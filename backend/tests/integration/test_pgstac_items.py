@@ -18,7 +18,7 @@ import pytest
 from earthx.catalog.collection import to_stac_collection
 from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.pgstac import PgstacError, fetch_item, load_collection, upsert_items
-from earthx.catalog.registry import CoverageProvider, ItemHolding
+from earthx.catalog.registry import CoverageProvider, ItemHolding, SearchCapabilities
 
 pytestmark = pytest.mark.anyio
 
@@ -35,6 +35,7 @@ MATERIALIZED = replace(
     ),
     coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
     search_filters=(),
+    search_capabilities=SearchCapabilities(evaluate=False, aoi_coverage=False),
 )
 
 FEDERATED = SENTINEL_2_L2A

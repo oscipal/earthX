@@ -4,7 +4,9 @@
 // with an estimate before it starts as a job. The same steps can make one job per
 // pass or per scene (M4-13c-4). Built from the schema of
 // `/processing/processes/recipe?dataset=…`, nothing per dataset here. A side
-// bar at the right edge, a sheet from below on narrow screens (M4-13c §3.1);
+// bar at the right edge, in the column of the settings bar but wider, a sheet from
+// below on narrow screens (M4-13c §3.1, UI-03b). Its sections stand in one order:
+// Selection, Bands, Processing steps, Output, Preview on the map, then Review and Start;
 // the jobs are listed in the processing manager beside the rail, and a click
 // on one shows its details here (`JobDetails.tsx`, UI-01). The first step shows
 // on the map as a tile preview (M4-13c-2, `processingPreview.ts`).
@@ -14,12 +16,14 @@ import { useShallow } from 'zustand/react/shallow';
 
 import { crsBlockReason, midLatitude } from '../crsUnit';
 import { polygonBbox } from '../geoUtils';
+import { resamplingParts } from '../resamplingWarning';
+import { channelProblems, channelsAutoScaled, channelsOfRange, percentsOfChannels, samePercents, withoutChannels, type ChannelRange } from '../channels';
+import { DEFAULT_PERCENT, percentOf, samePercent, type Percent, type RangeUnit } from '../percentRange';
+import { formatBytes, formatMegapixels, formatUnits } from '../numberFormat';
 import { totalOf } from '../processingBatch';
 import {
   EMPTY_OUTPUT,
-  formatBytes,
   formatDuration,
-  formatMegapixels,
   insertName,
   isArea,
   processBlockReason,
@@ -29,30 +33,55 @@ import {
 import {
   furtherNote,
   MAX_PREVIEW_ASSETS,
+  measuredRange,
   planPreview,
   previewRead,
   previewTitle,
-  previewUnit,
   rescaleOf,
 } from '../processingPreview';
 import { bandLabel, isBandMath, nameProblem, resultNameOf, RGB } from '../processingBands';
-import { orderView, type PartOutcome, selectionState, useProcessingStore, type OrderView } from '../processingStore';
+import { AFTER_REPROJECT } from '../normalizeMethods';
+import { measuredNumbers, type MeasureNeed } from '../processingOrder';
+import {
+  OUTSIDE_TEXT,
+  orderView,
+  type PartOutcome,
+  sceneCountOf,
+  selectionState,
+  useProcessingStore,
+  type OrderView,
+} from '../processingStore';
 import { CONVERTED_NOTE } from '../recipeUpgrade';
 import { MAX_RECIPE_BYTES } from '../recipeFile';
-import { COLORMAPS } from '../render';
-import { ticksOfOpen, useAppStore } from '../store';
+import { useAppStore } from '../store';
 import type { StacItem } from '../types';
-import BandSelect from './BandSelect';
+import { ChevronDownIcon, ChevronUpIcon, PlusIcon, UploadIcon } from './icons';
+import RenderFields, { NO_COLORMAP } from './RenderFields';
+import ResamplingDialog from './ResamplingDialog';
 import JobDetails from './JobDetails';
 import ShareLink from './ShareLink';
 import StepForm from './StepForm';
 import Tip from './Tip';
+import Badge from './Badge';
 import usePreviewLoading, { LOADING_TITLE } from './usePreviewLoading';
+import CloseButton from './CloseButton';
 
 // What the server says when the output needs more memory than a job may use (`plan.py`, 413).
 const isMemoryRefusal = (message: string): boolean => /\bof memory\b/u.test(message);
 
+
 const PASS_NOTE = 'One job covers the scenes of one pass; the scenes of another pass need a job of their own.';
+const OVERLAP_NOTE = 'Where scenes overlap, the preview may show another scene than the result: the job follows the mosaic rule of the server.';
+const QUEUE_NOTE = 'Jobs run 2 at a time per source; the rest wait.';
+const ESTIMATE_NOTE = 'An estimate, not a promise.';
+
+// What "Run as" does with the scenes, behind the (i) of the selection: one job for all of them or one job each, and the scenes by name.
+function runAsNote(view: OrderView, sceneCount: number): string | null {
+  const scenes = view.pass?.items.map((item) => item.id).join(', ');
+  if (view.runAs !== 'one') return `Every ${view.runAs} gets a job of its own with the same steps, bands and data type.${scenes ? `\nScenes: ${scenes}` : ''}`;
+  if (view.pass && sceneCount > 1) return `The scenes are merged into one mosaic first; the steps run on the mosaic.\nScenes: ${scenes}`;
+  return null;
+}
 
 // The expression field that has the cursor, if one has: only into that field a
 // band chip inserts its name (Otto, 12.10.2026).
@@ -90,7 +119,7 @@ function RecipeLoader() {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
-    if (!file.name.toLowerCase().endsWith('.json')) return setOutcome({ ok: false, message: 'Pick a .json file.' });
+    if (!file.name.toLowerCase().endsWith('.json')) return setOutcome({ ok: false, message: 'Choose a .json file.' });
     if (file.size > MAX_RECIPE_BYTES) return setOutcome({ ok: false, message: 'The file is larger than 1 MB.' });
     setBusy(true);
     setOutcome(null);
@@ -105,12 +134,12 @@ function RecipeLoader() {
 
   return (
     <div className="pp-recipe">
-      <label className={`ghost-btn pp-recipe-btn${busy ? ' disabled' : ''}`} title="Take the steps, the output bands and the data type from a recipe.json, onto the current selection">
-        ⬆ Load recipe…
+      <label className="btn" aria-disabled={busy || undefined} data-tip-level="advanced" data-tip="Take the steps, the output bands and the data type from a recipe.json, onto the current selection">
+        <UploadIcon lead />Load recipe…
         <input type="file" accept=".json,application/json" hidden disabled={busy} onChange={(e) => void pick(e)} />
       </label>
       {outcome && (
-        <p className={outcome.ok ? 'pp-help' : 'hint-text error'} role="status">
+        <p className={outcome.ok ? 'hint' : 'error'} role="status">
           {outcome.message}
           {outcome.converted && <Tip text={CONVERTED_NOTE} />}
         </p>
@@ -127,7 +156,7 @@ function Bands({ view, insert }: { view: OrderView; insert: (field: HTMLTextArea
     return (
       <section className="pp-section" aria-label="Bands">
         <h3 className="pp-heading">Bands</h3>
-        <p className="hint-text">This dataset does not list band names yet.</p>
+        <p className="hint">This dataset does not list band names yet.</p>
       </section>
     );
   }
@@ -135,7 +164,7 @@ function Bands({ view, insert }: { view: OrderView; insert: (field: HTMLTextArea
     <section className="pp-section" aria-label="Bands">
       <div className="pp-bands-head">
         <h3 className="pp-heading">Bands</h3>
-        <Tip text="Bands of the data. Click one to put its name into an expression." />
+        <Tip text={view.fixed?.result ? 'Bands of the result. Click one to put its name into an expression.' : 'Bands of the data. Click one to put its name into an expression.'} />
       </div>
       <div className="pp-chips">
         {view.dataBands
@@ -144,7 +173,7 @@ function Bands({ view, insert }: { view: OrderView; insert: (field: HTMLTextArea
             <button
               key={`${band.asset}/${band.name}`}
               type="button"
-              className="pp-chip"
+              className="btn seg"
               // Keep the cursor where it is: a click on a button would take the focus, and with it the field a name goes into.
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
@@ -161,7 +190,7 @@ function Bands({ view, insert }: { view: OrderView; insert: (field: HTMLTextArea
   );
 }
 
-// "Select Bands that are processed" (adr/0020 §9, §14): the bands of the output, the results of the steps ("New") and
+// "Select bands to process" (adr/0020 §9, §14): the bands of the output, the results of the steps ("New") and
 // the bands of the data ("Data"), a click each. Nothing is checked for the person, but the result of a step and the one
 // band of a dataset that has only one.
 function OutputBands({ view }: { view: OrderView }) {
@@ -174,7 +203,7 @@ function OutputBands({ view }: { view: OrderView }) {
   const checkedOnOpening = useRef<string | null>(null);
   const checked = lonely !== null && view.output.includes(lonely);
   // Not where the steps already add a band: the results are what is in the output then.
-  const results = view.results.length;
+  const results = view.fresh.length;
   useEffect(() => {
     if (lonely === null || checkedOnOpening.current === lonely) return;
     checkedOnOpening.current = lonely;
@@ -184,9 +213,9 @@ function OutputBands({ view }: { view: OrderView }) {
   const on = new Set(view.output);
   const data = view.dataBands.filter((band) => !band.auxiliary || on.has(band.name));
   // What "All" takes: every result and every band of the data that is no layer and no auxiliary asset.
-  const everything = [...view.results.map((result) => result.name), ...view.selectable];
+  const everything = [...view.fresh.map((result) => result.name), ...view.selectable];
   const chip = (name: string, band?: DataBand) => (
-    <button key={name} type="button" className={`pp-chip${on.has(name) ? ' on' : ''}`} aria-pressed={on.has(name)} onClick={() => toggle(name)}>
+    <button key={name} type="button" className="btn seg" aria-pressed={on.has(name)} onClick={() => toggle(name)}>
       {name}
       {band?.unit && <span className="pp-chip-unit"> · {band.unit}</span>}
     </button>
@@ -195,21 +224,21 @@ function OutputBands({ view }: { view: OrderView }) {
   return (
     <section className="pp-section" aria-label="Output">
       <div className="pp-bands-head">
-        <h3 className="pp-heading">Select Bands that are processed</h3>
+        <h3 className="pp-heading">Select bands to process</h3>
         <Tip text="The bands of the result. Click a band to put it into the output or take it out." />
-        <span className="pp-help" aria-label="Output summary">
+        <span className="hint" aria-label="Output summary">
           {count} band{count === 1 ? '' : 's'} · {view.dtype}
         </span>
       </div>
-      {view.results.length > 0 && (
+      {view.fresh.length > 0 && (
         <div className="pp-chip-row" role="group" aria-label="New bands">
-          <span className="pp-help">New</span>
-          <div className="pp-chips">{view.results.map((result) => chip(result.name))}</div>
+          <span className="hint">New</span>
+          <div className="pp-chips">{view.fresh.map((result) => chip(result.name))}</div>
         </div>
       )}
       {data.length > 0 && (
         <div className="pp-chip-row" role="group" aria-label="Bands of the data">
-          <span className="pp-help">Data</span>
+          <span className="hint">Data</span>
           <div className="pp-chips">{data.map((band) => chip(band.name, band))}</div>
         </div>
       )}
@@ -219,14 +248,14 @@ function OutputBands({ view }: { view: OrderView }) {
             <button
               type="button"
               className="link-btn"
-              title="Put every band into the output"
+              data-tip-level="advanced" data-tip="Put every band into the output"
               onClick={() => setOutput([...everything, ...view.output.filter((name) => !everything.includes(name))])}
             >
               All
             </button>
           )}
           {count > 0 && (
-            <button type="button" className="link-btn" title="Take every band out of the output" onClick={() => setOutput([])}>
+            <button type="button" className="link-btn" data-tip-level="advanced" data-tip="Take every band out of the output" onClick={() => setOutput([])}>
               None
             </button>
           )}
@@ -236,8 +265,8 @@ function OutputBands({ view }: { view: OrderView }) {
         Data type: <strong>{view.dtype}</strong>
         {view.dtypeChosen ? ' (your choice)' : ' (chosen automatically)'}
       </p>
-      {view.dtypeAutomatic && !view.dtypeChosen && <span className="pp-help">{view.dtypeAutomatic.reason}</span>}
-      {view.dtypeNote && <p className="hint-text warn">{view.dtypeNote}</p>}
+      {view.dtypeAutomatic && !view.dtypeChosen && <span className="hint">{view.dtypeAutomatic.reason}</span>}
+      {view.dtypeNote && <p className="hint warn">{view.dtypeNote}</p>}
       <details className="pp-details">
         <summary>Change the data type</summary>
         <label className="vc-field pp-field">
@@ -252,7 +281,7 @@ function OutputBands({ view }: { view: OrderView }) {
           </select>
         </label>
         {view.dtypeOptions.find((o) => o.disabledReason) && (
-          <span className="pp-help">{view.dtypeOptions.find((o) => o.disabledReason)!.disabledReason} These types are not offered.</span>
+          <span className="hint">{view.dtypeOptions.find((o) => o.disabledReason)!.disabledReason} These types are not offered.</span>
         )}
       </details>
     </section>
@@ -273,35 +302,36 @@ function areaLatitude(area: Area, aoi: GeoJSON.Geometry | null, scenes: readonly
 function AreaChoice({ view, hasAoi }: { view: OrderView; hasAoi: boolean }) {
   const area = useProcessingStore((s) => s.area);
   const setArea = useProcessingStore((s) => s.setArea);
-  const scenes = (view.pass?.items.length ?? 0) > 1 ? 'scenes' : 'scene';
+  // On a result "Whole scene" is the result's own area, and "AOI only" another AOI inside it (NM4-05b).
+  const result = view.fixed?.result != null;
   return (
     <div className="pp-area">
       <div className="pp-toggle" role="group" aria-label="Area">
-        <span className="pp-help">Area:</span>
+        <span className="hint">Area:</span>
         <button
           type="button"
-          className={`pp-seg${area === 'scene' ? ' on' : ''}`}
+          className="btn seg"
           aria-pressed={area === 'scene'}
-          title="Process the whole scenes; no AOI is sent"
+          data-tip-level="advanced" data-tip={result ? 'Process the area of the result' : 'Process the whole scenes; no AOI is sent'}
           onClick={() => setArea('scene')}
         >
           Whole scene
         </button>
         <button
           type="button"
-          className={`pp-seg${area === 'aoi' ? ' on' : ''}`}
+          className="btn seg"
           aria-pressed={area === 'aoi'}
           disabled={!hasAoi}
-          title={hasAoi ? 'Process only the AOI' : 'Draw an AOI first'}
+          data-tip-level="advanced" data-tip={hasAoi ? (result ? 'Process only the AOI, cut to the area of the result' : 'Process only the AOI') : 'Draw an AOI first'}
           onClick={() => setArea('aoi')}
         >
           AOI only
         </button>
       </div>
-      {area === 'scene' ? (
-        <p className="pp-help">The result covers the whole {scenes}; the mask marks where they have data.</p>
+      {area === 'scene' ? null : !hasAoi ? (
+        <p className="error">Draw an AOI first, or choose “Whole scene”.</p>
       ) : (
-        !hasAoi && <p className="hint-text error">Draw an AOI first, or choose “Whole scene”.</p>
+        view.outside && <p className="error">{OUTSIDE_TEXT}</p>
       )}
     </div>
   );
@@ -310,21 +340,23 @@ function AreaChoice({ view, hasAoi }: { view: OrderView; hasAoi: boolean }) {
 // "Run as": one job, or one per pass or scene (M4-13c-4). Only offered where it
 // makes a choice; a choice over the limit is greyed out with the reason.
 function RunAsChoice({ view }: { view: OrderView }) {
+  // A crop that is one object has no "Run as", only its passes (NM4-06).
+  const label = view.fixed ? 'Passes' : 'Run as';
   const setRunAs = useProcessingStore((s) => s.setRunAs);
   if (view.runChoices.length < 2) return null;
   const limits = [...new Set(view.runChoices.flatMap((choice) => (choice.disabled ? [choice.disabled] : [])))];
   return (
     <>
-      <div className="pp-toggle" role="group" aria-label="Run as">
-        <span className="pp-help">Run as:</span>
+      <div className="pp-toggle" role="group" aria-label={label}>
+        <span className="hint">{label}:</span>
         {view.runChoices.map((choice) => (
           <button
             key={choice.value}
             type="button"
-            className={`pp-seg${view.runAs === choice.value ? ' on' : ''}`}
+            className="btn seg"
             aria-pressed={view.runAs === choice.value}
             disabled={choice.disabled !== null}
-            title={choice.disabled ?? undefined}
+            data-tip={choice.disabled ?? undefined}
             onClick={() => setRunAs(choice.value)}
           >
             {choice.label}
@@ -332,7 +364,7 @@ function RunAsChoice({ view }: { view: OrderView }) {
         ))}
       </div>
       {limits.map((limit) => (
-        <p key={limit} className="pp-help">
+        <p key={limit} className="hint">
           {limit}.
         </p>
       ))}
@@ -352,19 +384,17 @@ function BatchEstimate({ parts }: { parts: readonly PartOutcome[] }) {
         <>
           <p>
             {total.jobs} job{total.jobs === 1 ? '' : 's'} · about {formatMegapixels(total.outputPixels)},{' '}
-            {formatBytes(total.size)}, {total.units.toFixed(1)} units in total
+            {formatBytes(total.size)}, {formatUnits(total.units)} in total <Tip text={`${QUEUE_NOTE} ${ESTIMATE_NOTE}`} />
           </p>
           {total.duration && <p>{formatDuration(total.duration)} of work</p>}
-          <p className="pp-help">Jobs run 2 at a time per source; the rest wait.</p>
         </>
       )}
-      {skipped.length > 0 && <p className="hint-text warn">Left out (the AOI misses them): {skipped.join(', ')}</p>}
+      {skipped.length > 0 && <p className="hint warn">Left out (the AOI misses them): {skipped.join(', ')}</p>}
       {refused.map((part) => (
-        <p key={part.unit.key} className="hint-text error" role="alert" title={part.refusal!.reason}>
+        <p key={part.unit.key} className="error" role="alert" data-tip-level="advanced" data-tip={part.refusal!.reason}>
           {part.unit.label}: {part.refusal!.message}
         </p>
       ))}
-      <p className="pp-help">An estimate, not a promise.</p>
     </div>
   );
 }
@@ -386,10 +416,20 @@ function PreviewSection({ view }: { view: OrderView }) {
   const autoStretch = useProcessingStore((s) => s.autoStretch);
   const shown = useProcessingStore((s) => s.shown);
   const setShown = useProcessingStore((s) => s.setShown);
-  const unit = previewUnit(preview, measure);
+  // "vmin"/"vmax" as values or as percentiles (NM4-65 part 4): in percentiles the fields hold what was typed.
+  const range = useProcessingStore((s) => s.range);
+  const applyRangePercent = useProcessingStore((s) => s.applyRangePercent);
+  const applyRangeChannels = useProcessingStore((s) => s.applyRangeChannels);
+  const [rangeUnit, setRangeUnit] = useState<RangeUnit>(() => (rangeByHand && range.percent ? 'percent' : 'value'));
+  const [typed, setTyped] = useState<Percent>(() => range.percent ?? DEFAULT_PERCENT);
+  const [percentProblem, setPercentProblem] = useState<string | null>(null);
+  const percentMode = rangeUnit === 'percent';
+  const typedPair = percentMode ? percentOf(typed) : null;
+  // Applied already: the percentiles typed are the ones of the range in force, and the colormap chosen is the one drawn. A change of
+  // the colormap alone is something to apply (Otto, 01.11.2026).
+  const percentApplied = percentMode && typedPair !== null && rangeByHand && samePercent(typedPair, range.percent) && rangeDraft.colormap === range.colormap;
   const loading = usePreviewLoading();
-  const plan = planPreview(steps, view.info);
-  const range = rescaleOf(rangeDraft);
+  const plan = planPreview(steps, view.info, measuredNumbers(steps, view.built));
   // The band the map shows, and what it reads for it (adr/0020 §10): the limit of the tile is that of these assets.
   const read =
     plan.state === 'ready'
@@ -405,101 +445,128 @@ function PreviewSection({ view }: { view: OrderView }) {
         })
       : null;
   const sceneCount = view.pass?.items.length ?? 0;
+  // The colour picture has a range and a unit for each channel (UI-04 part 5), the pair "Apply" has to measure being each one's own.
+  const colour = read?.band === RGB;
+  const singlePercent = percentMode && !colour;
+  const channelValues = channelsOfRange(rangeDraft);
+  const colourPercent = colour && channelValues.some((channel) => channel.percent);
+  // A channel that cannot be drawn locks "Apply" with its reason, and its fields are marked.
+  const problems = colour ? channelProblems(channelValues) : [];
+  const blocked = problems.find((reason) => reason !== null) ?? null;
+  const valueRange = rescaleOf(colour ? { ...rangeDraft, channels: channelValues } : withoutChannels(rangeDraft));
+  const editChannels = (channels: ChannelRange[]) => {
+    setRangeDraft({ channels, vmin: channels[0].vmin, vmax: channels[0].vmax, percent: undefined });
+    setPercentProblem(null);
+  };
+  const channels = colour
+    ? {
+        values: channelValues,
+        onChange: (channel: number, end: 'vmin' | 'vmax', text: string) => editChannels(channelValues.map((range, index) => (index === channel ? { ...range, [end]: text } : range))),
+        onPercent: (channel: number, end: 'low' | 'high', text: string) =>
+          editChannels(channelValues.map((range, index) => (index === channel ? { ...range, percent: { ...(range.percent ?? DEFAULT_PERCENT), [end]: text } } : range))),
+        problems,
+        onUnit: (channel: number, next: RangeUnit) =>
+          editChannels(
+            channelValues.map((range, index) => {
+              if (index !== channel) return range;
+              const { percent, ...values } = range;
+              return next === 'percent' ? { ...values, percent: percent ?? { ...DEFAULT_PERCENT } } : values;
+            }),
+          ),
+      }
+    : undefined;
+  const appliedChannels = colourPercent && rangeByHand && rangeDraft.colormap === range.colormap && samePercents(percentsOfChannels(channelValues), percentsOfChannels(channelsOfRange(range)));
   return (
     <section className="pp-section" aria-label="Preview on the map">
       <h3 className="pp-heading">
         Preview on the map{' '}
-        {preview && (
-          <span className="pp-badge" title={previewTitle(preview, measure)}>
-            Preview
-          </span>
-        )}
+        {sceneCount > 1 && <Tip text={OVERLAP_NOTE} />}{' '}
+        {preview && <Badge tip={previewTitle(preview, measure)}>Preview</Badge>}
         {loading && (
-          <span className="pp-badge loading" title={LOADING_TITLE}>
+          <Badge loading tip={LOADING_TITLE}>
             Loading…
-          </span>
+          </Badge>
         )}
       </h3>
       {plan.state === 'off' ? (
-        plan.reason && <p className="hint-text">{plan.reason}</p>
+        plan.reason && <p className="hint">{plan.reason}</p>
       ) : (
         <>
           <div className="pp-range" role="group" aria-label="Range and colormap">
-            {read && read.choices.length > 1 && read.band !== null && (
-              <BandSelect
-                label="Show"
-                className="pp-show"
-                title="The band the map shows"
-                value={read.band}
-                options={read.choices.map((name) => ({ value: name, label: bandLabel(name) }))}
-                onChange={setShown}
-              />
-            )}
-            <label className="vc-field vc-num">
-              <span>min</span>
-              <input type="number" value={rangeDraft.vmin} onChange={(e) => setRangeDraft({ vmin: e.target.value })} />
-            </label>
-            <div className="pp-bound">
-              <label className="vc-field vc-num">
-                <span>max</span>
-                <input type="number" value={rangeDraft.vmax} onChange={(e) => setRangeDraft({ vmax: e.target.value })} />
-              </label>
-              {unit && (
-                <span className="pp-unit" aria-label="Unit of the range">
-                  {unit}
-                </span>
-              )}
+            <RenderFields
+              scale
+              band={
+                read && read.choices.length > 1 && read.band !== null
+                  ? {
+                      className: 'pp-show',
+                      title: 'The band the map shows',
+                      value: read.band,
+                      options: read.choices.map((name) => ({ value: name, label: bandLabel(name) })),
+                      onChange: setShown,
+                    }
+                  : undefined
+              }
+              vmin={percentMode ? { value: typed.low, onChange: (low) => { setTyped((t) => ({ ...t, low })); setPercentProblem(null); } } : { value: rangeDraft.vmin, onChange: (vmin) => setRangeDraft({ vmin }) }}
+              channels={channels}
+              unit={colour ? undefined : {
+                value: rangeUnit,
+                onChange: (next) => {
+                  setRangeUnit(next);
+                  setPercentProblem(null);
+                  // Back in values the draft is no percentiles any more: it keeps the values they gave.
+                  if (next === 'value' && rangeDraft.percent) setRangeDraft({ percent: undefined });
+                },
+              }}
+              vmax={{
+                value: percentMode ? typed.high : rangeDraft.vmax,
+                onChange: (vmax) => (percentMode ? (setTyped((t) => ({ ...t, high: vmax })), setPercentProblem(null)) : setRangeDraft({ vmax })),
+              }}
+              colormap={read?.band === RGB ? { fixed: NO_COLORMAP, title: 'True colour: three bands, no colormap' } : { value: rangeDraft.colormap, onChange: (colormap) => setRangeDraft({ colormap }) }}
+            />
+            <div className="pp-buttons">
+              <button
+                type="button"
+                className="btn"
+                disabled={colourPercent ? channelValues.every((channel) => !channel.percent || samePercent(channel.percent, DEFAULT_PERCENT)) : singlePercent ? samePercent(typed, DEFAULT_PERCENT) : !rangeByHand && !rangeEdited && rangeNote === null && measure?.source !== 'fallback'}
+                data-tip-level="advanced" data-tip="Use the measured range (the 2nd to 98th percentile, or −1 to 1 for an index); with AOI only, measured over the AOI"
+                onClick={() => {
+                  if (colourPercent) editChannels(channelsAutoScaled(channelValues, measuredRange(measure)));
+                  else if (singlePercent) setTyped(DEFAULT_PERCENT);
+                  else autoStretch();
+                }}
+              >
+                Auto-scale
+              </button>
+              <button
+                type="button"
+                className="btn primary vc-apply"
+                disabled={blocked !== null || (colourPercent ? appliedChannels : singlePercent ? percentApplied : 'problem' in valueRange)}
+                data-tip={blocked ?? undefined}
+                onClick={() => (colourPercent ? void applyRangeChannels(channelValues).then(setPercentProblem) : singlePercent ? void applyRangePercent(typed).then(setPercentProblem) : applyRange())}
+              >
+                Apply
+              </button>
             </div>
-            {read?.band !== RGB && (
-              <label className="vc-field">
-                <span>Colormap</span>
-                <select value={rangeDraft.colormap} onChange={(e) => setRangeDraft({ colormap: e.target.value })}>
-                  <option value="">— none —</option>
-                  {COLORMAPS.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            <button type="button" className="primary-btn vc-apply" disabled={'problem' in range} onClick={() => applyRange()}>
-              Apply
-            </button>
-            <button
-              type="button"
-              className="link-btn"
-              disabled={!rangeByHand && !rangeEdited && rangeNote === null && measure?.source !== 'fallback'}
-              title="Use the measured range (the 2nd to 98th percentile, or −1 to 1 for an index); with AOI only, measured over the AOI"
-              onClick={() => autoStretch()}
-            >
-              Auto stretch
-            </button>
           </div>
-          {'problem' in range && <p className="hint-text error">{range.problem}</p>}
-          {rangeNote && <p className="hint-text">{rangeNote}</p>}
-          {read?.assets.length === 0 && <p className="hint-text">Pick a band for the output to see the preview.</p>}
+          {!singlePercent && !colour && 'problem' in valueRange && <p className="error">{valueRange.problem}</p>}
+          {(singlePercent || colourPercent) && percentProblem && <p className="error">{percentProblem}</p>}
+          {rangeNote && <p className="hint">{rangeNote}</p>}
+          {read?.assets.length === 0 && <p className="hint">Choose a band for the output to see the preview.</p>}
           {read && read.assets.length > MAX_PREVIEW_ASSETS && (
-            <p className="hint-text">No preview: the map takes at most {MAX_PREVIEW_ASSETS} bands.</p>
+            <p className="hint">No preview: the map takes at most {MAX_PREVIEW_ASSETS} bands.</p>
           )}
-          {!view.pass && <p className="hint-text">Choose a pass to see the preview.</p>}
-          {plan.further && <p className="pp-help">{furtherNote(plan)}</p>}
-          {previewNote && <p className="hint-text">{previewNote}</p>}
-          {sceneCount > 1 && (
-            <p className="pp-help">
-              Where scenes overlap, the preview may show another scene than the result: the job follows the mosaic rule of
-              the server.
-            </p>
-          )}
+          {!view.pass && <p className="hint">Choose a pass to see the preview.</p>}
+          {plan.further && <p className="hint">{furtherNote(plan)}</p>}
+          {previewNote && <p className="hint">{previewNote}</p>}
           <div className="vc-actions">
             <button
               type="button"
-              className="ghost-btn"
+              className="btn"
               disabled={!preview}
-              title="Pin this preview into the layer manager"
+              data-tip-level="advanced" data-tip="Add this preview to the layers"
               onClick={() => pinPreview()}
             >
-              ＋ Add preview to layers
+              <PlusIcon lead />Add preview to layers
             </button>
           </div>
         </>
@@ -514,9 +581,9 @@ function MaskLayerNote({ view }: { view: OrderView }) {
   const mask = view.maskAsset;
   if (!mask || !view.pass) return null;
   return mask.inOrder ? (
-    view.output.includes(view.maskLayer?.band ?? mask.asset) ? null : <p className="pp-help">The order also reads the mask layer {mask.asset}; it is not in the result.</p>
+    view.output.includes(view.maskLayer?.band ?? mask.asset) ? null : <p className="hint">The order also reads the mask layer {mask.asset}; it is not in the result.</p>
   ) : (
-    <p className="hint-text error">The scenes have no mask layer {mask.asset}: the job cannot hide anything.</p>
+    <p className="error">The scenes have no mask layer {mask.asset}: the job cannot hide anything.</p>
   );
 }
 
@@ -524,7 +591,7 @@ function MaskLayerNote({ view }: { view: OrderView }) {
 function TooLarge({ hasAoi }: { hasAoi: boolean }) {
   const setArea = useProcessingStore((s) => s.setArea);
   return (
-    <p className="hint-text warn">
+    <p className="hint warn">
       The whole scene is too large for one job.{' '}
       {hasAoi ? (
         <>
@@ -540,6 +607,17 @@ function TooLarge({ hasAoi }: { hasAoi: boolean }) {
   );
 }
 
+// Asks the questions the preview of the statistical Normalize steps needs answered (NM4-11b, NM4-71): when the method is chosen and
+// whenever the steps before, the AOI, the scenes or the bands change. The answers come into the store, which holds each once.
+function AskMeasures({ needs }: { needs: readonly MeasureNeed[] }) {
+  const ensure = useProcessingStore((s) => s.ensureMeasures);
+  const measures = useProcessingStore((s) => s.measures);
+  useEffect(() => {
+    ensure(needs);
+  }, [needs, measures, ensure]);
+  return null;
+}
+
 export default function ProcessingPanel() {
   const open = useProcessingStore((s) => s.open);
   const close = useProcessingStore((s) => s.closeProcessing);
@@ -553,7 +631,7 @@ export default function ProcessingPanel() {
 
   const dataset = app.datasets.find((d) => d.id === app.datasetId);
   // The same rule as the button in the ViewBar: scenes picked by hand.
-  const reason = processBlockReason(dataset, ticksOfOpen(app).length);
+  const reason = processBlockReason(dataset, sceneCountOf(app, p));
   const description = app.datasetId ? p.descriptions[app.datasetId] : undefined;
   const view = orderView(app, p);
   const info = view.info;
@@ -569,6 +647,10 @@ export default function ProcessingPanel() {
       ? 'Start job'
       : `Start ${batch && taken < view.parts.length ? `${taken} of ${view.parts.length}` : view.parts.length} jobs`;
   const startReady = view.runAs === 'one' ? !!estimate : taken > 0;
+  // Bands that are brought to a common grid ask for a confirmation when the review is there (NM4-65 part 7, Otto, 1.11.2026:
+  // "wenn ich auf review drücke"): "Continue" keeps the review, "Cancel" drops it.
+  const resampling = resamplingParts(estimate, batch);
+  const askResampling = resampling.length > 0 && view.key !== null && p.resamplingAsking === view.key;
   const showErrors = p.reviewAsked;
   const sceneCount = view.pass?.items.length ?? 0;
   // A refusal belongs to the order it refused; a changed draft hides it.
@@ -579,7 +661,7 @@ export default function ProcessingPanel() {
   const memory = refusals.find((r) => r!.step === null && r!.status === 413 && isMemoryRefusal(r!.message))?.message ?? null;
   const orderRefusals = refusals.filter((r) => r!.step === null && r!.message !== memory);
   const tooLarge =
-    p.area === 'scene' &&
+    view.area === 'scene' &&
     (refusals.some((r) => r!.status === 413 && r!.message !== memory) ||
       (batch?.some((part) => part.refusal?.status === 413 && !isMemoryRefusal(part.refusal.message)) ?? false));
   const startTitle =
@@ -596,68 +678,58 @@ export default function ProcessingPanel() {
             : 'Review the order first';
   // A target CRS the server turned away holds the review back (M4-13c-3).
   const crsBlock = crsBlockReason(p.steps, p.crs);
-  const latitude = areaLatitude(p.area, hasAoi ? app.aoi : null, view.pass?.items ?? []);
+  const latitude = areaLatitude(view.area, view.aoi, view.pass?.items ?? []);
 
   return (
     <div className={`panel processing-panel${folded ? ' folded' : ''}`} role="dialog" aria-label="Processing">
+      {!reason && info && <AskMeasures needs={view.needs} />}
       <div className="pp-head">
         <button
           type="button"
           className="pp-grip"
           aria-expanded={!folded}
           aria-label={folded ? 'Show the panel' : 'Fold the panel down'}
-          title={folded ? 'Show the panel' : 'Fold the panel down'}
+          data-tip-level="advanced" data-tip={folded ? 'Show the panel' : 'Fold the panel down'}
           onClick={() => setFolded(!folded)}
         >
-          {folded ? '▴' : '▾'}
+          {folded ? <ChevronUpIcon /> : <ChevronDownIcon />}
         </button>
-        <div className="vc-head">
-          <span className="vc-title">PROCESSING</span>
-          <button type="button" className="link-btn" title="Close the panel" onClick={close}>
-            ✕
-          </button>
+        <div className="pp-title-row">
+          <h2 className="pp-title">Processing</h2>
+          <CloseButton onClick={close} />
         </div>
-        {!reason && (
-          <section className="pp-section" aria-label="Selection">
-            <p className="pp-summary">
-              {[
-                dataset?.title ?? app.datasetId,
-                view.pass?.label,
-                view.pass && (sceneCount === 1 ? view.pass.items[0].id : `${sceneCount} scenes`),
-              ]
-                .filter(Boolean)
-                .join(' · ')}
-            </p>
-            <AreaChoice view={view} hasAoi={hasAoi} />
-            <RunAsChoice view={view} />
-            <RecipeLoader />
-          </section>
-        )}
       </div>
 
       <div className="pp-body">
         {reason ? (
-          <p className="hint-text">{reason}</p>
+          <p className="hint">{reason}</p>
         ) : (
           <>
-            <section className="pp-section" aria-label="Scenes">
-              {p.area === 'aoi' && hasAoi && view.candidates.length === 0 && (
-                <p className="hint-text error">No selected scene meets the AOI.</p>
-              )}
-              {view.runAs !== 'one' && (
-                <p className="pp-help" title={view.pass?.items.map((i) => i.id).join(', ')}>
-                  Every {view.runAs} gets a job of its own with the same steps, bands and data type.
-                </p>
-              )}
-              {view.runAs === 'one' && view.pass && sceneCount > 1 && (
-                <p className="pp-help" title={view.pass.items.map((i) => i.id).join(', ')}>
-                  The scenes are merged into one mosaic first; the steps run on the mosaic.
-                </p>
+            <section className="pp-section" aria-label="Selection">
+              <h3 className="pp-heading">Selection</h3>
+              <p className="pp-summary">
+                {[
+                  dataset?.title ?? app.datasetId,
+                  view.pass?.label,
+                  view.pass && (sceneCount === 1 ? view.pass.items[0].id : `${sceneCount} scenes`),
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+                {runAsNote(view, sceneCount) && <Tip text={runAsNote(view, sceneCount)!} />}
+              </p>
+              {/* A crop has its own AOI to take, the map's AOI or none is no matter (NM4-06). */}
+              <AreaChoice view={view} hasAoi={hasAoi || (view.fixed != null && view.fixed.result === null)} />
+              <RunAsChoice view={view} />
+              {view.area === 'aoi' && view.aoi !== null && view.candidates.length === 0 && (
+                <p className="error">No selected scene meets the AOI.</p>
               )}
               {view.runAs === 'one' && view.passes.length > 1 && (
                 <>
                   <label className="vc-field pp-field">
-                    Pass
+                    <span className="pp-label">
+                      Pass
+                      <Tip tone="warn" text={PASS_NOTE} />
+                    </span>
                     <select value={view.pass?.key ?? ''} onChange={(e) => p.choosePass(e.target.value)}>
                       <option value="" disabled>
                         — choose one pass —
@@ -669,14 +741,14 @@ export default function ProcessingPanel() {
                       ))}
                     </select>
                   </label>
-                  <p className="hint-text warn">{PASS_NOTE}</p>
                 </>
               )}
+              <RecipeLoader />
             </section>
 
-            {description?.state === 'loading' && <p className="hint-text">Loading the operators…</p>}
+            {description?.state === 'loading' && <p className="hint">Loading the operators…</p>}
             {description?.state === 'error' && (
-              <p className="hint-text error">
+              <p className="error">
                 The operators could not be loaded: {description.message}{' '}
                 <button
                   type="button"
@@ -694,18 +766,23 @@ export default function ProcessingPanel() {
 
                 <section className="pp-section" aria-label="Processing steps">
                   <h3 className="pp-heading">Processing steps</h3>
-                  {p.steps.length > 0 && (
+                  {p.steps.length > view.locked && (
                     <ol className="pp-steps">
                       {p.steps.map((step, index) => {
+                        // The steps of a result stand first in the order and are not shown (adr/0019, Nachtrag NM4-05b).
+                        if (index < view.locked) return null;
                         const operator = info.operators.find((o) => o.op === step.op && o.opVersion === step.opVersion);
                         const problem = built?.stepProblems[index];
                         // The results of the steps before this one: the bands this step may name besides those of the data.
-                        const earlier = view.results.slice(0, p.steps.slice(0, index).filter(isBandMath).length).map((r) => r.name);
+                        const earlier = view.results
+                          .slice(0, p.steps.slice(0, index).filter(isBandMath).length)
+                          .map((r) => r.name)
+                          .filter((name) => !view.hidden.includes(name));
                         return (
                           <StepForm
                             key={step.key}
-                            index={index}
-                            count={p.steps.length}
+                            index={index - view.locked}
+                            count={p.steps.length - view.locked}
                             stepKey={step.key}
                             operator={operator}
                             values={step.values}
@@ -717,6 +794,10 @@ export default function ProcessingPanel() {
                             maskLayer={view.maskLayer}
                             earlier={earlier}
                             dataBands={view.selectable}
+                            units={Object.fromEntries(view.dataBands.flatMap((b) => (b.unit ? [[b.name, b.unit]] : [])))}
+                            measure={view.measures[index]}
+                            statisticsLock={p.steps.slice(0, index).some((earlier) => earlier.op === 'reproject') ? AFTER_REPROJECT : null}
+                            onRetryMeasure={p.retryMeasures}
                             checkName={(name) =>
                               nameProblem(
                                 name,
@@ -740,9 +821,9 @@ export default function ProcessingPanel() {
                     </ol>
                   )}
                   <div className="pp-add" role="group" aria-label="Add step">
-                    <span className="pp-help">Add step:</span>
-                    {info.operators.length === 0 && <span className="hint-text">No operator runs on this dataset.</span>}
-                    {info.operators.map((operator) => {
+                    <span className="hint">Add step:</span>
+                    {info.operators.length === 0 && <span className="hint">No operator runs on this dataset.</span>}
+                    {info.operators.filter((operator) => !(operator.op === 'mask' && view.maskHidden)).map((operator) => {
                       const full = p.steps.length >= info.maxSteps;
                       const why = !operator.form.supported
                         ? operator.form.reason
@@ -753,22 +834,19 @@ export default function ProcessingPanel() {
                         <button
                           key={`${operator.op}/${operator.opVersion}`}
                           type="button"
-                          className="ghost-btn pp-add-btn"
+                          className="btn pp-add-btn"
                           disabled={!operator.form.supported || full || !!view.nameBlock}
-                          title={why}
+                          data-tip-level="advanced" data-tip={why}
                           onClick={() => p.addStep(operator.op, operator.opVersion)}
                         >
-                          ＋ {operator.title}
+                          <PlusIcon lead />{operator.title}
                         </button>
                       );
                     })}
                   </div>
-                  {!view.maskLayer && !info.operators.some((o) => o.op === 'mask') && (
-                    <p className="hint-text">Mask: this dataset has no classification layer to read.</p>
-                  )}
                   {info.operators.map((o) =>
                     o.form.supported ? null : (
-                      <p key={`${o.op}/${o.opVersion}`} className="hint-text">
+                      <p key={`${o.op}/${o.opVersion}`} className="hint">
                         {o.title}: {o.form.reason}
                       </p>
                     ),
@@ -787,24 +865,24 @@ export default function ProcessingPanel() {
       {!reason && info && (
         <section className="pp-foot" aria-label="Review">
           {showErrors && built && built.problems.length > 0 && (
-            <p className="hint-text error">{built.problems.join(' ')}</p>
+            <p className="error">{built.problems.join(' ')}</p>
           )}
           {view.maskAsset && <MaskLayerNote view={view} />}
           <div className="vc-actions">
             <button
               type="button"
-              className="ghost-btn"
+              className="btn"
               disabled={p.reviewing || p.starting || !!crsBlock || !!view.nameBlock}
-              title={crsBlock ?? view.nameBlock ?? 'Ask the server what this job is expected to cost'}
+              data-tip-level="advanced" data-tip={crsBlock ?? view.nameBlock ?? 'Ask the server what this job is expected to cost'}
               onClick={() => void p.reviewOrder()}
             >
               {p.reviewing ? 'Reviewing…' : 'Review'}
             </button>
             <button
               type="button"
-              className="primary-btn"
+              className="btn primary"
               disabled={!startReady || p.starting || !!crsBlock || !!view.nameBlock}
-              title={crsBlock ?? view.nameBlock ?? startTitle}
+              data-tip-level="advanced" data-tip={crsBlock ?? view.nameBlock ?? startTitle}
               onClick={() => void p.startJob()}
             >
               {startLabel}
@@ -814,27 +892,27 @@ export default function ProcessingPanel() {
             <div className="pp-estimate" aria-label="Estimate">
               <p>
                 about {formatMegapixels(estimate.estimate.outputPixels)}, {formatBytes(estimate.estimate.size)},{' '}
-                {formatDuration(estimate.estimate.duration)}, {estimate.estimate.units.toFixed(1)} units
+                {formatDuration(estimate.estimate.duration)}, {formatUnits(estimate.estimate.units)} <Tip text={ESTIMATE_NOTE} />
               </p>
               {estimate.skippedItems.length > 0 && (
-                <p className="hint-text warn">Left out (the AOI misses them): {estimate.skippedItems.join(', ')}</p>
+                <p className="hint warn">Left out (the AOI misses them): {estimate.skippedItems.join(', ')}</p>
               )}
-              <p className="pp-help">An estimate, not a promise.</p>
             </div>
           )}
           {batch && <BatchEstimate parts={batch} />}
           {startRefusals.map((refusal) => (
-            <p key={refusal.label} className="hint-text error" role="alert">
+            <p key={refusal.label} className="error" role="alert">
               {refusal.label}: {refusal.message}
             </p>
           ))}
           {orderRefusals.map((refusal, index) => (
-            <p key={index} className="hint-text error" role="alert" title={refusal!.reason}>
+            <p key={index} className="error" role="alert" data-tip-level="advanced" data-tip={refusal!.reason}>
               {refusal!.message}
             </p>
           ))}
           {tooLarge && <TooLarge hasAoi={hasAoi} />}
           <ShareLink view={view} />
+          {askResampling && <ResamplingDialog parts={resampling} onCancel={p.declineResampling} onContinue={p.confirmResampling} />}
         </section>
       )}
     </div>

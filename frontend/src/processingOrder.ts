@@ -2,14 +2,32 @@
 // and how it builds an order from them (M4-13 §3.3–§3.5). Pure functions; the
 // panel's state lives in `processingStore.ts`.
 
-import { intersection } from 'polyclip-ts';
+import { difference, intersection, union } from 'polyclip-ts';
 import type { Geom } from 'polyclip-ts';
 
 import { footprintOf, polygonBbox } from './geoUtils';
 import { bboxesOverlap } from './aoiClip';
 import { groupIndexOfItem } from './grouping';
-import type { AoiProvenance, JsonSchema, Order, OrderStep, ProcessDescription } from './processing';
+import { canonicalJson, type AoiProvenance, type ExportLayout, type JsonSchema, type Order, type OrderStep, type ProcessDescription } from './processing';
+import type { AreaStatistics } from './api';
 import { bandNamesOf, isBandMath, isExpression, nameProblem, ownersOf, resultNameOf } from './processingBands';
+import {
+  AFTER_REPROJECT,
+  ANEW,
+  KEPT,
+  MEASURING,
+  NORMALIZE_VERSION,
+  TILE_VERSION,
+  isStatistical,
+  keptMeasured,
+  measuredFrom,
+  measuredText,
+  normalizeForm,
+  previewNote,
+  upgradedValues,
+  type Measured,
+  type Method,
+} from './normalizeMethods';
 import { initialValues, paramsForm, paramsFrom, type FieldValue, type ParamsForm } from './schemaForm';
 import type { Collection, EarthxMask, StacAsset, StacBand, StacItem, TimeStepGroup } from './types';
 
@@ -71,7 +89,7 @@ export function processInfo(description: ProcessDescription): ProcessInfo {
       ...(typeof def.description === 'string' ? { description: def.description } : {}),
       tiers: Array.isArray(def['x-earthx-tiers']) ? def['x-earthx-tiers'].filter((t) => typeof t === 'string') : [],
       kind: typeof def['x-earthx-kind'] === 'string' ? def['x-earthx-kind'] : null,
-      form: paramsForm(stepProps?.params, defs),
+      form: op === 'normalize' && opVersion === NORMALIZE_VERSION ? normalizeForm(stepProps?.params) : paramsForm(stepProps?.params, defs),
     });
   }
   const inputDef = defOf(defs, '#/$defs/InputRequest');
@@ -364,6 +382,62 @@ export function touchesAoi(item: StacItem, aoi: GeoJSON.Geometry): boolean {
   }
 }
 
+// The area in square degrees that a polygon or multi-polygon (as `Geom`) covers, holes taken off.
+function areaOf(geom: Geom): number {
+  const ring = (r: ReadonlyArray<readonly [number, number]>) =>
+    Math.abs(r.reduce((sum, [x, y], i) => sum + x * r[(i + 1) % r.length][1] - r[(i + 1) % r.length][0] * y, 0)) / 2;
+  return (geom as unknown as Array<Array<Array<readonly [number, number]>>>).reduce(
+    (total, polygon) => total + polygon.reduce((acc, r, i) => acc + (i === 0 ? ring(r) : -ring(r)), 0),
+    0,
+  );
+}
+
+// Whether `inner` lies within `outer` (to a few metres): what is left of it once `outer` is taken away is a sliver at most.
+// Where either cannot be computed the answer is yes, and the server has the last word.
+export function isInside(inner: GeoJSON.Geometry, outer: GeoJSON.Geometry): boolean {
+  const a = toGeom(inner);
+  const b = toGeom(outer);
+  if (!a || !b) return true;
+  try {
+    return areaOf(difference(a, b)) < 1e-9;
+  } catch {
+    return true;
+  }
+}
+
+// The part of `inner` that lies within `outer`: `inner` itself where all of it does, `null` where none of it does (a sliver at the
+// edge counts as none). Where either cannot be computed `inner` is kept, and the server has the last word.
+export function clipArea(
+  inner: GeoJSON.Polygon | GeoJSON.MultiPolygon,
+  outer: GeoJSON.Geometry,
+): GeoJSON.Polygon | GeoJSON.MultiPolygon | null {
+  const a = toGeom(inner);
+  const b = toGeom(outer);
+  if (!a || !b || isInside(inner, outer)) return inner;
+  try {
+    const part = intersection(a, b);
+    if (part.length === 0 || areaOf(part) < 1e-9) return null;
+    const polygons = part as unknown as GeoJSON.Position[][][];
+    return polygons.length === 1 ? { type: 'Polygon', coordinates: polygons[0] } : { type: 'MultiPolygon', coordinates: polygons };
+  } catch {
+    return inner;
+  }
+}
+
+// The area a result covers: its own AOI, or, for a result of whole scenes, the union of their footprints; `null` where that
+// cannot be said (a scene without a footprint).
+export function resultArea(aoi: GeoJSON.Geometry | null, items: readonly StacItem[]): GeoJSON.Geometry | null {
+  if (aoi) return aoi;
+  const geoms = items.map((item) => footprintOf(item)).map((footprint) => (footprint ? toGeom(footprint) : null));
+  if (geoms.length === 0 || geoms.some((g) => g === null)) return null;
+  try {
+    const [first, ...rest] = geoms as Geom[];
+    return { type: 'MultiPolygon', coordinates: union(first, ...rest) as unknown as GeoJSON.Position[][][] };
+  } catch {
+    return null;
+  }
+}
+
 // The scenes one job can be ordered for: those of the selection the AOI meets.
 export function candidateItems(items: readonly StacItem[], aoi: GeoJSON.Geometry): StacItem[] {
   return items.filter((item) => touchesAoi(item, aoi));
@@ -426,7 +500,7 @@ export function processBlockReason(
   dataset: { viewable: boolean; collection: Collection } | undefined,
   sceneCount: number,
 ): string | null {
-  if (!dataset?.viewable) return 'Pick a dataset first.';
+  if (!dataset?.viewable) return 'Choose a dataset first.';
   if (!processingAllowed(dataset.collection)) {
     const tier = dataset.collection['earthx:license_flags']?.tier ?? 'unknown';
     return `The licence of this dataset does not allow processing (tier: ${tier}).`;
@@ -448,19 +522,47 @@ export interface DraftStep {
   values: Record<string, FieldValue>;
 }
 
+// What the route of NM4-19 said of a question (NM4-11b), by the text of the question: the numbers, or why there are none.
+// Held in memory only: the text holds the AOI. The answer is for the preview only; the job measures itself (NM4-71).
+export type MeasureEntry = { state: 'ready'; answer: AreaStatistics } | { state: 'failed'; reason: string };
+
+// A question the preview needs answered: the steps before a statistical `normalize` step, the bands it converts, as float64.
+export interface MeasureNeed {
+  key: string;
+  datasetId: string;
+  body: Order;
+}
+
+// Where the preview's measure of a statistical `normalize` step stands: `text` is the tooltip of its numbers or the reason it
+// waits. It never holds the order back: the job measures itself.
+export interface MeasureStatus {
+  state: 'measuring' | 'failed' | 'ready';
+  text: string;
+  // The numbers of a step that has them: the preview draws the step with them.
+  measured?: Measured;
+  // A failure that asking again does not mend (a band without a valid value).
+  final?: boolean;
+}
+
 export interface StepProblem {
   errors: Record<string, string>;
   unsupported?: string;
+  measure?: MeasureStatus;
 }
 
 export interface BuiltOrder {
   order: Order | null;
+  // The order as the tiler and the route of NM4-19 take it: `normalize` of version 4 as version 3, the statistical methods with the
+  // numbers measured for the preview. `null` where the order is, and where a statistical step has no numbers yet.
+  previewOrder: Order | null;
   stepProblems: StepProblem[];
   problems: string[];
+  // The questions the preview needs answered (the shown order only).
+  needs: MeasureNeed[];
 }
 
 // Why the job cannot start while the output holds no band (adr/0020 §9).
-export const EMPTY_OUTPUT = 'Pick at least one band for the output.';
+export const EMPTY_OUTPUT = 'Choose at least one band for the output.';
 
 // The scenes of a group in one fixed order, so that the same selection is the
 // same order text (an estimate belongs to exactly one order, K4). The server
@@ -469,14 +571,17 @@ const orderedIds = (ids: readonly string[]): string[] => [...ids].sort();
 
 // What a step reads that is no band at its place: the field and a short hint, or `null`. An expression may name the bands
 // of the data and the results of the steps before it, nothing else; a `normalize` step likewise names only such bands
-// (review of #250). Where the data list no bands there is nothing to compare with.
+// (review of #250), and so does the band of a `mask_values` step (DS-06b). Where the data list no bands there is nothing
+// to compare with.
 export function readProblem(
   step: DraftStep,
   index: number,
   steps: readonly DraftStep[],
   data: readonly string[],
-): { field: 'expression' | 'bands'; message: string } | null {
-  const field = step.op === 'normalize' ? 'bands' : 'expression';
+  // Bands the stock holds but the step may not read: those a result of a job did not keep in its output (NM4-05b).
+  hidden: readonly string[] = [],
+): { field: 'expression' | 'bands' | 'band'; message: string } | null {
+  const field = step.op === 'normalize' ? 'bands' : step.op === 'mask_values' ? 'band' : 'expression';
   // Text that is no expression at all is told before anything else (review of #250); an empty one is the form's "Required".
   if (step.op === 'band_math' && typeof step.values.expression === 'string' && step.values.expression.trim() !== '' && !isExpression(step.values.expression)) {
     return { field, message: 'Enter a valid expression' };
@@ -486,13 +591,17 @@ export function readProblem(
       ? namesInExpression(step.values.expression)
       : step.op === 'normalize' && typeof step.values.bands === 'string'
         ? new Set(step.values.bands.split(/[\s,;]+/u).filter((n) => n !== ''))
-        : new Set<string>();
+        : step.op === 'mask_values' && typeof step.values.band === 'string' && step.values.band !== ''
+          ? new Set([step.values.band])
+          : new Set<string>();
+  const blocked = [...names].find((name) => hidden.includes(name));
+  if (blocked !== undefined) return { field, message: `'${blocked}' is not a band name` };
   const results = steps.flatMap((s, i) => (isBandMath(s) ? [{ index: i, name: resultNameOf(s) }] : []));
   for (const result of results) {
     if (result.index < index || !names.has(result.name) || data.includes(result.name)) continue;
     return { field, message: result.index === index ? `'${result.name}' is the band this step adds` : `'${result.name}' is added by a later step` };
   }
-  if (step.op !== 'band_math' || data.length === 0) return null;
+  if ((step.op !== 'band_math' && step.op !== 'mask_values') || data.length === 0) return null;
   const known = new Set([...data, ...results.filter((r) => r.index < index).map((r) => r.name)]);
   const unknown = [...names].find((name) => !known.has(name));
   return unknown === undefined ? null : { field, message: `'${unknown}' is not a band name` };
@@ -500,14 +609,20 @@ export function readProblem(
 
 // What is wrong with a step beyond its form fields, by field (adr/0020 §6): the name of the band a `band_math` step adds,
 // and what the step reads that is no band at its place.
-function bandProblems(step: DraftStep, index: number, steps: readonly DraftStep[], data: readonly string[]): Record<string, string> {
+function bandProblems(
+  step: DraftStep,
+  index: number,
+  steps: readonly DraftStep[],
+  data: readonly string[],
+  hidden: readonly string[],
+): Record<string, string> {
   const errors: Record<string, string> = {};
   if (isBandMath(step)) {
     const others = steps.flatMap((s, i) => (i !== index && isBandMath(s) ? [resultNameOf(s)] : []));
     const problem = nameProblem(resultNameOf(step), others, data);
     if (problem) errors.name = problem;
   }
-  const read = readProblem(step, index, steps, data);
+  const read = readProblem(step, index, steps, data, hidden);
   if (read) errors[read.field] = read.message;
   return errors;
 }
@@ -521,39 +636,157 @@ export function buildOrder(args: {
   // The bands of the output in the order of the file, and every band of the data (the names a result may not take).
   bands: readonly string[];
   data: readonly string[];
+  // The bands a step may not read (`readProblem`); none for an order of the selection.
+  hidden?: readonly string[];
+  // How many steps at the start came with a result: they ran when the result was made, and read what its output does not keep.
+  locked?: number;
   dtype: string;
   info: ProcessInfo;
+  // The answers to the questions of the statistical `normalize` steps, by `MeasureNeed.key` (NM4-11b).
+  measures?: ReadonlyMap<string, MeasureEntry>;
+  // The numbers the locked steps of a result keep from its job, by step key: they are not measured again (NM4-05b, NM4-71).
+  kept?: ReadonlyMap<number, Measured>;
+  // The locked steps whose numbers the result lacks, by step key: measured anew in the run.
+  anew?: ReadonlySet<number>;
+  // This order is the one the preview shows, the only one that asks for measures; the other orders of a batch measure in their run.
+  shown?: boolean;
 }): BuiltOrder {
   const { datasetId, itemIds, area, aoi, steps, bands, data, dtype, info } = args;
+  const hidden = args.hidden ?? [];
+  const locked = args.locked ?? 0;
   const problems: string[] = [];
   const built: OrderStep[] = [];
   const stepProblems: StepProblem[] = steps.map((step, index) => {
     const operator = info.operators.find((o) => o.op === step.op && o.opVersion === step.opVersion);
     if (!operator) return { errors: {}, unsupported: 'this operator is not available for this dataset' };
     if (!operator.form.supported) return { errors: {}, unsupported: operator.form.reason };
-    const { params, errors } = paramsFrom(operator.form.fields, step.values);
+    const { params, errors } = paramsFrom(operator.form.fields, step.values, step.op);
     built.push({ op: step.op, op_version: step.opVersion, params });
-    return { errors: { ...errors, ...bandProblems(step, index, steps, data) } };
+    return { errors: { ...errors, ...bandProblems(step, index, steps, data, index < locked ? [] : hidden) } };
   });
-  if (itemIds.length === 0) problems.push('Pick a pass.');
+  const { needs, tiles } = measureSteps({ ...args, built, stepProblems });
+  if (itemIds.length === 0) problems.push('Choose a pass.');
   if (area === 'aoi' && !isArea(aoi)) problems.push('Draw an area as AOI.');
   if (steps.length === 0) problems.push('Add a step.');
   if (steps.length > info.maxSteps) problems.push(`At most ${info.maxSteps} steps.`);
   if (bands.length === 0) problems.push(EMPTY_OUTPUT);
-  if (!dtype) problems.push('Pick an output data type.');
+  if (!dtype) problems.push('Choose an output data type.');
   const stepsOk = stepProblems.every((p) => !p.unsupported && Object.keys(p.errors).length === 0);
-  if (problems.length > 0 || !stepsOk) return { order: null, stepProblems, problems };
-  return {
-    order: {
+  if (problems.length > 0 || !stepsOk) return { order: null, previewOrder: null, stepProblems, problems, needs };
+  const order: Order = {
+    recipe_version: 2,
+    inputs: [{ name: INPUT_NAME, dataset: datasetId, groups: [orderedIds(itemIds)] }],
+    ...(area === 'aoi' && isArea(aoi) ? { aoi: orderAoi(aoi) } : {}),
+    steps: built,
+    output: { kind: 'raster', format: 'cog', dtype, bands: [...bands] },
+  };
+  const whole = tiles.length === built.length && tiles.every((tile) => tile !== null);
+  const previewOrder = !whole ? null : tiles.every((tile, i) => tile === built[i]) ? order : { ...order, steps: tiles as OrderStep[] };
+  return { order, previewOrder, stepProblems, problems, needs };
+}
+
+// A step as the tiler and the route take it: `normalize` of version 4 is version 3, which carries the numbers of a statistical
+// method in `measured` (NM4-71: the job measures, the tile cannot). `null` for such a step without numbers.
+function tileStepOf(step: OrderStep, measured?: Measured): OrderStep | null {
+  if (step.op !== 'normalize' || step.op_version !== NORMALIZE_VERSION) return step;
+  if (!isStatistical(step.params.method)) return { ...step, op_version: TILE_VERSION };
+  return measured ? { ...step, op_version: TILE_VERSION, params: { ...step.params, measured } } : null;
+}
+
+// The statistical `normalize` steps (NM4-11b, NM4-71): the job measures them itself, so the order carries no numbers. The preview
+// needs them: for each step it asks for the numbers of its bands over the area, measured on the steps before it (float64, as the core
+// rolls between steps; the steps before it as the tile takes them, with their own numbers, so the questions go in order). Gives the
+// questions to ask and, where an answer is in, the numbers in the status of the step, and the steps as the tiler takes them. A step
+// after a reprojection cannot be measured and gets its reason as the error of `method`. A locked step of a result keeps the numbers
+// of its job: it becomes version 3 with them and is not measured.
+function measureSteps(args: {
+  datasetId: string;
+  itemIds: readonly string[];
+  area: Area;
+  aoi: GeoJSON.Geometry | null;
+  steps: readonly DraftStep[];
+  built: OrderStep[];
+  stepProblems: StepProblem[];
+  measures?: ReadonlyMap<string, MeasureEntry>;
+  kept?: ReadonlyMap<number, Measured>;
+  anew?: ReadonlySet<number>;
+  shown?: boolean;
+}): { needs: MeasureNeed[]; tiles: Array<OrderStep | null> } {
+  const { datasetId, itemIds, area, aoi, steps, built, stepProblems, measures, kept, anew } = args;
+  const needs: MeasureNeed[] = [];
+  const tiles: Array<OrderStep | null> = [];
+  if (built.length !== steps.length) return { needs, tiles };
+  tiles.push(...built.map((step) => tileStepOf(step)));
+  let blocked = false;
+  steps.forEach((step, index) => {
+    const params = built[index].params;
+    if (step.op !== 'normalize' || !isStatistical(params.method)) return;
+    const problem = stepProblems[index];
+    const method = params.method as Method;
+    // A locked step of a result keeps the numbers of its job: the result is an entity of its own and is not measured again.
+    const own = kept?.get(step.key);
+    if (own) {
+      built[index] = { ...built[index], op_version: TILE_VERSION, params: { ...params, measured: own } };
+      tiles[index] = built[index];
+      problem.measure = { state: 'ready', text: `${measuredText(method, own)}\n${KEPT}`, measured: own };
+      return;
+    }
+    if (built.slice(0, index).some((earlier) => earlier.op === 'reproject')) {
+      problem.errors.method = AFTER_REPROJECT;
+      return;
+    }
+    if (args.shown === false || (area === 'aoi' && !isArea(aoi))) return;
+    // An error before it, or in its bands: nothing is asked. The fields of the target range do not matter to the question, so it is
+    // asked as soon as the method is chosen.
+    const wrong = stepProblems.slice(0, index).some((p) => Object.keys(p.errors).length > 0) || problem.errors.bands !== undefined;
+    if (blocked || wrong || itemIds.length === 0) return;
+    if (tiles.slice(0, index).some((earlier) => earlier === null)) {
+      problem.measure = { state: 'measuring', text: MEASURING };
+      return;
+    }
+    const bandNames = params.bands as string[];
+    // Without an AOI the question holds none: the route measures the whole scenes.
+    const body: Order = {
       recipe_version: 2,
       inputs: [{ name: INPUT_NAME, dataset: datasetId, groups: [orderedIds(itemIds)] }],
       ...(area === 'aoi' && isArea(aoi) ? { aoi: orderAoi(aoi) } : {}),
-      steps: built,
-      output: { kind: 'raster', format: 'cog', dtype, bands: [...bands] },
-    },
-    stepProblems,
-    problems,
-  };
+      steps: tiles.slice(0, index).map((earlier) => ({ ...earlier! })),
+      output: { kind: 'raster', format: 'cog', dtype: 'float64', bands: [...bandNames] },
+    };
+    const key = canonicalJson(body);
+    needs.push({ key, datasetId, body: JSON.parse(key) as Order });
+    const entry = measures?.get(key);
+    if (!entry) {
+      problem.measure = { state: 'measuring', text: MEASURING };
+      return;
+    }
+    if (entry.state === 'failed') {
+      problem.measure = { state: 'failed', text: `The measurement failed: ${entry.reason}` };
+      return;
+    }
+    const low = typeof params.low === 'number' ? params.low : 0;
+    const high = typeof params.high === 'number' ? params.high : 100;
+    const found = measuredFrom(method, low, high, bandNames, entry.answer);
+    if ('without' in found) {
+      problem.measure = { state: 'failed', text: `No valid values in ${found.without.join(', ')} to measure.`, final: true };
+      blocked = true;
+      return;
+    }
+    tiles[index] = tileStepOf(built[index], found.measured);
+    const text = [measuredText(method, found.measured), ...(anew?.has(step.key) ? [ANEW] : []), previewNote(entry.answer.exact)].join('\n');
+    problem.measure = { state: 'ready', text, measured: found.measured };
+  });
+  return { needs, tiles };
+}
+
+// The numbers measured for the statistical `normalize` steps of the draft, by step key: what the preview draws them with.
+export function measuredNumbers(steps: readonly DraftStep[], built: BuiltOrder | null): Map<number, Measured> {
+  const numbers = new Map<number, Measured>();
+  steps.forEach((step, index) => {
+    const measured = built?.stepProblems[index]?.measure?.measured;
+    if (measured) numbers.set(step.key, measured);
+  });
+  return numbers;
 }
 
 // What the panel takes from a recipe or an order (M4-19d): the other way round
@@ -566,6 +799,9 @@ export interface Draft {
   steps: DraftStep[];
   // The bands of the output; empty for a crop, which names assets.
   bands: string[];
+  // The numbers each step holds as `measured` (version 3), in step order: `null` for a step that has none. The form does not take
+  // them (the job measures, NM4-71); only "process further" reads them, for a result that has no `earthx:normalize` (`extendResult`).
+  measured: Array<Measured | null>;
   // `null` for an output without a data type (a crop).
   dtype: string | null;
 }
@@ -581,6 +817,7 @@ export function draftFromOrder(
   const problems: string[] = [];
   const notes: string[] = [];
   const steps: DraftStep[] = [];
+  const measured: Array<Measured | null> = [];
   order.steps.forEach((step, index) => {
     const where = `Step ${index + 1} (${step.op})`;
     // The server still takes an older version of an operator but no longer lists it (M4-24):
@@ -594,23 +831,31 @@ export function draftFromOrder(
     }
     if (!operator.form.supported) return void problems.push(`${where}: ${operator.form.reason}`);
     const { fields } = operator.form;
+    const methods = step.op === 'normalize' && fields.some((f) => f.name === 'method');
     for (const name of Object.keys(step.params)) {
-      if (!fields.some((f) => f.name === name)) problems.push(`${where}: unknown parameter ${name}.`);
+      // The numbers a statistical method of version 3 measured are not taken into the form: the job measures (NM4-71). Version 4 has none.
+      if (!fields.some((f) => f.name === name) && !(methods && step.op_version === 3 && name === 'measured')) problems.push(`${where}: unknown parameter ${name}.`);
     }
     const values = initialValues(fields);
     for (const field of fields) {
       const raw = step.params[field.name];
       if (raw === undefined || field.kind === 'const') continue;
       if (field.kind === 'boolean' && typeof raw === 'boolean') values[field.name] = raw;
-      else if (field.kind !== 'boolean' && (typeof raw === 'string' || typeof raw === 'number')) values[field.name] = String(raw);
+      else if (field.kind !== 'boolean' && field.kind !== 'numbers' && (typeof raw === 'string' || typeof raw === 'number')) values[field.name] = String(raw);
       // The classes of a mask: the order holds them as a list, the form as the text it would have been typed as.
       else if (field.kind === 'integers' && Array.isArray(raw) && raw.every((n) => typeof n === 'number')) values[field.name] = raw.join(', ');
+      // The numbers of a mask by value, likewise.
+      else if (field.kind === 'numbers' && Array.isArray(raw) && raw.every((n) => typeof n === 'number')) values[field.name] = raw.join(', ');
       // The bands of a normalize step, likewise.
       else if (field.kind === 'names' && Array.isArray(raw) && raw.every((n) => typeof n === 'string')) values[field.name] = raw.join(', ');
       else problems.push(`${where}: ${field.name} has the wrong type.`);
     }
-    for (const [name, message] of Object.entries(paramsFrom(fields, values).errors)) problems.push(`${where}: ${name}: ${message}`);
+    // Version 2 of `normalize` was the fixed range: it comes as `linear` with the same numbers. Version 3 has its method; a statistical
+    // one loses its numbers (the job measures, NM4-71), `linear` stays bit for bit.
+    if (methods && step.op_version < 3) Object.assign(values, upgradedValues(values));
+    for (const [name, message] of Object.entries(paramsFrom(fields, values, step.op).errors)) problems.push(`${where}: ${name}: ${message}`);
     steps.push({ key: nextKey(), op: step.op, opVersion: operator.opVersion, values });
+    measured.push(methods && isStatistical(step.params.method) ? keptMeasured(step.params.measured) : null);
   });
   const input = order.inputs[0];
   return {
@@ -619,6 +864,7 @@ export function draftFromOrder(
       groups: input.groups.map((group) => [...group]),
       aoi: order.aoi ?? null,
       steps,
+      measured,
       bands: order.output.kind === 'raster' ? [...order.output.bands] : [],
       dtype: order.output.kind === 'raster' ? order.output.dtype : null,
     },
@@ -646,20 +892,31 @@ export function buildMosaicOrder(args: {
 
 // The crop of the download dialog as an export job (M4-11 §3.1): the same
 // groups, assets and AOI as the refused request, no steps, factor 1 (only that
-// factor is offered as a job, M4-11 K5).
+// factor is offered as a job, M4-11 K5). `layout` (NM4-75) says how the bands lie
+// in files. Without `aoi` the order covers the whole scenes: the server takes the
+// union of their footprints (a download of whole scenes in one file per
+// resolution or one multi-band file).
 export function buildExportOrder(args: {
   datasetId: string;
   groups: readonly (readonly string[])[];
   assets: readonly string[];
-  aoi: GeoJSON.Polygon | GeoJSON.MultiPolygon;
+  aoi?: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
+  layout?: ExportLayout;
 }): Order {
-  const { datasetId, groups, assets, aoi } = args;
+  const { datasetId, groups, assets, aoi, layout } = args;
   return {
     recipe_version: 2,
     inputs: [{ name: INPUT_NAME, dataset: datasetId, groups: groups.map((g) => [...g]), assets: [...assets] }],
-    aoi: orderAoi(aoi),
+    ...(aoi ? { aoi: orderAoi(aoi) } : {}),
     steps: [],
-    output: { kind: 'crop', format: 'cog', resolution_factor: 1, extent: 'bbox(aoi ∩ footprints)', mask: 'file' },
+    output: {
+      kind: 'crop',
+      format: 'cog',
+      resolution_factor: 1,
+      extent: 'bbox(aoi ∩ footprints)',
+      mask: 'file',
+      ...(layout ? { layout: { ...layout } } : {}),
+    },
   };
 }
 
@@ -699,13 +956,6 @@ export function stepOfRefusal(detail: string, steps: readonly Pick<DraftStep, 'o
 
 // --- numbers for the review (K4) ---------------------------------------------
 
-export function formatBytes(bytes: number): string {
-  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
-  if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(1)} MB`;
-  if (bytes >= 1e3) return `${Math.round(bytes / 1e3)} kB`;
-  return `${bytes} B`;
-}
-
 // `PT12.3S` (the only form the route writes) → "about 12 s"; anything else is
 // shown as it came.
 export function formatDuration(duration: string): string {
@@ -717,7 +967,3 @@ export function formatDuration(duration: string): string {
   return `about ${Math.round(seconds / 60)} min`;
 }
 
-export function formatMegapixels(pixels: number): string {
-  const mp = pixels / 1e6;
-  return mp >= 10 ? `${Math.round(mp)} MP` : `${mp.toFixed(1)} MP`;
-}

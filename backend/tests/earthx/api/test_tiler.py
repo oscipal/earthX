@@ -30,13 +30,15 @@ from earthx.api.area_statistics import AREA_STATISTICS_ROUTE
 from earthx.api.dependencies import policy_from_registry
 from earthx.api.result_tiles import ROUTER_PREFIX as RESULT_ROUTER_PREFIX
 from earthx.api.tiler import (
+    BANDS_ROUTE,
     DOWNLOAD_ROUTE,
     MOSAIC_ROUTER_PREFIX,
     ROUTER_PREFIX,
+    SCENE_ORDER_ROUTE,
     build_app,
 )
 from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
-from earthx.catalog.registry import DatasetRegistry, LicenseTier, ViewerInfo
+from earthx.catalog.registry import DatasetRegistry, LicenseTier, SearchCapabilities, ViewerInfo
 from earthx.gateway import (
     CachingResolver,
     UpstreamError,
@@ -131,6 +133,10 @@ class TestNoFreeAddress:
         assert ("query", "url") not in parameters
         assert not [name for where, name in parameters if where == "query" and "url" in name.lower()]
 
+    def test_the_list_of_colormaps_takes_no_parameter(self, client: TestClient) -> None:
+        """The one route outside the catalogue besides health has nothing to name an address with."""
+        assert client.app.openapi()["paths"]["/colormaps"]["get"].get("parameters", []) == []
+
     def test_every_path_names_a_dataset_and_an_item(self, client: TestClient) -> None:
         """There is no route that could render without going through the catalogue.
 
@@ -139,15 +145,16 @@ class TestNoFreeAddress:
         (a mosaic can list several), not because it skips the catalogue — every
         item it touches still resolves through ``earthx_item_source`` like any
         other route here. The statistics of an order's area (NM4-19) are the same case: the order, with its
-        items and its AOI, travels in the body. The mosaic tiles (M4-17b) name the dataset in the path and the items
+        items and its AOI, travels in the body. So is the order of the scenes of a pass without a mosaic (NM4-24): the
+        ids travel in the body, and every item still resolves through the source. The mosaic tiles (M4-17b) name the dataset in the path and the items
         of one overpass in the query, each fetched through the same source. The tiles of a job
-        result (M4-13c-5) are the last: they name a result, which the object store holds, and no
-        source at all.
+        result (M4-13c-5) name a result, which the object store holds, and no
+        source at all. ``/colormaps`` (UI-03d) renders nothing and reads no source: it lists the names the tiles take.
         """
         rendering = [
             path
             for path in client.app.openapi()["paths"]
-            if path not in ("/health", DOWNLOAD_ROUTE, AREA_STATISTICS_ROUTE)
+            if path not in ("/health", "/colormaps", DOWNLOAD_ROUTE, AREA_STATISTICS_ROUTE, SCENE_ORDER_ROUTE, BANDS_ROUTE)
             and not path.startswith((RESULT_ROUTER_PREFIX, MOSAIC_ROUTER_PREFIX))
         ]
         assert rendering
@@ -377,7 +384,10 @@ class TestOnlyReleasedZoomLevels:
 
     @staticmethod
     def _client_for(viewer: ViewerInfo | None, client: TestClient, fetched: list[str]) -> TestClient:
-        registry = DatasetRegistry((replace(SENTINEL_2_L2A, viewer=viewer),))
+        # A dataset without a viewer has no overpass key to judge per pass on (DS-03c).
+        registry = DatasetRegistry(
+            (replace(SENTINEL_2_L2A, viewer=viewer, search_capabilities=SearchCapabilities(False, False)),)
+        )
         app = build_app(registry)
         app.state.earthx_item_source = client.app.state.earthx_item_source
         app.state.earthx_cache_pool = None
@@ -498,6 +508,7 @@ class TestDisplayLicenceTier:
             SENTINEL_2_L2A,
             license=replace(SENTINEL_2_L2A.license, tier=LicenseTier.CATALOG),
             viewer=None,
+            search_capabilities=SearchCapabilities(evaluate=False, aoi_coverage=False),
         )
         registry = DatasetRegistry((catalog_tier,))
         app = build_app(registry)

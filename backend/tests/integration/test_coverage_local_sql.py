@@ -32,7 +32,7 @@ from earthx.api.dependencies import cache_pool
 from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.load import main as load_catalog
 from earthx.catalog.pgstac import load_collection, upsert_items, use_pgstac_search_path
-from earthx.catalog.registry import CoverageProvider, DatasetRegistry, ItemHolding
+from earthx.catalog.registry import CoverageProvider, DatasetRegistry, ItemHolding, SearchCapabilities
 from earthx.gateway import Policy
 from earthx.gateway.client import Gateway
 
@@ -48,6 +48,7 @@ AREA_DATASET = replace(
     capabilities=replace(SENTINEL_2_L2A.capabilities, single_coverage_product=True),
     coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
     search_filters=(),
+    search_capabilities=SearchCapabilities(evaluate=False, aoi_coverage=False),
     source=replace(
         SENTINEL_2_L2A.source,
         item_holding=ItemHolding.MATERIALIZED,

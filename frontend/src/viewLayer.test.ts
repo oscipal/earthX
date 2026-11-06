@@ -5,13 +5,13 @@ import type { MapLayer } from './layers';
 import { buildTileUrl, syncFocusRaster, syncLayers } from './mapLayers';
 import { useAppStore } from './store';
 import type { AppliedRender, DownloadedInfo } from './types';
-import { layersForMap, viewLayerOf, viewShown, type ViewState } from './viewLayer';
+import { isTemporaryImage, layersForMap, viewLayerOf, viewShown, type ViewState } from './viewLayer';
 
 const AOI: GeoJSON.Polygon = { type: 'Polygon', coordinates: [[[10, 47], [11, 47], [11, 48], [10, 47]]] };
 
 function info(itemId: string): DownloadedInfo {
   return {
-    tileUrl: `/collections/c/items/${itemId}/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=visual`,
+    datasetId: 'sentinel-2-c1-l2a', tileUrl: `/collections/c/items/${itemId}/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=visual`,
     bounds: [10, 47, 11, 48],
     asset: 'visual',
     minZoom: 0,
@@ -237,5 +237,82 @@ describe('the view of a pinned layer on the map', () => {
     useAppStore.getState().selectLayer('middle');
     useAppStore.getState().exitFocus();
     expect(useAppStore.getState().viewLayerId).toBeNull();
+  });
+});
+
+
+// Otto, 1.11.2026 (zu #272): the mark "Temporary" of the view of the search.
+describe('an image that is temporary', () => {
+  const image = (ids: string[]) => ({ ids, datasetId: 'sentinel-2-c1-l2a' });
+  const RENDER: AppliedRender = { rescale: '0,3000' };
+  const view = { cropToAoi: false, aoi: null as GeoJSON.Geometry | null };
+  // A layer pinned from the view of the dataset (`datasetId` is what ties it to its images).
+  const pinned = (id: string, ids: string[], render: AppliedRender) => {
+    const layer = pinnedView(id, ids, render);
+    return { ...layer, restore: { ...layer.restore, datasetId: 'sentinel-2-c1-l2a' } };
+  };
+
+  it('is so while no layer holds it', () => {
+    expect(isTemporaryImage([], image(['a']), RENDER, view)).toBe(true);
+  });
+
+  it('is not once "Add to layers" pinned it as it looks, and is again as soon as its look changes', () => {
+    const layers = [pinned('L1', ['a'], RENDER)];
+    expect(isTemporaryImage(layers, image(['a']), RENDER, view)).toBe(false);
+    expect(isTemporaryImage(layers, image(['a']), { rescale: '0,2000' }, view)).toBe(true);
+    expect(isTemporaryImage(layers, image(['a']), { ...RENDER, colormapName: 'magma' }, view)).toBe(true);
+    expect(isTemporaryImage(layers, image(['a']), { ...RENDER, band: 'B04' }, view)).toBe(true);
+  });
+
+  it('is so again for other scenes, another dataset or another crop of the same image', () => {
+    const layers = [pinned('L1', ['a', 'b'], RENDER)];
+    expect(isTemporaryImage(layers, image(['a', 'b']), RENDER, view)).toBe(false);
+    expect(isTemporaryImage(layers, image(['a']), RENDER, view)).toBe(true);
+    expect(isTemporaryImage(layers, image(['a', 'b', 'c']), RENDER, view)).toBe(true);
+    expect(isTemporaryImage(layers, { ids: ['a', 'b'], datasetId: 'dem' }, RENDER, view)).toBe(true);
+    expect(isTemporaryImage(layers, image(['a', 'b']), RENDER, { cropToAoi: true, aoi: AOI })).toBe(true);
+  });
+
+  it('is not for any image "Add all to layers" pinned, so that a step that was not changed shows no mark, and is for one it did not pin', () => {
+    const layers = [pinned('L2', ['b'], RENDER), pinned('L1', ['a'], RENDER)];
+    expect(isTemporaryImage(layers, image(['a']), RENDER, view)).toBe(false);
+    expect(isTemporaryImage(layers, image(['b']), RENDER, view)).toBe(false);
+    expect(isTemporaryImage(layers, image(['c']), RENDER, view)).toBe(true);
+    // The step changed after it was pinned: the mark is back on that step only.
+    expect(isTemporaryImage(layers, image(['b']), { rescale: '0,100' }, view)).toBe(true);
+    expect(isTemporaryImage(layers, image(['a']), RENDER, view)).toBe(false);
+  });
+
+  // Otto, 2.11.2026: changed and set back, the image is the layer's again; what counts is what is drawn, not that it was changed.
+  describe('compared by what is drawn', () => {
+    const BASE: AppliedRender = { rescale: '0,3000' };
+    it('is not when the look is set back to the values of the layer, typed as other text', () => {
+      const layers = [pinned('L1', ['a'], { rescale: '0,3000' })];
+      expect(isTemporaryImage(layers, image(['a']), { rescale: '0.0,3000.00' }, view, BASE)).toBe(false);
+      expect(isTemporaryImage(layers, image(['a']), { rescale: ' 0 , 3000 ' }, view, BASE)).toBe(false);
+    });
+
+    it('is not when the layer draws the standard picture and the view types its values in', () => {
+      const layers = [pinned('L1', ['a'], {})];
+      expect(isTemporaryImage(layers, image(['a']), { rescale: '0,3000' }, view, BASE)).toBe(false);
+      expect(isTemporaryImage(layers, image(['a']), { rescale: '0,2999' }, view, BASE)).toBe(true);
+    });
+
+    it('is not for the same values typed as percentiles, which only say how they were typed', () => {
+      const layers = [pinned('L1', ['a'], { rescale: '12,2999' })];
+      expect(isTemporaryImage(layers, image(['a']), { rescale: '12,2999', percent: { low: '2', high: '98' } }, view, BASE)).toBe(false);
+    });
+
+    it('is still for a band, an index or a colormap the layer does not draw', () => {
+      const layers = [pinned('L1', ['a'], {})];
+      expect(isTemporaryImage(layers, image(['a']), { band: 'B04', rescale: '0,3000' }, view, BASE)).toBe(true);
+      expect(isTemporaryImage(layers, image(['a']), { index: 'NDVI' }, view, BASE)).toBe(true);
+      expect(isTemporaryImage(layers, image(['a']), { colormapName: 'magma' }, view, BASE)).toBe(true);
+    });
+  });
+
+  it('does not count a layer that is no view of scenes (a result, a preview)', () => {
+    const result = { ...pinned('R', ['a'], RENDER), derived: 'result' as const };
+    expect(isTemporaryImage([result], image(['a']), RENDER, view)).toBe(true);
   });
 });

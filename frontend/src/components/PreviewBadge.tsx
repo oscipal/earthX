@@ -20,9 +20,11 @@ import { useMemo } from 'react';
 
 import { previewOverlays, previewTitle } from '../processingPreview';
 import { isOverview } from '../resultLayer';
-import { useProcessingStore } from '../processingStore';
+import { tileSizeOf } from '../tileSize';
+import { clipAoiOf, useProcessingStore } from '../processingStore';
 import { useAppStore } from '../store';
 import { zoomInTo } from '../zoomHint';
+import Badge from './Badge';
 import usePreviewLoading, { LOADING_TITLE } from './usePreviewLoading';
 
 export const OVERVIEW_TITLE = 'Drawn coarser than the result: zoom in for its full resolution.';
@@ -34,7 +36,9 @@ export default function PreviewBadge() {
   const draft = useProcessingStore((s) => s.preview);
   const draftMeasure = useProcessingStore((s) => s.measure);
   const loading = usePreviewLoading();
-  const aoi = useAppStore((s) => s.aoi);
+  const mapAoi = useAppStore((s) => s.aoi);
+  // What an entry fixed (a crop, a result) is cut to its own AOI, not the map's.
+  const aoi = useProcessingStore((s) => clipAoiOf(s, mapAoi));
   const draftOverlays = useMemo(() => (draft ? previewOverlays(draft, draft.clipToAoi ? aoi : null) : []), [draft, aoi]);
   const layers = useAppStore((s) => s.layers);
   const mapZoom = useAppStore((s) => s.mapZoom);
@@ -47,7 +51,7 @@ export default function PreviewBadge() {
       !l.result.expired &&
       !l.result.deleted &&
       l.overlays.some(
-        (o) => o.kind === 'raster' && isOverview({ gsd: l.result?.gsd ?? null, mapZoom, viewport, maxZoom: o.maxZoom }),
+        (o) => o.kind === 'raster' && isOverview({ gsd: l.result?.gsd ?? null, mapZoom, viewport, maxZoom: o.maxZoom, tileSize: tileSizeOf(o.tileUrl) }),
       ),
   );
   // A layer or the preview of the panel that starts at a level above this zoom: the map says so, instead of nothing.
@@ -58,26 +62,14 @@ export default function PreviewBadge() {
   if (!draft && !pinned && !overview && waiting.length === 0 && !loading) return null;
   return (
     <div className="overlay preview-badge-dock">
-      {(draft || pinned) && (
-        <span className="preview-badge" title={previewTitle(draft, draftMeasure)}>
-          Preview
-        </span>
-      )}
+      {(draft || pinned) && <Badge tip={previewTitle(draft, draftMeasure)}>Preview</Badge>}
       {loading && (
-        <span className="preview-badge loading" role="status" title={LOADING_TITLE}>
+        <Badge loading role="status" tip={LOADING_TITLE}>
           Loading…
-        </span>
+        </Badge>
       )}
-      {overview && (
-        <span className="preview-badge" title={OVERVIEW_TITLE}>
-          Overview
-        </span>
-      )}
-      {waiting.length > 0 && (
-        <span className="preview-badge" title={zoomInTitle(waiting)}>
-          Zoom in
-        </span>
-      )}
+      {overview && <Badge tip={OVERVIEW_TITLE}>Overview</Badge>}
+      {waiting.length > 0 && <Badge tip={zoomInTitle(waiting)}>Zoom in</Badge>}
     </div>
   );
 }

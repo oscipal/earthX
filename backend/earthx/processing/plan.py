@@ -4,7 +4,8 @@
   ``T1`` becomes tile parameters; everything after it is a job (§6.1).
 * :func:`segments` — the steps of a job as the core runs them: a run of ``pixel``
   steps is computed block by block in one pass, a ``grid`` step is a pass of its
-  own over a file in the work directory (approved F3).
+  own over a file in the work directory (approved F3). A step that measures
+  (``Operator.measures``, NM4-71) opens a pass: the pass before it counts its bands.
 * :func:`stock_steps` — the steps of a job on a stock of named bands (recipe version 2, adr/0020 §4): the
   planner works from the end, drops what no later step and not ``output.bands`` needs, and puts the result
   in the order of the output.
@@ -42,9 +43,10 @@ from earthx.access.crop_rules import (
     bytes_per_pixel,
     compute_crop_region,
     estimate_output_dims,
+    target_crs,
 )
 from earthx.processing.errors import AoiOutsideInputs, ExportTooLarge, JobTooLarge, RecipeInvalid, UnsupportedRecipe
-from earthx.processing.operators import BandMeta, Operator, OperatorRegistry, RasterMeta, Tier
+from earthx.processing.operators import BandMeta, Grid, Operator, OperatorRegistry, RasterMeta, Tier
 from earthx.processing.operators.select import SELECT_BANDS, SelectParams
 from earthx.processing.recipe import Band, CropOutput, RasterOutput, Recipe, ResolvedInput, Step
 from earthx.processing.source import expected_band_names, units_of
@@ -53,17 +55,24 @@ __all__ = [
     "EXPORT_FACTOR",
     "MAX_JOB_MEMORY_BYTES",
     "RASTER_WITHOUT_STEP_FACTOR",
+    "RESAMPLING_METHOD",
     "SECONDS_PER_ASSET",
     "SECONDS_PER_EXPORT_MB",
     "SECONDS_PER_EXPORT_MB_PER_ITEM",
     "SECONDS_PER_INPUT_MB",
+    "SECONDS_PER_MEASURE_BAND_MPIXEL",
     "SECONDS_PER_OUTPUT_BAND_MPIXEL",
     "DISK_RESERVE_BYTES",
+    "BandOnOtherGrid",
     "CostEstimate",
+    "GridFacts",
     "PlannedStep",
+    "ResamplingFacts",
+    "ScenesInOtherZone",
     "Segment",
     "check_bands",
     "crop_window",
+    "describe_resampling",
     "disk_needed",
     "estimate",
     "export_outputs",
@@ -85,6 +94,11 @@ SECONDS_PER_INPUT_MB = 0.034
 #: cores, as a worker with two slots runs: 0.42–0.72 s per band and million pixels, 0.57 with 16 `band_math` steps at 5632²;
 #: the real runs of adr/0020 §3.2 give 0.55–0.7. The limit of a run is twice the estimate.
 SECONDS_PER_OUTPUT_BAND_MPIXEL = 0.75
+
+#: Seconds per million pixels and band of the stock at a cut where a step measures: the extra pass over the local
+#: ``float64`` file (read, convert, write, count) and the refinement of the percentiles. Measured, plan NM4-71 §8.3:
+#: 0.20–0.21 s (whole scene, one band 25 s, four bands 98 s).
+SECONDS_PER_MEASURE_BAND_MPIXEL = 0.2
 
 #: First open of an asset over the network (adr/0006 §3.4).
 SECONDS_PER_ASSET = 1.0
@@ -118,17 +132,61 @@ MEMORY_BYTES_PER_BAND = 33_000_000
 MEMORY_BYTES_PER_SCENE = 4_000_000
 MEMORY_BYTES_PER_SCENE_BAND = 1_200_000
 
+#: Added for every band a step measures, measured NM4-71 (`test_memory_mask_normalize.py`, `normalize` version 4 with a
+#: percentile stretch over every band of a 4096² scene, ``VmHWM`` with ``GDAL_CACHEMAX`` 64 MB): 1 band 347 MB, 2 bands
+#: 433 MB, 4 bands 516 MB, against 333, 366 and 432 MB of base and share per band alone. The least share that covers all
+#: three is 34 MB (2 bands). The CI runner measured 457 MB for 2 bands, which needs 46 MB; 60 MB keeps a margin on both
+#: machines, and the sum stays above every measured peak.
+MEMORY_BYTES_PER_MEASURED_BAND = 60_000_000
+
 #: Bytes per value where an item names no data type, as the download estimate assumes.
 _FALLBACK_BYTES_PER_VALUE = 8
 
 
 @dataclass(frozen=True, slots=True)
+class Placed:
+    """The grid a step lays, with what it was worked out from: the raster's CRS and bounds, and the parameters."""
+
+    crs: str
+    bounds: tuple[float, float, float, float]
+    params: object
+    grid: Grid
+
+
+@dataclass(frozen=True, slots=True)
 class PlannedStep:
-    """One step with its operator looked up and its parameters validated."""
+    """One step with its operator looked up and its parameters validated.
+
+    A step that lays a new grid (``reproject``) projects the outline of the raster it is applied to to find it, and the
+    planner asks for the raster behind the step in several places of one order. :meth:`place` works the grid out once
+    and the step carries it from there on, to be used only for the same raster and parameters; it lives and dies with
+    the order's plan and is kept nowhere else.
+    """
 
     step: Step
     operator: Operator
     params: object
+    placed: Placed | None = None
+
+    def place(self, meta: RasterMeta) -> PlannedStep:
+        """The step with its grid for ``meta``; itself where the operator lays none or it has the grid already."""
+        if self.operator.place is None or self._grid_for(meta) is not None:
+            return self
+        grid = self.operator.place(meta, self.params)  # type: ignore[arg-type]
+        return replace(self, placed=Placed(meta.crs, meta.bounds, self.params, grid))
+
+    def advance(self, meta: RasterMeta) -> RasterMeta:
+        """The raster behind the step, as ``operator.transform`` gives it, on the grid worked out before if there is one."""
+        grid = self._grid_for(meta)
+        if grid is None or self.operator.transform_on is None:
+            return self.operator.transform(meta, self.params)  # type: ignore[arg-type]
+        return self.operator.transform_on(meta, self.params, grid)  # type: ignore[arg-type]
+
+    def _grid_for(self, meta: RasterMeta) -> Grid | None:
+        placed = self.placed
+        if placed is None or (placed.crs, placed.bounds, placed.params) != (meta.crs, meta.bounds, self.params):
+            return None
+        return placed.grid
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,6 +195,16 @@ class Segment:
 
     kind: Literal["pixel", "grid"]
     steps: tuple[PlannedStep, ...]
+
+    @property
+    def measuring(self) -> PlannedStep | None:
+        """The step that opens this pass and needs its bands counted in the pass before it, or ``None`` (NM4-71).
+
+        :func:`segments` puts such a step first in its pass and never inside a run, so this is the only place one can be.
+        """
+        if self.kind == "pixel" and self.steps and _measures(self.steps[0]):
+            return self.steps[0]
+        return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,17 +222,20 @@ class CostEstimate:
     memory_bytes: int = 0
 
 
-def memory_needed(bands: int, scenes: int = 1) -> int:
+def memory_needed(bands: int, scenes: int = 1, measured_bands: int = 0) -> int:
     """The peak memory of a run whose widest pass holds ``bands`` bands, over ``scenes`` scenes of one mosaic.
 
     A band is held several times per block (read, scaled, masked, written), so the share is per band; a scene beyond
-    the first is an open file whose pieces are merged one at a time. Nothing here depends on the area.
+    the first is an open file whose pieces are merged one at a time. Nothing here depends on the area. A step that
+    measures (NM4-71) adds :data:`MEMORY_BYTES_PER_MEASURED_BAND` for each band it measures: the pass after the count
+    reads the ``float64`` work file, which holds twice the bytes per value of the scene.
     """
     extra_scenes = scenes - 1
     return (
         MEMORY_BASE_BYTES
         + MEMORY_BYTES_PER_BAND * bands
         + extra_scenes * (MEMORY_BYTES_PER_SCENE + MEMORY_BYTES_PER_SCENE_BAND * bands)
+        + MEMORY_BYTES_PER_MEASURED_BAND * measured_bands
     )
 
 
@@ -243,11 +314,13 @@ def stock_steps(meta: RasterMeta, planned: Sequence[PlannedStep], output: Sequen
     _refuse_chain_of_version_1(planned)
     needed, dead = _trace(planned, output)
     full = meta
+    placed = list(planned)
     for index, step in enumerate(planned):
         if dead[index]:
             continue
         try:
-            full = step.operator.transform(full, step.params)
+            placed[index] = step.place(full)
+            full = placed[index].advance(full)
         except RecipeInvalid as error:
             if len(planned) == 1:
                 raise
@@ -272,14 +345,14 @@ def stock_steps(meta: RasterMeta, planned: Sequence[PlannedStep], output: Sequen
             current = SELECT_BANDS.transform(current, steps[-1].params)
 
     narrow(needed[0])
-    for index, step in enumerate(planned):
+    for index, step in enumerate(placed):
         if dead[index]:
             continue
         if step.operator.restrict is not None:
             # The bands of the step that the planner dropped are not converted; the others are, as before.
             step = replace(step, params=step.operator.restrict(step.params, needed[index + 1]))
         steps.append(step)
-        current = step.operator.transform(current, step.params)
+        current = step.advance(current)
         narrow(needed[index + 1])
     return steps
 
@@ -301,17 +374,30 @@ def split_tiers(steps: Sequence[Step], operators: OperatorRegistry) -> tuple[lis
     return list(steps[:cut]), list(steps[cut:])
 
 
+def _measures(step: PlannedStep) -> frozenset[str]:
+    return step.operator.measures(step.params)
+
+
 def segments(planned: Sequence[PlannedStep]) -> list[Segment]:
     """The passes of a job, in order.
 
     The first pass is always ``pixel``: it is the one that reads the inputs, and with
     no ``pixel`` step before a ``grid`` step it is empty, a plain native crop into the
     work directory for the grid step to read (F3). No step at all is that crop alone.
+
+    A ``pixel`` step that measures (``Operator.measures``) ends the run before it and opens the next pass, so that the
+    pass before it can count its bands (NM4-71). As with a ``grid`` step, a measuring first step is preceded by an empty
+    pass that reads the inputs; one that follows a ``grid`` step needs no pass of its own, the pass of the grid step
+    counts. Two measuring steps are two cuts. A measuring step before a ``grid`` step is fine: the pass before it counts on
+    the grid of the stock, with the AOI on that grid.
     """
     result: list[Segment] = []
     run: list[PlannedStep] = []
     for step in planned:
         if step.operator.kind == "pixel":
+            if _measures(step) and (run or not result):
+                result.append(Segment("pixel", tuple(run)))
+                run = []
             run.append(step)
             continue
         if run or not result:
@@ -518,6 +604,11 @@ class _Stock:
     #: the others the bands they act on), and an output band no step touches counts as written (adr/0014 Nachtrag
     #: NM4-43c PR 2, Otto 30.10.2026).
     weighted_bands: float
+    #: The pixels times the bands of the stock at every cut where a step measures, summed: each is written once more and
+    #: read again (NM4-71). The raster at a cut before a ``grid`` step is not the one of the result.
+    measure_band_pixels: int = 0
+    #: The most bands one step measures; the count of the pass holds their statistics and the second look their values.
+    measured_bands: int = 0
 
 
 def _planned_stock(recipe: Recipe, operators: OperatorRegistry) -> _Stock:
@@ -531,17 +622,28 @@ def _planned_stock(recipe: Recipe, operators: OperatorRegistry) -> _Stock:
     steps = stock_steps(meta, plan_steps(recipe.steps, operators), recipe.output.bands)
     widest = len(meta.bands)
     weighted, touched = 0.0, set[str]()
+    measure_band_pixels = measured_bands = 0
     for step in steps:
+        if measured := _measures(step):
+            measure_band_pixels += meta.width * meta.height * len(meta.bands)
+            measured_bands = max(measured_bands, len(measured))
         if step.operator is not SELECT_BANDS:
             names = {band.name for band in meta.bands}
             use = step.operator.bands_used(step.params)
             changed = {use.adds} if use.adds is not None else names if use.acts_on is None else names & use.acts_on
             weighted += step.operator.cost_factor(step.params) * len(changed)
             touched |= changed
-        meta = step.operator.transform(meta, step.params)
+        meta = step.advance(meta)
         widest = max(widest, len(meta.bands))
     weighted += RASTER_WITHOUT_STEP_FACTOR * len({band.name for band in meta.bands} - touched)
-    return _Stock(meta, [step for step in steps if step.operator is not SELECT_BANDS], widest, weighted)
+    return _Stock(
+        meta,
+        [step for step in steps if step.operator is not SELECT_BANDS],
+        widest,
+        weighted,
+        measure_band_pixels,
+        measured_bands,
+    )
 
 
 def estimate(recipe: Recipe, operators: OperatorRegistry) -> CostEstimate:
@@ -552,7 +654,8 @@ def estimate(recipe: Recipe, operators: OperatorRegistry) -> CostEstimate:
     with :class:`JobTooLarge` above it, counting its output and its mask (M4-12 F7), and above the memory one child
     process may use (:func:`memory_needed`, adr/0020 §7). A raster job needs the pixel size of every asset (``gsd``);
     without it :class:`UnsupportedRecipe` says so (M4-25). Seconds count the bands of the output; units count each step's factor for the bands it adds or
-    changes (:class:`_Stock`).
+    changes (:class:`_Stock`). Each cut where a step measures (NM4-71) adds :data:`SECONDS_PER_MEASURE_BAND_MPIXEL` for
+    every band of the stock at that cut.
     """
     if isinstance(recipe.output, CropOutput):
         return _export_estimate(recipe)
@@ -576,7 +679,7 @@ def estimate(recipe: Recipe, operators: OperatorRegistry) -> CostEstimate:
             f"This job would write about {(output_bytes + output_pixels) / 1_000_000:.0f} MB, more than the "
             f"{MAX_JOB_BYTES / 1_000_000:.0f} MB a job may write. Draw a smaller area or choose fewer assets."
         )
-    memory = memory_needed(widest, len(recipe.inputs[0].groups[0]))
+    memory = memory_needed(widest, len(recipe.inputs[0].groups[0]), stock.measured_bands)
     if memory > MAX_JOB_MEMORY_BYTES:
         raise JobTooLarge(
             f"This job would need about {memory / 1_000_000_000:.1f} GB of memory, more than the "
@@ -591,21 +694,182 @@ def estimate(recipe: Recipe, operators: OperatorRegistry) -> CostEstimate:
         output_bytes=output_bytes,
         seconds=SECONDS_PER_INPUT_MB * input_bytes / 1_000_000
         + SECONDS_PER_ASSET * assets
-        + SECONDS_PER_OUTPUT_BAND_MPIXEL * band_megapixels,
+        + SECONDS_PER_OUTPUT_BAND_MPIXEL * band_megapixels
+        + SECONDS_PER_MEASURE_BAND_MPIXEL * stock.measure_band_pixels / 1_000_000,
         units=output_pixels / 1_000_000 * stock.weighted_bands,
         memory_bytes=memory,
     )
 
 
+#: How the core brings a value band of a coarser asset, or a scene of another zone, onto the grid of the finest
+#: asset: read with ``nearest`` (``source.common_grid``, ``mosaic``, which warps with the constants of ``reproject``).
+RESAMPLING_METHOD = "nearest"
+
+#: Two pixel sizes are the same grid up to this (``source._GRID_TOLERANCE``).
+_SAME_SIZE = 1e-6
+
+
+@dataclass(frozen=True, slots=True)
+class GridFacts:
+    """The grid the values of a job lie on: the finest pixel size (metres, the item's ``gsd``) and the CRS, if the item names one."""
+
+    resolution: float
+    crs: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class BandOnOtherGrid:
+    """A band of the data that reaches the result and whose source does not lie on the grid of the job."""
+
+    band: str
+    resolution: float
+    crs: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class ScenesInOtherZone:
+    """``count`` of the ``of`` scenes of a mosaic lie in another CRS than ``crs``, the one most scenes share."""
+
+    count: int
+    of: int
+    crs: str
+
+
+@dataclass(frozen=True, slots=True)
+class ResamplingFacts:
+    """What a raster job converts silently, from the recipe alone (no read): the values of ``bands`` and of ``scenes``."""
+
+    grid: GridFacts
+    method: str
+    bands: tuple[BandOnOtherGrid, ...]
+    scenes: ScenesInOtherZone | None
+
+
+def _crs_by_asset(recipe: Recipe) -> dict[str, str | None]:
+    """The CRS each asset is read in: the one most of its scenes are in, as the mosaic picks its target (``target_crs``)."""
+    scenes: dict[str, dict[str, str | None]] = {}
+    for entry in recipe.inputs[0].resolved:
+        scenes.setdefault(entry.asset.asset, {})[entry.asset.item_id] = entry.asset.crs
+    return {asset: target_crs(crs_by_item) for asset, crs_by_item in scenes.items()}
+
+
+def _feeding_bands(live: Sequence[PlannedStep], output: Sequence[str]) -> frozenset[str]:
+    """The bands of the data whose values reach the output.
+
+    Worked from the end through the steps that run. A step that adds a band (``band_math``) hands on what it reads;
+    what a step that adds none reads is the layer it decides by (``mask``, ``mask_values``, :class:`BandUse`): it
+    hides pixels and gives no value, so it does not feed the result.
+    """
+    feeding = frozenset(output)
+    for step in reversed(live):
+        use = step.operator.bands_used(step.params)
+        if use.adds is not None and use.adds in feeding:
+            feeding = (feeding - {use.adds}) | use.reads
+    return feeding
+
+
+def describe_resampling(recipe: Recipe, operators: OperatorRegistry) -> ResamplingFacts | None:
+    """What a raster job converts onto a common grid without being asked to, or ``None``; reads nothing.
+
+    The rule of the job (:func:`~earthx.processing.source.common_grid` and ``_source_meta`` of the core): the grid is
+    that of the asset with the finest ``gsd`` (:func:`_finest`); a band is converted where its asset has another pixel
+    size or CRS, and a scene of a mosaic where it lies in another CRS than most (:func:`target_crs`). Like the flag
+    ``earthx:resampled`` of the result, only a band that reaches the output counts (:func:`_feeding_bands`): a
+    classification layer that only masks is read onto the grid and does not appear.
+
+    ``None`` as well for an export (native values), for an order with a ``grid`` step (``reproject``: the person chose
+    the target and the method, that step describes it) and where an asset has no ``gsd`` (the estimate refuses that
+    before). A CRS the item does not name is ``None`` in the facts: it is neither compared nor guessed.
+    """
+    if isinstance(recipe.output, CropOutput):
+        return _describe_crop_resampling(recipe)
+    if not isinstance(recipe.output, RasterOutput):
+        return None
+    live = live_steps(plan_steps(recipe.steps, operators), recipe.output.bands)
+    entries = _asset_entries(recipe)
+    if any(step.operator.kind == "grid" for step in live) or not entries or any(e.gsd is None for e in entries):
+        return None
+    finest = _finest(entries)
+    crs_of = _crs_by_asset(recipe)
+    grid = GridFacts(finest.gsd, crs_of[finest.asset.asset])
+
+    def on_grid(entry: ResolvedInput) -> bool:
+        crs = crs_of[entry.asset.asset]
+        return math.isclose(entry.gsd, grid.resolution, rel_tol=_SAME_SIZE) and (
+            crs is None or grid.crs is None or crs == grid.crs
+        )
+
+    feeding = _feeding_bands(live, recipe.output.bands)
+    bands = tuple(
+        BandOnOtherGrid(name, entry.gsd, crs_of[entry.asset.asset])
+        for entry in entries
+        if not on_grid(entry)
+        for name in expected_band_names(entry) or [entry.asset.asset]
+        if name in feeding
+    )
+    scenes = None
+    crs_by_scene = {e.asset.item_id: e.asset.crs for e in recipe.inputs[0].resolved if e.asset.asset == finest.asset.asset}
+    if len(crs_by_scene) > 1 and (target := target_crs(crs_by_scene)) is not None:
+        apart = sum(1 for crs in crs_by_scene.values() if crs is not None and crs != target)
+        scenes = ScenesInOtherZone(apart, len(crs_by_scene), target) if apart else None
+    return ResamplingFacts(grid, RESAMPLING_METHOD, bands, scenes) if bands or scenes else None
+
+
+def _describe_crop_resampling(recipe: Recipe) -> ResamplingFacts | None:
+    """What an export with a layout converts (NM4-75): the bands of one multi-band file that are not at its resolution,
+    and the scenes that lie in another coordinate system and are reprojected. ``None`` for an export without a layout
+    (the crop of before), and for a layout that converts nothing.
+    """
+    layout = recipe.output.layout  # type: ignore[union-attr]
+    entry = recipe.inputs[0]
+    if layout is None:
+        return None
+    sizes: dict[str, float | None] = {}
+    for resolved in entry.resolved:
+        known = [item.gsd for item in entry.resolved if item.asset.asset == resolved.asset.asset and item.gsd is not None]
+        sizes[resolved.asset.asset] = min(known) if known else None
+    first = entry.assets[0]
+    crs_by_scene = {e.asset.item_id: e.asset.crs for e in entry.resolved if e.asset.asset == first}
+    target = target_crs(crs_by_scene)
+    if layout.form == "multi_band":
+        assert layout.resolution_m is not None
+        grid = GridFacts(layout.resolution_m, target)
+        bands = tuple(
+            BandOnOtherGrid(asset, size, None)
+            for asset, size in sizes.items()
+            if size is not None and not math.isclose(size, layout.resolution_m, rel_tol=_SAME_SIZE)
+        )
+        coarser = any(band.resolution < layout.resolution_m for band in bands)  # the band's pixels are smaller
+        finer = any(band.resolution > layout.resolution_m for band in bands)
+        method = "mixed" if coarser and finer else "average" if coarser else "nearest"
+    else:
+        known = [size for size in sizes.values() if size is not None]
+        grid = GridFacts(min(known) if known else 0.0, target)
+        bands, method = (), RESAMPLING_METHOD
+    scenes = None
+    if len(crs_by_scene) > 1 and target is not None:
+        apart = sum(1 for crs in crs_by_scene.values() if crs is not None and crs != target)
+        scenes = ScenesInOtherZone(apart, len(crs_by_scene), target) if apart else None
+    return ResamplingFacts(grid, method, bands, scenes) if bands or scenes else None
+
+
 def export_outputs(recipe: Recipe) -> list[PlannedOutput]:
-    """The files an export writes, per group and asset, as ``access.download.plan_outputs`` plans a crop.
+    """The files an export writes, per group and file, as ``access.download.plan_outputs`` plans a crop.
 
     The region of a group is AOI ∩ its footprints (``compute_crop_region``); per asset the
     finest ``gsd`` and the largest bytes per pixel of the group's items, both read off the
-    item at acceptance. Reads nothing.
+    item at acceptance. With a layout (NM4-75) a file stacks the bands of one resolution or all of
+    them at the common one: its pixels are those of its resolution and its bytes per pixel the sum
+    of its bands (each at the widest type, since the file has one). Reads nothing.
     """
+    return [output for output, _ in _export_plan(recipe)]
+
+
+def _export_plan(recipe: Recipe) -> list[tuple[PlannedOutput, int]]:
+    """:func:`export_outputs`, each with the number of items of its group (the reads that make it)."""
     aoi = shapely_shape(recipe.aoi.model_dump(mode="json"))
-    planned = []
+    layout = getattr(recipe.output, "layout", None)
+    planned: list[tuple[PlannedOutput, int]] = []
     for entry in recipe.inputs:
         footprints = entry.footprints or {}
         resolved = {(item.asset.item_id, item.asset.asset): item for item in entry.resolved}
@@ -616,23 +880,49 @@ def export_outputs(recipe: Recipe) -> list[PlannedOutput]:
                 region = compute_crop_region(items, aoi)
             except AoiOutsideItems:
                 raise AoiOutsideInputs("the AOI does not touch the footprint of a group") from None
+            per_asset: dict[str, tuple[float | None, int]] = {}
             for asset in entry.assets:
                 entries = [resolved[(item_id, asset)] for item_id in group]
                 gsds = [item.gsd for item in entries if item.gsd is not None]
-                if gsds:
-                    height, width = estimate_output_dims(region, min(gsds))
-                else:
-                    height = width = MAX_OUTPUT_SIDE_PX
                 per_pixel = max(
                     (bytes_per_pixel([band.data_type for band in item.bands], asset) for item in entries),
                     default=FALLBACK_BYTES_PER_PIXEL,
                 )
-                planned.append(PlannedOutput(label=asset, width=width, height=height, bytes_per_pixel=per_pixel))
+                per_asset[asset] = (min(gsds) if gsds else None, per_pixel)
+            files: list[tuple[str, float | None, list[str]]]
+            if layout is None or layout.form == "per_band":
+                files = [(asset, per_asset[asset][0], [asset]) for asset in entry.assets]
+            elif layout.form == "multi_band":
+                files = [("bands", layout.resolution_m, list(entry.assets))]
+            else:
+                by_size: list[tuple[float | None, list[str]]] = []
+                for asset in entry.assets:
+                    size = per_asset[asset][0]
+                    for known, assets in by_size:
+                        if known is None and size is None or (
+                            known is not None and size is not None and math.isclose(known, size, rel_tol=_SAME_SIZE)
+                        ):
+                            assets.append(asset)
+                            break
+                    else:
+                        by_size.append((size, [asset]))
+                files = [(f"bands_{size}", size, assets) for size, assets in by_size]
+            for label, size, assets in files:
+                if size:
+                    height, width = estimate_output_dims(region, size)
+                else:
+                    height = width = MAX_OUTPUT_SIDE_PX
+                if len(assets) == 1:
+                    per_pixel = per_asset[assets[0]][1]
+                else:
+                    per_pixel = len(assets) * max(per_asset[asset][1] for asset in assets)
+                planned.append((PlannedOutput(label=label, width=width, height=height, bytes_per_pixel=per_pixel), len(group)))
     return planned
 
 
 def _export_estimate(recipe: Recipe) -> CostEstimate:
-    planned = export_outputs(recipe)
+    plan = _export_plan(recipe)
+    planned = [output for output, _ in plan]
     pixels = sum(output.width * output.height for output in planned)
     raw = sum(output.width * output.height * output.bytes_per_pixel for output in planned)
     total = sum(output.total_bytes for output in planned)
@@ -643,10 +933,9 @@ def _export_estimate(recipe: Recipe) -> CostEstimate:
             "Draw a smaller area or choose fewer assets."
         )
     assets = sum(len(entry.resolved) for entry in recipe.inputs)
-    items = [len(group) for entry in recipe.inputs for group in entry.groups for _ in entry.assets]
     seconds = sum(
         output.total_bytes / 1_000_000 * (SECONDS_PER_EXPORT_MB + SECONDS_PER_EXPORT_MB_PER_ITEM * count)
-        for output, count in zip(planned, items, strict=True)
+        for output, count in plan
     )
     return CostEstimate(
         input_pixels=pixels,
@@ -686,6 +975,11 @@ def disk_needed(recipe: Recipe, operators: OperatorRegistry) -> int:
       whole 1024 px blocks — for an export the data file of one group and asset, for a raster
       run the float64 pass over all bands; twice, because ``cog_translate`` keeps a temporary
       file of the same order beside it (measured, plan m4-11 §11 Punkt 8);
+    * the work file of a measure (NM4-71) is that same float64 pass: the pass before a step that measures writes it and
+      counts into it, the next pass reads it. At most two pass files lie in the work directory at once (the one read and
+      the one written, each deleted as soon as the pass that reads it is done), and a deflate file is not larger than its
+      raw size by more than a fraction of a percent, so the term covers it; a test holds the highest level measured in
+      a run below this number;
     * :data:`DISK_RESERVE_BYTES`.
 
     An estimate like :func:`estimate`, conservative where it has to guess (``gsd`` missing,
@@ -704,5 +998,5 @@ def disk_needed(recipe: Recipe, operators: OperatorRegistry) -> int:
             shapely_shape(recipe.aoi.model_dump(mode="json")), _finest(_asset_entries(recipe)).gsd
         )
         bands = _planned_stock(recipe, operators).widest
-        largest = _tiles_px(rows) * _tiles_px(columns) * bands * _PASS_BYTES
+        largest = _tiles_px(rows) * _tiles_px(columns) * bands * _PASS_BYTES  # the work file of a pass, measured or not
     return math.ceil(finished * _WITH_OVERVIEWS) + 2 * largest + DISK_RESERVE_BYTES

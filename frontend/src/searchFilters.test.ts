@@ -14,7 +14,8 @@ import {
 } from './searchFilters';
 import type { Collection } from './types';
 
-const [cloud, , satellite] = searchFiltersOf(OPTICAL);
+// "AOI coverage" stands first (Otto, 05.11.2026), then the filters of the registry in its order.
+const [coverage, cloud, , satellite] = searchFiltersOf(OPTICAL);
 const [orbit] = searchFiltersOf(RADAR);
 const range = (from: string, to: string): FilterInput => ({ kind: 'range', from, to });
 const values = (...ticked: string[]): FilterInput => ({ kind: 'values', values: ticked });
@@ -23,10 +24,12 @@ const withFilters = (filters: unknown): Collection => ({ id: 'x', 'earthx:search
 describe('searchFiltersOf: what the registry offers', () => {
   it('reads a range and a choice in the order of the registry, each with its group', () => {
     expect(searchFiltersOf(OPTICAL).map((f) => [f.group, f.property, f.kind])).toEqual([
+      ['Area', 'earthx:aoi_coverage', 'range'],
       ['Clouds', 'test:cloud', 'range'],
       ['Scene', 'test:nodata', 'range'],
       ['Acquisition', 'platform', 'values'],
     ]);
+    expect(coverage.needsAoi).toBe(true);
     expect(cloud).toEqual({
       property: 'test:cloud',
       kind: 'range',
@@ -34,6 +37,9 @@ describe('searchFiltersOf: what the registry offers', () => {
       group: 'Clouds',
       description: 'Share of the scene covered by clouds.',
       unit: '%',
+      withinAoi: 'earthx:aoi_cloud_cover',
+      areaBased: true,
+      needsAoi: false,
       minimum: 0,
       maximum: 100,
       integer: false,
@@ -46,6 +52,9 @@ describe('searchFiltersOf: what the registry offers', () => {
       group: 'Acquisition',
       description: 'The satellite that took the scene.',
       unit: null,
+      withinAoi: null,
+      areaBased: false,
+      needsAoi: false,
       minimum: 0,
       maximum: 0,
       integer: false,
@@ -101,6 +110,7 @@ describe('searchFiltersOf: what the registry offers', () => {
 describe('groupsOf: the headings of the pop-up', () => {
   it('keeps the order of the registry and puts each filter under its heading', () => {
     expect(groupsOf(searchFiltersOf(OPTICAL)).map((g) => [g.name, g.filters.map((f) => f.title)])).toEqual([
+      ['Area', ['AOI coverage']],
       ['Clouds', ['Cloud cover']],
       ['Scene', ['No data']],
       ['Acquisition', ['Satellite']],
@@ -211,5 +221,52 @@ describe('filterQuery: the query extension for the fields', () => {
   it('sends nothing when the fields belong to the other kind of filter', () => {
     expect(filterQuery([cloud], { 'test:cloud': values('sat-a') })).toEqual({});
     expect(filterQuery([satellite], { platform: range('1', '2') })).toEqual({});
+  });
+});
+
+// DS-03b (Otto, 31.10.2026): the registry names, for each filter that depends on the area, the property the server measures it
+// under inside the AOI (`within_aoi`); "Filter within AOI only" moves those ranges there and nothing else.
+describe('within_aoi: the filters that depend on the area', () => {
+  const [, cloudFilter, nodata] = searchFiltersOf(OPTICAL);
+
+  it('reads the property of the registry, and null where a filter has none', () => {
+    expect(cloudFilter.withinAoi).toBe('earthx:aoi_cloud_cover');
+    expect(nodata.withinAoi).toBe('earthx:aoi_nodata');
+    expect(satellite.withinAoi).toBeNull();
+    expect(orbit.withinAoi).toBeNull();
+  });
+
+  it.each([
+    ['a flag of the first version', true],
+    ['false', false],
+    ['text that is no platform property', 'eo:cloud_cover'],
+    ['the bare namespace', 'earthx:'],
+    ['a number', 3],
+  ])('takes %s for no property rather than send the server a name it does not know', (_what, value) => {
+    const [filter] = searchFiltersOf(withFilters([{ ...CLOUD_FILTER, within_aoi: value }]));
+    expect(filter.withinAoi).toBeNull();
+  });
+
+  const inputs = { 'test:cloud': range('', '20'), 'test:nodata': range('5', ''), platform: values('sat-a') };
+  const filters = searchFiltersOf(OPTICAL);
+
+  it('keeps every range under the property of the scene while the switch is not looked at', () => {
+    expect(filterQuery(filters, inputs)).toEqual({ 'test:cloud': { lte: 20 }, 'test:nodata': { gte: 5 }, platform: { in: ['sat-a'] } });
+  });
+
+  it('moves every filter that depends on the area to its own property, and nothing else, with "aoi"', () => {
+    expect(filterQuery(filters, inputs, 'aoi')).toEqual({
+      'earthx:aoi_cloud_cover': { lte: 20 },
+      'earthx:aoi_nodata': { gte: 5 },
+      platform: { in: ['sat-a'] },
+    });
+  });
+
+  it('leaves them out and nothing else, with "skip" (the coverage map)', () => {
+    expect(filterQuery(filters, inputs, 'skip')).toEqual({ platform: { in: ['sat-a'] } });
+  });
+
+  it('does not send a range that is wrong, under either name', () => {
+    expect(filterQuery(filters, { 'test:cloud': range('', '500') }, 'aoi')).toEqual({});
   });
 });

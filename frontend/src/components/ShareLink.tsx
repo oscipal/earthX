@@ -4,18 +4,19 @@
 
 import { useState } from 'react';
 
+import { formatDay } from '../numberFormat';
 import { createPermalink, permalinkAddress, rememberKey, removePermalink, viewOf, type Created } from '../permalink';
 import type { OrderView } from '../processingStore';
-import { handRangeOf, useProcessingStore } from '../processingStore';
+import { handRangeOnShownBand, useProcessingStore } from '../processingStore';
 import { useAppStore } from '../store';
 import CopyButton from './CopyButton';
+import { TrashIcon } from './icons';
 
 export default function ShareLink({ view }: { view: OrderView }) {
   const bbox = useAppStore((s) => s.viewportBbox);
   const zoom = useAppStore((s) => s.mapZoom);
   const basemap = useAppStore((s) => s.basemap);
   const projection = useAppStore((s) => s.projection);
-  const range = useProcessingStore((s) => handRangeOf(s));
   const [busy, setBusy] = useState(false);
   const [made, setMade] = useState<Created | null>(null);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
@@ -28,6 +29,8 @@ export default function ShareLink({ view }: { view: OrderView }) {
     setBusy(true);
     setNote(null);
     try {
+      // The range of the band the map shows, read as the link is made.
+      const range = handRangeOnShownBand(view, useProcessingStore.getState());
       const created = await createPermalink(order, viewOf(bbox, zoom, range, { basemap, projection }));
       rememberKey(created);
       setMade(created);
@@ -55,28 +58,28 @@ export default function ShareLink({ view }: { view: OrderView }) {
       {made ? (
         <>
           <div className="pp-share-link">
-            <input type="text" readOnly value={permalinkAddress(made.id)} aria-label="Link" onFocus={(e) => e.currentTarget.select()} />
+            <input autoComplete="off" type="text" readOnly value={permalinkAddress(made.id)} aria-label="Link" onFocus={(e) => e.currentTarget.select()} />
             <CopyButton text={permalinkAddress(made.id)} title="Copy link" label="Copy link" />
             <button
               type="button"
-              className="delete-btn"
-              title="Delete link"
+              className="icon-btn sm danger"
+              data-tip-level="advanced" data-tip="Delete link"
               aria-label="Delete link"
               disabled={busy}
               onClick={() => void remove(made.id)}
             >
-              ✕
+              <TrashIcon />
             </button>
           </div>
-          <p className="pp-help">Good until {new Date(made.expiresAt).toLocaleDateString()}. Anyone with the link sees your area.</p>
+          <p className="hint">Good until {formatDay(made.expiresAt)}. Anyone with the link sees your area.</p>
         </>
       ) : (
         <>
           <button
             type="button"
-            className="ghost-btn"
+            className="btn"
             disabled={busy || !!blocked || !bbox}
-            title={blocked ?? 'Keep this order and the map view under a link for 30 days'}
+            data-tip-level="advanced" data-tip={blocked ?? 'Keep this order and the map view under a link for 30 days'}
             onClick={() => void share()}
           >
             {busy ? 'Sharing…' : 'Share'}
@@ -84,7 +87,7 @@ export default function ShareLink({ view }: { view: OrderView }) {
         </>
       )}
       {note && (
-        <p className={note.ok ? 'pp-help' : 'hint-text error'} role="status">
+        <p className={note.ok ? 'hint' : 'error'} role="status">
           {note.text}
         </p>
       )}

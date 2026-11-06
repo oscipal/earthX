@@ -13,7 +13,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { datasetsFrom } from '../datasets';
 import { useAppStore } from '../store';
 import type { Collection } from '../types';
+import { lockedWithoutReason } from '../fixtures/lockedControls';
 import ControlPanel from './ControlPanel';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -317,7 +319,7 @@ describe('PlaceSearchField: searching a place and picking a hit (M3-07b)', () =>
       expect(panel.innerHTML).toBe(before);
     });
 
-    it('arrow down moves from the field into the list, Escape closes it', async () => {
+    it('arrow down moves from the field into the list; Escape leaves it open (Otto, 2.11.2026)', async () => {
       await found();
       placeInput().focus();
       key(placeInput(), 'ArrowDown');
@@ -327,7 +329,7 @@ describe('PlaceSearchField: searching a place and picking a hit (M3-07b)', () =>
       key(resultButtons()[1], 'ArrowUp');
       expect(document.activeElement).toBe(resultButtons()[0]);
       key(resultButtons()[0], 'Escape');
-      expect(container.querySelector('.place-results')).toBeNull();
+      expect(container.querySelector('.place-results')).not.toBeNull();
     });
 
     it('a click beside it closes it', async () => {
@@ -600,14 +602,13 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
     return buttons().map((b) => b.querySelector('.dataset-toggle-title')!.textContent ?? '');
   }
   function searchButton(): HTMLButtonElement {
-    return container.querySelector('.control-footer .primary-btn') as HTMLButtonElement;
+    return container.querySelector('.control-footer .btn.primary') as HTMLButtonElement;
   }
 
   it('lists every dataset as a toggle button, the picked ones pressed', () => {
     setUp(['optical']);
     expect(titles()).toEqual(['Optical imagery', 'Elevation model', 'Broken data']);
     expect(buttons().map((b) => b.getAttribute('aria-pressed'))).toEqual(['true', 'false', 'false']);
-    expect(buttons()[0].classList.contains('active')).toBe(true);
     expect(container.textContent).not.toContain('selected');
   });
 
@@ -685,14 +686,16 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
     setUp(['optical']);
     const broken = buttons()[2];
     expect(broken.disabled).toBe(true);
-    expect(broken.title).toContain('not viewable');
-    expect(broken.title).toContain('group_by');
+    expect(tipOf(broken)).toContain('not viewable');
+    expect(tipOf(broken)).toContain('group_by');
   });
 
-  it('shows the maturity chip and puts the description into the tooltip', () => {
+  // Otto, 4.11.2026: no tooltip at a dataset, but the reason where one cannot be chosen (above).
+  it('shows the maturity chip and has no tooltip at a dataset that can be chosen', () => {
     setUp(['optical']);
     expect(buttons()[0].querySelector('.maturity-chip')?.textContent).toBe('staging');
-    expect(buttons()[0].title).toContain('Multispectral optical imagery.');
+    expect(buttons()[0].hasAttribute('data-tip')).toBe(false);
+    expect(buttons()[0].hasAttribute('title')).toBe(false);
   });
 
   it('shows every dataset of the catalogue in one grid, however many — the grid itself scrolls (CSS shows 2 x 2)', () => {
@@ -706,7 +709,9 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
     setUp([]);
     useAppStore.setState({ aoi: { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] } });
     act(() => root.render(<ControlPanel />));
-    expect(container.textContent).toContain('Choose a dataset to search.');
+    // The reason stands in the tooltip of the locked button, not in a paragraph below it (NM4-22).
+    expect(tipOf(searchButton())).toBe('Choose a dataset to search');
+    expect(container.textContent).not.toContain('Choose a dataset to search');
     expect(searchButton().disabled).toBe(true);
   });
 
@@ -728,7 +733,7 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
       ],
     });
     act(() => root.render(<ControlPanel />));
-    expect(container.textContent).toContain('3 scene(s) found');
+    expect(container.textContent).toContain('3 scenes found');
   });
 
   it('the scene name field has a "×" while it holds text, which empties it', () => {
@@ -764,7 +769,7 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
 
   it('lists the maturity note of every ticked dataset, named by title once there are several', () => {
     setUp(['optical', 'dem']);
-    const notes = [...container.querySelectorAll('.dataset-notes .hint-text')].map((n) => n.textContent);
+    const notes = [...container.querySelectorAll('.dataset-notes .hint')].map((n) => n.textContent);
     expect(notes).toEqual(['Optical imagery: staging: the provider may withdraw this collection without notice']);
   });
 
@@ -773,14 +778,14 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
     const panel = container.querySelector('.control-panel')!;
     const scroll = panel.querySelector('.control-scroll')!;
     const footer = panel.querySelector('.control-footer')!;
-    expect(footer.querySelector('.primary-btn')).not.toBeNull();
-    expect(scroll.querySelector('.primary-btn')).toBeNull();
+    expect(footer.querySelector('.btn.primary')).not.toBeNull();
+    expect(scroll.querySelector('.btn.primary')).toBeNull();
     expect(scroll.querySelector('.dataset-list')).not.toBeNull();
   });
 
   describe('the "Coverage" button (M3-10, Otto 30.09.2026)', () => {
     function button(): HTMLButtonElement {
-      return container.querySelector('.coverage-btn') as HTMLButtonElement;
+      return container.querySelector('.coverage-button-wrap > .btn:first-child') as HTMLButtonElement;
     }
     function choices(): HTMLButtonElement[] {
       return [...container.querySelectorAll('.coverage-choice-item')] as HTMLButtonElement[];
@@ -791,8 +796,8 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
       expect(button()).not.toBeNull();
       const grid = container.querySelector('.dataset-list')!;
       expect(grid.nextElementSibling?.classList.contains('coverage-button-wrap')).toBe(true);
-      expect(grid.querySelector('.coverage-btn')).toBeNull();
-      expect(container.querySelector('.control-footer .coverage-btn')).toBeNull();
+      expect(grid.querySelector('.coverage-button-wrap')).toBeNull();
+      expect(container.querySelector('.control-footer .coverage-button-wrap')).toBeNull();
       expect(button().textContent).toBe('Coverage');
     });
 
@@ -809,7 +814,7 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
       expect(panel.innerHTML.replace(/aria-expanded="true"/, 'aria-expanded="false"')).toBe(before);
     });
 
-    it('is worked with the keyboard: arrow down opens it at the first entry, arrows move, Escape returns to the button', () => {
+    it('is worked with the keyboard: arrow down opens it at the first entry, arrows move, Escape closes nothing', () => {
       setUp(['optical', 'dem']);
       button().focus();
       act(() => button().dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
@@ -819,14 +824,14 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
       act(() => choices()[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
       expect(document.activeElement).toBe(choices()[0]); // wraps round
       act(() => document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
-      expect(container.querySelector('.coverage-choice')).toBeNull();
-      expect(document.activeElement).toBe(button());
+      expect(container.querySelector('.coverage-choice')).not.toBeNull();
+      expect(document.activeElement).toBe(choices()[0]);
     });
 
-    it('"Clear coverage" is on only while a coverage map is shown, and hides it', () => {
-      const clear = () => container.querySelector('.coverage-clear-btn') as HTMLButtonElement;
+    it('"Hide coverage" is on only while a coverage map is shown, and hides it', () => {
+      const clear = () => container.querySelector('.coverage-button-wrap > .btn:nth-child(2)') as HTMLButtonElement;
       setUp(['optical']);
-      expect(clear().textContent).toBe('Clear coverage');
+      expect(clear().textContent).toBe('Hide coverage');
       expect(clear().disabled).toBe(true);
       act(() => button().click());
       expect(useAppStore.getState().showCoverage).toBe(true);
@@ -837,10 +842,10 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
       expect(clear().disabled).toBe(true);
     });
 
-    it('"Coverage" and "Clear coverage" share one row', () => {
+    it('"Coverage" and "Hide coverage" share one row', () => {
       setUp(['optical']);
       const row = container.querySelector('.coverage-button-wrap')!;
-      expect([...row.children].map((c) => c.textContent)).toEqual(['Coverage', 'Clear coverage']);
+      expect([...row.children].map((c) => c.textContent)).toEqual(['Coverage', 'Hide coverage']);
     });
 
     it('is visible but off when no dataset is picked', () => {
@@ -880,25 +885,44 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
       expect(container.textContent).toContain('Coverage · Elevation model');
     });
 
-    it('with the coverage on and several picked, the choice also offers to hide it and marks the current one', () => {
+    it('with the coverage on and several picked, the choice holds the datasets only, with no entry "Hide coverage", and marks the current one (UI-04 part 4)', () => {
       setUp(['optical', 'dem']);
       act(() => button().click());
       act(() => choices()[0].click());
       act(() => button().click());
-      expect(choices().map((c) => c.textContent)).toEqual(['Optical imagery', 'Elevation model', 'Hide coverage']);
+      expect(choices().map((c) => c.textContent)).toEqual(['Optical imagery', 'Elevation model']);
+      expect(container.querySelector('.coverage-choice')?.textContent).not.toMatch(/Hide coverage/u);
       expect(choices()[0].getAttribute('aria-checked')).toBe('true');
-      act(() => choices()[2].click());
+      expect(choices()[1].getAttribute('aria-checked')).toBe('false');
+    });
+
+    it('with the coverage on and several picked, it is hidden with the button "Hide coverage" beside "Coverage", not from the choice', () => {
+      setUp(['optical', 'dem']);
+      act(() => button().click());
+      act(() => choices()[0].click());
+      expect(useAppStore.getState().showCoverage).toBe(true);
+      const hide = container.querySelector('.coverage-button-wrap > .btn:nth-child(2)') as HTMLButtonElement;
+      expect(hide.textContent).toBe('Hide coverage');
+      act(() => hide.click());
       expect(useAppStore.getState().showCoverage).toBe(false);
     });
 
-    it('Escape and a click outside close the choice without drawing anything', () => {
+    it('chooses another dataset from the choice while the coverage is on, and the map follows without being hidden first', () => {
+      setUp(['optical', 'dem']);
+      act(() => button().click());
+      act(() => choices()[0].click());
+      act(() => button().click());
+      act(() => choices()[1].click());
+      expect(useAppStore.getState()).toMatchObject({ showCoverage: true, coverageDatasetId: 'dem' });
+    });
+
+    it('a click outside closes the choice without drawing anything; Escape does not close it (Otto, 2.11.2026)', () => {
       setUp(['optical', 'dem']);
       act(() => button().click());
       act(() => {
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
       });
-      expect(container.querySelector('.coverage-choice')).toBeNull();
-      act(() => button().click());
+      expect(container.querySelector('.coverage-choice')).not.toBeNull();
       act(() => {
         document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }));
       });
@@ -922,3 +946,17 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
     });
   });
 });
+
+// UI-04 §7.5 no. 8: what is locked says why in its tooltip.
+describe('locked controls of the menu', () => {
+  it('name their reason: Find without a name, Last AOI without one, Search without a dataset or an AOI', () => {
+    useAppStore.setState({ datasets: [], datasetId: null, selectedDatasetIds: [], searching: false, sceneLookupLoading: false });
+    act(() => root.render(<ControlPanel />));
+    expect(lockedWithoutReason(container)).toEqual([]);
+    const button = (text: string) => [...container.querySelectorAll('button')].find((b) => b.textContent?.trim().endsWith(text));
+    expect(button('Find')?.getAttribute('data-tip')).toBe('Type a place name first');
+    expect(button('Last AOI')?.getAttribute('data-tip')).toBe('No earlier AOI in this browser');
+    expect(button('Search')?.getAttribute('data-tip')).toBe('Choose a dataset to search');
+  });
+});
+

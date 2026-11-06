@@ -22,7 +22,7 @@ import type { AppliedRender, DownloadedInfo, StacItem, TimeStepGroup } from './t
 
 function info(overrides: Partial<DownloadedInfo> = {}): DownloadedInfo {
   return {
-    tileUrl: '/collections/sentinel-2-c1-l2a/items/S2A_1/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=visual',
+    datasetId: 'sentinel-2-c1-l2a', tileUrl: '/collections/sentinel-2-c1-l2a/items/S2A_1/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=visual',
     bounds: [10, 47, 11, 48],
     asset: 'visual',
     minZoom: 0,
@@ -401,9 +401,12 @@ describe('syncFocusRaster with mosaics', () => {
     expect(layerSpecs.find((l) => l.source === mosaic.id)?.maxzoom).toBeUndefined();
     // bottom to top: the scene the mosaic reads last first, the one it reads first under the mosaic
     expect(rasters.slice(0, 3).map((r) => tileUrlOf(r).split('/items/')[1].split('/')[0])).toEqual(['A', 'C', 'B']);
+    // The mosaic is 512 px and asked for from map zoom 7.5, the scenes are 256 px and step aside there (NM4-29b).
+    expect(mosaic.spec.tileSize).toBe(512);
     for (const single of rasters.slice(0, 3)) {
+      expect(single.spec.tileSize).toBe(256);
       expect(single.spec.maxzoom).toBe(7);
-      expect(layerSpecs.find((l) => l.source === single.id)?.maxzoom).toBe(6.5);
+      expect(layerSpecs.find((l) => l.source === single.id)?.maxzoom).toBe(7.5);
     }
   });
 

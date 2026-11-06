@@ -10,9 +10,11 @@ import {
   chooseWay,
   safeName,
   savedFilesOf,
+  sceneBandsText,
   sceneItemJson,
   sourceFileName,
   zipJobOf,
+  zipPathOf,
   type OriginalEntry,
   type OriginalScene,
   type Way,
@@ -196,13 +198,14 @@ export async function runOriginals(args: RunArgs): Promise<void> {
         const attribution = attributionFileText({
           collection,
           scenes: [scene],
-          files: savedFilesOf([scene], (entry) => entry.name),
+          files: savedFilesOf([scene], zipPathOf),
           years,
           now: deps.now(),
         });
+        const bands = scene.entries.some((entry) => entry.band) ? sceneBandsText(collection, scene) : undefined;
         set(index, { status: 'running', loaded: 0, total });
         await deps.zip!.run(
-          zipJobOf(scene, attribution, sizes),
+          zipJobOf(scene, attribution, sizes, bands),
           (loaded) => set(index, { status: 'running', loaded, total }),
           signal,
         );

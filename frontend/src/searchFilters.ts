@@ -7,6 +7,7 @@
 // anything else (plan §6.4), so a filter this sends is always one the dataset offers; the checks below are there
 // to tell the user what is wrong before "Search" is pressed, not to stand in for the server's.
 
+import { COVERAGE_PROPERTY, isPlatformProperty } from './aoiFilter';
 import type { Collection } from './types';
 
 export interface FilterValue {
@@ -24,6 +25,15 @@ export interface SearchFilterDescription {
   // The tooltip.
   description: string;
   unit: string | null;
+  // The property the server measures this filter under, inside the AOI (DS-03, `within_aoi` of the registry), or `null`
+  // for a filter that does not depend on the area. The switch of "Advanced search" moves the range to it.
+  withinAoi: string | null;
+  // The registry's `area_based` (DS-03c): the filter is a share of an area, which a search per pass weights over the scenes
+  // of a pass. Informs the server's rule; the pop-up shows nothing for it.
+  areaBased: boolean;
+  // The filter "AOI coverage", which the pop-up adds from the dataset's capabilities (not a filter of the registry): it needs
+  // an AOI and nothing the scenes say about themselves.
+  needsAoi: boolean;
   // `range` only.
   minimum: number;
   maximum: number;
@@ -47,6 +57,30 @@ export type FilterQuery = Record<string, Record<string, number | string[]>>;
 // "Search" may be pressed): read each one once.
 const read = new WeakMap<Collection, SearchFilterDescription[]>();
 
+// What a dataset's search can do besides its filters (DS-03c, `earthx:search_capabilities`); a field that is not `true`
+// is `false`, so a backend before it offers neither.
+export function searchCapabilitiesOf(collection: Collection): { evaluate: boolean; aoiCoverage: boolean } {
+  const raw = collection['earthx:search_capabilities'];
+  return { evaluate: raw?.evaluate === true, aoiCoverage: raw?.aoi_coverage === true };
+}
+
+// "AOI coverage ≥ n %" as a filter the pop-up shows under "Area" (DS-03c): the share of the AOI the outlines cover.
+const COVERAGE_FILTER: SearchFilterDescription = {
+  property: COVERAGE_PROPERTY,
+  kind: 'range',
+  title: 'AOI coverage',
+  group: 'Area',
+  description: 'At least this much of the AOI is covered by the outlines of the scenes.',
+  unit: '%',
+  withinAoi: null,
+  areaBased: true,
+  needsAoi: true,
+  minimum: 0,
+  maximum: 100,
+  integer: false,
+  values: [],
+};
+
 // The filters of a dataset, in the order of the registry. An entry that is not complete is left out rather than
 // guessed at, like every other registry field the viewer reads (`datasets.ts`): a filter with a made-up bound
 // would send the server a value it answers with `400`.
@@ -62,6 +96,8 @@ export function searchFiltersOf(collection: Collection): SearchFilterDescription
     seen.add(description.property);
     found.push(description);
   }
+  // First, over the filters of the registry (Otto, 05.11.2026): it asks the least of the area and every dataset offers it.
+  if (searchCapabilitiesOf(collection).aoiCoverage) found.unshift(COVERAGE_FILTER);
   read.set(collection, found);
   return found;
 }
@@ -81,7 +117,17 @@ function describe(entry: unknown): SearchFilterDescription | null {
     const { minimum, maximum } = entry;
     if (typeof minimum !== 'number' || typeof maximum !== 'number') return null;
     if (!Number.isFinite(minimum) || !Number.isFinite(maximum) || minimum >= maximum) return null;
-    return { ...common, kind, minimum, maximum, integer: entry.type === 'integer', values: [] };
+    return {
+      ...common,
+      kind,
+      minimum,
+      maximum,
+      integer: entry.type === 'integer',
+      values: [],
+      withinAoi: isPlatformProperty(entry.within_aoi) ? entry.within_aoi : null,
+      areaBased: entry.area_based === true,
+      needsAoi: false,
+    };
   }
   if (kind === 'values') {
     const options = entry.oneOf;
@@ -92,7 +138,7 @@ function describe(entry: unknown): SearchFilterDescription | null {
       values.push({ value: option.const, label: option.title });
     }
     if (values.length < 2 || new Set(values.map((v) => v.value)).size !== values.length) return null;
-    return { ...common, kind, minimum: 0, maximum: 0, integer: false, values };
+    return { ...common, kind, minimum: 0, maximum: 0, integer: false, values, withinAoi: null, areaBased: false, needsAoi: false };
   }
   return null;
 }
@@ -165,18 +211,34 @@ export function hasFilterError(filters: SearchFilterDescription[], inputs: Filte
 // The `query` for the filters the user has set and got right: a filter with a wrong field is not sent (the search
 // itself is held back until it is right, `hasFilterError`; the coverage map has nothing to wait for, so it simply
 // goes without). `{}` when nothing is set.
-export function filterQuery(filters: SearchFilterDescription[], inputs: FilterInputs | undefined): FilterQuery {
+//
+// `withoutArea` leaves out the filters that need an AOI to be judged ("AOI coverage"): the coverage map cannot judge them, and
+// without a usable AOI the search would be refused (DS-03c).
+//
+// `within` says what the filters that depend on the area become while the switch "Filter within AOI only" is on (DS-03b):
+// `'aoi'` asks them inside the AOI instead, under the property the registry names for each (search), `'skip'` leaves them
+// out (the coverage map counts at the source and cannot measure, plan §6.5), and without it the switch is not looked at
+// and the ranges are the scene's. A filter that does not depend on the area is never changed.
+export function filterQuery(
+  filters: SearchFilterDescription[],
+  inputs: FilterInputs | undefined,
+  within?: 'aoi' | 'skip',
+  withoutArea = false,
+): FilterQuery {
   const query: FilterQuery = {};
   for (const filter of filters) {
     const input = inputs?.[filter.property];
     if (!input || !isSet(input) || filterError(filter, input)) continue;
+    if (filter.needsAoi && withoutArea) continue;
     if (input.kind === 'range' && filter.kind === 'range') {
+      const measured = within !== undefined ? filter.withinAoi : null;
+      if (measured && within === 'skip') continue;
       const from = bound(input.from);
       const to = bound(input.to);
       const operators: Record<string, number> = {};
       if (from !== null) operators.gte = from;
       if (to !== null) operators.lte = to;
-      query[filter.property] = operators;
+      query[measured ?? filter.property] = operators;
     } else if (input.kind === 'values' && filter.kind === 'values') {
       // In the order of the registry, and only values it offers.
       const values = filter.values.map((v) => v.value).filter((value) => input.values.includes(value));

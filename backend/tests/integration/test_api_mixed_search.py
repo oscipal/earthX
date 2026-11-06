@@ -30,7 +30,7 @@ from earthx.api import mixed_search
 from earthx.api.main import build_app
 from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
 from earthx.catalog.pgstac import load_collection, upsert_items, use_pgstac_search_path
-from earthx.catalog.registry import CoverageProvider, DatasetRegistry, ItemHolding
+from earthx.catalog.registry import CoverageProvider, DatasetRegistry, ItemHolding, SearchCapabilities
 from earthx.gateway import Gateway, Policy
 from tests.conftest import format_without_timestamp
 
@@ -55,6 +55,7 @@ NATIVE_A = replace(
     ),
     coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
     search_filters=(),
+    search_capabilities=SearchCapabilities(evaluate=False, aoi_coverage=False),
 )
 
 # A second materialized collection with a time axis: shares NATIVE_A's source (one

@@ -57,14 +57,14 @@ const collection = {
   'earthx:viewer': { group_by: ['datetime'], min_zoom: 8, max_zoom: 14, browse: 'quicklook', quicklook_nodata_max: null, results_group_by: ['datetime'] },
 };
 
-const autoScale = () => [...container.querySelectorAll('button')].filter((b) => b.textContent?.trim() === 'auto-scale');
+const autoScale = () => [...container.querySelectorAll('button')].filter((b) => b.textContent?.trim() === 'Auto-scale');
 
 describe('"auto-scale"', () => {
   it('is one button in the view of scenes and in the settings of a result: the same name, the same classes', () => {
     act(() => {
       useAppStore.setState({
         datasets: datasetsFrom([collection] as never), datasetId: 'optical', focusMode: true, cropToAoi: false, showDownloaded: true, groups: [], selectedIds: [],
-        downloaded: { s0: { tileUrl: '/t/{z}/{x}/{y}', bounds: [0, 0, 1, 1], asset: 'visual', minZoom: 0, maxZoom: 14 } },
+        downloaded: { s0: { datasetId: 'sentinel-2-c1-l2a', tileUrl: '/t/{z}/{x}/{y}', bounds: [0, 0, 1, 1], asset: 'visual', minZoom: 0, maxZoom: 14 } },
         pendingColormapName: '', pendingVmin: '0', pendingVmax: '3000', focusLoading: false, resultViewLayerId: null, layers: [],
       });
       root.render(<ViewerControls />);

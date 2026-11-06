@@ -234,7 +234,7 @@ describe('the "Load recipe…" control', () => {
 
   it('says why a file is turned away before reading it', async () => {
     await pick(text('x', 'recipe.txt'));
-    expect(container.textContent).toContain('Pick a .json file.');
+    expect(container.textContent).toContain('Choose a .json file.');
     const big = new File([new Uint8Array(1_048_577)], 'big.json');
     await pick(big);
     expect(container.textContent).toContain('The file is larger than 1 MB.');

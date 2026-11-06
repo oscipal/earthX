@@ -25,18 +25,6 @@ export function useNowUntil(deadline: number): number {
   return now;
 }
 
-const MONTH_DAY = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' });
-const HOUR_MINUTE = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
-const YEAR = new Intl.DateTimeFormat('en-GB', { year: 'numeric' });
-
-// "31 Oct, 14:02"; the year only when it is not this one.
-export function formatUntil(iso: string, now: number = Date.now()): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  const year = YEAR.format(date) === YEAR.format(now) ? '' : ` ${YEAR.format(date)}`;
-  return `${MONTH_DAY.format(date)}${year}, ${HOUR_MINUTE.format(date)}`;
-}
-
 export interface BatchCount {
   done: number;
   running: number;
@@ -75,10 +63,10 @@ export function countBatch(batch: BatchEntry, parts: readonly JobEntry[], now: n
   };
 }
 
-// "12 done · 3 running · 1 refused · 1 failed"; what is zero is left out.
+// "12 finished · 3 running · 1 refused · 1 failed"; what is zero is left out.
 export function batchSummary(count: BatchCount): string {
   const parts: [number, string][] = [
-    [count.done, 'done'],
+    [count.done, 'finished'],
     [count.running, 'running'],
     [count.refused, 'refused'],
     [count.failed, 'failed'],

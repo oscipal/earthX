@@ -7,9 +7,11 @@
 // Checks here are a help while typing; the server decides (`422`/`400` with a
 // text shown at the step). No `eval`, no `new Function`.
 
+import { refineMaskValues } from './maskValues';
+import { fieldsOfMethod, refineNormalize } from './normalizeMethods';
 import type { JsonSchema } from './processing';
 
-export type FieldKind = 'string' | 'number' | 'integer' | 'integers' | 'names' | 'boolean' | 'enum' | 'const';
+export type FieldKind = 'string' | 'number' | 'integer' | 'integers' | 'numbers' | 'names' | 'boolean' | 'enum' | 'const';
 
 export interface Field {
   name: string;
@@ -29,7 +31,7 @@ export interface Field {
   maximum?: number;
   exclusiveMinimum?: number;
   exclusiveMaximum?: number;
-  // `integers` and `names`: a list of whole numbers or of texts, with the bounds of the list (and of each number).
+  // `integers`, `numbers` and `names`: a list of whole numbers, of numbers or of texts, with the bounds of the list (and of each number).
   minItems?: number;
   maxItems?: number;
   itemMinimum?: number;
@@ -85,12 +87,16 @@ function numberOrUndefined(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
+// The names the server's schema writes in title case (pydantic makes "Crs" of `crs`), as the interface writes them (UI-04 §7.4).
+const ACRONYMS: Readonly<Record<string, string>> = { Crs: 'CRS', Aoi: 'AOI', Rgb: 'RGB', Utm: 'UTM' };
+export const fieldTitle = (title: string): string => title.replace(/\b[A-Z][a-z]+\b/gu, (word) => ACRONYMS[word] ?? word);
+
 function fieldOf(name: string, schema: JsonSchema, required: boolean): Field | string {
   const extra = Object.keys(schema).find((key) => !FIELD_KEYWORDS.has(key));
   if (extra) return `keyword ${extra} in ${name}`;
   const base = {
     name,
-    title: typeof schema.title === 'string' ? schema.title : name,
+    title: fieldTitle(typeof schema.title === 'string' ? schema.title : name),
     ...(typeof schema.description === 'string' ? { description: schema.description } : {}),
     required,
     ...('default' in schema ? { default: schema.default } : {}),
@@ -134,8 +140,9 @@ function fieldOf(name: string, schema: JsonSchema, required: boolean): Field | s
 }
 
 // A list of whole numbers, as `mask` takes its classes: `items` is an integer with bounds, nothing
-// else. It is edited as text, "3, 8, 9, 10". Or a list of texts, as `normalize` takes its bands: `items` is a plain
-// string, and the panel offers the names to pick from (`StepForm`).
+// else. It is edited as text, "3, 8, 9, 10". Or a list of numbers, as `mask_values` takes its values (`items` is a number
+// with bounds), or of texts, as `normalize` takes its bands: `items` is a plain string, and the panel offers the names
+// to pick from (`StepForm`).
 const ITEM_KEYWORDS = new Set(['type', 'minimum', 'maximum']);
 
 function listField(name: string, schema: JsonSchema, base: Omit<Field, 'kind'>): Field | string {
@@ -143,12 +150,13 @@ function listField(name: string, schema: JsonSchema, base: Omit<Field, 'kind'>):
   if (isObject(items) && items.type === 'string' && Object.keys(items).length === 1) {
     return { ...base, kind: 'names', minItems: numberOrUndefined(schema.minItems), maxItems: numberOrUndefined(schema.maxItems) };
   }
-  if (!isObject(items) || items.type !== 'integer' || Object.keys(items).some((key) => !ITEM_KEYWORDS.has(key))) {
-    return `items of ${name} are not whole numbers`;
+  const numbers = isObject(items) && items.type === 'number';
+  if (!isObject(items) || (items.type !== 'integer' && !numbers) || Object.keys(items).some((key) => !ITEM_KEYWORDS.has(key))) {
+    return `items of ${name} are not numbers`;
   }
   return {
     ...base,
-    kind: 'integers',
+    kind: numbers ? 'numbers' : 'integers',
     minItems: numberOrUndefined(schema.minItems),
     maxItems: numberOrUndefined(schema.maxItems),
     itemMinimum: numberOrUndefined(items.minimum),
@@ -161,6 +169,16 @@ export function integersIn(text: string): number[] | null {
   const parts = text.split(/[\s,;]+/u).filter((part) => part !== '');
   const numbers = parts.map((part) => (/^[+-]?\d+$/u.test(part) ? Number(part) : NaN));
   return numbers.every(Number.isSafeInteger) ? numbers : null;
+}
+
+// The numbers of a list field's text ("0.2, 0.8"), in the order typed; `null` where a part is no number. A number is
+// written the way JSON writes it, plus a leading "+" or ".": no "Infinity", no hexadecimal, no "1,5" for 1.5.
+const NUMBER = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/u;
+
+export function numbersIn(text: string): number[] | null {
+  const parts = text.split(/[\s,;]+/u).filter((part) => part !== '');
+  const numbers = parts.map((part) => (NUMBER.test(part) ? Number(part) : NaN));
+  return numbers.every(Number.isFinite) ? numbers : null;
 }
 
 // The names of a list field's text ("a, b"), each once, in the order typed.
@@ -269,10 +287,10 @@ function valueOf(field: Field, raw: FieldValue | undefined): { value?: unknown; 
   if (field.kind === 'const') return { value: field.constValue };
   if (field.kind === 'boolean') return { value: raw === true };
   const text = typeof raw === 'string' ? raw : '';
-  if (text === '') return field.required ? { error: field.kind === 'names' ? 'Pick at least one band.' : 'Required.' } : {};
+  if (text === '') return field.required ? { error: field.kind === 'names' ? 'Choose at least one band.' : 'Required.' } : {};
   switch (field.kind) {
     case 'enum':
-      return field.options?.includes(text) ? { value: text } : { error: 'Pick one of the options.' };
+      return field.options?.includes(text) ? { value: text } : { error: 'Choose one of the options.' };
     case 'number':
     case 'integer': {
       const value = parseNumber(field, text);
@@ -291,9 +309,19 @@ function valueOf(field: Field, raw: FieldValue | undefined): { value?: unknown; 
       if (field.maxItems !== undefined && value.length > field.maxItems) return { error: `At most ${field.maxItems} values.` };
       return { value };
     }
+    case 'numbers': {
+      const numbers = numbersIn(text);
+      if (numbers === null || numbers.length === 0) return { error: 'Enter numbers separated by commas.' };
+      if (numbers.some((n) => (field.itemMinimum !== undefined && n < field.itemMinimum) || (field.itemMaximum !== undefined && n > field.itemMaximum))) {
+        return { error: 'Too large or too small.' };
+      }
+      if (field.minItems !== undefined && numbers.length < field.minItems) return { error: `At least ${field.minItems} values.` };
+      if (field.maxItems !== undefined && numbers.length > field.maxItems) return { error: `At most ${field.maxItems} values.` };
+      return { value: numbers };
+    }
     case 'names': {
       const value = namesIn(text);
-      if (field.minItems !== undefined && value.length < field.minItems) return { error: 'Pick at least one band.' };
+      if (field.minItems !== undefined && value.length < field.minItems) return { error: 'Choose at least one band.' };
       if (field.maxItems !== undefined && value.length > field.maxItems) return { error: `At most ${field.maxItems} bands.` };
       return { value };
     }
@@ -313,13 +341,18 @@ export interface ParamsResult {
   errors: Record<string, string>;
 }
 
-export function paramsFrom(fields: readonly Field[], values: Readonly<Record<string, FieldValue>>): ParamsResult {
+// `op` lets a step's own rules between its fields in: the numbers a `mask_values` step needs depend on its condition, the fields of a `normalize` step on its method.
+export function paramsFrom(fields: readonly Field[], values: Readonly<Record<string, FieldValue>>, op?: string): ParamsResult {
   const params: Record<string, unknown> = {};
   const errors: Record<string, string> = {};
-  for (const field of fields) {
+  // A `normalize` step of version 4 takes the fields of its method and no others.
+  const methods = op === 'normalize' && fields.some((field) => field.name === 'method');
+  for (const field of methods ? fieldsOfMethod(fields, values.method) : fields) {
     const { value, error } = valueOf(field, values[field.name]);
     if (error) errors[field.name] = error;
     else if (value !== undefined) params[field.name] = value;
   }
+  if (op === 'mask_values') refineMaskValues(params, errors);
+  if (methods) refineNormalize(params, errors);
   return { params, errors };
 }

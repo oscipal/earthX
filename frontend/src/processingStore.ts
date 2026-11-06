@@ -18,9 +18,12 @@
 
 import { create } from 'zustand';
 
-import { fetchItem, fetchStatisticsAt, HttpError, postAreaStatistics, type AreaStatistics } from './api';
+import { fetchItem, fetchStatisticsAt, HttpError, postAreaStatistics, withPercentiles, type AreaStatistics } from './api';
+import { CHANNEL_NAMES, channelsAtOwnPercent, withoutChannels, type ChannelRange } from './channels';
+import { checkPercent, NO_RANGE_AT_PERCENT, rescaleAtPercent, type Percent } from './percentRange';
 import { crsBlockReason, type CrsEntry } from './crsUnit';
 import { resultsGroupByOfOption, type DatasetOption } from './datasets';
+import { indexPresetsOf } from './indexPresets';
 import {
   loadShelf,
   MAX_NAME_LENGTH,
@@ -44,6 +47,7 @@ import {
   foreignReason,
   foreignScenes,
   jobTitle,
+  passChoices,
   titleDay,
   runChoices,
   runPool,
@@ -81,11 +85,13 @@ import {
   resultBands,
   resultGsd,
   resultLayerName,
+  presetOfResultBand,
   resultRender,
   resultStats,
   resultTileTemplate,
   startPlaceOf,
   tilesHref,
+  typedOf,
   type ResultBand,
 } from './resultLayer';
 import {
@@ -111,6 +117,8 @@ import {
   dataBandsOf,
   draftFromOrder,
   isArea,
+  clipArea,
+  measuredNumbers,
   lonelyBand,
   maskAssetOf,
   maskLayerOf,
@@ -120,13 +128,18 @@ import {
   processBlockReason,
   processInfo,
   readProblem,
+  resultArea,
   selectableAssets,
   stepOfRefusal,
   type Area,
   type BandSource,
   type BuiltOrder,
   type DataBand,
+  type Draft,
   type DraftStep,
+  type MeasureEntry,
+  type MeasureNeed,
+  type MeasureStatus,
   type Pass,
   type ProcessInfo,
 } from './processingOrder';
@@ -158,22 +171,65 @@ import type { ResultStats } from './render';
 import { chooseDtype, dtypeOptions, effectiveDtype, integerNote, type Choice, type DtypeOption } from './processingDefaults';
 import { buildTileUrl } from './mapLayers';
 import type { PermalinkView } from './permalink';
+import { previewRangeOf } from './permalinkRange';
 import { readRecipe } from './recipeFile';
 import { keyNames } from './recipeUpgrade';
+import { isStatistical, measuredFromRuns, normalizeRuns, startValues, type Measured, type Method, type NormalizeRun } from './normalizeMethods';
 import { initialValues, namesIn, type FieldValue } from './schemaForm';
+import { datesOfIds, knownItems } from './layerDate';
+import { resamplingParts } from './resamplingWarning';
 import type { MapLayer } from './layers';
-import { selectionItemsFrom, ticksOfOpen, useAppStore, type AppState } from './store';
+import { indexOfLayer, indexOrdersOfScenes } from './indexDownload';
+import type { IndexPreset } from './indexPresets';
+import { selectionItemsFrom, shownImageOf, ticksOfOpen, useAppStore, viewImagesOf, type AppState } from './store';
 import { buildGroups } from './grouping';
 import { stackLikeView } from './mosaic';
+import { fieldNumber } from './numberFormat';
 import type { EarthxMask, StacItem, TimeStepGroup } from './types';
 
 // Where a panel opens from: the "Area" it starts with, and the scenes the
 // results on screen lack.
 export interface ProcessingEntry {
   area?: Area;
+  // The pass a job is for, where the entry holds several (`Pass.key`); left out: none picked.
+  passKey?: string;
   // Scenes of the entry that the results on screen do not hold (see `ExtraScenes`);
   // `null` drops those of an earlier entry. Left out: they stay.
   extraScenes?: ExtraScenes | null;
+  // What the entry fixes; left out: nothing, and the panel is the selection's.
+  fixed?: Fixed;
+}
+
+// What an entry fixes about the order (NM4-05b): the scenes, the area and that it is one job. The panel shows them locked,
+// and the order keeps them whatever the selection and the map do afterwards.
+export interface Fixed {
+  // The scenes of the order.
+  itemIds: string[];
+  // The area, whatever the map holds; `null`: the whole scenes. A result's own area is "Whole scene" in its panel; "AOI only" is
+  // another AOI inside it (the map's).
+  aoi: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
+  // Set when the entry is "process further" of a result: its steps stand first, locked.
+  result: FixedResult | null;
+}
+
+export interface FixedResult {
+  // What the job was called and the group it lies in: the new job gets the title plus its own steps, and the same group.
+  title: string;
+  groupId: string | null;
+  // The first `locked` steps of the draft are those of the result: the order runs them again first, the panel does not show them
+  // as steps, and they cannot be changed, moved or removed.
+  locked: number;
+  // The bands of the result's output: all the panel offers of the result, as bands of its own (adr/0019, Nachtrag NM4-05b). What the job did not
+  // keep cannot be read by a step of the person, though the chain still holds it.
+  bands: string[];
+  // What the process description made of the steps (an older version taken as the listed one).
+  notes: string[];
+  // The numbers the locked steps measured when the job ran, by step key: they keep them, the result is an entity of its own
+  // (NM4-11b, adr/0019 Nachtrag NM4-05b). From `earthx:normalize` of the result, else from the copy of the order. Steps added later
+  // measure for the area they are given.
+  measured: Record<number, Measured>;
+  // The locked statistical steps of a result that has `earthx:normalize` but no numbers for them: they measure anew in the run (NM4-71).
+  anew: number[];
 }
 
 // Scenes fetched one by one because a layer or the full-resolution view names them
@@ -247,6 +303,9 @@ export interface JobEntry extends ShelfJob {
   // The bands of the raster in the order of the file, each with its statistics, for the colour scale of the layer
   // (NM4-43e PR 2); empty until the results are read, and for a result from before the bands were named.
   bands: ResultBand[];
+  // `earthx:normalize` of the result: the measuring steps that ran, with their numbers (NM4-71); `null` until the results are read,
+  // and for a result from before the property.
+  normalize: NormalizeRun[] | null;
 }
 
 // The jobs of one batch (M4-13c-4) are one entry of the manager (UI-01 §6.10).
@@ -286,6 +345,8 @@ interface ProcessingState {
   // One job, or one per pass or per scene (M4-13c-4); the choice in force is `OrderView.runAs`.
   runAs: RunAs;
   extraScenes: ExtraScenes | null;
+  // What the entry fixed (`Fixed`); `null` for an order of the selection.
+  fixed: Fixed | null;
   steps: DraftStep[];
   // The bands the person wants in the output, by name: results of `band_math` steps and bands of the data
   // (adr/0020 §9). `OrderView.output` is the same in the order of the file.
@@ -293,6 +354,9 @@ interface ProcessingState {
   // The reason a name field holds a name that breaks a rule, by step: only what the person has typed and not left yet or
   // a name a loaded recipe brought; never a name the steps and the output use (review of #250).
   nameProblems: Record<number, string>;
+  // What the route of NM4-19 said to the questions of the statistical `normalize` steps, by the text of the question (NM4-11b).
+  // In memory only: the text holds the AOI.
+  measures: ReadonlyMap<string, MeasureEntry>;
   // The one band of a dataset that has only one, while it is in the output because the panel put it there on opening and
   // the person has not touched the choice: the first result of a band math step takes its place (review of #250).
   lonelyAuto: string | null;
@@ -322,6 +386,11 @@ interface ProcessingState {
   // "Review" was asked for this draft: empty required fields show their hint.
   reviewAsked: boolean;
   estimate: { key: string; doc: EstimateDocument } | null;
+  // The order whose review says that bands are resampled to a common grid (NM4-65 part 7): the warning to confirm is open for it.
+  // "Continue" keeps the review, "Cancel" drops it, so that "Start job" stays shut.
+  resamplingAsking: string | null;
+  confirmResampling: () => void;
+  declineResampling: () => void;
   // The review of a batch: one outcome per job, for the batch it was asked for.
   batch: { key: string; parts: PartOutcome[] } | null;
   reviewing: boolean;
@@ -338,9 +407,21 @@ interface ProcessingState {
 
   openProcessing: (entry?: ProcessingEntry) => void;
   processLayer: (layerId: string) => Promise<void>;
+  // "Process" of a result layer (NM4-05b, adr/0019 option 2): the order of its job with the steps locked at the start, the output of
+  // the job as the output; what is added is run with them as one order.
+  extendResult: (layerId: string) => Promise<void>;
+  // "Process" at a layer that shows an index (NM4-14b): the panel opens on the index as the one band of an entity of its own. The view of
+  // scenes does not: its "Process" opens on the bands of the scenes, the index there is only a picture (Otto, 1.11.2026).
+  extendIndexLayer: (layerId: string) => Promise<void>;
   processFocusView: () => Promise<void>;
   setRangeDraft: (patch: Partial<PreviewRange>) => void;
   applyRange: () => void;
+  // "Apply" with percentiles in the fields (NM4-65 part 4): the values come from the measure of the preview, or, where it does not
+  // name those percentiles (the measure of a scene), from the tiler on the first scene of the preview. Resolves to the reason
+  // there is none, or `null` once the range is applied.
+  applyRangePercent: (percent: Percent) => Promise<string | null>;
+  // The same for a colour picture whose channels each have a unit (UI-04 part 5): the channels as the fields hold them.
+  applyRangeChannels: (channels: ChannelRange[]) => Promise<string | null>;
   // Back to the range the measure calls for (M4-19c), measured again where the measure failed.
   autoStretch: () => void;
   pinPreview: () => void;
@@ -396,6 +477,9 @@ interface ProcessingState {
   setShown: (name: string) => void;
   loadRecipe: (text: string) => Promise<LoadResult>;
   restoreOrder: (order: Order, view: PermalinkView, options?: { converted?: boolean }) => Promise<LoadResult>;
+  // Asks the questions not asked yet, a few at a time; the answers arrive in `measures`. A failed answer is asked again by `retryMeasures`.
+  ensureMeasures: (needs: readonly MeasureNeed[]) => void;
+  retryMeasures: () => void;
   reviewOrder: () => Promise<void>;
   startJob: () => Promise<void>;
   placeOrder: (
@@ -424,6 +508,16 @@ export type LoadResult = { ok: true; notes: string[]; converted?: boolean } | { 
 
 export interface OrderView {
   dataset: DatasetOption | undefined;
+  // What the entry fixed, and how many steps stand locked at the start (`ProcessingState.fixed`); 0 without.
+  fixed: Fixed | null;
+  locked: number;
+  // The area the order has, and its AOI: the panel's choice and the map's AOI, or what the entry fixed. A result's own area is
+  // an AOI where the job had one; `inner` is "AOI only" in the panel of a result, another AOI of which the part inside the result
+  // is the area, and `outside` says that none of it is.
+  area: Area;
+  aoi: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
+  inner: boolean;
+  outside: boolean;
   // `earthx:true_color` of the dataset: red, green, blue; `null` where it has no colour picture (NM4-64).
   trueColor: [string, string, string] | null;
   info: ProcessInfo | null;
@@ -447,10 +541,22 @@ export interface OrderView {
   selectable: string[];
   lonely: string | null;
   results: Array<{ key: number; name: string }>;
+  // The results the person's own steps add, and the bands of a result that stand in its place as bands of the data: the
+  // results of its locked steps that its output kept (`inherited`), and the stock it did not (`hidden`; a step may not read them,
+  // and they still count for a name). Both empty for an order of the selection (NM4-05b).
+  fresh: Array<{ key: number; name: string }>;
+  inherited: string[];
+  hidden: string[];
+  // The layer of the mask, which a result without it cannot mask by: there is no mask step to offer.
+  maskHidden: boolean;
   // The output in the order of the file; what the order names as `output.bands`.
   output: string[];
   // Why steps, "Review" and "Start job" wait: a name field holds a name that breaks a rule. `null` for none.
   nameBlock: string | null;
+  // Where the preview's measure of each statistical `normalize` step stands, by step index; `undefined` for the other steps. It holds
+  // nothing back: the job measures itself (NM4-71). It is for the shown order (the first job of a batch); `needs` are its questions.
+  measures: Array<MeasureStatus | undefined>;
+  needs: MeasureNeed[];
   // The assets the order reads or the preview needs: those of the output, of the expressions, of `normalize` and the layer
   // of a mask, in the item's order.
   assets: string[];
@@ -480,20 +586,33 @@ export interface OrderPart {
 // is the one costly part of the view, so the last answer is kept.
 let lastCandidates: { inputs: unknown[]; result: { items: StacItem[]; passes: Pass[] } } | null = null;
 
-function candidatesOf(app: SelectionState, area: Area): { items: StacItem[]; passes: Pass[] } {
-  const inputs = [app.items, app.selectedIds, app.groups, app.activeGroupIndex, app.aoi, area];
+// The scenes of the order and their passes: those the selection has, or, where the entry fixed them, those it named. The
+// area is the fixed one then, not the map's.
+function candidatesOf(app: SelectionState, area: Area, fixed: Fixed | null): { items: StacItem[]; passes: Pass[] } {
+  const inputs = [app.items, app.selectedIds, app.groups, app.activeGroupIndex, app.aoi, area, fixed];
   if (lastCandidates && lastCandidates.inputs.every((value, i) => value === inputs[i])) return lastCandidates.result;
-  const selected = selectionItemsFrom(app);
+  const named = fixed ? new Set(fixed.itemIds) : null;
+  const selected = named ? app.items.filter((item) => named.has(item.id)) : selectionItemsFrom(app);
   const items = area === 'scene' ? selected : isArea(app.aoi) ? candidateItems(selected, app.aoi) : [];
   const result = { items, passes: passesOf(items, app.groups) };
   lastCandidates = { inputs, result };
   return result;
 }
 
+// The scenes the panel can order: those ticked, or those the entry fixed.
+export function sceneCountOf(app: SelectionState, p: Pick<ProcessingState, 'fixed'>): number {
+  return p.fixed ? p.fixed.itemIds.length : ticksOfOpen(app).length;
+}
+
 export function bandMathExpressions(steps: readonly DraftStep[]): string[] {
   return steps
     .filter((step) => step.op === 'band_math' && typeof step.values.expression === 'string')
     .map((step) => step.values.expression as string);
+}
+
+// The bands the "Mask by value" steps look at: the order reads them whether or not they are in the output.
+function maskedBands(steps: readonly DraftStep[]): string[] {
+  return steps.flatMap((step) => (step.op === 'mask_values' && typeof step.values.band === 'string' && step.values.band !== '' ? [step.values.band] : []));
 }
 
 // What the panel reads from the selection; a selector on these keeps the
@@ -514,21 +633,70 @@ function nameBlockOf(
   steps: readonly DraftStep[],
   problems: Readonly<Record<number, string>>,
   data: readonly string[],
+  hidden: readonly string[],
+  locked: number,
 ): string | null {
   for (const [index, step] of steps.entries()) {
-    const reason = problems[step.key] ?? (isBandMath(step) ? readProblem(step, index, steps, data)?.message : undefined);
+    const reason =
+      problems[step.key] ?? (isBandMath(step) || step.op === 'mask_values'
+        ? readProblem(step, index, steps, data, index < locked ? [] : hidden)?.message
+        : undefined);
     if (reason !== undefined) return `Step ${index + 1}: ${reason}`;
   }
   return null;
 }
 
+// The AOI a preview is cut to: the map's, or where an entry fixed one its own. A crop's own AOI is the one "AOI only" takes, and
+// "Whole scene" cuts nothing (NM4-06, Otto 1.11.2026); on a result "AOI only" is the map's AOI inside the result's area.
+export function clipAoiOf(p: Pick<ProcessingState, 'fixed' | 'area'>, mapAoi: GeoJSON.Geometry | null): GeoJSON.Geometry | null {
+  if (!p.fixed) return mapAoi;
+  if (p.fixed.result) return p.area === 'aoi' ? mapAoi : p.fixed.aoi;
+  return p.area === 'aoi' ? p.fixed.aoi : null;
+}
+
+export const OUTSIDE_TEXT = 'The AOI does not meet the result.';
+
+// The part of an AOI that lies in the area of a result: its AOI, or the scenes' footprints. The last answer is kept, since the
+// clipping is the costly part of the view.
+let lastClip: { inputs: unknown[]; result: GeoJSON.Polygon | GeoJSON.MultiPolygon | null } | null = null;
+
+function clipToResult(aoi: GeoJSON.Polygon | GeoJSON.MultiPolygon, fixed: Fixed, items: readonly StacItem[]) {
+  const inputs = [aoi, fixed, items];
+  if (lastClip && lastClip.inputs.every((value, i) => value === inputs[i])) return lastClip.result;
+  const named = new Set(fixed.itemIds);
+  const outer = resultArea(fixed.aoi, items.filter((item) => named.has(item.id)));
+  const result = outer === null ? aoi : clipArea(aoi, outer);
+  lastClip = { inputs, result };
+  return result;
+}
+
+// The numbers the locked steps of a result keep, by step key.
+const keptOf = (p: Pick<ProcessingState, 'fixed'>): ReadonlyMap<number, Measured> | undefined =>
+  p.fixed?.result ? new Map(Object.entries(p.fixed.result.measured).map(([key, measured]) => [Number(key), measured])) : undefined;
+
+const anewOf = (p: Pick<ProcessingState, 'fixed'>): ReadonlySet<number> | undefined => (p.fixed?.result ? new Set(p.fixed.result.anew) : undefined);
+
 export function orderView(selection: SelectionState, p: ProcessingState): OrderView {
-  const app = withExtraScenes(selection, p.extraScenes);
+  const scenes = withExtraScenes(selection, p.extraScenes);
+  // What an entry fixed is the order's area, whatever the map holds; but in the panel of a result "AOI only" is the map's AOI, inside
+  // the result's own area (NM4-05b).
+  const inner = p.fixed?.result != null && p.area === 'aoi';
+  const drawn = isArea(scenes.aoi) ? scenes.aoi : null;
+  // Another AOI on a result covers part of it at most: only that part is the order's, and none of it where the AOI misses it.
+  const clipped = inner && drawn !== null ? clipToResult(drawn, p.fixed!, scenes.items) : drawn;
+  // A crop (an entry that fixed its scenes and an AOI, and no result) is one object whose area is chosen: "AOI only" is its own AOI, the
+  // one the crop was made with, "Whole scene" the whole of its scenes (NM4-06, Otto 1.11.2026).
+  const crop = p.fixed != null && p.fixed.result === null;
+  const aoi = crop ? (p.area === 'aoi' ? p.fixed!.aoi : null) : p.fixed && !inner ? p.fixed.aoi : (clipped ?? drawn);
+  const area: Area = crop ? p.area : p.fixed && !inner ? (p.fixed.aoi ? 'aoi' : 'scene') : p.area;
+  const app = aoi === scenes.aoi ? scenes : { ...scenes, aoi };
   const dataset = app.datasets.find((d) => d.id === app.datasetId);
   const description = app.datasetId ? p.descriptions[app.datasetId] : undefined;
   const info = description?.state === 'ready' ? description.info : null;
-  const { items: candidates, passes } = candidatesOf(app, p.area);
-  const runOptions = runChoices(passes, candidates);
+  const { items: candidates, passes } = candidatesOf(app, area, p.fixed);
+  // A result is one job. A crop is one object too, with "Run as" gone: its passes, if it has several, are the one in view or
+  // every one as a job of its own (NM4-05b, NM4-06).
+  const runOptions = p.fixed ? (p.fixed.result ? [] : passChoices(passes)) : runChoices(passes, candidates);
   const runAs = effectiveRunAs(p.runAs, runOptions);
   const chosen = passes.find((c) => c.key === p.passKey) ?? (passes.length === 1 ? passes[0] : null);
   const units = unitsOf(runAs, chosen, passes, candidates);
@@ -539,10 +707,26 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
   const maskLayer = maskLayerOf(dataset?.collection);
   const maskAsset = maskAssetOf(p.steps, maskLayer);
   const auxiliary = auxiliaryAssetsOf(dataset?.collection);
-  const dataBands = dataBandsOf(sources, auxiliary, maskLayer?.asset ?? null);
+  const stock = dataBandsOf(sources, auxiliary, maskLayer?.asset ?? null);
   const dataNames = sources.flatMap(bandNamesOf);
   const selectable = selectableAssets(sources, auxiliary, maskLayer?.asset ?? null);
   const results = resultsOf(p.steps);
+  // A result offers its output and nothing else (adr/0019, Nachtrag NM4-05b): the bands of the data and the results of its steps that the job
+  // kept stand as the bands of the data; the rest of the stock is hidden.
+  const from = p.fixed?.result ?? null;
+  const kept = new Set(from?.bands ?? []);
+  const lockedResults = from ? resultsOf(p.steps.slice(0, from.locked)) : [];
+  const inherited = lockedResults.filter((r) => kept.has(r.name)).map((r) => r.name);
+  const hidden = from
+    ? [...stock.map((b) => b.name).filter((name) => !kept.has(name)), ...lockedResults.map((r) => r.name).filter((name) => !kept.has(name))]
+    : [];
+  const dataBands: DataBand[] = from
+    ? [
+        ...inherited.map((name) => ({ name, asset: '', unit: null, auxiliary: false, layer: false })),
+        ...stock.filter((band) => kept.has(band.name)),
+      ]
+    : stock;
+  const onlyBand = dataBands.filter((b) => !b.auxiliary && !b.layer).map((b) => b.name);
   const output = outputBands(p.output, results.map((r) => r.name), dataBands.map((b) => b.name));
   const inOutput = new Set(output);
   // What the order reads: the bands of the output, those an expression or a `normalize` names, the layer of a mask.
@@ -550,6 +734,7 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
     ...output,
     ...bandMathExpressions(p.steps).flatMap((expression) => [...namesInExpression(expression)]),
     ...p.steps.flatMap((step) => (step.op === 'normalize' && typeof step.values.bands === 'string' ? namesIn(step.values.bands) : [])),
+    ...maskedBands(p.steps),
   ];
   const carried = new Set([...assetsCarrying(sources, named), ...(maskAsset ? [maskAsset] : [])]);
   const assets = sources.map((s) => s.asset).filter((asset) => carried.has(asset));
@@ -577,13 +762,16 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
   const foundUnder = (item: StacItem) =>
     extraIds.has(item.id) ? (p.extraScenes?.datasetId ?? null) : (selection.openSectionId ?? selection.datasetId);
   const foreign = dataset ? foreignScenes(dataset.id, pass?.items ?? [], foundUnder) : [];
-  const buildFor = (itemIds: string[]): BuiltOrder | null => {
+  const outside = inner && drawn !== null && clipped === null;
+  // Only the first order is the one the preview shows and measures for; the other orders of a batch measure in their own run.
+  const buildFor = (itemIds: string[], shown: boolean): BuiltOrder | null => {
     if (!info || !dataset) return null;
-    const result = buildOrder({ datasetId: dataset.id, itemIds, area: p.area, aoi: app.aoi, steps: p.steps, bands: output, data: dataNames, dtype, info });
-    return foreign.length === 0 ? result : { ...result, order: null, problems: [...result.problems, foreignReason(foreign)] };
+    const result = buildOrder({ datasetId: dataset.id, itemIds, area, aoi, steps: p.steps, bands: output, data: dataNames, hidden, locked: from?.locked ?? 0, dtype, info, measures: p.measures, kept: keptOf(p), anew: anewOf(p), shown });
+    if (outside) return { ...result, order: null, previewOrder: null, problems: [...result.problems, OUTSIDE_TEXT] };
+    return foreign.length === 0 ? result : { ...result, order: null, previewOrder: null, problems: [...result.problems, foreignReason(foreign)] };
   };
-  const builtParts = units.map((unit) => ({ unit, built: buildFor(unit.items.map((i) => i.id)) }));
-  const built = builtParts[0]?.built ?? buildFor([]);
+  const builtParts = units.map((unit, index) => ({ unit, built: buildFor(unit.items.map((i) => i.id), index === 0) }));
+  const built = builtParts[0]?.built ?? buildFor([], true);
   const parts: OrderPart[] = builtParts.map(({ unit, built: b }) => ({ unit, order: b?.order ?? null }));
   // The text of the order, or of all orders of a batch: one serialisation either way.
   const key =
@@ -592,6 +780,12 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
       : null;
   return {
     dataset,
+    fixed: p.fixed,
+    locked: p.fixed?.result?.locked ?? 0,
+    area,
+    aoi,
+    inner,
+    outside,
     info,
     candidates,
     passes,
@@ -604,10 +798,17 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
     dataNames,
     dataBands,
     selectable: dataBands.filter((b) => !b.auxiliary && !b.layer).map((b) => b.name),
-    lonely: lonelyBand(selectable, sources),
+    // A result with one band to choose from has it checked once, as a scene with one band does.
+    lonely: from ? (onlyBand.length === 1 ? onlyBand[0] : null) : lonelyBand(selectable, sources),
     results,
+    fresh: results.slice(lockedResults.length),
+    inherited,
+    hidden,
+    maskHidden: from !== null && maskLayer !== null && !kept.has(maskLayer.band),
     output,
-    nameBlock: nameBlockOf(p.steps, p.nameProblems, dataNames),
+    nameBlock: nameBlockOf(p.steps, p.nameProblems, dataNames, hidden, from?.locked ?? 0),
+    measures: p.steps.map((_, index) => built?.stepProblems[index]?.measure),
+    needs: built?.needs ?? [],
     assets,
     maskLayer,
     maskAsset: maskAsset ? { asset: maskAsset, inOrder: assets.includes(maskAsset) } : null,
@@ -624,8 +825,24 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
 // --- source layer and entries (M4-13c-2) ------------------------------------
 
 // Why a layer cannot be the start of an order, or `null`. A picture made from
-// scenes is no scene; the licence is the dataset's, as for the selection.
-export function layerProcessBlock(layer: MapLayer, datasets: readonly DatasetOption[]): string | null {
+// scenes is no scene; the licence is the dataset's, as for the selection. A result can be, where the browser keeps
+// the order of its job (adr/0019: F2); it needs no more than that, an expired result is run from the scenes all the same (F4).
+export const NO_COPY_TEXT = 'No copy of the original order is kept in this browser. Open its recipe.json instead.';
+export const PROCESS_RESULT_TEXT = 'Process further';
+export const EXPIRED_PROCESS_TEXT = 'Expired: runs everything again from the scenes.';
+
+export function layerProcessBlock(
+  layer: MapLayer,
+  datasets: readonly DatasetOption[],
+  jobs: ReadonlyArray<Pick<JobEntry, 'jobID' | 'order'>> = [],
+): string | null {
+  if (layer.derived === 'result') {
+    const order = jobs.find((j) => j.jobID === layer.result?.jobID)?.order;
+    if (!order) return NO_COPY_TEXT;
+    if (order.output.kind !== 'raster') return 'An export has no bands to process further.';
+    const input = order.inputs[0];
+    return processBlockReason(datasets.find((d) => d.id === input.dataset), input.groups.flat().length);
+  }
   if (layer.derived) return 'A result cannot be processed further yet.';
   const dataset = datasets.find((d) => d.id === layer.restore.datasetId);
   return processBlockReason(dataset, layer.restore.itemIds.length);
@@ -651,7 +868,7 @@ async function selectScenes(ids: readonly string[], whose: string): Promise<Extr
   let extra: ExtraScenes = { datasetId: app.datasetId, items: [], groups: [] };
   if (missing.length > 0) {
     const dataset = app.datasets.find((d) => d.id === app.datasetId);
-    if (!app.datasetId || !dataset?.viewable) return fail('Pick a dataset first.');
+    if (!app.datasetId || !dataset?.viewable) return fail('Choose a dataset first.');
     const datasetId = app.datasetId;
     const answers = await Promise.allSettled(missing.map((id) => fetchItem(datasetId, id)));
     if (generation !== entryGeneration) return null;
@@ -770,6 +987,12 @@ function dropReview(): { reviewing: false } | Record<string, never> {
   return { reviewing: false };
 }
 
+// Whether the step with this key stands in the part that came with a result and is locked (NM4-05b).
+function isLocked(s: Pick<ProcessingState, 'steps' | 'fixed'>, key: number): boolean {
+  const at = s.steps.findIndex((step) => step.key === key);
+  return at >= 0 && at < (s.fixed?.result?.locked ?? 0);
+}
+
 const RETIRED_TEXT = 'Dataset retired';
 
 // Only the order routes (estimate, placing a job) end here. A `410` of a result
@@ -833,6 +1056,23 @@ export function orderRetired(job: JobEntry, descriptions: Record<string, Descrip
   return description?.state === 'error' && description.retired !== undefined;
 }
 
+// The numbers the locked statistical steps of a result keep (NM4-71): those its job wrote to `earthx:normalize`, by the index of the
+// step; else those of the copy of its order, a step of version 3 that carried them and so measured nothing (and a result from
+// before NM4-71, which lacks the property). A step of version 4 without numbers for it or one of its bands measures anew.
+function lockedNumbers(draft: Draft, runs: readonly NormalizeRun[] | null): { measured: Record<number, Measured>; anew: number[] } {
+  const measured: Record<number, Measured> = {};
+  const anew: number[] = [];
+  draft.steps.forEach((step, index) => {
+    const method = step.values.method;
+    if (step.op !== 'normalize' || !isStatistical(method)) return;
+    const fromRuns = runs ? measuredFromRuns(runs, index, method as Method, namesIn(String(step.values.bands ?? ''))) : null;
+    const numbers = fromRuns ?? draft.measured[index];
+    if (numbers) measured[step.key] = numbers;
+    else if (runs) anew.push(step.key);
+  });
+  return { measured, anew };
+}
+
 // The names a draft uses that this selection has no band for: the notes of a loaded recipe. Where the data lists no
 // bands at all there is nothing to compare with.
 function missingBands(draft: { steps: readonly DraftStep[]; bands: readonly string[] }, view: OrderView): string[] {
@@ -842,6 +1082,7 @@ function missingBands(draft: { steps: readonly DraftStep[]; bands: readonly stri
     ...draft.bands,
     ...bandMathExpressions(draft.steps).flatMap((expression) => [...namesInExpression(expression)]),
     ...draft.steps.flatMap((step) => (step.op === 'normalize' && typeof step.values.bands === 'string' ? namesIn(step.values.bands) : [])),
+    ...maskedBands(draft.steps),
   ];
   return [...new Set(used.filter((name) => !known.has(name)))].map((name) => `Band ${name} is not in this selection.`);
 }
@@ -852,9 +1093,11 @@ const EMPTY_DRAFT = {
   area: 'scene' as Area,
   runAs: 'one' as RunAs,
   extraScenes: null as ExtraScenes | null,
+  fixed: null as Fixed | null,
   steps: [] as DraftStep[],
   output: [] as string[],
   nameProblems: {} as Record<number, string>,
+  measures: new Map<string, MeasureEntry>() as ReadonlyMap<string, MeasureEntry>,
   lonelyAuto: null as string | null,
   dtype: null,
   shown: null as string | null,
@@ -870,6 +1113,7 @@ const EMPTY_DRAFT = {
   rangeEdited: false,
   reviewAsked: false,
   estimate: null,
+  resamplingAsking: null as string | null,
   batch: null as { key: string; parts: PartOutcome[] } | null,
   reviewing: false,
   reviewError: null,
@@ -894,6 +1138,107 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         }
       });
     });
+  };
+
+  // The panel for a layer or a view: a crop merged and cut to its AOI is one object, so its scenes and area are fixed and
+  // "Run as" is gone (NM4-06); anything else starts from the scenes and "Whole scene". Where the crop holds several passes, the
+  // one in view (`preferred`, the scenes the view had chosen) is the one a job is for, the first one if it names none.
+  const openCrop = (fixed: Fixed | null, extraScenes: ExtraScenes, preferred: readonly string[]) => {
+    const scenes = extraScenes.items.length > 0 ? extraScenes : null;
+    const passes = fixed ? orderView(selectionState(useAppStore.getState()), { ...get(), fixed, area: 'aoi', extraScenes: scenes }).passes : [];
+    const inView = passes.find((pass) => pass.items.some((item) => preferred.includes(item.id))) ?? passes[0];
+    get().openProcessing({
+      area: fixed ? 'aoi' : 'scene',
+      extraScenes: scenes,
+      ...(fixed ? { fixed } : {}),
+      ...(inView && passes.length > 1 ? { passKey: inView.key } : {}),
+    });
+  };
+
+  // The order as the draft, on its scenes and area: what "Open in panel", a link and "process further" share (adr/0019). The
+  // dataset first (a new dataset drops the draft), then the scenes (fetched one by one where the results lack them), the area
+  // and the draft itself; `patch` adds what the caller keeps besides. Nothing changes unless the order is taken up as a whole.
+  const takeOrder = async (
+    order: Order,
+    whose: string,
+    patch: (draft: Draft, notes: string[]) => Partial<ProcessingState>,
+  ): Promise<{ ok: true; notes: string[]; draft: Draft } | { ok: false; reason: string }> => {
+    const datasetId = order.inputs[0].dataset;
+    const dataset = useAppStore.getState().datasets.find((d) => d.id === datasetId);
+    if (!dataset) {
+      // A dataset the catalog does not list: the server says whether it left (`410`) or never was.
+      const gone = await describe(datasetId);
+      if (gone?.state === 'error' && gone.retired) return { ok: false, reason: `${RETIRED_TEXT}: ${gone.retired}` };
+    }
+    const block = processBlockReason(dataset, order.inputs[0].groups.flat().length);
+    if (block) return { ok: false, reason: block };
+    const description = await describe(datasetId);
+    if (description?.state !== 'ready') return { ok: false, reason: 'The process description of the dataset could not be loaded.' };
+    const { info } = description;
+    const { draft, problems, notes } = draftFromOrder(order, info, () => nextStepKey++);
+    if (problems.length > 0) return { ok: false, reason: problems.slice(0, 3).join(' ') };
+    if (draft.dtype !== null && !info.dtypes.includes(draft.dtype)) notes.push(`Data type ${draft.dtype} is not offered for this dataset.`);
+    const dtype = draft.dtype !== null && info.dtypes.includes(draft.dtype) ? draft.dtype : null;
+    abortEstimate();
+    startGeneration += 1;
+    useAppStore.setState({ datasetId, selectedDatasetIds: [datasetId] });
+    const extraScenes = await selectScenes(draft.groups.flat(), whose);
+    if (!extraScenes) return { ok: false, reason: useAppStore.getState().error ?? 'The scenes could not be loaded.' };
+    if (draft.aoi) useAppStore.getState().setAoi(draft.aoi);
+    set({
+      ...EMPTY_DRAFT,
+      open: true,
+      detailJobID: null,
+      area: draft.aoi ? 'aoi' : 'scene',
+      extraScenes: extraScenes.items.length > 0 ? extraScenes : null,
+      steps: draft.steps,
+      output: draft.bands,
+      dtype,
+      ...patch(draft, notes),
+    });
+    return { ok: true, notes, draft };
+  };
+
+  // The panel on an index as an entity of its own (`extendIndexLayer`): the order the index would be a job with, taken up like the
+  // order of a result, its one step locked, its one band the whole stock.
+  const openIndexPanel = async (args: {
+    dataset: DatasetOption;
+    preset: IndexPreset;
+    groups: readonly (readonly string[])[];
+    aoi: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
+    title: string;
+    whose: string;
+  }) => {
+    const { dataset, preset, groups, aoi, title, whose } = args;
+    const block = processBlockReason(dataset, groups.flat().length);
+    if (block) return void useAppStore.setState({ error: block });
+    const description = await describe(dataset.id);
+    if (description?.state !== 'ready') return void useAppStore.setState({ error: 'The process description of the dataset could not be loaded.' });
+    const made = indexOrdersOfScenes({ datasetId: dataset.id, groups, aoi, preset, dataset, info: description.info });
+    if ('problem' in made) return void useAppStore.setState({ error: made.problem });
+    const taken = await takeOrder(made.orders[0], whose, (draft, notes) => ({
+      // As the panel of a result: "Whole scene" of it; "AOI only" is another AOI inside it. The band is in the list of the output, not
+      // checked, as the bands of a scene are.
+      area: 'scene',
+      output: [],
+      fixed: {
+        itemIds: draft.groups.flat(),
+        aoi: draft.aoi,
+        result: { title, groupId: null, locked: draft.steps.length, bands: [...draft.bands], notes, measured: {}, anew: [] },
+      },
+    }));
+    if (!taken.ok) useAppStore.setState({ error: taken.reason });
+    // The preview lies with the entry "Results", above the layer it is made from.
+    else useAppStore.getState().resultsToTop();
+  };
+
+  // `earthx:normalize` of the result of a job, or `null` where the result does not say (it has none, is gone, or the answer fails).
+  const readNormalize = async (jobID: string): Promise<NormalizeRun[] | null> => {
+    try {
+      return normalizeRuns((await fetchResults(jobID)).result?.properties?.['earthx:normalize']);
+    } catch {
+      return null;
+    }
   };
 
   const updateJob = (jobID: string, patch: Partial<JobEntry>) => {
@@ -937,6 +1282,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
           : null,
         statistics: resultStats(properties),
         bands: resultBands(properties, get().jobs.find((j) => j.jobID === jobID)?.order ?? null),
+        normalize: normalizeRuns(properties?.['earthx:normalize']),
       });
     } catch (error) {
       if (error instanceof HttpError && error.status === 410) {
@@ -1005,6 +1351,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       tiles: null,
       statistics: null,
       bands: [],
+      normalize: null,
     };
   };
 
@@ -1023,6 +1370,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       range: null,
       bandRanges: {},
       shownBand: null,
+      dates: null,
       order: null,
       deletedUntil: null,
       serverDeleted: false,
@@ -1030,6 +1378,8 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       superseded: false,
       ...job,
     };
+    // The day of the scenes is read while they are known: the layer of the result shows it long after the search has moved on.
+    if (job.dates === undefined && job.order) blank.dates = datesOfOrder(job.order);
     blank.titleDefault = job.titleDefault ?? job.title ?? null;
     const entry = jobEntry(blank, status, Date.now());
     set((s) => {
@@ -1042,13 +1392,30 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     follow(job.jobID);
   };
 
-  // "<operators> · <dataset> · <day>". Made before the first job is placed: the draft may change while they are.
+  // "<operators> · <dataset> · <day>". Made before the first job is placed: the draft may change while they are. A job that
+  // goes on from a result is called as that one was, and "→" the operators it adds (NM4-05b).
   const titleOf = (view: OrderView) => {
-    const operators = get().steps.map(
-      (step) => view.info?.operators.find((o) => o.op === step.op && o.opVersion === step.opVersion)?.title ?? step.op,
-    );
+    const { steps, fixed } = get();
+    const titleOfStep = (step: DraftStep) =>
+      view.info?.operators.find((o) => o.op === step.op && o.opVersion === step.opVersion)?.title ?? step.op;
+    const from = fixed?.result;
+    if (from?.title) {
+      const added = [...new Set(steps.slice(from.locked).map(titleOfStep))].join(', ');
+      const tail = added ? ` → ${added}` : '';
+      return `${from.title.slice(0, MAX_TITLE_LENGTH - tail.length)}${tail}`;
+    }
     const resultsGroupBy = view.dataset ? resultsGroupByOfOption(view.dataset) : null;
-    return jobTitle({ operators, dataset: view.dataset?.title ?? '', day: titleDay(view.pass?.items ?? [], resultsGroupBy) });
+    return jobTitle({
+      operators: steps.map(titleOfStep),
+      dataset: view.dataset?.title ?? '',
+      day: titleDay(view.pass?.items ?? [], resultsGroupBy),
+    });
+  };
+
+  // The group a job from a result lies in: that of the result, if it still exists.
+  const groupOf = (): { groupId: string } | Record<string, never> => {
+    const groupId = get().fixed?.result?.groupId;
+    return groupId && get().groups.some((g) => g.id === groupId) ? { groupId } : {};
   };
 
   // The jobs of the reviewed batch the server took in; one after the other, and a
@@ -1203,12 +1570,16 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     // Every entry sets the area: "Whole scene" unless the entry says otherwise
     // (Otto 19.10.2026).
     openProcessing: (entry = {}) => {
-      set({
+      set((s) => ({
+        // Steps that came with a result stay with it: another entry starts a draft of its own.
+        ...(s.fixed?.result && !entry.fixed?.result ? { ...EMPTY_DRAFT } : {}),
         open: true,
         detailJobID: null,
         area: entry.area ?? 'scene',
+        fixed: entry.fixed ?? null,
+        ...(entry.passKey !== undefined ? { passKey: entry.passKey } : {}),
         ...(entry.extraScenes !== undefined ? { extraScenes: entry.extraScenes } : {}),
-      });
+      }));
       const datasetId = useAppStore.getState().datasetId;
       if (datasetId) get().ensureDescription(datasetId);
     },
@@ -1219,28 +1590,70 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     // first, one by one.
     processLayer: async (layerId) => {
       const layer = useAppStore.getState().layers.find((l) => l.id === layerId);
+      if (layer?.derived === 'result') return get().extendResult(layerId);
+      if (layer && !layer.derived && indexOfLayer(layer, useAppStore.getState().datasets)) return get().extendIndexLayer(layerId);
       if (!layer || layerProcessBlock(layer, useAppStore.getState().datasets) !== null) return;
+      // The preview lies with the entry "Results": above the layer it is made from, so that it can be seen.
+      useAppStore.getState().resultsToTop();
       useAppStore.getState().activateLayerContext(layerId);
       const extraScenes = await selectScenes(layer.restore.itemIds, 'this layer');
       if (!extraScenes) return;
-      get().openProcessing({
-        area: layer.restore.cropToAoi && isArea(layer.restore.aoi) ? 'aoi' : 'scene',
-        extraScenes: extraScenes.items.length > 0 ? extraScenes : null,
-      });
+      // A layer merged and cut to its AOI is one object (NM4-06).
+      const { cropToAoi, aoi } = layer.restore;
+      openCrop(cropToAoi && isArea(aoi) ? { itemIds: layer.restore.itemIds, aoi, result: null } : null, extraScenes, layer.restore.selectedIds);
     },
     processFocusView: async () => {
       useAppStore.getState().activateViewContext();
       const app = useAppStore.getState();
-      const extraScenes = await selectScenes(Object.keys(app.downloaded), 'this view');
+      // A job has one dataset: the scenes of every image of the dataset that is shown (NM4-53).
+      const images = viewImagesOf(app);
+      const shown = shownImageOf(images, app.shownImage);
+      const ids = shown ? images.filter((image) => image.datasetId === shown.datasetId).flatMap((image) => image.ids) : Object.keys(app.downloaded);
+      const extraScenes = await selectScenes(ids, 'this view');
       if (!extraScenes) return;
-      get().openProcessing({
-        area: app.cropToAoi && isArea(app.viewAoi) ? 'aoi' : 'scene',
-        extraScenes: extraScenes.items.length > 0 ? extraScenes : null,
-      });
+      const { cropToAoi, viewAoi } = app;
+      // The pass in view is the one of the image the head of the view shows.
+      openCrop(cropToAoi && isArea(viewAoi) ? { itemIds: ids, aoi: viewAoi, result: null } : null, extraScenes, shown?.ids ?? []);
     },
-    setRangeDraft: (patch) => set((s) => ({ rangeDraft: { ...s.rangeDraft, ...patch }, rangeEdited: true })),
+    // Values typed by hand are no percentiles any more (NM4-65 part 4).
+    // The ranges of single channels are set with `channels`; a value typed in the shared fields is for all (UI-04 part 5).
+    setRangeDraft: (patch) =>
+      set((s) => ({
+        rangeDraft: { ...s.rangeDraft, ...patch, ...(('vmin' in patch || 'vmax' in patch) && !('channels' in patch) ? { percent: undefined, channels: undefined } : {}) },
+        rangeEdited: true,
+      })),
     applyRange: () => {
       if ('rescale' in rescaleOf(get().rangeDraft)) set((s) => ({ range: s.rangeDraft, rangeByHand: true, rangeEdited: false }));
+    },
+    confirmResampling: () => set({ resamplingAsking: null }),
+    declineResampling: () => set({ resamplingAsking: null, estimate: null, batch: null }),
+    applyRangePercent: async (percent) => {
+      const checked = checkPercent(percent);
+      if ('problem' in checked) return checked.problem;
+      const bands = await bandsAtPercent([checked.low, checked.high]);
+      if (typeof bands === 'string') return bands;
+      const range = rescaleAtPercent(bands, checked);
+      if (!range) return NO_RANGE_AT_PERCENT;
+      const look: PreviewRange = { ...get().rangeDraft, vmin: fieldNumber(range[0]), vmax: fieldNumber(range[1]), percent: { low: String(checked.low), high: String(checked.high) } };
+      set({ rangeDraft: look, range: look, rangeByHand: true, rangeEdited: false });
+      return null;
+    },
+    // The colour picture, each channel in its own unit: the ones typed in percentiles are taken at their own values.
+    applyRangeChannels: async (channels) => {
+      const pairs: { low: number; high: number }[] = [];
+      for (const [index, channel] of channels.entries()) {
+        const checked = channel.percent && checkPercent(channel.percent);
+        if (checked && 'problem' in checked) return `${CHANNEL_NAMES[index]}: ${checked.problem}`;
+        if (checked) pairs.push(checked);
+      }
+      const bands = await bandsAtPercent(pairs.flatMap(({ low, high }) => [low, high]));
+      if (typeof bands === 'string') return bands;
+      const made = channelsAtOwnPercent(bands, channels);
+      if (!made) return NO_RANGE_AT_PERCENT;
+      const { percent: _shared, ...rest } = get().rangeDraft;
+      const look: PreviewRange = { ...rest, vmin: made[0].vmin, vmax: made[0].vmax, channels: made };
+      set({ rangeDraft: look, range: look, rangeByHand: true, rangeEdited: false });
+      return null;
     },
     autoStretch: () => {
       failedMeasures.clear();
@@ -1261,7 +1674,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         name: `Preview · ${preview.title}`,
         derived: 'preview',
         ...(preview.perScene ? { note: SCENE_PREVIEW_HINT } : {}),
-        overlays: stackLikeView(previewOverlays(preview, app.aoi)),
+        overlays: stackLikeView(previewOverlays(preview, clipAoiOf(get(), app.aoi))),
         itemIds: [...new Set([...preview.mosaics.flatMap((mosaic) => mosaic.order), ...preview.scenes.map((scene) => scene.id)])],
         cropToAoi: preview.clipToAoi,
       });
@@ -1309,7 +1722,8 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       const colour = several ? colourPlacesOf(job.bands, trueColorOf(dataset?.collection)) : null;
       const place = startPlaceOf(job.bands, job.order, job.shownBand, colour);
       const stats = place === RGB ? colourStats(job.bands, colour!) : several ? job.bands[place].stats : job.statistics;
-      const render = resultRender(tileJson.dataType, get().range, stats, ownRangeOf(job, job.bands, place), place === RGB);
+      const preset = place === RGB ? null : presetOfResultBand(job.bands[several ? place : 0], indexPresetsOf(dataset?.collection));
+      const render = resultRender(tileJson.dataType, get().range, stats, ownRangeOf(job, job.bands, place), place === RGB, preset);
       const template = resultTileTemplate(href);
       useAppStore.getState().pinDerivedLayer({
         name: resultLayerName(job.title),
@@ -1322,7 +1736,9 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
           expired: false,
           dataType: tileJson.dataType,
           stats,
+          preset,
           ...(several ? { bands: job.bands, band: place, ...(colour ? { colour } : {}) } : {}),
+          ...typedOf(ownRangeOf(job, job.bands, place)),
         },
         overlays: [
           {
@@ -1343,6 +1759,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         ],
         itemIds: [],
         cropToAoi: false,
+        date: job.dates,
       });
     },
     // The order behind the details is read from the operators of the dataset, as `openProcessing` does.
@@ -1407,7 +1824,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     },
     choosePass: (passKey) => set({ passKey, reviewError: null, startError: null, ...dropReview() }),
     setArea: (area) => set({ area, reviewError: null, startError: null, ...dropReview() }),
-    setRunAs: (runAs) => set({ runAs, reviewError: null, startError: null, ...dropReview() }),
+    setRunAs: (runAs) => set((s) => (s.fixed?.result ? {} : { runAs, reviewError: null, startError: null, ...dropReview() })),
     addStep: (op, opVersion) => {
       const { datasetId, datasets } = useAppStore.getState();
       const description = datasetId ? get().descriptions[datasetId] : undefined;
@@ -1428,7 +1845,12 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         added = defaultName([...view.dataNames, ...steps.filter(isBandMath).map(resultNameOf)]);
         values.name = added;
       } else if (op === 'normalize' && 'bands' in values) {
-        values.bands = view.results.at(-1)?.name ?? '';
+        if ('method' in values) Object.assign(values, startValues());
+        values.bands = view.results.filter((result) => !view.hidden.includes(result.name)).at(-1)?.name ?? '';
+      } else if (op === 'mask_values') {
+        // The band to look at is proposed like that of a normalize step; "below" is where a threshold usually starts.
+        values.band = view.results.filter((result) => !view.hidden.includes(result.name)).at(-1)?.name ?? '';
+        values.condition = 'lt';
       }
       set((s) => ({
         steps: [...s.steps, { key, op, opVersion, values }],
@@ -1441,16 +1863,20 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       }));
     },
     updateStep: (key, name, value) =>
-      set((s) => ({
-        steps: s.steps.map((step) => (step.key === key ? { ...step, values: { ...step.values, [name]: value } } : step)),
-        reviewError: null,
-        startError: null,
-        ...dropReview(),
-      })),
+      set((s) =>
+        isLocked(s, key)
+          ? {}
+          : {
+              steps: s.steps.map((step) => (step.key === key ? { ...step, values: { ...step.values, [name]: value } } : step)),
+              reviewError: null,
+              startError: null,
+              ...dropReview(),
+            },
+      ),
     renameResult: (key, name) =>
       set((s) => {
         const step = s.steps.find((candidate) => candidate.key === key);
-        if (!step || !isBandMath(step)) return {};
+        if (!step || !isBandMath(step) || isLocked(s, key)) return {};
         const from = resultNameOf(step);
         const view = orderView(selectionState(useAppStore.getState()), s);
         const others = s.steps.filter((candidate) => candidate.key !== key && isBandMath(candidate)).map(resultNameOf);
@@ -1469,7 +1895,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       }),
     setNameProblem: (key, reason) =>
       set((s) => {
-        if ((s.nameProblems[key] ?? null) === reason) return {};
+        if ((s.nameProblems[key] ?? null) === reason || isLocked(s, key)) return {};
         const { [key]: _gone, ...rest } = s.nameProblems;
         return { nameProblems: reason === null ? rest : { ...rest, [key]: reason } };
       }),
@@ -1477,13 +1903,16 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       set((s) => {
         const index = s.steps.findIndex((step) => step.key === key);
         const target = index + direction;
-        if (index < 0 || target < 0 || target >= s.steps.length) return {};
+        const locked = s.fixed?.result?.locked ?? 0;
+        // A locked step stays where it is, and nothing is moved in front of it.
+        if (index < locked || target < locked || target >= s.steps.length) return {};
         const steps = [...s.steps];
         [steps[index], steps[target]] = [steps[target], steps[index]];
         return { steps, reviewError: null, startError: null, ...dropReview() };
       }),
     removeStep: (key) =>
       set((s) => {
+        if (isLocked(s, key)) return {};
         const step = s.steps.find((candidate) => candidate.key === key);
         const gone = step && isBandMath(step) ? resultNameOf(step) : null;
         const left = s.steps.filter((candidate) => candidate.key !== key);
@@ -1527,7 +1956,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       if (!read.ok) return { ok: false, reason: read.reason };
       const { order } = read;
       const datasetId = useAppStore.getState().datasetId;
-      if (!datasetId) return { ok: false, reason: 'Pick a dataset first.' };
+      if (!datasetId) return { ok: false, reason: 'Choose a dataset first.' };
       if (order.steps.length === 0) return { ok: false, reason: 'This recipe has no steps.' };
       const description = await describe(datasetId);
       if (description?.state !== 'ready') return { ok: false, reason: 'The process description of the dataset could not be loaded.' };
@@ -1538,7 +1967,9 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       const dtype = draft.dtype !== null && info.dtypes.includes(draft.dtype) ? draft.dtype : null;
       abortEstimate();
       startGeneration += 1;
-      set({ steps: draft.steps, output: draft.bands, nameProblems: {}, dtype, reviewAsked: false, estimate: null, batch: null, reviewing: false, reviewError: null, startError: null, batchStartRefusals: null });
+      // The steps of a result stay in front of the recipe's.
+      const kept = get().steps.slice(0, get().fixed?.result?.locked ?? 0);
+      set({ steps: [...kept, ...draft.steps], output: draft.bands, nameProblems: {}, dtype, reviewAsked: false, estimate: null, batch: null, reviewing: false, reviewError: null, startError: null, batchStartRefusals: null });
       const view = orderView(selectionState(useAppStore.getState()), get());
       return { ok: true, notes: [...notes, ...missingBands(draft, view)], ...(read.converted ? { converted: true } : {}) };
     },
@@ -1549,44 +1980,92 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     // without an AOI keeps the AOI on the map and covers the whole scenes. Nothing is changed unless
     // the order is taken up as a whole.
     restoreOrder: async (order, view, options) => {
-      const datasetId = order.inputs[0].dataset;
-      const dataset = useAppStore.getState().datasets.find((d) => d.id === datasetId);
-      if (!dataset) {
-        // A dataset the catalog does not list: the server says whether it left (`410`) or never was.
-        const gone = await describe(datasetId);
-        if (gone?.state === 'error' && gone.retired) return { ok: false, reason: `${RETIRED_TEXT}: ${gone.retired}` };
-      }
-      const block = processBlockReason(dataset, order.inputs[0].groups.flat().length);
-      if (block) return { ok: false, reason: block };
-      const description = await describe(datasetId);
-      if (description?.state !== 'ready') return { ok: false, reason: 'The process description of the dataset could not be loaded.' };
-      const { info } = description;
-      const { draft, problems, notes } = draftFromOrder(order, info, () => nextStepKey++);
-      if (problems.length > 0) return { ok: false, reason: problems.slice(0, 3).join(' ') };
-      if (draft.dtype !== null && !info.dtypes.includes(draft.dtype)) notes.push(`Data type ${draft.dtype} is not offered for this dataset.`);
-      const dtype = draft.dtype !== null && info.dtypes.includes(draft.dtype) ? draft.dtype : null;
-      abortEstimate();
-      startGeneration += 1;
-      useAppStore.setState({ datasetId, selectedDatasetIds: [datasetId] });
-      const extraScenes = await selectScenes(draft.groups.flat(), 'this link');
-      if (!extraScenes) return { ok: false, reason: useAppStore.getState().error ?? 'The scenes could not be loaded.' };
-      if (draft.aoi) useAppStore.getState().setAoi(draft.aoi);
-      const range = view.range && { vmin: String(view.range.vmin), vmax: String(view.range.vmax), colormap: view.range.colormap };
-      set({
-        ...EMPTY_DRAFT,
+      const range = view.range && previewRangeOf(view.range);
+      const taken = await takeOrder(order, 'this link', () => ({
         ...(range ? { range, rangeDraft: range, rangeByHand: true } : {}),
-        open: true,
-        detailJobID: null,
-        area: draft.aoi ? 'aoi' : 'scene',
-        extraScenes: extraScenes.items.length > 0 ? extraScenes : null,
-        steps: draft.steps,
-        output: draft.bands,
-        dtype,
-      });
+      }));
+      if (!taken.ok) return taken;
       useAppStore.setState({ flyToView: { center: view.center, zoom: view.zoom } });
       useAppStore.getState().showSharedLook(view);
-      return { ok: true, notes, ...(options?.converted ? { converted: true } : {}) };
+      return { ok: true, notes: taken.notes, ...(options?.converted ? { converted: true } : {}) };
     },
+
+    // "Process" of a result layer: the order of its job, the steps locked, on the scenes and the area of the job. The job's own output
+    // is the start of the output, and what the steps add comes in as always. A reason it cannot is told as an error.
+    extendResult: async (layerId) => {
+      const app = useAppStore.getState();
+      const layer = app.layers.find((l) => l.id === layerId);
+      const job = get().jobs.find((j) => j.jobID === layer?.result?.jobID);
+      const block = layer ? layerProcessBlock(layer, app.datasets, get().jobs) : 'This layer is gone.';
+      if (!layer?.result || block !== null || !job?.order) return void useAppStore.setState({ error: block ?? NO_COPY_TEXT });
+      const { order } = job;
+      const groupId = job.groupId ?? get().batches.find((b) => b.id === job.batchId)?.groupId ?? null;
+      // The numbers the result's job measured (NM4-71): in the properties of the result, which the panel has read when the job ended;
+      // asked for here where it has not. Only a chain with a statistical step needs them.
+      const measuring = order.steps.some((step) => step.op === 'normalize' && isStatistical(step.params.method));
+      const runs = measuring ? (job.normalize ?? (await readNormalize(job.jobID))) : null;
+      const taken = await takeOrder(order, 'this result', (draft, notes) => ({
+        // The area of the result is "Whole scene" here; "AOI only" is another AOI inside it. Its bands are in the list of the output,
+        // none of them checked, as the bands of a scene are (Otto, 2026-10-31).
+        area: 'scene',
+        output: [],
+        fixed: {
+          itemIds: draft.groups.flat(),
+          aoi: draft.aoi,
+          result: {
+            title: job.title ?? job.titleDefault ?? '',
+            groupId,
+            locked: draft.steps.length,
+            bands: [...draft.bands],
+            notes,
+            ...lockedNumbers(draft, runs),
+          },
+        },
+      }));
+      if (!taken.ok) useAppStore.setState({ error: taken.reason });
+      // The preview lies with the entry "Results": above the result, which it would else be hidden by.
+      else useAppStore.getState().resultsToTop();
+    },
+
+    // A layer that shows an index is processed as the index alone: the panel opens on the order that makes it (one Band math step,
+    // locked) with that band as the whole stock of bands, as it opens on the result of a job (`extendResult`), so that the raw bands of
+    // the scenes are not offered besides it (Otto, 1.11.2026). The first pass of the layer is the pass of the order.
+    extendIndexLayer: async (layerId) => {
+      const app = useAppStore.getState();
+      const layer = app.layers.find((l) => l.id === layerId);
+      const preset = layer && indexOfLayer(layer, app.datasets);
+      const dataset = app.datasets.find((d) => d.id === layer?.restore.datasetId);
+      if (!layer || !preset || !dataset) return;
+      const { restore } = layer;
+      useAppStore.getState().activateLayerContext(layerId);
+      await openIndexPanel({
+        dataset,
+        preset,
+        groups: restore.groupItemIds.length > 0 ? restore.groupItemIds : [restore.itemIds],
+        aoi: restore.cropToAoi && isArea(restore.aoi) ? restore.aoi : null,
+        title: layer.name,
+        whose: 'this layer',
+      });
+    },
+
+    ensureMeasures: (needs) => {
+      const fresh = needs.filter((need) => !get().measures.has(need.key) && !asking.has(need.key));
+      for (const need of fresh) asking.add(need.key);
+      void runPool(fresh, ESTIMATE_PARALLEL, new AbortController().signal, async (need) => {
+        let entry: MeasureEntry;
+        try {
+          entry = { state: 'ready', answer: await postAreaStatistics(need.datasetId, need.body) };
+        } catch (error) {
+          entry = { state: 'failed', reason: refusalMessage(error) };
+        }
+        asking.delete(need.key);
+        set((s) => {
+          const kept = [...s.measures].slice(-(NORMALIZE_MEASURES_KEPT - 1));
+          return { measures: new Map([...kept.filter(([key]) => key !== need.key), [need.key, entry]]) };
+        });
+      });
+    },
+    retryMeasures: () => set((s) => ({ measures: new Map([...s.measures].filter(([, entry]) => entry.state !== 'failed')) })),
 
     reviewOrder: async () => {
       const view = orderView(useAppStore.getState(), get());
@@ -1597,11 +2076,11 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       const controller = new AbortController();
       estimating = controller;
       const key = view.key;
-      set({ reviewing: true, reviewError: null, startError: null, batchStartRefusals: null, estimate: null, batch: null });
+      set({ reviewing: true, reviewError: null, startError: null, batchStartRefusals: null, estimate: null, batch: null, resamplingAsking: null });
       try {
         if (view.runAs === 'one') {
           const doc = await estimateOrder(order, controller.signal);
-          set({ estimate: { key, doc }, reviewing: false });
+          set({ estimate: { key, doc }, reviewing: false, resamplingAsking: resamplingParts(doc, null).length > 0 ? key : null });
           return;
         }
         // A batch: every job asks for its own estimate, a few at a time; one the
@@ -1617,7 +2096,8 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
           }
         });
         if (controller.signal.aborted) return;
-        set({ batch: { key, parts: outcomes.filter((o): o is PartOutcome => o !== undefined) }, reviewing: false });
+        const parts = outcomes.filter((o): o is PartOutcome => o !== undefined);
+        set({ batch: { key, parts }, reviewing: false, resamplingAsking: resamplingParts(null, parts).length > 0 ? key : null });
       } catch (error) {
         if (controller.signal.aborted || isAbort(error)) return;
         set({ reviewing: false, reviewError: refusalOf(error, key, get().steps) });
@@ -1642,11 +2122,12 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       set({ starting: true, startError: null });
       try {
         const status = await placeJob(order, {
-          aoiProvenance: aoiProvenanceFor(order, useAppStore.getState().aoi),
+          // A fixed area is the entry's, not the map's, and the map's provenance is not its own; another AOI on a result is the map's where nothing was cut off.
+          aoiProvenance: s.fixed && !(view.inner && view.aoi === useAppStore.getState().aoi) ? undefined : aoiProvenanceFor(order, useAppStore.getState().aoi),
         });
         // One estimate, one job: a second identical job needs its own review.
         if (mine === startGeneration) set({ starting: false, estimate: null });
-        addJob({ jobID: status.jobID, expires: status.expires, status, title, ...own, order: orderCopy(order) });
+        addJob({ jobID: status.jobID, expires: status.expires, status, title, ...own, ...groupOf(), order: orderCopy(order) });
       } catch (error) {
         if (mine === startGeneration) set({ starting: false, startError: refusalOf(error, view.key, s.steps) });
       }
@@ -1731,19 +2212,21 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       if (!layer || !info || !info.bands || !job || info.band === place) return;
       if (place === RGB ? !colour : !band) return;
       const stats = colour ? colourStats(info.bands, colour) : band!.stats;
-      const render = resultRender(info.dataType, get().range, stats, ownRangeOf(job, info.bands, place), colour !== undefined);
+      const dataset = app.datasets.find((d) => d.id === job.order?.inputs[0]?.dataset);
+      const preset = colour ? null : presetOfResultBand(band ?? undefined, indexPresetsOf(dataset?.collection));
+      const render = resultRender(info.dataType, get().range, stats, ownRangeOf(job, info.bands, place), colour !== undefined, preset);
       useAppStore.setState({
         layers: app.layers.map((l) => {
           if (l.id !== layerId || !l.result) return l;
           // What was applied and not saved belongs to the band it was applied to: it goes with it.
-          const { savedTileUrl: _unsaved, ...kept } = l.result;
+          const { savedTileUrl: _unsaved, savedPercent: _unsavedPercent, savedPercentChannels: _unsavedChannels, percent: _percent, percentChannels: _channels, ...kept } = l.result;
           let first = true;
           const overlays = l.overlays.map((o) => {
             if (o.kind !== 'raster' || !first) return o;
             first = false;
             return { ...o, tileUrl: colour ? colourTileUrl(o.tileUrl, colour, render) : bandTileUrl(o.tileUrl, place as number, render) };
           });
-          return { ...l, overlays, result: { ...kept, band: place, stats } };
+          return { ...l, overlays, result: { ...kept, band: place, stats, preset, ...typedOf(ownRangeOf(job, info.bands!, place)) } };
         }),
       });
     },
@@ -1832,6 +2315,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
             range: job.range,
             bandRanges: job.bandRanges,
             shownBand: job.shownBand,
+            dates: job.dates,
             order: job.order,
           },
           jobID,
@@ -1950,6 +2434,12 @@ function previewReadOf(view: OrderView, plan: Extract<PreviewPlan, { state: 'rea
   });
 }
 
+// The day of the scenes an order reads, among the scenes the page knows now (`layerDate.ts`); `null` where they are not known
+// or have no instant.
+function datesOfOrder(order: Order): string | null {
+  return datesOfIds(order.inputs.flatMap((input) => input.groups.flat()), knownItems(useAppStore.getState()));
+}
+
 // What a job keeps of the preview it was started from (NM4-43e PR 2): the band the map showed, which the layer of a result of
 // several bands starts with, and the range set by hand, which was set for that band. A result of one band keeps the
 // range as the job's; of several, as the range of that band by its name.
@@ -1957,13 +2447,41 @@ function startLook(
   view: OrderView,
   p: ProcessingState,
 ): { range: PreviewRange | null; bandRanges: Record<string, PreviewRange>; shownBand: string | null } {
-  const own = handRangeOf(p);
+  const own = handRangeOnShownBand(view, p);
   if (view.output.length <= 1) return { range: own, bandRanges: {}, shownBand: null };
-  const plan = planPreview(p.steps, view.info);
-  const band = plan.state === 'ready' ? previewReadOf(view, plan, p.shown).band : null;
+  const band = shownBandOf(view, p);
   // The colour picture has no colormap, whatever the fields of the range hold.
   const kept = own && band === RGB ? { ...own, colormap: '' } : own;
   return { range: null, bandRanges: kept && band !== null ? { [band]: kept } : {}, shownBand: band };
+}
+
+// The band the map of the preview shows, `null` where there is no preview.
+function shownBandOf(view: OrderView, p: Pick<ProcessingState, 'steps' | 'shown'>): string | null {
+  const plan = planPreview(p.steps, view.info, measuredNumbers(p.steps, view.built));
+  return plan.state === 'ready' ? previewReadOf(view, plan, p.shown).band : null;
+}
+
+// The range set by hand as it holds for the band the map shows: a range for each channel is for the colour picture, on any other
+// band only its first is (UI-04 part 5).
+export function handRangeOnShownBand(view: OrderView, p: ProcessingState): PreviewRange | null {
+  const own = handRangeOf(p);
+  return own?.channels && shownBandOf(view, p) !== RGB ? { ...withoutChannels(own) } : own;
+}
+
+// The statistics of the bands of the preview for the whole percents asked: the measure of this very preview where it names them all, else
+// the tiler's on the first scene. The reason as text where there is none.
+async function bandsAtPercent(percents: readonly number[]): Promise<Record<string, unknown>[] | string> {
+  const spec = wantedPreview();
+  const measure = useProcessingStore.getState().measure;
+  const asked = [...new Set(percents)].filter((n) => n !== 0 && n !== 100);
+  const named = measure && spec && measure.key === spec.measure && measure.raw && measure.raw.length > 0 && measure.raw.every((band) => asked.every((n) => typeof band[`percentile_${n}`] === 'number'));
+  if (named) return measure.raw!;
+  if (!spec) return 'There is no preview to take the percentiles from.';
+  try {
+    return Object.values(await fetchStatisticsAt(withPercentiles(spec.sceneMeasure, asked)));
+  } catch (error) {
+    return `Could not measure the percentiles: ${error instanceof Error ? error.message : String(error)}`;
+  }
 }
 
 function wantedPreview(limit?: number): PreviewSpec | null {
@@ -1972,13 +2490,13 @@ function wantedPreview(limit?: number): PreviewSpec | null {
   if (!p.open || p.detailJobID) return null;
   const app = useAppStore.getState();
   const view = orderView(app, p);
-  if (!view.info || !view.pass || processBlockReason(view.dataset, ticksOfOpen(app).length) !== null) return null;
-  const full = planPreview(p.steps, view.info);
+  if (!view.info || !view.pass || view.outside || processBlockReason(view.dataset, sceneCountOf(app, p)) !== null) return null;
+  const full = planPreview(p.steps, view.info, measuredNumbers(p.steps, view.built));
   if (full.state !== 'ready') return null;
   const plan = limit === undefined ? full : shortenPlan(full, limit);
   if (plan === null) return null;
   const jobs = view.parts.map((part) => part.unit.items);
-  const order = view.parts[0]?.order ?? null;
+  const order = view.built?.previewOrder ?? null;
   // The map reads what the band it shows needs, not all that the order reads (adr/0020 §4, §10).
   const read = previewReadOf(view, plan, p.shown);
   const args = {
@@ -1987,7 +2505,7 @@ function wantedPreview(limit?: number): PreviewSpec | null {
     assets: read.assets,
     info: view.info,
     plan,
-    area: p.area,
+    area: view.area,
     jobs,
     answers: mosaicAnswers,
     order,
@@ -1995,9 +2513,9 @@ function wantedPreview(limit?: number): PreviewSpec | null {
     bands: read.bands,
     named: read.choices.length > 1,
   };
-  const spec = previewSpec({ ...args, range: p.range });
+  const spec = previewSpec({ ...args, range: p.range, ...(view.inner && view.aoi ? { clipAoi: view.aoi } : {}) });
   if (spec === null) return null;
-  const range = drawnRange(p, spec.measure);
+  const range = drawnRange(p, spec);
   return range === p.range ? spec : previewSpec({ ...args, range });
 }
 
@@ -2009,10 +2527,11 @@ export function handRangeOf(p: Pick<ProcessingState, 'range' | 'rangeByHand'>): 
 }
 
 // The range the preview is drawn with (M4-19c): the one the user applied; else the one the measure of this very
-// preview calls for (the rule of a result's, `scaleOf`); else the start range.
-function drawnRange(p: Pick<ProcessingState, 'range' | 'rangeByHand' | 'measure'>, measureKey: string): PreviewRange {
+// preview calls for (the rule of a result's, `scaleOf`); else the start range. Between the two: the preset of an index (NM4-14, D2).
+function drawnRange(p: Pick<ProcessingState, 'range' | 'rangeByHand' | 'measure'>, spec: Pick<PreviewSpec, 'measure' | 'preset'>): PreviewRange {
   if (handRangeOf(p)) return p.range;
-  return (p.measure?.key === measureKey ? measuredRange(p.measure) : null) ?? p.range;
+  if (spec.preset) return spec.preset;
+  return (p.measure?.key === spec.measure ? measuredRange(p.measure) : null) ?? p.range;
 }
 
 // One measure per state of the preview, which is the steps over the first scene (over the AOI, for "AOI only" with
@@ -2020,6 +2539,9 @@ function drawnRange(p: Pick<ProcessingState, 'range' | 'rangeByHand' | 'measure'
 // expression asks for no measure per key, nor a refusal twice). The key of an area measure is the text of the order,
 // which carries the AOI: it lives here in memory and goes into no URL, storage, log or message.
 const MEASURES_KEPT = 50;
+// The same for the measures of the `normalize` steps (NM4-11b), and the questions on their way: `ensureMeasures` asks each once.
+const NORMALIZE_MEASURES_KEPT = 50;
+const asking = new Set<string>();
 const measures = new Map<string, PreviewMeasure>();
 const failedMeasures = new Set<string>();
 const measuring = new Map<string, Promise<PreviewMeasure | null>>();
@@ -2115,18 +2637,18 @@ function stillWanted(run: number, spec: PreviewSpec | null, limit: number | unde
 // (review of #250).
 function fieldsShow(spec: PreviewSpec | null): Partial<Pick<ProcessingState, 'rangeDraft'>> {
   const p = useProcessingStore.getState();
-  return spec && !p.rangeByHand && !p.rangeEdited ? { rangeDraft: drawnRange(p, spec.measure) } : {};
+  return spec && !p.rangeByHand && !p.rangeEdited ? { rangeDraft: drawnRange(p, spec) } : {};
 }
 
 // Takes a measure into the state: with it the unit, and — where no range of the user's holds — the range it calls
 // for in the fields, unless the user is typing in them. Without one the panel says so.
-function adoptMeasure(measure: PreviewMeasure | null): void {
+function adoptMeasure(measure: PreviewMeasure | null, preset: PreviewRange | null): void {
   const p = useProcessingStore.getState();
   const hand = p.rangeByHand;
   useProcessingStore.setState({
     measure,
-    rangeNote: hand || measure !== null ? null : NO_MEASURE,
-    ...(!hand && !p.rangeEdited ? { rangeDraft: measuredRange(measure) ?? p.range } : {}),
+    rangeNote: hand || measure !== null || preset !== null ? null : NO_MEASURE,
+    ...(!hand && !p.rangeEdited ? { rangeDraft: preset ?? measuredRange(measure) ?? p.range } : {}),
   });
 }
 
@@ -2236,7 +2758,7 @@ async function settleAs(run: number, wanted: PreviewSpec): Promise<void> {
     if (measure === TOO_LATE) {
       late = request;
     } else {
-      adoptMeasure(measure);
+      adoptMeasure(measure, spec.preset);
       spec = wantedPreview(limit);
     }
   }
@@ -2246,7 +2768,7 @@ async function settleAs(run: number, wanted: PreviewSpec): Promise<void> {
   if (late) {
     const measure = await late;
     if (!stillWanted(run, spec, limit)) return;
-    adoptMeasure(measure);
+    adoptMeasure(measure, spec?.preset ?? null);
     const again = wantedPreview(limit);
     if (again && again.key !== spec?.key) {
       const now = wantedPreview();
@@ -2257,7 +2779,7 @@ async function settleAs(run: number, wanted: PreviewSpec): Promise<void> {
   // With one, the measure is for the unit alone, and the picture does not wait for it.
   if (spec && hand) {
     const measure = await measureFor(spec);
-    if (stillWanted(run, spec, limit)) adoptMeasure(measure);
+    if (stillWanted(run, spec, limit)) adoptMeasure(measure, spec.preset);
   }
 }
 
@@ -2297,6 +2819,7 @@ useProcessingStore.subscribe((s, prev) => {
     s.area !== prev.area ||
     s.runAs !== prev.runAs ||
     s.steps !== prev.steps ||
+    s.measures !== prev.measures ||
     s.output !== prev.output ||
     s.dtype !== prev.dtype ||
     s.shown !== prev.shown ||

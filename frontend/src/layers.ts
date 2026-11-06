@@ -4,6 +4,8 @@
 
 import type { Coords4 } from './geoUtils';
 import type { RGB } from './processingBands';
+import type { Percent } from './percentRange';
+import type { PreviewRange } from './processingPreview';
 import type { ResultStats } from './render';
 import type { ResultBand } from './resultLayer';
 import type { AppliedRender, Bbox, DownloadedInfo } from './types';
@@ -76,6 +78,9 @@ export interface LayerRestore {
   // stays pinned, and a download has to name the dataset the pinned items
   // actually belong to, not whatever is picked in the panel right now.
   datasetId: string | null;
+  // Pinned with an index of "Quick processing" (UI-03d, Otto, 2.11.2026): the layer is that index and nothing else, no band and no
+  // other index to choose, and its download is the index as a job computes it (NM4-14b).
+  indexOnly?: true;
 }
 
 export interface MapLayer {
@@ -89,6 +94,14 @@ export interface MapLayer {
   // preview of the processing panel, or the result of a job. It cannot be
   // processed or downloaded as scenes (the buttons of the layer manager skip it).
   derived?: 'preview' | 'result';
+  // The acquisition day of the scenes the layer shows (UTC, YYYY-MM-DD), or the span "first – last" of several; absent for
+  // data without a time axis such as the elevation model (NM4-65 part 3). Set where the layer is made: it does not follow
+  // the search, which moves on.
+  date?: string;
+  // What the layer was saved with while its settings are open and something else is applied or its opacity is changed (NM4-54, Otto,
+  // 1.11.2026): "Save" makes the layer as it is drawn its own, closing the settings without it puts this back. Only the parts that changed
+  // are here.
+  saved?: { opacity: number; overlays?: LayerOverlay[]; downloaded?: LayerRestore['downloaded']; appliedRender?: LayerRestore['appliedRender'] };
   // A hint for the tooltip of the layer's name, never a line of text in its row: a preview drawn scene by scene where
   // the job is a mosaic says it may differ from the job (`processingPreview.ts::SCENE_PREVIEW_HINT`).
   note?: string;
@@ -120,6 +133,9 @@ export interface ResultLayerInfo {
   // The statistics of the AOI the default range comes from (M4-32); `null` for a result without them. Of a result of
   // several bands: those of the band the layer draws.
   stats: ResultStats | null;
+  // The range and colormap of the index preset the band the layer draws is (its expression is the preset's, NM4-14);
+  // `null` for any other band. Left out in a layer made before this was written.
+  preset?: PreviewRange | null;
   // The bands of a result of more than one, in the order of the file, and the place of the one the layer draws
   // (`bidx` is the place + 1); left out for a result of one band (NM4-43e PR 2).
   bands?: ResultBand[];
@@ -128,4 +144,15 @@ export interface ResultLayerInfo {
   // The places in the file of red, green and blue where the result has all three and the dataset a colour picture:
   // then "RGB" is one of the choices of the layer.
   colour?: [number, number, number];
+  // Set on a layer made from one band of another ("Add band as layer", NM4-65 part 2): it draws that band and no other, is
+  // named after it, and its look is its own — "Save" keeps it for this layer and leaves the layer it came from and the job alone.
+  own?: true;
+  // What the range the layer draws was typed as, where it was typed in percentiles (NM4-65 part 4); the tile URL holds the
+  // values they gave. While a look is applied and not saved, `savedPercent` is what the saved look was typed as.
+  percent?: Percent;
+  savedPercent?: Percent | null;
+  // The same for a colour picture whose channels are each typed in their own unit (UI-04 part 5): a pair for a channel typed in
+  // percentiles, `null` for one typed in values, red, green, blue. Where it is set, `percent` is not.
+  percentChannels?: (Percent | null)[];
+  savedPercentChannels?: (Percent | null)[] | null;
 }

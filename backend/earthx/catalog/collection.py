@@ -82,6 +82,8 @@ def _earthx_mask(config: DatasetConfig) -> dict[str, object] | None:
         "note": mask.note,
         "cloud_classes": sorted(mask.cloud_classes),
         "cloud_note": mask.cloud_note,
+        # DS-03c: the classes of the other shares measured in the AOI, by the property the search sends the range under.
+        "share_classes": {entry.measure.value: sorted(entry.classes) for entry in mask.share_classes},
     }
 
 
@@ -120,7 +122,8 @@ def _earthx_search_filters(config: DatasetConfig) -> list[dict[str, object]]:
     """The filters the search offers, in the words of STAC queryables (JSON Schema) where they have one (DS-02).
 
     ``kind``, ``unit``, ``group`` and ``within_aoi`` are ours: a queryable describes a property, the panel also needs how it
-    narrows it and whether its range may be applied to the cloud share inside the AOI (DS-03 plan §6.10).
+    narrows it and under which property its range is sent to be applied inside the AOI instead (DS-03 plan §6.10), or
+    ``None`` where the filter has no area.
     """
     published: list[dict[str, object]] = []
     for entry in config.search_filters:
@@ -130,7 +133,8 @@ def _earthx_search_filters(config: DatasetConfig) -> list[dict[str, object]]:
             "title": entry.title,
             "description": entry.description,
             "unit": entry.unit,
-            "within_aoi": entry.within_aoi,
+            "within_aoi": None if entry.within_aoi is None else entry.within_aoi.value,
+            "area_based": entry.area_based,
             "group": entry.group,
         }
         if entry.kind is FilterKind.RANGE:
@@ -141,6 +145,12 @@ def _earthx_search_filters(config: DatasetConfig) -> list[dict[str, object]]:
             fields.update(type="string", oneOf=[{"const": value.value, "title": value.label} for value in entry.values])
         published.append(fields)
     return published
+
+
+def _earthx_search_capabilities(config: DatasetConfig) -> dict[str, bool]:
+    """What the search can do besides filtering (DS-03c): judge per overpass, and the coverage of the AOI."""
+    capabilities = config.search_capabilities
+    return {"evaluate": capabilities.evaluate, "aoi_coverage": capabilities.aoi_coverage}
 
 
 def _earthx_license_flags(config: DatasetConfig) -> dict[str, object]:
@@ -223,6 +233,7 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
         "earthx:band_units": _earthx_band_units(config),
         "earthx:auxiliary_assets": _earthx_auxiliary_assets(config),
         "earthx:search_filters": _earthx_search_filters(config),
+        "earthx:search_capabilities": _earthx_search_capabilities(config),
         "earthx:index_presets": _earthx_index_presets(config),
         "earthx:true_color": _earthx_true_color(config),
         "earthx:license_flags": _earthx_license_flags(config),

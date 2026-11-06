@@ -26,6 +26,8 @@ export default defineConfig({
       '/collections': { target: tilerTarget, changeOrigin: true },
       // The tiles of a finished job (M4-13c-5): read by the tiler from the object store.
       '/results': { target: tilerTarget, changeOrigin: true },
+      // The colormaps the tiles take, for the field "Colormap" and its list (UI-03d).
+      '/colormaps': { target: tilerTarget, changeOrigin: true },
     },
   },
   test: {
@@ -34,8 +36,9 @@ export default defineConfig({
     // mounted inside a panel that slides away, and only rendering a component
     // catches that.
     include: ['src/**/*.test.{ts,tsx}'],
-    // `mapStyles.test.ts` reads `index.css` as text (`?raw`) to check the theme
-    // tokens; without this vitest hands every stylesheet back empty.
-    css: { include: [/index\.css/] },
+    // `mapStyles.test.ts` and `tokens.test.ts` read `index.css` and `tokens.css`
+    // as text (`?raw`) to check the theme tokens; without this vitest hands
+    // every stylesheet back empty.
+    css: { include: [/(?:index|tokens)\.css/] },
   },
 })

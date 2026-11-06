@@ -2,46 +2,98 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { placeTip, type Side } from '../tipPlacement';
+import { useAppStore } from '../store';
+import { currentTipLevel, tipShown } from '../tipLevel';
 
 // The one tooltip of the app (UI-01 §4). Every element with `data-tip` gets it on hover and on keyboard focus;
-// it is drawn in `.app` (where the theme tokens are) beside the panels, not in one, so no panel can cover or cut it off, and `Esc` closes it. It is hidden from screen
-// readers: the element carries the same text as its `aria-label`.
+// it is drawn in `.app` (where the theme tokens are) beside the panels, not in one, so no panel can cover or cut it off. It goes with the pointer
+// or the focus; `Esc` closes nothing (Otto, 2.11.2026).
+//
+// It is the one tooltip (UI-04 part 3a, Otto, 3.11.2026): no element carries a `title`. A screen reader gets the text as the description of
+// the element while the tip shows (`aria-describedby`), unless the element is named by the same text. A locked button (`disabled`) gets no
+// mouse events in every browser, so it is found by where the pointer is. Each tip has a step, `simple` or `advanced` (`tipLevel.ts`).
 
 const TIP = '[data-tip]';
+const TIP_ID = 'tip-layer';
+// A locked control: it takes no pointer events (`index.css`), so the pointer is looked for among them.
+const CONTROL = 'button, input, select, textarea, a[href], [tabindex]';
+const LOCKED = ':is(button, input, select, textarea):disabled[data-tip]';
 
-const tipOf = (target: EventTarget | null): HTMLElement | null =>
-  target instanceof Element ? (target.closest(TIP) as HTMLElement | null) : null;
+// The element with a tip that this step of the tooltips shows (`tipLevel.ts`): the nearest one up the tree, since a field inside a label
+// that has a tip of the other step still has the tip of the label.
+const shownTip = (element: Element | null): HTMLElement | null => {
+  const level = currentTipLevel();
+  for (let el = element?.closest(TIP) ?? null; el; el = el.parentElement?.closest(TIP) ?? null) if (tipShown(el, level)) return el as HTMLElement;
+  return null;
+};
+
+const lockedAt = (x: number, y: number): HTMLElement | null =>
+  [...document.querySelectorAll<HTMLElement>(LOCKED)].find((el) => {
+    const box = el.getBoundingClientRect();
+    return box.width > 0 && x >= box.left && x <= box.right && y >= box.top && y <= box.bottom;
+  }) ?? null;
+
+const tipOf = (target: EventTarget | null): HTMLElement | null => (target instanceof Element ? shownTip(target) : null);
 
 export default function TipLayer() {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [at, setAt] = useState<{ top: number; left: number } | null>(null);
   const box = useRef<HTMLDivElement>(null);
   const text = anchor?.getAttribute('data-tip') ?? '';
+  // A change of the step takes the tip that is shown away: it may be one the new step holds back.
+  const level = useAppStore((s) => s.tipLevel);
+  useEffect(() => setAnchor(null), [level]);
 
   useEffect(() => {
     const show = (event: Event) => {
       const el = tipOf(event.target);
       if (el) setAnchor(el);
     };
+    // The tip goes with the pointer or the focus, whatever step the tips are in by then: a tip that was shown stays no more because the step
+    // changed to "simple" while the pointer was on it (a control of the other step is no tip any more, but its tip is still drawn).
     const hide = (event: Event) => {
-      if (tipOf(event.target)) setAnchor(null);
+      const target = event.target;
+      const left = tipOf(target) !== null;
+      setAnchor((was) => (left || (was !== null && target instanceof Node && was.contains(target)) ? null : was));
     };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setAnchor(null);
+    // At most once a frame: the search over the locked controls is not for every move of a dragged map.
+    let frame = 0;
+    const move = (event: MouseEvent) => {
+      if (tipOf(event.target) || frame !== 0) return;
+      const { clientX, clientY } = event;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        const locked = lockedAt(clientX, clientY);
+        setAnchor((was) => locked ?? (was?.matches(LOCKED) ? null : was));
+      });
     };
+    document.addEventListener('mousemove', move);
     document.addEventListener('mouseover', show);
     document.addEventListener('focusin', show);
     document.addEventListener('mouseout', hide);
     document.addEventListener('focusout', hide);
-    document.addEventListener('keydown', onKey);
     return () => {
+      document.removeEventListener('mousemove', move);
+      cancelAnimationFrame(frame);
       document.removeEventListener('mouseover', show);
       document.removeEventListener('focusin', show);
       document.removeEventListener('mouseout', hide);
       document.removeEventListener('focusout', hide);
-      document.removeEventListener('keydown', onKey);
     };
   }, []);
+
+  // The description of the element while its tip shows.
+  useEffect(() => {
+    if (!anchor || anchor.getAttribute('aria-label') === text) return undefined;
+    // On the control itself; a label or a box with a tip describes the field in it.
+    const target = anchor.matches(CONTROL) ? anchor : (anchor.querySelector<HTMLElement>(CONTROL) ?? anchor);
+    const before = target.getAttribute('aria-describedby');
+    target.setAttribute('aria-describedby', [before, TIP_ID].filter(Boolean).join(' '));
+    return () => {
+      if (before === null) target.removeAttribute('aria-describedby');
+      else target.setAttribute('aria-describedby', before);
+    };
+  }, [anchor, text]);
 
   useLayoutEffect(() => {
     setAt(null);
@@ -69,7 +121,7 @@ export default function TipLayer() {
 
   if (!anchor) return null;
   return createPortal(
-    <div ref={box} className="tip-layer" aria-hidden="true" style={at ? { top: at.top, left: at.left } : { visibility: 'hidden' }}>
+    <div ref={box} id={TIP_ID} role="tooltip" className="tip-layer" style={at ? { top: at.top, left: at.left } : { visibility: 'hidden' }}>
       {text}
     </div>,
     anchor.closest('.app') ?? document.body,

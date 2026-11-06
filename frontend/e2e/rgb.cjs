@@ -1,9 +1,10 @@
 // Browser check of the choice "RGB" (NM4-64), in a real browser with made-up answers of the tiler:
 //   1. "Show" in the preview: with the three bands of the colour picture in the output "RGB" stands on top; it is the start
 //      only where the output has no Band math result; the preview asks the tiler for `band=red&band=green&band=blue`, measures
-//      the three together, draws them with one range and shows no colormap field; a single band has its colormap again.
+//      the three together, draws them with one range and a locked colormap "— none —"; a single band has its colormap again.
 //   2. "Band" in the row of a result layer: "RGB" stands on top, the layer starts with it where the result has no Band math
-//      result, draws three `bidx` with one range and no colormap, and the view of the layer shows no colormap field.
+//      result, draws three `bidx` with one range and no colormap, and the view of the layer has a row of fields for each channel
+//      (UI-03d) and keeps its field "Colormap" in its place, locked, "— none —", with the reason in its tooltip (NM4-54 part 5, UI-03a).
 // In the light and the dark theme, at a wide and a narrow window (360 px); a screenshot per case.
 //
 //   cd frontend && npm run dev &            # the dev server; no backend is needed, the answers are made up here
@@ -97,6 +98,21 @@ async function selectScene(page) {
   }, COLLECTION);
 }
 
+// Nothing in `root` overlaps another control or leaves it, and it does not scroll sideways.
+async function checkFit(page, root, what, problems) {
+  const layout = await page.evaluate((selector) => {
+    const box = (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
+    const el = document.querySelector(selector);
+    return { panel: box(el), scrolls: el.scrollWidth > el.clientWidth + 1, leaves: [...el.querySelectorAll('input, select, button')].map((e) => ({ what: e.tagName.toLowerCase() + ':' + (e.getAttribute('aria-label') || e.type), ...box(e) })).filter((c) => c.width > 0) };
+  }, root);
+  for (let i = 0; i < layout.leaves.length; i++) {
+    for (let j = i + 1; j < layout.leaves.length; j++) if (overlap(layout.leaves[i], layout.leaves[j])) problems.push(`${what}: ${layout.leaves[i].what} overlaps ${layout.leaves[j].what}`);
+    const leaf = layout.leaves[i];
+    if (leaf.x < layout.panel.x - 0.5 || leaf.x + leaf.width > layout.panel.x + layout.panel.width + 0.5) problems.push(`${what}: ${leaf.what} leaves its box (leaf ${Math.round(leaf.x)}–${Math.round(leaf.x + leaf.width)}, box ${Math.round(layout.panel.x)}–${Math.round(layout.panel.x + layout.panel.width)})`);
+  }
+  if (layout.scrolls) problems.push(`${what}: scrolls sideways`);
+}
+
 // 1. "Show" in the preview.
 async function checkShow(browser, theme, viewport) {
   const name = `show ${theme} ${viewport}`;
@@ -108,7 +124,9 @@ async function checkShow(browser, theme, viewport) {
   await page.locator('textarea[id$="-expression"]').fill('(nir - red) / (nir + red)');
   await page.waitForSelector('.pp-range input[type=number]', { timeout: 15000 });
   const fields = () => page.$$eval('.pp-range input[type=number]', (i) => i.map((x) => x.value));
-  const colormapField = () => page.$$eval('.pp-range .vc-field:not(.pp-show) select', (s) => s.length);
+  const colormapField = () => page.$$eval('.pp-range .vc-field:not(.pp-show) select:not(.vc-unit):not(:disabled)', (s) => s.length);
+  // At RGB the colormap keeps its place, locked on "— none —", as in the settings bar (UI-04 §7.2 row 27).
+  const lockedColormap = () => page.$$eval('.pp-range .vc-field:not(.pp-show) select:disabled:not(.vc-unit)', (s) => s.map((x) => x.textContent).join());
   const options = () => page.$$eval('.pp-show select option', (o) => o.map((x) => `${x.value}=${x.textContent}`));
   const tileBands = () =>
     page.evaluate(async () => {
@@ -139,8 +157,12 @@ async function checkShow(browser, theme, viewport) {
     .find((q) => q.getAll('band').join() === 'red,green,blue');
   if (!colourStatistics) problems.push('no statistics asked for red,green,blue');
   else if (colourStatistics.getAll('asset').join() !== 'red,green,blue') problems.push(`the picture reads ${colourStatistics.getAll('asset')}, not red,green,blue`);
-  if ((await fields()).join() !== '0.02,0.7') problems.push(`the fields of RGB say ${await fields()}, not 0.02,0.7`);
-  if ((await colormapField()) !== 0) problems.push('RGB shows a colormap field');
+  // A range and a unit for each channel (UI-04 part 5), each with the one range of the three bands to begin with.
+  if ((await fields()).join() !== '0.02,0.7,0.02,0.7,0.02,0.7') problems.push(`the fields of RGB say ${await fields()}, not 0.02,0.7 for each channel`);
+  const units = () => page.$$eval('.pp-range select.vc-unit', (s) => s.map((x) => `${x.getAttribute('aria-label')}=${x.value}`).join());
+  if ((await units()) !== 'red range unit=value,green range unit=value,blue range unit=value') problems.push(`the units of RGB say ${await units()}`);
+  if ((await colormapField()) !== 0) problems.push('RGB shows a colormap to choose');
+  if ((await lockedColormap()) !== '— none —') problems.push(`the colormap of RGB is not a locked "— none —": ${await lockedColormap()}`);
   const rgb = await tileBands();
   if (rgb.band.join() !== 'red,green,blue' || rgb.colormap !== null || rgb.rescale.join() !== '0.02,0.7') problems.push(`the tiles of RGB ask ${JSON.stringify(rgb)}`);
   const layout = await page.evaluate(() => {
@@ -158,6 +180,15 @@ async function checkShow(browser, theme, viewport) {
   if (layout.scrolls) problems.push('the panel scrolls sideways');
   fs.mkdirSync(OUT, { recursive: true });
   await page.locator('section[aria-label="Preview on the map"]').screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_rgb.png`) });
+
+  // A unit for each channel (UI-04 part 5): red and blue in percentiles fit as well, and the fields keep their pairs.
+  await page.selectOption('.pp-range select[aria-label="red range unit"]', 'percent');
+  await page.selectOption('.pp-range select[aria-label="blue range unit"]', 'percent');
+  if ((await fields()).join() !== '2,98,0.02,0.7,2,98') problems.push(`red and blue in percentiles say ${await fields()}`);
+  await checkFit(page, '.pp-range', 'the preview with percentiles', problems);
+  await page.locator('section[aria-label="Preview on the map"]').screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_rgb_percent.png`) });
+  await page.selectOption('.pp-range select[aria-label="red range unit"]', 'value');
+  await page.selectOption('.pp-range select[aria-label="blue range unit"]', 'value');
 
   // A single band has its colormap again.
   await page.selectOption('.pp-show select', 'red');
@@ -221,16 +252,20 @@ async function checkLayer(browser, theme, viewport) {
   if (rgb.getAll('bidx').join() !== '4,3,2') problems.push(`RGB is drawn with bidx ${rgb.getAll('bidx')}, not 4,3,2`);
   if (rgb.getAll('rescale').join() !== '0.02,0.7' || rgb.has('colormap_name')) problems.push(`RGB is drawn with ${rgb.getAll('rescale')}, ${rgb.get('colormap_name')}`);
 
-  // The view of the layer: no colormap, the range of the three bands.
+  // The view of the layer: the colormap field stays in its place, locked, the range of the three bands.
   await page.evaluate(async () => {
     const { useAppStore } = await import('/src/store.ts');
     useAppStore.setState({ resultViewLayerId: useAppStore.getState().layers[0].id });
   });
   await page.waitForSelector('.result-controls', { timeout: 5000 });
+  // A row of vmin and vmax for each channel (UI-03d), each with the one range of the three bands to begin with.
   const fields = await page.$$eval('.result-controls input[type=number]', (i) => i.map((x) => x.value));
-  if (fields.join() !== '0.02,0.7') problems.push(`the view of RGB says ${fields}, not 0.02,0.7`);
-  const colormaps = await page.$$eval('.result-controls select', (s) => s.length);
-  if (colormaps !== 0) problems.push('the view of RGB shows a colormap field');
+  if (fields.join() !== '0.02,0.7,0.02,0.7,0.02,0.7') problems.push(`the view of RGB says ${fields}, not 0.02,0.7 for each channel`);
+  // A field that does not apply to the choice keeps its place and is locked with its reason (NM4-54 part 5); RGB has no colormap.
+  const colormaps = await page.$$eval('.result-controls .vc-field', (fields) => fields
+    .filter((f) => f.querySelector('span')?.textContent === 'Colormap')
+    .map((f) => ({ locked: f.querySelector('select')?.disabled ?? null, title: f.getAttribute('data-tip'), shown: f.querySelector('select')?.selectedOptions[0]?.textContent ?? null })));
+  if (colormaps.length !== 1 || colormaps[0].locked !== true || !colormaps[0].title || colormaps[0].shown !== '— none —') problems.push(`the colormap of RGB is not one locked field "— none —" with its reason (${JSON.stringify(colormaps)})`);
   const view = await page.evaluate(() => {
     const box = (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
     const root = document.querySelector('.result-controls');
@@ -243,6 +278,21 @@ async function checkLayer(browser, theme, viewport) {
   }
   if (view.theme !== THEMES[theme]) problems.push(`the app shows the theme ${view.theme}`);
   if (view.scrolls) problems.push('the view scrolls sideways');
+  // A unit for each channel (UI-04 part 5): green in percentiles shows its pair, the others keep their values, and all of it fits.
+  await page.selectOption('.result-controls select[aria-label="green range unit"]', 'percent');
+  const mixed = await page.$$eval('.result-controls input[type=number]', (i) => i.map((x) => x.value));
+  if (mixed.join() !== '0.02,0.7,2,98,0.02,0.7') problems.push(`green in percentiles says ${mixed}`);
+  await checkFit(page, '.result-controls', 'the view with percentiles', problems);
+  await page.screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_view_percent.png`) });
+  await page.selectOption('.result-controls select[aria-label="green range unit"]', 'value');
+  // A channel that cannot be drawn locks "Apply" and "Save" with its letter and reason, and its fields are marked (Otto, 4.11.2026).
+  await page.fill('.result-controls input[type=number] >> nth=3', '0.01');
+  const locked = await page.$$eval('.result-controls .vc-apply, .result-controls .vc-save', (b) => b.map((x) => `${x.getAttribute('aria-disabled')}|${x.getAttribute('data-tip')}`));
+  if (locked.join() !== 'true|G: vmin must be below vmax,true|G: vmin must be below vmax') problems.push(`a wrong channel says ${locked}`);
+  const marked = await page.$$eval('.result-controls input[aria-invalid=true]', (i) => i.length);
+  if (marked !== 2) problems.push(`${marked} fields are marked, not the 2 of green`);
+  await checkFit(page, '.result-controls', 'the view with a wrong channel', problems);
+  await page.screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_view_wrong.png`) });
   fs.mkdirSync(OUT, { recursive: true });
   await page.waitForTimeout(700);
   await page.screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_view.png`) });

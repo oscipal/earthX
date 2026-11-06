@@ -5,10 +5,11 @@
 // text shown before either one starts (adr/0003 §11.2: the notice belongs on
 // the download, not only in a footer).
 
-import type { ExportJobHint, ResolutionFactor } from './api';
+import type { ExportJobHint } from './api';
 import type { DatasetOption } from './datasets';
 import { defaultRenderOf } from './datasets';
 import type { MapLayer } from './layers';
+import { isJobId, type ExportLayout } from './processing';
 import type { LicenseFlags, StacItem } from './types';
 
 // `groups` (M3-17, replacing the flat `items` list): item ids per group, in
@@ -21,6 +22,8 @@ export interface DownloadRequestInfo {
   groups: string[][];
   assets: string[];
   aoi: GeoJSON.Geometry;
+  // How the chosen bands are laid out in files (NM4-75); left out for a dataset whose items list no bands to choose from.
+  layout?: ExportLayout;
 }
 
 // Which of the three P19 outcomes a download follows (M3-17 plan §4): the AOI
@@ -204,7 +207,8 @@ export function downloadRequestFor(layer: MapLayer, datasets: DatasetOption[]): 
   if (restore.focusMode) {
     const entries = Object.entries(restore.downloaded).filter(([id]) => restore.itemIds.includes(id));
     if (entries.length === 0) return null;
-    const assets = [...new Set(entries.map(([, info]) => info.asset))];
+    // The raw bands are the assets the scenes were opened with, not the band the view draws now (NM4-45, Otto, 1.11.2026).
+    const assets = [...new Set(entries.map(([, info]) => info.baseAsset ?? info.asset))];
     return { datasetId: restore.datasetId, groups, assets, aoi: restore.aoi };
   }
   const dataset = datasets.find((d) => d.id === restore.datasetId);
@@ -218,6 +222,7 @@ export function downloadRequestFor(layer: MapLayer, datasets: DatasetOption[]): 
 // a quicklook-only layer reads like browsing the results list, `null`.
 export function decideDownloadOutcomeForLayer(layer: MapLayer, datasets: DatasetOption[]): DownloadOutcomeKind {
   const { restore } = layer;
+  // A layer that shows an index is downloaded like any other, as its raw bands; the index is offered besides (Otto, 1.11.2026, `indexOfferedFor`).
   const dataset = datasets.find((d) => d.id === restore.datasetId);
   return decideDownloadOutcome({
     cropToAoi: restore.focusMode ? restore.cropToAoi : null,
@@ -329,37 +334,6 @@ export function termsNoticeText(flags: LicenseFlags | null | undefined, language
   return flags?.terms_url ? text.replaceAll('{terms_url}', flags.terms_url) : text;
 }
 
-// The asset's own ground sample distance, in metres/pixel, the same order
-// `access/download.py::_asset_gsd` tries on the backend: the asset's own
-// `gsd`, then its pixel size read off `proj:transform` (a plain STAC item
-// carries no `raster:bands` the frontend already parses). `null` when
-// neither is present — the resolution dialog then shows the factor alone,
-// never a guessed number (F10c, M3-18 §10).
-function assetGsdMeters(item: StacItem, asset: string): number | null {
-  const stacAsset = item.assets[asset];
-  if (!stacAsset) return null;
-  if (typeof stacAsset.gsd === 'number' && stacAsset.gsd > 0) return stacAsset.gsd;
-  const transform = stacAsset['proj:transform'];
-  if (Array.isArray(transform) && typeof transform[0] === 'number' && transform[0] > 0) {
-    return transform[0];
-  }
-  return null;
-}
-
-// The label the download dialog shows for one resolution choice (F10c,
-// M3-18 §10) — "Native (10 m)"/"2× (20 m)" where a metre figure can be read
-// off any of the given items, "Native"/"2×" otherwise. The finest (smallest)
-// gsd among the items is used, matching the backend's own worst-case pixel
-// estimate (`plan_outputs`) — never a number that could understate the result.
-export function resolutionOptionLabel(items: StacItem[], asset: string, factor: ResolutionFactor): string {
-  const label = factor === 1 ? 'Native' : `${factor}×`;
-  const gsds = items.map((item) => assetGsdMeters(item, asset)).filter((gsd): gsd is number => gsd !== null);
-  if (gsds.length === 0) return label;
-  const meters = Math.min(...gsds) * factor;
-  const rounded = meters >= 10 ? Math.round(meters) : Math.round(meters * 10) / 10;
-  return `${label} (${rounded} m)`;
-}
-
 // Download tier follows the onboarding checklist (KLAERUNGEN B11): a crop
 // hands out the source's pixels, so it needs the same licence tier as an
 // operator, a job or the datacube. The backend enforces this too (403) — this
@@ -367,4 +341,11 @@ export function resolutionOptionLabel(items: StacItem[], asset: string, factor: 
 // user finding out after a failed request.
 export function canExportLicense(flags: LicenseFlags | null | undefined): boolean {
   return flags?.tier === 'processing';
+}
+
+// What a layer offers to download: the ZIP of its result (not once the results are gone), the dialog of the AOI crop and the original
+// files for a layer of scenes, or nothing. The row of the layer manager and the settings bar ask the same.
+export function layerDownloadKind(layer: MapLayer): 'zip' | 'dialog' | null {
+  if (layer.result) return layer.result.expired || layer.result.deleted === true || !isJobId(layer.result.jobID) ? null : 'zip';
+  return !layer.derived && layer.restore.itemIds.length > 0 ? 'dialog' : null;
 }

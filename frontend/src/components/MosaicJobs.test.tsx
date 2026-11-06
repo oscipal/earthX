@@ -18,6 +18,7 @@ import { useAppStore } from '../store';
 import type { Collection, StacItem } from '../types';
 import DownloadDialog from './DownloadDialog';
 import { TOO_MANY_SCENES } from './MosaicJobs';
+import { tipOf } from '../fixtures/tips';
 
 // What the page would do to download the files; here nothing, and the source is not asked.
 vi.mock('../originalsClient', () => ({
@@ -189,15 +190,18 @@ const placed = () => fetchMock.mock.calls.filter(([u, init]) => String(u).endsWi
 const linksShown = () => [...container.querySelectorAll('.dialog-original-links a')].map((a) => a.textContent).sort();
 
 describe('beside the download (Zusatz 1a, NM4-33)', () => {
-  it('starts the download without a question, and offers the merge next to it without starting a job', async () => {
+  it('starts the download with "Download", and offers the merge beside it without starting a job', async () => {
     open();
     await show();
     expect(container.querySelector('[role="group"]')).toBeNull();
+    expect(container.querySelectorAll('.dialog-original-row')).toHaveLength(0);
+    expect(buttons(MERGED)).toHaveLength(1);
+    await press('Download');
     expect(container.querySelectorAll('.dialog-original-row')).toHaveLength(4);
     expect(buttons(MERGED)).toHaveLength(1);
     expect(container.querySelector('.dialog-mosaics')).toBeNull();
     expect(placed()).toHaveLength(0);
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls.filter(([url]) => !String(url).endsWith('/bands'))).toEqual([]);
   });
 
   it('does not offer the merge for one scene', async () => {
@@ -285,7 +289,9 @@ describe('beside the download (Zusatz 1a, NM4-33)', () => {
 
   it('opening the merge does not stop the download', async () => {
     open();
-    await showMerged();
+    await show();
+    await press('Download');
+    await press(MERGED);
     expect(container.querySelectorAll('.dialog-original-row')).toHaveLength(4);
     expect(container.textContent).not.toContain('Cancelled');
   });
@@ -310,8 +316,9 @@ describe('beside the download (Zusatz 1a, NM4-33)', () => {
     open('catalog');
     await show();
     expect(buttons(MERGED)[0].disabled).toBe(true);
-    expect(buttons(MERGED)[0].title).toContain('licence does not permit processing');
+    expect(tipOf(buttons(MERGED)[0])).toContain('licence does not permit processing');
     expect(container.textContent).not.toContain('Contains modified');
+    await press('Download');
     expect(container.querySelectorAll('.dialog-original-row')).toHaveLength(4);
     expect(linksShown()).toHaveLength(4);
     expect(placed()).toHaveLength(0);
@@ -446,7 +453,7 @@ describe('Merged per pass (job)', () => {
     useAppStore.setState({ downloadPasses: [{ label: '2026-07-03', items: many }] });
     await showMerged();
     expect(buttons(START)[0].disabled).toBe(true);
-    expect(buttons(START)[0].title).toBe(TOO_MANY_SCENES);
+    expect(tipOf(buttons(START)[0])).toBe(TOO_MANY_SCENES);
     expect(container.querySelector('.dialog-mosaics')?.textContent).toContain(TOO_MANY_SCENES);
     expect(placed()).toHaveLength(0);
   });

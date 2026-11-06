@@ -49,6 +49,7 @@ from titiler.core.models.responses import Statistics
 from titiler.core.resources.enums import ImageType
 from titiler.core.resources.responses import JSONResponse
 
+from earthx.access.colormaps import COLORMAP_PARAMS
 from earthx.readers.cog import AssetPath, CogReader
 from earthx.readers.zarr_reader import ZarrAsset, ZarrReader
 
@@ -144,6 +145,9 @@ class EarthxTilerFactory(TilerFactory):
     """TiTiler's tiler factory with our reader, our route set and a cached statistic."""
 
     reader: Callable[..., BaseReader] = open_asset
+
+    # The colormaps of `colormaps.py`: rio-tiler's and the ones added, with every one reversed (UI-03d).
+    colormap_dependency: Callable[..., Any] = COLORMAP_PARAMS
 
     # Every route checks `tilesize` first (NM4-29). A field of the factory, not an argument of `include_router`, so
     # that a factory built in a test carries it too.

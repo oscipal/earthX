@@ -7,17 +7,20 @@ import type { GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl';
 import { clipTileUrl } from './aoiClip';
 import { buildTileTemplate } from './api';
 import type { CoverageCell } from './api';
+import { rescaleParams } from './channels';
 import { cellsToFeatureCollection, coverageFillColorExpression } from './coverage';
 import { preferredGeoreferencedAsset, quicklookPlan } from './datasets';
 import type { DatasetOption } from './datasets';
-import { asFeatureCollection, footprintOf, quicklookCoords } from './geoUtils';
+import { asFeatureCollection, footprintOf, quicklookAoiPixelRings, quicklookCoords } from './geoUtils';
 import type { Coords4 } from './geoUtils';
 import { groupOutlineFeatures } from './groupOutline';
 import type { LayerOverlay, MapLayer } from './layers';
+import { indexRasterOf, viewIndexOf } from './viewIndex';
 import { underlayOf } from './underlay';
 import type { ImageOverlay } from './underlay';
-import { passesOf, stackLikeView, viewOfPass } from './mosaic';
-import type { Mosaics, PlannedRaster } from './mosaic';
+import { inStackOrder, passesOf, stackLikeView, viewOfPass } from './mosaic';
+import type { Mosaics, PlannedRaster, SceneEntry } from './mosaic';
+import { tileSizeOf } from './tileSize';
 import type { AppliedRender, DownloadedInfo, StacItem, TimeStepGroup } from './types';
 
 const AOI_SRC = 'aoi-src';
@@ -41,6 +44,8 @@ const PREVIEW_LYR = 'preview-lyr-';
 // because a pinned layer that is switched on draws the same (`settleViewTwin`).
 const viewPictures = new Map<string, string>();
 const viewTwinsHidden = new Set<string>();
+// The opacity of the view of the search (Otto, 2.11.2026): every picture of the view is laid and shown with it.
+let viewOpacity = 1;
 
 // Bumped on each syncMosaic so slow async quicklook processing can tell whether
 // it has been superseded before it touches the map.
@@ -58,7 +63,8 @@ const OVERLAYS_BASE = 'overlays-base';
 // to top; in a tier the rank decides (the order of the ticks, the last ticked on top), and of equal rank the layer that
 // was placed later. Every layer is placed at the top and given its key; `restackAll` then lays all of them out from the
 // state alone, whatever was on the map when a picture arrived.
-const TIERS = ['view', 'otherTicked', 'openRest', 'openTicked', 'preview', 'outline'] as const;
+// The view and the live preview lie over the quicklooks of the search (Otto, 2.11.2026; replaces the view at the bottom of 30.10.2026).
+const TIERS = ['otherTicked', 'openRest', 'openTicked', 'view', 'preview', 'outline'] as const;
 type Tier = (typeof TIERS)[number];
 interface ResultsKey {
   tier: number;
@@ -86,7 +92,17 @@ function restackAll(map: MapLibreMap): void {
   if (typeof map.getLayersOrder !== 'function') return;
   const pinned = wantedOverlays.filter((w) => isPlaced(map, w));
   const results = [...resultsKeys].filter(([id]) => map.getLayer(id)).sort(byKey).map(([id]) => id);
-  const want = [...pinned.filter((w) => !w.above).map((w) => w.lyrId), ...results, ...pinned.filter((w) => w.above).map((w) => w.lyrId)];
+  // "Flip through layers" (NM4-65 part 9): the chosen layer lies over every other picture of the app, only the outlines of the
+  // results (their last tier) stay over it, as they do over every layer. The list is not touched: it is this order that changes.
+  const flipped = pinned.filter((w) => w.flip).map((w) => w.lyrId);
+  const outlines = new Set(flipped.length === 0 ? [] : [...resultsKeys].filter(([, key]) => key.tier >= TIERS.indexOf('outline')).map(([id]) => id));
+  const want = [
+    ...pinned.filter((w) => !w.above && !w.flip).map((w) => w.lyrId),
+    ...results.filter((id) => !outlines.has(id)),
+    ...pinned.filter((w) => w.above && !w.flip).map((w) => w.lyrId),
+    ...flipped,
+    ...results.filter((id) => outlines.has(id)),
+  ];
   const order = map.getLayersOrder();
   const top = rastersTop(map);
   let above = top;
@@ -255,7 +271,7 @@ function placeRaster(
   map.addSource(srcId, {
     type: 'raster',
     tiles: [tileUrl],
-    tileSize: 256,
+    tileSize: tileSizeOf(tileUrl),
     bounds,
     minzoom: zoom.minZoom,
     maxzoom: zoom.maxZoom,
@@ -283,7 +299,8 @@ export function buildTileUrl(template: string, render: AppliedRender): string {
   for (const place of render.bidx ? render.bidx.split(',') : []) params.append('bidx', place);
   if (render.expression) params.set('expression', render.expression);
   if (render.colormapName) params.set('colormap_name', render.colormapName);
-  if (render.rescale) params.set('rescale', render.rescale);
+  // A colour picture with a range for each channel has three, in the order of its bands (`channels.ts`).
+  for (const pair of render.rescale ? rescaleParams(render.rescale) : []) params.append('rescale', pair);
   const q = params.toString();
   return q ? `${template}&${q}` : template;
 }
@@ -326,8 +343,9 @@ export function ensureBaseLayers(map: MapLibreMap): void {
       layout: { visibility: 'none' },
       paint: {
         // maplibre-gl doesn't export the expression-spec type this needs, so
-        // `coverage.ts` returns a plain array and the cast happens once,
-        // here — `setPaintProperty` below takes `value: any` and needs none.
+        // `coverage.ts` returns a plain array and the cast happens at the two
+        // places that hand it to MapLibre (here and in `setCoverageDisplay`;
+        // maplibre-gl 6 types `setPaintProperty` as well).
         'fill-color': coverageFillColorExpression(1) as never,
         'fill-opacity': 0.5,
         'fill-outline-color': 'rgba(0,0,0,0)',
@@ -406,7 +424,7 @@ export function setCoverageDisplay(map: MapLibreMap, display: CoverageDisplay): 
   const area = display.mode === 'area';
   setData(map, COVERAGE_SRC, density ? cellsToFeatureCollection(display.cells) : EMPTY_FC);
   if (density && map.getLayer('coverage-heat')) {
-    map.setPaintProperty('coverage-heat', 'fill-color', coverageFillColorExpression(display.maxCount));
+    map.setPaintProperty('coverage-heat', 'fill-color', coverageFillColorExpression(display.maxCount) as never);
   }
   setVisibility(map, 'coverage-heat', density);
   setData(map, COVERAGE_FOOTPRINTS_SRC, footprints ? (display.footprints ?? EMPTY_FC) : EMPTY_FC);
@@ -460,10 +478,29 @@ const dynamicId = (kind: (typeof DYNAMIC_KINDS)[number], i: number): string => `
 
 function hasDynamic(map: MapLibreMap, which: DynamicBank): boolean {
   for (let i = 0; i < MAX_DYNAMIC_LAYERS; i++) {
-    if (map.getLayer(`${which}-img-lyr-${i}`) || map.getLayer(`${which}-tiles-lyr-${i}`)) return true;
+    for (const kind of ['img', 'tiles']) {
+      if (map.getLayer(`${which}-${kind}-lyr-${i}`) || map.getLayer(`${which}-${kind}-lyr-c${i}`)) return true;
+    }
   }
   return false;
 }
+
+// How a picture of the view can be drawn again cut to an AOI (NM4-25), by the id of its layer: the picture that stays under
+// the new one while that loads has to follow the AOI the new one is cut to.
+type Redraw = { clippedTo: GeoJSON.Geometry | null } & (
+  | { kind: 'tiles'; tileUrl: string; bounds: [number, number, number, number]; zoom: RasterZoom }
+  | {
+      kind: 'image';
+      url: string;
+      coords: Coords4;
+      nodataMax: number | null;
+      // The rings of the AOI on the pixels of the image, or `null` where they cannot be placed.
+      ringsFor: (clip: GeoJSON.Geometry) => [number, number][][] | null;
+    }
+);
+const redraws = new Map<string, Redraw>();
+// The cut copy of a picture of the old bank, `c` for "cut": ids of their own, inside the range `removeDynamic` clears.
+const cutId = (lyrId: string): string => lyrId.replace(/-(img|tiles)-(lyr|src)-/, '-$1-$2-c');
 
 function removeDynamic(map: MapLibreMap, which: DynamicBank): void {
   // Remove by deterministic id across the whole index range — not just the
@@ -471,19 +508,22 @@ function removeDynamic(map: MapLibreMap, which: DynamicBank): void {
   // finished around a re-sync can't survive as an orphan.
   for (let i = 0; i < MAX_DYNAMIC_LAYERS; i++) {
     for (const lyr of [`${which}-img-lyr-${i}`, `${which}-tiles-lyr-${i}`]) {
-      if (map.getLayer(lyr)) map.removeLayer(lyr);
-      viewPictures.delete(lyr);
-      viewTwinsHidden.delete(lyr);
-      resultsKeys.delete(lyr);
+      for (const id of [lyr, cutId(lyr)]) {
+        if (map.getLayer(id)) map.removeLayer(id);
+        viewPictures.delete(id);
+        viewTwinsHidden.delete(id);
+        resultsKeys.delete(id);
+        redraws.delete(id);
+      }
     }
     for (const src of [`${which}-img-src-${i}`, `${which}-tiles-src-${i}`]) {
-      if (map.getSource(src)) map.removeSource(src);
+      for (const id of [src, cutId(src)]) if (map.getSource(id)) map.removeSource(id);
     }
   }
 }
 
 function revealArriving(map: MapLibreMap): void {
-  for (const lyr of arriving) if (map.getLayer(lyr)) map.setPaintProperty(lyr, 'raster-opacity', 1);
+  for (const lyr of arriving) if (map.getLayer(lyr)) map.setPaintProperty(lyr, 'raster-opacity', viewOpacity);
   arriving.clear();
 }
 
@@ -555,6 +595,60 @@ function retireDynamicMosaic(map: MapLibreMap, hold = false): void {
   const id = ++retired;
   retiring = { id, map, bank, timer: retireTimer(map, id) };
   bank = bank === 'm' ? 'n' : 'm';
+}
+
+// The picture that stays on the map while the cropped view loads follows the AOI (NM4-25): each picture of the old bank is drawn
+// again cut to it, under the old one, and the old one goes once the cut one is on the map. Outside the AOI the old picture is
+// then gone as soon as that is, inside it nothing changes, and there is no frame with the basemap in between.
+function clipRetired(map: MapLibreMap, clip: GeoJSON.Geometry): void {
+  const old = retiring;
+  // A map that cannot say when a source has loaded (`retireDynamicMosaic` has taken its old picture away at once) is left alone.
+  if (!old || old.map !== map || typeof map.on !== 'function') return;
+  const stale = () => retiring?.id !== old.id;
+  for (const [lyrId, redraw] of redraws) {
+    if (!lyrId.startsWith(`${old.bank}-`) || /-c\d+$/.test(lyrId) || redraw.clippedTo === clip || !map.getLayer(lyrId)) continue;
+    const srcId = (map.getLayer(lyrId) as { source?: string }).source;
+    if (!srcId) continue;
+    const [cutLyr, cutSrc] = [cutId(lyrId), cutId(srcId)];
+    const key = resultsKeys.get(lyrId);
+    const swap = () => {
+      if (stale() || !map.getLayer(cutLyr)) return;
+      const check = () => {
+        if (stale() || !map.getSource(cutSrc)) return map.off('render', check);
+        if (!map.isSourceLoaded(cutSrc)) return;
+        map.off('render', check);
+        if (map.getLayer(lyrId)) map.removeLayer(lyrId);
+        if (map.getSource(srcId)) map.removeSource(srcId);
+        for (const table of [viewPictures, redraws, resultsKeys]) table.delete(lyrId);
+        viewTwinsHidden.delete(lyrId);
+      };
+      map.on('render', check);
+      check();
+    };
+    const arrived = () => {
+      if (key) resultsKeys.set(cutLyr, { ...key, seq: key.seq - 0.5 });
+      redraws.set(cutLyr, { ...redraw, clippedTo: clip });
+      restackAll(map);
+      swap();
+    };
+    redraw.clippedTo = clip;
+    if (redraw.kind === 'tiles') {
+      placeRaster(map, cutSrc, cutLyr, clipTileUrl(redraw.tileUrl, clip), redraw.bounds, viewOpacity, redraw.zoom);
+      arrived();
+    } else {
+      const rings = redraw.ringsFor(clip);
+      if (!rings) continue;
+      loadProcessed(redraw.url, redraw.nodataMax, rings, (dataUrl) => {
+        if (stale() || !map.getLayer(lyrId)) return;
+        try {
+          placeImage(map, cutSrc, cutLyr, dataUrl, redraw.coords, viewOpacity);
+        } catch {
+          return; /* map/style went away while loading */
+        }
+        arrived();
+      });
+    }
+  }
 }
 
 // Calls `done` once the layers that arrive have every tile for the part of the map in view. Only those sources count,
@@ -647,7 +741,7 @@ export function syncPreview(map: MapLibreMap, overlays: readonly LayerOverlay[])
       map.addSource(srcId, {
         type: 'raster',
         tiles: [overlay.tileUrl],
-        tileSize: 256,
+        tileSize: tileSizeOf(overlay.tileUrl),
         bounds: overlay.bounds,
         minzoom: overlay.minZoom,
         maxzoom: overlay.maxZoom,
@@ -722,6 +816,7 @@ function addPreview(
     const lyrId = dynamicId('tiles-lyr', i);
     keyScene(lyrId, item.id, order);
     placeRaster(map, dynamicId('tiles-src', i), lyrId, tileUrl, item.bbox, 1, zoom);
+    redraws.set(lyrId, { kind: 'tiles', tileUrl, bounds: item.bbox, zoom, clippedTo: null });
     holdBack(map, lyrId);
     drawsPicture(map, lyrId, overlaySignature({ kind: 'raster', tileUrl, bounds: item.bbox, ...zoom }));
     return;
@@ -739,6 +834,14 @@ function addPreview(
     pendingImages--;
     try {
       placeImage(map, srcId, lyrId, dataUrl, coords, 1);
+      redraws.set(lyrId, {
+        kind: 'image',
+        url: plan.href,
+        coords,
+        nodataMax,
+        ringsFor: (clip) => quicklookAoiPixelRings(item, clip, preferredGeoreferencedAsset(dataset)),
+        clippedTo: null,
+      });
       holdBack(map, lyrId);
       drawsPicture(map, lyrId, overlaySignature({ kind: 'image', url: plan.href, coords, nodataMax }));
       restackAll(map);
@@ -755,7 +858,14 @@ function addPreview(
 // stays under the tiles at every zoom, so that no zoom and no jump leaves the map without a picture. Reuses the `m-img-*` id range the browse preview uses: focus mode
 // and browse mode never sync at once, and `retireDynamicMosaic` already
 // clears both ranges up front regardless of which mode is running.
-function addQuicklookUnderlay(map: MapLibreMap, underlay: ImageOverlay, i: number, gen: number): void {
+function addQuicklookUnderlay(
+  map: MapLibreMap,
+  underlay: ImageOverlay,
+  i: number,
+  gen: number,
+  clip: GeoJSON.Geometry | null,
+  ringsFor: (clip: GeoJSON.Geometry) => [number, number][][] | null,
+): void {
   const srcId = dynamicId('img-src', i);
   const lyrId = dynamicId('img-lyr', i);
   // Keyed before the tiles of its scene are placed, so that it lies under them whenever it arrives.
@@ -765,7 +875,8 @@ function addQuicklookUnderlay(map: MapLibreMap, underlay: ImageOverlay, i: numbe
     if (gen !== syncGen) return; // a newer sync superseded this one
     pendingImages--;
     try {
-      placeImage(map, srcId, lyrId, dataUrl, underlay.coords, 1);
+      placeImage(map, srcId, lyrId, dataUrl, underlay.coords, viewOpacity);
+      redraws.set(lyrId, { kind: 'image', url: underlay.url, coords: underlay.coords, nodataMax: underlay.nodataMax, ringsFor, clippedTo: clip });
       // The quicklook of a pinned layer of the same scene takes its place (`drawsPicture`).
       drawsPicture(map, lyrId, overlaySignature(underlay));
       restackAll(map);
@@ -790,7 +901,9 @@ function addTiles(
   const srcId = dynamicId('tiles-src', i);
   const lyrId = dynamicId('tiles-lyr', i);
   keyResults(lyrId, 'view');
-  placeRaster(map, srcId, lyrId, clipTileUrl(buildTileUrl(info.tileUrl, render), clip), info.bounds, 1, info);
+  const tileUrl = buildTileUrl(info.tileUrl, render);
+  placeRaster(map, srcId, lyrId, clipTileUrl(tileUrl, clip), info.bounds, viewOpacity, info);
+  redraws.set(lyrId, { kind: 'tiles', tileUrl, bounds: info.bounds, zoom: info, clippedTo: clip });
   drawsPicture(map, lyrId, tilesPicture(info, render, clip));
 }
 
@@ -825,6 +938,8 @@ interface WantedOverlay {
   sig: string;
   // Of a layer above "Results" in the list (NM4-59).
   above: boolean;
+  // Of the layer that "Flip through layers" draws on top of all the others (NM4-65 part 9).
+  flip: boolean;
 }
 
 interface PlacedOverlay {
@@ -848,7 +963,7 @@ function overlaySignature(ov: LayerOverlay): string {
 // The overlays up to the budget, bottom to top, and how many did not fit. The budget is spent from the
 // top: the layers on top of the list, and of a layer its topmost overlays (the mosaic of a time step),
 // are always whole; what is left out is the bottom of the stack.
-function wantedOverlaysOf(layers: MapLayer[], above: number): { wanted: WantedOverlay[]; notDrawn: number } {
+function wantedOverlaysOf(layers: MapLayer[], above: number, flipId: string | null = null): { wanted: WantedOverlay[]; notDrawn: number } {
   const wanted: WantedOverlay[] = [];
   let notDrawn = 0;
   for (const [index, layer] of layers.entries()) {
@@ -868,6 +983,7 @@ function wantedOverlaysOf(layers: MapLayer[], above: number): { wanted: WantedOv
         opacity: layer.opacity,
         sig: overlaySignature(overlay),
         above: index < above,
+        flip: layer.id === flipId,
       });
     }
   }
@@ -899,6 +1015,15 @@ function settleViewTwin(map: MapLibreMap, lyrId: string): void {
   else viewTwinsHidden.delete(lyrId);
 }
 
+// A new opacity for the pictures of the view: only their paint changes, no tile is loaded again. A picture held back for the next step
+// (`holdBack`) stays at 0 and is shown with this opacity.
+export function setViewOpacity(map: MapLibreMap, opacity: number): void {
+  viewOpacity = Math.max(0, Math.min(1, opacity));
+  for (const lyrId of viewPictures.keys()) {
+    for (const id of [lyrId, cutId(lyrId)]) if (map.getLayer(id) && !arriving.has(id)) map.setPaintProperty(id, 'raster-opacity', viewOpacity);
+  }
+}
+
 function settleViewTwins(map: MapLibreMap): void {
   for (const lyrId of viewPictures.keys()) settleViewTwin(map, lyrId);
 }
@@ -927,9 +1052,10 @@ function placeWanted(map: MapLibreMap, w: WantedOverlay, dataUrl?: string): void
 }
 
 // Returns how many overlays the budget left out (`overlayBudgetNote`). `resultsAt`: how many layers of the list lie
-// above "Results" (`store.ts`); none where it is left out, as before NM4-59.
-export function syncLayers(map: MapLibreMap, layers: MapLayer[], resultsAt = 0): number {
-  const { wanted, notDrawn } = wantedOverlaysOf(layers, resultsAt);
+// above "Results" (`store.ts`); none where it is left out, as before NM4-59. `flipId`: the layer "Flip through layers" draws
+// over all the others (NM4-65 part 9); none, the order of the list.
+export function syncLayers(map: MapLibreMap, layers: MapLayer[], resultsAt = 0, flipId: string | null = null): number {
+  const { wanted, notDrawn } = wantedOverlaysOf(layers, resultsAt, flipId);
   wantedOverlays = wanted;
   const known = new Map(wanted.map((w) => [w.lyrId, w]));
   // Gone from the list, or built from something else now: out.
@@ -1029,6 +1155,7 @@ export function syncFocusRaster(
   retireDynamicMosaic(map);
   if (!s.showDownloaded) return dropRetired(map);
   const clip = s.cropToAoi ? (s.aoi ?? null) : null;
+  if (clip) clipRetired(map, clip);
   const dataset = s.dataset;
   // Each pass is a mosaic, scene by scene, or not yet known (`mosaic.ts`). The scenes drawn one by
   // one are capped, first come first served, as they always were.
@@ -1036,7 +1163,8 @@ export function syncFocusRaster(
   const drawn = passesOf(Object.entries(s.downloaded), s.groups).map((entries) => {
     const view = viewOfPass(dataset?.id ?? null, entries, s.mosaics);
     if (view.kind === 'scenes') {
-      const own = entries.slice(0, Math.max(0, MAX_MOSAIC_LAYERS - single));
+      // In the order of the mosaic where the tiler gave it (NM4-24), else of the selection.
+      const own = inStackOrder(entries, view.order).slice(0, Math.max(0, MAX_MOSAIC_LAYERS - single));
       single += own.length;
       return { entries: own, view };
     }
@@ -1055,8 +1183,13 @@ export function syncFocusRaster(
   );
   let tiles = 0;
   let underlays = 0;
-  const place = (raster: PlannedRaster) => {
-    if (tiles < MAX_DYNAMIC_LAYERS) addTiles(map, raster, tiles++, s.render, clip);
+  // An index in the look (NM4-14b) is computed by the tile route with an operator, with no quicklook under it: that would
+  // be the true-colour picture, which an index is not. A raster the route cannot take is not drawn; the view says why.
+  const index = dataset ? viewIndexOf(s.render, dataset.collection) : null;
+  const place = (raster: PlannedRaster, pass: SceneEntry[]) => {
+    if (tiles >= MAX_DYNAMIC_LAYERS) return;
+    const drawing = index && dataset ? indexRasterOf(raster, pass, dataset.id, index) : raster;
+    if (typeof drawing !== 'string') addTiles(map, drawing, tiles++, s.render, clip);
   };
   for (const { entries, view } of stackLikeView(drawn)) {
     if (view.kind === 'pending' && !s.tilesInLayer) continue;
@@ -1066,11 +1199,11 @@ export function syncFocusRaster(
       // the underlay's image arrives.
       const item = underlays < MAX_DYNAMIC_LAYERS ? s.items.find((it) => it.id === itemId) : undefined;
       const underlay = item && underlayOf(item, dataset, clip);
-      if (underlay) addQuicklookUnderlay(map, underlay, underlays++, gen);
-      if (view.kind === 'scenes' && !s.tilesInLayer) place(info);
+      if (underlay && !index) addQuicklookUnderlay(map, underlay, underlays++, gen, clip, (c) => (item ? underlayOf(item, dataset, c)?.clipRings ?? null : null));
+      if (view.kind === 'scenes' && !s.tilesInLayer) place(info, entries);
     });
     if (view.kind === 'mosaic' && !s.tilesInLayer) {
-      (wanted > MAX_DYNAMIC_LAYERS ? view.rasters.slice(-1) : view.rasters).forEach(place);
+      (wanted > MAX_DYNAMIC_LAYERS ? view.rasters.slice(-1) : view.rasters).forEach((raster) => place(raster, entries));
     }
   }
   restackAll(map);
@@ -1120,8 +1253,8 @@ export function syncBrowseMosaic(map: MapLibreMap, s: PreviewState): void {
   settleRetired(map);
 }
 
-// The quicklooks of the search results while a full-resolution view is open, with the eye of "Results" on: over the
-// view, which is the bottom tier of "Results" (NM4-59, Otto, 30.10.2026; replaces the view over them of 27.10.2026). Their
+// The quicklooks of the search results while a full-resolution view is open, with the eye of "Results" on: under the
+// view, which lies over them in "Results" (Otto, 2.11.2026; replaces the view at the bottom of 30.10.2026). Their
 // own id range (`res-…`), apart from the view's two banks, so that neither sync takes the other's layers away.
 const RESULTS_KINDS = ['img-lyr', 'img-src', 'tiles-lyr', 'tiles-src'] as const;
 let resultsGen = 0;

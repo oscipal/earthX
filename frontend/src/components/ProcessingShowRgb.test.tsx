@@ -12,10 +12,11 @@ import type { DatasetOption } from '../datasets';
 import s2 from '../fixtures/processes/sentinel-2-c1-l2a.json';
 import { bboxToPolygon } from '../geoUtils';
 import { RGB } from '../processingBands';
-import { useProcessingStore } from '../processingStore';
+import { handRangeOnShownBand, orderView, selectionState, useProcessingStore } from '../processingStore';
 import { useAppStore } from '../store';
 import type { Collection, EarthxMask, StacItem } from '../types';
 import ProcessingPanel from './ProcessingPanel';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -162,6 +163,11 @@ const show = () => section().querySelector<HTMLSelectElement>('.pp-show select')
 const options = () => [...(show()?.options ?? [])].map((o) => o.value);
 const labels = () => [...(show()?.options ?? [])].map((o) => o.textContent);
 const colormapField = () => [...section().querySelectorAll('.pp-range .vc-field')].find((f) => f.textContent?.startsWith('Colormap'));
+// At RGB the field keeps its place, locked on "— none —", as in the settings bar (UI-04 §7.2 row 27).
+const lockedColormap = () => {
+  const select = colormapField()?.querySelector('select');
+  return !!select && select.disabled && select.textContent === '— none —';
+};
 const fields = () => [...section().querySelectorAll<HTMLInputElement>('input[type="number"]')];
 const button = (label: string) => [...container.querySelectorAll('button')].find((b) => b.textContent?.trim() === label)!;
 const expression = (index: number) => container.querySelectorAll<HTMLTextAreaElement>('textarea[id$="-expression"]')[index]!;
@@ -197,7 +203,7 @@ async function openWith(items: StacItem[], trueColor?: string[] | null) {
 // One Band math step (NDVI), and the output: the result alone, or with more bands.
 async function ndvi(output: string[] = ['result'], trueColor?: string[] | null, items = [scene('S2B_A')]) {
   await openWith(items, trueColor);
-  click(button('＋ Band math'));
+  click(button('Band math'));
   typeInto(expression(0), NDVI);
   act(() => store().setOutput(output));
   await afterDebounce();
@@ -268,11 +274,12 @@ describe('the picture of RGB', () => {
     expect(tiles().getAll('asset')).toEqual(['red', 'green', 'blue']);
   });
 
-  it('has no colormap in the tiles and no field for one', async () => {
+  it('has no colormap in the tiles and a locked field "— none —"', async () => {
     await ndvi(COLOUR);
     expect(tiles().has('colormap_name')).toBe(false);
-    expect(colormapField()).toBeUndefined();
-    expect(fields()).toHaveLength(2);
+    expect(lockedColormap()).toBe(true);
+    // A range for each channel, red, green, blue.
+    expect(fields()).toHaveLength(6);
   });
 
   it('is named RGB when it is added to the layers', async () => {
@@ -290,7 +297,7 @@ describe('the picture of RGB', () => {
     await ndvi(COLOUR);
     // red 0.05…0.7, green 0.04…0.5, blue 0.02…0.4
     expect(rescale()).toBe('0.02,0.7');
-    expect(fields().map((f) => f.value)).toEqual(['0.02', '0.7']);
+    expect(fields().map((f) => f.value)).toEqual(['0.02', '0.7', '0.02', '0.7', '0.02', '0.7']);
     expect(tiles().getAll('rescale')).toHaveLength(1);
   });
 
@@ -302,12 +309,72 @@ describe('the picture of RGB', () => {
 
   it('draws the range applied by hand, also without a colormap', async () => {
     await ndvi(COLOUR);
-    typeInto(fields()[0], '0');
-    typeInto(fields()[1], '0.3');
+    fields().forEach((field, i) => typeInto(field, ['0', '0.3'][i % 2]));
     click(button('Apply'));
     await afterDebounce();
-    expect(rescale()).toBe('0,0.3');
+    expect(tiles().getAll('rescale')).toEqual(['0,0.3']);
     expect(tiles().has('colormap_name')).toBe(false);
+  });
+
+  it('draws a range for each channel, in the order red, green, blue', async () => {
+    await ndvi(COLOUR);
+    ['0.05', '0.7', '0.04', '0.5', '0.02', '0.4'].forEach((value, i) => typeInto(fields()[i], value));
+    click(button('Apply'));
+    await afterDebounce();
+    expect(tiles().getAll('rescale')).toEqual(['0.05,0.7', '0.04,0.5', '0.02,0.4']);
+    // Counter-check: one end typed wrong locks "Apply" with the channel and the reason, and marks the fields of that channel.
+    typeInto(fields()[3], '0.01');
+    expect(button('Apply').disabled).toBe(true);
+    expect(tipOf(button('Apply'))).toBe('G: vmin must be below vmax');
+    expect(fields().map((f) => f.getAttribute('aria-invalid'))).toEqual([null, null, 'true', 'true', null, null]);
+    expect(tiles().getAll('rescale')).toEqual(['0.05,0.7', '0.04,0.5', '0.02,0.4']);
+    typeInto(fields()[3], '0.6');
+    expect(button('Apply').disabled).toBe(false);
+    expect(fields().some((f) => f.hasAttribute('aria-invalid'))).toBe(false);
+  });
+
+  const unitOf = (channel: string) => section().querySelector<HTMLSelectElement>(`select[aria-label="${channel} range unit"]`)!;
+
+  it('has a unit for each channel, and takes the ones in percentiles at their own values', async () => {
+    await ndvi(COLOUR);
+    expect(COLOUR.map((c) => unitOf(c).value)).toEqual(['value', 'value', 'value']);
+    choose(unitOf('red'), 'percent');
+    choose(unitOf('blue'), 'percent');
+    typeInto(fields()[0], '0');
+    typeInto(fields()[1], '100');
+    typeInto(fields()[3], '0.45');
+    click(button('Apply'));
+    // The percentiles are measured first, so the preview is asked for afterwards.
+    await afterDebounce();
+    await afterDebounce();
+    // red from its minimum to its maximum, green as typed, blue at its 2nd to its 98th percentile.
+    expect(tiles().getAll('rescale')).toEqual(['0.01,0.9', '0.02,0.45', '0.02,0.4']);
+    expect(store().range.channels?.map((c) => c.percent ?? null)).toEqual([{ low: '0', high: '100' }, null, { low: '2', high: '98' }]);
+    expect(COLOUR.map((c) => unitOf(c).value)).toEqual(['percent', 'value', 'percent']);
+  });
+
+  it('locks "Apply" for a channel with a pair that is none, names the channel, and applies nothing', async () => {
+    await ndvi(COLOUR);
+    choose(unitOf('green'), 'percent');
+    typeInto(fields()[2], '98');
+    typeInto(fields()[3], '2');
+    expect(button('Apply').disabled).toBe(true);
+    expect(tipOf(button('Apply'))).toBe('G: the lower percentile must be below the upper one');
+    click(button('Apply'));
+    await afterDebounce();
+    expect(store().rangeByHand).toBe(false);
+    // Counter-check: a pair that is one opens it again.
+    typeInto(fields()[2], '2');
+    typeInto(fields()[3], '98');
+    expect(button('Apply').disabled).toBe(false);
+  });
+
+  it('puts the usual pair on a channel in percentiles with "Auto-scale"', async () => {
+    await ndvi(COLOUR);
+    choose(unitOf('red'), 'percent');
+    typeInto(fields()[0], '10');
+    click(button('Auto-scale'));
+    expect([fields()[0].value, fields()[1].value]).toEqual(['2', '98']);
   });
 
   it('measures over the AOI for "AOI only" from the three bands of the answer', async () => {
@@ -331,16 +398,17 @@ describe('from RGB to a band and back', () => {
     choose(show()!, RGB);
     await afterDebounce();
     expect(tiles().getAll('band')).toEqual(COLOUR);
-    expect(colormapField()).toBeUndefined();
+    expect(lockedColormap()).toBe(true);
     choose(show()!, 'red');
     await afterDebounce();
     expect(tiles().getAll('band')).toEqual(['red']);
     expect(tiles().get('colormap_name')).toBe('viridis');
     expect(colormapField()).toBeDefined();
+    expect(lockedColormap()).toBe(false);
     choose(show()!, RGB);
     await afterDebounce();
     expect(tiles().has('colormap_name')).toBe(false);
-    expect(colormapField()).toBeUndefined();
+    expect(lockedColormap()).toBe(true);
   });
 
   it('gives up the range set by hand for RGB when the band changes', async () => {
@@ -353,6 +421,23 @@ describe('from RGB to a band and back', () => {
     await afterDebounce();
     expect(rescale()).toBe('0.05,0.7');
     expect(store().rangeByHand).toBe(false);
+    // Counter-check: one band shows one pair of fields again.
+    expect(fields()).toHaveLength(2);
+  });
+
+  it('hands the range of each channel to a link only while the map shows the colour picture', async () => {
+    await ndvi(ALL);
+    choose(show()!, RGB);
+    await afterDebounce();
+    ['0.05', '0.7', '0.04', '0.5', '0.02', '0.4'].forEach((value, i) => typeInto(fields()[i], value));
+    click(button('Apply'));
+    await afterDebounce();
+    const range = () => handRangeOnShownBand(orderView(selectionState(useAppStore.getState()), store()), store());
+    expect(range()?.channels?.map((c) => [c.vmin, c.vmax])).toEqual([['0.05', '0.7'], ['0.04', '0.5'], ['0.02', '0.4']]);
+    // Counter-check: where the band is another one without the range being given up, it is the first range alone.
+    act(() => useProcessingStore.setState({ shown: 'red' }));
+    expect(range()).toMatchObject({ vmin: '0.05', vmax: '0.7' });
+    expect(range()?.channels).toBeUndefined();
   });
 
   it('falls back to the default when a band of the colour picture leaves the output', async () => {

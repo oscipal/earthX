@@ -19,6 +19,7 @@ import { HIDE_RESULTS_TIP, SHOW_RESULTS_TIP } from './components/ResultsEye';
 import { RESULTS_ON_TOP_TIP } from './components/ResultsToTop';
 import { useAppStore } from './store';
 import type { Collection, StacItem } from './types';
+import { tipOf } from './fixtures/tips';
 
 vi.mock('./components/MapView', () => ({ default: () => null }));
 
@@ -139,12 +140,13 @@ afterEach(() => {
 });
 
 describe('the symbol', () => {
-  it('is the fourth in the rail, named "Results"', () => {
+  it('is the fourth in the rail, before "Settings", named "Search results"', () => {
     expect([...container.querySelectorAll('.app-rail button')].map((b) => b.id)).toEqual([
       'rail-controls',
       'rail-layers',
       'rail-jobs',
       'rail-results',
+      'rail-settings',
     ]);
   });
 
@@ -160,7 +162,7 @@ describe('the symbol', () => {
   it('counts the scenes the search found, in the badge and in the name', async () => {
     await search();
     expect(symbol('results').getAttribute('aria-disabled')).toBeNull();
-    expect(symbol('results').getAttribute('aria-label')).toBe('Results, 2');
+    expect(symbol('results').getAttribute('aria-label')).toBe('Search results, 2');
     expect(symbol('results').querySelector('.rail-badge')?.textContent).toBe('2');
   });
 });
@@ -173,7 +175,6 @@ describe('after a search', () => {
     expect(symbol('results').getAttribute('aria-expanded')).toBe('true');
     expect(symbol('results').getAttribute('aria-controls')).toBe('dock-results');
     expect(symbol('controls').getAttribute('aria-expanded')).toBe('false');
-    expect(container.querySelector('.app')!.classList.contains('dock-open')).toBe(true);
   });
 
   it('lies beside the rail with the other panels, and no list is left at the right edge', async () => {
@@ -245,12 +246,11 @@ describe('one panel at a time', () => {
     expect(useAppStore.getState().dock).toBe('controls');
   });
 
-  it('closes with Escape from inside, and hands the focus back to its symbol', async () => {
+  it('stays open on Escape from inside: it closes with its symbol (Otto, 2.11.2026)', async () => {
     await search();
     const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
     act(() => slot('results').querySelector('.results-head h2')!.dispatchEvent(event));
-    expect(useAppStore.getState().dock).toBeNull();
-    expect(document.activeElement).toBe(symbol('results'));
+    expect(useAppStore.getState().dock).toBe('results');
   });
 });
 
@@ -263,7 +263,7 @@ describe('everything the list could do is in the panel', () => {
   it('lists the scenes in groups by pass, with their counts', () => {
     const heads = [...slot('results').querySelectorAll('.result-group-head')];
     expect(heads.map((h) => h.querySelector('.rg-count')?.textContent)).toEqual(['100', '100', '100']);
-    expect(slot('results').querySelector('.results-head h2')?.textContent).toBe('Results (0/300)');
+    expect(slot('results').querySelector('.results-head h2')?.textContent).toBe('Search results (0/300)');
   });
 
   it('opens and closes a group', () => {
@@ -291,7 +291,7 @@ describe('everything the list could do is in the panel', () => {
   it('loads more, and the new scenes arrive in the panel', async () => {
     const button = [...slot('results').querySelectorAll('button')].find((b) => b.textContent === 'Load more')!;
     await act(async () => button.click());
-    expect(symbol('results').getAttribute('aria-label')).toBe('Results, 340');
+    expect(symbol('results').getAttribute('aria-label')).toBe('Search results, 340');
     expect([...slot('results').querySelectorAll('button')].some((b) => b.textContent === 'Load more')).toBe(false);
   });
 
@@ -305,12 +305,12 @@ describe('everything the list could do is in the panel', () => {
     const bar = container.querySelector('.download-bar')!;
     expect(bar).not.toBeNull();
     expect(bar.closest('.dock')).toBeNull();
-    expect(bar.textContent).toContain('Crop & merge to AOI');
+    expect(bar.textContent).toContain('Crop and merge to AOI');
     expect(bar.textContent).toContain('Download merged crop');
   });
 
   it('has no "Clear all" in its head', () => {
-    expect([...slot('results').querySelectorAll('.results-head button')].map((b) => (b as HTMLButtonElement).title)).toEqual([RESULTS_ON_TOP_TIP, HIDE_RESULTS_TIP]);
+    expect([...slot('results').querySelectorAll('.results-head button')].map((b) => tipOf((b as HTMLButtonElement)))).toEqual([RESULTS_ON_TOP_TIP, HIDE_RESULTS_TIP]);
   });
 
   it('goes back to the control menu when the search is cleared', () => {
@@ -336,15 +336,15 @@ describe('with a view open (Otto, 26.10.2026: the results never disappear, they 
     act(() => useAppStore.setState({ focusMode: true, cropToAoi: true }));
     expect(slot('results').querySelector('.results-list')).not.toBeNull();
     expect(slot('results').querySelectorAll('.result-group-head')).toHaveLength(3);
-    expect(slot('results').querySelector('.results-head h2')?.textContent).toBe('Results (1/300)');
-    expect([...slot('results').querySelectorAll('.results-head button')].map((b) => (b as HTMLButtonElement).title)).toEqual([RESULTS_ON_TOP_TIP, HIDE_RESULTS_TIP]);
+    expect(slot('results').querySelector('.results-head h2')?.textContent).toBe('Search results (1/300)');
+    expect([...slot('results').querySelectorAll('.results-head button')].map((b) => tipOf((b as HTMLButtonElement)))).toEqual([RESULTS_ON_TOP_TIP, HIDE_RESULTS_TIP]);
     expect(useAppStore.getState().sections).toHaveLength(1);
-    expect(symbol('results').getAttribute('aria-label')).toBe('Results, 300');
+    expect(symbol('results').getAttribute('aria-label')).toBe('Search results, 300');
     act(() => useAppStore.setState({ focusMode: false, cropToAoi: false }));
     expect(slot('results').querySelector('.results-list')).not.toBeNull();
   });
 
-  it('shows the bar of the selection above the controls of the view once a scene is ticked that the view does not draw', async () => {
+  it('shows the bar of the selection at the bottom, beside the settings bar of the view, once a scene is ticked that the view does not draw', async () => {
     answer = MANY;
     await search();
     act(() => useAppStore.setState({ focusMode: true, downloaded: { c0: {} as never }, selectedIds: ['c0'] }));
@@ -355,10 +355,12 @@ describe('with a view open (Otto, 26.10.2026: the results never disappear, they 
     expect(container.querySelector('.download-bar')?.textContent).toContain('2');
     expect(container.querySelector('.viewer-controls')).not.toBeNull();
     const bottom = container.querySelector('.overlay.bottom')!;
-    expect(bottom.querySelector('.download-bar')!.compareDocumentPosition(bottom.querySelector('.viewer-controls')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(bottom.querySelector('.download-bar')).not.toBeNull();
+    expect(bottom.querySelector('.viewer-controls')).toBeNull();
+    expect(container.querySelector('.inspector .viewer-controls')).not.toBeNull();
   });
 
-  it('shows the bar of the selection above the controls of a result view once a scene is ticked', async () => {
+  it('shows the bar of the selection beside the settings of a result view once a scene is ticked', async () => {
     await search();
     act(() => useAppStore.setState({ resultViewLayerId: 'some-layer', selectedIds: [] }));
     expect(container.querySelector('.download-bar')).toBeNull();
@@ -377,7 +379,7 @@ describe('with a view open (Otto, 26.10.2026: the results never disappear, they 
     await search();
     click(slot('results').querySelector('.select-all-box input')!);
     const before = useAppStore.getState().sections;
-    const crop = [...container.querySelectorAll('.download-bar button')].find((b) => b.textContent === 'Crop & merge to AOI')!;
+    const crop = [...container.querySelectorAll('.download-bar button')].find((b) => b.textContent === 'Crop and merge to AOI')!;
     await act(async () => crop.dispatchEvent(new MouseEvent('click', { bubbles: true })));
     expect(useAppStore.getState().sections).toBe(before);
     expect(slot('results').querySelector('.results-list')).not.toBeNull();
@@ -396,18 +398,18 @@ describe('the results on the map (Otto, 26.10.2026)', () => {
 
   it('are on after a search, and the eye offers to hide them', () => {
     expect(useAppStore.getState().resultsOnMap).toBe(true);
-    expect(toggle().title).toBe(HIDE_RESULTS_TIP);
+    expect(tipOf(toggle())).toBe(HIDE_RESULTS_TIP);
   });
 
   it('go off and on with the eye, whose tooltip names the next step; the list does not change', () => {
     click(toggle());
     expect(useAppStore.getState().resultsOnMap).toBe(false);
-    expect(toggle().title).toBe(SHOW_RESULTS_TIP);
+    expect(tipOf(toggle())).toBe(SHOW_RESULTS_TIP);
     expect(slot('results').querySelectorAll('.result-group-head')).toHaveLength(3);
-    expect(slot('results').querySelector('.results-head h2')?.textContent).toBe('Results (0/300)');
+    expect(slot('results').querySelector('.results-head h2')?.textContent).toBe('Search results (0/300)');
     click(toggle());
     expect(useAppStore.getState().resultsOnMap).toBe(true);
-    expect(toggle().title).toBe(HIDE_RESULTS_TIP);
+    expect(tipOf(toggle())).toBe(HIDE_RESULTS_TIP);
   });
 
   it('a scene ticked while they are off is ticked as usual, with the bar of the selection, and shows them (Otto, 28.10.2026)', () => {
@@ -415,7 +417,7 @@ describe('the results on the map (Otto, 26.10.2026)', () => {
     click(slot('results').querySelector('.result-row input')!);
     expect(useAppStore.getState().selectedIds).toHaveLength(1);
     expect(useAppStore.getState().resultsOnMap).toBe(true);
-    expect(toggle().title).toBe(HIDE_RESULTS_TIP);
+    expect(tipOf(toggle())).toBe(HIDE_RESULTS_TIP);
     expect(container.querySelector('.download-count strong')?.textContent).toBe('1');
     expect(container.querySelector('.download-count span')?.textContent).toBe('scene selected');
   });
@@ -451,7 +453,7 @@ describe('"Clear search results" under "Load more" (Otto, 26.10.2026)', () => {
     const load = buttons.findIndex((b) => b.textContent === 'Load more');
     expect(load).toBeGreaterThan(-1);
     expect(buttons.indexOf(clearButton())).toBeGreaterThan(load);
-    expect(clearButton().querySelector('.clear-results-x')?.textContent).toBe('✕');
+    expect(clearButton().querySelector('svg.lucide-trash-2.clear-results-x')).not.toBeNull();
     expect(clearButton().querySelector('.clear-results-x')?.getAttribute('aria-hidden')).toBe('true');
   });
 

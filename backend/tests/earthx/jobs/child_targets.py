@@ -124,6 +124,22 @@ def end_to_end(workdir: str, conn: Any) -> None:
     run_child(workdir, conn)
 
 
+def end_to_end_killed(workdir: str, conn: Any) -> None:
+    """The real child as in :func:`end_to_end`, killed by a signal as soon as the first pass file is in the work directory.
+
+    What the OOM killer does in the middle of a run: the core cannot clean up, the supervisor has to (NM4-71).
+    """
+    import threading
+
+    def kill_when_a_pass_file_appears() -> None:
+        while not list(Path(workdir).glob("pass-*.tif")):
+            time.sleep(0.01)
+        os.kill(os.getpid(), signal.SIGKILL)
+
+    threading.Thread(target=kill_when_a_pass_file_appears, daemon=True).start()
+    end_to_end(workdir, conn)
+
+
 def fail_first_attempt(workdir: str, conn: Any) -> None:
     """The first attempt of a run fails with ``CHILD_KIND``; the next ones succeed. The work directory is `<run>-<attempt>`."""
     if int(Path(workdir).name.split("-")[1]) == 1:

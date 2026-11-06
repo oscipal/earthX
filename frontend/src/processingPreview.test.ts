@@ -34,17 +34,16 @@ import {
   planPreview,
   previewOverlays,
   previewTitle,
-  previewUnit,
   probeChain,
   refusedNote,
   refusedStepOf,
   shortenPlan,
   previewSpec,
   rescaleOf,
-  tileResolution,
   type PreviewPlan,
   type PreviewSpec,
 } from './processingPreview';
+import { tileMetres, tileSizeOf } from './tileSize';
 import type { Collection, StacItem } from './types';
 
 const S2 = processInfo(s2 as unknown as ProcessDescription);
@@ -61,8 +60,8 @@ function normalize(key = 5, values: Record<string, string | boolean> = {}): Draf
   return {
     key,
     op: 'normalize',
-    opVersion: 2,
-    values: { bands: 'red', in_min: '0', in_max: '0.5', out_min: '0', out_max: '255', clip: true, ...values },
+    opVersion: 4,
+    values: { method: 'linear', bands: 'red', in_min: '0', in_max: '0.5', out_min: '0', out_max: '255', clip: true, ...values },
   };
 }
 
@@ -134,7 +133,7 @@ describe('planPreview (adr/0014 §6.1)', () => {
   it('shows the longest start of tile steps, and says there are more', () => {
     const plan = ready([bandMath('red + nir'), normalize(), reproject(), bandMath('red', 3)]);
     expect(plan.steps.map((s) => s.operator.op)).toEqual(['band_math', 'normalize']);
-    expect(plan.steps[1].params).toEqual({ bands: ['red'], in_min: 0, in_max: 0.5, out_min: 0, out_max: 255, clip: true });
+    expect(plan.steps[1].params).toEqual({ method: 'linear', bands: ['red'], in_min: 0, in_max: 0.5, out_min: 0, out_max: 255, clip: true });
     expect(plan.further).toBe(true);
   });
 
@@ -228,6 +227,64 @@ describe('planPreview (adr/0014 §6.1)', () => {
   });
 });
 
+describe('a statistical normalize step in the chain (NM4-11b)', () => {
+  const zscore = (key = 5, values: Record<string, string | boolean> = {}) => normalize(key, { method: 'zscore', ...values });
+  const numbers = new Map([[5, { factor: 1, bands: { red: { mean: 2000, stddev: 500 } } }]]);
+
+  it('is drawn with the numbers measured for it, in its parameters', () => {
+    const plan = planPreview([bandMath('red + nir'), zscore()], S2, numbers);
+    expect(plan.state === 'ready' && plan.steps[1].params).toEqual({
+      method: 'zscore',
+      bands: ['red'],
+      measured: { factor: 1, bands: { red: { mean: 2000, stddev: 500 } } },
+    });
+  });
+
+  it('ends the start before the step while it has no numbers, and says what is missing where it is the first', () => {
+    const plan = planPreview([bandMath('red + nir'), zscore(), bandMath('red', 3)], S2);
+    expect(plan.state === 'ready' && plan.steps.map((s) => s.operator.op)).toEqual(['band_math']);
+    expect(plan.state === 'ready' && plan.further).toBe(true);
+    expect(planPreview([zscore()], S2)).toEqual({ state: 'off', reason: 'Normalize has no measured numbers yet.' });
+    expect(planPreview([normalize(5, { method: 'zscore', bands: '' })], S2)).toEqual({ state: 'off', reason: 'Complete the step to see the preview.' });
+  });
+
+  it('takes the numbers of its own step only, and none for the fixed range', () => {
+    expect(planPreview([zscore(6)], S2, numbers)).toEqual({ state: 'off', reason: 'Normalize has no measured numbers yet.' });
+    const fixed = planPreview([normalize()], S2, numbers);
+    expect(fixed.state === 'ready' && 'measured' in fixed.steps[0].params).toBe(false);
+  });
+
+  it('takes version 4, which runs only as a job, to the tile as version 3 (NM4-71), the fixed range with the same fields', () => {
+    const operator = S2.operators.find((o) => o.op === 'normalize')!;
+    expect([operator.opVersion, operator.tiers]).toEqual([4, ['T2']]);
+    const plan = planPreview([bandMath('red + nir'), zscore(), normalize(6)], S2, numbers);
+    if (plan.state !== 'ready') throw new Error('no plan');
+    expect(plan.steps.map((s) => [s.step.opVersion, s.version])).toEqual([[2, 2], [4, 3], [4, 3]]);
+    expect(plan.steps[2].params).toEqual({ method: 'linear', bands: ['red'], in_min: 0, in_max: 0.5, out_min: 0, out_max: 255, clip: true });
+  });
+
+  it('ends the start before a step whose parameters are longer than the tile route takes', () => {
+    const bands = Array.from({ length: 80 }, (_, i) => `band_${i}`);
+    const many = { factor: 1, bands: Object.fromEntries(bands.map((name) => [name, { mean: 2000.123456, stddev: 500.654321 }])) };
+    const plan = planPreview([bandMath('red'), zscore(5, { bands: bands.join(', ') })], S2, new Map([[5, many]]));
+    expect(plan.state === 'ready' && plan.steps.map((s) => s.operator.op)).toEqual(['band_math']);
+    expect(plan.state === 'ready' && plan.further).toBe(true);
+  });
+
+  it('makes the tile URL carry the numbers, and a new key where they change', () => {
+    const base = { dataset: DATASET, items: [item('S2_A', { gsd: 10 })], assets: ['red', 'nir'], info: S2, range: DEFAULT_RANGE, area: 'scene' as const };
+    const plan = planPreview([zscore()], S2, numbers);
+    if (plan.state !== 'ready') throw new Error('no plan');
+    const a = previewSpec({ ...base, plan })!;
+    const url = new URL(a.scenes[0].url, 'http://localhost');
+    expect(url.searchParams.getAll('op_version')).toEqual(['3']);
+    expect(JSON.parse(url.searchParams.get('params')!)).toMatchObject({ method: 'zscore', measured: { bands: { red: { mean: 2000, stddev: 500 } } } });
+    const other = planPreview([zscore()], S2, new Map([[5, { factor: 1, bands: { red: { mean: 2100, stddev: 500 } } }]]));
+    if (other.state !== 'ready') throw new Error('no plan');
+    expect(previewSpec({ ...base, plan: other })!.key).not.toBe(a.key);
+  });
+});
+
 describe('rescaleOf', () => {
   it('writes min,max for the tile URL', () => {
     expect(rescaleOf(DEFAULT_RANGE)).toEqual({ rescale: '-1,1' });
@@ -272,9 +329,9 @@ describe('previewSpec', () => {
     const url = new URL(spec.scenes[0].url, 'http://localhost');
     expect(url.searchParams.getAll('asset')).toEqual(['red', 'nir']);
     expect(url.searchParams.getAll('op')).toEqual(['normalize', 'band_math']);
-    expect(url.searchParams.getAll('op_version')).toEqual(['2', '2']);
+    expect(url.searchParams.getAll('op_version')).toEqual(['3', '2']);
     expect(url.searchParams.getAll('params')).toEqual([
-      '{"bands":["red"],"clip":true,"in_max":0.5,"in_min":0,"out_max":255,"out_min":0}',
+      '{"bands":["red"],"clip":true,"in_max":0.5,"in_min":0,"method":"linear","out_max":255,"out_min":0}',
       '{"expression":"red / 2","name":"Band_Math_3"}',
     ]);
     expect(spec.title).toBe('Normalize → Band math');
@@ -342,7 +399,7 @@ describe('previewSpec', () => {
 
   it('marks its overlays as a preview, held under the pixel size of the data', () => {
     const spec = previewSpec({ ...base, plan: ready([bandMath('red')]) })!;
-    expect(tileResolution(51, spec.maxZoom)).toBeGreaterThan(10);
+    expect(tileMetres(51, spec.maxZoom, 256)).toBeGreaterThan(10);
     expect(previewOverlays(spec, null)[0]).toMatchObject({ kind: 'raster', bounds: [10, 50, 11, 51], preview: true });
   });
 
@@ -406,7 +463,7 @@ describe('previewSpec: the mosaic of a job (NM4-04b)', () => {
 
   it('carries no AOI, no id of a job, a recipe or a permalink and no hash, in any URL it builds', () => {
     const spec = previewSpec({ ...base, area: 'aoi', dataset: wide })!;
-    const known = new Set(['item', 'asset', 'op', 'op_version', 'params', 'rescale', 'colormap_name']);
+    const known = new Set(['item', 'asset', 'op', 'op_version', 'params', 'rescale', 'colormap_name', 'tilesize']);
     for (const url of [spec.mosaics[0].url, spec.mosaics[0].probe, spec.probe, spec.measure, ...spec.scenes.map((s) => s.url)]) {
       expect(url).not.toContain('#');
       expect([...new Set(query(url).searchParams.keys())].filter((name) => !known.has(name))).toEqual([]);
@@ -440,11 +497,15 @@ describe('previewSpec: the mosaic of a job (NM4-04b)', () => {
     expect(spec.scenes.map((s) => [s.id, s.below])).toEqual([['S2_D', 8], ['S2_B', 8], ['S2_A', 8], ['S2_C', 8]]);
     expect(query(spec.measure).pathname).toBe('/collections/sentinel-2-c1-l2a/items/S2_D/statistics');
     const overlays = previewOverlays(spec, null);
-    expect(overlays[0]).toMatchObject({ minZoom: 8, maxZoom: 13, preview: true });
+    // The mosaic's tiles are 512 px: its last level is one below the scenes' (13), and it is asked for from map zoom 7.5,
+    // where the scenes step aside (NM4-29b).
+    expect(spec.maxZoom).toBe(13);
+    expect(overlays[0]).toMatchObject({ minZoom: 8, maxZoom: 12, preview: true });
     expect(overlays[0]).not.toHaveProperty('hideFrom');
     expect(overlays.slice(1).map((o) => o.kind === 'raster' && [o.minZoom, o.maxZoom, o.hideFrom])).toEqual(
-      Array(4).fill([5, 7, 6.5]),
+      Array(4).fill([5, 7, 7.5]),
     );
+    expect(overlays.map((o) => o.kind === 'raster' && tileSizeOf(o.tileUrl))).toEqual([512, 256, 256, 256, 256]);
     expect(overlays.slice(1).map((o) => o.kind === 'raster' && query(o.tileUrl).pathname.split('/')[4])).toEqual(['S2_D', 'S2_B', 'S2_A', 'S2_C']);
   });
 
@@ -674,7 +735,7 @@ describe('the measure over the AOI (NM4-19)', () => {
   const ndvi = { minimum: -1.3, maximum: 1.5, mean: 0.3, stddev: 0.2, count: 900, valid_percent: 100, percentile_2: 0, percentile_98: 0.91 };
 
   it('reads the statistics of the results document: the numbers a colour scale is chosen from, the unit, whether it is exact', () => {
-    expect(areaMeasureOf('K', answer(ndvi, 'm', false), true)).toEqual({
+    expect(areaMeasureOf('K', answer(ndvi, 'm', false), true)).toMatchObject({
       key: 'K',
       stats: { bands: [{ minimum: -1.3, maximum: 1.5, percentile2: 0, percentile98: 0.91 }], expression: true },
       unit: 'm',
@@ -734,13 +795,19 @@ describe('the measure of a preview (M4-19c)', () => {
     measureOf('K', Object.fromEntries(bands.map((b, i) => [`b${i + 1}`, b])) as never, true);
 
   it('reads the numbers a colour scale is chosen from, and the unit', () => {
-    expect(ask({ ...band, unit: 'm' })).toEqual({
+    expect(ask({ ...band, unit: 'm' })).toMatchObject({
       key: 'K',
       stats: { bands: [{ minimum: -0.2, maximum: 0.9, percentile2: -0.1, percentile98: 0.8 }], expression: true },
       unit: 'm',
       source: 'scene',
       exact: true,
     });
+  });
+
+  // NM4-65 part 4: the statistics are kept whole, for the percentiles typed in the fields; a band without a valid pixel has none.
+  it('keeps what the statistics named of each band with a valid pixel', () => {
+    expect(ask({ ...band, percentile_3: -0.15 }).raw).toEqual([expect.objectContaining({ percentile_3: -0.15 })]);
+    expect(ask({ count: 0, min: null, max: null, percentile_2: null, percentile_98: null, unit: null }).raw).toEqual([]);
   });
 
   it('names no value of a band without a valid pixel, and no scale when no band has one', () => {
@@ -765,22 +832,6 @@ describe('the measure of a preview (M4-19c)', () => {
       colormap: 'viridis',
     });
     expect(measuredRange(null)).toBeNull();
-  });
-
-  const spec = { measure: 'M' } as PreviewSpec;
-  it.each([
-    ['m', 'm'],
-    ['1', null],
-    ['', null],
-    [null, null],
-  ])('shows the unit %j beside the range as %j', (unit, shown) => {
-    expect(previewUnit(spec, { key: 'M', stats: null, unit, source: 'scene', exact: true })).toBe(shown);
-  });
-
-  it('shows the unit of the measure of this preview and of no other', () => {
-    expect(previewUnit(spec, { key: 'other', stats: null, unit: 'm', source: 'scene', exact: true })).toBeNull();
-    expect(previewUnit(spec, null)).toBeNull();
-    expect(previewUnit(null, { key: 'M', stats: null, unit: 'm', source: 'scene', exact: true })).toBeNull();
   });
 });
 
@@ -817,17 +868,29 @@ describe('the pixel size of the data (F4)', () => {
 describe('the preview is never as fine as the data (Otto, 19.10.2026)', () => {
   const at51 = [[10, 50, 11, 51]] as [number, number, number, number][];
 
-  it('computes metres per pixel of a 256-pixel Web Mercator tile', () => {
-    expect(tileResolution(0, 0)).toBeCloseTo(156543.03392, 4);
-    expect(tileResolution(0, 14)).toBeCloseTo(9.5546, 3);
-    expect(tileResolution(60, 14)).toBeCloseTo(4.7773, 3);
+  it('computes metres per pixel of a Web Mercator tile of its size', () => {
+    expect(tileMetres(0, 0, 256)).toBeCloseTo(156543.03392, 4);
+    expect(tileMetres(0, 14, 256)).toBeCloseTo(9.5546, 3);
+    expect(tileMetres(60, 14, 256)).toBeCloseTo(4.7773, 3);
+    // A 512-px tile of level L has the pixels of a 256-px tile of level L + 1.
+    expect(tileMetres(51, 13, 512)).toBeCloseTo(tileMetres(51, 14, 256), 6);
+  });
+
+  it('ends a 512-px preview one level lower than a 256-px one of the same data (NM4-29b)', () => {
+    // 10 m at 51° N: 256-px tiles are held at level 13, and a 512-px tile of level 12 is as coarse as one of level 13.
+    expect(previewMaxZoom(at51, 10, { min: 8, max: 22 }, 256)).toBe(13);
+    expect(previewMaxZoom(at51, 10, { min: 8, max: 22 }, 512)).toBe(12);
+    expect(tileMetres(51, 12, 512)).toBeGreaterThan(10);
+    expect(tileMetres(51, 13, 512)).toBeLessThanOrEqual(10);
+    // The default is the 256-px tile.
+    expect(previewMaxZoom(at51, 10, { min: 8, max: 22 })).toBe(13);
   });
 
   it('stops at the last level whose tiles are coarser than the data, where the scene is farthest from the equator', () => {
     // 10 m at 51° N: level 13 is 12.0 m per pixel, level 14 is 6.0 m.
     expect(previewMaxZoom(at51, 10, { min: 8, max: 22 })).toBe(13);
-    expect(tileResolution(51, 13)).toBeGreaterThan(10);
-    expect(tileResolution(51, 14)).toBeLessThan(10);
+    expect(tileMetres(51, 13, 256)).toBeGreaterThan(10);
+    expect(tileMetres(51, 14, 256)).toBeLessThan(10);
     // At the equator level 13 is 19.1 m, level 14 is 9.55 m: the same level, as 9.55 < 10.
     expect(previewMaxZoom([[10, -1, 11, 1]], 10, { min: 8, max: 22 })).toBe(13);
     // 30 m (a DEM): level 12 is 38 m at the equator, level 13 is 19 m.
@@ -835,7 +898,7 @@ describe('the preview is never as fine as the data (Otto, 19.10.2026)', () => {
   });
 
   it('uses a level while it is coarser than the data and not once it is as fine', () => {
-    const level13 = tileResolution(0, 13);
+    const level13 = tileMetres(0, 13, 256);
     const equator = [[10, -1, 11, 1]] as [number, number, number, number][];
     expect(previewMaxZoom(equator, level13 * 0.999, { min: 0, max: 22 })).toBe(13);
     expect(previewMaxZoom(equator, level13 * 1.001, { min: 0, max: 22 })).toBe(12);
@@ -850,8 +913,8 @@ describe('the preview is never as fine as the data (Otto, 19.10.2026)', () => {
   ] as const)('holds every tile under the pixel size at its farthest latitude (%s)', (_, gsd, bbox) => {
     const level = previewMaxZoom([bbox as unknown as [number, number, number, number]], gsd, { min: 0, max: 22 });
     const farthest = Math.max(Math.abs(bbox[1]), Math.abs(bbox[3]));
-    expect(tileResolution(farthest, level)).toBeGreaterThan(gsd);
-    expect(tileResolution(farthest, level + 1)).toBeLessThanOrEqual(gsd);
+    expect(tileMetres(farthest, level, 256)).toBeGreaterThan(gsd);
+    expect(tileMetres(farthest, level + 1, 256)).toBeLessThanOrEqual(gsd);
   });
 
   it('takes the scene farthest from the equator when there are several', () => {
@@ -991,6 +1054,16 @@ describe('namesNeeded', () => {
   it('does not read what a step after the band reads, and knows no band of a step that comes later', () => {
     const steps = [named(1, 'a', 'red + 1'), named(2, 'b', 'a + green')];
     expect([...namesNeeded(steps, 'a')]).toEqual(['red']);
+  });
+
+  it('reads the band a mask by value looks at, whichever band is shown', () => {
+    const mask = (key: number, band: string): DraftStep => ({ key, op: 'mask_values', opVersion: 1, values: { band, condition: 'lt', values: '0.2' } });
+    expect([...namesNeeded([mask(1, 'red')], 'blue')].sort()).toEqual(['blue', 'red']);
+    // A result it looks at is read through its expression; one that comes after the mask is no concern of it.
+    const steps = [named(1, 'ndvi', '(nir - red) / (nir + red)'), mask(2, 'ndvi')];
+    expect([...namesNeeded(steps, 'blue')].sort()).toEqual(['blue', 'nir', 'red']);
+    expect([...namesNeeded([mask(1, 'scl'), named(2, 'a', 'red + 1')], 'a')].sort()).toEqual(['red', 'scl']);
+    expect([...namesNeeded([mask(1, '')], 'blue')]).toEqual(['blue']);
   });
 
   it('keeps the bands a normalize or a reproject is given', () => {

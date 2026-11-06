@@ -14,6 +14,7 @@ import { bboxToPolygon } from '../geoUtils';
 import { useAppStore } from '../store';
 import type { Collection, StacItem } from '../types';
 import ViewBar from './ViewBar';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -102,29 +103,29 @@ describe('the download buttons', () => {
   ])('are both there for a %s dataset with AOI %j', (format, aoi) => {
     select(format, aoi);
     show();
-    expect(button('⇩ Download merged crop')).toBeDefined();
-    expect(button('⇩ Download full scenes')).toBeDefined();
-    expect([...container.querySelectorAll('button')].map((b) => b.textContent)).not.toContain('⇩ Download');
+    expect(button('Download merged crop')).toBeDefined();
+    expect(button('Download full scenes')).toBeDefined();
+    expect([...container.querySelectorAll('button')].map((b) => b.textContent)).not.toContain('Download');
   });
 
   it('crop: disabled without an AOI, with the reason', () => {
     select('cog', null);
     show();
-    expect(button('⇩ Download merged crop').disabled).toBe(true);
-    expect(button('⇩ Download merged crop').title).toBe(DRAW_AOI_TO_CROP);
+    expect(button('Download merged crop').disabled).toBe(true);
+    expect(tipOf(button('Download merged crop'))).toBe(DRAW_AOI_TO_CROP);
   });
 
   it('crop: open with an AOI, for a Zarr dataset too', () => {
     select('zarr', AOI);
     show();
-    expect(button('⇩ Download merged crop').disabled).toBe(false);
+    expect(button('Download merged crop').disabled).toBe(false);
   });
 
   it('originals: open for a COG dataset with and without an AOI', () => {
     for (const aoi of [null, AOI]) {
       select('cog', aoi);
       show();
-      expect(button('⇩ Download full scenes').disabled).toBe(false);
+      expect(button('Download full scenes').disabled).toBe(false);
     }
   });
 
@@ -133,12 +134,12 @@ describe('the download buttons', () => {
     const [only] = useAppStore.getState().datasets;
     useAppStore.setState({ datasets: [{ ...only, collection: { ...only.collection, 'earthx:access': { cors: true } } }] });
     show();
-    expect(button('⇩ Download full scenes').title).toContain('one ZIP of its original files');
-    expect(button('⇩ Download full scenes').title).toContain('may ask once to allow several downloads');
+    expect(tipOf(button('Download full scenes'))).toContain('one ZIP of its original files');
+    expect(tipOf(button('Download full scenes'))).toContain('may ask once to allow several downloads');
     useAppStore.setState({ selectedIds: ['A'] });
     show();
-    expect(button('⇩ Download full scene').title).toContain('as one ZIP');
-    expect(button('⇩ Download full scene').title).not.toContain('several downloads');
+    expect(tipOf(button('Download full scene'))).toContain('as one ZIP');
+    expect(tipOf(button('Download full scene'))).not.toContain('several downloads');
   });
 
   describe('the tooltip names the scenes and the size before the click (Otto, 31.10.2026)', () => {
@@ -162,54 +163,54 @@ describe('the download buttons', () => {
         selectedIds: items.map((it) => it.id),
       });
       show();
-      return button(items.length === 1 ? '⇩ Download full scene' : '⇩ Download full scenes').title;
+      return tipOf(button(items.length === 1 ? 'Download full scene' : 'Download full scenes'));
     }
 
     it('the number of scenes and the sum of the sizes, first', () => {
       expect(withSizes(true, [4_500_000_000, 5_900_000_000])).toMatch(/^2 scenes · 10\.4 GB\. Download each selected scene as one ZIP/);
-      expect(withSizes(true, [887_000_000])).toMatch(/^1 scene · 887\.0 MB\. Download the selected scene as one ZIP/);
+      expect(withSizes(true, [887_000_000])).toMatch(/^1 scene · 887 MB\. Download the selected scene as one ZIP/);
     });
 
     it('where the browser downloads the files itself: the same, with no ZIP', () => {
       const title = withSizes(false, [40_000_000, 40_000_000]);
-      expect(title).toMatch(/^2 scenes · 80\.0 MB\. Download the original files/);
+      expect(title).toMatch(/^2 scenes · 80 MB\. Download the original files/);
       expect(title).not.toContain('ZIP');
     });
 
     it('a size not known is said so, whole or in part', () => {
       expect(withSizes(true, [null, null])).toMatch(/^2 scenes · size unknown\./);
-      expect(withSizes(true, [2_000_000, null])).toMatch(/^2 scenes · 2\.0 MB and more, some sizes unknown\./);
+      expect(withSizes(true, [2_000_000, null])).toMatch(/^2 scenes · 2 MB and more, some sizes unknown\./);
     });
 
     it('counts the scenes the download takes: the ticked ones, else those of the open group', () => {
       withSizes(true, [1_000_000, 1_000_000, 1_000_000]);
       useAppStore.setState({ selectedIds: ['S0', 'S2'] });
       show();
-      expect(button('⇩ Download full scenes').title).toMatch(/^2 scenes · 2\.0 MB\./);
+      expect(tipOf(button('Download full scenes'))).toMatch(/^2 scenes · 2 MB\./);
     });
   });
 
   it('originals: the tooltip says "file" where the source gives no CORS, and promises no ZIP', () => {
     select('cog', null);
     show();
-    expect(button('⇩ Download full scenes').title).toContain('original files of the selected scenes');
-    expect(button('⇩ Download full scenes').title).not.toContain('ZIP');
+    expect(tipOf(button('Download full scenes'))).toContain('original files of the selected scenes');
+    expect(tipOf(button('Download full scenes'))).not.toContain('ZIP');
   });
 
   it('originals: disabled for Zarr, with the reason', () => {
     select('zarr', AOI);
     show();
-    expect(button('⇩ Download full scenes').disabled).toBe(true);
-    expect(button('⇩ Download full scenes').title).toContain('no single original file per scene');
+    expect(button('Download full scenes').disabled).toBe(true);
+    expect(tipOf(button('Download full scenes'))).toContain('no single original file per scene');
   });
 
   it('each opens its own dialog: the crop, or the originals with an AOI drawn', () => {
     select('cog', AOI);
     show();
-    act(() => button('⇩ Download merged crop').dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    act(() => button('Download merged crop').dispatchEvent(new MouseEvent('click', { bubbles: true })));
     expect(useAppStore.getState().downloadOutcome).toBe('crop');
     act(() => useAppStore.getState().closeDownloadDialog());
-    act(() => button('⇩ Download full scenes').dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    act(() => button('Download full scenes').dispatchEvent(new MouseEvent('click', { bubbles: true })));
     expect(useAppStore.getState().downloadOutcome).toBe('originals');
     expect(useAppStore.getState().downloadOriginalLinks).toHaveLength(2);
   });
@@ -222,18 +223,18 @@ describe('the labels of the bar (UI-01g)', () => {
     select('cog', AOI);
     act(() => useAppStore.setState({ selectedIds: ['A'] }));
     show();
-    expect(labels()).toEqual(['Crop to AOI', 'View whole scene', '⇩ Download crop', '⇩ Download full scene', '⚙ Process']);
+    expect(labels()).toEqual(['Crop to AOI', 'View whole scene', 'Download crop', 'Download full scene', 'Process']);
   });
 
   it('say "merged" for several scenes', () => {
     select('cog', AOI);
     show();
     expect(labels()).toEqual([
-      'Crop & merge to AOI',
+      'Crop and merge to AOI',
       'View merged scenes',
-      '⇩ Download merged crop',
-      '⇩ Download full scenes',
-      '⚙ Process',
+      'Download merged crop',
+      'Download full scenes',
+      'Process',
     ]);
   });
 
@@ -251,9 +252,9 @@ describe('the labels of the bar (UI-01g)', () => {
   it('say in their tooltips that the view and the downloads are at full resolution', () => {
     select('cog', AOI);
     show();
-    expect(button('Crop & merge to AOI').title).toContain('full resolution');
-    expect(button('View merged scenes').title).toContain('full resolution');
-    expect(button('⇩ Download merged crop').title).toContain('full resolution');
+    expect(tipOf(button('Crop and merge to AOI'))).toContain('full resolution');
+    expect(tipOf(button('View merged scenes'))).toContain('full resolution');
+    expect(tipOf(button('Download merged crop'))).toContain('full resolution');
   });
 
   it('put the number above its label, so the count has one box whether it says "scene" or "scenes"', () => {
@@ -272,7 +273,75 @@ describe('the labels of the bar (UI-01g)', () => {
     show();
     for (const b of container.querySelectorAll('button')) {
       expect(b.getAttribute('style')).toBeNull();
-      expect(['primary-btn', 'ghost-btn']).toContain(b.className);
+      expect(['btn primary', 'btn']).toContain(b.className);
     }
+  });
+});
+
+// NM4-53: a view takes the ticks of every dataset of the search; a download and a job work on one dataset.
+describe('ticks in several datasets', () => {
+  const itemOf = (id: string, collection: string): StacItem => ({ ...item(id), collection });
+  const sectionOf = (datasetId: string, items: StacItem[]) => ({
+    datasetId,
+    items,
+    groups: [{ key: ['2026-07-01'], label: '2026-07-01', items }],
+    notes: [],
+    groupingError: null,
+    origin: 'search' as const,
+    incomplete: false,
+  });
+
+  function twoDatasets(ticks: string[]) {
+    const d = [itemOf('A', 'd'), itemOf('B', 'd')];
+    const e = [itemOf('E1', 'e')];
+    const other = { ...dataset('cog'), id: 'e', title: 'Other dataset' };
+    useAppStore.setState({
+      datasets: [dataset('cog'), other],
+      datasetId: 'd',
+      openSectionId: 'd',
+      sections: [sectionOf('d', d), sectionOf('e', e)],
+      items: d,
+      groups: sectionOf('d', d).groups,
+      activeGroupIndex: 0,
+      selectedIds: ticks,
+      aoi: AOI,
+      error: null,
+    });
+    show();
+  }
+
+  it('counts the ticks of every dataset and names the spread in the tooltip', () => {
+    twoDatasets(['A', 'B', 'E1']);
+    expect(container.querySelector('.download-count strong')?.textContent).toBe('3');
+    expect(container.querySelector('.download-count')?.getAttribute('data-tip')).toBe('Some dataset 2 · Other dataset 1');
+  });
+
+  it('lets the buttons that start a view take them all', () => {
+    twoDatasets(['A', 'E1']);
+    expect(button('Crop and merge to AOI').disabled).toBe(false);
+    expect(button('View merged scenes').disabled).toBe(false);
+  });
+
+  it('keeps the download and the job on the open dataset, and says so', () => {
+    twoDatasets(['A', 'E1']);
+    expect(button('Download crop').disabled).toBe(false);
+    expect(tipOf(button('Download crop'))).toContain('Works on the 1 scene ticked in Some dataset only');
+    expect(tipOf(button('Process'))).toContain('Works on the 1 scene ticked in Some dataset only');
+  });
+
+  it('shows the bar where the ticks are only in another dataset, with the download and the job off and the reason on them', () => {
+    twoDatasets(['E1']);
+    expect(container.querySelector('.download-count strong')?.textContent).toBe('1');
+    expect(button('Crop to AOI').disabled).toBe(false);
+    expect(button('Download crop').disabled).toBe(true);
+    expect(button('Download full scene').disabled).toBe(true);
+    expect(button('Process').disabled).toBe(true);
+    expect(tipOf(button('Download crop'))).toContain('Tick scenes in Some dataset first');
+  });
+
+  it('says nothing more than before where all ticks are in the open dataset', () => {
+    twoDatasets(['A', 'B']);
+    expect(container.querySelector('.download-count')?.getAttribute('data-tip')).toBeNull();
+    expect(tipOf(button('Download merged crop'))).not.toContain('Works on');
   });
 });

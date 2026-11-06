@@ -47,7 +47,7 @@ const SEARCH_AOI: GeoJSON.Polygon = { type: 'Polygon', coordinates: [[[10, 50], 
 const LAYER_AOI: GeoJSON.Polygon = { type: 'Polygon', coordinates: [[[10.6, 50.6], [10.9, 50.6], [10.9, 50.9], [10.6, 50.9], [10.6, 50.6]]] };
 
 const info = (id: string): DownloadedInfo => ({
-  tileUrl: `/collections/optical/items/${id}/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=visual`,
+  datasetId: 'sentinel-2-c1-l2a', tileUrl: `/collections/optical/items/${id}/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=visual`,
   bounds: [10, 50, 11, 51],
   asset: 'visual',
   minZoom: 0,

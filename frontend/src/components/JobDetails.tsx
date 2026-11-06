@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from 'react';
 
+import { formatMoment, formatNumber } from '../numberFormat';
 import { viewOf } from '../permalink';
 import { MAX_TITLE_LENGTH } from '../jobShelf';
 import type { Order, OrderStep } from '../processing';
@@ -11,9 +12,10 @@ import { MIN_REMAINING_MS } from '../resultLayer';
 import { orderRetired, useProcessingStore, type JobEntry } from '../processingStore';
 import { useAppStore } from '../store';
 import InlineRename from './InlineRename';
-import { DownloadZip, RESAMPLED_TIP } from './JobRow';
-import { canRestore, canRetry, failsAgain, formatUntil, jobLabel, jobState, RETRY_TIP, useNowUntil } from './jobView';
-import Tip from './Tip';
+import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, PencilIcon, PlusIcon, RetryIcon } from './icons';
+import { DownloadZip } from './JobRow';
+import { canRestore, canRetry, jobLabel, jobState, RETRY_TIP, useNowUntil } from './jobView';
+import CloseButton from './CloseButton';
 
 export const NO_COPY_TIP = 'No copy of this order is kept: it was too large, or the browser ran out of room.';
 
@@ -26,8 +28,11 @@ const stepName = (op: string) => {
 // not shown as coordinates.
 function valueText(value: unknown): string | null {
   if (typeof value === 'string') return value.length > 120 ? `${value.slice(0, 120)}…` : value;
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-  if (Array.isArray(value) && value.every((v) => typeof v === 'string' || typeof v === 'number')) return value.join(', ');
+  if (typeof value === 'number') return formatNumber(value);
+  if (typeof value === 'boolean') return String(value);
+  if (Array.isArray(value) && value.every((v) => typeof v === 'string' || typeof v === 'number')) {
+    return value.map((v) => (typeof v === 'number' ? formatNumber(v) : v)).join(', ');
+  }
   return null;
 }
 
@@ -84,16 +89,16 @@ function Title({ job }: { job: JobEntry }) {
       ) : (
         <>
           <h3 className="pm-title-text">
-            <button type="button" className="pm-title-edit" title="Rename this job" onClick={() => setEditing(true)}>
+            <button type="button" className="pm-title-edit" data-tip-level="advanced" data-tip="Rename this job" onClick={() => setEditing(true)}>
               {jobLabel(job)}
             </button>
           </h3>
-          <button type="button" className="link-btn" title="Rename this job" aria-label="Rename this job" onClick={() => setEditing(true)}>
-            ✎
+          <button type="button" className="link-btn" data-tip-level="advanced" data-tip="Rename this job" aria-label="Rename this job" onClick={() => setEditing(true)}>
+            <PencilIcon />
           </button>
         </>
       )}
-      {batch && job.part && <span className="pp-help">{`${batch.title} · ${job.part}`}</span>}
+      {batch && job.part && <span className="hint">{`${batch.title} · ${job.part}`}</span>}
     </div>
   );
 }
@@ -118,9 +123,9 @@ function OpenInPanel({ job }: { job: JobEntry }) {
     <>
       <button
         type="button"
-        className="ghost-btn has-tip"
+        className="btn has-tip"
         aria-disabled={!order || busy}
-        data-tip={order ? 'Take the order of this job back into the panel' : NO_COPY_TIP}
+        data-tip-level="advanced" data-tip={order ? 'Take the order of this job back into the panel' : NO_COPY_TIP}
         aria-label={order ? undefined : `Open in panel: ${NO_COPY_TIP}`}
         onClick={() => {
           if (order && !busy) void open();
@@ -129,7 +134,7 @@ function OpenInPanel({ job }: { job: JobEntry }) {
         Open in panel
       </button>
       {problem && (
-        <p className="hint-text error" role="alert">
+        <p className="error" role="alert">
           {problem}
         </p>
       )}
@@ -167,23 +172,21 @@ export default function JobDetails() {
           className="pp-grip"
           aria-expanded={!folded}
           aria-label={folded ? 'Show the panel' : 'Fold the panel down'}
-          title={folded ? 'Show the panel' : 'Fold the panel down'}
+          data-tip-level="advanced" data-tip={folded ? 'Show the panel' : 'Fold the panel down'}
           onClick={() => setFolded(!folded)}
         >
-          {folded ? '▴' : '▾'}
+          {folded ? <ChevronUpIcon /> : <ChevronDownIcon />}
         </button>
-        <div className="vc-head">
-          <button type="button" className="link-btn" title="Back to the order" onClick={back}>
-            ‹ Order
+        <div className="pp-title-row">
+          <button type="button" className="link-btn" data-tip-level="advanced" data-tip="Back to the order" onClick={back}>
+            <ArrowLeftIcon lead />Order
           </button>
-          <button type="button" className="link-btn" title="Close the panel" onClick={close}>
-            ✕
-          </button>
+          <CloseButton onClick={close} />
         </div>
       </div>
       <div className="pp-body">
         {!job || !state ? (
-          <p className="hint-text">This job is not in the list.</p>
+          <p className="hint">This job is not in the list.</p>
         ) : (
           <>
             <Title job={job} />
@@ -192,14 +195,13 @@ export default function JobDetails() {
               <dd>
                 {state.key === 'running' ? `Running · ${state.text}` : state.text}
                 {job.superseded && <span className="pm-tag"> · Superseded</span>}
-                {job.resampled === true && state.key === 'finished' && <Tip text={RESAMPLED_TIP} symbol="⚠" tone="warn" />}
               </dd>
               {state.key === 'deleted' ? (
                 restorable &&
                 job.deletedUntil && (
                   <>
                     <dt>Restore until</dt>
-                    <dd title={job.deletedUntil}>{formatUntil(job.deletedUntil, now)}</dd>
+                    <dd data-tip-level="advanced" data-tip={job.deletedUntil}>{formatMoment(job.deletedUntil, now)}</dd>
                   </>
                 )
               ) : (
@@ -207,46 +209,46 @@ export default function JobDetails() {
                 state.key !== 'unavailable' && (
                   <>
                     <dt>Expires</dt>
-                    <dd title={job.expires}>{formatUntil(job.expires, now)}</dd>
+                    <dd data-tip-level="advanced" data-tip={job.expires}>{formatMoment(job.expires, now)}</dd>
                   </>
                 )
               )}
             </dl>
             {active && <progress className="pp-progress" max={100} value={job.status?.progress ?? 0} aria-label="Progress" />}
             {job.phase === 'failed' && (
-              <p className="hint-text error" role="alert">
+              <p className="error" role="alert">
                 {job.failure ?? job.status?.message ?? 'The job failed'}
               </p>
             )}
             {job.error && (
-              <p className="hint-text error" role="alert">
+              <p className="error" role="alert">
                 {job.error}
               </p>
             )}
             {job.retryError && (
-              <p className="hint-text error" role="alert">
+              <p className="error" role="alert">
                 {job.retryError}
               </p>
             )}
             {job.order && <Steps order={job.order} />}
             <div className="vc-actions">
-              {state.key === 'finished' && job.archive && <DownloadZip job={job} now={now} label="Download (ZIP)" className="ghost-btn" />}
+              {state.key === 'finished' && job.archive && <DownloadZip job={job} now={now} label="Download (ZIP)" className="btn" />}
               {state.key === 'finished' && job.tiles && (
                 <button
                   type="button"
-                  className="ghost-btn"
-                  title="Draw the result on the map, cut to the area of the job, as a layer"
+                  className="btn"
+                  data-tip-level="advanced" data-tip="Draw the result on the map, cut to the area of the job, as a layer"
                   onClick={() => void showOnMap(job.jobID)}
                 >
-                  Show on map
+                  <PlusIcon lead />Add to layers
                 </button>
               )}
               {active && (
                 <button
                   type="button"
-                  className="ghost-btn"
+                  className="btn"
                   disabled={job.cancelling || !job.status}
-                  title="Cancel this job"
+                  data-tip-level="advanced" data-tip={job.cancelling ? 'The job is being cancelled' : !job.status ? 'Waiting for the state of the job' : 'Cancel this job'}
                   onClick={() => void cancelJob(job.jobID)}
                 >
                   {job.cancelling ? 'Cancelling…' : 'Cancel'}
@@ -255,16 +257,16 @@ export default function JobDetails() {
               {retryable && (
                 <button
                   type="button"
-                  className="ghost-btn"
+                  className="btn"
                   disabled={job.retrying}
-                  title={RETRY_TIP}
+                  data-tip-level="advanced" data-tip={job.retrying ? 'Starting it again…' : RETRY_TIP}
                   aria-label={RETRY_TIP}
                   onClick={() => void retryJob(job.jobID)}
                 >
-                  ↻
+                  <RetryIcon />
                 </button>
               )}
-              {(state.key === 'expired' || state.key === 'unavailable' || (state.key === 'failed' && (failsAgain(job.failureKind) || job.retryRefused || !job.order))) && <OpenInPanel job={job} />}
+              <OpenInPanel job={job} />
             </div>
           </>
         )}

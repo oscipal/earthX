@@ -15,9 +15,9 @@ const rows = (moved: { layers: typeof layers; resultsAt: number } | null) => {
 
 // Otto, 30.10.2026 (zu #249): new layers are always on top, over "Results" too.
 describe('a new layer', () => {
-  it('goes on top, over "Results" on top as well', () => {
-    expect(resultsAtAfterAdding(0, 1)).toBe(1);
-    expect(resultsAtAfterAdding(0, 3)).toBe(3);
+  it('goes right under "Results" while it is on top, which stays there (Otto, 2.11.2026)', () => {
+    expect(resultsAtAfterAdding(0, 1)).toBe(0);
+    expect(resultsAtAfterAdding(0, 3)).toBe(0);
   });
 
   it('and over "Results" lower down, which keeps the layers above it', () => {

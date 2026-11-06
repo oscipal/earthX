@@ -12,6 +12,7 @@ import { jobEntry, NOW } from './fixtures/jobEntries';
 import type { MapLayer } from './layers';
 import { resetJobs, useProcessingStore } from './processingStore';
 import { useAppStore } from './store';
+import tokens from './tokens.css?raw';
 
 vi.mock('./components/MapView', () => ({ default: () => null }));
 
@@ -56,29 +57,40 @@ afterEach(() => {
 });
 
 const rail = () => container.querySelector<HTMLElement>('nav[aria-label="Main"]')!;
-const symbol = (name: 'controls' | 'layers' | 'jobs' | 'results') => container.querySelector<HTMLButtonElement>(`#rail-${name}`)!;
-const slot = (name: 'controls' | 'layers' | 'jobs' | 'results') => container.querySelector<HTMLElement>(`#dock-${name}`);
+const symbol = (name: 'controls' | 'layers' | 'jobs' | 'results' | 'settings') => container.querySelector<HTMLButtonElement>(`#rail-${name}`)!;
+const slot = (name: 'controls' | 'layers' | 'jobs' | 'results' | 'settings') => container.querySelector<HTMLElement>(`#dock-${name}`);
 const click = (el: Element) => act(() => el.dispatchEvent(new MouseEvent('click', { bubbles: true })));
 const key = (target: Element, name: string) => {
   const event = new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true });
   act(() => target.dispatchEvent(event));
   return event;
 };
+const settings = () => rail().querySelector<HTMLButtonElement>('button.rail-settings')!;
 const stops = () => [...rail().querySelectorAll<HTMLElement>('button')].map((b) => b.tabIndex);
 
 describe('the symbols', () => {
-  it('are four, in a navigation named "Main", each with its name for a screen reader', () => {
+  it('are five, in a navigation named "Main", each with its name for a screen reader: four panels and "Settings" at the bottom', () => {
     expect(rail()).not.toBeNull();
-    expect([...rail().querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))).toEqual(['Search and area', 'Layers', 'Processing jobs', 'Results, No results yet: run a search first']);
+    expect([...rail().querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))).toEqual(['Search and area', 'Layers', 'Jobs', 'Search results, No results yet: run a search first', 'Settings']);
   });
 
   it('carry their tooltip as text that shows on hover and on focus, and no second one as `title`', () => {
-    expect([...rail().querySelectorAll('button')].map((b) => b.getAttribute('data-tip'))).toEqual(['Search and area', 'Layers', 'Processing jobs', 'No results yet: run a search first']);
+    expect([...rail().querySelectorAll('button')].map((b) => b.getAttribute('data-tip'))).toEqual(['Search and area', 'Layers', 'Jobs', 'No results yet: run a search first', 'Settings']);
     expect(rail().querySelector('[title]')).toBeNull();
   });
 
   it('have an icon that a screen reader skips', () => {
     for (const svg of rail().querySelectorAll('svg')) expect(svg.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('draw their icons 20 px large, the size of the token --icon-size-rail (Otto, 4.11.2026)', () => {
+    const icons = [...rail().querySelectorAll('svg')];
+    expect(icons).toHaveLength(5);
+    for (const svg of icons) {
+      expect(svg.getAttribute('width')).toBe('20');
+      expect(svg.getAttribute('height')).toBe('20');
+    }
+    expect(tokens).toMatch(/--icon-size-rail:\s*20px/u);
   });
 
   it('count the layers and the jobs that run, and the count goes into the name', () => {
@@ -88,13 +100,13 @@ describe('the symbols', () => {
     });
     expect(symbol('layers').getAttribute('aria-label')).toBe('Layers, 3');
     expect(symbol('layers').querySelector('.rail-badge')?.textContent).toBe('3');
-    expect(symbol('jobs').getAttribute('aria-label')).toBe('Processing jobs, 2');
+    expect(symbol('jobs').getAttribute('aria-label')).toBe('Jobs, 2');
     expect(symbol('controls').querySelector('.rail-badge')).toBeNull();
   });
 
   it('do not count a job whose state is not known yet as running: an archived one, one of another tab', () => {
     act(() => useProcessingStore.setState({ jobs: [jobEntry(1, { status: null }), jobEntry(2)] }));
-    expect(symbol('jobs').getAttribute('aria-label')).toBe('Processing jobs, 1');
+    expect(symbol('jobs').getAttribute('aria-label')).toBe('Jobs, 1');
   });
 
   it('show no count where there is nothing to count, and "99+" for a great many', () => {
@@ -110,7 +122,6 @@ describe('the panels', () => {
     expect(useAppStore.getState().dock).toBe('controls');
     expect(slot('controls')!.hidden).toBe(false);
     expect(symbol('controls').getAttribute('aria-expanded')).toBe('true');
-    expect(container.querySelector('.app')!.classList.contains('dock-open')).toBe(true);
   });
 
   it('open one at a time: a second symbol takes the place of the first', () => {
@@ -128,7 +139,6 @@ describe('the panels', () => {
     click(symbol('controls'));
     expect(useAppStore.getState().dock).toBeNull();
     expect(container.querySelector<HTMLElement>('.dock')!.hidden).toBe(true);
-    expect(container.querySelector('.app')!.classList.contains('dock-open')).toBe(false);
     expect(symbol('controls').getAttribute('aria-expanded')).toBe('false');
   });
 
@@ -168,23 +178,57 @@ describe('the panels', () => {
     expect(useAppStore.getState().dock).toBe('controls');
   });
 
-  it('leave the buttons "Zoom to selection", "Basemap" and "Light" at the top right', () => {
+  it('leave only the button "Zoom to selection" at the top right: Basemap and Light/Dark are in "Settings" now (UI-04 part 4)', () => {
     const top = container.querySelector('.top-right')!;
-    expect([...top.querySelectorAll('button')].map((b) => b.textContent?.replace(/^\S+\s/u, ''))).toEqual(['Zoom to selection', 'Basemap', 'Light']);
+    expect([...top.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Zoom to selection']);
+  });
+
+  it('put "Settings" last, at the bottom edge of the rail, and it opens a panel like the others, not a menu (Otto, 4.11.2026)', () => {
+    const settings = rail().querySelector<HTMLButtonElement>('button.rail-settings')!;
+    expect([...rail().querySelectorAll('button')].at(-1)).toBe(settings);
+    expect(settings.id).toBe('rail-settings');
+    expect(settings.hasAttribute('aria-haspopup')).toBe(false);
+    expect(settings.getAttribute('aria-expanded')).toBe('false');
+    expect(slot('settings')!.hidden).toBe(true);
+    click(settings);
+    expect(useAppStore.getState().dock).toBe('settings');
+    expect(settings.getAttribute('aria-expanded')).toBe('true');
+    expect(settings.getAttribute('aria-controls')).toBe('dock-settings');
+    expect(slot('settings')!.hidden).toBe(false);
+    expect(slot('controls')!.hidden).toBe(true);
+    expect(container.querySelector('#dock-settings .settings-panel h2')?.textContent).toBe('Settings');
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+    // A second click closes it, like on the other symbols: it has no red x (Otto, 4.11.2026).
+    click(settings);
+    expect(useAppStore.getState().dock).toBeNull();
+    expect(container.querySelector('#dock-settings .close-x')).toBeNull();
+  });
+
+  it('have no red x in the head of any panel: a panel of the rail is opened and closed with its symbol only (Otto, 4.11.2026)', () => {
+    for (const name of ['controls', 'layers', 'jobs', 'results', 'settings'] as const) {
+      act(() => useAppStore.setState({ dock: name === 'results' ? 'controls' : name }));
+      expect(container.querySelector('.dock .close-x'), name).toBeNull();
+    }
+  });
+
+  it('give the panel "Settings" the width and the place of the other panels, in the same slot of the dock', () => {
+    const slots = [...container.querySelectorAll('.dock > .dock-slot')].map((el) => el.id);
+    expect(slots).toEqual(['dock-controls', 'dock-layers', 'dock-results', 'dock-settings']);
+    expect(container.querySelector('#dock-settings .dock-panel')).not.toBeNull();
   });
 });
 
 describe('the keyboard', () => {
   it('gives the Tab key one stop in the rail: the open panel\'s symbol', () => {
-    expect(stops()).toEqual([0, -1, -1, -1]);
+    expect(stops()).toEqual([0, -1, -1, -1, -1]);
     click(symbol('jobs'));
-    expect(stops()).toEqual([-1, -1, 0, -1]);
+    expect(stops()).toEqual([-1, -1, 0, -1, -1]);
   });
 
   it('keeps the stop on the last symbol focused where no panel is open', () => {
     click(symbol('controls'));
     act(() => symbol('layers').focus());
-    expect(stops()).toEqual([-1, 0, -1, -1]);
+    expect(stops()).toEqual([-1, 0, -1, -1, -1]);
   });
 
   it('moves between the symbols with the arrow keys and wraps at the ends', () => {
@@ -194,13 +238,15 @@ describe('the keyboard', () => {
     key(symbol('layers'), 'ArrowDown');
     key(symbol('jobs'), 'ArrowDown');
     key(symbol('results'), 'ArrowDown');
+    expect(document.activeElement).toBe(settings());
+    key(settings(), 'ArrowDown');
     expect(document.activeElement).toBe(symbol('controls'));
     key(symbol('controls'), 'ArrowUp');
-    expect(document.activeElement).toBe(symbol('results'));
-    key(symbol('results'), 'Home');
+    expect(document.activeElement).toBe(settings());
+    key(settings(), 'Home');
     expect(document.activeElement).toBe(symbol('controls'));
     key(symbol('controls'), 'End');
-    expect(document.activeElement).toBe(symbol('results'));
+    expect(document.activeElement).toBe(settings());
   });
 
   it('does not take other keys', () => {
@@ -216,55 +262,52 @@ describe('the keyboard', () => {
     expect(useAppStore.getState().dock).toBe('layers');
   });
 
-  it('closes the open panel with Escape from inside it and gives the focus back to its symbol', () => {
+  // Otto, 2.11.2026: Esc closes nothing; a panel closes with its symbol. Esc ends "Flip through layers" (NM4-65 part 9), the one thing it does here.
+  it('leaves the open panel open on Escape, from inside it and from its symbol; its symbol closes it', () => {
     click(symbol('layers'));
-    const inside = container.querySelector<HTMLElement>('.layer-manager h2')!;
-    key(inside, 'Escape');
-    expect(useAppStore.getState().dock).toBeNull();
+    key(container.querySelector<HTMLElement>('.layer-manager h2')!, 'Escape');
+    expect(useAppStore.getState().dock).toBe('layers');
+    act(() => symbol('layers').focus());
+    key(symbol('layers'), 'Escape');
+    expect(useAppStore.getState().dock).toBe('layers');
     expect(document.activeElement).toBe(symbol('layers'));
-  });
-
-  it('closes the open panel with Escape from its symbol, which keeps the focus', () => {
-    act(() => symbol('controls').focus());
-    key(symbol('controls'), 'Escape');
+    click(symbol('layers'));
     expect(useAppStore.getState().dock).toBeNull();
-    expect(document.activeElement).toBe(symbol('controls'));
   });
 
-  it('leaves the panel open when Escape closes the menu of a job row, and closes it with the next Escape', () => {
+  it('ends "Flip through layers" with Escape from inside the layer manager, and the panel stays after the next Escape too', () => {
+    act(() => useAppStore.setState({ layers: [layer('a'), layer('b')], flipThrough: false, flipLayerId: null }));
+    click(symbol('layers'));
+    act(() => useAppStore.getState().setFlipThrough(true));
+    key(container.querySelector<HTMLElement>('.layer-manager h2')!, 'Escape');
+    expect(useAppStore.getState().flipThrough).toBe(false);
+    expect(useAppStore.getState().dock).toBe('layers');
+    key(container.querySelector<HTMLElement>('.layer-manager h2')!, 'Escape');
+    expect(useAppStore.getState().dock).toBe('layers');
+  });
+
+  it('ends "Flip through layers" with Escape from the symbol of the layers, and the panel stays after the next Escape too', () => {
+    act(() => useAppStore.setState({ layers: [layer('a'), layer('b')], flipThrough: false, flipLayerId: null }));
+    click(symbol('layers'));
+    act(() => useAppStore.getState().setFlipThrough(true));
+    act(() => symbol('layers').focus());
+    key(symbol('layers'), 'Escape');
+    expect(useAppStore.getState().flipThrough).toBe(false);
+    expect(useAppStore.getState().dock).toBe('layers');
+    key(symbol('layers'), 'Escape');
+    expect(useAppStore.getState().dock).toBe('layers');
+  });
+
+  it('leaves the menu of a job row and the panel open on Escape (Otto, 2.11.2026: Esc closes no menu either)', () => {
     act(() => useProcessingStore.setState({ jobs: [jobEntry(1)] }));
     click(symbol('jobs'));
     click(container.querySelector('button[aria-haspopup="menu"]')!);
     const first = document.querySelector('[role="menu"] button')!;
     key(first, 'Escape');
-    expect(document.querySelector('[role="menu"]')).toBeNull();
+    expect(document.querySelector('[role="menu"]')).not.toBeNull();
     expect(useAppStore.getState().dock).toBe('jobs');
     key(container.querySelector('.processing-manager h2')!, 'Escape');
-    expect(useAppStore.getState().dock).toBeNull();
-  });
-
-  it('does nothing with Escape where no panel is open', () => {
-    click(symbol('controls'));
-    key(symbol('controls'), 'Escape');
-    expect(useAppStore.getState().dock).toBeNull();
-  });
-
-  it.each([
-    ['a text field', () => container.querySelector<HTMLElement>('.control-panel input')],
-    ['a menu', () => { const el = document.createElement('div'); el.setAttribute('role', 'menu'); container.querySelector('.control-panel')!.append(el); return el; }],
-    ['a pop-over', () => { const el = document.createElement('div'); el.className = 'popover'; container.querySelector('.control-panel')!.append(el); return el; }],
-  ])('leaves Escape to %s inside the panel', (_, find) => {
-    const target = find()!;
-    expect(target).not.toBeNull();
-    key(target, 'Escape');
-    expect(useAppStore.getState().dock).toBe('controls');
-  });
-
-  it('leaves an Escape that something else already took', () => {
-    const inside = container.querySelector<HTMLElement>('.control-panel h2, .control-panel')!;
-    inside.addEventListener('keydown', (e) => e.preventDefault());
-    key(inside, 'Escape');
-    expect(useAppStore.getState().dock).toBe('controls');
+    expect(useAppStore.getState().dock).toBe('jobs');
   });
 });
 

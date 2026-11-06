@@ -8,7 +8,7 @@ from dataclasses import replace
 import pytest
 
 from earthx.catalog.collection import to_stac_collection
-from earthx.catalog.datasets import COP_DEM_GLO_30, SENTINEL_2_L2A
+from earthx.catalog.datasets import COP_DEM_GLO_30, REGISTRY, SENTINEL_2_L2A
 from earthx.catalog.registry import (
     ConfigError,
     CoverageProvider,
@@ -37,8 +37,9 @@ CLOUD = SearchFilter(
     maximum=100.0,
     integer=False,
     values=(),
-    within_aoi=False,
+    within_aoi=None,
     group="Clouds",
+    area_based=True,
 )
 ORBIT = replace(
     CLOUD,
@@ -49,6 +50,7 @@ ORBIT = replace(
     maximum=175,
     integer=True,
     group="Acquisition",
+    area_based=False,
 )
 PLATFORM = SearchFilter(
     property="platform",
@@ -60,8 +62,9 @@ PLATFORM = SearchFilter(
     maximum=None,
     integer=False,
     values=(FilterValue("sentinel-2a", "Sentinel-2A"), FilterValue("sentinel-2b", "Sentinel-2B")),
-    within_aoi=False,
+    within_aoi=None,
     group="Acquisition",
+    area_based=False,
 )
 
 
@@ -118,8 +121,17 @@ class TestTheEntries:
         tooltips = [entry.description for entry in SENTINEL_2_L2A.search_filters]
         assert len(set(tooltips)) == len(tooltips)
 
-    def test_only_the_cloud_cover_may_be_applied_inside_the_aoi(self) -> None:
-        assert [entry.property for entry in SENTINEL_2_L2A.search_filters if entry.within_aoi] == ["eo:cloud_cover"]
+    def test_the_shares_of_a_class_may_be_applied_inside_the_aoi_and_degraded_data_may_not(self) -> None:
+        assert [entry.property for entry in SENTINEL_2_L2A.search_filters if entry.within_aoi] == [
+            "eo:cloud_cover",
+            "s2:thin_cirrus_percentage",
+            "s2:cloud_shadow_percentage",
+            "s2:nodata_pixel_percentage",
+            "s2:snow_ice_percentage",
+            "s2:water_percentage",
+            "s2:vegetation_percentage",
+            "s2:not_vegetated_percentage",
+        ]  # "Degraded data" has no class of the classification (Otto, 05.11.2026)
 
     @pytest.mark.parametrize(
         "property_name",
@@ -155,6 +167,7 @@ class TestTheEntryIsRefused:
             (replace(CLOUD, property="eo:cloud:cover"), "not a property"),
             (replace(CLOUD, property="datetime"), "not a property"),
             (replace(CLOUD, property="earthx:aoi_cloud_cover"), "kept for filters the platform computes"),
+            (replace(CLOUD, property="earthx:aoi_nodata"), "kept for filters the platform computes"),
             (replace(CLOUD, title=" "), "title and a description"),
             (replace(CLOUD, description=""), "title and a description"),
             (replace(CLOUD, group=""), "group"),
@@ -221,7 +234,8 @@ class TestTheCollection:
                 "title": "Cloud cover",
                 "description": "Share of the scene covered by clouds.",
                 "unit": "%",
-                "within_aoi": False,
+                "within_aoi": None,
+                "area_based": True,
                 "group": "Clouds",
                 "type": "number",
                 "minimum": 0.0,
@@ -233,7 +247,8 @@ class TestTheCollection:
                 "title": "Relative orbit",
                 "description": "Share of the scene covered by clouds.",
                 "unit": None,
-                "within_aoi": False,
+                "within_aoi": None,
+                "area_based": False,
                 "group": "Acquisition",
                 "type": "integer",
                 "minimum": 1,
@@ -245,7 +260,8 @@ class TestTheCollection:
                 "title": "Satellite",
                 "description": "The satellite that took the scene.",
                 "unit": None,
-                "within_aoi": False,
+                "within_aoi": None,
+                "area_based": False,
                 "group": "Acquisition",
                 "type": "string",
                 "oneOf": [
@@ -340,3 +356,12 @@ def test_the_key_of_the_same_question_is_one_spelling() -> None:
     second = {"eo:cloud_cover": RangeCondition(None, 20.0), "platform": ValuesCondition(("sentinel-2a",))}
     assert conditions_key(first) == conditions_key(second)
     assert conditions_key(first) == {"eo:cloud_cover": ["range", None, 20.0], "platform": ["values", ["sentinel-2a"]]}
+
+
+class TestEveryDatasetOffersTheCoverage:
+    """Otto, 05.11.2026: "AOI coverage" is there for all datasets, and stands first in "Advanced search"."""
+
+    @pytest.mark.parametrize("entry", REGISTRY, ids=lambda entry: entry.dataset_id)
+    def test_each_dataset_of_the_registry_says_so(self, entry) -> None:
+        assert entry.search_capabilities.aoi_coverage is True
+        assert to_stac_collection(entry)["earthx:search_capabilities"]["aoi_coverage"] is True

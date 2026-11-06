@@ -1,0 +1,12 @@
+{
+  "comment": "Scenes of Sentinel-2 style items and the overpass groups the registry key makes of them (day and datatake, newest first). Shared by backend/tests/earthx/api/test_pass_filter.py and frontend/src/grouping.test.ts: the filter, the results list and the mosaic job hold the same scenes per group. Made up, no real scene.",
+  "items": [
+    {"id": "A1", "geometry": null, "properties": {"datetime": "2024-05-12T10:00:10Z", "s2:datatake_id": "dt-1", "platform": "sentinel-2a"}},
+    {"id": "B1", "geometry": null, "properties": {"datetime": "2024-05-12T10:00:05Z", "s2:datatake_id": "dt-2", "platform": "sentinel-2a"}},
+    {"id": "A2", "geometry": null, "properties": {"datetime": "2024-05-12T10:00:00Z", "s2:datatake_id": "dt-1", "platform": "sentinel-2a"}},
+    {"id": "C1", "geometry": null, "properties": {"datetime": "2024-05-11T23:59:58Z", "s2:datatake_id": "dt-1", "platform": "sentinel-2a"}},
+    {"id": "D1", "geometry": null, "properties": {"datetime": "2024-05-11T23:59:50Z", "s2:datatake_id": "dt-3", "platform": "sentinel-2a"}},
+    {"id": "A3", "geometry": null, "properties": {"datetime": "2024-05-10T09:00:00+02:00", "s2:datatake_id": "dt-1", "platform": "sentinel-2a"}}
+  ],
+  "groups": [["A1", "A2"], ["B1"], ["C1"], ["D1"], ["A3"]]
+}

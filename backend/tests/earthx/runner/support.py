@@ -103,6 +103,20 @@ def normalize_recipe(method: str = "percentile", params: dict[str, Any] | None =
     return recipe
 
 
+#: Version 4 (NM4-71): the same methods without the numbers; the run, of the job and of the runner, measures them.
+NORMALIZE_V4_METHODS: dict[str, dict[str, Any]] = {
+    method: {key: value for key, value in params.items() if key != "measured"}
+    for method, params in NORMALIZE_METHODS.items()
+}
+
+
+def normalize_v4_recipe(method: str = "percentile", params: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Version 4 of ``normalize`` over two scaled COG bands: nothing in the recipe says the numbers, the run measures them."""
+    recipe = normalize_recipe()
+    recipe["steps"] = [{"op": "normalize", "op_version": 4, "params": params or NORMALIZE_V4_METHODS[method]}]
+    return recipe
+
+
 MASK_VALUES: dict[str, Any] = {"band": "red", "condition": "gt", "values": [0.2]}
 
 

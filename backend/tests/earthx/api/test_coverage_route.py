@@ -22,7 +22,7 @@ from fastapi.testclient import TestClient
 from earthx.adapters import ADAPTER_SPECS
 from earthx.api.coverage_route import MAX_BODY_BYTES, build_router
 from earthx.catalog.datasets import SENTINEL_2_L2A
-from earthx.catalog.registry import CoverageProvider, DatasetRegistry, ItemHolding
+from earthx.catalog.registry import CoverageProvider, DatasetRegistry, ItemHolding, SearchCapabilities
 from tests.earthx.adapters.conftest import answering, gateway_for, load
 
 DATASET = SENTINEL_2_L2A.dataset_id
@@ -239,7 +239,9 @@ class TestSearchFilters:
         [
             query_of(**{"foo:bar": {"gte": 1}}),  # a property the dataset does not offer: the source would answer 0
             query_of(**{"sat:orbit_state": {"in": ["ascending", "descending"]}}),  # DS-04, not Sentinel-2
-            query_of(**{"earthx:aoi_cloud_cover": {"lte": 10}}),  # reserved for DS-03
+            query_of(**{"earthx:aoi_cloud_cover": {"lte": 10}}),  # needs the raster of a scene (DS-03)
+            query_of(**{"earthx:aoi_nodata": {"lte": 10}}),  # likewise
+            query_of(**{"earthx:aoi_cloud_cover": {"lte": 10}, "earthx:aoi_nodata": {"lte": 10}}),
             query_of(datetime={"gte": 1}),  # has its own parameter
             query_of(**{"eo:cloud_cover": {"lt": 20}}),  # an operator outside gte/lte
             query_of(**{"eo:cloud_cover": {"between": [1, 2]}}),  # the source would pass it over
@@ -289,6 +291,7 @@ class TestSearchFilters:
             {"eo:cloud_cover": {}},
             {"platform": {"in": ["sentinel-2z"]}},
             {"earthx:aoi_cloud_cover": {"lte": 10}},
+            {"earthx:aoi_nodata": {"lte": 10}},
         ],
     )
     def test_the_body_takes_the_same_filters_as_the_url_and_refuses_the_same(self, query: dict[str, Any]) -> None:
@@ -297,8 +300,27 @@ class TestSearchFilters:
         assert response.status_code == 400
         assert not seen
 
+    @pytest.mark.parametrize(
+        ("query", "named"),
+        [
+            ({"earthx:aoi_cloud_cover": {"lte": 10.4321}}, "earthx:aoi_cloud_cover"),
+            ({"earthx:aoi_nodata": {"lte": 10.4321}}, "earthx:aoi_nodata"),
+            (
+                {"earthx:aoi_cloud_cover": {"lte": 10.4321}, "earthx:aoi_nodata": {"lte": 10.4321}},
+                "earthx:aoi_cloud_cover and earthx:aoi_nodata",
+            ),
+        ],
+    )
+    def test_the_refusal_names_the_filter_asked_and_no_value(self, query: dict[str, Any], named: str) -> None:
+        """Otto, 31.10.2026: the text names the filter within the AOI that was asked for, not always the cloud share."""
+        gateway, seen = answering(ok("aggregate_complete"))
+        response = post(client_for(gateway), bbox=[5, 45, 15, 55], query=query)
+        assert response.status_code == 400
+        assert response.json()["detail"] == f"the coverage map cannot apply {named}; search for scenes"
+        assert "10.4321" not in response.text and not seen
+
     def test_a_dataset_without_filters_refuses_any(self) -> None:
-        config = replace(SENTINEL_2_L2A, search_filters=())
+        config = replace(SENTINEL_2_L2A, search_filters=(), search_capabilities=SearchCapabilities(evaluate=False, aoi_coverage=False))
         gateway, seen = answering(ok("aggregate_complete"))
         response = get(
             client_for(gateway, registry=DatasetRegistry((config,))),
@@ -570,6 +592,7 @@ class TestUnavailableProvider:
             SENTINEL_2_L2A,
             coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
             search_filters=(),
+            search_capabilities=SearchCapabilities(evaluate=False, aoi_coverage=False),
             # local-sql is only a valid combination on a materialized entry
             # (M3-11a K-05) — this route's 501 is about no caller existing yet,
             # not about the combination itself being invalid.
@@ -593,6 +616,7 @@ class TestAreaPathWithoutADatabase:
             capabilities=replace(SENTINEL_2_L2A.capabilities, single_coverage_product=True),
             coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
             search_filters=(),
+            search_capabilities=SearchCapabilities(evaluate=False, aoi_coverage=False),
             source=replace(SENTINEL_2_L2A.source, item_holding=ItemHolding.MATERIALIZED),
         )
 

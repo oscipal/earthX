@@ -23,6 +23,7 @@ import PreviewBadge from './PreviewBadge';
 import ProcessingPanel from './ProcessingPanel';
 import ViewBar from './ViewBar';
 import ViewerControls from './ViewerControls';
+import { tipOf, tipsOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -196,7 +197,7 @@ async function openPanel() {
 
 function button(label: string | RegExp, within: Element = container): HTMLButtonElement {
   const found = [...within.querySelectorAll('button')].find((b) =>
-    typeof label === 'string' ? b.textContent?.trim() === label : label.test(b.textContent ?? ''),
+    typeof label === 'string' ? b.textContent?.trim() === label || b.getAttribute('aria-label') === label : label.test(b.textContent ?? '') || label.test(b.getAttribute('aria-label') ?? ''),
   );
   if (!found) throw new Error(`no button ${String(label)} in ${container.textContent}`);
   return found as HTMLButtonElement;
@@ -232,7 +233,7 @@ async function withNdvi(items = [scene('S2B_A')]) {
   select(items);
   await openPanel();
   vi.useFakeTimers();
-  click(button('＋ Band math'));
+  click(button('Band math'));
   typeInto(expression(), '(nir - red) / (nir + red)');
   await afterDebounce();
 }
@@ -241,9 +242,9 @@ describe('the preview section', () => {
   it('says nothing before there is a step, and asks to complete the first one', async () => {
     select([scene('S2B_A')]);
     await openPanel();
-    expect(section().querySelector('.hint-text')).toBeNull();
+    expect(section().querySelector('.hint')).toBeNull();
     expect(section().querySelector('.pp-range')).toBeNull();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     expect(section().textContent).toContain('Complete the step to see the preview.');
     expect(store().preview).toBeNull();
   });
@@ -252,7 +253,7 @@ describe('the preview section', () => {
     select([scene('S2B_A'), scene('S2B_B')]);
     await openPanel();
     vi.useFakeTimers();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(), 'nir / red');
     act(() => {
       vi.advanceTimersByTime(399);
@@ -275,7 +276,8 @@ describe('the preview section', () => {
     expect(JSON.parse(params.get('params')!)).toEqual({ expression: '(nir - red) / (nir + red)', name: 'result' });
     expect(params.get('rescale')).toBe('-1,1');
     expect(params.get('colormap_name')).toBe('rdylgn');
-    expect(section().textContent).toContain('Where scenes overlap');
+    expect(tipsOf(section())).toContain('Where scenes overlap');
+    expect(section().textContent).not.toContain('Where scenes overlap');
   });
 
   it('is cut to the AOI only for "AOI only"', async () => {
@@ -320,7 +322,7 @@ describe('the preview section', () => {
     select([scene('S2B_A')]);
     await openPanel();
     vi.useFakeTimers();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(), 'nir / red');
     act(() => store().closeProcessing());
     await afterDebounce();
@@ -363,7 +365,7 @@ describe('the preview section', () => {
     for (let i = 1; i <= 17; i++) wide.assets[`b${i}`] = { href: 'https://example.org/b.tif', type: COG, 'raster:bands': [{ data_type: 'uint16' }] };
     select([wide]);
     await openPanel();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(), Array.from({ length: 17 }, (_, i) => `b${i + 1}`).join(' + '));
     expect(section().textContent).toContain('No preview: the map takes at most 16 bands.');
     expect(store().preview).toBeNull();
@@ -380,7 +382,7 @@ describe('the preview section', () => {
       ],
     });
     await openPanel();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(), 'nir / red');
     expect(section().textContent).toContain('Choose a pass to see the preview.');
     expect(store().preview).toBeNull();
@@ -390,8 +392,8 @@ describe('the preview section', () => {
     select([scene('S2B_A')]);
     await openPanel();
     vi.useFakeTimers();
-    click(button('＋ Reproject and resample'));
-    click(button('＋ Band math'));
+    click(button('Reproject and resample'));
+    click(button('Band math'));
     typeInto(expression(), 'nir / red');
     await afterDebounce();
     expect(section().textContent).toContain('No preview: the first step runs only as a job.');
@@ -402,14 +404,14 @@ describe('the preview section', () => {
   it('says the job runs all steps while the map shows the first', async () => {
     await withNdvi();
     expect(section().textContent).not.toContain('the job runs all steps');
-    click(button('＋ Band math'));
+    click(button('Band math'));
     expect(section().textContent).toContain('The map shows the first step; the job runs all steps.');
     expect(store().preview!.title).toBe('Band math');
   });
 
   async function chainOfTwo(): Promise<void> {
     await withNdvi();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(1), 'red + 1');
     await afterDebounce();
     await flush();
@@ -420,7 +422,7 @@ describe('the preview section', () => {
 
   it('draws a chain of tile steps and counts what the map leaves out', async () => {
     await withNdvi();
-    const normalize = { key: 900, op: 'normalize', opVersion: 2, values: { bands: 'result', in_min: '-1', in_max: '1', out_min: '0', out_max: '255', clip: true } };
+    const normalize = { key: 900, op: 'normalize', opVersion: 4, values: { method: 'linear', bands: 'result', in_min: '-1', in_max: '1', out_min: '0', out_max: '255', clip: true } };
     act(() => useProcessingStore.setState({ steps: [...store().steps, normalize] }));
     await afterDebounce();
     await flush();
@@ -428,8 +430,10 @@ describe('the preview section', () => {
     expect(store().previewNote).toBeNull();
     const url = new URL(store().preview!.scenes[0].url, 'http://localhost');
     expect(url.searchParams.getAll('op')).toEqual(['band_math', 'normalize']);
+    // `normalize` of version 4 runs only as a job; the tile takes it as version 3 (NM4-71).
+    expect(url.searchParams.getAll('op_version')).toEqual(['2', '3']);
     expect(section().textContent).not.toContain('the job runs all steps');
-    click(button('＋ Band math'));
+    click(button('Band math'));
     expect(section().textContent).toContain('The map shows the first 2 steps; the job runs all steps.');
     expect(store().preview!.title).toBe('Band math → Normalize');
   });
@@ -570,9 +574,9 @@ describe('the preview section', () => {
   it('asks for a band when none is named', async () => {
     select([scene('S2B_A')]);
     await openPanel();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(), '1 + 1');
-    expect(section().textContent).toContain('Pick a band for the output to see the preview.');
+    expect(section().textContent).toContain('Choose a band for the output to see the preview.');
     expect(store().preview).toBeNull();
   });
 
@@ -582,7 +586,7 @@ describe('the preview section', () => {
     it('starts at -1 to 1 with rdylgn and draws a new range only after "Apply"', async () => {
       await withNdvi();
       expect(inputs().map((i) => i.value)).toEqual(['-1', '1']);
-      expect(section().querySelector('select')!.value).toBe('rdylgn');
+      expect(section().querySelector<HTMLSelectElement>('select:not(.vc-unit)')!.value).toBe('rdylgn');
       typeInto(inputs()[1], '0.8');
       await afterDebounce();
       expect(new URL(store().preview!.scenes[0].url, 'http://localhost').searchParams.get('rescale')).toBe('-1,1');
@@ -604,7 +608,7 @@ describe('the preview section', () => {
 
     it('takes another colormap, or none', async () => {
       await withNdvi();
-      const select_ = section().querySelector('select')!;
+      const select_ = section().querySelector<HTMLSelectElement>('select:not(.vc-unit)')!;
       act(() => {
         const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!;
         setter.call(select_, '');
@@ -615,10 +619,40 @@ describe('the preview section', () => {
       expect(new URL(store().preview!.scenes[0].url, 'http://localhost').searchParams.has('colormap_name')).toBe(false);
     });
 
+    // Otto, 01.11.2026: a change of the colormap alone must open "Apply", in values and in percentiles that are applied already.
+    it('opens "Apply" for a change of the colormap alone, in values and in percentiles that are applied already', async () => {
+      await withNdvi();
+      const colormapSelect = () => section().querySelector<HTMLSelectElement>('select:not(.vc-unit)')!;
+      const unitSelect = () => section().querySelector<HTMLSelectElement>('select.vc-unit')!;
+      const apply = () => section().querySelector<HTMLButtonElement>('.vc-apply')!;
+      const choose = (element: HTMLSelectElement, value: string) =>
+        act(() => {
+          Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!.call(element, value);
+          element.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+      choose(colormapSelect(), 'terrain');
+      expect(apply().disabled).toBe(false);
+      click(apply());
+      expect(store().range.colormap).toBe('terrain');
+      // In percentiles: applied, nothing left to apply ...
+      choose(unitSelect(), 'percent');
+      click(apply());
+      await flush();
+      expect(store().range.percent).toEqual({ low: '2', high: '98' });
+      expect(apply().disabled).toBe(true);
+      // ... until the colormap alone changes.
+      choose(colormapSelect(), 'magma');
+      expect(apply().disabled).toBe(false);
+      click(apply());
+      await flush();
+      expect(store().range).toMatchObject({ colormap: 'magma', percent: { low: '2', high: '98' } });
+      expect(apply().disabled).toBe(true);
+    });
+
   });
 
   // M4-19c: the range of a preview is measured once, on the first scene, and chosen by the rule of a result's.
-  describe('the measured range and the unit (M4-19c)', () => {
+  describe('the measured range (M4-19c)', () => {
     const inputs = () => [...section().querySelectorAll<HTMLInputElement>('input[type="number"]')];
     const asked = () => fetchMock.mock.calls.map(([u]) => String(u)).filter((u) => u.includes('/statistics?'));
     const rescale = () => new URL(store().preview!.scenes[0].url, 'http://localhost').searchParams.get('rescale');
@@ -642,7 +676,7 @@ describe('the preview section', () => {
       await withNdvi();
       expect([rescale(), colormap()]).toEqual(['120,2400', 'viridis']);
       expect(inputs().map((i) => i.value)).toEqual(['120', '2400']);
-      expect(section().querySelector('select')!.value).toBe('viridis');
+      expect(section().querySelector<HTMLSelectElement>('select:not(.vc-unit)')!.value).toBe('viridis');
       expect(store().range).toEqual({ vmin: '-1', vmax: '1', colormap: 'rdylgn' }); // no choice of the user's
     });
 
@@ -680,7 +714,7 @@ describe('the preview section', () => {
       expect(store().range).toEqual({ vmin: '-1', vmax: '0.8', colormap: 'rdylgn' });
     });
 
-    it('keeps the range of the user across expressions, and "Auto stretch" gives the measure back', async () => {
+    it('keeps the range of the user across expressions, and "Auto-scale" gives the measure back', async () => {
       statistics = () => measured({ b1: DEM_VALUES });
       await withNdvi();
       typeInto(inputs()[0], '0');
@@ -690,11 +724,11 @@ describe('the preview section', () => {
       typeInto(expression(), 'nir / red');
       await afterDebounce();
       expect(rescale()).toBe('0,5');
-      click(button('Auto stretch'));
+      click(button('Auto-scale'));
       await afterDebounce();
       expect([rescale(), colormap()]).toEqual(['120,2400', 'viridis']);
       expect(inputs().map((i) => i.value)).toEqual(['120', '2400']);
-      expect(button('Auto stretch').disabled).toBe(true);
+      expect(button('Auto-scale').disabled).toBe(true);
     });
 
     it('does not write over what the user is typing when the measure arrives', async () => {
@@ -703,7 +737,7 @@ describe('the preview section', () => {
       select([scene('S2B_A')]);
       await openPanel();
       vi.useFakeTimers();
-      click(button('＋ Band math'));
+      click(button('Band math'));
       typeInto(expression(), 'nir / red');
       act(() => {
         vi.advanceTimersByTime(400);
@@ -716,13 +750,13 @@ describe('the preview section', () => {
       expect(rescale()).toBe('120,2400');
     });
 
-    it('draws the start range once the user applies it against a measure, and lets Auto stretch take it back', async () => {
+    it('draws the start range once the user applies it against a measure, and lets Auto-scale take it back', async () => {
       statistics = () => measured({ b1: DEM_VALUES });
       await withNdvi();
       expect(rescale()).toBe('120,2400');
       typeInto(inputs()[0], '-1');
       typeInto(inputs()[1], '1');
-      const select_ = section().querySelector('select')!;
+      const select_ = section().querySelector<HTMLSelectElement>('select:not(.vc-unit)')!;
       act(() => {
         const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!;
         setter.call(select_, 'rdylgn');
@@ -731,8 +765,8 @@ describe('the preview section', () => {
       click(button('Apply'));
       await afterDebounce();
       expect([rescale(), colormap()]).toEqual(['-1,1', 'rdylgn']);
-      expect(button('Auto stretch').disabled).toBe(false);
-      click(button('Auto stretch'));
+      expect(button('Auto-scale').disabled).toBe(false);
+      click(button('Auto-scale'));
       await afterDebounce();
       expect(rescale()).toBe('120,2400');
     });
@@ -743,7 +777,7 @@ describe('the preview section', () => {
       select([scene('S2B_A')]);
       await openPanel();
       vi.useFakeTimers();
-      click(button('＋ Band math'));
+      click(button('Band math'));
       typeInto(expression(), 'nir - red');
       await afterDebounce();
       typeInto(expression(), 'nir / red'); // inside the 400 ms of the next picture
@@ -771,7 +805,7 @@ describe('the preview section', () => {
         await openPanel();
         vi.useFakeTimers();
         const seen = drawn();
-        click(button('＋ Band math'));
+        click(button('Band math'));
         typeInto(expression(), 'nir / red');
         await afterDebounce();
         return seen;
@@ -802,7 +836,7 @@ describe('the preview section', () => {
         await flush();
         expect(seen).toEqual(['-1,1', '120,2400']);
         expect(inputs().map((i) => i.value)).toEqual(['120', '2400']);
-        expect(unit()).toBe('m');
+        expect(unit()).toBeNull();
       });
 
       it('does not redraw when the late measure calls for the same range', async () => {
@@ -836,7 +870,7 @@ describe('the preview section', () => {
         await openPanel();
         vi.useFakeTimers();
         const seen = drawn();
-        click(button('＋ Band math'));
+        click(button('Band math'));
         typeInto(expression(), 'nir');
         await afterDebounce();
         await flush();
@@ -876,7 +910,7 @@ describe('the preview section', () => {
       });
     });
 
-    it('keeps the start range, says so and does not ask again when the measure fails; "Auto stretch" asks again', async () => {
+    it('keeps the start range, says so and does not ask again when the measure fails; "Auto-scale" asks again', async () => {
       statistics = () => new Response('{}', { status: 502 });
       await withNdvi();
       expect(rescale()).toBe('-1,1');
@@ -887,8 +921,8 @@ describe('the preview section', () => {
       await afterDebounce();
       expect(asked()).toHaveLength(2);
       statistics = () => measured({ b1: DEM_VALUES });
-      expect(button('Auto stretch').disabled).toBe(false);
-      click(button('Auto stretch'));
+      expect(button('Auto-scale').disabled).toBe(false);
+      click(button('Auto-scale'));
       await afterDebounce();
       expect(asked()).toHaveLength(3);
       expect(rescale()).toBe('120,2400');
@@ -902,19 +936,11 @@ describe('the preview section', () => {
       expect(section().textContent).not.toContain('could not be measured');
     });
 
-    it('writes the unit beside the range, where the steps leave one', async () => {
+    it('writes no unit at "Scale", also where the data have one (Otto, 03.11.2026)', async () => {
       statistics = () => measured({ b1: DEM_VALUES });
       await withNdvi();
-      expect(unit()).toBe('m');
-    });
-
-    it('puts the unit in an element of its own beside the max field, never inside a field', async () => {
-      statistics = () => measured({ b1: DEM_VALUES });
-      await withNdvi();
-      const element = section().querySelector('.pp-unit')!;
-      expect(element.closest('label')).toBeNull();
-      expect(element.previousElementSibling?.matches('label.vc-num')).toBe(true);
-      expect(element.previousElementSibling?.textContent).toContain('max');
+      expect(unit()).toBeNull();
+      expect(section().querySelector('.vc-scale')?.textContent).not.toMatch(/\bm\b/u);
     });
 
     it.each([['1'], [null], ['']])('writes no unit beside the range for %j', async (value) => {
@@ -929,7 +955,7 @@ describe('the preview section', () => {
       expect(unit()).toBeNull();
     });
 
-    it('shows the unit of a hand range as soon as the measure is in, and drops that of a former preview', async () => {
+    it('shows no unit for a hand range, nor that of a former preview', async () => {
       statistics = () => measured({ b1: DEM_VALUES });
       await withNdvi();
       typeInto(inputs()[1], '5');
@@ -943,8 +969,8 @@ describe('the preview section', () => {
     it('puts the unit into no layer: the preview pinned to the layer manager shows none', async () => {
       statistics = () => measured({ b1: DEM_VALUES });
       await withNdvi();
-      expect(unit()).toBe('m');
-      click(button('＋ Add preview to layers'));
+      expect(unit()).toBeNull();
+      click(button('Add preview to layers'));
       expect(useAppStore.getState().layers[0]).not.toHaveProperty('unit');
       const manager = document.createElement('div');
       document.body.append(manager);
@@ -968,7 +994,7 @@ describe('the range measured over the AOI (NM4-19b)', () => {
   const sceneAsked = () => fetchMock.mock.calls.map(([u]) => String(u)).filter((u) => u.includes('/statistics?'));
   const rescale = () => new URL(store().preview!.scenes[0].url, 'http://localhost').searchParams.get('rescale');
   const colormap = () => new URL(store().preview!.scenes[0].url, 'http://localhost').searchParams.get('colormap_name');
-  const title = () => section().querySelector('.pp-badge:not(.loading)')?.getAttribute('title') ?? null;
+  const title = () => section().querySelector('.badge:not(.loading)')?.getAttribute('data-tip') ?? null;
   const unit = () => section().querySelector('.pp-unit')?.textContent ?? null;
   const DEM = { count: 900, min: 100, max: 2500, percentile_2: 120, percentile_98: 2400, unit: 'm' };
   const OUTLIERS = { count: 900, min: -1.3, max: 1.5, percentile_2: 0, percentile_98: 0.91, unit: null };
@@ -1054,10 +1080,10 @@ describe('the range measured over the AOI (NM4-19b)', () => {
     expect(title()).toBeNull();
   });
 
-  it('takes the unit from the answer, and shows its range in the fields', async () => {
+  it('shows the range of the answer in the fields, without its unit', async () => {
     areaStatistics = () => areaAnswer([areaBand(DEM)]);
     await aoiOnly();
-    expect(unit()).toBe('m');
+    expect(unit()).toBeNull();
     expect([rescale(), colormap()]).toEqual(['120,2400', 'viridis']);
     expect([...section().querySelectorAll<HTMLInputElement>('input[type="number"]')].map((i) => i.value)).toEqual(['120', '2400']);
   });
@@ -1074,7 +1100,7 @@ describe('the range measured over the AOI (NM4-19b)', () => {
     await openPanel();
     act(() => useProcessingStore.setState({ runAs: 'scene' }));
     vi.useFakeTimers();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(), '(nir - red) / (nir + red)');
     click(button('AOI only'));
     await afterDebounce();
@@ -1097,7 +1123,7 @@ describe('the range measured over the AOI (NM4-19b)', () => {
       expect(store().measure).toMatchObject({ source: 'area', exact: true });
       both();
       expect(title()).toBeNull();
-      expect(container.querySelector('.preview-badge')!.getAttribute('title')).toBeNull();
+      expect(container.querySelector('.preview-badge-dock .badge')!.getAttribute('data-tip')).toBeNull();
     });
 
     it('says the tiler read a coarser raster, on the panel and on the map', async () => {
@@ -1106,7 +1132,7 @@ describe('the range measured over the AOI (NM4-19b)', () => {
       expect(store().measure).toMatchObject({ source: 'area', exact: false });
       both();
       expect(title()).toBe(COARSE_HINT);
-      expect(container.querySelector('.preview-badge')!.getAttribute('title')).toBe(COARSE_HINT);
+      expect(container.querySelector('.preview-badge-dock .badge')!.getAttribute('data-tip')).toBe(COARSE_HINT);
       // The range of a coarse read is drawn all the same: it is better than the first whole scene's.
       expect([rescale(), colormap()]).toEqual(['120,2400', 'viridis']);
     });
@@ -1188,7 +1214,7 @@ describe('the range measured over the AOI (NM4-19b)', () => {
       click(button('AOI only'));
       await afterDebounce();
       expect(posted()).toHaveLength(1);
-      click(button('＋ Band math'));
+      click(button('Band math'));
       typeInto(expression(1), 'red + 1');
       await afterDebounce();
       await flush();
@@ -1197,14 +1223,14 @@ describe('the range measured over the AOI (NM4-19b)', () => {
       expect(title()).toBe(SCENE_HINT);
     });
 
-    it('measures over the AOI again with "Auto stretch", which a fall-back enables', async () => {
+    it('measures over the AOI again with "Auto-scale", which a fall-back enables', async () => {
       areaStatistics = () => new Response('{}', { status: 502 });
       await aoiOnly();
       fellBack();
       warned('status 502');
-      expect(button('Auto stretch').disabled).toBe(false);
+      expect(button('Auto-scale').disabled).toBe(false);
       areaStatistics = () => areaAnswer([areaBand({ ...DEM, percentile_2: 130 })]);
-      click(button('Auto stretch'));
+      click(button('Auto-scale'));
       await afterDebounce();
       expect(posted()).toHaveLength(2);
       expect(store().measure).toMatchObject({ source: 'area' });
@@ -1249,7 +1275,7 @@ describe('the range measured over the AOI (NM4-19b)', () => {
     select([scene('S2B_A')]);
     await openPanel();
     vi.useFakeTimers();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(), 'nir - red');
     click(button('AOI only'));
     await afterDebounce();
@@ -1266,7 +1292,7 @@ describe('the range measured over the AOI (NM4-19b)', () => {
     select([scene('S2B_A')]);
     await openPanel();
     vi.useFakeTimers();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(), 'nir / red');
     click(button('AOI only'));
     await afterDebounce();
@@ -1294,18 +1320,18 @@ describe('"Preview" (Otto, 19.10.2026: always coarser than the data)', () => {
     select([scene('S2B_A', 10)]);
     act(() => store().openProcessing());
     await flush();
-    expect(container.querySelector('.preview-badge')).toBeNull();
+    expect(container.querySelector('.preview-badge-dock .badge')).toBeNull();
     vi.useFakeTimers();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(), 'nir / red');
     await afterDebounce();
     for (const zoom of [3, 12.5, 18, 22]) {
       act(() => useAppStore.setState({ mapZoom: zoom, viewportBbox: [10, 50, 11, 51] }));
-      expect(section().querySelector('.pp-badge')?.textContent).toBe('Preview');
-      expect(container.querySelector('.preview-badge')?.textContent).toBe('Preview');
+      expect(section().querySelector('.badge')?.textContent).toBe('Preview');
+      expect(container.querySelector('.preview-badge-dock .badge')?.textContent).toBe('Preview');
     }
     act(() => store().closeProcessing());
-    expect(container.querySelector('.preview-badge')).toBeNull();
+    expect(container.querySelector('.preview-badge-dock .badge')).toBeNull();
   });
 
   it('holds the tiles of the preview under the pixel size of the data', async () => {
@@ -1326,15 +1352,15 @@ describe('"Preview" (Otto, 19.10.2026: always coarser than the data)', () => {
     act(() => store().openProcessing());
     await flush();
     vi.useFakeTimers();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(), 'nir / red');
     await afterDebounce();
     expect(store().preview).toMatchObject({ minZoom: 8, maxZoom: 14 });
     expect(container.textContent).not.toContain('pixel size');
     for (const zoom of [3, 12.5, 22]) {
       act(() => useAppStore.setState({ mapZoom: zoom }));
-      expect(container.querySelector('.preview-badge')?.textContent).toBe('Preview');
-      expect(section().querySelector('.pp-badge')?.textContent).toBe('Preview');
+      expect(container.querySelector('.preview-badge-dock .badge')?.textContent).toBe('Preview');
+      expect(section().querySelector('.badge')?.textContent).toBe('Preview');
     }
   });
 
@@ -1347,11 +1373,11 @@ describe('"Preview" (Otto, 19.10.2026: always coarser than the data)', () => {
     });
     useAppStore.setState({ layers: [layer('P1', false)] });
     mount(<PreviewBadge />);
-    expect(container.querySelector('.preview-badge')).toBeNull();
+    expect(container.querySelector('.preview-badge-dock .badge')).toBeNull();
     act(() => useAppStore.setState({ layers: [layer('P1', true)] }));
-    expect(container.querySelector('.preview-badge')).not.toBeNull();
+    expect(container.querySelector('.preview-badge-dock .badge')).not.toBeNull();
     act(() => useAppStore.setState({ mapZoom: 20 }));
-    expect(container.querySelector('.preview-badge')).not.toBeNull();
+    expect(container.querySelector('.preview-badge-dock .badge')).not.toBeNull();
   });
 
   it('does not stand for an ordinary layer', () => {
@@ -1359,15 +1385,15 @@ describe('"Preview" (Otto, 19.10.2026: always coarser than the data)', () => {
       layers: [{ ...pinned('L1'), overlays: [{ kind: 'raster', tileUrl: 'u', bounds: [10, 50, 11, 51], minZoom: 0, maxZoom: 14 }] }],
     });
     mount(<PreviewBadge />);
-    expect(container.querySelector('.preview-badge')).toBeNull();
+    expect(container.querySelector('.preview-badge-dock .badge')).toBeNull();
   });
 });
 
 describe('the preview as a layer (§3.4)', () => {
-  it('"＋ Add preview to layers" pins it on top, with the badge right, and leaves the others', async () => {
+  it('"Add preview to layers" pins it on top, with the badge right, and leaves the others', async () => {
     await withNdvi([scene('S2B_A'), scene('S2B_B')]);
     useAppStore.setState({ layers: [pinned('L1')] });
-    click(button('＋ Add preview to layers'));
+    click(button('Add preview to layers'));
     const [layer, other] = useAppStore.getState().layers;
     expect(other.id).toBe('L1');
     expect(other.visible).toBe(true);
@@ -1383,7 +1409,7 @@ describe('the preview as a layer (§3.4)', () => {
     await withNdvi();
     click(button('AOI only'));
     await afterDebounce();
-    click(button('＋ Add preview to layers'));
+    click(button('Add preview to layers'));
     const layer = useAppStore.getState().layers[0];
     expect(layer.restore.cropToAoi).toBe(true);
     const url = (layer.overlays[0] as { tileUrl: string }).tileUrl;
@@ -1396,12 +1422,12 @@ describe('the preview as a layer (§3.4)', () => {
     select([scene('S2B_A')]);
     await openPanel();
     vi.useFakeTimers();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(), 'nir / red');
     // The step is complete, the picture follows in 400 ms.
-    expect(button('＋ Add preview to layers').disabled).toBe(true);
+    expect(button('Add preview to layers').disabled).toBe(true);
     await afterDebounce();
-    expect(button('＋ Add preview to layers').disabled).toBe(false);
+    expect(button('Add preview to layers').disabled).toBe(false);
   });
 
   it('leaves the other layers as they are, also when the panel was opened from one of them', async () => {
@@ -1413,13 +1439,13 @@ describe('the preview as a layer (§3.4)', () => {
         <LayerManager />
       </>,
     );
-    click(button('⚙', container.querySelectorAll('.layer-row')[1] as HTMLElement));
+    click(button('Process layer', container.querySelectorAll('.layer-row')[1] as HTMLElement));
     await flush();
     vi.useFakeTimers();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(), '(nir - red) / (nir + red)');
     await afterDebounce();
-    click(button('＋ Add preview to layers'));
+    click(button('Add preview to layers'));
     expect(useAppStore.getState().layers.map((l) => [l.id.startsWith('P') ? 'preview' : l.id, l.visible])).toEqual([
       ['preview', true],
       ['L0', true],
@@ -1439,7 +1465,7 @@ describe('the ways into the panel (§3.5)', () => {
       </>,
     );
     expect(store().open).toBe(false);
-    click(button('⚙'));
+    click(button('Process layer'));
     await flush();
     expect(useAppStore.getState().selectedIds).toEqual(['S2B_B']);
     expect(useAppStore.getState().aoi).toBe(AOI);
@@ -1451,7 +1477,7 @@ describe('the ways into the panel (§3.5)', () => {
     select([scene('S2B_A')]);
     useAppStore.setState({ layers: [pinned('L1', { cropToAoi: true, focusMode: true })] });
     mount(<LayerManager />);
-    click(button('⚙'));
+    click(button('Process layer'));
     await flush();
     expect(store()).toMatchObject({ open: true, area: 'aoi' });
   });
@@ -1460,7 +1486,7 @@ describe('the ways into the panel (§3.5)', () => {
     select([scene('S2B_A')]);
     useAppStore.setState({ layers: [pinned('L1', { cropToAoi: true, aoi: null })] });
     mount(<LayerManager />);
-    click(button('⚙'));
+    click(button('Process layer'));
     await flush();
     expect(store().area).toBe('scene');
   });
@@ -1469,9 +1495,9 @@ describe('the ways into the panel (§3.5)', () => {
     select([scene('S2B_A')]);
     useAppStore.setState({ layers: [{ ...pinned('P1'), derived: 'preview' }] });
     mount(<LayerManager />);
-    const gear = button('⚙');
+    const gear = button('Process layer');
     expect(gear.disabled).toBe(true);
-    expect(gear.title).toBe('A result cannot be processed further yet.');
+    expect(tipOf(gear)).toBe('A result cannot be processed further yet.');
     click(gear);
     expect(store().open).toBe(false);
   });
@@ -1480,8 +1506,8 @@ describe('the ways into the panel (§3.5)', () => {
     select([scene('S2B_A')], 'display');
     useAppStore.setState({ layers: [pinned('L1')] });
     mount(<LayerManager />);
-    expect(button('⚙').disabled).toBe(true);
-    expect(button('⚙').title).toContain('does not allow processing');
+    expect(button('Process layer').disabled).toBe(true);
+    expect(tipOf(button('Process layer'))).toContain('does not allow processing');
   });
 
   it('does not offer to download a preview, which is no scene file', () => {
@@ -1489,11 +1515,11 @@ describe('the ways into the panel (§3.5)', () => {
     useAppStore.setState({ layers: [pinned('L1'), { ...pinned('P1'), derived: 'preview' }] });
     mount(<LayerManager />);
     const rows = [...container.querySelectorAll('.layer-row')];
-    expect(rows.map((row) => [...row.querySelectorAll('button')].some((b) => b.textContent === '⇩'))).toEqual([true, false]);
+    expect(rows.map((row) => [...row.querySelectorAll('button')].some((b) => b.getAttribute('aria-label') === 'Download'))).toEqual([true, false]);
   });
 
   describe('the view stays as it is (Otto, 19.10.2026)', () => {
-    const tile: DownloadedInfo = { tileUrl: 'u', bounds: [10, 50, 11, 51], asset: 'visual', minZoom: 8, maxZoom: 14 };
+    const tile: DownloadedInfo = { datasetId: 'sentinel-2-c1-l2a', tileUrl: 'u', bounds: [10, 50, 11, 51], asset: 'visual', minZoom: 8, maxZoom: 14 };
     const OTHER_AOI = bboxToPolygon([10.1, 50.1, 10.2, 50.2]);
 
     it('does not enter the full-resolution view of a layer, and keeps the results list', async () => {
@@ -1510,7 +1536,7 @@ describe('the ways into the panel (§3.5)', () => {
       });
       useAppStore.setState({ layers: [cropped] });
       mount(<LayerManager />);
-      click(button('⚙'));
+      click(button('Process layer'));
       await flush();
       const after = useAppStore.getState();
       expect(store()).toMatchObject({ open: true, area: 'aoi' });
@@ -1530,7 +1556,7 @@ describe('the ways into the panel (§3.5)', () => {
       select([scene('S2B_A')]);
       useAppStore.setState({ layers: [pinned('L1', { aoi: OTHER_AOI, cropToAoi: false })] });
       mount(<LayerManager />);
-      click(button('⚙'));
+      click(button('Process layer'));
       await flush();
       expect(store().area).toBe('scene');
       expect(useAppStore.getState().aoi).toBe(AOI);
@@ -1545,7 +1571,7 @@ describe('the ways into the panel (§3.5)', () => {
         layers: [pinned('L1', { focusMode: true, downloaded: { S2B_A: tile } })],
       });
       mount(<LayerManager />);
-      click(button('⚙'));
+      click(button('Process layer'));
       await flush();
       const after = useAppStore.getState();
       expect(after.focusMode).toBe(true);
@@ -1563,7 +1589,7 @@ describe('the ways into the panel (§3.5)', () => {
         layers: [pinned('L1', { focusMode: true })],
       });
       mount(<LayerManager />);
-      click(button('⚙'));
+      click(button('Process layer'));
       await flush();
       expect(useAppStore.getState().datasetId).toBe('sentinel-2-c1-l2a');
       expect(useAppStore.getState().focusMode).toBe(false);
@@ -1585,7 +1611,7 @@ describe('the ways into the panel (§3.5)', () => {
           <ProcessingPanel />
         </>,
       );
-      click(button('⚙'));
+      click(button('Process layer'));
       await flush();
       expect(itemRequests()).toEqual([`${ITEM_URL}GONE`]);
       expect(useAppStore.getState().selectedIds).toEqual(['S2B_A', 'GONE']);
@@ -1602,7 +1628,7 @@ describe('the ways into the panel (§3.5)', () => {
       catalog.OTHER_DAY = { ...scene('OTHER_DAY'), properties: { datetime: '2026-06-01T10:00:00Z' } };
       useAppStore.setState({ layers: [pinned('L1', { itemIds: ['S2B_A', 'SAME_DAY'], selectedIds: ['S2B_A', 'SAME_DAY'] })] });
       mount(<LayerManager />);
-      click(button('⚙'));
+      click(button('Process layer'));
       await flush();
       const view = orderView(useAppStore.getState(), store());
       expect(view.passes.map((p) => p.items.map((i) => i.id))).toEqual([['S2B_A', 'SAME_DAY']]);
@@ -1610,7 +1636,7 @@ describe('the ways into the panel (§3.5)', () => {
       act(() =>
         useAppStore.setState({ layers: [pinned('L2', { itemIds: ['S2B_A', 'OTHER_DAY'], selectedIds: ['S2B_A', 'OTHER_DAY'] })] }),
       );
-      click(button('⚙'));
+      click(button('Process layer'));
       await flush();
       const second = orderView(useAppStore.getState(), store());
       expect(second.passes.map((p) => p.items.map((i) => i.id))).toEqual([['S2B_A'], ['OTHER_DAY']]);
@@ -1621,7 +1647,7 @@ describe('the ways into the panel (§3.5)', () => {
       catalog.GONE = scene('GONE');
       useAppStore.setState({ layers: [layerOf('S2B_A', 'S2B_B', 'GONE')] });
       mount(<LayerManager />);
-      click(button('⚙'));
+      click(button('Process layer'));
       await flush();
       expect(itemRequests()).toEqual([`${ITEM_URL}GONE`]);
     });
@@ -1630,7 +1656,7 @@ describe('the ways into the panel (§3.5)', () => {
       select([scene('S2B_A')]);
       useAppStore.setState({ layers: [layerOf('S2B_A')] });
       mount(<LayerManager />);
-      click(button('⚙'));
+      click(button('Process layer'));
       await flush();
       expect(itemRequests()).toEqual([]);
       expect(store().extraScenes).toBeNull();
@@ -1640,7 +1666,7 @@ describe('the ways into the panel (§3.5)', () => {
       select([scene('S2B_A')]);
       useAppStore.setState({ layers: [layerOf('S2B_A', 'GONE')] });
       mount(<LayerManager />);
-      click(button('⚙'));
+      click(button('Process layer'));
       await flush();
       expect(store().open).toBe(false);
       expect(useAppStore.getState().error).toBe('Could not load the scenes of this layer. GONE: not found in the catalog');
@@ -1652,7 +1678,7 @@ describe('the ways into the panel (§3.5)', () => {
       catalog.ALSO = scene('ALSO');
       useAppStore.setState({ layers: [layerOf('S2B_A', 'GONE', 'ALSO')] });
       mount(<LayerManager />);
-      click(button('⚙'));
+      click(button('Process layer'));
       await flush();
       expect(store().open).toBe(false);
       expect(store().extraScenes).toBeNull();
@@ -1667,7 +1693,7 @@ describe('the ways into the panel (§3.5)', () => {
       pending[`${ITEM_URL}SLOW`] = new Promise<Response>((resolve) => (answer = resolve));
       useAppStore.setState({ layers: [layerOf('S2B_A', 'SLOW'), { ...layerOf('S2B_A'), id: 'L2' }] });
       mount(<LayerManager />);
-      const gears = () => [...container.querySelectorAll<HTMLButtonElement>('.layer-row button')].filter((b) => b.textContent === '⚙');
+      const gears = () => [...container.querySelectorAll<HTMLButtonElement>('.layer-row button')].filter((b) => b.getAttribute('aria-label') === 'Process layer');
       click(gears()[0]);
       await flush();
       click(gears()[1]);
@@ -1683,17 +1709,17 @@ describe('the ways into the panel (§3.5)', () => {
     it('does the same for the full-resolution view, and says "view"', async () => {
       select([scene('S2B_A')]);
       catalog.GONE = scene('GONE');
-      const tile: DownloadedInfo = { tileUrl: 'u', bounds: [10, 50, 11, 51], asset: 'visual', minZoom: 8, maxZoom: 14 };
+      const tile: DownloadedInfo = { datasetId: 'sentinel-2-c1-l2a', tileUrl: 'u', bounds: [10, 50, 11, 51], asset: 'visual', minZoom: 8, maxZoom: 14 };
       useAppStore.setState({ focusMode: true, downloaded: { S2B_A: tile, GONE: tile } });
       mount(<ViewerControls />);
-      click(button('⚙ Process'));
+      click(button('Process'));
       await flush();
       expect(itemRequests()).toEqual([`${ITEM_URL}GONE`]);
       expect(store().open).toBe(true);
 
       act(() => store().closeProcessing());
       delete catalog.GONE;
-      click(button('⚙ Process'));
+      click(button('Process'));
       await flush();
       expect(store().open).toBe(false);
       expect(useAppStore.getState().error).toBe('Could not load the scenes of this view. GONE: not found in the catalog');
@@ -1704,7 +1730,7 @@ describe('the ways into the panel (§3.5)', () => {
       catalog.GONE = scene('GONE');
       useAppStore.setState({ layers: [layerOf('S2B_A', 'GONE')] });
       mount(<LayerManager />);
-      click(button('⚙'));
+      click(button('Process layer'));
       await flush();
       expect(store().extraScenes).not.toBeNull();
       act(() => useAppStore.setState({ datasetId: 'other' }));
@@ -1722,44 +1748,44 @@ describe('the ways into the panel (§3.5)', () => {
         <ViewBar />
       </>,
     );
-    click(button('⚙', container.querySelector('.layer-row') as HTMLElement));
+    click(button('Process layer', container.querySelector('.layer-row') as HTMLElement));
     await flush();
     expect(store()).toMatchObject({ open: true, area: 'aoi' });
 
     act(() => store().closeProcessing());
-    click(button('⚙ Process'));
+    click(button('Process'));
     expect(store()).toMatchObject({ open: true, area: 'scene' });
 
     // Also while the panel stays open: every entry sets the area.
     click(button('AOI only'));
     expect(store().area).toBe('aoi');
-    click(button('⚙ Process'));
+    click(button('Process'));
     expect(store().area).toBe('scene');
   });
 
-  it('"⚙ Process" of the full-resolution view takes the scenes of the view, cropped or whole', async () => {
+  it('"Process" of the full-resolution view takes the scenes of the view, cropped or whole', async () => {
     select([scene('S2B_A'), scene('S2B_B')]);
-    const tile: DownloadedInfo = { tileUrl: 'u', bounds: [10, 50, 11, 51], asset: 'visual', minZoom: 8, maxZoom: 14 };
+    const tile: DownloadedInfo = { datasetId: 'sentinel-2-c1-l2a', tileUrl: 'u', bounds: [10, 50, 11, 51], asset: 'visual', minZoom: 8, maxZoom: 14 };
     useAppStore.setState({ focusMode: true, cropToAoi: true, viewAoi: useAppStore.getState().aoi, downloaded: { S2B_B: tile }, selectedIds: ['S2B_A', 'S2B_B'] });
     mount(<ViewerControls />);
-    click(button('⚙ Process'));
+    click(button('Process'));
     await flush();
     expect(useAppStore.getState().selectedIds).toEqual(['S2B_B']);
     expect(store()).toMatchObject({ open: true, area: 'aoi' });
 
     act(() => store().closeProcessing());
     useAppStore.setState({ cropToAoi: false });
-    click(button('⚙ Process'));
+    click(button('Process'));
     await flush();
     expect(store().area).toBe('scene');
   });
 
-  it('locks "⚙ Process" of the full-resolution view for a dataset below processing', () => {
+  it('locks "Process" of the full-resolution view for a dataset below processing', () => {
     select([scene('S2B_A')], 'catalog');
-    const tile: DownloadedInfo = { tileUrl: 'u', bounds: [10, 50, 11, 51], asset: 'visual', minZoom: 8, maxZoom: 14 };
+    const tile: DownloadedInfo = { datasetId: 'sentinel-2-c1-l2a', tileUrl: 'u', bounds: [10, 50, 11, 51], asset: 'visual', minZoom: 8, maxZoom: 14 };
     useAppStore.setState({ focusMode: true, downloaded: { S2B_A: tile } });
     mount(<ViewerControls />);
-    expect(button('⚙ Process').disabled).toBe(true);
+    expect(button('Process').disabled).toBe(true);
   });
 });
 
@@ -1789,14 +1815,14 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
       </>,
     );
     vi.useFakeTimers();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(), expressionText);
     await afterDebounce();
     await flush();
   }
 
-  const dockBadge = () => container.querySelector('.preview-badge-dock .preview-badge:not(.loading)');
-  const panelBadge = () => section().querySelector('.pp-badge');
+  const dockBadge = () => container.querySelector('.preview-badge-dock .badge:not(.loading)');
+  const panelBadge = () => section().querySelector('.badge');
 
   it('draws one job over a pass as its mosaic with the steps, and the scenes below it in the order of the tiler', async () => {
     tilejson = taking(['S2B_B', 'S2B_C', 'S2B_A']);
@@ -1817,8 +1843,8 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
     expect(asks('/items/')).toHaveLength(asks('/statistics?').length);
     expect(asks('/statistics?').map((u) => query(u).pathname)).toEqual(['/collections/sentinel-2-c1-l2a/items/S2B_B/statistics']);
     expect(asks('/mosaic/').some((u) => u.includes('/statistics'))).toBe(false);
-    expect(panelBadge()?.getAttribute('title')).toBeNull();
-    expect(dockBadge()?.getAttribute('title')).toBeNull();
+    expect(panelBadge()?.getAttribute('data-tip')).toBeNull();
+    expect(dockBadge()?.getAttribute('data-tip')).toBeNull();
   });
 
   it('keeps the TileJSON of the mosaic and the measure when only the range changes', async () => {
@@ -1843,8 +1869,8 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
     expect(preview.mosaics).toEqual([]);
     expect(preview.scenes.map((s) => [s.id, s.below])).toEqual([['S2B_A', undefined], ['S2B_B', undefined], ['S2B_C', undefined]]);
     expect(preview.perScene).toBe(true);
-    expect(panelBadge()?.getAttribute('title')).toBe(HINT);
-    expect(dockBadge()?.getAttribute('title')).toBe(HINT);
+    expect(panelBadge()?.getAttribute('data-tip')).toBe(HINT);
+    expect(dockBadge()?.getAttribute('data-tip')).toBe(HINT);
     expect(section().textContent).not.toContain('per scene');
     expect(section().textContent).not.toContain('may differ');
     expect(store().previewNote).toBeNull();
@@ -1863,7 +1889,7 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
     selectWide([scene('S2B_A'), scene('S2B_B')]);
     await typeNdvi();
     expect(store().preview).toMatchObject({ mosaics: [], perScene: true });
-    expect(panelBadge()?.getAttribute('title')).toBe(HINT);
+    expect(panelBadge()?.getAttribute('data-tip')).toBe(HINT);
   });
 
   it('draws the scenes one by one when the network fails for the mosaic', async () => {
@@ -1931,7 +1957,7 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
         : json({ tilejson: '3.0.0' });
     selectWide([scene('S2B_A'), scene('S2B_B')]);
     await typeNdvi();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(1), 'red + 1');
     await afterDebounce();
     await flush();
@@ -1956,7 +1982,7 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
         : json({ tilejson: '3.0.0', 'earthx:order': ['S2B_A', 'S2B_B'] });
     selectWide([scene('S2B_A'), scene('S2B_B')]);
     await typeNdvi();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(1), 'red + 1');
     await afterDebounce();
     await flush();
@@ -1992,7 +2018,7 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
       </>,
     );
     vi.useFakeTimers();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(), 'nir / red');
     await afterDebounce();
     await flush();
@@ -2012,7 +2038,7 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
     selectWide([scene('S2B_A')]);
     await typeNdvi();
     expect(store().preview).toMatchObject({ mosaics: [], perScene: false });
-    expect(panelBadge()?.getAttribute('title')).toBeNull();
+    expect(panelBadge()?.getAttribute('data-tip')).toBeNull();
     expect(asks('/mosaic/')).toHaveLength(0);
 
     act(() => store().closeProcessing());
@@ -2024,7 +2050,7 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
     await flush();
     expect(store().preview).toMatchObject({ mosaics: [], perScene: false });
     expect(store().preview!.scenes).toHaveLength(3);
-    expect(panelBadge()?.getAttribute('title')).toBeNull();
+    expect(panelBadge()?.getAttribute('data-tip')).toBeNull();
     expect(asks('/mosaic/')).toHaveLength(0);
   });
 
@@ -2040,7 +2066,7 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
     expect(tiles).toEqual(['items', 'items', 'mosaic']);
     const mosaic = layer.overlays[2];
     expect(mosaic).toMatchObject({ kind: 'raster', minZoom: 8, preview: true });
-    expect(layer.overlays[0]).toMatchObject({ kind: 'raster', maxZoom: 7, hideFrom: 6.5, preview: true });
+    expect(layer.overlays[0]).toMatchObject({ kind: 'raster', maxZoom: 7, hideFrom: 7.5, preview: true });
     expect(layer.restore.itemIds).toEqual(['S2B_B', 'S2B_A']);
   });
 
@@ -2056,8 +2082,8 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
       const layer = useAppStore.getState().layers[0];
       expect(layer.note).toBe(HINT);
       mount(<LayerManager />);
-      expect(nameButton().getAttribute('title')).toContain(HINT);
-      expect(nameButton().getAttribute('title')).toContain(`${layer.name} — `);
+      // The name has no tooltip of its own (Otto, 4.11.2026); the hint of the preview is the whole of it.
+      expect(nameButton().getAttribute('data-tip')).toBe(HINT);
       expect(container.querySelector('.layer-row')!.textContent).not.toContain('per scene');
       expect(container.querySelector('.layer-row')!.textContent).not.toContain('may differ');
     });
@@ -2069,13 +2095,12 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
       click(button(/Add preview to layers/));
       expect(useAppStore.getState().layers[0].note).toBeUndefined();
       mount(<LayerManager />);
-      expect(nameButton().getAttribute('title')).not.toContain('per scene');
-      expect(nameButton().getAttribute('title')).toBe(`${useAppStore.getState().layers[0].name} — view this layer / continue working on it`);
+      expect(nameButton().hasAttribute('data-tip')).toBe(false);
     });
   });
 
   describe('"Loading…" while the first tile is on its way (Otto, 28.10.2026: cold 6.0 s, warm 0.16 s)', () => {
-    const loading = () => container.querySelector('.preview-badge-dock .preview-badge.loading');
+    const loading = () => container.querySelector('.preview-badge-dock .badge.loading');
     let release: (response: Response) => void;
 
     function holdTheMosaic() {
@@ -2099,12 +2124,12 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
         vi.advanceTimersByTime(1);
       });
       expect(loading()?.textContent).toBe('Loading…');
-      expect(loading()?.getAttribute('title')).toBe('Reading the scenes. The first tile of a mosaic can take several seconds.');
+      expect(loading()?.getAttribute('data-tip')).toBe('Reading the scenes. The first tile of a mosaic can take several seconds.');
       expect(loading()?.getAttribute('role')).toBe('status');
       // The heading of the preview says it too, for a window in which the panel hides the map: a badge, no line of text.
-      const inHeading = section().querySelector('.pp-heading .pp-badge.loading');
+      const inHeading = section().querySelector('.pp-heading .badge.loading');
       expect(inHeading?.textContent).toBe('Loading…');
-      expect(inHeading?.getAttribute('title')).toBe(loading()?.getAttribute('title'));
+      expect(inHeading?.getAttribute('data-tip')).toBe(loading()?.getAttribute('data-tip'));
       expect(section().querySelector('p')?.textContent ?? '').not.toContain('Loading');
       release(json({ tilejson: '3.0.0', 'earthx:order': ['S2B_B', 'S2B_A'] }));
       await flush();
@@ -2190,7 +2215,7 @@ describe('layerProcessBlock', () => {
     const datasets = [dataset()];
     expect(layerProcessBlock(pinned('L1'), datasets)).toBeNull();
     expect(layerProcessBlock({ ...pinned('P1'), derived: 'preview' }, datasets)).toBe('A result cannot be processed further yet.');
-    expect(layerProcessBlock(pinned('L1', { datasetId: 'unknown' }), datasets)).toBe('Pick a dataset first.');
+    expect(layerProcessBlock(pinned('L1', { datasetId: 'unknown' }), datasets)).toBe('Choose a dataset first.');
     expect(layerProcessBlock(pinned('L1', { itemIds: [] }), datasets)).toBe('Select a scene first.');
   });
 });

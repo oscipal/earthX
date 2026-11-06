@@ -104,17 +104,6 @@ export function coverageFillColorExpression(maxCount: number): unknown[] {
   return ['interpolate', ['linear'], ['log10', ['get', 'n']], ...stops];
 }
 
-// A drawn/uploaded AOI can carry longitudes outside ±180: MapLibre pans
-// across repeated world copies at low zoom, so a rectangle dragged over a
-// wrapped copy ends up with corners like -200 or 210. The coverage route
-// checks ±180 and refuses anything past it (`InvalidCoverageQuery` → `400`),
-// which made the heatmap vanish rather than just clamp to the same area a
-// non-wrapped view would show. A hard clamp, not an antimeridian split —
-// the smallest fix for the reported bug, not a general AOI-longitude fix.
-export function clampBboxLongitude([west, south, east, north]: Bbox): Bbox {
-  return [Math.max(-180, Math.min(180, west)), south, Math.max(-180, Math.min(180, east)), north];
-}
-
 // The zoom brake of `plans/m2/m2-05-coverage.md` §6.8: `footprints_advised`
 // alone answers "is the checked total small enough", but a strict filter
 // (e.g. a narrow date range) can keep a *world* view under 500 hits, and
@@ -160,9 +149,9 @@ export function areaGeometry(result: CoverageResponse): GeoJSON.Geometry | null 
 // room for (zoom 1.6 asked for level 1 — four cells for the whole globe —
 // before a fixed z6 cap ever applied). See
 // `plans/m3/m3-19-weltueberblick-ausschnitt.md` §1 for the derivation and §2 for
-// the measured cell counts/payload sizes it is chosen from. With an AOI nothing
-// changes: the request is a real spatial filter, and the map's zoom alone
-// still decides (`Math.floor`, in `store.ts`).
+// the measured cell counts/payload sizes it is chosen from. With an AOI the level
+// is the same (Otto, 03.11.2026): the map's zoom alone asked level 1 at the first zoom
+// of the page, a quarter of the world in one cell around a small AOI.
 //
 // A geotile cell of level `L` is `512 * 2^(mapZoom - L)` CSS pixels wide at
 // map zoom `mapZoom` (MapLibre draws the whole world at `512 * 2^mapZoom`

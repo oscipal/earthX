@@ -21,6 +21,7 @@ import {
   removePermalink,
   viewOf,
 } from './permalink';
+import { previewRangeOf } from './permalinkRange';
 import type { Order } from './processing';
 
 const ID = 'AbCdEfGhIjKlMnOpQrSt_-';
@@ -96,13 +97,74 @@ describe('viewOf', () => {
   });
 });
 
+describe('viewOf, the unit of the range (UI-04 part 5)', () => {
+  const bbox = [8, 46, 11, 48] as [number, number, number, number];
+  const channels = [
+    { vmin: '0.05', vmax: '0.7', percent: { low: '2', high: '98' } },
+    { vmin: '0.04', vmax: '0.5' },
+    { vmin: '0.02', vmax: '0.4', percent: { low: '5', high: '95' } },
+  ];
+
+  it('keeps the percentiles a range was typed as, as whole numbers', () => {
+    expect(viewOf(bbox, 5, { vmin: '1', vmax: '9', colormap: '', percent: { low: '2', high: '98' } }, LOOK).range).toEqual({ vmin: 1, vmax: 9, colormap: '', percent: { low: 2, high: 98 } });
+    // A pair that is none is not kept; the values are.
+    expect(viewOf(bbox, 5, { vmin: '1', vmax: '9', colormap: '', percent: { low: '98', high: '2' } }, LOOK).range).toEqual({ vmin: 1, vmax: 9, colormap: '' });
+  });
+
+  it('keeps a range and a pair for each channel of a colour picture', () => {
+    const range = viewOf(bbox, 5, { vmin: '0.05', vmax: '0.7', colormap: '', channels }, LOOK).range;
+    expect(range).toEqual({
+      vmin: 0.05,
+      vmax: 0.7,
+      colormap: '',
+      channels: [{ vmin: 0.05, vmax: 0.7, percent: { low: 2, high: 98 } }, { vmin: 0.04, vmax: 0.5 }, { vmin: 0.02, vmax: 0.4, percent: { low: 5, high: 95 } }],
+    });
+  });
+
+  it('keeps no range where one end of a channel is none, and no channels that are not three', () => {
+    expect(viewOf(bbox, 5, { vmin: '0.05', vmax: '0.7', colormap: '', channels: [channels[0], channels[1], { vmin: '', vmax: '1' }] }, LOOK).range).toBeNull();
+    expect(viewOf(bbox, 5, { vmin: '0.05', vmax: '0.7', colormap: '', channels: channels.slice(0, 2) }, LOOK).range).toEqual({ vmin: 0.05, vmax: 0.7, colormap: '' });
+  });
+
+  it('reads what it writes, and gives the panel the same range back', () => {
+    const view = viewOf(bbox, 5, { vmin: '0.05', vmax: '0.7', colormap: '', channels }, LOOK);
+    const read = parseView(JSON.parse(JSON.stringify(view)));
+    expect(read).toEqual(view);
+    expect(previewRangeOf(read!.range!)).toEqual({ vmin: '0.05', vmax: '0.7', colormap: '', channels });
+  });
+
+  it('opens a link from before, with a range of values only, as it was', () => {
+    const old = { center: [1, 2], zoom: 3, range: { vmin: 0, vmax: 1, colormap: 'viridis' } };
+    expect(parseView(old)?.range).toEqual(old.range);
+    expect(previewRangeOf(old.range)).toEqual({ vmin: '0', vmax: '1', colormap: 'viridis' });
+    expect(parseView({ ...old, range: { ...old.range, percent: null, channels: null } })?.range).toEqual(old.range);
+  });
+
+  const range = { vmin: 0, vmax: 1, colormap: '' };
+  const three = [{ vmin: 0, vmax: 1 }, { vmin: 0, vmax: 1 }, { vmin: 0, vmax: 1 }];
+  it.each([
+    ['a pair below zero', { ...range, percent: { low: -1, high: 98 } }],
+    ['a pair above 100', { ...range, percent: { low: 2, high: 101 } }],
+    ['a pair the wrong way round', { ...range, percent: { low: 98, high: 2 } }],
+    ['a pair of text', { ...range, percent: { low: '2', high: '98' } }],
+    ['a pair of fractions', { ...range, percent: { low: 2.5, high: 98 } }],
+    ['two channels', { ...range, channels: three.slice(0, 2) }],
+    ['four channels', { ...range, channels: [...three, three[0]] }],
+    ['channels that are no list', { ...range, channels: three[0] }],
+    ['a channel with an end of text', { ...range, channels: [{ vmin: '0', vmax: 1 }, three[1], three[2]] }],
+    ['a channel with a pair that is none', { ...range, channels: [{ ...three[0], percent: { low: 9, high: 3 } }, three[1], three[2]] }],
+    ['one pair and channels together', { ...range, percent: { low: 2, high: 98 }, channels: three }],
+  ])('refuses a link with %s, as the server does', (_what, bad) => {
+    expect(parseView({ center: [1, 2], zoom: 3, range: bad })).toBeNull();
+  });
+});
+
 describe('viewOf, basemap and projection', () => {
   it.each([
     ['streets', 'globe'],
     ['grey', 'mercator'],
     ['outlines', 'globe'],
     ['satellite', 'mercator'],
-    ['relief', 'globe'],
   ] as const)('keeps %s and %s as they are on screen', (basemap, projection) => {
     const view = viewOf([8, 46, 11, 48], 5, null, { basemap, projection });
     expect(view).toMatchObject({ basemap, projection });
@@ -121,8 +183,19 @@ describe('parseView', () => {
     expect(parseView(old)).toEqual({ ...old, basemap: 'satellite', projection: 'mercator' });
     expect(parseView({ ...old, basemap: null, projection: null })).toEqual({ ...old, basemap: 'satellite', projection: 'mercator' });
     expect(parseView({ ...old, basemap: 'grey' })).toMatchObject({ basemap: 'grey', projection: 'mercator' });
-    expect(parseView({ ...old, basemap: 'relief' })).toMatchObject({ basemap: 'relief', projection: 'mercator' });
     expect(parseView({ ...old, projection: 'globe' })).toMatchObject({ basemap: 'satellite', projection: 'globe' });
+  });
+
+  it('opens a link made when Relief was a basemap with the default basemap and the overlay Relief (UI-04 part 4)', () => {
+    const old = { center: [1, 2], zoom: 3, range: null };
+    const view = parseView({ ...old, basemap: 'relief', projection: 'globe' });
+    expect(view).toEqual({ ...old, basemap: 'satellite', projection: 'globe', relief: true });
+    // And it is never written again: what the panel makes has neither the basemap "relief" nor the field.
+    expect(JSON.stringify(viewOf([8, 46, 11, 48], 5, null, { basemap: view!.basemap, projection: view!.projection }))).not.toMatch(/relief/u);
+  });
+
+  it('gives no overlay to a link of any other basemap', () => {
+    expect(parseView({ center: [1, 2], zoom: 3, range: null, basemap: 'grey' })).not.toHaveProperty('relief');
   });
 
   it.each([

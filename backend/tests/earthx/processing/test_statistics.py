@@ -14,7 +14,7 @@ from fractions import Fraction
 import numpy
 import pytest
 
-from earthx.processing.statistics import BandStatistics, gdal_tags, summarize
+from earthx.processing.statistics import MEASURE_PERCENTILES, PERCENTILES, BandStatistics, gdal_tags, summarize
 
 #: The relative width of one bin of the float histogram: 7 bits of the significand.
 BIN = 2.0**-7
@@ -104,6 +104,22 @@ class TestAgainstAnIndependentComputation:
             assert summary["mean"] == _exact_mean(values) and summary["count"] == values.size
         else:
             _assert_independent(summary, values, values.size, exact_percentiles=exact)
+
+
+class TestEveryWholePercent:
+    """NM4-65: a measure adds every whole percent to the two a result carries."""
+
+    def test_the_measure_adds_all_but_the_two_of_a_result(self) -> None:
+        assert PERCENTILES == (2, 98)
+        assert sorted({*PERCENTILES, *MEASURE_PERCENTILES}) == list(range(1, 100))
+        assert not set(PERCENTILES) & set(MEASURE_PERCENTILES)
+
+    def test_each_is_the_nearest_rank_for_integers_of_16_bits(self) -> None:
+        values = RNG.integers(0, 60000, size=5003).astype(numpy.uint16)
+        summary = _gathered(values).summary(values.size, MEASURE_PERCENTILES)
+        for percent in range(1, 100):
+            true = int(numpy.percentile(values.astype(numpy.float64), percent, method="inverted_cdf"))
+            assert summary[f"percentile_{percent}"] == true, percent
 
 
 class TestDeterminism:
@@ -250,3 +266,52 @@ class TestMisuse:
     def test_nothing_in_the_summary_is_nan(self) -> None:
         summary = _gathered(numpy.array([0.5], dtype="float32")).summary(1)
         assert all(math.isfinite(value) for value in summary.values())
+
+
+class TestTheHistogramToDraw:
+    """UI-03d: ``histogram()`` from the fixed histogram, against ``numpy.histogram`` over the same edges."""
+
+    @pytest.mark.parametrize("dtype", ["uint8", "int16", "uint16"])
+    def test_integers_of_up_to_16_bits_are_counted_exactly(self, dtype: str) -> None:
+        values = RNG.integers(0, 200, 50_000).astype(dtype)
+        counts, edges = _gathered(values).histogram(32)
+        assert len(counts) == 32 and len(edges) == 33
+        assert edges[0] == values.min() and edges[-1] == values.max()
+        expected, _ = numpy.histogram(values, bins=numpy.array(edges))
+        assert counts == expected.tolist()
+
+    @pytest.mark.parametrize("dtype", ["float32", "float64", "int32"])
+    def test_other_types_hold_every_value_and_follow_numpy(self, dtype: str) -> None:
+        # A generator of its own: the share that moves depends on the values, not on the tests run before.
+        values = (numpy.random.default_rng(7).normal(0.2, 0.1, 50_000) * (1000 if dtype == "int32" else 1)).astype(dtype)
+        counts, edges = _gathered(values).histogram()
+        assert len(counts) == 64
+        assert sum(counts) == pytest.approx(values.size, abs=0.1)
+        expected, _ = numpy.histogram(values.astype(numpy.float64), bins=numpy.array(edges))
+        # A fixed bin is 2^-7 wide and spread evenly over the drawn bins it overlaps: at most a few percent move to a neighbour
+        # (measured up to 4 % for whole numbers of 32 bits over 40 draws).
+        assert numpy.abs(numpy.array(counts) - expected).sum() < 0.06 * values.size
+        # Counter-check: a histogram of other values is far off.
+        other, _ = numpy.histogram(values.astype(numpy.float64) + 0.3 * float(numpy.ptp(values)), bins=numpy.array(edges))
+        assert numpy.abs(numpy.array(counts) - other).sum() > 0.5 * values.size
+
+    def test_the_same_whatever_the_order_of_the_blocks(self) -> None:
+        values = RNG.normal(0.0, 1.0, 20_000).astype("float32")
+        assert _gathered(values).histogram() == _gathered(values, block=333, reverse=True).histogram()
+
+    @pytest.mark.parametrize("dtype", ["uint8", "float32"])
+    def test_one_value_is_one_bin_from_it_to_one_above(self, dtype: str) -> None:
+        assert _gathered(numpy.full(10, 3, dtype=dtype)).histogram(8) == [[10.0], [3.0, 4.0]]
+
+    def test_the_minimum_and_the_maximum_are_counted(self) -> None:
+        values = numpy.array([-0.5, 0.0, 0.9], dtype="float32")
+        counts, _ = _gathered(values).histogram(3)
+        assert counts[0] >= 1.0 and counts[-1] >= 1.0 and sum(counts) == pytest.approx(3.0)
+
+    def test_no_valid_value_is_an_empty_histogram(self) -> None:
+        assert BandStatistics("float32").histogram() == [[], []]
+
+    @pytest.mark.parametrize("bins", [0, -1])
+    def test_fewer_than_one_bin_is_refused(self, bins: int) -> None:
+        with pytest.raises(ValueError, match="at least one bin"):
+            _gathered(numpy.arange(5, dtype="uint8")).histogram(bins)

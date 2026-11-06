@@ -108,7 +108,7 @@ class TestACropOverTheSecondFormat:
             assert dl.NOTICE_FILENAME in names
             # The cleaned name, because `SR_20m:b04,b02.tif` is not a filename
             # every extractor can write (M2-10 §3.4).
-            assert "SR_20m_b04_b02.tif" in names
+            assert "exports/SR_20m_b04_b02.tif" in names
 
     def test_a_place_search_aoi_over_a_zarr_asset_still_names_openstreetmap(
         self, served: list[httpx.Request]
@@ -175,7 +175,7 @@ class TestACropOverTheSecondFormat:
         def side(fraction: float) -> int:
             zip_bytes = build([dl.AssetCrop(asset=ASSET_KEY, paths=(asset(),))], aoi_over(fraction))
             with zipfile.ZipFile(BytesIO(zip_bytes)) as archive:
-                with rasterio.open(BytesIO(archive.read("SR_20m_b04_b02.tif"))) as raster:
+                with rasterio.open(BytesIO(archive.read("exports/SR_20m_b04_b02.tif"))) as raster:
                     return raster.width
 
         assert side(0.25) < side(0.9)

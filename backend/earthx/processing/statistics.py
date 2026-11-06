@@ -13,8 +13,8 @@ whole file come from the same summaries, without reading anything twice
   block the mean, then the sum of squared deviations (numpy's pairwise sums); across blocks
   Chan's parallel formula; divided by ``count``. Deterministic for a fixed order of blocks,
   not exact. GDAL reads stored statistics only with it (plan §6.1).
-* ``percentile_2`` and ``percentile_98`` (and, where a measure asks for them, other whole percents) come from a fixed
-  histogram: one bin per value
+* ``percentile_2`` and ``percentile_98`` (and, where a measure asks for them, every other whole percent) come from a
+  fixed histogram: one bin per value
   for integers of up to 16 bits (exact), otherwise the upper 16 bits of the
   order-preserving pattern of the ``float32`` value — 65 536 bins of relative width
   2⁻⁷. The rank is the nearest rank; the 2 % value is the lower edge of its bin, the
@@ -34,17 +34,32 @@ from typing import Any
 
 import numpy
 
-__all__ = ["BandStatistics", "BlockSummary", "MEASURE_PERCENTILES", "PERCENTILES", "gdal_tags", "summarize"]
+__all__ = [
+    "BandStatistics",
+    "BlockSummary",
+    "DISPLAY_BINS",
+    "MEASURE_PERCENTILES",
+    "PERCENTILES",
+    "PercentileRefinement",
+    "gdal_tags",
+    "summarize",
+]
 
 PERCENTILES = (2, 98)
 
-#: What a measure of the area adds to :data:`PERCENTILES` for the methods of ``normalize`` (NM4-11): the ends of the
-#: stretches (1 and 5, 95 and 99) and the quartiles. A result carries the two of :data:`PERCENTILES` only.
-MEASURE_PERCENTILES = (1, 5, 25, 50, 75, 95, 99)
+#: What a measure adds to :data:`PERCENTILES`: every other whole percent from 1 to 99 (NM4-65), for the methods of
+#: ``normalize`` (NM4-11) and for the range a person enters as percentiles. A result's document carries the two of
+#: :data:`PERCENTILES` only.
+MEASURE_PERCENTILES = tuple(percent for percent in range(1, 100) if percent not in PERCENTILES)
+
+#: Bins of :meth:`BandStatistics.histogram`, the one drawn under the range of a band (UI-03d).
+DISPLAY_BINS = 64
 
 #: Bins of the float histogram: the upper 16 bits of the order-preserving float32 pattern.
 _KEY_BITS = 16
 _KEY_SHIFT = numpy.uint32(32 - _KEY_BITS)
+#: The lower bits of the pattern, which the second stage of the exact percentiles counts.
+_KEY_SHIFT_BITS = 32 - _KEY_BITS
 _SIGN32 = numpy.uint32(0x80000000)
 _FLOAT32_MAX = numpy.finfo(numpy.float32).max
 
@@ -90,20 +105,33 @@ def _histogram_size(dtype: numpy.dtype) -> int:
     return 1 << (8 * dtype.itemsize) if _kind(dtype) == "small" else 1 << _KEY_BITS
 
 
+def _floor32(values: numpy.ndarray) -> numpy.ndarray:
+    """``values`` as float32: themselves for float32, else the largest float32 not above each value.
+
+    Below the float32 range that is ``-inf``, whose bin lies under every finite one.
+    """
+    if values.dtype == numpy.float32:
+        return values
+    wide = values.astype(numpy.float64)
+    with numpy.errstate(over="ignore"):  # below the float32 range nextafter gives -inf, on purpose
+        narrow = numpy.clip(wide, -_FLOAT32_MAX, _FLOAT32_MAX).astype(numpy.float32)
+        return numpy.where(narrow > wide, numpy.nextafter(narrow, numpy.float32(-numpy.inf)), narrow)
+
+
+def _ordered_bits(values: numpy.ndarray) -> numpy.ndarray:
+    """The float32 pattern of each value made order-preserving: negatives flipped, as ``uint32``."""
+    bits = values.view(numpy.uint32)
+    flip = (values.view(numpy.int32) >> 31).view(numpy.uint32) | _SIGN32
+    return bits ^ flip
+
+
 def _float_keys(values: numpy.ndarray) -> numpy.ndarray:
     """The bin of each value: its float32 pattern made order-preserving (negatives flipped), upper 16 bits.
 
-    A value of another type becomes the largest float32 not above it, so its bin's lower edge is never
-    above it; below the float32 range that is ``-inf``, whose bin lies under every finite one.
+    A value of another type becomes the largest float32 not above it (:func:`_floor32`), so its bin's lower edge is
+    never above it.
     """
-    if values.dtype != numpy.float32:
-        wide = values.astype(numpy.float64)
-        with numpy.errstate(over="ignore"):  # below the float32 range nextafter gives -inf, on purpose
-            narrow = numpy.clip(wide, -_FLOAT32_MAX, _FLOAT32_MAX).astype(numpy.float32)
-            values = numpy.where(narrow > wide, numpy.nextafter(narrow, numpy.float32(-numpy.inf)), narrow)
-    bits = values.view(numpy.uint32)
-    flip = (values.view(numpy.int32) >> 31).view(numpy.uint32) | _SIGN32
-    return ((bits ^ flip) >> _KEY_SHIFT).astype(numpy.intp)
+    return (_ordered_bits(_floor32(values)) >> _KEY_SHIFT).astype(numpy.intp)
 
 
 def _float32_total(values: numpy.ndarray, keys: numpy.ndarray) -> numpy.ndarray:
@@ -210,6 +238,13 @@ def _unkey(key: int) -> numpy.float32:
     return numpy.array([bits], dtype=numpy.uint32).view(numpy.float32)[0]
 
 
+def _unkey_all(keys: numpy.ndarray) -> numpy.ndarray:
+    """:func:`_unkey` of many order-preserving patterns (32 bits) at once, as float64."""
+    keys = keys.astype(numpy.uint32)
+    bits = numpy.where(keys & _SIGN32, keys & numpy.uint32(0x7FFFFFFF), ~keys)
+    return bits.astype(numpy.uint32).view(numpy.float32).astype(numpy.float64)
+
+
 #: The bins of the most negative and the most positive finite float32.
 _LOWEST_BIN = int(_float_keys(numpy.array([-_FLOAT32_MAX], dtype=numpy.float32))[0])
 _HIGHEST_BIN = int(_float_keys(numpy.array([_FLOAT32_MAX], dtype=numpy.float32))[0])
@@ -266,10 +301,23 @@ class BandStatistics:
         edge = _unkey((((index + 1) << (32 - _KEY_BITS)) - 1) if upper else (index << (32 - _KEY_BITS)))
         if upper and self.dtype != numpy.float32:
             edge = numpy.nextafter(edge, numpy.float32(numpy.inf))  # the value may lie just above its float32
+        return self._within(edge, upper, minimum, maximum)
+
+    def _within(self, edge: Any, upper: bool, minimum: Any, maximum: Any) -> Any:
+        """``edge`` (a float32) as the statistic of the band's type, whole for integers, inside ``[minimum, maximum]``."""
         if self._kind == "int":
             return min(math.ceil(edge), maximum) if upper else max(math.floor(edge), minimum)
         edge = float(edge) + 0.0  # no -0.0 from a bin edge
         return min(edge, maximum) if upper else max(edge, minimum)
+
+    def _range(self) -> tuple[Any, Any]:
+        if self._kind == "float":
+            return float(self._minimum), float(self._maximum)
+        return int(self._minimum), int(self._maximum)
+
+    def refine_targets(self, percents: Sequence[int]) -> PercentileRefinement:
+        """The second look that makes ``percents`` (whole percents, 1 to 99) exact (NM4-71), see :class:`PercentileRefinement`."""
+        return PercentileRefinement(self, percents)
 
     def summary(self, pixels: int, extra_percentiles: Sequence[int] = ()) -> dict[str, Any]:
         """The STAC statistics object (1.1, extended by the two percentiles) over ``pixels`` in all.
@@ -287,8 +335,8 @@ class BandStatistics:
         valid_percent = 100.0 * self.count / pixels
         if self.count == 0:
             return {"count": 0, "valid_percent": valid_percent}
+        minimum, maximum = self._range()
         if self._kind == "float":
-            minimum, maximum = float(self._minimum), float(self._maximum)
             exact = (
                 _float32_sum(self._total, self._histogram)
                 if self.dtype == numpy.float32
@@ -296,7 +344,6 @@ class BandStatistics:
             )
             mean = float(exact / self.count)
         else:
-            minimum, maximum = int(self._minimum), int(self._maximum)
             mean = float(Fraction(self._total, self.count))
         result: dict[str, Any] = {"minimum": minimum, "maximum": maximum, "mean": mean}
         stddev = math.sqrt(self._m2 / self.count) if math.isfinite(self._m2) else math.nan
@@ -307,6 +354,147 @@ class BandStatistics:
         for percent in sorted({*PERCENTILES, *extra_percentiles}):
             result[f"percentile_{percent}"] = self._percentile(percent, minimum, maximum)
         return result
+
+
+    def histogram(self, bins: int = DISPLAY_BINS) -> list[list[float]]:
+        """A histogram of ``bins`` equal bins from the minimum to the maximum, for drawing (UI-03d), as rio-tiler writes
+        one: ``[counts, edges]``, ``bins + 1`` edges.
+
+        Taken from the fixed histogram, nothing is read again. Integers of up to 16 bits count exactly; a float bin
+        spreads its count over the drawn bins it overlaps, evenly, so the counts are whole only where it lies in one.
+        A band of one value has one bin from it to one above it; one without valid values ``[[], []]``.
+        """
+        if bins < 1:
+            raise ValueError("a histogram has at least one bin")
+        if self.count == 0:
+            return [[], []]
+        low, high = (float(value) for value in self._range())
+        edges = numpy.linspace(low, high, bins + 1) if high > low else numpy.array([low, low + 1.0])
+        keys = numpy.flatnonzero(self._histogram)
+        counts = self._histogram[keys].astype(numpy.float64)
+        if self._kind == "small":
+            values = (keys + int(numpy.iinfo(self.dtype).min)).astype(numpy.float64)
+            places = numpy.clip(numpy.searchsorted(edges, values, side="right") - 1, 0, len(edges) - 2)
+            drawn = numpy.bincount(places, weights=counts, minlength=len(edges) - 1)
+        else:
+            lower = numpy.clip(_unkey_all(keys << _KEY_SHIFT_BITS), low, high)
+            upper = numpy.clip(_unkey_all(((keys + 1) << _KEY_SHIFT_BITS) - 1), low, high)
+            width = numpy.where(upper > lower, upper - lower, 1.0)
+            # The share of each bin at or below each edge; a bin of no width lies all at its lower edge.
+            below = numpy.clip((edges[None, :] - lower[:, None]) / width[:, None], 0.0, 1.0)
+            below = numpy.where((upper == lower)[:, None], (edges[None, :] >= lower[:, None]).astype(float), below)
+            below[:, 0], below[:, -1] = 0.0, 1.0  # the range holds every value, the minimum too
+            drawn = numpy.diff(counts @ below)
+        return [[round(float(count), 3) for count in drawn], [float(edge) for edge in edges]]
+
+
+@dataclass(slots=True)
+class _TargetBin:
+    """The values of one stage-1 bin that holds a wanted rank, counted by the lower 16 bits of their float32 pattern."""
+
+    counts: numpy.ndarray
+    #: Per lower-16-bit bin: a value in it differs from its float32 (only float64 holds it).
+    inexact: numpy.ndarray
+
+
+class PercentileRefinement:
+    """The exact nearest-rank values of some percentiles of one band, from a second look at its values (NM4-71).
+
+    ``statistics`` is the band after all its blocks were counted; ``percents`` are whole percents from 1 to 99. The
+    caller feeds the very same valid values once more through :meth:`add`, block by block in any order, and then reads
+    :meth:`values`. Stage 1 is the histogram of ``statistics``: it gives, for each percent, the bin and the rank inside
+    it. Stage 2 counts the values that fall in those bins by the lower 16 bits of their order-preserving float32
+    pattern, so that the rank inside the bin names the value. Memory: 65 536 counters and flags per distinct target bin,
+    whatever the number of values.
+
+    The result is the nearest-rank value (the one ``numpy.percentile(..., method="inverted_cdf")`` gives) for every value
+    a float32 holds. A value that only float64 (or an integer beyond 2²⁴) holds reaches float32 rounded down; for a percent
+    above 50 it moves one float32 step up, as in :meth:`BandStatistics.summary`, so ``[low, high]`` still holds the true
+    values. The results are clamped to ``[minimum, maximum]`` of the band and never ``-0.0``. Integers of up to 16 bits
+    are exact after stage 1: :attr:`needed` is ``False`` and :meth:`add` has nothing to do.
+    """
+
+    def __init__(self, statistics: BandStatistics, percents: Sequence[int]) -> None:
+        for percent in percents:
+            if not 1 <= percent <= 99:
+                raise ValueError(f"a percentile is a whole percent from 1 to 99, not {percent}")
+        if statistics.count == 0:
+            raise ValueError("a band without a valid value has no percentiles")
+        self._statistics = statistics
+        self._range = statistics._range()
+        #: Percent → the final value (stage 1 is exact, or the range says it) or ``None`` while stage 2 has to give it.
+        self._fixed: dict[int, Any] = {}
+        #: Percent → (stage-1 bin, rank inside the bin).
+        self._wanted: dict[int, tuple[int, int]] = {}
+        cumulative = numpy.cumsum(statistics._histogram)
+        minimum, maximum = self._range
+        for percent in dict.fromkeys(percents):
+            rank = max(1, -(-percent * statistics.count // 100))
+            index = int(numpy.searchsorted(cumulative, rank))
+            upper = percent > 50
+            if statistics._kind == "small" or (upper and index >= _HIGHEST_BIN) or (not upper and index <= _LOWEST_BIN):
+                # Exact already, or beyond the float32 range, where the bin says nothing and the range does.
+                self._fixed[percent] = statistics._percentile(percent, minimum, maximum)
+                continue
+            self._wanted[percent] = (index, rank - (int(cumulative[index - 1]) if index else 0))
+        self._bins = {
+            index: _TargetBin(
+                numpy.zeros(1 << _KEY_SHIFT_BITS, dtype=numpy.int64), numpy.zeros(1 << _KEY_SHIFT_BITS, dtype=bool)
+            )
+            for index in sorted({index for index, _ in self._wanted.values()})
+        }
+
+    @property
+    def needed(self) -> bool:
+        """Whether stage 2 has to see the values; ``False`` when every percent is already exact."""
+        return bool(self._bins)
+
+    def add(self, values: numpy.ndarray) -> None:
+        """Count ``values``, the valid values of one block in the type of ``statistics`` (one dimension).
+
+        Values that are not finite are skipped, as :func:`summarize` skips them.
+        """
+        if values.ndim != 1:
+            raise ValueError("add() takes the valid values of a block as one dimension")
+        if values.dtype != self._statistics.dtype:
+            raise ValueError(f"values of {values.dtype} do not belong to statistics of {self._statistics.dtype}")
+        if not self._bins:
+            return
+        if self._statistics._kind == "float":
+            values = values[numpy.isfinite(values)]
+        narrow = _floor32(values)
+        ordered = _ordered_bits(narrow)
+        keys = (ordered >> _KEY_SHIFT).astype(numpy.intp)
+        low = (ordered & numpy.uint32((1 << _KEY_SHIFT_BITS) - 1)).astype(numpy.intp)
+        inexact = (
+            None if values.dtype == numpy.float32 else narrow.astype(numpy.float64) != values.astype(numpy.float64)
+        )
+        for index, target in self._bins.items():
+            hit = keys == index
+            if not hit.any():
+                continue
+            target.counts += numpy.bincount(low[hit], minlength=target.counts.size)
+            if inexact is not None:
+                target.inexact[low[hit & inexact]] = True
+
+    def values(self) -> dict[int, Any]:
+        """Percent → its value, after all values were added; a number of the band's type (an ``int`` for integers).
+
+        :class:`ValueError` where the values added are not the ones counted in ``statistics``.
+        """
+        result = dict(self._fixed)
+        for percent, (index, within) in self._wanted.items():
+            target = self._bins[index]
+            cumulative = numpy.cumsum(target.counts)
+            if int(cumulative[-1]) != int(self._statistics._histogram[index]):
+                raise ValueError("the values added are not the values the statistics counted")
+            low = int(numpy.searchsorted(cumulative, within))
+            edge = _unkey((index << _KEY_SHIFT_BITS) | low)
+            upper = percent > 50
+            if upper and target.inexact[low]:
+                edge = numpy.nextafter(edge, numpy.float32(numpy.inf))  # the value lies just above its float32
+            result[percent] = self._statistics._within(edge, upper, *self._range)
+        return {percent: result[percent] for percent in sorted(result)}
 
 
 #: STAC name → GDAL band tag. The percentiles have no GDAL name, hence a prefix of our own.

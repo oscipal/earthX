@@ -134,7 +134,7 @@ async function run(browser, { theme, viewport }) {
   await page.waitForSelector('.time-slider');
   const x = Math.round(win.width * 0.6);
   // High enough to stay clear of the bars of a view, which cover the middle of a narrow window.
-  const y = Math.round(win.height * 0.25);
+  const y = Math.round(win.height * 0.18);
   const settle = async (want) => {
     let c = [0, 0, 0];
     for (let t = 0; t < 6000; t += 100) {
@@ -148,6 +148,8 @@ async function run(browser, { theme, viewport }) {
     const c = await settle(want);
     if (!near(c, want)) problems.push(`${what}: expected ${JSON.stringify(want)}, the map shows ${JSON.stringify(c)}`);
   };
+  // A message of the status bar stands over the panel in a narrow window (UI-04 part 6) until its red x closes it, as a person would.
+  for (const close of await page.locator('.toast .close-x').all()) await close.click().catch(() => undefined);
   const resultsRow = page.locator('.layer-manager .results-row');
   // A click in a panel of the dock: opened by its symbol on the rail, closed again so that the map is read uncovered
   // (in a narrow window the panel lies over the middle of the map).
@@ -159,7 +161,7 @@ async function run(browser, { theme, viewport }) {
   };
 
   await expectColour('the open group', COLOURS[0]);
-  // 1. Otto's click path: the job pinned goes on top, over "Results" (Otto, zu #249).
+  // 1. Otto's click path: the job pinned comes under "Results", which stays on top (Otto, 2.11.2026; replaces "over it", zu #249).
   await page.evaluate(async (bbox) => {
     (await import('/src/store.ts')).useAppStore.getState().pinDerivedLayer({
       name: 'Job result',
@@ -170,14 +172,17 @@ async function run(browser, { theme, viewport }) {
     });
   }, BBOX);
   const rows = await page.locator('.layer-manager .layer-row [data-col="name"]').allTextContents();
-  if (rows.join('|') !== 'Job result|Results') problems.push(`the layer manager lists ${rows.join(', ')}`);
-  await expectColour('the job pinned over "Results"', JOB);
+  if (rows.join('|') !== 'Search results|Job result') problems.push(`the layer manager lists ${rows.join(', ')}`);
+  await expectColour('the job pinned under "Results"', COLOURS[0]);
+  // Moved down by the user, "Results" lies under the job, and the button brings it back on top.
+  await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.getState().moveResults('down'));
+  await expectColour('the job over "Results" moved down', JOB);
   await page.locator('#rail-results').click();
   await page.screenshot({ path: path.join(OUT, `to-top button ${name}.png`) });
   await page.locator('#rail-results').click();
-  const greyed = () => page.locator('.results-head button[aria-label="Put results on top of the layers"]').getAttribute('aria-disabled');
+  const greyed = () => page.locator('.results-head button[aria-label="Put search results on top of the layers"]').getAttribute('aria-disabled');
   if ((await greyed()) !== null) problems.push('the button is greyed out with a layer over "Results"');
-  await click('results', page.locator('.results-head button[aria-label="Put results on top of the layers"]'), 'the button "Results" on top');
+  await click('results', page.locator('.results-head button[aria-label="Put search results on top of the layers"]'), 'the button "Results" on top');
   if ((await greyed()) !== 'true') problems.push('the button is not greyed out with "Results" on top');
   await page.locator('#rail-results').click();
   await page.screenshot({ path: path.join(OUT, `to-top greyed ${name}.png`) });
@@ -187,7 +192,7 @@ async function run(browser, { theme, viewport }) {
   // The eye of the layer manager, then the one of the results list.
   const eyes = [
     ['layers', resultsRow.locator('[data-col="eye"]')],
-    ['results', page.locator('.results-head .lm-eye[aria-pressed]')],
+    ['results', page.locator('.results-head [data-col="eye"][aria-pressed]')],
   ];
   for (let round = 0; round < 4; round++) {
     if (round === 3) slow = 400;
@@ -215,6 +220,8 @@ async function run(browser, { theme, viewport }) {
       downloaded: { SYNTH_2: { tileUrl: `${location.origin}/collections/synthetic/items/SYNTH_2/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=data`, bounds: [10.2, 46.9, 10.4, 48.7], asset: 'data', minZoom: 0, maxZoom: 14 } },
     });
     useAppStore.getState().toggleSelected('SYNTH_1');
+    // The bar of the selection stands above the settings sheet of a view and, in a narrow window, over the probe: it is not what is looked at.
+    useAppStore.getState().closeSelectionBlock();
   });
   await expectColour('a view open: the open group over the ticked scene of another group', COLOURS[0]);
   await page.screenshot({ path: path.join(OUT, `view ${name}.png`) });

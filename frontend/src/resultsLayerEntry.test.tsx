@@ -18,6 +18,7 @@ import { bboxToPolygon } from './geoUtils';
 import { resetJobs, useProcessingStore } from './processingStore';
 import { useAppStore } from './store';
 import type { Collection, StacItem } from './types';
+import { tipOf } from './fixtures/tips';
 
 vi.mock('./components/MapView', () => ({ default: () => null }));
 
@@ -100,67 +101,71 @@ afterEach(() => {
 
 describe('the entry "Results" in the layer manager', () => {
   it('is there with the results, on top, with an eye and ▲/▼ and nothing else', () => {
-    expect(rowNames()).toEqual(['Results']);
-    expect(resultsButton('name').getAttribute('title')).toBe(RESULTS_ENTRY_TIP);
+    expect(rowNames()).toEqual(['Search results']);
+    expect(resultsButton('name').getAttribute('data-tip')).toBe(RESULTS_ENTRY_TIP);
     for (const col of ['opacity', 'process', 'download', 'note', 'remove']) expect(resultsRow()!.querySelector(`button[data-col="${col}"], input[data-col="${col}"]`)).toBeNull();
     expect(resultsButton('up').disabled).toBe(true);
     expect(resultsButton('down').disabled).toBe(true);
     // The count in the head is that of the pinned layers.
-    expect(container.querySelector('.layer-manager .results-head-right')?.textContent).toBe('0');
+    expect(container.querySelector('.layer-manager .results-head > div')?.textContent).toBe('0');
   });
 
-  it('lets a pinned layer go on top, over it, also while it is on top (Otto, zu #249)', () => {
+  // Otto, 2.11.2026 (replaces "a new layer goes over it" of 30.10.2026, zu #249): it stays on top unless the user moves it down.
+  it('stays on top while a layer is pinned: the new layer comes right under it', () => {
     pin('Job one');
-    expect(rowNames()).toEqual(['Job one', 'Results']);
+    expect(rowNames()).toEqual(['Search results', 'Job one']);
     pin('Job two');
-    expect(rowNames()).toEqual(['Job two', 'Job one', 'Results']);
-    expect(state().resultsAt).toBe(2);
+    expect(rowNames()).toEqual(['Search results', 'Job two', 'Job one']);
+    expect(state().resultsAt).toBe(0);
   });
 
-  it('moves with ▲/▼ among the layers, and a layer pinned then goes on top, over it', () => {
+  it('moves with ▲/▼ among the layers; moved down, a layer pinned then goes on top, over it', () => {
     pin('Job one');
     pin('Job two');
-    click(resultsButton('up'));
-    expect(rowNames()).toEqual(['Job two', 'Results', 'Job one']);
-    click(resultsButton('up'));
-    expect(rowNames()).toEqual(['Results', 'Job two', 'Job one']);
-    expect(resultsButton('up').disabled).toBe(true);
-    pin('Job three');
-    expect(rowNames()).toEqual(['Job three', 'Results', 'Job two', 'Job one']);
     click(resultsButton('down'));
-    expect(rowNames()).toEqual(['Job three', 'Job two', 'Results', 'Job one']);
+    expect(rowNames()).toEqual(['Job two', 'Search results', 'Job one']);
+    pin('Job three');
+    expect(rowNames()).toEqual(['Job three', 'Job two', 'Search results', 'Job one']);
+    click(resultsButton('up'));
+    click(resultsButton('up'));
+    expect(rowNames()).toEqual(['Search results', 'Job three', 'Job two', 'Job one']);
+    expect(resultsButton('up').disabled).toBe(true);
+    pin('Job four');
+    expect(rowNames()).toEqual(['Search results', 'Job four', 'Job three', 'Job two', 'Job one']);
   });
 
   it('changes places with a layer whose ▲/▼ points at it', () => {
     pin('Job one');
     click(rowOf('Job one').querySelector<HTMLButtonElement>('[data-col="down"]')!);
-    expect(rowNames()).toEqual(['Results', 'Job one']);
+    expect(rowNames()).toEqual(['Search results', 'Job one']);
     expect(rowOf('Job one').querySelector<HTMLButtonElement>('[data-col="down"]')!.disabled).toBe(true);
     click(rowOf('Job one').querySelector<HTMLButtonElement>('[data-col="up"]')!);
-    expect(rowNames()).toEqual(['Job one', 'Results']);
+    expect(rowNames()).toEqual(['Job one', 'Search results']);
   });
 
   it('moves up when a layer above it is removed, and stays when one below it is', () => {
     pin('Job one');
     pin('Job two');
     pin('Job three');
-    click(resultsButton('up'));
-    expect(rowNames()).toEqual(['Job three', 'Job two', 'Results', 'Job one']);
+    click(resultsButton('down'));
+    click(resultsButton('down'));
+    expect(rowNames()).toEqual(['Job three', 'Job two', 'Search results', 'Job one']);
     click(rowOf('Job one').querySelector('[data-col="remove"]')!);
-    expect(rowNames()).toEqual(['Job three', 'Job two', 'Results']);
+    expect(rowNames()).toEqual(['Job three', 'Job two', 'Search results']);
     click(rowOf('Job three').querySelector('[data-col="remove"]')!);
-    expect(rowNames()).toEqual(['Job two', 'Results']);
+    expect(rowNames()).toEqual(['Job two', 'Search results']);
     expect(state().resultsAt).toBe(1);
   });
 
   it('goes back on top with every search, and "Load more" leaves it', async () => {
     pin('Job one');
+    click(resultsButton('down'));
     expect(state().resultsAt).toBe(1);
     await act(() => state().loadMore());
     expect(state().resultsAt).toBe(1);
     await act(() => state().runSearch());
     await flush();
-    expect(rowNames()).toEqual(['Results', 'Job one']);
+    expect(rowNames()).toEqual(['Search results', 'Job one']);
   });
 
   it('goes with "Clear search results"; the layers then move among themselves only', () => {
@@ -180,17 +185,17 @@ describe('the eye of "Results"', () => {
   it('is the switch of the results on the map, with what a click does in its tooltip', () => {
     const eye = () => resultsButton('eye');
     expect(eye().getAttribute('aria-pressed')).toBe('true');
-    expect(eye().title).toBe(HIDE_RESULTS_TIP);
+    expect(tipOf(eye())).toBe(HIDE_RESULTS_TIP);
     click(eye());
     expect(state().resultsOnMap).toBe(false);
     expect(eye().getAttribute('aria-pressed')).toBe('false');
-    expect(eye().title).toBe(SHOW_RESULTS_TIP);
-    expect(eye().classList.contains('off')).toBe(true);
+    expect(tipOf(eye())).toBe(SHOW_RESULTS_TIP);
+    expect(eye().querySelector('svg.lucide-eye-off')).not.toBeNull();
     click(eye());
     expect(state().resultsOnMap).toBe(true);
   });
 
-  it('follows the exceptions: a crop closes it, a tick opens it, a search opens it, "Play" opens it', async () => {
+  it('follows the exceptions: a crop closes it, a tick opens it, a search opens it', async () => {
     const pressed = () => resultsButton('eye').getAttribute('aria-pressed');
     act(() => state().toggleSelected('a0'));
     await act(() => state().enterFocus(true));
@@ -201,16 +206,13 @@ describe('the eye of "Results"', () => {
     await act(() => state().runSearch());
     await flush();
     expect(pressed()).toBe('true');
-    click(resultsButton('eye'));
-    click(container.querySelector('.time-slider .play-btn')!);
-    expect(pressed()).toBe('true');
   });
 
   it('leaves the order alone, and moving leaves the eye alone', () => {
     pin('Job one');
     click(resultsButton('eye'));
     click(resultsButton('up'));
-    expect(rowNames()).toEqual(['Results', 'Job one']);
+    expect(rowNames()).toEqual(['Search results', 'Job one']);
     expect(state().resultsOnMap).toBe(false);
   });
 });
@@ -226,14 +228,14 @@ describe('"Results" on top, from the results list', () => {
   it('is there left of the eye, greyed out while "Results" is on top, the reason in its tooltip', () => {
     const [first, second] = [...head().children];
     expect(first).toBe(toTop());
-    expect((second as HTMLButtonElement).title).toBe(HIDE_RESULTS_TIP);
+    expect(tipOf((second as HTMLButtonElement))).toBe(HIDE_RESULTS_TIP);
     expect(greyed()).toBe(true);
-    expect(toTop().title).toBe(RESULTS_ON_TOP_TIP);
+    expect(tipOf(toTop())).toBe(RESULTS_ON_TOP_TIP);
   });
 
   it('does nothing while greyed out', () => {
     pin('Job one');
-    act(() => state().resultsToTop());
+    expect(greyed()).toBe(true);
     expect(greyed()).toBe(true);
     const before = rowNames();
     click(toTop());
@@ -243,11 +245,13 @@ describe('"Results" on top, from the results list', () => {
   it('puts "Results" over every layer, and is greyed out then', () => {
     pin('Job one');
     pin('Job two');
-    expect(rowNames()).toEqual(['Job two', 'Job one', 'Results']);
+    act(() => state().moveResults('down'));
+    act(() => state().moveResults('down'));
+    expect(rowNames()).toEqual(['Job two', 'Job one', 'Search results']);
     expect(greyed()).toBe(false);
-    expect(toTop().title).toBe(RESULTS_TO_TOP_TIP);
+    expect(tipOf(toTop())).toBe(RESULTS_TO_TOP_TIP);
     click(toTop());
-    expect(rowNames()).toEqual(['Results', 'Job two', 'Job one']);
+    expect(rowNames()).toEqual(['Search results', 'Job two', 'Job one']);
     expect(greyed()).toBe(true);
   });
 
@@ -260,11 +264,11 @@ describe('"Results" on top, from the results list', () => {
     expect(state().layers).toBe(layers);
   });
 
-  it('is open again once a new layer goes over "Results"', () => {
+  it('stays greyed out when a layer is pinned: the layer comes under "Results" (Otto, 2.11.2026)', () => {
     pin('Job one');
-    click(toTop());
     expect(greyed()).toBe(true);
     pin('Job two');
-    expect(greyed()).toBe(false);
+    expect(greyed()).toBe(true);
+    expect(rowNames()[0]).toBe('Search results');
   });
 });

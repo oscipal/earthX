@@ -125,7 +125,7 @@ describe('addCurrentToLayers while browsing', () => {
   });
 });
 
-// M3-09 §10 (Otto): "Crop & merge to AOI" pins one layer per group instead
+// M3-09 §10 (Otto): "Crop and merge to AOI" pins one layer per group instead
 // of one for the whole selection.
 describe('addCurrentToLayers while cropped in focus mode (M3-09 §10)', () => {
   const AOI: GeoJSON.Polygon = {
@@ -145,8 +145,8 @@ describe('addCurrentToLayers while cropped in focus mode (M3-09 §10)', () => {
     { key: ['b'], label: 'Overpass B', items: [scene({ id: 'S3' })] },
   ];
 
-  function focusedDownload(id: string): { tileUrl: string; bounds: [number, number, number, number]; asset: string; minZoom: number; maxZoom: number } {
-    return { tileUrl: `/tiles/${id}/{z}/{x}/{y}`, bounds: [1, 47, 2, 48], asset: 'visual', minZoom: 0, maxZoom: 19 };
+  function focusedDownload(id: string): { datasetId: string; tileUrl: string; bounds: [number, number, number, number]; asset: string; minZoom: number; maxZoom: number } {
+    return { datasetId: COG_LIKE.id, tileUrl: `/tiles/${id}/{z}/{x}/{y}`, bounds: [1, 47, 2, 48], asset: 'visual', minZoom: 0, maxZoom: 19 };
   }
 
   beforeEach(() => {
@@ -171,8 +171,9 @@ describe('addCurrentToLayers while cropped in focus mode (M3-09 §10)', () => {
     });
   });
 
-  it('pins one layer per group, not one for the whole selection', () => {
-    useAppStore.getState().addCurrentToLayers();
+  // NM4-53: "Add to layers" pins the image that is shown, "Add all to layers" every image, one layer each.
+  it('pins one layer per group with "Add all to layers", not one for the whole selection', () => {
+    useAppStore.getState().addAllToLayers();
     const { layers } = useAppStore.getState();
     expect(layers).toHaveLength(2);
     const itemIdSets = layers.map((l) => [...l.restore.itemIds].sort());
@@ -180,20 +181,28 @@ describe('addCurrentToLayers while cropped in focus mode (M3-09 §10)', () => {
     expect(itemIdSets).toContainEqual(['S3']);
   });
 
-  it('each per-group layer carries its own itemIds as its one groupItemIds group (M3-17)', () => {
+  it('pins only the image that is shown with "Add to layers"', () => {
     useAppStore.getState().addCurrentToLayers();
+    const { layers } = useAppStore.getState();
+    expect(layers).toHaveLength(1);
+    expect([...layers[0].restore.itemIds].sort()).toEqual(['S1', 'S2']);
+  });
+
+  it('each per-group layer carries its own itemIds as its one groupItemIds group (M3-17)', () => {
+    useAppStore.getState().addAllToLayers();
     for (const layer of useAppStore.getState().layers) {
       expect(layer.restore.groupItemIds).toEqual([layer.restore.itemIds]);
     }
   });
 
-  it('an uncropped "View full selection" layer still splits groupItemIds by group (M3-17)', () => {
+  it('an uncropped "View full selection" layer is one group of its image (M3-17, NM4-53)', () => {
     useAppStore.setState({ cropToAoi: false });
-    useAppStore.getState().addCurrentToLayers();
-    const [layer] = useAppStore.getState().layers;
-    expect(layer.restore.groupItemIds.map((g) => [...g].sort())).toEqual(
+    useAppStore.getState().addAllToLayers();
+    const { layers } = useAppStore.getState();
+    expect(layers.flatMap((l) => l.restore.groupItemIds.map((g) => [...g].sort()))).toEqual(
       expect.arrayContaining([['S1', 'S2'], ['S3']]),
     );
+    expect(layers.every((l) => l.restore.groupItemIds.length === 1)).toBe(true);
   });
 
   it('clips each group layer\'s tile URLs to the AOI and marks it cropped', () => {
@@ -215,12 +224,12 @@ describe('addCurrentToLayers while cropped in focus mode (M3-09 §10)', () => {
     expect(layers[0].restore.itemIds).toEqual(['S1']);
   });
 
-  it('still pins one layer for the whole selection when the view is uncropped', () => {
+  it('pins the shown image of an uncropped view as one layer, not cut to the AOI', () => {
     useAppStore.setState({ cropToAoi: false });
     useAppStore.getState().addCurrentToLayers();
     const { layers } = useAppStore.getState();
     expect(layers).toHaveLength(1);
-    expect([...layers[0].restore.itemIds].sort()).toEqual(['S1', 'S2', 'S3']);
+    expect([...layers[0].restore.itemIds].sort()).toEqual(['S1', 'S2']);
     expect(layers[0].restore.cropToAoi).toBe(false);
     for (const overlay of layers[0].overlays) {
       if (overlay.kind === 'raster') expect(overlay.tileUrl.startsWith('earthx-clip://')).toBe(false);
@@ -246,10 +255,10 @@ describe('zoomToView', () => {
   };
 
   beforeEach(() => {
-    useAppStore.setState({ aoi: null, layers: [], flyToBbox: null });
+    useAppStore.setState({ aoi: null, layers: [], flyToBbox: null, focusMode: false, downloaded: {}, showDownloaded: true, viewLayerId: null });
   });
 
-  it('prefers the AOI over pinned layers', () => {
+  it('zooms to the AOI and the layers that are shown together (UI-04 part 4: it no longer prefers the AOI)', () => {
     useAppStore.setState({
       aoi: AOI,
       layers: [
@@ -275,10 +284,10 @@ describe('zoomToView', () => {
       ],
     });
     useAppStore.getState().zoomToView();
-    expect(useAppStore.getState().flyToBbox).toEqual([1, 1, 2, 2]);
+    expect(useAppStore.getState().flyToBbox).toEqual([1, 1, 41, 41]);
   });
 
-  it('falls back to the pinned layer images without an AOI, raster and image overlays alike', () => {
+  it('zooms to the pinned layer images alone without an AOI, raster and image overlays alike', () => {
     useAppStore.setState({
       layers: [
         {
@@ -652,11 +661,10 @@ describe('runSearch', () => {
   });
 });
 
-// M3-19 (Otto, 23.09.2026): without an AOI, `refreshCoverage` asks for the
-// visible map extent and reuses an already-loaded answer for a viewport that
-// stays inside it, instead of firing a request on every `moveend`. With an
-// AOI nothing changes — every call still asks fresh.
-describe('refreshCoverage without an AOI (M3-19)', () => {
+// M3-19 (Otto, 23.09.2026): `refreshCoverage` asks for the visible map extent and reuses an already-loaded answer for a viewport that
+// stays inside it, instead of firing a request on every `moveend`. Since UI-04 part 4 (Otto, 4.11.2026) that holds with an AOI drawn as
+// well: the coverage map does not depend on the AOI (`store.coverage.test.ts`).
+describe('refreshCoverage (M3-19, UI-04 part 4)', () => {
   // A fresh id per test: the reuse cache is module-level (store.ts), so two
   // tests sharing a dataset id would see each other's cached answers.
   let testCounter = 0;
@@ -752,7 +760,7 @@ describe('refreshCoverage without an AOI (M3-19)', () => {
     expect(useAppStore.getState().coverage?.level).toBe(7);
   });
 
-  it('with an AOI, every viewport report still asks fresh — no reuse', async () => {
+  it('with an AOI drawn, the cache of map extents is used as without, and the same question is not sent again', async () => {
     const aoi: GeoJSON.Geometry = {
       type: 'Polygon',
       coordinates: [[[10, 49], [11, 49], [11, 50], [10, 50], [10, 49]]],
@@ -760,19 +768,29 @@ describe('refreshCoverage without an AOI (M3-19)', () => {
     useAppStore.setState({ aoi });
     const { setMapViewport } = useAppStore.getState();
 
-    setMapViewport(8, [10, 49, 11, 50], { width: 1920, height: 1080 });
+    setMapViewport(0, [10, 10, 60, 60], { width: 1920, height: 1080 });
     await vi.advanceTimersByTimeAsync(500);
     expect(fetch).toHaveBeenCalledTimes(1);
 
-    // The very same report a second time (e.g. a resize firing `moveend`
-    // without the map actually moving) is not treated as reuse either.
-    setMapViewport(8, [10, 49, 11, 50], { width: 1920, height: 1080 });
+    // The very same report a second time (e.g. a resize firing `moveend` without the map actually moving) asks the
+    // question that is already answered on the map: nothing is sent (Otto, 03.11.2026, eleven equal requests).
+    setMapViewport(0, [10, 10, 60, 60], { width: 1920, height: 1080 });
+    await vi.advanceTimersByTimeAsync(500);
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    // A small pan inside the same block is answered from what is there.
+    setMapViewport(0, [15, 15, 55, 55], { width: 1920, height: 1080 });
+    await vi.advanceTimersByTimeAsync(500);
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    // Another level is another question.
+    setMapViewport(3, [10, 10, 60, 60], { width: 1920, height: 1080 });
     await vi.advanceTimersByTimeAsync(500);
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 
-  // NM4-57 (M4 Q8): the box of an AOI stands in the body of a POST; the map extent, which is no AOI, in the URL.
-  it('asks with an AOI by POST, and no coordinate of it stands in a URL', async () => {
+  // NM4-57 (M4 Q8), since UI-04 part 4 (Otto, 4.11.2026) without a POST at all: the AOI is no part of the question.
+  it('asks with an AOI drawn by GET with the map extent, and no coordinate of the AOI stands in any request', async () => {
     const aoi: GeoJSON.Geometry = {
       type: 'Polygon',
       coordinates: [[[11.31234, 47.81234], [11.51234, 47.81234], [11.51234, 47.91234], [11.31234, 47.91234], [11.31234, 47.81234]]],
@@ -783,13 +801,13 @@ describe('refreshCoverage without an AOI (M3-19)', () => {
     setMapViewport(8, [10, 47, 12, 48], { width: 1920, height: 1080 });
     await vi.advanceTimersByTimeAsync(500);
 
-    const [url, init] = vi.mocked(fetch).mock.calls[0] as unknown as [string, RequestInit];
-    expect(init.method).toBe('POST');
-    expect(JSON.parse(String(init.body)).bbox).toEqual([11.31234, 47.81234, 11.51234, 47.91234]);
-    for (const [asked] of vi.mocked(fetch).mock.calls) {
-      expect(String(asked)).not.toMatch(/11\.31234|47\.81234|11\.51234|47\.91234/);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    for (const [asked, init] of vi.mocked(fetch).mock.calls as unknown as [string, RequestInit | undefined][]) {
+      expect(init).toBeUndefined();
+      expect(String(asked)).not.toMatch(/11\.31234|47\.81234|11\.51234|47\.91234/u);
+      expect(new URL(String(asked), 'http://x').searchParams.get('bbox')).not.toBeNull();
     }
-    expect(url).toBe(`/coverage/${DATASET_ID}`);
+    expect(String(vi.mocked(fetch).mock.calls[0][0]).startsWith(`/coverage/${DATASET_ID}?`)).toBe(true);
   });
 
   it('asks without an AOI by GET, with the map extent in the URL', async () => {
@@ -909,7 +927,8 @@ describe('download outcome (M3-17 plan §4)', () => {
       expect(s.downloadSelection).toBe(true);
       expect(s.downloadOutcome).toBe('crop');
       expect(s.error).toBeNull();
-      expect(fetch).not.toHaveBeenCalled();
+      // Only the bands of the scenes are asked of the platform (NM4-75), no scene is fetched.
+      expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url))).toEqual([`/collections/${COG_DATASET.id}/bands`]);
     });
 
     it('no AOI, a COG dataset: the originals outcome, links built straight from store.items', () => {
@@ -928,7 +947,7 @@ describe('download outcome (M3-17 plan §4)', () => {
       expect(s.downloadOriginalLinks).toEqual([
         { itemId: 'S1', groupLabel: 'Overpass A', asset: 'visual', href: 'https://data.test/S1.tif' },
       ]);
-      expect(fetch).not.toHaveBeenCalled();
+      expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url))).toEqual([`/collections/${COG_DATASET.id}/bands`]);
     });
 
     it('no AOI, a COG dataset: keeps the scenes of each group for a mosaic job (M4-12b)', () => {
@@ -1070,14 +1089,20 @@ describe('download outcome (M3-17 plan §4)', () => {
       };
     }
 
-    it('a cropped layer: the crop outcome, known without any fetch', async () => {
+    it('a cropped layer: the crop outcome, known before any fetch; the bands are asked of the platform for its scenes (NM4-75)', async () => {
       useAppStore.setState({
         datasets: datasetsFrom([COG_DATASET]),
         layers: [layerFixture({ cropToAoi: true, aoi: AOI })],
       });
-      await useAppStore.getState().openDownloadDialog('L1');
+      vi.mocked(fetch).mockImplementation(async () => jsonResponse(200, { bands: [] }));
+      const opening = useAppStore.getState().openDownloadDialog('L1');
       expect(useAppStore.getState().downloadOutcome).toBe('crop');
-      expect(fetch).not.toHaveBeenCalled();
+      expect(useAppStore.getState().downloadBandsLoading).toBe(true);
+      await opening;
+      await vi.waitFor(() => expect(useAppStore.getState().downloadBandsLoading).toBe(false));
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(fetch).mock.calls[0][0]).toBe(`/collections/${COG_DATASET.id}/bands`);
+      expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body))).toEqual({ items: ['S1', 'S2'] });
     });
 
     it('a "View full selection" Zarr layer without an AOI: disabled, known without any fetch', async () => {
@@ -1104,7 +1129,8 @@ describe('download outcome (M3-17 plan §4)', () => {
 
       const s = useAppStore.getState();
       expect(s.downloadOutcome).toBe('originals');
-      expect(fetch).toHaveBeenCalledTimes(2);
+      // The two scenes, and the bands of them asked of the platform.
+      expect(vi.mocked(fetch).mock.calls.filter(([url]) => !String(url).endsWith('/bands'))).toHaveLength(2);
       expect(s.downloadOriginalLinks).toEqual([
         { itemId: 'S1', groupLabel: 'Group 1', asset: 'visual', href: 'https://data.test/S1.tif' },
         { itemId: 'S2', groupLabel: 'Group 2', asset: 'visual', href: 'https://data.test/S2.tif' },

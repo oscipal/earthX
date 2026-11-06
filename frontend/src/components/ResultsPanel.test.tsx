@@ -18,6 +18,7 @@ import type { Collection, StacItem } from '../types';
 import ResultsPanel from './ResultsPanel';
 import { HIDE_RESULTS_TIP, SHOW_RESULTS_TIP } from './ResultsEye';
 import { RESULTS_ON_TOP_TIP } from './ResultsToTop';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -145,7 +146,7 @@ describe('ResultsPanel dataset dropdown', () => {
     expect(text(box())).toContain('Optical imagery');
     expect(text(box())).toContain('staging');
     expect(text(box().querySelector('.rg-count'))).toBe('2');
-    expect(container.querySelector('h2')?.textContent).toBe('Results (0/3)');
+    expect(container.querySelector('h2')?.textContent).toBe('Search results (0/3)');
   });
 
   it('starts on the first dataset with scenes and shows its time steps', () => {
@@ -200,14 +201,13 @@ describe('ResultsPanel dataset dropdown', () => {
     expect(useAppStore.getState().openSectionId).toBe('optical');
   });
 
-  it('Escape and a click outside close the list', () => {
+  it('a click outside closes the list; Escape does not (Otto, 2.11.2026)', () => {
     load(MIXED);
     openList();
     act(() => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     });
-    expect(options()).toHaveLength(0);
-    openList();
+    expect(options().length).toBeGreaterThan(0);
     act(() => {
       document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }));
     });
@@ -280,7 +280,7 @@ describe('ResultsPanel dataset dropdown', () => {
 
   it('has no "Clear all" in its head, only "Results" on top of the layers and the eye of the results on the map', () => {
     load(MIXED);
-    expect([...container.querySelectorAll<HTMLButtonElement>('.results-head button')].map((b) => b.title)).toEqual([RESULTS_ON_TOP_TIP, HIDE_RESULTS_TIP]);
+    expect([...container.querySelectorAll<HTMLButtonElement>('.results-head button')].map((b) => tipOf(b))).toEqual([RESULTS_ON_TOP_TIP, HIDE_RESULTS_TIP]);
   });
 
   // NM4-59: the eye replaces "Hide results" / "Show results"; it is the eye of the entry "Results" in the layer manager.
@@ -291,14 +291,14 @@ describe('ResultsPanel dataset dropdown', () => {
     expect(toggle().getAttribute('aria-pressed')).toBe('true');
     act(() => toggle().click());
     expect(useAppStore.getState().resultsOnMap).toBe(false);
-    expect(toggle().title).toBe(SHOW_RESULTS_TIP);
+    expect(tipOf(toggle())).toBe(SHOW_RESULTS_TIP);
     expect(toggle().getAttribute('aria-pressed')).toBe('false');
-    expect(toggle().classList.contains('off')).toBe(true);
+    expect(toggle().querySelector('svg.lucide-eye-off')).not.toBeNull();
     expect(container.querySelectorAll('.result-group')).toHaveLength(2);
-    expect(container.querySelector('h2')?.textContent).toBe('Results (0/3)');
+    expect(container.querySelector('h2')?.textContent).toBe('Search results (0/3)');
     act(() => toggle().click());
     expect(useAppStore.getState().resultsOnMap).toBe(true);
-    expect(toggle().title).toBe(HIDE_RESULTS_TIP);
+    expect(tipOf(toggle())).toBe(HIDE_RESULTS_TIP);
   });
 });
 
@@ -311,10 +311,12 @@ describe('the dataset dropdown lies over the scenes (Otto, 30.09.2026)', () => {
     const list = container.querySelector('.dataset-select-list') as HTMLElement;
     expect(panel.contains(list)).toBe(false);
     expect(list.style.position).toBe('fixed');
-    expect(panel.innerHTML.replace(/aria-expanded="true"/, 'aria-expanded="false"').replace('▴', '▾')).toBe(before);
+    // The caret of the box turns from down to up while the list is open; the rest stays.
+    const withoutCaret = (html: string) => html.replace(/<span class="rg-caret">.*?<\/span>/u, '');
+    expect(withoutCaret(panel.innerHTML.replace(/aria-expanded="true"/, 'aria-expanded="false"'))).toBe(withoutCaret(before));
   });
 
-  it('is worked with the keyboard: arrow down opens it at the chosen dataset, Escape returns to the box', () => {
+  it('is worked with the keyboard: arrow down opens it at the chosen dataset, Escape closes nothing', () => {
     load(MIXED);
     box().focus();
     act(() => box().dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
@@ -323,8 +325,8 @@ describe('the dataset dropdown lies over the scenes (Otto, 30.09.2026)', () => {
     act(() => options()[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true })));
     expect(document.activeElement).toBe(options()[2]);
     act(() => options()[2].dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
-    expect(options()).toEqual([]);
-    expect(document.activeElement).toBe(box());
+    expect(options()).toHaveLength(3);
+    expect(document.activeElement).toBe(options()[2]);
   });
 
   it('closes on a click beside it, and on Tab', () => {
@@ -513,7 +515,7 @@ describe('the group heads in index.css', () => {
   it('lets the list scroll with no padding above, or the head would stop below its edge', () => {
     const list = rule('.results-list');
     expect(list).toContain('overflow-y: auto');
-    expect(list).toMatch(/padding: 0 \d+px \d+px/);
+    expect(list).toMatch(/padding: 0 var\(--space-[\w-]+\) var\(--space-[\w-]+\)/);
   });
 
   it('scrolls a focused scene into view below the head, not under it', () => {

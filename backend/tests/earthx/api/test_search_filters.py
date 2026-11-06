@@ -7,9 +7,9 @@ from typing import Any
 
 import pytest
 
-from earthx.api.search_filters import AOI_CLOUD_COVER, SearchConditions, read_search_conditions
+from earthx.api.search_filters import AOI_CLOUD_COVER, AOI_NODATA, SearchConditions, read_search_conditions
 from earthx.catalog.datasets import SENTINEL_2_L2A
-from earthx.catalog.registry import SearchFilter
+from earthx.catalog.registry import AoiMeasure, SearchFilter
 from earthx.catalog.search_filters import InvalidFilter, RangeCondition, ValuesCondition
 
 S2 = "s2"
@@ -104,24 +104,24 @@ def test_a_body_without_filters() -> None:
     assert _read({"collections": [S2]}) == SearchConditions()
 
 
-class TestCloudShareInTheAoi:
-    """DS-03 plan §6.5: ``earthx:aoi_cloud_cover`` takes the range of the filter whose registry entry says ``within_aoi``."""
+class TestRangesInTheAoi:
+    """DS-03 plan §6.5: the property of a measure takes the range of the filter whose registry entry names it as ``within_aoi``."""
 
     def test_in_query_it_is_kept_apart_for_each_collection_that_offers_it(self) -> None:
         read = _read({"query": {AOI_CLOUD_COVER: {"lte": 20}, "platform": {"in": ["sentinel-2c"]}}}, (S2, NONE))
-        assert read.aoi_cloud_cover == {S2: RangeCondition(None, 20.0)}
+        assert read.aoi == {S2: {AoiMeasure.CLOUD_SHARE: RangeCondition(None, 20.0)}}
         assert read.by_collection == {S2: {"platform": ValuesCondition(("sentinel-2c",))}}, "the source never gets it"
         assert read.dropped == {NONE: (AOI_CLOUD_COVER, "platform")}
 
     def test_in_query_by_collection_it_is_the_collections_own(self) -> None:
         read = _read({"query_by_collection": {S2: {AOI_CLOUD_COVER: {"gte": 10, "lte": 30}}}})
-        assert read.aoi_cloud_cover == {S2: RangeCondition(10.0, 30.0)}
+        assert read.aoi == {S2: {AoiMeasure.CLOUD_SHARE: RangeCondition(10.0, 30.0)}}
         assert read.by_collection == {} and read.dropped == {}
 
     def test_it_may_stand_beside_the_scene_filter(self) -> None:
         read = _read({"query_by_collection": {S2: {"eo:cloud_cover": {"lte": 50}, AOI_CLOUD_COVER: {"lte": 10}}}})
         assert read.by_collection == {S2: {"eo:cloud_cover": RangeCondition(None, 50.0)}}
-        assert read.aoi_cloud_cover == {S2: RangeCondition(None, 10.0)}
+        assert read.aoi == {S2: {AoiMeasure.CLOUD_SHARE: RangeCondition(None, 10.0)}}
 
     def test_it_takes_the_bounds_of_the_filter_it_follows(self) -> None:
         for bad in ({"lte": 100.5}, {"gte": -1}, {"gte": 30, "lte": 10}, {"lt": 5}, {"in": [1]}, {}):
@@ -135,7 +135,7 @@ class TestCloudShareInTheAoi:
             _read({"query": {AOI_CLOUD_COVER: {"lte": 20}}}, (NONE,))
 
     def test_a_cloud_cover_filter_without_within_aoi_does_not_offer_it_either(self) -> None:
-        plain = {"plain": (replace(SENTINEL_2_L2A.search_filter("eo:cloud_cover"), within_aoi=False),)}
+        plain = {"plain": (replace(SENTINEL_2_L2A.search_filter("eo:cloud_cover"), within_aoi=None),)}
         with pytest.raises(InvalidFilter):
             read_search_conditions({"query_by_collection": {"plain": {AOI_CLOUD_COVER: {"lte": 20}}}}, ["plain"], plain.__getitem__)
 
@@ -145,3 +145,53 @@ class TestCloudShareInTheAoi:
 
     def test_it_is_no_property_of_the_registry_entries(self) -> None:
         assert all(AOI_CLOUD_COVER != entry.property for entries in FILTERS.values() for entry in entries)
+
+    def test_the_no_data_share_takes_the_range_of_the_no_data_filter(self) -> None:
+        read = _read({"query_by_collection": {S2: {AOI_NODATA: {"gte": 5, "lte": 30}}}})
+        assert read.aoi == {S2: {AoiMeasure.NODATA_SHARE: RangeCondition(5.0, 30.0)}}
+        assert read.by_collection == {} and read.dropped == {}, "the source never gets it"
+
+    def test_both_may_stand_in_one_request_and_beside_the_scene_filters(self) -> None:
+        query = {
+            AOI_CLOUD_COVER: {"lte": 20},
+            AOI_NODATA: {"lte": 10},
+            "s2:nodata_pixel_percentage": {"lte": 50},
+            "platform": {"in": ["sentinel-2a"]},
+        }
+        read = _read({"query_by_collection": {S2: query}})
+        assert read.aoi == {S2: {AoiMeasure.CLOUD_SHARE: RangeCondition(None, 20.0), AoiMeasure.NODATA_SHARE: RangeCondition(None, 10.0)}}
+        assert read.by_collection == {
+            S2: {"s2:nodata_pixel_percentage": RangeCondition(None, 50.0), "platform": ValuesCondition(("sentinel-2a",))}
+        }
+
+    def test_in_query_the_no_data_share_goes_to_the_collections_that_offer_it(self) -> None:
+        read = _read({"query": {AOI_NODATA: {"gte": 1}, AOI_CLOUD_COVER: {"lte": 5}}}, (S2, CLOUD_ONLY, NONE))
+        assert read.aoi == {
+            S2: {AoiMeasure.NODATA_SHARE: RangeCondition(1.0, None), AoiMeasure.CLOUD_SHARE: RangeCondition(None, 5.0)},
+            CLOUD_ONLY: {AoiMeasure.CLOUD_SHARE: RangeCondition(None, 5.0)},
+        }
+        assert read.dropped == {CLOUD_ONLY: (AOI_NODATA,), NONE: (AOI_CLOUD_COVER, AOI_NODATA)}
+
+    def test_a_collection_that_offers_only_the_cloud_share_refuses_the_no_data_share(self) -> None:
+        with pytest.raises(InvalidFilter, match=f"{AOI_NODATA} is no filter of the collection it is given for"):
+            _read({"query_by_collection": {CLOUD_ONLY: {AOI_NODATA: {"lte": 20}}}})
+        with pytest.raises(InvalidFilter, match=f"{AOI_NODATA} is no filter of a searched collection"):
+            _read({"query": {AOI_NODATA: {"lte": 20}}}, (CLOUD_ONLY, NONE))
+
+    def test_the_no_data_share_takes_the_bounds_of_its_filter(self) -> None:
+        for bad in ({"lte": 100.5}, {"gte": -1}, {"gte": 30, "lte": 10}, {"lt": 5}, {"in": [1]}, {}, {"lte": "5"}, {"lte": True}):
+            with pytest.raises(InvalidFilter) as caught:
+                _read({"query_by_collection": {S2: {AOI_NODATA: bad}}})
+            assert "100.5" not in str(caught.value) and "30" not in str(caught.value)
+
+    def test_the_filter_of_the_scene_is_not_the_filter_inside_the_aoi(self) -> None:
+        read = _read({"query_by_collection": {S2: {"s2:nodata_pixel_percentage": {"lte": 5}}}})
+        assert read.aoi == {} and read.by_collection == {S2: {"s2:nodata_pixel_percentage": RangeCondition(None, 5.0)}}
+
+    def test_a_collection_whose_filter_names_no_measure_does_not_offer_it(self) -> None:
+        plain = {"plain": tuple(replace(entry, within_aoi=None) for entry in SENTINEL_2_L2A.search_filters)}
+        with pytest.raises(InvalidFilter):
+            read_search_conditions({"query_by_collection": {"plain": {AOI_NODATA: {"lte": 20}}}}, ["plain"], plain.__getitem__)
+
+    def test_the_reserved_names_are_the_ones_of_the_registry(self) -> None:
+        assert (AOI_CLOUD_COVER, AOI_NODATA) == ("earthx:aoi_cloud_cover", "earthx:aoi_nodata")

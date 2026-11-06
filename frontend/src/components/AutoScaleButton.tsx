@@ -3,8 +3,8 @@
 // size and the same look in both places (Otto, 30.10.2026, zu #234).
 export default function AutoScaleButton({ title, busy = false, onClick }: { title: string; busy?: boolean; onClick: () => void }) {
   return (
-    <button type="button" className="ghost-btn vc-auto" disabled={busy} title={title} onClick={onClick}>
-      auto-scale
+    <button type="button" className="btn vc-auto" disabled={busy} data-tip-level="advanced" data-tip={title} onClick={onClick}>
+      Auto-scale
     </button>
   );
 }

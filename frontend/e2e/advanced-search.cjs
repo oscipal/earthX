@@ -7,7 +7,8 @@
 //   - the filters do not stand under the headings of the registry, in its order;
 //   - the search, "Load more"-style repeat or the coverage map do not carry the filters of their own dataset
 //     (and only those), or carry a filter whose field is wrong;
-//   - Escape, "Done" or a click beside the pop-up lose a value, or Escape in the list of datasets closes the pop-up too;
+//   - Escape closes the pop-up or the list of datasets in it (Otto, 2.11.2026: Esc closes nothing; the x, "Done" or a click beside
+//     do), or one of those loses a value;
 //   - a wrong field (also half-typed text such as "20-") is not marked, or "Search" is not held back, also after "Done";
 //   - "Clear search results" drops the filters, or "Reset filters" does not;
 //   - a field, the unit or the box overlaps another or leaves the pop-up; the page scrolls sideways;
@@ -193,7 +194,7 @@ async function check(browser, { theme, viewport }) {
   const titles = await popup.locator('.filter-title').allTextContents();
   const expectedTitles = SENTINEL_2_FILTERS.map((f) => f.title);
   expect('the filters of Sentinel-2 in the order of the registry', JSON.stringify(titles) === JSON.stringify(expectedTitles), JSON.stringify(titles));
-  expect('the tooltip of Cloud cover', (await popup.locator('.filter-title').first().getAttribute('title')) === SENTINEL_2_FILTERS[0].description);
+  expect('the tooltip of Cloud cover', (await popup.locator('.filter-title').first().getAttribute('data-tip')) === SENTINEL_2_FILTERS[0].description);
   expect('the placeholders are the bounds', (await fields('Cloud cover, from').getAttribute('placeholder')) === '0' && (await fields('Cloud cover, to').getAttribute('placeholder')) === '100');
   expect('the unit of the sun elevation', (await popup.locator('.filter-range', { has: page.locator('input[aria-label="Sun elevation, to"]') }).locator('.filter-unit').textContent()) === '°');
   expect('the focus is not in the pop-up', await popup.evaluate((el) => el.contains(document.activeElement)));
@@ -227,7 +228,7 @@ async function check(browser, { theme, viewport }) {
   expect('the page scrolls sideways', await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
 
   // 5. The coverage map of Sentinel-2 asks without filters; a filter changes it at once, and only the filters of its dataset.
-  await key('Escape');
+  await popup.locator('.advanced-top .close-x').click();
   await page.getByRole('button', { name: 'Coverage', exact: true }).click();
   await settle();
   const first = requests.coverage.at(-1);
@@ -248,7 +249,7 @@ async function check(browser, { theme, viewport }) {
 
   // 6. The button counts the filters set, closed too; the tooltip names them.
   expect('the count on the button', (await button.textContent()) === 'Advanced search · 2', await button.textContent());
-  expect('the tooltip of the button', (await button.getAttribute('title')) === 'Sentinel-2 L2A: Cloud cover, Satellite', await button.getAttribute('title'));
+  expect('the tooltip of the button', (await button.getAttribute('data-tip')) === 'Sentinel-2 L2A: Cloud cover, Satellite', await button.getAttribute('data-tip'));
 
   // 7. A wrong field is marked, "Done" closes the pop-up all the same, "Search" stays held back, the coverage goes without it.
   await popup.locator('.advanced-fields').evaluate((el) => { el.scrollTop = 0; });
@@ -256,7 +257,7 @@ async function check(browser, { theme, viewport }) {
   await settle();
   expect('"Search" is not held back', await searchButton.isDisabled());
   expect('the wrong field is not marked', (await fields('Cloud cover, to').getAttribute('aria-invalid')) === 'true');
-  expect('the message under the field', (await popup.locator('.filter-field .hint-text.error').textContent()) === 'Between 0 and 100');
+  expect('the message under the field', (await popup.locator('.filter-field .error').textContent()) === 'Between 0 and 100');
   expect('the coverage asked with the wrong field', JSON.stringify(requests.coverage.at(-1).query) === JSON.stringify({ platform: { in: ['sentinel-2a'] } }), JSON.stringify(requests.coverage.at(-1)));
   await shot('5-wrong');
   await done();
@@ -270,7 +271,7 @@ async function check(browser, { theme, viewport }) {
   // Typed key by key, as a user does: "20-" is no number, and the field says so instead of dropping the filter.
   await fields('Cloud cover, to').fill('');
   await fields('Cloud cover, to').pressSequentially('20-');
-  expect('half-typed text is not marked', (await fields('Cloud cover, to').getAttribute('aria-invalid')) === 'true' && (await popup.locator('.filter-field .hint-text.error').textContent()) === 'Enter a number');
+  expect('half-typed text is not marked', (await fields('Cloud cover, to').getAttribute('aria-invalid')) === 'true' && (await popup.locator('.filter-field .error').textContent()) === 'Enter a number');
   expect('half-typed text does not hold "Search" back', await searchButton.isDisabled());
   await fields('Cloud cover, from').fill('50');
   await fields('Cloud cover, to').fill('20');
@@ -279,13 +280,16 @@ async function check(browser, { theme, viewport }) {
   await fields('Cloud cover, to').fill('40');
   expect('"Search" is still held back once the fields are right', !(await searchButton.isDisabled()));
 
-  // 8. Escape and a click beside the pop-up close it; the values stay; the focus goes back to the button.
+  // 8. Escape leaves the pop-up open (Otto, 2.11.2026); its x and a click beside close it; the values stay; the focus goes back
+  //    to the button.
   await key('Escape');
-  expect('Escape did not close the pop-up', (await popup.count()) === 0);
-  expect('the focus is not on the button after Escape', await button.evaluate((el) => el === document.activeElement));
+  expect('Escape closed the pop-up', (await popup.count()) === 1);
+  await popup.locator('.advanced-top .close-x').click();
+  expect('the x did not close the pop-up', (await popup.count()) === 0);
+  expect('the focus is not on the button after the x', await button.evaluate((el) => el === document.activeElement));
   await button.press('Enter');
   await popup.waitFor();
-  expect('the value was lost with Escape', (await fields('Cloud cover, to').inputValue()) === '40');
+  expect('the value was lost with the x', (await fields('Cloud cover, to').inputValue()) === '40');
   await fields('Cloud cover, to').press('Tab');
   expect('Tab closed the pop-up', (await popup.count()) === 1);
   const q = await rect(popup);
@@ -323,15 +327,14 @@ async function check(browser, { theme, viewport }) {
   expect('the dot of the dataset with filters', (await page.locator('.dataset-select-list [role="option"] .filter-dot').count()) === 1);
   await shot('7-box');
   await key('Escape');
-  expect('Escape in the list closed the pop-up too', (await popup.count()) === 1 && (await page.locator('.dataset-select-list').count()) === 0);
-  await dataset.click();
+  expect('Escape closed the list or the pop-up', (await popup.count()) === 1 && (await page.locator('.dataset-select-list').count()) === 1);
   await page.locator('.dataset-select-list [role="option"]', { hasText: 'Radar' }).click();
   expect('a click in the list closed the pop-up', (await popup.count()) === 1);
   expect('the values of Sentinel-2 show up in the radar', (await popup.locator('.filter-title').allTextContents()).join() === 'Relative orbit');
   expect('a heading for the one group of the radar', (await popup.locator('.filter-group-title').count()) === 0);
   expect('the radar field is not empty', (await fields('Relative orbit, from').inputValue()) === '');
   await fields('Relative orbit, from').fill('22.5');
-  expect('a fraction for whole numbers is not marked', (await popup.locator('.hint-text.error').textContent()) === 'Whole numbers only');
+  expect('a fraction for whole numbers is not marked', (await popup.locator('.error').textContent()) === 'Whole numbers only');
   await fields('Relative orbit, from').fill('22');
   await fields('Relative orbit, to').fill('22');
   expect('the button counts three filters', (await button.textContent()) === 'Advanced search · 3', await button.textContent());

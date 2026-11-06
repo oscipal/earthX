@@ -18,7 +18,11 @@ const zlib = require('node:zlib');
 const BASE = process.env.BASE ?? 'http://localhost:5173';
 const BASE_OLD = process.env.BASE_OLD;
 const OUT = process.env.OUT ?? path.join(require('node:os').tmpdir(), 'earthx-zoom-layers');
-const FIXTURE = JSON.parse(process.env.FIXTURE ?? '');
+if (!process.env.FIXTURE) {
+  console.error('FIXTURE is not set: start serve-result-fixture.py and the dev server as in the header, and pass the JSON line it prints');
+  process.exit(2);
+}
+const FIXTURE = JSON.parse(process.env.FIXTURE);
 const [LON, LAT] = FIXTURE.center;
 // What the code before the change drew a result with: rio-tiler's levels of this 3072-pixel file (9 and 13) and one more.
 const BEFORE = { minZoom: 9, maxZoom: 14 };

@@ -1,6 +1,6 @@
-# NM4-56 — Paket Oberfläche: Zahlenformat, weniger Text, Ausblenden statt Ausgrauen (NM4-21, NM4-22, NM4-30)
+# NM4-56 — Paket Oberfläche: Zahlenformat, weniger Text, schmale Fenster (NM4-21, NM4-22)
 
-**Stand:** 29.10.2026, von Otto beauftragt: kleine Aufgaben zusammenlegen, um Sessions und Konflikte zu sparen (`docs/plans/nach-m4-backlog.md`).
+**Stand:** 31.10.2026 (NM4-30 entfällt, Funde zu schmalen Fenstern ergänzt); 29.10.2026 von Otto beauftragt: kleine Aufgaben zusammenlegen, um Sessions und Konflikte zu sparen (`docs/plans/nach-m4-backlog.md`).
 **Stufe A:** direkt umsetzen, ein Draft-PR für alle Teile.
 **Modell:** Sonnet, Effort hoch (quer durch die App).
 **Start:** als letzte Frontend-Aufgabe vor M5, wenn keine andere Frontend-Session läuft (die Teile gehen quer durch die ganze Oberfläche und kollidieren sonst mit allem).
@@ -10,13 +10,17 @@
 
 | Reihenfolge | Teilaufgabe | Plan |
 |---|---|---|
-| 1 | NM4-30 Nicht Mögliches ausblenden statt ausgrauen | `querschnitt/nm4-30-nicht-moegliches-ausblenden.md` |
-| 2 | NM4-21 Einheitliches Zahlenformat in der ganzen Web-App | `querschnitt/nm4-21-zahlenformat.md` |
-| 3 | NM4-22 Weniger Text in der Oberfläche | `querschnitt/nm4-22-weniger-text.md` |
+| 1 | NM4-21 Einheitliches Zahlenformat in der ganzen Web-App | `querschnitt/nm4-21-zahlenformat.md` |
+| 2 | NM4-22 Weniger Text in der Oberfläche | `querschnitt/nm4-22-weniger-text.md` |
 
-Zusätzlich (Backlog-Punkt 58): Bei 320 px Breite ragen die Toolbar-Knöpfe des Control-Menüs etwa 8 px über den Rand (Fund aus DS-02c, #239); beheben, mit Browserprüfung bei 320 px.
+**NM4-30 entfällt (Otto, 31.10.2026):** Bestehende gesperrte Bedienelemente bleiben, wie sie sind; kein Durchgang „ausblenden statt ausgrauen“ über die ältere Oberfläche. Die Regel für Neues gilt weiter.
 
-Zuerst eine Bestandsaufnahme über alle Panels (Tabelle im PR: Stelle, heute, künftig), dann die drei Durchgänge. Der Hinweis „resampled to common grid“ (Backlog-Punkt 51) ist Sache von NM4-43e, nicht dieses Pakets.
+Zusätzlich (Backlog-Punkt 58), je mit Browserprüfung bei 320 und 360 px:
+- Bei 320 px ragen die Toolbar-Knöpfe des Control-Menüs etwa 8 px über den Rand (Fund aus DS-02c, #239).
+- Bei 360 px verdeckt die Ebenenliste die Statusleiste; Fehler aus dem Layer-Manager sind dort unsichtbar (Fund aus NM4-05b, #263).
+- Bei schmalem Fenster ragt die Statusmeldung nach einer Suche über den Rand, sobald ein Panel offen ist (Fund aus DS-03b, #265).
+
+Zuerst eine Bestandsaufnahme über alle Panels (Tabelle im PR: Stelle, heute, künftig), dann die zwei Durchgänge. Der Hinweis „resampled to common grid“ (Backlog-Punkt 51) ist Sache von NM4-43e, nicht dieses Pakets.
 
 ## Grenzen
 

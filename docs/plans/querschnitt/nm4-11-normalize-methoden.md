@@ -390,3 +390,16 @@ Draft-PR [#244](https://github.com/oscipal/earthX/pull/244) trägt Plan und Back
 - Alle vier Pflicht-Checks der CI grün: Lint (`npm run lint`), Typprüfung (`npx tsc -b --pretty false`), Tests, Backend-Tests.
 - Nachtrag `adr/0014` „§15 Nachtrag NM4-11b“ (Panel, Messung, Sperren), Log-Zeile mit PR-Nummer. `docs/plans/nach-m4-backlog.md` nicht ändern (pflegt der Planungs-Chat). Vor „fertig“ ist `main` geholt.
 - Grenzen: Oberflächentexte nur auf Englisch; keine neue Abhängigkeit ohne Frage an Otto; keine AOI, Job-, Rezept- oder Permalink-Kennungen, Hashes, `href` oder signierten URLs in Logs oder URLs; `CLAUDE.md`, `.github/`, `.claude/` und `CODEOWNERS` bleiben unverändert.
+
+## 16. Umsetzung NM4-11b (Frontend, 01.11.2026)
+
+Draft-PR [#269](https://github.com/oscipal/earthX/pull/269) trägt das Frontend und die Auflistung (§15 Punkt 8). Statt zweier PRs (§15) steht alles in einem (Otto, 01.11.2026: ein PR genügt), in Commits an der Naht von PR 1 (Formular, Messung, Sperren, Vorschau) und PR 2 (mehrere Aufträge, Laden); der Richtwert von 400 Zeilen ist überschritten.
+
+**Auslegungen von Claude** (gelten, bis Otto widerspricht): siehe die Log-Zeile vom 01.11.2026 und `adr/0014` „§15 Nachtrag NM4-11b“. Otto hat entschieden: Die Bänder bleiben Chips (Beschriftung „Band“, wie bei „Mask by value“), nicht ein Dropdown; der Zielbereich ist mit 0 bis 1 vorbelegt; die gesperrten Schritte eines Ergebnisses („⚙“) behalten ihre gemessenen Zahlen und messen nicht neu, Rezeptdatei, Permalink und Ablage messen neu (`adr/0019` „Nachtrag NM4-11b“). `test_the_item_is_fetched_once` bleibt unangetastet (Backlog 68).
+
+**Abnahme NM4-11b.**
+
+- **Vitest:** `normalizeMethods.test.ts` (Formular aus dem Schema, Regeln, Abbildung der Antwort je Methode mit `low` 0 und `high` 100, Fragen und Zustände von `buildOrder`), `ProcessingNormalize.test.tsx` (Formular je Methode, gebauter Body der Messung, Warten und Sperren in allen Zuständen, neu messen bei AOI, Band, Szene und Schritten davor, keine AOI in einer Adresse, Stapel, Laden, Vorschau, Sperren), dazu Vorschau und Entwurf.
+- **Browser:** `frontend/e2e/normalize-methods.cjs`, 12 Fälle (Chromium, hell/dunkel, 1280/360 px), alle ohne Befund.
+- **Backend:** die Auflistung (`NORMALIZE_V3.listed=True`, `NORMALIZE_V2.listed=False`), der Test der Prozessbeschreibung auf die echte Registry umgestellt.
+- **Prüfanleitung für Otto:** im PR.

@@ -23,6 +23,7 @@ import { EXPIRED_TIP } from './jobView';
 import ProcessingManager from './ProcessingManager';
 import ProcessingPanel from './ProcessingPanel';
 import ViewBar from './ViewBar';
+import { tipOf, tipsOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -192,7 +193,7 @@ async function openPanel() {
 
 function button(label: string | RegExp, within: Element = container): HTMLButtonElement {
   const found = [...within.querySelectorAll('button')].find((b) =>
-    typeof label === 'string' ? b.textContent?.trim() === label : label.test(b.textContent ?? ''),
+    typeof label === 'string' ? (b.textContent?.trim() === label || b.getAttribute('aria-label') === label) : label.test(b.textContent ?? ''),
   );
   if (!found) throw new Error(`no button ${String(label)} in ${container.textContent}`);
   return found as HTMLButtonElement;
@@ -217,17 +218,17 @@ function typeInto(input: HTMLInputElement | HTMLTextAreaElement, value: string) 
 // The chips of the section "Bands" (information and a help to write an expression) and the group "Bands of the data"
 // of the section "Output" (a click puts a band into the output or takes it out).
 const infoSection = () => container.querySelector<HTMLElement>('section[aria-label="Bands"]')!;
-const infoChips = () => [...infoSection().querySelectorAll('.pp-chip')].map((c) => c.textContent);
+const infoChips = () => [...infoSection().querySelectorAll('.pp-chips .seg')].map((c) => c.textContent);
 const dataGroup = () => container.querySelector<HTMLElement>('section[aria-label="Output"] [aria-label="Bands of the data"]')!;
-const dataChips = () => [...dataGroup().querySelectorAll('.pp-chip')].map((c) => c.textContent);
+const dataChips = () => [...dataGroup().querySelectorAll('.pp-chips .seg')].map((c) => c.textContent);
 const dataChip = (label: string | RegExp) => button(label, dataGroup());
 const pressedData = () =>
-  [...dataGroup().querySelectorAll('.pp-chip')].filter((c) => c.getAttribute('aria-pressed') === 'true').map((c) => c.textContent);
+  [...dataGroup().querySelectorAll('.pp-chips .seg')].filter((c) => c.getAttribute('aria-pressed') === 'true').map((c) => c.textContent);
 const outputSection = () => container.querySelector<HTMLElement>('section[aria-label="Output"]')!;
 const outputOf = () => useProcessingStore.getState().output;
 
 async function ndvi() {
-  click(button('＋ Band math'));
+  click(button('Band math'));
   typeInto(container.querySelector('textarea[id$="-expression"]')!, '(nir - red) / (nir + red)');
 }
 
@@ -240,8 +241,8 @@ describe('the panel built from the schema', () => {
   it('offers the operators of the Sentinel-2 fixture and the bands of the scene', async () => {
     select([scene('S2B_A')]);
     await openPanel();
-    expect(button('＋ Band math').disabled).toBe(false);
-    expect(button('＋ Reproject and resample').disabled).toBe(false);
+    expect(button('Band math').disabled).toBe(false);
+    expect(button('Reproject and resample').disabled).toBe(false);
     expect(infoChips()).toEqual(['red', 'nir']);
     expect(dataChips()).toEqual(['red', 'nir']);
     expect(container.textContent).toContain('Sentinel-2 L2A · 2026-07-01 · S2B_A');
@@ -283,7 +284,7 @@ describe('the panel built from the schema', () => {
     async function withBandMath() {
       select([scene('S2B_A')]);
       await openPanel();
-      click(button('＋ Band math'));
+      click(button('Band math'));
     }
 
     it('inserts its name where the cursor is in an expression, and the bands follow the expression', async () => {
@@ -329,8 +330,8 @@ describe('the panel built from the schema', () => {
     it('does not insert while the cursor is in another field', async () => {
       select([scene('S2B_A')]);
       await openPanel();
-      click(button('＋ Band math'));
-      click(button('＋ Reproject and resample'));
+      click(button('Band math'));
+      click(button('Reproject and resample'));
       const resolution = container.querySelector<HTMLInputElement>('input[id$="-resolution"]')!;
       act(() => resolution.focus());
       click(chip('nir'));
@@ -369,7 +370,7 @@ describe('the panel built from the schema', () => {
     select([]);
     await openPanel();
     expect(container.textContent).toContain('Select a scene first.');
-    expect(container.querySelector('.pp-chip')).toBeNull();
+    expect(container.querySelector('.pp-chips .seg')).toBeNull();
   });
 });
 
@@ -380,8 +381,10 @@ describe('review before start (K4)', () => {
     await ndvi();
     expect(button('Start job').disabled).toBe(true);
     await review();
-    expect(container.textContent).toContain('about 1.0 MP, 4.0 MB, about 3 s, 1.0 units');
-    expect(container.textContent).toContain('An estimate, not a promise.');
+    expect(container.textContent).toContain('about 1 MP, 4 MB, about 3 s, 1 unit');
+    // Behind the (i) of the estimate, not a paragraph (NM4-22).
+    expect(tipsOf(container)).toContain('An estimate, not a promise.');
+    expect(container.textContent).not.toContain('An estimate, not a promise.');
     expect(button('Start job').disabled).toBe(false);
     const body = JSON.parse(fetchMock.mock.calls.find(([u]) => String(u).endsWith('/estimate'))![1].body);
     expect(body.inputs.recipe.inputs).toEqual([{ name: 'input', dataset: 'sentinel-2-c1-l2a', groups: [['S2B_A']] }]);
@@ -391,7 +394,7 @@ describe('review before start (K4)', () => {
     expect(body.inputs.recipe.output).toEqual({ kind: 'raster', format: 'cog', dtype: 'float32', bands: ['result'] });
 
     typeInto(container.querySelector('textarea[id$="-expression"]')!, 'nir / red');
-    expect(container.textContent).not.toContain('An estimate, not a promise.');
+    expect(tipsOf(container)).not.toContain('An estimate, not a promise.');
     expect(button('Start job').disabled).toBe(true);
   });
 
@@ -476,7 +479,7 @@ describe('review before start (K4)', () => {
     select([scene('S2B_A')]);
     await openPanel();
     await ndvi();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     const expressions = container.querySelectorAll<HTMLTextAreaElement>('textarea[id$="-expression"]');
     typeInto(expressions[1], 'red + 1');
     await review();
@@ -531,7 +534,7 @@ describe('review before start (K4)', () => {
       await review();
       const alert = container.querySelector('[role="alert"]')!;
       expect(alert.textContent).toBe('Dataset retired');
-      expect(alert.getAttribute('title')).toBe(REASON);
+      expect(alert.getAttribute('data-tip')).toBe(REASON);
       expect(button('Start job').disabled).toBe(true);
     });
 
@@ -543,16 +546,16 @@ describe('review before start (K4)', () => {
       await review();
       const alert = container.querySelector('[role="alert"]')!;
       expect(alert.textContent).not.toContain('Dataset retired');
-      expect(alert.hasAttribute('title')).toBe(false);
+      expect(alert.hasAttribute('data-tip')).toBe(false);
     });
   });
 
   it('disables adding a step once the schema maximum is reached', async () => {
     select([scene('S2B_A')]);
     await openPanel();
-    for (let i = 0; i < 16; i++) click(button('＋ Band math'));
-    expect(button('＋ Band math').disabled).toBe(true);
-    expect(button('＋ Band math').title).toBe('At most 16 steps');
+    for (let i = 0; i < 16; i++) click(button('Band math'));
+    expect(button('Band math').disabled).toBe(true);
+    expect(tipOf(button('Band math'))).toBe('At most 16 steps');
     expect(container.querySelectorAll('.pp-step')).toHaveLength(16);
   });
 
@@ -561,7 +564,7 @@ describe('review before start (K4)', () => {
     await openPanel();
     click(dataChip('red'));
     expect(dataChip('red').getAttribute('aria-pressed')).toBe('true');
-    click(button('＋ Band math'));
+    click(button('Band math'));
     expect(pressedData()).toEqual(['red']);
     click(dataChip('red'));
     expect(dataChip('red').getAttribute('aria-pressed')).toBe('false');
@@ -572,7 +575,7 @@ describe('review before start (K4)', () => {
   it('blocks review with a message while the order is incomplete', async () => {
     select([scene('S2B_A')]);
     await openPanel();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     await review();
     expect(container.textContent).toContain('Required.');
     expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/estimate'))).toBe(false);
@@ -597,7 +600,7 @@ describe('review before start (K4)', () => {
     expect(signal.aborted).toBe(true);
     answer(json(ESTIMATE));
     await flush();
-    expect(container.textContent).not.toContain('An estimate, not a promise.');
+    expect(tipsOf(container)).not.toContain('An estimate, not a promise.');
     expect(button('Review').disabled).toBe(false);
   });
 
@@ -642,7 +645,7 @@ describe('review before start (K4)', () => {
     expect(button('Start job').disabled).toBe(false);
     act(() => useAppStore.setState({ aoi: bboxToPolygon([10.45, 50.45, 10.55, 50.55]) }));
     expect(container.querySelector('.pp-step')).not.toBeNull();
-    expect(container.textContent).not.toContain('An estimate, not a promise.');
+    expect(tipsOf(container)).not.toContain('An estimate, not a promise.');
     expect(button('Start job').disabled).toBe(true);
   });
 
@@ -652,7 +655,7 @@ describe('review before start (K4)', () => {
     await ndvi();
     await review();
     act(() => useAppStore.setState({ aoi: bboxToPolygon([10.45, 50.45, 10.55, 50.55]) }));
-    expect(container.textContent).toContain('An estimate, not a promise.');
+    expect(tipsOf(container)).toContain('An estimate, not a promise.');
     expect(button('Start job').disabled).toBe(false);
   });
 
@@ -677,7 +680,7 @@ describe('the process description', () => {
     routes['GET /processing/processes/recipe?dataset=sentinel-2-c1-l2a'] = () => json(s2);
     click(button('Retry'));
     await flush();
-    expect(button('＋ Band math').disabled).toBe(false);
+    expect(button('Band math').disabled).toBe(false);
   });
 });
 
@@ -704,7 +707,7 @@ describe('resampling and data type (Otto, 12.10.2026)', () => {
   async function reprojectDem() {
     select([dem()]);
     await openPanel();
-    click(button('＋ Reproject and resample'));
+    click(button('Reproject and resample'));
     fill('crs', 'EPSG:3035');
     fill('resolution', '30');
   }
@@ -763,7 +766,7 @@ describe('resampling and data type (Otto, 12.10.2026)', () => {
     };
     select([item]);
     await openPanel();
-    click(button('＋ Reproject and resample'));
+    click(button('Reproject and resample'));
     fill('crs', 'EPSG:3035');
     fill('resolution', '30');
     expect(dtypeLine()).toContain('float32'); // no resampling chosen yet
@@ -788,7 +791,7 @@ describe('resampling and data type (Otto, 12.10.2026)', () => {
     };
     select([item]);
     await openPanel();
-    click(button('＋ Reproject and resample'));
+    click(button('Reproject and resample'));
     choose(resampling(), 'bilinear');
     expect(dtypeLine()).toBe('Data type: float64 (chosen automatically)');
   });
@@ -801,7 +804,7 @@ describe('resampling and data type (Otto, 12.10.2026)', () => {
     act(() => details.setAttribute('open', ''));
     choose(dtypeSelect(), 'uint16');
     expect(dtypeLine()).toBe('Data type: uint16 (your choice)');
-    click(button('＋ Band math'));
+    click(button('Band math'));
     expect(dtypeLine()).toBe('Data type: float32 (chosen automatically)');
     const disabled = [...dtypeSelect().options].filter((o) => o.disabled).map((o) => o.value);
     expect(disabled).toEqual(['uint8', 'uint16', 'int16', 'uint32', 'int32']);
@@ -1029,7 +1032,7 @@ describe('a Zarr dataset (K7, Otto 10.10.2026)', () => {
     await openPanel();
     expect(infoChips()).toEqual(['b04', 'b08']);
     expect(dataChips()).toEqual(['b04', 'b08']);
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(container.querySelector('textarea[id$="-expression"]')!, 'b08 - b04');
     click(dataChip('b08'));
     await review();
@@ -1041,7 +1044,7 @@ describe('a Zarr dataset (K7, Otto 10.10.2026)', () => {
   it('offers no chip and says so when the asset lists no band names, whatever an extension field says', async () => {
     select([zarrScene(undefined)], 'processing', dataset('processing', ID, 'zarr'));
     await openPanel();
-    expect(container.querySelector('.pp-chip')).toBeNull();
+    expect(container.querySelector('.pp-chips .seg')).toBeNull();
     expect(container.textContent).toContain('This dataset does not list band names yet.');
     expect(container.textContent).not.toContain('b99');
   });
@@ -1083,7 +1086,8 @@ describe('the scenes of one pass are one mosaic (M4-12b, lifting F8)', () => {
     await openPanel();
     click(button('AOI only'));
     expect(container.textContent).toContain('2 scenes');
-    expect(container.textContent).toContain('merged into one mosaic');
+    expect(tipsOf(container)).toContain('merged into one mosaic');
+    expect(container.textContent).not.toContain('merged into one mosaic');
     expect(passPicker()).toBeNull();
     const recipe = await estimateBody();
     expect(recipe.inputs[0].groups).toEqual([['S2B_A', 'S2B_B']]);
@@ -1106,8 +1110,9 @@ describe('the scenes of one pass are one mosaic (M4-12b, lifting F8)', () => {
       '2026-07-01': [scene('S2B_A'), scene('S2B_B', NEAR)],
     });
     await openPanel();
-    expect(container.textContent).toContain('One job covers the scenes of one pass');
-    expect(container.querySelector('.pp-chip')).toBeNull();
+    expect(tipsOf(container)).toContain('One job covers the scenes of one pass');
+    expect(container.textContent).not.toContain('One job covers the scenes of one pass');
+    expect(container.querySelector('.pp-chips .seg')).toBeNull();
     expect([...passPicker()!.querySelectorAll('option')].map((o) => o.textContent)).toEqual([
       '— choose one pass —',
       '2026-07-02 (1 scene)',
@@ -1130,7 +1135,7 @@ describe('the scenes of one pass are one mosaic (M4-12b, lifting F8)', () => {
     await openPanel();
     click(button('Review'));
     await flush();
-    expect(container.textContent).toContain('Pick a pass.');
+    expect(container.textContent).toContain('Choose a pass.');
     expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/estimate'))).toBe(false);
   });
 
@@ -1170,7 +1175,7 @@ describe('starting and following a job', () => {
     await flush();
     const alert = container.querySelector('[role="alert"]')!;
     expect(alert.textContent).toBe('Dataset retired');
-    expect(alert.getAttribute('title')).toBe(reason);
+    expect(alert.getAttribute('data-tip')).toBe(reason);
     expect(useProcessingStore.getState().jobs).toEqual([]);
   });
 
@@ -1289,6 +1294,8 @@ describe('starting and following a job', () => {
           jobID: JOB,
           expires: expect.any(String),
           createdAt: expect.any(String),
+          // The day of the scenes of the order, for the layer of its result (NM4-65 part 3).
+          dates: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
           title: expect.stringMatching(/^Band math · Sentinel-2 L2A · \d{1,2} [A-Z][a-z]{2}( \d{4})?$/),
           order: expect.objectContaining({ recipe_version: 2 }),
         },
@@ -1430,22 +1437,22 @@ describe('starting and following a job', () => {
     await waitFor(() => downloads().length > 0);
     expect(useProcessingStore.getState().jobs[0].tiles).toEqual({ href: TILES, width: 1000, gsd: 10 });
     // The result goes on the map from the details, not from the list.
-    expect([...container.querySelectorAll('.processing-manager button')].map((b) => b.textContent)).not.toContain('Show on map');
+    expect([...container.querySelectorAll('.processing-manager button')].map((b) => b.textContent)).not.toContain('Add to layers');
     showDetails();
     expect(downloads().length).toBeGreaterThan(0);
-    expect([...container.querySelectorAll('button')].map((b) => b.textContent)).toContain('Show on map');
+    expect([...container.querySelectorAll('button')].map((b) => b.textContent)).toContain('Add to layers');
   });
 
   it.each([
     ['an export', { export: link('export.zip'), recipe: link('recipe.json') }],
     ['a link of another shape', { result: link('result.tif'), bundle: link('result.zip'), tiles: { href: 'https://example.org/results/x/tilejson.json' } }],
     ['a link to a file of the job API', { result: link('result.tif'), bundle: link('result.zip'), tiles: link('result.tif') }],
-  ])('offers no "Show on map" for %s', async (_, doc) => {
+  ])('offers no "Add to layers" for %s', async (_, doc) => {
     await resume(() => json(doc));
     await waitFor(() => downloads().length > 0);
     expect(useProcessingStore.getState().jobs[0].tiles).toBeNull();
     showDetails();
-    expect([...container.querySelectorAll('button')].map((b) => b.textContent)).not.toContain('Show on map');
+    expect([...container.querySelectorAll('button')].map((b) => b.textContent)).not.toContain('Add to layers');
   });
 
   it.each([
@@ -1466,7 +1473,7 @@ describe('starting and following a job', () => {
     expect(downloads()).toHaveLength(0);
     // The file is not offered; the reason is the tooltip of the dimmed symbol.
     expect(container.querySelector<HTMLButtonElement>('button.pm-icon[aria-disabled="true"]')?.getAttribute('data-tip')).toBe(EXPIRED_TIP);
-    expect(container.querySelector('.hint-text.error')).toBeNull();
+    expect(container.querySelector('.error')).toBeNull();
   });
 });
 
@@ -1482,6 +1489,7 @@ describe('a finished job row (K6)', () => {
       resampled,
       failure: null,
       failureKind: null,
+      normalize: null,
       error: null,
       cancelling: false,
       retrying: false,
@@ -1499,6 +1507,7 @@ describe('a finished job row (K6)', () => {
       range: null,
       bandRanges: {},
       shownBand: null,
+    dates: null,
       archived: false,
       groupId: null,
       batchId: null,
@@ -1530,7 +1539,7 @@ describe('a finished job row (K6)', () => {
 
   it('has no button to remove the row: a job is cancelled while it runs and kept after (UI-01 §6.7)', () => {
     act(() => root.render(<ul><JobRow job={entry(MIN_REMAINING_MS + 5000, false)} /></ul>));
-    expect(container.querySelector('[title="Remove this row"]')).toBeNull();
+    expect(container.querySelector('[data-tip="Remove this row"]')).toBeNull();
     expect(container.querySelectorAll('button')).toHaveLength(0);
   });
 
@@ -1551,7 +1560,7 @@ describe('the Process button (B11, K12)', () => {
     showBar();
     const process = button(/Process/);
     expect(process.disabled).toBe(true);
-    expect(process.title).toContain('tier: display');
+    expect(tipOf(process)).toContain('tier: display');
   });
 
   it('needs no AOI: "Whole scene" sends none (M4-13c K1)', () => {
@@ -1649,11 +1658,12 @@ describe('the area of the order (M4-13c §3.2)', () => {
   const recipeOf = (call: unknown[]) => JSON.parse((call[1] as RequestInit).body as string).inputs.recipe;
   const lastEstimate = () => recipeOf(fetchMock.mock.calls.filter(([u]) => String(u).endsWith('/estimate')).at(-1)!);
 
-  it('starts on "Whole scene", sends no AOI and says what the mask covers', async () => {
+  it('starts on "Whole scene", sends no AOI and adds no note under the choice (Otto, 03.11.2026)', async () => {
     select([scene('S2B_A')]);
     await openPanel();
     expect(button('Whole scene').getAttribute('aria-pressed')).toBe('true');
-    expect(container.textContent).toContain('The result covers the whole scene; the mask marks where they have data.');
+    expect(container.textContent).not.toContain('The result covers');
+    expect(container.querySelector('.pp-area > .hint')).toBeNull();
     await ndvi();
     await review();
     expect(lastEstimate()).not.toHaveProperty('aoi');
@@ -1673,7 +1683,7 @@ describe('the area of the order (M4-13c §3.2)', () => {
     useAppStore.setState({ aoi: null });
     await openPanel();
     expect(button('AOI only').disabled).toBe(true);
-    expect(button('AOI only').title).toBe('Draw an AOI first');
+    expect(tipOf(button('AOI only'))).toBe('Draw an AOI first');
     await ndvi();
     await review();
     expect(button('Start job').disabled).toBe(false);
@@ -1740,7 +1750,7 @@ describe('bands named in an expression are read by themselves (M4-13c point 5, a
   it('are those of a typed expression, without a click on a chip, and drop out with the name', async () => {
     select([scene('S2B_A')]);
     await openPanel();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     const field = container.querySelector<HTMLTextAreaElement>('textarea[id$="-expression"]')!;
     typeInto(field, 'nir * 2');
     await review();
@@ -1760,7 +1770,7 @@ describe('the expression field (M4-13c §3.1)', () => {
   it('stays one line: Enter adds none, a pasted line break becomes a space', async () => {
     select([scene('S2B_A')]);
     await openPanel();
-    click(button('＋ Band math'));
+    click(button('Band math'));
     const field = container.querySelector<HTMLTextAreaElement>('textarea[id$="-expression"]')!;
     const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
     act(() => field.dispatchEvent(enter));
@@ -1792,9 +1802,9 @@ describe('the panel and the manager of the jobs (M4-13c §3.1, UI-01 §6.9)', ()
     select([scene('S2B_A')]);
     await openPanel();
     const panel = container.querySelector('.processing-panel')!;
-    click(button('▾'));
+    click(button('Fold the panel down'));
     expect(panel.classList.contains('folded')).toBe(true);
-    click(button('▴'));
+    click(button('Show the panel'));
     expect(panel.classList.contains('folded')).toBe(false);
   });
 });
@@ -1828,7 +1838,7 @@ describe('the target CRS and the resolution of a reproject step (M4-13c-3)', () 
   async function openStep(items: StacItem[] = [southern()]) {
     select(items);
     await openPanel();
-    click(button('＋ Reproject and resample'));
+    click(button('Reproject and resample'));
   }
 
   // Past the rest of the field (300 ms) and the answer.
@@ -1992,7 +2002,7 @@ describe('the target CRS and the resolution of a reproject step (M4-13c-3)', () 
       expect(cellSize()).toBeNull();
       expect(unit()).toBeNull();
       expect(button('Review').disabled).toBe(true);
-      expect(button('Review').title).toBe(UNKNOWN);
+      expect(tipOf(button('Review'))).toBe(UNKNOWN);
       expect(button('Start job').disabled).toBe(true);
     });
 
@@ -2013,8 +2023,8 @@ describe('the target CRS and the resolution of a reproject step (M4-13c-3)', () 
 
     it('does not hold back a step that is not a reproject', async () => {
       await refused();
-      click(button(/Remove/, container.querySelector('.pp-step')!));
-      click(button('＋ Band math'));
+      click(button('Remove', container.querySelector('.pp-step')!));
+      click(button('Band math'));
       typeInto(container.querySelector('textarea[id$="-expression"]')!, 'data * 2');
       expect(button('Review').disabled).toBe(false);
     });

@@ -4,9 +4,9 @@
 
 import type { MapLayer } from './layers';
 
-// New layers always come onto the top of the list, over "Results" too (Otto, 30.10.2026, zu #249): "Results" keeps the
-// layers that were above it, and the new ones go above them.
-export const resultsAtAfterAdding = (resultsAt: number, added: number): number => resultsAt + added;
+// "Search results" stays on top unless the user moved it down (Otto, 2.11.2026; replaces "new layers over Results" of 30.10.2026):
+// on top, new layers come right under it; moved down, it keeps the layers that were above it and the new ones go above them.
+export const resultsAtAfterAdding = (resultsAt: number, added: number): number => (resultsAt === 0 ? 0 : resultsAt + added);
 
 // Layers left the list: "Results" moves up by those of them that were above it.
 export const resultsAtAfterRemoving = (before: readonly MapLayer[], resultsAt: number, kept: (layer: MapLayer) => boolean): number =>
@@ -40,4 +40,26 @@ export function moveEntry(
   const moved = [...layers];
   [moved[i], moved[j]] = [moved[j], moved[i]];
   return { layers: moved, resultsAt: at };
+}
+
+// A row moved to a place of the list in one go (NM4-65 part 1, the grip of the layer manager): `to` is the place in the
+// list as it is drawn, with the row "Results" among the layers where it is listed, and the row ends up there. The same
+// list as `moveEntry` builds one step at a time. `null` where nothing changes: the place is the row's own, or the row is
+// not in the list.
+export function moveEntryTo(
+  layers: readonly MapLayer[],
+  resultsAt: number,
+  id: string | null,
+  to: number,
+  listed = true,
+): { layers: MapLayer[]; resultsAt: number } | null {
+  const at = clampResultsAt(resultsAt, layers);
+  const rows: (MapLayer | null)[] = listed ? [...layers.slice(0, at), null, ...layers.slice(at)] : [...layers];
+  const from = rows.findIndex((row) => (row === null ? id === null : row.id === id));
+  if (from < 0 || !Number.isFinite(to)) return null;
+  const place = Math.max(0, Math.min(Math.trunc(to), rows.length - 1));
+  if (place === from) return null;
+  const [row] = rows.splice(from, 1);
+  rows.splice(place, 0, row);
+  return { layers: rows.filter((r): r is MapLayer => r !== null), resultsAt: listed ? rows.indexOf(null) : at };
 }

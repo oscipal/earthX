@@ -36,8 +36,10 @@ export function popoverItems(root: HTMLElement | null): HTMLElement[] {
   return root ? ([...root.querySelectorAll(ITEMS)] as HTMLElement[]) : [];
 }
 
-// Focus the chosen entry of an open dropdown, else its first one.
+// Focus the chosen entry of an open dropdown, else its first one. The close "x" of a pop-up is no entry to start with: the
+// focus goes to the first thing to work with, and the "x" stays one Tab away (NM4-65).
 export function focusFirstItem(root: HTMLElement | null): void {
   const all = popoverItems(root);
-  (all.find((el) => el.getAttribute('aria-selected') === 'true' || el.getAttribute('aria-checked') === 'true') ?? all[0])?.focus();
+  const chosen = all.find((el) => el.getAttribute('aria-selected') === 'true' || el.getAttribute('aria-checked') === 'true');
+  (chosen ?? all.find((el) => !el.classList.contains('close-x')) ?? all[0])?.focus();
 }

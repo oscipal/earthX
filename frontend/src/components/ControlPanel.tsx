@@ -11,8 +11,10 @@ import { totalItems } from '../sections';
 import { searchFiltersInvalid, useAppStore } from '../store';
 import AdvancedSearch from './AdvancedSearch';
 import ClearableInput from './ClearableInput';
+import { CoverageIcon, HistoryIcon, UploadIcon } from './icons';
 import Popover from './Popover';
 import Toolbar from './Toolbar';
+import { counted } from '../plural';
 
 // A date input plus a transparent button covering its calendar icon
 // (V-5). The tech theme draws its own icon and hides the native
@@ -36,7 +38,7 @@ function DateField({
   const ref = useRef<HTMLInputElement>(null);
   return (
     <div className="date-field">
-      <input
+      <input autoComplete="off"
         ref={ref}
         type="date"
         value={value}
@@ -95,7 +97,7 @@ function AcquisitionDateFields() {
         <DateField value={dateTo} onChange={setDateTo} label="To date" disabled={locked} />
       </div>
       {notes.map((n) => (
-        <p key={n.id} className="hint-text">
+        <p key={n.id} className="hint">
           {n.text}
         </p>
       ))}
@@ -170,7 +172,6 @@ function PlaceSearchField() {
           clearLabel="Clear place name"
           onKeyDown={(e) => {
             if (e.key === 'Enter') void runSearch();
-            if (e.key === 'Escape') setShowResults(false);
             if (e.key === 'ArrowDown' && showResults) {
               e.preventDefault();
               focusFirstItem(resultsRef.current);
@@ -182,9 +183,10 @@ function PlaceSearchField() {
         />
         <button
           type="button"
-          className="tool-btn ghost"
+          className="btn"
           aria-busy={searching}
           disabled={searching || !query.trim()}
+          data-tip-level="advanced" data-tip={searching ? 'Looking for the place…' : !query.trim() ? 'Type a place name first' : 'Find the place on the map'}
           onClick={() => void runSearch()}
         >
           {searching ? 'Finding…' : 'Find'}
@@ -192,13 +194,13 @@ function PlaceSearchField() {
       </div>
       <Popover anchorRef={rowRef} open={showResults} onClose={closeResults} className="place-results" ariaLabel="Places found">
         <div ref={resultsRef}>
-          {results.length === 0 && <p className="hint-text">No place found.</p>}
+          {results.length === 0 && <p className="hint">No place found.</p>}
           {results.map((r, i) => (
             <button
               key={`${r.display_name}-${i}`}
               type="button"
               className="place-result"
-              title={r.outline_simplified ? 'Outline simplified' : undefined}
+              data-tip-level="advanced" data-tip={r.outline_simplified ? 'Outline simplified' : undefined}
               onClick={() => choose(r)}
             >
               <span className="place-result-name">{r.name}</span>
@@ -207,7 +209,7 @@ function PlaceSearchField() {
             </button>
           ))}
           {attribution && (
-            <p className="hint-text place-attribution">
+            <p className="hint place-attribution">
               {attribution.url?.startsWith('https://') ? (
                 <a href={attribution.url} target="_blank" rel="noopener noreferrer">
                   {attribution.text}
@@ -220,7 +222,7 @@ function PlaceSearchField() {
         </div>
       </Popover>
       {stillActive && picked && (
-        <p className="hint-text place-attribution">
+        <p className="hint place-attribution">
           {picked.name} · {PLACE_SEARCH_PROVENANCE.attribution}
         </p>
       )}
@@ -271,9 +273,9 @@ function AoiExtras() {
   return (
     <div className="aoi-extras">
       <label
-        className="tool-btn ghost"
+        className="btn"
         aria-busy={uploading}
-        title="Upload a GeoJSON, KML or zipped Shapefile (max. 1 MB) as the AOI"
+        data-tip-level="advanced" data-tip="Upload a GeoJSON, KML or zipped Shapefile (max. 1 MB) as the AOI"
       >
         <input
           type="file"
@@ -282,16 +284,20 @@ function AoiExtras() {
           disabled={uploading}
           hidden
         />
-        <span>⤒ {uploading ? 'Reading…' : 'Upload AOI'}</span>
+        <span>
+          <UploadIcon size={14} lead />{uploading ? 'Reading…' : 'Upload AOI'}
+        </span>
       </label>
       <button
         type="button"
-        className="tool-btn ghost"
+        className="btn"
         disabled={!lastAoi}
-        title="Reuse the previous area of interest"
+        data-tip-level="advanced" data-tip={lastAoi ? 'Reuse the previous AOI' : 'No earlier AOI in this browser'}
         onClick={() => applyLastAoi()}
       >
-        <span>↺ Last AOI</span>
+        <span>
+          <HistoryIcon size={14} lead />Last AOI
+        </span>
       </button>
     </div>
   );
@@ -317,7 +323,7 @@ function DatasetNotes() {
   return (
     <div className="dataset-notes">
       {notes.map((n) => (
-        <p key={n.id} className="hint-text warn">
+        <p key={n.id} className="hint warn">
           {n.text}
         </p>
       ))}
@@ -360,7 +366,7 @@ function MultiSelectToggle() {
   const setMultiSelect = useAppStore((s) => s.setMultiSelect);
   const busy = useAppStore((s) => s.searching || s.sceneLookupLoading);
   return (
-    <label className="multi-select-toggle" title="Pick several datasets and search them together">
+    <label className="multi-select-toggle" data-tip-level="advanced" data-tip="Choose several datasets and search them together">
       <input type="checkbox" checked={multiSelect} disabled={busy} onChange={(e) => setMultiSelect(e.target.checked)} />
       Select multiple datasets
     </label>
@@ -384,18 +390,13 @@ function DatasetPicker() {
       <div className="dataset-list" role="group" aria-label="Datasets">
         {datasets.map((d) => {
           const picked = selectedDatasetIds.includes(d.id);
-          const maturity = d.viewable ? maturityNote(d.collection) : null;
           const label = d.viewable ? maturityLabel(d.collection) : null;
           return (
             <button
               key={d.id}
               type="button"
-              className={`dataset-toggle${picked ? ' active' : ''}`}
-              title={
-                d.viewable
-                  ? [d.title, maturity, d.collection.description].filter(Boolean).join(' — ')
-                  : `${d.title} — not viewable: ${d.reason}`
-              }
+              className="btn dataset-toggle"
+              data-tip={d.viewable ? undefined : `${d.title} — not viewable: ${d.reason}`}
               aria-pressed={picked}
               disabled={!d.viewable || busy}
               onClick={() => toggle(d.id)}
@@ -436,7 +437,7 @@ function CoverageHistogram({
             key={bucket.t}
             className={`histogram-bar${inRange ? ' in-range' : ''}`}
             style={{ height: `${Math.max(2, (bucket.n / max) * 100)}%` }}
-            title={`${month}: ${bucket.n}`}
+            data-tip-level="advanced" data-tip={`${month}: ${bucket.n}`}
           />
         );
       })}
@@ -459,9 +460,9 @@ function CoverageLegend() {
   const note = coverage ? completenessNote(coverage) : null;
   return (
     <div className="coverage-controls">
-      <p className="hint-text coverage-dataset-name">Coverage · {title}</p>
-      {coverageLoading && <p className="hint-text">Loading coverage…</p>}
-      {coverageError && <p className="hint-text error">{coverageError}</p>}
+      <p className="hint coverage-dataset-name">Coverage · {title}</p>
+      {coverageLoading && <p className="hint">Loading coverage…</p>}
+      {coverageError && <p className="error">{coverageError}</p>}
       {coverage && (
         <div className="coverage-legend">
           <div className="legend-scale">
@@ -473,8 +474,8 @@ function CoverageLegend() {
           </div>
           {/* English, matching the rest of the UI (D25; adr/0004 §5.3 nachtrag
               22.09.2026 lifts the earlier German-terms default). */}
-          <p className="hint-text">Scenes counted by their center point in the cell</p>
-          {note && <p className="hint-text coverage-note">{note}</p>}
+          <p className="hint">Scenes counted by their center point in the cell</p>
+          {note && <p className="hint coverage-note">{note}</p>}
           {coverage.histogram.length > 0 && (
             <CoverageHistogram histogram={coverage.histogram} dateFrom={dateFrom} dateTo={dateTo} />
           )}
@@ -488,9 +489,9 @@ function CoverageLegend() {
 // buttons, outside it so it stays in view however that grid scrolls, and set
 // apart from them. One dataset picked: a click shows its coverage (or hides it
 // again). Several picked: the click first offers the choice of which dataset,
-// lying over what is below — nothing is drawn until one is chosen. Beside it
-// "Clear coverage", on only while a coverage map is shown; the two fill the
-// panel's width. Off by default (M2-07c).
+// lying over what is below — nothing is drawn until one is chosen. The choice holds only datasets (UI-04 part 4, Otto,
+// 4.11.2026): the map is switched on and off with the buttons, not with an entry of the choice. Beside "Coverage",
+// "Hide coverage", on only while a coverage map is shown; the two fill the panel's width. Off by default (M2-07c).
 function CoverageButton() {
   const datasets = useAppStore((s) => s.datasets);
   const selectedDatasetIds = useAppStore((s) => s.selectedDatasetIds);
@@ -524,14 +525,14 @@ function CoverageButton() {
       <button
         ref={buttonRef}
         type="button"
-        className={`coverage-btn${showCoverage ? ' active' : ''}`}
+        className="btn"
         aria-pressed={showCoverage}
         aria-haspopup={picked.length > 1 ? 'menu' : undefined}
         aria-expanded={picked.length > 1 ? choosing : undefined}
         disabled={picked.length === 0}
-        title={
+        data-tip-level="advanced" data-tip={
           picked.length === 0
-            ? 'Pick a dataset to see its coverage'
+            ? 'Choose a dataset to see its coverage'
             : showCoverage
               ? 'Coverage map on — click to change or hide it'
               : 'Show how densely a dataset covers the world'
@@ -544,26 +545,20 @@ function CoverageButton() {
           }
         }}
       >
-        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
-          <rect x="2" y="2" width="5" height="5" />
-          <rect x="9" y="2" width="5" height="5" fill="currentColor" fillOpacity="0.45" />
-          <rect x="2" y="9" width="5" height="5" fill="currentColor" fillOpacity="0.2" />
-          <rect x="9" y="9" width="5" height="5" fill="currentColor" fillOpacity="0.75" />
-        </svg>
+        <CoverageIcon size={14} />
         <span>Coverage</span>
       </button>
       <button
         type="button"
-        className="coverage-btn coverage-clear-btn"
+        className="btn"
         disabled={!showCoverage}
-        title={showCoverage ? 'Hide the coverage map' : 'No coverage map is shown'}
+        data-tip-level="advanced" data-tip={showCoverage ? 'Hide the coverage map' : 'No coverage map is shown'}
         onClick={() => hideCoverage()}
       >
-        Clear coverage
+        Hide coverage
       </button>
       <Popover
         anchorRef={rowRef}
-        triggerRef={buttonRef}
         open={choosing && picked.length > 1}
         onClose={close}
         className="coverage-choice"
@@ -583,11 +578,6 @@ function CoverageButton() {
             {d.title}
           </button>
         ))}
-        {showCoverage && (
-          <button type="button" role="menuitem" className="coverage-choice-item off" onClick={() => chosen(hideCoverage)}>
-            Hide coverage
-          </button>
-        )}
       </Popover>
     </div>
   );
@@ -615,6 +605,18 @@ export default function ControlPanel() {
   // The scene-name lookup and the search both ask every ticked dataset.
   // The filters of "Advanced search" belong to the search of an area; the lookup of a name does not read them.
   const canSearch = !busy && !!datasetId && selectedCount > 0 && (hasSceneName || (!!aoi && !filtersWrong));
+  // Why "Search" is held back, for its tooltip (UI-04: a locked control says why).
+  const searchBlock = busy
+    ? 'A search is running'
+    : selectedCount === 0 || !datasetId
+      ? 'Choose a dataset to search'
+      : hasSceneName
+        ? null
+        : !aoi
+          ? 'Choose a tool to define an AOI, or enter a scene name'
+          : filtersWrong
+            ? 'Correct the filters in Advanced search'
+            : null;
   const search = () => {
     if (!canSearch) return;
     if (hasSceneName) void findSceneByName();
@@ -655,14 +657,12 @@ export default function ControlPanel() {
       {/* Outside the scrolling part, so "Search" is on screen at any window height. */}
       <div className="control-footer">
         <AdvancedSearch />
-        <button type="button" className="primary-btn" disabled={!canSearch} onClick={search}>
+        <button type="button" className="btn primary" disabled={!canSearch} data-tip={canSearch ? undefined : (searchBlock ?? undefined)} onClick={search}>
           {sceneLookupLoading ? 'Finding…' : searching ? 'Searching…' : 'Search'}
         </button>
 
-        {count > 0 && <p className="result-count">{count} scene(s) found</p>}
-        {selectedCount === 0 && <p className="hint-text">Choose a dataset to search.</p>}
-        {filtersWrong && !hasSceneName && <p className="hint-text error">Correct the filters in Advanced search.</p>}
-        {!aoi && !hasSceneName && <p className="hint-text">Pick a tool to define an area of interest, or enter a scene name above.</p>}
+        {count > 0 && <p className="result-count">{counted(count, 'scene')} found</p>}
+        {filtersWrong && !hasSceneName && <p className="error">Correct the filters in Advanced search.</p>}
       </div>
     </div>
   );

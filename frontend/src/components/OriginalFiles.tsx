@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
+import type { DownloadBand } from '../bandChoice';
 import type { DatasetOption } from '../datasets';
+import { formatPercent } from '../numberFormat';
 import {
   acquisitionYears,
   canExportLicense,
@@ -14,10 +16,10 @@ import { browserDeps } from '../originalsClient';
 import { runOriginals, type SceneState } from '../originalsRun';
 import MosaicJobs, { type Started } from './MosaicJobs';
 
-// The original files of a selection (NM4-33, plan section 6.14): one click starts the download of every scene, one
+// The original files of a selection (NM4-33, plan section 6.14): "Download" of the dialog starts the download of every scene, one
 // after the other, as one ZIP per scene built in the browser from the files of the source (no byte passes through
-// the platform), or, where the browser or the source does not allow that, as single files. The rows tell how far each
-// scene is. Where a pass holds two or more scenes there is also "Merged per pass (job)", which makes one merged file
+// the platform), or, where the browser or the source does not allow that, as single files. With a choice of bands
+// (NM4-75, `pick`) only those are loaded, in the folder `exports/` of the ZIP. The rows tell how far each scene is. Where a pass holds two or more scenes there is also "Merged per pass (job)", which makes one merged file
 // per pass on the platform (M4-12b, Zusatz 1a) and does not stop the download. Closing the dialog stops the run.
 
 interface Props {
@@ -25,6 +27,12 @@ interface Props {
   // `null` while the layer's scenes are still being fetched.
   links: OriginalFileLink[] | null;
   passes: DownloadPass[] | null;
+  // The asset keys ticked in the dialog and the table of bands they are read from; `undefined` for a dataset whose scenes list no
+  // bands, which loads every original file.
+  pick?: readonly string[];
+  table?: readonly DownloadBand[];
+  // "Download" was pressed: until then the dialog lists what it would load and loads nothing.
+  started: boolean;
 }
 
 function saveLinkList(datasetId: string, links: readonly OriginalFileLink[]): void {
@@ -52,7 +60,7 @@ function rowText(state: SceneState): string {
     case 'waiting':
       return 'Waiting';
     case 'running':
-      return state.total ? `Loading ${Math.min(100, Math.floor((state.loaded / state.total) * 100))} %` : 'Loading…';
+      return state.total ? `Loading ${formatPercent(Math.min(100, Math.floor((state.loaded / state.total) * 100)))}` : 'Loading…';
     case 'done':
       return 'Done';
     case 'started':
@@ -130,7 +138,7 @@ function SceneRows({ dataset, scenes }: { dataset: DatasetOption; scenes: Origin
           const state = states[index] ?? { status: 'waiting' };
           return (
             <li key={scene.item.id} className={`dialog-original-row ${state.status}`}>
-              <span className="dialog-original-name" title={scene.groupLabel}>
+              <span className="dialog-original-name" data-tip-level="advanced" data-tip={scene.groupLabel}>
                 {way.way === 'zip' ? scene.zipName : scene.item.id}
               </span>
               <span className="dialog-original-state">{rowText(state)}</span>
@@ -142,7 +150,7 @@ function SceneRows({ dataset, scenes }: { dataset: DatasetOption; scenes: Origin
         })}
       </ul>
       {note && (
-        <p className="hint-text" title={way.reason ? `${note.why} ${way.reason}` : note.why}>
+        <p className="hint" data-tip-level="advanced" data-tip={way.reason ? `${note.why} ${way.reason}` : note.why}>
           {note.text}
         </p>
       )}
@@ -150,18 +158,18 @@ function SceneRows({ dataset, scenes }: { dataset: DatasetOption; scenes: Origin
         {running && (
           <button
             type="button"
-            className="lm-btn"
-            title="Stop the download. Files already saved stay."
+            className="btn"
+            data-tip-level="advanced" data-tip="Stop the download. Files already saved stay."
             onClick={() => control.current?.abort()}
           >
-            Cancel
+            Stop
           </button>
         )}
         {!running && failed && (
           <button
             type="button"
-            className="lm-btn"
-            title="Load the scenes that did not finish again, each from the start."
+            className="btn"
+            data-tip-level="advanced" data-tip="Load the scenes that did not finish again, each from the start."
             onClick={() => {
               retry.current = latest.current.flatMap((state, index) => (isRetryable(state) ? [index] : []));
               setAttempt((n) => n + 1);
@@ -175,17 +183,17 @@ function SceneRows({ dataset, scenes }: { dataset: DatasetOption; scenes: Origin
   );
 }
 
-export default function OriginalFiles({ dataset, links, passes }: Props) {
+export default function OriginalFiles({ dataset, links, passes, pick, table, started: go }: Props) {
   const [merged, setMerged] = useState(false);
   const [started, setStarted] = useState<Record<number, Started>>({});
   const scenes = useMemo(
-    () => (dataset && passes ? scenesOf(dataset.collection, passes) : []),
-    [dataset, passes],
+    () => (dataset && passes ? scenesOf(dataset.collection, passes, pick && table ? { keys: pick, table } : undefined) : []),
+    [dataset, passes, pick, table],
   );
 
-  if (links === null) return <p className="hint-text">Loading the original files…</p>;
+  if (links === null) return <p className="hint">Loading the original files…</p>;
   if (!dataset || scenes.every((scene) => scene.entries.length === 0)) {
-    return <p className="hint-text">No original file of this selection could be linked directly from the source.</p>;
+    return <p className="hint">No original file of this selection could be linked directly from the source.</p>;
   }
 
   const asks = (passes ?? []).some((pass) => pass.items.length > 1);
@@ -197,16 +205,16 @@ export default function OriginalFiles({ dataset, links, passes }: Props) {
 
   return (
     <div className="dialog-originals">
-      <p className="hint-text">{summaryText(summaryOf(dataset.collection, scenes))}</p>
-      <SceneRows dataset={dataset} scenes={scenes} />
+      <p className="hint">{summaryText(summaryOf(dataset.collection, scenes))}</p>
+      {go && <SceneRows dataset={dataset} scenes={scenes} />}
       <p className="dialog-original-buttons">
         {asks && (
           <button
             type="button"
-            className="lm-btn"
+            className="btn"
             disabled={!mergeAllowed}
             aria-pressed={merged}
-            title={mergeAllowed ? 'One merged file per pass, made as a job on the platform' : noMerge}
+            data-tip-level="advanced" data-tip={mergeAllowed ? 'One merged file per pass, made as a job on the platform' : noMerge}
             onClick={() => setMerged((on) => !on)}
           >
             Merged per pass (job)
@@ -215,8 +223,8 @@ export default function OriginalFiles({ dataset, links, passes }: Props) {
         {all.length > 1 && (
           <button
             type="button"
-            className="lm-btn"
-            title="A text file with one address per line, for a download manager."
+            className="btn"
+            data-tip-level="advanced" data-tip="A text file with one address per line, for a download manager."
             onClick={() => saveLinkList(dataset.id, all)}
           >
             Save link list

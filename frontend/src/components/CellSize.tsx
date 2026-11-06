@@ -15,7 +15,7 @@ export function CrsRefusal({ code }: { code: FieldValue | undefined }) {
   const entry = useEntry(code);
   if (entry?.state !== 'refused') return null;
   return (
-    <p className="hint-text error" role="alert">
+    <p className="error" role="alert">
       {entry.message}
     </p>
   );
@@ -25,7 +25,7 @@ export function CrsRefusal({ code }: { code: FieldValue | undefined }) {
 export function CellSizeError({ code }: { code: FieldValue | undefined }) {
   const entry = useEntry(code);
   if (typeof code !== 'string' || !CRS_PATTERN.test(code) || entry?.state !== 'error') return null;
-  return <p className="hint-text warn">The unit of {code} could not be looked up: {entry.message}</p>;
+  return <p className="hint warn">The unit of {code} could not be looked up: {entry.message}</p>;
 }
 
 // The unit of the resolution, small beside its label (Otto, 30.10.2026): "in m", "in °", or the name of another unit.

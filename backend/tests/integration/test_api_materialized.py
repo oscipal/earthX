@@ -30,7 +30,7 @@ from earthx.api.main import build_app
 from earthx.catalog.collection import to_stac_collection
 from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
 from earthx.catalog.pgstac import load_collection, upsert_items, use_pgstac_search_path
-from earthx.catalog.registry import CoverageProvider, DatasetRegistry, ItemHolding
+from earthx.catalog.registry import CoverageProvider, DatasetRegistry, ItemHolding, SearchCapabilities
 
 pytestmark = pytest.mark.anyio
 
@@ -44,6 +44,7 @@ MATERIALIZED = replace(
     ),
     coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
     search_filters=(),
+    search_capabilities=SearchCapabilities(evaluate=False, aoi_coverage=False),
 )
 
 # Routing reads the registry (M4-01a), so the app has to know these collections.

@@ -21,7 +21,7 @@ from earthx.adapters.earth_search import search_items as earth_search_items
 from earthx.adapters.federated_search import search_fingerprint
 from earthx.adapters.spec import AdapterSpecs, spec_table
 from earthx.catalog.datasets import SENTINEL_2_L2A
-from earthx.catalog.registry import AdapterKind, DatasetRegistry
+from earthx.catalog.registry import AdapterKind, DatasetRegistry, SearchCapabilities
 from earthx.catalog.search_filters import RangeCondition, ValuesCondition
 
 from .conftest import answering, body_of, load
@@ -104,4 +104,4 @@ class TestRefused:
             check_adapter_specs(DatasetRegistry((SENTINEL_2_L2A,)), _without_query())
 
     def test_an_entry_without_filters_needs_no_query(self) -> None:
-        check_adapter_specs(DatasetRegistry((replace(SENTINEL_2_L2A, search_filters=()),)), _without_query())
+        check_adapter_specs(DatasetRegistry((replace(SENTINEL_2_L2A, search_filters=(), search_capabilities=SearchCapabilities(evaluate=False, aoi_coverage=False)),)), _without_query())

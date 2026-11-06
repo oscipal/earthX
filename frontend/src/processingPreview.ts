@@ -3,6 +3,7 @@
 // "Preview", and the layer a preview becomes. Pure functions; the state lives in
 // `processingStore.ts`.
 
+import { checkChannels, withoutChannels, type ChannelRange } from './channels';
 import { clipTileUrl } from './aoiClip';
 import {
   buildMosaicOperatorTileJsonUrl,
@@ -25,22 +26,25 @@ import {
   MAX_MOSAIC_SCENES,
   MIN_MOSAIC_SCENES,
   MIN_MOSAIC_ZOOM,
-  TILE_LEVEL_AHEAD,
   mosaicRequestBytes,
 } from './mosaic';
+import { MOSAIC_TILE_SIZE, TILE_SIZE, tileLevelAhead, tileMetres } from './tileSize';
 import { canonicalJson, type Order } from './processing';
+import { indexPresetsOf, presetFor, presetRange } from './indexPresets';
 import { assetsCarrying, bandLabel, isBandMath, resultNameOf, resultsOf, RGB, startBand } from './processingBands';
 import {
   bandsOf,
   namesInExpression,
-  shownUnit,
   type Area,
   type BandSource,
   type DraftStep,
   type Operator,
   type ProcessInfo,
 } from './processingOrder';
+import type { Percent } from './percentRange';
 import { INDEX_COLORMAP, INDEX_RANGE, scaleOf, statsFrom, type BandStats, type ResultStats } from './render';
+import { NORMALIZE_VERSION, TILE_VERSION, isStatistical, type Measured } from './normalizeMethods';
+import { fieldNumber } from './numberFormat';
 import { paramsFrom, type Field } from './schemaForm';
 import type { Bbox, StacItem } from './types';
 
@@ -74,6 +78,10 @@ export interface PreviewRange {
   vmax: string;
   // `''`: no colormap.
   colormap: string;
+  // What the range was typed as where it was typed in percentiles (NM4-65 part 4): `vmin`/`vmax` hold the values they gave.
+  percent?: Percent;
+  // A colour picture of a result with a range for each channel (UI-03d); `vmin`/`vmax` are then the first.
+  channels?: ChannelRange[];
 }
 
 export const DEFAULT_RANGE: PreviewRange = {
@@ -83,6 +91,7 @@ export const DEFAULT_RANGE: PreviewRange = {
 };
 
 export function rescaleOf(range: PreviewRange): { rescale: string } | { problem: string } {
+  if (range.channels?.length) return checkChannels(range.channels);
   const number = (text: string) => (text.trim() === '' ? NaN : Number(text));
   const low = number(range.vmin);
   const high = number(range.vmax);
@@ -98,6 +107,8 @@ export interface PlannedStep {
   step: DraftStep;
   operator: Operator;
   params: Record<string, unknown>;
+  // The version the tile takes: `normalize` of version 4 (job only) goes to the tile as version 3 (NM4-71).
+  version: number;
 }
 
 export type PreviewPlan =
@@ -112,33 +123,52 @@ export type PreviewPlan =
 
 // The operator of a step that can be a tile and the fields of its form, or the text why
 // there is no picture: the operator is not on the dataset's list, it does not run as a tile
-// (`T1`, `pixel`), or the panel has no form for it.
-function tileStep(step: DraftStep, info: ProcessInfo): { operator: Operator; fields: Field[] } | { reason: string } {
+// (`T1`, `pixel`), or the panel has no form for it. `normalize` of version 4 runs only as a job; its tile is version 3.
+function tileStep(step: DraftStep, info: ProcessInfo): { operator: Operator; fields: Field[]; version: number } | { reason: string } {
   const operator = info.operators.find((o) => o.op === step.op && o.opVersion === step.opVersion);
   if (!operator) return { reason: NO_PREVIEW_UNLISTED };
-  if (!operator.tiers.includes('T1') || operator.kind !== 'pixel') return { reason: NO_PREVIEW };
+  const asVersion3 = operator.op === 'normalize' && operator.opVersion === NORMALIZE_VERSION;
+  if (!asVersion3 && (!operator.tiers.includes('T1') || operator.kind !== 'pixel')) return { reason: NO_PREVIEW };
   if (!operator.form.supported) return { reason: NO_PREVIEW_FORM };
-  return { operator, fields: operator.form.fields };
+  return { operator, fields: operator.form.fields, version: asVersion3 ? TILE_VERSION : operator.opVersion };
 }
+
+// What the tile route takes of the parameters of one step, in characters (`MAX_OPERATOR_PARAMS_CHARS` of the backend).
+export const MAX_OPERATOR_PARAMS_CHARS = 2048;
+export const NO_NUMBERS_YET = 'Normalize has no measured numbers yet.';
+
+// A statistical `normalize` step: the tile needs the numbers measured for it.
+const waitsForNumbers = (step: DraftStep, params: Record<string, unknown>): boolean => step.op === 'normalize' && isStatistical(params.method);
 
 // The preview is the longest start of the steps in which every one runs as a tile
 // (`T1`, a pixel operator) and has its fields complete, at most `MAX_PREVIEW_STEPS`
 // of them (adr/0014 §6.1); the tile URL takes the steps in that order. Nothing after
 // a step that cannot be drawn is shown. Without steps there is nothing to say.
-export function planPreview(steps: readonly DraftStep[], info: ProcessInfo | null): PreviewPlan {
+//
+// A statistical `normalize` step is drawn with the numbers measured for it (`numbers`, by step key, NM4-11b): the tile
+// takes them in its parameters, as version 3. Without them, or with parameters longer than the tile route takes, the start ends before it.
+export function planPreview(steps: readonly DraftStep[], info: ProcessInfo | null, numbers: ReadonlyMap<number, Measured> = new Map()): PreviewPlan {
   const first = steps[0];
   if (!info || !first) return { state: 'off', reason: null };
   const planned: PlannedStep[] = [];
   for (const step of steps.slice(0, MAX_PREVIEW_STEPS)) {
     const found = tileStep(step, info);
     if ('reason' in found) break;
-    const { params, errors } = paramsFrom(found.fields, step.values);
+    const { params, errors } = paramsFrom(found.fields, step.values, step.op);
     if (Object.keys(errors).length > 0) break;
-    planned.push({ step, operator: found.operator, params });
+    if (waitsForNumbers(step, params)) {
+      const measured = numbers.get(step.key);
+      if (!measured) break;
+      params.measured = measured;
+    }
+    if (canonicalJson(params).length > MAX_OPERATOR_PARAMS_CHARS) break;
+    planned.push({ step, operator: found.operator, params, version: found.version });
   }
   if (planned.length === 0) {
     const found = tileStep(first, info);
-    return { state: 'off', reason: 'reason' in found ? found.reason : 'Complete the step to see the preview.' };
+    if ('reason' in found) return { state: 'off', reason: found.reason };
+    const { params, errors } = paramsFrom(found.fields, first.values, first.op);
+    return { state: 'off', reason: Object.keys(errors).length === 0 && waitsForNumbers(first, params) ? NO_NUMBERS_YET : 'Complete the step to see the preview.' };
   }
   return { state: 'ready', steps: planned, further: planned.length < steps.length };
 }
@@ -153,10 +183,12 @@ export function furtherNote(plan: Extract<PreviewPlan, { state: 'ready' }>): str
 
 // The names the stock must hold before the first step for `band` to come out: the planner's trace from the end
 // (`processing/plan.py::_trace`, adr/0020 §4). A `band_math` step whose result nobody needs is not run, and a result
-// that is needed is replaced by the names its expression reads. `normalize` and `reproject` keep the names they are given.
+// that is needed is replaced by the names its expression reads. `normalize` and `reproject` keep the names they are given; `mask_values` reads the band it looks at.
 export function namesNeeded(steps: readonly DraftStep[], band: string): Set<string> {
   const needed = new Set([band]);
   for (const step of [...steps].reverse()) {
+    // A mask by value always reads the band that decides (`BandUse(reads={band})`), whichever band is shown.
+    if (step.op === 'mask_values' && typeof step.values.band === 'string' && step.values.band !== '') needed.add(step.values.band);
     if (!isBandMath(step) || !needed.delete(resultNameOf(step))) continue;
     for (const name of namesInExpression(typeof step.values.expression === 'string' ? step.values.expression : '')) needed.add(name);
   }
@@ -311,8 +343,10 @@ export interface PreviewMosaic {
   url: string;
   // Its TileJSON: what `probeMosaic` asks.
   probe: string;
-  // Its first level.
+  // Its first and its last level: its tiles are 512 px (`tileSize.ts`), so a level is as fine as the next one of a scene's,
+  // and the last is one lower than the scenes' (`previewMaxZoom`).
   minZoom: number;
+  maxZoom: number;
 }
 
 export interface PreviewSpec {
@@ -340,6 +374,9 @@ export interface PreviewSpec {
   // Whether the band shown is a Band math result (with no band chosen: whether a Band math step is among the steps):
   // what the values of an index are judged by.
   expression: boolean;
+  // The range and colormap of the preset (NM4-14) whose expression the band shown has, in the presets of the dataset; `null`
+  // for any other band. It goes before the measure: an index is drawn alike wherever it is made.
+  preset: PreviewRange | null;
   // The passes drawn as a mosaic from their first level up, and the scenes: those below a mosaic, those of a pass
   // that is drawn scene by scene.
   mosaics: PreviewMosaic[];
@@ -351,6 +388,8 @@ export interface PreviewSpec {
   maxZoom: number;
   // "AOI only": the tiles are cut to the AOI in the browser (`aoiClip.ts`).
   clipToAoi: boolean;
+  // The AOI they are cut to where it is not the map's: the part of it that lies in a result.
+  clipAoi?: GeoJSON.Geometry;
 }
 
 const positive = (value: unknown): number | null =>
@@ -411,23 +450,30 @@ export function previewSpec(args: {
   band?: string | null;
   bands?: readonly string[];
   named?: boolean;
+  // The AOI the tiles are cut to where it is not the map's (the part of it in a result), for "AOI only".
+  clipAoi?: GeoJSON.Geometry;
 }): PreviewSpec | null {
   const { dataset, items, assets, info, plan, range, area, jobs = [], answers, order = null, band = null, named = false } = args;
+  const clipAoi = area === 'aoi' ? args.clipAoi : undefined;
   if (!dataset?.viewable || assets.length === 0 || assets.length > MAX_PREVIEW_ASSETS) return null;
   if (band === RGB && args.bands?.length !== 3) return null;
-  const rescale = rescaleOf(range);
+  // A range for each channel is for the colour picture; one band takes the first.
+  const rescale = rescaleOf(band === RGB ? range : withoutChannels(range));
   if ('problem' in rescale) return null;
-  // The tiles ask for the band, or the three of the colour picture, which takes one range for all of them and no colormap.
+  // The tiles ask for the band, or the three of the colour picture, which takes a range for each of them and no colormap.
   const shown: string[] | null = band === null ? null : band === RGB ? [...args.bands!] : [band];
   const asked: ShownBands = shown === null ? null : shown.length === 1 ? shown[0] : shown;
   const render = { rescale: rescale.rescale, colormapName: band === RGB ? undefined : range.colormap || undefined };
-  const chain = plan.steps.map(({ step, params }) => ({ op: step.op, opVersion: step.opVersion, paramsJson: canonicalJson(params) }));
+  const chain = plan.steps.map(({ step, params, version }) => ({ op: step.op, opVersion: version, paramsJson: canonicalJson(params) }));
   // Without a pixel size there is no level to hold the preview under: it is drawn
   // as before, up to the last released level, and "Preview" says what it is (Otto,
   // 19.10.2026).
   const gsd = finestGsd(items, assets, info.variableSeparator);
-  const maxZoom =
-    gsd === null ? dataset.zoom.max : previewMaxZoom(items.flatMap((item) => (item.bbox ? [item.bbox] : [])), gsd, dataset.zoom);
+  const bboxes = items.flatMap((item) => (item.bbox ? [item.bbox] : []));
+  const maxZoomOf = (tileSize: number) => (gsd === null ? dataset.zoom.max : previewMaxZoom(bboxes, gsd, dataset.zoom, tileSize));
+  const maxZoom = maxZoomOf(TILE_SIZE);
+  // The mosaic's tiles are 512 px, a level finer than the scenes' at the same level.
+  const mosaicMaxZoom = maxZoomOf(MOSAIC_TILE_SIZE);
   // The levels from which a pass is one mosaic: the tiler takes none below `MIN_MOSAIC_ZOOM`.
   const firstLevel = Math.max(MIN_MOSAIC_ZOOM, dataset.zoom.min);
 
@@ -440,17 +486,17 @@ export function previewSpec(args: {
       unit.length < MIN_MOSAIC_SCENES ||
       unit.length > MAX_MOSAIC_SCENES ||
       assets.length > MAX_MOSAIC_OPERATOR_ASSETS ||
-      maxZoom < MIN_MOSAIC_ZOOM
+      mosaicMaxZoom < MIN_MOSAIC_ZOOM
     ) {
       return null;
     }
     const ids = unit.map((item) => item.id);
     const url = buildTileUrl(buildMosaicOperatorTileTemplate(dataset.id, ids, assets, chain, asked), render);
-    if (mosaicRequestBytes(url, maxZoom) > MAX_MOSAIC_REQUEST_BYTES) return null;
+    if (mosaicRequestBytes(url, mosaicMaxZoom) > MAX_MOSAIC_REQUEST_BYTES) return null;
     const probe = buildMosaicOperatorTileJsonUrl(dataset.id, ids, assets, chain, asked);
     const answer = answers?.get(probe);
     if (answer?.state === 'scenes') return null;
-    return { order: readOrder(answer?.state === 'taken' ? answer.order : [], ids), bounds, url, probe, minZoom: firstLevel };
+    return { order: readOrder(answer?.state === 'taken' ? answer.order : [], ids), bounds, url, probe, minZoom: firstLevel, maxZoom: mosaicMaxZoom };
   };
   const mosaics = jobs.flatMap((unit) => mosaicOf(unit) ?? []);
   const mosaicked = new Set(mosaics.flatMap((mosaic) => mosaic.order));
@@ -486,10 +532,11 @@ export function previewSpec(args: {
   return {
     key: canonicalJson({
       urls: scenes.map((s) => s.url),
-      ...(mosaics.length > 0 ? { mosaics: mosaics.map((m) => [m.url, m.order]), below: scenes.map((s) => s.below ?? null) } : {}),
+      ...(mosaics.length > 0 ? { mosaics: mosaics.map((m) => [m.url, m.order, m.maxZoom]), below: scenes.map((s) => s.below ?? null) } : {}),
       minZoom: dataset.zoom.min,
       maxZoom,
       clipToAoi,
+      ...(clipAoi ? { clipAoi } : {}),
     }),
     title: [plan.steps.map(({ operator }) => operator.title).join(' → '), ...(named && band !== null ? [bandLabel(band)] : [])].join(' · '),
     stepCount: plan.steps.length,
@@ -500,13 +547,23 @@ export function previewSpec(args: {
     sceneMeasure,
     areaOrder,
     expression: plan.steps.some(({ step }) => isBandMath(step) && (band === null || resultNameOf(step) === band)),
+    preset: presetOfBand(dataset, plan, band),
     mosaics,
     scenes,
     perScene: jobs.some((unit) => unit.length >= MIN_MOSAIC_SCENES && !mosaicked.has(unit[0].id)),
     minZoom: dataset.zoom.min,
     maxZoom,
     clipToAoi,
+    ...(clipAoi ? { clipAoi } : {}),
   };
+}
+
+// The look of the preset whose expression the band `band` has, if it is a result of a Band math step of the chain.
+function presetOfBand(dataset: DatasetOption, plan: Extract<PreviewPlan, { state: 'ready' }>, band: string | null): PreviewRange | null {
+  if (band === null || band === RGB) return null;
+  const made = plan.steps.find(({ step }) => isBandMath(step) && resultNameOf(step) === band);
+  const preset = presetFor(indexPresetsOf(dataset.collection), made?.params.expression as string | undefined);
+  return preset ? presetRange(preset) : null;
 }
 
 // --- the measure of a preview (M4-19c) ---------------------------------------
@@ -523,6 +580,9 @@ export interface PreviewMeasure {
   source: 'area' | 'scene' | 'fallback';
   // Over the AOI: the values are the result's; else the tiler read a coarser raster. Always `true` for a scene.
   exact: boolean;
+  // What the statistics named of each band that has a valid pixel, whole: where "vmin"/"vmax" typed in percentiles are read
+  // from, if they name them (NM4-65 part 4).
+  raw?: Record<string, unknown>[];
 }
 
 const finite = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
@@ -553,7 +613,7 @@ export function measureOf(
   });
   const unit = commonUnit(bands.map((band) => (typeof band.unit === 'string' ? band.unit : null)));
   const named = read.some((band) => band.minimum !== null && band.maximum !== null);
-  return { key, stats: named ? { bands: read, expression } : null, unit, source, exact: true };
+  return { key, stats: named ? { bands: read, expression } : null, unit, source, exact: true, raw: bands.filter((band) => (finite(band.count) ?? 0) > 0) };
 }
 
 // The statistics over the AOI as a measure: the object of the results document per band, read as a result's are.
@@ -564,6 +624,7 @@ export function areaMeasureOf(key: string, answer: AreaStatistics, expression: b
     unit: commonUnit(answer.bands.map((band) => band.unit)),
     source: 'area',
     exact: answer.exact,
+    raw: answer.bands.map((band) => band.statistics).filter((stats) => (finite(stats.count) ?? 0) > 0),
   };
 }
 
@@ -584,28 +645,22 @@ export function previewTitle(preview: PreviewSpec | null, measure: PreviewMeasur
 // The range the measure calls for as the panel holds it (the same rule as a result's, `scaleOf`), or `null`.
 export function measuredRange(measure: PreviewMeasure | null): PreviewRange | null {
   const scale = scaleOf(measure?.stats ?? null);
-  return scale ? { vmin: String(scale.low), vmax: String(scale.high), colormap: scale.colormap } : null;
-}
-
-// The unit beside the range of the preview: that of the measure of this very preview, and nothing for a
-// dimensionless quantity ("1") or an unknown one.
-export function previewUnit(preview: PreviewSpec | null, measure: PreviewMeasure | null): string | null {
-  return preview && measure && measure.key === preview.measure ? shownUnit(measure.unit) : null;
+  return scale ? { vmin: fieldNumber(scale.low), vmax: fieldNumber(scale.high), colormap: scale.colormap } : null;
 }
 
 // What the panel says when the measure could not be had: the preview then keeps the start range.
-export const NO_MEASURE = 'The range could not be measured, so the preview uses its start range. Set it by hand or try Auto stretch.';
+export const NO_MEASURE = 'The range could not be measured, so the preview uses its start range. Set it by hand or try Auto-scale.';
 
 // The overlays of a preview, as the map and a layer hold them, the first on top: the mosaics, then the scenes. A scene
 // below a mosaic is drawn up to the level before it and steps aside for it (`hideFrom`, as in `mosaic.ts::viewOfPass`).
 export function previewOverlays(spec: PreviewSpec, aoi: GeoJSON.Geometry | null): LayerOverlay[] {
-  const clip = spec.clipToAoi ? aoi : null;
+  const clip = spec.clipToAoi ? (spec.clipAoi ?? aoi) : null;
   const mosaics = spec.mosaics.map((mosaic) => ({
     kind: 'raster' as const,
     tileUrl: clipTileUrl(mosaic.url, clip),
     bounds: mosaic.bounds,
     minZoom: mosaic.minZoom,
-    maxZoom: spec.maxZoom,
+    maxZoom: mosaic.maxZoom,
     preview: true as const,
   }));
   const scenes = spec.scenes.map((scene) => ({
@@ -614,7 +669,7 @@ export function previewOverlays(spec: PreviewSpec, aoi: GeoJSON.Geometry | null)
     bounds: scene.bbox,
     minZoom: spec.minZoom,
     maxZoom: scene.below === undefined ? spec.maxZoom : Math.min(spec.maxZoom, scene.below - 1),
-    ...(scene.below === undefined ? {} : { hideFrom: scene.below - TILE_LEVEL_AHEAD }),
+    ...(scene.below === undefined ? {} : { hideFrom: scene.below - tileLevelAhead(MOSAIC_TILE_SIZE) }),
     preview: true as const,
   }));
   return [...mosaics, ...scenes];
@@ -622,20 +677,21 @@ export function previewOverlays(spec: PreviewSpec, aoi: GeoJSON.Geometry | null)
 
 // --- never as fine as the data (Otto, 19.10.2026) ---------------------------
 
-// Metres per pixel of a 256-pixel Web Mercator tile at `latitude`.
-export function tileResolution(latitude: number, zoom: number): number {
-  return (156543.03392 * Math.cos((latitude * Math.PI) / 180)) / 2 ** zoom;
-}
-
 // The last tile level the preview asks for. A tile is the finest where the scene
 // lies farthest from the equator, so the level is chosen there: every tile is
 // coarser than `gsd` (strictly), everywhere in the scenes. Above it the map
 // stretches the last level, the picture gets blurry and no finer. Held within the
 // released levels; a dataset whose lowest level is already finer than the data
-// cannot be held under it, and keeps that level.
-export function previewMaxZoom(bboxes: readonly Bbox[], gsd: number, zoom: { min: number; max: number }): number {
+// cannot be held under it, and keeps that level. A tile of 512 px is as fine as the next level's of 256 px, so the
+// last level for it is one lower.
+export function previewMaxZoom(
+  bboxes: readonly Bbox[],
+  gsd: number,
+  zoom: { min: number; max: number },
+  tileSize: number = TILE_SIZE,
+): number {
   const farthest = Math.max(0, ...bboxes.flatMap(([, south, , north]) => [Math.abs(south), Math.abs(north)]));
-  const coarsest = (156543.03392 * Math.cos((Math.min(farthest, 89) * Math.PI) / 180)) / gsd;
+  const coarsest = tileMetres(Math.min(farthest, 89), 0, tileSize) / gsd;
   // The largest whole level below log2(coarsest): its tiles are still coarser than `gsd`.
   const level = Math.ceil(Math.log2(coarsest)) - 1;
   return Math.max(zoom.min, Math.min(zoom.max, level));

@@ -382,7 +382,7 @@ describe('runSearch over several datasets', () => {
     expect(state.items.map((i) => i.id)).toEqual(['z1', 'z2']);
     expect(state.groups).toHaveLength(2);
     expect(state.activeGroupIndex).toBe(0);
-    expect(state.notice).toBe('3 scene(s) in 3 time step(s) across 3 datasets.');
+    expect(state.notice).toBe('3 scenes in 3 time steps across 3 datasets.');
   });
 
   it("puts each dataset's dropped filters and outages in its own section", async () => {
@@ -415,7 +415,7 @@ describe('runSearch over several datasets', () => {
     await useAppStore.getState().runSearch();
     const state = useAppStore.getState();
     expect(state.sections.flatMap((s) => s.items).map((i) => i.id)).toEqual(['o1']);
-    expect(state.notice).toContain('1 scene(s) of other datasets were left out.');
+    expect(state.notice).toContain('1 scene of other datasets was left out.');
   });
 
   it('a grouping failure in one dataset leaves the others standing', async () => {
@@ -495,7 +495,7 @@ describe('runSearch over several datasets', () => {
     );
     await useAppStore.getState().runSearch();
     const state = useAppStore.getState();
-    expect(state.notice).toBe('1 scene(s) in 1 time step(s). No time axis – acquired Dec 2010 to Jan 2015.');
+    expect(state.notice).toBe('1 scene in 1 time step. No time axis – acquired Dec 2010 to Jan 2015.');
     expect(state.sections[0].notes).toEqual(['No time axis – acquired Dec 2010 to Jan 2015']);
   });
 
@@ -594,7 +594,7 @@ describe('setOpenSection: the dropdown of the results', () => {
       selectedIds: ['o1'],
       focusMode: true,
       cropToAoi: true,
-      downloaded: { o1: { tileUrl: 't', bounds: [0, 0, 1, 1], asset: 'a', minZoom: 0, maxZoom: 1 } },
+      downloaded: { o1: { datasetId: 'sentinel-2-c1-l2a', tileUrl: 't', bounds: [0, 0, 1, 1], asset: 'a', minZoom: 0, maxZoom: 1 } },
       appliedRender: { rescale: '0,1' },
       playing: true,
     });
@@ -828,7 +828,9 @@ describe('coverage of a chosen dataset', () => {
     expect(useAppStore.getState().coverageDatasetId).toBeNull();
   });
 
-  it('asks the coverage route for that dataset', async () => {
+  it('asks the coverage route for that dataset, over the extent of the map (no AOI is needed or sent)', async () => {
+    // Since UI-04 part 4 the question waits for the map to tell what is in view, whatever AOI there is.
+    useAppStore.setState({ aoi: null, mapZoom: 3, viewportBbox: [-20, 20, 40, 60], viewportSize: { width: 1280, height: 800 } });
     useAppStore.getState().showCoverageFor('dem');
     await new Promise((resolve) => setTimeout(resolve, 0));
     const [url] = vi.mocked(fetch).mock.calls[0];
@@ -902,7 +904,7 @@ describe('"Load more" (M3-10 F1)', () => {
     expect(token).toBe('p4');
     expect(rest).toEqual(firstRest);
     expect([count('optical'), count('optical-zarr'), count('dem')]).toEqual([202, 102, 1]);
-    expect(useAppStore.getState().notice).toBe('305 scene(s) in 6 time step(s) across 3 datasets.');
+    expect(useAppStore.getState().notice).toBe('305 scenes in 6 time steps across 3 datasets.');
   });
 
   it('keeps the dataset and the time step that are open, found by key, and the picked scenes', async () => {
@@ -1037,7 +1039,7 @@ describe('"Load more" (M3-10 F1)', () => {
     reset(['optical']);
     vi.stubGlobal('fetch', routed((body) => ({ ...byToken(body), numberMatched: 305 })));
     await search();
-    expect(useAppStore.getState().notice).toBe('300 scene(s) in 3 time step(s). 305 matched in total.');
+    expect(useAppStore.getState().notice).toBe('300 scenes in 3 time steps. 305 matched in total.');
   });
 });
 
@@ -1082,7 +1084,7 @@ describe('±90-day fallback for the dataset chosen in the dropdown (M3-10 F7)', 
     expect(state.items.map((i) => i.id)).toEqual(['f1', 'f2']);
     expect(state.fallbackDatasetIds).toEqual([]);
     expect(count('optical')).toBe(1);
-    expect(state.notice).toBe('2 scene(s) in 2 time step(s) across 3 datasets.');
+    expect(state.notice).toBe('2 scenes in 2 time steps across 3 datasets.');
   });
 
   it('runs once per search: choosing the dataset again asks nothing', async () => {
@@ -1271,7 +1273,7 @@ describe('±90-day fallback for the dataset chosen in the dropdown (M3-10 F7)', 
     expect(zarr().items.map((i) => i.id)).toEqual(['f1']);
     expect(useAppStore.getState().openSectionId).toBe('optical-zarr');
     // The fallback's scene is not a scene of the searched date range.
-    expect(useAppStore.getState().notice).toBe('301 scene(s) in 2 time step(s) across 3 datasets.');
+    expect(useAppStore.getState().notice).toBe('301 scenes in 2 time steps across 3 datasets.');
   });
 
   it('scenes in the date range that "Load more" brings replace the fallback', async () => {
