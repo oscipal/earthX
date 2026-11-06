@@ -162,7 +162,7 @@ Angaben aus den Metadaten von `mteb` [P\*]; „MMTEB-Retrieval“ ist der Mittel
 | nomic-embed-text-v2-moe | 475 M | 768 | Apache-2.0 | ja | — | möglich, wenig verbreitet |
 | jina-embeddings-v3 | 572 M | 1024 | **CC-BY-NC-4.0** | Adapter | — | **ausgeschlossen:** nicht kommerziell |
 
-- **Laufzeit:** `fastembed` (Apache-2.0, 0.9.1) bringt ONNX-Modelle für die CPU; von den Kandidaten ist nur multilingual-e5-large eingebaut, die übrigen gehen als eigenes Modell [P\*]. Ob fertige ONNX-Exporte für alle Kandidaten bestehen, ist nicht geprüft. Die Alternative ist ONNX Runtime mit `tokenizers` direkt [A].
+- **Laufzeit:** `fastembed` (Apache-2.0, 0.9.1) bringt ONNX-Modelle für die CPU; eingebaut sind u. a. multilingual-e5-large und die beiden paraphrase-Modelle; e5-small, e5-base und bge-m3 gehen als eigenes Modell [P\*]. Ob fertige ONNX-Exporte für alle Kandidaten bestehen, ist nicht geprüft. Die Alternative ist ONNX Runtime mit `tokenizers` direkt [A].
 - **Präfixe:** e5 verlangt „query: “ bzw. „passage: “ vor dem Text [P\*]. Das gehört in den Code der Einbettung, nicht in den Suchtext.
 - **Nicht gemessen:** keines der Modelle an deutschen Kurzanfragen. Zahlen für e5-small und e5-base auf derselben Skala fehlen. Die Wahl trifft das Set (F2).
 
@@ -223,7 +223,7 @@ Der Architekturplan nennt Titel, Beschreibung, Schlagworte, Variablen und Bände
 - **`unaccent`** gleicht Umlaute und Akzente an („Höhe“ findet „Hohe“, „Schnee“ bleibt „Schnee“).
 - **Komposita:** Der deutsche Snowball-Stemmer zerlegt keine Komposita, und Wörterbücher mit Zerlegung sind nicht installiert (§3.3). „Höhenmodell“ findet „Modell“ nicht. Das Glossar fängt die wichtigen Fälle ab; der Vektorarm den Rest.
 - **Tippfehler:** Trigramme (`pg_trgm`) über Kennung, Titel und Schlagworte, als eigene Rangliste in der Fusion. „Sentinal 2“ und „Worldcovr“ finden so ihren Datensatz.
-- **Glossar:** eine kuratierte Liste gleichbedeutender Begriffe in Deutsch und Englisch, als YAML in `catalog` (B13, Review über Git). Beispiel einer Gruppe: „Höhenmodell, Geländemodell, DGM, DTM, digital terrain model, elevation model, DEM“. Steht ein Begriff der Gruppe in der Anfrage, sucht der lexikalische Arm auch nach den anderen. Der Vektorarm bekommt die Anfrage unverändert.
+- **Glossar:** eine kuratierte Liste gleichbedeutender Begriffe in Deutsch und Englisch, als YAML in `catalog` (B13, Review über Git). Beispiel zweier Gruppen: „Höhenmodell, elevation model, DEM“ (allgemein) und „Geländemodell, DGM, DTM, digital terrain model, bare-earth model“ (nur Gelände ohne Bewuchs und Bauten). Steht ein Begriff der Gruppe in der Anfrage, sucht der lexikalische Arm auch nach den anderen. Der Vektorarm bekommt die Anfrage unverändert.
   - Das Glossar liegt in der Anwendung, nicht als Thesaurus-Datei im Server von Postgres. Ein verwaltetes Postgres in der Cloud erlaubt keine eigenen Dateien im Verzeichnis `tsearch_data` [A].
   - Eine Gruppe darf keine Begriffe enthalten, die nur ähnlich sind („DSM“ ist nicht „DTM“; das Set prüft genau das mit Q11 und Q12).
 - **Rang im Arm:** `ts_rank_cd` mit den Gewichten aus §4.1. Für die Fusion zählt nur die Reihenfolge, nicht der Wert.
@@ -244,7 +244,7 @@ Der Architekturplan nennt Titel, Beschreibung, Schlagworte, Variablen und Bände
   - **Raum:** Die Abdeckung des Datensatzes schneidet die AOI. Wo es Footprints gibt (materialisierte Items, `LOCAL_SQL`), zählen die Footprints; sonst die Bbox der Collection. Die Bbox allein wäre bei regionalen Datensätzen zu grob: Die Bbox der Schweiz reicht bis über 10° O nach Tirol hinein [A].
   - **Zeit:** Die zeitliche Ausdehnung überlappt den Zeitraum; ein offenes Ende heißt heute. Datensätze ohne Zeitachse (`time_range = false`) fallen nie wegen eines Zeitraums heraus. Das ist dieselbe Regel wie bei `/coverage` und `/stac/search` (`architekturplan.md` 5.1); die Antwort nennt den ignorierten Filter in `ignored_filters`.
   - **Zugang und Lizenz:** B11-Stufe und `access.account` als Filter, sobald die Felder da sind (YAML-Lader, `adr/0027` §6.1). In M5 nur auf Wunsch über die Schnittstelle, nicht in der Oberfläche.
-  - **Prototyp:** Ein `proto-`-Datensatz ist nur dort im Index, wo er geladen ist (`adr/0024` R3, R6). In der veröffentlichten Version gibt es ihn also nicht.
+  - **Prototyp:** Ein `proto-`-Datensatz ist nur dort im Index, wo er geladen ist (`adr/0024` R5, R6). In der veröffentlichten Version gibt es ihn also nicht.
 - **Kein Rangfaktor** aus Health, Beliebtheit oder Datum. Ein Datensatz mit `broken` bleibt in der Liste und zeigt seinen Status (Prinzip 11); die Suche versteckt nichts.
 - **Gleichstand:** nach Titel, dann Kennung, damit dieselbe Anfrage immer dieselbe Liste gibt.
 - **Größe der Antwort:** höchstens 20 Treffer je Seite, Blättern über die Paginierung der STAC-API.
@@ -306,19 +306,20 @@ Der „Data catalogue“ ist ein Panel der linken Leiste mit allen Datensätzen,
 - **Ort:** ein Suchfeld oben im Panel, unter dem Kopf, über der Liste. Bauteil wie die Ortssuche (`ClearableInput`), `autoComplete="off"` (Leitfaden §8b). Platzhalter „Search datasets“. Kein Satz darunter; was die Suche kann (Deutsch und Englisch, Namen, Themen), steht hinter einem (i) neben dem Feld (Leitfaden §4).
 - **Leeres Feld:** Der Katalog zeigt seine Gruppen wie in UI-05. Die Suche ändert daran nichts.
 - **Mit Text:** eine gerankte Liste statt der Gruppen. Jede Zeile ist **dieselbe Zeile** wie in der Gruppenansicht (Name, Marken, Hinzufügen bzw. Entfernen, Angaben aufklappbar); dazu der Name der Gruppe als kleine Marke. Keine Punktzahl, kein Rang als Zahl. Kein Tooltip am Namen (Leitfaden §4: keine Tooltips an Namen).
-- **Ohne Treffer:** ein Leerzustand „No matching datasets“. Fragen ohne passenden Datensatz bekommen so eine ehrliche Antwort statt eines nächstbesten Treffers (K9).
-- **AOI:** ein Schalter „Within AOI“ (Name in der Umsetzung nach Leitfaden §2) über der Liste. Gesperrt ohne AOI, Grund im Tooltip („Draw an AOI first“). Ob er bei vorhandener AOI an oder aus beginnt, ist F6. Er wirkt auch ohne Text: Dann zeigt die Gruppenansicht nur Datensätze, die die AOI berühren. Das ist die „AOI-zuerst-Suche“ aus dem Projektplan (M5, Funktionen).
+- **Ohne Treffer:** ein Leerzustand, der sagt, was zu tun ist (Leitfaden §4), etwa „No matching datasets — try other words“, mit eingeschaltetem AOI-Filter „… or include datasets outside the AOI“. Fragen ohne passenden Datensatz bekommen so eine ehrliche Antwort statt eines nächstbesten Treffers (K9).
+- **AOI:** ein Schalter über der Liste: nur Datensätze, die die AOI berühren. Der Name kommt zuerst in den Leitfaden (§2) und darf nicht mit „Filter within AOI only“ verwechselbar sein, das in „Advanced search“ etwas anderes heißt. Gesperrt ohne AOI, Grund im Tooltip mit dem vorhandenen Text „Draw an AOI to use this filter“ (`LOCK_NEEDS_AOI`, `frontend/src/aoiFilter.ts`). Vorgabe: F6. Er wirkt auch ohne Text auf die Gruppenansicht. Das ist die „AOI-zuerst-Suche“ aus dem Projektplan (M5, Funktionen). Leitfaden §7 erlaubt heute genau einen Schalter (`role="switch"` nur im Filter der AOI); ein zweiter braucht einen Nachtrag dort.
 - **Zeitraum:** kein Filter im Katalog. Die Daten des Control Panels gelten je Datensatz und sind auf dessen Zeitraum begrenzt (UI-05); ein zweiter Zeitraum im Katalog wäre doppelt [A]. Die Schnittstelle kann ihn trotzdem (§4.4), für Chatbot und Python-Client.
-- **Marken:** „Prototype“ (`adr/0024` R8) und die Marke für Konto-Quellen (`adr/0027` §4.1) stehen in der Trefferzeile wie in der Gruppenansicht. „Last checked“ steht in den Angaben, sobald es Health-Checks gibt.
+- **Marken:** „Prototype“ (`adr/0024` R8) und der Hinweis für Konto-Quellen (`adr/0027` §4.1 und F2: Link „kostenloses Konto nötig“; Form und Begriff legt UI-05 bzw. der Leitfaden fest) stehen in der Trefferzeile wie in der Gruppenansicht. „Last checked“ steht in den Angaben, sobald es Health-Checks gibt.
 - **Verhalten:** Die Anfrage geht nach einer kurzen Pause im Tippen an die API (keine Taste nötig), ab zwei Zeichen. Eine ältere Antwort überschreibt nie eine neuere. Fehler der API: der Fehler sichtbar mit „Retry“ (Leitfaden §2), die Gruppenansicht bleibt nutzbar.
 - **Merken:** Der Suchtext bleibt für die Sitzung stehen wie die Einstellungen von „Advanced search“, nicht im Browserspeicher und nicht im Permalink (wie DS-03c, Log 06.11.2026).
+- **Schließen und Leeren:** Der „Data catalogue“ ist ein linkes Panel ohne x (Leitfaden §5). Esc leert das Feld nicht; geleert wird nur mit „Clear“ von `ClearableInput`.
 - **Schmale Fenster:** dasselbe Panel; das Feld bleibt oben stehen, die Liste scrollt.
 
 **Was das für UI-05 heißt (Weitergabe):**
 
-1. Oben im Panel des „Data catalogue“ bleibt der Platz für ein Feld und eine Zeile mit dem Schalter frei; UI-05 baut beides nicht.
+1. Der Kopf des „Data catalogue“ lässt sich später um ein Feld und eine Zeile mit dem Schalter ergänzen, ohne Umbau. Keine sichtbar leere Fläche; UI-05 baut beides nicht.
 2. Die Zeile eines Datensatzes ist ein eigenes Bauteil, das auch ohne Gruppe stehen kann (mit der Gruppe als Marke).
-3. Die Gruppenansicht lässt sich auf eine Teilmenge von Datensätzen einschränken (für den AOI-Schalter ohne Text).
+3. Keine Pflicht für UI-05: Dass die Gruppenansicht auf eine Teilmenge eingeschränkt werden kann (AOI-Schalter ohne Text), baut die Aufgabe der Suche in Fassung 3.
 4. Die Gruppe kommt aus einem Registry-Feld (UI-05 legt es fest). Dieses ADR schlägt kein eigenes vor; die Suche liest das Feld nur für die Marke.
 
 Läuft UI-05 anders, stimmt sich ab, wer später holt (wie M5-Plan §6.2 für Registry-Felder).
@@ -340,7 +341,7 @@ Läuft UI-05 anders, stimmt sich ab, wer später holt (wie M5-Plan §6.2 für Re
   - **nDCG@10** mit den Gewinnen 2 und 1: nur berichtet, ohne Grenze.
   - **Filterfragen:** bestanden, wenn kein Datensatz mit „nie“ in der Liste steht, auf keinem Rang.
   - **Negativfragen:** bestanden, wenn die Liste leer ist.
-  - Alle Maße getrennt für Deutsch, Englisch und zusammen.
+  - Alle Maße getrennt für Deutsch, Englisch und zusammen. In die Maße **je Sprache** zählen nur Fragen mit mindestens einem Wort der Sprache; reine Namen und Kürzel (Q01, Q03, Q04, Q05, Q07, Q40, Q42, Q43, Q44, Q46) zählen nur im Gesamtmaß.
 - **Bestehen:** Grenzen in F5. Vorschlag: Recall@5 ≥ 0,9 und MRR@10 ≥ 0,8, **je Sprache**; alle Filterfragen; drei von vier Negativfragen.
 - **Vergleich zweier Varianten** (Modelle, Arme, Parameter): gepaart über dieselben Fragen, mit Test und Konfidenzintervall (`ranx`). Mit 50 Fragen zeigt das große Unterschiede und Rückfälle einzelner Fragen, keine feinen (§3.7).
 - **Änderung:** Neue Fragen und geänderte Noten kommen per PR mit Begründung; Otto gibt sie frei. Eine Frage verschwindet nicht, weil sie scheitert.
@@ -383,10 +384,10 @@ Fragen zum Geländeoperator setzen voraus, dass er gebaut ist (M5-10), weil erst
 | Q10 | en | elevation model | — | DEM, ALTI, BEV | — | — | T |
 | Q11 | en | digital terrain model bare earth | — | ALTI, BEV | DEM | — | T |
 | Q12 | de | digitales Oberflächenmodell | — | DEM | ALTI, BEV | — | T |
-| Q13 | de | Landbedeckung | — | WC20, WC21 | CLC | — | T |
-| Q14 | en | land cover classification | — | WC20, WC21 | CLC | — | T |
-| Q15 | en | multispectral optical imagery | — | S2 | — | — | T |
-| Q16 | de | Satellitenbilder in Echtfarben | — | S2 | — | — | T |
+| Q13 | de | Landbedeckung | — | WC20, WC21, CLC | — | — | T |
+| Q14 | en | land cover classification | — | WC20, WC21, CLC | — | — | T |
+| Q15 | en | multispectral optical imagery | — | S2 | LS | — | T |
+| Q16 | de | Satellitenbilder in Echtfarben | — | S2 | LS | — | T |
 | Q17 | en | radar backscatter | — | S1 | — | — | T |
 | Q18 | de | Radarbilder bei Bewölkung | — | S1 | — | — | T |
 | Q19 | de | Niederschlag | — | MCH, HYR | — | — | T |
@@ -396,10 +397,10 @@ Fragen zum Geländeoperator setzen voraus, dass er gebaut ist (M5-10), weil erst
 | Q23 | de | Höhenmodell Österreich | — | BEV | DEM | — | X |
 | Q24 | en | terrain model Switzerland | — | ALTI | DEM | — | X |
 | Q25 | en | rainfall Germany | — | HYR | — | — | X |
-| Q26 | de | Höhenmodell | AOI „Tirol“ 11–12° O, 47,0–47,5° N | BEV | DEM | ALTI | R |
-| Q27 | en | elevation | AOI „Valais“ 7–8° O, 46,0–46,5° N | ALTI | DEM | BEV | R |
-| Q28 | en | land cover | AOI „Kenya“ 36–37° O, 1° S–0° | WC20, WC21 | — | ALTI, BEV, MCH, CLC | R |
-| Q29 | de | Niederschlag | AOI „Tirol“ wie Q26 | — | — | MCH, HYR | R |
+| Q26 | de | Höhenmodell | AOI „Österreich Mitte“ 14–15° O, 47–48° N | BEV | DEM | ALTI | R |
+| Q27 | en | elevation | AOI „Western Switzerland“ 7–8° O, 46–47° N | ALTI | DEM | BEV | R |
+| Q28 | en | land cover | AOI „Kenya“ 36–37° O, 1° S–0° | WC20, WC21 | — | ALTI, BEV, MCH, HYR, CLC | R |
+| Q29 | de | Niederschlag | AOI wie Q26 | — | — | MCH | R |
 | Q30 | de | Landbedeckung 2021 | — | WC21 | WC20 | — | Z |
 | Q31 | en | land cover 2020 | — | WC20 | WC21 | — | Z |
 | Q32 | en | radar | Zeitraum 2000–2005 | — | DEM | S1 | Z |
@@ -426,9 +427,9 @@ Hinweise zu einzelnen Fragen:
 
 - **Q11, Q12:** prüfen, dass DSM und DTM nicht gleichgesetzt werden. Der Copernicus DEM ist ein Oberflächenmodell; swissALTI3D und BEV sind Geländemodelle (`adr/0023` §3.1, §4.2).
 - **Q23–Q25:** Region nur im Text, ohne AOI. Sie hängen an den Ortsbegriffen im Suchtext (§4.1, F8).
-- **Q26, Q27:** Die Boxen liegen ganz in einem Land. Q26 liegt östlich der Bbox der Schweiz, Q27 westlich von Österreich; sie prüfen den Raumfilter, nicht die Grenze von Bbox und Footprint.
+- **Q26, Q27:** Q26 liegt ganz in Österreich und östlich der Bbox der Schweiz (bis 10,5° O). Q27 liegt westlich von Österreich (ab 9,5° O); am Südrand streift die Box Italien, was für die Frage nichts ändert. Beide prüfen den Raumfilter, nicht die Grenze von Bbox und Footprint.
 - **Q28:** WorldCover ist global, CORINE nur Europa (`nie`).
-- **Q29:** Niederschlag in Tirol: Weder MeteoSchweiz noch HYRAS decken es ab; GeoSphere ist nicht im Katalog. Erwartet ist eine Liste ohne MCH und HYR.
+- **Q29:** Niederschlag in der Mitte Österreichs: MeteoSchweiz deckt es nicht ab; GeoSphere ist nicht im Katalog. Erwartet ist eine Liste ohne MCH. Ob das Gitter von HYRAS über Deutschland hinausreicht (Einzugsgebiete), ist nicht belegt; HYR kommt erst nach dieser Prüfung als „nie“ dazu. Eine erste Fassung mit einer Box in Tirol hätte deutsches Gebiet (Werdenfelser Land) geschnitten.
 - **Q32:** Sentinel-1 beginnt 2014 (`nie`). Der Copernicus DEM stammt aus Radar (TanDEM-X) und hat keine Zeitachse; er darf erscheinen.
 - **Q33:** Datensätze ohne Zeitachse fallen nicht wegen eines Zeitraums heraus (§4.4).
 - **Q38, Q39:** Quick processings (NDSI, NDWI) stehen im Suchtext von Sentinel-2 (§4.1).
@@ -496,8 +497,8 @@ Abschätzung [A]; gemessen wird in der Umsetzung.
 3. In M5 nur berichten, keine Grenze
 
 **F6 — AOI im „Data catalogue“ (§7)?**
-1. Schalter „Within AOI“, an, sobald eine AOI da ist; aus ohne AOI (gesperrt) **(Empfehlung)**
-2. Schalter, Vorgabe aus
+1. Schalter, Vorgabe aus; an nur auf Klick, dann bleibt er für die Sitzung an **(Empfehlung: beim Zeichnen einer AOI verschwindet so kein Datensatz ohne Zutun, Leitfaden §1 Punkt 5, Prinzip 9)**
+2. Schalter, an, sobald eine AOI da ist
 3. Kein Schalter: Mit AOI filtert der Katalog immer
 
 **F7 — Begriffe beim Onboarding (§4.2)?**
@@ -530,7 +531,7 @@ Eingabe für Fassung 3 des M5-Plans. Diese Liste legt keine Plan-Dateien an und 
 7. **An UI-05:** Platz für Feld und Schalter, Zeile als eigenes Bauteil, Gruppenansicht auf Teilmenge einschränkbar (§7).
 8. **An `adr/0025`:** Der Harvester rechnet keine Embeddings; er liefert Texte in der Sprache der Quelle, das Review ergänzt englische Titel und Beschreibungen, wo sie fehlen (§4.1, §4.6).
 9. **An M5-07, M5-08, M5-09, M5-11, DS-04:** Beschreibungen nennen Region und Inhalt; Schlagworte nach F7. Gilt erst mit Ottos Antwort.
-10. **Dokumente nach der Annahme:** `architekturplan.md` 5.3 und 10 (Nachtrag), `projektuebersicht.md` §5 (F7), `docs/ui/leitfaden.md` §2 (neue Begriffe), Entscheidungslog.
+10. **Dokumente nach der Annahme:** `architekturplan.md` 5.3 und 10 (Nachtrag), `projektuebersicht.md` §5 (F7), `docs/ui/leitfaden.md` §2 (neue Begriffe) und §7 (zweiter Schalter), Entscheidungslog.
 11. **Chatbot (M7 7a):** nutzt dieselbe Schnittstelle und dasselbe Set (`architekturplan.md` 8.3).
 
 ---
