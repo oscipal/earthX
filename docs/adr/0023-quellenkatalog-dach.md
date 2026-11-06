@@ -1,12 +1,12 @@
 # ADR 0023 — Quellenkatalog DACH und Satellit
 
-- **Status:** Entwurf. Die Nummer 0023 ist im M5-Plan fest vergeben (`plans/m5/m5-discovery-und-suche.md` §5a). Am 31.10.2026 belegte weder `main` noch ein offener PR diese Nummer.
-- **Datum:** 2026-10-31
-- **Aufgabe:** M5-01 laut `docs/plans/m5/m5-discovery-und-suche.md` §5a (Entscheidungsvorlage A, §4).
+- **Status:** Angenommen (fest, Otto, 06.11.2026; Antworten in §10). Offen bleiben die in §10 und §9.1 als **offen** markierten Teile, vor allem der Nachtrag aus Ottos Lauf von `probe.py` und die Stände je Kachel bei swissALTI3D und BEV (§8.3). Die Nummer 0023 ist im M5-Plan fest vergeben (`plans/m5/m5-discovery-und-suche.md` §5a).
+- **Datum:** 2026-10-31 (Entwurf, gemergt mit PR #262); fortgeschrieben 2026-11-06 (M5-01b).
+- **Aufgabe:** M5-01 laut `docs/plans/m5/m5-discovery-und-suche.md` §5a (Entscheidungsvorlage A, §4); Fortschreibung M5-01b nach Ottos Antworten.
 - **Autonomiestufe:** C. Kein Produktivcode.
-  - Geändert sind nur dieses ADR, eine Zeile im Entscheidungslog und das Messskript `scripts/m5-01-sources/probe.py`.
-  - Das Skript ruft nur über `gateway` ab und läuft auf Ottos Rechner (§9).
-  - Unverändert bleiben `backend/`, `frontend/`, Registry, Fixtures, Backlog, `.github/`, `.claude/` und `CLAUDE.md`.
+  - M5-01 änderte dieses ADR, eine Zeile im Entscheidungslog und das Messskript `scripts/m5-01-sources/probe.py`. Das Skript ruft nur über `gateway` ab und läuft auf Ottos Rechner (§9).
+  - M5-01b ändert nur dieses ADR und das Entscheidungslog. Die Messung lief mit `curl` aus der Sitzung (§9.3).
+  - Unverändert bleiben `backend/`, `frontend/`, Registry, Fixtures, Backlog, M5-Plan, `.github/`, `.claude/` und `CLAUDE.md`.
 - **Vorab fest (Otto, 31.10.2026, Plan §2 und §5):**
   - Satellitendaten immer.
   - DACH-Behörden zuerst.
@@ -61,31 +61,46 @@ Die meisten Aussagen dieses ADR stehen auf **S**. Grund ist der folgende Befund.
 
 **Folge:** Vor einer Annahme müssen die Kernaussagen zu den empfohlenen Quellen an der Quelle selbst geprüft werden. Dazu gehören anonymer Zugriff, Format, Range-Requests, ETag, CORS und Region. Weg dafür: §9, das Skript auf Ottos Rechner oder eine neue Sitzung mit freigegebenen Hosts.
 
+**Messung vom 06.11.2026 (Weg B, M5-01b) [M]:**
+
+- Die Hosts aus §9.3 sind in der Umgebung freigegeben (F4). Zu Beginn der Sitzung standen sie noch nicht in der Allowlist; der Proxy antwortete mit `403`. Nach dem Eintrag mit Ottos Freigabe waren sie erreichbar.
+- Gemessen wurden nur Metadaten:
+  - STAC-Collection und ein Item (`limit=1`) bzw. der ATOM-Feed;
+  - je Datei `HEAD` mit `Origin`-Header, ein Range-GET auf die ersten 16 KB und eine bedingte Anfrage mit `If-None-Match`;
+  - der Kopf der Datei über GDAL (`/vsicurl/`, liest nur den TIFF-Kopf und die IFDs).
+- Kein Pixelblock wurde gelesen, keine Datei vollständig geladen.
+- Adressen, Item-IDs, Kachelnamen und genaue Flächen stehen nicht in diesem Dokument.
+- Die Seiten mit den Nutzungsbedingungen von swisstopo und der Metadatensatz des BEV sind seitdem **P**.
+- Der Standort der BEV-Server ließ sich nicht prüfen: Eine Namensauflösung aus der Sitzung wurde abgelehnt.
+
 ---
 
 ## 0. Kurzfassung
 
 1. **Es gibt viel ohne Schlüssel, aber wenig in einem Format, das die Plattform heute liest** [A, aus §3–§6]:
-   - In COG liegen ESA WorldCover [M], swissALTI3D [S], die Geländemodelle und Orthofotos des BEV [S] und Niedersachsens [S] sowie der Copernicus DEM.
+   - In COG liegen ESA WorldCover [M], swissALTI3D [M], das Geländemodell des BEV [M], die Orthofotos des BEV [S], die Daten Niedersachsens [S] sowie der Copernicus DEM.
    - Die Meteorologie aller drei Länder (DWD, MeteoSchweiz, GeoSphere) liegt nur als NetCDF, HDF5 oder GRIB2 vor oder hinter einer Abfrage-API. Lizenzen und Zugang wären in Ordnung (CC BY 4.0, ohne Konto; bei MeteoSchweiz und GeoSphere am Primärtext belegt [P]).
 2. **Lizenzen sind fast überall offen** (§7.2):
-   - CC BY 4.0: MeteoSchweiz [P], GeoSphere [P], WorldCover [M], BEV [S], DWD [S].
+   - CC BY 4.0: MeteoSchweiz [P], GeoSphere [P], WorldCover [M], BEV [P], DWD [S].
    - dl-de/by-2-0 und dl-de/zero-2-0: die meisten deutschen Länder [S].
-   - swisstopo-OGD ohne SPDX-Kennung [S].
+   - swisstopo-OGD ohne SPDX-Kennung [P].
    - Daraus folgt der Vorschlag „Processing“ für alle empfohlenen Quellen. Die Einstufung gibt Otto.
 3. **Lage der Daten** (§7.3):
    - Die Schweizer Bundes-Geodaten liegen nach der Vorgabe im Code des Dienstes in AWS `eu-central-1` [P]; ICON liegt bei CSCS.
    - WorldCover liegt in `eu-central-1` [M], Niedersachsen in IBM `eu-de` [P].
    - DWD, BEV und GeoSphere: unbekannt, vermutlich eigene Rechenzentren in DE bzw. AT.
-4. **Empfehlung für die Handarbeit vor der Pipeline (§8, F1):** ESA WorldCover, dann swissALTI3D, dann BEV ALS-DGM 1 m.
+4. **Entscheidung für die Handarbeit vor der Pipeline (§8, F1, fest):** ESA WorldCover, dann swissALTI3D, dann BEV ALS-DGM 1 m.
+   - Die Bedingung für BEV ist erfüllt [M]: ATOM-Feed ohne Anmeldung, COG mit Overviews bis 1:256, Range-Requests mit `206`.
    - Alle drei kommen ohne neuen Reader aus.
    - Sie stressen die Achsen aus Prinzip 3 und 4: Bucket mit Kachelraster, eine zweite STAC-API, ATOM; dazu LV95 und LAEA.
-   - Die Meteorologie folgt als nächster Block, sobald ein Leseweg für NetCDF entschieden ist (F3).
+   - Die Meteorologie folgt als nächster Block, sobald ein Leseweg für NetCDF entschieden ist (F3, eigene Recherche).
 5. **Eigenheiten je Datensatz (§8.3):** Für die drei Quellen sind Processing, Suche und Schnellrechnungen in Feldern der Registry vorgeschlagen.
-   - Neu wären nur `data_region` (beschlossen) und eine Capability `terrain` für einen Geländeoperator (F5).
+   - Neu sind nur `data_region` (beschlossen) und eine Capability `terrain` für einen Geländeoperator (F5, fest).
+   - WorldCover wird zwei Datensätze, je Stand einer (F6 Option 2): Eine Ansicht kann Kacheln beider Jahre zeigen (§10, F6).
    - Suchfilter bleiben bei allen dreien vorerst leer. Die FSDI-Suche kennt weder Query noch CQL2 [P], und materialisierte Datensätze haben nach `adr/0021` noch keine Filter.
-6. **Offen:** Die meisten Behördenseiten waren aus der Sitzung gesperrt. Vor dem Onboarding prüft Ottos Lauf von `scripts/m5-01-sources/probe.py` oder eine Sitzung mit freigegebenen Hosts die Kernpunkte (§9).
-7. **Nicht gefunden:** komplexe Quad-Pol-Daten ohne Konto (§6.3). `decomp` ruht weiter.
+6. **Neu aus der Messung [M]:** swissALTI3D und BEV halten mehrere Stände derselben Kachel. Bei swissALTI3D liegen an einem Ort Items von 2019 und 2025, beim BEV sechs Stichtage (2019 sowie 2021 bis 2025) je 55 Kacheln. Wie das in die Registry kommt, ist **offen** (§8.3).
+7. **Offen:** der Nachtrag aus Ottos Lauf von `scripts/m5-01-sources/probe.py` (F4), die Wortlaute der Bedingungen (F2, Otto), die Lage der BEV-Server und die STAC-Adresse des LGLN (§9.1).
+8. **Nicht gefunden:** komplexe Quad-Pol-Daten ohne Konto (§6.3). `decomp` ruht weiter.
 
 ---
 
@@ -147,25 +162,29 @@ Kandidaten für diese ADRs sind in §7.5 nur genannt.
 - **Ohne Konto:** Die Nutzungsbedingungen der FSDI verlangen keine Registrierung; es gilt Fair Use [S].
   - Die Limits wurden zum 05.01.2025 geändert. Zahlen sind nicht belegt [S].
   - MeteoSchweiz verbietet „excessive use … in particular the high-frequency downloading of the same content“ und verweist auf die FSDI-Bedingungen [P].
-- **ETag und bedingte Requests [P]:**
-  - Die Doku empfiehlt ausdrücklich `If-None-Match` mit dem ETag; der Server antwortet dann `304 Not Modified`.
-  - Assets werden 2 Stunden gecacht, 10-Minuten-Collections 10 Sekunden.
+- **ETag und bedingte Requests [P, M]:**
+  - Die Doku empfiehlt ausdrücklich `If-None-Match` mit dem ETag; der Server antwortet dann `304 Not Modified` [P].
+  - Gemessen am 06.11.2026 [M]: Collection und Asset tragen ein ETag, das Asset auch Last-Modified. Eine bedingte Anfrage auf das Asset ergibt `304`.
+  - Gemessen ist auch das Caching [M]: `Cache-Control: max-age=7200` am Asset, `max-age=600` an der Collection.
   - Das passt genau zur Abnahme von M5: Ein Lauf ohne Änderung kostet nur bedingte Requests.
-- **CORS:** Die API setzt `Access-Control-Allow-Origin: *` (`service-stac`, `app/middleware/cors.py`) [P]. Für die Asset-Dateien ist das nicht belegt.
+- **CORS [P, M]:** Die API setzt `Access-Control-Allow-Origin: *` (`service-stac`, `app/middleware/cors.py`) [P]. Die Asset-Dateien setzen bei einem `Origin`-Header ebenfalls `Access-Control-Allow-Origin: *` mit `GET, HEAD` [M].
 - **Lage der Daten:**
   - Der Dienst schreibt verwaltete Assets in einen S3-Bucket. Seine Vorgabe ist die Region `eu-central-1`; ältere Bestände liegen nach der Vorgabe in `eu-west-1` (`service-stac`, `app/config/settings_prod.py`) [P].
-  - Die Produktion kann die Vorgaben über Umgebungsvariablen ändern. Gesichert ist nur „AWS“ (AWS-Fallstudie [S]).
-  - **Vorschlag für `data_region`:** `aws:eu-central-1`, zu bestätigen mit §9 (Kopfzeile `x-amz-bucket-region` bzw. Host) [A].
-- **Lizenz swisstopo:** Seit 01.03.2021 sind die Geodaten von swisstopo Open Government Data [S].
-  - Erlaubt sind Nutzung, Weitergabe, Bearbeitung und kommerzielle Nutzung. Einzige Pflicht ist die Quellenangabe [S].
-  - Es gibt keine SPDX-Kennung (SPDX-Liste [P]). Die Collections tragen laut Suchtreffer `license: proprietary` [S].
-  - **Vorschlag:** `spdx_id = None`, Name und URL der swisstopo-Bedingungen, `attribution_required = true`, alle anderen Flags `true`, Stufe Processing. **Einstufung durch Otto.**
+  - Gemessen [M]: Die Assets kommen über den Host der API aus S3 hinter CloudFront (`server: AmazonS3`, `via: … cloudfront.net`). Die Kopfzeile `x-amz-bucket-region` fehlt, die Region des Buckets ist also nicht gemessen.
+  - **Vorschlag für `data_region`:** `aws:eu-central-1` nach der Code-Vorgabe [P]. Die Region des Buckets bleibt **offen**. Auch Ottos Lauf von `probe.py` dürfte sie nicht zeigen, weil CloudFront sie verdeckt [A].
+- **Lizenz swisstopo [P]** (Nutzungsbedingungen für kostenlose Geodaten und Geodienste, Version 1.3.2021, gelesen am 06.11.2026):
+  - Seit 01.03.2021 sind die Standardprodukte von swisstopo Open Government Data.
+  - Die Daten „dürfen genutzt, verbreitet und zugänglich gemacht werden“, „angereichert, bearbeitet sowie auch kommerziell genutzt werden“.
+  - „Eine Quellenangabe ist Pflicht“. Zur Wahl stehen der Name des Amtes in einer der Landessprachen oder Englisch und „©swisstopo“. Für swissALTI Regio und swissEO gilt eine andere Quellenangabe; swissALTI3D gehört nicht dazu.
+  - Bei übermäßiger Nutzung kann swisstopo den Zugang einschränken. Ergänzend gelten die allgemeinen Bedingungen der BGDI.
+  - Es gibt keine SPDX-Kennung (SPDX-Liste [P]). Die Collection trägt `license: proprietary` und keinen Link mit `rel=license` [M].
+  - **Vorschlag:** `spdx_id = None`, Name und URL der swisstopo-Bedingungen, `attribution_required = true`, alle anderen Flags `true`, Stufe Processing. **Einstufung durch Otto** (F2: Otto prüft die Wortlaute vor dem Eintrag).
 
-**Datensätze von swisstopo (alle [S], Collection-IDs aus Suchtreffern):**
+**Datensätze von swisstopo (swissALTI3D [M] am 06.11.2026, die übrigen [S]):**
 
 | Collection | Inhalt | Auflösung, Kachel | Format | Zeit |
 |---|---|---|---|---|
-| `ch.swisstopo.swissalti3d` | Geländemodell (DTM), Schweiz und Liechtenstein | 0,5 m und 2 m, Kacheln 1 km | COG laut Forum und Swiss Data Cube, Float32, Nodata −9999, EPSG:2056, Höhen LN02 | Nachführung im 6-Jahres-Zyklus, Jahr je Kachel |
+| `ch.swisstopo.swissalti3d` | Geländemodell (DTM), Schweiz und Liechtenstein | 0,5 m (2000² px) und 2 m (500² px) als getrennte Assets eines Items, Kacheln 1 km [M] | COG [M]: Medientyp `profile=cloud-optimized`, LZW, Blöcke 128², Overviews 2/4/8 (0,5 m) bzw. 2 (2 m); Float32, Nodata −9999, EPSG:2056 [M]; Höhen LN02 [S]. Daneben je Auflösung ein Asset als ASCII-XYZ (ZIP) | Item-`datetime` = Jahr im Namen des Assets [M]. Mehrere Stände derselben Kachel als eigene Items, z. B. 2019 und 2025 an einem Ort [M]. Zeitraum der Collection 2019 bis 2026 [M] |
 | `ch.swisstopo.swissimage-dop10` | Orthofoto RGB | 10 cm im Mittelland und in den Alpentälern, 25 cm in den Alpen | GeoTIFF; COG für dieses Produkt nicht belegt | Zyklus 3 Jahre (Angaben widersprechen sich) |
 | `ch.swisstopo.swisssurface3d-raster` | Oberflächenmodell (DOM) | 0,5 m, Kacheln 1 km | GeoTIFF; COG nicht belegt | wie swissALTI3D |
 | `…pixelkarte-farbe-pk50/100/200.noscale` | Landeskarten als Bild | — | GeoTIFF LZW | — |
@@ -234,18 +253,26 @@ Der Bestand von swissALTI3D liegt laut Forum bei rund 770 GB (0,5 m) bzw. 44 GB 
   - Anzeige und Processing gehen daher nur mit Dateien. Die gibt es laut Suchtreffern im Data Hub (`data.hub.geosphere.at`) als NetCDF-Dateien je Jahr [S], nicht belegt.
   - Discovery und Katalog gehen über die API: `/datasets` listet alle Ressourcen samt Metadaten [P].
 
-### 4.2 BEV (Bundesamt für Eich- und Vermessungswesen) [S]
+### 4.2 BEV (Bundesamt für Eich- und Vermessungswesen) [ALS-DGM M am 06.11.2026, sonst S]
 
-- **ALS-DGM 1 m (Höhenraster) und ALS-DOM 1 m:**
-  - ganz Österreich in 55 Kacheln zu 50 km, EPSG:3035;
-  - Download über einen ATOM-Dienst (`data.bev.gv.at`), Zugriff „unrestricted“;
-  - Formate in den Metadaten: GeoTIFF und COG.
-- **Orthofoto DOP 20 cm:** 57 Kacheln, Zyklus 3 Jahre, gleiche Wege und Formate.
-- **Lizenz:** CC BY 4.0 laut BEV-Metadaten.
+- **ALS-DGM 1 m (Höhenraster) und ALS-DOM 1 m [M]:**
+  - Katalog ist ein GeoNetwork auf `data.bev.gv.at`; Suche und Metadaten sind ohne Anmeldung lesbar.
+  - Der INSPIRE-ATOM-Downloaddienst „ALS EL Höhendaten“ ist ohne Anmeldung lesbar. Er listet DTM und DSM zu den Stichtagen 15.09.2019 und 15.09.2021 bis 15.09.2025, je Stichtag und Modell 55 Kacheln zu 50 km, EPSG:3035.
+  - Der Feed sagt: „Der öffentliche Zugang zu diesem Produkt unterliegt keinen Einschränkungen.“
+  - Je Kachel führt ein Dataset-Feed auf genau eine Datei `image/tiff` auf demselben Host. Jede Kachel hat einen eigenen DOI.
+- **Datei (eine Randkachel, Stichtag 2025) [M]:**
+  - `LAYOUT=COG`, LZW mit Prädiktor 3, Blöcke 512², **Overviews 2 bis 256**;
+  - 50 001² Pixel zu 1 m, EPSG:3035, Float32, Nodata −9999;
+  - `HEAD` und Range-GET ohne Anmeldung: `Accept-Ranges: bytes`, Range ergibt `206`;
+  - ETag und Last-Modified sind gesetzt; bedingte Anfragen mit `If-None-Match` und `If-Modified-Since` ergeben `304`;
+  - `Cache-Control: no-cache,must-revalidate`, Server Apache.
+  - Mit einem `Origin`-Header kommt **kein** `Access-Control-Allow-Origin` zurück (wie bei WorldCover).
+- **Orthofoto DOP 20 cm [S]:** 57 Kacheln, Zyklus 3 Jahre, gleiche Wege und Formate laut Suchtreffern; nicht gemessen.
+- **Lizenz [P]:** Der Metadatensatz der Serie sagt „Für dieses Produkt gilt die Standardlizenz CC-BY-4.0“ mit Link auf die Lizenz.
 - **Unklar:**
-  - Ein WMS-Metadatensatz nennt „Anmeldung erforderlich“; das betrifft den Darstellungsdienst, nicht den Download.
-  - Ob jede Kachel wirklich ein COG ist, ist offen. Eine 50-km-Kachel zu 1 m hat 50 000² Pixel; ohne Overviews wäre sie für Kacheln unbrauchbar [A].
-  - Range-Requests, CORS, ETag und Lage der Daten sind nicht belegt.
+  - Ein WMS-Metadatensatz nennt „Anmeldung erforderlich“ [S]; das betrifft den Darstellungsdienst, nicht den Download.
+  - Gemessen ist nur eine Kachel. Dass alle 55 gleich aufgebaut sind, ist eine Annahme [A]; das Onboarding prüft es über die Kopfzeilen aller Kacheln.
+  - Wer den Speicher betreibt und wo er steht, ist nicht belegt (F7: `unknown`).
 - **basemap.at:** WMTS mit Karten und Orthofoto, CC BY 4.0 laut Sekundärquellen. Das sind Bildkacheln, keine Messwerte. Es ist ein Kandidat für eine Basiskarte (UI-02), keine Datenquelle [A].
 
 ### 4.3 Bundesländer, EODC, data.gv.at [S]
@@ -306,6 +333,7 @@ Der Bestand von swissALTI3D liegt laut Forum bei rund 770 GB (0,5 m) bzw. 44 GB 
 - **COG und STAC sind nur für Niedersachsen (LGLN) belegt:**
   - DOP20 (RGB, RGBI) und DGM1/DOM1 als COG [S].
   - Eine STAC-API wurde auf der FOSSGIS 2024 vorgestellt [S]. Ihre Adresse wurde nicht gefunden.
+  - Nachgesehen am 06.11.2026 [M]: Das Skript des Portals auf `opengeodata.lgln.niedersachsen.de` hat einen Bereich STAC mit Baustellen-Symbol und Link auf die STAC-Spezifikation, aber ohne Adresse einer API. Sonst verweist es nur auf statische STAC-Beispiele auf Hosts außerhalb der Freigabe aus §9.3. Eine STAC-API ist dort **nicht belegt**.
   - Ein Notebook eines LGLN-Mitarbeiters auf GitHub lädt die DOP20 über einen Kachelindex im IBM-Cloud-Objektspeicher, Region `eu-de` (Frankfurt). Dort ist die Lizenz „dl-de/by-2-0“ angegeben [P, aber keine amtliche Seite].
   - Für DGM1/DOM1 nennt nur ein Dritt-Wiki CC BY 4.0 seit Mai 2024 [S].
 - In Bayern gibt es auch CC-BY-ND-Produkte [S]. ND ist nach B11 nur Katalogeintrag; Bayern muss deshalb je Produkt geprüft werden.
@@ -344,6 +372,10 @@ Der Bestand von swissALTI3D liegt laut Forum bei rund 770 GB (0,5 m) bzw. 44 GB 
 - **Lizenz:** CC BY 4.0. Der Kopf der Datei sagt `license: CC-BY 4.0` und „Contains modified Copernicus Sentinel data (2021) processed by ESA WorldCover consortium“ [M]. Die Registry sagt dasselbe [P].
 - **Kachelraster:** Das Raster liegt als `esa_worldcover_grid.geojson` bzw. `.fgb` im Bucket [M]. Daraus lassen sich die Items erzeugen wie beim DEM (`adr/0009`, Einmal-Befehl in `discovery`) [A].
 - **Zwei Stände:** 2020 (v100) und 2021 (v200). Wegen eines Algorithmuswechsels sind sie „nur mit Vorsicht vergleichbar“ (Registry [P\*]). Weitere Jahre wurden nicht gefunden.
+- **Nachmessung 06.11.2026 [M]:** je eine Kachel beider Stände an derselben Stelle in den Alpen.
+  - Beide Stände: anonymes Listing, `x-amz-bucket-region: eu-central-1`, Range `206`, ETag und Last-Modified, bedingte Anfrage `304`.
+  - Beide Dateien sind gleich aufgebaut: `LAYOUT=COG`, DEFLATE, Blöcke 1024², Overviews 2 bis 64, 36 000² Pixel, EPSG:4326, `uint8`, Nodata 0.
+  - Weiterhin kein `Access-Control-Allow-Origin` auf einen `Origin`-Header.
 
 ### 6.2 Earth Search v1 und AWS Open Data (Stand der bekannten Quellen)
 
@@ -390,7 +422,7 @@ Der Bestand von swissALTI3D liegt laut Forum bei rund 770 GB (0,5 m) bzw. 44 GB 
 
 | Gruppe | Format | Lesbar heute | Beispiele |
 |---|---|---|---|
-| A | COG | ja | ESA WorldCover [M], Copernicus DEM (im Code), swissALTI3D [S], BEV DGM/DOP [S], LGLN DOP/DGM [S], Thünen [P\*], JAXA Earth API [S] |
+| A | COG | ja | ESA WorldCover [M], Copernicus DEM (im Code), swissALTI3D [M], BEV DGM [M], BEV DOP [S], LGLN DOP/DGM [S], Thünen [P\*], JAXA Earth API [S] |
 | B | Zarr | ja | EOPF (Samples, `adr/0017`), Source Cooperative FTW (Zarr v3 ohne Multiscales) [S] |
 | C | GeoTIFF ohne Overviews, JPEG2000, ASCII-Grid | nein, bzw. nur langsam | die meisten Länder, DWD `grids_germany` |
 | D | NetCDF, HDF5, GRIB2 | nein | DWD, MeteoSchweiz, GeoSphere-Dateien |
@@ -403,7 +435,7 @@ Folgerungen [A]:
    - **(b)** Den Schritt in GDAL über `/vsicurl/` mit dem NetCDF- bzw. HDF5-Treiber machen. Das ist einfach, aber oft langsam, weil NetCDF-4/HDF5 viele kleine Lesezugriffe braucht.
    - **(c)** Ein flüchtiger Cache als COG mit Ablaufdatum (Prinzip 1 erlaubt abgeleitete Produkte nur flüchtig).
    
-   Das ist rechenrelevant und gehört in eine eigene Recherche bzw. einen Spike (Frage F3).
+   Das ist rechenrelevant und gehört in eine eigene Recherche bzw. einen Spike (Frage F3; nach Ottos Antwort eine eigene Aufgabe der Stufe C, §11).
 3. GRIB2 auf dem Ikosaedergitter (ICON) braucht ein Umrechnen auf ein reguläres Gitter. Das ist Processing, kein Lesen. Bis auf Weiteres scheidet es aus.
 
 ### 7.2 Lizenzen und Vorschlag zur B11-Einstufung
@@ -412,10 +444,10 @@ Alle Einträge sind **Vorschlag**; die Einstufung entscheidet Otto (`CLAUDE.md`)
 
 | Lizenz | Quellen | Flags (Vorschlag) | Stufe (Vorschlag) |
 |---|---|---|---|
-| `CC-BY-4.0` | MeteoSchweiz [P], GeoSphere [P], ESA WorldCover [M], BEV [S], DWD [S], die meisten AT-Länder [S], Thünen [P\*] | `commercial_use`, `distribution`, `derivatives` = true; `share_alike` = false; `attribution_required` = true | Processing |
+| `CC-BY-4.0` | MeteoSchweiz [P], GeoSphere [P], ESA WorldCover [M], BEV [P], DWD [S], die meisten AT-Länder [S], Thünen [P\*] | `commercial_use`, `distribution`, `derivatives` = true; `share_alike` = false; `attribution_required` = true | Processing |
 | `DL-DE-BY-2.0` | BKG, die meisten DE-Länder, LGLN-DOP [S] | wie CC BY 4.0; der Quellenvermerk verlangt den Hinweis „Daten verändert“ bei Bearbeitung (BKG-Muster [S]) | Processing |
 | `DL-DE-ZERO-2.0` | NRW, Hessen [S] | alles true, `attribution_required` = false | Processing |
-| swisstopo-OGD (keine SPDX-Kennung) | swisstopo [S] | wie CC BY 4.0; `spdx_id = None`, Bedingungen als URL | Processing |
+| swisstopo-OGD (keine SPDX-Kennung) | swisstopo [P] | wie CC BY 4.0; `spdx_id = None`, Bedingungen als URL | Processing |
 | opendata.swiss `terms_*_ask` | z. B. Orthofoto Liechtenstein [S] | `commercial_use` = false | Processing nur im Gratis-Tier (B11), sonst Katalog |
 | CC BY-ND | einzelne Bayern-Produkte [S] | `derivatives` = false | nur Katalogeintrag |
 | ungeklärt | Vorarlberg, Salzburg, NÖ, Liechtenstein-DTM, WSL/SLF | — | Katalogeintrag mit Link oder `adr/0024` |
@@ -431,27 +463,29 @@ Zwei Punkte gehen über B11 hinaus und gehören an Otto, aber in kein neues Feld
 
 | Quelle | Wert (Vorschlag) | Beleg |
 |---|---|---|
-| FSDI (swisstopo, MeteoSchweiz außer ICON) | `aws:eu-central-1` | Code-Vorgabe [P], Produktion zu messen |
+| FSDI (swisstopo, MeteoSchweiz außer ICON) | `aws:eu-central-1` | Code-Vorgabe [P]; S3 hinter CloudFront gemessen [M], Region des Buckets offen |
 | MeteoSchweiz ICON | `cscs:lugano` | „CSCS public cloud object storage“ [P]; Standort Lugano [A] |
 | LGLN | `ibm:eu-de` | Host des Kachelindex [P] |
-| GeoSphere, BEV, DWD, Länder | unbekannt; vermutlich eigene Rechenzentren in AT bzw. DE | — |
-| ESA WorldCover | `aws:eu-central-1` | Registry [P], Host [M] |
+| BEV | `unknown` (F7) | eigener Host, Server Apache [M]; Betreiber des Speichers und Ort nicht belegt |
+| GeoSphere, DWD, Länder | `unknown` (F7); vermutlich eigene Rechenzentren in AT bzw. DE | — |
+| ESA WorldCover | `aws:eu-central-1` | Registry [P], Host und `x-amz-bucket-region` [M] |
 | EOPF, EODC | `eodc:vienna` | `adr/0022` |
 | JAXA Earth API | unbekannt | — |
 
-Für eigene Rechenzentren schlägt dieses ADR die Form `<betreiber>:<ort>` vor, etwa `dwd:offenbach` [A]. Ein Startcheck gegen `asset_hosts` geht dann nicht; er bleibt AWS-Hosts vorbehalten (`adr/0022` §7.2).
+Für eigene Rechenzentren gilt die Form `<betreiber>:<ort>`, etwa `dwd:offenbach` (F7, fest). **Betreiber ist der Betreiber des Speichers, nicht die Behörde** (Otto, 06.11.2026): Liegen die Daten einer Behörde bei einem Cloud-Anbieter, steht dieser vorn. Solange Betreiber oder Ort nicht belegt sind, steht `unknown`. Ein Startcheck gegen `asset_hosts` geht für diese Form nicht; er bleibt AWS-Hosts vorbehalten (`adr/0022` §7.2).
 
 ### 7.4 Kataloge für die Discovery (Eingabe für `adr/0025`)
 
 | Katalog | Protokoll | ohne Schlüssel | Lizenz maschinenlesbar | Beleg |
 |---|---|---|---|---|
-| FSDI STAC (CH) | STAC API v1 | ja | `license` meist `proprietary`; Link auf Bedingungen | P/S |
+| FSDI STAC (CH) | STAC API v1 | ja [M] | `license` meist `proprietary` (swissALTI3D [M]); Link auf Bedingungen | P/M |
 | GeoSphere `/v1/datasets` | eigene REST-API mit Metadaten | ja | eine Lizenz für alles | P |
 | opendata.swiss | CKAN v3, DCAT-AP CH | vermutlich | `terms_*` je Datensatz | S |
 | data.gv.at | CKAN, DCAT-AP | nicht belegt | je Datensatz | S |
 | GovData | CKAN v3, DCAT-AP.de | ja (Leitfaden) | Lizenz-URIs aus DCAT-AP.de | S |
-| LGLN STAC | STAC API | vermutlich | offen | S |
+| LGLN STAC | STAC API | vermutlich | offen | S; Adresse am 06.11.2026 nicht belegt [M] |
 | STAC Index | eigene API | nicht prüfbar (gesperrt) | — | — |
+| BEV GeoNetwork | CSW, INSPIRE-ATOM, Suche über die GeoNetwork-API | ja [M] | Lizenz als Text mit Link im Metadatensatz | M |
 | AWS Open Data Registry | YAML im Repo `awslabs/open-data-registry` | ja | Freitext im Feld `License` | P |
 | EODC STAC | STAC API | unbekannt | unbekannt | P\* |
 | CEOS FedEO (u. a. ESA CCI) | OpenSearch, STAC | unbekannt | je Datensatz | S |
@@ -476,23 +510,25 @@ Für eigene Rechenzentren schlägt dieses ADR die Form `<betreiber>:<ort>` vor, 
 
 ### 8.1 Bewertung der Kandidaten
 
-Bewertet sind nur Kandidaten, die K1 bis K3 nach heutigem Stand erfüllen. ✓ = erfüllt, ~ = teilweise oder nur [S], ✗ = nicht erfüllt.
+Bewertet sind nur Kandidaten, die K1 bis K3 nach heutigem Stand erfüllen. ✓ = erfüllt, ~ = teilweise oder nur [S], ✗ = nicht erfüllt. Die Zeilen von WorldCover, swissALTI3D, BEV ALS-DGM und LGLN sind am 06.11.2026 nachgezogen (Messung unter „Methode und Belegstufen“).
 
 | Kandidat | K1 anonym | K2 Lizenz | K4 Format | K5 Schnittstelle | K6 Region | K7 Betrieb | K8 Nutzen DACH | K9 Aufwand | Belege |
 |---|---|---|---|---|---|---|---|---|---|
-| **ESA WorldCover 10 m** | ✓ [M] | ✓ CC BY 4.0 [M] | ✓ COG [M] | ~ Bucket mit Kachelraster, kein STAC | ✓ `eu-central-1` | ✓ ETag [M] | mittel: Landbedeckung, neu | klein: Weg des DEM | M/P |
-| **swisstopo swissALTI3D** | ✓ [S] | ✓ OGD [S] | ✓ COG [S] | ✓ STAC API | ✓ vermutlich `eu-central-1` [P] | ✓ ETag empfohlen [P] | hoch: DTM 0,5 m CH + FL | mittel: STAC-Adapter für eine zweite STAC-Quelle, LV95 | P/S |
+| **ESA WorldCover 10 m** | ✓ [M] | ✓ CC BY 4.0 [M] | ✓ COG, Overviews bis 64 [M] | ~ Bucket mit Kachelraster, kein STAC [M] | ✓ `eu-central-1` [M] | ✓ ETag, `304` [M] | mittel: Landbedeckung, neu | klein: Weg des DEM | M |
+| **swisstopo swissALTI3D** | ✓ [M] | ✓ OGD [P] | ✓ COG, Overviews bis 8 [M] | ✓ STAC API [M] | ~ AWS hinter CloudFront [M], `eu-central-1` nur Code-Vorgabe [P] | ✓ ETag, `304` [M] | hoch: DTM 0,5 m CH + FL | mittel: STAC-Adapter für eine zweite STAC-Quelle, LV95, mehrere Stände je Kachel [M] | M/P |
 | swisstopo SWISSIMAGE 10 cm | ✓ [S] | ✓ OGD [S] | ~ COG offen | ✓ STAC API | ✓ wie oben | ✓ | hoch: Orthofoto | klein nach swissALTI3D (gleicher Adapter) | S |
-| **BEV ALS-DGM 1 m** (auch DOP 20 cm) | ✓ [S] | ✓ CC BY 4.0 [S] | ~ COG laut Metadaten | ~ ATOM | unbekannt (AT) | unbekannt | hoch: DTM für AT | mittel: neue Nicht-STAC-Quelle, EPSG:3035, 50-km-Kacheln | S |
-| LGLN DOP20/DGM1 (Niedersachsen) | ✓ [S] | ✓ dl-de/by-2-0 [P] | ✓ COG [S] | ✓ STAC (Adresse offen) | ✓ `ibm:eu-de` [P] | unbekannt | mittel: ein Land | klein nach swissALTI3D | P/S |
+| **BEV ALS-DGM 1 m** (DOP 20 cm nicht gemessen) | ✓ [M] | ✓ CC BY 4.0 [P] | ✓ COG, Overviews bis 256 [M] | ~ ATOM [M] | unbekannt (AT), `unknown` | ✓ ETag, `304` [M] | hoch: DTM für AT | mittel: neue Nicht-STAC-Quelle, EPSG:3035, 50-km-Kacheln, sechs Stichtage [M] | M/P |
+| LGLN DOP20/DGM1 (Niedersachsen) | ✓ [S] | ✓ dl-de/by-2-0 [P] | ✓ COG [S] | ~ STAC-API nicht belegt [M] | ✓ `ibm:eu-de` [P] | unbekannt | mittel: ein Land | klein nach swissALTI3D, falls es eine STAC-API gibt | P/S |
 | MeteoSchweiz Klimagitter 1 km | ✓ [P] | ✓ CC BY 4.0 [P] | ✗ NetCDF | ✓ STAC API (dieselbe wie swisstopo) | ✓ wie swisstopo | ✓ ETag [P] | hoch: Meteorologie | groß: Reader für Gruppe D | P |
 | GeoSphere SPARTACUS/WINFORE | ✓ [P] | ✓ CC BY 4.0 [P] | ✗ Abfrage-API / NetCDF | ~ eigene API, 240/h | unbekannt (AT) | ~ Limit [P] | hoch: Meteorologie AT | groß | P |
 | DWD HYRAS/HOSTRADA | ✓ [S] | ✓ CC BY 4.0 [S] | ✗ NetCDF | ~ Dateiserver | unbekannt (DE) | unbekannt | hoch: Meteorologie DE | groß | S |
 | JAXA Earth API | ~ [S] | ~ je Collection [S] | ✓ COG [S] | ✓ STAC [S] | ✗ vermutlich Japan | unbekannt | mittel | mittel | S |
 
-### 8.2 Empfehlung: drei Quellen von Hand
+### 8.2 Entscheidung: drei Quellen von Hand
 
-**Option 1 (Empfehlung):** ESA WorldCover, dann swissALTI3D, dann BEV ALS-DGM 1 m.
+**Gewählt (F1, Otto, 06.11.2026):** Option 1 mit Ottos Bedingung. Die Bedingung für BEV ist am 06.11.2026 erfüllt (§4.2) [M]. Damit gelten drei Quellen: WorldCover, swissALTI3D, BEV ALS-DGM 1 m. LGLN rückt nicht nach.
+
+**Option 1 (Empfehlung, gewählt):** ESA WorldCover, dann swissALTI3D, dann BEV ALS-DGM 1 m.
 
 - **Warum diese drei [A]:**
   - Alle drei liegen in Gruppe A (§7.1). Es braucht keinen neuen Reader.
@@ -503,7 +539,8 @@ Bewertet sind nur Kandidaten, die K1 bis K3 nach heutigem Stand erfüllen. ✓ =
   - Die Projektionen LV95 und LAEA (EPSG:3035) testen die Reprojektion außerhalb von UTM und WGS84.
   - Zusammen mit dem Copernicus DEM ergeben sie Geländedaten in drei Stufen für die Alpen: 30 m weltweit, 1 m für AT, 0,5 m für CH und FL.
 - **Reihenfolge:** WorldCover zuerst. Es ist als einziger Kandidat schon gemessen, und der Weg ist bekannt. BEV zuletzt, weil COG und Zugang dort erst zu bestätigen sind (§9).
-- **Bedingung:** Die Prüfung in §9 bestätigt anonymen Zugriff, COG mit Overviews und Range-Requests. Fällt BEV durch, rückt LGLN nach (Option 3).
+- **Bedingung:** Die Prüfung in §9 bestätigt anonymen Zugriff, COG mit Overviews und Range-Requests. Fällt BEV durch, rückt LGLN nach (Option 3), falls die STAC-Adresse belegt ist; sonst bleibt es vorerst bei zwei Quellen (Ottos Antwort zu F1).
+  - Ergebnis 06.11.2026 [M]: ATOM ohne Anmeldung, `LAYOUT=COG` mit Overviews 2 bis 256, Range `206`. **Erfüllt.**
 
 **Option 2:** WorldCover, swissALTI3D und MeteoSchweiz-Klimagitter.
 
@@ -529,52 +566,54 @@ Danach kommen DWD HYRAS und GeoSphere-Dateien.
 
 Die Eigenheiten werden in den Feldern der Registry festgelegt, die es schon gibt. Was kein Feld hat, ist als neu markiert. Alle Werte sind Vorschlag [A]; sie werden beim Onboarding gegen die Quelle geprüft.
 
-**ESA WorldCover (`esa-worldcover`):**
+**ESA WorldCover (`esa-worldcover-2020`, `esa-worldcover-2021`):**
 
+- **Zwei Datensätze, je Stand einer (F6 Option 2, Begründung in §10).** Sie teilen Adapter, Kachelraster und alle Eigenheiten; sie unterscheiden sich nur im Präfix des Buckets und in der Version (v100, v200).
 - **Processing:**
-  - `data_class` = statisches Raster mit zwei Ständen. `time_range` = true, damit 2020 und 2021 wählbar sind. Alternativ zwei Datensätze, siehe F6.
+  - `data_class` = statisches Raster, `time_range` = false, wie beim DEM.
   - `masking` = true mit `earthx:mask`: Asset `map`, Band 1, die elf Klassen; `cloud_classes` leer.
   - `value_masking` = true.
   - `band_math` = false (Rechnen mit Klassencodes ergibt keinen Sinn).
   - `reprojection` = true, aber `interpolation` = **false**: Klassen nur mit `nearest`. Das setzt `adr/0014` F6 schon so um.
   - `normalization` = false.
   - Eigener Operator: keiner.
-- **Erweiterte Suche:** `search_filters` leer. Filter gibt es nach `adr/0021` §2 Punkt 1 vorerst nur für föderierte Datensätze; der Stand wird über den Zeitraum gewählt.
+- **Erweiterte Suche:** `search_filters` leer. Filter gibt es nach `adr/0021` §2 Punkt 1 vorerst nur für föderierte Datensätze. Der Stand wird über den Datensatz gewählt.
 - **Schnellrechnungen:** `index_presets` leer.
 - **Darstellung:** `default_render` mit der Farbtabelle aus der Datei (die Klassenfarben von ESA).
-- **Hinweis in der Beschreibung:** 2020 und 2021 sind nicht direkt vergleichbar.
+- **Hinweis in beiden Beschreibungen:** 2020 und 2021 sind nicht direkt vergleichbar.
 - **Coverage:** aus dem Kachelraster (`LOCAL_SQL`), Einmal-Befehl wie beim DEM.
 
 **swisstopo swissALTI3D (`swissalti3d`):**
 
 - **Processing:**
   - `data_class` = statisches Raster. `time_range` = false, wie beim DEM; das Befliegungsjahr je Kachel ist eine Eigenschaft, keine Zeitachse.
+  - **Offen nach der Messung [M]:** Die Collection hält mehrere Stände derselben Kachel als eigene Items (an einem Ort 2019 und 2025). Mit der Gruppierung des DEM (ein Schlüssel für alle Items) mischte ein Mosaik alte und neue Stände derselben Kachel; es gewänne das erste gültige Pixel (`registry.group_key`, `api/mosaic_tiles.py`) [P]. Mit dem Jahr im Schlüssel zerfiele eine AOI über Kacheln verschiedener Befliegungsjahre in mehrere Überflüge [A]. Wie die Registry das abbildet (etwa nur der jüngste Stand je Kachel), entscheidet das Onboarding mit einer Frage an Otto.
   - `band_math`, `reprojection`, `interpolation` und `normalization` = true. `masking` = false.
   - `value_masking`: nach Wunsch Ottos, bei Höhen meist sinnlos.
   - Eigener Operator: Hangneigung, Exposition und Schummerung. Das ist ein **neuer generischer Geländeoperator**, gebunden an eine **neue Capability** (Vorschlag `terrain`), die nur Höhenmodelle setzen (B10, F5). Dasselbe gilt dann für BEV und den Copernicus DEM.
 - **Erweiterte Suche:**
   - Auflösung 0,5 m oder 2 m. Das ist eine Wahl des Assets, kein Filter. Die Registry braucht dafür eine Angabe, welches Asset die Plattform liest; heute gibt es dafür `default_render.assets`. Ob das reicht, klärt das Onboarding.
   - Befliegungsjahr: Die Suche der FSDI kennt `bbox`, `intersects`, `datetime`, `ids`, `collections`, Sortierung und die `forecast:*`-Felder, aber weder die Query-Extension noch CQL2 (`service-stac`, `app/stac_api/managers.py`, Konformitätsklassen in den Migrationen) [P]. Ein Filter nach `adr/0021` geht also nicht an die Quelle.
-    - Das Jahr lässt sich nur über `datetime` wählen. Das hilft nur, wenn das Item-Datum das Befliegungsjahr ist; zu prüfen in §9.
+    - Das Jahr lässt sich nur über `datetime` wählen. Das Item-Datum ist der 1. Januar des Jahres, das auch im Namen der Assets steht [M]; dass dies das Befliegungsjahr ist, ist naheliegend, aber nicht am Primärtext belegt [A].
     - `search_filters` bleibt deshalb vorerst leer.
 - **Schnellrechnungen:** `index_presets` leer. Gelände kommt über den Operator.
 - **Darstellung:** Graustufen oder `terrain`-Colormap mit festem Bereich.
 - **`band_units`:** `m` (LN02).
-- **Attribution:** „© swisstopo“. Der genaue Wortlaut steht auf der Seite zur Quellenangabe von swisstopo und ist vor dem Eintrag zu lesen.
+- **Attribution:** „©swisstopo“ oder der Name des Amtes; beides lassen die Nutzungsbedingungen zu [P]. Die Seite zur Quellenangabe war am 06.11.2026 nicht erreichbar (`500`). Den Wortlaut prüft Otto vor dem Eintrag (F2).
 - **Coverage:** Die FSDI kennt keine Aggregation (nicht belegt). Deshalb `LOCAL_SQL` aus materialisierten Items, rund 45 000 Kacheln zu 1 km² [A]. Ob die Items trotzdem föderiert gesucht werden, entscheidet die Umsetzung (`architekturplan.md` 5.2).
 
 **BEV ALS-DGM 1 m (`bev-als-dgm`):**
 
-- **Processing, Suche und Schnellrechnungen:** wie swissALTI3D. Projektion EPSG:3035, ein Stand.
-- **Unterschied:** 55 Kacheln zu 50 km statt 45 000 zu 1 km. Die Items kommen aus dem ATOM-Feed. Die Coverage ist eine Fläche (`complete`).
-- **Prüfpunkt:** Ohne Overviews ist eine 50-km-Kachel bei kleinem Maßstab zu langsam [A].
-  - Dann zeigt die Karte den Datensatz erst ab einer hohen Zoomstufe (`viewer.min_zoom`, M2-10).
-  - Zuschnitt und Processing über die AOI bleiben möglich, weil sie nur die Blöcke der AOI lesen.
+- **Processing, Suche und Schnellrechnungen:** wie swissALTI3D. Projektion EPSG:3035.
+- **Unterschied:** 55 Kacheln zu 50 km statt rund 45 000 zu 1 km. Die Items kommen aus dem ATOM-Feed. Die Coverage ist eine Fläche (`complete`).
+- **Stände [M]:** Der Feed listet sechs Stichtage (2019, 2021 bis 2025), je Stichtag alle 55 Kacheln. Anders als bei swissALTI3D ist jeder Stichtag ein vollständiger Stand für ganz Österreich. Ob nur der jüngste Stichtag kommt oder alle, ist **offen** und geht mit derselben Frage wie bei swissALTI3D ans Onboarding. Kommen mehrere, gilt dieselbe Überlegung wie bei WorldCover (F6): je Stichtag ein Datensatz oder ein Schlüssel, der die Stichtage trennt.
+- **Prüfpunkt Overviews: erledigt [M].** Die gemessene Kachel hat Overviews 2 bis 256. Die Karte kann den Datensatz also auch bei kleinem Maßstab zeigen; `viewer.min_zoom` (M2-10) legt das Onboarding nach einer Messung der Kachelzeit fest.
+- **Kein CORS [M]:** wie WorldCover; ein Quicklook im Browser direkt von der Quelle geht nicht, die Kacheln kommen über den `tiler`.
 
 **Neu in der Registry, für alle drei:**
 
 - `data_region` (`adr/0022` F3, beschlossen; Werte §7.3).
-- Die Capability `terrain`, falls F5 = 1.
+- Die Capability `terrain` (F5 = 1, fest) für swissALTI3D, BEV und den Copernicus DEM, nicht für WorldCover.
 
 ---
 
@@ -582,16 +621,21 @@ Die Eigenheiten werden in den Feldern der Registry festgelegt, die es schon gibt
 
 ### 9.1 Was vor dem Onboarding zu prüfen ist
 
-| Quelle | Prüfpunkt |
-|---|---|
-| swissALTI3D, SWISSIMAGE | anonym; `license` der Collection; Medientyp der Assets (COG?); Region (`x-amz-bucket-region` bzw. Host); Range `206`; ETag; CORS der Assets; Bedeutung von `datetime` am Item |
-| MeteoSchweiz Klimagitter | wie oben; Größe und Aufbau einer NetCDF-Datei (für F3) |
-| BEV ALS-DGM, DOP | ATOM-Feed ohne Anmeldung; COG mit Overviews; Range; ETag; Lage der Server |
-| LGLN | Adresse der STAC-API; Lizenz DGM1/DOM1 |
-| GeoSphere | Kopfzeilen `x-ratelimit-*`; Dateidownload im Data Hub ohne Konto |
-| DWD | Range und ETag auf dem Dateiserver |
-| JAXA Earth API, EODC STAC | Schlüssel nötig? Lizenz je Collection; Region |
-| swisstopo, BEV, DWD, BKG | Wortlaut der Nutzungsbedingungen und des Quellenvermerks (für Otto) |
+Stand nach der Messung vom 06.11.2026 (Weg B). „offen“ heißt: weder gemessen noch am Primärtext gelesen.
+
+| Quelle | Prüfpunkt | Stand 06.11.2026 |
+|---|---|---|
+| ESA WorldCover | anonym; COG; Range; ETag; CORS; Region; beide Stände | alles [M]: anonym, COG mit Overviews, `206`, ETag und `304`, **kein CORS**, `eu-central-1`, v100 und v200 gleich aufgebaut |
+| swissALTI3D | anonym; `license` der Collection; Medientyp der Assets (COG?); Region (`x-amz-bucket-region` bzw. Host); Range `206`; ETag; CORS der Assets; Bedeutung von `datetime` am Item | [M]: anonym, `license: proprietary`, COG (Medientyp und Kopf), `206`, ETag und `304`, CORS `*` an den Assets; `datetime` = Jahr im Namen des Assets; mehrere Stände je Kachel. **Offen:** Region des Buckets (CloudFront verdeckt sie), Befliegungsjahr am Primärtext |
+| SWISSIMAGE | wie swissALTI3D | offen (nicht Teil von F1) |
+| MeteoSchweiz Klimagitter | wie oben; Größe und Aufbau einer NetCDF-Datei (für F3) | offen; gehört zur Recherche F3 (§11) |
+| BEV ALS-DGM | ATOM-Feed ohne Anmeldung; COG mit Overviews; Range; ETag; Lage der Server | [M]: ATOM anonym, COG mit Overviews 2 bis 256, `206`, ETag und `304`, kein CORS; Lizenz [P]. **Offen:** Betreiber und Ort des Speichers; Aufbau der übrigen 54 Kacheln |
+| BEV DOP | wie ALS-DGM | offen (nicht Teil von F1) |
+| LGLN | Adresse der STAC-API; Lizenz DGM1/DOM1 | STAC-API auf dem freigegebenen Host nicht belegt [M]; Lizenz DGM1/DOM1 offen. Nicht mehr nötig, weil BEV die Bedingung erfüllt |
+| GeoSphere | Kopfzeilen `x-ratelimit-*`; Dateidownload im Data Hub ohne Konto | offen; Ottos Lauf von `probe.py` (F4) bzw. Recherche F3 |
+| DWD | Range und ETag auf dem Dateiserver | offen; wie GeoSphere |
+| JAXA Earth API, EODC STAC | Schlüssel nötig? Lizenz je Collection; Region | offen |
+| swisstopo, BEV, DWD, BKG | Wortlaut der Nutzungsbedingungen und des Quellenvermerks (für Otto) | swisstopo-Bedingungen und BEV-Metadaten gelesen [P]; den Wortlaut für den Registry-Eintrag prüft Otto (F2) |
 
 ### 9.2 Weg A: Skript auf Ottos Rechner (empfohlen)
 
@@ -619,11 +663,13 @@ python scripts/m5-01-sources/probe.py fsdi-alti worldcover   # nur diese beiden
 
 Aus der Cloud-Sitzung geht das Skript nicht [M]. `gateway` verbindet die geprüfte Adresse ohne den Proxy der Sitzung und meldet `AddressRejected` (`adr/0002`). Ottos Ausgabe genügt als Beleg [M] für die Nachträge.
 
+**Stand (F4):** Otto lässt `probe.py` lokal laufen. Das Ergebnis kommt später als Nachtrag in dieses ADR; bis dahin sind die Punkte aus §9.1, die nur das Skript prüft, **offen**.
+
 BEV, JAXA und EODC stehen nicht im Skript, weil ihre Adressen nur aus Suchtreffern bekannt sind. Sie werden in Weg B oder beim Onboarding geprüft.
 
 ### 9.3 Weg B: neue Sitzung mit freigegebenen Hosts
 
-Otto gibt diese Hosts in der Umgebung frei. Die Freigabe wirkt erst in einer neu gestarteten Sitzung (`cloud-umgebung.md`, Regel zur Allowlist). Danach misst eine Sitzung mit `curl` wie in `adr/0009` und liest die Doku als P statt S:
+Otto gibt diese Hosts in der Umgebung frei (F4, 06.11.2026). Eine Sitzung misst dann mit `curl` wie in `adr/0009` und liest die Doku als P statt S:
 
 - **Schweiz:** `data.geo.admin.ch`, `www.swisstopo.admin.ch`, `www.geo.admin.ch`, `opendatadocs.meteoswiss.ch`, `ckan.opendata.swiss`
 - **Österreich:** `dataset.api.hub.geosphere.at`, `data.hub.geosphere.at`, `data.bev.gv.at`, `www.bev.gv.at`, `stac.eodc.eu`
@@ -632,9 +678,13 @@ Otto gibt diese Hosts in der Umgebung frei. Die Freigabe wirkt erst in einer neu
 
 `esa-worldcover.s3.eu-central-1.amazonaws.com` ist schon erreichbar [M].
 
+**Ausgeführt am 06.11.2026 (M5-01b):** für WorldCover, swissALTI3D, BEV und LGLN; Ergebnis in §9.1. Die Hosts standen zu Beginn der Sitzung nicht in der Allowlist der Umgebung und wurden mit Ottos Freigabe eingetragen; sie wirkten danach ohne Neustart. Nur die Hosts dieser Liste wurden eingetragen.
+
 ---
 
-## 10. Fragen an Otto
+## 10. Fragen an Otto und Antworten
+
+Otto hat am 06.11.2026 alle sieben Fragen beantwortet, jeweils mit Option 1 und Zusätzen. Die Antworten stehen unter der jeweiligen Frage. Was danach offen bleibt, ist als **offen** markiert.
 
 **F1 — Welche Quellen bindet M5 zuerst von Hand an (§8.2)?**
 1. ESA WorldCover, swissALTI3D, BEV ALS-DGM 1 m, in dieser Reihenfolge, je nach Prüfung in §9 **(Empfehlung)**
@@ -642,41 +692,99 @@ Otto gibt diese Hosts in der Umgebung frei. Die Freigabe wirkt erst in einer neu
 3. ESA WorldCover, swissALTI3D, LGLN DOP20/DGM1
 4. Zuerst nur WorldCover und swissALTI3D, die dritte nach §9
 
+**Antwort F1 (Otto, 06.11.2026): 1, fest.** WorldCover, dann swissALTI3D. BEV ALS-DGM 1 m als dritte Quelle nur, wenn die Messung anonymen ATOM-Zugang, COG mit Overviews und Range-Requests bestätigt. Sonst LGLN, falls die STAC-Adresse belegt ist, sonst vorerst nur zwei Quellen.
+- **Ergebnis:** Die Messung vom 06.11.2026 bestätigt alle drei Punkte für BEV [M] (§4.2). Damit sind es **drei Quellen: WorldCover, swissALTI3D, BEV ALS-DGM 1 m.**
+- Die STAC-Adresse des LGLN ist nicht belegt (§5.3); das spielt nach dem Ergebnis keine Rolle mehr.
+
 **F2 — Lizenz-Einstufung der gewählten Quellen (§7.2)?**
 1. Die Vorschläge aus §7.2 für die Quellen aus F1 annehmen. Die Wortlaute der Bedingungen prüfst du vor dem Eintrag selbst **(Empfehlung)**
 2. Jede Quelle einzeln beim Onboarding vorlegen
 3. swisstopo-OGD erst nach Rechtsberatung; bis dahin nur Katalogeintrag
+
+**Antwort F2 (Otto, 06.11.2026): 1, fest.** Die Vorschläge aus §7.2 gelten für die Quellen aus F1. Otto prüft die Wortlaute von ESA WorldCover, swisstopo (Bedingungen und Quellenangabe) und BEV vor dem jeweiligen Registry-Eintrag.
+- **Offen** bis zu Ottos Prüfung: der Wortlaut je Quelle. Gelesen sind bisher die swisstopo-Bedingungen und der BEV-Metadatensatz [P] sowie der Kopf der WorldCover-Dateien [M]. Die Seite zur Quellenangabe von swisstopo war am 06.11.2026 nicht erreichbar.
 
 **F3 — Leseweg für NetCDF/HDF5 (Meteorologie, §7.1)?**
 1. Eigene Recherche mit Messung (Stufe C) zu virtuellem Zarr, GDAL-Treiber über `/vsicurl/` und flüchtigem COG-Cache, an MeteoSchweiz-Klimagittern und DWD HYRAS; danach erste Meteorologie-Quelle **(Empfehlung)**
 2. Meteorologie vorerst nur als Katalogeintrag mit Link (B11 Stufe 1), ohne Anzeige
 3. Meteorologie nach M5
 
+**Antwort F3 (Otto, 06.11.2026): 1, fest.** Recherche mit Messung als eigene Aufgabe der Stufe C, parallel zum Onboarding (§11).
+
 **F4 — Wie werden die offenen Punkte aus §9 geprüft?**
 1. Du führst `probe.py` aus (Weg A) und gibst die Hosts aus §9.3 für die Onboarding-Sitzungen frei **(Empfehlung)**
 2. Nur Weg A
 3. Nur Weg B
+
+**Antwort F4 (Otto, 06.11.2026): 1, fest.** Die Hosts aus §9.3 sind freigegeben. Weg B führt die Sitzung selbst aus; `probe.py` lässt Otto lokal laufen, das Ergebnis kommt später als Nachtrag.
+- **Weg B:** ausgeführt am 06.11.2026 (§9.3, §9.1).
+- **Weg A:** **offen** bis zu Ottos Nachtrag.
 
 **F5 — Geländeoperator (Hangneigung, Exposition, Schummerung)?**
 1. Eigene Aufgabe nach dem ersten hochaufgelösten DGM: ein generischer Operator, gebunden an eine neue Capability `terrain`, die nur Höhenmodelle setzen (B10) **(Empfehlung)**
 2. Nicht in M5
 3. Nur als Darstellung im `tiler` (Algorithmus), kein Operator
 
+**Antwort F5 (Otto, 06.11.2026): 1, fest.** Ein generischer Geländeoperator, gebunden an die neue Capability `terrain`. Der Plan dieser Aufgabe muss ausdrücklich zwei Punkte behandeln:
+- die Nachbarpixel am Blockrand beim blockweisen Lesen (`adr/0014` F10): Hangneigung, Exposition und Schummerung brauchen ein Fenster von 3 × 3 Pixeln, eine Blockschleife also einen Rand von einem Pixel je Block;
+- die Schummerung zur Anzeige als Algorithmus im `tiler` als Ergänzung. Heute weist der `tiler` TiTilers freie Parameter `algorithm` und `algorithm_params` ab (`api/tiler.py`, Plan M4-09 F3); eine Schummerung zur Anzeige müsste also ein eigener, benannter Weg sein.
+
 **F6 — WorldCover 2020 und 2021: ein Datensatz oder zwei?**
 1. Ein Datensatz mit Zeitachse (`time_range` = true, zwei Stände), Hinweis auf eingeschränkte Vergleichbarkeit in der Beschreibung **(Empfehlung)**
 2. Zwei Datensätze (`esa-worldcover-2020`, `-2021`), je statisch
 3. Nur 2021 (v200)
+
+**Antwort F6 (Otto, 06.11.2026):** Option 1, wenn eine Ansicht nie Kacheln beider Jahre mischt; mischt sie, gilt Option 2. **Ergebnis der Prüfung im Code: Option 2 gilt, zwei Datensätze** (`esa-worldcover-2020`, `esa-worldcover-2021`).
+
+Begründung (gelesen im Code von `main`, Stand DS-03c) [P]:
+- Ein einzelnes Mosaik mischt nie zwei Überflüge. Der Schlüssel ist `results_group_by` (`registry.overpass_key`, `group_by_overpass`). Kachel, TileJSON (`api/tiler.py`, `check_one_overpass`), Mosaik-Kachel (`api/mosaic_tiles.py`) und Mosaik-Job (`api/intake.py`) lehnen verschiedene Schlüssel mit `422` ab.
+- **Die Ansicht aber zeigt mehr als einen Überflug:**
+  - `itemsForMap` (`frontend/src/grouping.ts`) gibt die aufgeklappte Gruppe **plus alle ausgewählten Items anderer Gruppen** zurück (V-3: ein ausgewählter Quicklook bleibt beim Wechsel der Gruppe stehen).
+  - `mapLayers.ts` zeichnet alle heruntergeladenen Überflüge zugleich, jeden als eigenes Mosaik übereinander (`passesOf`).
+- Die Kacheln von 2020 und 2021 haben denselben Umriss. Wird eine Kachel von 2020 ausgewählt und danach zur Gruppe 2021 gewechselt, oder werden beide heruntergeladen, zeigt eine Ansicht beide Jahre am selben Ort übereinander. Das ist ein Mischen im Sinne der Bedingung.
+- Mit dem Schlüssel des DEM (`start_datetime`, gleich für alle Items) wäre es noch schlimmer: Dann wären beide Jahre ein Überflug, und schon ein einzelnes Mosaik mischte sie stillschweigend nach dem ersten gültigen Pixel [A, aus `group_key`].
+- Mit zwei Datensätzen ist jede Ansicht eines Datensatzes auf ein Jahr festgelegt; der Hinweis auf die eingeschränkte Vergleichbarkeit steht in beiden Beschreibungen (§8.3).
 
 **F7 — `data_region` für Quellen ohne Cloud-Region (§7.3)?**
 1. Form `<betreiber>:<ort>` wie `dwd:offenbach`, ohne Startcheck; `unknown`, solange der Ort nicht belegt ist **(Empfehlung)**
 2. Nur Länderkennung (`de`, `at`, `ch`)
 3. Feld leer lassen, bis gemessen
 
+**Antwort F7 (Otto, 06.11.2026): 1, fest.** Form `<betreiber>:<ort>` ohne Startcheck, `unknown`, solange der Ort nicht belegt ist. **Betreiber heißt der Betreiber des Speichers, nicht die Behörde.** Umgesetzt in §7.3; BEV steht danach auf `unknown`.
+
 ---
 
-## 11. Quellen
+## 11. Folgen
 
-Abgerufen bzw. gesucht am 31.10.2026. Die Belegstufe steht in Klammern.
+Eingabe für Fassung 2 des M5-Plans. Diese Liste legt keine Plan-Dateien an und ändert weder Backlog noch M5-Plan; Zuschnitt, Nummern und Stufen der Aufgaben legt die Fassung 2 fest.
+
+1. **Onboarding ESA WorldCover** als zwei Datensätze (`esa-worldcover-2020`, `-2021`, F6).
+   - Weg des DEM: Items aus dem Kachelraster im Bucket, Einmal-Befehl in `discovery`, Coverage `LOCAL_SQL` (`adr/0009`).
+   - Eigenheiten nach §8.3; `data_region` = `aws:eu-central-1`.
+   - Vor dem Registry-Eintrag: Otto prüft den Wortlaut der Lizenz (F2).
+2. **Allgemeiner STAC-Adapter mit swissALTI3D.**
+   - Aus dem Earth-Search-Adapter wird ein Adapter für beliebige STAC-APIs; swissALTI3D ist nach Earth Search die erste Quelle darüber (FSDI, LV95).
+   - Vorab zu klären (Frage an Otto im Plan der Aufgabe): mehrere Stände derselben Kachel (§8.3) und die Wahl des Assets 0,5 m bzw. 2 m.
+   - Vor dem Registry-Eintrag: Otto prüft Bedingungen und Quellenangabe von swisstopo (F2).
+3. **BEV ALS-DGM 1 m** als Quelle mit ATOM-Feed (EPSG:3035, 55 Kacheln).
+   - Die Bedingung aus F1 ist erfüllt; ein Ersatz (LGLN) ist nicht nötig.
+   - Vorab zu klären: welche Stichtage (§8.3); Aufbau aller Kacheln über ihre Kopfzeilen prüfen; `data_region` = `unknown`, bis Betreiber und Ort des Speichers belegt sind (F7).
+   - Vor dem Registry-Eintrag: Otto prüft den Wortlaut der Lizenz (F2).
+4. **Recherche zum Leseweg für NetCDF** (F3, Stufe C, parallel zum Onboarding).
+   - Virtuelles Zarr, GDAL über `/vsicurl/` und flüchtiger COG-Cache, gemessen an MeteoSchweiz-Klimagittern und DWD HYRAS (§7.1).
+   - Danach die erste Meteorologie-Quelle (§8.2).
+5. **Geländeoperator mit Capability `terrain`** (F5).
+   - Hangneigung, Exposition und Schummerung als ein generischer Operator, nur für Datensätze mit `terrain` (B10): swissALTI3D, BEV, Copernicus DEM.
+   - Der Plan behandelt ausdrücklich die Nachbarpixel am Blockrand beim blockweisen Lesen (`adr/0014` F10) und prüft die Schummerung zur Anzeige als Algorithmus im `tiler` als Ergänzung.
+   - Nach dem ersten hochaufgelösten DGM (Punkt 2 oder 3 dieser Liste).
+
+Außerdem ohne eigene Aufgabe: Ottos Nachtrag aus `probe.py` (F4) wird in dieses ADR eingetragen, sobald er vorliegt.
+
+---
+
+## 12. Quellen
+
+Abgerufen bzw. gesucht am 31.10.2026, die Messung von M5-01b am 06.11.2026. Die Belegstufe steht in Klammern.
 
 **Quelltexte auf GitHub (P), geklont in das Kratzverzeichnis:**
 
@@ -704,6 +812,16 @@ Abgerufen bzw. gesucht am 31.10.2026. Die Belegstufe steht in Klammern.
 
 - `https://earth-search.aws.element84.com/v1/collections`
 - der Bucket `esa-worldcover` in `eu-central-1`: Listing, `HEAD` und Range-GET auf eine Kachel, Kopf der Datei über GDAL
+- am 06.11.2026 (M5-01b), ohne Adressen und Item-IDs:
+  - `esa-worldcover`: je eine Kachel von v100 und v200 (Listing, `HEAD`, Range-GET, bedingte Anfrage, Kopf über GDAL);
+  - FSDI-STAC: Konformität, Collection `ch.swisstopo.swissalti3d`, ein Item, eine Suche mit `datetime`, eine Suche über eine kleine Fläche; je ein Asset 0,5 m und 2 m (`HEAD`, Range-GET, bedingte Anfrage, Kopf über GDAL);
+  - BEV: GeoNetwork-Suche, ATOM-Dienst „ALS EL Höhendaten“, ein Dataset-Feed und dessen Datei (`HEAD`, Range-GET, bedingte Anfragen, Kopf über GDAL);
+  - LGLN: Startseite und Skript des Portals.
+
+**Am Primärdokument gelesen am 06.11.2026 (P):**
+
+- swisstopo, Nutzungsbedingungen für kostenlose Geodaten und Geodienste (OGD), Version 1.3.2021, und die Seite „Conditions for Geodata“ auf `www.swisstopo.admin.ch`
+- BEV, Metadatensatz der Serie ALS DTM Höhenraster 1 m (Lizenz, Zugang, Koordinatensystem) im GeoNetwork auf `data.bev.gv.at`
 
 **Über das Abrufwerkzeug gelesen (P\*):**
 
