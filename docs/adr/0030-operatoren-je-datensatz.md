@@ -79,12 +79,12 @@ Belegstufen wie in `adr/0018` und `adr/0027`:
    - Nach einer σ⁰-Kalibrierung kommen der Radar-Vegetationsindex RVI und Schwellenmasken dazu.
    - Dual-Pol-H-α und DpRVI brauchen SLC [S] und entfallen.
 3. **Interferometrie und Kohärenz brauchen SLC.**
-   - Weltweit gibt es SLC ohne Konto nicht [P][S].
+   - Eine weltweite SLC-Quelle ohne Konto gibt es nicht; anonym sind nur zwei regionale Bestände [P][S].
    - Der einzige anonyme europäische Bestand (LiveEO, Deutschland) endet am 08.12.2022 [M]. Eine Szene hat rund 8,5 GB [M].
    - Eine eigene InSAR-Kette kostet Stunden je Stapel und bringt eine neue Werkzeugkette mit [S].
    - **Empfehlung:** keine eigene Interferometrie in M5. Fertige Kohärenzprodukte als eigene Datensätze prüfen (Global Coherence, CC BY 4.0, 2019/20 [P]; LiCSAR [S]); EGMS nur als Katalogeintrag (Konto) (§5.2.4, F6).
 4. **Zwei neue Bausteine tragen die meisten Vorschläge (§3):**
-   - eine **Operator-Art mit Nachbarschaft** (`focal`): Rand in Blockschleife und Kachel. M5-10 (Gelände) braucht sie zuerst, DS-05 nutzt sie für Speckle-Filter (F3);
+   - eine **Operator-Art mit Nachbarschaft** (`focal`): Rand in Blockschleife und Kachel. M5-10 (Gelände) braucht sie zuerst, DS-05 nutzt sie für Speckle-Filter. Die Kachel ist dabei nur „Preview“, weil sie im Kachelraster rechnet; bitgleich zum Job wäre sie nur mit einem eigenen Kachelweg im Quellraster (F3);
    - **Presets über mehr als einen Index:** Komposit-Presets (drei Bänder als RGB) und Schritt-Presets (ein Schritt eines Operators mit festen Parametern), damit Quick processing auch Gelände und SAR abdeckt (F7).
 5. **Je Datensatz (§5, Rangfolge in §6):**
    - **Sentinel-2:** vier weitere Index-Presets (NDMI, MNDWI, NDREI, SAVI); Falschfarben-Komposite. NDBI nicht: Es ist genau −NDMI.
@@ -134,7 +134,7 @@ Belegstufen wie in `adr/0018` und `adr/0027`:
 | `mask` v1/v2 | `masking` | T1, T2 | pixel | 0,2 |
 | `mask_values` | `value_masking` | T1, T2 | pixel | 0,2 |
 | `normalize` v1–v3 / v4 | `normalization` | T1, T2 / nur T2 | pixel | 0,3 |
-| `reproject` v1–v3 | `reprojection` (+ `interpolation` außer `nearest`/`mode`) | T2 | grid | je Methode 0,4–1,1 |
+| `reproject` v1–v3 | `reprojection` (+ `interpolation` außer `nearest`/`mode`) | T2 | grid | je Methode 0,5–2,4 |
 | `select_bands` | — | T2 | pixel | 0 (nicht in `REGISTRY`) |
 
 - **Planer [P]:** Der längste Anfang aus `pixel`-Schritten mit T1 wird Kachel, höchstens vier Schritte (`processing/plan.py` Z. 368–371; `api/tiler.py` `MAX_OPERATOR_STEPS`). Der Rest wird Job.
@@ -183,7 +183,13 @@ Jeder Vorschlag in §5 nutzt einen dieser Bausteine. Die Bausteine B0 und B1 gib
 - **Job:** Die Blockschleife liest je Block das Fenster um h Pixel größer, der Operator gibt den inneren Block zurück. Außerhalb der Daten gilt die Maske.
   - Bei Blöcken zu 1024 px und h = 3 (Fenster 7×7) kostet das rund 1,2 % mehr Lesen: (1030/1024)² ≈ 1,012.
 - **Kachel:** Die Kachel liest einen Rand mit; rio-tiler kennt dafür einen `buffer` (nicht geprüft für die Version der Lock-Datei).
-- **Bitgleichheit:** Kachel und Job sind bitgleich nur auf der nativen Ebene und nur mit demselben Rand. Auf Overviews rechnet der Filter auf schon gemittelten Pixeln. Die Vorschau dort ist eine Annäherung, wie bei `normalize` („Preview“, `adr/0014` §0 Punkt 7).
+- **Bitgleichheit Kachel ↔ Job:** Hier geht die Regel für Pixel-Operatoren nicht über.
+  - Die Kachel rechnet im Kachelraster (Web Mercator), der Job im Zielraster. Auch auf der nativen Ebene mit `nearest` sind Kachelpixel nicht 1:1 Quellpixel; einzelne werden doppelt gezogen oder übersprungen [A].
+  - Für punktweise Operatoren schadet das nicht. Für eine Nachbarschaft schon: Das Fenster enthält andere Pixel, die Neigung rechnet aus doppelten Pixeln.
+  - Auch der `buffer` von rio-tiler zählt in Pixeln der Kachel, nicht der Quelle.
+  - **Bitgleich wäre nur:** die Kachel liest das Quellfenster mit Rand, rechnet `focal` im Quellraster und warpt erst danach. Das ist ein eigener Kachelweg (F3, Option 2).
+  - **Sonst:** Die Kachel ist immer „Preview“, auch auf der nativen Ebene, wie `normalize` auf Overviews (`adr/0014` §0 Punkt 7). Der Job rechnet exakt. Die Abnahme „Kachel ↔ Job bitgleich“ in DS-05 §5 gilt dann für `focal` nicht.
+- **Bitgleichheit Job ↔ Runner:** Gleitende Summen in Gleitkomma hängen vom Startpunkt des Blocks ab. Deshalb in ganzen Zahlen summieren, wo die Eingabe ganzzahlig ist (DN und DN² von `uint16` in `int64` sind exakt), sonst jedes Fenster in fester Reihenfolge direkt summieren [A].
 - **Ränder der AOI:** Pixel, deren Fenster über die Daten hinausreicht, werden aus den gültigen Nachbarn gerechnet oder maskiert. Die Regel gehört in den Plan, mit Test gegen eine unabhängige Rechnung.
 - **Reihenfolge:** Ein `focal`-Schritt in der Kachelkette braucht den Rand aller Schritte davor. Einfachste Regel: `focal` steht in der Kachel nur als erster Schritt.
 
@@ -225,8 +231,8 @@ Jeder Vorschlag in §5 nutzt einen dieser Bausteine. Die Bausteine B0 und B1 gib
 | NDREI `(nir − rededge1)/(nir + rededge1)` | B1 | Chlorophyll bei dichter Vegetation | `band_math` | ASI „NDREI“ [P\*] (Q10); Bandwahl in der Literatur uneinheitlich [S] | wie NDVI | Registry-Eintrag | P1 |
 | SAVI `1.5 · (nir − red)/(nir + red + 0.5)` | B1 | NDVI bei offenem Boden | `band_math` | Huete 1988 über ASI [P\*] (Q10); L = 0,5 nicht gelesen [A] | wie NDVI | Registry-Eintrag | P1 |
 | NDBI | B1 | — | — | `(swir16 − nir)/(swir16 + nir)` = −NDMI [P\*][A] | — | — | — (doppelt) |
-| Komposit Falschfarbe IR (nir, red, green) | B2 | Vegetation rot | `band_math` | verbreitet [S] | 3 Bänder, kein Rechnen | mit B2 | P2 |
-| Komposit SWIR (swir22, nir, red) | B2 | Brandflächen, Boden | `band_math` | verbreitet [S] | wie oben | mit B2 | P2 |
+| Komposit Falschfarbe IR (nir, red, green) | B2 | Vegetation rot | — (drei Bänder ohne Schritt, §2) | verbreitet [S] | 3 Bänder, kein Rechnen | mit B2 | P2 |
+| Komposit SWIR (swir22, nir, red) | B2 | Brandflächen, Boden | — | verbreitet [S] | wie oben | mit B2 | P2 |
 | Zonale Statistik je Polygon | B7 | Mittel/Anteile je Feld | — | Projektübersicht §8 | gering | eigene Aufgabe | P3 |
 | Wolkenfreies Zeitkomposit (Median) | B6 | Mosaik ohne Wolken | `masking`, Zeitachse | Standard [S] | n Szenen × Fläche | groß | P3 |
 | dNBR (vor − nach) | B6 | Brandschwere | zwei Zeitpunkte | Key & Benson; Schwellen lokal prüfen [S] (Q12) | 2 × NBR | mit B6 | P3 |
@@ -237,7 +243,7 @@ Jeder Vorschlag in §5 nutzt einen dieser Bausteine. Die Bausteine B0 und B1 gib
 
 ### 5.2 Sentinel-1 GRD (nach DS-04)
 
-**Daten (`adr/0018` §3.1, §4) [M][P]:**
+**Daten (`adr/0018` §3.1, §4) [P]:**
 
 - VV+VH (bzw. HH+HV) als `uint16`-DN, also **Amplitude, unkalibriert**;
 - Lage aus GCPs per TPS („approximate geolocation“);
@@ -249,14 +255,14 @@ Jeder Vorschlag in §5 nutzt einen dieser Bausteine. Die Bausteine B0 und B1 gib
 |---|---|---|---|---|---|---|---|
 | dB-Darstellung `20·log10(DN)` | neuer Pixel-Operator `sar_db` (F2) | lesbare Helligkeit; Grundlage aller SAR-Knöpfe | `sar_backscatter`; Größe des Bandes (Amplitude → 20, Intensität → 10) | `adr/0018` §4.2 [A] | Faktor ≈ 0,2 [A] (Tabelle) | 1 PR | P1 (DS-05a) |
 | Komposit „Dual-pol“ R = VV, G = VH, B = VV÷VH | B2 auf `sar_db` bzw. `band_math` | trennt Wasser, Vegetation, Bebauung; **Ersatz für Pauli** | `sar_backscatter`; Verhältnis nur innerhalb der Szene, näherungsweise (`adr/0018` §4.4) | Sentinel Hub „RGB ratio“ (VV, VH, VH/VV mit Verstärkung) [S] (Q14); feste Belegung nicht normiert [S] | 1–2 Schritte | mit B2 | P2 (DS-05c) |
-| Speckle-Filter Boxcar, Lee | B4 | glättet Speckle, erhält Kanten (Lee) | `sar_backscatter`; Rechnung auf Intensität (DN²) [A] | SNAP bietet Boxcar, Median, Frost, Gamma-MAP, Lee, Refined Lee, Lee Sigma, IDAN [S] (Q15); Fenster 5×5 bis 7×7 in Anleitungen [S] | Faktor ≈ 1–2 mit Summenfenstern [A], messen | 1–2 PRs nach B4 | P2 (DS-05b) |
+| Speckle-Filter Boxcar, Lee | B4 | glättet Speckle, erhält Kanten (Lee) | `sar_backscatter`; Rechnung auf Intensität (DN²) [A] | SNAP bietet Boxcar, Median, Frost, Gamma-MAP, Lee, Refined Lee, Lee Sigma, IDAN [S] (Q15); Fenster 5×5 bis 7×7 in Anleitungen [S] | Faktor ≈ 1–2 mit Summen in ganzen Zahlen [A], messen | 1–2 PRs nach B4 | P2 (DS-05b) |
 | Refined Lee, Gamma-MAP, Lee Sigma | B4 | bessere Kanten- und Punktzielerhaltung | wie oben | Lopes 1990 [S]; Lee et al. 2009 (Q16) [S] | höher, messen | je 1 PR | P3 |
 | Multitemporaler Filter | B6 | Speckle über die Zeit | gleiche Bahn, σ⁰ | Quegan & Yu 2001 (Q17) [S] | n Szenen | groß | P3 |
-| σ⁰-Kalibrierung `σ⁰ = DN²/A²` mit LUT, optional Rauschabzug | B5 (F5) | vergleichbare Werte; erlaubt danach Schwellen und RVI | `sar_calibration`; LUT aus der Annotation über `gateway` | LUT bilinear je Pixel interpoliert, Rauschen mit LUT skaliert [S] (Q18, Q19) | + 1 Hilfsband, Warp `nearest` (0,4) [A]; je Szene 1–2 XML | 2 PRs | P2 (DS-05d) |
+| σ⁰-Kalibrierung `σ⁰ = DN²/A²` mit LUT, optional Rauschabzug | B5 (F5) | vergleichbare Werte; erlaubt danach Schwellen und RVI | `sar_calibration`; LUT aus der Annotation über `gateway` | LUT bilinear je Pixel interpoliert, Rauschen mit LUT skaliert [S] (Q18, Q19) | + 1 Hilfsband, Warp `nearest` (0,5) [A]; je Szene 1–2 XML | 2 PRs | P2 (DS-05d) |
 | RVI `4·σVH/(σVV + σVH)` | B1 auf σ⁰ | Vegetationsdichte | **nach σ⁰**; `adr/0018` F3 schließt Index-Knöpfe auf DN aus | Nasirzadehdizaji 2019 nach Trudel 2012 [S] (Q20) | wie NDVI | Registry nach DS-05d | P3 |
 | Wassermaske (Schwelle in dB) | B0 `mask_values` mit Schwelle des Nutzers | Hochwasser | **nach σ⁰**; Schwelle regional | Werte zwischen −15 und −20 dB in Anleitungen, nicht einheitlich [S] (Q21) | gering | vorhanden (DS-06) | P3, kein Preset |
 | Änderung zweier Szenen (Log-Ratio) | B6 | Änderungen, Hochwasser | gleiche relative Bahn, σ⁰; `adr/0018` F3 verbietet Vergleich über Bahnen | Standardverfahren [S] | 2 Szenen | mit B6 | P3 |
-| RTC (γ⁰) | eigener ADR (`adr/0018` F6) | Geländekorrektur | DEM, sarsen (19 Pakete) | `adr/0018` §6 [M] | Minuten je AOI | 4–6 PRs | P3, unverändert |
+| RTC (γ⁰) | eigener ADR (`adr/0018` F6) | Geländekorrektur | DEM, sarsen (19 Pakete) | `adr/0018` §6 [P] | Minuten je AOI | 4–6 PRs | P3, unverändert |
 
 **dB ohne Toleranz [A] (Grund für F2):**
 
@@ -264,6 +270,7 @@ Jeder Vorschlag in §5 nutzt einen dieser Bausteine. Die Bausteine B0 und B1 gib
 - Eine Wertetabelle, einmal mit Pythons `decimal` (korrekt gerundetes `log10`) erzeugt und auf `float32` gerundet, ist auf jeder Maschine bitgleich. Damit gilt auch T2 ↔ T2L über Maschinen.
 - Ein `log10` aus numpy oder numexpr ist es nicht: Deshalb lehnt `band_math` `log` heute ab (§2).
 - Für Gleitkomma-Eingaben (nach Filter oder Kalibrierung) gilt das nicht. Dort braucht dB eine Toleranzregel (F2).
+- DN = 0 ist bei GRD Nodata (`adr/0018` §3.1); `log10(0)` ist −∞. Die Tabelle führt 0 deshalb als maskiert, mit eigenem Testfall.
 
 **Geometrie des Filters [A]:**
 
@@ -282,6 +289,7 @@ Jeder Vorschlag in §5 nutzt einen dieser Bausteine. Die Bausteine B0 und B1 gib
 - **Pauli** braucht die komplexe Streumatrix mit HH, HV, VH und VV und deren Phase [S] (Q22). Sentinel-1 misst zwei Polarisationen; GRD ist detektiert, ohne Phase. **Geht nicht.**
 - **Dual-Pol H-α** (Cloude 2007) und **DpRVI** (Mandal 2020) rechnen auf der 2×2-Kovarianzmatrix C2 mit dem komplexen Kreuzterm [S] (Q23, Q24). Sie brauchen also SLC. **Geht mit GRD nicht.**
 - **`decomp.py`** bleibt ruhend mit synthetischen Tests (`ENTSCHEIDUNGEN` §3). Eine Quelle für komplexe Quad-Pol-Daten ohne Konto gibt es weiter nicht (`adr/0023` §6.3).
+- **Verhältnis zu `adr/0018` F3:** F3 schließt „Index-Knöpfe“ auf GRD aus, weil sie für optische Daten gelten. „VV dB“, „VH dB“ und „Dual-pol RGB“ sind keine optischen Indizes, sondern Darstellungen derselben Szene, die F3 erlaubt (dB, Verhältnis innerhalb der Szene). Als Quick processing brauchen sie trotzdem Ottos Zustimmung als Nachtrag zu F3; F1 und F7 schließen sie ein.
 - **Ersatz im Sinne von Ottos Beispiel:** Quick processing „Dual-pol RGB“ (VV, VH, VV÷VH) und „VV dB“/„VH dB“. Beide zeigen auf einen Blick, was die Pauli-Darstellung bei Quad-Pol zeigt: Oberfläche, Volumen, Doppelreflexion. Das ist eine Näherung [A].
 
 #### 5.2.3 Interferometrie und Kohärenz
@@ -294,7 +302,7 @@ Beides rechnet mit der Phase zweier Aufnahmen derselben Bahn. Es braucht also **
 |---|---|---|---|---|
 | `sentinel1-slc` (LiveEO, `eu-west-1`) | Deutschland („Europa geplant“) | 2014 bis **08.12.2022**; YAML sagt „updated continuously“ | anonym, Range `206` | [P] Q1, [M] |
 | `sentinel1-slc-seasia-pds` (EOS, `ap-southeast-1`) | Süd- und Südostasien, Japan | laufend laut YAML | anonym laut YAML | [P] Q2 |
-| ASF, CDSE | weltweit | laufend | **Konto** (`adr/0018` §3.4, `adr/0027`) | [P\*] |
+| ASF, CDSE | weltweit | laufend | **Konto** (`adr/0018` §3.4, `adr/0027`) | [P] |
 | Bahndaten `s1-orbits` (ASF, `us-west-2`) | Mission | POEORB gesamt, RESORB 90 Tage | anonym | [P] Q3, [M] |
 
 **Was eine eigene Kette kostete [S][A]:**
@@ -335,6 +343,7 @@ Beides rechnet mit der Phase zweier Aufnahmen derselben Bahn. Es braucht also **
 
 - **EPSG:4326 [P\*][A]:** Neigung braucht Meter in beiden Achsen. `gdaldem` nimmt dafür `-s 111120` und empfiehlt fern vom Äquator eine Reprojektion; ab GDAL 3.11 bestimmt es die Skala aus dem CRS (Q29).
   - Für den Operator heißt das: Pixelgröße in Metern je Zeile aus der Breite, oder Neigung nur nach einer Reprojektion. Das entscheidet M5-10 (dort Pflichtpunkt).
+- **Schummerung im `tiler`:** `adr/0023` F5 und M5-10 verlangen, die Schummerung auch als Algorithmus im `tiler` zu prüfen (Ergänzung zu NM4-35). Das wäre eine reine Darstellung ohne Rezeptschritt. Ein Schritt-Preset „Hillshade“ (B3) dagegen ist ein Schritt mit Hash, Download und Provenienz. Beide schließen sich nicht aus; M5-10 legt fest, welcher Weg die Ansicht bedient, F7 nur das Registry-Feld.
 - **Index-Presets:** keine (wie NM4-14 KE5).
 
 ### 5.4 swissALTI3D und BEV ALS-DGM 1 m (M5-08, M5-09)
@@ -348,7 +357,7 @@ Wie §5.3, mit drei Unterschieden:
 
 ### 5.5 ESA WorldCover 2020 / 2021 (M5-07)
 
-**Daten:** `uint8`, elf Klassen, Farbtabelle, ≈ 10 m (`adr/0023` §6.1) [M]. Eigenheiten fest nach `adr/0023` §8.3: Maske über die Klassen, `value_masking`, kein `band_math`, nur `nearest`, `index_presets` leer.
+**Daten:** `uint8`, elf Klassen, Farbtabelle, ≈ 10 m (`adr/0023` §6.1) [P]. Eigenheiten fest nach `adr/0023` §8.3: Maske über die Klassen, `value_masking`, kein `band_math`, nur `nearest`, `index_presets` leer.
 
 | Vorschlag | Baustein | Nutzen | Voraussetzung | Stand der Technik | Kosten | Aufwand | Prio |
 |---|---|---|---|---|---|---|---|
@@ -412,9 +421,9 @@ Einheit wie `adr/0014` §5.5: Megapixel der Ausgabe × Summe der Faktoren. Neue 
 | Operator | Faktor (Schätzung) | Begründung |
 |---|---|---|
 | `sar_db` (Wertetabelle) | 0,2 | ein Tabellenzugriff je Pixel, wie `mask` |
-| Boxcar/Lee 7×7 | 1–2 | Summenfenster (zwei gleitende Mittel), Rand +1,2 % |
+| Boxcar/Lee 7×7 | 1–2 | Fenstersummen in ganzen Zahlen bzw. in fester Reihenfolge (§3), Rand +1,2 % |
 | `terrain` 3×3 | 1 | neun Nachbarn, Gradient, `atan2` |
-| σ⁰-Kalibrierung | 0,4 + 0,2 | ein Hilfsband mit `nearest` gewarpt, dann Pixelrechnung; dazu 1–2 XML je Szene |
+| σ⁰-Kalibrierung | 0,5 + 0,2 | ein Hilfsband mit `nearest` gewarpt, dann Pixelrechnung; dazu 1–2 XML je Szene |
 | InSAR (nur zum Vergleich) | — | Stunden je Stapel [S] (Q25) |
 
 **Pixel je 100 km² Ausgabe [A]:**
@@ -422,7 +431,7 @@ Einheit wie `adr/0014` §5.5: Megapixel der Ausgabe × Summe der Faktoren. Neue 
 | Datensatz | Mpx |
 |---|---|
 | Sentinel-1/-2 (10 m) | 1 |
-| GLO-30 | 0,11 |
+| GLO-30 | 0,11 am Äquator, ≈ 0,15 in den Alpen (1″ ≈ 31 × 21 m) |
 | BEV (1 m) | 100 |
 | swissALTI3D (0,5 m) | 400 |
 | MeteoSchweiz (1 km) | 0,0001 je Zeitschritt |
@@ -448,7 +457,7 @@ Für Interferometrie, Kohärenz oder Dual-Pol-Zerlegungen gibt es **kein** neues
 
 | Feld | Inhalt | Prüfung |
 |---|---|---|
-| `composite_presets` | `name`, `title`, drei Ausdrücke (R, G, B) in den Bändern des Datensatzes, `rescale` je Kanal, `reference` | wie `index_presets`: Form in `catalog`, Ausdrücke beim Start von `api`; höchstens vier Schritte (Kachelgrenze) |
+| `composite_presets` | `name`, `title`, drei Ausdrücke (R, G, B) in den Bändern des Datensatzes, `rescale` je Kanal, `reference`. Erweitert das vorhandene `true_color` (`catalog/registry.py`, NM4-64), das nur die Echtfarben nennt; `true_color` bleibt | wie `index_presets`: Form in `catalog`, Ausdrücke beim Start von `api`; höchstens vier Schritte (Kachelgrenze) |
 | `step_presets` | `name`, `title`, `op`, `op_version`, `params`, Darstellung (`rescale`, `colormap_name`) | beim Start von `api` gegen das Parameterschema des Operators und `applicable()`; nur T1-Operatoren |
 | Größe je SAR-Band, z. B. `sar_quantity: {"vv": "amplitude", "vh": "amplitude"}` | Amplitude, Intensität, σ⁰, γ⁰; bestimmt den Faktor 20 oder 10 in dB und den Text in Rezept und Provenienz | Pflicht, wenn `sar_backscatter` gesetzt ist |
 | Ort der Kalibrierdaten | Asset-Schlüssel oder Pfadregel zur Kalibrier-XML je Polarisation | Pflicht, wenn `sar_calibration` gesetzt ist; offen, siehe §5.2.1 |
@@ -471,7 +480,7 @@ Für Interferometrie, Kohärenz oder Dual-Pol-Zerlegungen gibt es **kein** neues
 |---|---|
 | dB als Preset über Band-Math | geht nicht: `band_math` lehnt `log` ab (§2). Statt dessen Operator `sar_db` mit Wertetabelle für Ganzzahlen (F2) |
 | Speckle-Filter | braucht die Operator-Art `focal` (B4). Sie kommt aus M5-10; DS-05 baut darauf auf (F3). Zuerst Boxcar und Lee (F4) |
-| T1-Vorschau des Filters | auf nativer Ebene bitgleich; auf Overviews Annäherung mit Kennzeichnung „Preview“ (§3) |
+| T1-Vorschau des Filters | „Preview“ auch auf nativer Ebene, weil die Kachel im Kachelraster rechnet; bitgleich nur mit eigenem Kachelweg im Quellraster (§3, F3). Die Abnahme in DS-05 §5 ist dafür anzupassen |
 | Verhältnis und Differenz | Verhältnis innerhalb der Szene mit Hinweis (`adr/0018` F3); in dB als Differenz über `band_math` nach `sar_db` |
 | RGB-Komposite als Presets | brauchen `composite_presets` (F7); die Kachel kann drei berechnete Bänder schon zeigen (§2) |
 | Pauli RGB | **entfällt** für Sentinel-1 (§5.2.2); `decomp.py` bleibt ruhend |
@@ -506,9 +515,9 @@ Für Interferometrie, Kohärenz oder Dual-Pol-Zerlegungen gibt es **kein** neues
 3. dB nur als Darstellung im tiler, kein Band im Ergebnis
 
 **F3 — Operatoren mit Nachbarschaft?**
-1. Neue Operator-Art `focal` mit Rand h in Blockschleife und Kachel, gebaut in M5-10 und von DS-05 genutzt; in der Kachel nur als erster Schritt **(Empfehlung)**
-2. `focal` nur als Job (T2), keine Vorschau
-3. Jeder Operator löst die Nachbarschaft selbst
+1. Neue Operator-Art `focal` mit Rand h, gebaut in M5-10 und von DS-05 genutzt. Job und Runner exakt und bitgleich; die Kachel rechnet im Kachelraster und ist immer „Preview“; in der Kachel nur als erster Schritt **(Empfehlung)**
+2. Wie 1, aber die Kachel rechnet `focal` im Quellraster mit Rand und warpt danach: Kachel und Job bitgleich auf nativer Ebene, dafür ein eigener Kachelweg
+3. `focal` nur als Job (T2), keine Vorschau
 
 **F4 — Welche Speckle-Filter zuerst?**
 1. Boxcar und Lee (Fenster 3–11, Vorgabe 7×7); Refined Lee, Gamma-MAP und Lee Sigma auf Wunsch später **(Empfehlung)**
