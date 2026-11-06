@@ -1,6 +1,6 @@
 # M5-07 — ESA WorldCover 2020 und 2021, Registry-Feld `data_region`: Plan-Schritt
 
-**Status (06.11.2026):** Plan-Schritt, wartet auf Ottos Antworten (§8).
+**Status (06.11.2026):** Plan angenommen (Otto, 06.11.2026; Antworten in §8), Umsetzung im selben PR.
 **Aufgabe:** M5-07 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.1. **Stufe B.** Hängt von nichts ab; M5-08 und DS-04 warten auf den Merge.
 **Grundlagen:** `adr/0023` §6.1, §7.2, §7.3, §8.3, §10 (F2, F6, F7); `adr/0022` §7.2 und F3; `adr/0009` (Weg des DEM); `plans/m3/m3-11b-dem-adapter.md`; `adr/0014` F6; `adr/0021` §2; `KLAERUNGEN.md` B8, B10, B11, B12, B13; `projektuebersicht.md` §5.
 
@@ -127,7 +127,13 @@ Schätzung ohne Tests und Fixtures: rund 450 Zeilen (Adapter 200, Einträge 150,
 
 ---
 
-## 8. Fragen an Otto
+## 8. Fragen an Otto — beantwortet am 06.11.2026
+
+**Antworten Otto:** F1–F5 und F7 jeweils Option 1.
+- **F5:** Der genaue Wortlaut je Jahr steht in der PR-Beschreibung; Otto bestätigt ihn vor dem Merge (`adr/0023` F2). DOI 2021 an der Quelle prüfen.
+- **F6:** erlaubt, genau eine Zeile in `.github/workflows/live-smoke.yml` für WorldCover, sonst nichts in `.github/`.
+- **Zusatz Onboarding:** Schlagworte deutsch und englisch (`adr/0026` F7, ab M5-07).
+
 
 **F1 — Wo steht `data_region`?**
 1. In `SourceInfo`, neben `asset_hosts`, gegen die der Check prüft **(Empfehlung)**

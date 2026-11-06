@@ -209,7 +209,9 @@ Freigabe geht es: `adr/0007` §12 hat Kachel, Statistik und AOI-Zuschnitt in
 einer Cloud-Sitzung gegen die echte Quelle gemessen.
 
 Eine Freigabe wirkt erst in **neu gestarteten** Sitzungen; eine mitten in der
-Sitzung eingetragene Freigabe wirkt dort nicht (`adr/0003` §11.3).
+Sitzung eingetragene Freigabe wirkt dort nicht (`adr/0003` §11.3). Eine über die
+Freigabekarte eingetragene Freigabe wirkt dagegen sofort in derselben Sitzung
+(Nachtrag M5-01b in §4).
 
 ## 7. Was daraus folgt
 
@@ -236,7 +238,8 @@ Sitzung eingetragene Freigabe wirkt dort nicht (`adr/0003` §11.3).
    Die PostGIS-Extension schlug in dieser Sitzung fehl, weil das Paket hier
    noch nicht installiert war — erwartungsgemäß, da die apt-Installation
    erst mit der nächsten neu gestarteten Sitzung wirkt (siehe die
-   Allowlist-Regel oben).
+   Allowlist-Regel oben); für Freigaben über die Freigabekarte gilt der
+   Nachtrag M5-01b in §4).
    **Nachtrag 2026-09-23 (M3-03, `plans/m3/m3-03-python-312.md`):** Der Hook
    legt das venv mit `/usr/bin/python3.12` an, über den absoluten Pfad: `python3`
    zeigt im Image auf 3.11, und ein `python3.12` im `PATH` kann ein anderer Build
@@ -254,7 +257,8 @@ Sitzung eingetragene Freigabe wirkt dort nicht (`adr/0003` §11.3).
    ist nur im Prozess des Hooks selbst gesetzt, nicht in der Shell, die
    Werkzeuge danach benutzen. Das ist kein Fehler des Hooks, sondern zeigt nur
    den Unterschied zwischen „neu gestartet“ und „fortgesetzt“, wie schon in
-   §4 und §6 für Allowlist-Freigaben festgehalten. In der öffentlichen
+   §4 und §6 für Allowlist-Freigaben festgehalten (Ausnahme seit dem
+   Nachtrag M5-01b in §4: Freigaben über die Freigabekarte). In der öffentlichen
    Dokumentation von Claude Code (claude-code-on-the-web, Abschnitt zu
    Umgebungsvariablen) ist `CLAUDE_ENV_FILE` nicht beschrieben; es steht nur
    in der eingebauten Skill-Datei `session-start-hook`. **Folge:** Findet eine
