@@ -185,6 +185,17 @@ def _scientific(config: DatasetConfig) -> dict[str, object]:
     return fields
 
 
+def _providers(config: DatasetConfig) -> list[dict[str, object]]:
+    """STAC `providers`, without `url` where the entry names none (UI-05 plan §5)."""
+    published: list[dict[str, object]] = []
+    for provider in config.providers:
+        fields: dict[str, object] = {"name": provider.name, "roles": [role.value for role in provider.roles]}
+        if provider.url is not None:
+            fields["url"] = provider.url
+        published.append(fields)
+    return published
+
+
 def _links(config: DatasetConfig) -> list[dict[str, str]]:
     links = [{"rel": "license", "href": config.license.url, "title": config.license.name}]
     name = doi_name(config.doi)
@@ -209,6 +220,9 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
         "description": config.description,
         "keywords": list(config.keywords),
         "license": _stac_license(config.license),
+        # UI-05 plan §5 (F2): who stands behind the data and its resolution, in the fields of the STAC core.
+        "providers": _providers(config),
+        "summaries": {"gsd": list(config.gsd)},
         "extent": {
             "spatial": {"bbox": [list(config.spatial_extent.bbox)]},
             "temporal": {
@@ -223,6 +237,8 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
         # The licence link is the primary source of the texts above (adr/0003 §11.2).
         "links": _links(config),
         "earthx:data_class": config.data_class.value,
+        # UI-05 plan §5 (F1): the group of the Data catalogue.
+        "earthx:category": config.category.value,
         # architekturplan.md 6.2's reader dispatch (`cog`, `zarr`, `legacy`) —
         # published so the frontend can tell a whole scene it may link straight
         # to the source (a COG) from one it may not (a Zarr store has no single

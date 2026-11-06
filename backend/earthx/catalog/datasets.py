@@ -24,6 +24,7 @@ from earthx.catalog.registry import (
     CoverageProvider,
     DataClass,
     DataFormat,
+    DatasetCategory,
     DatasetConfig,
     DatasetRegistry,
     DefaultRender,
@@ -38,6 +39,8 @@ from earthx.catalog.registry import (
     MaskClass,
     MaskSource,
     Maturity,
+    Provider,
+    ProviderRole,
     RetiredDataset,
     SearchCapabilities,
     SearchFilter,
@@ -128,6 +131,16 @@ SENTINEL_2_L2A = DatasetConfig(
         "Data on AWS (adr/0003 §3, Option B)."
     ),
     keywords=("sentinel-2", "optical", "multispectral", "surface reflectance", "copernicus"),
+    category=DatasetCategory.OPTICAL,
+    # `providers` and `summaries.gsd` of the source's own collection (read 06.11.2026, UI-05 plan §5). The source links
+    # AWS over plain http only, so that provider stays without a link.
+    providers=(
+        Provider("ESA", (ProviderRole.PRODUCER,), "https://earth.esa.int/web/guest/home"),
+        Provider("Sinergise", (ProviderRole.PROCESSOR,), "https://registry.opendata.aws/sentinel-2/"),
+        Provider("AWS", (ProviderRole.HOST,), None),
+        Provider("Element 84", (ProviderRole.PROCESSOR,), "https://element84.com"),
+    ),
+    gsd=(10.0, 20.0, 60.0),
     # The collection's own `cite-as` link (read from the source on 22.09.2026, M2-08
     # plan §3), the same seam the second entry takes its DOI from. adr/0003 left
     # onboarding checklist point 3 open because M1 read nothing from the source; the
@@ -588,6 +601,19 @@ COP_DEM_GLO_30 = DatasetConfig(
         "Copernicus programme (adr/0009 §10.3)."
     ),
     keywords=("elevation", "dem", "dsm", "terrain", "copernicus", "tandem-x"),
+    category=DatasetCategory.ELEVATION,
+    # The providers of the bucket's own STAC collection (`copernicus-dem-30m-stac`, `dem_cop_30.json`, read 06.11.2026,
+    # UI-05 plan §5); it names no gsd, the 30 m are the grid of GLO-30 (`readme.html` of the bucket).
+    providers=(
+        Provider(
+            "Copernicus",
+            (ProviderRole.LICENSOR, ProviderRole.PRODUCER),
+            "https://spacedata.copernicus.eu/en/web/guest/collections/copernicus-digital-elevation-model/",
+        ),
+        Provider("Sentinel Hub", (ProviderRole.PROCESSOR,), "https://copernicus-dem-30m.s3.amazonaws.com/readme.html"),
+        Provider("Open Data on AWS", (ProviderRole.HOST,), "https://registry.opendata.aws/copernicus-dem/"),
+    ),
+    gsd=(30.0,),
     # The product's own citation DOI (M3-11b plan §2.7, read from the CDSE
     # COP-DEM page 26.09.2026) — the same page `adr/0003` §11.1 reads the
     # licence from. Not specific to the GLO-30 instance; it is what the source
@@ -790,6 +816,19 @@ def _worldcover(year: int, version: str, doi: str) -> DatasetConfig:
             "land cover", "landcover", "land use", "classification", "worldcover", "esa", "copernicus",
             "sentinel-1", "sentinel-2", "Landbedeckung", "Bodenbedeckung", "Landnutzung", "Klassifikation",
         ),  # fmt: skip
+        category=DatasetCategory.LAND_COVER,
+        # The bucket has no STAC collection. The providers are those of the collection `stactools-packages/esa-worldcover`
+        # builds for the product (`constants.py`, `PROVIDERS`, read 06.11.2026, UI-05 plan §5); the 10 m are the
+        # resolution in the `readme.html` of the bucket.
+        providers=(
+            Provider(
+                "ESA",
+                (ProviderRole.LICENSOR, ProviderRole.PRODUCER, ProviderRole.HOST),
+                "https://esa-worldcover.org",
+            ),
+            Provider("ESA WorldCover Consortium", (ProviderRole.PROCESSOR,), "https://esa-worldcover.org"),
+        ),
+        gsd=(10.0,),
         doi=doi,
         citation=None,
         # One map per year, not a stream of acquisitions (`adr/0023` §8.3), like the DEM.

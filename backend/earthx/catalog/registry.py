@@ -148,6 +148,25 @@ class Maturity(Enum):
     EXPERIMENTAL = "experimental"
 
 
+class DatasetCategory(Enum):
+    """The group of a dataset in the Data catalogue (UI-05 plan §5, F1), in the order the catalogue shows the groups."""
+
+    OPTICAL = "optical"
+    RADAR = "radar"
+    ELEVATION = "elevation"
+    LAND_COVER = "land_cover"
+    WEATHER_CLIMATE = "weather_climate"
+
+
+class ProviderRole(Enum):
+    """The roles of a STAC provider (STAC Collection spec, Provider Object)."""
+
+    PRODUCER = "producer"
+    LICENSOR = "licensor"
+    PROCESSOR = "processor"
+    HOST = "host"
+
+
 #: ``data_region`` of an entry whose storage operator or place is not shown yet (adr/0023 F7).
 UNKNOWN_DATA_REGION = "unknown"
 _DATA_REGION_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*:[a-z0-9]+(?:-[a-z0-9]+)*")
@@ -351,6 +370,31 @@ class SourceInfo:
     asset_hosts: tuple[str, ...]
     item_holding: ItemHolding
     data_region: str
+
+
+@dataclass(frozen=True, slots=True)
+class Provider:
+    """One organisation behind the data, as a STAC provider (UI-05 plan §5, F2), taken over from the source.
+
+    ``url`` is None where the source names none or only a plain ``http`` one: the catalogue links it, and a link the
+    platform shows leaves the house over https only (KLAERUNGEN B8).
+    """
+
+    name: str
+    roles: tuple[ProviderRole, ...]
+    url: str | None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.name, str) or not self.name.strip():
+            raise ConfigError("a provider needs a name")
+        if not isinstance(self.roles, tuple) or not self.roles:
+            raise ConfigError(f"provider {self.name!r} names no role")
+        if not all(isinstance(role, ProviderRole) for role in self.roles):
+            raise ConfigError(f"provider {self.name!r}: every role must be one of {[r.value for r in ProviderRole]}")
+        if len(set(self.roles)) != len(self.roles):
+            raise ConfigError(f"provider {self.name!r} names a role twice")
+        if self.url is not None and not (isinstance(self.url, str) and self.url.startswith("https://")):
+            raise ConfigError(f"provider {self.name!r}: url {self.url!r} is not https")
 
 
 @dataclass(frozen=True, slots=True)
@@ -1048,6 +1092,14 @@ class DatasetConfig:
     # published as STAC `keywords`). No default (KLAERUNGEN B10): an entry names them
     # on purpose, at least one.
     keywords: tuple[str, ...]
+    # The group of the Data catalogue (UI-05 plan §5, F1; published as `earthx:category`). No default (KLAERUNGEN B10).
+    category: DatasetCategory
+    # Who produces, licenses, processes and hosts the data, as the source names them (UI-05 plan §5, F2; published as
+    # STAC `providers`), at least one. No default (KLAERUNGEN B10).
+    providers: tuple[Provider, ...]
+    # The ground sample distances of the data in metres, ascending, at least one (UI-05 plan §5, F2; published as STAC
+    # `summaries.gsd`). No default (KLAERUNGEN B10).
+    gsd: tuple[float, ...]
     # Onboarding checklist, point 3: a DOI where one exists, otherwise a persistent
     # citation. Both None means the point is still open for this dataset.
     doi: str | None
@@ -1105,6 +1157,7 @@ class DatasetConfig:
     def __post_init__(self) -> None:
         object.__setattr__(self, "band_units", MappingProxyType(dict(self.band_units)))
         self._check_keywords()
+        self._check_catalogue_fields()
         self._check_doi()
         self._check_license_is_identifiable()
         self._check_license_tier()
@@ -1363,6 +1416,21 @@ class DatasetConfig:
             raise ConfigError(f"{self.dataset_id}: keywords names no keyword")
         if not all(isinstance(word, str) and word.strip() for word in self.keywords):
             raise ConfigError(f"{self.dataset_id}: every keyword must be a non-blank string")
+
+    def _check_catalogue_fields(self) -> None:
+        """Group, providers and resolution of the Data catalogue (UI-05 plan §5): set, of the right kind, gsd ascending."""
+        if not isinstance(self.category, DatasetCategory):
+            raise ConfigError(f"{self.dataset_id}: category must be one of {[c.value for c in DatasetCategory]}")
+        if not isinstance(self.providers, tuple) or not self.providers:
+            raise ConfigError(f"{self.dataset_id}: providers names no provider")
+        if not all(isinstance(provider, Provider) for provider in self.providers):
+            raise ConfigError(f"{self.dataset_id}: every provider must be a Provider")
+        if not isinstance(self.gsd, tuple) or not self.gsd:
+            raise ConfigError(f"{self.dataset_id}: gsd names no resolution")
+        if not all(_is_finite_number(value) and value > 0 for value in self.gsd):
+            raise ConfigError(f"{self.dataset_id}: every gsd must be a number of metres greater than zero")
+        if list(self.gsd) != sorted(set(self.gsd)):
+            raise ConfigError(f"{self.dataset_id}: gsd must be ascending, each value once")
 
     def _check_doi(self) -> None:
         """A DOI that is no DOI stops the start (M4-14, Otto 07.10.2026), not the first citation.
