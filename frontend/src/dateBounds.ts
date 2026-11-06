@@ -1,6 +1,8 @@
 // The days the date fields of the search offer (UI-05 §3.3, Otto 06.11.2026): the temporal extent of the chosen datasets
 // that have a time axis, from the earliest start to the latest end, an open end being today. Days are UTC, in the form a
 // date field holds ("2015-06-27"). An extent this cannot read leaves that side open rather than guessing a bound.
+//
+// The same days fill the fields whenever the choice of datasets changes (Otto, 06.11.2026, review of part 1).
 
 import type { DatasetOption } from './datasets';
 
@@ -35,15 +37,34 @@ function boundsOf(dataset: DatasetOption, today: string): DayBounds {
   return { min, max };
 }
 
-// The bounds over the chosen datasets with a time axis, or `null` where none of them has one (the fields are free, or
-// locked when every chosen one lacks an axis).
-export function dateBounds(datasets: DatasetOption[], selectedIds: readonly string[], today: string): DayBounds | null {
-  const timed = datasets.filter((d) => d.viewable && d.hasTimeAxis && selectedIds.includes(d.id));
-  if (timed.length === 0) return null;
-  const each = timed.map((d) => boundsOf(d, today));
+// From the earliest start to the latest end over some datasets; a side one of them leaves open is open.
+function spanOf(chosen: DatasetOption[], today: string): DayBounds {
+  const each = chosen.map((d) => boundsOf(d, today));
   const min = each.every((b) => b.min) ? each.map((b) => b.min!).sort()[0] : null;
   const max = each.every((b) => b.max) ? each.map((b) => b.max!).sort().at(-1)! : null;
   return { min, max };
+}
+
+type Viewable = Extract<DatasetOption, { viewable: true }>;
+
+const chosenOf = (datasets: DatasetOption[], selectedIds: readonly string[]): Viewable[] =>
+  datasets.filter((d): d is Viewable => d.viewable && selectedIds.includes(d.id));
+
+// The bounds over the chosen datasets with a time axis, or `null` where none of them has one (the fields are free, or
+// locked when every chosen one lacks an axis).
+export function dateBounds(datasets: DatasetOption[], selectedIds: readonly string[], today: string): DayBounds | null {
+  const timed = chosenOf(datasets, selectedIds).filter((d) => d.hasTimeAxis);
+  return timed.length === 0 ? null : spanOf(timed, today);
+}
+
+// What the date fields hold after a new choice of datasets (Otto, 06.11.2026): the earliest and the latest day of the
+// chosen ones with a time axis; where none has one, the acquisition period of all chosen (the fields are locked then and
+// show it); empty with nothing chosen, and on a side no extent names.
+export function prefilledDays(datasets: DatasetOption[], selectedIds: readonly string[], today: string): { from: string; to: string } {
+  const chosen = chosenOf(datasets, selectedIds);
+  if (chosen.length === 0) return { from: '', to: '' };
+  const span = dateBounds(datasets, selectedIds, today) ?? spanOf(chosen, today);
+  return { from: span.min ?? '', to: span.max ?? '' };
 }
 
 // A day of a field moved onto the nearest bound; an empty field, or one this cannot read, stays as it is.

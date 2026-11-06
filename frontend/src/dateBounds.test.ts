@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { datasetsFrom } from './datasets';
-import { clampDay, dateBounds, todayUtc, utcDay } from './dateBounds';
+import { clampDay, dateBounds, prefilledDays, todayUtc, utcDay } from './dateBounds';
 import type { Collection } from './types';
 
 const CAPABILITIES = {
@@ -116,5 +116,34 @@ describe('clampDay', () => {
     expect(clampDay('2001-01-01', null)).toBe('2001-01-01');
     expect(clampDay('2001-01-01', { min: null, max: TODAY })).toBe('2001-01-01');
     expect(clampDay('2030-01-01', { min: '2015-06-27', max: null })).toBe('2030-01-01');
+  });
+});
+
+describe('prefilledDays', () => {
+  const days = (...ids: string[]) => prefilledDays(ALL, ids, TODAY);
+
+  it('is the first and the last day of a chosen dataset, an open end being today', () => {
+    expect(days('optical')).toEqual({ from: '2015-06-27', to: TODAY });
+    expect(days('radar')).toEqual({ from: '2014-10-03', to: '2025-12-31' });
+  });
+
+  it('spans all chosen datasets with a time axis, leaving out one without', () => {
+    expect(days('optical', 'radar')).toEqual({ from: '2014-10-03', to: TODAY });
+    expect(days('optical', 'dem')).toEqual({ from: '2015-06-27', to: TODAY });
+  });
+
+  it('is the acquisition period where no chosen dataset has a time axis', () => {
+    expect(days('dem')).toEqual({ from: '2010-12-01', to: '2015-01-31' });
+  });
+
+  it('is empty with nothing chosen, or only what cannot be viewed', () => {
+    expect(days()).toEqual({ from: '', to: '' });
+    const broken = datasetsFrom([{ id: 'broken', extent: { temporal: { interval: [['1990-01-01T00:00:00Z', null]] } } }]);
+    expect(prefilledDays(broken, ['broken'], TODAY)).toEqual({ from: '', to: '' });
+  });
+
+  it('leaves a side empty that the extent does not name', () => {
+    const odd = datasetsFrom([dataset('odd', [null, '2020-01-01T00:00:00Z'])]);
+    expect(prefilledDays(odd, ['odd'], TODAY)).toEqual({ from: '', to: '2020-01-01' });
   });
 });
