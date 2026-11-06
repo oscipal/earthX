@@ -293,19 +293,68 @@ Verweise (Datei, Offset, Länge je Chunk) statt Kopie; gelesen über einen Zarr-
 
 ## 8. Empfehlung
 
-*Folgt.*
+**Option A2: virtuelle Verweise, erzeugt und gelesen mit eigenem Code über `gateway`.**
+
+Begründung:
+
+1. **K2 ohne Abstrich.** Jeder Chunk ist ein `gateway`-Abruf, wie bei Zarr heute. B, der einzige Weg ohne neuen Code, bliebe bis M6 auf die Duldung aus B8 angewiesen; für COG ist das hingenommen, für einen neuen Leseweg muss es nicht sein.
+2. **K4 am günstigsten** und genau vorhersagbar: Die Verweise nennen jeden Abruf mit seiner Größe, bevor er stattfindet. Das passt zum Kostenmodell des Processing.
+3. **K7:** ETag zu den Verweisen, `If-Match` beim Lesen. Ein erneuter Lauf ohne Änderung kostet je Datei einen bedingten Abruf; das ist die Abnahme von M5.
+4. **K3:** Die Verweise liegen im Item; Worker und lokaler Runner bekommen sie mit dem Rezept.
+5. **Architektur:** Das ist Rang 3 aus `architekturplan.md` 6.2, nur ohne Icechunk und ohne fremde I/O-Schicht.
+6. **Aufwand begrenzt:** `h5py` als einzige neue Abhängigkeit, nur in `discovery`; der Lesepfad baut auf `GatewayStore` und `numcodecs` auf.
+
+Nicht empfohlen:
+
+- **A1**, solange VirtualiZarr `obstore` zieht und die Importregel gilt. Eine Lockerung bringt keinen Vorteil, den A2 nicht auch hat.
+- **B** als Dauerlösung; als Gegenprobe in Tests ist GDAL nützlich (bitgleich, §4).
+- **C** in M5. Wiedervorlage, falls eine Quelle mit großen Chunks über die Zeit (Muster DWD) im Betrieb zu langsame Kacheln liefert.
 
 ---
 
 ## 9. Fragen an Otto
 
-*Folgt.*
+**F1 — Leseweg für NetCDF/HDF5?**
+1. A2: virtuelle Verweise mit eigenem Code über `gateway`; `h5py` neu in der Lock-Datei, nur für `discovery` **(Empfehlung)**
+2. B: GDAL-netCDF-Treiber über `/vsicurl/`, ohne neue Abhängigkeit, Durchsetzung von `gateway` erst in M6
+3. B jetzt für M5-11, A2 danach als eigene Aufgabe
+4. A1 mit VirtualiZarr; verlangt eine Ausnahme in der Importregel für `obstore`
+
+**F2 — Zeitachse?**
+1. Ein Item je Zeitschritt, materialisiert in `discovery`, `datetime` aus der Achse `time` der Datei **(Empfehlung)**
+2. Ein Item je Datei mit Zeitachse im Item (STAC-Datacube); die Ansicht bekommt einen eigenen Zeitregler
+3. Ein Item je Datei, nur der erste Zeitschritt sichtbar, bis die Ansicht Zeitachsen kann
+
+**F3 — Wo liegen die Verweise?**
+1. Im Item selbst, je Zeitschritt nur die eigenen Chunks; Typ, Chunkform, Filter, CRS einmal je Datensatz bzw. Datei **(Empfehlung)**
+2. Als Manifest je Datei im eigenen Objektspeicher; der Worker erzeugt sie selbst neu
+3. Nirgends; jeder Leser erzeugt sie beim Öffnen (5–8 Abrufe je Datei)
+
+**F4 — ARCO-ERA5?**
+1. Nicht in M5; bleibt Vergleichsfall, Lizenz und Ort (`us-central1`) wie in §3.3 festgehalten **(Empfehlung)**
+2. Katalogeintrag mit Link, ohne Anzeige
+3. Als globaler Kontext anbinden (Zarr v2, Zeitachse, Längen 0–360 im Leser nachziehen)
+
+**F5 — Laufende und vorläufige Daten in M5-11?**
+1. Nur abgeschlossene Jahresdateien (Archiv); laufendes Jahr später mit täglichem Lauf **(Empfehlung)**
+2. Auch das laufende Jahr, täglich neu verwiesen
+3. Auch die vorläufigen Tageswerte mit `expires`
 
 ---
 
 ## 10. Folgen
 
-*Folgt.*
+Für den Fall, dass Otto die Empfehlungen annimmt. Diese Liste legt keine Plan-Dateien an und ändert weder Backlog noch M5-Plan.
+
+1. **M5-11** (erste Meteorologie-Quelle, Stufe B) setzt A2 um: Erzeugen der Verweise in `discovery`, Store und Zeitindex in `readers`, Items je Zeitschritt.
+   - Kandidat bleibt MeteoSchweiz `ogd-surface-derived-grid`: unkomprimiert, ein Chunk je Tag, also der einfachste Fall. DWD HYRAS danach (zlib, Chunks über 40 Tage).
+   - Plan klärt: welche Größen (Tagesmittel, Niederschlag …) als ein Datensatz oder mehrere; die beiden Gitter `ch01r` und `ch01h` (§3.1); der Name der Registry-Felder für Verweise und Zeitindex.
+   - Tests mit synthetischen NetCDF-4-Dateien (unkomprimiert und zlib, Zeilen von Süd nach Nord) unter `tests/fixtures`; GDAL als Gegenprobe (bitgleich).
+2. **Lock-Datei:** `h5py` neu (BSD-3-Clause). `kerchunk`, `virtualizarr`, `fsspec`-HTTP und `obstore` kommen nicht dazu.
+3. **`readers`:** Der Leser lernt eine Zeitdimension und Zarr-v2-Filter bzw. eine Übersetzung der Metadaten; `ZARR_FORMAT = 3` bleibt für echte Zarr-Stores.
+4. **Registry:** Zeitachse und Verweise je Item; `time_range = true`. Die Felder benennt der Plan von M5-11.
+5. **`adr/0023` §7.1 und §9.1** sowie **`adr/0027` §6.5**: ARCO-ERA5 ist gemessen (Zarr v2, Chunk 1 h × Erde, kein Requester Pays, Lizenz laut README Copernicus) — Nachtrag dort bei Gelegenheit, nicht in diesem PR.
+6. **`architekturplan.md` 6.2 Rang 3:** Nachtrag bei Annahme: „virtuelle Verweise ohne Icechunk, erzeugt mit `h5py` über `gateway`“.
 
 ---
 
