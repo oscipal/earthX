@@ -1,8 +1,11 @@
 # ADR 0030 — Operatoren und Quick processings je Datensatz
 
-- **Status:** **Entwurf**, offen. Fragen F1–F10 in §10.
+- **Status:** **Angenommen** von Otto am 2026-11-06.
+  - F1–F10 jeweils Option 1 (Empfehlung), Antworten in §10.
+  - Ausdrücklich freigegeben: die Quick processings „VV dB“, „VH dB“ und „Dual-pol RGB“ auf Sentinel-1 GRD, als Nachtrag zu `adr/0018` F3 (dort §9.4, „Nachtrag M5-12“).
+  - Folgen in §11, darunter der neue Plan für DS-04 (Stufe B).
   - Nummer 0030 fest laut `docs/plans/m5/m5-discovery-und-suche.md` §6.1.
-- **Datum:** 2026-11-06
+- **Datum:** 2026-11-06 (Entwurf und Annahme)
 - **Aufgabe:** M5-12 laut `docs/plans/m5/m5-discovery-und-suche.md` §6.1 (Zusatz Otto vom 06.11.2026, §2 Punkt 8).
 - **Autonomiestufe:** C. Kein Produktivcode.
   - Keine Änderung an `backend/`, `frontend/`, `scripts/`, Fixtures, `.importlinter`, `.github/`, `.claude/`, `CLAUDE.md` oder den Lock-Dateien.
@@ -41,7 +44,7 @@
 Belegstufen wie in `adr/0018` und `adr/0027`:
 
 - **M:** in dieser Sitzung gemessen; das Verfahren steht im Text.
-- **P:** am Primärdokument selbst gelesen (im Repo mit Pfad, sonst mit URL in §12).
+- **P:** am Primärdokument selbst gelesen (im Repo mit Pfad, sonst mit URL in §13).
 - **P\*:** Primärdokument über das Abrufwerkzeug eines Hilfsagenten gelesen. Das Werkzeug fasst Seiten zusammen; Zitate sind sinngemäß und vor einer Annahme an der Quelle zu prüfen.
 - **S:** Suchtreffer oder Zusammenfassung, Wortlaut nicht geprüft.
 - **A:** eigene Ableitung, ein Argument und kein Beleg.
@@ -58,15 +61,17 @@ Belegstufen wie in `adr/0018` und `adr/0027`:
 - `s1-orbits` (`us-west-2`): `README.html` `200`.
 - `sentinel-1-global-coherence-earthbigdata` (`us-west-2`): Listing `200`.
 
-**Gelesen [P]:** die Registry-YAMLs dieser drei Buckets und des Buckets `sentinel1-slc-seasia-pds` im AWS Open Data Registry (§12, Q1–Q4). Dazu der Code-Stand im Repo, mit Pfad und Zeile im Text.
+**Gelesen [P]:** die Registry-YAMLs dieser drei Buckets und des Buckets `sentinel1-slc-seasia-pds` im AWS Open Data Registry (§13, Q1–Q4). Dazu der Code-Stand im Repo, mit Pfad und Zeile im Text.
 
-**Nicht erreichbar:** Ein Hilfsagent las Fachquellen. Viele Hosts waren aus der Sitzung nicht erreichbar, darunter gdal.org, step.esa.int, sentinels.copernicus.eu, un-spider.org und nature.com. Deshalb tragen viele Fachaussagen nur **S**. Was vor einer Umsetzung an der Quelle zu prüfen ist, steht in §11.
+**Nicht erreichbar:** Ein Hilfsagent las Fachquellen. Viele Hosts waren aus der Sitzung nicht erreichbar, darunter gdal.org, step.esa.int, sentinels.copernicus.eu, un-spider.org und nature.com. Deshalb tragen viele Fachaussagen nur **S**. Was vor einer Umsetzung an der Quelle zu prüfen ist, steht in §12.
 
 **Anfragen an Datenquellen:** keine Datenpixel. Nur Listings, `HEAD` und 1 KB Range.
 
 ---
 
 ## 0. Kurzfassung
+
+**Entscheidung (Otto, 06.11.2026):** alle Empfehlungen angenommen (F1–F10 Option 1, §10); „VV dB“, „VH dB“ und „Dual-pol RGB“ als Nachtrag zu `adr/0018` F3 freigegeben; Folgen in §11. Die Punkte unten sind der Stand der Vorlage.
 
 1. **Was es heute gibt [P]:** sechs generische Operatoren:
    - `band_math`, `mask`, `mask_values` und `normalize` laufen auf Kachel und Job;
@@ -289,7 +294,7 @@ Jeder Vorschlag in §5 nutzt einen dieser Bausteine. Die Bausteine B0 und B1 gib
 - **Pauli** braucht die komplexe Streumatrix mit HH, HV, VH und VV und deren Phase [S] (Q22). Sentinel-1 misst zwei Polarisationen; GRD ist detektiert, ohne Phase. **Geht nicht.**
 - **Dual-Pol H-α** (Cloude 2007) und **DpRVI** (Mandal 2020) rechnen auf der 2×2-Kovarianzmatrix C2 mit dem komplexen Kreuzterm [S] (Q23, Q24). Sie brauchen also SLC. **Geht mit GRD nicht.**
 - **`decomp.py`** bleibt ruhend mit synthetischen Tests (`ENTSCHEIDUNGEN` §3). Eine Quelle für komplexe Quad-Pol-Daten ohne Konto gibt es weiter nicht (`adr/0023` §6.3).
-- **Verhältnis zu `adr/0018` F3:** F3 schließt „Index-Knöpfe“ auf GRD aus, weil sie für optische Daten gelten. „VV dB“, „VH dB“ und „Dual-pol RGB“ sind keine optischen Indizes, sondern Darstellungen derselben Szene, die F3 erlaubt (dB, Verhältnis innerhalb der Szene). Als Quick processing brauchen sie trotzdem Ottos Zustimmung als Nachtrag zu F3; F1 und F7 schließen sie ein.
+- **Verhältnis zu `adr/0018` F3:** F3 schließt „Index-Knöpfe“ auf GRD aus, weil sie für optische Daten gelten. „VV dB“, „VH dB“ und „Dual-pol RGB“ sind keine optischen Indizes, sondern Darstellungen derselben Szene, die F3 erlaubt (dB, Verhältnis innerhalb der Szene). Otto hat sie am 06.11.2026 als Quick processing freigegeben, als Nachtrag zu F3 (`adr/0018` §9.4, „Nachtrag M5-12“).
 - **Ersatz im Sinne von Ottos Beispiel:** Quick processing „Dual-pol RGB“ (VV, VH, VV÷VH) und „VV dB“/„VH dB“. Beide zeigen auf einen Blick, was die Pauli-Darstellung bei Quad-Pol zeigt: Oberfläche, Volumen, Doppelreflexion. Das ist eine Näherung [A].
 
 #### 5.2.3 Interferometrie und Kohärenz
@@ -496,67 +501,110 @@ Für Interferometrie, Kohärenz oder Dual-Pol-Zerlegungen gibt es **kein** neues
 | DS-05c | Komposit „Dual-pol RGB“ | A | DS-05a; B2 (F7) |
 | DS-05d | σ⁰-Kalibrierung, danach RVI-Preset | B | DS-05a; F5 |
 
-`docs/plans/ds/ds-05-sar-operatoren.md` wird nach Ottos Antwort angepasst; das ist nicht Teil dieses PR.
+`docs/plans/ds/ds-05-sar-operatoren.md` wird vor dem Start von DS-05 angepasst (§11); das ist nicht Teil dieses PR.
 
-**Nebenbefund:** `docs/plans/ds/ds-04-s1-anbinden.md` enthält denselben Text wie `ds-00-paket.md` (Überschrift „DS-00 — Paket …“). Der Nachtrag dazu ist ohnehin offen (`adr/0018` §10, letzter Punkt). Der Plan für DS-04 sollte vor dem Start von DS-04 neu geschrieben werden.
+**Nebenbefund:** `docs/plans/ds/ds-04-s1-anbinden.md` enthält denselben Text wie `ds-00-paket.md` (Überschrift „DS-00 — Paket …“). Der Nachtrag dazu ist ohnehin offen (`adr/0018` §10, letzter Punkt). Folge in §11.
 
 ---
 
-## 10. Fragen an Otto
+## 10. Fragen an Otto — beantwortet am 2026-11-06
+
+Otto hat alle zehn Fragen mit Option 1 (Empfehlung) beantwortet. Dazu ausdrücklich: Die Quick processings „VV dB“, „VH dB“ und „Dual-pol RGB“ auf Sentinel-1 GRD sind freigegeben, als Nachtrag zu `adr/0018` F3 (Darstellungen derselben Szene, keine optischen Indizes; eingetragen als `adr/0018` §9.4, „Nachtrag M5-12“).
 
 **F1 — Rangfolge und Schnitt (§6)?**
 1. Wie in §6: Rang 1–3 mit M5, Rang 4–7 über DS-05 und eine Aufgabe für B2/B3, Rang 8–9 mit Fassung 3 bzw. eigenem ADR **(Empfehlung)**
 2. Nur was ohne neuen Baustein geht (Rang 2, 3), alles andere nach M5
 3. Sentinel-1 zuerst (Rang 4–7 vor 2, 3, 5)
 
+**Antwort F1 (Otto, 2026-11-06): (1).** Rang 1–3 mit M5, Rang 4–7 über DS-05 und eine Aufgabe für B2/B3, Rang 8–9 mit Fassung 3 bzw. eigenem ADR.
+
 **F2 — dB für Sentinel-1?**
 1. Eigener Pixel-Operator `sar_db` (T1, T2) an Capability `sar_backscatter`, für Ganzzahlen über eine Wertetabelle (überall bitgleich); dB auf Gleitkomma (nach Filter/Kalibrierung) später mit eigener Toleranzregel **(Empfehlung)**
 2. `log10` in `band_math` aufnehmen, mit Toleranz zwischen Maschinen (T2 ↔ T2L nicht mehr bitgleich)
 3. dB nur als Darstellung im tiler, kein Band im Ergebnis
+
+**Antwort F2 (Otto, 2026-11-06): (1).** Operator `sar_db` an Capability `sar_backscatter`, für Ganzzahlen über eine Wertetabelle; dB auf Gleitkomma später mit eigener Toleranzregel.
 
 **F3 — Operatoren mit Nachbarschaft?**
 1. Neue Operator-Art `focal` mit Rand h, gebaut in M5-10 und von DS-05 genutzt. Job und Runner exakt und bitgleich; die Kachel rechnet im Kachelraster und ist immer „Preview“; in der Kachel nur als erster Schritt **(Empfehlung)**
 2. Wie 1, aber die Kachel rechnet `focal` im Quellraster mit Rand und warpt danach: Kachel und Job bitgleich auf nativer Ebene, dafür ein eigener Kachelweg
 3. `focal` nur als Job (T2), keine Vorschau
 
+**Antwort F3 (Otto, 2026-11-06): (1).** Operator-Art `focal` mit Rand h, gebaut in M5-10, von DS-05 genutzt. Job und Runner exakt und bitgleich; die Kachel ist immer „Preview“ und nimmt `focal` nur als ersten Schritt.
+
 **F4 — Welche Speckle-Filter zuerst?**
 1. Boxcar und Lee (Fenster 3–11, Vorgabe 7×7); Refined Lee, Gamma-MAP und Lee Sigma auf Wunsch später **(Empfehlung)**
 2. Alle Filter aus SNAP auf einmal
 3. Keine Speckle-Filter
+
+**Antwort F4 (Otto, 2026-11-06): (1).** Boxcar und Lee zuerst (Fenster 3–11, Vorgabe 7×7); weitere Filter auf Wunsch später.
 
 **F5 — σ⁰-Kalibrierung für Sentinel-1 GRD?**
 1. Ja, als DS-05d nach DS-04: LUT aus der Annotation über `gateway`, als Hilfsband mit derselben TPS gewarpt, Rauschabzug wählbar; für kalibrierte Bänder gelten dann Schwellen und RVI (Nachtrag zu `adr/0018` F3) **(Empfehlung)**
 2. Nein, nur über RTC (`adr/0018` F6)
 3. RVI schon auf DN, mit Hinweis „uncalibrated“
 
+**Antwort F5 (Otto, 2026-11-06): (1).** σ⁰-Kalibrierung als DS-05d nach DS-04; danach gelten für kalibrierte Bänder Schwellen und RVI.
+
 **F6 — Interferometrie und Kohärenz?**
 1. Keine eigene InSAR. Global Coherence als Datensatz-Kandidat für die Pipeline (Datennähe nach `adr/0022` prüfen), LiCSAR prüfen, EGMS als Katalogeintrag mit Link **(Empfehlung)**
 2. Zusätzlich ein Spike (Stufe C) mit dem LiveEO-Bestand (Deutschland, bis 12/2022), um Aufwand und Werkzeuge zu messen
 3. Thema für M5 ganz zurückstellen
+
+**Antwort F6 (Otto, 2026-11-06): (1).** Keine eigene InSAR. Global Coherence als Datensatz-Kandidat für die Pipeline (Datennähe nach `adr/0022` prüfen), LiCSAR prüfen, EGMS als Katalogeintrag mit Link.
 
 **F7 — Quick processing über Index-Presets hinaus?**
 1. Zwei neue Registry-Felder: `composite_presets` (RGB aus drei Ausdrücken) und `step_presets` (ein T1-Schritt mit festen Parametern, z. B. „Hillshade“, „VV dB“); geprüft beim Start von `api` wie `index_presets` **(Empfehlung)**
 2. Nur `composite_presets`; Gelände und dB bleiben im Processing-Panel
 3. Nur Index-Presets wie heute
 
+**Antwort F7 (Otto, 2026-11-06): (1).** Registry-Felder `composite_presets` und `step_presets`, geprüft beim Start von `api` wie `index_presets`.
+
 **F8 — Weitere Index-Presets für Sentinel-2?**
 1. NDMI, MNDWI, NDREI, SAVI (L = 0,5), als Registry-Änderung der Stufe A; NDBI nicht, weil es −NDMI ist **(Empfehlung)**
 2. Nur NDMI und MNDWI
 3. Keine weiteren
+
+**Antwort F8 (Otto, 2026-11-06): (1).** NDMI, MNDWI, NDREI und SAVI (L = 0,5) als Registry-Änderung der Stufe A; kein NDBI.
 
 **F9 — Klassenanteile bei WorldCover?**
 1. Aus der vorhandenen Ergebnis-Statistik (für `uint8` exakt) mit Namen und Farben aus `mask`, als Folgeaufgabe nach M5-07 **(Empfehlung)**
 2. Eigener Operator „zonales Histogramm“
 3. Keine
 
+**Antwort F9 (Otto, 2026-11-06): (1).** Klassenanteile aus der vorhandenen Ergebnis-Statistik mit Namen und Farben aus `mask`, als Folgeaufgabe nach M5-07.
+
 **F10 — Operatoren über mehrere Eingaben oder Zeitschritte (Zeitkomposit, dNBR, Differenz der DEM-Stände, Klimaaggregation, Log-Ratio)?**
 1. Eigener ADR (Stufe C) nach M5-11, wenn die Zeitachse der Meteorologie steht **(Empfehlung)**
 2. Eigener ADR jetzt, parallel zu Welle 2
 3. Nicht vor M6
 
+**Antwort F10 (Otto, 2026-11-06): (1).** Eigener ADR (Stufe C) nach M5-11, wenn die Zeitachse der Meteorologie steht.
+
 ---
 
-## 11. Was offen bleibt und vor einer Umsetzung zu prüfen ist
+## 11. Folgen
+
+Aus Ottos Antworten vom 06.11.2026. Pläne und M5-Plan zieht die nächste Doku-Aufgabe oder Otto nach; dieser PR ändert nur `adr/0018` (Nachtrag M5-12), dieses ADR und das Log.
+
+- **DS-04:** Der Plan wird vor dem Start neu geschrieben.
+  - DS-04 wird **Stufe B** (bisher A laut M5-Plan §6.1 und DS-00).
+  - Der Plan entsteht aus `adr/0018` Teil A: TPS in Kachel, Zuschnitt, Job und Runner (F1); die Hinweise „Approximate geolocation“ und „Uncalibrated (DN)“ (F2); Operatoren nach §4.4 mit Nachtrag M5-12 (F3); Abbildung `s3://` → `https://`; Fassung per CRC64NVME; Live-Smoke mit Prüfung von Requester Pays; dazu `data_region` aus M5-07.
+  - Die heutige Datei `docs/plans/ds/ds-04-s1-anbinden.md` ist eine Kopie von DS-00 (§9) und wird ersetzt.
+- **`adr/0018`:** Nachtrag M5-12 (§9.4) gibt „VV dB“, „VH dB“ und „Dual-pol RGB“ auf GRD frei.
+- **DS-05** wird DS-05a bis DS-05d nach §9; der Plan wird vor dem Start angepasst. Pauli entfällt. Die Abnahme „Kachel ↔ Job bitgleich“ gilt für Speckle-Filter nicht (F3: Kachel als „Preview“); Job ↔ Runner bleibt bitgleich.
+- **M5-10** baut die Operator-Art `focal` allgemein (F3): Rand h als Eigenschaft des Operators, Kachel als „Preview“ mit `focal` nur als erstem Schritt, Fenstersummen in ganzen Zahlen oder fester Reihenfolge.
+- **Neue Aufgaben:**
+  - Index-Presets NDMI, MNDWI, NDREI, SAVI für Sentinel-2 (F8, Stufe A);
+  - `composite_presets` und `step_presets` (F7, Stufe B, Registry und Frontend);
+  - Klassenanteile bei WorldCover nach M5-07 (F9);
+  - ADR zu Operatoren über mehrere Eingaben und Zeitschritte nach M5-11 (F10, Stufe C).
+- **Fassung 3 des M5-Plans:** Global Coherence, LiCSAR und EGMS als Kandidaten für die Pipeline bzw. als Katalogeintrag (F6).
+- **Registry:** Capabilities `sar_backscatter` und `sar_calibration` sowie die Felder aus §8 kommen mit den Aufgaben, die sie zuerst brauchen (DS-05a, DS-05d, F7).
+
+---
+
+## 12. Was offen bleibt und vor einer Umsetzung zu prüfen ist
 
 - **Quellen mit Stufe S** an der Primärquelle lesen:
   - SNAP-Vorgaben der Speckle-Filter (Q15);
@@ -578,7 +626,7 @@ Für Interferometrie, Kohärenz oder Dual-Pol-Zerlegungen gibt es **kein** neues
 
 ---
 
-## 12. Quellen
+## 13. Quellen
 
 Abgerufen am 06.11.2026.
 
