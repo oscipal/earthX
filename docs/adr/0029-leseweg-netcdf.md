@@ -1,6 +1,6 @@
 # ADR 0029 — Leseweg NetCDF/HDF5 für die Meteorologie
 
-- **Status:** **Entwurf** (offen). Fragen F1–F5 in §9.
+- **Status:** **Entwurf** (offen). Fragen F1–F7 in §9. Ergänzt nach Ottos Review vom 06.11.2026 (§8a; F1 nennt die Zustimmung zu `h5py` ausdrücklich, F6 und F7 neu).
 - **Datum:** 2026-11-06
 - **Aufgabe:** M5-06 laut `docs/plans/m5/m5-discovery-und-suche.md` §6.1 (Antwort F3 zu `adr/0023`). Die Nummer 0029 ist dort vergeben und war beim Start frei.
 - **Autonomiestufe:** C. Kein Produktivcode.
@@ -59,6 +59,7 @@ Belegstufen wie in `adr/0022` und `adr/0023`:
 5. **Die Zeitachse kommt nicht aus dem STAC der Quelle** [M]. MeteoSchweiz setzt `datetime` der Items auf die letzte Aktualisierung; die Zeit steht nur im Dateinamen und in der Datei. Das Archiv ist ein einziges Item mit 3257 Assets.
 6. **Empfehlung (F1):** virtuelle Verweise, erzeugt und gelesen mit eigenem Code über `gateway` (Option A2, §6); je Zeitschritt ein Item, das die Verweise auf seine Chunks selbst trägt (F2, F3). Kein flüchtiger COG-Cache in M5 (F1, Option C nur als spätere Ergänzung).
 7. **ARCO-ERA5** taugt als Vergleich, nicht als Quelle für M5: ein Chunk ist eine Stunde × ganze Erde (2,3 MB), eine Zeitreihe an einem Punkt über ein Jahr hieße rund 20 GB (F4).
+8. **Nach Ottos Review (§8a):** Der bestehende Lesepfad `xarray` → rio-tiler liest die Verweise über einen zweiten Store neben `GatewayStore`, bitgleich zu GDAL [M]. Je Datensatz entstehen 20 000 bis 35 000 Items (F6). Eine geänderte Quelle wird zur eigenen Fehlerart `source_changed` statt `source_4xx` (F7). `h5py` kostet 18 MB im gemeinsamen Image und im Runner-Image. Der Runner liest dieselben Verweise und ist bitgleich oder scheitert ausdrücklich.
 
 ---
 
@@ -252,7 +253,7 @@ Verweise (Datei, Offset, Länge je Chunk) statt Kopie; gelesen über einen Zarr-
   - Ablegen: die Verweise je Zeitschritt im Item (F3).
   - Lesen in `readers`: ein Store nach dem Muster von `GatewayStore`, dessen `get` ein Range-GET mit `If-Match` ist; Entpacken mit `numcodecs` (zlib; schon in der Lock-Datei); Achsenrichtung und CRS aus den Verweisen.
   - Neue Abhängigkeit: `h5py` (BSD-3-Clause) nur für `discovery`. `kerchunk` und VirtualiZarr bleiben draußen.
-  - Neuer Code: Store, Erzeugen der Verweise, Zeitindex im Leser (heute nur 2-D-Variablen), Zarr-v2-Filter bzw. Übersetzen der Metadaten (der Leser öffnet heute fest `zarr_format=3`) [P].
+  - Neuer Code: Store, Erzeugen der Verweise, Zeitindex im Leser (heute nur 2-D-Variablen); der Store liefert Zarr-v3-Metadaten aus den Verweisen, der Leser bleibt bei `zarr_format=3` (§8a.1).
 - **A3 — GDAL-Zarr-Treiber auf Kerchunk-Verweisen** (seit GDAL 3.11): liest die Verweise über `/vsisubfile/` und `/vsicurl/`, prüft aber weder ETag noch Änderungszeit [P\*]. K2 wie B. In der Bewertung unten wie B mit den Abrufzahlen von A.
 
 ### Option B — GDAL-Treiber über `/vsicurl/`
@@ -344,10 +345,145 @@ Nicht empfohlen:
 
 ---
 
+## 8a. Ergänzungen nach Ottos Review (06.11.2026)
+
+### 8a.1 Reader: bestehender Zarr-Leser oder neuer Leser?
+
+**Befund [M]:** Der Lesepfad hinter `ZarrReader` bleibt, nur der Store ist neu. Geprüft mit einem Prototyp im Kratzverzeichnis (nicht im Repo; Abrufe über den Proxy statt über `gateway`):
+
+- Ein schreibgeschützter Store (`zarr.abc.store.Store`, wie `GatewayStore`) liefert:
+  - `zarr.json` mit konsolidierten Zarr-**v3**-Metadaten, erzeugt aus den Verweisen: Form, Typ, Chunkform, Codecs `bytes` und `numcodecs.zlib` (in zarr 3.1.6 als `zarr.codecs.Zlib` vorhanden), Füllwert, `dimension_names`;
+  - die Achsen `x` und `y` als kleine Felder aus der Geotransformation;
+  - je Chunk-Schlüssel einen Range-GET mit `If-Match` auf die Quelldatei.
+- Darüber unverändert `xarray.open_zarr(store, consolidated=True, zarr_format=3, decode_coords="all", chunks=None)`, wie in `_open_group`, dann ein Zeitschritt mit `isel(time=…)` und rio-tilers `XarrayReader`.
+- **Ergebnis:**
+  - Ein Tag ist **bitgleich** zu GDAL, bei MeteoSchweiz und bei DWD.
+  - Er kostet genau die Chunks aus §4: MeteoSchweiz 1 Abruf mit 355 KB, DWD ganz Deutschland 25 Abrufe mit 7,5 MB.
+  - Eine Kachel über `XarrayReader.tile` holte danach keinen weiteren Chunk.
+- **Zwei Stellen fehlten im Prototyp** und gehören in M5-11:
+  - Der Füllwert kam nur als `fill_value` des Arrays an. `xarray` hat damit nicht maskiert; die Werte waren erst nach Gleichsetzen der Füllwerte bitgleich. Der Store muss `_FillValue` so liefern, wie `xarray` es für v3 liest.
+  - Die Zeilen liegen von Süd nach Nord; der Prototyp drehte sie mit `isel(y=slice(None, None, -1))` um.
+
+**Was neu ist [P, A]:**
+
+| Modul | Änderung | Importregel |
+|---|---|---|
+| `readers` | `ReferenceStore` neben `GatewayStore` (`get` → `Gateway.get` mit `Range` und `If-Match`, `412` → eigene Fehlerart, §8a.3); `ZarrAsset` bekommt Verweise und Zeitindex statt `store_url`; `ZarrReader` wählt den Store, wählt den Zeitschritt, dreht `y` bei Bedarf; `failures.py` bekommt `source_changed` | `readers` → `gateway` erlaubt; kein neues Paket (`zarr`, `numcodecs`, `xarray` stehen schon in der Lock-Datei) |
+| `access` | Auflösung Asset → Leser auch für das neue Format | unverändert |
+| `catalog` | Registry: Format (z. B. eigener Wert in `DataFormat` für Rang 3) und Felder für Verweise, Zeitindex, ETag | unverändert |
+| `discovery` | Verweise mit `h5py` über ein Dateiobjekt auf `gateway` erzeugen; Items je Zeitschritt materialisieren (Muster `materialize.py`) | `discovery` → `gateway`, `adapters`, `catalog` erlaubt; `h5py` ist kein HTTP-Client. Neuer Vertrag „`h5py` nur in `discovery`“ (§8a.4), eine Verschärfung |
+| `adapters` | Liste der Dateien je Quelle (FSDI-STAC aus M5-08, DWD-Verzeichnis) | unverändert |
+| `api`, `processing`, `jobs` | Fehlerart `source_changed` in `processing_route._FAILURES`; sonst nichts, weil das Item die Verweise trägt | unverändert |
+
+- Keine Lockerung einer Importregel. `GatewayStore` und echte Zarr-Stores bleiben, wie sie sind.
+- **Aufwand [A]:** zwei Pakete in M5-11, je unter etwa 400 Zeilen ohne Tests:
+  - (a) `readers`: Store, Zeitindex, Fehlerart, Tests mit synthetischen NetCDF-4-Dateien;
+  - (b) `discovery`, `adapters`, Registry: Verweise, Items, erster Datensatz.
+
+### 8a.2 Mengen: Items, Variablen, pgstac, Coverage, Harvest
+
+**Items je Datensatz** bei einem Item je Zeitschritt, abgeschlossene Jahre bis 2025 (F5) [M aus den Assetnamen bzw. der Verzeichnisliste]:
+
+| Quelle | Größen | ab | Items (Tage) |
+|---|---|---|---|
+| MeteoSchweiz, Gitter `ch01r` | `TabsD` | 1961 | 23 741 |
+| | `TminD`, `TmaxD`, `SrelD` | 1971 | 20 089 |
+| MeteoSchweiz, Gitter `ch01h` | `RhiresD` | 1961 | 23 741 |
+| DWD HYRAS-DE | `pr` | 1931 | 34 699 |
+| | `tas`, `tasmin`, `tasmax`, `hurs` | 1951 | 27 394 |
+
+Monatswerte sind je Größe 780 bzw. 660 Items.
+
+**Variablen: Assets eines Items oder eigene Items? (F6)**
+
+- **Assets eines Items** (Empfehlung):
+  - Ein Datensatz je Quelle, Gitter und Takt, z. B. „MeteoSchweiz täglich, `ch01r`“ mit den Assets `TabsD`, `TminD`, `TmaxD`, `SrelD`.
+  - Das ist das Modell der Plattform: Bänder eines Datensatzes sind Assets eines Items, `band_units` je Band, Band-Math über Assets eines Items (etwa `TmaxD − TminD`).
+  - Größen ohne Daten an einem Tag (vor 1971) fehlen als Asset.
+- **Nicht mischbar** sind Gitter: `RhiresD` liegt auf `ch01h` (265 statt 240 Zeilen, §3.1) und wird ein eigener Datensatz.
+- **Eigene Items je Größe** hieße 4–5-mal so viele Items und kein Band-Math zwischen Größen.
+
+**pgstac [A]:**
+
+- Ein Item mit vier bzw. fünf Assets und je Asset den Verweisen der eigenen Chunks: bei MeteoSchweiz ein Paar (Offset, Länge) je Asset, bei DWD 25. Das sind geschätzt 2–3 KB bzw. 4–5 KB JSON je Item.
+- Je Datensatz also etwa 50–150 MB JSON vor der Kompression in Postgres. Der DEM hat heute 26 450 Items (`adr/0009` §3.1); die Größenordnung kennt pgstac also schon.
+- Laden über `pypgstac` mit `upsert`, wie `materialize.py`; die Suche nach `datetime` bleibt die bestehende.
+
+**Coverage [P]:**
+
+- Der Weg `LOCAL_SQL` für Datensätze mit Zeitachse (Dichte) ist **nicht gebaut**; gebaut ist nur der Flächenweg für Einmal-Produkte (`api/coverage_route.py`, `_area_path`, „the density path that is not built (F4)“).
+- Bei einem festen Gitter ist die Dichte überall gleich: jedes Item hat dieselbe Fläche.
+- **Vorschlag [A]:** ein einfacher Weg „festes Gitter“ in M5-11: Fläche aus der Ausdehnung der Collection, Zahl der Zeitschritte aus dem Zeitraum, ohne Abfrage je Item. Er gehört zur Checkliste Punkt 2 und ist im Plan von M5-11 zu entscheiden.
+
+**Harvest [M, A]:**
+
+- **Erster Lauf:**
+  - MeteoSchweiz rund 300 Jahresdateien, DWD rund 400.
+  - Je Datei 5–8 Abrufe zu 64 KiB (§4), zusammen je Quelle rund 2 500 Abrufe und 150 MB.
+  - Einmalig, als Befehl in `discovery` wie `materialize`.
+- **Folgeläufe:**
+  - MeteoSchweiz: ein bedingter Abruf des Archiv-Items (1,5 MB, ETag, `304` gemessen). Jedes Asset trägt `updated` und `file:checksum`; neu verwiesen werden nur geänderte Dateien.
+  - DWD: Die Verzeichnisliste trägt **kein** ETag (gemessen: bedingte Anfrage ergibt `200`). Sie zeigt aber Datum und Größe je Datei. Also ganze Liste holen, dann bedingte Abrufe nur für Dateien mit neuem Datum. Das ist der Fall „Liste ohne ETag, Entscheidung über den Inhalt“ aus dem Entwurf von `adr/0025` (PR #300, F7).
+
+### 8a.3 ETag passt nicht mehr
+
+**Heute [P]:**
+
+- `412` kommt aus `gateway` als `UpstreamError` und wird in `readers/failures.py` zu `source_4xx`.
+- `source_4xx` ist nicht wiederholbar (`jobs/queue.py`, `RETRYABLE`). Die Oberfläche bietet „Run again“ nicht an (`frontend/src/jobState.ts`, `FAILS_AGAIN`). Der Titel lautet „The source refused a read“ (`api/processing_route.py`).
+- Das wäre bei einer neu gerechneten Datei falsch: Die Quelle lehnt nichts ab, nur die Verweise sind veraltet.
+
+**Vorschlag (F7, Option 1):**
+
+- **Fehlerart `source_changed`** in `failures.py`: `UpstreamError` mit Status `412`, sonst nichts.
+  - Nicht in `RETRYABLE`: Ein sofortiger zweiter Versuch mit demselben Rezept trüge dieselben Verweise und scheiterte gleich.
+  - Nicht in `FAILS_AGAIN`: „Run again“ schickt den Auftrag neu, und `api` holt die Items dabei frisch aus dem Katalog (`processing_route.py`, `fetch_item_or_refuse` bei der Annahme) [P]. Nach dem nächsten Lauf von `discovery` trägt das Item neue Verweise, der zweite Versuch geht.
+  - Titel in `_FAILURES`, z. B. „The source has updated this file; it is being catalogued again“, Status `502`.
+- **Anzeige im `tiler`:** dieselbe Fehlerart als `502` mit festem Titel; die Ebene zeigt ihren Fehler wie heute. Kein Ausweichen auf alte oder neue Bytes.
+- **Neues Harvesten:**
+  - Der nächste geplante Lauf findet die Änderung selbst: bedingter Abruf, `200`, Verweise der Datei neu, Items per `upsert`. MeteoSchweiz veröffentlicht am 10. und 26., DWD täglich (§7).
+  - Ein Anstoß aus dem Lesepfad ist nicht nötig. Worker und `tiler` schreiben ohnehin in keine Tabelle (B9).
+  - Ob `jobs` einen Fund `source_changed` als Hinweis an `discovery` weitergibt, gehört zu den Zuständen in `adr/0025` (Entwurf, PR #300, §5.4 und §6.6) und wird dort entschieden, nicht hier.
+- **Kachel-Caches [A]:** Eine Kachel-URL bestimmt das Bild vollständig (`architekturplan.md` 6.3). Ersetzt die Quelle eine Datei, ändert sich das Bild bei gleicher Item-ID. Die URL muss deshalb den Stand des Items tragen, z. B. das ETag der Datei oder `updated`. Das betrifft auch Browser- und CDN-Caches; der Plan von M5-11 legt das Feld fest.
+- **Provenienz:** Das ETag gehört in die Provenienz des Ergebnisses. So bleibt nachvollziehbar, welcher Stand der Datei gerechnet wurde.
+
+### 8a.4 `h5py`: Größe, Lizenz, Importregel
+
+- **Größe [M]:**
+  - Wheel `h5py` 3.16.0 für `manylinux_2_28_x86_64`: 5,4 MB.
+  - Installiert 18 MB: 12 MB Paket und 6,2 MB eigene Bibliotheken (`libhdf5` 2.0.0, `libhdf5_hl`, `libaec`, `libsz`).
+  - Zum Vergleich: `rasterio.libs` 67 MB.
+  - Ein Wheel für `aarch64` gibt es auch [M]; die Lock-Datei trägt die aarch64-Hashes mit (`adr/0016`).
+- **Images [P]:**
+  - Es gibt ein Image für `api`, `tiler`, `worker` und `harvester` (`backend/Dockerfile`, Stufe `app`). Das Runner-Image ist `FROM app AS runner`.
+  - Mit einer Lock-Datei landet `h5py` also in beiden Images, je +18 MB, auch wo es nie geladen wird.
+  - Ein eigenes Image nur für `harvester` spart das, kostet aber eine zweite Lock-Datei bzw. Stufe. Empfehlung: hinnehmen.
+- **Zwei HDF5 in einem Prozess [M]:** GDAL bringt im Rasterio-Wheel sein eigenes `libhdf5` 2.2.0 mit, `h5py` sein `libhdf5` 2.0.0. In einem Prozess geladen, lesen beide dieselbe Datei bitgleich. Weil `h5py` nur in `discovery` geladen wird, treffen sie im Betrieb ohnehin nicht zusammen.
+- **Lizenz:**
+  - `h5py`: BSD-3-Clause [M, Paketmetadaten].
+  - Die mitgelieferten Bibliotheken (HDF5 unter der eigenen BSD-artigen HDF5-Lizenz, `libaec` BSD-2-Clause) sind beim Eintrag in die Lock-Datei zu prüfen [S].
+- **Importregel:**
+  - `h5py` ist kein HTTP-Client und steht nicht auf der Verbotsliste.
+  - Ein neuer Vertrag in `.importlinter`, „`h5py` nur in `discovery`“ (Typ `forbidden`, alle anderen Module), hält es aus `readers`, `processing`, `runner` und `api` heraus. Das ist eine Verschärfung, keine Lockerung, und kommt mit M5-11.
+- **Zustimmung:** steht ausdrücklich in F1, Option 1.
+
+### 8a.5 Runner und Bitgleichheit (`adr/0014` F9)
+
+- Der Runner führt den Kern `processing` mit `readers` und `gateway` aus (B9; `adr/0016`). Das Rezept trägt die Items und damit die Verweise (F3). Der Runner liest über denselben `ReferenceStore` dieselben Byte-Ranges, nur von der IP des Nutzers. `h5py` braucht er nicht.
+- **Bitgleichheit T2 = T2L** (`adr/0014` F9, gleiches Image, gleiche CPU-Architektur):
+  - Die Eingabe ist dieselbe Folge von Bytes, gesichert durch `If-Match`.
+  - Das Entpacken mit zlib ist deterministisch, danach läuft dieselbe Blockschleife.
+  - Gemessen: Verweise aus `h5py` und `kerchunk` gleich [M]; der Weg über die Verweise gleich GDAL [M].
+- **Stärker als bei GDAL:** Hat die Quelle die Datei zwischen dem Lauf auf der Plattform und dem im Runner ersetzt, liefert der Runner `source_changed` statt anderer Zahlen. Das Ergebnis ist also bitgleich oder scheitert ausdrücklich, nie still verschieden.
+- Mit Option B (GDAL) ginge das nicht: GDAL liest die neue Datei ohne Prüfung.
+- **Provenienz:** ETag je Datei im Ergebnis (§8a.3). Der Vergleich in der CI (`adr/0016`) kann es mitprüfen.
+
+---
+
 ## 9. Fragen an Otto
 
 **F1 — Leseweg für NetCDF/HDF5?**
-1. A2: virtuelle Verweise mit eigenem Code über `gateway`; `h5py` neu in der Lock-Datei, nur für `discovery` **(Empfehlung)**
+1. A2: virtuelle Verweise mit eigenem Code über `gateway`, gelesen über einen zweiten Store im bestehenden Zarr-Lesepfad (§8a.1). **Dazu deine Zustimmung zur neuen Abhängigkeit `h5py` 3.16 (BSD-3-Clause, +18 MB im gemeinsamen Image und im Runner-Image)**, geladen nur in `discovery` und dort durch einen neuen Importvertrag festgehalten (§8a.4) **(Empfehlung)**
 2. B: GDAL-netCDF-Treiber über `/vsicurl/`, ohne neue Abhängigkeit, Durchsetzung von `gateway` erst in M6
 3. B jetzt für M5-11, A2 danach als eigene Aufgabe
 4. A1 mit VirtualiZarr über einen eigenen obspec-Store; `obstore` wird mitgeladen, verlangt deine Zustimmung zur Importgrenze
@@ -372,21 +508,32 @@ Nicht empfohlen:
 2. Auch das laufende Jahr, täglich neu verwiesen
 3. Auch die vorläufigen Tageswerte mit `expires`
 
+**F6 — Variablen und Datensätze (§8a.2)?**
+1. Ein Datensatz je Quelle, Gitter und Takt; die Größen sind Assets eines Items je Zeitschritt (z. B. MeteoSchweiz täglich `ch01r` mit `TabsD`, `TminD`, `TmaxD`, `SrelD`; `RhiresD` auf `ch01h` eigener Datensatz) **(Empfehlung)**
+2. Ein Datensatz je Größe, ein Item je Zeitschritt mit einem Asset
+3. Ein Datensatz je Quelle mit allen Gittern; Assets unterschiedlicher Gitter in einem Item
+
+**F7 — Die Quelle hat die Datei ersetzt (ETag passt nicht, §8a.3)?**
+1. Neue Fehlerart `source_changed` (nicht sofort wiederholt, „Run again“ angeboten); der nächste geplante Lauf verweist neu; die Kachel-URL trägt den Stand des Items **(Empfehlung)**
+2. Wie 1, dazu ein sofortiger Anstoß von `discovery` aus `jobs` (Regel in `adr/0025`)
+3. Der Leser erzeugt bei `412` die Verweise selbst neu und liest weiter (braucht `h5py` in `readers`, Ergebnis weicht vom Katalog ab)
+
 ---
 
 ## 10. Folgen
 
 Für den Fall, dass Otto die Empfehlungen annimmt. Diese Liste legt keine Plan-Dateien an und ändert weder Backlog noch M5-Plan.
 
-1. **M5-11** (erste Meteorologie-Quelle, Stufe B) setzt A2 um: Erzeugen der Verweise in `discovery`, Store und Zeitindex in `readers`, Items je Zeitschritt.
+1. **M5-11** (erste Meteorologie-Quelle, Stufe B) setzt A2 um, in zwei Paketen (§8a.1): `readers` (Store, Zeitindex, `source_changed`), dann `discovery`, `adapters` und Registry (Verweise, Items je Zeitschritt, erster Datensatz). Dazu der Coverage-Weg „festes Gitter“ und der Stand des Items in der Kachel-URL (§8a.2, §8a.3).
    - Kandidat bleibt MeteoSchweiz `ogd-surface-derived-grid`: unkomprimiert, ein Chunk je Tag, also der einfachste Fall. DWD HYRAS danach (zlib, Chunks über 40 Tage).
-   - Plan klärt: welche Größen (Tagesmittel, Niederschlag …) als ein Datensatz oder mehrere; die beiden Gitter `ch01r` und `ch01h` (§3.1); der Name der Registry-Felder für Verweise und Zeitindex.
+   - Plan klärt: die Namen der Registry-Felder für Verweise, Zeitindex und ETag; den Coverage-Weg; das Feld für den Stand in der Kachel-URL. Datensätze nach F6.
    - Tests mit synthetischen NetCDF-4-Dateien (unkomprimiert und zlib, Zeilen von Süd nach Nord) unter `tests/fixtures`; GDAL als Gegenprobe (bitgleich).
-2. **Lock-Datei:** `h5py` neu (BSD-3-Clause). `kerchunk`, `virtualizarr`, `fsspec`-HTTP und `obstore` kommen nicht dazu.
-3. **`readers`:** Der Leser lernt eine Zeitdimension und Zarr-v2-Filter bzw. eine Übersetzung der Metadaten; `ZARR_FORMAT = 3` bleibt für echte Zarr-Stores.
-4. **Registry:** Zeitachse und Verweise je Item; `time_range = true`. Die Felder benennt der Plan von M5-11.
-5. **`adr/0023` §7.1 und §9.1** sowie **`adr/0027` §6.5**: ARCO-ERA5 ist gemessen (Zarr v2, Chunk 1 h × Erde, kein Requester Pays, Lizenz laut README Copernicus) — Nachtrag dort bei Gelegenheit, nicht in diesem PR.
-6. **`architekturplan.md` 6.2 Rang 3:** Nachtrag bei Annahme: „virtuelle Verweise ohne Icechunk, erzeugt mit `h5py` über `gateway`“.
+2. **Lock-Datei:** `h5py` neu (BSD-3-Clause, mit Prüfung der mitgelieferten Bibliotheken). `kerchunk`, `virtualizarr`, `fsspec`-HTTP und `obstore` kommen nicht dazu. **`.importlinter`:** neuer Vertrag „`h5py` nur in `discovery`“.
+3. **`readers`:** `ReferenceStore` neben `GatewayStore`; der Leser lernt einen Zeitindex und die Achsenrichtung; `ZARR_FORMAT = 3` bleibt. `failures.py`, `processing_route._FAILURES` und `frontend/src/jobState.ts` kennen `source_changed` (F7).
+4. **Registry:** Format für Rang 3, Zeitachse, Verweise und ETag je Item; `time_range = true`. Die Felder benennt der Plan von M5-11.
+5. **`adr/0025`** (Entwurf, PR #300): ob `source_changed` aus `jobs` einen Lauf anstößt (F7 Option 2), und dass Listen ohne ETag (DWD) über ihren Inhalt entschieden werden, passt zu dessen F7.
+6. **`adr/0023` §7.1 und §9.1** sowie **`adr/0027` §6.5**: ARCO-ERA5 ist gemessen (Zarr v2, Chunk 1 h × Erde, kein Requester Pays, Lizenz laut README Copernicus) — Nachtrag dort bei Gelegenheit, nicht in diesem PR.
+7. **`architekturplan.md` 6.2 Rang 3:** Nachtrag bei Annahme: „virtuelle Verweise ohne Icechunk, erzeugt mit `h5py` über `gateway`“.
 
 ---
 
