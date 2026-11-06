@@ -21,7 +21,6 @@ from tests.conftest import own_log_text
 from tests.earthx.adapters.conftest import NOMINATIM_HOST, NOMINATIM_POLICY, answering, gateway_for, load_nominatim
 
 BASE_URL = f"https://{NOMINATIM_HOST}"
-USER_AGENT = "EarthX-test/0.0 (+https://example.invalid)"
 RESULT_NAME = "Musterstadt"  # the place `search_hit_with_outline.json` answers with
 
 
@@ -70,7 +69,6 @@ def build_client(
     cache: FakeCache | None = None,
     rate_slot: FakeRateSlot | None = None,
     geocoder_url: str | None = BASE_URL,
-    user_agent: str = USER_AGENT,
     monkeypatch: pytest.MonkeyPatch,
 ) -> TestClient:
     pool = FakePool() if pool is ... else pool
@@ -85,7 +83,6 @@ def build_client(
     app.state.earthx_cache_pool = pool
     if geocoder_url is not None:
         app.state.earthx_geocoder_url = geocoder_url
-        app.state.earthx_geocoder_user_agent = user_agent
     return TestClient(app)
 
 

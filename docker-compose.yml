@@ -80,6 +80,8 @@ services:
       target: app
     entrypoint: ["python", "-m", "earthx.discovery.materialize"]
     environment:
+      # M5-18: the one User-Agent of this instance, on every outgoing request; empty = the built-in one.
+      EARTHX_USER_AGENT: ${EARTHX_USER_AGENT:-}
       PGHOST: postgres
       PGPORT: "5432"
       PGUSER: ${POSTGRES_USER}
@@ -217,7 +219,8 @@ services:
       # M3-07a: unset (the default) turns place search off — `api.dependencies`
       # treats an empty value the same as unset.
       EARTHX_GEOCODER_URL: ${EARTHX_GEOCODER_URL:-}
-      EARTHX_GEOCODER_USER_AGENT: ${EARTHX_GEOCODER_USER_AGENT:-}
+      # M5-18: the one User-Agent of this instance, on every outgoing request; empty = the built-in one.
+      EARTHX_USER_AGENT: ${EARTHX_USER_AGENT:-}
       # NM4-03: where a client reaches the tiler (published below as 8001). The
       # `tiles` link of a results document is built from this value, never from
       # the request's Host header.
@@ -261,6 +264,8 @@ services:
     ports:
       - "8001:8000"
     environment:
+      # M5-18: the one User-Agent of this instance, on every outgoing request; empty = the built-in one.
+      EARTHX_USER_AGENT: ${EARTHX_USER_AGENT:-}
       # Like `api` above: the tiler reads the item cache and the statistics cache of
       # adr/0006 from the same Postgres. Both caches are optional (a miss is slower,
       # never wrong), but the process opens the pool at startup — M1-07 showed that a
@@ -313,6 +318,8 @@ services:
     # not start unless the bucket carries the `results/` lifecycle rule that
     # objectstore-init sets (adr/0015 §7.3, F8).
     environment:
+      # M5-18: the one User-Agent of this instance, on every outgoing request; empty = the built-in one.
+      EARTHX_USER_AGENT: ${EARTHX_USER_AGENT:-}
       # M4-08a: the queue lives in Postgres (migration 006, applied by
       # catalog-load); same libpq-style names as api and catalog-load. The slots,
       # lease, heartbeat and polling interval (WORKER_*) keep their defaults here
