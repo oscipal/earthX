@@ -100,7 +100,7 @@ async function check(browser, theme, viewport, scenario) {
       return json({ b1: { count: 900, min: -0.2, max: 0.9, percentile_2: -0.1, percentile_98: 0.8, unit: null } });
     }
     if (url.pathname.includes('/tiles/')) {
-      seen.itemTiles.push(url.pathname);
+      seen.itemTiles.push(url.pathname + url.search);
       return route.fulfill({ status: 200, contentType: 'image/png', body: TILE });
     }
     return json({ detail: 'not made up' }, 404);
@@ -149,8 +149,8 @@ async function check(browser, theme, viewport, scenario) {
   await page.locator('textarea[id$="-expression"]').fill('(nir - red) / (nir + red)');
   fs.mkdirSync(OUT, { recursive: true });
   const shot = (label) => page.screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_${label}.png`) });
-  const loading = page.locator('.preview-badge-dock .preview-badge.loading');
-  const badges = () => page.locator('.preview-badge-dock .preview-badge:not(.loading)');
+  const loading = page.locator('.preview-badge-dock .badge.loading');
+  const badges = () => page.locator('.preview-badge-dock .badge:not(.loading)');
 
   if (scenario === 'cold') {
     // 400 ms of debounce, 600 ms before the badge shows: by 1.6 s the wait is on the map and in no line of the panel.
@@ -161,11 +161,11 @@ async function check(browser, theme, viewport, scenario) {
       const dock = await page.locator('.preview-badge-dock').boundingBox();
       if (box.width > 120 || box.height > 32) problems.push(`the badge takes ${Math.round(box.width)} x ${Math.round(box.height)} px`);
       if (box.x < 0 || box.x + box.width > VIEWPORTS[viewport].width || dock.y + dock.height > VIEWPORTS[viewport].height) problems.push('the badge is not within the window');
-      if ((await loading.getAttribute('title')) !== 'Reading the scenes. The first tile of a mosaic can take several seconds.') problems.push('the badge has no explanation in its tooltip');
+      if ((await loading.getAttribute('data-tip')) !== 'Reading the scenes. The first tile of a mosaic can take several seconds.') problems.push('the badge has no explanation in its tooltip');
       await shot('loading');
     }
     // The panel's heading says it too, in a badge: a narrow window hides the map behind the panel.
-    const inHeading = page.locator('.processing-panel .pp-heading .pp-badge.loading');
+    const inHeading = page.locator('.processing-panel .pp-heading .badge.loading');
     if ((await inHeading.count()) !== 1) problems.push('no "Loading…" badge in the heading of the preview');
     else {
       await inHeading.scrollIntoViewIfNeeded();
@@ -186,19 +186,22 @@ async function check(browser, theme, viewport, scenario) {
     if (seen.statistics.length !== 1 || !seen.statistics[0].includes(`/items/${ORDER[0]}/statistics`)) problems.push(`the statistics asked: ${seen.statistics.join(', ')}; not once over ${ORDER[0]}`);
     const first = new URLSearchParams(seen.mosaicTiles[0] ?? '');
     if (JSON.stringify(first.getAll('item')) !== JSON.stringify([...SCENES].sort())) problems.push(`the mosaic tile names the scenes ${first.getAll('item')}`);
-    for (const key of first.keys()) if (!['item', 'asset', 'op', 'op_version', 'params', 'rescale', 'colormap_name'].includes(key)) problems.push(`the mosaic tile carries ${key}`);
-    if ((await badges().first().getAttribute('title')) !== null) problems.push('"Preview" carries a hint though the mosaic is drawn');
+    for (const key of first.keys()) if (!['item', 'asset', 'op', 'op_version', 'params', 'rescale', 'colormap_name', 'band', 'tilesize'].includes(key)) problems.push(`the mosaic tile carries ${key}`);
+    // NM4-29b: the tiles of a mosaic are 512 px; those of a scene are not asked in a size (the tiler's 256).
+    if (seen.mosaicTiles.some((search) => new URLSearchParams(search).get('tilesize') !== '512')) problems.push('a mosaic tile does not ask for tilesize=512');
+    if ((await badges().first().getAttribute('data-tip')) !== null) problems.push('"Preview" carries a hint though the mosaic is drawn');
   } else {
     await page.waitForTimeout(2500);
     const badge = badges().first();
     if ((await badge.textContent()) !== 'Preview') problems.push('no "Preview" badge');
-    if ((await badge.getAttribute('title')) !== HINT) problems.push('"Preview" over the map has no hint in its tooltip');
-    const inPanel = page.locator('.processing-panel .pp-badge:not(.loading)');
-    if ((await inPanel.getAttribute('title')) !== HINT) problems.push('"Preview" in the panel has no hint in its tooltip');
+    if ((await badge.getAttribute('data-tip')) !== HINT) problems.push('"Preview" over the map has no hint in its tooltip');
+    const inPanel = page.locator('.processing-panel .badge:not(.loading)');
+    if ((await inPanel.getAttribute('data-tip')) !== HINT) problems.push('"Preview" in the panel has no hint in its tooltip');
     const panel = await page.evaluate(() => document.querySelector('.processing-panel')?.textContent ?? '');
     if (/Preview per scene|may differ from the job/.test(panel)) problems.push('the panel carries the hint as text');
     if (seen.mosaicTiles.length !== 0) problems.push('a refused mosaic asked for tiles');
     if (seen.itemTiles.length === 0) problems.push('no scene was drawn instead');
+    if (seen.itemTiles.some((tile) => tile.includes('tilesize'))) problems.push('a scene tile names a size, not the tiler\'s 256');
     if (seen.itemProbes.length < 1) problems.push('the first scene was not asked about the chain');
     // A narrow window hides the map behind the panel: the tooltip of the badge in the panel is the one to look at.
     await (viewport === 'wide' ? badge : inPanel).hover();

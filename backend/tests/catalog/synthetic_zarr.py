@@ -22,6 +22,7 @@ from earthx.catalog.registry import (
     DatasetConfig,
     DatasetRegistry,
     MaskSource,
+    SearchCapabilities,
     ViewerInfo,
     ZarrInfo,
 )
@@ -38,8 +39,9 @@ def without_cloud_share(entry: DatasetConfig) -> DatasetConfig:
     """
     return replace(
         entry,
-        mask=replace(entry.mask, cloud_classes=frozenset(), cloud_note=""),
-        search_filters=tuple(replace(item, within_aoi=False) for item in entry.search_filters),
+        mask=replace(entry.mask, cloud_classes=frozenset(), cloud_note="", share_classes=()),
+        search_filters=tuple(replace(item, within_aoi=None) for item in entry.search_filters),
+        search_capabilities=SearchCapabilities(evaluate=False, aoi_coverage=False),
     )
 
 
@@ -81,11 +83,13 @@ SYNTHETIC_ZARR: DatasetConfig = replace(
         note=SENTINEL_2_L2A.mask.note,
         cloud_classes=frozenset(),
         cloud_note="",
+        share_classes=(),
     ),
     band_units={"SR_*": "1", "SCL_20m:scl": None},
     auxiliary_assets=(),
     # The Zarr layer has no cloud classes (DS-03 plan §6.19), so none of the inherited filters is "within AOI".
-    search_filters=tuple(replace(entry, within_aoi=False) for entry in SENTINEL_2_L2A.search_filters),
+    search_filters=tuple(replace(entry, within_aoi=None) for entry in SENTINEL_2_L2A.search_filters),
+    search_capabilities=SearchCapabilities(evaluate=False, aoi_coverage=False),
     index_presets=(),
     true_color=(),
 )

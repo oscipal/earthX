@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// The output of the processing panel (NM4-43e, adr/0020 §6, §9, §14): "Select Bands that are processed", the names of the
+// The output of the processing panel (NM4-43e, adr/0020 §6, §9, §14): "Select bands to process", the names of the
 // bands a band math step adds, and the bands of the data above as information. No backend: `fetch` answers the process
 // description, the estimate and, where a test says so, a refusal.
 
@@ -16,6 +16,7 @@ import { useProcessingStore } from '../processingStore';
 import { useAppStore } from '../store';
 import type { Collection, EarthxMask, StacAsset, StacItem } from '../types';
 import ProcessingPanel from './ProcessingPanel';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -26,7 +27,7 @@ const COG = 'image/tiff; application=geotiff; profile=cloud-optimized';
 const AOI = bboxToPolygon([10.4, 50.4, 10.6, 50.6]);
 const DESCRIPTION = '/processing/processes/recipe?dataset=sentinel-2-c1-l2a';
 const ESTIMATE_URL = '/processing/processes/recipe/estimate';
-const HEADING = 'Select Bands that are processed';
+const HEADING = 'Select bands to process';
 
 const SCL: EarthxMask = {
   asset: 'scl',
@@ -156,7 +157,7 @@ async function openPanel() {
 
 function button(label: string | RegExp, within: ParentNode = container): HTMLButtonElement {
   const found = [...within.querySelectorAll('button')].find((b) =>
-    typeof label === 'string' ? b.textContent?.trim() === label : label.test(b.textContent ?? ''),
+    typeof label === 'string' ? (b.textContent?.trim() === label || b.getAttribute('aria-label') === label) : label.test(b.textContent ?? ''),
   );
   if (!found) throw new Error(`no button ${String(label)} in ${container.textContent}`);
   return found as HTMLButtonElement;
@@ -182,11 +183,11 @@ const store = () => useProcessingStore.getState();
 const out = () => container.querySelector('section[aria-label="Output"]')!;
 const info = () => container.querySelector('section[aria-label="Bands"]')!;
 const group = (label: string) => out().querySelector(`[aria-label="${label}"]`);
-const names = (where: ParentNode | null) => [...(where?.querySelectorAll('.pp-chip') ?? [])].map((c) => c.childNodes[0].textContent);
+const names = (where: ParentNode | null) => [...(where?.querySelectorAll('.pp-chips .seg') ?? [])].map((c) => c.childNodes[0].textContent);
 const checked = () =>
-  [...out().querySelectorAll<HTMLButtonElement>('.pp-chip[aria-pressed="true"]')].map((c) => c.childNodes[0].textContent);
-const outChip = (name: string) => [...out().querySelectorAll<HTMLButtonElement>('.pp-chip')].find((c) => c.childNodes[0].textContent === name)!;
-const infoChip = (name: string) => [...info().querySelectorAll<HTMLButtonElement>('.pp-chip')].find((c) => c.childNodes[0].textContent === name)!;
+  [...out().querySelectorAll<HTMLButtonElement>('.pp-chips .seg[aria-pressed="true"]')].map((c) => c.childNodes[0].textContent);
+const outChip = (name: string) => [...out().querySelectorAll<HTMLButtonElement>('.pp-chips .seg')].find((c) => c.childNodes[0].textContent === name)!;
+const infoChip = (name: string) => [...info().querySelectorAll<HTMLButtonElement>('.pp-chips .seg')].find((c) => c.childNodes[0].textContent === name)!;
 const heading = () => out().querySelector('h3')!.textContent;
 const summary = () => out().querySelector('[aria-label="Output summary"]')!.textContent;
 const expression = (step = 0) => container.querySelectorAll<HTMLTextAreaElement>('textarea[data-band-target]')[step];
@@ -194,7 +195,7 @@ const nameField = (step = 0) => container.querySelectorAll<HTMLInputElement>('in
 const startButton = () => button(/Start job|Starting/);
 
 async function addBandMath(text = 'nir - red') {
-  click(button('＋ Band math'));
+  click(button('Band math'));
   typeInto(expression(store().steps.filter((s) => s.op === 'band_math').length - 1), text);
 }
 
@@ -220,7 +221,7 @@ describe('what is in the output when the panel opens (adr/0020 §9)', () => {
   it('is nothing after reproject, mask or normalize either, and nothing without a step', async () => {
     select(scene());
     await openPanel();
-    for (const op of ['＋ Reproject and resample', '＋ Mask', '＋ Normalize']) {
+    for (const op of ['Reproject and resample', 'Mask by class', 'Normalize']) {
       click(button(op));
       expect(checked(), op).toEqual([]);
     }
@@ -242,12 +243,12 @@ describe('what is in the output when the panel opens (adr/0020 §9)', () => {
   it('locks the start while the output is empty, and says why in the tooltip', async () => {
     select(scene());
     await openPanel();
-    click(button('＋ Mask'));
+    click(button('Mask by class'));
     expect(startButton().disabled).toBe(true);
-    expect(startButton().title).toBe(EMPTY_OUTPUT);
-    expect(EMPTY_OUTPUT).toBe('Pick at least one band for the output.');
+    expect(tipOf(startButton())).toBe(EMPTY_OUTPUT);
+    expect(EMPTY_OUTPUT).toBe('Choose at least one band for the output.');
     click(outChip('red'));
-    expect(startButton().title).not.toBe(EMPTY_OUTPUT);
+    expect(tipOf(startButton())).not.toBe(EMPTY_OUTPUT);
   });
 
   it('checks the one band of a dataset that has one, once: a later "None" stays, until the panel is opened again', async () => {
@@ -259,7 +260,7 @@ describe('what is in the output when the panel opens (adr/0020 §9)', () => {
     await flush();
     expect(checked()).toEqual([]);
     // Another step does not bring it back.
-    click(button('＋ Reproject and resample'));
+    click(button('Reproject and resample'));
     await flush();
     expect(checked()).toEqual([]);
   });
@@ -335,7 +336,7 @@ describe('the results of band math steps', () => {
     await addBandMath();
     await addBandMath('green - nir');
     expect(checked()).toEqual(['result', 'result_1']);
-    click(button('✕ Remove'));
+    click(button('Remove'));
     expect(checked()).toEqual(['result_1']);
     expect(store().output).toEqual(['result_1']);
   });
@@ -381,7 +382,7 @@ describe('the results of band math steps', () => {
 });
 
 describe('what an expression names', () => {
-  const problemOf = (step = 0) => container.querySelectorAll('.pp-step')[step].querySelector('.hint-text.error')?.textContent ?? null;
+  const problemOf = (step = 0) => container.querySelectorAll('.pp-step')[step].querySelector('.error')?.textContent ?? null;
 
   it('is a band of the data or a result of a step before: anything else is told at once, as a name is', async () => {
     select(scene());
@@ -408,9 +409,9 @@ describe('what an expression names', () => {
     typeInto(expression(0), 'red red');
     const why = 'Step 1: Enter a valid expression';
     expect(button('Review').disabled).toBe(true);
-    expect(button('Review').title).toBe(why);
-    expect(startButton().title).toBe(why);
-    expect(button('＋ Mask').disabled).toBe(true);
+    expect(tipOf(button('Review'))).toBe(why);
+    expect(tipOf(startButton())).toBe(why);
+    expect(button('Mask by class').disabled).toBe(true);
     await review();
     expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/estimate'))).toBe(false);
     typeInto(expression(0), 'red / nir');
@@ -422,17 +423,17 @@ describe('what an expression names', () => {
     await openPanel();
     await addBandMath('red - re');
     const why = "Step 1: 're' is not a band name";
-    expect(button('＋ Mask').disabled).toBe(true);
-    expect(button('＋ Mask').title).toBe(why);
+    expect(button('Mask by class').disabled).toBe(true);
+    expect(tipOf(button('Mask by class'))).toBe(why);
     expect(button('Review').disabled).toBe(true);
-    expect(button('Review').title).toBe(why);
+    expect(tipOf(button('Review'))).toBe(why);
     expect(startButton().disabled).toBe(true);
-    expect(startButton().title).toBe(why);
+    expect(tipOf(startButton())).toBe(why);
     await review();
     expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/estimate'))).toBe(false);
     typeInto(expression(0), 'red - nir');
     expect(button('Review').disabled).toBe(false);
-    expect(button('＋ Mask').disabled).toBe(false);
+    expect(button('Mask by class').disabled).toBe(false);
   });
 
   it('takes the result of an earlier step and the name of a function, not a number or a longer name for a band', async () => {
@@ -467,7 +468,7 @@ describe('the resolution of a reproject step (review of #250)', () => {
   it('has its unit small beside its label, once the code is known', async () => {
     select(scene());
     await openPanel();
-    click(button('＋ Reproject and resample'));
+    click(button('Reproject and resample'));
     const label = field('resolution').closest('label')!;
     expect(label.querySelector('[aria-label="Unit"]')).toBeNull();
     typeInto(field('crs'), 'EPSG:3035');
@@ -480,7 +481,7 @@ describe('the resolution of a reproject step (review of #250)', () => {
   it('says what format a code needs, not the pattern', async () => {
     select(scene());
     await openPanel();
-    click(button('＋ Reproject and resample'));
+    click(button('Reproject and resample'));
     typeInto(field('crs'), 'EPSG:30');
     expect(container.textContent).toContain('Needs to be in the format "EPSG:3035"');
     expect(container.textContent).not.toContain('Does not match');
@@ -493,7 +494,7 @@ describe('the name of a result', () => {
     await openPanel();
     await addBandMath('(nir - red) / (nir + red)');
     await addBandMath('result * 2');
-    click(button('＋ Normalize'));
+    click(button('Normalize'));
   }
 
   // The name is typed into the field and taken over when the field is left, as a person does it.
@@ -502,7 +503,7 @@ describe('the name of a result', () => {
     typeInto(nameField(step), text);
     if (leave) act(() => nameField(step).blur());
   }
-  const hint = () => container.querySelector('.hint-text.error[id$="-problem"]')?.textContent ?? null;
+  const hint = () => container.querySelector('.error[id$="-problem"]')?.textContent ?? null;
 
   it('is result by default, and result_1, result_2 where that is taken', async () => {
     select(scene());
@@ -568,14 +569,14 @@ describe('the name of a result', () => {
     typeInto(nameField(0), 'red');
     const why = "Step 1: 'red' is already a band name";
     expect(store().nameProblems).toEqual({ [store().steps[0].key]: "'red' is already a band name" });
-    for (const label of ['＋ Band math', '＋ Mask', '＋ Normalize', '＋ Reproject and resample']) {
+    for (const label of ['Band math', 'Mask by class', 'Normalize', 'Reproject and resample']) {
       expect(button(label).disabled, label).toBe(true);
-      expect(button(label).title, label).toBe(why);
+      expect(tipOf(button(label)), label).toBe(why);
     }
     expect(button('Review').disabled).toBe(true);
-    expect(button('Review').title).toBe(why);
+    expect(tipOf(button('Review'))).toBe(why);
     expect(startButton().disabled).toBe(true);
-    expect(startButton().title).toBe(why);
+    expect(tipOf(startButton())).toBe(why);
     await review();
     expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/estimate'))).toBe(false);
     // Put right, everything is open again.
@@ -583,7 +584,7 @@ describe('the name of a result', () => {
     act(() => nameField(0).blur());
     expect(store().nameProblems).toEqual({});
     expect(button('Review').disabled).toBe(false);
-    expect(button('＋ Band math').disabled).toBe(false);
+    expect(button('Band math').disabled).toBe(false);
     expect(hint()).toBeNull();
   });
 
@@ -592,7 +593,7 @@ describe('the name of a result', () => {
     act(() => nameField(1).focus());
     typeInto(nameField(1), 'scl');
     expect(store().nameProblems).not.toEqual({});
-    click(button('✕ Remove', container.querySelectorAll('.pp-step')[1]));
+    click(button('Remove', container.querySelectorAll('.pp-step')[1]));
     expect(store().nameProblems).toEqual({});
     expect(button('Review').disabled).toBe(false);
   });
@@ -687,7 +688,7 @@ describe('no limit of bands (adr/0020 §7)', () => {
   it('takes 20 bands into one order, which was refused above 16', async () => {
     select({ ...scene(), assets: MANY }, dataset({ 'earthx:mask': undefined, 'earthx:auxiliary_assets': undefined }));
     await openPanel();
-    click(button('＋ Reproject and resample'));
+    click(button('Reproject and resample'));
     expect(checked()).toEqual([]);
     click(button('All'));
     expect(checked()).toHaveLength(20);
@@ -713,7 +714,7 @@ describe('the memory limit of a job (adr/0020 §7)', () => {
     await addBandMath();
     await review();
     expect(startButton().disabled).toBe(true);
-    expect(startButton().title).toBe(REASON);
+    expect(tipOf(startButton())).toBe(REASON);
     expect(container.textContent).not.toContain(REASON);
     expect(container.textContent).not.toContain('The whole scene is too large');
   });
@@ -733,7 +734,7 @@ describe('the bands a normalize step converts', () => {
     select(scene());
     await openPanel();
     await addBandMath();
-    click(button('＋ Normalize'));
+    click(button('Normalize'));
     expect(store().steps[1].values.bands).toBe('result');
     const picker = container.querySelector('fieldset.pp-classes')!;
     expect(names(picker)).toEqual(['result', 'green', 'red', 'nir']);
@@ -747,9 +748,9 @@ describe('the bands a normalize step converts', () => {
   it('is told to pick a band when none is chosen', async () => {
     select(scene());
     await openPanel();
-    click(button('＋ Normalize'));
+    click(button('Normalize'));
     await review();
-    expect(container.textContent).toContain('Pick at least one band.');
+    expect(container.textContent).toContain('Choose at least one band.');
   });
 });
 

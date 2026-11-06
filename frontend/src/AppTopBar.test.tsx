@@ -1,9 +1,7 @@
 // @vitest-environment jsdom
 //
 // V-2 (docs/plans/m2/m2-format-und-viewer.md), five findings from Otto's review:
-// 1. the theme/projection buttons label the switch's *target* (what clicking
-//    gets you), e.g. "Light" while the theme is dark — confirmed with Otto
-//    2026-09-23 after an initial state-first reading of the same wording;
+// 1. the theme/projection buttons (gone with UI-04 part 4: the menu of "Settings" has them, `SettingsPanel.test.tsx`);
 // 2. (icons for the projection: replaced by the "Basemap" menu, UI-02a; the symbol for "Layers" moved to the
 //    rail, UI-01, `AppRail.test.tsx`);
 // 3. "Zoom to selection" is disabled with neither an AOI nor pinned layers;
@@ -75,36 +73,38 @@ describe('top-right map controls', () => {
     vi.unstubAllGlobals();
   });
 
-  it('labels the theme button by the switch target: "Light" while dark, "Dark" while light (point 1)', () => {
-    const view = mount();
-    expect(btn(view, 'Light')?.textContent).toContain('☀');
-    expect(btn(view, 'Dark')).toBeNull();
-
-    act(() => {
-      btn(view, 'Light')!.click();
-    });
-    expect(btn(view, 'Dark')?.textContent).toContain('☾');
-    expect(btn(view, 'Light')).toBeNull();
-  });
-
-  it('has a "Basemap" button where "Mercator/Globe" was, and no button for the projection of its own (UI-02a)', () => {
+  it('has no button for the theme any more: "Light", "Dark" and "System" are in the panel "Settings" (UI-04 part 4)', () => {
     const view = mount();
     const bar = view.querySelector<HTMLElement>('.top-right')!;
-    expect(btn(bar, 'Basemap')).not.toBeNull();
-    expect(btn(bar, 'Globe')).toBeNull();
-    expect(btn(bar, 'Mercator')).toBeNull();
-    // The theme keeps its own button (Otto, 27.10.2026).
-    expect(btn(bar, 'Light')).not.toBeNull();
+    expect(btn(bar, 'Light')).toBeNull();
+    expect(btn(bar, 'Dark')).toBeNull();
+    expect(view.querySelector('.app')?.getAttribute('data-theme')).toBe('tech');
+    act(() => {
+      view.querySelector<HTMLButtonElement>('button.rail-settings')!.click();
+    });
+    act(() => {
+      [...view.querySelectorAll<HTMLButtonElement>('.settings-panel .btn.seg')].find((e) => e.textContent === 'Light')!.click();
+    });
+    expect(view.querySelector('.app')?.getAttribute('data-theme')).toBe('normal');
   });
 
-  it('puts the projection in the Basemap menu, and back', () => {
+  it('has no "Basemap" button and none for the projection: the panel "Settings" has both (UI-02a, UI-04 part 4)', () => {
+    const view = mount();
+    const bar = view.querySelector<HTMLElement>('.top-right')!;
+    expect(btn(bar, 'Basemap')).toBeNull();
+    expect(btn(bar, 'Globe')).toBeNull();
+    expect(btn(bar, 'Mercator')).toBeNull();
+    expect(view.querySelector('button.rail-settings')).not.toBeNull();
+  });
+
+  it('puts the projection in the panel "Settings", and back', () => {
     const view = mount();
     const choose = (name: string) =>
       act(() => {
-        [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')].find((e) => e.textContent === name)!.click();
+        [...view.querySelectorAll<HTMLButtonElement>('.settings-panel .btn.seg')].find((e) => e.textContent === name)!.click();
       });
     act(() => {
-      btn(view, 'Basemap')!.click();
+      view.querySelector<HTMLButtonElement>('button.rail-settings')!.click();
     });
     choose('Globe');
     expect(useAppStore.getState().projection).toBe('globe');
@@ -123,6 +123,8 @@ describe('top-right map controls', () => {
   it('disables "Zoom to selection" with neither an AOI nor pinned layers, and enables it once one exists (point 3)', () => {
     const view = mount();
     expect(btn(view, 'Zoom to selection')?.disabled).toBe(true);
+    // A locked button says why (`TipLayer` shows it in either step of the tooltips).
+    expect(btn(view, 'Zoom to selection')?.getAttribute('data-tip')).toBe('Nothing to zoom to: draw an AOI, open an image or show a layer');
 
     act(() => {
       useAppStore.setState({
@@ -141,6 +143,7 @@ describe('top-right map controls', () => {
       });
     });
     expect(btn(view, 'Zoom to selection')?.disabled).toBe(false);
+    expect(btn(view, 'Zoom to selection')?.getAttribute('data-tip')).toMatch(/^Zoom the map to fit/u);
   });
 });
 
@@ -196,6 +199,7 @@ describe('the processing side bar and the manager of the jobs', () => {
     resampled: null,
     failure: null,
     failureKind: null,
+    normalize: null,
     error: null,
     cancelling: false,
     retrying: false,
@@ -213,6 +217,7 @@ describe('the processing side bar and the manager of the jobs', () => {
     range: null,
     bandRanges: {},
     shownBand: null,
+    dates: null,
     archived: false,
     groupId: null,
     batchId: null,

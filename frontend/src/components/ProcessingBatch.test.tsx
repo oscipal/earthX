@@ -17,6 +17,7 @@ import { useAppStore } from '../store';
 import type { Collection, StacItem } from '../types';
 import ProcessingManager from './ProcessingManager';
 import ProcessingPanel from './ProcessingPanel';
+import { tipOf, tipsOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -213,7 +214,7 @@ function typeInto(input: HTMLTextAreaElement, value: string) {
 }
 
 async function ndvi() {
-  click(button('＋ Band math'));
+  click(button('Band math'));
   typeInto(container.querySelector('textarea[id$="-expression"]')!, '(nir - red) / (nir + red)');
 }
 
@@ -257,7 +258,7 @@ describe('what "Run as" offers', () => {
     await openPanel();
     const perScene = button('One job per scene (26)');
     expect(perScene.disabled).toBe(true);
-    expect(perScene.title).toBe('At most 25 jobs at once');
+    expect(tipOf(perScene)).toBe('At most 25 jobs at once');
     // not only in the tooltip: a touch screen has none
     expect(text()).toContain('At most 25 jobs at once.');
   });
@@ -284,6 +285,39 @@ describe('what "Run as" offers', () => {
     click(button('One job per scene (3)'));
     act(() => useProcessingStore.getState().resetDraft());
     expect(button('One job').getAttribute('aria-pressed')).toBe('true');
+  });
+});
+
+describe('the warning at the review of a batch that resamples bands (NM4-65 part 7)', () => {
+  const FACTS = { resampling: { grid: { resolution: 10, crs: 'EPSG:32632' }, method: 'nearest', bands: [{ band: 'rededge1', resolution: 20, crs: 'EPSG:32632' }], scenes: null } };
+  const dialog = () => document.querySelector<HTMLElement>('[role="alertdialog"]');
+
+  it('is one warning for the batch, with a line of facts for each part that has some', async () => {
+    selectPasses([sceneIds(3)]);
+    await openPanel();
+    await ndvi();
+    click(button('One job per scene (3)'));
+    // The first and the third scene resample, the second does not.
+    estimateFor = (ids) => json({ ...estimateOf(), ...(ids[0] === 'S2' ? {} : FACTS) });
+    await review();
+    expect(document.querySelectorAll('[role="alertdialog"]')).toHaveLength(1);
+    const parts = [...dialog()!.querySelectorAll('.resampling-part')];
+    expect(parts).toHaveLength(2);
+    expect(parts.every((part) => part.textContent!.includes('Resampled: rededge1 (20 m).'))).toBe(true);
+    // "Cancel" drops the review of the whole batch: the start stays shut.
+    click(dialog()!.querySelectorAll('button')[0]);
+    expect(dialog()).toBeNull();
+    expect(useProcessingStore.getState().batch).toBeNull();
+  });
+
+  it('is not there where no part resamples', async () => {
+    selectPasses([sceneIds(3)]);
+    await openPanel();
+    await ndvi();
+    click(button('One job per scene (3)'));
+    await review();
+    expect(dialog()).toBeNull();
+    expect(useProcessingStore.getState().batch).not.toBeNull();
   });
 });
 
@@ -322,9 +356,10 @@ describe('reviewing a batch', () => {
     await ndvi();
     click(button('One job per scene (3)'));
     await review();
-    expect(text()).toContain('3 jobs · about 3.0 MP, 12.0 MB, 3.0 units in total');
+    expect(text()).toContain('3 jobs · about 3 MP, 12 MB, 3 units in total');
     expect(text()).toContain('about 11 s of work');
-    expect(text()).toContain('Jobs run 2 at a time per source; the rest wait.');
+    expect(tipsOf(container)).toContain('Jobs run 2 at a time per source; the rest wait.');
+    expect(text()).not.toContain('Jobs run 2 at a time');
     expect(button('Start 3 jobs').disabled).toBe(false);
   });
 
@@ -334,7 +369,7 @@ describe('reviewing a batch', () => {
     await ndvi();
     click(button('One job per scene (3)'));
     expect(button('Start 3 jobs').disabled).toBe(true);
-    expect(button('Start 3 jobs').title).toBe('Review the order first');
+    expect(tipOf(button('Start 3 jobs'))).toBe('Review the order first');
   });
 
   it('asks for four estimates at a time at most', async () => {
@@ -369,7 +404,7 @@ describe('reviewing a batch', () => {
     await review();
     const alerts = [...container.querySelectorAll('[role="alert"]')].map((a) => a.textContent);
     expect(alerts).toEqual(['S2: the job is larger than 5 GB']);
-    expect(text()).toContain('2 jobs · about 2.0 MP');
+    expect(text()).toContain('2 jobs · about 2 MP');
     expect(button('Start 2 of 3 jobs').disabled).toBe(false);
     // 413 under "Whole scene": the suggestion of K2
     expect(text()).toContain('The whole scene is too large for one job.');
@@ -584,7 +619,8 @@ describe('the title and the entry of a batch (K5, UI-01 §6.4, §6.5)', () => {
     expect(stored.batches).toEqual([{ id: batches[0].id, title: batches[0].title, createdAt: expect.any(String), refused: [] }]);
     expect(stored.jobs).toHaveLength(2);
     for (const job of stored.jobs) {
-      expect(Object.keys(job).sort()).toEqual(['batchId', 'createdAt', 'expires', 'jobID', 'order', 'part', 'title']);
+      // The day of the scenes is kept too, for the layer of the result (NM4-65 part 3).
+      expect(Object.keys(job).sort()).toEqual(['batchId', 'createdAt', 'dates', 'expires', 'jobID', 'order', 'part', 'title']);
       expect(job.batchId).toBe(batches[0].id);
       expect(job.order.steps).toHaveLength(1);
     }
@@ -667,7 +703,7 @@ describe('a draft that changes while the batch is on its way', () => {
     await review();
     click(button('Start 2 jobs'));
     await flush();
-    click(button('＋ Reproject and resample'));
+    click(button('Reproject and resample'));
     release();
     await flush();
     expect(useProcessingStore.getState().jobs.map((j) => j.title)).toEqual([
@@ -811,7 +847,7 @@ describe('the buttons of a reviewed batch', () => {
     await review();
     const startButton = button('Start 0 of 2 jobs');
     expect(startButton.disabled).toBe(true);
-    expect(startButton.title).toBe('The server refused every job');
+    expect(tipOf(startButton)).toBe('The server refused every job');
   });
 
   it('takes no panel away from the user, however many jobs are started', async () => {

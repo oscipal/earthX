@@ -1,19 +1,22 @@
 // @vitest-environment jsdom
 //
-// Otto, 27.10.2026 (zu #211): the view of scenes has a head of one line, an eye for "Hide image", two rows of buttons
-// of one width, and "✕ Clear". The CSS contract is read off `index.css`, as `mapStyles.test.ts` does for the theme.
+// Otto, 27.10.2026 (zu #211): the view of scenes has a head with an eye for "Hide image", its fields and buttons, and "✕ Clear". Since
+// UI-03a (2.11.2026) it stands in the settings bar: the head has two rows, then "Display" and "Actions". The CSS contract is read off
+// `index.css`, as `mapStyles.test.ts` does for the theme.
 
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import CSS from '../index.css?raw';
+import TOKENS from '../tokens.css?raw';
 import { datasetsFrom } from '../datasets';
 import { useAppStore, type AppState } from '../store';
 import type { Collection, DownloadedInfo, StacItem, TimeStepGroup } from '../types';
 import { viewDates, viewKind } from '../viewKind';
-import { NOTHING_TO_APPLY, NOTHING_TO_SAVE } from '../render';
+import { NOTHING_TO_APPLY, NOTHING_TO_APPLY_TO_ALL_LAYER, NOTHING_TO_SAVE_ONE_IMAGE } from '../render';
 import ViewerControls from './ViewerControls';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -30,14 +33,14 @@ const collection = (title: string) =>
     'earthx:viewer': { group_by: ['datetime'], min_zoom: 8, max_zoom: 14, browse: 'quicklook', quicklook_nodata_max: null, results_group_by: ['datetime'] },
   }) as unknown as Collection;
 
-const info = (): DownloadedInfo => ({ tileUrl: '/t/{z}/{x}/{y}', bounds: [0, 0, 1, 1], asset: 'visual', minZoom: 0, maxZoom: 14 });
+const info = (): DownloadedInfo => ({ datasetId: 'optical', tileUrl: '/t/{z}/{x}/{y}', bounds: [0, 0, 1, 1], asset: 'visual', minZoom: 0, maxZoom: 14 });
 const scenes = (n: number) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`s${i}`, info()]));
 
 // Scenes s0, s1, … of the search, one per entry of `days` (a datetime, or undefined for a product without an instant).
 const withDays = (days: (string | undefined)[]): TimeStepGroup[] => [
   {
     label: 'all',
-    key: 'all',
+    key: ['all'],
     items: days.map((day, i) => ({ id: `s${i}`, collection: 'optical', bbox: [0, 0, 1, 1], properties: day ? { datetime: day } : {}, assets: {} }) as StacItem),
   } as unknown as TimeStepGroup,
 ];
@@ -71,7 +74,7 @@ afterEach(() => {
 
 const head = () => container.querySelector('.vc-head')!;
 const title = () => container.querySelector('.vc-title') as HTMLElement;
-const eye = () => container.querySelector('.vc-eye') as HTMLButtonElement;
+const eye = () => container.querySelector('.vc-head button[aria-label$=" image"]') as HTMLButtonElement;
 const row = (name: 'vc-render' | 'vc-actions') => container.querySelector(`.${name}`)!;
 
 describe('the head', () => {
@@ -85,32 +88,49 @@ describe('the head', () => {
     expect(title().textContent).toBe(text);
   });
 
-  it('has the acquisition date (UTC) after the dataset: one date for scenes of one day', () => {
-    mount({ groups: withDays(['2025-07-29T23:30:00Z']) });
-    expect(title().textContent).toBe('Sentinel-2 L2A · 2025-07-29 · AOI crop');
-    mount({ cropToAoi: false, downloaded: scenes(2), groups: withDays(['2025-07-29T08:00:00Z', '2025-07-29T20:15:00Z']) });
-    expect(title().textContent).toBe('Sentinel-2 L2A · 2025-07-29 · 2 scenes merged');
+  // Otto, 1.11.2026 (zu #272): the view of the search is a temporary picture, and a yellow box beside the title says so.
+  it('has a badge "Temporary" right after the title, before the eye and the x, in the style of the "Preview" badge', () => {
+    mount();
+    const temporary = container.querySelector('.vc-head .badge') as HTMLElement;
+    expect(temporary.textContent).toBe('Temporary');
+    expect(temporary.previousElementSibling).toBe(title());
+    expect(temporary.nextElementSibling).toBe(eye());
+    expect(temporary.classList.contains('badge')).toBe(true);
+    expect(CSS).toMatch(/\n\.badge \{[^}]*border: var\(--line-width\) solid var\(--accent-2\)/u);
   });
 
-  it('has the span of the first and the last day for scenes of different days', () => {
-    mount({ downloaded: scenes(2), groups: withDays(['2025-08-03T10:00:00Z', '2025-07-29T10:00:00Z']) });
-    expect(title().textContent).toBe('Sentinel-2 L2A · 2025-07-29 – 2025-08-03 · AOI crop · 2 scenes merged');
+  it('has the dataset and the date with the arrows in a second row, under the title', () => {
+    mount();
+    const rows = head().children;
+    expect(rows).toHaveLength(2);
+    expect(rows[0].contains(title())).toBe(true);
+    expect(rows[1].querySelector('.vc-stepper')).not.toBeNull();
+    expect(rows[0].querySelector('.vc-stepper')).toBeNull();
   });
 
-  it('takes the date of the scenes of the view only, not of the other results', () => {
-    mount({ groups: withDays(['2025-07-29T10:00:00Z', '2025-09-01T10:00:00Z']), downloaded: { s0: info() } });
-    expect(title().textContent).toContain('2025-07-29');
-    expect(title().textContent).not.toContain('2025-09-01');
+  it('has no box "Temporary" in the settings of a layer: a layer is not temporary', () => {
+    mount({ viewOfLayer: true, layers: [{ id: 'L1', name: 'Optical', visible: true, opacity: 1, overlays: [], restore: { focusMode: true, downloaded: scenes(1), appliedRender: {}, activeGroupIndex: 0, selectedIds: [], itemIds: [], groupItemIds: [], aoi: null, cropToAoi: true, datasetId: 'optical' } } as never], viewLayerId: 'L1' });
+    expect(container.querySelector('.vc-head .badge')).toBeNull();
+    act(() => useAppStore.setState({ viewOfLayer: false, layers: [], viewLayerId: null }));
   });
 
-  it('has no date for a product without an instant, and no empty separator', () => {
+  // Otto, 31.10.2026 (zu #257): the date is chosen with the arrows (`ViewerControls.steps.test.tsx`), so the head does not say it.
+  it.each([
+    [['2025-07-29T23:30:00Z'], 1],
+    [['2025-07-29T08:00:00Z', '2025-07-29T20:15:00Z'], 2],
+    [['2025-08-03T10:00:00Z', '2025-07-29T10:00:00Z'], 2],
+    [[undefined], 1],
+  ])('has no date, neither in the line nor in the tooltip: scenes of %j', (days, count) => {
+    mount({ downloaded: scenes(count), groups: withDays(days) });
+    expect(title().textContent).not.toMatch(/\d{4}-\d{2}-\d{2}/u);
+    expect(tipOf(title())).not.toMatch(/\d{4}-\d{2}-\d{2}/u);
+  });
+
+  it('has no empty separator for a product without an instant, and no tooltip at the title', () => {
     mount({ groups: withDays([undefined]) });
     expect(title().textContent).toBe('Sentinel-2 L2A · AOI crop');
-  });
-
-  it('has the date in the tooltip as well, so a cut-off head can be read whole', () => {
     mount({ downloaded: scenes(2), groups: withDays(['2025-07-29T10:00:00Z', '2025-08-03T10:00:00Z']) });
-    expect(title().title).toBe('Sentinel-2 L2A · 2025-07-29 – 2025-08-03 · cropped to the AOI · 2 scenes merged');
+    expect(title().hasAttribute('data-tip')).toBe(false);
   });
 
   it('has no "Full-resolution view" and no count of one image', () => {
@@ -119,9 +139,9 @@ describe('the head', () => {
     expect(head().textContent).not.toMatch(/\bimages?\b/u);
   });
 
-  it('gives the whole text as the tooltip, for the cut-off one', () => {
+  it('has no tooltip at the title, also not at a cut-off one (Otto, 4.11.2026)', () => {
     mount({ cropToAoi: true, downloaded: scenes(3) }, 'Copernicus DEM GLO-30, global 30 m digital surface model');
-    expect(title().title).toBe('Copernicus DEM GLO-30, global 30 m digital surface model · cropped to the AOI · 3 scenes merged');
+    expect(title().hasAttribute('data-tip')).toBe(false);
     expect(title().textContent).toContain('Copernicus DEM GLO-30, global 30 m digital surface model');
   });
 
@@ -143,10 +163,11 @@ describe('the head', () => {
 });
 
 describe('the eye', () => {
-  it('is in the head, on the right, with the tooltip of what a click does', () => {
+  it('is in the first row of the head, before the red x, with the tooltip of what a click does', () => {
     mount({ showDownloaded: true });
-    expect(head().lastElementChild).toBe(eye());
-    expect(eye().title).toBe('Hide image');
+    expect(eye().nextElementSibling).toBe(container.querySelector('.vc-head .close-x'));
+    expect(head().firstElementChild!.contains(eye())).toBe(true);
+    expect(tipOf(eye())).toBe('Hide image');
     expect(eye().getAttribute('aria-label')).toBe('Hide image');
     expect(eye().textContent).toBe('');
   });
@@ -155,11 +176,11 @@ describe('the eye', () => {
     mount({ showDownloaded: true });
     act(() => eye().click());
     expect(useAppStore.getState().showDownloaded).toBe(false);
-    expect(eye().title).toBe('Show image');
-    expect(eye().classList.contains('off')).toBe(true);
+    expect(tipOf(eye())).toBe('Show image');
+    expect(eye().querySelector('svg.lucide-eye-off')).not.toBeNull();
     act(() => eye().click());
     expect(useAppStore.getState().showDownloaded).toBe(true);
-    expect(eye().title).toBe('Hide image');
+    expect(tipOf(eye())).toBe('Hide image');
   });
 
   it('is not the results switch: it leaves "Hide results" alone', () => {
@@ -169,27 +190,32 @@ describe('the eye', () => {
   });
 });
 
-describe('the rows of buttons', () => {
-  it('has three fields and the buttons "auto-scale" and "Apply" in the first row, and four buttons in the second', () => {
+describe('the fields and the buttons', () => {
+  // In pairs, no "Clear" (Otto, 2.11.2026).
+  const ACTIONS = ['Change image', 'Process', 'Add to layers', 'Add all to layers', 'Download crop', 'Download full scene'];
+  const actions = () => [...row('vc-actions').children] as HTMLButtonElement[];
+  const actionNamed = (text: string) => actions().find((b) => b.textContent === text)!;
+
+  it('has the fields in the order of the place, then the opacity and the buttons "auto-scale", "Apply", "Apply to all"; the actions under them', () => {
     mount();
     const first = [...row('vc-render').children];
-    expect(first).toHaveLength(4);
-    expect(first.map((el) => el.tagName)).toEqual(['LABEL', 'LABEL', 'LABEL', 'DIV']);
-    expect([first[0], first[1], first[2]].map((el) => el.querySelector('span')?.textContent)).toEqual(['Colormap', 'vmin', 'vmax']);
-    expect([...first[3].children].map((el) => el.textContent)).toEqual(['auto-scale', 'Apply']);
-    expect([...row('vc-actions').children].map((el) => el.textContent)).toEqual(['＋ Add to layers', '⚙ Process', '‹ Change image', '✕ Clear']);
+    expect(first.map((el) => el.tagName)).toEqual(['LABEL', 'DIV', 'LABEL', 'DIV', 'DIV']);
+    expect(first.slice(0, 3).map((el) => el.querySelector(':scope > span')!.textContent)).toEqual(['Band', 'Scale', 'Colormap']);
+    expect([...first[1].querySelectorAll('input')].map((el) => el.placeholder)).toEqual(['vmin', 'vmax']);
+    expect(first[3].classList.contains('vc-opacity')).toBe(true);
+    expect([...first[4].children].map((el) => el.textContent)).toEqual(['Auto-scale', 'Apply', 'Apply to all']);
+    expect(actions().map((el) => el.textContent)).toEqual(ACTIONS);
   });
 
-  it('has the tooltips of what "Change image" and "Clear" do', () => {
+  it('has the tooltips of what "Change image" and the red x do', () => {
     mount();
-    const buttons = [...row('vc-actions').children] as HTMLButtonElement[];
-    expect(buttons[2].title).toBe('Remove this view and choose another scene from the results');
-    expect(buttons[3].title).toBe('Remove this view from the map');
+    expect(tipOf(actionNamed('Change image'))).toBe('Remove this view, show the search results and choose another scene');
+    expect(container.querySelector('.vc-head .close-x')!.getAttribute('data-tip')).toBe('Close and drop this view');
   });
 
-  it('"Clear" takes the view off the map and nothing else: the tick, the results panel and the switch stay', () => {
+  it('the red x takes the view off the map and nothing else, as "Clear" did: the tick, the results panel and the switch stay', () => {
     mount({ selectedIds: ['s0'], dock: 'controls', resultsOnMap: false });
-    act(() => ([...row('vc-actions').children][3] as HTMLButtonElement).click());
+    act(() => container.querySelector<HTMLButtonElement>('.vc-head .close-x')!.click());
     const s = useAppStore.getState();
     expect(s.focusMode).toBe(false);
     expect(s.downloaded).toEqual({});
@@ -198,22 +224,22 @@ describe('the rows of buttons', () => {
     expect(s.resultsOnMap).toBe(false);
   });
 
-  it('"Change image" takes the view off the map and opens the results, and leaves the tick and the switch', () => {
+  it('"Change image" takes the view off the map, opens the results and shows them, and leaves the tick (Otto, 2.11.2026)', () => {
     const sections = [{ datasetId: 'optical', items: withDays([undefined])[0].items, groups: [], notes: [] }] as never;
     mount({ selectedIds: ['s0'], dock: 'controls', resultsOnMap: false, sections });
-    act(() => ([...row('vc-actions').children][2] as HTMLButtonElement).click());
+    act(() => actionNamed('Change image').click());
     const s = useAppStore.getState();
     expect(s.focusMode).toBe(false);
     expect(s.dock).toBe('results');
     expect(s.selectedIds).toEqual(['s0']);
-    expect(s.resultsOnMap).toBe(false);
+    expect(s.resultsOnMap).toBe(true);
   });
 
-  it('puts "Apply" under "auto-scale", in one cluster, and has no "Save" yet (it comes with NM4-53)', () => {
+  it('puts "auto-scale", "Apply" and "Apply to all" in one row (NM4-53)', () => {
     mount();
-    const cluster = row('vc-render').children[3];
+    const cluster = row('vc-render').children[4];
     expect(cluster.classList.contains('vc-buttons')).toBe(true);
-    expect([...cluster.children].map((el) => el.textContent)).toEqual(['auto-scale', 'Apply']);
+    expect([...cluster.children].map((el) => el.textContent)).toEqual(['Auto-scale', 'Apply', 'Apply to all']);
     expect(container.textContent).not.toContain('Save');
   });
 });
@@ -232,14 +258,14 @@ describe('"Apply" of the view', () => {
   it('is locked while the fields hold what the map shows, with the reason as its tooltip', () => {
     mount({ appliedRender: { rescale: '0,3000' } });
     expect(apply().getAttribute('aria-disabled')).toBe('true');
-    expect(apply().title).toBe(NOTHING_TO_APPLY);
+    expect(tipOf(apply())).toBe(NOTHING_TO_APPLY);
   });
 
   it('is open once a field is changed, draws the view and is locked again', () => {
     mount({ appliedRender: { rescale: '0,3000' } });
     type(field('vmin'), '5');
     expect(apply().hasAttribute('aria-disabled')).toBe(false);
-    expect(apply().title).not.toBe(NOTHING_TO_APPLY);
+    expect(tipOf(apply())).not.toBe(NOTHING_TO_APPLY);
     act(() => apply().click());
     expect(useAppStore.getState().appliedRender.rescale).toBe('5,3000');
     expect(apply().getAttribute('aria-disabled')).toBe('true');
@@ -273,16 +299,35 @@ describe('"Save" of the view of a pinned layer', () => {
     restore: { focusMode: true, downloaded: scenes(1), appliedRender: { rescale: '0,3000' }, activeGroupIndex: 0, selectedIds: [], itemIds: ['s0'], groupItemIds: [['s0']], aoi: null, cropToAoi: false, datasetId: 'optical' },
   };
 
-  it('is not there for a view that is no layer\'s', () => {
+  // Otto, 31.10.2026 (zu #257): "Save" is "Apply to all" and always there; where there is nothing to apply it is locked.
+  it('is there for a view that is no layer\'s too, locked for a dataset of one image, with the reason', () => {
     mount({ appliedRender: { rescale: '0,3000' } });
-    expect(save()).toBeNull();
+    expect(save()).not.toBeNull();
+    expect(save()!.textContent).toBe('Apply to all');
+    expect(save()!.getAttribute('aria-disabled')).toBe('true');
+    expect(tipOf(save()!)).toBe(NOTHING_TO_SAVE_ONE_IMAGE);
   });
 
-  it('stands beside "Apply", under "auto-scale", and is locked while the layer is saved as it is, with the reason', () => {
+  // Otto, 1.11.2026 (zu #272): "Temporary" goes when the image is a layer, and comes back with a change.
+  it('takes off "Temporary" while a layer holds the image as it is drawn, and puts it back with an applied change; the fields alone do not', () => {
+    mount({ appliedRender: { rescale: '0,3000' }, pendingVmin: '0', pendingVmax: '3000', layers: [], cropToAoi: false });
+    expect(container.querySelector('.vc-head .badge')).not.toBeNull();
+    mount({ appliedRender: { rescale: '0,3000' }, pendingVmin: '0', pendingVmax: '3000', layers: [layer as never], viewLayerId: 'L1', cropToAoi: false });
+    expect(container.querySelector('.vc-head .badge')).toBeNull();
+    type(vmax(), '2000');
+    expect(container.querySelector('.vc-head .badge')).toBeNull(); // typed, not drawn
+    act(() => void (container.querySelector('.vc-apply') as HTMLButtonElement).click());
+    expect(container.querySelector('.vc-head .badge')).not.toBeNull();
+    type(vmax(), '3000');
+    act(() => void (container.querySelector('.vc-apply') as HTMLButtonElement).click());
+    expect(container.querySelector('.vc-head .badge')).toBeNull();
+  });
+
+  it('stands beside "Apply", after "auto-scale", and is locked while the layer is saved as it is, with the reason', () => {
     mount({ appliedRender: { rescale: '0,3000' }, layers: [layer as never], viewLayerId: 'L1', cropToAoi: false });
-    expect([...container.querySelector('.vc-buttons')!.children].map((el) => el.textContent)).toEqual(['auto-scale', 'Apply', 'Save']);
+    expect([...container.querySelector('.vc-buttons')!.children].map((el) => el.textContent)).toEqual(['Auto-scale', 'Apply', 'Apply to all']);
     expect(save()!.getAttribute('aria-disabled')).toBe('true');
-    expect(save()!.title).toBe(NOTHING_TO_SAVE);
+    expect(tipOf(save()!)).toBe(NOTHING_TO_APPLY_TO_ALL_LAYER);
   });
 
   it('is the one blue button: "Apply" has the format of "auto-scale"', () => {
@@ -290,9 +335,9 @@ describe('"Save" of the view of a pinned layer', () => {
     const [auto, apply, saveButton] = [...container.querySelector('.vc-buttons')!.children] as HTMLButtonElement[];
     const format = (el: HTMLElement) => [...el.classList].filter((c) => !c.startsWith('vc-')).sort();
     expect(format(apply)).toEqual(format(auto));
-    expect(format(apply)).toEqual(['ghost-btn']);
-    expect(format(saveButton)).toEqual(['primary-btn']);
-    expect(container.querySelectorAll('.vc-buttons .primary-btn')).toHaveLength(1);
+    expect(format(apply)).toEqual(['btn']);
+    expect(format(saveButton)).toEqual(['btn', 'primary']);
+    expect(container.querySelectorAll('.vc-buttons .btn.primary')).toHaveLength(1);
   });
 
   it('opens with a change, keeps the look for the layer and is locked again', () => {
@@ -312,7 +357,7 @@ describe('"Save" of the view of a pinned layer', () => {
   });
 });
 
-// The grid cannot be laid out in jsdom: what the CSS promises is read off the file.
+// The layout cannot be laid out in jsdom: what the CSS promises is read off the file.
 describe('the layout contract in index.css', () => {
   const rule = (selector: string): string => {
     const start = CSS.indexOf(`${selector} {`);
@@ -320,51 +365,60 @@ describe('the layout contract in index.css', () => {
     return CSS.slice(start, CSS.indexOf('}', start));
   };
 
-  it('puts the head and both rows in one grid of twelve columns, which decides the width of the view', () => {
-    expect(rule('.scene-view')).toContain('grid-template-columns: repeat(12, minmax(0, 1fr))');
-    expect(rule('.scene-view')).toMatch(/width: min\(/u);
-    expect(rule('.scene-view .vc-render,\n.scene-view .vc-actions')).toContain('grid-template-columns: subgrid');
-    expect(rule('.scene-view .vc-head')).toContain('grid-column: 1 / -1');
+  // Otto, 2.11.2026: from the top, with no gap; the top buttons stand left of it.
+  it('puts the bar at the right edge from the top to the foot, 320 px wide, with a line on the left and no corners', () => {
+    const bar = rule('.inspector.panel');
+    expect(rule('  .app.has-inspector .overlay.top-right')).toContain('right: calc(var(--inspector-width) + var(--space-4))');
+    expect(rule('  .overlay.top-right.beside-sheet')).toContain('right: calc(var(--sheet-wide-width) + var(--space-4))');
+    expect(rule('.processing-sheet')).toContain('top: 0');
+    expect(rule('.processing-sheet')).toContain('width: var(--sheet-wide-width)');
+    for (const declaration of ['top: 0;', 'right: 0', 'bottom: 0', 'width: var(--inspector-width)', 'border-radius: 0', 'border-width: 0 0 0 var(--line-width)']) expect(bar).toContain(declaration);
+    expect(Number(/--inspector-width: (\d+)px/u.exec(TOKENS)?.[1])).toBe(320);
   });
 
-  it('cuts a long title with "…" and lets it shrink, so the head is never wider than the rows', () => {
-    const title = rule('.scene-view .vc-title');
+  it('makes it a sheet from the bottom under 900 px, at most 55 % high, round at the top', () => {
+    expect(CSS).toMatch(/@media \(max-width: 899px\) \{\s*\.inspector\.panel \{[^}]*top: auto;[^}]*left: var\(--rail-width\);[^}]*max-height: 55vh;[^}]*border-radius: var\(--radius-md\) var\(--radius-md\) 0 0;/u);
+  });
+
+  it('keeps the head standing and lets the middle scroll', () => {
+    expect(rule('.inspector .vc-head')).toContain('flex: none');
+    expect(rule('.inspector .insp-body')).toContain('overflow-y: auto');
+    expect(rule('.inspector .insp-body')).toContain('min-height: 0');
+  });
+
+  it('cuts a long title with "…" and lets it shrink', () => {
+    const title = rule('.inspector .vc-title');
     expect(title).toContain('text-overflow: ellipsis');
     expect(title).toContain('overflow: hidden');
     expect(title).toContain('white-space: nowrap');
     expect(title).toContain('min-width: 0');
   });
 
-  it('makes "auto-scale" and "Apply" together as high as the fields, and "Save" as high as the two together', () => {
-    const cluster = rule('.vc-buttons');
-    const height = Number(/--row-height: (\d+)px/u.exec(cluster)?.[1]);
-    // The fields of the view and of the settings of a result are as high as the cluster.
-    expect(Number(/--row-height: (\d+)px/u.exec(rule('.scene-view'))?.[1])).toBe(height);
-    expect(Number(/--row-height: (\d+)px/u.exec(rule('.result-controls'))?.[1])).toBe(height);
-    expect(cluster).toContain('height: var(--row-height)');
-    expect(cluster).toContain('grid-template-rows: 1fr 1fr');
-    // "Save" takes both rows of the second column.
-    expect(rule('.vc-buttons > .vc-save')).toContain('grid-area: 1 / 2 / 3 / 3');
-    expect(rule('.vc-buttons > .vc-auto')).toContain('grid-area: 1 / 1');
-    expect(rule('.vc-buttons > .vc-apply')).toContain('grid-area: 2 / 1');
-    const buttons = rule('.vc-buttons > button');
-    expect(buttons).not.toMatch(/\n  height:/u);
-    // `.vc-apply` aligns itself to the end of a row: in the cluster every button fills its cell, or "Apply" is lower than "auto-scale".
-    expect(buttons).toContain('align-self: stretch');
-    expect(buttons).toContain('align-items: center');
-    expect(buttons).toContain('justify-content: center');
-    expect(rule('.vc-buttons')).toContain('grid-template-columns: 1fr 1fr');
-    expect(rule('.scene-view .vc-render > :nth-child(4)')).toContain('grid-column: span 5');
-    expect(rule('.scene-view .vc-field select,\n.scene-view .vc-field input')).toContain('height: var(--row-height)');
-    expect(rule('.scene-view .vc-render,\n.scene-view .vc-actions')).toContain('align-items: end');
+  it('makes both rows of the head as high as a control, so that "Display" begins at one height', () => {
+    expect(rule('.inspector .insp-row')).toContain('min-height: var(--control-height)');
   });
 
-  it('gives the four buttons of the second row three columns each and wraps them below 600 px', () => {
-    expect(rule('.scene-view .vc-actions > *')).toContain('grid-column: span 3');
-    expect(CSS).toMatch(/@media \(max-width: 599px\) \{\s*\.scene-view \{\s*grid-template-columns: repeat\(4, minmax\(0, 1fr\)\);/u);
+  it('lays the fields out as a form: a label column of 72 px, the control filling the rest, a row as high as a control', () => {
+    const field = rule('.inspector .vc-field');
+    expect(field).toContain('grid-template-columns: var(--form-label-width) minmax(0, 1fr)');
+    expect(Number(/--form-label-width: (\d+)px/u.exec(TOKENS)?.[1])).toBe(72);
+    // The processing panel takes the same rules with a column of its own width (UI-03b).
+    expect(CSS).toContain('.processing-panel .vc-field,\n.inspector .vc-field {');
+    expect(rule('.processing-panel')).toContain('--form-label-width: 112px');
+    expect(field).toContain('min-height: var(--control-height)');
+    expect(rule('.inspector .vc-field select,\n.inspector .vc-field input:not([type=\'range\'])')).toContain('height: var(--control-height)');
+    expect(rule('.inspector .vc-render')).toContain('gap: var(--space-2)');
   });
 
-  it('breaks a word that is too long for its button instead of running over the edge', () => {
-    expect(rule('.scene-view .vc-actions > *')).toContain('overflow-wrap: anywhere');
+  it('puts "auto-scale", "Apply" and "Save" in three columns of one width, the actions in pairs without wrapping', () => {
+    expect(rule('.inspector .vc-buttons')).toContain('grid-template-columns: repeat(3, minmax(0, 1fr))');
+    expect(rule('.inspector .vc-actions')).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))');
+    expect(rule('.inspector .vc-actions > *')).toContain('white-space: nowrap');
+    expect(rule('.inspector .vc-actions > *')).toContain('text-overflow: ellipsis');
+    expect(rule('.inspector .vc-actions > *')).toContain('min-width: 0');
+  });
+
+  it('keeps the switch of the range below the one height of the fields, so that it stays in the line of the label', () => {
+    expect(rule('.vc-field.vc-num .vc-unit')).toContain('min-height: 0');
   });
 });

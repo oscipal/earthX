@@ -8,6 +8,8 @@ import { HttpError, jsonOrThrow } from './api';
 import { BASEMAP_IDS, DEFAULT_BASEMAP, type BasemapId } from './basemaps';
 import { DEFAULT_PROJECTION, PROJECTIONS, type Projection } from './preferences';
 import type { Order } from './processing';
+import type { PreviewRange } from './processingPreview';
+import { parseViewRange, viewRangeOf, type ViewRange } from './permalinkRange';
 import type { Bbox } from './types';
 import { useProcessingStore } from './processingStore';
 import { readRecipe } from './recipeFile';
@@ -26,9 +28,12 @@ export const GONE_TEXT = 'This link has expired or never existed.';
 export interface PermalinkView {
   center: [number, number];
   zoom: number;
-  range: { vmin: number; vmax: number; colormap: string } | null;
+  range: ViewRange | null;
   basemap: BasemapId;
   projection: Projection;
+  // Set when a link of the time when Relief was a basemap is opened (UI-04 part 4): it opens with the default basemap and the overlay
+  // Relief. Never written.
+  relief?: true;
 }
 
 // The basemap and projection a view is made with.
@@ -79,19 +84,13 @@ export async function createPermalink(order: Order, view: PermalinkView): Promis
 
 // The view as the panel keeps it now: the centre of the map's viewport (across the antimeridian too),
 // the zoom, and the preview's range only where the user set it by hand (`null` for the default).
-export function viewOf(
-  bbox: Bbox,
-  zoom: number,
-  range: { vmin: string; vmax: string; colormap: string } | null,
-  look: Look,
-): PermalinkView {
+export function viewOf(bbox: Bbox, zoom: number, range: PreviewRange | null, look: Look): PermalinkView {
   const [west, south, east, north] = bbox;
   const lon = (west + (east < west ? east + 360 : east)) / 2;
-  const hand = range && isNumber(Number(range.vmin)) && isNumber(Number(range.vmax)) && range.vmin.trim() !== '' && range.vmax.trim() !== '';
   return {
     center: [lon > 180 ? lon - 360 : lon, (south + north) / 2],
     zoom: Math.min(Math.max(zoom, 0), 24),
-    range: hand ? { vmin: Number(range.vmin), vmax: Number(range.vmax), colormap: range.colormap } : null,
+    range: range && viewRangeOf(range),
     basemap: look.basemap,
     projection: look.projection,
   };
@@ -104,6 +103,8 @@ function choiceIn<T extends string>(value: unknown, valid: readonly T[], fallbac
   return typeof value === 'string' && (valid as readonly string[]).includes(value) ? (value as T) : null;
 }
 
+const OLD_RELIEF_BASEMAP = 'relief';
+
 export function parseView(value: unknown): PermalinkView | null {
   if (!isObject(value) || !Array.isArray(value.center) || value.center.length !== 2) return null;
   const [lon, lat] = value.center;
@@ -111,13 +112,15 @@ export function parseView(value: unknown): PermalinkView | null {
   const { range } = value;
   let parsed: PermalinkView['range'] = null;
   if (range !== null && range !== undefined) {
-    if (!isObject(range) || !isNumber(range.vmin) || !isNumber(range.vmax) || typeof range.colormap !== 'string') return null;
-    parsed = { vmin: range.vmin, vmax: range.vmax, colormap: range.colormap };
+    parsed = isObject(range) ? parseViewRange(range) : null;
+    if (!parsed) return null;
   }
-  const basemap = choiceIn(value.basemap, BASEMAP_IDS, DEFAULT_BASEMAP);
+  // The server still takes "relief" (a link kept for 30 days), the panel no longer writes it: it opens as the default basemap with the overlay.
+  const wasRelief = value.basemap === OLD_RELIEF_BASEMAP;
+  const basemap = wasRelief ? DEFAULT_BASEMAP : choiceIn(value.basemap, BASEMAP_IDS, DEFAULT_BASEMAP);
   const projection = choiceIn(value.projection, PROJECTIONS, DEFAULT_PROJECTION);
   if (!basemap || !projection) return null;
-  return { center: [lon, lat], zoom: value.zoom, range: parsed, basemap, projection };
+  return { center: [lon, lat], zoom: value.zoom, range: parsed, basemap, projection, ...(wasRelief ? { relief: true as const } : {}) };
 }
 
 // What the server keeps is checked again: it is a file of someone else's, as far as this tab knows.

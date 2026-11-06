@@ -572,6 +572,9 @@ class TestAResultIdentifierIsNotLogged:
         [
             (f"/results/{ID}/tiles/WebMercatorQuad/1/2/3", "/results/{resultID}/tiles/WebMercatorQuad/1/2/3"),
             (f"/results/{ID}/WebMercatorQuad/tilejson.json", "/results/{resultID}/WebMercatorQuad/tilejson.json"),
+            # NM4-65: the statistics of a result lie under the same prefix and are logged like its tiles.
+            (f"/results/{ID}/statistics", "/results/{resultID}/statistics"),
+            (f"//results//{ID}/statistics", "//results/{resultID}/statistics"),
             (f"//results//{ID}/WebMercatorQuad/tilejson.json", "//results/{resultID}/WebMercatorQuad/tilejson.json"),
             ("/results/not-an-identifier-but-secret/tiles/x", "/results/{resultID}/tiles/x"),
             (f"/tiler/results/{ID}/tiles/x", "/tiler/results/{resultID}/tiles/x"),

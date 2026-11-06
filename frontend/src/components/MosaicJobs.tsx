@@ -17,6 +17,7 @@ import { bandNamesOf } from '../processingBands';
 import { bandSources, buildMosaicOrder } from '../processingOrder';
 import { orderStands, useProcessingStore } from '../processingStore';
 import { JobRow } from './JobRow';
+import Tip from './Tip';
 
 // "Merged per pass (job)" in the download dialog's choice for original files
 // (M4-12b, Zusatz 1a): one job per pass of two or more scenes, the whole scenes
@@ -26,6 +27,9 @@ import { JobRow } from './JobRow';
 // stays in the panel's list ("Jobs") when the dialog is closed.
 
 export type Started = { state: 'starting' } | { state: 'placed'; jobID: string } | { state: 'refused'; message: string };
+
+const MOSAIC_NOTE =
+  'A job on the platform merges the whole scenes of one pass into one COG. Scenes in another UTM zone are resampled (nearest neighbour) to the zone most scenes lie in.';
 
 export const TOO_MANY_SCENES = `A job takes at most ${MAX_JOB_SCENES} scenes; select fewer scenes of this pass.`;
 
@@ -93,14 +97,8 @@ export default function MosaicJobs({ dataset, passes, links, started, onStarted 
 
   return (
     <section className="dialog-mosaics" aria-label="Mosaic jobs">
-      {hasJobs && (
-        <p className="hint-text">
-          A job on the platform merges the whole scenes of one pass into one COG. Scenes in another UTM zone are
-          resampled (nearest neighbour) to the zone most scenes lie in.
-        </p>
-      )}
       {attribution && <p className="dialog-attribution">{attribution}</p>}
-      {hasJobs && why && <p className="hint-text">{why}</p>}
+      {hasJobs && why && <p className="hint">{why}</p>}
       <ul>
         {passes.map((pass, index) => {
           const run = started[index];
@@ -114,7 +112,7 @@ export default function MosaicJobs({ dataset, passes, links, started, onStarted 
                   {pass.label} · {count}
                 </span>{' '}
                 {own.length === 0 ? (
-                  <span className="hint-text">No direct link to this scene’s file.</span>
+                  <span className="hint">No direct link to this scene’s file.</span>
                 ) : (
                   own.map((link) => (
                     <a
@@ -140,16 +138,17 @@ export default function MosaicJobs({ dataset, passes, links, started, onStarted 
               </span>{' '}
               <button
                 type="button"
-                className="lm-btn"
+                className="btn"
                 disabled={!!blocked || run?.state === 'starting' || orderStands(job)}
-                title={blocked ?? 'Merge the scenes of this pass into one file, as a job'}
+                data-tip-level="advanced" data-tip={blocked ?? 'Merge the scenes of this pass into one file, as a job'}
                 onClick={() => void start(index, pass)}
               >
                 {run?.state === 'starting' ? 'Starting…' : 'Start job'}
               </button>
-              {tooMany && <p className="hint-text">{TOO_MANY_SCENES}</p>}
+              <Tip text={MOSAIC_NOTE} />
+              {tooMany && <p className="hint">{TOO_MANY_SCENES}</p>}
               {run?.state === 'refused' && (
-                <p className="hint-text error" role="alert">
+                <p className="error" role="alert">
                   {run.message}
                 </p>
               )}

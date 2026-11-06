@@ -45,13 +45,13 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request
 from fastapi.dependencies.utils import solve_dependencies
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 from rasterio.errors import RasterioError, RasterioIOError
 from rio_tiler.errors import RioTilerError, TileOutsideBounds
 from rio_tiler.models import ImageData
@@ -59,10 +59,11 @@ from shapely.geometry import mapping as shapely_mapping
 from starlette.concurrency import run_in_threadpool
 from titiler.core.dependencies import BidxParams
 
-from earthx.access.crop_rules import MAX_JOB_BYTES, mosaic_order
+from earthx.access.band_export import ExportPlanError, band_count, band_meta_of_items, band_table, plan_files
+from earthx.access.colormaps import catalog as colormap_catalog
+from earthx.access.crop_rules import MAX_JOB_BYTES, mosaic_order, target_crs
 from earthx.access.download import (
     LARGE_DOWNLOAD_THRESHOLD_BYTES,
-    RESOLUTION_FACTORS,
     AoiOutsideItems,
     AoiTooLarge,
     AssetCrop,
@@ -144,6 +145,13 @@ RESULT_PATH_START = "/results/"
 # the asset(s) travel in the body (a mosaic can name several of each, and an AOI
 # polygon does not belong in a query string) — so it cannot share ROUTER_PREFIX.
 DOWNLOAD_ROUTE = "/collections/{dataset}/download"
+
+# The order of the scenes of a pass, without a mosaic (NM4-24): a POST with the ids in the body, as a pass the mosaic
+# tile refuses can have more scenes than a URL takes. Apart from the mosaic router, whose routes are the tile and its TileJSON.
+SCENE_ORDER_ROUTE = "/collections/{dataset}/scene-order"
+BANDS_ROUTE = "/collections/{dataset}/bands"
+# Scenes one such request may name: the largest overpasses of a continental AOI over a season stay far below it.
+MAX_ORDER_ITEMS = 500
 
 # At most one download whose planned output reaches LARGE_DOWNLOAD_THRESHOLD_BYTES
 # runs at a time in this process (F10a, M3-18 §10): measured (plan §10.3/§10.4)
@@ -519,12 +527,12 @@ def _operator_request(request: Request, config: DatasetConfig) -> list[tuple[Any
 def _bands_request(request: Request) -> tuple[str, ...] | None:
     """The ``band`` of the query: the one band of the stock a tile shows (NM4-43d), or ``None`` where the URL names none.
 
-    Or three, in the order red, green, blue, for a colour picture (NM4-64): they share one ``rescale`` and take no
-    colormap, which paints one band. Two bands have no picture.
+    Or three, in the order red, green, blue, for a colour picture (NM4-64): one ``rescale`` for all three, or one for
+    each channel in the same order (UI-03d), and no colormap, which paints one band. Two bands have no picture.
 
     ``400`` for a name that is empty, longer than :data:`MAX_BAND_CHARS` or given twice, for a number of names other
-    than one or three, and for a colormap or several ``rescale`` next to three; whether the steps leave such bands is
-    for :func:`_band_plan`.
+    than one or three, and for a colormap or a number of ``rescale`` other than one or three next to three; whether
+    the steps leave such bands is for :func:`_band_plan`.
     """
     given = request.query_params.getlist("band")
     if not given:
@@ -539,8 +547,10 @@ def _bands_request(request: Request) -> tuple[str, ...] | None:
     if len(given) > 1:
         if any(name in request.query_params for name in ("colormap_name", "colormap")):
             raise HTTPException(status_code=400, detail="a picture of three bands takes no colormap")
-        if len(request.query_params.getlist("rescale")) > 1:
-            raise HTTPException(status_code=400, detail="a picture of three bands takes one rescale for all of them")
+        if len(request.query_params.getlist("rescale")) not in (0, 1, COLOUR_BANDS):
+            raise HTTPException(
+                status_code=400, detail="a picture of three bands takes one rescale for all of them or one for each"
+            )
     return tuple(given)
 
 
@@ -692,7 +702,8 @@ _BandQuery = Annotated[
     Query(
         description=(
             "the band of the stock a tile with steps of version 2 shows; the last band a `band_math` step added if none is "
-            f"named, else the first. Three, in the order red, green, blue, for a colour picture (no colormap, one `rescale`). "
+            "named, else the first. Three, in the order red, green, blue, for a colour picture (no colormap; one "
+            "`rescale`, or one per channel). "
             f"At most {MAX_BAND_CHARS} characters each"
         ),
     ),
@@ -914,6 +925,56 @@ async def mosaic_scenes(
     return MosaicOperatorInput(dataset, scenes_with_steps, tuple(run_steps), bounds, None if plan is None else plan.bands)
 
 
+class MosaicOrderRequest(BaseModel):
+    """Body of ``POST /collections/{dataset}/scene-order`` (NM4-24): the scenes of one pass and the asset they are read from.
+
+    A field the route does not know is refused, as a parameter the mosaic tile does not declare is: an AOI or a filter
+    that was quietly dropped would look like an answer to a question the route never heard.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[str] = Field(
+        min_length=mosaic_tiles.MIN_MOSAIC_ITEMS,
+        max_length=MAX_ORDER_ITEMS,
+        description="item ids of one pass, each once",
+    )
+    asset: str = Field(min_length=1, max_length=128, description="the asset key whose CRS decides the order")
+
+
+async def scene_order(
+    request: Request, dataset: Annotated[str, Path(description="dataset id of the registry")], body: MosaicOrderRequest
+) -> dict[str, list[str]]:
+    """The order a mosaic reads these scenes in, without a mosaic: ``{"order": [item id, ...]}`` (NM4-24).
+
+    For a pass the mosaic tile cannot take (more than 64 scenes, a mosaic the tile refused, a dataset released below
+    z8 only) the map draws the scenes one by one; this answers with the order of :func:`mosaic_order` so that they
+    lie in an overlap as the mosaic, the crop and the export have them. The ids travel in the body, as 64 and more of
+    them do not belong in a URL. Only the items and the CRS of the asset are read, no pixel; the licence tier and
+    the item cache are those of the mosaic tile.
+    """
+    state = request.app.state
+    config = _dataset_config(state, dataset)
+    _check_display_allowed(config)
+    try:
+        if len(set(body.items)) != len(body.items):
+            raise OrderRefused(400, "name each item once", "order")
+        if not all(mosaic_tiles.ITEM_ID.match(item_id) for item_id in body.items):
+            raise OrderRefused(400, "an item id has the shape the sources give theirs", "order")
+        if getattr(state, "earthx_cache_pool", None) is None:
+            raise OrderRefused(
+                503, "scene orders need the item cache, and the catalogue database is not reachable", "items"
+            )
+        ids = sorted(body.items)
+        items = await mosaic_tiles.fetch_items(state.earthx_item_fetches, state.earthx_item_source, dataset, ids)
+        crs_by_item = {
+            item_id: _resolve_ref(items[item_id], config=config, item=item_id, asset=body.asset).crs for item_id in ids
+        }
+        return {"order": mosaic_order(crs_by_item)}
+    except OrderRefused as error:
+        raise HTTPException(status_code=error.status_code, detail=error.detail) from None
+
+
 def _describe_one(
     items: dict[str, dict[str, Any]],
     refs: dict[tuple[str, str], ResolvedAsset],
@@ -1035,14 +1096,34 @@ class DownloadRequest(BaseModel):
     )
     assets: list[str] = Field(min_length=1, max_length=32, description="asset keys, e.g. `visual`")
     aoi: dict[str, Any] = Field(description="a GeoJSON Polygon or MultiPolygon, in WGS84")
-    resolution: int = Field(
+    resolution: Literal[1] = Field(
         default=1,
         description=(
-            "how many times coarser than native resolution to read, one of "
-            f"{RESOLUTION_FACTORS} — 1 is native, the default (Otto, 23.09.2026, M3-18 §10). "
-            "Never chosen automatically; the caller (the download dialog) picks it explicitly."
+            "Always 1, the resolution of the source: a coarser factor is no longer offered (Otto, 03.11.2026, NM4-75). "
+            "A file is in the resolution of its source, or in `common_resolution` for one multi-band file. "
+            "Any other value is refused."
         ),
     )
+    form: Literal["per_band", "per_resolution", "multi_band"] = Field(
+        default="per_band",
+        description=(
+            "`per_band`: one GeoTIFF per band in its own resolution; `per_resolution`: one multi-band GeoTIFF per "
+            "resolution that occurs; `multi_band`: one GeoTIFF at `common_resolution`. Nothing is converted except "
+            "for `multi_band` (NM4-75)."
+        ),
+    )
+    common_resolution: float | None = Field(
+        default=None,
+        gt=0,
+        le=1000,
+        description="the pixel size in metres of the one file of `multi_band`; with no other form",
+    )
+
+    @model_validator(mode="after")
+    def _form_and_resolution_agree(self) -> DownloadRequest:
+        if (self.form == "multi_band") != (self.common_resolution is not None):
+            raise ValueError("common_resolution goes with the form multi_band, and with no other")
+        return self
 
     @field_validator("groups")
     @classmethod
@@ -1106,12 +1187,6 @@ async def download_crop(
     except InvalidAoi as error:
         raise HTTPException(status_code=400, detail=str(error)) from None
 
-    if body.resolution not in RESOLUTION_FACTORS:
-        raise HTTPException(
-            status_code=422,
-            detail=f"resolution must be one of {RESOLUTION_FACTORS}, not {body.resolution!r}",
-        )
-
     # One fetch per item id, even where two groups would otherwise ask for it
     # twice — the request validator already refuses that, so this dict never
     # loses an entry to a second fetch overwriting the first.
@@ -1157,37 +1232,50 @@ async def download_crop(
     # archive twice (M2-10 review). One request for `visual` is one `visual.tif`.
     wanted = list(dict.fromkeys(body.assets))
 
-    # Native is always planned too (F10c, M3-18 §10): even when the caller
-    # already chose a coarser resolution, a rejection still needs the smallest
-    # *native-relative* factor to suggest, not one relative to what was
-    # already asked for.
-    native_planned_by_group: list[list[PlannedOutput]] = [
-        plan_outputs(matched, wanted, region) for matched, region in surviving_groups
-    ]
-    planned_by_group: list[list[PlannedOutput]] = (
-        native_planned_by_group
-        if body.resolution == 1
-        else [
-            plan_outputs(matched, wanted, region, resolution_factor=body.resolution)
-            for matched, region in surviving_groups
+    # What the items say about each band, for the names of the files and BANDS.txt (NM4-75), and the plan of the
+    # files: refused here, before anything is read, when the bands and the form do not make one.
+    if config.zarr is not None and body.form != "per_band":
+        raise HTTPException(status_code=422, detail="this dataset is a Zarr store; only one file per band is offered")
+    all_matched = [item for matched, _ in surviving_groups for item in matched]
+    band_metas = {
+        asset: band_meta_of_items(
+            all_matched, asset, unit=config.band_unit(asset),
+            categorical=config.mask is not None and config.mask.asset == asset,
+        )
+        for asset in wanted
+    }  # fmt: skip
+    if body.form != "per_band":
+        several = [
+            asset
+            for asset in wanted
+            if any((band_count(item, asset) or 1) > 1 for item in all_matched if asset in item.get("assets", {}))
         ]
-    )
+        if several:
+            raise HTTPException(
+                status_code=422, detail=f"{', '.join(several)} has several bands in one file; only one file per band can hold it"
+            )
+    try:
+        plan_files(body.form, [band_metas[asset] for asset in wanted], body.common_resolution)
+    except ExportPlanError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from None
+
+    # Each file at the resolution of its source, or all at the common one (NM4-75).
+    planned_by_group: list[list[PlannedOutput]] = [
+        plan_outputs(matched, wanted, region, pixel_size=body.common_resolution) for matched, region in surviving_groups
+    ]
     try:
         check_item_count_cap(sum(len(matched) for matched, _ in surviving_groups))
     except AoiTooLarge as error:
         raise HTTPException(status_code=413, detail=str(error)) from None
-    native_total = sum(output.total_bytes for planned in native_planned_by_group for output in planned)
+    planned_total = sum(output.total_bytes for planned in planned_by_group for output in planned)
     try:
-        check_output_size_cap(
-            [output for planned in planned_by_group for output in planned],
-            native_planned=[output for planned in native_planned_by_group for output in planned],
-        )
+        check_output_size_cap([output for planned in planned_by_group for output in planned])
     except AoiTooLarge as error:
         # Over the synchronous cap, the same selection may still run as an export job (M4-11 K5):
-        # native resolution only (K1), COG only (F6), under the job's own cap (F5). A word, no
-        # number and no geometry, like `X-Skipped-Groups` below.
-        if body.resolution == 1 and config.zarr is None:
-            fits = native_total <= MAX_JOB_BYTES
+        # COG only (F6), under the job's own cap (F5). A word, no number and no geometry, like
+        # `X-Skipped-Groups` below.
+        if config.zarr is None:
+            fits = planned_total <= MAX_JOB_BYTES
             headers = {EXPORT_JOB_HEADER: EXPORT_JOB_AVAILABLE if fits else EXPORT_JOB_TOO_LARGE}
         else:
             headers = None
@@ -1200,8 +1288,7 @@ async def download_crop(
         (_in_mosaic_order(matched, config=config, asset=wanted[0]), region) for matched, region in surviving_groups
     ]
 
-    def _crops_for(matched_items: list[dict[str, Any]], planned: list[PlannedOutput]) -> list[AssetCrop]:
-        planned_by_asset = {output.label: output for output in planned}
+    def _crops_for(matched_items: list[dict[str, Any]]) -> list[AssetCrop]:
         return [
             AssetCrop(
                 asset=asset,
@@ -1211,21 +1298,37 @@ async def download_crop(
                     )
                     for matched_item in matched_items
                 ),
-                width=None if body.resolution == 1 else planned_by_asset[asset].width,
-                height=None if body.resolution == 1 else planned_by_asset[asset].height,
             )
             for asset in wanted
         ]
 
+    # Scenes of one mosaic in more than one coordinate system are reprojected onto the one grid; BANDS.txt says so.
+    bands_notes: list[str] = []
+    for matched, _ in surviving_groups:
+        crs_names = sorted(
+            {
+                ref.crs
+                for stac_item in matched
+                if (ref := _resolve_ref(stac_item, config=config, item=str(stac_item.get("id")), asset=wanted[0])).crs
+            }
+        )
+        if len(crs_names) > 1:
+            target = target_crs({str(item.get("id")): _resolve_ref(item, config=config, item=str(item.get("id")), asset=wanted[0]).crs for item in matched})
+            bands_notes = [
+                "Note: the scenes of a mosaic of this download lie in more than one coordinate reference system "
+                f"({', '.join(crs_names)}); those not in {target} were reprojected to it and merged."
+            ]
+            break
+
     first_matched, first_region = surviving_groups[0]
-    first_crops = _crops_for(first_matched, planned_by_group[0])
+    first_crops = _crops_for(first_matched)
     additional_groups = [
         GroupCrop(
             item_ids=[matched_item["id"] for matched_item in matched],
-            crops=_crops_for(matched, planned),
+            crops=_crops_for(matched),
             region_geometry=shapely_mapping(region),
         )
-        for (matched, region), planned in zip(surviving_groups[1:], planned_by_group[1:], strict=True)
+        for matched, region in surviving_groups[1:]
     ]
 
     # The worker core stays out of the tiler's start (the intake imports it), so it is
@@ -1240,9 +1343,12 @@ async def download_crop(
             groups=[matched for matched, _ in surviving_groups],
             assets=wanted,
             aoi=body.aoi,
-            resolution_factor=body.resolution,
             accepted_at=accepted_at,
             years=years,
+            layout={
+                "form": body.form,
+                **({"resolution_m": body.common_resolution} if body.common_resolution is not None else {}),
+            },
         )
     except OrderRefused as refused:
         # By cause (Otto, 07.10.2026): an address its dataset does not declare, or an
@@ -1283,11 +1389,14 @@ async def download_crop(
             item_ids=[matched_item["id"] for matched_item in first_matched],
             additional_groups=additional_groups,
             skipped_item_ids=skipped_item_ids,
-            resolution_factor=body.resolution,
             recipe_json=recipe_json,
             citation_bib=bib,
             recipe_omitted_cause=recipe_omitted_cause,
             years=years,
+            form=body.form,
+            common_resolution=body.common_resolution,
+            band_metas=band_metas,
+            bands_notes=bands_notes,
             # The GDAL/VSI settings `gateway` also uses for the tile path
             # (timeouts, the read cache, no directory listings on open) —
             # missing here until M3-18 (F7 Nebenbefund), so a crop's reads
@@ -1309,6 +1418,8 @@ async def download_crop(
         # The bbox prefilter passed but the geometry itself misses every item's
         # actual footprint (a bbox is not the data — MGRS tiles are rotated).
         raise HTTPException(status_code=400, detail=str(error)) from None
+    except ExportPlanError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from None
     except RioTilerError as error:
         raise HTTPException(status_code=400, detail=str(error)) from None
     except (RasterioIOError, GatewayError):
@@ -1347,7 +1458,6 @@ async def download_crop(
             "items": sum(len(matched) for matched, _ in surviving_groups),
             "assets": len(wanted),
             "bytes": len(zip_bytes),
-            "resolution": body.resolution,
         },
     )
     return StreamingResponse(
@@ -1367,6 +1477,45 @@ async def download_crop(
             "X-Skipped-Groups": str(skipped_group_count),
         },
     )
+
+
+class BandsRequest(BaseModel):
+    """Body of ``POST /collections/{dataset}/bands`` (NM4-75): the scenes the download dialog is opened for."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[str] = Field(min_length=1, max_length=25, description="item ids, each once")
+
+    @field_validator("items")
+    @classmethod
+    def _once(cls, items: list[str]) -> list[str]:
+        if len(set(items)) != len(items):
+            raise ValueError("name each item once")
+        return items
+
+
+async def bands_of_items(
+    request: Request, dataset: Annotated[str, Path(description="dataset id of the registry")], body: BandsRequest
+) -> dict[str, list[dict[str, Any]]]:
+    """The bands the download dialog offers for these scenes (NM4-75), from the items and the registry alone.
+
+    The GeoTIFF assets of the first scene without the pictures the registry calls auxiliary, each with the name, common name
+    and wavelength the item gives it, its pixel size (the finest over the scenes), type, scale, offset, nodata and unit,
+    whether it is the classification layer, and whether it starts ticked. A dataset with no file per band (a Zarr store) has
+    none. No pixel is read; the ids travel in the body.
+    """
+    state = request.app.state
+    config = _dataset_config(state, dataset)
+    items = await asyncio.gather(*(_fetch_item(state, dataset, item_id) for item_id in body.items))
+    if config.zarr is not None:
+        return {"bands": []}
+    table = band_table(
+        items,
+        auxiliary=config.auxiliary_assets,
+        mask_asset=config.mask.asset if config.mask is not None else None,
+        unit_of=config.band_unit,
+    )
+    return {"bands": [{**meta.to_json(), "preselected": ticked} for meta, ticked in table]}
 
 
 def gdal_environment(request: Request) -> dict[str, str]:
@@ -1500,6 +1649,20 @@ def build_app(
     app.state.earthx_results = None
     app.include_router(build_result_factory().router, prefix=RESULT_ROUTER_PREFIX, tags=["Results"])
     app.add_api_route(
+        SCENE_ORDER_ROUTE,
+        scene_order,
+        methods=["POST"],
+        tags=["Mosaic tiles"],
+        summary="The order a mosaic reads the scenes of a pass in",
+    )
+    app.add_api_route(
+        BANDS_ROUTE,
+        bands_of_items,
+        methods=["POST"],
+        tags=["Download"],
+        summary="The bands the download dialog offers for some scenes",
+    )
+    app.add_api_route(
         DOWNLOAD_ROUTE,
         download_crop,
         methods=["POST"],
@@ -1544,6 +1707,14 @@ def build_app(
     @app.get("/health")
     def health() -> dict:
         return {"status": "ok", "service": "tiler"}
+
+    @app.get("/colormaps", tags=["Colormaps"])
+    def colormaps() -> JSONResponse:
+        """The colormaps every tile route takes as ``colormap_name``, by group, each with a preview and its reversed name.
+
+        The same answer for everyone and every time this version runs: a day in the browser's cache (UI-03d).
+        """
+        return JSONResponse(colormap_catalog(), headers={"Cache-Control": "public, max-age=86400"})
 
     return app
 
@@ -1593,6 +1764,7 @@ app = build_app()
 
 
 __all__ = [
+    "BANDS_ROUTE",
     "DOWNLOAD_ROUTE",
     "MOSAIC_ROUTER_PREFIX",
     "ROUTER_PREFIX",

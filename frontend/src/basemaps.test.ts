@@ -5,8 +5,10 @@ import { describe, expect, it } from 'vitest';
 import { BASEMAP_IDS, BASEMAP_PREFIX, BASEMAPS, DEFAULT_BASEMAP } from './basemaps';
 
 describe('the basemap catalogue', () => {
-  it('offers satellite, streets, grey, outlines and relief, in that order, and starts on satellite', () => {
-    expect(BASEMAP_IDS).toEqual(['satellite', 'streets', 'grey', 'outlines', 'relief']);
+  it('offers satellite, streets, grey and outlines, in that order, and starts on satellite; Relief is an overlay only (UI-04 part 4)', () => {
+    expect(BASEMAP_IDS).toEqual(['satellite', 'streets', 'grey', 'outlines']);
+    expect(BASEMAP_IDS as readonly string[]).not.toContain('relief');
+    expect(Object.keys(BASEMAPS)).not.toContain('relief');
     expect(DEFAULT_BASEMAP).toBe('satellite');
     expect(Object.keys(BASEMAPS)).toEqual([...BASEMAP_IDS]);
   });
@@ -25,7 +27,6 @@ describe('the basemap catalogue', () => {
 
   it('names the host the tiles come from, and no other', () => {
     expect(BASEMAPS.satellite.tip).toContain('arcgisonline.com');
-    expect(BASEMAPS.relief.tip).toContain('amazonaws.com');
     for (const id of ['streets', 'grey', 'outlines'] as const) expect(BASEMAPS[id].tip).toContain('openfreemap.org');
   });
 
@@ -40,7 +41,7 @@ describe('the basemap catalogue', () => {
     expect(BASEMAPS.grey.style).toBe('https://tiles.openfreemap.org/styles/positron');
   });
 
-  it.each(['satellite', 'outlines', 'relief'] as const)('draws %s from layers whose sources all exist, and gives none an id with the basemap prefix', (id) => {
+  it.each(['satellite', 'outlines'] as const)('draws %s from layers whose sources all exist, and gives none an id with the basemap prefix', (id) => {
     const style = BASEMAPS[id].style;
     if (typeof style === 'string') throw new Error('a local style is an object');
     for (const layer of style.layers) {

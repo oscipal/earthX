@@ -1,0 +1,76 @@
+{
+  "inputs": {
+    "recipe": {
+      "recipe_version": 2,
+      "inputs": [
+        {
+          "name": "input",
+          "dataset": "sentinel-2-c1-l2a",
+          "groups": [
+            [
+              "ITEM_A"
+            ]
+          ]
+        }
+      ],
+      "aoi": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              9,
+              47
+            ],
+            [
+              9.05,
+              47
+            ],
+            [
+              9.05,
+              47.05
+            ],
+            [
+              9,
+              47.05
+            ],
+            [
+              9,
+              47
+            ]
+          ]
+        ]
+      },
+      "steps": [
+        {
+          "op": "band_math",
+          "op_version": 2,
+          "params": {
+            "expression": "(nir - red) / (nir + red)",
+            "name": "NDVI"
+          }
+        },
+        {
+          "op": "mask_values",
+          "op_version": 1,
+          "params": {
+            "band": "NDVI",
+            "condition": "between",
+            "values": [
+              0.2,
+              0.8
+            ]
+          }
+        }
+      ],
+      "output": {
+        "kind": "raster",
+        "format": "cog",
+        "dtype": "float32",
+        "bands": [
+          "NDVI",
+          "red"
+        ]
+      }
+    }
+  }
+}

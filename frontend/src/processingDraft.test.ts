@@ -154,6 +154,33 @@ describe('draftFromOrder', () => {
     ]);
   });
 
+  describe('the numbers of a mask by value (DS-06b)', () => {
+    const check = (params: Record<string, unknown>) => {
+      const order = structuredClone(FIXTURES['./fixtures/orders/mask-dem-equal-to-values-with-drawn-aoi.json'].inputs.recipe);
+      order.steps[0] = { ...order.steps[0], params };
+      return draftFromOrder(order, infoOf('cop-dem-glo-30'), keys());
+    };
+
+    it('are read as the text they would have been typed as', () => {
+      const { draft, problems } = check({ band: 'data', condition: 'between', values: [0.2, 0.8] });
+      expect(problems).toEqual([]);
+      expect(draft.steps[0].values).toEqual({ band: 'data', condition: 'between', values: '0.2, 0.8' });
+    });
+
+    it('are refused as text, as a number, or in the wrong count for the condition', () => {
+      expect(check({ band: 'data', condition: 'lt', values: '0.2' }).problems.join(' ')).toMatch(/values has the wrong type/u);
+      expect(check({ band: 'data', condition: 'lt', values: [1, 2] }).problems).toEqual(['Step 1 (mask_values): values: Enter one number.']);
+      expect(check({ band: 'data', condition: 'between', values: [3, 1] }).problems).toEqual([
+        'Step 1 (mask_values): values: “from” must be below “to”.',
+      ]);
+      expect(check({ band: 'data', condition: 'eq', values: ['a'] }).problems.join(' ')).toMatch(/values has the wrong type/u);
+    });
+
+    it('name a parameter of the mask by class as unknown', () => {
+      expect(check({ band: 'data', condition: 'lt', values: [1], source: 'scl' }).problems).toEqual(['Step 1 (mask_values): unknown parameter source.']);
+    });
+  });
+
   describe('the bands of a normalize step (adr/0020 §4)', () => {
     const normalize = () => structuredClone(FIXTURES['./fixtures/orders/normalize-dem-with-drawn-aoi.json'].inputs.recipe);
     const check = (bands: unknown) => {
@@ -169,9 +196,9 @@ describe('draftFromOrder', () => {
     });
 
     it('are refused as an object, a list of numbers, or an empty list', () => {
-      expect(check({ data: true }).problems).toEqual(['Step 1 (normalize): bands has the wrong type.', 'Step 1 (normalize): bands: Pick at least one band.']);
+      expect(check({ data: true }).problems).toEqual(['Step 1 (normalize): bands has the wrong type.', 'Step 1 (normalize): bands: Choose at least one band.']);
       expect(check([1, 2]).problems.join(' ')).toMatch(/bands has the wrong type/u);
-      expect(check([]).problems).toEqual(['Step 1 (normalize): bands: Pick at least one band.']);
+      expect(check([]).problems).toEqual(['Step 1 (normalize): bands: Choose at least one band.']);
     });
   });
 
@@ -204,6 +231,83 @@ describe('draftFromOrder', () => {
       const order = asV2(2);
       order.steps[0].params = { crs: 'EPSG:3035', resolution: 'x' };
       expect(draftFromOrder(order, infoOf('cop-dem-glo-30'), keys()).problems.join(' ')).toMatch(/resolution/u);
+    });
+  });
+
+  describe('the methods of a normalize step (NM4-11b, NM4-71)', () => {
+    const normalize = () => structuredClone(FIXTURES['./fixtures/orders/normalize-dem-with-drawn-aoi.json'].inputs.recipe);
+    const withStep = (op_version: number, params: Record<string, unknown>) => {
+      const order = normalize();
+      order.steps[0] = { op: 'normalize', op_version, params };
+      return order;
+    };
+    const FIXED = { bands: ['data'], in_min: 0, in_max: 3000, out_min: 0, out_max: 1, clip: true };
+    const LINEAR_V4 = { op: 'normalize', op_version: 4, params: { method: 'linear', ...FIXED } };
+
+    it('takes version 2, the fixed range, as version 4 with the method linear and the same numbers, with a note', () => {
+      const order = withStep(2, FIXED);
+      const { draft, problems, notes } = draftFromOrder(order, infoOf('cop-dem-glo-30'), keys());
+      expect(problems).toEqual([]);
+      expect(notes).toEqual(['Step 1 (normalize): version 2 is taken as version 4.']);
+      expect(draft.steps[0]).toMatchObject({ op: 'normalize', opVersion: 4, values: { method: 'linear', bands: 'data', in_min: '0', in_max: '3000', clip: true } });
+      expect(roundTrip(order).built.order?.steps[0]).toEqual(LINEAR_V4);
+    });
+
+    it('takes version 3 linear as version 4 linear, bit for bit, and version 4 as it is', () => {
+      const v3 = withStep(3, { method: 'linear', ...FIXED });
+      const taken = draftFromOrder(v3, infoOf('cop-dem-glo-30'), keys());
+      expect(taken.problems).toEqual([]);
+      expect(taken.notes).toEqual(['Step 1 (normalize): version 3 is taken as version 4.']);
+      expect(roundTrip(v3).built.order?.steps[0]).toEqual(LINEAR_V4);
+      const v4 = withStep(4, { method: 'linear', ...FIXED });
+      expect(draftFromOrder(v4, infoOf('cop-dem-glo-30'), keys()).notes).toEqual([]);
+      expect(roundTrip(v4).built.order?.steps[0]).toEqual(LINEAR_V4);
+    });
+
+    it('takes version 3 with a statistical method as version 4 and leaves the numbers behind: the job measures', () => {
+      const measured = { factor: 1, bands: { data: { p_low: 12, p_high: 2000 } } };
+      const order = withStep(3, { method: 'percentile', bands: ['data'], low: 5, high: 95, out_min: 0, out_max: 1, clip: false, measured });
+      const { draft, problems, notes } = draftFromOrder(order, infoOf('cop-dem-glo-30'), keys());
+      expect(problems).toEqual([]);
+      expect(notes).toEqual(['Step 1 (normalize): version 3 is taken as version 4.']);
+      expect(draft.steps[0]).toMatchObject({ opVersion: 4, values: { method: 'percentile', low: '5', high: '95', clip: false } });
+      // The steps of the draft do not hold them; the draft lists them apart, and only "process further" of a result reads them.
+      expect(JSON.stringify(draft.steps)).not.toContain('2000');
+      expect(draft.measured).toEqual([measured]);
+      const built = roundTrip(order).built;
+      expect(built.order?.steps[0]).toEqual({
+        op: 'normalize',
+        op_version: 4,
+        params: { method: 'percentile', bands: ['data'], low: 5, high: 95, out_min: 0, out_max: 1, clip: false },
+      });
+      expect(JSON.stringify(built.order)).not.toContain('measured');
+      expect(built.needs).toHaveLength(1);
+    });
+
+    it('reads z-score and robust of version 3 and 4 with no fields besides the bands', () => {
+      for (const method of ['zscore', 'robust']) {
+        const measured = { factor: 1, bands: { data: method === 'zscore' ? { mean: 1, stddev: 2 } : { p25: 1, median: 2, p75: 3 } } };
+        const v3 = draftFromOrder(withStep(3, { method, bands: ['data'], measured }), infoOf('cop-dem-glo-30'), keys());
+        expect(v3.problems, method).toEqual([]);
+        expect(v3.draft.steps[0].values.method).toBe(method);
+        const v4 = draftFromOrder(withStep(4, { method, bands: ['data'] }), infoOf('cop-dem-glo-30'), keys());
+        expect(v4.problems, method).toEqual([]);
+        expect(v4.notes).toEqual([]);
+        expect(v4.draft.measured).toEqual([null]);
+      }
+    });
+
+    it('refuses numbers measured in version 4, and what the form refuses: no method, a method that is none, a field of another operator', () => {
+      const info = infoOf('cop-dem-glo-30');
+      const measured = { factor: 1, bands: { data: { mean: 1, stddev: 2 } } };
+      expect(draftFromOrder(withStep(4, { method: 'zscore', bands: ['data'], measured }), info, keys()).problems).toEqual(['Step 1 (normalize): unknown parameter measured.']);
+      expect(draftFromOrder(withStep(4, { bands: ['data'] }), info, keys()).problems).toEqual(['Step 1 (normalize): method: Required.']);
+      expect(draftFromOrder(withStep(4, { method: 'median', bands: ['data'] }), info, keys()).problems).toEqual([
+        'Step 1 (normalize): method: Choose one of the options.',
+      ]);
+      expect(draftFromOrder(withStep(4, { method: 'zscore', bands: ['data'], threshold: 1 }), info, keys()).problems).toEqual([
+        'Step 1 (normalize): unknown parameter threshold.',
+      ]);
     });
   });
 });

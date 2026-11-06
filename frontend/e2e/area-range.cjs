@@ -25,15 +25,17 @@ const SCENE_HINT = 'Range measured over the first whole scene';
 const COARSE_HINT = 'Range measured on a coarser read; the result may differ';
 
 // What the tiler would answer over the AOI, and for the first whole scene.
-const band = (values) => ({ name: 'b1', ...(values.unit ? { unit: values.unit } : {}), statistics: { mean: 0.3, valid_percent: 100, ...values.statistics } });
+// The band_math step names its output band "result" (the recipe the panel builds); the answer must name it, or the panel falls back.
+const band = (values) => ({ name: 'result', ...(values.unit ? { unit: values.unit } : {}), statistics: { mean: 0.3, valid_percent: 100, ...values.statistics } });
 const NDVI = { statistics: { minimum: -1.3, maximum: 1.5, count: 900, percentile_2: 0, percentile_98: 0.91 } };
 const DEM = { unit: 'm', statistics: { minimum: -11000, maximum: 8848.86, count: 900, percentile_2: -10000, percentile_98: 8000 } };
 const SCENE = { b1: { count: 900, min: 100, max: 2500, percentile_2: 120, percentile_98: 2400, unit: null } };
 
-// What the panel must show for each case: the range fields, the unit, the tooltip of "Preview", the colormap.
+// What the panel must show for each case: the range fields, the unit (none at "Scale", also where the data have one: Otto, UI-04,
+// 3.11.2026), the tooltip of "Preview", the colormap.
 const CASES = {
   'exact index with outliers': { area: { status: 200, body: { bands: [band(NDVI)], exact: true, factor: 1 } }, fields: ['-1', '1'], unit: null, hint: null, colormap: 'rdylgn' },
-  'coarser read of a DEM': { area: { status: 200, body: { bands: [band(DEM)], exact: false, factor: 4 } }, fields: ['-10000', '8000'], unit: 'm', hint: COARSE_HINT, colormap: 'viridis' },
+  'coarser read of a DEM': { area: { status: 200, body: { bands: [band(DEM)], exact: false, factor: 4 } }, fields: ['-10000', '8000'], unit: null, hint: COARSE_HINT, colormap: 'viridis' },
   'order refused (413)': { area: { status: 413, body: { detail: 'too many files' } }, fields: ['120', '2400'], unit: null, hint: SCENE_HINT, colormap: 'viridis' },
   'tiler down (502)': { area: { status: 502, body: { detail: 'down' } }, fields: ['120', '2400'], unit: null, hint: SCENE_HINT, colormap: 'viridis' },
 };
@@ -101,11 +103,11 @@ async function check(browser, { name, theme, viewport }) {
     const leaves = [
       ...[...row.querySelectorAll('input')].map((e) => ({ what: `field ${e.value}`, e })),
       ...[...row.querySelectorAll('.pp-unit')].map((e) => ({ what: `unit ${e.textContent}`, e })),
-      ...[...row.querySelectorAll('select')].map((e) => ({ what: 'colormap', e })),
+      ...[...row.querySelectorAll('select')].map((e) => ({ what: `select ${e.getAttribute('aria-label') ?? e.closest('label')?.querySelector('span')?.textContent ?? 'band'}`, e })),
       ...[...row.querySelectorAll('button')].map((e) => ({ what: `button ${e.textContent}`, e })),
     ].map(({ what, e }) => ({ what, ...box(e), cutOff: e.tagName === 'INPUT' && e.scrollWidth > e.clientWidth }));
     const body = row.closest('.pp-body') ?? document.querySelector('.processing-panel');
-    const badge = document.querySelector('section[aria-label="Preview on the map"] .pp-heading .pp-badge:not(.loading)');
+    const badge = document.querySelector('section[aria-label="Preview on the map"] .pp-heading .badge:not(.loading)');
     return {
       theme: document.querySelector('.app')?.dataset.theme,
       leaves,
@@ -113,8 +115,8 @@ async function check(browser, { name, theme, viewport }) {
       scrolls: body.scrollWidth > body.clientWidth + 1,
       unit: row.querySelector('.pp-unit')?.textContent ?? null,
       fields: [...row.querySelectorAll('input')].map((e) => e.value),
-      colormap: row.querySelector('select')?.value,
-      hint: badge?.getAttribute('title') ?? null,
+      colormap: [...row.querySelectorAll('.vc-field')].find((field) => field.querySelector('span')?.textContent === 'Colormap')?.querySelector('select')?.value,
+      hint: badge?.getAttribute('data-tip') ?? null,
       badge: badge ? box(badge) : null,
       heading: box(document.querySelector('section[aria-label="Preview on the map"] .pp-heading')),
     };

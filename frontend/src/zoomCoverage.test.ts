@@ -81,7 +81,8 @@ describe('a layer pinned from a scene with a quicklook, whose tiles start at z8'
 
 describe('a layer pinned from a time step of several scenes (mosaic)', () => {
   it('is on the map at every zoom where single scenes stand under the mosaic, released below z8', () => {
-    expectEveryZoom([raster(0, 7, { hideFrom: 6.5 }), raster(8, 19)]);
+    // The mosaic is 512 px (asked for from zoom 7.5), the scenes under it 256 px.
+    expectEveryZoom([raster(0, 7, { hideFrom: 7.5 }), raster(8, 19, { tileUrl: 'https://t/8-19/{z}/{x}/{y}?tilesize=512' })]);
   });
 
   it('says from which zoom it is drawn where the dataset is released from z8 only', () => {

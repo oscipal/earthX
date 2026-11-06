@@ -7,25 +7,25 @@ import { useEffect } from 'react';
 import { resultUrl } from '../processing';
 import { MIN_REMAINING_MS } from '../resultLayer';
 import { useProcessingStore, ZIP_LABEL, type JobEntry } from '../processingStore';
-import { EXPIRED_TIP, formatUntil, jobState, useNowUntil } from './jobView';
-import Tip from './Tip';
+import { DownloadIcon } from './icons';
+import { formatMoment } from '../numberFormat';
+import { EXPIRED_TIP, jobState, useNowUntil } from './jobView';
 
-export const RESAMPLED_TIP = 'Resampled to a common grid';
 
 // The archive of a finished job as a link; once it expired, the link is gone and the reason is the tooltip.
-export function DownloadZip({ job, now, label, className = 'pm-icon' }: { job: JobEntry; now: number; label?: string; className?: string }) {
+export function DownloadZip({ job, now, label, className = 'icon-btn pm-icon' }: { job: JobEntry; now: number; label?: string; className?: string }) {
   const state = jobState(job, now);
   if (state.key === 'expired' && job.phase === 'successful') {
     return (
       <button type="button" className={`${className} has-tip`} aria-disabled="true" data-tip={EXPIRED_TIP} aria-label={`${ZIP_LABEL}: ${EXPIRED_TIP}`}>
-        {label ?? '⇩'}
+        {label ? <><DownloadIcon lead />{label}</> : <DownloadIcon />}
       </button>
     );
   }
   if (state.key !== 'finished' || !job.archive) return <span className={className} aria-hidden="true" />;
   return (
-    <a className={className} href={resultUrl(job.jobID, job.archive)} download rel="noopener noreferrer" title={ZIP_LABEL} aria-label={ZIP_LABEL}>
-      {label ?? '⇩'}
+    <a className={className} href={resultUrl(job.jobID, job.archive)} download rel="noopener noreferrer" data-tip-level="advanced" data-tip={ZIP_LABEL} aria-label={ZIP_LABEL}>
+      {label ? <><DownloadIcon lead />{label}</> : <DownloadIcon />}
     </a>
   );
 }
@@ -50,7 +50,7 @@ export function JobRow({ job }: { job: JobEntry }) {
             type="button"
             className="link-btn"
             disabled={job.cancelling || !job.status}
-            title="Cancel this job"
+            data-tip-level="advanced" data-tip={job.cancelling ? 'The job is being cancelled' : !job.status ? 'Waiting for the state of the job' : 'Cancel this job'}
             onClick={() => void cancelJob(job.jobID)}
           >
             {job.cancelling ? 'Cancelling…' : 'Cancel'}
@@ -58,10 +58,10 @@ export function JobRow({ job }: { job: JobEntry }) {
         )}
       </div>
       {active && <progress className="pp-progress" max={100} value={job.status?.progress ?? 0} aria-label="Progress" />}
-      {job.phase === 'failed' && <span className="hint-text error">{job.failure ?? job.status?.message ?? 'The job failed'}</span>}
+      {job.phase === 'failed' && <span className="error">{job.failure ?? job.status?.message ?? 'The job failed'}</span>}
       {state.key !== 'cancelled' && state.key !== 'unavailable' && state.key !== 'deleted' && (
-        <span className="pp-help" title={job.expires}>
-          until {formatUntil(job.expires, now)}
+        <span className="hint" data-tip-level="advanced" data-tip={job.expires}>
+          until {formatMoment(job.expires, now)}
         </span>
       )}
       {state.key === 'finished' && job.archive && (
@@ -69,10 +69,9 @@ export function JobRow({ job }: { job: JobEntry }) {
           <a href={resultUrl(job.jobID, job.archive)} download rel="noopener noreferrer">
             {ZIP_LABEL}
           </a>
-          {job.resampled === true && <Tip text={RESAMPLED_TIP} symbol="⚠" tone="warn" />}
         </span>
       )}
-      {job.error && <span className="hint-text error">{job.error}</span>}
+      {job.error && <span className="error">{job.error}</span>}
     </li>
   );
 }

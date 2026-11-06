@@ -11,19 +11,32 @@ Two spellings, never both in one request:
 Only ``gte``/``lte`` on a range and ``in`` on a list of values. The checks on the values themselves are
 ``catalog.search_filters``', independent of this spelling. No message names a value of the request.
 
-``earthx:aoi_cloud_cover`` (DS-03 plan §6.5) is the one filter the platform computes: the range of the cloud
-share inside the AOI. A collection offers it where its registry sets ``within_aoi`` on a filter; it takes that
-filter's range. It is read here and kept apart from the conditions of the source (``SearchConditions.aoi_cloud_cover``),
-because the source never gets it: ``api`` measures each scene itself (``api.aoi_cloud_filter``).
+Two more keys are the platform's (DS-03c). ``earthx:evaluate`` in the body says whether the filters are judged per ``pass`` (the
+scenes of an overpass stay or go together) or per ``scene`` (the default, as before the key existed); it counts for the
+collections whose registry offers it and is ignored for the others. ``earthx:aoi_coverage`` is a range filter like the others
+on the part of the AOI the outlines of the scenes cover, offered by the collections whose registry says so.
+
+The filters the platform computes (DS-03 plan §6.5) are the ranges of a measure inside the AOI, one property per
+:class:`~earthx.catalog.registry.AoiMeasure`: ``earthx:aoi_cloud_cover``, ``earthx:aoi_nodata``. A collection offers the
+property of each measure its registry sets as ``within_aoi`` on a filter; it takes that filter's range. They are read
+here and kept apart from the conditions of the source (``SearchConditions.aoi``), because the source never gets them:
+``api`` measures each scene itself (``api.aoi_cloud_filter``). Several may stand in one request; a scene has to meet all.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any
 
-from earthx.catalog.registry import FILTER_PROPERTY, RESERVED_FILTER_PREFIX, FilterKind, SearchFilter
+from earthx.catalog.registry import (
+    FILTER_PROPERTY,
+    RESERVED_FILTER_PREFIX,
+    AoiMeasure,
+    FilterKind,
+    SearchCapabilities,
+    SearchFilter,
+)
 from earthx.catalog.search_filters import (
     Condition,
     FilterConditions,
@@ -34,11 +47,44 @@ from earthx.catalog.search_filters import (
 )
 
 FILTER_KEYS = frozenset({"query", "query_by_collection"})
-#: The filter on the cloud share inside the AOI, and the body key that carries the AOI to measure when the search
-#: itself sends its bounding box (DS-03 plan §6.5). Both belong to the body of ``POST /stac/search`` only.
-AOI_CLOUD_COVER = "earthx:aoi_cloud_cover"
+#: DS-03c: how the filters are judged, per ``pass`` (overpass) or per ``scene``; one value for the whole search (Otto,
+#: 05.11.2026). Without the key a search judges per scene, as it did before the key existed. A collection whose registry does
+#: not offer ``evaluate`` has nothing to judge per pass and takes the value as ``scene``.
+EVALUATE_KEY = "earthx:evaluate"
+EVALUATE_VALUES = frozenset({"pass", "scene"})
+#: DS-03c: the range on the part of the AOI the outlines of the scenes cover, a filter of its own that reads no pixel.
+AOI_COVERAGE = "earthx:aoi_coverage"
+_COVERAGE_FILTER = SearchFilter(
+    property=AOI_COVERAGE,
+    kind=FilterKind.RANGE,
+    title="AOI coverage",
+    description="The share of the AOI that the outlines of the scenes cover.",
+    unit="%",
+    minimum=0.0,
+    maximum=100.0,
+    integer=False,
+    values=(),
+    within_aoi=None,
+    group="Area",
+    area_based=True,
+)
+#: The filters on a measure inside the AOI by property, and the body key that carries the AOI to measure when the
+#: search itself sends its bounding box (DS-03 plan §6.5). Both belong to the body of ``POST /stac/search`` only.
+AOI_CLOUD_COVER = AoiMeasure.CLOUD_SHARE.value
+AOI_NODATA = AoiMeasure.NODATA_SHARE.value
+AOI_MEASURES = {measure.value: measure for measure in AoiMeasure}
+#: What a refusal says when it has no filter to name (a marker of another search, ``earthx:aoi`` without a filter).
+AOI_FILTERS_TEXT = "a filter measured in the AOI"
+
+
+def aoi_filters_text(measures: Iterable[AoiMeasure], coverage: bool = False) -> str:
+    """The filters a request asked to be measured in the AOI, named by their property for a refusal: ``earthx:aoi_nodata``
+    or ``earthx:aoi_cloud_cover and earthx:aoi_nodata``, with ``earthx:aoi_coverage`` where it asked for that. A name, never
+    a value of the request."""
+    names = sorted({measure.value for measure in measures} | ({AOI_COVERAGE} if coverage else set()))
+    return " and ".join(names) if names else AOI_FILTERS_TEXT
 AOI_KEY = "earthx:aoi"
-BODY_KEYS = FILTER_KEYS | {AOI_KEY}
+BODY_KEYS = FILTER_KEYS | {AOI_KEY, EVALUATE_KEY}
 _RANGE_OPERATORS = frozenset({"gte", "lte"})
 _VALUES_OPERATORS = frozenset({"in"})
 
@@ -47,70 +93,119 @@ _VALUES_OPERATORS = frozenset({"in"})
 class SearchConditions:
     """The conditions each searched collection gets, and the properties of ``query`` a collection does not offer.
 
-    ``aoi_cloud_cover`` holds the range on the cloud share in the AOI of each collection that has one; it is not in
-    ``by_collection``, which is what the source is asked."""
+    ``aoi`` holds, per collection, the range on each measure inside the AOI the request names; it is not in
+    ``by_collection``, which is what the source is asked. ``coverage`` is the range on the coverage of the AOI by the
+    outlines, and ``evaluate`` the collections that judge their filters per pass; neither is ever asked of the source."""
 
     by_collection: Mapping[str, FilterConditions] = field(default_factory=dict)
     dropped: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
-    aoi_cloud_cover: Mapping[str, RangeCondition] = field(default_factory=dict)
+    aoi: Mapping[str, Mapping[AoiMeasure, RangeCondition]] = field(default_factory=dict)
+    coverage: Mapping[str, RangeCondition] = field(default_factory=dict)
+    evaluate: Mapping[str, str] = field(default_factory=dict)
 
 
 def read_search_conditions(
     body: Mapping[str, Any],
     collection_ids: Sequence[str],
     filters_of: Callable[[str], tuple[SearchFilter, ...]],
+    capabilities_of: Callable[[str], SearchCapabilities | None] | None = None,
 ) -> SearchConditions:
     """The conditions of a search body over ``collection_ids``; raises :class:`InvalidFilter` for a request a
-    caller has to change."""
+    caller has to change. ``capabilities_of`` says what else a collection offers (the coverage of the AOI, judging per
+    pass); without it a collection offers neither."""
     query = body.get("query")
     per_collection = body.get("query_by_collection")
     if query is not None and per_collection is not None:
         raise InvalidFilter("send query or query_by_collection, not both")
-    offered = {cid: _offered(filters_of(cid)) for cid in collection_ids}
+    evaluate = _read_evaluate(body.get(EVALUATE_KEY), collection_ids, capabilities_of)
+    offered = {cid: _offered(filters_of(cid), capabilities_of(cid) if capabilities_of else None) for cid in collection_ids}
     if query is not None:
-        return _read_shared(_object(query, "query"), collection_ids, offered)
-    if per_collection is not None:
-        return _read_per_collection(_object(per_collection, "query_by_collection"), offered)
-    return SearchConditions()
+        read = _read_shared(_object(query, "query"), collection_ids, offered)
+    elif per_collection is not None:
+        read = _read_per_collection(_object(per_collection, "query_by_collection"), offered)
+    else:
+        read = _Reading()
+    return read.finish(evaluate)
 
 
-def _offered(filters: Sequence[SearchFilter]) -> dict[str, SearchFilter]:
-    """The filters a collection offers by property, and under ``earthx:aoi_cloud_cover`` the range of the one that
-    may also apply to the AOI (``within_aoi``)."""
+def _read_evaluate(
+    value: Any, collection_ids: Sequence[str], capabilities_of: Callable[[str], SearchCapabilities | None] | None
+) -> dict[str, str]:
+    """The collections that judge per pass: those where it is asked for and the registry offers it. Any other collection
+    judges per scene and is not named."""
+    if value is not None and (not isinstance(value, str) or value not in EVALUATE_VALUES):
+        raise InvalidFilter(f"{EVALUATE_KEY} is pass or scene")
+    if value != "pass" or capabilities_of is None:
+        return {}
+    return {
+        cid: "pass"
+        for cid in collection_ids
+        if (capabilities := capabilities_of(cid)) is not None and capabilities.evaluate
+    }
+
+
+def _offered(filters: Sequence[SearchFilter], capabilities: SearchCapabilities | None) -> dict[str, SearchFilter]:
+    """The filters a collection offers by property, under the property of each measure the range of the filter
+    that may also apply inside the AOI (``within_aoi``), and the coverage where the registry offers it."""
     offered = {entry.property: entry for entry in filters}
     for entry in filters:
-        if entry.within_aoi:
-            offered[AOI_CLOUD_COVER] = replace(entry, property=AOI_CLOUD_COVER)
+        if entry.within_aoi is not None:
+            offered[entry.within_aoi.value] = replace(entry, property=entry.within_aoi.value)
+    if capabilities is not None and capabilities.aoi_coverage:
+        offered[AOI_COVERAGE] = _COVERAGE_FILTER
     return offered
+
+
+@dataclass(slots=True)
+class _Reading:
+    """The conditions read so far, by collection."""
+
+    by_collection: dict[str, dict[str, Condition]] = field(default_factory=dict)
+    aoi: dict[str, dict[AoiMeasure, RangeCondition]] = field(default_factory=dict)
+    coverage: dict[str, RangeCondition] = field(default_factory=dict)
+    dropped: dict[str, list[str]] = field(default_factory=dict)
+
+    def keep(self, collection_id: str, condition: Condition, name: str) -> None:
+        """The condition on its collection: a range inside the AOI and the coverage apart, every other one for the source."""
+        if name in AOI_MEASURES:
+            assert isinstance(condition, RangeCondition)  # the registry allows `within_aoi` on a RANGE only
+            self.aoi.setdefault(collection_id, {})[AOI_MEASURES[name]] = condition
+        elif name == AOI_COVERAGE:
+            assert isinstance(condition, RangeCondition)
+            self.coverage[collection_id] = condition
+        else:
+            self.by_collection.setdefault(collection_id, {})[name] = condition
+
+    def finish(self, evaluate: Mapping[str, str]) -> SearchConditions:
+        return SearchConditions(
+            by_collection=self.by_collection,
+            dropped={cid: tuple(sorted(names)) for cid, names in self.dropped.items()},
+            aoi=self.aoi,
+            coverage=self.coverage,
+            evaluate=dict(evaluate),
+        )
 
 
 def _read_shared(
     query: Mapping[str, Any], collection_ids: Sequence[str], offered: Mapping[str, Mapping[str, SearchFilter]]
-) -> SearchConditions:
-    by_collection: dict[str, dict[str, Condition]] = {}
-    aoi: dict[str, RangeCondition] = {}
-    dropped: dict[str, list[str]] = {}
+) -> _Reading:
+    read = _Reading()
     for name, operators in query.items():
         owners = [cid for cid in collection_ids if name in offered[cid]]
         if not owners:
             raise InvalidFilter(f"{_named(name)} is no filter of a searched collection")
         for cid in collection_ids:
             if cid in owners:
-                _keep(by_collection, aoi, cid, _condition(offered[cid][name], operators), name)
+                read.keep(cid, _condition(offered[cid][name], operators), name)
             else:
-                dropped.setdefault(cid, []).append(name)
-    return SearchConditions(
-        by_collection=by_collection,
-        dropped={cid: tuple(sorted(names)) for cid, names in dropped.items()},
-        aoi_cloud_cover=aoi,
-    )
+                read.dropped.setdefault(cid, []).append(name)
+    return read
 
 
 def _read_per_collection(
     per_collection: Mapping[str, Any], offered: Mapping[str, Mapping[str, SearchFilter]]
-) -> SearchConditions:
-    by_collection: dict[str, dict[str, Condition]] = {}
-    aoi: dict[str, RangeCondition] = {}
+) -> _Reading:
+    read = _Reading()
     for cid, query in per_collection.items():
         if cid not in offered:
             raise InvalidFilter("query_by_collection names a collection the search does not")
@@ -118,23 +213,8 @@ def _read_per_collection(
             search_filter = offered[cid].get(name)
             if search_filter is None:
                 raise InvalidFilter(f"{_named(name)} is no filter of the collection it is given for")
-            _keep(by_collection, aoi, cid, _condition(search_filter, operators), name)
-    return SearchConditions(by_collection=by_collection, aoi_cloud_cover=aoi)
-
-
-def _keep(
-    by_collection: dict[str, dict[str, Condition]],
-    aoi: dict[str, RangeCondition],
-    collection_id: str,
-    condition: Condition,
-    name: str,
-) -> None:
-    """The condition on its collection: the AOI range apart, every other one for the source."""
-    if name == AOI_CLOUD_COVER:
-        assert isinstance(condition, RangeCondition)  # the registry allows `within_aoi` on a RANGE only
-        aoi[collection_id] = condition
-    else:
-        by_collection.setdefault(collection_id, {})[name] = condition
+            read.keep(cid, _condition(search_filter, operators), name)
+    return read
 
 
 def _condition(search_filter: SearchFilter, operators: Any) -> Condition:
@@ -160,6 +240,6 @@ def _named(name: str) -> str:
     """A property of the request in a message only where it has the form of one; anything else stays unnamed."""
     if not FILTER_PROPERTY.match(name):
         return "a property"
-    if name.startswith(RESERVED_FILTER_PREFIX) and name != AOI_CLOUD_COVER:
+    if name.startswith(RESERVED_FILTER_PREFIX) and name not in AOI_MEASURES and name != AOI_COVERAGE:
         return f"{name} (computed by the platform, not offered yet)"
     return name

@@ -260,6 +260,27 @@ class TestRefusals:
         response = client.get(_url(_tiles()[0], [("normalize", 3, METHODS["linear"])], dataset=NO_NORMALIZE.dataset_id))
         assert response.status_code == 422 and "normalization" in response.json()["detail"]
 
+    @pytest.mark.parametrize("method", list(METHODS))
+    def test_version_4_is_no_tile_but_a_job_and_the_refusal_says_so_before_the_source_is_asked(
+        self, client: TestClient, method: str
+    ) -> None:
+        """NM4-71: the numbers of version 4 are measured in the run, which a tile has none of; the panel shows version 3."""
+        fetched: list[str] = []
+        original = client.app.state.earthx_item_source
+
+        async def counting(dataset_id: str, item_id: str) -> dict[str, Any]:
+            fetched.append(item_id)
+            return await original(dataset_id, item_id)
+
+        client.app.state.earthx_item_source = counting
+        params = {key: value for key, value in METHODS[method].items() if key != "measured"}
+        response = client.get(_url(_tiles()[0], [("normalize", 4, params)]))
+        assert response.status_code == 422 and "'normalize' does not run as a tile" in response.json()["detail"]
+        assert fetched == []
+
+    def test_version_3_stays_the_tile_form_of_a_measured_step(self, client: TestClient) -> None:
+        assert client.get(_url(_tiles()[0], [("normalize", 3, METHODS["zscore"])])).status_code == 200
+
     def test_the_refusals_cost_no_request_to_the_source(self, client: TestClient) -> None:
         fetched: list[str] = []
         original = client.app.state.earthx_item_source

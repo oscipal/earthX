@@ -1,4 +1,5 @@
 """Peak memory of a T2 run with ``mask`` and ``normalize``: below 500 MB at 4096², and not growing with the scene (M4-18a).
+Also ``normalize`` version 4 over four bands (NM4-71), which counts in a pass of its own and reads a work file again.
 
 The limit and the method are those of ``test_memory_8192.py`` and ``test_memory_reproject.py``: the whole
 child process, ``VmHWM`` in a process of its own, ``GDAL_CACHEMAX`` 64 MB. The scene is the same two-band
@@ -18,11 +19,14 @@ import numpy
 import pytest
 import rasterio
 from rasterio.transform import from_origin
+from rasterio.windows import Window
 from rio_cogeo.cogeo import cog_translate
 from rio_cogeo.profiles import cog_profiles
 
+from earthx.processing.plan import memory_needed
 from tests.earthx.processing import sources
 from tests.earthx.processing.test_memory_8192 import BACKEND, PEAK_LIMIT_MB, build_scene
+from tests.earthx.processing.test_memory_reproject import FOUR_BANDS_PEAK_LIMIT_MB
 
 SMALL, LARGE = 2048, 4096
 
@@ -99,3 +103,71 @@ def test_a_pixel_operator_stays_below_the_limit_and_does_not_follow_the_scene_si
     assert measured[LARGE]["peak_mb"] < PEAK_LIMIT_MB
     assert growth <= GROWTH_LIMIT_MB
 
+
+def build_wide_scene(path: Path, size: int, bands: int) -> Path:
+    """``build_scene`` with ``bands`` bands; one band is the first of a scene of two, written strip by strip."""
+    if bands > 1:
+        return build_scene(path, size, bands=bands)
+    two = build_scene(path.with_suffix(".two.tif"), size, bands=2)
+    with rasterio.open(two) as source:
+        with rasterio.open(path, "w", **{**source.profile, "count": 1}) as destination:
+            for row in range(0, size, 512):
+                window = Window(0, row, size, 512)
+                destination.write(source.read(1, window=window), 1, window=window)
+    two.unlink()
+    return path
+
+
+@pytest.fixture(scope="module")
+def wide_scenes(tmp_path_factory: pytest.TempPathFactory) -> dict[tuple[int, int], Path]:
+    root = tmp_path_factory.mktemp("wide-scenes")
+    return {
+        (size, bands): build_wide_scene(root / f"scene-{size}-{bands}.tif", size, bands)
+        for size, bands in ((SMALL, 4), (LARGE, 4), (LARGE, 1), (LARGE, 2))
+    }
+
+
+@pytest.mark.parametrize("step", ["normalize-v4-percentile", "normalize-v4-zscore"])
+def test_normalize_version_4_over_four_bands_stays_below_the_limit_and_does_not_follow_the_scene_size(
+    wide_scenes: dict[tuple[int, int], Path], tmp_path: Path, capsys: pytest.CaptureFixture[str], step: str
+) -> None:
+    """The count of the pass before the step, the second look at the work file and the step itself, block by block.
+
+    The limit is the one of four bands (``test_memory_reproject.py``): the pass over the ``float64`` work file holds four
+    bands of 8 bytes where the pass that reads the scene holds them of 4. Measured in the session: 516 MB at 4096² for both
+    methods, against 425 MB for version 3 over the same four bands.
+    """
+    measured = {}
+    for size in (SMALL, LARGE):
+        (tmp_path / str(size)).mkdir()
+        measured[size] = measure(wide_scenes[(size, 4)], None, tmp_path / str(size), size, step)
+    growth = measured[LARGE]["peak_mb"] - measured[SMALL]["peak_mb"]
+    with capsys.disabled():
+        for size in (SMALL, LARGE):
+            print(f"\nT2 memory {step} {size}² (4 bands): {measured[size]}")
+        print(f"T2 memory {step} growth {SMALL}² → {LARGE}²: {growth:.1f} MB")
+    passes = 2 if step.endswith("zscore") else 3  # the pass before the step, [the second look,] the pass of the step
+    for size in (SMALL, LARGE):
+        assert measured[size]["blocks"] == passes * (size // 1024) ** 2
+        with rasterio.open(tmp_path / str(size) / "result.tif") as result:
+            assert (result.width, result.height, result.count) == (size, size, 4)
+    assert measured[LARGE]["peak_mb"] < FOUR_BANDS_PEAK_LIMIT_MB
+    assert growth <= GROWTH_LIMIT_MB
+
+
+@pytest.mark.parametrize("bands", [1, 2, 4])
+def test_the_estimate_of_the_memory_of_a_step_that_measures_is_not_below_the_measured_peak(
+    wide_scenes: dict[tuple[int, int], Path], tmp_path: Path, capsys: pytest.CaptureFixture[str], bands: int
+) -> None:
+    """``plan.memory_needed`` is what the job is refused or admitted by: with the share per measured band (NM4-71) it
+    holds the highest peak of a percentile stretch over every band of the scene."""
+    measured = measure(wide_scenes[(LARGE, bands)], None, tmp_path, LARGE, "normalize-v4-percentile")
+    estimated = memory_needed(bands, 1, bands) / 1_000_000
+    with capsys.disabled():
+        print(
+            f"\nT2 memory normalize-v4-percentile {LARGE}² ({bands} bands): measured {measured['peak_mb']} MB, estimated {estimated:.0f} MB"
+        )
+    assert measured["peak_mb"] <= estimated
+    assert memory_needed(bands) / 1_000_000 < measured["peak_mb"], (
+        "without the share the estimate was below, which is why it is there"
+    )

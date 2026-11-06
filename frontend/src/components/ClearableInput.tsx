@@ -4,6 +4,8 @@
 
 import { useRef, type InputHTMLAttributes } from 'react';
 
+import { ClearIcon } from './icons';
+
 type Props = Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'type'> & {
   value: string;
   onChange: (value: string) => void;
@@ -16,20 +18,20 @@ export default function ClearableInput({ value, onChange, onClear, clearLabel, c
   const ref = useRef<HTMLInputElement>(null);
   return (
     <span className={`clearable${className ? ` ${className}` : ''}`}>
-      <input ref={ref} type="text" value={value} onChange={(e) => onChange(e.target.value)} {...input} />
+      <input autoComplete="off" ref={ref} type="text" value={value} onChange={(e) => onChange(e.target.value)} {...input} />
       {value !== '' && !input.disabled && (
         <button
           type="button"
-          className="clear-btn"
+          className="icon-btn sm quiet clear-btn"
           aria-label={clearLabel}
-          title={clearLabel}
+          data-tip-level="advanced" data-tip={clearLabel}
           onClick={() => {
             onChange('');
             onClear?.();
             ref.current?.focus();
           }}
         >
-          ×
+          <ClearIcon size={14} />
         </button>
       )}
     </span>

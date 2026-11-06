@@ -1039,6 +1039,10 @@ verlangt den Bruch. Der Methodentext in `provenance.methods` nennt die Zahlen. D
 Der Runner rechnet `mask_values` Version 1 mit demselben Kern wie die Plattform (`processing`), ohne Messung und ohne Zahlen aus der Plattform: Band, Bedingung und Werte stehen im Rezept. Kern und Runner geben dieselben Bytes (`runner/test_compare.py`, Gegenprobe mit anderer Schwelle).
 Das Image bleibt `earthx-runner:0.5.0` (kein Byte eines bestehenden Rezepts ändert sich, `earthx.__version__` bleibt); eine ältere Fassung weist das Rezept als unbekannten Operator ab (Exit-Code 2).
 
+## 12 Nachtrag NM4-71 (2026-11-01): `normalize` Version 4 misst im Runner (zu §12, Nachtrag NM4-11; `adr/0014` Nachtrag NM4-71)
+
+Version 4 trägt keine Zahlen; der Kern misst sie im Lauf über eine Arbeitsdatei (`adr/0014` Nachtrag NM4-71). Der Runner rechnet `core.run` und **misst damit selbst**, mit demselben Code wie das Job-Kind: kein Plattformdienst, kein zusätzliches Lesen der Quellen (sie werden einmal gelesen), nur eine Datei mehr in seinem Arbeitsordner, die der Lauf wieder löscht (B9 unberührt). Der Satz „misst nichts“ des Nachtrags NM4-11 gilt weiter für Version 3. `runner/test_compare.py` vergleicht Job-Kind und Runner mit Version 4 für jede Methode bis auf das Byte, die Gegenprobe verlangt den Bruch (Otto, Auflage 2 zu #273). Das Image bleibt `earthx-runner:0.5.0` (kein Byte eines bestehenden Rezepts ändert sich); eine ältere Fassung weist Version 4 als unbekannten Operator ab (Exit-Code 2).
+
 ## 13. Quellen
 
 **Im Repo [P]**

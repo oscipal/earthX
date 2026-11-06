@@ -31,7 +31,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any, cast
@@ -44,6 +44,7 @@ from stac_fastapi.pgstac.models.links import ItemCollectionLinks, ItemLinks, Pag
 from stac_fastapi.types.rfc3339 import str_to_interval
 from stac_fastapi.types.stac import Item, ItemCollection
 
+from earthx.access.outlines import AoiOutlines
 from earthx.adapters import (
     MAX_LIMIT,
     AdapterSpecs,
@@ -60,6 +61,7 @@ from earthx.adapters import search_items as adapter_search_items
 from earthx.adapters.federated_search import search_fingerprint
 from earthx.api import mixed_search
 from earthx.api.aoi_cloud_filter import (
+    FILTERED_SOURCE_SECONDS,
     MAX_BODY_BYTES,
     PAGE_SIZE,
     AoiFilterRequest,
@@ -80,10 +82,25 @@ from earthx.api.mixed_search import (
     is_mixed_token,
     mixed_fingerprint,
 )
-from earthx.api.search_filters import AOI_KEY, BODY_KEYS, read_search_conditions
-from earthx.catalog.registry import DatasetRegistry, ItemHolding, SearchFilter, UnknownDatasetError
+from earthx.api.pass_filter import PassMeasurer, day_of, mosaic_ordered, pass_key_of, run_pass_filter
+from earthx.api.search_filters import (
+    AOI_FILTERS_TEXT,
+    AOI_KEY,
+    BODY_KEYS,
+    SearchConditions,
+    aoi_filters_text,
+    read_search_conditions,
+)
+from earthx.catalog.registry import (
+    DatasetConfig,
+    DatasetRegistry,
+    ItemHolding,
+    SearchCapabilities,
+    SearchFilter,
+    UnknownDatasetError,
+)
 from earthx.catalog.search_cache import PostgresSearchCache
-from earthx.catalog.search_filters import FilterConditions, InvalidFilter, RangeCondition
+from earthx.catalog.search_filters import FilterConditions, InvalidFilter
 from earthx.catalog.stats_cache import PooledStatsCache
 from earthx.gateway import UpstreamError, UpstreamTimeout, UpstreamUnreachable
 
@@ -265,6 +282,9 @@ class _NativeGroup:
     ids: tuple[str, ...]
     effective_datetime: str | None
     dropped_datetime: bool
+    # The filter that `api` judges itself (DS-03c: the coverage of the AOI by the outlines), `None` where there is none.
+    # A collection that has one is a group of its own.
+    aoi: AoiFilterRequest | None = None
 
     @property
     def key(self) -> str:
@@ -274,7 +294,7 @@ class _NativeGroup:
 @dataclass(frozen=True, slots=True)
 class _FederatedSource:
     """One federated collection — always its own source (M3-13 §4.2) — with the
-    conditions on its own search filters (DS-02), ``None`` where it has none, and the cloud-share filter
+    conditions on its own search filters (DS-02), ``None`` where it has none, and the filter within the AOI
     that ``api`` measures itself (DS-03), ``None`` where it has none."""
 
     collection_id: str
@@ -293,42 +313,61 @@ _Source = _NativeGroup | _FederatedSource
 
 async def _aoi_requests(
     request: Request,
-    ranges: Mapping[str, RangeCondition],
+    read: SearchConditions,
     infos: Mapping[str, tuple[ItemHolding, bool]],
     body: Mapping[str, Any],
+    registry: DatasetRegistry,
     *,
     datetime_value: str | None,
     bbox: tuple[float, ...] | None,
     intersects: Mapping[str, Any] | None,
 ) -> dict[str, AoiFilterRequest]:
-    """The cloud-share filter of each collection that has one, with the AOI it is measured in (DS-03 plan §6.5).
+    """The filters that `api` judges itself, per collection (DS-03, DS-03c): the ranges inside the AOI, the coverage of the AOI
+    by the outlines, and, in a search per pass, every filter on a property of the items.
 
-    A request that cannot be measured is a ``400`` with a text that names no value: no date range with both ends, no
-    area, ``earthx:aoi`` without the filter, a body over the cap, or a collection whose items this platform holds
-    itself (the measure reads the assets of a federated source).
+    A request that cannot be judged is a ``400`` with a text that names no value: no date range with both ends for a measure
+    inside the AOI, no area, ``earthx:aoi`` without such a filter, a body over the cap, or a measure on a collection whose
+    items this platform holds itself (it reads the assets of a federated source; the coverage needs only the outlines).
     """
     earthx_aoi = body.get(AOI_KEY)
-    if not ranges:
+    by_pass = {
+        cid
+        for cid, mode in read.evaluate.items()
+        if mode == "pass" and (read.by_collection.get(cid) or read.aoi.get(cid) or cid in read.coverage)
+    }
+    judged = set(read.aoi) | set(read.coverage) | by_pass
+    if not judged:
         if earthx_aoi is not None:
-            raise HTTPException(status_code=400, detail=f"{AOI_KEY} goes with the cloud share in the AOI only")
+            raise HTTPException(status_code=400, detail=f"{AOI_KEY} goes with {AOI_FILTERS_TEXT} only")
         return {}
-    if any(infos[cid][0] is not ItemHolding.FEDERATED for cid in ranges):
-        raise HTTPException(
-            status_code=400, detail="the cloud share in the AOI is measured on a federated collection only"
-        )
+    asked = aoi_filters_text(
+        (measure for conditions in read.aoi.values() for measure in conditions), coverage=bool(read.coverage)
+    )
+    if any(infos[cid][0] is not ItemHolding.FEDERATED for cid in (set(read.aoi) | by_pass)):
+        raise HTTPException(status_code=400, detail=f"{asked} is measured on a federated collection only")
     if len(await request.body()) > MAX_BODY_BYTES:
-        raise HTTPException(
-            status_code=400, detail=f"a search with the cloud share in the AOI is at most {MAX_BODY_BYTES} bytes"
-        )
+        raise HTTPException(status_code=400, detail=f"a search with {asked} is at most {MAX_BODY_BYTES} bytes")
+    requests: dict[str, AoiFilterRequest] = {}
     try:
-        return {
-            cid: read_aoi_request(
-                cid, condition, datetime_value=datetime_value, bbox=bbox, intersects=intersects, earthx_aoi=earthx_aoi
+        for cid in sorted(judged):
+            config = dataset_config(registry, cid)
+            classes = {entry.measure: entry.classes for entry in config.mask.share_classes} if config.mask else {}
+            requests[cid] = read_aoi_request(
+                cid,
+                read.aoi.get(cid, {}),
+                datetime_value=datetime_value,
+                bbox=bbox,
+                intersects=intersects,
+                earthx_aoi=earthx_aoi,
+                coverage=read.coverage.get(cid),
+                evaluate_pass=cid in by_pass,
+                scene_conditions=read.by_collection.get(cid),
+                filters=config.search_filters,
+                share_classes=classes,
             )
-            for cid, condition in ranges.items()
-        }
     except InvalidFilter as error:
         raise HTTPException(status_code=400, detail=str(error)) from None
+    return requests
 
 
 def _partition_sources(
@@ -354,21 +393,34 @@ def _partition_sources(
     federated_ids = sorted(cid for cid in target_ids if infos[cid][0] is ItemHolding.FEDERATED)
     native_ids = [cid for cid in target_ids if cid not in federated_ids]
     sources: list[_Source] = []
+    judged = [cid for cid in native_ids if (aoi_filters or {}).get(cid) is not None]
     for time_range in (True, False):
-        group_ids = tuple(sorted(cid for cid in native_ids if infos[cid][1] is time_range))
+        group_ids = tuple(sorted(cid for cid in native_ids if infos[cid][1] is time_range and cid not in judged))
         if not group_ids:
             continue
         effective, ignored = _apply_time_axis(datetime_value, [time_range])
         sources.append(_NativeGroup(ids=group_ids, effective_datetime=effective, dropped_datetime=bool(ignored)))
+    for collection_id in sorted(judged):
+        effective, ignored = _apply_time_axis(datetime_value, [infos[collection_id][1]])
+        sources.append(
+            _NativeGroup(
+                ids=(collection_id,),
+                effective_datetime=effective,
+                dropped_datetime=bool(ignored),
+                aoi=(aoi_filters or {})[collection_id],
+            )
+        )
     for collection_id in federated_ids:
         effective, ignored = _apply_time_axis(datetime_value, [infos[collection_id][1]])
+        aoi = (aoi_filters or {}).get(collection_id)
         sources.append(
             _FederatedSource(
                 collection_id=collection_id,
                 effective_datetime=effective,
                 dropped_datetime=bool(ignored),
-                conditions=conditions.get(collection_id) or None,
-                aoi=(aoi_filters or {}).get(collection_id),
+                # A search per pass judges the filters on properties itself: the source is not asked them.
+                conditions=None if aoi is not None and aoi.evaluate_pass else conditions.get(collection_id) or None,
+                aoi=aoi,
             )
         )
     return sources
@@ -413,7 +465,7 @@ class DispatchOutcome:
     # while it links a next page — `searched` are that source's collections.
     open_collections: tuple[str, ...] | None = None
     searched: tuple[str, ...] = ()
-    # The counts of the cloud-share filter per collection (DS-03); `aoi_filter_mixed` says which key they go under.
+    # The counts of the filter within the AOI per collection (DS-03); `aoi_filter_mixed` says which key they go under.
     aoi_filter: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
     aoi_filter_mixed: bool = False
 
@@ -582,6 +634,14 @@ def _search_filters_in(registry: DatasetRegistry, collection_id: str) -> tuple[S
         return registry.get(collection_id).search_filters
     except UnknownDatasetError:
         return ()
+
+
+def _capabilities_in(registry: DatasetRegistry, collection_id: str) -> SearchCapabilities | None:
+    """What else the search can do on a collection (DS-03c); nothing for one pgstac holds but the registry does not."""
+    try:
+        return registry.get(collection_id).search_capabilities
+    except UnknownDatasetError:
+        return None
 
 
 def _adapters_of(request: Request) -> AdapterSpecs:
@@ -856,15 +916,19 @@ class FederatingCoreCrudClient(CoreCrudClient):
         registry = _registry_of(request)
         try:
             conditions = read_search_conditions(
-                search_filters or {}, target_ids, lambda cid: _search_filters_in(registry, cid)
+                search_filters or {},
+                target_ids,
+                lambda cid: _search_filters_in(registry, cid),
+                lambda cid: _capabilities_in(registry, cid),
             )
         except InvalidFilter as error:
             raise HTTPException(status_code=400, detail=str(error)) from None
         aoi_filters = await _aoi_requests(
             request,
-            conditions.aoi_cloud_cover,
+            conditions,
             infos,
             search_filters or {},
+            registry,
             datetime_value=datetime_value,
             bbox=bbox,
             intersects=intersects,
@@ -877,6 +941,18 @@ class FederatingCoreCrudClient(CoreCrudClient):
                 return DispatchOutcome(None, datetime_value, ignored_filters, ignored_by_collection)
             source = sources[0]
             searched = _collections_of(source)
+            if isinstance(source, _NativeGroup) and source.aoi is not None:
+                native_page, counts = await self._filtered_native_page(
+                    source, request, bbox=bbox, intersects=intersects, ids=ids, limit=limit, token=token
+                )
+                return DispatchOutcome(
+                    native_page,
+                    source.effective_datetime,
+                    ignored_filters,
+                    ignored_by_collection,
+                    searched=searched,
+                    aoi_filter={source.ids[0]: counts},
+                )
             if isinstance(source, _NativeGroup):
                 # A mixed token from an earlier page of the same paging sequence
                 # (a source dropped out and the search is single-source again):
@@ -974,7 +1050,7 @@ class FederatingCoreCrudClient(CoreCrudClient):
         limit: int | None,
         token: str | None,
     ) -> tuple[ItemCollection, dict[str, Any]]:
-        """A response of a lone federated search with the cloud-share filter, and the counts it reports."""
+        """A response of a lone federated search with the filter within the AOI, and the counts it reports."""
         try:
             page, counts = await self._filtered_search_raw(
                 source, request, bbox=bbox, intersects=intersects, ids=ids, limit=limit, token=token
@@ -994,7 +1070,7 @@ class FederatingCoreCrudClient(CoreCrudClient):
         limit: int | None,
         token: str | None,
     ) -> tuple[ItemPage, dict[str, Any]]:
-        """One response of the cloud-share filter (DS-03 plan §6.5), none of the source's exceptions caught.
+        """One response of the filter within the AOI (DS-03 plan §6.5), none of the source's exceptions caught.
 
         Pages of the source come through :meth:`_federated_search_raw` with the other filters of the source and
         its own page cache; the scenes of a page are measured by ``api.aoi_cloud_filter``. The page it returns holds
@@ -1022,16 +1098,6 @@ class FederatingCoreCrudClient(CoreCrudClient):
                 conditions=source.conditions,
             ),
         )
-        measurer = AoiMeasurer(
-            config,
-            aoi.aoi,
-            policy=_state_of(request, "earthx_policy"),
-            resolver=_state_of(request, "earthx_resolver"),
-            gdal_options=_state_of(request, "earthx_gdal_options"),
-            slots=_state_of(request, "earthx_read_slots"),
-            cache=None if pool is None else PooledStatsCache(pool),
-            limiter=_read_limiter(request),
-        )
 
         async def fetch_page(marker: str | None) -> ItemPage:
             return await self._federated_search_raw(
@@ -1039,10 +1105,25 @@ class FederatingCoreCrudClient(CoreCrudClient):
                 datetime_value=source.effective_datetime, limit=PAGE_SIZE, token=marker, conditions=source.conditions,
             )
 
+        reading: dict[str, Any] = {
+            "policy": _state_of(request, "earthx_policy"),
+            "resolver": _state_of(request, "earthx_resolver"),
+            "gdal_options": _state_of(request, "earthx_gdal_options"),
+            "slots": _state_of(request, "earthx_read_slots"),
+            "cache": None if pool is None else PooledStatsCache(pool),
+            "limiter": _read_limiter(request),
+        }
+        if aoi.evaluate_pass:
+            return await self._pass_outcome(config, aoi, fetch_page, reading, wanted, token, binding)
+        measurer = AoiMeasurer(config, aoi.aoi, **reading) if aoi.conditions and aoi.aoi is not None else None
+
+        async def no_measure(item: Mapping[str, Any]) -> None:
+            raise AssertionError("a search without a measure inside the AOI reads no pixel")
+
         outcome = await run_filter(
             aoi,
             fetch_page=fetch_page,
-            measure=measurer,
+            measure=measurer or no_measure,
             limit=wanted,
             token=_strip_forward_token(token),
             binding=binding,
@@ -1051,6 +1132,111 @@ class FederatingCoreCrudClient(CoreCrudClient):
             items=tuple(outcome.items), matched=None, next_page_token=outcome.next_token, from_cache=False
         )
         return page, outcome.summary()
+
+    async def _pass_outcome(
+        self,
+        config: DatasetConfig,
+        aoi: AoiFilterRequest,
+        fetch_page: Callable[[str | None], Awaitable[ItemPage]],
+        reading: Mapping[str, Any],
+        wanted: int,
+        token: str | None,
+        binding: str,
+    ) -> tuple[ItemPage, dict[str, Any]]:
+        """One response of a search per pass (DS-03c): the scenes of the passes that meet every filter."""
+        viewer = config.viewer
+        if viewer is None or config.mask is None and aoi.conditions:
+            raise InvalidQuery("the dataset has no overpass key or no classification to judge a pass on")
+        measurer = (
+            PassMeasurer(config, aoi.aoi, aoi_outlines=AoiOutlines(aoi.aoi), **reading)
+            if aoi.conditions and aoi.aoi is not None
+            else None
+        )
+
+        async def measure_pass(items: Sequence[dict[str, Any]]) -> Any:
+            assert measurer is not None  # a search without a measure inside the AOI never asks for one
+            return await measurer.measure_pass(items)
+
+        asset = config.mask.asset if config.mask is not None else ""
+        outcome = await run_pass_filter(
+            aoi,
+            fetch_page=fetch_page,
+            group_of=pass_key_of(viewer),
+            day_of=day_of(viewer),
+            order_of=mosaic_ordered(config, asset),
+            measure_pass=measure_pass,
+            limit=wanted,
+            token=_strip_forward_token(token),
+            binding=binding,
+        )
+        page = ItemPage(
+            items=tuple(outcome.items), matched=None, next_page_token=outcome.next_token, from_cache=False
+        )
+        return page, outcome.summary()
+
+    async def _filtered_native_page(
+        self,
+        group: _NativeGroup,
+        request: Request,
+        *,
+        bbox: tuple[float, ...] | None,
+        intersects: Mapping[str, Any] | None,
+        ids: tuple[str, ...] | None,
+        limit: int | None,
+        token: str | None,
+    ) -> tuple[ItemCollection, dict[str, Any]]:
+        """A response of a lone search over one of this platform's own collections with the coverage of the AOI (DS-03c)."""
+        try:
+            features, next_marker, counts = await self._filtered_native_raw(
+                group, request, bbox=bbox, intersects=intersects, ids=ids, limit=limit, token=token
+            )
+        except InvalidQuery as error:
+            raise _adapter_error_to_http(error) from error
+        links = await PagingLinks(request=request, next=next_marker, prev=None).get_links()
+        page = cast(
+            ItemCollection,
+            {"type": "FeatureCollection", "features": features, "links": links, "numberReturned": len(features)},
+        )
+        return page, counts
+
+    async def _filtered_native_raw(
+        self,
+        group: _NativeGroup,
+        request: Request,
+        *,
+        bbox: tuple[float, ...] | None,
+        intersects: Mapping[str, Any] | None,
+        ids: tuple[str, ...] | None,
+        limit: int | None,
+        token: str | None,
+    ) -> tuple[list[dict[str, Any]], str | None, dict[str, Any]]:
+        """``(features, next marker, counts)`` of the coverage filter over pages of pgstac; none of its errors caught.
+
+        The scenes are judged by their outlines alone, so nothing is read and the dataset's mask is not asked for."""
+        aoi = group.aoi
+        assert aoi is not None
+        wanted = limit if limit is not None else SearchParams().limit
+        if not 1 <= wanted <= MAX_LIMIT:
+            raise InvalidQuery(f"limit {wanted} is outside 1..{MAX_LIMIT} (adr/0005 rule V)")
+
+        async def fetch_page(marker: str | None) -> ItemPage:
+            features, next_marker = await self._native_group_page(
+                group, request, bbox=bbox, intersects=intersects, ids=ids, limit=PAGE_SIZE, marker=marker
+            )
+            return ItemPage(items=tuple(features), matched=None, next_page_token=next_marker, from_cache=False)
+
+        async def no_measure(item: Mapping[str, Any]) -> None:
+            raise AssertionError("a search with the coverage alone reads no pixel")
+
+        outcome = await run_filter(
+            aoi,
+            fetch_page=fetch_page,
+            measure=no_measure,
+            limit=wanted,
+            token=_strip_forward_token(token),
+            binding=mixed_fingerprint(group.ids, bbox, intersects, ids, group.effective_datetime),
+        )
+        return outcome.items, outcome.next_token, outcome.summary()
 
     async def _federated_search_raw(
         self,
@@ -1163,9 +1349,7 @@ class FederatingCoreCrudClient(CoreCrudClient):
             if isinstance(source, _FederatedSource) and source.conditions is not None
         }
         aoi_keys = {
-            source.collection_id: source.aoi.key
-            for source in sources
-            if isinstance(source, _FederatedSource) and source.aoi is not None
+            _collections_of(source)[0]: source.aoi.key for source in sources if source.aoi is not None
         }
         fingerprint = mixed_fingerprint(collection_ids, bbox, intersects, ids, datetime_value, conditions, aoi_keys)
         known_source_keys = {source.key for source in sources}
@@ -1183,13 +1367,21 @@ class FederatingCoreCrudClient(CoreCrudClient):
         shares = dict(zip((source.key for source in to_query), compute_shares(page_limit, len(to_query)), strict=True))
 
         async def run(source: _Source) -> tuple[list[dict[str, Any]], str | None, str | None, dict[str, Any] | None]:
-            """``(features, next inner marker, failure reason, counts of the cloud-share filter)``."""
+            """``(features, next inner marker, failure reason, counts of the filter within the AOI)``."""
             share = shares[source.key]
             marker = pending[source.key]
             if share <= 0:
                 # Plan §4.2 step 3: no share this page, no call — carried forward
                 # unchanged by the caller below.
                 return [], marker, None, None
+            if isinstance(source, _NativeGroup) and source.aoi is not None:
+                try:
+                    features, next_marker, native_counts = await self._filtered_native_raw(
+                        source, request, bbox=bbox, intersects=intersects, ids=ids, limit=share, token=marker
+                    )
+                except InvalidQuery as error:
+                    raise _adapter_error_to_http(error) from error
+                return features, next_marker, None, native_counts
             if isinstance(source, _NativeGroup):
                 features, next_marker = await self._native_group_page(
                     source, request, bbox=bbox, intersects=intersects, ids=ids, limit=share, marker=marker
@@ -1203,7 +1395,9 @@ class FederatingCoreCrudClient(CoreCrudClient):
                         self._filtered_search_raw(
                             source, request, bbox=bbox, intersects=intersects, ids=ids, limit=share, token=marker
                         ),
-                        timeout=mixed_search.SOURCE_TIMEOUT_S,
+                        # A source that reads rasters ends its response with its first scene or pass, which has its own time
+                        # and a second try (`aoi_cloud_filter.FILTERED_SOURCE_SECONDS`); the others keep the budget.
+                        timeout=FILTERED_SOURCE_SECONDS if source.aoi.conditions else mixed_search.SOURCE_TIMEOUT_S,
                     )
                 else:
                     page = await asyncio.wait_for(
@@ -1251,8 +1445,8 @@ class FederatingCoreCrudClient(CoreCrudClient):
         aoi_counts: dict[str, Mapping[str, Any]] = {}
         for source, (features, next_marker, reason, counts) in zip(to_query, outcomes, strict=True):
             combined_features.extend(features)
-            if counts is not None and isinstance(source, _FederatedSource):
-                aoi_counts[source.collection_id] = counts
+            if counts is not None:
+                aoi_counts[_collections_of(source)[0]] = counts
             if reason is not None:
                 newly_failed[source.key] = reason
             elif next_marker is not None:

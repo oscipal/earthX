@@ -5,10 +5,13 @@ import { resultsGroupByOfOption } from '../datasets';
 import type { ExportOffer } from '../download';
 import { estimateOrder, type EstimateDocument } from '../processing';
 import { jobTitle, titleDay } from '../processingBatch';
-import { aoiProvenanceOf, buildExportOrder, formatBytes, formatDuration } from '../processingOrder';
+import { resamplingParts } from '../resamplingWarning';
+import { formatBytes } from '../numberFormat';
+import { aoiProvenanceOf, buildExportOrder, formatDuration } from '../processingOrder';
 import { orderStands, refusalMessage, useProcessingStore } from '../processingStore';
 import { useAppStore } from '../store';
 import { JobRow } from './JobRow';
+import ResamplingDialog from './ResamplingDialog';
 
 // "Export as job" in the download dialog (M4-11b-2, plan §3.2): the crop was
 // refused as too large for a direct download, and its `413` said the same
@@ -48,6 +51,8 @@ export default function ExportJobOffer({ offer }: { offer: ExportOffer }) {
   const [estimate, setEstimate] = useState<Estimate>(tooLarge ? { state: 'too-large' } : { state: 'estimating' });
   const [attempt, setAttempt] = useState(0);
   const [started, setStarted] = useState<Started | null>(null);
+  // The bands are brought to one grid (NM4-65 part 7): the person confirms before the job is placed.
+  const [asking, setAsking] = useState(false);
 
   useEffect(() => {
     if (tooLarge) return undefined;
@@ -67,8 +72,11 @@ export default function ExportJobOffer({ offer }: { offer: ExportOffer }) {
   const job = started?.state === 'placed' ? jobs.find((j) => j.jobID === started.jobID) : undefined;
   const blocked = estimate.state !== 'ready' || started?.state === 'starting' || orderStands(job);
 
+  const parts = estimate.state === 'ready' ? resamplingParts(estimate.doc, null) : [];
+
   const start = async () => {
     if (blocked) return;
+    setAsking(false);
     setStarted({ state: 'starting' });
     const answer = await placeOrder(buildExportOrder(offer.request), {
       aoiProvenance: aoiProvenanceOf(offer.request.aoi),
@@ -85,33 +93,33 @@ export default function ExportJobOffer({ offer }: { offer: ExportOffer }) {
   return (
     <section className="dialog-export-job" aria-label="Export as job">
       <h3>Too large for a direct download</h3>
-      <p className="hint-text">{offer.message}</p>
-      {estimate.state === 'estimating' && <p className="hint-text">Estimating the export…</p>}
+      <p className="hint">{offer.message}</p>
+      {estimate.state === 'estimating' && <p className="hint">Estimating the export…</p>}
       {estimate.state === 'ready' && (
         <p>
           About {formatBytes(estimate.doc.estimate.size)} · {formatDuration(estimate.doc.estimate.duration)}
         </p>
       )}
-      {estimate.state === 'too-large' && <p className="hint-text warn">{TOO_LARGE_FOR_A_JOB}</p>}
+      {estimate.state === 'too-large' && <p className="hint warn">{TOO_LARGE_FOR_A_JOB}</p>}
       {estimate.state === 'error' && (
-        <p className="hint-text error" role="alert">
+        <p className="error" role="alert">
           {estimate.message}{' '}
           <button type="button" className="link-btn" onClick={retry}>
-            Try again
+            Retry
           </button>
         </p>
       )}
       <button
         type="button"
-        className="lm-btn primary"
+        className="btn primary"
         disabled={blocked}
-        title={estimate.state === 'too-large' ? TOO_LARGE_FOR_A_JOB : 'Compute the crop on the platform, as a job'}
-        onClick={() => void start()}
+        data-tip-level="advanced" data-tip={estimate.state === 'too-large' ? TOO_LARGE_FOR_A_JOB : 'Compute the crop on the platform, as a job'}
+        onClick={() => (parts.length > 0 ? setAsking(true) : void start())}
       >
         {started?.state === 'starting' ? 'Starting…' : 'Export as job'}
       </button>
       {started?.state === 'refused' && (
-        <p className="hint-text error" role="alert">
+        <p className="error" role="alert">
           {started.message}
         </p>
       )}
@@ -120,6 +128,7 @@ export default function ExportJobOffer({ offer }: { offer: ExportOffer }) {
           <JobRow job={job} />
         </ul>
       )}
+      {asking && <ResamplingDialog parts={parts} onContinue={() => void start()} onCancel={() => setAsking(false)} />}
     </section>
   );
 }

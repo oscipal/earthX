@@ -15,8 +15,6 @@ from __future__ import annotations
 
 import os
 import time
-import zipfile
-from io import BytesIO
 from pathlib import Path
 
 import numpy as np
@@ -24,14 +22,11 @@ import pytest
 
 from earthx.access import download as dl
 from earthx.access.tiles import open_asset
-from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.registry import AcquisitionYears
 from tests.earthx.access.test_download_mask import (
-    ITEM,
     _asset,
     _diamond_aoi,
     _open_bytes,
-    _open_zip_member,
     _rectangle_aoi,
 )
 from tests.earthx.readers import mini_cog
@@ -54,21 +49,14 @@ def served(cog_path: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
 
 
 def _one_round(aoi_geometry: dict) -> None:
-    zip_bytes = dl.build_download_zip(
-        config=SENTINEL_2_L2A,
-        years=YEARS,
-        open_reader=open_asset,
-        crops=[dl.AssetCrop(asset="visual", paths=(_asset(),))],
-        aoi_geometry=aoi_geometry,
-        item_ids=[ITEM],
-    )
+    # The windowed path of a single item, the one the crop used before it took the grid of the source (NM4-75), against
+    # the whole-array read; the new path is checked in test_download_forms.py.
+    crop = dl.crop_asset_to_cog_bytes(open_asset, (_asset(),), aoi_geometry)
     image = dl.crop_asset(open_asset, (_asset(),), aoi_geometry)
     naive_bytes = dl._masked_array_to_cog_bytes(image.array, image.transform, image.crs, image.nodata)
-    with zipfile.ZipFile(BytesIO(zip_bytes)) as archive:
-        assert archive.testzip() is None
     with (
-        _open_zip_member(zip_bytes, "visual.tif") as windowed,
-        _open_zip_member(zip_bytes, "visual_mask.tif") as mask,
+        _open_bytes(crop.data) as windowed,
+        _open_bytes(crop.mask) as mask,
         _open_bytes(naive_bytes) as naive,
     ):
         assert windowed.shape == naive.shape == mask.shape

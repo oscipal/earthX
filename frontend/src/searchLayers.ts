@@ -4,10 +4,12 @@
 import { clipTileUrl } from './aoiClip';
 import type { DatasetOption } from './datasets';
 import type { LayerOverlay } from './layers';
+import type { IndexPreset } from './indexPresets';
 import { buildTileUrl } from './mapLayers';
-import { stackLikeView, viewOfPass } from './mosaic';
+import { inStackOrder, stackLikeView, viewOfPass } from './mosaic';
 import type { Mosaics, PlannedRaster, SceneEntry } from './mosaic';
 import { underlayOf } from './underlay';
+import { indexRastersOfPass } from './viewIndex';
 import type { ImageOverlay } from './underlay';
 import type { AppliedRender, StacItem } from './types';
 
@@ -31,11 +33,15 @@ export function overlaysOfPass(
   clip: GeoJSON.Geometry | null,
   // The quicklooks under the tiles (`underlaysOf`), which the layer draws where its tiles do not start yet.
   underlays: readonly ImageOverlay[] = [],
+  // The index the look names (NM4-14b): the rasters are the tiles that compute it, and no quicklook lies under them.
+  index: IndexPreset | null = null,
 ): LayerOverlay[] | null {
   const view = viewOfPass(datasetId, entries, mosaics);
   if (view.kind === 'pending') return null;
-  const rasters = view.kind === 'mosaic' ? view.rasters : stackLikeView(entries.map(([, info]) => info));
-  return [...underlays, ...rasters.map((raster) => rasterOverlay(raster, render, clip))];
+  // Scene by scene the pass lies in the order of the mosaic, as in the crop and the export (NM4-24), not in the order of the ticks.
+  const plain = view.kind === 'mosaic' ? view.rasters : stackLikeView(inStackOrder(entries, view.order).map(([, info]) => info));
+  const rasters = index ? indexRastersOfPass(plain, entries, datasetId, index).rasters : plain;
+  return [...(index ? [] : underlays), ...rasters.map((raster) => rasterOverlay(raster, render, clip))];
 }
 
 // The quicklooks of these scenes, bottom to top like the view lays them (`underlay.ts`).

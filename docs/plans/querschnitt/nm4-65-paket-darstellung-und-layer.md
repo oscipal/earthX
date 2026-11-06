@@ -47,3 +47,20 @@
 - Alle vier Pflicht-Checks grün.
 - Log-Zeilen mit PR-Nummer. `docs/plans/nach-m4-backlog.md` nicht ändern.
 - Vor „fertig“ ist main geholt.
+
+## 5. Nachtrag NM4-65 (1.11.2026, Draft-PR [#266](https://github.com/oscipal/earthX/pull/266))
+
+**Umgesetzt:** Teile 1, 2, 3, 5, 6, 8, 9, je ein Commit; Einzelheiten und Auslegungen im Log (Zeile „NM4-65 umgesetzt“) und in der PR-Beschreibung, dort auch die Prüfanleitung.
+
+- **Teil 5, Ursache:** `.vc-field input` traf auch `input[type=range]`; Padding und Rahmen eines Textfelds verkleinerten die Spur im eigenen Kasten, der Wert war immer 1.
+- **Teil 6:** Die Ansicht hat noch kein Band-Feld (NM4-45); `RenderFields` lässt es weg, die Reihenfolge bleibt Band · Index · vmin · vmax · Colormap. NM4-54 setzt das Band-Feld dort ein.
+- **Teil 8, Liste der geschlossenen Stellen:** Layer-Einstellungen, Processing-Panel, Job-Details, Download-Fenster (drei Fassungen), „Advanced search“. Nicht umgestellt, weil sie nichts schließen: „Clear search results“, „✕ Clear“ der Ansicht, Entfernen von Layern, Schritten, Gruppen und Links, Toasts, das ✕ im Eingabefeld.
+- **Aufräumen älterer Browser-Skripte:** `layer-settings`, `view-index`, `band-dropdowns`, `layer-rows` an die neuen Knöpfe und die Reihenfolge angepasst; `layer-settings` hat zwei Fälle, die schon an „Apply to all“ (#257) scheitern.
+
+**Teile 4 und 7 (Antwort Otto, 1.11.2026: Backend erweitern, jeweils Option 1):** umgesetzt, im selben PR.
+
+- **Teil 4:** Backend `percentile_1`…`percentile_99` in der AOI-Messung und neue Route `GET /results/{id}/statistics` (adr/0006 Nachtrag NM4-65); Frontend: Umschalter „value / %“ am Feld vmin in `RenderFields`, die Werte kommen in der Ansicht aus der Item-Statistik (`p=`), in der Vorschau aus der Messung (sonst `p=` auf der ersten Szene), im Ergebnis-Layer aus der neuen Route; der Look behält die Eingabe als `percent`.
+- **Teil 7:** Backend `resampling` in der Kostenschätzung (adr/0014 Nachtrag NM4-65); Frontend: Warnung zum Bestätigen vor „Start job“, einmal je Auftrag; das Rufzeichen ist entfernt.
+- **Offen:** Eine Szene im selben CRS mit anderer Pixelgröße oder anderem Ursprung warpt der Job; die Schätzung erkennt das aus den Item-Metadaten nicht sicher und meldet es nicht. Soll `scenes` das später über `proj:transform`/`proj:bbox` mit nennen?
+
+**Rückmeldung Otto zu #266 (1.11.2026), umgesetzt:** Ein Layer aus dem Layer-Manager hat die Box jedes Layers (kein „Add to layers“/„Process“/„Change image“/„Clear“, dafür das rote x und die Deckkraft; eine Ansicht aus der Suche bleibt, wie sie ist). Das Datum steht im Namen des Layers, die Knöpfe einer Zeile unter dem Titel. Mit ausgeblendeten Results erscheint die Leiste „Crop & merge to AOI“ nicht. Der Umschalter heißt „absolute“ / „percentile“ und steht in der Zeile der Beschriftung von vmax. Die Box eines Layers aus dem Manager hat eine Zeile, wie zuvor; ein angeklicktes Suchergebnis schließt sie. Die Warnung zum Resampling kommt bei „Review“. Einzelheiten im Log.

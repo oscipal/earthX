@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import time
 import zipfile
 import zlib
@@ -48,6 +49,22 @@ from rio_tiler.constants import WGS84_CRS
 from shapely.geometry import shape as shapely_shape
 from shapely.geometry.base import BaseGeometry
 
+from earthx.access.band_export import (
+    BANDS_FILENAME,
+    EXPORTS_DIR,
+    BandMeta,
+    BandsFile,
+    ExportPlanError,
+    FilePlan,
+    StackReader,
+    aoi_on_grid,
+    apply_band_tags,
+    bands_text,
+    file_profile,
+    plan_files,
+    resampling_for,
+    write_blocks,
+)
 from earthx.access.crop_rules import (
     AOI_FILENAME,
     BLOCK_SIZE,
@@ -64,6 +81,7 @@ from earthx.access.crop_rules import (
     merge_first_valid,
     native_crop_grid,
     rasterize_aoi,
+    source_crop_grid,
 )
 from earthx.access.resolve import open_asset_ref
 from earthx.processing.errors import AoiOutsideInputs, ProcessingError, UnsupportedRecipe
@@ -105,7 +123,7 @@ ATTACHMENT_LIMITS: Mapping[str, int] = {
     AOI_FILENAME: 2 * 1024 * 1024,
 }
 _ATTRIBUTION_ENTRIES = 8
-_ATTACHMENT_KEYS = frozenset({"files", "attribution", "dataset", "acquired_on"})
+_ATTACHMENT_KEYS = frozenset({"files", "attribution", "dataset", "acquired_on", "bands", "notes"})
 
 _ATTRIBUTION_CHARS = 1024
 
@@ -132,6 +150,12 @@ class Attachments:
     #: The UTC day of the overpass for the methods text, as `api` found it for the file names; ``None``
     #: where there is none.
     acquired_on: date | None = None
+    #: The assets of the export as the items describe them (NM4-75), by asset key, for the names of the files and
+    #: ``exports/BANDS.txt``; needed where the output has a layout.
+    bands: tuple[BandMeta, ...] = ()
+    #: Lines for the head of ``BANDS.txt`` that `api` knows from the items, such as that scenes of several coordinate
+    #: systems were combined.
+    notes: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if set(self.files) != set(ATTACHMENT_LIMITS):
@@ -154,6 +178,10 @@ class Attachments:
             data["dataset"] = self.dataset.to_json()
         if self.acquired_on is not None:
             data["acquired_on"] = self.acquired_on.isoformat()
+        if self.bands:
+            data["bands"] = [band.to_json() for band in self.bands]
+        if self.notes:
+            data["notes"] = list(self.notes)
         return data
 
     @classmethod
@@ -166,9 +194,13 @@ class Attachments:
         try:
             dataset = DatasetFacts.from_json(data["dataset"]) if "dataset" in data else None
             acquired_on = date.fromisoformat(data["acquired_on"]) if "acquired_on" in data else None
-        except (ValueError, TypeError):
+            bands = tuple(BandMeta.from_json(band) for band in data.get("bands", ()))
+            notes = tuple(data.get("notes", ()))
+        except (ValueError, TypeError, KeyError):
             raise AttachmentsInvalid("the attachments hold files and attribution") from None
-        return cls(dict(files), tuple(attribution), dataset, acquired_on)
+        if not all(isinstance(note, str) and len(note) <= _ATTRIBUTION_CHARS for note in notes):
+            raise AttachmentsInvalid("the notes are short texts")
+        return cls(dict(files), tuple(attribution), dataset, acquired_on, bands, notes)
 
 
 @dataclass(frozen=True, slots=True)
@@ -208,7 +240,7 @@ def check_export(recipe: Recipe) -> CropOutput:
     if any(entry.asset.reader != "cog" for entry in recipe.inputs[0].resolved):
         raise UnsupportedRecipe("export jobs read COG assets only for now")
     names = [crop_filename(asset) for asset in recipe.inputs[0].assets]
-    if len(set(names)) != len(names):
+    if output.layout is None and len(set(names)) != len(names):
         raise UnsupportedRecipe("two assets of the export would get the same file name in the ZIP")
     estimate(recipe, REGISTRY)
     return output
@@ -232,6 +264,24 @@ class _Output:
     asset: str
     entries: tuple[ResolvedInput, ...]
     region: BaseGeometry
+    transform: Any
+    width: int
+    height: int
+
+    @property
+    def blocks(self) -> int:
+        return -(-self.width // BLOCK_SIZE) * -(-self.height // BLOCK_SIZE)
+
+
+@dataclass(frozen=True, slots=True)
+class _LayoutOutput:
+    """One file of an export with a layout: its plan, the bands in it, their reads per item, and its grid."""
+
+    group: int
+    plan: FilePlan
+    members: tuple[BandMeta, ...]
+    entries: tuple[tuple[ResolvedInput, ...], ...]
+    crs: Any
     transform: Any
     width: int
     height: int
@@ -293,8 +343,11 @@ class _Export:
                 outputs.append(_Output(index, asset, entries, region, transform, width, height))
         return outputs
 
-    def write(self, index: int, output: _Output) -> tuple[str, str]:
-        """The data COG and the mask of one group and asset; returns their work file names."""
+    def write(self, index: int, output: _Output, meta: BandMeta | None = None) -> tuple[str, str]:
+        """The data COG and the mask of one group and asset; returns their work file names.
+
+        ``meta`` (NM4-75): the band's description, scale and offset go into a single-band file, as the crop's do.
+        """
         stem = f"out-{index}"
         plain_name, data_name, mask_name = f"{stem}-plain.tif", f"{stem}.tif", f"{stem}-mask.tif"
         any_valid = False
@@ -330,6 +383,8 @@ class _Export:
                 open_workfile(self.workdir, plain_name, "w", **profile) as dst,
                 open_workfile(self.workdir, mask_name, "w", **masks) as mask_dst,
             ):
+                if meta is not None and profile["count"] == 1:
+                    apply_band_tags(dst, [meta])
                 for window in _blocks(output.width, output.height):
                     block = merge_first_valid(item.read(window) for item in items)
                     inside = rasterize_aoi(
@@ -351,6 +406,91 @@ class _Export:
         self.forget(plain_name)
         _verify(self.workdir, data_name, mask_name)
         return data_name, mask_name
+
+    def layout_plans(self, bands: tuple[BandMeta, ...]) -> tuple[dict[str, BandMeta], dict[str, FilePlan]]:
+        """The bands of the export by asset and the file each asset ends up in (NM4-75)."""
+        layout = self.recipe.output.layout  # type: ignore[union-attr]
+        entry = self.recipe.inputs[0]
+        if not bands:
+            raise AttachmentsInvalid("an export with a layout needs the bands of its assets")
+        by_asset = {meta.asset: meta for meta in bands}
+        if set(by_asset) != set(entry.assets):
+            raise AttachmentsInvalid("the bands of the attachments are not the assets of the export")
+        try:
+            plans = plan_files(layout.form, [by_asset[asset] for asset in entry.assets], layout.resolution_m)
+        except ExportPlanError as error:
+            raise UnsupportedRecipe(str(error)) from None
+        return by_asset, {asset: plan for plan in plans for asset in plan.assets}
+
+    def plan_layout(self, bands: tuple[BandMeta, ...]) -> list[_LayoutOutput]:
+        """Every stacked file of an export with a layout, with its grid, before the first block is read (NM4-75)."""
+        layout = self.recipe.output.layout  # type: ignore[union-attr]
+        entry = self.recipe.inputs[0]
+        by_asset, by_plan = self.layout_plans(bands)
+        plans = list({plan.name: plan for plan in by_plan.values()}.values())
+        footprints = entry.footprints or {}
+        resolved = {(item.asset.item_id, item.asset.asset): item for item in entry.resolved}
+        outputs = []
+        for index, group in enumerate(entry.groups):
+            items = [{"geometry": _geometry(footprints.get(item_id))} for item_id in group]
+            try:
+                region = compute_crop_region(items, self.aoi)
+            except AoiOutsideItems:
+                raise AoiOutsideInputs("the AOI does not touch the footprint of a group") from None
+            for plan in plans:
+                members = tuple(by_asset[asset] for asset in plan.assets)
+                finest = min(range(len(members)), key=lambda i: members[i].resolution_m or math.inf)
+                scale = 1.0
+                if layout.form == "multi_band":
+                    scale = plan.resolution_m / members[finest].resolution_m  # type: ignore[operator]
+                with ExitStack() as stack:
+                    first = resolved[(group[0], plan.assets[finest])]
+                    try:
+                        crs, transform, width, height = source_crop_grid(
+                            self.open_dataset(first, stack), region, pixel_scale=scale
+                        )
+                    except ValueError as error:
+                        raise UnsupportedRecipe(str(error)) from None
+                entries = tuple(tuple(resolved[(item_id, asset)] for item_id in group) for asset in plan.assets)
+                outputs.append(_LayoutOutput(index, plan, members, entries, crs, transform, width, height))
+        return outputs
+
+    def write_layout(self, index: int, output: _LayoutOutput, form: str) -> tuple[str, str, str]:
+        """The data COG and the mask of one file of the layout; returns their work file names and the data type."""
+        stem = f"out-{index}"
+        plain_name, data_name, mask_name = f"{stem}-plain.tif", f"{stem}.tif", f"{stem}-mask.tif"
+        target = output.plan.resolution_m if form == "multi_band" else None
+        methods = [resampling_for(meta, target) for meta in output.members]
+        with ExitStack() as stack:
+            count = max(len(entries) for entries in output.entries)
+            with rasterio.Env(VSI_CACHE_SIZE=str(cache_per_item(count * len(output.entries)))):
+                datasets = [[self.open_dataset(entry, stack) for entry in entries] for entries in output.entries]
+            if form != "per_band" and any(dataset.count != 1 for group in datasets for dataset in group):
+                raise UnsupportedRecipe("a band of a stacked file has exactly one band in its source")
+            reader = StackReader(datasets, methods, output.crs, output.transform, output.width, output.height, stack)
+            profile = file_profile(reader, block_size=BLOCK_SIZE)
+            masks = mask_profile(height=output.height, width=output.width, crs=output.crs, transform=output.transform)
+            self.new_file(plain_name)
+            self.new_file(mask_name)
+            with (
+                open_workfile(self.workdir, plain_name, "w", **profile) as dst,
+                open_workfile(self.workdir, mask_name, "w", **masks) as mask_dst,
+            ):
+                if reader.count == len(output.members):
+                    apply_band_tags(dst, output.members)
+                any_valid = write_blocks(
+                    reader, dst, mask_dst, aoi_on_grid(self.aoi, output.crs), block_size=BLOCK_SIZE, on_block=self.tick
+                )
+        if not any_valid:
+            raise AoiOutsideInputs("the AOI does not cover any valid pixel of a group")
+        data_path = self.new_file(data_name)
+        with open_workfile(self.workdir, plain_name) as plain:
+            cog_translate(plain, str(data_path), COG_PROFILE, in_memory=False, quiet=True)
+        self.forget(plain_name)
+        _verify(self.workdir, data_name, mask_name)
+        with open_workfile(self.workdir, data_name) as written:
+            dtype = written.dtypes[0]
+        return data_name, mask_name, dtype
 
     def pack(self, files: list[tuple[str, str]], texts: list[tuple[str, bytes]]) -> Path:
         """``export.zip``: the rasters stored as they are, the texts deflated; each file goes once it is in."""
@@ -414,15 +554,36 @@ def export(recipe: Recipe, *, workdir: Path, progress: Progress, attachments: At
     LOGGER.info("export started", extra={"dataset": entry.dataset, "groups": len(entry.groups)})
     try:
         with rasterio.Env(**process_gdal_options()):
-            outputs = state.plan()
-            state.total = sum(output.blocks for output in outputs) + 1
             group_count = len(entry.groups)
             files: list[tuple[str, str]] = []
-            for index, output in enumerate(outputs):
-                data_name, mask_name = state.write(index, output)
-                folder = group_dirname(output.group, group_count)
-                files.append((folder + crop_filename(output.asset), data_name))
-                files.append((folder + mask_filename(output.asset), mask_name))
+            listed: list[BandsFile] = []
+            layout = recipe.output.layout  # type: ignore[union-attr]  # `check_export`: a crop
+            if layout is None:
+                outputs = state.plan()
+                state.total = sum(output.blocks for output in outputs) + 1
+                for index, output in enumerate(outputs):
+                    data_name, mask_name = state.write(index, output)
+                    folder = group_dirname(output.group, group_count)
+                    files.append((folder + crop_filename(output.asset), data_name))
+                    files.append((folder + mask_filename(output.asset), mask_name))
+            else:
+                laid = state.plan_layout(attachments.bands)
+                state.total = sum(output.blocks for output in laid) + 1
+                for index, output in enumerate(laid):
+                    data_name, mask_name, dtype = state.write_layout(index, output, layout.form)
+                    folder = EXPORTS_DIR + group_dirname(output.group, group_count)
+                    files.append((folder + output.plan.name, data_name))
+                    files.append((folder + output.plan.mask_name, mask_name))
+                    target = output.plan.resolution_m if layout.form == "multi_band" else None
+                    listed.append(
+                        BandsFile(
+                            folder + output.plan.name,
+                            output.members,
+                            [resampling_for(meta, target) for meta in output.members],
+                            [target if target is not None else meta.resolution_m for meta in output.members],
+                            dtype if layout.form != "per_band" else None,
+                        )
+                    )
             engine = engine_versions()
             finished = datetime.now(UTC)
             document = recipe_with_methods(
@@ -444,6 +605,19 @@ def export(recipe: Recipe, *, workdir: Path, progress: Progress, attachments: At
                 (CITATION_FILENAME, attachments.files[CITATION_FILENAME].encode("utf-8")),
                 (NOTICE_FILENAME, attachments.files[NOTICE_FILENAME].encode("utf-8")),
             ]
+            if layout is not None:
+                texts.append(
+                    (
+                        EXPORTS_DIR + BANDS_FILENAME,
+                        bands_text(
+                            title=attachments.dataset.title if attachments.dataset else entry.dataset,
+                            form=layout.form,
+                            files=listed,
+                            common_resolution=layout.resolution_m,
+                            notes=attachments.notes,
+                        ).encode("utf-8"),
+                    )
+                )
             path = state.pack(files, texts)
             state.tick()
     except BaseException:

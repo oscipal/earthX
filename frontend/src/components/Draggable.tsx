@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
 
 import { useBandPositions, type BandId, type Place } from '../bandPositions';
+import { GripHorizontalIcon } from './icons';
 
 // How close to the viewport edge a dragged panel is allowed to get — keeps it
 // fully reachable instead of letting it vanish behind the edge (V-10).
@@ -112,7 +113,9 @@ export default function Draggable({ id, children, className }: { id: BandId; chi
       className={`draggable${className ? ` ${className}` : ''}`}
       onPointerDown={onPointerDown}
     >
-      <span className="drag-grip" title="Drag to move" aria-hidden="true" />
+      <span className="drag-grip" data-tip-level="advanced" data-tip="Drag to move" aria-hidden="true">
+        <GripHorizontalIcon />
+      </span>
       {children}
     </div>
   );

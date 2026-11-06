@@ -24,7 +24,7 @@ export default function InlineRename({
     else onCancel();
   };
   return (
-    <input
+    <input autoComplete="off"
       type="text"
       className="pm-rename"
       aria-label={label}

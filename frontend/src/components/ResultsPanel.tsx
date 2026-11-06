@@ -1,3 +1,4 @@
+import { aoiNotes, measuresAoi, SKIPPED_TIP } from '../aoiFilter';
 import { maturityLabel, quicklookAsset } from '../datasets';
 import type { ResultSection } from '../sections';
 import { hasResultsPanel, totalItems } from '../sections';
@@ -5,8 +6,10 @@ import { useAppStore } from '../store';
 import type { StacItem, TimeStepGroup } from '../types';
 import CopyButton from './CopyButton';
 import DatasetSelect from './DatasetSelect';
+import { ChevronDownIcon, ChevronRightIcon, TrashIcon } from './icons';
 import ResultsEye from './ResultsEye';
 import ResultsToTop from './ResultsToTop';
+import Tip from './Tip';
 
 function timeOf(properties: Record<string, unknown>): string {
   const dt = properties['datetime'];
@@ -26,7 +29,7 @@ function Row({ item }: { item: StacItem }) {
       <input
         type="checkbox"
         checked={selected}
-        title="Select this scene"
+        data-tip-level="advanced" data-tip="Select this scene"
         onClick={(e) => e.stopPropagation()}
         onChange={() => toggleSelected(item.id)}
         aria-label={`Select ${item.id}`}
@@ -48,13 +51,13 @@ function Row({ item }: { item: StacItem }) {
         // on the zoom, neither of which this row knows.
         <span
           className="result-thumb placeholder"
-          title="No preview image for this scene"
+          data-tip-level="advanced" data-tip="No preview image for this scene"
         />
       )}
       <div className="result-meta">
         <span className="result-date">{timeOf(item.properties)}</span>
         <span className="result-id-row">
-          <span className="result-id" title={item.id}>
+          <span className="result-id" data-tip={item.id} data-tip-cut="">
             {item.id}
           </span>
           <CopyButton text={item.id} title="Copy scene name" label={`Copy scene name ${item.id}`} />
@@ -104,7 +107,6 @@ function GroupSelectBox({ group, index }: { group: TimeStepGroup; index: number 
       ref={(el) => {
         if (el) el.indeterminate = count > 0 && !all;
       }}
-      title={`Select all scenes of ${group.label}`}
       aria-label={`Select all scenes of ${group.label}`}
       onChange={() => toggleGroupSelected(index)}
     />
@@ -127,8 +129,8 @@ function GroupBlock({
       <div className="result-group-row">
         <GroupSelectBox group={group} index={index} />
         <button type="button" className="result-group-head" onClick={() => onToggle(index)}>
-          <span className="rg-caret">{expanded ? '▾' : '▸'}</span>
-          <span className="rg-label" title={group.label}>
+          <span className="rg-caret">{expanded ? <ChevronDownIcon /> : <ChevronRightIcon />}</span>
+          <span className="rg-label">
             {group.label}
           </span>
           <span className="rg-count">{group.items.length}</span>
@@ -155,10 +157,15 @@ function SectionSummary({ section }: { section: ResultSection }) {
     const dataset = s.datasets.find((d) => d.id === section.datasetId);
     return dataset?.viewable ? maturityLabel(dataset.collection) : null;
   });
+  // A dataset searched with the limit on the clouds inside the AOI says how far the search got (DS-03b).
+  const measured = useAppStore((s) => measuresAoi(s.searchContext?.query, section.datasetId));
+  const counts = useAppStore((s) => s.searchContext?.answer?.aoiFilter?.[section.datasetId]);
+  const walking = useAppStore((s) => s.aoiWalking);
+  const notes = measured ? aoiNotes(section, counts, walking) : section.notes;
   return (
     <>
       <span className="dataset-select-line">
-        <span className="dataset-select-title" title={title}>
+        <span className="dataset-select-title">
           {title}
         </span>
         {label && <span className="maturity-chip">{label}</span>}
@@ -167,7 +174,7 @@ function SectionSummary({ section }: { section: ResultSection }) {
       {lookingForDate ? (
         <span className="dataset-select-note">Looking for the nearest date with scenes…</span>
       ) : (
-        section.notes.map((note, i) => (
+        notes.map((note, i) => (
           <span key={`${i}-${note}`} className="dataset-select-note">
             {note}
           </span>
@@ -210,14 +217,44 @@ function LoadMore({ openId }: { openId: string | null }) {
   const loading = useAppStore((s) => s.loadingMore);
   const failed = useAppStore((s) => s.loadMoreError);
   const loadMore = useAppStore((s) => s.loadMore);
-  if (failed) return <p className="hint-text load-more">{failed}</p>;
-  if (!canLoad) return used ? <p className="hint-text load-more">No more results available.</p> : null;
+  // A search that checks the clouds inside the AOI asks on by itself and shows how far it is (DS-03b).
+  const walking = useAppStore((s) => s.aoiWalking);
+  if (walking) return null;
+  if (failed) return <p className="hint load-more">{failed}</p>;
+  if (!canLoad) return used ? <p className="hint load-more">No more results available.</p> : null;
   return (
     <div className="load-more">
-      <span className="hint-text">More scenes may be available.</span>
-      <button type="button" className="ghost-btn" disabled={loading} onClick={() => void loadMore()}>
+      <span className="hint">More scenes may be available.</span>
+      <button type="button" className="btn" disabled={loading} onClick={() => void loadMore()}>
         {loading ? 'Loading…' : 'Load more'}
       </button>
+    </div>
+  );
+}
+
+// The state of a search with the limit on the clouds inside the AOI, in the head of the list (DS-03b): how many scenes
+// are within the limit of those checked so far, and "Stop" while the search goes on. What is found stays, "Load more"
+// goes on from there.
+export function AoiProgress({ datasetId }: { datasetId: string | null }) {
+  const counts = useAppStore((s) => (datasetId ? s.searchContext?.answer?.aoiFilter?.[datasetId] : undefined));
+  const walking = useAppStore((s) => s.aoiWalking);
+  const stop = useAppStore((s) => s.stopSearch);
+  return (
+    <div className="aoi-progress" role="status">
+      <span data-tip-level="advanced" data-tip="Scenes within the limit, of the scenes checked so far">
+        {counts?.found ?? 0} found / {counts?.checked ?? 0} checked
+      </span>
+      {counts && counts.unreadable > 0 && (
+        <>
+          <span className="aoi-skipped">{counts.unreadable} skipped</span>
+          <Tip text={SKIPPED_TIP} />
+        </>
+      )}
+      {walking && (
+        <button type="button" className="btn aoi-stop" data-tip-level="advanced" data-tip="Stop checking. What is found stays." onClick={stop}>
+          Stop
+        </button>
+      )}
     </div>
   );
 }
@@ -265,7 +302,7 @@ export default function ResultsPanel() {
   return (
     <div className="panel dock-panel results-panel" role="region" aria-label="Results">
       <div className="results-head">
-        <h2 title="Selected scenes / scenes found">Results ({selected}/{totalItems(sections)})</h2>
+        <h2 data-tip-level="advanced" data-tip="Selected scenes / scenes found">Search results ({selected}/{totalItems(sections)})</h2>
         <div className="results-head-switches">
           <ResultsToTop />
           <ResultsEye />
@@ -283,13 +320,11 @@ function ClearResults() {
   return (
     <button
       type="button"
-      className="clear-results"
-      title="Remove the results from the list and the map. Area, dates, datasets and filters, layers and jobs stay."
+      className="btn clear-results"
+      data-tip-level="advanced" data-tip="Remove the results from the list and the map. Area, dates, datasets and filters, layers and jobs stay."
       onClick={() => clearSearchResults()}
     >
-      <span className="clear-results-x" aria-hidden="true">
-        ✕
-      </span>
+      <TrashIcon className="clear-results-x" />
       Clear search results
     </button>
   );
@@ -306,9 +341,11 @@ function ResultsList({ sections }: { sections: ResultSection[] }) {
   const groups = useAppStore((s) => s.groups);
   const expandedGroupIndex = useAppStore((s) => s.expandedGroupIndex);
   const toggleGroup = useAppStore((s) => s.toggleResultsGroup);
+  const measured = useAppStore((s) => openSectionId !== null && measuresAoi(s.searchContext?.query, openSectionId));
   return (
     <>
       <DatasetDropdown sections={sections} openId={openSectionId} />
+      {measured && <AoiProgress datasetId={openSectionId} />}
       <div className="results-list-head">
         <div className="eyebrow results-list-eyebrow">Scenes by time step</div>
         <SelectionRow />

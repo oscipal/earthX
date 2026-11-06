@@ -20,6 +20,8 @@ Code: `frontend/src/store.ts` (`refreshCoverage`), `frontend/src/coverage.ts`,
 ab. Die Zellstufe folgt dem Kartenzoom, sodass auf dem Bildschirm ungefähr
 gleich viele Zellen liegen. Mit AOI bleibt alles wie heute.
 
+**Nachtrag UI-04 Teil 4 (04.11.2026, Otto):** Die Regel „mit AOI über die AOI“ gilt nicht mehr. Die Coverage zeigt immer den sichtbaren Kartenausschnitt, auch wenn eine AOI gezeichnet ist, und die Anfrage trägt keine AOI mehr (`plans/vp3/ui-04-einheitlichkeit.md` §8.6, `adr/0004` Nachtrag). Stufenregel und „dieselbe Frage nicht zweimal“ (#286) bleiben. Originaltext unverändert.
+
 **Belegstufen** wie in `adr/0004`: **M** gemessen in dieser Sitzung, **P**
 Primärdokument oder Code gelesen, **A** eigene Ableitung.
 

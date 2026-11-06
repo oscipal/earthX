@@ -5,24 +5,9 @@
 // single pair to every output band when only one is given.
 
 import type { BandStatistics } from './api';
+import { badChannelPercent, CHANNEL_COUNT, channelsOf, channelsOfRescale, percentsOfChannels, rescaleOfChannels, samePercents, type ChannelRange } from './channels';
+import { DEFAULT_PERCENT, percentOf, samePercent, type RangeUnit } from './percentRange';
 import type { AppliedRender, EarthxDefaultRender } from './types';
-
-// Named colormaps rio-tiler/matplotlib ship — generic, not tied to any dataset.
-export const COLORMAPS = [
-  'viridis',
-  'plasma',
-  'inferno',
-  'magma',
-  'cividis',
-  'turbo',
-  'greens',
-  'ylgn',
-  'rdylgn',
-  'spectral',
-  'terrain',
-  'gist_earth',
-  'greys',
-];
 
 export function autoRescale(stats: Record<string, BandStatistics>): [number, number] | null {
   const bands = Object.values(stats);
@@ -54,32 +39,109 @@ export function appliedRenderFrom(render: EarthxDefaultRender): AppliedRender {
 }
 
 // The fields of the view's controls for a look, the other way round: what "Apply" would send back to make the same
-// picture. Where a view starts from a layer, the controls show what the layer was made with (NM4-50).
-export function pendingFieldsOf(render: AppliedRender): { pendingColormapName: string; pendingVmin: string; pendingVmax: string } {
-  const [vmin = '', vmax = ''] = (render.rescale ?? '').split(',');
-  return { pendingColormapName: render.colormapName ?? '', pendingVmin: vmin, pendingVmax: vmax };
+// picture. Where a view starts from a layer, the controls show what the layer was made with (NM4-50). The index (NM4-14b) is one
+// of the fields: it is drawn once "Apply" is pressed, like the colormap and the range.
+export function pendingFieldsOf(render: AppliedRender): {
+  pendingColormapName: string;
+  pendingVmin: string;
+  pendingVmax: string;
+  pendingChannels: ChannelRange[];
+  pendingIndex: string;
+  pendingBand: string;
+  pendingUnit: RangeUnit;
+  pendingPercentLow: string;
+  pendingPercentHigh: string;
+} {
+  // A colour picture with a range for each channel (UI-03d): the fields of the three, and the first in the shared ones.
+  const channels = channelsOfRescale(render.rescale);
+  const [vmin = '', vmax = ''] = channels ? [channels[0].vmin, channels[0].vmax] : (render.rescale ?? '').split(',');
+  // Channels typed each in their own unit (UI-03e): the pairs go onto the three ranges.
+  const pairs = render.percentChannels?.length === CHANNEL_COUNT ? render.percentChannels : null;
+  const typed = pairs ? (channels ?? channelsOf(vmin, vmax)).map((channel, index) => (pairs[index] ? { ...channel, percent: pairs[index] } : channel)) : null;
+  return {
+    pendingColormapName: render.colormapName ?? '',
+    pendingVmin: vmin,
+    pendingVmax: vmax,
+    pendingChannels: typed ?? channels ?? [],
+    pendingIndex: render.index ?? '',
+    pendingBand: render.band ?? '',
+    // A look typed in percentiles shows "%" again (NM4-65 part 4).
+    pendingUnit: render.percent ? 'percent' : 'value',
+    pendingPercentLow: render.percent?.low ?? DEFAULT_PERCENT.low,
+    pendingPercentHigh: render.percent?.high ?? DEFAULT_PERCENT.high,
+  };
 }
 
 // What the disabled "Apply" and "Save" say in their tooltips (the view of scenes and of a result).
 export const NOTHING_TO_APPLY = 'Nothing to apply: the map shows these values';
 export const NOTHING_TO_SAVE = 'Nothing to save: the layer is saved as it is drawn';
+// "Apply to all" in the view of scenes (NM4-53, Otto 31.10.2026): always there, locked with the reason where it has nothing to do.
+export const NOTHING_TO_APPLY_TO_ALL_LAYER = 'Nothing to apply to all: the layer is saved as it is drawn';
+export const NOTHING_TO_SAVE_IMAGES = 'Nothing to apply to all: every image of this dataset is drawn like this';
+export const NOTHING_TO_SAVE_ONE_IMAGE = 'Nothing to apply to all: this dataset has only one image in the view';
 
-type PendingFields = { pendingColormapName: string; pendingVmin: string; pendingVmax: string };
+type PendingFields = {
+  pendingColormapName: string;
+  pendingVmin: string;
+  pendingVmax: string;
+  // The three ranges of a colour picture set channel by channel; empty while one range holds for all (UI-03d).
+  pendingChannels?: readonly ChannelRange[];
+  pendingIndex?: string;
+  pendingBand?: string;
+  pendingUnit?: RangeUnit;
+  pendingPercentLow?: string;
+  pendingPercentHigh?: string;
+};
 
-// What the fields of the controls ask for: the colormap, and a range once both ends are typed.
+// The three ranges of a colour picture as the fields show them (UI-03e): each with its own unit. A look made before the units were
+// kept per channel (one pair for the three, `percent`) shows that pair on every channel until a channel is changed.
+export function colourChannelsOf(p: PendingFields): ChannelRange[] {
+  const base = p.pendingChannels?.length ? [...p.pendingChannels] : channelsOf(p.pendingVmin, p.pendingVmax);
+  if (p.pendingUnit !== 'percent' || base.some((channel) => channel.percent)) return base;
+  const shared = { low: p.pendingPercentLow ?? '', high: p.pendingPercentHigh ?? '' };
+  return base.map((channel) => ({ ...channel, percent: shared }));
+}
+
+// Whether the fields of a colour picture hold a range typed in percentiles in any channel: "Apply" has to measure them first.
+export const colourInPercent = (p: PendingFields): boolean => colourChannelsOf(p).some((channel) => channel.percent !== undefined);
+
+// The percentiles the fields stand for, where "%" is on and they are a valid pair.
+export const pendingPercentOf = (p: PendingFields) =>
+  p.pendingUnit === 'percent' ? percentOf({ low: p.pendingPercentLow ?? '', high: p.pendingPercentHigh ?? '' }) : null;
+
+// What the fields of the controls ask for: the colormap, and a range once both ends are typed (each channel's, where they are set
+// one by one).
 export function lookOfPendingFields(p: PendingFields): AppliedRender {
   const vmin = p.pendingVmin.trim();
   const vmax = p.pendingVmax.trim();
+  const channels = p.pendingChannels?.length ? p.pendingChannels : null;
+  // Units kept for each channel (UI-03e) take the place of the one pair; a pair for all (a look of before) stays as it was.
+  const percentChannels = channels ? percentsOfChannels(channels) : undefined;
   return {
     colormapName: p.pendingColormapName || undefined,
-    rescale: vmin !== '' && vmax !== '' ? `${vmin},${vmax}` : undefined,
+    rescale: channels ? rescaleOfChannels(channels) : vmin !== '' && vmax !== '' ? `${vmin},${vmax}` : undefined,
+    index: p.pendingIndex || undefined,
+    band: p.pendingBand || undefined,
+    percent: (channels?.some((channel) => channel.percent) ? undefined : pendingPercentOf(p)) ?? undefined,
+    percentChannels,
   };
 }
 
-// Whether "Apply" would draw anything else than the map shows now.
+// Whether "Apply" would draw anything else than `applied` shows: another colormap, range, index or band. NDVI, EVI and NBR share one range
+// and colormap (−1…1, rdylgn) and are three different pictures all the same.
 export function lookChanged(applied: AppliedRender, p: PendingFields): boolean {
   const asked = lookOfPendingFields(p);
-  return (applied.colormapName || undefined) !== asked.colormapName || (applied.rescale || undefined) !== asked.rescale;
+  return (
+    (applied.colormapName || undefined) !== asked.colormapName ||
+    (applied.rescale || undefined) !== asked.rescale ||
+    (applied.index || undefined) !== asked.index ||
+    (applied.band || undefined) !== asked.band ||
+    // Typed in percentiles and not applied yet: the values still hold the ones of the percentiles before.
+    !samePercent(applied.percent, asked.percent) ||
+    !samePercents(applied.percentChannels, asked.percentChannels) ||
+    (p.pendingUnit === 'percent' && asked.percent === undefined && !asked.percentChannels) ||
+    badChannelPercent(p.pendingChannels ?? [])
+  );
 }
 
 // --- one colour scale for a preview and a result (M4-32b, M4-19c) --------------------

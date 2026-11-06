@@ -8,7 +8,7 @@
 //              ATTRIBUTION.txt beside them, the metadata files left out
 //   no worker  service workers blocked: single files under their names, item.json and ATTRIBUTION.txt beside them
 //   a failure  a source answering 500: that scene fails with its reason, the others finish, "Retry failed" loads it
-//   cancel     "Cancel" and the ✕ of the dialog stop the download, and the source sends nothing more
+//   stop       "Stop" and the red x of the dialog stop the download, and the source sends nothing more
 //   layout     nothing overlaps or leaves the dialog; a screenshot per case
 //
 //   cd frontend && npm run dev &            # the dev server; no backend is needed, the answers are made up here
@@ -195,7 +195,18 @@ async function layout(page, label, problems) {
   if (found.scrolls) problems.push(`${label}: the dialog scrolls sideways`);
 }
 
-const downloadButton = (page) => page.getByRole('button', { name: /^⇩ Download full scenes?$/ });
+const downloadButton = (page) => page.getByRole('button', { name: /^Download full scenes?$/ });
+// Since NM4-75 the button opens the dialog with the choice of the bands; its "Download" starts the files.
+async function startDownload(page) {
+  await downloadButton(page).click();
+  const start = page.locator('.dialog-download .dialog-actions button', { hasText: /^Download$/ });
+  await start.waitFor();
+  await page.waitForFunction(() => {
+    const button = [...document.querySelectorAll('.dialog-download .dialog-actions button')].find((b) => b.textContent === 'Download');
+    return button && !button.disabled;
+  });
+  await start.click();
+}
 
 function expectEq(problems, what, got, want) {
   if (JSON.stringify(got) !== JSON.stringify(want)) problems.push(`${what}: ${JSON.stringify(got)}, not ${JSON.stringify(want)}`);
@@ -210,10 +221,10 @@ async function caseZip(browser, { theme, viewport }) {
   control.slowMs = 25;
   // Before the click the tooltip says what it will load: the scenes and the sum of the sizes (4 data files and the
   // metadata file of each scene; the preview is not one of them).
-  const tip = await downloadButton(page).getAttribute('title');
+  const tip = await downloadButton(page).getAttribute('data-tip');
   const expectedMB = ((ASSETS.red + ASSETS.nir + ASSETS.scl + ASSETS.visual + ASSETS.granule_metadata) * 2) / 1e6;
   if (!tip?.startsWith(`2 scenes · ${expectedMB.toFixed(1)} MB. `)) problems.push(`${label}: the tooltip does not name scenes and size: ${JSON.stringify(tip?.slice(0, 60))}`);
-  await downloadButton(page).click();
+  await startDownload(page);
   await page.waitForSelector('.dialog-original-row');
   await waitRows(page, (s) => s.some((t) => /^Loading/.test(t)));
   fs.mkdirSync(OUT, { recursive: true });
@@ -257,7 +268,7 @@ async function caseNoCors(browser, { why, cors, origin }) {
   const label = `no CORS (${why})`;
   const { context, page, problems } = await openApp(browser, { theme: 'light', viewport: 'wide', cors, sceneIds: ['S2_A', 'S2_B'], origin });
   const downloads = collectDownloads(page);
-  await downloadButton(page).click();
+  await startDownload(page);
   await waitRows(page, (s) => s.every((t) => t === 'Started in your browser'));
   await new Promise((resolve) => setTimeout(resolve, 2500));
   await settled(downloads);
@@ -268,7 +279,7 @@ async function caseNoCors(browser, { why, cors, origin }) {
   const attribution = downloads.find((d) => d.name.endsWith('_ATTRIBUTION.txt'));
   const text = attribution?.file ? fs.readFileSync(attribution.file, 'utf8') : '';
   if (!text.includes('Scenes: S2_A, S2_B') || !text.includes('red.tif (S2_A, asset red)') || text.includes('granule_metadata')) problems.push(`${label}: ATTRIBUTION.txt is not as expected`);
-  const note = await page.locator('.dialog-originals .hint-text').nth(1).textContent();
+  const note = await page.locator('.dialog-originals .hint').nth(1).textContent();
   if (!/downloads each file/.test(note ?? '')) problems.push(`${label}: no note on the way, got ${JSON.stringify(note)}`);
   await layout(page, label, problems);
   await page.locator('.dialog-panel').screenshot({ path: path.join(OUT, `no-cors-${why.replace(/\W+/g, '_')}.png`) });
@@ -280,14 +291,14 @@ async function caseNoWorker(browser) {
   const label = 'no worker';
   const { context, page, problems } = await openApp(browser, { theme: 'light', viewport: 'wide', cors: true, sceneIds: ['S2_A'], origin: `https://localhost:${PORTS.cors}`, blockWorkers: true });
   const downloads = collectDownloads(page);
-  await downloadButton(page).click();
+  await startDownload(page);
   await waitRows(page, (s) => s.every((t) => t === 'Done'));
   await new Promise((resolve) => setTimeout(resolve, 1500));
   await settled(downloads);
   expectEq(problems, `${label}: files`, downloads.map((d) => d.name).sort(), ['S2_A_item.json', 'S2_A_nir.tif', 'S2_A_red.tif', 'S2_A_scl.tif', 'S2_A_visual.tif', 'S2_A_granule_metadata.xml', 'e2e_ATTRIBUTION.txt'].sort());
   const nir = downloads.find((d) => d.name === 'S2_A_nir.tif');
   if (nir?.file && sha(fs.readFileSync(nir.file)) !== sha(bytesOf('S2_A/nir.tif', ASSETS.nir))) problems.push(`${label}: S2_A_nir.tif differs from what the source sent`);
-  const note = await page.locator('.dialog-originals .hint-text').nth(1).textContent();
+  const note = await page.locator('.dialog-originals .hint').nth(1).textContent();
   if (!/one by one/.test(note ?? '')) problems.push(`${label}: no note on the way, got ${JSON.stringify(note)}`);
   await layout(page, label, problems);
   await page.locator('.dialog-panel').screenshot({ path: path.join(OUT, 'no-worker.png') });
@@ -300,7 +311,7 @@ async function caseFailure(browser) {
   const { context, page, problems } = await openApp(browser, { theme: 'light', viewport: 'wide', cors: true, sceneIds: ['S2_A', 'S2_B'], origin: `https://localhost:${PORTS.cors}` });
   const downloads = collectDownloads(page);
   control.fail.add('S2_A/red.tif');
-  await downloadButton(page).click();
+  await startDownload(page);
   await waitRows(page, (s) => s.every((t) => t === 'Done' || /^Failed/.test(t)));
   expectEq(problems, `${label}: rows`, await rowStates(page), ['Failed: The source answered 500.', 'Done']);
   control.fail.delete('S2_A/red.tif');
@@ -323,15 +334,16 @@ async function caseStop(browser, how) {
   const downloads = collectDownloads(page);
   control.slowMs = 60;
   control.sent.clear();
-  await downloadButton(page).click();
+  await startDownload(page);
   await waitRows(page, (s) => s.some((t) => /^Loading [1-9]/.test(t)));
-  if (how === 'Cancel') {
-    await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  if (how === 'Stop') {
+    await page.getByRole('button', { name: 'Stop', exact: true }).click();
     await waitRows(page, (s) => s.every((t) => t === 'Cancelled'), 10_000);
     expectEq(problems, `${label}: rows`, await rowStates(page), ['Cancelled', 'Cancelled']);
     if (!(await page.getByRole('button', { name: 'Retry failed' }).count())) problems.push(`${label}: no "Retry failed" after the stop`);
   } else {
-    await page.getByTitle(/stops a download/).click();
+    // The red x of the dialog says in its tooltip (`data-tip` since part 3a, no `title`) that closing stops the download.
+    await page.locator('[data-tip*="stops a download"]').click();
   }
   const sentThen = [...control.sent.values()].reduce((a, b) => a + b, 0);
   await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -350,7 +362,7 @@ async function caseManyScenes(browser) {
   const label = 'many scenes (layout)';
   const ids = Array.from({ length: 14 }, (_, i) => `S2_${String.fromCharCode(65 + i)}`);
   const { context, page, problems } = await openApp(browser, { theme: 'dark', viewport: 'narrow', cors: false, sceneIds: ids, origin: `https://localhost:${PORTS.plain}` });
-  await downloadButton(page).click();
+  await startDownload(page);
   await page.waitForSelector('.dialog-original-row');
   await new Promise((resolve) => setTimeout(resolve, 800));
   await layout(page, label, problems);
@@ -402,7 +414,7 @@ async function caseRealScene(browser, itemFile) {
   let peak = base;
   const sampler = setInterval(() => (peak = Math.max(peak, rss())), 1000);
   const t0 = Date.now();
-  await downloadButton(page).click();
+  await startDownload(page);
   await waitRows(page, (s) => s.every((t) => t === 'Done' || /^Failed/.test(t)), 30 * 60_000);
   await settled(downloads);
   clearInterval(sampler);
@@ -431,7 +443,7 @@ async function caseRealScene(browser, itemFile) {
     results.push(await caseNoCors(browser, { why: 'a source that does not allow it', cors: true, origin: `https://localhost:${PORTS.plain}` }));
     results.push(await caseNoWorker(browser));
     results.push(await caseFailure(browser));
-    results.push(await caseStop(browser, 'Cancel'));
+    results.push(await caseStop(browser, 'Stop'));
     results.push(await caseStop(browser, 'closing the dialog'));
     results.push(await caseManyScenes(browser));
   }

@@ -1,18 +1,24 @@
-// Browser check of NM4-26, in a real browser against the real tiler over a synthetic source:
+// Browser check of NM4-26, in a real browser:
 //   1. opening the app asks no search page;
 //   2. a search with 340 matches asks the pages (none), p2, p3, each once;
-//   3. an NDVI preview of the scenes asks its probe, its statistics once, and real tiles, all answered;
+//   3. an NDVI preview of the scenes asks its probe, its statistics once, and tiles, all answered;
 //   4. a half-typed expression is refused by the probe: no statistics and no tiles of it, the panel says why.
 // In the light and the dark theme, at a wide and a narrow window; a screenshot per case.
 //
-// The tiler of `scripts/tile-bench`, over the COGs of its `make_cogs.py` (PG* variables as for the bench):
+// The tiler is the real one when the dev server has it behind it, else a stand-in made up here. The script asks the dev
+// server once and says which it found (TILER=real or TILER=stand-in forces one; `real` fails without a tiler). The real tiler
+// is that of `scripts/tile-bench`, over the COGs of its `make_cogs.py` (PG* variables as for the bench):
 //   python -I scripts/tile-bench/slow_source.py <cog-dir> --rtt-ms 40 &
 //   PYTHONPATH=backend python scripts/tile-bench/run_tiler.py --source http://127.0.0.1:9100 --item-ms 50 &
 //   cd frontend && VITE_TILER_PROXY=http://127.0.0.1:8101 npm run dev &
 //   node e2e/preview-probe.cjs                  # BASE=http://localhost:5173 OUT=<directory for the screenshots>
+// Without a tiler it is enough to start the dev server (`cd frontend && npm run dev &`).
 //
-// The search answers and the process description are made up here; tiles, TileJSON and statistics come from the
-// tiler. Playwright and Chromium are not a dependency of the project (CI does not run this); the cloud session has both.
+// The stand-in answers like the tiler for the questions of this script: the TileJSON of an item or a mosaic, the statistics of
+// the first scene, one tile of a single colour, and a 422 with a reason for an expression that cannot be read. It checks the
+// panel (which questions it asks, how often, what it says to a refusal), not the tiler. The search answers and the process
+// description are made up here in both cases. Playwright and Chromium are not a dependency of the project (CI does not
+// run this); the cloud session has both.
 
 const { chromium } = require('playwright');
 const fs = require('node:fs');
@@ -25,6 +31,9 @@ const THEMES = { light: 'normal', dark: 'tech' };
 const VIEWPORTS = { wide: { width: 1280, height: 800 }, narrow: { width: 360, height: 740 } };
 // The footprint of the synthetic scene of `scripts/tile-bench` (UTM 32N, 600000/5300040, 10980 px of 10 m).
 const FOOTPRINT = [10.3119, 46.8326, 11.8028, 47.8459];
+const MODE = process.env.TILER ?? 'auto';
+// A 1 x 1 PNG: enough to see that a tile was drawn.
+const TILE = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
 const SCENES = ['SYNTH_T32TPT_20260801T102039_L2A', 'SYNTH_T32TPT_20260802T102039_L2A', 'SYNTH_T32TPT_20260803T102039_L2A'];
 
 function searchPage(token) {
@@ -40,7 +49,47 @@ function searchPage(token) {
   return { type: 'FeatureCollection', features, links, numberMatched: 340 };
 }
 
-async function check(browser, theme, viewport) {
+// Whether the dev server has the real tiler over the synthetic source behind it: it answers the TileJSON of the first
+// synthetic scene. A dev server with no tiler answers 502 or 504, a tiler of another source (or one without the scene) a
+// 4xx or 5xx. A dev server that does not answer at all is no case for a stand-in: the script cannot run.
+async function realTilerBehind() {
+  let response;
+  try {
+    response = await fetch(`${BASE}/collections/sentinel-2-c1-l2a/items/${SCENES[0]}/WebMercatorQuad/tilejson.json?asset=red`, { signal: AbortSignal.timeout(20000) });
+  } catch {
+    console.error(`no dev server at ${BASE}: start it with "cd frontend && npm run dev"`);
+    process.exit(2);
+  }
+  return response.ok;
+}
+
+// An expression the stand-in refuses, as the tiler's probe does: parentheses that do not close, or an operator at the end.
+function unreadable(params) {
+  const text = params.join('|');
+  const found = /"expression":"([^"]*)"/.exec(text);
+  if (!found) return false;
+  const expression = found[1];
+  let depth = 0;
+  for (const char of expression) {
+    depth += char === '(' ? 1 : char === ')' ? -1 : 0;
+    if (depth < 0) return true;
+  }
+  return depth !== 0 || /[-+*/]\s*$/.test(expression);
+}
+
+// What the stand-in answers under /collections/.
+function standInTiler(route, url) {
+  const json = (body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+  if (unreadable(url.searchParams.getAll('params'))) return json({ detail: 'step 1 (band_math): the expression cannot be read' }, 422);
+  if (url.pathname.endsWith('/tilejson.json')) {
+    return json({ tilejson: '3.0.0', bounds: FOOTPRINT, minzoom: 8, maxzoom: 14, data_type: 'float32', 'earthx:order': url.searchParams.getAll('item').sort() });
+  }
+  if (url.pathname.endsWith('/statistics')) return json({ b1: { count: 900, min: -0.2, max: 0.9, percentile_2: -0.1, percentile_98: 0.8, unit: null } });
+  if (url.pathname.includes('/tiles/')) return route.fulfill({ status: 200, contentType: 'image/png', body: TILE });
+  return json({ detail: 'not made up' }, 404);
+}
+
+async function check(browser, theme, viewport, standIn) {
   const name = `${theme} ${viewport}`;
   const problems = [];
   const context = await browser.newContext({ viewport: VIEWPORTS[viewport] });
@@ -63,7 +112,7 @@ async function check(browser, theme, viewport) {
       if (url.pathname.endsWith('/statistics')) seen.statistics.push(params);
       else if (url.pathname.endsWith('/tilejson.json')) seen.probes.push(params);
       else if (url.pathname.includes('/tiles/')) seen.tiles.push(params);
-      return route.continue();
+      return standIn ? standInTiler(route, url) : route.continue();
     }
     return json({ detail: 'not made up' }, 404);
   });
@@ -151,7 +200,7 @@ async function check(browser, theme, viewport) {
   });
   if (scroll) problems.push('the panel scrolls sideways');
   await page.screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_refused.png`) });
-  const shown = page.locator('.processing-panel p.hint-text', { hasText: 'No preview: ' });
+  const shown = page.locator('.processing-panel p.hint', { hasText: 'No preview: ' });
   if ((await shown.count()) === 1) {
     await shown.scrollIntoViewIfNeeded();
     if (!(await shown.isVisible())) problems.push('the refusal cannot be scrolled into view');
@@ -162,10 +211,16 @@ async function check(browser, theme, viewport) {
 }
 
 (async () => {
+  const real = MODE === 'stand-in' ? false : await realTilerBehind();
+  if (MODE === 'real' && !real) {
+    console.error('TILER=real, but the dev server has no tiler over the synthetic source behind it (see the header for how to start one)');
+    process.exit(2);
+  }
+  console.log(real ? 'tiler: the real one behind the dev server' : 'tiler: a stand-in made up here (the dev server has no tiler over the synthetic source behind it)');
   const browser = await chromium.launch();
   let failed = 0;
   for (const theme of Object.keys(THEMES)) for (const viewport of Object.keys(VIEWPORTS)) {
-    const result = await check(browser, theme, viewport);
+    const result = await check(browser, theme, viewport, !real);
     failed += result.problems.length > 0 ? 1 : 0;
     console.log(`${result.problems.length ? 'FAIL' : 'ok  '} ${result.name} — ${result.detail}${result.problems.length ? '\n     ' + result.problems.join('\n     ') : ''}`);
   }

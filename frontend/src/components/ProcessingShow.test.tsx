@@ -196,7 +196,7 @@ async function openWith(items: StacItem[]) {
 // One Band math step (NDVI), and the output: the result alone, or with more bands.
 async function ndvi(items = [scene('S2B_A')], output: string[] = ['result']) {
   await openWith(items);
-  click(button('＋ Band math'));
+  click(button('Band math'));
   typeInto(expression(0), NDVI);
   act(() => store().setOutput(output));
   await afterDebounce();
@@ -207,7 +207,7 @@ describe('the dropdown "Show"', () => {
     await ndvi();
     expect(store().preview).not.toBeNull();
     expect(show()).toBeNull();
-    expect(section().textContent).not.toContain('Show');
+    expect(section().textContent).not.toContain('Band');
   });
 
   it('is not there without a picture to choose for', async () => {
@@ -217,19 +217,19 @@ describe('the dropdown "Show"', () => {
     expect(show()).toBeNull();
   });
 
-  it('stands left of min and max, which keep to one row with it', async () => {
+  it('stands first in the fields of the settings bar, over the row "Scale" with vmin and vmax (NM4-65: the same names everywhere)', async () => {
     await ndvi(undefined, ['result', 'red']);
     const row = section().querySelector('.pp-range')!;
     expect(row.firstElementChild!.classList.contains('pp-show')).toBe(true);
-    expect(row.querySelector('.pp-show span')!.textContent).toBe('Show');
-    expect([...row.querySelectorAll('.vc-field > span')].slice(0, 3).map((s) => s.textContent)).toEqual(['Show', 'min', 'max']);
+    expect(row.querySelector('.pp-show span')!.textContent).toBe('Band');
+    expect([...row.querySelectorAll('.vc-field > span')].slice(0, 5).map((s) => s.textContent)).toEqual(['Band', 'Scale', 'vmin', 'vmax', 'Colormap']);
   });
 
   it('lists every band of the output, the results above the bands of the data', async () => {
     await openWith([scene('S2B_A')]);
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(0), NDVI);
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(1), NDWI);
     act(() => store().setOutput(['red', 'result_1', 'green', 'result']));
     await afterDebounce();
@@ -238,7 +238,7 @@ describe('the dropdown "Show"', () => {
 
   it('does not list a result that is not in the output, nor a band of the data that is not', async () => {
     await ndvi(undefined, ['result', 'green']);
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(1), NDWI);
     await afterDebounce();
     expect(store().output).toEqual(expect.arrayContaining(['result', 'result_1', 'green']));
@@ -249,9 +249,9 @@ describe('the dropdown "Show"', () => {
 
   it('starts with the result added last, not the last of the chain', async () => {
     await openWith([scene('S2B_A')]);
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(0), NDVI);
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(1), NDWI);
     act(() => store().setOutput(['result', 'result_1', 'red']));
     await afterDebounce();
@@ -266,7 +266,7 @@ describe('the dropdown "Show"', () => {
 
   it('starts with the first band of the output where it holds no result', async () => {
     await openWith([scene('S2B_A')]);
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(0), NDVI);
     act(() => store().setOutput(['red', 'green']));
     await afterDebounce();
@@ -297,8 +297,8 @@ describe('what the picture reads for the band (adr/0020 §4)', () => {
   it('adds the layer of a mask, and nothing else, to NDVI with a mask (three assets)', async () => {
     const wide = scene('S2B_A', 17);
     await openWith([wide]);
-    click(button('＋ Mask'));
-    click(button('＋ Band math'));
+    click(button('Mask by class'));
+    click(button('Band math'));
     typeInto(expression(0), NDVI);
     act(() => store().setOutput(['result', 'red', 'green', ...Array.from({ length: 17 }, (_, i) => `b${i + 1}`)]));
     await afterDebounce();
@@ -309,7 +309,7 @@ describe('what the picture reads for the band (adr/0020 §4)', () => {
   it('still says there is no picture where one band needs more assets than the map takes', async () => {
     const wide = scene('S2B_A', 17);
     await openWith([wide]);
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(0), Array.from({ length: 17 }, (_, i) => `b${i + 1}`).join(' + '));
     await afterDebounce();
     expect(section().textContent).toContain('No preview: the map takes at most 16 bands.');
@@ -327,9 +327,9 @@ describe('what the picture reads for the band (adr/0020 §4)', () => {
 
   it('shows the band of the second step with the assets of that step', async () => {
     await openWith([scene('S2B_A')]);
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(0), NDVI);
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(1), NDWI);
     act(() => store().setOutput(['result', 'result_1']));
     await afterDebounce();
@@ -358,7 +358,7 @@ describe('a scale of its own for every band', () => {
     await afterDebounce();
     expect([rescale(), colormap()]).toEqual(['120,2400', 'viridis']);
     expect(fields().map((f) => f.value)).toEqual(['120', '2400']);
-    expect(section().querySelector('.pp-unit')!.textContent).toBe('m');
+    expect(section().querySelector('.pp-unit')).toBeNull();
   });
 
   it('takes a band of the data for no index, however small its values are', async () => {
@@ -390,7 +390,7 @@ describe('a scale of its own for every band', () => {
     await afterDebounce();
     expect(rescale()).toBe('120,2400');
     expect(store().rangeByHand).toBe(false);
-    expect((button('Auto stretch') as HTMLButtonElement).disabled).toBe(true);
+    expect((button('Auto-scale') as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('measures over the AOI for "AOI only", takes the band from the answer by its name, and asks the order once for all bands', async () => {
@@ -463,11 +463,136 @@ describe('what follows from a change of the output', () => {
     await ndvi(undefined, ['result', 'red']);
     expect(store().steps.map((s) => s.op)).toEqual(['band_math']);
     act(() => store().addStep('reproject', 4));
-    click(button('＋ Band math'));
+    click(button('Band math'));
     typeInto(expression(1), NDWI);
     act(() => store().setOutput(['result', 'result_1', 'red']));
     await afterDebounce();
     expect(options()).toEqual(['result', 'red']);
     expect(tiles().get('band')).toBe('result');
+  });
+});
+
+// NM4-65 part 4 (Otto, 31.10.2026): "vmin"/"vmax" as percentiles in the preview of the panel. The values come from the measure of
+// the preview where it names the percentiles, else from the tiler on the first scene; the picture is drawn from values and the
+// range in force keeps what was typed (a job started with it keeps it too).
+describe('"vmin" and "vmax" as percentiles in the preview', () => {
+  const chip = () => section().querySelector<HTMLSelectElement>('.vc-unit')!;
+  const toggleUnit = () => {
+    const select = chip();
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(select, select.value === 'value' ? 'percent' : 'value');
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  };
+  const unitText = () => chip().selectedOptions[0].textContent;
+  const problem = () => section().querySelector('.error')?.textContent ?? null;
+  const percentValues = () => asked().filter((u) => u.includes('p=3'));
+  const withPercentiles = (over: object = {}) => {
+    statistics = () => ({ band: { ...INDEX, percentile_3: -0.15, percentile_97: 0.85, ...over } });
+  };
+
+  it('has the dropdown at "vmin", and turns the fields into 2 and 98', async () => {
+    await ndvi();
+    expect(unitText()).toBe('absolute');
+    toggleUnit();
+    expect(unitText()).toBe('percentile');
+    expect(fields().map((f) => f.value)).toEqual(['2', '98']);
+  });
+
+  it('asks the tiler for the two percentiles on the first scene and draws the values it gives', async () => {
+    await ndvi();
+    // The measure the preview was drawn with names 2 and 98 only; the tiler names the others where they are asked for.
+    withPercentiles();
+    toggleUnit();
+    typeInto(fields()[0], '3');
+    typeInto(fields()[1], '97');
+    await act(async () => click(button('Apply')));
+    await flush();
+    expect(percentValues()).toHaveLength(1);
+    expect(percentValues()[0]).toContain('p=3&p=97');
+    expect(store().range).toMatchObject({ vmin: '-0.15', vmax: '0.85', percent: { low: '3', high: '97' } });
+    expect(store().rangeByHand).toBe(true);
+    await afterDebounce();
+    expect(tiles().get('rescale')).toBe('-0.15,0.85');
+    expect(problem()).toBeNull();
+    // Applied: nothing more to apply until something changes.
+    expect(button('Apply').hasAttribute('disabled')).toBe(true);
+    typeInto(fields()[1], '96');
+    expect(button('Apply').hasAttribute('disabled')).toBe(false);
+  });
+
+  it('reads 2 and 98 from the measure it has, with no further question', async () => {
+    await ndvi();
+    const before = asked().length;
+    toggleUnit();
+    await act(async () => click(button('Apply')));
+    await flush();
+    expect(asked()).toHaveLength(before);
+    expect(store().range).toMatchObject({ vmin: '-0.1', vmax: '0.8', percent: { low: '2', high: '98' } });
+  });
+
+  it('takes the minimum and the maximum for 0 and 100', async () => {
+    await ndvi();
+    toggleUnit();
+    typeInto(fields()[0], '0');
+    typeInto(fields()[1], '100');
+    await act(async () => click(button('Apply')));
+    await flush();
+    expect(store().range).toMatchObject({ vmin: '-0.2', vmax: '0.9' });
+  });
+
+  it('refuses what is no whole percent, in the wrong order or out of range, says why and asks nothing', async () => {
+    await ndvi();
+    const before = asked().length;
+    toggleUnit();
+    for (const [low, high, text] of [['x', '98', 'Enter whole percents'], ['2.5', '98', 'Enter whole percents'], ['2', '120', 'Enter whole percents'], ['90', '10', 'must be below']]) {
+      typeInto(fields()[0], low);
+      typeInto(fields()[1], high);
+      await act(async () => click(button('Apply')));
+      await flush();
+      expect(problem(), `${low}/${high}`).toContain(text);
+    }
+    expect(asked()).toHaveLength(before);
+    expect(store().rangeByHand).toBe(false);
+  });
+
+  it('says so where the tiler does not give the percentiles, and changes nothing', async () => {
+    await ndvi();
+    toggleUnit();
+    typeInto(fields()[0], '3');
+    typeInto(fields()[1], '97');
+    await act(async () => click(button('Apply')));
+    await flush();
+    // The statistics of the scene name no 3rd and 97th percentile.
+    expect(problem()).toBe('The statistics give no range for these percentiles.');
+    expect(store().rangeByHand).toBe(false);
+    fetchMock.mockImplementation(async () => new Response('{}', { status: 502, headers: { 'Content-Type': 'application/problem+json' } }));
+    await act(async () => click(button('Apply')));
+    await flush();
+    expect(problem()).toMatch(/^Could not measure the percentiles/u);
+  });
+
+  it('puts the usual stretch back with "Auto-scale" in percentiles, and the values back in values', async () => {
+    await ndvi();
+    toggleUnit();
+    typeInto(fields()[0], '10');
+    click(button('Auto-scale'));
+    expect(fields().map((f) => f.value)).toEqual(['2', '98']);
+  });
+
+  it('is no percentiles any more once the values are typed again', async () => {
+    withPercentiles();
+    await ndvi();
+    toggleUnit();
+    typeInto(fields()[0], '3');
+    typeInto(fields()[1], '97');
+    await act(async () => click(button('Apply')));
+    await flush();
+    toggleUnit();
+    expect(fields().map((f) => f.value)).toEqual(['-0.15', '0.85']);
+    typeInto(fields()[1], '0.8');
+    click(button('Apply'));
+    expect(store().range.percent).toBeUndefined();
+    expect(store().range).toMatchObject({ vmin: '-0.15', vmax: '0.8' });
   });
 });

@@ -9,9 +9,11 @@ import {
   buildTileTemplate,
   downloadCrop,
   errorDetail,
+  fetchBands,
   fetchCoverage,
   fetchItem,
   fetchMosaicTileJson,
+  fetchSceneOrder,
   HttpError,
   nextTokenFrom,
   parseAreaStatistics,
@@ -20,6 +22,7 @@ import {
   searchItems,
   uploadAoi,
 } from './api';
+import { tileSizeOf } from './tileSize';
 
 describe('buildSearchBody', () => {
   it('carries the collections, bbox, datetime range, limit and token', () => {
@@ -114,9 +117,11 @@ describe('buildCoverageUrl', () => {
       expect([...url.searchParams.keys()]).toEqual(['zoom']);
     }
   });
-  // NM4-57 (M4 Q8): the box of an AOI is never in a URL.
-  it('never carries the box of an AOI', () => {
-    const url = buildCoverageUrl({ datasetId: 'optical', zoom: 4, aoiBbox: [11.31234, 47.81234, 11.51234, 47.91234] });
+  // UI-04 part 4 (Otto, 4.11.2026): the question carries no AOI at all; the map extent is the only area it can name.
+  it('has no way to name an AOI: the question takes the map extent and nothing else for an area', () => {
+    // @ts-expect-error there is no `aoiBbox` any more
+    const params: CoverageParams = { datasetId: 'optical', zoom: 4, aoiBbox: [11.31234, 47.81234, 11.51234, 47.91234] };
+    const url = buildCoverageUrl(params);
     expect(url).not.toContain('11.31234');
     expect(new URL(url, 'http://localhost').searchParams.has('bbox')).toBe(false);
   });
@@ -127,37 +132,7 @@ describe('fetchCoverage', () => {
 
   const answer = { ok: true, status: 200, json: async () => ({}) } as Response;
 
-  it('asks an AOI by POST: the box and the filters in the body, nothing in the URL', async () => {
-    const fetchMock = vi.fn(async () => answer);
-    vi.stubGlobal('fetch', fetchMock);
-    const query = { 'eo:cloud_cover': { lte: 20 } };
-
-    await fetchCoverage({
-      datasetId: 'optical',
-      zoom: 9,
-      aoiBbox: [11.31234, 47.81234, 11.51234, 47.91234],
-      datetime: '2026-07-01T00:00:00Z/..',
-      query,
-    });
-
-    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe('/coverage/optical');
-    expect(init.method).toBe('POST');
-    expect(JSON.parse(String(init.body))).toEqual({
-      zoom: 9,
-      bbox: [11.31234, 47.81234, 11.51234, 47.91234],
-      datetime: '2026-07-01T00:00:00Z/..',
-      query,
-    });
-  });
-
-  it('does not take a map extent and the box of an AOI together (checked by the type)', () => {
-    // @ts-expect-error the extent goes in the URL, the AOI in the body: one question has one of them
-    const both: CoverageParams = { datasetId: 'optical', zoom: 4, bbox: [0, 0, 1, 1], aoiBbox: [0, 0, 1, 1] };
-    expect(both.zoom).toBe(4);
-  });
-
-  it('asks a map extent by GET, as before', async () => {
+  it('asks a map extent by GET, with the filters in the URL', async () => {
     const fetchMock = vi.fn(async () => answer);
     vi.stubGlobal('fetch', fetchMock);
 
@@ -166,14 +141,25 @@ describe('fetchCoverage', () => {
     expect(fetchMock.mock.calls[0]).toEqual(['/coverage/optical?zoom=6&bbox=-180%2C-85%2C180%2C85']);
   });
 
-  it('leaves a body without the optional fields out', async () => {
+  it('never asks by POST: no body goes out, whatever the question holds', async () => {
     const fetchMock = vi.fn(async () => answer);
     vi.stubGlobal('fetch', fetchMock);
 
-    await fetchCoverage({ datasetId: 'optical', zoom: 3, aoiBbox: [0, 0, 1, 1], query: {} });
+    await fetchCoverage({ datasetId: 'optical', zoom: 9, bbox: [0, 0, 1, 1], datetime: '2026-07-01T00:00:00Z/..', query: { 'eo:cloud_cover': { lte: 20 } } });
 
-    const init = (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1];
-    expect(JSON.parse(String(init.body))).toEqual({ zoom: 3, bbox: [0, 0, 1, 1] });
+    const calls = fetchMock.mock.calls as unknown as unknown[][];
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toHaveLength(1);
+    expect(String(calls[0][0])).toContain('query=');
+  });
+
+  it('asks the world without a box', async () => {
+    const fetchMock = vi.fn(async () => answer);
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchCoverage({ datasetId: 'optical', zoom: 1 });
+
+    expect(fetchMock.mock.calls[0]).toEqual(['/coverage/optical?zoom=1']);
   });
 });
 
@@ -359,6 +345,32 @@ describe('downloadCrop', () => {
     assets: ['visual'],
     aoi: { type: 'Polygon' as const, coordinates: [] },
   };
+
+  // NM4-75: the form of the files and the common resolution go in the body, the latter for one multi-band file only.
+  const bodyOf = async (extra: object) => {
+    const fetchMock = vi.fn().mockResolvedValue(blobResponse());
+    vi.stubGlobal('fetch', fetchMock);
+    await downloadCrop({ ...request, ...extra });
+    return JSON.parse(String(fetchMock.mock.calls[0][1].body)) as Record<string, unknown>;
+  };
+
+  it('sends no form unless one is given: the server then writes one file per band, as before', async () => {
+    const body = await bodyOf({});
+    expect(body).toEqual({ groups: [['ITEM1']], assets: ['visual'], aoi: { type: 'Polygon', coordinates: [] } });
+    expect(body).not.toHaveProperty('resolution');
+  });
+
+  it.each(['per_band', 'per_resolution'] as const)('the form %s sends no common resolution, even if one is held', async (form) => {
+    const body = await bodyOf({ form, commonResolution: 20 });
+    expect(body.form).toBe(form);
+    expect(body).not.toHaveProperty('common_resolution');
+  });
+
+  it('one multi-band file sends the common resolution in metres', async () => {
+    const body = await bodyOf({ form: 'multi_band', commonResolution: 20 });
+    expect(body).toMatchObject({ form: 'multi_band', common_resolution: 20 });
+    expect(body).not.toHaveProperty('resolution');
+  });
 
   it('a 413 over the output size cap surfaces the backend detail unchanged', async () => {
     vi.stubGlobal(
@@ -742,7 +754,23 @@ describe('the mosaic of a time step (M4-17)', () => {
     expect(template).toContain('/collections/a%20b/mosaic/');
     const params = new URL(template, 'http://localhost').searchParams;
     expect(params.getAll('item')).toEqual(['x&y=1', 'z/../w']);
-    expect([...params.keys()].sort()).toEqual(['asset', 'item', 'item']);
+    expect([...params.keys()].sort()).toEqual(['asset', 'item', 'item', 'tilesize']);
+  });
+
+  it('asks for 512-px tiles, which the tiler takes as 256 or 512 (NM4-29b)', () => {
+    expect(new URL(buildMosaicTileTemplate('d', ['a', 'b'], 'x'), 'http://localhost').searchParams.get('tilesize')).toBe('512');
+    expect(tileSizeOf(buildMosaicTileTemplate('d', ['a', 'b'], 'x'))).toBe(512);
+  });
+
+  it('leaves the TileJSON of the same pass without a size', async () => {
+    const urls: string[] = [];
+    vi.stubGlobal('fetch', async (url: string) => {
+      urls.push(url);
+      return { ok: true, status: 200, statusText: '', json: async () => ({ bounds: [0, 0, 1, 1], minzoom: 8, maxzoom: 19, 'earthx:order': ['a'] }) } as Response;
+    });
+    await fetchMosaicTileJson('d', ['a', 'b'], 'x');
+    vi.unstubAllGlobals();
+    expect(urls[0]).not.toContain('tilesize');
   });
 });
 
@@ -854,5 +882,64 @@ describe('postAreaStatistics', () => {
       exact: true,
       factor: 1,
     });
+  });
+});
+
+describe('fetchSceneOrder (NM4-24)', () => {
+  const answer = (status: number, body: unknown) =>
+    vi.fn().mockResolvedValue({ ok: status < 300, status, statusText: '', json: async () => body } as Response);
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('posts the ids and the asset in the body, sorted, to a route of its own, and reads the order', async () => {
+    vi.stubGlobal('fetch', answer(200, { order: ['A', 'B', 'C'] }));
+    expect(await fetchSceneOrder('sentinel-2-c1-l2a', ['C', 'A', 'B'], 'visual')).toEqual(['A', 'B', 'C']);
+    const [url, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('/collections/sentinel-2-c1-l2a/scene-order');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toEqual({ items: ['A', 'B', 'C'], asset: 'visual' });
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('throws the reason of the tiler', async () => {
+    vi.stubGlobal('fetch', answer(503, { detail: 'scene orders need the item cache' }));
+    await expect(fetchSceneOrder('d', ['A', 'B'], 'visual')).rejects.toMatchObject({ status: 503, message: 'scene orders need the item cache' });
+  });
+
+  it.each([['no order', {}], ['numbers', { order: [1, 2] }], ['a text', { order: 'AB' }]])('refuses an answer with %s', async (_name, body) => {
+    vi.stubGlobal('fetch', answer(200, body));
+    await expect(fetchSceneOrder('d', ['A', 'B'], 'visual')).rejects.toThrow('cannot read');
+  });
+});
+
+// NM4-75: the table of bands of the download dialog is the platform's answer for the scenes named.
+describe('fetchBands', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const answer = { bands: [{ asset: 'a', name: 'A', common_name: null, wavelength_um: 0.5, resolution_m: 10, categorical: false, preselected: true }] };
+
+  it('posts the scene ids in the body, never in the address, and reads the rows', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(answer), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    const found = await fetchBands('some/dataset', ['S1', 'S2']);
+    expect(fetchMock.mock.calls[0][0]).toBe('/collections/some%2Fdataset/bands');
+    expect(fetchMock.mock.calls[0][1].method).toBe('POST');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ items: ['S1', 'S2'] });
+    expect(found).toEqual([expect.objectContaining({ asset: 'a', name: 'A', wavelength: 0.5, resolution: 10, preselected: true })]);
+  });
+
+  it('names at most the first five scenes', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ bands: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    await fetchBands('d', ['1', '2', '3', '4', '5', '6', '7']);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).items).toEqual(['1', '2', '3', '4', '5']);
+  });
+
+  it('throws the refusal of the platform, and an answer that is no list of bands', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ detail: 'unknown scene' }), { status: 404, headers: { 'Content-Type': 'application/json' } })));
+    await expect(fetchBands('d', ['x'])).rejects.toThrow('unknown scene');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ nothing: 1 }), { status: 200, headers: { 'Content-Type': 'application/json' } })));
+    await expect(fetchBands('d', ['x'])).rejects.toThrow(/cannot read/);
   });
 });

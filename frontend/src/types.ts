@@ -1,3 +1,4 @@
+import type { Percent } from './percentRange';
 // Shared types for the EarthX viewer.
 
 // Mutually-exclusive AOI selection tools.
@@ -185,6 +186,18 @@ export interface EarthxMask {
   // Where the class table comes from (https URL).
   reference: string;
   note: string;
+  // DS-03: the classes that count as clouds when the cloud share is measured in the AOI (ascending; empty or absent
+  // where the dataset has no such measure), and the registry's sentence to the limits of the classification.
+  cloud_classes?: number[] | null;
+  cloud_note?: string | null;
+  // DS-03c: the classes of the other shares measured in the AOI, by the property the search sends the range under.
+  share_classes?: Record<string, number[]> | null;
+}
+
+// What a dataset's search can do besides its filters (DS-03c): judge them per overpass, and the filter "AOI coverage".
+export interface EarthxSearchCapabilities {
+  evaluate?: boolean;
+  aoi_coverage?: boolean;
 }
 
 export interface Collection {
@@ -220,6 +233,11 @@ export interface Collection {
   // The filters the search offers for this dataset (DS-02), in the words of STAC queryables; read, and checked
   // entry by entry, by `searchFilters.ts`. Absent on a backend before DS-02a.
   'earthx:search_filters'?: unknown[] | null;
+  // What the search can do besides filtering (DS-03c); absent on a backend before it, which means neither.
+  'earthx:search_capabilities'?: EarthxSearchCapabilities | null;
+  // The indices the panel offers as one click each (NM4-14), in the words of the registry; read, and checked entry by
+  // entry, by `indexPresets.ts`. Absent on a backend before NM4-14a.
+  'earthx:index_presets'?: unknown[] | null;
 }
 
 // A time step: the items that share one grouping key (registry.ViewerInfo).
@@ -234,20 +252,38 @@ export interface TimeStepGroup {
 // names follow TiTiler's own query parameters (`bidx`, `colormap_name`, …) so
 // `buildTileUrl` (mapLayers.ts) can pass them straight through.
 export interface AppliedRender {
+  // The name of the index preset of the dataset the view draws instead of a band (NM4-14b, `viewIndex.ts`); the range and
+  // colormap below are the ones the index is drawn with.
+  index?: string;
+  // The single band of the data the view draws instead of its standard picture (NM4-45, `viewBand.ts`): the key of its asset.
+  // None is the standard picture ("RGB" where the dataset has a true-colour one).
+  band?: string;
   // The band of a result by its place from 1; several, comma-separated, for a colour picture (`3,2,1`).
   bidx?: string;
   expression?: string;
   colormapName?: string;
   rescale?: string; // "min,max" (adr/0006 §3.4 Z4)
+  // What the range was typed as where it was typed in percentiles (NM4-65 part 4): `rescale` holds the values they gave when
+  // they were applied, so the picture is always drawn from values; this is only for the fields to show "%" again.
+  percent?: Percent;
+  // The same for a colour picture whose channels are each typed in their own unit (UI-03e, Otto, 3.11.2026): a pair for a channel typed
+  // in percentiles, `null` for one typed in values, in the order red, green, blue. `rescale` holds the values they gave. Where it is
+  // set, `percent` is not.
+  percentChannels?: (Percent | null)[];
 }
 
 // Full-resolution tile info for one item, keyed by item id in the store's
 // `downloaded` map (M2-07b). The tiler renders straight from the source asset —
 // there is no crop or download step here, that is M2-06/M2-07d.
 export interface DownloadedInfo {
+  // The dataset the scene belongs to: a view can hold scenes of several (NM4-53), so it is not the open section's.
+  datasetId: string;
   tileUrl: string; // MapLibre tile template ({z}/{x}/{y}), asset already baked in
   bounds: Bbox;
   asset: string;
+  // The asset the scene was opened with, when the view draws another one for the look of its image (NM4-45): the one the
+  // standard picture of the dataset comes from.
+  baseAsset?: string;
   // The levels this dataset is released for (`earthx:viewer`, M2-10). Below the
   // lower one MapLibre requests nothing, above the upper one it overzooms the
   // last level — which is also what the tile route allows, so the map never asks

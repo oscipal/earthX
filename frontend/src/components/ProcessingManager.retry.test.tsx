@@ -14,6 +14,7 @@ import { SHELF_KEY } from '../jobShelf';
 import type { Order } from '../processing';
 import { resetJobs, setTrackerOptions, useProcessingStore, type JobEntry } from '../processingStore';
 import ProcessingManager from './ProcessingManager';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -122,6 +123,20 @@ const cancelled = (n: number, over: Partial<JobEntry> = {}): JobEntry =>
 const expiredJob = (n: number, over: Partial<JobEntry> = {}): JobEntry =>
   finished(n, { expires: new Date(NOW - DAY).toISOString(), expired: true, order: ORDER, ...over });
 
+describe('the place of the symbol (Otto, 3.11.2026)', () => {
+  it('is the place of the download: "Run again" stands where a finished job has "Download (ZIP)", and "+" has a place of its own before it', () => {
+    put({ jobs: [failed(1), finished(2, { order: ORDER })] });
+    mount();
+    tab('All');
+    const tail = (row: Element) => [...row.querySelector('.pm-line')!.children].slice(-3);
+    const [first, second] = topRows().map(tail);
+    expect(first[1].getAttribute('aria-label')).toMatch(/^Run again/u);
+    expect(second[1].getAttribute('aria-label')).toBe('Download (ZIP)');
+    expect(first.map((e) => e.className.replace(/^icon-btn /u, '').split(' ')[0])).toEqual(['pm-icon', 'pm-icon', 'pm-menu']);
+    expect(second.map((e) => e.className.replace(/^icon-btn /u, '').split(' ')[0])).toEqual(['pm-icon', 'pm-icon', 'pm-menu']);
+  });
+});
+
 describe('the symbol', () => {
   it.each([
     ['a failed job', () => failed(1)],
@@ -133,8 +148,8 @@ describe('the symbol', () => {
     mount();
     tab('All');
     const symbol = retryIn(rows()[0])!;
-    expect(symbol.textContent).toBe('↻');
-    expect(symbol.title).toBe('Run again');
+    expect(symbol.querySelector('svg.lucide-rotate-cw')).not.toBeNull();
+    expect(tipOf(symbol)).toBe('Run again');
   });
 
   it.each([
@@ -380,7 +395,7 @@ describe('a batch', () => {
   it('has one symbol, "Retry failed parts", and it starts only the parts that failed or were cancelled', async () => {
     batch();
     const symbol = retryIn(topRows()[0])!;
-    expect(symbol.title).toBe('Retry failed parts');
+    expect(tipOf(symbol)).toBe('Retry failed parts');
     click(symbol);
     await settle();
     // The failed part and the cancelled one; not the finished, the expired, nor the one that would fail again.
@@ -402,7 +417,7 @@ describe('a batch', () => {
       ['S5', 'Failed'],
     ]);
     expect(useProcessingStore.getState().jobs.filter((j) => j.batchId === BATCH && !j.superseded).map((j) => j.part)).toEqual(['S1', 'S2', 'S3', 'S4', 'S5']);
-    expect(topRows()[0].querySelector('.pm-state')?.textContent).toBe('1 done · 2 running · 1 failed · 1 expired');
+    expect(topRows()[0].querySelector('.pm-state')?.textContent).toBe('1 finished · 2 running · 1 failed · 1 expired');
     // The symbol is gone with nothing left to start: the part that would fail again is not one of them.
     expect(retryIn(topRows()[0])).toBeNull();
   });

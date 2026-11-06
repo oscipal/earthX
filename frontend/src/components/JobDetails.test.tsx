@@ -16,6 +16,7 @@ import { useAppStore } from '../store';
 import JobDetails, { NO_COPY_TIP } from './JobDetails';
 import ProcessingManager from './ProcessingManager';
 import ProcessingPanel from './ProcessingPanel';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -73,8 +74,8 @@ const click = (el: Element | null | undefined) => {
   act(() => el.dispatchEvent(new MouseEvent('click', { bubbles: true })));
 };
 const button = (label: string | RegExp) =>
-  [...container.querySelectorAll('button')].find((b) => (typeof label === 'string' ? b.textContent?.trim() === label : label.test(b.textContent ?? ''))) as HTMLButtonElement | undefined;
-const actions = () => [...container.querySelectorAll('.vc-actions > *')].map((el) => el.textContent?.trim());
+  [...container.querySelectorAll('button')].find((b) => (typeof label === 'string' ? b.textContent?.trim() === label || b.getAttribute('aria-label') === label : label.test(b.textContent ?? '') || label.test(b.getAttribute('aria-label') ?? ''))) as HTMLButtonElement | undefined;
+const actions = () => [...container.querySelectorAll('.vc-actions > *')].map((el) => el.textContent?.trim() || el.getAttribute('aria-label'));
 const fact = (name: string) => {
   const dt = [...container.querySelectorAll('.pm-facts dt')].find((d) => d.textContent === name);
   return dt?.nextElementSibling?.textContent ?? null;
@@ -89,12 +90,12 @@ const type = (input: HTMLInputElement, value: string) => {
 const key = (target: Element, name: string) => act(() => target.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true })));
 
 describe('the window', () => {
-  it('takes the place of the order in the processing window, and "‹ Order" brings the order back, unchanged', () => {
+  it('takes the place of the order in the processing window, and "Order" brings the order back, unchanged', () => {
     act(() => useProcessingStore.setState({ steps: [{ key: 1, op: 'band_math', opVersion: 2, values: { expression: 'a', name: 'NDVI' } }] }));
     show(jobEntry(1), <ProcessingPanel />);
     expect(container.querySelector('[aria-label="Job"]')).not.toBeNull();
     expect(container.querySelector('[aria-label="Processing"]')).toBeNull();
-    click(button('‹ Order'));
+    click(button('Order'));
     expect(useProcessingStore.getState().detailJobID).toBeNull();
     expect(container.querySelector('[aria-label="Processing"]')).not.toBeNull();
     expect(useProcessingStore.getState().steps).toHaveLength(1);
@@ -103,9 +104,9 @@ describe('the window', () => {
   it('folds down to its head and opens again, as the order does (narrow screens)', () => {
     show(jobEntry(1));
     const panel = container.querySelector('.processing-panel')!;
-    click(button('▾'));
+    click(button('Fold the panel down'));
     expect(panel.classList.contains('folded')).toBe(true);
-    click(button('▴'));
+    click(button('Show the panel'));
     expect(panel.classList.contains('folded')).toBe(false);
   });
 
@@ -119,7 +120,7 @@ describe('the window', () => {
 
   it('closes the whole window with the cross', () => {
     show(jobEntry(1));
-    click(button('✕'));
+    click(container.querySelector('.close-x'));
     expect(useProcessingStore.getState()).toMatchObject({ open: false, detailJobID: null });
   });
 
@@ -189,9 +190,12 @@ describe('what it says of the job', () => {
     expect([...container.querySelectorAll('[role="alert"]')].map((a) => a.textContent)).toEqual(['The source failed', 'The result could not be shown on the map.']);
   });
 
-  it('marks a finished result that was resampled, as a symbol with the text as its tooltip', () => {
+  // NM4-65 part 7 (Otto, 31.10.2026): no exclamation mark any more; a warning to confirm comes before the job instead.
+  it('marks a finished result that was resampled by no symbol and no tooltip', () => {
     show(finished(1, { resampled: true }));
-    expect(container.querySelector('.tip.warn')?.getAttribute('data-tip')).toBe('Resampled to a common grid');
+    expect(container.querySelector('.tip.warn')).toBeNull();
+    expect(container.querySelector('.tip')).toBeNull();
+    expect(container.textContent).not.toContain('Resampled');
     show(finished(1, { resampled: false }));
     expect(container.querySelector('.tip')).toBeNull();
   });
@@ -211,7 +215,7 @@ describe('what it says of the job', () => {
     const batch = 'b'.repeat(32);
     act(() => useProcessingStore.setState({ batches: [{ id: batch, title: 'Field 7', titleDefault: 'Field 7', createdAt: new Date(NOW).toISOString(), archived: false, groupId: null, refused: [] }] }));
     show(jobEntry(1, { batchId: batch, part: 'S2' }));
-    expect(container.querySelector('.pm-detail-title .pp-help')?.textContent).toBe('Field 7 · S2');
+    expect(container.querySelector('.pm-detail-title .hint')?.textContent).toBe('Field 7 · S2');
   });
 });
 
@@ -228,8 +232,8 @@ describe('"Run again"', () => {
   it('sends the kept order once, however often it is pressed, and the new job takes the place of the old one', async () => {
     const fetchMock = stubExecution(() => new Response(JSON.stringify(accepted(jobId(9))), { status: 201, headers: { 'Content-Type': 'application/json' } }));
     show(failedJob());
-    const symbol = button('↻')!;
-    expect(symbol.title).toBe('Run again');
+    const symbol = button('Run again')!;
+    expect(tipOf(symbol)).toBe('Run again');
     await act(async () => {
       symbol.click();
       symbol.click();
@@ -246,17 +250,17 @@ describe('"Run again"', () => {
   it('says why the order was not sent, and offers the symbol again', async () => {
     stubExecution(() => new Response(JSON.stringify({ title: 'No', detail: 'step 0 is not valid' }), { status: 422, headers: { 'Content-Type': 'application/problem+json' } }));
     show(failedJob());
-    click(button('↻'));
+    click(button('Run again'));
     await vi.waitFor(() => expect(useProcessingStore.getState().jobs[0].retryError).not.toBeNull());
     expect([...container.querySelectorAll('[role="alert"]')].map((a) => a.textContent)).toEqual(['The source failed', 'step 0 is not valid']);
-    expect(button('↻')).toBeDefined();
+    expect(button('Run again')).toBeDefined();
     expect(useProcessingStore.getState().jobs).toHaveLength(1);
   });
 
   it('marks the old job as superseded', () => {
     show(failedJob({ superseded: true, archived: true }));
     expect(fact('State')).toBe('Failed · Superseded');
-    expect(actions()).toEqual([]);
+    expect(actions()).toEqual(['Open in panel']);
   });
 });
 
@@ -351,29 +355,41 @@ describe('the steps', () => {
 });
 
 describe('the actions', () => {
-  it('of a finished job are "Download (ZIP)" and "Show on map", and no other file, no "Methods", no "Copy"', () => {
+  it('of a finished job are "Download (ZIP)" and "Add to layers", and no other file, no "Methods", no "Copy"', () => {
     show(finished(1, { tiles: { href: '/results/x/WebMercatorQuad/tilejson.json', width: 10, gsd: 10 }, order: ORDER }));
-    expect(actions()).toEqual(['Download (ZIP)', 'Show on map']);
+    expect(actions()).toEqual(['Download (ZIP)', 'Add to layers', 'Open in panel']);
     const link = container.querySelector<HTMLAnchorElement>('.vc-actions a')!;
     expect(link.getAttribute('href')).toBe(`/processing/jobs/${jobId(1)}/results/result.zip`);
     expect(link.hasAttribute('download')).toBe(true);
-    for (const word of ['Methods', 'Copy', 'Remove', 'Delete', 'Open in panel']) expect(container.textContent).not.toContain(word);
+    for (const word of ['Methods', 'Copy', 'Remove', 'Delete']) expect(container.textContent).not.toContain(word);
+  });
+
+  it.each([
+    ['a finished job', () => finished(1, { order: ORDER })],
+    ['a running job', () => jobEntry(1, { phase: 'active', status: status({ jobID: jobId(1), status: 'running', progress: 40 }), order: ORDER })],
+    ['a failed job', () => jobEntry(1, { phase: 'failed', status: status({ jobID: jobId(1), status: 'failed', progress: 100 }), failure: 'The source failed', failureKind: 'source_5xx', order: ORDER })],
+    ['a cancelled job', () => jobEntry(1, { phase: 'dismissed', status: status({ jobID: jobId(1), status: 'dismissed' }), order: ORDER })],
+    ['a deleted job', () => finished(1, { phase: 'dismissed', deletedUntil: new Date(NOW + 3_600_000).toISOString(), serverDeleted: true, order: ORDER })],
+    ['a job without a copy of its order', () => finished(1, { order: null })],
+  ])('has "Open in panel" for %s (Otto, 3.11.2026)', (_, make) => {
+    show(make());
+    expect(actions()).toContain('Open in panel');
   });
 
   it('of a finished job without tiles (an export) is "Download (ZIP)"', () => {
     show(finished(1, { archive: 'export.zip' }));
-    expect(actions()).toEqual(['Download (ZIP)']);
+    expect(actions()).toEqual(['Download (ZIP)', 'Open in panel']);
     expect(container.querySelector('a')?.getAttribute('href')).toBe(`/processing/jobs/${jobId(1)}/results/export.zip`);
   });
 
   it('of a finished job whose results are not read yet are none: there is no file to take', () => {
     show(finished(1, { archive: null }));
-    expect(actions()).toEqual([]);
+    expect(actions()).toEqual(['Open in panel']);
   });
 
   it('of a running job is "Cancel", off until its state is known, and "Cancelling…" while it goes', () => {
     show(jobEntry(1));
-    expect(actions()).toEqual(['Cancel']);
+    expect(actions()).toEqual(['Cancel', 'Open in panel']);
     expect(button('Cancel')!.disabled).toBe(false);
     show(jobEntry(1, { status: null }));
     expect(button('Cancel')!.disabled).toBe(true);
@@ -399,22 +415,22 @@ describe('the actions', () => {
     expect(fact('State')).toBe('Cancelled');
   });
 
-  it('of a failed or cancelled job is "Run again" and nothing else', () => {
+  it('of a failed or cancelled job is "Run again" and "Open in panel"', () => {
     show(jobEntry(1, { phase: 'failed', failure: 'x', order: ORDER }));
-    expect(actions()).toEqual(['↻']);
+    expect(actions()).toEqual(['Run again', 'Open in panel']);
     show(jobEntry(1, { phase: 'dismissed', order: ORDER }));
-    expect(actions()).toEqual(['↻']);
+    expect(actions()).toEqual(['Run again', 'Open in panel']);
   });
 
   it('of an expired job is "Run again" and "Open in panel", and nothing to download', () => {
     show(finished(1, { expired: true, order: ORDER }));
-    expect(actions()).toEqual(['↻', 'Open in panel']);
+    expect(actions()).toEqual(['Run again', 'Open in panel']);
     expect(button('Open in panel')!.getAttribute('aria-disabled')).toBe('false');
   });
 
   it('of a job the server forgot is "Run again" and "Open in panel"', () => {
     show(jobEntry(1, { phase: 'gone', order: ORDER }));
-    expect(actions()).toEqual(['↻', 'Open in panel']);
+    expect(actions()).toEqual(['Run again', 'Open in panel']);
     show(jobEntry(1, { phase: 'gone', order: null }));
     expect(actions()).toEqual(['Open in panel']);
   });
@@ -432,11 +448,11 @@ describe('the actions', () => {
     expect(actions()).toEqual(['Open in panel']);
   });
 
-  it('draws the result on the map from "Show on map"', () => {
+  it('draws the result on the map from "Add to layers"', () => {
     const showOnMap = vi.fn(async () => undefined);
     act(() => useProcessingStore.setState({ showResultOnMap: showOnMap }));
     show(finished(1, { tiles: { href: '/results/x/WebMercatorQuad/tilejson.json', width: 10, gsd: 10 } }));
-    click(button('Show on map'));
+    click(button('Add to layers'));
     expect(showOnMap).toHaveBeenCalledWith(jobId(1));
   });
 });

@@ -36,7 +36,7 @@ from earthx.catalog.pgstac import (
     upsert_items,
     use_pgstac_search_path,
 )
-from earthx.catalog.registry import AdapterKind, CoverageProvider, ItemHolding
+from earthx.catalog.registry import AdapterKind, CoverageProvider, ItemHolding, SearchCapabilities
 from earthx.discovery.materialize import run_materialize
 from earthx.gateway import Policy, UpstreamError
 from earthx.gateway.client import Gateway
@@ -58,6 +58,7 @@ MATERIALIZED = replace(
     ),
     coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
     search_filters=(),
+    search_capabilities=SearchCapabilities(evaluate=False, aoi_coverage=False),
     # The DEM adapter stamps every item with the entry's own acquisition period
     # (adr/0011 F3), so this entry needs a closed one, as the real DEM entry has.
     temporal_extent=COP_DEM_GLO_30.temporal_extent,

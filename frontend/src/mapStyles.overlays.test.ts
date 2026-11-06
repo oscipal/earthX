@@ -112,7 +112,7 @@ describe('Labels', () => {
     }
   });
 
-  it.each(['satellite', 'outlines', 'relief'] as const)('%s has none of its own: it takes the names of Grey when Labels is on, with their glyphs and sprite', (id) => {
+  it.each(['satellite', 'outlines'] as const)('%s has none of its own: it takes the names of Grey when Labels is on, with their glyphs and sprite', (id) => {
     const style = running(id, LABELS);
     // Over Outlines the names use its own tiles; over the satellite imagery they bring a source of their own.
     expect(layer(style, 'ov-labels-place-label')).toMatchObject({ type: 'symbol', source: id === 'outlines' ? 'bm-openmaptiles' : 'bm-labels-openmaptiles' });
@@ -121,7 +121,7 @@ describe('Labels', () => {
     expect(layer(style, 'ov-labels-place-label')?.layout?.visibility).toBeUndefined();
   });
 
-  it.each(['satellite', 'outlines', 'relief'] as const)('%s asks nobody for names and loads no vector tiles while Labels is off', (id) => {
+  it.each(['satellite', 'outlines'] as const)('%s asks nobody for names and loads no vector tiles while Labels is off', (id) => {
     const style = running(id);
     expect(overlayIds(style)).toEqual([]);
     expect(Object.keys(style.sources).filter((key) => key.includes('labels'))).toEqual([]);

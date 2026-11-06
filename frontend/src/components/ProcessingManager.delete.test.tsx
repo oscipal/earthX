@@ -88,8 +88,10 @@ const click = (element: Element | null | undefined) => {
   if (!element) throw new Error(`nothing to click in ${container.textContent}`);
   act(() => element.dispatchEvent(new MouseEvent('click', { bubbles: true })));
 };
-const button = (label: string): HTMLButtonElement => {
-  const found = [...container.querySelectorAll('button')].find((b) => b.textContent?.trim() === label);
+const button = (label: string | RegExp): HTMLButtonElement => {
+  const found = [...container.querySelectorAll('button')].find((b) =>
+    typeof label === 'string' ? b.textContent?.trim() === label || b.getAttribute('aria-label') === label : label.test(b.getAttribute('aria-label') ?? ''),
+  );
   if (!found) throw new Error(`no button ${label} in ${container.textContent}`);
   return found;
 };
@@ -132,8 +134,8 @@ describe('Delete with D', () => {
     click(button('Deleted'));
     expect(states()).toEqual(['Deleted']);
     expect(rows()[0].classList.contains('deleted')).toBe(true);
-    expect(rows()[0].querySelector('.pm-until')?.textContent).toMatch(/^restore until 21 Oct, \d{2}:\d{2}$/u);
-    expect(rows()[0].querySelector('.pm-until')?.getAttribute('title')).toBe(new Date(NOW + DAY).toISOString());
+    expect(rows()[0].querySelector('.pm-until')?.textContent).toMatch(/^21 Oct, \d{2}:\d{2}$/u);
+    expect(rows()[0].querySelector('.pm-until')?.getAttribute('data-tip')).toBe(new Date(NOW + DAY).toISOString());
     expect(job(1)).toMatchObject({ phase: 'dismissed', serverDeleted: true, deletedUntil: new Date(NOW + DAY).toISOString() });
     expect(stored().jobs[0]).toMatchObject({ jobID: jobId(1), deletedUntil: new Date(NOW + DAY).toISOString(), serverDeleted: true });
   });
@@ -333,7 +335,7 @@ describe('Restore', () => {
     put({ jobs: [deleted(1)] });
     mount();
     click(button('Deleted'));
-    expect(restoreIcon(rows()[0])?.getAttribute('title')).toMatch(/^Restore \(possible until 20 Oct, \d{2}:\d{2}\)$/u);
+    expect(restoreIcon(rows()[0])?.getAttribute('data-tip')).toMatch(/^Restore \(possible until 20 Oct, \d{2}:\d{2}\)$/u);
     click(restoreIcon(rows()[0]));
     await settle();
     expect(asked[0]).toBe(`POST /processing/jobs/${jobId(1)}/restore`);
@@ -341,7 +343,7 @@ describe('Restore', () => {
     expect(rows()).toHaveLength(0);
     click(button('Active'));
     expect(states()).toEqual(['Finished']);
-    expect(rows()[0].querySelector('.pm-until')?.textContent).toMatch(/^until 27 Oct, \d{2}:\d{2}$/u);
+    expect(rows()[0].querySelector('.pm-until')?.textContent).toMatch(/^27 Oct, \d{2}:\d{2}$/u);
     expect(job(1)).toMatchObject({ deletedUntil: null, serverDeleted: false, phase: 'successful' });
     expect(stored().jobs[0].deletedUntil).toBeUndefined();
     // The results are read again: the download is back.
@@ -366,7 +368,28 @@ describe('Restore', () => {
     click(button('Deleted'));
     expect(states()).toEqual(['Deleted']);
     expect(restoreIcon(rows()[0])).toBeNull();
-    expect(rows()[0].querySelector('.pm-until')).toBeNull();
+    // The column of the dates names the day a day after the deletion, which has passed: the job is deleted for good (Otto, 3.11.2026).
+    expect(rows()[0].querySelector('.pm-until')?.getAttribute('data-tip')).toBe(job(1).deletedUntil);
+    expect(rows()[0].querySelector('.pm-until')?.textContent).toMatch(/^\d{1,2} [A-Z][a-z]{2}(?: \d{4})?, \d{2}:\d{2}$/u);
+  });
+
+  it('names the day the job expired when that came before the day after its deletion: expired already, or within the day', () => {
+    const early = new Date(NOW - 3_600_000).toISOString();
+    const soon = new Date(NOW + 1_800_000).toISOString();
+    put({
+      jobs: [
+        deleted(1, { expires: early, expired: true }),
+        deleted(2, { expires: soon }),
+        deleted(3),
+      ],
+    });
+    mount();
+    click(button('Deleted'));
+    const until = (n: number) => rows().find((r) => r.textContent?.includes(`Job ${n}`) || r.querySelector(`[data-row-id="${jobId(n)}"]`) || r.getAttribute('data-row-id') === jobId(n))!.querySelector('.pm-until')!;
+    expect(until(1).getAttribute('data-tip')).toBe(early);
+    expect(until(2).getAttribute('data-tip')).toBe(soon);
+    // A job that goes after the day of its deletion has that day: a day after the deletion.
+    expect(until(3).getAttribute('data-tip')).toBe(new Date(NOW + 3_600_000).toISOString());
   });
 
   it('does not ask once the day is over, whatever the screen still shows', async () => {
@@ -417,11 +440,12 @@ describe('Restore', () => {
 
 describe('an entry the server cannot hold any more', () => {
   it.each([
-    ['an expired job', () => finished(1, { expired: true })],
-    ['a cancelled job', () => jobEntry(1, { phase: 'dismissed' })],
-    ['a job the server forgot', () => jobEntry(1, { phase: 'gone', lost: true })],
-    ['a job past its time', () => jobEntry(1, { phase: 'gone', expires: new Date(NOW - 1000).toISOString() })],
-  ])('is deleted here only for a day, asking nobody: %s', async (_, make) => {
+    // The column "Expires" names the day a day after the deletion, or the day the job expired when that came first (Otto, 3.11.2026).
+    ['an expired job', () => finished(1, { expired: true }), /^21 Oct, /u],
+    ['a cancelled job', () => jobEntry(1, { phase: 'dismissed' }), /^21 Oct, /u],
+    ['a job the server forgot', () => jobEntry(1, { phase: 'gone', lost: true }), /^21 Oct, /u],
+    ['a job past its time', () => jobEntry(1, { phase: 'gone', expires: new Date(NOW - 1000).toISOString() }), /^20 Oct, /u],
+  ])('is deleted here only for a day, asking nobody: %s', async (_, make, day) => {
     put({ jobs: [make()] });
     mount();
     click(button('All'));
@@ -430,7 +454,7 @@ describe('an entry the server cannot hold any more', () => {
     expect(asked).toEqual([]);
     expect(job(1)).toMatchObject({ serverDeleted: false, deletedUntil: new Date(NOW + DAY).toISOString() });
     click(button('Deleted'));
-    expect(rows()[0].querySelector('.pm-until')?.textContent).toMatch(/^restore until 21 Oct/u);
+    expect(rows()[0].querySelector('.pm-until')?.textContent).toMatch(day);
     click(restoreIcon(rows()[0]));
     await settle();
     expect(asked).toEqual([]);
@@ -516,14 +540,14 @@ describe('a batch', () => {
     expect(rows()).toHaveLength(0);
     click(button('Deleted'));
     expect(rows()[0].querySelector('.pm-state')?.textContent).toBe('3 deleted');
-    expect(rows()[0].querySelector('.pm-until')?.textContent).toMatch(/^restore until 21 Oct/u);
+    expect(rows()[0].querySelector('.pm-until')?.textContent).toMatch(/^21 Oct, \d{2}:\d{2}$/u);
   });
 
   it('is deleted by a key pressed on one of its parts: the part has no key of its own', async () => {
     for (const n of [1, 2]) serverHolds(jobId(n));
     withBatch([part(1), part(2)]);
     mount();
-    click(button('▸'));
+    click(button(/^Show the parts of/u));
     press(openButton(container.querySelector<HTMLElement>('.pm-parts .pm-row')!), 'd');
     await settle();
     expect(asked).toHaveLength(2);
@@ -545,13 +569,13 @@ describe('a batch', () => {
     serverHolds(jobId(2));
     withBatch([part(1), part(2), part(3)]);
     mount();
-    click(button('▸'));
+    click(button(/^Show the parts of/u));
     const second = container.querySelectorAll<HTMLElement>('.pm-parts .pm-row')[1];
     menuOf(second);
     click(item('Delete'));
     await settle();
     expect(asked).toEqual([`DELETE /processing/jobs/${jobId(2)}`]);
-    expect(rows()[0].querySelector('.pm-state')?.textContent).toBe('2 done · 1 deleted');
+    expect(rows()[0].querySelector('.pm-state')?.textContent).toBe('2 finished · 1 deleted');
     // Not every part is deleted, so the batch stays under "Active".
     expect(titles()).toHaveLength(1);
     expect(job(1).deletedUntil).toBeNull();
@@ -581,7 +605,8 @@ describe('a batch', () => {
     mount();
     click(button('Deleted'));
     expect(restoreIcon(rows()[0])).toBeNull();
-    expect(rows()[0].querySelector('.pm-until')).toBeNull();
+    // The column still names the day, the latest of the parts': a day after they were deleted (Otto, 3.11.2026).
+    expect(rows()[0].querySelector('.pm-until')?.getAttribute('data-tip')).toBe(new Date(NOW - 1000).toISOString());
   });
 
   it('names the soonest end of the days when the parts were deleted at different times', () => {
@@ -591,7 +616,7 @@ describe('a batch', () => {
     ]);
     mount();
     click(button('Deleted'));
-    expect(rows()[0].querySelector('.pm-until')?.getAttribute('title')).toBe(new Date(NOW + 3_600_000).toISOString());
+    expect(rows()[0].querySelector('.pm-until')?.getAttribute('data-tip')).toBe(new Date(NOW + 3_600_000).toISOString());
   });
 
   it('is "Expired" when the parts that are not deleted have expired, and "Deleted" only when all are deleted', () => {
@@ -619,7 +644,7 @@ describe('a reload', () => {
     expect(rows()).toHaveLength(0);
     click(button('Expired'));
     expect(states()).toEqual(['No longer available']);
-    expect(rows()[0].querySelector('.pm-state')?.getAttribute('title')).toBe('The server does not know this job any more.');
+    expect(rows()[0].querySelector('.pm-state')?.getAttribute('data-tip')).toBe('The server does not know this job any more.');
     expect(rows()[0].querySelector('.pm-until')).toBeNull();
   });
 

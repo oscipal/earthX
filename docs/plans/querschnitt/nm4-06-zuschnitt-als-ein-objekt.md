@@ -41,3 +41,7 @@ Wird Processing aus einem Layer gestartet, der schon gemergt und auf die AOI zug
 - Alle vier Pflicht-Checks der CI sind grün.
 - Log-Zeile(n) mit PR-Nummer. `docs/plans/nach-m4-backlog.md` nicht ändern (pflegt der Planungs-Chat, siehe Kopf des Backlogs).
 - Vor „fertig“ ist main geholt.
+
+## Nachtrag NM4-06 (Otto, 2026-11-01, Browsertest zu [#264](https://github.com/oscipal/earthX/pull/264))
+
+Ändert §2 „Area steht fest auf ‚AOI only‘“: Beim Process aus einem gemergten Zuschnitt (Ansicht „Crop to AOI“ / „Crop & merge to AOI“ und angehefteter Layer) ist die Fläche **wählbar**: „AOI only“ (Vorgabe, die AOI des Zuschnitts) und „Whole scene“ (die ganzen Szenen, kein AOI im Auftrag). „Run as“ bleibt ausgeblendet; für mehrere Überflüge gilt die Wahl „This pass only / All passes (n jobs)“ aus #263 auf der gewählten Fläche. Das Weitere steht in `adr/0019` „Nachtrag NM4-05b“ (Zusatz NM4-06 vom 1.11.2026). Der Originaltext oben bleibt stehen.

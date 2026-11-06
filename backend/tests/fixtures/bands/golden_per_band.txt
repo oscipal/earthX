@@ -1,0 +1,27 @@
+EarthX band list
+Dataset: Synthetic dataset
+Layout: one file per band
+
+File: exports/B02_blue_10m.tif
+Band | Name | Common name | Wavelength (um) | Source resolution (m) | Export resolution (m) | Resampling | Data type | Scale | Offset | Nodata | Unit
+1 | B02 | blue | 0.49 | 10 | 10 | none | uint16 | 0.0001 | -0.1 | 0 | 1
+
+File: exports/B04_red_10m.tif
+Band | Name | Common name | Wavelength (um) | Source resolution (m) | Export resolution (m) | Resampling | Data type | Scale | Offset | Nodata | Unit
+1 | B04 | red | 0.665 | 10 | 10 | none | uint16 | 0.0001 | -0.1 | 0 | 1
+
+File: exports/B05_rededge1_20m.tif
+Band | Name | Common name | Wavelength (um) | Source resolution (m) | Export resolution (m) | Resampling | Data type | Scale | Offset | Nodata | Unit
+1 | B05 | rededge1 | 0.705 | 20 | 20 | none | uint16 | 0.0001 | -0.1 | 0 | 1
+
+File: exports/B01_coastal_60m.tif
+Band | Name | Common name | Wavelength (um) | Source resolution (m) | Export resolution (m) | Resampling | Data type | Scale | Offset | Nodata | Unit
+1 | B01 | coastal | 0.443 | 60 | 60 | none | uint16 | 0.0001 | -0.1 | 0 | 1
+
+File: exports/AOT_10m.tif
+Band | Name | Common name | Wavelength (um) | Source resolution (m) | Export resolution (m) | Resampling | Data type | Scale | Offset | Nodata | Unit
+1 | AOT | - | - | 10 | 10 | none | uint16 | 0.001 | 0 | 0 | 1
+
+File: exports/SCL_20m.tif
+Band | Name | Common name | Wavelength (um) | Source resolution (m) | Export resolution (m) | Resampling | Data type | Scale | Offset | Nodata | Unit
+1 | SCL | - | - | 20 | 20 | none | uint8 | 1 | 0 | 0 | -

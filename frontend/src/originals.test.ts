@@ -164,7 +164,7 @@ describe('what a click will load, told before the click (Otto, 31.10.2026)', () 
 
   it('a file without a size says so: the sum is at least what is known', () => {
     const partly = item('A', { red: { href: `https://${HOST}/A/red.tif`, 'file:size': 2_000_000 }, nir: { href: `https://${HOST}/A/nir.tif` } }, ['red', 'nir']);
-    expect(summary(collection(), partly)).toBe('1 scene · 2.0 MB and more, some sizes unknown');
+    expect(summary(collection(), partly)).toBe('1 scene · 2 MB and more, some sizes unknown');
   });
 
   it('no size known at all says the size is unknown, and no scene or no file is no size either', () => {

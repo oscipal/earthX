@@ -12,7 +12,10 @@ import { batchEntry, finished, jobEntry, jobId, NOW, status } from '../fixtures/
 import { SHELF_KEY } from '../jobShelf';
 import { resetJobs, setTrackerOptions, useProcessingStore } from '../processingStore';
 import css from '../index.css?raw';
-import ProcessingManager, { GROUP_NOT_EMPTY_TIP, NOT_KEPT_TEXT, STORAGE_FULL_TIP } from './ProcessingManager';
+import { useAppStore } from '../store';
+import tokens from '../tokens.css?raw';
+import ProcessingManager, { ADD_TO_LAYERS_TIP, ALREADY_A_LAYER_TIP, GROUP_NOT_EMPTY_TIP, NOT_KEPT_TEXT, STORAGE_FULL_TIP } from './ProcessingManager';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -78,7 +81,7 @@ const click = (element: Element | null | undefined) => {
   act(() => element.dispatchEvent(new MouseEvent('click', { bubbles: true })));
 };
 const button = (label: string | RegExp, within: ParentNode = container): HTMLButtonElement => {
-  const found = [...within.querySelectorAll('button')].find((b) => (typeof label === 'string' ? b.textContent?.trim() === label : label.test(b.textContent ?? '')));
+  const found = [...within.querySelectorAll('button')].find((b) => (typeof label === 'string' ? b.textContent?.trim() === label || b.getAttribute('aria-label') === label : label.test(b.textContent ?? '') || label.test(b.getAttribute('aria-label') ?? '')));
   if (!found) throw new Error(`no button ${String(label)} in ${container.textContent}`);
   return found;
 };
@@ -100,6 +103,11 @@ const type = (input: HTMLInputElement, value: string) => {
   });
 };
 const key = (target: Element, name: string) => act(() => target.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true })));
+// An entry of the menu "⋯" in the head of a group: opened first, then found in the pop-up over the window.
+const groupItem = (group: string, label: string): HTMLButtonElement => {
+  click(container.querySelector(`.pm-group[aria-label="${group}"] button[aria-label="Actions for ${group}"]`));
+  return document.querySelector<HTMLButtonElement>(`[role="menuitem"][aria-label="${label}"]`)!;
+};
 const field = () => container.querySelector<HTMLInputElement>('input.pm-rename')!;
 
 describe('the rows', () => {
@@ -117,7 +125,7 @@ describe('the rows', () => {
     const first = rows()[0];
     expect(first.querySelector('.pm-state')?.textContent).toBe('70%');
     expect(first.querySelector('progress')?.getAttribute('value')).toBe('70');
-    expect(first.querySelector('.pm-until')?.textContent).toMatch(/^until 27 Oct, \d{2}:\d{2}$/u);
+    expect(first.querySelector('.pm-until')?.textContent).toMatch(/^27 Oct, \d{2}:\d{2}$/u);
   });
 
   it('shows a finished job as such, with "Download (ZIP)" at the end of the row and nothing else', () => {
@@ -151,7 +159,7 @@ describe('the rows', () => {
     expect(off.getAttribute('data-tip')).toBe('Expired: results are kept for 7 days.');
     expect(off.disabled).toBe(false);
     // The date stays, so the user can see when it went.
-    expect(rows()[0].querySelector('.pm-until')?.textContent).toMatch(/^until \d+ Oct, \d{2}:\d{2}$/u);
+    expect(rows()[0].querySelector('.pm-until')?.textContent).toMatch(/^\d{1,2} Oct, \d{2}:\d{2}$/u);
   });
 
   it('shows a failed job with its reason, and a cancelled one as cancelled', () => {
@@ -167,7 +175,7 @@ describe('the rows', () => {
     put({ jobs: [jobEntry(1, { title: null, titleDefault: null }), jobEntry(2, { title: long })] });
     mount();
     expect(titles()[0]).toBe('Untitled job');
-    expect(rows()[1].querySelector('.pm-open')?.getAttribute('title')).toBe(long);
+    expect(rows()[1].querySelector('.pm-open')?.getAttribute('data-tip')).toBe(long);
   });
 
   it('opens the details of a job in the processing window with a click on the row', () => {
@@ -190,7 +198,7 @@ describe('the rows', () => {
     expect(deletable).toEqual([true, false, true, true]);
     const text = container.textContent ?? '';
     for (const word of ['Methods', 'Copy', 'Remove']) expect(text).not.toContain(word);
-    expect(container.querySelector('[title*="Remove"], [aria-label*="Remove"]')).toBeNull();
+    expect(container.querySelector('[data-tip*="Remove"], [aria-label*="Remove"]')).toBeNull();
   });
 });
 
@@ -206,13 +214,15 @@ describe('the menu of a row', () => {
     expect([...document.querySelectorAll('[role="menu"] button')].map((b) => b.textContent)).toEqual(['RenameR', 'Move to group…G', 'ArchiveA', 'DeleteD']);
   });
 
-  it('closes on Escape and gives the focus back to its button', () => {
+  it('stays open on Escape, with the focus where it was (Otto, 2.11.2026: Esc closes nothing)', () => {
     put({ jobs: [jobEntry(1)] });
     mount();
     menuOf(rows()[0]);
-    key(document.querySelector('[role="menu"] button')!, 'Escape');
-    expect(document.querySelector('[role="menu"]')).toBeNull();
-    expect(document.activeElement).toBe(container.querySelector('button[aria-haspopup="menu"]'));
+    const first = document.querySelector<HTMLElement>('[role="menu"] button')!;
+    act(() => first.focus());
+    key(first, 'Escape');
+    expect(document.querySelector('[role="menu"]')).not.toBeNull();
+    expect(document.activeElement).toBe(first);
   });
 
   it('lies outside the scrolling list, over the whole window, so the panel cannot cut it off', () => {
@@ -242,8 +252,8 @@ describe('the menu of a row', () => {
     click(items()[1]);
     expect(items().map((b) => b.textContent)).toEqual(['Ungrouped', 'Field 7']);
     expect(document.activeElement).toBe(items()[0]);
-    // Escape still works from there.
-    key(items()[0], 'Escape');
+    // A click beside it closes it from there (Esc does not, Otto, 2.11.2026).
+    act(() => void document.body.dispatchEvent(new Event('pointerdown', { bubbles: true })));
     expect(document.querySelector('[role="menu"]')).toBeNull();
   });
 
@@ -268,14 +278,15 @@ describe('rename', () => {
     expect(stored().jobs[0].title).toBe('Field 7 · NDVI');
   });
 
-  it('brings the default title back for an empty name', () => {
+  it('takes no empty name: the title stays as it was (Otto, 3.11.2026)', () => {
     put({ jobs: [jobEntry(1, { title: 'Mine', titleDefault: 'Band math · Sentinel-2 L2A · 1 Oct' })] });
     mount();
     menuOf(rows()[0]);
     click(item('Rename'));
     type(field(), '   ');
     key(field(), 'Enter');
-    expect(titles()).toEqual(['Band math · Sentinel-2 L2A · 1 Oct']);
+    expect(titles()).toEqual(['Mine']);
+    expect(container.querySelector('input.pm-rename')).toBeNull();
   });
 
   it('drops the edit on Escape and keeps the title', () => {
@@ -398,7 +409,7 @@ describe('groups', () => {
   it('makes a group with "New group" and shows it, empty, under its name', () => {
     put({ jobs: [jobEntry(1)] });
     mount();
-    click(button('＋ New group'));
+    click(button('New group'));
     type(field(), 'Field 7');
     key(field(), 'Enter');
     const sections = [...container.querySelectorAll('.pm-group')].map((s) => s.getAttribute('aria-label'));
@@ -408,7 +419,7 @@ describe('groups', () => {
 
   it('makes no group of an empty name', () => {
     mount();
-    click(button('＋ New group'));
+    click(button('New group'));
     type(field(), '  ');
     key(field(), 'Enter');
     expect(useProcessingStore.getState().groups).toEqual([]);
@@ -443,7 +454,7 @@ describe('groups', () => {
   it('renames a group, and keeps its jobs', () => {
     put({ jobs: [jobEntry(1, { groupId: GROUP })], groups: [{ id: GROUP, name: 'Field 7' }] });
     mount();
-    click(container.querySelector('button[aria-label="Rename Field 7"]'));
+    click(groupItem('Field 7', 'Rename Field 7'));
     type(field(), 'Field 8');
     key(field(), 'Enter');
     expect(container.querySelector('.pm-group[aria-label="Field 8"] .pm-group-head h3')?.textContent).toBe('Field 8');
@@ -454,13 +465,13 @@ describe('groups', () => {
   it('lets only an empty group go, and a group that holds an archived job is not empty', () => {
     put({ jobs: [jobEntry(1, { groupId: GROUP, archived: true })], groups: [{ id: GROUP, name: 'Field 7' }, { id: OTHER_GROUP, name: 'Empty' }] });
     mount();
-    const full = container.querySelector<HTMLButtonElement>('button[aria-label^="Remove Field 7"]')!;
+    const full = groupItem('Field 7', 'Remove Field 7: ' + GROUP_NOT_EMPTY_TIP);
     expect(full.getAttribute('aria-disabled')).toBe('true');
-    expect(full.getAttribute('data-tip')).toBe(GROUP_NOT_EMPTY_TIP);
+    expect(tipOf(full)).toBe(GROUP_NOT_EMPTY_TIP);
     click(full);
     expect(useProcessingStore.getState().groups).toHaveLength(2);
     expect(useProcessingStore.getState().removeGroup(GROUP)).toBe(false);
-    click(container.querySelector('button[aria-label="Remove Empty"]'));
+    click(groupItem('Empty', 'Remove Empty'));
     expect(useProcessingStore.getState().groups.map((g) => g.name)).toEqual(['Field 7']);
   });
 
@@ -562,7 +573,7 @@ describe('the keys of a focused row (R, G, A)', () => {
   it('act on the batch for a part of it: a part has no keys of its own', () => {
     put({ jobs: [jobEntry(1, { batchId: BATCH, part: 'S1' })], batches: [batchEntry(BATCH)] });
     mount();
-    click(button('▸'));
+    click(button(/^Show the parts of/u));
     const part = container.querySelector<HTMLElement>('.pm-parts .pm-row')!;
     press(openButton(part), 'a');
     expect(useProcessingStore.getState().batches[0].archived).toBe(true);
@@ -577,7 +588,7 @@ describe('the keys of a focused row (R, G, A)', () => {
     for (const letter of ['a', 'g', 'r']) expect(press(field(), letter).defaultPrevented).toBe(false);
     expect(rows()).toHaveLength(1);
     key(field(), 'Escape');
-    click(button('＋ New group'));
+    click(button('New group'));
     expect(press(field(), 'a').defaultPrevented).toBe(false);
     expect(useProcessingStore.getState().jobs[0].archived).toBe(false);
   });
@@ -695,7 +706,7 @@ describe('the letters of the open menu', () => {
   it('have no letter for an action the row does not offer: a part has only "Cancel"', () => {
     put({ jobs: [jobEntry(1, { batchId: BATCH, part: 'S1' })], batches: [batchEntry(BATCH)] });
     mount();
-    click(button('▸'));
+    click(button(/^Show the parts of/u));
     menuOf(container.querySelector('.pm-parts .pm-row')!);
     expect(press(document.activeElement!, 'r').defaultPrevented).toBe(false);
     expect(press(document.activeElement!, 'a').defaultPrevented).toBe(false);
@@ -832,7 +843,7 @@ describe('dragging a row to a group', () => {
   it('does not offer a part of a batch, or a row that is being renamed, for dragging', () => {
     put({ jobs: [jobEntry(1, { batchId: BATCH, part: 'S1' }), jobEntry(2)], batches: [batchEntry(BATCH)] });
     mount();
-    click(button('▸'));
+    click(button(/^Show the parts of/u));
     expect(container.querySelector('.pm-parts .pm-row')!.hasAttribute('draggable')).toBe(false);
     expect(rows()[0].getAttribute('draggable')).toBe('true');
     press(openButton(rows()[1]), 'r');
@@ -915,7 +926,7 @@ describe('the keys with no click first', () => {
     put({ jobs: [jobEntry(1)] });
     mount();
     over(rows()[0]);
-    click(button('＋ New group'));
+    click(button('New group'));
     expect(press(field(), 'a').defaultPrevented).toBe(false);
     key(field(), 'Escape');
     expect(press(document.body, 'a', { ctrlKey: true }).defaultPrevented).toBe(false);
@@ -958,7 +969,7 @@ describe('the keys with no click first', () => {
     put({ jobs: [jobEntry(1)] });
     mount();
     expect(press(document.body, 'ArrowDown').defaultPrevented).toBe(false);
-    click(button('＋ New group'));
+    click(button('New group'));
     expect(press(field(), 'ArrowDown').defaultPrevented).toBe(false);
   });
 });
@@ -999,7 +1010,7 @@ describe('the focus of a row', () => {
   it('is not set on the row of a part of a batch: its keys are the batch\'s', () => {
     put({ jobs: [jobEntry(1, { batchId: BATCH, part: 'S1' })], batches: [batchEntry(BATCH)] });
     mount();
-    click(button('▸'));
+    click(button(/^Show the parts of/u));
     const part = container.querySelector<HTMLElement>('.pm-parts .pm-row')!;
     (document.activeElement as HTMLElement | null)?.blur();
     down(part);
@@ -1052,7 +1063,7 @@ describe('the focus of a row', () => {
     mount();
     openButton(rows()[0]).focus();
     press(openButton(rows()[0]), 'a');
-    click(button('＋ New group'));
+    click(button('New group'));
     await new Promise((resolve) => setTimeout(resolve, 5));
     expect(document.activeElement).toBe(field());
   });
@@ -1073,10 +1084,12 @@ describe('folding a group up', () => {
     expect(group('Field 7').querySelectorAll('.pm-row')).toHaveLength(2);
     click(fold('Field 7'));
     expect(group('Field 7').querySelectorAll('.pm-row')).toHaveLength(0);
-    expect(group('Field 7').querySelector('.pm-group-name')?.textContent).toBe('Field 7 (2)');
+    expect(group('Field 7').querySelector('.pm-count')?.textContent).toBe('2');
     expect(fold('Field 7').getAttribute('aria-expanded')).toBe('false');
     click(fold('Field 7'));
     expect(group('Field 7').querySelectorAll('.pm-row')).toHaveLength(2);
+    // The head says the count open as well as folded; the name is the name alone.
+    expect(group('Field 7').querySelector('.pm-count')?.textContent).toBe('2');
     expect(group('Field 7').querySelector('.pm-group-name')?.textContent).toBe('Field 7');
   });
 
@@ -1120,16 +1133,16 @@ describe('folding a group up', () => {
     put({ jobs: [jobEntry(1, { groupId: GROUP }), jobEntry(2, { groupId: GROUP, archived: true })], groups: [{ id: GROUP, name: 'Field 7' }] });
     mount();
     click(fold('Field 7'));
-    expect(group('Field 7').querySelector('.pm-group-name')?.textContent).toBe('Field 7 (1)');
+    expect(group('Field 7').querySelector('.pm-count')?.textContent).toBe('1');
     click(button('All'));
-    expect(group('Field 7').querySelector('.pm-group-name')?.textContent).toBe('Field 7 (2)');
+    expect(group('Field 7').querySelector('.pm-count')?.textContent).toBe('2');
   });
 
   it('does not stop a group from being renamed or removed while it is folded', () => {
     put({ groups: [{ id: GROUP, name: 'Empty' }] });
     mount();
     click(fold('Empty'));
-    click(container.querySelector('button[aria-label="Remove Empty"]'));
+    click(groupItem('Empty', 'Remove Empty'));
     expect(useProcessingStore.getState().groups).toEqual([]);
   });
 
@@ -1171,10 +1184,10 @@ describe('a batch', () => {
     expect(rows()).toHaveLength(1);
     expect(titles()).toEqual(['Band math · Sentinel-2 L2A · 12 Oct']);
     expect(container.querySelectorAll('.pm-parts')).toHaveLength(0);
-    click(button('▸'));
+    click(button(/^Show the parts of/u));
     const list = container.querySelector('.pm-parts')!;
     expect([...list.querySelectorAll('.pm-title')].map((t) => t.textContent)).toEqual(['S1', 'S2', 'S3', 'S4']);
-    click(button('▾'));
+    click(button(/^Fold up/u));
     expect(container.querySelector('.pm-parts')).toBeNull();
   });
 
@@ -1199,8 +1212,8 @@ describe('a batch', () => {
     withBatch(jobs, { refused: [{ label: 'S5', message: 'no good' }] });
     mount();
     const row = rows()[0];
-    expect(row.querySelector('.pm-state')?.textContent).toBe('2 done · 1 running · 1 refused · 1 failed');
-    expect(row.querySelector('.pm-until')?.getAttribute('title')).toBe(early);
+    expect(row.querySelector('.pm-state')?.textContent).toBe('2 finished · 1 running · 1 refused · 1 failed');
+    expect(row.querySelector('.pm-until')?.getAttribute('data-tip')).toBe(early);
     // 100 + 100 + 50 + 100 + 100 (refused) over five parts
     expect(row.querySelector('.pm-line + progress')?.getAttribute('value')).toBe('90');
   });
@@ -1214,7 +1227,7 @@ describe('a batch', () => {
   it('lists a part the server refused, without a job, with the reason as its tooltip', () => {
     withBatch(parts(1), { refused: [{ label: 'S2', message: 'no good' }] });
     mount();
-    click(button('▸'));
+    click(button(/^Show the parts of/u));
     const refused = container.querySelector('.pm-row.refused')!;
     expect(refused.querySelector('.pm-title')?.textContent).toBe('S2');
     expect(refused.querySelector('.pm-state')?.textContent).toBe('Refused');
@@ -1227,7 +1240,7 @@ describe('a batch', () => {
   it('gives a part its download and a menu with nothing but "Delete" once it is done and "Cancel" while it runs', () => {
     withBatch([finished(1, { batchId: BATCH, part: 'S1' }), jobEntry(2, { batchId: BATCH, part: 'S2' })]);
     mount();
-    click(button('▸'));
+    click(button(/^Show the parts of/u));
     const [done, running] = [...container.querySelectorAll<HTMLElement>('.pm-parts .pm-row')];
     expect(done.querySelector('a[aria-label="Download (ZIP)"]')).not.toBeNull();
     menuOf(done);
@@ -1304,7 +1317,7 @@ describe('a batch', () => {
       withBatch([gone(1), failed(2), jobEntry(3, { batchId: BATCH, part: 'S3', phase: 'dismissed', status: null })]);
       mount();
       expect(all()).toBeNull();
-      const line = () => [...container.querySelector('.pm-row.batch .pm-line')!.children].map((c) => c.className.split(' ')[0]);
+      const line = () => [...container.querySelector('.pm-row.batch .pm-line')!.children].map((c) => c.className.replace(/^icon-btn /u, '').split(' ')[0]);
       const without = line();
       put({ jobs: [part(1), part(2)] });
       expect(all()).not.toBeNull();
@@ -1333,7 +1346,7 @@ describe('a batch', () => {
     it('is hidden above 25 GB where the sizes are known, with the reason as a ⚠ in its place, and shown at that size', () => {
       withBatch([part(1, { bytes: 13e9 }), part(2, { bytes: 12e9 + 1 })]);
       mount();
-      const line = () => [...container.querySelector('.pm-row.batch .pm-line')!.children].map((c) => c.className.split(' ')[0]);
+      const line = () => [...container.querySelector('.pm-row.batch .pm-line')!.children].map((c) => c.className.replace(/^icon-btn /u, '').split(' ')[0]);
       expect(all()).toBeNull();
       const warning = container.querySelector('.pm-row.batch .pm-line .pm-icon .tip.warn')!;
       expect(warning.getAttribute('data-tip')).toBe('Too large for one ZIP (over 25 GB); download parts separately.');
@@ -1355,7 +1368,7 @@ describe('a batch', () => {
     it('is not on a job of its own, nor on the parts of an opened batch', () => {
       put({ jobs: [part(1), part(2), finished(3)], batches: [batchEntry(BATCH)] });
       mount();
-      click(button('▸'));
+      click(button(/^Show the parts of/u));
       expect(container.querySelectorAll('[aria-label^="Download all (ZIP)"]')).toHaveLength(1);
     });
 
@@ -1509,7 +1522,7 @@ describe('a batch', () => {
         await vi.waitFor(() => expect(deleted).toEqual([jobId(2), jobId(3)]));
       });
       expect(useProcessingStore.getState().jobs.map((j) => j.phase)).toEqual(['successful', 'dismissed', 'dismissed']);
-      expect(rows()[0].querySelector('.pm-state')?.textContent).toBe('1 done · 2 cancelled');
+      expect(rows()[0].querySelector('.pm-state')?.textContent).toBe('1 finished · 2 cancelled');
     });
 
     it('is offered only while a part runs', () => {
@@ -1715,5 +1728,264 @@ describe('a job the server no longer has', () => {
     await vi.waitFor(() => expect(rows()[0].querySelector('.pm-state')?.textContent).toBe('No longer available'));
     expect(titles()).toEqual(['Kept']);
     expect(stored().jobs[0]).toMatchObject({ jobID: jobId(1), lost: true });
+  });
+});
+
+// Otto, 3.11.2026 (#283): a job is one line in the dock, with the pencil at its title and "＋" before "⇩" and "⋯".
+describe('the line of a job', () => {
+  const tiles = { href: '/results/r/WebMercatorQuad/tilejson.json', width: 1000, gsd: 10 };
+  const places = (row: Element) => [...row.querySelector('.pm-line')!.children].map((e) => e.getAttribute('aria-label')?.split(':')[0] ?? e.className.split(' ')[0]);
+  const addButton = (row: Element) => row.querySelector<HTMLButtonElement>('button[aria-label^="Add to layers"]');
+
+  it('keeps the title alone in the button that opens the details, with the full title as its tooltip, and the status and the date beside it', () => {
+    const long = 'A job with a title that is much longer than the line of the dock can hold';
+    put({ jobs: [finished(1, { title: long })] });
+    mount();
+    const row = rows()[0];
+    const open = row.querySelector<HTMLButtonElement>('.pm-open')!;
+    expect(tipOf(open)).toBe(long);
+    expect([...open.children].map((c) => c.className)).toEqual(['pm-title']);
+    expect(row.querySelector('.pm-meta')!.parentElement).toBe(row.querySelector('.pm-line'));
+    expect(row.querySelector('.pm-state')!.textContent).toBe('Finished');
+    expect(row.querySelector('.pm-until')!.textContent).toMatch(/^27 Oct, \d{2}:\d{2}$/u);
+  });
+
+  it('has "+" and the download in two places of their own and "⋯" last, and leaves both empty for a job that runs', () => {
+    put({ jobs: [finished(1, { tiles }), jobEntry(3, { phase: 'active', status: status({ jobID: jobId(3), status: 'running', progress: 40 }) })] });
+    mount();
+    const [done, running] = rows().map((r) => [...r.querySelector('.pm-line')!.children].slice(-3));
+    expect(done.map((e) => e.getAttribute('aria-label')?.split(':')[0] ?? e.className)).toEqual(['Add to layers', 'Download (ZIP)', 'pm-menu']);
+    expect(running[0].getAttribute('aria-hidden')).toBe('true');
+    expect(running[1].getAttribute('aria-hidden')).toBe('true');
+    expect(running[2].classList.contains('pm-menu')).toBe(true);
+    // The state stands where the date would: the date is not drawn, for a screen reader the state is there.
+    expect(rows()[1].querySelector('.pm-meta.running .pm-state')!.textContent).toBe('40%');
+  });
+
+  it('puts the progress of a job that runs in a bar of its own in its row, and none on a finished one', () => {
+    put({ jobs: [jobEntry(1, { phase: 'active', status: status({ jobID: jobId(1), status: 'running', progress: 70 }) }), finished(2)] });
+    mount();
+    const [running, done] = rows();
+    expect(running.querySelector(':scope > progress.pm-progress')!.getAttribute('value')).toBe('70');
+    expect(done.querySelector('progress')).toBeNull();
+  });
+
+  it('names the columns under the head of every open group, quietly, and writes the date as "27 Oct, 14:02" (as in the details) without "until"', () => {
+    put({
+      jobs: [finished(1, { groupId: GROUP }), finished(2), finished(3, { groupId: OTHER_GROUP })],
+      groups: [{ id: GROUP, name: 'Field 7' }, { id: OTHER_GROUP, name: 'Field 8' }],
+    });
+    mount();
+    const headers = [...container.querySelectorAll('.pm-group')].map((g) => g.querySelector('.pm-columns'));
+    expect(headers).toHaveLength(3);
+    for (const [index, header] of headers.entries()) {
+      expect([...header!.children].map((c) => c.textContent), String(index)).toEqual(['Title', 'Expires']);
+      expect(header!.getAttribute('aria-hidden')).toBe('true');
+      // Under the head of the group, over its jobs.
+      expect(header!.previousElementSibling!.classList.contains('pm-group-head')).toBe(true);
+      expect(header!.nextElementSibling!.classList.contains('pm-rows')).toBe(true);
+    }
+    expect(rows()[0].querySelector('.pm-until')!.textContent).toMatch(/^\d{1,2} [A-Z][a-z]{2}(?: \d{4})?, \d{2}:\d{2}$/u);
+    expect(rows()[0].textContent).not.toMatch(/until/iu);
+  });
+
+  it('has no titles under a group that is folded up or empty, and the same columns in every group', () => {
+    put({ jobs: [finished(1, { groupId: GROUP })], groups: [{ id: GROUP, name: 'Field 7' }, { id: OTHER_GROUP, name: 'Empty' }] });
+    mount();
+    const headers = () => [...container.querySelectorAll('.pm-group')].map((g) => g.querySelector('.pm-columns') !== null);
+    expect(headers()).toEqual([false, true, false]);
+    click(container.querySelector('.pm-group[aria-label="Field 7"] button[aria-expanded]'));
+    expect(headers()).toEqual([false, false, false]);
+  });
+
+  it('calls the date "Expires" in every filter', () => {
+    put({
+      jobs: [
+        finished(1),
+        finished(2, { expires: new Date(NOW - 86_400_000).toISOString(), expired: true }),
+        finished(3, { phase: 'dismissed', deletedUntil: new Date(NOW + 3_600_000).toISOString(), serverDeleted: true }),
+      ],
+    });
+    mount();
+    for (const filter of ['Active', 'Expired', 'Deleted', 'All']) {
+      click(button(filter));
+      expect(container.querySelector('.pm-col-until')!.textContent, filter).toBe('Expires');
+    }
+  });
+
+  it('puts the marks "Archived" and "Superseded" side by side in one place under the title, not one over the other', () => {
+    put({ jobs: [finished(1, { archived: true, superseded: true }), finished(2, { archived: true })] });
+    mount();
+    click(button('All'));
+    const [both, one] = rows();
+    const tags = both.querySelector('.pm-tags')!;
+    expect([...tags.children].map((t) => t.textContent)).toEqual(['Archived', 'Superseded']);
+    expect(tags.parentElement!.classList.contains('pm-meta')).toBe(true);
+    expect([...one.querySelector('.pm-tags')!.children].map((t) => t.textContent)).toEqual(['Archived']);
+    expect(css).toMatch(/\.pm-tags \{\s*display: flex;\s*flex-wrap: nowrap;/u);
+    // They stand across all the columns, in the dock and under 900 px, so that they stand side by side whatever the width.
+    expect(css).toMatch(/\.pm-tags,\s*\.pm-meta > \.pm-tag \{\s*grid-column: 1 \/ -1;\s*grid-row: 2;/u);
+    expect(css).toMatch(/\.pm-tags,\s*\.pm-meta > \.pm-tag \{\s*grid-column: 1 \/ -1;\s*grid-row: 3;/u);
+    // A job with no mark has no place for it.
+    put({ jobs: [finished(3)] });
+    expect(container.querySelector('.pm-tags')).toBeNull();
+  });
+
+  it('has no titles of columns over an empty list', () => {
+    put({ jobs: [] });
+    mount();
+    expect(container.querySelector('.pm-columns')).toBeNull();
+  });
+
+  it('has the pencil beside the title, in a place of its own and not over it, quiet like the one of a layer', () => {
+    const edit = css.slice(css.indexOf('\n.pm-edit {') + 1);
+    const rule = edit.slice(0, edit.indexOf('}'));
+    expect(rule).toMatch(/grid-column: 2;\s*grid-row: 1;/u);
+    expect(rule).not.toMatch(/justify-self|background|z-index|color/u);
+    // The same quiet icon button as the pencil of a layer (UI-04 part 3a): its colour is the one of `.icon-btn.quiet`.
+    expect(css).toMatch(/\.icon-btn\.quiet \{\s*color: var\(--muted\)/u);
+  });
+
+  it('hides the titles where the status and the date stand under the title', () => {
+    const media = css.slice(css.indexOf('@media (pointer: coarse), (max-width: 899px) {\n  .pm-list'));
+    expect(media).toMatch(/\.pm-columns \{\s*display: none;/u);
+    expect(css).toMatch(/\.pm-columns \{[^}]*grid-template-columns: minmax\(0, 1fr\) var\(--pm-icon\) var\(--pm-date\) repeat\(3, var\(--pm-icon\)\)/u);
+  });
+
+  it('puts the pencil after the title and "＋", "⇩", "⋯" at the end, in that order', () => {
+    put({ jobs: [finished(1, { tiles })] });
+    mount();
+    expect(places(rows()[0])).toEqual(['pm-open', 'pm-meta', 'Rename job', 'Add to layers', 'Download (ZIP)', 'pm-menu']);
+  });
+
+  it('renames in place with the pencil, drops an empty name and an Escape, and keeps a new one', () => {
+    put({ jobs: [finished(1, { title: 'Mine' })] });
+    mount();
+    const pencil = () => rows()[0].querySelector<HTMLButtonElement>('.pm-edit')!;
+    // As in the layer manager: the symbol of a pencil, the tooltip and the name for a screen reader the same.
+    expect(tipOf(pencil())).toBe('Rename job');
+    expect(pencil().getAttribute('aria-label')).toBe('Rename job');
+    expect(pencil().querySelector('svg')).not.toBeNull();
+    expect(pencil().textContent).toBe('');
+    click(pencil());
+    type(field(), '');
+    key(field(), 'Enter');
+    expect(titles()).toEqual(['Mine']);
+    click(pencil());
+    type(field(), 'Changed');
+    key(field(), 'Escape');
+    expect(titles()).toEqual(['Mine']);
+    expect(container.querySelector('.pm-row')).not.toBeNull();
+    click(pencil());
+    type(field(), 'Field 7 · NDVI');
+    key(field(), 'Enter');
+    expect(titles()).toEqual(['Field 7 · NDVI']);
+    expect(stored().jobs[0].title).toBe('Field 7 · NDVI');
+  });
+
+  it('has no pencil on the part of a batch, whose name is its scene', () => {
+    put({ jobs: [finished(1, { batchId: BATCH, part: 'S1' })], batches: [batchEntry(BATCH)] });
+    mount();
+    click(container.querySelector('.pm-open'));
+    const part = container.querySelector('.pm-parts .pm-row')!;
+    expect(part.querySelector('.pm-edit')).toBeNull();
+    expect(container.querySelector('.pm-row.batch .pm-edit')).not.toBeNull();
+  });
+
+  describe('"＋" Add to layers', () => {
+    it('is there for a finished job with a result on the map, and draws it as a layer', () => {
+      const show = vi.fn(async () => undefined);
+      put({ jobs: [finished(1, { tiles })], showResultOnMap: show });
+      useAppStore.setState({ layers: [] });
+      mount();
+      const add = addButton(rows()[0])!;
+      expect(tipOf(add)).toBe(ADD_TO_LAYERS_TIP);
+      expect(add.getAttribute('aria-disabled')).toBeNull();
+      click(add);
+      expect(show).toHaveBeenCalledWith(jobId(1));
+    });
+
+    it('is not there for a job that is not finished, or has no result to draw: the place stays empty', () => {
+      put({
+        jobs: [
+          jobEntry(1, { phase: 'active', status: status({ jobID: jobId(1), status: 'running', progress: 40 }) }),
+          jobEntry(2),
+          finished(3),
+          finished(4, { tiles, expired: true }),
+        ],
+      });
+      mount();
+      for (const row of rows()) expect(addButton(row), row.textContent ?? '').toBeNull();
+      // The symbols of the other places do not move: "⋯" is the last one in every row.
+      for (const row of rows()) expect(row.querySelector('.pm-line')!.lastElementChild!.classList.contains('pm-menu')).toBe(true);
+    });
+
+    it('stays, locked with its reason, when the result is a layer already, and does nothing', () => {
+      const show = vi.fn(async () => undefined);
+      put({ jobs: [finished(1, { tiles })], showResultOnMap: show });
+      useAppStore.setState({ layers: [{ id: 'L1', name: 'Result', visible: true, opacity: 1, overlays: [], derived: 'result', result: { jobID: jobId(1) } } as never] });
+      mount();
+      const add = addButton(rows()[0])!;
+      expect(add.getAttribute('aria-disabled')).toBe('true');
+      expect(add.getAttribute('data-tip')).toBe(ALREADY_A_LAYER_TIP);
+      expect(add.getAttribute('aria-label')).toBe(`${ADD_TO_LAYERS_TIP}: ${ALREADY_A_LAYER_TIP}`);
+      click(add);
+      expect(show).not.toHaveBeenCalled();
+    });
+
+    it('takes the place of "Run again", which a finished job does not have', () => {
+      put({ jobs: [finished(1, { tiles }), jobEntry(2)] });
+      mount();
+      expect(addButton(rows()[0])).not.toBeNull();
+      expect(rows()[0].querySelector('button[aria-label^="Run again"]')).toBeNull();
+      expect(addButton(rows()[1])).toBeNull();
+    });
+  });
+
+  describe('the contract in index.css', () => {
+    const block = (selector: string) => {
+      const start = css.indexOf(`\n${selector} {`);
+      expect(start, selector).toBeGreaterThanOrEqual(0);
+      return css.slice(start, css.indexOf('}', start));
+    };
+
+    it('lays a job out as one line of six places in the dock, which is as wide as the other panels (340 px)', () => {
+      expect(Number(/--dock-width: (\d+)px/u.exec(tokens)?.[1])).toBe(340);
+      const line = block('.pm-line');
+      expect(line).toContain('display: grid');
+      expect(line).toContain('grid-template-columns: minmax(0, 1fr) var(--pm-icon) var(--pm-date) repeat(3, var(--pm-icon))');
+      // No second line from a container query, whatever the width of the list.
+      expect(css).not.toMatch(/@container \(max-width: \d+px\) \{\s*\.pm-open/u);
+      expect(block('.pm-until')).toContain('grid-row: 1');
+    });
+
+    it('aligns the dates and the title "Expires" to the left, in one column, and keeps "No longer available" inside it on two short lines', () => {
+      expect(block('.pm-until')).not.toContain('text-align');
+      expect(block('.pm-col-until')).not.toContain('text-align');
+      expect(block('.pm-col-until')).toContain('grid-column: 3');
+      expect(block('.pm-until')).toContain('grid-column: 3');
+      const unavailable = block('.pm-meta.unavailable .pm-state');
+      expect(unavailable).toContain('white-space: normal');
+      expect(unavailable).toContain('min-width: 0');
+    });
+
+    it('has no column for the state: it is for a screen reader, and stands in the place of the date while a job runs, waits or is cancelled', () => {
+      expect(block('.pm-line .pm-state')).toMatch(/position: absolute;[^}]*clip-path: inset\(50%\)/u);
+      expect(block('.pm-meta:is(.running, .waiting, .checking, .cancelled, .unavailable) .pm-state')).toContain('grid-column: 3');
+      expect(block('.pm-meta:is(.running, .waiting, .checking) .pm-until')).toContain('display: none');
+    });
+
+    it('draws the progress of a running job as a line of two pixels at the bottom edge of its row, under the title', () => {
+      const bar = block('.pm-progress');
+      expect(bar).not.toContain('top:');
+      for (const declaration of ['position: absolute', 'bottom: 0', 'left: 0', 'right: 0', 'height: calc(var(--line-width) * 2)', 'margin: 0']) expect(bar).toContain(declaration);
+      expect(css).toMatch(/\n\.pm-row \{\s*position: relative;/u);
+    });
+
+    it('puts the status and the date under the title only where a finger needs 44 px symbols: a touch screen and under 900 px', () => {
+      const media = css.slice(css.indexOf('@media (pointer: coarse), (max-width: 899px) {\n  .pm-list'));
+      expect(media).toContain('--pm-icon: var(--control-height)');
+      expect(media).toMatch(/\.pm-until \{\s*grid-column: 1;\s*grid-row: 2;/u);
+    });
   });
 });

@@ -797,6 +797,31 @@ deshalb in den Anwendungs-Cache (12.3).
   gefragt; das Mosaik erscheint damit ab Kartenzoom 7,5 statt 6,5 (Frage 3, Option 1).
 - **Bitgleichheit:** siehe `adr/0014` §15 Nachtrag NM4-29.
 
+**Nachtrag NM4-29b (2026-11-01, zu #270):** Kachelgröße je Quelle im Frontend
+(`plans/querschnitt/nm4-29-kacheln-512.md` §15, §17).
+
+- **Wer welche Größe zeichnet:** Mosaik und Mosaik-Vorschau (Mosaik-Kachel mit und ohne
+  Schritte) fragen `tilesize=512`, Szene, Item-Vorschau und Ergebnis 256 px. Die Größe steht in
+  der Kachel-Vorlage; die Quelle in MapLibre liest ihr `tileSize` aus der Vorlage
+  (`frontend/src/tileSize.ts`), beides kann nicht auseinanderlaufen. Die TileJSON-Anfragen
+  nennen keine Größe.
+- **Zoomschwelle:** MapLibre fragt eine Rasterquelle auf Stufe `round(Zoom + log2(512 / tileSize))`.
+  Stufe L wird bei 512 px ab Kartenzoom L − 0,5, bei 256 px ab L − 1,5 gefragt. Das Mosaik ab z8
+  erscheint damit ab Kartenzoom 7,5 (vorher 6,5); die Einzelszenen darunter treten dort zurück,
+  und der Zoomhinweis nennt dieselbe Schwelle. `MIN_MOSAIC_ZOOM` bleibt 8.
+  Folge: Zwischen Kartenzoom 6,5 und 7,5 zeigt die Karte die Szenen unter dem Mosaik aus Stufe 7,
+  bis zu etwa 2,6-fach gestreckt (vorher höchstens etwa 1,4-fach, weil sie bei 6,5 wichen). Wer das
+  nicht will, setzt `maxZoom` der Szenen auf 8; das kostet mehr 256er-Anfragen kurz vor dem Mosaik
+  und ist eine Frage an Otto.
+- **Vorschau:** Die Mosaik-Vorschau endet eine Stufe tiefer als die Szenen-Vorschau, weil eine
+  512er-Kachel dieselbe Pixelgröße hat wie die 256er-Kachel der nächsten Stufe (Otto, 19.10.2026:
+  nie so fein wie die Daten).
+- **AOI-Zuschnitt im Browser:** Die Maske liegt im Pixelraum des geladenen Bildes, nicht in festen
+  256 px.
+- **Messung** (echter Browser, echter `tiler` des Messgeräts, NDVI-Mosaik aus 12 Szenen, 1920×1080,
+  Zoom 11,5): 77 → 24 Anfragen, letzte Kachel 22,2/24,0 → 10,7/10,8 s ohne Leitungsgrenze,
+  29,1/28,5 → 26,4/26,7 s bei 100 Mbit/s [M]. Wiedervorlage M6 (HTTP/2 bzw. CDN) bleibt.
+
 ### 5.1 Wo der Kachel-Pfad liegt — eine Modulgrenze, die auffällt
 
 Die Zusammensetzung passt **nicht** in `access`. `access` darf `gateway` nach
@@ -1175,3 +1200,40 @@ done
 # sentinel-2-c1-l2a -> e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com
 # sentinel-2-l2a    -> sentinel-cogs.s3.us-west-2.amazonaws.com
 ```
+
+## Nachtrag NM4-65 (2026-11-01): Perzentile für den Wertebereich, Statistik der Ergebnis-Kacheln
+
+Entschieden von Otto (NM4-65, 1.11.2026). Das Frontend nimmt `vmin`/`vmax` als Perzentile entgegen (ganze Zahlen 1 bis 99, dazu 0 und 100 als Minimum und Maximum). Dafür braucht es die Zahlen im Backend:
+
+- **Messung der AOI** (`POST /collections/{dataset}/statistics`): Jedes Band der Antwort trägt `percentile_1` bis `percentile_99`, alle aus demselben Histogramm (`MEASURE_PERCENTILES` ist jetzt jedes ganze Prozent außer 2 und 98; `PERCENTILES` bleibt `(2, 98)`). Der Schlüssel des Caches trägt `area-statistics/v3`, Einträge der Formen v1 und v2 werden nicht mehr getroffen. Die Antwort wächst um etwa 90 Zahlen je Band; Body-Grenze, Dateigrenze, Datenschutz und Logzeile der Route bleiben wie bisher (die AOI nur im Body, die Zeile ohne AOI, Item-ID und Schlüssel). Das Ergebnisdokument und `result.tif` tragen weiter nur 2 und 98.
+- **Neue Route `GET /results/{result_id}/statistics`** im Ergebnis-Tiler. Sie hebt für diese eine Route die Festlegung „Statistik, Info und Punktabfragen werden nicht ausgeliefert“ (Plan M4-13c §5) auf; Info und Punktabfragen bleiben ausgeschlossen. Grund: Wer ein Ergebnis wieder öffnet oder nur die `result_id` kennt, soll den Wertebereich ebenfalls als Perzentil wählen können, und das Ergebnisdokument kennt nur p2 und p98. Die Route liest `result.tif` und `mask.tif` über denselben Weg wie die Kachel (dieselben Prüfungen und Fehlerwege: `404`, `410`, `503`; freie Parameter wie `op` und `expression` weiter `400`) und zählt nur die Pixel, die die Maske markiert und die gültig sind. Die Antwort hat die Form von `properties.bands` des Ergebnisdokuments: `{"bands": [{"name", "data_type", "statistics": {…, "percentile_1" … "percentile_99"}}]}`; ein Band ohne gültigen Pixel trägt `{"count": 0, "valid_percent": 0.0}`.
+- **Grenzen der Route.** Gerechnet wird blockweise über das Histogramm von `processing.statistics` (deterministisch), auf höchstens 4096 × 4096 Pixeln; ein größeres Raster wird auf einem um einen ganzzahligen Faktor gröberen Raster gelesen. Die Grenze steht im Docstring, nicht in der Antwort. Keine freien Parameter, kein Zugriff auf die Datenbank, keine neue Importregel: der Tiler behält nur seinen Zugang zum Objektspeicher (adr/0015). `Cache-Control: private, max-age=…` mit höchstens fünf Minuten und nie über die Restlebensdauer des Ergebnisses.
+
+## Nachtrag NM4-24 (2026-11-01): Reihenfolge der Szenen einer Zeitscheibe ohne Mosaik
+
+Aufgabe NM4-24 (Paket NM4-54, Stufe A). Seit NM4-02 lesen Zuschnitt, Export, Mosaik-Auftrag und Mosaik-Kachel die Szenen in einer Reihenfolge (`access.crop_rules.mosaic_order`: erst die Szenen im Ziel-CRS, je Teil nach ID). Die Mosaik-Kachel nennt sie als `earthx:order`. Fällt die Ansicht auf Einzelszenen zurück (Zeitscheibe über 64 Szenen, abgelehnte Mosaik-Kachel, Datensatz nur unter z8 freigegeben), gab es diese Reihenfolge nicht, und das Frontend stapelte nach der Auswahl.
+
+- **Neue Route `POST /collections/{dataset}/scene-order`** (Tiler, außerhalb des Routers der Mosaik-Kacheln, dessen Routen nur Kachel und TileJSON bleiben). Körper: `{"items": [...], "asset": "..."}`, 2 bis 500 Item-IDs, jede einmal, das Asset, dessen CRS gilt; weitere Felder werden abgewiesen. Antwort: `{"order": [...]}`. Die Regel steht nur im Backend (`mosaic_order`); das Frontend baut sie nicht nach. Die IDs stehen im Körper, weil mehr als 64 nicht in eine URL passen.
+- **Prüfungen und Kosten** wie bei der Mosaik-Kachel: Lizenzstufe mindestens `display` (403), unbekannter Datensatz (404/410), Item-Cache nötig (503), Items über denselben `ItemFetches` (je Item einmal, vier gleichzeitig). Es wird kein Pixel eines Assets gelesen und kein Mosaik gebaut; gelesen werden nur die Items und das CRS des Assets.
+- **Grenze 500.** Größere Zeitscheiben bekommen keine Reihenfolge: das Frontend behält dann die Auswahlreihenfolge und sagt es in einer Meldung. Der Wert steht in `MAX_ORDER_ITEMS`.
+- **Frontend.** Die Reihenfolge liegt neben den Mosaiken im Store (`mosaics`, Schlüssel `order|<Vorlage>`); die Ansicht, ein angehefteter Layer und die Quicklook-Unterlagen stapeln danach (`mosaic.ts::inStackOrder`). Bekannte Grenze bleibt: Bei gemischten CRS ordnet der Job nur Szenen, die die AOI berühren (`adr/0014` §15p); die Route ordnet alle genannten Szenen.
+
+## Nachtrag NM4-45 (2026-11-01): ein Band in der Ansicht über den Parameter `asset`
+
+Die Ansicht zeichnet ein einzelnes Band, indem sie die Szenen von dessen Asset zeichnet: Kachel-Route (`?asset=`, M2-04) und Mosaik-Kachel (`asset`, ein Asset je Kachel) nehmen den Schlüssel schon, eine neue Route oder ein Registry-Feld war nicht nötig. Das Mosaik eines anderen Assets ist ein anderes Mosaik (anderer Schlüssel im Store, eigene TileJSON-Anfrage); bis es da ist, bleibt das Bild davor stehen. Die Bänder nennt das Item, nicht die Registry (`adr/0014` §15 Nachtrag NM4-45).
+
+
+## Nachtrag UI-03d (2026-11-02): ein Bereich je Kanal, Histogramm der Ergebnis-Statistik, Route `GET /colormaps`
+
+Aufgabe UI-03d (Otto, 02.11.2026, Stufe A). Drei Änderungen am Kachel-Pfad, die die Seitenleiste braucht:
+
+- **`rescale` je Kanal.** Eine Kachel mit drei `band=` (NM4-64) nimmt `rescale` einmal (für alle drei, wie bisher) oder dreimal (je Kanal, in der Reihenfolge der Bänder); jede andere Anzahl ist `400`, bevor ein Item geholt wird. Item- und Mosaik-Kachel ohne Schritte und die Ergebnis-Kachel (`bidx`) konnten das schon (titiler/rio-tiler wenden je Band einen Bereich an). Das Bild ist bitgleich zu dem, was der Ergebnis-Layer aus `result.tif` des Jobs mit denselben drei Bereichen zeichnet (Test). Das Frontend hält die drei Paare in einem Text (`a,b;c,d;e,f`, drei gleiche als ein Paar) und schreibt sie als drei `rescale` in die URL.
+- **Histogramm.** `GET /results/{result_id}/statistics` trägt je Band mit gültigen Pixeln `histogram` in der Form von rio-tiler (`[counts, edges]`, 64 gleich breite Klassen vom Minimum zum Maximum), aus dem festen Histogramm der Zählung (`BandStatistics.histogram`: exakt für Ganzzahlen bis 16 Bit, sonst je Klasse anteilig verteilt); nichts wird zweimal gelesen, das Ergebnisdokument bleibt unverändert. Die Item-Statistik liefert ihr Histogramm schon (titiler, `histogram_bins=64` fragt das Frontend).
+- **Neue Route `GET /colormaps`.** Die Colormaps, die jede Kachel-Route als `colormap_name` nimmt (`access/colormaps.py`), nach Gruppen (sequential, diverging, cyclic, qualitative, other; nach matplotlib und cmocean), je mit 16 Farben für die Vorschau und dem Namen der umgekehrten (`_r`). Ergänzt um `rocket` und `mako`, die beiden Standard-Farbverläufe von QGIS, die rio-tiler fehlen (Tabellen aus seaborn, BSD-3-Clause, Lizenz neben den Daten), und um die umgekehrten von `cfastie`, `rplumbo` und `schwarzwald`, die rio-tiler nicht hat. Kein Parameter, keine Datenbank, `Cache-Control: public, max-age=86400`. Die Kachel-Routen nehmen genau diese Namen; ein anderer ist `422`.
+
+
+## Nachtrag UI-03e (2026-11-03): Histogramm in der Antwort von `POST /collections/{dataset}/statistics`
+
+Aufgabe UI-03e (Otto, 03.11.2026, Stufe A). Die Ansicht misst Bereich, Perzentile und Histogramm ihres Bildes über den Zuschnitt, mit der Route aus NM4-19 und ohne neue Route. Dafür trägt jedes Band der Antwort mit gültigen Pixeln `histogram` (`[counts, edges]`, 64 gleich breite Klassen vom Minimum zum Maximum, `BandStatistics.histogram`) neben seinen Zahlen, wie die Statistik der Ergebnis-Kacheln (Nachtrag UI-03d). Die Zahlen selbst bleiben die des Jobs, Feld für Feld; der Cache-Schlüssel heißt `area-statistics/v4`, damit eine Antwort ohne Histogramm nicht ausgeliefert wird. Der Kern (`core.area_statistics`) legt das Histogramm nur auf Verlangen bei (`histogram=True`); die Route verlangt es immer.
+
+Die Route misst in physikalischen Werten (`scale`/`offset` des Items angewandt), die Kacheln der Ansicht für ein Band und für das Farbbild zeichnen Rohwerte. Die Umrechnung steht im Frontend (`viewMeasure.ts`): linear und steigend, deshalb gilt sie für Werte, Perzentile und Kanten des Histogramms gleich. Ein Index wird auf beiden Seiten physikalisch gezeichnet und bleibt, wie er ist.

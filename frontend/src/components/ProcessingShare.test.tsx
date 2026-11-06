@@ -18,6 +18,7 @@ import { useAppStore } from '../store';
 import type { Collection, StacItem } from '../types';
 import ProcessingPanel from './ProcessingPanel';
 import css from '../index.css?raw';
+import { tipOf } from '../fixtures/tips';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -160,6 +161,24 @@ describe('opening a link', () => {
     expect(window.location.search).toBe('?other=1');
   });
 
+  it('brings back a range and a unit for each channel of a colour picture, and one pair of percentiles', async () => {
+    const channels = [{ vmin: 0.05, vmax: 0.7, percent: { low: 2, high: 98 } }, { vmin: 0.04, vmax: 0.5 }, { vmin: 0.02, vmax: 0.4 }];
+    link = () => json({ order: ORDER, view: { ...VIEW, range: { vmin: 0.05, vmax: 0.7, colormap: '', channels } }, expires_at: EXPIRES });
+    onAddress(`?permalink=${ID}`);
+    await open();
+    expect(draft().range).toEqual({
+      vmin: '0.05',
+      vmax: '0.7',
+      colormap: '',
+      channels: [{ vmin: '0.05', vmax: '0.7', percent: { low: '2', high: '98' } }, { vmin: '0.04', vmax: '0.5' }, { vmin: '0.02', vmax: '0.4' }],
+    });
+    expect(draft().rangeByHand).toBe(true);
+    link = () => json({ order: ORDER, view: { ...VIEW, range: { vmin: 1, vmax: 9, colormap: 'viridis', percent: { low: 2, high: 98 } } }, expires_at: EXPIRES });
+    onAddress(`?permalink=${ID}`);
+    await open();
+    expect(draft().range).toEqual({ vmin: '1', vmax: '9', colormap: 'viridis', percent: { low: '2', high: '98' } });
+  });
+
   it('brings back the order without a job or a result, ready to be reviewed and started again', async () => {
     onAddress(`?permalink=${ID}`);
     await open();
@@ -245,7 +264,7 @@ describe('opening a link', () => {
     link = () => json({ order: { ...ORDER, inputs: [{ ...ORDER.inputs[0], dataset: 'never-was' }] }, view: VIEW, expires_at: EXPIRES });
     onAddress(`?permalink=${ID}`);
     await open();
-    expect(useAppStore.getState().error).toBe('Pick a dataset first.');
+    expect(useAppStore.getState().error).toBe('Choose a dataset first.');
   });
 
   it('says a scene is gone from the catalog', async () => {
@@ -289,7 +308,6 @@ describe('opening a link, basemap and projection', () => {
     ['grey', 'mercator'],
     ['outlines', 'globe'],
     ['satellite', 'globe'],
-    ['relief', 'mercator'],
   ] as const)('shows %s and %s for the opened view', async (basemap, projection) => {
     linkWith({ basemap, projection });
     await open();
@@ -309,17 +327,25 @@ describe('opening a link, basemap and projection', () => {
     expect(localStorage.getItem('earthx.basemap')).toBe('grey');
   });
 
-  it('opens the basemap "Relief" of a link and leaves the relief overlay and the kept basemap as the viewer had them (NM4-35)', async () => {
+  it('opens a link of the time when Relief was a basemap with the default basemap and the overlay Relief, for this view only (UI-04 part 4)', async () => {
     act(() => {
       useAppStore.getState().setBasemap('grey');
       useAppStore.getState().setOverlay('relief', false);
       useAppStore.getState().setOverlay('graticule', true);
     });
-    linkWith({ basemap: 'relief', projection: 'mercator' });
+    linkWith({ basemap: 'relief', projection: 'globe' });
     await open();
-    expect(useAppStore.getState()).toMatchObject({ basemap: 'relief', overlays: { relief: false, graticule: true, labels: false } });
+    expect(useAppStore.getState()).toMatchObject({ basemap: 'satellite', projection: 'globe', overlays: { relief: true, graticule: true, labels: false }, error: null });
+    // Nothing is written: the next visit opens with what the viewer chose.
     expect(localStorage.getItem('earthx.basemap')).toBe('grey');
     expect(JSON.parse(localStorage.getItem('earthx.overlays') ?? '{}')).toMatchObject({ relief: false, graticule: true });
+  });
+
+  it('opens a link of any other basemap without touching the overlays', async () => {
+    act(() => useAppStore.getState().setOverlay('relief', false));
+    linkWith({ basemap: 'grey', projection: 'mercator' });
+    await open();
+    expect(useAppStore.getState()).toMatchObject({ basemap: 'grey', overlays: { relief: false } });
   });
 
   it('writes nothing for a user who never chose, and a choice in the menu afterwards is kept as always', async () => {
@@ -421,13 +447,12 @@ describe('Share', () => {
 
   it('keeps no overlay in a link, the relief one neither: only the basemap and the projection are in the view', async () => {
     act(() => {
-      useAppStore.getState().showSharedLook({ basemap: 'relief', projection: 'globe' });
-      useAppStore.getState().setOverlay('relief', true);
+      useAppStore.getState().showSharedLook({ basemap: 'outlines', projection: 'globe', relief: true });
       useAppStore.getState().setOverlay('labels', true);
     });
     await click('Share');
     const view = JSON.parse(fetchMock.mock.calls[0][1].body).view;
-    expect(view).toMatchObject({ basemap: 'relief', projection: 'globe' });
+    expect(view).toMatchObject({ basemap: 'outlines', projection: 'globe' });
     expect(Object.keys(view).sort()).toEqual(['basemap', 'center', 'projection', 'range', 'zoom']);
     expect(JSON.stringify(view)).not.toMatch(/overlay|labels|graticule/u);
   });
@@ -455,6 +480,19 @@ describe('Share', () => {
     expect(JSON.parse(fetchMock.mock.calls[0][1].body).view.range).toEqual({ vmin: -1, vmax: 1, colormap: 'rdylgn' });
   });
 
+  it('keeps the percentiles a range was typed as', async () => {
+    act(() => useProcessingStore.setState({ range: { vmin: '1', vmax: '9', colormap: 'viridis', percent: { low: '2', high: '98' } }, rangeByHand: true }));
+    await click('Share');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).view.range).toEqual({ vmin: 1, vmax: 9, colormap: 'viridis', percent: { low: 2, high: 98 } });
+  });
+
+  it('keeps no range of single channels where the map shows one band: only the first is meant for it', async () => {
+    const channels = [{ vmin: '0.05', vmax: '0.7', percent: { low: '2', high: '98' } }, { vmin: '0.04', vmax: '0.5' }, { vmin: '0.02', vmax: '0.4' }];
+    act(() => useProcessingStore.setState({ range: { vmin: '0.05', vmax: '0.7', colormap: 'viridis', channels }, rangeByHand: true }));
+    await click('Share');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).view.range).toEqual({ vmin: 0.05, vmax: 0.7, colormap: 'viridis' });
+  });
+
   it('is a button like "Review", close below it, and has no text under it', async () => {
     const share = button('Share')!;
     expect(share.className).toBe(button('Review')!.className);
@@ -465,7 +503,7 @@ describe('Share', () => {
     const rule = (selector: string) => new RegExp(`${selector.replace('.', '\\.')} \\{([^}]*)\\}`, 'u').exec(css)?.[1] ?? '';
     expect(rule('.pp-share')).not.toMatch(/margin/u);
     expect(rule('.pp-share')).toContain('align-items: flex-start');
-    expect(rule('.pp-foot')).toContain('gap: 8px');
+    expect(rule('.pp-foot')).toContain('gap: var(--space-2)');
   });
 
   it('has no title field, in the panel or in what is sent', async () => {
@@ -490,8 +528,8 @@ describe('Share', () => {
     await click('Share');
     expect(button('Copy link')).toBeUndefined();
     const copy = icon('Copy link')!;
-    expect(copy.className).toBe('copy-btn');
-    expect(copy.title).toBe('Copy link');
+    expect(copy.className).toBe('icon-btn sm quiet');
+    expect(tipOf(copy)).toBe('Copy link');
     const glyph = copy.innerHTML;
     await clickIcon('Copy link');
     expect(writeText).toHaveBeenCalledWith(expect.stringContaining(`?permalink=${ID}`));
@@ -503,7 +541,7 @@ describe('Share', () => {
     const confirm = vi.spyOn(window, 'confirm');
     await click('Share');
     const cross = icon('Delete link')!;
-    expect([cross.className, cross.title, cross.textContent]).toEqual(['delete-btn', 'Delete link', '✕']);
+    expect([cross.className, tipOf(cross), cross.textContent, cross.querySelector('svg.lucide-trash-2') !== null]).toEqual(['icon-btn sm danger', 'Delete link', '', true]);
     expect(button('Delete link')).toBeUndefined();
     await clickIcon('Delete link');
     expect(confirm).not.toHaveBeenCalled();
@@ -539,7 +577,7 @@ describe('Share', () => {
     expect(button('Share')!.disabled).toBe(false);
     act(() => draft().setRunAs('scene'));
     expect(button('Share')!.disabled).toBe(true);
-    expect(button('Share')!.title).toBe('A link holds one order: choose “One job”.');
+    expect(tipOf(button('Share')!)).toBe('A link holds one order: choose “One job”.');
     // The reason is the tooltip; no text stands under the button.
     expect(container.textContent).not.toContain('A link holds one order');
   });
