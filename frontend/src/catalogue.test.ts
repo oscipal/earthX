@@ -144,6 +144,9 @@ describe('the rows', () => {
     expect(sourceRow(collection('x', 'optical', { 'earthx:source': source }))).toEqual([{ text: 'stac.example.org · col', href: 'https://stac.example.org/v1' }]);
     expect(sourceRow(collection('x', 'optical', { 'earthx:source': { ...source, endpoint: 'http://stac.example.org' } }))).toEqual([{ text: '—', href: null }]);
     expect(sourceRow(collection('x', 'optical'))).toEqual([{ text: '—', href: null }]);
+    for (const endpoint of ['https://ex ample.org', 'https://host:99999']) {
+      expect(sourceRow(collection('x', 'optical', { 'earthx:source': { ...source, endpoint } }))).toEqual([{ text: '—', href: null }]);
+    }
   });
 
   it('write the extent in degrees with their sides, "—" for a box that is not one', () => {

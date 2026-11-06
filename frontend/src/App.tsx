@@ -100,8 +100,6 @@ export default function App() {
         )}
       </div>
 
-      <DataCatalogue />
-
       <div className={`overlay top-right${processingOpen ? ' beside-sheet' : ''}`}>
         <button
           type="button"
@@ -127,6 +125,9 @@ export default function App() {
           <ProcessingPanel />
         </div>
       )}
+
+      {/* After the side bar and the processing sheet (same layer): the window opened last lies above them, red x included. */}
+      <DataCatalogue />
 
       <PreviewBadge />
 

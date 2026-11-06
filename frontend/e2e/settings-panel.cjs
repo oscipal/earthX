@@ -82,7 +82,7 @@ async function layout(browser, theme, viewport) {
   // 1. The symbol.
   const buttons = page.locator('nav[aria-label="Main"] button');
   const count = await buttons.count();
-  expect(`${name}: five symbols in the rail`, count === 5, String(count));
+  expect(`${name}: six symbols in the rail (the Data catalogue second, UI-05)`, count === 6, String(count));
   expect(`${name}: Settings is the last one`, (await buttons.nth(count - 1).getAttribute('aria-label')) === 'Settings');
   const rail = await box(page.locator('nav[aria-label="Main"]'));
   const symbol = await box(settings(page));
@@ -101,7 +101,7 @@ async function layout(browser, theme, viewport) {
   expect(`${name}: only "Zoom to selection" at the top right`, top.length === 1 && top[0].includes('Zoom to selection'), JSON.stringify(top));
 
   // 2. The panel, like the others. The widths of the others are measured with the layers panel.
-  await buttons.nth(1).click();
+  await page.locator('#rail-layers').click();
   await page.locator('.layer-manager').waitFor();
   const layers = await box(page.locator('.dock'));
   await openPanel(page);
@@ -114,8 +114,9 @@ async function layout(browser, theme, viewport) {
   const head = await panel(page).locator('.results-head').evaluate((e) => ({ title: e.querySelector('h2')?.textContent, buttons: e.querySelectorAll('button').length }));
   expect(`${name}: the head has the title and no x`, head.title === 'Settings' && head.buttons === 0 && (await panel(page).locator('.close-x').count()) === 0, JSON.stringify(head));
   const others = [];
-  for (const index of [0, 1, 2]) {
-    await buttons.nth(index).click();
+  // The panels of the dock; the Data catalogue (second symbol) is a window with its own red x (UI-05).
+  for (const id of ['controls', 'layers', 'jobs']) {
+    await page.locator(`#rail-${id}`).click();
     others.push(await page.locator('.dock .close-x').count());
   }
   expect(`${name}: no panel of the rail has an x in its head`, others.every((n) => n === 0), JSON.stringify(others));

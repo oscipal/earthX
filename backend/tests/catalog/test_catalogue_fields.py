@@ -112,7 +112,8 @@ class TestTheProvidersCheck:
             Provider("ESA", (ProviderRole.HOST, ProviderRole.HOST), None)
 
     @pytest.mark.parametrize(
-        "url", ["http://example.org", "javascript:alert(1)", "//example.org", "", "example.org"]
+        "url",
+        ["http://example.org", "javascript:alert(1)", "//example.org", "", "example.org", "https://", "https:// x", "https://a b"],
     )
     def test_a_link_that_is_not_https_is_refused(self, url) -> None:
         with pytest.raises(ConfigError, match="not https"):

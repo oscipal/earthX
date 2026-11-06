@@ -372,6 +372,10 @@ class SourceInfo:
     data_region: str
 
 
+# An https address with a host and nothing blank in it: what the catalogue may put behind a link.
+_HTTPS_URL_RE = re.compile(r"https://[^\s/?#]+(?:[/?#]\S*)?")
+
+
 @dataclass(frozen=True, slots=True)
 class Provider:
     """One organisation behind the data, as a STAC provider (UI-05 plan §5, F2), taken over from the source.
@@ -393,7 +397,7 @@ class Provider:
             raise ConfigError(f"provider {self.name!r}: every role must be one of {[r.value for r in ProviderRole]}")
         if len(set(self.roles)) != len(self.roles):
             raise ConfigError(f"provider {self.name!r} names a role twice")
-        if self.url is not None and not (isinstance(self.url, str) and self.url.startswith("https://")):
+        if self.url is not None and not (isinstance(self.url, str) and _HTTPS_URL_RE.fullmatch(self.url)):
             raise ConfigError(f"provider {self.name!r}: url {self.url!r} is not https")
 
 

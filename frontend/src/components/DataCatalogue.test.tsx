@@ -126,6 +126,28 @@ describe('the window', () => {
     expect(catalogueWindow()!.classList.contains('beside-dock')).toBe(true);
   });
 
+  it('gives way to a panel of the rail in a narrow window, where it would cover it, and shows the panel open under it', () => {
+    const narrow = vi.fn(() => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
+    vi.stubGlobal('matchMedia', narrow);
+    act(() => useAppStore.setState({ dock: 'controls' }));
+    click(symbol());
+    click(container.querySelector('#rail-controls')!);
+    expect(catalogueWindow()).toBeNull();
+    expect(useAppStore.getState().dock).toBe('controls');
+    click(symbol());
+    click(container.querySelector('#rail-layers')!);
+    expect(catalogueWindow()).toBeNull();
+    expect(useAppStore.getState().dock).toBe('layers');
+  });
+
+  it('stays open beside a panel opened in a wide window', () => {
+    vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false, addEventListener() {}, removeEventListener() {} })));
+    click(symbol());
+    click(container.querySelector('#rail-layers')!);
+    expect(catalogueWindow()).not.toBeNull();
+    expect(useAppStore.getState().dock).toBe('layers');
+  });
+
   it('has a head of its own with the title, the place for the search later', () => {
     click(symbol());
     expect(catalogueWindow()!.querySelector('.catalogue-head h2')?.textContent).toBe('Data catalogue');

@@ -32,6 +32,9 @@ const ITEMS: Item[] = [
 
 const NO_RESULTS = 'No results yet: run a search first';
 
+// Below 900 px the Data catalogue covers the whole map and every panel of the dock (UI-05 §4.1), so opening a panel closes it.
+const narrowWindow = () => typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 899px)').matches;
+
 export default function AppRail() {
   const dock = useAppStore((s) => s.dock);
   const toggleDock = useAppStore((s) => s.toggleDock);
@@ -93,7 +96,16 @@ export default function AppRail() {
             aria-controls={open ? controls : undefined}
             tabIndex={index === current ? 0 : -1}
             onFocus={() => setStop(index)}
-            onClick={() => (locked ? undefined : catalogue ? toggleCatalogue() : toggleDock(item.panel as DockPanel))}
+            onClick={() => {
+              if (locked) return;
+              if (catalogue) return toggleCatalogue();
+              // The panel already open lies under the window: the click shows it rather than closing it.
+              if (catalogueOpen && narrowWindow()) {
+                toggleCatalogue();
+                if (dock === item.panel) return;
+              }
+              toggleDock(item.panel as DockPanel);
+            }}
           >
             {item.icon}
             {count > 0 && <span className="rail-badge" aria-hidden="true">{count > 99 ? '99+' : count}</span>}

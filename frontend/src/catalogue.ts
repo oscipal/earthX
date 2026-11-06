@@ -117,7 +117,7 @@ function providersRow(collection: Collection): LinkText[] {
 export function sourceRow(collection: Collection): LinkText[] {
   const source = collection['earthx:source'];
   const endpoint = source?.endpoint;
-  if (!isHttps(endpoint)) return plain(NONE);
+  if (!isHttps(endpoint) || !URL.canParse(endpoint)) return plain(NONE);
   const host = new URL(endpoint).host;
   const id = source?.source_collection_id;
   return [link(typeof id === 'string' && id !== '' ? `${host} · ${id}` : host, endpoint)];

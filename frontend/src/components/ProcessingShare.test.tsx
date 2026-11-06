@@ -241,6 +241,16 @@ describe('opening a link', () => {
     expect(JSON.parse(localStorage.getItem('earthx.datasets')!)).toEqual([DATASET]);
   });
 
+  it('brings back a dataset that was removed from "Search and area", so that it is never chosen there unseen', async () => {
+    onAddress(`?permalink=${ID}`);
+    await open();
+    useAppStore.getState().removeDataset(DATASET);
+    expect(useAppStore.getState().addedDatasetIds).toEqual([]);
+    await act(() => useProcessingStore.getState().restoreOrder(ORDER, VIEW as never));
+    expect(useAppStore.getState().selectedDatasetIds).toEqual([DATASET]);
+    expect(useAppStore.getState().addedDatasetIds).toEqual([DATASET]);
+  });
+
   it('adds nothing for a link it cannot open', async () => {
     link = () => json({ detail: 'there is no such permalink' }, 404);
     onAddress(`?permalink=${ID}`);

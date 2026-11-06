@@ -159,7 +159,7 @@ export default function DataCatalogue() {
       </div>
       <div className="catalogue-body">
         <div className="catalogue-list">
-          {groups.length === 0 && <p className="hint">No datasets: the backend lists none</p>}
+          {groups.length === 0 && <p className="hint">No datasets to show</p>}
           {groups.map((group) => {
             const isOpen = !folded.includes(group.id);
             return (
