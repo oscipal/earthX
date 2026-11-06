@@ -170,3 +170,23 @@ export function loadCollapsedGroups(): string[] {
 export function saveCollapsedGroups(ids: readonly string[]): void {
   writeStored(COLLAPSED_GROUPS_KEY, JSON.stringify(ids));
 }
+
+// The datasets in "Search and area" (UI-05 F4): their ids in the order they were added, as JSON. `null` where this
+// browser has saved none, or what it saved is no list of ids (a first visit then chooses, `catalogue.ts`); ids that are
+// no string are left out. Unknown and retired ids are dropped where the datasets are known (`knownDatasets`).
+const DATASETS_KEY = 'earthx.datasets';
+
+export function loadAddedDatasets(): string[] | null {
+  try {
+    const raw = window.localStorage.getItem(DATASETS_KEY);
+    if (raw === null) return null;
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string').slice(0, 500) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveAddedDatasets(ids: readonly string[]): void {
+  writeStored(DATASETS_KEY, JSON.stringify(ids));
+}

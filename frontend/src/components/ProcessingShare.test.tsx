@@ -112,6 +112,7 @@ beforeEach(async () => {
   useProcessingStore.setState({ open: false, descriptions: {}, jobs: [] });
   useAppStore.setState({
     datasets: [option],
+    addedDatasetIds: [],
     datasetId: null,
     selectedDatasetIds: [],
     items: [],
@@ -231,6 +232,21 @@ describe('opening a link', () => {
     onAddress(`?permalink=${ID}`);
     await open();
     expect(useAppStore.getState().error).toMatch(/could not be opened.*cannot read/u);
+  });
+
+  it('adds the dataset of the link to "Search and area" and saves the list (UI-05 A7)', async () => {
+    onAddress(`?permalink=${ID}`);
+    await open();
+    expect(useAppStore.getState().addedDatasetIds).toEqual([DATASET]);
+    expect(JSON.parse(localStorage.getItem('earthx.datasets')!)).toEqual([DATASET]);
+  });
+
+  it('adds nothing for a link it cannot open', async () => {
+    link = () => json({ detail: 'there is no such permalink' }, 404);
+    onAddress(`?permalink=${ID}`);
+    await open();
+    expect(useAppStore.getState().addedDatasetIds).toEqual([]);
+    expect(localStorage.getItem('earthx.datasets')).toBeNull();
   });
 
   it('refuses an order whose steps the dataset does not take, and keeps the selection', async () => {

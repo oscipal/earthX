@@ -201,6 +201,9 @@ export async function openPermalinkInAddress(): Promise<void> {
   try {
     const document = await fetchPermalink(id);
     const result = await useProcessingStore.getState().restoreOrder(document.order, document.view, { converted: document.converted });
+    // The datasets of the link's order go into "Search and area" where they are not (UI-05 A7); the link itself carries no
+    // choice.
+    if (result.ok) for (const input of document.order.inputs) app.ensureDatasetAdded(input.dataset);
     if (!result.ok) app.setError(result.reason);
     // A notice is a line that fades and has no tooltip: the conversion is told there only where it is all there is to say.
     else if (result.notes.length > 0) app.setNotice(result.notes.join(' '));
