@@ -13,18 +13,25 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from collections.abc import Iterator, Mapping, Sequence
-from dataclasses import dataclass
+import time
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import AbstractContextManager, ExitStack, nullcontext
+from contextvars import ContextVar
+from dataclasses import dataclass, field
+from functools import partial
 from typing import Any
 
 import numpy
 import rasterio
 import rasterio.windows
 from rasterio.features import geometry_mask
-from rasterio.warp import transform_geom
-from rasterio.windows import Window
+from rasterio.transform import Affine
+from rasterio.warp import Resampling, reproject, transform_geom
+from rasterio.windows import Window, from_bounds
 from shapely.geometry import box, mapping, shape
 from shapely.geometry.base import BaseGeometry
+from shapely.ops import unary_union
 from shapely.prepared import prep
 
 import earthx
@@ -35,6 +42,21 @@ from earthx.readers.cog import AssetPath
 MIN_AOI_PIXELS = 10_000
 
 _AREA_TYPES = frozenset({"Polygon", "MultiPolygon"})
+
+
+class ReadDeadlineExceeded(Exception):
+    """A reading ran past the time its caller gave it (DS-03c): it stops between two blocks and frees its reader."""
+
+
+#: The moment (``time.monotonic()``) a reading must end by, set by the caller in the thread it reads in; ``None``: no limit.
+#: A context variable, so that the functions below keep their signatures. Checked between blocks, never inside one: a
+#: stall inside a block is the GDAL timeout's to end.
+READ_DEADLINE: ContextVar[float | None] = ContextVar("READ_DEADLINE", default=None)
+
+
+def _check_deadline(deadline: float | None) -> None:
+    if deadline is not None and time.monotonic() > deadline:
+        raise ReadDeadlineExceeded
 
 # How many lists lie above the numbers: Polygon rings, positions, numbers; a MultiPolygon one more.
 _NUMBER_DEPTH = {"Polygon": 3, "MultiPolygon": 4}
@@ -53,6 +75,9 @@ class AoiClouds:
     data_pixels: int
     aoi_pixels: int
     resolution: float
+    # The valid pixels of each class of the layer, from the same reading as ``cloud_pixels`` (DS-03c): the shares of
+    # the other classes need no second look. Classes without a pixel are left out.
+    class_pixels: Mapping[int, int] = field(default_factory=dict)
 
     @property
     def cloud_percent(self) -> float | None:
@@ -75,6 +100,7 @@ class AoiClouds:
             "cloud_pixels": self.cloud_pixels,
             "data_pixels": self.data_pixels,
             "resolution": self.resolution,
+            "class_pixels": {str(value): count for value, count in sorted(self.class_pixels.items())},
         }
 
 
@@ -115,7 +141,7 @@ def measure_aoi_clouds(path: AssetPath, aoi: Mapping[str, Any], cloud_classes: f
         raise TypeError("the cloud share reads a path the gateway cleared, not a plain string (KLAERUNGEN B8)")
     if not isinstance(aoi, Mapping) or aoi.get("type") not in _AREA_TYPES:
         raise ValueError("the AOI must be a Polygon or MultiPolygon")
-    classes = sorted(cloud_classes)
+    classes = frozenset(cloud_classes)
     with rasterio.open(path) as full:
         whole, on_raster = _geometry_in(full, aoi)
         native_pixels = on_raster.area / abs(full.transform.determinant)
@@ -141,10 +167,33 @@ def aoi_clouds_cache_key(
     """
     payload = json.dumps(
         {
-            "kind": "aoi-clouds/v1",
+            "kind": "aoi-clouds/v2",
             "earthx": earthx.__version__,
             "dataset": dataset_id,
             "item": item_id,
+            "asset": asset,
+            "classes": sorted(cloud_classes),
+            "aoi": canonical_aoi(aoi),
+        },
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def aoi_pass_cache_key(
+    dataset_id: str, item_ids: Sequence[str], asset: str, cloud_classes: frozenset[int], aoi: Mapping[str, Any]
+) -> str:
+    """The key of one measure of an overpass: its scenes (as a set), the classes and the AOI (DS-03c).
+
+    The scenes in the order of the mosaic are a function of the set, so the set is the key. Like the key of a scene it can
+    be recomputed from the AOI: never logged, never in a URL, kept at most 7 days."""
+    payload = json.dumps(
+        {
+            "kind": "aoi-pass/v1",
+            "earthx": earthx.__version__,
+            "dataset": dataset_id,
+            "items": sorted(set(item_ids)),
             "asset": asset,
             "classes": sorted(cloud_classes),
             "aoi": canonical_aoi(aoi),
@@ -207,7 +256,7 @@ def _geometry_in(dataset: rasterio.DatasetReader, aoi: Mapping[str, Any]) -> tup
 
 
 def _count(
-    level: rasterio.DatasetReader, on_raster: BaseGeometry, off_raster_area: float, classes: list[int]
+    level: rasterio.DatasetReader, on_raster: BaseGeometry, off_raster_area: float, classes: frozenset[int]
 ) -> AoiClouds:
     """Pixels of the AOI on the grid of ``level``: all, valid, and cloud (plan §6.7).
 
@@ -216,11 +265,14 @@ def _count(
     the CRS's units squared, has no data and joins ``aoi_pixels`` by its area in pixels of this level.
     """
     off_raster = round(off_raster_area / abs(level.transform.determinant))
-    data_pixels = cloud_pixels = on_pixels = 0
+    data_pixels = on_pixels = 0
+    per_class: dict[int, int] = {}
     if not on_raster.is_empty:
         geometry = mapping(on_raster)
         prepared = prep(on_raster)
+        deadline = READ_DEADLINE.get()
         for window in _blocks_over(level, on_raster.bounds):
+            _check_deadline(deadline)
             grid = level.window_transform(window)
             if not prepared.intersects(box(*rasterio.windows.bounds(window, level.transform))):
                 continue
@@ -233,13 +285,28 @@ def _count(
             valid = inside & ~_is_nodata(values, level.nodata)
             on_pixels += int(inside.sum())
             data_pixels += int(valid.sum())
-            cloud_pixels += int((valid & numpy.isin(values, classes)).sum())
+            _add_classes(per_class, values[valid])
     return AoiClouds(
-        cloud_pixels=cloud_pixels,
+        cloud_pixels=sum(count for value, count in per_class.items() if value in classes),
         data_pixels=data_pixels,
         aoi_pixels=on_pixels + off_raster,
         resolution=abs(level.transform.a),
+        class_pixels=per_class,
     )
+
+
+def _add_classes(per_class: dict[int, int], values: numpy.ndarray) -> None:
+    """Add the pixels of each class in ``values`` (the valid ones) to ``per_class``, in one pass over the values."""
+    if values.size == 0:
+        return
+    if values.dtype == numpy.uint8:
+        counts = numpy.bincount(values, minlength=256)
+        for value in numpy.flatnonzero(counts).tolist():
+            per_class[value] = per_class.get(value, 0) + int(counts[value])
+        return
+    found, counts = numpy.unique(values, return_counts=True)
+    for value, count in zip(found.tolist(), counts.tolist(), strict=True):
+        per_class[int(value)] = per_class.get(int(value), 0) + int(count)
 
 
 def _blocks_over(level: rasterio.DatasetReader, bounds: tuple[float, float, float, float]) -> Iterator[Window]:
@@ -263,3 +330,229 @@ def _is_nodata(values: numpy.ndarray, nodata: float | None) -> numpy.ndarray:
     if math.isnan(nodata):
         return numpy.isnan(values)
     return values == nodata
+
+
+#: Cells per side of one chunk of the common grid of a pass: a pass is read chunk by chunk, so the arrays stay a few
+#: megabytes however large the AOI is.
+PASS_CHUNK = 2048
+
+
+#: Scenes read at once for one pass; a caller's reader slots (``gateway.ReadSlots``) are the real limit per host.
+PASS_READERS = 8
+
+#: What a reading of a scene runs inside: the slot of its host and the GDAL environment of the gateway. Called in the
+#: thread that reads, once per read. The default is nothing, for a file on disk.
+EnterRead = Callable[[AssetPath], AbstractContextManager[Any]]
+
+
+def measure_aoi_pass(
+    paths: Sequence[AssetPath],
+    aoi: Mapping[str, Any],
+    cloud_classes: frozenset[int],
+    *,
+    enter: EnterRead | None = None,
+) -> AoiClouds:
+    """The valid and class pixels of the merged scenes of one overpass inside ``aoi`` (DS-03c).
+
+    ``paths`` are the classification rasters of the pass **in the order of the mosaic**
+    (:func:`~earthx.access.crop_rules.mosaic_order`): a pixel belongs to the first scene that has a valid value there,
+    exactly as the mosaic takes it, so a pixel in an overlap counts once. The scenes are read onto one grid in the CRS of the
+    first scene (nearest neighbour, no new classes), at the coarsest overview level that keeps
+    :data:`MIN_AOI_PIXELS` pixels of the AOI that lie on the scenes, as :func:`measure_aoi_clouds` picks it. The counts of the
+    separate scenes cannot be added up for this: each scene picks its own level, and an overlap would count twice.
+
+    **The scenes are read in parallel** (Otto, 05.11.2026): each is opened, and each block of the grid read from it, in a
+    thread of its own, inside ``enter(path)`` (the slot of its host and the GDAL environment); the merge then runs in the order
+    of the mosaic. The time :data:`READ_DEADLINE` gives is checked before each read, and a pass that runs past it raises
+    :class:`ReadDeadlineExceeded` with every reader freed.
+
+    The part of the AOI no scene covers has no data and joins ``aoi_pixels`` by its area. Errors are those of
+    :func:`measure_aoi_clouds`, a ``ValueError`` without a coordinate.
+    """
+    if not paths or not all(isinstance(path, AssetPath) for path in paths):
+        raise TypeError("the pass share reads paths the gateway cleared, not plain strings (KLAERUNGEN B8)")
+    if not isinstance(aoi, Mapping) or aoi.get("type") not in _AREA_TYPES:
+        raise ValueError("the AOI must be a Polygon or MultiPolygon")
+    deadline = READ_DEADLINE.get()
+    around = enter or (lambda path: nullcontext())
+
+    def reading(path: AssetPath, work: Callable[[], Any]) -> Any:
+        with around(path):
+            _check_deadline(deadline)
+            return work()
+
+    with ExitStack() as stack, ThreadPoolExecutor(max_workers=min(len(paths), PASS_READERS)) as pool:
+        scenes = _open_all(stack, pool, [(path, partial(rasterio.open, path)) for path in paths], reading)
+        target = scenes[0]
+        whole, _ = _geometry_in(target, aoi)
+        try:
+            on_scenes = whole.intersection(_reach(scenes, target))
+        except Exception:  # GEOS and PROJ word an error with a position in it
+            raise ValueError("the AOI is not a valid polygon that can be placed on the raster") from None
+        base = abs(target.transform.a)
+        factor = 1 if on_scenes.is_empty else overview_factor(on_scenes.area / base**2, target.overviews(1))
+        cell = base * factor
+        off_scenes_pixels = round((whole.area - on_scenes.area) / cell**2)
+        if on_scenes.is_empty:
+            return AoiClouds(0, 0, off_scenes_pixels, cell, {})
+        levels = _open_all(
+            stack,
+            pool,
+            [(path, partial(_level, path, scene, factor)) for path, scene in zip(paths, scenes, strict=True)],
+            reading,
+        )
+        return _merge(levels, paths, target, on_scenes, cell, off_scenes_pixels, frozenset(cloud_classes), pool, reading)
+
+
+def _open_all(
+    stack: ExitStack,
+    pool: ThreadPoolExecutor,
+    openings: Sequence[tuple[AssetPath, Callable[[], rasterio.DatasetReader]]],
+    reading: Callable[[AssetPath, Callable[[], Any]], Any],
+) -> list[rasterio.DatasetReader]:
+    """Open the files at once; every one that opened is closed with ``stack``, also when another one fails."""
+    futures = [pool.submit(reading, path, opening) for path, opening in openings]
+    opened: list[rasterio.DatasetReader] = []
+    failure: BaseException | None = None
+    for future in futures:
+        try:
+            opened.append(stack.enter_context(future.result()))
+        except BaseException as error:  # the first stands; the others are collected so that nothing stays open
+            failure = failure or error
+    if failure is not None:
+        raise failure
+    return opened
+
+
+def _reach(scenes: Sequence[rasterio.DatasetReader], target: rasterio.DatasetReader) -> BaseGeometry:
+    """The area the rasters cover, in the CRS of ``target``."""
+    outlines = []
+    for scene in scenes:
+        if scene.crs is None:
+            raise ValueError("the raster has no CRS")
+        outline = box(*scene.bounds)
+        if scene.crs != target.crs:
+            outline = shape(transform_geom(scene.crs, target.crs, mapping(outline)))
+        outlines.append(outline)
+    return unary_union(outlines)
+
+
+def _level(path: AssetPath, scene: rasterio.DatasetReader, factor: int) -> rasterio.DatasetReader:
+    """``scene`` at the overview level of ``factor``, or the nearest one it has below it (1: the file itself)."""
+    available = scene.overviews(1)
+    usable = max((f for f in available if f <= factor), default=1)
+    if usable == 1:
+        return rasterio.open(path)
+    return rasterio.open(path, overview_level=available.index(usable))
+
+
+def _merge(
+    levels: Sequence[rasterio.DatasetReader],
+    paths: Sequence[AssetPath],
+    target: rasterio.DatasetReader,
+    on_scenes: BaseGeometry,
+    cell: float,
+    off_scenes_pixels: int,
+    classes: frozenset[int],
+    pool: ThreadPoolExecutor,
+    reading: Callable[[AssetPath, Callable[[], Any]], Any],
+) -> AoiClouds:
+    """Count the first valid pixel of the scenes, chunk by chunk of one grid laid over the AOI on the scenes.
+
+    The grid is anchored at the origin of the first scene, so its cells are that scene's own where the level is the same.
+    Within a chunk the scenes are read at once; the first valid value of the scenes, in the order given, owns a cell."""
+    origin_x, origin_y = target.transform.c, target.transform.f
+    minx, miny, maxx, maxy = on_scenes.bounds
+    col0 = math.floor((minx - origin_x) / cell)
+    row0 = math.floor((origin_y - maxy) / cell)
+    width = math.ceil((maxx - origin_x) / cell) - col0
+    height = math.ceil((origin_y - miny) / cell) - row0
+    geometry = mapping(on_scenes)
+    prepared = prep(on_scenes)
+    data_pixels = on_pixels = 0
+    per_class: dict[int, int] = {}
+    for row in range(0, height, PASS_CHUNK):
+        for col in range(0, width, PASS_CHUNK):
+            rows, cols = min(PASS_CHUNK, height - row), min(PASS_CHUNK, width - col)
+            grid = Affine(cell, 0.0, origin_x + (col0 + col) * cell, 0.0, -cell, origin_y - (row0 + row) * cell)
+            west, north = grid * (0, 0)
+            east, south = grid * (cols, rows)
+            if not prepared.intersects(box(west, south, east, north)):
+                continue
+            inside = geometry_mask([geometry], out_shape=(rows, cols), transform=grid, invert=True)
+            if not inside.any():
+                continue
+            futures = [
+                pool.submit(reading, path, partial(_scene_on_grid, level, target, grid, (rows, cols)))
+                for path, level in zip(paths, levels, strict=True)
+            ]
+            merged = numpy.zeros((rows, cols), dtype=levels[0].dtypes[0])
+            filled = numpy.zeros((rows, cols), dtype=bool)
+            for future in futures:  # in the order of the mosaic
+                laid = future.result()
+                if laid is None:
+                    continue
+                placed, known = laid
+                fresh = ~filled & known & inside
+                merged[fresh] = placed[fresh]
+                filled |= fresh
+            valid = filled & inside
+            on_pixels += int(inside.sum())
+            data_pixels += int(valid.sum())
+            _add_classes(per_class, merged[valid])
+    return AoiClouds(
+        cloud_pixels=sum(count for value, count in per_class.items() if value in classes),
+        data_pixels=data_pixels,
+        aoi_pixels=on_pixels + off_scenes_pixels,
+        resolution=cell,
+        class_pixels=per_class,
+    )
+
+
+def _scene_on_grid(
+    level: rasterio.DatasetReader, target: rasterio.DatasetReader, grid: Affine, cells: tuple[int, int]
+) -> tuple[numpy.ndarray, numpy.ndarray] | None:
+    """One scene read for one chunk and laid on its grid: the values and where the scene has a valid pixel; ``None``
+    where the scene has nothing under the chunk.
+
+    Validity is the warp of the scene's own mask, not a value that stands for nodata: a raster without a nodata value (or
+    with NaN) has class 0 as a class, and a cell past its edge has no scene at all."""
+    west, north = grid * (0, 0)
+    east, south = grid * (cells[1], cells[0])
+    if level.crs == target.crs:
+        bounds = (west, south, east, north)
+    else:
+        bounds = shape(transform_geom(target.crs, level.crs, mapping(box(west, south, east, north)))).bounds
+    window = _window_over(level, bounds)
+    if window is None:
+        return None
+    values = level.read(1, window=window)
+    nodata = level.nodata
+    valid_here = ~_is_nodata(values, nodata)
+    if not valid_here.any():
+        return None
+    placed = numpy.zeros(cells, dtype=values.dtype)
+    known = numpy.zeros(cells, dtype="uint8")
+    for source, destination in ((values, placed), (valid_here.astype("uint8"), known)):
+        reproject(
+            source=source,
+            destination=destination,
+            src_transform=level.window_transform(window),
+            src_crs=level.crs,
+            dst_transform=grid,
+            dst_crs=target.crs,
+            resampling=Resampling.nearest,
+        )
+    return placed, known == 1
+
+
+def _window_over(level: rasterio.DatasetReader, bounds: tuple[float, float, float, float]) -> Window | None:
+    """The pixels of ``level`` under ``bounds`` plus two of margin for the nearest-neighbour step, or ``None``."""
+    window = from_bounds(*bounds, transform=level.transform)
+    col0 = max(math.floor(window.col_off) - 2, 0)
+    row0 = max(math.floor(window.row_off) - 2, 0)
+    col1 = min(math.ceil(window.col_off + window.width) + 2, level.width)
+    row1 = min(math.ceil(window.row_off + window.height) + 2, level.height)
+    if col1 <= col0 or row1 <= row0:
+        return None
+    return Window(col0, row0, col1 - col0, row1 - row0)

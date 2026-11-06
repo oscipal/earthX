@@ -30,7 +30,7 @@ from earthx.adapters import (
 )
 from earthx.adapters.spec import AdapterSpec, FilterSupport, spec_table
 from earthx.catalog.datasets import SENTINEL_2_L2A
-from earthx.catalog.registry import AdapterKind, CoverageProvider, DatasetRegistry, ItemHolding
+from earthx.catalog.registry import AdapterKind, CoverageProvider, DatasetRegistry, ItemHolding, SearchCapabilities
 from earthx.gateway import Policy
 from earthx.gateway.client import Gateway
 from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR
@@ -134,6 +134,7 @@ class TestSearchDispatchesByAdapter:
             source=replace(SENTINEL_2_L2A.source, item_holding=ItemHolding.MATERIALIZED),
             coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
             search_filters=(),
+            search_capabilities=SearchCapabilities(evaluate=False, aoi_coverage=False),
         )
         gateway, seen = gateway_for(httpx.Response(200, json=load(EARTH_SEARCH_FIXTURES, "search_empty")))
         async with gateway:
@@ -160,6 +161,7 @@ class TestGetItemDispatchesByAdapter:
             source=replace(SENTINEL_2_L2A.source, item_holding=ItemHolding.MATERIALIZED),
             coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
             search_filters=(),
+            search_capabilities=SearchCapabilities(evaluate=False, aoi_coverage=False),
         )
         gateway, seen = gateway_for(httpx.Response(200, json=load(EARTH_SEARCH_FIXTURES, "item")))
         async with gateway:

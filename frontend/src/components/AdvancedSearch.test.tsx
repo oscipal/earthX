@@ -154,11 +154,17 @@ describe('the pop-up', () => {
   it('stands the filters under the headings of the registry, in its order', () => {
     pick('optical');
     open();
-    expect(headings()).toEqual(['Clouds', 'Scene', 'Acquisition']);
-    expect(titles()).toEqual(['Cloud cover', 'No data', 'Satellite']);
+    // "AOI coverage" is the platform's own filter and stands first, over "Clouds", under "Area" (DS-03c, Otto 05.11.2026).
+    expect(headings()).toEqual(['Area', 'Clouds', 'Scene', 'Acquisition']);
+    expect(titles()).toEqual(['AOI coverage', 'Cloud cover', 'No data', 'Satellite']);
     const sections = [...container.querySelectorAll('.filter-group')];
-    expect(sections.map((s) => s.getAttribute('aria-label'))).toEqual(['Clouds', 'Scene', 'Acquisition']);
-    expect(sections.map((s) => [...s.querySelectorAll('.filter-title')].map((t) => text(t)))).toEqual([['Cloud cover'], ['No data'], ['Satellite']]);
+    expect(sections.map((s) => s.getAttribute('aria-label'))).toEqual(['Area', 'Clouds', 'Scene', 'Acquisition']);
+    expect(sections.map((s) => [...s.querySelectorAll('.filter-title')].map((t) => text(t)))).toEqual([
+      ['AOI coverage'],
+      ['Cloud cover'],
+      ['No data'],
+      ['Satellite'],
+    ]);
   });
 
   it('has no heading where the dataset has only one group', () => {
@@ -184,7 +190,7 @@ describe('the pop-up', () => {
     act(() => useAppStore.setState({ datasets: datasetsFrom([added]) }));
     pick('optical');
     open();
-    expect(headings()).toEqual(['Clouds', 'Scene', 'Acquisition', 'Elsewhere']);
+    expect(headings()).toEqual(['Area', 'Clouds', 'Scene', 'Acquisition', 'Elsewhere']);
     expect(text(container.querySelectorAll('.filter-range')[2])).toBe('fromtokm');
     type(field('Brand new, to'), '3');
     expect(useAppStore.getState().searchFilters.optical['made:up']).toEqual({ kind: 'range', from: '', to: '3' });
@@ -198,7 +204,7 @@ describe('the pop-up', () => {
     expect([from.type, from.placeholder, to.placeholder, from.value, to.value]).toEqual(['text', '0', '100', '', '']);
     expect(from.inputMode).toBe('decimal');
     expect(text(container.querySelector('.filter-range'))).toBe('fromto%');
-    expect(container.querySelector('.filter-title')!.getAttribute('data-tip')).toBe('Share of the scene covered by clouds.');
+    expect(from.closest('.filter-field')!.querySelector('.filter-title')!.getAttribute('data-tip')).toBe('Share of the scene covered by clouds.');
   });
 
   it('asks for whole numbers where the registry says so', () => {
@@ -243,8 +249,8 @@ describe('the pop-up', () => {
   it('puts the focus on the first thing to work with when it opens', () => {
     pick('optical');
     open();
-    // The switch at the top comes first (Otto, 31.10.2026); a dataset without one starts with its first field.
-    expect(document.activeElement).toBe(container.querySelector('.within-aoi input'));
+    // "Evaluate" at the top comes first (DS-03c), then the switch (Otto, 31.10.2026); a dataset without them starts with its first field.
+    expect(document.activeElement).toBe(container.querySelector('.evaluate-choice .btn'));
     open();
     pick('radar');
     open();
@@ -419,7 +425,7 @@ describe('one dataset at a time, each with its own values', () => {
     switchTo(1);
     pick('optical');
     expect(text(box())).toBe('Optical imagery');
-    expect(titles()).toEqual(['Cloud cover', 'No data', 'Satellite']);
+    expect(titles()).toEqual(['AOI coverage', 'Cloud cover', 'No data', 'Satellite']);
   });
 });
 
@@ -642,6 +648,8 @@ describe('"Filter within AOI only"', () => {
   const withinBox = () => within()!.querySelector<HTMLInputElement>('input')!;
   const clickWithin = () => act(() => withinBox().click());
   const stored = () => useAppStore.getState().searchWithin;
+  // What the switch does is explained behind the (i) beside it (DS-03c, Otto 05.11.2026).
+  const withinTip = () => tipOf(container.querySelector('.within-aoi-row .tip')!);
 
   beforeEach(() => {
     useAppStore.setState({ ...DATES, searchWithin: {} });
@@ -653,7 +661,13 @@ describe('"Filter within AOI only"', () => {
     expect(container.querySelectorAll('.within-aoi')).toHaveLength(1);
     expect(text(within())).toBe('Filter within AOI only');
     const body = container.querySelector('.advanced-popup-body')!;
-    expect([...body.children].map((c) => c.className.split(' ')[0])).toEqual(['advanced-top', 'within-aoi', 'advanced-fields', 'advanced-actions']);
+    expect([...body.children].map((c) => c.className.split(' ')[0])).toEqual([
+      'advanced-top',
+      'evaluate-choice',
+      'within-aoi-row',
+      'advanced-fields',
+      'advanced-actions',
+    ]);
     // The dataset box and the red x (NM4-65 part 8) share the first line.
     expect([...body.firstElementChild!.children].map((c) => c.className.split(' ')[0])).toEqual(['dataset-select', 'close-x']);
   });
@@ -685,7 +699,7 @@ describe('"Filter within AOI only"', () => {
   it('names in its tooltip the filters it changes and not the others, the classes and the note of the registry', () => {
     pick('optical');
     open();
-    const tip = tipOf(within()!);
+    const tip = withinTip();
     expect(tip).toContain('Cloud cover (classes 5, 6; cloud shadows do not count), No data.');
     expect(tip).toContain('Others are unchanged.');
     expect(tip).not.toContain('Satellite');
@@ -720,12 +734,20 @@ describe('"Filter within AOI only"', () => {
     expect([...container.querySelectorAll('.advanced-actions button')].map(text)).toEqual(['Done']);
   });
 
+  it('is free for a point: the square around it is the AOI (Otto, 06.11.2026)', () => {
+    useAppStore.setState({ aoiPoint: { type: 'Point', coordinates: [10.5, 47.5] } });
+    pick('optical');
+    open();
+    expect(within()!.classList.contains('locked')).toBe(false);
+    clickWithin();
+    expect(stored()).toEqual({ optical: true });
+  });
+
   describe.each([
     ['no area', { aoi: null }, 'Draw an AOI and set a date range first'],
     ['no dates', { dateFrom: '', dateTo: '' }, 'Draw an AOI and set a date range first'],
     ['no end', { dateTo: '' }, 'Draw an AOI and set a date range first'],
     ['no start', { dateFrom: '' }, 'Draw an AOI and set a date range first'],
-    ['a point', { aoiPoint: { type: 'Point', coordinates: [10.5, 47.5] } as GeoJSON.Point }, 'Draw an area to use this filter'],
     [
       'more than 20 000 points',
       { aoi: { type: 'Polygon', coordinates: [Array.from({ length: 20_001 }, (_, i) => [10 + (i % 100) / 1000, 47 + Math.floor(i / 100) / 1000])] } as GeoJSON.Polygon },
@@ -761,7 +783,7 @@ describe('"Filter within AOI only"', () => {
     expect(within()!.classList.contains('locked')).toBe(true);
     act(() => useAppStore.setState({ aoi: AOI }));
     expect(within()!.classList.contains('locked')).toBe(false);
-    expect(tipOf(within()!)).toContain('Measure these filters inside the AOI');
+    expect(withinTip()).toContain('Measure these filters inside the AOI');
   });
 
   it('goes off when the dates go and is then locked with the reason; it does not come back on its own', () => {

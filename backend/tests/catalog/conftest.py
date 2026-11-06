@@ -28,6 +28,7 @@ from earthx.catalog.registry import (
     LicenseInfo,
     LicenseTier,
     Maturity,
+    SearchCapabilities,
     SourceInfo,
     SpatialExtent,
     TemporalExtent,
@@ -126,6 +127,7 @@ def valid_config() -> DatasetConfig:
         band_units={"red": "1", "green": "1", "blue": "1"},
         auxiliary_assets=(),
         search_filters=(),
+        search_capabilities=SearchCapabilities(evaluate=False, aoi_coverage=False),
         index_presets=(),
         true_color=(),
     )

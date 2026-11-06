@@ -1,11 +1,21 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 
-import { withinAoiLock, withinAoiTip, withinFilters } from '../aoiFilter';
+import {
+  COVERAGE_PROPERTY,
+  COVERAGE_TIP,
+  coverageLock,
+  EVALUATE_TIP,
+  withinAoiLock,
+  withinAoiTip,
+  withinFilters,
+  type Evaluate,
+} from '../aoiFilter';
 import type { DatasetOption } from '../datasets';
 import { formatNumber } from '../numberFormat';
 import {
   filterError,
   groupsOf,
+  searchCapabilitiesOf,
   searchFiltersOf,
   setFilters,
   type FilterInput,
@@ -15,6 +25,7 @@ import { useAppStore } from '../store';
 import DatasetSelect from './DatasetSelect';
 import Popover from './Popover';
 import CloseButton from './CloseButton';
+import Tip from './Tip';
 
 type Offer = { dataset: DatasetOption; filters: SearchFilterDescription[] };
 
@@ -103,6 +114,68 @@ function ValuesField({
   );
 }
 
+// "AOI coverage" (DS-03c): at least n percent of the AOI covered by the outlines of the scenes, on a slider and in a field that
+// say the same. It reads outlines and needs only an AOI; without one it is locked, with the reason in its tooltip, and what
+// stood in it is gone. 0 is no filter.
+function CoverageField({
+  filter,
+  input,
+  lock,
+  onChange,
+}: {
+  filter: SearchFilterDescription;
+  input: FilterInput | undefined;
+  lock: string | null;
+  onChange: (input: FilterInput) => void;
+}) {
+  const errorId = useId();
+  const text = input?.kind === 'range' ? input.from : '';
+  const error = filterError(filter, input);
+  const typed = Number(text);
+  const position = text.trim() !== '' && Number.isFinite(typed) ? Math.min(Math.max(typed, 0), 100) : 0;
+  const set = (from: string) => onChange({ kind: 'range', from, to: '' });
+  const locked = lock !== null;
+  return (
+    <div className="filter-field">
+      <span className="filter-title">
+        {filter.title}
+        <Tip text={COVERAGE_TIP} />
+      </span>
+      <div className={`filter-coverage${locked ? ' locked' : ''}`} data-tip={lock ?? undefined}>
+        <span>at least</span>
+        <input
+          type="range"
+          min={0}
+          max={100}
+          step={1}
+          value={position}
+          disabled={locked}
+          aria-label={`${filter.title}, at least`}
+          onChange={(e) => set(e.target.value === '0' ? '' : e.target.value)}
+        />
+        <input
+          autoComplete="off"
+          type="text"
+          inputMode="decimal"
+          value={text}
+          placeholder={formatNumber(0)}
+          disabled={locked}
+          aria-label={`${filter.title}, at least, in percent`}
+          aria-invalid={error !== null}
+          aria-describedby={error ? errorId : undefined}
+          onChange={(e) => set(e.target.value)}
+        />
+        <span className="filter-unit">%</span>
+      </div>
+      {error && (
+        <p className="error" id={errorId}>
+          {error.message}
+        </p>
+      )}
+    </div>
+  );
+}
+
 // The line of a dataset in the box and in its list: the title, and a dot where it has filters set.
 function OfferLine({ offer, set }: { offer: Offer; set: boolean }) {
   return (
@@ -112,6 +185,33 @@ function OfferLine({ offer, set }: { offer: Offer; set: boolean }) {
       </span>
       {set && <span className="filter-dot" role="img" aria-label="Filters set" data-tip-level="advanced" data-tip="Filters set" />}
     </span>
+  );
+}
+
+// "Evaluate: per pass / per scene" at the top of the pop-up (DS-03c, Otto 05.11.2026): how every filter below is judged, over
+// the merged scenes of an overpass or on each scene alone. Two segment buttons, per pass first; what each means, with an
+// example, is behind the (i). It counts for every dataset that offers it.
+function EvaluateChoice({ value, onChange }: { value: Evaluate; onChange: (value: Evaluate) => void }) {
+  const choices: { id: Evaluate; name: string }[] = [
+    { id: 'pass', name: 'per pass' },
+    { id: 'scene', name: 'per scene' },
+  ];
+  return (
+    <div className="evaluate-choice" role="group" aria-label="Evaluate">
+      <span className="evaluate-label">Evaluate</span>
+      {choices.map((choice) => (
+        <button
+          key={choice.id}
+          type="button"
+          className="btn seg"
+          aria-pressed={value === choice.id}
+          onClick={() => onChange(choice.id)}
+        >
+          {choice.name}
+        </button>
+      ))}
+      <Tip text={EVALUATE_TIP} />
+    </div>
   );
 }
 
@@ -133,18 +233,21 @@ function WithinAoiSwitch({
 }) {
   const locked = lock !== null;
   return (
-    <label className={`within-aoi${locked ? ' locked' : ''}`} data-tip-level={lock ? undefined : 'advanced'} data-tip={lock ?? tip}>
-      <input
-        type="checkbox"
-        role="switch"
-        checked={on && !locked}
-        aria-disabled={locked || undefined}
-        onChange={() => {
-          if (!locked) onChange(!on);
-        }}
-      />
-      Filter within AOI only
-    </label>
+    <div className="within-aoi-row">
+      <label className={`within-aoi${locked ? ' locked' : ''}`} data-tip={lock ?? undefined}>
+        <input
+          type="checkbox"
+          role="switch"
+          checked={on && !locked}
+          aria-disabled={locked || undefined}
+          onChange={() => {
+            if (!locked) onChange(!on);
+          }}
+        />
+        Filter within AOI only
+      </label>
+      <Tip text={tip} />
+    </div>
   );
 }
 
@@ -152,12 +255,15 @@ function WithinAoiSwitch({
 function FilterRow({
   filter,
   input,
+  coverageLockReason,
   onChange,
 }: {
   filter: SearchFilterDescription;
   input: FilterInput | undefined;
+  coverageLockReason: string | null;
   onChange: (input: FilterInput) => void;
 }) {
+  if (filter.needsAoi) return <CoverageField filter={filter} input={input} lock={coverageLockReason} onChange={onChange} />;
   return filter.kind === 'range' ? (
     <RangeField filter={filter} input={input} onChange={onChange} />
   ) : (
@@ -180,6 +286,9 @@ export default function AdvancedSearch() {
   const setSearchFilter = useAppStore((s) => s.setSearchFilter);
   const resetSearchFilters = useAppStore((s) => s.resetSearchFilters);
   const lock = useAppStore((s) => withinAoiLock(s));
+  const coverageLockReason = useAppStore((s) => coverageLock(s));
+  const searchEvaluate = useAppStore((s) => s.searchEvaluate);
+  const setSearchEvaluate = useAppStore((s) => s.setSearchEvaluate);
   const [open, setOpen] = useState(false);
   const [shownId, setShownId] = useState<string | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -205,6 +314,14 @@ export default function AdvancedSearch() {
     if (lock === null) return;
     for (const [datasetId, on] of Object.entries(searchWithin)) if (on) setSearchWithin(datasetId, false);
   }, [lock, searchWithin, setSearchWithin]);
+  // Without an area the coverage goes with it, in every dataset, so that it does not come back with the next one (the search
+  // does not use it meanwhile either).
+  useEffect(() => {
+    if (coverageLockReason === null) return;
+    for (const [datasetId, inputs] of Object.entries(useAppStore.getState().searchFilters)) {
+      if (inputs[COVERAGE_PROPERTY]) setSearchFilter(datasetId, COVERAGE_PROPERTY, { kind: 'range', from: '', to: '' });
+    }
+  }, [coverageLockReason, setSearchFilter]);
   if (offers.length === 0) return null;
 
   const shown = offers.find((o) => o.dataset.id === shownId) ?? offers[0];
@@ -264,6 +381,9 @@ export default function AdvancedSearch() {
               }}
             />
           </div>
+          {searchCapabilitiesOf(shown.dataset.collection).evaluate && (
+            <EvaluateChoice value={searchEvaluate} onChange={setSearchEvaluate} />
+          )}
           {withinFilters(shown.filters).length > 0 && (
             <WithinAoiSwitch
               on={searchWithin[shown.dataset.id] === true}
@@ -281,6 +401,7 @@ export default function AdvancedSearch() {
                     key={filter.property}
                     filter={filter}
                     input={own?.[filter.property]}
+                    coverageLockReason={coverageLockReason}
                     onChange={(next) => setSearchFilter(shown.dataset.id, filter.property, next)}
                   />
                 ))}

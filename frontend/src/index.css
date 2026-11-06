@@ -1812,6 +1812,53 @@ textarea:autofill {
   color: var(--muted);
   cursor: not-allowed;
 }
+.within-aoi-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+}
+/* "Evaluate: per pass / per scene" (DS-03c): the label, two segment buttons of one size, the (i). */
+.evaluate-choice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--text);
+}
+.evaluate-label {
+  margin-right: var(--space-1);
+}
+/* "AOI coverage": at least [slider] [n] %, the fields share what the unit leaves, however narrow the panel. */
+.filter-coverage {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 5em) auto;
+  align-items: center;
+  gap: var(--space-1-5);
+  font-size: var(--text-2xs);
+  color: var(--muted);
+}
+.filter-coverage input[type='text'] {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: var(--space-1-5) var(--space-2);
+  background: var(--input-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: var(--text-sm);
+}
+.filter-coverage input[type='text'][aria-invalid='true'] {
+  border-color: var(--danger);
+}
+.filter-coverage input[type='range'] {
+  min-width: 0;
+  width: 100%;
+}
+.filter-coverage.locked {
+  cursor: not-allowed;
+}
 
 /* --- grouped (mosaic) results --- */
 .result-group {
@@ -1974,7 +2021,9 @@ textarea:autofill {
    take what is left, so the middle stays in the middle; a date that is not there keeps its place. */
 .time-dates {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, auto) auto auto auto minmax(0, auto) minmax(0, 1fr);
+  /* Four text columns of one width round the date and its arrows, which therefore stand in the same place whichever of the
+     first, before, after and last dates a step has (Otto, 05.11.2026: the first and the last step moved them). */
+  grid-template-columns: repeat(2, minmax(0, 1fr)) auto auto auto repeat(2, minmax(0, 1fr));
   align-items: center;
   column-gap: var(--space-1-5);
   font-size: var(--text-2xs);
@@ -1984,6 +2033,9 @@ textarea:autofill {
   color: var(--text);
   font-size: var(--text-xs);
   white-space: nowrap;
+  /* A date of ten characters has the same room at every step. */
+  min-width: 10ch;
+  text-align: center;
 }
 .time-end,
 .time-near {
@@ -2002,7 +2054,7 @@ textarea:autofill {
 /* Narrow: the ends go first, then the neighbours (their arrows say them in the tooltip); the date shown stays. */
 @container (max-width: 459px) {
   .time-dates {
-    grid-template-columns: 0 minmax(0, auto) auto auto auto minmax(0, auto) 0;
+    grid-template-columns: 0 minmax(0, 1fr) auto auto auto minmax(0, 1fr) 0;
   }
   .time-end {
     visibility: hidden;

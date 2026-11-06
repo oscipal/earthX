@@ -8,7 +8,7 @@ import pytest
 from pydantic import BaseModel, ConfigDict
 
 from earthx.catalog.datasets import REGISTRY as DATASETS
-from earthx.catalog.registry import DataClass, LicenseTier
+from earthx.catalog.registry import DataClass, LicenseTier, SearchCapabilities
 from earthx.processing.errors import UnknownOperator
 from earthx.processing.operators import (
     JSON_SCHEMA_DIALECT,
@@ -160,7 +160,11 @@ class TestApplicable:
     def test_a_licence_below_processing(self, tier: LicenseTier) -> None:
         config = next(iter(DATASETS))
         # A catalogue-only entry is never displayed, so it carries no viewer (B11).
-        shown = {} if tier is LicenseTier.DISPLAY else {"viewer": None, "default_render": None}
+        shown = (
+            {}
+            if tier is LicenseTier.DISPLAY
+            else {"viewer": None, "default_render": None, "search_capabilities": SearchCapabilities(False, False)}
+        )
         config = replace(config, license=replace(config.license, tier=tier), **shown)
         assert applicable(SCALE, config) == [f"the licence of {config.dataset_id} does not allow processing"]
 

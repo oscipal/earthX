@@ -56,6 +56,8 @@ function reset(selected: string[]) {
     dateFrom: '',
     dateTo: '',
     searchFilters: {},
+    // These tests are about the filters as the source takes them, one scene at a time; "per pass" has its own file.
+    searchEvaluate: 'scene',
     sections: [],
     openSectionId: null,
     items: [],

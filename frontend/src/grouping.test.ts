@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { buildGroups, groupItemIdsFor, groupKey, itemsForMap, itemsOverView, MissingProperty } from './grouping';
+import sharedFixture from '../../backend/tests/fixtures/overpass_groups.json';
 import type { StacItem, TimeStepGroup } from './types';
 
 function item(properties: Record<string, unknown>): StacItem {
@@ -242,5 +243,26 @@ describe('itemsOverView (UI-01g, 27.10.2026)', () => {
 
   it('does not draw a ticked id that is in no group', () => {
     expect(itemsOverView(groups, 0, ['ghost'], false)).toEqual([]);
+  });
+});
+
+// Otto, 05.11.2026, on #293: the overpass of a search per pass is the group of the results list. The backend fixture holds
+// made-up scenes and the groups the registry key (`overpass_key`, day and datatake) makes of them; the backend test checks the
+// search per pass against it, this one the list's grouping, so the two hold the same scenes.
+describe('the groups of the results list are the overpasses of the search per pass', () => {
+  const shared = sharedFixture as unknown as { items: StacItem[]; groups: string[][] };
+  const idsOf = (groups: string[][]) => groups.map((group) => [...group].sort()).sort((a, b) => a[0].localeCompare(b[0]));
+
+  it('holds the same scenes in each group', () => {
+    const built = buildGroups(shared.items, ['datetime', 's2:datatake_id']);
+    expect(idsOf(built.map((group) => group.items.map((item) => item.id)))).toEqual(idsOf(shared.groups));
+  });
+
+  it('keeps a pass of one datatake on two days apart, as the filter does', () => {
+    const built = buildGroups(shared.items, ['datetime', 's2:datatake_id']);
+    const holding = (id: string) => built.find((group) => group.items.some((item) => item.id === id))!;
+    expect(holding('C1')).not.toBe(holding('A1'));
+    expect(holding('A1')).toBe(holding('A2'));
+    expect(holding('A3').items.map((item) => item.id)).toEqual(['A3']); // an offset of +02:00 is read as the UTC day
   });
 });

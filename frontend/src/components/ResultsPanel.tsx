@@ -1,4 +1,4 @@
-import { aoiNotes, measuresAoi } from '../aoiFilter';
+import { aoiNotes, measuresAoi, SKIPPED_TIP } from '../aoiFilter';
 import { maturityLabel, quicklookAsset } from '../datasets';
 import type { ResultSection } from '../sections';
 import { hasResultsPanel, totalItems } from '../sections';
@@ -9,6 +9,7 @@ import DatasetSelect from './DatasetSelect';
 import { ChevronDownIcon, ChevronRightIcon, TrashIcon } from './icons';
 import ResultsEye from './ResultsEye';
 import ResultsToTop from './ResultsToTop';
+import Tip from './Tip';
 
 function timeOf(properties: Record<string, unknown>): string {
   const dt = properties['datetime'];
@@ -243,6 +244,12 @@ export function AoiProgress({ datasetId }: { datasetId: string | null }) {
       <span data-tip-level="advanced" data-tip="Scenes within the limit, of the scenes checked so far">
         {counts?.found ?? 0} found / {counts?.checked ?? 0} checked
       </span>
+      {counts && counts.unreadable > 0 && (
+        <>
+          <span className="aoi-skipped">{counts.unreadable} skipped</span>
+          <Tip text={SKIPPED_TIP} />
+        </>
+      )}
       {walking && (
         <button type="button" className="btn aoi-stop" data-tip-level="advanced" data-tip="Stop checking. What is found stays." onClick={stop}>
           Stop

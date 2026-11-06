@@ -19,7 +19,7 @@ from earthx.api.item_source import (
     item_holding_of,
 )
 from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
-from earthx.catalog.registry import CoverageProvider, DatasetConfig, DatasetRegistry, ItemHolding
+from earthx.catalog.registry import CoverageProvider, DatasetConfig, DatasetRegistry, ItemHolding, SearchCapabilities
 
 
 def _materialized_entry() -> Any:
@@ -28,6 +28,7 @@ def _materialized_entry() -> Any:
         source=replace(SENTINEL_2_L2A.source, item_holding=ItemHolding.MATERIALIZED),
         coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
         search_filters=(),
+        search_capabilities=SearchCapabilities(evaluate=False, aoi_coverage=False),
     )
 
 

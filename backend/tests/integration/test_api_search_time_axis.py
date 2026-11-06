@@ -26,7 +26,7 @@ import pytest
 from earthx.api.main import build_app
 from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
 from earthx.catalog.pgstac import load_collection, upsert_items, use_pgstac_search_path
-from earthx.catalog.registry import CoverageProvider, DatasetRegistry, ItemHolding
+from earthx.catalog.registry import CoverageProvider, DatasetRegistry, ItemHolding, SearchCapabilities
 
 pytestmark = pytest.mark.anyio
 
@@ -46,6 +46,7 @@ NO_TIME_AXIS = replace(
     ),
     coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
     search_filters=(),
+    search_capabilities=SearchCapabilities(evaluate=False, aoi_coverage=False),
 )
 
 # A control with a time axis, otherwise identical — proves the drop is specific to

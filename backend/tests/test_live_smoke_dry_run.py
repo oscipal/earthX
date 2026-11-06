@@ -134,7 +134,13 @@ def _scl_scenes() -> list[dict[str, Any]]:
             **_fixture("earth_search", "item"),
             "id": f"SYNTH_SCL_{index}",
             "geometry": footprint,
-            "properties": {"datetime": "2024-06-01T10:00:00Z", "eo:cloud_cover": 50.0, "s2:nodata_pixel_percentage": 20.0},
+            # Two overpasses of three scenes (DS-03c): the footprint is the same, so a pass is as large as a scene.
+            "properties": {
+                "datetime": f"2024-06-0{1 + index // 3}T10:00:00Z",
+                "s2:datatake_id": f"synthetic-{index // 3}",
+                "eo:cloud_cover": 50.0,
+                "s2:nodata_pixel_percentage": 20.0,
+            },
             "assets": {"scl": {"href": f"https://{host}/synth/{index}/SCL.tif"}},
         }
         for index in range(6)
@@ -165,7 +171,12 @@ def _replay_rasters(module: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None
     # Four valid pixels, two of them in a cloud class (8 and 9): the share of the scenes above, 50 %.
     monkeypatch.setattr(module, "RESOLVER", lambda host, port: ("93.184.216.34",))
     monkeypatch.setattr(module, "read_whole_file", lambda scene: (numpy.array([8, 9, 4, 5, 0], dtype="uint8"), 0))
+    def together(paths: Any, aoi: Any, classes: Any) -> AoiClouds:
+        # The scenes of a pass share one footprint, so the pass is a scene: half of its valid pixels are clouds, half vegetation.
+        return AoiClouds(cloud_pixels=50, data_pixels=100, aoi_pixels=100, resolution=80.0, class_pixels={8: 50, 4: 50})
+
     monkeypatch.setattr(module, "measure_aoi_clouds", counts)
+    monkeypatch.setattr(module, "measure_aoi_pass", together)
     monkeypatch.setattr(aoi_cloud_filter, "measure_aoi_clouds", counts)
     monkeypatch.setattr(module, "open_asset_ref", lambda ref, policy, resolver, **kwargs: str(ref.href))
 

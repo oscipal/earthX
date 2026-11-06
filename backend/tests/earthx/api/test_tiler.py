@@ -38,7 +38,7 @@ from earthx.api.tiler import (
     build_app,
 )
 from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
-from earthx.catalog.registry import DatasetRegistry, LicenseTier, ViewerInfo
+from earthx.catalog.registry import DatasetRegistry, LicenseTier, SearchCapabilities, ViewerInfo
 from earthx.gateway import (
     CachingResolver,
     UpstreamError,
@@ -384,7 +384,10 @@ class TestOnlyReleasedZoomLevels:
 
     @staticmethod
     def _client_for(viewer: ViewerInfo | None, client: TestClient, fetched: list[str]) -> TestClient:
-        registry = DatasetRegistry((replace(SENTINEL_2_L2A, viewer=viewer),))
+        # A dataset without a viewer has no overpass key to judge per pass on (DS-03c).
+        registry = DatasetRegistry(
+            (replace(SENTINEL_2_L2A, viewer=viewer, search_capabilities=SearchCapabilities(False, False)),)
+        )
         app = build_app(registry)
         app.state.earthx_item_source = client.app.state.earthx_item_source
         app.state.earthx_cache_pool = None
@@ -505,6 +508,7 @@ class TestDisplayLicenceTier:
             SENTINEL_2_L2A,
             license=replace(SENTINEL_2_L2A.license, tier=LicenseTier.CATALOG),
             viewer=None,
+            search_capabilities=SearchCapabilities(evaluate=False, aoi_coverage=False),
         )
         registry = DatasetRegistry((catalog_tier,))
         app = build_app(registry)

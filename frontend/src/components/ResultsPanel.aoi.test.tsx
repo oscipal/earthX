@@ -174,9 +174,19 @@ describe('the hints in the head of the dataset', () => {
     expect(container.querySelector('.load-more button')).toBeNull();
   });
 
-  it('says how many scenes could not be read', () => {
+  it('says how many scenes were skipped in the line "n found / m checked", with the reason behind a (i)', () => {
     load({ features: THREE, counts: counts({ unreadable: 2 }) });
-    expect(text(container.querySelector('.dataset-select-box'))).toContain('2 scenes could not be checked');
+    expect(text(progress())).toBe('12 found / 180 checked2 skipped');
+    const tip = progress()!.querySelector<HTMLElement>('.tip')!;
+    expect(tipOf(tip)).toMatch(/could not read/);
+    expect(tipOf(tip)).toMatch(/second try/);
+    expect(text(container)).not.toContain('could not be checked');
+  });
+
+  it('says nothing of skipped while none was', () => {
+    load({ features: THREE, counts: counts({ unreadable: 0 }) });
+    expect(progress()!.querySelector('.aoi-skipped')).toBeNull();
+    expect(progress()!.querySelector('.tip')).toBeNull();
   });
 
   it('says that nothing is within the limit, in place of "no scenes for this area", once the search is done', () => {

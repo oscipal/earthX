@@ -93,6 +93,8 @@ function reset(selected: string[] = ['optical']) {
     dateTo: '2026-07-31',
     searchFilters: { optical: { 'test:cloud': range('', '20') } },
     searchWithin: { optical: true },
+    // Per scene, as the filter was first made; "per pass" has its own file (`store.evaluate.test.ts`).
+    searchEvaluate: 'scene',
     sections: [],
     openSectionId: null,
     items: [],
@@ -149,11 +151,10 @@ describe('what the search asks', () => {
     expect(asked[0]).not.toHaveProperty('query_by_collection');
   });
 
-  it('asks the scene when the switch cannot be used: no dates, one date, or a point', async () => {
+  it('asks the scene when the switch cannot be used: no dates or one date', async () => {
     const cases: [string, Partial<ReturnType<typeof state>>][] = [
       ['no dates', { dateFrom: '', dateTo: '' }],
       ['no end', { dateTo: '' }],
-      ['a point', { aoiPoint: { type: 'Point', coordinates: [10.5, 47.5] } }],
     ];
     for (const [, change] of cases) {
       reset();
@@ -163,6 +164,15 @@ describe('what the search asks', () => {
       expect(asked[0].query_by_collection).toEqual({ optical: { 'test:cloud': { lte: 20 } } });
       expect(state().aoiWalking).toBe(false);
     }
+  });
+
+  it('measures in the square around a point, and searches by the square (Otto, 06.11.2026)', async () => {
+    reset();
+    useAppStore.setState({ aoiPoint: { type: 'Point', coordinates: [10.5, 47.5] } });
+    steps = [{ scenes: [], checked: 0 }];
+    await state().runSearch();
+    expect(asked[0].query_by_collection).toEqual({ optical: { [AOI_CLOUD_PROPERTY]: { lte: 20 } } });
+    expect((asked[0].intersects as { type?: string } | undefined)?.type).not.toBe('Point');
   });
 
   it('asks the scene, not the AOI, for an AOI with too many points to measure in', async () => {
@@ -324,7 +334,7 @@ describe('the walk through the answers', () => {
     steps = [{ checked: 500, found: 0, unreadable: 2, limit: true }];
     await state().runSearch();
     expect(state().notice).toBe(
-      'No scenes within the AOI limit in this date range (500 checked). Checked 500 scenes. Narrow the date range to search further. 2 scenes could not be checked.',
+      'No scenes within the AOI limit in this date range (500 checked). Checked 500 scenes. Narrow the date range to search further. 2 scenes skipped.',
     );
     expect(state().sections[0].items).toEqual([]);
   });

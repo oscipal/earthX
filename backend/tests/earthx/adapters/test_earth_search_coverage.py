@@ -35,7 +35,7 @@ from earthx.catalog.coverage import (
     UpstreamCoverageShapeError,
 )
 from earthx.catalog.datasets import SENTINEL_2_L2A
-from earthx.catalog.registry import CoverageProvider, ItemHolding
+from earthx.catalog.registry import CoverageProvider, ItemHolding, SearchCapabilities
 from earthx.catalog.search_filters import RangeCondition, ValuesCondition
 from earthx.gateway import UpstreamError, UpstreamTimeout
 
@@ -614,6 +614,7 @@ class TestDispatchMistakes:
             source=replace(SENTINEL_2_L2A.source, item_holding=ItemHolding.MATERIALIZED),
             coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
             search_filters=(),
+            search_capabilities=SearchCapabilities(evaluate=False, aoi_coverage=False),
         )
 
         with pytest.raises(CoverageProviderMismatch):
