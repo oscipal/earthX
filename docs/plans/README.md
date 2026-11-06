@@ -16,3 +16,4 @@ Ein neuer Plan liegt im Ordner seines Meilensteins, verlinkt als `docs/plans/<or
 ## Backlog
 
 Das Backlog (`nach-m4-backlog.md`) pflegt nur der Planungs-Chat bzw. Otto. Sessions ändern es nicht; Erledigtes tragen sie als Log-Zeile mit PR-Nummer in `docs/ENTSCHEIDUNGSLOG.md` ein (Otto, 26.10.2026).
+
