@@ -9,15 +9,23 @@ a dot, and the host is normalized before it is compared at all.
 from __future__ import annotations
 
 import ipaddress
+import math
 import os
 import re
-from collections.abc import Iterable
-from dataclasses import dataclass
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field
+from types import MappingProxyType
 from urllib.parse import urlsplit
 
 from earthx.gateway.errors import UrlRejected, UrlTooLong
 
 ALLOWED_HOSTS_ENV = "EARTHX_ALLOWED_HOSTS"
+USER_AGENT_ENV = "EARTHX_USER_AGENT"
+# Project name and repository, no person's mail address (adr/0025 F9).
+DEFAULT_USER_AGENT = "EarthX/0.1 (+https://github.com/oscipal/earthX)"
+MAX_USER_AGENT_CHARS = 256
+# A spacing above this is a typo, not courtesy: one request every five minutes stalls a run.
+MAX_INTERVAL_S = 300.0
 
 _LABEL = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
 _DIGITS = re.compile(r"^[0-9]+$")
@@ -57,6 +65,50 @@ def normalize_host(host: str) -> str:
     return host
 
 
+def check_user_agent(value: str) -> str:
+    """Return ``value`` if it may go out as the ``User-Agent``, else raise ``ValueError``.
+
+    Printable ASCII only, so no line break can smuggle a header in; no ``@``, so no
+    mail address of a person goes to every source (adr/0025 F9). The message never
+    repeats the value: it may come from the environment.
+    """
+    if not value or value != value.strip():
+        raise ValueError("the User-Agent is empty or has leading or trailing spaces")
+    if len(value) > MAX_USER_AGENT_CHARS:
+        raise ValueError(f"the User-Agent is longer than {MAX_USER_AGENT_CHARS} characters")
+    if any(not (32 <= ord(char) < 127) for char in value):
+        raise ValueError("the User-Agent holds a character that is not printable ASCII")
+    if "@" in value:
+        raise ValueError("the User-Agent holds an '@'; a mail address does not belong in it")
+    return value
+
+
+def user_agent_from_env(environ: Mapping[str, str] | None = None) -> str:
+    """The instance's one ``User-Agent``: ``EARTHX_USER_AGENT``, or the default if unset or empty.
+
+    Every process calls this at start, so a bad value stops it there (M5-18 §3.1); the
+    error names the variable, never the value.
+    """
+    raw = (environ if environ is not None else os.environ).get(USER_AGENT_ENV, "")
+    if not raw.strip():
+        return DEFAULT_USER_AGENT
+    try:
+        return check_user_agent(raw)
+    except ValueError as error:
+        raise ValueError(f"{USER_AGENT_ENV}: {error}") from None
+
+
+def product_token(user_agent: str) -> str:
+    """The name ``robots.txt`` groups are matched against: the text before the first ``/`` or space."""
+    return re.split(r"[/ ]", user_agent, maxsplit=1)[0]
+
+
+def _check_interval(seconds: float) -> float:
+    if not isinstance(seconds, (int, float)) or math.isnan(seconds) or not 0 <= seconds <= MAX_INTERVAL_S:
+        raise ValueError(f"an interval per host lies between 0 and {MAX_INTERVAL_S:g} seconds")
+    return float(seconds)
+
+
 @dataclass(frozen=True)
 class Policy:
     """Allowlist and limits. A value, handed in by the caller.
@@ -73,9 +125,30 @@ class Policy:
     max_redirects: int = 3
     connect_timeout_s: float = 5.0
     read_timeout_s: float = 15.0
+    # On every request, never set by a caller (adr/0025 F9). The instance's value unless a test names one.
+    user_agent: str = field(default_factory=user_agent_from_env)
+    # The least time between the starts of two requests to one host (adr/0025 §6.2). 0 waits never.
+    min_interval_s: float = 0.0
+    # Per host, overriding ``min_interval_s``; a subdomain takes its parent's value, as in the allowlist.
+    host_intervals: Mapping[str, float] = field(default_factory=dict, hash=False)
+    # Ask robots.txt before a host is fetched (RFC 9309). Only the harvester's catalogue fetch sets it.
+    obey_robots: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "allowed_hosts", frozenset(normalize_host(h) for h in self.allowed_hosts))
+        check_user_agent(self.user_agent)
+        object.__setattr__(self, "min_interval_s", _check_interval(self.min_interval_s))
+        intervals = {normalize_host(host): _check_interval(value) for host, value in self.host_intervals.items()}
+        object.__setattr__(self, "host_intervals", MappingProxyType(intervals))
+
+    def interval_for(self, host: str) -> float:
+        """The spacing for ``host``: its own entry, the nearest parent's, else ``min_interval_s``."""
+        labels = host.split(".")
+        for start in range(len(labels) - 1):
+            value = self.host_intervals.get(".".join(labels[start:]))
+            if value is not None:
+                return value
+        return self.min_interval_s
 
     def allows_host(self, host: str) -> bool:
         """True for the host itself and for its real subdomains, nothing else."""

@@ -57,6 +57,8 @@ def gdal_options(policy: Policy) -> dict[str, str]:
         # Named rather than left to the default, because switching it on would
         # quietly drop certificate verification.
         "GDAL_HTTP_UNSAFESSL": "NO",
+        # GDAL opens its own connections; the same User-Agent as the client (adr/0025 F9).
+        "GDAL_HTTP_USERAGENT": policy.user_agent,
     }
 
 
