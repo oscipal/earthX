@@ -67,6 +67,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        working-directory: ${{ github.workspace }}
         run: scripts/ci-scope.sh
 
       - uses: actions/setup-python@v5
@@ -129,6 +130,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        working-directory: ${{ github.workspace }}
         run: scripts/ci-scope.sh
 
       - uses: actions/setup-node@v4
@@ -171,6 +173,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        working-directory: ${{ github.workspace }}
         run: scripts/ci-scope.sh
 
       - uses: actions/setup-python@v5
@@ -210,6 +213,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        working-directory: ${{ github.workspace }}
         run: scripts/ci-scope.sh
 
       - name: Write throwaway .env (CI only, never a real secret)
