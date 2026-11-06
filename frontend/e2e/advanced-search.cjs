@@ -1,7 +1,8 @@
 // Browser check of DS-02c: the button "Advanced search" above "Search" and the pop-up it opens. With made-up answers of
 // the search and the coverage (the server below applies the filters it is sent, so the results and the coverage count
 // show their effect), it does the clicks of a user in a real browser and fails when
-//   - the button is there for the DEM alone, is missing for a dataset with filters, or is not right above "Search" and as wide;
+//   - the button is missing or not locked with its reason for the DEM alone (UI-05: always there), is missing for a dataset
+//     with filters, or is not right above "Search" and as wide;
 //   - the pop-up is cut off by the panel or the window, a filter of the 13 the registry offers cannot be reached (also at
 //     320 px wide), or "Done" and the dataset box do not stay in view while the fields scroll;
 //   - the filters do not stand under the headings of the registry, in its order;
@@ -165,9 +166,13 @@ async function check(browser, { theme, viewport }) {
   await page.waitForSelector('.dataset-toggle');
   await store((s, aoi) => { s.getState().setAoi(aoi); s.getState().flyTo([9.2, 46.6, 12.2, 48.4]); }, AOI);
 
-  // 1. The DEM alone has no filters: no button, nothing greyed out in its place.
+  // 1. The DEM alone has no filters: the button is there, locked with the reason (UI-05, Otto 06.11.2026), and opens nothing.
   await pick('Copernicus DEM');
-  expect('a button for the DEM alone', (await button.count()) === 0);
+  expect('no button for the DEM alone', (await button.count()) === 1);
+  expect('the button is not locked for the DEM alone', (await button.getAttribute('aria-disabled')) === 'true');
+  expect('the reason of the locked button', (await button.getAttribute('data-tip')) === 'The chosen datasets offer no filters');
+  await button.click({ force: true });
+  expect('the locked button opened the pop-up', (await popup.count()) === 0);
   await shot('1-dem-only');
 
   // 2. Sentinel-2: the button is there, right above "Search" and as wide, in the footer that stays in view.

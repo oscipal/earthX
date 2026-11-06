@@ -167,7 +167,8 @@ describe('"AOI coverage"', () => {
     open();
     expect(coverage()).toBeNull();
     pick('elevation');
-    expect(button()).toBeNull();
+    expect(button()!.getAttribute('aria-disabled')).toBe('true');
+    expect(coverage()).toBeNull();
   });
 
   it('is set by the slider, and the field shows the same', () => {

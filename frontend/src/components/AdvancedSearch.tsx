@@ -274,7 +274,7 @@ function FilterRow({
 // The button "Advanced search · 2" above "Search" and the pop-up it opens (DS-02c, Otto 30.10.2026): the filters the
 // registry offers for the ticked datasets, one dataset at a time, under the headings the registry gives them. Each
 // dataset has its own values (nothing is shared across datasets); a dataset without filters is not in the box, and
-// the button is there only while a ticked dataset has some. What a filter is and where it stands is the registry's: a
+// the button is locked while no ticked dataset has some. What a filter is and where it stands is the registry's: a
 // filter it adds shows up here without a change, and this knows no property and no dataset. The values stay in the
 // store when the pop-up closes, whichever way it does.
 export default function AdvancedSearch() {
@@ -322,7 +322,15 @@ export default function AdvancedSearch() {
       if (inputs[COVERAGE_PROPERTY]) setSearchFilter(datasetId, COVERAGE_PROPERTY, { kind: 'range', from: '', to: '' });
     }
   }, [coverageLockReason, setSearchFilter]);
-  if (offers.length === 0) return null;
+  // Always there (UI-05, Otto 06.11.2026): without a dataset with filters it is locked, with the reason.
+  if (offers.length === 0) {
+    const reason = selectedDatasetIds.length === 0 ? 'Choose a dataset to see its filters' : 'The chosen datasets offer no filters';
+    return (
+      <button type="button" className="btn advanced-btn" aria-disabled="true" data-tip={reason}>
+        Advanced search
+      </button>
+    );
+  }
 
   const shown = offers.find((o) => o.dataset.id === shownId) ?? offers[0];
   const setOf = (offer: Offer) => setFilters(offer.filters, searchFilters[offer.dataset.id]);
