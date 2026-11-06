@@ -1,10 +1,10 @@
 # ADR 0024 — Prototyp-Quellen
 
-- **Status:** **Angenommen** von Otto am 2026-11-06 für F1–F10, jeweils Option 1
+- **Status:** **Angenommen** von Otto am 2026-11-06: F1–F10 jeweils Option 1
   (Empfehlung), unter der Bedingung einer Regel für Ergebnisse aus
-  Prototyp-Datensätzen. Diese Regel steht in §6a; ihr offener Teil ist **F11**
-  (offen, Antwort Otto ausstehend).
-- **Datum:** 2026-10-31 (Entwurf), 2026-11-06 (Antworten F1–F10, §6a)
+  Prototyp-Datensätzen (§6a); diese Regel mit F11 = Option 1, ebenfalls am
+  2026-11-06.
+- **Datum:** 2026-10-31 (Entwurf), 2026-11-06 (Antworten F1–F11, §6a)
 - **Aufgabe:** M5-02 laut `docs/plans/m5/m5-discovery-und-suche.md` §5a (§4 D, Antwort 3).
 - **Autonomiestufe:** C — nur gelesen und berichtet. Kein Produktivcode geändert,
   keine Datenquelle aufgerufen, kein Messskript nötig.
@@ -218,7 +218,7 @@ eine eigene Regel. Befund am Code (`main` nach #294):
 | Browser (`frontend/src/jobShelf.ts:1–4`) | Die Ablage der Jobs hält je Job eine Kopie des Auftrags in `localStorage`; Layer werden nicht gespeichert, Ergebnis-Layer entstehen aus der Ablage [P] | Die Marke lässt sich aus dem Präfix im Auftrag ableiten, auch wenn die Collection fehlt |
 | `EARTHX_PROFILE` | Gibt es nicht; im Code, in Compose und in der CI kommt die Variable nicht vor [P] | **Neu** mit diesem ADR; `CI` setzt GitHub Actions selbst |
 
-**Vorschlag (R11, gilt mit Antwort auf F11):**
+**Regel R11 (angenommen mit F11 = 1, Otto, 2026-11-06):**
 
 1. **Ergebnisse erben den Status.** Jeder Job, dessen Rezept einen `proto-`-Datensatz
    nennt, gilt als Prototyp-Ergebnis: Marke „Prototype“ in der Ablage der Jobs, am
@@ -231,7 +231,10 @@ eine eigene Regel. Befund am Code (`main` nach #294):
    Datensatz nicht kennt, tragen in einer Instanz mit geladenen Prototyp-Einträgen
    **alle** Antworten mit Daten `Cache-Control: private, no-store`, auch
    `/results/…`. Das ist strenger als R7 je Datensatz, kostet lokal nichts und
-   braucht keinen Datensatz im Schlüssel [A].
+   braucht keinen Datensatz im Schlüssel [A]. Mit gesetztem
+   `EARTHX_PROTOTYPE_SOURCES` gilt `no-store` für alle Antworten der Instanz;
+   Messungen von Kachelzeiten (z. B. `adr/0022` §8) laufen deshalb nur mit
+   ausgeschaltetem Schalter.
 3. **Abschalten räumt Ergebnisse binnen einer Stunde.** `catalog-load` ohne
    Schalter setzt das Ende jedes Jobs und Laufs mit `proto-`-Datensatz auf jetzt und
    löscht Bündel, die einen solchen Job enthalten. Die Job-API meldet sie damit
@@ -240,7 +243,7 @@ eine eigene Regel. Befund am Code (`main` nach #294):
    `catalog-load` bekommt keinen Zugang zum Objektspeicher. Bis zum nächsten Lauf
    des Aufsehers ist eine Ergebnis-Datei nur noch über ihre zufällige `result_id`
    lesbar, lokal und nur für Otto. Das ändert F5 („Jobs laufen nach Frist aus“)
-   und ist deshalb F11.
+   für Ergebnisse (F11 = 1).
 4. **Tests (bei Umsetzung):** `409` an `/bundles` mit Prototyp-Job; `no-store` an
    `/results/…` nur mit geladenen Prototyp-Einträgen; `catalog-load` ohne Schalter
    setzt das Ende der Prototyp-Jobs und -Läufe und lässt freigegebene unberührt;
@@ -279,7 +282,7 @@ eine eigene Regel. Befund am Code (`main` nach #294):
 ## 9. Fragen an Otto
 
 **Antworten Otto (2026-11-06):** F1–F10 jeweils **Option 1** (Empfehlung), unter
-der Bedingung der Regel für Ergebnisse (§6a, F11).
+der Bedingung der Regel für Ergebnisse (§6a); F11 = **Option 1**.
 
 **F1 — Was darf Prototyp-Quelle werden?** → **1**
 1. Nur Quellen mit **unklarer** Rechtslage; ausdrücklich untersagte Nutzung,
@@ -325,7 +328,7 @@ der Bedingung der Regel für Ergebnisse (§6a, F11).
 1. Erste Prototyp-Quelle erst mit dem YAML-Lader aus M5-03 (**Empfehlung**)
 2. Vorher übergangsweise im Python-Modul mit Laufzeitfilter (A1)
 
-**F11 — Ergebnisse aus Prototyp-Datensätzen (§6a)** → offen
+**F11 — Ergebnisse aus Prototyp-Datensätzen (§6a)** → **1**
 1. Ergebnisse erben den Status (Marke, „Share“ und „Download all (ZIP)“ `409`, Hinweis im Download); `no-store` für alle Antworten einer Prototyp-Instanz, auch `/results`; `catalog-load` ohne Schalter beendet Prototyp-Jobs sofort, der stündliche Aufseher löscht Dateien und Zeilen (**Empfehlung**)
 2. Wie 1, aber Jobs und Ergebnisse laufen nach ihrer Frist aus (bis 7 Tage, wie F5 bisher)
 3. Wie 1, aber `catalog-load` löscht auch die Dateien selbst (braucht Zugang zum Objektspeicher in `catalog-load`)
