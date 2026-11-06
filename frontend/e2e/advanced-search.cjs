@@ -10,7 +10,7 @@
 //   - Escape closes the pop-up or the list of datasets in it (Otto, 2.11.2026: Esc closes nothing; the x, "Done" or a click beside
 //     do), or one of those loses a value;
 //   - a wrong field (also half-typed text such as "20-") is not marked, or "Search" is not held back, also after "Done";
-//   - the filters are kept after a search or "Clear search results", or "Reset filters" does not take them back;
+//   - "Clear search results" drops the filters, or "Reset filters" does not;
 //   - a field, the unit or the box overlaps another or leaves the pop-up; the page scrolls sideways;
 //   - an item id or the AOI shows up in a URL the browser asks for (the filters go in the body of a POST);
 // and writes a screenshot per step. The requests of the search and the coverage go to <OUT>/requests.json, so that
@@ -309,19 +309,10 @@ async function check(browser, { theme, viewport }) {
   expect('the scenes after the filters', listed === '1', listed);
   await shot('6-results');
 
-  // 10. The settings are never kept (Otto, 05.11.2026): empty after the search, and "Clear search results" leaves them empty. The
-  // rest of the steps set the two filters of Sentinel-2 again.
-  expect('the settings were kept after the search', (await button.textContent()) === 'Advanced search', await button.textContent());
+  // 10. "Clear search results" keeps the filters.
   await page.getByRole('button', { name: /Clear search results/ }).click();
   await page.waitForSelector('.control-panel');
-  expect('the count after "Clear search results"', (await button.textContent()) === 'Advanced search', await button.textContent());
-  await page.evaluate(async () => {
-    const { useAppStore } = await import('/src/store.ts');
-    const s = useAppStore.getState();
-    s.setSearchFilter('sentinel-2-c1-l2a', 'eo:cloud_cover', { kind: 'range', from: '', to: '40' });
-    s.setSearchFilter('sentinel-2-c1-l2a', 'platform', { kind: 'values', values: ['sentinel-2a'] });
-  });
-  expect('the count with the filters set again', (await button.textContent()) === 'Advanced search · 2', await button.textContent());
+  expect('the count after "Clear search results"', (await button.textContent()) === 'Advanced search · 2', await button.textContent());
 
   // 11. A second dataset with filters of its own: the box offers it, the DEM stays out of it, the values stay apart.
   await store((s) => s.getState().setMultiSelect(true));
@@ -359,15 +350,6 @@ async function check(browser, { theme, viewport }) {
   // 12. "Reset filters" takes back the dataset shown and leaves the other.
   await page.getByRole('button', { name: 'Clear search results' }).click().catch(() => {});
   await page.waitForSelector('.control-panel');
-  // The settings are empty after a search (Otto, 05.11.2026): set them again to take them back.
-  expect('the settings were kept after the search', (await button.textContent()) === 'Advanced search', await button.textContent());
-  await page.evaluate(async () => {
-    const { useAppStore } = await import('/src/store.ts');
-    const s = useAppStore.getState();
-    s.setSearchFilter('sentinel-2-c1-l2a', 'eo:cloud_cover', { kind: 'range', from: '', to: '40' });
-    s.setSearchFilter('sentinel-2-c1-l2a', 'platform', { kind: 'values', values: ['sentinel-2a'] });
-    s.setSearchFilter('radar-made-up', 'sat:relative_orbit', { kind: 'range', from: '22', to: '22' });
-  });
   await button.click();
   await popup.getByRole('button', { name: 'Reset filters' }).click();
   expect('"Reset filters" left values', (await fields('Relative orbit, from').inputValue()) === '' && (await popup.getByRole('button', { name: 'Reset filters' }).count()) === 0);

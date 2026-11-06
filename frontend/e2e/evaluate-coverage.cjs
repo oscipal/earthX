@@ -4,7 +4,7 @@
 //     two segment buttons with "per pass" first and pressed, or does not keep the choice;
 //   - the (i) beside it does not hold the explanation with its example, or the explanation stands as a paragraph;
 //   - "AOI coverage" is missing, is not a slider with a field that say the same, is not locked with the reason in its tooltip
-//     without an AOI and for a point, wants a date range, or keeps its value when the AOI goes;
+//     without an AOI, wants a date range, or keeps its value when the AOI goes;
 //   - the search does not ask `earthx:evaluate` (per pass) and `earthx:aoi_coverage`, asks the first per scene, or sends the
 //     AOI in a URL;
 //   - the coverage map is asked the coverage;
@@ -153,7 +153,7 @@ async function check(browser, { theme, viewport }) {
   expect('"Evaluate" leaves the pop-up', inside(rows[0], p, 2), JSON.stringify(rows[0]));
   await shot('1-evaluate');
 
-  // 2. "AOI coverage": locked without an AOI, with the reason; free with an AOI and no dates; locked for a point.
+  // 2. "AOI coverage": locked without an AOI, with the reason; free with an AOI and no dates, and for a point.
   expect('"AOI coverage" is missing', (await coverage.count()) === 1);
   expect('"AOI coverage" is not locked without an AOI', (await slider.isDisabled()) && (await number.isDisabled()));
   expect('the reason it is locked', (await coverage.getAttribute('data-tip')) === 'Draw an AOI to use this filter', await coverage.getAttribute('data-tip'));
@@ -166,8 +166,7 @@ async function check(browser, { theme, viewport }) {
   await close();
   await store((s) => s.setState({ aoiPoint: { type: 'Point', coordinates: [10.5, 47.5] } }));
   await button.click();
-  expect('"AOI coverage" is free for a point', await number.isDisabled());
-  expect('the reason for a point', (await coverage.getAttribute('data-tip')) === 'Draw an area to use this filter', await coverage.getAttribute('data-tip'));
+  expect('"AOI coverage" is locked for a point (Otto, 06.11.2026: its square is the AOI)', !(await number.isDisabled()) && !(await slider.isDisabled()), await coverage.getAttribute('data-tip'));
   await close();
   await store((s) => s.setState({ aoiPoint: null }));
 
@@ -204,15 +203,9 @@ async function check(browser, { theme, viewport }) {
   expect('the coverage is not in the query', JSON.stringify(perPass.query_by_collection) === JSON.stringify({ [S2]: { 'earthx:aoi_coverage': { gte: 60 } } }), JSON.stringify(perPass.query_by_collection));
   expect('the coverage wanted a date range', !('datetime' in perPass), JSON.stringify(perPass.datetime));
 
-  // 5. Per scene: no earthx:evaluate, the coverage stays. The settings are empty after a search (Otto, 05.11.2026): the coverage
-  // is set again, and "per pass" is pressed again.
+  // 5. Per scene: no earthx:evaluate, the coverage stays.
   await store((s) => { s.getState().clearSearchResults(); s.setState({ dock: 'controls' }); });
   await page.waitForSelector('.control-panel');
-  expect('the settings were kept after the search', (await text(button)) === 'Advanced search', await text(button));
-  await button.click();
-  expect('"per pass" is not pressed again after a search', (await buttons.nth(0).getAttribute('aria-pressed')) === 'true');
-  await number.fill('60');
-  await close();
   await button.click();
   await buttons.nth(1).click();
   expect('"per scene" is not pressed', (await buttons.nth(1).getAttribute('aria-pressed')) === 'true' && (await buttons.nth(0).getAttribute('aria-pressed')) === 'false');

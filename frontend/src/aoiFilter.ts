@@ -153,7 +153,6 @@ export const COVERAGE_TIP =
 
 export const LOCK_NEEDS_AOI = 'Draw an AOI to use this filter';
 export const LOCK_NEEDS_INPUT = 'Draw an AOI and set a date range first';
-export const LOCK_NEEDS_AREA = 'Draw an area to use this filter';
 export const LOCK_TOO_MANY = 'The area has too many points for this filter';
 
 // The most positions the server measures in (`earthx:aoi`, plan §6.5; Otto, 31.10.2026: checked here first, the server's
@@ -161,25 +160,22 @@ export const LOCK_TOO_MANY = 'The area has too many points for this filter';
 export const MAX_AOI_POSITIONS = 20_000;
 
 // Why "Within AOI" cannot be used right now, or `null` (§6.5, §6.17). The server needs an area and a date range with both
-// ends; a point is no area, and more than `MAX_AOI_POSITIONS` positions are too many to measure in. A long AOI below that is no
-// reason: the search then sends its bounding box and the AOI beside it.
+// ends; more than `MAX_AOI_POSITIONS` positions are too many to measure in. A long AOI below that is no reason: the search then
+// sends its bounding box and the AOI beside it. A point is an area too (Otto, 06.11.2026): the square around it, which is the AOI.
 export function withinAoiLock(s: {
   aoi: GeoJSON.Geometry | null;
-  aoiPoint: GeoJSON.Point | null;
   dateFrom: string;
   dateTo: string;
 }): string | null {
   if (!s.aoi || !s.dateFrom || !s.dateTo) return LOCK_NEEDS_INPUT;
-  if (s.aoiPoint) return LOCK_NEEDS_AREA;
   if (countPositions((s.aoi as { coordinates?: unknown }).coordinates) > MAX_AOI_POSITIONS) return LOCK_TOO_MANY;
   return null;
 }
 
 // Why "AOI coverage" cannot be used right now, or `null` (DS-03c). It reads outlines, so it needs an area and nothing else, no
-// date range; a point is no area, and an AOI of more than `MAX_AOI_POSITIONS` positions is too long to send.
-export function coverageLock(s: { aoi: GeoJSON.Geometry | null; aoiPoint: GeoJSON.Point | null }): string | null {
+// date range; an AOI of more than `MAX_AOI_POSITIONS` positions is too long to send. A point is an area too (the square).
+export function coverageLock(s: { aoi: GeoJSON.Geometry | null }): string | null {
   if (!s.aoi) return LOCK_NEEDS_AOI;
-  if (s.aoiPoint) return LOCK_NEEDS_AREA;
   if (countPositions((s.aoi as { coordinates?: unknown }).coordinates) > MAX_AOI_POSITIONS) return LOCK_TOO_MANY;
   return null;
 }

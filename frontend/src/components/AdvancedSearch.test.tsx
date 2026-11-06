@@ -734,12 +734,20 @@ describe('"Filter within AOI only"', () => {
     expect([...container.querySelectorAll('.advanced-actions button')].map(text)).toEqual(['Done']);
   });
 
+  it('is free for a point: the square around it is the AOI (Otto, 06.11.2026)', () => {
+    useAppStore.setState({ aoiPoint: { type: 'Point', coordinates: [10.5, 47.5] } });
+    pick('optical');
+    open();
+    expect(within()!.classList.contains('locked')).toBe(false);
+    clickWithin();
+    expect(stored()).toEqual({ optical: true });
+  });
+
   describe.each([
     ['no area', { aoi: null }, 'Draw an AOI and set a date range first'],
     ['no dates', { dateFrom: '', dateTo: '' }, 'Draw an AOI and set a date range first'],
     ['no end', { dateTo: '' }, 'Draw an AOI and set a date range first'],
     ['no start', { dateFrom: '' }, 'Draw an AOI and set a date range first'],
-    ['a point', { aoiPoint: { type: 'Point', coordinates: [10.5, 47.5] } as GeoJSON.Point }, 'Draw an area to use this filter'],
     [
       'more than 20 000 points',
       { aoi: { type: 'Polygon', coordinates: [Array.from({ length: 20_001 }, (_, i) => [10 + (i % 100) / 1000, 47 + Math.floor(i / 100) / 1000])] } as GeoJSON.Polygon },

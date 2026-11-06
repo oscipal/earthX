@@ -151,11 +151,10 @@ describe('what the search asks', () => {
     expect(asked[0]).not.toHaveProperty('query_by_collection');
   });
 
-  it('asks the scene when the switch cannot be used: no dates, one date, or a point', async () => {
+  it('asks the scene when the switch cannot be used: no dates or one date', async () => {
     const cases: [string, Partial<ReturnType<typeof state>>][] = [
       ['no dates', { dateFrom: '', dateTo: '' }],
       ['no end', { dateTo: '' }],
-      ['a point', { aoiPoint: { type: 'Point', coordinates: [10.5, 47.5] } }],
     ];
     for (const [, change] of cases) {
       reset();
@@ -165,6 +164,15 @@ describe('what the search asks', () => {
       expect(asked[0].query_by_collection).toEqual({ optical: { 'test:cloud': { lte: 20 } } });
       expect(state().aoiWalking).toBe(false);
     }
+  });
+
+  it('measures in the square around a point, and searches by the square (Otto, 06.11.2026)', async () => {
+    reset();
+    useAppStore.setState({ aoiPoint: { type: 'Point', coordinates: [10.5, 47.5] } });
+    steps = [{ scenes: [], checked: 0 }];
+    await state().runSearch();
+    expect(asked[0].query_by_collection).toEqual({ optical: { [AOI_CLOUD_PROPERTY]: { lte: 20 } } });
+    expect((asked[0].intersects as { type?: string } | undefined)?.type).not.toBe('Point');
   });
 
   it('asks the scene, not the AOI, for an AOI with too many points to measure in', async () => {
@@ -714,9 +722,7 @@ describe('the switch in the store', () => {
     steps = [{ scenes: [scene('a')], checked: 100, next: 't2' }];
     await state().runSearch();
     expect(state().searchContext?.nextToken).toBe('t2');
-    // The settings of "Advanced search" are empty after a search (Otto, 05.11.2026): the switch is off. Turning it on is a change.
-    expect(state().searchWithin).toEqual({});
-    state().setSearchWithin('optical', true);
+    state().setSearchWithin('optical', false);
     expect(state().searchContext?.nextToken).toBeNull();
   });
 });

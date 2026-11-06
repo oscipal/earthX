@@ -229,12 +229,13 @@ describe('"AOI coverage"', () => {
     expect(coverage()!.getAttribute('data-tip')).toBe('Draw an AOI to use this filter');
   });
 
-  it('is locked for a point, which is no area', () => {
+  it('is not locked for a point: the square around it is the AOI (Otto, 06.11.2026)', () => {
     useAppStore.setState({ aoiPoint: { type: 'Point', coordinates: [10.5, 47.5] } });
     pick('optical');
     open();
-    expect(number().disabled).toBe(true);
-    expect(coverage()!.getAttribute('data-tip')).toBe('Draw an area to use this filter');
+    expect(number().disabled).toBe(false);
+    expect(slider().disabled).toBe(false);
+    expect(coverage()!.getAttribute('data-tip')).toBeNull();
   });
 
   it('is free again with the AOI, empty', () => {

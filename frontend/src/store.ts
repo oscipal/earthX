@@ -491,7 +491,7 @@ function filterQueryOf(s: FilterState, datasetId: string, within?: 'aoi' | 'skip
 // What the switch "Filter within AOI only" does to a request (DS-03b): where it is on and can be used (an area and a date
 // range with both ends) the search asks the filters that depend on the area inside the AOI, and the coverage map leaves
 // them out, which it cannot measure; where it cannot be used, it counts for nothing and the ranges are the scene's.
-type WithinState = Pick<AppState, 'aoi' | 'aoiPoint' | 'dateFrom' | 'dateTo' | 'searchWithin'>;
+type WithinState = Pick<AppState, 'aoi' | 'dateFrom' | 'dateTo' | 'searchWithin'>;
 
 const withinFor = (s: WithinState, datasetId: string, request: 'search' | 'coverage'): 'aoi' | 'skip' | undefined =>
   s.searchWithin[datasetId] === true && withinAoiLock(s) === null ? (request === 'search' ? 'aoi' : 'skip') : undefined;
@@ -505,16 +505,8 @@ function filterQueriesOf(s: FilterState & WithinState, ids: readonly string[]): 
 // What a search on screen was asked with, to tell whether it still is what the fields say.
 function askedState(s: FilterState & WithinState & Pick<AppState, 'searchEvaluate'>, ids: readonly string[]): string {
   const asked = filterQueriesOf(s, ids);
-  // The raw settings too: after a search they are the empty ones, and any change of them is a change of the fields.
+  // The raw settings too: a change of "Evaluate" or of the switch with no filter set is a change of the fields as well.
   return JSON.stringify([asked, evaluationOf(s, asked), s.searchEvaluate, s.searchWithin]);
-}
-
-// The settings of "Advanced search" go back to empty (filters, "Filter within AOI only", "Evaluate" per pass): they are
-// taken by the search that is started and never kept (Otto, 05.11.2026). The coverage map, which follows the filters, follows.
-function forgetAdvancedSearch(set: SetState, get: GetState): void {
-  set({ searchFilters: {}, searchWithin: {}, searchEvaluate: DEFAULT_EVALUATE });
-  const { showCoverage } = get();
-  if (showCoverage) scheduleCoverageRefresh(set, get);
 }
 
 // How the search judges the filters (DS-03c): the datasets whose registry offers judging per pass and that are asked something
@@ -3321,7 +3313,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     // M3-08 F2a/F5a: a point AOI searches by the point itself, a polygon by its
     // true shape, a rectangle by its bbox — `aoiPoint` is only ever read here,
     // never for display or the download crop, which stay on `aoi`.
-    const area = searchArea(aoi, aoiPoint);
+    // A filter of the platform, or a search per pass, works on the AOI, the square around a point: that search is asked with the
+    // square too, the point would let scenes through that it cannot measure (Otto, 06.11.2026: a point is an area as well).
+    const wanted = filterQueriesOf(get(), chosen.map((d) => d.id));
+    const measuresArea = anyMeasuresAoi({ queryByCollection: wanted, ...evaluationOf(get(), wanted) });
+    const area = searchArea(aoi, measuresArea ? null : aoiPoint);
     if (!area.bbox && !area.intersects) {
       set({ error: 'Could not compute a search area for the area of interest.' });
       return;
@@ -3351,10 +3347,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         // A long AOI is searched by its box; the clouds are measured in the AOI itself (plan §6.5, KE1).
         ...(area.truncatedNotice && needsAoiBody({ queryByCollection: asked }) ? { aoi } : {}),
       };
-      // The settings of "Advanced search" are never kept (Otto, 05.11.2026): this search takes them, and the next one starts
-      // from empty fields. A change after this point is a change of the fields, which the search on screen then cannot follow.
-      forgetAdvancedSearch(set, get);
-      const idle = askedState(get(), ids);
+      // What this search is asked with, kept as it starts: a later change of the fields or of "Evaluate" is compared to it.
+      const startedWith = askedState(get(), ids);
       if (anyMeasuresAoi(query)) {
         await walkAoiSearch(set, get, {
           base: {
@@ -3372,7 +3366,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           },
           fresh: true,
           // Filters or area changed while the first answer was on its way.
-          unchanged: () => askedState(get(), ids) === idle,
+          unchanged: () => askedState(get(), ids) === startedWith,
         });
         // A dataset searched without the limit gets its nearest date as always; one searched with it does not (KE4).
         const { openSectionId } = get();
@@ -3383,7 +3377,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (gen !== searchGen) return;
       // Filters changed while the search ran (the page token cannot be dropped yet, there is no search on screen):
       // "Load more" would go on with filters the fields no longer show.
-      const filtersKept = askedState(get(), ids) === idle;
+      const filtersKept = askedState(get(), ids) === startedWith;
       showSearchResults(
         set,
         get,

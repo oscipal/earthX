@@ -8,7 +8,6 @@ import {
   aoiCountsOf,
   aoiNotes,
   countsFrom,
-  LOCK_NEEDS_AREA,
   LOCK_NEEDS_INPUT,
   LOCK_TOO_MANY,
   MAX_AOI_POSITIONS,
@@ -94,8 +93,8 @@ describe('when "Within AOI" is locked', () => {
     expect(withinAoiLock({ ...ready, ...change })).toBe(LOCK_NEEDS_INPUT);
   });
 
-  it('is locked for a point, which is no area', () => {
-    expect(withinAoiLock({ ...ready, aoiPoint: { type: 'Point', coordinates: [1, 2] } })).toBe(LOCK_NEEDS_AREA);
+  it('is not locked for a point: its square is the AOI (Otto, 06.11.2026)', () => {
+    expect(withinAoiLock({ ...ready, aoi: { type: 'Polygon', coordinates: [[[1, 2], [1.1, 2], [1.1, 2.1], [1, 2.1], [1, 2]]] } })).toBeNull();
   });
 
   const ring = (positions: number): GeoJSON.Polygon => ({
@@ -115,9 +114,6 @@ describe('when "Within AOI" is locked', () => {
     expect(withinAoiLock({ ...ready, aoi: multi })).toBe(LOCK_TOO_MANY);
   });
 
-  it('asks for the area and the dates first when a point has no dates either', () => {
-    expect(withinAoiLock({ ...ready, aoiPoint: { type: 'Point', coordinates: [1, 2] }, dateTo: '' })).toBe(LOCK_NEEDS_INPUT);
-  });
 });
 
 describe('what the search asked', () => {

@@ -194,7 +194,7 @@ async function check(browser, { theme, viewport }) {
   await shot('1-locked');
   await popup.locator('.advanced-top .close-x').click();
 
-  // 2. An AOI is not enough, one date is not enough; a point is no area; AOI and both dates free it.
+  // 2. An AOI is not enough, one date is not enough; a point is an area (its square); AOI and both dates free it.
   await store((s, aoi) => { s.getState().setAoi(aoi); s.getState().flyTo([9.2, 46.6, 12.2, 48.4]); }, AOI);
   await button.click();
   expect('the switch is free with an AOI alone', await locked());
@@ -217,7 +217,7 @@ async function check(browser, { theme, viewport }) {
   await popup.locator('.advanced-top .close-x').click();
   await store((s) => s.setState({ aoiPoint: { type: 'Point', coordinates: [10.5, 47.5] } }));
   await button.click();
-  expect('the tooltip for a point', (await within.getAttribute('data-tip')) === 'Draw an area to use this filter', await within.getAttribute('data-tip'));
+  expect('the switch is locked for a point (Otto, 06.11.2026: its square is the AOI)', await locked() === false, await within.getAttribute('data-tip'));
   await popup.locator('.advanced-top .close-x').click();
   await store((s) => s.setState({ aoiPoint: null }));
 
