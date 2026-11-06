@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Protocol
 
-from earthx.adapters import cop_dem_bucket, earth_search
+from earthx.adapters import cop_dem_bucket, earth_search, esa_worldcover_bucket
 from earthx.adapters.cache import SearchCache
 from earthx.adapters.cop_dem_bucket import MaterializeOutcome
 from earthx.adapters.earth_search_coverage import aggregate_coverage
@@ -122,6 +122,14 @@ ADAPTER_SPECS: AdapterSpecs = spec_table(
         search=None,
         fetch=None,
         materialize=cop_dem_bucket.materialize_items,
+        coverage={},
+        filters=None,
+    ),
+    AdapterSpec(
+        kind=AdapterKind.ESA_WORLDCOVER_BUCKET,
+        search=None,
+        fetch=None,
+        materialize=esa_worldcover_bucket.materialize_items,
         coverage={},
         filters=None,
     ),

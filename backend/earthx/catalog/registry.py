@@ -73,6 +73,8 @@ class AdapterKind(Enum):
     # coverage-provider pairing — nothing here ties an `AdapterKind` to an
     # `ItemHolding` value, by design, per M3-11a K-05).
     COP_DEM_BUCKET = "cop-dem-bucket"
+    # M5-07: a materializer like the one above, for both ESA WorldCover states (adr/0023 §8.3).
+    ESA_WORLDCOVER_BUCKET = "esa-worldcover-bucket"
 
 
 class ItemHolding(Enum):
