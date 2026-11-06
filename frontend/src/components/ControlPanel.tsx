@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 
 import type { CoverageHistogramPoint, PlaceResult } from '../api';
 import { readAoiFile } from '../aoiFile';
@@ -377,8 +377,8 @@ function MultiSelectToggle() {
   );
 }
 
-// The dataset choice (M3-10, M4-29): one button per dataset from
-// `/stac/collections`. Nothing is picked at the start; a click picks exactly that
+// The dataset choice (M3-10, M4-29): one button per dataset added from the Data catalogue (UI-05 §4,
+// `addedDatasetIds`), in the order they were added. Nothing is picked at the start; a click picks exactly that
 // dataset (drawn highlighted) and drops the one before; a click on the chosen one
 // drops it. Only with "Select multiple datasets" on can several be picked, and
 // then every picked dataset is searched together, also those on another page.
@@ -387,10 +387,16 @@ function MultiSelectToggle() {
 // UI-05 (Otto, 06.11.2026): pages of at most six buttons, two a row, with as many rows as the panel holds without
 // scrolling (measured, at least one), and "‹ 1 / 3 ›" small at the right of the heading "Datasets" (Otto's review of
 // part 1), also with one page. The grid keeps the height of a full page, so that the last page does not let the panel
-// jump. When the size of a page changes, the page of the dataset picked last is shown. The heading row is drawn here,
-// because the pages are.
+// jump. When the size of a page changes, the page of the dataset picked last is shown; "Add" in the catalogue turns to
+// the page of the dataset added (A5). The heading row is drawn here, because the pages are.
 function DatasetPicker() {
-  const datasets = useAppStore((s) => s.datasets);
+  const allDatasets = useAppStore((s) => s.datasets);
+  const addedDatasetIds = useAppStore((s) => s.addedDatasetIds);
+  const revealed = useAppStore((s) => s.revealedDataset);
+  const datasets = useMemo(
+    () => addedDatasetIds.flatMap((id) => allDatasets.filter((d) => d.id === id)),
+    [allDatasets, addedDatasetIds],
+  );
   const selectedDatasetIds = useAppStore((s) => s.selectedDatasetIds);
   const anchorId = useAppStore((s) => s.lastPickedDatasetId ?? s.selectedDatasetIds[0] ?? null);
   const toggle = useAppStore((s) => s.toggleDatasetSelected);
@@ -404,6 +410,12 @@ function DatasetPicker() {
   if (sizeSeen !== pageSize) {
     setSizeSeen(pageSize);
     const index = datasets.findIndex((d) => d.id === anchorId);
+    if (index >= 0) setPage(pageOf(index, pageSize));
+  }
+  const [revealSeen, setRevealSeen] = useState(revealed?.seq ?? 0);
+  if (revealed && revealed.seq !== revealSeen) {
+    setRevealSeen(revealed.seq);
+    const index = datasets.findIndex((d) => d.id === revealed.id);
     if (index >= 0) setPage(pageOf(index, pageSize));
   }
   const pages = pageCount(datasets.length, pageSize);
@@ -473,6 +485,9 @@ function DatasetPicker() {
         </span>
         <MultiSelectToggle />
       </div>
+      {datasets.length === 0 && allDatasets.length > 0 && (
+        <p className="hint">No datasets yet — add some from the Data catalogue</p>
+      )}
       {datasets.length > 0 && (
         <div
           ref={listRef}

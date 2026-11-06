@@ -2937,6 +2937,169 @@ button.pm-open:hover {
   overflow-wrap: anywhere;
 }
 
+/* --- Data catalogue (UI-05 §4): a window over the map beside the rail, or beside the dock while a panel is open; the
+   list at the left, the details at the right. Below 900 px it covers the map, and the details are a stage of their own. --- */
+.catalogue {
+  top: var(--space-4);
+  bottom: var(--space-4);
+  left: calc(var(--rail-width) + var(--space-4));
+  right: var(--space-4);
+  max-width: 960px;
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.catalogue.beside-dock {
+  left: calc(var(--rail-width) + var(--dock-width) + var(--space-4));
+}
+.catalogue-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(240px, 2fr) 3fr;
+}
+.catalogue-list,
+.catalogue-details,
+.catalogue-empty {
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-2) var(--space-3);
+}
+.catalogue-list {
+  border-right: 1px solid var(--panel-border);
+}
+.catalogue-group-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--control-height);
+  padding: 0 var(--space-1);
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  text-align: left;
+}
+.catalogue-group-name {
+  flex: 1;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.catalogue-group-count {
+  font-size: var(--text-xs);
+}
+.catalogue-entries {
+  list-style: none;
+  margin: 0 0 var(--space-2);
+  padding: 0;
+}
+.catalogue-entry {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border-radius: var(--radius-sm);
+}
+.catalogue-entry:hover,
+.catalogue-entry[aria-current='true'] {
+  background: var(--row-hover);
+}
+.catalogue-entry-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1-5);
+  padding: var(--space-1-5) var(--space-2);
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  text-align: left;
+}
+.catalogue-entry[aria-current='true'] .catalogue-entry-name {
+  color: var(--accent);
+}
+.catalogue-entry-title {
+  overflow-wrap: anywhere;
+}
+.catalogue-action {
+  flex: none;
+}
+.catalogue-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-1) 0 var(--space-3);
+  font-size: var(--text-lg);
+}
+.catalogue-rows {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+.catalogue-row-pair {
+  display: grid;
+  grid-template-columns: 128px 1fr;
+  gap: var(--space-3);
+  padding: var(--space-1) 0;
+  border-top: 1px solid var(--line-soft);
+}
+.catalogue-row-pair dt {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: var(--space-1);
+  color: var(--muted);
+}
+.catalogue-row-pair dd {
+  margin: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-wrap: anywhere;
+}
+.catalogue-value a {
+  color: var(--accent);
+}
+/* "Back" only where the details are a stage of their own. */
+.catalogue-back {
+  display: none;
+}
+@media (max-width: 899px) {
+  .catalogue,
+  .catalogue.beside-dock {
+    top: 0;
+    bottom: 0;
+    left: var(--rail-width);
+    right: 0;
+    max-width: none;
+    border-radius: 0;
+  }
+  .catalogue-body {
+    grid-template-columns: 1fr;
+  }
+  .catalogue-list {
+    border-right: none;
+  }
+  .catalogue-empty,
+  .catalogue.showing-details .catalogue-list {
+    display: none;
+  }
+  .catalogue-back {
+    display: inline-flex;
+  }
+  .catalogue-row-pair {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+}
+
 /* --- download dialog (M2-07d) --- */
 .dialog-backdrop {
   position: fixed;

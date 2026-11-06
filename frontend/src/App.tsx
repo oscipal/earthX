@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 
 import AppRail from './components/AppRail';
 import ControlPanel from './components/ControlPanel';
+import DataCatalogue from './components/DataCatalogue';
 import DownloadDialog from './components/DownloadDialog';
 import ColormapPicker from './components/ColormapPicker';
 import { ZoomToSelectionIcon } from './components/icons';
@@ -98,6 +99,8 @@ export default function App() {
           </div>
         )}
       </div>
+
+      <DataCatalogue />
 
       <div className={`overlay top-right${processingOpen ? ' beside-sheet' : ''}`}>
         <button

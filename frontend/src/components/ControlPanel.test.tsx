@@ -712,6 +712,7 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
   function setUp(selected: string[]) {
     useAppStore.setState({
       datasets: datasetsFrom([OPTICAL, DEM, BROKEN]),
+      addedDatasetIds: ['optical', 'dem', 'broken'],
       selectedDatasetIds: selected,
       multiSelect: false,
       lastPickedDatasetId: null,
@@ -841,7 +842,8 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
     const next = () => container.querySelector('.dataset-pages [aria-label="Next page"]') as HTMLButtonElement;
     const count = () => container.querySelector('.dataset-page-count')?.textContent;
     function setUpMany(selected: string[] = []) {
-      useAppStore.setState({ datasets: datasetsFrom([OPTICAL, DEM, ...many]), selectedDatasetIds: selected, datasetId: selected[0] ?? null, multiSelect: true });
+      const datasets = datasetsFrom([OPTICAL, DEM, ...many]);
+      useAppStore.setState({ datasets, addedDatasetIds: datasets.map((d) => d.id), selectedDatasetIds: selected, datasetId: selected[0] ?? null, multiSelect: true });
       act(() => root.render(<ControlPanel />));
     }
 
