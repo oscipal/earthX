@@ -1,11 +1,15 @@
 # ADR 0024 — Prototyp-Quellen
 
-- **Status:** Entwurf, offen. Entscheidungen F1–F10 (§9) liegen bei Otto.
-- **Datum:** 2026-10-31
+- **Status:** **Angenommen** von Otto am 2026-11-06 für F1–F10, jeweils Option 1
+  (Empfehlung), unter der Bedingung einer Regel für Ergebnisse aus
+  Prototyp-Datensätzen. Diese Regel steht in §6a; ihr offener Teil ist **F11**
+  (offen, Antwort Otto ausstehend).
+- **Datum:** 2026-10-31 (Entwurf), 2026-11-06 (Antworten F1–F10, §6a)
 - **Aufgabe:** M5-02 laut `docs/plans/m5/m5-discovery-und-suche.md` §5a (§4 D, Antwort 3).
 - **Autonomiestufe:** C — nur gelesen und berichtet. Kein Produktivcode geändert,
   keine Datenquelle aufgerufen, kein Messskript nötig.
-- **Stand des untersuchten Codes:** `main` nach #258/#259 (31.10.2026).
+- **Stand des untersuchten Codes:** `main` nach #258/#259 (31.10.2026); für §6a
+  `main` nach #294 (06.11.2026).
 - **Grundlage:** `ENTSCHEIDUNGEN_2026-09-18.md` §1, §3, §4; `KLAERUNGEN.md` B8,
   B10, B11, B12, B13; `architekturplan.md` 3.1, 4.3, 4.4, 5.1, 12.1, 12.3;
   `projektuebersicht.md` §2 (Prinzipien 2, 12), §5; `adr/0008`, `adr/0016`,
@@ -197,6 +201,51 @@ Alle mit synthetischen Einträgen, wie heute der Zarr-Testeintrag (`adr/0017`).
 Tests, setzt den YAML-Lader von M5-03 voraus; Weitergabe-Sperren und `no-store`
 50–100; Oberfläche 80–150. Zwei bis drei PRs unter dem Richtwert.
 
+## 6a. Ergebnisse aus Prototyp-Datensätzen (Nachtrag 2026-11-06)
+
+Bedingung Ottos zur Annahme: Was aus einem Prototyp-Datensatz entsteht, braucht
+eine eigene Regel. Befund am Code (`main` nach #294):
+
+| Stelle | Heute | Folge |
+|---|---|---|
+| Job, Lauf, Rezept (`catalog/migrations/006_jobs.sql:23`, `api/processing_route.py:1080`) | Das Rezept liegt als `body` in Postgres; der Datensatz eines Jobs ist `inputs[0].dataset` [P] | Ein Job auf einen Prototyp-Datensatz ist über das Präfix `proto-` im Rezept erkennbar |
+| Ergebnis-Tiler `/results/{result_id}` (`api/result_tiles.py:1–6`) | Kennt keinen Job, kein Rezept, keine Datenbank, nur die Datei im Objektspeicher [P] | Er kann den Status **nicht** je Ergebnis erkennen |
+| Objektspeicher (`objectstore/results.py:28`, `:45–50`, `:229`) | Schlüssel `results/<result_id>/<Datei>`, `result_id` zufällig; `attribution.txt` liegt beim Ergebnis; Bucket-Regel löscht nach 7 Tagen [P] | Kein Datensatz im Schlüssel; der Hinweis im Download entsteht beim Job und bleibt bei der Datei |
+| Rezept-Cache (`jobs/submit.py:9–13`, `:153`) | Gleiche Aufträge teilen sich einen Lauf [P] | Ein Prototyp-Lauf trifft nie einen freigegebenen Auftrag, weil der Datensatz im Rezept steht [A] |
+| Aufräumen (`jobs/cleanup.py:1–6`) | Stündlich löscht ein Aufseher erst die Objekte abgelaufener Läufe, dann die Zeilen [P] | Fertiger Weg, Ergebnisse samt Dateien zu entfernen, ohne `catalog-load` den Objektspeicher zu geben |
+| Permalink (`api/processing_route.py:1531–1540`) | Ein unbekannter Datensatz wird **durchgelassen** [P] | Die Sperre muss am Präfix hängen, nicht an der Registry |
+| Bündel „Download all (ZIP)“ (`jobs/bundles.py:1–6`, `api/processing_route.py:1650`, neu seit UI-01e) | Ein Bündel ist ein eigener Link auf die Ergebnisse mehrerer Jobs [P] | Weitergabe wie ein Permalink; R7 nannte es noch nicht |
+| Browser (`frontend/src/jobShelf.ts:1–4`) | Die Ablage der Jobs hält je Job eine Kopie des Auftrags in `localStorage`; Layer werden nicht gespeichert, Ergebnis-Layer entstehen aus der Ablage [P] | Die Marke lässt sich aus dem Präfix im Auftrag ableiten, auch wenn die Collection fehlt |
+| `EARTHX_PROFILE` | Gibt es nicht; im Code, in Compose und in der CI kommt die Variable nicht vor [P] | **Neu** mit diesem ADR; `CI` setzt GitHub Actions selbst |
+
+**Vorschlag (R11, gilt mit Antwort auf F11):**
+
+1. **Ergebnisse erben den Status.** Jeder Job, dessen Rezept einen `proto-`-Datensatz
+   nennt, gilt als Prototyp-Ergebnis: Marke „Prototype“ in der Ablage der Jobs, am
+   Ergebnis-Layer und im Download-Fenster (aus dem Präfix im Auftrag, nicht aus der
+   Collection); „Share“ und „Download all (ZIP)“ gesperrt (`409` an `/permalinks`
+   und `/bundles`, Knöpfe ausgegraut); Hinweis in `attribution.txt` bzw.
+   `ATTRIBUTION.txt` jedes Ergebnisses und jeder ZIP-Datei; der Runner lehnt sein
+   `recipe.json` ab (R5).
+2. **`no-store` für die ganze Prototyp-Instanz.** Weil der Ergebnis-Tiler den
+   Datensatz nicht kennt, tragen in einer Instanz mit geladenen Prototyp-Einträgen
+   **alle** Antworten mit Daten `Cache-Control: private, no-store`, auch
+   `/results/…`. Das ist strenger als R7 je Datensatz, kostet lokal nichts und
+   braucht keinen Datensatz im Schlüssel [A].
+3. **Abschalten räumt Ergebnisse binnen einer Stunde.** `catalog-load` ohne
+   Schalter setzt das Ende jedes Jobs und Laufs mit `proto-`-Datensatz auf jetzt und
+   löscht Bündel, die einen solchen Job enthalten. Die Job-API meldet sie damit
+   sofort als abgelaufen, die Ablage im Browser zeigt sie als abgelaufen, und der
+   stündliche Aufseher löscht Dateien und Zeilen auf dem vorhandenen Weg.
+   `catalog-load` bekommt keinen Zugang zum Objektspeicher. Bis zum nächsten Lauf
+   des Aufsehers ist eine Ergebnis-Datei nur noch über ihre zufällige `result_id`
+   lesbar, lokal und nur für Otto. Das ändert F5 („Jobs laufen nach Frist aus“)
+   und ist deshalb F11.
+4. **Tests (bei Umsetzung):** `409` an `/bundles` mit Prototyp-Job; `no-store` an
+   `/results/…` nur mit geladenen Prototyp-Einträgen; `catalog-load` ohne Schalter
+   setzt das Ende der Prototyp-Jobs und -Läufe und lässt freigegebene unberührt;
+   Ablage zeigt die Marke aus dem Präfix ohne Collection.
+
 ## 7. Bewertung der Empfehlung
 
 | Kriterium | Wie erfüllt |
@@ -229,51 +278,64 @@ Tests, setzt den YAML-Lader von M5-03 voraus; Weitergabe-Sperren und `no-store`
 
 ## 9. Fragen an Otto
 
-**F1 — Was darf Prototyp-Quelle werden?**
+**Antworten Otto (2026-11-06):** F1–F10 jeweils **Option 1** (Empfehlung), unter
+der Bedingung der Regel für Ergebnisse (§6a, F11).
+
+**F1 — Was darf Prototyp-Quelle werden?** → **1**
 1. Nur Quellen mit **unklarer** Rechtslage; ausdrücklich untersagte Nutzung,
    Konto, Schlüssel oder Umgehen einer Sperre bleiben ausgeschlossen (**Empfehlung**)
 2. Auch ausdrücklich untersagte, solange ohne Schlüssel
 
-**F2 — Markierung im Eintrag**
+**F2 — Markierung im Eintrag** → **1**
 1. Feld `legal_status` + `legal_note` **und** Präfix `proto-`, gegenseitig geprüft (**Empfehlung**)
 2. Nur das Feld
 3. Nur das Präfix
 
-**F3 — Ablage**
+**F3 — Ablage** → **1**
 1. Eigenes Verzeichnis außerhalb des Pakets, nie im Image, per Compose-Override gemountet (**Empfehlung**)
 2. Im Paket, Filter zur Laufzeit
 3. Gar nicht im Repo, nur lokal
 
-**F4 — Schalter**
+**F4 — Schalter** → **1**
 1. Pfad `EARTHX_PROTOTYPE_SOURCES` **und** Profil `EARTHX_PROFILE=local`, nie mit `CI`; Runner lädt nie (**Empfehlung**)
 2. Nur der Pfad
 
-**F5 — Reste nach dem Abschalten**
+**F5 — Reste nach dem Abschalten** → **1** (für Ergebnisse siehe F11)
 1. `catalog-load` entfernt alles mit `proto-`; Jobs laufen nach Frist aus (**Empfehlung**)
 2. Start verweigern, solange Reste da sind
 
-**F6 — Weitergabe**
+**F6 — Weitergabe** → **1**
 1. Permalink gesperrt (`409`, Knopf ausgegraut), `no-store`, keine Sitemap/JSON-LD; Download erlaubt mit Hinweis (**Empfehlung**)
 2. Zusätzlich Download sperren
 
-**F7 — Kennzeichnung in der Oberfläche**
+**F7 — Kennzeichnung in der Oberfläche** → **1**
 1. Marke „Prototype“ an Liste, Layer-Manager, Download-Fenster und Hinweis in der Kopfzeile (**Empfehlung**)
 2. Nur Marke am Datensatz
 
-**F8 — CI und Cloud-Sitzungen**
+**F8 — CI und Cloud-Sitzungen** → **1**
 1. CI prüft die Einträge ohne Netz; Cloud-Sitzungen schreiben Einträge, rufen die Quelle nicht ab; Messungen macht Otto lokal (**Empfehlung**)
 2. Cloud-Sitzungen dürfen messen, wenn Otto den Host freigibt
 3. Prototyp-Einträge gar nicht in CI
 
-**F9 — In der veröffentlichten Version**
+**F9 — In der veröffentlichten Version** → **1**
 1. Verschwindet vollständig (deine Vorgabe) (**Empfehlung**)
 2. Du kannst je Quelle zusätzlich einen Katalogeintrag (B11 Stufe 1, nur Metadaten und Link) freigeben; der ist dann ein eigener, freigegebener Eintrag
 
-**F10 — Zeitpunkt**
+**F10 — Zeitpunkt** → **1**
 1. Erste Prototyp-Quelle erst mit dem YAML-Lader aus M5-03 (**Empfehlung**)
 2. Vorher übergangsweise im Python-Modul mit Laufzeitfilter (A1)
 
-## 10. Folgen bei Annahme (nicht Teil dieses Entwurfs)
+**F11 — Ergebnisse aus Prototyp-Datensätzen (§6a)** → offen
+1. Ergebnisse erben den Status (Marke, „Share“ und „Download all (ZIP)“ `409`, Hinweis im Download); `no-store` für alle Antworten einer Prototyp-Instanz, auch `/results`; `catalog-load` ohne Schalter beendet Prototyp-Jobs sofort, der stündliche Aufseher löscht Dateien und Zeilen (**Empfehlung**)
+2. Wie 1, aber Jobs und Ergebnisse laufen nach ihrer Frist aus (bis 7 Tage, wie F5 bisher)
+3. Wie 1, aber `catalog-load` löscht auch die Dateien selbst (braucht Zugang zum Objektspeicher in `catalog-load`)
+
+## 10. Folgen der Annahme (nicht Teil dieses PR)
+
+- **M5-03 (`adr/0025`) baut den YAML-Lader** (B13 Stufe 2) mit Pflichtfeld
+  `legal_status` (und `legal_note` bei `unclear`), der Prüfung `unclear` ⇔ Präfix
+  `proto-` und der Startprüfung aus R5 (`EARTHX_PROTOTYPE_SOURCES`, neues
+  `EARTHX_PROFILE`, `CI`). Erst danach kommt eine Prototyp-Quelle (F10).
 
 - `KLAERUNGEN.md` B11: Nachtrag „Prototyp-Quellen nach `adr/0024`“.
 - `architekturplan.md` 5.1: Zeilen `earthx:legal_status`, `earthx:legal_note`.
