@@ -29,9 +29,11 @@ from contextlib import asynccontextmanager
 import httpx
 import pytest
 
-from earthx.catalog.datasets import COP_DEM_GLO_30
+from earthx.catalog.datasets import registry
 from earthx.gateway import Policy
 from earthx.gateway.client import Gateway
+
+COP_DEM_GLO_30 = registry().get("cop-dem-glo-30")
 
 pytestmark = [pytest.mark.anyio, pytest.mark.live_dataset("cop-dem-glo-30")]
 

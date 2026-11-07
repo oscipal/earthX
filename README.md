@@ -602,7 +602,7 @@ lokale Änderungen, also nur auf sauberem Stand.
   Der ausgeschiedene Zarr-Datensatz (Sentinel-2 L2A (Zarr3),
   [doi.org/10.5270/S2_-znk9xsj](https://doi.org/10.5270/S2_-znk9xsj)) behält
   Attribution, Nutzungsbedingungen und Zitat in den Dateien fertiger Jobs, bis
-  diese ablaufen (`catalog/datasets.py`, `docs/adr/0017-ein-sentinel-2-datensatz.md` Regel III).
+  diese ablaufen (`backend/catalog/retired.yaml`, `docs/adr/0017-ein-sentinel-2-datensatz.md` Regel III).
 - **Copernicus DEM GLO-30** (`cop-dem-glo-30`, direkt aus dem AWS-Open-Data-Bucket,
   Format COG; **M3-11b**, muss vor der ersten Anzeige erst über
   `docker compose run --rm materialize cop-dem-glo-30` geladen werden, siehe

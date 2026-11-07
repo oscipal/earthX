@@ -1,7 +1,7 @@
 """A dataset that left the registry answers ``410`` with its reason, before anything is asked of a source (adr/0017 §8).
 
 Nothing reaches a network: the item source of each test refuses to be called, and the gateway is the synthetic one of
-`tests/earthx/api/conftest.py`. The retired id is the one on the real list, `catalog/datasets.py`.
+`tests/earthx/api/conftest.py`. The retired id is the one on the real list, `backend/catalog/retired.yaml`.
 """
 
 from __future__ import annotations

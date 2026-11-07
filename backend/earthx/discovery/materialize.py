@@ -45,7 +45,7 @@ from earthx.adapters import (
     UpstreamShapeError,
     materialize_items,
 )
-from earthx.catalog.datasets import REGISTRY
+from earthx.catalog.datasets import registry
 from earthx.catalog.pgstac import (
     MaterializeRunRecord,
     PgstacError,
@@ -162,7 +162,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     try:
-        config = REGISTRY.get(args.dataset_id)
+        config = registry().get(args.dataset_id)
     except UnknownDatasetError:
         print(f"materialize failed: no dataset {args.dataset_id!r} in the registry", file=sys.stderr)
         return 1

@@ -33,7 +33,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from earthx.catalog.datasets import REGISTRY as DATASETS
+from earthx.catalog.datasets import registry as dataset_registry
 from earthx.catalog.registry import DatasetRegistry, RetiredDatasetError, UnknownDatasetError
 from earthx.processing import failure_kind
 from earthx.processing.errors import RecipeInvalid
@@ -127,12 +127,14 @@ def _cloud_provenance(block: Any) -> Provenance:
     return provenance
 
 
-def check_hosts(recipe: Recipe, registry: DatasetRegistry = DATASETS) -> tuple[str, ...]:
+def check_hosts(recipe: Recipe, registry: DatasetRegistry | None = None) -> tuple[str, ...]:
     """The hosts the recipe reads, sorted, once each address passes against its dataset's ``asset_hosts``.
 
     :class:`HostRefused` otherwise. A dataset is named only once the registry knows it
-    or has retired it, so the text never repeats a value of the file.
+    or has retired it, so the text never repeats a value of the file. Without ``registry`` it is the one of this
+    image (:func:`~earthx.catalog.datasets.registry`).
     """
+    registry = dataset_registry() if registry is None else registry
     hosts: set[str] = set()
     for entry in recipe.inputs:
         try:

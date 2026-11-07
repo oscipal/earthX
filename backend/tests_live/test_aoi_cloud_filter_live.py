@@ -41,11 +41,14 @@ from earthx.api import aoi_cloud_filter
 from earthx.api.aoi_cloud_filter import AoiMeasurer, SceneMeasure, read_aoi_request, run_filter
 from earthx.api.dependencies import policy_from_registry
 from earthx.api.pass_filter import day_of, mosaic_ordered, pass_key_of, run_pass_filter
-from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
+from earthx.catalog.datasets import registry
 from earthx.catalog.registry import AoiMeasure, group_by_overpass
 from earthx.catalog.search_filters import RangeCondition
 from earthx.gateway import CachingResolver, Gateway, ReadSlots, Resolver
 from earthx.gateway.gdal import gdal_options
+
+REGISTRY = registry()
+SENTINEL_2_L2A = registry().get("sentinel-2-c1-l2a")
 
 pytestmark = [pytest.mark.anyio, pytest.mark.live_dataset("sentinel-2-c1-l2a")]
 

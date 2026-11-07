@@ -18,7 +18,7 @@ import sys
 
 import psycopg
 
-from earthx.catalog.datasets import REGISTRY
+from earthx.catalog.datasets import registry
 from earthx.catalog.pgstac import PgstacError, load_registry
 from earthx.catalog.schema import apply_migrations
 
@@ -29,7 +29,7 @@ def main() -> int:
         # registry, or it is left exactly as it was.
         with psycopg.connect(autocommit=False) as conn:
             applied = apply_migrations(conn)
-            outcome = load_registry(conn, REGISTRY)
+            outcome = load_registry(conn, registry())
             conn.commit()
     except (PgstacError, psycopg.Error) as error:
         print(f"load failed: {error}", file=sys.stderr)

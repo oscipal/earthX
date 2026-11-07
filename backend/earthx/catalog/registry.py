@@ -1,6 +1,7 @@
 """Dataset registry: what the platform knows about a dataset before it asks the source.
 
-One entry per dataset, as a frozen dataclass (KLAERUNGEN B13, stage M1-M4). The
+One entry per dataset, as a frozen dataclass; since M5-13 the entries are YAML files under
+``backend/catalog/`` that ``catalog.entry_files`` reads into these classes (KLAERUNGEN B13, stage 2). The
 fields mirror the ``earthx:`` fields of architekturplan.md 5.1, so that
 ``collection.to_stac_collection`` is a mapping and not an interpretation.
 
@@ -1620,7 +1621,7 @@ class Attributable(Protocol):
 class RetiredDataset:
     """A dataset that left the registry, with the licence block and the citation it had (adr/0017 rule III).
 
-    Data, not code: the list lives in ``catalog/datasets.py``. ``recipe.json`` files of the user have
+    Data, not code: the list lives in ``backend/catalog/retired.yaml``. ``recipe.json`` files of the user have
     no expiry, so the id stays on the list; the licence block and the citation are those of the last
     entry and keep the side files of a finished job complete.
     """
