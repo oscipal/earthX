@@ -94,7 +94,7 @@ def main(argv: Sequence[str] | None = None, *, registry: DatasetRegistry | None 
     except ValueError as error:
         _say(f"not started: {error}")
         return EXIT_OTHER
-    checked = _checked(args.recipe, dataset_registry() if registry is None else registry)
+    checked = _checked(args.recipe, dataset_registry(prototype=False) if registry is None else registry)
     if isinstance(checked, int):
         return checked
     loaded, hosts = checked
@@ -151,7 +151,7 @@ def _compare_engine(loaded: RecipeFile) -> None:
 
 def _facts_of(dataset_id: str) -> DatasetFacts | None:
     """The title and DOI of the dataset in this image's registry; the text names it by its identifier if it is not there."""
-    known = dataset_registry().attributable(dataset_id)
+    known = dataset_registry(prototype=False).attributable(dataset_id)
     return DatasetFacts.of(known) if known is not None else None
 
 

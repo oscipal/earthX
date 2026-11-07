@@ -134,7 +134,7 @@ def check_hosts(recipe: Recipe, registry: DatasetRegistry | None = None) -> tupl
     or has retired it, so the text never repeats a value of the file. Without ``registry`` it is the one of this
     image (:func:`~earthx.catalog.datasets.registry`).
     """
-    registry = dataset_registry() if registry is None else registry
+    registry = dataset_registry(prototype=False) if registry is None else registry
     hosts: set[str] = set()
     for entry in recipe.inputs:
         try:

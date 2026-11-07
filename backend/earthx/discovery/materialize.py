@@ -56,7 +56,7 @@ from earthx.catalog.pgstac import (
     upsert_items,
     use_pgstac_search_path,
 )
-from earthx.catalog.registry import DatasetConfig, ItemHolding, UnknownDatasetError
+from earthx.catalog.registry import ConfigError, DatasetConfig, ItemHolding, UnknownDatasetError
 from earthx.gateway import Gateway, GatewayError, Policy, host_of, user_agent_from_env
 
 
@@ -163,6 +163,9 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         config = registry().get(args.dataset_id)
+    except ConfigError as error:
+        print(f"materialize failed: {error}", file=sys.stderr)
+        return 1
     except UnknownDatasetError:
         print(f"materialize failed: no dataset {args.dataset_id!r} in the registry", file=sys.stderr)
         return 1
