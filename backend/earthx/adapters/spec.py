@@ -6,7 +6,8 @@ is an answer, not a gap — the dispatch in ``earthx.adapters`` refuses it by na
 before any request goes out (K7), and a source is never asked for something it
 cannot do: the DEM bucket has no search to be forced into (K1).
 
-The filter capabilities of a source are data here too (:class:`FilterSupport`),
+The filter capabilities of a source are data here too
+(:class:`~earthx.adapters.federated_search.FilterSupport`, for a STAC API taken from its dialect),
 not module constants read with a silent ``False`` default (adr/0011 B7). They are
 the *source's* filters, kept apart from the dataset's capability flags in the
 registry (adr/0011 B12, KLAERUNGEN B10).
@@ -143,6 +144,8 @@ def check_adapter_specs(registry: DatasetRegistry, adapters: AdapterSpecs) -> No
             continue
         if config.source.item_holding is ItemHolding.FEDERATED and spec.search is None:
             problems.append(f"{config.dataset_id}: federated, but {kind} offers no search")
+        if spec.search is stac_api.search_items and kind not in stac_api.DIALECTS:
+            problems.append(f"{config.dataset_id}: {kind} searches as a STAC API, but has no dialect")
         if config.search_filters and (spec.filters is None or not spec.filters.query):
             problems.append(f"{config.dataset_id}: has search filters, but {kind} applies no query")
         provider = config.coverage.provider

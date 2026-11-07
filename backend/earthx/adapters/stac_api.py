@@ -66,6 +66,9 @@ from earthx.gateway import Gateway
 
 Item = dict[str, Any]
 
+# The fields our own search body may carry; a dialect's marker or conditions must not take one of them over.
+BODY_FIELDS = frozenset({"collections", "limit", "sortby", "bbox", "intersects", "ids", "datetime"})
+
 
 @dataclass(frozen=True, slots=True)
 class StacDialect:
@@ -86,6 +89,8 @@ class StacDialect:
     def __post_init__(self) -> None:
         if (self.write_conditions is None) == self.filters.query:
             raise ValueError(f"{self.kind}: conditions are written exactly when the source applies a query")
+        if self.marker_field in BODY_FIELDS:
+            raise ValueError(f"{self.kind}: the page marker cannot take over the body field {self.marker_field!r}")
 
 
 def query_extension(conditions: FilterConditions) -> dict[str, dict[str, Any]]:
@@ -126,7 +131,19 @@ EARTH_SEARCH = StacDialect(
     normalize_item=with_core_bands_on_assets,
 )
 
-DIALECTS: Mapping[AdapterKind, StacDialect] = MappingProxyType({dialect.kind: dialect for dialect in (EARTH_SEARCH,)})
+
+def dialect_table(*dialects: StacDialect) -> Mapping[AdapterKind, StacDialect]:
+    """A read-only table keyed by each dialect's own ``kind``; a kind twice is an error."""
+    table = {dialect.kind: dialect for dialect in dialects}
+    if len(table) != len(dialects):
+        raise ValueError("an adapter kind has two dialects")
+    return MappingProxyType(table)
+
+
+# Looked up by the entry's own adapter kind rather than bound into the spec table: the functions keep the
+# signatures of `SearchItems` and `FetchItem`, and `spec.check_adapter_specs` refuses a spec that serves a kind
+# with these functions but has no dialect here (M5-08 plan §11).
+DIALECTS: Mapping[AdapterKind, StacDialect] = dialect_table(EARTH_SEARCH)
 
 
 def dialect_of(config: DatasetConfig) -> StacDialect:
@@ -154,6 +171,9 @@ async def search_items(
     """
     params = params or SearchParams()
     dialect = dialect_of(config)
+    if params.conditions is not None and dialect.write_conditions is None:
+        # Refused before the cache is read, like the dispatch does (`adapters._check_filters`).
+        raise UnsupportedFilter(f"{config.dataset_id} does not support search filters")
     dataset_id = config.dataset_id
     fingerprint = search_fingerprint(dataset_id, params)
     marker = None if params.page_token is None else decode_page_token(params.page_token, dataset_id, fingerprint)
@@ -233,10 +253,11 @@ def _search_body(
     window = stac_interval(params.start, params.end)
     if window is not None:
         body["datetime"] = window
-    if params.conditions is not None:
-        if dialect.write_conditions is None:
-            raise UnsupportedFilter(f"{config.dataset_id} does not support search filters")
-        body.update(dialect.write_conditions(params.conditions))
+    if params.conditions is not None and dialect.write_conditions is not None:
+        written = dialect.write_conditions(params.conditions)
+        if not written.keys().isdisjoint(body.keys() | BODY_FIELDS | {dialect.marker_field}):
+            raise ValueError(f"{dialect.kind}: the conditions would take over a field of the search body")
+        body.update(written)
     if marker is not None:
         # Keyset paging: the marker is what the source handed out for the page after
         # this one, so the same search body plus this field is the next page (§3.3).

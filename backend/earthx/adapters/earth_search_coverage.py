@@ -76,7 +76,7 @@ MIN_RING_POINTS = 4
 TTL_WORLD_OVERVIEW_S = 24 * 60 * 60
 
 # The cached shape is versioned: a row written by an older release is read as a miss
-# rather than misread (same reasoning as the page marker in earth_search.py).
+# rather than misread (same reasoning as the page marker in federated_search.py).
 CACHE_VERSION = 1
 
 
@@ -252,7 +252,7 @@ def _storable(payload: Any, *, simplified_aoi: bool) -> CacheValue:
     """What we keep of the upstream answer: cells, total, histogram, and the flag.
 
     Reduced here rather than at the cache, so a cache hit and a live answer go through
-    exactly the same translation afterwards — the same reasoning as in ``earth_search``.
+    exactly the same translation afterwards — the same reasoning as in ``stac_api``.
     """
     if not isinstance(payload, dict):
         raise UpstreamCoverageShapeError("aggregation answer is not a JSON object")
@@ -322,7 +322,7 @@ def _total_count(aggregation: Any) -> int | None:
 def _is_usable(cached: CacheValue | None) -> bool:
     """A stored row of the shape this release writes — anything else counts as a miss.
 
-    The version alone is not enough. ``earth_search`` promises that a row "written by
+    The version alone is not enough. ``federated_search.cache_get`` promises that a row "written by
     an older release, **or damaged**, counts as a miss rather than as an answer", and a
     half-written row of the *current* version would otherwise reach ``_result`` and
     fail there — turning a bad cache row into a broken request instead of a slow one
