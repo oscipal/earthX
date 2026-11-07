@@ -286,4 +286,4 @@ Geländemodell ↔ digital terrain model (DTM); Höhenmodell ↔ elevation model
   - Bewusst in Kauf genommen: Bei einem direkten Aufruf mit dem Eintrag eines anderen Adapters lautet die Meldung jetzt „… which is no STAC API“ statt „… not earth-search-v1“. Typ (`UnsupportedSource`) und Verhalten bleiben; über die Dispatch-Funktionen ist sie nicht erreichbar.
 - **Für DS-04:** Der Adapter heißt `earth-search-v1` wie bisher, das YAML von Sentinel-2 ist unverändert. Eine Übersetzung je Eintrag (`asset_href_rewrites`) gehört in `stac_api` hinter `dialect.normalize_item`; dieselbe Stelle nutzt M5-08b für `asset_keys`.
 - **Doku:** `architekturplan.md` 6.1 (Dialekt), `adr/0011` §11b.
-- **Prüfung:** `ruff check backend` grün; `lint-imports` 16 Verträge eingehalten; `pytest` 9578 bestanden, 25 übersprungen (PowerShell fehlt in der Sitzung).
+- **Prüfung (nach den Korrekturen aus dem Review):** `ruff check backend` grün; `lint-imports` 16 Verträge eingehalten; `pytest` 9587 bestanden, 25 übersprungen (PowerShell fehlt in der Sitzung); Vergleichstest und Fixture seit ihrem Commit unverändert.
