@@ -1,6 +1,6 @@
 # DS-04 — Sentinel-1 GRD anbinden: Plan-Schritt
 
-**Status (07.11.2026):** Plan angenommen (Otto, 07.11.2026; Antworten in §9a). Umsetzung von Teil 1 (TPS, DS-04a) im selben Draft-PR nach dem Merge von M5-13. Ersetzt die frühere Datei, die den Text von DS-00 enthielt (`adr/0030` §9, Nebenbefund).
+**Status (07.11.2026):** Plan angenommen (Otto, 07.11.2026; Antworten in §9a). DS-04a (TPS) umgesetzt im selben Draft-PR (§11); DS-04b und DS-04c folgen als eigene PRs. Ersetzt die frühere Datei, die den Text von DS-00 enthielt (`adr/0030` §9, Nebenbefund).
 **Aufgabe:** DS-04 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2. **Stufe B** (`adr/0030` §11; vorher A laut DS-00). Der Plan darf sofort entstehen; die Umsetzung beginnt erst, wenn M5-13 (YAML-Lader) gemergt ist. Dann wird `main` geholt, und der Eintrag entsteht als YAML (M5-Plan §6.3).
 **Modell:** Opus, Effort hoch.
 **Grundlagen:** `adr/0018` Teil A (§3.1, §4, F1–F3) mit Nachtrag M5-12 (§9.4); `adr/0030` §5.2, §8, §9, §11; `adr/0021` (Suchfilter); `adr/0022` und M5-07 (`data_region`); `adr/0024` (`legal_status`); `adr/0025` §7 (YAML unter `backend/catalog/`); `adr/0027` §6.1 (`access.account`); `adr/0014` §3.1, §4.6, §6.3 (Fassung, Bitgleichheit); `architekturplan.md` 3.1, 5.1, 6.4, 7.3; `projektuebersicht.md` §5 (Checkliste); `KLAERUNGEN.md` B8–B12.
@@ -259,3 +259,37 @@ Ablauf: Nach dem Merge von M5-13 holt die Session `main` und setzt DS-04a im sel
 - Fixtures nur synthetisch.
 - `CLAUDE.md`, `.github/`, `.claude/` und `CODEOWNERS` bleiben unverändert.
 - Vor „fertig“: `main` geholt, Lint, Typprüfung, Tests und Importregeln grün; alle Pflicht-Checks der CI grün.
+
+---
+
+## 11. Umsetzung DS-04a (07.11.2026)
+
+Nach dem Merge von M5-13 (#311) auf `main` 309f0ec, im selben Draft-PR.
+
+**Was gebaut ist:**
+
+- **Registry:** `Georeferencing` (`geotransform`, `gcp_tps`) als Pflichtfeld `georeferencing` jedes Eintrags, ohne Vorgabe (B10); Startprüfung: `gcp_tps` nur bei `format: cog`. Die vier YAML-Einträge nennen `geotransform`. Veröffentlicht als `earthx:georeferencing` (`architekturplan.md` 5.1).
+- **Eine Stelle für die Lage:** `CogReader` öffnet die Datei selbst. Bei `gcp_tps` legt er ein `WarpedVRT` mit `SRC_METHOD=GCP_TPS` im CRS der GCPs darüber und gibt es rio-tiler als `dataset`; rio-tilers affiner Zweig wird nicht mehr betreten. Kachel, Zuschnitt, Export, Mosaik und Job lesen alle über `CogReader.dataset`, sehen also dasselbe Raster. `readers` hält die Werte als `Literal`, weil es `catalog` nicht importieren darf (3.1).
+- **Weg der Angabe:** `resolve_asset` nimmt sie aus der Registry in `ResolvedAsset.georeferencing`; `open_asset_ref` gibt sie an `asset_path`, der `AssetPath` trägt sie zum `CogReader`. Im Rezept steht sie in `asset` (A8).
+- **Widerspruch Registry ↔ Datei (A3):** `GeoreferenceMismatch` in `readers`, Fehlerart `source_georeference`: im Job `502` „The source file is not placed the way the platform expects“, kein zweiter Versuch (nicht in `RETRYABLE`, im Frontend „fails again“), im Runner Exit-Code „Quelle“; in der Kachelroute `502` „the asset is not placed the way the platform expects“. Keine Meldung nennt Datensatz, Adresse oder Pfad.
+
+**Abweichung vom Plan (Auslegung zu A8):** `geotransform` ist die Bedeutung eines fehlenden Schlüssels und wird im Rezept nicht geschrieben (`exclude_if`). So bleiben jedes bisherige `recipe.json` und jeder bisherige Hash und Cache-Schlüssel gleich; die festen Hashes in `test_recipe.py` sind unverändert. `gcp_tps` steht im Rezept und geht in Hash und Cache-Schlüssel ein (Test). Nachtrag in `adr/0014` §4.
+
+**Bitgleichheit:** Der Job liest das TPS-Raster des Readers mit exakten Fenstern; seine Pixel sind die der Kachel auf der nativen Ebene (Test). Zwei Läufe desselben Rezepts geben dieselben Bytes; der Runner rechnet mit demselben Kern. Kachel, Zuschnitt und Job warpen das TPS-Raster jeweils auf ihr eigenes Raster: zweimal `nearest` statt einmal, die Lage bleibt die der TPS bis auf ein Quellpixel.
+
+**Tests (synthetisch, `tests/earthx/readers/mini_gcp.py`):** `uint16`-Datei nur mit GCPs, Biegung von 12 Pixeln, jedes Pixel ein eigener Wert. Jeder der 39 GCPs liegt in Reader und Kachel auf seinem Pixel (höchstens 1 Pixel daneben); eine affine Näherung durch dieselben GCPs verfehlt sie (bis 4 Pixel, 9 ganz). Gegenprobe: Ohne `SRC_METHOD=GCP_TPS` schlagen die Lage-Tests fehl. Dazu: Job gleich Reader, zwei Läufe bytegleich, beide Widersprüche, Fehlerart, Werte des Felds in `AssetPath`, `ResolvedAsset`, Rezept und Registry, Collection, Kachelroute `200` und `502`.
+
+**Kosten je Kachel [M]:** eine IW-Szene (VV, 26 526 × 16 678 Pixel, Übersichten 2 bis 64, 210 GCPs) im Hügelland, über `/vsicurl` direkt im Kratzverzeichnis der Sitzung (nicht über `gateway`, wie `adr/0018` §4.1); Median aus drei Läufen, Kachel 256 × 256 über der Mitte der GCPs, HTTP-Antworten ab dem zweiten Lauf zum Teil aus GDALs Zwischenspeicher:
+
+| Zoom | affin (rio-tiler) | TPS (`CogReader`) |
+|---|---|---|
+| Öffnen | < 0,01 s | 0,02 s |
+| z7 | 0,04 s | 0,24 s |
+| z9 | 0,09 s | 0,34 s |
+| z11 | 0,06 s | 0,19 s |
+| z13 | 1,99 s | 2,04 s |
+
+TPS kostet bei groben und mittleren Zoomstufen rund 0,1 bis 0,25 s Rechenzeit mehr je Kachel; bei z13 überwiegt das Netz. Bytes je Kachel sind nicht gemessen. Ob sich die Rechenzeit drücken lässt (etwa die Fehlerschwelle des Näherungs-Transformers), prüft DS-04b an mehreren Szenen.
+
+**Noch nicht gebaut** (DS-04b, DS-04c): Eintrag `sentinel-1-grd`, Abbildung `s3://` → `https://`, Prüfsumme CRC64NVME, `notices`, Live-Smoke, Frontend.
+
