@@ -13,7 +13,10 @@ YAML and this module turns into the loader that builds the same objects.
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
+from pathlib import Path
 
+import earthx
+from earthx.catalog.entry_files import EntryFileError, load_entry, load_retired
 from earthx.catalog.registry import (
     AccessInfo,
     AdapterKind,
@@ -990,3 +993,27 @@ RETIRED = (
 )
 
 REGISTRY = DatasetRegistry((SENTINEL_2_L2A, COP_DEM_GLO_30, ESA_WORLDCOVER_2020, ESA_WORLDCOVER_2021), retired=RETIRED)
+
+
+# Where the curated entries lie (adr/0025 §7.1): `backend/catalog` in the repo, `/app/catalog` in the image. A constant
+# of the package, never a variable of the environment.
+CATALOG_DIR = Path(earthx.__file__).resolve().parents[1] / "catalog"
+_README = "README.md"
+
+
+def _entry_files(directory: Path) -> list[Path]:
+    """The ``*.yaml`` files of ``directory``; anything else but a README is an error, so a stray file is noticed."""
+    files = []
+    for path in sorted(directory.iterdir()):
+        if path.name == _README:
+            continue
+        if not path.is_file() or path.suffix != ".yaml":
+            raise EntryFileError(f"{directory.name}/{path.name}: only <dataset_id>.yaml files and a README belong here")
+        files.append(path)
+    return files
+
+
+def load_registry(catalog_dir: Path = CATALOG_DIR) -> DatasetRegistry:
+    """The registry from the entries under ``catalog_dir/datasets`` and ``catalog_dir/retired.yaml``."""
+    entries = tuple(load_entry(path) for path in _entry_files(catalog_dir / "datasets"))
+    return DatasetRegistry(entries, retired=load_retired(catalog_dir / "retired.yaml"))

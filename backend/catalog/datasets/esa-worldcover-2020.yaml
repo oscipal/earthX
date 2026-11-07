@@ -1,0 +1,176 @@
+# ESA WorldCover 2020 (M5-07, `adr/0023` §6.1 and §8.3): two states of one product, one entry each (`adr/0023` F6);
+# the other is `esa-worldcover-2021.yaml`. The two differ in the year, the algorithm version and the DOI only.
+# Measured 06.11.2026 (M5-07 plan §2): anonymous listing of the bucket in eu-central-1, 2651 COG tiles of 3° per
+# state, the colour table, the period and the copyright in the head of the file, the DOIs at Zenodo.
+#
+# One file is one entry of the registry (docs/plans/m5/m5-13-yaml-lader.md, KLAERUNGEN B13 stage 2). The fields are
+# those of `DatasetConfig` in `backend/earthx/catalog/registry.py`, every one set on purpose, none with a default
+# (KLAERUNGEN B10); `catalog.entry_files` reads the file strictly. Every value carries the place it comes from.
+
+dataset_id: esa-worldcover-2020
+title: ESA WorldCover 2020
+description: >-
+  ESA WorldCover 2020 (v100): global land cover map at 10 m resolution with 11 classes, derived from Sentinel-1
+  and Sentinel-2 data of 2020, as cloud-optimized GeoTIFF in 3° × 3° tiles, read directly from the AWS Open Data
+  bucket. The 2020 and 2021 maps were made with different algorithm versions and are not directly comparable.
+# German and English (adr/0026 F7, from M5-07 on).
+keywords:
+- land cover
+- landcover
+- land use
+- classification
+- worldcover
+- esa
+- copernicus
+- sentinel-1
+- sentinel-2
+- Landbedeckung
+- Bodenbedeckung
+- Landnutzung
+- Klassifikation
+category: land_cover
+# The bucket has no STAC collection. The providers are those of the collection `stactools-packages/esa-worldcover`
+# builds for the product (`constants.py`, `PROVIDERS`, read 06.11.2026, UI-05 plan §5); the 10 m are the resolution in
+# the `readme.html` of the bucket.
+providers:
+- name: ESA
+  roles: [licensor, producer, host]
+  url: https://esa-worldcover.org
+- name: ESA WorldCover Consortium
+  roles: [processor]
+  url: https://esa-worldcover.org
+gsd: [10.0]
+# Checked at Zenodo (M5-07 plan §2).
+doi: https://doi.org/10.5281/zenodo.5571936
+citation: null
+# One map per year, not a stream of acquisitions (`adr/0023` §8.3), like the DEM.
+data_class: raster-static
+format: cog
+# The outer edge of the tile grid (measured): no tiles south of 60° S.
+spatial_extent:
+  bbox: [-180.0, -60.0, 180.0, 84.0]
+# `time_start` and `time_end` of the file.
+temporal_extent:
+  start: 2020-01-01T00:00:00+00:00
+  end: 2020-12-31T23:59:59+00:00
+capabilities:
+  roi: true
+  # One map: the year is chosen by the dataset, not by a date (`adr/0023` §8.3).
+  time_range: false
+  # Arithmetic on class codes means nothing.
+  band_math: false
+  # Classes only with `nearest` (adr/0014 F6): reprojection yes, interpolation no.
+  interpolation: false
+  reprojection: true
+  masking: true
+  value_masking: true
+  normalization: false
+  # Open until M5-12 (`adr/0030`) has gone through the operators per dataset.
+  ml_processing: false
+  quad_pol: false
+  # One map per state: extent, not density (adr/0004 §5).
+  single_coverage_product: true
+license:
+  spdx_id: CC-BY-4.0
+  name: Creative Commons Attribution 4.0 International
+  url: https://creativecommons.org/licenses/by/4.0/
+  commercial_use: true
+  distribution: true
+  derivatives: true
+  share_alike: false
+  attribution_required: true
+  # Proposal `adr/0023` §7.2; the wording Otto confirmed before the merge of M5-07 (`adr/0023` F2, M5-07 plan F5).
+  tier: processing
+  # The source's own attribution for a published map (`readme.html` of the bucket, the `copyright` tag of the file),
+  # with "(modified)" for processed data.
+  attribution_modified: >-
+    © ESA WorldCover project 2020 / Contains modified Copernicus Sentinel data (2020) processed by ESA WorldCover
+    consortium (modified)
+  attribution_unmodified: >-
+    © ESA WorldCover project 2020 / Contains modified Copernicus Sentinel data (2020) processed by ESA WorldCover
+    consortium
+  terms: null
+access:
+  token_free_checked_at: 2026-11-06
+  method: anonymous HTTPS to the AWS Open Data bucket, no authentication header (M5-07 plan §2)
+  # No Access-Control-Allow-Origin on a request with Origin (`adr/0023` §6.1, measured 31.10. and 06.11.2026).
+  cors: false
+source:
+  adapter: esa-worldcover-bucket
+  endpoint: https://esa-worldcover.s3.eu-central-1.amazonaws.com
+  # The bucket has no STAC collection; the prefix of the state is the closest thing to a source-side id.
+  source_collection_id: v100/2020
+  asset_hosts: [esa-worldcover.s3.eu-central-1.amazonaws.com]
+  item_holding: materialized
+  data_region: aws:eu-central-1
+coverage:
+  provider: local-sql
+  # A 3° tile; `max_geotile_level_for(333.0) == 6`.
+  typical_footprint_km: 333.0
+  max_geotile_level: 6
+# The classes in the colours of the file, no stretch (M5-07 plan F4). `nearest`, as for every class layer.
+default_render:
+  title: Land cover
+  assets: [map]
+  rescale: null
+  colormap_name: esa-worldcover
+  expression: null
+  resampling: nearest
+# As for the DEM: one period for every tile, so one group; the AOI crop in full resolution, no quicklook (no CORS).
+# `min_zoom` 0: the file has overviews down to 1:64, so a tile of the world reads them, like the DEM's.
+viewer:
+  group_by: [start_datetime]
+  min_zoom: 0
+  max_zoom: 15
+  browse: full_resolution
+  quicklook_nodata_max: null
+  results_group_by: [start_datetime]
+health:
+  status: ok
+maturity: stable
+zarr: null
+# The map is its own class layer: `mask` keeps or hides the classes a recipe names (`adr/0023` §8.3).
+mask:
+  asset: map
+  band: map
+  # The legend in the head of every map file, values and names as the file writes them.
+  classes:
+  - value: 10
+    label: Tree cover
+  - value: 20
+    label: Shrubland
+  - value: 30
+    label: Grassland
+  - value: 40
+    label: Cropland
+  - value: 50
+    label: Built-up
+  - value: 60
+    label: Bare/sparse vegetation
+  - value: 70
+    label: Snow and ice
+  - value: 80
+    label: Permanent water bodies
+  - value: 90
+    label: Herbaceous wetland
+  - value: 95
+    label: Mangroves
+  - value: 100
+    label: Moss and lichen
+  suggested: []
+  reference: https://esa-worldcover.s3.eu-central-1.amazonaws.com/v200/2021/docs/WorldCover_PUM_V2.0.pdf
+  note: Class names as in the legend of the map files; 0 is no data.
+  cloud_classes: []
+  cloud_note: ''
+  share_classes: []
+# Class codes have no unit.
+band_units:
+  map: null
+auxiliary_assets: []
+# Filters only for federated items for now (adr/0021 §2, point 1).
+search_filters: []
+search_capabilities:
+  evaluate: false
+  aoi_coverage: true
+index_presets: []
+true_color: []
