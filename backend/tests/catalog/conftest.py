@@ -24,6 +24,7 @@ from earthx.catalog.registry import (
     DatasetCategory,
     DatasetConfig,
     DefaultRender,
+    Georeferencing,
     HealthInfo,
     HealthStatus,
     ItemHolding,
@@ -56,6 +57,7 @@ def valid_config() -> DatasetConfig:
         citation="Test publisher (2026): Test dataset, version 1.",
         data_class=DataClass.RASTER_TIME_SERIES,
         format=DataFormat.COG,
+        georeferencing=Georeferencing.GEOTRANSFORM,
         spatial_extent=SpatialExtent(bbox=(-10.0, -10.0, 10.0, 10.0)),
         temporal_extent=TemporalExtent(
             start=datetime(2020, 1, 1, tzinfo=timezone.utc),

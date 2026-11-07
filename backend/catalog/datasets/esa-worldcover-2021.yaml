@@ -46,6 +46,8 @@ citation: null
 # One map per year, not a stream of acquisitions (`adr/0023` §8.3), like the DEM.
 data_class: raster-static
 format: cog
+# The files carry a CRS and a geotransform (adr/0018 F1, DS-04a).
+georeferencing: geotransform
 # The outer edge of the tile grid (measured): no tiles south of 60° S.
 spatial_extent:
   bbox: [-180.0, -60.0, 180.0, 84.0]

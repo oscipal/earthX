@@ -37,6 +37,8 @@ citation: null
 # from this, not the other way round.
 data_class: raster-static
 format: cog
+# The files carry a CRS and a geotransform (adr/0018 F1, DS-04a).
+georeferencing: geotransform
 # From the bucket's own tile list (M3-11b plan §2.1, §2.6): latitudes S90 to N83, longitudes W180 to E179 (so the
 # nominal cells reach N84/E180).
 spatial_extent:
