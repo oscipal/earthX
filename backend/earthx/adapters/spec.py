@@ -25,12 +25,12 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Protocol
 
-from earthx.adapters import cop_dem_bucket, earth_search, esa_worldcover_bucket
+from earthx.adapters import cop_dem_bucket, esa_worldcover_bucket, stac_api
 from earthx.adapters.cache import SearchCache
 from earthx.adapters.cop_dem_bucket import MaterializeOutcome
 from earthx.adapters.earth_search_coverage import aggregate_coverage
 from earthx.adapters.errors import AdapterSpecMismatch
-from earthx.adapters.federated_search import ItemPage, SearchParams
+from earthx.adapters.federated_search import FilterSupport, ItemPage, SearchParams
 from earthx.catalog.coverage import CoverageQuery, CoverageResult
 from earthx.catalog.registry import AdapterKind, CoverageProvider, DatasetConfig, DatasetRegistry, ItemHolding
 from earthx.gateway import Gateway
@@ -58,17 +58,6 @@ class AnswerCoverage(Protocol):
     async def __call__(
         self, query: CoverageQuery, config: DatasetConfig, *, gateway: Gateway, cache: SearchCache | None
     ) -> CoverageResult: ...
-
-
-@dataclass(frozen=True, slots=True)
-class FilterSupport:
-    """Which filters the source itself honours (measured, adr/0011 §3.1)."""
-
-    intersects: bool
-    ids: bool
-    cql2: bool
-    # The STAC query extension, which carries the conditions of a dataset's search filters (DS-02).
-    query: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,12 +99,12 @@ def spec_table(*specs: AdapterSpec) -> AdapterSpecs:
 ADAPTER_SPECS: AdapterSpecs = spec_table(
     AdapterSpec(
         kind=AdapterKind.EARTH_SEARCH_V1,
-        search=earth_search.search_items,
-        fetch=earth_search.get_item,
+        search=stac_api.search_items,
+        fetch=stac_api.get_item,
         materialize=None,
         coverage={CoverageProvider.UPSTREAM_AGGREGATION: aggregate_coverage},
-        # CQL2 is not answered by this source (measured, M3-13 plan §2.3); `query` is (DS-02 plan §6.2).
-        filters=FilterSupport(intersects=True, ids=True, cql2=False, query=True),
+        # Measured per source and kept with its dialect (M5-08), so the two cannot drift apart.
+        filters=stac_api.EARTH_SEARCH.filters,
     ),
     AdapterSpec(
         kind=AdapterKind.COP_DEM_BUCKET,

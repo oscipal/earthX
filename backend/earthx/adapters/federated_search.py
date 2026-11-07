@@ -1,6 +1,6 @@
 """What every federated source shares: input checks, our own page marker, caching.
 
-Split out of ``earth_search.py`` for M2-09b's second adapter (plan §4.2): the four
+Split out of the Earth Search adapter for M2-09b's second adapter (plan §4.2): the four
 rules of adr/0005 that motivate this split apply to *any* source with a search API,
 not only Earth Search, and re-deriving them per adapter would let the two drift
 apart at exactly the place adr/0005 rule III cares about — the shape of our own
@@ -9,8 +9,8 @@ page marker.
 What lives here, and why it does not vary by source:
 
 * **Rule I** is not here: ``adapters.dataset_config`` looks the entry up, once,
-  and every adapter takes the entry itself (adr/0011 F3). What stays is
-  :func:`require_adapter`, the check that an adapter was handed an entry it serves.
+  and every adapter takes the entry itself (adr/0011 F3). An adapter checks only
+  that it was handed an entry it serves (``stac_api.dialect_of``).
 * **Rule III** — the page marker we hand out is ours, one shape (:data:`TOKEN_VERSION`)
   regardless of which source it points into. Splitting the token format per source
   would mean a client's marker only works against the source it was minted for,
@@ -43,8 +43,8 @@ from shapely.errors import ShapelyError
 from shapely.geometry import shape as shapely_shape
 
 from earthx.adapters.cache import CacheValue, SearchCache
-from earthx.adapters.errors import InvalidQuery, UnsupportedSource, UpstreamShapeError
-from earthx.catalog.registry import AdapterKind, DatasetConfig
+from earthx.adapters.errors import InvalidQuery, UpstreamShapeError
+from earthx.catalog.registry import DatasetConfig
 from earthx.catalog.search_filters import FilterConditions, RangeCondition, ValuesCondition, conditions_key
 
 LOGGER = logging.getLogger("earthx.adapters.federated_search")
@@ -118,6 +118,17 @@ _GEOMETRY_TYPES = frozenset(
     {"Point", "MultiPoint", "LineString", "MultiLineString", "Polygon", "MultiPolygon", "GeometryCollection"}
 )
 _POLYGONAL_TYPES = frozenset({"Polygon", "MultiPolygon"})
+
+
+@dataclass(frozen=True, slots=True)
+class FilterSupport:
+    """Which filters the source itself honours (measured, adr/0011 §3.1)."""
+
+    intersects: bool
+    ids: bool
+    cql2: bool
+    # The STAC query extension, which carries the conditions of a dataset's search filters (DS-02).
+    query: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -472,17 +483,6 @@ def matched_count(payload: dict[str, Any]) -> int | None:
         context = payload.get("context")
         value = context.get("matched") if isinstance(context, dict) else None
     return value if isinstance(value, int) else None
-
-
-def require_adapter(config: DatasetConfig, kind: AdapterKind) -> None:
-    """Refuse an entry another adapter serves, before any request is built.
-
-    The dispatch never hands one over (``adapters.spec``); this guards a direct call
-    with the wrong entry, which would otherwise ask a source about a collection it
-    does not hold.
-    """
-    if config.source.adapter is not kind:
-        raise UnsupportedSource(f"{config.dataset_id} is served by {config.source.adapter}, not {kind}")
 
 
 def endpoint_of(config: DatasetConfig) -> str:

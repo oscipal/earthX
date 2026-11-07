@@ -6,10 +6,11 @@ aggregates* here rather than in ``catalog``: that ``/aggregate`` answers GET onl
 what the parameters are called, that the cell count is capped at 10 000 and that the
 ``overflow`` field lies about it.
 
-Its own module, next to ``earth_search.py``, because that one is already long and
-speaks a different endpoint. What the two share — our catalogue deciding whether a
-collection exists, the endpoint, the STAC time window, the two cache lifetimes, and a
-cache that may fail — is imported from there, not copied.
+Its own module, next to ``stac_api.py``, because ``/aggregate`` is Earth Search's own
+endpoint, not part of a STAC API. What the two share — our catalogue deciding whether a
+collection exists, the endpoint, the STAC time window, the two cache lifetimes, a cache
+that may fail, and the query extension the conditions are written in — is imported, not
+copied.
 
 **One request, not three.** Cells, total and histogram are asked for together, so that
 the completeness probe of rule V compares numbers from the *same* answer (adr/0004
@@ -35,14 +36,8 @@ from datetime import datetime
 from typing import Any
 
 from earthx.adapters.cache import CacheValue, SearchCache
-from earthx.adapters.earth_search import (
-    cache_get,
-    cache_set,
-    endpoint_of,
-    query_extension,
-    stac_interval,
-    ttl_for_window,
-)
+from earthx.adapters.federated_search import cache_get, cache_set, endpoint_of, stac_interval, ttl_for_window
+from earthx.adapters.stac_api import query_extension
 from earthx.catalog.coverage import (
     CoverageCell,
     CoverageProviderMismatch,
