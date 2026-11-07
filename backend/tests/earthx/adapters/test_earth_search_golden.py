@@ -102,9 +102,7 @@ async def _run(answers: list[str], steps: list[Step]) -> dict[str, Any]:
 
 def _search(params: Callable[[list[Any]], SearchParams]) -> Step:
     async def step(gateway: Any, cache: RecordingCache, results: list[Any]) -> Any:
-        page = await search_items(
-            SENTINEL_2_L2A, params(results), adapters=ADAPTER_SPECS, gateway=gateway, cache=cache
-        )
+        page = await search_items(SENTINEL_2_L2A, params(results), adapters=ADAPTER_SPECS, gateway=gateway, cache=cache)
         return _page(page)
 
     return step
