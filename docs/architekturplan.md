@@ -292,7 +292,10 @@ Jeder Datensatz ist eine STAC Collection, jede Szene ein STAC Item. Genutzte Ext
 | Feld | Inhalt |
 |---|---|
 | `keywords` (STAC-Kernfeld, ohne Präfix) | Schlagworte des Datensatzes, mindestens eines, ohne Vorgabewert (B10). Der Datensatz-Filter der Suchkachel (M3-10) sucht im Client über Titel, Beschreibung und diese Liste |
+| `providers` (STAC-Kernfeld, ohne Präfix) | Wer die Daten herstellt, lizenziert, verarbeitet und bereitstellt (`name`, `roles` nach STAC, `url` nur mit `https://`), mindestens einer, aus der Collection der Quelle übernommen, ohne Vorgabewert (B10; UI-05 §5, F2) |
+| `summaries.gsd` (STAC-Kernfeld) | Auflösung in Metern, aufsteigend, mindestens ein Wert, ohne Vorgabewert (B10; UI-05 §5, F2) |
 | `earthx:data_class` | Datentyp-Klasse (Raster-Zeitreihe, statisches Raster, ...) |
+| `earthx:category` | Gruppe im Data catalogue: `optical`, `radar`, `elevation`, `land_cover`, `weather_climate`, in dieser Reihenfolge, ohne Vorgabewert (B10; UI-05 §5, F1) |
 | `earthx:capabilities` | Flags: ROI, Zeitraum, Band-Math, Interpolation erlaubt, Reprojektion (M4 R3, `adr/0014` F6; Methoden außer `nearest` brauchen zusätzlich Interpolation), ML geeignet, ... `time_range=False` (bisher nur der DEM) heißt: kein Datensatz mit Aufnahmeachse, ein gewählter Zeitraum ändert die Antwort nicht. Sowohl `/coverage` (M3-11c) als auch `/stac/search` (M3-12) verwerfen `datetime` dann vor jeder Anfrage und nennen das in `ignored_filters` der Antwort, statt den Filter still anzuwenden oder eine Suche wegen eines Zeitraums leer zu melden, der ohnehin nichts bedeutet |
 | `earthx:license_flags` | `commercial_use`, `derivatives`, `share_alike`, `attribution_required` + SPDX-Kennung |
 | `earthx:access` | token-frei geprüft am, Methode, CORS vorhanden |

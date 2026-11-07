@@ -1,9 +1,9 @@
-import { useCallback, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 
 import type { CoverageHistogramPoint, PlaceResult } from '../api';
 import { readAoiFile } from '../aoiFile';
 import { completenessNote } from '../coverage';
-import { DATASETS_PER_ROW, MAX_DATASET_ROWS, pageCount, pageOf, pageSlice, rowsThatFit } from '../datasetPages';
+import { DATASETS_PER_ROW, pageCount, pageOf, pageSlice, rowsThatFit, START_DATASET_ROWS } from '../datasetPages';
 import { clampDay, dateBounds, todayUtc, type DayBounds } from '../dateBounds';
 import { acquisitionNote, maturityLabel, maturityNote } from '../datasets';
 import { bufferPointToPolygon, polygonBbox } from '../geoUtils';
@@ -377,26 +377,32 @@ function MultiSelectToggle() {
   );
 }
 
-// The dataset choice (M3-10, M4-29): one button per dataset from
-// `/stac/collections`. Nothing is picked at the start; a click picks exactly that
+// The dataset choice (M3-10, M4-29): one button per dataset added from the Data catalogue (UI-05 §4,
+// `addedDatasetIds`), in the order they were added. Nothing is picked at the start; a click picks exactly that
 // dataset (drawn highlighted) and drops the one before; a click on the chosen one
 // drops it. Only with "Select multiple datasets" on can several be picked, and
 // then every picked dataset is searched together, also those on another page.
 // A dataset that cannot be shown stays listed, disabled, with the reason.
 //
-// UI-05 (Otto, 06.11.2026): pages of at most six buttons, two a row, with as many rows as the panel holds without
-// scrolling (measured, at least one), and "‹ 1 / 3 ›" small at the right of the heading "Datasets" (Otto's review of
+// UI-05 (Otto, 06.11.2026 and 07.11.2026): pages of two buttons a row, with as many rows as the panel holds without
+// scrolling (measured again whenever the window or the panel changes size, at least one, no upper limit), and "‹ 1 / 3 ›" small at the right of the heading "Datasets" (Otto's review of
 // part 1), also with one page. The grid keeps the height of a full page, so that the last page does not let the panel
-// jump. When the size of a page changes, the page of the dataset picked last is shown. The heading row is drawn here,
-// because the pages are.
+// jump. When the size of a page changes, the page of the dataset picked last is shown; "Add" in the catalogue turns to
+// the page of the dataset added (A5). The heading row is drawn here, because the pages are.
 function DatasetPicker() {
-  const datasets = useAppStore((s) => s.datasets);
+  const allDatasets = useAppStore((s) => s.datasets);
+  const addedDatasetIds = useAppStore((s) => s.addedDatasetIds);
+  const revealed = useAppStore((s) => s.revealedDataset);
+  const datasets = useMemo(
+    () => addedDatasetIds.flatMap((id) => allDatasets.filter((d) => d.id === id)),
+    [allDatasets, addedDatasetIds],
+  );
   const selectedDatasetIds = useAppStore((s) => s.selectedDatasetIds);
   const anchorId = useAppStore((s) => s.lastPickedDatasetId ?? s.selectedDatasetIds[0] ?? null);
   const toggle = useAppStore((s) => s.toggleDatasetSelected);
   const busy = useAppStore((s) => s.searching || s.sceneLookupLoading);
   const listRef = useRef<HTMLDivElement>(null);
-  const [rows, setRows] = useState(MAX_DATASET_ROWS);
+  const [rows, setRows] = useState(START_DATASET_ROWS);
   const [page, setPage] = useState(0);
   const pageSize = rows * DATASETS_PER_ROW;
   // Only a new page size moves the page, to the one of the dataset picked last; a pick on the page shown leaves it.
@@ -406,6 +412,12 @@ function DatasetPicker() {
     const index = datasets.findIndex((d) => d.id === anchorId);
     if (index >= 0) setPage(pageOf(index, pageSize));
   }
+  const [revealSeen, setRevealSeen] = useState(revealed?.seq ?? 0);
+  if (revealed && revealed.seq !== revealSeen) {
+    setRevealSeen(revealed.seq);
+    const index = datasets.findIndex((d) => d.id === revealed.id);
+    if (index >= 0) setPage(pageOf(index, pageSize));
+  }
   const pages = pageCount(datasets.length, pageSize);
   const shownPage = Math.min(page, pages - 1);
   const drawnRows = Math.min(rows, Math.ceil(datasets.length / DATASETS_PER_ROW));
@@ -413,16 +425,21 @@ function DatasetPicker() {
   useLayoutEffect(() => {
     const list = listRef.current;
     const scroll = list?.closest('.control-scroll');
-    if (!list || !scroll || typeof ResizeObserver === 'undefined') return;
+    const panel = scroll?.parentElement;
+    if (!list || !scroll || !panel || typeof ResizeObserver === 'undefined') return;
+    // The room is the panel's height without what stands beside the scrolling part (the footer with "Search"): the
+    // scrolling part itself is only as tall as its content, so its own height shows a lack of room, never room to spare.
     const measure = () => {
       const grid = getComputedStyle(list);
       const step = parseFloat(grid.gridAutoRows) + parseFloat(grid.rowGap);
       const last = scroll.lastElementChild;
       const bottom = last ? last.getBoundingClientRect().bottom : scroll.getBoundingClientRect().top;
       const content = bottom - scroll.getBoundingClientRect().top + scroll.scrollTop + parseFloat(getComputedStyle(scroll).paddingBottom);
-      setRows(rowsThatFit(drawnRows, scroll.clientHeight - content, step));
+      const beside = [...panel.children].reduce((sum, child) => (child === scroll ? sum : sum + (child as HTMLElement).offsetHeight), 0);
+      setRows(rowsThatFit(drawnRows, panel.clientHeight - beside - content, step));
     };
     const observer = new ResizeObserver(measure);
+    observer.observe(panel);
     observer.observe(scroll);
     for (const child of scroll.children) observer.observe(child);
     return () => observer.disconnect();
@@ -473,6 +490,9 @@ function DatasetPicker() {
         </span>
         <MultiSelectToggle />
       </div>
+      {datasets.length === 0 && allDatasets.length > 0 && (
+        <p className="hint">No datasets yet — add some from the Data catalogue</p>
+      )}
       {datasets.length > 0 && (
         <div
           ref={listRef}

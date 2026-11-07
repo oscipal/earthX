@@ -28,6 +28,7 @@ import {
   VIEWPORT_ROUND_LEVELS,
 } from './coverage';
 import type { DatasetOption } from './datasets';
+import { firstVisitDatasets, knownDatasets, notAddableReason } from './catalogue';
 import { prefilledDays, todayUtc } from './dateBounds';
 import { acquisitionNote, datasetsFrom, defaultRenderOf, preferredGeoreferencedAsset, quicklookPlan } from './datasets';
 import { fallbackNotice, findFallback, fullDayRange, NO_FALLBACK_MESSAGE } from './dateFallback';
@@ -57,7 +58,7 @@ import type { Mosaics, SceneEntry } from './mosaic';
 import type { BasemapId } from './basemaps';
 import type { OverlayId, Overlays } from './overlays';
 import type { Appearance, Projection, Theme } from './preferences';
-import { loadAppearance, loadBasemap, loadOverlays, loadProjection, loadResultsOnMap, loadTipLevel, migrateReliefBasemap, saveAppearance, saveBasemap, saveOverlays, saveProjection, saveResultsOnMap, saveTipLevel, themeOf } from './preferences';
+import { loadAddedDatasets, loadAppearance, loadBasemap, loadOverlays, loadProjection, loadResultsOnMap, loadTipLevel, migrateReliefBasemap, saveAddedDatasets, saveAppearance, saveBasemap, saveOverlays, saveProjection, saveResultsOnMap, saveTipLevel, themeOf } from './preferences';
 import { setTipLevel, type TipLevel } from './tipLevel';
 import { zoomTarget } from './zoomSelection';
 import type { Percent } from './percentRange';
@@ -393,6 +394,8 @@ function datasetState(s: AppState, datasetId: string | null) {
   const section = r.datasetId ? s.sections.find((x) => x.datasetId === r.datasetId) : undefined;
   const dataset = r.datasetId ? s.datasets.find((d) => d.id === r.datasetId) : undefined;
   const tickable = !!dataset?.viewable && !s.selectedDatasetIds.includes(dataset.id);
+  // A ticked dataset is one of "Search and area" (UI-05): a layer's dataset that was removed comes back.
+  if (tickable) addToPanel(dataset.id);
   const becomesActive = dataset && (dataset.viewable || s.selectedDatasetIds.includes(dataset.id)) ? dataset.id : null;
   return {
     ...(tickable
@@ -401,6 +404,19 @@ function datasetState(s: AppState, datasetId: string | null) {
     ...(section ? openSectionState(section) : becomesActive && becomesActive !== s.datasetId ? openSectionState(null) : {}),
     ...(becomesActive ? { datasetId: becomesActive } : {}),
   };
+}
+
+// Puts a dataset at the end of "Search and area" and saves the list (UI-05 §4.2, F4): only one that can be added, once.
+// Returns whether it is there now.
+function addToPanel(datasetId: string): boolean {
+  const s = useAppStore.getState();
+  const dataset = s.datasets.find((d) => d.id === datasetId);
+  if (!dataset || notAddableReason(dataset) !== null) return false;
+  if (s.addedDatasetIds.includes(datasetId)) return true;
+  const addedDatasetIds = [...s.addedDatasetIds, datasetId];
+  useAppStore.setState({ addedDatasetIds });
+  saveAddedDatasets(addedDatasetIds);
+  return true;
 }
 
 // A layer id prefix, unique per call: the clock alone gives two pins within one
@@ -1592,9 +1608,17 @@ export interface AppState {
   multiSelect: boolean;
   // The dataset ticked last; "Select multiple datasets" ending keeps this one.
   lastPickedDatasetId: string | null;
+  // The datasets of "Search and area", in the order they were added (UI-05 §4): from the Data catalogue, saved per
+  // browser; on a first visit those of `firstVisitDatasets`. Every ticked dataset is one of them.
+  addedDatasetIds: string[];
+  // A dataset whose page "Search and area" turns to (UI-05 A5, after "Add"); `seq` tells two requests for one apart.
+  revealedDataset: { id: string; seq: number } | null;
+  // Whether the Data catalogue is open (UI-05 §4.1).
+  catalogueOpen: boolean;
   // The *active* dataset: the one the map, time slider, heatmap, full-resolution
   // view and download follow. It is the open results section's dataset, or the
-  // one picked in the heatmap legend; always one of `selectedDatasetIds`.
+  // one picked in the heatmap legend; one of `selectedDatasetIds`, unless "Remove" in the Data catalogue unticked it and
+  // kept its results (UI-05 A6) until the next choice.
   datasetId: string | null;
   // One entry per dataset the last search asked, in filter order (M3-10). `items`,
   // `groups` and the two indices below mirror the *open* section only.
@@ -1666,6 +1690,13 @@ export interface AppState {
   loadDatasets: () => Promise<void>;
   toggleDatasetSelected: (id: string) => void;
   setMultiSelect: (on: boolean) => void;
+  toggleCatalogue: () => void;
+  // "Add" in the Data catalogue (UI-05 A5): at the end of "Search and area", which turns to its page; not ticked.
+  addDataset: (id: string) => void;
+  // "Remove" in the Data catalogue (UI-05 A6): out of "Search and area", unticked if it was; results, view and layers stay.
+  removeDataset: (id: string) => void;
+  // A permalink's dataset (UI-05 A7): added where it is not, so that view and panel agree.
+  ensureDatasetAdded: (id: string) => void;
   setOpenSection: (id: string) => void;
   setToolMode: (m: ToolMode) => void;
   setAoi: (g: GeoJSON.Geometry | null, point?: GeoJSON.Point | null) => void;
@@ -1908,6 +1939,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedDatasetIds: [],
   multiSelect: false,
   lastPickedDatasetId: null,
+  addedDatasetIds: [],
+  revealedDataset: null,
+  catalogueOpen: false,
   datasetId: null,
   sections: [],
   openSectionId: null,
@@ -1951,7 +1985,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const collections = await api.fetchCollections();
       const datasets = datasetsFrom(collections);
-      set({ datasets, selectedDatasetIds: [], lastPickedDatasetId: null, datasetId: null });
+      // The saved list as it is, or the first visit's (F3); the first visit is not saved, so that it follows the registry
+      // until the user adds or removes a dataset.
+      const saved = loadAddedDatasets();
+      const addedDatasetIds = saved === null ? firstVisitDatasets(datasets) : knownDatasets(saved, datasets);
+      set({ datasets, addedDatasetIds, selectedDatasetIds: [], lastPickedDatasetId: null, datasetId: null });
     } catch (e) {
       set({ error: `Backend not reachable: ${(e as Error).message}` });
     }
@@ -1994,6 +2032,34 @@ export const useAppStore = create<AppState>((set, get) => ({
           : s.selectedDatasetIds[0];
     set({ multiSelect: false });
     applyDatasetSelection(set, get, [keepId], keepId);
+  },
+  toggleCatalogue: () => set((s) => ({ catalogueOpen: !s.catalogueOpen })),
+  addDataset: (id) => {
+    if (!addToPanel(id)) return;
+    set((s) => ({ revealedDataset: { id, seq: (s.revealedDataset?.seq ?? 0) + 1 } }));
+  },
+  // Unticking here keeps what the last search found and the active dataset (A6): they are things of their own, unlike a
+  // new choice in the panel, which starts a new search. Not while a search or a lookup runs on the dataset.
+  removeDataset: (id) => {
+    const s = get();
+    if (!s.addedDatasetIds.includes(id)) return;
+    const ticked = s.selectedDatasetIds.includes(id);
+    if (ticked && (s.searching || s.sceneLookupLoading)) return;
+    const addedDatasetIds = s.addedDatasetIds.filter((x) => x !== id);
+    set({
+      addedDatasetIds,
+      ...(ticked
+        ? {
+            selectedDatasetIds: s.selectedDatasetIds.filter((x) => x !== id),
+            lastPickedDatasetId: s.lastPickedDatasetId === id ? null : s.lastPickedDatasetId,
+          }
+        : {}),
+    });
+    saveAddedDatasets(addedDatasetIds);
+    if (s.coverageDatasetId === id) get().hideCoverage();
+  },
+  ensureDatasetAdded: (id) => {
+    addToPanel(id);
   },
   // Shows one dataset's results — the dropdown of the results panel (M3-10) — and
   // makes that dataset the active one. Exactly one is shown while a search has

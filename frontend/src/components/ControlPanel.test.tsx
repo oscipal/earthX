@@ -712,6 +712,7 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
   function setUp(selected: string[]) {
     useAppStore.setState({
       datasets: datasetsFrom([OPTICAL, DEM, BROKEN]),
+      addedDatasetIds: ['optical', 'dem', 'broken'],
       selectedDatasetIds: selected,
       multiSelect: false,
       lastPickedDatasetId: null,
@@ -834,16 +835,65 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
     expect(buttons()[0].hasAttribute('title')).toBe(false);
   });
 
-  // UI-05 (Otto, 06.11.2026): pages of at most six; jsdom has no layout, so the panel keeps three rows.
+  // UI-05 (Otto, 06.11.2026 and 07.11.2026): as many rows as fit, no upper limit; jsdom has no layout, so the panel keeps the
+  // three rows it starts with unless a test lays it out.
   describe('pages of datasets', () => {
     const many = Array.from({ length: 7 }, (_, i) => collection(`extra-${i}`, `Extra ${i}`));
     const previous = () => container.querySelector('.dataset-pages [aria-label="Previous page"]') as HTMLButtonElement;
     const next = () => container.querySelector('.dataset-pages [aria-label="Next page"]') as HTMLButtonElement;
     const count = () => container.querySelector('.dataset-page-count')?.textContent;
     function setUpMany(selected: string[] = []) {
-      useAppStore.setState({ datasets: datasetsFrom([OPTICAL, DEM, ...many]), selectedDatasetIds: selected, datasetId: selected[0] ?? null, multiSelect: true });
+      const datasets = datasetsFrom([OPTICAL, DEM, ...many]);
+      useAppStore.setState({ datasets, addedDatasetIds: datasets.map((d) => d.id), selectedDatasetIds: selected, datasetId: selected[0] ?? null, multiSelect: true });
       act(() => root.render(<ControlPanel />));
     }
+
+    // A made-up layout: rows of 40 px with a gap of 6 px, the scrolling part `height` tall and its content ending at the top.
+    function layOut(height: number) {
+      vi.stubGlobal('ResizeObserver', class {
+        callback: () => void;
+        constructor(callback: () => void) {
+          this.callback = callback;
+        }
+        observe() {
+          this.callback();
+        }
+        disconnect() {}
+      });
+      const real = window.getComputedStyle.bind(window);
+      vi.spyOn(window, 'getComputedStyle').mockImplementation((el) =>
+        (el as HTMLElement).classList.contains('dataset-list')
+          ? ({ gridAutoRows: '40px', rowGap: '6px' } as CSSStyleDeclaration)
+          : ({ ...real(el), paddingBottom: '0px' } as CSSStyleDeclaration),
+      );
+      vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(height);
+    }
+
+    it('puts as many on a page as the room holds, more than six where there is room (Otto, 07.11.2026)', () => {
+      layOut(1000);
+      try {
+        setUpMany();
+        act(() => root.render(<ControlPanel />));
+        expect(titles()).toHaveLength(9);
+        expect(count()).toBe('1 / 1');
+      } finally {
+        vi.restoreAllMocks();
+        vi.unstubAllGlobals();
+      }
+    });
+
+    it('takes rows away again when the room shrinks, down to one row', () => {
+      layOut(-1000);
+      try {
+        setUpMany();
+        act(() => root.render(<ControlPanel />));
+        expect(titles()).toHaveLength(2);
+        expect(count()).toBe('1 / 5');
+      } finally {
+        vi.restoreAllMocks();
+        vi.unstubAllGlobals();
+      }
+    });
 
     it('shows six of nine, with "1 / 2" and the first arrow locked with its reason', () => {
       setUpMany();

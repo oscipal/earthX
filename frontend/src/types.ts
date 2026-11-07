@@ -61,6 +61,9 @@ export interface CollectionAccess {
   token_free_checked_at?: string | null;
   method?: string | null;
   cors: boolean | null;
+  // What reading the assets needs (`adr/0027` §6.1): `none` is anonymous; any other value makes the dataset a catalogue
+  // entry with a link (W0). Absent until the YAML loader sets it (UI-05 F7), which reads as `none`.
+  account?: string | null;
 }
 
 // The reader dispatch format (`DataFormat`, architekturplan.md 6.2), read only
@@ -77,6 +80,18 @@ export type DatasetFormat = 'cog' | 'zarr' | 'legacy';
 // first time by the frontend.
 export interface EarthxSource {
   asset_hosts: string[];
+  // Where the catalogue of the source answers, and the collection there (shown as "Source" in the Data catalogue, UI-05).
+  endpoint?: string | null;
+  source_collection_id?: string | null;
+  // Where the storage of the assets lies, `<operator>:<place>` or `unknown` (M5-07).
+  data_region?: string | null;
+}
+
+// A STAC provider (UI-05 F2): who produces, licenses, processes or hosts the data.
+export interface StacProvider {
+  name: string;
+  roles?: string[] | null;
+  url?: string | null;
 }
 
 // What the browse view shows right after a search, before any tile is requested
@@ -213,7 +228,16 @@ export interface Collection {
   // dataset has them. Written into `ATTRIBUTION.txt` of a download of original files (NM4-33).
   'sci:doi'?: string | null;
   'sci:citation'?: string | null;
-  extent?: { temporal?: StacTemporalExtent };
+  extent?: { spatial?: { bbox?: number[][] }; temporal?: StacTemporalExtent };
+  // STAC core (UI-05 F2): the providers, and the resolution in metres under `summaries.gsd`.
+  providers?: StacProvider[] | null;
+  summaries?: { gsd?: number[] | null } | null;
+  // The group of the Data catalogue (UI-05 F1).
+  'earthx:category'?: string | null;
+  // `adr/0024` R3: `unclear` marks a prototype source, with `legal_note` saying what is unclear. Absent until the YAML
+  // loader sets them (UI-05 F7), which reads as cleared.
+  'earthx:legal_status'?: string | null;
+  'earthx:legal_note'?: string | null;
   'earthx:access'?: CollectionAccess;
   'earthx:viewer'?: EarthxViewer | null;
   'earthx:capabilities'?: EarthxCapabilities;

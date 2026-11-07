@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { DATASETS_PER_ROW, MAX_DATASET_ROWS, pageCount, pageOf, pageSlice, rowsThatFit } from './datasetPages';
+import { DATASETS_PER_ROW, pageCount, pageOf, pageSlice, rowsThatFit, START_DATASET_ROWS } from './datasetPages';
 
 describe('rowsThatFit', () => {
   const STEP = 46;
@@ -10,9 +10,11 @@ describe('rowsThatFit', () => {
     expect(rowsThatFit(2, STEP - 1, STEP)).toBe(2);
   });
 
-  it('adds the rows the free height holds, up to three', () => {
+  it('adds every row the free height holds, with no upper limit (Otto, 07.11.2026)', () => {
     expect(rowsThatFit(1, STEP, STEP)).toBe(2);
-    expect(rowsThatFit(1, 10 * STEP, STEP)).toBe(MAX_DATASET_ROWS);
+    expect(rowsThatFit(3, STEP, STEP)).toBe(4);
+    expect(rowsThatFit(1, 10 * STEP, STEP)).toBe(11);
+    expect(rowsThatFit(2, 10 * STEP + STEP - 1, STEP)).toBe(12);
   });
 
   it('drops as many rows as the panel lacks, but keeps one', () => {
@@ -23,6 +25,8 @@ describe('rowsThatFit', () => {
 
   it('changes nothing without a layout to measure (no row height, or a height that is no number)', () => {
     expect(rowsThatFit(3, -500, 0)).toBe(3);
+    expect(rowsThatFit(5, 500, 0)).toBe(5);
+    expect(rowsThatFit(2, Number.POSITIVE_INFINITY, STEP)).toBe(2);
     expect(rowsThatFit(2, Number.NaN, STEP)).toBe(2);
     expect(rowsThatFit(2, -500, Number.NaN)).toBe(2);
     expect(rowsThatFit(0, 0, 0)).toBe(1);
@@ -30,10 +34,11 @@ describe('rowsThatFit', () => {
 });
 
 describe('pages', () => {
-  const SIZE = DATASETS_PER_ROW * MAX_DATASET_ROWS;
+  const SIZE = DATASETS_PER_ROW * START_DATASET_ROWS;
 
-  it('has six to a full page, and one page also for none', () => {
+  it('has two to a row, six to a page of three rows, and one page also for none', () => {
     expect(SIZE).toBe(6);
+    expect(pageCount(13, DATASETS_PER_ROW * 7)).toBe(1);
     expect(pageCount(0, SIZE)).toBe(1);
     expect(pageCount(6, SIZE)).toBe(1);
     expect(pageCount(7, SIZE)).toBe(2);

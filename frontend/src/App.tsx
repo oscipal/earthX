@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 
 import AppRail from './components/AppRail';
 import ControlPanel from './components/ControlPanel';
+import DataCatalogue from './components/DataCatalogue';
 import DownloadDialog from './components/DownloadDialog';
 import ColormapPicker from './components/ColormapPicker';
 import { ZoomToSelectionIcon } from './components/icons';
@@ -124,6 +125,9 @@ export default function App() {
           <ProcessingPanel />
         </div>
       )}
+
+      {/* After the side bar and the processing sheet (same layer): the window opened last lies above them, red x included. */}
+      <DataCatalogue />
 
       <PreviewBadge />
 

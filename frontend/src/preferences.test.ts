@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { BASEMAP_IDS } from './basemaps';
-import { forgetJobsWindow, loadAppearance, loadBasemap, loadOverlays, loadProjection, loadResultsOnMap, loadTipLevel, migrateReliefBasemap, saveAppearance, saveBasemap, saveOverlays, saveProjection, saveResultsOnMap, saveTipLevel, themeOf } from './preferences';
+import { forgetJobsWindow, loadAddedDatasets, loadAppearance, loadBasemap, loadOverlays, loadProjection, loadResultsOnMap, loadTipLevel, migrateReliefBasemap, saveAddedDatasets, saveAppearance, saveBasemap, saveOverlays, saveProjection, saveResultsOnMap, saveTipLevel, themeOf } from './preferences';
 
 // No jsdom in this project (Vitest runs plain Node) — a minimal
 // localStorage stand-in is enough to exercise the module under test.
@@ -374,5 +374,35 @@ describe('the old place of the window of the jobs (UI-03c, gone with #283)', () 
       },
     });
     expect(() => forgetJobsWindow()).not.toThrow();
+  });
+});
+
+describe('the datasets of "Search and area" (UI-05 F4)', () => {
+  it('are none saved on a first visit', () => {
+    expect(loadAddedDatasets()).toBeNull();
+  });
+
+  it('round-trip in their order, an empty list included', () => {
+    saveAddedDatasets(['b', 'a']);
+    expect(storage.getItem('earthx.datasets')).toBe('["b","a"]');
+    expect(loadAddedDatasets()).toEqual(['b', 'a']);
+    saveAddedDatasets([]);
+    expect(loadAddedDatasets()).toEqual([]);
+  });
+
+  it.each(['not json', '{"a":1}', '"a"', 'null', '3'])('read %j as nothing saved', (raw) => {
+    storage.setItem('earthx.datasets', raw);
+    expect(loadAddedDatasets()).toBeNull();
+  });
+
+  it('leave out what is no id', () => {
+    storage.setItem('earthx.datasets', '["a", 3, null, {"id":"b"}, "c"]');
+    expect(loadAddedDatasets()).toEqual(['a', 'c']);
+  });
+
+  it('read nothing and write nothing from a storage that is locked, without an error', () => {
+    vi.stubGlobal('window', BLOCKED);
+    expect(loadAddedDatasets()).toBeNull();
+    expect(() => saveAddedDatasets(['a'])).not.toThrow();
   });
 });

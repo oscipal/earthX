@@ -31,6 +31,7 @@ import {
   List,
   ClipboardList,
   Layers,
+  Library,
   MapPin,
   Monitor,
   Moon,
@@ -107,6 +108,7 @@ export const GripVerticalIcon = icon('GripVerticalIcon', GripVertical);
 export const HistoryIcon = icon('HistoryIcon', History);
 export const InfoIcon = icon('InfoIcon', Info);
 export const LayersIcon = icon('LayersIcon', Layers);
+export const LibraryIcon = icon('LibraryIcon', Library);
 export const JobsIcon = icon('JobsIcon', ClipboardList);
 export const MapPinIcon = icon('MapPinIcon', MapPin);
 export const MonitorIcon = icon('MonitorIcon', Monitor);

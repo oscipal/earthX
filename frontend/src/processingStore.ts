@@ -1182,6 +1182,8 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     abortEstimate();
     startGeneration += 1;
     useAppStore.setState({ datasetId, selectedDatasetIds: [datasetId] });
+    // A ticked dataset is one of "Search and area" (UI-05): an order brings its dataset back where it was removed.
+    useAppStore.getState().ensureDatasetAdded(datasetId);
     const extraScenes = await selectScenes(draft.groups.flat(), whose);
     if (!extraScenes) return { ok: false, reason: useAppStore.getState().error ?? 'The scenes could not be loaded.' };
     if (draft.aoi) useAppStore.getState().setAoi(draft.aoi);
