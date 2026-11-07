@@ -29,10 +29,10 @@ from earthx.adapters import (
     search_items,
 )
 from earthx.adapters.spec import AdapterSpec, FilterSupport, spec_table
-from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.registry import AdapterKind, CoverageProvider, DatasetRegistry, ItemHolding, SearchCapabilities
 from earthx.gateway import Policy
 from earthx.gateway.client import Gateway
+from tests.catalog.entries import SENTINEL_2_L2A
 from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR
 
 pytestmark = pytest.mark.anyio

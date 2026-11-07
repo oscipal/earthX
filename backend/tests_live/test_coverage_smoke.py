@@ -24,9 +24,11 @@ import pytest
 
 from earthx.adapters.earth_search_coverage import aggregate_coverage
 from earthx.catalog.coverage import CoverageQuery
-from earthx.catalog.datasets import SENTINEL_2_L2A
+from earthx.catalog.datasets import registry
 from earthx.gateway import Policy
 from earthx.gateway.client import Gateway
+
+SENTINEL_2_L2A = registry().get("sentinel-2-c1-l2a")
 
 pytestmark = [pytest.mark.anyio, pytest.mark.live_dataset("sentinel-2-c1-l2a")]
 

@@ -1,5 +1,5 @@
 // The five presets of Sentinel-2 as the collection serves them (`earthx:index_presets`, NM4-14a), for the tests. The formulas
-// and ranges are those of `backend/earthx/catalog/datasets.py`.
+// and ranges are those of `backend/catalog/datasets/sentinel-2-c1-l2a.yaml`.
 
 export const SENTINEL_2_PRESETS = [
   {

@@ -48,7 +48,6 @@ from earthx.adapters import ADAPTER_SPECS, SearchParams, materialize_items, sear
 from earthx.api.citation import citation_bib
 from earthx.api.intake import AcceptedOrder, accept_order, job_recipe_json
 from earthx.api.tiler import build_app
-from earthx.catalog.datasets import REGISTRY
 from earthx.catalog.registry import AdapterKind, DataFormat, DatasetConfig, DatasetRegistry, ItemHolding
 from earthx.gateway import Gateway
 from earthx.processing import RunResult, run
@@ -56,6 +55,7 @@ from earthx.processing.operators import REGISTRY as OPERATORS
 from earthx.processing.operators import applicable
 from earthx.processing.recipe import recipe_hash
 from tests.catalog import synthetic_chain
+from tests.catalog.entries import REGISTRY
 from tests.catalog.synthetic_chain import UnsupportedFormat
 from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR, TEST_ENTRIES
 from tests.catalog.test_onboarding_checklist import CHECKED_ELSEWHERE, CHECKLIST

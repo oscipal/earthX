@@ -31,8 +31,8 @@ from earthx.catalog.coverage import (
     level_for_viewport,
     parse_cell_key,
 )
-from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.search_filters import RangeCondition, ValuesCondition
+from tests.catalog.entries import SENTINEL_2_L2A
 
 UTC = timezone.utc
 
@@ -368,8 +368,8 @@ class TestRegularResult:
 @pytest.mark.anyio
 async def test_the_area_way_refuses_search_filters_instead_of_answering_without_them() -> None:
     """Its cache key leaves the filters out, so a filtered question would be answered, and kept, as an unfiltered one."""
-    from earthx.catalog.datasets import COP_DEM_GLO_30
     from earthx.catalog.local_coverage import area_coverage
+    from tests.catalog.entries import COP_DEM_GLO_30
 
     query = CoverageQuery(
         dataset_id=COP_DEM_GLO_30.dataset_id,

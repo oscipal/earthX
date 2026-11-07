@@ -22,9 +22,11 @@ import httpx
 import pytest
 
 from earthx.adapters import ADAPTER_SPECS, SearchParams, get_item, search_items
-from earthx.catalog.datasets import SENTINEL_2_L2A
+from earthx.catalog.datasets import registry
 from earthx.gateway import Policy
 from earthx.gateway.client import Gateway
+
+SENTINEL_2_L2A = registry().get("sentinel-2-c1-l2a")
 
 pytestmark = [pytest.mark.anyio, pytest.mark.live_dataset("sentinel-2-c1-l2a")]
 

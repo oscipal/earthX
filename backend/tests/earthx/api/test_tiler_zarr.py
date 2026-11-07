@@ -25,11 +25,11 @@ from rasterio.warp import transform_bounds
 from rio_tiler.constants import WEB_MERCATOR_TMS, WGS84_CRS
 
 from earthx.api.tiler import build_app, dataset_asset_path
-from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.registry import DataFormat, DatasetRegistry
 from earthx.gateway import check_url
 from earthx.readers.cog import AssetPath
 from earthx.readers.zarr_reader import ZarrAsset
+from tests.catalog.entries import SENTINEL_2_L2A
 from tests.catalog.synthetic_zarr import without_cloud_share
 from tests.earthx.readers import mini_zarr
 from tests.earthx.readers.mini_zarr import BASE_URL, HOST, build_mini_zarr, serve_store

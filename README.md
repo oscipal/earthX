@@ -268,6 +268,24 @@ Absichtlich **kein** Compose-Dienst, der bei `docker compose up` mitläuft
 Quelle, und weder ein gewöhnlicher lokaler Start noch die CI sollen sie
 anfragen.
 
+### Registry-Einträge ändern (seit M5-13)
+
+Jeder Datensatz ist eine YAML-Datei unter `backend/catalog/datasets/<dataset_id>.yaml`,
+ausgeschiedene Datensätze stehen in `backend/catalog/retired.yaml` (KLAERUNGEN B13,
+`docs/adr/0025-harvest-pipeline.md` §7). Die Felder sind die von `DatasetConfig` in
+`backend/earthx/catalog/registry.py`, alle ohne Vorgabe; `earthx.catalog.entry_files` liest
+streng (YAML 1.2: nur `true`/`false` sind Wahrheitswerte, keine Anker, keine doppelten
+Schlüssel; ein unbekanntes oder fehlendes Feld ist ein Fehler mit Datei und Feldpfad). Eine
+Änderung wirkt nach `docker compose build` und einem neuen `catalog-load`; die Tests unter
+`backend/tests/catalog` laden dieselben Dateien.
+
+`backend/catalog/prototype/` hält Einträge von Quellen mit unklarer Rechtslage
+(`docs/adr/0024-prototyp-quellen.md`). Das Verzeichnis kommt nie ins Image; geladen wird es
+nur mit `EARTHX_PROTOTYPE_SOURCES` (Pfad), `EARTHX_PROFILE=local` und ohne `CI`. Jede andere
+Einstellung mit gesetztem Pfad und jedes unbekannte `EARTHX_PROFILE` (erlaubt: `local`, `ci`,
+`cloud`) hält `catalog-load`, `materialize`, `api` und `tiler` beim Start an. Der lokale Runner
+liest Prototyp-Einträge nie.
+
 ### Ortssuche lokal einschalten (M3-07a)
 
 Standardmäßig **aus**: `POST /geocode` antwortet `503`, solange
@@ -602,7 +620,7 @@ lokale Änderungen, also nur auf sauberem Stand.
   Der ausgeschiedene Zarr-Datensatz (Sentinel-2 L2A (Zarr3),
   [doi.org/10.5270/S2_-znk9xsj](https://doi.org/10.5270/S2_-znk9xsj)) behält
   Attribution, Nutzungsbedingungen und Zitat in den Dateien fertiger Jobs, bis
-  diese ablaufen (`catalog/datasets.py`, `docs/adr/0017-ein-sentinel-2-datensatz.md` Regel III).
+  diese ablaufen (`backend/catalog/retired.yaml`, `docs/adr/0017-ein-sentinel-2-datensatz.md` Regel III).
 - **Copernicus DEM GLO-30** (`cop-dem-glo-30`, direkt aus dem AWS-Open-Data-Bucket,
   Format COG; **M3-11b**, muss vor der ersten Anzeige erst über
   `docker compose run --rm materialize cop-dem-glo-30` geladen werden, siehe

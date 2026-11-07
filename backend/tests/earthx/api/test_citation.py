@@ -8,8 +8,8 @@ from datetime import date
 import pytest
 
 from earthx.api.citation import citation_bib
-from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
 from earthx.catalog.registry import AcquisitionYears
+from tests.catalog.entries import REGISTRY, SENTINEL_2_L2A
 from tests.catalog.synthetic_zarr import TEST_ENTRIES
 
 DAY = date(2026, 10, 7)

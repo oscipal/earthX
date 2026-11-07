@@ -253,10 +253,19 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
         "earthx:index_presets": _earthx_index_presets(config),
         "earthx:true_color": _earthx_true_color(config),
         "earthx:license_flags": _earthx_license_flags(config),
+        # adr/0024 R3: `unclear` marks a prototype source, `legal_note` says what is unclear (null when cleared, A4).
+        "earthx:legal_status": config.legal_status.value,
+        "earthx:legal_note": config.legal_note,
         "earthx:access": {
-            "token_free_checked_at": config.access.token_free_checked_at.isoformat(),
+            "token_free_checked_at": (
+                None if config.access.token_free_checked_at is None else config.access.token_free_checked_at.isoformat()
+            ),
             "method": config.access.method,
             "cors": config.access.cors,
+            # adr/0027 §6.1: what reading the assets needs; anything but `none` makes it a catalogue entry with a link.
+            "account": config.access.account.value,
+            "account_provider": config.access.account_provider,
+            "account_paths": [path.value for path in config.access.account_paths],
         },
         # Mirrors and alternative formats are harvested from M5 on (architekturplan.md 7).
         "earthx:distributions": [],

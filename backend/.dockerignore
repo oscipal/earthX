@@ -3,3 +3,6 @@ requirements-dev.txt
 requirements-dev.lock
 **/__pycache__/
 **/*.pyc
+# Never in an image (adr/0024 R4, adr/0025 §7.1): the prototype entries and the candidates of the harvest.
+catalog/prototype/
+catalog/candidates/

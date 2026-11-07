@@ -62,7 +62,7 @@ export interface CollectionAccess {
   method?: string | null;
   cors: boolean | null;
   // What reading the assets needs (`adr/0027` §6.1): `none` is anonymous; any other value makes the dataset a catalogue
-  // entry with a link (W0). Absent until the YAML loader sets it (UI-05 F7), which reads as `none`.
+  // entry with a link (W0). Every collection carries it since M5-13; a collection without it reads as `none`.
   account?: string | null;
 }
 
@@ -234,8 +234,8 @@ export interface Collection {
   summaries?: { gsd?: number[] | null } | null;
   // The group of the Data catalogue (UI-05 F1).
   'earthx:category'?: string | null;
-  // `adr/0024` R3: `unclear` marks a prototype source, with `legal_note` saying what is unclear. Absent until the YAML
-  // loader sets them (UI-05 F7), which reads as cleared.
+  // `adr/0024` R3: `unclear` marks a prototype source, with `legal_note` saying what is unclear (`null` when cleared).
+  // Every collection carries them since M5-13; a collection without them reads as cleared.
   'earthx:legal_status'?: string | null;
   'earthx:legal_note'?: string | null;
   'earthx:access'?: CollectionAccess;

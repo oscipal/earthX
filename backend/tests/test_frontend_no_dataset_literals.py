@@ -30,8 +30,8 @@ from pathlib import Path
 
 import pytest
 
-from earthx.catalog.datasets import REGISTRY, RETIRED
 from earthx.catalog.registry import MAX_TILE_ZOOM
+from tests.catalog.entries import REGISTRY, RETIRED
 
 REPO = Path(__file__).resolve().parents[2]
 FRONTEND_SRC = REPO / "frontend" / "src"

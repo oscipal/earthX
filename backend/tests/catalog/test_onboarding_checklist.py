@@ -46,7 +46,6 @@ import pytest
 
 from earthx.api.coverage_route import IMPLEMENTED_PROVIDERS
 from earthx.catalog.coverage import Completeness, check_completeness
-from earthx.catalog.datasets import REGISTRY
 from earthx.catalog.registry import (
     ConfigError,
     CoverageProvider,
@@ -56,6 +55,7 @@ from earthx.catalog.registry import (
     ItemHolding,
     LicenseTier,
 )
+from tests.catalog.entries import REGISTRY
 from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR
 
 # The wording of projektuebersicht.md §5, shortened only where the document repeats

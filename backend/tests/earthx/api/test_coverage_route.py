@@ -21,8 +21,8 @@ from fastapi.testclient import TestClient
 
 from earthx.adapters import ADAPTER_SPECS
 from earthx.api.coverage_route import MAX_BODY_BYTES, build_router
-from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.registry import CoverageProvider, DatasetRegistry, ItemHolding, SearchCapabilities
+from tests.catalog.entries import SENTINEL_2_L2A
 from tests.earthx.adapters.conftest import answering, gateway_for, load
 
 DATASET = SENTINEL_2_L2A.dataset_id

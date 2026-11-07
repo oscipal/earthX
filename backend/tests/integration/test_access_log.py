@@ -22,9 +22,9 @@ import httpx
 import pytest
 
 from earthx.api.main import app
-from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.load import main as load_catalog
 from earthx.gateway import Gateway, Policy
+from tests.catalog.entries import SENTINEL_2_L2A
 from tests.conftest import log_line_without_timestamp
 from tests.earthx.adapters.conftest import load as load_earth_search_fixture
 

@@ -19,10 +19,10 @@ import pytest
 
 from earthx.api import main, tiler
 from earthx.api.item_source import ItemHoldingMismatch
-from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.pgstac import load_collection, use_pgstac_search_path
 from earthx.catalog.registry import CoverageProvider, DatasetRegistry, ItemHolding, SearchCapabilities
 from earthx.gateway import Gateway, Policy
+from tests.catalog.entries import SENTINEL_2_L2A
 
 pytestmark = pytest.mark.anyio
 

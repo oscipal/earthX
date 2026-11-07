@@ -32,9 +32,9 @@ from earthx.api.pass_filter import (
     run_pass_filter,
     weighted_value,
 )
-from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.registry import AoiMeasure, FilterKind, SearchFilter
 from earthx.catalog.search_filters import RangeCondition, ValuesCondition
+from tests.catalog.entries import SENTINEL_2_L2A
 
 pytestmark = pytest.mark.anyio
 

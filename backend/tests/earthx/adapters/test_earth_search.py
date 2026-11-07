@@ -15,9 +15,9 @@ import pytest
 
 from earthx.adapters import InvalidQuery, SearchParams, UnsupportedSource, UpstreamShapeError
 from earthx.adapters.earth_search import get_item, search_items
-from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.registry import DatasetConfig
 from earthx.gateway.errors import UpstreamError, UpstreamTimeout
+from tests.catalog.entries import SENTINEL_2_L2A
 
 from .conftest import answering, body_of, gateway_for, load
 

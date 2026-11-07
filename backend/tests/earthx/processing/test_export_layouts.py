@@ -21,7 +21,6 @@ from earthx.access import download
 from earthx.access.band_export import BandMeta, band_meta
 from earthx.access.crop_rules import compute_crop_region
 from earthx.access.tiles import open_asset
-from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.registry import AcquisitionYears
 from earthx.processing import run
 from earthx.processing.errors import UnsupportedRecipe
@@ -30,6 +29,7 @@ from earthx.processing.methods import DatasetFacts
 from earthx.processing.plan import describe_resampling, estimate
 from earthx.readers import Policy
 from earthx.readers.cog import asset_path
+from tests.catalog.entries import SENTINEL_2_L2A
 from tests.earthx.processing import sources
 from tests.earthx.processing.recipes import CROP, recipe_of_data
 from tests.earthx.processing.testops import OPERATORS

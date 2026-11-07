@@ -15,10 +15,10 @@ from typing import Any
 import httpx
 import pytest
 
-from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.registry import DatasetConfig
 from earthx.gateway import Policy
 from earthx.gateway.client import Gateway
+from tests.catalog.entries import SENTINEL_2_L2A
 
 FIXTURES = Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "earth_search"
 

@@ -21,8 +21,8 @@ from rasterio.transform import from_origin
 
 from earthx.access import download as dl
 from earthx.access.band_export import ExportPlanError, band_meta
-from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.registry import AcquisitionYears
+from tests.catalog.entries import SENTINEL_2_L2A
 
 from .test_download_edge_cases import UTM32, _asset_path, _bbox_to_wgs84, _memcog, _polygon, open_reader
 

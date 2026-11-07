@@ -1,0 +1,185 @@
+# Copernicus DEM GLO-30 from the AWS Open Data bucket (M3-11b, adr/0009); licence adr/0003 §11.1.
+#
+# One file is one entry of the registry (docs/plans/m5/m5-13-yaml-lader.md, KLAERUNGEN B13 stage 2). The fields are
+# those of `DatasetConfig` in `backend/earthx/catalog/registry.py`, every one set on purpose, none with a default
+# (KLAERUNGEN B10); `catalog.entry_files` reads the file strictly. Every value carries the place it comes from.
+
+# The name Earth Search and Microsoft Planetary Computer both use for the same product (M3-11b plan §3.6, F4); no
+# collision with either, because this entry is not federated through them.
+dataset_id: cop-dem-glo-30
+title: Copernicus DEM GLO-30
+description: >-
+  Copernicus DEM GLO-30 Public: global 30 m digital surface model from the TanDEM-X mission (acquired December
+  2010 to January 2015), as cloud-optimized GeoTIFF in 1° × 1° tiles, read directly from the AWS Open Data bucket
+  (state of 9 May 2022, adr/0009 §7.3). Oceans carry no tiles, and 25 tiles between 38° and 42° N and 43° and
+  51° E are withheld from public release by the Copernicus programme (adr/0009 §10.3).
+keywords: [elevation, dem, dsm, terrain, copernicus, tandem-x]
+category: elevation
+# The providers of the bucket's own STAC collection (`copernicus-dem-30m-stac`, `dem_cop_30.json`, read 06.11.2026,
+# UI-05 plan §5); it names no gsd, the 30 m are the grid of GLO-30 (`readme.html` of the bucket).
+providers:
+- name: Copernicus
+  roles: [licensor, producer]
+  url: https://spacedata.copernicus.eu/en/web/guest/collections/copernicus-digital-elevation-model/
+- name: Sentinel Hub
+  roles: [processor]
+  url: https://copernicus-dem-30m.s3.amazonaws.com/readme.html
+- name: Open Data on AWS
+  roles: [host]
+  url: https://registry.opendata.aws/copernicus-dem/
+gsd: [30.0]
+# The product's own citation DOI (M3-11b plan §2.7, read from the CDSE COP-DEM page 26.09.2026), the same page
+# `adr/0003` §11.1 reads the licence from. Not specific to the GLO-30 instance; it is what the source itself asks to
+# be cited with.
+doi: https://doi.org/10.5270/ESA-c5d3d65
+citation: null
+# A single elevation model, not a stream of acquisitions (P24, adr/0009 §6): `single_coverage_product` below follows
+# from this, not the other way round.
+data_class: raster-static
+format: cog
+# From the bucket's own tile list (M3-11b plan §2.1, §2.6): latitudes S90 to N83, longitudes W180 to E179 (so the
+# nominal cells reach N84/E180).
+spatial_extent:
+  bbox: [-180.0, -90.0, 180.0, 84.0]
+# M3-11b, F1: no single acquisition instant exists for the DEM (`adr/0009` §10.1), a period instead, the same for
+# every tile and for the collection itself, belonging to the product, not a measurement of one scene. Read from the
+# Product Handbook (v5.0, 29.11.2022, p. 30): "the TanDEM-X/WorldDEM has been acquired between December 2010 and
+# January 2015." `adapters.cop_dem_bucket` stamps every item with these two instants.
+temporal_extent:
+  start: 2010-12-01T00:00:00+00:00
+  end: 2015-01-31T23:59:59+00:00
+capabilities:
+  roi: true
+  # No acquisition stream to filter by date (M3-11b F1): a search with a time window is a question this dataset does
+  # not answer differently from one without (the ADR-decided behaviour for M3-12/M3-13: shown regardless of the chosen
+  # range, never date-filtered).
+  time_range: false
+  band_math: true
+  interpolation: true
+  # Every entry switches it on by itself (B10); M4 R3, Otto 05.10.2026.
+  reprojection: true
+  # M4-18: the bucket holds elevation only, no classification layer.
+  masking: false
+  # DS-06 (Otto, 30.10.2026): a mask by value needs no layer, so every entry has it.
+  value_masking: true
+  normalization: true
+  ml_processing: true
+  # No complex quad-pol data: decomp.py stays out (ENTSCHEIDUNGEN §3).
+  quad_pol: false
+  # One elevation model, not a time series: extent, not density (adr/0004 §5).
+  single_coverage_product: true
+license:
+  spdx_id: null
+  name: Licence for Copernicus DEM instance COP-DEM-GLO-30-F Global 30m Full, Free & Open
+  # adr/0003 §11.1: the licence PDF the AWS registry entry and the CDSE COP-DEM page both link, read on 18.09.2026 and
+  # rechecked 26.09.2026 (M3-11b plan §2.7).
+  url: https://dataspace.copernicus.eu/sites/default/files/media/files/2025-06/copernicus_contributing_mission_data_access_v2_cop_dem_licenses.pdf
+  commercial_use: true
+  distribution: true
+  derivatives: true
+  share_alike: false
+  attribution_required: true
+  tier: processing
+  # The licence's own vocabulary (Art. 6 a/b), read from the primary document on 18.09.2026 (`adr/0003` §11.1) and
+  # reused verbatim rather than paraphrased. Art. 6 b: the modified-data wording adds "produced using Copernicus
+  # WorldDEM-30" to the same attribution the unmodified data carries.
+  attribution_modified: >-
+    © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European
+    Union and ESA; all rights reserved; produced using Copernicus WorldDEM-30
+  attribution_unmodified: >-
+    © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European
+    Union and ESA; all rights reserved
+  terms:
+    url: https://dataspace.copernicus.eu/sites/default/files/media/files/2025-06/copernicus_contributing_mission_data_access_v2_cop_dem_licenses.pdf
+    notice:
+      # Art. 6 c, the licence's own liability waiver, shortened only where it names the licence itself (`adr/0003`
+      # §11.1).
+      en: >-
+        Use is subject to the Licence for Copernicus DEM instance COP-DEM-GLO-30-F Global 30m Full, Free & Open:
+        {terms_url}. The organisations in charge of the Copernicus programme, the European Union and ESA, do not
+        incur any liability for the use of this data.
+# The licence is checked and the tier set by Otto (adr/0024 R1, R3): no prototype source.
+legal_status: cleared
+legal_note: null
+access:
+  token_free_checked_at: 2026-09-26
+  method: anonymous HTTPS, no authentication header (M3-11b plan §2.1)
+  # Measured 26.09.2026 (M3-11b plan §2.2): no Access-Control-Allow-Origin on a plain GET. Moot for this dataset: it
+  # has no quicklook a browser would load straight from the source (M3-12 decides what appears instead: the full-
+  # resolution AOI crop, per the M3-11b F11 Nachtrag).
+  cors: false
+  # Metadata and assets anonymous (adr/0027 §6.1): no account, no account path.
+  account: none
+  account_provider: null
+  account_paths: []
+source:
+  adapter: cop-dem-bucket
+  endpoint: https://copernicus-dem-30m.s3.amazonaws.com
+  # The bucket has no STAC collection of its own (`adr/0009` §5); its own name is the closest thing to a source-side
+  # identifier.
+  source_collection_id: copernicus-dem-30m
+  # The global bucket name (`adr/0009` §10.2, M3-11b plan §2): never the bare `s3.amazonaws.com` or `amazonaws.com`,
+  # which would open every bucket on AWS to `gateway`'s allowlist (`registry.py` `DatasetConfig._check_source`).
+  asset_hosts: [copernicus-dem-30m.s3.amazonaws.com]
+  item_holding: materialized
+  # The global host names no region; the bucket answers `x-amz-bucket-region: eu-central-1` (measured 06.11.2026,
+  # M5-07 plan §2), as the AWS Open Data registry says (`adr/0023` §6.2).
+  data_region: aws:eu-central-1
+coverage:
+  provider: local-sql
+  # The nominal 1x1-degree cell a tile name gives (`adapters.cop_dem_bucket`); `max_geotile_level_for(111.0) == 8`,
+  # checked by `DatasetConfig._check_coverage`.
+  typical_footprint_km: 111.0
+  max_geotile_level: 8
+default_render:
+  title: Elevation
+  assets: [data]
+  # 0..5000 m: covers every measured tile's p98 (max 5907 m at the Himalaya sample, M3-11b plan §2.4) except the very
+  # highest peaks, which saturate white rather than clip to a flat colour: the trade-off `terrain` is chosen for (F6).
+  rescale:
+  - [0.0, 5000.0]
+  colormap_name: terrain
+  expression: null
+  resampling: nearest
+# F7: every tile shares the same `start_datetime` (there is only one), so grouping by it puts every DEM tile in one
+# group: an AOI crop over several tiles becomes one merged file (P19), the way a Sentinel-2 overpass does.
+# `results_group_by` is the same key: one dataset, one group, nothing a results list would head differently.
+#
+# `min_zoom` 0, not 8 (M3-12 plan step §3, F4): a DEM tile's own overview block costs the same to read at every level
+# from z0 to z8; the source has no per-scene mosaic to spread thinner as the map zooms out, so "below min_zoom one
+# tile shows several scenes" (`ViewerInfo`'s general reasoning) does not bound anything here; what does is how many of
+# the up to 300 items a search can return sit on screen at once, which does not change with `min_zoom`. z15 is three
+# levels past the native ~30 m/px resolution, for zooming into real detail without reaching MapLibre's own z22 ceiling
+# on a dataset with nothing finer to give past it.
+#
+# `browse: full-resolution` (M3-12, M3-11b F11 Nachtrag): no quicklook (`access.cors` is false) and nothing a coarse
+# tile would usefully preview either, so the viewer shows the AOI crop in full resolution straight after the search
+# (M3-09's mechanism), never a quicklook stage.
+viewer:
+  group_by: [start_datetime]
+  min_zoom: 0
+  max_zoom: 15
+  browse: full_resolution
+  quicklook_nodata_max: null
+  results_group_by: [start_datetime]
+health:
+  status: ok
+# A released, versioned product (state of 9 May 2022), not a pilot.
+maturity: stable
+zarr: null
+mask: null
+# Elevation in metres, the unit the default render's range of 0 to 5000 already states (M3-11b plan §2.4).
+band_units:
+  data: m
+auxiliary_assets: []
+search_filters: []
+# DS-03c (Otto, 04.11.2026): the coverage of the AOI is meaningful, the share of the AOI the 1° tiles reach (oceans
+# carry none). "Evaluate" is not: the dataset has no filter to judge, and all its tiles share one acquisition period,
+# so there is one pass and per pass and per scene would differ only in the coverage, which has its own wording.
+search_capabilities:
+  evaluate: false
+  aoi_coverage: true
+# One band of heights: none of the indices of Awesome Spectral Indices reads it.
+index_presets: []
+# One band of heights: no picture in colours of light.
+true_color: []

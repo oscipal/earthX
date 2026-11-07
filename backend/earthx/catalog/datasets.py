@@ -1,992 +1,138 @@
-"""The registry entries: Sentinel-2 L2A over Earth Search v1 (COG), the Copernicus DEM GLO-30 and ESA WorldCover.
+"""The registry of this process, read from the curated YAML entries (KLAERUNGEN B13 stage 2, adr/0025 §7).
 
-Decided in docs/adr/0003-erster-datensatz.md §6 (first token-free dataset) and
-§11.2 (licence). The Zarr entry of docs/adr/0007-zweites-format-zarr.md §12.11 left
-with docs/adr/0017-ein-sentinel-2-datensatz.md; its id is on the list ``RETIRED``
-below. Nothing here is a decision of its own; every value carries
-the place it comes from.
+Each dataset is one file under ``backend/catalog/datasets/``, the datasets that left the registry are
+``backend/catalog/retired.yaml`` (adr/0017). ``catalog.entry_files`` turns a file into the same
+:class:`~earthx.catalog.registry.DatasetConfig` the entries were in Python up to M4, with every check of the
+dataclasses; callers notice nothing. :func:`registry` builds the registry once per process, the one place every
+process asks (docs/plans/m5/m5-13-yaml-lader.md §3.2).
 
-KLAERUNGEN B13 stage M1-M4: entries live in Python. From M5 they become curated
-YAML and this module turns into the loader that builds the same objects.
+Prototype entries (adr/0024) lie in a directory of their own that is never in an image; they are read only when
+``EARTHX_PROTOTYPE_SOURCES`` names it, ``EARTHX_PROFILE`` is ``local`` and ``CI`` is not set (R5). Any other setting
+with the path is an error at the start, not a quiet omission (:func:`prototype_dir_from_env`).
 """
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+import logging
+import os
+from collections.abc import Mapping
+from functools import cache
+from pathlib import Path
 
-from earthx.catalog.registry import (
-    AccessInfo,
-    AdapterKind,
-    AoiMeasure,
-    BrowseMode,
-    Capabilities,
-    CoverageInfo,
-    CoverageProvider,
-    DataClass,
-    DataFormat,
-    DatasetCategory,
-    DatasetConfig,
-    DatasetRegistry,
-    DefaultRender,
-    FilterKind,
-    FilterValue,
-    HealthInfo,
-    HealthStatus,
-    IndexPreset,
-    ItemHolding,
-    LicenseInfo,
-    LicenseTier,
-    MaskClass,
-    MaskSource,
-    Maturity,
-    Provider,
-    ProviderRole,
-    RetiredDataset,
-    SearchCapabilities,
-    SearchFilter,
-    ShareClasses,
-    SourceInfo,
-    SpatialExtent,
-    TemporalExtent,
-    TermsOfUse,
-    ViewerInfo,
-)
+import earthx
+from earthx.catalog.entry_files import EntryFileError, load_entry, load_retired
+from earthx.catalog.registry import ConfigError, DatasetConfig, DatasetRegistry, LegalStatus
 
-# Reachability of earth-search.aws.element84.com, measured in adr/0003 §10.1.
-_REACHABILITY_CHECKED = date(2026, 9, 18)
+__all__ = [
+    "CATALOG_DIR",
+    "PROFILES",
+    "InstanceSettingError",
+    "forget_registry",
+    "prototype_dir_from_env",
+    "read_registry",
+    "registry",
+]
 
-# The licence of the data and, since Otto's decision of 19.09.2026, also the terms
-# we pass on at a download. Read from the primary source on 19.09.2026.
-_LEGAL_NOTICE_URL = "https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice"
+LOGGER = logging.getLogger(__name__)
 
-# The classes of Sentinel-2's scene classification layer, with the names of SentiWiki "S2
-# Processing", L2A Algorithms, Scene Classification, Table 3 (read by Otto on 20.10.2026;
-# plans/m4/m4-18-masking-normalisierung.md §8).
-_SCL_REFERENCE = "https://sentiwiki.copernicus.eu/web/s2-processing"
-_SCL_CLASSES = tuple(
-    MaskClass(value, label)
-    for value, label in enumerate(
-        (
-            "NO_DATA",
-            "SATURATED_OR_DEFECTIVE",
-            "CAST_SHADOWS",
-            "CLOUD_SHADOWS",
-            "VEGETATION",
-            "NOT_VEGETATED",
-            "WATER",
-            "UNCLASSIFIED",
-            "CLOUD_MEDIUM_PROBABILITY",
-            "CLOUD_HIGH_PROBABILITY",
-            "THIN_CIRRUS",
-            "SNOW or ICE",
-        )
-    )
-)
-# Cloud shadows, both cloud classes and thin cirrus: the example of architekturplan.md 7.1.
-_SCL_SUGGESTED = frozenset({3, 8, 9, 10})
-_SCL_NOTE = (
-    "Class names follow the current Sentinel-2 L2A documentation. Older processing baselines name some "
-    "classes differently (for example 2 as Dark Area Pixels, 7 as Clouds Low Probability / Unclassified); "
-    "the values are the same."
-)
-
-# The unit of a value after the scaling, in UCUM (adr/0014 §15n). Surface reflectance is a ratio, so "1". An asset
-# that is not on the list is "unknown", and so is an explicit None; none of those is guessed. A class layer has no
-# unit (its values name classes, `mask` below), and the TCI `visual` is the 8-bit picture the default render shows.
-# The aerosol optical thickness is unit less as well, so it shares the "1".
-_REFLECTANCE_UNIT = "1"
-
-def _scene_share(
-    property_name: str, title: str, description: str, *, group: str, within_aoi: AoiMeasure | None = None
-) -> SearchFilter:
-    """A share of the scene in percent, 0 to 100: the form most of the scene properties of Sentinel-2 have.
-
-    ``within_aoi`` is the measure that gives the share inside the AOI instead, where the filter has one. Every share is
-    area-based: a search per pass weights the scenes of an overpass by the area they add to the mosaic."""
-    return SearchFilter(
-        property=property_name,
-        kind=FilterKind.RANGE,
-        title=title,
-        description=description,
-        unit="%",
-        minimum=0.0,
-        maximum=100.0,
-        integer=False,
-        values=(),
-        within_aoi=within_aoi,
-        group=group,
-        area_based=True,
-    )
+# Where the curated entries lie (adr/0025 §7.1): `backend/catalog` in the repo, `/app/catalog` in the image. A constant
+# of the package, never a variable of the environment.
+CATALOG_DIR = Path(earthx.__file__).resolve().parents[1] / "catalog"
+_README = "README.md"
 
 
-SENTINEL_2_L2A = DatasetConfig(
-    # The same id as the upstream collection, by Otto's decision of 19.09.2026: the
-    # shorter "sentinel-2-l2a" is the name of the older Earth Search collection that
-    # Collection 1 replaces (adr/0003 §3, Option B), so it would be read as that one.
-    dataset_id="sentinel-2-c1-l2a",
-    title="Sentinel-2 L2A",
-    description=(
-        "Sentinel-2 Level-2A, Collection 1, as cloud-optimized GeoTIFF from baseline "
-        "5.0 on. Served by Earth Search v1 (Element 84) from the Registry of Open "
-        "Data on AWS (adr/0003 §3, Option B)."
-    ),
-    keywords=("sentinel-2", "optical", "multispectral", "surface reflectance", "copernicus"),
-    category=DatasetCategory.OPTICAL,
-    # `providers` and `summaries.gsd` of the source's own collection (read 06.11.2026, UI-05 plan §5). The source links
-    # AWS over plain http only, so that provider stays without a link.
-    providers=(
-        Provider("ESA", (ProviderRole.PRODUCER,), "https://earth.esa.int/web/guest/home"),
-        Provider("Sinergise", (ProviderRole.PROCESSOR,), "https://registry.opendata.aws/sentinel-2/"),
-        Provider("AWS", (ProviderRole.HOST,), None),
-        Provider("Element 84", (ProviderRole.PROCESSOR,), "https://element84.com"),
-    ),
-    gsd=(10.0, 20.0, 60.0),
-    # The collection's own `cite-as` link (read from the source on 22.09.2026, M2-08
-    # plan §3), the same seam the second entry takes its DOI from. adr/0003 left
-    # onboarding checklist point 3 open because M1 read nothing from the source; the
-    # link was there all along. It names the ESA product, not Element 84's COG
-    # distribution — which is why it differs from the Zarr entry's DOI rather than
-    # repeating it. No separate persistent citation beyond it.
-    doi="https://doi.org/10.5270/S2_-742ikth",
-    citation=None,
-    data_class=DataClass.RASTER_TIME_SERIES,
-    format=DataFormat.COG,
-    # Both extents as the upstream collection reports them, read on 22.09.2026 (M2-08
-    # plan §3), replacing the M1 placeholders. The source states the whole globe for
-    # the spatial extent — wider than Sentinel-2 actually flies, but it is the
-    # source's own claim and not ours to narrow. The start is the first acquisition
-    # the collection carries; the end stays open because the archive still grows.
-    spatial_extent=SpatialExtent(bbox=(-180.0, -90.0, 180.0, 90.0)),
-    temporal_extent=TemporalExtent(
-        start=datetime(2015, 6, 27, 10, 25, 31, 456000, tzinfo=timezone.utc),
-        end=None,
-    ),
-    # Every flag set deliberately (KLAERUNGEN B10). These say what the dataset is
-    # suited for under its licence, not what the platform has already built.
-    capabilities=Capabilities(
-        roi=True,
-        time_range=True,
-        band_math=True,
-        interpolation=True,
-        # Every entry switches it on by itself (B10); M4 R3, Otto 05.10.2026.
-        reprojection=True,
-        # M4-18 (Otto, 20.10.2026): the layer is described in `mask` below.
-        masking=True,
-        # DS-06 (Otto, 30.10.2026): a mask by value needs no layer, so every entry has it.
-        value_masking=True,
-        normalization=True,
-        ml_processing=True,
-        # No complex quad-pol data — decomp.py stays out (ENTSCHEIDUNGEN §3).
-        quad_pol=False,
-        # A time series, not a single coverage: density, not extent (adr/0004 §5).
-        single_coverage_product=False,
-    ),
-    # adr/0003 §11.2: checked by Otto against the Sentinel Data Legal Notice.
-    # Tier Processing — modification and distribution are explicitly allowed and
-    # the text knows no non-commercial reservation.
-    license=LicenseInfo(
-        spdx_id=None,
-        name="Sentinel Data Legal Notice",
-        url=_LEGAL_NOTICE_URL,
-        commercial_use=True,
-        distribution=True,
-        derivatives=True,
-        share_alike=False,
-        attribution_required=True,
-        tier=LicenseTier.PROCESSING,
-        # {year} is filled in where data leaves the platform (adr/0003 §11.2:
-        # the notice belongs on the download, not only in a footer).
-        attribution_modified="Contains modified Copernicus Sentinel data {year}",
-        attribution_unmodified="Copernicus Sentinel data {year}",
-        # Read from the Legal Notice itself on 19.09.2026 (the host is released).
-        # The document carries no disclaimer by the provider; it carries a waiver by
-        # the user, plus "without any express or implied warranty". Otto settled the
-        # wording on the same day: we pass on the source's terms, not our own, and the
-        # text stays free of the attribution above, which goes in front of it.
-        terms=TermsOfUse(
-            url=_LEGAL_NOTICE_URL,
-            notice={
-                # The Legal Notice's own words, shortened only where it names itself:
-                # "without any express or implied warranty, including as regards quality
-                # and suitability for any purpose", "renounces to any claims for damages
-                # against the European Union and the providers of the said Data and
-                # Information", "any dispute, including contracts and torts claims, that
-                # might be filed in court, in arbitration or in any other form of dispute
-                # settlement".
-                "en": (
-                    "Use is subject to the Sentinel Data Legal Notice: {terms_url}. The data "
-                    "are provided without any express or implied warranty, including as regards "
-                    "quality and suitability for any purpose; by using them the user renounces "
-                    "any claims for damages against the European Union and the providers of the "
-                    "data. The waiver encompasses any dispute, including contracts and torts "
-                    "claims, that might be filed in court, in arbitration or in any other form "
-                    "of dispute settlement."
-                ),
-            },
-        ),
-    ),
-    access=AccessInfo(
-        token_free_checked_at=_REACHABILITY_CHECKED,
-        method="anonymous HTTPS, no authentication header (adr/0003 §10.1)",
-        # Measured in adr/0006 §3.6, at the asset bucket and at Earth Search itself:
-        # `Access-Control-Allow-Origin: *`. The viewer decides on this field whether it
-        # loads a quicklook straight from the source — for Sentinel-2 it may, and that
-        # is why there is no asset proxy (D14).
-        cors=True,
-    ),
-    # adr/0005 rule I branches on this per collection: an unknown one is a 404,
-    # not the empty, valid-looking result Earth Search returns for it.
-    source=SourceInfo(
-        adapter=AdapterKind.EARTH_SEARCH_V1,
-        endpoint="https://earth-search.aws.element84.com/v1",
-        # Collection 1 (adr/0003 §6): COGs only, from baseline 5.0 on.
-        source_collection_id="sentinel-2-c1-l2a",
-        # Measured at real items in adr/0006 §3.7: all 22 assets of this collection lie
-        # on this one host. `sentinel-cogs…amazonaws.com` belongs to the older
-        # collection and deliberately stays out of the allowlist.
-        asset_hosts=("e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com",),
-        # Federated items, nothing harvested into our own pgstac (architekturplan.md 5.2).
-        item_holding=ItemHolding.FEDERATED,
-        # The region the asset host names (M5-07 plan §2, `x-amz-bucket-region` measured 06.11.2026).
-        data_region="aws:us-west-2",
-    ),
-    coverage=CoverageInfo(
-        provider=CoverageProvider.UPSTREAM_AGGREGATION,
-        # z8 is Otto's setting for this dataset (adr/0004 §5, decision log 19.09.2026).
-        # The footprint width is the granule size of Sentinel-2, which docs/ does not
-        # record — see the PR. The two are checked against each other, but the level
-        # is the decision and the width is not derived from it.
-        typical_footprint_km=110.0,
-        max_geotile_level=8,
-    ),
-    # Onboarding checklist point 8, filled in M2-04 from a measurement at real assets
-    # (see the PR): `visual` is the TCI the source already renders as 8-bit RGB, which
-    # is why the stretch is the identity. Measured `p2/p98` over five scenes on four
-    # continents (July 2026, cloud cover below 10 %): the second percentile runs from 9
-    # over vegetation to 202 over desert, so any fixed stretch other than the identity
-    # would clip a whole climate zone. The scene-specific stretch is what `/statistics`
-    # is for — the viewer asks once per item and overwrites `rescale` (adr/0006 §5,
-    # F18); this value is only the picture before anyone touches a control.
-    default_render=DefaultRender(
-        title="True colour (TCI)",
-        assets=("visual",),
-        rescale=((0.0, 255.0), (0.0, 255.0), (0.0, 255.0)),
-        colormap_name=None,
-        expression=None,
-        # rio-tiler's own default, named rather than implied (KLAERUNGEN B10).
-        resampling="nearest",
-    ),
-    # The viewer groups the items of one acquisition day per MGRS tile into one step
-    # of the time line (Otto, 20.09.2026). `datetime` enters the key as its UTC date,
-    # `grid:code` is the MGRS tile Earth Search carries on every item of this
-    # collection. M2-07a reads this field and implements nothing of its own.
-    # Zoom levels released for the tile path (M2-10, Otto 22.09.2026 F2 a): exactly
-    # what the viewer already did before the field existed, now said out loud at the
-    # entry instead of defaulted in the client's code (KLAERUNGEN B10). z19 is
-    # several times past this source's ~10 m/px (≈z14 near the equator, coarser
-    # towards the poles) — headroom to zoom into real detail, without letting an
-    # ordinary scroll-zoom run up to MapLibre's own ceiling of z22. There is no
-    # lower bound to set: a COG carries overviews, so a tile at z0 costs a read of
-    # the coarsest overview and nothing more.
-    # M3-12: the source's own thumbnail (role `thumbnail`) is a real quicklook a
-    # browser loads cross-origin and keys transparent on its own canvas (D14,
-    # `access.cors=True` above); `16` is the JPEG's near-black padding
-    # threshold measured for this source (`mapLayers.ts` before this field
-    # existed). The results list heads its groups by day and overpass
-    # (`s2:datatake_id`, V-4/D30) rather than day and MGRS tile — `group_by`
-    # above stays the tile-and-day key it always was.
-    viewer=ViewerInfo(
-        group_by=("datetime", "grid:code"),
-        min_zoom=0,
-        max_zoom=19,
-        browse=BrowseMode.QUICKLOOK,
-        quicklook_nodata_max=16,
-        results_group_by=("datetime", "s2:datatake_id"),
-    ),
-    # Not health in the sense M5 will measure it: adr/0003 §10.1 got HTTP 200 on
-    # /v1/collections/sentinel-2-c1-l2a, nothing beyond that. The reachability date
-    # itself lives on `access.token_free_checked_at` (point 6), not here.
-    health=HealthInfo(status=HealthStatus.OK),
-    # Element 84's Collection 1 is a released, versioned product line, not a pilot.
-    maturity=Maturity.STABLE,
-    zarr=None,
-    # The 20 m layer; read onto the 10 m grid of the bands with `nearest`, no new values (M4-18).
-    mask=MaskSource(
-        asset="scl",
-        band="scl",
-        classes=_SCL_CLASSES,
-        suggested=_SCL_SUGGESTED,
-        reference=_SCL_REFERENCE,
-        note=_SCL_NOTE,
-        # DS-03 plan §6.6, §6.10: 8, 9, 10 is the definition of `eo:cloud_cover`, measured equal on 48 of 48 scenes
-        # (plan §6.2.5); cloud shadows (3) do not count.
-        cloud_classes=frozenset({8, 9, 10}),
-        cloud_note="Sen2Cor's classification can miss thin cirrus and can take snow or bright ground for clouds.",
-        # DS-03c (Otto, 05.11.2026): the class of the filter of the same name, counted in the one reading of the
-        # classification. "Degraded data" has no class and stays with the value of the item.
-        share_classes=(
-            ShareClasses(AoiMeasure.CIRRUS_SHARE, frozenset({10})),
-            ShareClasses(AoiMeasure.SHADOW_SHARE, frozenset({3})),
-            ShareClasses(AoiMeasure.SNOW_SHARE, frozenset({11})),
-            ShareClasses(AoiMeasure.WATER_SHARE, frozenset({6})),
-            ShareClasses(AoiMeasure.VEGETATION_SHARE, frozenset({4})),
-            ShareClasses(AoiMeasure.NOT_VEGETATED_SHARE, frozenset({5})),
-        ),
-    ),
-    # The twelve reflectance bands of the L2A product (surface reflectance, scaled by the item), then the other
-    # assets. Sources: Sen2Cor L2A IODD (S2-PDGS-MPC-L2A-IODD-2.4, issue 02) Tables 6 and 7 (cloud and snow
-    # probability: unit percentage, range 0-100), Table 16 (AOT: unit less, AOT = DN / 1000), Table 20 (water vapour:
-    # range 0.3-5.5 cm); the collection's `item_assets` give `wvp` the unit "cm" and scale 0.001 as well. `preview`
-    # is a true-colour picture like `visual`, so it has no unit on purpose.
-    band_units={
-        **dict.fromkeys(
-            (
-                "coastal", "blue", "green", "red", "rededge1", "rededge2", "rededge3",
-                "nir", "nir08", "nir09", "swir16", "swir22",
-            ),  # fmt: skip
-            _REFLECTANCE_UNIT,
-        ),
-        "aot": _REFLECTANCE_UNIT,
-        "wvp": "cm",
-        "cloud": "%",
-        "snow": "%",
-        "scl": None,
-        "visual": None,
-        "preview": None,
-    },
-    # Pictures made from the bands, not bands themselves. `scl` is the mask layer (`mask` above).
-    auxiliary_assets=("visual", "preview"),
-    # DS-02 plan §6.2, §6.2a and DS-02c (Otto 28.10.2026 and 30.10.2026): every filter below was measured against the
-    # source on 30.10.2026 (`scripts/ds-02-filters/measure.py`, adr/0021 §8): over 7 regions and 2 seasons, in 252
-    # searches, `query` returned exactly the scenes the unfiltered sample says it must. Clouds first, then what the scene
-    # shows, then how it was taken. Left out on purpose, with the reason in adr/0021 §8: `s2:dark_features_percentage` (the
-    # items carry it only up to baseline 05.10, so a filter on it would drop every newer scene without a word), the parts
-    # of the cloud cover (`s2:medium_proba_clouds_percentage`, `s2:high_proba_clouds_percentage`), `s2:unclassified_percentage`,
-    # the viewing angles, the MGRS tile (a text, not a list to tick) and every identifier, timestamp and constant.
-    # The items carry no `sat:orbit_state` or `sat:relative_orbit`, so neither is offered.
-    search_filters=(
-        SearchFilter(
-            property="eo:cloud_cover",
-            kind=FilterKind.RANGE,
-            title="Cloud cover",
-            description="Share of the whole scene (about 110 × 110 km) covered by clouds, as reported by the source.",
-            unit="%",
-            minimum=0.0,
-            maximum=100.0,
-            integer=False,
-            values=(),
-            # DS-03 plan §6.10: the range of this filter may also be applied to the cloud share inside the AOI.
-            within_aoi=AoiMeasure.CLOUD_SHARE,
-            group="Clouds",
-            area_based=True,
-        ),
-        _scene_share(
-            "s2:thin_cirrus_percentage",
-            "Thin cirrus",
-            "Share of the scene covered by thin cirrus clouds. Part of the cloud cover.",
-            group="Clouds",
-            within_aoi=AoiMeasure.CIRRUS_SHARE,
-        ),
-        _scene_share(
-            "s2:cloud_shadow_percentage",
-            "Cloud shadow",
-            "Share of the scene lying in the shadow of clouds. Not part of the cloud cover.",
-            group="Clouds",
-            within_aoi=AoiMeasure.SHADOW_SHARE,
-        ),
-        _scene_share(
-            "s2:nodata_pixel_percentage",
-            "No data",
-            "Share of the scene tile without image data, e.g. at the edge of a swath.",
-            group="Scene",
-            # Class 0 of the same classification the cloud share is read from (`mask`), so no further reading.
-            within_aoi=AoiMeasure.NODATA_SHARE,
-        ),
-        _scene_share(
-            "s2:snow_ice_percentage",
-            "Snow and ice",
-            "Share of the scene classified as snow or ice.",
-            group="Scene",
-            within_aoi=AoiMeasure.SNOW_SHARE,
-        ),
-        _scene_share(
-            "s2:water_percentage",
-            "Water",
-            "Share of the scene classified as water.",
-            group="Scene",
-            within_aoi=AoiMeasure.WATER_SHARE,
-        ),
-        _scene_share(
-            "s2:vegetation_percentage",
-            "Vegetation",
-            "Share of the scene classified as vegetation.",
-            group="Scene",
-            within_aoi=AoiMeasure.VEGETATION_SHARE,
-        ),
-        _scene_share(
-            "s2:not_vegetated_percentage",
-            "Not vegetated",
-            "Share of the scene classified as not vegetated, e.g. bare ground or built-up areas.",
-            group="Scene",
-            within_aoi=AoiMeasure.NOT_VEGETATED_SHARE,
-        ),
-        _scene_share(
-            "s2:degraded_msi_data_percentage",
-            "Degraded data",
-            "Share of the scene whose sensor data the source marks as degraded.",
-            group="Scene",
-        ),
-        SearchFilter(
-            property="platform",
-            kind=FilterKind.VALUES,
-            title="Satellite",
-            description="The satellite that took the scene.",
-            unit=None,
-            minimum=None,
-            maximum=None,
-            integer=False,
-            # The collection's own summaries name only 2A and 2B; the items carry 2C as well (measured).
-            values=(
-                FilterValue(value="sentinel-2a", label="Sentinel-2A"),
-                FilterValue(value="sentinel-2b", label="Sentinel-2B"),
-                FilterValue(value="sentinel-2c", label="Sentinel-2C"),
-            ),
-            within_aoi=None,
-            group="Acquisition",
-            area_based=False,
-        ),
-        SearchFilter(
-            property="view:sun_elevation",
-            kind=FilterKind.RANGE,
-            title="Sun elevation",
-            description="Height of the sun above the horizon when the scene was taken. Low values mean long shadows.",
-            unit="°",
-            minimum=0.0,
-            maximum=90.0,
-            integer=False,
-            values=(),
-            within_aoi=None,
-            group="Acquisition",
-            area_based=False,
-        ),
-        SearchFilter(
-            property="view:sun_azimuth",
-            kind=FilterKind.RANGE,
-            title="Sun azimuth",
-            description="Direction of the sun when the scene was taken, in degrees clockwise from north.",
-            unit="°",
-            minimum=0.0,
-            maximum=360.0,
-            integer=False,
-            values=(),
-            within_aoi=None,
-            group="Acquisition",
-            area_based=False,
-        ),
-        SearchFilter(
-            property="s2:processing_baseline",
-            kind=FilterKind.VALUES,
-            title="Processing baseline",
-            description="Version of the ESA processing that made the scene. A new version comes every few months.",
-            unit=None,
-            minimum=None,
-            maximum=None,
-            integer=False,
-            # Every value the source held on 30.10.2026 (measured over 2018–2026); the live test names a newer one.
-            values=tuple(FilterValue(value=version, label=version) for version in ("05.00", "05.09", "05.10", "05.11", "05.12", "05.13")),
-            within_aoi=None,
-            group="Acquisition",
-            area_based=False,
-        ),
-    ),
-    # DS-03c: Sentinel-2 judges its filters per overpass (the overpass key `results_group_by` holds the instant) and
-    # offers the coverage of the AOI.
-    search_capabilities=SearchCapabilities(evaluate=True, aoi_coverage=True),
-    # NM4-14 plan §7.5 (Otto 30.10.2026): five indices of Awesome Spectral Indices (MIT; Montero et al. 2023, Scientific
-    # Data 10, 197, https://doi.org/10.1038/s41597-023-02096-0), `formula` and `reference` as its
-    # `spectral-indices-dict.json` holds them at commit 835fea7. The bands are the ones Earth Search names, N as `nir`
-    # (B08) like the catalogue's `bands.json` and Sentinel Hub's scripts. The ranges and colormaps are plan §8.5.
-    index_presets=(
-        IndexPreset(
-            name="NDVI",
-            title="Normalized Difference Vegetation Index",
-            expression="(nir - red) / (nir + red)",
-            rescale=(-1.0, 1.0),
-            colormap_name="rdylgn",
-            formula="(N - R)/(N + R)",
-            reference="https://ntrs.nasa.gov/citations/19740022614",
-        ),
-        IndexPreset(
-            name="NDWI",
-            title="Normalized Difference Water Index (McFeeters 1996)",
-            expression="(green - nir) / (green + nir)",
-            rescale=(-1.0, 1.0),
-            colormap_name="rdbu",
-            formula="(G - N) / (G + N)",
-            reference="https://doi.org/10.1080/01431169608948714",
-        ),
-        IndexPreset(
-            name="NDSI",
-            title="Normalized Difference Snow Index",
-            expression="(green - swir16) / (green + swir16)",
-            rescale=(-1.0, 1.0),
-            colormap_name="rdbu",
-            formula="(G - S1) / (G + S1)",
-            reference="https://doi.org/10.1109/IGARSS.1994.399618",
-        ),
-        IndexPreset(
-            name="NBR",
-            title="Normalized Burn Ratio",
-            expression="(nir - swir22) / (nir + swir22)",
-            rescale=(-1.0, 1.0),
-            colormap_name="rdylgn",
-            formula="(N - S2) / (N + S2)",
-            reference="https://doi.org/10.3133/ofr0211",
-        ),
-        # The constants are the defaults of the catalogue's `constants.json` (g 2.5, C1 6, C2 7.5, L 1), the same as in
-        # Sentinel Hub's EVI script. L = 1 holds for reflectance from 0 to 1, which is what the core computes on.
-        IndexPreset(
-            name="EVI",
-            title="Enhanced Vegetation Index",
-            expression="2.5 * (nir - red) / (nir + 6 * red - 7.5 * blue + 1)",
-            rescale=(-1.0, 1.0),
-            colormap_name="rdylgn",
-            formula="g * (N - R) / (N + C1 * R - C2 * B + L)",
-            reference="https://doi.org/10.1016/S0034-4257(96)00112-5",
-        ),
-    ),
-    # NM4-64 (Otto 31.10.2026): the picture the eye sees, B04, B03, B02 at 10 m.
-    true_color=("red", "green", "blue"),
-)
-
-# M3-11b, F1: no single acquisition instant exists for the DEM (`adr/0009`
-# §10.1) — a period instead, the same for every tile and for the collection
-# itself, belonging to the *product*, not a measurement of one scene. Read
-# from the Product Handbook (v5.0, 29.11.2022, p. 30): "the TanDEM-X/WorldDEM
-# has been acquired between December 2010 and January 2015." Exported because
-# `adapters.cop_dem_bucket` stamps every item with the same two instants —
-# `adapters` may import `catalog` (`.importlinter`), not the other way round,
-# so the constant lives here rather than being duplicated at both ends.
-DEM_ACQUISITION_START = datetime(2010, 12, 1, tzinfo=timezone.utc)
-DEM_ACQUISITION_END = datetime(2015, 1, 31, 23, 59, 59, tzinfo=timezone.utc)
-
-# adr/0003 §11.1: the licence PDF the AWS registry entry and the CDSE COP-DEM
-# page both link, read on 18.09.2026 and rechecked 26.09.2026 (M3-11b plan §2.7).
-_DEM_LICENSE_URL = (
-    "https://dataspace.copernicus.eu/sites/default/files/media/files/2025-06/"
-    "copernicus_contributing_mission_data_access_v2_cop_dem_licenses.pdf"
-)
-
-# The licence's own vocabulary (Art. 6 a/b) and its liability waiver (Art. 6 c),
-# read from the primary document on 18.09.2026 (`adr/0003` §11.1) and reused
-# here verbatim rather than paraphrased.
-_DEM_ATTRIBUTION = (
-    "© DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 "
-    "provided under COPERNICUS by the European Union and ESA; all rights reserved"
-)
-
-COP_DEM_GLO_30 = DatasetConfig(
-    # The name Earth Search and Microsoft Planetary Computer both use for the
-    # same product (M3-11b plan §3.6, F4) — no collision with either of the
-    # two entries above, because this one is not federated through them.
-    dataset_id="cop-dem-glo-30",
-    title="Copernicus DEM GLO-30",
-    description=(
-        "Copernicus DEM GLO-30 Public: global 30 m digital surface model from "
-        "the TanDEM-X mission (acquired December 2010 to January 2015), as "
-        "cloud-optimized GeoTIFF in 1° × 1° tiles, read directly "
-        "from the AWS Open Data bucket (state of 9 May 2022, adr/0009 §7.3). "
-        "Oceans carry no tiles, and 25 tiles between 38° and 42° N and "
-        "43° and 51° E are withheld from public release by the "
-        "Copernicus programme (adr/0009 §10.3)."
-    ),
-    keywords=("elevation", "dem", "dsm", "terrain", "copernicus", "tandem-x"),
-    category=DatasetCategory.ELEVATION,
-    # The providers of the bucket's own STAC collection (`copernicus-dem-30m-stac`, `dem_cop_30.json`, read 06.11.2026,
-    # UI-05 plan §5); it names no gsd, the 30 m are the grid of GLO-30 (`readme.html` of the bucket).
-    providers=(
-        Provider(
-            "Copernicus",
-            (ProviderRole.LICENSOR, ProviderRole.PRODUCER),
-            "https://spacedata.copernicus.eu/en/web/guest/collections/copernicus-digital-elevation-model/",
-        ),
-        Provider("Sentinel Hub", (ProviderRole.PROCESSOR,), "https://copernicus-dem-30m.s3.amazonaws.com/readme.html"),
-        Provider("Open Data on AWS", (ProviderRole.HOST,), "https://registry.opendata.aws/copernicus-dem/"),
-    ),
-    gsd=(30.0,),
-    # The product's own citation DOI (M3-11b plan §2.7, read from the CDSE
-    # COP-DEM page 26.09.2026) — the same page `adr/0003` §11.1 reads the
-    # licence from. Not specific to the GLO-30 instance; it is what the source
-    # itself asks to be cited with.
-    doi="https://doi.org/10.5270/ESA-c5d3d65",
-    citation=None,
-    # A single elevation model, not a stream of acquisitions (P24, adr/0009 §6):
-    # `single_coverage_product` below follows from this, not the other way round.
-    data_class=DataClass.RASTER_STATIC,
-    format=DataFormat.COG,
-    # From the bucket's own tile list (M3-11b plan §2.1, §2.6): latitudes S90 to
-    # N83, longitudes W180 to E179 (so the nominal cells reach N84/E180).
-    spatial_extent=SpatialExtent(bbox=(-180.0, -90.0, 180.0, 84.0)),
-    temporal_extent=TemporalExtent(start=DEM_ACQUISITION_START, end=DEM_ACQUISITION_END),
-    capabilities=Capabilities(
-        roi=True,
-        # No acquisition stream to filter by date (M3-11b F1) — a search with a
-        # time window is a question this dataset does not answer differently
-        # from one without (the ADR-decided behaviour for M3-12/M3-13: shown
-        # regardless of the chosen range, never date-filtered).
-        time_range=False,
-        band_math=True,
-        interpolation=True,
-        # Every entry switches it on by itself (B10); M4 R3, Otto 05.10.2026.
-        reprojection=True,
-        # M4-18: the bucket holds elevation only, no classification layer.
-        masking=False,
-        # DS-06 (Otto, 30.10.2026): a mask by value needs no layer, so every entry has it.
-        value_masking=True,
-        normalization=True,
-        ml_processing=True,
-        # No complex quad-pol data — decomp.py stays out (ENTSCHEIDUNGEN §3).
-        quad_pol=False,
-        # One elevation model, not a time series: extent, not density (adr/0004 §5).
-        single_coverage_product=True,
-    ),
-    license=LicenseInfo(
-        spdx_id=None,
-        name="Licence for Copernicus DEM instance COP-DEM-GLO-30-F Global 30m Full, Free & Open",
-        url=_DEM_LICENSE_URL,
-        commercial_use=True,
-        distribution=True,
-        derivatives=True,
-        share_alike=False,
-        attribution_required=True,
-        tier=LicenseTier.PROCESSING,
-        # Art. 6 b: the modified-data wording adds "produced using Copernicus
-        # WorldDEM-30" to the same attribution the unmodified data carries.
-        attribution_modified=f"{_DEM_ATTRIBUTION}; produced using Copernicus WorldDEM-30",
-        attribution_unmodified=_DEM_ATTRIBUTION,
-        terms=TermsOfUse(
-            url=_DEM_LICENSE_URL,
-            notice={
-                # Art. 6 c, the licence's own liability waiver, shortened only
-                # where it names the licence itself (`adr/0003` §11.1).
-                "en": (
-                    "Use is subject to the Licence for Copernicus DEM instance "
-                    "COP-DEM-GLO-30-F Global 30m Full, Free & Open: {terms_url}. "
-                    "The organisations in charge of the Copernicus programme, "
-                    "the European Union and ESA, do not incur any liability for "
-                    "the use of this data."
-                ),
-            },
-        ),
-    ),
-    access=AccessInfo(
-        token_free_checked_at=date(2026, 9, 26),
-        method="anonymous HTTPS, no authentication header (M3-11b plan §2.1)",
-        # Measured 26.09.2026 (M3-11b plan §2.2): no Access-Control-Allow-Origin
-        # on a plain GET. Moot for this dataset — it has no quicklook a browser
-        # would load straight from the source (M3-12 decides what appears
-        # instead: the full-resolution AOI crop, per the M3-11b F11 Nachtrag).
-        cors=False,
-    ),
-    source=SourceInfo(
-        adapter=AdapterKind.COP_DEM_BUCKET,
-        endpoint="https://copernicus-dem-30m.s3.amazonaws.com",
-        # The bucket has no STAC collection of its own (`adr/0009` §5) — its own
-        # name is the closest thing to a source-side identifier.
-        source_collection_id="copernicus-dem-30m",
-        # The global bucket name (`adr/0009` §10.2, M3-11b plan §2): never the
-        # bare `s3.amazonaws.com` or `amazonaws.com`, which would open every
-        # bucket on AWS to `gateway`'s allowlist (`registry.py`
-        # `DatasetConfig._check_source`).
-        asset_hosts=("copernicus-dem-30m.s3.amazonaws.com",),
-        item_holding=ItemHolding.MATERIALIZED,
-        # The global host names no region; the bucket answers `x-amz-bucket-region: eu-central-1` (measured
-        # 06.11.2026, M5-07 plan §2), as the AWS Open Data registry says (`adr/0023` §6.2).
-        data_region="aws:eu-central-1",
-    ),
-    coverage=CoverageInfo(
-        provider=CoverageProvider.LOCAL_SQL,
-        # The nominal 1x1-degree cell a tile name gives (`adapters.
-        # cop_dem_bucket`); `max_geotile_level_for(111.0) == 8`, checked by
-        # `DatasetConfig._check_coverage`.
-        typical_footprint_km=111.0,
-        max_geotile_level=8,
-    ),
-    default_render=DefaultRender(
-        title="Elevation",
-        assets=("data",),
-        # 0..5000 m: covers every measured tile's p98 (max 5907 m at the
-        # Himalaya sample, M3-11b plan §2.4) except the very highest peaks,
-        # which saturate white rather than clip to a flat colour — the
-        # trade-off `terrain` is chosen for (F6).
-        rescale=((0.0, 5000.0),),
-        colormap_name="terrain",
-        expression=None,
-        resampling="nearest",
-    ),
-    # F7: every tile shares the same `start_datetime` (there is only one), so
-    # grouping by it puts every DEM tile in one group — a AOI crop over several
-    # tiles becomes one merged file (P19), the way a Sentinel-2 overpass does.
-    # `results_group_by` is the same key: one dataset, one group, nothing a
-    # results list would head differently.
-    #
-    # `min_zoom` 0, not 8 (M3-12 plan step §3, F4): a DEM tile's own overview
-    # block costs the same to read at every level from z0 to z8 — the source
-    # has no per-scene mosaic to spread thinner as the map zooms out, so
-    # "below min_zoom one tile shows several scenes" (`ViewerInfo`'s general
-    # reasoning) does not bound anything here; what does is how many of the
-    # up to 300 items a search can return sit on screen at once, which does
-    # not change with `min_zoom`. z15 is three levels past the native
-    # ~30 m/px resolution, for zooming into real detail without reaching
-    # MapLibre's own z22 ceiling on a dataset with nothing finer to give past it.
-    #
-    # `browse=FULL_RESOLUTION` (M3-12, M3-11b F11 Nachtrag): no quicklook
-    # (`access.cors=False` above) and nothing a coarse tile would usefully
-    # preview either, so the viewer shows the AOI crop in full resolution
-    # straight after the search (M3-09's mechanism), never a quicklook stage.
-    viewer=ViewerInfo(
-        group_by=("start_datetime",),
-        min_zoom=0,
-        max_zoom=15,
-        browse=BrowseMode.FULL_RESOLUTION,
-        quicklook_nodata_max=None,
-        results_group_by=("start_datetime",),
-    ),
-    health=HealthInfo(status=HealthStatus.OK),
-    # A released, versioned product (state of 9 May 2022), not a pilot.
-    maturity=Maturity.STABLE,
-    zarr=None,
-    mask=None,
-    # Elevation in metres, the unit the default render's range of 0 to 5000 already states (M3-11b plan §2.4).
-    band_units={"data": "m"},
-    auxiliary_assets=(),
-    search_filters=(),
-    # DS-03c (Otto, 04.11.2026): the coverage of the AOI is meaningful, the share of the AOI the 1° tiles reach (oceans carry
-    # none). "Evaluate" is not: the dataset has no filter to judge, and all its tiles share one acquisition period, so
-    # there is one pass and per pass and per scene would differ only in the coverage, which has its own wording.
-    search_capabilities=SearchCapabilities(evaluate=False, aoi_coverage=True),
-    # One band of heights: none of the indices of Awesome Spectral Indices reads it.
-    index_presets=(),
-    # One band of heights: no picture in colours of light.
-    true_color=(),
-)
-
-# ESA WorldCover (M5-07, `adr/0023` §6.1 and §8.3): two states of one product, one entry each (`adr/0023` F6). Measured
-# 06.11.2026 (M5-07 plan §2): anonymous listing of the bucket in eu-central-1, 2651 COG tiles of 3° per state, the colour
-# table, the period and the copyright in the head of the file, the DOIs at Zenodo.
-_WORLDCOVER_HOST = "esa-worldcover.s3.eu-central-1.amazonaws.com"
-_WORLDCOVER_REFERENCE = f"https://{_WORLDCOVER_HOST}/v200/2021/docs/WorldCover_PUM_V2.0.pdf"
-# The legend in the head of every map file, values and names as the file writes them.
-_WORLDCOVER_CLASSES = tuple(
-    MaskClass(value, label)
-    for value, label in (
-        (10, "Tree cover"),
-        (20, "Shrubland"),
-        (30, "Grassland"),
-        (40, "Cropland"),
-        (50, "Built-up"),
-        (60, "Bare/sparse vegetation"),
-        (70, "Snow and ice"),
-        (80, "Permanent water bodies"),
-        (90, "Herbaceous wetland"),
-        (95, "Mangroves"),
-        (100, "Moss and lichen"),
-    )
-)
+def _entry_files(directory: Path) -> list[Path]:
+    """The ``*.yaml`` files of ``directory``; anything else but a README is an error, so a stray file is noticed."""
+    try:
+        listing = sorted(directory.iterdir())
+    except OSError as error:
+        raise EntryFileError(f"{directory.name}: the directory cannot be read ({type(error).__name__})") from None
+    files = []
+    for path in listing:
+        if path.name == _README:
+            continue
+        if not path.is_file() or path.suffix != ".yaml":
+            raise EntryFileError(f"{directory.name}/{path.name}: only <dataset_id>.yaml files and a README belong here")
+        files.append(path)
+    return files
 
 
-def _worldcover(year: int, version: str, doi: str) -> DatasetConfig:
-    """One state of ESA WorldCover; the two differ in the year, the algorithm version and the DOI only."""
-    # The source's own attribution for a published map (`readme.html` of the bucket, the `copyright` tag of the file).
-    attribution = (
-        f"© ESA WorldCover project {year} / Contains modified Copernicus Sentinel data ({year}) "
-        "processed by ESA WorldCover consortium"
-    )
-    return DatasetConfig(
-        dataset_id=f"esa-worldcover-{year}",
-        title=f"ESA WorldCover {year}",
-        description=(
-            f"ESA WorldCover {year} ({version}): global land cover map at 10 m resolution with 11 classes, "
-            f"derived from Sentinel-1 and Sentinel-2 data of {year}, as cloud-optimized GeoTIFF in 3° × 3° tiles, "
-            "read directly from the AWS Open Data bucket. The 2020 and 2021 maps were made with different "
-            "algorithm versions and are not directly comparable."
-        ),
-        # German and English (adr/0026 F7, from M5-07 on).
-        keywords=(
-            "land cover", "landcover", "land use", "classification", "worldcover", "esa", "copernicus",
-            "sentinel-1", "sentinel-2", "Landbedeckung", "Bodenbedeckung", "Landnutzung", "Klassifikation",
-        ),  # fmt: skip
-        category=DatasetCategory.LAND_COVER,
-        # The bucket has no STAC collection. The providers are those of the collection `stactools-packages/esa-worldcover`
-        # builds for the product (`constants.py`, `PROVIDERS`, read 06.11.2026, UI-05 plan §5); the 10 m are the
-        # resolution in the `readme.html` of the bucket.
-        providers=(
-            Provider(
-                "ESA",
-                (ProviderRole.LICENSOR, ProviderRole.PRODUCER, ProviderRole.HOST),
-                "https://esa-worldcover.org",
-            ),
-            Provider("ESA WorldCover Consortium", (ProviderRole.PROCESSOR,), "https://esa-worldcover.org"),
-        ),
-        gsd=(10.0,),
-        doi=doi,
-        citation=None,
-        # One map per year, not a stream of acquisitions (`adr/0023` §8.3), like the DEM.
-        data_class=DataClass.RASTER_STATIC,
-        format=DataFormat.COG,
-        # The outer edge of the tile grid (measured): no tiles south of 60° S.
-        spatial_extent=SpatialExtent(bbox=(-180.0, -60.0, 180.0, 84.0)),
-        # `time_start` and `time_end` of the file.
-        temporal_extent=TemporalExtent(
-            start=datetime(year, 1, 1, tzinfo=timezone.utc),
-            end=datetime(year, 12, 31, 23, 59, 59, tzinfo=timezone.utc),
-        ),
-        capabilities=Capabilities(
-            roi=True,
-            # One map: the year is chosen by the dataset, not by a date (`adr/0023` §8.3).
-            time_range=False,
-            # Arithmetic on class codes means nothing.
-            band_math=False,
-            # Classes only with `nearest` (adr/0014 F6): reprojection yes, interpolation no.
-            interpolation=False,
-            reprojection=True,
-            masking=True,
-            value_masking=True,
-            normalization=False,
-            # Open until M5-12 (`adr/0030`) has gone through the operators per dataset.
-            ml_processing=False,
-            quad_pol=False,
-            # One map per state: extent, not density (adr/0004 §5).
-            single_coverage_product=True,
-        ),
-        license=LicenseInfo(
-            spdx_id="CC-BY-4.0",
-            name="Creative Commons Attribution 4.0 International",
-            url="https://creativecommons.org/licenses/by/4.0/",
-            commercial_use=True,
-            distribution=True,
-            derivatives=True,
-            share_alike=False,
-            attribution_required=True,
-            # Proposal `adr/0023` §7.2; the wording Otto confirms before the merge (`adr/0023` F2, M5-07 plan F5).
-            tier=LicenseTier.PROCESSING,
-            attribution_modified=f"{attribution} (modified)",
-            attribution_unmodified=attribution,
-            terms=None,
-        ),
-        access=AccessInfo(
-            token_free_checked_at=date(2026, 11, 6),
-            method="anonymous HTTPS to the AWS Open Data bucket, no authentication header (M5-07 plan §2)",
-            # No Access-Control-Allow-Origin on a request with Origin (`adr/0023` §6.1, measured 31.10. and 06.11.2026).
-            cors=False,
-        ),
-        source=SourceInfo(
-            adapter=AdapterKind.ESA_WORLDCOVER_BUCKET,
-            endpoint=f"https://{_WORLDCOVER_HOST}",
-            # The bucket has no STAC collection; the prefix of the state is the closest thing to a source-side id.
-            source_collection_id=f"{version}/{year}",
-            asset_hosts=(_WORLDCOVER_HOST,),
-            item_holding=ItemHolding.MATERIALIZED,
-            data_region="aws:eu-central-1",
-        ),
-        coverage=CoverageInfo(
-            provider=CoverageProvider.LOCAL_SQL,
-            # A 3° tile; `max_geotile_level_for(333.0) == 6`.
-            typical_footprint_km=333.0,
-            max_geotile_level=6,
-        ),
-        # The classes in the colours of the file, no stretch (M5-07 plan F4). `nearest`, as for every class layer.
-        default_render=DefaultRender(
-            title="Land cover",
-            assets=("map",),
-            rescale=None,
-            colormap_name="esa-worldcover",
-            expression=None,
-            resampling="nearest",
-        ),
-        # As for the DEM: one period for every tile, so one group; the AOI crop in full resolution, no quicklook (no CORS).
-        # `min_zoom` 0: the file has overviews down to 1:64, so a tile of the world reads them, like the DEM's.
-        viewer=ViewerInfo(
-            group_by=("start_datetime",),
-            min_zoom=0,
-            max_zoom=15,
-            browse=BrowseMode.FULL_RESOLUTION,
-            quicklook_nodata_max=None,
-            results_group_by=("start_datetime",),
-        ),
-        health=HealthInfo(status=HealthStatus.OK),
-        maturity=Maturity.STABLE,
-        zarr=None,
-        # The map is its own class layer: `mask` keeps or hides the classes a recipe names (`adr/0023` §8.3).
-        mask=MaskSource(
-            asset="map",
-            band="map",
-            classes=_WORLDCOVER_CLASSES,
-            suggested=frozenset(),
-            reference=_WORLDCOVER_REFERENCE,
-            note="Class names as in the legend of the map files; 0 is no data.",
-            cloud_classes=frozenset(),
-            cloud_note="",
-            share_classes=(),
-        ),
-        # Class codes have no unit.
-        band_units={"map": None},
-        auxiliary_assets=(),
-        # Filters only for federated items for now (adr/0021 §2, point 1).
-        search_filters=(),
-        search_capabilities=SearchCapabilities(evaluate=False, aoi_coverage=True),
-        index_presets=(),
-        true_color=(),
-    )
+#: The variables of the start check (adr/0024 R5, adr/0025 §7.4).
+PROFILE_VARIABLE = "EARTHX_PROFILE"
+PROTOTYPE_VARIABLE = "EARTHX_PROTOTYPE_SOURCES"
+#: The profiles an instance may name (adr/0025 §7.4); in M5 only `local` changes anything.
+PROFILES = ("local", "ci", "cloud")
 
 
-ESA_WORLDCOVER_2020 = _worldcover(2020, "v100", "https://doi.org/10.5281/zenodo.5571936")
-ESA_WORLDCOVER_2021 = _worldcover(2021, "v200", "https://doi.org/10.5281/zenodo.7254221")
+class InstanceSettingError(ConfigError):
+    """A setting of the instance that keeps a process from starting; the text names variables, never their values."""
 
-# The datasets that left the registry (docs/adr/0017-ein-sentinel-2-datensatz.md, rule III). An id on this
-# list answers `410` with the reason instead of "no dataset", and the side files of a job finished before the
-# entry left (`ATTRIBUTION.txt`, `citation.bib`) still carry its attribution, its terms and its citation. A
-# `recipe.json` in the user's hands has no expiry, so an id stays here. Each record keeps the licence block and
-# the citation of the last entry as they were: a copy, not a reference, so that a later change to another entry
-# cannot rewrite what a finished download said.
-RETIRED = (
-    RetiredDataset(
-        dataset_id="sentinel-2-l2a-zarr3",
-        title="Sentinel-2 L2A (Zarr3)",
-        # The collection's own `cite-as` link; the entry had no separate persistent citation.
-        doi="https://doi.org/10.5270/S2_-znk9xsj",
-        citation=None,
-        license=LicenseInfo(
-            spdx_id=None,
-            name="Sentinel Data Legal Notice",
-            url=_LEGAL_NOTICE_URL,
-            commercial_use=True,
-            distribution=True,
-            derivatives=True,
-            share_alike=False,
-            attribution_required=True,
-            tier=LicenseTier.PROCESSING,
-            attribution_modified="Contains modified Copernicus Sentinel data {year}",
-            attribution_unmodified="Copernicus Sentinel data {year}",
-            terms=TermsOfUse(
-                url=_LEGAL_NOTICE_URL,
-                notice={
-                    "en": (
-                        "Use is subject to the Sentinel Data Legal Notice: {terms_url}. The data "
-                        "are provided without any express or implied warranty, including as regards "
-                        "quality and suitability for any purpose; by using them the user renounces "
-                        "any claims for damages against the European Union and the providers of the "
-                        "data. The waiver encompasses any dispute, including contracts and torts "
-                        "claims, that might be filed in court, in arbitration or in any other form "
-                        "of dispute settlement."
-                    ),
-                },
-            ),
-        ),
-        retired_on=date(2026, 10, 25),
-        successor="sentinel-2-c1-l2a",
-        reason="the Zarr samples service it read from is a staging service, and the platform offers one Sentinel-2 L2A dataset",
-    ),
-)
 
-REGISTRY = DatasetRegistry((SENTINEL_2_L2A, COP_DEM_GLO_30, ESA_WORLDCOVER_2020, ESA_WORLDCOVER_2021), retired=RETIRED)
+def prototype_dir_from_env(environ: Mapping[str, str] = os.environ) -> Path | None:
+    """The directory of the prototype entries, or None where the instance reads none (adr/0024 R5, plan §3.5).
+
+    ``EARTHX_PROFILE`` is free without the path (A5) but never an unknown value. ``CI`` counts as set with any
+    value that is not empty, ``false`` included (A6).
+    """
+    profile = environ.get(PROFILE_VARIABLE, "").strip()
+    if profile and profile not in PROFILES:
+        raise InstanceSettingError(f"{PROFILE_VARIABLE} is set to a profile other than {', '.join(PROFILES)}")
+    path = environ.get(PROTOTYPE_VARIABLE, "").strip()
+    if not path:
+        return None
+    if profile != "local":
+        raise InstanceSettingError(f"{PROTOTYPE_VARIABLE} is set, but {PROFILE_VARIABLE} is not local (adr/0024 R5)")
+    if environ.get("CI", "").strip():
+        raise InstanceSettingError(f"{PROTOTYPE_VARIABLE} is set in CI (adr/0024 R5)")
+    directory = Path(path)
+    if not directory.is_dir():
+        raise InstanceSettingError(f"{PROTOTYPE_VARIABLE} names no directory")
+    return directory
+
+
+def _entries(directory: Path, status: LegalStatus) -> tuple[DatasetConfig, ...]:
+    """The entries of ``directory``, each with ``status``: released ones are cleared, prototypes unclear (R3)."""
+    entries = tuple(load_entry(path) for path in _entry_files(directory))
+    for entry in entries:
+        if entry.legal_status is not status:
+            raise EntryFileError(
+                f"{directory.name}/{entry.dataset_id}.yaml: an entry here has legal_status {status.value}"
+            )
+    return entries
+
+
+def read_registry(catalog_dir: Path = CATALOG_DIR, prototype_dir: Path | None = None) -> DatasetRegistry:
+    """The registry from ``catalog_dir/datasets`` and ``catalog_dir/retired.yaml``, plus the prototype entries of
+    ``prototype_dir`` where one is given."""
+    entries = _entries(catalog_dir / "datasets", LegalStatus.CLEARED)
+    if prototype_dir is not None:
+        entries += _entries(prototype_dir, LegalStatus.UNCLEAR)
+    return DatasetRegistry(entries, retired=load_retired(catalog_dir / "retired.yaml"))
+
+
+def registry(*, prototype: bool = True) -> DatasetRegistry:
+    """The registry of this process, read once, with the start check of adr/0024 R5.
+
+    The runner asks with ``prototype=False``: it is built to be handed on (adr/0016), so it never reads the
+    prototype directory and only warns where the variable is set (A7); a recipe of a prototype dataset is unknown
+    there. It does not check ``EARTHX_PROFILE`` either, which means nothing to it.
+    """
+    return _with_prototypes() if prototype else _released()
+
+
+@cache
+def _with_prototypes() -> DatasetRegistry:
+    return read_registry(prototype_dir=prototype_dir_from_env())
+
+
+@cache
+def _released() -> DatasetRegistry:
+    if os.environ.get(PROTOTYPE_VARIABLE, "").strip():
+        LOGGER.warning("%s is set and ignored: this process never reads prototype entries", PROTOTYPE_VARIABLE)
+    return read_registry()
+
+
+def forget_registry() -> None:
+    """Forget the registries read so far, so the next :func:`registry` reads the environment again (tests)."""
+    _with_prototypes.cache_clear()
+    _released.cache_clear()

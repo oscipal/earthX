@@ -18,18 +18,24 @@ import sys
 
 import psycopg
 
-from earthx.catalog.datasets import REGISTRY
+from earthx.catalog.datasets import registry
 from earthx.catalog.pgstac import PgstacError, load_registry
+from earthx.catalog.registry import ConfigError
 from earthx.catalog.schema import apply_migrations
 
 
 def main() -> int:
     try:
+        datasets = registry()
+    except ConfigError as error:
+        print(f"load failed: {error}", file=sys.stderr)
+        return 1
+    try:
         # One transaction for the whole run: either the database ends up matching the
         # registry, or it is left exactly as it was.
         with psycopg.connect(autocommit=False) as conn:
             applied = apply_migrations(conn)
-            outcome = load_registry(conn, REGISTRY)
+            outcome = load_registry(conn, datasets)
             conn.commit()
     except (PgstacError, psycopg.Error) as error:
         print(f"load failed: {error}", file=sys.stderr)

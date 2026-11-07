@@ -1,0 +1,37 @@
+# The datasets that left the registry (docs/adr/0017-ein-sentinel-2-datensatz.md, rule III). An id on this list
+# answers `410` with the reason instead of "no dataset", and the side files of a job finished before the entry left
+# (`ATTRIBUTION.txt`, `citation.bib`) still carry its attribution, its terms and its citation. A `recipe.json` in the
+# user's hands has no expiry, so an id stays here. Each record keeps the licence block and the citation of the last
+# entry as they were: a copy, not a reference, so that a later change to another entry cannot rewrite what a finished
+# download said.
+
+- dataset_id: sentinel-2-l2a-zarr3
+  title: Sentinel-2 L2A (Zarr3)
+  # The collection's own `cite-as` link; the entry had no separate persistent citation.
+  doi: https://doi.org/10.5270/S2_-znk9xsj
+  citation: null
+  license:
+    spdx_id: null
+    name: Sentinel Data Legal Notice
+    url: https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice
+    commercial_use: true
+    distribution: true
+    derivatives: true
+    share_alike: false
+    attribution_required: true
+    tier: processing
+    attribution_modified: Contains modified Copernicus Sentinel data {year}
+    attribution_unmodified: Copernicus Sentinel data {year}
+    terms:
+      url: https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice
+      notice:
+        en: >-
+          Use is subject to the Sentinel Data Legal Notice: {terms_url}. The data are provided without any express
+          or implied warranty, including as regards quality and suitability for any purpose; by using them the
+          user renounces any claims for damages against the European Union and the providers of the data. The
+          waiver encompasses any dispute, including contracts and torts claims, that might be filed in court,
+          in arbitration or in any other form of dispute settlement.
+  retired_on: 2026-10-25
+  successor: sentinel-2-c1-l2a
+  reason: >-
+    the Zarr samples service it read from is a staging service, and the platform offers one Sentinel-2 L2A dataset

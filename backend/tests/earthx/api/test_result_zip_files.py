@@ -24,10 +24,10 @@ from earthx.access.crop_rules import TEXT_FILES
 from earthx.api.citation import citation_bib
 from earthx.api.intake import SCENE_AOI_PROPERTIES
 from earthx.api.result_zip import Layout, Member
-from earthx.catalog.datasets import REGISTRY
 from earthx.catalog.registry import AcquisitionYears, DatasetRegistry, doi_name
 from earthx.objectstore.results import Store
 from earthx.processing.methods import DatasetFacts, methods_of, methods_text
+from tests.catalog.entries import REGISTRY
 from tests.earthx.access.test_download import GOOD_AOI, FakeReader, path
 from tests.earthx.api.conftest import Rig
 from tests.earthx.api.test_intake import (

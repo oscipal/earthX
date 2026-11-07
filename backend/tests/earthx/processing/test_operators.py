@@ -7,7 +7,6 @@ from dataclasses import replace
 import pytest
 from pydantic import BaseModel, ConfigDict
 
-from earthx.catalog.datasets import REGISTRY as DATASETS
 from earthx.catalog.registry import DataClass, LicenseTier, SearchCapabilities
 from earthx.processing.errors import UnknownOperator
 from earthx.processing.operators import (
@@ -17,6 +16,7 @@ from earthx.processing.operators import (
     Tier,
     applicable,
 )
+from tests.catalog.entries import REGISTRY as DATASETS
 from tests.earthx.processing.testops import COARSEN, SCALE, CoarsenParams, ScaleParams
 from tests.earthx.processing.testops import OPERATORS as TEST_REGISTRY
 

@@ -21,7 +21,6 @@ from rasterio.warp import reproject as warp_reproject
 from rasterio.windows import Window
 from rio_tiler.io import Reader
 
-from earthx.catalog.datasets import REGISTRY as DATASETS
 from earthx.processing import run
 from earthx.processing.errors import RecipeInvalid, UnknownOperator, UnsupportedRecipe
 from earthx.processing.operators import (
@@ -35,6 +34,7 @@ from earthx.processing.operators import (
     applicable,
 )
 from earthx.processing.operators import reproject as reproject_module
+from tests.catalog.entries import REGISTRY as DATASETS
 from tests.earthx.processing import sources
 from tests.earthx.processing.recipes import recipe_of_data, resolved
 from tests.earthx.processing.test_reproject_tolerance import Measured, row

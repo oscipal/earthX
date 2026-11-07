@@ -146,6 +146,10 @@ markiert sein:
   kommen nur über eine Compose-Override-Datei unter `compose/` als Mount hinein.
   Derselbe Lader wie für alle Einträge, eine Registry je Prozess, gebaut an einer
   Stelle statt sechs Importen einer Konstante (§3).
+  *Nachtrag 2026-11-07 (M5-13, `adr/0025` §7.1, §12):* Das Verzeichnis heißt
+  `backend/catalog/prototype/`; der Lader `catalog.datasets.registry()` und die
+  Startprüfung aus R5 sind umgesetzt, die Compose-Override-Datei kommt mit der
+  ersten Prototyp-Quelle (M5-13 F4).
 - **R5 Schalter.** Geladen wird nur, wenn `EARTHX_PROTOTYPE_SOURCES` auf das
   Verzeichnis zeigt **und** `EARTHX_PROFILE=local` gesetzt ist **und** `CI` nicht
   gesetzt ist. Jede andere Kombination mit gesetztem Pfad ist ein Startfehler,

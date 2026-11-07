@@ -1,7 +1,7 @@
 """A dataset that left the registry answers ``410`` with its reason, before anything is asked of a source (adr/0017 §8).
 
 Nothing reaches a network: the item source of each test refuses to be called, and the gateway is the synthetic one of
-`tests/earthx/api/conftest.py`. The retired id is the one on the real list, `catalog/datasets.py`.
+`tests/earthx/api/conftest.py`. The retired id is the one on the real list, `backend/catalog/retired.yaml`.
 """
 
 from __future__ import annotations
@@ -17,9 +17,9 @@ from earthx.adapters import ADAPTER_SPECS
 from earthx.api.coverage_route import build_router
 from earthx.api.processing_route import GONE, JobApi
 from earthx.api.tiler import build_app as build_tiler_app
-from earthx.catalog.datasets import REGISTRY, RETIRED
 from earthx.catalog.registry import DatasetRegistry
 from earthx.objectstore.results import Store
+from tests.catalog.entries import REGISTRY, RETIRED
 from tests.earthx.api.conftest import Rig
 from tests.earthx.api.test_intake import order
 from tests.earthx.api.test_permalink_route import PATH as PERMALINKS

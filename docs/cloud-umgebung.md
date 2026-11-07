@@ -305,3 +305,8 @@ Freigabekarte eingetragene Freigabe wirkt dagegen sofort in derselben Sitzung
    einmal `git rm --cached -r . ; git reset --hard` (verwirft lokale
    Änderungen). Eine Sitzung mit einem Branch von vor dem Merge holt `main` und
    normalisiert ihn mit `git add --renormalize .`.
+5. **Prototyp-Einträge (M5-13, `adr/0024` R10):** Cloud-Sitzungen dürfen
+   Einträge unter `backend/catalog/prototype/` schreiben und ohne Netz prüfen
+   (`backend/tests/catalog/test_registry_loading.py`), rufen die Quellen aber
+   nicht ab; Messungen fürs Onboarding macht Otto lokal. Die Variable
+   `EARTHX_PROTOTYPE_SOURCES` bleibt in Sitzungen und CI ungesetzt.

@@ -51,6 +51,12 @@ ENV AWS_EC2_METADATA_DISABLED=true
 
 COPY earthx ./earthx
 
+# The curated registry entries (M5-13, adr/0025 §7.1), each released directory or file by name: never the whole
+# `catalog/`, so the candidates of the harvest and the prototype entries of adr/0024 R4 stay out of every image, the
+# runner's included. `.dockerignore` keeps both out of the build context as a second guard.
+COPY catalog/datasets ./catalog/datasets
+COPY catalog/retired.yaml ./catalog/retired.yaml
+
 # The local runner (adr/0016 F1, F10): the same code and the same locked
 # dependencies as the services, run as an unprivileged user. EARTHX_COMMIT ends
 # up in `runner_version` (earthx.runner.output).

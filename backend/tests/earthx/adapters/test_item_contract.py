@@ -27,9 +27,9 @@ from stac_pydantic import Item as StacItem
 
 from earthx.adapters import ADAPTER_SPECS, get_item, materialize_items, search_items
 from earthx.adapters.spec import AdapterSpec, AdapterSpecs
-from earthx.catalog.datasets import COP_DEM_GLO_30, ESA_WORLDCOVER_2021, SENTINEL_2_L2A
 from earthx.catalog.registry import AdapterKind, DatasetConfig
 from earthx.gateway import Policy, host_of
+from tests.catalog.entries import COP_DEM_GLO_30, ESA_WORLDCOVER_2021, SENTINEL_2_L2A
 from tests.earthx.adapters.conftest import FIXTURES as EARTH_SEARCH_FIXTURES
 from tests.earthx.adapters.conftest import answering, load
 from tests.earthx.adapters.test_cop_dem_bucket import HOST as DEM_HOST
