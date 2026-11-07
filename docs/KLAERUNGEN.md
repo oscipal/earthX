@@ -107,6 +107,8 @@ Gestuft, mit gleichbleibender Schnittstelle:
 2. **Ab M5 (Harvester, Git-Review):** Kuratierte Definitionen liegen als YAML unter `catalog/`; `datasets.py` wird zum Lader, der daraus dieselben `DatasetConfig`-Objekte erzeugt. Aufrufer merken nichts.
 3. pgstac wird aus derselben Quelle befüllt; es gibt nie zwei gepflegte Wahrheiten.
 
+**Nachtrag 2026-11-07 (M5-13, `adr/0025` §7, F8):** Stufe 2 ist umgesetzt. Die Einträge liegen als je eine YAML-Datei unter `backend/catalog/datasets/`, ausgeschiedene in `backend/catalog/retired.yaml` (`backend/` statt Repo-Wurzel, weil der Build-Kontext `./backend` ist). `catalog.datasets.registry()` liest sie einmal je Prozess streng in dieselben `DatasetConfig`-Objekte; Prototyp-Einträge liegen in `backend/catalog/prototype/` und nie im Image (`adr/0024` R4, R5).
+
 ### B14. Skills — *Vorerst nicht im Repo* (Stand 19.09.2026)
 
 Die drei Skills (`atomic-commits`, `code-cleanup`, `readme-updater`) liegen weiterhin nur in Ottos persönlicher Claude-Code-Umgebung. Sie werden **vorerst nicht** ins Repo kopiert.

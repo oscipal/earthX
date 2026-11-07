@@ -1,6 +1,6 @@
 # M5-13 — YAML-Lader für die Registry: Plan-Schritt
 
-**Status (07.11.2026):** Plan angenommen (Otto, 07.11.2026; Antworten in §8a), umgesetzt im selben Draft-PR.
+**Status (07.11.2026):** Plan angenommen (Otto, 07.11.2026; Antworten in §8a), umgesetzt im selben Draft-PR [#311](https://github.com/oscipal/earthX/pull/311) (§9).
 **Aufgabe:** M5-13 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2. **Stufe B.** Hängt von UI-05b ab (gemergt mit #310). M5-08, M5-22, M5-15, M5-17, M5-19 und M5-14 warten auf den Merge.
 **Grundlagen:** `adr/0025` §7 (Lader, Ablage, Pflichtfelder, Startprüfung), §8 Schnitt Schritt 1, F8; `adr/0024` R3, R4, R5, R10, §6a, Tests 1–5; `adr/0027` §6.1 (F8); `KLAERUNGEN.md` B10, B13; `architekturplan.md` 3.1, 5.1.
 
@@ -148,7 +148,7 @@ Alle ohne Netz, mit synthetischen Einträgen in `tmp_path` (Muster: `tests/catal
 - `adr/0024` R4: Nachtrag, dass das Verzeichnis `backend/catalog/prototype/` heißt (`adr/0025` §12).
 - `docs/cloud-umgebung.md`: R10 (Cloud-Sitzungen schreiben Prototyp-Einträge, rufen die Quelle nicht ab).
 - README und `.env.example`: `EARTHX_PROFILE`; wie man einen Eintrag ändert (Datei unter `backend/catalog/datasets/`).
-- `docs/ENTSCHEIDUNGSLOG.md`: Zeile mit Ottos Antworten, dann Zeile zur Umsetzung; M5-Plan §6.1.
+- `docs/ENTSCHEIDUNGSLOG.md`: Zeile mit Ottos Antworten, dann Zeile zur Umsetzung. M5-Plan §6.1 („Erledigt“) mit dem Merge.
 
 ---
 
@@ -187,3 +187,23 @@ Commits (je eine Sache): (1) `pyyaml` und `pydantic` direkt in `requirements.txt
 F1–F5 jeweils **Option 1**, Auslegungen A1–A7 (§5) angenommen.
 
 **Korrektur zu F3:** Die Grenze für `anonymous_token` (Stufe höchstens `catalog`) hebt **nicht DS-04** auf; Sentinel-1 GRD über Earth Search braucht kein Token (`adr/0018` Teil A). Aufgehoben wird sie erst, wenn der Satz aus `adr/0018` §12 in `ENTSCHEIDUNGEN_2026-09-18.md` übernommen ist (Teil B, Planetary Computer RTC). So steht es auch im Kommentar an der Prüfung in `catalog/registry.py`.
+
+## 9. Umsetzung (07.11.2026)
+
+Wie §3, in getrennten Commits. Abweichungen und Ergänzungen:
+
+- **Nachweis bitgleich (F2):** Im Commit „Add the registry entries as YAML next to the Python ones“ verlangte `tests/catalog/test_yaml_move.py` für alle vier Einträge Gleichheit des ganzen `DatasetConfig` und der Collection sowie gleiches `RETIRED`: 10 von 10 bestanden. Der nächste Commit entfernte die Python-Einträge und den Test. Dauerhaft bleibt der Round-Trip in `tests/catalog/test_entry_files.py`.
+- **Modul `catalog/entry_files.py`** (strenges Lesen, `to_plain`) statt alles in `datasets.py`; `datasets.py` ist nur noch Lader und Startprüfung. Der Name `load_registry` war in `catalog/pgstac.py` schon vergeben, der Lader heißt deshalb `read_registry`.
+- **Importvertrag `runner`:** `.importlinter` nennt `earthx.catalog.entry_files` unter den verbotenen direkten Importen des Runners (`adr/0016` F2 erlaubt nur `catalog.datasets` und `catalog.registry`). Der Runner erreicht das Modul weiter indirekt über `catalog.datasets`; das ist eine Verschärfung, keine Lockerung.
+- **Live-Smoke** (`backend/tests_live/`) importierte die Konstanten ebenfalls; die sechs Dateien holen ihre Einträge jetzt aus `registry()` (nur die Importzeilen). Der Probelauf `test_live_smoke_dry_run.py` ist grün.
+- **Reihenfolge der Einträge:** Die Registry folgt jetzt den Dateinamen (`cop-dem-glo-30`, `esa-worldcover-2020`, `esa-worldcover-2021`, `sentinel-2-c1-l2a`), vorher der Reihenfolge im Python-Modul. Der Data catalogue gruppiert und sortiert selbst; kein Test hing davon ab.
+- **`catalog-load` und `materialize`** fangen einen Fehler der Registry beim Start ab, schreiben den Grund (`load failed: …` bzw. `materialize failed: …`) und enden mit Code 1. `api` und `tiler` bauen die Registry beim Import; ein Fehler hält `uvicorn` mit derselben Meldung an.
+- **Compose:** `EARTHX_PROFILE` bei `catalog-load`, `materialize`, `api` und `tiler`; nicht bei `worker`, der die Registry nicht liest.
+- **Frontend:** nur zwei Kommentare in `types.ts` und ein Pfad in einem Fixture-Kommentar.
+
+**Geprüft (Cloud-Sitzung):** `pytest` 9538 bestanden, 25 übersprungen (PowerShell fehlt in der Sitzung); `ruff check backend` und `lint-imports` ohne Befund; Frontend `npm run lint` und `npx tsc -b` ohne Befund.
+
+**Image (Cloud-Sitzung, Kopie des `Dockerfile` nur mit der CA des Sitzungs-Proxys, `--network host`):** Stufe `runner` gebaut; im Image liegen `/app/catalog/datasets/` mit den vier Dateien und `retired.yaml`, kein `prototype/`, obwohl im Build-Kontext eine Kanarien-Datei darin lag (`.dockerignore` wirkt). `registry()` lädt die vier Einträge und den ausgeschiedenen; `EARTHX_PROFILE=production` hält den Start an; der Runner mit gesetztem Schalter warnt und lädt vier Einträge; `earthx.api.main` und `earthx.api.tiler` bauen beim Import. Der Bau mit dem echten `Dockerfile` bleibt Sache der CI (`compose-topology`) und von Otto lokal.
+
+**Lokal bei Otto:** `docker compose build` und ein Start (Befehle und Prüfpunkte in der PR-Beschreibung).
+
