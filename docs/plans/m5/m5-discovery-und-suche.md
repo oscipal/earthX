@@ -29,7 +29,7 @@ Daraus:
 7. **Jeder Datensatz hat Eigenheiten (Otto, 31.10.2026):** beim Processing (Fähigkeiten, eigene Operatoren), bei der erweiterten Suche (Filter, DS-02) und bei Schnellrechnungen (Index-Knöpfe, NM4-14). Das Onboarding jedes Datensatzes legt diese drei Teile ausdrücklich fest; sie stehen in der Registry, nicht im Code des Frontends. Was je Datensatz sinnvoll ist, legt `adr/0030` fest.
 8. **Zusatz Otto (06.11.2026):**
    - **Operatoren je Datensatz:** → `adr/0030` (M5-12, erledigt).
-   - **Control Panel:** höchstens sechs Datensätze je Seite, so viele wie ohne Scrollen passen; Seitenpfeile klein oben neben „Datasets“ (Otto, 06.11.2026 abends).
+   - **Control Panel:** je Seite so viele Datensätze, wie ohne Scrollen passen, ohne Obergrenze (Otto, 07.11.2026; bis dahin höchstens sechs); Seitenpfeile klein oben neben „Datasets“ (Otto, 06.11.2026 abends). Die Vorauswahl beim ersten Besuch bleibt bei höchstens sechs.
    - **„Advanced search“** immer sichtbar.
    - **Kein zusätzlicher Text** im Panel.
    - **Datum:** begrenzt auf den verfügbaren Zeitraum und am Anfang mit frühestem und spätestem Aufnahmedatum des Datensatzes vorausgefüllt (Otto, 06.11.2026 abends).

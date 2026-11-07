@@ -1,6 +1,6 @@
 # UI-05 — Data catalogue und Control Panel
 
-**Stand:** 06.11.2026, **angenommen** von Otto am 06.11.2026 (§8a: F1–F9 jeweils Option 1, F5 mit Symbol in der Leiste, F3 ergänzt; A1–A9 angenommen). Teil 1 umgesetzt (§9), Teil 2 umgesetzt (§10); dessen Auslegungen (a)–(d) und (h) angenommen von Otto am 06.11.2026. Beauftragt in `docs/plans/m5/m5-discovery-und-suche.md` §6.1 (UI-05) nach Ottos Zusatz vom 06.11.2026 (§2 Punkt 8 dort).
+**Stand:** 06.11.2026, **angenommen** von Otto am 06.11.2026 (§8a: F1–F9 jeweils Option 1, F5 mit Symbol in der Leiste, F3 ergänzt; A1–A9 angenommen). Teil 1 umgesetzt (§9), Teil 2 umgesetzt (§10); dessen Auslegungen (a)–(d) und (h) angenommen von Otto am 06.11.2026. Review von Teil 2 (Otto, 07.11.2026): keine Obergrenze von sechs Datensätzen je Seite mehr (§8a, §3.1). Beauftragt in `docs/plans/m5/m5-discovery-und-suche.md` §6.1 (UI-05) nach Ottos Zusatz vom 06.11.2026 (§2 Punkt 8 dort).
 **Stufe B:** Erst dieser Plan mit Fragen F1 … F9, dann setzt dieselbe Session nach Ottos Antworten Teil 1 um (§8a, §9); Teil 2 bekommt eine neue Session und einen eigenen PR.
 **Modell:** Opus, Effort hoch.
 **Gilt dazu:** `docs/ui/leitfaden.md` (alle Regeln; Oberflächentexte englisch), `adr/0024` R8 (Marke „Prototype“), `adr/0027` W0 (Konto-Quellen als Katalogeintrag mit Link), `KLAERUNGEN` B10 (keine Vorgaben in der Registry), B12 (Punkt 10 „zuletzt erfolgreich geprüft“).
@@ -35,10 +35,12 @@ Aus §6.1 des M5-Plans dazu: Erklärungen hinter (i) bzw. im Tooltip; ohne Zeita
 
 ## 3. Control Panel
 
-### 3.1 Seiten mit höchstens sechs Datensätzen
+### 3.1 Seiten mit so vielen Datensätzen, wie Platz haben
 
-- Das Panel zeigt **nur die hinzugefügten Datensätze** (`addedDatasetIds`, Reihenfolge des Hinzufügens), in Seiten zu höchstens sechs Knöpfen (zwei Spalten, höchstens drei Reihen, Knopf wie heute: Titel und Marke).
-- **So viele, wie ohne Scrollen Platz haben (Auslegung A1):** Die Zahl der Reihen je Seite ist die größte von 1 bis 3, bei der der scrollende Teil des Panels (`.control-scroll`) nicht scrollen muss; gemessen mit `ResizeObserver` an Fenster und Panel. Mindestens eine Reihe (zwei Knöpfe), auch wenn das Panel dann doch scrollt (sehr niedrige Fenster). Die Seitengröße ändert sich mit der Fensterhöhe; die Seite bleibt die, auf der der zuletzt gewählte Datensatz liegt.
+*Fassung vom 07.11.2026 (Otto, Review von Teil 2): Die Obergrenze von sechs Datensätzen und drei Reihen je Seite entfällt.*
+
+- Das Panel zeigt **nur die hinzugefügten Datensätze** (`addedDatasetIds`, Reihenfolge des Hinzufügens), in Seiten zu zwei Spalten mit so vielen Reihen, wie Platz haben (Knopf wie heute: Titel und Marke); erst der Rest kommt auf die nächste Seite.
+- **So viele, wie ohne Scrollen Platz haben (Auslegung A1):** Die Zahl der Reihen je Seite ist die größte, bei der der scrollende Teil des Panels (`.control-scroll`) nicht scrollen muss, ohne Obergrenze; gemessen mit `ResizeObserver` am Panel, neu bei jeder Größenänderung des Fensters oder des Panels. Mindestens eine Reihe (zwei Knöpfe), auch wenn das Panel dann doch scrollt (sehr niedrige Fenster). Die Seitengröße ändert sich mit der Fensterhöhe; die Seite bleibt die, auf der der zuletzt gewählte Datensatz liegt.
 - **Blättern:** unter dem Raster eine Zeile „‹ 1 / 3 ›“ mit `chevron-left` / `chevron-right` (Leitfaden §3, „Bild davor / danach“) und dem Zähler in der Schreibweise des Leitfadens (`4 / 7` mit Leerzeichen, §2). Auf der ersten bzw. letzten Seite ist der Pfeil gesperrt mit Grund („Already on the first page“ / „… last page“). Mit nur einer Seite entfällt die Zeile nicht, sondern bleibt mit „1 / 1“ und zwei gesperrten Pfeilen, damit das Panel nicht springt (A2; Leitfaden §1 Punkt 5).
 - **Gewählte Datensätze auf anderen Seiten** bleiben gewählt; die Suche läuft über alle gewählten wie heute. Der Zähler zeigt nur die Seite, nicht die Zahl der gewählten (die steht schon in der Suche).
 - **„Select multiple datasets“** und „Coverage“ / „Hide coverage“ bleiben unverändert.
@@ -165,7 +167,7 @@ Teil 1 in diesem PR, Teil 2 in einer neuen Session mit eigenem PR nach dem Merge
 
 ## 7. Auslegungen (angenommen von Otto, 06.11.2026)
 
-- **A1** „So viele wie ohne Scrollen Platz haben“ = gemessene Reihen 1–3, mindestens eine (§3.1).
+- **A1** „So viele wie ohne Scrollen Platz haben“ = gemessene Reihen, mindestens eine (§3.1); bis 06.11.2026 höchstens drei, die Obergrenze hat Otto am 07.11.2026 gestrichen.
 - **A2** Die Zeile „‹ 1 / 1 ›“ bleibt auch mit einer Seite, Pfeile gesperrt.
 - **A3** Mehrere gewählte Datensätze: Bereich von frühestem Anfang bis spätestem Ende der Datensätze mit Zeitachse.
 - **A4** Ein Datum außerhalb des Bereichs wird beim Verlassen des Feldes auf die Grenze gesetzt.
@@ -228,6 +230,7 @@ Teil 1 in diesem PR, Teil 2 in einer neuen Session mit eigenem PR nach dem Merge
 - **A1–A9** angenommen.
 - Danach: Teil 1 umsetzen (§6.1, §9).
 - **Nachtrag (Otto, 06.11.2026, aus `adr/0026`, #301):** Der Data catalogue ist ein Fenster: ein Klick daneben schließt es nicht, ein zweiter Klick auf das Symbol in der Leiste schließt es. Der obere Bereich bleibt frei für Suchfeld und AOI-Schalter, ohne sichtbar leere Fläche (§4.1, §4.2). Die Form „Fenster“ steht im Leitfaden §5 und §7.
+- **Review von Teil 2 (Otto, 07.11.2026):** Die Obergrenze von sechs Datensätzen je Seite entfällt. Jede Seite zeigt so viele, wie ohne Scrollen ins Panel passen, neu berechnet bei jeder Größenänderung des Fensters; erst der Rest kommt auf die nächste Seite. Die Vorauswahl beim ersten Besuch bleibt bei höchstens sechs (F3). Umgesetzt in §10.
 - **Review von Teil 1 (Otto, 06.11.2026):**
   1. **Seitenpfeile** oben, klein, rechts neben der Überschrift „Datasets“ statt unter der Liste; weiter mit gesperrtem Pfeil und Grund am Rand. Umgesetzt: „‹ 1 / n ›“ steht in der Kopfzeile zwischen „Datasets“ und „Select multiple datasets“, ohne Umbruch (bei 320 px bricht dafür „Select multiple datasets“ in zwei Zeilen).
   2. **Datum vorausgefüllt** mit dem frühesten und spätesten Aufnahmedatum des gewählten Datensatzes (offenes Ende = heute), bei mehreren über alle; bei jeder neuen Datensatz-Wahl neu; was Otto selbst einträgt, bleibt bis dahin. Ersetzt A4 für die neue Wahl (dort wurde nur auf die Grenze geschoben); beim Verlassen eines Feldes gilt A4 weiter. Auslegungen (gelten, bis Otto widerspricht): (a) bei gemischter Wahl zählen nur die Datensätze mit Zeitachse, wie bei den Grenzen (§3.3); (b) nur mit Datensätzen ohne Zeitachse zeigen die gesperrten Felder deren Zeitraum (DEM: 2010-12-01 → 2015-01-31; ESA WorldCover 2020 aus M5-07: 2020-01-01 → 2020-12-31, beide Jahre gewählt 2020-01-01 → 2021-12-31); (c) ohne gewählten Datensatz sind die Felder leer; (d) „neue Wahl“ ist die Wahl im Panel (Klick auf einen Datensatz, Ende der Mehrfachwahl), nicht das Öffnen eines Layers, das seinen Datensatz mit anwählt.
@@ -266,6 +269,7 @@ Umgesetzt wie §4 und §5 mit F1–F9, A5–A8 und dem Nachtrag zu F5/F6; alle v
   - (g) **Konto-Datensatz:** statt „Add“ ein Link „Source“ auf den Endpunkt; ohne `https`-Endpunkt bleibt „Add“ gesperrt mit Grund.
   - (h) *fest:* **Quick processing** in den Angaben nennt, was die Seitenleiste anbietet: die Indizes und „Enhance contrast“ nur bei einem Datensatz mit Echtfarbenbild (nicht „für alle“ wie in §4.3).
 - **Nach dem Review (Subagent `reviewer`):** Ein übernommener Auftrag („Open in panel“, „Process“ eines Ergebnis-Layers, Index, Permalink) bringt seinen Datensatz zurück ins Panel (sonst gewählt, aber unsichtbar); unter 900 px schließt ein Symbol eines Panels der Leiste das Fenster, weil es das Panel ganz verdeckt; das Fenster liegt über Seitenleiste und Processing-Sheet (sonst verdeckten sie das rote x); ein Endpunkt, den `URL` nicht lesen kann, ergibt „—“ statt eines Absturzes; `Provider.url` verlangt einen Host. Offen gelassen: Ein anzeigbarer Datensatz mit Konto (`access.account`) könnte über einen Layer gewählt werden, ohne ins Panel zu kommen; heute nicht erreichbar, weil das Feld erst mit dem YAML-Lader kommt. Ein Datensatz, der beim Laden vorübergehend fehlt, fällt aus der gespeicherten Liste, sobald der Nutzer sie ändert (wie §4.5 „fallen beim Laden weg“).
+- **Nach dem Review von Otto (07.11.2026):** `rowsThatFit` kennt keine Obergrenze mehr; drei Reihen sind nur noch der Startwert vor der ersten Messung (und ohne Layout, jsdom). Dabei aufgefallen und behoben: Der Platz wurde an `.control-scroll` gemessen, das nur so hoch ist wie sein Inhalt; die Messung sah darum nur Mangel, nie freien Platz, und ein Fenster, das wieder höher wurde, bekam seine Reihen nicht zurück (schon in Teil 1, dort durch die drei Reihen kaum sichtbar). Gemessen wird jetzt am Panel: seine Höhe ohne den Fuß mit „Search“, beobachtet am Panel selbst. `e2e/dataset-pages.cjs` hat dafür 23 Datensätze und ein hohes Fenster (1280 × 1200), verlangt dort mehr als sechs je Seite und prüft, dass ein niedrigeres Fenster Reihen wegnimmt und das wieder höhere sie zurückgibt.
 - **Umfang:** über dem Richtwert von etwa 400 Zeilen ohne Tests (Registry, Store, zwei neue Module und CSS); ein weiterer Schnitt hätte Teile ohne Oberfläche ergeben.
 
 **Geprüft:** `pytest` (Backend), `ruff`, `lint-imports`, `vitest`, `tsc`, `oxlint`; Browser-Skripte `e2e/data-catalogue.cjs` (neu; Hell/Dunkel, 1280 und 360 px, mit erfundenen und mit den echten vier Collections) und `e2e/dataset-pages.cjs` (angepasst: speichert seine neun Datensätze, weil ein Erstbesuch höchstens sechs hinzufügt) grün; `e2e/narrow-windows.cjs` und `e2e/tooltips.cjs` grün, `e2e/settings-panel.cjs` nach Anpassung (sechs Symbole; Panels über ihre Kennung statt über die Position) grün. Gegenprobe: Die Tests zu Permalink, Layer und übernommenem Auftrag scheitern ohne die jeweilige Änderung.
