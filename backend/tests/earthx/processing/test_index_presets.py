@@ -22,7 +22,7 @@ from tests.catalog.entries import COP_DEM_GLO_30, REGISTRY, SENTINEL_2_L2A
 PRESETS = {preset.name: preset for preset in SENTINEL_2_L2A.index_presets}
 
 #: Physical reflectance of one pixel, chosen so that every index has a value well inside −1…1.
-REFLECTANCE = {"blue": "0.05", "green": "0.08", "red": "0.06", "nir": "0.40", "swir16": "0.20", "swir22": "0.10"}
+REFLECTANCE = {"blue": "0.05", "green": "0.08", "red": "0.06", "nir": "0.40", "rededge1": "0.30", "swir16": "0.20", "swir22": "0.10"}
 
 #: Each index worked out by hand on :data:`REFLECTANCE`, as exact fractions.
 _R = {band: Fraction(value) for band, value in REFLECTANCE.items()}
@@ -34,12 +34,18 @@ BY_HAND = {
     "EVI": Fraction(5, 2)
     * (_R["nir"] - _R["red"])
     / (_R["nir"] + 6 * _R["red"] - Fraction(15, 2) * _R["blue"] + 1),  # 170/277
+    "NDMI": (_R["nir"] - _R["swir16"]) / (_R["nir"] + _R["swir16"]),  # 1/3
+    "MNDWI": (_R["green"] - _R["swir16"]) / (_R["green"] + _R["swir16"]),  # -3/7
+    "NDREI": (_R["nir"] - _R["rededge1"]) / (_R["nir"] + _R["rededge1"]),  # 1/7
+    "SAVI": Fraction(3, 2) * (_R["nir"] - _R["red"]) / (_R["nir"] + _R["red"] + Fraction(1, 2)),  # 17/32
 }
 
 #: Awesome Spectral Indices' symbols on the bands of Sentinel-2 at Earth Search (`bands.json`: N is B8, S1 is B11, S2 is
 #: B12) and its constants (`constants.json`, commit 835fea7). Only this test knows the mapping (plan §10 point 2).
-ASI_BANDS = {"N": "nir", "R": "red", "G": "green", "B": "blue", "S1": "swir16", "S2": "swir22"}
+ASI_BANDS = {"N": "nir", "R": "red", "G": "green", "B": "blue", "S1": "swir16", "S2": "swir22", "RE1": "rededge1"}
 ASI_CONSTANTS = {"g": Fraction(5, 2), "C1": Fraction(6), "C2": Fraction(15, 2), "L": Fraction(1)}
+#: Where the setting differs from the dictionary's default: SAVI with L = 0.5 (adr/0030 F8, Otto 06.11.2026).
+SETTING_OF = {"SAVI": {"L": Fraction(1, 2)}}
 
 
 def _image(values: dict[str, float]) -> ImageData:
@@ -86,12 +92,12 @@ class TestReferenceValues:
     def test_the_expression_is_the_formula_of_the_catalogue(self, name: str) -> None:
         """Copying ``nir08`` for ``nir`` or 7 for 7.5 would show here, on any reflectance."""
         preset = PRESETS[name]
-        symbols = {**ASI_CONSTANTS, **{symbol: _R[band] for symbol, band in ASI_BANDS.items()}}
+        symbols = {**ASI_CONSTANTS, **SETTING_OF.get(name, {}), **{symbol: _R[band] for symbol, band in ASI_BANDS.items()}}
         assert _exact(preset.formula, symbols) == BY_HAND[name]
         bands = {band: _R[band] for band in REFLECTANCE}
         assert _exact(preset.expression, bands) == BY_HAND[name]
 
-    @pytest.mark.parametrize("name", ["NDVI", "NDWI", "NDSI", "NBR"])
+    @pytest.mark.parametrize("name", ["NDVI", "NDWI", "NDSI", "NBR", "NDMI", "MNDWI", "NDREI", "SAVI"])
     def test_a_normalized_difference_of_reflectance_from_0_to_1_stays_inside_its_range(self, name: str) -> None:
         rng = numpy.random.default_rng(14)
         values = {band: rng.uniform(0.0, 1.0, (64, 64)) for band in REFLECTANCE}
