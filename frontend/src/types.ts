@@ -62,7 +62,7 @@ export interface CollectionAccess {
   method?: string | null;
   cors: boolean | null;
   // What reading the assets needs (`adr/0027` §6.1): `none` is anonymous; any other value makes the dataset a catalogue
-  // entry with a link (W0). Absent until the YAML loader sets it (UI-05 F7), which reads as `none`.
+  // entry with a link (W0). Every collection carries it since M5-13; a collection without it reads as `none`.
   account?: string | null;
 }
 

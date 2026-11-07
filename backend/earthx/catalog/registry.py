@@ -170,6 +170,28 @@ class LegalStatus(Enum):
     UNCLEAR = "unclear"
 
 
+class AccountKind(Enum):
+    """What reading the assets of a dataset needs (adr/0027 §6.1, F8). Independent of ``LegalStatus``."""
+
+    #: Metadata and assets anonymous, without any proof.
+    NONE = "none"
+    #: The source hands everyone a proof without an account (adr/0018 F4, conditions (a)-(d)).
+    ANONYMOUS_TOKEN = "anonymous_token"
+    #: The assets need a free account (CDSE download, Earthdata, CDS, ...): a catalogue entry with a link only (W0).
+    FREE_ACCOUNT = "free_account"
+    #: The assets need a cloud account of one's own, and the reader pays the transfer: W0 only.
+    REQUESTER_PAYS = "requester_pays"
+
+
+class AccountPath(Enum):
+    """The ways to read an account source beyond the link (adr/0027 §5). None is released in M5."""
+
+    W2A = "W2a"
+    W2B = "W2b"
+    W3 = "W3"
+    W4 = "W4"
+
+
 #: The prefix of every prototype dataset id (adr/0024 R3): visible in each address, recipe, file name and cache key.
 PROTOTYPE_PREFIX = "proto-"
 
@@ -350,11 +372,21 @@ class LicenseInfo:
 
 @dataclass(frozen=True, slots=True)
 class AccessInfo:
-    """Evidence that the source answers without a token (onboarding checklist, point 6)."""
+    """What reading the source needs, and the evidence of the anonymous check (onboarding checklist, point 6).
 
-    token_free_checked_at: date
+    ``token_free_checked_at`` is the day of that check, ``None`` exactly where ``account`` says it cannot pass
+    (``free_account``, ``requester_pays``). ``account_provider`` names the identity service of an account source for
+    the hint and the link, never the address of a token endpoint; ``account_paths`` the ways released for this dataset
+    beyond the link. The rules between the four, and with the licence tier, are ``DatasetConfig._check_access``
+    (adr/0027 §6.1).
+    """
+
+    token_free_checked_at: date | None
     method: str
     cors: bool | None
+    account: AccountKind
+    account_provider: str | None
+    account_paths: tuple[AccountPath, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -1186,6 +1218,7 @@ class DatasetConfig:
         self._check_license_is_identifiable()
         self._check_license_tier()
         self._check_legal_status()
+        self._check_access()
         self._check_attribution()
         self._check_coverage()
         self._check_source()
@@ -1490,6 +1523,42 @@ class DatasetConfig:
                 raise ConfigError(f"{self.dataset_id}: legal_status unclear needs a legal_note saying what is unclear")
         elif self.legal_note is not None:
             raise ConfigError(f"{self.dataset_id}: legal_note belongs to legal_status unclear only")
+
+    def _check_access(self) -> None:
+        """The start check of adr/0027 §6.1 between ``access.account``, its other fields and the licence tier."""
+        access = self.access
+        if not isinstance(access.account, AccountKind):
+            raise ConfigError(f"{self.dataset_id}: access.account must be one of {[k.value for k in AccountKind]}")
+        if not isinstance(access.account_paths, tuple) or not all(
+            isinstance(path, AccountPath) for path in access.account_paths
+        ):
+            raise ConfigError(f"{self.dataset_id}: access.account_paths is a tuple of AccountPath")
+        # No way beyond the link (W0) is released (adr/0027 §9): a value here comes with a decision of Otto and a change
+        # of this check, never with an entry alone.
+        if access.account_paths:
+            raise ConfigError(f"{self.dataset_id}: access.account_paths stays empty, no account path is released")
+        provider = access.account_provider
+        if provider is not None and (not isinstance(provider, str) or not provider.strip()):
+            raise ConfigError(f"{self.dataset_id}: access.account_provider is a name or null")
+        anonymous = access.account in (AccountKind.NONE, AccountKind.ANONYMOUS_TOKEN)
+        if anonymous and provider is not None:
+            raise ConfigError(f"{self.dataset_id}: access.account {access.account.value} names no account_provider")
+        if access.account is AccountKind.FREE_ACCOUNT and provider is None:
+            raise ConfigError(f"{self.dataset_id}: access.account free_account names its account_provider")
+        if anonymous != (access.token_free_checked_at is not None):
+            raise ConfigError(
+                f"{self.dataset_id}: access.token_free_checked_at is set exactly for access.account none and "
+                "anonymous_token"
+            )
+        # An account source is a catalogue entry with a link (W0) while no account path is released (adr/0027 §6.1).
+        # `anonymous_token` is held to the same tier until Otto has taken the sentence of adr/0018 §12 into
+        # ENTSCHEIDUNGEN_2026-09-18.md (part B, Planetary Computer RTC; adr/0027 §6.1 "bis dahin wie free_account"). DS-04
+        # does not lift it: Sentinel-1 GRD over Earth Search needs no token (M5-13 plan §8a, correction to F3).
+        if access.account is not AccountKind.NONE and self.license.tier is not LicenseTier.CATALOG:
+            raise ConfigError(
+                f"{self.dataset_id}: access.account {access.account.value} allows licence tier catalog only "
+                "(adr/0027 §6.1)"
+            )
 
     def _check_license_tier(self) -> None:
         """KLAERUNGEN B11: display and processing need distribution and modification;

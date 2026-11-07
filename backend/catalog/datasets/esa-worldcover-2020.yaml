@@ -98,6 +98,10 @@ access:
   method: anonymous HTTPS to the AWS Open Data bucket, no authentication header (M5-07 plan §2)
   # No Access-Control-Allow-Origin on a request with Origin (`adr/0023` §6.1, measured 31.10. and 06.11.2026).
   cors: false
+  # Metadata and assets anonymous (adr/0027 §6.1): no account, no account path.
+  account: none
+  account_provider: null
+  account_paths: []
 source:
   adapter: esa-worldcover-bucket
   endpoint: https://esa-worldcover.s3.eu-central-1.amazonaws.com

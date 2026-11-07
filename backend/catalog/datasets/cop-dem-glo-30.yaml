@@ -108,6 +108,10 @@ access:
   # has no quicklook a browser would load straight from the source (M3-12 decides what appears instead: the full-
   # resolution AOI crop, per the M3-11b F11 Nachtrag).
   cors: false
+  # Metadata and assets anonymous (adr/0027 §6.1): no account, no account path.
+  account: none
+  account_provider: null
+  account_paths: []
 source:
   adapter: cop-dem-bucket
   endpoint: https://copernicus-dem-30m.s3.amazonaws.com

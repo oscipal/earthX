@@ -13,6 +13,7 @@ import pytest
 
 from earthx.catalog.registry import (
     AccessInfo,
+    AccountKind,
     AdapterKind,
     BrowseMode,
     Capabilities,
@@ -96,6 +97,9 @@ def valid_config() -> DatasetConfig:
             token_free_checked_at=date(2026, 1, 1),
             method="anonymous HTTPS",
             cors=None,
+            account=AccountKind.NONE,
+            account_provider=None,
+            account_paths=(),
         ),
         source=SourceInfo(
             adapter=AdapterKind.EARTH_SEARCH_V1,

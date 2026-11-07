@@ -113,6 +113,10 @@ access:
   # viewer decides on this field whether it loads a quicklook straight from the source; for Sentinel-2 it may, and
   # that is why there is no asset proxy (D14).
   cors: true
+  # Metadata and assets anonymous (adr/0027 §6.1): no account, no account path.
+  account: none
+  account_provider: null
+  account_paths: []
 # adr/0005 rule I branches on this per collection: an unknown one is a 404, not the empty, valid-looking result Earth
 # Search returns for it.
 source:
