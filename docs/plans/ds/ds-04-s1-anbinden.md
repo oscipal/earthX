@@ -1,6 +1,6 @@
 # DS-04 — Sentinel-1 GRD anbinden: Plan-Schritt
 
-**Status (07.11.2026):** Plan, Fragen an Otto in §9. Ersetzt die frühere Datei, die den Text von DS-00 enthielt (`adr/0030` §9, Nebenbefund).
+**Status (07.11.2026):** Plan angenommen (Otto, 07.11.2026; Antworten in §9a). Umsetzung von Teil 1 (TPS, DS-04a) im selben Draft-PR nach dem Merge von M5-13. Ersetzt die frühere Datei, die den Text von DS-00 enthielt (`adr/0030` §9, Nebenbefund).
 **Aufgabe:** DS-04 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2. **Stufe B** (`adr/0030` §11; vorher A laut DS-00). Der Plan darf sofort entstehen; die Umsetzung beginnt erst, wenn M5-13 (YAML-Lader) gemergt ist. Dann wird `main` geholt, und der Eintrag entsteht als YAML (M5-Plan §6.3).
 **Modell:** Opus, Effort hoch.
 **Grundlagen:** `adr/0018` Teil A (§3.1, §4, F1–F3) mit Nachtrag M5-12 (§9.4); `adr/0030` §5.2, §8, §9, §11; `adr/0021` (Suchfilter); `adr/0022` und M5-07 (`data_region`); `adr/0024` (`legal_status`); `adr/0025` §7 (YAML unter `backend/catalog/`); `adr/0027` §6.1 (`access.account`); `adr/0014` §3.1, §4.6, §6.3 (Fassung, Bitgleichheit); `architekturplan.md` 3.1, 5.1, 6.4, 7.3; `projektuebersicht.md` §5 (Checkliste); `KLAERUNGEN.md` B8–B12.
@@ -161,7 +161,7 @@ Alle ohne Netz, mit synthetischen Fixtures unter `backend/tests/fixtures/` (CLAU
 
 ---
 
-## 5. Auslegungen (gelten als Vorschlag, bis Otto widerspricht)
+## 5. Auslegungen (angenommen von Otto am 07.11.2026)
 
 - **A1 — Hinweise im Rezept ändern den Cache-Schlüssel nicht.** Sie sind Folge des Datensatzes, nicht des Auftrags.
 - **A2 — TPS ist eine Eigenschaft des Datensatzes, nicht des Auftrags.** Kein Schalter im Panel.
@@ -185,11 +185,11 @@ Alle ohne Netz, mit synthetischen Fixtures unter `backend/tests/fixtures/` (CLAU
 
 ## 7. Schnitt und Umfang
 
-Richtwert 400 geänderte Zeilen (CLAUDE.md). Vorschlag (F7):
+Richtwert 400 geänderte Zeilen (CLAUDE.md). Angenommen (F1, §9a):
 
 | PR | Inhalt | Größe (Schätzung) |
 |---|---|---|
-| **DS-04a** (dieser Draft-PR) | Plan; nach den Antworten: §4.1 TPS als Reader-Fähigkeit, Feld `georeferencing`, synthetisches GCP-COG, Messung der Kachelkosten | rund 300–400 Zeilen ohne Fixture |
+| **DS-04a** (dieser Draft-PR) | Plan; nach dem Merge von M5-13: §4.1 TPS als Reader-Fähigkeit, Feld `georeferencing`, synthetisches GCP-COG, Messung der Kachelkosten | rund 300–400 Zeilen ohne Fixture |
 | **DS-04b** | §4.2–§4.5, §4.7, §4.8: Abbildung, Prüfsumme, Hinweise, YAML-Eintrag, Live-Smoke | rund 350–450 Zeilen |
 | **DS-04c** | §4.6 Frontend: Marken, Originale, Browserprüfung | rund 150–250 Zeilen |
 
@@ -203,7 +203,7 @@ Rückstreuung ↔ backscatter; Radar mit synthetischer Apertur ↔ synthetic ape
 
 ---
 
-## 9. Fragen an Otto
+## 9. Fragen an Otto — beantwortet am 07.11.2026 (§9a)
 
 **F1 — Schnitt (§7)?**
 1. Drei PRs: TPS (in diesem PR), Datensatz, Frontend **(Empfehlung)**
@@ -235,6 +235,19 @@ Rückstreuung ↔ backscatter; Radar mit synthetischer Apertur ↔ synthetic ape
 2. Otto prüft den Wortlaut im PR gesondert
 
 Die Auslegungen A1–A8 (§5) gelten, wenn Otto nicht widerspricht.
+
+## 9a. Antworten Otto (07.11.2026)
+
+F1–F6 jeweils Option 1 (Empfehlung); die Auslegungen A1–A8 (§5) sind angenommen.
+
+- **F1:** drei PRs. DS-04a (TPS, §4.1) in diesem Draft-PR, danach DS-04b (Datensatz) und DS-04c (Frontend).
+- **F2:** Graustufen des ersten vorhandenen Bandes aus `vv`, `hh` (neue allgemeine Angabe in `default_render`); fester Stretch auf DN aus einer Messung an Szenen, je Szene über `/statistics`.
+- **F3:** ein Schritt je Durchgang über `s1:datatake_id`; Ergebnisgruppen nach Zeitpunkt und `s1:datatake_id`.
+- **F4:** `value_masking` aus bis DS-05d (σ⁰).
+- **F5:** Orbitrichtung, relativer Orbit (1–175), Aufnahmemodus, Polarisation (enthält); dazu `aoi_coverage` und „Evaluate per pass“.
+- **F6:** Lizenz wie Sentinel-2: Sentinel Data Legal Notice, Stufe Processing, dieselbe Attribution und dieselben Nutzungsbedingungen.
+
+Ablauf: Nach dem Merge von M5-13 holt die Session `main` und setzt DS-04a im selben PR um.
 
 ---
 
