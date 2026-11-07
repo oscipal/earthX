@@ -271,4 +271,11 @@ Geländemodell ↔ digital terrain model (DTM); Höhenmodell ↔ elevation model
 
 ## 11. Umsetzung Teil 1 (M5-08a, 07.11.2026)
 
-Folgt mit den Commits dieses PRs.
+- **Vergleichstest zuerst** (eigener Commit vor dem Umbau): `tests/earthx/adapters/test_earth_search_golden.py` mit `tests/fixtures/earth_search/golden_requests.json`. Elf Fälle: Suche mit Folgeseite und Cache-Treffer, `bbox` und geschlossenes Zeitfenster, offenes Ende, `intersects`, `ids` ohne Zähler, Bedingungen, alles zusammen, Item mit Cache-Treffer, Item mit Band-Assets, Coverage ohne und mit Fläche, Zeit und Bedingungen. Verglichen werden Methode, URL, Kopfzeilen, Body als Text, jeder Cache-Schreibvorgang (Schlüssel, Wert, Lebensdauer) und die Antwort (Items, Zähler, Seitenmarke, Cache-Herkunft). Der Test geht nur über die Dispatch-Funktionen aus `earthx.adapters`; Testdatei und Fixture sind nach dem Umbau unverändert.
+- **Umbau:** `adapters/earth_search.py` heißt jetzt `adapters/stac_api.py` (`git mv`). `StacDialect` (`kind`, `marker_field`, `filters`, `write_conditions`, `normalize_item`) mit der Prüfung, dass Bedingungen genau dann geschrieben werden, wenn die Quelle `query` kann. `DIALECTS` mit dem einen Eintrag `EARTH_SEARCH`; `dialect_of` ersetzt `federated_search.require_adapter`, das sonst niemand nutzte.
+- **`FilterSupport`** liegt jetzt in `federated_search`; `spec.py` liest die Filter von Earth Search aus dem Dialekt, ein Test hält das für jeden Dialekt fest.
+- **`earth_search_coverage.py`** nimmt `query_extension` aus `stac_api` und die übrigen Bausteine direkt aus `federated_search`; sonst unverändert.
+- **Abweichung vom Plan:** keine. `AdapterKind.FSDI_STAC_V1` und der FSDI-Dialekt kommen wie geplant erst mit M5-08b.
+- **Für DS-04:** Der Adapter heißt `earth-search-v1` wie bisher, das YAML von Sentinel-2 ist unverändert. Eine Übersetzung je Eintrag (`asset_href_rewrites`) gehört in `stac_api` hinter `dialect.normalize_item`; dieselbe Stelle nutzt M5-08b für `asset_keys`.
+- **Doku:** `architekturplan.md` 6.1 (Dialekt), `adr/0011` §11b.
+- **Prüfung:** `ruff check backend` grün; `lint-imports` 16 Verträge eingehalten; `pytest` 9578 bestanden, 25 übersprungen (PowerShell fehlt in der Sitzung).
