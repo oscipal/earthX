@@ -511,5 +511,37 @@ index_presets:
   colormap_name: rdylgn
   formula: g * (N - R) / (N + C1 * R - C2 * B + L)
   reference: https://doi.org/10.1016/S0034-4257(96)00112-5
+# M5-15 (Otto 06.11.2026, adr/0030 F8, §5.1): four more indices from the same ASI dictionary and commit. The ranges and
+# colormaps are those of the five above: moisture and plant indices in `rdylgn`, water in `rdbu`. NDBI stays out, it is
+# exactly -NDMI. NDREI takes `rededge1` (B05); the literature is not uniform on the band, the choice is ASI's. For
+# SAVI, ASI's formula carries L as a parameter; L = 0.5 is Otto's setting (F8), written into the expression.
+- name: NDMI
+  title: Normalized Difference Moisture Index
+  expression: (nir - swir16) / (nir + swir16)
+  rescale: [-1.0, 1.0]
+  colormap_name: rdylgn
+  formula: (N - S1)/(N + S1)
+  reference: https://doi.org/10.1016/S0034-4257(01)00318-2
+- name: MNDWI
+  title: Modified Normalized Difference Water Index
+  expression: (green - swir16) / (green + swir16)
+  rescale: [-1.0, 1.0]
+  colormap_name: rdbu
+  formula: (G - S1) / (G + S1)
+  reference: https://doi.org/10.1080/01431160600589179
+- name: NDREI
+  title: Normalized Difference Red Edge Index
+  expression: (nir - rededge1) / (nir + rededge1)
+  rescale: [-1.0, 1.0]
+  colormap_name: rdylgn
+  formula: (N - RE1) / (N + RE1)
+  reference: https://doi.org/10.1016/1011-1344(93)06963-4
+- name: SAVI
+  title: Soil-Adjusted Vegetation Index
+  expression: 1.5 * (nir - red) / (nir + red + 0.5)
+  rescale: [-1.0, 1.0]
+  colormap_name: rdylgn
+  formula: (1.0 + L) * (N - R) / (N + R + L)
+  reference: https://doi.org/10.1016/0034-4257(88)90106-X
 # NM4-64 (Otto 31.10.2026): the picture the eye sees, B04, B03, B02 at 10 m.
 true_color: [red, green, blue]
