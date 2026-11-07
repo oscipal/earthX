@@ -98,6 +98,9 @@ license:
         Use is subject to the Licence for Copernicus DEM instance COP-DEM-GLO-30-F Global 30m Full, Free & Open:
         {terms_url}. The organisations in charge of the Copernicus programme, the European Union and ESA, do not
         incur any liability for the use of this data.
+# The licence is checked and the tier set by Otto (adr/0024 R1, R3): no prototype source.
+legal_status: cleared
+legal_note: null
 access:
   token_free_checked_at: 2026-09-26
   method: anonymous HTTPS, no authentication header (M3-11b plan §2.1)

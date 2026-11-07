@@ -159,6 +159,21 @@ class DatasetCategory(Enum):
     WEATHER_CLIMATE = "weather_climate"
 
 
+class LegalStatus(Enum):
+    """Whether the legal footing of the source is settled (adr/0024 R1, R3). Only Otto sets it, like every licence tier.
+
+    ``UNCLEAR`` marks a prototype source: loaded only in Otto's local instance (adr/0024 R5), its id carries
+    :data:`PROTOTYPE_PREFIX`. It says nothing about what the source needs to be read; that is ``AccessInfo.account``.
+    """
+
+    CLEARED = "cleared"
+    UNCLEAR = "unclear"
+
+
+#: The prefix of every prototype dataset id (adr/0024 R3): visible in each address, recipe, file name and cache key.
+PROTOTYPE_PREFIX = "proto-"
+
+
 class ProviderRole(Enum):
     """The roles of a STAC provider (STAC Collection spec, Provider Object)."""
 
@@ -1115,6 +1130,10 @@ class DatasetConfig:
     temporal_extent: TemporalExtent
     capabilities: Capabilities
     license: LicenseInfo
+    # Whether the legal footing is settled (adr/0024 R3), and for ``unclear`` one sentence on what is unclear, no legal
+    # opinion; ``None`` for ``cleared``. No default (KLAERUNGEN B10).
+    legal_status: LegalStatus
+    legal_note: str | None
     access: AccessInfo
     source: SourceInfo
     coverage: CoverageInfo
@@ -1166,6 +1185,7 @@ class DatasetConfig:
         self._check_doi()
         self._check_license_is_identifiable()
         self._check_license_tier()
+        self._check_legal_status()
         self._check_attribution()
         self._check_coverage()
         self._check_source()
@@ -1455,6 +1475,21 @@ class DatasetConfig:
             raise ConfigError(
                 f"{self.dataset_id}: a licence without an SPDX identifier needs a name and a URL"
             )
+
+    def _check_legal_status(self) -> None:
+        """``unclear`` if and only if the id has the prototype prefix, and only then a note (adr/0024 R3)."""
+        if not isinstance(self.legal_status, LegalStatus):
+            raise ConfigError(f"{self.dataset_id}: legal_status must be one of {[s.value for s in LegalStatus]}")
+        prototype = self.dataset_id.startswith(PROTOTYPE_PREFIX)
+        if self.legal_status is LegalStatus.UNCLEAR and not prototype:
+            raise ConfigError(f"{self.dataset_id}: legal_status unclear needs an id starting with {PROTOTYPE_PREFIX!r}")
+        if self.legal_status is LegalStatus.CLEARED and prototype:
+            raise ConfigError(f"{self.dataset_id}: an id starting with {PROTOTYPE_PREFIX!r} needs legal_status unclear")
+        if self.legal_status is LegalStatus.UNCLEAR:
+            if not isinstance(self.legal_note, str) or not self.legal_note.strip():
+                raise ConfigError(f"{self.dataset_id}: legal_status unclear needs a legal_note saying what is unclear")
+        elif self.legal_note is not None:
+            raise ConfigError(f"{self.dataset_id}: legal_note belongs to legal_status unclear only")
 
     def _check_license_tier(self) -> None:
         """KLAERUNGEN B11: display and processing need distribution and modification;

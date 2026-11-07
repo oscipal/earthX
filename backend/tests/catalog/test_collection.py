@@ -27,6 +27,8 @@ EARTHX_FIELDS = (
     "earthx:data_class",
     "earthx:capabilities",
     "earthx:license_flags",
+    "earthx:legal_status",
+    "earthx:legal_note",
     "earthx:access",
     "earthx:distributions",
     "earthx:health",

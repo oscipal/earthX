@@ -102,6 +102,9 @@ license:
         renounces any claims for damages against the European Union and the providers of the data. The waiver
         encompasses any dispute, including contracts and torts claims, that might be filed in court, in arbitration
         or in any other form of dispute settlement.
+# The licence is checked and the tier set by Otto (adr/0024 R1, R3): no prototype source.
+legal_status: cleared
+legal_note: null
 access:
   # Reachability of earth-search.aws.element84.com, measured in adr/0003 §10.1.
   token_free_checked_at: 2026-09-18

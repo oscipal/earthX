@@ -90,6 +90,9 @@ license:
     © ESA WorldCover project 2020 / Contains modified Copernicus Sentinel data (2020) processed by ESA WorldCover
     consortium
   terms: null
+# The licence is checked and the tier set by Otto (adr/0024 R1, R3): no prototype source.
+legal_status: cleared
+legal_note: null
 access:
   token_free_checked_at: 2026-11-06
   method: anonymous HTTPS to the AWS Open Data bucket, no authentication header (M5-07 plan §2)
