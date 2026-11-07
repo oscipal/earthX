@@ -275,7 +275,15 @@ Geländemodell ↔ digital terrain model (DTM); Höhenmodell ↔ elevation model
 - **Umbau:** `adapters/earth_search.py` heißt jetzt `adapters/stac_api.py` (`git mv`). `StacDialect` (`kind`, `marker_field`, `filters`, `write_conditions`, `normalize_item`) mit der Prüfung, dass Bedingungen genau dann geschrieben werden, wenn die Quelle `query` kann. `DIALECTS` mit dem einen Eintrag `EARTH_SEARCH`; `dialect_of` ersetzt `federated_search.require_adapter`, das sonst niemand nutzte.
 - **`FilterSupport`** liegt jetzt in `federated_search`; `spec.py` liest die Filter von Earth Search aus dem Dialekt, ein Test hält das für jeden Dialekt fest.
 - **`earth_search_coverage.py`** nimmt `query_extension` aus `stac_api` und die übrigen Bausteine direkt aus `federated_search`; sonst unverändert.
-- **Abweichung vom Plan:** keine. `AdapterKind.FSDI_STAC_V1` und der FSDI-Dialekt kommen wie geplant erst mit M5-08b.
+- **Abweichung vom Plan (§4.1):** Die Funktionen nehmen den Dialekt nicht als Argument, und `spec.py` bindet ihn nicht per `functools.partial`. `stac_api.search_items` und `get_item` schlagen ihn in `DIALECTS` über `config.source.adapter` nach.
+  - Begründung: Signaturen und die Protokolle `SearchItems`/`FetchItem` bleiben, wie sie sind, und rund 70 direkte Aufrufe in den Tests bleiben unverändert.
+  - Preis: zwei Tabellen (`ADAPTER_SPECS`, `DIALECTS`). Dagegen hilft `check_adapter_specs`: Es weist beim Start jeden Eintrag ab, dessen Spec mit den STAC-Funktionen sucht, aber keinen Dialekt hat. `dialect_table` weist eine Art mit zwei Dialekten ab.
+  - `AdapterKind.FSDI_STAC_V1` und der FSDI-Dialekt kommen wie geplant erst mit M5-08b.
+- **Aus dem Review (Subagent `reviewer`):**
+  - Bedingungen für eine Quelle ohne `query` werden jetzt am Anfang von `search_items` abgewiesen, vor Cache und Anfrage. Vorher kam die Prüfung erst beim Bau des Bodys.
+  - Neue Schutzprüfungen: Das Feld der Marke darf kein Feld unseres Bodys sein (`BODY_FIELDS`); die geschriebenen Bedingungen dürfen kein Feld des Bodys ersetzen.
+  - Neue Tests für Fehlerfälle und zweckfremde Nutzung, dazu veraltete Verweise in `earth_search_coverage.py`. Der Kommentar in `migrations/002_search_cache.sql` nennt weiter `earth_search.py`; Migrationen bleiben wegen ihrer Prüfsumme unverändert.
+  - Bewusst in Kauf genommen: Bei einem direkten Aufruf mit dem Eintrag eines anderen Adapters lautet die Meldung jetzt „… which is no STAC API“ statt „… not earth-search-v1“. Typ (`UnsupportedSource`) und Verhalten bleiben; über die Dispatch-Funktionen ist sie nicht erreichbar.
 - **Für DS-04:** Der Adapter heißt `earth-search-v1` wie bisher, das YAML von Sentinel-2 ist unverändert. Eine Übersetzung je Eintrag (`asset_href_rewrites`) gehört in `stac_api` hinter `dialect.normalize_item`; dieselbe Stelle nutzt M5-08b für `asset_keys`.
 - **Doku:** `architekturplan.md` 6.1 (Dialekt), `adr/0011` §11b.
 - **Prüfung:** `ruff check backend` grün; `lint-imports` 16 Verträge eingehalten; `pytest` 9578 bestanden, 25 übersprungen (PowerShell fehlt in der Sitzung).
