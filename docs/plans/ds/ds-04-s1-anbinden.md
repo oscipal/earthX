@@ -190,7 +190,7 @@ Richtwert 400 geänderte Zeilen (CLAUDE.md). Angenommen (F1, §9a):
 | PR | Inhalt | Größe (Schätzung) |
 |---|---|---|
 | **DS-04a** (dieser Draft-PR) | Plan; nach dem Merge von M5-13: §4.1 TPS als Reader-Fähigkeit, Feld `georeferencing`, synthetisches GCP-COG, Messung der Kachelkosten | rund 300–400 Zeilen ohne Fixture |
-| **DS-04b** | §4.2–§4.5, §4.7, §4.8: Abbildung, Prüfsumme, Hinweise, YAML-Eintrag, Live-Smoke | rund 350–450 Zeilen |
+| **DS-04b** | §4.2–§4.5, §4.7, §4.8: Abbildung, Prüfsumme, Hinweise, YAML-Eintrag, Live-Smoke; Prüfauftrag Zwischenspeicher der TPS (§11) | rund 350–450 Zeilen |
 | **DS-04c** | §4.6 Frontend: Marken, Originale, Browserprüfung | rund 150–250 Zeilen |
 
 DS-05a hängt am Merge von DS-04b (Datensatz) und M5-14.
@@ -273,7 +273,7 @@ Nach dem Merge von M5-13 (#311) auf `main` 309f0ec, im selben Draft-PR.
 - **Weg der Angabe:** `resolve_asset` nimmt sie aus der Registry in `ResolvedAsset.georeferencing`; `open_asset_ref` gibt sie an `asset_path`, der `AssetPath` trägt sie zum `CogReader`. Im Rezept steht sie in `asset` (A8).
 - **Widerspruch Registry ↔ Datei (A3):** `GeoreferenceMismatch` in `readers`, Fehlerart `source_georeference`: im Job `502` „The source file is not placed the way the platform expects“, kein zweiter Versuch (nicht in `RETRYABLE`, im Frontend „fails again“), im Runner Exit-Code „Quelle“; in der Kachelroute `502` „the asset is not placed the way the platform expects“. Keine Meldung nennt Datensatz, Adresse oder Pfad.
 
-**Abweichung vom Plan (Auslegung zu A8):** `geotransform` ist die Bedeutung eines fehlenden Schlüssels und wird im Rezept nicht geschrieben (`exclude_if`). So bleiben jedes bisherige `recipe.json` und jeder bisherige Hash und Cache-Schlüssel gleich; die festen Hashes in `test_recipe.py` sind unverändert. `gcp_tps` steht im Rezept und geht in Hash und Cache-Schlüssel ein (Test). Nachtrag in `adr/0014` §4.
+**Abweichung vom Plan (Auslegung zu A8), bestätigt von Otto am 07.11.2026:** `geotransform` ist die Bedeutung eines fehlenden Schlüssels und wird im Rezept nicht geschrieben (`exclude_if`). So bleiben jedes bisherige `recipe.json` und jeder bisherige Hash und Cache-Schlüssel gleich; die festen Hashes in `test_recipe.py` sind unverändert. `gcp_tps` steht im Rezept und geht in Hash und Cache-Schlüssel ein (Test). Nachtrag in `adr/0014` §4.
 
 **Bitgleichheit:** Der Job liest das TPS-Raster des Readers mit exakten Fenstern; seine Pixel sind die der Kachel auf der nativen Ebene (Test). Zwei Läufe desselben Rezepts geben dieselben Bytes; der Runner rechnet mit demselben Kern. Kachel, Zuschnitt und Job warpen das TPS-Raster jeweils auf ihr eigenes Raster: zweimal `nearest` statt einmal, die Lage bleibt die der TPS bis auf ein Quellpixel.
 
@@ -289,7 +289,9 @@ Nach dem Merge von M5-13 (#311) auf `main` 309f0ec, im selben Draft-PR.
 | z11 | 0,06 s | 0,19 s |
 | z13 | 1,99 s | 2,04 s |
 
-TPS kostet bei groben und mittleren Zoomstufen rund 0,1 bis 0,25 s Rechenzeit mehr je Kachel; bei z13 überwiegt das Netz. Bytes je Kachel sind nicht gemessen. Ob sich die Rechenzeit drücken lässt (etwa die Fehlerschwelle des Näherungs-Transformers), prüft DS-04b an mehreren Szenen.
+TPS kostet bei groben und mittleren Zoomstufen rund 0,1 bis 0,25 s Rechenzeit mehr je Kachel; bei z13 überwiegt das Netz. Bytes je Kachel sind nicht gemessen. Ob sich die Rechenzeit drücken lässt, prüft DS-04b an mehreren Szenen (Prüfauftrag unten).
+
+**Prüfauftrag für DS-04b (Otto, 07.11.2026):** Kann die TPS-Transformation je Szene im Prozess `tiler` zwischengespeichert werden, statt sie je Kachel neu aus den GCPs zu bilden? Mit Messung vorher und nachher, an mehreren Szenen und denselben Zoomstufen wie oben. Dabei zu klären: was genau GDAL je `WarpedVRT` neu rechnet (Lösung des TPS-Gleichungssystems, vorgeschlagenes Ausgaberaster, Übersichten), wo der Speicher dafür liegt (je Prozess, begrenzt, Schlüssel aus Datensatz, Item, Asset und Fassung) und dass Kachel, Zuschnitt und Job weiter dasselbe Raster sehen.
 
 **Noch nicht gebaut** (DS-04b, DS-04c): Eintrag `sentinel-1-grd`, Abbildung `s3://` → `https://`, Prüfsumme CRC64NVME, `notices`, Live-Smoke, Frontend.
 
