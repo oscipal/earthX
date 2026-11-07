@@ -189,7 +189,7 @@ describe('the symbol', () => {
     expect(retryIn(rows()[0])).not.toBeNull();
   });
 
-  it.each(['recipe_invalid', 'unsupported_recipe', 'scaling_mismatch', 'grid_mismatch', 'aoi_outside_inputs', 'rejected', 'source_4xx', 'runtime_exceeded'])(
+  it.each(['recipe_invalid', 'unsupported_recipe', 'scaling_mismatch', 'grid_mismatch', 'aoi_outside_inputs', 'rejected', 'source_4xx', 'source_georeference', 'runtime_exceeded'])(
     'is not on a job that failed for %s, which would end the same',
     (kind) => {
       put({ jobs: [failed(1, { failureKind: kind })] });

@@ -16,17 +16,39 @@ Only ``https``: ``gateway.inspect_url`` refuses every other scheme, so ``s3://``
 never gets here (adr/0006 §5 "Zu Frage 6"). What this module cannot do is take
 the socket away from GDAL; B8 says so, and the network policy of M6 is what
 closes it.
+
+**One position for a file with ground control points (adr/0018 F1, DS-04a).** rio-tiler places such a
+file with an affine fit through its GCPs, a plain ``WarpedVRT`` with GDAL's polynomial; the two lie up to
+kilometres apart (adr/0018 §4.1). :class:`CogReader` therefore opens a GCP file itself, as a ``WarpedVRT``
+with a thin-plate spline through the GCPs, and hands that to rio-tiler as its ``dataset``. Tile, crop,
+export, mosaic and job all read through ``CogReader.dataset``, so all of them see the same grid. The path
+carries the method the registry names; a file that disagrees with it is not read.
 """
 
 from __future__ import annotations
 
+from typing import Literal, get_args
+
+import rasterio
+from rasterio.vrt import WarpedVRT
 from rio_tiler.io.rasterio import Reader
+from rio_tiler.utils import has_alpha_band
 
 from earthx.gateway import GatewayError, Policy, Resolver, check_url, resolve_host
 from earthx.gateway.gdal import vsicurl_path
-from earthx.readers.errors import AssetRejected
+from earthx.readers.errors import AssetRejected, GeoreferenceMismatch
 
-__all__ = ["AssetPath", "CogReader", "asset_path"]
+__all__ = ["AssetPath", "CogReader", "Georeferencing", "asset_path", "warp_options"]
+
+#: How a file is placed; the values of ``earthx.catalog.registry.Georeferencing``, which this module may not import.
+Georeferencing = Literal["geotransform", "gcp_tps"]
+
+
+def warp_options(georeferencing: Georeferencing) -> dict[str, str]:
+    """The GDAL transformer options of ``georeferencing`` for a ``WarpedVRT`` over the source file itself."""
+    if georeferencing not in get_args(Georeferencing):
+        raise ValueError(f"georeferencing is one of {get_args(Georeferencing)}")
+    return {"SRC_METHOD": "GCP_TPS"} if georeferencing == "gcp_tps" else {}
 
 
 class AssetPath(str):
@@ -38,13 +60,24 @@ class AssetPath(str):
     statistics cache is keyed on these three values (adr/0006 §5 "Zu Frage 3").
     """
 
-    __slots__ = ("asset", "dataset_id", "item_id")
+    __slots__ = ("asset", "dataset_id", "georeferencing", "item_id")
 
-    def __new__(cls, path: str, *, dataset_id: str, item_id: str, asset: str) -> AssetPath:
+    def __new__(
+        cls,
+        path: str,
+        *,
+        dataset_id: str,
+        item_id: str,
+        asset: str,
+        georeferencing: Georeferencing = "geotransform",
+    ) -> AssetPath:
+        if georeferencing not in get_args(Georeferencing):
+            raise ValueError(f"georeferencing is one of {get_args(Georeferencing)}")
         self = super().__new__(cls, path)
         self.dataset_id = dataset_id
         self.item_id = item_id
         self.asset = asset
+        self.georeferencing = georeferencing
         return self
 
 
@@ -55,6 +88,7 @@ def asset_path(
     dataset_id: str,
     item_id: str,
     asset: str,
+    georeferencing: Georeferencing = "geotransform",
     resolve: Resolver = resolve_host,
 ) -> AssetPath:
     """Clear an asset address and return the path GDAL reads, or raise the reason why not.
@@ -68,6 +102,9 @@ def asset_path(
     :class:`~earthx.gateway.CachingResolver` here, because every tile of one item
     otherwise resolves the same asset host again (M2-14); every check around the
     resolution stays exactly where it was.
+
+    ``georeferencing`` is what the registry names for the asset's dataset; it travels with the path to
+    :class:`CogReader`.
     """
     try:
         checked = check_url(href, policy, resolve=resolve)
@@ -78,6 +115,7 @@ def asset_path(
         dataset_id=dataset_id,
         item_id=item_id,
         asset=asset,
+        georeferencing=georeferencing,
     )
 
 
@@ -91,6 +129,11 @@ class CogReader(Reader):
     One exception to "every path comes from ``asset_path``", agreed in adr/0015 §14c:
     ``api/result_tiles.py`` builds the path of a job result from a URL that
     ``earthx.objectstore`` signed. A test lists the places that build an ``AssetPath``.
+
+    The file is opened here rather than by rio-tiler, to check it against ``input.georeferencing``: a
+    ``gcp_tps`` file must carry GCPs and is read through a thin-plate spline (module docstring), a
+    ``geotransform`` file must not carry them. Either mismatch is :class:`GeoreferenceMismatch`, never a
+    silent approximation.
     """
 
     def __attrs_post_init__(self) -> None:
@@ -99,4 +142,27 @@ class CogReader(Reader):
                 "a COG is opened from an AssetPath built by earthx.readers.cog.asset_path, "
                 "not from a plain string (KLAERUNGEN B8)"
             )
+        if not self.dataset:
+            self.dataset = self._ctx_stack.enter_context(rasterio.open(self.input))
+        gcps, gcp_crs = self.dataset.gcps
+        if self.input.georeferencing == "gcp_tps":
+            if not gcps or gcp_crs is None:
+                self._ctx_stack.close()
+                raise GeoreferenceMismatch("the registry places this asset by its GCPs, but it carries none")
+            self.dataset = self._ctx_stack.enter_context(
+                WarpedVRT(self.dataset, crs=gcp_crs, **_gcp_vrt_options(self.dataset))
+            )
+        elif gcps:
+            self._ctx_stack.close()
+            raise GeoreferenceMismatch("this asset carries GCPs, but the registry places it by its geotransform")
         super().__attrs_post_init__()
+
+
+def _gcp_vrt_options(dataset: rasterio.DatasetReader) -> dict[str, object]:
+    """rio-tiler's own options for a GCP file (nodata, or an alpha band), with the thin-plate spline."""
+    options: dict[str, object] = {"add_alpha": True, **warp_options("gcp_tps")}
+    if dataset.nodata is not None:
+        options.update(nodata=dataset.nodata, src_nodata=dataset.nodata, add_alpha=False)
+    if has_alpha_band(dataset):
+        options["add_alpha"] = False
+    return options

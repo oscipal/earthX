@@ -31,7 +31,7 @@ from rasterio.warp import transform_bounds
 
 from earthx.catalog.registry import DataFormat, DatasetConfig
 from earthx.readers import AssetRejected, Policy, Resolver
-from earthx.readers.cog import AssetPath, asset_path
+from earthx.readers.cog import AssetPath, Georeferencing, asset_path
 from earthx.readers.zarr_reader import ZarrAsset, split_asset_key, zarr_asset
 
 if TYPE_CHECKING:
@@ -92,6 +92,9 @@ class ResolvedAsset:
     separator that is ``"<item asset><separator><variable>"``, the same value the
     statistics cache keys on. ``href`` is the item asset's address as the item names
     it; whether it may be fetched is decided only when it is opened.
+
+    ``georeferencing`` is how the registry places the dataset's files (adr/0018 F1, DS-04a); it travels with the
+    recipe, so that a job and the local runner place them the same way as the tile.
     """
 
     dataset_id: str
@@ -101,6 +104,7 @@ class ResolvedAsset:
     href: str
     variable: str | None
     crs: str | None
+    georeferencing: Georeferencing
 
     def __post_init__(self) -> None:
         for name in ("dataset_id", "item_id", "asset", "href"):
@@ -115,6 +119,10 @@ class ResolvedAsset:
                 raise ValueError(f"ResolvedAsset.{name} must be a non-empty string or null")
         if self.reader == "cog" and self.variable is not None:
             raise ValueError("ResolvedAsset.variable is only for a Zarr asset")
+        if self.georeferencing not in get_args(Georeferencing):
+            raise ValueError(f"ResolvedAsset.georeferencing must be one of {get_args(Georeferencing)}")
+        if self.reader == "zarr" and self.georeferencing != "geotransform":
+            raise ValueError("ResolvedAsset.georeferencing gcp_tps is only for a COG")
 
     def to_json(self) -> dict[str, Any]:
         return asdict(self)
@@ -168,6 +176,7 @@ def resolve_asset(item: Mapping[str, Any], config: DatasetConfig, asset: str) ->
         href=_asset_href(item, item_asset),
         variable=variable,
         crs=_proj_code(item),
+        georeferencing=config.georeferencing.value,
     )
 
 
@@ -204,6 +213,7 @@ def open_asset_ref(
         dataset_id=ref.dataset_id,
         item_id=ref.item_id,
         asset=ref.asset,
+        georeferencing=ref.georeferencing,
         resolve=resolve,
     )
 
