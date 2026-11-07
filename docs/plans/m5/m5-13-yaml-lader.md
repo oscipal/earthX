@@ -1,6 +1,6 @@
 # M5-13 — YAML-Lader für die Registry: Plan-Schritt
 
-**Status (07.11.2026):** Plan, wartet auf Ottos Antworten (§8). Umsetzung danach im selben Draft-PR.
+**Status (07.11.2026):** Plan angenommen (Otto, 07.11.2026; Antworten in §8a), umgesetzt im selben Draft-PR.
 **Aufgabe:** M5-13 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2. **Stufe B.** Hängt von UI-05b ab (gemergt mit #310). M5-08, M5-22, M5-15, M5-17, M5-19 und M5-14 warten auf den Merge.
 **Grundlagen:** `adr/0025` §7 (Lader, Ablage, Pflichtfelder, Startprüfung), §8 Schnitt Schritt 1, F8; `adr/0024` R3, R4, R5, R10, §6a, Tests 1–5; `adr/0027` §6.1 (F8); `KLAERUNGEN.md` B10, B13; `architekturplan.md` 3.1, 5.1.
 
@@ -80,7 +80,7 @@ Die Registry-Einträge wandern aus Python in YAML (B13 Stufe 2). Aufrufer merken
 | `account` | Stufe (`license.tier`) | `account_paths` | `account_provider` | `token_free_checked_at` |
 |---|---|---|---|---|
 | `none` | jede | leer | leer | gesetzt |
-| `anonymous_token` | nach F3 | leer | leer | gesetzt |
+| `anonymous_token` | höchstens `catalog` (F3, §8a) | leer | leer | gesetzt |
 | `free_account` | höchstens `catalog`, solange `account_paths` leer | in M5 leer | gesetzt | leer |
 | `requester_pays` | höchstens `catalog` | immer leer | gesetzt oder leer | leer |
 
@@ -171,7 +171,7 @@ Commits (je eine Sache): (1) `pyyaml` und `pydantic` direkt in `requirements.txt
 2. Zusätzlich dauerhaft eine Golden-Datei der vier Collections; jede spätere Änderung an einem Eintrag erzeugt sie neu
 
 **F3 — `access.account: anonymous_token` bis zum Nachtrag aus `adr/0018` §12?**
-1. Prüfung wie `free_account` bei der Stufe (höchstens `catalog`), aber mit Prüfdatum; DS-04 hebt das mit dem Nachtrag auf (`adr/0027` §6.1: „bis dahin wie `free_account`“) **(Empfehlung)**
+1. Prüfung wie `free_account` bei der Stufe (höchstens `catalog`), aber mit Prüfdatum; DS-04 hebt das mit dem Nachtrag auf (`adr/0027` §6.1: „bis dahin wie `free_account`“) **(Empfehlung)** — Korrektur Otto in §8a
 2. Nur die Prüfungen aus `adr/0025` §7.3 (Pfade leer, kein Anbieter), keine Grenze der Stufe
 
 **F4 — Compose-Override für Prototyp-Einträge (`adr/0024` R4)?**
@@ -181,3 +181,9 @@ Commits (je eine Sache): (1) `pyyaml` und `pydantic` direkt in `requirements.txt
 **F5 — Schnitt (rund 750 Zeilen plus mechanischer Umzug, §7)?**
 1. Ein PR mit getrennten Commits; der Umzug ist durch den Vergleichstest belegt **(Empfehlung)**
 2. Zwei PRs: M5-13a Lader und Umzug bitgleich (ohne neue Felder); M5-13b `legal_status`, `access.account`, Startprüfung, `Dockerfile`. M5-08 wartet auf beide
+
+## 8a. Antworten Otto (07.11.2026)
+
+F1–F5 jeweils **Option 1**, Auslegungen A1–A7 (§5) angenommen.
+
+**Korrektur zu F3:** Die Grenze für `anonymous_token` (Stufe höchstens `catalog`) hebt **nicht DS-04** auf; Sentinel-1 GRD über Earth Search braucht kein Token (`adr/0018` Teil A). Aufgehoben wird sie erst, wenn der Satz aus `adr/0018` §12 in `ENTSCHEIDUNGEN_2026-09-18.md` übernommen ist (Teil B, Planetary Computer RTC). So steht es auch im Kommentar an der Prüfung in `catalog/registry.py`.
