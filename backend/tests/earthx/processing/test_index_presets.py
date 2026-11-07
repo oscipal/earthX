@@ -13,11 +13,11 @@ import numpy
 import pytest
 from rio_tiler.models import ImageData
 
-from earthx.catalog.datasets import COP_DEM_GLO_30, REGISTRY, SENTINEL_2_L2A
 from earthx.catalog.registry import DatasetRegistry, IndexPreset
 from earthx.processing.index_presets import IndexPresetMismatch, check_index_presets
 from earthx.processing.operators import BAND_MATH_V2
 from earthx.processing.operators.band_math import BandMathParamsV2
+from tests.catalog.entries import COP_DEM_GLO_30, REGISTRY, SENTINEL_2_L2A
 
 PRESETS = {preset.name: preset for preset in SENTINEL_2_L2A.index_presets}
 

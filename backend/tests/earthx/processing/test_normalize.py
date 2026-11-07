@@ -22,9 +22,9 @@ from rasterio.transform import Affine
 from rio_tiler.io import Reader
 from rio_tiler.models import ImageData
 
-from earthx.catalog.datasets import COP_DEM_GLO_30, SENTINEL_2_L2A
 from earthx.processing import run
 from earthx.processing.operators import NORMALIZE, REGISTRY, BandMeta, NormalizeParams, RasterMeta, applicable
+from tests.catalog.entries import COP_DEM_GLO_30, SENTINEL_2_L2A
 from tests.earthx.processing import sources
 from tests.earthx.processing.recipes import recipe_of_data, resolved
 from tests.earthx.processing.test_band_math import _SETTING_D, _glibc_masks_features

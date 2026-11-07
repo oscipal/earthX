@@ -23,9 +23,9 @@ from rio_tiler.models import ImageData
 
 from earthx.access import crop_rules
 from earthx.access import download as dl
-from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.registry import AcquisitionYears, LicenseInfo, LicenseTier
 from earthx.readers.cog import AssetPath
+from tests.catalog.entries import SENTINEL_2_L2A
 
 YEARS = AcquisitionYears(2025, 2025)
 GOOD_AOI = {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]]}

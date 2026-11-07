@@ -22,13 +22,13 @@ from psycopg_pool import ConnectionPool
 
 from earthx.api.job_events import JobEvents
 from earthx.api.processing_route import _FAILURES, LINK_NAMES, MAX_BODY_BYTES, JobApi
-from earthx.catalog.datasets import REGISTRY
 from earthx.catalog.registry import DatasetRegistry, LicenseTier
 from earthx.jobs.submit import RecipeIdTaken
 from earthx.objectstore.errors import StoreUnavailable
 from earthx.processing.errors import AoiOutsideInputs, ExportTooLarge, JobTooLarge, RecipeInvalid, UnsupportedRecipe
 from earthx.processing.operators import REGISTRY as REAL_OPERATORS
 from earthx.processing.recipe import job_recipe_document
+from tests.catalog.entries import REGISTRY
 from tests.conftest import own_log_text
 from tests.earthx.api.conftest import Rig, build_app
 from tests.earthx.api.test_intake import (

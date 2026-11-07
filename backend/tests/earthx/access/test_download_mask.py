@@ -32,9 +32,9 @@ from rasterio.warp import transform_bounds
 
 from earthx.access import download as dl
 from earthx.access.tiles import open_asset
-from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.registry import AcquisitionYears
 from earthx.readers.cog import asset_path
+from tests.catalog.entries import SENTINEL_2_L2A
 from tests.earthx.readers import mini_cog
 from tests.earthx.readers.mini_cog import ASSET_URL, ORIGIN_X, ORIGIN_Y, RESOLUTION, SIZE
 from tests.earthx.readers.mini_zarr import ITEM_CRS, POLICY, from_memory

@@ -35,10 +35,10 @@ from earthx.api.aoi_cloud_filter import (
     run_filter,
 )
 from earthx.api.search_filters import SearchConditions
-from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.registry import AoiMeasure
 from earthx.catalog.search_filters import InvalidFilter, RangeCondition
 from earthx.gateway import Policy, ReadSlots
+from tests.catalog.entries import SENTINEL_2_L2A
 
 pytestmark = pytest.mark.anyio
 

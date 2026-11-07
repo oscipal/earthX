@@ -34,12 +34,12 @@ from earthx.api.intake import (
     job_side_files,
 )
 from earthx.api.item_source import MaterializedCatalogUnavailable, MaterializedItemNotFound, Stage, fetch_item_or_refuse
-from earthx.catalog.datasets import REGISTRY
 from earthx.catalog.registry import AcquisitionYears, DatasetConfig, DatasetRegistry, LicenseTier
 from earthx.gateway import Gateway, Policy, UpstreamError
 from earthx.processing.operators import OperatorRegistry, Tier
 from earthx.processing.plan import export_outputs
 from earthx.processing.recipe import cache_key, recipe_from_data, recipe_hash
+from tests.catalog.entries import REGISTRY
 from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR, registry_with_zarr
 from tests.conftest import own_log_text
 from tests.earthx.processing.testops import OPERATORS, SCALE

@@ -34,10 +34,10 @@ from earthx.catalog.coverage import (
     CoverageSource,
     UpstreamCoverageShapeError,
 )
-from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.registry import CoverageProvider, ItemHolding, SearchCapabilities
 from earthx.catalog.search_filters import RangeCondition, ValuesCondition
 from earthx.gateway import UpstreamError, UpstreamTimeout
+from tests.catalog.entries import SENTINEL_2_L2A
 
 from .conftest import answering, gateway_for, load
 

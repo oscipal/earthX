@@ -16,9 +16,9 @@ import psycopg
 import pytest
 
 from earthx.catalog.collection import to_stac_collection
-from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.pgstac import PgstacError, fetch_item, load_collection, upsert_items
 from earthx.catalog.registry import CoverageProvider, ItemHolding, SearchCapabilities
+from tests.catalog.entries import SENTINEL_2_L2A
 
 pytestmark = pytest.mark.anyio
 

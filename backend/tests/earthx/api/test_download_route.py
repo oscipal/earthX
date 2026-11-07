@@ -31,10 +31,10 @@ from earthx.access import download as download_module
 from earthx.access.crop_rules import TEXT_FILES
 from earthx.api.item_source import OrderRefused
 from earthx.api.tiler import build_app
-from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
 from earthx.catalog.registry import DatasetRegistry, LicenseInfo, LicenseTier
 from earthx.gateway import UpstreamError, check_url
 from earthx.processing.methods import DatasetFacts, methods_text
+from tests.catalog.entries import REGISTRY, SENTINEL_2_L2A
 from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR
 
 FIXTURE = Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "earth_search" / "item_asset_hosts.json"

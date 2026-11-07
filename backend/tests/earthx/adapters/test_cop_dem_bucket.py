@@ -17,10 +17,10 @@ import pytest
 
 from earthx.adapters import ADAPTER_SPECS, NotMaterialized, UnsupportedSource, UpstreamShapeError, materialize_items
 from earthx.adapters.cop_dem_bucket import COG_MEDIA_TYPE, MAX_NOT_LOADABLE_FRACTION
-from earthx.catalog.datasets import COP_DEM_GLO_30, DEM_ACQUISITION_END, DEM_ACQUISITION_START, SENTINEL_2_L2A
 from earthx.catalog.registry import TemporalExtent
 from earthx.gateway import Policy
 from earthx.gateway.client import Gateway
+from tests.catalog.entries import COP_DEM_GLO_30, DEM_ACQUISITION_END, DEM_ACQUISITION_START, SENTINEL_2_L2A
 
 pytestmark = pytest.mark.anyio
 

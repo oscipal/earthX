@@ -39,9 +39,9 @@ from earthx.access.crop_rules import mosaic_order
 from earthx.adapters.errors import UnknownCollection
 from earthx.api import mosaic_tiles
 from earthx.api.tiler import MOSAIC_ROUTER_PREFIX, build_app
-from earthx.catalog.datasets import COP_DEM_GLO_30, SENTINEL_2_L2A
 from earthx.catalog.registry import DatasetRegistry, LicenseTier, SearchCapabilities
 from earthx.gateway import UpstreamError, check_url
+from tests.catalog.entries import COP_DEM_GLO_30, SENTINEL_2_L2A
 from tests.conftest import own_log_text
 from tests.earthx.access.test_mosaic_tiles import SEAM_X, SEAM_Y, TILE, TMS, TOP
 from tests.earthx.access.test_mosaic_tiles import _at as value_at

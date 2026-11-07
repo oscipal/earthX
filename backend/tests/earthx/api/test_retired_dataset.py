@@ -17,9 +17,9 @@ from earthx.adapters import ADAPTER_SPECS
 from earthx.api.coverage_route import build_router
 from earthx.api.processing_route import GONE, JobApi
 from earthx.api.tiler import build_app as build_tiler_app
-from earthx.catalog.datasets import REGISTRY, RETIRED
 from earthx.catalog.registry import DatasetRegistry
 from earthx.objectstore.results import Store
+from tests.catalog.entries import REGISTRY, RETIRED
 from tests.earthx.api.conftest import Rig
 from tests.earthx.api.test_intake import order
 from tests.earthx.api.test_permalink_route import PATH as PERMALINKS

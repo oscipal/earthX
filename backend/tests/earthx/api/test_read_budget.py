@@ -26,9 +26,9 @@ from earthx.api.aoi_cloud_filter import (
     run_filter,
 )
 from earthx.api.pass_filter import PassMeasurer
-from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.search_filters import RangeCondition
 from earthx.gateway import ReadSlots
+from tests.catalog.entries import SENTINEL_2_L2A
 from tests.earthx.api.test_aoi_cloud_filter import (
     POLICY,
     SQUARE,

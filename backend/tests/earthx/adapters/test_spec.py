@@ -29,7 +29,6 @@ from earthx.adapters import (
 )
 from earthx.adapters.spec import AdapterSpec, AdapterSpecs, FilterSupport, spec_table
 from earthx.catalog.coverage import CoverageProviderMismatch, CoverageQuery
-from earthx.catalog.datasets import COP_DEM_GLO_30, REGISTRY, SENTINEL_2_L2A
 from earthx.catalog.registry import (
     AdapterKind,
     CoverageProvider,
@@ -40,6 +39,7 @@ from earthx.catalog.registry import (
 )
 from earthx.gateway import Policy, host_of
 from earthx.gateway.client import Gateway
+from tests.catalog.entries import COP_DEM_GLO_30, REGISTRY, SENTINEL_2_L2A
 from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR, TEST_ENTRIES
 
 ADAPTERS_DIR = Path(__file__).resolve().parents[3] / "earthx" / "adapters"

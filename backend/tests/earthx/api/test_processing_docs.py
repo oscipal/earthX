@@ -18,12 +18,12 @@ from fastapi import FastAPI
 
 from earthx.api.processing_docs import FORM_NOTE, OUTPUTS, order_schema
 from earthx.api.processing_route import router
-from earthx.catalog.datasets import COP_DEM_GLO_30, ESA_WORLDCOVER_2021, REGISTRY
 from earthx.catalog.registry import DatasetRegistry, LicenseTier
 from earthx.processing.errors import RecipeInvalid
 from earthx.processing.operators import REGISTRY as REAL_OPERATORS
 from earthx.processing.operators import OperatorRegistry, Tier
 from earthx.processing.recipe import parse_request
+from tests.catalog.entries import COP_DEM_GLO_30, ESA_WORLDCOVER_2021, REGISTRY
 from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR
 from tests.earthx.api.conftest import build_app
 from tests.earthx.api.test_intake import SCALE_STEP, order
@@ -340,7 +340,7 @@ class TestWhatThePanelReads:
         assert set(params["required"]) == {"band", "condition", "values"}
 
     def test_the_dem_is_offered_the_mask_by_value_and_not_the_one_by_class(self) -> None:
-        from earthx.catalog.datasets import COP_DEM_GLO_30
+        from tests.catalog.entries import COP_DEM_GLO_30
 
         offered = {key for key in order_schema(REAL_OPERATORS, COP_DEM_GLO_30)["$defs"] if key.startswith("step_")}
         assert "step_mask_values_v1" in offered and "step_mask_v2" not in offered

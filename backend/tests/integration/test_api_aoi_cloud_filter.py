@@ -27,12 +27,12 @@ from rasterio.errors import RasterioIOError
 from earthx.access.aoi_clouds import AoiClouds
 from earthx.api import aoi_cloud_filter
 from earthx.api.main import build_app
-from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
 from earthx.catalog.load import main as load_catalog
 from earthx.catalog.pgstac import load_collection, use_pgstac_search_path
 from earthx.catalog.registry import CoverageProvider, DatasetRegistry, ItemHolding, SearchCapabilities
 from earthx.gateway import Gateway, Policy, ReadSlots
 from earthx.readers.cog import AssetPath
+from tests.catalog.entries import REGISTRY, SENTINEL_2_L2A
 
 pytestmark = pytest.mark.anyio
 

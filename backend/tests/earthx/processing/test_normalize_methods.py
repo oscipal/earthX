@@ -28,7 +28,6 @@ from rio_tiler.io import Reader
 from rio_tiler.models import ImageData
 
 from earthx.api.processing_docs import order_schema
-from earthx.catalog.datasets import COP_DEM_GLO_30, SENTINEL_2_L2A
 from earthx.processing import run
 from earthx.processing.errors import RecipeInvalid
 from earthx.processing.operators import (
@@ -46,6 +45,7 @@ from earthx.processing.operators import (
 from earthx.processing.operators.normalize import NormalizeParams
 from earthx.processing.recipe import recipe_from_data
 from earthx.processing.statistics import MEASURE_PERCENTILES, BandStatistics
+from tests.catalog.entries import COP_DEM_GLO_30, SENTINEL_2_L2A
 from tests.earthx.processing import sources
 from tests.earthx.processing.recipes import resolved
 from tests.earthx.processing.test_band_math import _SETTING_D, _glibc_masks_features

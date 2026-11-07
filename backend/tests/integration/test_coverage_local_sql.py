@@ -29,12 +29,12 @@ from fastapi.testclient import TestClient
 from earthx.adapters import ADAPTER_SPECS
 from earthx.api.coverage_route import build_router
 from earthx.api.dependencies import cache_pool
-from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.load import main as load_catalog
 from earthx.catalog.pgstac import load_collection, upsert_items, use_pgstac_search_path
 from earthx.catalog.registry import CoverageProvider, DatasetRegistry, ItemHolding, SearchCapabilities
 from earthx.gateway import Policy
 from earthx.gateway.client import Gateway
+from tests.catalog.entries import SENTINEL_2_L2A
 
 DATASET_ID = "earthx-test-local-sql-area"
 

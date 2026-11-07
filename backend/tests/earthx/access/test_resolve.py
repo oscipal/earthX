@@ -23,12 +23,12 @@ from earthx.access.resolve import (
     open_asset_ref,
     resolve_asset,
 )
-from earthx.catalog.datasets import COP_DEM_GLO_30, SENTINEL_2_L2A
 from earthx.catalog.registry import DataFormat, ZarrInfo
 from earthx.gateway import Policy, UrlRejected
 from earthx.readers import AssetRejected
 from earthx.readers.cog import AssetPath
 from earthx.readers.zarr_reader import ZarrAsset
+from tests.catalog.entries import COP_DEM_GLO_30, SENTINEL_2_L2A
 from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR, without_cloud_share
 
 HOST = "assets.example.invalid"

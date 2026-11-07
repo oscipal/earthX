@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from datetime import date
 
-from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.registry import (
     AdapterKind,
     CoverageProvider,
@@ -17,6 +16,7 @@ from earthx.catalog.registry import (
     ItemHolding,
     LicenseTier,
 )
+from tests.catalog.entries import SENTINEL_2_L2A
 
 
 def test_source_is_earth_search_collection_one() -> None:

@@ -8,9 +8,9 @@ from typing import Any
 import pytest
 
 from earthx.api.search_filters import AOI_CLOUD_COVER, AOI_NODATA, SearchConditions, read_search_conditions
-from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.registry import AoiMeasure, SearchFilter
 from earthx.catalog.search_filters import InvalidFilter, RangeCondition, ValuesCondition
+from tests.catalog.entries import SENTINEL_2_L2A
 
 S2 = "s2"
 CLOUD_ONLY = "cloud-only"

@@ -8,7 +8,6 @@ from dataclasses import replace
 import pytest
 
 from earthx.catalog.collection import to_stac_collection
-from earthx.catalog.datasets import COP_DEM_GLO_30, REGISTRY, SENTINEL_2_L2A
 from earthx.catalog.registry import (
     ConfigError,
     CoverageProvider,
@@ -26,6 +25,7 @@ from earthx.catalog.search_filters import (
     range_condition,
     values_condition,
 )
+from tests.catalog.entries import COP_DEM_GLO_30, REGISTRY, SENTINEL_2_L2A
 
 CLOUD = SearchFilter(
     property="eo:cloud_cover",

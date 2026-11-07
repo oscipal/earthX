@@ -41,9 +41,9 @@ from shapely.geometry import mapping as shapely_mapping
 from shapely.geometry import shape as shapely_shape
 
 from earthx.access import download as dl
-from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.registry import AcquisitionYears
 from earthx.readers.cog import AssetPath
+from tests.catalog.entries import SENTINEL_2_L2A
 
 UTM32 = "EPSG:32632"
 UTM33 = "EPSG:32633"

@@ -18,8 +18,8 @@ from earthx.api.item_source import (
     check_item_holdings,
     item_holding_of,
 )
-from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
 from earthx.catalog.registry import CoverageProvider, DatasetConfig, DatasetRegistry, ItemHolding, SearchCapabilities
+from tests.catalog.entries import REGISTRY, SENTINEL_2_L2A
 
 
 def _materialized_entry() -> Any:

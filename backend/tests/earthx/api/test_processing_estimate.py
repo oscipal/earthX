@@ -17,11 +17,11 @@ import pytest
 
 from earthx.access.download import compute_crop_region, parse_aoi_geometry, plan_outputs
 from earthx.api.intake import accept_order
-from earthx.catalog.datasets import REGISTRY
 from earthx.catalog.registry import DatasetRegistry, LicenseTier
 from earthx.gateway import UpstreamError
 from earthx.processing.operators import REGISTRY as REAL_OPERATORS
 from earthx.processing.plan import estimate
+from tests.catalog.entries import REGISTRY
 from tests.conftest import own_log_text
 from tests.earthx.api.conftest import Rig
 from tests.earthx.api.test_intake import CROP, NEAR, PLACE, S2_HOST, SCALE_STEP, SQUARE, dem_item, order, s2_item

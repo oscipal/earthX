@@ -20,10 +20,10 @@ import psycopg
 import pytest
 
 from earthx.api.main import build_app
-from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.load import main as load_catalog
 from earthx.catalog.registry import DatasetRegistry
 from earthx.gateway import Gateway, Policy
+from tests.catalog.entries import SENTINEL_2_L2A
 
 pytestmark = pytest.mark.anyio
 

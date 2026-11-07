@@ -14,9 +14,9 @@ from pathlib import Path
 import pytest
 import yaml
 
-from earthx.catalog.datasets import COP_DEM_GLO_30, RETIRED
 from earthx.catalog.entry_files import EntryFileError, load_entry, load_retired, read_yaml, to_plain
 from earthx.catalog.registry import LicenseTier
+from tests.catalog.entries import COP_DEM_GLO_30, RETIRED
 
 DEM = COP_DEM_GLO_30.dataset_id
 

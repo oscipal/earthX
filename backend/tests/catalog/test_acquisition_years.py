@@ -11,8 +11,8 @@ from datetime import UTC, datetime
 import pytest
 
 from earthx.access.download import attribution_names_year, attribution_text, attribution_years
-from earthx.catalog.datasets import REGISTRY
 from earthx.catalog.registry import AcquisitionYearMissing, AcquisitionYears, acquisition_years
+from tests.catalog.entries import REGISTRY
 
 S2 = REGISTRY.get("sentinel-2-c1-l2a")
 DEM = REGISTRY.get("cop-dem-glo-30")
