@@ -21,7 +21,7 @@ export const CATEGORIES = [
 ] as const;
 export const OTHER_CATEGORY = { id: 'other', title: 'Other' } as const;
 
-// How many datasets a first visit adds (UI-05 F3): as many as one page of "Search and area" holds.
+// How many datasets a first visit adds (UI-05 F3, Otto 06.11.2026; it stays six after the pages lost their limit, 07.11.2026).
 export const FIRST_VISIT_DATASETS = 6;
 
 export const NONE = '—';

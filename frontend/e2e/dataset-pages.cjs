@@ -1,8 +1,10 @@
-// Browser check of UI-05 part 1 (Otto, 06.11.2026): the panel "Search and area" with pages of datasets, "Advanced search"
-// always there, the date fields held to the days of the chosen datasets, and no explanation as text in the panel. With
-// nine made-up datasets it does the clicks of a user in a real browser and fails when
-//   - a page holds more than six buttons, or more rows than fit: the scrolling part of the panel scrolls while it shows
-//     more than one row, or shows fewer rows than the room it has;
+// Browser check of UI-05 part 1 (Otto, 06.11.2026, pages without an upper limit since 07.11.2026): the panel "Search and
+// area" with pages of datasets, "Advanced search" always there, the date fields held to the days of the chosen datasets,
+// and no explanation as text in the panel. With 23 made-up datasets it does the clicks of a user in a real browser and
+// fails when
+//   - a page holds more rows than fit: the scrolling part of the panel scrolls while it shows more than one row, or shows
+//     fewer rows than the room it has while there are further pages; a tall window still holds no more than six;
+//   - a lower window does not take rows away, or the window grown again does not give them back;
 //   - the counter does not read "1 / n" for the pages there are, an arrow at the edge is not locked with its reason, or
 //     turning the pages misses a dataset or shows one twice;
 //   - the arrows and the counter do not stand small at the right of the heading "Datasets", in its row, before "Select
@@ -32,6 +34,7 @@ const OUT = process.env.OUT ?? path.join(require('node:os').tmpdir(), 'earthx-da
 const THEMES = { light: 'normal', dark: 'tech' };
 const VIEWPORTS = {
   wide: { width: 1280, height: 800 },
+  tall: { width: 1280, height: 1200 },
   'wide and low': { width: 1280, height: 560 },
   narrow: { width: 360, height: 740 },
   'very narrow': { width: 320, height: 640 },
@@ -50,7 +53,7 @@ const collection = (id, title, interval, timeAxis = true) => ({
 const COLLECTIONS = [
   collection('optical', 'Optical (made up)', ['2015-06-27T10:25:31Z', null]),
   collection('dem', 'Elevation (made up)', ['2010-12-01T00:00:00Z', '2015-01-31T23:59:59Z'], false),
-  ...Array.from({ length: 7 }, (_, i) => collection(`extra-${i}`, `Extra ${i}`, [`201${i}-01-01T00:00:00Z`, '2020-12-31T23:59:59Z'])),
+  ...Array.from({ length: 21 }, (_, i) => collection(`extra-${i}`, `Extra ${String(i).padStart(2, '0')}`, [`201${i % 10}-01-01T00:00:00Z`, '2020-12-31T23:59:59Z'])),
 ];
 const TITLES = COLLECTIONS.map((c) => c.title);
 const TODAY = new Date().toISOString().slice(0, 10);
@@ -59,7 +62,7 @@ async function check(browser, { theme, viewport }) {
   const label = `${theme} ${viewport}`;
   const problems = [];
   const context = await browser.newContext({ viewport: VIEWPORTS[viewport] });
-  // All nine in "Search and area" (UI-05 part 2: a first visit adds at most six; the pages need more).
+  // All of them in "Search and area" (UI-05 part 2: a first visit adds at most six; the pages need more).
   await context.addInitScript(([t, ids]) => {
     localStorage.setItem('earthx.theme', t);
     localStorage.setItem('earthx.datasets', JSON.stringify(ids));
@@ -109,18 +112,18 @@ async function check(browser, { theme, viewport }) {
   await page.waitForSelector('.dataset-toggle');
   await page.waitForTimeout(400);
 
-  // 1. A page: at most six, as many rows as fit; the panel does not scroll unless it is down to one row.
+  // 1. A page: as many rows as fit, no upper limit; the panel does not scroll unless it is down to one row.
   const shownRows = await rows();
   const size = await toggles.count();
-  expect('more than six on a page', size <= 6, `${size}`);
+  if (viewport === 'tall') expect('no more than six on a page in a tall window (Otto, 07.11.2026)', size > 6, `${size}`);
   expect('a page is not two buttons a row', size === Math.min(TITLES.length, shownRows * 2), `${size} in ${shownRows} rows`);
   if (shownRows > 1) expect('the panel scrolls with more than one row', !(await scrolls()));
   const slack = await scroll.evaluate((el) => {
     const last = el.lastElementChild.getBoundingClientRect().bottom - el.getBoundingClientRect().top + el.scrollTop;
     return el.clientHeight - last - parseFloat(getComputedStyle(el).paddingBottom);
   });
-  if (shownRows < 3) expect('a row more would have fitted', slack < 46, `${Math.round(slack)} px free`);
   const pages = Math.ceil(TITLES.length / size);
+  if (pages > 1) expect('a row more would have fitted', slack < 46, `${Math.round(slack)} px free`);
   expect('the counter', (await counter.textContent())?.replace(/\s+/g, ' ').trim() === `1 / ${pages}`, await counter.textContent());
   expect('the first arrow is not locked', (await previous.getAttribute('aria-disabled')) === 'true');
   expect('the reason of the first arrow', (await tipOnHover(previous)) === 'Already on the first page');
@@ -157,14 +160,18 @@ async function check(browser, { theme, viewport }) {
   // 3. A dataset on the last page picked, the window lower: its page is shown.
   await toggles.last().click();
   const pickedTitle = TITLES.at(-1);
-  if (viewport === 'wide') {
+  if (viewport === 'wide' || viewport === 'tall') {
+    const before = await rows();
     await page.setViewportSize({ width: 1280, height: 520 });
     await page.waitForTimeout(400);
     expect('the picked dataset is not on the page shown', (await titles()).includes(pickedTitle), (await titles()).join(', '));
-    if ((await rows()) > 1) expect('the panel scrolls in the lower window', !(await scrolls()));
+    const lower = await rows();
+    expect('the lower window keeps every row', lower < before, `${before} → ${lower}`);
+    if (lower > 1) expect('the panel scrolls in the lower window', !(await scrolls()));
     await shot('3-lower-window');
     await page.setViewportSize(VIEWPORTS[viewport]);
     await page.waitForTimeout(400);
+    expect('the window grown again does not give the rows back', (await rows()) === before, `${before} → ${await rows()}`);
   }
   await store((s) => s.setState({ selectedDatasetIds: [], datasetId: null, lastPickedDatasetId: null }));
 

@@ -1,15 +1,16 @@
-// The pages of dataset buttons in "Search and area" (UI-05 §3.1, Otto 06.11.2026): two buttons a row, at most three rows,
-// and only as many rows as the panel holds without scrolling, at least one.
+// The pages of dataset buttons in "Search and area" (UI-05 §3.1): two buttons a row, and as many rows as the panel holds
+// without scrolling, at least one; the rest goes to the next page. No upper limit (Otto, 07.11.2026, replacing the six of
+// 06.11.2026).
 
 export const DATASETS_PER_ROW = 2;
-export const MAX_DATASET_ROWS = 3;
+// The rows before the first measurement, and where there is no layout to measure (jsdom).
+export const START_DATASET_ROWS = 3;
 
 // The rows that fit: those drawn now, plus as many as the free height (`slack`, negative while the panel scrolls) holds or
 // minus as many as it lacks. `rowStep` is the height of one row with its gap; without one (no layout) nothing changes.
 export function rowsThatFit(drawn: number, slack: number, rowStep: number): number {
-  if (!(rowStep > 0) || !Number.isFinite(slack)) return Math.min(MAX_DATASET_ROWS, Math.max(1, drawn));
-  const rows = drawn + Math.floor(slack / rowStep);
-  return Math.min(MAX_DATASET_ROWS, Math.max(1, rows));
+  if (!(rowStep > 0) || !Number.isFinite(slack)) return Math.max(1, drawn);
+  return Math.max(1, drawn + Math.floor(slack / rowStep));
 }
 
 export function pageCount(total: number, pageSize: number): number {
