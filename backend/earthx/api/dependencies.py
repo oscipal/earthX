@@ -41,8 +41,8 @@ _CACHE_POOL_MAX_SIZE = 5
 # registry's (below). An unset `EARTHX_GEOCODER_URL` turns place search off — the
 # safe end of the range, like an empty `EARTHX_ALLOWED_HOSTS`.
 GEOCODER_URL_ENV = "EARTHX_GEOCODER_URL"
-GEOCODER_USER_AGENT_ENV = "EARTHX_GEOCODER_USER_AGENT"
-DEFAULT_GEOCODER_USER_AGENT = "EarthX/0.1 (+https://github.com/oscipal/earthX)"
+# M5-18 §3.1: dropped in favour of the instance's one `EARTHX_USER_AGENT`; only named to warn when still set.
+RETIRED_GEOCODER_USER_AGENT_ENV = "EARTHX_GEOCODER_USER_AGENT"
 
 # NM4-03: where a client reaches the tiler. The links of a results document that lead there are built from
 # this value alone, never from the `Host` header of the request (header injection).
@@ -65,7 +65,6 @@ _GEOCODER_READ_TIMEOUT_S = 10.0
 @dataclass(frozen=True, slots=True)
 class GeocoderConfig:
     base_url: str
-    user_agent: str
 
 
 def resolve_geocoder_config(environ: Mapping[str, str] | None = None) -> GeocoderConfig | None:
@@ -79,8 +78,16 @@ def resolve_geocoder_config(environ: Mapping[str, str] | None = None) -> Geocode
     raw = values.get(GEOCODER_URL_ENV, "").strip()
     if not raw:
         return None
-    user_agent = values.get(GEOCODER_USER_AGENT_ENV, "").strip() or DEFAULT_GEOCODER_USER_AGENT
-    return GeocoderConfig(base_url=raw.rstrip("/"), user_agent=user_agent)
+    return GeocoderConfig(base_url=raw.rstrip("/"))
+
+
+def warn_retired_settings(environ: Mapping[str, str] | None = None) -> None:
+    """Say at start that a setting this process no longer reads is still set; never its value."""
+    values = environ if environ is not None else os.environ
+    if values.get(RETIRED_GEOCODER_USER_AGENT_ENV, "").strip():
+        LOGGER.warning(
+            f"{RETIRED_GEOCODER_USER_AGENT_ENV} is no longer read; the geocoder sends EARTHX_USER_AGENT like every request"
+        )
 
 
 def resolve_tiler_base(environ: Mapping[str, str] | None = None) -> str | None:

@@ -21,6 +21,23 @@ class UrlRejected(GatewayError):
         self.host = host
 
 
+class RobotsDisallowed(UrlRejected):
+    """The host's ``robots.txt`` disallows this path for our product token (RFC 9309)."""
+
+    def __init__(self, *, host: str) -> None:
+        super().__init__("robots.txt disallows this path", host=host)
+
+
+class HostResting(GatewayError):
+    """The host rests for the rest of this run: its ``robots.txt`` could not be read
+    (``429``, ``5xx``, unreachable) or asks for more delay than we wait (M5-18 §3.3)."""
+
+    def __init__(self, reason: str, *, host: str) -> None:
+        super().__init__(f"{reason}; host {host!r} rests for this run")
+        self.reason = reason
+        self.host = host
+
+
 class AddressRejected(GatewayError):
     """The host does not resolve, or resolves to an address we must not connect to."""
 
