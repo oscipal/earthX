@@ -10,7 +10,7 @@ Hier liegen Registry-Einträge von Quellen mit **unklarer Rechtslage**, nur für
 - **Jeder Eintrag** heißt `proto-<name>.yaml`, hat eine ID mit Präfix `proto-`, `legal_status: unclear` und einen Satz
   `legal_note`, was unklar ist (keine Rechtsmeinung, R3). `legal_status` setzt nur Otto (R1).
 - **Nur Quellen ohne Konto, Schlüssel oder Umgehen einer Sperre**; ausdrücklich untersagte Nutzung bleibt draußen (R2).
-- **CI und Cloud-Sitzungen** prüfen die Einträge ohne Netz (`backend/tests/catalog/test_prototype_entries.py`); die
+- **CI und Cloud-Sitzungen** prüfen die Einträge ohne Netz (`backend/tests/catalog/test_registry_loading.py`); die
   Quellen ruft nur Otto lokal ab (R10).
 
 Außer `*.yaml` und dieser Datei darf hier nichts liegen; der Lader bricht sonst ab.

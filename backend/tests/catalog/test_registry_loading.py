@@ -2,7 +2,7 @@
 
 The prototype entries are synthetic: a copy of a real entry with the prefix, ``unclear`` and a note, on the reserved
 host of the runner's fixtures (adr/0024 R10). Every test that sets the variables clears the cache of ``registry()``
-before and after, so no other test sees its registry.
+before and after (``forget_registry``), so no other test sees its registry.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from earthx.catalog.datasets import (
     PROFILE_VARIABLE,
     PROTOTYPE_VARIABLE,
     InstanceSettingError,
+    forget_registry,
     prototype_dir_from_env,
     read_registry,
     registry,
@@ -71,9 +72,9 @@ def prototypes(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def fresh_registry():
-    registry.cache_clear()
+    forget_registry()
     yield
-    registry.cache_clear()
+    forget_registry()
 
 
 class TestTheDirectories:
@@ -114,6 +115,11 @@ class TestTheDirectories:
         assert loaded.get(PROTOTYPE_ID) == _prototype()
         assert len(loaded) == len(read_registry()) + 1
 
+    def test_a_directory_that_cannot_be_read_is_an_error_without_its_path(self, catalog: Path, tmp_path: Path) -> None:
+        with pytest.raises(EntryFileError, match="cannot be read") as raised:
+            read_registry(catalog, tmp_path / "gone" / "prototype")
+        assert str(tmp_path) not in str(raised.value)
+
     def test_a_retired_list_that_is_missing_is_an_error(self, catalog: Path) -> None:
         (catalog / "retired.yaml").unlink()
         with pytest.raises(EntryFileError, match="retired.yaml"):
@@ -135,8 +141,11 @@ class TestTheStartCheck:
     def test_every_known_profile_is_accepted_without_a_path(self, profile: str) -> None:
         assert prototype_dir_from_env({PROFILE_VARIABLE: profile}) is None
 
-    def test_path_local_and_no_ci_reads_the_directory(self, prototypes: Path) -> None:
+    @pytest.mark.parametrize("ci", [None, "", "  "], ids=["unset", "empty", "blank"])
+    def test_path_local_and_no_ci_reads_the_directory(self, prototypes: Path, ci: str | None) -> None:
         environ = {PROTOTYPE_VARIABLE: str(prototypes), PROFILE_VARIABLE: "local"}
+        if ci is not None:
+            environ["CI"] = ci
         assert prototype_dir_from_env(environ) == prototypes
 
     @pytest.mark.parametrize("profile", [None, "", "ci", "cloud"])
@@ -174,7 +183,8 @@ class TestTheStartCheck:
 @pytest.mark.usefixtures("fresh_registry")
 class TestTheProcessRegistry:
     def test_without_the_switch_no_prototype_is_loaded(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv(PROTOTYPE_VARIABLE, raising=False)
+        for name in (PROTOTYPE_VARIABLE, PROFILE_VARIABLE, "CI"):
+            monkeypatch.delenv(name, raising=False)
         loaded = registry()
         assert all(entry.legal_status is LegalStatus.CLEARED for entry in loaded)
         assert not any(entry.dataset_id.startswith(PROTOTYPE_PREFIX) for entry in loaded)

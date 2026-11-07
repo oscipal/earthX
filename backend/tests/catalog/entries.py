@@ -1,14 +1,15 @@
 """The registry entries by the names the tests know them by (M5-13 plan §3.3, A3).
 
 Up to M4 these were constants of `earthx.catalog.datasets`; since M5-13 the entries are YAML files and the package
-keeps no names for them. The tests keep theirs, taken from the registry of the process.
+keeps no names for them. The tests keep theirs, read from the released files alone: the environment of the shell that
+runs the tests (a prototype switch, a profile) does not reach them.
 """
 
 from __future__ import annotations
 
-from earthx.catalog.datasets import registry
+from earthx.catalog.datasets import read_registry
 
-REGISTRY = registry()
+REGISTRY = read_registry()
 RETIRED = REGISTRY.retired
 
 SENTINEL_2_L2A = REGISTRY.get("sentinel-2-c1-l2a")

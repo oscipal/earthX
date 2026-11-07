@@ -27,6 +27,7 @@ __all__ = [
     "CATALOG_DIR",
     "PROFILES",
     "InstanceSettingError",
+    "forget_registry",
     "prototype_dir_from_env",
     "read_registry",
     "registry",
@@ -42,8 +43,12 @@ _README = "README.md"
 
 def _entry_files(directory: Path) -> list[Path]:
     """The ``*.yaml`` files of ``directory``; anything else but a README is an error, so a stray file is noticed."""
+    try:
+        listing = sorted(directory.iterdir())
+    except OSError as error:
+        raise EntryFileError(f"{directory.name}: the directory cannot be read ({type(error).__name__})") from None
     files = []
-    for path in sorted(directory.iterdir()):
+    for path in listing:
         if path.name == _README:
             continue
         if not path.is_file() or path.suffix != ".yaml":
@@ -105,16 +110,29 @@ def read_registry(catalog_dir: Path = CATALOG_DIR, prototype_dir: Path | None = 
     return DatasetRegistry(entries, retired=load_retired(catalog_dir / "retired.yaml"))
 
 
-@cache
 def registry(*, prototype: bool = True) -> DatasetRegistry:
     """The registry of this process, read once, with the start check of adr/0024 R5.
 
     The runner asks with ``prototype=False``: it is built to be handed on (adr/0016), so it never reads the
     prototype directory and only warns where the variable is set (A7); a recipe of a prototype dataset is unknown
-    there.
+    there. It does not check ``EARTHX_PROFILE`` either, which means nothing to it.
     """
-    if not prototype:
-        if os.environ.get(PROTOTYPE_VARIABLE, "").strip():
-            LOGGER.warning("%s is set and ignored: this process never reads prototype entries", PROTOTYPE_VARIABLE)
-        return read_registry()
+    return _with_prototypes() if prototype else _released()
+
+
+@cache
+def _with_prototypes() -> DatasetRegistry:
     return read_registry(prototype_dir=prototype_dir_from_env())
+
+
+@cache
+def _released() -> DatasetRegistry:
+    if os.environ.get(PROTOTYPE_VARIABLE, "").strip():
+        LOGGER.warning("%s is set and ignored: this process never reads prototype entries", PROTOTYPE_VARIABLE)
+    return read_registry()
+
+
+def forget_registry() -> None:
+    """Forget the registries read so far, so the next :func:`registry` reads the environment again (tests)."""
+    _with_prototypes.cache_clear()
+    _released.cache_clear()
