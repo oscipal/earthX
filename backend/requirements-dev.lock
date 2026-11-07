@@ -1618,6 +1618,7 @@ pydantic==2.13.5 \
     --hash=sha256:51a9c5f7b2f8e636f04c6cada605d9b6a3bf1348fdf945a3d8869b19bba0ee08
     # via
     #   -c backend/requirements.lock
+    #   -r backend/requirements.txt
     #   fastapi
     #   geojson-pydantic
     #   morecantile
@@ -2121,6 +2122,7 @@ pyyaml==6.0.3 \
     # via
     #   -c backend/requirements.lock
     #   -r backend/requirements-dev.txt
+    #   -r backend/requirements.txt
     #   donfig
     #   moto
     #   responses

@@ -64,3 +64,8 @@ pyproj>=3.6
 # Only `earthx/objectstore/client.py` may import it (.importlinter). No cap on the
 # version: botocore stays 1.x and the lock file carries the pin (§5).
 botocore>=1.36
+# The registry entries are YAML from M5-13 on (docs/plans/m5/m5-13-yaml-lader.md, F1): `catalog.datasets` reads them
+# with `pyyaml` and checks them strictly with `pydantic` against the dataclasses of `catalog.registry`. Both came in
+# before through uvicorn[standard] and fastapi; they are named here now that the catalog imports them itself.
+pyyaml>=6.0
+pydantic>=2.6
