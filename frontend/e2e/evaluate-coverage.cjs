@@ -201,7 +201,8 @@ async function check(browser, { theme, viewport }) {
   const perPass = requests.search.at(-1);
   expect('the search per pass does not carry earthx:evaluate', perPass['earthx:evaluate'] === 'pass', JSON.stringify(perPass['earthx:evaluate']));
   expect('the coverage is not in the query', JSON.stringify(perPass.query_by_collection) === JSON.stringify({ [S2]: { 'earthx:aoi_coverage': { gte: 60 } } }), JSON.stringify(perPass.query_by_collection));
-  expect('the coverage wanted a date range', !('datetime' in perPass), JSON.stringify(perPass.datetime));
+  // The dates are filled with the whole extent of the dataset up to today (UI-05); the search must not narrow them.
+  expect('the search narrowed the dates', perPass.datetime === `2015-06-27T00:00:00Z/${new Date().toISOString().slice(0, 10)}T23:59:59Z`, JSON.stringify(perPass.datetime));
 
   // 5. Per scene: no earthx:evaluate, the coverage stays.
   await store((s) => { s.getState().clearSearchResults(); s.setState({ dock: 'controls' }); });
