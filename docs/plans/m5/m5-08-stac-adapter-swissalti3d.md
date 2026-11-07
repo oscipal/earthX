@@ -1,6 +1,6 @@
 # M5-08 — Allgemeiner STAC-Adapter und swissALTI3D: Plan-Schritt
 
-**Status (07.11.2026):** Entwurf mit Fragen an Otto (§8), Draft-PR [#314](https://github.com/oscipal/earthX/pull/314). Umsetzung erst nach Ottos Antworten, im selben Draft-PR (Stufe B).
+**Status (07.11.2026):** Plan angenommen (Otto, 07.11.2026; Antworten in §8a). Teil 1 (M5-08a: Vergleichstest und `stac_api.py`) umgesetzt im selben Draft-PR [#314](https://github.com/oscipal/earthX/pull/314) (§11); M5-08b und M5-08c folgen als eigene PRs.
 **Aufgabe:** M5-08 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2. **Stufe B.** Hängt von M5-13 ab (gemergt mit #311). Danach warten M5-10, M5-09 und M5-11 auf den Merge. **DS-04** (#312) baut Sentinel-1 nach dem Merge auf dem neuen Adapter; Earth Search muss dabei bitgleich bleiben (§3.2).
 **Modell:** Opus, Effort hoch.
 **Grundlagen:** `adr/0011` F1, F6 und §8.2 (Dialekt je STAC-API); `adr/0005` Regeln I–V; `adr/0023` §4.1, §7.2, §7.3, §8.3, §9.1, F2, F5, F7, §11 Punkt 2; `adr/0025` §9 (Stände: Regel bei M5-08); `adr/0030` §5.4; `adr/0026` F7 (Schlagworte, Glossar); `adr/0024` (`legal_status`); `adr/0027` §6.1 (`access.account`); `KLAERUNGEN.md` B8, B10–B13; `architekturplan.md` 3.1, 5.1, 5.2, 6.1; `projektuebersicht.md` §5.
@@ -189,6 +189,7 @@ Alle ohne Netz, Fixtures synthetisch unter `backend/tests/fixtures/` (CLAUDE.md)
 - **A5 — `value_masking` an wie beim DEM.** Eine Maske nach Höhe („über 2 000 m“) ist sinnvoll, anders als `adr/0023` §8.3 vermutet; nach Ottos Wunsch abschaltbar.
 - **A6 — Coverage z8 wie DEM und WorldCover**, bis Otto anders entscheidet (die Stufe ist seine Einstellung, `adr/0004` §5).
 - **A7 — Genauigkeit der Lage 1 m** (§2) steht in der Beschreibung. Für 0,5-m-Daten ist das sichtbar; eine Gitterdatei (CHENyx06) bräuchte einen freigegebenen Download von PROJ und ist nicht Teil von M5-08.
+  - **Zusatz Otto (07.11.2026):** Die Gitterdatei für LV95 kommt **nie** über das Netz von PROJ (`PROJ_NETWORK`, `cdn.proj.org`), weil das an `gateway` vorbeiginge (B8). Ob sie ins Image kommt, ist eine spätere, eigene Aufgabe.
 
 ---
 
@@ -211,7 +212,7 @@ Alle ohne Netz, Fixtures synthetisch unter `backend/tests/fixtures/` (CLAUDE.md)
 
 ---
 
-## 8. Fragen an Otto
+## 8. Fragen an Otto — beantwortet am 07.11.2026 (§8a)
 
 **F1 — Mehrere Stände je Kachel?** Jede Kachel hat einen Stand 2019 und einen bis zwei neuere (§2).
 1. **Je Kachel nur der jüngste Stand wird geladen**; ältere Stände bleiben bei der Quelle. `time_range` aus, `single_coverage_product` an, ein Mosaik über alle Kacheln; das Befliegungsjahr steht am Item. Ältere Stände lassen sich später über dieselbe Regel nachrüsten **(Empfehlung)**
@@ -237,6 +238,18 @@ Den Text `terms.notice.en` (Haftung, Drosselung bei übermäßiger Nutzung) lege
 
 Die Auslegungen A1–A7 (§5) gelten, wenn Otto nicht widerspricht.
 
+## 8a. Antworten Otto (07.11.2026)
+
+F1–F3 jeweils Option 1, F4 = 2; Auslegungen A1–A7 angenommen, zu A7 mit Zusatz (§5).
+
+- **F1:** Je Kachel nur der jüngste Stand; `time_range` aus, `single_coverage_product` an, ein Mosaik über alle Kacheln.
+- **F2:** Beide COGs mit festen Schlüsseln (`dtm` 0,5 m, `dtm_2m`), Vorgabe 0,5 m; XYZ-ZIPs nur als Originale.
+- **F3:** Drei PRs. M5-08a (dieser Draft-PR): Vergleichstest und `stac_api.py`, Earth Search bitgleich. M5-08b: FSDI-Dialekt, Materialisierung, `asset_keys`, `item_states`. M5-08c: YAML-Eintrag, Live-Smoke, Doku.
+- **F4:** Unverändert „© swisstopo“, verändert „© swisstopo (modified)“, einheitlich mit `adr/0023` §7.2 und WorldCover. Vorher die Seite zur Quellenangabe lesen und den geforderten Wortlaut in die PR-Beschreibung schreiben; Otto bestätigt ihn vor dem Merge.
+  - **Gelesen am 07.11.2026 [P]:** Die „Terms of use for free geodata and geoservices (OGD) from swisstopo“ (Version 1.3.2021) verlangen bei jeder Darstellung, Veröffentlichung und Weitergabe eine der Angaben „Bundesamt für Landestopografie swisstopo“ (bzw. französisch, italienisch, rätoromanisch, englisch „Federal Office of Topography swisstopo“) oder **„©swisstopo“ (ohne Leerzeichen)**. Für swissALTI Regio und swissEO gilt eine andere Angabe, swissALTI3D gehört nicht dazu.
+  - Die Seite „How to indicate the source“ regelt den Ort: in dynamischen Karten ideal neben den Daten, zulässig eine zentrale Seite der Quellen mit Link; bei Daten ohne Darstellung in der begleitenden Dokumentation. Bei abgeleiteten Daten gelten dieselben Regeln, der Angabe darf „derived from …“ (deutsch „abgeleitet von …“) vorangestellt werden.
+  - Folge für den Eintrag (M5-08c): Schreibweise „©swisstopo“ wie in den Bedingungen; „(modified)“ ist ein Zusatz hinter der geforderten Angabe, den die Seite nicht nennt, aber auch nicht ausschließt. Otto bestätigt Schreibweise und Zusatz im PR.
+
 ---
 
 ## 9. Begriffe für das Glossar (`adr/0026` F7)
@@ -253,3 +266,9 @@ Geländemodell ↔ digital terrain model (DTM); Höhenmodell ↔ elevation model
 - Fixtures nur synthetisch.
 - `CLAUDE.md`, `.github/`, `.claude/` und `CODEOWNERS` bleiben unverändert.
 - Vor „fertig“: `main` geholt, Lint, Typprüfung, Tests und Importregeln grün.
+
+---
+
+## 11. Umsetzung Teil 1 (M5-08a, 07.11.2026)
+
+Folgt mit den Commits dieses PRs.
