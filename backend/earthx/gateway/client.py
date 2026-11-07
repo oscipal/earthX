@@ -31,7 +31,10 @@ import httpx
 
 from earthx.gateway.checks import CheckedUrl, check_url
 from earthx.gateway.errors import (
+    AddressRejected,
+    HostResting,
     ResponseTooLarge,
+    RobotsDisallowed,
     TooManyRedirects,
     UpstreamError,
     UpstreamTimeout,
@@ -39,8 +42,9 @@ from earthx.gateway.errors import (
     UrlRejected,
     UrlTooLong,
 )
-from earthx.gateway.policy import Policy, inspect_url
+from earthx.gateway.policy import Policy, inspect_url, product_token
 from earthx.gateway.resolver import resolve_host
+from earthx.gateway.robots import ROBOTS_PATH, RobotsRules
 
 LOGGER = logging.getLogger("earthx.gateway")
 
@@ -50,6 +54,10 @@ MAX_ATTEMPTS = 3
 BACKOFF_S = (0.5, 1.0, 2.0)
 MAX_RETRY_AFTER_S = 10.0
 EXCERPT_CHARS = 500
+# RFC 9309 §2.4: a robots.txt is cached for at most 24 hours.
+ROBOTS_MAX_AGE_S = 24 * 3600.0
+# A Crawl-delay above this lets the host rest for the run instead of stalling it (M5-18 F5).
+MAX_CRAWL_DELAY_S = 30.0
 
 
 @dataclass(frozen=True)
@@ -96,13 +104,22 @@ class Gateway:
         transport: httpx.AsyncBaseTransport | None = None,
         resolve: Callable[[str, int], tuple[str, ...]] = resolve_host,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._policy = policy
         self._resolve = resolve
         self._sleep = sleep
+        self._clock = clock
         # The per-host cap is the semaphore below, not httpx's global pool limit:
         # six connections per host is a rule about the source (adr/0005 §6).
         self._semaphores: dict[str, asyncio.Semaphore] = {}
+        # The spacing per host (adr/0025 §6.2): the earliest start of the next request.
+        self._spacing_locks: dict[str, asyncio.Lock] = {}
+        self._next_start: dict[str, float] = {}
+        # robots.txt per host, for this object's life and at most 24 h (M5-18 §3.3, A5).
+        self._robots_locks: dict[str, asyncio.Lock] = {}
+        self._robots: dict[str, tuple[float, RobotsRules | HostResting]] = {}
+        self._crawl_delays: dict[str, float] = {}
         self._client = httpx.AsyncClient(
             transport=transport,
             follow_redirects=False,
@@ -189,6 +206,7 @@ class Gateway:
         content: bytes | None = None,
         retry: bool = True,
         within: Policy | None = None,
+        robots: bool = True,
     ) -> GatewayResponse:
         target = self._assemble(url, params)
         redirects = 0
@@ -196,6 +214,8 @@ class Gateway:
             if within is not None:
                 inspect_url(target, within)  # before anything is resolved
             checked = check_url(target, self._policy, resolve=self._resolve)
+            if robots and self._policy.obey_robots:
+                await self._check_robots(checked)
             async with self._semaphore(checked.host):
                 response = await self._attempt(
                     method, checked, headers=headers, content=content, retry=retry, redirects=redirects
@@ -218,6 +238,65 @@ class Gateway:
                 # (found reviewing M1-06). 307 and 308 keep method and body, so they
                 # are followed as before.
                 raise UpstreamError(response.status_code, "redirect would drop the request body")
+
+    async def _check_robots(self, checked: CheckedUrl) -> None:
+        """Raise unless the host's robots.txt lets us fetch this path (RFC 9309), on every hop."""
+        url = httpx.URL(checked.url)
+        if url.path == ROBOTS_PATH:
+            return
+        rules = await self._robots_for(checked.host)
+        target = url.raw_path.decode("ascii", errors="replace")
+        if not rules.allows(target):
+            raise RobotsDisallowed(host=checked.host)
+
+    async def _robots_for(self, host: str) -> RobotsRules:
+        lock = self._robots_locks.setdefault(host, asyncio.Lock())
+        async with lock:
+            cached = self._robots.get(host)
+            if cached is None or self._clock() - cached[0] >= ROBOTS_MAX_AGE_S:
+                cached = (self._clock(), await self._fetch_robots(host))
+                self._robots[host] = cached
+                rules = cached[1]
+                if isinstance(rules, RobotsRules) and rules.crawl_delay is not None:
+                    self._crawl_delays[host] = rules.crawl_delay
+        result = cached[1]
+        if isinstance(result, HostResting):
+            raise result
+        return result
+
+    async def _fetch_robots(self, host: str) -> RobotsRules | HostResting:
+        """The rules, or why the host rests: 4xx but 429 allows all, the rest is not readable."""
+        try:
+            response = await self._send("GET", f"https://{host}{ROBOTS_PATH}", retry=False, robots=False)
+        except UpstreamError as error:
+            if 400 <= error.status_code < 500 and error.status_code != 429:
+                return RobotsRules.allow_all()
+            return HostResting(f"robots.txt answered {error.status_code}", host=host)
+        except (UpstreamUnreachable, UrlRejected, AddressRejected, TooManyRedirects, ResponseTooLarge) as error:
+            return HostResting(f"robots.txt is not readable ({type(error).__name__})", host=host)
+        if not 200 <= response.status_code < 300:
+            return HostResting(f"robots.txt answered {response.status_code}", host=host)
+        rules = RobotsRules.parse(response.content, product_token(self._policy.user_agent))
+        if rules.crawl_delay is not None and rules.crawl_delay > MAX_CRAWL_DELAY_S:
+            return HostResting("robots.txt asks for a longer crawl delay than we wait", host=host)
+        return rules
+
+    async def _space(self, host: str) -> None:
+        """Wait until this host's spacing allows the next start (adr/0025 §6.2).
+
+        The start is reserved under the lock and waited for outside it, so six
+        concurrent requests still start one interval apart.
+        """
+        interval = max(self._policy.interval_for(host), self._crawl_delays.get(host, 0.0))
+        if interval <= 0:
+            return
+        lock = self._spacing_locks.setdefault(host, asyncio.Lock())
+        async with lock:
+            now = self._clock()
+            start = max(now, self._next_start.get(host, now))
+            self._next_start[host] = start + interval
+        if start > now:
+            await self._sleep(start - now)
 
     def _assemble(self, url: str, params: Mapping[str, Any] | None) -> str:
         """Put the query string on, and name what is wrong with the result ourselves.
@@ -263,6 +342,7 @@ class Gateway:
         # longer a per-method rule (M3-07a): the caller's flag decides for both.
         may_retry = retry
         for attempt in range(1, MAX_ATTEMPTS + 1):
+            await self._space(checked.host)
             started = time.monotonic()
             last = attempt == MAX_ATTEMPTS
             try:
@@ -293,13 +373,16 @@ class Gateway:
         content: bytes | None,
     ) -> GatewayResponse:
         # A caller does not get to set Host: it decides which certificate the
-        # connection is checked against, and that is the gateway's call.
-        given = {name: value for name, value in (headers or {}).items() if name.lower() != "host"}
+        # connection is checked against, and that is the gateway's call. Nor the
+        # User-Agent: one value per instance, on every request (adr/0025 F9).
+        given = {
+            name: value for name, value in (headers or {}).items() if name.lower() not in {"host", "user-agent"}
+        }
         request = self._client.build_request(
             method,
             httpx.URL(checked.url).copy_with(host=checked.address),
             content=content,
-            headers={**given, "Host": checked.host},
+            headers={**given, "Host": checked.host, "User-Agent": self._policy.user_agent},
             extensions={"sni_hostname": checked.host},
         )
         response = await self._client.send(request, stream=True)

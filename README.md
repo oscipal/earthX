@@ -281,9 +281,11 @@ EARTHX_GEOCODER_URL=https://nominatim.openstreetmap.org
 und `docker compose up` neu starten (oder nur `api` neu bauen/starten). Das
 ist der öffentliche Nominatim-Dienst, dessen Nutzungsbedingung höchstens eine
 Anfrage pro Sekunde über alle Prozesse hinweg erlaubt und eine eigene
-Kennung verlangt — beides setzt `earthx.adapters.nominatim` bereits um, ein
-zweiter, eigener `EARTHX_GEOCODER_USER_AGENT` ist nur für einen eigenen
-Nominatim-Betrieb nötig. Die Bedingung erlaubt außerdem, den Dienst jederzeit
+Kennung verlangt — beides setzt `earthx.adapters.nominatim` bereits um. Die
+Kennung ist der `User-Agent` der Instanz aus `EARTHX_USER_AGENT` (leer = die
+eingebaute `EarthX/0.1 (+https://github.com/oscipal/earthX)`), den `gateway` auf
+jede Anfrage setzt; `EARTHX_GEOCODER_USER_AGENT` wird nicht mehr gelesen (M5-18).
+Die Bedingung erlaubt außerdem, den Dienst jederzeit
 zu wechseln, ohne einen Release zu brauchen — daher die Umgebungsvariable statt
 einer festen Adresse im Code. Ein ungültiger Wert (kein `https`, ein
 Portname, eine eigene Anfrage) schaltet nur die Ortssuche ab, nicht den

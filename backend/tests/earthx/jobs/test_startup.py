@@ -179,3 +179,14 @@ def test_compose_never_switches_the_check_off() -> None:
         environment = service.get("environment") or {}
         names = environment if isinstance(environment, dict) else [entry.split("=")[0] for entry in environment]
         assert "S3_LIFECYCLE_CHECK" not in names, name
+
+
+def test_a_bad_user_agent_stops_the_start_without_its_value(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """M5-18 §3.1: checked before anything else, so no store or database is needed to see it."""
+    monkeypatch.setenv("EARTHX_USER_AGENT", "EarthX/0.1\r\nX-Injected: 1")
+    with caplog.at_level(logging.ERROR), pytest.raises(ValueError), TestClient(main.app):
+        pass
+    assert "EARTHX_USER_AGENT" in _messages(caplog)
+    assert "X-Injected" not in _messages(caplog)

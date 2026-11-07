@@ -12,7 +12,9 @@ from earthx.gateway.client import Gateway, GatewayResponse
 from earthx.gateway.errors import (
     AddressRejected,
     GatewayError,
+    HostResting,
     ResponseTooLarge,
+    RobotsDisallowed,
     TooManyRedirects,
     UpstreamError,
     UpstreamTimeout,
@@ -22,28 +24,37 @@ from earthx.gateway.errors import (
 )
 from earthx.gateway.policy import (
     ALLOWED_HOSTS_ENV,
+    DEFAULT_USER_AGENT,
+    USER_AGENT_ENV,
     Policy,
     UrlParts,
     host_of,
     inspect_url,
     normalize_host,
     policy_from_env,
+    user_agent_from_env,
 )
 from earthx.gateway.resolver import CachingResolver, Resolver, resolve_host
+from earthx.gateway.robots import RobotsRules
 from earthx.gateway.slots import ReadSlots
 
 __all__ = [
     "ALLOWED_HOSTS_ENV",
+    "DEFAULT_USER_AGENT",
+    "USER_AGENT_ENV",
     "AddressRejected",
     "CachingResolver",
     "CheckedUrl",
     "Gateway",
     "GatewayError",
     "GatewayResponse",
+    "HostResting",
     "Policy",
     "ReadSlots",
     "Resolver",
     "ResponseTooLarge",
+    "RobotsDisallowed",
+    "RobotsRules",
     "TooManyRedirects",
     "UpstreamError",
     "UpstreamTimeout",
@@ -57,4 +68,5 @@ __all__ = [
     "normalize_host",
     "policy_from_env",
     "resolve_host",
+    "user_agent_from_env",
 ]

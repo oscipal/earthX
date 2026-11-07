@@ -551,6 +551,15 @@ class TestTheCommandLine:
     def test_help_is_no_failure(self) -> None:
         assert main(["--help"]) == EXIT_OK
 
+    def test_a_bad_user_agent_stops_the_runner_without_its_value(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+    ) -> None:
+        monkeypatch.setenv("EARTHX_USER_AGENT", "EarthX/0.1 (person@example.org)")
+        assert main(["check", str(tmp_path / "recipe.json")]) == EXIT_OTHER
+        err = capsys.readouterr().err
+        assert "EARTHX_USER_AGENT" in err
+        assert "person@example.org" not in err
+
     def test_versions_is_json_with_engine_runner_and_platform(self, capsys: pytest.CaptureFixture[str]) -> None:
         assert main(["versions"]) == EXIT_OK
         versions = json.loads(capsys.readouterr().out)
