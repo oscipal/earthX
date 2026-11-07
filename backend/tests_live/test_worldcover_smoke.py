@@ -16,9 +16,12 @@ from contextlib import asynccontextmanager
 import httpx
 import pytest
 
-from earthx.catalog.datasets import ESA_WORLDCOVER_2020, ESA_WORLDCOVER_2021
+from earthx.catalog.datasets import registry
 from earthx.gateway import Policy
 from earthx.gateway.client import Gateway
+
+ESA_WORLDCOVER_2020 = registry().get("esa-worldcover-2020")
+ESA_WORLDCOVER_2021 = registry().get("esa-worldcover-2021")
 
 pytestmark = [
     pytest.mark.anyio,

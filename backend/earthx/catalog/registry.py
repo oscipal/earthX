@@ -1,6 +1,7 @@
 """Dataset registry: what the platform knows about a dataset before it asks the source.
 
-One entry per dataset, as a frozen dataclass (KLAERUNGEN B13, stage M1-M4). The
+One entry per dataset, as a frozen dataclass; since M5-13 the entries are YAML files under
+``backend/catalog/`` that ``catalog.entry_files`` reads into these classes (KLAERUNGEN B13, stage 2). The
 fields mirror the ``earthx:`` fields of architekturplan.md 5.1, so that
 ``collection.to_stac_collection`` is a mapping and not an interpretation.
 
@@ -156,6 +157,43 @@ class DatasetCategory(Enum):
     ELEVATION = "elevation"
     LAND_COVER = "land_cover"
     WEATHER_CLIMATE = "weather_climate"
+
+
+class LegalStatus(Enum):
+    """Whether the legal footing of the source is settled (adr/0024 R1, R3). Only Otto sets it, like every licence tier.
+
+    ``UNCLEAR`` marks a prototype source: loaded only in Otto's local instance (adr/0024 R5), its id carries
+    :data:`PROTOTYPE_PREFIX`. It says nothing about what the source needs to be read; that is ``AccessInfo.account``.
+    """
+
+    CLEARED = "cleared"
+    UNCLEAR = "unclear"
+
+
+class AccountKind(Enum):
+    """What reading the assets of a dataset needs (adr/0027 §6.1, F8). Independent of ``LegalStatus``."""
+
+    #: Metadata and assets anonymous, without any proof.
+    NONE = "none"
+    #: The source hands everyone a proof without an account (adr/0018 F4, conditions (a)-(d)).
+    ANONYMOUS_TOKEN = "anonymous_token"
+    #: The assets need a free account (CDSE download, Earthdata, CDS, ...): a catalogue entry with a link only (W0).
+    FREE_ACCOUNT = "free_account"
+    #: The assets need a cloud account of one's own, and the reader pays the transfer: W0 only.
+    REQUESTER_PAYS = "requester_pays"
+
+
+class AccountPath(Enum):
+    """The ways to read an account source beyond the link (adr/0027 §5). None is released in M5."""
+
+    W2A = "W2a"
+    W2B = "W2b"
+    W3 = "W3"
+    W4 = "W4"
+
+
+#: The prefix of every prototype dataset id (adr/0024 R3): visible in each address, recipe, file name and cache key.
+PROTOTYPE_PREFIX = "proto-"
 
 
 class ProviderRole(Enum):
@@ -334,11 +372,21 @@ class LicenseInfo:
 
 @dataclass(frozen=True, slots=True)
 class AccessInfo:
-    """Evidence that the source answers without a token (onboarding checklist, point 6)."""
+    """What reading the source needs, and the evidence of the anonymous check (onboarding checklist, point 6).
 
-    token_free_checked_at: date
+    ``token_free_checked_at`` is the day of that check, ``None`` exactly where ``account`` says it cannot pass
+    (``free_account``, ``requester_pays``). ``account_provider`` names the identity service of an account source for
+    the hint and the link, never the address of a token endpoint; ``account_paths`` the ways released for this dataset
+    beyond the link. The rules between the four, and with the licence tier, are ``DatasetConfig._check_access``
+    (adr/0027 §6.1).
+    """
+
+    token_free_checked_at: date | None
     method: str
     cors: bool | None
+    account: AccountKind
+    account_provider: str | None
+    account_paths: tuple[AccountPath, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -832,6 +880,12 @@ class TemporalExtent:
     end: datetime | None
 
     def __post_init__(self) -> None:
+        # An instant without a zone would be read as UTC by one reader and as local time by the next, and cannot be
+        # compared with one that has a zone; a YAML entry names the offset (M5-13 review).
+        for name in ("start", "end"):
+            instant = getattr(self, name)
+            if instant is not None and (not isinstance(instant, datetime) or instant.utcoffset() is None):
+                raise ConfigError(f"temporal extent {name} is an instant with a time zone offset")
         if self.start is not None and self.end is not None and self.start > self.end:
             raise ConfigError(f"temporal extent ends before it starts: {self.start} to {self.end}")
 
@@ -1114,6 +1168,10 @@ class DatasetConfig:
     temporal_extent: TemporalExtent
     capabilities: Capabilities
     license: LicenseInfo
+    # Whether the legal footing is settled (adr/0024 R3), and for ``unclear`` one sentence on what is unclear, no legal
+    # opinion; ``None`` for ``cleared``. No default (KLAERUNGEN B10).
+    legal_status: LegalStatus
+    legal_note: str | None
     access: AccessInfo
     source: SourceInfo
     coverage: CoverageInfo
@@ -1165,6 +1223,8 @@ class DatasetConfig:
         self._check_doi()
         self._check_license_is_identifiable()
         self._check_license_tier()
+        self._check_legal_status()
+        self._check_access()
         self._check_attribution()
         self._check_coverage()
         self._check_source()
@@ -1455,6 +1515,57 @@ class DatasetConfig:
                 f"{self.dataset_id}: a licence without an SPDX identifier needs a name and a URL"
             )
 
+    def _check_legal_status(self) -> None:
+        """``unclear`` if and only if the id has the prototype prefix, and only then a note (adr/0024 R3)."""
+        if not isinstance(self.legal_status, LegalStatus):
+            raise ConfigError(f"{self.dataset_id}: legal_status must be one of {[s.value for s in LegalStatus]}")
+        prototype = self.dataset_id.startswith(PROTOTYPE_PREFIX)
+        if self.legal_status is LegalStatus.UNCLEAR and not prototype:
+            raise ConfigError(f"{self.dataset_id}: legal_status unclear needs an id starting with {PROTOTYPE_PREFIX!r}")
+        if self.legal_status is LegalStatus.CLEARED and prototype:
+            raise ConfigError(f"{self.dataset_id}: an id starting with {PROTOTYPE_PREFIX!r} needs legal_status unclear")
+        if self.legal_status is LegalStatus.UNCLEAR:
+            if not isinstance(self.legal_note, str) or not self.legal_note.strip():
+                raise ConfigError(f"{self.dataset_id}: legal_status unclear needs a legal_note saying what is unclear")
+        elif self.legal_note is not None:
+            raise ConfigError(f"{self.dataset_id}: legal_note belongs to legal_status unclear only")
+
+    def _check_access(self) -> None:
+        """The start check of adr/0027 §6.1 between ``access.account``, its other fields and the licence tier."""
+        access = self.access
+        if not isinstance(access.account, AccountKind):
+            raise ConfigError(f"{self.dataset_id}: access.account must be one of {[k.value for k in AccountKind]}")
+        if not isinstance(access.account_paths, tuple) or not all(
+            isinstance(path, AccountPath) for path in access.account_paths
+        ):
+            raise ConfigError(f"{self.dataset_id}: access.account_paths is a tuple of AccountPath")
+        # No way beyond the link (W0) is released (adr/0027 §9): a value here comes with a decision of Otto and a change
+        # of this check, never with an entry alone.
+        if access.account_paths:
+            raise ConfigError(f"{self.dataset_id}: access.account_paths stays empty, no account path is released")
+        provider = access.account_provider
+        if provider is not None and (not isinstance(provider, str) or not provider.strip()):
+            raise ConfigError(f"{self.dataset_id}: access.account_provider is a name or null")
+        anonymous = access.account in (AccountKind.NONE, AccountKind.ANONYMOUS_TOKEN)
+        if anonymous and provider is not None:
+            raise ConfigError(f"{self.dataset_id}: access.account {access.account.value} names no account_provider")
+        if access.account is AccountKind.FREE_ACCOUNT and provider is None:
+            raise ConfigError(f"{self.dataset_id}: access.account free_account names its account_provider")
+        if anonymous != (access.token_free_checked_at is not None):
+            raise ConfigError(
+                f"{self.dataset_id}: access.token_free_checked_at is set exactly for access.account none and "
+                "anonymous_token"
+            )
+        # An account source is a catalogue entry with a link (W0) while no account path is released (adr/0027 §6.1).
+        # `anonymous_token` is held to the same tier until Otto has taken the sentence of adr/0018 §12 into
+        # ENTSCHEIDUNGEN_2026-09-18.md (part B, Planetary Computer RTC; adr/0027 §6.1 "bis dahin wie free_account"). DS-04
+        # does not lift it: Sentinel-1 GRD over Earth Search needs no token (M5-13 plan §8a, correction to F3).
+        if access.account is not AccountKind.NONE and self.license.tier is not LicenseTier.CATALOG:
+            raise ConfigError(
+                f"{self.dataset_id}: access.account {access.account.value} allows licence tier catalog only "
+                "(adr/0027 §6.1)"
+            )
+
     def _check_license_tier(self) -> None:
         """KLAERUNGEN B11: display and processing need distribution and modification;
         a catalogue-only entry names no viewer (M3-02 K-03, Otto's answer of
@@ -1620,7 +1731,7 @@ class Attributable(Protocol):
 class RetiredDataset:
     """A dataset that left the registry, with the licence block and the citation it had (adr/0017 rule III).
 
-    Data, not code: the list lives in ``catalog/datasets.py``. ``recipe.json`` files of the user have
+    Data, not code: the list lives in ``backend/catalog/retired.yaml``. ``recipe.json`` files of the user have
     no expiry, so the id stays on the list; the licence block and the citation are those of the last
     entry and keep the side files of a finished job complete.
     """
@@ -1694,3 +1805,35 @@ class DatasetRegistry:
 
     def __len__(self) -> int:
         return len(self._by_id)
+
+
+# How the YAML entries are read (docs/plans/m5/m5-13-yaml-lader.md §3.2, F1): `catalog.entry_files` checks a file
+# against these very dataclasses with pydantic, strictly and without unknown fields, so there is no second schema next
+# to them. A plain dict, so this module does not import pydantic; it is what pydantic reads off a stdlib dataclass.
+ENTRY_FILE_CONFIG = {"strict": True, "extra": "forbid"}
+for _entry_part in (
+    Capabilities,
+    TermsOfUse,
+    LicenseInfo,
+    AccessInfo,
+    SourceInfo,
+    Provider,
+    CoverageInfo,
+    ZarrInfo,
+    DefaultRender,
+    ViewerInfo,
+    HealthInfo,
+    SpatialExtent,
+    TemporalExtent,
+    MaskClass,
+    MaskSource,
+    ShareClasses,
+    FilterValue,
+    SearchFilter,
+    SearchCapabilities,
+    IndexPreset,
+    DatasetConfig,
+    RetiredDataset,
+):
+    _entry_part.__pydantic_config__ = ENTRY_FILE_CONFIG
+del _entry_part

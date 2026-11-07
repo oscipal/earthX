@@ -15,8 +15,8 @@ from datetime import datetime, timezone
 
 import pytest
 
-from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.registry import BrowseMode, MissingProperty, ViewerInfo, group_key
+from tests.catalog.entries import SENTINEL_2_L2A
 
 
 def viewer(*, group_by: tuple[str, ...]) -> ViewerInfo:
@@ -215,7 +215,7 @@ class TestTheDayOfAcquisition:
         assert acquisition_day({"id": "x"}, self.S2) is None
 
     def test_the_sentinel_2_and_the_zarr_entry_have_a_day_and_the_dem_none(self) -> None:
-        from earthx.catalog.datasets import COP_DEM_GLO_30
+        from tests.catalog.entries import COP_DEM_GLO_30
         from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR
 
         assert ACQ in SENTINEL_2_L2A.viewer.results_group_by  # type: ignore[union-attr]

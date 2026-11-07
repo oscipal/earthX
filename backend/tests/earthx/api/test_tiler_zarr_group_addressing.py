@@ -26,10 +26,10 @@ from starlette.requests import Request
 
 from earthx.access.resolve import target_gsd_for as _target_gsd
 from earthx.api.tiler import _resolve_asset_path
-from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.registry import DataFormat, ZarrInfo
 from earthx.gateway import Policy
 from earthx.readers.zarr_reader import ZarrReader
+from tests.catalog.entries import SENTINEL_2_L2A
 from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR, without_cloud_share
 from tests.earthx.readers import mini_zarr_composite, mini_zarr_multiscales
 from tests.earthx.readers.mini_zarr_composite import GROUP as COMPOSITE_GROUP

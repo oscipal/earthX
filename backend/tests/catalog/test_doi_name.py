@@ -6,8 +6,8 @@ from dataclasses import replace
 
 import pytest
 
-from earthx.catalog.datasets import REGISTRY
 from earthx.catalog.registry import ConfigError, doi_name
+from tests.catalog.entries import REGISTRY
 
 
 @pytest.mark.parametrize(

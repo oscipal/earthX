@@ -1,0 +1,515 @@
+# Sentinel-2 L2A, Collection 1, over Earth Search v1 (COG). Decided in docs/adr/0003-erster-datensatz.md §6 (first
+# token-free dataset) and §11.2 (licence).
+#
+# One file is one entry of the registry (docs/plans/m5/m5-13-yaml-lader.md, KLAERUNGEN B13 stage 2). The fields are
+# those of `DatasetConfig` in `backend/earthx/catalog/registry.py`, every one set on purpose, none with a default
+# (KLAERUNGEN B10); `catalog.entry_files` reads the file strictly. Every value carries the place it comes from.
+
+# The same id as the upstream collection, by Otto's decision of 19.09.2026: the shorter "sentinel-2-l2a" is the name
+# of the older Earth Search collection that Collection 1 replaces (adr/0003 §3, Option B), so it would be read as that
+# one.
+dataset_id: sentinel-2-c1-l2a
+title: Sentinel-2 L2A
+description: >-
+  Sentinel-2 Level-2A, Collection 1, as cloud-optimized GeoTIFF from baseline 5.0 on. Served by Earth Search v1
+  (Element 84) from the Registry of Open Data on AWS (adr/0003 §3, Option B).
+keywords: [sentinel-2, optical, multispectral, surface reflectance, copernicus]
+category: optical
+# `providers` and `summaries.gsd` of the source's own collection (read 06.11.2026, UI-05 plan §5). The source links
+# AWS over plain http only, so that provider stays without a link.
+providers:
+- name: ESA
+  roles: [producer]
+  url: https://earth.esa.int/web/guest/home
+- name: Sinergise
+  roles: [processor]
+  url: https://registry.opendata.aws/sentinel-2/
+- name: AWS
+  roles: [host]
+  url: null
+- name: Element 84
+  roles: [processor]
+  url: https://element84.com
+gsd: [10.0, 20.0, 60.0]
+# The collection's own `cite-as` link (read from the source on 22.09.2026, M2-08 plan §3). adr/0003 left onboarding
+# checklist point 3 open because M1 read nothing from the source; the link was there all along. It names the ESA
+# product, not Element 84's COG distribution, which is why it differs from the DOI of the retired Zarr entry rather
+# than repeating it. No separate persistent citation beyond it.
+doi: https://doi.org/10.5270/S2_-742ikth
+citation: null
+data_class: raster-time-series
+format: cog
+# Both extents as the upstream collection reports them, read on 22.09.2026 (M2-08 plan §3), replacing the M1
+# placeholders. The source states the whole globe for the spatial extent: wider than Sentinel-2 actually flies, but it
+# is the source's own claim and not ours to narrow. The start is the first acquisition the collection carries; the end
+# stays open because the archive still grows.
+spatial_extent:
+  bbox: [-180.0, -90.0, 180.0, 90.0]
+temporal_extent:
+  start: 2015-06-27T10:25:31.456000+00:00
+  end: null
+# Every flag set deliberately (KLAERUNGEN B10). These say what the dataset is suited for under its licence, not what
+# the platform has already built.
+capabilities:
+  roi: true
+  time_range: true
+  band_math: true
+  interpolation: true
+  # Every entry switches it on by itself (B10); M4 R3, Otto 05.10.2026.
+  reprojection: true
+  # M4-18 (Otto, 20.10.2026): the layer is described in `mask` below.
+  masking: true
+  # DS-06 (Otto, 30.10.2026): a mask by value needs no layer, so every entry has it.
+  value_masking: true
+  normalization: true
+  ml_processing: true
+  # No complex quad-pol data: decomp.py stays out (ENTSCHEIDUNGEN §3).
+  quad_pol: false
+  # A time series, not a single coverage: density, not extent (adr/0004 §5).
+  single_coverage_product: false
+# adr/0003 §11.2: checked by Otto against the Sentinel Data Legal Notice. Tier Processing: modification and
+# distribution are explicitly allowed and the text knows no non-commercial reservation.
+license:
+  spdx_id: null
+  name: Sentinel Data Legal Notice
+  # The licence of the data and, since Otto's decision of 19.09.2026, also the terms we pass on at a download. Read
+  # from the primary source on 19.09.2026.
+  url: https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice
+  commercial_use: true
+  distribution: true
+  derivatives: true
+  share_alike: false
+  attribution_required: true
+  tier: processing
+  # {year} is filled in where data leaves the platform (adr/0003 §11.2: the notice belongs on the download, not only
+  # in a footer).
+  attribution_modified: Contains modified Copernicus Sentinel data {year}
+  attribution_unmodified: Copernicus Sentinel data {year}
+  # Read from the Legal Notice itself on 19.09.2026 (the host is released). The document carries no disclaimer by the
+  # provider; it carries a waiver by the user, plus "without any express or implied warranty". Otto settled the
+  # wording on the same day: we pass on the source's terms, not our own, and the text stays free of the attribution
+  # above, which goes in front of it.
+  terms:
+    url: https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice
+    notice:
+      # The Legal Notice's own words, shortened only where it names itself: "without any express or implied warranty,
+      # including as regards quality and suitability for any purpose", "renounces to any claims for damages against
+      # the European Union and the providers of the said Data and Information", "any dispute, including contracts and
+      # torts claims, that might be filed in court, in arbitration or in any other form of dispute settlement".
+      en: >-
+        Use is subject to the Sentinel Data Legal Notice: {terms_url}. The data are provided without any express
+        or implied warranty, including as regards quality and suitability for any purpose; by using them the user
+        renounces any claims for damages against the European Union and the providers of the data. The waiver
+        encompasses any dispute, including contracts and torts claims, that might be filed in court, in arbitration
+        or in any other form of dispute settlement.
+# The licence is checked and the tier set by Otto (adr/0024 R1, R3): no prototype source.
+legal_status: cleared
+legal_note: null
+access:
+  # Reachability of earth-search.aws.element84.com, measured in adr/0003 §10.1.
+  token_free_checked_at: 2026-09-18
+  method: anonymous HTTPS, no authentication header (adr/0003 §10.1)
+  # Measured in adr/0006 §3.6, at the asset bucket and at Earth Search itself: `Access-Control-Allow-Origin: *`. The
+  # viewer decides on this field whether it loads a quicklook straight from the source; for Sentinel-2 it may, and
+  # that is why there is no asset proxy (D14).
+  cors: true
+  # Metadata and assets anonymous (adr/0027 §6.1): no account, no account path.
+  account: none
+  account_provider: null
+  account_paths: []
+# adr/0005 rule I branches on this per collection: an unknown one is a 404, not the empty, valid-looking result Earth
+# Search returns for it.
+source:
+  adapter: earth-search-v1
+  endpoint: https://earth-search.aws.element84.com/v1
+  # Collection 1 (adr/0003 §6): COGs only, from baseline 5.0 on.
+  source_collection_id: sentinel-2-c1-l2a
+  # Measured at real items in adr/0006 §3.7: all 22 assets of this collection lie on this one host. `sentinel-
+  # cogs…amazonaws.com` belongs to the older collection and deliberately stays out of the allowlist.
+  asset_hosts: [e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com]
+  # Federated items, nothing harvested into our own pgstac (architekturplan.md 5.2).
+  item_holding: federated
+  # The region the asset host names (M5-07 plan §2, `x-amz-bucket-region` measured 06.11.2026).
+  data_region: aws:us-west-2
+coverage:
+  provider: upstream-aggregation
+  # z8 is Otto's setting for this dataset (adr/0004 §5, decision log 19.09.2026). The footprint width is the granule
+  # size of Sentinel-2, which docs/ does not record. The two are checked against each other, but the level is the
+  # decision and the width is not derived from it.
+  typical_footprint_km: 110.0
+  max_geotile_level: 8
+# Onboarding checklist point 8, filled in M2-04 from a measurement at real assets: `visual` is the TCI the source
+# already renders as 8-bit RGB, which is why the stretch is the identity. Measured `p2/p98` over five scenes on four
+# continents (July 2026, cloud cover below 10 %): the second percentile runs from 9 over vegetation to 202 over
+# desert, so any fixed stretch other than the identity would clip a whole climate zone. The scene-specific stretch is
+# what `/statistics` is for: the viewer asks once per item and overwrites `rescale` (adr/0006 §5, F18); this value is
+# only the picture before anyone touches a control.
+default_render:
+  title: True colour (TCI)
+  assets: [visual]
+  rescale:
+  - [0.0, 255.0]
+  - [0.0, 255.0]
+  - [0.0, 255.0]
+  colormap_name: null
+  expression: null
+  # rio-tiler's own default, named rather than implied (KLAERUNGEN B10).
+  resampling: nearest
+# The viewer groups the items of one acquisition day per MGRS tile into one step of the time line (Otto, 20.09.2026).
+# `datetime` enters the key as its UTC date, `grid:code` is the MGRS tile Earth Search carries on every item of this
+# collection. M2-07a reads this field and implements nothing of its own.
+#
+# Zoom levels released for the tile path (M2-10, Otto 22.09.2026 F2 a): exactly what the viewer already did before the
+# field existed, now said out loud at the entry instead of defaulted in the client's code (KLAERUNGEN B10). z19 is
+# several times past this source's ~10 m/px (≈z14 near the equator, coarser towards the poles): headroom to zoom into
+# real detail, without letting an ordinary scroll-zoom run up to MapLibre's own ceiling of z22. There is no lower
+# bound to set: a COG carries overviews, so a tile at z0 costs a read of the coarsest overview and nothing more.
+#
+# M3-12: the source's own thumbnail (role `thumbnail`) is a real quicklook a browser loads cross-origin and keys
+# transparent on its own canvas (D14, `access.cors` above); `16` is the JPEG's near-black padding threshold measured
+# for this source (`mapLayers.ts` before this field existed). The results list heads its groups by day and overpass
+# (`s2:datatake_id`, V-4/D30) rather than day and MGRS tile; `group_by` stays the tile-and-day key it always was.
+viewer:
+  group_by: [datetime, 'grid:code']
+  min_zoom: 0
+  max_zoom: 19
+  browse: quicklook
+  quicklook_nodata_max: 16
+  results_group_by: [datetime, 's2:datatake_id']
+# Not health in the sense M5 will measure it: adr/0003 §10.1 got HTTP 200 on /v1/collections/sentinel-2-c1-l2a,
+# nothing beyond that. The reachability date itself lives on `access.token_free_checked_at` (point 6), not here.
+health:
+  status: ok
+# Element 84's Collection 1 is a released, versioned product line, not a pilot.
+maturity: stable
+zarr: null
+# The 20 m layer; read onto the 10 m grid of the bands with `nearest`, no new values (M4-18).
+mask:
+  asset: scl
+  band: scl
+  # The classes of Sentinel-2's scene classification layer, with the names of SentiWiki "S2 Processing", L2A
+  # Algorithms, Scene Classification, Table 3 (read by Otto on 20.10.2026; plans/m4/m4-18-masking-normalisierung.md
+  # §8).
+  classes:
+  - value: 0
+    label: NO_DATA
+  - value: 1
+    label: SATURATED_OR_DEFECTIVE
+  - value: 2
+    label: CAST_SHADOWS
+  - value: 3
+    label: CLOUD_SHADOWS
+  - value: 4
+    label: VEGETATION
+  - value: 5
+    label: NOT_VEGETATED
+  - value: 6
+    label: WATER
+  - value: 7
+    label: UNCLASSIFIED
+  - value: 8
+    label: CLOUD_MEDIUM_PROBABILITY
+  - value: 9
+    label: CLOUD_HIGH_PROBABILITY
+  - value: 10
+    label: THIN_CIRRUS
+  - value: 11
+    label: SNOW or ICE
+  # Cloud shadows, both cloud classes and thin cirrus: the example of architekturplan.md 7.1.
+  suggested: [3, 8, 9, 10]
+  reference: https://sentiwiki.copernicus.eu/web/s2-processing
+  note: >-
+    Class names follow the current Sentinel-2 L2A documentation. Older processing baselines name some classes
+    differently (for example 2 as Dark Area Pixels, 7 as Clouds Low Probability / Unclassified); the values are
+    the same.
+  # DS-03 plan §6.6, §6.10: 8, 9, 10 is the definition of `eo:cloud_cover`, measured equal on 48 of 48 scenes (plan
+  # §6.2.5); cloud shadows (3) do not count.
+  cloud_classes: [8, 9, 10]
+  cloud_note: Sen2Cor's classification can miss thin cirrus and can take snow or bright ground for clouds.
+  # DS-03c (Otto, 05.11.2026): the class of the filter of the same name, counted in the one reading of the
+  # classification. "Degraded data" has no class and stays with the value of the item.
+  share_classes:
+  - measure: earthx:aoi_thin_cirrus
+    classes: [10]
+  - measure: earthx:aoi_cloud_shadow
+    classes: [3]
+  - measure: earthx:aoi_snow_ice
+    classes: [11]
+  - measure: earthx:aoi_water
+    classes: [6]
+  - measure: earthx:aoi_vegetation
+    classes: [4]
+  - measure: earthx:aoi_not_vegetated
+    classes: [5]
+# The twelve reflectance bands of the L2A product (surface reflectance, scaled by the item), then the other assets.
+# Sources: Sen2Cor L2A IODD (S2-PDGS-MPC-L2A-IODD-2.4, issue 02) Tables 6 and 7 (cloud and snow probability: unit
+# percentage, range 0-100), Table 16 (AOT: unit less, AOT = DN / 1000), Table 20 (water vapour: range 0.3-5.5 cm); the
+# collection's `item_assets` give `wvp` the unit "cm" and scale 0.001 as well. `preview` is a true-colour picture like
+# `visual`, so it has no unit on purpose.
+#
+# The unit of a value after the scaling, in UCUM (adr/0014 §15n). Surface reflectance is a ratio, so "1". An asset
+# that is not on the list is "unknown", and so is an explicit null; none of those is guessed. A class layer has no
+# unit (its values name classes, `mask` above), and the TCI `visual` is the 8-bit picture the default render shows.
+# The aerosol optical thickness is unit less as well, so it shares the "1".
+band_units:
+  coastal: '1'
+  blue: '1'
+  green: '1'
+  red: '1'
+  rededge1: '1'
+  rededge2: '1'
+  rededge3: '1'
+  nir: '1'
+  nir08: '1'
+  nir09: '1'
+  swir16: '1'
+  swir22: '1'
+  aot: '1'
+  wvp: cm
+  cloud: '%'
+  snow: '%'
+  scl: null
+  visual: null
+  preview: null
+# Pictures made from the bands, not bands themselves. `scl` is the mask layer (`mask` above).
+auxiliary_assets: [visual, preview]
+# DS-02 plan §6.2, §6.2a and DS-02c (Otto 28.10.2026 and 30.10.2026): every filter below was measured against the
+# source on 30.10.2026 (`scripts/ds-02-filters/measure.py`, adr/0021 §8): over 7 regions and 2 seasons, in 252
+# searches, `query` returned exactly the scenes the unfiltered sample says it must. Clouds first, then what the scene
+# shows, then how it was taken. Left out on purpose, with the reason in adr/0021 §8: `s2:dark_features_percentage`
+# (the items carry it only up to baseline 05.10, so a filter on it would drop every newer scene without a word), the
+# parts of the cloud cover (`s2:medium_proba_clouds_percentage`, `s2:high_proba_clouds_percentage`),
+# `s2:unclassified_percentage`, the viewing angles, the MGRS tile (a text, not a list to tick) and every identifier,
+# timestamp and constant. The items carry no `sat:orbit_state` or `sat:relative_orbit`, so neither is offered.
+#
+# Most are a share of the scene in percent, 0 to 100, and area-based: a search per pass weights the scenes of an
+# overpass by the area they add to the mosaic. `within_aoi` is the measure that gives the share inside the AOI
+# instead, where the filter has one.
+search_filters:
+- property: eo:cloud_cover
+  kind: range
+  title: Cloud cover
+  description: Share of the whole scene (about 110 × 110 km) covered by clouds, as reported by the source.
+  unit: '%'
+  minimum: 0.0
+  maximum: 100.0
+  integer: false
+  values: []
+  # DS-03 plan §6.10: the range of this filter may also be applied to the cloud share inside the AOI.
+  within_aoi: earthx:aoi_cloud_cover
+  group: Clouds
+  area_based: true
+- property: s2:thin_cirrus_percentage
+  kind: range
+  title: Thin cirrus
+  description: Share of the scene covered by thin cirrus clouds. Part of the cloud cover.
+  unit: '%'
+  minimum: 0.0
+  maximum: 100.0
+  integer: false
+  values: []
+  within_aoi: earthx:aoi_thin_cirrus
+  group: Clouds
+  area_based: true
+- property: s2:cloud_shadow_percentage
+  kind: range
+  title: Cloud shadow
+  description: Share of the scene lying in the shadow of clouds. Not part of the cloud cover.
+  unit: '%'
+  minimum: 0.0
+  maximum: 100.0
+  integer: false
+  values: []
+  within_aoi: earthx:aoi_cloud_shadow
+  group: Clouds
+  area_based: true
+- property: s2:nodata_pixel_percentage
+  kind: range
+  title: No data
+  description: Share of the scene tile without image data, e.g. at the edge of a swath.
+  unit: '%'
+  minimum: 0.0
+  maximum: 100.0
+  integer: false
+  values: []
+  # Class 0 of the same classification the cloud share is read from (`mask`), so no further reading.
+  within_aoi: earthx:aoi_nodata
+  group: Scene
+  area_based: true
+- property: s2:snow_ice_percentage
+  kind: range
+  title: Snow and ice
+  description: Share of the scene classified as snow or ice.
+  unit: '%'
+  minimum: 0.0
+  maximum: 100.0
+  integer: false
+  values: []
+  within_aoi: earthx:aoi_snow_ice
+  group: Scene
+  area_based: true
+- property: s2:water_percentage
+  kind: range
+  title: Water
+  description: Share of the scene classified as water.
+  unit: '%'
+  minimum: 0.0
+  maximum: 100.0
+  integer: false
+  values: []
+  within_aoi: earthx:aoi_water
+  group: Scene
+  area_based: true
+- property: s2:vegetation_percentage
+  kind: range
+  title: Vegetation
+  description: Share of the scene classified as vegetation.
+  unit: '%'
+  minimum: 0.0
+  maximum: 100.0
+  integer: false
+  values: []
+  within_aoi: earthx:aoi_vegetation
+  group: Scene
+  area_based: true
+- property: s2:not_vegetated_percentage
+  kind: range
+  title: Not vegetated
+  description: Share of the scene classified as not vegetated, e.g. bare ground or built-up areas.
+  unit: '%'
+  minimum: 0.0
+  maximum: 100.0
+  integer: false
+  values: []
+  within_aoi: earthx:aoi_not_vegetated
+  group: Scene
+  area_based: true
+- property: s2:degraded_msi_data_percentage
+  kind: range
+  title: Degraded data
+  description: Share of the scene whose sensor data the source marks as degraded.
+  unit: '%'
+  minimum: 0.0
+  maximum: 100.0
+  integer: false
+  values: []
+  within_aoi: null
+  group: Scene
+  area_based: true
+- property: platform
+  kind: values
+  title: Satellite
+  description: The satellite that took the scene.
+  unit: null
+  minimum: null
+  maximum: null
+  integer: false
+  # The collection's own summaries name only 2A and 2B; the items carry 2C as well (measured).
+  values:
+  - value: sentinel-2a
+    label: Sentinel-2A
+  - value: sentinel-2b
+    label: Sentinel-2B
+  - value: sentinel-2c
+    label: Sentinel-2C
+  within_aoi: null
+  group: Acquisition
+  area_based: false
+- property: view:sun_elevation
+  kind: range
+  title: Sun elevation
+  description: Height of the sun above the horizon when the scene was taken. Low values mean long shadows.
+  unit: °
+  minimum: 0.0
+  maximum: 90.0
+  integer: false
+  values: []
+  within_aoi: null
+  group: Acquisition
+  area_based: false
+- property: view:sun_azimuth
+  kind: range
+  title: Sun azimuth
+  description: Direction of the sun when the scene was taken, in degrees clockwise from north.
+  unit: °
+  minimum: 0.0
+  maximum: 360.0
+  integer: false
+  values: []
+  within_aoi: null
+  group: Acquisition
+  area_based: false
+- property: s2:processing_baseline
+  kind: values
+  title: Processing baseline
+  description: Version of the ESA processing that made the scene. A new version comes every few months.
+  unit: null
+  minimum: null
+  maximum: null
+  integer: false
+  # Every value the source held on 30.10.2026 (measured over 2018–2026); the live test names a newer one.
+  values:
+  - value: '05.00'
+    label: '05.00'
+  - value: '05.09'
+    label: '05.09'
+  - value: '05.10'
+    label: '05.10'
+  - value: '05.11'
+    label: '05.11'
+  - value: '05.12'
+    label: '05.12'
+  - value: '05.13'
+    label: '05.13'
+  within_aoi: null
+  group: Acquisition
+  area_based: false
+# DS-03c: Sentinel-2 judges its filters per overpass (the overpass key `results_group_by` holds the instant) and
+# offers the coverage of the AOI.
+search_capabilities:
+  evaluate: true
+  aoi_coverage: true
+# NM4-14 plan §7.5 (Otto 30.10.2026): five indices of Awesome Spectral Indices (MIT; Montero et al. 2023, Scientific
+# Data 10, 197, https://doi.org/10.1038/s41597-023-02096-0), `formula` and `reference` as its `spectral-indices-
+# dict.json` holds them at commit 835fea7. The bands are the ones Earth Search names, N as `nir` (B08) like the
+# catalogue's `bands.json` and Sentinel Hub's scripts. The ranges and colormaps are plan §8.5.
+index_presets:
+- name: NDVI
+  title: Normalized Difference Vegetation Index
+  expression: (nir - red) / (nir + red)
+  rescale: [-1.0, 1.0]
+  colormap_name: rdylgn
+  formula: (N - R)/(N + R)
+  reference: https://ntrs.nasa.gov/citations/19740022614
+- name: NDWI
+  title: Normalized Difference Water Index (McFeeters 1996)
+  expression: (green - nir) / (green + nir)
+  rescale: [-1.0, 1.0]
+  colormap_name: rdbu
+  formula: (G - N) / (G + N)
+  reference: https://doi.org/10.1080/01431169608948714
+- name: NDSI
+  title: Normalized Difference Snow Index
+  expression: (green - swir16) / (green + swir16)
+  rescale: [-1.0, 1.0]
+  colormap_name: rdbu
+  formula: (G - S1) / (G + S1)
+  reference: https://doi.org/10.1109/IGARSS.1994.399618
+- name: NBR
+  title: Normalized Burn Ratio
+  expression: (nir - swir22) / (nir + swir22)
+  rescale: [-1.0, 1.0]
+  colormap_name: rdylgn
+  formula: (N - S2) / (N + S2)
+  reference: https://doi.org/10.3133/ofr0211
+# The constants are the defaults of the catalogue's `constants.json` (g 2.5, C1 6, C2 7.5, L 1), the same as in
+# Sentinel Hub's EVI script. L = 1 holds for reflectance from 0 to 1, which is what the core computes on.
+- name: EVI
+  title: Enhanced Vegetation Index
+  expression: 2.5 * (nir - red) / (nir + 6 * red - 7.5 * blue + 1)
+  rescale: [-1.0, 1.0]
+  colormap_name: rdylgn
+  formula: g * (N - R) / (N + C1 * R - C2 * B + L)
+  reference: https://doi.org/10.1016/S0034-4257(96)00112-5
+# NM4-64 (Otto 31.10.2026): the picture the eye sees, B04, B03, B02 at 10 m.
+true_color: [red, green, blue]

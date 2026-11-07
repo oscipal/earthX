@@ -25,9 +25,9 @@ import httpx
 import numpy
 import pytest
 
-from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.registry import FilterKind
 from earthx.gateway import Gateway
+from tests.catalog.entries import SENTINEL_2_L2A
 
 pytestmark = pytest.mark.anyio
 

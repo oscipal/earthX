@@ -30,11 +30,13 @@ import pytest
 
 from earthx.adapters import ADAPTER_SPECS, SearchParams, coverage, search_items
 from earthx.catalog.coverage import CoverageQuery
-from earthx.catalog.datasets import REGISTRY
+from earthx.catalog.datasets import registry
 from earthx.catalog.registry import DatasetConfig, FilterKind, SearchFilter
 from earthx.catalog.search_filters import Condition, RangeCondition, ValuesCondition
 from earthx.gateway import Policy
 from earthx.gateway.client import Gateway
+
+REGISTRY = registry()
 
 pytestmark = [pytest.mark.anyio, pytest.mark.live_dataset("sentinel-2-c1-l2a")]
 

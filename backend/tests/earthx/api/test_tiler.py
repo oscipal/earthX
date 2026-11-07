@@ -37,7 +37,6 @@ from earthx.api.tiler import (
     SCENE_ORDER_ROUTE,
     build_app,
 )
-from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
 from earthx.catalog.registry import DatasetRegistry, LicenseTier, SearchCapabilities, ViewerInfo
 from earthx.gateway import (
     CachingResolver,
@@ -48,6 +47,7 @@ from earthx.gateway import (
     check_url,
 )
 from earthx.gateway.policy import inspect_url
+from tests.catalog.entries import REGISTRY, SENTINEL_2_L2A
 
 FIXTURE = Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "earth_search" / "item_asset_hosts.json"
 DATASET = SENTINEL_2_L2A.dataset_id

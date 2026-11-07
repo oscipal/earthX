@@ -9,7 +9,6 @@ import pytest
 
 from earthx.access.download import attribution_text, build_notice_text
 from earthx.api.citation import citation_bib
-from earthx.catalog.datasets import REGISTRY, RETIRED, SENTINEL_2_L2A
 from earthx.catalog.registry import (
     AcquisitionYears,
     ConfigError,
@@ -18,6 +17,7 @@ from earthx.catalog.registry import (
     RetiredDatasetError,
     UnknownDatasetError,
 )
+from tests.catalog.entries import REGISTRY, RETIRED, SENTINEL_2_L2A
 from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR, TEST_ENTRIES
 
 GONE = "sentinel-2-l2a-zarr3"

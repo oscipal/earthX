@@ -13,11 +13,11 @@ from pydantic import ValidationError
 from rasterio.transform import Affine
 from rio_tiler.models import ImageData
 
-from earthx.catalog.datasets import COP_DEM_GLO_30, SENTINEL_2_L2A
 from earthx.catalog.registry import LicenseTier
 from earthx.processing import run
 from earthx.processing.errors import RecipeInvalid
 from earthx.processing.operators import MASK, REGISTRY, BandMeta, MaskParams, RasterMeta, applicable
+from tests.catalog.entries import COP_DEM_GLO_30, SENTINEL_2_L2A
 from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR, TEST_ENTRIES
 from tests.earthx.processing import sources
 from tests.earthx.processing.recipes import recipe_of_data, resolved

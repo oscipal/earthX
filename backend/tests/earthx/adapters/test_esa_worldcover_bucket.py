@@ -24,10 +24,10 @@ from earthx.adapters import (
     materialize_items,
 )
 from earthx.adapters.cop_dem_bucket import COG_MEDIA_TYPE
-from earthx.catalog.datasets import ESA_WORLDCOVER_2020, ESA_WORLDCOVER_2021
 from earthx.catalog.registry import ItemHolding, TemporalExtent
 from earthx.gateway import Policy
 from earthx.gateway.client import Gateway
+from tests.catalog.entries import ESA_WORLDCOVER_2020, ESA_WORLDCOVER_2021
 
 pytestmark = pytest.mark.anyio
 

@@ -51,7 +51,7 @@ from earthx.api.item_source import build_item_source, check_item_holdings
 from earthx.api.job_events import JobEvents
 from earthx.api.processing_route import JobApi
 from earthx.api.processing_route import router as processing_router
-from earthx.catalog.datasets import REGISTRY
+from earthx.catalog.datasets import registry as dataset_registry
 from earthx.catalog.registry import DatasetRegistry
 from earthx.gateway import CachingResolver, ReadSlots, user_agent_from_env
 from earthx.gateway.gdal import gdal_options
@@ -158,19 +158,21 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def build_app(
-    registry: DatasetRegistry = REGISTRY,
+    registry: DatasetRegistry | None = None,
     *,
     adapters: AdapterSpecs = ADAPTER_SPECS,
     operators: OperatorRegistry = OPERATORS,
 ) -> FastAPI:
     """The api application. ``registry``, ``adapters`` and ``operators`` are arguments so that a
     test can route collections and run operators of its own (M4-01a, M4-01b, M4-08b), the same
-    shape ``api.tiler.build_app`` has; the process entrypoint below takes the defaults.
+    shape ``api.tiler.build_app`` has; the process entrypoint below takes the defaults, the registry of the process
+    (:func:`~earthx.catalog.datasets.registry`) among them.
 
     A registry entry that asks an adapter for something ``adapters`` lacks stops
     the build (:func:`~earthx.adapters.check_adapter_specs`, M4-01b F1), and so does an index preset
     ``band_math`` would refuse (:func:`~earthx.processing.index_presets.check_index_presets`, NM4-14).
     """
+    registry = dataset_registry() if registry is None else registry
     check_adapter_specs(registry, adapters)
     check_index_presets(registry)
     # M3-16: this process's own JSON logging, before anything can log a line

@@ -32,11 +32,11 @@ from shapely.geometry import box, mapping
 
 from earthx.api import mosaic_tiles
 from earthx.api.tiler import build_app
-from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.registry import DatasetRegistry
 from earthx.gateway import UpstreamError, check_url
 from earthx.processing import run
 from earthx.processing.operators import REGISTRY as OPERATORS
+from tests.catalog.entries import SENTINEL_2_L2A
 from tests.earthx.api.test_tiler_chain import _decode
 from tests.earthx.processing import sources
 from tests.earthx.processing.recipes import recipe_of_data, resolved

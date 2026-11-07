@@ -24,9 +24,9 @@ from earthx.api import tiler
 from earthx.api.dependencies import policy_from_registry
 from earthx.api.result_tiles import result_environment
 from earthx.api.tiler import build_app, gdal_environment
-from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
 from earthx.gateway.gdal import crop_gdal_options, gdal_options, tile_gdal_options
 from tests.catalog import synthetic_chain
+from tests.catalog.entries import REGISTRY, SENTINEL_2_L2A
 from tests.earthx.access.test_mosaic_tiles import SEAM_X
 from tests.earthx.api.test_download_route import DATASET, FIXTURE, GOOD_AOI, ITEM_ID, _client_for
 from tests.earthx.api.test_tiler_mosaic import ZONE_32, Scenes, _app, _query, _serve, _tile_path

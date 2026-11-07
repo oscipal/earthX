@@ -14,7 +14,6 @@ from datetime import datetime, timezone
 
 import pytest
 
-from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
 from earthx.catalog.registry import (
     BrowseMode,
     Capabilities,
@@ -33,6 +32,7 @@ from earthx.catalog.registry import (
     ViewerInfo,
     max_geotile_level_for,
 )
+from tests.catalog.entries import REGISTRY, SENTINEL_2_L2A
 
 
 class TestCapabilitiesAreExplicit:

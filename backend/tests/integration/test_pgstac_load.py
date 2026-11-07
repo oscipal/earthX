@@ -14,7 +14,6 @@ from dataclasses import replace
 import psycopg
 import pytest
 
-from earthx.catalog.datasets import COP_DEM_GLO_30, REGISTRY, SENTINEL_2_L2A
 from earthx.catalog.load import main
 from earthx.catalog.pgstac import (
     PgstacError,
@@ -28,6 +27,7 @@ from earthx.catalog.pgstac import (
     use_pgstac_search_path,
 )
 from earthx.catalog.registry import DatasetRegistry
+from tests.catalog.entries import COP_DEM_GLO_30, REGISTRY, SENTINEL_2_L2A
 
 
 class TestVersionCheck:

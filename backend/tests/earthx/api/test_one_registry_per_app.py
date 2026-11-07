@@ -14,8 +14,8 @@ import httpx
 from fastapi.testclient import TestClient
 
 from earthx.api.main import build_app
-from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.registry import DatasetRegistry
+from tests.catalog.entries import SENTINEL_2_L2A
 from tests.earthx.adapters.conftest import answering, load
 
 # Known to this app only; the module-wide registry has no such dataset.

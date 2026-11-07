@@ -19,14 +19,16 @@ from earthx.catalog.collection import (
     _stac_license,
     to_stac_collection,
 )
-from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
 from earthx.catalog.registry import Capabilities
+from tests.catalog.entries import REGISTRY, SENTINEL_2_L2A
 from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR
 
 EARTHX_FIELDS = (
     "earthx:data_class",
     "earthx:capabilities",
     "earthx:license_flags",
+    "earthx:legal_status",
+    "earthx:legal_note",
     "earthx:access",
     "earthx:distributions",
     "earthx:health",

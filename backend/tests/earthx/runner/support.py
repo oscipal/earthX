@@ -12,10 +12,10 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
 
-from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.registry import DatasetRegistry
 from earthx.processing.methods import recipe_with_methods
 from earthx.processing.recipe import engine_versions, job_recipe_document
+from tests.catalog.entries import SENTINEL_2_L2A
 from tests.earthx.processing import sources
 from tests.earthx.processing.recipes import resolved
 from tests.earthx.readers import mini_zarr_cf

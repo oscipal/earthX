@@ -26,11 +26,11 @@ from rio_tiler.constants import WEB_MERCATOR_TMS, WGS84_CRS
 from rio_tiler.io import Reader
 
 from earthx.api.tiler import build_app
-from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.registry import DatasetRegistry, LicenseTier
 from earthx.gateway import check_url
 from earthx.processing import run
 from earthx.processing.operators import REGISTRY as OPERATORS
+from tests.catalog.entries import SENTINEL_2_L2A
 from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR
 from tests.earthx.processing import sources
 from tests.earthx.processing.recipes import recipe_of_data, resolved

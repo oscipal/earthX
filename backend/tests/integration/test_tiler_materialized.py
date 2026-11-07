@@ -23,10 +23,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from earthx.api.tiler import build_app
-from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.pgstac import load_collection, upsert_items, use_pgstac_search_path
 from earthx.catalog.registry import CoverageProvider, DatasetRegistry, ItemHolding, SearchCapabilities
 from earthx.gateway import check_url
+from tests.catalog.entries import SENTINEL_2_L2A
 
 MATERIALIZED = replace(
     SENTINEL_2_L2A,

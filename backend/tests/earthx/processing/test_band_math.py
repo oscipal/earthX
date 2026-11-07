@@ -20,11 +20,11 @@ from pydantic import ValidationError
 from rasterio.transform import Affine
 from rio_tiler.models import ImageData
 
-from earthx.catalog.datasets import COP_DEM_GLO_30, SENTINEL_2_L2A
 from earthx.catalog.registry import LicenseTier
 from earthx.processing.errors import RecipeInvalid
 from earthx.processing.operators import BAND_MATH, REGISTRY, BandMathParams, BandMeta, RasterMeta, applicable
 from earthx.processing.operators.band_math import FUNCTIONS, MAX_EXPONENT, MAX_EXPRESSION_CHARS, check_expression
+from tests.catalog.entries import COP_DEM_GLO_30, SENTINEL_2_L2A
 from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR
 
 NDVI = "(nir - red) / (nir + red)"

@@ -19,8 +19,8 @@ from rasterio.io import MemoryFile
 
 from earthx.access.colormaps import COLORMAPS
 from earthx.api.tiler import build_app
-from earthx.catalog.datasets import ESA_WORLDCOVER_2020, ESA_WORLDCOVER_2021
 from tests.catalog import synthetic_chain
+from tests.catalog.entries import ESA_WORLDCOVER_2020, ESA_WORLDCOVER_2021
 from tests.catalog.synthetic_chain import Chain
 
 

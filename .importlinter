@@ -240,6 +240,7 @@ forbidden_modules =
     earthx.objectstore
     earthx.catalog.collection
     earthx.catalog.coverage
+    earthx.catalog.entry_files
     earthx.catalog.geocode_cache
     earthx.catalog.load
     earthx.catalog.local_coverage

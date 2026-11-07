@@ -7,8 +7,8 @@ from dataclasses import replace
 import pytest
 
 from earthx.catalog.collection import to_stac_collection
-from earthx.catalog.datasets import COP_DEM_GLO_30, SENTINEL_2_L2A
 from earthx.catalog.registry import ConfigError
+from tests.catalog.entries import COP_DEM_GLO_30, SENTINEL_2_L2A
 
 
 class TestTheEntries:

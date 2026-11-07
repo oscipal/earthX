@@ -7,14 +7,14 @@ from dataclasses import replace
 import pytest
 
 from earthx.catalog.collection import to_stac_collection
-from earthx.catalog.datasets import (
+from earthx.catalog.registry import ConfigError, DatasetCategory, DatasetConfig, Provider, ProviderRole
+from tests.catalog.entries import (
     COP_DEM_GLO_30,
     ESA_WORLDCOVER_2020,
     ESA_WORLDCOVER_2021,
     REGISTRY,
     SENTINEL_2_L2A,
 )
-from earthx.catalog.registry import ConfigError, DatasetCategory, DatasetConfig, Provider, ProviderRole
 
 
 class TestTheEntries:

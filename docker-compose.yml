@@ -57,6 +57,9 @@ services:
       target: app
     command: ["python", "-m", "earthx.catalog.load"]
     environment:
+      # M5-13: the profile of this instance (local, ci, cloud; empty = none); only `local` lets prototype entries load
+      # (adr/0024 R5), and their path comes with an override file of its own, not here.
+      EARTHX_PROFILE: ${EARTHX_PROFILE:-}
       PGHOST: postgres
       PGPORT: "5432"
       PGUSER: ${POSTGRES_USER}
@@ -82,6 +85,9 @@ services:
     environment:
       # M5-18: the one User-Agent of this instance, on every outgoing request; empty = the built-in one.
       EARTHX_USER_AGENT: ${EARTHX_USER_AGENT:-}
+      # M5-13: the profile of this instance (local, ci, cloud; empty = none); only `local` lets prototype entries load
+      # (adr/0024 R5), and their path comes with an override file of its own, not here.
+      EARTHX_PROFILE: ${EARTHX_PROFILE:-}
       PGHOST: postgres
       PGPORT: "5432"
       PGUSER: ${POSTGRES_USER}
@@ -221,6 +227,9 @@ services:
       EARTHX_GEOCODER_URL: ${EARTHX_GEOCODER_URL:-}
       # M5-18: the one User-Agent of this instance, on every outgoing request; empty = the built-in one.
       EARTHX_USER_AGENT: ${EARTHX_USER_AGENT:-}
+      # M5-13: the profile of this instance (local, ci, cloud; empty = none); only `local` lets prototype entries load
+      # (adr/0024 R5), and their path comes with an override file of its own, not here.
+      EARTHX_PROFILE: ${EARTHX_PROFILE:-}
       # NM4-03: where a client reaches the tiler (published below as 8001). The
       # `tiles` link of a results document is built from this value, never from
       # the request's Host header.
@@ -266,6 +275,9 @@ services:
     environment:
       # M5-18: the one User-Agent of this instance, on every outgoing request; empty = the built-in one.
       EARTHX_USER_AGENT: ${EARTHX_USER_AGENT:-}
+      # M5-13: the profile of this instance (local, ci, cloud; empty = none); only `local` lets prototype entries load
+      # (adr/0024 R5), and their path comes with an override file of its own, not here.
+      EARTHX_PROFILE: ${EARTHX_PROFILE:-}
       # Like `api` above: the tiler reads the item cache and the statistics cache of
       # adr/0006 from the same Postgres. Both caches are optional (a miss is slower,
       # never wrong), but the process opens the pool at startup — M1-07 showed that a

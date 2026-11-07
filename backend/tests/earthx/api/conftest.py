@@ -19,10 +19,10 @@ from psycopg_pool import ConnectionPool
 
 from earthx.api.job_events import JobEvents
 from earthx.api.processing_route import JobApi, router
-from earthx.catalog.datasets import REGISTRY
 from earthx.logging import RequestIdMiddleware
 from earthx.objectstore.results import Store
 from earthx.processing.operators import OperatorRegistry
+from tests.catalog.entries import REGISTRY
 from tests.earthx.api.test_intake import FAR, S2, Heads, Source, gateway_for, s2_item
 from tests.earthx.processing.testops import OPERATORS
 from tests.integration.conftest import _postgres_env, require_postgres_env  # noqa: F401 - fixtures

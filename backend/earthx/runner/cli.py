@@ -28,7 +28,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
-from earthx.catalog.datasets import REGISTRY as DATASETS
+from earthx.catalog.datasets import registry as dataset_registry
 from earthx.catalog.registry import DatasetRegistry
 from earthx.processing import RunResult, check_instance_settings, check_scope, failure_kind, run, worker_environment
 from earthx.processing.errors import RecipeInvalid, UnsupportedRecipe
@@ -78,7 +78,7 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Sequence[str] | None = None, *, registry: DatasetRegistry = DATASETS) -> int:
+def main(argv: Sequence[str] | None = None, *, registry: DatasetRegistry | None = None) -> int:
     """Run one command; returns its exit code. ``registry`` is the one of this image unless a test hands in another."""
     try:
         args = _parser().parse_args(argv)
@@ -94,7 +94,7 @@ def main(argv: Sequence[str] | None = None, *, registry: DatasetRegistry = DATAS
     except ValueError as error:
         _say(f"not started: {error}")
         return EXIT_OTHER
-    checked = _checked(args.recipe, registry)
+    checked = _checked(args.recipe, dataset_registry(prototype=False) if registry is None else registry)
     if isinstance(checked, int):
         return checked
     loaded, hosts = checked
@@ -151,7 +151,7 @@ def _compare_engine(loaded: RecipeFile) -> None:
 
 def _facts_of(dataset_id: str) -> DatasetFacts | None:
     """The title and DOI of the dataset in this image's registry; the text names it by its identifier if it is not there."""
-    known = DATASETS.attributable(dataset_id)
+    known = dataset_registry(prototype=False).attributable(dataset_id)
     return DatasetFacts.of(known) if known is not None else None
 
 

@@ -26,7 +26,6 @@ import pytest
 
 from earthx.adapters import NotMaterialized
 from earthx.api.main import app
-from earthx.catalog.datasets import COP_DEM_GLO_30, SENTINEL_2_L2A
 from earthx.catalog.pgstac import (
     MaterializeRunRecord,
     delete_items_except,
@@ -40,6 +39,7 @@ from earthx.catalog.registry import AdapterKind, CoverageProvider, ItemHolding, 
 from earthx.discovery.materialize import main, run_materialize
 from earthx.gateway import Policy, UpstreamError
 from earthx.gateway.client import Gateway
+from tests.catalog.entries import COP_DEM_GLO_30, SENTINEL_2_L2A
 
 pytestmark = pytest.mark.anyio
 

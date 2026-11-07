@@ -20,8 +20,8 @@ from fastapi import FastAPI, HTTPException
 
 from earthx.api import mosaic_tiles
 from earthx.api.tiler import _fetch_item, build_app
-from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.gateway import UpstreamError, UpstreamTimeout, check_url
+from tests.catalog.entries import SENTINEL_2_L2A
 
 pytestmark = pytest.mark.anyio
 

@@ -109,7 +109,7 @@ from earthx.api.item_source import (
 )
 from earthx.api.result_tiles import ROUTER_PREFIX as RESULT_ROUTER_PREFIX
 from earthx.api.result_tiles import ResultSources, build_result_factory
-from earthx.catalog.datasets import REGISTRY
+from earthx.catalog.datasets import registry as dataset_registry
 from earthx.catalog.registry import (
     AcquisitionYearMissing,
     DatasetConfig,
@@ -1581,7 +1581,7 @@ def _result_sources() -> ResultSources | None:
 
 
 def build_app(
-    registry: DatasetRegistry = REGISTRY, *, adapters: AdapterSpecs = ADAPTER_SPECS, lifespan=_lifespan
+    registry: DatasetRegistry | None = None, *, adapters: AdapterSpecs = ADAPTER_SPECS, lifespan=_lifespan
 ) -> FastAPI:
     """The tiler application, with everything the factory needs hung on it.
 
@@ -1589,8 +1589,9 @@ def build_app(
     the same app against a registry of its own and without a database — not so that
     a deployment can: the process entrypoint below takes none of them. A registry
     entry that asks an adapter for something ``adapters`` lacks stops the build
-    (M4-01b F1).
+    (M4-01b F1). Without ``registry`` it is the one of the process (:func:`~earthx.catalog.datasets.registry`).
     """
+    registry = dataset_registry() if registry is None else registry
     check_adapter_specs(registry, adapters)
     # M3-16: this process's own JSON logging, before anything can log a line
     # (K-01/K-02) — the compose command starts it with `--no-access-log`, so

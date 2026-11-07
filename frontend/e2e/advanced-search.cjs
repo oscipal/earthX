@@ -159,7 +159,16 @@ async function check(browser, { theme, viewport }) {
   const done = () => popup.getByRole('button', { name: 'Done' }).click();
   const rect = (locator) => locator.evaluate((el) => el.getBoundingClientRect().toJSON());
   const inside = (inner, outer, slack = 1) => inner.x >= outer.x - slack && inner.y >= outer.y - slack && inner.x + inner.width <= outer.x + outer.width + slack && inner.y + inner.height <= outer.y + outer.height + slack;
-  const pick = (title) => page.locator('.dataset-toggle', { hasText: title }).first().click();
+  // The datasets stand on pages (UI-05); in a small window the one wanted may be on another page, so turn the pages first.
+  const pick = async (title) => {
+    const toggle = page.locator('.dataset-toggle', { hasText: title }).first();
+    const next = page.locator('.dataset-pages [aria-label="Next page"]');
+    const previous = page.locator('.dataset-pages [aria-label="Previous page"]');
+    for (const arrow of [previous, next]) {
+      while ((await toggle.count()) === 0 && (await arrow.getAttribute('aria-disabled')) !== 'true') await arrow.click();
+    }
+    await toggle.click();
+  };
   const view = VIEWPORTS[viewport];
 
   await page.goto(BASE);

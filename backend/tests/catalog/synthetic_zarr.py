@@ -15,7 +15,6 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
 from earthx.catalog.registry import (
     BrowseMode,
     DataFormat,
@@ -26,6 +25,7 @@ from earthx.catalog.registry import (
     ViewerInfo,
     ZarrInfo,
 )
+from tests.catalog.entries import REGISTRY, SENTINEL_2_L2A
 from tests.earthx.readers import mini_zarr
 
 DATASET_ID = "synthetic-zarr"
