@@ -880,6 +880,12 @@ class TemporalExtent:
     end: datetime | None
 
     def __post_init__(self) -> None:
+        # An instant without a zone would be read as UTC by one reader and as local time by the next, and cannot be
+        # compared with one that has a zone; a YAML entry names the offset (M5-13 review).
+        for name in ("start", "end"):
+            instant = getattr(self, name)
+            if instant is not None and (not isinstance(instant, datetime) or instant.utcoffset() is None):
+                raise ConfigError(f"temporal extent {name} is an instant with a time zone offset")
         if self.start is not None and self.end is not None and self.start > self.end:
             raise ConfigError(f"temporal extent ends before it starts: {self.start} to {self.end}")
 

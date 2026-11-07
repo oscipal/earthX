@@ -48,9 +48,12 @@ class _StrictLoader(yaml.SafeLoader):
         return super().compose_node(parent, index)
 
     def construct_mapping(self, node, deep=False):
-        seen: set[object] = set()
+        seen: set[str] = set()
         for key_node, _ in node.value:
             key = self.construct_object(key_node, deep=deep)
+            # Every key of an entry is text: `1` and `'1'` would both become "1" in JSON, and one would vanish.
+            if not isinstance(key, str):
+                raise yaml.YAMLError(f"a key is not text (line {key_node.start_mark.line + 1})")
             if key in seen:
                 raise yaml.YAMLError(f"duplicate key {key!r} (line {key_node.start_mark.line + 1})")
             seen.add(key)

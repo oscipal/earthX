@@ -14,8 +14,10 @@ from pathlib import Path
 import pytest
 import yaml
 
+from earthx.catalog import registry as registry_module
+from earthx.catalog.datasets import CATALOG_DIR
 from earthx.catalog.entry_files import EntryFileError, load_entry, load_retired, read_yaml, to_plain
-from earthx.catalog.registry import LicenseTier
+from earthx.catalog.registry import ENTRY_FILE_CONFIG, DatasetConfig, LicenseTier, RetiredDataset
 from tests.catalog.entries import COP_DEM_GLO_30, RETIRED
 
 DEM = COP_DEM_GLO_30.dataset_id
@@ -140,9 +142,24 @@ def test_the_message_names_no_value(tmp_path: Path) -> None:
         ("title: a\ntitle: b\n", "duplicate key"),
         ("a: &x 1\nb: *x\n", "anchor"),
         ("a: [1\n", "not valid YAML"),
+        ("a: *nowhere\n", "alias"),
+        ("license:\n  name: a\n  name: b\n", "duplicate key"),
+        ("1: a\n'1': b\n", "key is not text"),
+        ("band_units:\n  true: m\n", "key is not text"),
+        ("? [a]\n: 1\n", "key is not text"),
         ("a: !!python/object:os.system x\n", "not valid YAML"),
     ],
-    ids=["duplicate-key", "anchor-and-alias", "broken", "python-tag"],
+    ids=[
+        "duplicate-key",
+        "anchor-and-alias",
+        "broken",
+        "alias-alone",
+        "nested-duplicate-key",
+        "number-key",
+        "boolean-key",
+        "compound-key",
+        "python-tag",
+    ],
 )
 def test_a_file_that_is_no_plain_yaml_is_an_error(tmp_path: Path, text: str, problem: str) -> None:
     with pytest.raises(EntryFileError, match=problem):
@@ -189,3 +206,49 @@ def test_to_plain_writes_enums_dates_and_sets_as_plain_values() -> None:
     assert plain["license"]["tier"] == LicenseTier.PROCESSING.value
     assert plain["temporal_extent"]["start"] == COP_DEM_GLO_30.temporal_extent.start.isoformat()
     assert list(plain) == [name for name in COP_DEM_GLO_30.__dataclass_fields__]
+
+
+def test_an_instant_without_a_time_zone_is_an_error(tmp_path: Path) -> None:
+    data = _plain()
+    data["temporal_extent"]["start"] = "2010-12-01T00:00:00"
+    with pytest.raises(EntryFileError, match="time zone offset"):
+        load_entry(_write(tmp_path, data))
+
+
+@pytest.mark.parametrize(
+    "path", sorted((CATALOG_DIR / "datasets").glob("*.yaml")), ids=lambda path: path.name
+)
+def test_every_entry_file_round_trips(path: Path) -> None:
+    """Plan §3.3: what an entry file holds is exactly what its entry gives back, so no field is lost on the way."""
+    assert to_plain(load_entry(path)) == read_yaml(path)
+
+
+def test_the_retired_file_round_trips() -> None:
+    path = CATALOG_DIR / "retired.yaml"
+    assert [to_plain(gone) for gone in load_retired(path)] == read_yaml(path)
+
+
+def _dataclasses_below(kind: type, seen: set[type]) -> None:
+    import dataclasses
+    import typing
+
+    if kind in seen:
+        return
+    seen.add(kind)
+    hints = typing.get_type_hints(kind, vars(registry_module))
+    for field in dataclasses.fields(kind):
+        stack = [hints[field.name]]
+        while stack:
+            hint = stack.pop()
+            stack.extend(typing.get_args(hint))
+            if isinstance(hint, type) and dataclasses.is_dataclass(hint):
+                _dataclasses_below(hint, seen)
+
+
+def test_every_dataclass_of_an_entry_is_read_strictly() -> None:
+    """A new nested dataclass without ``ENTRY_FILE_CONFIG`` would quietly accept unknown fields."""
+    seen: set[type] = set()
+    for kind in (DatasetConfig, RetiredDataset):
+        _dataclasses_below(kind, seen)
+    loose = sorted(kind.__name__ for kind in seen if getattr(kind, "__pydantic_config__", None) is not ENTRY_FILE_CONFIG)
+    assert not loose
