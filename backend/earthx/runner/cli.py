@@ -30,7 +30,7 @@ from pathlib import Path
 
 from earthx.catalog.datasets import REGISTRY as DATASETS
 from earthx.catalog.registry import DatasetRegistry
-from earthx.processing import RunResult, check_scope, failure_kind, run, worker_environment
+from earthx.processing import RunResult, check_instance_settings, check_scope, failure_kind, run, worker_environment
 from earthx.processing.errors import RecipeInvalid, UnsupportedRecipe
 from earthx.processing.methods import DatasetFacts
 from earthx.processing.recipe import RECIPE_VERSION, CropOutput, Recipe, engine_versions
@@ -89,6 +89,11 @@ def main(argv: Sequence[str] | None = None, *, registry: DatasetRegistry = DATAS
         versions = {"runner_version": runner_version(), "engine": engine_versions(), "platform": platform_info()}
         print(json.dumps(versions, indent=2, sort_keys=True))
         return EXIT_OK
+    try:
+        check_instance_settings()
+    except ValueError as error:
+        _say(f"not started: {error}")
+        return EXIT_OTHER
     checked = _checked(args.recipe, registry)
     if isinstance(checked, int):
         return checked

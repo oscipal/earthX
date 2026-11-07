@@ -486,6 +486,13 @@ für bekannte Buckets entfällt. Der eigene Objektspeicher läuft nicht über
 `gateway`, sondern über das Modul für Plattformdienste (`adr/0015`) mit festem
 Endpunkt aus der Konfiguration.
 
+**Nachtrag 2026-11-06 (M5-18, `adr/0025` §6.2):** Jede Anfrage trägt den
+`User-Agent` der Instanz (`EARTHX_USER_AGENT`, beim Start geprüft), auch über
+GDAL; kein Aufrufer überschreibt ihn. `Policy` kennt einen Mindestabstand je
+Host (Vorgabe 0) und den Schalter `obey_robots` für `robots.txt` nach RFC 9309
+(Vorgabe aus; `429`, `5xx` oder nicht erreichbar lässt den Host im Lauf ruhen).
+Beides setzt der Harvester.
+
 ---
 
 ## 7. Processing-Ebene

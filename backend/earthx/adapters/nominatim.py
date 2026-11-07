@@ -369,7 +369,7 @@ async def _cache_set(cache: GeocodeCache | None, key: str, results: tuple[Geocod
         LOGGER.warning("geocode cache not writable, answer is not stored", exc_info=True)
 
 
-async def _fetch(gateway: Gateway, query: str, *, base_url: str, user_agent: str) -> Any:
+async def _fetch(gateway: Gateway, query: str, *, base_url: str) -> Any:
     response = await gateway.get(
         f"{base_url}{SEARCH_PATH}",
         params={
@@ -381,7 +381,6 @@ async def _fetch(gateway: Gateway, query: str, *, base_url: str, user_agent: str
             "accept-language": ACCEPT_LANGUAGE,
             "dedupe": 1,
         },
-        headers={"User-Agent": user_agent},
         # No repeat of our own: a retry would be a second request with no slot of
         # its own (plan §9). The gateway's own timeout/connection-error retries
         # would have the same problem, which is why `retry=False` covers those too,
@@ -399,7 +398,6 @@ async def geocode(
     *,
     gateway: Gateway,
     base_url: str,
-    user_agent: str,
     cache: GeocodeCache | None,
     rate_slot: RateSlot,
     max_wait_s: float = MAX_WAIT_S,
@@ -427,7 +425,7 @@ async def geocode(
         await asyncio.sleep(delay)
 
     try:
-        payload = await _fetch(gateway, query, base_url=base_url, user_agent=user_agent)
+        payload = await _fetch(gateway, query, base_url=base_url)
     except UpstreamError as error:
         if error.status_code == 429:
             await rate_slot.push_back(RATE_SLOT_NAME, seconds=PUSH_BACK_ON_429_S)

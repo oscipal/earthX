@@ -78,7 +78,6 @@ async def _geocode(text: str, *, gateway: Gateway, cache=None, rate_slot=None):
         text,
         gateway=gateway,
         base_url=BASE_URL,
-        user_agent="EarthX-test/0.0 (+https://example.invalid)",
         cache=cache,
         rate_slot=rate_slot or FakeRateSlot(),
     )
@@ -191,13 +190,12 @@ class TestGeocode:
                 "Berlin",
                 gateway=gateway,
                 base_url=BASE_URL,
-                user_agent="EarthX-test/0.0 (+https://example.invalid)",
-                cache=None,
+                        cache=None,
                 rate_slot=FakeRateSlot(),
             )
         request = seen[0]
         assert request.url.path == "/search"
-        assert request.headers["user-agent"] == "EarthX-test/0.0 (+https://example.invalid)"
+        assert request.headers["user-agent"] == NOMINATIM_POLICY.user_agent
         query = dict(httpx.QueryParams(request.url.query))
         assert query["q"] == "Berlin"
         assert query["format"] == "jsonv2"

@@ -50,7 +50,6 @@ async def search_place(request: Request, body: GeocodeRequest) -> dict:
     if pool is None:
         raise HTTPException(status_code=503, detail="place search is not available")
     base_url = request.app.state.earthx_geocoder_url
-    user_agent = request.app.state.earthx_geocoder_user_agent
 
     started = time.monotonic()
     try:
@@ -59,7 +58,6 @@ async def search_place(request: Request, body: GeocodeRequest) -> dict:
                 body.q,
                 gateway=gateway,
                 base_url=base_url,
-                user_agent=user_agent,
                 cache=PostgresGeocodeCache(conn),
                 rate_slot=PostgresRateSlot(conn),
             )

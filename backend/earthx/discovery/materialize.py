@@ -57,7 +57,7 @@ from earthx.catalog.pgstac import (
     use_pgstac_search_path,
 )
 from earthx.catalog.registry import DatasetConfig, ItemHolding, UnknownDatasetError
-from earthx.gateway import Gateway, GatewayError, Policy, host_of
+from earthx.gateway import Gateway, GatewayError, Policy, host_of, user_agent_from_env
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,6 +155,11 @@ async def _main_async(config: DatasetConfig, *, force: bool) -> MaterializeResul
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(sys.argv[1:] if argv is None else argv)
+    try:
+        user_agent_from_env()
+    except ValueError as error:
+        print(f"materialize failed: {error}", file=sys.stderr)
+        return 1
 
     try:
         config = REGISTRY.get(args.dataset_id)

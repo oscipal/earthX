@@ -37,7 +37,7 @@ from earthx.catalog.pgstac import (
     use_pgstac_search_path,
 )
 from earthx.catalog.registry import AdapterKind, CoverageProvider, ItemHolding, SearchCapabilities
-from earthx.discovery.materialize import run_materialize
+from earthx.discovery.materialize import main, run_materialize
 from earthx.gateway import Policy, UpstreamError
 from earthx.gateway.client import Gateway
 
@@ -308,3 +308,14 @@ class TestSearchOverACopDemShapedCollection:
             response = await client.get(f"/stac/collections/{COP_DEM_GLO_30.dataset_id}/items/{TILE_B}")
         assert response.status_code == 200, response.text
         assert response.json()["id"] == TILE_B
+
+
+def test_a_bad_user_agent_stops_the_command_without_its_value(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """M5-18 §3.1: checked before the registry, the database or a source is touched."""
+    monkeypatch.setenv("EARTHX_USER_AGENT", "EarthX/0.1 (person@example.org)")
+    assert main(["cop-dem-glo-30"]) == 1
+    err = capsys.readouterr().err
+    assert "EARTHX_USER_AGENT" in err
+    assert "person@example.org" not in err

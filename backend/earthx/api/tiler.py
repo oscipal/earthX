@@ -119,7 +119,7 @@ from earthx.catalog.registry import (
     UnknownDatasetError,
 )
 from earthx.catalog.stats_cache import PooledStatsCache, PostgresStatsCache
-from earthx.gateway import CachingResolver, Gateway, GatewayError
+from earthx.gateway import CachingResolver, Gateway, GatewayError, user_agent_from_env
 from earthx.gateway.gdal import crop_gdal_options, tile_gdal_options
 from earthx.logging import RequestIdMiddleware, configure_logging, get_request_id
 from earthx.objectstore.errors import StoreConfigError
@@ -1545,6 +1545,7 @@ def area_statistics_cache(request: Request) -> PooledStatsCache | None:
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    user_agent_from_env()  # M5-18 §3.1: a bad EARTHX_USER_AGENT stops the start
     async with (
         cache_pool() as pool,
         Gateway(app.state.earthx_policy, resolve=app.state.earthx_resolver) as gateway,
