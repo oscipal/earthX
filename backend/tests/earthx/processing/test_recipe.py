@@ -471,7 +471,9 @@ class TestProvenance:
 def test_the_asset_model_matches_the_dataclass_field_for_field() -> None:
     assert {field.name for field in fields(ResolvedAsset)} == set(ResolvedAssetModel.model_fields)
     entry = copy.deepcopy(recipe_data()["inputs"][0]["resolved"][0]["asset"])
-    assert ResolvedAssetModel.model_validate_json(json.dumps(entry)).to_asset() == ResolvedAsset(**entry)
+    assert ResolvedAssetModel.model_validate_json(json.dumps(entry)).to_asset() == ResolvedAsset(
+        **entry, georeferencing="geotransform"
+    )
 
 
 def test_the_package_version_is_semver_0_x() -> None:

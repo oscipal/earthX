@@ -23,7 +23,7 @@ from earthx.access.resolve import (
     open_asset_ref,
     resolve_asset,
 )
-from earthx.catalog.registry import DataFormat, ZarrInfo
+from earthx.catalog.registry import DataFormat, Georeferencing, ZarrInfo
 from earthx.gateway import Policy, UrlRejected
 from earthx.readers import AssetRejected
 from earthx.readers.cog import AssetPath
@@ -75,7 +75,12 @@ class TestResolveAsset:
             href=f"https://{HOST}/s2/TCI.tif",
             variable=None,
             crs="EPSG:32632",
+            georeferencing="geotransform",
         )
+
+    def test_the_registrys_georeferencing_travels_with_the_asset(self) -> None:
+        tps = replace(COG, georeferencing=Georeferencing.GCP_TPS)
+        assert resolve_asset(COG_ITEM, tps, "visual").georeferencing == "gcp_tps"
 
     def test_a_zarr_key_is_split_at_the_registrys_separator(self) -> None:
         ref = resolve_asset(ZARR_ITEM, ZARR_GROUPS, "SR_10m:b04")
@@ -159,7 +164,9 @@ class TestJsonRoundTrip:
         with pytest.raises(ValueError, match="unknown"):
             ResolvedAsset.from_json({**self.good(), "policy": "allow-all"})
 
-    @pytest.mark.parametrize("field", ["dataset_id", "item_id", "asset", "reader", "href", "variable", "crs"])
+    @pytest.mark.parametrize(
+        "field", ["dataset_id", "item_id", "asset", "reader", "href", "variable", "crs", "georeferencing"]
+    )
     def test_every_field_is_required(self, field: str) -> None:
         data = self.good()
         del data[field]
@@ -178,6 +185,9 @@ class TestJsonRoundTrip:
             ("variable", ""),
             ("variable", 4),
             ("crs", 32632),
+            ("georeferencing", "GCP_TPS"),
+            ("georeferencing", "affine"),
+            ("georeferencing", None),
         ],
     )
     def test_a_wrong_value_is_refused(self, field: str, value: object) -> None:
@@ -188,6 +198,11 @@ class TestJsonRoundTrip:
         data = resolve_asset(COG_ITEM, COG, "visual").to_json()
         with pytest.raises(ValueError, match="Zarr"):
             ResolvedAsset.from_json({**data, "variable": "b04"})
+
+    def test_a_zarr_asset_is_never_placed_by_gcps(self) -> None:
+        data = resolve_asset(ZARR_ITEM, ZARR_GROUPS, "SR_10m:b04").to_json()
+        with pytest.raises(ValueError, match="only for a COG"):
+            ResolvedAsset.from_json({**data, "georeferencing": "gcp_tps"})
 
     @pytest.mark.parametrize("data", [None, [], "{}", 1])
     def test_not_an_object(self, data: object) -> None:
@@ -201,6 +216,11 @@ class TestOpenAssetRef:
         assert isinstance(opened, AssetPath)
         assert opened == f"/vsicurl/https://{HOST}/s2/TCI.tif"
         assert (opened.dataset_id, opened.item_id, opened.asset) == (COG.dataset_id, COG_ITEM["id"], "visual")
+        assert opened.georeferencing == "geotransform"
+
+    def test_a_gcp_asset_opens_with_its_method(self) -> None:
+        tps = replace(COG, georeferencing=Georeferencing.GCP_TPS)
+        assert open_asset_ref(resolve_asset(COG_ITEM, tps, "visual"), POLICY, public).georeferencing == "gcp_tps"
 
     def test_a_zarr_asset_opens_with_group_variable_crs_and_level(self) -> None:
         opened = open_asset_ref(resolve_asset(ZARR_ITEM, ZARR_GROUPS, "SR_10m:b04"), POLICY, public, target_gsd=60.0)
@@ -232,6 +252,7 @@ class TestOpenAssetRef:
                 "href": "https://169.254.169.254/latest/meta-data/",
                 "variable": None,
                 "crs": None,
+                "georeferencing": "geotransform",
             }
         )
         with pytest.raises(AssetRejected):

@@ -183,6 +183,7 @@ _FAILURES: dict[str, tuple[int, str]] = {
     "source_429": (502, "The source asked for fewer requests"),
     "source_5xx": (502, "The source failed"),
     "source_unreachable": (502, "The source could not be reached"),
+    "source_georeference": (502, "The source file is not placed the way the platform expects"),
     "rejected": (502, "The platform refused an address of the source"),
     "source_timeout": (504, "The source did not answer in time"),
     "out_of_memory": (500, "The job ran out of memory"),

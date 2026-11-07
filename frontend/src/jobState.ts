@@ -88,6 +88,7 @@ const FAILS_AGAIN: ReadonlySet<string> = new Set([
   'aoi_outside_inputs',
   'rejected',
   'source_4xx',
+  'source_georeference',
   'runtime_exceeded',
 ]);
 

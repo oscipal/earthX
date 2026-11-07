@@ -183,5 +183,6 @@ def test_the_names_are_the_declared_ones() -> None:
         "source_429",
         "source_4xx",
         "source_unreachable",
+        "source_georeference",
         "rejected",
     } == SOURCE_KINDS
