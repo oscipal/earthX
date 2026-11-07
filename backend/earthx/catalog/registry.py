@@ -1694,3 +1694,35 @@ class DatasetRegistry:
 
     def __len__(self) -> int:
         return len(self._by_id)
+
+
+# How the YAML entries are read (docs/plans/m5/m5-13-yaml-lader.md §3.2, F1): `catalog.entry_files` checks a file
+# against these very dataclasses with pydantic, strictly and without unknown fields, so there is no second schema next
+# to them. A plain dict, so this module does not import pydantic; it is what pydantic reads off a stdlib dataclass.
+ENTRY_FILE_CONFIG = {"strict": True, "extra": "forbid"}
+for _entry_part in (
+    Capabilities,
+    TermsOfUse,
+    LicenseInfo,
+    AccessInfo,
+    SourceInfo,
+    Provider,
+    CoverageInfo,
+    ZarrInfo,
+    DefaultRender,
+    ViewerInfo,
+    HealthInfo,
+    SpatialExtent,
+    TemporalExtent,
+    MaskClass,
+    MaskSource,
+    ShareClasses,
+    FilterValue,
+    SearchFilter,
+    SearchCapabilities,
+    IndexPreset,
+    DatasetConfig,
+    RetiredDataset,
+):
+    _entry_part.__pydantic_config__ = ENTRY_FILE_CONFIG
+del _entry_part
