@@ -195,7 +195,8 @@ async function check(browser, { theme, viewport }) {
   await popup.locator('.advanced-top .close-x').click();
 
   // 2. An AOI is not enough, one date is not enough; a point is an area (its square); AOI and both dates free it.
-  await store((s, aoi) => { s.getState().setAoi(aoi); s.getState().flyTo([9.2, 46.6, 12.2, 48.4]); }, AOI);
+  // Choosing the dataset fills both dates with its extent (UI-05); the user empties them here to start without dates.
+  await store((s, aoi) => { s.getState().setDateFrom(''); s.getState().setDateTo(''); s.getState().setAoi(aoi); s.getState().flyTo([9.2, 46.6, 12.2, 48.4]); }, AOI);
   await button.click();
   expect('the switch is free with an AOI alone', await locked());
   await popup.locator('.advanced-top .close-x').click();
@@ -221,12 +222,14 @@ async function check(browser, { theme, viewport }) {
   await popup.locator('.advanced-top .close-x').click();
   await store((s) => s.setState({ aoiPoint: null }));
 
-  // 3. The DEM alone has no switch.
+  // 3. The DEM alone has the button, locked with its reason (UI-05), and so no switch.
   await page.locator('.dataset-toggle', { hasText: 'Sentinel-2 L2A' }).first().click();
   await page.locator('.dataset-toggle', { hasText: 'Copernicus DEM' }).first().click();
-  expect('a button for the DEM alone', (await button.count()) === 0);
+  expect('no locked button for the DEM alone', (await button.count()) === 1 && (await button.getAttribute('aria-disabled')) === 'true');
   await page.locator('.dataset-toggle', { hasText: 'Copernicus DEM' }).first().click();
   await page.locator('.dataset-toggle', { hasText: 'Sentinel-2 L2A' }).first().click();
+  // A new choice fills the dates with the extent again; the range of July is typed anew.
+  await store((s) => { s.getState().setDateFrom('2026-07-01'); s.getState().setDateTo('2026-07-31'); });
 
   // 4. The switch on, the limit typed: the layout holds and the coverage map asks without the cloud range.
   await button.click();

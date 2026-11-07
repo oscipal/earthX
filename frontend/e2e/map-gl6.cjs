@@ -276,7 +276,13 @@ const UPLOAD = { type: 'Polygon', coordinates: [[[10.0, 47.2], [10.3, 47.2], [10
     expect('a wrong file is told to the user', typeof (await store((s) => s.getState().error)) === 'string');
 
     // 7. The outline of a ticked scene.
-    await page.locator('.dataset-toggle', { hasText: 'Sentinel-2' }).first().click();
+    // The datasets stand on pages (UI-05); in a small window Sentinel-2 may be on another page than the one shown.
+    const toggle = page.locator('.dataset-toggle', { hasText: 'Sentinel-2' }).first();
+    for (const arrow of ['Previous page', 'Next page']) {
+      const turn = page.locator(`.dataset-pages [aria-label="${arrow}"]`);
+      while ((await toggle.count()) === 0 && (await turn.getAttribute('aria-disabled')) !== 'true') await turn.click();
+    }
+    await toggle.click();
     await store((s) => { s.getState().setDateFrom('2024-06-01'); s.getState().setDateTo('2024-06-30'); });
     await dock(true);
     await page.getByRole('button', { name: 'Search', exact: true }).click();
