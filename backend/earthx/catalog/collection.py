@@ -328,6 +328,15 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
             "item_holding": config.source.item_holding.value,
             # M5-07: where the storage of the assets lies (adr/0022 §7.2), for the description of the dataset.
             "data_region": config.source.data_region,
+            # M5-08: the fixed asset keys and which state of a tile is loaded (architekturplan.md 5.1).
+            "asset_keys": [
+                {"key": rule.key, "media_type": rule.media_type, "gsd": rule.gsd} for rule in config.source.asset_keys
+            ],
+            "item_states": (
+                None
+                if config.source.item_states is None
+                else {"rule": config.source.item_states.rule.value, "tile_pattern": config.source.item_states.tile_pattern}
+            ),
         },
         # architekturplan.md 5.1, tenth row (adr/0007 §12.11 point 14): how settled
         # the source itself is, not a measurement like earthx:health. No default on

@@ -89,6 +89,8 @@ class AdapterKind(Enum):
     COP_DEM_BUCKET = "cop-dem-bucket"
     # M5-07: a materializer like the one above, for both ESA WorldCover states (adr/0023 §8.3).
     ESA_WORLDCOVER_BUCKET = "esa-worldcover-bucket"
+    # M5-08: the STAC API of swisstopo's FSDI (`data.geo.admin.ch`), a second dialect of `adapters.stac_api`.
+    FSDI_STAC_V1 = "fsdi-stac-v1"
 
 
 class ItemHolding(Enum):
@@ -402,6 +404,60 @@ class AccessInfo:
     account_paths: tuple[AccountPath, ...]
 
 
+class ItemStateRule(Enum):
+    """Which of several states of one tile the platform loads (adr/0023 §8.3, adr/0025 §9, M5-08 F1).
+
+    ``LATEST`` — the state with the youngest ``datetime``; the older ones stay with the source.
+    """
+
+    LATEST = "latest"
+
+
+# A key the entry fixes for an asset: what ``band_math`` takes as the name of a band (``INDEX_PRESET_NAME``), so the
+# key can stand in an expression, a tile URL's list of assets and a Zarr-free order alike.
+FIXED_ASSET_KEY = re.compile(r"\A[A-Za-z][A-Za-z0-9_]{0,31}\Z")
+
+
+@dataclass(frozen=True, slots=True)
+class AssetKeyRule:
+    """One fixed asset key (M5-08 plan §4.3): the key of the one asset of an item with exactly this type and gsd.
+
+    For a source whose asset keys differ from item to item (the FSDI names them after the file, M5-08 plan §2), so
+    that ``default_render``, ``band_units`` and ``auxiliary_assets`` can name an asset at all.
+    """
+
+    key: str
+    media_type: str
+    gsd: float
+
+
+@dataclass(frozen=True, slots=True)
+class ItemStates:
+    """Several states of one tile at the source, and which of them the platform loads (M5-08 plan §4.4).
+
+    ``tile_pattern`` is a regular expression the whole item id has to match, with exactly one named group ``tile``:
+    the id is the one reliable sign of the tile, its geometry differs between states (M5-08 plan §2).
+    """
+
+    rule: ItemStateRule
+    tile_pattern: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.rule, ItemStateRule):
+            raise ConfigError(f"item_states.rule is one of {[rule.value for rule in ItemStateRule]}")
+        try:
+            pattern = re.compile(self.tile_pattern)
+        except (re.error, TypeError):
+            raise ConfigError("item_states.tile_pattern is no regular expression") from None
+        if set(pattern.groupindex) != {"tile"}:
+            raise ConfigError("item_states.tile_pattern has exactly one named group, 'tile'")
+
+    def tile_of(self, item_id: str) -> str | None:
+        """The tile ``item_id`` names, or ``None`` where the id does not match the pattern."""
+        match = re.fullmatch(self.tile_pattern, item_id)
+        return None if match is None else match["tile"]
+
+
 @dataclass(frozen=True, slots=True)
 class SourceInfo:
     """Where the items come from. adr/0005 rule I branches on this per collection.
@@ -423,6 +479,11 @@ class SourceInfo:
     storage, not the agency (``aws:eu-central-1``, ``eodc:vienna``), or ``unknown`` until both are shown
     (adr/0022 §7.2, adr/0023 F7). It sits next to ``asset_hosts`` because the start check reads it against them
     (M5-07 plan F1).
+
+    ``asset_keys`` fixes the key of every asset (:class:`AssetKeyRule`); empty means "the keys the source gives",
+    which is every entry whose source keys its assets the same way in every item. ``item_states`` says which state of
+    a tile is loaded where the source holds several (:class:`ItemStates`), ``None`` where every item is a state of
+    its own. Neither has a default (KLAERUNGEN B10).
     """
 
     adapter: AdapterKind
@@ -431,6 +492,8 @@ class SourceInfo:
     asset_hosts: tuple[str, ...]
     item_holding: ItemHolding
     data_region: str
+    asset_keys: tuple[AssetKeyRule, ...]
+    item_states: ItemStates | None
 
 
 # An https address with a host and nothing blank in it: what the catalogue may put behind a link.
@@ -1251,6 +1314,8 @@ class DatasetConfig:
         self._check_mask()
         self._check_band_units()
         self._check_auxiliary_assets()
+        self._check_asset_keys()
+        self._check_item_states()
         self._check_search_filters()
         self._check_index_presets()
         self._check_true_color()
@@ -1377,6 +1442,51 @@ class DatasetConfig:
             raise ConfigError(f"{self.dataset_id}: auxiliary_assets names an asset twice")
         if self.mask is not None and self.mask.asset in keys:
             raise ConfigError(f"{self.dataset_id}: the mask layer {self.mask.asset!r} is named by mask, not auxiliary_assets")
+
+    def _check_asset_keys(self) -> None:
+        """Each rule is well formed, keys and (type, gsd) pairs once, and the entry names only fixed keys (M5-08 §4.3).
+
+        Two rules on one type and gsd would both claim the same asset; a key the entry names that no rule gives would
+        be an asset no item has.
+        """
+        rules = self.source.asset_keys
+        if isinstance(rules, AssetKeyRule) or not isinstance(rules, tuple):
+            raise ConfigError(f"{self.dataset_id}: source.asset_keys is a tuple of AssetKeyRule")
+        for rule in rules:
+            if not isinstance(rule, AssetKeyRule):
+                raise ConfigError(f"{self.dataset_id}: source.asset_keys is a tuple of AssetKeyRule")
+            if not isinstance(rule.key, str) or not FIXED_ASSET_KEY.match(rule.key):
+                raise ConfigError(f"{self.dataset_id}: {rule.key!r} is not a fixed asset key (letter, then letters, digits, _)")
+            if not isinstance(rule.media_type, str) or not rule.media_type.strip() or rule.media_type != rule.media_type.strip():
+                raise ConfigError(f"{self.dataset_id}: the asset key {rule.key} needs a media type")
+            if not _is_finite_number(rule.gsd) or rule.gsd <= 0:
+                raise ConfigError(f"{self.dataset_id}: the gsd of the asset key {rule.key} is a positive number")
+        keys = [rule.key for rule in rules]
+        if len(set(keys)) != len(keys):
+            raise ConfigError(f"{self.dataset_id}: source.asset_keys names a key twice")
+        if len({(rule.media_type, rule.gsd) for rule in rules}) != len(rules):
+            raise ConfigError(f"{self.dataset_id}: two asset keys claim the same media type and gsd")
+        if not rules:
+            return
+        named = [*(self.default_render.assets if self.default_render is not None else ()), *self.auxiliary_assets]
+        if self.mask is not None:
+            named.append(self.mask.asset)
+        for key in named:
+            if key not in keys:
+                raise ConfigError(f"{self.dataset_id}: {key!r} is no key of source.asset_keys")
+        for pattern in self.band_units:
+            if not any(key == pattern or ("*" in pattern and fnmatchcase(key, pattern)) for key in keys):
+                raise ConfigError(f"{self.dataset_id}: band_units names {pattern!r}, which no key of source.asset_keys is")
+
+    def _check_item_states(self) -> None:
+        """Choosing a state per tile is the materialization's: a live search has only the page it was handed."""
+        states = self.source.item_states
+        if states is None:
+            return
+        if not isinstance(states, ItemStates):
+            raise ConfigError(f"{self.dataset_id}: source.item_states is an ItemStates or None")
+        if self.source.item_holding is not ItemHolding.MATERIALIZED:
+            raise ConfigError(f"{self.dataset_id}: source.item_states needs materialized items")
 
     def _check_index_presets(self) -> None:
         """The presets are well formed, each name once, and name only bands of the data (NM4-14 plan §8.1).
@@ -1840,6 +1950,8 @@ for _entry_part in (
     TermsOfUse,
     LicenseInfo,
     AccessInfo,
+    AssetKeyRule,
+    ItemStates,
     SourceInfo,
     Provider,
     CoverageInfo,
