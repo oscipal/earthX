@@ -189,8 +189,9 @@ entschieden.
 `-n auto --dist worksteal`, eingestellt in `pyproject.toml`. Der Befehl bleibt derselbe
 `pytest`, in der Sitzung wie in CI; seriell läuft die Suite mit `pytest -n 0`
 (nötig für `--pdb` und `-s`). Jeder Worker bekommt für die T-C-Tests eine eigene,
-leer angelegte und mit `pypgstac` migrierte Datenbank `<PGDATABASE>_gw<n>`, die am
-Ende wieder gelöscht wird (`backend/tests/worker_database.py`); auf einem nicht
+neu angelegte, mit `pypgstac` und den earthx-Migrationen migrierte Datenbank
+`<PGDATABASE>_gw<n>` (DS-04a: ohne die earthx-Migrationen hingen Tests davon ab, ob im
+Worker vorher `catalog.load` gelaufen war), die am Ende wieder gelöscht wird (`backend/tests/worker_database.py`); auf einem nicht
 lokalen Host wird keine angelegt. Daraus folgt für neue Tests: Die Kennungen müssen
 in jedem Prozess gleich sein (keine `repr` mit Adresse, keine Zufallswerte in
 `parametrize`), und ein Test darf sich weder auf die Reihenfolge anderer Tests noch

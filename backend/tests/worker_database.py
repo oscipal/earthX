@@ -3,10 +3,12 @@
 The T-C tests share the configured database when they run one after another: they create
 and drop tables in transactions they roll back, drop the `pgstac` schema, and
 `earthx.catalog.load` commits. Side by side in several processes they would block or see
-each other's work. So each worker gets a database of its own, made empty the way CI makes
-its own: PostGIS, then the pgstac migrations from the pinned `pypgstac`. The earthx
-migrations are not applied here; the tests that need them apply them, as they do against
-a fresh database in CI.
+each other's work. So each worker gets a database of its own, made the way a deployment makes its own: PostGIS,
+the pgstac migrations from the pinned `pypgstac`, then the earthx migrations. NM4-23 left the
+last step out, so the tables existed only in a worker that had run `earthx.catalog.load`
+before; materialize, mixed-search, item-holding and tiler tests failed in the others, by the
+order the workers happened to get their tests (DS-04a). The tests that check the migrations
+themselves make a database of their own, empty (`create_worker_database(..., migrate_earthx=False)`).
 
 The checks of `require_postgres_env` come first: no database is made on a host that is not
 local, and with nothing configured nothing happens. A `PGHOSTADDR` or `PGSERVICE` could point
@@ -26,6 +28,7 @@ from psycopg import sql
 from pypgstac.db import PgstacDB
 from pypgstac.migrate import Migrate
 
+from earthx.catalog.schema import apply_migrations
 from tests.integration.conftest import _ENV_FILE, is_local_host, missing_postgres_env
 
 
@@ -34,8 +37,12 @@ def worker_database_name(configured: str, worker: str) -> str:
     return f"{configured}_{worker}"
 
 
-def create_worker_database(name: str) -> None:
-    """Drop what a killed run may have left under that name, then make it empty and migrated."""
+def create_worker_database(name: str, *, migrate_earthx: bool = True) -> None:
+    """Drop what a killed run may have left under that name, then make it and migrate it.
+
+    With ``migrate_earthx=False`` only pgstac is migrated: the empty database the tests of the
+    earthx migrations themselves start from.
+    """
     with psycopg.connect(autocommit=True) as admin:
         admin.execute(sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(sql.Identifier(name)))
         # From template0: CREATE DATABASE refuses a template another session is connected to,
@@ -48,6 +55,10 @@ def create_worker_database(name: str) -> None:
         Migrate(pgstac).run_migration()
     finally:
         pgstac.close()
+    if migrate_earthx:
+        with psycopg.connect(dbname=name) as connection:
+            apply_migrations(connection)
+            connection.commit()
 
 
 def drop_worker_database(name: str, configured: str) -> None:
