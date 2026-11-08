@@ -77,3 +77,13 @@ Die Band-Assets (`red`, in `search_real_shape.json` auch `green`, `blue`, `nir`)
 `eo:bands` mit einem Eintrag in der Form, die ein echtes Earth-Search-v1-Item am
 11.10.2026 zeigte (`name`, `common_name`, `center_wavelength`, `full_width_half_max`).
 Die Werte sind die öffentlichen Bandangaben von Sentinel-2, kein kopiertes Item.
+
+## `golden_requests.json` (M5-08)
+
+Kein Abbild der Quelle, sondern ein Abbild **unseres** Adapters: geschrieben von
+`tests/earthx/adapters/test_earth_search_golden.py` gegen den Code vor dem Umbau zu
+`adapters/stac_api.py` (Plan `plans/m5/m5-08-stac-adapter-swissalti3d.md` §4.7). Die
+Datei hält je Fall die Anfragen, wie sie das Gateway verlassen (mit Rumpf als Text),
+die Schreibvorgänge in den Cache und die Antworten an den Aufrufer. Sie entsteht nur aus
+den synthetischen Dateien dieses Ordners und wird nur mit Absicht neu geschrieben, nie im
+selben Commit wie eine Änderung am Adapter.

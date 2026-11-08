@@ -156,7 +156,7 @@ class TestSearchFilters:
 
     async def test_the_same_translation_as_the_item_search(self, dataset_id: str) -> None:
         """One function writes both requests, so a filter cannot narrow the map differently than the results."""
-        from earthx.adapters.earth_search import query_extension
+        from earthx.adapters.stac_api import query_extension
 
         gateway, seen = answering(ok("aggregate_complete"))
         await aggregate_coverage(

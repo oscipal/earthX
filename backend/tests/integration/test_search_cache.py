@@ -14,7 +14,7 @@ import pytest
 
 from earthx.adapters import SearchParams
 from earthx.adapters.cache import SearchCache
-from earthx.adapters.earth_search import get_item, search_items
+from earthx.adapters.stac_api import get_item, search_items
 from earthx.catalog.schema import discover_migrations
 from earthx.catalog.search_cache import PostgresSearchCache
 from earthx.gateway import Policy

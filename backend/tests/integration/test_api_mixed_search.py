@@ -189,7 +189,7 @@ def _synthetic_federated_items(n: int) -> list[dict[str, Any]]:
 
 
 def _paged_earth_search_handler(items: list[dict[str, Any]]) -> Callable[[httpx.Request], httpx.Response]:
-    """A minimal stand-in for Earth Search's own keyset paging (`earth_search.py`
+    """A minimal stand-in for Earth Search's own keyset paging (`stac_api.py`
     `_search_body`/`_next_marker`) that actually respects the request's own
     ``limit`` — unlike replaying a single canned fixture on every call, which
     hands back the same fixed page size regardless of what was asked for and so
@@ -523,7 +523,7 @@ class TestSourceFailure:
             )
         assert second.status_code == 200
         assert second.json()["incomplete_collections"] == [{"collection": DATASET_ID, "reason": "upstream_error"}]
-        # The gateway itself retries a failed search (`earth_search.py` asks for
+        # The gateway itself retries a failed search (`stac_api.py` asks for
         # `retry=True`) up to its own limit — all of that happens within the
         # *first* page's one call to this source; the point of this assertion is
         # that the count does not grow further on the second page.

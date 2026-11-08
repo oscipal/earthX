@@ -27,7 +27,8 @@ from earthx.adapters import (
     materialize_items,
     search_items,
 )
-from earthx.adapters.spec import AdapterSpec, AdapterSpecs, FilterSupport, spec_table
+from earthx.adapters.federated_search import FilterSupport
+from earthx.adapters.spec import AdapterSpec, AdapterSpecs, spec_table
 from earthx.catalog.coverage import CoverageProviderMismatch, CoverageQuery
 from earthx.catalog.registry import (
     AdapterKind,

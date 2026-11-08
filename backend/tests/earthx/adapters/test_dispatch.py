@@ -28,7 +28,8 @@ from earthx.adapters import (
     get_item,
     search_items,
 )
-from earthx.adapters.spec import AdapterSpec, FilterSupport, spec_table
+from earthx.adapters.federated_search import FilterSupport
+from earthx.adapters.spec import AdapterSpec, spec_table
 from earthx.catalog.registry import AdapterKind, CoverageProvider, DatasetRegistry, ItemHolding, SearchCapabilities
 from earthx.gateway import Policy
 from earthx.gateway.client import Gateway
