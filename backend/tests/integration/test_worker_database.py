@@ -1,4 +1,4 @@
-"""One database per pytest-xdist worker (tests/worker_database.py; NM4-23, question 3).
+"""One database per pytest-xdist worker (tests/worker_database.py; NM4-23, question 3; DS-04a).
 
 Against the real Postgres like every T-C test. The test that makes a database names it after
 the database this process runs on, so two workers never make the same one.
@@ -12,7 +12,9 @@ import re
 import psycopg
 import pytest
 
+from earthx.catalog.schema import applied_migrations, apply_migrations, discover_migrations
 from tests import worker_database
+from tests.integration.conftest import SHIPPED_TABLES
 from tests.worker_database import (
     create_worker_database,
     drop_worker_database,
@@ -70,7 +72,12 @@ def test_this_process_runs_on_its_workers_database_or_on_the_configured_one(requ
         assert current == os.environ["PGDATABASE"] and current.endswith(f"_{worker}")
 
 
-def test_a_worker_database_is_made_empty_with_pgstac_and_dropped_again(require_postgres_env: None) -> None:
+def _tables(name: str) -> set[str]:
+    with psycopg.connect(dbname=name) as connection:
+        return {row[0] for row in connection.execute("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")}
+
+
+def test_a_worker_database_has_pgstac_and_every_earthx_table_and_is_dropped_again(require_postgres_env: None) -> None:
     configured = os.environ["PGDATABASE"]
     name = worker_database_name(configured, "probe")
     create_worker_database(name)
@@ -79,8 +86,24 @@ def test_a_worker_database_is_made_empty_with_pgstac_and_dropped_again(require_p
         with psycopg.connect(dbname=name) as connection:
             assert connection.execute("SELECT to_regnamespace('pgstac') IS NOT NULL").fetchone() == (True,)
             assert connection.execute("SELECT 1 FROM pg_extension WHERE extname = 'postgis'").fetchone() == (1,)
-            assert connection.execute("SELECT to_regclass('public.earthx_migrations')").fetchone() == (None,)
+            assert set(applied_migrations(connection)) == {m.version for m in discover_migrations()}
+        assert {table.removeprefix("public.") for table in SHIPPED_TABLES} <= _tables(name)
     finally:
         drop_worker_database(name, configured)
     with psycopg.connect(dbname=configured) as connection:
         assert connection.execute("SELECT 1 FROM pg_database WHERE datname = %s", (name,)).fetchone() is None
+
+
+def test_a_database_of_its_own_can_be_made_without_the_earthx_migrations(require_postgres_env: None) -> None:
+    """What the tests of the migrations themselves start from: pgstac, no earthx table at all."""
+    configured = os.environ["PGDATABASE"]
+    name = worker_database_name(configured, "empty")
+    create_worker_database(name, migrate_earthx=False)
+    try:
+        with psycopg.connect(dbname=name) as connection:
+            assert connection.execute("SELECT to_regnamespace('pgstac') IS NOT NULL").fetchone() == (True,)
+            assert applied_migrations(connection) == {}
+            assert apply_migrations(connection) == tuple(m.version for m in discover_migrations())
+        assert {table.removeprefix("public.") for table in SHIPPED_TABLES} <= _tables(name)
+    finally:
+        drop_worker_database(name, configured)
