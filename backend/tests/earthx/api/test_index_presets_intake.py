@@ -24,13 +24,17 @@ TYPED = {
     "NDSI": "(green - swir16) / (green + swir16)",
     "NBR": "(nir - swir22) / (nir + swir22)",
     "EVI": "2.5 * (nir - red) / (nir + 6 * red - 7.5 * blue + 1)",
+    "NDMI": "(nir - swir16) / (nir + swir16)",
+    "MNDWI": "(green - swir16) / (green + swir16)",
+    "NDREI": "(nir - rededge1) / (nir + rededge1)",
+    "SAVI": "1.5 * (nir - red) / (nir + red + 0.5)",
 }
 
 
 @pytest.fixture
 def source() -> Source:
     item = s2_item()
-    extra = {"blue": "B02", "green": "B03", "swir16": "B11", "swir22": "B12"}
+    extra = {"blue": "B02", "green": "B03", "rededge1": "B05", "swir16": "B11", "swir22": "B12"}
     for asset, band in extra.items():
         item["assets"][asset] = {**item["assets"]["red"], "href": item["assets"]["red"]["href"].replace("B04", band)}
         item["assets"][asset]["file:checksum"] = f"1220S2_A{band}"
