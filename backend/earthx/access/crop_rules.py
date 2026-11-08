@@ -225,7 +225,9 @@ def asset_gsd(item: Mapping[str, Any], asset: str) -> float | None:
 
     Tried in the order both real sources are measured to carry it (plan §3):
     the asset's own ``gsd``, then the first band's ``raster:bands``
-    ``spatial_resolution``, then the item's own ``properties.gsd``.
+    ``spatial_resolution``, then the item's own ``properties.gsd``, last the pixel spacing in range of the SAR
+    extension, ``sar:pixel_spacing_range``, which a Sentinel-1 GRD item carries instead of any of them
+    (DS-04 plan Auslegung A5: the spacing of the pixels, not the resolution of the sensor).
     """
     item_asset = item.get("assets", {})
     item_asset = item_asset.get(asset, {}) if isinstance(item_asset, Mapping) else {}
@@ -238,6 +240,7 @@ def asset_gsd(item: Mapping[str, Any], asset: str) -> float | None:
     properties = item.get("properties")
     if isinstance(properties, Mapping):
         candidates.append(properties.get("gsd"))
+        candidates.append(properties.get("sar:pixel_spacing_range"))
     for candidate in candidates:
         gsd = _finite_positive(candidate)
         if gsd is not None:

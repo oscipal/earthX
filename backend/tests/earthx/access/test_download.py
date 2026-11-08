@@ -161,9 +161,21 @@ class TestAssetGsd:
         item = item_with(**{"raster:bands": [{"spatial_resolution": 10}]})
         assert dl.asset_gsd(item, "visual") == 10
 
-    def test_the_items_own_properties_gsd_is_the_last_resort(self) -> None:
-        item = {"id": "i", "bbox": [-1, -1, 1, 1], "assets": {"visual": {}}, "properties": {"gsd": 60}}
+    def test_the_items_own_properties_gsd_comes_before_the_pixel_spacing(self) -> None:
+        properties = {"gsd": 60, "sar:pixel_spacing_range": 10}
+        item = {"id": "i", "bbox": [-1, -1, 1, 1], "assets": {"visual": {}}, "properties": properties}
         assert dl.asset_gsd(item, "visual") == 60
+
+    def test_the_sar_pixel_spacing_in_range_is_the_last_resort(self) -> None:
+        """DS-04b: a Sentinel-1 GRD item names its pixel spacing only (Auslegung A5)."""
+        properties = {"sar:pixel_spacing_range": 10, "sar:pixel_spacing_azimuth": 25}
+        item = {"id": "i", "bbox": [-1, -1, 1, 1], "assets": {"vv": {}}, "properties": properties}
+        assert dl.asset_gsd(item, "vv") == 10
+
+    @pytest.mark.parametrize("bad", [0, -10, float("nan"), "ten", [10]])
+    def test_a_malformed_pixel_spacing_is_unknown(self, bad: object) -> None:
+        item = {"id": "i", "bbox": [-1, -1, 1, 1], "assets": {"vv": {}}, "properties": {"sar:pixel_spacing_range": bad}}
+        assert dl.asset_gsd(item, "vv") is None
 
     @pytest.mark.parametrize("bad_gsd", [0, -10, float("nan"), float("inf"), "ten", None, [10]])
     def test_a_malformed_gsd_is_treated_as_unknown_not_divided_by(self, bad_gsd: object) -> None:
