@@ -257,9 +257,10 @@ Output = Annotated[RasterOutput | CropOutput, Field(discriminator="kind")]
 
 
 class InputVersion(_Model):
-    """The version of one input at acceptance (§4.6): content checksum, ETag or item update time."""
+    """The version of one input at acceptance (§4.6): content checksum, the host's checksum over the whole object
+    (``crc64nvme``, DS-04 plan §4.3), ETag or item update time."""
 
-    kind: Literal["file:checksum", "etag", "updated"]
+    kind: Literal["file:checksum", "crc64nvme", "etag", "updated"]
     value: Text
 
 
@@ -693,10 +694,13 @@ def input_hosts(entry: Input, allowed_hosts: Sequence[str]) -> tuple[str, ...]:
     return tuple(sorted(hosts_for(hrefs)))
 
 
-def input_version(item: Mapping[str, Any], asset: str, *, etag: str | None = None) -> InputVersion | None:
-    """The version of one item asset in the order of F4: checksum, then ETag, then ``updated``.
+def input_version(
+    item: Mapping[str, Any], asset: str, *, crc64nvme: str | None = None, etag: str | None = None
+) -> InputVersion | None:
+    """The version of one item asset in the order of F4: checksum, then the host's CRC64NVME, then ETag, then
+    ``updated``.
 
-    Pure: the ETag, where one is needed, is fetched by `api` through `gateway` and
+    Pure: the host's checksum and the ETag, where one is needed, are fetched by `api` through `gateway` and
     handed in. ``asset`` is the key on the item, for Zarr the group side of it.
     """
     assets = item.get("assets")
@@ -704,6 +708,8 @@ def input_version(item: Mapping[str, Any], asset: str, *, etag: str | None = Non
     checksum = entry.get("file:checksum") if isinstance(entry, Mapping) else None
     if isinstance(checksum, str) and checksum:
         return InputVersion(kind="file:checksum", value=checksum)
+    if crc64nvme:
+        return InputVersion(kind="crc64nvme", value=crc64nvme)
     if etag:
         return InputVersion(kind="etag", value=etag)
     properties = item.get("properties")
