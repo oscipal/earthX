@@ -39,6 +39,10 @@ from tests.earthx.adapters.test_esa_worldcover_bucket import TILES as WORLDCOVER
 from tests.earthx.adapters.test_esa_worldcover_bucket import bucket as worldcover_bucket
 from tests.earthx.adapters.test_esa_worldcover_bucket import grid as worldcover_grid
 from tests.earthx.adapters.test_esa_worldcover_bucket import key as worldcover_key
+from tests.earthx.adapters.test_fsdi_stac import ENTRY as FSDI_ENTRY
+from tests.earthx.adapters.test_fsdi_stac import FEDERATED as FSDI_FEDERATED
+from tests.earthx.adapters.test_fsdi_stac import Source as FsdiSource
+from tests.earthx.adapters.test_fsdi_stac import item as fsdi_item
 
 pytestmark = pytest.mark.anyio
 
@@ -126,6 +130,18 @@ async def _materialized_worldcover() -> list[dict[str, Any]]:
     return list(outcome.items)
 
 
+async def _fsdi(capability: str) -> list[dict[str, Any]]:
+    source = FsdiSource([[fsdi_item(2019), fsdi_item(2025)], [fsdi_item(2019, "2601-1200")]])
+    async with source.gateway() as gateway:
+        if capability == "search":
+            page = await search_items(FSDI_FEDERATED, None, adapters=ADAPTER_SPECS, gateway=gateway)
+            return list(page.items)
+        if capability == "fetch":
+            return [await get_item(FSDI_FEDERATED, "dtm_2019_2600-1200", adapters=ADAPTER_SPECS, gateway=gateway)]
+        outcome = await materialize_items(FSDI_ENTRY, adapters=ADAPTER_SPECS, gateway=gateway, known_version=None)
+    return list(outcome.items)
+
+
 # One producer per entry of the table and capability that delivers items. A new adapter,
 # or a new capability of an old one, adds a line here, with its own synthetic fixtures.
 PRODUCERS: Mapping[Capability, Producer] = {
@@ -137,6 +153,9 @@ PRODUCERS: Mapping[Capability, Producer] = {
     ),
     (AdapterKind.COP_DEM_BUCKET, "materialize"): _materialized,
     (AdapterKind.ESA_WORLDCOVER_BUCKET, "materialize"): _materialized_worldcover,
+    (AdapterKind.FSDI_STAC_V1, "search"): lambda: _fsdi("search"),
+    (AdapterKind.FSDI_STAC_V1, "fetch"): lambda: _fsdi("fetch"),
+    (AdapterKind.FSDI_STAC_V1, "materialize"): lambda: _fsdi("materialize"),
 }
 
 

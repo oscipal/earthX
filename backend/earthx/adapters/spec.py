@@ -108,6 +108,15 @@ ADAPTER_SPECS: AdapterSpecs = spec_table(
         filters=stac_api.EARTH_SEARCH.filters,
     ),
     AdapterSpec(
+        kind=AdapterKind.FSDI_STAC_V1,
+        search=stac_api.search_items,
+        fetch=stac_api.get_item,
+        materialize=stac_api.materialize_items,
+        # No aggregation at the source: an entry of this kind is materialized and counted by `catalog` (local-sql).
+        coverage={},
+        filters=stac_api.FSDI.filters,
+    ),
+    AdapterSpec(
         kind=AdapterKind.COP_DEM_BUCKET,
         search=None,
         fetch=None,
