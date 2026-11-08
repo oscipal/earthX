@@ -16,8 +16,8 @@ import pytest
 
 from earthx.adapters import SearchParams
 from earthx.adapters.cache import SearchCache
-from earthx.adapters.earth_search import get_item, search_items
 from earthx.adapters.federated_search import TTL_CLOSED_S, TTL_ITEM_S, TTL_OPEN_EDGE_S
+from earthx.adapters.stac_api import get_item, search_items
 from tests.catalog.entries import SENTINEL_2_L2A
 
 from .conftest import answering, load

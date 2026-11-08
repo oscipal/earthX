@@ -14,7 +14,7 @@ import httpx
 import pytest
 
 from earthx.adapters import InvalidQuery, SearchParams, UnsupportedSource, UpstreamShapeError
-from earthx.adapters.earth_search import get_item, search_items
+from earthx.adapters.stac_api import get_item, search_items
 from earthx.catalog.registry import DatasetConfig
 from earthx.gateway.errors import UpstreamError, UpstreamTimeout
 from tests.catalog.entries import SENTINEL_2_L2A
@@ -111,8 +111,8 @@ class TestSearch:
 
 class TestCollectionIsOurs:
     async def test_a_collection_of_another_adapter_is_not_served_here(self) -> None:
-        """A second AdapterKind does not exist yet, so a placeholder value stands in
-        for one — the guard compares identity with our own kind, not a string."""
+        """A placeholder value stands in for a kind that speaks no STAC API: the guard
+        looks the entry's adapter up among the dialects, and finds none."""
         other = replace(SENTINEL_2_L2A, source=replace(SENTINEL_2_L2A.source, adapter="some-other-protocol"))
         gateway, seen = answering(httpx.Response(200, json=load("search_empty")))
         async with gateway:

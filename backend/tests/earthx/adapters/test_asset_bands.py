@@ -15,9 +15,9 @@ import httpx
 import pytest
 
 from earthx.adapters.cop_dem_bucket import _item as dem_item
-from earthx.adapters.earth_search import get_item as earth_search_item
 from earthx.adapters.esa_worldcover_bucket import _item as worldcover_item
 from earthx.adapters.federated_search import with_core_bands
+from earthx.adapters.stac_api import get_item as earth_search_item
 from earthx.gateway import Policy
 from tests.catalog.entries import COP_DEM_GLO_30, ESA_WORLDCOVER_2020, ESA_WORLDCOVER_2021, REGISTRY, SENTINEL_2_L2A
 from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR

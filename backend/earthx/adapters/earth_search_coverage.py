@@ -6,10 +6,11 @@ aggregates* here rather than in ``catalog``: that ``/aggregate`` answers GET onl
 what the parameters are called, that the cell count is capped at 10 000 and that the
 ``overflow`` field lies about it.
 
-Its own module, next to ``earth_search.py``, because that one is already long and
-speaks a different endpoint. What the two share — our catalogue deciding whether a
-collection exists, the endpoint, the STAC time window, the two cache lifetimes, and a
-cache that may fail — is imported from there, not copied.
+Its own module, next to ``stac_api.py``, because ``/aggregate`` is Earth Search's own
+endpoint, not part of a STAC API. What the two share — our catalogue deciding whether a
+collection exists, the endpoint, the STAC time window, the two cache lifetimes, a cache
+that may fail, and the query extension the conditions are written in — is imported, not
+copied.
 
 **One request, not three.** Cells, total and histogram are asked for together, so that
 the completeness probe of rule V compares numbers from the *same* answer (adr/0004
@@ -35,14 +36,8 @@ from datetime import datetime
 from typing import Any
 
 from earthx.adapters.cache import CacheValue, SearchCache
-from earthx.adapters.earth_search import (
-    cache_get,
-    cache_set,
-    endpoint_of,
-    query_extension,
-    stac_interval,
-    ttl_for_window,
-)
+from earthx.adapters.federated_search import cache_get, cache_set, endpoint_of, stac_interval, ttl_for_window
+from earthx.adapters.stac_api import query_extension
 from earthx.catalog.coverage import (
     CoverageCell,
     CoverageProviderMismatch,
@@ -81,7 +76,7 @@ MIN_RING_POINTS = 4
 TTL_WORLD_OVERVIEW_S = 24 * 60 * 60
 
 # The cached shape is versioned: a row written by an older release is read as a miss
-# rather than misread (same reasoning as the page marker in earth_search.py).
+# rather than misread (same reasoning as the page marker in federated_search.py).
 CACHE_VERSION = 1
 
 
@@ -257,7 +252,7 @@ def _storable(payload: Any, *, simplified_aoi: bool) -> CacheValue:
     """What we keep of the upstream answer: cells, total, histogram, and the flag.
 
     Reduced here rather than at the cache, so a cache hit and a live answer go through
-    exactly the same translation afterwards — the same reasoning as in ``earth_search``.
+    exactly the same translation afterwards — the same reasoning as in ``stac_api``.
     """
     if not isinstance(payload, dict):
         raise UpstreamCoverageShapeError("aggregation answer is not a JSON object")
@@ -327,7 +322,7 @@ def _total_count(aggregation: Any) -> int | None:
 def _is_usable(cached: CacheValue | None) -> bool:
     """A stored row of the shape this release writes — anything else counts as a miss.
 
-    The version alone is not enough. ``earth_search`` promises that a row "written by
+    The version alone is not enough. ``federated_search.cache_get`` promises that a row "written by
     an older release, **or damaged**, counts as a miss rather than as an answer", and a
     half-written row of the *current* version would otherwise reach ``_result`` and
     fail there — turning a bad cache row into a broken request instead of a slow one

@@ -2,7 +2,7 @@
 
 Builds the request, sends it through ``gateway``, and turns the answer into an
 outline (simplified under a point cap) plus a bounding box in our own field order —
-the same split of duties as ``earth_search.py``: what varies by source stays here,
+the same split of duties as ``stac_api.py``: what varies by source stays here,
 what does not (the cache-fails-soft rule, E5) is a small helper next to it.
 
 Cache and the shared rate slot are handed in as protocols, not imported: this module
