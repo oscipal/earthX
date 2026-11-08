@@ -5,8 +5,10 @@ from __future__ import annotations
 from dataclasses import replace
 
 import pytest
+import yaml
 
 from earthx.catalog.collection import to_stac_collection
+from earthx.catalog.entry_files import EntryFileError, load_entry, to_plain
 from earthx.catalog.registry import (
     AssetKeyRule,
     ConfigError,
@@ -16,7 +18,7 @@ from earthx.catalog.registry import (
     ItemStates,
     SourceInfo,
 )
-from tests.catalog.entries import REGISTRY
+from tests.catalog.entries import COP_DEM_GLO_30, REGISTRY
 
 COG = "image/tiff; application=geotiff; profile=cloud-optimized"
 RULES = (AssetKeyRule("red", COG, 10.0), AssetKeyRule("green", COG, 20.0), AssetKeyRule("blue", COG, 60.0))
@@ -143,6 +145,48 @@ class TestItemStates:
     )
     def test_the_whole_id_has_to_match(self, item_id, tile) -> None:
         assert STATES.tile_of(item_id) == tile
+
+    def test_an_empty_tile_is_no_tile(self) -> None:
+        states = ItemStates(rule=ItemStateRule.LATEST, tile_pattern=r"tiles_\d{4}_(?P<tile>\d*)")
+        assert states.tile_of("tiles_2019_") is None
+
+
+class TestFromYaml:
+    """The YAML loader reads both fields strictly, like every other field (M5-13)."""
+
+    @staticmethod
+    def _source(path, **changes):
+        data = to_plain(COP_DEM_GLO_30)
+        data["source"].update(changes)
+        data["default_render"]["assets"] = ["dtm"]
+        data["band_units"] = {"dtm": "m"}
+        path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+        return load_entry(path)
+
+    def test_rules_and_states_are_read(self, tmp_path) -> None:
+        entry = self._source(
+            tmp_path / f"{COP_DEM_GLO_30.dataset_id}.yaml",
+            asset_keys=[{"key": "dtm", "media_type": COG, "gsd": 0.5}],
+            item_states={"rule": "latest", "tile_pattern": STATES.tile_pattern},
+        )
+        assert entry.source.asset_keys == (AssetKeyRule("dtm", COG, 0.5),)
+        assert entry.source.item_states == STATES
+
+    @pytest.mark.parametrize(
+        "changes",
+        [
+            {"item_states": {"rule": "oldest", "tile_pattern": STATES.tile_pattern}},
+            {"item_states": {"rule": "latest", "tile_pattern": "(?P<kachel>.*)"}},
+            {"item_states": {"rule": "latest"}},
+            {"asset_keys": [{"key": "dtm", "media_type": COG, "gsd": "0.5"}]},
+            {"asset_keys": [{"key": "dtm", "media_type": COG}]},
+            {"asset_keys": [{"key": "dtm", "media_type": COG, "gsd": 0.5, "role": "data"}]},
+        ],
+        ids=["unknown-rule", "no-tile-group", "no-pattern", "gsd-as-text", "no-gsd", "unknown-field"],
+    )
+    def test_a_malformed_field_is_an_error_of_the_file(self, tmp_path, changes) -> None:
+        with pytest.raises(EntryFileError, match="source"):
+            self._source(tmp_path / f"{COP_DEM_GLO_30.dataset_id}.yaml", **{"asset_keys": [], "item_states": None, **changes})
 
     def test_the_collection_publishes_the_rule(self, vary, valid_config) -> None:
         source = to_stac_collection(_materialized(vary, valid_config, STATES))["earthx:source"]

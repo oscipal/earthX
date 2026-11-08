@@ -36,6 +36,7 @@ import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from types import MappingProxyType
 
 import psycopg
 
@@ -63,7 +64,7 @@ from earthx.gateway import Gateway, GatewayError, Policy, host_of, user_agent_fr
 # The least time between two requests to the endpoint of a run, by adapter (M5-08 plan §4.2, M5-18). The FSDI pages
 # about a thousand searches for swissALTI3D, and swisstopo reserves the right to throttle excessive use (adr/0023
 # §4.1): about 17 minutes for a full run. The buckets answer a handful of requests; they keep no spacing.
-ENDPOINT_INTERVALS_S: Mapping[AdapterKind, float] = {AdapterKind.FSDI_STAC_V1: 1.0}
+ENDPOINT_INTERVALS_S: Mapping[AdapterKind, float] = MappingProxyType({AdapterKind.FSDI_STAC_V1: 1.0})
 
 
 @dataclass(frozen=True, slots=True)

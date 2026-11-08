@@ -518,8 +518,10 @@ def _checked_item(dialect: StacDialect, config: DatasetConfig, feature: Any) -> 
         raise UpstreamShapeError("an item has no geometry")
     properties = feature.get("properties")
     instant = _instant(properties.get("datetime") if isinstance(properties, dict) else None)
+    if not isinstance(feature.get("assets"), dict) or not feature["assets"]:
+        raise UpstreamShapeError("an item has no assets")
     item = normalize_for(dialect, config, feature)
-    for asset in item.get("assets", {}).values():
+    for asset in item["assets"].values():
         if not _on_asset_host(asset, config.source.asset_hosts):
             raise UpstreamShapeError("an asset of an item lies off the entry's asset hosts")
     states = config.source.item_states

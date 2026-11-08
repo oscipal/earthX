@@ -453,9 +453,11 @@ class ItemStates:
             raise ConfigError("item_states.tile_pattern has exactly one named group, 'tile'")
 
     def tile_of(self, item_id: str) -> str | None:
-        """The tile ``item_id`` names, or ``None`` where the id does not match the pattern."""
+        """The tile ``item_id`` names, or ``None`` where the id does not match the pattern or names an empty tile."""
         match = re.fullmatch(self.tile_pattern, item_id)
-        return None if match is None else match["tile"]
+        if match is None or not match["tile"]:
+            return None
+        return match["tile"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -1450,7 +1452,7 @@ class DatasetConfig:
         be an asset no item has.
         """
         rules = self.source.asset_keys
-        if isinstance(rules, AssetKeyRule) or not isinstance(rules, tuple):
+        if not isinstance(rules, tuple):
             raise ConfigError(f"{self.dataset_id}: source.asset_keys is a tuple of AssetKeyRule")
         for rule in rules:
             if not isinstance(rule, AssetKeyRule):

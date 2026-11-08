@@ -15,6 +15,7 @@ import pytest
 
 from earthx.adapters import (
     ADAPTER_SPECS,
+    AdapterSpecMismatch,
     NotMaterialized,
     SearchParams,
     UnsupportedFilter,
@@ -196,6 +197,20 @@ class TestDialect:
 
     def test_a_materialized_fsdi_entry_passes_the_start_check(self) -> None:
         check_adapter_specs(DatasetRegistry((ENTRY,)), ADAPTER_SPECS)
+
+    @pytest.mark.parametrize("field", ["asset_keys", "item_states"])
+    def test_a_bucket_adapter_may_not_take_either_field(self, field) -> None:
+        """Only a STAC dialect applies them; a bucket adapter would pass them over without a word."""
+        value = {"asset_keys": RULES[:1], "item_states": STATES}[field]
+        bucket = replace(
+            ENTRY,
+            source=replace(ENTRY.source, adapter=AdapterKind.COP_DEM_BUCKET, **{"asset_keys": (), "item_states": None, field: value}),
+            default_render=replace(ENTRY.default_render, assets=("dtm",)),
+            band_units={"dtm": "m"},
+            auxiliary_assets=(),
+        )
+        with pytest.raises(AdapterSpecMismatch, match="applies no source.asset_keys"):
+            check_adapter_specs(DatasetRegistry((bucket,)), ADAPTER_SPECS)
 
 
 class TestSearch:
@@ -380,6 +395,14 @@ class TestMaterialize:
         foreign = item(2025, "2900-1200")
         next(iter(foreign["assets"].values()))["href"] = href
         outcome = await materialize(Source([[*good, foreign]]))
+        assert outcome.unknown == 1
+
+    @pytest.mark.parametrize("assets", [None, [], "x", {}], ids=["null", "list", "text", "empty"])
+    async def test_an_item_without_assets_counts_as_unknown_even_without_rules(self, assets) -> None:
+        """A later FSDI collection keeps the source keys (SWISSIMAGE); its items still need assets."""
+        config = replace(ENTRY, source=replace(ENTRY.source, asset_keys=()), default_render=None, band_units={}, auxiliary_assets=())
+        good = [item(2019, f"{2600 + n}-1200") for n in range(200)]
+        outcome = await materialize(Source([[*good, item(2025, "2900-1200", assets=assets)]]), config=config)
         assert outcome.unknown == 1
 
     async def test_an_item_off_the_asset_keys_counts_as_unknown(self) -> None:
