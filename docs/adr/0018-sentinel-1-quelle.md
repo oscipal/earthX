@@ -818,6 +818,9 @@ freigegeben. Das ist ein Nachtrag zu F3.
   Messung der Kosten je Kachel, beide Hinweise, Operatoren nach §4.4,
   `s3://`-Abbildung, Fassung per CRC64NVME, Live-Smoke mit
   Requester-Pays-Prüfung.
+  *Stand 08.11.2026:* TPS umgesetzt mit DS-04a ([#312](https://github.com/oscipal/earthX/pull/312)); Eintrag,
+  Abbildung, Prüfsumme, Hinweise und Live-Smoke mit DS-04b (`plans/ds/ds-04-s1-anbinden.md` §12); das Frontend
+  (Marken, Originale, `first_present`) folgt mit DS-04c.
 - **Teil B:** Ottos Messung (§11 C, mit CORS der Token-API); bei positivem
   Ergebnis die Nachträge aus §12 (den Satz in `ENTSCHEIDUNGEN` trägt Otto ein) und die Lizenz-Einstufung von
   `sentinel-1-rtc` (B11, Otto). Offen bleibt dann auch der lokale Runner
@@ -826,7 +829,9 @@ freigegeben. Das ist ein Nachtrag zu F3.
 - **Teil C:** eigener ADR nach DS-04; Kernfrage Speicher (F6).
 - Ob Element 84 die Metadaten (`requester_pays`, `s3://`, `schema-product-*`)
   nachzieht; eine Betriebszusage gibt es nicht.
-- TPS im Kachelpfad: Geschwindigkeit, misst die Umsetzung.
+- TPS im Kachelpfad: Geschwindigkeit, misst die Umsetzung. *Gemessen in DS-04a und DS-04b
+  (`plans/ds/ds-04-s1-anbinden.md` §11, §12.2):* 50 bis 110 ms mehr je Kachel als affin, davon 25 bis 45 ms
+  für das Bauen des TPS-Rasters je Kachel; ob es je Szene gehalten wird, ist F7 des Plans.
 - Nachtrag in `docs/plans/ds/ds-04-s1-anbinden.md` (Quelle, Produktart,
   Hinweise): mit der nächsten Doku-Aufgabe oder durch Otto; der Backlog bleibt
   unverändert.

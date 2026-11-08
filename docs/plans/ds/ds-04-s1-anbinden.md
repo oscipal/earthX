@@ -1,6 +1,6 @@
 # DS-04 — Sentinel-1 GRD anbinden: Plan-Schritt
 
-**Status (07.11.2026):** Plan angenommen (Otto, 07.11.2026; Antworten in §9a). DS-04a (TPS) umgesetzt im selben Draft-PR (§11); DS-04b und DS-04c folgen als eigene PRs. Ersetzt die frühere Datei, die den Text von DS-00 enthielt (`adr/0030` §9, Nebenbefund).
+**Status (08.11.2026):** Plan angenommen (Otto, 07.11.2026; Antworten in §9a). DS-04a (TPS) umgesetzt (§11, [#312](https://github.com/oscipal/earthX/pull/312)); DS-04b umgesetzt im eigenen Draft-PR (§12) mit den Fragen F7–F10 an Otto; DS-04c folgt. Ersetzt die frühere Datei, die den Text von DS-00 enthielt (`adr/0030` §9, Nebenbefund).
 **Aufgabe:** DS-04 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2. **Stufe B** (`adr/0030` §11; vorher A laut DS-00). Der Plan darf sofort entstehen; die Umsetzung beginnt erst, wenn M5-13 (YAML-Lader) gemergt ist. Dann wird `main` geholt, und der Eintrag entsteht als YAML (M5-Plan §6.3).
 **Modell:** Opus, Effort hoch.
 **Grundlagen:** `adr/0018` Teil A (§3.1, §4, F1–F3) mit Nachtrag M5-12 (§9.4); `adr/0030` §5.2, §8, §9, §11; `adr/0021` (Suchfilter); `adr/0022` und M5-07 (`data_region`); `adr/0024` (`legal_status`); `adr/0025` §7 (YAML unter `backend/catalog/`); `adr/0027` §6.1 (`access.account`); `adr/0014` §3.1, §4.6, §6.3 (Fassung, Bitgleichheit); `architekturplan.md` 3.1, 5.1, 6.4, 7.3; `projektuebersicht.md` §5 (Checkliste); `KLAERUNGEN.md` B8–B12.
@@ -295,3 +295,93 @@ TPS kostet bei groben und mittleren Zoomstufen rund 0,1 bis 0,25 s Rechenzeit me
 
 **Noch nicht gebaut** (DS-04b, DS-04c): Eintrag `sentinel-1-grd`, Abbildung `s3://` → `https://`, Prüfsumme CRC64NVME, `notices`, Live-Smoke, Frontend.
 
+---
+
+## 12. Umsetzung DS-04b (08.11.2026)
+
+Auf `main` aae2196 (nach M5-08a #314 und M5-13 #311), eigener Draft-PR. Belegstufen wie oben; gemessen am 08.11.2026 nur Metadaten und, für §12.2, vier Szenen im Kratzverzeichnis der Sitzung (nicht im Repo, keine IDs hier).
+
+### 12.1 Was gebaut ist
+
+- **Registry, allgemein (B10, ohne Vorgabe):** `source.asset_href_rewrites` (Präfix-Paare; Startprüfung: beide enden auf `/`, alt ist kein `https`, neu ist `https` auf einem Host aus `asset_hosts` ohne Port und ohne `..`, kein Präfix liegt in einem anderen), `source.asset_checksum` (`crc64nvme` oder `null`), `notices` (`code` in `lower_snake_case`, `label` bis 32, `tooltip` bis 200 Zeichen, je eine Zeile, jeder Code einmal; auch an ausgeschiedenen Einträgen, weil der Hinweistext alter Jobs daraus entsteht), `default_render.asset_selection` (`all`/`first_present`, F2). Die vier bisherigen Einträge setzen das bisherige Verhalten (`[]`, `null`, `[]`, `all`). Alles veröffentlicht (`architekturplan.md` 5.1).
+- **Abbildung (§4.2):** im STAC-Modul aus M5-08a, für Suche und Item-Abruf, auf dem Weg nach außen hinter dem Cache: Der Cache hält, was die Quelle sagte, und eine geänderte Abbildung gilt ab der nächsten Antwort. Nur `href` ändert sich (A4). Ein Eintrag ohne Abbildung bekommt seine Items unverändert zurück; der Golden-Test von Earth Search bleibt bitgleich.
+- **Fassung (§4.3):** `HEAD` mit `x-amz-checksum-mode: ENABLED`, wo die Registry `crc64nvme` nennt; Fassung `crc64nvme` nur bei `x-amz-checksum-type: FULL_OBJECT` und einem Wert in der Form von 8 Byte Base64, sonst ETag wie bisher. Der Wert steht in keinem Log (Test).
+- **Hinweise (§4.4):** in `recipe.json` unter `provenance.notices` (Job, Export, Zuschnitt, lokaler Runner); das Feld fehlt, wo ein Datensatz keine hat, sodass jede bisherige Datei bytegleich bleibt; nie im Hash (A1). In `ATTRIBUTION.txt` je Hinweis ein Absatz nach der Zitierangabe. Nachtrag in `adr/0014` §4.
+- **Eintrag `sentinel-1-grd`** (`backend/catalog/datasets/sentinel-1-grd.yaml`) nach §4.5 und F2–F6, mit den Abweichungen in §12.3.
+- **Live-Smoke** `backend/tests_live/test_sentinel_1_grd_smoke.py`: Collection `200`; ein Item, Datenbänder unter `https://sentinel-s1-l1c…/`; Range-`GET` `206` über `gateway`; `?requestPayment` → `BucketOwner`; `HEAD` mit Prüfsummen-Modus → `FULL_OBJECT`; `in` auf `sar:polarizations` zählt wie `eq`. Der Trockenlauf (`tests/test_live_smoke_dry_run.py`) spielt ihn gegen ein synthetisches Double. Der Filter-Smoke (DS-02) prüft jetzt auch die vier Filter von Sentinel-1 und liest eine Listen-Eigenschaft als „enthält eines davon“.
+- **Onboarding Punkt 9:** Die Kette läuft für `sentinel-1-grd` End-to-End auf einer synthetischen GCP-Datei (Suche, Kachel, Zuschnitt, Auftrag, Reprojektion des TPS-Rasters, `recipe.json`).
+
+### 12.2 Prüfauftrag: TPS je Szene im `tiler` halten [M]
+
+**Was GDAL je Kachel neu rechnet.** `CogReader` baut je Kachel ein `WarpedVRT` mit `SRC_METHOD=GCP_TPS`. GDAL löst dabei das TPS-Gleichungssystem (210 GCPs, vorwärts und rückwärts) und schlägt das Ausgaberaster vor (`GDALSuggestedWarpOutput2`): rund 8–10 ms. Für jede Übersichtsstufe, die eine Kachel liest, legt GDAL ein implizites Übersichts-VRT mit einem eigenen TPS-Transformer an (GCPs skaliert, System neu gelöst). Danach warpt GDAL die Blöcke des Zwischenrasters (512 × 128); dabei wertet der Näherungs-Transformer (Fehlergrenze 0,125 Pixel) die TPS je Zeile mehrfach aus. Ein Block kostet so 45–55 ms. Exakt ausgewertet (Fehlergrenze 0) kostet ein Fenster von 512² 6,4 s statt 0,25 s; die Näherung ist also schon in Gebrauch.
+
+**Falle:** Ein `WarpedVRT` mit vorgegebenem Raster (`transform`, `width`, `height`) nimmt in rasterio 1.5.2 `GDALCreateGenImgProjTransformer3` mit der Geotransformation der Datei und lässt die GCPs ganz weg (Fall 1 in `rasterio/_warp.pyx`); die Pixel liegen dann falsch, ohne Warnung. Das gespeicherte Raster lässt sich so nicht wiederverwenden.
+
+**Messung.** Vier IW-Szenen (VV, rund 25 500 × 16 700 Pixel, Übersichten 2–64, je 210 GCPs) als lokale Dateien, damit das Netz nicht mitmisst; je Zoomstufe 2 bis 9 verschiedene Kacheln 256 × 256 um die Mitte der GCPs; Median je Kachel; vor jeder Messung einmal mit einem frischen Reader gelesen (Seiten-Cache warm, Blöcke des gemessenen VRT nicht). „Gehalten“: `CogReader` je Szene einmal gebaut (22–36 ms) und für alle Kacheln wiederverwendet.
+
+| Zoom | affin (rio-tiler) | TPS heute (neu je Kachel) | TPS je Szene gehalten |
+|---|---|---|---|
+| z7 | 20 ms | 100 ms | 75 ms |
+| z9 | 26 ms | 137 ms | 111 ms |
+| z11 | 33 ms | 100 ms | 63 ms |
+| z13 | 32 ms | 83 ms | 39 ms |
+
+Die Pixel sind in allen 34 Fällen bitgleich. Das Halten spart 25–45 ms je Kachel (25 bis 55 %). Der Rest über affin (40 bis 80 ms) ist die TPS im Warp selbst; den nimmt kein Speicher des Transformers weg, nur eine gröbere Fehlergrenze (andere Pixel) oder ein Speicher gewarpter Blöcke.
+
+**Wo der Speicher läge.** Der `tiler` liest Kacheln im Threadpool von Starlette; ein GDAL-Datensatz darf nicht von zwei Threads zugleich gelesen werden. Darum nicht gebaut, sondern F7. Kachel, Zuschnitt und Job sehen weiter dasselbe Raster: Ein gehaltener Reader entsteht auf demselben Weg (`asset_path` → `CogReader`). Ein Schlüssel aus Datensatz, Item, Asset und Adresse ist da; die Fassung kennt der `tiler` nicht (kein `HEAD` je Kachel), also begrenzt eine Lebensdauer das Risiko, dass eine Datei unter derselben Adresse wechselt.
+
+### 12.3 Abweichungen und neue Auslegungen
+
+- **Coverage z7 statt z8 (zu A6):** Die Startprüfung aus `adr/0004` §5 lässt bei 250 km Breite höchstens z7 zu. F8.
+- **A9 — Pixelgröße aus dem Item:** Ein GRD-Item nennt weder `gsd` noch `spatial_resolution`, nur `sar:pixel_spacing_range`. Ohne Pixelgröße weist der Intake jeden Auftrag und Zuschnitt ab (`422`). `asset_gsd` nimmt den Pixelabstand jetzt als letzte Stufe (allgemein über die SAR-Erweiterung, wie A5 für die Collection). F9.
+- **Stretch je Asset bei `first_present`:** gemessen p2/p98 der DN an je 8 Szenen (IW und EW, März bis Oktober 2026, Übersicht 1:64): VV im Median 87/249, HH 69/755. Ein gemeinsamer Stretch hätte eine der beiden Familien verfälscht; darum ein Paar je Asset, das des gezeichneten Bandes gilt.
+- **`band_units: DN`** wie im Plan; kein UCUM-Zeichen (UCUM schriebe `{DN}`).
+- **Zitierangabe:** keine DOI und kein `cite-as`-Link an der Collection [M]; die Angabe nennt ESA, das Produkt und die Collection bei Earth Search.
+- **Nicht gebaut:** Bytes je Kachel (DS-04a offen); der Live-Smoke ist nicht in `.github/workflows/live-smoke.yml` eingetragen (`.github/` bleibt unverändert, §10).
+- **Bis DS-04c** kennt das Frontend `first_present` nicht: Es zeichnet das erste Asset der Liste (`vv`), eine HH-Szene zeigt dann kein Bild. Die Marken der Hinweise fehlen ebenso bis DS-04c.
+
+### 12.4 Fragen an Otto
+
+**F7 — TPS je Szene im `tiler` halten?**
+1. Ein kleiner Pool je Szene im Prozess: ein Thread leiht einen Reader und gibt ihn zurück; Obergrenzen je Szene und gesamt, Lebensdauer rund 10 min; Schlüssel aus Datensatz, Item, Asset, Adresse und Georeferenz. Eigener PR nach DS-04c, mit der Messung oben als Vorher **(Empfehlung)**
+2. Ein Reader je Szene und Thread (einfacher, aber jeder Thread baut erneut)
+3. Nicht bauen; 25–45 ms je Kachel sind die Mühe nicht wert
+
+**F8 — Coverage-Stufe?**
+1. z7, wie die Startprüfung es bei 250 km zulässt **(Empfehlung)**
+2. z8 wie Sentinel-2; dafür müsste die Breite unter 156 km eingetragen oder die Prüfung geändert werden
+
+**F9 — Pixelgröße aus `sar:pixel_spacing_range` (A9)?**
+1. Bestätigen **(Empfehlung)**
+2. Stattdessen aus der Datei lesen (eine Leseanfrage je Auftrag im Intake)
+
+**F10 — Tooltip-Texte der Hinweise?**
+1. Wie im Eintrag: „Placed by the scene's own ground control points without terrain correction; positions can be off by tens of metres, more in steep terrain.“ und „Values are the digital numbers of the GRD product, not calibrated backscatter, so dB thresholds from the literature do not apply.“ **(Empfehlung)**
+2. Anderer Wortlaut (bitte angeben)
+
+### 12.5 Prüfanleitung für Otto
+
+**Browser:** lokal `npm run dev` und das Backend starten, im Data catalogue „Sentinel-1 GRD“ wählen: Gruppe „Radar“, Provider ESA, AWS, Element 84; Suchfilter „Orbit direction“, „Relative orbit“, „Acquisition mode“, „Polarization“; kein Abschnitt „Quick processing“. Eine Suche über Mitteleuropa liefert Szenen mit einem Zeitschritt je Durchgang; ab Zoom 7 erscheinen Kacheln in Graustufen (VV-Szenen; HH erst mit DS-04c).
+
+**PowerShell 5.1** (nur Metadaten, eine Datei per `HEAD`):
+
+```powershell
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+$es = 'https://earth-search.aws.element84.com/v1'
+$body = '{"collections":["sentinel-1-grd"],"limit":1}'
+$i = (Invoke-RestMethod -Method Post -Uri "$es/search" -Body $body -ContentType 'application/json').features[0]
+$i.assets.vv.href                       # s3://sentinel-s1-l1c/… (die Quelle; die Plattform liest https)
+$u = $i.assets.vv.href -replace '^s3://sentinel-s1-l1c/', 'https://sentinel-s1-l1c.s3.eu-central-1.amazonaws.com/'
+$r = [Net.HttpWebRequest]::Create($u); $r.Method = 'HEAD'; $r.Headers.Add('x-amz-checksum-mode', 'ENABLED')
+$x = $r.GetResponse(); $x.Headers['x-amz-checksum-type']; $x.Close()     # FULL_OBJECT
+(Invoke-WebRequest 'https://sentinel-s1-l1c.s3.eu-central-1.amazonaws.com/?requestPayment' -UseBasicParsing).Content
+#   … <Payer>BucketOwner</Payer> …
+```
+
+**Live-Smoke lokal** (geht ins Netz), aus der Repo-Wurzel:
+
+```powershell
+$env:PYTHONPATH = 'backend'; pytest backend/tests_live/test_sentinel_1_grd_smoke.py backend/tests_live/test_search_filters_live.py
+```
+
+Für den täglichen Lauf gehört `backend/tests_live/test_sentinel_1_grd_smoke.py` in den Schritt mit `test_earth_search_smoke.py` in `.github/workflows/live-smoke.yml`; das ist eine Änderung an `.github/`, also Ottos.
