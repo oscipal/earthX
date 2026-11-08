@@ -113,6 +113,7 @@ def _export_info(result: ExportResult) -> dict[str, Any]:
         "scaling": [],
         "attribution": list(result.attribution),
         "methods": result.methods,
+        "notices": [notice.model_dump(mode="json") for notice in result.notices],
         "started": result.started.isoformat(),
         "finished": result.finished.isoformat(),
         "bytes": result.path.stat().st_size,

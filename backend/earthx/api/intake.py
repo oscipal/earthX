@@ -119,6 +119,7 @@ from earthx.processing.recipe import (
     Provenance,
     RasterOutput,
     Recipe,
+    RecipeNotice,
     RecipeRequest,
     cache_key,
     document_bytes,
@@ -643,6 +644,7 @@ def export_attachments(
             layout=names,
         ),
         attribution=(attribution,) if attribution else (),
+        notices=recipe_notices(config),
         dataset=DatasetFacts.of(config),
         acquired_on=acquired_on,
         bands=tuple(bands),
@@ -1500,6 +1502,7 @@ def crop_recipe_json(
         started=accepted_at,
         finished=None,
         attribution=[attribution] if attribution else [],
+        notices=list(recipe_notices(config)),
     )
     document = {
         **recipe.model_dump(mode="json", exclude={"recipe_id"}),
@@ -1548,5 +1551,17 @@ def job_recipe_json(
     """
     attribution = attribution_text(config, years=years) if config else None
     return job_recipe_document(
-        body, attribution=[attribution] if attribution else [], result=result, started=started, finished=finished
+        body,
+        attribution=[attribution] if attribution else [],
+        result=result,
+        started=started,
+        finished=finished,
+        notices=recipe_notices(config) if config else (),
+    )
+
+
+def recipe_notices(config: Attributable) -> tuple[RecipeNotice, ...]:
+    """The notices of the dataset as the provenance of ``recipe.json`` holds them (DS-04 plan §4.4)."""
+    return tuple(
+        RecipeNotice(code=notice.code, label=notice.label, tooltip=notice.tooltip) for notice in config.notices
     )
