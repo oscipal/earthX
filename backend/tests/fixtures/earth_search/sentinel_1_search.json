@@ -1,0 +1,300 @@
+{
+  "type": "FeatureCollection",
+  "numberMatched": 2,
+  "numberReturned": 2,
+  "features": [
+    {
+      "type": "Feature",
+      "stac_version": "1.0.0",
+      "stac_extensions": [],
+      "id": "S1_VVVH",
+      "collection": "sentinel-1-grd",
+      "bbox": [
+        8.0,
+        46.0,
+        9.0,
+        47.0
+      ],
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              8.0,
+              46.0
+            ],
+            [
+              9.0,
+              46.0
+            ],
+            [
+              9.0,
+              47.0
+            ],
+            [
+              8.0,
+              47.0
+            ],
+            [
+              8.0,
+              46.0
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "datetime": "2026-06-01T05:30:00Z",
+        "platform": "sentinel-1x",
+        "constellation": "sentinel-1",
+        "sar:instrument_mode": "IW",
+        "sar:polarizations": [
+          "VV",
+          "VH"
+        ],
+        "sar:product_type": "GRD",
+        "sar:pixel_spacing_range": 10,
+        "sar:pixel_spacing_azimuth": 10,
+        "sat:orbit_state": "ascending",
+        "sat:relative_orbit": 42,
+        "s1:datatake_id": "12345",
+        "s1:slice_number": "2",
+        "s1:total_slices": "3",
+        "storage:requester_pays": true,
+        "storage:region": "eu-central-1",
+        "updated": "2026-06-02T00:00:00Z"
+      },
+      "links": [],
+      "assets": {
+        "vv": {
+          "href": "s3://sentinel-s1-l1c/GRD/2026/6/1/IW/DV/S1X_SYNTHETIC_S1_VVVH/measurement/iw-vv.tiff",
+          "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+          "roles": [
+            "data"
+          ],
+          "raster:bands": [
+            {
+              "nodata": 0,
+              "data_type": "uint16"
+            }
+          ]
+        },
+        "vh": {
+          "href": "s3://sentinel-s1-l1c/GRD/2026/6/1/IW/DV/S1X_SYNTHETIC_S1_VVVH/measurement/iw-vh.tiff",
+          "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+          "roles": [
+            "data"
+          ],
+          "raster:bands": [
+            {
+              "nodata": 0,
+              "data_type": "uint16"
+            }
+          ]
+        },
+        "schema-product-vv": {
+          "href": "s3://sentinel-s1-l1c/GRD/2026/6/1/IW/DV/S1X_SYNTHETIC_S1_VVVH/annotation/rfi/rfi-iw-vv.xml",
+          "type": "application/xml",
+          "roles": [
+            "metadata"
+          ]
+        },
+        "schema-calibration-vv": {
+          "href": "s3://sentinel-s1-l1c/GRD/2026/6/1/IW/DV/S1X_SYNTHETIC_S1_VVVH/annotation/calibration/calibration-iw-vv.xml",
+          "type": "application/xml",
+          "roles": [
+            "metadata"
+          ]
+        },
+        "schema-noise-vv": {
+          "href": "s3://sentinel-s1-l1c/GRD/2026/6/1/IW/DV/S1X_SYNTHETIC_S1_VVVH/annotation/calibration/noise-iw-vv.xml",
+          "type": "application/xml",
+          "roles": [
+            "metadata"
+          ]
+        },
+        "schema-product-vh": {
+          "href": "s3://sentinel-s1-l1c/GRD/2026/6/1/IW/DV/S1X_SYNTHETIC_S1_VVVH/annotation/rfi/rfi-iw-vh.xml",
+          "type": "application/xml",
+          "roles": [
+            "metadata"
+          ]
+        },
+        "schema-calibration-vh": {
+          "href": "s3://sentinel-s1-l1c/GRD/2026/6/1/IW/DV/S1X_SYNTHETIC_S1_VVVH/annotation/calibration/calibration-iw-vh.xml",
+          "type": "application/xml",
+          "roles": [
+            "metadata"
+          ]
+        },
+        "schema-noise-vh": {
+          "href": "s3://sentinel-s1-l1c/GRD/2026/6/1/IW/DV/S1X_SYNTHETIC_S1_VVVH/annotation/calibration/noise-iw-vh.xml",
+          "type": "application/xml",
+          "roles": [
+            "metadata"
+          ]
+        },
+        "safe-manifest": {
+          "href": "s3://sentinel-s1-l1c/GRD/2026/6/1/IW/DV/S1X_SYNTHETIC_S1_VVVH/manifest.safe",
+          "type": "application/xml",
+          "roles": [
+            "metadata"
+          ]
+        },
+        "thumbnail": {
+          "href": "s3://sentinel-s1-l1c/GRD/2026/6/1/IW/DV/S1X_SYNTHETIC_S1_VVVH/preview/quick-look.png",
+          "type": "image/png",
+          "roles": [
+            "thumbnail"
+          ]
+        }
+      }
+    },
+    {
+      "type": "Feature",
+      "stac_version": "1.0.0",
+      "stac_extensions": [],
+      "id": "S1_HHHV",
+      "collection": "sentinel-1-grd",
+      "bbox": [
+        -40.0,
+        70.0,
+        -38.0,
+        71.0
+      ],
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -40.0,
+              70.0
+            ],
+            [
+              -38.0,
+              70.0
+            ],
+            [
+              -38.0,
+              71.0
+            ],
+            [
+              -40.0,
+              71.0
+            ],
+            [
+              -40.0,
+              70.0
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "datetime": "2026-06-01T09:10:00Z",
+        "platform": "sentinel-1x",
+        "constellation": "sentinel-1",
+        "sar:instrument_mode": "EW",
+        "sar:polarizations": [
+          "HH",
+          "HV"
+        ],
+        "sar:product_type": "GRD",
+        "sar:pixel_spacing_range": 40,
+        "sar:pixel_spacing_azimuth": 40,
+        "sat:orbit_state": "ascending",
+        "sat:relative_orbit": 42,
+        "s1:datatake_id": "12345",
+        "s1:slice_number": "2",
+        "s1:total_slices": "3",
+        "storage:requester_pays": true,
+        "storage:region": "eu-central-1",
+        "updated": "2026-06-02T00:00:00Z"
+      },
+      "links": [],
+      "assets": {
+        "hh": {
+          "href": "s3://sentinel-s1-l1c/GRD/2026/6/1/IW/DV/S1X_SYNTHETIC_S1_HHHV/measurement/ew-hh.tiff",
+          "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+          "roles": [
+            "data"
+          ],
+          "raster:bands": [
+            {
+              "nodata": 0,
+              "data_type": "uint16"
+            }
+          ]
+        },
+        "hv": {
+          "href": "s3://sentinel-s1-l1c/GRD/2026/6/1/IW/DV/S1X_SYNTHETIC_S1_HHHV/measurement/ew-hv.tiff",
+          "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+          "roles": [
+            "data"
+          ],
+          "raster:bands": [
+            {
+              "nodata": 0,
+              "data_type": "uint16"
+            }
+          ]
+        },
+        "schema-product-hh": {
+          "href": "s3://sentinel-s1-l1c/GRD/2026/6/1/IW/DV/S1X_SYNTHETIC_S1_HHHV/annotation/rfi/rfi-ew-hh.xml",
+          "type": "application/xml",
+          "roles": [
+            "metadata"
+          ]
+        },
+        "schema-calibration-hh": {
+          "href": "s3://sentinel-s1-l1c/GRD/2026/6/1/IW/DV/S1X_SYNTHETIC_S1_HHHV/annotation/calibration/calibration-ew-hh.xml",
+          "type": "application/xml",
+          "roles": [
+            "metadata"
+          ]
+        },
+        "schema-noise-hh": {
+          "href": "s3://sentinel-s1-l1c/GRD/2026/6/1/IW/DV/S1X_SYNTHETIC_S1_HHHV/annotation/calibration/noise-ew-hh.xml",
+          "type": "application/xml",
+          "roles": [
+            "metadata"
+          ]
+        },
+        "schema-product-hv": {
+          "href": "s3://sentinel-s1-l1c/GRD/2026/6/1/IW/DV/S1X_SYNTHETIC_S1_HHHV/annotation/rfi/rfi-ew-hv.xml",
+          "type": "application/xml",
+          "roles": [
+            "metadata"
+          ]
+        },
+        "schema-calibration-hv": {
+          "href": "s3://sentinel-s1-l1c/GRD/2026/6/1/IW/DV/S1X_SYNTHETIC_S1_HHHV/annotation/calibration/calibration-ew-hv.xml",
+          "type": "application/xml",
+          "roles": [
+            "metadata"
+          ]
+        },
+        "schema-noise-hv": {
+          "href": "s3://sentinel-s1-l1c/GRD/2026/6/1/IW/DV/S1X_SYNTHETIC_S1_HHHV/annotation/calibration/noise-ew-hv.xml",
+          "type": "application/xml",
+          "roles": [
+            "metadata"
+          ]
+        },
+        "safe-manifest": {
+          "href": "s3://sentinel-s1-l1c/GRD/2026/6/1/IW/DV/S1X_SYNTHETIC_S1_HHHV/manifest.safe",
+          "type": "application/xml",
+          "roles": [
+            "metadata"
+          ]
+        },
+        "thumbnail": {
+          "href": "s3://sentinel-s1-l1c/GRD/2026/6/1/IW/DV/S1X_SYNTHETIC_S1_HHHV/preview/quick-look.png",
+          "type": "image/png",
+          "roles": [
+            "thumbnail"
+          ]
+        }
+      }
+    }
+  ],
+  "links": []
+}

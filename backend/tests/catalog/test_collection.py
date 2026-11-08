@@ -163,7 +163,7 @@ def test_a_dataset_with_a_doi_declares_the_scientific_extension(collection: dict
     assert collection["sci:doi"] == "10.5270/S2_-742ikth"
 
 
-@pytest.mark.parametrize("config", list(REGISTRY), ids=lambda config: config.dataset_id)
+@pytest.mark.parametrize("config", [entry for entry in REGISTRY if entry.doi], ids=lambda config: config.dataset_id)
 def test_a_doi_is_the_name_and_comes_with_a_cite_as_link(config) -> None:
     """adr/0014 §10.2 (M4-14): `sci:doi` is the DOI name, the URL is the `cite-as` link."""
     built = to_stac_collection(config)

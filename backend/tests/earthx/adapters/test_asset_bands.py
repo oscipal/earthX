@@ -19,7 +19,14 @@ from earthx.adapters.esa_worldcover_bucket import _item as worldcover_item
 from earthx.adapters.federated_search import with_core_bands
 from earthx.adapters.stac_api import get_item as earth_search_item
 from earthx.gateway import Policy
-from tests.catalog.entries import COP_DEM_GLO_30, ESA_WORLDCOVER_2020, ESA_WORLDCOVER_2021, REGISTRY, SENTINEL_2_L2A
+from tests.catalog.entries import (
+    COP_DEM_GLO_30,
+    ESA_WORLDCOVER_2020,
+    ESA_WORLDCOVER_2021,
+    REGISTRY,
+    SENTINEL_1_GRD,
+    SENTINEL_2_L2A,
+)
 from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR
 from tests.earthx.readers import mini_zarr
 
@@ -61,6 +68,14 @@ async def earth_search_fixture() -> dict[str, Any]:
         return await earth_search_item(SENTINEL_2_L2A, "SYNTH_T00AAA_20240601T100000_L2A", gateway=gateway)
 
 
+async def sentinel_1_fixture() -> dict[str, Any]:
+    """A Sentinel-1 item as Earth Search serves it: `raster:bands` on the data, no `eo:bands` anywhere (DS-04b)."""
+    item = load("sentinel_1_search")["features"][0]
+    gateway, _ = answering(httpx.Response(200, json=item))
+    async with gateway:
+        return await earth_search_item(SENTINEL_1_GRD, item["id"], gateway=gateway)
+
+
 def dem_fixture() -> dict[str, Any]:
     config = replace(COP_DEM_GLO_30, source=replace(COP_DEM_GLO_30.source, endpoint="https://dem.example"))
     return dem_item("Copernicus_DSM_10_N47_00_E009_00_DEM", (9.0, 47.0, 10.0, 48.0), config=config)
@@ -74,6 +89,7 @@ def worldcover_fixture(entry) -> dict[str, Any]:
 async def items_by_dataset() -> dict[str, dict[str, Any]]:
     return {
         SENTINEL_2_L2A.dataset_id: await earth_search_fixture(),
+        SENTINEL_1_GRD.dataset_id: await sentinel_1_fixture(),
         SYNTHETIC_ZARR.dataset_id: await zarr_fixture(),
         COP_DEM_GLO_30.dataset_id: dem_fixture(),
         **{entry.dataset_id: worldcover_fixture(entry) for entry in (ESA_WORLDCOVER_2020, ESA_WORLDCOVER_2021)},
@@ -81,7 +97,13 @@ async def items_by_dataset() -> dict[str, dict[str, Any]]:
 
 
 def test_every_registry_entry_is_covered() -> None:
-    covered = {SENTINEL_2_L2A.dataset_id, COP_DEM_GLO_30.dataset_id, ESA_WORLDCOVER_2020.dataset_id, ESA_WORLDCOVER_2021.dataset_id}
+    covered = {
+        SENTINEL_2_L2A.dataset_id,
+        SENTINEL_1_GRD.dataset_id,
+        COP_DEM_GLO_30.dataset_id,
+        ESA_WORLDCOVER_2020.dataset_id,
+        ESA_WORLDCOVER_2021.dataset_id,
+    }
     assert {entry.dataset_id for entry in REGISTRY} == covered
 
 

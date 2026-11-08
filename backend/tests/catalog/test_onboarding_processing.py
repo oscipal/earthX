@@ -48,7 +48,7 @@ from earthx.adapters import ADAPTER_SPECS, SearchParams, materialize_items, sear
 from earthx.api.citation import citation_bib
 from earthx.api.intake import AcceptedOrder, accept_order, job_recipe_json
 from earthx.api.tiler import build_app
-from earthx.catalog.registry import AdapterKind, DataFormat, DatasetConfig, DatasetRegistry, ItemHolding
+from earthx.catalog.registry import AdapterKind, DataFormat, DatasetConfig, DatasetRegistry, Georeferencing, ItemHolding
 from earthx.gateway import Gateway
 from earthx.processing import RunResult, run
 from earthx.processing.operators import REGISTRY as OPERATORS
@@ -63,9 +63,11 @@ from tests.earthx.processing import sources
 from tests.earthx.readers import mini_dem, mini_zarr, mini_zarr_cf
 
 #: Q14: band math for the Sentinel-2 entry and the Zarr test entry, reprojection for the DEM; the mask over its own
-#: classes for ESA WorldCover (M5-07 plan §4.4, no band math there).
+#: classes for ESA WorldCover (M5-07 plan §4.4, no band math there); reprojection of the TPS raster for Sentinel-1 GRD
+#: (DS-04 plan §4.7, Checkliste Punkt 9).
 OPERATOR_FOR = {
     "sentinel-2-c1-l2a": "band_math",
+    "sentinel-1-grd": "reproject",
     "synthetic-zarr": "band_math",
     "cop-dem-glo-30": "reproject",
     "esa-worldcover-2020": "mask",
@@ -150,6 +152,8 @@ def build(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
         return _worldcover(config, tmp_path, monkeypatch)
     if config.format is DataFormat.COG and config.source.item_holding is ItemHolding.MATERIALIZED:
         return _dem(config, tmp_path, monkeypatch)
+    if config.georeferencing is Georeferencing.GCP_TPS:
+        return _gcp(config, tmp_path, monkeypatch)
     if config.format is DataFormat.COG:
         return _cog_pair(config, tmp_path, monkeypatch)
     if config.format is DataFormat.ZARR:
@@ -160,7 +164,7 @@ def build(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 def _federated(
     config: DatasetConfig, item: dict[str, Any], assets: list[str], aoi: dict[str, Any], step: dict[str, Any], **rest: Any
 ) -> Scenario:
-    synthetic = replace(config, source=replace(config.source, asset_hosts=(synthetic_chain.HOST,)))
+    synthetic = replace(config, source=replace(config.source, asset_hosts=(synthetic_chain.HOST,), asset_href_rewrites=()))
     gateway, _ = synthetic_chain.gateway_answering_search(synthetic, item)
     return Scenario(
         config=synthetic,
@@ -225,7 +229,9 @@ def _dem(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     mini_dem.serve_dem(mini_dem.build_mini_dem(tmp_path / "mini_dem.tif"), monkeypatch)
     synthetic_chain.resolve_from_memory(monkeypatch)
     synthetic = replace(
-        config, source=replace(config.source, endpoint=f"https://{synthetic_chain.HOST}", asset_hosts=(synthetic_chain.HOST,))
+        config, source=replace(
+            config.source, endpoint=f"https://{synthetic_chain.HOST}", asset_hosts=(synthetic_chain.HOST,), asset_href_rewrites=()
+        )
     )
     item = synthetic_chain.dem_item(mini_dem.TILE_NAME, mini_dem.BOUNDS, config=synthetic, gsd=30.0)
     gateway, _ = synthetic_chain.gateway_answering_materialize(synthetic, item)
@@ -259,6 +265,27 @@ def _worldcover(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.Monke
         result_bands=["map"],
         tile=None,
         output_bands=["map"],
+    )
+
+
+def _gcp(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Scenario:
+    """A file placed by its GCPs only, read through the thin-plate spline and reprojected (DS-04 plan §4.7)."""
+    sources.serve({}, monkeypatch)  # the resolver; the COG itself is served by the chain
+    chain = synthetic_chain.build(config, tmp_path, monkeypatch)
+    asset = chain.render_asset
+    # The version without a `HEAD` the synthetic source does not answer; the host's checksum has tests of its own.
+    chain.item["assets"][asset]["file:checksum"] = f"1220{asset:0<64}"
+    return Scenario(
+        config=chain.config,
+        registry=chain.registry,
+        item=chain.item,
+        assets=[asset],
+        aoi=chain.aoi,
+        step={"op": "reproject", "op_version": 2, "params": REPROJECT},
+        scaling="none",
+        gateway=chain.gateway,
+        result_bands=[asset],
+        tile=None,
     )
 
 
