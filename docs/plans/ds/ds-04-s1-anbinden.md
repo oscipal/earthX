@@ -339,6 +339,7 @@ Die Pixel sind in allen 34 Fällen bitgleich. Das Halten spart 25–45 ms je Kac
 - **Zitierangabe:** keine DOI und kein `cite-as`-Link an der Collection [M]; die Angabe nennt ESA, das Produkt und die Collection bei Earth Search.
 - **Nicht gebaut:** Bytes je Kachel (DS-04a offen); der Live-Smoke ist nicht in `.github/workflows/live-smoke.yml` eingetragen (`.github/` bleibt unverändert, §10).
 - **Bis DS-04c** kennt das Frontend `first_present` nicht: Es zeichnet das erste Asset der Liste (`vv`), eine HH-Szene zeigt dann kein Bild. Die Marken der Hinweise fehlen ebenso bis DS-04c.
+- **Vorschau bis DS-04c:** `quicklookPlan` (`frontend/src/datasets.ts`) nimmt das `thumbnail` eines Items vor jeder `browse`-Angabe. Sentinel-1-Items tragen eines (in Radargeometrie, ohne `proj:code`), also wählt das Frontend nie den Kachelplan, und die Browse-Ansicht zeigt für Sentinel-1 keine Vorschau. Gefunden im Review; die Lösung (ein Thumbnail nicht nehmen, wo `browse` es ausschließt, oder ein Registry-Feld dafür) gehört zu DS-04c.
 
 ### 12.4 Fragen an Otto
 
@@ -361,7 +362,7 @@ Die Pixel sind in allen 34 Fällen bitgleich. Das Halten spart 25–45 ms je Kac
 
 ### 12.5 Prüfanleitung für Otto
 
-**Browser:** lokal `npm run dev` und das Backend starten, im Data catalogue „Sentinel-1 GRD“ wählen: Gruppe „Radar“, Provider ESA, AWS, Element 84; Suchfilter „Orbit direction“, „Relative orbit“, „Acquisition mode“, „Polarization“; kein Abschnitt „Quick processing“. Eine Suche über Mitteleuropa liefert Szenen mit einem Zeitschritt je Durchgang; ab Zoom 7 erscheinen Kacheln in Graustufen (VV-Szenen; HH erst mit DS-04c).
+**Browser:** lokal `npm run dev` und das Backend starten, im Data catalogue „Sentinel-1 GRD“ wählen: Gruppe „Radar“, Provider ESA, AWS, Element 84; Suchfilter „Orbit direction“, „Relative orbit“, „Acquisition mode“, „Polarization“; kein Abschnitt „Quick processing“. Eine Suche über Mitteleuropa liefert Szenen mit einem Zeitschritt je Durchgang. Die Browse-Vorschau fehlt bis DS-04c (§12.3); die Kacheln der Ansicht in Graustufen ab Zoom 7 gibt es für VV-Szenen, für HH erst mit DS-04c. In der Sitzung nicht im Browser geprüft.
 
 **PowerShell 5.1** (nur Metadaten, eine Datei per `HEAD`):
 

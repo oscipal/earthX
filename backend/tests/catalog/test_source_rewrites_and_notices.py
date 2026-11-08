@@ -78,6 +78,8 @@ class TestHrefRewrites:
             S3 + "x.tiff?versionId=1",
             S3 + "x.tiff#frag",
             S3 + "x\\..\\y.tiff",
+            S3 + "a/%2e%2e/%2e%2e/x.tiff",  # a percent-encoded climb
+            S3 + "a/..%2f..%2fx.tiff",
             "https://assets.example.invalid/bucket-a/x.tiff",
         ],
     )

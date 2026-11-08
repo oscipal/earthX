@@ -465,14 +465,14 @@ class SourceInfo:
 def rewrite_href(href: str, rewrites: Iterable[HrefRewrite]) -> str:
     """``href`` under the first prefix of ``rewrites`` it starts with, else unchanged.
 
-    The rest after the prefix stays as it is, and an address whose rest could climb out of the prefix or carries a
-    query or a fragment is not rewritten at all: it stays the source's address, which ``readers`` refuses
-    (DS-04 plan §4.7).
+    The rest after the prefix stays as it is, and an address whose rest could climb out of the prefix (a ``..``
+    segment, a backslash, or any percent-encoding, which a server may decode into either) or carries a query or a
+    fragment is not rewritten at all: it stays the source's address, which ``readers`` refuses (DS-04 plan §4.7).
     """
     for rewrite in rewrites:
         if href.startswith(rewrite.from_prefix):
             rest = href[len(rewrite.from_prefix) :]
-            if any(char in rest for char in "?#\\") or ".." in rest.split("/"):
+            if any(char in rest for char in "?#%\\") or ".." in rest.split("/"):
                 return href
             return rewrite.to_prefix + rest
     return href
