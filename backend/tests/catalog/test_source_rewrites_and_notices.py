@@ -143,7 +143,7 @@ class TestAssetSelection:
         fields = {
             "title": "Co-polarisation",
             "assets": ("vv", "hh"),
-            "rescale": ((0.0, 500.0),),
+            "rescale": ((0.0, 250.0), (0.0, 750.0)),
             "colormap_name": None,
             "expression": None,
             "resampling": "nearest",
@@ -151,7 +151,7 @@ class TestAssetSelection:
         }
         return DefaultRender(**{**fields, **changes})
 
-    def test_first_present_takes_a_list_and_one_stretch(self) -> None:
+    def test_first_present_takes_a_list_and_a_stretch_per_asset(self) -> None:
         assert self.render().asset_selection is AssetSelection.FIRST_PRESENT
         assert self.render(rescale=None).rescale is None
 
@@ -159,9 +159,9 @@ class TestAssetSelection:
         with pytest.raises(ConfigError, match="at least two"):
             self.render(assets=("vv",))
 
-    def test_first_present_draws_one_band(self) -> None:
-        with pytest.raises(ConfigError, match="one rescale pair"):
-            self.render(rescale=((0.0, 500.0), (0.0, 500.0)))
+    def test_first_present_needs_a_stretch_for_each_asset(self) -> None:
+        with pytest.raises(ConfigError, match="one rescale pair per asset"):
+            self.render(rescale=((0.0, 500.0),))
 
     def test_a_colormap_may_paint_the_chosen_band(self) -> None:
         assert self.render(colormap_name="greys").colormap_name == "greys"

@@ -561,8 +561,8 @@ class AssetSelection(Enum):
     """Which of ``DefaultRender.assets`` the standard visualisation draws (DS-04 plan F2, Otto 07.11.2026).
 
     ``ALL``: every asset, in this order (one band grey, three bands red, green, blue). ``FIRST_PRESENT``: the first
-    asset of the list the item carries, drawn alone; for a source whose items carry one of several band sets
-    (Sentinel-1: ``vv``/``vh`` or ``hh``/``hv``).
+    asset of the list the item carries, drawn alone with the rescale pair at the same place in ``rescale``; for a
+    source whose items carry one of several band sets (Sentinel-1: ``vv``/``vh`` or ``hh``/``hv``).
     """
 
     ALL = "all"
@@ -607,8 +607,8 @@ class DefaultRender:
         if self.asset_selection is AssetSelection.FIRST_PRESENT:
             if len(self.assets) < 2:
                 raise ConfigError("default_render: first_present chooses among at least two assets")
-            if self.rescale is not None and len(self.rescale) != 1:
-                raise ConfigError("default_render: first_present draws one band, so it takes one rescale pair")
+            if self.rescale is not None and len(self.rescale) != len(self.assets):
+                raise ConfigError("default_render: first_present takes one rescale pair per asset, for the one drawn")
         elif not isinstance(self.asset_selection, AssetSelection):
             raise ConfigError("default_render.asset_selection is an AssetSelection")
         elif self.colormap_name is not None and len(self.assets) > 1:
