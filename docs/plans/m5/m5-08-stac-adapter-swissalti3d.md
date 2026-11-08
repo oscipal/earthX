@@ -248,7 +248,8 @@ F1–F3 jeweils Option 1, F4 = 2; Auslegungen A1–A7 angenommen, zu A7 mit Zusa
 - **F4:** Unverändert „© swisstopo“, verändert „© swisstopo (modified)“, einheitlich mit `adr/0023` §7.2 und WorldCover. Vorher die Seite zur Quellenangabe lesen und den geforderten Wortlaut in die PR-Beschreibung schreiben; Otto bestätigt ihn vor dem Merge.
   - **Gelesen am 07.11.2026 [P]:** Die „Terms of use for free geodata and geoservices (OGD) from swisstopo“ (Version 1.3.2021) verlangen bei jeder Darstellung, Veröffentlichung und Weitergabe eine der Angaben „Bundesamt für Landestopografie swisstopo“ (bzw. französisch, italienisch, rätoromanisch, englisch „Federal Office of Topography swisstopo“) oder **„©swisstopo“ (ohne Leerzeichen)**. Für swissALTI Regio und swissEO gilt eine andere Angabe, swissALTI3D gehört nicht dazu.
   - Die Seite „How to indicate the source“ regelt den Ort: in dynamischen Karten ideal neben den Daten, zulässig eine zentrale Seite der Quellen mit Link; bei Daten ohne Darstellung in der begleitenden Dokumentation. Bei abgeleiteten Daten gelten dieselben Regeln, der Angabe darf „derived from …“ (deutsch „abgeleitet von …“) vorangestellt werden.
-  - Folge für den Eintrag (M5-08c): Schreibweise „©swisstopo“ wie in den Bedingungen; „(modified)“ ist ein Zusatz hinter der geforderten Angabe, den die Seite nicht nennt, aber auch nicht ausschließt. Otto bestätigt Schreibweise und Zusatz im PR.
+  - Folge für den Eintrag (M5-08c): Schreibweise „©swisstopo“ wie in den Bedingungen; „(modified)“ ist ein Zusatz hinter der geforderten Angabe, den die Seite nicht nennt, aber auch nicht ausschließt.
+  - **Bestätigt (Otto, 08.11.2026, im PR #314):** `attribution_unmodified` „©swisstopo“ (ohne Leerzeichen), `attribution_modified` „©swisstopo (modified)“.
 
 ---
 
