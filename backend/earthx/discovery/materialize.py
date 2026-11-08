@@ -33,6 +33,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -56,8 +57,13 @@ from earthx.catalog.pgstac import (
     upsert_items,
     use_pgstac_search_path,
 )
-from earthx.catalog.registry import ConfigError, DatasetConfig, ItemHolding, UnknownDatasetError
+from earthx.catalog.registry import AdapterKind, ConfigError, DatasetConfig, ItemHolding, UnknownDatasetError
 from earthx.gateway import Gateway, GatewayError, Policy, host_of, user_agent_from_env
+
+# The least time between two requests to the endpoint of a run, by adapter (M5-08 plan §4.2, M5-18). The FSDI pages
+# about a thousand searches for swissALTI3D, and swisstopo reserves the right to throttle excessive use (adr/0023
+# §4.1): about 17 minutes for a full run. The buckets answer a handful of requests; they keep no spacing.
+ENDPOINT_INTERVALS_S: Mapping[AdapterKind, float] = {AdapterKind.FSDI_STAC_V1: 1.0}
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,7 +148,12 @@ def _policy_for(config: DatasetConfig) -> Policy:
     the same allowlist shape :func:`earthx.api.dependencies.policy_from_registry`
     builds for a whole registry, narrowed here to the one dataset this run touches.
     """
-    return Policy(allowed_hosts=frozenset({host_of(config.source.endpoint), *config.source.asset_hosts}))
+    endpoint_host = host_of(config.source.endpoint)
+    interval = ENDPOINT_INTERVALS_S.get(config.source.adapter)
+    return Policy(
+        allowed_hosts=frozenset({endpoint_host, *config.source.asset_hosts}),
+        host_intervals={} if interval is None else {endpoint_host: interval},
+    )
 
 
 async def _main_async(config: DatasetConfig, *, force: bool) -> MaterializeResult:
@@ -187,7 +198,7 @@ def main(argv: list[str] | None = None) -> int:
             f"{config.dataset_id}: loaded (source version {outcome.source_version}); "
             f"{result.items_written} items written, {result.items_deleted} deleted; "
             f"{outcome.listed} listed, {outcome.missing} missing, {outcome.withheld} withheld, "
-            f"{outcome.unknown} unknown prefixes in the bucket"
+            f"{outcome.unknown} unknown at the source"
         )
     return 0
 

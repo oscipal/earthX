@@ -24,7 +24,7 @@ import httpx
 import psycopg
 import pytest
 
-from earthx.adapters import NotMaterialized
+from earthx.adapters import NotMaterialized, UpstreamShapeError
 from earthx.api.main import app
 from earthx.catalog.pgstac import (
     MaterializeRunRecord,
@@ -36,10 +36,15 @@ from earthx.catalog.pgstac import (
     use_pgstac_search_path,
 )
 from earthx.catalog.registry import AdapterKind, CoverageProvider, ItemHolding, SearchCapabilities
-from earthx.discovery.materialize import main, run_materialize
+from earthx.discovery.materialize import _policy_for, main, run_materialize
 from earthx.gateway import Policy, UpstreamError
 from earthx.gateway.client import Gateway
 from tests.catalog.entries import COP_DEM_GLO_30, SENTINEL_2_L2A
+from tests.earthx.adapters.test_fsdi_stac import ENTRY as FSDI_ENTRY
+from tests.earthx.adapters.test_fsdi_stac import ETAG as FSDI_ETAG
+from tests.earthx.adapters.test_fsdi_stac import HOST as FSDI_HOST
+from tests.earthx.adapters.test_fsdi_stac import Source as FsdiSource
+from tests.earthx.adapters.test_fsdi_stac import item as fsdi_item
 
 pytestmark = pytest.mark.anyio
 
@@ -197,6 +202,50 @@ class TestAbortLeavesTheDatabaseUnchanged:
 
         assert _item_count(conn, MATERIALIZED.dataset_id) == 0
         assert last_source_version(conn, MATERIALIZED.dataset_id) is None
+
+
+class TestAStacApiSource:
+    """M5-08b: the run over the pages of a STAC API, with one state per tile, in the same one transaction."""
+
+    async def test_the_latest_states_are_written_and_the_next_run_is_unchanged(self, conn: psycopg.Connection) -> None:
+        load_collection(conn, FSDI_ENTRY)
+        pages = [[fsdi_item(2019), fsdi_item(2025)], [fsdi_item(2019, "2601-1200"), fsdi_item(2024, "2601-1200")]]
+        async with FsdiSource(pages).gateway() as gateway:
+            result = await run_materialize(conn, FSDI_ENTRY, gateway=gateway, force=False)
+
+        assert (result.items_written, result.outcome.withheld) == (2, 2)
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT content->'properties'->>'earthx:state', count(*) FROM pgstac.items WHERE collection = %s GROUP BY 1",
+                (FSDI_ENTRY.dataset_id,),
+            )
+            assert cur.fetchall() == [("latest", 2)]
+        assert last_source_version(conn, FSDI_ENTRY.dataset_id).startswith(FSDI_ETAG)
+
+        source = FsdiSource(pages)
+        async with source.gateway() as gateway:
+            again = await run_materialize(conn, FSDI_ENTRY, gateway=gateway, force=False)
+        assert again.outcome.status == "unchanged" and len(source.seen) == 1
+
+    async def test_too_many_items_off_the_entry_write_nothing(self, conn: psycopg.Connection) -> None:
+        load_collection(conn, FSDI_ENTRY)
+        pages = [[fsdi_item(2019), fsdi_item(2025, collection="ch.example.other")]]
+        async with FsdiSource(pages).gateway() as gateway:
+            with pytest.raises(UpstreamShapeError, match="1 of 2 items"):
+                await run_materialize(conn, FSDI_ENTRY, gateway=gateway, force=False)
+
+        assert _item_count(conn, FSDI_ENTRY.dataset_id) == 0
+        assert last_source_version(conn, FSDI_ENTRY.dataset_id) is None
+
+
+class TestCommandSpacing:
+    """M5-08 plan §4.2: about a thousand pages for swissALTI3D, one second apart."""
+
+    def test_the_fsdi_endpoint_gets_one_second_between_requests(self) -> None:
+        assert _policy_for(FSDI_ENTRY).interval_for(FSDI_HOST) == 1.0
+
+    def test_a_bucket_keeps_no_spacing(self) -> None:
+        assert _policy_for(COP_DEM_GLO_30).interval_for("copernicus-dem-30m.s3.amazonaws.com") == 0.0
 
 
 class TestRefusesAFederatedDataset:
