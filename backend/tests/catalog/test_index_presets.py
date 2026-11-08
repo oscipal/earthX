@@ -22,15 +22,31 @@ def _preset(**changes: object) -> IndexPreset:
     return replace(NDVI, **changes)
 
 
+NAMES = ["NDVI", "NDWI", "NDSI", "NBR", "EVI", "NDMI", "MNDWI", "NDREI", "SAVI"]
+
+
 class TestTheEntries:
-    def test_sentinel_2_offers_the_five_indices_in_the_order_of_the_buttons(self) -> None:
-        assert [preset.name for preset in SENTINEL_2_L2A.index_presets] == ["NDVI", "NDWI", "NDSI", "NBR", "EVI"]
+    def test_sentinel_2_offers_the_nine_indices_in_the_order_of_the_buttons(self) -> None:
+        assert [preset.name for preset in SENTINEL_2_L2A.index_presets] == NAMES
+
+    def test_ndbi_is_not_offered_because_it_is_minus_ndmi(self) -> None:
+        assert "NDBI" not in NAMES
 
     def test_n_is_the_nir_band_not_nir08(self) -> None:
         """Awesome Spectral Indices' `bands.json` maps N to B8 for Sentinel-2; B8A is N2 (plan §7.5)."""
         for preset in SENTINEL_2_L2A.index_presets:
             assert "nir08" not in preset.expression
-        assert {"NDVI", "NDWI", "NBR", "EVI"} == {p.name for p in SENTINEL_2_L2A.index_presets if "nir" in p.expression}
+        assert {"NDVI", "NDWI", "NBR", "EVI", "NDMI", "NDREI", "SAVI"} == {
+            p.name for p in SENTINEL_2_L2A.index_presets if "nir" in p.expression
+        }
+
+    def test_the_new_indices_use_the_expressions_and_bands_of_adr_0030(self) -> None:
+        by_name = {p.name: p for p in SENTINEL_2_L2A.index_presets}
+        assert by_name["NDMI"].expression == "(nir - swir16) / (nir + swir16)"
+        assert by_name["MNDWI"].expression == "(green - swir16) / (green + swir16)"
+        assert by_name["NDREI"].expression == "(nir - rededge1) / (nir + rededge1)"
+        assert by_name["SAVI"].expression == "1.5 * (nir - red) / (nir + red + 0.5)"
+        assert {p.name for p in by_name.values() if p.colormap_name == "rdbu"} == {"NDWI", "NDSI", "MNDWI"}
 
     def test_ndwi_is_the_water_index_of_mcfeeters_green_over_nir(self) -> None:
         ndwi = next(preset for preset in SENTINEL_2_L2A.index_presets if preset.name == "NDWI")
@@ -48,7 +64,7 @@ class TestTheEntries:
 class TestTheCollection:
     def test_it_publishes_the_presets_with_rescale_as_the_render_extension_writes_it(self) -> None:
         published = to_stac_collection(SENTINEL_2_L2A)["earthx:index_presets"]
-        assert [entry["name"] for entry in published] == ["NDVI", "NDWI", "NDSI", "NBR", "EVI"]
+        assert [entry["name"] for entry in published] == NAMES
         assert published[0] == {
             "name": "NDVI",
             "title": "Normalized Difference Vegetation Index",
