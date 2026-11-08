@@ -735,6 +735,10 @@ an die Aggregation. `earth_search_coverage` schreibt sie mit derselben Funktion
 derselben Bedingung gibt es nicht. Der Cache-Schlüssel der Coverage nimmt sie nur
 auf, wenn gesetzt.
 
+## 11b. Nachtrag M5-08 (07.11.2026): STAC-API-Dialekt umgesetzt
+
+F6 ist mit M5-08a umgesetzt (`plans/m5/m5-08-stac-adapter-swissalti3d.md` §11, PR #314). `adapters/earth_search.py` heißt jetzt `adapters/stac_api.py`. Ein `StacDialect` je Quelle hält die drei Stellen aus §3.2 B2: das Feld der Seitenmarke (`marker_field`), die Übersetzung der Bedingungen (`write_conditions`, für Earth Search die Query-Extension) und die Normalisierung der Items. Dazu kommt `FilterSupport`, das jetzt in `federated_search` liegt; `spec.py` liest es aus dem Dialekt, damit die Messung an einer Stelle steht. Earth Search bleibt `earth-search-v1` und bitgleich, belegt durch einen Vergleich auf Bytes (`tests/earthx/adapters/test_earth_search_golden.py`), der vor dem Umbau geschrieben wurde. Der zweite Dialekt (FSDI) folgt mit M5-08b.
+
 ## 12. Quellen
 
 **Im Repo [P]**

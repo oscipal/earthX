@@ -1,8 +1,9 @@
 """Source protocols: search, item fetch, materialization, aggregation.
 
-One adapter per source protocol (architekturplan.md 6.1). ``earth_search`` speaks
-Earth Search v1 (Sentinel-2 L2A as COG); it answers search and item fetch and a coverage
-way of adr/0004 §5, the aggregation (K-06, M3-11c). The EOPF adapter left with its dataset
+One adapter per source protocol (architekturplan.md 6.1). ``stac_api`` speaks STAC
+APIs, one dialect per source (M5-08); Earth Search v1 (Sentinel-2 L2A as COG) answers
+search and item fetch through it, and ``earth_search_coverage`` adds a coverage way of
+adr/0004 §5, the aggregation (K-06, M3-11c). The EOPF adapter left with its dataset
 (adr/0017). ``cop_dem_bucket`` (M3-11b)
 speaks a structurally different protocol: it never searches, it
 *materializes* — it turns a bucket's own tile list into STAC items, once, for the
