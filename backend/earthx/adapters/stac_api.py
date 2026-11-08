@@ -60,7 +60,7 @@ from earthx.adapters.federated_search import (
     ttl_for_window,
     with_core_bands,
 )
-from earthx.catalog.registry import AdapterKind, DatasetConfig
+from earthx.catalog.registry import AdapterKind, DatasetConfig, HrefRewrite, rewrite_href
 from earthx.catalog.search_filters import FilterConditions, RangeCondition
 from earthx.gateway import Gateway
 
@@ -181,7 +181,7 @@ async def search_items(
     key = search_cache_key(fingerprint, marker, params.limit)
     cached = await cache_get(cache, key)
     if cached is not None and isinstance(cached.get("features"), list):
-        return page_from_stored(dataset_id, fingerprint, cached, from_cache=True)
+        return page_from_stored(dataset_id, fingerprint, _with_https(config, cached), from_cache=True)
 
     response = await gateway.post_json(
         f"{endpoint_of(config)}/search",
@@ -192,7 +192,7 @@ async def search_items(
     )
     stored = _storable(dialect, response.json())
     await cache_set(cache, key, stored, ttl_s=ttl_for_window(params.end), dataset_id=dataset_id)
-    return page_from_stored(dataset_id, fingerprint, stored, from_cache=False)
+    return page_from_stored(dataset_id, fingerprint, _with_https(config, stored), from_cache=False)
 
 
 async def get_item(
@@ -215,7 +215,7 @@ async def get_item(
     key = item_cache_key(dataset_id, item_id)
     cached = await cache_get(cache, key)
     if isinstance(cached, dict) and isinstance(cached.get("item"), dict):
-        return cached["item"]
+        return _rewritten(cached["item"], config.source.asset_href_rewrites)
 
     url = f"{endpoint_of(config)}/collections/{config.source.source_collection_id}/items/{item_id}"
     item = (await gateway.get(url)).json()
@@ -225,7 +225,38 @@ async def get_item(
         raise UpstreamShapeError("item answer is not a JSON object")
     item = dialect.normalize_item(item)
     await cache_set(cache, key, {"item": item}, ttl_s=TTL_ITEM_S, dataset_id=dataset_id)
-    return item
+    return _rewritten(item, config.source.asset_href_rewrites)
+
+
+def _with_https(config: DatasetConfig, stored: CacheValue) -> CacheValue:
+    """``stored`` with the asset addresses of every item under the entry's rewrites (DS-04 plan §4.2).
+
+    Applied on the way out, after the cache: the cache keeps what the source said, and a change of the rewrites in
+    the registry holds from the next answer on, cached or not.
+    """
+    rewrites = config.source.asset_href_rewrites
+    if not rewrites:
+        return stored
+    features = [_rewritten(feature, rewrites) if isinstance(feature, dict) else feature for feature in stored["features"]]
+    return {**stored, "features": features}
+
+
+def _rewritten(item: Item, rewrites: tuple[HrefRewrite, ...]) -> Item:
+    """The item with each asset's ``href`` rewritten; every other field stays as the source wrote it (Auslegung A4)."""
+    assets = item.get("assets")
+    if not rewrites or not isinstance(assets, dict):
+        return item
+    return {
+        **item,
+        "assets": {
+            key: (
+                {**asset, "href": rewrite_href(asset["href"], rewrites)}
+                if isinstance(asset, dict) and isinstance(asset.get("href"), str)
+                else asset
+            )
+            for key, asset in assets.items()
+        },
+    }
 
 
 def _search_body(
