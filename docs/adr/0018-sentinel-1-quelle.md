@@ -831,7 +831,8 @@ freigegeben. Das ist ein Nachtrag zu F3.
   nachzieht; eine Betriebszusage gibt es nicht.
 - TPS im Kachelpfad: Geschwindigkeit, misst die Umsetzung. *Gemessen in DS-04a und DS-04b
   (`plans/ds/ds-04-s1-anbinden.md` §11, §12.2):* 50 bis 110 ms mehr je Kachel als affin, davon 25 bis 45 ms
-  für das Bauen des TPS-Rasters je Kachel; ob es je Szene gehalten wird, ist F7 des Plans.
+  für das Bauen des TPS-Rasters je Kachel. Es wird vorerst nicht je Szene gehalten (Otto, 08.11.2026, F7 = 3);
+  Wiedervorlage nach DS-04c, falls Sentinel-1 im Browser spürbar langsam ist.
 - Nachtrag in `docs/plans/ds/ds-04-s1-anbinden.md` (Quelle, Produktart,
   Hinweise): mit der nächsten Doku-Aufgabe oder durch Otto; der Backlog bleibt
   unverändert.

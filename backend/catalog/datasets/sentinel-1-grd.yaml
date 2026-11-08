@@ -116,7 +116,7 @@ coverage:
   provider: upstream-aggregation
   # An IW scene is about 250 km across the track (adr/0018 §3.1). DS-04 plan A6 asks for z8 like Sentinel-2, but a
   # z8 cell (about 156 km at the equator) cannot hold a 250 km footprint, which the start check refuses (adr/0004
-  # §5); z7 is the finest level it allows, a question to Otto in the PR of DS-04b.
+  # §5); z7 is the finest level it allows (Otto 08.11.2026, DS-04 plan F8).
   typical_footprint_km: 250.0
   max_geotile_level: 7
 # DS-04 plan F2 (Otto 07.11.2026): the co-polarisation in grey, VV where the item has it, else HH. The stretch is the
@@ -252,7 +252,7 @@ search_capabilities:
 # adr/0018 F3: no index buttons on DN; the quick processings in dB come with DS-05a and DS-05c.
 index_presets: []
 true_color: []
-# adr/0018 F2, DS-04 plan §4.4. The tooltips are for Otto to confirm in the PR of DS-04b.
+# adr/0018 F2, DS-04 plan §4.4; the tooltips confirmed by Otto on 08.11.2026 (F10).
 notices:
 - code: approximate_geolocation
   label: Approximate geolocation
