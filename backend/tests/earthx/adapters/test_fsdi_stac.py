@@ -25,6 +25,7 @@ from earthx.adapters import (
     stac_api,
 )
 from earthx.adapters import search_items as dispatch_search
+from earthx.adapters.errors import ItemOffAssetKeys
 from earthx.adapters.stac_api import (
     BODY_FIELDS,
     FSDI,
@@ -48,6 +49,7 @@ from earthx.catalog.search_filters import RangeCondition
 from earthx.gateway import Policy, UpstreamError
 from earthx.gateway.client import Gateway
 from tests.catalog.entries import COP_DEM_GLO_30
+from tests.earthx.adapters.test_cache_use import FakeCache
 
 pytestmark = pytest.mark.anyio
 
@@ -259,12 +261,57 @@ class TestSearch:
             result = await search_items(FEDERATED, gateway=gateway)
         assert list(result.items[0]["assets"]) == ["dtm", "dtm_2m", "xyz", "xyz_2m"]
 
-    async def test_an_item_that_does_not_fit_the_keys_fails_the_page(self) -> None:
+    async def test_an_item_that_does_not_fit_the_keys_is_skipped_and_counted(self, caplog) -> None:
+        """Otto, 08.11.2026: the page stays, the item is left out and counted; the log names no item."""
+        broken = item(2025)
+        broken["assets"].popitem()
+        async with Source([[item(2019), broken, item(2019, "2601-1200")]]).gateway() as gateway:
+            with caplog.at_level("WARNING", logger="earthx.adapters.stac_api"):
+                result = await search_items(FEDERATED, gateway=gateway)
+        assert [one["id"] for one in result.items] == ["dtm_2019_2600-1200", "dtm_2019_2601-1200"]
+        assert result.skipped == 1
+        (record,) = caplog.records
+        assert record.skipped == 1 and record.dataset_id == FEDERATED.dataset_id
+        logged = json.dumps({**record.__dict__, "msg": record.getMessage()}, default=str)
+        assert "dtm_2025" not in logged and HOST not in logged
+
+    async def test_the_count_comes_back_from_the_cache(self) -> None:
+        broken = item(2025)
+        broken["assets"].popitem()
+        cache = FakeCache()
+        source = Source([[item(2019), broken]])
+        async with source.gateway() as gateway:
+            live = await search_items(FEDERATED, gateway=gateway, cache=cache)
+            cached = await search_items(FEDERATED, gateway=gateway, cache=cache)
+        assert (live.skipped, cached.skipped, cached.from_cache) == (1, 1, True)
+        assert len(source.searches) == 1
+
+    async def test_a_page_with_nothing_skipped_is_stored_as_before(self) -> None:
+        """The cache value of M5-08a stays byte for byte where nothing was skipped (Earth Search, golden test)."""
+        cache = FakeCache()
+        async with Source([[item(2019)]]).gateway() as gateway:
+            result = await search_items(FEDERATED, gateway=gateway, cache=cache)
+        (stored,) = cache.entries.values()
+        assert set(stored) == {"features", "matched", "marker"} and result.skipped == 0
+
+    @pytest.mark.parametrize("value", [-1, True, "1", None, 1.5])
+    async def test_a_damaged_count_in_the_cache_reads_as_none_skipped(self, value) -> None:
+        cache = FakeCache()
+        source = Source([[item(2019)]])
+        async with source.gateway() as gateway:
+            await search_items(FEDERATED, gateway=gateway, cache=cache)
+            (key,) = cache.entries
+            cache.entries[key] = {**cache.entries[key], "skipped": value}
+            cached = await search_items(FEDERATED, gateway=gateway, cache=cache)
+        assert cached.from_cache and cached.skipped == 0
+
+    async def test_one_item_that_does_not_fit_the_keys_is_still_an_error(self) -> None:
+        """A fetch by id has no page to keep: the item asked for is not one the entry can serve."""
         broken = item(2019)
         broken["assets"].popitem()
         async with Source([[broken]]).gateway() as gateway:
-            with pytest.raises(UpstreamShapeError, match="no asset for xyz_2m"):
-                await search_items(FEDERATED, gateway=gateway)
+            with pytest.raises(ItemOffAssetKeys, match="no asset for xyz_2m"):
+                await get_item(FEDERATED, "dtm_2019_2600-1200", gateway=gateway)
 
     async def test_one_item_gets_the_fixed_keys_too(self) -> None:
         source = Source([[item(2019)]])

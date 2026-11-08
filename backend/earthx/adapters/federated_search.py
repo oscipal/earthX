@@ -338,6 +338,9 @@ class ItemPage:
     matched: int | None
     next_page_token: str | None
     from_cache: bool
+    # Items of the source the adapter left out because they do not fit the entry (``source.asset_keys``, Otto
+    # 08.11.2026); 0 for every source that keeps each item.
+    skipped: int
 
 
 def _stac_instant(value: datetime) -> str:
@@ -499,11 +502,14 @@ def page_from_stored(dataset_id: str, fingerprint: str, stored: CacheValue, *, f
     every source.
     """
     marker = stored.get("marker")
+    skipped = stored.get("skipped", 0)
     return ItemPage(
         items=tuple(stored["features"]),
         matched=stored.get("matched"),
         next_page_token=None if marker is None else encode_page_token(dataset_id, fingerprint, marker),
         from_cache=from_cache,
+        # A damaged cache row says nothing about what was skipped; it cannot add to the items either.
+        skipped=skipped if isinstance(skipped, int) and not isinstance(skipped, bool) and skipped >= 0 else 0,
     )
 
 

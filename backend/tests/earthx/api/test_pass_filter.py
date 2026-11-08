@@ -128,6 +128,7 @@ class Source:
             matched=None,
             next_page_token=str(end) if end < len(self.items) else None,
             from_cache=False,
+            skipped=0,
         )
 
 

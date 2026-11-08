@@ -32,6 +32,7 @@ the three possible answers — checking it ourselves is why ``SearchParams`` exi
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -42,6 +43,7 @@ from earthx.adapters.cache import CacheValue, SearchCache
 from earthx.adapters.cop_dem_bucket import MAX_NOT_LOADABLE_FRACTION, MaterializeOutcome
 from earthx.adapters.errors import (
     InvalidQuery,
+    ItemOffAssetKeys,
     NotMaterialized,
     UnsupportedFilter,
     UnsupportedSource,
@@ -73,6 +75,8 @@ from earthx.catalog.search_filters import FilterConditions, RangeCondition
 from earthx.gateway import Gateway, host_of
 
 Item = dict[str, Any]
+
+LOGGER = logging.getLogger("earthx.adapters.stac_api")
 
 # The fields our own search body may carry; a dialect's marker or conditions must not take one of them over.
 BODY_FIELDS = frozenset({"collections", "limit", "sortby", "bbox", "intersects", "ids", "datetime"})
@@ -186,25 +190,25 @@ def with_fixed_asset_keys(item: Item, rules: tuple[AssetKeyRule, ...]) -> Item:
     """The item with every asset under the key of the one rule its media type and gsd fit (M5-08 plan §4.3).
 
     No rules: the item unchanged, keys as the source gives them. Otherwise an asset that fits no rule, two assets on
-    one rule or a rule no asset fits is :class:`UpstreamShapeError`: an asset never stays under the source's own key,
+    one rule or a rule no asset fits is :class:`ItemOffAssetKeys`: an asset never stays under the source's own key,
     where nothing the entry names would find it. The message names no key of the source, which is a file name.
     """
     if not rules:
         return item
     assets = item.get("assets")
     if not isinstance(assets, dict):
-        raise UpstreamShapeError("item carries no assets to key")
+        raise ItemOffAssetKeys("item carries no assets to key")
     keyed: dict[str, Any] = {}
     for asset in assets.values():
         rule = next((rule for rule in rules if isinstance(asset, dict) and _fits(asset, rule)), None)
         if rule is None:
-            raise UpstreamShapeError("an asset of the item fits no rule of source.asset_keys")
+            raise ItemOffAssetKeys("an asset of the item fits no rule of source.asset_keys")
         if rule.key in keyed:
-            raise UpstreamShapeError(f"two assets of the item fit the asset key {rule.key}")
+            raise ItemOffAssetKeys(f"two assets of the item fit the asset key {rule.key}")
         keyed[rule.key] = asset
     missing = [rule.key for rule in rules if rule.key not in keyed]
     if missing:
-        raise UpstreamShapeError(f"the item has no asset for {', '.join(missing)}")
+        raise ItemOffAssetKeys(f"the item has no asset for {', '.join(missing)}")
     return {**item, "assets": {rule.key: keyed[rule.key] for rule in rules}}
 
 
@@ -333,11 +337,24 @@ def _storable(dialect: StacDialect, config: DatasetConfig, payload: Any) -> Cach
     Reduced here rather than at the cache, so that a cache hit and a live answer go
     through exactly the same translation afterwards.
     """
-    features = [
-        normalize_for(dialect, config, feature) if isinstance(feature, dict) else feature
-        for feature in require_feature_list(payload)
-    ]
-    return {"features": features, "matched": matched_count(payload), "marker": _next_marker(dialect, payload)}
+    features: list[Any] = []
+    skipped = 0
+    for feature in require_feature_list(payload):
+        if not isinstance(feature, dict):
+            features.append(feature)
+            continue
+        try:
+            features.append(normalize_for(dialect, config, feature))
+        except ItemOffAssetKeys:
+            # Skipped and counted, not the whole page refused (Otto, 08.11.2026). The log names the dataset and the
+            # number, never an item: an id of the source is a file name.
+            skipped += 1
+    stored: CacheValue = {"features": features, "matched": matched_count(payload), "marker": _next_marker(dialect, payload)}
+    if skipped:
+        # Only where something was skipped: a page without one is stored exactly as before (M5-08a, bit-identical).
+        stored["skipped"] = skipped
+        LOGGER.warning("search skipped items that fit no asset key", extra={"dataset_id": config.dataset_id, "skipped": skipped})
+    return stored
 
 
 def _next_marker(dialect: StacDialect, payload: dict[str, Any]) -> str | None:
