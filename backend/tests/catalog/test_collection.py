@@ -150,10 +150,12 @@ def test_the_terms_notice_is_copied_not_shared(collection: dict) -> None:
 def test_the_standard_visualisation_travels_in_the_field_names_of_the_render_extension(
     collection: dict,
 ) -> None:
-    """adr/0006 §5: the values must be publishable as `renders` without a translation."""
+    """adr/0006 §5: the values must be publishable as `renders` without a translation; `asset_selection` is our
+    own field beside them (DS-04 plan F2)."""
     render = collection["earthx:default_render"]
-    assert set(render) == {"title", "assets", "rescale", "colormap_name", "expression", "resampling"}
+    assert set(render) == {"title", "assets", "rescale", "colormap_name", "expression", "resampling", "asset_selection"}
     assert render["assets"] == ["visual"]
+    assert render["asset_selection"] == "all"
 
 
 def test_a_dataset_with_a_doi_declares_the_scientific_extension(collection: dict) -> None:

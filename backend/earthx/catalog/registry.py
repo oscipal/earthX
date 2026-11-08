@@ -402,6 +402,29 @@ class AccessInfo:
     account_paths: tuple[AccountPath, ...]
 
 
+class AssetChecksum(Enum):
+    """A checksum over the whole object that the asset host hands out on a ``HEAD`` (DS-04 plan §4.3).
+
+    ``CRC64NVME``: S3's full-object CRC-64/NVME, asked for with ``x-amz-checksum-mode: ENABLED`` and taken only where
+    ``x-amz-checksum-type`` is ``FULL_OBJECT`` (adr/0018 §3.1).
+    """
+
+    CRC64NVME = "crc64nvme"
+
+
+@dataclass(frozen=True, slots=True)
+class HrefRewrite:
+    """One prefix of the asset addresses the source writes, and the ``https`` prefix the platform reads it under.
+
+    Applied by the adapter as it reads an item, before anyone else sees the address (DS-04 plan §4.2): Earth Search
+    writes ``s3://sentinel-s1-l1c/…`` for objects the bucket serves anonymously over ``https`` (adr/0018 §4.3).
+    Both prefixes end in ``/``, so that a prefix never matches part of a longer name.
+    """
+
+    from_prefix: str
+    to_prefix: str
+
+
 @dataclass(frozen=True, slots=True)
 class SourceInfo:
     """Where the items come from. adr/0005 rule I branches on this per collection.
@@ -423,6 +446,10 @@ class SourceInfo:
     storage, not the agency (``aws:eu-central-1``, ``eodc:vienna``), or ``unknown`` until both are shown
     (adr/0022 §7.2, adr/0023 F7). It sits next to ``asset_hosts`` because the start check reads it against them
     (M5-07 plan F1).
+
+    ``asset_href_rewrites`` (DS-04 plan §4.2) are the prefixes the adapter rewrites, empty where the source writes
+    ``https`` itself; each new prefix lies on a host of ``asset_hosts``. ``asset_checksum`` (§4.3) is the checksum
+    the asset host gives for the version of an input, or ``None`` where it gives none we take.
     """
 
     adapter: AdapterKind
@@ -431,7 +458,28 @@ class SourceInfo:
     asset_hosts: tuple[str, ...]
     item_holding: ItemHolding
     data_region: str
+    asset_href_rewrites: tuple[HrefRewrite, ...]
+    asset_checksum: AssetChecksum | None
 
+
+def rewrite_href(href: str, rewrites: Iterable[HrefRewrite]) -> str:
+    """``href`` under the first prefix of ``rewrites`` it starts with, else unchanged.
+
+    The rest after the prefix stays as it is, and an address whose rest could climb out of the prefix or carries a
+    query or a fragment is not rewritten at all: it stays the source's address, which ``readers`` refuses
+    (DS-04 plan §4.7).
+    """
+    for rewrite in rewrites:
+        if href.startswith(rewrite.from_prefix):
+            rest = href[len(rewrite.from_prefix) :]
+            if any(char in rest for char in "?#\\") or ".." in rest.split("/"):
+                return href
+            return rewrite.to_prefix + rest
+    return href
+
+
+# The https prefix of an href rewrite: a bare host, then a path without anything that could leave it.
+_HTTPS_PREFIX_RE = re.compile(r"https://(?P<host>[a-z0-9.-]+)/(?:(?!\.\.?/)[A-Za-z0-9._~-]+/)*")
 
 # An https address with a host and nothing blank in it: what the catalogue may put behind a link.
 _HTTPS_URL_RE = re.compile(r"https://[^\s/?#]+(?:[/?#]\S*)?")
@@ -509,6 +557,18 @@ class ZarrInfo:
             raise ConfigError("zarr.variable_separator must not be an empty string")
 
 
+class AssetSelection(Enum):
+    """Which of ``DefaultRender.assets`` the standard visualisation draws (DS-04 plan F2, Otto 07.11.2026).
+
+    ``ALL``: every asset, in this order (one band grey, three bands red, green, blue). ``FIRST_PRESENT``: the first
+    asset of the list the item carries, drawn alone; for a source whose items carry one of several band sets
+    (Sentinel-1: ``vv``/``vh`` or ``hh``/``hv``).
+    """
+
+    ALL = "all"
+    FIRST_PRESENT = "first_present"
+
+
 @dataclass(frozen=True, slots=True)
 class DefaultRender:
     """Standard visualisation (onboarding checklist, point 8; adr/0001 FZ7).
@@ -521,6 +581,8 @@ class DefaultRender:
 
     ``rescale`` is the *starting point* of the display controls, not a fixed stretch:
     the viewer asks ``/statistics`` for the item it shows and overwrites it (F18).
+
+    ``asset_selection`` is our own field beside those of the extension: see :class:`AssetSelection`.
     """
 
     title: str
@@ -529,6 +591,7 @@ class DefaultRender:
     colormap_name: str | None
     expression: str | None
     resampling: str
+    asset_selection: AssetSelection
 
     def __post_init__(self) -> None:
         if self.expression is not None:
@@ -541,7 +604,14 @@ class DefaultRender:
         for low, high in self.rescale or ():
             if low >= high:
                 raise ConfigError(f"default_render rescale ({low}, {high}) is empty or inverted")
-        if self.colormap_name is not None and len(self.assets) > 1:
+        if self.asset_selection is AssetSelection.FIRST_PRESENT:
+            if len(self.assets) < 2:
+                raise ConfigError("default_render: first_present chooses among at least two assets")
+            if self.rescale is not None and len(self.rescale) != 1:
+                raise ConfigError("default_render: first_present draws one band, so it takes one rescale pair")
+        elif not isinstance(self.asset_selection, AssetSelection):
+            raise ConfigError("default_render.asset_selection is an AssetSelection")
+        elif self.colormap_name is not None and len(self.assets) > 1:
             raise ConfigError(
                 "default_render: a colormap paints one band, so it cannot go with several assets"
             )
@@ -1152,6 +1222,55 @@ def _is_whole_number(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
+#: A notice is a short mark with one sentence behind it (DS-04 plan §4.4, M5 plan §2 point 8).
+NOTICE_CODE = re.compile(r"[a-z][a-z0-9]*(?:_[a-z0-9]+)*")
+MAX_NOTICE_LABEL_CHARS = 32
+MAX_NOTICE_TOOLTIP_CHARS = 200
+
+
+@dataclass(frozen=True, slots=True)
+class Notice:
+    """A fact about the data a user should know before reading a pixel of it (DS-04 plan §4.4, adr/0018 F2).
+
+    ``code`` names it for recipe and tests, ``label`` is the mark the viewer shows (English, a few words), ``tooltip``
+    the one sentence behind it. Shown in the catalogue, on the results and the layer, and written into the recipe
+    and ``ATTRIBUTION.txt``; it never changes a cache key (Auslegung A1).
+    """
+
+    code: str
+    label: str
+    tooltip: str
+
+
+def _notice_problem(notice: Notice) -> str | None:
+    if not isinstance(notice, Notice):
+        return "notices is a tuple of Notice"
+    if not isinstance(notice.code, str) or not NOTICE_CODE.fullmatch(notice.code):
+        return f"the notice code {notice.code!r} is not lower_snake_case"
+    for name, text, limit in (
+        ("label", notice.label, MAX_NOTICE_LABEL_CHARS),
+        ("tooltip", notice.tooltip, MAX_NOTICE_TOOLTIP_CHARS),
+    ):
+        if not isinstance(text, str) or not text.strip() or text != text.strip() or "\n" in text:
+            return f"the {name} of notice {notice.code!r} is one line of text"
+        if len(text) > limit:
+            return f"the {name} of notice {notice.code!r} is longer than {limit} characters"
+    return None
+
+
+def check_notices(notices: object) -> str | None:
+    """What is wrong with ``notices``, or ``None``: a tuple of well-formed notices, each code once."""
+    if not isinstance(notices, tuple):
+        return "notices is a tuple of Notice"
+    for notice in notices:
+        if problem := _notice_problem(notice):
+            return problem
+    codes = [notice.code for notice in notices]
+    if len(set(codes)) != len(codes):
+        return "notices names a code twice"
+    return None
+
+
 @dataclass(frozen=True, slots=True)
 class DatasetConfig:
     """One dataset, everything the platform decides about it before asking the source."""
@@ -1231,6 +1350,9 @@ class DatasetConfig:
     # data has no such picture (the DEM). Names of bands of the data, not of a picture made from them (``visual``). No
     # default (KLAERUNGEN B10): an entry says so.
     true_color: tuple[str, ...]
+    # What a user should know about the data before reading it (DS-04 plan §4.4), published as `earthx:notices`. No
+    # default (KLAERUNGEN B10): an entry says so, with an empty tuple where there is nothing to say.
+    notices: tuple[Notice, ...]
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "band_units", MappingProxyType(dict(self.band_units)))
@@ -1254,6 +1376,8 @@ class DatasetConfig:
         self._check_search_filters()
         self._check_index_presets()
         self._check_true_color()
+        if problem := check_notices(self.notices):
+            raise ConfigError(f"{self.dataset_id}: {problem}")
 
     def search_filter(self, name: str) -> SearchFilter | None:
         """The filter on the property ``name``, or None where the entry offers none."""
@@ -1656,6 +1780,29 @@ class DatasetConfig:
                     "(no scheme, no path, no port, lower case)"
                 )
         self._check_data_region()
+        self._check_href_rewrites()
+        if self.source.asset_checksum is not None and not isinstance(self.source.asset_checksum, AssetChecksum):
+            raise ConfigError(f"{self.dataset_id}: asset_checksum is an AssetChecksum or None")
+
+    def _check_href_rewrites(self) -> None:
+        """Each rewrite ends on a host of ``asset_hosts``, over ``https``, and no prefix shadows another (§4.2)."""
+        rewrites = self.source.asset_href_rewrites
+        if not isinstance(rewrites, tuple) or not all(isinstance(rewrite, HrefRewrite) for rewrite in rewrites):
+            raise ConfigError(f"{self.dataset_id}: asset_href_rewrites is a tuple of HrefRewrite")
+        for rewrite in rewrites:
+            old, new = rewrite.from_prefix, rewrite.to_prefix
+            if not isinstance(old, str) or not isinstance(new, str) or not old.endswith("/") or not new.endswith("/"):
+                raise ConfigError(f"{self.dataset_id}: both prefixes of an href rewrite end in '/'")
+            if "://" not in old or old.startswith("https://") or any(char in old for char in " ?#"):
+                raise ConfigError(f"{self.dataset_id}: an href rewrite starts from another scheme than https")
+            match = _HTTPS_PREFIX_RE.fullmatch(new)
+            if match is None or match["host"] not in self.source.asset_hosts:
+                raise ConfigError(f"{self.dataset_id}: an href rewrite leads to https on a host of asset_hosts")
+        prefixes = [rewrite.from_prefix for rewrite in rewrites]
+        if any(first != second and first.startswith(second) for first in prefixes for second in prefixes):
+            raise ConfigError(f"{self.dataset_id}: one href rewrite prefix lies inside another")
+        if len(set(prefixes)) != len(prefixes):
+            raise ConfigError(f"{self.dataset_id}: an href rewrite prefix is named twice")
 
     def _check_data_region(self) -> None:
         """The form of adr/0023 F7, and the region an AWS host names in itself (adr/0022 §7.2, M5-07 plan F2).
@@ -1750,6 +1897,9 @@ class Attributable(Protocol):
     @property
     def license(self) -> LicenseInfo: ...
 
+    @property
+    def notices(self) -> tuple[Notice, ...]: ...
+
 
 @dataclass(frozen=True, slots=True)
 class RetiredDataset:
@@ -1765,6 +1915,8 @@ class RetiredDataset:
     doi: str | None
     citation: str | None
     license: LicenseInfo
+    #: The notices it had (DS-04 plan §4.4): they belong in the notice of a job read before it left.
+    notices: tuple[Notice, ...]
     retired_on: date
     #: The dataset that shows the same thing now.
     successor: str
@@ -1775,6 +1927,8 @@ class RetiredDataset:
         for name in ("dataset_id", "title", "successor", "reason"):
             if not getattr(self, name).strip():
                 raise ConfigError(f"a retired dataset needs a {name}")
+        if problem := check_notices(self.notices):
+            raise ConfigError(f"{self.dataset_id}: {problem}")
 
     @property
     def message(self) -> str:
@@ -1840,6 +1994,7 @@ for _entry_part in (
     TermsOfUse,
     LicenseInfo,
     AccessInfo,
+    HrefRewrite,
     SourceInfo,
     Provider,
     CoverageInfo,
@@ -1856,6 +2011,7 @@ for _entry_part in (
     SearchFilter,
     SearchCapabilities,
     IndexPreset,
+    Notice,
     DatasetConfig,
     RetiredDataset,
 ):

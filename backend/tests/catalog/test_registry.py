@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 import pytest
 
 from earthx.catalog.registry import (
+    AssetSelection,
     BrowseMode,
     Capabilities,
     ConfigError,
@@ -298,6 +299,7 @@ def render(**overrides) -> DefaultRender:
         "colormap_name": None,
         "expression": None,
         "resampling": "nearest",
+        "asset_selection": AssetSelection.ALL,
     }
     return DefaultRender(**{**fields, **overrides})
 

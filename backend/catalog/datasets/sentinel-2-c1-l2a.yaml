@@ -133,6 +133,10 @@ source:
   item_holding: federated
   # The region the asset host names (M5-07 plan §2, `x-amz-bucket-region` measured 06.11.2026).
   data_region: aws:us-west-2
+  # DS-04 plan §4.2, §4.3: the source writes https addresses itself, and no checksum over the whole object has
+  # been measured on this host, so the version of an input stays its ETag.
+  asset_href_rewrites: []
+  asset_checksum: null
 coverage:
   provider: upstream-aggregation
   # z8 is Otto's setting for this dataset (adr/0004 §5, decision log 19.09.2026). The footprint width is the granule
@@ -157,6 +161,8 @@ default_render:
   expression: null
   # rio-tiler's own default, named rather than implied (KLAERUNGEN B10).
   resampling: nearest
+  # Every asset of the list (DS-04 plan F2).
+  asset_selection: all
 # The viewer groups the items of one acquisition day per MGRS tile into one step of the time line (Otto, 20.09.2026).
 # `datetime` enters the key as its UTC date, `grid:code` is the MGRS tile Earth Search carries on every item of this
 # collection. M2-07a reads this field and implements nothing of its own.
@@ -547,3 +553,5 @@ index_presets:
   reference: https://doi.org/10.1016/0034-4257(88)90106-X
 # NM4-64 (Otto 31.10.2026): the picture the eye sees, B04, B03, B02 at 10 m.
 true_color: [red, green, blue]
+# DS-04 plan §4.4: nothing a user has to know before reading the data beyond its description.
+notices: []

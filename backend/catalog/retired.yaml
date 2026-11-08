@@ -31,6 +31,7 @@
           user renounces any claims for damages against the European Union and the providers of the data. The
           waiver encompasses any dispute, including contracts and torts claims, that might be filed in court,
           in arbitration or in any other form of dispute settlement.
+  notices: []
   retired_on: 2026-10-25
   successor: sentinel-2-c1-l2a
   reason: >-

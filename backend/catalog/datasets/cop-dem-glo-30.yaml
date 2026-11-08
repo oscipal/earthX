@@ -127,6 +127,10 @@ source:
   # The global host names no region; the bucket answers `x-amz-bucket-region: eu-central-1` (measured 06.11.2026,
   # M5-07 plan §2), as the AWS Open Data registry says (`adr/0023` §6.2).
   data_region: aws:eu-central-1
+  # DS-04 plan §4.2, §4.3: the source writes https addresses itself, and no checksum over the whole object has
+  # been measured on this host, so the version of an input stays its ETag.
+  asset_href_rewrites: []
+  asset_checksum: null
 coverage:
   provider: local-sql
   # The nominal 1x1-degree cell a tile name gives (`adapters.cop_dem_bucket`); `max_geotile_level_for(111.0) == 8`,
@@ -143,6 +147,8 @@ default_render:
   colormap_name: terrain
   expression: null
   resampling: nearest
+  # Every asset of the list (DS-04 plan F2).
+  asset_selection: all
 # F7: every tile shares the same `start_datetime` (there is only one), so grouping by it puts every DEM tile in one
 # group: an AOI crop over several tiles becomes one merged file (P19), the way a Sentinel-2 overpass does.
 # `results_group_by` is the same key: one dataset, one group, nothing a results list would head differently.
@@ -185,3 +191,5 @@ search_capabilities:
 index_presets: []
 # One band of heights: no picture in colours of light.
 true_color: []
+# DS-04 plan §4.4: nothing a user has to know before reading the data beyond its description.
+notices: []
