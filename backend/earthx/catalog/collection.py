@@ -244,6 +244,8 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
         # to the source (a COG) from one it may not (a Zarr store has no single
         # file to link, M3-17) without a dataset-specific branch anywhere.
         "earthx:format": config.format.value,
+        # adr/0018 F1 (DS-04a): `gcp_tps` tells that the position comes from ground control points, approximately.
+        "earthx:georeferencing": config.georeferencing.value,
         "earthx:capabilities": _earthx_capabilities(config),
         "earthx:mask": _earthx_mask(config),
         "earthx:band_units": _earthx_band_units(config),

@@ -46,6 +46,7 @@ from earthx.access.crop_rules import RESOLUTION_FACTORS
 from earthx.access.resolve import ReaderKind, ResolvedAsset
 from earthx.processing.errors import RecipeInvalid, UnknownOperator
 from earthx.readers import check_hrefs, hosts_for
+from earthx.readers.cog import Georeferencing
 
 __all__ = [
     "HASH_METHOD",
@@ -288,10 +289,14 @@ class ResolvedAssetModel(_Model):
     href: Annotated[str, Field(min_length=1, max_length=8192)]
     variable: Text | None
     crs: Text | None
+    #: How the asset is placed (DS-04a, Auslegung A8). ``gcp_tps`` is part of the recipe and its hash, because it decides
+    #: the pixels. ``geotransform`` is what a missing key means and is left out of the dump, so that every recipe and
+    #: every hash from before the field stays what it was.
+    georeferencing: Georeferencing = Field(default="geotransform", exclude_if=lambda value: value == "geotransform")
 
     def to_asset(self) -> ResolvedAsset:
         """The dataclass the readers take; its own checks run again here."""
-        return ResolvedAsset(**self.model_dump())
+        return ResolvedAsset(**{**self.model_dump(), "georeferencing": self.georeferencing})
 
 
 class ResolvedInput(_Model):

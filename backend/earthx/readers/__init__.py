@@ -8,11 +8,12 @@ of a source failed (adr/0013 §5.6).
 
 from earthx.gateway import Policy, Resolver
 from earthx.readers.access import ReadAccess, check_hrefs, hosts_for, process_gdal_options, read_access_for
-from earthx.readers.errors import AssetRejected
+from earthx.readers.errors import AssetRejected, GeoreferenceMismatch
 from earthx.readers.failures import source_failure_kind
 
 __all__ = [
     "AssetRejected",
+    "GeoreferenceMismatch",
     "Policy",
     "ReadAccess",
     "Resolver",

@@ -39,6 +39,8 @@ doi: https://doi.org/10.5270/S2_-742ikth
 citation: null
 data_class: raster-time-series
 format: cog
+# The files carry a CRS and a geotransform (adr/0018 F1, DS-04a).
+georeferencing: geotransform
 # Both extents as the upstream collection reports them, read on 22.09.2026 (M2-08 plan §3), replacing the M1
 # placeholders. The source states the whole globe for the spatial extent: wider than Sentinel-2 actually flies, but it
 # is the source's own claim and not ours to narrow. The start is the first acquisition the collection carries; the end

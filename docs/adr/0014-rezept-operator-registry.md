@@ -609,6 +609,10 @@ mechanisch in einen openEO-Graphen übersetzen, umgekehrt nicht [A].
 
 - **`asset` ist `ResolvedAsset` aus `adr/0011` §6.4, unverändert.** `version`
   und `bands` stehen daneben, nicht darin.
+  - *Nachtrag DS-04a (07.11.2026, `plans/ds/ds-04-s1-anbinden.md` §11):* `asset` trägt zusätzlich
+    `georeferencing` (`gcp_tps` für Dateien, die nur GCPs tragen, `adr/0018` F1). Der Wert
+    `geotransform` ist die Bedeutung eines fehlenden Schlüssels und wird nicht geschrieben; jedes
+    Rezept und jeder Hash von vorher bleibt damit gleich, `gcp_tps` geht in Hash und Cache-Schlüssel ein.
   - `version` braucht für das DEM eine Anfrage über `gateway`, und
     `resolve_asset` ist rein (kein Netz).
   - `bands` kommt aus dem Item (`raster:bands` bzw. `bands`). Der Worker

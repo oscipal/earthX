@@ -85,6 +85,7 @@ def test_open_asset_ref_hands_the_switch_to_the_zarr_asset() -> None:
         href=mini_zarr_cf.GROUP_URL,
         variable="b04",
         crs=mini_zarr_cf.ITEM_CRS,
+        georeferencing="geotransform",
     )
     assert open_asset_ref(ref, POLICY, from_memory).decode_cf is True
     assert open_asset_ref(ref, POLICY, from_memory, decode_cf=False).decode_cf is False

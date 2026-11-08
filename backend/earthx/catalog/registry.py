@@ -54,6 +54,19 @@ class DataFormat(Enum):
     LEGACY = "legacy"
 
 
+class Georeferencing(Enum):
+    """Where the position of a pixel comes from, the same way in tile, crop, job and runner (adr/0018 F1, DS-04a).
+
+    ``GEOTRANSFORM``: the file carries a CRS and a geotransform. ``GCP_TPS``: the file carries only ground control
+    points (Sentinel-1 GRD in radar geometry); the readers place it with a thin-plate spline through them. The values
+    are those of ``earthx.readers.cog.Georeferencing``, which ``readers`` keeps on its own because it may not import
+    ``catalog`` (architekturplan.md 3.1).
+    """
+
+    GEOTRANSFORM = "geotransform"
+    GCP_TPS = "gcp_tps"
+
+
 class LicenseTier(Enum):
     """What the licence allows the platform to do (KLAERUNGEN B11)."""
 
@@ -1164,6 +1177,9 @@ class DatasetConfig:
     citation: str | None
     data_class: DataClass
     format: DataFormat
+    # How the readers place the pixels (adr/0018 F1, DS-04a), published as `earthx:georeferencing`. No default
+    # (KLAERUNGEN B10): an entry names it, and a file that disagrees with it is not read.
+    georeferencing: Georeferencing
     spatial_extent: SpatialExtent
     temporal_extent: TemporalExtent
     capabilities: Capabilities
@@ -1230,6 +1246,7 @@ class DatasetConfig:
         self._check_source()
         self._check_item_holding()
         self._check_zarr()
+        self._check_georeferencing()
         self._check_browse_cors()
         self._check_mask()
         self._check_band_units()
@@ -1669,6 +1686,13 @@ class DatasetConfig:
             raise ConfigError(
                 f"{self.dataset_id}: zarr info is set but format is {self.format.value}, not zarr"
             )
+
+    def _check_georeferencing(self) -> None:
+        """Ground control points are read from a COG only; a Zarr store is placed by its own coordinates."""
+        if not isinstance(self.georeferencing, Georeferencing):
+            raise ConfigError(f"{self.dataset_id}: georeferencing is a Georeferencing")
+        if self.georeferencing is Georeferencing.GCP_TPS and self.format is not DataFormat.COG:
+            raise ConfigError(f"{self.dataset_id}: georeferencing gcp_tps needs format cog, not {self.format.value}")
 
     def _check_browse_cors(self) -> None:
         """M3-12, F-11: a quicklook the browser keys transparent on its own canvas

@@ -22,11 +22,22 @@ from collections.abc import Iterator
 from rasterio.errors import RasterioIOError
 
 from earthx.gateway import GatewayError, UpstreamError, UpstreamTimeout, UpstreamUnreachable
+from earthx.readers.errors import GeoreferenceMismatch
 
 __all__ = ["SOURCE_KINDS", "source_failure_kind"]
 
 #: Everything :func:`source_failure_kind` can return.
-SOURCE_KINDS = frozenset({"source_timeout", "source_5xx", "source_429", "source_4xx", "source_unreachable", "rejected"})
+SOURCE_KINDS = frozenset(
+    {
+        "source_timeout",
+        "source_5xx",
+        "source_429",
+        "source_4xx",
+        "source_unreachable",
+        "source_georeference",
+        "rejected",
+    }
+)
 
 _GDAL_STATUS = re.compile(r"HTTP response code: (\d{3})\b")
 _GDAL_TIMEOUT = "CURL error: Operation timed out"
@@ -65,6 +76,9 @@ def source_failure_kind(error: BaseException) -> str | None:
             return "source_unreachable"
         if isinstance(current, UpstreamError):
             return _by_status(current.status_code)
+        if isinstance(current, GeoreferenceMismatch):
+            # The file and the registry disagree on how it is placed (DS-04a); a second attempt reads the same file.
+            return "source_georeference"
         if isinstance(current, GatewayError):
             return "rejected"
         if isinstance(current, RasterioIOError):

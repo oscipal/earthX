@@ -124,7 +124,7 @@ from earthx.gateway.gdal import crop_gdal_options, tile_gdal_options
 from earthx.logging import RequestIdMiddleware, configure_logging, get_request_id
 from earthx.objectstore.errors import StoreConfigError
 from earthx.objectstore.results import Store
-from earthx.readers import AssetRejected
+from earthx.readers import AssetRejected, GeoreferenceMismatch
 from earthx.readers.cog import AssetPath
 from earthx.readers.zarr_reader import ZarrAsset, ZarrAssetError
 
@@ -1696,6 +1696,13 @@ def build_app(
     # without a real `build_app()` (backend/tests/earthx/api/test_statistics_read_errors.py).
     app.add_exception_handler(RasterioIOError, _rasterio_io_error)
     app.add_exception_handler(RasterioError, _rasterio_error)
+
+    @app.exception_handler(GeoreferenceMismatch)
+    async def _georeference_mismatch(request: Request, error: GeoreferenceMismatch):
+        # The file is placed differently from what the registry names (DS-04a): the source's side of the line. The
+        # text names neither dataset nor address.
+        LOGGER.warning("an asset is not placed the way the registry names")
+        return _problem(502, "the asset is not placed the way the platform expects")
 
     @app.exception_handler(ZarrAssetError)
     async def _zarr_asset_error(request: Request, error: ZarrAssetError):
