@@ -30,7 +30,7 @@ import {
 import type { DatasetOption } from './datasets';
 import { firstVisitDatasets, knownDatasets, notAddableReason } from './catalogue';
 import { prefilledDays, todayUtc } from './dateBounds';
-import { acquisitionNote, datasetsFrom, defaultRenderOf, preferredGeoreferencedAsset, quicklookPlan } from './datasets';
+import { acquisitionNote, datasetsFrom, defaultRenderOf, preferredGeoreferencedAsset, quicklookPlan, standardAssetsOf } from './datasets';
 import { fallbackNotice, findFallback, fullDayRange, NO_FALLBACK_MESSAGE } from './dateFallback';
 import {
   assetHostsOf,
@@ -2202,7 +2202,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const plan = browsed ? quicklookPlan(it, browsed) : null;
       if (!plan) continue;
       if (plan.kind === 'image') {
-        const coords = quicklookCoords(it, browsed && preferredGeoreferencedAsset(browsed));
+        const coords = quicklookCoords(it, browsed && preferredGeoreferencedAsset(browsed, it));
         if (coords) {
           overlays.push({
             kind: 'image',
@@ -2528,8 +2528,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (outcome !== 'originals') return;
     const datasetId = layer.restore.datasetId;
     const dataset = s.datasets.find((d) => d.id === datasetId);
-    const asset = dataset?.viewable ? defaultRenderOf(dataset.collection)?.assets[0] : undefined;
-    if (!datasetId || !dataset || !asset) {
+    const assets = dataset?.viewable ? standardAssetsOf(dataset.collection) : [];
+    if (!datasetId || !dataset || assets.length === 0) {
       set({ downloadOriginalLinks: [] });
       return;
     }
@@ -2545,7 +2545,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Still the dialog open for this same layer? The user may have closed
       // it, or opened another one, while the fetch was in flight.
       if (get().downloadDialogLayerId === id) {
-        set({ downloadOriginalLinks: originalFileLinks(groups, [asset], hosts), downloadPasses: groups });
+        set({ downloadOriginalLinks: originalFileLinks(groups, assets, hosts), downloadPasses: groups });
       }
     } catch (e) {
       if (get().downloadDialogLayerId === id) {
@@ -2595,7 +2595,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     // Originals: the dataset's default asset, straight from the source — also
     // with an AOI drawn (the AOI plays no part), Zusatz 1a.
-    const asset = dataset?.viewable ? defaultRenderOf(dataset.collection)?.assets[0] : undefined;
+    const assets = dataset?.viewable ? standardAssetsOf(dataset.collection) : [];
     const groupItemIds = groupItemIdsFor(
       items.map((it) => it.id),
       s.groups,
@@ -2604,7 +2604,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       label: s.groups[groupIndexOfItem(s.groups, ids[0])]?.label ?? `Group ${i + 1}`,
       items: items.filter((it) => ids.includes(it.id)),
     }));
-    const links = asset ? originalFileLinks(groups, [asset], assetHostsOf(dataset)) : [];
+    const links = originalFileLinks(groups, assets, assetHostsOf(dataset));
     set({
       downloadDialogLayerId: null,
       downloadSelection: true,
@@ -2658,9 +2658,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       void loadDownloadBands(image.datasetId, items.map((it) => it.id));
       return;
     }
-    const asset = dataset?.viewable ? defaultRenderOf(dataset.collection)?.assets[0] : undefined;
+    const assets = dataset?.viewable ? standardAssetsOf(dataset.collection) : [];
     const groups = [{ label: image.groupLabel || 'Group 1', items }];
-    set({ ...open, downloadOutcome: 'originals', downloadOriginalLinks: asset ? originalFileLinks(groups, [asset], assetHostsOf(dataset)) : [], downloadPasses: groups });
+    set({ ...open, downloadOutcome: 'originals', downloadOriginalLinks: originalFileLinks(groups, assets, assetHostsOf(dataset)), downloadPasses: groups });
     void loadDownloadBands(image.datasetId, items.map((it) => it.id));
   },
   closeDownloadDialog: () => {
@@ -2906,10 +2906,16 @@ export const useAppStore = create<AppState>((set, get) => ({
         problem ??= `${dataset.title} has no default visualisation yet (earthx:default_render).`;
         continue;
       }
-      const asset = render.assets[0];
-      looks[dataset.id] = appliedRenderFrom(render);
       for (const it of items) {
         if (!it.bbox) continue;
+        // The asset the scene is drawn with: for `first_present` the one it carries (DS-04 F2), else the dataset's.
+        const own = defaultRenderOf(dataset.collection, it);
+        if (!own) {
+          problem ??= `Scene ${it.id} carries none of the assets ${dataset.title} is drawn from.`;
+          continue;
+        }
+        const asset = own.assets[0];
+        looks[dataset.id] ??= appliedRenderFrom(own);
         // A scene the open view has already is not added again.
         if (open && it.id in s.downloaded) continue;
         if (it.id in downloaded) {

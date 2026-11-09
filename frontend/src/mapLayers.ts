@@ -821,7 +821,7 @@ function addPreview(
     drawsPicture(map, lyrId, overlaySignature({ kind: 'raster', tileUrl, bounds: item.bbox, ...zoom }));
     return;
   }
-  const coords = quicklookCoords(item, preferredGeoreferencedAsset(dataset));
+  const coords = quicklookCoords(item, preferredGeoreferencedAsset(dataset, item));
   if (!coords) return;
   const srcId = dynamicId('img-src', i);
   const lyrId = dynamicId('img-lyr', i);
@@ -839,7 +839,7 @@ function addPreview(
         url: plan.href,
         coords,
         nodataMax,
-        ringsFor: (clip) => quicklookAoiPixelRings(item, clip, preferredGeoreferencedAsset(dataset)),
+        ringsFor: (clip) => quicklookAoiPixelRings(item, clip, preferredGeoreferencedAsset(dataset, item)),
         clippedTo: null,
       });
       holdBack(map, lyrId);
@@ -1289,7 +1289,7 @@ export function syncResultsOverlay(map: MapLibreMap, s: PreviewState): void {
       placeRaster(map, src, lyr, tileUrl, item.bbox, 1, { minZoom: plan.minZoom, maxZoom: plan.maxZoom });
       return;
     }
-    const coords = quicklookCoords(item, preferredGeoreferencedAsset(own));
+    const coords = quicklookCoords(item, preferredGeoreferencedAsset(own, item));
     if (!coords) return;
     const nodataMax = own.viewable ? own.quicklookNodataMax : null;
     keyScene(lyr, item.id, order);

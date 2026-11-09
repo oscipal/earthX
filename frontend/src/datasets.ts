@@ -125,8 +125,24 @@ export function acquisitionNote(collection: Collection): string | null {
 // The registry's standard visualisation (M2-04/D20) — what full-resolution
 // viewing (M2-07b) defaults to before the user touches the stretch/colormap
 // controls. `null` when the dataset has not set one yet.
-export function defaultRenderOf(collection: Collection): EarthxDefaultRender | null {
-  return collection['earthx:default_render'] ?? null;
+//
+// With `asset_selection: 'first_present'` (DS-04 F2, Sentinel-1: `vv` or `hh`) an item is drawn with the first asset of
+// the list it carries, alone, with the `rescale` pair at the same place; `null` for an item that carries none of them.
+// Without an item the first of the list stands for the dataset.
+export function defaultRenderOf(collection: Collection, item?: Pick<StacItem, 'assets'> | null): EarthxDefaultRender | null {
+  const render = collection['earthx:default_render'] ?? null;
+  if (!render || render.asset_selection !== 'first_present') return render;
+  const index = item ? render.assets.findIndex((key) => item.assets?.[key] !== undefined) : 0;
+  if (index < 0) return null;
+  return { ...render, assets: [render.assets[index]], rescale: render.rescale?.[index] ? [render.rescale[index]] : null };
+}
+
+// The assets of the standard visualisation the source files are offered for ("Originals"): the drawn one, or for
+// `first_present` every one of the list, of which an item has the one it carries.
+export function standardAssetsOf(collection: Collection): string[] {
+  const render = collection['earthx:default_render'];
+  if (!render) return [];
+  return render.asset_selection === 'first_present' ? render.assets : render.assets.slice(0, 1);
 }
 
 // Whether a colormap can colour the standard picture of the dataset. It cannot where the dataset has a true-colour picture
@@ -150,9 +166,9 @@ export function drawsClasses(collection: Collection): boolean {
 // the same one full-resolution viewing renders by default. `undefined` where
 // the dataset names none, which leaves those functions' `visual`/generic
 // fallback in charge, unchanged.
-export function preferredGeoreferencedAsset(dataset: DatasetOption): string | undefined {
+export function preferredGeoreferencedAsset(dataset: DatasetOption, item?: Pick<StacItem, 'assets'>): string | undefined {
   if (!dataset.viewable) return undefined;
-  return defaultRenderOf(dataset.collection)?.assets?.[0];
+  return defaultRenderOf(dataset.collection, item)?.assets?.[0];
 }
 
 // The released tile levels, or `null` where the dataset names none or names
@@ -336,7 +352,7 @@ export function quicklookPlan(item: StacItem, dataset: DatasetOption): Quicklook
   const asset = quicklookAsset(item);
   if (asset?.href) return { kind: 'image', href: asset.href };
   if (!dataset.viewable || dataset.browse === 'quicklook') return null;
-  const render = defaultRenderOf(dataset.collection);
+  const render = defaultRenderOf(dataset.collection, item);
   const rendered = render?.assets?.[0];
   if (!render || !rendered) return null;
   const wholeScene = dataset.browse === 'full_resolution';

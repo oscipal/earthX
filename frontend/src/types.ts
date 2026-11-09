@@ -156,6 +156,9 @@ export interface EarthxDefaultRender {
   colormap_name: string | null;
   expression: string | null;
   resampling: string;
+  // Which of `assets` an item is drawn with (DS-04 F2): `all` of them, or the `first_present` one the item carries,
+  // with the `rescale` pair at its place. Absent on a backend before DS-04b, which means `all`.
+  asset_selection?: 'all' | 'first_present';
 }
 
 // The registry's licence flags (`earthx.catalog.collection._earthx_license_flags`),
