@@ -12,6 +12,7 @@
 // out — and every difference between two datasets comes from here, never from
 // a branch on a dataset id somewhere in a component (M2-10).
 
+import { quicklookCoords } from './geoUtils';
 import { trueColorOf } from './processingOrder';
 import { appliedRenderFrom } from './render';
 import type { AppliedRender, BrowseMode, Collection, EarthxDefaultRender, StacAsset, StacItem } from './types';
@@ -339,7 +340,9 @@ export function quicklookAsset(item: StacItem): StacAsset | null {
 //
 // An item's own quicklook still wins first regardless of `browse`: a source that
 // starts publishing thumbnails tomorrow gets them without a change here, and one
-// that stops falls back to whatever `browse` says next.
+// that stops falls back to whatever `browse` says next. Only a quicklook the map
+// can place counts (`quicklookCoords`): Sentinel-1's lies in radar geometry with no
+// CRS, so its scenes get the tiles `browse` names instead of no preview (DS-04c).
 export type QuicklookPlan =
   | { kind: 'image'; href: string }
   // `render` is the registry's standard visualisation, carried because a preview
@@ -350,7 +353,7 @@ export type QuicklookPlan =
 
 export function quicklookPlan(item: StacItem, dataset: DatasetOption): QuicklookPlan | null {
   const asset = quicklookAsset(item);
-  if (asset?.href) return { kind: 'image', href: asset.href };
+  if (asset?.href && quicklookCoords(item, preferredGeoreferencedAsset(dataset, item))) return { kind: 'image', href: asset.href };
   if (!dataset.viewable || dataset.browse === 'quicklook') return null;
   const render = defaultRenderOf(dataset.collection, item);
   const rendered = render?.assets?.[0];

@@ -1,9 +1,10 @@
 // DS-04c: the standard picture of a dataset whose items carry one of several band sets (`asset_selection: first_present`,
-// Sentinel-1: `vv` or `hh`). Synthetic collections and items only.
+// Sentinel-1: `vv` or `hh`), and the preview after a search for a dataset whose quicklook the map cannot place.
+// Synthetic collections and items only.
 
 import { describe, expect, it } from 'vitest';
 
-import { datasetsFrom, defaultRenderOf, preferredGeoreferencedAsset, standardAssetsOf } from './datasets';
+import { datasetsFrom, defaultRenderOf, preferredGeoreferencedAsset, quicklookPlan, standardAssetsOf } from './datasets';
 import type { Collection, EarthxDefaultRender, StacItem } from './types';
 
 const COG = 'image/tiff; application=geotiff; profile=cloud-optimized';
@@ -100,5 +101,33 @@ describe('preferredGeoreferencedAsset with first_present', () => {
   it('names the asset the scene is drawn with', () => {
     expect(preferredGeoreferencedAsset(dataset(), scene(['hh', 'hv']))).toBe('hh');
     expect(preferredGeoreferencedAsset(dataset())).toBe('vv');
+  });
+});
+
+describe('quicklookPlan for a dataset whose quicklook the map cannot place', () => {
+  it('draws the preview tiles of the band the scene carries instead of a thumbnail that would not show', () => {
+    const plan = quicklookPlan(scene(['hh', 'hv']), dataset());
+    expect(plan).toEqual({ kind: 'tiles', asset: 'hh', minZoom: 7, maxZoom: 7, render: { expression: undefined, colormapName: undefined, rescale: '70,750' } });
+  });
+
+  it('draws them for a VV scene with the stretch of vv', () => {
+    const plan = quicklookPlan(scene(['vv', 'vh']), dataset());
+    expect(plan?.kind === 'tiles' && [plan.asset, plan.render.rescale]).toEqual(['vv', '90,250']);
+  });
+
+  it('has no preview for a scene that carries none of the bands', () => {
+    expect(quicklookPlan(scene(['vh']), dataset())).toBeNull();
+  });
+
+  it('keeps the thumbnail of a scene the map can place (a CRS and a georeferenced band)', () => {
+    const placed = scene(['vv']);
+    placed.properties['proj:code'] = 'EPSG:32632';
+    placed.assets.vv = { ...placed.assets.vv, 'proj:transform': [10, 0, 600000, 0, -10, 5300000], 'proj:shape': [100, 100] } as never;
+    expect(quicklookPlan(placed, dataset())).toEqual({ kind: 'image', href: 'https://assets.example.org/quick-look.png' });
+  });
+
+  it('shows nothing for a `quicklook` dataset whose thumbnail cannot be placed, as before', () => {
+    const viewer = { group_by: ['datetime'], min_zoom: 0, max_zoom: 14, browse: 'quicklook', quicklook_nodata_max: null, results_group_by: ['datetime'] };
+    expect(quicklookPlan(scene(['vv']), dataset(radar(FIRST_PRESENT, { 'earthx:viewer': viewer } as never)))).toBeNull();
   });
 });

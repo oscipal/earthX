@@ -426,12 +426,21 @@ describe('quicklookPlan', () => {
     return datasetsFrom([from])[0];
   }
 
-  it('uses the published quicklook where the item carries one', () => {
-    const scene = item({ thumbnail: { href: 'https://example.test/thumb.jpg', roles: ['thumbnail'] } });
+  it('uses the published quicklook where the item carries one the map can place', () => {
+    const scene = item({
+      thumbnail: { href: 'https://example.test/thumb.jpg', roles: ['thumbnail'] },
+      data: { href: 'https://example.test/data.tif', 'proj:transform': [10, 0, 600000, 0, -10, 5300000], 'proj:shape': [100, 100] } as never,
+    });
+    scene.properties['proj:code'] = 'EPSG:32632';
     expect(quicklookPlan(scene, option(zarrLike))).toEqual({
       kind: 'image',
       href: 'https://example.test/thumb.jpg',
     });
+  });
+
+  it('falls back to the tiles where the quicklook carries no place on the map (DS-04c)', () => {
+    const scene = item({ thumbnail: { href: 'https://example.test/thumb.jpg', roles: ['thumbnail'] } });
+    expect(quicklookPlan(scene, option(zarrLike))).toMatchObject({ kind: 'tiles', asset: 'SR_10m:b04,b03,b02' });
   });
 
   it('falls back to tiles on the coarsest released level where the source publishes none', () => {
