@@ -76,6 +76,18 @@ describe('the view of a first_present dataset', () => {
     expect(state().appliedRender.rescale).toBe('70,750');
   });
 
+  it('gives each image the stretch of its own band when stepping from VV to HH and back', async () => {
+    useAppStore.setState({ selectedIds: ['VV_SCENE', 'HH_SCENE'] });
+    await state().enterFocus(false);
+    const vv = state().shownImage;
+    expect(state().appliedRender.rescale).toBe('90,250');
+    state().stepImage(1);
+    expect(state().shownImage).not.toBe(vv);
+    expect(state().appliedRender.rescale).toBe('70,750');
+    state().stepImage(-1);
+    expect(state().appliedRender.rescale).toBe('90,250');
+  });
+
   it('leaves out a scene that carries none of the bands and says why', async () => {
     // The stretch is measured, so that its own notice does not stand in the place of this one.
     const statistics = { vv: { min: 0, max: 900, percentile_2: 80, percentile_98: 260, count: 9 } };

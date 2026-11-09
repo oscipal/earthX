@@ -707,22 +707,27 @@ function pinWhenLoaded(set: SetState, get: GetState, lists: SceneEntry[][], agai
   });
 }
 
-// The standard visualisation of a dataset as the look of its images ("RGB without colormap" for Sentinel-2, Otto 31.10.2026).
-function defaultLookOf(s: Pick<AppState, 'datasets'>, datasetId: string): AppliedRender {
-  const dataset = s.datasets.find((d) => d.id === datasetId);
-  const render = dataset ? defaultRenderOf(dataset.collection) : null;
+type LookSource = Pick<AppState, 'datasets' | 'sections' | 'openSectionId' | 'datasetId' | 'items' | 'groups'>;
+
+// The standard visualisation of a dataset as the look of one of its images ("RGB without colormap" for Sentinel-2, Otto
+// 31.10.2026). Read off the image's first scene: with `first_present` an image of HH scenes has the stretch of `hh`, not of
+// the first band of the list (DS-04c); the scenes of one image are one pass and carry the same bands.
+function defaultLookOf(s: LookSource, image: Pick<ViewImage, 'datasetId' | 'ids'>): AppliedRender {
+  const dataset = s.datasets.find((d) => d.id === image.datasetId);
+  const item = sectionsForView(s).flatMap((section) => section.items).find((it) => it.id === image.ids[0]);
+  const render = dataset ? defaultRenderOf(dataset.collection, item) : null;
   return render ? appliedRenderFrom(render) : {};
 }
 
 // The look an image is drawn with: for the one that is shown, what the map shows; for another, the first it has of
 // its own unsaved look, the look saved for its dataset and the standard one.
 export function lookOfImage(
-  s: Pick<AppState, 'datasets' | 'appliedRender' | 'shownImage' | 'viewLooks' | 'savedLooks'>,
+  s: LookSource & Pick<AppState, 'appliedRender' | 'shownImage' | 'viewLooks' | 'savedLooks'>,
   image: ViewImage,
   shown: ViewImage | null,
 ): AppliedRender {
   if (shown && image.key === shown.key) return s.appliedRender;
-  return s.viewLooks[image.key] ?? s.savedLooks[image.datasetId] ?? defaultLookOf(s, image.datasetId);
+  return s.viewLooks[image.key] ?? s.savedLooks[image.datasetId] ?? defaultLookOf(s, image);
 }
 
 // Moves the view to another image: what the one left shows is kept when it differs from what its dataset would show
@@ -730,11 +735,11 @@ export function lookOfImage(
 function moveToImage(s: AppState, target: ViewImage, from: ViewImage | null): Partial<AppState> {
   const viewLooks = { ...s.viewLooks };
   if (from) {
-    const baseline = s.savedLooks[from.datasetId] ?? defaultLookOf(s, from.datasetId);
+    const baseline = s.savedLooks[from.datasetId] ?? defaultLookOf(s, from);
     if (sameRender(s.appliedRender, baseline)) delete viewLooks[from.key];
     else viewLooks[from.key] = s.appliedRender;
   }
-  const look = viewLooks[target.key] ?? s.savedLooks[target.datasetId] ?? defaultLookOf(s, target.datasetId);
+  const look = viewLooks[target.key] ?? s.savedLooks[target.datasetId] ?? defaultLookOf(s, target);
   return { shownImage: target.key, viewLooks, appliedRender: look, ...pendingFieldsOf(look) };
 }
 
@@ -2893,7 +2898,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     // The scenes of every dataset that is ticked (NM4-53), each with the standard visualisation of its own dataset. A
     // dataset that cannot be viewed is left out and said so; a scene id two datasets share keeps its first owner.
     const downloaded: Record<string, DownloadedInfo> = {};
-    const looks: Record<string, AppliedRender> = {};
     let problem: string | null = null;
     for (const { datasetId, items } of picked) {
       const dataset = s.datasets.find((d) => d.id === datasetId);
@@ -2915,7 +2919,6 @@ export const useAppStore = create<AppState>((set, get) => ({
           continue;
         }
         const asset = own.assets[0];
-        looks[dataset.id] ??= appliedRenderFrom(own);
         // A scene the open view has already is not added again.
         if (open && it.id in s.downloaded) continue;
         if (it.id in downloaded) {
@@ -2947,7 +2950,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const shownBefore = open ? shownImageOf(viewImagesOf(s), s.shownImage) : null;
     const newImage = open ? images.find((image) => image.ids.some((id) => id in added) && !viewImagesOf(s).some((old) => old.key === image.key)) : undefined;
     const first = open ? (newImage ?? images.find((image) => image.key === shownBefore?.key) ?? firstImageOf(images, s)) : firstImageOf(images, s);
-    const applied = (first && looks[first.datasetId]) || {};
+    const applied = first ? defaultLookOf(s, first) : {};
     // Scenes of a time step too big for one mosaic are drawn one by one, and only so many of those.
     const groups = sectionsForView(s).flatMap((section) => section.groups);
     const passes = passesOf(Object.entries(all), groups);
@@ -3032,7 +3035,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Without an index the image goes back to what the dataset shows: the look saved for it ("Apply to all") unless that
       // names an index too, else the standard one.
       const saved = s.savedLooks[shown.datasetId];
-      const plain = saved && !saved.index && !saved.band ? saved : defaultLookOf(s, shown.datasetId);
+      const plain = saved && !saved.index && !saved.band ? saved : defaultLookOf(s, shown);
       const preset = name === null ? null : viewIndexOf({ index: name }, collection);
       if (name !== null && !preset) return {};
       // Only the fields change: the map draws it once "Apply" is pressed, like the colormap and the range.
@@ -3049,7 +3052,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const collection = s.datasets.find((d) => d.id === shown.datasetId)?.collection;
     if (band === null) {
       const saved = s.savedLooks[shown.datasetId];
-      set(pendingFieldsOf(saved && !saved.index && !saved.band ? saved : defaultLookOf(s, shown.datasetId)));
+      set(pendingFieldsOf(saved && !saved.index && !saved.band ? saved : defaultLookOf(s, shown)));
       return;
     }
     const item = sectionsForView(s).flatMap((x) => x.items).find((it) => it.id === shown.ids[0]);

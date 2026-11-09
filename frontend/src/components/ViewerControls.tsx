@@ -176,8 +176,10 @@ export default function ViewerControls() {
   // One dropdown "Band" (NM4-45, Otto, 31.10.2026): the standard picture first ("RGB" where the dataset has a true-colour one) and the
   // single bands of the data; the indices are in "Quick processing" (UI-03d, Otto, 2.11.2026). The index drawn stands in it, not to
   // be picked, so that the field says what the map shows; a band picked puts it away.
-  const standardAsset = shownDataset?.collection['earthx:default_render']?.assets[0] ?? null;
-  const bandAssets = shownDataset && shown ? bandAssetsOf(sectionsForView({ sections, openSectionId, datasetId, items, groups }).flatMap((section) => section.items).find((it) => it.id === shown.ids[0]), shownDataset.collection) : [];
+  // The first scene of the image shown: with `first_present` its band is the standard picture (DS-04c).
+  const shownItem = shown ? sectionsForView({ sections, openSectionId, datasetId, items, groups }).flatMap((section) => section.items).find((it) => it.id === shown.ids[0]) : undefined;
+  const standardAsset = shownDataset ? (defaultRenderOf(shownDataset.collection, shownItem)?.assets[0] ?? null) : null;
+  const bandAssets = shownDataset && shown ? bandAssetsOf(shownItem, shownDataset.collection) : [];
   const trueColour = shownDataset ? trueColorOf(shownDataset.collection) !== null : false;
   const chosenOption: BandOption[] = chosen ? [{ value: `index:${chosen.name}`, label: chosen.name, title: presetTip(chosen), disabled: true }] : [];
   const bandOptions: BandOption[] = indexOnly
@@ -223,9 +225,9 @@ export default function ViewerControls() {
   // Temporary where no layer holds the image as it is drawn now (Otto, 1.11.2026). What is only typed in the fields does not count: the
   // measured range that stands in them when the view opens is no change; "Apply" is.
   const standardLook = useMemo(() => {
-    const render = shownDataset ? defaultRenderOf(shownDataset.collection) : null;
+    const render = shownDataset ? defaultRenderOf(shownDataset.collection, shownItem) : null;
     return render ? appliedRenderFrom(render) : {};
-  }, [shownDataset]);
+  }, [shownDataset, shownItem]);
   const temporary = shown ? isTemporaryImage(layers, shown, appliedRender, { cropToAoi: cropToAoi && viewAoi !== null, aoi: viewAoi }, standardLook) : false;
   const datasetIds = datasetIdsOf(images);
   // Only the date is read in the switcher (Otto, 1.11.2026); the satellite, the step and the group are its tooltip.
