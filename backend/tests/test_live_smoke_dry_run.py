@@ -196,6 +196,53 @@ def _sentinel_1_double(request: httpx.Request) -> httpx.Response:
     raise AssertionError(f"the double has no answer for {request.method} {request.url}")
 
 
+def _swissalti3d_item(index: int) -> dict[str, Any]:
+    """A synthetic item in the shape M5-08 measured at the FSDI: four assets keyed by their file name."""
+    config = REGISTRY.get("swissalti3d")
+    item_id = f"swissalti3d_2025_2600-{1200 + index}"
+    base = f"{config.source.endpoint.rsplit('/api/', 1)[0]}/{config.source.source_collection_id}/{item_id}"
+    assets = {
+        f"{item_id}_{rule.gsd}_2056.{'tif' if 'geotiff' in rule.media_type else 'xyz.zip'}": {
+            "href": f"{base}/{item_id}_{rule.gsd}_2056.{'tif' if 'geotiff' in rule.media_type else 'xyz.zip'}",
+            "type": rule.media_type,
+            "gsd": rule.gsd,
+            "file:checksum": "1220" + "00" * 32,
+        }
+        for rule in config.source.asset_keys
+    }
+    ring = [[7.5, 46.7], [7.51, 46.7], [7.51, 46.71], [7.5, 46.71], [7.5, 46.7]]
+    return {
+        "type": "Feature",
+        "stac_version": "1.0.0",
+        "id": item_id,
+        "collection": config.source.source_collection_id,
+        "geometry": {"type": "Polygon", "coordinates": [ring]},
+        "properties": {"datetime": "2025-01-01T00:00:00Z", "updated": "2026-01-01T00:00:00Z"},
+        "assets": assets,
+        "links": [],
+    }
+
+
+def _swissalti3d_double(request: httpx.Request) -> httpx.Response:
+    """The STAC API of the FSDI as M5-08 measured it: ETag and 304, `cursor` with `merge: true`, assets on the host."""
+    path = request.url.path
+    if request.method == "GET" and path.endswith(".tif"):
+        return httpx.Response(206, content=TIFF_HEADER[:16])
+    if request.method == "GET" and "/items/" in path:
+        return _json({**_swissalti3d_item(0), "id": path.rsplit("/", 1)[-1]})
+    if request.method == "GET" and path.endswith("/collections/ch.swisstopo.swissalti3d"):
+        if request.headers.get("if-none-match") == '"synthetic"':
+            return httpx.Response(304)
+        return httpx.Response(200, json={"id": "ch.swisstopo.swissalti3d", "updated": "2026-01-01T00:00:00Z"}, headers={"etag": '"synthetic"'})
+    if request.method == "POST" and path.endswith("/search"):
+        body = json.loads(request.content)
+        start = 2 if "cursor" in body else 0
+        features = [_swissalti3d_item(start + index) for index in range(body["limit"])]
+        links = [] if start else [{"rel": "next", "method": "POST", "merge": True, "body": {"cursor": "synthetic"}}]
+        return _json({"type": "FeatureCollection", "features": features, "links": links})
+    raise AssertionError(f"the double has no answer for {request.method} {request.url}")
+
+
 def _replay_rasters(module: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None:
     """The reading of a raster does not go through the gateway: stand a synthetic classification in its place."""
     from earthx.access.aoi_clouds import AoiClouds
@@ -237,6 +284,7 @@ DOUBLES: dict[str, Callable[[httpx.Request], httpx.Response]] = {
     "test_search_filters_live": _filtering_double,
     "test_aoi_cloud_filter_live": _scl_double,
     "test_sentinel_1_grd_smoke": _sentinel_1_double,
+    "test_swissalti3d_smoke": _swissalti3d_double,
 }
 
 
