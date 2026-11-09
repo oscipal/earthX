@@ -35,6 +35,7 @@ import pytest
 from rasterio.warp import transform_bounds
 from rio_tiler.constants import WEB_MERCATOR_TMS, WGS84_CRS
 
+from earthx.adapters.stac_api import STATE_PROPERTY, TILE_PROPERTY, dialect_of, normalize_for
 from earthx.catalog.registry import (
     AdapterKind,
     DataFormat,
@@ -45,7 +46,15 @@ from earthx.catalog.registry import (
     ViewerInfo,
 )
 from earthx.gateway import Gateway, Policy, check_url, host_of
-from tests.earthx.readers import mini_cog, mini_dem, mini_gcp, mini_worldcover, mini_zarr, mini_zarr_composite
+from tests.earthx.readers import (
+    mini_cog,
+    mini_dem,
+    mini_gcp,
+    mini_lv95,
+    mini_worldcover,
+    mini_zarr,
+    mini_zarr_composite,
+)
 
 #: The one host both synthetic stores live on.
 HOST = mini_zarr.HOST
@@ -449,6 +458,78 @@ def _build_worldcover(config: DatasetConfig, render_asset: str, tmp_path: Path, 
     )
 
 
+def fsdi_feature(config: DatasetConfig) -> dict[str, Any]:
+    """One item of :mod:`mini_lv95`'s tile as the FSDI writes it (M5-08 plan §2): each asset keyed by its file name, one
+    asset per rule of ``source.asset_keys``, the COG of the first rule on the synthetic host and read from there."""
+    item_id = f"swissalti3d_2025_{mini_lv95.TILE}"
+    west, south, east, north = mini_lv95.BOUNDS
+    ring = [[west, south], [east, south], [east, north], [west, north], [west, south]]
+    assets = {}
+    for index, rule in enumerate(config.source.asset_keys):
+        name = f"{item_id}_{rule.gsd}_2056.{'tif' if 'geotiff' in rule.media_type else 'xyz.zip'}"
+        href = mini_lv95.ASSET_URL if index == 0 else f"https://{HOST}/{config.source.source_collection_id}/{item_id}/{name}"
+        assets[name] = {"href": href, "type": rule.media_type, "gsd": rule.gsd, "proj:epsg": 2056, "file:checksum": "1220" + f"{index:0>64}"}
+    return {
+        "type": "Feature",
+        "stac_version": "1.0.0",
+        "id": item_id,
+        "collection": config.source.source_collection_id,
+        "bbox": [west, south, east, north],
+        "geometry": {"type": "Polygon", "coordinates": [ring]},
+        "properties": {"datetime": "2025-01-01T00:00:00Z", "created": "2026-01-01T00:00:00Z", "updated": "2026-01-01T00:00:00Z"},
+        "assets": assets,
+        "links": [],
+    }
+
+
+def gateway_answering_stac_materialize(config: DatasetConfig, feature: dict[str, Any]) -> tuple[Gateway, list[httpx.Request]]:
+    """A gateway that answers the collection with an ETag and the search with one page holding ``feature``, enough for
+    `adapters.materialize_items` over a STAC API (M5-08b) to build the item for real."""
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if request.method == "GET":
+            collection = {"id": config.source.source_collection_id, "updated": "2026-01-01T00:00:00Z"}
+            return httpx.Response(200, json=collection, headers={"etag": '"synthetic"'})
+        return httpx.Response(200, json={"type": "FeatureCollection", "features": [feature], "links": []})
+
+    async def sleep(seconds: float) -> None:
+        return None
+
+    policy = Policy(allowed_hosts=frozenset({HOST, host_of(config.source.endpoint)}))
+    return (
+        Gateway(policy, transport=httpx.MockTransport(handler), resolve=mini_zarr.from_memory, sleep=sleep),
+        seen,
+    )
+
+
+def _build_fsdi(config: DatasetConfig, render_asset: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Chain:
+    """swissALTI3D (M5-08): the item from the real materialization over the STAC API, the tile a COG in LV95."""
+    path = mini_lv95.build_mini_lv95(tmp_path / "mini_lv95.tif")
+    read_addresses = mini_cog.serve_cog(path, monkeypatch)
+    synthetic = replace(
+        config, source=replace(config.source, endpoint=f"https://{HOST}/api/stac/v1", asset_hosts=(HOST,), asset_href_rewrites=())
+    )
+    feature = fsdi_feature(synthetic)
+    gateway, searched = gateway_answering_stac_materialize(synthetic, feature)
+    resolve_from_memory(monkeypatch)
+    # What the materialization writes (M5-08b): the fixed keys, our collection, the tile and the state.
+    item = normalize_for(dialect_of(synthetic), synthetic, feature)
+    properties = {**item["properties"], TILE_PROPERTY: mini_lv95.TILE, STATE_PROPERTY: synthetic.source.item_states.rule.value}
+    return Chain(
+        config=synthetic,
+        registry=DatasetRegistry((synthetic,)),
+        item={**item, "collection": synthetic.dataset_id, "links": [], "properties": properties},
+        render_asset=render_asset,
+        aoi=aoi_wgs84(mini_lv95.BOUNDS),
+        tile=_covering_tile_wgs84(mini_lv95.BOUNDS, config.viewer),
+        gateway=gateway,
+        searched=searched,
+        read_addresses=lambda: list(read_addresses),
+    )
+
+
 def _build_materialized(
     config: DatasetConfig, render_asset: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> Chain:
@@ -456,6 +537,8 @@ def _build_materialized(
         raise UnsupportedFormat(f"no synthetic materialize chain for format {config.format.value!r}")
     if config.source.adapter is AdapterKind.ESA_WORLDCOVER_BUCKET:
         return _build_worldcover(config, render_asset, tmp_path, monkeypatch)
+    if config.source.adapter is AdapterKind.FSDI_STAC_V1:
+        return _build_fsdi(config, render_asset, tmp_path, monkeypatch)
     path = mini_dem.build_mini_dem(tmp_path / "mini_dem.tif")
     read_addresses = mini_dem.serve_dem(path, monkeypatch)
     # Only the host has to match what the real adapter builds an href from

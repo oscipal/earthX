@@ -86,7 +86,8 @@ async def test_search_reaches_the_source_through_its_own_adapter(chain: Chain) -
         assert [item["id"] for item in outcome.items] == [chain.item["id"]]
         assert outcome.items[0]["bbox"] == chain.item["bbox"]
         paths = {request.url.path for request in chain.searched}
-        assert paths in ({"/tileList.txt", "/blacklist.txt", "/"}, {"/esa_worldcover_grid.geojson", "/"})
+        stac = {f"/api/stac/v1/collections/{chain.config.source.source_collection_id}", "/api/stac/v1/search"}
+        assert paths in ({"/tileList.txt", "/blacklist.txt", "/"}, {"/esa_worldcover_grid.geojson", "/"}, stac)
         return
 
     page = await search_items(chain.config, SearchParams(limit=10), adapters=ADAPTER_SPECS, gateway=chain.gateway)
@@ -113,8 +114,10 @@ async def test_a_found_item_carries_the_key_the_viewer_groups_by(chain: Chain) -
     assert len(key) == len(viewer.group_by)
     # A STAC instant enters the key as its UTC date (D19) — the date itself
     # differs by entry (a federated Sentinel-2 item vs. the DEM's fixed
-    # acquisition period, M3-11b F1), so only the shape is checked here.
-    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", key[0])
+    # acquisition period, M3-11b F1), so only the shape is checked here. Any
+    # other property enters as its own text (`earthx:state` of swissALTI3D, M5-08).
+    for name, part in zip(viewer.group_by, key, strict=True):
+        assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", part) if name.endswith("datetime") else part
 
 
 def test_display_renders_a_tile_from_the_registrys_own_visualisation(

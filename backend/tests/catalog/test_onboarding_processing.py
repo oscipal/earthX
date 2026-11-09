@@ -150,6 +150,8 @@ def build(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     """A scenario for one entry, or :class:`UnsupportedFormat` — never a quiet pass."""
     if config.format is DataFormat.COG and config.source.adapter is AdapterKind.ESA_WORLDCOVER_BUCKET:
         return _worldcover(config, tmp_path, monkeypatch)
+    if config.format is DataFormat.COG and config.source.adapter is AdapterKind.FSDI_STAC_V1:
+        return _lv95(config, tmp_path, monkeypatch)
     if config.format is DataFormat.COG and config.source.item_holding is ItemHolding.MATERIALIZED:
         return _dem(config, tmp_path, monkeypatch)
     if config.georeferencing is Georeferencing.GCP_TPS:
@@ -265,6 +267,25 @@ def _worldcover(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.Monke
         result_bands=["map"],
         tile=None,
         output_bands=["map"],
+    )
+
+
+def _lv95(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Scenario:
+    """A tile in LV95 from the materialization over the STAC API, reprojected to UTM (M5-08 plan §4.6 point 9)."""
+    sources.serve({}, monkeypatch)  # the resolver; the COG itself is served by the chain
+    chain = synthetic_chain.build(config, tmp_path, monkeypatch)
+    asset = chain.render_asset
+    return Scenario(
+        config=chain.config,
+        registry=chain.registry,
+        item=chain.item,
+        assets=[asset],
+        aoi=chain.aoi,
+        step={"op": "reproject", "op_version": 2, "params": REPROJECT},
+        scaling="none",
+        gateway=chain.gateway,
+        result_bands=[asset],
+        tile=None,
     )
 
 
