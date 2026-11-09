@@ -44,7 +44,12 @@ const COLLECTIONS = [
   collection('relief', 'Relief model', 'elevation'),
   collection('beta', 'Beta optical', 'optical'),
   collection('alpha', 'Alpha optical', 'optical'),
-  collection('odd', 'Odd one', 'something-new'),
+  collection('odd', 'Odd one', 'something-new', {
+    'earthx:notices': [
+      { code: 'approximate_geolocation', label: 'Approximate geolocation', tooltip: 'Placed by ground control points.' },
+      { code: 'broken', label: '', tooltip: 'A notice without a label is not shown.' },
+    ],
+  }),
   collection('broken', 'Broken entry', 'optical', { 'earthx:viewer': null }),
   collection('closed', 'Closed source', 'radar', { 'earthx:access': { cors: null, account: 'free_account' } }),
   collection('proto', 'Prototype source', 'radar', { 'earthx:legal_status': 'unclear', 'earthx:legal_note': 'The terms of reuse are not published' }),
@@ -229,6 +234,14 @@ describe('the list', () => {
     expect(entry('Prototype source').querySelector('.badge')?.textContent).toBe('Prototype');
     const marked = [...container.querySelectorAll('.catalogue-entry')].filter((el) => el.querySelector('.badge')?.textContent === 'Prototype');
     expect(marked).toHaveLength(1);
+  });
+
+  it('marks a dataset with its notices, the explanation in a tooltip of either step (DS-04c)', () => {
+    const badges = [...entry('Odd one').querySelectorAll('.badge')];
+    expect(badges.map((badge) => badge.textContent)).toEqual(['Approximate geolocation']);
+    expect(badges[0].getAttribute('data-tip')).toBe('Placed by ground control points.');
+    expect(badges[0].hasAttribute('data-tip-level')).toBe(false);
+    expect(entry('Beta optical').querySelector('.badge')).toBeNull();
   });
 
   it('has no tooltip at the name of a dataset', () => {

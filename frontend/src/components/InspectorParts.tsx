@@ -25,12 +25,14 @@ interface HeadProps {
   // A layer is renamed here (Otto, 2.11.2026): a click on the title or on the pencil; `name` is the name as kept, without the date
   // the title adds. `onRename` refuses an empty name.
   rename?: { name: string; onRename: (name: string) => boolean };
+  // The notices of the dataset ("Approximate geolocation", DS-04 plan §4.6), a row of their own under the two.
+  notices?: ReactNode;
 }
 
 export const RENAME_TIP = 'Rename layer';
 const EMPTY_NAME_TIP = 'A layer needs a name: an empty one keeps the name it had';
 
-export function InspectorHead({ title, mark, eye, onClose, closeTitle, copy, children, rename }: HeadProps) {
+export function InspectorHead({ title, mark, eye, onClose, closeTitle, copy, children, rename, notices }: HeadProps) {
   const [editing, setEditing] = useState(false);
   return (
     <div className="vc-head">
@@ -70,6 +72,7 @@ export function InspectorHead({ title, mark, eye, onClose, closeTitle, copy, chi
         {children}
         {copy}
       </div>
+      {notices && <div className="insp-notices">{notices}</div>}
     </div>
   );
 }

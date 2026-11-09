@@ -257,6 +257,9 @@ export interface Collection {
   'earthx:auxiliary_assets'?: string[] | null;
   // The three bands of the colour picture, red, green, blue (NM4-64); empty for a dataset that has none.
   'earthx:true_color'?: string[] | null;
+  // What a user must know about the data of this dataset, each a short label with a one-sentence tooltip (DS-04 plan
+  // §4.4); read entry by entry by `datasets.ts::noticesOf`. Absent on a backend before DS-04b.
+  'earthx:notices'?: unknown[] | null;
   // The filters the search offers for this dataset (DS-02), in the words of STAC queryables; read, and checked
   // entry by entry, by `searchFilters.ts`. Absent on a backend before DS-02a.
   'earthx:search_filters'?: unknown[] | null;
