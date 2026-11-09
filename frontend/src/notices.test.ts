@@ -25,4 +25,9 @@ describe('noticesOf', () => {
     const broken = [null, 'text', { code: 'a', label: 'A' }, { code: 'b', label: '', tooltip: 'x' }, { code: 'c', label: 3, tooltip: 'x' }, notice];
     expect(noticesOf(radar({ 'earthx:notices': broken }))).toEqual([notice]);
   });
+
+  it('shows a code given twice once, the first time', () => {
+    const again = { ...notice, label: 'Again' };
+    expect(noticesOf(radar({ 'earthx:notices': [notice, again] }))).toEqual([notice]);
+  });
 });

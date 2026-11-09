@@ -244,16 +244,20 @@ export interface DatasetNotice {
   tooltip: string;
 }
 
-// The notices of a dataset, in the order the registry gives them. An entry that is not a notice is left out rather
-// than shown half: the registry checks them at start, so one here is a backend this viewer does not know.
+// The notices of a dataset, in the order the registry gives them. An entry that is not a notice, or a code given twice, is
+// left out rather than shown half or twice: the registry checks them at start, so one here is a backend this viewer does
+// not know.
 export function noticesOf(collection: Collection): DatasetNotice[] {
   const notices = collection['earthx:notices'];
   if (!Array.isArray(notices)) return [];
+  const seen = new Set<string>();
   return notices.filter(
     (notice): notice is DatasetNotice =>
       typeof notice === 'object' &&
       notice !== null &&
-      ['code', 'label', 'tooltip'].every((key) => typeof (notice as Record<string, unknown>)[key] === 'string' && (notice as Record<string, string>)[key] !== ''),
+      ['code', 'label', 'tooltip'].every((key) => typeof (notice as Record<string, unknown>)[key] === 'string' && (notice as Record<string, string>)[key] !== '') &&
+      !seen.has((notice as DatasetNotice).code) &&
+      Boolean(seen.add((notice as DatasetNotice).code)),
   );
 }
 
