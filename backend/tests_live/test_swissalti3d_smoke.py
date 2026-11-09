@@ -8,7 +8,9 @@ and is Otto's local run, not a smoke.
 It checks what the entry and the materialization assume (M5-08 plan §2, §7 R1): the collection answers a conditional
 request with ``304``, the next page comes from ``cursor``, every item fits the fixed asset keys and the tile pattern,
 the COG of 0.5 m is read anonymously by range, the newest state lies inside the entry's period, and the collection's
-``updated`` is not older than the newest item, so the version of a run notices items added without a new ETag.
+``updated`` is not older than the newest item. That last check is half of risk R1: ``updated`` moves with the items.
+Whether the ETag moves too is not something one run can see, and while the source answers ``304`` the ETag alone
+decides (plan §12, §13).
 """
 
 from __future__ import annotations
@@ -78,9 +80,11 @@ async def test_two_pages_of_items_fit_the_entry(gateway: Gateway) -> None:
     assert first.skipped == second.skipped == 0, "an item no longer fits source.asset_keys"
     assert len({item["id"] for item in items}) == len(items), "the second page repeats the first"
     keys = [rule.key for rule in SWISSALTI3D.source.asset_keys]
+    host = SWISSALTI3D.source.asset_hosts[0]
     pattern = re.compile(SWISSALTI3D.source.item_states.tile_pattern)
     for item in items:
-        assert list(item["assets"]) == keys
+        assert set(item["assets"]) == set(keys)
+        assert all(asset["href"].startswith(f"https://{host}/") for asset in item["assets"].values())
         assert pattern.fullmatch(item["id"]), "an item id no longer names its tile"
         assert item["collection"] == SWISSALTI3D.source.source_collection_id
         assert item["properties"].get("datetime")
@@ -99,8 +103,8 @@ async def test_one_item_and_its_cog_are_read_anonymously(gateway: Gateway) -> No
 
 
 async def test_the_newest_state_lies_in_the_period_and_under_the_collection_updated(gateway: Gateway) -> None:
-    """A state after the end of ``temporal_extent`` needs the entry updated; ``updated`` of the collection must move
-    with the items (R1)."""
+    """A state after the end of ``temporal_extent`` needs the entry updated; ``updated`` of the collection has to move
+    with the items (half of R1, see the module docstring)."""
     collection = (await gateway.get(COLLECTION_URL)).json()
 
     async def newest(field: str) -> dict:
@@ -119,5 +123,5 @@ async def test_the_newest_state_lies_in_the_period_and_under_the_collection_upda
     )
     latest_update = _instant((await newest("updated"))["updated"])
     assert latest_update <= _instant(collection["updated"]), (
-        "an item was updated after the collection's own updated; the version of a run would miss it (R1)"
+        "an item was updated after the collection's own updated; updated no longer follows the items (R1)"
     )

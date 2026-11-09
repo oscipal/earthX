@@ -459,16 +459,22 @@ def _build_worldcover(config: DatasetConfig, render_asset: str, tmp_path: Path, 
 
 
 def fsdi_feature(config: DatasetConfig) -> dict[str, Any]:
-    """One item of :mod:`mini_lv95`'s tile as the FSDI writes it (M5-08 plan §2): each asset keyed by its file name, one
-    asset per rule of ``source.asset_keys``, the COG of the first rule on the synthetic host and read from there."""
+    """One item of :mod:`mini_lv95`'s tile as the FSDI writes it (M5-08 plan §2): each asset keyed by its file name,
+    one asset per rule of ``source.asset_keys``, the COG of the first rule on the synthetic host and read from there."""
     item_id = f"swissalti3d_2025_{mini_lv95.TILE}"
     west, south, east, north = mini_lv95.BOUNDS
     ring = [[west, south], [east, south], [east, north], [west, north], [west, south]]
     assets = {}
     for index, rule in enumerate(config.source.asset_keys):
         name = f"{item_id}_{rule.gsd}_2056.{'tif' if 'geotiff' in rule.media_type else 'xyz.zip'}"
-        href = mini_lv95.ASSET_URL if index == 0 else f"https://{HOST}/{config.source.source_collection_id}/{item_id}/{name}"
-        assets[name] = {"href": href, "type": rule.media_type, "gsd": rule.gsd, "proj:epsg": 2056, "file:checksum": "1220" + f"{index:0>64}"}
+        href = mini_lv95.ASSET_URL if index == 0 else f"https://{HOST}/{config.source.source_collection_id}/{name}"
+        assets[name] = {
+            "href": href,
+            "type": rule.media_type,
+            "gsd": rule.gsd,
+            "proj:epsg": 2056,
+            "file:checksum": f"1220{index:0>64}",
+        }
     return {
         "type": "Feature",
         "stac_version": "1.0.0",
@@ -476,23 +482,32 @@ def fsdi_feature(config: DatasetConfig) -> dict[str, Any]:
         "collection": config.source.source_collection_id,
         "bbox": [west, south, east, north],
         "geometry": {"type": "Polygon", "coordinates": [ring]},
-        "properties": {"datetime": "2025-01-01T00:00:00Z", "created": "2026-01-01T00:00:00Z", "updated": "2026-01-01T00:00:00Z"},
+        "properties": {
+            "datetime": "2025-01-01T00:00:00Z",
+            "created": "2026-01-01T00:00:00Z",
+            "updated": "2026-01-01T00:00:00Z",
+        },
         "assets": assets,
         "links": [],
     }
 
 
-def gateway_answering_stac_materialize(config: DatasetConfig, feature: dict[str, Any]) -> tuple[Gateway, list[httpx.Request]]:
+def gateway_answering_stac_materialize(
+    config: DatasetConfig, feature: dict[str, Any]
+) -> tuple[Gateway, list[httpx.Request]]:
     """A gateway that answers the collection with an ETag and the search with one page holding ``feature``, enough for
     `adapters.materialize_items` over a STAC API (M5-08b) to build the item for real."""
     seen: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(request)
-        if request.method == "GET":
+        path = request.url.path
+        if request.method == "GET" and path.endswith(f"/collections/{config.source.source_collection_id}"):
             collection = {"id": config.source.source_collection_id, "updated": "2026-01-01T00:00:00Z"}
             return httpx.Response(200, json=collection, headers={"etag": '"synthetic"'})
-        return httpx.Response(200, json={"type": "FeatureCollection", "features": [feature], "links": []})
+        if request.method == "POST" and path.endswith("/search"):
+            return httpx.Response(200, json={"type": "FeatureCollection", "features": [feature], "links": []})
+        raise AssertionError(f"the synthetic STAC API has no answer for {request.method} {request.url}")
 
     async def sleep(seconds: float) -> None:
         return None
@@ -505,18 +520,26 @@ def gateway_answering_stac_materialize(config: DatasetConfig, feature: dict[str,
 
 
 def _build_fsdi(config: DatasetConfig, render_asset: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Chain:
-    """swissALTI3D (M5-08): the item from the real materialization over the STAC API, the tile a COG in LV95."""
+    """swissALTI3D (M5-08): the item as the materialization over the STAC API writes it, the tile a COG in LV95.
+
+    Link 1 of the end-to-end test runs the real materialization against the same gateway and compares its item with
+    this one, so the two cannot drift apart.
+    """
     path = mini_lv95.build_mini_lv95(tmp_path / "mini_lv95.tif")
     read_addresses = mini_cog.serve_cog(path, monkeypatch)
     synthetic = replace(
-        config, source=replace(config.source, endpoint=f"https://{HOST}/api/stac/v1", asset_hosts=(HOST,), asset_href_rewrites=())
+        config,
+        source=replace(
+            config.source, endpoint=f"https://{HOST}/api/stac/v1", asset_hosts=(HOST,), asset_href_rewrites=()
+        ),
     )
     feature = fsdi_feature(synthetic)
     gateway, searched = gateway_answering_stac_materialize(synthetic, feature)
     resolve_from_memory(monkeypatch)
     # What the materialization writes (M5-08b): the fixed keys, our collection, the tile and the state.
     item = normalize_for(dialect_of(synthetic), synthetic, feature)
-    properties = {**item["properties"], TILE_PROPERTY: mini_lv95.TILE, STATE_PROPERTY: synthetic.source.item_states.rule.value}
+    state = synthetic.source.item_states.rule.value
+    properties = {**item["properties"], TILE_PROPERTY: mini_lv95.TILE, STATE_PROPERTY: state}
     return Chain(
         config=synthetic,
         registry=DatasetRegistry((synthetic,)),

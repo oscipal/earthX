@@ -196,51 +196,68 @@ def _sentinel_1_double(request: httpx.Request) -> httpx.Response:
     raise AssertionError(f"the double has no answer for {request.method} {request.url}")
 
 
-def _swissalti3d_item(index: int) -> dict[str, Any]:
-    """A synthetic item in the shape M5-08 measured at the FSDI: four assets keyed by their file name."""
-    config = REGISTRY.get("swissalti3d")
-    item_id = f"swissalti3d_2025_2600-{1200 + index}"
-    base = f"{config.source.endpoint.rsplit('/api/', 1)[0]}/{config.source.source_collection_id}/{item_id}"
-    assets = {
-        f"{item_id}_{rule.gsd}_2056.{'tif' if 'geotiff' in rule.media_type else 'xyz.zip'}": {
-            "href": f"{base}/{item_id}_{rule.gsd}_2056.{'tif' if 'geotiff' in rule.media_type else 'xyz.zip'}",
-            "type": rule.media_type,
-            "gsd": rule.gsd,
-            "file:checksum": "1220" + "00" * 32,
-        }
-        for rule in config.source.asset_keys
-    }
+SWISSALTI3D = REGISTRY.get("swissalti3d")
+#: Collection and items of the FSDI double; the tests below change one value each.
+FSDI_UPDATED = "2026-01-01T00:00:00Z"
+
+
+def _swissalti3d_item(index: int, *, year: int = 2025, updated: str = FSDI_UPDATED) -> dict[str, Any]:
+    """A synthetic item in the shape M5-08 measured at the FSDI: four assets keyed by their file name. The tile lies
+    outside the LV95 grid, so the id is never a real one."""
+    source = SWISSALTI3D.source
+    item_id = f"swissalti3d_{year}_9999-{9900 + index}"
+    base = f"{source.endpoint.rsplit('/api/', 1)[0]}/{source.source_collection_id}/{item_id}"
+    assets = {}
+    for rule in source.asset_keys:
+        name = f"{item_id}_{rule.gsd}_2056.{'tif' if 'geotiff' in rule.media_type else 'xyz.zip'}"
+        checksum = "1220" + "00" * 32
+        assets[name] = {"href": f"{base}/{name}", "type": rule.media_type, "gsd": rule.gsd, "file:checksum": checksum}
     ring = [[7.5, 46.7], [7.51, 46.7], [7.51, 46.71], [7.5, 46.71], [7.5, 46.7]]
     return {
         "type": "Feature",
         "stac_version": "1.0.0",
         "id": item_id,
-        "collection": config.source.source_collection_id,
+        "collection": source.source_collection_id,
         "geometry": {"type": "Polygon", "coordinates": [ring]},
-        "properties": {"datetime": "2025-01-01T00:00:00Z", "updated": "2026-01-01T00:00:00Z"},
+        "properties": {"datetime": f"{year}-01-01T00:00:00Z", "updated": updated},
         "assets": assets,
         "links": [],
     }
 
 
-def _swissalti3d_double(request: httpx.Request) -> httpx.Response:
-    """The STAC API of the FSDI as M5-08 measured it: ETag and 304, `cursor` with `merge: true`, assets on the host."""
-    path = request.url.path
-    if request.method == "GET" and path.endswith(".tif"):
-        return httpx.Response(206, content=TIFF_HEADER[:16])
-    if request.method == "GET" and "/items/" in path:
-        return _json({**_swissalti3d_item(0), "id": path.rsplit("/", 1)[-1]})
-    if request.method == "GET" and path.endswith("/collections/ch.swisstopo.swissalti3d"):
-        if request.headers.get("if-none-match") == '"synthetic"':
-            return httpx.Response(304)
-        return httpx.Response(200, json={"id": "ch.swisstopo.swissalti3d", "updated": "2026-01-01T00:00:00Z"}, headers={"etag": '"synthetic"'})
-    if request.method == "POST" and path.endswith("/search"):
-        body = json.loads(request.content)
-        start = 2 if "cursor" in body else 0
-        features = [_swissalti3d_item(start + index) for index in range(body["limit"])]
-        links = [] if start else [{"rel": "next", "method": "POST", "merge": True, "body": {"cursor": "synthetic"}}]
-        return _json({"type": "FeatureCollection", "features": features, "links": links})
-    raise AssertionError(f"the double has no answer for {request.method} {request.url}")
+def _fsdi_double(
+    *, newest_year: int = 2025, newest_update: str = FSDI_UPDATED, etag: str | None = '"synthetic"'
+) -> Callable[[httpx.Request], httpx.Response]:
+    """The STAC API of the FSDI as M5-08 measured it: ETag and 304, `cursor` with `merge: true`, assets on the host.
+
+    A search sorted by a property (the smoke's question for the newest state) answers with an item of ``newest_year``
+    updated at ``newest_update``.
+    """
+    collection_path = f"/collections/{SWISSALTI3D.source.source_collection_id}"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if request.method == "GET" and path.endswith(".tif"):
+            return httpx.Response(206, content=TIFF_HEADER[:16])
+        if request.method == "GET" and "/items/" in path:
+            return _json({**_swissalti3d_item(0), "id": path.rsplit("/", 1)[-1]})
+        if request.method == "GET" and path.endswith(collection_path):
+            if etag is not None and request.headers.get("if-none-match") == etag:
+                return httpx.Response(304)
+            collection = {"id": SWISSALTI3D.source.source_collection_id, "updated": FSDI_UPDATED}
+            return httpx.Response(200, json=collection, headers={"etag": etag} if etag else {})
+        if request.method == "POST" and path.endswith("/search"):
+            body = json.loads(request.content)
+            if "bbox" not in body:
+                newest = _swissalti3d_item(0, year=newest_year, updated=newest_update)
+                return _json({"type": "FeatureCollection", "features": [newest], "links": []})
+            first = 2 if "cursor" in body else 0
+            features = [_swissalti3d_item(first + index) for index in range(body["limit"])]
+            links = [] if first else [{"rel": "next", "method": "POST", "merge": True, "body": {"cursor": "synthetic"}}]
+            return _json({"type": "FeatureCollection", "features": features, "links": links})
+        raise AssertionError(f"the double has no answer for {request.method} {request.url}")
+
+    return handler
 
 
 def _replay_rasters(module: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -284,7 +301,7 @@ DOUBLES: dict[str, Callable[[httpx.Request], httpx.Response]] = {
     "test_search_filters_live": _filtering_double,
     "test_aoi_cloud_filter_live": _scl_double,
     "test_sentinel_1_grd_smoke": _sentinel_1_double,
-    "test_swissalti3d_smoke": _swissalti3d_double,
+    "test_swissalti3d_smoke": _fsdi_double(),
 }
 
 
@@ -385,3 +402,35 @@ async def test_the_filter_smoke_names_a_value_the_registry_lacks() -> None:
 
     with pytest.raises(AssertionError, match="a new value of s2:processing_baseline"):
         await _replay_filters(newer)
+
+
+async def _replay_swissalti3d(test: str, handler: Callable[[httpx.Request], httpx.Response]) -> None:
+    path = next(path for path in SMOKE_FILES if path.stem == "test_swissalti3d_smoke")
+    module = _load(path)
+    _replaying(module, handler)
+    async with module.open_gateway() as gateway:
+        await getattr(module, test)(gateway=gateway)
+
+
+async def test_the_swissalti3d_smoke_fails_on_a_state_after_the_entrys_period() -> None:
+    """A new survey year at the source is what asks for a new `temporal_extent.end` (M5-08 plan §13)."""
+    year = SWISSALTI3D.temporal_extent.end.year + 1
+    with pytest.raises(AssertionError, match=f"a state of {year} is newer"):
+        await _replay_swissalti3d(
+            "test_the_newest_state_lies_in_the_period_and_under_the_collection_updated", _fsdi_double(newest_year=year)
+        )
+
+
+async def test_the_swissalti3d_smoke_fails_on_an_item_updated_after_its_collection() -> None:
+    """R1: a collection whose `updated` stays behind its items would hide a change from the version of a run."""
+    with pytest.raises(AssertionError, match="updated after the collection"):
+        await _replay_swissalti3d(
+            "test_the_newest_state_lies_in_the_period_and_under_the_collection_updated",
+            _fsdi_double(newest_update="2026-06-01T00:00:00Z"),
+        )
+
+
+async def test_the_swissalti3d_smoke_fails_on_a_collection_without_etag() -> None:
+    """Without an ETag the materialization could not ask conditionally, and a later run could not compare."""
+    with pytest.raises(AssertionError, match="without an ETag"):
+        await _replay_swissalti3d("test_the_collection_answers_its_etag_with_304", _fsdi_double(etag=None))

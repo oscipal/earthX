@@ -1,6 +1,6 @@
 # swissALTI3D from the STAC API of the Federal Spatial Data Infrastructure (M5-08, `adr/0023` §4.1, §8.3, §9.1).
-# Measured 07.11.2026 (M5-08 plan §2) and again 09.11.2026 (plan §13): the collection, its newest search page, the head
-# of one COG (range read of 1024 bytes) and the CORS header of an asset. Since 26.09.2026 the source also holds a state
+# Measured 07.11.2026 (M5-08 plan §2) and again 09.11.2026 (plan §13): the collection, its newest search page, the
+# head of one COG (range read of 1024 bytes) and the CORS header of an asset. Since 26.09.2026 the source also holds a state
 # of 2026.
 #
 # One file is one entry of the registry (docs/plans/m5/m5-13-yaml-lader.md, KLAERUNGEN B13 stage 2). The fields are
@@ -14,7 +14,8 @@ description: >-
   swissALTI3D: digital terrain model (DTM) of Switzerland and the Principality of Liechtenstein without vegetation
   and buildings, at 0.5 m and 2 m, as cloud-optimized GeoTIFF in tiles of 1 km in the Swiss coordinate system LV95,
   heights in LN02. The source holds several states of most tiles from different aerial surveys; only the latest state
-  of each tile is loaded, so one area can combine tiles of different survey years; each tile keeps its own year as its date.
+  of each tile is loaded, so one area can combine tiles of different survey years; each tile keeps its own year as
+  its date.
   The position is transformed to WGS 84 without a grid file, with an accuracy of about 1 m.
 # German and English (adr/0026 F7, M5-08 plan §4.5, §9).
 keywords:
@@ -33,8 +34,8 @@ keywords:
 - Höhe
 - Schweiz
 category: elevation
-# The one provider of the collection, with its roles (measured 09.11.2026): the collection names no host role, though
-# the same office runs the FSDI.
+# The one provider of the collection with its roles and url (measured 09.11.2026): the collection names no host
+# role, though the same office runs the FSDI.
 providers:
 - name: Federal Office of Topography swisstopo
   roles: [producer, licensor]
@@ -77,7 +78,7 @@ capabilities:
   quad_pol: false
   # One model, one mosaic over all tiles (M5-08 F1): extent, not density (adr/0004 §5).
   single_coverage_product: true
-# Classified by Otto (M5-08 F4, KLAERUNGEN B11): no SPDX identifier; every flag on, attribution mandatory, tier
+# Classified by Otto (M5-08 F4, KLAERUNGEN B11): no SPDX identifier; every permission on, attribution mandatory, tier
 # processing. Read from the primary texts on 07.11.2026 and again on 09.11.2026 (plan §8a, §13).
 license:
   spdx_id: null

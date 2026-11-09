@@ -122,8 +122,9 @@ class TestItemStates:
         """F1, and the id form measured at the source (M5-08 plan §2)."""
         states = SWISSALTI3D.source.item_states
         assert states.rule is ItemStateRule.LATEST
-        assert states.tile_of("swissalti3d_2019_2600-1199") == states.tile_of("swissalti3d_2025_2600-1199") == "2600-1199"
-        for other in ("swissalti3d_2019_2600-1199_extra", "swissimage-dop10_2019_2600-1199", "swissalti3d_19_2600-1199"):
+        for item_id in ("swissalti3d_2019_9999-9999", "swissalti3d_2025_9999-9999"):
+            assert states.tile_of(item_id) == "9999-9999"
+        for other in ("swissalti3d_2019_9999-9999_x", "swissimage-dop10_2019_9999-9999", "swissalti3d_19_9999-9999"):
             assert states.tile_of(other) is None
 
     def test_a_materialized_entry_may_choose_a_state_per_tile(self, vary, valid_config) -> None:

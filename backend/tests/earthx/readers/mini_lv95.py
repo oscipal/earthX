@@ -18,11 +18,12 @@ from rio_cogeo.profiles import cog_profiles
 
 from tests.earthx.readers.mini_zarr import HOST
 
-ASSET_PATH = "/ch.swisstopo.swissalti3d/swissalti3d_2025_2600-1199/swissalti3d_2025_2600-1199_0.5_2056.tif"
+ASSET_PATH = "/ch.swisstopo.swissalti3d/swissalti3d_2025_9999-9999/swissalti3d_2025_9999-9999_0.5_2056.tif"
 ASSET_URL = f"https://{HOST}{ASSET_PATH}"
 
-#: The tile as the id names it: the south-west corner in kilometres of LV95.
-TILE = "2600-1199"
+#: The tile as the id names it. A real id names the south-west corner in kilometres of LV95; this one lies outside
+#: the grid, so it can never be the id of a real tile. The pixels lie at :data:`BOUNDS_LV95`.
+TILE = "9999-9999"
 CRS = "EPSG:2056"
 #: West, south, east, north in LV95 metres.
 BOUNDS_LV95 = (2_600_000.0, 1_199_000.0, 2_601_000.0, 1_200_000.0)

@@ -30,7 +30,7 @@ from fastapi.testclient import TestClient
 from earthx.access.download import NOTICE_FILENAME
 from earthx.adapters import ADAPTER_SPECS, SearchParams, materialize_items, search_items
 from earthx.api.tiler import build_app
-from earthx.catalog.registry import DatasetConfig, ItemHolding, group_key
+from earthx.catalog.registry import AdapterKind, DatasetConfig, ItemHolding, group_key
 from tests.catalog import synthetic_chain
 from tests.catalog.synthetic_chain import Chain, UnsupportedFormat
 from tests.catalog.synthetic_zarr import TEST_ENTRIES
@@ -85,6 +85,9 @@ async def test_search_reaches_the_source_through_its_own_adapter(chain: Chain) -
         )
         assert [item["id"] for item in outcome.items] == [chain.item["id"]]
         assert outcome.items[0]["bbox"] == chain.item["bbox"]
+        if chain.config.source.adapter is AdapterKind.FSDI_STAC_V1:
+            # The chain builds this item by hand for the tile and download routes; it is what the run writes.
+            assert outcome.items == (chain.item,)
         paths = {request.url.path for request in chain.searched}
         stac = {f"/api/stac/v1/collections/{chain.config.source.source_collection_id}", "/api/stac/v1/search"}
         assert paths in ({"/tileList.txt", "/blacklist.txt", "/"}, {"/esa_worldcover_grid.geojson", "/"}, stac)
@@ -117,7 +120,10 @@ async def test_a_found_item_carries_the_key_the_viewer_groups_by(chain: Chain) -
     # acquisition period, M3-11b F1), so only the shape is checked here. Any
     # other property enters as its own text (`earthx:state` of swissALTI3D, M5-08).
     for name, part in zip(viewer.group_by, key, strict=True):
-        assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", part) if name.endswith("datetime") else part
+        if name.endswith("datetime"):
+            assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", part)
+        else:
+            assert part
 
 
 def test_display_renders_a_tile_from_the_registrys_own_visualisation(
