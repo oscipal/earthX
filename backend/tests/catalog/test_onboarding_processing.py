@@ -64,7 +64,7 @@ from tests.earthx.readers import mini_dem, mini_zarr, mini_zarr_cf
 
 #: Q14: band math for the Sentinel-2 entry and the Zarr test entry, reprojection for the DEM; the mask over its own
 #: classes for ESA WorldCover (M5-07 plan §4.4, no band math there); reprojection of the TPS raster for Sentinel-1 GRD
-#: (DS-04 plan §4.7, Checkliste Punkt 9).
+#: (DS-04 plan §4.7, Checkliste Punkt 9); reprojection out of LV95 for swissALTI3D (M5-08 plan §4.6 point 9).
 OPERATOR_FOR = {
     "sentinel-2-c1-l2a": "band_math",
     "sentinel-1-grd": "reproject",
@@ -72,6 +72,7 @@ OPERATOR_FOR = {
     "cop-dem-glo-30": "reproject",
     "esa-worldcover-2020": "mask",
     "esa-worldcover-2021": "mask",
+    "swissalti3d": "reproject",
 }
 
 ENTRIES = list(TEST_ENTRIES)
