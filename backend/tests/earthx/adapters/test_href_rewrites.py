@@ -59,7 +59,8 @@ async def test_only_the_href_changes() -> None:
             }
 
 
-async def test_the_cache_keeps_what_the_source_said_and_a_hit_is_rewritten_too() -> None:
+async def test_the_cache_holds_the_rewritten_items_and_a_hit_returns_them() -> None:
+    """The rewrite is part of `normalize_for`, with the fixed asset keys of M5-08b: what is cached is already ours."""
     cache = MemoryCache()
     gateway, seen = answering(httpx.Response(200, json=load("sentinel_1_search")), policy=POLICY)
     async with gateway:
@@ -69,7 +70,7 @@ async def test_the_cache_keeps_what_the_source_said_and_a_hit_is_rewritten_too()
     assert second.from_cache
     assert second.items == first.items
     (stored,) = cache.rows.values()
-    assert all(href.startswith("s3://") for item in stored["features"] for href in hrefs(item))
+    assert all(href.startswith(HOST) for item in stored["features"] for href in hrefs(item))
 
 
 async def test_an_item_fetch_is_rewritten_live_and_from_the_cache() -> None:

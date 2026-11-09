@@ -127,6 +127,9 @@ source:
   # The global host names no region; the bucket answers `x-amz-bucket-region: eu-central-1` (measured 06.11.2026,
   # M5-07 plan §2), as the AWS Open Data registry says (`adr/0023` §6.2).
   data_region: aws:eu-central-1
+  # M5-08: the source keys every asset the same way in every item, and every item is a state of its own.
+  asset_keys: []
+  item_states: null
   # DS-04 plan §4.2, §4.3: the source writes https addresses itself, and no checksum over the whole object has
   # been measured on this host, so the version of an input stays its ETag.
   asset_href_rewrites: []

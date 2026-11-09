@@ -106,6 +106,10 @@ source:
   asset_hosts: [sentinel-s1-l1c.s3.eu-central-1.amazonaws.com]
   item_holding: federated
   data_region: aws:eu-central-1
+  # M5-08: the source keys every asset the same way in every item (`vv`, `vh`, `hh`, `hv`, the annotation files), and
+  # every item is a scene of its own.
+  asset_keys: []
+  item_states: null
   # The items write `s3://sentinel-s1-l1c/…` [M]; the bucket serves the same objects anonymously over https.
   asset_href_rewrites:
   - from_prefix: s3://sentinel-s1-l1c/

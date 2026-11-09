@@ -330,6 +330,15 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
             "item_holding": config.source.item_holding.value,
             # M5-07: where the storage of the assets lies (adr/0022 §7.2), for the description of the dataset.
             "data_region": config.source.data_region,
+            # M5-08: the fixed asset keys and which state of a tile is loaded (architekturplan.md 5.1).
+            "asset_keys": [
+                {"key": rule.key, "media_type": rule.media_type, "gsd": rule.gsd} for rule in config.source.asset_keys
+            ],
+            "item_states": (
+                None
+                if config.source.item_states is None
+                else {"rule": config.source.item_states.rule.value, "tile_pattern": config.source.item_states.tile_pattern}
+            ),
             # DS-04 plan §4.2, §4.3: the prefixes the adapter rewrites, and the checksum that versions an input.
             "asset_href_rewrites": [
                 {"from_prefix": rewrite.from_prefix, "to_prefix": rewrite.to_prefix}

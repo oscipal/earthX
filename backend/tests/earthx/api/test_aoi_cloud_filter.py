@@ -352,6 +352,7 @@ class Source:
             matched=None,
             next_page_token=str(end) if end < self.total else None,
             from_cache=False,
+            skipped=0,
         )
 
 

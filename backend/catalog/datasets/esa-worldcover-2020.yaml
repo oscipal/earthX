@@ -112,6 +112,9 @@ source:
   asset_hosts: [esa-worldcover.s3.eu-central-1.amazonaws.com]
   item_holding: materialized
   data_region: aws:eu-central-1
+  # M5-08: the source keys every asset the same way in every item, and every item is a state of its own.
+  asset_keys: []
+  item_states: null
   # DS-04 plan §4.2, §4.3: the source writes https addresses itself, and no checksum over the whole object has
   # been measured on this host, so the version of an input stays its ETag.
   asset_href_rewrites: []

@@ -108,6 +108,15 @@ ADAPTER_SPECS: AdapterSpecs = spec_table(
         filters=stac_api.EARTH_SEARCH.filters,
     ),
     AdapterSpec(
+        kind=AdapterKind.FSDI_STAC_V1,
+        search=stac_api.search_items,
+        fetch=stac_api.get_item,
+        materialize=stac_api.materialize_items,
+        # No aggregation at the source: an entry of this kind is materialized and counted by `catalog` (local-sql).
+        coverage={},
+        filters=stac_api.FSDI.filters,
+    ),
+    AdapterSpec(
         kind=AdapterKind.COP_DEM_BUCKET,
         search=None,
         fetch=None,
@@ -146,6 +155,9 @@ def check_adapter_specs(registry: DatasetRegistry, adapters: AdapterSpecs) -> No
             problems.append(f"{config.dataset_id}: federated, but {kind} offers no search")
         if spec.search is stac_api.search_items and kind not in stac_api.DIALECTS:
             problems.append(f"{config.dataset_id}: {kind} searches as a STAC API, but has no dialect")
+        if (config.source.asset_keys or config.source.item_states is not None) and kind not in stac_api.DIALECTS:
+            # Only the STAC API adapter applies them; a bucket adapter would pass them over without a word.
+            problems.append(f"{config.dataset_id}: {kind} applies no source.asset_keys or source.item_states")
         if config.search_filters and (spec.filters is None or not spec.filters.query):
             problems.append(f"{config.dataset_id}: has search filters, but {kind} applies no query")
         provider = config.coverage.provider
