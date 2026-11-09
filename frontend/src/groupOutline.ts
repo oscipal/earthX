@@ -94,46 +94,84 @@ function mapRings(geom: Geom, fn: (ring: Point[]) => Point[]): Geom {
     : (geom as Point[][][]).map((polygon) => polygon.map(fn));
 }
 
+type Box = [number, number, number, number];
+
+function boxOf(geom: Geom): Box {
+  const box: Box = [Infinity, Infinity, -Infinity, -Infinity];
+  for (const [x, y] of ringsOf(geom).flat()) {
+    box[0] = Math.min(box[0], x);
+    box[1] = Math.min(box[1], y);
+    box[2] = Math.max(box[2], x);
+    box[3] = Math.max(box[3], y);
+  }
+  return box;
+}
+
+const near = (a: Box, b: Box, tolerance: number): boolean =>
+  a[0] - tolerance <= b[2] && b[0] - tolerance <= a[2] && a[1] - tolerance <= b[3] && b[1] - tolerance <= a[3];
+
+// A ring this can snap: closed, with at least three corners. Anything else is left as it is, for the union to judge.
+const closedRing = (ring: Point[]): boolean => ring.length >= 4 && squaredDistance(ring[0], ring[ring.length - 1]) === 0;
+
 export function snapFootprints(footprints: readonly Geom[], tolerance = SNAP_TOLERANCE_DEG): Geom[] {
   const limit = tolerance * tolerance;
+  const boxes = footprints.map(boxOf);
+  // Only the footprints that come within the tolerance of each other are compared, so a group of many scenes costs what
+  // their neighbours cost. A footprint narrower than three tolerances is not snapped: corners of a neighbour would land on
+  // both of its long edges and cross them.
+  const neighbours = (index: number, before: number) =>
+    boxes.slice(0, before).flatMap((box, j) => (j !== index && near(box, boxes[index], tolerance) ? [j] : []));
+  const narrow = boxes.map((box) => box[2] - box[0] < 3 * tolerance || box[3] - box[1] < 3 * tolerance);
   // Corners first, each footprint onto those before it, so that two near corners become one point and not two that swapped.
+  // A corner that lies exactly on an earlier corner keeps it.
   const snapped: Geom[] = [];
-  for (const footprint of footprints) {
-    const earlier = snapped.flatMap((g) => ringsOf(g).flat());
+  footprints.forEach((footprint, index) => {
+    const earlier = narrow[index] ? [] : neighbours(index, index).flatMap((j) => ringsOf(snapped[j]).flat());
     snapped.push(
       mapRings(footprint, (ring) =>
-        ring.map((corner) => {
-          let best = corner;
-          let bestDistance = limit;
-          for (const other of earlier) {
-            const distance = squaredDistance(corner, other);
-            if (distance > 0 && distance <= bestDistance) {
-              best = other;
-              bestDistance = distance;
-            }
-          }
-          return best;
-        }),
+        !closedRing(ring)
+          ? ring
+          : ring.map((corner) => {
+              let best = corner;
+              let bestDistance = limit;
+              for (const other of earlier) {
+                const distance = squaredDistance(corner, other);
+                if (distance === 0) return corner;
+                if (distance <= bestDistance) {
+                  best = other;
+                  bestDistance = distance;
+                }
+              }
+              return best;
+            }),
       ),
     );
-  }
+  });
   // Then every edge takes the corners of the other footprints that lie near it, in their order along the edge.
   return snapped.map((footprint, index) => {
-    const others = snapped.flatMap((g, j) => (j === index ? [] : ringsOf(g).flatMap((ring) => ring.slice(0, -1))));
+    if (narrow[index]) return footprint;
+    const others = neighbours(index, snapped.length).flatMap((j) => ringsOf(snapped[j]).flatMap((ring) => ring.slice(0, -1)));
+    if (others.length === 0) return footprint;
     return mapRings(footprint, (ring) => {
+      if (!closedRing(ring)) return ring;
       const out: Point[] = [];
       for (let k = 0; k < ring.length - 1; k++) {
         const [a, b] = [ring[k], ring[k + 1]];
         // Two corners snapped onto one point leave it once; a corner that is no number stays, for the union to refuse.
         if (out.length === 0 || squaredDistance(a, out[out.length - 1]) !== 0) out.push(a);
-        const inserted = others
-          .filter((corner) => squaredDistance(corner, a) > limit && squaredDistance(corner, b) > limit)
-          .map((corner) => ({ corner, at: alongSegment(corner, a, b) }))
-          .filter((c): c is { corner: Point; at: { t: number; distance: number } } => c.at !== null && c.at.distance <= limit)
-          .sort((x, y) => x.at.t - y.at.t);
+        const [x0, x1] = [Math.min(a[0], b[0]) - tolerance, Math.max(a[0], b[0]) + tolerance];
+        const [y0, y1] = [Math.min(a[1], b[1]) - tolerance, Math.max(a[1], b[1]) + tolerance];
+        const inserted: { corner: Point; t: number }[] = [];
+        for (const corner of others) {
+          if (corner[0] < x0 || corner[0] > x1 || corner[1] < y0 || corner[1] > y1) continue;
+          if (squaredDistance(corner, a) <= limit || squaredDistance(corner, b) <= limit) continue;
+          const at = alongSegment(corner, a, b);
+          if (at && at.distance <= limit) inserted.push({ corner, t: at.t });
+        }
+        inserted.sort((x, y) => x.t - y.t);
         for (const { corner } of inserted) if (squaredDistance(corner, out[out.length - 1]) !== 0) out.push(corner);
       }
-      if (ring.length > 0) out.push(out[0]);
+      out.push(out[0]);
       return out;
     });
   });

@@ -222,4 +222,28 @@ describe('snapFootprints', () => {
     const [, north] = snapFootprints([SOUTH.coordinates as never, [NORTH.coordinates] as never]);
     expect((north as number[][][][])[0][0][0]).toEqual([-0.1, 1.2]);
   });
+
+  it('keeps a corner that lies exactly on an earlier corner, even with another one nearer than the tolerance', () => {
+    const a = [[[0, 0], [0.995, 0], [1, 0], [1, 1], [0, 1], [0, 0]]];
+    const c = [[[0.995, 0], [2, 0], [2, -1], [0.995, -1], [0.995, 0]]];
+    const [, snapped] = snapFootprints([a, c] as never);
+    expect((snapped as number[][][])[0][0]).toEqual([0.995, 0]);
+  });
+
+  it('leaves a ring that is not closed or too short as it is', () => {
+    const open = [[[0.003, 1.2], [2, 1.2], [2, 3], [0.003, 3]]];
+    const short = [[[0.003, 1.2], [0.003, 1.2]]];
+    expect(snapFootprints([SOUTH.coordinates as never, open as never])[1]).toEqual(open);
+    expect(snapFootprints([SOUTH.coordinates as never, short as never])[1]).toEqual(short);
+  });
+
+  it('leaves a footprint narrower than three tolerances as it is, instead of crossing its edges', () => {
+    const strip = [[[0, 1.21], [2, 1.21], [2, 1.218], [0, 1.218], [0, 1.21]]];
+    expect(snapFootprints([SOUTH.coordinates as never, strip as never])[1]).toEqual(strip);
+  });
+
+  it('compares only footprints that come near each other', () => {
+    const far = [[[50, 50], [51, 50], [51, 51], [50, 51], [50, 50]]];
+    expect(snapFootprints([SOUTH.coordinates as never, far as never])).toEqual([SOUTH.coordinates, far]);
+  });
 });
