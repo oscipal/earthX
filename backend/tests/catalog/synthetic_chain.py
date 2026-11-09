@@ -35,9 +35,17 @@ import pytest
 from rasterio.warp import transform_bounds
 from rio_tiler.constants import WEB_MERCATOR_TMS, WGS84_CRS
 
-from earthx.catalog.registry import AdapterKind, DataFormat, DatasetConfig, DatasetRegistry, ItemHolding, ViewerInfo
+from earthx.catalog.registry import (
+    AdapterKind,
+    DataFormat,
+    DatasetConfig,
+    DatasetRegistry,
+    Georeferencing,
+    ItemHolding,
+    ViewerInfo,
+)
 from earthx.gateway import Gateway, Policy, check_url, host_of
-from tests.earthx.readers import mini_cog, mini_dem, mini_worldcover, mini_zarr, mini_zarr_composite
+from tests.earthx.readers import mini_cog, mini_dem, mini_gcp, mini_worldcover, mini_zarr, mini_zarr_composite
 
 #: The one host both synthetic stores live on.
 HOST = mini_zarr.HOST
@@ -117,14 +125,16 @@ def build(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
         # (`test_onboarding_endtoend.py`'s replacement for link 1).
         return _build_materialized(config, render_asset, tmp_path, monkeypatch)
 
-    if config.format is DataFormat.COG:
+    if config.georeferencing is Georeferencing.GCP_TPS:
+        href, bounds, gsd, read_addresses = _gcp_asset(tmp_path, monkeypatch)
+    elif config.format is DataFormat.COG:
         href, bounds, gsd, read_addresses = _cog_asset(tmp_path, monkeypatch)
     elif config.format is DataFormat.ZARR:
         href, bounds, gsd, read_addresses = _zarr_asset(tmp_path, monkeypatch)
     else:
         raise UnsupportedFormat(f"no synthetic asset for format {config.format.value!r}")
 
-    synthetic = replace(config, source=replace(config.source, asset_hosts=(HOST,)))
+    synthetic = replace(config, source=replace(config.source, asset_hosts=(HOST,), asset_href_rewrites=()))
     item = stac_item(item_asset_key(config, render_asset), href, bounds, gsd)
     gateway, searched = gateway_answering_search(synthetic, item)
     resolve_from_memory(monkeypatch)
@@ -148,6 +158,18 @@ def _cog_asset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _Asset:
     side = mini_cog.SIZE * mini_cog.RESOLUTION
     bounds = (mini_cog.ORIGIN_X, mini_cog.ORIGIN_Y - side, mini_cog.ORIGIN_X + side, mini_cog.ORIGIN_Y)
     return mini_cog.ASSET_URL, bounds, mini_cog.RESOLUTION, lambda: list(cleared)
+
+
+def _gcp_asset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _Asset:
+    """A file placed by ground control points only, for an entry read through a thin-plate spline (DS-04b, Checkliste
+    Punkt 9): the whole chain then runs on the TPS raster of ``readers``."""
+    path = mini_gcp.build_mini_gcp(tmp_path / "mini-gcp.tif")
+    cleared = mini_cog.serve_cog(path, monkeypatch)
+    corners = [mini_gcp.position(row, col) for row in (0, mini_gcp.SIZE) for col in (0, mini_gcp.SIZE)]
+    lons, lats = [lon for lon, _ in corners], [lat for _, lat in corners]
+    bounds = transform_bounds(WGS84_CRS, CRS, min(lons), min(lats), max(lons), max(lats))
+    # The step of the file in metres, as a GRD item gives it in `sar:pixel_spacing_range`.
+    return mini_cog.ASSET_URL, bounds, 10.0, lambda: list(cleared)
 
 
 def _zarr_asset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _Asset:
@@ -191,6 +213,8 @@ def stac_item(asset_key: str, href: str, bounds: tuple[float, ...], gsd: float) 
             # built from this item without a second fixture.
             "datetime": "2026-01-02T10:00:00Z",
             "grid:code": "MGRS-32TNS",
+            # The pass Sentinel-1 GRD groups by (DS-04 plan F3).
+            "s1:datatake_id": "12345",
             # The Zarr store carries no CRS of its own (adr/0007 §3.4); for the
             # COG it is redundant and harmless.
             "proj:code": CRS,
@@ -400,7 +424,7 @@ def _build_worldcover(config: DatasetConfig, render_asset: str, tmp_path: Path, 
 
     path = mini_worldcover.build_mini_worldcover(tmp_path / "mini_worldcover.tif")
     read_addresses = mini_worldcover.serve_worldcover(path, monkeypatch)
-    synthetic = replace(config, source=replace(config.source, endpoint=f"https://{HOST}", asset_hosts=(HOST,)))
+    synthetic = replace(config, source=replace(config.source, endpoint=f"https://{HOST}", asset_hosts=(HOST,), asset_href_rewrites=()))
     version, year = config.source.source_collection_id.split("/")
     tile = mini_worldcover.TILE
     item = worldcover_item(
@@ -437,7 +461,7 @@ def _build_materialized(
     # Only the host has to match what the real adapter builds an href from
     # (`config.source.endpoint`/`.tif`): `vsicurl_path` is monkeypatched above to
     # serve the local file regardless of the path it is asked for.
-    synthetic = replace(config, source=replace(config.source, endpoint=f"https://{HOST}", asset_hosts=(HOST,)))
+    synthetic = replace(config, source=replace(config.source, endpoint=f"https://{HOST}", asset_hosts=(HOST,), asset_href_rewrites=()))
     item = dem_item(mini_dem.TILE_NAME, mini_dem.BOUNDS, config=synthetic, gsd=30.0)
     gateway, searched = gateway_answering_materialize(synthetic, item)
     resolve_from_memory(monkeypatch)

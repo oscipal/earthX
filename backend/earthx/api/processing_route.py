@@ -128,7 +128,7 @@ from earthx.processing.errors import AoiOutsideInputs, JobTooLarge, RecipeInvali
 from earthx.processing.methods import methods_of
 from earthx.processing.operators import OperatorRegistry
 from earthx.processing.plan import ResamplingFacts, describe_resampling, estimate
-from earthx.processing.recipe import RECIPE_VERSION, job_recipe_document, loads_i_json
+from earthx.processing.recipe import RECIPE_VERSION, RecipeNotice, job_recipe_document, loads_i_json
 
 LOGGER = logging.getLogger("earthx.api.processing")
 
@@ -1142,6 +1142,7 @@ def _recipe_bytes(api: JobApi, body: dict[str, Any], status: JobStatus) -> bytes
             started=_instant(result.get("started")) or status.started_at,
             finished=_instant(result.get("finished")) or status.finished_at,
             methods=stored if isinstance(stored, str) and stored else None,
+            notices=[RecipeNotice.model_validate(notice) for notice in result.get("notices") or []],
         )
         if methods_of(document) is not None:
             return document

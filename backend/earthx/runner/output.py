@@ -112,7 +112,8 @@ class RunFolder:
 def _local_document(recipe_raw: bytes, provenance: dict[str, Any]) -> dict[str, Any]:
     """The recipe of the input with the provenance of this run in place of the cloud run's: what the text is written from."""
     document = json.loads(recipe_raw)
-    own = {name: provenance[name] for name in Provenance.model_fields}
+    # `notices` is left out of the dump where a dataset has none (DS-04b); every other field is always there.
+    own = {name: provenance[name] for name in Provenance.model_fields if name != "notices" or name in provenance}
     return {**document, "provenance": own}
 
 
@@ -135,6 +136,7 @@ def provenance_document(
         started=started,
         finished=finished,
         attribution=list(source.attribution),
+        notices=list(source.notices),
     )
     document = {
         **local.model_dump(mode="json"),

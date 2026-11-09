@@ -257,9 +257,10 @@ Output = Annotated[RasterOutput | CropOutput, Field(discriminator="kind")]
 
 
 class InputVersion(_Model):
-    """The version of one input at acceptance (§4.6): content checksum, ETag or item update time."""
+    """The version of one input at acceptance (§4.6): content checksum, the host's checksum over the whole object
+    (``crc64nvme``, DS-04 plan §4.3), ETag or item update time."""
 
-    kind: Literal["file:checksum", "etag", "updated"]
+    kind: Literal["file:checksum", "crc64nvme", "etag", "updated"]
     value: Text
 
 
@@ -475,6 +476,14 @@ class AppliedScaling(_Model):
     offsets: list[float]
 
 
+class RecipeNotice(_Model):
+    """A notice of the dataset an input came from (DS-04 plan §4.4): its code, mark and sentence, as the registry says."""
+
+    code: Text
+    label: Text
+    tooltip: Text
+
+
 class Provenance(_Model):
     """How a result came about (§4.1). Never hashed, never part of a cache key."""
 
@@ -490,6 +499,10 @@ class Provenance(_Model):
     #: The paragraph for a methods section, written from the rest of the document (M4-19a, NM4-08).
     #: Absent in files written before NM4-08.
     methods: Annotated[str, Field(min_length=1)] | None = None
+    #: What the dataset says a user should know about its values (DS-04 plan §4.4); a consequence of the dataset, not
+    #: of the order, so never part of a hash (Auslegung A1). Left out where there is none, so that every recipe.json
+    #: of a dataset without notices stays what it was.
+    notices: list[RecipeNotice] = Field(default_factory=list, exclude_if=lambda value: not value)
 
     @model_validator(mode="after")
     def _local_is_self_attested(self) -> Provenance:
@@ -693,10 +706,13 @@ def input_hosts(entry: Input, allowed_hosts: Sequence[str]) -> tuple[str, ...]:
     return tuple(sorted(hosts_for(hrefs)))
 
 
-def input_version(item: Mapping[str, Any], asset: str, *, etag: str | None = None) -> InputVersion | None:
-    """The version of one item asset in the order of F4: checksum, then ETag, then ``updated``.
+def input_version(
+    item: Mapping[str, Any], asset: str, *, crc64nvme: str | None = None, etag: str | None = None
+) -> InputVersion | None:
+    """The version of one item asset in the order of F4: checksum, then the host's CRC64NVME, then ETag, then
+    ``updated``.
 
-    Pure: the ETag, where one is needed, is fetched by `api` through `gateway` and
+    Pure: the host's checksum and the ETag, where one is needed, are fetched by `api` through `gateway` and
     handed in. ``asset`` is the key on the item, for Zarr the group side of it.
     """
     assets = item.get("assets")
@@ -704,6 +720,8 @@ def input_version(item: Mapping[str, Any], asset: str, *, etag: str | None = Non
     checksum = entry.get("file:checksum") if isinstance(entry, Mapping) else None
     if isinstance(checksum, str) and checksum:
         return InputVersion(kind="file:checksum", value=checksum)
+    if crc64nvme:
+        return InputVersion(kind="crc64nvme", value=crc64nvme)
     if etag:
         return InputVersion(kind="etag", value=etag)
     properties = item.get("properties")
@@ -729,6 +747,7 @@ def job_recipe_document(
     started: datetime | None,
     finished: datetime | None,
     methods: str | None = None,
+    notices: Sequence[RecipeNotice] = (),
 ) -> bytes:
     """``recipe.json`` of a job: its own recipe and the provenance of the cloud run (adr/0014 §10.1).
 
@@ -749,5 +768,6 @@ def job_recipe_document(
         finished=finished,
         attribution=list(attribution),
         methods=methods,
+        notices=list(notices),
     )
     return document_bytes({**body, "provenance": provenance.model_dump(mode="json")})

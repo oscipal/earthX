@@ -1,0 +1,270 @@
+# Sentinel-1 GRD over Earth Search v1 (COG, in radar geometry with ground control points). Decided in
+# docs/adr/0018-sentinel-1-quelle.md part A (Otto 26.10.2026) and planned in docs/plans/ds/ds-04-s1-anbinden.md
+# (answers of 07.11.2026, §9a).
+#
+# One file is one entry of the registry (KLAERUNGEN B13 stage 2). Every field is set on purpose, none has a default
+# (KLAERUNGEN B10); every value carries the place it comes from. [M] measured at the source on 07.11.2026 (DS-04 plan
+# §2) or 08.11.2026 (DS-04b), metadata only.
+
+# The same id as the upstream collection, the rule of Sentinel-2 (DS-04 plan §4.5).
+dataset_id: sentinel-1-grd
+title: Sentinel-1 GRD
+description: >-
+  Sentinel-1 C-band SAR, Level-1 Ground Range Detected, as cloud-optimized GeoTIFF in radar geometry. Served by Earth
+  Search v1 (Element 84) from the Registry of Open Data on AWS. Placed by its ground control points without terrain
+  correction, and not calibrated: the values are digital numbers (adr/0018 §3.1).
+# German and English (adr/0026 F7, DS-04 plan §4.5).
+keywords: [sentinel-1, radar, SAR, C-band, backscatter, Rückstreuung, GRD, copernicus]
+category: radar
+# The source's own `providers` [M]. AWS links its registry page over https here, unlike at Sentinel-2.
+providers:
+- name: ESA
+  roles: [producer, processor, licensor]
+  url: https://earth.esa.int/web/guest/home
+- name: AWS
+  roles: [host]
+  url: https://registry.opendata.aws/sentinel-1
+- name: Element 84
+  roles: [processor]
+  url: https://element84.com
+# The collection names no `gsd`; these are the pixel spacings of `sar:pixel_spacing_range` [M], which is the spacing
+# of the pixels, not the resolution of the sensor (Auslegung A5).
+gsd: [3.5, 10.0, 25.0, 40.0]
+# No DOI found, and the collection carries no `cite-as` link [M]. The citation names the product and the copy we read
+# (onboarding checklist point 3, DS-04 plan §4.5).
+doi: null
+citation: >-
+  Copernicus Sentinel-1 Level-1 GRD, European Space Agency; cloud-optimized GeoTIFF distributed by Element 84, Earth
+  Search v1, collection sentinel-1-grd, https://earth-search.aws.element84.com/v1/collections/sentinel-1-grd
+data_class: raster-time-series
+format: cog
+# adr/0018 F1: a thin-plate spline through the GCPs in tile, crop, job and runner (DS-04a).
+georeferencing: gcp_tps
+# Both extents as the collection states them [M]; the end stays open because the archive still grows.
+spatial_extent:
+  bbox: [-180.0, -90.0, 180.0, 90.0]
+temporal_extent:
+  start: 2014-10-10T00:28:21+00:00
+  end: null
+# adr/0018 §4.4 and F3: operations within one scene and one pass, nothing that needs calibrated values.
+capabilities:
+  roi: true
+  time_range: true
+  band_math: true
+  interpolation: true
+  reprojection: true
+  # No class layer.
+  masking: false
+  # DS-04 plan F4: off until DS-05d (σ⁰); `mask_values` knows fixed values only, and DN are not σ⁰.
+  value_masking: false
+  normalization: true
+  ml_processing: false
+  # Dual-pol, not complex quad-pol: decomp.py stays out (ENTSCHEIDUNGEN §3).
+  quad_pol: false
+  single_coverage_product: false
+# DS-04 plan F6 (Otto 07.11.2026): as Sentinel-2, the Sentinel Data Legal Notice, tier Processing, the same
+# attribution and the same terms (adr/0003 §11.2).
+license:
+  spdx_id: null
+  name: Sentinel Data Legal Notice
+  url: https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice
+  commercial_use: true
+  distribution: true
+  derivatives: true
+  share_alike: false
+  attribution_required: true
+  tier: processing
+  attribution_modified: Contains modified Copernicus Sentinel data {year}
+  attribution_unmodified: Copernicus Sentinel data {year}
+  terms:
+    url: https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice
+    notice:
+      en: >-
+        Use is subject to the Sentinel Data Legal Notice: {terms_url}. The data are provided without any express
+        or implied warranty, including as regards quality and suitability for any purpose; by using them the user
+        renounces any claims for damages against the European Union and the providers of the data. The waiver
+        encompasses any dispute, including contracts and torts claims, that might be filed in court, in arbitration
+        or in any other form of dispute settlement.
+legal_status: cleared
+legal_note: null
+access:
+  # Earth Search answered 200 for the collection, the bucket 200 for `?requestPayment` [M, 08.11.2026].
+  token_free_checked_at: 2026-11-08
+  method: anonymous HTTPS, no authentication header; the bucket is not requester pays (adr/0018 §3.1)
+  # `Access-Control-Allow-Origin: *` at Earth Search and at the bucket [M].
+  cors: true
+  # The items say `storage:requester_pays: true`, the bucket says otherwise; the live smoke checks the bucket
+  # (Auslegung A4).
+  account: none
+  account_provider: null
+  account_paths: []
+source:
+  adapter: earth-search-v1
+  endpoint: https://earth-search.aws.element84.com/v1
+  source_collection_id: sentinel-1-grd
+  # The host the rewrite below leads to (adr/0018 §4.3); the items name no other.
+  asset_hosts: [sentinel-s1-l1c.s3.eu-central-1.amazonaws.com]
+  item_holding: federated
+  data_region: aws:eu-central-1
+  # M5-08: the source keys every asset the same way in every item (`vv`, `vh`, `hh`, `hv`, the annotation files), and
+  # every item is a scene of its own.
+  asset_keys: []
+  item_states: null
+  # The items write `s3://sentinel-s1-l1c/…` [M]; the bucket serves the same objects anonymously over https.
+  asset_href_rewrites:
+  - from_prefix: s3://sentinel-s1-l1c/
+    to_prefix: https://sentinel-s1-l1c.s3.eu-central-1.amazonaws.com/
+  # Every object of the bucket carries a CRC64NVME checksum over the whole file (adr/0018 §3.1).
+  asset_checksum: crc64nvme
+coverage:
+  provider: upstream-aggregation
+  # An IW scene is about 250 km across the track (adr/0018 §3.1). DS-04 plan A6 asks for z8 like Sentinel-2, but a
+  # z8 cell (about 156 km at the equator) cannot hold a 250 km footprint, which the start check refuses (adr/0004
+  # §5); z7 is the finest level it allows (Otto 08.11.2026, DS-04 plan F8).
+  typical_footprint_km: 250.0
+  max_geotile_level: 7
+# DS-04 plan F2 (Otto 07.11.2026): the co-polarisation in grey, VV where the item has it, else HH. The stretch is the
+# median of the 2nd and 98th percentiles of DN over 8 scenes each (IW and EW, March to October 2026, read at overview
+# 1:64) [M, 08.11.2026]: VV 87 and 249, HH 69 and 755, rounded. Only the picture before anyone touches a control:
+# the viewer asks `/statistics` per scene (adr/0006 §5, F18).
+default_render:
+  title: Co-polarisation (VV or HH)
+  assets: [vv, hh]
+  rescale:
+  - [90.0, 250.0]
+  - [70.0, 750.0]
+  colormap_name: null
+  expression: null
+  resampling: nearest
+  asset_selection: first_present
+# DS-04 plan F3 (Otto 07.11.2026): one step of the time line per pass, the slices of one datatake making one mosaic,
+# and the results grouped the same way. `datetime` enters as its UTC date (registry.ViewerInfo).
+#
+# The thumbnail lies in radar geometry (adr/0018 §4.2), so the browse view shows tiles. A z7 tile (about 313 km at
+# the equator) holds about one scene; below it the coverage map shows where scenes are. z19 as at Sentinel-2: the
+# pixel spacing of IW is 10 m too. A TPS tile from z7 to z13 costs 0.1 to 0.3 s (DS-04 plan §11).
+viewer:
+  group_by: [datetime, 's1:datatake_id']
+  min_zoom: 7
+  max_zoom: 19
+  browse: preview_tiles
+  quicklook_nodata_max: null
+  results_group_by: [datetime, 's1:datatake_id']
+health:
+  status: ok
+# As Sentinel-2: the same source without an operating commitment (Auslegung A7).
+maturity: stable
+zarr: null
+mask: null
+# Digital numbers of the amplitude, not calibrated (adr/0018 §3.1, DS-04 plan §4.5). An item carries one pair.
+band_units:
+  vv: DN
+  vh: DN
+  hh: DN
+  hv: DN
+# The source's quicklook and the SAFE annotation files, by the keys of the items [M]. The calibration tables are
+# what DS-05d will read.
+auxiliary_assets:
+- thumbnail
+- safe-manifest
+- schema-product-vv
+- schema-product-vh
+- schema-product-hh
+- schema-product-hv
+- schema-calibration-vv
+- schema-calibration-vh
+- schema-calibration-hh
+- schema-calibration-hv
+- schema-noise-vv
+- schema-noise-vh
+- schema-noise-hh
+- schema-noise-hv
+# DS-04 plan F5 (Otto 07.11.2026), measured at the source [M]: `in` narrows on each of the four, and on
+# `sar:polarizations` it means "holds one of these" (`in ["VH"]` finds as many as `eq "VH"`).
+search_filters:
+- property: sat:orbit_state
+  kind: values
+  title: Orbit direction
+  description: Whether the satellite flew towards the north (ascending) or the south (descending).
+  unit: null
+  minimum: null
+  maximum: null
+  integer: false
+  values:
+  - value: ascending
+    label: Ascending
+  - value: descending
+    label: Descending
+  within_aoi: null
+  group: Orbit
+  area_based: false
+- property: sat:relative_orbit
+  kind: range
+  title: Relative orbit
+  description: The track of the 12-day repeat cycle the scene lies on, 1 to 175. Scenes of one track look alike.
+  unit: null
+  minimum: 1.0
+  maximum: 175.0
+  integer: true
+  values: []
+  within_aoi: null
+  group: Orbit
+  area_based: false
+- property: sar:instrument_mode
+  kind: values
+  title: Acquisition mode
+  description: How the radar scanned the ground. IW is the mode over land; EW covers the polar seas and sea ice.
+  unit: null
+  minimum: null
+  maximum: null
+  integer: false
+  values:
+  - value: IW
+    label: Interferometric Wide swath (IW)
+  - value: EW
+    label: Extra Wide swath (EW)
+  - value: SM
+    label: Stripmap (SM)
+  within_aoi: null
+  group: Acquisition
+  area_based: false
+- property: sar:polarizations
+  kind: values
+  title: Polarization
+  description: The scene holds at least one of the chosen polarizations. Most scenes hold VV and VH, polar ones HH and HV.
+  unit: null
+  minimum: null
+  maximum: null
+  integer: false
+  values:
+  - value: VV
+    label: VV
+  - value: VH
+    label: VH
+  - value: HH
+    label: HH
+  - value: HV
+    label: HV
+  within_aoi: null
+  group: Acquisition
+  area_based: false
+# DS-04 plan F5: judged per pass (the overpass key holds the instant) and with the coverage of the AOI from the
+# footprints.
+search_capabilities:
+  evaluate: true
+  aoi_coverage: true
+# adr/0018 F3: no index buttons on DN; the quick processings in dB come with DS-05a and DS-05c.
+index_presets: []
+true_color: []
+# adr/0018 F2, DS-04 plan §4.4; the tooltips confirmed by Otto on 08.11.2026 (F10).
+notices:
+- code: approximate_geolocation
+  label: Approximate geolocation
+  tooltip: >-
+    Placed by the scene's own ground control points without terrain correction; positions can be off by tens of
+    metres, more in steep terrain.
+- code: uncalibrated_dn
+  label: Uncalibrated (DN)
+  tooltip: >-
+    Values are the digital numbers of the GRD product, not calibrated backscatter, so dB thresholds from the
+    literature do not apply.

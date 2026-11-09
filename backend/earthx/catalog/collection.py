@@ -291,6 +291,8 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
                 "colormap_name": config.default_render.colormap_name,
                 "expression": config.default_render.expression,
                 "resampling": config.default_render.resampling,
+                # DS-04 plan F2: our own field beside those of the extension.
+                "asset_selection": config.default_render.asset_selection.value,
             }
         ),
         # architekturplan.md 5.1, ninth row: what the viewer decides from the
@@ -337,7 +339,17 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
                 if config.source.item_states is None
                 else {"rule": config.source.item_states.rule.value, "tile_pattern": config.source.item_states.tile_pattern}
             ),
+            # DS-04 plan §4.2, §4.3: the prefixes the adapter rewrites, and the checksum that versions an input.
+            "asset_href_rewrites": [
+                {"from_prefix": rewrite.from_prefix, "to_prefix": rewrite.to_prefix}
+                for rewrite in config.source.asset_href_rewrites
+            ],
+            "asset_checksum": None if config.source.asset_checksum is None else config.source.asset_checksum.value,
         },
+        # DS-04 plan §4.4: the marks the viewer shows beside the dataset, its results and its layer.
+        "earthx:notices": [
+            {"code": notice.code, "label": notice.label, "tooltip": notice.tooltip} for notice in config.notices
+        ],
         # architekturplan.md 5.1, tenth row (adr/0007 §12.11 point 14): how settled
         # the source itself is, not a measurement like earthx:health. No default on
         # the entry (KLAERUNGEN B10), so this is always one of the three values.

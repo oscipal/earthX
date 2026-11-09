@@ -615,6 +615,10 @@ mechanisch in einen openEO-Graphen übersetzen, umgekehrt nicht [A].
     Rezept und jeder Hash von vorher bleibt damit gleich, `gcp_tps` geht in Hash und Cache-Schlüssel ein.
   - `version` braucht für das DEM eine Anfrage über `gateway`, und
     `resolve_asset` ist rein (kein Netz).
+  - *Nachtrag DS-04b (08.11.2026, `plans/ds/ds-04-s1-anbinden.md` §12):* `version.kind` kennt zusätzlich
+    `crc64nvme`, die Prüfsumme des Hosts über das ganze Objekt; sie kommt nach `file:checksum` und vor dem ETag,
+    nur wo die Registry `source.asset_checksum` nennt. `provenance` trägt `notices` (Code, Marke, Satz je Hinweis
+    des Datensatzes); das Feld fehlt, wo es keine gibt, und geht nie in einen Hash ein (Auslegung A1).
   - `bands` kommt aus dem Item (`raster:bands` bzw. `bands`). Der Worker
     vergleicht es mit der Datei (§5.4).
 - `groups` übernimmt die Gruppierung des Downloads (P19, M3-17). So beschreibt

@@ -291,6 +291,7 @@ class TestRefusedBeforeReading:
             doi=None,
             citation=None,
             license=synthetic.license,
+            notices=(),
             retired_on=date(2026, 10, 25),
             successor="other",
             reason="a test",

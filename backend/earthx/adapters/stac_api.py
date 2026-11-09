@@ -70,7 +70,15 @@ from earthx.adapters.federated_search import (
     ttl_for_window,
     with_core_bands,
 )
-from earthx.catalog.registry import AdapterKind, AssetKeyRule, DatasetConfig, ItemHolding, ItemStates
+from earthx.catalog.registry import (
+    AdapterKind,
+    AssetKeyRule,
+    DatasetConfig,
+    HrefRewrite,
+    ItemHolding,
+    ItemStates,
+    rewrite_href,
+)
 from earthx.catalog.search_filters import FilterConditions, RangeCondition
 from earthx.gateway import Gateway, host_of
 
@@ -218,8 +226,10 @@ def _fits(asset: dict[str, Any], rule: AssetKeyRule) -> bool:
 
 
 def normalize_for(dialect: StacDialect, config: DatasetConfig, item: Item) -> Item:
-    """An item of the source as ours: the dialect's translation first, then what the entry fixes (M5-08 plan §4.1)."""
-    return with_fixed_asset_keys(dialect.normalize_item(item), config.source.asset_keys)
+    """An item of the source as ours: the dialect's translation first, then what the entry fixes (M5-08 plan §4.1):
+    the asset keys, and the asset addresses under its rewrites (DS-04 plan §4.2)."""
+    fixed = with_fixed_asset_keys(dialect.normalize_item(item), config.source.asset_keys)
+    return _rewritten(fixed, config.source.asset_href_rewrites)
 
 
 async def search_items(
@@ -290,6 +300,24 @@ async def get_item(
     item = normalize_for(dialect, config, item)
     await cache_set(cache, key, {"item": item}, ttl_s=TTL_ITEM_S, dataset_id=dataset_id)
     return item
+
+
+def _rewritten(item: Item, rewrites: tuple[HrefRewrite, ...]) -> Item:
+    """The item with each asset's ``href`` rewritten; every other field stays as the source wrote it (Auslegung A4)."""
+    assets = item.get("assets")
+    if not rewrites or not isinstance(assets, dict):
+        return item
+    return {
+        **item,
+        "assets": {
+            key: (
+                {**asset, "href": rewrite_href(asset["href"], rewrites)}
+                if isinstance(asset, dict) and isinstance(asset.get("href"), str)
+                else asset
+            )
+            for key, asset in assets.items()
+        },
+    }
 
 
 def _search_body(

@@ -63,20 +63,27 @@ async def gateway() -> AsyncIterator[Gateway]:
         yield gateway
 
 
+def _held(value: Any) -> tuple[Any, ...]:
+    """The values one item holds: a list property (``sar:polarizations``) holds each of its entries, and a values
+    filter keeps the item where it holds one of the chosen (DS-04 plan §2, measured)."""
+    return tuple(value) if isinstance(value, list) else (value,)
+
+
 def _probes(search_filter: SearchFilter, found: list[Any]) -> list[Condition]:
     """Conditions whose result the sample itself tells: both halves of a range split at its median, and for a choice
     the value the sample holds most often and, where there is one, a value it does not hold at all."""
     if search_filter.kind is FilterKind.RANGE:
         median = statistics.median(found)
         return [RangeCondition(minimum=None, maximum=median), RangeCondition(minimum=median, maximum=None)]
-    held = max(set(found), key=found.count)
-    absent = [entry.value for entry in search_filter.values if entry.value not in found]
+    every = [entry for value in found for entry in _held(value)]
+    held = max(set(every), key=every.count)
+    absent = [entry.value for entry in search_filter.values if entry.value not in every]
     return [ValuesCondition(values=(held,)), *([ValuesCondition(values=(absent[0],))] if absent else [])]
 
 
 def _keeps(condition: Condition, value: Any) -> bool:
     if isinstance(condition, ValuesCondition):
-        return value in condition.values
+        return any(entry in condition.values for entry in _held(value))
     return (condition.minimum is None or value >= condition.minimum) and (condition.maximum is None or value <= condition.maximum)
 
 
@@ -101,7 +108,7 @@ async def _recent_values_are_known(config: DatasetConfig, gateway: Gateway, sear
     params = SearchParams(bbox=BBOX, start=until - timedelta(days=30), end=until, limit=SAMPLE)
     recent = await search_items(config, params, adapters=ADAPTER_SPECS, gateway=gateway)
     offered = {entry.value for entry in search_filter.values}
-    held = {item.get("properties", {}).get(search_filter.property) for item in recent.items}
+    held = {entry for item in recent.items for entry in _held(item.get("properties", {}).get(search_filter.property))}
     assert held <= offered, f"{config.dataset_id}: the source holds a new value of {search_filter.property}: add it to the registry"
 
 
@@ -123,7 +130,8 @@ async def test_the_registry_filters_still_fit_their_source(gateway: Gateway) -> 
             assert all(value is not None for value in found), f"{config.dataset_id}: an item lacks {name}"
             if search_filter.kind is FilterKind.VALUES:
                 offered = {entry.value for entry in search_filter.values}
-                assert set(found) <= offered, f"{config.dataset_id}: the source holds a value of {name} not offered"
+                held = {entry for value in found for entry in _held(value)}
+                assert held <= offered, f"{config.dataset_id}: the source holds a value of {name} not offered"
                 await _recent_values_are_known(config, gateway, search_filter)
             narrowed_somewhere = False
             for number, condition in enumerate(_probes(search_filter, found)):
@@ -135,7 +143,7 @@ async def test_the_registry_filters_still_fit_their_source(gateway: Gateway) -> 
                     assert await _counted(config, gateway, {name: condition}) == matched, (
                         f"{config.dataset_id}: the coverage count does not follow {name}"
                     )
-            if len(set(found)) > 1:
+            if len({_held(value) for value in found}) > 1:
                 assert narrowed_somewhere, f"{config.dataset_id}: {name} does not narrow the sample"
 
         url = f"{config.source.endpoint.rstrip('/')}/collections/{config.source.source_collection_id}/queryables"

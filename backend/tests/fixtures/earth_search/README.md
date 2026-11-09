@@ -87,3 +87,12 @@ Datei hält je Fall die Anfragen, wie sie das Gateway verlassen (mit Rumpf als T
 die Schreibvorgänge in den Cache und die Antworten an den Aufrufer. Sie entsteht nur aus
 den synthetischen Dateien dieses Ordners und wird nur mit Absicht neu geschrieben, nie im
 selben Commit wie eine Änderung am Adapter.
+
+## `sentinel_1_search.json` (DS-04b)
+
+Eine Suchantwort mit zwei erfundenen Sentinel-1-GRD-Items in der Form, die Earth Search
+v1 am 07.11.2026 lieferte (`plans/ds/ds-04-s1-anbinden.md` §2): je Polarisation ein
+Datenband (`vv`/`vh` bzw. `hh`/`hv`) und der Pixelabstand `sar:pixel_spacing_range`, dazu `safe-manifest`, `schema-product-<pol>`,
+`schema-calibration-<pol>`, `schema-noise-<pol>` und `thumbnail`, alle Adressen als
+`s3://sentinel-s1-l1c/…`, und `storage:requester_pays: true`, wie die Quelle es angibt.
+IDs, Pfade, Zeiten, Bahnen und Geometrien sind erfunden.

@@ -15,6 +15,7 @@ from earthx.catalog.registry import (
     AccessInfo,
     AccountKind,
     AdapterKind,
+    AssetSelection,
     BrowseMode,
     Capabilities,
     CoverageInfo,
@@ -112,6 +113,8 @@ def valid_config() -> DatasetConfig:
             data_region="unknown",
             asset_keys=(),
             item_states=None,
+            asset_href_rewrites=(),
+            asset_checksum=None,
         ),
         coverage=CoverageInfo(
             provider=CoverageProvider.UPSTREAM_AGGREGATION,
@@ -125,6 +128,7 @@ def valid_config() -> DatasetConfig:
             colormap_name=None,
             expression=None,
             resampling="nearest",
+            asset_selection=AssetSelection.ALL,
         ),
         viewer=ViewerInfo(
             group_by=("datetime",),
@@ -148,6 +152,7 @@ def valid_config() -> DatasetConfig:
         search_capabilities=SearchCapabilities(evaluate=False, aoi_coverage=False),
         index_presets=(),
         true_color=(),
+        notices=(),
     )
 
 

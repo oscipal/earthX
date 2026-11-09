@@ -27,7 +27,7 @@ import pytest
 
 from earthx.catalog.registry import FilterKind
 from earthx.gateway import Gateway
-from tests.catalog.entries import SENTINEL_2_L2A
+from tests.catalog.entries import REGISTRY, SENTINEL_2_L2A
 
 pytestmark = pytest.mark.anyio
 
@@ -93,17 +93,25 @@ def _worldcover_double(request: httpx.Request) -> httpx.Response:
     raise AssertionError(f"the double has no answer for {request.method} {request.url}")
 
 
-def _filtered_items() -> list[dict[str, Any]]:
-    """Three synthetic scenes per filter: a range at 10, 40 and 90 % of its span, the values in turn."""
+#: Properties the source writes as a list; `in` keeps an item that holds one of the values (DS-04 plan §2).
+LIST_PROPERTIES = frozenset({"sar:polarizations"})
+
+
+def _filtered_items(collection: str = SENTINEL_2_L2A.source.source_collection_id) -> list[dict[str, Any]]:
+    """Three synthetic scenes per filter of the entry of ``collection``: a range at 10, 40 and 90 % of its span, the
+    values in turn."""
+    (config,) = [entry for entry in REGISTRY if entry.source.source_collection_id == collection]
     items: list[dict[str, Any]] = []
     for index, share in enumerate((0.1, 0.4, 0.9)):
         properties: dict[str, Any] = {"datetime": "2024-06-01T10:00:00Z"}
-        for search_filter in SENTINEL_2_L2A.search_filters:
+        for search_filter in config.search_filters:
             if search_filter.kind is FilterKind.RANGE:
                 low, high = search_filter.minimum or 0.0, search_filter.maximum or 0.0
-                properties[search_filter.property] = low + share * (high - low)
+                value: Any = low + share * (high - low)
+                properties[search_filter.property] = round(value) if search_filter.integer else value
             else:
-                properties[search_filter.property] = search_filter.values[index % len(search_filter.values)].value
+                value = search_filter.values[index % len(search_filter.values)].value
+                properties[search_filter.property] = [value] if search_filter.property in LIST_PROPERTIES else value
         items.append({**_fixture("earth_search", "item"), "id": f"SYNTH_FILTERED_{index}", "properties": properties})
     return items
 
@@ -111,7 +119,8 @@ def _filtered_items() -> list[dict[str, Any]]:
 def _keeps(item: dict[str, Any], query: dict[str, dict[str, Any]]) -> bool:
     for name, operators in query.items():
         value = item["properties"].get(name)
-        if "in" in operators and value not in operators["in"]:
+        held = value if isinstance(value, list) else [value]
+        if "in" in operators and not any(entry in operators["in"] for entry in held):
             return False
         if "gte" in operators and not value >= operators["gte"]:
             return False
@@ -124,10 +133,11 @@ def _filtering_double(request: httpx.Request) -> httpx.Response:
     """Applies the query extension to synthetic scenes, in a search and an aggregation, as the source does (plan §6.2)."""
     if request.method == "POST" and request.url.path.endswith("/search"):
         body = json.loads(request.content)
-        kept = [item for item in _filtered_items() if _keeps(item, body.get("query", {}))]
+        kept = [item for item in _filtered_items(body["collections"][0]) if _keeps(item, body.get("query", {}))]
         return _json({"type": "FeatureCollection", "numberMatched": len(kept), "features": kept[: body["limit"]], "links": []})
     if request.method == "GET" and request.url.path.endswith("/aggregate"):
-        kept = [item for item in _filtered_items() if _keeps(item, json.loads(request.url.params.get("query", "{}")))]
+        items = _filtered_items(request.url.params["collections"])
+        kept = [item for item in items if _keeps(item, json.loads(request.url.params.get("query", "{}")))]
         cells = [{"key": "4/8/5", "frequency": len(kept)}] if kept else []
         return _json({"aggregations": [
             {"name": "total_count", "value": len(kept)},
@@ -164,6 +174,25 @@ def _scl_scenes() -> list[dict[str, Any]]:
 def _scl_double(request: httpx.Request) -> httpx.Response:
     if request.method == "POST" and request.url.path.endswith("/search"):
         return _json({"type": "FeatureCollection", "features": _scl_scenes(), "links": []})
+    raise AssertionError(f"the double has no answer for {request.method} {request.url}")
+
+
+def _sentinel_1_double(request: httpx.Request) -> httpx.Response:
+    """Earth Search and the bucket of Sentinel-1 GRD as DS-04 measured them, from the synthetic search of the fixtures."""
+    # The gateway connects to the address it resolved; the name stays in the Host header.
+    if request.headers["host"].endswith("amazonaws.com"):
+        if request.url.query == b"requestPayment":
+            return httpx.Response(200, content=b"<RequestPaymentConfiguration><Payer>BucketOwner</Payer></RequestPaymentConfiguration>")
+        if request.method == "HEAD":
+            return httpx.Response(200, headers={"x-amz-checksum-type": "FULL_OBJECT", "x-amz-checksum-crc64nvme": "AAECAwQFBgc="})
+        return httpx.Response(206, content=TIFF_HEADER[:16])
+    search = _fixture("earth_search", "sentinel_1_search")
+    if request.method == "POST" and request.url.path.endswith("/search"):
+        return _json(search)
+    if request.method == "GET" and "/items/" in request.url.path:
+        return _json(search["features"][0])
+    if request.method == "GET" and request.url.path.endswith("/collections/sentinel-1-grd"):
+        return _json({"type": "Collection", "id": "sentinel-1-grd"})
     raise AssertionError(f"the double has no answer for {request.method} {request.url}")
 
 
@@ -207,6 +236,7 @@ DOUBLES: dict[str, Callable[[httpx.Request], httpx.Response]] = {
     "test_worldcover_smoke": _worldcover_double,
     "test_search_filters_live": _filtering_double,
     "test_aoi_cloud_filter_live": _scl_double,
+    "test_sentinel_1_grd_smoke": _sentinel_1_double,
 }
 
 

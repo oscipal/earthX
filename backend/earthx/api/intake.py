@@ -92,6 +92,7 @@ from earthx.api.item_source import ItemSource, OrderRefused, fetch_item_or_refus
 from earthx.catalog.registry import (
     AcquisitionYearMissing,
     AcquisitionYears,
+    AssetChecksum,
     Attributable,
     DatasetConfig,
     DatasetRegistry,
@@ -118,6 +119,7 @@ from earthx.processing.recipe import (
     Provenance,
     RasterOutput,
     Recipe,
+    RecipeNotice,
     RecipeRequest,
     cache_key,
     document_bytes,
@@ -173,6 +175,10 @@ _ETAG_MAX_CHARS = 256
 
 # The source says the object is not there (any more): the job would fail later.
 _GONE = frozenset({404, 410})
+
+# DS-04 plan §4.3: S3 hands out its checksum over the whole object when asked, as eight bytes in base64.
+_CHECKSUM_MODE = {"x-amz-checksum-mode": "ENABLED"}
+_CRC64NVME = re.compile(r"[A-Za-z0-9+/]{11}=")
 
 
 @dataclass(frozen=True, slots=True)
@@ -638,6 +644,7 @@ def export_attachments(
             layout=names,
         ),
         attribution=(attribution,) if attribution else (),
+        notices=recipe_notices(config),
         dataset=DatasetFacts.of(config),
         acquired_on=acquired_on,
         bands=tuple(bands),
@@ -1324,10 +1331,20 @@ def _usable_etag(value: str | None) -> str | None:
     return value
 
 
-def _version(item: Mapping[str, Any], key: str, *, etag: str | None = None) -> InputVersion | None:
+def _full_object_crc64nvme(headers: Mapping[str, str]) -> str | None:
+    """The CRC64NVME of the whole object, where the host gives one; a checksum of parts says nothing about the file."""
+    value = headers.get("x-amz-checksum-crc64nvme")
+    if headers.get("x-amz-checksum-type") != "FULL_OBJECT" or not value or not _CRC64NVME.fullmatch(value):
+        return None
+    return value
+
+
+def _version(
+    item: Mapping[str, Any], key: str, *, crc64nvme: str | None = None, etag: str | None = None
+) -> InputVersion | None:
     """:func:`input_version`, where a value the model refuses (over 256 characters) is the source's mistake."""
     try:
-        return input_version(item, key, etag=etag)
+        return input_version(item, key, crc64nvme=crc64nvme, etag=etag)
     except ValidationError:
         raise OrderRefused(
             502, malformed_item_detail(str(item.get("id"))) + " (a version is not usable)", "version"
@@ -1337,7 +1354,8 @@ def _version(item: Mapping[str, Any], key: str, *, etag: str | None = None) -> I
 async def _version_of(target: _Target, gateway: Gateway) -> InputVersion | None:
     """The version of one input (adr/0014 §4.6, F4; M4-07b F2, F6).
 
-    A ``HEAD`` is asked only of a COG with no ``file:checksum``: a Zarr address is a
+    A ``HEAD`` is asked only of a COG with no ``file:checksum``, with the checksum mode where the registry names
+    the host's checksum (DS-04 plan §4.3); the value never goes into a log. A Zarr address is a
     group of many objects, and an ETag on it would not describe the data. A source
     that says the object is gone (404, 410) refuses the order — the job would fail
     later anyway. Any other failure leaves the version empty: no cache hit, a
@@ -1347,8 +1365,9 @@ async def _version_of(target: _Target, gateway: Gateway) -> InputVersion | None:
     own = _version(target.item, key)
     if (own is not None and own.kind == "file:checksum") or target.ref.reader != "cog":
         return own
+    checksum = target.config.source.asset_checksum is AssetChecksum.CRC64NVME
     try:
-        response = await gateway.head(target.ref.href, within=target.policy)
+        response = await gateway.head(target.ref.href, headers=_CHECKSUM_MODE if checksum else None, within=target.policy)
     except UpstreamError as error:
         if error.status_code in _GONE:
             raise OrderRefused(
@@ -1361,7 +1380,8 @@ async def _version_of(target: _Target, gateway: Gateway) -> InputVersion | None:
     except GatewayError as error:
         _warn_no_version(target, error)
         return None
-    return _version(target.item, key, etag=_usable_etag(response.headers.get("etag")))
+    crc64nvme = _full_object_crc64nvme(response.headers) if checksum else None
+    return _version(target.item, key, crc64nvme=crc64nvme, etag=_usable_etag(response.headers.get("etag")))
 
 
 def _warn_no_version(target: _Target, error: GatewayError) -> None:
@@ -1482,6 +1502,7 @@ def crop_recipe_json(
         started=accepted_at,
         finished=None,
         attribution=[attribution] if attribution else [],
+        notices=list(recipe_notices(config)),
     )
     document = {
         **recipe.model_dump(mode="json", exclude={"recipe_id"}),
@@ -1530,5 +1551,17 @@ def job_recipe_json(
     """
     attribution = attribution_text(config, years=years) if config else None
     return job_recipe_document(
-        body, attribution=[attribution] if attribution else [], result=result, started=started, finished=finished
+        body,
+        attribution=[attribution] if attribution else [],
+        result=result,
+        started=started,
+        finished=finished,
+        notices=recipe_notices(config) if config else (),
+    )
+
+
+def recipe_notices(config: Attributable) -> tuple[RecipeNotice, ...]:
+    """The notices of the dataset as the provenance of ``recipe.json`` holds them (DS-04 plan §4.4)."""
+    return tuple(
+        RecipeNotice(code=notice.code, label=notice.label, tooltip=notice.tooltip) for notice in config.notices
     )

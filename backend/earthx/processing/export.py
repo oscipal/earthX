@@ -88,7 +88,14 @@ from earthx.processing.errors import AoiOutsideInputs, ProcessingError, Unsuppor
 from earthx.processing.methods import DatasetFacts, methods_of, recipe_with_methods
 from earthx.processing.operators import REGISTRY
 from earthx.processing.plan import estimate
-from earthx.processing.recipe import CropOutput, Recipe, ResolvedInput, engine_versions, job_recipe_document
+from earthx.processing.recipe import (
+    CropOutput,
+    Recipe,
+    RecipeNotice,
+    ResolvedInput,
+    engine_versions,
+    job_recipe_document,
+)
 from earthx.processing.warped import WarpedItem, cache_per_item
 from earthx.processing.workfile import open_workfile, workfile_path
 from earthx.readers import process_gdal_options, read_access_for
@@ -123,7 +130,7 @@ ATTACHMENT_LIMITS: Mapping[str, int] = {
     AOI_FILENAME: 2 * 1024 * 1024,
 }
 _ATTRIBUTION_ENTRIES = 8
-_ATTACHMENT_KEYS = frozenset({"files", "attribution", "dataset", "acquired_on", "bands", "notes"})
+_ATTACHMENT_KEYS = frozenset({"files", "attribution", "dataset", "acquired_on", "bands", "notes", "notices"})
 
 _ATTRIBUTION_CHARS = 1024
 
@@ -156,6 +163,8 @@ class Attachments:
     #: Lines for the head of ``BANDS.txt`` that `api` knows from the items, such as that scenes of several coordinate
     #: systems were combined.
     notes: tuple[str, ...] = ()
+    #: The notices of the dataset for the provenance of ``recipe.json`` (DS-04 plan §4.4).
+    notices: tuple[RecipeNotice, ...] = ()
 
     def __post_init__(self) -> None:
         if set(self.files) != set(ATTACHMENT_LIMITS):
@@ -182,6 +191,8 @@ class Attachments:
             data["bands"] = [band.to_json() for band in self.bands]
         if self.notes:
             data["notes"] = list(self.notes)
+        if self.notices:
+            data["notices"] = [notice.model_dump(mode="json") for notice in self.notices]
         return data
 
     @classmethod
@@ -196,11 +207,12 @@ class Attachments:
             acquired_on = date.fromisoformat(data["acquired_on"]) if "acquired_on" in data else None
             bands = tuple(BandMeta.from_json(band) for band in data.get("bands", ()))
             notes = tuple(data.get("notes", ()))
+            notices = tuple(RecipeNotice.model_validate(notice) for notice in data.get("notices", ()))
         except (ValueError, TypeError, KeyError):
             raise AttachmentsInvalid("the attachments hold files and attribution") from None
         if not all(isinstance(note, str) and len(note) <= _ATTRIBUTION_CHARS for note in notes):
             raise AttachmentsInvalid("the notes are short texts")
-        return cls(dict(files), tuple(attribution), dataset, acquired_on, bands, notes)
+        return cls(dict(files), tuple(attribution), dataset, acquired_on, bands, notes, notices)
 
 
 @dataclass(frozen=True, slots=True)
@@ -220,6 +232,8 @@ class ExportResult:
     attribution: tuple[str, ...]
     #: The methods text its ``recipe.json`` carries (NM4-08), for the same copy.
     methods: str
+    #: The notices its ``recipe.json`` carries (DS-04 plan §4.4), for the same copy.
+    notices: tuple[RecipeNotice, ...] = ()
 
 
 def check_export(recipe: Recipe) -> CropOutput:
@@ -593,6 +607,7 @@ def export(recipe: Recipe, *, workdir: Path, progress: Progress, attachments: At
                     result={"engine": engine, "scaling": []},
                     started=started,
                     finished=finished,
+                    notices=attachments.notices,
                 ),
                 dataset=attachments.dataset,
                 acquired_on=attachments.acquired_on,
@@ -647,6 +662,7 @@ def export(recipe: Recipe, *, workdir: Path, progress: Progress, attachments: At
         finished=finished,
         attribution=attachments.attribution,
         methods=methods,
+        notices=attachments.notices,
     )
 
 

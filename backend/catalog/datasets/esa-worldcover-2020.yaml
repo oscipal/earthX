@@ -115,6 +115,10 @@ source:
   # M5-08: the source keys every asset the same way in every item, and every item is a state of its own.
   asset_keys: []
   item_states: null
+  # DS-04 plan §4.2, §4.3: the source writes https addresses itself, and no checksum over the whole object has
+  # been measured on this host, so the version of an input stays its ETag.
+  asset_href_rewrites: []
+  asset_checksum: null
 coverage:
   provider: local-sql
   # A 3° tile; `max_geotile_level_for(333.0) == 6`.
@@ -128,6 +132,8 @@ default_render:
   colormap_name: esa-worldcover
   expression: null
   resampling: nearest
+  # Every asset of the list (DS-04 plan F2).
+  asset_selection: all
 # As for the DEM: one period for every tile, so one group; the AOI crop in full resolution, no quicklook (no CORS).
 # `min_zoom` 0: the file has overviews down to 1:64, so a tile of the world reads them, like the DEM's.
 viewer:
@@ -186,3 +192,5 @@ search_capabilities:
   aoi_coverage: true
 index_presets: []
 true_color: []
+# DS-04 plan §4.4: nothing a user has to know before reading the data beyond its description.
+notices: []
