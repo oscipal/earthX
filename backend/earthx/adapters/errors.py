@@ -49,6 +49,14 @@ class UpstreamShapeError(RuntimeError):
     """The source answered something that is not what its protocol promises."""
 
 
+class ItemOffAssetKeys(UpstreamShapeError):
+    """An item whose assets do not fit the entry's ``source.asset_keys`` (M5-08 plan §4.3).
+
+    The live search skips and counts such an item (Otto, 08.11.2026); a single item fetch and the materialization
+    treat it as any other item of the wrong shape.
+    """
+
+
 class AdapterSpecMismatch(RuntimeError):
     """The registry names a capability the adapter table has no answer for (M4-01b).
 

@@ -288,3 +288,37 @@ Geländemodell ↔ digital terrain model (DTM); Höhenmodell ↔ elevation model
 - **Für DS-04:** Der Adapter heißt `earth-search-v1` wie bisher, das YAML von Sentinel-2 ist unverändert. Eine Übersetzung je Eintrag (`asset_href_rewrites`) gehört in `stac_api` hinter `dialect.normalize_item`; dieselbe Stelle nutzt M5-08b für `asset_keys`.
 - **Doku:** `architekturplan.md` 6.1 (Dialekt), `adr/0011` §11b.
 - **Prüfung (nach den Korrekturen aus dem Review):** `ruff check backend` grün; `lint-imports` 16 Verträge eingehalten; `pytest` 9587 bestanden, 25 übersprungen (PowerShell fehlt in der Sitzung); Vergleichstest und Fixture seit ihrem Commit unverändert.
+
+---
+
+## 12. Umsetzung Teil 2 (M5-08b, 08.11.2026)
+
+- **Registry** (`catalog/registry.py`): `SourceInfo.asset_keys` (Liste von `AssetKeyRule` mit `key`, `media_type`, `gsd`) und `SourceInfo.item_states` (`null` oder `ItemStates` mit `rule` und `tile_pattern`; einzige Regel `latest` nach F1). Beide ohne Vorgabe (B10); die vier bisherigen Einträge setzen `asset_keys: []` und `item_states: null`. Veröffentlicht unter `earthx:source`.
+- **Startprüfungen:** Schlüssel nach dem Muster eines Bandnamens (`FIXED_ASSET_KEY`, wie `INDEX_PRESET_NAME`), Medientyp nicht leer, `gsd` positiv; kein Schlüssel und kein Paar aus Medientyp und `gsd` doppelt. Bei nicht leerer Liste nennen `default_render.assets`, `auxiliary_assets`, `mask.asset` und `band_units` (auch Muster mit `*`) nur Schlüssel aus der Liste. `tile_pattern` muss kompilieren und genau eine benannte Gruppe `tile` haben (unbenannte Gruppen daneben sind erlaubt); die ganze ID muss passen, eine leere Gruppe gilt als kein Treffer. `asset_keys` und `item_states` nur für einen Adapter mit STAC-Dialekt (`check_adapter_specs`); ein Bucket-Adapter würde sie stillschweigend übergehen. `item_states` nur bei materialisierten Items.
+- **FSDI-Dialekt** (`adapters/stac_api.py`): `AdapterKind.FSDI_STAC_V1` (`fsdi-stac-v1`), Marke aus `cursor`, `FilterSupport(intersects, ids, cql2=False, query=False)`, keine Übersetzung der Items. Die Spec in `spec.py` bietet Suche, Item-Abruf und Materialisierung, keine Coverage der Quelle (ein Eintrag dieser Art zählt mit `local-sql`).
+- **Normalisierung je Eintrag:** `normalize_for` wendet nach dem Dialekt `with_fixed_asset_keys` an, bei Suche, Item-Abruf und Materialisierung. Leere Regeln geben das Item unverändert zurück; Vergleichstest und Fixture von M5-08a sind unverändert grün. DS-04b hängt `asset_href_rewrites` an dieselbe Stelle.
+- **Materialisierung** (`stac_api.materialize_items`): zuerst `GET` der Collection mit `If-None-Match`; Fassung ist `ETag` und `updated` der Collection (R1, Form `<ETag>;updated=<updated>`). `304` oder dieselbe Fassung bei `200` ergibt `unchanged` ohne Suche. `updated` greift nur, wenn die Quelle `If-None-Match` übergeht und `200` mit gleichem `ETag` liefert; beachtet sie es, entscheidet der `ETag` allein. Das ist vertretbar, weil der `ETag` eine Fassungsmarke ist (Messung unten); ob er sich beim Hinzufügen von Items ändert, bleibt der Prüfpunkt des Live-Smokes (R1), `--force` lädt immer neu. Danach `POST /search` mit `collections`, `limit` 100, `sortby` `id asc` bis zur letzten Seite, Seite für Seite verarbeitet.
+- **Je Item** zählt als `unknown`: keine verwendbare ID, keine Assets, fremde Collection, keine Geometrie, kein `datetime` mit Zeitzone, Asset ohne `https` auf `asset_hosts`, Asset-Schlüssel nicht nach den Regeln, ID ohne Kachel. Über 1 % `unknown` bricht ab, ebenso eine leere Collection (Regel I), eine zweimal ausgegebene Marke und ein Item, das zweimal kommt (die Seiten sind dann nicht verlässlich). Das Item bekommt unsere Collection und keine Links der Quelle.
+- **Stände:** je Kachel lädt der jüngste Stand mit `earthx:tile` und `earthx:state: latest`; ersetzte Stände zählen als `withheld` (A2). Zwei Stände einer Kachel mit gleichem `datetime` zählen beide als `unknown`; liegt der Gleichstand oben, lädt die Kachel nichts und die älteren zählen als `withheld`. `in_bucket` = `listed`, `missing` 0.
+- **Befehl** (`discovery/materialize.py`): Abstand je Adapter-Art für den Host des Endpunkts, `fsdi-stac-v1` 1 s (§4.2); die Buckets ohne Abstand. Die Zeile des Berichts sagt „unknown at the source“ statt „unknown prefixes in the bucket“.
+- **Gemessen am 08.11.2026 [M]:** Die Collection trägt `updated` auf oberster Ebene; der `ETag` hat die Form einer UUID (eine Fassungsmarke, kein Hash des Inhalts). Ein `GET` der Collection, sonst nichts.
+- **Fragen an Otto im PR [#317](https://github.com/oscipal/earthX/pull/317)** (Antworten in §12a):
+  1. Gleichstand unter dem jüngsten Stand: beide `unknown` lassen (Empfehlung) oder als `withheld` zählen.
+  2. Item außerhalb der Asset-Schlüssel in der Live-Suche: Vorschlag war, die Seite mit `UpstreamShapeError` scheitern zu lassen.
+  3. Abstand von 1 s als Tabelle je `AdapterKind` im Befehl, nicht im YAML (er gehört zur Quelle wie der Dialekt, A1).
+  4. R1: Beachtet die Quelle `If-None-Match`, entscheidet der `ETag` allein; Prüfpunkt im Live-Smoke, bis dahin `--force`.
+- **Tests:** `tests/catalog/test_source_asset_keys_and_states.py` (Startprüfungen, Veröffentlichung), `tests/earthx/adapters/test_fsdi_stac.py` (Dialekt, Schlüssel, Stände, Materialisierung, synthetische Quelle), `test_item_contract.py` um die drei Fähigkeiten der FSDI erweitert, `tests/integration/test_materialize_command.py` (Lauf über eine STAC-API in einer Transaktion, Abbruch ohne Schreiben, Abstand).
+- **Nicht in diesem Teil** (M5-08c): YAML-Eintrag `swissalti3d`, Live-Smoke, übrige Doku aus §4.8.
+
+## 12a. Antworten Otto (08.11.2026) zu M5-08b
+
+Punkte 1, 3 und 4 wie empfohlen; Punkt 2 geändert.
+
+- **1:** Zwei Stände einer Kachel mit gleichem `datetime` zählen beide als `unknown`, auch unter dem jüngsten Stand.
+- **2 (geändert):** In der Live-Suche wird ein Item, das nicht zu `asset_keys` passt, **übersprungen und gezählt** (wie `unknown` bei der Materialisierung), statt die Seite scheitern zu lassen. Die Zahl erscheint nicht in URLs oder in Logs mit Kennungen.
+  - Umgesetzt: `with_fixed_asset_keys` wirft `ItemOffAssetKeys` (eine Art von `UpstreamShapeError`). Die Suche lässt das Item aus und zählt es in `ItemPage.skipped`; der Cache-Wert trägt die Zahl unter `skipped`, nur wenn sie über 0 liegt. So bleiben die Cache-Werte von Earth Search Byte für Byte wie in M5-08a. Ein beschädigter Wert im Cache gilt als 0.
+  - Log: eine Warnung je Antwort der Quelle mit `dataset_id` und Anzahl, ohne Item-ID, `href` oder URL. Ein Cache-Treffer schreibt keine Zeile.
+  - Der Item-Abruf per ID bleibt ein Fehler (`ItemOffAssetKeys`): Er hat keine Seite, auf der sich das Item auslassen ließe. Die Materialisierung zählt das Item weiter als `unknown`.
+  - Die Seiten des AOI-Filters in `api` tragen `skipped=0`; die Seiten der Quelle, aus denen er liest, zählen und loggen selbst. Kein Leser der Zahl in `api` bisher.
+- **3:** Abstand bleibt als Tabelle je `AdapterKind` im Befehl.
+- **4:** Wie umgesetzt; der Prüfpunkt zu R1 bleibt im Live-Smoke von M5-08c.

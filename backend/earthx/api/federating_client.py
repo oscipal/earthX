@@ -1128,8 +1128,9 @@ class FederatingCoreCrudClient(CoreCrudClient):
             token=_strip_forward_token(token),
             binding=binding,
         )
+        # The pages of the source count and log what they skipped (`ItemPage.skipped`); this page holds the kept scenes.
         page = ItemPage(
-            items=tuple(outcome.items), matched=None, next_page_token=outcome.next_token, from_cache=False
+            items=tuple(outcome.items), matched=None, next_page_token=outcome.next_token, from_cache=False, skipped=0
         )
         return page, outcome.summary()
 
@@ -1170,7 +1171,7 @@ class FederatingCoreCrudClient(CoreCrudClient):
             binding=binding,
         )
         page = ItemPage(
-            items=tuple(outcome.items), matched=None, next_page_token=outcome.next_token, from_cache=False
+            items=tuple(outcome.items), matched=None, next_page_token=outcome.next_token, from_cache=False, skipped=0
         )
         return page, outcome.summary()
 
@@ -1223,7 +1224,7 @@ class FederatingCoreCrudClient(CoreCrudClient):
             features, next_marker = await self._native_group_page(
                 group, request, bbox=bbox, intersects=intersects, ids=ids, limit=PAGE_SIZE, marker=marker
             )
-            return ItemPage(items=tuple(features), matched=None, next_page_token=next_marker, from_cache=False)
+            return ItemPage(items=tuple(features), matched=None, next_page_token=next_marker, from_cache=False, skipped=0)
 
         async def no_measure(item: Mapping[str, Any]) -> None:
             raise AssertionError("a search with the coverage alone reads no pixel")

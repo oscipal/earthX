@@ -110,6 +110,8 @@ def valid_config() -> DatasetConfig:
             asset_hosts=("assets.example.invalid",),
             item_holding=ItemHolding.FEDERATED,
             data_region="unknown",
+            asset_keys=(),
+            item_states=None,
         ),
         coverage=CoverageInfo(
             provider=CoverageProvider.UPSTREAM_AGGREGATION,

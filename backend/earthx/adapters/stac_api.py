@@ -32,13 +32,23 @@ the three possible answers — checking it ourselves is why ``SearchParams`` exi
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+import logging
+from collections.abc import AsyncIterator, Callable, Mapping
+from dataclasses import dataclass, field
+from datetime import datetime
 from types import MappingProxyType
 from typing import Any
 
 from earthx.adapters.cache import CacheValue, SearchCache
-from earthx.adapters.errors import InvalidQuery, UnsupportedFilter, UnsupportedSource, UpstreamShapeError
+from earthx.adapters.cop_dem_bucket import MAX_NOT_LOADABLE_FRACTION, MaterializeOutcome
+from earthx.adapters.errors import (
+    InvalidQuery,
+    ItemOffAssetKeys,
+    NotMaterialized,
+    UnsupportedFilter,
+    UnsupportedSource,
+    UpstreamShapeError,
+)
 from earthx.adapters.federated_search import (
     ITEM_ID,
     SORTBY,
@@ -60,11 +70,13 @@ from earthx.adapters.federated_search import (
     ttl_for_window,
     with_core_bands,
 )
-from earthx.catalog.registry import AdapterKind, DatasetConfig
+from earthx.catalog.registry import AdapterKind, AssetKeyRule, DatasetConfig, ItemHolding, ItemStates
 from earthx.catalog.search_filters import FilterConditions, RangeCondition
-from earthx.gateway import Gateway
+from earthx.gateway import Gateway, host_of
 
 Item = dict[str, Any]
+
+LOGGER = logging.getLogger("earthx.adapters.stac_api")
 
 # The fields our own search body may carry; a dialect's marker or conditions must not take one of them over.
 BODY_FIELDS = frozenset({"collections", "limit", "sortby", "bbox", "intersects", "ids", "datetime"})
@@ -132,6 +144,22 @@ EARTH_SEARCH = StacDialect(
 )
 
 
+def as_given(item: Item) -> Item:
+    """The item unchanged: a source whose items need no translation of their own."""
+    return item
+
+
+FSDI = StacDialect(
+    kind=AdapterKind.FSDI_STAC_V1,
+    # The `next` link is a POST link with `merge: true` whose body carries only `cursor` (M5-08 plan §2).
+    marker_field="cursor",
+    # `ids` and `intersects` narrow; CQL2 and every `query` on an item property answer 400 (measured, M5-08 plan §2).
+    filters=FilterSupport(intersects=True, ids=True, cql2=False, query=False),
+    write_conditions=None,
+    normalize_item=as_given,
+)
+
+
 def dialect_table(*dialects: StacDialect) -> Mapping[AdapterKind, StacDialect]:
     """A read-only table keyed by each dialect's own ``kind``; a kind twice is an error."""
     table = {dialect.kind: dialect for dialect in dialects}
@@ -143,7 +171,7 @@ def dialect_table(*dialects: StacDialect) -> Mapping[AdapterKind, StacDialect]:
 # Looked up by the entry's own adapter kind rather than bound into the spec table: the functions keep the
 # signatures of `SearchItems` and `FetchItem`, and `spec.check_adapter_specs` refuses a spec that serves a kind
 # with these functions but has no dialect here (M5-08 plan §11).
-DIALECTS: Mapping[AdapterKind, StacDialect] = dialect_table(EARTH_SEARCH)
+DIALECTS: Mapping[AdapterKind, StacDialect] = dialect_table(EARTH_SEARCH, FSDI)
 
 
 def dialect_of(config: DatasetConfig) -> StacDialect:
@@ -156,6 +184,42 @@ def dialect_of(config: DatasetConfig) -> StacDialect:
     if dialect is None:
         raise UnsupportedSource(f"{config.dataset_id} is served by {config.source.adapter}, which is no STAC API")
     return dialect
+
+
+def with_fixed_asset_keys(item: Item, rules: tuple[AssetKeyRule, ...]) -> Item:
+    """The item with every asset under the key of the one rule its media type and gsd fit (M5-08 plan §4.3).
+
+    No rules: the item unchanged, keys as the source gives them. Otherwise an asset that fits no rule, two assets on
+    one rule or a rule no asset fits is :class:`ItemOffAssetKeys`: an asset never stays under the source's own key,
+    where nothing the entry names would find it. The message names no key of the source, which is a file name.
+    """
+    if not rules:
+        return item
+    assets = item.get("assets")
+    if not isinstance(assets, dict):
+        raise ItemOffAssetKeys("item carries no assets to key")
+    keyed: dict[str, Any] = {}
+    for asset in assets.values():
+        rule = next((rule for rule in rules if isinstance(asset, dict) and _fits(asset, rule)), None)
+        if rule is None:
+            raise ItemOffAssetKeys("an asset of the item fits no rule of source.asset_keys")
+        if rule.key in keyed:
+            raise ItemOffAssetKeys(f"two assets of the item fit the asset key {rule.key}")
+        keyed[rule.key] = asset
+    missing = [rule.key for rule in rules if rule.key not in keyed]
+    if missing:
+        raise ItemOffAssetKeys(f"the item has no asset for {', '.join(missing)}")
+    return {**item, "assets": {rule.key: keyed[rule.key] for rule in rules}}
+
+
+def _fits(asset: dict[str, Any], rule: AssetKeyRule) -> bool:
+    gsd = asset.get("gsd")
+    return asset.get("type") == rule.media_type and not isinstance(gsd, bool) and gsd == rule.gsd
+
+
+def normalize_for(dialect: StacDialect, config: DatasetConfig, item: Item) -> Item:
+    """An item of the source as ours: the dialect's translation first, then what the entry fixes (M5-08 plan §4.1)."""
+    return with_fixed_asset_keys(dialect.normalize_item(item), config.source.asset_keys)
 
 
 async def search_items(
@@ -190,7 +254,7 @@ async def search_items(
         # judgement to the caller, because only the caller knows what the POST means.
         retry=True,
     )
-    stored = _storable(dialect, response.json())
+    stored = _storable(dialect, config, response.json())
     await cache_set(cache, key, stored, ttl_s=ttl_for_window(params.end), dataset_id=dataset_id)
     return page_from_stored(dataset_id, fingerprint, stored, from_cache=False)
 
@@ -223,7 +287,7 @@ async def get_item(
         # Same reason as for a search answer: what is not an item must not become one
         # by being passed on, and must not be cached as one either.
         raise UpstreamShapeError("item answer is not a JSON object")
-    item = dialect.normalize_item(item)
+    item = normalize_for(dialect, config, item)
     await cache_set(cache, key, {"item": item}, ttl_s=TTL_ITEM_S, dataset_id=dataset_id)
     return item
 
@@ -267,17 +331,30 @@ def _search_body(
     return body
 
 
-def _storable(dialect: StacDialect, payload: Any) -> CacheValue:
+def _storable(dialect: StacDialect, config: DatasetConfig, payload: Any) -> CacheValue:
     """What we keep of an upstream answer: the items, the count, the marker.
 
     Reduced here rather than at the cache, so that a cache hit and a live answer go
     through exactly the same translation afterwards.
     """
-    features = [
-        dialect.normalize_item(feature) if isinstance(feature, dict) else feature
-        for feature in require_feature_list(payload)
-    ]
-    return {"features": features, "matched": matched_count(payload), "marker": _next_marker(dialect, payload)}
+    features: list[Any] = []
+    skipped = 0
+    for feature in require_feature_list(payload):
+        if not isinstance(feature, dict):
+            features.append(feature)
+            continue
+        try:
+            features.append(normalize_for(dialect, config, feature))
+        except ItemOffAssetKeys:
+            # Skipped and counted, not the whole page refused (Otto, 08.11.2026). The log names the dataset and the
+            # number, never an item: an id of the source is a file name.
+            skipped += 1
+    stored: CacheValue = {"features": features, "matched": matched_count(payload), "marker": _next_marker(dialect, payload)}
+    if skipped:
+        # Only where something was skipped: a page without one is stored exactly as before (M5-08a, bit-identical).
+        stored["skipped"] = skipped
+        LOGGER.warning("search skipped items that fit no asset key", extra={"dataset_id": config.dataset_id, "skipped": skipped})
+    return stored
 
 
 def _next_marker(dialect: StacDialect, payload: dict[str, Any]) -> str | None:
@@ -293,3 +370,206 @@ def _next_marker(dialect: StacDialect, payload: dict[str, Any]) -> str | None:
         # truncation adr/0005 rule I refuses for an unknown collection.
         raise UpstreamShapeError("the next link carries no marker we can follow")
     return None
+
+
+# One page of a materialization: the FSDI's own maximum (`limit` 101 answers 100 items, M5-08 plan §2).
+MATERIALIZE_PAGE_LIMIT = 100
+# By id alone: no time window and no area, so every item of the collection comes, each once (M5-08 plan §4.2).
+MATERIALIZE_SORTBY: tuple[dict[str, str], ...] = ({"field": "id", "direction": "asc"},)
+# What a materialized item of an entry with states per tile carries besides the source's properties (M5-08 plan §4.4).
+TILE_PROPERTY = "earthx:tile"
+STATE_PROPERTY = "earthx:state"
+# The source version of a run is the collection's ETag and its `updated` (M5-08 plan §7 R1).
+_VERSION_UPDATED = ";updated="
+
+
+@dataclass(slots=True)
+class _Tile:
+    """The states of one tile read so far: every ``datetime``, and the items of the youngest."""
+
+    instants: list[datetime] = field(default_factory=list)
+    latest: list[Item] = field(default_factory=list)
+
+    def add(self, instant: datetime, item: Item) -> None:
+        if not self.instants or instant > max(self.instants):
+            self.latest = [item]
+        elif instant == max(self.instants):
+            self.latest.append(item)
+        self.instants.append(instant)
+
+
+async def materialize_items(
+    config: DatasetConfig,
+    *,
+    gateway: Gateway,
+    known_version: str | None,
+) -> MaterializeOutcome:
+    """Every item of the collection, read page by page and checked against the entry, or "unchanged" (M5-08 §4.2).
+
+    The collection is asked first, with ``If-None-Match``; ``304`` or the same ETag and ``updated`` as last time is
+    "unchanged" without a search. Otherwise ``POST /search`` over the whole collection, sorted by id, to the last page.
+    An item the entry cannot take (collection, geometry, ``datetime``, an asset off ``asset_hosts``, the asset keys,
+    an id without a tile) counts as ``unknown``; above 1 % of what was read the run aborts without an item. Where the
+    entry names ``item_states``, one state per tile is loaded and the others count as ``withheld``. ``in_bucket`` is
+    ``listed`` and ``missing`` is 0: the source lists nothing apart from its items. No asset is opened.
+    """
+    if config.source.item_holding is not ItemHolding.MATERIALIZED:
+        raise NotMaterialized(
+            f"{config.dataset_id} is not materialized; adapters.materialize_items does not build its items"
+        )
+    dialect = dialect_of(config)
+    known_etag = None if known_version is None else known_version.partition(_VERSION_UPDATED)[0]
+    url = f"{endpoint_of(config)}/collections/{config.source.source_collection_id}"
+    response = await gateway.get(url, headers={"if-none-match": known_etag} if known_etag else None)
+    if response.status_code == 304:
+        return _unchanged(known_version or "")
+    version = _collection_version(config, response.headers.get("etag", ""), response.json())
+    if version == known_version:
+        return _unchanged(version)
+
+    states = config.source.item_states
+    tiles: dict[str, _Tile] = {}
+    items: list[Item] = []
+    seen: set[str] = set()
+    listed = unknown = 0
+    async for feature in _every_item(dialect, config, gateway):
+        listed += 1
+        item_id = feature.get("id") if isinstance(feature, dict) else None
+        if isinstance(item_id, str):
+            if item_id in seen:
+                raise UpstreamShapeError("the source returned an item twice; its paging cannot be trusted")
+            seen.add(item_id)
+        try:
+            item, instant, tile = _checked_item(dialect, config, feature)
+        except UpstreamShapeError:
+            unknown += 1
+            continue
+        if states is None or tile is None:
+            items.append(item)
+        else:
+            tiles.setdefault(tile, _Tile()).add(instant, _with_state(item, tile, states))
+
+    withheld = 0
+    for tile_states in tiles.values():
+        twice = {instant for instant in tile_states.instants if tile_states.instants.count(instant) > 1}
+        # Which of two states with the same `datetime` is the younger one cannot be told: neither is loaded.
+        tied = sum(1 for instant in tile_states.instants if instant in twice)
+        unknown += tied
+        loaded = tile_states.latest if len(tile_states.latest) == 1 else []
+        items.extend(loaded)
+        withheld += len(tile_states.instants) - tied - len(loaded)
+
+    if not listed:
+        raise UpstreamShapeError(f"the source lists no item of {config.source.source_collection_id}")
+    if unknown / listed > MAX_NOT_LOADABLE_FRACTION:
+        raise UpstreamShapeError(
+            f"{unknown} of {listed} items do not fit the registry entry — over the 1% abort threshold (M5-08 plan §4.2)"
+        )
+    return MaterializeOutcome(
+        status="loaded",
+        source_version=version,
+        listed=listed,
+        in_bucket=listed,
+        missing=0,
+        withheld=withheld,
+        unknown=unknown,
+        items=tuple(items),
+    )
+
+
+def _unchanged(version: str) -> MaterializeOutcome:
+    return MaterializeOutcome(
+        status="unchanged", source_version=version, listed=0, in_bucket=0, missing=0, withheld=0, unknown=0, items=()
+    )
+
+
+def _collection_version(config: DatasetConfig, etag: str, collection: Any) -> str:
+    """ETag and ``updated`` of the collection; without either a later run could not compare (M5-08 plan §7 R1)."""
+    if not etag:
+        raise UpstreamShapeError("the collection answered without an ETag; a later run could not compare")
+    if not isinstance(collection, dict) or collection.get("id") != config.source.source_collection_id:
+        raise UpstreamShapeError("the collection answer is not the collection the entry names")
+    updated = collection.get("updated")
+    if not isinstance(updated, str) or not updated:
+        raise UpstreamShapeError("the collection carries no updated; a later run could not compare")
+    return f"{etag}{_VERSION_UPDATED}{updated}"
+
+
+async def _every_item(dialect: StacDialect, config: DatasetConfig, gateway: Gateway) -> AsyncIterator[Any]:
+    """The features of every page of a search over the whole collection, page after page."""
+    body: dict[str, Any] = {
+        "collections": [config.source.source_collection_id],
+        "limit": MATERIALIZE_PAGE_LIMIT,
+        "sortby": list(MATERIALIZE_SORTBY),
+    }
+    markers: set[str] = set()
+    while True:
+        payload = (await gateway.post_json(f"{endpoint_of(config)}/search", json=body, retry=True)).json()
+        for feature in require_feature_list(payload):
+            yield feature
+        marker = _next_marker(dialect, payload)
+        if marker is None:
+            return
+        if marker in markers:
+            # The same page again would be read forever.
+            raise UpstreamShapeError("the source handed out the same page marker twice")
+        markers.add(marker)
+        body = {**body, dialect.marker_field: marker}
+
+
+def _checked_item(dialect: StacDialect, config: DatasetConfig, feature: Any) -> tuple[Item, datetime, str | None]:
+    """Our item for one feature of the source, its ``datetime`` and its tile (``None`` without ``item_states``), or
+    :class:`UpstreamShapeError`.
+
+    The item names our collection and carries no links of the source; pgstac and ``api`` give it links of our own.
+    """
+    if not isinstance(feature, dict):
+        raise UpstreamShapeError("a feature is not a JSON object")
+    item_id = feature.get("id")
+    if not isinstance(item_id, str) or not ITEM_ID.match(item_id):
+        raise UpstreamShapeError("an item has no id we can keep")
+    if feature.get("collection") != config.source.source_collection_id:
+        raise UpstreamShapeError("an item names another collection")
+    geometry = feature.get("geometry")
+    if not isinstance(geometry, dict) or not isinstance(geometry.get("type"), str) or "coordinates" not in geometry:
+        raise UpstreamShapeError("an item has no geometry")
+    properties = feature.get("properties")
+    instant = _instant(properties.get("datetime") if isinstance(properties, dict) else None)
+    if not isinstance(feature.get("assets"), dict) or not feature["assets"]:
+        raise UpstreamShapeError("an item has no assets")
+    item = normalize_for(dialect, config, feature)
+    for asset in item["assets"].values():
+        if not _on_asset_host(asset, config.source.asset_hosts):
+            raise UpstreamShapeError("an asset of an item lies off the entry's asset hosts")
+    states = config.source.item_states
+    tile = None if states is None else states.tile_of(item_id)
+    if states is not None and tile is None:
+        raise UpstreamShapeError("an item id names no tile of item_states.tile_pattern")
+    return {**item, "collection": config.dataset_id, "links": []}, instant, tile
+
+
+def _instant(value: Any) -> datetime:
+    if not isinstance(value, str):
+        raise UpstreamShapeError("an item has no datetime")
+    try:
+        instant = datetime.fromisoformat(value)
+    except ValueError:
+        raise UpstreamShapeError("the datetime of an item is no instant") from None
+    if instant.tzinfo is None:
+        raise UpstreamShapeError("the datetime of an item has no offset")
+    return instant
+
+
+def _on_asset_host(asset: Any, hosts: tuple[str, ...]) -> bool:
+    href = asset.get("href") if isinstance(asset, dict) else None
+    if not isinstance(href, str) or not href.startswith("https://"):
+        return False
+    try:
+        return host_of(href) in hosts
+    except ValueError:
+        return False
+
+
+def _with_state(item: Item, tile: str, states: ItemStates) -> Item:
+    """``earthx:tile`` for the tile, ``earthx:state`` for the rule: one value for all, so one mosaic (A3)."""
+    return {**item, "properties": {**item["properties"], TILE_PROPERTY: tile, STATE_PROPERTY: states.rule.value}}
