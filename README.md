@@ -268,6 +268,26 @@ Absichtlich **kein** Compose-Dienst, der bei `docker compose up` mitläuft
 Quelle, und weder ein gewöhnlicher lokaler Start noch die CI sollen sie
 anfragen.
 
+### swissALTI3D laden (M5-08)
+
+Auch swissALTI3D (`swissalti3d`) hat Items im eigenen Katalog: rund 45 000 Kacheln zu 1 km
+mit je einem bis drei Ständen, aus der STAC-API der FSDI (`data.geo.admin.ch`). Geladen wird
+je Kachel nur der jüngste Stand. Der Lauf liest nur Metadaten, rund 1 000 Seiten zu 100 Items
+mit 1 s Abstand, also etwa 17 Minuten. In PowerShell 5.1, bei laufender Topologie:
+
+```powershell
+docker compose run --rm materialize swissalti3d
+```
+
+Der Bericht nennt ersetzte Stände unter `withheld`. Ein zweiter Lauf ohne Änderung der
+Collection (`ETag` und `updated`) endet mit `unchanged`; `--force` hinter der ID lädt
+trotzdem neu. Der Live-Smoke prüft die Quelle mit zehn Anfragen, aus der Repo-Wurzel mit
+den Backend-Abhängigkeiten:
+
+```powershell
+python -m pytest backend/tests_live/test_swissalti3d_smoke.py
+```
+
 ### Registry-Einträge ändern (seit M5-13)
 
 Jeder Datensatz ist eine YAML-Datei unter `backend/catalog/datasets/<dataset_id>.yaml`,
@@ -632,6 +652,15 @@ lokale Änderungen, also nur auf sauberem Stand.
   [Licence for Copernicus DEM instance COP-DEM-GLO-30-F Global 30m Full, Free & Open](https://dataspace.copernicus.eu/sites/default/files/media/files/2025-06/copernicus_contributing_mission_data_access_v2_cop_dem_licenses.pdf)
   (Haftungsausschluss der Copernicus-Trägerorganisationen). Zitierangabe:
   [doi.org/10.5270/ESA-c5d3d65](https://doi.org/10.5270/ESA-c5d3d65).
+- **swissALTI3D** (`swissalti3d`, STAC-API der FSDI von swisstopo, Format COG;
+  **M5-08**, muss vor der ersten Anzeige über
+  `docker compose run --rm materialize swissalti3d` geladen werden, siehe Abschnitt 2):
+  „©swisstopo“, bei Weitergabe **veränderter** Daten „©swisstopo (modified)“. Nutzung
+  unterliegt den
+  [Terms of use for free geodata and geoservices (OGD) from swisstopo](https://www.swisstopo.admin.ch/en/terms-of-use-free-geodata-and-geoservices)
+  (Quellenangabe Pflicht, Zugang bei übermäßiger Nutzung einschränkbar). Zitierangabe:
+  Federal Office of Topography swisstopo: swissALTI3D,
+  [swisstopo.admin.ch/de/hoehenmodell-swissalti3d](https://www.swisstopo.admin.ch/de/hoehenmodell-swissalti3d).
 - **Ortssuche** (`POST /geocode`, nur wenn eingeschaltet): „© OpenStreetMap
   contributors" (Daten unter der Open Database License, ODbL-1.0;
   [openstreetmap.org/copyright](https://www.openstreetmap.org/copyright)),
