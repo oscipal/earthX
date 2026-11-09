@@ -819,8 +819,9 @@ freigegeben. Das ist ein Nachtrag zu F3.
   `s3://`-Abbildung, Fassung per CRC64NVME, Live-Smoke mit
   Requester-Pays-Prüfung.
   *Stand 08.11.2026:* TPS umgesetzt mit DS-04a ([#312](https://github.com/oscipal/earthX/pull/312)); Eintrag,
-  Abbildung, Prüfsumme, Hinweise und Live-Smoke mit DS-04b (`plans/ds/ds-04-s1-anbinden.md` §12); das Frontend
-  (Marken, Originale, `first_present`) folgt mit DS-04c.
+  Abbildung, Prüfsumme, Hinweise und Live-Smoke mit DS-04b (`plans/ds/ds-04-s1-anbinden.md` §12).
+  *Stand 09.11.2026:* Frontend mit DS-04c (Marken, `first_present`, Vorschau-Kacheln nach der Suche; §13);
+  offen sind der Quicklook auf der Karte (F11) und die Beschriftung der Originale (F12).
 - **Teil B:** Ottos Messung (§11 C, mit CORS der Token-API); bei positivem
   Ergebnis die Nachträge aus §12 (den Satz in `ENTSCHEIDUNGEN` trägt Otto ein) und die Lizenz-Einstufung von
   `sentinel-1-rtc` (B11, Otto). Offen bleibt dann auch der lokale Runner

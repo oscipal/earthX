@@ -1,6 +1,6 @@
 # DS-04 — Sentinel-1 GRD anbinden: Plan-Schritt
 
-**Status (08.11.2026):** Plan angenommen (Otto, 07.11.2026; Antworten in §9a). DS-04a (TPS) umgesetzt (§11, [#312](https://github.com/oscipal/earthX/pull/312)); DS-04b umgesetzt im Draft-PR [#318](https://github.com/oscipal/earthX/pull/318) (§12), F7–F10 beantwortet (§12.4a); DS-04c folgt. Ersetzt die frühere Datei, die den Text von DS-00 enthielt (`adr/0030` §9, Nebenbefund).
+**Status (09.11.2026):** Plan angenommen (Otto, 07.11.2026; Antworten in §9a). DS-04a (TPS) umgesetzt (§11, [#312](https://github.com/oscipal/earthX/pull/312)); DS-04b umgesetzt ([#318](https://github.com/oscipal/earthX/pull/318), §12), F7–F10 beantwortet (§12.4a); DS-04c umgesetzt im Draft-PR (§13), mit dem Fehler aus Ottos Browserprüfung vom 09.11.2026; F11 und F12 offen (§13.5). Ersetzt die frühere Datei, die den Text von DS-00 enthielt (`adr/0030` §9, Nebenbefund).
 **Aufgabe:** DS-04 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2. **Stufe B** (`adr/0030` §11; vorher A laut DS-00). Der Plan darf sofort entstehen; die Umsetzung beginnt erst, wenn M5-13 (YAML-Lader) gemergt ist. Dann wird `main` geholt, und der Eintrag entsteht als YAML (M5-Plan §6.3).
 **Modell:** Opus, Effort hoch.
 **Grundlagen:** `adr/0018` Teil A (§3.1, §4, F1–F3) mit Nachtrag M5-12 (§9.4); `adr/0030` §5.2, §8, §9, §11; `adr/0021` (Suchfilter); `adr/0022` und M5-07 (`data_region`); `adr/0024` (`legal_status`); `adr/0025` §7 (YAML unter `backend/catalog/`); `adr/0027` §6.1 (`access.account`); `adr/0014` §3.1, §4.6, §6.3 (Fassung, Bitgleichheit); `architekturplan.md` 3.1, 5.1, 6.4, 7.3; `projektuebersicht.md` §5 (Checkliste); `KLAERUNGEN.md` B8–B12.
@@ -395,3 +395,74 @@ $env:PYTHONPATH = 'backend'; pytest backend/tests_live/test_sentinel_1_grd_smoke
 ```
 
 Der tägliche Lauf nimmt `backend/tests_live/test_sentinel_1_grd_smoke.py` im Schritt mit `test_earth_search_smoke.py` mit (`.github/workflows/live-smoke.yml`, eine Zeile, von Otto am 08.11.2026 freigegeben).
+
+---
+
+## 13. Umsetzung DS-04c (09.11.2026)
+
+Auf `main` 05a3b1c (nach DS-04b #318), eigener Draft-PR, nur Frontend. Belegstufen wie oben; gemessen am 09.11.2026 nur Metadaten von Earth Search und das Vorschaubild einer Szene (im Kratzverzeichnis der Sitzung, nicht im Repo, keine IDs hier).
+
+### 13.1 Was gebaut ist
+
+- **`first_present` in der Darstellung (F2):** `defaultRenderOf(collection, item)` nimmt das erste Asset der Liste, das das Item trägt, mit dem Stretch-Paar an derselben Stelle; ein Item ohne eines davon hat keine Standarddarstellung. Ohne Item steht das erste der Liste für den Datensatz. Ansicht („View whole scene“, „Crop to AOI“), Vorschau-Kacheln, georeferenziertes Asset eines Quicklooks und Mosaik-Job nehmen das Band je Szene; eine Szene ohne eines der Bänder fällt mit Meldung aus der Ansicht. „Originals“ bietet alle Assets der Liste an, jede Szene liefert das, das sie trägt. `all` und ein Backend ohne das Feld bleiben wie bisher.
+- **Vorschau nach der Suche (§12.3):** `quicklookPlan` nimmt das Thumbnail eines Items nur noch, wenn die Karte es platzieren kann (`quicklookCoords`: CRS und georeferenziertes Asset). Sentinel-1 bekommt damit die Kacheln, die `browse: preview_tiles` nennt (ab z7, Band je Szene); die Trefferliste zeigt das Thumbnail weiter neben der Szene. Allgemein, kein Zweig auf den Datensatz.
+- **Marken (§4.4, §4.6):** `earthx:notices` als je eine Marke (`.badge`), englisch, Erklärung im Tooltip, kein Text daneben: im Data catalogue neben „Prototype“, unter dem Kasten der Suchergebnisse und in einer eigenen Zeile unter dem Kopf einer Ansicht bzw. eines Layers. Der Tooltip erscheint in beiden Tooltip-Stufen, weil er erklärt, was die Marke bedeutet (wie ein (i), `tipLevel.ts`). Ein Eintrag, der kein ganzer Hinweis ist, wird ausgelassen.
+- **Browser-Skript** `frontend/e2e/s1-pass.cjs` (synthetisch, ohne Backend): Vorschau mit dem Band je Szene, kein Thumbnail in Radargeometrie auf der Karte, Marken mit Tooltip an allen drei Stellen, Kontur eines zusammengeführten Überflugs aus zwei Slices (Sentinel-1) und aus zwei Kacheln (Sentinel-2). Hell/Dunkel, breit und 360 px.
+
+### 13.2 Fehler aus Ottos Browserprüfung: Szenengrenzen im zusammengeführten Layer
+
+**Befund (Otto, 09.11.2026):** Bei „Crop and merge to AOI“ zeichnet die Karte innerhalb der AOI die Umrisse der einzelnen Szenen über das Mosaik; bei zwei Szenen eines Sentinel-1-Überflugs eine doppelte Linie quer durchs Bild.
+
+**Ursache, bestätigt [M]:** Die gelbe Kontur der zugeschnittenen Ansicht ist je Gruppe die Vereinigung der Footprints, geschnitten mit der AOI (`groupOutline.ts`, M3-09 §10). Zwei aufeinanderfolgende Slices eines Datatakes teilen bei Earth Search keine exakte Kante: Die Ecken der gemeinsamen Kante liegen 0,003 bis 0,0075° auseinander, mal überlappend, mal mit Lücke, und eine Seite hat dort teils eine Ecke mehr. Die Vereinigung zerfällt dann in zwei Ringe, in einen Ring mit Loch oder (nach dem Schnitt mit der AOI) in einen Ring mit einem langen schmalen Schlitz; alle drei werden als Doppellinie gezeichnet. Gemessen an 921 Paaren aufeinanderfolgender Slices (Europa, Amerika, Asien, Polargebiete, September/Oktober 2026): 387 (42 %) zerfallen. Andere Ebenen scheiden aus: Die Coverage-Footprints sind in der Ansicht aus, die Vorschau-Quicklooks liegen unter der Ansicht und zeichnen keine Linien. Sentinel-2-Kacheln eines Überflugs überlappen breit, ihre Vereinigung war in der Stichprobe (4 Überflüge, 200 Kacheln) je ein Stück.
+
+**Behebung (allgemein):** Vor der Vereinigung werden die Footprints einer Gruppe aneinander eingerastet (`snapFootprints`): Eine Ecke in höchstens 0,01° Abstand zu einer Ecke eines früheren Footprints übernimmt deren Lage, und eine Kante bekommt die Ecken anderer Footprints eingefügt, die in diesem Abstand an ihr liegen. Danach teilen beide Slices dieselben Punkte entlang der gemeinsamen Kante. Ergebnis an den 921 Paaren: 0 zerfallen (0,008° war die kleinste Toleranz, die alle schloss); bei Sentinel-2 ändert sich die Fläche der Kontur um höchstens 0,06 %. Die Toleranz verschiebt eine Kontur höchstens um rund 1 km, und nur dort, wo Szenen tatsächlich aneinanderstoßen; eine echte Lücke über 0,01° bleibt sichtbar (Test). Ein Fehler der Geometrie-Bibliothek fällt wie bisher auf die Footprints einzeln zurück.
+
+**Tests:** synthetische Slices in der Form von Earth Search: ohne Einrasten zerfällt die Vereinigung (Vorbedingung), mit Einrasten ein Ring, in der AOI keine Ecke außer ihrem Rand, unabhängig von der Reihenfolge; echte Lücke bleibt; zwei überlappende Kacheln unverändert; Randfälle (eine Fläche, leer, Toleranz 0, MultiPolygon, NaN fällt zurück). Gegenprobe: ohne Einrasten vier Tests rot; im Browser meldet `s1-pass.cjs` dann „1 rings and 4 corners inside the AOI“, mit Einrasten grün.
+
+### 13.3 Quicklook für Sentinel-1 [M]
+
+- Das Item trägt `thumbnail` (Rolle `thumbnail`, `image/png`) → `…/preview/quick-look.png` der SAFE-Struktur, nach der Abbildung aus §4.2 unter dem Asset-Host. **Anonym abrufbar:** `GET` 200, rund 340 kB, 532 × 341 Pixel, `Access-Control-Allow-Origin: *` (auch auf `OPTIONS`), also im Browser in ein Canvas ladbar.
+- Inhalt: RGB-Komposit (rot Ko-, grün Kreuzpolarisation, blau ihr Verhältnis), nicht das Graustufenbild der Kacheln (VV bzw. HH). Lage in Radargeometrie: bei der gemessenen aufsteigenden Szene liegt der Norden unten (erste Zeile = früheste Zeit = Süden), Westen links; bei absteigender Bahn ist es umgekehrt gespiegelt.
+- Neben dem Bild liegt `preview/map-overlay.kml` (rund 1 kB) mit einem `gx:LatLonQuad`: die vier Ecken des Vorschaubilds in der Reihenfolge unten links, unten rechts, oben rechts, oben links des Bildes, also mit der Spiegelung schon darin. Die Datei ist **kein Asset** des Items; ihre Adresse entstünde nur aus der Ordnerkonvention. Ihre Ecken weichen von den Ecken der Item-Geometrie um bis zu rund 0,1° ab.
+- Die Item-Geometrie hat 6 bis 10 Punkte: die vier Ecken der Szene und Zwischenpunkte an den Slice-Grenzen. Für eine Einpassung müssten die vier Ecken daraus bestimmt werden (z. B. über die Winkel) und je Bahnrichtung den Bildecken zugeordnet werden.
+- Nicht gebaut, Frage F11.
+
+### 13.4 Abweichungen und Auslegungen
+
+- **Marken „an der Ergebnisgruppe“** stehen unter dem Kasten des Datensatzes in den Suchergebnissen, nicht an jeder Zeitgruppe: Alle Gruppen eines Datensatzes haben dieselben Hinweise, zwei Marken je Gruppe würden die Liste verdoppeln. Im Kasten selbst gehen sie nicht, weil er bei einem Datensatz ein gesperrter Knopf ist, über dem kein Tooltip erscheint.
+- **Marken „am Layer“** stehen in einer eigenen Zeile unter dem Kopf der Einstellungen der Ansicht und eines daraus gehefteten Layers, nicht in der Layerzeile (deren elf Plätze sind fest, UI-03).
+- **Tooltip-Stufe:** Die Marken der Hinweise zeigen ihren Tooltip auch in der Stufe „simple“; die übrigen Marken bleiben „advanced“.
+- **Zuschnitt-Downloads** nehmen die Bänder aus der Bandtabelle des Dialogs (NM4-75) und sind nicht geändert; nur der Fall ohne Bandtabelle nennt weiter das erste Asset der Liste.
+- **Nicht gebaut:** die Beschriftung der Originale als COG-Fassung des Bucket-Betreibers (§4.6), weil es dafür keine Registry-Angabe gibt und ein Text je Datensatz im Code gegen §10 verstieße; Frage F12.
+- **F7 (Wiedervorlage):** Die Kachelkosten der TPS sind in diesem PR nicht neu gemessen; ob Sentinel-1 im Browser spürbar langsam ist, sieht Otto bei der Prüfung (§13.6).
+
+### 13.5 Fragen an Otto
+
+**F11 — Quicklook für Sentinel-1 auf der Karte?**
+1. Das `thumbnail` über die vier Ecken der Item-Geometrie auf die Karte einpassen, Zuordnung der Bildecken je Bahnrichtung (`sat:orbit_state`) gespiegelt, mit der Marke „Approximate geolocation“; sichtbar auch unter z7, Kacheln ab z7 darüber. Allgemein über eine neue Registry-Angabe (z. B. `viewer.quicklook_placement: footprint_corners`), kein Zweig auf den Datensatz. Lage auf rund einen Kilometer, Farben als RGB-Komposit **(Empfehlung)**
+2. Wie 1, aber die Ecken aus `preview/map-overlay.kml` (Lage des Herstellers, Spiegelung schon darin); dafür eine zweite Anfrage je Szene an eine Datei, die kein Asset ist
+3. Vorschau aus dem `tiler` mit TPS, wie jetzt gebaut (exakte Lage, Graustufen wie die Ansicht, erst ab z7, je Kachel 0,1–0,3 s)
+4. Das Vorschaubild nur in der Trefferliste (heute schon so), auf der Karte die Kacheln aus 3
+
+**F12 — Beschriftung der Originale (§4.6)?**
+1. Neue allgemeine Registry-Angabe `source.originals_note` (englisch, ein Satz, ohne Vorgabe; bei den vier bisherigen Einträgen `null`), als Tooltip an „Originals“; Sentinel-1: „Cloud-optimized GeoTIFFs as the bucket operator converted them, not the ESA SAFE product.“ Kleiner eigener PR mit Backend **(Empfehlung)**
+2. Den Satz als dritten Hinweis in `notices` (erscheint dann auch als Marke)
+3. Weglassen
+
+### 13.6 Prüfanleitung für Otto
+
+**Browser:** `main` mit diesem PR, lokal `npm run dev` und das Backend starten.
+
+1. Data catalogue: „Sentinel-1 GRD“ zeigt die Marken „Approximate geolocation“ und „Uncalibrated (DN)“; beim Überfahren steht der Satz aus F10 im Tooltip, auch mit Tooltips auf „simple“.
+2. Suche über Mitteleuropa: unter „Showing dataset“ dieselben zwei Marken. Ab Zoom 7 zeigt die Karte die Vorschau-Kacheln der Szenen in Graustufen (VV); eine Suche im Nordpolarmeer (EW, HH) zeigt sie ebenfalls (HH).
+3. Zwei Szenen eines Überflugs ankreuzen, AOI über ihre Grenze, „Crop and merge to AOI“: eine gelbe Kontur um das Mosaik, **keine Linie quer durchs Bild**; die Marken stehen unter dem Kopf der Ansicht. Dasselbe mit Sentinel-2 (zwei Kacheln eines Überflugs).
+4. „Download full scene“ → „Originals“: je Szene das Band der Ko-Polarisation (`vv` bzw. `hh`).
+5. Ob die Kacheln spürbar langsam laden (Wiedervorlage F7).
+
+**Browser-Skript** (ohne Backend, braucht Playwright mit Chromium, das keine Abhängigkeit des Projekts ist), aus `frontend/`:
+
+```powershell
+npm run dev   # in einem zweiten Fenster
+node e2e/s1-pass.cjs
+```
+
