@@ -34,11 +34,13 @@ import { acquisitionNote, datasetsFrom, defaultRenderOf, preferredGeoreferencedA
 import { fallbackNotice, findFallback, fullDayRange, NO_FALLBACK_MESSAGE } from './dateFallback';
 import {
   assetHostsOf,
+  cropAssetsOf,
   decideDownloadOutcomeForLayer,
   downloadRequestFor,
   downloadRequestForSelection,
   DRAW_AOI_TO_CROP,
   isCogFormat,
+  mixedBandsNote,
   noOriginalsReason,
   originalFileLinks,
   type DownloadPass,
@@ -2252,6 +2254,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         aoi: s.aoi,
         cropToAoi: false,
         datasetId: s.datasetId,
+        ...(browsed?.viewable && browsed.collection['earthx:default_render']?.asset_selection === 'first_present'
+          ? { assets: cropAssetsOf(browsed, items) }
+          : {}),
       },
       0,
       viewDates(items),
@@ -2579,7 +2584,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       return;
     }
     if (kind === 'crop') {
-      const req = downloadRequestForSelection(dataset, groupItemIdsFor(items.map((it) => it.id), s.groups), s.aoi);
+      const req = downloadRequestForSelection(dataset, groupItemIdsFor(items.map((it) => it.id), s.groups), s.aoi, items);
       if (!req) {
         set({ error: 'Nothing to download — pick a time step or select scenes first.' });
         return;
@@ -2749,8 +2754,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     const layer = s.layers.find((l) => l.id === s.downloadDialogLayerId);
     const view = s.downloadSelection ? s.downloadView : null;
     const dataset = s.datasets.find((d) => d.id === (view?.datasetId ?? s.datasetId));
-    const sceneIds = view ? [view.items.map((it) => it.id)] : groupItemIdsFor(selectionItemsFrom(s).map((it) => it.id), s.groups);
-    const asked = s.downloadSelection ? downloadRequestForSelection(dataset, sceneIds, s.aoi) : layer && downloadRequestFor(layer, s.datasets);
+    const sceneItems = view ? view.items : selectionItemsFrom(s);
+    const sceneIds = view ? [sceneItems.map((it) => it.id)] : groupItemIdsFor(sceneItems.map((it) => it.id), s.groups);
+    const asked = s.downloadSelection ? downloadRequestForSelection(dataset, sceneIds, s.aoi, sceneItems) : layer && downloadRequestFor(layer, s.datasets);
     const name = s.downloadSelection
       ? `${dataset?.title ?? s.datasetId ?? '?'} · ${view?.label ?? s.groups[s.activeGroupIndex]?.label ?? ''}`
       : (layer?.name ?? '');
@@ -2793,6 +2799,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         set({ error: block });
         return;
       }
+    }
+    const mixed = table.length === 0 ? mixedBandsNote(downloadDatasetOf(s), asked.assets) : null;
+    if (mixed) {
+      set({ error: mixed });
+      return;
     }
     const req = withBandChoice(asked, table, s.downloadBands, s.downloadForm, s.downloadCommonResolution);
     const send = async () => {
