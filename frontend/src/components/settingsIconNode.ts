@@ -13,11 +13,12 @@ type Part = [element: 'path' | 'circle', attributes: Record<string, string>];
 
 const KNOB = 2.25;
 
-// One row: a line from x = 4 to x = 20 with a ring at `at` that interrupts it.
+// One row: a line from x = 4 to x = 20 with a ring at `at` that interrupts it. Each part carries a `key`, as Lucide's own do:
+// the icon renders its parts as a list, and React warns about a list without keys.
 const row = (y: number, at: number): Part[] => [
-  ['path', { d: `M4 ${y}H${at - KNOB}` }],
-  ['circle', { cx: String(at), cy: String(y), r: String(KNOB) }],
-  ['path', { d: `M${at + KNOB} ${y}H20` }],
+  ['path', { d: `M4 ${y}H${at - KNOB}`, key: `line-a-${y}` }],
+  ['circle', { cx: String(at), cy: String(y), r: String(KNOB), key: `knob-${y}` }],
+  ['path', { d: `M${at + KNOB} ${y}H20`, key: `line-b-${y}` }],
 ];
 
 export const SETTINGS_ICON_NODE: Part[] = [...row(5, 16), ...row(12, 8), ...row(19, 16)];
