@@ -202,5 +202,8 @@ search_capabilities:
 index_presets: []
 true_color: []
 notices: []
-# The sentences of the row "Limitations" of the Data catalogue (adr/0018 F2, Nachtrag DS-04c); none for this entry.
-limitations: []
+# The row "Limitations" of the Data catalogue (adr/0018 F2, Nachtrag DS-04c): the two limits the description names, as
+# sentences (DS-04 plan F15, Otto 10.11.2026).
+limitations:
+- One area can combine tiles of different survey years; each tile keeps its own year.
+- Placed in WGS 84 without a grid file, to about 1 m.
