@@ -1,0 +1,203 @@
+# swissALTI3D from the STAC API of the Federal Spatial Data Infrastructure (M5-08, `adr/0023` §4.1, §8.3, §9.1).
+# Measured 07.11.2026 (M5-08 plan §2) and again 09.11.2026 (plan §13): the collection, its newest search page, the
+# head of one COG (range read of 1024 bytes) and the CORS header of an asset. Since 26.09.2026 the source also holds a state
+# of 2026.
+#
+# One file is one entry of the registry (docs/plans/m5/m5-13-yaml-lader.md, KLAERUNGEN B13 stage 2). The fields are
+# those of `DatasetConfig` in `backend/earthx/catalog/registry.py`, every one set on purpose, none with a default
+# (KLAERUNGEN B10); `catalog.entry_files` reads the file strictly. Every value carries the place it comes from.
+
+# The id of the evaluation set of `adr/0026`, fixed here (M5-08 plan §4.5).
+dataset_id: swissalti3d
+title: swissALTI3D
+description: >-
+  swissALTI3D: digital terrain model (DTM) of Switzerland and the Principality of Liechtenstein without vegetation
+  and buildings, at 0.5 m and 2 m, as cloud-optimized GeoTIFF in tiles of 1 km in the Swiss coordinate system LV95,
+  heights in LN02. The source holds several states of most tiles from different aerial surveys; only the latest state
+  of each tile is loaded, so one area can combine tiles of different survey years; each tile keeps its own year as
+  its date.
+  The position is transformed to WGS 84 without a grid file, with an accuracy of about 1 m.
+# German and English (adr/0026 F7, M5-08 plan §4.5, §9).
+keywords:
+- swissalti3d
+- swisstopo
+- digital terrain model
+- DTM
+- elevation
+- elevation model
+- terrain
+- lidar
+- Switzerland
+- Liechtenstein
+- Geländemodell
+- Höhenmodell
+- Höhe
+- Schweiz
+category: elevation
+# The one provider of the collection with its roles and url (measured 09.11.2026): the collection names no host
+# role, though the same office runs the FSDI.
+providers:
+- name: Federal Office of Topography swisstopo
+  roles: [producer, licensor]
+  url: https://www.swisstopo.admin.ch/en/home.html
+# `summaries.gsd` of the collection [M].
+gsd: [0.5, 2.0]
+# No DOI found. The citation names publisher, product and the landing page the collection links as `about` [M]
+# (onboarding checklist point 3); a version is not given, the states are per tile.
+doi: null
+citation: >-
+  Federal Office of Topography swisstopo: swissALTI3D, digital terrain model of Switzerland and Liechtenstein,
+  https://www.swisstopo.admin.ch/de/hoehenmodell-swissalti3d
+# One terrain model, kept current tile by tile: the latest state of each tile is the dataset (M5-08 F1).
+data_class: raster-static
+format: cog
+# The files carry a CRS (EPSG:2056) and a geotransform [M].
+georeferencing: geotransform
+# The extent of the collection [M].
+spatial_extent:
+  bbox: [5.9503666, 45.7213375, 10.4998461, 47.8216742]
+# From the oldest state (2019) to the end of the year of the newest (2026, measured 09.11.2026; the item `datetime` is
+# 1 January of the year). A newer state shows up in the live smoke, which compares it with this end.
+temporal_extent:
+  start: 2019-01-01T00:00:00+00:00
+  end: 2026-12-31T23:59:59+00:00
+capabilities:
+  roi: true
+  # Only the latest state of each tile is loaded (M5-08 F1): no time line to choose from.
+  time_range: false
+  band_math: true
+  interpolation: true
+  reprojection: true
+  # A height model has no classification layer.
+  masking: false
+  # A mask by height ("above 2000 m") makes sense, as for the DEM (M5-08 Auslegung A5).
+  value_masking: true
+  normalization: true
+  ml_processing: true
+  # No complex quad-pol data: decomp.py stays out (ENTSCHEIDUNGEN §3).
+  quad_pol: false
+  # One model, one mosaic over all tiles (M5-08 F1): extent, not density (adr/0004 §5).
+  single_coverage_product: true
+# Classified by Otto (M5-08 F4, KLAERUNGEN B11): no SPDX identifier; every permission on, attribution mandatory, tier
+# processing. Read from the primary texts on 07.11.2026 and again on 09.11.2026 (plan §8a, §13).
+license:
+  spdx_id: null
+  name: Terms of use for free geodata and geoservices (OGD) from swisstopo
+  url: https://www.swisstopo.admin.ch/en/terms-of-use-free-geodata-and-geoservices
+  commercial_use: true
+  distribution: true
+  derivatives: true
+  share_alike: false
+  attribution_required: true
+  tier: processing
+  # The terms (Version 1.3.2021) offer "©swisstopo", written without a space, as one of the required source
+  # references. "(modified)" follows the form of `adr/0023` §7.2 and WorldCover (Otto, 08.11.2026, PR #314).
+  attribution_modified: ©swisstopo (modified)
+  attribution_unmodified: ©swisstopo
+  terms:
+    url: https://www.swisstopo.admin.ch/en/terms-of-use-free-geodata-and-geoservices
+    notice:
+      # Sections 3 and 4 of the terms in their own words (Version 1.3.2021, read 09.11.2026), shortened only where
+      # they name themselves. The terms carry no liability clause.
+      en: >-
+        Use is subject to the Terms of use for free geodata and geoservices (OGD) from swisstopo: {terms_url}. In
+        the event of excessive use of the geoservices infrastructure, access may be restricted or refused. The
+        general terms of use and operating regulations of the Federal Spatial Data Infrastructure FSDI apply.
+# The licence is checked and the tier set by Otto (adr/0024 R1, R3): no prototype source.
+legal_status: cleared
+legal_note: null
+access:
+  token_free_checked_at: 2026-11-09
+  method: anonymous HTTPS to the STAC API of the FSDI and its assets, no authentication header (M5-08 plan §2)
+  # `Access-Control-Allow-Origin: *` on the API and on an asset requested with an Origin (measured 09.11.2026).
+  cors: true
+  # Metadata and assets anonymous (adr/0027 §6.1): no account, no account path.
+  account: none
+  account_provider: null
+  account_paths: []
+source:
+  adapter: fsdi-stac-v1
+  endpoint: https://data.geo.admin.ch/api/stac/v1
+  source_collection_id: ch.swisstopo.swissalti3d
+  # The assets lie on the host of the API (S3 behind CloudFront, M5-08 plan §2).
+  asset_hosts: [data.geo.admin.ch]
+  # About 45 000 tiles, each read once a run (M5-08 plan §4.2); the source has no aggregation for a coverage.
+  item_holding: materialized
+  # CloudFront hides the region of the bucket; `eu-central-1` is the default of the service's code (`adr/0023` §7.3).
+  data_region: aws:eu-central-1
+  # The source keys each asset by its file name (M5-08 plan §2), so each item has other keys. Fixed keys by media type
+  # and gsd (M5-08 F2); the media types as the items carry them [M].
+  asset_keys:
+  - key: dtm
+    media_type: image/tiff; application=geotiff; profile=cloud-optimized
+    gsd: 0.5
+  - key: dtm_2m
+    media_type: image/tiff; application=geotiff; profile=cloud-optimized
+    gsd: 2.0
+  - key: xyz
+    media_type: application/x.ascii-xyz+zip
+    gsd: 0.5
+  - key: xyz_2m
+    media_type: application/x.ascii-xyz+zip
+    gsd: 2.0
+  # The latest state of each tile (M5-08 F1). The id is `swissalti3d_<year>_<tile>`, the tile two groups of four
+  # digits [M]; the geometry differs between states and does not tell the tile.
+  item_states:
+    rule: latest
+    tile_pattern: swissalti3d_\d{4}_(?P<tile>\d{4}-\d{4})
+  # The source writes https addresses, and every asset carries `file:checksum` for the version of an input.
+  asset_href_rewrites: []
+  asset_checksum: null
+coverage:
+  provider: local-sql
+  # A tile of 1 km; z8 as for the DEM until Otto decides otherwise (M5-08 Auslegung A6).
+  typical_footprint_km: 1.0
+  max_geotile_level: 8
+# 0,5 m by default, 2 m to choose like a band (M5-08 F2). Shown like the DEM (Auslegung A4).
+default_render:
+  title: Elevation
+  assets: [dtm]
+  rescale:
+  - [0.0, 5000.0]
+  colormap_name: terrain
+  expression: null
+  resampling: nearest
+  asset_selection: all
+# One mosaic over all tiles, whatever their survey year (M5-08 §4.4, Auslegung A3): every loaded item carries the
+# same `earthx:state`.
+#
+# `min_zoom` 14: a mosaic tile reads at most 12 scenes (`api.mosaic_tiles.MAX_SCENES_PER_TILE`). Over Switzerland a
+# tile of z14 meets at most 9 tiles of 1 km, one of z13 up to 25 (computed for 300 random tiles per level from the
+# LV95 grid, plan §13). `max_zoom` 20: two levels past z18, the level of the native 0.5 m.
+#
+# `browse: full_resolution` as for the DEM: no quicklook, the AOI crop in full resolution.
+viewer:
+  group_by: ['earthx:state']
+  min_zoom: 14
+  max_zoom: 20
+  browse: full_resolution
+  quicklook_nodata_max: null
+  results_group_by: ['earthx:state']
+health:
+  status: ok
+# A standard product of swisstopo, open government data since 2021.
+maturity: stable
+zarr: null
+mask: null
+# Heights in metres above the Swiss height system LN02 (`adr/0023` §8.3).
+band_units:
+  dtm: m
+  dtm_2m: m
+# The ASCII-XYZ files in a ZIP: originals for the download, not readable as a raster (M5-08 F2).
+auxiliary_assets: [xyz, xyz_2m]
+# The source answers neither `query` nor CQL2 (M5-08 plan §2): no filters.
+search_filters: []
+# As for the DEM: the share of the AOI the tiles reach is meaningful; there is no filter to evaluate and one state per
+# tile.
+search_capabilities:
+  evaluate: false
+  aoi_coverage: true
+# Terrain comes with its own operator (M5-10, `adr/0023` F5).
+index_presets: []
+true_color: []
+notices: []

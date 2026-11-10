@@ -588,11 +588,13 @@ Die Eigenheiten werden in den Feldern der Registry festgelegt, die es schon gibt
 - **Processing:**
   - `data_class` = statisches Raster. `time_range` = false, wie beim DEM; das Befliegungsjahr je Kachel ist eine Eigenschaft, keine Zeitachse.
   - **Offen nach der Messung [M]:** Die Collection hält mehrere Stände derselben Kachel als eigene Items (an einem Ort 2019 und 2025). Mit der Gruppierung des DEM (ein Schlüssel für alle Items) mischte ein Mosaik alte und neue Stände derselben Kachel; es gewänne das erste gültige Pixel (`registry.group_key`, `api/mosaic_tiles.py`) [P]. Mit dem Jahr im Schlüssel zerfiele eine AOI über Kacheln verschiedener Befliegungsjahre in mehrere Überflüge [A]. Wie die Registry das abbildet (etwa nur der jüngste Stand je Kachel), entscheidet das Onboarding mit einer Frage an Otto.
+  - **Entschieden mit M5-08 (Otto, 07.11.2026, F1):** Je Kachel lädt nur der jüngste Stand, über die allgemeine Registry-Angabe `source.item_states` (Regel `latest`, Kachel aus der Item-ID); ein Mosaik über alle Kacheln über `earthx:state`. Eintrag `backend/catalog/datasets/swissalti3d.yaml` (`plans/m5/m5-08-stac-adapter-swissalti3d.md` §8a, §13).
   - `band_math`, `reprojection`, `interpolation` und `normalization` = true. `masking` = false.
   - `value_masking`: nach Wunsch Ottos, bei Höhen meist sinnlos.
   - Eigener Operator: Hangneigung, Exposition und Schummerung. Das ist ein **neuer generischer Geländeoperator**, gebunden an eine **neue Capability** (Vorschlag `terrain`), die nur Höhenmodelle setzen (B10, F5). Dasselbe gilt dann für BEV und den Copernicus DEM.
 - **Erweiterte Suche:**
   - Auflösung 0,5 m oder 2 m. Das ist eine Wahl des Assets, kein Filter. Die Registry braucht dafür eine Angabe, welches Asset die Plattform liest; heute gibt es dafür `default_render.assets`. Ob das reicht, klärt das Onboarding.
+    - **Entschieden mit M5-08 (F2):** Es reicht nicht, weil die Quelle die Assets nach dem Dateinamen benennt. Die allgemeine Angabe `source.asset_keys` gibt feste Schlüssel nach Medientyp und `gsd`: `dtm` (0,5 m, Vorgabe), `dtm_2m`, und die XYZ-Dateien `xyz`, `xyz_2m` nur als Originale.
   - Befliegungsjahr: Die Suche der FSDI kennt `bbox`, `intersects`, `datetime`, `ids`, `collections`, Sortierung und die `forecast:*`-Felder, aber weder die Query-Extension noch CQL2 (`service-stac`, `app/stac_api/managers.py`, Konformitätsklassen in den Migrationen) [P]. Ein Filter nach `adr/0021` geht also nicht an die Quelle.
     - Das Jahr lässt sich nur über `datetime` wählen. Das Item-Datum ist der 1. Januar des Jahres, das auch im Namen der Assets steht [M]; dass dies das Befliegungsjahr ist, ist naheliegend, aber nicht am Primärtext belegt [A].
     - `search_filters` bleibt deshalb vorerst leer.
@@ -766,6 +768,7 @@ Eingabe für Fassung 2 des M5-Plans. Diese Liste legt keine Plan-Dateien an und 
    - Aus dem Earth-Search-Adapter wird ein Adapter für beliebige STAC-APIs; swissALTI3D ist nach Earth Search die erste Quelle darüber (FSDI, LV95).
    - Vorab zu klären (Frage an Otto im Plan der Aufgabe): mehrere Stände derselben Kachel (§8.3) und die Wahl des Assets 0,5 m bzw. 2 m.
    - Vor dem Registry-Eintrag: Otto prüft Bedingungen und Quellenangabe von swisstopo (F2).
+   - *Nachtrag M5-08:* Stände und Asset-Wahl sind entschieden (§8.3, `plans/m5/m5-08-stac-adapter-swissalti3d.md` §8a); umgesetzt in drei PRs (M5-08a–c).
 3. **BEV ALS-DGM 1 m** als Quelle mit ATOM-Feed (EPSG:3035, 55 Kacheln).
    - Die Bedingung aus F1 ist erfüllt; ein Ersatz (LGLN) ist nicht nötig.
    - Vorab zu klären: welche Stichtage (§8.3); Aufbau aller Kacheln über ihre Kopfzeilen prüfen; `data_region` = `unknown`, bis Betreiber und Ort des Speichers belegt sind (F7).
