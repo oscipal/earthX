@@ -156,6 +156,7 @@ Ausgehendes HTTPS geht über den Agent-Proxy der Umgebung. Gemessen:
 | `nominatim.openstreetmap.org` (seit dem 26.09.2026 freigegeben, für M3-07a gemessen, Beleg `plans/m3/m3-07a-ortssuche-backend.md` §3) | |
 | `e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com` (tatsächlicher Asset-Host von `sentinel-2-c1-l2a`, Beleg `adr/0006`) | |
 | `sentinel-s1-l1c.s3.eu-central-1.amazonaws.com` (Asset-Host von `sentinel-1-grd` nach der Abbildung von `s3://`, gemessen 26.10., 07.11. und 08.11.2026, Beleg `adr/0018` §3.1, `plans/ds/ds-04-s1-anbinden.md` §2) | |
+| `data.geo.admin.ch` (STAC-API der FSDI und Asset-Host von `swissalti3d`, gemessen 06.11., 07.11. und 09.11.2026 mit `curl`; über `gateway` wie alle Quellen nicht erreichbar, Beleg `plans/m5/m5-08-stac-adapter-swissalti3d.md` §2, §13) | |
 | `objects.eodc.eu`, **`data.eodc.eu`**, `stac.core.eopf.eodc.eu` (Beleg `adr/0007` §3.1, §12.1) | `download.user.eopf.eodc.eu`, `stac.browser.user.eopf.eodc.eu` (Beleg `adr/0007` §12.1) |
 
 **Stand 19.09.2026: Earth Search v1 ist erreichbar.** Die Tabelle oben führte
