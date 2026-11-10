@@ -1,6 +1,6 @@
 # M5-22 — Suche Teil 1: Bewertungs-Set, Suchtext, lexikalischer Arm, Collection Search: Plan-Schritt
 
-**Status (10.11.2026):** Plan, Fragen an Otto offen (§8). Umsetzung erst nach den Antworten, im selben Draft-PR (Schnitt nach F1).
+**Status (10.11.2026):** Plan, Fragen an Otto offen (§8). Umsetzung erst nach den Antworten, im selben Draft-PR [#325](https://github.com/oscipal/earthX/pull/325) (Schnitt nach F1).
 **Aufgabe:** M5-22 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2. **Stufe B.** Hängt von M5-13 ab (gemergt mit #311). M5-23 (Vektorarm, Suchfeld im Data catalogue) und M5-25 (JSON-LD, Sitemap) warten auf den Merge.
 **Grundlagen:** `adr/0026` §4.1–§4.6, §6 Schritte 1 und 2, §8, §10, §11 (F1–F9), §12 Folgen 2, 4, 6, 9, 10; `adr/0024` R5, R7; `adr/0027` §6.1; `KLAERUNGEN.md` B10, B13; `architekturplan.md` 3.1, 5.1, 5.3, 10; Glossar-Begriffe aus `plans/m5/m5-07-worldcover.md` §10, `plans/m5/m5-08-stac-adapter-swissalti3d.md` §9, `plans/ds/ds-04-s1-anbinden.md` §8.
 
