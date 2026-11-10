@@ -98,11 +98,15 @@ jobs:
           pip install --require-hashes --only-binary :all: --no-binary version-parser \
             -r backend/requirements-dev.lock
 
-      # Bit-exact tests (adr/0016 §3.3, adr/0014 §6.3) depend on the CPU the runner lands
-      # on, which ubuntu-latest does not fix. This puts what they depend on into the log.
-      - name: CPU and numeric libraries (for bit-exact tests)
+      # Bit-exact tests (adr/0016 §3.3, adr/0014 §6.3) depend on the system's glibc (version
+      # and build variant) and on the CPU features it and numpy dispatch on. This puts
+      # both into the log, so a red run can be matched to its machine.
+      - name: System, CPU and numeric libraries (for bit-exact tests)
         if: steps.scope.outputs.docs_only != 'true'
         run: |
+          grep PRETTY_NAME /etc/os-release
+          ldd --version | head -1
+          dpkg -s libc6 | grep -E '^(Version|Architecture)' || true
           lscpu
           /lib64/ld-linux-x86-64.so.2 --list-diagnostics \
             | grep -E '^x86\.cpu_features\.(basic\.|features\[0x[01]\]\.active|preferred|isa_1)' || true
