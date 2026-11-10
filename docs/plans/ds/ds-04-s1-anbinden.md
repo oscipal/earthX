@@ -549,9 +549,15 @@ In allen Fällen fragt die Karte die Kacheln der Szenen ohne Kartenbewegung an u
 1. Zwei Sätze: „One area can combine tiles of different survey years; each tile keeps its own year.“ und „Placed in WGS 84 without a grid file, to about 1 m.“ **(Empfehlung)**
 2. Leer lassen
 
+**F16 — CI rot seit dem 10.11.2026 ab ca. 15:20 (`main` und #319)?** Auf `main` und hier schlagen dieselben drei Tests fehl, mit denselben Hashes: `test_band_math.py::TestBitStabilityAcrossCpuLevels::test_the_probe_would_notice_a_function_that_is_not_bit_stable` und zweimal `test_mosaic.py::TestTheRuleOfTheExport::test_both_compute_the_same_bytes_as_before_the_order_moved`; lokal grün. Vermutung: Runner mit anderer CPU, nicht belegt.
+1. Eigene Aufgabe von `main` aus: die CI schreibt CPU-Modell und -Merkmale ins Log; damit klären, ob der Export je CPU andere Bytes gibt **(Empfehlung)**
+2. Den Lauf später erneut starten
+3. Zurückstellen
+
 ### 14.7a Antworten Otto (10.11.2026)
 
 - **F13:** Option 3. Die leere Karte nach „Crop and merge“ über 64 Kacheln ist zurückgestellt bis M5-30; `frontend/e2e/many-scenes.cjs` bleibt als Prüfung des Ablaufs.
 - **F14:** Option 1. Über 40 einzeln gezeichnete Szenen bleibt es bis M5-30, wie es ist; die Meldung nennt die nicht gezeichneten.
 - **F15:** Option 1. swissALTI3D hat in `limitations` zwei Sätze: „One area can combine tiles of different survey years; each tile keeps its own year.“ und „Placed in WGS 84 without a grid file, to about 1 m.“ Eingetragen in `backend/catalog/datasets/swissalti3d.yaml`.
+- **F16:** Option 1 (Otto, 10.11.2026). Die Ursache klärt eine eigene Aufgabe von `main` aus (CI-Fix); #319 bleibt unverändert. Gemergt wird, sobald `main` wieder grün ist und dieser Branch danach `main` geholt hat.
 
