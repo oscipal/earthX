@@ -353,6 +353,60 @@ class TestFixedAssetKeys:
             with_fixed_asset_keys(item(2019, assets=None), RULES)
 
 
+class TestMaterializeProgress:
+    """One log line every ``PROGRESS_EVERY_PAGES`` pages: how far the run is, never an item or an address."""
+
+    @pytest.fixture(autouse=True)
+    def every_second_page(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(stac_api, "PROGRESS_EVERY_PAGES", 2)
+
+    @staticmethod
+    def lines(caplog: pytest.LogCaptureFixture) -> list[str]:
+        return [r.getMessage() for r in caplog.records if r.name == "earthx.adapters.stac_api" and r.levelname == "INFO"]
+
+    @staticmethod
+    def pages(count: int) -> list[list[Any]]:
+        return [[item(2019, f"{2600 + n}-1200"), item(2019, f"{2600 + n}-1201")] for n in range(count)]
+
+    async def test_the_line_names_page_and_items_and_the_pages_to_expect(self, caplog: pytest.LogCaptureFixture) -> None:
+        caplog.set_level("INFO", logger="earthx.adapters.stac_api")
+        async with Source(self.pages(5)).gateway() as gateway:
+            await materialize_items(ENTRY, adapters=ADAPTER_SPECS, gateway=gateway, known_version=None, expected_items=1000)
+        assert self.lines(caplog) == ["materialize: page 2 / ~10, 4 items", "materialize: page 4 / ~10, 8 items"]
+
+    async def test_without_an_earlier_run_the_line_gives_no_total(self, caplog: pytest.LogCaptureFixture) -> None:
+        caplog.set_level("INFO", logger="earthx.adapters.stac_api")
+        await materialize(Source(self.pages(3)))
+        assert self.lines(caplog) == ["materialize: page 2, 4 items"]
+
+    async def test_a_run_shorter_than_the_interval_logs_nothing(self, caplog: pytest.LogCaptureFixture) -> None:
+        caplog.set_level("INFO", logger="earthx.adapters.stac_api")
+        await materialize(Source(self.pages(1)), known_version=None)
+        assert self.lines(caplog) == []
+
+    async def test_an_unchanged_run_reads_no_page_and_logs_nothing(self, caplog: pytest.LogCaptureFixture) -> None:
+        caplog.set_level("INFO", logger="earthx.adapters.stac_api")
+        await materialize(Source(self.pages(4)), known_version=f"{ETAG};updated={UPDATED}")
+        assert self.lines(caplog) == []
+
+    async def test_no_item_id_and_no_address_reaches_the_log(self, caplog: pytest.LogCaptureFixture) -> None:
+        caplog.set_level("DEBUG", logger="earthx.adapters.stac_api")
+        await materialize(Source(self.pages(4)))
+        text = " ".join(r.getMessage() for r in caplog.records if r.name == "earthx.adapters.stac_api")
+        assert text and "dtm_" not in text and HOST not in text and "http" not in text
+
+    def test_the_line_in_the_form_of_the_example(self) -> None:
+        assert stac_api._progress(120, 12000, 45000) == "materialize: page 120 / ~450, 12 000 items"
+
+    def test_the_estimate_never_falls_behind_the_page_count(self) -> None:
+        # The source grew since the last run: the line says the page it is at, not a smaller total.
+        assert stac_api._progress(500, 50000, 45000) == "materialize: page 500 / ~500, 50 000 items"
+
+    @pytest.mark.parametrize("expected", [None, 0])
+    def test_no_usable_estimate_leaves_the_total_out(self, expected: int | None) -> None:
+        assert stac_api._progress(10, 1000, expected) == "materialize: page 10, 1 000 items"
+
+
 class TestMaterialize:
     async def test_every_page_is_read_and_the_latest_state_per_tile_is_loaded(self) -> None:
         source = Source(
