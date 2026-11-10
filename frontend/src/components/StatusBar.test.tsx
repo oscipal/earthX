@@ -1,15 +1,9 @@
 // @vitest-environment jsdom
 //
-// The hint below a dataset's lowest released level (M2-10), where it has to be
-// seen rather than merely rendered.
-//
-// The bug this covers was never in the rule: the hint sat in the control panel,
-// which `runSearch` slides off screen, so it was never once visible in the
-// situation it is for (found locally by Otto, 22.09.2026). A test of the rule
-// could not have caught that, and neither could a test that mounts one
-// component in isolation — it would pass just as well with the hint back inside
-// the panel. So `App` is mounted whole and the assertion is about *where* the
-// hint ends up: outside the dock that collapses.
+// The map below a dataset's lowest released level (M2-10). Until 10.11.2026 a standing line over the map said "Zoom in to
+// level n to see imagery …"; Otto dropped it: the tooltip of the row "Search results" in the layer manager says why the
+// results show nothing (`LayerManager.test.tsx`). `App` is mounted whole, so that no part of the interface says it over
+// the map either.
 //
 // This one file asks for a DOM; the rest of the suite stays on plain node.
 // Rendered as a client, not to static markup, because zustand hands a server
@@ -110,13 +104,7 @@ function show(collection: Collection, mapZoom: number): HTMLElement {
   return container;
 }
 
-function hintOf(root_: HTMLElement): HTMLElement | null {
-  return [...root_.querySelectorAll<HTMLElement>('[role="status"]')].find((el) =>
-    (el.textContent ?? '').includes('Zoom in to level'),
-  ) ?? null;
-}
-
-describe('the hint below a dataset’s lowest released level', () => {
+describe('the map below a dataset’s lowest released level (Otto, 10.11.2026)', () => {
   beforeEach(() => {
     globalThis.IS_REACT_ACT_ENVIRONMENT = true;
     container = document.createElement('div');
@@ -130,44 +118,14 @@ describe('the hint below a dataset’s lowest released level', () => {
     vi.unstubAllGlobals();
   });
 
-  it('says why the map is empty, naming the level and the dataset', () => {
-    const text = hintOf(show(ZARR_LIKE, 5))?.textContent ?? '';
-    expect(text).toContain('Zoom in to level 8');
-    expect(text).toContain('Synthetic Zarr dataset');
-    expect(text).toContain('coverage layer');
+  it.each([5, 2, 8])('stands nothing over the map at zoom %i: the row of the results in the layer manager says why', (zoom) => {
+    const shown = show(ZARR_LIKE, zoom);
+    expect(shown.textContent).not.toContain('Zoom in');
+    expect(shown.textContent).not.toContain('Nothing shown at this zoom');
+    expect(shown.querySelector('.toast.hint')).toBeNull();
   });
 
-  it('does not sit inside the panel beside the rail', () => {
-    // The whole bug in one assertion: the hint used to live in the panel beside
-    // the rail, which is hidden in this very state — visible to neither the type
-    // check nor a test of the rule.
-    const hint = hintOf(show(ZARR_LIKE, 5));
-    const dock = container.querySelector('.dock');
-
-    expect(hint).not.toBeNull();
-    expect(dock?.hasAttribute('hidden')).toBe(true);
-    expect(dock?.contains(hint!)).toBe(false);
-  });
-
-  it('shows without a search, which is when a dataset switch explains it best', () => {
-    // `setDatasetId` clears the results, so anything gated on them would be off
-    // at exactly the moment someone picks the dataset with the higher floor.
-    expect(hintOf(show(ZARR_LIKE, 2))).not.toBeNull();
-  });
-
-  it('is gone at the floor itself — the floor is released', () => {
-    expect(hintOf(show(ZARR_LIKE, 8))).toBeNull();
-  });
-
-  it('never appears for a dataset released from z0', () => {
-    expect(hintOf(show(COG_LIKE, 0))).toBeNull();
-  });
-
-  it('carries no dismiss button and takes no clicks away from the map', () => {
-    const hint = hintOf(show(ZARR_LIKE, 5));
-    expect(hint?.querySelector('button')).toBeNull();
-    // The stack crosses the buttons at the top right on an ordinary laptop
-    // width; a standing hint that took pointer events would swallow them.
-    expect(hint?.className).toContain('hint');
+  it('stands nothing for a dataset released from z0 either', () => {
+    expect(show(COG_LIKE, 0).querySelector('.status-stack')?.textContent ?? '').toBe('');
   });
 });

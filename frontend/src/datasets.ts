@@ -259,38 +259,21 @@ export function maturityNote(collection: Collection): string | null {
   return maturity;
 }
 
-// Why the map shows no imagery for this dataset at this zoom, or `null` when
-// that is not the reason (M2-10).
+// Why the search results of this dataset show nothing at this zoom, or `null` when that is not the reason (M2-10): the
+// tooltip of the entry "Search results" in the layer manager says it (Otto, 10.11.2026; before, a standing line over the
+// map said "Zoom in to level n to see imagery …"). Below `min_zoom` MapLibre requests no tiles at all, a raster source has
+// no underzoom, so the scenes simply are not drawn. Above the floor this says nothing: an empty map then has another cause.
 //
-// Below `min_zoom` MapLibre requests no tiles at all — a raster source has no
-// underzoom — so the scenes simply are not drawn, and the map looks empty rather
-// than out of range. Above the floor this says nothing: an empty map then has
-// some other cause, and a hint that is always on is a hint nobody reads.
-//
-// Two limits worth knowing. It speaks for the *tile* paths, which is what a
-// released range bounds: a published quicklook is placed as an image and has no
-// floor, so for a dataset with `min_zoom > 0` whose items carry thumbnails this
-// would be wrong — no entry is in that position today (the COG one releases from
-// z0). And it follows the map's `moveend`, so during a long zoom gesture the map
-// is already empty while this still says nothing.
-//
-// M3-12 (Otto, 26.09.2026): only for `browse: 'preview_tiles'` — a dataset with
-// no coarse-tile preview at all (`full_resolution`, the DEM) shows no "zoom in"
-// hint when zoomed out; its tiles are per-item (M3-09), so there is nothing a
-// released range would be hiding several scenes behind (M3-12 plan step §3).
-//
-// It belongs wherever the app talks to the user and not in a panel that can be
-// slid away: the first version of this sat in the control panel, which
-// `runSearch` collapses, so it was never once visible in the situation it is
-// for (found locally by Otto, 22.09.2026).
+// Only for `browse: 'preview_tiles'` (M3-12, Otto, 26.09.2026): a dataset with no coarse-tile preview (`full_resolution`,
+// the DEM) draws its scenes at every released level; a published quicklook is placed as an image and has no floor.
 export function zoomFloorHint(dataset: DatasetOption | undefined, mapZoom: number): string | null {
   // A zoom that is not a number compares false against everything, which would
-  // otherwise turn a broken reading into a standing hint.
+  // otherwise turn a broken reading into a standing reason.
   if (!Number.isFinite(mapZoom)) return null;
   if (!dataset?.viewable || dataset.browse !== 'preview_tiles' || mapZoom >= dataset.zoom.min) return null;
   return (
-    `Zoom in to level ${dataset.zoom.min} to see imagery for ${dataset.title} — ` +
-    'below it one tile covers several scenes, which is what the coverage layer is for.'
+    `Nothing shown at this zoom: ${dataset.title} is drawn from zoom ${dataset.zoom.min}. ` +
+    'Below it one tile covers several scenes; the coverage shows where they are.'
   );
 }
 

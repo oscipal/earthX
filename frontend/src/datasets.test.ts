@@ -521,14 +521,10 @@ describe('zoomFloorHint', () => {
     ])[0];
   }
 
-  it('names the level to reach and the dataset it is about', () => {
-    const text = zoomFloorHint(option(), 5);
-    expect(text).toContain('level 8');
-    expect(text).toContain('Synthetic Zarr dataset');
-  });
-
-  it('points at the coverage layer as what answers this zoom', () => {
-    expect(zoomFloorHint(option(), 5)).toContain('coverage layer');
+  it('names the zoom it is drawn from and the dataset it is about', () => {
+    expect(zoomFloorHint(option(), 5)).toBe(
+      'Nothing shown at this zoom: Synthetic Zarr dataset is drawn from zoom 8. Below it one tile covers several scenes; the coverage shows where they are.',
+    );
   });
 
   it('is null at the floor itself — the floor is released', () => {
@@ -570,7 +566,7 @@ describe('zoomFloorHint', () => {
   it('a fractional map zoom counts as the level it has not reached yet', () => {
     // MapLibre reports a continuous zoom; 7.9 is still below the z8 the source
     // starts at, and the tiles are still not requested.
-    expect(zoomFloorHint(option(), 7.9)).toContain('level 8');
+    expect(zoomFloorHint(option(), 7.9)).toContain('from zoom 8');
     expect(zoomFloorHint(option(), 8.1)).toBeNull();
   });
 });

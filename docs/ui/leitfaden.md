@@ -176,7 +176,7 @@
 | `Popover` | Menüs, Listen und das Formular „Advanced search“ |
 | `ResamplingDialog` | die einzige Rückfrage mit Cancel/Continue |
 | Fenster (`DataCatalogue`) | größeres Fenster über der Karte, geöffnet und geschlossen über sein Symbol in der Leiste, dazu das rote x im Kopf (§5); der Kopf ist ein eigener Bereich, in den später Suchfeld und AOI-Schalter kommen, ohne sichtbar leere Fläche, solange sie fehlen |
-| `Badge` | das eine Abzeichen („Preview“, „Temporary“, „Overview“, „Zoom in“, „Loading…“): Pille in `--accent-2`, Großbuchstaben per CSS; `PreviewBadge` setzt sie über die Karte. Hinweise eines Datensatzes (`earthx:notices`, etwa „Approximate geolocation“) sind keine Marke, nirgends: Sie stehen als Satz in seiner Beschreibung (Otto, 10.11.2026, `adr/0018` F2, Nachtrag DS-04c) |
+| `Badge` | das eine Abzeichen („Preview“, „Temporary“, „Overview“, „Loading…“): Pille in `--accent-2`, Großbuchstaben per CSS; `PreviewBadge` setzt sie über die Karte. Hinweise eines Datensatzes (`earthx:notices`, etwa „Approximate geolocation“) sind keine Marke, nirgends: Sie stehen als Satz in seiner Beschreibung (Otto, 10.11.2026, `adr/0018` F2, Nachtrag DS-04c) |
 
 **Knopfformen** (`index.css`, vorn im Blatt):
 
@@ -252,6 +252,7 @@ Jeder Tooltip hat eine Stufe; alles läuft über `TipLayer` (ein gezeigter Toolt
   - **Appearance:** Vorgabe „Dark“. Gespeichert wird `tech` (Dark), `normal` (Light) oder `system`, damit eine Wahl aus der Zeit vor „System“ gilt. „System“ folgt `prefers-color-scheme` und wechselt mit dem System, auch während die Seite offen ist.
   - **Die bisherigen Stellen entfallen:** der Knopf „Basemap“ und der Knopf Light/Dark oben rechts. Dort bleibt „Zoom to selection“. Neue Einstellungen dieser Art kommen in dieses Panel, nicht an einen eigenen Knopf.
 - **Relief** gibt es nur als Overlay. Ein Browser, der die Basemap „relief“ gemerkt hat, öffnet mit der Standard-Basemap und dem Overlay Relief (der Eintrag wird einmal umgeschrieben). Ein alter Permalink mit Basemap „relief“ öffnet für diese Ansicht ebenso, ohne etwas zu speichern; das Backend nimmt `relief` weiter an, das Frontend schreibt es nicht mehr.
+- **Unter der Startzoomstufe** zeigt ein Layer nichts; über der Karte steht dazu nichts (kein „Zoom in to level n …“, keine Marke „Zoom in“; Otto, 10.11.2026). Den Grund nennt der Tooltip seiner Zeile im Layer-Manager, in beiden Stufen, solange er gilt: „Nothing shown at this zoom: this layer is drawn from zoom n.“ (`zoomHint.ts`). Die Zeile „Search results“ sagt es für einen Datensatz mit Vorschau-Kacheln (`browse: preview_tiles`), die Marke „Preview“ für die Vorschau des Processing-Panels. Gilt für jeden Datensatz.
 - **„Zoom to selection“** zoomt auf alles Gewählte zusammen (`zoomSelection.ts`):
   - Dazu gehören die AOI, die Bilder der offenen Ansicht und die Bilder der sichtbaren Layer; ein ausgeblendeter Layer und eine Ansicht mit ausgeblendetem Bild zählen nicht. Beispiel: AOI in der Schweiz und Ansicht auf Teneriffa → beide sind im Bild.
   - Über die Datumsgrenze gilt der kürzere Weg (`unionBboxShortest`): Fidschi beiderseits der Linie ist ein Kasten über 180°, nicht die Welt.
