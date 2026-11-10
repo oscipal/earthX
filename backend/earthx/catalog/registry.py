@@ -509,7 +509,8 @@ class SourceInfo:
     its own. Neither has a default (KLAERUNGEN B10).
     ``asset_href_rewrites`` (DS-04 plan §4.2) are the prefixes the adapter rewrites, empty where the source writes
     ``https`` itself; each new prefix lies on a host of ``asset_hosts``. ``asset_checksum`` (§4.3) is the checksum
-    the asset host gives for the version of an input, or ``None`` where it gives none we take.
+    the asset host gives for the version of an input, or ``None`` where it gives none we take; an object without it is
+    versioned by its ETag, as everywhere else.
     """
 
     adapter: AdapterKind
