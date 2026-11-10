@@ -406,7 +406,7 @@ Auf `main` 05a3b1c (nach DS-04b #318), eigener Draft-PR, nur Frontend. Belegstuf
 
 - **`first_present` in der Darstellung (F2):** `defaultRenderOf(collection, item)` nimmt das erste Asset der Liste, das das Item trägt, mit dem Stretch-Paar an derselben Stelle; ein Item ohne eines davon hat keine Standarddarstellung. Ohne Item steht das erste der Liste für den Datensatz. Ansicht („View whole scene“, „Crop to AOI“), Vorschau-Kacheln, georeferenziertes Asset eines Quicklooks und Mosaik-Job nehmen das Band je Szene; Standard-Look, Bezugspunkt von „Temporary“ und Standardband im Band-Menü kommen von der ersten Szene des gezeigten Bildes (die Szenen eines Bildes sind ein Überflug); eine Szene ohne eines der Bänder fällt mit Meldung aus der Ansicht. „Originals“ bietet alle Assets der Liste an, jede Szene liefert das, das sie trägt. `all` und ein Backend ohne das Feld bleiben wie bisher.
 - **Vorschau nach der Suche (§12.3):** `quicklookPlan` nimmt das Thumbnail eines Items nur noch, wenn die Karte es platzieren kann (`quicklookCoords`: CRS und georeferenziertes Asset). Sentinel-1 bekommt damit die Kacheln, die `browse: preview_tiles` nennt (ab z7, Band je Szene); die Trefferliste zeigt das Thumbnail weiter neben der Szene. Allgemein, kein Zweig auf den Datensatz.
-- **Marken (§4.4, §4.6):** `earthx:notices` als je eine Marke (`.badge`), englisch, Erklärung im Tooltip, kein Text daneben: im Data catalogue neben „Prototype“, unter dem Kasten der Suchergebnisse und in einer eigenen Zeile unter dem Kopf einer Ansicht bzw. eines Layers. Der Tooltip erscheint in beiden Tooltip-Stufen, weil er erklärt, was die Marke bedeutet (wie ein (i), `tipLevel.ts`). Ein Eintrag, der kein ganzer Hinweis ist, wird ausgelassen.
+- **Marken (§4.4, §4.6):** zuerst als je eine Marke gebaut; nach Ottos Review vom 10.11.2026 wieder entfernt und durch die Zeile „Limitations“ des Data catalogue ersetzt (§14.2).
 - **Browser-Skript** `frontend/e2e/s1-pass.cjs` (synthetisch, ohne Backend): Vorschau mit dem Band je Szene, kein Thumbnail in Radargeometrie auf der Karte, Marken mit Tooltip an allen drei Stellen, Kontur eines zusammengeführten Überflugs aus zwei Slices (Sentinel-1) und aus zwei Kacheln (Sentinel-2). Hell/Dunkel, breit und 360 px.
 
 ### 13.2 Fehler aus Ottos Browserprüfung: Szenengrenzen im zusammengeführten Layer
@@ -472,4 +472,47 @@ Auf `main` 05a3b1c (nach DS-04b #318), eigener Draft-PR, nur Frontend. Belegstuf
 npm run dev   # in einem zweiten Fenster
 node e2e/s1-pass.cjs
 ```
+
+---
+
+## 14. Nachträge nach Ottos Prüfung (10.11.2026)
+
+Im selben Draft-PR [#319](https://github.com/oscipal/earthX/pull/319), auf Ottos Auftrag.
+
+### 14.1 Fehler: Mosaik weist Sentinel-1 ab („the item points at a host this dataset does not declare“)
+
+**Befund (Otto):** Beim Mosaik eines Sentinel-1-Überflugs meldet der Viewer „Could not load the mosaic (the item points at a host this dataset does not declare (asset_hosts)); its scenes are drawn one by one.“
+
+**Nachgestellt [M]:** zwei echte Slices eines Datatakes (nur Metadaten, per `curl` geholt, weil das Gateway aus der Sitzung nicht durch den Proxy kommt), die echten Routen des `tiler` (`build_app` mit der echten Registry):
+- Items so, wie `get_item` sie liefert (nach `normalize_for`, also `https`): Einzel-TileJSON, Mosaik-TileJSON und Szenenreihenfolge `200`.
+- Dieselben Items roh (`s3://`): Mosaik-TileJSON `502` mit genau Ottos Meldung, ebenso die Einzelkachel.
+- Rohe Items im Item-Cache, `get_item` als Item-Quelle: ohne Behebung `502`, mit Behebung `200`.
+
+**Ursache:** Die Host-Prüfung vergleicht richtig (der Host von `asset_hosts` und der abgebildeten Adresse sind gleich); bei der Route kommen aber Items mit der Adresse der Quelle an. Das kann nur der Item-Cache sein. In der ersten Fassung von DS-04b (Commit 4831410 auf dem Branch von #318) speicherte das STAC-Modul die Items roh und bildete erst beim Lesen ab. Beim Einarbeiten von M5-08b wanderte die Abbildung vor den Cache (`normalize_for`), und beim Lesen wurde nichts mehr abgebildet. Ein Eintrag aus der Zeit davor (Item 24 h, Suchseite bis 24 h gültig) kam deshalb mit `s3://` heraus, und `gateway` weist die Adresse ab. Dass einzelne Szenen gezeichnet wurden, passt dazu, wenn nur ein Teil der Items alt im Cache lag; Ottos Datenbank habe ich nicht eingesehen.
+
+**Behebung (gemeinsame Stelle, STAC-Modul):** Die Abbildung gilt auch für ein Item und eine Suchseite aus dem Cache. Sie ist idempotent: Ein altes Präfix ist nie `https`, ein neues immer (Startprüfung). Test ohne Netz: rohe Einträge im Cache kommen abgebildet heraus (ohne Behebung 2 Tests rot), ein abgebildeter Eintrag wird nicht doppelt abgebildet, ein Eintrag ohne Abbildung bleibt unverändert.
+
+**Andere Datensätze:** Sentinel-2 hat keine Abbildung; mit zwei echten Kacheln eines Überflugs liefern die drei Routen `200`. DEM und WorldCover haben keine Abbildung und werden aus pgstac gelesen, nicht aus dem Item-Cache. swissALTI3D hat auf `main` noch keinen Registry-Eintrag (M5-08c steht aus); die Behebung gilt für jeden Eintrag mit Abbildung, auch einen späteren.
+
+### 14.2 Hinweise: keine Marken, Zeile „Limitations“ (`adr/0018` F2, Nachtrag DS-04c)
+
+- Die Marken „Approximate geolocation“ und „Uncalibrated (DN)“ sind aus der Oberfläche entfernt: Panel, Suchergebnisse, Kopf von Ansicht und Layer, Liste und Kopf der Angaben im Data catalogue.
+- Neue Registry-Angabe `limitations` (ganze Sätze, englisch, je bis 200 Zeichen, mit Punkt; ohne Vorgabe, leer bei den vier übrigen Einträgen), veröffentlicht als `earthx:limitations`; im Data catalogue die Zeile „Limitations“ nach „Description“, ohne Einschränkung keine Zeile. Sentinel-1: „Placed only by the ground control points of each scene, without terrain correction; this holds for every pixel, not only the preview.“ und „Values are uncalibrated digital numbers (DN), not calibrated backscatter.“
+- Rezept (`provenance.notices`) und `ATTRIBUTION.txt` behalten die Hinweise; `ATTRIBUTION.txt` setzt für `{year}` das Aufnahmejahr ein (so schon gebaut, jetzt mit Test für Sentinel-1), der Katalog zeigt „[year]“.
+- Keine internen Verweise in Texten für Nutzer: Startprüfung auf `adr/…`, `§…`, Aufgabenkürzel und die Namen der Klärungsdokumente in Beschreibung, Zitierangabe, Zugangsweg, Einschränkungen, Hinweisen und Suchfiltern; die Beschreibungen von Sentinel-1, Sentinel-2 und DEM und der Zugangsweg aller fünf Einträge sind bereinigt, die Verweise stehen in YAML-Kommentaren.
+- Zeile „DOI“ nur bei einer DOI, sonst „Citation“.
+
+### 14.3 Kein „Zoom in“ über der Karte
+
+Der Hinweis „Zoom in to level n to see imagery …“ und die Marke „Zoom in“ entfallen. Ein Layer unter seiner Startzoomstufe sagt im Tooltip seiner Zeile im Layer-Manager „Nothing shown at this zoom: this layer is drawn from zoom n.“ (beide Tooltip-Stufen, nur solange es gilt); die Zeile „Search results“ sagt es für einen Datensatz mit Vorschau-Kacheln, die Marke „Preview“ für die Vorschau des Processing-Panels. Allgemein, für jeden Datensatz.
+
+### 14.4 Balken der Coverage
+
+Die Balken wuchsen mit jedem Monat um ein Pixel und einen Abstand; bei 146 Monaten (Sentinel-1 seit Oktober 2014) scrollte das Panel um 113 bis 141 px quer (gemessen im Browser, Gegenprobe). Jetzt eine feste Reihe von 32 px Höhe in der Breite des Panels: ein Balken je Monat bis 36, sonst je Quartal, sonst je Jahr; Tooltip mit Zeitraum und Zahl. Browser-Skript `frontend/e2e/coverage-histogram.cjs` (30, 60, 146 Monate).
+
+### 14.5 Auslegungen
+
+- **Kein „Zoom in“ auch für die Vorschau des Panels:** Sie hat keine Layer-Zeile; der Grund steht im Tooltip von „Preview“.
+- **„Limitations“** ist eine eigene Angabe neben `notices`, nicht aus ihnen abgeleitet: Die Sätze für den Katalog sind andere als die Absätze in `ATTRIBUTION.txt`.
+- **Grenze von 36 Balken:** so viele passen ins schmalste Panel (360 px) mit sichtbarem Abstand.
 
