@@ -510,9 +510,42 @@ Der Hinweis „Zoom in to level n to see imagery …“ und die Marke „Zoom in
 
 Die Balken wuchsen mit jedem Monat um ein Pixel und einen Abstand; bei 146 Monaten (Sentinel-1 seit Oktober 2014) scrollte das Panel um 113 bis 141 px quer (gemessen im Browser, Gegenprobe). Jetzt eine feste Reihe von 32 px Höhe in der Breite des Panels: ein Balken je Monat bis 36, sonst je Quartal, sonst je Jahr; Tooltip mit Zeitraum und Zahl. Browser-Skript `frontend/e2e/coverage-histogram.cjs` (30, 60, 146 Monate).
 
-### 14.5 Auslegungen
+### 14.5 Auslegungen (bestätigt von Otto am 10.11.2026)
 
 - **Kein „Zoom in“ auch für die Vorschau des Panels:** Sie hat keine Layer-Zeile; der Grund steht im Tooltip von „Preview“.
 - **„Limitations“** ist eine eigene Angabe neben `notices`, nicht aus ihnen abgeleitet: Die Sätze für den Katalog sind andere als die Absätze in `ATTRIBUTION.txt`.
 - **Grenze von 36 Balken:** so viele passen ins schmalste Panel (360 px) mit sichtbarem Abstand.
+
+### 14.6 Nach dem Merge von #320 (swissALTI3D), 10.11.2026
+
+**`main` geholt** (d73852f, M5-08c #320). Konflikt nur in `architekturplan.md` 5.1 (Zeile `earthx:source` von `main`, Zeilen `notices`/`limitations` von hier). Der neue Eintrag `swissalti3d.yaml` bekommt `limitations: []` und einen Zugangsweg ohne internen Verweis; sonst hätte ihn die Startprüfung aus §14.2 abgewiesen.
+
+**Mosaik-Behebung und swissALTI3D [M]:** swissALTI3D ist materialisiert; seine Items kommen aus pgstac, nicht aus dem Item-Cache des STAC-Moduls, und haben keine Abbildung. Die Behebung aus §14.1 berührt sie nicht und muss es nicht: Die Materialisierung legt die Items nach `normalize_for` ab (feste Schlüssel `dtm`, `dtm_2m`, `xyz`, `xyz_2m` aus `asset_keys`). Nachgestellt mit 9 echten Kacheln (nur Metadaten der FSDI, so umgeformt, wie die Materialisierung sie speichert): Einzel-TileJSON, Mosaik-TileJSON und Szenenreihenfolge `200`.
+
+**Fehler „leere Karte nach Crop and merge, über 64 Kacheln“ — nicht nachgestellt.** Geprüft im Browser (Skript `frontend/e2e/many-scenes.cjs`, dazu eine Fassung mit der echten Collection von swissALTI3D und 72 echten Kacheln um Bern, nur Metadaten, im Kratzverzeichnis):
+- 70 bzw. 72 Szenen (über 64, Rückfall „Szene für Szene“), 60 Szenen mit Mosaik und mit vom `tiler` abgelehntem Mosaik;
+- Start bei z12,5 und bei z14,2, danach auf z14,2 bzw. z13,6 gezoomt; Ergebnisse vor dem Zuschnitt an und aus;
+- Antwortzeiten: Kachel 50–1500 ms, Reihenfolge 50–3000 ms, Statistik 400–2500 ms; Kacheln 1 × 1 und 256 × 256 Pixel.
+In allen Fällen fragt die Karte die Kacheln der Szenen ohne Kartenbewegung an und zeichnet sie (Bildpunkte in der AOI geprüft); Hinein- und Herauszoomen ändert nichts. Die Ursache ist damit offen, Frage F13.
+
+**Gefunden beim Nachstellen:**
+- **Naht in der Kontur bei kleinen Kacheln** (behoben): Die Schutzregel aus dem Review (§13.2) ließ jeden Footprint unter 0,03° Breite uneingerastet, also jede Kachel von 1 km. Kacheln, deren gemeinsame Kanten nur in den letzten Stellen abweichen, ergaben dann eine Linie quer durchs Mosaik. Die Toleranz ist jetzt 0,01°, aber nie mehr als ein Zehntel der kürzeren Seite eines Footprints. Die echten Kacheln von swissALTI3D teilen ihre Ecken genau und waren nicht betroffen; die 921 Sentinel-1-Paare schließen weiter ohne Naht.
+- **React-Warnung auf jeder Seite** (behoben): Den Teilen des Settings-Symbols fehlte das `key`, das Lucide für seine Liste erwartet (seit c0e295e).
+- **Höchstens 40 Szenen einzeln** (`MAX_MOSAIC_LAYERS`): Bei einem Überflug über 64 Szenen werden 40 gezeichnet, die übrigen nicht („… 30 of them not at all“); ein Teil der AOI bleibt dauerhaft leer, auch nach Zoomen. Das ist nicht Ottos Fehlerbild, aber eine Lücke; Frage F14.
+
+### 14.7 Fragen an Otto
+
+**F13 — Leere Karte nach „Crop and merge“ bei swissALTI3D: wie weiter?**
+1. Otto schickt aus einem Lauf: die Konsole des Browsers (Fehler und Warnungen), die Zahl der Szenen und ob die Meldung „A time step of N scenes is more than one mosaic takes“ kam, die Zoomstufe vor dem Klick und die Zeilen des `tiler` zu `tilejson.json`, `/scene-order` und `/statistics` (ohne IDs); damit stelle ich nach und behebe mit einem Test, der vorher rot ist **(Empfehlung)**
+2. Eine Diagnose im Entwicklungsmodus: Die Ansicht schreibt bei jedem Neuzeichnen Bank, Zahl der Ebenen und Zustand der Quellen in die Konsole; Otto wiederholt den Lauf damit
+3. Zurückstellen bis M5-30 (Grenze von 64)
+
+**F14 — Überflug mit mehr als 40 Szenen, Szene für Szene gezeichnet?**
+1. Bis M5-30 so lassen; die Meldung nennt die nicht gezeichneten Szenen **(Empfehlung)**
+2. Die 40 Szenen nach Lage wählen: zuerst die, die den sichtbaren Ausschnitt treffen, neu bei jeder Kartenbewegung
+3. Die Obergrenze anheben (Messung der Kosten im Browser vorher)
+
+**F15 — `limitations` für swissALTI3D?** Die Beschreibung sagt zwei Einschränkungen schon im Text.
+1. Zwei Sätze: „One area can combine tiles of different survey years; each tile keeps its own year.“ und „Placed in WGS 84 without a grid file, to about 1 m.“ **(Empfehlung)**
+2. Leer lassen
 
