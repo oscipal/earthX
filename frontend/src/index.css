@@ -1351,15 +1351,19 @@ textarea:autofill {
 .coverage-note {
   color: var(--accent);
 }
+/* A fixed, small row (Otto, 10.11.2026): the bars share its width, more months make coarser bars, never a longer row. */
 .coverage-histogram {
   display: flex;
   align-items: flex-end;
   gap: var(--space-0);
   height: 32px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
 .histogram-bar {
-  flex: 1 1 auto;
-  min-width: 1px;
+  flex: 1 1 0;
+  min-width: 0;
   background: var(--panel-border);
   border-radius: var(--radius-xs);
 }
