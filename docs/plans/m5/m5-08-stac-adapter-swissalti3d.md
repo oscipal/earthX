@@ -1,6 +1,6 @@
 # M5-08 — Allgemeiner STAC-Adapter und swissALTI3D: Plan-Schritt
 
-**Status (09.11.2026):** Plan angenommen (Otto, 07.11.2026; Antworten in §8a). Teil 1 (M5-08a) umgesetzt mit [#314](https://github.com/oscipal/earthX/pull/314) (§11), Teil 2 (M5-08b) mit [#317](https://github.com/oscipal/earthX/pull/317) (§12), Teil 3 (M5-08c: Eintrag, Live-Smoke, Doku) im eigenen Draft-PR (§13).
+**Status (10.11.2026):** Plan angenommen (Otto, 07.11.2026; Antworten in §8a). Teil 1 (M5-08a) umgesetzt mit [#314](https://github.com/oscipal/earthX/pull/314) (§11), Teil 2 (M5-08b) mit [#317](https://github.com/oscipal/earthX/pull/317) (§12), Teil 3 (M5-08c: Eintrag, Live-Smoke, Doku) mit [#320](https://github.com/oscipal/earthX/pull/320) (§13, Antworten in §13a).
 **Aufgabe:** M5-08 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2. **Stufe B.** Hängt von M5-13 ab (gemergt mit #311). Danach warten M5-10, M5-09 und M5-11 auf den Merge. **DS-04** (#312) baut Sentinel-1 nach dem Merge auf dem neuen Adapter; Earth Search muss dabei bitgleich bleiben (§3.2).
 **Modell:** Opus, Effort hoch.
 **Grundlagen:** `adr/0011` F1, F6 und §8.2 (Dialekt je STAC-API); `adr/0005` Regeln I–V; `adr/0023` §4.1, §7.2, §7.3, §8.3, §9.1, F2, F5, F7, §11 Punkt 2; `adr/0025` §9 (Stände: Regel bei M5-08); `adr/0030` §5.4; `adr/0026` F7 (Schlagworte, Glossar); `adr/0024` (`legal_status`); `adr/0027` §6.1 (`access.account`); `KLAERUNGEN.md` B8, B10–B13; `architekturplan.md` 3.1, 5.1, 5.2, 6.1; `projektuebersicht.md` §5.
@@ -328,7 +328,7 @@ Punkte 1, 3 und 4 wie empfohlen; Punkt 2 geändert.
 - **Messung am 09.11.2026 [M]** (mit `curl` über den Proxy der Sitzung; der `gateway` erreicht die Quelle aus der Sitzung nicht, `UpstreamUnreachable`): Collection, zwei Suchen mit einem bzw. zwei Items (nach `datetime` und nach `updated` absteigend), eine Suche über eine Fläche mit zwei Items, ein Range-Read von 1024 Bytes auf ein COG mit `Origin`, eine bedingte Anfrage auf die Collection. Ergebnisse:
   - **Neu: ein Stand 2026.** Das neueste Item trägt `datetime` 2026-01-01 und kam am 26.09.2026 dazu. Der Zeitraum der Collection endet weiter am 2026-01-01.
   - Collection: `ETag` weiter in Form einer UUID, `304` auf `If-None-Match`; Provider „Federal Office of Topography swisstopo“ mit den Rollen `producer` und `licensor` (keine Rolle `host`); `about` verlinkt die Produktseite von swisstopo.
-  - **R1, zur Hälfte:** `updated` der Collection ist gleich dem jüngsten `updated` eines Items, zieht also mit den Items mit; der Live-Smoke prüft das bei jedem Lauf. Ob sich auch der `ETag` ändert, zeigt ein einzelner Lauf nicht. Solange die Quelle `If-None-Match` mit `304` beantwortet, entscheidet bei der Materialisierung der `ETag` allein (§12); `updated` greift dann nicht (Frage 1 unten).
+  - **R1, zur Hälfte:** `updated` der Collection ist gleich dem jüngsten `updated` eines Items, zieht also mit den Items mit; der Live-Smoke prüft das bei jedem Lauf. Ob sich auch der `ETag` ändert, zeigt ein einzelner Lauf nicht. Solange die Quelle `If-None-Match` mit `304` beantwortet, entscheidet bei der Materialisierung der `ETag` allein (§12); `updated` greift dann nicht (Frage 1 unten, umgesetzt nach §13a).
   - Asset: Medientypen `image/tiff; application=geotiff; profile=cloud-optimized` und `application/x.ascii-xyz+zip`, je mit `gsd` 0,5 und 2; Range `206`, `Access-Control-Allow-Origin: *` auf eine Anfrage mit `Origin`. Kopf des COG 0,5 m: 2000 px, Float32, Nodata −9999, LZW, Blöcke 128, Overviews, `LAYOUT=IFDS_BEFORE_DATA` (Checkliste Punkt 5).
   - Primärtexte erneut gelesen: „Terms of use for free geodata and geoservices (OGD) from swisstopo“ (Version 1.3.2021), die Seite „Attribution“ (14.09.2021) und die allgemeinen Nutzungsbedingungen der FSDI (01.01.2025). Diese nennen als Quellenvermerk im Kartenviewer „© Data: swisstopo“ und verlangen „fair use“; die Tabelle der Grenzen war ohne JavaScript nicht lesbar.
 - **Eintrag** `backend/catalog/datasets/swissalti3d.yaml` nach §4.5, F1, F2 und F4. Abweichungen und Ergänzungen zu §4.5:
@@ -361,3 +361,12 @@ Punkte 1, 3 und 4 wie empfohlen; Punkt 2 geändert.
   3. **`terms.notice.en`:** (1) Wie im Eintrag, §3 und §4 der OGD-Bedingungen ohne Haftungssatz **(Empfehlung)**. (2) Dazu der Satz der FSDI „there is no entitlement to claim performance or warranty“.
   4. **Hilfs-Assets in Kachel und Download:** (1) In einem eigenen PR abweisen, bevor gelesen wird **(Empfehlung)**. (2) So lassen.
 - **Lokal bei Otto:** `docker compose run --rm materialize swissalti3d` und der Live-Smoke (README, Abschnitt 2), dabei die Kachelzeit bei z14 ansehen.
+
+## 13a. Antworten Otto (10.11.2026) zu M5-08c
+
+Fragen 1–4 jeweils Option 1.
+
+- **1 (R1):** Die Materialisierung über eine STAC-API fragt die Collection ohne `If-None-Match` und vergleicht immer `ETag` und `updated` mit dem letzten Lauf; ein `304` auf diese Anfrage ist ein Formfehler der Quelle. Kostet je Lauf eine Antwort der Collection von wenigen kB. Damit bemerkt ein Lauf neue Items über `updated`, auch wenn der `ETag` gleich bliebe. Der Live-Smoke prüft keinen `304` mehr, sondern dass die Collection `ETag` und `updated` trägt; neun Anfragen statt zehn. Tests: dieselbe Fassung ohne Suche, keine Bedingung in der Anfrage, neues `updated` bzw. neuer `ETag` lädt neu, `304` wird abgewiesen.
+- **2 (Quellenangabe):** „©swisstopo“ / „©swisstopo (modified)“, ohne Leerzeichen wie in den OGD-Bedingungen. Ottos Antwort nannte zuerst „© swisstopo“ mit Leerzeichen; auf Rückfrage am 10.11.2026 bestätigt: ohne Leerzeichen. Der Eintrag bleibt unverändert.
+- **3 (`terms.notice.en`):** wie im Eintrag, ohne Satz zur Gewährleistung.
+- **4 (Hilfs-Assets):** Kachel- und Download-Route weisen ein Hilfs-Asset künftig vor dem Lesen ab; das kommt als eigener PR nach diesem.

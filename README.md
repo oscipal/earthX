@@ -280,8 +280,9 @@ docker compose run --rm materialize swissalti3d
 ```
 
 Der Bericht nennt ersetzte Stände unter `withheld`. Ein zweiter Lauf ohne Änderung der
-Collection (`ETag` und `updated`) endet mit `unchanged`; `--force` hinter der ID lädt
-trotzdem neu. Der Live-Smoke prüft die Quelle mit zehn Anfragen. Er läuft täglich in GitHub
+Collection (`ETag` und `updated`, ohne bedingte Anfrage gelesen) endet mit `unchanged`;
+`--force` hinter der ID lädt trotzdem neu. Der Live-Smoke prüft die Quelle mit neun Anfragen.
+Er läuft täglich in GitHub
 Actions (Workflow „Live smoke“, von Hand über „Run workflow“) oder lokal aus der Repo-Wurzel in
 einer Python-Umgebung mit `backend/requirements-dev.lock`:
 
