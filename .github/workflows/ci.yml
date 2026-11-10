@@ -489,3 +489,83 @@ jobs:
       - name: Tear down
         if: always() && steps.scope.outputs.docs_only != 'true'
         run: docker compose down -v
+
+  # TEMPORARY (diagnosis of the red bit-exact tests, 10.11.2026): six runners at once, each
+  # reports its CPU and runs the three failing tests under several CPU feature levels.
+  # Removed again before the pull request is ready.
+  cpu-sample:
+    name: CPU sample ${{ matrix.sample }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sample: [1, 2, 3, 4, 5, 6]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.lock
+      - name: Install dependencies
+        run: |
+          pip install --require-hashes --only-binary :all: --no-binary version-parser \
+            -r backend/requirements-dev.lock
+      - name: CPU
+        run: |
+          lscpu | grep -E 'Vendor|Model name|^CPU\(s\)|Flags'
+          free -m | head -2
+          python -c 'import numpy; print(numpy.show_runtime())' 2>&1 | grep -A3 simd
+          /lib64/ld-linux-x86-64.so.2 --list-diagnostics | grep -E 'features\[0x0\]\.active\[0x2\]|features\[0x1\]\.active\[0x1\]|isa_1'
+          GLIBC_TUNABLES='glibc.cpu.hwcaps=-AVX2,-FMA,-AVX512F,-AVX512CD,-AVX512BW,-AVX512DQ,-AVX512VL' \
+            /lib64/ld-linux-x86-64.so.2 --list-diagnostics | grep -E 'features\[0x0\]\.active\[0x2\]|features\[0x1\]\.active\[0x1\]|isa_1'
+      - name: The three tests, outputs kept
+        run: |
+          pytest -n0 -p no:cacheprovider --basetemp="$RUNNER_TEMP/bt" -o addopts="-ra" -q \
+            backend/tests/earthx/processing/test_mosaic.py::TestTheRuleOfTheExport \
+            backend/tests/earthx/processing/test_band_math.py::TestBitStabilityAcrossCpuLevels || true
+      - name: Export under feature levels
+        run: |
+          D_NPY="X86_V3 X86_V4 AVX512_ICL AVX512_SPR"
+          D_GL="glibc.cpu.hwcaps=-AVX2,-FMA,-AVX512F,-AVX512CD,-AVX512BW,-AVX512DQ,-AVX512VL"
+          t="backend/tests/earthx/processing/test_mosaic.py::TestTheRuleOfTheExport"
+          run() { echo "== $1: $(env "${@:2}" pytest -n0 -p no:cacheprovider -o addopts= -q -k test_both_compute "$t" 2>&1 | tail -1)"; }
+          run A
+          run B NPY_DISABLE_CPU_FEATURES="X86_V4 AVX512_ICL AVX512_SPR"
+          run D NPY_DISABLE_CPU_FEATURES="$D_NPY" GLIBC_TUNABLES="$D_GL"
+          run E GLIBC_TUNABLES="$D_GL"
+          run GDAL-no-simd GDAL_USE_AVX=NO GDAL_USE_SSSE3=NO GDAL_USE_SSE=NO
+          run single-cpu taskset -c 0
+      - name: numexpr functions, A against D
+        run: |
+          for s in A D; do
+            if [ "$s" = D ]; then export GLIBC_TUNABLES="glibc.cpu.hwcaps=-AVX2,-FMA,-AVX512F,-AVX512CD,-AVX512BW,-AVX512DQ,-AVX512VL"; fi
+            python -I - "$s" <<'EOF'
+          import hashlib, sys, numpy, numexpr
+          a = numpy.random.default_rng(42).uniform(0.1, 1.5, (1024, 1024))
+          out = {e: hashlib.sha256(numexpr.evaluate(e, optimization="aggressive").tobytes()).hexdigest()[:12]
+                 for e in ("log(a)", "exp(a)", "a ** 51", "sin(a)", "arctan2(a, a + 1)")}
+          out["numpy sin"] = hashlib.sha256(numpy.sin(a).tobytes()).hexdigest()[:12]
+          print(sys.argv[1], out)
+          EOF
+          done
+      - name: Summary of the outputs
+        run: |
+          python - "$RUNNER_TEMP/bt" <<'EOF'
+          import hashlib, sys, glob, numpy, rasterio
+          for path in sorted(glob.glob(sys.argv[1] + "/**/*.tif", recursive=True)):
+              if "/export/" not in path and "/mosaic/" not in path:
+                  continue
+              with rasterio.open(path) as ds:
+                  d = ds.read(masked=True)
+                  m = numpy.ma.getmaskarray(d)
+                  vals, counts = numpy.unique(d.data[~m], return_counts=True)
+                  print(path.split("/")[-3:], ds.crs.to_epsg(), [repr(v) for v in tuple(ds.transform)[:6]], d.shape,
+                        "masked", int(m.sum()), dict(zip(vals.tolist(), counts.tolist())),
+                        "data", hashlib.sha256(d.data.tobytes()).hexdigest()[:12], "mask", hashlib.sha256(m.tobytes()).hexdigest()[:12])
+          EOF
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cpu-sample-${{ matrix.sample }}
+          path: ${{ runner.temp }}/bt/**/*.tif
+          retention-days: 3
