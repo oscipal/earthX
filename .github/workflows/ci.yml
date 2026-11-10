@@ -24,7 +24,12 @@ env:
 jobs:
   backend:
     name: Backend — lint and tests
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest: the tests run on the runner's own glibc, and bit-exact
+    # tests with recorded hashes depend on its libm. ubuntu-latest moved to 26.04 on
+    # 10.11.2026, whose amd64v3 glibc build gives other last bits (hypot, cbrt) and
+    # turned three of them red. 24.04 is the system the hashes were recorded on, as
+    # in the cloud session. The platform image pins its own base (backend/Dockerfile).
+    runs-on: ubuntu-24.04
 
     # The T-C tests of M1-04 run against a real Postgres, in CI and in the cloud
     # session alike (docs/adr/0002-testaufteilung.md §2). They are part of the same
@@ -97,6 +102,31 @@ jobs:
           python -m pip install --upgrade pip
           pip install --require-hashes --only-binary :all: --no-binary version-parser \
             -r backend/requirements-dev.lock
+
+      # Bit-exact tests (adr/0016 §3.3, adr/0014 §6.3) depend on the system's glibc (version
+      # and build variant) and on the CPU features it and numpy dispatch on. This puts
+      # both into the log, so a red run can be matched to its machine.
+      - name: System, CPU and numeric libraries (for bit-exact tests)
+        if: steps.scope.outputs.docs_only != 'true'
+        run: |
+          grep PRETTY_NAME /etc/os-release
+          ldd --version | head -1
+          dpkg -s libc6 | grep -E '^(Version|Architecture)' || true
+          lscpu
+          /lib64/ld-linux-x86-64.so.2 --list-diagnostics \
+            | grep -E '^x86\.cpu_features\.(basic\.|features\[0x[01]\]\.active|preferred|isa_1)' || true
+          python - <<'EOF'
+          import ctypes, glob, os
+          import numexpr, numpy, pyproj, rasterio, shapely
+          numpy.show_runtime()
+          print("numexpr", numexpr.__version__, "threads", numexpr.nthreads)
+          print("pyproj", pyproj.__version__, "PROJ", pyproj.proj_version_str, "shapely", shapely.__version__, "GEOS", shapely.geos_version_string)
+          print("rasterio", rasterio.__version__, "GDAL", rasterio.__gdal_version__)
+          for lib in glob.glob(os.path.join(os.path.dirname(rasterio.__file__), os.pardir, "rasterio.libs", "libgdal*")):
+              gdal = ctypes.CDLL(lib)
+              gdal.GDALVersionInfo.restype = ctypes.c_char_p
+              print(gdal.GDALVersionInfo(b"BUILD_INFO").decode())
+          EOF
 
       - name: Lint (ruff)
         if: steps.scope.outputs.docs_only != 'true'
