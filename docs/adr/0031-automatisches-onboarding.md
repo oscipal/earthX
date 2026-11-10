@@ -1,7 +1,11 @@
 # ADR 0031 — Automatisches Onboarding
 
-- **Status:** **Entwurf**, Fragen F1–F15 offen (§14).
-- **Datum:** 2026-11-10 (Entwurf, Draft-PR [#321](https://github.com/oscipal/earthX/pull/321))
+- **Status:** **Angenommen** von Otto am 2026-11-10: F1–F15 jeweils Option 1 (Empfehlung), mit vier Ergänzungen (§14):
+  - Zielmenge 5–10 je Tag erst mit genug Adaptern (M5-09, M5-11, M5-21); bis dahin zählt die Zahl der Kandidaten mit vorhandenem Adapter, und jeder Bericht nennt, wie viele wegen fehlendem Adapter warten (§5.4, §5.5, §12);
+  - Merge-Commit statt Squash für Onboarding-PRs, vermerkt im `CLAUDE.md`-Satz und in der PR-Vorlage (V7);
+  - die Erlaubnis für `.github/` (V4, V5) und `CLAUDE.md` (V7) gibt Otto mit dem jeweiligen Auftrag, nicht mit diesem ADR;
+  - die geplante Aufgabe richtet der Planungs-Chat nach V1–V7 ein.
+- **Datum:** 2026-11-10 (Entwurf, Draft-PR [#321](https://github.com/oscipal/earthX/pull/321)); 2026-11-10 angenommen.
 - **Aufgabe:** M5-29, Auftrag von Otto vom 10.11.2026. Die Nummer 0031 war beim Start frei (auf `main` endet die Reihe mit 0030; die offenen PRs #319 und #320 legen kein ADR an).
 - **Autonomiestufe:** C. Kein Produktivcode.
   - Geändert sind nur dieses ADR und eine Zeile im Entscheidungslog.
@@ -34,7 +38,7 @@ Belegstufen wie in `adr/0025` und `adr/0030`:
 
 - **Aufwand bisheriger Onboardings** aus `git diff --stat`:
   - ESA WorldCover 2020/2021 (M5-07, zwei Einträge, Commit `dd11b4d`): 15 Dateien, +1 632 Zeilen, davon 1 176 in zwei erzeugten Prozess-Fixtures des Frontends.
-  - swissALTI3D (M5-08c, offener PR #320): 22 Dateien, +1 603 Zeilen, davon 745 erzeugt. Darin Änderungen an sieben gemeinsamen Testdateien, am Adapter und an `.github/workflows/live-smoke.yml`.
+  - swissALTI3D (M5-08c, PR #320, am 10.11.2026 gemergt): 22 Dateien, +1 603 Zeilen, davon 745 erzeugt. Darin Änderungen an sieben gemeinsamen Testdateien, am Adapter und an `.github/workflows/live-smoke.yml`.
   - Live-Smoke für WorldCover (Commit `98a21d2`): eine eigene Datei mit 81 Zeilen und eine Zeile in `live-smoke.yml`.
   - Einträge unter `backend/catalog/datasets/`: 196–270 Zeilen, Sentinel-2 mit Presets 560.
 - **stactools-packages** über die Such-API von GitHub (`search/repositories`, `org:stactools-packages`): 76 Repositories. Letzter Push bei 57 davon vor 2024, bei 14 seit 2025 (`pushed_at`; zählt jeden Push, auch automatische). `LICENSE` von `template`, `esa-worldcover` und `cop-dem` gelesen: Apache 2.0. `constants.py` von `esa-worldcover` gelesen.
@@ -44,6 +48,8 @@ Belegstufen wie in `adr/0025` und `adr/0030`:
 ---
 
 ## 0. Kurzfassung
+
+**Entscheidung (Otto, 10.11.2026):** F1–F15 jeweils Option 1, mit vier Ergänzungen (§14). Die Punkte unten sind der Stand der Vorlage, ergänzt um Ergänzung 1 in Punkt 6.
 
 1. **Heute ist ein voller Datensatz eine Aufgabe der Stufe B** mit Plan, eigenem Adapter- oder Reader-Anteil und Änderungen an gemeinsamen Testdateien und an `.github/` [M]. So gehen 5–10 je Tag nicht, aus drei Gründen:
    - Jeder neue Datensatz ändert gemeinsame Dateien. Einen einzelnen aus dem Sammel-PR zu nehmen, ist dann Handarbeit.
@@ -57,7 +63,7 @@ Belegstufen wie in `adr/0025` und `adr/0030`:
 3. **Prüfung mit echten Daten (§6):** ein Workflow am Sammel-PR in GitHub Actions. Je neuem Eintrag: erreichbar, Items in eine Wegwerf-Datenbank, eine Kachel, ein kleiner Job, eine Tabelle. Nicht Pflicht für den Merge. Einmalige Änderung an `.github/`, dazu ein allgemeiner Live-Smoke, damit kein Datensatz mehr `.github/` ändert.
 4. **Zwei Wege (§8):** gelistete Einträge in Menge, wo Format, Adapter, Konto oder Lizenzstufe den vollen Weg nicht tragen; volle Einträge nur bei Profil, vorhandenem Adapter, Format und Lizenzstufe Anzeige oder Processing.
 5. **Abbruchregeln (§9):** In zwölf Fällen hält die Automatik den Kandidaten an und schreibt eine Notiz. Sie baut nie Code außerhalb von Eintrag, Fixture und Test.
-6. **Engpass ist das Angebot, nicht die Session (§5.5):** Voll anbindbar sind nur Kandidaten, deren Quelle einen vorhandenen Adapter hat (heute die STAC-Dialekte `earth-search-v1` und `fsdi-stac-v1`) und deren Format gelesen wird. Wie viele das sind, zeigt erst der erste Harvest-Lauf. Eine Session schafft geschätzt 5 Datensätze in 3–4 h [A].
+6. **Engpass ist das Angebot, nicht die Session (§5.5):** Voll anbindbar sind nur Kandidaten, deren Quelle einen vorhandenen Adapter hat (heute die STAC-Dialekte `earth-search-v1` und `fsdi-stac-v1`) und deren Format gelesen wird. Wie viele das sind, zeigt erst der erste Harvest-Lauf. Eine Session schafft geschätzt 5 Datensätze in 3–4 h [A]. Die Zielmenge 5–10 je Tag gilt erst, wenn genug Adapter da sind (Ergänzung 1).
 7. **Vorarbeiten (§12):** neun Aufgaben, davon sechs vor dem ersten Lauf. Zwei brauchen Ottos Erlaubnis für `.github/`, eine für `CLAUDE.md`.
 
 ---
@@ -174,7 +180,7 @@ flowchart LR
   P --> W[Prüflauf in Actions]
 ```
 
-1. **Auslöser:** eine geplante Aufgabe in Ottos Konto (Claude Code, Zeitplan), täglich zu einer Zeit außerhalb der vollen Stunde. Ihr Prompt ist ein Satz, der auf ein Lauf-Dokument unter `docs/` zeigt (§12, V7). Kein Prompt unter `.claude/`, damit dafür keine Erlaubnis nötig ist. Anlegen kann die Aufgabe nur Otto (`CLAUDE.md`: keine Check-ins planen).
+1. **Auslöser:** eine geplante Aufgabe in Ottos Konto (Claude Code, Zeitplan), täglich zu einer Zeit außerhalb der vollen Stunde. Ihr Prompt ist ein Satz, der auf ein Lauf-Dokument unter `docs/` zeigt (§12, V7). Kein Prompt unter `.claude/`, damit dafür keine Erlaubnis nötig ist. Eingerichtet wird sie vom Planungs-Chat nach V1–V7 (Ergänzung 4), nie von einer Umsetzungs-Session (`CLAUDE.md`: keine Check-ins planen).
 2. **Rückstau-Regel:** Sind schon zwei Onboarding-PRs offen, bindet der Lauf nichts Neues an. Er arbeitet nur Review-Punkte ab (§5.3) und endet.
 3. **Branch:** von `main`, je Lauf einer, Name `onboarding/<datum>`, Englisch wie alle Branches.
 4. **Je Kandidat:**
@@ -197,7 +203,7 @@ Ziel K3: Ein Datensatz besteht nur aus **eigenen Dateien**.
 
 **Commits:** zwei je Datensatz: (1) „Add <id> to the registry“ mit YAML und Fixture-Beschreibung, (2) „Generate the process fixture for <id>“. Ein Datensatz zieht so mit einem `git revert` beider Commits oder einem Löschen seiner Dateien heraus.
 
-**Merge-Art:** Merge-Commit oder Rebase, kein Squash; sonst verschwinden die Commits je Datensatz, und eine spätere Rücknahme betrifft den ganzen Tag (F14).
+**Merge-Art:** Merge-Commit, kein Squash; sonst verschwinden die Commits je Datensatz, und eine spätere Rücknahme betrifft den ganzen Tag (F14 = 1, Ergänzung 2). Vermerkt im `CLAUDE.md`-Satz und in der PR-Vorlage (V7).
 
 ### 5.3 Review-Punkte und Herausnehmen
 
@@ -214,7 +220,7 @@ Ziel K3: Ein Datensatz besteht nur aus **eigenen Dateien**.
 
 Gliederung, alles auf Englisch außer den Fragen an Otto (Kommunikation Deutsch, `CLAUDE.md`):
 
-1. **Kopf:** Lauf, Zahl neu, übersprungen, offen; Verweis auf den Prüflauf.
+1. **Kopf:** Lauf, Zahl neu, übersprungen, offen; **Zahl der freigegebenen Kandidaten, die wegen fehlendem Adapter warten**, nach fehlendem Adapter bzw. Format gruppiert (Ergänzung 1); Verweis auf den Prüflauf.
 2. **Tabelle neu:** ID, Titel, Profil, Weg, Lizenz mit Regel (`license_rule`), Attribution im Wortlaut (bestätigt Otto vor dem Merge, M5-Plan §6.5), Hosts, Prüflauf-Ergebnis, „☐ remove“.
 3. **Abweichungen vom Profil** je Datensatz, jede mit Grund und Beleg (Feld der Probe). Nur das liest Otto im Detail (K2).
 4. **Übersprungen** mit Grund (Abbruchregel aus §9, rote Tests mit Kurzfassung).
@@ -239,7 +245,8 @@ Keine AOI, keine Item-IDs, keine `href` im Bericht (M5-Plan §10).
 | Abschluss (Suite, Lint, Review, Bericht) | — | 30–45 min | 45–60 min |
 | Kontext der Hauptsession | rund 5 000 Tokens Zusammenfassung | klein | klein |
 
-- **Empfehlung:** Start mit höchstens 5 vollen Datensätzen je Lauf; nach zwei Wochen mit Messung (Zeit, Nacharbeit, Ottos Prüfzeit) auf 10 (F3).
+- **Entschieden (F3 = 1):** Start mit höchstens 5 vollen Datensätzen je Lauf; nach zwei Wochen mit Messung (Zeit, Nacharbeit, Ottos Prüfzeit) auf 10.
+- **Zielmenge erst mit genug Adaptern (Ergänzung 1, Otto 10.11.2026):** Die 5–10 je Tag gelten erst, wenn ATOM (M5-09), NetCDF (M5-11) und die Extraktoren (M5-21) da sind. Bis dahin ist die Obergrenze je Lauf die Zahl der freigegebenen Kandidaten mit vorhandenem Adapter; ein Lauf mit weniger ist kein Fehler. Jeder Bericht nennt, wie viele Kandidaten wegen fehlendem Adapter warten (§5.4).
 - **Ottos Zeit:** geschätzt 5 min je Datensatz, wenn der Bericht nur Abweichungen zeigt, also 25–50 min je Tag [A]. Das ist der eigentliche Taktgeber neben dem Kontingent (Projektplan §3.5: Sessions teilen sich Ottos Limits).
 - **Angebot:** Voll anbindbar ist nur, was einen vorhandenen Adapter, ein gelesenes Format und ein Profil trifft (§8). Earth Search v1 listet neun Collections (`adr/0023` §6.2) [P]: drei führt die Registry schon (`sentinel-2-c1-l2a`, `sentinel-1-grd`, `cop-dem-glo-30`), Landsat ist Requester Pays, `sentinel-2-l2a` und `sentinel-2-pre-c1-l2a` sind ältere Fassungen. Offen bleiben `sentinel-2-l1c` (Bucket laut §6.2 Requester Pays, ein Fall für Verify), `cop-dem-glo-90` und `naip` [A]. Bei der FSDI ist die erste Seite überwiegend thematisch, ohne `item_assets` [M]; welcher Anteil der 514 Collections Raster als COG liefert, zeigt erst Verify. **Folge [A]:** Ohne weitere Adapter oder einen allgemeinen STAC-Dialekt (V9) dürfte der volle Weg nach einigen Wochen leer laufen. Der gelistete Weg läuft weiter.
 
@@ -465,109 +472,145 @@ Je unter dem Richtwert. Reihenfolge nach Abhängigkeit; keine davon ist Teil die
 | **V1** | Probe im Kandidaten (§4.4) als Ergänzung zu M5-20 | B (in M5-20) | M5-19 |
 | **V2** | Profile unter `backend/catalog/profiles/` für `elevation` und `land-cover`, Feld `profile`/`deviations`, Profiltreue-Test (§7.1) | B | M5-08 gemergt |
 | **V3** | Allgemeine Prüfungen je Eintrag statt Änderungen an gemeinsamen Dateien; synthetische Raster aus Fixture-Beschreibungen; bestehende `mini_*`-Module darauf umstellen (§10.2) | B | V2 |
-| **V4** | Allgemeiner Live-Smoke (§6.6); **braucht Erlaubnis für `.github/`** | B | V3 |
-| **V5** | Prüflauf `onboarding-check.yml` und Begrenzung von `materialize` (§6); **braucht Erlaubnis für `.github/`** | B | V3 |
+| **V4** | Allgemeiner Live-Smoke (§6.6); **braucht Erlaubnis für `.github/`**, die Otto mit dem Auftrag gibt (Ergänzung 3) | B | V3 |
+| **V5** | Prüflauf `onboarding-check.yml` und Begrenzung von `materialize` (§6); **braucht Erlaubnis für `.github/`**, die Otto mit dem Auftrag gibt (Ergänzung 3) | B | V3 |
 | **V6** | `onboarding.yaml` und `python -m earthx.discovery.queue` (§4) | B | M5-20 |
-| **V7** | Lauf-Dokument unter `docs/` (Prompt der geplanten Aufgabe), Nachträge in `CLAUDE.md` (§11); **braucht Erlaubnis für `CLAUDE.md`**; danach legt Otto die geplante Aufgabe an | A | V1–V6 |
+| **V7** | Lauf-Dokument unter `docs/` (Prompt der geplanten Aufgabe) mit der Vorlage des PR-Texts; Nachträge in `CLAUDE.md` (§11). In `CLAUDE.md` und in der PR-Vorlage steht: Onboarding-PRs werden mit Merge-Commit gemergt, nie Squash (Ergänzung 2). Eine `.github/pull_request_template.md` gibt es bisher nicht; liegt die Vorlage dort, gehört das zur Erlaubnis dieses Auftrags. **Braucht Erlaubnis für `CLAUDE.md`**, die Otto mit dem Auftrag gibt (Ergänzung 3). Danach richtet der Planungs-Chat die geplante Aufgabe ein (Ergänzung 4) | A | V1–V6 |
 | **V8** | Weitere Profile (`optical-reflectance`, `orthophoto`, `meteo-grid`, `continuous-product`), je nach dem zweiten Vorbild | A je Profil | V2 |
 | **V9** | Allgemeiner STAC-Dialekt aus den Konformitätsklassen einer API (`adr/0011` F6), damit neue STAC-Quellen keinen eigenen Dialekt brauchen (§5.5) | C, dann B | — |
 
-**Erster Lauf frühestens nach V1–V7.** Bis dahin lassen sich Profile und allgemeine Tests (V2, V3) schon an den vorhandenen Einträgen bauen und prüfen.
+**Erster Lauf frühestens nach V1–V7.** Die Zielmenge 5–10 je Tag erst zusätzlich nach M5-09, M5-11 und M5-21 (Ergänzung 1). Bis dahin lassen sich Profile und allgemeine Tests (V2, V3) schon an den vorhandenen Einträgen bauen und prüfen.
 
 ## 13. Risiken und Grenzen
 
 - **Zufluss:** Der Harvest läuft in M5 nur lokal bei Otto. Bleibt er aus, läuft die Warteschlange leer, und der Lauf meldet „nichts zu tun“. Ein automatischer Harvest ist `adr/0025` §6.5 (P2/P3) und für M6 vertagt.
-- **Angebot:** §5.5. Ohne V9 oder neue Adapter bleibt der volle Weg schmal.
+- **Angebot:** §5.5. Ohne V9 oder neue Adapter bleibt der volle Weg schmal; bis M5-09, M5-11 und M5-21 gilt deshalb die Zahl der Kandidaten mit Adapter als Obergrenze (Ergänzung 1).
 - **Fehler in Menge:** Ein Fehler im Profil steckt in allen Einträgen danach. Gegenmittel: Profiltreue-Test (eine Profiländerung wird in jedem Eintrag sichtbar), Prüflauf je Eintrag, Start mit 5 je Tag.
 - **Review-Ermüdung:** Bei täglichen PRs liest Otto weniger genau [A]. Gegenmittel: Bericht nur mit Abweichungen und Messwerten; Rückstau-Regel (höchstens zwei offene PRs).
 - **Lizenz im Block:** Mit Regeln bestätigt Otto viele Lizenzen auf einmal. Die Regel ist genau (Herausgeber und Lizenz-URI wörtlich, `adr/0025` §6.7); die Attribution steht trotzdem je Datensatz im Bericht.
 - **Annahmen ungeprüft:** ob PRs der GitHub-App den Prüflauf auslösen (§6.2), die Minuten (§6.5), die Zeit je Datensatz (§5.5). Alle drei misst die erste Woche.
 - **Stufe C:** Die Zahlen in §5.5 und §6.5 sind Schätzungen [A].
 
-## 14. Fragen an Otto
+## 14. Fragen an Otto — beantwortet am 2026-11-10
 
-Kurz beantwortbar mit „F1: 1, F2: 1, …“ oder „alle 1“.
+**Antworten (Otto, 10.11.2026):** F1–F15 jeweils **Option 1** (Empfehlung), mit diesen Ergänzungen:
+
+1. **Zielmenge:** Die 5–10 je Tag gelten erst, wenn genug Adapter da sind (ATOM M5-09, NetCDF M5-11, Extraktoren M5-21). Bis dahin zählt die Zahl der Kandidaten mit vorhandenem Adapter. Der Bericht je Lauf nennt, wie viele Kandidaten wegen fehlendem Adapter warten. Eingetragen in §5.4, §5.5, §12, §13.
+2. **Zu F14:** Für Onboarding-PRs Merge-Commit statt Squash; vermerkt im `CLAUDE.md`-Satz (V7) und in der PR-Vorlage. Eingetragen in §5.2, §12.
+3. **Erlaubnisse:** Die Erlaubnis für `.github/` (V4, V5) und `CLAUDE.md` (V7) gibt Otto mit dem jeweiligen Auftrag, nicht mit diesem ADR. Eingetragen in §12.
+4. **Geplante Aufgabe:** richtet der Planungs-Chat nach V1–V7 ein. Eingetragen in §5.1, §12.
 
 **F1 — Was heißt „freigegeben“ (§4.1)?**
 1. Kandidat auf `main` mit Lizenzblock aus Regel oder von dir, `legal_status: cleared`; der Merge des Kandidaten-PR ist die Freigabe **(Empfehlung)**
 2. Regeltreffer genügt; dein Merge des Onboarding-PR bestätigt Lizenz und Technik zusammen
 3. Du schreibst eine Liste mit IDs
 
+**Antwort F1 (Otto, 2026-11-10): 1.**
+
 **F2 — Reihenfolge (§4.3)?**
 1. Regel im Skript `queue` (voll vor gelistet, Profil mit zwei Vorbildern zuerst, Kategorien im Wechsel, älteste Freigabe zuerst); du übersteuerst mit `pin`/`hold` in `onboarding.yaml` **(Empfehlung)**
 2. Reihenfolge der Freigabe (FIFO)
 3. Du setzt jede Position
+
+**Antwort F2 (Otto, 2026-11-10): 1.**
 
 **F3 — Takt und Menge (§5.1, §5.5)?**
 1. Ein Lauf je Tag; zuerst höchstens 5 volle Datensätze, nach zwei Wochen mit Messung 10; höchstens zwei offene Onboarding-PRs **(Empfehlung)**
 2. Sofort bis 10 je Lauf
 3. Zwei Läufe je Tag mit je 5
 
+**Antwort F3 (Otto, 2026-11-10): 1.**
+
 **F4 — Review-Punkte (§5.3)?**
 1. Der nächste geplante Lauf arbeitet zuerst Kommentare und Häkchen der offenen Onboarding-PRs ab; dafür ein Satz in `CLAUDE.md` **(Empfehlung)**
 2. Die Session abonniert die PR-Aktivität und reagiert sofort
 3. Du startest dafür von Hand eine Session
+
+**Antwort F4 (Otto, 2026-11-10): 1.**
 
 **F5 — Einen Datensatz herausnehmen (§5.3)?**
 1. Häkchen „remove“ in der Tabelle oder Kommentar; der Lauf löscht die Dateien in einem Commit und trägt `hold` bzw. bei „ablehnen“ `rejected.yaml` ein **(Empfehlung)**
 2. Du löschst die Dateien selbst
 3. Nur per Kommentar
 
+**Antwort F5 (Otto, 2026-11-10): 1.**
+
 **F6 — Größe des Sammel-PR (§11)?**
 1. Ausnahme vom Richtwert für Onboarding-PRs: Er gilt für alles außerhalb der Dateien der Datensätze; du liest die Abweichungsliste **(Empfehlung)**
 2. Profile per Vererbung (F7 Option 2), damit die Dateien klein bleiben
 3. Höchstens zwei Datensätze je PR
+
+**Antwort F6 (Otto, 2026-11-10): 1.**
 
 **F7 — Form der Profile (§7.1)?**
 1. Vorlage mit Abweichungsliste; jede YAML voll ausgeschrieben (B10 bleibt), Profiltreue-Test **(Empfehlung)**
 2. Vererbung im Lader (Nachtrag zu B10 nötig)
 3. Keine Profile
 
+**Antwort F7 (Otto, 2026-11-10): 1.**
+
 **F8 — stactools-packages (§7.3)?**
 1. Nur als Referenz zur Gegenprobe globaler Produkte, mit Commit-Hash im Bericht; keine Abhängigkeit, kein kopierter Code **(Empfehlung)**
 2. Als Abhängigkeit in `discovery` für Quellen ohne STAC
 3. Nicht nutzen
+
+**Antwort F8 (Otto, 2026-11-10): 1.**
 
 **F9 — Prüflauf mit echten Daten (§6)?**
 1. Workflow am PR (`pull_request` mit Pfadfilter, nur Branches dieses Repos, kein Pflicht-Check, nur Leserecht); Ergebnis als Job-Zusammenfassung, die Session überträgt die Tabelle in den PR-Text **(Empfehlung)**
 2. Wie 1, aber zusätzlich ein Kommentar am PR über einen zweiten Workflow (`workflow_run`)
 3. Nur von Hand (`workflow_dispatch`)
 
+**Antwort F9 (Otto, 2026-11-10): 1.**
+
 **F10 — Gelistete Einträge (§8)?**
 1. Im selben Tages-PR als eigener Abschnitt, höchstens 20 **(Empfehlung)**
 2. Eigener PR einmal je Woche
 3. `discovery propose` schreibt sie gleich als gelistete Einträge, ohne Onboarding-Lauf
+
+**Antwort F10 (Otto, 2026-11-10): 1.**
 
 **F11 — Abbruchregeln (§9)?**
 1. Wie §9; neue Hosts bestätigst du mit einer Zeile `hosts_confirmed` in `onboarding.yaml`, der nächste Lauf nimmt den Datensatz dann; Konto-Quellen nur mit `way: listed` von dir **(Empfehlung)**
 2. Wie 1, aber neue Hosts im PR markiert, dein Merge ist die Bestätigung
 3. Wie 1, aber Konto-Quellen automatisch als gelistet (W0)
 
+**Antwort F11 (Otto, 2026-11-10): 1.**
+
 **F12 — Autonomiestufe (§11)?**
 1. Onboarding nach Profil ist Stufe A mit Bericht; alles nach §9 bleibt B oder C **(Empfehlung)**
 2. Jeder Tages-PR ist Stufe B (Plan zuerst, dann Umsetzung)
 3. Stufe A auch für Abweichungen ohne neues Feld
+
+**Antwort F12 (Otto, 2026-11-10): 1.**
 
 **F13 — Modelle der geplanten Aufgabe (§5.6)?**
 1. Hauptsession Opus (mittel), `implementer` Sonnet je Datensatz, `reviewer` Opus einmal je PR **(Empfehlung)**
 2. Alles Sonnet, `reviewer` Opus
 3. Alles Opus
 
+**Antwort F13 (Otto, 2026-11-10): 1.**
+
 **F14 — Rücknahme (§10.3)?**
 1. Nur auf dein Wort: vor dem Deployment Revert-PR der Commits des Datensatzes, danach Ausscheiden nach `adr/0017`; Merge-Commit statt Squash, damit die Commits einzeln bleiben **(Empfehlung)**
 2. Automatisch nach mehreren roten Tagen
 3. Nur Markierung über den Health-Status
+
+**Antwort F14 (Otto, 2026-11-10): 1.** Merge-Commit statt Squash, vermerkt in `CLAUDE.md` und PR-Vorlage (Ergänzung 2).
 
 **F15 — Live-Smoke nach dem Merge (§6.6)?**
 1. Ein allgemeiner Smoke über alle Einträge (drei Anfragen je Eintrag), ab 100 Einträgen je Tag ein Siebtel; einmalige Änderung an `.github/` **(Empfehlung)**
 2. Je Datensatz eigene Datei wie heute (jeder Datensatz ändert `.github/`)
 3. Nur Health-Checks aus M5-24
 
-## 15. Folgen (erst mit Ottos Antworten)
+**Antwort F15 (Otto, 2026-11-10): 1.**
 
-- Vorarbeiten V1–V9 als Aufgaben (§12); Eintrag in Backlog bzw. M5-Plan durch die nächste Doku-Aufgabe oder Otto, nicht in diesem PR.
-- Nachträge: `adr/0025` §6.1 (Probe im Kandidaten), `projektuebersicht.md` §5 Punkt 10 (allgemeiner Smoke), `projektplan.md` §6 (Zeile „Harvest-Vorschläge …“ wird „Onboarding-Lauf“), `CLAUDE.md` (Onboarding-PRs, Review-Schleife), `KLAERUNGEN` B10 nur bei F7 = 2.
-- Entscheidungslog: eine Zeile je Antwort.
+## 15. Folgen
+
+- Vorarbeiten V1–V9 als Aufgaben (§12); Eintrag in Backlog bzw. M5-Plan durch die nächste Doku-Aufgabe oder Otto, nicht in diesem PR. Die Erlaubnisse für `.github/` und `CLAUDE.md` kommen mit dem jeweiligen Auftrag (Ergänzung 3).
+- Nachträge: `adr/0025` §6.1 (Probe im Kandidaten), `projektuebersicht.md` §5 Punkt 10 (allgemeiner Smoke), `projektplan.md` §6 (Zeile „Harvest-Vorschläge …“ wird „Onboarding-Lauf“), `CLAUDE.md` (Onboarding-PRs mit Merge-Commit, Ausnahme vom Richtwert, Review-Schleife, Stufe A nach Profil); `KLAERUNGEN` B10 bleibt unverändert (F7 = 1).
+- Die geplante Aufgabe richtet der Planungs-Chat nach V1–V7 ein (Ergänzung 4).
+- Entscheidungslog: eine Zeile für die Annahme (diese, im PR geändert); weitere Zeilen mit den Vorarbeiten.
 
 ## 16. Quellen
 
@@ -577,7 +620,7 @@ Kurz beantwortbar mit „F1: 1, F2: 1, …“ oder „alle 1“.
 - `adr/0002` T-D; `adr/0017`; `adr/0018` F3; `adr/0021`; `adr/0022`; `adr/0023` §6.2, §7.2, §8.3; `adr/0024` R1–R10; `adr/0025` §2, §5–§8, §10–§12; `adr/0026` F7; `adr/0027` §6.1; `adr/0029`; `adr/0030` §3, §5, §8.
 - `docs/plans/m5/m5-discovery-und-suche.md` (Fassung 3); `docs/plans/querschnitt/nm4-23-backend-tests-schneller.md` §2.
 - Code: `.github/workflows/ci.yml`, `.github/workflows/live-smoke.yml`, `backend/catalog/datasets/*.yaml`, `backend/earthx/adapters/`, `backend/earthx/catalog/registry.py`, `backend/tests/catalog/entries.py`, `backend/tests/catalog/test_onboarding_endtoend.py`, `backend/tests/test_live_smoke_dry_run.py`, `scripts/write-process-fixtures.py`.
-- Diffs: Commits `dd11b4d`, `98a21d2`; offener PR #320 (Branch `claude/loving-gates-be6dq4`).
+- Diffs: Commits `dd11b4d`, `98a21d2`; PR #320 (gemessen am offenen Branch `claude/loving-gates-be6dq4`, gemergt als `d73852f`).
 
 **Gemessen am 10.11.2026 [M]:**
 
