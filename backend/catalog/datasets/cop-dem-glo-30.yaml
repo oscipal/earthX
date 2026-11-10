@@ -8,11 +8,13 @@
 # collision with either, because this entry is not federated through them.
 dataset_id: cop-dem-glo-30
 title: Copernicus DEM GLO-30
+# The state of the bucket from adr/0009 §7.3, the withheld tiles from §10.3. No internal reference in a text for users
+# (Otto, 10.11.2026).
 description: >-
   Copernicus DEM GLO-30 Public: global 30 m digital surface model from the TanDEM-X mission (acquired December
   2010 to January 2015), as cloud-optimized GeoTIFF in 1° × 1° tiles, read directly from the AWS Open Data bucket
-  (state of 9 May 2022, adr/0009 §7.3). Oceans carry no tiles, and 25 tiles between 38° and 42° N and 43° and
-  51° E are withheld from public release by the Copernicus programme (adr/0009 §10.3).
+  (state of 9 May 2022). Oceans carry no tiles, and 25 tiles between 38° and 42° N and 43° and 51° E are withheld
+  from public release by the Copernicus programme.
 keywords: [elevation, dem, dsm, terrain, copernicus, tandem-x]
 category: elevation
 # The providers of the bucket's own STAC collection (`copernicus-dem-30m-stac`, `dem_cop_30.json`, read 06.11.2026,
@@ -105,7 +107,8 @@ legal_status: cleared
 legal_note: null
 access:
   token_free_checked_at: 2026-09-26
-  method: anonymous HTTPS, no authentication header (M3-11b plan §2.1)
+  # As measured in M3-11b plan §2.1.
+  method: anonymous HTTPS, no authentication header
   # Measured 26.09.2026 (M3-11b plan §2.2): no Access-Control-Allow-Origin on a plain GET. Moot for this dataset: it
   # has no quicklook a browser would load straight from the source (M3-12 decides what appears instead: the full-
   # resolution AOI crop, per the M3-11b F11 Nachtrag).
@@ -196,3 +199,5 @@ index_presets: []
 true_color: []
 # DS-04 plan §4.4: nothing a user has to know before reading the data beyond its description.
 notices: []
+# The sentences of the row "Limitations" of the Data catalogue (adr/0018 F2, Nachtrag DS-04c); none for this entry.
+limitations: []

@@ -264,7 +264,7 @@ describe('the details', () => {
     const labels = [...container.querySelectorAll('.catalogue-row-pair dt')].map((dt) => dt.textContent);
     expect(labels).toEqual([
       'Description', 'Provider', 'Source', 'License', 'Attribution', 'Spatial extent', 'Temporal extent', 'Resolution',
-      'Bands', 'Data region', 'DOI', 'Last checked', 'Maturity', 'Processing', 'Quick processing',
+      'Bands', 'Data region', 'Citation', 'Last checked', 'Maturity', 'Processing', 'Quick processing',
     ]);
     expect(value('Provider')?.textContent).toBe('—');
     expect(value('Spatial extent')?.textContent).toBe('180° W – 180° E · 60° S – 84° N');

@@ -2,8 +2,8 @@
 //   1. After a search a Sentinel-1-like dataset shows its preview: the tiles of the band each scene carries (`vv` for a
 //      VV scene, `hh` for an HH scene, `first_present`), not the thumbnail in radar geometry the map cannot place (the
 //      results list still shows it beside the scene).
-//   2. Its notices are no mark anywhere (Otto, 10.11.2026): not in the results, not in the head of the view, not in the Data
-//      catalogue, which says them in the description of the dataset.
+//   2. Its notices are no mark anywhere (Otto, 10.11.2026): not in the results, not in the head of the view, not in the list
+//      of the Data catalogue; its details say them in the row "Limitations", and name the row "Citation" where there is no DOI.
 //   3. "Crop and merge to AOI" over two scenes of one pass draws one outline around the merged picture and no scene
 //      boundary across it: two Sentinel-1 slices whose footprints almost meet (the double line Otto saw), and two
 //      Sentinel-2 tiles that overlap.
@@ -29,6 +29,10 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
 const SOUTH = [[[10, 47], [13, 47.3], [12.9, 48.5], [11.5, 48.35], [9.9, 48.2], [10, 47]]];
 const NORTH = [[[9.904, 48.197], [10.7, 48.2785], [11.497, 48.354], [12.904, 48.498], [12.8, 49.7], [9.8, 49.4], [9.904, 48.197]]];
 const AOI = { type: 'Polygon', coordinates: [[[10.5, 47.8], [12.5, 47.8], [12.5, 49], [10.5, 49], [10.5, 47.8]]] };
+const LIMITATIONS = [
+  'Placed only by the ground control points of each scene, without terrain correction; this holds for every pixel, not only the preview.',
+  'Values are uncalibrated digital numbers (DN), not calibrated backscatter.',
+];
 const NOTICES = [
   { code: 'approximate_geolocation', label: 'Approximate geolocation', tooltip: "Placed by the scene's own ground control points without terrain correction." },
   { code: 'uncalibrated_dn', label: 'Uncalibrated (DN)', tooltip: 'Values are the digital numbers of the GRD product, not calibrated backscatter.' },
@@ -65,7 +69,7 @@ async function run(browser, theme, viewport, results) {
   await page.goto(BASE);
   await page.waitForSelector('.maplibregl-canvas');
 
-  await page.evaluate(async ({ south, north, notices }) => {
+  await page.evaluate(async ({ south, north, notices, LIMITATIONS }) => {
     const { useAppStore } = await import('/src/store.ts');
     const { datasetsFrom } = await import('/src/datasets.ts');
     const COG = 'image/tiff; application=geotiff; profile=cloud-optimized';
@@ -90,7 +94,10 @@ async function run(browser, theme, viewport, results) {
       'earthx:license_flags': { tier: 'processing', license: 'proprietary' },
       'earthx:source': { asset_hosts: ['assets.example.org'] },
       'earthx:notices': notices,
-      description: 'Placed by its ground control points without terrain correction, and not calibrated: the values are digital numbers.',
+      description: 'Sentinel-1 C-band SAR, Level-1 Ground Range Detected, in radar geometry.',
+      'earthx:limitations': LIMITATIONS,
+      'sci:doi': null,
+      'sci:citation': 'Copernicus Sentinel-1 Level-1 GRD',
       extent: { spatial: { bbox: [[-180, -90, 180, 90]] }, temporal: { interval: [['2014-10-10T00:00:00Z', null]] } },
     };
     const groups = [
@@ -103,7 +110,7 @@ async function run(browser, theme, viewport, results) {
       resultsOnMap: true, focusMode: false, downloaded: {}, layers: [], mosaics: {}, error: null, aoi: null, dock: 'results',
       flyToView: { center: [11.4, 48.3], zoom: 7.5 },
     });
-  }, { south: SOUTH, north: NORTH, notices: NOTICES });
+  }, { south: SOUTH, north: NORTH, notices: NOTICES, LIMITATIONS });
 
   const st = (expr) => page.evaluate(async (e) => { const { useAppStore } = await import('/src/store.ts'); return new Function('s', `return ${e}`)(useAppStore.getState()); }, expr);
   const set = (patch) => page.evaluate(async (p) => { const { useAppStore } = await import('/src/store.ts'); useAppStore.setState(p); }, patch);
@@ -188,9 +195,16 @@ async function run(browser, theme, viewport, results) {
   await page.waitForSelector('#data-catalogue');
   const entry = page.locator('.catalogue-entry', { hasText: 'Sentinel-1 GRD' });
   await entry.locator('.catalogue-entry-name').click();
-  await expectNoNotices('catalogue');
-  const description = await page.locator('.catalogue-details').innerText();
-  if (!description.includes('ground control points')) problems.push('the description of the dataset does not say how it is placed');
+  // The list holds no notice; the details say the limitations, one sentence each, and "Citation" for a dataset without a DOI.
+  if ((await page.locator('.catalogue-entry .badge').count()) !== 0) problems.push('the list of the catalogue shows a mark');
+  const row = (label) => page.locator('.catalogue-row-pair').filter({ has: page.locator('dt', { hasText: new RegExp(`^${label}$`) }) });
+  const limits = await row('Limitations').locator('dd .catalogue-value').allInnerTexts();
+  if (JSON.stringify(limits) !== JSON.stringify(LIMITATIONS)) problems.push(`the row "Limitations" says ${JSON.stringify(limits)}`);
+  if ((await row('DOI').count()) !== 0) problems.push('a row "DOI" without a DOI');
+  if ((await row('Citation').innerText()).indexOf('Copernicus Sentinel-1 Level-1 GRD') < 0) problems.push('no row "Citation"');
+  for (const label of NOTICES.map((n) => n.label)) {
+    if ((await page.locator('#data-catalogue').innerText()).toUpperCase().includes(label.toUpperCase())) problems.push(`the catalogue shows "${label}"`);
+  }
   await shot('catalogue');
 
   results.push({ name, problems });
