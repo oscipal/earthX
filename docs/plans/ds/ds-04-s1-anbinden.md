@@ -533,7 +533,7 @@ In allen Fällen fragt die Karte die Kacheln der Szenen ohne Kartenbewegung an u
 - **React-Warnung auf jeder Seite** (behoben): Den Teilen des Settings-Symbols fehlte das `key`, das Lucide für seine Liste erwartet (seit c0e295e).
 - **Höchstens 40 Szenen einzeln** (`MAX_MOSAIC_LAYERS`): Bei einem Überflug über 64 Szenen werden 40 gezeichnet, die übrigen nicht („… 30 of them not at all“); ein Teil der AOI bleibt dauerhaft leer, auch nach Zoomen. Das ist nicht Ottos Fehlerbild, aber eine Lücke; Frage F14.
 
-### 14.7 Fragen an Otto
+### 14.7 Fragen an Otto — beantwortet am 10.11.2026 (§14.7a)
 
 **F13 — Leere Karte nach „Crop and merge“ bei swissALTI3D: wie weiter?**
 1. Otto schickt aus einem Lauf: die Konsole des Browsers (Fehler und Warnungen), die Zahl der Szenen und ob die Meldung „A time step of N scenes is more than one mosaic takes“ kam, die Zoomstufe vor dem Klick und die Zeilen des `tiler` zu `tilejson.json`, `/scene-order` und `/statistics` (ohne IDs); damit stelle ich nach und behebe mit einem Test, der vorher rot ist **(Empfehlung)**
@@ -548,4 +548,10 @@ In allen Fällen fragt die Karte die Kacheln der Szenen ohne Kartenbewegung an u
 **F15 — `limitations` für swissALTI3D?** Die Beschreibung sagt zwei Einschränkungen schon im Text.
 1. Zwei Sätze: „One area can combine tiles of different survey years; each tile keeps its own year.“ und „Placed in WGS 84 without a grid file, to about 1 m.“ **(Empfehlung)**
 2. Leer lassen
+
+### 14.7a Antworten Otto (10.11.2026)
+
+- **F13:** Option 3. Die leere Karte nach „Crop and merge“ über 64 Kacheln ist zurückgestellt bis M5-30; `frontend/e2e/many-scenes.cjs` bleibt als Prüfung des Ablaufs.
+- **F14:** Option 1. Über 40 einzeln gezeichnete Szenen bleibt es bis M5-30, wie es ist; die Meldung nennt die nicht gezeichneten.
+- **F15:** Option 1. swissALTI3D hat in `limitations` zwei Sätze: „One area can combine tiles of different survey years; each tile keeps its own year.“ und „Placed in WGS 84 without a grid file, to about 1 m.“ Eingetragen in `backend/catalog/datasets/swissalti3d.yaml`.
 
