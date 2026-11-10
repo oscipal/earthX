@@ -1,7 +1,7 @@
 # ADR 0031 — Automatisches Onboarding
 
 - **Status:** **Entwurf**, Fragen F1–F15 offen (§14).
-- **Datum:** 2026-11-10
+- **Datum:** 2026-11-10 (Entwurf, Draft-PR [#321](https://github.com/oscipal/earthX/pull/321))
 - **Aufgabe:** M5-29, Auftrag von Otto vom 10.11.2026. Die Nummer 0031 war beim Start frei (auf `main` endet die Reihe mit 0030; die offenen PRs #319 und #320 legen kein ADR an).
 - **Autonomiestufe:** C. Kein Produktivcode.
   - Geändert sind nur dieses ADR und eine Zeile im Entscheidungslog.
