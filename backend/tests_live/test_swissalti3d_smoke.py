@@ -1,16 +1,15 @@
 """T-D: is the STAC API of the FSDI still the source the swissALTI3D entry describes? (M5-08 plan §4.7)
 
 Runs on the schedule of the live smokes in GitHub Actions, never in a pull request and never in a cloud session. Small
-on purpose (adr/0005 §3.6): nine metadata requests and one range of 16 bytes. Everything goes through the gateway, the
+on purpose (adr/0005 §3.6): eight metadata requests and one range of 16 bytes. Everything goes through the gateway, the
 search and the item through the STAC module as on the platform; the materialization itself reads about a thousand pages
 and is Otto's local run, not a smoke.
 
-It checks what the entry and the materialization assume (M5-08 plan §2, §7 R1): the collection answers a conditional
-request with ``304``, the next page comes from ``cursor``, every item fits the fixed asset keys and the tile pattern,
-the COG of 0.5 m is read anonymously by range, the newest state lies inside the entry's period, and the collection's
-``updated`` is not older than the newest item. That last check is half of risk R1: ``updated`` moves with the items.
-Whether the ETag moves too is not something one run can see, and while the source answers ``304`` the ETag alone
-decides (plan §12, §13).
+It checks what the entry and the materialization assume (M5-08 plan §2, §7 R1): the collection carries an ETag and
+``updated``, the next page comes from ``cursor``, every item fits the fixed asset keys and the tile pattern, the COG of
+0.5 m is read anonymously by range, the newest state lies inside the entry's period, and the collection's ``updated``
+is not older than the newest item. The version of a run is ETag and ``updated``, asked without a condition (plan §13,
+question 1), so it notices new items through ``updated`` even if the ETag stayed.
 """
 
 from __future__ import annotations
@@ -58,15 +57,12 @@ def _instant(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
-async def test_the_collection_answers_its_etag_with_304(gateway: Gateway) -> None:
-    """The materialization asks with ``If-None-Match`` first (M5-08 plan §4.2)."""
-    first = await gateway.get(COLLECTION_URL)
-    assert first.status_code == 200
-    etag = first.headers.get("etag")
-    assert etag, "the collection answered without an ETag; the version of a run needs one"
-    assert first.json().get("updated"), "the collection carries no updated; the version of a run needs one"
-    again = await gateway.get(COLLECTION_URL, headers={"if-none-match": etag})
-    assert again.status_code == 304
+async def test_the_collection_carries_what_the_version_of_a_run_is_made_of(gateway: Gateway) -> None:
+    """The materialization compares ETag and ``updated`` of the collection with the last run (M5-08 plan §13)."""
+    collection = await gateway.get(COLLECTION_URL)
+    assert collection.status_code == 200
+    assert collection.headers.get("etag"), "the collection answered without an ETag; the version of a run needs one"
+    assert collection.json().get("updated"), "the collection carries no updated; the version of a run needs one"
 
 
 async def test_two_pages_of_items_fit_the_entry(gateway: Gateway) -> None:
@@ -104,7 +100,7 @@ async def test_one_item_and_its_cog_are_read_anonymously(gateway: Gateway) -> No
 
 async def test_the_newest_state_lies_in_the_period_and_under_the_collection_updated(gateway: Gateway) -> None:
     """A state after the end of ``temporal_extent`` needs the entry updated; ``updated`` of the collection has to move
-    with the items (half of R1, see the module docstring)."""
+    with the items, or a run would miss new items under an unchanged ETag (R1)."""
     collection = (await gateway.get(COLLECTION_URL)).json()
 
     async def newest(field: str) -> dict:

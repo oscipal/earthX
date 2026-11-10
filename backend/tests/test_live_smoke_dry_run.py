@@ -228,7 +228,7 @@ def _swissalti3d_item(index: int, *, year: int = 2025, updated: str = FSDI_UPDAT
 def _fsdi_double(
     *, newest_year: int = 2025, newest_update: str = FSDI_UPDATED, etag: str | None = '"synthetic"'
 ) -> Callable[[httpx.Request], httpx.Response]:
-    """The STAC API of the FSDI as M5-08 measured it: ETag and 304, `cursor` with `merge: true`, assets on the host.
+    """The STAC API of the FSDI as M5-08 measured it: ETag and `updated`, `cursor` with `merge: true`, assets on the host.
 
     A search sorted by a property (the smoke's question for the newest state) answers with an item of ``newest_year``
     updated at ``newest_update``.
@@ -242,8 +242,7 @@ def _fsdi_double(
         if request.method == "GET" and "/items/" in path:
             return _json({**_swissalti3d_item(0), "id": path.rsplit("/", 1)[-1]})
         if request.method == "GET" and path.endswith(collection_path):
-            if etag is not None and request.headers.get("if-none-match") == etag:
-                return httpx.Response(304)
+            assert "if-none-match" not in request.headers, "the smoke asks without a condition, as the run does"
             collection = {"id": SWISSALTI3D.source.source_collection_id, "updated": FSDI_UPDATED}
             return httpx.Response(200, json=collection, headers={"etag": etag} if etag else {})
         if request.method == "POST" and path.endswith("/search"):
@@ -431,6 +430,8 @@ async def test_the_swissalti3d_smoke_fails_on_an_item_updated_after_its_collecti
 
 
 async def test_the_swissalti3d_smoke_fails_on_a_collection_without_etag() -> None:
-    """Without an ETag the materialization could not ask conditionally, and a later run could not compare."""
+    """Without an ETag a later run could not compare its version."""
     with pytest.raises(AssertionError, match="without an ETag"):
-        await _replay_swissalti3d("test_the_collection_answers_its_etag_with_304", _fsdi_double(etag=None))
+        await _replay_swissalti3d(
+            "test_the_collection_carries_what_the_version_of_a_run_is_made_of", _fsdi_double(etag=None)
+        )

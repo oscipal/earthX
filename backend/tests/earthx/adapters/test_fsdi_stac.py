@@ -151,12 +151,9 @@ def page(features: list[Any], cursor: str | None) -> dict[str, Any]:
 class Source:
     """The collection and a search over ``pages``; page ``n`` is asked for with the cursor ``p<n>``."""
 
-    def __init__(
-        self, pages: list[list[Any]], *, etag: str | None = ETAG, collection: Any = None, honours_etag: bool = True
-    ) -> None:
+    def __init__(self, pages: list[list[Any]], *, etag: str | None = ETAG, collection: Any = None) -> None:
         self.pages = pages
         self.etag = etag
-        self.honours_etag = honours_etag
         self.collection = collection if collection is not None else {"id": COLLECTION, "updated": UPDATED}
         self.seen: list[httpx.Request] = []
 
@@ -167,8 +164,6 @@ class Source:
             found = [one for features in self.pages for one in features if one["id"] == wanted]
             return httpx.Response(200, json=found[0]) if found else httpx.Response(404, json={"description": "Not Found"})
         if request.method == "GET":
-            if self.honours_etag and self.etag is not None and request.headers.get("if-none-match") == self.etag:
-                return httpx.Response(304)
             return httpx.Response(200, json=self.collection, headers={"etag": self.etag} if self.etag else {})
         cursor = json.loads(request.content).get("cursor")
         index = 0 if cursor is None else int(cursor[1:])
@@ -465,22 +460,35 @@ class TestMaterialize:
         with pytest.raises(UpstreamShapeError, match="2 of 100 items"):
             await materialize(Source([good, bad]))
 
-    async def test_an_unchanged_collection_asks_no_search(self) -> None:
+    async def test_the_same_version_asks_no_search(self) -> None:
         source = Source([[item(2019)]])
         outcome = await materialize(source, known_version=f"{ETAG};updated={UPDATED}")
         assert outcome.status == "unchanged" and outcome.items == ()
-        assert source.seen[0].headers["if-none-match"] == ETAG and len(source.seen) == 1
+        assert len(source.seen) == 1
 
-    async def test_the_same_version_without_a_304_asks_no_search_either(self) -> None:
-        source = Source([[item(2019)]], honours_etag=False)
-        outcome = await materialize(source, known_version=f"{ETAG};updated={UPDATED}")
-        assert outcome.status == "unchanged" and len(source.seen) == 1
+    async def test_the_collection_is_asked_without_a_condition(self) -> None:
+        """Answer to question 1 (M5-08 plan §13): a 304 would leave the decision to the ETag alone."""
+        source = Source([[item(2019)]])
+        await materialize(source, known_version=f"{ETAG};updated={UPDATED}")
+        assert "if-none-match" not in source.seen[0].headers
 
     async def test_a_new_updated_under_the_same_etag_reloads(self) -> None:
-        """Plan §7 R1: whether the ETag changes when only items are added is not measured."""
-        source = Source([[item(2019)]], honours_etag=False, collection={"id": COLLECTION, "updated": "2026-02-01T00:00:00Z"})
+        """Plan §7 R1: whether the ETag changes when only items are added is not measured; `updated` does change."""
+        source = Source([[item(2019)]], collection={"id": COLLECTION, "updated": "2026-02-01T00:00:00Z"})
         outcome = await materialize(source, known_version=f"{ETAG};updated={UPDATED}")
         assert outcome.status == "loaded" and outcome.source_version == f"{ETAG};updated=2026-02-01T00:00:00Z"
+
+    async def test_a_new_etag_under_the_same_updated_reloads(self) -> None:
+        source = Source([[item(2019)]], etag='"synthetic-collection-2"')
+        outcome = await materialize(source, known_version=f"{ETAG};updated={UPDATED}")
+        assert outcome.status == "loaded" and len(outcome.items) == 1
+
+    async def test_a_304_to_a_plain_request_is_refused(self) -> None:
+        """Not an answer to a question we asked: nothing to compare, and no reason to call the collection unchanged."""
+        gateway = gateway_for(lambda request: httpx.Response(304))
+        async with gateway:
+            with pytest.raises(UpstreamShapeError, match="answered 304"):
+                await materialize_items(ENTRY, adapters=ADAPTER_SPECS, gateway=gateway, known_version=None)
 
     @pytest.mark.parametrize(
         ("etag", "collection", "message"),

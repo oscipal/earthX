@@ -434,8 +434,10 @@ async def materialize_items(
 ) -> MaterializeOutcome:
     """Every item of the collection, read page by page and checked against the entry, or "unchanged" (M5-08 §4.2).
 
-    The collection is asked first, with ``If-None-Match``; ``304`` or the same ETag and ``updated`` as last time is
-    "unchanged" without a search. Otherwise ``POST /search`` over the whole collection, sorted by id, to the last page.
+    The collection is asked first, without ``If-None-Match``: the same ETag and ``updated`` as last time is
+    "unchanged" without a search. A conditional request would leave the decision to the ETag alone, and whether the
+    FSDI changes its ETag when only items are added is not measured; ``updated`` follows the items (M5-08 plan §13,
+    Otto's answer to question 1). Otherwise ``POST /search`` over the whole collection, sorted by id, to the last page.
     An item the entry cannot take (collection, geometry, ``datetime``, an asset off ``asset_hosts``, the asset keys,
     an id without a tile) counts as ``unknown``; above 1 % of what was read the run aborts without an item. Where the
     entry names ``item_states``, one state per tile is loaded and the others count as ``withheld``. ``in_bucket`` is
@@ -446,11 +448,11 @@ async def materialize_items(
             f"{config.dataset_id} is not materialized; adapters.materialize_items does not build its items"
         )
     dialect = dialect_of(config)
-    known_etag = None if known_version is None else known_version.partition(_VERSION_UPDATED)[0]
     url = f"{endpoint_of(config)}/collections/{config.source.source_collection_id}"
-    response = await gateway.get(url, headers={"if-none-match": known_etag} if known_etag else None)
-    if response.status_code == 304:
-        return _unchanged(known_version or "")
+    response = await gateway.get(url)
+    if response.status_code != 200:
+        # A 304 to a request that asked nothing conditional, or another answer without the collection in it.
+        raise UpstreamShapeError(f"the collection answered {response.status_code}, not 200")
     version = _collection_version(config, response.headers.get("etag", ""), response.json())
     if version == known_version:
         return _unchanged(version)
