@@ -12,7 +12,7 @@ import { DRAW_AOI_TO_CROP, isCogFormat, noOriginalsReason } from '../download';
 import { originalsTitle, scenesOf, summaryOf, summaryText } from '../originals';
 import { processBlockReason } from '../processingOrder';
 import { useProcessingStore } from '../processingStore';
-import { defaultRenderOf, drawsClasses, noticesOf, showsColormap } from '../datasets';
+import { defaultRenderOf, drawsClasses, showsColormap } from '../datasets';
 import { indexPresetsOf, presetTip } from '../indexPresets';
 import { trueColorOf } from '../processingOrder';
 import { BAND_TIP, bandAssetsOf, ONE_BAND_TIP } from '../viewBand';
@@ -36,7 +36,6 @@ import OpacityRow from './OpacityRow';
 import type { BandOption } from './BandSelect';
 import { viewKind } from '../viewKind';
 import RenderFields, { NO_COLORMAP } from './RenderFields';
-import NoticeBadges from './NoticeBadges';
 import ScaleHistograms from './ScaleHistograms';
 import { useHistograms } from './useHistograms';
 
@@ -253,7 +252,6 @@ export default function ViewerControls() {
           !compact &&
           temporary && <Badge tip="This image is not a layer: add it to the layers to keep it">Temporary</Badge>
         }
-        notices={shownDataset && noticesOf(shownDataset.collection).length > 0 ? <NoticeBadges collection={shownDataset.collection} /> : undefined}
         eye={
           !compact && (
             <EyeButton shown={showDownloaded} tip={showDownloaded ? 'Hide image' : 'Show image'} onToggle={() => toggleDownloaded()} />

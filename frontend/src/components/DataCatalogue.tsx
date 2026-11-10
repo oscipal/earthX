@@ -21,7 +21,6 @@ import { useAppStore } from '../store';
 import Badge from './Badge';
 import CloseButton from './CloseButton';
 import { ArrowLeftIcon, ChevronDownIcon, ChevronRightIcon, PlusIcon, TrashIcon } from './icons';
-import NoticeBadges from './NoticeBadges';
 import Tip from './Tip';
 
 function Marks({ dataset }: { dataset: DatasetOption }) {
@@ -31,7 +30,6 @@ function Marks({ dataset }: { dataset: DatasetOption }) {
       {prototypeNote(dataset.collection) && <Badge>Prototype</Badge>}
       {accountOf(dataset.collection) && <Badge>Account</Badge>}
       {maturity && <Badge>{maturity}</Badge>}
-      <NoticeBadges collection={dataset.collection} />
     </>
   );
 }

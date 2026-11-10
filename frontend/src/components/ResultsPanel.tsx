@@ -1,5 +1,5 @@
 import { aoiNotes, measuresAoi, SKIPPED_TIP } from '../aoiFilter';
-import { maturityLabel, noticesOf, quicklookAsset } from '../datasets';
+import { maturityLabel, quicklookAsset } from '../datasets';
 import type { ResultSection } from '../sections';
 import { hasResultsPanel, totalItems } from '../sections';
 import { useAppStore } from '../store';
@@ -7,7 +7,6 @@ import type { StacItem, TimeStepGroup } from '../types';
 import CopyButton from './CopyButton';
 import DatasetSelect from './DatasetSelect';
 import { ChevronDownIcon, ChevronRightIcon, TrashIcon } from './icons';
-import NoticeBadges from './NoticeBadges';
 import ResultsEye from './ResultsEye';
 import ResultsToTop from './ResultsToTop';
 import Tip from './Tip';
@@ -343,16 +342,9 @@ function ResultsList({ sections }: { sections: ResultSection[] }) {
   const expandedGroupIndex = useAppStore((s) => s.expandedGroupIndex);
   const toggleGroup = useAppStore((s) => s.toggleResultsGroup);
   const measured = useAppStore((s) => openSectionId !== null && measuresAoi(s.searchContext?.query, openSectionId));
-  // The notices of the dataset shown, under its box: the box is no button to hover with one dataset (DS-04 plan §4.6).
-  const shownCollection = useAppStore((s) => s.datasets.find((d) => d.id === (openSectionId ?? sections[0]?.datasetId))?.collection);
   return (
     <>
       <DatasetDropdown sections={sections} openId={openSectionId} />
-      {shownCollection && noticesOf(shownCollection).length > 0 && (
-        <div className="results-notices">
-          <NoticeBadges collection={shownCollection} />
-        </div>
-      )}
       {measured && <AoiProgress datasetId={openSectionId} />}
       <div className="results-list-head">
         <div className="eyebrow results-list-eyebrow">Scenes by time step</div>

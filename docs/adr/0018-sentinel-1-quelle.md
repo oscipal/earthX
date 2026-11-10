@@ -687,6 +687,8 @@ Kosten je Kachel misst die Umsetzung.
 
 **Antwort F2: (1)** „Approximate geolocation“ und „Uncalibrated (DN)“.
 
+**Nachtrag DS-04c (Entscheidung Otto, 10.11.2026):** Die beiden Hinweise erscheinen in der Oberfläche nicht mehr als Marke, weder im Panel und in den Suchergebnissen noch im Kopf von Ansicht und Layer oder im Data catalogue. Sie bleiben im Rezept (`provenance.notices`), in `ATTRIBUTION.txt` und als gewöhnlicher Satz in der Beschreibung des Datensatzes. Die Registry führt sie weiter als `notices` und veröffentlicht sie als `earthx:notices`; das Frontend liest das Feld nicht.
+
 **F3 — Operatoren auf GRD?**
 1. Nach §4.4: Zuschnitt, Band-Math innerhalb der Szene, Normalisierung, Reprojektion, Mosaik je Durchgang; keine festen Schwellen, keine Index-Knöpfe, kein Vergleich über Bahnen **(Empfehlung)**
 2. Alle generischen Operatoren freischalten, nur Hinweise

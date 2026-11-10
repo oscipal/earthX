@@ -9,10 +9,13 @@
 # The same id as the upstream collection, the rule of Sentinel-2 (DS-04 plan §4.5).
 dataset_id: sentinel-1-grd
 title: Sentinel-1 GRD
+# The last two sentences are the notices below as plain text (adr/0018 §3.1; F2, Nachtrag DS-04c: the viewer shows no
+# mark for them, Otto 10.11.2026).
 description: >-
   Sentinel-1 C-band SAR, Level-1 Ground Range Detected, as cloud-optimized GeoTIFF in radar geometry. Served by Earth
   Search v1 (Element 84) from the Registry of Open Data on AWS. Placed by its ground control points without terrain
-  correction, and not calibrated: the values are digital numbers (adr/0018 §3.1).
+  correction, so positions can be off by tens of metres, more in steep terrain. Not calibrated: the values are digital
+  numbers, not backscatter.
 # German and English (adr/0026 F7, DS-04 plan §4.5).
 keywords: [sentinel-1, radar, SAR, C-band, backscatter, Rückstreuung, GRD, copernicus]
 category: radar

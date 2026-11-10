@@ -2,7 +2,8 @@
 //   1. After a search a Sentinel-1-like dataset shows its preview: the tiles of the band each scene carries (`vv` for a
 //      VV scene, `hh` for an HH scene, `first_present`), not the thumbnail in radar geometry the map cannot place (the
 //      results list still shows it beside the scene).
-//   2. Its notices are badges with a tooltip: in the Data catalogue, under the box of the results and in the head of the view.
+//   2. Its notices are no mark anywhere (Otto, 10.11.2026): not in the results, not in the head of the view, not in the Data
+//      catalogue, which says them in the description of the dataset.
 //   3. "Crop and merge to AOI" over two scenes of one pass draws one outline around the merged picture and no scene
 //      boundary across it: two Sentinel-1 slices whose footprints almost meet (the double line Otto saw), and two
 //      Sentinel-2 tiles that overlap.
@@ -89,6 +90,7 @@ async function run(browser, theme, viewport, results) {
       'earthx:license_flags': { tier: 'processing', license: 'proprietary' },
       'earthx:source': { asset_hosts: ['assets.example.org'] },
       'earthx:notices': notices,
+      description: 'Placed by its ground control points without terrain correction, and not calibrated: the values are digital numbers.',
       extent: { spatial: { bbox: [[-180, -90, 180, 90]] }, temporal: { interval: [['2014-10-10T00:00:00Z', null]] } },
     };
     const groups = [
@@ -144,17 +146,13 @@ async function run(browser, theme, viewport, results) {
   if (tiles.some((t) => t === 'SLICE_HH vv')) problems.push('the HH scene was asked for vv');
 
   // --- 2. the notices ------------------------------------------------------------------------------------------------
-  const badges = async (selector) => page.locator(`${selector} .badge`).evaluateAll((els) => els.map((e) => [e.textContent, e.getAttribute('data-tip'), e.hasAttribute('data-tip-level')]));
-  const expectNotices = async (selector, where) => {
-    const found = await badges(selector);
-    const want = NOTICES.map((n) => [n.label, n.tooltip, false]);
-    if (JSON.stringify(found) !== JSON.stringify(want)) problems.push(`${where}: the badges are ${JSON.stringify(found)}`);
-    for (const box of await page.locator(`${selector} .badge`).evaluateAll((els) => els.map((e) => e.getBoundingClientRect().right))) {
-      if (box > win.width + 1) problems.push(`${where}: a badge lies outside the window`);
-    }
+  // No text of a notice anywhere in the page, whatever element would hold it.
+  const expectNoNotices = async (where) => {
+    const text = await page.evaluate(() => document.body.innerText);
+    for (const notice of NOTICES) if (text.includes(notice.label) || text.toUpperCase().includes(notice.label.toUpperCase())) problems.push(`${where}: "${notice.label}" is shown`);
   };
-  await expectNotices('.results-notices', 'results');
-  await shot('results notices');
+  await expectNoNotices('results');
+  await shot('results');
 
   // --- 3. "Crop and merge to AOI" over the two slices of one pass ------------------------------------------------------
   await set({ activeGroupIndex: 0, expandedGroupIndex: 0, selectedIds: ['SLICE_SOUTH', 'SLICE_NORTH'], aoi: AOI });
@@ -165,7 +163,7 @@ async function run(browser, theme, viewport, results) {
   if (viewed !== 'vv,vv') problems.push(`the view draws ${viewed}`);
   const merged = await outline();
   if (merged.rings !== 1 || merged.inside > 0) problems.push(`the outline of the merged pass has ${merged.rings} rings and ${merged.inside} corners inside the AOI (a scene boundary across it)`);
-  await expectNotices('.insp-notices', 'view');
+  await expectNoNotices('view');
   await page.evaluate((m) => m.jumpTo({ center: [11.5, 48.4], zoom: 8 }), map);
   await page.waitForTimeout(800);
   await shot('merged pass');
@@ -189,8 +187,10 @@ async function run(browser, theme, viewport, results) {
   await page.evaluate(async () => { const { useAppStore } = await import('/src/store.ts'); useAppStore.getState().exitFocus(); useAppStore.setState({ catalogueOpen: true }); });
   await page.waitForSelector('#data-catalogue');
   const entry = page.locator('.catalogue-entry', { hasText: 'Sentinel-1 GRD' });
-  await expectNotices('.catalogue-entry:has-text("Sentinel-1 GRD")', 'catalogue');
   await entry.locator('.catalogue-entry-name').click();
+  await expectNoNotices('catalogue');
+  const description = await page.locator('.catalogue-details').innerText();
+  if (!description.includes('ground control points')) problems.push('the description of the dataset does not say how it is placed');
   await shot('catalogue');
 
   results.push({ name, problems });

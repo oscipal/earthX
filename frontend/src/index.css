@@ -909,8 +909,7 @@ svg.lucide.icon-lead {
     padding-left: calc(var(--space-1) / 2);
   }
   .inspector.folded .insp-body,
-  .inspector.folded .insp-row2,
-  .inspector.folded .insp-notices {
+  .inspector.folded .insp-row2 {
     display: none;
   }
   .inspector.folded .vc-head {
@@ -3859,20 +3858,6 @@ button.pm-open:hover {
 }
 .badge + .badge {
   margin-left: var(--space-2);
-}
-/* The notices of a dataset (DS-04 plan §4.6) under the box of the results and under the head of a view: a row that wraps. */
-.results-notices,
-.insp-notices {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1-5);
-}
-.results-notices {
-  padding: var(--space-3) var(--space-4) 0;
-}
-.results-notices .badge + .badge,
-.insp-notices .badge + .badge {
-  margin-left: 0;
 }
 /* "Loading…" (NM4-04b): the badge itself breathes, so a cold mosaic does not look stuck. */
 .badge.loading {
