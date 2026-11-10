@@ -1,7 +1,8 @@
 """Every registry entry's items: an asset with band names also carries the core field ``bands`` (M4-23).
 
 One synthetic item per dataset, taken through the adapter path that item would take
-(the Earth Search pass-through, for a COG and for a Zarr item, the DEM and the WorldCover item builders). A new
+(the Earth Search pass-through, for a COG and for a Zarr item, the DEM and the WorldCover item builders, the FSDI with
+its fixed asset keys). A new
 registry entry fails ``test_every_registry_entry_is_covered`` until it is added here.
 """
 
@@ -26,7 +27,9 @@ from tests.catalog.entries import (
     REGISTRY,
     SENTINEL_1_GRD,
     SENTINEL_2_L2A,
+    SWISSALTI3D,
 )
+from tests.catalog.synthetic_chain import fsdi_feature
 from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR
 from tests.earthx.readers import mini_zarr
 
@@ -76,6 +79,15 @@ async def sentinel_1_fixture() -> dict[str, Any]:
         return await earth_search_item(SENTINEL_1_GRD, item["id"], gateway=gateway)
 
 
+async def swissalti3d_fixture() -> dict[str, Any]:
+    """An item of the FSDI by id, under the fixed asset keys of the entry (M5-08): no band names at the source."""
+    feature = fsdi_feature(SWISSALTI3D)
+    policy = Policy(allowed_hosts=frozenset({httpx.URL(SWISSALTI3D.source.endpoint).host}))
+    gateway, _ = answering(httpx.Response(200, json=feature), policy=policy)
+    async with gateway:
+        return await earth_search_item(SWISSALTI3D, feature["id"], gateway=gateway)
+
+
 def dem_fixture() -> dict[str, Any]:
     config = replace(COP_DEM_GLO_30, source=replace(COP_DEM_GLO_30.source, endpoint="https://dem.example"))
     return dem_item("Copernicus_DSM_10_N47_00_E009_00_DEM", (9.0, 47.0, 10.0, 48.0), config=config)
@@ -92,6 +104,7 @@ async def items_by_dataset() -> dict[str, dict[str, Any]]:
         SENTINEL_1_GRD.dataset_id: await sentinel_1_fixture(),
         SYNTHETIC_ZARR.dataset_id: await zarr_fixture(),
         COP_DEM_GLO_30.dataset_id: dem_fixture(),
+        SWISSALTI3D.dataset_id: await swissalti3d_fixture(),
         **{entry.dataset_id: worldcover_fixture(entry) for entry in (ESA_WORLDCOVER_2020, ESA_WORLDCOVER_2021)},
     }
 
@@ -103,6 +116,7 @@ def test_every_registry_entry_is_covered() -> None:
         COP_DEM_GLO_30.dataset_id,
         ESA_WORLDCOVER_2020.dataset_id,
         ESA_WORLDCOVER_2021.dataset_id,
+        SWISSALTI3D.dataset_id,
     }
     assert {entry.dataset_id for entry in REGISTRY} == covered
 

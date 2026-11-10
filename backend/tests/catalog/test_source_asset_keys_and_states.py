@@ -18,7 +18,7 @@ from earthx.catalog.registry import (
     ItemStates,
     SourceInfo,
 )
-from tests.catalog.entries import COP_DEM_GLO_30, REGISTRY
+from tests.catalog.entries import COP_DEM_GLO_30, REGISTRY, SWISSALTI3D
 
 COG = "image/tiff; application=geotiff; profile=cloud-optimized"
 RULES = (AssetKeyRule("red", COG, 10.0), AssetKeyRule("green", COG, 20.0), AssetKeyRule("blue", COG, 60.0))
@@ -44,9 +44,21 @@ def test_neither_field_has_a_default(valid_config, field) -> None:
 
 
 class TestAssetKeys:
-    def test_every_entry_of_the_registry_keeps_the_source_keys(self) -> None:
+    def test_only_swissalti3d_renames_assets(self) -> None:
         """No entry before swissALTI3D renames an asset (M5-08 plan §4.3)."""
-        assert all(entry.source.asset_keys == () for entry in REGISTRY)
+        assert [entry.dataset_id for entry in REGISTRY if entry.source.asset_keys] == ["swissalti3d"]
+
+    def test_swissalti3d_keys_both_cogs_and_both_zips(self) -> None:
+        """F2: `dtm` 0.5 m and `dtm_2m` as COGs, shown 0.5 m; the XYZ files only as originals."""
+        keys = {rule.key: (rule.media_type.split(";")[0], rule.gsd) for rule in SWISSALTI3D.source.asset_keys}
+        assert keys == {
+            "dtm": ("image/tiff", 0.5),
+            "dtm_2m": ("image/tiff", 2.0),
+            "xyz": ("application/x.ascii-xyz+zip", 0.5),
+            "xyz_2m": ("application/x.ascii-xyz+zip", 2.0),
+        }
+        assert SWISSALTI3D.default_render.assets == ("dtm",)
+        assert SWISSALTI3D.auxiliary_assets == ("xyz", "xyz_2m")
 
     def test_rules_for_every_key_the_entry_names_are_accepted(self, vary, valid_config) -> None:
         assert _with_keys(vary, valid_config, RULES).source.asset_keys == RULES
@@ -103,8 +115,17 @@ class TestAssetKeys:
 
 
 class TestItemStates:
-    def test_every_entry_of_the_registry_loads_every_item(self) -> None:
-        assert all(entry.source.item_states is None for entry in REGISTRY)
+    def test_only_swissalti3d_chooses_a_state_per_tile(self) -> None:
+        assert [entry.dataset_id for entry in REGISTRY if entry.source.item_states] == ["swissalti3d"]
+
+    def test_swissalti3d_loads_the_latest_state_of_the_tile_its_id_names(self) -> None:
+        """F1, and the id form measured at the source (M5-08 plan §2)."""
+        states = SWISSALTI3D.source.item_states
+        assert states.rule is ItemStateRule.LATEST
+        for item_id in ("swissalti3d_2019_9999-9999", "swissalti3d_2025_9999-9999"):
+            assert states.tile_of(item_id) == "9999-9999"
+        for other in ("swissalti3d_2019_9999-9999_x", "swissimage-dop10_2019_9999-9999", "swissalti3d_19_9999-9999"):
+            assert states.tile_of(other) is None
 
     def test_a_materialized_entry_may_choose_a_state_per_tile(self, vary, valid_config) -> None:
         assert _materialized(vary, valid_config, STATES).source.item_states == STATES

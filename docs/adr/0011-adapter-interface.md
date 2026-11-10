@@ -77,6 +77,7 @@ Die Empfehlungen, jede mit einer Frage in §11:
 6. **STAC-API-Dialekt erst mit der nächsten STAC-API-Quelle (F6).** Die beiden
    STAC-Adapter unterscheiden sich im Code in drei Stellen (§3.2 B2). Das
    Zusammenlegen lohnt erst in M5 und wird nicht auf Vorrat gebaut.
+   *Umgesetzt mit M5-08 (§11b).*
 7. **Architekturplan 3.1 und 6.1 anpassen (F8).** In 6.1 sind sechs
    Fähigkeiten nötig statt vier. „Genutzt von“ muss `api` bzw. `discovery`
    heißen statt `catalog` (K-07). In 3.1 wandert „Zugriffsauflösung“ von
@@ -737,7 +738,7 @@ auf, wenn gesetzt.
 
 ## 11b. Nachtrag M5-08 (07.11.2026): STAC-API-Dialekt umgesetzt
 
-F6 ist mit M5-08a umgesetzt (`plans/m5/m5-08-stac-adapter-swissalti3d.md` §11, PR #314). `adapters/earth_search.py` heißt jetzt `adapters/stac_api.py`. Ein `StacDialect` je Quelle hält die drei Stellen aus §3.2 B2: das Feld der Seitenmarke (`marker_field`), die Übersetzung der Bedingungen (`write_conditions`, für Earth Search die Query-Extension) und die Normalisierung der Items. Dazu kommt `FilterSupport`, das jetzt in `federated_search` liegt; `spec.py` liest es aus dem Dialekt, damit die Messung an einer Stelle steht. Earth Search bleibt `earth-search-v1` und bitgleich, belegt durch einen Vergleich auf Bytes (`tests/earthx/adapters/test_earth_search_golden.py`), der vor dem Umbau geschrieben wurde. Der zweite Dialekt (FSDI) folgt mit M5-08b.
+F6 ist mit M5-08a umgesetzt (`plans/m5/m5-08-stac-adapter-swissalti3d.md` §11, PR #314). `adapters/earth_search.py` heißt jetzt `adapters/stac_api.py`. Ein `StacDialect` je Quelle hält die drei Stellen aus §3.2 B2: das Feld der Seitenmarke (`marker_field`), die Übersetzung der Bedingungen (`write_conditions`, für Earth Search die Query-Extension) und die Normalisierung der Items. Dazu kommt `FilterSupport`, das jetzt in `federated_search` liegt; `spec.py` liest es aus dem Dialekt, damit die Messung an einer Stelle steht. Earth Search bleibt `earth-search-v1` und bitgleich, belegt durch einen Vergleich auf Bytes (`tests/earthx/adapters/test_earth_search_golden.py`), der vor dem Umbau geschrieben wurde. Der zweite Dialekt (FSDI, `fsdi-stac-v1`) kam mit M5-08b (PR #317), der erste Eintrag dazu, `swissalti3d`, mit M5-08c (§13 des Plans). Eine weitere Collection der FSDI braucht nur einen YAML-Eintrag (Auslegung A1).
 
 ## 12. Quellen
 
