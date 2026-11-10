@@ -67,7 +67,9 @@ function combinedLonSpan(geometries: readonly GeoJSON.Geometry[]): number {
 // each other: a corner near a corner of an earlier footprint takes its place, and an edge that passes near a corner of
 // another footprint gets that corner, so the two share the same points along their common edge. 0.01° closes every
 // seam of those pairs and of 232 more in the polar seas, where 0.008° was the least that did; it moves an outline by at
-// most about a kilometre where scenes really meet, and nowhere else. Generic: any dataset's group goes through it.
+// most about a kilometre where scenes really meet, and nowhere else. A footprint smaller than ten times that (a tile of
+// swissALTI3D, 1 km) snaps within a tenth of its shorter side (`SNAP_SHARE_OF_SIDE`). Generic: any dataset's group goes
+// through it.
 const SNAP_TOLERANCE_DEG = 0.01;
 
 type Point = [number, number];
@@ -113,33 +115,40 @@ const near = (a: Box, b: Box, tolerance: number): boolean =>
 // A ring this can snap: closed, with at least three corners. Anything else is left as it is, for the union to judge.
 const closedRing = (ring: Point[]): boolean => ring.length >= 4 && squaredDistance(ring[0], ring[ring.length - 1]) === 0;
 
+// The share of the shorter side of a footprint it may move by at most: a small tile (swissALTI3D, 1 km) snaps within its
+// own size, never onto the next corner of its neighbour, and a narrow strip cannot have its two long edges pulled across.
+const SNAP_SHARE_OF_SIDE = 0.1;
+
 export function snapFootprints(footprints: readonly Geom[], tolerance = SNAP_TOLERANCE_DEG): Geom[] {
-  const limit = tolerance * tolerance;
   const boxes = footprints.map(boxOf);
+  // The tolerance of each footprint, and of a pair the smaller of the two: 0.01° for scenes of a pass, a tenth of the
+  // shorter side for footprints that small.
+  const own = boxes.map((box) => Math.min(tolerance, SNAP_SHARE_OF_SIDE * Math.min(box[2] - box[0], box[3] - box[1])));
+  const limitOf = (i: number, j: number) => Math.min(own[i], own[j]) ** 2;
   // Only the footprints that come within the tolerance of each other are compared, so a group of many scenes costs what
-  // their neighbours cost. A footprint narrower than three tolerances is not snapped: corners of a neighbour would land on
-  // both of its long edges and cross them.
+  // their neighbours cost.
   const neighbours = (index: number, before: number) =>
     boxes.slice(0, before).flatMap((box, j) => (j !== index && near(box, boxes[index], tolerance) ? [j] : []));
-  const narrow = boxes.map((box) => box[2] - box[0] < 3 * tolerance || box[3] - box[1] < 3 * tolerance);
   // Corners first, each footprint onto those before it, so that two near corners become one point and not two that swapped.
   // A corner that lies exactly on an earlier corner keeps it.
   const snapped: Geom[] = [];
   footprints.forEach((footprint, index) => {
-    const earlier = narrow[index] ? [] : neighbours(index, index).flatMap((j) => ringsOf(snapped[j]).flat());
+    const earlier = neighbours(index, index).map((j) => ({ corners: ringsOf(snapped[j]).flat(), limit: limitOf(index, j) }));
     snapped.push(
       mapRings(footprint, (ring) =>
         !closedRing(ring)
           ? ring
           : ring.map((corner) => {
               let best = corner;
-              let bestDistance = limit;
-              for (const other of earlier) {
-                const distance = squaredDistance(corner, other);
-                if (distance === 0) return corner;
-                if (distance <= bestDistance) {
-                  best = other;
-                  bestDistance = distance;
+              let bestDistance = Infinity;
+              for (const { corners, limit } of earlier) {
+                for (const other of corners) {
+                  const distance = squaredDistance(corner, other);
+                  if (distance === 0) return corner;
+                  if (distance <= limit && distance <= bestDistance) {
+                    best = other;
+                    bestDistance = distance;
+                  }
                 }
               }
               return best;
@@ -149,8 +158,9 @@ export function snapFootprints(footprints: readonly Geom[], tolerance = SNAP_TOL
   });
   // Then every edge takes the corners of the other footprints that lie near it, in their order along the edge.
   return snapped.map((footprint, index) => {
-    if (narrow[index]) return footprint;
-    const others = neighbours(index, snapped.length).flatMap((j) => ringsOf(snapped[j]).flatMap((ring) => ring.slice(0, -1)));
+    const others = neighbours(index, snapped.length).flatMap((j) =>
+      ringsOf(snapped[j]).flatMap((ring) => ring.slice(0, -1).map((corner) => ({ corner, limit: limitOf(index, j) }))),
+    );
     if (others.length === 0) return footprint;
     return mapRings(footprint, (ring) => {
       if (!closedRing(ring)) return ring;
@@ -162,7 +172,7 @@ export function snapFootprints(footprints: readonly Geom[], tolerance = SNAP_TOL
         const [x0, x1] = [Math.min(a[0], b[0]) - tolerance, Math.max(a[0], b[0]) + tolerance];
         const [y0, y1] = [Math.min(a[1], b[1]) - tolerance, Math.max(a[1], b[1]) + tolerance];
         const inserted: { corner: Point; t: number }[] = [];
-        for (const corner of others) {
+        for (const { corner, limit } of others) {
           if (corner[0] < x0 || corner[0] > x1 || corner[1] < y0 || corner[1] > y1) continue;
           if (squaredDistance(corner, a) <= limit || squaredDistance(corner, b) <= limit) continue;
           const at = alongSegment(corner, a, b);

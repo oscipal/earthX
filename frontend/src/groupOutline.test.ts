@@ -237,6 +237,21 @@ describe('snapFootprints', () => {
     expect(snapFootprints([SOUTH.coordinates as never, short as never])[1]).toEqual(short);
   });
 
+  it('closes the seams of small tiles too: 70 tiles of 1 km whose shared edges differ in the last digits', () => {
+    // Tiles of about 1 km, as swissALTI3D's, laid on a grid whose corners are computed twice (once as the end of a tile,
+    // once as the start of the next), so neighbours meet a few units of the last digit apart.
+    const [west, south, step] = [7.4, 46.92, 0.013];
+    const tiles = Array.from({ length: 70 }, (_, i) => {
+      const [x, y] = [west + (i % 10) * step, south + Math.floor(i / 10) * step];
+      return item(`T${i}`, [x, y, x + step, y + step], poly([[x, y], [x + step, y], [x + step, y + step], [x, y + step], [x, y]]));
+    });
+    const aoi = poly([[7.43, 46.93], [7.5, 46.93], [7.5, 46.99], [7.43, 46.99], [7.43, 46.93]]);
+    const features = groupOutlineFeatures([group('tiles', tiles)], new Set(tiles.map((t) => t.id)), aoi);
+    expect(ringCount(features)).toBe(1);
+    const corners = features.flatMap((f) => (f.geometry.type === 'Polygon' ? f.geometry.coordinates : f.geometry.coordinates.flat()).flat());
+    expect(corners.filter(([x, y]) => x > 7.4301 && x < 7.4999 && y > 46.9301 && y < 46.9899)).toEqual([]);
+  });
+
   it('leaves a footprint narrower than three tolerances as it is, instead of crossing its edges', () => {
     const strip = [[[0, 1.21], [2, 1.21], [2, 1.218], [0, 1.218], [0, 1.21]]];
     expect(snapFootprints([SOUTH.coordinates as never, strip as never])[1]).toEqual(strip);
