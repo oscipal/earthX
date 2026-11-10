@@ -821,7 +821,8 @@ freigegeben. Das ist ein Nachtrag zu F3.
   *Stand 08.11.2026:* TPS umgesetzt mit DS-04a ([#312](https://github.com/oscipal/earthX/pull/312)); Eintrag,
   Abbildung, Prüfsumme, Hinweise und Live-Smoke mit DS-04b (`plans/ds/ds-04-s1-anbinden.md` §12).
   *Stand 09.11.2026:* Frontend mit DS-04c (Marken, `first_present`, Vorschau-Kacheln nach der Suche; §13);
-  offen sind der Quicklook auf der Karte (F11) und die Beschriftung der Originale (F12).
+  Quicklook auf der Karte (F11 = 1, Prüfung gegen `map-overlay.kml`) und Beschriftung der Originale (F12 = 1,
+  eigener PR) beantwortet von Otto am 09.11.2026, noch nicht gebaut.
 - **Teil B:** Ottos Messung (§11 C, mit CORS der Token-API); bei positivem
   Ergebnis die Nachträge aus §12 (den Satz in `ENTSCHEIDUNGEN` trägt Otto ein) und die Lizenz-Einstufung von
   `sentinel-1-rtc` (B11, Otto). Offen bleibt dann auch der lokale Runner

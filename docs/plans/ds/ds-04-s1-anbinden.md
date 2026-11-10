@@ -1,6 +1,6 @@
 # DS-04 — Sentinel-1 GRD anbinden: Plan-Schritt
 
-**Status (09.11.2026):** Plan angenommen (Otto, 07.11.2026; Antworten in §9a). DS-04a (TPS) umgesetzt (§11, [#312](https://github.com/oscipal/earthX/pull/312)); DS-04b umgesetzt ([#318](https://github.com/oscipal/earthX/pull/318), §12), F7–F10 beantwortet (§12.4a); DS-04c umgesetzt im Draft-PR (§13), mit dem Fehler aus Ottos Browserprüfung vom 09.11.2026; F11 und F12 offen (§13.5). Ersetzt die frühere Datei, die den Text von DS-00 enthielt (`adr/0030` §9, Nebenbefund).
+**Status (09.11.2026):** Plan angenommen (Otto, 07.11.2026; Antworten in §9a). DS-04a (TPS) umgesetzt (§11, [#312](https://github.com/oscipal/earthX/pull/312)); DS-04b umgesetzt ([#318](https://github.com/oscipal/earthX/pull/318), §12), F7–F10 beantwortet (§12.4a); DS-04c umgesetzt im Draft-PR [#319](https://github.com/oscipal/earthX/pull/319) (§13), mit dem Fehler aus Ottos Browserprüfung vom 09.11.2026; F11 und F12 beantwortet (§13.5a), der Zuschnitt ohne Bandtabelle nachgezogen (§13.4). Ersetzt die frühere Datei, die den Text von DS-00 enthielt (`adr/0030` §9, Nebenbefund).
 **Aufgabe:** DS-04 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2. **Stufe B** (`adr/0030` §11; vorher A laut DS-00). Der Plan darf sofort entstehen; die Umsetzung beginnt erst, wenn M5-13 (YAML-Lader) gemergt ist. Dann wird `main` geholt, und der Eintrag entsteht als YAML (M5-Plan §6.3).
 **Modell:** Opus, Effort hoch.
 **Grundlagen:** `adr/0018` Teil A (§3.1, §4, F1–F3) mit Nachtrag M5-12 (§9.4); `adr/0030` §5.2, §8, §9, §11; `adr/0021` (Suchfilter); `adr/0022` und M5-07 (`data_region`); `adr/0024` (`legal_status`); `adr/0025` §7 (YAML unter `backend/catalog/`); `adr/0027` §6.1 (`access.account`); `adr/0014` §3.1, §4.6, §6.3 (Fassung, Bitgleichheit); `architekturplan.md` 3.1, 5.1, 6.4, 7.3; `projektuebersicht.md` §5 (Checkliste); `KLAERUNGEN.md` B8–B12.
@@ -432,7 +432,7 @@ Auf `main` 05a3b1c (nach DS-04b #318), eigener Draft-PR, nur Frontend. Belegstuf
 - **Marken „an der Ergebnisgruppe“** stehen unter dem Kasten des Datensatzes in den Suchergebnissen, nicht an jeder Zeitgruppe: Alle Gruppen eines Datensatzes haben dieselben Hinweise, zwei Marken je Gruppe würden die Liste verdoppeln. Im Kasten selbst gehen sie nicht, weil er bei einem Datensatz ein gesperrter Knopf ist, über dem kein Tooltip erscheint.
 - **Marken „am Layer“** stehen in einer eigenen Zeile unter dem Kopf der Einstellungen der Ansicht und eines daraus gehefteten Layers, nicht in der Layerzeile (deren elf Plätze sind fest, UI-03).
 - **Tooltip-Stufe:** Die Marken der Hinweise zeigen ihren Tooltip auch in der Stufe „simple“; die übrigen Marken bleiben „advanced“.
-- **Zuschnitt-Downloads** nehmen die Bänder aus der Bandtabelle des Dialogs (NM4-75) und sind nicht geändert; nur der Fall ohne Bandtabelle nennt weiter das erste Asset der Liste.
+- **Zuschnitt-Downloads** nehmen die Bänder aus der Bandtabelle des Dialogs (NM4-75). **Ohne Bandtabelle** (Otto, 10.11.2026, vor dem Merge): Der Zuschnitt einer Auswahl liest das `first_present`-Band ihrer Szenen; ein aus der Trefferliste gehefteter Layer behält beim Heften die Bänder seiner Szenen (`restore.assets`, fehlt bei älteren Layern, die wie bisher das erste der Liste nehmen); ein aus der Ansicht gehefteter Layer las sie schon je Szene. Szenen eines VV- und eines HH-Überflugs haben kein gemeinsames Band, und ein Zuschnitt liest eine Asset-Liste für alle Szenen (sonst `404` „the item carries no asset“): Der Dialog sagt „These scenes carry different bands (vv, hh): crop the scenes of one band at a time.“ und schickt nichts (Auslegung).
 - **Nicht gebaut:** die Beschriftung der Originale als COG-Fassung des Bucket-Betreibers (§4.6), weil es dafür keine Registry-Angabe gibt und ein Text je Datensatz im Code gegen §10 verstieße; Frage F12.
 - **F7 (Wiedervorlage):** Die Kachelkosten der TPS sind in diesem PR nicht neu gemessen; ob Sentinel-1 im Browser spürbar langsam ist, sieht Otto bei der Prüfung (§13.6).
 
@@ -449,6 +449,12 @@ Auf `main` 05a3b1c (nach DS-04b #318), eigener Draft-PR, nur Frontend. Belegstuf
 2. Den Satz als dritten Hinweis in `notices` (erscheint dann auch als Marke)
 3. Weglassen
 
+### 13.5a Antworten Otto (09.11.2026)
+
+- **F11:** Option 1, mit Prüfung: Die eingepasste Lage (vier Ecken, Spiegelung je Bahnrichtung) wird in Tests gegen `map-overlay.kml` geprüft, je eine echte aufsteigende und absteigende Szene als Fixture; zur Laufzeit keine KML-Anfrage.
+- **F12:** Option 1 (`source.originals_note` als Tooltip), als eigener kleiner PR nach diesem.
+- **Vor dem Merge in diesem PR:** Zuschnitt ohne Bandtabelle fragt `vv` an; bei HH-Szenen `first_present` verwenden, mit Test. Umgesetzt (§13.4).
+
 ### 13.6 Prüfanleitung für Otto
 
 **Browser:** `main` mit diesem PR, lokal `npm run dev` und das Backend starten.
@@ -456,7 +462,7 @@ Auf `main` 05a3b1c (nach DS-04b #318), eigener Draft-PR, nur Frontend. Belegstuf
 1. Data catalogue: „Sentinel-1 GRD“ zeigt die Marken „Approximate geolocation“ und „Uncalibrated (DN)“; beim Überfahren steht der Satz aus F10 im Tooltip, auch mit Tooltips auf „simple“.
 2. Suche über Mitteleuropa: unter „Showing dataset“ dieselben zwei Marken. Ab Zoom 7 zeigt die Karte die Vorschau-Kacheln der Szenen in Graustufen (VV); eine Suche im Nordpolarmeer (EW, HH) zeigt sie ebenfalls (HH).
 3. Zwei Szenen eines Überflugs ankreuzen, AOI über ihre Grenze, „Crop and merge to AOI“: eine gelbe Kontur um das Mosaik, **keine Linie quer durchs Bild**; die Marken stehen unter dem Kopf der Ansicht. Dasselbe mit Sentinel-2 (zwei Kacheln eines Überflugs).
-4. „Download full scene“ → „Originals“: je Szene das Band der Ko-Polarisation (`vv` bzw. `hh`).
+4. „Download full scene“ → „Originals“: je Szene das Band der Ko-Polarisation (`vv` bzw. `hh`). „Download crop“ einer HH-Szene nennt „asset hh“; eine VV- und eine HH-Szene zusammen sperren „Download“ mit dem Satz aus §13.4.
 5. Ob die Kacheln spürbar langsam laden (Wiedervorlage F7).
 
 **Browser-Skript** (ohne Backend, braucht Playwright mit Chromium, das keine Abhängigkeit des Projekts ist), aus `frontend/`:
