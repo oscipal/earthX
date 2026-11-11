@@ -325,7 +325,7 @@ Belegstufen wie oben; **M** heißt hier: im lokalen Postgres 16 der Sitzung geme
 - **Eingaben:** `q` über 200 Zeichen, Box mit falscher Zahl von Werten oder außerhalb ±180/±90 oder mit Süd über Nord, Zeitraum ungültig oder verkehrt herum, `bbox` und `intersects` zugleich, Position einer Geometrie außerhalb ±180/±90, unbekanntes Feld im Body, `limit` < 1, `offset` < 0 → `400`. Keine Fehlermeldung nennt Text oder Koordinate.
 - **Logs:** weder `q` noch Fläche in einer Logzeile; ein Test prüft das Zugangsprotokoll für `GET` mit `q` und Box, `POST` mit `intersects` und eine abgewiesene Anfrage.
 - **Zahl am Namen (§11.7):** in `catalog/search.py`, siehe A18–A21. Negativfrage **Q51** „Sentinel-3“ im Set und in `adr/0026` §8.3 (Nachtrag).
-- **Tests:** `tests/integration/test_api_collection_search.py` (Route gegen Postgres und pgstac), `tests/earthx/api/test_collection_search.py` (Lesen der Anfrage ohne Datenbank), neue Fälle in `tests/integration/test_search.py` (Zahlen am Namen, synthetisch).
+- **Tests:** `tests/integration/test_api_collection_search.py` (Route gegen Postgres und pgstac, auch: kein Text und keine Koordinate in einem `400`), `tests/earthx/api/test_collection_search.py` (Lesen der Anfrage ohne Datenbank), neue Fälle in `tests/integration/test_search.py` (Zahlen am Namen, synthetisch).
 
 ### 12.2 Messung am Set [M]
 
@@ -339,16 +339,24 @@ Gewählte Variante (`Joining.KNOWN`), Schwelle 0,5, Katalog der Registry mit sec
 
 Filterfragen 4/4, Negativfragen 4/5 (Q48 wie in M5-22b; Q51 leer). Alle Maße wie in M5-22b; die Sperrklinke bleibt. Ohne die Regel aus §11.7 lieferte Q51 vier Datensätze (Sentinel-1, Sentinel-2, beide WorldCover), der Test nach A9 schlüge fehl.
 
+Nach dem Review (§12.4) erneut gemessen: dieselben Zahlen, je Frage derselbe Bericht.
+
 Einzelne Anfragen vorher → nachher: „Sentinel 3“ 4 → 0, „Copernicus DEM 90“ 5 → 0, „Landsat 9“ 1 (Copernicus DEM, über die „9“ einer Beschreibung) → 0; „Sentinel-2“ verliert Sentinel-1 (kam nur über die Trigramme von „sentinel“), „Sentinal 2“ verliert swissALTI3D und Sentinel-1. „Höhenmodell 2024“, „Landbedeckung 2021“, „land cover 2020“, „S2 L2A“ unverändert.
 
 ### 12.3 Auslegungen der Umsetzung (zur Bestätigung)
 
-- **A18** „Name“ ist ein Wort mit Buchstaben aus Kennung oder Titel eines Datensatzes im Index, „Zahl“ eine Ziffernfolge. Steht eine Zahl direkt nach einem Namen („Sentinel 3“, „Copernicus DEM 90“), muss sie in Kennung, Titel oder Schlagworten eines Treffers stehen, verglichen als Ziffernfolge. Nicht im Volltext, weil der „GLO-30“ in `glo` und `-30` zerlegt [M]. Schlagworte zählen mit, damit WorldCover (Schlagwort `sentinel-2`) bei „Sentinel-2“ bleibt wie bisher.
-- **A19** Im Trigramm-Arm gilt das für jede Zahl der Anfrage, nicht nur für eine nach einem Namen: Der Arm vergleicht nur Namen und Schlagworte, und „sentinel3“ oder „Sentinal 3“ (Tippfehler im Namen) sollen nichts finden.
+- **A18** „Name“ ist ein Wort mit Buchstaben aus Kennung oder Titel eines Datensatzes im Index, „Zahl“ ein Wort nur aus Ziffern. Steht eine Zahl direkt nach einem Namen („Sentinel 3“, „Copernicus DEM 90“), muss sie als Wort in Kennung, Titel oder Schlagworten eines Treffers stehen („1“ ist nicht die Eins aus „c1“). Nicht im Volltext geprüft, weil der „GLO-30“ in `glo` und `-30` zerlegt [M]. Schlagworte zählen mit, damit WorldCover (Schlagwort `sentinel-2`) bei „Sentinel-2“ bleibt wie bisher. Was als Name zählt, wächst mit dem Katalog: Käme ein Titel „Digitales Höhenmodell …“ hinzu, wäre „Höhenmodell“ ein Name und „Höhenmodell 2024“ fände nur noch Datensätze mit 2024. Schon heute leert „ESA 10 m“ die Liste (die 10 steht nach dem Namen „ESA“ und in keinem Text).
+- **A19** Im Trigramm-Arm gilt das für jede Zahl der Anfrage, nicht nur für eine nach einem Namen: Der Arm vergleicht nur Namen und Schlagworte, und „Sentinal 3“ (Tippfehler im Namen) soll nichts finden. Die Ziffern eines Worts mit Buchstaben („sentinel3“, „L2A“, „swissALTI3D“) müssen dort als Ziffernfolge irgendwo stehen.
 - **A20** Eine reine Zahl trägt im Volltext nie allein einen Treffer. Ohne das bliebe „Landsat 9“ (Landsat kennt der Katalog noch nicht) beim Copernicus DEM, weil eine „9“ in einem Text steht.
 - **A21** Eine Zahl nach einem Thema bleibt verzichtbar, wenn kein Text sie kennt: „Höhenmodell 2024“ findet weiter die Höhenmodelle; ein Zeitraum gehört in `datetime`.
 - **A22** Q51 ist englisch und `name_only` wie Q01 „Sentinel-2“ (ein reiner Name zählt nur im Gesamtmaß). „Landsat 9“ wird keine eigene Frage: LS (Landsat Collection 2 Level-2) enthält Landsat 9 und machte sie mit dem ersten W0-Eintrag zur gesuchten statt zur Negativfrage.
 - **A23** Ohne `q`, aber mit Fläche, Zeit, `limit` oder `offset`: eine Seite hält alle Treffer (bis 10 000, die Grenze der Bibliothek), außer `limit` sagt weniger. Die 20 aus A5 gelten nur mit Text.
 - **A24** Eine Box mit West östlich von Ost geht über den Antimeridian (Regel der STAC-API) und wird als zwei Boxen gesucht; eine Box mit sechs Werten (mit Höhe) wird flach gelesen. `intersects` nimmt jede GeoJSON-Geometrie wie `/stac/search`.
 - **A25** `ignored_filters` und `ignored_filters_by_collection` nennen nur Collections der ausgelieferten Seite.
-- **A26** `filter`, `sortby`, `query`, `fields` und `intersects` per `GET` sind ein `400` statt still übergangen (wie bei `/stac/search`); andere unbekannte Query-Parameter übergeht die Route wie bisher.
+- **A26** `filter`, `sortby`, `query`, `fields` und `intersects` per `GET` sind ein `400` statt still übergangen (wie bei `/stac/search`). Andere unbekannte Query-Parameter übergeht die Route; die Antwort sind alle Collections nach Kennung wie ohne Parameter, aber über den Suchpfad (Test vorhanden).
+- **A27** `q` kommt über ein eigenes Anfragemodell der Route statt über die Free-text-Extension ohne Konformitätsklasse (§3.7): Die Extension der Bibliothek trennt `q` per `GET` an Kommas in eine Liste (Free-text-Syntax), was §3.7 ausschließt; Wirkung auf Konformität und OpenAPI wie geplant.
+- **A28** Ein `400` auf `/stac/collections` nennt nur Feld und Grund, nie den Body oder einen abgewiesenen Wert. Der Handler von stac-fastapi schickt beides zurück, also Text und Fläche; alle anderen Routen behalten ihn unverändert.
+
+### 12.4 Review vor dem PR
+
+Ein Review-Subagent fand keine Blocker und vier Punkte, alle behoben: (1) Ein `400` auf `POST` schickte über den Handler von stac-fastapi Text und Koordinaten im Body zurück (A28). (2) Eine verschachtelte GeometryCollection umging die Prüfung der Positionen; die Prüfung läuft jetzt rekursiv. (3) „Sentinel 1“ fand Sentinel-2 über das „c1“ der Kennung; eine Zahl wird jetzt als Wort verglichen (A18, A19). (4) `ruff format` hatte unbeteiligte Methoden in `federating_client.py` umgebrochen; zurückgenommen. Hinweise ohne Änderung: Die Suche belegt eine Verbindung aus dem Pool des Such-Cache (höchstens fünf), vor der Suche beim Tippen in M5-23 im Blick behalten; der Log-Test hört das Zugangsprotokoll ab, im Code der Route loggt nichts.
