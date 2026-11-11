@@ -25,7 +25,10 @@ from typing import Annotated, Any
 
 import attr
 from buildpg import render
-from fastapi import HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from stac_fastapi.extensions.collection_search import CollectionSearchPostExtension
 from stac_fastapi.extensions.collection_search.collection_search import CollectionSearchConformanceClasses
@@ -35,7 +38,7 @@ from stac_fastapi.types.rfc3339 import str_to_interval
 from stac_fastapi.types.search import APIRequest
 from stac_pydantic.api.search import Intersection
 
-from earthx.catalog.search import MAX_QUERY_CHARS, QueryTooLong, SearchResult, box_area, search_datasets
+from earthx.catalog.search import MAX_QUERY_CHARS, SearchResult, box_area, search_datasets
 
 #: adr/0026 §4.4: at most 20 hits per page of a text search.
 MAX_TEXT_PAGE = 20
@@ -96,6 +99,27 @@ def collection_search_extension(client: Any, settings: ApiSettings) -> Collectio
     )
 
 
+def keep_searches_out_of_errors(app: FastAPI, path: str) -> None:
+    """A malformed request to ``path`` gets a ``400`` that repeats none of its input.
+
+    The handler of stac-fastapi answers with the body and the value of every field it refused, which for a search
+    are the text and the area. Every other route keeps that answer.
+    """
+    previous = app.exception_handlers[RequestValidationError]
+
+    async def handler(request: Request, error: Exception) -> Any:
+        if request.url.path != path or not isinstance(error, RequestValidationError):
+            return await _maybe_await(previous(request, error))
+        fields = [{"loc": problem["loc"], "msg": problem["msg"], "type": problem["type"]} for problem in error.errors()]
+        return JSONResponse(content=jsonable_encoder({"detail": fields}), status_code=400)
+
+    app.add_exception_handler(RequestValidationError, handler)
+
+
+async def _maybe_await(value: Any) -> Any:
+    return await value if hasattr(value, "__await__") else value
+
+
 @dataclass(frozen=True, slots=True)
 class CollectionQuery:
     """A checked search: text, area as GeoJSON, period with open ends as ``None``, and the page."""
@@ -139,13 +163,17 @@ def _positions(node: Any) -> list[Sequence[float]]:
     return []
 
 
+def _check_positions(geometry: Mapping[str, Any]) -> None:
+    for part in geometry.get("geometries", []):
+        _check_positions(part)
+    for position in _positions(geometry.get("coordinates", [])):
+        if not (-180.0 <= position[0] <= 180.0 and -90.0 <= position[1] <= 90.0):
+            raise _bad("intersects has a position outside ±180 / ±90")
+
+
 def _geometry(geometry: Any) -> Mapping[str, Any]:
     dumped = geometry.model_dump(mode="json", exclude_none=True)
-    parts = dumped.get("geometries", [dumped])
-    for part in parts:
-        for position in _positions(part.get("coordinates", [])):
-            if not (-180.0 <= position[0] <= 180.0 and -90.0 <= position[1] <= 90.0):
-                raise _bad("intersects has a position outside ±180 / ±90")
+    _check_positions(dumped)
     return dumped
 
 
@@ -238,10 +266,7 @@ async def search_collections(
 ) -> dict[str, Any]:
     """One page of collections for ``query``; ``body`` is the POST body a next page repeats (``None`` for ``GET``)."""
     async with request.app.state.earthx_cache_pool.connection() as conn:
-        try:
-            result: SearchResult = await search_datasets(conn, query.text, area=query.area, period=query.period)
-        except QueryTooLong as error:
-            raise _bad(str(error)) from None
+        result: SearchResult = await search_datasets(conn, query.text, area=query.area, period=query.period)
     page = result.ids[query.offset : query.offset + query.limit]
     collections = await _collections(request, page)
     links = await CollectionSearchPagingLinks(request=request).get_links()

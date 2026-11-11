@@ -212,6 +212,30 @@ async def test_post_refuses_what_is_no_valid_search(client, body):
     assert (await client.post("/stac/collections", json=body)).status_code == 400
 
 
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"q": _TEXT, "intersects": {"type": "Point", "coordinates": [7.123457, 46.654321]}, "limit": 0},
+        {"q": _TEXT, "bbox": [7.123457, 46.654321, 8, 47], "unknown": 1},
+        {"q": _TEXT, "intersects": {"type": "Polygon", "coordinates": [[7.123457, 46.654321]]}},
+        {"q": _TEXT, "intersects": {"type": "Point", "coordinates": [7.123457, 95.654321]}},
+    ],
+)
+async def test_a_refusal_repeats_neither_the_text_nor_the_area(client, body):
+    response = await client.post("/stac/collections", json=body)
+    assert response.status_code == 400
+    assert _TEXT not in response.text and "7.123457" not in response.text
+
+
+async def test_a_refusal_elsewhere_keeps_the_answer_of_the_library(client):
+    response = await client.post("/stac/search", json={"collections": ["sentinel-2-c1-l2a"], "limit": "many"})
+    assert response.status_code == 400 and "body" in response.json()
+
+
+async def test_an_unknown_parameter_lists_every_collection(client):
+    assert _ids(await client.get("/stac/collections", params={"unknown": "1"})) == ALL_IDS
+
+
 async def test_a_bowtie_area_is_answered(client):
     # A self-crossing ring is a mistake of the caller, not of this server.
     bowtie = {"type": "Polygon", "coordinates": [[[0, 0], [1, 1], [1, 0], [0, 1], [0, 0]]]}

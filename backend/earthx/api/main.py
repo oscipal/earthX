@@ -36,7 +36,7 @@ from stac_fastapi.pgstac.models.extensions import Extensions
 from earthx.adapters import ADAPTER_SPECS, AdapterSpecs, check_adapter_specs
 from earthx.api.aoi_cloud_filter import settle
 from earthx.api.aoi_upload_route import router as aoi_upload_router
-from earthx.api.collection_search import collection_search_extension
+from earthx.api.collection_search import collection_search_extension, keep_searches_out_of_errors
 from earthx.api.coverage_route import build_router as build_coverage_router
 from earthx.api.crs_info import switch_off_proj_network
 from earthx.api.dependencies import (
@@ -210,6 +210,7 @@ def build_app(
     api = instantiate_api(client=FederatingCoreCrudClient, settings=settings, extensions=extensions, lifespan=_lifespan)
     app = api.app
     app.add_middleware(RequestIdMiddleware)
+    keep_searches_out_of_errors(app, f"{_PREFIX_PATH}/collections")
     # What routes a collection federated or materialized (adr/0011 §7 D2), and
     # what the gateway's allowlist and the start-up comparison are built from.
     app.state.earthx_registry = registry

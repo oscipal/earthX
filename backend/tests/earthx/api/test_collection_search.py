@@ -41,15 +41,14 @@ def test_a_box_across_the_antimeridian_is_two_boxes():
     assert [ring[0][0][0] for ring in area["coordinates"]] == [170, -180]
 
 
-def test_a_position_inside_a_geometry_collection_is_checked():
-    collection = TypeAdapter(Intersection).validate_python(
-        {
-            "type": "GeometryCollection",
-            "geometries": [{"type": "Point", "coordinates": [7, 46]}, {"type": "Point", "coordinates": [7, 95]}],
-        }
-    )
+@pytest.mark.parametrize("nested", [False, True])
+def test_a_position_inside_a_geometry_collection_is_checked(nested):
+    outside = {"type": "Point", "coordinates": [7, 95]}
+    if nested:
+        outside = {"type": "GeometryCollection", "geometries": [outside]}
+    geometry = {"type": "GeometryCollection", "geometries": [{"type": "Point", "coordinates": [7, 46]}, outside]}
     with pytest.raises(HTTPException) as refused:
-        _read(intersects=collection)
+        _read(intersects=TypeAdapter(Intersection).validate_python(geometry))
     assert refused.value.status_code == 400 and "95" not in refused.value.detail
 
 
