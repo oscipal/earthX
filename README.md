@@ -321,6 +321,16 @@ Schlüssel; ein unbekanntes oder fehlendes Feld ist ein Fehler mit Datei und Fel
 Änderung wirkt nach `docker compose build` und einem neuen `catalog-load`; die Tests unter
 `backend/tests/catalog` laden dieselben Dateien.
 
+**Suchindex (M5-22b):** `catalog-load` schreibt neben den Collections den Index der
+Datensatzsuche (Tabelle `earthx_dataset_search`, Migration `016`) aus dem Suchtext jedes Eintrags:
+Kennung und Titel, Schlagworte, Ortsbegriffe aus der Ausdehnung (Natural Earth, `backend/catalog/places.json`),
+Beschreibung, Bänder, Quick processings. `api` startet nicht, wenn der Index nicht zum Suchtext der Registry
+passt; ein neuer Lauf von `catalog-load` behebt das (in Compose läuft er ohnehin vor `api`). Gleichbedeutende
+Begriffe (deutsch und englisch, Kürzel) stehen in `backend/catalog/glossary.yaml`: eine Gruppe je Bedeutung,
+nur Begriffe, die wirklich dasselbe meinen (ein Oberflächenmodell ist kein Geländemodell). Das Glossar wirkt
+nur auf die Anfrage und braucht keinen neuen Index; Begriffe zu Operatoren je Capability stehen in
+`backend/catalog/capability_terms.yaml`.
+
 `backend/catalog/prototype/` hält Einträge von Quellen mit unklarer Rechtslage
 (`docs/adr/0024-prototyp-quellen.md`). Das Verzeichnis kommt nie ins Image; geladen wird es
 nur mit `EARTHX_PROTOTYPE_SOURCES` (Pfad), `EARTHX_PROFILE=local` und ohne `CI`. Jede andere
