@@ -37,7 +37,7 @@ async function check(browser, { theme, viewport }) {
     useAppStore.setState({
       dock: 'layers',
       layers: [
-        { ...base, id: 'result', name: 'Result · Band math', derived: 'result', result: result({ dataType: 'uint8' }), restore },
+        { ...base, id: 'result', name: 'Result · Band math', derived: 'result', result: result({ dataType: 'uint8', classes: true }), restore },
         { ...base, id: 'old', name: 'Result · expired and resampled', derived: 'result', result: result({ expired: true, resampled: true }), restore },
       ],
     });

@@ -27,7 +27,7 @@ from rio_tiler.models import ImageData
 
 from earthx.catalog.registry import MAX_MASK_VALUE, DatasetConfig, LicenseTier
 from earthx.processing.errors import RecipeInvalid
-from earthx.processing.operators.base import BandUse, Operator, RasterMeta, Requirement, Tier
+from earthx.processing.operators.base import PASSES_VALUES, BandUse, Operator, RasterMeta, Requirement, Tier
 
 __all__ = ["MASK", "MASK_V2", "MAX_CLASSES", "MaskParams"]
 
@@ -191,7 +191,7 @@ MASK = Operator(
     method=_method,
     properties=_properties,
     dataset_check=_dataset_check,
-    passes_values=lambda params: True,
+    passes_values=PASSES_VALUES,
     stock=False,
     listed=False,
 )

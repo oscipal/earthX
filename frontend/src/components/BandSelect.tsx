@@ -24,7 +24,8 @@ interface Props {
 
 export default function BandSelect({ label, value, options, onChange, className = '', title, disabled }: Props) {
   return (
-    <label className={`vc-field band-select ${className}`.trim()} data-tip-level="advanced" data-tip={title}>
+    // Locked, the tooltip is the reason and shows in both steps (`tipLevel.ts`): the label is not the locked field, so it says so itself.
+    <label className={`vc-field band-select ${className}`.trim()} data-tip-level={disabled ? undefined : 'advanced'} data-tip={title}>
       <span>{label}</span>
       <select value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)}>
         {options.map((option) =>

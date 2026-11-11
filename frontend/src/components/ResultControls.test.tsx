@@ -12,13 +12,14 @@ import App from '../App';
 import { finished, jobId, NOW } from '../fixtures/jobEntries';
 import { loadShelf } from '../jobShelf';
 import type { MapLayer } from '../layers';
+import type { DatasetOption } from '../datasets';
 import { resultUrl, type Order } from '../processing';
 import { resetJobs, useProcessingStore, type JobEntry } from '../processingStore';
 import { resultStats } from '../resultLayer';
 import { useAppStore } from '../store';
 import JobDetails from './JobDetails';
 import LayerManager from './LayerManager';
-import ResultControls from './ResultControls';
+import ResultControls, { CLASSES_TIP, NO_TYPE_TIP } from './ResultControls';
 import { tipOf } from '../fixtures/tips';
 
 vi.mock('./MapView', () => ({ default: () => null }));
@@ -490,21 +491,83 @@ describe('"Apply" and "Save" of a result layer', () => {
   });
 });
 
-describe('a result drawn as it is, or gone', () => {
-  it('shows no range, colormap or "Apply" for whole numbers, and says why', async () => {
+// Otto, 11.11.2026: "drawn as it is" only for classes; every other result of whole numbers has the settings of a float one.
+const MASK = { asset: 'map', band: 'map', classes: [{ value: 10, label: 'Tree cover' }, { value: 80, label: 'Permanent water bodies' }], suggested: [], reference: '', note: '' };
+const CLASSES = { id: 'land-cover', title: 'Land cover', viewable: true, collection: { id: 'land-cover', 'earthx:mask': MASK } } as unknown as DatasetOption;
+const CODES = { minimum: 10, maximum: 80, mean: 30, count: 1000, valid_percent: 100, percentile_2: 10, percentile_98: 80 };
+const classJob = (band: { name: string; expression?: string | null }) =>
+  entry({
+    order: { recipe_version: 2, inputs: [{ name: 'input', dataset: 'land-cover', groups: [['T1']] }], steps: [], output: { kind: 'raster', format: 'cog', dtype: 'uint8', bands: [band.name] } } as unknown as Order,
+    bands: [{ name: band.name, stats: resultStats({ bands: [{ name: band.name, data_type: 'uint8', statistics: CODES }] }), expression: band.expression ?? null }],
+  });
+
+describe('a result of whole numbers', () => {
+  it.each(['uint16', 'int16', 'uint8'])('of %s that is no class has the range, colormap and "Auto-scale" of a float one', async (dataType) => {
+    tileJsonBody = { ...TILE_JSON, data_type: dataType };
+    await openView();
+    expect(urlOf()).toContain('rescale=180%2C1900');
+    expect(urlOf()).toContain('colormap_name=viridis');
+    expect([field('vmin').value, field('vmax').value]).toEqual(['180', '1900']);
+    expect(field('Colormap').value).toBe('viridis');
+    expect(button('Auto-scale')).toBeDefined();
+    expect(button('Apply')).toBeDefined();
+    expect(container.querySelector('.vc-head .tip')).toBeNull();
+  });
+
+  it('"Auto-scale" puts the 2–98 % of the statistics back, which count no nodata (M5-28)', async () => {
     tileJsonBody = { ...TILE_JSON, data_type: 'uint16' };
     await openView();
+    type(field('vmin'), '0');
+    type(field('vmax'), '65535');
+    click(button('Auto-scale'));
+    expect([field('vmin').value, field('vmax').value]).toEqual(['180', '1900']);
+  });
+
+  it('draws a band of classes (the mask band of the registry) as it is, and says why', async () => {
+    tileJsonBody = { ...TILE_JSON, data_type: 'uint8' };
+    useAppStore.setState({ datasets: [CLASSES] });
+    useProcessingStore.setState({ jobs: [classJob({ name: 'map' })] });
+    await openView();
+    expect(layers()[0].result?.classes).toBe(true);
     expect(urlOf()).not.toContain('rescale');
+    expect(urlOf()).not.toContain('colormap_name');
     expect(container.querySelector('.vc-num')).toBeNull();
-    expect(container.querySelector('select')).toBeNull();
     expect(button('Apply')).toBeUndefined();
     expect(button('Auto-scale')).toBeUndefined();
-    expect(container.querySelector('.vc-head .tip')?.getAttribute('data-tip')).toMatch(/whole numbers/u);
+    expect(container.querySelector('.vc-head .tip')?.getAttribute('data-tip')).toBe(CLASSES_TIP);
     // The opacity stays, and the way out.
     expect(field('Opacity').disabled).toBe(false);
     expect(closeX()).not.toBeNull();
   });
 
+  it('takes a band of the same name made by Band math for a quantity, not for classes', async () => {
+    tileJsonBody = { ...TILE_JSON, data_type: 'uint8' };
+    useAppStore.setState({ datasets: [CLASSES] });
+    useProcessingStore.setState({ jobs: [classJob({ name: 'map', expression: 'map * 2' })] });
+    await openView();
+    expect(layers()[0].result?.classes).toBeUndefined();
+    expect(urlOf()).toContain('rescale=');
+    expect(button('Auto-scale')).toBeDefined();
+  });
+
+  it('takes the mask band for classes only in its own dataset', async () => {
+    tileJsonBody = { ...TILE_JSON, data_type: 'uint8' };
+    useAppStore.setState({ datasets: [{ ...CLASSES, collection: { id: 'land-cover' } } as unknown as DatasetOption] });
+    useProcessingStore.setState({ jobs: [classJob({ name: 'map' })] });
+    await openView();
+    expect(button('Auto-scale')).toBeDefined();
+  });
+
+  it('says why a result of no known type is drawn as it is', async () => {
+    tileJsonBody = { bounds: TILE_JSON.bounds, minzoom: 0, maxzoom: 19, tiles: TILE_JSON.tiles };
+    await openView();
+    expect(urlOf()).not.toContain('rescale');
+    expect(button('Auto-scale')).toBeUndefined();
+    expect(container.querySelector('.vc-head .tip')?.getAttribute('data-tip')).toBe(NO_TYPE_TIP);
+  });
+});
+
+describe('a result that is gone', () => {
   it('shows no range, colormap or "Apply" once it expired', async () => {
     await openView();
     expect(button('Apply')).toBeDefined();

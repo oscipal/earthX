@@ -754,17 +754,16 @@ describe('resampling and data type (Otto, 12.10.2026)', () => {
     await reprojectDem();
     choose(resampling(), 'bilinear');
     expect(dtypeLine()).toBe('Data type: float32 (chosen automatically)');
-    expect(container.textContent).toContain('Interpolating gives fractional values, which an integer type would cut off.');
+    expect(container.textContent).toContain('The steps compute new values; float32 keeps them.');
     await review();
     expect(sent().output.dtype).toBe('float32');
   });
 
+  const classes = (): StacItem => ({ ...scene('LC_A'), assets: { lc: asset({ 'raster:bands': [{ data_type: 'uint8', nodata: 255 }] }) } });
+  const offered = () => [...dtypeSelect().options].map((o) => o.value);
+
   it('the same type as the source for nearest on integers whose nodata the item states', async () => {
-    const item: StacItem = {
-      ...scene('LC_A'),
-      assets: { lc: asset({ 'raster:bands': [{ data_type: 'uint8', nodata: 255 }] }) },
-    };
-    select([item]);
+    select([classes()]);
     await openPanel();
     click(button('Reproject and resample'));
     fill('crs', 'EPSG:3035');
@@ -784,52 +783,62 @@ describe('resampling and data type (Otto, 12.10.2026)', () => {
     expect(sent().output.dtype).toBe('uint8');
   });
 
-  it('a float source keeps its type, also interpolated', async () => {
-    const item: StacItem = {
-      ...scene('DEM_B'),
-      assets: { data: asset({ 'raster:bands': [{ data_type: 'float64' }] }) },
-    };
+  // Otto, 11.11.2026: only the types that make sense; values computed anew are float32, nothing is "not recommended".
+  it('offers the type of the source and float32 where the values pass, float32 only where they are computed anew', async () => {
+    select([classes()]);
+    await openPanel();
+    expect(offered()).toEqual(['', 'uint8', 'float32']);
+    click(button('Reproject and resample'));
+    choose(resampling(), 'nearest');
+    expect(offered()).toEqual(['', 'uint8', 'float32']);
+    choose(resampling(), 'cubic');
+    expect(offered()).toEqual(['', 'float32']);
+    expect([...dtypeSelect().options].some((o) => o.disabled)).toBe(false);
+    expect(container.textContent).not.toMatch(/not recommended|marks missing pixels|not offered/u);
+  });
+
+  it('a source of float64 keeps its type, also with values computed anew, and offers float32 beside it (Otto, 11.11.2026)', async () => {
+    const item: StacItem = { ...scene('DEM_B'), assets: { data: asset({ 'raster:bands': [{ data_type: 'float64' }] }) } };
+    select([item]);
+    await openPanel();
+    click(button('Reproject and resample'));
+    choose(resampling(), 'nearest');
+    expect(dtypeLine()).toBe('Data type: float64 (chosen automatically)');
+    choose(resampling(), 'bilinear');
+    expect(dtypeLine()).toBe('Data type: float64 (chosen automatically)');
+    expect(offered()).toEqual(['', 'float64', 'float32']);
+  });
+
+  it('a source of float32 is float32 only once interpolated', async () => {
+    const item: StacItem = { ...scene('DEM_C'), assets: { data: asset({ 'raster:bands': [{ data_type: 'float32' }] }) } };
     select([item]);
     await openPanel();
     click(button('Reproject and resample'));
     choose(resampling(), 'bilinear');
-    expect(dtypeLine()).toBe('Data type: float64 (chosen automatically)');
+    expect(offered()).toEqual(['', 'float32']);
   });
 
-  it('band math: float32 recommended, integer types still offered and a type chosen before kept (M5-28)', async () => {
-    select([scene('S2B_A')]);
+  it('a type chosen by hand gives way to float32 without a word once the chain computes new values, and comes back with them gone', async () => {
+    select([classes()]);
     await openPanel();
-    click(dataChip('red'));
     const details = container.querySelector('details')!;
     act(() => details.setAttribute('open', ''));
-    choose(dtypeSelect(), 'uint16');
-    expect(dtypeLine()).toBe('Data type: uint16 (your choice)');
+    choose(dtypeSelect(), 'uint8');
+    expect(dtypeLine()).toBe('Data type: uint8 (your choice)');
     click(button('Band math'));
-    expect(dtypeLine()).toBe('Data type: uint16 (your choice)');
-    expect([...dtypeSelect().options].filter((o) => o.disabled)).toEqual([]);
-    expect(container.textContent).toContain('uint16 marks missing pixels with 65535');
-    choose(dtypeSelect(), '');
     expect(dtypeLine()).toBe('Data type: float32 (chosen automatically)');
+    expect(offered()).toEqual(['', 'float32']);
+    expect(container.querySelector('section[aria-label="Output"] .warn')).toBeNull();
   });
 
   it('the user can change the type and go back to the automatic one', async () => {
-    await reprojectDem();
-    choose(resampling(), 'bilinear');
-    choose(dtypeSelect(), 'float64');
-    expect(dtypeLine()).toBe('Data type: float64 (your choice)');
-    await review();
-    expect(sent().output.dtype).toBe('float64');
-    choose(dtypeSelect(), '');
-    expect(dtypeLine()).toBe('Data type: float32 (chosen automatically)');
-    expect([...dtypeSelect().options][0].textContent).toBe('Automatic: float32');
-  });
-
-  it('names the nodata an integer type takes on a source that states none (the DEM with uint16)', async () => {
-    await reprojectDem();
-    choose(dtypeSelect(), 'uint16');
-    expect(container.textContent).toContain('uint16 marks missing pixels with 65535');
+    select([classes()]);
+    await openPanel();
     choose(dtypeSelect(), 'float32');
-    expect(container.textContent).not.toContain('marks missing pixels');
+    expect(dtypeLine()).toBe('Data type: float32 (your choice)');
+    choose(dtypeSelect(), '');
+    expect(dtypeLine()).toBe('Data type: uint8 (chosen automatically)');
+    expect([...dtypeSelect().options][0].textContent).toBe('Automatic: uint8');
   });
 });
 
@@ -994,7 +1003,7 @@ describe('the bands of the data in the output (NM4-07, adr/0020 §9)', () => {
     expect(button('All', outputSection()).disabled).toBe(false);
     click(button('All', outputSection()));
     expect(pressedData()).toEqual(keys);
-    expect(container.querySelector('section[aria-label="Output"] [aria-label="Output summary"]')!.textContent).toBe('18 bands · float32');
+    expect(container.querySelector('section[aria-label="Output"] [aria-label="Output summary"]')!.textContent).toBe('18 bands · uint16');
   });
 
   it('has no use for the buttons where the item lists no bands to pick', async () => {

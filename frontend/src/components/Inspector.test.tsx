@@ -801,7 +801,7 @@ describe('the actions of a layer', () => {
     expect(actionButton('Process').disabled).toBe(true);
     // A dataset that allows processing: both free.
     act(() => useAppStore.setState({ datasets: datasetsFrom([{ ...collection, 'earthx:license_flags': { tier: 'processing' } } as unknown as Collection]) }));
-    expect([actionButton('Process').disabled, tipOf(actionButton('Process'))]).toEqual([false, 'Process this layer']);
-    expect([row().disabled, tipOf(row())]).toEqual([false, 'Process this layer']);
+    expect([actionButton('Process').disabled, tipOf(actionButton('Process'))]).toEqual([false, 'Process layer']);
+    expect([row().disabled, tipOf(row())]).toEqual([false, 'Process layer']);
   });
 });

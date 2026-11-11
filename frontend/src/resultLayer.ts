@@ -9,10 +9,12 @@ import type { Percent } from './percentRange';
 import { buildTileUrl } from './mapLayers';
 import { RGB, RGB_LABEL, startBand } from './processingBands';
 import { presetFor, presetRange, type IndexPreset } from './indexPresets';
+import { isIntegerType } from './processingDefaults';
+import { maskLayerOf } from './processingOrder';
 import { rescaleOf, type PreviewRange } from './processingPreview';
 import { scaleOf, statsFrom, type ResultStats } from './render';
 import { levelAskedAt, TILE_SIZE, tileMetres } from './tileSize';
-import type { AppliedRender, Bbox } from './types';
+import type { AppliedRender, Bbox, Collection } from './types';
 
 // The path of the output `tiles` (`api/processing_docs.py::TILES_HREF`), in the shape the
 // tiler serves — nothing else is ever fetched or used for a layer. The results document
@@ -56,8 +58,6 @@ export function resultTileTemplate(href: string): string {
 }
 
 // --- how it is drawn --------------------------------------------------------
-
-const FLOAT = /^float/;
 
 // The statistics in the `properties` of the `result` link; `null` for a result from before
 // they were written, or for a document that does not carry them in this shape.
@@ -164,15 +164,25 @@ function drawnWith(range: PreviewRange, colour: boolean): AppliedRender {
   };
 }
 
-// How a result is drawn (M4-32b, plan §6.7). A floating-point result needs a range and a
-// colormap to become a picture; an integer result is drawn as it is. For a float, in order:
-//  1. an integer result is drawn as it is;
+// A band of classes (Otto, 11.11.2026): the class layer the registry names for the dataset (the band of `earthx:mask`, e.g. the map of
+// ESA WorldCover or the scene classification of Sentinel-2), passed on as whole numbers and not made by Band math. Its values are codes;
+// a stretch would move them off their meaning, so it is drawn as it is. Any other result of whole numbers (reflectance as `uint16`,
+// heights as `int16`) is a quantity and takes a range and a colormap as a floating-point one does.
+export function isClassBand(band: Pick<ResultBand, 'name' | 'expression'> | undefined, dataType: string | null, collection: Collection | undefined): boolean {
+  const mask = maskLayerOf(collection);
+  if (!mask || !band || band.expression || dataType === null || !isIntegerType(dataType)) return false;
+  return band.name === mask.band || band.name === mask.asset;
+}
+
+// How a result is drawn (M4-32b, plan §6.7). A band of classes is drawn as it is (`isClassBand`), and so is a result whose type the
+// tiler did not name; every other one, of whole numbers too, needs a range and a colormap to become a picture. In order:
+//  1. a band of classes, or of no known type, is drawn as it is;
 //  2. the range the user had set by hand when the job started holds for this result only (`own`);
 //  3. an index the dataset offers as a preset (a band whose expression is the preset's, NM4-14) is drawn with the
 //     range and colormap of the preset, so that the same index looks the same wherever it is made;
 //  4. an index (a Band math result whose 2–98 % lie in −1…1, `render.ts::scaleOf`) is drawn at −1…1 in `rdylgn`,
 //     so that jobs can be compared with one another;
-//  5. otherwise the 2–98 % of the AOI from the statistics, in `viridis`;
+//  5. otherwise the 2–98 % of the AOI from the statistics, in `viridis`; the statistics count no nodata (M5-28);
 //  6. a result without statistics is drawn with the range of the panel, as before M4-32.
 // The colour picture (`colour`, NM4-64) takes one range for its three bands and no colormap, whatever the rule says.
 export function resultRender(
@@ -182,8 +192,9 @@ export function resultRender(
   own: PreviewRange | null = null,
   colour = false,
   preset: PreviewRange | null = null,
+  classes = false,
 ): AppliedRender {
-  if (dataType === null || !FLOAT.test(dataType)) return {};
+  if (dataType === null || classes) return {};
   const scale = scaleOf(stats);
   const render = own ? drawnWith(own, colour) : preset ? drawnWith(preset, colour) : scale ? { rescale: `${scale.low},${scale.high}`, colormapName: scale.colormap } : drawnWith(panel, colour);
   if (!colour) return render;
@@ -236,8 +247,8 @@ export function colourTileUrl(tileUrl: string, colour: readonly number[], render
 
 // How a layer of a result is drawn when no range was set by hand for its job (M4-32): the default of
 // "Auto". `null` for a result that is drawn as it is.
-export function defaultRange(info: Pick<ResultLayerInfo, 'dataType' | 'stats' | 'band' | 'preset'>, panel: PreviewRange): PreviewRange | null {
-  const render = resultRender(info.dataType, panel, info.stats, null, info.band === RGB, info.preset ?? null);
+export function defaultRange(info: Pick<ResultLayerInfo, 'dataType' | 'stats' | 'band' | 'preset' | 'classes'>, panel: PreviewRange): PreviewRange | null {
+  const render = resultRender(info.dataType, panel, info.stats, null, info.band === RGB, info.preset ?? null, info.classes === true);
   return 'rescale' in render || render.colormapName ? rangeOfRender(render) : null;
 }
 

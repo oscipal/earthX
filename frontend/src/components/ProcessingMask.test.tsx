@@ -444,7 +444,7 @@ describe('the preview of a mask', () => {
 });
 
 describe('the data type after normalize (Otto, 22.10.2026)', () => {
-  it('is float32 on integer bands with a stated nodata; integer types stay offered (M5-28)', async () => {
+  it('is float32 on integer bands with a stated nodata, and the only type offered (Otto, 11.11.2026)', async () => {
     select([scene('S2B_A')]);
     await openPanel();
     click(chip('red'));
@@ -455,9 +455,8 @@ describe('the data type after normalize (Otto, 22.10.2026)', () => {
     const bands = [...container.querySelectorAll('fieldset.pp-classes')].find((f) => f.querySelector('legend')!.textContent!.startsWith('Band'))!;
     click([...bands.querySelectorAll<HTMLButtonElement>('.pp-chips .seg')].find((c) => c.textContent === 'red')!);
     expect(container.querySelector('[aria-label="Data type"]')!.textContent).toContain('float32');
-    const options = [...container.querySelectorAll('select option')].map((o) => o.textContent);
-    expect(options).toContain('uint16');
-    expect(container.textContent).not.toContain('nodata does not fit');
+    const output = container.querySelector('section[aria-label="Output"] select')!;
+    expect([...output.querySelectorAll('option')].map((o) => o.textContent)).toEqual(['Automatic: float32', 'float32']);
   });
 });
 
