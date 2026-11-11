@@ -392,6 +392,7 @@ class TestOnlyReleasedZoomLevels:
                 max_zoom=14,
                 overview=OverviewMode.PYRAMID,
                 overview_resampling=OverviewResampling.AVERAGE,
+                overview_substitute=None,
             ),
             client,
             fetched,

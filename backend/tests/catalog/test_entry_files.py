@@ -254,7 +254,7 @@ def test_every_dataclass_of_an_entry_is_read_strictly() -> None:
     assert not loose
 
 
-@pytest.mark.parametrize("field", ["overview", "overview_resampling"])
+@pytest.mark.parametrize("field", ["overview", "overview_resampling", "overview_substitute"])
 def test_the_overview_fields_of_the_viewer_are_not_optional(tmp_path: Path, field: str) -> None:
     data = _plain()
     del data["viewer"][field]
@@ -277,4 +277,10 @@ def test_the_checks_of_the_overview_hold_in_a_file(tmp_path: Path) -> None:
         load_entry(_write(tmp_path, data))
     data["viewer"].update(overview="pyramid", overview_resampling=None)
     with pytest.raises(EntryFileError, match="overview_resampling is required"):
+        load_entry(_write(tmp_path, data))
+    data["viewer"].update(overview="substitute", overview_substitute=None, min_zoom=3)
+    with pytest.raises(EntryFileError, match="overview_substitute is required"):
+        load_entry(_write(tmp_path, data))
+    data["viewer"].update(overview="own", overview_substitute="other", min_zoom=0)
+    with pytest.raises(EntryFileError, match="overview_substitute is set"):
         load_entry(_write(tmp_path, data))
