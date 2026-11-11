@@ -322,3 +322,60 @@ class TestTheScenes:
     def test_the_reader_takes_nothing_but_mosaic_scenes(self) -> None:
         with pytest.raises(TypeError, match="MosaicScenes"):
             MosaicTileReader("/vsicurl/https://anywhere.example.invalid/x.tif")  # type: ignore[arg-type]
+
+
+class TestTheReadBudget:
+    """M5-30b part 2 (adr/0032 §6.2): a scene that has not begun when the time is up is left out, never one already read."""
+
+    @staticmethod
+    def _strips(tmp_path: Path, count: int) -> list[AssetPath]:
+        """``count`` strips of 400 m side by side across the tile, none of which fills it alone."""
+        return [_scene(tmp_path / f"s{n}.tif", SEAM_X - 2000.0 + 400.0 * n, 400.0, 10 + n) for n in range(count)]
+
+    def test_a_budget_is_a_positive_number_of_seconds(self) -> None:
+        for seconds in (0, -1.0, float("nan")):
+            with pytest.raises(ValueError):
+                mosaic_tiles.ReadBudget(seconds)
+
+    def test_the_scenes_after_the_time_are_left_out_and_the_tile_keeps_what_came_before(self, tmp_path: Path) -> None:
+        scenes = self._strips(tmp_path, 8)
+        now = [0.0]
+        budget = mosaic_tiles.ReadBudget(1.0, clock=lambda: now[0])
+        reader = MosaicTileReader(MosaicScenes("synthetic", tuple(scenes), _bounds(scenes), budget))
+        opened: list[str] = []
+        original = mosaic_tiles.open_asset
+
+        def opening(scene: AssetPath, **options: Any) -> Any:
+            opened.append(scene.item_id)
+            if len(opened) == MOSAIC_THREADS:
+                now[0] = 5.0  # the first portion is read; the time is up for the rest
+            return original(scene, **options)
+
+        mosaic_tiles.open_asset = opening
+        try:
+            image = reader.tile(TILE.x, TILE.y, TILE.z)
+        finally:
+            mosaic_tiles.open_asset = original
+        assert budget.timed_out
+        assert sorted(opened) == sorted(scene.item_id for scene in scenes[:MOSAIC_THREADS])
+        values = set(numpy.unique(image.array.compressed()).tolist())
+        assert values == {10 + n for n in range(MOSAIC_THREADS)}
+
+    def test_a_budget_that_is_never_spent_reads_every_scene(self, tmp_path: Path) -> None:
+        scenes = self._strips(tmp_path, 6)
+        budget = mosaic_tiles.ReadBudget(60.0)
+        image = MosaicTileReader(MosaicScenes("synthetic", tuple(scenes), _bounds(scenes), budget)).tile(
+            TILE.x, TILE.y, TILE.z
+        )
+        assert not budget.timed_out
+        assert set(numpy.unique(image.array.compressed()).tolist()) == {10 + n for n in range(6)}
+
+    def test_a_tile_whose_time_is_up_before_any_scene_is_a_503_and_not_an_empty_tile(self, tmp_path: Path) -> None:
+        scenes = self._strips(tmp_path, 2)
+        ticks = iter([0.0] + [9.0] * 10)
+        budget = mosaic_tiles.ReadBudget(1.0, clock=lambda: next(ticks))
+        with pytest.raises(mosaic_tiles.MosaicOutOfTime) as refused:
+            MosaicTileReader(MosaicScenes("synthetic", tuple(scenes), _bounds(scenes), budget)).tile(
+                TILE.x, TILE.y, TILE.z
+            )
+        assert refused.value.status_code == 503
