@@ -8,12 +8,12 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { datasetsFrom } from '../datasets';
-import type { MapLayer } from '../layers';
+import { LOCKED_LAYER_TIP, type MapLayer } from '../layers';
 import { useAppStore } from '../store';
 import { jobEntry, jobId, NOW } from '../fixtures/jobEntries';
 import { lockedWithoutReason } from '../fixtures/lockedControls';
 import { resetJobs, useProcessingStore } from '../processingStore';
-import LayerManager, { DELETED_LAYER_TIP, EXPIRED_LAYER_TEXT, HIDE_LAYER_TIP, SHOW_LAYER_TIP } from './LayerManager';
+import LayerManager, { EXPIRED_LAYER_TEXT, HIDE_LAYER_TIP, SHOW_LAYER_TIP } from './LayerManager';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -324,11 +324,12 @@ describe('the result layer of a deleted job', () => {
     expect(locked.classList.contains('locked')).toBe(true);
     expect(free.classList.contains('locked')).toBe(false);
     const eye = locked.querySelector<HTMLElement>('[data-col="eye"]')!;
-    expect(eye.getAttribute('data-tip')).toBe(DELETED_LAYER_TIP);
+    // One reason for every control the deleted job locks, the eye and the download too (Otto, 11.11.2026).
+    expect(eye.getAttribute('data-tip')).toBe(LOCKED_LAYER_TIP);
     expect(eye.getAttribute('aria-disabled')).toBe('true');
-    expect(DELETED_LAYER_TIP).toBe('Job deleted: restore it to show it');
     expect(locked.querySelector('[data-col="opacity"]')?.hasAttribute('disabled')).toBe(true);
-    expect(locked.querySelector('[data-col="download"]')?.tagName).toBe('SPAN');
+    const download = locked.querySelector<HTMLButtonElement>('[data-col="download"]')!;
+    expect([download.tagName, download.disabled, download.getAttribute('data-tip')]).toEqual(['BUTTON', true, LOCKED_LAYER_TIP]);
     expect(locked.querySelector('[data-col="note"]')?.className).toBe('lm-slot');
     expect(locked.textContent).not.toMatch(/delet|restore|job/iu);
     expect(useAppStore.getState().layers[0].result?.deleted).toBe(true);

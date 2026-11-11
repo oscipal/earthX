@@ -10,6 +10,7 @@ import { bboxesOverlap } from './aoiClip';
 import { groupIndexOfItem } from './grouping';
 import { canonicalJson, type AoiProvenance, type ExportLayout, type JsonSchema, type Order, type OrderStep, type ProcessDescription } from './processing';
 import type { AreaStatistics } from './api';
+import type { PassesRule } from './processingDefaults';
 import { bandNamesOf, isBandMath, isExpression, nameProblem, ownersOf, resultNameOf } from './processingBands';
 import {
   AFTER_REPROJECT,
@@ -42,6 +43,9 @@ export interface Operator {
   // `x-earthx-tiers`/`x-earthx-kind` (K1): what M4-13c's preview reads.
   tiers: string[];
   kind: string | null;
+  // `x-earthx-passes-values` (M5-28, Otto 11.11.2026): whether the step writes only values it read, which decides the output types
+  // the panel offers (`processingDefaults.ts`). `false` where the description does not say.
+  passesValues: PassesRule;
   form: ParamsForm;
 }
 
@@ -64,6 +68,12 @@ function defOf(defs: JsonSchema, ref: unknown): JsonSchema | null {
 
 function constOf(schema: unknown): unknown {
   return isObject(schema) ? schema.const : undefined;
+}
+
+function passesRuleOf(value: unknown): PassesRule {
+  if (typeof value === 'boolean') return value;
+  if (isObject(value) && typeof value.param === 'string' && Array.isArray(value.in)) return { param: value.param, in: value.in.filter((v): v is string => typeof v === 'string') };
+  return false;
 }
 
 // The operators of the order's `steps` (`oneOf` over `step_<op>_v<n>`), in the
@@ -89,6 +99,7 @@ export function processInfo(description: ProcessDescription): ProcessInfo {
       ...(typeof def.description === 'string' ? { description: def.description } : {}),
       tiers: Array.isArray(def['x-earthx-tiers']) ? def['x-earthx-tiers'].filter((t) => typeof t === 'string') : [],
       kind: typeof def['x-earthx-kind'] === 'string' ? def['x-earthx-kind'] : null,
+      passesValues: passesRuleOf(def['x-earthx-passes-values']),
       form: op === 'normalize' && opVersion === NORMALIZE_VERSION ? normalizeForm(stepProps?.params) : paramsForm(stepProps?.params, defs),
     });
   }

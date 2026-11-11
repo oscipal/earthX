@@ -9,7 +9,9 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { saveShelf } from '../jobShelf';
+import type { DatasetOption } from '../datasets';
 import type { MapLayer } from '../layers';
+import type { Order } from '../processing';
 import { layerProcessBlock, NO_COPY_TEXT, setTrackerOptions, useProcessingStore, type JobEntry } from '../processingStore';
 import { MIN_REMAINING_MS, resultStats } from '../resultLayer';
 import { useAppStore } from '../store';
@@ -369,10 +371,23 @@ describe('the layer a result becomes', () => {
     });
   });
 
-  it('is drawn as it is when the result is not floating point', async () => {
+  // Otto, 11.11.2026: only a band of classes is drawn as it is.
+  it('is drawn with a range when the result is whole numbers that are no classes', async () => {
     tileJson = () => json({ ...TILE_JSON, data_type: 'uint16' });
     await showOnMap();
+    expect((layers()[0].overlays[0] as { tileUrl: string }).tileUrl).toMatch(/rescale=/u);
+  });
+
+  it('is drawn as it is when the result is the class band of its dataset', async () => {
+    const mask = { asset: 'map', band: 'map', classes: [{ value: 10, label: 'Tree cover' }], suggested: [], reference: '', note: '' };
+    useAppStore.setState({ datasets: [{ id: 'land-cover', viewable: true, collection: { id: 'land-cover', 'earthx:mask': mask } } as unknown as DatasetOption] });
+    useProcessingStore.setState({
+      jobs: [entry({ order: { recipe_version: 2, inputs: [{ name: 'input', dataset: 'land-cover', groups: [['T1']] }], steps: [], output: { kind: 'raster', format: 'cog', dtype: 'uint8', bands: ['map'] } } as unknown as Order, bands: [{ name: 'map', stats: null, expression: null }] })],
+    });
+    tileJson = () => json({ ...TILE_JSON, data_type: 'uint8' });
+    await showOnMap();
     expect(layers()[0].overlays[0]).toMatchObject({ tileUrl: `/results/${RESULT}/tiles/WebMercatorQuad/{z}/{x}/{y}?tilesize=256` });
+    expect(layers()[0].result?.classes).toBe(true);
   });
 
   it('carries no address, no order and no AOI in its text', async () => {

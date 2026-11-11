@@ -495,11 +495,12 @@ describe('starting the job', () => {
     expect(inputs.recipe).not.toHaveProperty('aoi');
   });
 
-  it('asks for float32 where the item does not state a nodata value', async () => {
+  // Otto, 11.11.2026: the mosaic of whole scenes passes the values on, so it keeps the type of the source (M5-28 picks the nodata).
+  it('asks for the type of the source, also where the item does not state a nodata value', async () => {
     open('processing', { data_type: 'uint8' });
     await showMerged();
     await press(START);
-    expect(JSON.parse(placed()[0][1].body).inputs.recipe.output.dtype).toBe('float32');
+    expect(JSON.parse(placed()[0][1].body).inputs.recipe.output.dtype).toBe('uint8');
   });
 
   it('shows the job with the row of the processing panel, and the button waits for it', async () => {

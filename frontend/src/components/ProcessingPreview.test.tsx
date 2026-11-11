@@ -24,6 +24,7 @@ import ProcessingPanel from './ProcessingPanel';
 import ViewBar from './ViewBar';
 import ViewerControls from './ViewerControls';
 import { tipOf, tipsOf } from '../fixtures/tips';
+import { finished } from '../fixtures/jobEntries';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -734,7 +735,30 @@ describe('the preview section', () => {
       await afterDebounce();
       expect([rescale(), colormap()]).toEqual(['120,2400', 'viridis']);
       expect(inputs().map((i) => i.value)).toEqual(['120', '2400']);
-      expect(button('Auto-scale').disabled).toBe(true);
+      expect(button('Auto-scale').disabled).toBe(false);
+    });
+
+    // Otto, 11.11.2026: from the first preview on, through "Start job", while the job runs and after it ended, "Auto-scale" was locked (with
+    // no reason) because the measured range was drawn already. It is always to be pressed, as in the layer and the view, and measures again.
+    it('can be pressed from the first preview on, while a job runs and after it ended, and puts the measured range back', async () => {
+      statistics = () => measured({ b1: DEM_VALUES });
+      await withNdvi();
+      expect(store().rangeByHand).toBe(false);
+      expect(button('Auto-scale').disabled).toBe(false);
+      expect(tipOf(button('Auto-scale'))).toMatch(/measured range/u);
+      for (const phase of ['active', 'successful'] as const) {
+        act(() => useProcessingStore.setState({ dtype: 'uint16', jobs: [{ ...finished(1), phase }] }));
+        expect(button('Auto-scale').disabled, phase).toBe(false);
+        typeInto(inputs()[0], '0');
+        typeInto(inputs()[1], '5');
+        click(button('Apply'));
+        await afterDebounce();
+        expect(rescale(), phase).toBe('0,5');
+        click(button('Auto-scale'));
+        await afterDebounce();
+        expect([rescale(), ...inputs().map((i) => i.value)], phase).toEqual(['120,2400', '120', '2400']);
+        expect(button('Auto-scale').disabled, phase).toBe(false);
+      }
     });
 
     it('does not write over what the user is typing when the measure arrives', async () => {
@@ -1268,16 +1292,15 @@ describe('the range measured over the AOI (NM4-19b)', () => {
     expect(body(posted()[0]).aoi).not.toEqual(body(posted()[1]).aoi);
   });
 
-  it('measures again where the output type changes: the job counts the values in that type', async () => {
+  // Otto, 11.11.2026: after Band math only float32 makes sense; a type chosen by hand gives way to it, and the measure stays the one of float32.
+  it('offers float32 only after Band math, so a type chosen by hand asks for no other measure', async () => {
     await aoiOnly();
-    const type = orderOfFirstJob()!.output;
-    const other = orderView(useAppStore.getState(), store()).dtypeOptions.find(
-      (option) => option.disabledReason === null && option.value !== (type as { dtype: string }).dtype,
-    )!;
-    act(() => store().setDtype(other.value));
+    expect((orderOfFirstJob()!.output as { dtype: string }).dtype).toBe('float32');
+    expect(orderView(useAppStore.getState(), store()).dtypeOptions.map((option) => option.value)).toEqual(['float32']);
+    act(() => store().setDtype('uint16'));
     await afterDebounce();
-    expect(posted()).toHaveLength(2);
-    expect((body(posted()[1]).output as { dtype: string }).dtype).toBe(other.value);
+    expect(posted()).toHaveLength(1);
+    expect((orderOfFirstJob()!.output as { dtype: string }).dtype).toBe('float32');
   });
 
   it('does not take the measure of the order before for the one typed while the 400 ms run', async () => {
