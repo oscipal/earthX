@@ -1,6 +1,6 @@
 # UI-06 — 3D-Ansicht und Nordpfeil
 
-**Stand:** 10.11.2026, beauftragt von Otto; Plan mit Fragen F1–F14 (§9). Bis zu Ottos Meldung kein Produktivcode.
+**Stand:** 11.11.2026, beauftragt von Otto am 10.11.2026; Plan mit Fragen F1–F14 (§9), **angenommen von Otto am 11.11.2026** mit Abweichungen bei F2–F5 (§9a). §5 und §7 sind an die Antworten angepasst, die Regeln stehen im Leitfaden mit der Markierung *(folgt mit UI-06)*. Neue Fragen F15–F17 (§9b). Bis zu Ottos Signal kein Produktivcode.
 **Stufe B:** Erst dieser Plan im Draft-PR, Otto beantwortet die Fragen, dann setzt dieselbe Session um.
 **Gilt dazu:** `docs/ui/leitfaden.md` (alle Regeln; Oberflächentexte englisch), NM4-35 (`docs/plans/querschnitt/nm4-35-relief.md`, Höhenkacheln, Attribution, Datenschutz), UI-02 §6.7 (Browser lädt Kacheln direkt), D27 (`docs/plans/m2/m2-format-und-viewer.md`).
 **Startsatz:** „Führe Aufgabe UI-06 aus `docs/plans/vp3/ui-06-3d-und-nordpfeil.md` aus.“
@@ -24,7 +24,7 @@ Belegstufen wie in NM4-35 §6: [P] Code oder Primärquelle gelesen, [M] in der S
 
 **Warum:** Entscheidung **D27** (Log 20.09.2026, umgesetzt in V-1, #56): „Karte ohne Drehen und Kippen, Globus umschaltbar. Maus und Touch verschieben und zoomen nur.“ Ziel von V-1: „Die Karte ist ruhig zu bedienen.“ Ein technischer Zwang steht nirgends; es war eine Bedienentscheidung. Die Abnahme von V-1 verlangte ausdrücklich, dass Drehen und Kippen mit Maus und Touch nicht möglich sind.
 
-**Folge:** UI-06 hebt D27 teilweise auf. Das ist eine Entscheidung von Otto (F1) und bekommt eine eigene Zeile im Entscheidungslog.
+**Folge (Otto, 11.11.2026, F1):** UI-06 hebt D27 **teilweise** auf: Drehen und Kippen gibt es nur mit 3D an. In 2D gilt D27 weiter, die Karte verschiebt und zoomt nur. Eigene Zeile im Entscheidungslog.
 
 ## 3. Weitere Befunde im Code [P]
 
@@ -56,29 +56,35 @@ Wegwerf-Skript, nicht im Repo: Chromium der Sitzung (Software-Rendering, also nu
 
 ## 5. Vorschlag
 
-### 5.1 Nordpfeil (Wunsch 1)
+### 5.1 Kompass (Wunsch 1; Otto, F2 und F3)
 
-- **Bauteil:** der Kompass von MapLibre im vorhandenen `NavigationControl` unten rechts (`showCompass: true`, `visualizePitch: true`), über Zoom + und −. Er zeigt nach Norden, wird bei Neigung flacher gezeichnet, und ein Klick ruft `resetNorthPitch` auf: Norden oben und Neigung 0. Kein eigenes Symbol, kein neues Bauteil; `title` ist an Steuerelementen von MapLibre erlaubt (Leitfaden §4). Text über `locale` englisch: „Reset north and tilt“ (F3).
-- **Sichtbar:** nur, wenn die Karte gedreht **oder** gekippt ist (Drehung oder Neigung über 0,5°); sonst ausgeblendet (eine Klasse am Steuerelement, gesetzt bei `rotate` und `pitch`). Nach dem Klick verschwindet er, sobald die Bewegung endet (F2).
-- **Tastatur:** der Kompass ist ein Knopf von MapLibre, erreichbar mit Tab, Enter richtet aus.
+- **Immer sichtbar,** auch bei nicht gedrehter Karte und in 2D; dort zeigt er nach Norden, also nach oben (F2).
+- **Aussehen wie bei Google Maps** (F3): runder Knopf, darin eine Kompassnadel aus zwei Spitzen, die **Nordhälfte rot** (`--danger`), die Südhälfte in Textfarbe (`--text`), Fläche `--panel-bg`, Rand wie die übrigen Knöpfe über der Karte. Die Nadel dreht sich mit der Karte (Winkel = −Drehung der Karte), in hellem und dunklem Thema mit denselben Tokens. Bei Neigung bleibt sie flach (kein Stauchen wie bei MapLibre `visualizePitch`), damit sie lesbar bleibt.
+- **Klick:** `resetNorthPitch`: Norden oben und Neigung 0, als kurze Bewegung (MapLibre-Vorgabe, bei `prefers-reduced-motion` ohne Bewegung). In 2D und schon nach Norden ausgerichtet tut der Klick nichts und ist doch nicht gesperrt (er hat keinen Grund, gesperrt zu sein; F16).
+- **Ziehen am Kompass (Vorschlag, F15):** in 3D dreht Ziehen um den Kompass die Karte (Winkel des Zeigers um die Mitte des Knopfs = Drehung); ein Klick ohne Bewegung (unter 4 px) richtet aus. In 2D gibt es kein Ziehen (D27). Per Tastatur: Fokus auf dem Kompass, ←/→ drehen in 3D um 15°, Enter oder Leertaste richtet aus.
+- **Tooltip** (advanced, Leitfaden §8a): „Reset north and tilt“; `aria-label` gleich. Der Name ist selbsterklärend genug für „advanced“; wer das Symbol nicht kennt, findet es per `aria-label`.
+- **Lage:** oberster Knopf der Gruppe unten rechts, über Zoom + (§5.2).
+- **Zeichnung:** Lucide hat keine Nadel mit roter Nordhälfte (`compass` ist eine einfarbige Raute im Kreis, `navigation-2` ein Pfeil). Die Nadel ist damit eine **eigene Zeichnung**, die zweite Ausnahme von Leitfaden §3 nach dem Symbol „Settings“; sie steht in einer Datei (`components/compassNeedle.ts`) und im Leitfaden (F17).
 
-### 5.2 3D (Wunsch 2)
+### 5.2 3D (Wunsch 2; Otto, F4 und F5)
 
-- **Schalter:** im Panel „Settings“ (Leitfaden §9: neue Einstellungen dieser Art kommen dorthin), neuer Abschnitt „Terrain“ mit der Box „3D“, gedrückt = an, Form wie ein Overlay (F4). Tooltip (advanced): „Lay the map over the terrain and allow tilting. Elevation tiles load from amazonaws.com.“
-- **An:** `setTerrain({ source: 'terrain', exaggeration })` auf eine eigene Quelle `terrain` (`raster-dem`, Terrarium, dieselbe Adresse und Attribution wie `relief.ts`, `maxzoom: 12`), `setMaxPitch(60)`, Drehen und Kippen frei (§5.3). Die Karte kippt beim Einschalten nicht von selbst (F5).
-- **Aus:** `easeTo({ pitch: 0, bearing: 0 })`, dann `setTerrain(null)`, `setMaxPitch(0)`, Drehen und Kippen wieder gesperrt wie heute.
-- **Gemerkt:** je Browser als `earthx.terrain` (`preferences.ts`), wie Projektion und Overlays; Neigung und Drehung werden nicht gemerkt (F12).
+- **Knopf an der Karte, kein Eintrag im Panel „Settings“** (F4): ein kleiner Knopf mit dem Text „3D“ direkt unter Zoom −. **Reihenfolge unten rechts: Kompass, Zoom +, Zoom −, 3D**, als eine Gruppe.
+- **Form:** quadratischer Knopf wie Zoom + und − (`.icon-btn` in der Gruppe), Text „3D“ statt Symbol, weil kein Lucide-Symbol „3D“ eindeutig sagt (`box`, `rotate-3d` sind Würfel und Drehpfeile). **An** ist sichtbar wie jeder gedrückte Schalter (`aria-pressed="true"`, Leitfaden §7): gefüllt in Akzent mit Text `--on-accent` (Form der gewählten Segment-Knöpfe), aus wie Zoom + und −. Tooltip (advanced): „Show the terrain in 3D“ bzw. „Show the map flat“; das (i)-artige Detail zum Datenschutz („Elevation tiles load from amazonaws.com.“) steht als zweiter Satz im selben Tooltip, wie beim Overlay „Relief“.
+- **An** (F5): `setTerrain({ source: 'terrain', exaggeration: 1.5 })` auf eine eigene Quelle `terrain` (`raster-dem`, Terrarium, dieselbe Adresse und Attribution wie `relief.ts`, `maxzoom: 12`), `setMaxPitch(60)`, Drehen und Kippen frei, dann `easeTo({ pitch: 50 })` um die Mitte; Drehung bleibt, wie sie ist (in 2D also Norden).
+- **Aus** (F5): `easeTo({ pitch: 0, bearing: 0 })`, danach `setTerrain(null)`, `setMaxPitch(0)`, Drehen und Kippen wieder gesperrt wie heute (D27).
+- **Gemerkt** (F12): 3D an/aus je Browser als `earthx.terrain` (`preferences.ts`); ein Besuch mit gemerktem 3D öffnet mit Gelände und 50° Neigung wie beim Einschalten. Neigung und Drehung selbst werden nicht gemerkt. Ein Permalink öffnet immer flach (F11) und lässt die gemerkte Wahl unberührt.
 - **Globus:** 3D gilt in beiden Projektionen (Gelände auf dem Globus gemessen [M]); der Wechsel der Projektion soll es anlassen, das prüft der Browser-Test [A].
+- **Bauteil:** Kompass, Zoom +, Zoom − und 3D werden ein eigenes `MapControls` (React, Tokens, Lucide `plus` und `minus`) und ersetzen `NavigationControl` von MapLibre. Grund: eine Gruppe aus vier Knöpfen mit einer Form, beide Themen über Tokens (heute sind Zoom + und − im dunklen Thema weiß), Steuerhöhe 28 px bzw. 44 px bei Touch und unter 900 px (Leitfaden §7). Zoom + und − behalten ihr Verhalten (`zoomIn`, `zoomOut`) und ihre Texte „Zoom in“ und „Zoom out“.
 
 ### 5.3 Bedienung
 
 | Eingabe | Drehen | Kippen | Zurück |
 |---|---|---|---|
-| Maus | rechte Taste oder Strg + Ziehen links/rechts | dieselbe Geste auf/ab | Klick auf den Kompass |
-| Touch | zwei Finger drehen | zwei Finger senkrecht schieben | Kompass |
-| Tastatur (Karte im Fokus) | Umschalt + ←/→ | Umschalt + ↑/↓ | Tab zum Kompass, Enter |
+| Maus | rechte Taste oder Strg + Ziehen links/rechts; Ziehen am Kompass (F15) | dieselbe Geste auf/ab | Klick auf den Kompass |
+| Touch | zwei Finger drehen; Ziehen am Kompass (F15) | zwei Finger senkrecht schieben | Kompass |
+| Tastatur | Karte im Fokus: Umschalt + ←/→; Kompass im Fokus: ←/→ (F15) | Karte im Fokus: Umschalt + ↑/↓ | Kompass im Fokus: Enter |
 
-Alles Vorgaben von MapLibre, nur eingeschaltet, solange 3D an ist. In 2D bleibt die Karte wie heute (D27), der Kompass erscheint dort nie (F1).
+Die Gesten an der Karte sind Vorgaben von MapLibre, nur eingeschaltet, solange 3D an ist. In 2D bleibt die Karte wie heute (D27, F1); der Kompass steht dort und zeigt nach Norden (F2). Die Zeitleiste fängt ←/→ ab, außer in Feldern, Listen, Dialogen und am Regler (`stepKeys.ts`); der Kompass kommt als weitere Ausnahme dazu, damit er im Fokus seine Pfeiltasten behält.
 
 ### 5.4 Darstellung
 
@@ -104,30 +110,40 @@ Alles Vorgaben von MapLibre, nur eingeschaltet, solange 3D an ist. In 2D bleibt 
 
 ### 5.7 Leistung auf schwächeren Rechnern
 
-- 3D ist **aus** als Vorgabe und wird nur auf Wunsch eingeschaltet.
+- 3D ist **aus** als Vorgabe und wird nur auf Wunsch eingeschaltet (F13).
 - Neigung höchstens 60° begrenzt die Kacheln (§4).
 - Verliert die Karte den WebGL-Kontext (`webglcontextlost`) mit 3D an, geht 3D aus und die Statusmeldung sagt „3D was turned off: the graphics card ran out of memory“ (F13). Eine Erkennung „schwacher Rechner“ vorab gibt es nicht; sie wäre geraten.
 
-## 6. Nachtrag Leitfaden (nach der Umsetzung)
+## 6. Nachtrag Leitfaden (eingetragen am 11.11.2026)
 
-- §2 Begriffe: „3D“ (Box im Abschnitt „Terrain“), „Reset north and tilt“ (Kompass); „Basemap, Overlays, Projection, Terrain, Appearance, Tooltips“ als die sechs Abschnitte des Panels.
-- §3 Symbole: der Kompass ist das Steuerelement von MapLibre, kein Lucide-Symbol (wie Zoom + und −); kein neues Symbol in `icons.ts`.
-- §9 Karte: Drehen und Kippen nur mit 3D (§5.3), höchstens 60°, Kompass nur bei Drehung oder Neigung, 3D je Browser gemerkt (`earthx.terrain`), nicht im Permalink; Coverage misst den flachen Ausschnitt.
-- §10 Prüfungen: Zeile für Kompass, 3D und Sperre in 2D.
+Die Regeln stehen schon jetzt im Leitfaden, markiert mit *(folgt mit UI-06)*; die Markierung fällt mit der Umsetzung weg.
+
+- §2 Begriffe: „3D“ (der Knopf an der Karte), „Reset north and tilt“ (Kompass), „Zoom in“, „Zoom out“.
+- §3 Symbole: Kompass als zweite Ausnahme (eigene Nadel, Nordhälfte `--danger`), Zoom mit `plus` und `minus`, 3D als Text.
+- §7 Bauteile: `MapControls` (Kompass, Zoom +, Zoom −, 3D, unten rechts).
+- §9 Karte: Drehen und Kippen nur mit 3D (D27 in 2D), höchstens 60°, Einschalten kippt auf 50°, Ausschalten auf 0; Kompass immer sichtbar; 3D je Browser gemerkt (`earthx.terrain`), nicht im Permalink; Coverage misst den flachen Ausschnitt; schmale Fenster.
+- §10 Prüfungen: Zeile für Kompass, 3D und die Sperre in 2D.
+
+**Hell und dunkel, schmale Fenster:**
+- Alle vier Knöpfe nehmen Fläche, Rand, Text und Akzent aus `tokens.css`; die Nadel `--danger` und `--text`, also in beiden Themen lesbar. Keine feste Farbe.
+- Unter 900 px und bei Touch 44 px je Knopf (`--control-height-touch`); die Gruppe ist dann 4 × 44 px hoch und steht wie heute über der Attribution. Wo eine Seitenleiste oder ein Blatt rechts offen ist, rückt die Gruppe mit (die vorhandenen Regeln für `.maplibregl-ctrl-bottom-right` gelten für die neue Gruppe).
+- Bei 320 px Breite darf die Gruppe kein Panel der Leiste und keine Statusmeldung überdecken, die man bedienen muss; Prüfung in `narrow-windows.cjs`.
 
 ## 7. Umsetzung, Tests, Abnahme
 
-**Schnitt:** ein PR, Frontend allein, geschätzt rund 250 Zeilen ohne Tests [A]. Dateien: `MapView.tsx`, neue `terrain.ts` (Quelle, Ein/Aus, Sperren), `relief.ts` (gemeinsame Adresse und Attribution), `SettingsPanel.tsx`, `preferences.ts`, `store.ts` (Wert und Setter, flacher Ausschnitt für die Coverage), `index.css` (Kompass ausblenden, nur Tokens), Leitfaden.
+**Schnitt:** ein PR, Frontend allein, geschätzt rund 350 Zeilen ohne Tests [A]. Dateien: `MapView.tsx` (ohne `NavigationControl`), neue `terrain.ts` (Quelle, Ein/Aus, Sperren), neue `components/MapControls.tsx` und `components/compassNeedle.ts`, `relief.ts` (gemeinsame Adresse und Attribution), `icons.ts` (`MinusIcon`), `preferences.ts`, `store.ts` (Wert und Setter, flacher Ausschnitt für die Coverage), `index.css` (nur Tokens), Leitfaden (Markierung entfernen).
 
 **Tests (Vitest):**
 - `terrain.test.ts`: An setzt Gelände, Neigungsgrenze und gibt Drehen frei; Aus kippt zurück, sperrt wieder; doppeltes An oder Aus ändert nichts; Aufruf ohne geladenen Stil wirft nicht.
 - `preferences.test.ts`: `earthx.terrain` gemerkt; kaputter, fremder oder gesperrter Speicher gibt „aus“.
 - `mapStyles.diff.test.ts`: Wechsel der Basemap behält `terrain` und seine Quelle; mit Relief an bleiben beide Quellen.
-- `SettingsPanel.test.tsx`: Abschnitt „Terrain“, Box „3D“ mit `aria-pressed`, gleiche Größe wie die anderen Boxen.
+- `MapControls.test.tsx`: Reihenfolge Kompass, Zoom +, Zoom −, 3D; Kompass immer da, Nadel folgt der Drehung, Klick ruft das Zurücksetzen; Ziehen dreht nur in 3D; Pfeiltasten am Kompass nur in 3D; „3D“ mit `aria-pressed`, An kippt auf 50°, Aus auf 0 und Norden; Tooltips mit Stufe „advanced“, `aria-label` überall.
+- `SettingsPanel.test.tsx`: kein Abschnitt „Terrain“, keine Box „3D“ (Gegenprobe).
 - Coverage: gekippter Ausschnitt gibt dieselbe Anfrage wie flach bei gleicher Mitte und gleichem Zoom.
-- `uiRules.test.ts`: Begriffe, Tooltip-Stufe, kein `title` außer an MapLibre.
+- `uiRules.test.ts`: Begriffe, Tooltip-Stufe, kein `title` außer an MapLibre; die Nadel als einzige zweite eigene Zeichnung (`<svg>` nur in `RangeHistogram` und am Kompass).
+- `icons.test.tsx`: `MinusIcon` benutzt.
 
-**Browser (Playwright, `e2e/terrain-3d.cjs`):** Hell und Dunkel, 1280 und 360 px, Maus und Touch: in 2D kein Drehen und Kippen, kein Kompass; 3D an, kippen und drehen per Maus, Touch und Tastatur, Kompass erscheint, Klick richtet aus und verschwindet; Wechsel der Basemap und der Projektion lässt 3D an; Ansicht, Layer, AOI und Coverage auf dem Gelände; AOI zeichnen gekippt (Punkt, Rechteck, Polygon); Neigung nicht über 60°. `map-gl6.cjs` Punkt 3 gilt dann für 2D.
+**Browser (Playwright, `e2e/terrain-3d.cjs`):** Hell und Dunkel, 1280, 360 und 320 px, Maus und Touch: Reihenfolge und Größe der Gruppe; in 2D kein Drehen und Kippen, Kompass nach Norden; 3D an kippt auf 50°, kippen und drehen per Maus, Touch, Tastatur und Kompass, die Nadel dreht mit, Klick richtet aus; 3D aus setzt Neigung und Drehung auf 0; Wechsel der Basemap und der Projektion lässt 3D an; Ansicht, Layer, AOI und Coverage auf dem Gelände; AOI zeichnen gekippt (Punkt, Rechteck, Polygon); Neigung nicht über 60°. `map-gl6.cjs` Punkt 3 gilt dann für 2D.
 
 **Abnahme:** Lint, Typprüfung, Vitest, Importregeln und Backend-Tests grün; Prüfanleitung für Otto im PR; Zeile im Entscheidungslog; vor „fertig“ `main` geholt.
 
@@ -135,7 +151,8 @@ Alles Vorgaben von MapLibre, nur eingeschaltet, solange 3D an ist. In 2D bleibt 
 
 Copernicus DEM (`cop-dem-glo-30`) oder swissALTI3D (M5-08c) als Gelände bräuchten Höhenkacheln in Terrarium-Kodierung aus dem `tiler` (heute weist er `algorithm` ab) und für niedrige Zoomstufen eine vorab gerechnete Pyramide; das ist Option B aus NM4-35 §6.3 mit denselben Kosten. Gewinn: genauere Daten (swissALTI3D 0,5–2 m), keine Anfrage bei AWS. Vorschlag: nicht in UI-06, eigene Aufgabe mit Plan, frühestens vor dem öffentlichen Start (F14).
 
-## 9. Fragen an Otto
+## 9. Fragen an Otto (10.11.2026)
+
 
 Antwort je Frage mit der Nummer der Option genügt.
 
@@ -201,3 +218,30 @@ Antwort je Frage mit der Nummer der Option genügt.
 1. Später als eigene Aufgabe mit Plan, frühestens vor dem öffentlichen Start (**Empfehlung**)
 2. Nicht verfolgen; AWS Terrain Tiles bleiben
 3. Jetzt in UI-06 mitplanen
+
+## 9a. Antworten Otto (11.11.2026)
+
+| Frage | Antwort |
+|---|---|
+| F1 | Option 1: Drehen und Kippen nur mit 3D; **D27 gilt für 2D weiter** (teilweise Aufhebung, Log) |
+| F2 | **abweichend:** Der Kompass ist immer sichtbar, auch bei nicht gedrehter Karte; in 2D zeigt er nach Norden |
+| F3 | **abweichend:** wie bei Google Maps: runder Knopf mit Kompassnadel (Nordhälfte rot), dreht mit der Karte, Klick richtet nach Norden aus und setzt die Neigung zurück; in 3D optional Drehen durch Ziehen am Kompass (Vorschlag im Plan, F15); über den Zoom-Knöpfen |
+| F4 | **abweichend:** kein Eintrag im Panel „Settings“, sondern ein kleiner Knopf „3D“ direkt unter den Zoom-Knöpfen (Lucide oder Text, Tooltip nach Leitfaden, aktiv sichtbar); Reihenfolge Kompass, Zoom +, Zoom −, 3D |
+| F5 | **abweichend:** Einschalten kippt gleich auf etwa 50°; Ausschalten setzt Neigung und Drehung auf 0 |
+| F6–F14 | jeweils Option 1 |
+
+Dazu: hell und dunkel, schmale Fenster (§6); Antworten im Leitfaden. Umsetzung erst auf Ottos Signal.
+
+## 9b. Neue Fragen aus den Antworten
+
+**F15 — Ziehen am Kompass**
+1. In 3D dreht Ziehen um den Kompass die Karte, Klick ohne Bewegung richtet aus; im Fokus drehen ←/→ um 15° (**Empfehlung**, §5.1)
+2. Kein Ziehen, nur Klick
+
+**F16 — Kompass in 2D, schon nach Norden**
+1. Nicht gesperrt, der Klick tut nichts (**Empfehlung**: er ist kein Knopf, der „gerade nicht geht“)
+2. Gesperrt mit Grund „Already facing north“
+
+**F17 — Eigene Zeichnung der Nadel** (Leitfaden §3 erlaubt keine eigenen Zeichnungen)
+1. Zweite Ausnahme neben „Settings“: zwei Spitzen als SVG in `compassNeedle.ts`, Nord `--danger`, Süd `--text`, im Leitfaden vermerkt (**Empfehlung**; anders ist eine rote Nordhälfte nicht zu haben)
+2. Lucide `navigation-2` in Rot, gedreht (Pfeil statt Nadel)
