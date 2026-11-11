@@ -4,7 +4,8 @@
 - An integer type takes the nodata of the source where the chain only passes the source's integer values on, for
   then no valid value can be it (R2); otherwise an edge of the type, ``max`` for an unsigned type and ``min`` for a
   signed one, as ``gdal_calc.py`` chooses, so that 0 always stays a value (R3).
-- A source nodata the integer type cannot hold is refused before a block is read (Otto, 11.11.2026, F7).
+- A source nodata that would reach the result unchanged (R2) and that the integer type cannot hold is refused before a
+  block is read (Otto, 11.11.2026, F7 as corrected the same day); where the steps change the values, the edge applies.
 - A valid value that lands on the nodata after rounding and clamping is moved one step towards the middle of the
   type, as GDAL's warper does (``AvoidNoData`` in ``alg/gdalwarpkernel.cpp``) (R4).
 """
@@ -33,28 +34,30 @@ def edge(dtype: str) -> int:
 def output_nodata(dtype: str, bands: Sequence[BandMeta], passes_values: bool) -> float:
     """The nodata of a file of ``dtype`` holding ``bands``; ``passes_values`` says the steps only pass values on.
 
-    :class:`UnsupportedRecipe` where a band carries a source nodata the integer type cannot hold.
+    :class:`UnsupportedRecipe` where the source nodata would be kept and the integer type cannot hold it.
     """
     target = numpy.dtype(dtype)
     if numpy.issubdtype(target, numpy.floating):
         return math.nan
     if not numpy.issubdtype(target, numpy.integer):
         raise UnsupportedRecipe(f"no nodata for the output type {dtype}")
-    limits = numpy.iinfo(target)
     declared = {band.nodata for band in bands if band.nodata is not None and not math.isnan(band.nodata)}
-    for value in sorted(declared):
-        if not (math.isfinite(value) and value == int(value) and limits.min <= value <= limits.max):
-            raise UnsupportedRecipe(
-                f"the source's nodata {value:g} does not fit the output type {dtype}; "
-                "choose a type that holds it, or a float type"
-            )
     keeps = (
         passes_values
         and len(declared) == 1
         and all(band.nodata is not None for band in bands)
         and all(is_integer(band.data_type) for band in bands)
     )
-    return float(declared.pop()) if keeps else float(edge(dtype))
+    if not keeps:
+        return float(edge(dtype))
+    value = declared.pop()
+    limits = numpy.iinfo(target)
+    if not (math.isfinite(value) and value == int(value) and limits.min <= value <= limits.max):
+        raise UnsupportedRecipe(
+            f"the source's nodata {value:g} does not fit the output type {dtype}; "
+            "choose a type that holds it, or a float type"
+        )
+    return float(value)
 
 
 def avoid_nodata(values: numpy.ndarray, valid: numpy.ndarray, nodata: float) -> list[int]:

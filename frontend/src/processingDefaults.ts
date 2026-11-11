@@ -7,8 +7,10 @@
 // NaN; an integer type keeps the source's nodata where the steps only pass the
 // source's integer values on (`nearest`, `mode`, masks), else it takes an edge of
 // the type (`max` unsigned, `min` signed), and a value that would land on it is
-// moved by one. A source nodata an integer type cannot hold (swissALTI3D −9999 in
-// `uint16`) is refused, so that type is not offered (Otto, 11.11.2026, F7).
+// moved by one. A source nodata that would be kept but that an integer type cannot
+// hold (`int16` −32768 into `uint16`) is refused, so that type is not offered (Otto,
+// 11.11.2026, F7 as corrected). Where the steps change the values — a float source
+// such as swissALTI3D (−9999) into `uint16` too — the edge applies.
 // Band math and normalize end in float32 with NaN (Otto, 22.10.2026); an integer
 // type after them is offered, not recommended. The process description does not
 // state an operator's output type, so the two are named here.
@@ -53,9 +55,9 @@ const RANGE: Record<string, readonly [number, number]> = {
 // The nodata of an integer type whose source gives none it can keep.
 export const edgeNodata = (dtype: string): number => (RANGE[dtype][0] === 0 ? RANGE[dtype][1] : RANGE[dtype][0]);
 
-// Why `dtype` cannot hold the nodata the source states, or `null` where it can (F7).
-export function nodataMisfit(dtype: string, bands: readonly BandSource[]): string | null {
-  if (!isIntegerType(dtype)) return null;
+// Why `dtype` cannot hold the source nodata the result would keep, or `null` (F7 as corrected).
+export function nodataMisfit(dtype: string, steps: readonly StepChoice[], bands: readonly BandSource[]): string | null {
+  if (!isIntegerType(dtype) || !keepsSourceNodata(steps, bands)) return null;
   const [low, high] = RANGE[dtype];
   const value = bands.map((band) => band.nodata).find((v) => v !== null && !(Number.isInteger(v) && v >= low && v <= high));
   return value === undefined || value === null ? null : `The source marks missing pixels with ${value}, which ${dtype} cannot hold.`;
@@ -128,16 +130,14 @@ export interface DtypeOption {
   disabledReason: string | null;
 }
 
-// The types of the schema as options; those a run refuses for sure disabled with the reason. After band math or
-// normalize the result bands carry NaN, not the source's nodata, so no type is refused for it.
+// The types of the schema as options; those a run refuses for sure disabled with the reason.
 export function dtypeOptions(args: {
   dtypes: readonly string[];
   steps: readonly StepChoice[];
   bands: readonly BandSource[];
 }): DtypeOption[] {
-  const floating = floatResultOf(args.steps);
   return args.dtypes.map((value) => {
-    const disabledReason = floating ? null : nodataMisfit(value, args.bands);
+    const disabledReason = nodataMisfit(value, args.steps, args.bands);
     return { value, label: disabledReason ? `${value} (nodata does not fit)` : value, disabledReason };
   });
 }

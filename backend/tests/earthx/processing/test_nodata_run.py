@@ -2,7 +2,8 @@
 
 Synthetic COGs: ``counts`` (``uint16``, nodata 0, unscaled, like Sentinel-1 DN or WorldCover classes), ``heights``
 (``float32``, nodata −9999, like swissALTI3D) and ``dem`` (``float32`` without nodata, like the Copernicus DEM). Each
-holds 0 as a real value where its kind allows it: 0 m is sea level.
+holds 0 as a real value where its kind allows it: 0 m is sea level. ``signed`` (``int16``, nodata −32768) is a source
+whose nodata an unsigned type cannot hold.
 """
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ SOURCES = {
     "counts": ("uint16", 0),
     "heights": ("float32", -9999),
     "dem": ("float32", None),
+    "signed": ("int16", -32768),
 }
 
 
@@ -49,6 +51,9 @@ def files(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
         "counts": sources.build_band_cog(root / "counts.tif", sources.ramp(WIDTH, HEIGHT, 100), scale=None, offset=None),
         "heights": sources.build_band_cog(root / "heights.tif", _heights(), scale=None, offset=None, nodata=-9999),
         "dem": sources.build_band_cog(root / "dem.tif", dem, scale=None, offset=None, nodata=None),
+        "signed": sources.build_band_cog(
+            root / "signed.tif", _heights().astype("int16"), scale=None, offset=None, nodata=-32768
+        ),
     }
 
 
@@ -143,11 +148,13 @@ class TestAValueOnTheNodataIsMoved:
 
 
 class TestRefusal:
-    def test_a_source_nodata_the_type_cannot_hold_fails_before_the_first_block(self, tmp_path: Path) -> None:
+    """Otto, 11.11.2026, F7 as corrected: refused only where the source nodata would reach the result unchanged."""
+
+    def test_a_kept_source_nodata_the_type_cannot_hold_fails_before_the_first_block(self, tmp_path: Path) -> None:
         ticks: list[int] = []
-        with pytest.raises(UnsupportedRecipe, match="nodata -9999 does not fit the output type uint16"):
+        with pytest.raises(UnsupportedRecipe, match="nodata -32768 does not fit the output type uint16"):
             run(
-                recipe_from_data(_recipe("heights", [], ["heights"], "uint16"), REGISTRY),
+                recipe_from_data(_recipe("signed", [], ["signed"], "uint16"), REGISTRY),
                 workdir=tmp_path,
                 progress=lambda done, total: ticks.append(done),
                 operators=REGISTRY,
@@ -155,11 +162,24 @@ class TestRefusal:
         assert ticks == [] and list(tmp_path.iterdir()) == []
 
     def test_the_estimate_refuses_it_from_the_item_before_the_job_waits(self) -> None:
-        with pytest.raises(UnsupportedRecipe, match="-9999 does not fit the output type uint8"):
-            estimate(recipe_from_data(_recipe("heights", [], ["heights"], "uint8"), REGISTRY), REGISTRY)
+        with pytest.raises(UnsupportedRecipe, match="-32768 does not fit the output type uint8"):
+            estimate(recipe_from_data(_recipe("signed", [_reproject("nearest")], ["signed"], "uint8"), REGISTRY), REGISTRY)
+
+    def test_a_float_source_into_uint16_changes_the_values_and_takes_the_edge(self, tmp_path: Path) -> None:
+        """swissALTI3D −9999 into ``uint16``: rounding makes new values, so 65535, not a refusal."""
+        recipe = recipe_from_data(_recipe("heights", [], ["heights"], "uint16"), REGISTRY)
+        assert estimate(recipe, REGISTRY).output_pixels > 0
+        result = _run(_recipe("heights", [], ["heights"], "uint16"), tmp_path)
+        values, nodata = _file(result.path)
+        assert nodata == 65535
+        assert (values[:8, :8] == 65535).all() and (values[20, 8:] == 0).all()
+
+    def test_an_interpolating_step_takes_the_edge_where_the_kept_nodata_would_not_fit(self, tmp_path: Path) -> None:
+        result = _run(_recipe("signed", [_reproject("bilinear")], ["signed"], "uint16"), tmp_path)
+        assert _file(result.path)[1] == 65535
 
     def test_after_band_math_the_source_nodata_is_not_in_the_result_and_nothing_is_refused(self) -> None:
-        recipe = recipe_from_data(_recipe("heights", [_math("heights * 2")], ["x"], "uint16"), REGISTRY)
+        recipe = recipe_from_data(_recipe("signed", [_math("signed * 2")], ["x"], "uint16"), REGISTRY)
         assert estimate(recipe, REGISTRY).output_pixels > 0
 
 

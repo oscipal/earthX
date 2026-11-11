@@ -115,6 +115,8 @@ describe('chooseDtype (Otto, 12.10.2026): the type of the source data wherever t
 
 // A float raster whose item states a nodata no unsigned type holds, as swissALTI3D (−9999).
 const HEIGHTS = band({ dataType: 'float32', nodata: -9999 });
+// An integer raster whose nodata no unsigned type holds.
+const SIGNED = band({ dataType: 'int16', nodata: -32768 });
 
 describe('dtypeOptions (M5-28)', () => {
   it('lists all types of the schema as they are', () => {
@@ -130,22 +132,33 @@ describe('dtypeOptions (M5-28)', () => {
     }
   });
 
-  it('does not offer a type that cannot hold the source nodata, with the reason (Otto, 11.11.2026, F7)', () => {
-    const options = dtypeOptions({ dtypes: DTYPES, steps: NEAREST, bands: [HEIGHTS] });
+  it('does not offer a type that cannot hold a source nodata the result would keep (Otto, 11.11.2026, F7)', () => {
+    const options = dtypeOptions({ dtypes: DTYPES, steps: NEAREST, bands: [SIGNED] });
     const refused = options.filter((o) => o.disabledReason);
     expect(refused.map((o) => o.value)).toEqual(['uint8', 'uint16', 'uint32']);
     expect(refused[1].label).toBe('uint16 (nodata does not fit)');
-    expect(refused[1].disabledReason).toBe('The source marks missing pixels with -9999, which uint16 cannot hold.');
+    expect(refused[1].disabledReason).toBe('The source marks missing pixels with -32768, which uint16 cannot hold.');
+  });
+
+  it('offers every type where the steps change the values: a float source, interpolation, band math', () => {
+    for (const [steps, bands] of [
+      [NEAREST, [HEIGHTS]],
+      [BILINEAR, [SIGNED]],
+      [[{ op: 'band_math' }], [SIGNED]],
+    ] as const) {
+      expect(dtypeOptions({ dtypes: DTYPES, steps: [...steps], bands: [...bands] }).every((o) => o.disabledReason === null)).toBe(true);
+    }
   });
 });
 
 describe('nodataMisfit', () => {
-  it('names a nodata out of range or with a fraction, and nothing for float types or a fitting value', () => {
-    expect(nodataMisfit('uint8', [band({ nodata: 256 })])).toMatch(/256, which uint8/);
-    expect(nodataMisfit('int16', [band({ nodata: 0.5 })])).toMatch(/0.5, which int16/);
-    expect(nodataMisfit('int16', [HEIGHTS])).toBeNull();
-    expect(nodataMisfit('float32', [HEIGHTS])).toBeNull();
-    expect(nodataMisfit('uint16', [band()])).toBeNull();
+  it('names a kept nodata out of range, and nothing where it fits, is not kept, or for float types', () => {
+    expect(nodataMisfit('uint8', NEAREST, [band({ dataType: 'uint16', nodata: 256 })])).toMatch(/256, which uint8/);
+    expect(nodataMisfit('uint16', [], [SIGNED])).toMatch(/-32768, which uint16/);
+    expect(nodataMisfit('int16', NEAREST, [SIGNED])).toBeNull();
+    expect(nodataMisfit('uint16', NEAREST, [HEIGHTS])).toBeNull();
+    expect(nodataMisfit('uint16', [{ op: 'normalize' }], [SIGNED])).toBeNull();
+    expect(nodataMisfit('float32', NEAREST, [SIGNED])).toBeNull();
   });
 });
 
@@ -157,7 +170,7 @@ describe('edgeNodata', () => {
 
 describe('effectiveDtype', () => {
   const automatic = { value: 'float32', reason: 'x.' };
-  const options = dtypeOptions({ dtypes: DTYPES, steps: NEAREST, bands: [HEIGHTS] });
+  const options = dtypeOptions({ dtypes: DTYPES, steps: NEAREST, bands: [SIGNED] });
 
   it('is the automatic type until the user chooses', () => {
     expect(effectiveDtype(null, options, automatic)).toBe('float32');

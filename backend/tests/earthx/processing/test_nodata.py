@@ -1,8 +1,8 @@
 """``processing.nodata``: the nodata of a result never equals a real value (plan M5-28, Otto 11.11.2026).
 
 R1 float: NaN. R2 integer: the source's nodata where the steps only pass the source's integers on. R3 otherwise an edge
-of the type, ``max`` unsigned and ``min`` signed (``gdal_calc.py``'s side). F7: a source nodata the type cannot hold is
-refused. R4: a valid value on the nodata moves one step towards the middle, as GDAL's ``AvoidNoData``.
+of the type, ``max`` unsigned and ``min`` signed (``gdal_calc.py``'s side). F7 (corrected 11.11.2026): a source nodata
+that R2 would keep and the type cannot hold is refused; where the steps change the values, R3 applies. R4: a valid value on the nodata moves one step towards the middle, as GDAL's ``AvoidNoData``.
 """
 
 from __future__ import annotations
@@ -65,16 +65,29 @@ class TestOutputNodata:
         assert output_nodata("int16", [_band("float32", math.nan)], passes_values=False) == -32768.0
 
     @pytest.mark.parametrize(
-        ("dtype", "nodata"),
-        [("uint16", -9999.0), ("uint8", 256.0), ("int16", 40000.0), ("uint16", 0.5), ("int32", math.inf)],
+        ("dtype", "source", "nodata"),
+        [("uint8", "uint16", 65535.0), ("uint16", "int16", -32768.0), ("int16", "uint16", 65535.0), ("uint8", "int32", 256.0)],
     )
-    def test_a_source_nodata_the_type_cannot_hold_is_refused_with_the_reason(self, dtype: str, nodata: float) -> None:
-        with pytest.raises(UnsupportedRecipe, match=f"nodata .* does not fit the output type {dtype}"):
-            output_nodata(dtype, [_band("float32", nodata)], passes_values=False)
+    def test_a_kept_source_nodata_the_type_cannot_hold_is_refused_with_the_reason(
+        self, dtype: str, source: str, nodata: float
+    ) -> None:
+        with pytest.raises(UnsupportedRecipe, match=f"nodata {nodata:g} does not fit the output type {dtype}"):
+            output_nodata(dtype, [_band(source, nodata)], passes_values=True)
 
-    def test_the_refusal_comes_first_even_beside_a_band_that_fits(self) -> None:
-        with pytest.raises(UnsupportedRecipe, match="-9999 does not fit"):
-            output_nodata("uint16", [_band("uint16", 0.0), _band("float32", -9999.0, "h")], passes_values=True)
+    @pytest.mark.parametrize(
+        ("bands", "passes"),
+        [
+            ([_band("float32", -9999.0)], True),  # swissALTI3D into uint16: float to integer changes the values
+            ([_band("uint16", 65535.0)], False),  # an interpolating step
+            ([_band("uint16", 65535.0), _band("uint16", 0.0, "c")], True),  # bands disagree
+            ([_band("float32", math.inf)], True),
+        ],
+    )
+    def test_where_the_values_change_an_unfitting_source_nodata_gives_the_edge(
+        self, bands: list[BandMeta], passes: bool
+    ) -> None:
+        assert output_nodata("uint8", bands, passes_values=passes) == 255.0
+        assert output_nodata("uint16", bands, passes_values=passes) == 65535.0
 
     def test_a_type_that_is_neither_float_nor_integer_is_refused(self) -> None:
         with pytest.raises(UnsupportedRecipe, match="no nodata for the output type complex64"):
