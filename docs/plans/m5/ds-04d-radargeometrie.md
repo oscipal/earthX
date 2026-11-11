@@ -1,7 +1,7 @@
 # DS-04d — Sentinel-1 GRD bleibt in Radargeometrie: Plan-Schritt
 
-**Stand:** 11.11.2026, Stufe B. Beauftragt von Otto am 11.11.2026. Dieser Plan legt die Umsetzung vor und stellt
-Fragen (§9); Produktivcode folgt erst nach Ottos Antworten im selben Draft-PR.
+**Stand:** 11.11.2026, Stufe B. Beauftragt von Otto am 11.11.2026. Fragen F1–F8 beantwortet (§9a); gebaut wird,
+sobald #335 und #341 auf `main` sind, im selben Draft-PR.
 
 Bezug: `adr/0018` §4.1, §4.3, §4.4 (Nachtrag DS-04d), `plans/ds/ds-04-s1-anbinden.md`, `plans/m5/m5-28-nodata-ergebnisse.md`,
 `adr/0028` (Raster der Quelle), M3-18 (Maske statt nodata, `access/download.py`).
@@ -15,7 +15,8 @@ Sentinel-1 GRD wird ohne richtige Bearbeitung (σ⁰ und Geländekorrektur) nie 
 1. Download und Ergebnisse (Zuschnitt, Operatoren) bleiben in Radargeometrie: kein CRS, kein Geotransform, keine
    Spiegelung. Die GCPs der Quelle bleiben in der Datei, umgerechnet auf das ausgeschnittene Fenster.
 2. Zuschnitt: umschließendes Pixel-Fenster der AOI über die GCPs/TPS, dazu eine Maske aus der ungefähr übertragenen
-   AOI-Form; außerhalb nodata nach den Regeln aus M5-28.
+   AOI-Form; außerhalb nodata nach den Regeln aus M5-28. *Präzisiert durch F1 = 2 (§9a): kein nodata außerhalb
+   der Form, die Form steht nur in `mask.tif` (M3-18).*
 3. Mosaik je Durchgang (aufeinanderfolgende Slices einer Bahn) bleibt, aber in Radargeometrie aneinandergehängt.
    Vorher prüfen, ob das sauber geht; wenn nicht, Frage statt Annahme.
 4. Reprojektion entfällt für Sentinel-1 in Download und Processing. Was nicht geht, erscheint nicht
@@ -69,8 +70,9 @@ TPS der verschobenen GCPs bis 3·10⁻¹² ° auf der Quelle: Verschieben aller 
 (F3) und Fälle, die nicht gemessen sind (fehlende Slices, F4). Zwei Paare sind eine Stichprobe; die Umsetzung prüft
 jede Naht (§4.6) statt es anzunehmen.
 
-**Nebenbefund [M]:** Die Assets `schema-product-vv`/`-vh` der Items zeigen auf `annotation/rfi/rfi-iw-*.xml`, nicht
-auf die Produkt-Annotation `annotation/iw-*.xml`. Für DS-05d (σ⁰) relevant; hier nicht gebraucht, wenn F2 = 1.
+**Nebenbefund [M], gehört zu DS-05d (Otto, 11.11.2026):** Die Assets `schema-product-vv`/`-vh` der Items zeigen auf
+`annotation/rfi/rfi-iw-*.xml`, nicht auf die Produkt-Annotation `annotation/iw-*.xml`. DS-05d (σ⁰) muss das beim Lesen
+der Annotation berücksichtigen; diese Aufgabe braucht sie nicht (F2 = 1).
 
 ## 3. Ausgangslage im Code [P]
 
@@ -115,7 +117,7 @@ Rein, ohne I/O, in `access/crop_rules.py` (von `processing` mitbenutzt wie heute
 - `radar_mask(gcps, aoi, window)`: dasselbe Polygon in Pixelkoordinaten des Fensters, gerastert mit der Regel von
   `mask.tif` (`all_touched`). „Ungefähr übertragen“: Die Form folgt der TPS an den verdichteten Punkten, dazwischen
   gerade.
-- Außerhalb der Maske: nach F1.
+- Außerhalb der Maske bleiben die Werte unverändert (F1 = 2, M3-18); die Form steht nur in `mask.tif`.
 
 ### 4.3 GCPs der Ausgabe
 
@@ -206,7 +208,7 @@ Erweitert `readers/mini_gcp.py` um zwei aneinanderhängende Slices mit Zeitangab
 
 - **Fenster:** AOI ganz innen, am Rand, über die Naht, ganz außerhalb (`AoiOutsideItems`), Punkt-AOI, Polygon mit
   Loch, Multipolygon; Fenster umschließt alle Eckpunkte über die inverse TPS; aufsteigende Szene nicht gespiegelt.
-- **Maske:** innen 1, außen nach F1; Form folgt der TPS an verdichteten Kanten (Gegenprobe ohne Verdichtung weicht ab).
+- **Maske:** `mask.tif` innen 1, außen 0; die Datendatei behält außerhalb der Form die Werte der Quelle (F1 = 2); Form folgt der TPS an verdichteten Kanten (Gegenprobe ohne Verdichtung weicht ab).
 - **GCP-Verschiebung:** alle GCPs vorhanden, um das Fenster verschoben; TPS der Ausgabe an (z, s) = TPS der Quelle an
   (z + Zeile₀, s + Spalte₀) bis 10⁻⁹ °; bei gröberer Auflösung (F5) geteilt; Fenster ohne eigene GCPs bleibt
   platzierbar.
@@ -231,7 +233,7 @@ Erweitert `readers/mini_gcp.py` um zwei aneinanderhängende Slices mit Zeitangab
 | [#341](https://github.com/oscipal/earthX/pull/341) M5-30b Teil 7 | ja: `api/tiler.py`, `catalog/registry.py` (Startprüfung), `sentinel-1-grd.yaml` (eine Zeile) |
 | M5-30b Teil 6 (Zuschnitt/Job, noch kein PR) | ja: `access/download.py`, `api/intake.py`, `processing/export.py` (Grenzen je Szene) |
 
-Frage dazu: F8.
+Frage dazu: F8 (beantwortet: erst nach #335 und #341).
 
 ## 8. Umfang und Commits
 
@@ -240,7 +242,7 @@ trennen die Teile: (1) Lesen in Radargeometrie und `radar_window`/`radar_mask`/G
 Bänder-Download, Export-Job, Textdatei, (3) Job-Kern und Ergebnis-Kachel, (4) Mosaik je Durchgang, (5) Registry
 (`reprojection`, Startprüfung, Mosaik-Sperre), (6) Version, Doku-Nachträge, Log.
 
-## 9. Fragen an Otto
+## 9. Fragen an Otto — beantwortet am 11.11.2026 (§9a)
 
 **F1 — Außerhalb der AOI-Form (Punkt 2 ↔ M3-18 „Maske statt nodata“).** M3-18 lässt in der Datendatei jeden Wert
 des Rechtecks stehen und gibt die Form nur als `mask.tif` mit; Punkt 2 sagt „außerhalb nodata“.
@@ -290,6 +292,20 @@ möglich.
    auf diesen PR oder baut zuerst, wie Otto es lieber hat. F11 (#340) läuft unberührt. **(Empfehlung)**
 2. Sofort bauen; Konflikte in `tiler.py`, `registry.py`, `sentinel-1-grd.yaml` löse ich beim Holen von `main`.
 3. Erst nach ganz M5-30b.
+
+## 9a. Antworten Otto (11.11.2026)
+
+- **F1 = 2:** wie M3-18, kein nodata außerhalb der AOI-Form. Die Datendatei ist das Pixel-Fenster mit den Werten der
+  Quelle; die übertragene Form steht nur in `mask.tif`. Das präzisiert Punkt 2 der Entscheidung.
+- **F2 = 1, F3 = 1, F4 = 1, F5 = 1, F6 = 1, F7 = 1** jeweils nach Empfehlung: Zeilenversatz aus den Item-Zeiten über
+  eine neue allgemeine Registry-Angabe; GCPs des Mosaiks als Vereinigung; Naht, die nicht passt: im Download eine
+  Gruppe je Stück, im Job `422` mit Grund; gröbere Auflösung bleibt ohne Warp; `reprojection: false` mit Startprüfung;
+  Version 0.5.2.
+- **F8 = 1:** gebaut wird erst, wenn #335 und #341 auf `main` sind; dann `main` holen und umsetzen.
+- **Auslegungen A1–A6 angenommen**, auch A3: Ergebnis-Layer von Sentinel-1 über die TPS (der 502 wird behoben).
+- **Umfang:** ein PR mit Commits nach Teilen (§8) ist in Ordnung.
+- **Nebenbefund** (§2, Annotation-Verweis auf die RFI-Annotation) gehört zu DS-05d; als eigener Punkt im PR und im
+  Log festgehalten.
 
 ## 10. Nicht Teil dieser Aufgabe
 

@@ -832,7 +832,8 @@ Geländekorrektur) nie georeferenziert ausgeliefert.** Das ändert §4.3 (Zuschn
   Radargeometrie: kein CRS, kein Geotransform, keine Spiegelung. Die GCPs der Quelle bleiben in der Datei,
   verschoben auf das ausgeschnittene Fenster.
 - **Zuschnitt:** umschließendes Pixel-Fenster der AOI über die TPS aus den GCPs, dazu eine Maske aus der
-  ungefähr übertragenen AOI-Form; außerhalb nodata nach M5-28.
+  ungefähr übertragenen AOI-Form. Außerhalb der Form bleiben die Werte stehen, die Form steht nur in
+  `mask.tif` wie bei M3-18 (Otto, 11.11.2026, DS-04d F1 = 2; ersetzt „außerhalb nodata“ der ersten Fassung).
 - **Mosaik je Durchgang** bleibt, in Radargeometrie aneinandergehängt. Gemessen an zwei Paaren
   aufeinanderfolgender Slices: lückenlos (Abstand eine Zeile), ganzzahliger Zeilenversatz, gleicher Beginn der
   Bodenentfernung und Pixelabstand, keine radiometrische Naht.
@@ -842,8 +843,11 @@ Geländekorrektur) nie georeferenziert ausgeliefert.** Das ändert §4.3 (Zuschn
 - **Textdatei** des Downloads nennt Radargeometrie, Szene und Pixel-Fenster (Zeile/Spalte); im Frontend keine
   Hinweise, Erklärungen höchstens im Tooltip.
 
-Umsetzung, Messung und offene Fragen (Quelle des Zeilenversatzes, GCPs des Mosaiks, Nähte, die nicht passen,
-nodata außerhalb der AOI-Form gegenüber M3-18): `docs/plans/m5/ds-04d-radargeometrie.md`.
+Umsetzung, Messung und Antworten zu F1–F8 (Zeilenversatz aus den Item-Zeiten, GCPs des Mosaiks als Vereinigung,
+Nähte, die nicht passen, als eigene Gruppe bzw. `422`): `docs/plans/m5/ds-04d-radargeometrie.md` §9a.
+
+**Nebenbefund für DS-05d [M]:** Die Assets `schema-product-*` der Items zeigen auf die RFI-Annotation
+(`annotation/rfi/rfi-iw-*.xml`), nicht auf die Produkt-Annotation (`annotation/iw-*.xml`).
 
 ---
 
