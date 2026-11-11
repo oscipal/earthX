@@ -252,3 +252,29 @@ def test_every_dataclass_of_an_entry_is_read_strictly() -> None:
         _dataclasses_below(kind, seen)
     loose = sorted(kind.__name__ for kind in seen if getattr(kind, "__pydantic_config__", None) is not ENTRY_FILE_CONFIG)
     assert not loose
+
+
+@pytest.mark.parametrize("field", ["overview", "overview_resampling"])
+def test_the_overview_fields_of_the_viewer_are_not_optional(tmp_path: Path, field: str) -> None:
+    data = _plain()
+    del data["viewer"][field]
+    with pytest.raises(EntryFileError, match=rf"viewer\.{field}"):
+        load_entry(_write(tmp_path, data))
+
+
+@pytest.mark.parametrize("field", ["overview", "overview_resampling"])
+def test_an_unknown_overview_value_is_an_error(tmp_path: Path, field: str) -> None:
+    data = _plain()
+    data["viewer"][field] = "bilinear"
+    with pytest.raises(EntryFileError, match=rf"viewer\.{field}"):
+        load_entry(_write(tmp_path, data))
+
+
+def test_the_checks_of_the_overview_hold_in_a_file(tmp_path: Path) -> None:
+    data = _plain()
+    data["viewer"].update(overview="own", overview_resampling=None, min_zoom=3)
+    with pytest.raises(EntryFileError, match="no image below min_zoom"):
+        load_entry(_write(tmp_path, data))
+    data["viewer"].update(overview="pyramid", overview_resampling=None)
+    with pytest.raises(EntryFileError, match="overview_resampling is required"):
+        load_entry(_write(tmp_path, data))

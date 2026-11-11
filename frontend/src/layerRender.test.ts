@@ -18,7 +18,7 @@ const collection = (id: string, browse: 'quicklook' | 'full_resolution'): Collec
   id,
   title: id,
   'earthx:capabilities': CAPABILITIES,
-  'earthx:viewer': { group_by: ['datetime'], min_zoom: 8, max_zoom: 14, browse, quicklook_nodata_max: browse === 'quicklook' ? 16 : null, results_group_by: ['datetime'] },
+  'earthx:viewer': { group_by: ['datetime'], min_zoom: 8, max_zoom: 14, browse, quicklook_nodata_max: browse === 'quicklook' ? 16 : null, results_group_by: ['datetime'], overview: 'pyramid' as const, overview_resampling: 'average' as const },
   'earthx:default_render': { title: 'Standard', assets: ['visual'], rescale: [[0, 255]], colormap_name: null, expression: null, resampling: 'nearest' },
 });
 

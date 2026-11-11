@@ -8,7 +8,7 @@ import type { EstimateDocument } from './processing';
 import type { Pass } from './processingOrder';
 import type { StacItem } from './types';
 
-// As many jobs as one order can name scenes (`MAX_ORDER_ITEMS` of `api/intake.py`).
+// Jobs started at once from one batch: its own limit, no longer tied to `MAX_ORDER_ITEMS` of `api/intake.py` (a guard of 2000).
 export const MAX_BATCH_JOBS = 25;
 // Estimates asked at once; the starts follow one after the other.
 export const ESTIMATE_PARALLEL = 4;

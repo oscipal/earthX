@@ -106,6 +106,23 @@ def probe_modules(conn: Any) -> None:
     conn.close()
 
 
+def measure_high_water(conn: Any) -> None:
+    """The high-water mark before a 150 MB block, with it, and after it is freed, in a process of its own.
+
+    A mark never falls (VmHWM): in a pytest worker it holds the peak of every test that ran there
+    before, so the same measurement in the worker depends on which tests the worker got.
+    """
+    from earthx.jobs.child import high_water_mb
+
+    before = high_water_mb()
+    block = bytearray(150 * 1024 * 1024)
+    block[::4096] = b"x" * len(block[::4096])  # touch the pages
+    with_block = high_water_mb()
+    del block
+    conn.send((before, with_block, high_water_mb()))
+    conn.close()
+
+
 def end_to_end(workdir: str, conn: Any) -> None:
     """The real child on a synthetic scene: the readers' two last steps point at a local COG.
 

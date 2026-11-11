@@ -43,6 +43,8 @@ const COLLECTION = {
     browse: 'quicklook',
     quicklook_nodata_max: null,
     results_group_by: ['datetime'],
+    overview: 'pyramid' as const,
+    overview_resampling: 'average' as const,
   },
 } as unknown as Collection;
 

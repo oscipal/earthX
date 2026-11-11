@@ -1,7 +1,7 @@
 """What the swissALTI3D entry promises beyond its start checks (M5-08 plan §4.5, F2, §13).
 
 * F2: the COG of 2 m is offered like a band beside the one of 0.5 m; the XYZ files in a ZIP are originals, never a band.
-* ``viewer.min_zoom``: no tile at that level meets more scenes than a mosaic tile reads.
+* ``viewer.min_zoom``: no tile at that level meets more files than a mosaic tile reads (its budget, adr/0032 §6.2).
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from shapely.geometry import Polygon, box
 from earthx.access.band_export import band_table
 from earthx.adapters.stac_api import dialect_of, normalize_for
 from earthx.api.intake import band_sources
-from earthx.api.mosaic_tiles import MAX_SCENES_PER_TILE
+from earthx.api.mosaic_tiles import TILE_FILE_BUDGET
 from tests.catalog.entries import SWISSALTI3D
 from tests.catalog.synthetic_chain import fsdi_feature
 
@@ -55,13 +55,13 @@ def _tiles_met(zoom: int, lon: float, lat: float, to_lv95: Transformer, to_wgs84
 
 
 def test_no_tile_at_min_zoom_meets_more_scenes_than_a_mosaic_reads() -> None:
-    """Below ``min_zoom`` the coverage shows; at it, every mosaic tile has to answer (M5-08 plan §13)."""
+    """At ``min_zoom`` every mosaic tile reads all its files within the budget (M5-08 plan §13, adr/0032 §9)."""
     to_lv95 = Transformer.from_crs("EPSG:4326", "EPSG:2056", always_xy=True)
     to_wgs84 = Transformer.from_crs("EPSG:2056", "EPSG:4326", always_xy=True)
     west, south, east, north = SWISSALTI3D.spatial_extent.bbox
     places = random.Random(20261109)
     samples = [(places.uniform(west, east), places.uniform(south, north)) for _ in range(60)]
     zoom = SWISSALTI3D.viewer.min_zoom
-    assert max(_tiles_met(zoom, lon, lat, to_lv95, to_wgs84) for lon, lat in samples) <= MAX_SCENES_PER_TILE
+    assert max(_tiles_met(zoom, lon, lat, to_lv95, to_wgs84) for lon, lat in samples) <= TILE_FILE_BUDGET
     # One level lower would not hold: min_zoom is the lowest level that does.
-    assert max(_tiles_met(zoom - 1, lon, lat, to_lv95, to_wgs84) for lon, lat in samples) > MAX_SCENES_PER_TILE
+    assert max(_tiles_met(zoom - 1, lon, lat, to_lv95, to_wgs84) for lon, lat in samples) > TILE_FILE_BUDGET

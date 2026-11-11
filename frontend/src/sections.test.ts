@@ -35,6 +35,8 @@ function collection(id: string, title: string, overrides: Partial<Collection> = 
       browse: 'quicklook',
       quicklook_nodata_max: null,
       results_group_by: ['datetime'],
+      overview: 'own' as const,
+      overview_resampling: null,
     },
     ...overrides,
   };
@@ -50,6 +52,8 @@ const NO_TIME_AXIS = collection('dem', 'Elevation', {
     browse: 'full_resolution',
     quicklook_nodata_max: null,
     results_group_by: ['start_datetime'],
+    overview: 'own' as const,
+    overview_resampling: null,
   },
 });
 

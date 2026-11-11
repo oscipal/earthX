@@ -80,7 +80,7 @@ from earthx.access.download import (
     parse_aoi_geometry,
     plan_outputs,
 )
-from earthx.access.mosaic_tiles import EarthxMosaicTilerFactory, MosaicScenes, open_mosaic
+from earthx.access.mosaic_tiles import EarthxMosaicTilerFactory, MosaicScenes, ReadBudget, open_mosaic
 from earthx.access.resolve import (
     AssetNotOnItem,
     InvalidAssetKey,
@@ -793,22 +793,16 @@ async def _validate_before_fetching(request: Request) -> None:
 
 
 def _mosaic_zooms(config: DatasetConfig) -> tuple[int, int]:
-    """The levels a mosaic tile of this dataset serves: the released range, from z8 up (plan M4-17 §5).
+    """The levels a mosaic tile of this dataset serves: the released range (adr/0032 §6.2).
 
-    ``501`` without a released range, ``400`` for a dataset released only below the first level a
-    mosaic starts at — both before any item is fetched.
+    Since M5-30b every released level has a mosaic; the budget per tile bounds what one costs. ``501`` without a
+    released range, before any item is fetched.
     """
     if config.viewer is None:
         raise HTTPException(
             status_code=501, detail=f"{config.dataset_id!r} names no released zoom range (earthx:viewer)"
         )
-    low, high = config.viewer.min_zoom, config.viewer.max_zoom
-    if high < mosaic_tiles.MIN_MOSAIC_ZOOM:
-        raise HTTPException(
-            status_code=400,
-            detail=f"{config.dataset_id!r} is released up to z{high}; mosaic tiles start at z{mosaic_tiles.MIN_MOSAIC_ZOOM}",
-        )
-    return max(low, mosaic_tiles.MIN_MOSAIC_ZOOM), high
+    return config.viewer.min_zoom, config.viewer.max_zoom
 
 
 def _mosaic_zoom_range(request: Request) -> tuple[int, int]:
@@ -896,16 +890,23 @@ async def mosaic_scenes(
             )
     try:
         order = mosaic_order({item_id: refs[(item_id, asset[0])].crs for item_id in ids})
-        read = order if grid is None else mosaic_tiles.scenes_touching(order, outlines, grid)
+        touching = None if grid is None else mosaic_tiles.scenes_touching(order, outlines, grid, files_per_scene=len(asset))
     except OrderRefused as error:
         raise HTTPException(status_code=error.status_code, detail=error.detail) from None
+    read = order if touching is None else touching.read
+    outcome = mosaic_tiles.TileOutcome.of(request.scope)
+    budget = None if grid is None else ReadBudget(mosaic_tiles.TILE_TIME_BUDGET_S)
+    if outcome is not None and touching is not None:
+        outcome.left_out = touching.left_out
+        # Only the read without steps keeps to the time; the worker core reads a tile with steps (NM4-04).
+        outcome.budget = budget if steps is None else None
     bounds = mosaic_tiles.union_bounds(outlines)
     if steps is None:
         scenes = tuple(
             _open_ref(state, refs[(item_id, asset[0])], target_gsd=target_gsd_for(request, items[item_id]))
             for item_id in read
         )
-        return MosaicScenes(dataset, scenes, bounds)
+        return MosaicScenes(dataset, scenes, bounds, budget)
     run_steps = steps if plan is None else list(plan.steps)
     described = _describe_mosaic(items, refs, config=config, order=order, assets=asset, steps=run_steps)
     scenes_with_steps = tuple(
@@ -948,9 +949,8 @@ async def scene_order(
 ) -> dict[str, list[str]]:
     """The order a mosaic reads these scenes in, without a mosaic: ``{"order": [item id, ...]}`` (NM4-24).
 
-    For a pass the mosaic tile cannot take (more than 64 scenes, a mosaic the tile refused, a dataset released below
-    z8 only) the map draws the scenes one by one; this answers with the order of :func:`mosaic_order` so that they
-    lie in an overlap as the mosaic, the crop and the export have them. The ids travel in the body, as 64 and more of
+    For a pass the mosaic tile cannot take (more than 64 scenes, a mosaic the tile refused) the map draws the scenes
+    one by one; this answers with the order of :func:`mosaic_order` so that they lie in an overlap as the mosaic, the crop and the export have them. The ids travel in the body, as 64 and more of
     them do not belong in a URL. Only the items and the CRS of the asset are read, no pixel; the licence tier and
     the item cache are those of the mosaic tile.
     """
@@ -1068,6 +1068,28 @@ EXPORT_JOB_HEADER = "X-Export-Job"
 EXPORT_JOB_AVAILABLE = "available"
 EXPORT_JOB_TOO_LARGE = "too-large"
 
+# The longest a crop may be estimated to take and still run in the request (adr/0032 §10.3, F13, Otto 11.11.2026).
+# Replaces the fixed 25 scenes: the estimate of `processing.plan` counts the files opened and the megabytes read.
+MAX_CROP_SECONDS = 60.0
+
+
+def estimated_crop_seconds(files: int, input_bytes: int) -> float:
+    """Seconds a crop is estimated to take: a first open per file plus the time per megabyte (adr/0014 §5.5)."""
+    from earthx.processing.plan import SECONDS_PER_ASSET, SECONDS_PER_INPUT_MB
+
+    return SECONDS_PER_ASSET * files + SECONDS_PER_INPUT_MB * input_bytes / 1_000_000
+
+
+def _export_job_headers(config: DatasetConfig, planned_total: int) -> dict[str, str] | None:
+    """Whether the refused crop fits an export job (M4-11 K5): COG only (F6), under the job's own cap (F5).
+
+    A word, no number and no geometry, like ``X-Skipped-Groups``.
+    """
+    if config.zarr is not None:
+        return None
+    return {EXPORT_JOB_HEADER: EXPORT_JOB_AVAILABLE if planned_total <= MAX_JOB_BYTES else EXPORT_JOB_TOO_LARGE}
+
+
 # The stages of `OrderRefused` at which a crop is refused rather than delivered without
 # its `recipe.json` (Otto, 07.10.2026): a foreign host, an input gone from its source.
 _RECIPE_ABORTS = frozenset({"hosts", "version"})
@@ -1157,8 +1179,9 @@ async def download_crop(
     Every check that can run before an asset is opened runs first, in the order
     M2-06's acceptance criteria list the failures: unknown dataset, licence tier,
     a malformed AOI, an unknown item, an AOI that touches none of the given items,
-    the item-count cap, then the output size cap (M3-18: built from the AOI and
-    the items' own metadata, not from how many items or assets were asked for)
+    the item-count guard, then the output size cap (M3-18: built from the AOI and
+    the items' own metadata, not from how many items or assets were asked for),
+    then the estimated duration (:data:`MAX_CROP_SECONDS`, adr/0032 §10.3)
     — only after all of that does anything reach `gateway`.
 
     **Per group, not per item (M3-17).** ``body.groups`` names one or more
@@ -1280,15 +1303,20 @@ async def download_crop(
     try:
         check_output_size_cap([output for planned in planned_by_group for output in planned])
     except AoiTooLarge as error:
-        # Over the synchronous cap, the same selection may still run as an export job (M4-11 K5):
-        # COG only (F6), under the job's own cap (F5). A word, no number and no geometry, like
-        # `X-Skipped-Groups` below.
-        if config.zarr is None:
-            fits = planned_total <= MAX_JOB_BYTES
-            headers = {EXPORT_JOB_HEADER: EXPORT_JOB_AVAILABLE if fits else EXPORT_JOB_TOO_LARGE}
-        else:
-            headers = None
-        raise HTTPException(status_code=413, detail=str(error), headers=headers) from None
+        # Over the synchronous cap, the same selection may still run as an export job (M4-11 K5).
+        raise HTTPException(status_code=413, detail=str(error), headers=_export_job_headers(config, planned_total)) from None
+    # After the size cap, so that no size refusal changes its place. The files the crop opens: every scene of
+    # every group, once per wanted asset.
+    seconds = estimated_crop_seconds(sum(len(matched) for matched, _ in surviving_groups) * len(wanted), planned_total)
+    if seconds > MAX_CROP_SECONDS:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"This crop would take about {seconds:.0f} s; at most {MAX_CROP_SECONDS:.0f} s run here. "
+                + ("Run it as a job." if config.zarr is None else "Select fewer scenes or draw a smaller area.")
+            ),
+            headers=_export_job_headers(config, planned_total),
+        )
 
     # The scenes of a group are read in the order of the mosaic job and the mosaic tile, not in the
     # order of the selection (NM4-02): where scenes overlap, the crop then keeps the pixels the
@@ -1609,6 +1637,8 @@ def build_app(
     policy = policy_from_registry(registry)
     app = FastAPI(title="earthx-tiler", lifespan=lifespan)
     app.add_middleware(RequestIdMiddleware)
+    # The headers of a mosaic tile that shows a part of its scenes (adr/0032 §6.2): known only once it is read.
+    app.add_middleware(mosaic_tiles.TileOutcomeHeaders)
     # Read at request time through the two small dependencies above, so a route
     # never closes over something a test cannot replace.
     app.state.earthx_policy = policy

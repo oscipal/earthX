@@ -438,7 +438,7 @@ describe('whole scenes', () => {
   });
 
   it('a refusal of the estimate is told and locks "Download"', async () => {
-    estimate = () => json({ detail: 'This order names 30 items; at most 25 fit in one order' }, 413);
+    estimate = () => json({ detail: 'This order names 2001 items; at most 2000 fit in one order' }, 413);
     await open('originals');
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     await click(button('One multi-band file'));

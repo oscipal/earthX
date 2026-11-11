@@ -433,7 +433,7 @@ describe('previewSpec: the mosaic of a job (NM4-04b)', () => {
   const items = ids.map((id) => item(id, { gsd: 10 }));
   const plan = ready([bandMath('(nir - red) / (nir + red)')]);
   const base = { dataset: DATASET, items, assets: ['red', 'nir'], info: S2, range: DEFAULT_RANGE, area: 'scene' as const, plan, jobs: [items] };
-  // The dataset is released below the first level of a mosaic, so that single scenes can stand under it.
+  // A dataset released from a lower level than the default one: the mosaic starts at the dataset's own first level.
   const wide: DatasetOption = { ...DATASET, zoom: { min: 5, max: 14 } };
   const taken = (order: string[]): MosaicAnswer => ({ state: 'taken', order });
   const query = (url: string) => new URL(url, 'http://localhost');
@@ -490,29 +490,34 @@ describe('previewSpec: the mosaic of a job (NM4-04b)', () => {
     expect(spec.scenes).toHaveLength(4);
   });
 
-  it('stacks the scenes below the first level of the mosaic in the order of the tiler, and measures the first', () => {
+  it('starts the mosaic at the first level of the dataset and draws no scene below it, and measures the first it reads', () => {
     const answers = new Map([[previewSpec({ ...base, dataset: wide })!.mosaics[0].probe, taken(['S2_D', 'S2_B', 'S2_A', 'S2_C'])]]);
     const spec = previewSpec({ ...base, dataset: wide, answers })!;
     expect(spec.mosaics[0].order).toEqual(['S2_D', 'S2_B', 'S2_A', 'S2_C']);
-    expect(spec.scenes.map((s) => [s.id, s.below])).toEqual([['S2_D', 8], ['S2_B', 8], ['S2_A', 8], ['S2_C', 8]]);
+    // The tiler has every level the dataset is released for (adr/0032 §6.2), so no scene has to stand under the mosaic.
+    expect(spec.scenes).toEqual([]);
     expect(query(spec.measure).pathname).toBe('/collections/sentinel-2-c1-l2a/items/S2_D/statistics');
     const overlays = previewOverlays(spec, null);
-    // The mosaic's tiles are 512 px: its last level is one below the scenes' (13), and it is asked for from map zoom 7.5,
-    // where the scenes step aside (NM4-29b).
+    // The mosaic's tiles are 512 px: its last level is one below the scenes' (13).
     expect(spec.maxZoom).toBe(13);
-    expect(overlays[0]).toMatchObject({ minZoom: 8, maxZoom: 12, preview: true });
+    expect(overlays).toHaveLength(1);
+    expect(overlays[0]).toMatchObject({ minZoom: 5, maxZoom: 12, preview: true });
     expect(overlays[0]).not.toHaveProperty('hideFrom');
-    expect(overlays.slice(1).map((o) => o.kind === 'raster' && [o.minZoom, o.maxZoom, o.hideFrom])).toEqual(
-      Array(4).fill([5, 7, 7.5]),
-    );
-    expect(overlays.map((o) => o.kind === 'raster' && tileSizeOf(o.tileUrl))).toEqual([512, 256, 256, 256, 256]);
-    expect(overlays.slice(1).map((o) => o.kind === 'raster' && query(o.tileUrl).pathname.split('/')[4])).toEqual(['S2_D', 'S2_B', 'S2_A', 'S2_C']);
+    expect(tileSizeOf((overlays[0] as { tileUrl: string }).tileUrl)).toBe(512);
   });
 
   it('adds the scenes an answer leaves out, by id, and ignores the ones it makes up', () => {
     const probe = previewSpec(base)!.mosaics[0].probe;
     const answers = new Map([[probe, taken(['S2_C', 'X', 'S2_C', 'S2_B'])]]);
     expect(previewSpec({ ...base, answers })!.mosaics[0].order).toEqual(['S2_C', 'S2_B', 'S2_A', 'S2_D']);
+  });
+
+  it('draws a pass of a dataset released only at coarse levels as a mosaic, from the first level of the dataset', () => {
+    const spec = previewSpec({ ...base, dataset: { ...DATASET, zoom: { min: 2, max: 7 } } })!;
+    expect(spec).toMatchObject({ perScene: false, scenes: [] });
+    expect(spec.mosaics).toHaveLength(1);
+    expect(spec.mosaics[0].minZoom).toBe(2);
+    expect(previewOverlays(spec, null)[0]).toMatchObject({ minZoom: 2, preview: true });
   });
 
   it('draws no scene below a mosaic where the dataset starts at its first level', () => {
@@ -544,10 +549,6 @@ describe('previewSpec: the mosaic of a job (NM4-04b)', () => {
       scenesOnly(previewSpec({ ...base, items: sixtyFive, jobs: [sixtyFive] }));
       const sixtyFour = many(MAX_MOSAIC_SCENES);
       expect(previewSpec({ ...base, items: sixtyFour, jobs: [sixtyFour] })!.mosaics).toHaveLength(1);
-    });
-
-    it('for a dataset released only below the first level of a mosaic', () => {
-      scenesOnly(previewSpec({ ...base, dataset: { ...DATASET, zoom: { min: 2, max: 7 } } }));
     });
 
     it('for a request longer than the tiler takes, and keeps the mosaic at the limit', () => {
@@ -582,14 +583,13 @@ describe('previewSpec: the mosaic of a job (NM4-04b)', () => {
       expect(spec.scenes.map((s) => s.id)).toEqual(big.map((b) => b.id).slice(0, MAX_PREVIEW_SCENES - 1));
     });
 
-    it('keeps the scenes drawn alone when a mosaic is big, and fills the rest with the scenes below it', () => {
+    it('keeps the places of the scenes drawn alone when a mosaic is big, and takes one of them for the mosaic', () => {
       const big = Array.from({ length: 45 }, (_, i) => item(`A${String(i).padStart(2, '0')}`, { gsd: 10 }));
-      const lone = item('B_LONE', { gsd: 10 });
-      const spec = previewSpec({ ...base, dataset: wide, items: [...big, lone], jobs: [big, [lone]] })!;
+      const lone = Array.from({ length: MAX_PREVIEW_SCENES + 5 }, (_, i) => item(`B${String(i).padStart(2, '0')}`, { gsd: 10 }));
+      const spec = previewSpec({ ...base, dataset: wide, items: [...big, ...lone], jobs: [big, ...lone.map((l) => [l])] })!;
       expect(spec.mosaics).toHaveLength(1);
-      expect(spec.scenes).toHaveLength(MAX_PREVIEW_SCENES - 1);
-      expect(spec.scenes.filter((s) => s.below === undefined).map((s) => s.id)).toEqual(['B_LONE']);
-      expect(spec.scenes.filter((s) => s.below !== undefined)).toHaveLength(MAX_PREVIEW_SCENES - 2);
+      expect(spec.scenes.map((s) => s.id)).toEqual(lone.map((l) => l.id).slice(0, MAX_PREVIEW_SCENES - 1));
+      expect(spec.scenes.every((s) => s.below === undefined)).toBe(true);
     });
 
     it('with the hint a person can read', () => {

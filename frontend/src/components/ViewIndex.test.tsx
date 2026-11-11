@@ -30,7 +30,7 @@ const collection = (presets: unknown[] | null, trueColor = true): Collection =>
     'earthx:format': 'cog',
     'earthx:capabilities': { roi: true, time_range: true, band_math: true, interpolation: true },
     'earthx:default_render': { title: 'True colour', assets: ['visual'], rescale: [[0, 3000]], colormap_name: null, expression: null, resampling: 'nearest' },
-    'earthx:viewer': { group_by: ['datetime'], min_zoom: 8, max_zoom: 14, browse: 'quicklook', quicklook_nodata_max: null, results_group_by: ['datetime'] },
+    'earthx:viewer': { group_by: ['datetime'], min_zoom: 8, max_zoom: 14, browse: 'quicklook', quicklook_nodata_max: null, results_group_by: ['datetime'], overview: 'pyramid' as const, overview_resampling: 'average' as const },
     ...(trueColor ? { 'earthx:true_color': ['red', 'green', 'blue'] } : {}),
     ...(presets ? { 'earthx:index_presets': presets } : {}),
   }) as unknown as Collection;
@@ -262,7 +262,7 @@ describe('the note under the settings', () => {
   it('asks to zoom in where the map is too far out, and says why in its tooltip', () => {
     mount(SENTINEL_2_PRESETS, { mapZoom: 5, appliedRender: { index: 'NDVI', colormapName: 'rdylgn', rescale: '-1,1' } });
     expect(note()!.textContent).toBe('Zoom in to compute NDVI');
-    expect(tipOf(note()!)).toBe('The quick calculation works from zoom 8. For whole scenes start a job in Processing.');
+    expect(tipOf(note()!)).toBe('The quick calculation starts at the zoom where the image does. For whole scenes start a job in Processing.');
     expect(select().value).toBe('index:NDVI'); // the choice stays
   });
 

@@ -57,6 +57,8 @@ describe('LayerManager', () => {
           browse: 'quicklook',
           quicklook_nodata_max: null,
           results_group_by: ['datetime'],
+          overview: 'own' as const,
+          overview_resampling: null,
         },
       },
     ]);

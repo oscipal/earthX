@@ -109,6 +109,8 @@ function viewable(
       browse: 'quicklook',
       quicklook_nodata_max: null,
       results_group_by: ['datetime'],
+      overview: 'pyramid' as const,
+      overview_resampling: 'average' as const,
     },
     ...(filters ? { 'earthx:search_filters': filters } : {}),
     ...(mask ? { 'earthx:mask': mask } : {}),

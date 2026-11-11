@@ -307,6 +307,8 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
         # the key the results list and the download route group by (P19) —
         # separate from `group_by` because a dataset may head its results
         # display by a property `group_by` deliberately does not use (M3-02 F-01).
+        # `overview` and `overview_resampling` (M5-30b, adr/0032 §9) say what is
+        # shown below `min_zoom`; the viewer reads them through and decides nothing.
         "earthx:viewer": (
             None
             if config.viewer is None
@@ -317,6 +319,10 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
                 "browse": config.viewer.browse.value,
                 "quicklook_nodata_max": config.viewer.quicklook_nodata_max,
                 "results_group_by": list(config.viewer.results_group_by),
+                "overview": config.viewer.overview.value,
+                "overview_resampling": (
+                    None if config.viewer.overview_resampling is None else config.viewer.overview_resampling.value
+                ),
             }
         ),
         "earthx:source": {

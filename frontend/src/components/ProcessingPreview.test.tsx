@@ -686,9 +686,14 @@ describe('the preview section', () => {
       statistics = () => measured({ b1: DEM_VALUES });
       await withNdvi();
       const seen: Array<string | null> = [];
-      useProcessingStore.subscribe((s) => seen.push(s.preview && new URL(s.preview.scenes[0].url, 'http://localhost').searchParams.get('rescale')));
-      typeInto(expression(), 'nir / red');
-      await afterDebounce();
+      // Stopped at the end: a later test's preview may have no scene of its own (a mosaic does not need one).
+      const stop = useProcessingStore.subscribe((s) => seen.push(s.preview && new URL(s.preview.scenes[0].url, 'http://localhost').searchParams.get('rescale')));
+      try {
+        typeInto(expression(), 'nir / red');
+        await afterDebounce();
+      } finally {
+        stop();
+      }
       expect(new Set(seen.filter((r) => r !== null))).toEqual(new Set(['120,2400']));
     });
 
@@ -818,11 +823,16 @@ describe('the preview section', () => {
       const slow = () => {
         statistics = () => new Promise<Response>((resolve) => (answer = resolve)) as unknown as Response;
       };
+      // Stopped after each test: a later test's preview may have no scene of its own (a mosaic does not need one).
+      const watching: Array<() => void> = [];
+      afterEach(() => watching.splice(0).forEach((stop) => stop()));
       const drawn = () => {
         const seen: Array<string | null> = [];
-        useProcessingStore.subscribe((s, prev) => {
-          if (s.preview !== prev.preview) seen.push(s.preview && new URL(s.preview.scenes[0].url, 'http://localhost').searchParams.get('rescale'));
-        });
+        watching.push(
+          useProcessingStore.subscribe((s, prev) => {
+            if (s.preview !== prev.preview) seen.push(s.preview && new URL(s.preview.scenes[0].url, 'http://localhost').searchParams.get('rescale'));
+          }),
+        );
         return seen;
       };
       const start = async () => {
@@ -1824,7 +1834,7 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
   const mosaicRefused = (status: number, detail: string) => (url: string) =>
     url.includes('/mosaic/') ? reply(status, { detail }) : json({ tilejson: '3.0.0' });
 
-  // A dataset released below the first level of a mosaic, so that scenes can stand under it.
+  // A dataset released from a lower level than the default one: the mosaic starts at the dataset's own first level.
   function selectWide(items: StacItem[]) {
     select(items);
     useAppStore.setState({ datasets: [{ ...(dataset() as Extract<DatasetOption, { viewable: true }>), zoom: { min: 5, max: 14 } }] });
@@ -1848,7 +1858,7 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
   const dockBadge = () => container.querySelector('.preview-badge-dock .badge:not(.loading)');
   const panelBadge = () => section().querySelector('.badge');
 
-  it('draws one job over a pass as its mosaic with the steps, and the scenes below it in the order of the tiler', async () => {
+  it('draws one job over a pass as its mosaic with the steps from the first level of the dataset, and no scene below it', async () => {
     tilejson = taking(['S2B_B', 'S2B_C', 'S2B_A']);
     selectWide([scene('S2B_C'), scene('S2B_A'), scene('S2B_B')]);
     await typeNdvi();
@@ -1860,7 +1870,8 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
     expect(url.searchParams.getAll('asset')).toEqual(['red', 'nir']);
     expect(url.searchParams.getAll('op')).toEqual(['band_math']);
     expect(JSON.parse(url.searchParams.get('params')!)).toEqual({ expression: '(nir - red) / (nir + red)', name: 'result' });
-    expect(preview.scenes.map((scene) => [scene.id, scene.below])).toEqual([['S2B_B', 8], ['S2B_C', 8], ['S2B_A', 8]]);
+    expect(preview.mosaics[0]).toMatchObject({ minZoom: 5, order: ['S2B_B', 'S2B_C', 'S2B_A'] });
+    expect(preview.scenes).toEqual([]);
     expect(preview.perScene).toBe(false);
     // The tiler is asked about the mosaic, not about a scene; the colour scale is measured over the scene that wins.
     expect(asks('/mosaic/')).toHaveLength(1);
@@ -1988,7 +1999,8 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
     const preview = store().preview!;
     expect(preview.stepCount).toBe(1);
     expect(preview.mosaics).toHaveLength(1);
-    expect(preview.scenes.map((s) => s.id)).toEqual(['S2B_B', 'S2B_A']);
+    expect(preview.mosaics[0].order).toEqual(['S2B_B', 'S2B_A']);
+    expect(preview.scenes).toEqual([]);
     expect(preview.perScene).toBe(false);
     expect(query(preview.mosaics[0].url).searchParams.getAll('op')).toEqual(['band_math']);
     expect(store().previewNote).toBe(
@@ -2078,19 +2090,17 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
     expect(asks('/mosaic/')).toHaveLength(0);
   });
 
-  it('puts the mosaic and the scenes under it into the layer it pins', async () => {
+  it('puts the mosaic, from the first level of the dataset, into the layer it pins, with no scene under it', async () => {
     tilejson = taking(['S2B_B', 'S2B_A']);
     selectWide([scene('S2B_A'), scene('S2B_B')]);
     await typeNdvi();
     click(button(/Add preview to layers/));
     const layer = useAppStore.getState().layers[0];
-    expect(layer.overlays).toHaveLength(3);
-    // Bottom to top: the scenes, the first one on top of them, then the mosaic.
-    const tiles = layer.overlays.map((o) => (o.kind === 'raster' ? query(o.tileUrl).pathname.split('/')[3] : null));
-    expect(tiles).toEqual(['items', 'items', 'mosaic']);
-    const mosaic = layer.overlays[2];
-    expect(mosaic).toMatchObject({ kind: 'raster', minZoom: 8, preview: true });
-    expect(layer.overlays[0]).toMatchObject({ kind: 'raster', maxZoom: 7, hideFrom: 7.5, preview: true });
+    expect(layer.overlays).toHaveLength(1);
+    const mosaic = layer.overlays[0];
+    expect(mosaic.kind === 'raster' && query(mosaic.tileUrl).pathname.split('/')[3]).toBe('mosaic');
+    expect(mosaic).toMatchObject({ kind: 'raster', minZoom: 5, preview: true });
+    expect(mosaic).not.toHaveProperty('hideFrom');
     expect(layer.restore.itemIds).toEqual(['S2B_B', 'S2B_A']);
   });
 
