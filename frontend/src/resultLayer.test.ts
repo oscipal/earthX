@@ -157,7 +157,7 @@ describe('the statistics of a result', () => {
 
 describe('the colour scale of a result (plan §6.7)', () => {
   // Otto, 11.11.2026: drawn as it is only for classes; Sentinel-2 as uint16 and heights as int16 are quantities.
-  it.each(['uint8', 'uint16', 'int16', 'uint32', 'int32'])('is 2–98 %% in viridis for whole numbers of %s too', (dataType) => {
+  it.each(['uint8', 'uint16', 'int16', 'uint32', 'int32'])('is the 2nd to 98th percentile in viridis for whole numbers of %s too', (dataType) => {
     expect(resultRender(dataType, DEFAULT_RANGE, stats(dem))).toEqual({ rescale: '180,1900', colormapName: 'viridis' });
   });
 
