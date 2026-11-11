@@ -363,7 +363,7 @@ class TestTheTileJson:
         assert response.status_code == 200, response.text
         body = response.json()
         assert body["earthx:order"] == ["EAST", "FAR", "WEST"]
-        assert (body["minzoom"], body["maxzoom"]) == (8, 19)
+        assert (body["minzoom"], body["maxzoom"]) == (0, 19)
         west, south, east, north = body["bounds"]
         assert west < scenes.items["WEST"]["bbox"][0] + 1e-9 and east > scenes.items["FAR"]["bbox"][2] - 1e-9
         assert south < north
@@ -397,8 +397,11 @@ class TestTheTileJson:
         api = client()
         narrowed = api.get(f"{BASE}/WebMercatorQuad/tilejson.json", params=_query(["WEST", "EAST"], minzoom="10"))
         assert narrowed.status_code == 200 and narrowed.json()["minzoom"] == 10
-        below = api.get(f"{BASE}/WebMercatorQuad/tilejson.json", params=_query(["WEST", "EAST"], minzoom="5"))
-        assert below.status_code == 400  # a mosaic starts at z8, though the registry releases the dataset from z0
+        # Every released level has a mosaic since M5-30b (adr/0032 §6.2); the registry releases this dataset from z0.
+        low = api.get(f"{BASE}/WebMercatorQuad/tilejson.json", params=_query(["WEST", "EAST"], minzoom="0"))
+        assert low.status_code == 200 and low.json()["minzoom"] == 0
+        above = api.get(f"{BASE}/WebMercatorQuad/tilejson.json", params=_query(["WEST", "EAST"], maxzoom="25"))
+        assert above.status_code == 400
 
 
 class TestAnswersToWrongRequests:
@@ -445,18 +448,55 @@ class TestAnswersToWrongRequests:
         del scenes.items["EAST"]["properties"]["s2:datatake_id"]
         assert client().get(_tile_path(), params=_query(["WEST", "EAST"])).status_code == 502
 
-    def test_more_scenes_than_a_tile_reads_is_a_422_zoom_in(self, scenes: Scenes, client) -> None:
+    def test_more_scenes_than_the_budget_are_read_up_to_it_and_the_rest_is_said_in_a_header(
+        self, scenes: Scenes, client
+    ) -> None:
+        """adr/0032 §6.2: the first scenes of the mosaic's order up to the budget, the same picture for the same URL."""
         scenes.add("S00", ZONE_32, SEAM_X - 5000.0, 10_000.0, 10)
-        names = ["S00"] + [f"S{n:02d}" for n in range(1, mosaic_tiles.MAX_SCENES_PER_TILE + 1)]
+        names = ["S00"] + [f"S{n:02d}" for n in range(1, mosaic_tiles.TILE_FILE_BUDGET + 2)]
         for name in names[1:]:
             scenes.alias(name, "S00")
-        response = client().get(_tile_path(), params=_query(names))
-        assert response.status_code == 422 and "zoom in" in response.json()["detail"]
-        assert scenes.opened == []
-        # the same number of scenes is fine as soon as one is away from the tile
-        scenes.alias("S99", "S00", bbox=[0.0, 0.0, 0.1, 0.1], geometry=mapping(box(0.0, 0.0, 0.1, 0.1)))
-        ok = client().get(_tile_path(), params=_query(names[:-1] + ["S99"]))
-        assert ok.status_code == 200, ok.text
+        api = client()
+        first = api.get(_tile_path(), params=_query(names))
+        assert first.status_code == 200, first.text
+        assert first.headers[mosaic_tiles.PARTIAL_HEADER] == "2"
+        assert "no-store" not in first.headers.get("cache-control", "")
+        again = api.get(_tile_path(), params=_query(list(reversed(names))))
+        assert again.content == first.content
+        # within the budget the header is not there
+        within = api.get(_tile_path(), params=_query(names[: mosaic_tiles.TILE_FILE_BUDGET]))
+        assert within.status_code == 200 and mosaic_tiles.PARTIAL_HEADER not in within.headers
+
+    def test_a_tile_whose_time_runs_out_is_not_stored_anywhere(
+        self, scenes: Scenes, client, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _seam(scenes)
+        monkeypatch.setattr(mosaic_tiles, "TILE_TIME_BUDGET_S", 1e-9)
+        response = client().get(_tile_path(), params=_query(["WEST", "EAST"]))
+        assert response.status_code == 503, response.text
+        assert response.headers["cache-control"] == "no-store"
+        assert response.headers[mosaic_tiles.PARTIAL_HEADER] == "time"
+
+    def test_the_time_budget_does_not_reach_the_tilejson_or_a_tile_of_one_item(
+        self, scenes: Scenes, client, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _seam(scenes)
+        monkeypatch.setattr(mosaic_tiles, "TILE_TIME_BUDGET_S", 1e-9)
+        api = client()
+        tilejson = api.get(f"{BASE}/WebMercatorQuad/tilejson.json", params=_query(["WEST", "EAST"]))
+        assert tilejson.status_code == 200 and mosaic_tiles.PARTIAL_HEADER not in tilejson.headers
+
+    def test_the_file_budget_counts_the_assets_of_each_scene(self) -> None:
+        outlines = {f"S{n}": box(-1.0, -1.0, 1.0, 1.0) for n in range(20)}
+        grid = (TMS, TMS.tile(0.0, 0.0, 10))
+        order = sorted(outlines)
+        one = mosaic_tiles.scenes_touching(order, outlines, grid)
+        four = mosaic_tiles.scenes_touching(order, outlines, grid, files_per_scene=4)
+        assert (len(one.read), one.left_out) == (20, 0)
+        assert four.read == order[: mosaic_tiles.TILE_FILE_BUDGET // 4]
+        assert four.left_out == 20 - mosaic_tiles.TILE_FILE_BUDGET // 4
+        with pytest.raises(ValueError):
+            mosaic_tiles.scenes_touching(order, outlines, grid, files_per_scene=0)
 
     def test_a_tile_no_scene_touches_is_a_404(self, scenes: Scenes, client) -> None:
         _seam(scenes)
@@ -467,11 +507,13 @@ class TestAnswersToWrongRequests:
         assert response.status_code == 404
         assert scenes.opened == []
 
-    def test_below_z8_it_is_a_400_before_any_item_is_fetched(self, scenes: Scenes, client) -> None:
+    def test_below_z8_it_is_a_mosaic_too(self, scenes: Scenes, client) -> None:
+        """adr/0032 §6.2: the first zoom level of a mosaic is the dataset's, not z8."""
         _seam(scenes)
-        response = client().get(_tile_path(7, 64, 41), params=_query(["WEST", "EAST"]))
-        assert response.status_code == 400 and "z8" in response.json()["detail"]
-        assert scenes.fetched == []
+        low = TMS.tile(*TMS.lnglat(*TMS.xy_bounds(TILE)[:2]), 3)
+        response = client().get(_tile_path(low.z, low.x, low.y), params=_query(["WEST", "EAST"]))
+        assert response.status_code == 200, response.text
+        assert mosaic_tiles.PARTIAL_HEADER not in response.headers
 
     def test_a_level_the_dataset_is_not_released_for_is_a_400_before_any_item_is_fetched(
         self, scenes: Scenes, client
@@ -495,14 +537,16 @@ class TestAnswersToWrongRequests:
         assert api.get(f"{path}/WebMercatorQuad/tilejson.json", params=_query(["WEST", "EAST"])).status_code == 501
         assert scenes.fetched == []
 
-    def test_a_dataset_released_only_below_z8_has_no_mosaic(self, scenes: Scenes, client) -> None:
+    def test_a_dataset_released_only_below_z8_has_its_mosaic_there(self, scenes: Scenes, client) -> None:
         _seam(scenes)
         api = client()
         api.app.state.earthx_registry = DatasetRegistry(
             (replace(SYNTHETIC, viewer=replace(SYNTHETIC.viewer, min_zoom=2, max_zoom=7)),)
         )
-        for path in (_tile_path(), f"{BASE}/WebMercatorQuad/tilejson.json"):
-            assert api.get(path, params=_query(["WEST", "EAST"])).status_code == 400, path
+        body = api.get(f"{BASE}/WebMercatorQuad/tilejson.json", params=_query(["WEST", "EAST"])).json()
+        assert (body["minzoom"], body["maxzoom"]) == (2, 7)
+        scenes.fetched.clear()
+        assert api.get(_tile_path(), params=_query(["WEST", "EAST"])).status_code == 400  # z12 is not released
         assert scenes.fetched == []
 
     def test_a_dataset_released_from_a_higher_level_starts_its_mosaic_there(self, scenes: Scenes, client) -> None:

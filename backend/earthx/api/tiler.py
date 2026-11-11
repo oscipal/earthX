@@ -80,7 +80,7 @@ from earthx.access.download import (
     parse_aoi_geometry,
     plan_outputs,
 )
-from earthx.access.mosaic_tiles import EarthxMosaicTilerFactory, MosaicScenes, open_mosaic
+from earthx.access.mosaic_tiles import EarthxMosaicTilerFactory, MosaicScenes, ReadBudget, open_mosaic
 from earthx.access.resolve import (
     AssetNotOnItem,
     InvalidAssetKey,
@@ -793,22 +793,16 @@ async def _validate_before_fetching(request: Request) -> None:
 
 
 def _mosaic_zooms(config: DatasetConfig) -> tuple[int, int]:
-    """The levels a mosaic tile of this dataset serves: the released range, from z8 up (plan M4-17 §5).
+    """The levels a mosaic tile of this dataset serves: the released range (adr/0032 §6.2).
 
-    ``501`` without a released range, ``400`` for a dataset released only below the first level a
-    mosaic starts at — both before any item is fetched.
+    Since M5-30b every released level has a mosaic; the budget per tile bounds what one costs. ``501`` without a
+    released range, before any item is fetched.
     """
     if config.viewer is None:
         raise HTTPException(
             status_code=501, detail=f"{config.dataset_id!r} names no released zoom range (earthx:viewer)"
         )
-    low, high = config.viewer.min_zoom, config.viewer.max_zoom
-    if high < mosaic_tiles.MIN_MOSAIC_ZOOM:
-        raise HTTPException(
-            status_code=400,
-            detail=f"{config.dataset_id!r} is released up to z{high}; mosaic tiles start at z{mosaic_tiles.MIN_MOSAIC_ZOOM}",
-        )
-    return max(low, mosaic_tiles.MIN_MOSAIC_ZOOM), high
+    return config.viewer.min_zoom, config.viewer.max_zoom
 
 
 def _mosaic_zoom_range(request: Request) -> tuple[int, int]:
@@ -896,16 +890,23 @@ async def mosaic_scenes(
             )
     try:
         order = mosaic_order({item_id: refs[(item_id, asset[0])].crs for item_id in ids})
-        read = order if grid is None else mosaic_tiles.scenes_touching(order, outlines, grid)
+        touching = None if grid is None else mosaic_tiles.scenes_touching(order, outlines, grid, files_per_scene=len(asset))
     except OrderRefused as error:
         raise HTTPException(status_code=error.status_code, detail=error.detail) from None
+    read = order if touching is None else touching.read
+    outcome = mosaic_tiles.TileOutcome.of(request.scope)
+    budget = None if grid is None else ReadBudget(mosaic_tiles.TILE_TIME_BUDGET_S)
+    if outcome is not None and touching is not None:
+        outcome.left_out = touching.left_out
+        # Only the read without steps keeps to the time; the worker core reads a tile with steps (NM4-04).
+        outcome.budget = budget if steps is None else None
     bounds = mosaic_tiles.union_bounds(outlines)
     if steps is None:
         scenes = tuple(
             _open_ref(state, refs[(item_id, asset[0])], target_gsd=target_gsd_for(request, items[item_id]))
             for item_id in read
         )
-        return MosaicScenes(dataset, scenes, bounds)
+        return MosaicScenes(dataset, scenes, bounds, budget)
     run_steps = steps if plan is None else list(plan.steps)
     described = _describe_mosaic(items, refs, config=config, order=order, assets=asset, steps=run_steps)
     scenes_with_steps = tuple(
@@ -948,9 +949,8 @@ async def scene_order(
 ) -> dict[str, list[str]]:
     """The order a mosaic reads these scenes in, without a mosaic: ``{"order": [item id, ...]}`` (NM4-24).
 
-    For a pass the mosaic tile cannot take (more than 64 scenes, a mosaic the tile refused, a dataset released below
-    z8 only) the map draws the scenes one by one; this answers with the order of :func:`mosaic_order` so that they
-    lie in an overlap as the mosaic, the crop and the export have them. The ids travel in the body, as 64 and more of
+    For a pass the mosaic tile cannot take (more than 64 scenes, a mosaic the tile refused) the map draws the scenes
+    one by one; this answers with the order of :func:`mosaic_order` so that they lie in an overlap as the mosaic, the crop and the export have them. The ids travel in the body, as 64 and more of
     them do not belong in a URL. Only the items and the CRS of the asset are read, no pixel; the licence tier and
     the item cache are those of the mosaic tile.
     """
@@ -1609,6 +1609,8 @@ def build_app(
     policy = policy_from_registry(registry)
     app = FastAPI(title="earthx-tiler", lifespan=lifespan)
     app.add_middleware(RequestIdMiddleware)
+    # The headers of a mosaic tile that shows a part of its scenes (adr/0032 §6.2): known only once it is read.
+    app.add_middleware(mosaic_tiles.TileOutcomeHeaders)
     # Read at request time through the two small dependencies above, so a route
     # never closes over something a test cannot replace.
     app.state.earthx_policy = policy
