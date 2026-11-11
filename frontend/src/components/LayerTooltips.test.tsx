@@ -16,6 +16,7 @@ import { EXPIRED_PROCESS_TEXT, PROCESS_LAYER_TEXT, resetJobs, useProcessingStore
 import { useAppStore } from '../store';
 import type { Collection } from '../types';
 import { tipShown, type TipLevel } from '../tipLevel';
+import LayerActions from './LayerActions';
 import LayerManager from './LayerManager';
 
 declare global {
@@ -148,5 +149,17 @@ describe('the rows of a dataset, of a result and "Search results"', () => {
 
   it('have no tooltip at the name, unless it says why nothing is shown, a note or what "Search results" is', () => {
     for (const name of ['Optical · 24 Jul', 'Result · live', 'Result · deleted', 'Result · expired']) expect(at(name, 'name').hasAttribute('data-tip'), name).toBe(false);
+  });
+});
+
+describe('the actions of a layer of a deleted job in the settings bar', () => {
+  it('lock "Add current view to layers" with the reason of the row (Otto, 11.11.2026)', () => {
+    const layer = useAppStore.getState().layers.find((l) => l.id === 'deleted')!;
+    act(() => root.render(<LayerActions layer={layer} />));
+    const copy = container.querySelector<HTMLButtonElement>('.vc-copy')!;
+    expect([copy.disabled, copy.getAttribute('data-tip'), shownTip(copy, 'simple')]).toEqual([true, LOCKED_LAYER_TIP, LOCKED_LAYER_TIP]);
+    // The ZIP is locked with the same reason.
+    const download = [...container.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.includes('Download'))!;
+    expect([download.disabled, download.getAttribute('data-tip')]).toEqual([true, LOCKED_LAYER_TIP]);
   });
 });
