@@ -71,7 +71,8 @@ class FakeReader:
         # real AOI polygon against this image's own transform (bug A/M3-18 §3)
         # to decide whether any of it is real data — a bounds that does not
         # even overlap the request's own AOI would always fail that check.
-        return ImageData(data, crs="EPSG:4326", bounds=bbox)
+        # nodata as rio-tiler's own reader hands on the file's (M5-28: a uint8 crop without one is refused).
+        return ImageData(data, crs="EPSG:4326", bounds=bbox, nodata=0)
 
 
 class SourceReadFailureReader(FakeReader):
