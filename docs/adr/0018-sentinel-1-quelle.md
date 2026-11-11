@@ -830,6 +830,8 @@ freigegeben. Das ist ein Nachtrag zu F3.
   *Stand 09.11.2026:* Frontend mit DS-04c (Marken, `first_present`, Vorschau-Kacheln nach der Suche; §13);
   Quicklook auf der Karte (F11 = 1, Prüfung gegen `map-overlay.kml`) und Beschriftung der Originale (F12 = 1,
   eigener PR) beantwortet von Otto am 09.11.2026, noch nicht gebaut.
+  *Stand 11.11.2026:* F11 neu gefasst (Otto): kein Einpassen des Thumbnails, keine Marke; Datensätze mit
+  `gcp_tps` zeigen den Quicklook als Kacheln auf jeder Stufe, unter `min_zoom` nach `adr/0032` (ENTSCHEIDUNGSLOG).
 - **Teil B:** Ottos Messung (§11 C, mit CORS der Token-API); bei positivem
   Ergebnis die Nachträge aus §12 (den Satz in `ENTSCHEIDUNGEN` trägt Otto ein) und die Lizenz-Einstufung von
   `sentinel-1-rtc` (B11, Otto). Offen bleibt dann auch der lokale Runner
