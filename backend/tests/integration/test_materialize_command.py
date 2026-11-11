@@ -36,7 +36,14 @@ from earthx.catalog.pgstac import (
     upsert_items,
     use_pgstac_search_path,
 )
-from earthx.catalog.registry import AdapterKind, CoverageProvider, ItemHolding, SearchCapabilities
+from earthx.catalog.registry import (
+    AdapterKind,
+    CoverageProvider,
+    ItemHolding,
+    OverviewMode,
+    OverviewResampling,
+    SearchCapabilities,
+)
 from earthx.discovery import materialize as materialize_module
 from earthx.discovery.materialize import _policy_for, main, run_materialize
 from earthx.gateway import Policy, UpstreamError
@@ -69,6 +76,13 @@ MATERIALIZED = replace(
     # The DEM adapter stamps every item with the entry's own acquisition period
     # (adr/0011 F3), so this entry needs a closed one, as the real DEM entry has.
     temporal_extent=COP_DEM_GLO_30.temporal_extent,
+)
+
+PYRAMID = replace(
+    MATERIALIZED,
+    dataset_id="earthx-test-materialize-pyramid",
+    source=replace(MATERIALIZED.source, source_collection_id="earthx-test-materialize-pyramid"),
+    viewer=replace(MATERIALIZED.viewer, overview=OverviewMode.PYRAMID, overview_resampling=OverviewResampling.AVERAGE),
 )
 
 TILE_A = "Copernicus_DSM_COG_10_N46_00_E010_00_DEM"
@@ -112,10 +126,18 @@ def _item_count(conn: psycopg.Connection, collection_id: str) -> int:
         return cur.fetchone()[0]
 
 
-async def _run(conn: psycopg.Connection, *, tile_names: list[str], etag: str, force: bool = False):
-    """`run_materialize` against `MATERIALIZED` and a bucket answering `tile_names`."""
+async def _run(conn: psycopg.Connection, *, tile_names: list[str], etag: str, force: bool = False, config=MATERIALIZED):
+    """`run_materialize` against `MATERIALIZED` (or ``config``) and a bucket answering `tile_names`."""
     gateway = _bucket_gateway(tile_names=tile_names, etag=etag)
-    return await run_materialize(conn, MATERIALIZED, gateway=gateway, force=force)
+    return await run_materialize(conn, config, gateway=gateway, force=force)
+
+
+def _requests(conn: psycopg.Connection, dataset_id: str) -> list[tuple[str, str]]:
+    """``(source_version, version)`` of the overview requests of a dataset, oldest first."""
+    return conn.execute(
+        "SELECT source_version, version FROM public.earthx_overview_request WHERE dataset_id = %s ORDER BY requested_at",
+        (dataset_id,),
+    ).fetchall()
 
 
 class TestRunMaterializeLoadsAndIsIdempotent:
@@ -151,6 +173,58 @@ class TestRunMaterializeLoadsAndIsIdempotent:
         assert result.outcome.status == "loaded"
         assert result.items_written == 2
         assert _item_count(conn, MATERIALIZED.dataset_id) == 2
+
+
+class TestOverviewRequest:
+    """A run that loads a new source version of a pyramid dataset asks for its pyramid (M5-30b part 8b, F1)."""
+
+    async def test_a_loaded_run_of_a_pyramid_dataset_asks_for_the_pyramid_of_its_version(
+        self, conn: psycopg.Connection
+    ) -> None:
+        load_collection(conn, PYRAMID)
+        await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+
+        [(source_version, version)] = _requests(conn, PYRAMID.dataset_id)
+        assert source_version == '"v1"'
+        assert conn.execute("SELECT public.earthx_overview_version(%s)", (source_version,)).fetchone() == (version,)
+
+    async def test_a_new_version_adds_a_request_and_an_unchanged_run_adds_none(self, conn: psycopg.Connection) -> None:
+        load_collection(conn, PYRAMID)
+        await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+        unchanged = await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+        assert unchanged.outcome.status == "unchanged"
+        assert [r[0] for r in _requests(conn, PYRAMID.dataset_id)] == ['"v1"']
+
+        await _run(conn, tile_names=[TILE_A], etag='"v2"', config=PYRAMID)
+        assert [r[0] for r in _requests(conn, PYRAMID.dataset_id)] == ['"v1"', '"v2"']
+
+    async def test_a_forced_run_of_the_same_version_asks_once(self, conn: psycopg.Connection) -> None:
+        load_collection(conn, PYRAMID)
+        await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+        await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID, force=True)
+        assert [r[0] for r in _requests(conn, PYRAMID.dataset_id)] == ['"v1"']
+
+    async def test_a_dataset_without_a_pyramid_asks_for_none(self, conn: psycopg.Connection) -> None:
+        load_collection(conn, MATERIALIZED)
+        result = await _run(conn, tile_names=[TILE_A], etag='"v1"')
+        assert result.outcome.status == "loaded"
+        assert _requests(conn, MATERIALIZED.dataset_id) == []
+
+    async def test_a_failed_run_asks_for_nothing(self, conn: psycopg.Connection) -> None:
+        load_collection(conn, PYRAMID)
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(500)
+
+        async def sleep(seconds: float) -> None:
+            return None
+
+        gateway = Gateway(
+            Policy(allowed_hosts=frozenset({HOST})), transport=httpx.MockTransport(handler), resolve=_public, sleep=sleep
+        )
+        with pytest.raises(UpstreamError):
+            await run_materialize(conn, PYRAMID, gateway=gateway, force=False)
+        assert _requests(conn, PYRAMID.dataset_id) == []
 
 
 class TestForce:

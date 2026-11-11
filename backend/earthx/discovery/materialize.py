@@ -23,6 +23,9 @@ never by a plain ``docker compose up`` (M3-11b plan §3.7, F8): the source this
 command reaches (e.g. ``copernicus-dem-30m.s3.amazonaws.com``) must never be
 asked by CI or by an ordinary local start.
 
+A run that loaded a new source version of a dataset with ``viewer.overview: pyramid`` also asks for its overview
+pyramid (:func:`~earthx.catalog.pgstac.request_overview`), in the same transaction; an unchanged run asks for nothing.
+
 Connection details come from the environment (``PGHOST`` and friends), like
 ``catalog.load``. ``--force`` skips the "unchanged" check and reloads
 regardless of the last recorded source version.
@@ -56,10 +59,18 @@ from earthx.catalog.pgstac import (
     last_loaded_count,
     last_source_version,
     record_materialize_run,
+    request_overview,
     upsert_items,
     use_pgstac_search_path,
 )
-from earthx.catalog.registry import AdapterKind, ConfigError, DatasetConfig, ItemHolding, UnknownDatasetError
+from earthx.catalog.registry import (
+    AdapterKind,
+    ConfigError,
+    DatasetConfig,
+    ItemHolding,
+    OverviewMode,
+    UnknownDatasetError,
+)
 from earthx.gateway import Gateway, GatewayError, Policy, host_of, user_agent_from_env
 from earthx.logging import configure_logging
 
@@ -138,6 +149,9 @@ async def run_materialize(
             withheld=outcome.withheld,
         ),
     )
+    if config.viewer is not None and config.viewer.overview is OverviewMode.PYRAMID:
+        # A new source version of a dataset with an overview pyramid: ask the worker for one (adr/0032 §5.2, F1).
+        request_overview(conn, config.dataset_id, outcome.source_version)
     return MaterializeResult(outcome=outcome, items_written=written, items_deleted=deleted)
 
 
