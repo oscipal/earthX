@@ -1,7 +1,7 @@
 // The stacking of the view where it falls back to the scenes one by one (NM4-24), in a real browser, on the real
-// `mapLayers.ts`: two scenes that overlap completely (A red, B green), ticked in either order, drawn below the first level
-// of a mosaic. The scene on top is the same with the mosaic and with the order the tiler gave for a pass without one (A);
-// without an order it is the one that was ticked first, as before.
+// `mapLayers.ts`: two scenes that overlap completely (A red, B green), ticked in either order, drawn one by one because the
+// tiler refused the mosaic. With the order the tiler gave for the pass, the scene on top is A; without an order it is the one
+// that was ticked first, as before.
 //
 //   cd frontend && npm run dev
 //   node e2e/fallback-order.cjs        # BASE=http://localhost:5173
@@ -59,8 +59,7 @@ const name = ([r, g, b]) => (r > 200 && g < 60 && b < 60 ? 'A' : g > 200 && r < 
   };
   for (const ids of [['A', 'B'], ['B', 'A']]) {
     const label = `ticked ${ids.join(', then ')}`;
-    check(`${label}: with the mosaic, A is on top`, (await top(ids, 'mosaic')) === 'A');
-    check(`${label}: scene by scene with the order of the tiler, A is on top, the same`, (await top(ids, 'order')) === 'A');
+    check(`${label}: scene by scene with the order of the tiler, A is on top`, (await top(ids, 'order')) === 'A');
     const none = await top(ids, 'none');
     check(`${label}: scene by scene with no order, the first ticked is on top (as before)`, none === ids[0], none);
   }

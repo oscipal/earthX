@@ -21,6 +21,7 @@
 // Playwright and Chromium are not a dependency of the project (CI does not run this); the cloud session has both.
 
 const { chromium } = require('playwright');
+const { answersSelection } = require('./selectionMock.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -54,6 +55,7 @@ async function open(browser, theme, viewport) {
     const url = new URL(route.request().url());
     const json = (body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
     if (url.origin !== BASE || /^\/(src|@|node_modules|assets)/.test(url.pathname) || url.pathname === '/' || url.pathname.endsWith('.svg')) return route.continue();
+    if (answersSelection(route, url)) return;
     if (url.pathname.includes('/mosaic/') && url.pathname.endsWith('/tilejson.json')) return json({ tilejson: '3.0.0', bounds: FOOTPRINT, minzoom: 8, maxzoom: 14, 'earthx:order': SCENES });
     if (url.pathname.includes('/statistics')) return json({ b1: { min: 0, max: 4000, percentile_2: 100, percentile_98: 2900 } });
     if (url.pathname.includes('/tiles/')) return route.fulfill({ status: 200, contentType: 'image/png', body: PNG });

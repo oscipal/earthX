@@ -1,11 +1,11 @@
-// A pass of more than one mosaic takes (64 scenes, `MAX_MOSAIC_SCENES`) after "Crop and merge to AOI" (Otto's browser check
-// of swissALTI3D, 10.11.2026: the map stayed empty, even at zoom 14, until it was zoomed in and out again), in a real browser
-// with made-up tiles of 1 km and no backend:
-//   1. Without a move of the map, the tiles of the scenes are asked for and drawn: the map is not empty.
-//   2. No mosaic tile is asked for (the pass is drawn scene by scene); the order of the scenes comes from `/scene-order`.
-//   3. The note says the time step is more than one mosaic takes.
-// 70 scenes of a dataset released from z14 like swissALTI3D; light and dark theme, a wide and a narrow window. With
-// SCENES=60 the pass is one mosaic (MOSAIC=refuse: the tiler refuses it and the view falls back to the scenes).
+// A pass of many scenes after "Crop and merge to AOI" (Otto's browser check of swissALTI3D, 10.11.2026: the map stayed empty, even
+// at zoom 14, until it was zoomed in and out again), in a real browser with made-up tiles of 1 km and no backend. Since the
+// selection of a mosaic (M5-30b part 3, `adr/0032` §10.2) a pass is one mosaic up to what a selection takes (2000 scenes), so:
+//   1. Without a move of the map, the tiles are asked for and drawn: the map is not empty.
+//   2. Up to 2000 scenes the pass is one selection: no tile of a single scene and no `?item=` in any URL, whatever the number
+//      of scenes. Over 2000 (SCENES=2100) or where the tiler refuses the mosaic (MOSAIC=refuse) the scenes are drawn one by
+//      one, the 40 that lie in the view first, and their order comes from `/scene-order`.
+// 70 scenes of a dataset released from z14 like swissALTI3D; light and dark theme, a wide and a narrow window.
 //
 // In the cloud session of 10.11.2026 this did not reproduce Otto's empty map (DS-04 plan §14.6): it runs green there, with
 // made-up and with real metadata of swissALTI3D, at z12.5 and z14.2 and with slow answers. It stays as the check of the flow.
@@ -16,6 +16,7 @@
 // Playwright and Chromium are not a dependency of the project (CI does not run this); the cloud session has both.
 
 const { chromium } = require('playwright');
+const { answersSelection, isSelectionTile, scenesOfSelection } = require('./selectionMock.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -41,11 +42,28 @@ const DELAY = {
   statistics: Number(process.env.STATS_MS ?? 400),
   tilejson: Number(process.env.TILEJSON_MS ?? 800),
 };
-// For a pass of at most 64 scenes: the tiler gives its mosaic (`ok`) or refuses it (`refuse`), and the view falls back to
-// drawing the scenes one by one.
+// The tiler gives the mosaic (`ok`) or refuses it (`refuse`), and the view falls back to drawing the scenes one by one.
 const MOSAIC = process.env.MOSAIC ?? 'ok';
 const later = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
+// A tile of pure blue of 256 px: the clip to the AOI (`aoiClip.ts`) works in the pixels of the image it is given, so a tile of one pixel
+// would be cut at the edge of the AOI into a pixel of half the colour, and a mosaic tile, which is larger than a scene's, shows it.
+const PNG = (() => {
+  const zlib = require('node:zlib');
+  const row = Buffer.concat([Buffer.from([0]), Buffer.from(Array.from({ length: 256 }, () => [0, 0, 255, 255]).flat())]);
+  const chunk = (type, data) => {
+    const head = Buffer.alloc(8);
+    head.writeUInt32BE(data.length, 0);
+    head.write(type, 4, 'ascii');
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(zlib.crc32(Buffer.concat([head.subarray(4), data])), 0);
+    return Buffer.concat([head, data, crc]);
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(256, 0);
+  header.writeUInt32BE(256, 4);
+  header.set([8, 6, 0, 0, 0], 8);
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', header), chunk('IDAT', zlib.deflateSync(Buffer.concat(Array.from({ length: 256 }, () => row)))), chunk('IEND', Buffer.alloc(0))]);
+})();
 
 // The colour of one pixel of the page, read from a screenshot of it (a PNG of 1 × 1, RGB or RGBA, one IDAT chunk).
 async function pixelAt(page, x, y) {
@@ -91,10 +109,11 @@ async function run(browser, theme, viewport, results) {
   page.on('pageerror', (error) => problems.push(`the page failed: ${error.message.slice(0, 200)}`));
   const consoleErrors = [];
   page.on('console', (message) => message.type() === 'error' && consoleErrors.push(message.text().slice(0, process.env.FULL ? 4000 : 200)));
-  const asked = { scene: 0, mosaic: 0, order: 0, tilejson: 0 };
+  const asked = { scene: 0, mosaic: 0, order: 0, tilejson: 0, item: 0 };
   await page.route('**/*', async (route) => {
     const url = new URL(route.request().url());
     const json = (body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+    if (url.searchParams.has('item')) asked.item += 1;
     if (url.origin !== BASE || /^\/(src|@|node_modules|assets)/.test(url.pathname) || url.pathname === '/' || url.pathname.endsWith('.svg')) return route.continue();
     if (url.pathname === '/colormaps') return json({ groups: [] });
     if (url.pathname.endsWith('/scene-order')) {
@@ -103,14 +122,14 @@ async function run(browser, theme, viewport, results) {
       const ids = JSON.parse(route.request().postData() ?? '{}').items ?? [];
       return json({ order: [...ids].sort() });
     }
+    if (answersSelection(route, url)) return;
     if (url.pathname.includes('/mosaic/') && url.pathname.endsWith('/tilejson.json')) {
       asked.tilejson += 1;
       await later(DELAY.tilejson);
       if (MOSAIC === 'refuse') return json({ detail: 'a made-up refusal' }, 422);
-      const ids = url.searchParams.getAll('item');
-      return json({ tilejson: '3.0.0', bounds: [WEST, SOUTH, WEST + 10 * STEP, SOUTH + 7 * STEP], minzoom: 14, maxzoom: 20, 'earthx:order': ids });
+      return json({ tilejson: '3.0.0', bounds: [WEST, SOUTH, WEST + 10 * STEP, SOUTH + 7 * STEP], minzoom: 14, maxzoom: 20, 'earthx:order': scenesOfSelection(url) });
     }
-    if (url.pathname.includes('/mosaic/')) {
+    if (isSelectionTile(url.href)) {
       asked.mosaic += 1;
       await later(DELAY.tile);
       return route.fulfill({ status: 200, contentType: 'image/png', body: PNG });
@@ -164,6 +183,8 @@ async function run(browser, theme, viewport, results) {
   await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.getState().enterFocus(true));
   const notice = await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.getState().notice);
   await page.waitForTimeout(3000);
+  // What was asked for before the view settled belongs to the preview of the results, which the crop takes off the map.
+  const settled = { ...asked };
   await page.evaluate(async (zoom) => (await import('/src/store.ts')).useAppStore.setState({ flyToView: { center: [7.465, 46.96], zoom } }), THEN_ZOOM);
   await page.waitForTimeout(3000);
   const map = await page.evaluateHandle(() => {
@@ -182,9 +203,11 @@ async function run(browser, theme, viewport, results) {
   if (seen.points === 0) problems.push('the AOI is not on the screen');
   if (seen.blue < seen.points) problems.push(`the map shows the scenes at ${seen.blue} of ${seen.points} places in the AOI (${JSON.stringify(seen.colours)})`);
   const tilesAsked = asked.scene - before.scene;
-  const oneMosaic = SCENES <= 64;
-  if (!oneMosaic && asked.tilejson - before.tilejson > 0) problems.push('a mosaic was asked for over 64 scenes');
-  if (!oneMosaic && !notice?.includes('more than one mosaic takes')) problems.push(`the note says ${JSON.stringify(notice)}`);
+  const oneMosaic = SCENES <= 2000;
+  if (!oneMosaic && asked.tilejson - before.tilejson > 0) problems.push('a mosaic was asked for over 2000 scenes');
+  if (notice && MOSAIC === 'ok') problems.push(`the note says ${JSON.stringify(notice)}`);
+  if (asked.item > 0) problems.push(`${asked.item} requests name the scenes in the URL`);
+  if (oneMosaic && MOSAIC === 'ok' && asked.scene - settled.scene > 0) problems.push(`${asked.scene - settled.scene} tiles of single scenes were asked for although the pass is one mosaic`);
   const drawnTiles = tilesAsked + (oneMosaic && MOSAIC === 'ok' ? asked.mosaic - before.mosaic : 0);
   if (drawnTiles === 0) problems.push(`nothing was asked for to draw at zoom ${drawn.zoom.toFixed(1)} (${drawn.layers} layers)`);
   // The basemaps come from hosts a cloud session cannot reach (as in `map-gl6.cjs`); their failures are not judged here.
