@@ -47,6 +47,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Annotated, Any, Literal
 
+import psycopg
 from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request
 from fastapi.dependencies.utils import solve_dependencies
 from fastapi.exceptions import RequestValidationError
@@ -80,7 +81,7 @@ from earthx.access.download import (
     parse_aoi_geometry,
     plan_outputs,
 )
-from earthx.access.mosaic_tiles import EarthxMosaicTilerFactory, MosaicScenes, ReadBudget, open_mosaic
+from earthx.access.mosaic_tiles import EarthxMosaicTilerFactory, MosaicLayout, MosaicScenes, ReadBudget, open_mosaic
 from earthx.access.resolve import (
     AssetNotOnItem,
     InvalidAssetKey,
@@ -104,13 +105,16 @@ from earthx.api.citation import citation_bib
 from earthx.api.dependencies import cache_pool, policy_from_registry
 from earthx.api.item_source import (
     OrderRefused,
+    build_item_batch_source,
     build_item_source,
     check_item_holdings,
     malformed_item_detail,
 )
+from earthx.api.mosaic_selection import Selection, SelectionStore, outline_source
 from earthx.api.result_tiles import ROUTER_PREFIX as RESULT_ROUTER_PREFIX
 from earthx.api.result_tiles import ResultSources, build_result_factory
 from earthx.catalog.datasets import registry as dataset_registry
+from earthx.catalog.mosaic_selection import selection_id
 from earthx.catalog.registry import (
     AcquisitionYearMissing,
     DatasetConfig,
@@ -136,8 +140,10 @@ LOGGER = logging.getLogger("earthx.api.tiler")
 # so the two never collide.
 ROUTER_PREFIX = "/collections/{dataset}/items/{item}"
 
-# The tiles of the scenes of one overpass read as one (M4-17b); the item ids are query parameters.
+# The tiles of the scenes of one overpass read as one (M4-17b); the scenes are a selection, named by its id in the path
+# (M5-30b part 3), which `POST` to MOSAIC_SELECTION_ROUTE creates.
 MOSAIC_ROUTER_PREFIX = mosaic_tiles.ROUTER_PREFIX
+MOSAIC_SELECTION_ROUTE = "/collections/{dataset}/mosaic"
 
 # Where the tiles of a job result begin (`result_tiles.ROUTER_PREFIX` up to its identifier).
 RESULT_PATH_START = "/results/"
@@ -810,45 +816,71 @@ def _mosaic_zoom_range(request: Request) -> tuple[int, int]:
     return _mosaic_zooms(_dataset_config(request.app.state, str(request.path_params.get("dataset"))))
 
 
+_SELECTION_DATABASE_DETAIL = "mosaic tiles need the item cache and the stored selections, and the catalogue database is not reachable"
+
+
+def _selection_store(state: Any) -> SelectionStore:
+    """The store of the selections, or the ``503`` that says there is no database to keep them in."""
+    store = getattr(state, "earthx_mosaic_selections", None)
+    if getattr(state, "earthx_cache_pool", None) is None or store is None:
+        raise OrderRefused(503, _SELECTION_DATABASE_DETAIL, "items")
+    return store
+
+
+async def _load_selection(state: Any, dataset: str, selection: str) -> Selection:
+    """The selection a tile URL names: ``410`` where it is gone, ``404`` where it belongs to another dataset.
+
+    A selection that expired or never was is gone the same way for the map: it creates it again from its list, which gives
+    the same id (adr/0032 §10.2).
+    """
+    store = _selection_store(state)
+    try:
+        chosen = await store.get(selection)
+    except psycopg.Error as error:
+        # The kind of failure only: the driver's text can name the host and the user.
+        LOGGER.warning("the catalogue database failed under a mosaic tile: %s", type(error).__name__)
+        raise OrderRefused(503, _SELECTION_DATABASE_DETAIL, "items") from None
+    if chosen is None:
+        raise OrderRefused(
+            410,
+            f"no selection {selection!r}: it expired or never existed; create it again with POST /collections/{dataset}/mosaic",
+            "items",
+        )
+    if chosen.dataset_id != dataset:
+        raise OrderRefused(404, f"no selection {selection!r} of {dataset!r}", "items")
+    return chosen
+
+
 async def mosaic_scenes(
     request: Request,
     dataset: Annotated[str, Path(description="dataset id of the registry")],
-    item: Annotated[
-        list[str],
-        Query(default_factory=list, description="item ids of one overpass, each once; 2 to 64 of them"),
-    ],
-    asset: Annotated[
-        list[str],
-        Query(default_factory=list, description="asset key every scene is read from; up to four together with `op`"),
-    ],
-) -> MosaicScenes | MosaicOperatorInput:
-    """Turn dataset, item ids and asset into the scenes a mosaic tile reads, in the order it reads them.
+    selection: Annotated[str, Path(description="id of a selection, from `POST /collections/{dataset}/mosaic`")],
+) -> MosaicScenes | MosaicOperatorInput | MosaicLayout:
+    """Turn dataset and selection into the scenes a mosaic tile reads, in the order it reads them.
 
-    The path dependency of the mosaic route, in the order of plan M4-17 §4.2: everything that costs
-    no request first (licence, level, the shape of the query), then the items, then the rules that
-    need them — one overpass, the CRS of each scene, the scenes the tile touches — and last the
-    address of each scene through the gateway policy, as for the tile of one item. The target CRS and
-    the order come from the **whole** list, so a tile that touches only some scenes still picks the
-    scene the mosaic job over the same list picks (S5, `access.crop_rules.mosaic_order`).
+    The path dependency of the mosaic route, in the order of plan M4-17 §4.2: everything that costs no request first
+    (licence, level, the shape of the query), then the selection, then the items of the scenes **this tile** reads and
+    last the address of each through the gateway policy, as for the tile of one item. The selection holds the order,
+    which the creation took from the **whole** list, and the outline of each scene, so a tile that touches only some
+    scenes still picks the scene the mosaic job over the same list picks (S5, `access.crop_rules.mosaic_order`) and
+    fetches no other item (M5-30b part 3).
 
-    A TileJSON names no tile and gets every scene, in the order a tile reads them.
+    A TileJSON names no tile and fetches no item: it answers from the order and the extent the selection holds.
 
     With ``op``, ``op_version`` and ``params`` (NM4-04) the tile is the preview of the mosaic job: the steps are
     judged as on the tile of one item, and the dataset has to allow what the job's order needs — all before the
-    first item is fetched (KE1, KE2).
+    selection is read (KE1, KE2). The band the tile shows is judged on the first scene it reads.
     """
     state = request.app.state
     config = _dataset_config(state, dataset)
     _check_display_allowed(config)
     _check_zoom_released(request, config)
     _mosaic_zooms(config)
-    viewer = config.viewer
-    assert viewer is not None  # `_mosaic_zooms` answered 501 otherwise
-    with_steps = any(name in request.query_params for name in ("op", "op_version", "params"))
     try:
         mosaic_tiles.check_length(request.scope.get("raw_path") or b"", request.scope.get("query_string") or b"")
         grid = mosaic_tiles.mosaic_tile(request.path_params)
-        ids = mosaic_tiles.check_query(request.query_params, _declared_query(request), item, asset, steps=with_steps)
+        mosaic_tiles.check_selection_id(selection)
+        mosaic_tiles.check_query(request.query_params, _declared_query(request))
     except OrderRefused as error:
         raise HTTPException(status_code=error.status_code, detail=error.detail) from None
     steps = _operator_request(request, config)
@@ -862,53 +894,56 @@ async def mosaic_scenes(
                 422, f"{config.dataset_id!r} does not allow reprojection, which a mosaic of scenes may need", "applicable"
             )
         await _validate_before_fetching(request)
-        if getattr(state, "earthx_cache_pool", None) is None:
-            raise OrderRefused(
-                503, "mosaic tiles need the item cache, and the catalogue database is not reachable", "items"
-            )
-        items = await mosaic_tiles.fetch_items(state.earthx_item_fetches, state.earthx_item_source, dataset, ids)
-        mosaic_tiles.check_one_overpass(items, viewer)
-        refs = {
-            (item_id, key): _resolve_ref(items[item_id], config=config, item=item_id, asset=key)
-            for item_id in ids
-            for key in asset
-        }
-        outlines = mosaic_tiles.footprints_of(items)
+        chosen = await _load_selection(state, dataset, selection)
     except OrderRefused as error:
         raise HTTPException(status_code=error.status_code, detail=error.detail) from None
-    plan = None
-    if steps is not None:
-        # The scenes carry the same bands (`_describe_mosaic` compares them), so the first by id says which assets the
-        # shown band needs; only those are described, ordered and opened (NM4-43d).
-        entries = [_describe_one(items, refs, config, ids[0], key) for key in asset]
-        plan = _band_plan(_operator_support(), entries, steps, bands)
-        asset = list(asset if plan is None else plan.assets)
-        if len(asset) > mosaic_tiles.MAX_MOSAIC_OPERATOR_ASSETS:
-            raise HTTPException(
-                status_code=400,
-                detail=f"the tile reads {len(asset)} assets, at most {mosaic_tiles.MAX_MOSAIC_OPERATOR_ASSETS}",
-            )
+    assets = list(chosen.assets)
+    if steps is None and len(assets) != 1:
+        raise HTTPException(status_code=400, detail="a selection of several assets is for tiles with op")
+    if grid is None:
+        return MosaicLayout(dataset, chosen.order, chosen.bounds)
+    fetches, source = state.earthx_item_fetches, state.earthx_item_source
     try:
-        order = mosaic_order({item_id: refs[(item_id, asset[0])].crs for item_id in ids})
-        touching = None if grid is None else mosaic_tiles.scenes_touching(order, outlines, grid, files_per_scene=len(asset))
+        touching = mosaic_tiles.touching_scenes(chosen.order, chosen.outlines, grid)
+        if steps is None:
+            cut = mosaic_tiles.scenes_touching(chosen.order, chosen.outlines, grid, touching=touching)
+            items = await mosaic_tiles.fetch_items(fetches, source, dataset, cut.read)
+            plan = None
+        else:
+            # The first scene it reads says which assets the shown band needs; only those are described and opened
+            # (NM4-43d), and how many there are decides how many scenes the budget lets the tile read.
+            items = await mosaic_tiles.fetch_items(fetches, source, dataset, touching[:1])
+            first = {key: _resolve_ref(items[touching[0]], config=config, item=touching[0], asset=key) for key in assets}
+            entries = [
+                _describe_one(items, {(touching[0], key): ref for key, ref in first.items()}, config, touching[0], key)
+                for key in assets
+            ]
+            plan = _band_plan(_operator_support(), entries, steps, bands)
+            assets = list(assets if plan is None else plan.assets)
+            if not set(assets) <= set(chosen.assets):
+                raise HTTPException(status_code=400, detail="the band needs assets the selection does not name")
+            cut = mosaic_tiles.scenes_touching(
+                chosen.order, chosen.outlines, grid, files_per_scene=len(assets), touching=touching
+            )
+            items |= await mosaic_tiles.fetch_items(fetches, source, dataset, [i for i in cut.read if i not in items])
     except OrderRefused as error:
         raise HTTPException(status_code=error.status_code, detail=error.detail) from None
-    read = order if touching is None else touching.read
+    read = cut.read
+    refs = {(item_id, key): _resolve_ref(items[item_id], config=config, item=item_id, asset=key) for item_id in read for key in assets}
     outcome = mosaic_tiles.TileOutcome.of(request.scope)
-    budget = None if grid is None else ReadBudget(mosaic_tiles.TILE_TIME_BUDGET_S)
-    if outcome is not None and touching is not None:
-        outcome.left_out = touching.left_out
+    budget = ReadBudget(mosaic_tiles.TILE_TIME_BUDGET_S)
+    if outcome is not None:
+        outcome.left_out = cut.left_out
         # Only the read without steps keeps to the time; the worker core reads a tile with steps (NM4-04).
         outcome.budget = budget if steps is None else None
-    bounds = mosaic_tiles.union_bounds(outlines)
     if steps is None:
         scenes = tuple(
-            _open_ref(state, refs[(item_id, asset[0])], target_gsd=target_gsd_for(request, items[item_id]))
+            _open_ref(state, refs[(item_id, assets[0])], target_gsd=target_gsd_for(request, items[item_id]))
             for item_id in read
         )
-        return MosaicScenes(dataset, scenes, bounds, budget)
+        return MosaicScenes(dataset, scenes, chosen.bounds, budget)
     run_steps = steps if plan is None else list(plan.steps)
-    described = _describe_mosaic(items, refs, config=config, order=order, assets=asset, steps=run_steps)
+    described = _describe_mosaic(items, refs, config=config, order=read, assets=assets, steps=run_steps)
     scenes_with_steps = tuple(
         tuple(
             (
@@ -920,11 +955,99 @@ async def mosaic_scenes(
                     decode_cf=described[(item_id, key)].scaling == "store-cf",
                 ),
             )
-            for key in asset
+            for key in assets
         )
         for item_id in read
     )
-    return MosaicOperatorInput(dataset, scenes_with_steps, tuple(run_steps), bounds, None if plan is None else plan.bands)
+    return MosaicOperatorInput(dataset, scenes_with_steps, tuple(run_steps), chosen.bounds, None if plan is None else plan.bands)
+
+
+def _selection_answer(dataset: str, selection: str, status_code: int) -> JSONResponse:
+    """The answer of the creation: the id and where its tiles and its TileJSON are, relative to this app."""
+    base = f"/collections/{dataset}/mosaic/{selection}"
+    return JSONResponse(
+        status_code=status_code,
+        content={"id": selection, "tiles": f"{base}/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}", "tilejson": f"{base}/WebMercatorQuad/tilejson.json"},
+    )
+
+
+async def _read_selection_body(request: Request) -> mosaic_tiles.SelectionRequest:
+    """The body of the creation, read up to :data:`~earthx.api.mosaic_tiles.MAX_SELECTION_BODY_BYTES` and no further.
+
+    ``413`` from the ``Content-Length`` before a byte is read, and from the bytes read for a body that did not say; ``422``
+    for one that is no JSON of the right shape, with the names of the fields and no value.
+    """
+    limit = mosaic_tiles.MAX_SELECTION_BODY_BYTES
+    too_large = OrderRefused(413, f"the body of a selection is at most {limit} bytes", "order")
+    declared = request.headers.get("content-length", "")
+    if declared.isdecimal() and int(declared) > limit:
+        raise too_large
+    raw = bytearray()
+    async for chunk in request.stream():
+        raw += chunk
+        if len(raw) > limit:
+            raise too_large
+    try:
+        return mosaic_tiles.SelectionRequest.model_validate_json(bytes(raw))
+    except ValidationError as error:
+        problems = "; ".join(
+            f"{'.'.join(map(str, entry['loc'])) or 'body'}: {entry['msg']}"
+            for entry in error.errors(include_url=False, include_input=False, include_context=False)
+        )
+        raise OrderRefused(422, f"the body of a selection is not valid: {problems}", "order") from None
+
+
+async def create_mosaic_selection(
+    request: Request, dataset: Annotated[str, Path(description="dataset id of the registry")]
+) -> JSONResponse:
+    """Create the selection of a mosaic: ``{"id", "tiles", "tilejson"}``, ``201``, or ``200`` where it exists (M5-30b part 3).
+
+    The body is ``{"items": [...], "assets": [...]}``: two to :data:`~earthx.api.mosaic_tiles.MAX_SELECTION_ITEMS`
+    scenes of one overpass, each once, and the assets they are read from. The id is the hash of that content
+    (`catalog.mosaic_selection.selection_id`), so the same content is the same id wherever and whenever it is created, and
+    creating one that exists only moves its end seven days out, without a request to the source. Otherwise the scenes are
+    fetched in batches (one search of the source for a hundred ids, not a request each), checked as a tile checks them
+    (one overpass, every asset on every scene, a usable outline), put in the order of the mosaic job and stored with
+    their outlines, so that a tile fetches only the scenes it reads.
+
+    Everything that costs no request comes first: dataset, licence tier, the released range, the shape of the body.
+    """
+    state = request.app.state
+    config = _dataset_config(state, dataset)
+    _check_display_allowed(config)
+    _mosaic_zooms(config)
+    viewer = config.viewer
+    assert viewer is not None  # `_mosaic_zooms` answered 501 otherwise
+    try:
+        body = await _read_selection_body(request)
+        ids, assets = mosaic_tiles.check_selection(body.items, body.assets)
+        store = _selection_store(state)
+        selection = selection_id(dataset, assets, ids)
+        try:
+            if await store.renew(selection):
+                return _selection_answer(dataset, selection, 200)
+        except psycopg.Error as error:
+            LOGGER.warning("the catalogue database failed under a mosaic selection: %s", type(error).__name__)
+            raise OrderRefused(503, _SELECTION_DATABASE_DETAIL, "items") from None
+        batches = getattr(state, "earthx_item_batches", None)
+        if batches is None:
+            raise OrderRefused(503, _SELECTION_DATABASE_DETAIL, "items")
+        items = await mosaic_tiles.fetch_selection_items(batches, dataset, ids)
+        mosaic_tiles.check_one_overpass(items, viewer)
+        refs = {(item_id, key): _resolve_ref(items[item_id], config=config, item=item_id, asset=key) for item_id in ids for key in assets}
+        order = mosaic_order({item_id: refs[(item_id, assets[0])].crs for item_id in ids})
+        chosen = Selection.build(
+            selection, dataset, assets, {item_id: outline_source(items[item_id]) for item_id in ids}, order
+        )
+        try:
+            await store.put(chosen)
+        except psycopg.Error as error:
+            LOGGER.warning("the catalogue database failed under a mosaic selection: %s", type(error).__name__)
+            raise OrderRefused(503, _SELECTION_DATABASE_DETAIL, "items") from None
+    except OrderRefused as error:
+        raise HTTPException(status_code=error.status_code, detail=error.detail) from None
+    LOGGER.info("mosaic selection created with %d scenes of %d assets", len(ids), len(assets))
+    return _selection_answer(dataset, selection, 201)
 
 
 class MosaicOrderRequest(BaseModel):
@@ -1013,10 +1136,10 @@ def _describe_mosaic(
 ) -> dict[tuple[str, str], Any]:
     """Each asset of each scene with the bands and scaling its item describes, judged as the job judges them.
 
-    Over **every** scene of the URL, not only those of the tile, so that every tile of one mosaic gives the same
-    answer (NM4-04 §8.1): the scenes scale each asset alike and name the same units (the part of the job's
-    ``check_alike`` the items decide; the files are compared by the reader), a Zarr mosaic lies in one CRS
-    (``check_scope``), and the steps know the bands the first scene's items name (KE1). Nothing is opened.
+    Over the scenes ``order`` names, which are those the tile reads (a tile fetches no other item, M5-30b part 3): the scenes
+    scale each asset alike and name the same units (the part of the job's ``check_alike`` the items decide; the files are
+    compared by the reader), a Zarr mosaic lies in one CRS (``check_scope``), and the steps know the bands the first
+    scene's items name (KE1). Nothing is opened.
     """
     described = {(item_id, key): _describe_one(items, refs, config, item_id, key) for item_id in order for key in assets}
     first = order[0]
@@ -1571,6 +1694,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.earthx_item_source = build_item_source(
             app.state.earthx_registry, app.state.earthx_adapters, gateway, pool
         )
+        app.state.earthx_item_batches = build_item_batch_source(
+            app.state.earthx_registry, app.state.earthx_adapters, gateway, pool
+        )
+        app.state.earthx_mosaic_selections = None if pool is None else SelectionStore(pool)
         app.state.earthx_results = _result_sources()
         yield
 
@@ -1626,6 +1753,9 @@ def build_app(
     # every request, by `check_url` as before.
     app.state.earthx_resolver = CachingResolver()
     app.state.earthx_item_source = None
+    # The scenes of a mosaic selection are fetched by id in batches, and the selections are kept in the database (M5-30b).
+    app.state.earthx_item_batches = None
+    app.state.earthx_mosaic_selections = None
     # The download route (M2-06) needs the dataset's licence, title and terms —
     # nothing the path dependency above already carries.
     app.state.earthx_registry = registry
@@ -1658,6 +1788,20 @@ def build_app(
         name="mosaic-tiles",
     )
     app.include_router(mosaic_factory.router, prefix=MOSAIC_ROUTER_PREFIX, tags=["Mosaic tiles"])
+    app.add_api_route(
+        MOSAIC_SELECTION_ROUTE,
+        create_mosaic_selection,
+        methods=["POST"],
+        status_code=201,
+        tags=["Mosaic tiles"],
+        summary="Create the selection of a mosaic; its id goes into the tile URL",
+        openapi_extra={
+            "requestBody": {
+                "required": True,
+                "content": {"application/json": {"schema": mosaic_tiles.SelectionRequest.model_json_schema()}},
+            }
+        },
+    )
     # The tiles of a finished job (M4-13c-5): read from the object store, not through the registry.
     app.state.earthx_results = None
     app.include_router(build_result_factory().router, prefix=RESULT_ROUTER_PREFIX, tags=["Results"])
@@ -1787,6 +1931,7 @@ __all__ = [
     "BANDS_ROUTE",
     "DOWNLOAD_ROUTE",
     "MOSAIC_ROUTER_PREFIX",
+    "MOSAIC_SELECTION_ROUTE",
     "ROUTER_PREFIX",
     "DownloadRequest",
     "app",

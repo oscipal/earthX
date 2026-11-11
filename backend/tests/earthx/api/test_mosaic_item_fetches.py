@@ -1,9 +1,10 @@
 """What a mosaic tile asks of the source, and of the server in front of it (M4-17b, plan M4-17 §4.3, §5, §11 Auflage 3).
 
-A tile of a cold overpass needs the metadata of every item in its URL, and the six tiles of a map view
+A tile of a cold overpass needs the metadata of the items it reads, and the six tiles of a map view
 ask for it at once. `ItemFetches` keeps that to one fetch per item and four at a time; these tests
-check it on its own, then through the real app and the real gateway, and last that the longest URL
-(64 ids of 60 characters) gets through uvicorn as the compose file starts it.
+check it on its own, then through the real app and the real gateway, and last that the largest request
+(a selection of 2000 ids of 60 characters, and a tile URL with three steps) gets through uvicorn as the
+compose file starts it.
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ from fastapi import FastAPI
 from earthx.adapters import ADAPTER_SPECS
 from earthx.api import mosaic_tiles
 from earthx.api.dependencies import policy_from_registry
-from earthx.api.item_source import OrderRefused, build_item_source
+from earthx.api.item_source import OrderRefused, build_item_batch_source, build_item_source
 from earthx.gateway import Gateway
 from earthx.gateway.policy import Policy
 from tests.earthx.access.test_mosaic_tiles import SEAM_X
@@ -38,9 +39,9 @@ from tests.earthx.api.test_tiler_mosaic import (
     ZONE_32,
     Scenes,
     _app,
-    _query,
     _serve,
     _tile_path,
+    _tilejson_path,
 )
 
 pytestmark = pytest.mark.anyio
@@ -162,6 +163,58 @@ class TestItemFetches:
             other.close()
 
 
+class TestFetchingByIds:
+    """The creation of a selection fetches in pages of a hundred ids and maps a failure as one item's fetch does."""
+
+    @staticmethod
+    def _source(known: set[str], asked: list[list[str]], extra: tuple[dict[str, Any], ...] = ()) -> Any:
+        async def batch(dataset: str, item_ids: Any) -> list[dict[str, Any]]:
+            asked.append(list(item_ids))
+            return [{"id": item_id} for item_id in item_ids if item_id in known] + list(extra)
+
+        return batch
+
+    async def test_250_ids_are_three_pages_in_order(self) -> None:
+        names = [f"I{n:03d}" for n in range(250)]
+        asked: list[list[str]] = []
+        found = await mosaic_tiles.fetch_selection_items(self._source(set(names), asked), DATASET, names)
+        assert [len(page) for page in asked] == [100, 100, 50] and sum(asked, []) == names
+        assert sorted(found) == names
+
+    async def test_an_id_the_source_does_not_return_is_a_404_that_names_the_first_in_id_order(self) -> None:
+        asked: list[list[str]] = []
+        with pytest.raises(OrderRefused) as refused:
+            await mosaic_tiles.fetch_selection_items(self._source({"A"}, asked), DATASET, ["A", "C", "B"])
+        assert refused.value.status_code == 404 and "'B'" in refused.value.detail
+
+    async def test_an_item_nobody_asked_for_is_left_out(self) -> None:
+        source = self._source({"A", "B"}, [], extra=({"id": "STRAY"}, "not an item"))  # type: ignore[arg-type]
+        assert sorted(await mosaic_tiles.fetch_selection_items(source, DATASET, ["A", "B"])) == ["A", "B"]
+
+    async def test_a_source_that_fails_maps_as_it_does_for_one_item(self) -> None:
+        from earthx.gateway import UpstreamError, UpstreamTimeout
+
+        for failure, status in ((UpstreamError(500, "boom"), 502), (UpstreamTimeout("late"), 504), (UpstreamError(404, "gone"), 404)):
+
+            async def failing(dataset: str, item_ids: Any, failure: Exception = failure) -> list[dict[str, Any]]:
+                raise failure
+
+            with pytest.raises(OrderRefused) as refused:
+                await mosaic_tiles.fetch_selection_items(failing, DATASET, ["A", "B"])
+            assert refused.value.status_code == status
+            assert "boom" not in refused.value.detail  # the source's own text is not passed on
+
+    async def test_a_database_that_fails_is_a_503_with_no_text_of_its_own(self) -> None:
+        import psycopg
+
+        async def failing(dataset: str, item_ids: Any) -> list[dict[str, Any]]:
+            raise psycopg.OperationalError("connection to server at db.internal.example failed")
+
+        with pytest.raises(OrderRefused) as refused:
+            await mosaic_tiles.fetch_selection_items(failing, DATASET, ["A", "B"])
+        assert refused.value.status_code == 503 and "internal.example" not in refused.value.detail
+
+
 def _scenes_over_the_tile(scenes: Scenes, count: int) -> list[str]:
     """``count`` items that all read one file covering the tile."""
     scenes.add("BASE", ZONE_32, SEAM_X - 5000.0, 10_000.0, 10)
@@ -174,8 +227,17 @@ def _scenes_over_the_tile(scenes: Scenes, count: int) -> list[str]:
 def _bare(scenes: Scenes, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     _serve(scenes, monkeypatch)
     app = _app(scenes)
+    # `httpx.ASGITransport` runs no lifespan, so what the lifespan would hang on the app is hung here.
     app.state.earthx_cache_pool = POOL
+    app.state.earthx_item_batches = scenes.batch_source
+    app.state.earthx_mosaic_selections = scenes.selections
     return app
+
+
+async def _selected(http: httpx.AsyncClient, names: list[str]) -> str:
+    response = await http.post(f"/collections/{DATASET}/mosaic", json={"items": names, "assets": [ASSET]})
+    assert response.status_code in (200, 201), response.text
+    return response.json()["id"]
 
 
 def _all_asked(app: FastAPI, monkeypatch: pytest.MonkeyPatch, times: int) -> asyncio.Event:
@@ -212,24 +274,25 @@ class TestSixTilesAtOnce:
         source = Counter({name: scenes.items[name] for name in names}, gate=_all_asked(app, monkeypatch, 6 * len(names)))
         app.state.earthx_item_source = source
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
-            tiles = asyncio.gather(*(http.get(_tile_path(), params=_query(names)) for _ in range(6)))
+            chosen = await _selected(http, names)
+            tiles = asyncio.gather(*(http.get(_tile_path(chosen)) for _ in range(6)))
             responses = await asyncio.wait_for(tiles, timeout=60)
         assert [response.status_code for response in responses] == [200] * 6
         assert sorted(source.calls) == sorted(names)
         assert source.most == mosaic_tiles.MAX_ITEM_FETCHES
         assert app.state.earthx_item_fetches._running == {}
 
-    async def test_the_tilejson_and_the_tiles_share_the_fetches(
+    async def test_the_tilejson_fetches_nothing_and_the_tiles_share_the_fetches(
         self, scenes: Scenes, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         names = _scenes_over_the_tile(scenes, 6)
         app = _bare(scenes, monkeypatch)
-        source = Counter({name: scenes.items[name] for name in names}, gate=_all_asked(app, monkeypatch, 4 * len(names)))
+        source = Counter({name: scenes.items[name] for name in names}, gate=_all_asked(app, monkeypatch, 3 * len(names)))
         app.state.earthx_item_source = source
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
+            chosen = await _selected(http, names)
             requests = asyncio.gather(
-                http.get("/collections/%s/mosaic/WebMercatorQuad/tilejson.json" % DATASET, params=_query(names)),
-                *(http.get(_tile_path(), params=_query(names)) for _ in range(3)),
+                http.get(_tilejson_path(chosen)), *(http.get(_tile_path(chosen)) for _ in range(3))
             )
             responses = await asyncio.wait_for(requests, timeout=60)
         assert [response.status_code for response in responses] == [200] * 4
@@ -249,7 +312,8 @@ class TestSixTilesAtOnce:
 
         app.state.earthx_item_source = slow
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
-            responses = await asyncio.gather(*(http.get(_tile_path(), params=_query(names)) for _ in range(4)))
+            chosen = await _selected(http, names)
+            responses = await asyncio.gather(*(http.get(_tile_path(chosen)) for _ in range(4)))
         assert [response.status_code for response in responses] == [504] * 4
         assert app.state.earthx_item_fetches._running == {}
 
@@ -285,21 +349,51 @@ class TestAtTheGateway:
             app.state.earthx_item_source = build_item_source(REGISTRY, ADAPTER_SPECS, gateway, None)
             lots = [names[n : n + 8] for n in range(0, 48, 8)]  # six tiles, each over its own eight items
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
-                responses = await asyncio.gather(*(http.get(_tile_path(), params=_query(lot)) for lot in lots))
+                chosen = [await _selected(http, lot) for lot in lots]
+                responses = await asyncio.gather(*(http.get(_tile_path(selection)) for selection in chosen))
         assert [response.status_code for response in responses] == [200] * 6, [r.text for r in responses]
         assert sorted(asked) == sorted(names)
         assert 1 < most <= mosaic_tiles.MAX_ITEM_FETCHES <= policy.max_connections_per_host
+
+
+    async def test_a_selection_of_250_scenes_is_three_searches_through_the_gateway_and_no_item_request(
+        self, scenes: Scenes, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        names = _scenes_over_the_tile(scenes, 250)
+        app = _bare(scenes, monkeypatch)
+        policy = policy_from_registry(REGISTRY)
+        searches: list[list[str]] = []
+        paths: list[str] = []
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            paths.append(f"{request.method} {request.url.path.rsplit('/', 1)[-1]}")
+            body = json.loads(request.content)
+            searches.append(body["ids"])
+            return httpx.Response(
+                200, json={"type": "FeatureCollection", "features": [scenes.items[item_id] for item_id in body["ids"]]}
+            )
+
+        async with Gateway(
+            policy, transport=httpx.MockTransport(handler), resolve=lambda host, port: ("93.184.216.34",)
+        ) as gateway:
+            app.state.earthx_item_batches = build_item_batch_source(REGISTRY, ADAPTER_SPECS, gateway, None)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
+                chosen = await _selected(http, names)
+        assert chosen in scenes.selections.rows
+        assert paths == ["POST search"] * 3
+        assert [len(ids) for ids in searches] == [100, 100, 50]
+        assert sorted(sum(searches, [])) == sorted(names)
 
 
 @pytest.fixture
 def server(scenes: Scenes, monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[str, list[str]]]:
     """The tiler under uvicorn with its defaults, as `docker-compose.yml` starts it, on a free local port.
 
-    Yields its address and 64 item ids of 60 characters: one scene over the tile and 63 away from it, so that
-    all 64 are fetched and only the one is read.
+    Yields its address and 2000 item ids of 60 characters: one scene over the tile and 1999 away from it, so that
+    all are in the selection and only the one is read.
     """
     scenes.add("BASE", ZONE_32, SEAM_X - 5000.0, 10_000.0, 10)
-    long_ids = [f"S2C_{n:02d}_".ljust(60, "x") for n in range(63)]
+    long_ids = [f"S2C_{n:04d}_".ljust(60, "x") for n in range(mosaic_tiles.MAX_SELECTION_ITEMS - 1)]
     away = {"type": "Polygon", "coordinates": [[[0.0, 0.0], [0.1, 0.0], [0.1, 0.1], [0.0, 0.1], [0.0, 0.0]]]}
     for item_id in long_ids:
         scenes.alias(item_id, "BASE", bbox=[0.0, 0.0, 0.1, 0.1], geometry=away)
@@ -332,25 +426,38 @@ CHAIN = "&".join(
 )
 
 
-class TestTheLongestUrl:
+def _http(address: str, request: str, body: bytes = b"") -> tuple[str, bytes]:
+    """The status line and the body of what the server answers a request sent by hand over a socket.
+
+    By hand because the guard of the test suite allows no name lookup, not even of 127.0.0.1.
+    """
+    host, port = address.removeprefix("http://").split(":")
+    headers = f"Host: {host}\r\nConnection: close\r\n"
+    if body:
+        headers += f"Content-Type: application/json\r\nContent-Length: {len(body)}\r\n"
+    with socket.socket() as connection:
+        connection.settimeout(30)
+        connection.connect((host, int(port)))
+        connection.sendall(f"{request} HTTP/1.1\r\n{headers}\r\n".encode() + body)
+        received = b""
+        while chunk := connection.recv(65536):
+            received += chunk
+    head, _, content = received.partition(b"\r\n\r\n")
+    return head.split(b"\r\n", 1)[0].decode(), content
+
+
+class TestTheLargestRequests:
     @pytest.mark.parametrize("steps", ["", CHAIN], ids=["scenes", "scenes and three steps"])
-    def test_64_ids_of_60_characters_get_through_the_server_the_compose_file_starts(
+    def test_a_selection_of_2000_ids_of_60_characters_and_its_tile_get_through_the_server_the_compose_file_starts(
         self, server: tuple[str, list[str]], steps: str
     ) -> None:
-        """Sent by hand over a socket: the guard of the test suite allows no name lookup, not even of 127.0.0.1."""
         address, ids = server
-        assert len(ids) == mosaic_tiles.MAX_MOSAIC_ITEMS
-        query = "&".join([f"item={item_id}" for item_id in ids] + [f"asset={ASSET}"] + ([steps] if steps else []))
-        target = f"{_tile_path()}?{query}"
-        assert len(target) > 4000  # the plan counts 4.3 kB for 64 long ids (§5)
+        assert len(ids) == mosaic_tiles.MAX_SELECTION_ITEMS
+        body = json.dumps({"items": ids, "assets": [ASSET]}, separators=(",", ":")).encode()
+        assert 120_000 < len(body) < mosaic_tiles.MAX_SELECTION_BODY_BYTES  # 2000 ids of 60 characters, a little under the limit
+        status, content = _http(address, f"POST /collections/{DATASET}/mosaic", body)
+        assert status == "HTTP/1.1 201 Created", (status, content[-300:])
+        target = _tile_path(json.loads(content)["id"]) + (f"?{steps}" if steps else "")
         assert len(target) <= mosaic_tiles.MAX_MOSAIC_REQUEST_BYTES
-        host, port = address.removeprefix("http://").split(":")
-        with socket.socket() as connection:
-            connection.settimeout(30)
-            connection.connect((host, int(port)))
-            connection.sendall(f"GET {target} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n".encode())
-            received = b""
-            while chunk := connection.recv(65536):
-                received += chunk
-        status = received.split(b"\r\n", 1)[0].decode()
-        assert status == "HTTP/1.1 200 OK", (status, received[-300:])
+        status, content = _http(address, f"GET {target}")
+        assert status == "HTTP/1.1 200 OK", (status, content[-300:])

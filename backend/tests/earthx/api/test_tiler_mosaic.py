@@ -4,13 +4,18 @@ The real app (`api.tiler.build_app`) over synthetic scenes of zone 32 and 33, se
 `readers`: ``sources.serve`` swaps only the last step of the COG path for a local file per address, so
 the registry, the licence tier, ``check_url`` and the allowlist all run for real. Each scene is a flat
 ``uint8`` COG with a value of its own, so that the winner of a pixel can be read off it. The item source
-is a double that records what it was asked.
+is a double that records what it was asked, and so is the source of items by id; the selections live in memory
+(`mosaic_selections.py`; their SQL is tested against a real database).
+
+A mosaic is asked for in two steps since M5-30b part 3: the selection of its scenes is created
+(``POST /collections/{dataset}/mosaic``), then its tiles and TileJSON are asked for by the id that came back.
 
 The part that needs a clock and a gateway — the item fetches — is in `test_mosaic_item_fetches.py`.
 """
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import logging
@@ -38,13 +43,15 @@ from earthx.access import mosaic_tiles as mosaic_reading
 from earthx.access.crop_rules import mosaic_order
 from earthx.adapters.errors import UnknownCollection
 from earthx.api import mosaic_tiles
-from earthx.api.tiler import MOSAIC_ROUTER_PREFIX, build_app
+from earthx.api.tiler import MOSAIC_ROUTER_PREFIX, MOSAIC_SELECTION_ROUTE, build_app
+from earthx.catalog.mosaic_selection import selection_id
 from earthx.catalog.registry import DatasetRegistry, LicenseTier, SearchCapabilities
 from earthx.gateway import UpstreamError, check_url
 from tests.catalog.entries import COP_DEM_GLO_30, SENTINEL_2_L2A
 from tests.conftest import own_log_text
 from tests.earthx.access.test_mosaic_tiles import SEAM_X, SEAM_Y, TILE, TMS, TOP
 from tests.earthx.access.test_mosaic_tiles import _at as value_at
+from tests.earthx.api.mosaic_selections import MemorySelections, batch_source_of, create
 from tests.earthx.processing import sources
 from tests.earthx.processing import test_mosaic as job
 from tests.earthx.readers import mini_zarr
@@ -123,7 +130,9 @@ class Scenes:
         self.root = root
         self.items: dict[str, dict[str, Any]] = {}
         self.files: dict[str, Path] = {}
-        self.fetched: list[str] = []
+        self.fetched: list[str] = []  # the items fetched one by one, as a tile fetches the ones it reads
+        self.batches: list[list[str]] = []  # the calls that fetched items by id, as the creation of a selection does
+        self.selections = MemorySelections()
         self.cleared: list[str] = []  # the addresses that passed `check_url`
         self.opened: list[str] = []  # the scenes a tile opened to read, by item id
         self.served = False
@@ -152,6 +161,11 @@ class Scenes:
         if dataset_id == DEM or item_id not in self.items:
             raise UpstreamError(404, "not found")
         return json.loads(json.dumps(self.items[item_id]))
+
+    async def batch_source(self, dataset_id: str, item_ids: Any) -> list[dict[str, Any]]:
+        if dataset_id not in REGISTRY:
+            raise UnknownCollection(dataset_id)
+        return await batch_source_of({} if dataset_id == DEM else self.items, self.batches)(dataset_id, item_ids)
 
 
 @pytest.fixture
@@ -182,7 +196,9 @@ def _app(scenes: Scenes, *, pool: Any = POOL) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.earthx_item_source = scenes.source
+        app.state.earthx_item_batches = scenes.batch_source
         app.state.earthx_cache_pool = pool
+        app.state.earthx_mosaic_selections = None if pool is None else scenes.selections
         yield
 
     app = build_app(REGISTRY, lifespan=lifespan)
@@ -203,12 +219,25 @@ def client(scenes: Scenes, monkeypatch: pytest.MonkeyPatch) -> Iterator[Callable
         yield build
 
 
-def _tile_path(z: int = TILE.z, x: int = TILE.x, y: int = TILE.y, *, extension: str = "npy") -> str:
-    return f"{BASE}/tiles/WebMercatorQuad/{z}/{x}/{y}.{extension}"
+def _select(
+    api: TestClient, items: list[str], assets: tuple[str, ...] = (ASSET,), dataset: str = DATASET
+) -> str:
+    """The id of the selection of ``items`` read from ``assets``, created through the route."""
+    return create(api, dataset, items, assets)
 
 
-def _query(items: list[str], **extra: str) -> list[tuple[str, str]]:
-    return [("item", item_id) for item_id in items] + [("asset", ASSET)] + list(extra.items())
+def _tile_path(
+    selection: str, z: int = TILE.z, x: int = TILE.x, y: int = TILE.y, *, extension: str = "npy", dataset: str = DATASET
+) -> str:
+    return f"/collections/{dataset}/mosaic/{selection}/tiles/WebMercatorQuad/{z}/{x}/{y}.{extension}"
+
+
+def _tilejson_path(selection: str, dataset: str = DATASET) -> str:
+    return f"/collections/{dataset}/mosaic/{selection}/WebMercatorQuad/tilejson.json"
+
+
+def _query(**extra: str) -> list[tuple[str, str]]:
+    return list(extra.items())
 
 
 def _array(response: Any) -> numpy.ndarray:
@@ -228,24 +257,27 @@ class TestOneSurfaceOverASceneBoundary:
 
     def test_two_scenes_over_the_seam_are_one_surface_without_a_gap(self, scenes: Scenes, client) -> None:
         _seam(scenes)
-        tile = _array(client().get(_tile_path(), params=_query(["WEST", "EAST"])))
+        api = client()
+        tile = _array(api.get(_tile_path(_select(api, ["WEST", "EAST"]))))
         assert value_at(tile, SEAM_X - 500.0) == 100
         assert value_at(tile, SEAM_X + 500.0) == 200
         assert all(value_at(tile, x) is not None for x in numpy.arange(SEAM_X - 1500.0, SEAM_X + 1500.0, 30.0))
 
-    def test_the_order_of_the_ids_in_the_url_does_not_change_the_bytes(self, scenes: Scenes, client) -> None:
+    def test_the_order_of_the_ids_given_does_not_change_the_id_or_the_bytes(self, scenes: Scenes, client) -> None:
         scenes.add("A", ZONE_32, SEAM_X - 4000.0, 5000.0, 100)
         scenes.add("B", ZONE_32, SEAM_X - 1000.0, 5000.0, 200)
         api = client()
-        forward = api.get(_tile_path(), params=_query(["A", "B"]))
-        backward = api.get(_tile_path(), params=_query(["B", "A"]))
-        assert forward.content == backward.content
-        # where both have data the scene that sorts first wins, whatever the URL says
-        assert value_at(_array(forward), SEAM_X - 500.0) == 100
+        forward, backward = _select(api, ["A", "B"]), _select(api, ["B", "A"])
+        assert forward == backward
+        first, second = api.get(_tile_path(forward)), api.get(_tile_path(backward))
+        assert first.content == second.content
+        # where both have data the scene that sorts first wins, whatever the creation says
+        assert value_at(_array(first), SEAM_X - 500.0) == 100
 
     def test_a_scene_away_from_the_tile_is_not_opened(self, scenes: Scenes, client) -> None:
         _seam(scenes)
-        _array(client().get(_tile_path(), params=_query(["WEST", "EAST", "FAR"])))
+        api = client()
+        _array(api.get(_tile_path(_select(api, ["WEST", "EAST", "FAR"]))))
         assert sorted(scenes.opened) == ["EAST", "WEST"]
         assert not [address for address in scenes.cleared if "FAR" in address]  # its address was never even cleared
 
@@ -254,7 +286,8 @@ class TestOneSurfaceOverASceneBoundary:
         scenes.add("S1", ZONE_32, SEAM_X - 5000.0, 10_000.0, 10)
         for name in names[1:]:
             scenes.alias(name, "S1")
-        _array(client().get(_tile_path(), params=_query(names)))
+        api = client()
+        _array(api.get(_tile_path(_select(api, names))))
         assert sorted(scenes.opened) == ["S1", "S2", "S3", "S4"]
 
     def test_two_fresh_apps_answer_the_same_url_with_the_same_bytes(
@@ -263,9 +296,11 @@ class TestOneSurfaceOverASceneBoundary:
         _seam(scenes)
         _serve(scenes, monkeypatch)
         answers = []
+        with TestClient(_app(scenes)) as api:
+            chosen = _select(api, ["WEST", "EAST"])
         for _ in range(2):
-            with TestClient(_app(scenes)) as api:
-                answers.append(api.get(_tile_path(), params=_query(["WEST", "EAST"])).content)
+            with TestClient(_app(scenes)) as api:  # the selection is in the store, not in the app
+                answers.append(api.get(_tile_path(chosen)).content)
         assert answers[0] == answers[1]
 
 
@@ -279,7 +314,8 @@ class TestTheOrderIsTheMosaicJobs:
         scenes.add("A", ZONE_33, x33 - 5000.0, 10_000.0, 1, top=y33 + 5000.0)
         scenes.add("B", ZONE_32, SEAM_X - 5000.0, 5000.0, 2)
         scenes.add("C", ZONE_32, SEAM_X, 5000.0, 3)
-        tile = _array(client().get(_tile_path(), params=_query(["A", "B", "C"])))
+        api = client()
+        tile = _array(api.get(_tile_path(_select(api, ["A", "B", "C"]))))
         assert value_at(tile, SEAM_X - 1000.0) == 2
         assert value_at(tile, SEAM_X + 1000.0) == 3
         assert 1 not in numpy.unique(tile[0][tile[-1] != 0])
@@ -290,16 +326,19 @@ class TestTheTargetZoneComesFromTheWholeList:
         """Two zone-32 scenes far away make zone 32 the target; X (32) and Y, Z (33) lie at the tile.
 
         Over the whole list zone 32 is the target and X wins where it has data. Computed from the scenes of
-        the tile alone, zone 33 would be the target and Y would win there (plan §4.4)."""
+        the tile alone, zone 33 would be the target and Y would win there (plan §4.4). The selection takes the order
+        from the whole list once, and the tile reads it from there."""
         x33, y33 = Transformer.from_crs(ZONE_32, ZONE_33, always_xy=True).transform(SEAM_X, SEAM_Y)
         scenes.add("F1", ZONE_32, SEAM_X + 60_000.0, 4000.0, 9)
         scenes.add("F2", ZONE_32, SEAM_X + 70_000.0, 4000.0, 9)
         scenes.add("X", ZONE_32, SEAM_X - 5000.0, 5000.0, 1)
         scenes.add("Y", ZONE_33, x33 - 5000.0, 10_000.0, 2, top=y33 + 5000.0)
         scenes.add("Z", ZONE_33, x33 - 5000.0, 10_000.0, 3, top=y33 + 5000.0)
-        tile = _array(client().get(_tile_path(), params=_query(["F1", "F2", "X", "Y", "Z"])))
+        api = client()
+        tile = _array(api.get(_tile_path(_select(api, ["F1", "F2", "X", "Y", "Z"]))))
         assert value_at(tile, SEAM_X - 1000.0) == 1
         assert value_at(tile, SEAM_X + 1000.0) == 2
+        assert sorted(scenes.fetched) == ["X", "Y", "Z"]  # the two far away were not fetched for this tile
 
 
 class TestTheRuleOfTheMosaicJob:
@@ -329,6 +368,7 @@ class TestTheRuleOfTheMosaicJob:
         self, overpass: Scenes, client, asked: list[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         api = client()
+        chosen = _select(api, asked)
         crs_by_item = {name: job.GEOMETRY[name][0] for name in "ABC"}
         assert mosaic_order(crs_by_item) == ["A", "B", "C"]
         result = job._run(job._recipe(mosaic_order(crs_by_item)), tmp_path)
@@ -341,7 +381,7 @@ class TestTheRuleOfTheMosaicJob:
         from_tile = {}
         for label, x in probes.items():
             cell = TMS.tile(*to_wgs.transform(x, y), 12)
-            tile = _array(api.get(_tile_path(cell.z, cell.x, cell.y), params=_query(asked)))
+            tile = _array(api.get(_tile_path(chosen, cell.z, cell.x, cell.y)))
             raw = _raw_at(tile, cell, x, y)
             from_tile[label] = "A" if raw < 10000 else ("B" if raw < 30000 else "C")
         assert from_tile == from_job
@@ -359,7 +399,9 @@ def _raw_at(tile: numpy.ndarray, cell: Any, x: float, y: float) -> int:
 class TestTheTileJson:
     def test_it_names_the_extent_the_zoom_range_and_the_order_a_tile_reads(self, scenes: Scenes, client) -> None:
         _seam(scenes)
-        response = client().get(f"{BASE}/WebMercatorQuad/tilejson.json", params=_query(["EAST", "FAR", "WEST"]))
+        api = client()
+        chosen = _select(api, ["EAST", "FAR", "WEST"])
+        response = api.get(_tilejson_path(chosen))
         assert response.status_code == 200, response.text
         body = response.json()
         assert body["earthx:order"] == ["EAST", "FAR", "WEST"]
@@ -368,39 +410,53 @@ class TestTheTileJson:
         assert west < scenes.items["WEST"]["bbox"][0] + 1e-9 and east > scenes.items["FAR"]["bbox"][2] - 1e-9
         assert south < north
         (template,) = body["tiles"]
-        assert template.startswith("http://testserver" + BASE + "/tiles/WebMercatorQuad/{z}/{x}/{y}")
-        assert template.count("item=") == 3 and f"asset={ASSET}" in template
+        assert template.startswith(f"http://testserver{BASE}/{chosen}/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}")
+        assert "item=" not in template and "asset=" not in template  # the selection names both
+
+    def test_it_fetches_no_item_and_clears_no_address(self, scenes: Scenes, client) -> None:
+        """It answers from the order and the extent the selection stores (M5-30b part 3)."""
+        _seam(scenes)
+        api = client()
+        chosen = _select(api, ["EAST", "FAR", "WEST"])
+        assert api.get(_tilejson_path(chosen)).status_code == 200
+        assert scenes.fetched == [] and scenes.opened == []
+        assert not [address for address in scenes.cleared if any(name in address for name in ("EAST", "FAR", "WEST"))]
 
     def test_its_tiles_are_512_px_unless_asked_for_256(self, scenes: Scenes, client) -> None:
         """The viewer draws a mosaic at 512 px (NM4-29 §15); the document hands out the same tiles."""
         _seam(scenes)
         api = client()
-        (default,) = api.get(f"{BASE}/WebMercatorQuad/tilejson.json", params=_query(["WEST", "EAST"])).json()["tiles"]
-        (asked,) = api.get(f"{BASE}/WebMercatorQuad/tilejson.json", params=_query(["WEST", "EAST"], tilesize="256")).json()[
-            "tiles"
-        ]
+        chosen = _select(api, ["WEST", "EAST"])
+        (default,) = api.get(_tilejson_path(chosen)).json()["tiles"]
+        (asked,) = api.get(_tilejson_path(chosen), params=_query(tilesize="256")).json()["tiles"]
         assert "tilesize=512" in default and "tilesize=256" in asked
 
     def test_a_tile_of_512_px_is_512_px(self, scenes: Scenes, client) -> None:
         _seam(scenes)
-        assert _array(client().get(_tile_path(), params=_query(["WEST", "EAST"], tilesize="512"))).shape[-2:] == (512, 512)
+        api = client()
+        assert _array(api.get(_tile_path(_select(api, ["WEST", "EAST"])), params=_query(tilesize="512"))).shape[-2:] == (
+            512,
+            512,
+        )
 
-    def test_the_order_is_the_jobs_not_the_urls(self, scenes: Scenes, client) -> None:
+    def test_the_order_is_the_jobs_not_the_creations(self, scenes: Scenes, client) -> None:
         scenes.add("A", ZONE_33, 500_000.0, 4000.0, 1, top=5_700_000.0)
         scenes.add("B", ZONE_32, SEAM_X, 4000.0, 2)
         scenes.add("C", ZONE_32, SEAM_X + 3000.0, 4000.0, 3)
-        body = client().get(f"{BASE}/WebMercatorQuad/tilejson.json", params=_query(["A", "B", "C"])).json()
+        api = client()
+        body = api.get(_tilejson_path(_select(api, ["A", "B", "C"]))).json()
         assert body["earthx:order"] == ["B", "C", "A"]  # zone 32 has two scenes, so it is the target
 
     def test_a_zoom_asked_for_must_stay_in_the_range_the_mosaic_serves(self, scenes: Scenes, client) -> None:
         _seam(scenes)
         api = client()
-        narrowed = api.get(f"{BASE}/WebMercatorQuad/tilejson.json", params=_query(["WEST", "EAST"], minzoom="10"))
+        path = _tilejson_path(_select(api, ["WEST", "EAST"]))
+        narrowed = api.get(path, params=_query(minzoom="10"))
         assert narrowed.status_code == 200 and narrowed.json()["minzoom"] == 10
         # Every released level has a mosaic since M5-30b (adr/0032 §6.2); the registry releases this dataset from z0.
-        low = api.get(f"{BASE}/WebMercatorQuad/tilejson.json", params=_query(["WEST", "EAST"], minzoom="0"))
+        low = api.get(path, params=_query(minzoom="0"))
         assert low.status_code == 200 and low.json()["minzoom"] == 0
-        above = api.get(f"{BASE}/WebMercatorQuad/tilejson.json", params=_query(["WEST", "EAST"], maxzoom="25"))
+        above = api.get(path, params=_query(maxzoom="25"))
         assert above.status_code == 400
 
 
@@ -409,21 +465,21 @@ class TestAnswersToWrongRequests:
         ("items", "why"),
         [
             (["WEST"], "one item"),
-            ([f"S{n}" for n in range(65)], "65 items"),
+            ([f"S{n}" for n in range(mosaic_tiles.MAX_SELECTION_ITEMS + 1)], "one more than the limit"),
             (["WEST", "WEST"], "twice the same item"),
         ],
     )
-    def test_the_number_of_items_is_two_to_64_each_once_and_nothing_is_fetched(
+    def test_the_number_of_items_is_two_to_2000_each_once_and_nothing_is_fetched(
         self, scenes: Scenes, client, items: list[str], why: str
     ) -> None:
         _seam(scenes)
-        response = client().get(_tile_path(), params=_query(items))
+        response = client().post(BASE, json={"items": items, "assets": [ASSET]})
         assert response.status_code == 400, why
-        assert scenes.fetched == []
+        assert scenes.fetched == [] and scenes.batches == []
 
-    def test_a_missing_item_is_a_404(self, scenes: Scenes, client) -> None:
+    def test_a_missing_item_is_a_404_that_names_it(self, scenes: Scenes, client) -> None:
         _seam(scenes)
-        response = client().get(_tile_path(), params=_query(["WEST", "NOWHERE"]))
+        response = client().post(BASE, json={"items": ["WEST", "NOWHERE"], "assets": [ASSET]})
         assert response.status_code == 404
         assert "NOWHERE" in response.json()["detail"]
 
@@ -431,22 +487,22 @@ class TestAnswersToWrongRequests:
         _seam(scenes)
         del scenes.items["EAST"]["assets"][ASSET]
         scenes.items["EAST"]["assets"]["other"] = {"href": sources.url("EAST-other")}
-        response = client().get(_tile_path(), params=_query(["WEST", "EAST"]))
+        response = client().post(BASE, json={"items": ["WEST", "EAST"], "assets": [ASSET]})
         assert response.status_code == 404
-        assert scenes.opened == []
+        assert scenes.opened == [] and scenes.selections.rows == {}
 
     def test_scenes_of_two_overpasses_are_a_422_that_names_the_ones_apart(self, scenes: Scenes, client) -> None:
         _seam(scenes)
         scenes.items["EAST"]["properties"]["s2:datatake_id"] = "D2"
-        response = client().get(_tile_path(), params=_query(["WEST", "EAST"]))
+        response = client().post(BASE, json={"items": ["WEST", "EAST"], "assets": [ASSET]})
         assert response.status_code == 422
         assert "EAST" in response.json()["detail"] and "one overpass" in response.json()["detail"]
-        assert scenes.opened == []
+        assert scenes.opened == [] and scenes.selections.rows == {}
 
     def test_an_item_that_lacks_the_overpass_is_the_sources_502(self, scenes: Scenes, client) -> None:
         _seam(scenes)
         del scenes.items["EAST"]["properties"]["s2:datatake_id"]
-        assert client().get(_tile_path(), params=_query(["WEST", "EAST"])).status_code == 502
+        assert client().post(BASE, json={"items": ["WEST", "EAST"], "assets": [ASSET]}).status_code == 502
 
     def test_more_scenes_than_the_budget_are_read_up_to_it_and_the_rest_is_said_in_a_header(
         self, scenes: Scenes, client
@@ -457,14 +513,16 @@ class TestAnswersToWrongRequests:
         for name in names[1:]:
             scenes.alias(name, "S00")
         api = client()
-        first = api.get(_tile_path(), params=_query(names))
+        chosen = _select(api, names)
+        first = api.get(_tile_path(chosen))
         assert first.status_code == 200, first.text
         assert first.headers[mosaic_tiles.PARTIAL_HEADER] == "2"
         assert "no-store" not in first.headers.get("cache-control", "")
-        again = api.get(_tile_path(), params=_query(list(reversed(names))))
+        assert len(scenes.fetched) == mosaic_tiles.TILE_FILE_BUDGET  # the 32 it reads, not the 34 of the selection
+        again = api.get(_tile_path(_select(api, list(reversed(names)))))
         assert again.content == first.content
         # within the budget the header is not there
-        within = api.get(_tile_path(), params=_query(names[: mosaic_tiles.TILE_FILE_BUDGET]))
+        within = api.get(_tile_path(_select(api, names[: mosaic_tiles.TILE_FILE_BUDGET])))
         assert within.status_code == 200 and mosaic_tiles.PARTIAL_HEADER not in within.headers
 
     def test_a_tile_whose_time_runs_out_is_not_stored_anywhere(
@@ -472,18 +530,19 @@ class TestAnswersToWrongRequests:
     ) -> None:
         _seam(scenes)
         monkeypatch.setattr(mosaic_tiles, "TILE_TIME_BUDGET_S", 1e-9)
-        response = client().get(_tile_path(), params=_query(["WEST", "EAST"]))
+        api = client()
+        response = api.get(_tile_path(_select(api, ["WEST", "EAST"])))
         assert response.status_code == 503, response.text
         assert response.headers["cache-control"] == "no-store"
         assert response.headers[mosaic_tiles.PARTIAL_HEADER] == "time"
 
-    def test_the_time_budget_does_not_reach_the_tilejson_or_a_tile_of_one_item(
+    def test_the_time_budget_does_not_reach_the_tilejson(
         self, scenes: Scenes, client, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         _seam(scenes)
         monkeypatch.setattr(mosaic_tiles, "TILE_TIME_BUDGET_S", 1e-9)
         api = client()
-        tilejson = api.get(f"{BASE}/WebMercatorQuad/tilejson.json", params=_query(["WEST", "EAST"]))
+        tilejson = api.get(_tilejson_path(_select(api, ["WEST", "EAST"])))
         assert tilejson.status_code == 200 and mosaic_tiles.PARTIAL_HEADER not in tilejson.headers
 
     def test_the_file_budget_counts_the_assets_of_each_scene(self) -> None:
@@ -498,20 +557,24 @@ class TestAnswersToWrongRequests:
         with pytest.raises(ValueError):
             mosaic_tiles.scenes_touching(order, outlines, grid, files_per_scene=0)
 
-    def test_a_tile_no_scene_touches_is_a_404(self, scenes: Scenes, client) -> None:
+    def test_a_tile_no_scene_touches_is_a_404_and_fetches_nothing(self, scenes: Scenes, client) -> None:
         _seam(scenes)
-        assert client().get(_tile_path(), params=_query(["FAR", "WEST"])).status_code == 200
+        api = client()
+        chosen = _select(api, ["FAR", "WEST"])
+        assert api.get(_tile_path(chosen)).status_code == 200
         scenes.opened.clear()
+        scenes.fetched.clear()
         away = TMS.tile(0.0, 0.0, 12)
-        response = client().get(_tile_path(away.z, away.x, away.y), params=_query(["WEST", "EAST"]))
+        response = api.get(_tile_path(chosen, away.z, away.x, away.y))
         assert response.status_code == 404
-        assert scenes.opened == []
+        assert scenes.opened == [] and scenes.fetched == []
 
     def test_below_z8_it_is_a_mosaic_too(self, scenes: Scenes, client) -> None:
         """adr/0032 §6.2: the first zoom level of a mosaic is the dataset's, not z8."""
         _seam(scenes)
         low = TMS.tile(*TMS.lnglat(*TMS.xy_bounds(TILE)[:2]), 3)
-        response = client().get(_tile_path(low.z, low.x, low.y), params=_query(["WEST", "EAST"]))
+        api = client()
+        response = api.get(_tile_path(_select(api, ["WEST", "EAST"]), low.z, low.x, low.y))
         assert response.status_code == 200, response.text
         assert mosaic_tiles.PARTIAL_HEADER not in response.headers
 
@@ -519,72 +582,76 @@ class TestAnswersToWrongRequests:
         self, scenes: Scenes, client
     ) -> None:
         _seam(scenes)
-        response = client().get(_tile_path(20, 1, 1), params=_query(["WEST", "EAST"]))
+        api = client()
+        response = api.get(_tile_path(_select(api, ["WEST", "EAST"]), 20, 1, 1))
         assert response.status_code == 400
         assert scenes.fetched == []
 
     def test_a_tile_outside_the_matrix_is_a_404_before_any_item_is_fetched(self, scenes: Scenes, client) -> None:
         _seam(scenes)
-        response = client().get(_tile_path(9, 5000, 1), params=_query(["WEST", "EAST"]))
+        api = client()
+        response = api.get(_tile_path(_select(api, ["WEST", "EAST"]), 9, 5000, 1))
         assert response.status_code == 404
         assert scenes.fetched == []
 
-    def test_a_dataset_without_a_released_range_is_a_501(self, scenes: Scenes, client) -> None:
+    def test_a_dataset_without_a_released_range_is_a_501_before_anything_is_fetched(self, scenes: Scenes, client) -> None:
         _seam(scenes)
         api = client()
         path = f"/collections/{NO_VIEWER}/mosaic"
-        assert api.get(f"{path}/tiles/WebMercatorQuad/10/1/1.png", params=_query(["WEST", "EAST"])).status_code == 501
-        assert api.get(f"{path}/WebMercatorQuad/tilejson.json", params=_query(["WEST", "EAST"])).status_code == 501
-        assert scenes.fetched == []
+        assert api.post(path, json={"items": ["WEST", "EAST"], "assets": [ASSET]}).status_code == 501
+        assert api.get(f"{path}/{'0' * 32}/tiles/WebMercatorQuad/10/1/1.png").status_code == 501
+        assert api.get(f"{path}/{'0' * 32}/WebMercatorQuad/tilejson.json").status_code == 501
+        assert scenes.fetched == [] and scenes.batches == []
 
     def test_a_dataset_released_only_below_z8_has_its_mosaic_there(self, scenes: Scenes, client) -> None:
         _seam(scenes)
         api = client()
+        chosen = _select(api, ["WEST", "EAST"])
         api.app.state.earthx_registry = DatasetRegistry(
             (replace(SYNTHETIC, viewer=replace(SYNTHETIC.viewer, min_zoom=2, max_zoom=7)),)
         )
-        body = api.get(f"{BASE}/WebMercatorQuad/tilejson.json", params=_query(["WEST", "EAST"])).json()
+        body = api.get(_tilejson_path(chosen)).json()
         assert (body["minzoom"], body["maxzoom"]) == (2, 7)
-        scenes.fetched.clear()
-        assert api.get(_tile_path(), params=_query(["WEST", "EAST"])).status_code == 400  # z12 is not released
+        assert api.get(_tile_path(chosen)).status_code == 400  # z12 is not released
         assert scenes.fetched == []
 
     def test_a_dataset_released_from_a_higher_level_starts_its_mosaic_there(self, scenes: Scenes, client) -> None:
         _seam(scenes)
         api = client()
+        chosen = _select(api, ["WEST", "EAST"])
         api.app.state.earthx_registry = DatasetRegistry(
             (replace(SYNTHETIC, viewer=replace(SYNTHETIC.viewer, min_zoom=10, max_zoom=14)),)
         )
-        body = api.get(f"{BASE}/WebMercatorQuad/tilejson.json", params=_query(["WEST", "EAST"])).json()
+        body = api.get(_tilejson_path(chosen)).json()
         assert (body["minzoom"], body["maxzoom"]) == (10, 14)
 
-    def test_a_dataset_below_licence_tier_display_is_a_403(self, scenes: Scenes, client) -> None:
+    def test_a_dataset_below_licence_tier_display_is_a_403_before_anything_is_fetched(self, scenes: Scenes, client) -> None:
         _seam(scenes)
-        response = client().get(
-            f"/collections/{CATALOG_ONLY}/mosaic/tiles/WebMercatorQuad/10/1/1.png", params=_query(["WEST", "EAST"])
-        )
-        assert response.status_code == 403
-        assert scenes.fetched == []
+        api = client()
+        path = f"/collections/{CATALOG_ONLY}/mosaic"
+        assert api.post(path, json={"items": ["WEST", "EAST"], "assets": [ASSET]}).status_code == 403
+        assert api.get(f"{path}/{'0' * 32}/tiles/WebMercatorQuad/10/1/1.png").status_code == 403
+        assert scenes.fetched == [] and scenes.batches == []
 
     def test_a_display_tier_dataset_gets_its_mosaic(self, scenes: Scenes, client) -> None:
         _seam(scenes)
-        response = client().get(
-            f"/collections/{DISPLAY_DATASET}/mosaic/tiles/WebMercatorQuad/{TILE.z}/{TILE.x}/{TILE.y}.npy",
-            params=_query(["WEST", "EAST"]),
-        )
+        api = client()
+        chosen = _select(api, ["WEST", "EAST"], dataset=DISPLAY_DATASET)
+        response = api.get(_tile_path(chosen, dataset=DISPLAY_DATASET))
         assert response.status_code == 200, response.text
 
     def test_an_unknown_dataset_is_a_404(self, scenes: Scenes, client) -> None:
         _seam(scenes)
-        response = client().get(
-            "/collections/no-such-dataset/mosaic/tiles/WebMercatorQuad/10/1/1.png", params=_query(["WEST", "EAST"])
-        )
-        assert response.status_code == 404
+        api = client()
+        assert api.post("/collections/no-such-dataset/mosaic", json={"items": ["WEST", "EAST"], "assets": [ASSET]}).status_code == 404
+        assert api.get(f"/collections/no-such-dataset/mosaic/{'0' * 32}/tiles/WebMercatorQuad/10/1/1.png").status_code == 404
+        assert scenes.batches == []
 
     def test_an_address_the_dataset_does_not_declare_is_a_502_and_nothing_is_read(self, scenes: Scenes, client) -> None:
         _seam(scenes)
         scenes.items["EAST"]["assets"][ASSET]["href"] = "https://elsewhere.example.invalid/east.tif"
-        response = client().get(_tile_path(), params=_query(["WEST", "EAST"]))
+        api = client()
+        response = api.get(_tile_path(_select(api, ["WEST", "EAST"])))
         assert response.status_code == 502
         assert "asset_hosts" in response.json()["detail"]
         assert scenes.opened == []
@@ -592,7 +659,8 @@ class TestAnswersToWrongRequests:
     def test_scenes_with_another_number_of_bands_are_a_422_and_not_a_crash(self, scenes: Scenes, client) -> None:
         scenes.add("ONE", ZONE_32, SEAM_X - 4000.0, 4000.0, 100)
         scenes.add("TWO", ZONE_32, SEAM_X, 4000.0, 200, bands=2)
-        response = client().get(_tile_path(), params=_query(["ONE", "TWO"]))
+        api = client()
+        response = api.get(_tile_path(_select(api, ["ONE", "TWO"])))
         assert response.status_code == 422, response.text
         assert "number of bands" in response.json()["detail"]
 
@@ -603,37 +671,39 @@ class TestNothingIsFetchedForARequestThatIsRefused:
     @pytest.mark.parametrize(
         ("path", "extra"),
         [
-            (f"{BASE}/tiles/WebMercatorQuad/{TILE.z}/{TILE.x}/{TILE.y}.xyz", {}),
-            (f"{BASE}/tiles/NoSuchGrid/{TILE.z}/{TILE.x}/{TILE.y}.png", {}),
-            (f"{BASE}/tiles/WorldCRS84Quad/{TILE.z}/{TILE.x}/{TILE.y}.png", {}),
-            (f"{BASE}/tiles/WebMercatorQuad/{TILE.z}/x/{TILE.y}.png", {}),
-            (f"{BASE}/tiles/WebMercatorQuad/abc/{TILE.x}/{TILE.y}.png", {}),
-            (f"{BASE}/tiles/WebMercatorQuad/{TILE.z}/{TILE.x}/{TILE.y}.png", {"tilesize": "0"}),
-            (f"{BASE}/tiles/WebMercatorQuad/{TILE.z}/{TILE.x}/{TILE.y}.png", {"tilesize": "big"}),
-            (f"{BASE}/tiles/WebMercatorQuad/{TILE.z}/{TILE.x}/{TILE.y}.png", {"tilesize": "1024"}),
-            (f"{BASE}/tiles/WebMercatorQuad/{TILE.z}/{TILE.x}/{TILE.y}.png", {"tilesize": "4096"}),
-            (f"{BASE}/tiles/WebMercatorQuad/{TILE.z}/{TILE.x}/{TILE.y}.png", {"bidx": "first"}),
-            (f"{BASE}/tiles/WebMercatorQuad/{TILE.z}/{TILE.x}/{TILE.y}.png", {"resampling": "magic"}),
-            (f"{BASE}/tiles/WebMercatorQuad/{TILE.z}/{TILE.x}/{TILE.y}.png", {"padding": "wide"}),
-            (f"{BASE}/NoSuchGrid/tilejson.json", {}),
-            (f"{BASE}/WebMercatorQuad/tilejson.json", {"minzoom": "low"}),
-            (f"{BASE}/WebMercatorQuad/tilejson.json", {"tilesize": "0"}),
-            (f"{BASE}/WebMercatorQuad/tilejson.json", {"tilesize": "4096"}),
-            (f"{BASE}/WebMercatorQuad/tilejson.json", {"tile_format": "gif"}),
+            (f"{BASE}/SEL/tiles/WebMercatorQuad/{TILE.z}/{TILE.x}/{TILE.y}.xyz", {}),
+            (f"{BASE}/SEL/tiles/NoSuchGrid/{TILE.z}/{TILE.x}/{TILE.y}.png", {}),
+            (f"{BASE}/SEL/tiles/WorldCRS84Quad/{TILE.z}/{TILE.x}/{TILE.y}.png", {}),
+            (f"{BASE}/SEL/tiles/WebMercatorQuad/{TILE.z}/x/{TILE.y}.png", {}),
+            (f"{BASE}/SEL/tiles/WebMercatorQuad/abc/{TILE.x}/{TILE.y}.png", {}),
+            (f"{BASE}/SEL/tiles/WebMercatorQuad/{TILE.z}/{TILE.x}/{TILE.y}.png", {"tilesize": "0"}),
+            (f"{BASE}/SEL/tiles/WebMercatorQuad/{TILE.z}/{TILE.x}/{TILE.y}.png", {"tilesize": "big"}),
+            (f"{BASE}/SEL/tiles/WebMercatorQuad/{TILE.z}/{TILE.x}/{TILE.y}.png", {"tilesize": "1024"}),
+            (f"{BASE}/SEL/tiles/WebMercatorQuad/{TILE.z}/{TILE.x}/{TILE.y}.png", {"tilesize": "4096"}),
+            (f"{BASE}/SEL/tiles/WebMercatorQuad/{TILE.z}/{TILE.x}/{TILE.y}.png", {"bidx": "first"}),
+            (f"{BASE}/SEL/tiles/WebMercatorQuad/{TILE.z}/{TILE.x}/{TILE.y}.png", {"resampling": "magic"}),
+            (f"{BASE}/SEL/tiles/WebMercatorQuad/{TILE.z}/{TILE.x}/{TILE.y}.png", {"padding": "wide"}),
+            (f"{BASE}/SEL/NoSuchGrid/tilejson.json", {}),
+            (f"{BASE}/SEL/WebMercatorQuad/tilejson.json", {"minzoom": "low"}),
+            (f"{BASE}/SEL/WebMercatorQuad/tilejson.json", {"tilesize": "0"}),
+            (f"{BASE}/SEL/WebMercatorQuad/tilejson.json", {"tilesize": "4096"}),
+            (f"{BASE}/SEL/WebMercatorQuad/tilejson.json", {"tile_format": "gif"}),
         ],
     )
     def test_an_invalid_request_is_a_400_or_422_and_asks_the_source_for_nothing(
         self, scenes: Scenes, client, path: str, extra: dict[str, str]
     ) -> None:
         _seam(scenes)
-        response = client().get(path, params=_query(["WEST", "EAST"], **extra))
+        api = client()
+        response = api.get(path.replace("SEL", _select(api, ["WEST", "EAST"])), params=_query(**extra))
         assert response.status_code in (400, 422), (path, extra, response.status_code)
         assert scenes.fetched == []
 
     def test_the_same_requests_without_the_fault_do_fetch(self, scenes: Scenes, client) -> None:
-        """The counter counts: a valid request does ask the source for its items."""
+        """The counter counts: a valid request does ask the source for the items it reads."""
         _seam(scenes)
-        assert client().get(_tile_path(), params=_query(["WEST", "EAST"], tilesize="256")).status_code == 200
+        api = client()
+        assert api.get(_tile_path(_select(api, ["WEST", "EAST"])), params=_query(tilesize="256")).status_code == 200
         assert sorted(scenes.fetched) == ["EAST", "WEST"]
 
 
@@ -647,8 +717,8 @@ class TestWhatTheItemsCarry:
     ) -> None:
         _seam(scenes)
         scenes.items["EAST"]["geometry"] = geometry
-        for path in (_tile_path(), f"{BASE}/WebMercatorQuad/tilejson.json"):
-            assert client().get(path, params=_query(["WEST", "EAST"])).status_code == 502, path
+        assert client().post(BASE, json={"items": ["WEST", "EAST"], "assets": [ASSET]}).status_code == 502
+        assert scenes.selections.rows == {}
 
     @pytest.mark.parametrize("heights", [False, True])
     def test_without_a_geometry_the_bbox_is_the_outline_with_four_or_six_numbers(
@@ -659,23 +729,46 @@ class TestWhatTheItemsCarry:
             west, south, east, north = scenes.items[name]["bbox"]
             scenes.items[name]["geometry"] = None
             scenes.items[name]["bbox"] = [west, south, 0, east, north, 100] if heights else [west, south, east, north]
-        assert _array(client().get(_tile_path(), params=_query(["WEST", "EAST"])))[0].any()
+        api = client()
+        assert _array(api.get(_tile_path(_select(api, ["WEST", "EAST"]))))[0].any()
+
+    def test_the_outline_is_stored_as_the_item_carries_it(self, scenes: Scenes, client) -> None:
+        """A geometry that is no rectangle stays what it is, and an item without one keeps its bbox (not their bounds)."""
+        _seam(scenes)
+        west, south, east, north = scenes.items["WEST"]["bbox"]
+        triangle = {"type": "Polygon", "coordinates": [[[west, south], [east, south], [west, north], [west, south]]]}
+        scenes.items["WEST"]["geometry"] = triangle
+        scenes.items["EAST"]["geometry"] = None
+        api = client()
+        chosen = _select(api, ["WEST", "EAST"])
+        _, document = scenes.selections.rows[chosen]
+        assert document["outlines"]["WEST"] == {"geometry": triangle}
+        assert document["outlines"]["EAST"] == {"bbox": scenes.items["EAST"]["bbox"]}
+        assert sorted(document["order"]) == ["EAST", "WEST"]
+        assert document["bounds"][0] <= west and document["bounds"][2] >= scenes.items["EAST"]["bbox"][2]
 
     def test_a_bbox_of_five_numbers_is_the_sources_502(self, scenes: Scenes, client) -> None:
         _seam(scenes)
         scenes.items["EAST"]["geometry"] = None
         scenes.items["EAST"]["bbox"] = [0, 0, 1, 1, 2]
-        assert client().get(_tile_path(), params=_query(["WEST", "EAST"])).status_code == 502
+        assert client().post(BASE, json={"items": ["WEST", "EAST"], "assets": [ASSET]}).status_code == 502
+
+    def test_an_item_with_neither_geometry_nor_bbox_is_the_sources_502(self, scenes: Scenes, client) -> None:
+        _seam(scenes)
+        scenes.items["EAST"]["geometry"] = None
+        del scenes.items["EAST"]["bbox"]
+        assert client().post(BASE, json={"items": ["WEST", "EAST"], "assets": [ASSET]}).status_code == 502
 
     def test_a_band_chosen_with_bidx_makes_scenes_of_other_band_counts_a_mosaic(self, scenes: Scenes, client) -> None:
         scenes.add("ONE", ZONE_32, SEAM_X - 4000.0, 4000.0, 100)
         scenes.add("TWO", ZONE_32, SEAM_X, 4000.0, 200, bands=2)
-        response = client().get(_tile_path(), params=_query(["ONE", "TWO"], bidx="1"))
+        api = client()
+        response = api.get(_tile_path(_select(api, ["ONE", "TWO"])), params=_query(bidx="1"))
         assert response.status_code == 200, response.text
 
 
 class TestWhatTheUrlMayCarry:
-    """Plan §4.1, §4.8 test 7: ids and one asset, and nothing that could name an area, an operator or an address."""
+    """Plan §4.1, §4.8 test 7: the selection and the display, and nothing that could name an area, an operator or an address."""
 
     @pytest.mark.parametrize(
         "extra",
@@ -696,6 +789,8 @@ class TestWhatTheUrlMayCarry:
             {"op": "band_math"},
             {"op_version": "1"},
             {"params": "{}"},
+            {"item": "WEST"},  # the selection names the scenes and the asset; the URL no longer does
+            {"asset": ASSET},
         ],
     )
     def test_a_parameter_that_could_carry_an_area_or_an_address_or_half_a_step_is_a_400(
@@ -703,8 +798,9 @@ class TestWhatTheUrlMayCarry:
     ) -> None:
         _seam(scenes)
         api = client()
-        for path in (_tile_path(), f"{BASE}/WebMercatorQuad/tilejson.json"):
-            assert api.get(path, params=_query(["WEST", "EAST"], **extra)).status_code == 400, path
+        chosen = _select(api, ["WEST", "EAST"])
+        for path in (_tile_path(chosen), _tilejson_path(chosen)):
+            assert api.get(path, params=_query(**extra)).status_code == 400, path
         assert scenes.fetched == []
 
     @pytest.mark.parametrize(
@@ -716,25 +812,32 @@ class TestWhatTheUrlMayCarry:
         self, scenes: Scenes, client, dataset: str, item_id: str
     ) -> None:
         _seam(scenes)
-        response = client().get(
-            f"/collections/{dataset}/mosaic/tiles/WebMercatorQuad/10/1/1.png", params=_query(["WEST", item_id])
-        )
+        response = client().post(f"/collections/{dataset}/mosaic", json={"items": ["WEST", item_id], "assets": [ASSET]})
         assert response.status_code == 400
         assert item_id.strip() == "" or item_id not in response.text
-        assert scenes.fetched == []
+        assert scenes.fetched == [] and scenes.batches == []
 
-    def test_two_assets_or_none_are_a_400(self, scenes: Scenes, client) -> None:
+    @pytest.mark.parametrize(
+        "assets", [[], ["a", "b", "c", "d", "e"], [ASSET, ASSET], [""], ["x" * 129]], ids=["none", "five", "twice", "empty", "long"]
+    )
+    def test_the_assets_are_one_to_four_each_once(self, scenes: Scenes, client, assets: list[str]) -> None:
         _seam(scenes)
+        response = client().post(BASE, json={"items": ["WEST", "EAST"], "assets": assets})
+        assert response.status_code == 400
+        assert scenes.batches == []
+
+    def test_two_assets_are_a_selection_but_a_tile_without_steps_reads_one(self, scenes: Scenes, client) -> None:
+        scenes.add("WEST", ZONE_32, SEAM_X - 4000.0, 4000.0, 100, assets=(ASSET, "other"))
+        scenes.add("EAST", ZONE_32, SEAM_X, 4000.0, 200, assets=(ASSET, "other"))
         api = client()
-        both = api.get(_tile_path(), params=[("item", "WEST"), ("item", "EAST"), ("asset", "a"), ("asset", "b")])
-        none = api.get(_tile_path(), params=[("item", "WEST"), ("item", "EAST")])
-        assert both.status_code == none.status_code == 400
+        chosen = _select(api, ["WEST", "EAST"], assets=(ASSET, "other"))
+        response = api.get(_tile_path(chosen))
+        assert response.status_code == 400 and "op" in response.json()["detail"]
+        assert scenes.fetched == []
 
     def test_an_item_of_another_dataset_is_the_sources_404(self, scenes: Scenes, client) -> None:
         _seam(scenes)
-        response = client().get(
-            f"/collections/{DEM}/mosaic/tiles/WebMercatorQuad/10/1/1.png", params=_query(["WEST", "EAST"])
-        )
+        response = client().post(f"/collections/{DEM}/mosaic", json={"items": ["WEST", "EAST"], "assets": [ASSET]})
         assert response.status_code == 404
 
     def test_the_schema_has_no_parameter_that_could_carry_an_area_or_an_address(self, scenes: Scenes, client) -> None:
@@ -747,16 +850,22 @@ class TestWhatTheUrlMayCarry:
             for operation in operations.values()
             for parameter in operation["parameters"]
         }
-        assert {"item", "asset", "op", "op_version", "params"} <= names  # the steps of NM4-04
-        assert not names & {"url", "aoi", "bbox", "geometry", "intersects", "expression", "algorithm"}
+        assert {"selection", "op", "op_version", "params"} <= names  # the steps of NM4-04
+        assert not names & {"item", "asset", "url", "aoi", "bbox", "geometry", "intersects", "expression", "algorithm"}
 
-    def test_only_the_tile_and_the_tilejson_exist(self, scenes: Scenes, client) -> None:
+    def test_only_the_tile_and_the_tilejson_exist_under_a_selection(self, scenes: Scenes, client) -> None:
         paths = [path for path in client().app.openapi()["paths"] if path.startswith(MOSAIC_ROUTER_PREFIX)]
         assert sorted(paths) == [
             f"{MOSAIC_ROUTER_PREFIX}/tiles/{{tileMatrixSetId}}/{{z}}/{{x}}/{{y}}",
             f"{MOSAIC_ROUTER_PREFIX}/tiles/{{tileMatrixSetId}}/{{z}}/{{x}}/{{y}}.{{format}}",
             f"{MOSAIC_ROUTER_PREFIX}/{{tileMatrixSetId}}/tilejson.json",
         ]
+
+    def test_the_creation_is_a_post_and_its_body_schema_forbids_other_fields(self, scenes: Scenes, client) -> None:
+        operations = client().app.openapi()["paths"][MOSAIC_SELECTION_ROUTE]
+        assert list(operations) == ["post"]
+        body = operations["post"]["requestBody"]["content"]["application/json"]["schema"]
+        assert sorted(body["properties"]) == ["assets", "items"] and body["additionalProperties"] is False
 
 
 class TestWithoutTheItemCache:
@@ -767,11 +876,13 @@ class TestWithoutTheItemCache:
     ) -> None:
         _seam(scenes)
         api = client(pool=None)
-        for path in (_tile_path(), f"{BASE}/WebMercatorQuad/tilejson.json"):
-            response = api.get(path, params=_query(["WEST", "EAST"]))
+        creation = api.post(BASE, json={"items": ["WEST", "EAST"], "assets": [ASSET]})
+        assert creation.status_code == 503 and "item cache" in creation.json()["detail"]
+        for path in (_tile_path("0" * 32), _tilejson_path("0" * 32)):
+            response = api.get(path)
             assert response.status_code == 503, path
             assert "item cache" in response.json()["detail"]
-        assert scenes.fetched == []
+        assert scenes.fetched == [] and scenes.batches == []
         single = api.get(
             f"/collections/{DATASET}/items/WEST/tiles/WebMercatorQuad/{TILE.z}/{TILE.x}/{TILE.y}.npy",
             params={"asset": ASSET},
@@ -779,14 +890,14 @@ class TestWithoutTheItemCache:
         assert single.status_code == 200, single.text
 
     def test_a_materialized_dataset_without_a_pool_is_a_503_too(self, scenes: Scenes, client) -> None:
-        response = client(pool=None).get(
-            f"/collections/{DEM}/mosaic/tiles/WebMercatorQuad/10/1/1.png", params=_query(["A", "B"])
-        )
+        response = client(pool=None).post(f"/collections/{DEM}/mosaic", json={"items": ["A", "B"], "assets": [ASSET]})
         assert response.status_code == 503 and "item cache" in response.json()["detail"]
 
     def test_a_wrong_request_is_still_a_400_without_a_pool(self, scenes: Scenes, client) -> None:
         _seam(scenes)
-        assert client(pool=None).get(_tile_path(), params=_query(["WEST"])).status_code == 400
+        api = client(pool=None)
+        assert api.post(BASE, json={"items": ["WEST"], "assets": [ASSET]}).status_code == 400
+        assert api.get(_tile_path("NOT-AN-ID")).status_code == 400
 
     @pytest.mark.parametrize(
         "failure",
@@ -806,21 +917,54 @@ class TestWithoutTheItemCache:
             raise failure
 
         api = client()
+        chosen = _select(api, ["WEST", "EAST"])
         api.app.state.earthx_item_source = failing
         root = logging.getLogger()
         root.addHandler(caplog.handler)
         try:
             if isinstance(failure, psycopg.Error):
-                response = api.get(_tile_path(), params=_query(["WEST", "EAST"]))
+                response = api.get(_tile_path(chosen))
                 assert response.status_code == 503 and "item cache" in response.json()["detail"]
                 text = " ".join(own_log_text(record) + str(record.exc_info) for record in caplog.records)
                 assert type(failure).__name__ in text  # a line was logged
                 assert "internal.example" not in text and "secret" not in text and "earthx_search_cache" not in text
             else:
                 with pytest.raises(TimeoutError):
-                    api.get(_tile_path(), params=_query(["WEST", "EAST"]))
+                    api.get(_tile_path(chosen))
         finally:
             root.removeHandler(caplog.handler)
+
+    @pytest.mark.parametrize("where", ["batch", "get", "renew", "put"])
+    def test_a_database_that_fails_under_a_selection_is_a_503_without_its_text(
+        self, scenes: Scenes, client, where: str, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        _seam(scenes)
+        failure = psycopg.OperationalError("connection to server at db.internal.example failed for user secret")
+
+        async def failing(*args: Any) -> Any:
+            raise failure
+
+        api = client()
+        chosen = _select(api, ["WEST", "EAST"])
+        if where == "batch":
+            api.app.state.earthx_item_batches = failing
+            scenes.selections.expire(chosen)
+        else:
+            setattr(scenes.selections, where, failing)
+            if where == "put":
+                scenes.selections.expire(chosen)
+        root = logging.getLogger()
+        root.addHandler(caplog.handler)
+        try:
+            if where == "get":
+                response = api.get(_tile_path(chosen))
+            else:
+                response = api.post(BASE, json={"items": ["WEST", "EAST"], "assets": [ASSET]})
+        finally:
+            root.removeHandler(caplog.handler)
+        assert response.status_code == 503 and "catalogue database" in response.json()["detail"]
+        text = " ".join(own_log_text(record) + str(record.exc_info) for record in caplog.records)
+        assert "OperationalError" in text and "internal.example" not in text and "secret" not in text
 
 
 class TestTheLog:
@@ -832,19 +976,208 @@ class TestTheLog:
         root = logging.getLogger()
         root.addHandler(caplog.handler)
         try:
-            assert api.get(_tile_path(), params=_query(["WEST", "EAST", "FAR"])).status_code == 200
+            chosen = _select(api, ["WEST", "EAST", "FAR"])
+            assert api.get(_tile_path(chosen)).status_code == 200
         finally:
             root.removeHandler(caplog.handler)
         lines = [own_log_text(record) for record in caplog.records]
         assert any("mosaic tile reads 2 of 3 scenes" in line for line in lines), lines  # lines were logged at all
-        coordinates = [
-            number
-            for item in scenes.items.values()
-            for number in item["bbox"]
-        ] + list(TMS.bounds(TILE))
+        assert any("mosaic selection created with 3 scenes" in line for line in lines), lines
+        coordinates = [number for item in scenes.items.values() for number in item["bbox"]] + list(TMS.bounds(TILE))
         text = " ".join(lines)
         for value in coordinates:
             assert f"{value:.3f}" not in text and f"{value:.4f}" not in text
+
+
+class TestTheSelection:
+    """M5-30b part 3 (adr/0032 §10.2): the id is the hash of the content, and the URL stays the whole description."""
+
+    def test_the_id_is_the_first_32_hex_characters_of_the_sha256_of_the_canonical_content(self) -> None:
+        canonical = json.dumps({"dataset": "d", "assets": ["a", "b"], "items": ["x", "y"]}, sort_keys=True, separators=(",", ":"))
+        expected = hashlib.sha256(canonical.encode()).hexdigest()[:32]
+        assert selection_id("d", ["b", "a"], ["y", "x"]) == selection_id("d", ["a", "b"], ["x", "y"]) == expected
+        assert canonical == '{"assets":["a","b"],"dataset":"d","items":["x","y"]}'
+
+    def test_it_answers_201_with_the_id_and_where_its_tiles_are_and_200_where_it_exists(self, scenes: Scenes, client) -> None:
+        _seam(scenes)
+        api = client()
+        body = {"items": ["EAST", "WEST"], "assets": [ASSET]}
+        created = api.post(BASE, json=body)
+        assert created.status_code == 201, created.text
+        chosen = created.json()["id"]
+        assert chosen == selection_id(DATASET, [ASSET], ["WEST", "EAST"])
+        assert created.json() == {
+            "id": chosen,
+            "tiles": f"{BASE}/{chosen}/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}",
+            "tilejson": f"{BASE}/{chosen}/WebMercatorQuad/tilejson.json",
+        }
+        again = api.post(BASE, json={"items": ["WEST", "EAST"], "assets": [ASSET]})
+        assert again.status_code == 200 and again.json() == created.json()
+        assert scenes.selections.renewed == [chosen]  # the second one only moved the end out
+
+    def test_creating_one_that_exists_asks_the_source_for_nothing(self, scenes: Scenes, client) -> None:
+        _seam(scenes)
+        api = client()
+        _select(api, ["WEST", "EAST"])
+        asked = len(scenes.batches)
+        _select(api, ["EAST", "WEST"])
+        assert len(scenes.batches) == asked
+
+    def test_another_asset_or_another_dataset_is_another_id(self, scenes: Scenes, client) -> None:
+        scenes.add("WEST", ZONE_32, SEAM_X - 4000.0, 4000.0, 100, assets=(ASSET, "other"))
+        scenes.add("EAST", ZONE_32, SEAM_X, 4000.0, 200, assets=(ASSET, "other"))
+        api = client()
+        ids = {
+            _select(api, ["WEST", "EAST"]),
+            _select(api, ["WEST", "EAST"], assets=("other",)),
+            _select(api, ["WEST", "EAST"], assets=(ASSET, "other")),
+            _select(api, ["WEST", "EAST"], dataset=DISPLAY_DATASET),
+        }
+        assert len(ids) == 4
+        assert _select(api, ["WEST", "EAST"], assets=("other", ASSET)) in ids  # the order of the assets is no content
+
+    def test_another_set_of_scenes_is_another_id(self, scenes: Scenes, client) -> None:
+        _seam(scenes)
+        api = client()
+        assert _select(api, ["WEST", "EAST"]) != _select(api, ["WEST", "FAR"])
+
+    def test_2000_scenes_are_taken_in_batches_of_a_hundred_and_no_item_is_fetched_alone(
+        self, scenes: Scenes, client
+    ) -> None:
+        names = [f"S{n:04d}" for n in range(mosaic_tiles.MAX_SELECTION_ITEMS)]
+        scenes.add(names[0], ZONE_32, SEAM_X - 5000.0, 10_000.0, 10)
+        for name in names[1:]:
+            scenes.alias(name, names[0])
+        api = client()
+        chosen = _select(api, names)
+        assert len(scenes.batches) == 20 and all(len(batch) == 100 for batch in scenes.batches)
+        assert sorted(sum(scenes.batches, [])) == names
+        assert scenes.fetched == []
+        # a tile reads its 32 and fetches those and no more
+        response = api.get(_tile_path(chosen))
+        assert response.status_code == 200, response.text
+        assert len(scenes.fetched) == mosaic_tiles.TILE_FILE_BUDGET
+        assert response.headers[mosaic_tiles.PARTIAL_HEADER] == str(len(names) - mosaic_tiles.TILE_FILE_BUDGET)
+
+    def test_a_selection_over_the_limit_is_refused_before_the_source_is_asked(self, scenes: Scenes, client) -> None:
+        names = [f"S{n:04d}" for n in range(mosaic_tiles.MAX_SELECTION_ITEMS + 1)]
+        response = client().post(BASE, json={"items": names, "assets": [ASSET]})
+        assert response.status_code == 400 and "2000" in response.json()["detail"]
+        assert response.text.count("S0001") == 0  # a refusal does not echo the list
+        assert scenes.batches == [] and scenes.fetched == []
+
+    def test_an_id_that_is_not_stored_is_a_410_that_says_how_to_create_it_again(self, scenes: Scenes, client) -> None:
+        _seam(scenes)
+        api = client()
+        for path in (_tile_path("0" * 32), _tilejson_path("0" * 32)):
+            response = api.get(path)
+            assert response.status_code == 410, path
+            assert f"POST /collections/{DATASET}/mosaic" in response.json()["detail"]
+        assert scenes.fetched == []
+
+    @pytest.mark.parametrize(
+        "malformed",
+        ["0" * 31, "0" * 33, "A" * 32, "g" * 32, "0" * 16 + "-" + "0" * 15],
+        ids=["short", "long", "upper case", "not hex", "dash"],
+    )
+    def test_an_id_that_does_not_look_like_one_is_a_400_and_nothing_is_looked_up(
+        self, scenes: Scenes, client, malformed: str
+    ) -> None:
+        _seam(scenes)
+        api = client()
+        api.app.state.earthx_mosaic_selections = None  # looking it up would be a 503
+        for path in (_tile_path(malformed), _tilejson_path(malformed)):
+            assert api.get(path).status_code == 400, path
+
+    def test_a_selection_of_one_dataset_asked_under_another_is_a_404(self, scenes: Scenes, client) -> None:
+        _seam(scenes)
+        api = client()
+        chosen = _select(api, ["WEST", "EAST"])
+        response = api.get(_tile_path(chosen, dataset=DISPLAY_DATASET))
+        assert response.status_code == 404
+        assert api.get(_tilejson_path(chosen, dataset=DISPLAY_DATASET)).status_code == 404
+        assert scenes.fetched == []
+
+    def test_an_expired_selection_is_a_410_and_creating_it_again_gives_the_same_id_and_the_same_picture(
+        self, scenes: Scenes, client
+    ) -> None:
+        _seam(scenes)
+        api = client()
+        chosen = _select(api, ["WEST", "EAST"])
+        before = api.get(_tile_path(chosen)).content
+        scenes.selections.expire(chosen)
+        assert api.get(_tile_path(chosen)).status_code == 410
+        assert api.get(_tilejson_path(chosen)).status_code == 410
+        recreated = api.post(BASE, json={"items": ["EAST", "WEST"], "assets": [ASSET]})
+        assert recreated.status_code == 201 and recreated.json()["id"] == chosen
+        assert api.get(_tile_path(chosen)).content == before
+
+    def test_a_tile_fetches_only_the_items_it_reads(self, scenes: Scenes, client) -> None:
+        _seam(scenes)
+        api = client()
+        chosen = _select(api, ["WEST", "EAST", "FAR"])
+        assert scenes.fetched == []
+        _array(api.get(_tile_path(chosen)))
+        assert sorted(scenes.fetched) == ["EAST", "WEST"]
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            {"items": ["WEST", "EAST"], "assets": [ASSET], "aoi": []},
+            {"items": "WEST", "assets": [ASSET]},
+            {"items": [1, 2], "assets": [ASSET]},
+            {"assets": [ASSET]},
+            {"items": ["WEST", "EAST"]},
+            ["WEST", "EAST"],
+        ],
+        ids=["other field", "items a string", "items numbers", "no items", "no assets", "a list"],
+    )
+    def test_a_body_of_another_shape_is_a_422_that_names_the_field_and_echoes_no_value(
+        self, scenes: Scenes, client, body: Any
+    ) -> None:
+        _seam(scenes)
+        response = client().post(BASE, json=body)
+        assert response.status_code == 422, response.text
+        assert "WEST" not in response.text and "EAST" not in response.text
+        assert scenes.batches == []
+
+    def test_a_body_that_is_no_json_is_a_422(self, scenes: Scenes, client) -> None:
+        response = client().post(BASE, content=b"{not json", headers={"content-type": "application/json"})
+        assert response.status_code == 422 and scenes.batches == []
+
+    def test_a_body_over_128_kb_is_a_413_from_its_length_before_it_is_read(self, scenes: Scenes, client) -> None:
+        limit = mosaic_tiles.MAX_SELECTION_BODY_BYTES
+        response = client().post(BASE, content=b" " * (limit + 1), headers={"content-type": "application/json"})
+        assert response.status_code == 413 and str(limit) in response.json()["detail"]
+        assert scenes.batches == []
+
+    def test_a_body_over_128_kb_without_a_length_is_a_413_too(self, scenes: Scenes, client) -> None:
+        limit = mosaic_tiles.MAX_SELECTION_BODY_BYTES
+
+        def chunks() -> Iterator[bytes]:
+            for _ in range(limit // 1024 + 2):
+                yield b" " * 1024
+
+        response = client().post(BASE, content=chunks(), headers={"content-type": "application/json"})
+        assert response.status_code == 413
+        assert scenes.batches == []
+
+    def test_a_body_of_2000_ids_of_60_characters_is_under_the_limit(self) -> None:
+        ids = [f"S2C_{n:04d}_".ljust(60, "x") for n in range(mosaic_tiles.MAX_SELECTION_ITEMS)]
+        assert len(json.dumps({"items": ids, "assets": [ASSET]}).encode()) < mosaic_tiles.MAX_SELECTION_BODY_BYTES
+
+    def test_the_items_of_the_selection_are_those_the_source_returned_not_those_it_added(self, scenes: Scenes, client) -> None:
+        """A source that answers a search by id with more than was asked for does not put more into the selection."""
+        _seam(scenes)
+        api = client()
+
+        async def generous(dataset_id: str, item_ids: Any) -> list[dict[str, Any]]:
+            return [json.loads(json.dumps(item)) for item in scenes.items.values()]
+
+        api.app.state.earthx_item_batches = generous
+        chosen = _select(api, ["WEST", "EAST"])
+        assert scenes.selections.rows[chosen][1]["items"] == ["EAST", "WEST"]
+        assert sorted(scenes.selections.rows[chosen][1]["outlines"]) == ["EAST", "WEST"]
 
 
 class TestTheOrderWithoutAMosaic:
@@ -870,7 +1203,7 @@ class TestTheOrderWithoutAMosaic:
     def test_it_is_the_order_the_mosaic_tile_names_in_its_tilejson(self, scenes: Scenes, client) -> None:
         self._zones(scenes)
         api = client()
-        tilejson = api.get(f"{BASE}/WebMercatorQuad/tilejson.json", params=_query(["A", "B", "C"])).json()
+        tilejson = api.get(_tilejson_path(_select(api, ["A", "B", "C"]))).json()
         answer = api.post(self.ROUTE, json={"items": ["C", "A", "B"], "asset": ASSET}).json()
         assert answer["order"] == tilejson["earthx:order"]
 
@@ -879,7 +1212,7 @@ class TestTheOrderWithoutAMosaic:
         client().post(self.ROUTE, json={"items": ["A", "B", "C"], "asset": ASSET})
         assert scenes.opened == []
 
-    def test_more_than_the_64_a_mosaic_takes_are_ordered(self, scenes: Scenes, client) -> None:
+    def test_more_than_64_scenes_are_ordered(self, scenes: Scenes, client) -> None:
         names = [f"S{n:03d}" for n in range(70)]
         scenes.add(names[0], ZONE_32, SEAM_X - 5000.0, 4000.0, 10)
         for name in names[1:]:
@@ -928,7 +1261,7 @@ class TestTheOrderWithoutAMosaic:
         assert scenes.fetched == []
 
     def test_get_is_not_the_way_to_ask(self, scenes: Scenes, client) -> None:
-        assert client().get(self.ROUTE, params=_query(["A", "B"])).status_code in (404, 405, 422)
+        assert client().get(self.ROUTE).status_code in (404, 405, 422)
 
 
 class TestAColourPictureTakesARangeForEachChannel:
@@ -937,8 +1270,9 @@ class TestAColourPictureTakesARangeForEachChannel:
     def test_each_channel_is_stretched_by_its_own_range(self, scenes: Scenes, client) -> None:
         scenes.add("A", ZONE_32, SEAM_X - 4000.0, 5000.0, 100, bands=3)
         scenes.add("B", ZONE_32, SEAM_X - 1000.0, 5000.0, 100, bands=3)
-        params = _query(["A", "B"]) + [("rescale", "0,200"), ("rescale", "100,300"), ("rescale", "0,100")]
-        response = client().get(_tile_path(extension="png"), params=params)
+        params = [("rescale", "0,200"), ("rescale", "100,300"), ("rescale", "0,100")]
+        api = client()
+        response = api.get(_tile_path(_select(api, ["A", "B"]), extension="png"), params=params)
         assert response.status_code == 200, response.text
         with MemoryFile(response.content) as memory, memory.open() as picture:
             red, green, blue, alpha = picture.read()
@@ -951,7 +1285,8 @@ class TestAColourPictureTakesARangeForEachChannel:
     def test_one_range_still_stretches_all_three_alike(self, scenes: Scenes, client) -> None:
         scenes.add("A", ZONE_32, SEAM_X - 4000.0, 5000.0, 100, bands=3)
         scenes.add("B", ZONE_32, SEAM_X - 1000.0, 5000.0, 100, bands=3)
-        response = client().get(_tile_path(extension="png"), params=_query(["A", "B"]) + [("rescale", "0,200")])
+        api = client()
+        response = api.get(_tile_path(_select(api, ["A", "B"]), extension="png"), params=[("rescale", "0,200")])
         with MemoryFile(response.content) as memory, memory.open() as picture:
             red, green, blue, alpha = picture.read()
         inside = alpha > 0

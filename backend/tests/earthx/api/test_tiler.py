@@ -33,6 +33,7 @@ from earthx.api.tiler import (
     BANDS_ROUTE,
     DOWNLOAD_ROUTE,
     MOSAIC_ROUTER_PREFIX,
+    MOSAIC_SELECTION_ROUTE,
     ROUTER_PREFIX,
     SCENE_ORDER_ROUTE,
     build_app,
@@ -146,15 +147,17 @@ class TestNoFreeAddress:
         item it touches still resolves through ``earthx_item_source`` like any
         other route here. The statistics of an order's area (NM4-19) are the same case: the order, with its
         items and its AOI, travels in the body. So is the order of the scenes of a pass without a mosaic (NM4-24): the
-        ids travel in the body, and every item still resolves through the source. The mosaic tiles (M4-17b) name the dataset in the path and the items
-        of one overpass in the query, each fetched through the same source. The tiles of a job
+        ids travel in the body, and every item still resolves through the source. So is the creation of the selection of a mosaic
+        (M5-30b part 3), whose ids travel in the body and are fetched by id in batches. The mosaic tiles (M4-17b) name the dataset and the
+        selection in the path, and each item they read is fetched through the same source. The tiles of a job
         result (M4-13c-5) name a result, which the object store holds, and no
         source at all. ``/colormaps`` (UI-03d) renders nothing and reads no source: it lists the names the tiles take.
         """
         rendering = [
             path
             for path in client.app.openapi()["paths"]
-            if path not in ("/health", "/colormaps", DOWNLOAD_ROUTE, AREA_STATISTICS_ROUTE, SCENE_ORDER_ROUTE, BANDS_ROUTE)
+            if path
+            not in ("/health", "/colormaps", DOWNLOAD_ROUTE, AREA_STATISTICS_ROUTE, SCENE_ORDER_ROUTE, BANDS_ROUTE, MOSAIC_SELECTION_ROUTE)
             and not path.startswith((RESULT_ROUTER_PREFIX, MOSAIC_ROUTER_PREFIX))
         ]
         assert rendering

@@ -45,7 +45,7 @@ class TestTheThreeBandsEqualTheMosaicJobOnTheNativeLevel:
         api = client()
         compared = 0
         for tile in _tiles(NATIVE[size]):
-            response = api.get(_url(tile, size=size) + _bands(*SHOWN))
+            response = api.get(_url(api, tile, size=size) + _bands(*SHOWN))
             assert response.status_code == 200, response.text
             from_tile, from_job = _decode(response.content), _job_tile(job, tile, size)
             assert from_tile.shape[0] == 3 and from_tile.shape[1:] == from_job.shape[1:], tile
@@ -61,27 +61,31 @@ class TestWhatIsRead:
     def test_the_assets_of_the_three_bands_are_opened_and_no_others(self, client, source: Source) -> None:
         tile = _tiles()[len(_tiles()) // 2]
         steps = [("band_math", NDVI)]
-        response = client().get(_url(tile, steps, assets=("red", "nir", "scl")) + _bands("red", "nir", "NDVI"))
+        api = client()
+        response = api.get(_url(api, tile, steps, assets=("red", "nir", "scl")) + _bands("red", "nir", "NDVI"))
         assert response.status_code == 200, response.text
         assert _opened_names(source) == {"red", "nir"}
 
 
 class TestARefusedPicture:
     def test_a_colormap_is_a_400_before_the_first_item(self, client, source: Source) -> None:
-        response = client().get(_url(_tiles()[0]) + _bands(*SHOWN) + "&rescale=0,1&colormap_name=viridis")
+        api = client()
+        response = api.get(_url(api, _tiles()[0]) + _bands(*SHOWN) + "&rescale=0,1&colormap_name=viridis")
         assert response.status_code == 400 and "colormap" in response.json()["detail"], response.text
         assert source.fetched == []
 
     def test_two_ranges_are_a_400_before_the_first_item(self, client, source: Source) -> None:
-        response = client().get(_url(_tiles()[0]) + _bands(*SHOWN) + "&rescale=0,1&rescale=0,2")
+        api = client()
+        response = api.get(_url(api, _tiles()[0]) + _bands(*SHOWN) + "&rescale=0,1&rescale=0,2")
         assert response.status_code == 400, response.text
         assert source.fetched == []
 
     def test_a_range_for_each_channel_draws(self, client) -> None:
         tile = _tiles()[len(_tiles()) // 2]
-        url = _url(tile).replace(".tif?", ".png?")
-        one = client().get(url + _bands(*SHOWN) + "&rescale=-1,1")
-        three = client().get(url + _bands(*SHOWN) + "&rescale=-1,1&rescale=0,0.2&rescale=-1,1")
+        api = client()
+        url = _url(api, tile).replace(".tif?", ".png?")
+        one = api.get(url + _bands(*SHOWN) + "&rescale=-1,1")
+        three = api.get(url + _bands(*SHOWN) + "&rescale=-1,1&rescale=0,0.2&rescale=-1,1")
         assert one.status_code == 200 and three.status_code == 200, three.text
         # Counter-check: the second channel has a range of its own, so the picture is another.
         assert one.content != three.content
@@ -90,26 +94,29 @@ class TestARefusedPicture:
     def test_two_four_or_a_repeated_band_is_a_400_before_the_first_item(
         self, client, source: Source, names: tuple[str, ...]
     ) -> None:
-        assert client().get(_url(_tiles()[0]) + _bands(*names)).status_code == 400
+        api = client()
+        assert api.get(_url(api, _tiles()[0]) + _bands(*names)).status_code == 400
         assert source.fetched == []
 
     def test_a_channel_the_steps_do_not_leave_is_a_422_with_its_name_before_a_file_is_opened(
         self, client, source: Source
     ) -> None:
-        response = client().get(_url(_tiles()[0]) + _bands("red", "EVI", "NDVI"))
+        api = client()
+        response = api.get(_url(api, _tiles()[0]) + _bands("red", "EVI", "NDVI"))
         assert response.status_code == 422 and "'EVI'" in response.json()["detail"], response.text
         assert source.opened == []
 
     def test_three_bands_without_steps_are_a_400(self, client, source: Source) -> None:
-        plain = f"/collections/{DATASET}/mosaic/tiles/WebMercatorQuad/{'/'.join(map(str, _tiles()[0]))}.tif"
-        assert client().get(f"{plain}?item=A&item=B&asset=red" + _bands(*SHOWN)).status_code == 400
+        api = client()
+        plain = _url(api, _tiles()[0], [], assets=("red",))
+        assert api.get(plain + _bands(*SHOWN)).status_code == 400
         assert source.fetched == []
 
 
 class TestTheTileJson:
-    def test_it_names_the_three_bands_and_the_tiles_carry_them_in_order(self, client) -> None:
-        body = client().get(_url(None) + _bands(*SHOWN)).json()
-        assert body["bands"] == list(SHOWN) and "band" not in body
+    def test_the_tiles_it_hands_out_carry_the_three_bands_in_order(self, client) -> None:
+        api = client()
+        body = api.get(_url(api, None) + _bands(*SHOWN)).json()
         template = body["tiles"][0]
         positions = [template.index(f"band={quote(name)}") for name in SHOWN]
         assert positions == sorted(positions)
