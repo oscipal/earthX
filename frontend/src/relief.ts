@@ -27,7 +27,7 @@ export function reliefSource(): Source {
   return { type: 'raster-dem', tiles: [TERRAIN_TILES], encoding: 'terrarium', tileSize: 256, maxzoom: TERRAIN_MAXZOOM, attribution: TERRAIN_ATTRIBUTION };
 }
 
-// Light from the north-west at 45° as maps usually have it, fixed to the map (it cannot turn or tilt here). The shading is light-handed so
+// Light from the north-west at 45° as maps usually have it, fixed to the map (it turns with the map in 3D, UI-06). The shading is light-handed so
 // that the imagery under it stays readable.
 const LOOK = { exaggeration: 0.5, shadow: 'rgba(0, 0, 0, 0.45)', highlight: 'rgba(255, 255, 255, 0.25)' } as const;
 
