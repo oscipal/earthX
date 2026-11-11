@@ -11,6 +11,7 @@ import { BASEMAP_IDS, BASEMAP_PREFIX, BASEMAPS, type BasemapId } from './basemap
 import { OVERLAY_PREFIX } from './overlays';
 import { appLayers, publishedStyle } from './fixtures/publishedStyle';
 import { baseMapStyle, composeStyle } from './mapStyles';
+import { TERRAIN_SOURCE, terrainSource } from './terrain';
 
 // What a change of the basemap may be made of: whole sources and layers, the glyphs and sprite, and the properties of
 // a layer that two styles share.
@@ -77,5 +78,28 @@ describe('the style diff of a change of the basemap', () => {
   it.each(BASEMAP_IDS)('%s again: nothing to change', (id) => {
     const previous = running(id);
     expect(diff(previous, composeStyle(previous, styleOf(id), id))).toEqual([]);
+  });
+});
+
+// UI-06: the map in 3D keeps its terrain across a change of the basemap, with or without the overlay "Relief" (two sources).
+describe('a change of the basemap in 3D', () => {
+  const in3d = (id: BasemapId, relief: boolean): StyleSpecification => {
+    const style = running(id);
+    const overlays = { labels: false, graticule: false, relief };
+    const withTerrain = { ...style, sources: { ...style.sources, [TERRAIN_SOURCE]: terrainSource() }, terrain: { source: TERRAIN_SOURCE, exaggeration: 1.5 } };
+    return composeStyle(withTerrain, styleOf(id), id, overlays);
+  };
+
+  it.each(pairs)('%s to %s keeps the terrain and its source, and the diff does not touch them', (from, to) => {
+    for (const relief of [false, true]) {
+      const previous = in3d(from, relief);
+      const next = composeStyle(previous, styleOf(to), to, { labels: false, graticule: false, relief });
+      expect(next.terrain).toEqual({ source: TERRAIN_SOURCE, exaggeration: 1.5 });
+      expect(next.sources[TERRAIN_SOURCE]).toEqual(terrainSource());
+      expect(Object.keys(next.sources).includes(`${OVERLAY_PREFIX}relief`)).toBe(relief);
+      const commands = diff(previous, next);
+      expect(commands.filter((c) => c.command === 'setTerrain')).toEqual([]);
+      expect(commands.filter((c) => ON_AN_ID.test(c.command) && idOf(c) === TERRAIN_SOURCE)).toEqual([]);
+    }
   });
 });

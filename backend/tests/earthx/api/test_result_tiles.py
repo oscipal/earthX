@@ -10,6 +10,7 @@ from __future__ import annotations
 import io
 import json
 import logging
+import socket
 from collections.abc import Iterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
@@ -552,23 +553,61 @@ def test_the_result_id_is_not_in_the_access_log(rig: Rig, uploaded: str, caplog:
     assert uploaded not in caplog.text
 
 
+def _closed_port() -> int:
+    """A loopback port nothing listens on, so GDAL's read is refused at once and takes no network."""
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
 def test_a_read_error_leaves_neither_the_signed_url_nor_the_result_id_in_the_log(
     rig: Rig, uploaded: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """GDAL puts the path it could not open into its own warning; the line that reaches stdout hides it."""
-    signed = f"http://127.0.0.1:1/earthx/results/{uploaded}/result.tif?X-Amz-Credential=GKkeyid%2F20261020&X-Amz-Signature=deadbeef"
+    # What an earlier test of the same worker left on the logging module must not decide whether GDAL's
+    # lines get here: a `propagate = False` on `rasterio` once kept them from the root handler.
+    for name in ("rasterio", "rasterio._env"):
+        monkeypatch.setattr(logging.getLogger(name), "propagate", True)
+        monkeypatch.setattr(logging.getLogger(name), "level", logging.NOTSET)
+        monkeypatch.setattr(logging.getLogger(name), "disabled", False)
+    monkeypatch.setattr(logging.getLogger(), "level", logging.INFO)
+    monkeypatch.setattr(logging.root.manager, "disable", logging.NOTSET)
+
+    signed = (
+        f"http://127.0.0.1:{_closed_port()}/earthx/results/{uploaded}/result.tif"
+        "?X-Amz-Credential=GKkeyid%2F20261020&X-Amz-Signature=deadbeef"
+    )
     monkeypatch.setattr(result_tiles, "gdal_path", lambda url: f"/vsicurl/{signed}")
     stream = io.StringIO()
     handler = logging.StreamHandler(stream)
     handler.setFormatter(JsonFormatter())
-    logging.getLogger().addHandler(handler)
+    gdal_lines: list[str] = []
+
+    class Raw(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            if record.name.startswith("rasterio"):
+                gdal_lines.append(record.getMessage())
+
+    raw = Raw()
+    root = logging.getLogger()
+    root.addHandler(handler)
+    root.addHandler(raw)
     try:
         response = rig.client.get(rig.tile_url(uploaded))
+        # Whatever else GDAL words about the address, the formatter must hide it: the same line in other words.
+        gdal_logger = logging.getLogger("rasterio._env")
+        for wording in (
+            "CPLE_AppDefined in HTTP response code on {}: 403",
+            "CPLE_OpenFailed in '/vsicurl/{}' not recognized as being in a supported file format.",
+            "GDAL signalled an error: err_no=11, msg='CURL error: Timeout on {}'",
+        ):
+            gdal_logger.warning(wording.format(signed))
     finally:
-        logging.getLogger().removeHandler(handler)
+        root.removeHandler(handler)
+        root.removeHandler(raw)
     out = stream.getvalue()
     assert response.status_code == 502
-    assert "HTTP response code on" in out, "GDAL's warning is there, so the check below looks at something"
+    assert gdal_lines, "GDAL wrote a line of its own, so the check below looks at something"
     for secret in ("deadbeef", "GKkeyid", uploaded):
         assert secret not in out
 
