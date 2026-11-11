@@ -755,7 +755,7 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
     }));
   const dtypes = info?.dtypes ?? [];
   const automatic = info ? chooseDtype({ steps: choices, bands: inOrder, allowed: dtypes }) : null;
-  const options = automatic ? dtypeOptions({ dtypes, steps: choices }) : [];
+  const options = automatic ? dtypeOptions({ dtypes, steps: choices, bands: inOrder }) : [];
   const dtype = automatic ? effectiveDtype(p.dtype, options, automatic) : '';
   // The results on screen are those of the open section; the extra scenes were fetched under the active dataset.
   const extraIds = new Set(p.extraScenes?.items.map((item) => item.id));

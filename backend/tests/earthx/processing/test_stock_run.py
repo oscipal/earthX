@@ -15,7 +15,7 @@ import rasterio
 from rio_tiler.io import Reader
 
 from earthx.processing import run
-from earthx.processing.errors import RecipeInvalid, UnsupportedRecipe
+from earthx.processing.errors import RecipeInvalid
 from earthx.processing.operators import REGISTRY
 from earthx.processing.recipe import recipe_from_data
 from tests.earthx.processing import sources
@@ -264,9 +264,12 @@ class TestRefusals:
         with pytest.raises(RecipeInvalid, match="replaces or removes bands"):
             _run(_recipe([old], ["band_math"]), tmp_path)
 
-    def test_an_integer_output_needs_one_nodata_for_every_band_it_holds(self, tmp_path: Path) -> None:
-        with pytest.raises(UnsupportedRecipe, match="integer output needs one nodata"):
-            _run(_recipe([NDVI], ["red", "NDVI"], dtype="uint16"), tmp_path)
+    def test_an_integer_output_of_scaled_bands_and_band_math_takes_the_edge_of_its_type(self, tmp_path: Path) -> None:
+        # Before M5-28 refused: the bands disagree (0 and NaN). The scaled values are not the source's integers either.
+        result = _run(_recipe([NDVI], ["red", "NDVI"], dtype="uint16"), tmp_path)
+        with rasterio.open(result.path) as dataset:
+            assert dataset.nodata == 65535
+        assert [band["nodata"] for band in result.properties["bands"]] == [65535, 65535]
 
     def test_a_recipe_without_bands_in_the_output_is_not_a_recipe(self) -> None:
         data = _recipe([NDVI], ["NDVI"])

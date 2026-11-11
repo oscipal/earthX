@@ -506,7 +506,7 @@ Mosaik eines Überflugs); ein Zuschnitt (`crop`) kommt von der Plattform.
 `latest`; es gibt kein `docker push`):
 
 ```bash
-docker build --target runner --build-arg EARTHX_COMMIT=$(git rev-parse --short HEAD) -t earthx-runner:0.5.0 backend
+docker build --target runner --build-arg EARTHX_COMMIT=$(git rev-parse --short HEAD) -t earthx-runner:0.5.1 backend
 ```
 
 **Rechnen.** Die `recipe.json` stammt aus dem Download eines Ergebnisses (sie
@@ -514,7 +514,7 @@ liegt neben `result.tif`); sie liegt hier in `./in`, das Ergebnis kommt nach
 `./out`. Eine Zeile, damit PowerShell sie nicht anders liest:
 
 ```bash
-docker run --rm --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges --user "$(id -u):$(id -g)" -v "$PWD/in:/in:ro" -v "$PWD/out:/out" earthx-runner:0.5.0 run /in/recipe.json
+docker run --rm --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges --user "$(id -u):$(id -g)" -v "$PWD/in:/in:ro" -v "$PWD/out:/out" earthx-runner:0.5.1 run /in/recipe.json
 ```
 
 In PowerShell ohne `--user` und mit `${PWD}\in:/in:ro` bzw. `${PWD}\out:/out`.

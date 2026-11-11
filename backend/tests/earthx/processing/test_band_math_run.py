@@ -14,7 +14,7 @@ import rasterio
 from rio_tiler.io import Reader
 
 from earthx.processing import run
-from earthx.processing.errors import GridMismatch, RecipeInvalid, ScalingMismatch, UnsupportedRecipe
+from earthx.processing.errors import GridMismatch, RecipeInvalid, ScalingMismatch
 from earthx.processing.operators import REGISTRY
 from earthx.processing.plan import estimate
 from tests.earthx.processing import sources
@@ -141,10 +141,10 @@ class TestOnCogs:
         with pytest.raises(RecipeInvalid):
             _run(data, tmp_path)
 
-    def test_an_integer_output_has_no_nodata_to_put_a_nan_in(self, tmp_path: Path) -> None:
-        with pytest.raises(UnsupportedRecipe, match="nodata"):
-            _run(_recipe([NDVI], dtype="uint16"), tmp_path)
-        assert list(tmp_path.iterdir()) == []
+    def test_an_integer_output_takes_the_edge_of_its_type_for_the_nan_of_band_math(self, tmp_path: Path) -> None:
+        """Refused before M5-28; NaN now becomes the edge, ``max`` for ``uint16``."""
+        result = _run(_recipe([NDVI], dtype="uint16"), tmp_path)
+        assert result.properties["bands"][0]["nodata"] == 65535
 
     def test_a_scaling_the_item_states_differently_from_the_file_stops_the_run(self, tmp_path: Path) -> None:
         with pytest.raises(ScalingMismatch):
