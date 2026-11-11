@@ -313,3 +313,47 @@ def test_the_measurement_runs_only_by_hand_under_its_profile() -> None:
 def test_the_gdal_configuration_is_the_tiles_own() -> None:
     config = tile_gdal_options(policy_from_registry(registry()))
     assert config["GDAL_HTTP_MULTIRANGE"] == "SERIAL"
+
+
+# --- the logging module is as it was after a read (#336)
+
+
+@pytest.mark.parametrize("fails", [False, True], ids=["read", "failed read"])
+def test_a_read_leaves_the_gdal_logger_as_it_found_it(tmp_path: Path, fails: bool) -> None:
+    import logging
+
+    gdal_logger = logging.getLogger("rasterio")
+    before = (gdal_logger.level, gdal_logger.propagate, list(gdal_logger.handlers))
+    scene = (
+        AssetPath(str(tmp_path / "missing.tif"), dataset_id="d", item_id="x", asset="a")
+        if fails
+        else _cog(tmp_path / "a.tif", 7.43, 500.0, "a")
+    )
+    tile = tile_at_centre((7.43, 46.9344, 7.4812, 46.96), 13)
+    result = read_twice([scene], "d", (7.43, 46.93, 7.49, 46.96), tuple(tile), {})
+    assert (result["status"] == "ok") is not fails
+    assert (gdal_logger.level, gdal_logger.propagate, list(gdal_logger.handlers)) == before
+
+
+def test_gdal_lines_reach_only_the_counter_during_a_read_and_the_process_again_afterwards() -> None:
+    import logging
+
+    gdal_logger = logging.getLogger("rasterio")
+    seen: list[str] = []
+
+    class Catch(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            seen.append(record.getMessage())
+
+    catch = Catch(logging.DEBUG)
+    root = logging.getLogger()
+    root.addHandler(catch)
+    try:
+        with measure_tiles._counting_gdal_lines() as downloads:
+            gdal_logger.debug("VSICURL: Downloading 0-9 (https://%s/x.tif)...", SECRET_HOST_PART)
+            assert downloads.take() == (1, 10)
+        assert seen == []
+        gdal_logger.warning("after the read")
+        assert seen == ["after the read"]
+    finally:
+        root.removeHandler(catch)
