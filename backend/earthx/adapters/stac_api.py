@@ -417,6 +417,8 @@ def _next_marker(dialect: StacDialect, payload: dict[str, Any]) -> str | None:
 
 # One page of a materialization: the FSDI's own maximum (`limit` 101 answers 100 items, M5-08 plan §2).
 MATERIALIZE_PAGE_LIMIT = 100
+# One progress line per this many pages: a full run of the FSDI is about a thousand (M5-08 plan §2).
+PROGRESS_EVERY_PAGES = 10
 # By id alone: no time window and no area, so every item of the collection comes, each once (M5-08 plan §4.2).
 MATERIALIZE_SORTBY: tuple[dict[str, str], ...] = ({"field": "id", "direction": "asc"},)
 # What a materialized item of an entry with states per tile carries besides the source's properties (M5-08 plan §4.4).
@@ -446,6 +448,7 @@ async def materialize_items(
     *,
     gateway: Gateway,
     known_version: str | None,
+    expected_items: int | None = None,
 ) -> MaterializeOutcome:
     """Every item of the collection, read page by page and checked against the entry, or "unchanged" (M5-08 §4.2).
 
@@ -457,6 +460,9 @@ async def materialize_items(
     an id without a tile) counts as ``unknown``; above 1 % of what was read the run aborts without an item. Where the
     entry names ``item_states``, one state per tile is loaded and the others count as ``withheld``. ``in_bucket`` is
     ``listed`` and ``missing`` is 0: the source lists nothing apart from its items. No asset is opened.
+
+    Every :data:`PROGRESS_EVERY_PAGES` pages one log line says how far the run is; ``expected_items`` (the count of the
+    last run) lets it name the pages to expect, the source gives no total (M5-08 plan §2).
     """
     if config.source.item_holding is not ItemHolding.MATERIALIZED:
         raise NotMaterialized(
@@ -477,7 +483,7 @@ async def materialize_items(
     items: list[Item] = []
     seen: set[str] = set()
     listed = unknown = 0
-    async for feature in _every_item(dialect, config, gateway):
+    async for feature in _every_item(dialect, config, gateway, expected_items):
         listed += 1
         item_id = feature.get("id") if isinstance(feature, dict) else None
         if isinstance(item_id, str):
@@ -522,6 +528,13 @@ async def materialize_items(
     )
 
 
+def _progress(pages: int, items: int, expected_items: int | None) -> str:
+    """``page 120 / ~450, 12 000 items``: numbers only, no item id and no address."""
+    of = f" / ~{max(pages, -(-expected_items // MATERIALIZE_PAGE_LIMIT))}" if expected_items else ""
+    count = f"{items:,}".replace(",", " ")
+    return f"materialize: page {pages}{of}, {count} items"
+
+
 def _unchanged(version: str) -> MaterializeOutcome:
     return MaterializeOutcome(
         status="unchanged", source_version=version, listed=0, in_bucket=0, missing=0, withheld=0, unknown=0, items=()
@@ -540,7 +553,9 @@ def _collection_version(config: DatasetConfig, etag: str, collection: Any) -> st
     return f"{etag}{_VERSION_UPDATED}{updated}"
 
 
-async def _every_item(dialect: StacDialect, config: DatasetConfig, gateway: Gateway) -> AsyncIterator[Any]:
+async def _every_item(
+    dialect: StacDialect, config: DatasetConfig, gateway: Gateway, expected_items: int | None = None
+) -> AsyncIterator[Any]:
     """The features of every page of a search over the whole collection, page after page."""
     body: dict[str, Any] = {
         "collections": [config.source.source_collection_id],
@@ -548,10 +563,16 @@ async def _every_item(dialect: StacDialect, config: DatasetConfig, gateway: Gate
         "sortby": list(MATERIALIZE_SORTBY),
     }
     markers: set[str] = set()
+    pages = items = 0
     while True:
         payload = (await gateway.post_json(f"{endpoint_of(config)}/search", json=body, retry=True)).json()
-        for feature in require_feature_list(payload):
+        features = require_feature_list(payload)
+        pages += 1
+        items += len(features)
+        for feature in features:
             yield feature
+        if pages % PROGRESS_EVERY_PAGES == 0:
+            LOGGER.info(_progress(pages, items, expected_items))
         marker = _next_marker(dialect, payload)
         if marker is None:
             return

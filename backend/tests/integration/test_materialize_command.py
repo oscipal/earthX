@@ -29,6 +29,7 @@ from earthx.api.main import app
 from earthx.catalog.pgstac import (
     MaterializeRunRecord,
     delete_items_except,
+    last_loaded_count,
     last_source_version,
     load_collection,
     record_materialize_run,
@@ -36,6 +37,7 @@ from earthx.catalog.pgstac import (
     use_pgstac_search_path,
 )
 from earthx.catalog.registry import AdapterKind, CoverageProvider, ItemHolding, SearchCapabilities
+from earthx.discovery import materialize as materialize_module
 from earthx.discovery.materialize import _policy_for, main, run_materialize
 from earthx.gateway import Policy, UpstreamError
 from earthx.gateway.client import Gateway
@@ -289,6 +291,41 @@ class TestRunLog:
         record_materialize_run(conn, earlier)
         record_materialize_run(conn, later)
         assert last_source_version(conn, MATERIALIZED.dataset_id) == '"newer"'
+
+
+class TestTheLengthOfTheLastRun:
+    """The estimate a progress line names: ``listed`` of the last run that loaded items."""
+
+    def test_none_before_any_run(self, conn: psycopg.Connection) -> None:
+        assert last_loaded_count(conn, "no-run-has-ever-happened-for-this-id") is None
+
+    async def test_the_count_of_the_last_loaded_run_and_an_unchanged_run_does_not_reset_it(
+        self, conn: psycopg.Connection
+    ) -> None:
+        load_collection(conn, MATERIALIZED)
+        await _run(conn, tile_names=[TILE_A, TILE_B], etag='"v1"')
+        await _run(conn, tile_names=[TILE_A, TILE_B], etag='"v1"')  # unchanged: lists nothing
+        assert last_loaded_count(conn, MATERIALIZED.dataset_id) == 2
+
+    async def test_a_forced_run_with_fewer_tiles_is_the_new_estimate(self, conn: psycopg.Connection) -> None:
+        load_collection(conn, MATERIALIZED)
+        await _run(conn, tile_names=[TILE_A, TILE_B], etag='"v1"')
+        await _run(conn, tile_names=[TILE_A], etag='"v2"')
+        assert last_loaded_count(conn, MATERIALIZED.dataset_id) == 1
+
+    async def test_the_run_hands_it_to_the_adapter(self, conn: psycopg.Connection, monkeypatch: pytest.MonkeyPatch) -> None:
+        load_collection(conn, MATERIALIZED)
+        await _run(conn, tile_names=[TILE_A, TILE_B], etag='"v1"')
+        seen: list[int | None] = []
+        original = materialize_module.materialize_items
+
+        async def spy(*args: Any, **kwargs: Any) -> Any:
+            seen.append(kwargs["expected_items"])
+            return await original(*args, **kwargs)
+
+        monkeypatch.setattr(materialize_module, "materialize_items", spy)
+        await _run(conn, tile_names=[TILE_A, TILE_B], etag='"v2"')
+        assert seen == [2]
 
 
 # --------------------------------------------------------------------------------

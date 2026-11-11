@@ -87,6 +87,7 @@ from earthx.access.resolve import (
     MalformedItem,
     NoReader,
     ResolvedAsset,
+    check_is_raster,
     open_asset_ref,
     resolve_asset,
     target_gsd_for,
@@ -1231,6 +1232,14 @@ async def download_crop(
     # and two identical keys would otherwise write the same file name into the
     # archive twice (M2-10 review). One request for `visual` is one `visual.tif`.
     wanted = list(dict.fromkeys(body.assets))
+    # An auxiliary file that is no raster (the ZIP of XYZ files) is refused before any band is described or read.
+    try:
+        for matched, _ in surviving_groups:
+            for matched_item in matched:
+                for asset in wanted:
+                    check_is_raster(matched_item, config, asset)
+    except InvalidAssetKey as error:
+        raise HTTPException(status_code=400, detail=str(error)) from None
 
     # What the items say about each band, for the names of the files and BANDS.txt (NM4-75), and the plan of the
     # files: refused here, before anything is read, when the bands and the form do not make one.
