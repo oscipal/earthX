@@ -62,7 +62,7 @@ Im lokalen Postgres 16 der Sitzung:
 - **Auswerter:** `backend/tests/search_evaluation.py` (Maße, Ruhen, Bericht), getrennt vom Test, damit M5-23 ihn mit dem Vektorarm wiederverwendet. Eigener Code statt `ranx`: vier Maße über wenige Dutzend Fragen brauchen keine Abhängigkeit [A]; der gepaarte Vergleich zweier Varianten (`ranx`) kommt mit M5-23, wo er gebraucht wird.
 - **Bericht:** je Frage Rang der Datensätze mit Note 2, Treffer mit `never`, aktiv oder ruhend; als Text in der Ausgabe von `pytest` (`-s`) und als Tabelle im PR.
 - **Grenze im Test (F3 = 1):** M5-22a hat noch keine Suche; der Test prüft den Auswerter und den Nullpunkt. Ab M5-22b sind alle Filterfragen und drei von vier Negativfragen hart, Recall@5 und MRR@10 haben eine Untergrenze aus der eigenen Messung (Sperrklinke). Die Grenze aus `adr/0026` F5 gilt ab M5-23.
-- **Nullpunkt:** der Auswerter mit einer Suche, die nichts liefert. Ergebnis vorab [A]: Recall@5 und MRR@10 = 0, beide Filterfragen und alle vier Negativfragen bestanden. Steht im PR.
+- **Nullpunkt:** der Auswerter mit einer Suche, die nichts liefert. Ergebnis vorab [A]: Recall@5 und MRR@10 = 0, alle vier Filterfragen (Q27, Q28, Q29, Q32) und alle vier Negativfragen bestanden. Steht im PR.
 
 ### 3.2 Suchtext je Datensatz (`adr/0026` §4.1)
 
@@ -146,6 +146,8 @@ Nichts, solange sie `/stac/collections` ohne Parameter rufen. `catalog-load` sch
 - **A5** Ohne Parameter alle Collections wie heute; mit `q` höchstens 20 je Seite, ein größeres `limit` wird gesenkt (die Spezifikation erlaubt dem Server weniger zu liefern [A]).
 - **A6** Ohne Text, aber mit Fläche oder Zeit: gefilterte Liste ohne Rang in der heutigen Reihenfolge.
 - **A7** Filterfragen zählen nach den Kürzeln in `never`, auch wenn ein Kürzel noch keine Kennung hat (M5-22a, §10).
+- **A8** Eine Sprache ohne gemessene Frage verfehlt die Grenze: Nichts belegt, dass sie erreicht ist.
+- **A9** „Drei von vier Negativfragen“ heißt: höchstens eine aktive Negativfrage darf Treffer haben, auch wenn per PR weitere hinzukommen.
 
 ---
 
@@ -230,9 +232,9 @@ Grob geschätzt [A], ohne Fixture: Auswerter und Test rund 300 Zeilen, Suchtext,
 ## 10. Umsetzung Teil 1: M5-22a (11.11.2026)
 
 - **Fixture** `backend/tests/fixtures/search/evaluation_set.yaml`: die 50 Fragen aus `adr/0026` §8.3 wörtlich, die Kürzel aus §8.2 mit Kennung (`null`, solange keine feststeht; BEV mit `provisional: true`), Hinweise aus §8.3 als Kommentare. AOI als Box in ganzen Grad, Zeitraum als `years: [erstes, letztes]`.
-- **Auswerter** `backend/tests/search_evaluation.py`: liest die Fixture mit dem strengen Lader der Registry (`entry_files.read_yaml`) und prüft die Regeln aus §8.1 (Noten getrennt, Negativfrage ohne Noten, ganze Grad, kein `proto-`); `evaluate` stellt die aktiven Fragen an eine beliebige Suche, `shortfalls` vergleicht mit einer Grenze (`ADR_0026_F5` als Konstante), `report` schreibt den Bericht je Frage. Eine Antwort mit doppelter oder unbekannter Kennung ist ein Fehler der Suche.
+- **Auswerter** `backend/tests/search_evaluation.py`: liest die Fixture mit dem strengen Lader der Registry (`entry_files.read_yaml`) und prüft die Regeln aus §8.1 (Noten getrennt, Negativfrage ohne Noten, ganze Grad, kein `proto-`); `evaluate` stellt die aktiven Fragen an eine beliebige Suche, die nur Text, AOI und Zeitraum sieht (`Query`), nie die Noten; `shortfalls` vergleicht mit einer Grenze (`ADR_0026_F5` als Konstante), `report` schreibt den Bericht je Frage. Eine Antwort mit doppelter oder unbekannter Kennung ist ein Fehler der Suche.
 - **Filterfragen** zählen nach den Kürzeln, nicht nach den Kennungen: Q29 prüft MCH, das noch keine Kennung hat, und bleibt so eine (bestandene) Filterfrage (Auslegung A7).
-- **Tests** `backend/tests/catalog/test_search_evaluation.py`: die Fixture gegen das ADR (Kennungen, Sprachen, Negativfragen, reine Namen, Voraussetzungen, Boxen, Zeiträume), feste Kennungen in der Registry, Maße auf einem synthetischen Katalog, 25 fehlerhafte Fixtures, Nullpunkt.
+- **Tests** `backend/tests/catalog/test_search_evaluation.py`: die Fixture gegen das ADR (Kennungen, Sprachen, Negativfragen, reine Namen, Voraussetzungen, Boxen, Zeiträume), feste Kennungen in der Registry, Maße auf einem synthetischen Katalog (mit einem Datensatz, der eine Kennung hat, aber nicht geladen ist, wie BEV), 26 fehlerhafte Fixtures, Nullpunkt mit festen Zahlen; eine vorläufige Kennung darf noch nicht in der Registry stehen (Erinnerung beim Einzug von BEV).
 
 **Nullpunkt** (keine Suche, Katalog der Registry mit sechs Einträgen; `pytest -n 0 -s backend/tests/catalog/test_search_evaluation.py`):
 
