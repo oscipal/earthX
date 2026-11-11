@@ -267,7 +267,6 @@ function OutputBands({ view }: { view: OrderView }) {
         {view.dtypeChosen ? ' (your choice)' : ' (chosen automatically)'}
       </p>
       {view.dtypeAutomatic && !view.dtypeChosen && <span className="hint">{view.dtypeAutomatic.reason}</span>}
-      {view.dtypeNote && <p className="hint warn">{view.dtypeNote}</p>}
       <details className="pp-details">
         <summary>Change the data type</summary>
         <label className="vc-field pp-field">
@@ -275,15 +274,12 @@ function OutputBands({ view }: { view: OrderView }) {
           <select value={view.dtypeChosen ? view.dtype : ''} onChange={(e) => setDtype(e.target.value)}>
             <option value="">Automatic{view.dtypeAutomatic ? `: ${view.dtypeAutomatic.value}` : ''}</option>
             {view.dtypeOptions.map((option) => (
-              <option key={option.value} value={option.value} disabled={option.disabledReason !== null} title={option.disabledReason ?? undefined}>
+              <option key={option.value} value={option.value}>
                 {option.label}
               </option>
             ))}
           </select>
         </label>
-        {view.dtypeOptions.find((o) => o.disabledReason) && (
-          <span className="hint">{view.dtypeOptions.find((o) => o.disabledReason)!.disabledReason} These types are not offered.</span>
-        )}
       </details>
     </section>
   );

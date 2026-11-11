@@ -1282,16 +1282,15 @@ describe('the range measured over the AOI (NM4-19b)', () => {
     expect(body(posted()[0]).aoi).not.toEqual(body(posted()[1]).aoi);
   });
 
-  it('measures again where the output type changes: the job counts the values in that type', async () => {
+  // Otto, 11.11.2026: after Band math only float32 makes sense; a type chosen by hand gives way to it, and the measure stays the one of float32.
+  it('offers float32 only after Band math, so a type chosen by hand asks for no other measure', async () => {
     await aoiOnly();
-    const type = orderOfFirstJob()!.output;
-    const other = orderView(useAppStore.getState(), store()).dtypeOptions.find(
-      (option) => option.disabledReason === null && option.value !== (type as { dtype: string }).dtype,
-    )!;
-    act(() => store().setDtype(other.value));
+    expect((orderOfFirstJob()!.output as { dtype: string }).dtype).toBe('float32');
+    expect(orderView(useAppStore.getState(), store()).dtypeOptions.map((option) => option.value)).toEqual(['float32']);
+    act(() => store().setDtype('uint16'));
     await afterDebounce();
-    expect(posted()).toHaveLength(2);
-    expect((body(posted()[1]).output as { dtype: string }).dtype).toBe(other.value);
+    expect(posted()).toHaveLength(1);
+    expect((orderOfFirstJob()!.output as { dtype: string }).dtype).toBe('float32');
   });
 
   it('does not take the measure of the order before for the one typed while the 400 ms run', async () => {

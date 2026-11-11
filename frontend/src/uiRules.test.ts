@@ -881,3 +881,20 @@ describe('the buttons at the bottom right of the map (UI-06, `docs/ui/leitfaden.
     expect(css).toMatch(/\.compass-south \{\s*fill: var\(--text\);/u);
   });
 });
+
+describe('the output types of an order (Otto, 11.11.2026): only those that make sense, by the rule of the registry', () => {
+  // The rule is the operators' (`x-earthx-passes-values` of the description): the file that offers the types names no operator or method.
+  const OWN_RULE = /['"](?:band_math|normalize|reproject|mask|mask_values|nearest|mode|bilinear)['"]/u;
+  // No type is shown locked or marked: what does not make sense is not offered.
+  const MARKED = /not recommended|nodata does not fit|These types are not offered|disabledReason/u;
+
+  it('takes the rule from the description, not from a list of its own', () => {
+    expect(OWN_RULE.test(withoutComments(SOURCES['./processingDefaults.ts']))).toBe(false);
+    expect(OWN_RULE.test("const FLOAT_RESULT = { band_math: 1 }; const PICKING = ['nearest', 'mode'];")).toBe(true);
+  });
+
+  it('offers no type it marks or locks', () => {
+    expect(where((code) => MARKED.test(code))).toEqual([]);
+    expect(MARKED.test('<option disabled={option.disabledReason !== null}>')).toBe(true);
+  });
+});

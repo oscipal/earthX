@@ -169,7 +169,7 @@ import {
   type PreviewSpec,
 } from './processingPreview';
 import type { ResultStats } from './render';
-import { chooseDtype, dtypeOptions, effectiveDtype, integerNote, type Choice, type DtypeOption } from './processingDefaults';
+import { chooseDtype, dtypeOptions, effectiveDtype, type Choice, type DtypeOption } from './processingDefaults';
 import { buildTileUrl } from './mapLayers';
 import type { PermalinkView } from './permalink';
 import { previewRangeOf } from './permalinkRange';
@@ -572,7 +572,6 @@ export interface OrderView {
   dtypeAutomatic: Choice | null;
   // The user changed it (and the choice stands); else the automatic type is sent.
   dtypeChosen: boolean;
-  dtypeNote: string | null;
   built: BuiltOrder | null;
   // The text of the order, or of all orders of a batch; `null` while one is missing.
   key: string | null;
@@ -750,13 +749,11 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
         ? inOutput.has(resultNameOf(step))
         : step.op !== 'normalize' || (typeof step.values.bands === 'string' && namesIn(step.values.bands).some((name) => inOutput.has(name))),
     )
-    .map((step) => ({
-      op: step.op,
-      ...(typeof step.values.resampling === 'string' ? { resampling: step.values.resampling } : {}),
-    }));
+    .map((step) => ({ op: step.op, values: step.values }));
   const dtypes = info?.dtypes ?? [];
-  const automatic = info ? chooseDtype({ steps: choices, bands: inOrder, allowed: dtypes }) : null;
-  const options = automatic ? dtypeOptions({ dtypes, steps: choices, bands: inOrder }) : [];
+  const typeArgs = { steps: choices, bands: inOrder, allowed: dtypes, operators: info?.operators ?? [] };
+  const automatic = info ? chooseDtype(typeArgs) : null;
+  const options = automatic ? dtypeOptions(typeArgs) : [];
   const dtype = automatic ? effectiveDtype(p.dtype, options, automatic) : '';
   // The results on screen are those of the open section; the extra scenes were fetched under the active dataset.
   const extraIds = new Set(p.extraScenes?.items.map((item) => item.id));
@@ -816,8 +813,9 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
     dtype,
     dtypeOptions: options,
     dtypeAutomatic: automatic,
-    dtypeChosen: p.dtype !== null && p.dtype === dtype,
-    dtypeNote: integerNote(dtype, choices, inOrder),
+    // A choice the chain no longer allows gives way to float32 without a word (Otto, 11.11.2026): where that is the automatic type too,
+    // the panel says "chosen automatically"; else it shows float32 as the choice.
+    dtypeChosen: p.dtype !== null && (p.dtype === dtype || dtype !== automatic?.value),
     built,
     key,
   };
