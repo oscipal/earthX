@@ -8,7 +8,9 @@ substitute ``SURFACE``.
 
 from __future__ import annotations
 
+import ast
 import io
+import json
 from collections.abc import Callable, Iterator
 from contextlib import ExitStack, asynccontextmanager
 from dataclasses import replace
@@ -21,6 +23,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+import earthx
 from earthx.api import mosaic_tiles
 from earthx.api.tiler import OVERVIEW_ROUTER_PREFIX, build_app
 from earthx.catalog.registry import (
@@ -93,12 +96,16 @@ class Catalogue:
         self.scenes = scenes
         self.asked: list[tuple[str, tuple[float, float, float, float], int]] = []
         self.fail: Exception | None = None
+        self.holds: set[str] | None = None  # the ids of the items it holds, or all of the scenes
 
-    async def search(self, conn: Any, dataset_id: str, bbox: tuple[float, float, float, float], limit: int) -> list[Any]:
+    async def search(
+        self, conn: Any, dataset_id: str, bbox: tuple[float, float, float, float], limit: int
+    ) -> list[Any]:
         self.asked.append((dataset_id, tuple(bbox), limit))
         if self.fail is not None:
             raise self.fail
-        return [dict(item, collection=dataset_id) for item in self.scenes.items.values()][:limit]
+        held = [item for item_id, item in self.scenes.items.items() if self.holds is None or item_id in self.holds]
+        return [dict(item, collection=dataset_id) for item in held][:limit]
 
 
 @pytest.fixture
@@ -114,16 +121,18 @@ def catalogue(scenes: Scenes, monkeypatch: pytest.MonkeyPatch) -> Catalogue:
 
 
 @pytest.fixture
-def client(scenes: Scenes, catalogue: Catalogue, monkeypatch: pytest.MonkeyPatch) -> Iterator[Callable[..., TestClient]]:
+def client(
+    scenes: Scenes, catalogue: Catalogue, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[Callable[..., TestClient]]:
     """The real app over ``registry``, with a pool or without; every client is closed with the test."""
     stack = ExitStack()
 
-    def build(registry: DatasetRegistry = REGISTRY, *, pool: Any = WITH_POOL) -> TestClient:
+    def build(registry: DatasetRegistry = REGISTRY, *, pool: Any = WITH_POOL, item_source: Any = None) -> TestClient:
         _serve(scenes, monkeypatch)
 
         @asynccontextmanager
         async def lifespan(app: FastAPI) -> Any:
-            app.state.earthx_item_source = None
+            app.state.earthx_item_source = item_source
             app.state.earthx_cache_pool = pool
             yield
 
@@ -161,10 +170,12 @@ class TestTheTileOfTheSubstitute:
         assert response.headers[mosaic_tiles.SOURCE_HEADER] == mosaic_tiles.SUBSTITUTE_SOURCE
         assert mosaic_tiles.PARTIAL_HEADER not in response.headers
 
-    def test_the_items_are_those_of_the_substitute_in_the_rectangle_of_the_tile(self, scenes, catalogue, client) -> None:
+    def test_the_items_are_those_of_the_substitute_in_the_rectangle_of_the_tile(
+        self, scenes, catalogue, client
+    ) -> None:
         _seam(scenes)
         _array(client().get(_path()))
-        (dataset_id, bbox, limit), = catalogue.asked
+        ((dataset_id, bbox, limit),) = catalogue.asked
         assert dataset_id == SURFACE_ID
         assert bbox == pytest.approx(tuple(TMS.bounds(TILE)))
         assert limit == mosaic_tiles.SUBSTITUTE_ITEM_CAP + 1
@@ -367,3 +378,106 @@ class TestWhatTheRouteRefuses:
 
     def test_the_prefix_is_the_one_the_client_builds(self) -> None:
         assert OVERVIEW_ROUTER_PREFIX == "/collections/{dataset}/overview"
+
+
+class TestWhatNeverComesFromTheSubstitute:
+    """Statistics, crop and the rest hang on the dataset and its items; the substitute is a picture of the tile route only.
+
+    ``T1`` is an item of ``TERRAIN`` itself, ``SUB1`` one of its substitute. Whatever else is asked of ``TERRAIN``, only the
+    address of ``T1`` is ever cleared; below its first level the tile reads ``SUB1`` and never ``T1``.
+    """
+
+    @pytest.fixture
+    def pair(self, scenes: Scenes, catalogue: Catalogue) -> list[tuple[str, str]]:
+        scenes.add("T1", ZONE_32, SEAM_X - 4000.0, 8000.0, 50)
+        scenes.add("SUB1", ZONE_32, SEAM_X - 4000.0, 8000.0, 200)
+        catalogue.holds = {"SUB1"}
+        fetched: list[tuple[str, str]] = []
+
+        async def source(dataset_id: str, item_id: str) -> dict[str, Any]:
+            fetched.append((dataset_id, item_id))
+            if (dataset_id, item_id) != (TERRAIN_ID, "T1"):
+                raise AssertionError(f"{dataset_id}/{item_id} is not an item of the dataset that is asked for")
+            return json.loads(json.dumps(scenes.items["T1"]))
+
+        self.source = source
+        return fetched
+
+    def test_the_statistics_of_the_dataset_are_those_of_its_own_item(self, scenes, catalogue, client, pair) -> None:
+        response = client(item_source=self.source).get(
+            f"{BASE.replace('overview', 'items/T1')}/statistics", params={"asset": ASSET}
+        )
+        assert response.status_code == 200, response.text
+        # the flat value of T1 (50), not that of the substitute's item over the same place (200)
+        assert "50.0" in response.text and "200.0" not in response.text
+        assert pair == [(TERRAIN_ID, "T1")]
+        assert catalogue.asked == []
+        assert [address for address in scenes.cleared if "SUB1" in address] == []
+
+    def test_the_tile_below_the_first_level_reads_the_substitute_and_not_the_dataset(
+        self, scenes, catalogue, client, pair
+    ) -> None:
+        tile = _array(client(item_source=self.source).get(_path()))
+        assert value_at(tile, SEAM_X + 500.0) == 200
+        assert [address for address in scenes.cleared if "T1" in address] == []
+        assert pair == []
+
+    def test_the_tile_of_the_dataset_from_its_first_level_on_reads_its_own_item(
+        self, scenes, catalogue, client, pair
+    ) -> None:
+        z13 = TMS.tile(*TMS.lnglat(*TMS.xy_bounds(TILE)[:2]), 13)
+        response = client(item_source=self.source).get(
+            f"/collections/{TERRAIN_ID}/items/T1/tiles/WebMercatorQuad/{z13.z}/{z13.x}/{z13.y}.npy",
+            params={"asset": ASSET},
+        )
+        assert response.status_code == 200, response.text
+        assert pair == [(TERRAIN_ID, "T1")]
+        assert catalogue.asked == []
+        assert [address for address in scenes.cleared if "SUB1" in address] == []
+
+
+def _references(tree: ast.AST) -> Iterator[tuple[str, str]]:
+    """Every use of the name of the substitute or of what reads it in a module: (kind, name of the function it is in)."""
+    wanted = {"overview_substitute", "items_in_tile", "search_items_in_bbox_async", "SUBSTITUTE"}
+
+    def walk(node: ast.AST, inside: str) -> Iterator[tuple[str, str]]:
+        for child in ast.iter_child_nodes(node):
+            where = child.name if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) else inside
+            name = (
+                child.attr if isinstance(child, ast.Attribute)
+                else child.id if isinstance(child, ast.Name)
+                else child.arg if isinstance(child, ast.keyword) and child.arg
+                else child.name if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
+                else child.value if isinstance(child, ast.Constant) and isinstance(child.value, str)
+                else None
+            )  # fmt: skip
+            if name in wanted:
+                yield name, where
+            yield from walk(child, where)
+
+    return walk(tree, "<module>")
+
+
+def test_no_code_but_the_registry_the_collection_and_the_substitute_route_names_the_substitute() -> None:
+    """The routes of statistics, histogram, area statistics, crop and download, and the jobs, cannot read the substitute by name.
+
+    A scan of the code of ``earthx``: the places that may mention it are the registry that checks the pair, the collection
+    that publishes it, the search that finds its items and the one path dependency of its tile route.
+    """
+    root = Path(earthx.__file__).parent
+    found: dict[str, set[tuple[str, str]]] = {}
+    for path in sorted(root.rglob("*.py")):
+        uses = set(_references(ast.parse(path.read_text())))
+        if uses:
+            found[path.relative_to(root).as_posix()] = uses
+    assert set(found) == {
+        "api/mosaic_tiles.py",
+        "api/tiler.py",
+        "catalog/collection.py",
+        "catalog/pgstac.py",
+        "catalog/registry.py",
+    }
+    assert {where for _, where in found["api/tiler.py"]} == {"overview_scenes"}
+    assert {name for name, _ in found["api/tiler.py"]} == {"overview_substitute", "items_in_tile", "SUBSTITUTE"}
+    assert {where for _, where in found["api/mosaic_tiles.py"]} == {"items_in_tile", "<module>"}
+    assert {where for _, where in found["catalog/collection.py"]} == {"to_stac_collection"}
