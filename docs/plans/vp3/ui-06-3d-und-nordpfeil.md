@@ -1,6 +1,6 @@
 # UI-06 — 3D-Ansicht und Nordpfeil
 
-**Stand:** 11.11.2026, beauftragt von Otto am 10.11.2026; Plan mit Fragen F1–F14 (§9), **angenommen von Otto am 11.11.2026** mit Abweichungen bei F2–F5 (§9a). §5 und §7 sind an die Antworten angepasst, die Regeln stehen im Leitfaden mit der Markierung *(folgt mit UI-06)*. Neue Fragen F15–F17 (§9b). Bis zu Ottos Signal kein Produktivcode.
+**Stand:** 11.11.2026, beauftragt von Otto am 10.11.2026; Plan mit Fragen F1–F14 (§9), **angenommen von Otto am 11.11.2026** mit Abweichungen bei F2–F5 (§9a). §5 und §7 sind an die Antworten angepasst, die Regeln stehen im Leitfaden mit der Markierung *(folgt mit UI-06)*. Neue Fragen F15–F17 (§9b), beantwortet von Otto am 11.11.2026 (jeweils Option 1); Umsetzung gestartet am 11.11.2026 (§10).
 **Stufe B:** Erst dieser Plan im Draft-PR, Otto beantwortet die Fragen, dann setzt dieselbe Session um.
 **Gilt dazu:** `docs/ui/leitfaden.md` (alle Regeln; Oberflächentexte englisch), NM4-35 (`docs/plans/querschnitt/nm4-35-relief.md`, Höhenkacheln, Attribution, Datenschutz), UI-02 §6.7 (Browser lädt Kacheln direkt), D27 (`docs/plans/m2/m2-format-und-viewer.md`).
 **Startsatz:** „Führe Aufgabe UI-06 aus `docs/plans/vp3/ui-06-3d-und-nordpfeil.md` aus.“
@@ -245,3 +245,5 @@ Dazu: hell und dunkel, schmale Fenster (§6); Antworten im Leitfaden. Umsetzung 
 **F17 — Eigene Zeichnung der Nadel** (Leitfaden §3 erlaubt keine eigenen Zeichnungen)
 1. Zweite Ausnahme neben „Settings“: zwei Spitzen als SVG in `compassNeedle.ts`, Nord `--danger`, Süd `--text`, im Leitfaden vermerkt (**Empfehlung**; anders ist eine rote Nordhälfte nicht zu haben)
 2. Lucide `navigation-2` in Rot, gedreht (Pfeil statt Nadel)
+
+**Antworten Otto (11.11.2026):** F15, F16 und F17 jeweils Option 1: Ziehen am Kompass dreht in 3D, Klick ohne Bewegung richtet aus, im Fokus ←/→ um 15°; der Kompass ist in 2D nicht gesperrt; die Nadel ist eine eigene Zeichnung als zweite Ausnahme von Leitfaden §3. Umsetzung freigegeben.
