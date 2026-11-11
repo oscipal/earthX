@@ -16,9 +16,10 @@ import json
 import httpx
 import numpy
 from rasterio.io import MemoryFile
-from view import CENTRE, NDVI, TMS, scene_ids
+from view import CENTRE, NDVI, TMS, create_selection, scene_ids, without_assets
 
-BASE = "http://127.0.0.1:8101/collections/sentinel-2-c1-l2a"
+HOST = "http://127.0.0.1:8101"
+BASE = f"{HOST}/collections/sentinel-2-c1-l2a"
 
 
 def read(client: httpx.Client, url: str) -> numpy.ma.MaskedArray:
@@ -35,11 +36,11 @@ def main() -> None:
     parser.add_argument("--scenes", type=int, default=2)
     args = parser.parse_args()
     scene = scene_ids(1)[0]
-    items = "&".join(f"item={item}" for item in sorted(scene_ids(args.scenes)))
+    selection = create_selection(HOST, scene_ids(args.scenes), ["nir", "red"])
     paths = {
         "ndvi": (f"{BASE}/items/{scene}/tiles/WebMercatorQuad", NDVI),
         "visual": (f"{BASE}/items/{scene}/tiles/WebMercatorQuad", "asset=visual"),
-        "ndvi-mosaic": (f"{BASE}/mosaic/tiles/WebMercatorQuad", f"{items}&{NDVI}"),
+        "ndvi-mosaic": (f"{HOST}{selection.removesuffix('/{z}/{x}/{y}')}", without_assets(NDVI)),
     }
     with httpx.Client(timeout=300) as client:
         for mode, (path, query) in paths.items():
