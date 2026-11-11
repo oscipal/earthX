@@ -242,12 +242,17 @@ forbidden_modules =
     earthx.catalog.coverage
     earthx.catalog.entry_files
     earthx.catalog.geocode_cache
+    earthx.catalog.glossary
     earthx.catalog.load
     earthx.catalog.local_coverage
     earthx.catalog.pgstac
+    earthx.catalog.places
     earthx.catalog.schema
+    earthx.catalog.search
     earthx.catalog.search_cache
     earthx.catalog.search_filters
+    earthx.catalog.search_index
+    earthx.catalog.search_text
     earthx.catalog.stats_cache
 
 [importlinter:contract:datasets-isolated]
