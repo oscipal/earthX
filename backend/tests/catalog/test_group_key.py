@@ -36,6 +36,7 @@ def viewer(*, group_by: tuple[str, ...]) -> ViewerInfo:
         results_group_by=group_by,
         overview=OverviewMode.OWN,
         overview_resampling=None,
+        overview_substitute=None,
     )
 
 
@@ -133,6 +134,7 @@ class TestTheOverpassKey:
             results_group_by=("datetime", "s2:datatake_id"),
             overview=OverviewMode.OWN,
             overview_resampling=None,
+            overview_substitute=None,
         )
         scene = item(datetime="2026-07-24T10:38:17Z", **{"grid:code": "MGRS-32TMS", "s2:datatake_id": "GS2B_1"})
         assert group_key(scene, both) == ("2026-07-24", "MGRS-32TMS")
@@ -166,6 +168,7 @@ class TestTheDayOfAcquisition:
         results_group_by=("datetime", "datatake"),
         overview=OverviewMode.OWN,
         overview_resampling=None,
+        overview_substitute=None,
     )
     PERIOD = ViewerInfo(
         group_by=("start_datetime",),
@@ -176,6 +179,7 @@ class TestTheDayOfAcquisition:
         results_group_by=("start_datetime",),
         overview=OverviewMode.OWN,
         overview_resampling=None,
+        overview_substitute=None,
     )
 
     def test_the_instant_of_the_key_is_the_utc_day_not_the_day_of_the_offset(self) -> None:

@@ -63,6 +63,7 @@ function quicklookDataset(minZoom = 8) {
         results_group_by: ['datetime'],
         overview: 'own' as const,
         overview_resampling: null,
+        overview_substitute: null,
       },
     },
   ]);
@@ -185,6 +186,7 @@ describe('syncFocusRaster: the quicklook underlay below min_zoom (M3-12, O5)', (
           results_group_by: ['datetime'],
           overview: 'pyramid' as const,
           overview_resampling: 'average' as const,
+          overview_substitute: null,
         },
       },
     ]);

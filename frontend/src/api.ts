@@ -380,6 +380,13 @@ export function buildMosaicTileTemplate(datasetId: string, itemIds: readonly str
   return `${mosaicBase(datasetId)}/tiles/${TILE_MATRIX_SET}/{z}/{x}/{y}?${mosaicQuery(itemIds, asset)}&tilesize=${MOSAIC_TILE_SIZE}`;
 }
 
+// The tile route of the substitute a dataset shows below its first level (registry `viewer.overview: substitute`, plan
+// M5-30b §4.8): no items and no asset, the tiler chooses both, so the template is the same for every user. 512 px like a
+// mosaic tile; the display parameters are added by `buildTileUrl`.
+export function buildOverviewTileTemplate(datasetId: string): string {
+  return `${BASE}/collections/${encodeURIComponent(datasetId)}/overview/tiles/${TILE_MATRIX_SET}/{z}/{x}/{y}?tilesize=${MOSAIC_TILE_SIZE}`;
+}
+
 // What the client reads of a mosaic's TileJSON: the surface (`bounds`), the levels it
 // serves, and `earthx:order` — the scene ids in the order a tile reads them, which the
 // map below the first level stacks single scenes by.

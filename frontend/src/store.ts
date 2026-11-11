@@ -79,7 +79,7 @@ import {
   needsFallback,
   withSourceState,
 } from './sections';
-import { overlaysOfPass, underlaysOf } from './searchLayers';
+import { overlaysOfPass, substituteOverlaysOf, underlaysOf } from './searchLayers';
 import { clampResultsAt, moveEntry, moveEntryTo, resultsAtAfterAdding, resultsAtAfterRemoving } from './resultsEntry';
 import {
   filterQuery,
@@ -611,13 +611,18 @@ function overlaysOfEntries(
   const sections = sectionsForView(s);
   const groups = sections.flatMap((section) => section.groups);
   const items = sections.flatMap((section) => section.items);
-  const overlays = passesOf(entries, groups).map((first) => {
+  const passList = passesOf(entries, groups);
+  const overlays = passList.map((first) => {
     const datasetId = first[0][1].datasetId;
     const pass = orderedPass(datasetId, first, s.mosaics);
     const dataset = s.datasets.find((d) => d.id === datasetId);
     return overlaysOfPass(datasetId, pass, s.mosaics, look, clip, underlaysOf(pass, items, dataset, clip), viewIndexOf(look, dataset?.collection));
   });
-  return overlays.some((o) => o === null) ? null : stackLikeView(overlays).flatMap((o) => o ?? []);
+  if (overlays.some((o) => o === null)) return null;
+  // The substitute of a dataset below its first level lies under everything the layer draws of its own.
+  const datasetIds = passList.map((first) => first[0][1].datasetId);
+  const substitutes = substituteOverlaysOf(datasetIds, s.datasets, look, clip);
+  return [...substitutes, ...stackLikeView(overlays).flatMap((o) => o ?? [])];
 }
 
 // The computing of the index of a download, which closing the dialog stops (`indexDownload.ts`).

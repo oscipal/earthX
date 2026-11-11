@@ -35,6 +35,7 @@ const ZARR_LIKE: Collection = {
     results_group_by: ['datetime'],
     overview: 'pyramid' as const,
     overview_resampling: 'average' as const,
+    overview_substitute: null,
   },
   'earthx:default_render': {
     title: 'True colour',
@@ -59,6 +60,7 @@ const COG_LIKE: Collection = {
     results_group_by: ['datetime'],
     overview: 'own' as const,
     overview_resampling: null,
+    overview_substitute: null,
   },
 };
 
@@ -858,6 +860,7 @@ describe('download outcome (M3-17 plan §4)', () => {
       results_group_by: ['datetime'],
       overview: 'own' as const,
       overview_resampling: null,
+      overview_substitute: null,
     },
     'earthx:format': 'cog',
     'earthx:source': { asset_hosts: ['data.test'] },
@@ -884,6 +887,7 @@ describe('download outcome (M3-17 plan §4)', () => {
       results_group_by: ['datetime'],
       overview: 'pyramid' as const,
       overview_resampling: 'average' as const,
+      overview_substitute: null,
     },
     'earthx:format': 'zarr',
   };

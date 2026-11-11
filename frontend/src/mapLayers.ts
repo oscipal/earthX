@@ -20,6 +20,7 @@ import { underlayOf } from './underlay';
 import type { ImageOverlay } from './underlay';
 import { inStackOrder, passesOf, stackLikeView, viewOfPass } from './mosaic';
 import type { Mosaics, PlannedRaster, SceneEntry } from './mosaic';
+import { substituteRasterOf } from './overviewSubstitute';
 import { tileSizeOf } from './tileSize';
 import type { AppliedRender, DownloadedInfo, StacItem, TimeStepGroup } from './types';
 
@@ -256,6 +257,9 @@ interface RasterZoom {
   // From this zoom up the layer is not drawn at all (MapLibre's layer `maxzoom`). A source's own
   // `maxzoom` hides nothing, it overzooms — so a scene meant for the levels below a mosaic needs this.
   hideFrom?: number;
+  // MapLibre puts the attribution of a source into the map's attribution line only while a layer of it is drawn: from
+  // `minZoom` up to `hideFrom`, and while the layer is not hidden. That is all the line of a substitute needs.
+  attribution?: string;
 }
 
 function placeRaster(
@@ -275,6 +279,7 @@ function placeRaster(
     bounds,
     minzoom: zoom.minZoom,
     maxzoom: zoom.maxZoom,
+    ...(zoom.attribution === undefined ? {} : { attribution: zoom.attribution }),
   });
   map.addLayer(
     {
@@ -1147,7 +1152,7 @@ export function syncFocusRaster(
   map: MapLibreMap,
   s: Pick<
     MosaicState,
-    'downloaded' | 'render' | 'showDownloaded' | 'aoi' | 'cropToAoi' | 'items' | 'dataset' | 'tilesInLayer' | 'groups' | 'mosaics'
+    'downloaded' | 'render' | 'showDownloaded' | 'aoi' | 'cropToAoi' | 'items' | 'dataset' | 'datasets' | 'tilesInLayer' | 'groups' | 'mosaics'
   >,
 ): void {
   // A quicklook that arrives after this sync belongs to the one before it.
@@ -1191,6 +1196,10 @@ export function syncFocusRaster(
     const drawing = index && dataset ? indexRasterOf(raster, pass, dataset.id, index) : raster;
     if (typeof drawing !== 'string') addTiles(map, drawing, tiles++, s.render, clip);
   };
+  // Below the first level of a dataset with a substitute the view draws the picture of that dataset, under everything it draws
+  // of its own (`overviewSubstitute.ts`); a layer pinned from the view draws it with its own rasters.
+  const substitute = !s.tilesInLayer && !s.render.index && drawn.length > 0 ? substituteRasterOf(dataset, s.datasets) : null;
+  if (substitute) addTiles(map, substitute, tiles++, s.render, clip);
   for (const { entries, view } of stackLikeView(drawn)) {
     if (view.kind === 'pending' && !s.tilesInLayer) continue;
     stackLikeView(entries).forEach(([itemId, info]) => {

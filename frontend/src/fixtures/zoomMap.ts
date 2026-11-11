@@ -40,5 +40,17 @@ export function zoomMap(initial?: string[]) {
     const up = Array.from({ length: 41 }, (_, i) => i / 2);
     return [...up, ...[...up].reverse()];
   };
-  return { ...live, idle, picturesAt, sweep };
+  // The attribution of the sources MapLibre puts into the attribution line at this zoom: those of a source one of whose layers is not
+  // hidden there (`Style.update`: `layer.isHidden(zoom)` is the layer's `maxzoom`, `minzoom` and `visibility`; the control reads
+  // `source.attribution` of every source `used` that way, maplibre-gl 6.16).
+  const attributionAt = (zoom: number): string[] => {
+    const shown = new Set<string>();
+    for (const [id, layer] of live.layers) {
+      if (!layer.source || !live.visible(id) || (layer.maxzoom !== undefined && zoom >= layer.maxzoom)) continue;
+      const attribution = (live.sources.get(layer.source) as { attribution?: string } | undefined)?.attribution;
+      if (attribution) shown.add(attribution);
+    }
+    return [...shown];
+  };
+  return { ...live, idle, picturesAt, attributionAt, sweep };
 }

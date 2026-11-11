@@ -95,6 +95,7 @@ def _released(*, min_zoom: int, max_zoom: int) -> Any:
         max_zoom=max_zoom,
         overview=OverviewMode.PYRAMID,
         overview_resampling=OverviewResampling.AVERAGE,
+        overview_substitute=None,
     )
 
 

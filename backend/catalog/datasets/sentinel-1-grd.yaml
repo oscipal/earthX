@@ -156,6 +156,7 @@ viewer:
   # What is shown below min_zoom (adr/0032 §9).
   overview: scenes
   overview_resampling: null
+  overview_substitute: null
 health:
   status: ok
 # As Sentinel-2: the same source without an operating commitment (Auslegung A7).
