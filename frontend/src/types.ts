@@ -248,6 +248,9 @@ export interface Collection {
   'earthx:default_render'?: EarthxDefaultRender | null;
   'earthx:license_flags'?: LicenseFlags | null;
   'earthx:format'?: DatasetFormat | string | null;
+  // How the files are placed on the map (registry `georeferencing`): `gcp_tps` places them through their ground
+  // control points (adr/0018 F1), so a picture of the source in the files' own geometry has no place on the map.
+  'earthx:georeferencing'?: 'geotransform' | 'gcp_tps' | string | null;
   'earthx:source'?: EarthxSource | null;
   'earthx:mask'?: EarthxMask | null;
   // The unit of the values of an asset, by the asset key an order names (`red`, `SR_10m:b04`); a key may end in
