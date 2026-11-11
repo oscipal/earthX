@@ -1,6 +1,6 @@
 # M5-22 — Suche Teil 1: Bewertungs-Set, Suchtext, lexikalischer Arm, Collection Search: Plan-Schritt
 
-**Status (10.11.2026):** Plan, Fragen an Otto offen (§8). Umsetzung erst nach den Antworten, im selben Draft-PR [#325](https://github.com/oscipal/earthX/pull/325) (Schnitt nach F1).
+**Status (11.11.2026):** Plan angenommen (Otto, 11.11.2026; Antworten in §8a). Drei Teile nach F1: M5-22a umgesetzt im Draft-PR [#325](https://github.com/oscipal/earthX/pull/325) (§10); M5-22b und M5-22c folgen als eigene PRs.
 **Aufgabe:** M5-22 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2. **Stufe B.** Hängt von M5-13 ab (gemergt mit #311). M5-23 (Vektorarm, Suchfeld im Data catalogue) und M5-25 (JSON-LD, Sitemap) warten auf den Merge.
 **Grundlagen:** `adr/0026` §4.1–§4.6, §6 Schritte 1 und 2, §8, §10, §11 (F1–F9), §12 Folgen 2, 4, 6, 9, 10; `adr/0024` R5, R7; `adr/0027` §6.1; `KLAERUNGEN.md` B10, B13; `architekturplan.md` 3.1, 5.1, 5.3, 10; Glossar-Begriffe aus `plans/m5/m5-07-worldcover.md` §10, `plans/m5/m5-08-stac-adapter-swissalti3d.md` §9, `plans/ds/ds-04-s1-anbinden.md` §8.
 
@@ -61,7 +61,7 @@ Im lokalen Postgres 16 der Sitzung:
 - **Maße** wie §8.1: Recall@5, MRR@10, nDCG@10 (nur berichtet), Filterfragen, Negativfragen; je Sprache und gesamt. Reine Namen und Kürzel (Q01, Q03, Q04, Q05, Q07, Q40, Q42, Q43, Q44, Q46) nur im Gesamtmaß. Heute je Sprache: 11 deutsche, 10 englische Fragen mit Note 2.
 - **Auswerter:** `backend/tests/search_evaluation.py` (Maße, Ruhen, Bericht), getrennt vom Test, damit M5-23 ihn mit dem Vektorarm wiederverwendet. Eigener Code statt `ranx`: vier Maße über wenige Dutzend Fragen brauchen keine Abhängigkeit [A]; der gepaarte Vergleich zweier Varianten (`ranx`) kommt mit M5-23, wo er gebraucht wird.
 - **Bericht:** je Frage Rang der Datensätze mit Note 2, Treffer mit `never`, aktiv oder ruhend; als Text in der Ausgabe von `pytest` (`-s`) und als Tabelle im PR.
-- **Grenze im Test:** nach F3.
+- **Grenze im Test (F3 = 1):** M5-22a hat noch keine Suche; der Test prüft den Auswerter und den Nullpunkt. Ab M5-22b sind alle Filterfragen und drei von vier Negativfragen hart, Recall@5 und MRR@10 haben eine Untergrenze aus der eigenen Messung (Sperrklinke). Die Grenze aus `adr/0026` F5 gilt ab M5-23.
 - **Nullpunkt:** der Auswerter mit einer Suche, die nichts liefert. Ergebnis vorab [A]: Recall@5 und MRR@10 = 0, beide Filterfragen und alle vier Negativfragen bestanden. Steht im PR.
 
 ### 3.2 Suchtext je Datensatz (`adr/0026` §4.1)
@@ -168,7 +168,7 @@ Grob geschätzt [A], ohne Fixture: Auswerter und Test rund 300 Zeilen, Suchtext,
 
 ---
 
-## 8. Fragen an Otto
+## 8. Fragen an Otto — beantwortet am 11.11.2026 (§8a)
 
 **F1 — Schnitt (§7)?**
 1. Drei PRs: a) Set und Auswerter (dieser PR), b) Index und lexikalischer Arm, c) Schnittstelle **(Empfehlung)**
@@ -206,6 +206,12 @@ Grob geschätzt [A], ohne Fixture: Auswerter und Test rund 300 Zeilen, Suchtext,
 **F8 — Deutsche Schlagworte für Sentinel-2 und Copernicus DEM nachziehen?** Beide entstanden vor `adr/0026` F7.
 1. Ja, in M5-22b (z. B. „Bodenreflexion“, „multispektral“ bzw. „Höhenmodell“, „Oberflächenmodell“); Messung vorher und nachher im PR **(Empfehlung)**
 2. Nein, das Glossar reicht
+
+## 8a. Antworten Otto (11.11.2026)
+
+- **F1–F8 jeweils Option 1.** Damit: drei PRs (a, b, c); Wortverknüpfung am Set gewählt, Bestätigung im PR von M5-22b; Filter- und Negativfragen ab M5-22b hart, Sperrklinke für Recall@5 und MRR@10, Grenze aus `adr/0026` F5 ab M5-23; Begriffe je Capability als YAML in `catalog`; `POST` mit `bbox` und `intersects`; kein Zugangs- und Lizenzfilter in M5; deutsche Schlagworte für Sentinel-2 und Copernicus DEM in M5-22b.
+- **Auslegung A1 angenommen:** Schlagworte auf Gewicht B.
+- **F4, Natural Earth:** als Public Domain bestätigt; Einstufung frei, eine Quellenangabe ist nicht Pflicht. Freiwillig in den Hinweisen zu Dritten nennen (mit M5-22b, das die Datei bringt).
 
 ---
 
