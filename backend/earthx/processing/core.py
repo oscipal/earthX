@@ -78,6 +78,7 @@ from earthx.access.resolve import open_asset_ref
 from earthx.processing.errors import UnsupportedRecipe
 from earthx.processing.export import Attachments, ExportResult, check_export, export
 from earthx.processing.mosaic import open_mosaic
+from earthx.processing.nodata import avoid_nodata, output_nodata
 from earthx.processing.operators import REGISTRY, BandMeta, OperatorRegistry, RasterMeta
 from earthx.processing.operators.normalize import MEASURED_PROPERTY
 from earthx.processing.plan import PlannedStep, Segment, crop_window, live_steps, plan_steps, segments, stock_steps
@@ -120,6 +121,8 @@ _COG_PROFILE = "deflate"
 #: Between passes every value is kept exactly, whatever the input type, and NaN marks
 #: what is masked: float64 holds every integer type a source here delivers.
 _INTERMEDIATE_DTYPE = "float64"
+#: The property naming, per band, the valid pixels moved one step off an integer nodata (M5-28 R4).
+NODATA_MOVED_PROPERTY = "earthx:nodata_moved"
 
 Progress = Callable[[int, int], None]
 
@@ -248,13 +251,9 @@ def check_scope(recipe: Recipe) -> RasterOutput | CropOutput:
     return recipe.output
 
 
-def _nodata_for(dtype: str, meta: RasterMeta) -> float:
-    if numpy.issubdtype(numpy.dtype(dtype), numpy.floating):
-        return float("nan")
-    values = {band.nodata for band in meta.bands}
-    if len(values) != 1 or None in values or any(math.isnan(value) for value in values):
-        raise UnsupportedRecipe("an integer output needs one nodata value shared by every band")
-    return float(values.pop())
+def _nodata_for(dtype: str, meta: RasterMeta, steps: Sequence[PlannedStep]) -> float:
+    """The nodata of the result (plan M5-28): see :func:`~earthx.processing.nodata.output_nodata`."""
+    return output_nodata(dtype, meta.bands, all(step.operator.passes_values(step.params) for step in steps))
 
 
 def _profile(meta: RasterMeta, dtype: str, nodata: float, interleave: str | None = None) -> dict[str, Any]:
@@ -282,9 +281,14 @@ def _cast(data: numpy.ma.MaskedArray, dtype: str) -> numpy.ma.MaskedArray:
     The rule of GDAL's ``GDALCopyWords`` (gdal_priv_templates.hpp): add 0.5 to the magnitude and drop the
     fraction, so x.5 goes away from zero, then clamp to the range of the type. Unlike GDAL, which turns NaN
     into 0, NaN stays what it marks, a masked pixel, and ends up as nodata. The sum is taken in float64,
-    where every float32 is exact, so no value just below x.5 is pushed over it.
+    where every float32 is exact, so no value just below x.5 is pushed over it. An integer written to a
+    narrower integer type is clamped to its range too, never wrapped (M5-28, F3).
     """
     target = numpy.dtype(dtype)
+    if numpy.issubdtype(target, numpy.integer) and numpy.issubdtype(data.dtype, numpy.integer):
+        source, limits = numpy.iinfo(data.dtype), numpy.iinfo(target)
+        low, high = max(source.min, limits.min), min(source.max, limits.max)
+        return numpy.ma.clip(data, data.dtype.type(low), data.dtype.type(high)).astype(target)
     if not (numpy.issubdtype(target, numpy.integer) and numpy.issubdtype(data.dtype, numpy.floating)):
         return data.astype(target, casting="unsafe")
     values = numpy.ma.getdata(data).astype("float64")
@@ -305,6 +309,8 @@ class _Run:
         self.done = 0
         self.total = 0
         self.valid_pixels = 0
+        #: Per band of the result, the valid pixels moved off the nodata (M5-28 R4).
+        self.nodata_moved: list[int] = []
         #: Per band, over the pixels the mask marks (M4-32).
         self.statistics: list[dict[str, Any]] = []
         #: The pass files named so far; a name is never used twice, whatever has been deleted since.
@@ -364,8 +370,10 @@ class _Run:
             whole = [BandStatistics(dtype) for _ in meta.bands] if count_valid else []
             area = [BandStatistics(dtype) for _ in meta.bands] if count_valid else []
             inside_pixels = 0
+            moved = [0] * len(meta.bands)
             for window in _blocks(meta.width, meta.height):
                 data = _cast(block(window), dtype)
+                moved = [a + b for a, b in zip(moved, _avoid(data, nodata), strict=True)]
                 if mask is not None or measure is not None:
                     values, valid, written = _written(data, nodata)
                     if measure is not None:
@@ -378,6 +386,7 @@ class _Run:
                 dst.write(numpy.ma.filled(data, nodata), window=window)
                 self.tick()
             if count_valid:
+                self.nodata_moved = moved
                 for index, statistics in enumerate(whole, start=1):
                     dst.update_tags(index, **gdal_tags(statistics.summary(meta.width * meta.height)))
                 self.statistics = [statistics.summary(max(inside_pixels, 1)) for statistics in area]
@@ -410,6 +419,13 @@ class _Measure:
         self.inside_pixels += int(inside.sum())
         for band, statistics in zip(self.indices, self.statistics, strict=True):
             statistics.add(values[band][valid[band] & inside])
+
+
+def _avoid(data: numpy.ma.MaskedArray, nodata: float) -> list[int]:
+    """Keep the valid values of an integer block off ``nodata`` (M5-28 R4); the pixels moved per band."""
+    if math.isnan(nodata):
+        return [0] * data.shape[0]
+    return avoid_nodata(numpy.ma.getdata(data), ~numpy.ma.getmaskarray(data), nodata)
 
 
 def _written(data: numpy.ma.MaskedArray, nodata: float) -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
@@ -574,6 +590,7 @@ def run(
             passes = segments(stock_steps(metas[0], planned, output.bands))
             for segment in passes:
                 metas.append(_transform_meta(metas[-1], segment.steps))
+            nodata = _nodata_for(output.dtype, metas[-1], live_steps(planned, output.bands))
             state.total = sum(_block_count(meta) for meta in metas[1:])
             for index, segment in enumerate(passes[1:]):
                 if (step := segment.measuring) is not None and step.operator.measure_percents(step.params):
@@ -595,6 +612,7 @@ def run(
                     metas[index],
                     metas[index + 1],
                     output,
+                    nodata if last else math.nan,
                     last,
                     measure,
                 )
@@ -603,7 +621,6 @@ def run(
                 previous = written
                 if measure is not None:
                     passes[index + 1] = _measured(state, recipe, passes[index + 1], measure, written, metas[index + 1])
-            nodata = _nodata_for(output.dtype, metas[-1])
             # The honesty flag of the result is that of the bands in it, not of every band that was read (backlog 51).
             final = replace(
                 metas[-1],
@@ -649,21 +666,24 @@ def run(
             "seconds": round(time.monotonic() - started, 3),
         },
     )
+    properties = _properties(
+        final,
+        [replace(step, params=state.resolved.get(id(step.step), step.params)) for step in live_steps(planned, output.bands)],
+        engine,
+        _scenes(recipe),
+        state.statistics,
+        state.measured,
+    )
+    if any(state.nodata_moved):
+        # How many valid pixels were moved one step off the nodata, per band (M5-28 R4, F4).
+        properties[NODATA_MOVED_PROPERTY] = {
+            band.name: moved for band, moved in zip(final.bands, state.nodata_moved, strict=True) if moved
+        }
     return RunResult(
         path=workfile_path(workdir, RESULT_NAME),
         mask_path=workfile_path(workdir, MASK_NAME),
         meta=final,
-        properties=_properties(
-            final,
-            [
-                replace(step, params=state.resolved.get(id(step.step), step.params))
-                for step in live_steps(planned, output.bands)
-            ],
-            engine,
-            _scenes(recipe),
-            state.statistics,
-            state.measured,
-        ),
+        properties=properties,
         scaling=scaling,
         blocks=state.done,
         valid_pixels=state.valid_pixels,
@@ -731,7 +751,7 @@ def area_statistics(
         source_meta = _source_meta(sources, finest, window, transform)
         steps = tuple(stock_steps(source_meta, planned, output.bands))
         meta = _transform_meta(source_meta, steps)
-        nodata = _nodata_for(output.dtype, meta)
+        nodata = _nodata_for(output.dtype, meta, steps)
         factor = area_factor(meta.width, meta.height, max_pixels)
         width, height = -(-meta.width // factor), -(-meta.height // factor)
         coarse = meta.transform @ Affine.scale(factor)
@@ -743,7 +763,9 @@ def area_statistics(
                 image = _read_block(sources, finest.transform, window, block)
             else:
                 image = merge_images([source.read(block, coarse) for source in sources])
-            values, _, written = _written(_cast(_pixel_kernels(image, steps).array, output.dtype), nodata)
+            data = _cast(_pixel_kernels(image, steps).array, output.dtype)
+            _avoid(data, nodata)
+            values, _, written = _written(data, nodata)
             inside = _mask_block(geometry, block, coarse) == 1
             inside_pixels += int(inside.sum())
             _count(values, written, inside, None, area)
@@ -769,6 +791,7 @@ def _run_pass(
     source_meta: RasterMeta,
     target_meta: RasterMeta,
     output: RasterOutput,
+    nodata: float,
     last: bool,
     measure: _Measure | None = None,
 ) -> str:
@@ -778,7 +801,6 @@ def _run_pass(
     state.passes += 1
     name = f"pass-{state.passes}.tif"
     dtype = output.dtype if last else _INTERMEDIATE_DTYPE
-    nodata = _nodata_for(dtype, target_meta)
     if segment.kind == "grid":
         step = segment.steps[0]
         with open_workfile(state.workdir, previous) as src:

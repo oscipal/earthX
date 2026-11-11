@@ -46,6 +46,7 @@ from earthx.access.crop_rules import (
     target_crs,
 )
 from earthx.processing.errors import AoiOutsideInputs, ExportTooLarge, JobTooLarge, RecipeInvalid, UnsupportedRecipe
+from earthx.processing.nodata import output_nodata
 from earthx.processing.operators import BandMeta, Grid, Operator, OperatorRegistry, RasterMeta, Tier
 from earthx.processing.operators.select import SELECT_BANDS, SelectParams
 from earthx.processing.recipe import Band, CropOutput, RasterOutput, Recipe, ResolvedInput, Step
@@ -546,11 +547,13 @@ def _input_meta(recipe: Recipe, *, names_known: bool, sized: bool) -> RasterMeta
             if names_known:
                 return None
             names = [entry.asset.asset]
-        types = [band.data_type for band in entry.bands] if len(entry.bands) == len(names) else [None] * len(names)
+        described = len(entry.bands) == len(names)
+        types = [band.data_type for band in entry.bands] if described else [None] * len(names)
+        nodata = [_nodata_of(band.nodata) for band in entry.bands] if described else [None] * len(names)
         units = units_of(entry, len(names))
         bands.extend(
-            BandMeta(name, data_type or "float64", None, unit)
-            for name, data_type, unit in zip(names, types, units, strict=True)
+            BandMeta(name, data_type or "float64", value, unit)
+            for name, data_type, value, unit in zip(names, types, nodata, units, strict=True)
         )
     if sized:
         finest = _finest(resolved)
@@ -564,6 +567,11 @@ def _input_meta(recipe: Recipe, *, names_known: bool, sized: bool) -> RasterMeta
             transform = Affine(1, 0, 0, 0, -1, 0)
         width = height = 1
     return RasterMeta(finest.asset.crs or "EPSG:4326", transform, width, height, tuple(bands))
+
+
+def _nodata_of(value: float | str | None) -> float | None:
+    """The item's nodata of a band as a number; ``"nan"``, ``"inf"`` and ``"-inf"`` as ``float`` reads them."""
+    return None if value is None else float(value)
 
 
 def check_bands(recipe: Recipe, operators: OperatorRegistry) -> None:
@@ -673,6 +681,9 @@ def estimate(recipe: Recipe, operators: OperatorRegistry) -> CostEstimate:
     meta, widest = stock.meta, stock.widest
     output_pixels = meta.width * meta.height
     dtype = getattr(recipe.output, "dtype", None)
+    if dtype is not None:
+        # A source nodata the output type cannot hold is refused before the job waits its turn (M5-28, F7).
+        output_nodata(dtype, meta.bands, all(step.operator.passes_values(step.params) for step in stock.steps))
     output_bytes = output_pixels * len(meta.bands) * _value_bytes(dtype)
     if output_bytes + output_pixels > MAX_JOB_BYTES:
         raise JobTooLarge(

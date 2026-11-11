@@ -156,6 +156,10 @@ def _needs_no_percentiles(params: BaseModel) -> tuple[int, ...]:
     return ()
 
 
+def _makes_values(params: BaseModel) -> bool:
+    return False
+
+
 @dataclass(frozen=True, slots=True)
 class Operator:
     """One registered operator in one version."""
@@ -183,6 +187,9 @@ class Operator:
     dataset_check: Callable[[DatasetConfig, BaseModel], list[str]] = field(default=_no_dataset_reasons)
     #: Which bands of the stock the step needs and changes (:class:`BandUse`), for the planner (adr/0020 §4).
     bands_used: Callable[[BaseModel], BandUse] = field(default=_keeps_every_band)
+    #: Whether every value the step writes is a value it read: selecting, hiding, ``nearest`` and ``mode``. Only then
+    #: may an integer result keep the nodata of its source (:func:`~earthx.processing.nodata.output_nodata`, M5-28).
+    passes_values: Callable[[BaseModel], bool] = field(default=_makes_values)
     #: The same step for a stock that the planner narrowed: ``restrict(params, kept)`` keeps of the bands the step changes
     #: only those in ``kept`` (``normalize``). ``None`` for a step that names no bands.
     restrict: Callable[[BaseModel, frozenset[str]], BaseModel] | None = None
