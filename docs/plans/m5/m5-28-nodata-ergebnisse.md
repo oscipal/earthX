@@ -162,7 +162,11 @@ Fragen 1–7 jeweils Option 1. Dazu:
 - **F3:** Ein Überlauf wird auf den Wertebereich des Zieltyps geklemmt, wie M4-26 es für Gleitkomma tut.
 - **F7:** Panel und Annahme weisen eine Ausgabe vorher mit Grund ab, wenn ihr nodata nicht in den Typ passt, zum Beispiel swissALTI3D −9999 nach `uint16`.
 
-**Auslegung von F7 (Claude, gilt bis Otto widerspricht):** Trägt ein Band des Ergebnisses ein endliches nodata der Quelle, das außerhalb des Ganzzahl-Ausgabetyps liegt, weist der Kern das Rezept mit `UnsupportedRecipe` ab. Das gilt vor R2 und R3, auch wenn die Quelle Gleitkomma ist. Die Annahme antwortet dann `422`, bevor der Job in die Warteschlange geht, und das Panel bietet den Typ nicht an. Der Fall „swissALTI3D, `uint16`“ in der Tabelle von §5 wird damit eine Abweisung statt nodata 65535. NaN als nodata (nach `band_math`, `normalize`) gilt nicht als „passt nicht“; dafür greift R3.
+~~**Auslegung von F7 (Claude):** Jedes endliche nodata der Quelle an den Bändern des Ergebnisses, das nicht in den Ganzzahltyp passt, wird abgewiesen, auch bei Gleitkomma-Quelle.~~ Ersetzt durch Ottos Korrektur unten.
+
+**F7, korrigiert von Otto (11.11.2026):** Abgewiesen wird nur, wenn das nodata der Quelle unverändert ins Ergebnis käme (R2: reines Weiterreichen) und nicht in den Zieltyp passt, zum Beispiel `int16` mit −32768 nach `uint16`. Ändert die Kette die Werte, gilt der Randwert (R3); das schließt einen Typwechsel von Gleitkomma nach Ganzzahl ein. swissALTI3D nach `uint16` bekommt also nodata 65535 statt einer Abweisung, wie in der Tabelle von §5. Panel und Annahme folgen derselben Regel. Damit korrigiert Otto seine eigene F7-Formulierung von oben.
+
+**Auslegung von F2 beim Bänder-Download:** von Otto am 11.11.2026 bestätigt.
 
 **Auslegung von F2 beim Bänder-Download (Claude):** Beide gestapelten Formen („Bänder nach Auflösung“ und „eine Datei mit allen Bändern“) weisen Bänder mit verschiedenem nodata in einer Datei mit Grund ab und nennen „one file per band“ als Ausweg. Erst war für die Form nach Auflösung eine Datei je Auflösung und nodata gedacht. Das brauchte neue Dateinamen und betrifft heute keinen Datensatz; es kommt, wenn ein Datensatz es braucht.
 
