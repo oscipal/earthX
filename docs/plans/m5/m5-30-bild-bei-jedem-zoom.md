@@ -146,7 +146,31 @@ Vorschlag, unter Vorbehalt von F1–F3:
 
 ---
 
+### 4.8 Teile 7–9 nach F7 = 1 (Neufassung, 11.11.2026)
+
+F7 = 1 ändert den Schnitt der Teile 7–9: **Teil 7 ist der Ersatz-Datensatz**, die Pyramide (Teile 8 und 9) gilt nur noch für GLO-30 und WorldCover. §4.7 bleibt als Vorlage für die Pyramide stehen; wo es abweicht, gilt dieser Abschnitt.
+
+**Teil 7 — Ersatz-Datensatz (`overview: substitute`):**
+- **Registry:** neuer Wert `substitute` in `OverviewMode` und Feld `viewer.overview_substitute: <dataset_id> | null` (Pflicht bei `substitute`, sonst `null`; B10). Prüfung beim Laden der Registry: der Ersatz existiert, hat Stufe „Anzeige“ oder höher, dieselbe Einheit des Standardbands (`m`), seine räumliche Ausdehnung enthält die des Datensatzes, und er ist selbst kein Ersatz (keine Kette). swissALTI3D: `substitute` → `cop-dem-glo-30`; BEV erst mit seiner Anbindung.
+- **Kachelroute ohne Items** (Auslegung A5): `GET /collections/{dataset}/overview/tiles/WebMercatorQuad/{z}/{x}/{y}` für z < `min_zoom` des Datensatzes. Sie liest die Dateien des Ersatzes, die die Kachel berühren (GLO-30 ist materialisiert: Items aus pgstac nach Kachelgrenzen), mit dem Leser der Mosaik-Kachel und **dem Budget je Kachel** (32 Dateien, 4 s). Darstellung (`rescale`, `colormap_name`, Band) kommt aus der Anfrage wie bei jeder Kachel, also der Farbbereich des gewählten Datensatzes. Kopf `X-EarthX-Source: substitute`, keine Marke. Unter dem `min_zoom` des Ersatzes (GLO-30: 7 nach Teil 9) liest die Route dessen Pyramide; bis Teil 9 da ist, liest sie GLO-30 auch darunter, mit Teilkacheln über dem Budget (z6 ≈ 32, z4 ≈ 300 Dateien).
+- **Was nie aus dem Ersatz kommt:** Statistik, Histogramm, AOI-Messung, Zuschnitt, Download, Jobs — sie hängen am Datensatz und seinen Items, nicht an dieser Route; ein Test prüft, dass keine dieser Routen den Ersatz liest.
+- **Frontend:** Ein Layer eines Datensatzes mit `substitute` bekommt unter `min_zoom` eine zweite Rasterquelle auf diese Route (gleiche Darstellung, MapLibre `maxzoom` = `min_zoom`), darüber wie bisher die Szenen bzw. das Mosaik. Kein Text, kein Tooltip, keine Marke.
+- **Quellenzeile der Karte:** Solange die Ersatzquelle sichtbar ist (Kartenzoom unter `min_zoom` und Layer sichtbar), nennt die Attribution der Karte den Text `attribution_modified` des Ersatzes aus der Registry (GLO-30: „© DLR e.V. … produced using Copernicus WorldDEM-30“), weil die Kacheln umprojiziert und gefärbt sind. Darüber verschwindet er wieder.
+- Tests: Registry-Prüfungen (fehlend, Kette, andere Einheit, Ausdehnung zu klein, Stufe Katalog), Route (Dateien nach Kachelgrenzen, Budget-Kopf, z ≥ `min_zoom` → `400`, Datensatz ohne `substitute` → `404`), keine Statistik aus dem Ersatz, Frontend (zweite Quelle mit `maxzoom`, Attribution nur unter `min_zoom`).
+
+**Teil 8 — Pyramide für GLO-30 und WorldCover (F1 = 2 + 1, F2 = 1, F3 = 1):** wie §4.7, mit diesen Festlegungen:
+- **Anstoß (F1):** `materialize` schreibt nach einem erfolgreichen Lauf mit neuer Fassung eine Zeile in `earthx_overview_request` (neue Tabelle, Migration in `catalog`; `discovery` schreibt über `catalog`, nicht über `jobs`). Der Worker übernimmt Wünsche sofort beim nächsten Abruf seiner Queue; seine stündliche Runde vergleicht außerdem die letzte Fassung je Datensatz mit der Pyramide und stellt fehlende oder veraltete ein.
+- **Zustand (F2):** eigene Tabelle `earthx_overview` (Datensatz, Fassung, Status, Hash je Basiskachel, `checked_at`), eigene Job-Art im Worker, ohne Nutzer und nicht in der Job-Liste.
+- **Abstand (F3):** je tatsächlicher GDAL-Anfrage 0,25 s je Host (gezählt aus den Debugzeilen wie im Messskript), einstellbar über `EARTHX_OVERVIEW_HOST_INTERVAL_S`.
+- Stufen: GLO-30 Basis z6 (`min_zoom` 7), WorldCover Basis z4 (`min_zoom` 5). Ablauf 30 Tage mit Verlängerung nach bestätigter Fassung (§5.3 des ADR); Regel 31 Tage auf `overviews/`.
+
+**Teil 9 — Kachelroute aus der Pyramide:** wie §4.7 (Route), für GLO-30 und WorldCover; `min_zoom` DEM 0 → 7, WorldCover 0 → 5; Marke „Overview“ nur für Pyramiden-Kacheln (F12); die Ersatzroute aus Teil 7 liest unter z7 die GLO-30-Pyramide.
+
+**Folge für `adr/0032`:** Nachtrag zu §5 (Pyramide nur noch für GLO-30 und WorldCover; swissALTI3D und BEV mit Ersatz), §9 (vierter Wert `substitute`), F12 (keine Marke beim Ersatz). Entwurf mit Teil 10.
+
 ## 5. Auslegungen (gelten, bis Otto widerspricht)
+
+- **A5 (Teil 7):** Der Ersatz bekommt eine eigene Kachelroute je Datensatz, ohne Items und ohne Auswahl-ID; sie hängt nur am Datensatz, seinem Ersatz und der Kachel. Eine Kachel unter `min_zoom` hat so bei jedem Nutzer dieselbe URL und dasselbe Bild, unabhängig von der Auswahl.
 
 - **A1:** Die Mosaik-URL mit `?item=` entfällt mit Teil 3 ganz, statt neben der ID weiterzuleben. Die Karte baut ihre URLs bei jedem Laden aus der Auswahl neu; Permalinks und Layer-Zustand speichern Items, keine Kachel-URLs [P: `buildMosaicTileTemplate` nur in `api.ts`, `mosaic.ts`]. Zwei Wege wären zwei Grenzen.
 - **A2:** Teil 2 nimmt die Startwerte aus `adr/0032` §6.2 (32 Dateien, 4 s, 4 gleichzeitig). Nach Ottos Messlauf ändert ein Commit im PR von Teil 2 (oder ein Folge-PR) nur die Konstanten.
