@@ -4,7 +4,8 @@
 //  - Values unchanged (choosing bands, a crop, a mask, a reprojection with `nearest` or `mode`, the mosaic of whole scenes): the type of
 //    the source and float32; the type of the source first.
 //  - Values computed anew (Band math, an index, Normalize, an interpolating reprojection, a source whose scale the core applies): float32
-//    only. An integer type would round them away (a ratio of 0.25 to 1 becomes 0 and 1).
+//    only, an integer type would round them away (a ratio of 0.25 to 1 becomes 0 and 1); a source of float64 offers float64 first and
+//    float32 (Otto, 11.11.2026).
 // A type the chain no longer allows gives way to float32, without a word. What the server accepts is unchanged (M5-28): the nodata of an
 // integer result is the source's where the values pass, which the type of the source always holds.
 
@@ -21,6 +22,7 @@ export const INTEGER_TYPES: readonly string[] = ['uint8', 'uint16', 'int16', 'ui
 export const isIntegerType = (dtype: string): boolean => INTEGER_TYPES.includes(dtype);
 
 const FLOAT32 = 'float32';
+const FLOAT64 = 'float64';
 
 export interface StepChoice {
   op: string;
@@ -53,10 +55,15 @@ interface Args {
 
 // The type of the source the result can keep, with the reason; `null` with the reason where only float32 makes sense.
 function sourceType({ steps, bands, allowed, operators }: Args): { type: string | null; reason: string } {
-  if (!passesValues(steps, operators)) return { type: null, reason: 'The steps compute new values; float32 keeps them.' };
-  if (bands.some((band) => band.scaled)) return { type: null, reason: 'The source values are scaled to physical values; float32 keeps them.' };
   const types = new Set(bands.map((band) => band.dataType));
   const type = types.size === 1 ? [...types][0] : null;
+  const scaled = bands.some((band) => band.scaled);
+  if (!passesValues(steps, operators)) {
+    // A source of float64 keeps its type for values computed anew too (Otto, 11.11.2026); every other one takes float32.
+    if (type === FLOAT64 && !scaled && allowed.includes(FLOAT64)) return { type, reason: 'Same type as the source data (float64); the steps compute new values.' };
+    return { type: null, reason: 'The steps compute new values; float32 keeps them.' };
+  }
+  if (scaled) return { type: null, reason: 'The source values are scaled to physical values; float32 keeps them.' };
   if (types.size > 1) return { type: null, reason: 'The bands have different types; float32 holds them all.' };
   if (type === null || !allowed.includes(type)) return { type: null, reason: 'The item does not state a type the result can keep; float32 always works.' };
   return { type, reason: `Same type as the source data (${type}).` };

@@ -82,6 +82,21 @@ describe('the output types offered (Otto, 11.11.2026): only those that make sens
     expect(offered([reproject('nearest')], [band({ dataType: 'float32' })])).toEqual(['float32']);
   });
 
+  // Otto, 11.11.2026: a source of float64 keeps float64 first where the values are computed anew; any other source gets float32 only.
+  it.each([
+    ['Band math', [MATH]],
+    ['Normalize', [{ op: 'normalize', values: {} }]],
+    ['an interpolating reprojection', [reproject('cubic')]],
+  ] as [string, StepChoice[]][])('are float64 first and float32 after %s on a source of float64', (_, steps) => {
+    const float64 = band({ dataType: 'float64' });
+    expect(offered(steps, [float64])).toEqual(['float64', 'float32']);
+    expect(chooseDtype(args(steps, [float64])).value).toBe('float64');
+    expect(offered(steps, [band({ dataType: 'float32' })])).toEqual(['float32']);
+    expect(offered(steps, [band({ dataType: 'float64', scaled: true })])).toEqual(['float32']);
+    expect(offered(steps, [float64, band({ dataType: 'float32' })])).toEqual(['float32']);
+    expect(dtypeOptions({ ...args(steps, [float64]), allowed: ['float32'] }).map((o) => o.value)).toEqual(['float32']);
+  });
+
   it('never offer a type the platform does not write, or one that is "not recommended"', () => {
     expect(dtypeOptions({ ...args([], [COUNTS]), allowed: ['float32'] }).map((o) => o.value)).toEqual(['float32']);
     for (const steps of [[], [MATH]]) for (const option of dtypeOptions(args(steps, [COUNTS]))) expect(option.label).toBe(option.value);

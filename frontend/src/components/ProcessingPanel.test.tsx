@@ -797,7 +797,7 @@ describe('resampling and data type (Otto, 12.10.2026)', () => {
     expect(container.textContent).not.toMatch(/not recommended|marks missing pixels|not offered/u);
   });
 
-  it('a float source keeps its type where the values pass, and is float32 once interpolated', async () => {
+  it('a source of float64 keeps its type, also with values computed anew, and offers float32 beside it (Otto, 11.11.2026)', async () => {
     const item: StacItem = { ...scene('DEM_B'), assets: { data: asset({ 'raster:bands': [{ data_type: 'float64' }] }) } };
     select([item]);
     await openPanel();
@@ -805,7 +805,16 @@ describe('resampling and data type (Otto, 12.10.2026)', () => {
     choose(resampling(), 'nearest');
     expect(dtypeLine()).toBe('Data type: float64 (chosen automatically)');
     choose(resampling(), 'bilinear');
-    expect(dtypeLine()).toBe('Data type: float32 (chosen automatically)');
+    expect(dtypeLine()).toBe('Data type: float64 (chosen automatically)');
+    expect(offered()).toEqual(['', 'float64', 'float32']);
+  });
+
+  it('a source of float32 is float32 only once interpolated', async () => {
+    const item: StacItem = { ...scene('DEM_C'), assets: { data: asset({ 'raster:bands': [{ data_type: 'float32' }] }) } };
+    select([item]);
+    await openPanel();
+    click(button('Reproject and resample'));
+    choose(resampling(), 'bilinear');
     expect(offered()).toEqual(['', 'float32']);
   });
 
