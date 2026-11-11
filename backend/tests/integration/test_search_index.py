@@ -12,7 +12,7 @@ import pytest
 import earthx.api.main
 from earthx.api.main import build_app
 from earthx.catalog.load import main as load_catalog
-from earthx.catalog.registry import DatasetRegistry
+from earthx.catalog.registry import DatasetRegistry, OverviewMode, OverviewResampling
 from earthx.catalog.search_index import (
     SearchIndexMismatch,
     check_search_index,
@@ -23,6 +23,17 @@ from earthx.catalog.search_text import search_text
 from tests.catalog.entries import REGISTRY, SENTINEL_2_L2A, SWISSALTI3D
 
 pytestmark = pytest.mark.anyio
+
+# swissALTI3D without its substitute, for a registry of this one entry (`overview_substitute` has to name an entry).
+ALONE = dataclasses.replace(
+    SWISSALTI3D,
+    viewer=dataclasses.replace(
+        SWISSALTI3D.viewer,
+        overview=OverviewMode.PYRAMID,
+        overview_resampling=OverviewResampling.AVERAGE,
+        overview_substitute=None,
+    ),
+)
 
 
 @pytest.fixture
@@ -76,13 +87,13 @@ def test_a_new_extent_alone_is_written_again(conn):
 
 def test_a_row_without_an_entry_is_removed(conn):
     write_search_index(conn, REGISTRY)
-    outcome = write_search_index(conn, DatasetRegistry((SWISSALTI3D,)))
+    outcome = write_search_index(conn, DatasetRegistry((ALONE,)))
     assert outcome.removed == tuple(sorted(c.dataset_id for c in REGISTRY if c.dataset_id != "swissalti3d"))
     assert set(_rows(conn)) == {"swissalti3d"}
 
 
 def test_the_document_holds_all_three_configurations(conn):
-    write_search_index(conn, DatasetRegistry((SWISSALTI3D,)))
+    write_search_index(conn, DatasetRegistry((ALONE,)))
     with conn.cursor() as cur:
         cur.execute(
             "SELECT document @@ phraseto_tsquery('german', 'Höhenmodelle'), document @@ to_tsquery('simple', 'dtm'),"

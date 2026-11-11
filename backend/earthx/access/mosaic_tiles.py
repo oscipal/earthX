@@ -48,6 +48,7 @@ __all__ = [
     "MAX_MOSAIC_THREADS",
     "MOSAIC_THREADS",
     "EarthxMosaicTilerFactory",
+    "EarthxOverviewTilerFactory",
     "MosaicBandsDiffer",
     "MosaicLayout",
     "MosaicLayoutReader",
@@ -347,3 +348,16 @@ class EarthxMosaicTilerFactory(EarthxTilerFactory):
     def register_routes(self) -> None:
         self.tile()
         self.tilejson()
+
+
+@define(kw_only=True)
+class EarthxOverviewTilerFactory(EarthxMosaicTilerFactory):
+    """The tile of the mosaic factory, over the scenes of a substitute dataset, and no other route (plan M5-30b §4.8).
+
+    A TileJSON, statistics, info and point of a substitute would make it something a client can ask about; it is a
+    picture below the first level of another dataset and nothing more. The scenes come from the path dependency,
+    which `api` writes for this route; the reader and the budget are those of the mosaic.
+    """
+
+    def register_routes(self) -> None:
+        self.tile()

@@ -34,6 +34,7 @@ from earthx.api.tiler import (
     DOWNLOAD_ROUTE,
     MOSAIC_ROUTER_PREFIX,
     MOSAIC_SELECTION_ROUTE,
+    OVERVIEW_ROUTER_PREFIX,
     ROUTER_PREFIX,
     SCENE_ORDER_ROUTE,
     build_app,
@@ -165,7 +166,7 @@ class TestNoFreeAddress:
             for path in client.app.openapi()["paths"]
             if path
             not in ("/health", "/colormaps", DOWNLOAD_ROUTE, AREA_STATISTICS_ROUTE, SCENE_ORDER_ROUTE, BANDS_ROUTE, MOSAIC_SELECTION_ROUTE)
-            and not path.startswith((RESULT_ROUTER_PREFIX, MOSAIC_ROUTER_PREFIX))
+            and not path.startswith((RESULT_ROUTER_PREFIX, MOSAIC_ROUTER_PREFIX, OVERVIEW_ROUTER_PREFIX))
         ]
         assert rendering
         assert all(path.startswith(ROUTER_PREFIX) for path in rendering)
@@ -395,6 +396,7 @@ class TestOnlyReleasedZoomLevels:
                 max_zoom=14,
                 overview=OverviewMode.PYRAMID,
                 overview_resampling=OverviewResampling.AVERAGE,
+                overview_substitute=None,
             ),
             client,
             fetched,

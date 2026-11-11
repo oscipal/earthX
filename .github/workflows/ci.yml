@@ -22,19 +22,53 @@ env:
   NODE_VERSION: "22"
 
 jobs:
-  backend:
-    name: Backend — lint and tests
+  # The backend tests run in four parallel jobs; the job "Backend — lint and tests" below
+  # is the one required check, green only if every part is (NM4-23 follow-up, Otto
+  # 11.11.2026: the single job had grown to about 15 minutes). Which tests make up which
+  # part: scripts/ci-backend-shard.sh. Nothing is skipped or loosened: together the parts
+  # run everything `pytest` runs.
+  backend-scope:
+    name: Backend scope (docs-only pull request?)
+    # First job of the backend check (docs-only PRs, Otto 2026-11-06): it always runs, so
+    # the required check never stays pending; a PR whose own changes lie only under docs/
+    # skips the four test jobs. Rules: scripts/ci-scope.sh.
+    runs-on: ubuntu-latest
+    outputs:
+      docs_only: ${{ steps.scope.outputs.docs_only }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scope (docs-only pull request?)
+        id: scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        working-directory: ${{ github.workspace }}
+        run: scripts/ci-scope.sh
+
+  backend-tests:
+    name: Backend tests (part ${{ matrix.shard }})
+    needs: backend-scope
+    if: needs.backend-scope.outputs.docs_only != 'true'
     # Pinned, not ubuntu-latest: the tests run on the runner's own glibc, and bit-exact
     # tests with recorded hashes depend on its libm. ubuntu-latest moved to 26.04 on
     # 10.11.2026, whose amd64v3 glibc build gives other last bits (hypot, cbrt) and
     # turned three of them red. 24.04 is the system the hashes were recorded on, as
     # in the cloud session. The platform image pins its own base (backend/Dockerfile).
     runs-on: ubuntu-24.04
+    strategy:
+      # A red part must not cancel the others: one run shows every failure.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
 
     # The T-C tests of M1-04 run against a real Postgres, in CI and in the cloud
     # session alike (docs/adr/0002-testaufteilung.md §2). They are part of the same
-    # `pytest` both places run (§6), so the service belongs on this job rather than
-    # on one of its own. Same image as docker-compose.yml.
+    # `pytest` both places run (§6), so the service belongs on each of these jobs
+    # rather than on one of its own. Same image as docker-compose.yml.
     services:
       postgres:
         image: postgis/postgis:16-3.4
@@ -63,51 +97,47 @@ jobs:
         with:
           fetch-depth: 0
 
-      # First step of every required job (docs-only PRs, Otto 2026-11-06): the job always
-      # runs, so the required check never stays pending, but a PR whose own changes lie
-      # only under docs/ skips the rest. Rules: scripts/ci-scope.sh.
-      - name: Scope (docs-only pull request?)
-        id: scope
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_REF: ${{ github.base_ref }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        working-directory: ${{ github.workspace }}
-        run: scripts/ci-scope.sh
-
       - uses: actions/setup-python@v5
+        id: python
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
-          cache-dependency-path: backend/requirements-dev.lock
 
-      # Docs-only PR: the two checks on files under docs/ (test_plans_layout,
-      # test_decision_log_format) need pytest and pytest-xdist only. Their pins and
-      # hashes are taken from the lock file; `--noconftest` because the shared conftest
-      # imports the whole stack.
-      - name: Docs checks (docs-only pull request)
-        if: steps.scope.outputs.docs_only == 'true'
-        run: |
-          awk '/^[A-Za-z0-9]/ { keep = ($1 ~ /^(pytest|pytest-xdist|execnet|iniconfig|packaging|pluggy|pygments)==/) } keep && !/^ *#/' \
-            backend/requirements-dev.lock > "$RUNNER_TEMP/docs-checks.lock"
-          pip install --require-hashes --only-binary :all: -r "$RUNNER_TEMP/docs-checks.lock"
-          pytest --noconftest -o addopts="-ra --strict-markers --strict-config" \
-            backend/tests/test_plans_layout.py backend/tests/test_decision_log_format.py
+      # The packages go into a virtual environment that is restored from the cache while
+      # the lock file stays the same (M4-00b: the install below is what fills it, from
+      # the lock file, hash-checked). The key carries the runner image and the exact
+      # Python: a venv holds compiled modules and links to the interpreter's path, so a
+      # new image or a new patch version must not reuse it.
+      - name: Runner image (for the cache key)
+        id: image
+        run: echo "version=${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the virtual environment
+        id: venv
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/venv
+          key: venv-${{ runner.os }}-${{ runner.arch }}-${{ steps.image.outputs.version }}-py${{ steps.python.outputs.python-version }}-${{ hashFiles('backend/requirements-dev.lock') }}
 
       # From the lock file, hash-checked (M4-00b). Why these options, and in this
       # order: scripts/lock-backend.sh.
       - name: Install dependencies
-        if: steps.scope.outputs.docs_only != 'true'
+        if: steps.venv.outputs.cache-hit != 'true'
         run: |
+          python -m venv "$RUNNER_TEMP/venv"
+          . "$RUNNER_TEMP/venv/bin/activate"
           python -m pip install --upgrade pip
           pip install --require-hashes --only-binary :all: --no-binary version-parser \
             -r backend/requirements-dev.lock
+
+      - name: Use the virtual environment
+        run: |
+          echo "VIRTUAL_ENV=$RUNNER_TEMP/venv" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
 
       # Bit-exact tests (adr/0016 §3.3, adr/0014 §6.3) depend on the system's glibc (version
       # and build variant) and on the CPU features it and numpy dispatch on. This puts
       # both into the log, so a red run can be matched to its machine.
       - name: System, CPU and numeric libraries (for bit-exact tests)
-        if: steps.scope.outputs.docs_only != 'true'
         run: |
           grep PRETTY_NAME /etc/os-release
           ldd --version | head -1
@@ -128,19 +158,69 @@ jobs:
               print(gdal.GDALVersionInfo(b"BUILD_INFO").decode())
           EOF
 
+      # Once, in part 1: the lint covers the whole backend, and a part that fails it
+      # would only repeat the finding.
       - name: Lint (ruff)
-        if: steps.scope.outputs.docs_only != 'true'
+        if: matrix.shard == 1
         run: ruff check backend
 
       # Installs the pgstac schema the T-C tests read. The version comes from the
       # pin in backend/requirements.txt — there is no second place that sets it.
       - name: Migrate pgstac
-        if: steps.scope.outputs.docs_only != 'true'
         run: pypgstac migrate
 
-      - name: Tests (pytest)
-        if: steps.scope.outputs.docs_only != 'true'
-        run: pytest
+      # The 50 slowest tests of the part go into the log: the data for the next time the
+      # parts need to be balanced (scripts/ci-backend-shard.sh).
+      - name: Tests (pytest, part ${{ matrix.shard }})
+        run: scripts/ci-backend-shard.sh ${{ matrix.shard }} --durations=50
+
+  backend:
+    name: Backend — lint and tests
+    # The required check. It stays one name (branch protection asks for it); it is green
+    # only if the scope was decided and every part of the tests passed, or, for a docs-only
+    # pull request, the four parts were skipped and the two docs checks passed.
+    needs: [backend-scope, backend-tests]
+    # Runs after a red or skipped part too: the check must end red or green, never
+    # "skipped" (which a required check may count as passed).
+    if: always()
+    runs-on: ubuntu-24.04
+    env:
+      SCOPE_RESULT: ${{ needs.backend-scope.result }}
+      DOCS_ONLY: ${{ needs.backend-scope.outputs.docs_only }}
+      TESTS_RESULT: ${{ needs.backend-tests.result }}
+    steps:
+      - name: Every part is green
+        run: |
+          echo "scope: $SCOPE_RESULT (docs_only=$DOCS_ONLY), tests: $TESTS_RESULT"
+          [ "$SCOPE_RESULT" = "success" ] || { echo "The scope was not decided."; exit 1; }
+          if [ "$DOCS_ONLY" = "true" ]; then
+            [ "$TESTS_RESULT" = "skipped" ] || { echo "Docs-only, but the test parts did not stay skipped."; exit 1; }
+          else
+            [ "$TESTS_RESULT" = "success" ] || { echo "A part of the tests is not green."; exit 1; }
+          fi
+
+      - uses: actions/checkout@v4
+        if: env.DOCS_ONLY == 'true'
+
+      - uses: actions/setup-python@v5
+        if: env.DOCS_ONLY == 'true'
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.lock
+
+      # Docs-only PR: the two checks on files under docs/ (test_plans_layout,
+      # test_decision_log_format) need pytest and pytest-xdist only. Their pins and
+      # hashes are taken from the lock file; `--noconftest` because the shared conftest
+      # imports the whole stack.
+      - name: Docs checks (docs-only pull request)
+        if: env.DOCS_ONLY == 'true'
+        run: |
+          awk '/^[A-Za-z0-9]/ { keep = ($1 ~ /^(pytest|pytest-xdist|execnet|iniconfig|packaging|pluggy|pygments)==/) } keep && !/^ *#/' \
+            backend/requirements-dev.lock > "$RUNNER_TEMP/docs-checks.lock"
+          pip install --require-hashes --only-binary :all: -r "$RUNNER_TEMP/docs-checks.lock"
+          pytest --noconftest -o addopts="-ra --strict-markers --strict-config" \
+            backend/tests/test_plans_layout.py backend/tests/test_decision_log_format.py
 
   frontend:
     name: Frontend — lint, types and tests

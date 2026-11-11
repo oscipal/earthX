@@ -81,7 +81,14 @@ from earthx.access.download import (
     parse_aoi_geometry,
     plan_outputs,
 )
-from earthx.access.mosaic_tiles import EarthxMosaicTilerFactory, MosaicLayout, MosaicScenes, ReadBudget, open_mosaic
+from earthx.access.mosaic_tiles import (
+    EarthxMosaicTilerFactory,
+    EarthxOverviewTilerFactory,
+    MosaicLayout,
+    MosaicScenes,
+    ReadBudget,
+    open_mosaic,
+)
 from earthx.access.resolve import (
     AssetNotOnItem,
     InvalidAssetKey,
@@ -119,7 +126,9 @@ from earthx.catalog.registry import (
     AcquisitionYearMissing,
     DatasetConfig,
     DatasetRegistry,
+    ItemHolding,
     LicenseTier,
+    OverviewMode,
     RetiredDatasetError,
     UnknownDatasetError,
 )
@@ -144,6 +153,9 @@ ROUTER_PREFIX = "/collections/{dataset}/items/{item}"
 # (M5-30b part 3), which `POST` to MOSAIC_SELECTION_ROUTE creates.
 MOSAIC_ROUTER_PREFIX = mosaic_tiles.ROUTER_PREFIX
 MOSAIC_SELECTION_ROUTE = "/collections/{dataset}/mosaic"
+
+# The tile of the substitute a dataset shows below its first level (plan M5-30b §4.8).
+OVERVIEW_ROUTER_PREFIX = mosaic_tiles.OVERVIEW_ROUTER_PREFIX
 
 # Where the tiles of a job result begin (`result_tiles.ROUTER_PREFIX` up to its identifier).
 RESULT_PATH_START = "/results/"
@@ -782,7 +794,7 @@ async def _validate_before_fetching(request: Request) -> None:
     ``422`` FastAPI would have answered, with nothing asked of the source.
     """
     route = request.scope["route"]
-    skipped = (mosaic_scenes, mosaic_post_process)
+    skipped = (mosaic_scenes, mosaic_post_process, overview_scenes)
     dependant = dataclasses.replace(
         route.dependant, dependencies=[sub for sub in route.dependant.dependencies if sub.call not in skipped]
     )
@@ -1090,6 +1102,82 @@ async def create_mosaic_selection(
         raise HTTPException(status_code=error.status_code, detail=error.detail) from None
     LOGGER.info("mosaic selection created with %d scenes of %d assets", len(ids), len(assets))
     return _selection_answer(dataset, selection, 201)
+
+
+async def overview_scenes(
+    request: Request, dataset: Annotated[str, Path(description="dataset id of the registry")]
+) -> MosaicScenes:
+    """The scenes of the substitute that a tile below the first level of ``dataset`` reads (plan M5-30b §4.8, A5).
+
+    The route hangs on the dataset and the tile alone, so that a tile has the same URL and the same picture for every
+    user, whatever they selected. Only a dataset with ``overview: substitute`` has it (else ``404``), and the licence of
+    the dataset and of the substitute allow display. The level has to lie below the first level of the dataset
+    (else ``400``); from there on the dataset's own tiles serve. What the pixels are is the substitute's picture, drawn
+    with the display parameters of the request; the route has no statistics, no info and no TileJSON.
+
+    The items are those of the substitute that touch the tile, from our own pgstac, in the order of the mosaic
+    and cut to the budget per tile. The asset is the first of the substitute's default render that an item carries.
+    """
+    state = request.app.state
+    config = _dataset_config(state, dataset)
+    _check_display_allowed(config)
+    viewer = config.viewer
+    if viewer is None or viewer.overview is not OverviewMode.SUBSTITUTE or viewer.overview_substitute is None:
+        raise HTTPException(status_code=404, detail=f"{dataset!r} draws no substitute below its first level")
+    substitute = _dataset_config(state, viewer.overview_substitute)
+    _check_display_allowed(substitute)
+    assert substitute.default_render is not None  # the registry compares the unit of its default band
+    _refuse_free_parameters(request)
+    try:
+        try:
+            zoom = int(request.path_params["z"])
+        except (KeyError, ValueError):
+            raise OrderRefused(400, "not a tile of a grid this tiler serves", "order") from None
+        if not 0 <= zoom < viewer.min_zoom:
+            raise OrderRefused(
+                400,
+                f"zoom level {zoom} is not below the first level of {dataset!r}, z{viewer.min_zoom}, where its own tiles begin",
+                "order",
+            )
+        grid = mosaic_tiles.mosaic_tile(request.path_params)
+        assert grid is not None  # the path has a level
+        await _validate_before_fetching(request)
+        if substitute.source.item_holding is not ItemHolding.MATERIALIZED:
+            # No dataset names a federated substitute yet: its items would come from the source's own search, which
+            # this route has no budget for. Refused until a case exists and decides it.
+            raise OrderRefused(501, "a federated dataset cannot serve as a substitute yet", "items")
+        found, capped = await mosaic_tiles.items_in_tile(getattr(state, "earthx_cache_pool", None), substitute.dataset_id, grid)
+        refs: dict[str, ResolvedAsset] = {}
+        items: dict[str, dict[str, Any]] = {}
+        for stac_item in found:
+            key = next((key for key in substitute.default_render.assets if key in (stac_item.get("assets") or {})), None)
+            if key is None:
+                continue
+            item_id = str(stac_item.get("id"))
+            refs[item_id] = _resolve_ref(stac_item, config=substitute, item=item_id, asset=key)
+            items[item_id] = stac_item
+        if not items:
+            raise OrderRefused(404, "the tile does not touch these items", "items")
+        outlines = mosaic_tiles.footprints_of(items)
+        order = mosaic_order({item_id: ref.crs for item_id, ref in refs.items()})
+        touching = mosaic_tiles.scenes_touching(order, outlines, grid)
+    except OrderRefused as error:
+        raise HTTPException(status_code=error.status_code, detail=error.detail) from None
+    budget = ReadBudget(mosaic_tiles.TILE_TIME_BUDGET_S)
+    outcome = mosaic_tiles.TileOutcome.of(request.scope)
+    if outcome is not None:
+        outcome.left_out = touching.left_out + int(capped)
+        outcome.budget = budget
+        outcome.source = mosaic_tiles.SUBSTITUTE_SOURCE
+    scenes = tuple(
+        _open_ref(state, refs[item_id], target_gsd=target_gsd_for(request, items[item_id])) for item_id in touching.read
+    )
+    return MosaicScenes(substitute.dataset_id, scenes, mosaic_tiles.union_bounds(outlines), budget)
+
+
+def overview_post_process() -> None:
+    """The ``process_dependency`` of the substitute's tile: none. No ``algorithm``, no steps; a picture only."""
+    return None
 
 
 class MosaicOrderRequest(BaseModel):
@@ -1883,6 +1971,16 @@ def build_app(
             }
         },
     )
+    # The picture a dataset shows below its first level where another dataset stands in (plan M5-30b §4.8): one tile route.
+    overview_factory = EarthxOverviewTilerFactory(
+        path_dependency=overview_scenes,
+        layer_dependency=BidxParams,
+        process_dependency=overview_post_process,
+        environment_dependency=gdal_environment,
+        router_prefix=OVERVIEW_ROUTER_PREFIX,
+        name="overview-tiles",
+    )
+    app.include_router(overview_factory.router, prefix=OVERVIEW_ROUTER_PREFIX, tags=["Overview tiles"])
     # The tiles of a finished job (M4-13c-5): read from the object store, not through the registry.
     app.state.earthx_results = None
     app.include_router(build_result_factory().router, prefix=RESULT_ROUTER_PREFIX, tags=["Results"])
@@ -2013,6 +2111,7 @@ __all__ = [
     "DOWNLOAD_ROUTE",
     "MOSAIC_ROUTER_PREFIX",
     "MOSAIC_SELECTION_ROUTE",
+    "OVERVIEW_ROUTER_PREFIX",
     "ROUTER_PREFIX",
     "DownloadRequest",
     "app",

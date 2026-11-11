@@ -363,6 +363,27 @@ async def search_items_by_ids(
     return list(row[0].get("features") or [])
 
 
+async def search_items_in_bbox_async(
+    conn: psycopg.AsyncConnection, dataset_id: str, bbox: tuple[float, float, float, float], limit: int
+) -> list[dict[str, object]]:
+    """:func:`search_items_in_bbox` on the caller's async connection, from the pool of the tiler (plan M5-30b §4.8).
+
+    The pool's connections are in autocommit, and its connections are shared: ``search_path`` is set for one transaction
+    only (``SET LOCAL``), never for the connection, which the next user of the pool would inherit.
+    """
+    if limit < 1:
+        raise ValueError("limit is at least 1")
+    query = {"collections": [dataset_id], "bbox": list(bbox), "limit": limit}
+    async with conn.transaction():
+        await conn.execute("SET LOCAL search_path TO pgstac, public")
+        async with conn.cursor() as cur:
+            await cur.execute("SELECT pgstac.search(%s::jsonb)", (json.dumps(query),))
+            row = await cur.fetchone()
+    if row is None or row[0] is None:
+        return []
+    return list(row[0].get("features") or [])[:limit]
+
+
 async def read_item_holdings(conn: psycopg.AsyncConnection) -> dict[str, str | None]:
     """``earthx:source.item_holding`` of every collection in pgstac, by collection id.
 

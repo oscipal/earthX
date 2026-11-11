@@ -324,8 +324,14 @@ export function quicklookAsset(item: StacItem): StacAsset | null {
 // An item's own quicklook still wins first regardless of `browse`: a source that
 // starts publishing thumbnails tomorrow gets them without a change here, and one
 // that stops falls back to whatever `browse` says next. Only a quicklook the map
-// can place counts (`quicklookCoords`): Sentinel-1's lies in radar geometry with no
-// CRS, so its scenes get the tiles `browse` names instead of no preview (DS-04c).
+// can place counts (`quicklookCoords`).
+//
+// Except where the registry places the files through ground control points
+// (`georeferencing: gcp_tps`, F11 to #319, adr/0018 §4.2): such a source's
+// quicklook lies in the files' own geometry (Sentinel-1: radar geometry, mirrored
+// on an ascending pass), and a tile is placed by the same thin-plate spline as the
+// full view. Its scenes always get tiles, at every released level, so a zoom
+// below `min_zoom` reads what the tile route serves there (adr/0032 §9).
 export type QuicklookPlan =
   | { kind: 'image'; href: string }
   // `render` is the registry's standard visualisation, carried because a preview
@@ -335,13 +341,16 @@ export type QuicklookPlan =
   | { kind: 'tiles'; asset: string; minZoom: number; maxZoom: number; render: AppliedRender };
 
 export function quicklookPlan(item: StacItem, dataset: DatasetOption): QuicklookPlan | null {
+  const byControlPoints = dataset.collection['earthx:georeferencing'] === 'gcp_tps';
   const asset = quicklookAsset(item);
-  if (asset?.href && quicklookCoords(item, preferredGeoreferencedAsset(dataset, item))) return { kind: 'image', href: asset.href };
-  if (!dataset.viewable || dataset.browse === 'quicklook') return null;
+  if (!byControlPoints && asset?.href && quicklookCoords(item, preferredGeoreferencedAsset(dataset, item))) {
+    return { kind: 'image', href: asset.href };
+  }
+  if (!dataset.viewable || (dataset.browse === 'quicklook' && !byControlPoints)) return null;
   const render = defaultRenderOf(dataset.collection, item);
   const rendered = render?.assets?.[0];
   if (!render || !rendered) return null;
-  const wholeScene = dataset.browse === 'full_resolution';
+  const wholeScene = byControlPoints || dataset.browse === 'full_resolution';
   return {
     kind: 'tiles',
     asset: rendered,

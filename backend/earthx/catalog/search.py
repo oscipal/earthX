@@ -11,6 +11,15 @@ with k = 60:
 * **Trigrams:** ``word_similarity`` of the normalized query with id, title and keywords, from
   :data:`TRIGRAM_THRESHOLD` on; it finds "Sentinal 2" and "Worldcovr".
 
+A number never drops out of a query that names a dataset (plan §11.7, A18): in the trigram arm every number of the
+query, in the full text every number right after a name that carries a number itself ("Sentinel 3", "Copernicus DEM
+90"), has to stand in the id, title or keywords of the dataset. A number on its own has to stand there as a word ("1"
+is not the one of "c1"); the digits of a word with letters ("sentinel3", "l2a") as a run of digits anywhere. A number
+with a unit ("10 m") or a year is no number of a name and drops out like any unknown word. Without such a
+dataset the list is empty (adr/0026 K9); the full text cannot check this itself, as it splits "GLO-30" into "glo"
+and "-30". Nor does a bare number carry a dataset in the full text on its own: "Landsat 9", with no Landsat in the
+catalogue, finds nothing for its "9".
+
 Hard filters before both arms: the area meets the footprints of a materialized dataset that has items in pgstac,
 otherwise the box of the collection (plan A4); the period overlaps the extent in time, an open end meaning now, and a
 dataset without a time axis never drops out for a period but is named in ``ignored_filters``. Without text the
@@ -22,6 +31,7 @@ Every text goes to SQL as a parameter, never into the statement.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -41,6 +51,11 @@ TRIGRAM_THRESHOLD = 0.5
 #: The share of the units a dataset has to match under :attr:`Joining.SHARE`.
 MIN_SHARE = 0.5
 TIME_FILTER = "datetime"
+_NUMBER = re.compile(r"[0-9]+")
+_LETTER = re.compile(r"[^\W\d_]")
+_YEAR = re.compile(r"(19|20)[0-9]{2}")
+_UNITS = frozenset({"m", "km", "cm"})
+_MEASURE = re.compile(r"[0-9]+(m|km|cm)")
 
 
 class Joining(Enum):
@@ -96,6 +111,68 @@ _FILTERED = """
 """
 
 
+_WORDS_OF_DIGITS = "ARRAY(SELECT w FROM unnest(string_to_array(f.trigram_text, ' ')) w WHERE w ~ '^[0-9]+$')"
+_RUNS_OF_DIGITS = "ARRAY(SELECT (regexp_matches(f.trigram_text, '[0-9]+', 'g'))[1])"
+
+
+def _carries(words: str, runs: str | None = None) -> str:
+    """True where id, title or keywords of the row ``f`` have every number of the parameter ``words`` as a word and
+    every one of ``runs`` as a run of digits."""
+    condition = f"%({words})s::text[] <@ {_WORDS_OF_DIGITS}"
+    return condition if runs is None else f"{condition} AND %({runs})s::text[] <@ {_RUNS_OF_DIGITS}"
+
+
+def _name_numbers(words: Sequence[str]) -> list[int]:
+    """The positions of the words that can be the number of a name: digits only, no year, no unit after them."""
+    return [
+        position
+        for position, word in enumerate(words)
+        if _NUMBER.fullmatch(word)
+        and not _YEAR.fullmatch(word)
+        and (position + 1 == len(words) or words[position + 1] not in _UNITS)
+    ]
+
+
+def numbers_of(text: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """The numbers of names in ``text`` (normalized), and the runs of digits in its words with letters.
+
+    A number with a unit after it ("10 m", "10m") and a year ("2021") are never part of a name (Otto, 11.11.2026).
+    """
+    words = normalize(text).split()
+    numbers = tuple(words[position] for position in _name_numbers(words))
+    codes = tuple(
+        run
+        for word in words
+        if not _NUMBER.fullmatch(word) and not _MEASURE.fullmatch(word)
+        for run in _NUMBER.findall(word)
+    )
+    return numbers, codes
+
+
+def numbers_after_names(text: str, names: frozenset[str]) -> tuple[str, ...]:
+    """The numbers of names in ``text`` right after a word of ``names``: "3" in "Sentinel 3"."""
+    words = normalize(text).split()
+    return tuple(words[position] for position in _name_numbers(words) if position and words[position - 1] in names)
+
+
+def numbered_names(rows: Sequence[str]) -> frozenset[str]:
+    """The words of the ids and titles in ``rows`` that come before a number of a name in the same row.
+
+    Only names that carry a number themselves ("Sentinel-2", "Copernicus DEM GLO-30") hold a number of the query to
+    account; "ESA WorldCover 2020" carries a year and none of its words does.
+    """
+    names: set[str] = set()
+    for row in rows:
+        words = normalize(row).split()
+        numbered = _name_numbers(words)
+        if numbered:
+            names.update(word for word in words[: numbered[-1]] if _LETTER.search(word))
+    return frozenset(names)
+
+
+_NAMES_SQL = "SELECT dataset_id || ' ' || title FROM public.earthx_dataset_search"
+
+
 def _unit_query(unit: Unit, number: int) -> sql.Composed:
     """The OR of every term of ``unit`` as a phrase in every configuration."""
     return sql.SQL(" || ").join(
@@ -126,15 +203,22 @@ _JOIN_CONDITION = {
 }
 
 
+def _bare_number(unit: Unit) -> bool:
+    """A unit of digits only ("9", "2020"); it never carries a dataset on its own."""
+    return not unit.from_glossary and all(_NUMBER.fullmatch(word) for word in unit.terms[0].split("-"))
+
+
 def _full_text_sql(units: Sequence[Unit], joining: Joining) -> sql.Composed:
     rows = sql.SQL(", ").join(
-        sql.SQL("({}, {}, {})").format(sql.Literal(number), _unit_query(unit, number), _stop_word(unit, number))
+        sql.SQL("({}, {}, {}, {})").format(
+            sql.Literal(number), _unit_query(unit, number), _stop_word(unit, number), sql.Literal(_bare_number(unit))
+        )
         for number, unit in enumerate(units)
     )
     return sql.SQL(
         """
-        WITH all_units(ord, query, stop) AS (VALUES {rows}),
-        units AS (SELECT ord, query FROM all_units WHERE NOT stop),
+        WITH all_units(ord, query, stop, bare) AS (VALUES {rows}),
+        units AS (SELECT ord, query, bare FROM all_units WHERE NOT stop),
         known AS (
             SELECT u.ord FROM units u
             WHERE EXISTS (SELECT 1 FROM public.earthx_dataset_search s WHERE s.document @@ u.query)),
@@ -142,25 +226,32 @@ def _full_text_sql(units: Sequence[Unit], joining: Joining) -> sql.Composed:
         hits AS (
             SELECT f.dataset_id, f.title, f.has_time_axis,
                    count(*) FILTER (WHERE f.document @@ u.query) AS matched,
+                   count(*) FILTER (WHERE f.document @@ u.query AND NOT u.bare) AS matched_words,
                    count(*) FILTER (WHERE f.document @@ u.query AND u.ord IN (SELECT ord FROM known)) AS matched_known,
                    sum(ts_rank_cd(f.document, u.query)) AS rank
             FROM filtered f CROSS JOIN units u
+            WHERE {carries}
             GROUP BY f.dataset_id, f.title, f.has_time_axis)
         SELECT h.dataset_id, h.title, h.has_time_axis, h.rank FROM hits h
-        WHERE {condition}
+        WHERE h.matched_words > 0 AND {condition}
         ORDER BY h.rank DESC, h.title, h.dataset_id
         """
-    ).format(rows=rows, filtered=sql.SQL(_FILTERED), condition=sql.SQL(_JOIN_CONDITION[joining]))
+    ).format(
+        rows=rows,
+        filtered=sql.SQL(_FILTERED),
+        condition=sql.SQL(_JOIN_CONDITION[joining]),
+        carries=sql.SQL(_carries("named_numbers")),
+    )
 
 
 _TRIGRAM_SQL = sql.SQL(
     """
     WITH filtered AS ({filtered})
     SELECT f.dataset_id, f.title, f.has_time_axis, word_similarity(%(normal)s, f.trigram_text) FROM filtered f
-    WHERE word_similarity(%(normal)s, f.trigram_text) >= %(threshold)s
+    WHERE word_similarity(%(normal)s, f.trigram_text) >= %(threshold)s AND {carries}
     ORDER BY word_similarity(%(normal)s, f.trigram_text) DESC, f.title, f.dataset_id
     """
-).format(filtered=sql.SQL(_FILTERED))
+).format(filtered=sql.SQL(_FILTERED), carries=sql.SQL(_carries("numbers", "codes")))
 
 _UNRANKED_SQL = sql.SQL(
     "WITH filtered AS ({filtered}) SELECT f.dataset_id, f.title, f.has_time_axis, 0 FROM filtered f ORDER BY f.dataset_id"
@@ -231,11 +322,27 @@ async def search_datasets(
         else:
             units = parse_query(text, glossary)
             normal = normalize(text)
+            numbers, codes = numbers_of(text)
             full_text = []
             if units:
+                named_numbers: tuple[str, ...] = ()
+                if numbers:
+                    async with conn.cursor() as cur:
+                        await cur.execute(_NAMES_SQL)
+                        names = numbered_names([row[0] for row in await cur.fetchall()])
+                    named_numbers = numbers_after_names(text, names)
                 terms = {f"term_{n}_{i}": term for n, unit in enumerate(units) for i, term in enumerate(unit.terms)}
-                full_text = await run(_full_text_sql(units, joining), {**terms, "share": MIN_SHARE})
-            trigrams = await run(_TRIGRAM_SQL, {"normal": normal, "threshold": threshold}) if normal else []
+                full_text = await run(
+                    _full_text_sql(units, joining), {**terms, "share": MIN_SHARE, "named_numbers": list(named_numbers)}
+                )
+            trigrams = (
+                await run(
+                    _TRIGRAM_SQL,
+                    {"normal": normal, "threshold": threshold, "numbers": list(numbers), "codes": list(codes)},
+                )
+                if normal
+                else []
+            )
             ids = fuse(ranks(full_text), ranks(trigrams), titles={i: title for i, (title, _) in rows.items()})
     if period is None:
         return SearchResult(ids)

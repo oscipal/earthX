@@ -7,6 +7,7 @@ import type { LayerOverlay } from './layers';
 import type { IndexPreset } from './indexPresets';
 import { buildTileUrl } from './mapLayers';
 import { inStackOrder, stackLikeView, viewOfPass } from './mosaic';
+import { substituteRasterOf } from './overviewSubstitute';
 import type { Mosaics, PlannedRaster, SceneEntry } from './mosaic';
 import { underlayOf } from './underlay';
 import { indexRastersOfPass } from './viewIndex';
@@ -20,7 +21,27 @@ const rasterOverlay = (raster: PlannedRaster, render: AppliedRender, clip: GeoJS
   minZoom: raster.minZoom,
   maxZoom: raster.maxZoom,
   ...(raster.hideFrom === undefined ? {} : { hideFrom: raster.hideFrom }),
+  ...(raster.attribution === undefined ? {} : { attribution: raster.attribution }),
 });
+
+// The pictures of the substitutes below the first level of the datasets these passes belong to, one for each dataset, in the
+// look of the layer (`overviewSubstitute.ts`). They lie at the bottom of the layer, under everything it draws of its own. An
+// index in the look is computed by the tile route with an operator, which a substitute's route does not take: none then.
+export function substituteOverlaysOf(
+  datasetIds: readonly string[],
+  datasets: readonly DatasetOption[],
+  render: AppliedRender,
+  clip: GeoJSON.Geometry | null,
+): LayerOverlay[] {
+  if (render.index) return [];
+  return [...new Set(datasetIds)].flatMap((id) => {
+    const raster = substituteRasterOf(
+      datasets.find((d) => d.id === id),
+      datasets,
+    );
+    return raster ? [rasterOverlay(raster, render, clip)] : [];
+  });
+}
 
 // The overlays one pass is pinned or cropped as: its mosaic, else one raster per scene (`mosaic.ts`). `null` while the pass's
 // mosaic, or the selection an index over it is asked from, is on its way — a pinned layer is a picture and is not made from half of one.

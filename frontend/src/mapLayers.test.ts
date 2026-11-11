@@ -129,6 +129,7 @@ function zarrLikeDataset() {
         results_group_by: ['datetime'],
         overview: 'pyramid' as const,
         overview_resampling: 'average' as const,
+        overview_substitute: null,
       },
       'earthx:default_render': {
         title: 'True colour',
@@ -362,6 +363,7 @@ describe('syncFocusRaster with mosaics', () => {
           results_group_by: ['datetime'],
           overview: 'own' as const,
           overview_resampling: null,
+          overview_substitute: null,
         },
         'earthx:default_render': {
           title: 'True colour',

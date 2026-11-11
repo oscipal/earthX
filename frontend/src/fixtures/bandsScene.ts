@@ -62,7 +62,7 @@ export function bandsCollection(overrides: Partial<Collection> = {}): Collection
     title: 'Made-up multispectral',
     'earthx:format': 'cog',
     'earthx:capabilities': { roi: true, time_range: true, band_math: true, interpolation: true, ml_processing: true, quad_pol: false, single_coverage_product: false },
-    'earthx:viewer': { group_by: ['datetime'], min_zoom: 0, max_zoom: 19, browse: 'quicklook', quicklook_nodata_max: 16, results_group_by: ['datetime'], overview: 'own' as const, overview_resampling: null },
+    'earthx:viewer': { group_by: ['datetime'], min_zoom: 0, max_zoom: 19, browse: 'quicklook', quicklook_nodata_max: 16, results_group_by: ['datetime'], overview: 'own' as const, overview_resampling: null, overview_substitute: null },
     'earthx:access': { cors: true },
     'earthx:source': { asset_hosts: [HOST] },
     'earthx:band_units': { ...Object.fromEntries(SPECS.map((spec) => [spec.key, spec.key === 'scl' ? null : '1'])), visual: null },
