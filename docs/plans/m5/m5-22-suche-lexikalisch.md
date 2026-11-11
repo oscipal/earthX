@@ -1,6 +1,6 @@
 # M5-22 — Suche Teil 1: Bewertungs-Set, Suchtext, lexikalischer Arm, Collection Search: Plan-Schritt
 
-**Status (11.11.2026):** Plan angenommen (Otto, 11.11.2026; Antworten in §8a). Drei Teile nach F1: M5-22a umgesetzt im Draft-PR [#325](https://github.com/oscipal/earthX/pull/325) (§10); M5-22b umgesetzt im Draft-PR [#334](https://github.com/oscipal/earthX/pull/334) (§11); M5-22c folgt als eigener PR.
+**Status (11.11.2026):** Plan angenommen (Otto, 11.11.2026; Antworten in §8a). Drei Teile nach F1: M5-22a umgesetzt im Draft-PR [#325](https://github.com/oscipal/earthX/pull/325) (§10); M5-22b umgesetzt im Draft-PR [#334](https://github.com/oscipal/earthX/pull/334) (§11, Antworten Otto in §11.6); M5-22c folgt als eigener PR.
 **Aufgabe:** M5-22 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2. **Stufe B.** Hängt von M5-13 ab (gemergt mit #311). M5-23 (Vektorarm, Suchfeld im Data catalogue) und M5-25 (JSON-LD, Sitemap) warten auf den Merge.
 **Grundlagen:** `adr/0026` §4.1–§4.6, §6 Schritte 1 und 2, §8, §10, §11 (F1–F9), §12 Folgen 2, 4, 6, 9, 10; `adr/0024` R5, R7; `adr/0027` §6.1; `KLAERUNGEN.md` B10, B13; `architekturplan.md` 3.1, 5.1, 5.3, 10; Glossar-Begriffe aus `plans/m5/m5-07-worldcover.md` §10, `plans/m5/m5-08-stac-adapter-swissalti3d.md` §9, `plans/ds/ds-04-s1-anbinden.md` §8.
 
@@ -274,7 +274,7 @@ Alle drei Varianten am Set, Schwelle 0,5, Katalog der Registry mit sechs Einträ
 | **UND ohne unbekannte Wörter** | **0,727** | **0,727** | **1,000** | **1,000** | **0,900** | **0,878** | **0,877** | **4/4** | **3/4** |
 | ODER mit Mindestanteil ½ | 0,727 | 0,727 | 1,000 | 1,000 | 0,900 | 0,878 | 0,877 | 4/4 | 3/4 |
 
-- Nach der Regel aus F2 gewinnt die höchste Recall@5 mit allen Filterfragen und mindestens drei von vier Negativfragen: Gleichstand zwischen „UND ohne unbekannte Wörter“ und „ODER mit Mindestanteil“. **Gewählt: UND ohne unbekannte Wörter** (`Joining.KNOWN`), weil sie keinen weiteren Parameter braucht (der Anteil ½ ist nicht belegt) und bei Wörtern, die der Katalog kennt, so genau bleibt wie UND. **Otto bestätigt im PR.**
+- Nach der Regel aus F2 gewinnt die höchste Recall@5 mit allen Filterfragen und mindestens drei von vier Negativfragen: Gleichstand zwischen „UND ohne unbekannte Wörter“ und „ODER mit Mindestanteil“. **Gewählt: UND ohne unbekannte Wörter** (`Joining.KNOWN`), weil sie keinen weiteren Parameter braucht (der Anteil ½ ist nicht belegt) und bei Wörtern, die der Katalog kennt, so genau bleibt wie UND. **Bestätigt (Otto, 11.11.2026, §11.6).**
 - Unterschied zu UND: Q16 „Satellitenbilder in Echtfarben“ (kein Suchtext kennt „Satellitenbild“). Preis: Q48 „ocean salinity“ findet den Copernicus DEM („Oceans carry no tiles“ in der Beschreibung), weil „salinity“ unbekannt ist und wegfällt; das ist die eine erlaubte Negativfrage (A9).
 - **Schwelle der Trigramme:** 0,4 und 0,5 messen gleich, 0,6 und 0,7 verlieren Q43 „Worldcovr“ (gesamt Recall@5 0,867). Festgelegt: **0,5** (der Startwert, die höhere der beiden gleich guten).
 - **Deutsche Schlagworte (F8), vorher und nachher:** in allen drei Varianten dieselben Zahlen. Das Glossar überbrückte die Begriffe schon; die Schlagworte helfen Anfragen außerhalb des Glossars und später dem Vektorarm.
@@ -285,7 +285,7 @@ Nicht unter den ersten fünf: Q18 „Radarbilder bei Bewölkung“ (kein Suchtex
 
 Sperrklinke (F3) in `test_search_evaluation.py`: Recall@5 und MRR@10 deutsch ≥ 8/11, englisch = 1,0; alle Filterfragen; höchstens eine Negativfrage mit Treffern. Gegen die Grenze aus `adr/0026` F5 fehlt nur Deutsch (0,727 statt 0,9 bzw. 0,8).
 
-### 11.4 Auslegungen der Umsetzung (gelten, bis Otto widerspricht)
+### 11.4 Auslegungen der Umsetzung (bestätigt, Otto 11.11.2026)
 
 - **A10** Global heißt: jeder Kontinent außer der Antarktis liegt mindestens zur Hälfte in der Box (WorldCover endet bei 60° S und ist global). Ein globaler Datensatz bekommt nur „global, worldwide, weltweit“, keine Länderliste.
 - **A11** Das Skript liegt unter `scripts/`, die reduzierte Datei mit Release und Prüfsumme unter `backend/catalog/` (F4 nannte beides dort; `scripts/` ist der Ort aller Skripte des Repos).
@@ -299,4 +299,15 @@ Sperrklinke (F3) in `test_search_evaluation.py`: Recall@5 und MRR@10 deutsch ≥
 ### 11.5 Review vor dem PR
 
 Ein Review-Subagent fand drei Fehler, alle behoben: (1) Der Importvertrag `runner` nannte die fünf neuen Module von `catalog` nicht (`test_module_boundaries.py` rot); sie stehen jetzt in der Verbotsliste, eine Verschärfung. (2) Die geodätische Fläche behandelte lange Kanten der Box entlang eines Breitenkreises als Geodäten (Box über Sibirien: 0,11 statt 0,51 von Russland); die Kanten werden vorher auf 0,5° geteilt, die Ortsbegriffe der heutigen Einträge bleiben gleich. (3) Die Startprüfung verglich nur den Prüfwert des Texts; jetzt auch die Spalten der Filter. Hinweise ohne Änderung, für M5-22c: Box mit `west > east` und Zeitraum mit vertauschten Enden prüft die Route; `word_similarity` als Funktion nutzt den Trigramm-Index nicht (bei sechs Zeilen ohne Belang); unter „UND ohne unbekannte Wörter“ kann eine Anfrage nach einem fehlenden Datensatz („Sentinel-3“) über die Trigramme einen ähnlich benannten finden.
+
+### 11.6 Antworten Otto (11.11.2026)
+
+- **F2:** UND ohne unbekannte Wörter (`Joining.KNOWN`), wie umgesetzt. Fest.
+- **Glossar:** die 37 Gruppen in `backend/catalog/glossary.yaml` so übernommen. Fest.
+- **Auslegungen A10–A17:** bestätigt. Fest.
+
+### 11.7 Vorgemerkt für M5-22c (Otto, 11.11.2026)
+
+- **Eine Zahl oder Kennung an einem bekannten Namen fällt nicht weg.** Heute liefert „Sentinel-3“ vier Datensätze: „3“ (bzw. „sentinel-3“) kennt kein Suchtext und fällt unter `Joining.KNOWN` weg, die Trigramme finden „sentinel“. Künftig gilt: Hängt eine Zahl oder Kennung an einem bekannten Namen („Sentinel-3“, „Landsat 9“, „S2“), bleibt sie eine Bedingung; ohne passenden Datensatz ist die Liste leer (`adr/0026`, K9). Das betrifft beide Arme: den Volltext (die Einheit fällt nicht weg) und die Trigramme (sie dürfen den Namen ohne seine Zahl nicht allein tragen).
+- **Neue Negativfrage im Set:** „Sentinel-3“ (Art 0, ohne Datensatz), mit M5-22c. Nicht schon in M5-22b: Mit ihr hätten zwei aktive Negativfragen Treffer (Q48, die neue), und der harte Test nach A9 schlüge fehl, bevor die Regel oben gebaut ist. Wortlaut, Sprache und ob „Landsat 9“ eine eigene Frage wird, legt M5-22c mit der Begründung im PR fest (`adr/0026` §8.1, „Änderung“).
 
