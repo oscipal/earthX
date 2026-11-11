@@ -247,12 +247,12 @@ MAX_TOTAL_OUTPUT_BYTES = 500_000_000
 LARGE_DOWNLOAD_THRESHOLD_BYTES = 100_000_000
 
 
-# How many scenes a single mosaic may touch (F4, M3-18, Otto 24.09.2026). This
-# bounds runtime, not memory — `crop_asset`'s `threads=1` mosaic read already
-# stops as soon as the AOI is fully covered (measured, plan §3), so this only
-# matters when a mosaic genuinely needs many of its items to fill the AOI.
-# Matches the per-tile mosaic cap `adr/0006` §5 "Zu Frage 4" already uses.
-MAX_DOWNLOAD_ITEMS = 25
+# A guard against abuse, not a limit of the subject (adr/0032 §10.3, F13, Otto 11.11.2026): the
+# fixed 25 scenes of F4 (M3-18) are gone, because what a crop may cost is decided by its estimated
+# duration and size (`api.tiler`, `MAX_CROP_SECONDS`). `crop_asset`'s `threads=1` mosaic read
+# stops as soon as the AOI is fully covered (measured, plan §3), so the number of scenes bounds
+# runtime, not memory; this only keeps a request from naming an absurd number of them.
+MAX_DOWNLOAD_ITEMS = 2000
 
 
 # What the notice may name as the reason `recipe.json` is missing: a code, not a message.

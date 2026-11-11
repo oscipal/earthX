@@ -139,8 +139,14 @@ class TestCheckItemCountCap:
         dl.check_item_count_cap(dl.MAX_DOWNLOAD_ITEMS)
 
     def test_one_over_the_cap_is_refused(self) -> None:
-        with pytest.raises(dl.AoiTooLarge, match="26 scenes"):
+        with pytest.raises(dl.AoiTooLarge, match=f"{dl.MAX_DOWNLOAD_ITEMS + 1} scenes"):
             dl.check_item_count_cap(dl.MAX_DOWNLOAD_ITEMS + 1)
+
+    def test_26_and_a_few_hundred_items_pass_the_guard(self) -> None:
+        """adr/0032 §10.3: the fixed 25 fell; 2000 is a guard against abuse."""
+        assert dl.MAX_DOWNLOAD_ITEMS == 2000
+        for count in (26, 300):
+            dl.check_item_count_cap(count)
 
     def test_zero_items_is_refused(self) -> None:
         """The AOI-outside-items case is caught earlier, but the cap must not divide by it."""
