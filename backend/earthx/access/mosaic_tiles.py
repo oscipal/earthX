@@ -56,7 +56,9 @@ __all__ = [
     "open_mosaic",
 ]
 
-#: Scenes read at the same time, and the size of the portion after which the tile is checked for full.
+#: Scenes read at the same time, and the size of the portion after which the tile is checked for full. Four after
+#: Otto's run of 11.11.2026 (plan M5-30b §8.6): eight threads made a cold tile of swissALTI3D 25 % faster and a warm one
+#: no faster (the read is bound by the CPU), and four stay under the six connections per host of the gateway.
 MOSAIC_THREADS = 4
 #: The most threads a reader may be given (the measurement compares counts up to this one).
 MAX_MOSAIC_THREADS = 16
