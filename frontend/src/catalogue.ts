@@ -196,12 +196,20 @@ function processingText(collection: Collection): string {
   return offered.length > 0 ? offered.join(', ') : NONE;
 }
 
-function doiRow(collection: Collection): LinkText[] {
+// "DOI" where the dataset has one, with its citation; else "Citation" (Otto, 10.11.2026): no row named after a DOI that
+// is not there.
+function doiRow(collection: Collection): CatalogueRow {
   const doi = collection['sci:doi'];
-  const values: LinkText[] = typeof doi === 'string' && doi !== '' ? [link(doi, `https://doi.org/${doi}`)] : [];
   const citation = collection['sci:citation'];
-  if (typeof citation === 'string' && citation !== '') values.push({ text: citation, href: null });
-  return values.length > 0 ? values : plain(NONE);
+  const cited: LinkText[] = typeof citation === 'string' && citation !== '' ? [{ text: citation, href: null }] : [];
+  if (typeof doi === 'string' && doi !== '') return { label: 'DOI', values: [link(doi, `https://doi.org/${doi}`), ...cited] };
+  return { label: 'Citation', values: cited.length > 0 ? cited : plain(NONE) };
+}
+
+// What the data cannot do (`earthx:limitations`, adr/0018 F2, Nachtrag DS-04c), one sentence each; none, no row.
+export function limitationsOf(collection: Collection): string[] {
+  const limitations = collection['earthx:limitations'];
+  return Array.isArray(limitations) ? limitations.filter((text): text is string => typeof text === 'string' && text.trim() !== '') : [];
 }
 
 // The rows of the details of one dataset (UI-05 §4.3), in the order of a STAC browser.
@@ -213,6 +221,7 @@ export function catalogueRows(dataset: DatasetOption): CatalogueRow[] {
   const quick = [...indexPresetsOf(c).map((p) => p.title), ...(trueColorOf(c) ? ['Enhance contrast'] : [])];
   return [
     { label: 'Description', values: plain(typeof c.description === 'string' && c.description !== '' ? c.description : NONE) },
+    ...(limitationsOf(c).length > 0 ? [{ label: 'Limitations', values: limitationsOf(c).map((text) => ({ text, href: null })) }] : []),
     { label: 'Provider', values: providersRow(c) },
     { label: 'Source', values: sourceRow(c) },
     ...licenseRows(c),
@@ -222,7 +231,7 @@ export function catalogueRows(dataset: DatasetOption): CatalogueRow[] {
     { label: 'Bands', values: plain(bandsText(c)) },
     ...(c['earthx:mask'] ? [{ label: 'Mask', values: plain(c['earthx:mask'].asset) }] : []),
     { label: 'Data region', values: plain(typeof region === 'string' && region !== '' ? region : NONE) },
-    { label: 'DOI', values: doiRow(c) },
+    doiRow(c),
     { label: 'Last checked', values: plain(NONE), tip: NOT_CHECKED },
     {
       label: 'Maturity',

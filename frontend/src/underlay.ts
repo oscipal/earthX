@@ -22,7 +22,7 @@ export function underlayOf(
   if (!dataset?.viewable || dataset.browse !== 'quicklook' || dataset.zoom.min <= 0) return null;
   const href = quicklookAsset(item)?.href;
   if (!href) return null;
-  const preferred = preferredGeoreferencedAsset(dataset);
+  const preferred = preferredGeoreferencedAsset(dataset, item);
   const coords = quicklookCoords(item, preferred);
   if (!coords) return null;
   const rings = clip ? quicklookAoiPixelRings(item, clip, preferred) : null;

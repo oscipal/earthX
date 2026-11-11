@@ -426,12 +426,21 @@ describe('quicklookPlan', () => {
     return datasetsFrom([from])[0];
   }
 
-  it('uses the published quicklook where the item carries one', () => {
-    const scene = item({ thumbnail: { href: 'https://example.test/thumb.jpg', roles: ['thumbnail'] } });
+  it('uses the published quicklook where the item carries one the map can place', () => {
+    const scene = item({
+      thumbnail: { href: 'https://example.test/thumb.jpg', roles: ['thumbnail'] },
+      data: { href: 'https://example.test/data.tif', 'proj:transform': [10, 0, 600000, 0, -10, 5300000], 'proj:shape': [100, 100] } as never,
+    });
+    scene.properties['proj:code'] = 'EPSG:32632';
     expect(quicklookPlan(scene, option(zarrLike))).toEqual({
       kind: 'image',
       href: 'https://example.test/thumb.jpg',
     });
+  });
+
+  it('falls back to the tiles where the quicklook carries no place on the map (DS-04c)', () => {
+    const scene = item({ thumbnail: { href: 'https://example.test/thumb.jpg', roles: ['thumbnail'] } });
+    expect(quicklookPlan(scene, option(zarrLike))).toMatchObject({ kind: 'tiles', asset: 'SR_10m:b04,b03,b02' });
   });
 
   it('falls back to tiles on the coarsest released level where the source publishes none', () => {
@@ -512,14 +521,10 @@ describe('zoomFloorHint', () => {
     ])[0];
   }
 
-  it('names the level to reach and the dataset it is about', () => {
-    const text = zoomFloorHint(option(), 5);
-    expect(text).toContain('level 8');
-    expect(text).toContain('Synthetic Zarr dataset');
-  });
-
-  it('points at the coverage layer as what answers this zoom', () => {
-    expect(zoomFloorHint(option(), 5)).toContain('coverage layer');
+  it('names the zoom it is drawn from and the dataset it is about', () => {
+    expect(zoomFloorHint(option(), 5)).toBe(
+      'Nothing shown at this zoom: Synthetic Zarr dataset is drawn from zoom 8. Below it one tile covers several scenes; the coverage shows where they are.',
+    );
   });
 
   it('is null at the floor itself — the floor is released', () => {
@@ -561,7 +566,7 @@ describe('zoomFloorHint', () => {
   it('a fractional map zoom counts as the level it has not reached yet', () => {
     // MapLibre reports a continuous zoom; 7.9 is still below the z8 the source
     // starts at, and the tiles are still not requested.
-    expect(zoomFloorHint(option(), 7.9)).toContain('level 8');
+    expect(zoomFloorHint(option(), 7.9)).toContain('from zoom 8');
     expect(zoomFloorHint(option(), 8.1)).toBeNull();
   });
 });
