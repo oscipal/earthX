@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { BASEMAP_IDS } from './basemaps';
-import { forgetJobsWindow, loadAddedDatasets, loadAppearance, loadBasemap, loadOverlays, loadProjection, loadResultsOnMap, loadTipLevel, migrateReliefBasemap, saveAddedDatasets, saveAppearance, saveBasemap, saveOverlays, saveProjection, saveResultsOnMap, saveTipLevel, themeOf } from './preferences';
+import { forgetJobsWindow, loadAddedDatasets, loadAppearance, loadBasemap, loadOverlays, loadProjection, loadResultsOnMap, loadTerrain, loadTipLevel, migrateReliefBasemap, saveAddedDatasets, saveAppearance, saveBasemap, saveOverlays, saveProjection, saveResultsOnMap, saveTerrain, saveTipLevel, themeOf } from './preferences';
 
 // No jsdom in this project (Vitest runs plain Node) — a minimal
 // localStorage stand-in is enough to exercise the module under test.
@@ -404,5 +404,35 @@ describe('the datasets of "Search and area" (UI-05 F4)', () => {
     vi.stubGlobal('window', BLOCKED);
     expect(loadAddedDatasets()).toBeNull();
     expect(() => saveAddedDatasets(['a'])).not.toThrow();
+  });
+});
+
+describe('loadTerrain (UI-06 F12)', () => {
+  it('is off when nothing is stored', () => {
+    expect(loadTerrain()).toBe(false);
+  });
+
+  it.each([true, false])('round-trips %s, under the key earthx.terrain', (on) => {
+    saveTerrain(on);
+    expect(storage.getItem('earthx.terrain')).toBe(on ? 'on' : 'off');
+    expect(loadTerrain()).toBe(on);
+  });
+
+  it.each(['', 'On', 'true', '1', 'on ', '3d', '__proto__', '["on"]', '{"on":true}'])('is off for the foreign value %j', (value) => {
+    storage.setItem('earthx.terrain', value);
+    expect(loadTerrain()).toBe(false);
+  });
+
+  it('is off when localStorage cannot be read, and saving into a locked storage does not throw', () => {
+    vi.stubGlobal('window', BLOCKED);
+    expect(loadTerrain()).toBe(false);
+    expect(() => saveTerrain(true)).not.toThrow();
+  });
+
+  it('keeps only the switch, apart from the projection and the basemap', () => {
+    saveTerrain(true);
+    expect(loadProjection()).toBe('mercator');
+    expect(loadBasemap()).toBe('satellite');
+    expect([...Array(storage.length).keys()].map((i) => storage.key(i))).toEqual(['earthx.terrain']);
   });
 });
