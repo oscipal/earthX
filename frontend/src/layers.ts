@@ -81,6 +81,9 @@ export interface LayerRestore {
   // Pinned with an index of "Quick processing" (UI-03d, Otto, 2.11.2026): the layer is that index and nothing else, no band and no
   // other index to choose, and its download is the index as a job computes it (NM4-14b).
   indexOnly?: true;
+  // The bands a quicklook-only layer of a `first_present` dataset was pinned with (DS-04c): a crop without a table of
+  // bands reads those, not the first of the list. Absent elsewhere and on a layer pinned before.
+  assets?: string[];
 }
 
 export interface MapLayer {

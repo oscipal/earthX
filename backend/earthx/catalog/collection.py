@@ -346,10 +346,12 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
             ],
             "asset_checksum": None if config.source.asset_checksum is None else config.source.asset_checksum.value,
         },
-        # DS-04 plan §4.4: the marks the viewer shows beside the dataset, its results and its layer.
+        # DS-04 plan §4.4: what the recipe and ATTRIBUTION.txt say about the data (the viewer shows no mark for it, adr/0018
+        # F2, Nachtrag DS-04c), and the sentences of the row "Limitations" of the Data catalogue.
         "earthx:notices": [
             {"code": notice.code, "label": notice.label, "tooltip": notice.tooltip} for notice in config.notices
         ],
+        "earthx:limitations": list(config.limitations),
         # architekturplan.md 5.1, tenth row (adr/0007 §12.11 point 14): how settled
         # the source itself is, not a measurement like earthx:health. No default on
         # the entry (KLAERUNGEN B10), so this is always one of the three values.

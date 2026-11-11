@@ -255,7 +255,7 @@ async def search_items(
     key = search_cache_key(fingerprint, marker, params.limit)
     cached = await cache_get(cache, key)
     if cached is not None and isinstance(cached.get("features"), list):
-        return page_from_stored(dataset_id, fingerprint, cached, from_cache=True)
+        return page_from_stored(dataset_id, fingerprint, _rewritten_page(cached, config), from_cache=True)
 
     response = await gateway.post_json(
         f"{endpoint_of(config)}/search",
@@ -289,7 +289,7 @@ async def get_item(
     key = item_cache_key(dataset_id, item_id)
     cached = await cache_get(cache, key)
     if isinstance(cached, dict) and isinstance(cached.get("item"), dict):
-        return cached["item"]
+        return _rewritten(cached["item"], config.source.asset_href_rewrites)
 
     url = f"{endpoint_of(config)}/collections/{config.source.source_collection_id}/items/{item_id}"
     item = (await gateway.get(url)).json()
@@ -300,6 +300,21 @@ async def get_item(
     item = normalize_for(dialect, config, item)
     await cache_set(cache, key, {"item": item}, ttl_s=TTL_ITEM_S, dataset_id=dataset_id)
     return item
+
+
+def _rewritten_page(stored: CacheValue, config: DatasetConfig) -> CacheValue:
+    """A search page out of the cache with the addresses under the entry's rewrites, as an item out of it (`get_item`).
+
+    The rewrite runs before an answer is stored, and again on what comes out of the cache: an entry kept without it (by
+    the first form of DS-04b, which rewrote only on the way out, or from before a rewrite was added) would hand a reader
+    the source's own ``s3://`` address, which `gateway` refuses (Otto's browser check, 10.11.2026: "the item points at a
+    host this dataset does not declare"). A second rewrite changes nothing: an old prefix is never `https`, a new one
+    always is (registry check).
+    """
+    rewrites = config.source.asset_href_rewrites
+    if not rewrites:
+        return stored
+    return {**stored, "features": [_rewritten(f, rewrites) if isinstance(f, dict) else f for f in stored["features"]]}
 
 
 def _rewritten(item: Item, rewrites: tuple[HrefRewrite, ...]) -> Item:
