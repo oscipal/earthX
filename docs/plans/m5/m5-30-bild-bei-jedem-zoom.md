@@ -186,9 +186,13 @@ Teile 1–6 brauchen keine Antwort. **Teile 7–9 ruhen bis zu F1–F3.**
 2. So lassen; die Karte zeigt die Ablehnung einer Kachel erst, wenn sie kommt
 3. Die TileJSON liest wieder die erste Szene (eine Datei), nur für Bänder und Einheit
 
+*Umgesetzt (Option 1):* Die Prüfung läuft beim Anlegen über alle Szenen und alle Assets und lehnt mit `422` in den Worten von vorher ab; die Auswahl speichert die Beschreibung der ersten Szene je Asset, und die TileJSON nennt `band`/`bands`, `unit` und `data_type` daraus, ohne ein Item zu holen; Ablehnungen, die nur von den Schritten und der gespeicherten Beschreibung abhängen (unbekanntes Band, entferntes Band), kommen wieder aus der TileJSON und ebenso von der Kachel vor dem ersten Abruf. `band_descriptions` und `minmax` standen nur in der Datei und entfallen.
+
 **F6 — Reihenfolge des Mosaiks mit Schritten (Teil 3a)?** Die Reihenfolge wird beim Anlegen aus dem CRS des ersten Assets (sortiert) festgelegt; vorher kam sie bei Schritten aus dem ersten Asset der gezeigten Bänder. Bei Datensätzen, deren Assets einer Szene im selben CRS liegen (alle heutigen), ist das gleich.
 1. So lassen; eine Prüfung beim Anlegen lehnt Assets einer Szene in verschiedenen CRS ab **(Empfehlung)**
 2. Je Asset eine eigene Reihenfolge speichern
+
+*Umgesetzt (Option 1):* Das CRS steht bei Sentinel-2 einmal am Item (`proj:code`, älter `proj:epsg`), jedes Asset einer Szene liegt darin; ein Überflug über die UTM-Zonen 32 und 33 wird deshalb angenommen und für jedes Asset gleich geordnet (Beleg: `test_tiler_mosaic.py::TestOneOrderForEveryAsset::test_the_two_zones_of_one_overpass_are_taken_and_ordered_like_the_job_for_every_asset`); eine Szene, deren Assets in verschiedenen CRS liegen, lehnt das Anlegen mit `422` ab (`test_assets_of_one_scene_in_different_crs_are_a_422_and_nothing_is_stored`, nur über eine ersetzte Auflösung erreichbar, weil Items kein CRS je Asset nennen).
 
 ---
 
@@ -243,7 +247,7 @@ Die Tabellen in den PR kopieren; sie enthalten kein Rechteck und keine ID. Erwar
 ### 8.5 Teil 3a — Auswahl-ID im Backend
 
 - Migration `016_mosaic_selection.sql` (`public.earthx_mosaic_selection`, 7 Tage), `catalog/mosaic_selection.py` (kanonischer Inhalt, ID = erste 32 Hex von SHA-256, SQL), `api/mosaic_selection.py` (Auswahl mit Reihenfolge, Umrissen, Ausdehnung; LRU im Prozess, höchstens 120 s, danach wieder aus der Tabelle).
-- `POST /collections/{dataset}/mosaic` mit `{items, assets}`: bis 2 000 Items, 128 kB; Items in Seiten zu 100 über die ID-Suche (föderiert) bzw. pgstac (materialisiert), ein Überflug, Reihenfolge, Umrisse. `201` neu, `200` erneuert ohne Abruf. Kachel und TileJSON unter `/collections/{dataset}/mosaic/{selection}/…`; unbekannt oder abgelaufen `410`, falsche Form `400`, fremder Datensatz `404`. Eine Kachel holt nur die Items, die sie liest; die TileJSON keine.
+- `POST /collections/{dataset}/mosaic` mit `{items, assets}`: bis 2 000 Items, 128 kB; Items in Seiten zu 100 über die ID-Suche (föderiert) bzw. pgstac (materialisiert), ein Überflug, ein CRS je Szene, gleiche Skalierung und Einheit über alle Szenen und Assets (F5, F6), Reihenfolge, Umrisse, Beschreibung der ersten Szene je Asset. `201` neu, `200` erneuert ohne Abruf. Kachel und TileJSON unter `/collections/{dataset}/mosaic/{selection}/…`; unbekannt oder abgelaufen `410`, falsche Form `400`, fremder Datensatz `404`. Eine Kachel holt nur die Items, die sie liest; die TileJSON keine.
 - `jobs/cleanup.py` löscht abgelaufene Auswahlen. `.importlinter`: der Runner darf das neue Modul nicht importieren (Verschärfung, keine Lockerung).
-- **Abweichungen:** F5 und F6 oben; `asset_hosts` wird erst auf der Kachel geprüft (beim Anlegen wären es bis zu 8 000 Adressen mit Namensauflösung), eine Kachel antwortet dann `502` und liest nichts; die Grenzen des Körpers prüft die Route selbst mit `400`, damit eine Ablehnung nicht die ganze ID-Liste zurückschickt.
+- **Abweichungen:** `asset_hosts` wird erst auf der Kachel geprüft (beim Anlegen wären es bis zu 8 000 Adressen mit Namensauflösung), eine Kachel antwortet dann `502` und liest nichts; die Grenzen des Körpers prüft die Route selbst mit `400`, damit eine Ablehnung nicht die ganze ID-Liste zurückschickt.
 - **Nicht allein mergen:** Das Frontend baut noch Item-Listen in die URL und ist gegen diesen Stand kaputt, bis Teil 3b kommt. Ebenso veraltet: `scripts/tile-bench/*.py` und `frontend/e2e/*` (Mosaik-URLs mit `?item=`).
