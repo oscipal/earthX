@@ -790,11 +790,17 @@ export function footprintsFC(items: StacItem[]): GeoJSON.FeatureCollection {
   return { type: 'FeatureCollection', features };
 }
 
-// One scene in the browse view. A source that publishes a quicklook gets the
-// image it publishes, keyed transparent and placed on the scene's own pixel grid;
-// a source that publishes none (adr/0007 §12.7) gets tiles instead, pinned to the
-// coarsest level it releases and overzoomed above it — the cheap server-rendered
-// preview of `adr/0007` §6 point 5, and no new endpoint for it (M2-10, F3 a).
+// One scene in the browse view. A source that publishes a quicklook the map can place
+// gets the image it publishes, keyed transparent and placed on the scene's own pixel
+// grid; a source that publishes none (adr/0007 §12.7) gets tiles instead — the cheap
+// server-rendered preview of `adr/0007` §6 point 5, and no new endpoint for it (M2-10,
+// F3 a). Which tiles `quicklookPlan` says (`datasets.ts`): pinned to the coarsest level the
+// dataset releases and overzoomed above it (`browse: preview_tiles`), or at every released level,
+// `min_zoom` to `max_zoom` (`browse: full_resolution`, and every dataset that places its files
+// through ground control points, `georeferencing: gcp_tps`, F11 to #319, adr/0018 §4.2: those
+// get tiles even where a thumbnail exists, never the thumbnail: that lies in the files' own
+// geometry, and a tile is placed by the same thin-plate spline as the full view). This function
+// draws what the plan says and decides none of it.
 function addPreview(
   map: MapLibreMap,
   item: StacItem,
