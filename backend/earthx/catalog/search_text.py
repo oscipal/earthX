@@ -159,6 +159,8 @@ def search_text(
             *offered,
         ),
         trigram_text=" ".join(
-            dict.fromkeys(normalize(" ".join((config.dataset_id, config.title, *config.keywords))).split())
+            dict.fromkeys(
+                normalize(part) for part in (config.dataset_id, config.title, *config.keywords) if normalize(part)
+            )
         ),
     )

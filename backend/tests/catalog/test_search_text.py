@@ -117,10 +117,11 @@ def test_the_hash_follows_the_version(monkeypatch):
     assert search_text(SWISSALTI3D, terms=NO_TERMS).text_hash != before
 
 
-def test_the_trigram_text_is_lower_case_without_accents_each_word_once():
+def test_the_trigram_text_is_lower_case_without_accents_each_phrase_once():
     trigram = search_text(SWISSALTI3D, terms=NO_TERMS).trigram_text
     assert "gelandemodell" in trigram.split() and trigram == trigram.lower()
     assert trigram.split().count("swissalti3d") == 1
+    assert "sentinel 1 sentinel 2" in search_text(ESA_WORLDCOVER_2020, terms=NO_TERMS).trigram_text
 
 
 # --- terms per capability ----------------------------------------------------------------------------------------------
