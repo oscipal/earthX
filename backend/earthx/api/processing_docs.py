@@ -274,6 +274,9 @@ def _step_schemas(
             # annotations in JSON Schema 2020-12, and `additionalProperties` guards the step.
             "x-earthx-tiers": sorted(tier.value for tier in operator.tiers),
             "x-earthx-kind": operator.kind,
+            # Whether the step writes only values it read (M5-28): the output types the panel offers follow from it (Otto,
+            # 11.11.2026). `true`, `false`, or `{"param": …, "in": [...]}` for a step where a parameter decides.
+            "x-earthx-passes-values": operator.passes_values.annotation(),
             "properties": {
                 "op": {"const": operator.op},
                 "op_version": {"const": operator.op_version},

@@ -237,6 +237,20 @@ class TestTheNumbers:
         assert got["count"] == int((_inside() & (counts[1] != 0)).sum())
         assert 70 < got["valid_percent"] < 80 and got["valid_percent"] == pytest.approx(100 * got["count"] / area)
 
+    def test_the_edge_nodata_of_a_uint16_result_is_in_neither_the_range_nor_the_histogram(
+        self, rig: Rig, tmp_path: Path, counts: numpy.ndarray
+    ) -> None:
+        # M5-28: a result of uint16 whose steps changed the values marks a missing pixel with 65535 (Otto, 11.11.2026).
+        edged = counts[:1].copy()
+        edged[0][counts[0] == 0] = 65535
+        got = rig.get(rig.put(_write(tmp_path / "edged.tif", edged, nodata=65535), _mask(tmp_path / "all.tif", numpy.ones((HEIGHT, WIDTH), bool))))
+        statistics = got.json()["bands"][0]["statistics"]
+        valid = counts[0][counts[0] != 0]
+        assert (statistics["minimum"], statistics["maximum"]) == (valid.min(), valid.max()) and statistics["maximum"] < 5000
+        assert statistics["percentile_98"] < 5000 and statistics["count"] == valid.size
+        _, edges = statistics["histogram"]
+        assert edges[0] == valid.min() and edges[-1] == valid.max()
+
     @pytest.mark.parametrize("index", [0, 1])
     def test_the_histogram_of_integers_is_numpys_over_the_marked_pixels(
         self, rig: Rig, files: dict[str, Path], counts: numpy.ndarray, index: int
