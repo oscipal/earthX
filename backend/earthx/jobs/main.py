@@ -3,8 +3,8 @@
 The process is a small FastAPI app with `/health` and, in its lifespan, the supervisor
 (`worker.py`, adr/0013 §5.3, §6.2): it picks up runs from the queue and computes each in a
 child process. Since M4-06 the process reaches the object store and does not start without
-the bucket rule that expires `results/` (adr/0015 §7.3, F8): the rule is the net under the
-7 days of Q10, and nothing here would notice it missing later. Since M4-08a it also does not
+the bucket rules that expire `results/` (adr/0015 §7.3, F8) and `overviews/` (adr/0032 §5.2): the rules are the net
+under the 7 days of Q10 and the 30 days of a pyramid, and nothing here would notice one missing later. Since M4-08a it also does not
 start without the queue tables (migration 006, `catalog-load`) or with a bad `WORKER_*`
 value.
 """
@@ -23,6 +23,7 @@ from earthx.jobs.config import WorkerConfig, WorkerConfigError
 from earthx.jobs.worker import Supervisor
 from earthx.logging import RequestIdMiddleware, configure_logging
 from earthx.objectstore.errors import LifecycleMissing, ObjectStoreError
+from earthx.objectstore.overviews import overviews_lifecycle_ok
 from earthx.objectstore.results import Store, lifecycle_ok
 from earthx.processing import check_instance_settings
 
@@ -45,13 +46,18 @@ def open_object_store(environ: Mapping[str, str] | None = None) -> Store:
     if store.config.lifecycle_check == "off":
         logger.warning(
             "object store lifecycle check is switched off (S3_LIFECYCLE_CHECK): nothing checks "
-            "that the bucket expires results/ after 7 days"
+            "that the bucket expires results/ after 7 days and overviews/ after 31 days"
         )
         return store
     if not lifecycle_ok(store):
         raise LifecycleMissing(
             "the bucket has no enabled lifecycle rule that expires results/ after 7 days and aborts "
             "multipart uploads after 1 day (adr/0015 §7.3)"
+        )
+    if not overviews_lifecycle_ok(store):
+        raise LifecycleMissing(
+            "the bucket has no enabled lifecycle rule that expires overviews/ after 31 days and aborts "
+            "multipart uploads after 1 day (adr/0032 §5.2, adr/0015 §7.3)"
         )
     return store
 

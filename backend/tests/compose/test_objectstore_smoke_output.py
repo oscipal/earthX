@@ -104,6 +104,12 @@ def test_the_smoke_only_reads_the_lifecycle_configuration() -> None:
         assert write not in source
 
 
+def test_the_smoke_reads_back_the_rules_for_results_and_overviews() -> None:
+    source = (OBJECTSTORE_DIR / "smoke.py").read_text(encoding="utf-8")
+    assert "Lifecycle rule for results/ set" in source and "_is_expiry_rule(r, RESULTS_PREFIX, 7)" in source
+    assert "Lifecycle rule for overviews/ set" in source and "_is_expiry_rule(r, OVERVIEWS_PREFIX, 31)" in source
+
+
 def test_the_smoke_uses_botocore_not_boto3() -> None:
     source = (OBJECTSTORE_DIR / "smoke.py").read_text(encoding="utf-8")
     assert "import botocore" in source

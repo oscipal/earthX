@@ -51,6 +51,7 @@ PERSISTED_KEY = "smoke/persisted.txt"
 INTERNAL_ENDPOINT = "http://objectstore:3900"
 # adr/0015 §7.3, recognised by content as the worker does (plan M4-06 F4).
 RESULTS_PREFIX = "results/"
+OVERVIEWS_PREFIX = "overviews/"
 
 
 def _client(access_key: str, secret_key: str, endpoint: str):
@@ -222,13 +223,13 @@ def _http_status(request: urllib.request.Request | str) -> tuple[int, Message | 
         return exc.code, None
 
 
-def _is_results_rule(rule: dict) -> bool:
+def _is_expiry_rule(rule: dict, prefix: str, days: int) -> bool:
     filter_ = rule.get("Filter") or {}
     return (
         rule.get("Status") == "Enabled"
         and set(filter_) == {"Prefix"}
-        and filter_["Prefix"] == RESULTS_PREFIX
-        and (rule.get("Expiration") or {}).get("Days") == 7
+        and filter_["Prefix"] == prefix
+        and (rule.get("Expiration") or {}).get("Days") == days
         and (rule.get("AbortIncompleteMultipartUpload") or {}).get("DaysAfterInitiation") == 1
     )
 
@@ -236,7 +237,14 @@ def _is_results_rule(rule: dict) -> bool:
 def run_service_key_suite(jobs, api, api_internal_signer, bucket: str, endpoint: str) -> None:
     """adr/0015 §12 point 4, with the two keys `objectstore-init` created."""
     rules = api.get_bucket_lifecycle_configuration(Bucket=bucket)["Rules"]
-    check("Lifecycle rule for results/ set (read with the api key)", any(_is_results_rule(r) for r in rules))
+    check(
+        "Lifecycle rule for results/ set (read with the api key)",
+        any(_is_expiry_rule(r, RESULTS_PREFIX, 7) for r in rules),
+    )
+    check(
+        "Lifecycle rule for overviews/ set (read with the api key)",
+        any(_is_expiry_rule(r, OVERVIEWS_PREFIX, 31) for r in rules),
+    )
 
     key = f"{RESULTS_PREFIX}smoke-{secrets.token_urlsafe(8)}/result.tif"
     body = b"written by the jobs key"

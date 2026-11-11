@@ -79,6 +79,7 @@ class FakeAdminApi:
         self._next_error: tuple[int, dict] | None = None
         self._next_import_error: tuple[int, dict] | None = None
         self.drop_lifecycle_rules = False
+        self.forget_prefix: str | None = None
 
     def fail_next_bucket_lookup_with(self, status: int, error: str) -> None:
         self._next_error = (status, {"error": error})
@@ -107,6 +108,7 @@ class FakeAdminApi:
         if path.startswith("/v2/GetBucketInfo?id="):
             bucket_id = path.split("id=")[1]
             rules = [] if self.drop_lifecycle_rules else self.lifecycle_rules.get(bucket_id, [])
+            rules = [rule for rule in rules if rule["Filter"]["Prefix"] != self.forget_prefix]
             return 200, {"id": bucket_id, "lifecycleRules": rules}
 
         if path.startswith("/v2/UpdateBucket?id="):
@@ -562,7 +564,7 @@ def test_init_takes_rights_away_from_a_read_key_that_had_more(secrets_dir, fake_
     assert fake_admin.permissions[key] == {"read": True, "write": False, "owner": False}
 
 
-def test_init_sets_exactly_the_results_rule_and_says_so(secrets_dir, fake_admin, capsys):
+def test_init_sets_exactly_the_rules_for_results_and_overviews_and_says_so(secrets_dir, fake_admin, capsys):
     _write_secrets_for_init(secrets_dir)
     bucket_id = "bucket-1"
     fake_admin.lifecycle_rules[bucket_id] = [{"ID": "expire-results", "Status": "Enabled", "Filter": {"Prefix": "smoke/"}}]
@@ -576,13 +578,32 @@ def test_init_sets_exactly_the_results_rule_and_says_so(secrets_dir, fake_admin,
             "Filter": {"Prefix": "results/"},
             "Expiration": {"Days": 7},
             "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 1},
-        }
+        },
+        {
+            "ID": "overviews-31d",
+            "Status": "Enabled",
+            "Filter": {"Prefix": "overviews/"},
+            "Expiration": {"Days": 31},
+            "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 1},
+        },
     ]
-    out = capsys.readouterr().out
+    lines = capsys.readouterr().out.splitlines()
     assert (
         "objectstore-init: lifecycle rule results-7d set (prefix results/, expire after 7 days, "
         "abort multipart after 1 day)"
-    ) in out.splitlines()
+    ) in lines
+    assert (
+        "objectstore-init: lifecycle rule overviews-31d set (prefix overviews/, expire after 31 days, "
+        "abort multipart after 1 day)"
+    ) in lines
+
+
+def test_init_fails_when_only_one_of_the_rules_reads_back(secrets_dir, fake_admin):
+    """A store that kept the rule for results/ and dropped the one for overviews/ is not one the worker can start on."""
+    _write_secrets_for_init(secrets_dir)
+    fake_admin.forget_prefix = "overviews/"
+    with pytest.raises(bootstrap.BootstrapError, match="rule for overviews/ did not read back"):
+        bootstrap.cmd_init(init_args())
 
 
 def test_init_sets_the_rule_again_on_every_run(secrets_dir, fake_admin):
@@ -596,7 +617,7 @@ def test_init_sets_the_rule_again_on_every_run(secrets_dir, fake_admin):
 def test_init_fails_when_the_rule_does_not_read_back(secrets_dir, fake_admin):
     _write_secrets_for_init(secrets_dir)
     fake_admin.drop_lifecycle_rules = True
-    with pytest.raises(bootstrap.BootstrapError, match="did not read back"):
+    with pytest.raises(bootstrap.BootstrapError, match="rule for results/ did not read back"):
         bootstrap.cmd_init(init_args())
 
 
