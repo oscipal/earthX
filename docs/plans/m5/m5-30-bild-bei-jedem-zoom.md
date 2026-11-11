@@ -173,6 +173,11 @@ Teile 1–6 brauchen keine Antwort. **Teile 7–9 ruhen bis zu F1–F3.**
 2. Je Datei 0,25 s (doppelt so schnell, bei 1–2 Anfragen je Datei bis zu 8 Anfragen je Sekunde)
 3. Lesen über den HTTP-Client von `gateway` statt GDAL (ganze Datei, Abstand wie M5-18; rund 8 GB statt 3–7 GB für swissALTI3D)
 
+**F4 — Texte im ZIP eines Exports mit sehr vielen Szenen (gefunden in Teil 6)?** Seit die 25 fallen, kann ein Export mit einigen hundert bis 2 000 Szenen die Grenze von 64 KiB für die Textdateien seines ZIP (`processing/export.py`, `ATTACHMENT_LIMITS`) überschreiten. Teil 6 lehnt das jetzt mit `413` ab statt mit einem `500`.
+1. So lassen; wer so viele Szenen will, teilt den Auftrag **(Empfehlung bis zur Messung, wie oft es vorkommt)**
+2. Grenze der Texte mit der Zahl der Szenen wachsen lassen
+3. Die Texte nennen ab einer Zahl die Szenen nicht mehr einzeln, sondern nur Zahl und Zeitraum
+
 ---
 
 ## 7. Prüfanleitung
@@ -211,3 +216,10 @@ Die Tabellen in den PR kopieren; sie enthalten kein Rechteck und keine ID. Erwar
 - **Abweichung von §4.1:** Jede Zoomstufe läuft in einem mit `spawn` gestarteten Prozess statt `fork`. Der Kindprozess bekommt die aufgelösten Assets (`ResolvedAsset`) und prüft ihre Adressen selbst noch einmal über die Policy von `gateway`; so bleibt es bei den zwei Stellen, die einen Lesepfad bauen (`test_only_two_places_build_an_asset_path`).
 - **Probe in der Sitzung [M]:** Mit 40 echten Items von swissALTI3D (per `curl` geholt, weil der HTTP-Client von `gateway` aus der Sitzung nicht hinauskommt) lief der Lesepfad mit `dtm_2m` durch: z13 berührt 12 Dateien, kalt 1,7 s mit 27 Anfragen und 2,7 MB, warm 0,7 s ohne Anfrage; z10 30 Dateien, kalt 4,0 s. Das sind keine Zahlen für die Budgets (Ort der Sitzung, kleine Stichprobe); die liefert Ottos Lauf.
 - **Tests:** `test_measure_tiles.py` (Argumente, Datensatz, Zählen der GDAL-Zeilen, Kachel und Szenen, Lesen über den echten Leser mit synthetischen COGs, Ausgabe ohne Rechteck/Adresse/ID, Compose), `integration/test_pgstac_search_bbox.py`.
+
+### 8.3 Teil 6 — Zuschnitt und Job
+
+- Zuschnitt: `MAX_DOWNLOAD_ITEMS` 25 → 2 000 (Schutz); neu `MAX_CROP_SECONDS = 60` mit `estimated_crop_seconds` (Konstanten aus `processing.plan`, Dateien = Szenen × Assets). Darüber `413` mit demselben Angebot „als Job“ wie über 500 MB; bei Zarr ohne Angebot und mit dem Hinweis, weniger Szenen oder eine kleinere Fläche zu wählen (für Zarr gibt es keinen Export-Job, F6 von M4-11).
+- Auftrag: `MAX_ORDER_ITEMS` 25 → 2 000 (Schutz); Spiegel `MAX_JOB_SCENES` im Frontend.
+- **Gefunden:** Ein Export mit sehr vielen Szenen kann an der Grenze der Textdateien im ZIP scheitern; vorher ein `500`, jetzt `413` (F4).
+- **Unverändert gelassen** (nicht Teil von F13): `MAX_BATCH_JOBS = 25` im Frontend (Aufträge, die ein Klick gleichzeitig startet) und höchstens 64 Gruppen je Download-Anfrage (`DownloadRequest.groups`).
