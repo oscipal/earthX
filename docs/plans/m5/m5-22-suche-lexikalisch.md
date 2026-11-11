@@ -1,6 +1,6 @@
 # M5-22 — Suche Teil 1: Bewertungs-Set, Suchtext, lexikalischer Arm, Collection Search: Plan-Schritt
 
-**Status (11.11.2026):** Plan angenommen (Otto, 11.11.2026; Antworten in §8a). Drei Teile nach F1: M5-22a umgesetzt im Draft-PR [#325](https://github.com/oscipal/earthX/pull/325) (§10); M5-22b und M5-22c folgen als eigene PRs.
+**Status (11.11.2026):** Plan angenommen (Otto, 11.11.2026; Antworten in §8a). Drei Teile nach F1: M5-22a umgesetzt im Draft-PR [#325](https://github.com/oscipal/earthX/pull/325) (§10); M5-22b umgesetzt im Draft-PR [#334](https://github.com/oscipal/earthX/pull/334) (§11); M5-22c folgt als eigener PR.
 **Aufgabe:** M5-22 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2. **Stufe B.** Hängt von M5-13 ab (gemergt mit #311). M5-23 (Vektorarm, Suchfeld im Data catalogue) und M5-25 (JSON-LD, Sitemap) warten auf den Merge.
 **Grundlagen:** `adr/0026` §4.1–§4.6, §6 Schritte 1 und 2, §8, §10, §11 (F1–F9), §12 Folgen 2, 4, 6, 9, 10; `adr/0024` R5, R7; `adr/0027` §6.1; `KLAERUNGEN.md` B10, B13; `architekturplan.md` 3.1, 5.1, 5.3, 10; Glossar-Begriffe aus `plans/m5/m5-07-worldcover.md` §10, `plans/m5/m5-08-stac-adapter-swissalti3d.md` §9, `plans/ds/ds-04-s1-anbinden.md` §8.
 
@@ -246,4 +246,53 @@ Grob geschätzt [A], ohne Fixture: Auswerter und Test rund 300 Zeilen, Suchtext,
 | gesamt | 30 | 0 | 0 | 0 |
 
 36 Fragen aktiv, 14 ruhend (wie §3.1). Filterfragen 4 von 4 (Q27, Q28, Q29, Q32), Negativfragen 4 von 4 bestanden. Gegen die Grenze aus F5 fehlen Recall@5 und MRR@10 in beiden Sprachen, sonst nichts.
+
+---
+
+## 11. Umsetzung Teil 2: M5-22b (11.11.2026)
+
+Draft-PR [#334](https://github.com/oscipal/earthX/pull/334). Belegstufen wie oben; **M** heißt hier: im lokalen Postgres 16 der Sitzung gemessen, ohne Netz außer dem einmaligen Abruf der Natural-Earth-Datei.
+
+### 11.1 Was gebaut ist
+
+- **Ortsbegriffe (F4):** `backend/catalog/places.json` aus Natural Earth 1:50m „Admin 0 – Countries“, Release 5.1.2 (Public Domain), mit Release, Dateiname und SHA-256 der Quelle; 242 Länder mit Kennung, Name englisch und deutsch, Kontinent und Umriss (auf 0,1° vereinfacht, zwei Nachkommastellen, wo das keine gültige Fläche lässt vier; 345 kB). Erzeugt mit `scripts/write-place-outlines.py` aus einer lokalen Kopie; das Skript ruft nichts ab und verweigert eine Datei mit anderer Prüfsumme. `catalog/places.py` rechnet geodätisch (WGS 84): Land bzw. Kontinent, wenn mindestens die Hälfte seiner Fläche in der Box liegt. Nennung in `backend/THIRD_PARTY_NOTICES.md` (freiwillig, §8a).
+- **Glossar:** `backend/catalog/glossary.yaml`, 37 Gruppen (Namen und Kürzel, Höhe in drei getrennten Gruppen, Landbedeckung aus M5-07 §10, Radar aus DS-04 §8, M5-08 §9, optische Begriffe der aktiven Fragen). Die Begriffe der drei Plan-Dateien sind damit umgezogen (`adr/0026` Folge 9). `catalog/glossary.py` prüft beim Laden und zerlegt die Anfrage (längster Treffer, Bindestrich = Leerzeichen, ohne Akzente; doppelte Einheiten zählen einmal).
+- **Begriffe je Capability (F5):** `backend/catalog/capability_terms.yaml` mit `general` (die fünf Capabilities der allgemeinen Operatoren) und leerem `terms`; ein Test hält die Datei gegen die Operator-Registry.
+- **Suchtext:** `catalog/search_text.py`, vier Teile wie §3.2 mit A1; Prüfwert über die Teile und `SEARCH_TEXT_VERSION` = 1.
+- **Index:** Migration `016_dataset_search.sql`, Tabelle `public.earthx_dataset_search`; geschrieben von `catalog-load` (`catalog/search_index.py`) in derselben Transaktion wie die Collections; ein zweiter Lauf schreibt keine Zeile. Startprüfung in `api` (`check_search_index`): fehlende Zeile, alter Prüfwert oder Zeile ohne Eintrag halten den Start an.
+- **Lexikalischer Arm und Filter:** `catalog/search.py` (`search_datasets`), noch ohne Route (M5-22c).
+- **Schlagworte deutsch (F8):** Sentinel-2 `optisch`, `multispektral`, `Bodenreflexion`; Copernicus DEM `Höhe`, `Höhenmodell`, `Oberflächenmodell`, `Gelände`.
+- **Tests:** Orte, Glossar, Suchtext und Begriffe je Capability ohne Datenbank; Index, Startprüfung, Suche und Bewertungs-Set gegen Postgres (`tests/integration/test_search_index.py`, `test_search.py`, `test_search_evaluation.py`).
+
+### 11.2 Wortverknüpfung (F2) und Schwelle der Trigramme, gemessen [M]
+
+Alle drei Varianten am Set, Schwelle 0,5, Katalog der Registry mit sechs Einträgen (36 Fragen aktiv, 14 ruhend):
+
+| Variante | de Recall@5 | de MRR@10 | en Recall@5 | en MRR@10 | gesamt Recall@5 | gesamt MRR@10 | gesamt nDCG@10 | Filter | Negativ |
+|---|---|---|---|---|---|---|---|---|---|
+| UND | 0,636 | 0,636 | 1,000 | 1,000 | 0,867 | 0,844 | 0,843 | 4/4 | 4/4 |
+| **UND ohne unbekannte Wörter** | **0,727** | **0,727** | **1,000** | **1,000** | **0,900** | **0,878** | **0,877** | **4/4** | **3/4** |
+| ODER mit Mindestanteil ½ | 0,727 | 0,727 | 1,000 | 1,000 | 0,900 | 0,878 | 0,877 | 4/4 | 3/4 |
+
+- Nach der Regel aus F2 gewinnt die höchste Recall@5 mit allen Filterfragen und mindestens drei von vier Negativfragen: Gleichstand zwischen „UND ohne unbekannte Wörter“ und „ODER mit Mindestanteil“. **Gewählt: UND ohne unbekannte Wörter** (`Joining.KNOWN`), weil sie keinen weiteren Parameter braucht (der Anteil ½ ist nicht belegt) und bei Wörtern, die der Katalog kennt, so genau bleibt wie UND. **Otto bestätigt im PR.**
+- Unterschied zu UND: Q16 „Satellitenbilder in Echtfarben“ (kein Suchtext kennt „Satellitenbild“). Preis: Q48 „ocean salinity“ findet den Copernicus DEM („Oceans carry no tiles“ in der Beschreibung), weil „salinity“ unbekannt ist und wegfällt; das ist die eine erlaubte Negativfrage (A9).
+- **Schwelle der Trigramme:** 0,4 und 0,5 messen gleich, 0,6 und 0,7 verlieren Q43 „Worldcovr“ (gesamt Recall@5 0,867). Festgelegt: **0,5** (der Startwert, die höhere der beiden gleich guten).
+- **Deutsche Schlagworte (F8), vorher und nachher:** in allen drei Varianten dieselben Zahlen. Das Glossar überbrückte die Begriffe schon; die Schlagworte helfen Anfragen außerhalb des Glossars und später dem Vektorarm.
+
+### 11.3 Ergebnis je Frage (gewählte Variante) [M]
+
+Nicht unter den ersten fünf: Q18 „Radarbilder bei Bewölkung“ (kein Suchtext kennt „Radarbild“ oder „Bewölkung“), Q38 „Schneebedeckung“ und Q39 „Wasserflächen erkennen“ (Sentinel-2 nennt nur „Snow Index“ und „Water Index“; Q38 findet WorldCover über die Trigramme von „Bodenbedeckung“). Alle drei sind deutsch und brauchen ein Wort, das in keinem Text steht: der Fall des Vektorarms (M5-23). Q42 „Sentinal 2“ findet Sentinel-2 auf Rang 3 (hinter den beiden WorldCover-Einträgen, die `sentinel-2` als Schlagwort tragen). Alle übrigen 26 gemessenen Fragen haben einen Datensatz mit Note 2 auf Rang 1.
+
+Sperrklinke (F3) in `test_search_evaluation.py`: Recall@5 und MRR@10 deutsch ≥ 8/11, englisch = 1,0; alle Filterfragen; höchstens eine Negativfrage mit Treffern. Gegen die Grenze aus `adr/0026` F5 fehlt nur Deutsch (0,727 statt 0,9 bzw. 0,8).
+
+### 11.4 Auslegungen der Umsetzung (gelten, bis Otto widerspricht)
+
+- **A10** Global heißt: jeder Kontinent außer der Antarktis liegt mindestens zur Hälfte in der Box (WorldCover endet bei 60° S und ist global). Ein globaler Datensatz bekommt nur „global, worldwide, weltweit“, keine Länderliste.
+- **A11** Das Skript liegt unter `scripts/`, die reduzierte Datei mit Release und Prüfsumme unter `backend/catalog/` (F4 nannte beides dort; `scripts/` ist der Ort aller Skripte des Repos).
+- **A12** Die Box steht im Index als vier Zahlen, nicht als `geometry`: die eigenen Datenbanken der Warteschlangen-Tests haben kein PostGIS, und die Migration soll überall laufen. Der Raumfilter baut die Box mit `ST_MakeEnvelope`.
+- **A13** Ein Wort, das im Deutschen oder Englischen ein Stoppwort ist („bei“, „in“, „the“), ist keine Bedingung, in jeder Variante (wie `websearch_to_tsquery` je Sprache). Ein Glossar-Begriff ist nie eines.
+- **A14** Gleiche Werte in einem Arm teilen sich vor der Fusion den Rang (1, 2, 2, 4). Sonst entschiede der Titel schon im Trigramm-Arm, und „ESA WorldCover“ läge bei „Sentinel-2“ vor Sentinel-2 (gemessen: Q01 fiel auf Rang 2). Nach Titel und Kennung wird erst nach der Fusion sortiert (§3.5).
+- **A15** Ohne Text, nur mit Fläche oder Zeit, kommt die Liste nach Kennung (A6, „heutige Reihenfolge“; ob `/stac/collections` heute genau so sortiert, prüft M5-22c an der Route).
+- **A16** Bandnamen ohne Einheit „1“ (Reflexion, Indizes), Hilfsassets (`visual`, `preview`) stehen nicht im Suchtext; Zugang ohne Anforderung (`none`, `anonymous_token`) fügt keine Wörter hinzu.
+- **A17** Die Integrationstests, die `api` mit eigener Registry starten, schreiben vor der Startprüfung den Index genau dieser Registry (`tests/integration/conftest.py`), wie `catalog-load` es für die Registry des Prozesses tut; die Prüfung selbst läuft unverändert und hat eigene Tests.
 
