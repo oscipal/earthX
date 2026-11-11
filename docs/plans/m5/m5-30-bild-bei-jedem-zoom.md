@@ -173,6 +173,15 @@ Teile 1–6 brauchen keine Antwort. **Teile 7–9 ruhen bis zu F1–F3.**
 2. Je Datei 0,25 s (doppelt so schnell, bei 1–2 Anfragen je Datei bis zu 8 Anfragen je Sekunde)
 3. Lesen über den HTTP-Client von `gateway` statt GDAL (ganze Datei, Abstand wie M5-18; rund 8 GB statt 3–7 GB für swissALTI3D)
 
+**F5 — Prüfungen über alle Szenen einer Auswahl (gefunden in Teil 3a)?** Mit bis zu 2 000 Szenen holt die TileJSON keine Items mehr; die Prüfung „gleiche Skalierung, Einheit, Bänder“ (`_describe_mosaic`, bei Kacheln mit Schritten) läuft nur noch über die Szenen, die eine Kachel liest. Zwei Kacheln derselben Auswahl können dann `200` und `422` antworten, und die TileJSON nennt keine Bänder und Einheit mehr (die Vorschau im Processing-Panel las Ablehnungen daraus).
+1. Beim Anlegen der Auswahl prüfen (die Items sind dort ohnehin geholt), für die Assets der Auswahl; die TileJSON liest Bänder und Einheit aus dem gespeicherten Ergebnis **(Empfehlung)**
+2. So lassen; die Karte zeigt die Ablehnung einer Kachel erst, wenn sie kommt
+3. Die TileJSON liest wieder die erste Szene (eine Datei), nur für Bänder und Einheit
+
+**F6 — Reihenfolge des Mosaiks mit Schritten (Teil 3a)?** Die Reihenfolge wird beim Anlegen aus dem CRS des ersten Assets (sortiert) festgelegt; vorher kam sie bei Schritten aus dem ersten Asset der gezeigten Bänder. Bei Datensätzen, deren Assets einer Szene im selben CRS liegen (alle heutigen), ist das gleich.
+1. So lassen; eine Prüfung beim Anlegen lehnt Assets einer Szene in verschiedenen CRS ab **(Empfehlung)**
+2. Je Asset eine eigene Reihenfolge speichern
+
 ---
 
 ## 7. Prüfanleitung
@@ -222,3 +231,11 @@ Die Tabellen in den PR kopieren; sie enthalten kein Rechteck und keine ID. Erwar
   - **swissALTI3D `min_zoom` 14 → 13** schon hier statt in Teil 9: z13 braucht höchstens 25 Dateien und passt ins Budget; der Registry-Test „bei `min_zoom` passt jede Kachel ins Budget, eine Stufe darunter nicht“ verlangt genau 13.
 - Frontend: `MIN_MOSAIC_ZOOM` entfällt (`mosaic.ts`, `processingPreview.ts`), Index-Tooltips ohne „zoom 8“. Der Zweig „Szenen unter dem ersten Level des Mosaiks“ (`below`) in `processingPreview.ts` und `mosaic.ts::viewOfPass` wird damit nicht mehr erreicht; er geht mit Teil 3, der beide Dateien ohnehin umbaut.
 - Tests: Budget (Kopf, gleiche Bytes bei gleicher Liste), Zeitabbruch (`503`, `no-store`), z3 als Mosaik, Datensatz nur bis z7 mit Mosaik, Dateibudget zählt Assets, `ReadBudget` mit falscher Uhr; Frontend-Tests auf „Mosaik ab dem ersten Level des Datensatzes“ umgestellt.
+
+### 8.5 Teil 3a — Auswahl-ID im Backend
+
+- Migration `016_mosaic_selection.sql` (`public.earthx_mosaic_selection`, 7 Tage), `catalog/mosaic_selection.py` (kanonischer Inhalt, ID = erste 32 Hex von SHA-256, SQL), `api/mosaic_selection.py` (Auswahl mit Reihenfolge, Umrissen, Ausdehnung; LRU im Prozess, höchstens 120 s, danach wieder aus der Tabelle).
+- `POST /collections/{dataset}/mosaic` mit `{items, assets}`: bis 2 000 Items, 128 kB; Items in Seiten zu 100 über die ID-Suche (föderiert) bzw. pgstac (materialisiert), ein Überflug, Reihenfolge, Umrisse. `201` neu, `200` erneuert ohne Abruf. Kachel und TileJSON unter `/collections/{dataset}/mosaic/{selection}/…`; unbekannt oder abgelaufen `410`, falsche Form `400`, fremder Datensatz `404`. Eine Kachel holt nur die Items, die sie liest; die TileJSON keine.
+- `jobs/cleanup.py` löscht abgelaufene Auswahlen. `.importlinter`: der Runner darf das neue Modul nicht importieren (Verschärfung, keine Lockerung).
+- **Abweichungen:** F5 und F6 oben; `asset_hosts` wird erst auf der Kachel geprüft (beim Anlegen wären es bis zu 8 000 Adressen mit Namensauflösung), eine Kachel antwortet dann `502` und liest nichts; die Grenzen des Körpers prüft die Route selbst mit `400`, damit eine Ablehnung nicht die ganze ID-Liste zurückschickt.
+- **Nicht allein mergen:** Das Frontend baut noch Item-Listen in die URL und ist gegen diesen Stand kaputt, bis Teil 3b kommt. Ebenso veraltet: `scripts/tile-bench/*.py` und `frontend/e2e/*` (Mosaik-URLs mit `?item=`).
