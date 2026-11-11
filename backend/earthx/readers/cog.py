@@ -34,11 +34,11 @@ from rasterio.vrt import WarpedVRT
 from rio_tiler.io.rasterio import Reader
 from rio_tiler.utils import has_alpha_band
 
-from earthx.gateway import GatewayError, Policy, Resolver, check_url, resolve_host
+from earthx.gateway import GatewayError, Policy, Resolver, check_url, host_of, resolve_host
 from earthx.gateway.gdal import vsicurl_path
 from earthx.readers.errors import AssetRejected, GeoreferenceMismatch
 
-__all__ = ["AssetPath", "CogReader", "Georeferencing", "asset_path", "warp_options"]
+__all__ = ["AssetPath", "CogReader", "Georeferencing", "asset_host", "asset_path", "warp_options"]
 
 #: How a file is placed; the values of ``earthx.catalog.registry.Georeferencing``, which this module may not import.
 Georeferencing = Literal["geotransform", "gcp_tps"]
@@ -79,6 +79,14 @@ class AssetPath(str):
         self.asset = asset
         self.georeferencing = georeferencing
         return self
+
+
+def asset_host(path: AssetPath) -> str | None:
+    """The host GDAL asks when it reads ``path``, in the gateway's spelling; ``None`` for a file on disk."""
+    if not isinstance(path, AssetPath):
+        raise TypeError("the host of a path is read from an AssetPath, not from a plain string")
+    prefix = "/vsicurl/"
+    return host_of(path[len(prefix) :]) if path.startswith(prefix) else None
 
 
 def asset_path(
