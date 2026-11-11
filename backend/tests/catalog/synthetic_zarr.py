@@ -21,6 +21,8 @@ from earthx.catalog.registry import (
     DatasetConfig,
     DatasetRegistry,
     MaskSource,
+    OverviewMode,
+    OverviewResampling,
     SearchCapabilities,
     ViewerInfo,
     ZarrInfo,
@@ -72,6 +74,9 @@ SYNTHETIC_ZARR: DatasetConfig = replace(
         browse=BrowseMode.PREVIEW_TILES,
         quicklook_nodata_max=None,
         results_group_by=("datetime", "grid:code"),
+        # Released from z8 up, so the levels below need a pyramid to show an image (adr/0032 §9).
+        overview=OverviewMode.PYRAMID,
+        overview_resampling=OverviewResampling.AVERAGE,
     ),
     zarr=ZarrInfo(variable_separator=":", multiscales_convention="zarr-conventions/multiscales v0.1 (pilot)"),
     mask=MaskSource(

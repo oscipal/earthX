@@ -310,3 +310,11 @@ Lauf: swissALTI3D um eine Stadt z6–z14 (Asset `dtm`), dasselbe bei z10 mit `dt
 - **Größe und Bau der Pyramide swissALTI3D** [A aus M]: z12 ≈ 1 820 Kacheln, davon ≈ 930 über Land × 0,55 MB ≈ 0,5 GB, mit den Stufen darüber ≈ 0,7 GB (im Rahmen von `adr/0032` §8.1). Bau: ≈ 45 000 Dateien × 2 Anfragen ≈ 90 000 Anfragen, ≈ 4 GB; bei 0,25 s je Anfrage (F3 = 1) ≈ 6,3 h.
 
 **Paralleles Lesen:** Der Mosaik-Leser liest in Portionen von 4 Threads (`MOSAIC_THREADS`). Weil die Zeit im Rechnen liegt, kann mehr Parallelität bei mehreren Kernen helfen; das Skript bekommt dafür `--threads` (#329), der zweite Lauf vergleicht 4 und 8. Erst danach ändere ich `MOSAIC_THREADS`.
+### 8.4 Teil 5 — Registry
+
+- `ViewerInfo.overview` (`own`, `pyramid`, `scenes`) und `overview_resampling` (`average`, `mode`, `nearest`), beide Pflicht ohne Vorgabe; `earthx:viewer` der Collection trägt sie, das Frontend liest sie nur durch.
+- **Prüfung „Bild bei z0“** beim Laden jedes Eintrags (also beim Start jedes Prozesses und in `catalog-load`): `own` und `scenes` verlangen `min_zoom` 0; `pyramid` verlangt ein Resampling; ein Resampling bei `own`/`scenes` wird abgelehnt.
+- Werte: Sentinel-1, Sentinel-2 `scenes`; swissALTI3D, DEM `pyramid`/`average`; WorldCover `pyramid`/`mode`. Kein `min_zoom` geändert (§3).
+- Der Docstring-Absatz „`min_zoom` als Kostenuntergrenze des DEM, darunter die Coverage“ ist gestrichen; er gilt nach `adr/0032` nicht mehr.
+- Der Frontend-Typ führt die Felder als Pflicht wie die Registry; deshalb tragen rund 60 Test-Fixtures zwei Zeilen mehr.
+- Test-Fixtures mit `min_zoom` > 0 (synthetischer Zarr-Datensatz, Mosaik-Tests mit eingeengtem Bereich) heißen jetzt `pyramid`/`average`, weil die Prüfung sie sonst ablehnt. Mit Teil 9 lesen solche Datensätze unter `min_zoom` die Pyramide; die Fixtures werden dann noch einmal angesehen.

@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from earthx.catalog.registry import BrowseMode, MissingProperty, ViewerInfo, group_key
+from earthx.catalog.registry import BrowseMode, MissingProperty, OverviewMode, ViewerInfo, group_key
 from tests.catalog.entries import SENTINEL_2_L2A
 
 
@@ -34,6 +34,8 @@ def viewer(*, group_by: tuple[str, ...]) -> ViewerInfo:
         browse=BrowseMode.FULL_RESOLUTION,
         quicklook_nodata_max=None,
         results_group_by=group_by,
+        overview=OverviewMode.OWN,
+        overview_resampling=None,
     )
 
 
@@ -129,6 +131,8 @@ class TestTheOverpassKey:
             browse=BrowseMode.FULL_RESOLUTION,
             quicklook_nodata_max=None,
             results_group_by=("datetime", "s2:datatake_id"),
+            overview=OverviewMode.OWN,
+            overview_resampling=None,
         )
         scene = item(datetime="2026-07-24T10:38:17Z", **{"grid:code": "MGRS-32TMS", "s2:datatake_id": "GS2B_1"})
         assert group_key(scene, both) == ("2026-07-24", "MGRS-32TMS")
@@ -160,6 +164,8 @@ class TestTheDayOfAcquisition:
         browse=BrowseMode.FULL_RESOLUTION,
         quicklook_nodata_max=None,
         results_group_by=("datetime", "datatake"),
+        overview=OverviewMode.OWN,
+        overview_resampling=None,
     )
     PERIOD = ViewerInfo(
         group_by=("start_datetime",),
@@ -168,6 +174,8 @@ class TestTheDayOfAcquisition:
         browse=BrowseMode.FULL_RESOLUTION,
         quicklook_nodata_max=None,
         results_group_by=("start_datetime",),
+        overview=OverviewMode.OWN,
+        overview_resampling=None,
     )
 
     def test_the_instant_of_the_key_is_the_utc_day_not_the_day_of_the_offset(self) -> None:
