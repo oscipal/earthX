@@ -38,8 +38,13 @@ export type SceneEntry = [itemId: string, info: DownloadedInfo];
 
 // What the map needs of a raster: `DownloadedInfo` has all of it, so a single scene is one.
 // `hideFrom` is the zoom from which the layer is not drawn (MapLibre's layer `maxzoom`, which a
-// source's own `maxzoom` is not: above that a source is overzoomed, not hidden).
-export type PlannedRaster = Pick<DownloadedInfo, 'tileUrl' | 'bounds' | 'minZoom' | 'maxZoom'> & { hideFrom?: number };
+// source's own `maxzoom` is not: above that a source is overzoomed, not hidden). `attribution` is the text the map's
+// attribution line carries while the raster is drawn (MapLibre does that for a source's `attribution`): set for the
+// picture of a substitute dataset (`overviewSubstitute.ts`) and nowhere else.
+export type PlannedRaster = Pick<DownloadedInfo, 'tileUrl' | 'bounds' | 'minZoom' | 'maxZoom'> & {
+  hideFrom?: number;
+  attribution?: string;
+};
 
 // What the TileJSON of a mosaic said, by the mosaic's tile template. `null`: the tiler refused it
 // or could not be asked, and the scenes are drawn one by one.
