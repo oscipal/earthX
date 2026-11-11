@@ -3287,6 +3287,40 @@ button.pm-open:hover {
 .app[data-theme='tech'] .maplibregl-ctrl-attrib a {
   color: var(--text);
 }
+/* The buttons at the bottom right of the map (UI-06, `MapControls.tsx`): one column on the panel, top to bottom the compass, zoom in,
+   zoom out and "3D", each as high as a control (44 px for a finger and under 900 px). */
+.map-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  background: var(--panel-bg);
+  border: var(--line-width) solid var(--panel-border);
+  border-radius: var(--radius-md);
+  backdrop-filter: blur(10px);
+  box-shadow: var(--glow);
+}
+.map-3d {
+  width: var(--control-height);
+  height: var(--control-height);
+  padding: 0;
+}
+/* The compass is round, like the one of Google Maps (Otto, F3); a drag on it turns the map, not the page. */
+.map-compass {
+  border-color: var(--panel-border);
+  border-radius: 50%;
+  touch-action: none;
+}
+.compass-needle {
+  width: var(--icon-size-rail);
+  height: var(--icon-size-rail);
+}
+.compass-north {
+  fill: var(--danger);
+}
+.compass-south {
+  fill: var(--text);
+}
 
 /* --- what the catalogue says about the source (M2-10) --- */
 /* The maturity chip sits inside the dataset button, so it has to stay small

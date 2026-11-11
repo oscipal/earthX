@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef } from 'react';
-import { addProtocol, Map as MapLibreMap, NavigationControl, setWorkerUrl } from 'maplibre-gl';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { addProtocol, Map as MapLibreMap, setWorkerUrl, type IControl } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import {
@@ -35,11 +36,13 @@ import {
 import { DEFAULT_BASEMAP } from '../basemaps';
 import { applyMapBackground, applyProjection, ATTRIBUTION_CONTROL, baseMapStyle, createBasemapSwitcher, isInFirstStyle, mapBackgroundOf } from '../mapStyles';
 import { previewOverlays } from '../processingPreview';
+import { applyTerrain, flatViewBounds } from '../terrain';
 import { clipAoiOf, useProcessingStore } from '../processingStore';
 import { flipIdOf } from '../layerFlip';
 import { layersForMap, viewLayerOf, viewShown } from '../viewLayer';
 import { shownViewOf, useAppStore } from '../store';
-import type { StacItem, ToolMode } from '../types';
+import type { Bbox, StacItem, ToolMode } from '../types';
+import { MapControls } from './MapControls';
 
 // Only one of density/footprints/area is ever drawn (mapLayers.ts): a one-off
 // product's extent (`area`, M3-12 F-07, ENTSCHEIDUNGEN §2) whenever the
@@ -70,15 +73,35 @@ function applyToolMode(draw: TerraDraw, mode: ToolMode): void {
 // `store.ts::refreshCoverage` needs (only for the no-AOI request) to derive
 // the geotile level and the request bbox — read here, at the one place that
 // has a live `Map` instance, rather than threaded through as separate state.
+// A tilted map (UI-06) reports what it would show flat at the same centre and zoom: its bounds reach the horizon (F10).
 function reportViewport(map: MapLibreMap): void {
-  const b = map.getBounds();
   const el = map.getContainer();
-  useAppStore
-    .getState()
-    .setMapViewport(map.getZoom(), [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()], {
-      width: el.clientWidth,
-      height: el.clientHeight,
-    });
+  const width = el.clientWidth;
+  const height = el.clientHeight;
+  let bbox: Bbox;
+  if (map.getPitch() > 0) {
+    const { lng, lat } = map.getCenter();
+    bbox = flatViewBounds([lng, lat], map.getZoom(), width, height, map.getBearing());
+  } else {
+    const b = map.getBounds();
+    bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+  }
+  useAppStore.getState().setMapViewport(map.getZoom(), bbox, { width, height });
+}
+
+// The place of `MapControls` in the corner at the bottom right, where MapLibre keeps its controls (and the rules of `index.css`
+// move them beside an open side bar).
+class ControlsHost implements IControl {
+  readonly element = document.createElement('div');
+  constructor() {
+    this.element.className = 'maplibregl-ctrl';
+  }
+  onAdd(): HTMLElement {
+    return this.element;
+  }
+  onRemove(): void {
+    this.element.remove();
+  }
 }
 
 // Registered once for the whole page, not per map instance — `addProtocol`
@@ -109,6 +132,8 @@ export default function MapView() {
   // The time step the browse preview was last synced for, while the timeline plays.
   const heldIndexRef = useRef<number | null>(null);
   const basemapRef = useRef<ReturnType<typeof createBasemapSwitcher> | null>(null);
+  // The map and the place of the buttons, once the map is made: `MapControls` is drawn there.
+  const [controls, setControls] = useState<{ map: MapLibreMap; host: HTMLElement } | null>(null);
 
   // Reactive slices used to drive the imperative map updates.
   const toolMode = useAppStore((s) => s.toolMode);
@@ -148,6 +173,7 @@ export default function MapView() {
   const basemap = useAppStore((s) => s.basemap);
   const overlays = useAppStore((s) => s.overlays);
   const theme = useAppStore((s) => s.theme);
+  const terrain = useAppStore((s) => s.terrain);
   const preview = useProcessingStore((s) => s.preview);
   // What an entry fixed (a crop, a result) is cut to its own AOI, not the map's.
   const previewAoi = useProcessingStore((s) => clipAoiOf(s, aoi));
@@ -166,12 +192,10 @@ export default function MapView() {
       center: [10, 20],
       zoom: 1.6,
       attributionControl: ATTRIBUTION_CONTROL,
-      // No rotate, no tilt (V-1, D27): mouse and touch only pan and zoom.
-      // `maxPitch: 0` blocks tilt regardless of input method; the drag/touch/
-      // keyboard handlers below additionally drop rotation itself so a
-      // pinch-rotate or ctrl-drag gesture doesn't just silently do nothing.
+      // In 2D no turn and no tilt (V-1, D27): mouse and touch only pan and zoom. `maxPitch: 0` blocks the tilt whatever the
+      // input; the handlers below drop the turn. The button "3D" lifts both (UI-06, `terrain.ts`): the mouse then tilts with
+      // the same drag that turns, which is why `pitchWithRotate` stays at its default.
       dragRotate: false,
-      pitchWithRotate: false,
       touchPitch: false,
       maxPitch: 0,
     });
@@ -188,7 +212,16 @@ export default function MapView() {
     map.touchZoomRotate.disableRotation();
     map.keyboard.disableRotation();
 
-    map.addControl(new NavigationControl({ showCompass: false }), 'bottom-right');
+    const host = new ControlsHost();
+    map.addControl(host, 'bottom-right');
+    setControls({ map, host: host.element });
+    // A graphics card that runs out of memory loses the map's context: 3D goes off for this visit, and the map says so.
+    map.on('webglcontextlost', () => {
+      const st = useAppStore.getState();
+      if (!st.terrain) return;
+      st.setTerrain(false, false);
+      st.setError('3D was turned off: the graphics card ran out of memory');
+    });
 
     const initDraw = () => {
       if (drawRef.current) {
@@ -246,6 +279,8 @@ export default function MapView() {
       if (!carried) ensureBaseLayers(map);
       const st = useAppStore.getState();
       applyProjection(map, st.projection);
+      // A visit that kept 3D opens with it, without a flight while the page loads. A change of the basemap carries the terrain.
+      if (!carried && st.terrain) applyTerrain(map, true, { animate: false, stillOff: () => !useAppStore.getState().terrain });
       // A basemap with a published style comes after the first style (it is fetched).
       basemapRef.current?.show(st.basemap, st.overlays);
       if (carried) return;
@@ -315,6 +350,7 @@ export default function MapView() {
       }
       map.remove();
       mapRef.current = null;
+      setControls(null);
     };
   }, []);
 
@@ -337,6 +373,12 @@ export default function MapView() {
     const map = mapRef.current;
     if (map && readyRef.current) applyProjection(map, projection);
   }, [projection]);
+
+  // --- 3D (UI-06): over the terrain and tilted, or flat and facing north ---
+  useEffect(() => {
+    const map = mapRef.current;
+    if (map && readyRef.current) applyTerrain(map, terrain, { animate: true, stillOff: () => !useAppStore.getState().terrain });
+  }, [terrain]);
 
   // --- basemap (UI-02a) under the app's own layers, which stay where they are, and the overlays (UI-02b) over them ---
   useEffect(() => {
@@ -511,9 +553,14 @@ export default function MapView() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !flyToView) return;
-    map.jumpTo({ center: flyToView.center, zoom: flyToView.zoom });
+    map.jumpTo({ center: flyToView.center, zoom: flyToView.zoom, bearing: 0, pitch: 0 });
     useAppStore.getState().clearFlyView();
   }, [flyToView]);
 
-  return <div ref={containerRef} className="map" />;
+  return (
+    <>
+      <div ref={containerRef} className="map" />
+      {controls && createPortal(<MapControls map={controls.map} />, controls.host)}
+    </>
+  );
 }

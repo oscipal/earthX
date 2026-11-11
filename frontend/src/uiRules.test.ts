@@ -85,8 +85,9 @@ describe('icons (§7.5 no. 3): one source, no character of the text for an icon'
     expect(IMPORT_LUCIDE.test("import { Eye } from './icons';")).toBe(false);
   });
 
-  it('draws no icon of its own: the only svg is the chart of the histogram', () => {
-    expect(where((code) => OWN_SVG.test(code))).toEqual(['components/RangeHistogram.tsx']);
+  // The needle of the compass is the second exception beside "Settings" (UI-06 F17, `docs/ui/leitfaden.md` §3).
+  it('draws no icon of its own: the only svgs are the chart of the histogram and the needle of the compass', () => {
+    expect(where((code) => OWN_SVG.test(code))).toEqual(['components/CompassNeedle.tsx', 'components/RangeHistogram.tsx']);
     expect(OWN_SVG.test('<svg viewBox="0 0 24 24"><path d="M0 0" /></svg>')).toBe(true);
     expect(OWN_SVG.test('<DownloadIcon />')).toBe(false);
   });
