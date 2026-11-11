@@ -487,7 +487,7 @@ Je unter dem Richtwert. Keine davon ist Teil dieses PR; Backlog und M5-Plan blei
 
 - Auch der Zustand „Pyramide wird gebaut“ bzw. „Bau gescheitert“ steht nur im Tooltip des Layers, nicht über der Karte (nach Ergänzung 5; §5.2).
 - Ohne bestätigte Fassung (Quelle nicht erreichbar, Formfehler) wird nicht verlängert; die Pyramide läuft ab (§5.2, §5.3).
-- Die Marke „Overview“ aus F12 Option 1 bleibt; Ergänzung 5 nennt nur Teilkacheln.
+- ~~Die Marke „Overview“ aus F12 Option 1 bleibt; Ergänzung 5 nennt nur Teilkacheln.~~ **Korrigiert von Otto (11.11.2026):** Zu F12 gibt es **keine Marke „Overview“ am Layer** und überhaupt keine sichtbare Marke im Frontend, höchstens einen Tooltip am Layer (wie bei den Teilkacheln). Es bleiben: Kopf `X-EarthX-Source: overview`, Quellenangabe für bearbeitete Daten („modified“) und „Statistik, Zuschnitt, Download und Jobs nur aus den Originalen“ (§5.2). Gilt für die Pyramide (GLO-30, WorldCover); der Ersatz-Datensatz (F7 in `plans/m5/m5-30-bild-bei-jedem-zoom.md`) hat ohnehin keinen Hinweis.
 - Pyramiden von Prototyp-Quellen (F10) werden nicht verlängert, sie laufen nach 7 Tagen ab (§8.4).
 
 

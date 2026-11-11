@@ -8,6 +8,8 @@ the one factory that turns the addresses of a recipe into what the readers need:
   ``GDAL_CACHEMAX``. They depend only on the policy's time limits, never on its
   allowlist (``gateway.gdal.gdal_options``), so a process can enter them once at
   start, in its main thread, before it knows which job it runs (§7.3 point 2).
+* :func:`counting_gdal_lines` — `gateway`'s counter of the requests GDAL makes, passed on because the core may not
+  import `gateway` (M5-30b part 8).
 * :func:`read_access_for` — one job's :class:`ReadAccess`: an allowlist of exactly
   the hosts its addresses name (KLAERUNGEN B9, word for word), the same GDAL
   options, and one :class:`~earthx.gateway.CachingResolver` for the whole run.
@@ -32,10 +34,16 @@ from earthx.gateway import (
     inspect_url,
     resolve_host,
 )
-from earthx.gateway.gdal import gdal_options
+from earthx.gateway.gdal import counting_gdal_lines, gdal_options
 from earthx.readers.errors import AssetRejected
 
-__all__ = ["GDAL_CACHEMAX_BYTES", "ReadAccess", "process_gdal_options", "read_access_for"]
+__all__ = [
+    "GDAL_CACHEMAX_BYTES",
+    "ReadAccess",
+    "counting_gdal_lines",
+    "process_gdal_options",
+    "read_access_for",
+]
 
 #: GDAL's block cache for one worker process. Set rather than left at its default
 #: of 5 % of RAM, which cost a worker several hundred MB in the measurement; 64 MB

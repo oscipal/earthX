@@ -30,7 +30,6 @@ from earthx.api.measure_tiles import (
     ZoomRow,
     check_dataset,
     choose,
-    count_downloads,
     gather,
     measure_zoom,
     parse_args,
@@ -44,7 +43,7 @@ from earthx.api.measure_tiles import (
 )
 from earthx.catalog.datasets import registry
 from earthx.catalog.registry import LicenseTier
-from earthx.gateway.gdal import tile_gdal_options
+from earthx.gateway.gdal import count_downloads, counting_gdal_lines, tile_gdal_options
 from earthx.readers.cog import AssetPath
 
 REPO = Path(__file__).resolve().parents[4]
@@ -472,7 +471,7 @@ def test_gdal_lines_reach_only_the_counter_during_a_read_and_the_process_again_a
     root = logging.getLogger()
     root.addHandler(catch)
     try:
-        with measure_tiles._counting_gdal_lines() as downloads:
+        with counting_gdal_lines() as downloads:
             gdal_logger.debug("VSICURL: Downloading 0-9 (https://%s/x.tif)...", SECRET_HOST_PART)
             assert downloads.take() == (1, 10)
         assert seen == []
