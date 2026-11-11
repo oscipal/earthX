@@ -218,7 +218,19 @@ def verdict(scope: str, docs_only: str, tests: str) -> int:
         ("cancelled", "", "skipped", False),
         ("success", "", "success", True),
         ("success", "", "skipped", False),
+        ("success", "true", "cancelled", False),
+        ("success", "false", "", False),
+        ("", "false", "success", False),
     ],
 )
 def test_the_required_check_is_green_only_when_every_part_is(scope: str, docs_only: str, tests: str, green: bool) -> None:
     assert (verdict(scope, docs_only, tests) == 0) is green
+
+
+def test_no_part_can_fail_without_the_collecting_job_seeing_it() -> None:
+    """`continue-on-error` would turn a failed step or part into a success the collecting job believes."""
+    job = jobs()["backend-tests"]
+    assert "continue-on-error" not in job
+    assert not [s for s in job["steps"] if "continue-on-error" in s]
+    assert "continue-on-error" not in jobs()["backend-scope"]
+    assert "continue-on-error" not in jobs()["backend"]
