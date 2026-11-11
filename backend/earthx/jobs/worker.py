@@ -46,7 +46,7 @@ import shutil
 import socket
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
 from dataclasses import dataclass, field
@@ -55,7 +55,7 @@ from typing import Any
 
 import psycopg
 
-from earthx.jobs import queue
+from earthx.jobs import overviews, queue
 from earthx.jobs.cleanup import cleanup
 from earthx.jobs.config import WorkerConfig
 from earthx.jobs.entry import ChildTarget
@@ -110,9 +110,13 @@ class Supervisor:
         *,
         target: Callable[[str, Any], None] | None = None,
         name: str | None = None,
+        pyramids: Mapping[str, Sequence[str]] | None = None,
     ) -> None:
         self.config = config
         self.store = store
+        #: The datasets with an overview pyramid (``viewer.overview: pyramid``) and the hosts each one is read from
+        #: (M5-30b part 8b). Plain data from the caller: the supervisor imports no registry and no `processing`.
+        self.pyramids = {dataset_id: tuple(hosts) for dataset_id, hosts in (pyramids or {}).items()}
         self.target = target if target is not None else ChildTarget()
         self.name = name or f"{socket.gethostname()}-{os.getpid()}-{secrets.token_hex(2)}"
         self._context = _SPAWN
@@ -217,7 +221,7 @@ class Supervisor:
             wake.set()
 
     def _maintain(self) -> None:
-        """Queue runs whose lease ran out, and clean up what expired, hourly."""
+        """Queue runs whose lease ran out; hourly ask for the pyramids that are missing and clean up what expired."""
         conn: psycopg.Connection | None = None
         next_cleanup = time.monotonic() + self.config.cleanup_first_seconds
         while not self._stopping.is_set():
@@ -229,6 +233,10 @@ class Supervisor:
                     LOGGER.warning("runs with a lost lease handled", extra={"runs": handled})
                 if time.monotonic() >= next_cleanup:
                     next_cleanup = time.monotonic() + self.config.cleanup_seconds
+                    # Database only, so before the clean-up, which can fail at the object store.
+                    asked = overviews.request_missing(conn, self.pyramids)
+                    if asked:
+                        LOGGER.info("overview pyramids asked for", extra={"datasets": asked})
                     cleanup(conn, self.store)
             except psycopg.Error as error:
                 self._database_error("maintain", error)
