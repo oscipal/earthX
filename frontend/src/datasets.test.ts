@@ -55,6 +55,7 @@ function viewer(overrides: Partial<EarthxViewer> = {}): EarthxViewer {
     results_group_by: ['datetime'],
     overview: 'own' as const,
     overview_resampling: null,
+    overview_substitute: null,
     ...overrides,
   };
 }
@@ -124,6 +125,7 @@ describe('datasetsFrom', () => {
           results_group_by: ['datetime', 's2:datatake_id'],
           overview: 'own' as const,
           overview_resampling: null,
+          overview_substitute: null,
         }),
       }),
     ]);
@@ -154,7 +156,7 @@ describe('datasetsFrom', () => {
 
   it('a dataset without earthx:viewer.results_group_by is not viewable', () => {
     const [option] = datasetsFrom([
-      collection({ 'earthx:viewer': { ...viewer(), results_group_by: [], overview: 'own' as const, overview_resampling: null } }),
+      collection({ 'earthx:viewer': { ...viewer(), results_group_by: [], overview: 'own' as const, overview_resampling: null, overview_substitute: null } }),
     ]);
     expect(option.viewable).toBe(false);
     if (!option.viewable) expect(option.reason).toMatch(/results_group_by/);
@@ -198,12 +200,12 @@ describe('browseOf', () => {
 describe('resultsGroupByOf', () => {
   it('reads earthx:viewer.results_group_by', () => {
     expect(
-      resultsGroupByOf(collection({ 'earthx:viewer': viewer({ results_group_by: ['start_datetime'], overview: 'own' as const, overview_resampling: null }) })),
+      resultsGroupByOf(collection({ 'earthx:viewer': viewer({ results_group_by: ['start_datetime'], overview: 'own' as const, overview_resampling: null, overview_substitute: null }) })),
     ).toEqual(['start_datetime']);
   });
 
   it('is null when empty or earthx:viewer is missing', () => {
-    expect(resultsGroupByOf(collection({ 'earthx:viewer': viewer({ results_group_by: [], overview: 'own' as const, overview_resampling: null }) }))).toBeNull();
+    expect(resultsGroupByOf(collection({ 'earthx:viewer': viewer({ results_group_by: [], overview: 'own' as const, overview_resampling: null, overview_substitute: null }) }))).toBeNull();
     expect(resultsGroupByOf(collection())).toBeNull();
   });
 });

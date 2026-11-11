@@ -17,7 +17,7 @@ const collection = (id: string, groupBy: string, timeRange: boolean): Collection
   id,
   title: id === 's2' ? 'Sentinel-2 L2A' : 'Copernicus DEM',
   'earthx:capabilities': { ...CAPABILITIES, time_range: timeRange },
-  'earthx:viewer': { group_by: [groupBy], min_zoom: 0, max_zoom: 14, browse: 'preview_tiles', quicklook_nodata_max: null, results_group_by: [groupBy], overview: 'own' as const, overview_resampling: null },
+  'earthx:viewer': { group_by: [groupBy], min_zoom: 0, max_zoom: 14, browse: 'preview_tiles', quicklook_nodata_max: null, results_group_by: [groupBy], overview: 'own' as const, overview_resampling: null, overview_substitute: null },
   'earthx:default_render': { title: 'Standard', assets: ['visual'], rescale: [[0, 255]], colormap_name: null, expression: null, resampling: 'nearest' },
 });
 

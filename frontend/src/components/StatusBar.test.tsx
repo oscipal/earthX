@@ -63,6 +63,7 @@ const ZARR_LIKE: Collection = {
     results_group_by: ['datetime'],
     overview: 'pyramid' as const,
     overview_resampling: 'average' as const,
+    overview_substitute: null,
   },
 };
 
@@ -79,6 +80,7 @@ const COG_LIKE: Collection = {
     results_group_by: ['datetime'],
     overview: 'own' as const,
     overview_resampling: null,
+    overview_substitute: null,
   },
 };
 

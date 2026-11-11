@@ -37,6 +37,7 @@ function collection(id: string, title: string, overrides: Partial<Collection> = 
       results_group_by: ['datetime'],
       overview: 'own' as const,
       overview_resampling: null,
+      overview_substitute: null,
     },
     ...overrides,
   };
@@ -54,6 +55,7 @@ const NO_TIME_AXIS = collection('dem', 'Elevation', {
     results_group_by: ['start_datetime'],
     overview: 'own' as const,
     overview_resampling: null,
+    overview_substitute: null,
   },
 });
 
