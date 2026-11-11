@@ -13,10 +13,11 @@ with k = 60:
 
 A number never drops out of a query that names a dataset (plan §11.7): in the trigram arm every number of the query,
 in the full text every number right after a word of an id or title ("Sentinel 3", "Copernicus DEM 90"), has to
-stand in the id, title or keywords of the dataset, compared as runs of digits. Without such a dataset the list is
-empty (adr/0026 K9); the full text cannot check this itself, as it splits "GLO-30" into "glo" and "-30". Nor does a
-bare number carry a dataset in the full text on its own: "Landsat 9", with no Landsat in the catalogue, finds nothing
-for its "9".
+stand in the id, title or keywords of the dataset. A number on its own has to stand there as a word ("1" is not the
+one of "c1"); the digits of a word with letters ("sentinel3", "l2a") as a run of digits anywhere. Without such a
+dataset the list is empty (adr/0026 K9); the full text cannot check this itself, as it splits "GLO-30" into "glo"
+and "-30". Nor does a bare number carry a dataset in the full text on its own: "Landsat 9", with no Landsat in the
+catalogue, finds nothing for its "9".
 
 Hard filters before both arms: the area meets the footprints of a materialized dataset that has items in pgstac,
 otherwise the box of the collection (plan A4); the period overlaps the extent in time, an open end meaning now, and a
@@ -106,19 +107,30 @@ _FILTERED = """
 """
 
 
-def _carries(numbers: str) -> str:
-    """True where id, title or keywords of the row ``f`` have every number of the parameter ``numbers``."""
-    return f"%({numbers})s::text[] <@ ARRAY(SELECT (regexp_matches(f.trigram_text, '[0-9]+', 'g'))[1])"
+_WORDS_OF_DIGITS = "ARRAY(SELECT w FROM unnest(string_to_array(f.trigram_text, ' ')) w WHERE w ~ '^[0-9]+$')"
+_RUNS_OF_DIGITS = "ARRAY(SELECT (regexp_matches(f.trigram_text, '[0-9]+', 'g'))[1])"
+
+
+def _carries(words: str, runs: str | None = None) -> str:
+    """True where id, title or keywords of the row ``f`` have every number of the parameter ``words`` as a word and
+    every one of ``runs`` as a run of digits."""
+    condition = f"%({words})s::text[] <@ {_WORDS_OF_DIGITS}"
+    return condition if runs is None else f"{condition} AND %({runs})s::text[] <@ {_RUNS_OF_DIGITS}"
+
+
+def numbers_of(text: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """The words of digits in ``text`` (normalized), and the runs of digits in its words with letters."""
+    words = normalize(text).split()
+    numbers = tuple(word for word in words if _NUMBER.fullmatch(word))
+    codes = tuple(run for word in words if not _NUMBER.fullmatch(word) for run in _NUMBER.findall(word))
+    return numbers, codes
 
 
 def numbers_after_names(text: str, names: frozenset[str]) -> tuple[str, ...]:
-    """The numbers of ``text`` in a word right after a word of ``names``: "3" in "Sentinel 3"."""
+    """The words of digits in ``text`` right after a word of ``names``: "3" in "Sentinel 3"."""
     words = normalize(text).split()
     return tuple(
-        number
-        for before, word in zip(words, words[1:], strict=False)
-        if before in names
-        for number in _NUMBER.findall(word)
+        word for before, word in zip(words, words[1:], strict=False) if before in names and _NUMBER.fullmatch(word)
     )
 
 
@@ -208,7 +220,7 @@ _TRIGRAM_SQL = sql.SQL(
     WHERE word_similarity(%(normal)s, f.trigram_text) >= %(threshold)s AND {carries}
     ORDER BY word_similarity(%(normal)s, f.trigram_text) DESC, f.title, f.dataset_id
     """
-).format(filtered=sql.SQL(_FILTERED), carries=sql.SQL(_carries("numbers")))
+).format(filtered=sql.SQL(_FILTERED), carries=sql.SQL(_carries("numbers", "codes")))
 
 _UNRANKED_SQL = sql.SQL(
     "WITH filtered AS ({filtered}) SELECT f.dataset_id, f.title, f.has_time_axis, 0 FROM filtered f ORDER BY f.dataset_id"
@@ -279,7 +291,7 @@ async def search_datasets(
         else:
             units = parse_query(text, glossary)
             normal = normalize(text)
-            numbers = _NUMBER.findall(normal)
+            numbers, codes = numbers_of(text)
             full_text = []
             if units:
                 named_numbers: tuple[str, ...] = ()
@@ -293,7 +305,10 @@ async def search_datasets(
                     _full_text_sql(units, joining), {**terms, "share": MIN_SHARE, "named_numbers": list(named_numbers)}
                 )
             trigrams = (
-                await run(_TRIGRAM_SQL, {"normal": normal, "threshold": threshold, "numbers": numbers})
+                await run(
+                    _TRIGRAM_SQL,
+                    {"normal": normal, "threshold": threshold, "numbers": list(numbers), "codes": list(codes)},
+                )
                 if normal
                 else []
             )

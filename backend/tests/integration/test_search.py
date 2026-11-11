@@ -21,6 +21,7 @@ from earthx.catalog.search import (
     fuse,
     name_words,
     numbers_after_names,
+    numbers_of,
     ranks,
     search_datasets,
 )
@@ -205,13 +206,14 @@ async def test_two_hundred_characters_are_allowed_and_one_more_is_not(catalogue,
 
 # --- numbers at a name (plan §11.7) -------------------------------------------------------------------------------------
 
-# A mission with a number, a product that names it as a keyword (like WorldCover names Sentinel-2), and a model whose
-# number stands behind a hyphen ("GLO-30", which the full text splits into "glo" and "-30").
+# A mission with a number and a code with another one (like "c1" in the id of Sentinel-2), a product that names it as
+# a keyword (like WorldCover names Sentinel-2), and a model whose number stands behind a hyphen ("GLO-30", which the
+# full text splits into "glo" and "-30").
 ORBITER = _entry(
     SENTINEL_2_L2A,
     "test-orbiter-2",
     "Orbiter-2 Imagery",
-    ("orbiter-2", "panchromatic"),
+    ("orbiter-2", "panchromatic", "c1"),
     description="Imagery of the second orbiter, 9 bands.",
 )
 PRODUCT = _entry(SENTINEL_2_L2A, "test-product", "Landuse Zeta", ("orbiter-2", "land use"))
@@ -227,7 +229,9 @@ def numbered(require_postgres_env: None) -> Iterator[None]:
         conn.execute("DELETE FROM public.earthx_dataset_search")
 
 
-@pytest.mark.parametrize("text", ["Orbiter-3", "Orbiter 3", "orbiter3", "Orbitr 3", "Mapper GLO-90", "Mapper 90"])
+@pytest.mark.parametrize(
+    "text", ["Orbiter-3", "Orbiter 3", "orbiter3", "Orbitr 3", "Orbiter 1", "Mapper GLO-90", "Mapper 90"]
+)
 async def test_a_name_with_a_number_no_dataset_has_finds_nothing(numbered, aconn, text):
     assert await _ids(aconn, text) == ()
 
@@ -262,7 +266,7 @@ def test_the_names_are_the_words_with_a_letter_of_ids_and_titles():
     [
         ("Sentinel 3", ("3",)),
         ("Sentinel-3", ("3",)),
-        ("sentinel S3b", ("3",)),
+        ("Sentinel S3b", ()),
         ("Höhenmodell 2024", ()),
         ("3 Sentinel", ()),
         ("Sentinel", ()),
@@ -270,6 +274,10 @@ def test_the_names_are_the_words_with_a_letter_of_ids_and_titles():
 )
 def test_the_numbers_right_after_a_name(text, expected):
     assert numbers_after_names(text, frozenset({"sentinel"})) == expected
+
+
+def test_numbers_are_words_of_digits_and_codes_are_the_digits_of_other_words():
+    assert numbers_of("Sentinel-2 L2A 2020 sentinel3") == (("2", "2020"), ("2", "3"))
 
 
 # --- area --------------------------------------------------------------------------------------------------------------
