@@ -329,21 +329,21 @@ Belegstufen wie oben; **M** heißt hier: im lokalen Postgres 16 der Sitzung geme
 
 ### 12.2 Messung am Set [M]
 
-Gewählte Variante (`Joining.KNOWN`), Schwelle 0,5, Katalog der Registry mit sechs Einträgen, 37 Fragen aktiv, 14 ruhend:
+Gewählte Variante (`Joining.KNOWN`), Schwelle 0,5, Katalog der Registry mit sechs Einträgen; nach §12.5 neu gemessen, mit Q52 38 Fragen aktiv, 14 ruhend:
 
 | | Fragen mit Note 2 | Recall@5 | MRR@10 | nDCG@10 |
 |---|---|---|---|---|
 | de | 11 | 0,727 | 0,727 | 0,753 |
 | en | 10 | 1,000 | 1,000 | 0,952 |
-| gesamt | 30 | 0,900 | 0,878 | 0,877 |
+| gesamt | 31 | 0,903 | 0,882 | 0,881 |
 
-Filterfragen 4/4, Negativfragen 4/5 (Q48 wie in M5-22b; Q51 leer). Alle Maße wie in M5-22b; die Sperrklinke bleibt. Ohne die Regel aus §11.7 lieferte Q51 vier Datensätze (Sentinel-1, Sentinel-2, beide WorldCover), der Test nach A9 schlüge fehl.
+Filterfragen 4/4, Negativfragen 4/5 (Q48 wie in M5-22b; Q51 leer); Q52 „ESA 10 m“ findet WorldCover 2020 und 2021 auf Rang 1 und 2. Die Maße je Sprache wie in M5-22b, gesamt um Q52 verschoben; die Sperrklinke bleibt. Ohne die Regel aus §11.7 lieferte Q51 vier Datensätze (Sentinel-1, Sentinel-2, beide WorldCover), der Test nach A9 schlüge fehl.
 
 Nach dem Review (§12.4) erneut gemessen: dieselben Zahlen, je Frage derselbe Bericht.
 
 Einzelne Anfragen vorher → nachher: „Sentinel 3“ 4 → 0, „Copernicus DEM 90“ 5 → 0, „Landsat 9“ 1 (Copernicus DEM, über die „9“ einer Beschreibung) → 0; „Sentinel-2“ verliert Sentinel-1 (kam nur über die Trigramme von „sentinel“), „Sentinal 2“ verliert swissALTI3D und Sentinel-1. „Höhenmodell 2024“, „Landbedeckung 2021“, „land cover 2020“, „S2 L2A“ unverändert.
 
-### 12.3 Auslegungen der Umsetzung (zur Bestätigung)
+### 12.3 Auslegungen der Umsetzung (Antworten Otto in §12.5)
 
 - **A18** „Name“ ist ein Wort mit Buchstaben aus Kennung oder Titel eines Datensatzes im Index, „Zahl“ ein Wort nur aus Ziffern. Steht eine Zahl direkt nach einem Namen („Sentinel 3“, „Copernicus DEM 90“), muss sie als Wort in Kennung, Titel oder Schlagworten eines Treffers stehen („1“ ist nicht die Eins aus „c1“). Nicht im Volltext geprüft, weil der „GLO-30“ in `glo` und `-30` zerlegt [M]. Schlagworte zählen mit, damit WorldCover (Schlagwort `sentinel-2`) bei „Sentinel-2“ bleibt wie bisher. Was als Name zählt, wächst mit dem Katalog: Käme ein Titel „Digitales Höhenmodell …“ hinzu, wäre „Höhenmodell“ ein Name und „Höhenmodell 2024“ fände nur noch Datensätze mit 2024. Schon heute leert „ESA 10 m“ die Liste (die 10 steht nach dem Namen „ESA“ und in keinem Text).
 - **A19** Im Trigramm-Arm gilt das für jede Zahl der Anfrage, nicht nur für eine nach einem Namen: Der Arm vergleicht nur Namen und Schlagworte, und „Sentinal 3“ (Tippfehler im Namen) soll nichts finden. Die Ziffern eines Worts mit Buchstaben („sentinel3“, „L2A“, „swissALTI3D“) müssen dort als Ziffernfolge irgendwo stehen.
@@ -360,3 +360,18 @@ Einzelne Anfragen vorher → nachher: „Sentinel 3“ 4 → 0, „Copernicus DE
 ### 12.4 Review vor dem PR
 
 Ein Review-Subagent fand keine Blocker und vier Punkte, alle behoben: (1) Ein `400` auf `POST` schickte über den Handler von stac-fastapi Text und Koordinaten im Body zurück (A28). (2) Eine verschachtelte GeometryCollection umging die Prüfung der Positionen; die Prüfung läuft jetzt rekursiv. (3) „Sentinel 1“ fand Sentinel-2 über das „c1“ der Kennung; eine Zahl wird jetzt als Wort verglichen (A18, A19). (4) `ruff format` hatte unbeteiligte Methoden in `federating_client.py` umgebrochen; zurückgenommen. Hinweise ohne Änderung: Die Suche belegt eine Verbindung aus dem Pool des Such-Cache (höchstens fünf), vor der Suche beim Tippen in M5-23 im Blick behalten; der Log-Test hört das Zugangsprotokoll ab, im Code der Route loggt nichts.
+
+### 12.5 Antworten Otto (11.11.2026) und Umsetzung
+
+- **A18 so nicht.** Eine Zahl mit Einheit (m, km, cm) oder eine vierstellige Jahreszahl ist nie Teil eines Namens; die strenge Zahlenprüfung gilt nur für Namen, die selbst nummeriert vorkommen, damit die Menge nicht mit dem Katalog wächst. „ESA 10 m“ meint 10-m-Datensätze und darf nicht leer sein; „Sentinel-3“, „Sentinel 3“ und „Copernicus DEM 90“ bleiben leer. Neue Frage **Q52** „ESA 10 m“, WorldCover unter den ersten fünf.
+- **Umgesetzt (Mechanik, A18 neu):**
+  - **Zahl eines Namens** ist ein Wort nur aus Ziffern, keine Jahreszahl (1900–2099) und ohne Einheit (m, km, cm) als nächstes Wort; „10m“ in einem Wort zählt ebenfalls als Maß.
+  - **Nummerierter Name** sind die Wörter mit Buchstaben, die in Kennung oder Titel eines Datensatzes vor einer Zahl eines Namens stehen. Heute: `sentinel` (Sentinel-1, Sentinel-2), `cop`, `dem`, `glo`, `copernicus` (Copernicus DEM GLO-30) sowie `c1`, `l2a` (Kennung von Sentinel-2). Nicht: `esa`, `worldcover` (2020 ist ein Jahr), `swissalti3d`. Die Menge wächst nur mit Titeln, die eine Nummer tragen.
+  - Folgt eine Zahl eines Namens direkt auf einen nummerierten Namen, muss sie als Wort in Kennung, Titel oder Schlagworten eines Treffers stehen. Im Trigramm-Arm gilt das für jede Zahl eines Namens der Anfrage (A19); Maße und Jahre prüft er nicht mehr.
+  - Gemessen: „Sentinel-3“, „Sentinel 3“, „Copernicus DEM 90“, „Landsat 9“ leer; „ESA 10 m“ WorldCover 2020, 2021; „Höhenmodell 2024“ unverändert.
+- **A21, A23 bestätigt; A19, A20, A22, A24–A28 bestätigt** nach Empfehlung.
+- **Deutsch unter der Grenze aus `adr/0026` F5** (Recall@5 und MRR@10 0,727, Ziel 0,9 bzw. 0,8; kein Blocker für M5-22c). Es fehlen drei von elf Fragen, alle mit einem Begriff, den kein Suchtext enthält:
+  - **Q18** „Radarbilder bei Bewölkung“: Die Glossar-Gruppe „Radarbild, radar image, radar imagery“ greift, aber Sentinel-1 nennt nur „radar“; „Bewölkung“ kennt kein Text.
+  - **Q38** „Schneebedeckung“: Die Gruppe „Schneebedeckung, snow cover“ greift, Sentinel-2 nennt nur „Snow Index“ (NDSI).
+  - **Q39** „Wasserflächen erkennen“: Die Gruppe „Gewässer, Wasserflächen, water bodies“ greift, Sentinel-2 nennt nur „Water Index“ (NDWI).
+  - **Wer schließt die Lücke:** M5-23 (Vektorarm). Das Glossar kann es nicht: Es verbindet nur Gleichbedeutendes (`adr/0026` §4.2), und „Snow Index“ ist keine Schneebedeckung, „radar“ kein Radarbild. Für 0,9 müssen zwei der drei Fragen unter die ersten fünf. Möglich wären auch Schlagworte in der Registry (etwa „radar imagery“ bei Sentinel-1), aber nur, wo sie für den Datensatz stimmen; das wäre eine eigene Entscheidung beim Onboarding, nicht Teil von M5-22c.
