@@ -184,11 +184,18 @@ def _sentinel_1_double(request: httpx.Request) -> httpx.Response:
         if request.url.query == b"requestPayment":
             return httpx.Response(200, content=b"<RequestPaymentConfiguration><Payer>BucketOwner</Payer></RequestPaymentConfiguration>")
         if request.method == "HEAD":
-            return httpx.Response(200, headers={"x-amz-checksum-type": "FULL_OBJECT", "x-amz-checksum-crc64nvme": "AAECAwQFBgc="})
+            # Measured 10.11.2026: only objects written since early 2025 carry the checksum, and only when asked.
+            headers = {"etag": '"00112233445566778899aabbccddeeff"'}
+            year = int(request.url.path.split("/GRD/")[1].split("/")[0])
+            if year >= 2025 and request.headers.get("x-amz-checksum-mode") == "ENABLED":
+                headers |= {"x-amz-checksum-type": "FULL_OBJECT", "x-amz-checksum-crc64nvme": "AAECAwQFBgc="}
+            return httpx.Response(200, headers=headers)
         return httpx.Response(206, content=TIFF_HEADER[:16])
     search = _fixture("earth_search", "sentinel_1_search")
     if request.method == "POST" and request.url.path.endswith("/search"):
-        return _json(search)
+        # The recorded scenes lie in 2026; a search in another year finds them under that year's prefix.
+        year = json.loads(request.content).get("datetime", "2026")[:4]
+        return httpx.Response(200, text=json.dumps(search).replace("/GRD/2026/", f"/GRD/{year}/"))
     if request.method == "GET" and "/items/" in request.url.path:
         return _json(search["features"][0])
     if request.method == "GET" and request.url.path.endswith("/collections/sentinel-1-grd"):

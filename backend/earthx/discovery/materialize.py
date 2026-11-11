@@ -53,6 +53,7 @@ from earthx.catalog.pgstac import (
     PgstacError,
     check_pgstac_version,
     delete_items_except,
+    last_loaded_count,
     last_source_version,
     record_materialize_run,
     upsert_items,
@@ -60,6 +61,7 @@ from earthx.catalog.pgstac import (
 )
 from earthx.catalog.registry import AdapterKind, ConfigError, DatasetConfig, ItemHolding, UnknownDatasetError
 from earthx.gateway import Gateway, GatewayError, Policy, host_of, user_agent_from_env
+from earthx.logging import configure_logging
 
 # The least time between two requests to the endpoint of a run, by adapter (M5-08 plan §4.2, M5-18). The FSDI pages
 # about a thousand searches for swissALTI3D, and swisstopo reserves the right to throttle excessive use (adr/0023
@@ -92,7 +94,13 @@ async def run_materialize(
     known_version = None if force else last_source_version(conn, config.dataset_id)
 
     started_at = datetime.now(timezone.utc)
-    outcome = await materialize_items(config, adapters=ADAPTER_SPECS, gateway=gateway, known_version=known_version)
+    outcome = await materialize_items(
+        config,
+        adapters=ADAPTER_SPECS,
+        gateway=gateway,
+        known_version=known_version,
+        expected_items=last_loaded_count(conn, config.dataset_id),
+    )
     finished_at = datetime.now(timezone.utc)
 
     if outcome.status == "unchanged":
@@ -167,6 +175,7 @@ async def _main_async(config: DatasetConfig, *, force: bool) -> MaterializeResul
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(sys.argv[1:] if argv is None else argv)
+    configure_logging()
     try:
         user_agent_from_env()
     except ValueError as error:
