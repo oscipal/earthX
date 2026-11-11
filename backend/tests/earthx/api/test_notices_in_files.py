@@ -43,6 +43,24 @@ class TestAttributionYear:
         assert "[year]" not in text
 
 
+class TestOriginalsAreTheBucketOperatorsCogs:
+    """DS-04 plan F12 (Otto, 11.11.2026): no label in the viewer; the registry and the text file say what the files are."""
+
+    SENTENCE = "cloud-optimized GeoTIFFs as the bucket operator converted them, not the ESA SAFE product"
+
+    def test_the_limitations_say_it_in_at_most_three_sentences(self) -> None:
+        assert len(SENTINEL_1_GRD.limitations) <= 3
+        assert any(self.SENTENCE in text for text in SENTINEL_1_GRD.limitations)
+
+    def test_attribution_txt_says_it(self) -> None:
+        text = build_notice_text(SENTINEL_1_GRD, item_ids=["S1_A"], years=YEARS, at=AT)
+        assert self.SENTENCE in text
+
+    def test_a_dataset_that_is_not_sentinel_1_does_not(self) -> None:
+        text = build_notice_text(SENTINEL_2_L2A, item_ids=["S2_A"], years=YEARS, at=AT)
+        assert "bucket operator" not in text
+
+
 class TestAttributionTxt:
     def test_each_notice_is_a_paragraph_of_its_own_and_nothing_else_changes(self) -> None:
         text = build_notice_text(SENTINEL_1_GRD, item_ids=["S1_A"], years=YEARS, at=AT)
