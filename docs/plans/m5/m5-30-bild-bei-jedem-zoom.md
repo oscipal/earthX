@@ -226,6 +226,13 @@ Teile 1–6 brauchen keine Antwort. **Teile 7–9 ruhen bis zu F1–F3.**
 2. Je Datei 0,25 s (doppelt so schnell, bei 1–2 Anfragen je Datei bis zu 8 Anfragen je Sekunde)
 3. Lesen über den HTTP-Client von `gateway` statt GDAL (ganze Datei, Abstand wie M5-18; rund 8 GB statt 3–7 GB für swissALTI3D)
 
+**F4 — Texte im ZIP eines Exports mit sehr vielen Szenen (gefunden in Teil 6)?** Seit die 25 fallen, kann ein Export mit einigen hundert bis 2 000 Szenen die Grenze von 64 KiB für die Textdateien seines ZIP (`processing/export.py`, `ATTACHMENT_LIMITS`) überschreiten. Teil 6 lehnt das jetzt mit `413` ab statt mit einem `500`.
+1. So lassen; wer so viele Szenen will, teilt den Auftrag **(Empfehlung bis zur Messung, wie oft es vorkommt)**
+2. Grenze der Texte mit der Zahl der Szenen wachsen lassen
+3. Die Texte nennen ab einer Zahl die Szenen nicht mehr einzeln, sondern nur Zahl und Zeitraum
+
+**F4 = 2 umgesetzt:** Die Grenze von `ATTRIBUTION.txt` wächst um 305 Byte je Szene (255 für die ID, 2 Trenner, 48 für den Kopf einer Gruppenzeile); `Attachments` trägt die Zahl `scenes` (höchstens 2 000), `api` und `jobs` rechnen mit derselben Zahl, die übrigen Dateien bleiben bei 64 KiB und 2 MiB.
+
 ---
 
 ## 7. Prüfanleitung
@@ -266,6 +273,13 @@ Die Tabellen in den PR kopieren; sie enthalten kein Rechteck und keine ID. Erwar
 - **Tests:** `test_measure_tiles.py` (Argumente, Datensatz, Zählen der GDAL-Zeilen, Kachel und Szenen, Lesen über den echten Leser mit synthetischen COGs, Ausgabe ohne Rechteck/Adresse/ID, Compose), `integration/test_pgstac_search_bbox.py`.
 - **Korrektur nach Ottos Lauf:** Das Skript holte die Items nur im `--bbox` und zählte deshalb bei kleinen Zoomstufen zu wenige Dateien (49 swissALTI3D-Kacheln bei z6–z11, eine Sentinel-1-Datei bei z0–z5). Jetzt wählt das Rechteck nur Überflug und Asset; jede Zoomstufe holt die Items im Ausschnitt ihrer Kachel (bis `--max-items`), behält die des gewählten Überflugs und löst sie wie zuvor auf. Ist die Liste voll und die berührten Dateien damit nicht alle bekannt, lautet der Status `over items cap`; über `--max-files` weiter `over cap`. Neu `--threads N` (Vorgabe `MOSAIC_THREADS`, 1–16; `MosaicTileReader(threads=…)` setzt `threads` und `chunk_size`), um paralleles Lesen zu vergleichen (die warme Zeit von swissALTI3D ohne Anfragen ist CPU, nicht Netz). Die Kopfzeile nennt die Zahl der Threads.
 
+### 8.3 Teil 6 — Zuschnitt und Job
+
+- Zuschnitt: `MAX_DOWNLOAD_ITEMS` 25 → 2 000 (Schutz); neu `MAX_CROP_SECONDS = 60` mit `estimated_crop_seconds` (Konstanten aus `processing.plan`, Dateien = Szenen × Assets). Darüber `413` mit demselben Angebot „als Job“ wie über 500 MB; bei Zarr ohne Angebot und mit dem Hinweis, weniger Szenen oder eine kleinere Fläche zu wählen (für Zarr gibt es keinen Export-Job, F6 von M4-11).
+- Auftrag: `MAX_ORDER_ITEMS` 25 → 2 000 (Schutz); Spiegel `MAX_JOB_SCENES` im Frontend.
+- **Gefunden:** Ein Export mit sehr vielen Szenen kann an der Grenze der Textdateien im ZIP scheitern; vorher ein `500`, jetzt `413` (F4).
+- F4 = 2 umgesetzt: Grenze des Hinweistexts = 64 KiB + 305 Byte × Szenen (`attachment_limits`); 2 000 Szenen mit IDs von 255 Zeichen passen, das `413` bleibt als Sicherheitsnetz.
+- **Unverändert gelassen** (nicht Teil von F13): `MAX_BATCH_JOBS = 25` im Frontend (Aufträge, die ein Klick gleichzeitig startet) und höchstens 64 Gruppen je Download-Anfrage (`DownloadRequest.groups`).
 ### 8.2 Teil 2 — Budget je Kachel
 
 - `api/mosaic_tiles.py`: `TILE_FILE_BUDGET = 32`, `TILE_TIME_BUDGET_S = 4.0` (Startwerte, A2) statt `MIN_MOSAIC_ZOOM`/`MAX_SCENES_PER_TILE`; `scenes_touching` kürzt auf das Budget (Szenen × Assets) und gibt die Zahl der weggelassenen zurück. Eine ASGI-Middleware (`TileOutcomeHeaders`) setzt `X-EarthX-Partial: <n>` bzw. `time` und nach Zeitabbruch `Cache-Control: no-store`, weil der Tile-Endpunkt von TiTiler seine Antwort selbst baut und der Zeitabbruch erst beim Lesen bekannt ist.
