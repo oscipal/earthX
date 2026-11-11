@@ -390,10 +390,10 @@ describe('downloadCrop', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
-        jsonResponse(413, { detail: 'This download covers 26 scenes; at most 25 fit in one download.' }),
+        jsonResponse(413, { detail: 'This download covers 2001 scenes; at most 2000 fit in one download.' }),
       ),
     );
-    await expect(downloadCrop(request)).rejects.toThrow('This download covers 26 scenes; at most 25 fit in one download.');
+    await expect(downloadCrop(request)).rejects.toThrow('This download covers 2001 scenes; at most 2000 fit in one download.');
   });
 
   // M4-11b-2: the dialog offers an export job from the status and the header.

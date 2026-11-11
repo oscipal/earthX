@@ -375,7 +375,7 @@ describe('whole scenes', () => {
     useAppStore.getState().setDownloadForm('per_resolution');
     await useAppStore.getState().confirmDownload();
     expect(placed()).toHaveLength(0);
-    routes.estimate = () => json({ detail: 'at most 25 items' }, 413);
+    routes.estimate = () => json({ detail: 'at most 2000 items' }, 413);
     useAppStore.getState().setDownloadBands(['a_red']);
     await vi.advanceTimersByTimeAsync(400);
     expect(useAppStore.getState().downloadJobNote).toMatchObject({ state: 'blocked' });
