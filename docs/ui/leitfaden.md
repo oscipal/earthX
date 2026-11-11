@@ -1,10 +1,10 @@
 # EarthX — Leitfaden der Oberfläche
 
-**Stand:** 11.11.2026, Ganzzahl-Ergebnisse und Tooltips im Layer-Manager (Browserprüfung Otto), davor 07.11.2026, Seiten der Datensätze ohne Obergrenze (Otto, Review von UI-05 Teil 2), davor 06.11.2026 UI-05 Teil 2 (Data catalogue als Fenster, Datensätze in „Search and area“ aus dem Katalog), davor UI-05 Teil 1 (Seiten der Datensätze, „Advanced search“ immer da, Datum im Zeitraum der Datensätze, kein Zusatztext im Panel; `docs/plans/vp3/ui-05-data-catalogue.md`), davor UI-04 Teil 6 (Zahlenformat, weniger Text, schmale Fenster, Tokens für alle Maße) (`docs/plans/vp3/ui-04-einheitlichkeit.md` §7, §8). Grundlage sind die Regeln und Begriffe aus UI-03 (#277–#283), NM4-75 (#284, `adr/0028`) und die Antworten Ottos zu UI-04 (§7.0, §7.9).
+**Stand:** 11.11.2026, Ganzzahl-Ergebnisse und Tooltips im Layer-Manager (Browserprüfung Otto), davor am selben Tag Kompass, Zoom und 3D an der Karte (UI-06, `docs/plans/vp3/ui-06-3d-und-nordpfeil.md` §9a, §10), davor 07.11.2026, Seiten der Datensätze ohne Obergrenze (Otto, Review von UI-05 Teil 2), davor 06.11.2026 UI-05 Teil 2 (Data catalogue als Fenster, Datensätze in „Search and area“ aus dem Katalog), davor UI-05 Teil 1 (Seiten der Datensätze, „Advanced search“ immer da, Datum im Zeitraum der Datensätze, kein Zusatztext im Panel; `docs/plans/vp3/ui-05-data-catalogue.md`), davor UI-04 Teil 6 (Zahlenformat, weniger Text, schmale Fenster, Tokens für alle Maße) (`docs/plans/vp3/ui-04-einheitlichkeit.md` §7, §8). Grundlage sind die Regeln und Begriffe aus UI-03 (#277–#283), NM4-75 (#284, `adr/0028`) und die Antworten Ottos zu UI-04 (§7.0, §7.9).
 
 **Gilt für:** jede Änderung an `frontend/`. Künftige Pläne verweisen auf diese Datei. Neue Begriffe, Bauteile oder Symbole kommen zuerst hierher.
 
-**Markierung:** Steht an einer Regel *(folgt in Teil n)*, ist sie entschieden, aber noch nicht überall umgesetzt. Nach UI-05 Teil 2 gibt es keine Regel mit dieser Markierung.
+**Markierung:** Steht an einer Regel *(folgt in Teil n)*, ist sie entschieden, aber noch nicht überall umgesetzt. Nach UI-06 gibt es keine Regel mit dieser Markierung.
 
 ## 1. Grundsätze
 
@@ -54,6 +54,7 @@
 | finished | Status eines Jobs („Finished“); in Zusammenfassungen klein („3 finished · 1 running“) | „done“ |
 | Settings | das Panel der Einstellungen, das Symbol unten in der Leiste links (§9); die Seitenleiste heißt für Screenreader nach ihrem Inhalt („Image settings“, „Layer settings“) | |
 | Basemap, Overlays, Projection, Appearance, Tooltips | die fünf Abschnitte des Panels „Settings“; Wahl je Abschnitt: Satellite / Streets / Grey / Outlines, Labels / Graticule / Relief, Mercator / Globe, Light / Dark / System, Simple / Advanced | „Theme“, „Mode“ für Light/Dark |
+| Compass, Reset north and tilt, Zoom in, Zoom out, 3D | die Knöpfe unten rechts an der Karte, von oben nach unten (§9); der Kompass heißt im Tooltip und `aria-label` „Reset north and tilt“, der Knopf „3D“ schaltet das Gelände | „North“, „Terrain“ als Knopftext, „Tilt“ allein |
 | Coverage, Hide coverage | die Abdeckung des gewählten Datensatzes über den sichtbaren Kartenausschnitt (§9); sie wird mit „Coverage“ gewählt und mit „Hide coverage“ beendet | „Clear coverage“, ein Eintrag „Hide coverage“ in der Wahl des Datensatzes |
 
 **Schreibweise:**
@@ -83,6 +84,7 @@
 - **Eigene Zeichnungen gibt es nicht.** Das einzige `<svg>` im Code ist das Balkendiagramm des Histogramms (`RangeHistogram`), kein Symbol.
 - **Der Haken** vor dem gewählten Eintrag eines Menüs ist ein Symbol in einem Platz fester Breite (`MenuTick`), kein Zeichen im CSS.
 - **Einzige Ausnahme:** Settings ist „Settings 6 Line“ von MingCute (Apache-2.0, `mingcute_icon` 2.9.72, `svg/system/settings_6_line.svg`). Es wird als einzelnes SVG übernommen, als Strich nachgezeichnet und an Lucide angeglichen; die Änderung ist vermerkt. Herkunft, Änderung und Lizenztext stehen in `frontend/THIRD_PARTY_NOTICES.md`, die Zeichnung (mit dem Vermerk der Änderung, Apache-2.0 §4(b)) in `components/settingsIconNode.ts`; `icons.ts` gibt sie als `SettingsIcon` weiter, wie alle anderen.
+- **Zweite Ausnahme: die Nadel des Kompasses** (Otto, 11.11.2026, UI-06 F3 und F17): eine Nadel aus zwei Spitzen wie bei Google Maps, Nordhälfte `--danger`, Südhälfte `--text`, als eigene Zeichnung in `components/CompassNeedle.tsx`, weil Lucide keine Nadel mit roter Nordhälfte hat. Sie ist neben dem Balkendiagramm (`RangeHistogram`) das einzige weitere `<svg>`; sie dreht sich mit der Karte.
 - **Das Auge ist ein Bauteil, `EyeButton`** (Otto, 04.11.2026): in der Layer-Zeile, bei „Search results“ (Kopf der Liste und Eintrag im Layer-Manager), im Kopf der Seitenleiste und überall sonst, wo etwas gezeigt oder verborgen wird. Eine Farbe, die des Textes; **verborgen** (oder gesperrt) ist das durchgestrichene Auge (`eye-off`), nie eine andere Farbe und kein Rahmen. In Listenzeilen 22 px mit 14-px-Symbol (`row`), sonst 28 px mit 16 px. `EyeIcon` und `EyeOffIcon` kommen nur in `EyeButton.tsx` vor; kein CSS gibt dem Auge eine eigene Farbe.
 - **Keine Textzeichen als Symbole** (⇩ ✎ ✕ ⚙ ＋ ⋯ ▾ ↻ …). Im Text erlaubt bleiben „…“, „—“ in „— none —“, „·“, „–“, „→“ zwischen zwei Datumsfeldern, „×“ in Maßen („10 m × 10 m“), „µm“.
 
@@ -118,6 +120,9 @@
 | AOI-Werkzeuge | `map-pin`, `square`, `pentagon` |
 | Leiste | `search`, `library` (Data catalogue), `layers`, `clipboard-list`, `list` |
 | Coverage | `layout-grid` |
+| Zoom in / Zoom out | `plus` / `minus` |
+| Kompass (Reset north and tilt) | eigene Nadel (`CompassNeedle.tsx`), siehe oben |
+| 3D | kein Symbol, der Text „3D“ |
 | Erscheinungsbild (Light / Dark / System) | `sun`, `moon`, `monitor` |
 
 ## 4. Sperren
@@ -179,6 +184,7 @@
 | `Popover` | Menüs, Listen und das Formular „Advanced search“ |
 | `ResamplingDialog` | die einzige Rückfrage mit Cancel/Continue |
 | Fenster (`DataCatalogue`) | größeres Fenster über der Karte, geöffnet und geschlossen über sein Symbol in der Leiste, dazu das rote x im Kopf (§5); der Kopf ist ein eigener Bereich, in den später Suchfeld und AOI-Schalter kommen, ohne sichtbar leere Fläche, solange sie fehlen |
+| `MapControls` | die Gruppe unten rechts an der Karte: Kompass, Zoom +, Zoom −, 3D (§9); ersetzt `NavigationControl` von MapLibre |
 | `Badge` | das eine Abzeichen („Preview“, „Temporary“, „Overview“, „Loading…“): Pille in `--accent-2`, Großbuchstaben per CSS; `PreviewBadge` setzt sie über die Karte. Hinweise eines Datensatzes (`earthx:notices`, etwa „Approximate geolocation“) sind keine Marke, nirgends; was die Daten nicht können, steht als Sätze in der Zeile „Limitations“ der Angaben im Data catalogue (Otto, 10.11.2026, `adr/0018` F2, Nachtrag DS-04c). Texte für Nutzer nennen keine internen Dokumente (`adr/…`, `§…`) |
 
 **Knopfformen** (`index.css`, vorn im Blatt):
@@ -255,6 +261,15 @@ Jeder Tooltip hat eine Stufe; alles läuft über `TipLayer` (ein gezeigter Toolt
   - **Appearance:** Vorgabe „Dark“. Gespeichert wird `tech` (Dark), `normal` (Light) oder `system`, damit eine Wahl aus der Zeit vor „System“ gilt. „System“ folgt `prefers-color-scheme` und wechselt mit dem System, auch während die Seite offen ist.
   - **Die bisherigen Stellen entfallen:** der Knopf „Basemap“ und der Knopf Light/Dark oben rechts. Dort bleibt „Zoom to selection“. Neue Einstellungen dieser Art kommen in dieses Panel, nicht an einen eigenen Knopf.
 - **Ergebnisse aus ganzen Zahlen** (Otto, 11.11.2026): „so wie es ist“ (nur Opacity, (i) „A layer of classes is drawn as it is: it has no range or colormap to set.“) gilt nur für ein **Band aus Klassen**: das Band, das die Registry als Klassenschicht des Datensatzes nennt (`earthx:mask`, z. B. WorldCover `map`, Sentinel-2 `scl`), ganzzahlig und nicht aus Band math (`resultLayer.ts::isClassBand`). Jedes andere Ergebnis aus ganzen Zahlen (Sentinel-2 als `uint16`, Höhen als `int16`) hat die Einstellungen eines Gleitkomma-Ergebnisses: Bereich mit Histogramm, vmin/vmax, absolute/percentile, Auto-scale, Band, Colormap; die Vorgabe sind die 2–98 % der Statistik, die das nodata nicht zählt (M5-28). Ein Ergebnis ohne bekannten Datentyp wird wie bisher gezeichnet, wie es ist, und sagt das im (i).
+  - **Die bisherigen Stellen entfallen:** der Knopf „Basemap“ und der Knopf Light/Dark oben rechts. Dort bleibt „Zoom to selection“. Neue Einstellungen dieser Art kommen in dieses Panel, nicht an einen eigenen Knopf; Ausnahme ist der Knopf „3D“ unten rechts an der Karte (Otto, 11.11.2026, UI-06 F4).
+- **Kompass, Zoom und 3D** (Otto, 11.11.2026, UI-06 §9a), `components/MapControls.tsx`:
+  - **Ort und Reihenfolge:** eine Gruppe unten rechts an der Karte, von oben nach unten **Kompass, Zoom +, Zoom −, 3D**; gleich große Knöpfe in der Form von `.icon-btn` mit Tokens, Steuerhöhe 28 px, bei Touch und unter 900 px 44 px. Sie rückt mit, wo rechts eine Seitenleiste oder ein Blatt offen ist, und deckt bei 320 px nichts, was man bedienen muss. Kein Eintrag „3D“ im Panel „Settings“.
+  - **Kompass:** immer sichtbar, auch in 2D und ohne Drehung (dann zeigt die Nadel nach oben); runder Knopf mit der Nadel (§3), die sich mit der Karte dreht und bei Neigung flach bleibt. Klick: Norden oben und Neigung 0. In 3D dreht Ziehen am Kompass die Karte, im Fokus ←/→ um 15°; ein Klick ohne Bewegung richtet aus. In 2D nicht gesperrt. Tooltip (advanced) und `aria-label` „Reset north and tilt“.
+  - **3D:** ein Schalter mit dem Text „3D“, an = gedrückt (`aria-pressed`) und gefüllt in Akzent wie eine gewählte Segment-Schaltfläche. An legt die Karte über die AWS Terrain Tiles (Überhöhung 1,5, Kacheln bis Zoom 12) und kippt sie auf 50°; aus setzt Neigung und Drehung auf 0 und nimmt das Gelände weg. Tooltip (advanced) mit dem Hinweis „Elevation tiles load from amazonaws.com.“ wie beim Relief.
+  - **Drehen und Kippen nur mit 3D** (D27 gilt in 2D weiter; Otto, 11.11.2026): mit Maus (rechte Taste oder Strg + Ziehen), Touch (zwei Finger) und Tastatur (Umschalt + Pfeiltasten an der Karte); Neigung höchstens 60°. In 2D verschiebt und zoomt die Karte nur.
+  - **Gemerkt** je Browser als `earthx.terrain` (3D an oder aus); Neigung und Drehung nicht. Der Permalink trägt nichts davon und öffnet flach.
+  - **Coverage** fragt bei gekippter Karte den Ausschnitt ab, den die Karte flach bei gleicher Mitte und gleichem Zoom hätte.
+  - Verliert die Karte mit 3D den WebGL-Kontext, geht 3D aus und die Statusmeldung sagt es.
 - **Relief** gibt es nur als Overlay. Ein Browser, der die Basemap „relief“ gemerkt hat, öffnet mit der Standard-Basemap und dem Overlay Relief (der Eintrag wird einmal umgeschrieben). Ein alter Permalink mit Basemap „relief“ öffnet für diese Ansicht ebenso, ohne etwas zu speichern; das Backend nimmt `relief` weiter an, das Frontend schreibt es nicht mehr.
 - **Unter der Startzoomstufe** zeigt ein Layer nichts; über der Karte steht dazu nichts (kein „Zoom in to level n …“, keine Marke „Zoom in“; Otto, 10.11.2026). Den Grund nennt der Tooltip seiner Zeile im Layer-Manager, in beiden Stufen, solange er gilt: „Nothing shown at this zoom: this layer is drawn from zoom n.“ (`zoomHint.ts`). Die Zeile „Search results“ sagt es für einen Datensatz mit Vorschau-Kacheln (`browse: preview_tiles`), die Marke „Preview“ für die Vorschau des Processing-Panels. Gilt für jeden Datensatz.
 - **„Zoom to selection“** zoomt auf alles Gewählte zusammen (`zoomSelection.ts`):
@@ -325,5 +340,6 @@ Jeder Tooltip hat eine Stufe; alles läuft über `TipLayer` (ein gezeigter Toolt
 | Ganzzahl-Ergebnisse: Einstellungen wie Gleitkomma, „so wie es ist“ nur für ein Band aus Klassen (Maskenband der Registry), Grund im (i); keine Regel nach dem Datentyp allein | `frontend/src/resultLayer.test.ts`, `frontend/src/components/ResultControls.test.tsx`, `frontend/src/components/ProcessingResultLayer.test.tsx`, `frontend/src/components/ResultPercent.test.tsx`, `frontend/src/uiRules.test.ts`, `frontend/e2e/whole-numbers.cjs` |
 | „Auto-scale“ der Processing-Vorschau bedienbar ab der ersten Vorschau, nach „Review“, bei laufendem und fertigem Job, mit automatischem Typ und `uint16`; setzt den gemessenen Bereich zurück | `frontend/src/components/ProcessingPreview.test.tsx`, `frontend/src/components/ProcessingShow.test.tsx`, `frontend/e2e/preview-auto-scale.cjs` |
 | Layer-Manager: gesperrtes Bedienelement zeigt den Grund in „Simple“, auch im `label`; ein Grund für einen gelöschten Job; „Process layer“ für jeden Layer; gleiche Stufen in allen Zeilen | `frontend/src/components/LayerTooltips.test.tsx`, `frontend/src/components/LayerManager.test.tsx`, `frontend/src/components/ResultBandLayer.test.tsx`, `frontend/src/uiRules.test.ts`, `frontend/e2e/layer-tooltips.cjs` |
+| Kompass, Zoom und 3D: Reihenfolge und Größe der Gruppe, Kompass immer da und mit der Karte gedreht, Klick richtet aus; Drehen und Kippen nur mit 3D, höchstens 60°; 3D an kippt auf 50°, aus auf 0; kein Eintrag „3D“ in „Settings“; hell, dunkel, schmale Fenster | `frontend/src/components/MapControls.test.tsx`, `frontend/src/terrain.test.ts`, `frontend/src/uiRules.test.ts`, `frontend/src/store.terrain.test.ts`, `frontend/src/mapStyles.diff.test.ts`, `frontend/e2e/terrain-3d.cjs` (1280, 360 und 320 px, hell und dunkel) |
 
 Ein neuer Begriff, der ein altes Wort ersetzt, bekommt eine Zeile in der Liste `FORBIDDEN` von `uiRules.test.ts` mit Gegenprobe.

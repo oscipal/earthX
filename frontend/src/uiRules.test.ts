@@ -85,8 +85,9 @@ describe('icons (§7.5 no. 3): one source, no character of the text for an icon'
     expect(IMPORT_LUCIDE.test("import { Eye } from './icons';")).toBe(false);
   });
 
-  it('draws no icon of its own: the only svg is the chart of the histogram', () => {
-    expect(where((code) => OWN_SVG.test(code))).toEqual(['components/RangeHistogram.tsx']);
+  // The needle of the compass is the second exception beside "Settings" (UI-06 F17, `docs/ui/leitfaden.md` §3).
+  it('draws no icon of its own: the only svgs are the chart of the histogram and the needle of the compass', () => {
+    expect(where((code) => OWN_SVG.test(code))).toEqual(['components/CompassNeedle.tsx', 'components/RangeHistogram.tsx']);
     expect(OWN_SVG.test('<svg viewBox="0 0 24 24"><path d="M0 0" /></svg>')).toBe(true);
     expect(OWN_SVG.test('<DownloadIcon />')).toBe(false);
   });
@@ -131,6 +132,10 @@ describe('one name for one thing (§7.5 no. 7, the list of terms in §7.4)', () 
     [/^Processing jobs$/u, 'Jobs'],
     [/\b(?:Previous|Next|First|Last) step\b/u, 'time step'],
     [/[\d}] %/u, 'a percent close to its number ("50%")'],
+    // The buttons at the bottom right of the map (UI-06).
+    [/^(?:North|Reset north|Reset bearing to north)$/u, 'Reset north and tilt'],
+    [/^Tilt$/u, 'Reset north and tilt'],
+    [/^Terrain$/u, '3D'],
   ];
   const faults = (text: string) =>
     texts(text).flatMap((shown) => FORBIDDEN.filter(([word]) => word.test(shown)).map(([word, instead]) => `"${shown}" (${String(word)} → ${instead})`));
@@ -152,6 +157,9 @@ describe('one name for one thing (§7.5 no. 7, the list of terms in §7.4)', () 
     ["title=\"Previous step\"", 'time step'],
     ['`Loading ${n} %`', 'a percent close to its number'],
     ["'Range 2–98 %'", 'a percent close to its number'],
+    ['<button aria-label="Reset bearing to north">', 'Reset north and tilt'],
+    ["data-tip={'Tilt'}", 'Reset north and tilt'],
+    ['<button>Terrain</button>', '3D'],
   ])('finds the old word in %j', (line, instead) => {
     expect(faults(line).join()).toContain(instead);
   });
@@ -848,5 +856,28 @@ describe('the layer manager (Otto, 11.11.2026): a row of a dataset, of a result 
     expect(where(byFloatAlone)).toEqual([]);
     expect(byFloatAlone("const adjustable = info.dataType !== null && /^float/.test(info.dataType);")).toBe(true);
     expect(byFloatAlone('const adjustable = info.dataType !== null && !info.classes;')).toBe(false);
+  });
+});
+
+describe('the buttons at the bottom right of the map (UI-06, `docs/ui/leitfaden.md` §9)', () => {
+  const NAVIGATION = /\bNavigationControl\b|\bTerrainControl\b/u;
+  const CONTROLS = /<MapControls\b/u;
+
+  it('has none of MapLibre\'s own map buttons: `MapControls` has compass, zoom and 3D in one form', () => {
+    expect(where((code) => NAVIGATION.test(code))).toEqual([]);
+    expect(NAVIGATION.test("map.addControl(new NavigationControl({ showCompass: false }), 'bottom-right');")).toBe(true);
+    expect(where((code) => CONTROLS.test(code))).toEqual(['components/MapView.tsx']);
+  });
+
+  it('puts "3D" at the map and not into the panel "Settings"', () => {
+    const settings = withoutComments(SOURCES['./components/SettingsPanel.tsx']);
+    expect(texts(settings).filter((t) => /^(?:3D|Terrain)$/u.test(t))).toEqual([]);
+    expect(texts('<button>3D</button>').filter((t) => /^(?:3D|Terrain)$/u.test(t))).toEqual(['3D']);
+  });
+
+  it('colours the needle of the compass with tokens only', () => {
+    const css = withoutCssComments(CSS);
+    expect(css).toMatch(/\.compass-north \{\s*fill: var\(--danger\);/u);
+    expect(css).toMatch(/\.compass-south \{\s*fill: var\(--text\);/u);
   });
 });

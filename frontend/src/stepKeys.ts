@@ -1,8 +1,8 @@
 import { useAppStore } from './store';
 
 // Where the arrow keys do not browse the passes: in a field that takes the cursor, on the slider (it steps itself, one the same
-// way), and in a list, menu or dialog that uses them for its own choice.
-const OWN_ARROWS = 'input, textarea, select, [contenteditable=""], [contenteditable="true"], [role="listbox"], [role="menu"], [role="dialog"], [role="slider"]';
+// way), in a list, menu or dialog that uses them for its own choice, and on the compass, which turns the map with them in 3D (UI-06).
+const OWN_ARROWS = 'input, textarea, select, [contenteditable=""], [contenteditable="true"], [role="listbox"], [role="menu"], [role="dialog"], [role="slider"], .map-compass';
 
 // ←/→ browse the time steps (passes) like the arrows beside the date (Otto, 05.11.2026): left to the one before, right to the
 // one after, as the slider reads, oldest on the left. Ends stay where they are. By hand, a step ends the playing. Taken before
