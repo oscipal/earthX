@@ -1,6 +1,6 @@
 # M5-28 — Ein nodata für Ergebnisse, das nie ein echter Wert ist
 
-**Stand:** 10.11.2026, Plan-Schritt, wartet auf Antworten von Otto (§9).
+**Stand:** 11.11.2026, freigegeben von Otto (Antworten in §9a), in Umsetzung.
 **Stufe B.** Erst Plan mit Fragen, Code nach Freigabe; ein Draft-PR.
 **Anlass:** Log 2026-10-12 („Festes nodata je Ganzzahltyp“, offen), `adr/0014` §15h und §15k („Kollision mit `nodata`“).
 **Vorgabe Otto (09.11.2026):** Der nodata-Wert muss nicht für alle Datensätze gleich sein; er darf je Datensatz oder Band abweichen. Er fällt nie mit einem echten Wert zusammen und funktioniert in allen Wegen.
@@ -154,6 +154,19 @@ Ein Draft-PR, Richtwert unter 400 Zeilen ohne Tests. Reihenfolge der Commits:
 **Frage 7 — Panel.**
 1. Im selben PR: Ganzzahltypen nach `band_math`/`normalize` anbieten, nicht empfehlen; Hinweis nennt das kommende nodata. **(Empfehlung)**
 2. Panel bleibt, wie es ist; nur die API nimmt mehr an.
+
+## 9a. Antworten von Otto (11.11.2026)
+
+Fragen 1–7 jeweils Option 1. Dazu:
+
+- **F3:** Ein Überlauf wird auf den Wertebereich des Zieltyps geklemmt, wie M4-26 es für Gleitkomma tut.
+- **F7:** Panel und Annahme weisen eine Ausgabe vorher mit Grund ab, wenn ihr nodata nicht in den Typ passt, zum Beispiel swissALTI3D −9999 nach `uint16`.
+
+**Auslegung von F7 (Claude, gilt bis Otto widerspricht):** Trägt ein Band des Ergebnisses ein endliches nodata der Quelle, das außerhalb des Ganzzahl-Ausgabetyps liegt, weist der Kern das Rezept mit `UnsupportedRecipe` ab. Das gilt vor R2 und R3, auch wenn die Quelle Gleitkomma ist. Die Annahme antwortet dann `422`, bevor der Job in die Warteschlange geht, und das Panel bietet den Typ nicht an. Der Fall „swissALTI3D, `uint16`“ in der Tabelle von §5 wird damit eine Abweisung statt nodata 65535. NaN als nodata (nach `band_math`, `normalize`) gilt nicht als „passt nicht“; dafür greift R3.
+
+**Auslegung von F2 beim Bänder-Download (Claude):** Die Form „Bänder nach Auflösung“ bekommt eine Datei je Auflösung **und** nodata. Die Form „eine Datei mit allen Bändern“ verspricht genau eine Datei; dort weist der Download Bänder mit verschiedenem nodata mit Grund ab.
+
+**Voller `pytest`-Lauf zum Plan-Schritt (10.11.2026):** 9984 bestanden, 25 übersprungen (darunter `pwsh` nicht installiert), 0 fehlgeschlagen; `ruff check backend` grün.
 
 ## 10. Grenzen und Abnahme
 
