@@ -16,11 +16,14 @@ import { areaGeometry, isAreaAnswer, showFootprints } from '../coverage';
 import { bufferPointToPolygon, pointInFootprint, polygonBbox } from '../geoUtils';
 import { openIdsOf, resultsOnMapOf } from '../mapResults';
 import { mosaicsOfView, sameMosaics } from '../mosaic';
+import { watchGoneSelections } from '../mosaicSelection';
+import { assetsOfExpression, viewIndexOf } from '../viewIndex';
 import type { CoverageDisplay } from '../mapLayers';
 import {
   ensureBaseLayers,
   hasOwnLayers,
   overlayBudgetNote,
+  rechooseScenes,
   setAoiData,
   setCoverageDisplay,
   setViewOpacity,
@@ -325,7 +328,10 @@ export default function MapView() {
     // reload).
     map.on('moveend', () => {
       reportViewport(map);
+      rechooseScenes(map);
     });
+    // A selection that expired is created again and its tiles are loaded again (`mosaicSelection.ts`).
+    watchGoneSelections(map);
 
     // Clicking the displayed imagery toggles that scene's download selection
     // (only when no drawing tool is active, so it never eats draw clicks).
@@ -407,9 +413,14 @@ export default function MapView() {
     () => (focusMode ? shownViewOf({ downloaded, sections, openSectionId, datasetId, items, groups, datasets, shownImage }) : null),
     [focusMode, downloaded, sections, openSectionId, datasetId, items, groups, datasets, shownImage],
   );
+  // The assets the index of the look reads: the tiler makes the tile of an index from a selection of them.
+  const indexAssets = useMemo(() => {
+    const preset = viewIndexOf(appliedRender, view?.dataset?.collection);
+    return preset ? assetsOfExpression(preset.expression) : null;
+  }, [appliedRender, view]);
   const picked = useMemo(
-    () => (view ? mosaicsOfView(allMosaics, view.dataset?.id ?? null, Object.entries(view.downloaded), view.groups) : {}),
-    [allMosaics, view],
+    () => (view ? mosaicsOfView(allMosaics, view.dataset?.id ?? null, Object.entries(view.downloaded), view.groups, indexAssets) : {}),
+    [allMosaics, view, indexAssets],
   );
   const mosaicsRef = useRef(picked);
   if (!sameMosaics(mosaicsRef.current, picked)) mosaicsRef.current = picked;

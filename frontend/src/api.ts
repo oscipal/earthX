@@ -362,22 +362,38 @@ export function buildTileTemplate(datasetId: string, itemId: string, asset: stri
   return `${itemBase(datasetId, itemId)}/tiles/${TILE_MATRIX_SET}/{z}/{x}/{y}?${params.toString()}`;
 }
 
-// One pass as a single surface (M4-17, `adr/0006` §5 "Zu Frage 4"): the scenes
-// stand in the URL, one `item` each and sorted by id, so the same selection is the
-// same URL (plan KE5). The order the tiler reads them in is its own (`mosaic_order`,
-// S5) and the URL's order does not count. Never a search id and never an AOI.
-function mosaicQuery(itemIds: readonly string[], asset: string): string {
-  const params = new URLSearchParams();
-  for (const id of [...itemIds].sort()) params.append('item', id);
-  params.set('asset', asset);
-  return params.toString();
+// A mosaic is a *selection* (M5-30b part 3, `adr/0032` §10.2): the scenes of a pass and the assets they are read from are
+// created once (`POST /collections/{dataset}/mosaic`), and the tile URL carries only the id the tiler gives back, which is the
+// hash of that content. The URL still says what the picture is, and a selection made again from the same list has the same id.
+// Never a search id, never an AOI.
+export interface MosaicSelection {
+  id: string;
+  datasetId: string;
+  // The tile template and the TileJSON of the selection behind the address of the API, without a query.
+  tiles: string;
+  tilejson: string;
 }
 
-const mosaicBase = (datasetId: string) => `${BASE}/collections/${encodeURIComponent(datasetId)}/mosaic`;
+const isText = (v: unknown): v is string => typeof v === 'string' && v.length > 0;
 
-// A mosaic tile is 512 px (`tileSize.ts`); the TileJSON of the same pass names no size, the tiler gives its own.
-export function buildMosaicTileTemplate(datasetId: string, itemIds: readonly string[], asset: string): string {
-  return `${mosaicBase(datasetId)}/tiles/${TILE_MATRIX_SET}/{z}/{x}/{y}?${mosaicQuery(itemIds, asset)}&tilesize=${MOSAIC_TILE_SIZE}`;
+// The assets and the scenes travel in the body, sorted: the id does not depend on their order. A selection the tiler does not take
+// (a pass of several overpasses, a scale or unit that differs, too many scenes) is an `HttpError` with the tiler's words.
+export async function createMosaicSelection(datasetId: string, itemIds: readonly string[], assets: readonly string[]): Promise<MosaicSelection> {
+  const res = await fetch(`${BASE}/collections/${encodeURIComponent(datasetId)}/mosaic`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ items: [...new Set(itemIds)].sort(), assets: [...new Set(assets)].sort() }),
+    signal: AbortSignal.timeout(MOSAIC_TILEJSON_TIMEOUT_MS),
+  });
+  const body = await jsonOrThrow<Record<string, unknown>>(res);
+  const { id, tiles, tilejson } = body;
+  if (!isText(id) || !isText(tiles) || !isText(tilejson)) throw new Error('The tile server sent a selection this page cannot read.');
+  return { id, datasetId, tiles: `${BASE}${tiles}`, tilejson: `${BASE}${tilejson}` };
+}
+
+// A mosaic tile is 512 px (`tileSize.ts`); the TileJSON of the same selection names no size, the tiler gives its own.
+export function buildMosaicTileTemplate(selection: MosaicSelection): string {
+  return `${selection.tiles}?tilesize=${MOSAIC_TILE_SIZE}`;
 }
 
 // What the client reads of a mosaic's TileJSON: the surface (`bounds`), the levels it
@@ -392,19 +408,14 @@ export interface MosaicTileJson {
 
 const isNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
-// A cold mosaic of 64 scenes is about 5 s (plan §2.8); a time step waits for its TileJSON and draws
-// nothing meanwhile, so an answer that never comes must end in an error, not in a map that stays empty.
+// A time step waits for its TileJSON and draws nothing meanwhile, so an answer that never comes must end in an error, not in a
+// map that stays empty. The creation of a selection of a thousand cold scenes takes the time (the tiler asks the source in batches).
 export const MOSAIC_TILEJSON_TIMEOUT_MS = 60_000;
 
-// Loading it also fills the tiler's item cache with every scene of the mosaic once,
-// so the tiles that follow find them there (plan §4.3) — which is why the map asks
-// for it before it asks for a single tile.
-export async function fetchMosaicTileJson(
-  datasetId: string,
-  itemIds: readonly string[],
-  asset: string,
-): Promise<MosaicTileJson> {
-  const url = `${mosaicBase(datasetId)}/${TILE_MATRIX_SET}/tilejson.json?${mosaicQuery(itemIds, asset)}`;
+// The TileJSON of a selection answers from what the tiler stored at the creation, without a request to the source. `HttpError` `410`:
+// the selection expired, and it is created again from its list (`mosaicSelection.ts`).
+export async function fetchMosaicTileJson(selection: MosaicSelection): Promise<MosaicTileJson> {
+  const url = selection.tilejson;
   const body = await jsonOrThrow<Record<string, unknown>>(
     await fetch(url, { signal: AbortSignal.timeout(MOSAIC_TILEJSON_TIMEOUT_MS) }),
   );
@@ -495,41 +506,16 @@ export function buildOperatorStatisticsUrl(
   return `${itemBase(datasetId, itemId)}/statistics?${operatorQuery(assets, steps, band)}`;
 }
 
-// The mosaic of a pass with the steps over it (NM4-04, `api/mosaic_tiles.py`): the scenes as one `item` each,
-// sorted by id like the mosaic without steps, and the assets and steps as the tile of one scene takes them.
-// The order of the scenes in the URL does not count, so the same pass is the same URL. Never an AOI, never an id
-// of a job or a recipe.
-export function buildMosaicOperatorTileTemplate(
-  datasetId: string,
-  itemIds: readonly string[],
-  assets: readonly string[],
-  steps: readonly TileStep[],
-  band: ShownBands = null,
-): string {
-  return `${mosaicBase(datasetId)}/tiles/${TILE_MATRIX_SET}/{z}/{x}/{y}?${mosaicOperatorQuery(itemIds, assets, steps, band)}&tilesize=${MOSAIC_TILE_SIZE}`;
+// The mosaic of a selection with the steps over it (NM4-04, `api/mosaic_tiles.py`): the assets are the selection's, the steps are
+// `op`, `op_version` and `params` once each, as the tile of one scene takes them. Never an AOI, never an id of a job or a recipe.
+export function buildMosaicOperatorTileTemplate(selection: MosaicSelection, steps: readonly TileStep[], band: ShownBands = null): string {
+  return `${selection.tiles}?${operatorQuery([], steps, band)}&tilesize=${MOSAIC_TILE_SIZE}`;
 }
 
-// Its TileJSON: the cheap question, with the refusals of the tiles and `earthx:order`, the scenes in the order a
-// tile reads them.
-export function buildMosaicOperatorTileJsonUrl(
-  datasetId: string,
-  itemIds: readonly string[],
-  assets: readonly string[],
-  steps: readonly TileStep[],
-  band: ShownBands = null,
-): string {
-  return `${mosaicBase(datasetId)}/${TILE_MATRIX_SET}/tilejson.json?${mosaicOperatorQuery(itemIds, assets, steps, band)}`;
-}
-
-function mosaicOperatorQuery(
-  itemIds: readonly string[],
-  assets: readonly string[],
-  steps: readonly TileStep[],
-  band: ShownBands,
-): string {
-  const items = new URLSearchParams();
-  for (const id of [...itemIds].sort()) items.append('item', id);
-  return `${items.toString()}&${operatorQuery(assets, steps, band)}`;
+// Its TileJSON: the cheap question, with the refusals of the tiles (a step, a band, a unit that differs) and `earthx:order`, the
+// scenes in the order a tile reads them.
+export function buildMosaicOperatorTileJsonUrl(selection: MosaicSelection, steps: readonly TileStep[], band: ShownBands = null): string {
+  return `${selection.tilejson}?${operatorQuery([], steps, band)}`;
 }
 
 function operatorQuery(assets: readonly string[], steps: readonly TileStep[], band: ShownBands): string {

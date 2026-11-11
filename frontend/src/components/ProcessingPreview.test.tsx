@@ -12,6 +12,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DatasetOption } from '../datasets';
 import s2 from '../fixtures/processes/sentinel-2-c1-l2a.json';
 import type { MapLayer } from '../layers';
+import { selectionIdOf, selectionServer } from '../fixtures/selectionTiler';
+import { resetSelections } from '../mosaicSelection';
 import { DEFAULT_RANGE } from '../processingPreview';
 import { layerProcessBlock, orderView, useProcessingStore } from '../processingStore';
 import { resultRender, resultStats } from '../resultLayer';
@@ -120,6 +122,8 @@ let catalog: Record<string, StacItem | number>;
 // Requests held back until a test answers them.
 let pending: Record<string, Promise<Response> | undefined>;
 let fetchMock: ReturnType<typeof vi.fn>;
+// The part of the tiler that creates the selections of the mosaics (`POST /collections/{dataset}/mosaic`).
+let selections: ReturnType<typeof selectionServer>;
 // What the tiler answers to the TileJSON of a chain (the question of `probeChain`): the chain is fine by default.
 let tilejson: (url: string) => Response;
 // What it answers to the statistics of the steps (the measure of the preview): the values of an index by default.
@@ -146,11 +150,14 @@ beforeEach(() => {
   catalog = {};
   pending = {};
   tilejson = () => json({ tilejson: '3.0.0' });
+  resetSelections();
+  selections = selectionServer();
   statistics = () => measured({ b1: INDEX_VALUES });
   areaStatistics = () => areaAnswer([areaBand(INDEX_VALUES)]);
   fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     if (url === '/processing/processes/recipe?dataset=sentinel-2-c1-l2a') return json(s2);
     if (init?.method === 'POST' && url.endsWith('/statistics')) return areaStatistics(JSON.parse(String(init.body)));
+    if (/^\/collections\/[^/]+\/mosaic$/.test(url)) return (await selections.answer(url, init))!;
     if (url.includes('/tilejson.json')) return tilejson(url);
     if (url.includes('/statistics?')) return statistics(url);
     if (pending[url]) return pending[url];
@@ -1865,9 +1872,10 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
     const preview = store().preview!;
     expect(preview.mosaics).toHaveLength(1);
     const url = query(preview.mosaics[0].url);
-    expect(preview.mosaics[0].url.split('?')[0]).toBe('/collections/sentinel-2-c1-l2a/mosaic/tiles/WebMercatorQuad/{z}/{x}/{y}');
-    expect(url.searchParams.getAll('item')).toEqual(['S2B_A', 'S2B_B', 'S2B_C']);
-    expect(url.searchParams.getAll('asset')).toEqual(['red', 'nir']);
+    const id = selectionIdOf('sentinel-2-c1-l2a', ['red', 'nir'], ['S2B_A', 'S2B_B', 'S2B_C']);
+    expect(preview.mosaics[0].url.split('?')[0]).toBe(`/collections/sentinel-2-c1-l2a/mosaic/${id}/tiles/WebMercatorQuad/{z}/{x}/{y}`);
+    expect(selections.created.map((c) => [c.items, c.assets])).toEqual([[['S2B_A', 'S2B_B', 'S2B_C'], ['nir', 'red']]]);
+    expect(url.searchParams.has('item') || url.searchParams.has('asset')).toBe(false);
     expect(url.searchParams.getAll('op')).toEqual(['band_math']);
     expect(JSON.parse(url.searchParams.get('params')!)).toEqual({ expression: '(nir - red) / (nir + red)', name: 'result' });
     expect(preview.mosaics[0]).toMatchObject({ minZoom: 5, order: ['S2B_B', 'S2B_C', 'S2B_A'] });
@@ -1902,7 +1910,7 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
     await typeNdvi();
     const preview = store().preview!;
     expect(preview.mosaics).toEqual([]);
-    expect(preview.scenes.map((s) => [s.id, s.below])).toEqual([['S2B_A', undefined], ['S2B_B', undefined], ['S2B_C', undefined]]);
+    expect(preview.scenes.map((s) => s.id)).toEqual(['S2B_A', 'S2B_B', 'S2B_C']);
     expect(preview.perScene).toBe(true);
     expect(panelBadge()?.getAttribute('data-tip')).toBe(HINT);
     expect(dockBadge()?.getAttribute('data-tip')).toBe(HINT);
@@ -1925,6 +1933,46 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
     await typeNdvi();
     expect(store().preview).toMatchObject({ mosaics: [], perScene: true });
     expect(panelBadge()?.getAttribute('data-tip')).toBe(HINT);
+  });
+
+  it('draws the scenes one by one, and asks nothing about a mosaic, when the tiler refuses to create the selection', async () => {
+    selections = selectionServer({ create: () => reply(422, { detail: 'the scenes of the mosaic scale red differently' }) });
+    selectWide([scene('S2B_A'), scene('S2B_B')]);
+    await typeNdvi();
+    expect(store().preview).toMatchObject({ mosaics: [], perScene: true, needs: [] });
+    expect(selections.created).toHaveLength(1);
+    expect(asks('/mosaic/')).toHaveLength(0);
+    // Asked for no more while the preview stays.
+    act(() => useProcessingStore.setState({ range: { vmin: '-0.5', vmax: '1', colormap: 'rdylgn' } }));
+    await afterDebounce();
+    await flush();
+    expect(selections.created).toHaveLength(1);
+  });
+
+  it('creates the selection of a job once, however often the range changes', async () => {
+    tilejson = taking(['S2B_B', 'S2B_A']);
+    selectWide([scene('S2B_A'), scene('S2B_B')]);
+    await typeNdvi();
+    act(() => useProcessingStore.setState({ range: { vmin: '-0.5', vmax: '1', colormap: 'rdylgn' } }));
+    await afterDebounce();
+    await flush();
+    expect(selections.created).toHaveLength(1);
+    expect(store().preview!.mosaics).toHaveLength(1);
+  });
+
+  it('creates the selection again, and asks the TileJSON again, when the selection has expired (410)', async () => {
+    let calls = 0;
+    tilejson = (url) => {
+      if (!url.includes('/mosaic/')) return json({ tilejson: '3.0.0' });
+      return ++calls === 1 ? reply(410, { detail: 'no selection: it expired or never existed' }) : json({ tilejson: '3.0.0', 'earthx:order': ['S2B_B', 'S2B_A'] });
+    };
+    selectWide([scene('S2B_A'), scene('S2B_B')]);
+    await typeNdvi();
+    expect(selections.created.map((c) => c.id)).toHaveLength(2);
+    expect(new Set(selections.created.map((c) => c.id)).size).toBe(1); // the same list, the same id
+    expect(asks('/mosaic/')).toHaveLength(2);
+    expect(store().preview).toMatchObject({ perScene: false });
+    expect(store().preview!.mosaics[0].order).toEqual(['S2B_B', 'S2B_A']);
   });
 
   it('draws the scenes one by one when the network fails for the mosaic', async () => {
@@ -2035,7 +2083,7 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
   });
 
   it('draws one mosaic for each pass with "One job per pass", and a pass of one scene alone', async () => {
-    tilejson = (url) => (url.includes('/mosaic/') ? json({ tilejson: '3.0.0', 'earthx:order': query(url).searchParams.getAll('item').reverse() }) : json({ tilejson: '3.0.0' }));
+    tilejson = (url) => (url.includes('/mosaic/') ? json({ tilejson: '3.0.0', 'earthx:order': [...(selections.selections.get(/\/mosaic\/([0-9a-f]{32})\//.exec(url)![1])?.items ?? [])].reverse() }) : json({ tilejson: '3.0.0' }));
     const items = ['S2B_A', 'S2B_B', 'S2B_C', 'S2B_D', 'S2B_E'].map((id) => scene(id));
     select(items);
     useAppStore.setState({
@@ -2059,10 +2107,10 @@ describe('the preview of a mosaic job (NM4-04b)', () => {
     await afterDebounce();
     await flush();
     const preview = store().preview!;
-    expect(preview.mosaics.map((m) => query(m.url).searchParams.getAll('item'))).toEqual([
-      ['S2B_A', 'S2B_B'],
-      ['S2B_C', 'S2B_D'],
-    ]);
+    expect(selections.created.map((c) => c.items)).toEqual([['S2B_A', 'S2B_B'], ['S2B_C', 'S2B_D']]);
+    expect(preview.mosaics.map((m) => /\/mosaic\/([0-9a-f]{32})\//.exec(m.url)![1])).toEqual(
+      [['S2B_A', 'S2B_B'], ['S2B_C', 'S2B_D']].map((pair) => selectionIdOf('sentinel-2-c1-l2a', ['red', 'nir'], pair)),
+    );
     expect(preview.mosaics.map((m) => m.order)).toEqual([['S2B_B', 'S2B_A'], ['S2B_D', 'S2B_C']]);
     expect(preview.scenes.map((s) => s.id)).toEqual(['S2B_E']);
     expect(preview.perScene).toBe(false);

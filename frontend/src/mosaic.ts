@@ -7,20 +7,21 @@
 //            tiler, or a mosaic the tiler refused;
 //   pending  a mosaic that is not described yet: nothing is drawn, because the
 //            scenes drawn meanwhile would each ask for tiles the mosaic then replaces;
-//   mosaic   the mosaic from its first level up — the dataset's, since M5-30b (adr/0032 §6.2) — and, below it, the
-//            single scenes stacked in the order the mosaic reads them (`earthx:order`), so the scene on top of an
-//            overlap does not change when the map zooms across that level.
+//   mosaic   the mosaic at every level its dataset is released for (adr/0032 §6.2): what one tile reads is bounded by its
+//            budget, and a tile over it shows a part without a mark on the map.
+//
+// A mosaic is a selection of the tiler (`mosaicSelection.ts`, adr/0032 §10.2). Its key here is logical — dataset, assets and
+// the sorted ids of its scenes — and the URL the map draws is the one of the selection created for that key.
 
-import { buildMosaicTileTemplate } from './api';
-import { firstZoomOf } from './tileSize';
-import type { DownloadedInfo, TimeStepGroup } from './types';
+import type { MosaicSelection } from './api';
+import { selectionKeyOf } from './mosaicSelection';
+import type { Bbox, DownloadedInfo, TimeStepGroup } from './types';
 
-// Mirror `earthx.api.mosaic_tiles` (`MIN_MOSAIC_ITEMS`, `MAX_MOSAIC_ITEMS`, `MAX_MOSAIC_OPERATOR_ASSETS`,
-// `MAX_MOSAIC_REQUEST_BYTES`); the tiler answers `400` (`414` for the length) outside them. They are not read from the
-// TileJSON, which comes only after the URL is built. A mosaic has every level its dataset is released for: what one
-// tile reads is bounded by its budget (adr/0032 §6.2), and a tile over it shows a part without a mark on the map.
+// Mirror `earthx.api.mosaic_tiles` (`MIN_MOSAIC_ITEMS`, `MAX_SELECTION_ITEMS`, `MAX_MOSAIC_OPERATOR_ASSETS`,
+// `MAX_MOSAIC_REQUEST_BYTES`); the tiler answers `400` or `413` outside them (`414` for the length). A pass of more scenes
+// than a selection takes is drawn scene by scene.
 export const MIN_MOSAIC_SCENES = 2;
-export const MAX_MOSAIC_SCENES = 64;
+export const MAX_SELECTION_ITEMS = 2000;
 // A mosaic tile with steps reads at most this many assets of each scene.
 export const MAX_MOSAIC_OPERATOR_ASSETS = 4;
 // Path and query of a mosaic request as they arrive at the tiler: the longest a proxy or a CDN in front of it passes.
@@ -46,15 +47,19 @@ export type PlannedRaster = Pick<DownloadedInfo, 'tileUrl' | 'bounds' | 'minZoom
 export interface SceneOrder {
   order: string[];
 }
+// The selection of a pass for the assets an index reads (`indexKeyOf`), which the tile of the index is asked from.
+export interface SelectionInfo {
+  selection: MosaicSelection;
+}
 export interface MosaicInfo extends SceneOrder, Pick<DownloadedInfo, 'tileUrl' | 'bounds' | 'minZoom' | 'maxZoom'> {}
 // The mosaics of the passes, by the template of each (`mosaicTemplateOf`), and next to them, by `orderKeyOf`, the order
 // the tiler gives the scenes of a pass it draws one by one (NM4-24).
-export type Mosaics = Record<string, MosaicInfo | SceneOrder | null>;
+export type Mosaics = Record<string, MosaicInfo | SceneOrder | SelectionInfo | null>;
 
 export type PassView =
   | { kind: 'scenes'; order?: readonly string[] }
   | { kind: 'pending' }
-  | { kind: 'mosaic'; rasters: PlannedRaster[] }; // bottom to top
+  | { kind: 'mosaic'; rasters: [PlannedRaster] };
 
 // The scenes of a view split by the time step each belongs to. A scene no group holds (a layer of an
 // earlier search) stands alone: its pass is unknown, and the tiler takes one pass per mosaic.
@@ -79,23 +84,28 @@ export function stackLikeView<T>(firstOnTop: readonly T[]): T[] {
 }
 
 // The key of the order of a pass's scenes in `Mosaics`: the one the tiler gives where there is no mosaic to follow, because
-// the pass is too big for one (over 64) or the tiler refused it.
+// the pass is too big for a selection or the tiler refused it.
 export function orderKeyOf(datasetId: string, entries: SceneEntry[]): string | null {
-  return entries.length >= MIN_MOSAIC_SCENES ? `order|${buildMosaicTileTemplate(datasetId, entries.map(([id]) => id), entries[0][1].asset)}` : null;
+  return entries.length >= MIN_MOSAIC_SCENES ? `order|${selectionKeyOf(datasetId, [entries[0][1].asset], entries.map(([id]) => id))}` : null;
 }
 
 export function isMosaicPass(entries: SceneEntry[]): boolean {
   const asset = entries[0]?.[1].asset;
   return (
     entries.length >= MIN_MOSAIC_SCENES &&
-    entries.length <= MAX_MOSAIC_SCENES &&
+    entries.length <= MAX_SELECTION_ITEMS &&
     entries.every(([, info]) => info.asset === asset)
   );
 }
 
-// The mosaic's tile template — also its key in `Mosaics` — or `null` for a pass that is no mosaic.
-export function mosaicTemplateOf(datasetId: string, entries: SceneEntry[]): string | null {
-  return isMosaicPass(entries) ? buildMosaicTileTemplate(datasetId, entries.map(([id]) => id), entries[0][1].asset) : null;
+// The mosaic's key in `Mosaics`, or `null` for a pass that is no mosaic.
+export function mosaicKeyOf(datasetId: string, entries: SceneEntry[]): string | null {
+  return isMosaicPass(entries) ? `mosaic|${selectionKeyOf(datasetId, [entries[0][1].asset], entries.map(([id]) => id))}` : null;
+}
+
+// The key of the selection of a pass for the assets an index reads: what the selection of the mosaic with steps is made from.
+export function indexKeyOf(datasetId: string, assets: readonly string[], entries: SceneEntry[]): string {
+  return `index|${selectionKeyOf(datasetId, assets, entries.map(([id]) => id))}`;
 }
 
 // Of all the mosaics known, those the passes of this view ask for: the view is drawn again when one of
@@ -105,10 +115,12 @@ export function mosaicsOfView(
   datasetId: string | null,
   entries: SceneEntry[],
   groups: readonly TimeStepGroup[] | undefined,
+  indexAssets: readonly string[] | null = null,
 ): Mosaics {
   const picked: Mosaics = {};
   for (const pass of passesOf(entries, groups)) {
-    for (const key of datasetId ? [mosaicTemplateOf(datasetId, pass), orderKeyOf(datasetId, pass)] : []) {
+    const keys = datasetId ? [mosaicKeyOf(datasetId, pass), orderKeyOf(datasetId, pass), indexAssets && isMosaicPass(pass) ? indexKeyOf(datasetId, indexAssets, pass) : null] : [];
+    for (const key of keys) {
       if (key && key in mosaics) picked[key] = mosaics[key];
     }
   }
@@ -121,33 +133,17 @@ export function sameMosaics(a: Mosaics, b: Mosaics): boolean {
 }
 
 // The scenes of a pass drawn one by one, in the order the tiler gave them, when it did (the others keep their place).
-const scenesInOrder = (order: SceneOrder | null | undefined): PassView => (order ? { kind: 'scenes', order: order.order } : { kind: 'scenes' });
+const scenesInOrder = (order: Mosaics[string] | undefined): PassView => (order && 'order' in order ? { kind: 'scenes', order: order.order } : { kind: 'scenes' });
 
 export function viewOfPass(datasetId: string | null, entries: SceneEntry[], mosaics: Mosaics | undefined): PassView {
-  const template = datasetId && mosaics ? mosaicTemplateOf(datasetId, entries) : null;
+  const key = datasetId && mosaics ? mosaicKeyOf(datasetId, entries) : null;
   const asked = datasetId && mosaics ? orderKeyOf(datasetId, entries) : null;
   const order = asked && mosaics ? mosaics[asked] : null;
-  if (!template || !mosaics) return scenesInOrder(order);
-  const mosaic = mosaics[template];
+  if (!key || !mosaics) return scenesInOrder(order);
+  const mosaic = mosaics[key];
   if (mosaic === undefined) return { kind: 'pending' };
   if (mosaic === null || !('tileUrl' in mosaic)) return scenesInOrder(order);
-  const rank = new Map(mosaic.order.map((id, i) => [id, i]));
-  const rankOf = (id: string) => rank.get(id) ?? mosaic.order.length;
-  const below: PlannedRaster[] = entries
-    .filter(([, info]) => info.minZoom < mosaic.minZoom)
-    .sort(([a], [b]) => rankOf(a) - rankOf(b))
-    .reverse() // the first the mosaic reads ends up topmost
-    .map(([, info]) => ({
-      tileUrl: info.tileUrl,
-      bounds: info.bounds,
-      minZoom: info.minZoom,
-      maxZoom: mosaic.minZoom - 1,
-      // A source's `maxzoom` is a tile level, a layer's `maxzoom` a map zoom: the scenes step aside where the mosaic (512 px, level
-      // L from map zoom L - 0.5, `tileSize.ts`) is first asked for. Between 6.5 and 7.5 they are level 7 stretched (their own
-      // level 8 would come from 6.5 on).
-      hideFrom: firstZoomOf(mosaic.minZoom, mosaic.tileUrl),
-    }));
-  return { kind: 'mosaic', rasters: [...below, mosaic] };
+  return { kind: 'mosaic', rasters: [mosaic] };
 }
 
 // The scenes of a pass first on top, as the view stacks them: in the order the tiler gave for the pass when it did, else in the
@@ -165,11 +161,10 @@ export function orderedPass(datasetId: string | null, entries: SceneEntry[], mos
   return view.kind === 'scenes' ? inStackOrder(entries, view.order) : entries;
 }
 
-// A time step too big for one mosaic is drawn scene by scene, and the map draws only so many of those.
-export function oversizeNote(passes: SceneEntry[][], notDrawn: number): string | null {
-  const biggest = Math.max(0, ...passes.map((pass) => pass.length));
-  if (biggest <= MAX_MOSAIC_SCENES) return null;
-  return `A time step of ${biggest} scenes is more than one mosaic takes (${MAX_MOSAIC_SCENES}); its scenes are drawn one by one${
-    notDrawn > 0 ? `, ${notDrawn} of them not at all` : ''
-  }.`;
+// The scenes of a pass drawn one by one, of which the map draws only so many: those whose outline meets the part of the world in
+// view first, in the order they have, then the others (`adr/0032` §10.4). Without a view the order alone counts.
+export function chosenByView<T extends SceneEntry>(entries: readonly T[], view: Bbox | null, limit: number): T[] {
+  const meets = ([, info]: SceneEntry) =>
+    view !== null && info.bounds[0] <= view[2] && info.bounds[2] >= view[0] && info.bounds[1] <= view[3] && info.bounds[3] >= view[1];
+  return [...entries.filter((entry) => meets(entry)), ...entries.filter((entry) => !meets(entry))].slice(0, Math.max(0, limit));
 }

@@ -22,9 +22,8 @@ const rasterOverlay = (raster: PlannedRaster, render: AppliedRender, clip: GeoJS
   ...(raster.hideFrom === undefined ? {} : { hideFrom: raster.hideFrom }),
 });
 
-// The overlays one pass is pinned or cropped as: its mosaic and the scenes below the mosaic's first
-// level, else one raster per scene (`mosaic.ts`). `null` while the pass's mosaic is on its way — a
-// pinned layer is a picture and is not made from half of one.
+// The overlays one pass is pinned or cropped as: its mosaic, else one raster per scene (`mosaic.ts`). `null` while the pass's
+// mosaic, or the selection an index over it is asked from, is on its way — a pinned layer is a picture and is not made from half of one.
 export function overlaysOfPass(
   datasetId: string,
   entries: SceneEntry[],
@@ -40,8 +39,9 @@ export function overlaysOfPass(
   if (view.kind === 'pending') return null;
   // Scene by scene the pass lies in the order of the mosaic, as in the crop and the export (NM4-24), not in the order of the ticks.
   const plain = view.kind === 'mosaic' ? view.rasters : stackLikeView(inStackOrder(entries, view.order).map(([, info]) => info));
-  const rasters = index ? indexRastersOfPass(plain, entries, datasetId, index).rasters : plain;
-  return [...(index ? [] : underlays), ...rasters.map((raster) => rasterOverlay(raster, render, clip))];
+  const planned = index ? indexRastersOfPass(plain, entries, datasetId, index, mosaics) : null;
+  if (planned?.waiting) return null;
+  return [...(index ? [] : underlays), ...(planned?.rasters ?? plain).map((raster) => rasterOverlay(raster, render, clip))];
 }
 
 // The quicklooks of these scenes, bottom to top like the view lays them (`underlay.ts`).

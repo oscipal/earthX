@@ -5,6 +5,7 @@ import {
   buildTileUrl,
   ensureBaseLayers,
   setCoverageDisplay,
+  rechooseScenes,
   syncFocusRaster,
   syncHighlight,
   syncLayers,
@@ -14,8 +15,7 @@ import {
   syncSelectionHighlight,
 } from './mapLayers';
 import type { LayerOverlay, MapLayer } from './layers';
-import { buildMosaicTileTemplate } from './api';
-import { mosaicTemplateOf } from './mosaic';
+import { mosaicKeyOf } from './mosaic';
 import type { Mosaics, SceneEntry } from './mosaic';
 import { liveMap, lyr, pinned } from './fixtures/liveMap';
 import type { AppliedRender, DownloadedInfo, StacItem, TimeStepGroup } from './types';
@@ -75,7 +75,7 @@ interface AddedSource {
   spec: Record<string, unknown>;
 }
 
-function fakeMap() {
+function fakeMap(view?: [number, number, number, number]) {
   const sources: AddedSource[] = [];
   const layers: string[] = [];
   const layerSpecs: { id: string; source?: string; maxzoom?: number }[] = [];
@@ -85,7 +85,10 @@ function fakeMap() {
   // sources, keyed by source id — this is how `setCoverageDisplay` and the
   // selection highlight (`SEL_SRC` = 'mosaicsel-src') publish their GeoJSON.
   const data: Record<string, GeoJSON.GeoJSON> = {};
+  // The part of the world in view: `syncFocusRaster` chooses the scenes drawn one by one by it (adr/0032 §10.4).
+  let seen = view;
   const map = {
+    getBounds: () => (seen ? { getWest: () => seen![0], getSouth: () => seen![1], getEast: () => seen![2], getNorth: () => seen![3] } : undefined),
     getSource: (id: string) =>
       id.startsWith('m-') ? undefined : { setData: (d: GeoJSON.GeoJSON) => (data[id] = d) },
     getLayer: () => undefined,
@@ -97,7 +100,8 @@ function fakeMap() {
       layerSpecs.push(layer);
     },
   };
-  return { map, sources, layers, layerSpecs, data, removedSources, removedLayers };
+  const moveTo = (next: [number, number, number, number]) => (seen = next);
+  return { map, sources, layers, layerSpecs, data, removedSources, removedLayers, moveTo };
 }
 
 const CAPABILITIES = {
@@ -332,8 +336,7 @@ describe('syncFocusRaster', () => {
   });
 });
 
-// M4-17c: a time step of several scenes is one surface from z8 up, and the single scenes under it
-// below that, stacked the way the mosaic reads them.
+// M4-17c, M5-30b: a time step of several scenes is one surface at every level its dataset is released for.
 describe('syncFocusRaster with mosaics', () => {
   const DATASET = 'sentinel-2-c1-l2a';
   const group = (ids: string[]): TimeStepGroup => ({
@@ -373,12 +376,13 @@ describe('syncFocusRaster with mosaics', () => {
     return d;
   };
   const entriesOf = (downloaded: Record<string, DownloadedInfo>) => Object.entries(downloaded) as SceneEntry[];
-  const loaded = (downloaded: Record<string, DownloadedInfo>, order: string[]): Mosaics => {
-    const tileUrl = mosaicTemplateOf(DATASET, entriesOf(downloaded)) as string;
-    return { [tileUrl]: { tileUrl, bounds: [9, 46, 12, 49], minZoom: 8, maxZoom: 19, order } };
+  // What the page holds once the selection of a pass is created: the URL of the selection under the key of the pass.
+  const loaded = (downloaded: Record<string, DownloadedInfo>, order: string[], id = '0123456789abcdef0123456789abcdef'): Mosaics => {
+    const tileUrl = `/collections/${DATASET}/mosaic/${id}/tiles/WebMercatorQuad/{z}/{x}/{y}?tilesize=512`;
+    return { [mosaicKeyOf(DATASET, entriesOf(downloaded)) as string]: { tileUrl, bounds: [9, 46, 12, 49], minZoom: 8, maxZoom: 19, order } };
   };
-  const draw = (state: Partial<Parameters<typeof syncFocusRaster>[1]>) => {
-    const fake = fakeMap();
+  const draw = (state: Partial<Parameters<typeof syncFocusRaster>[1]>, view?: [number, number, number, number]) => {
+    const fake = fakeMap(view);
     syncFocusRaster(fake.map as never, {
       render: {},
       showDownloaded: true,
@@ -391,27 +395,20 @@ describe('syncFocusRaster with mosaics', () => {
   };
   const tileUrlOf = (source: AddedSource) => (source.spec.tiles as string[])[0];
 
-  it('draws a time step as one surface above z8, under the single scenes that step aside from there', () => {
+  it('draws a time step as one surface from the URL of its selection, with no scene under it', () => {
     const downloaded = downloadedOf('A', 'B', 'C');
     const { rasters, layerSpecs } = draw({
       downloaded,
       groups: [group(['A', 'B', 'C'])],
       mosaics: loaded(downloaded, ['B', 'C', 'A']),
     });
-    expect(rasters).toHaveLength(4);
-    const mosaic = rasters[3];
-    expect(tileUrlOf(mosaic)).toBe(buildMosaicTileTemplate(DATASET, ['A', 'B', 'C'], 'visual'));
+    expect(rasters).toHaveLength(1);
+    const [mosaic] = rasters;
+    expect(tileUrlOf(mosaic)).toBe(`/collections/${DATASET}/mosaic/0123456789abcdef0123456789abcdef/tiles/WebMercatorQuad/{z}/{x}/{y}?tilesize=512`);
+    expect(tileUrlOf(mosaic)).not.toContain('item=');
     expect([mosaic.spec.bounds, mosaic.spec.minzoom, mosaic.spec.maxzoom]).toEqual([[9, 46, 12, 49], 8, 19]);
     expect(layerSpecs.find((l) => l.source === mosaic.id)?.maxzoom).toBeUndefined();
-    // bottom to top: the scene the mosaic reads last first, the one it reads first under the mosaic
-    expect(rasters.slice(0, 3).map((r) => tileUrlOf(r).split('/items/')[1].split('/')[0])).toEqual(['A', 'C', 'B']);
-    // The mosaic is 512 px and asked for from map zoom 7.5, the scenes are 256 px and step aside there (NM4-29b).
     expect(mosaic.spec.tileSize).toBe(512);
-    for (const single of rasters.slice(0, 3)) {
-      expect(single.spec.tileSize).toBe(256);
-      expect(single.spec.maxzoom).toBe(7);
-      expect(layerSpecs.find((l) => l.source === single.id)?.maxzoom).toBe(7.5);
-    }
   });
 
   it('draws nothing for a time step while its mosaic is on its way, instead of every scene', () => {
@@ -421,7 +418,7 @@ describe('syncFocusRaster with mosaics', () => {
 
   it('draws the scenes one by one once the tiler has refused the mosaic', () => {
     const downloaded = downloadedOf('A', 'B');
-    const refused = { [mosaicTemplateOf(DATASET, entriesOf(downloaded)) as string]: null };
+    const refused = { [mosaicKeyOf(DATASET, entriesOf(downloaded)) as string]: null };
     expect(draw({ downloaded, groups: [group(['A', 'B'])], mosaics: refused }).rasters).toHaveLength(2);
   });
 
@@ -441,14 +438,7 @@ describe('syncFocusRaster with mosaics', () => {
     const urls = rasters.map(tileUrlOf);
     expect(urls.filter((u) => u.includes('/mosaic/'))).toHaveLength(2);
     expect(urls.filter((u) => u.includes('/items/X/'))).toHaveLength(1);
-    expect(rasters).toHaveLength(2 * 3 + 1);
-  });
-
-  it('leaves the scenes below the mosaic out for a dataset released from the mosaic level on', () => {
-    const zarr = Object.fromEntries(['A', 'B'].map((id) => [id, { ...sceneInfo(id), minZoom: 8, maxZoom: 14 }]));
-    const tileUrl = mosaicTemplateOf(DATASET, entriesOf(zarr)) as string;
-    const mosaics = { [tileUrl]: { tileUrl, bounds: [9, 46, 12, 49] as [number, number, number, number], minZoom: 8, maxZoom: 14, order: ['A', 'B'] } };
-    expect(draw({ downloaded: zarr, groups: [group(['A', 'B'])], mosaics }).rasters).toHaveLength(1);
+    expect(rasters).toHaveLength(3);
   });
 
   it('wraps the mosaic URL in the AOI clip like any other, with no coordinate in it', () => {
@@ -463,7 +453,7 @@ describe('syncFocusRaster with mosaics', () => {
     });
     const mosaic = tileUrlOf(rasters[rasters.length - 1]);
     expect(mosaic.startsWith('earthx-clip://')).toBe(true);
-    expect(mosaic).toContain('/mosaic/tiles/');
+    expect(mosaic).toContain('/mosaic/0123456789abcdef0123456789abcdef/tiles/');
     expect(mosaic).toContain('rescale=0%2C3000');
     expect(mosaic).not.toContain('10.987654');
     expect(mosaic).not.toContain('47.123456');
@@ -475,35 +465,67 @@ describe('syncFocusRaster with mosaics', () => {
     expect(sources).toHaveLength(0);
   });
 
-  it('draws a time step too big for a mosaic scene by scene, the first 40', () => {
-    const ids = Array.from({ length: 70 }, (_, i) => `S${String(i).padStart(2, '0')}`);
-    const downloaded = downloadedOf(...ids);
-    const { rasters } = draw({ downloaded, groups: [group(ids)], mosaics: {} });
-    expect(rasters).toHaveLength(40);
-    expect(rasters.map(tileUrlOf).some((u) => u.includes('/items/S00/'))).toBe(true);
-    expect(rasters.map(tileUrlOf).some((u) => u.includes('/items/S40/'))).toBe(false);
-  });
-
-  it('keeps every mosaic and leaves no layer behind when the ids run short', () => {
-    const passIds = (p: number) => Array.from({ length: 64 }, (_, i) => `P${p}S${String(i).padStart(2, '0')}`);
-    const all = [0, 1, 2, 3].map(passIds);
-    const downloaded = downloadedOf(...all.flat(), 'X');
-    const mosaics = all.reduce<Mosaics>((acc, ids) => ({ ...acc, ...loaded(downloadedOf(...ids), ids) }), {});
-    const fake = fakeMap();
-    const state = { downloaded, groups: all.map(group), mosaics, render: {}, showDownloaded: true, items: [], dataset: dataset() };
-    syncFocusRaster(fake.map as never, state);
-    const urls = fake.sources.filter((src) => src.spec.type === 'raster').map(tileUrlOf);
-    expect(urls.filter((u) => u.includes('/mosaic/'))).toHaveLength(4);
-    expect(urls).toHaveLength(5); // the single scenes under the mosaics were given up, X is one of its own
-    // every id it handed out is one the next sync clears (`clearDynamicMosaic` goes up to 199)
-    expect(fake.layers.every((id) => Number(id.split('-').pop()) < 200)).toBe(true);
-  });
-
-  it('takes a time step of 64 scenes whole, with every scene under it', () => {
-    const ids = Array.from({ length: 64 }, (_, i) => `S${String(i).padStart(2, '0')}`);
+  it('takes a time step of hundreds of scenes as one mosaic: the URL no longer limits it (adr/0032 §10.2)', () => {
+    const ids = Array.from({ length: 500 }, (_, i) => `S${String(i).padStart(3, '0')}`);
     const downloaded = downloadedOf(...ids);
     const { rasters } = draw({ downloaded, groups: [group(ids)], mosaics: loaded(downloaded, ids) });
-    expect(rasters).toHaveLength(65);
+    expect(rasters).toHaveLength(1);
+    expect(tileUrlOf(rasters[0]).length).toBeLessThan(200);
+  });
+
+  // A pass that cannot be a mosaic — scenes of different assets, the tiler's refusal — is drawn scene by scene: 70 scenes in a row,
+  // a degree wide each, from west to east.
+  const row = Array.from({ length: 70 }, (_, i) => `S${String(i).padStart(2, '0')}`);
+  const rowDownloaded = Object.fromEntries(
+    row.map((id, i) => [id, { ...sceneInfo(id, [i, 47, i + 1, 48]), asset: i === 0 ? 'visual' : 'thumbnail' }]),
+  );
+  const drawnScenes = (rasters: AddedSource[]) => rasters.map((r) => tileUrlOf(r).split('/items/')[1].split('/')[0]).sort();
+
+  it('draws the scenes of a pass that is no mosaic one by one, the 40 that lie in view first', () => {
+    const { rasters } = draw({ downloaded: rowDownloaded, groups: [group(row)], mosaics: {} }, [60.2, 47.2, 64.8, 47.8]);
+    expect(rasters).toHaveLength(40);
+    expect(drawnScenes(rasters)).toContain('S60');
+    expect(drawnScenes(rasters)).toContain('S64');
+    expect(drawnScenes(rasters)).toContain('S00'); // then the others, in the order they have
+    expect(drawnScenes(rasters)).not.toContain('S50');
+  });
+
+  it('draws the first 40 of the order where the map cannot say what is in view', () => {
+    const { rasters } = draw({ downloaded: rowDownloaded, groups: [group(row)], mosaics: {} });
+    expect(drawnScenes(rasters)).toEqual(row.slice(0, 40));
+  });
+
+  it('draws every scene of such a pass when there are not more than 40', () => {
+    const few = row.slice(0, 30);
+    const { rasters } = draw({ downloaded: Object.fromEntries(few.map((id) => [id, rowDownloaded[id]])), groups: [group(few)], mosaics: {} }, [60, 47, 61, 48]);
+    expect(rasters).toHaveLength(30);
+  });
+
+  it('chooses again when the map has moved so that other scenes are in view, and leaves the tiles alone when it has not', () => {
+    const fake = fakeMap([0.2, 47.2, 4.8, 47.8]);
+    const state = { render: {}, showDownloaded: true, items: [], dataset: dataset(), downloaded: rowDownloaded, groups: [group(row)], mosaics: {} };
+    syncFocusRaster(fake.map as never, state);
+    const first = fake.sources.length;
+    expect(first).toBe(40);
+    rechooseScenes(fake.map as never); // the view is where it was
+    expect(fake.sources).toHaveLength(first);
+    fake.moveTo([0.2, 47.2, 4.9, 47.8]); // moved a little, the same scenes are in view
+    rechooseScenes(fake.map as never);
+    expect(fake.sources).toHaveLength(first);
+    fake.moveTo([60.2, 47.2, 64.8, 47.8]);
+    rechooseScenes(fake.map as never);
+    expect(fake.sources.length).toBeGreaterThan(first);
+    expect(drawnScenes(fake.sources.slice(first).filter((src) => src.spec.type === 'raster'))).toContain('S64');
+  });
+
+  it('leaves a pass that is a mosaic alone when the map moves', () => {
+    const downloaded = downloadedOf('A', 'B');
+    const fake = fakeMap([10, 47, 11, 48]);
+    syncFocusRaster(fake.map as never, { render: {}, showDownloaded: true, items: [], dataset: dataset(), downloaded, groups: [group(['A', 'B'])], mosaics: loaded(downloaded, ['A', 'B']) });
+    const before = fake.sources.length;
+    fake.moveTo([100, -10, 101, -9]);
+    rechooseScenes(fake.map as never);
+    expect(fake.sources).toHaveLength(before);
   });
 });
 
