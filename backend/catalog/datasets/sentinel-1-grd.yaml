@@ -115,7 +115,8 @@ source:
   asset_href_rewrites:
   - from_prefix: s3://sentinel-s1-l1c/
     to_prefix: https://sentinel-s1-l1c.s3.eu-central-1.amazonaws.com/
-  # Every object of the bucket carries a CRC64NVME checksum over the whole file (adr/0018 §3.1).
+  # The bucket's CRC64NVME over the whole file (adr/0018 §3.1). Only objects written since early 2025 carry it; older
+  # scenes are versioned by their ETag (DS-04 plan §4.3) [M, 10.11.2026].
   asset_checksum: crc64nvme
 coverage:
   provider: upstream-aggregation
