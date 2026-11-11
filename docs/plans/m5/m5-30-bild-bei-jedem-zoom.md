@@ -205,4 +205,9 @@ Die Tabellen in den PR kopieren; sie enthalten kein Rechteck und keine ID. Erwar
 
 ## 8. Umsetzung
 
-Wird je Teil ergänzt (PR, Tests, Abweichungen).
+### 8.1 Teil 1 — Messskript
+
+- `backend/earthx/api/measure_tiles.py`, Compose-Dienst `measure-tiles` (Profil `measure`), README-Abschnitt „Kachelzeiten messen“; `catalog.pgstac.search_items_in_bbox` für die Items materialisierter Datensätze.
+- **Abweichung von §4.1:** Jede Zoomstufe läuft in einem mit `spawn` gestarteten Prozess statt `fork`. Der Kindprozess bekommt die aufgelösten Assets (`ResolvedAsset`) und prüft ihre Adressen selbst noch einmal über die Policy von `gateway`; so bleibt es bei den zwei Stellen, die einen Lesepfad bauen (`test_only_two_places_build_an_asset_path`).
+- **Probe in der Sitzung [M]:** Mit 40 echten Items von swissALTI3D (per `curl` geholt, weil der HTTP-Client von `gateway` aus der Sitzung nicht hinauskommt) lief der Lesepfad mit `dtm_2m` durch: z13 berührt 12 Dateien, kalt 1,7 s mit 27 Anfragen und 2,7 MB, warm 0,7 s ohne Anfrage; z10 30 Dateien, kalt 4,0 s. Das sind keine Zahlen für die Budgets (Ort der Sitzung, kleine Stichprobe); die liefert Ottos Lauf.
+- **Tests:** `test_measure_tiles.py` (Argumente, Datensatz, Zählen der GDAL-Zeilen, Kachel und Szenen, Lesen über den echten Leser mit synthetischen COGs, Ausgabe ohne Rechteck/Adresse/ID, Compose), `integration/test_pgstac_search_bbox.py`.
