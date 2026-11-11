@@ -64,7 +64,7 @@ Jeder Teil ist ein eigener Draft-PR. Der Branch eines Teils geht vom Branch sein
 
 - **Messen zuerst (1):** Die Budgets (§6.2 in `adr/0032`) sind Startwerte; der Lauf bei Otto legt sie fest. Das Skript misst den heutigen Lesepfad ohne Zählgrenzen, braucht also nichts aus den späteren Teilen.
 - **Szenen vor Pyramide (2, 3, 4):** Sie bringen Sentinel-1 und -2 sofort ein Bild bei jedem Zoom und brauchen keinen Speicher. Teil 2 arbeitet mit den Startwerten 32 Dateien / 4 s; nach Ottos Messung ändert ein kleiner Folge-Commit nur die Konstanten.
-- **Registry (5) vor der Pyramide (7–9), nicht danach:** Der Bau muss wissen, welche Datensätze `overview: pyramid` haben und mit welchem Resampling (`overview_resampling`, Pflicht ohne Vorgabe, B10). Die Startprüfung „Bild bei z0“ kommt damit vor der Pyramide; für `pyramid` prüft sie nur, dass Feld und Resampling stehen. `min_zoom` von swissALTI3D, DEM und WorldCover ändert sich erst mit Teil 9, wenn die Route die Pyramide liest, sonst verlören DEM und WorldCover zwischen 5 und 9 ihr Bild unter z7 bzw. z5.
+- **Registry (5) vor der Pyramide (7–9), nicht danach:** Der Bau muss wissen, welche Datensätze `overview: pyramid` haben und mit welchem Resampling (`overview_resampling`, Pflicht ohne Vorgabe, B10). Die Startprüfung „Bild bei z0“ kommt damit vor der Pyramide; für `pyramid` prüft sie nur, dass Feld und Resampling stehen. `min_zoom` von DEM und WorldCover ändert sich erst mit Teil 9, wenn die Route die Pyramide liest, sonst verlören sie zwischen 5 und 9 ihr Bild unter z7 bzw. z5. swissALTI3D geht schon mit Teil 2 von 14 auf 13 (§8.2).
 - **Zuschnitt und Job (6)** sind unabhängig; sie stehen vor der Pyramide, weil sie keine offene Frage haben.
 - **Pyramide (7–9)** zuletzt: der größte Teil, mit den offenen Fragen F1–F3.
 
@@ -280,3 +280,33 @@ Die Tabellen in den PR kopieren; sie enthalten kein Rechteck und keine ID. Erwar
 - **Gefunden:** Ein Export mit sehr vielen Szenen kann an der Grenze der Textdateien im ZIP scheitern; vorher ein `500`, jetzt `413` (F4).
 - F4 = 2 umgesetzt: Grenze des Hinweistexts = 64 KiB + 305 Byte × Szenen (`attachment_limits`); 2 000 Szenen mit IDs von 255 Zeichen passen, das `413` bleibt als Sicherheitsnetz.
 - **Unverändert gelassen** (nicht Teil von F13): `MAX_BATCH_JOBS = 25` im Frontend (Aufträge, die ein Klick gleichzeitig startet) und höchstens 64 Gruppen je Download-Anfrage (`DownloadRequest.groups`).
+### 8.2 Teil 2 — Budget je Kachel
+
+- `api/mosaic_tiles.py`: `TILE_FILE_BUDGET = 32`, `TILE_TIME_BUDGET_S = 4.0` (Startwerte, A2) statt `MIN_MOSAIC_ZOOM`/`MAX_SCENES_PER_TILE`; `scenes_touching` kürzt auf das Budget (Szenen × Assets) und gibt die Zahl der weggelassenen zurück. Eine ASGI-Middleware (`TileOutcomeHeaders`) setzt `X-EarthX-Partial: <n>` bzw. `time` und nach Zeitabbruch `Cache-Control: no-store`, weil der Tile-Endpunkt von TiTiler seine Antwort selbst baut und der Zeitabbruch erst beim Lesen bekannt ist.
+- `access/mosaic_tiles.py`: `ReadBudget`; eine Szene, die bei Ablauf noch nicht begonnen hat, wird übersprungen; ohne eine gelesene Szene `503` statt einer leeren Kachel.
+- **Abweichungen von §4.2:**
+  - **Kein Tooltip** für Teilkacheln: Ottos Vorgabe heißt „höchstens Tooltip“; ihn zu bauen, hieße einen eigenen Kachel-Protokollweg in MapLibre, um Antwortköpfe zu lesen. Der Kopf steht für einen späteren Tooltip bereit.
+  - Die **Zeitgrenze** gilt nur für Mosaik-Kacheln ohne Schritte; mit Schritten liest der Worker-Kern (`processing.tile`), dort gilt nur die Dateigrenze.
+  - **swissALTI3D `min_zoom` 14 → 13** schon hier statt in Teil 9: z13 braucht höchstens 25 Dateien und passt ins Budget; der Registry-Test „bei `min_zoom` passt jede Kachel ins Budget, eine Stufe darunter nicht“ verlangt genau 13.
+- Frontend: `MIN_MOSAIC_ZOOM` entfällt (`mosaic.ts`, `processingPreview.ts`), Index-Tooltips ohne „zoom 8“. Der Zweig „Szenen unter dem ersten Level des Mosaiks“ (`below`) in `processingPreview.ts` und `mosaic.ts::viewOfPass` wird damit nicht mehr erreicht; er geht mit Teil 3, der beide Dateien ohnehin umbaut.
+- Tests: Budget (Kopf, gleiche Bytes bei gleicher Liste), Zeitabbruch (`503`, `no-store`), z3 als Mosaik, Datensatz nur bis z7 mit Mosaik, Dateibudget zählt Assets, `ReadBudget` mit falscher Uhr; Frontend-Tests auf „Mosaik ab dem ersten Level des Datensatzes“ umgestellt.
+
+### 8.6 Budgets und Stufen nach Ottos Messlauf (11.11.2026)
+
+Lauf: swissALTI3D um eine Stadt z6–z14 (Asset `dtm`), dasselbe bei z10 mit `dtm_2m`, Sentinel-1 über eine Stadt z0–z12. Tabellen in [#329](https://github.com/oscipal/earthX/pull/329).
+
+**Was die Zahlen tragen und was nicht.** Das Skript holte die Items nur im Rechteck, nicht in der ganzen Kachel. Gültig sind deshalb die Zeiten **je Datei**, nicht die Zahl der Dateien unter z12 (swissALTI3D: 49 statt ≈ 200–11 500) und nicht die Zahl der Szenen bei Sentinel-1 (1 statt aller Slices eines Überflugs). `--max-files 1000` wurde nicht ignoriert; es gab nur 49 Items. Korrigiert in #329 (§8.1); ein zweiter Lauf ist vorgeschlagen.
+
+**Befund [M]:**
+- swissALTI3D, 4 Threads: je Datei **55–85 ms**, kalt wie warm fast gleich (z6–z11: 49 Dateien kalt 3,1–4,2 s, warm 2,6–3,1 s mit 0 Anfragen; z12: 35 Dateien 2,5/2,0 s; z13: 18 Dateien 1,4/0,9 s). Die Zeit liegt im Öffnen und Umprojizieren, nicht im Netz (Ottos Hinweis). Gelesen wird je Datei 1 Anfrage mit ≈ 33 kB (gröbste Übersicht) bis 2 Anfragen mit ≈ 90 kB (z12).
+- Sentinel-1 (TPS-Warp), eine Datei: kalt **0,3–0,8 s**, warm 0,1–0,27 s, 2–3 Anfragen, bis 5 MB (z9–z10).
+- Größe einer vollen Pyramidenkachel (512², Float32, DEFLATE mit Prädiktor): **530–585 kB**, also rund 1,9 : 1 gegenüber 1 MB roh.
+
+**Festgelegt:**
+- **Dateibudget 32 je Kachel bleibt:** 32 Dateien von swissALTI3D kosten 1,8–2,8 s; eine Kachel bei z13 braucht höchstens 25 (M5-08 §13).
+- **Zeitbudget 4 s bleibt:** rund das 1,4-Fache dessen, was 32 Dateien kalt kosten, unter den 5 s von pgstac.
+- **Sentinel-1:** Bei kleinem Zoom begrenzt kalt die **Zeit**, nicht die Zahl: mit 4 Threads etwa 16–20 Slices in 4 s (0,3–0,8 s je Datei), warm alle 32. Eine kalte Kachel über einem langen Überflug wird also eine Teilkachel mit `no-store`; die nächste Anfrage findet die Köpfe im Zwischenspeicher. Bestätigen soll das der zweite Lauf mit allen Slices.
+- **Stufen der Pyramide:** swissALTI3D **`min_zoom` 13, Pyramide z0–z12** (Basis z12, ≈ 13 m): bei z12 berührt eine Kachel bis ≈ 60 Dateien, das wären 3,3–5,1 s und damit über dem Zeitbudget. DEM (z0–z6, `min_zoom` 7) und WorldCover (z0–z4, `min_zoom` 5) wie `adr/0032` §5.2; sie sind nicht gemessen und werden mit dem zweiten Lauf geprüft, sobald das Skript ganze Kacheln zählt.
+- **Größe und Bau der Pyramide swissALTI3D** [A aus M]: z12 ≈ 1 820 Kacheln, davon ≈ 930 über Land × 0,55 MB ≈ 0,5 GB, mit den Stufen darüber ≈ 0,7 GB (im Rahmen von `adr/0032` §8.1). Bau: ≈ 45 000 Dateien × 2 Anfragen ≈ 90 000 Anfragen, ≈ 4 GB; bei 0,25 s je Anfrage (F3 = 1) ≈ 6,3 h.
+
+**Paralleles Lesen:** Der Mosaik-Leser liest in Portionen von 4 Threads (`MOSAIC_THREADS`). Weil die Zeit im Rechnen liegt, kann mehr Parallelität bei mehreren Kernen helfen; das Skript bekommt dafür `--threads` (#329), der zweite Lauf vergleicht 4 und 8. Erst danach ändere ich `MOSAIC_THREADS`.

@@ -25,7 +25,6 @@ import {
   MAX_MOSAIC_REQUEST_BYTES,
   MAX_MOSAIC_SCENES,
   MIN_MOSAIC_SCENES,
-  MIN_MOSAIC_ZOOM,
   mosaicRequestBytes,
 } from './mosaic';
 import { MOSAIC_TILE_SIZE, TILE_SIZE, tileLevelAhead, tileMetres } from './tileSize';
@@ -474,8 +473,8 @@ export function previewSpec(args: {
   const maxZoom = maxZoomOf(TILE_SIZE);
   // The mosaic's tiles are 512 px, a level finer than the scenes' at the same level.
   const mosaicMaxZoom = maxZoomOf(MOSAIC_TILE_SIZE);
-  // The levels from which a pass is one mosaic: the tiler takes none below `MIN_MOSAIC_ZOOM`.
-  const firstLevel = Math.max(MIN_MOSAIC_ZOOM, dataset.zoom.min);
+  // The levels from which a pass is one mosaic: the dataset's own (adr/0032 §6.2).
+  const firstLevel = dataset.zoom.min;
 
   // The mosaic of one job, or `null` for the scenes one by one: not a pass of several scenes, more than the tile route
   // takes (scenes, assets, bytes of the request, levels), or a mosaic the tiler did not take.
@@ -485,8 +484,7 @@ export function previewSpec(args: {
       !bounds ||
       unit.length < MIN_MOSAIC_SCENES ||
       unit.length > MAX_MOSAIC_SCENES ||
-      assets.length > MAX_MOSAIC_OPERATOR_ASSETS ||
-      mosaicMaxZoom < MIN_MOSAIC_ZOOM
+      assets.length > MAX_MOSAIC_OPERATOR_ASSETS
     ) {
       return null;
     }
