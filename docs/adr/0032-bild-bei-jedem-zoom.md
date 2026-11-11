@@ -1,7 +1,12 @@
 # ADR 0032 — Bild bei jedem Zoom
 
-- **Status:** Entwurf, offen. Fragen F1–F14 in §14.
-- **Datum:** 2026-11-10 (Entwurf).
+- **Status:** **Angenommen** von Otto am 2026-11-11: F1–F14 jeweils Option 1 (Empfehlung), außer und mit diesen Ergänzungen (§14):
+  - **F1 = 2:** Die Pyramide entsteht gleich nach der Materialisierung und nach einem Wechsel der Quelle, nicht erst bei der ersten Anfrage.
+  - **F3 ergänzt:** Nach 30 Tagen prüft eine bedingte Anfrage die Fassung der Quelle (`ETag`/`updated`). Ist sie unverändert, wird die Frist verlängert, ohne neu zu lesen. Die Auslegung von Prinzip 1 dazu ist Ottos Entscheidung (§5.3).
+  - **F4:** 0,25 s Mindestabstand je Host, einstellbar, mit Verweis auf die Fair-Use-Regeln der FSDI (`adr/0023` §3.1).
+  - **F11 ergänzt:** Das Messskript läuft per `docker compose run`; auf Ottos Rechner gibt es kein Python.
+  - **Teilkacheln bei Szenen:** keine sichtbare Marke, höchstens ein Tooltip (Leitfaden, kein Zusatztext).
+- **Datum:** 2026-11-10 (Entwurf, Draft-PR [#326](https://github.com/oscipal/earthX/pull/326)); 2026-11-11 angenommen.
 - **Aufgabe:** M5-30, Auftrag von Otto vom 10.11.2026. Die Nummer 0032 war beim Start frei: Auf `main` endet die Reihe mit 0031, die offenen PRs #319 und #322 legen kein ADR an.
 - **Autonomiestufe:** C. Kein Produktivcode.
   - Geändert sind nur dieses ADR und eine Zeile im Entscheidungslog.
@@ -52,10 +57,10 @@ Die Dateien antworten mit `Cache-Control: public, max-age=7200`, `ETag` und `Las
 
 1. **Warum das Bild verschwindet:** Die Kosten einer Kachel hängen an der Zahl der Dateien, die sie öffnet, nicht an ihrer Pixelzahl (`adr/0006` §3.4). Beim Herauszoomen wächst diese Zahl mit dem Quadrat: swissALTI3D (Kacheln von 1 km) hat bei z13 bis 25, bei z10 rund 770 und bei z8 rund 11 500 Dateien je Kachel (§4). Die heutigen Grenzen (12 Szenen je Kachel, Mosaik ab z8, `min_zoom`) schneiden das Bild deshalb ab.
 2. **Zwei Fälle, zwei Wege.**
-   - **Kachel-Datensätze aus vielen Dateien** (swissALTI3D, BEV, WorldCover, DEM): unter einer Basisstufe eine **Übersichtspyramide** als flüchtiges Zwischenprodukt im eigenen Objektspeicher. Ein Job baut sie, angestoßen von der ersten Anfrage und nach einem Wechsel der Fassung. Die Fassung steht im Pfad, die Frist hält ein eigener Präfix (§5).
-   - **Szenen-Datensätze** (Sentinel-1, Sentinel-2): die gewählten Szenen über ihre eigenen Übersichten bei jedem Zoom. Statt „12 Szenen ab z8“ gilt ein **Budget je Kachel** (Dateien und Zeit). Über dem Budget kommt eine gekennzeichnete Teilkachel (§6).
+   - **Kachel-Datensätze aus vielen Dateien** (swissALTI3D, BEV, WorldCover, DEM): unter einer Basisstufe eine **Übersichtspyramide** als flüchtiges Zwischenprodukt im eigenen Objektspeicher. Ein Job baut sie gleich nach der Materialisierung und nach einem Wechsel der Fassung (F1 = 2). Die Fassung steht im Pfad. Nach 30 Tagen verlängert eine Prüfung der Fassung die Frist, wenn die Quelle unverändert ist (F3, §5.3).
+   - **Szenen-Datensätze** (Sentinel-1, Sentinel-2): die gewählten Szenen über ihre eigenen Übersichten bei jedem Zoom. Statt „12 Szenen ab z8“ gilt ein **Budget je Kachel** (Dateien und Zeit). Über dem Budget kommt eine Teilkachel; erklärt wird sie höchstens im Tooltip des Layers (§6).
 3. **Grobe Gitter und Einzeldateien** brauchen keine Pyramide, solange das ganze Feld in das Budget passt (§7).
-4. **Kosten [A]:** Die Pyramide für swissALTI3D braucht rund 0,4–0,9 GB je Fassung und einen Bau mit 45 000–90 000 Anfragen an die Quelle. Das dauert rund eine Stunde bei 6 parallelen Abrufen bzw. 1,3–2,5 h bei 10 Anfragen je Sekunde. WorldCover und DEM brauchen nur kleine globale Pyramiden. Für Sentinel-1 entsteht kein Speicher; bei kleinem Zoom liest eine Kachel mehr Szenen (§8).
+4. **Kosten [A]:** Die Pyramide für swissALTI3D braucht rund 0,4–0,9 GB je Fassung und einen Bau mit 45 000–90 000 Anfragen an die Quelle. Mit dem Mindestabstand von 0,25 s je Host (F4) dauert das 3,1–6,3 h. Danach wird nur bei geänderter Fassung neu gelesen, und dann nur die geänderten Kacheln. WorldCover und DEM brauchen nur kleine globale Pyramiden. Für Sentinel-1 entsteht kein Speicher; bei kleinem Zoom liest eine Kachel mehr Szenen (§8).
 5. **`min_zoom`** bleibt und heißt dann „ab hier aus den Originalen“. Darunter gilt ein neues Pflichtfeld `viewer.overview` (`own`, `pyramid`, `scenes`). Eine Registry-Prüfung verlangt für jeden angezeigten Datensatz ein Bild bei z0 (§9).
 6. **Grenzen nach Kosten statt nach Anzahl (§10):**
    - Kachel: Budget je Kachel.
@@ -176,10 +181,13 @@ Und die Auflösung der gröbsten Übersicht je Datei, also bis zu welcher Stufe 
 
 **Was in der Pyramide liegt.** Werte, nicht Bilder: das erste Band bzw. die Bänder der Standardansicht im Datentyp der Quelle, Nodata wie die Quelle. Farbe, Stretch, Colormap und Band-Math (T1) rechnet der `tiler` wie heute auf der Kachel. So gilt die Pyramide für jede Darstellung.
 
-**Wann sie entsteht (F1).** Als Job, nie synchron in der Kachelanfrage:
+**Wann sie entsteht (F1 = 2, Otto 11.11.2026).** Als Job, nie synchron in der Kachelanfrage:
 
-- **Erste Anfrage:** Eine Kachel unter `min_zoom` ohne vorhandene Pyramide stellt einen Bau-Job in die Queue. Der Job ist eindeutig je Datensatz und Fassung; eine zweite Anfrage stellt keinen zweiten ein. Die Kachel antwortet sofort `404` mit dem Kopf `X-EarthX-Overview: building`. Die Karte zeigt dort die Coverage und den Hinweis „Overview is being built“ (Prinzip 9 und 11: sagen, was ist, statt leer).
-- **Fassungswechsel:** Nach einer Materialisierung mit neuer Fassung (`ETag` und `updated` der Collection, M5-08b, Antwort Otto zu #320 Frage 1) baut ein Job neu, aber nur, wenn die alte Pyramide in ihrer Frist gelesen wurde. Ungenutzte Datensätze kosten so nichts.
+- **Nach der Materialisierung:** Jede Materialisierung eines Datensatzes mit `overview: pyramid` stößt den Bau an, auch ohne Nutzung. Der Job ist eindeutig je Datensatz und Fassung; ein zweiter Anstoß stellt keinen zweiten ein.
+- **Fassungswechsel:** Eine Materialisierung mit neuer Fassung (`ETag` und `updated` der Collection, M5-08b, Antwort Otto zu #320 Frage 1) baut neu, mit Kopie unveränderter Kacheln (Verfall unten).
+- **Wie der Anstoß technisch läuft, klärt V6:** Entweder stellt der Befehl `materialize` den Job ein, oder `jobs` findet eine Fassung ohne Pyramide.
+- **Solange keine Pyramide da ist** (erster Bau läuft, Bau gescheitert): Die Kachel antwortet `404` mit dem Kopf `X-EarthX-Overview: building` bzw. `failed`. Die Karte zeigt die Coverage; der Grund steht nur im Tooltip des Layers (`note`, Leitfaden §4), kein Zusatztext über der Karte (Auslegung nach Ottos Antwort zu den Teilkacheln).
+- Ursprünglich empfohlen war Option 1 (Bau bei der ersten Anfrage, ungenutzte Datensätze kosten nichts). Otto hat Option 2 gewählt: Das erste Bild soll nicht auf einen Bau warten (§13).
 
 **Wo sie liegt (F2).** Im eigenen Objektspeicher unter einem neuen Präfix:
 
@@ -213,15 +221,29 @@ overviews/{dataset_id}/{fassung}/{z}/{x}/{y}.tif
 **Verfall (F3).**
 
 - Eine **neue Fassung ist ein neuer Pfad**; die alte wird nie mehr gelesen. Beim Neubau kopiert die Hülle Basiskacheln, deren Items gleich geblieben sind, serverseitig aus der alten Fassung (S3 `CopyObject`, kein Abruf an der Quelle). „Gleich geblieben“ heißt: gleicher Hash über ID und `updated` der beteiligten Items. Neu gelesen wird nur, wo sich Items geändert haben.
-- **Frist:** 30 Tage ab dem Lesen an der Quelle, als Metadatum `read-at` je Objekt. `jobs/cleanup.py` löscht nach `read-at`, nicht nach dem Kopierdatum; eine Kopie verlängert die Frist also nicht.
-- Als Sicherung dient eine Lebenszyklus-Regel auf `overviews/` mit 31 Tagen, gesetzt wie die von `results/` (`adr/0015` §7.3, W1; Garage filtert nur nach Präfix und Größe).
-- Begründung der 30 Tage: Ein Bau kostet die Quelle einige zehntausend Anfragen (§8). Mit 7 Tagen hieße das bei einem genutzten Datensatz viermal im Monat. Die Frist ist Ottos Wahl (F3).
+- **Frist:** 30 Tage ab der letzten Bestätigung der Fassung, als Metadatum `checked-at` je Objekt; beim Bau ist das der Zeitpunkt des Lesens an der Quelle. `jobs/cleanup.py` löscht nach `checked-at`. Eine Kopie beim Fassungswechsel übernimmt `checked-at` der alten Kachel, sie verlängert also nicht.
+- **Verlängerung nach 30 Tagen (F3, Ergänzung Otto 11.11.2026):** Vor Ablauf fragt eine Prüfung die Fassung der Quelle ab, wie die Materialisierung: Collection über `gateway`, `ETag` und `updated` verglichen. Bei der FSDI geschieht das ohne `If-None-Match` (Antwort Otto zu #320 Frage 1); bei Quellen mit `304` ist es eine bedingte Anfrage.
+  - **Unverändert:** Die Hülle setzt `checked-at` neu, ohne an der Quelle zu lesen (S3 `CopyObject` auf sich selbst mit neuen Metadaten; Kosten nur im eigenen Speicher).
+  - **Geändert:** Materialisierung und Neubau mit Kopie unveränderter Kacheln.
+  - **Nicht erreichbar oder Formfehler:** keine Verlängerung; die Pyramide läuft ab (Auslegung: Ohne bestätigte Fassung gibt es keine Verlängerung). Der nächste erfolgreiche Lauf baut neu.
+  - Wo die Prüfung geplant läuft, klärt V6.
+- Als Sicherung dient eine Lebenszyklus-Regel auf `overviews/` mit 31 Tagen, gesetzt wie die von `results/` (`adr/0015` §7.3, W1; Garage filtert nur nach Präfix und Größe). Die Verlängerung setzt das Änderungsdatum des Objekts neu, die Regel greift also erst nach einer ausgebliebenen Verlängerung.
+- Begründung der 30 Tage: Ein Bau kostet die Quelle einige zehntausend Anfragen (§8). Mit 7 Tagen hieße das bei einem genutzten Datensatz viermal im Monat.
 
 **Ehrlichkeit (F12).**
 
 - Kacheln aus der Pyramide tragen den Kopf `X-EarthX-Source: overview`. Die Karte zeigt die Marke „Overview“ am Layer mit dem Tooltip „Resampled from the original files; zoom in to level n for the originals.“
 - Statistik, Zuschnitt, Download und Jobs lesen nie aus der Pyramide, sondern immer aus den Originalen (Prinzip 8: Rezept aus Quell-Items).
 - Die Quellenangabe der Pyramide ist die für bearbeitete Daten („©swisstopo (modified)“, M5-08c F2).
+
+### 5.3 Auslegung von Prinzip 1 (Entscheidung Otto, 11.11.2026)
+
+Prinzip 1 (`projektuebersicht.md` §2): „Abgeleitete Produkte (…) werden nur flüchtig mit Ablaufdatum gespeichert.“ Für Übersichtspyramiden gilt:
+
+- **Jedes Objekt hat ein Ablaufdatum** (30 Tage ab der letzten Bestätigung der Fassung).
+- **Eine Verlängerung ist zulässig, wenn eine Prüfung an der Quelle die Fassung bestätigt hat.** Die Pyramide bildet dann nachweislich den aktuellen Stand der Quelle ab; sie ist kein eigener Bestand neben der Quelle.
+- **Ohne Bestätigung läuft sie ab.** Eine Quelle, die verschwindet oder sich nicht mehr prüfen lässt, hinterlässt nach spätestens 31 Tagen nichts.
+- Die Auslegung gilt nur für Übersichtspyramiden. Job-Ergebnisse bleiben bei 7 Tagen ohne Verlängerung (`architekturplan.md` 12.3, Q10).
 
 ---
 
@@ -243,7 +265,7 @@ Die Mosaik-Kachel liest die Szenen der Auswahl in der Reihenfolge des Mosaiks (`
 
 **Was über dem Budget passiert:**
 
-- **Dateien erschöpft:** Die Kachel enthält die ersten 32 Dateien in Mosaik-Reihenfolge. Das ist deterministisch und damit cachebar; die Kachel trägt den Kopf `X-EarthX-Partial: n`. Die Karte zeigt die Marke „Partial“ und den Tooltip „Not all scenes fit at this zoom; zoom in for all.“
+- **Dateien erschöpft:** Die Kachel enthält die ersten 32 Dateien in Mosaik-Reihenfolge. Das ist deterministisch und damit cachebar; die Kachel trägt den Kopf `X-EarthX-Partial: n`. **Keine sichtbare Marke** (Otto, 11.11.2026, Leitfaden „wenig Text“). Höchstens ergänzt der Tooltip des Layers (`note`) den Satzteil „not all scenes at this zoom“, solange eine sichtbare Kachel so antwortet.
 - **Zeit erschöpft:** Die Kachel ist nicht deterministisch. Sie geht mit `Cache-Control: no-store` hinaus, damit kein Zufallsbild im CDN landet.
 - **Alle Grenzen** sind Konstanten wie heute (m4-17 §5, KE6) und keine Registry-Felder. Sie werden mit dem Messskript (F11) kalibriert.
 
@@ -288,7 +310,7 @@ Für das Budget zählt bei Gittern statt der Zahl der Dateien die Zahl der Chunk
 - **Rahmen:** 26 505 × 17 873 px bei z12 (474 MP), davon etwa 51 % Land der Schweiz; Float32 also rund 1 GB roh.
 - **Speicher:** komprimiert und mit allen Stufen darüber 0,4–0,9 GB. Annahme ist Kompression 2:1 bis 3:1 bei Höhen mit Prädiktor; nicht gemessen.
 - **Lesen:** 45 000 Dateien (2-m-Asset, Übersicht 1:2 = 4 m), je 1–2 Anfragen, also 45 000–90 000 GETs mit 3–7 GB.
-- **Zeit:** bei 6 parallelen Abrufen rund 45 000 × 0,07 s ≈ 55 min [A aus M]. Bei einem Mindestabstand von 0,1 s je Host 1,3–2,5 h, bei 1 s je Host 12–25 h.
+- **Zeit:** ohne Mindestabstand bei 6 parallelen Abrufen rund 45 000 × 0,07 s ≈ 55 min [A aus M]. Mit dem Mindestabstand von **0,25 s je Host** (F4) bestimmt der Abstand die Dauer: 45 000–90 000 × 0,25 s ≈ **3,1–6,3 h**.
 - **Rechnen:** Umprojektion von 474 MP mit `average` ≈ 1,0 × 0,146 s/MP ≈ 70 s auf einem Kern (Faktoren aus `adr/0014` §5.5). Das ist neben dem Lesen vernachlässigbar.
 - **Neubau bei neuer Fassung:** nur die geänderten Basiskacheln. Ein neuer Stand betrifft nach M5-08 §2 jeweils eine Befliegungsregion, also einen Teil.
 
@@ -303,7 +325,7 @@ Für das Budget zählt bei Gittern statt der Zahl der Dateien die Zahl der Chunk
 ### 8.2 Rücksicht auf die Quellen (`adr/0025` §6.2, F4)
 
 - Der Bau läuft über `gateway`: 6 Verbindungen je Host, `User-Agent` der Plattform, Unterbrecher nach 3 Fehlern in Folge (der Job pausiert und versucht es später; Fehlerart wie `source_timeout`).
-- **Mindestabstand:** aus `host_intervals` (M5-18) auch für den Bau. Vorschlag für `data.geo.admin.ch`: 0,1 s, also höchstens 10 Anfragen je Sekunde. swisstopo behält sich vor, bei übermäßiger Nutzung zu drosseln (`adr/0023` §3.1). Das CDN vor den Dateien nimmt einen Teil der Last [A].
+- **Mindestabstand (F4, Otto 11.11.2026):** **0,25 s je Host**, also höchstens 4 Anfragen je Sekunde, einstellbar über `host_intervals` (M5-18) auch für den Bau. Grund sind die Fair-Use-Regeln der FSDI: swisstopo kann den Zugang bei übermäßiger Nutzung einschränken (`adr/0023` §3.1, Quelle dort: geo.admin.ch „change limits, fair use“). Das CDN vor den Dateien nimmt einen Teil der Last [A].
 - Höchstens ein Bau je Host gleichzeitig.
 
 ### 8.3 Lizenz (B11)
@@ -318,6 +340,7 @@ Eine Pyramide ist eine gespeicherte Bearbeitung einer Quelle mit unklarem Recht.
 
 - nur in der Prototyp-Instanz, mit 7 Tagen Frist wie Ergebnisse;
 - jede Antwort `private, no-store` (R7);
+- keine Verlängerung nach §5.3 (Auslegung bei der Übernahme, §14);
 - `catalog-load` ohne Schalter löscht `overviews/proto-*` mit (R6).
 
 ### 8.5 Messung (F11)
@@ -328,7 +351,7 @@ Gemessen ist bisher nur, was oben steht (eine Datei je Quelle, zwölf Dateien vo
 2. **Bau einer Basiskachel** von swissALTI3D bei z10: ≈ 770 Dateien; Zeit und Bytes.
 3. **Kompression** der Pyramide (eine Basiskachel).
 
-Ein Messskript dafür über `gateway` gehört in den ersten Umsetzungs-PR (V1, §12) und läuft bei Otto lokal. Der Weg über `curl` aus `adr/0023` §9.3 misst nur Köpfe und Bytes, nicht, was GDAL tatsächlich liest. Die Hosts sind in dieser Umgebung schon frei [M].
+Ein Messskript dafür über `gateway` gehört in den ersten Umsetzungs-PR (V1, §12) und läuft bei Otto lokal **per `docker compose run`**, weil es auf seinem Rechner kein Python gibt (F11, Otto 11.11.2026). Es liegt deshalb im Image, wie der Befehl `materialize` (`docker compose run --rm materialize swissalti3d`, README). Ein Ordner `scripts/` außerhalb des Images genügt nicht (`backend/Dockerfile:52` kopiert nur `earthx/`). Die Ausgabe enthält keine AOI, Adresse oder Item-ID. Der Weg über `curl` aus `adr/0023` §9.3 misst nur Köpfe und Bytes, nicht, was GDAL tatsächlich liest. Die Hosts sind in dieser Umgebung schon frei [M].
 
 ---
 
@@ -412,7 +435,8 @@ Die Zahl 25 (`MAX_DOWNLOAD_ITEMS`, `MAX_ORDER_ITEMS`) begrenzt die Laufzeit, nic
 | `adr/0006` §5, `architekturplan.md` 6.3 | Item-Liste in der URL, höchstens 64, keine Such-ID | Auswahl-ID aus dem Inhalt (U1); der Grundsatz „URL bestimmt das Bild“ bleibt |
 | `plans/m4/m4-17-mosaik-kachel-pfad.md` §5 | 12 Szenen je Kachel, Mosaik ab z8 | Budget je Kachel |
 | `catalog/registry.py:714-775` | unter `min_zoom` ist Übersicht Sache der Coverage | unter `min_zoom` der Weg aus `overview` |
-| `architekturplan.md` 12.3 | Caching-Ebene „Ergebnis“ nur für Job-Ergebnisse | neue Zeile „Übersicht“ (Objektspeicher, 30 Tage, Fassung im Pfad) |
+| `architekturplan.md` 12.3 | Caching-Ebene „Ergebnis“ nur für Job-Ergebnisse | neue Zeile „Übersicht“ (Objektspeicher, Fassung im Pfad, 30 Tage, verlängert bei bestätigter Fassung) |
+| `projektuebersicht.md` §2, Prinzip 1 | „flüchtig mit Ablaufdatum“ | Auslegung für Pyramiden (§5.3): Verlängerung nur nach bestätigter Fassung; Entscheidung Otto |
 | `adr/0015` §7.3 | eine Ablaufregel für `results/` | zweite für `overviews/` |
 | `adr/0029` F1 | kein flüchtiger COG-Cache in M5 | gilt weiter für NetCDF; Pyramiden sind etwas anderes (Anzeige, nicht Lesen) |
 | `adr/0024` R6, R7 | Aufräumen und `no-store` für `proto-` | gilt auch für `overviews/proto-*` |
@@ -426,104 +450,148 @@ Je unter dem Richtwert. Keine davon ist Teil dieses PR; Backlog und M5-Plan blei
 
 | | Inhalt | Stufe | Hängt ab von |
 |---|---|---|---|
-| **V1** | Messskript (§8.5) unter `scripts/`; Lauf bei Otto; Zahlen in den PR | B | — |
+| **V1** | Messskript (§8.5) im Image, Aufruf per `docker compose run`; Lauf bei Otto; Zahlen in den PR | B | — |
 | **V2** | Budget je Kachel statt `MIN_MOSAIC_ZOOM`/`MAX_SCENES_PER_TILE`, Teilkachel mit Kopf, `no-store` nach Zeitabbruch; Sentinel-1 `min_zoom` 0 | B | V1 |
 | **V3** | Auswahl-ID (U1): Route, Ablage, `410`, Frontend legt neu an; 64 entfällt; Rückfall nur für Gruppen ohne Mosaik, 40 nach Lage | B | V2 |
 | **V4** | Test zu #319 F13 (vorher rot), Behebung, falls nicht schon durch V3 | A | V3 |
 | **V5** | Registry: `viewer.overview`, `overview_resampling`, Prüfung „Bild bei z0“; Docstring | B | V2 |
-| **V6** | Job-Art „Übersicht“: Kern (über `gateway`), Hülle (Upload, Stufen, Kopie unveränderter Kacheln), `objectstore` mit Präfix `overviews/` und Regel, Aufräumen nach `read-at` | B | V5 |
-| **V7** | Kachelroute unter `min_zoom` aus der Pyramide, `404` mit `building`, Anstoß des Baus; Marken „Overview“, „Partial“ im Frontend; Quellenangabe „modified“ | B | V6 |
+| **V6** | Job-Art „Übersicht“: Kern (über `gateway`), Hülle (Upload, Stufen, Kopie unveränderter Kacheln), `objectstore` mit Präfix `overviews/` und Regel, Aufräumen nach `checked-at`; Anstoß nach der Materialisierung; Prüfung der Fassung nach 30 Tagen mit Verlängerung (§5.2, §5.3); Mindestabstand 0,25 s | B | V5 |
+| **V7** | Kachelroute unter `min_zoom` aus der Pyramide, `404` mit `building`/`failed`; Marke „Overview“ (F12), Teilkacheln und Bau nur im Tooltip des Layers; Quellenangabe „modified“ | B | V6 |
 | **V8** | Grenzen von Zuschnitt und Job nach der Schätzung (§10.3) | B | — |
-| **V9** | Nachträge in `architekturplan.md` 6.3, 12.3, `adr/0006`, `adr/0015`, m4-17 | A | mit V3, V6 |
+| **V9** | Nachträge in `architekturplan.md` 6.3, 12.3, `projektuebersicht.md` §2 (Auslegung von Prinzip 1, §5.3), `adr/0006`, `adr/0015`, m4-17 | A | mit V3, V6 |
 
 ---
 
 ## 13. Risiken und Grenzen
 
-- **Erstes Bild:** Bei P1 sieht der erste Nutzer eines Datensatzes unter `min_zoom` für die Dauer des Baus (swissALTI3D: rund 1–2,5 h) die Coverage mit Hinweis, kein Bild. Gegenmittel ist ein Bau nach jeder Materialisierung (F1 Option 2), also Kosten ohne Nutzung.
+- **Erstes Bild:** Mit F1 = 2 entsteht die Pyramide nach der Materialisierung. Nur während des ersten Baus (swissALTI3D: 3,1–6,3 h bei 0,25 s je Host) oder nach einem gescheiterten Bau zeigt die Karte unter `min_zoom` die Coverage. Der Preis: Auch ungenutzte Datensätze kosten Speicher und eine Prüfung je 30 Tage.
 - **Last an der Quelle:** 45 000–90 000 Anfragen je Bau bei swissALTI3D. Falls swisstopo drosselt, wird der Bau langsamer, nicht falsch (Unterbrecher).
-- **Prinzip 1:** Pyramiden sind abgeleitete Produkte mit Ablaufdatum, wie Ergebnisse. Ohne Nutzung verschwinden sie nach 30 Tagen. Bei Nutzung entsteht nach 30 Tagen neu gelesener Bestand, kein dauerhafter.
-- **Teilkacheln:** Bei sehr großen Auswahlen ist das Bild unter einem Zoom unvollständig, wenn auch gekennzeichnet. Ob das oft vorkommt, zeigt V1.
+- **Prinzip 1:** Pyramiden haben ein Ablaufdatum. Sie leben so lange, wie die Quelle ihre Fassung bestätigt (Auslegung §5.3, Entscheidung Otto). Bei einer Quelle, die sich selten ändert, ist das praktisch ein langlebiger Bestand. Abgesichert ist das durch die Prüfung je 30 Tage und die Sicherungsregel von 31 Tagen.
+- **Teilkacheln:** Bei sehr großen Auswahlen ist das Bild unter einem Zoom unvollständig; erklärt wird das nur im Tooltip des Layers. Ob das oft vorkommt, zeigt V1.
 - **Schätzungen:** Speicher, Kompression, Bauzeit und Dateien je Kachel für BEV, WorldCover und DEM sind abgeleitet [A], nicht gemessen.
 - **Stufe C:** Kein Code. Die Zahlen in §6.2 und §8.1 sind Startwerte für V1.
 
 ---
 
-## 14. Fragen an Otto
+## 14. Fragen an Otto — beantwortet am 2026-11-11
+
+**Antworten (Otto, 11.11.2026):** F1–F14 jeweils **Option 1** (Empfehlung), außer F1. Dazu diese Ergänzungen:
+
+1. **F1 = 2:** Die Pyramide wird gleich nach der Materialisierung gebaut und nach einem Wechsel der Quelle, nicht erst bei der ersten Anfrage. Eingetragen in §0, §5.2, §12 (V6), §13.
+2. **F3 ergänzt:** Nach 30 Tagen prüft eine bedingte Anfrage (`ETag`/`updated`) die Fassung der Quelle. Ist sie unverändert, wird die Frist verlängert, ohne neu zu lesen. Die Auslegung von Prinzip 1 ist als Entscheidung Ottos festgehalten. Eingetragen in §0, §5.2, §5.3, §13.
+3. **F4:** Abstand 0,25 s je Host, einstellbar, mit Verweis auf die Fair-Use-Regeln der FSDI (`adr/0023` §3.1), statt der empfohlenen 0,1 s. Eingetragen in §0, §8.1, §8.2, §12.
+4. **F11 ergänzt:** Das Messskript muss per `docker compose run` laufen; auf Ottos Rechner gibt es kein Python. Eingetragen in §8.5, §12 (V1).
+5. **Teilkacheln bei Szenen (zu F6):** keine sichtbare Marke, höchstens ein Tooltip (Leitfaden, kein Zusatztext). Eingetragen in §0, §6.2, §12 (V7), §13.
+
+**Auslegungen bei der Übernahme (gelten, bis Otto widerspricht):**
+
+- Auch der Zustand „Pyramide wird gebaut“ bzw. „Bau gescheitert“ steht nur im Tooltip des Layers, nicht über der Karte (nach Ergänzung 5; §5.2).
+- Ohne bestätigte Fassung (Quelle nicht erreichbar, Formfehler) wird nicht verlängert; die Pyramide läuft ab (§5.2, §5.3).
+- Die Marke „Overview“ aus F12 Option 1 bleibt; Ergänzung 5 nennt nur Teilkacheln.
+- Pyramiden von Prototyp-Quellen (F10) werden nicht verlängert, sie laufen nach 7 Tagen ab (§8.4).
+
 
 **F1 — Wann entsteht die Pyramide (§5.2)?**
 1. Als Job bei der ersten Anfrage unter `min_zoom` und nach einem Fassungswechsel, sofern in der Frist gelesen **(Empfehlung)**
 2. Als Job für jeden Datensatz mit `pyramid` gleich nach jeder Materialisierung, auch ohne Nutzung
 3. Synchron bei der ersten Anfrage
 
+**Antwort F1 (Otto, 2026-11-11): 2 (Bau gleich nach der Materialisierung und nach einem Wechsel der Quelle).**
+
 **F2 — Form und Ort (§5.2)?**
 1. Je Web-Mercator-Kachel ein Objekt unter `overviews/{dataset}/{fassung}/{z}/{x}/{y}.tif` **(Empfehlung)**
 2. Ein COG oder ein GDAL-GTI je Datensatz und Fassung
 3. GeoZarr-Multiskalen
+
+**Antwort F2 (Otto, 2026-11-11): 1.**
 
 **F3 — Frist (§5.2)?**
 1. 30 Tage ab dem Lesen an der Quelle (`read-at`), Kopien verlängern nicht; Sicherungsregel 31 Tage auf `overviews/` **(Empfehlung)**
 2. 7 Tage wie Ergebnisse
 3. 90 Tage
 
+**Antwort F3 (Otto, 2026-11-11): 1, ergänzt: nach 30 Tagen Prüfung der Fassung, bei unveränderter Quelle Verlängerung ohne neues Lesen (§5.3).**
+
 **F4 — Rücksicht beim Bau (§8.2)?**
 1. Mindestabstand je Host aus `host_intervals`, für `data.geo.admin.ch` 0,1 s; ein Bau je Host gleichzeitig **(Empfehlung)**
 2. 1 s je Host wie beim Harvest (swissALTI3D 12–25 h)
 3. Ohne Mindestabstand, nur 6 Verbindungen je Host
 
+**Antwort F4 (Otto, 2026-11-11): 0,25 s je Host, einstellbar, Verweis auf die Fair-Use-Regeln der FSDI; sonst wie Option 1 (ein Bau je Host gleichzeitig).**
+
 **F5 — Stufen der Pyramide (§5.2)?**
 1. Basis = höchste Stufe über dem Budget, je Datensatz aus dem Kachelraster der Quelle berechnet (swissALTI3D z12, DEM z6, WorldCover z4) **(Empfehlung)**
 2. Fest z0–z8 für alle
+
+**Antwort F5 (Otto, 2026-11-11): 1.**
 
 **F6 — Budget je Kachel (§6.2)?**
 1. 32 Dateien und 4 s; über der Dateigrenze eine Teilkachel mit Marke, nach Zeitabbruch `no-store`; Werte mit V1 kalibriert **(Empfehlung)**
 2. Nur eine Zeitgrenze
 3. 12 Szenen ab z8 bleiben
 
+**Antwort F6 (Otto, 2026-11-11): 1, aber Teilkacheln ohne sichtbare Marke, höchstens Tooltip.**
+
 **F7 — Sehr viele Szenen (§6.3)?**
 1. Teilkachel mit Marke; über eine Auswahl-Übersicht als Job entscheiden wir nach V1 **(Empfehlung)**
 2. Gleich die Auswahl-Übersicht als Job (S2)
 3. Quicklooks unter einer Stufe (S3)
+
+**Antwort F7 (Otto, 2026-11-11): 1, Teilkachel ohne sichtbare Marke (zu F6).**
 
 **F8 — Die 64 in der URL (§10.2)?**
 1. Auswahl-ID aus dem Hash der Liste, abgelegt 7 Tage, `410` und neu anlegen; Schutzgrenze 2 000 Items **(Empfehlung)**
 2. Komprimierte Liste in der URL
 3. 64 bleiben
 
+**Antwort F8 (Otto, 2026-11-11): 1.**
+
 **F9 — `min_zoom` (§9)?**
 1. Bleibt als „ab hier aus den Originalen“; neues Pflichtfeld `viewer.overview` (`own`/`pyramid`/`scenes`) und Prüfung „Bild bei z0“ **(Empfehlung)**
 2. Entfällt; nur das Budget entscheidet
 3. Nur senken
 
+**Antwort F9 (Otto, 2026-11-11): 1.**
+
 **F10 — Prototyp-Quellen (§8.4)?**
 1. Pyramide nur in der Prototyp-Instanz, 7 Tage, `no-store`, Aufräumen nach R6 **(Empfehlung)**
 2. Keine Pyramide; unter `min_zoom` die Coverage
+
+**Antwort F10 (Otto, 2026-11-11): 1.**
 
 **F11 — Messung (§8.5)?**
 1. Messskript über `gateway` im ersten Umsetzungs-PR (V1), Lauf bei dir lokal **(Empfehlung)**
 2. Eine Sitzung misst mit `curl` wie `adr/0023` §9.3 (nur Köpfe und Bytes)
 3. Beides
 
+**Antwort F11 (Otto, 2026-11-11): 1, das Skript läuft per `docker compose run`.**
+
 **F12 — Ehrlichkeit (§5.2)?**
 1. Marke „Overview“ am Layer, Statistik, Zuschnitt und Jobs nur aus Originalen **(Empfehlung)**
 2. Statistik bei kleinem Zoom aus der Pyramide, gekennzeichnet
+
+**Antwort F12 (Otto, 2026-11-11): 1.**
 
 **F13 — Zuschnitt und Job (§10.3)?**
 1. Die 25 fallen; Dauer ≤ 60 s für den Zuschnitt, sonst als Job; Schutzgrenze 2 000 Items **(Empfehlung)**
 2. Die 25 nur anheben (z. B. auf 200)
 3. Bleibt
 
+**Antwort F13 (Otto, 2026-11-11): 1.**
+
 **F14 — #319 F13 und die 40 Ebenen (§10.4)?**
 1. Test aus `many-scenes.cjs` mit über 64 Kacheln und AOI unter z13,5, vorher rot, in V4; die 40 bleiben nur im Rückfall, gewählt nach Lage **(Empfehlung)**
 2. Erst deine Laufdaten wie #319 F13 Option 1
 3. Die 40 ganz streichen
 
+**Antwort F14 (Otto, 2026-11-11): 1.**
+
 ---
 
-## 15. Folgen (erst mit Annahme)
+## 15. Folgen
 
-- Umsetzung nach §12, Stufe B je PR.
-- Nachträge in `architekturplan.md` 6.3 und 12.3, `adr/0006` §5, `adr/0015` §7.3 und `plans/m4/m4-17-mosaik-kachel-pfad.md` §5, je mit Verweis auf dieses ADR.
+- Umsetzung nach §12, Stufe B je PR; keiner dieser PRs ist Teil dieses ADR. Backlog und M5-Plan bleiben hier unverändert.
+- Nachträge in `architekturplan.md` 6.3 und 12.3, `projektuebersicht.md` §2 (Auslegung von Prinzip 1, §5.3), `adr/0006` §5, `adr/0015` §7.3 und `plans/m4/m4-17-mosaik-kachel-pfad.md` §5, je mit Verweis auf dieses ADR.
 - Das Onboarding nach `adr/0031` setzt `viewer.overview` je Eintrag; die Pflichttests (§10.2 dort) prüfen „Bild bei z0“.
 
 ---
