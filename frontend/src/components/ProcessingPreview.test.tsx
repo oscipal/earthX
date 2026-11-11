@@ -24,6 +24,7 @@ import ProcessingPanel from './ProcessingPanel';
 import ViewBar from './ViewBar';
 import ViewerControls from './ViewerControls';
 import { tipOf, tipsOf } from '../fixtures/tips';
+import { finished } from '../fixtures/jobEntries';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -729,7 +730,30 @@ describe('the preview section', () => {
       await afterDebounce();
       expect([rescale(), colormap()]).toEqual(['120,2400', 'viridis']);
       expect(inputs().map((i) => i.value)).toEqual(['120', '2400']);
-      expect(button('Auto-scale').disabled).toBe(true);
+      expect(button('Auto-scale').disabled).toBe(false);
+    });
+
+    // Otto, 11.11.2026: from the first preview on, through "Start job", while the job runs and after it ended, "Auto-scale" was locked (with
+    // no reason) because the measured range was drawn already. It is always to be pressed, as in the layer and the view, and measures again.
+    it('can be pressed from the first preview on, while a job runs and after it ended, and puts the measured range back', async () => {
+      statistics = () => measured({ b1: DEM_VALUES });
+      await withNdvi();
+      expect(store().rangeByHand).toBe(false);
+      expect(button('Auto-scale').disabled).toBe(false);
+      expect(tipOf(button('Auto-scale'))).toMatch(/measured range/u);
+      for (const phase of ['active', 'successful'] as const) {
+        act(() => useProcessingStore.setState({ dtype: 'uint16', jobs: [{ ...finished(1), phase }] }));
+        expect(button('Auto-scale').disabled, phase).toBe(false);
+        typeInto(inputs()[0], '0');
+        typeInto(inputs()[1], '5');
+        click(button('Apply'));
+        await afterDebounce();
+        expect(rescale(), phase).toBe('0,5');
+        click(button('Auto-scale'));
+        await afterDebounce();
+        expect([rescale(), ...inputs().map((i) => i.value)], phase).toEqual(['120,2400', '120', '2400']);
+        expect(button('Auto-scale').disabled, phase).toBe(false);
+      }
     });
 
     it('does not write over what the user is typing when the measure arrives', async () => {

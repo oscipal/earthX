@@ -57,6 +57,7 @@ import { useAppStore } from '../store';
 import type { StacItem } from '../types';
 import { ChevronDownIcon, ChevronUpIcon, PlusIcon, UploadIcon } from './icons';
 import RenderFields, { NO_COLORMAP } from './RenderFields';
+import AutoScaleButton from './AutoScaleButton';
 import ResamplingDialog from './ResamplingDialog';
 import JobDetails from './JobDetails';
 import ShareLink from './ShareLink';
@@ -410,7 +411,6 @@ function PreviewSection({ view }: { view: OrderView }) {
   const applyRange = useProcessingStore((s) => s.applyRange);
   const pinPreview = useProcessingStore((s) => s.pinPreview);
   const rangeByHand = useProcessingStore((s) => s.rangeByHand);
-  const rangeEdited = useProcessingStore((s) => s.rangeEdited);
   const rangeNote = useProcessingStore((s) => s.rangeNote);
   const measure = useProcessingStore((s) => s.measure);
   const autoStretch = useProcessingStore((s) => s.autoStretch);
@@ -524,19 +524,16 @@ function PreviewSection({ view }: { view: OrderView }) {
               colormap={read?.band === RGB ? { fixed: NO_COLORMAP, title: 'True colour: three bands, no colormap' } : { value: rangeDraft.colormap, onChange: (colormap) => setRangeDraft({ colormap }) }}
             />
             <div className="pp-buttons">
-              <button
-                type="button"
-                className="btn"
-                disabled={colourPercent ? channelValues.every((channel) => !channel.percent || samePercent(channel.percent, DEFAULT_PERCENT)) : singlePercent ? samePercent(typed, DEFAULT_PERCENT) : !rangeByHand && !rangeEdited && rangeNote === null && measure?.source !== 'fallback'}
-                data-tip-level="advanced" data-tip="Use the measured range (the 2nd to 98th percentile, or −1 to 1 for an index); with AOI only, measured over the AOI"
+              {/* The one "Auto-scale" of the settings of a picture (`AutoScaleButton`), always to be pressed: where the measured range is
+                  drawn already it measures again (Otto, 11.11.2026: it was locked without a reason from the first preview on). */}
+              <AutoScaleButton
+                title={colourPercent || singlePercent ? 'Put the usual stretch in the fields: the 2nd to the 98th percentile' : 'Use the measured range (the 2nd to 98th percentile, or −1 to 1 for an index); with AOI only, measured over the AOI'}
                 onClick={() => {
                   if (colourPercent) editChannels(channelsAutoScaled(channelValues, measuredRange(measure)));
                   else if (singlePercent) setTyped(DEFAULT_PERCENT);
                   else autoStretch();
                 }}
-              >
-                Auto-scale
-              </button>
+              />
               <button
                 type="button"
                 className="btn primary vc-apply"
