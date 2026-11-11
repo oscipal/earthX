@@ -244,6 +244,7 @@ forbidden_modules =
     earthx.catalog.geocode_cache
     earthx.catalog.load
     earthx.catalog.local_coverage
+    earthx.catalog.mosaic_selection
     earthx.catalog.pgstac
     earthx.catalog.schema
     earthx.catalog.search_cache

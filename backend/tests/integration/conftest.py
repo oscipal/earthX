@@ -76,6 +76,7 @@ SHIPPED_TABLES = (
     "public.earthx_recipe",
     "public.earthx_permalink",
     "public.earthx_bundle",
+    "public.earthx_mosaic_selection",
 )
 
 

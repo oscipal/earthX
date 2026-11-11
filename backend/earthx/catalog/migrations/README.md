@@ -43,6 +43,11 @@ NM4-01: die Aufnahmejahre der Szenen eines Auftrags, aus denen die Attribution b
 zufälligen Kennung, die Frist das früheste Ende der Jobs, fest ab Erstellung. Keine AOI, kein Titel, keine Bytes;
 `api` schreibt und liest über `jobs/bundles.py`, der stündliche Aufräumer löscht.
 
+`016_mosaic_selection.sql` — die Tabelle `earthx_mosaic_selection` aus M5-30b Teil 3 (`adr/0032` §10.2): die Auswahl hinter
+einer Mosaik-Kachel-URL unter der ID, die der Hash ihres Inhalts ist (Datensatz, Assets, Item-IDs), dazu Reihenfolge, Umrisse
+und Ausdehnung für die Kacheln. Frist 7 Tage, ein erneutes Anlegen verlängert sie; keine AOI. `api` schreibt und liest über
+`catalog/mosaic_selection.py`, der stündliche Aufräumer von `jobs` löscht.
+
 Die Buchführungstabelle `earthx_migrations` gehört nicht hierher, sondern dem Läufer
 (`earthx/catalog/schema.py`) und wird von ihm angelegt. Sonst müsste jedes
 Migrationsverzeichnis sie erneut mitbringen.
