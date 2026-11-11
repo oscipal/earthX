@@ -1,6 +1,6 @@
 # M5-28 — Ein nodata für Ergebnisse, das nie ein echter Wert ist
 
-**Stand:** 11.11.2026, freigegeben von Otto (Antworten in §9a), in Umsetzung.
+**Stand:** 11.11.2026, freigegeben von Otto (Antworten in §9a), umgesetzt im Draft-PR [#323](https://github.com/oscipal/earthX/pull/323).
 **Stufe B.** Erst Plan mit Fragen, Code nach Freigabe; ein Draft-PR.
 **Anlass:** Log 2026-10-12 („Festes nodata je Ganzzahltyp“, offen), `adr/0014` §15h und §15k („Kollision mit `nodata`“).
 **Vorgabe Otto (09.11.2026):** Der nodata-Wert muss nicht für alle Datensätze gleich sein; er darf je Datensatz oder Band abweichen. Er fällt nie mit einem echten Wert zusammen und funktioniert in allen Wegen.
@@ -164,7 +164,7 @@ Fragen 1–7 jeweils Option 1. Dazu:
 
 **Auslegung von F7 (Claude, gilt bis Otto widerspricht):** Trägt ein Band des Ergebnisses ein endliches nodata der Quelle, das außerhalb des Ganzzahl-Ausgabetyps liegt, weist der Kern das Rezept mit `UnsupportedRecipe` ab. Das gilt vor R2 und R3, auch wenn die Quelle Gleitkomma ist. Die Annahme antwortet dann `422`, bevor der Job in die Warteschlange geht, und das Panel bietet den Typ nicht an. Der Fall „swissALTI3D, `uint16`“ in der Tabelle von §5 wird damit eine Abweisung statt nodata 65535. NaN als nodata (nach `band_math`, `normalize`) gilt nicht als „passt nicht“; dafür greift R3.
 
-**Auslegung von F2 beim Bänder-Download (Claude):** Die Form „Bänder nach Auflösung“ bekommt eine Datei je Auflösung **und** nodata. Die Form „eine Datei mit allen Bändern“ verspricht genau eine Datei; dort weist der Download Bänder mit verschiedenem nodata mit Grund ab.
+**Auslegung von F2 beim Bänder-Download (Claude):** Beide gestapelten Formen („Bänder nach Auflösung“ und „eine Datei mit allen Bändern“) weisen Bänder mit verschiedenem nodata in einer Datei mit Grund ab und nennen „one file per band“ als Ausweg. Erst war für die Form nach Auflösung eine Datei je Auflösung und nodata gedacht. Das brauchte neue Dateinamen und betrifft heute keinen Datensatz; es kommt, wenn ein Datensatz es braucht.
 
 **Voller `pytest`-Lauf zum Plan-Schritt (10.11.2026):** 9984 bestanden, 25 übersprungen (darunter `pwsh` nicht installiert), 0 fehlgeschlagen; `ruff check backend` grün.
 
