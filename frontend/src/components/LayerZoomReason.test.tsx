@@ -36,7 +36,7 @@ const PREVIEW_TILES = {
   id: 'radar',
   title: 'Radar',
   'earthx:capabilities': { roi: true, time_range: true },
-  'earthx:viewer': { group_by: ['datetime'], min_zoom: 7, max_zoom: 14, browse: 'preview_tiles', quicklook_nodata_max: null, results_group_by: ['datetime'] },
+  'earthx:viewer': { group_by: ['datetime'], min_zoom: 7, max_zoom: 14, browse: 'preview_tiles', quicklook_nodata_max: null, results_group_by: ['datetime'], overview: 'pyramid' as const, overview_resampling: 'average' as const },
 } as unknown as Collection;
 
 const nameOf = (id: string) =>

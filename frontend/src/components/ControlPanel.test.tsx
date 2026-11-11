@@ -474,6 +474,8 @@ describe('AcquisitionDateFields: a dataset without a time axis', () => {
       browse: 'full_resolution',
       quicklook_nodata_max: null,
       results_group_by: ['start_datetime'],
+      overview: 'own' as const,
+      overview_resampling: null,
     },
   };
 
@@ -488,6 +490,8 @@ describe('AcquisitionDateFields: a dataset without a time axis', () => {
       browse: 'quicklook',
       quicklook_nodata_max: 16,
       results_group_by: ['datetime'],
+      overview: 'own' as const,
+      overview_resampling: null,
     },
   };
 
@@ -562,6 +566,8 @@ describe('AcquisitionDateFields: the days of the ticked datasets', () => {
     browse: 'quicklook' as const,
     quicklook_nodata_max: null,
     results_group_by: ['datetime'],
+    overview: 'own' as const,
+    overview_resampling: null,
   };
   const timed = (id: string, interval: [string | null, string | null]): Collection => ({
     id,
@@ -691,6 +697,8 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
         browse: 'quicklook',
         quicklook_nodata_max: null,
         results_group_by: ['datetime'],
+        overview: 'own' as const,
+        overview_resampling: null,
       },
       ...extra,
     };
