@@ -829,8 +829,9 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
 // scenes is no scene; the licence is the dataset's, as for the selection. A result can be, where the browser keeps
 // the order of its job (adr/0019: F2); it needs no more than that, an expired result is run from the scenes all the same (F4).
 export const NO_COPY_TEXT = 'No copy of the original order is kept in this browser. Open its recipe.json instead.';
-export const PROCESS_RESULT_TEXT = 'Process further';
-export const EXPIRED_PROCESS_TEXT = 'Expired: runs everything again from the scenes.';
+// The name of "Process" for every layer, of a dataset or of a result (the `aria-label` of the button in the row).
+export const PROCESS_LAYER_TEXT = 'Process layer';
+export const EXPIRED_PROCESS_TEXT = 'Process layer: the result has expired, so the job runs again from the scenes';
 
 export function layerProcessBlock(
   layer: MapLayer,

@@ -161,3 +161,9 @@ export interface ResultLayerInfo {
   percentChannels?: (Percent | null)[];
   savedPercentChannels?: (Percent | null)[] | null;
 }
+
+// The reason in the tooltip of every control a layer of a deleted job locks in the layer manager, the eye too (UI-04: a locked control
+// says why).
+export const LOCKED_LAYER_TIP = 'Job deleted: restore it first';
+// The reason in the tooltip of every control an expired result locks; the (i) of the row says the rest.
+export const EXPIRED_LAYER_TIP = 'Expired: start the job again';

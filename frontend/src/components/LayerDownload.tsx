@@ -5,8 +5,8 @@ import type { ReactNode } from 'react';
 
 import { canDownloadLayer, decideDownloadOutcomeForLayer, layerDownloadKind } from '../download';
 import { indexDownloadBlock, indexOfferedFor } from '../indexDownload';
-import type { MapLayer } from '../layers';
-import { resultUrl } from '../processing';
+import { LOCKED_LAYER_TIP, type MapLayer } from '../layers';
+import { isJobId, resultUrl } from '../processing';
 import { ZIP_LABEL } from '../processingStore';
 import { RESULT_ZIP } from '../resultLayer';
 import { useAppStore } from '../store';
@@ -28,6 +28,15 @@ export default function LayerDownload({ layer, className = 'icon-btn sm', label,
   const datasets = useAppStore((s) => s.datasets);
   const kind = layerDownloadKind(layer);
   const text = label ? (<><DownloadIcon lead />{label}</>) : <DownloadIcon size={14} />;
+  // The ZIP of a deleted job can come back with it: it stays in its place, locked with the reason of the row. That of an expired result is
+  // gone for good and is not shown (Otto, 26.10.2026).
+  if (layer.result?.deleted && !layer.result.expired && isJobId(layer.result.jobID)) {
+    return (
+      <button type="button" className={className} data-col={col} disabled data-tip={LOCKED_LAYER_TIP} aria-label={label ? undefined : 'Download'}>
+        {text}
+      </button>
+    );
+  }
   if (kind === 'zip' && layer.result) {
     return (
       <a className={className} data-col={col} href={resultUrl(layer.result.jobID, RESULT_ZIP)} download rel="noopener noreferrer" data-tip-level="advanced" data-tip={ZIP_LABEL} aria-label={ZIP_LABEL}>

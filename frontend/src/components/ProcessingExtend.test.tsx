@@ -20,7 +20,7 @@ import {
   layerProcessBlock,
   NO_COPY_TEXT,
   orderView,
-  PROCESS_RESULT_TEXT,
+  PROCESS_LAYER_TEXT,
   resetJobs,
   selectionState,
   setTrackerOptions,
@@ -304,7 +304,7 @@ describe('the ⚙ of a result layer', () => {
     act(() => root.render(<LayerManager />));
     expect(gear().tagName).toBe('BUTTON');
     expect(gear().disabled).toBe(false);
-    expect(tipOf(gear())).toBe(PROCESS_RESULT_TEXT);
+    expect(tipOf(gear())).toBe(PROCESS_LAYER_TEXT);
     expect(container.querySelector('.layer-row')?.children).toHaveLength(11);
   });
 
