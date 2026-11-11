@@ -22,7 +22,6 @@ from rio_cogeo.cogeo import cog_validate
 
 import earthx.jobs as jobs_package
 from earthx.jobs import child
-from earthx.jobs.child import high_water_mb
 from earthx.processing.operators import REGISTRY
 from earthx.processing.recipe import job_recipe_document
 from earthx.processing.upgrade import recipe_of_any_version
@@ -97,13 +96,14 @@ class TestWhatTheChildLoads:
 
 class TestPeak:
     def test_the_peak_is_vmhwm_of_this_process_in_mb(self) -> None:
-        assert high_water_mb() > 10
-        before = high_water_mb()
-        block = bytearray(150 * 1024 * 1024)
-        block[::4096] = b"x" * len(block[::4096])  # touch the pages
-        assert high_water_mb() >= before + 100
-        del block
-        assert high_water_mb() >= before + 100, "a high-water mark does not fall"
+        """Measured in a process of its own: in a worker the mark holds what earlier tests peaked at (NM4-23 follow-up)."""
+        process, parent = _start("spawn", child_targets.measure_high_water)
+        (measured, *rest) = _messages(process, parent)
+        assert rest == []
+        before, with_block, after = measured
+        assert before > 10
+        assert with_block >= before + 100
+        assert after >= before + 100, "a high-water mark does not fall"
 
 
 def _scene(tmp_path: Path) -> Path:
