@@ -15,7 +15,8 @@ description: >-
   2010 to January 2015), as cloud-optimized GeoTIFF in 1° × 1° tiles, read directly from the AWS Open Data bucket
   (state of 9 May 2022). Oceans carry no tiles, and 25 tiles between 38° and 42° N and 43° and 51° E are withheld
   from public release by the Copernicus programme.
-keywords: [elevation, dem, dsm, terrain, copernicus, tandem-x]
+# German and English (adr/0026 F7; the German ones added with M5-22b, F8).
+keywords: [elevation, dem, dsm, terrain, copernicus, tandem-x, Höhe, Höhenmodell, Oberflächenmodell, Gelände]
 category: elevation
 # The providers of the bucket's own STAC collection (`copernicus-dem-30m-stac`, `dem_cop_30.json`, read 06.11.2026,
 # UI-05 plan §5); it names no gsd, the 30 m are the grid of GLO-30 (`readme.html` of the bucket).
