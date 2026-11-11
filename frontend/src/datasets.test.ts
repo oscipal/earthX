@@ -513,6 +513,111 @@ describe('quicklookPlan', () => {
   });
 });
 
+describe('quicklookPlan by georeferencing (F11 to #319)', () => {
+  // The two shapes of the registry entries: Sentinel-1 places its files by ground control points and publishes a
+  // thumbnail in radar geometry; Sentinel-2 places them by a geotransform and publishes a thumbnail the map can place.
+  const s1Render = {
+    title: 'Co-polarisation (VV or HH)',
+    assets: ['vv', 'hh'],
+    rescale: [
+      [90, 250],
+      [70, 750],
+    ] as [number, number][],
+    colormap_name: null,
+    expression: null,
+    resampling: 'nearest',
+    asset_selection: 'first_present' as const,
+  };
+  const s1 = collection({
+    id: 'sentinel-1-grd',
+    'earthx:georeferencing': 'gcp_tps',
+    'earthx:viewer': viewer({ min_zoom: 7, max_zoom: 19, browse: 'preview_tiles' }),
+    'earthx:default_render': s1Render,
+  });
+  const s2 = collection({
+    'earthx:georeferencing': 'geotransform',
+    'earthx:viewer': viewer({ browse: 'quicklook', quicklook_nodata_max: 16 }),
+    'earthx:default_render': {
+      title: 'True colour',
+      assets: ['visual'],
+      rescale: null,
+      colormap_name: null,
+      expression: null,
+      resampling: 'nearest',
+    },
+  });
+  const THUMB = { href: 'https://example.test/thumb.png', roles: ['thumbnail'] };
+  const PLACED = { 'proj:transform': [10, 0, 600000, 0, -10, 5300000], 'proj:shape': [100, 100] };
+
+  function option(from: Collection) {
+    return datasetsFrom([from])[0];
+  }
+
+  // A scene whose quicklook the map could place: had the rule looked only at that, the picture would be the thumbnail.
+  function placeable(assets: StacItem['assets']): StacItem {
+    const scene = item(assets);
+    scene.properties['proj:code'] = 'EPSG:32632';
+    return scene;
+  }
+
+  it('draws a Sentinel-1 scene from tiles at every released level, never from its thumbnail', () => {
+    const scene = placeable({ thumbnail: THUMB, vv: { href: 'https://example.test/vv.tif', roles: ['data'], ...PLACED } as never });
+    expect(quicklookPlan(scene, option(s1))).toEqual({
+      kind: 'tiles',
+      asset: 'vv',
+      minZoom: 7,
+      maxZoom: 19,
+      render: { rescale: '90,250', colormapName: undefined, expression: undefined },
+    });
+  });
+
+  it('draws a Sentinel-1 scene without VV from its HH tiles', () => {
+    const scene = item({ thumbnail: THUMB, hh: { href: 'https://example.test/hh.tif', roles: ['data'] } });
+    expect(quicklookPlan(scene, option(s1))).toMatchObject({ kind: 'tiles', asset: 'hh', minZoom: 7, maxZoom: 19 });
+  });
+
+  it('reads tiles from z0 once the registry releases z0 (adr/0032)', () => {
+    const fromZ0 = collection({ ...s1, 'earthx:viewer': viewer({ min_zoom: 0, max_zoom: 19 }) });
+    const scene = item({ thumbnail: THUMB, vv: { href: 'https://example.test/vv.tif', roles: ['data'] } });
+    expect(quicklookPlan(scene, option(fromZ0))).toMatchObject({ kind: 'tiles', minZoom: 0, maxZoom: 19 });
+  });
+
+  it('keeps the Sentinel-2 thumbnail', () => {
+    const scene = placeable({ thumbnail: THUMB, visual: { href: 'https://example.test/tci.tif', roles: ['visual'], ...PLACED } as never });
+    expect(quicklookPlan(scene, option(s2))).toEqual({ kind: 'image', href: THUMB.href });
+  });
+
+  it('keeps the thumbnail of a collection that does not name its georeferencing', () => {
+    const scene = placeable({ thumbnail: THUMB, visual: { href: 'https://example.test/tci.tif', roles: ['visual'], ...PLACED } as never });
+    const unnamed = collection({ ...s2, 'earthx:georeferencing': undefined });
+    expect(quicklookPlan(scene, option(unnamed))).toEqual({ kind: 'image', href: THUMB.href });
+  });
+
+  it('takes an unknown georeferencing value as no reason to leave the thumbnail', () => {
+    const scene = placeable({ thumbnail: THUMB, visual: { href: 'https://example.test/tci.tif', roles: ['visual'], ...PLACED } as never });
+    const odd = collection({ ...s2, 'earthx:georeferencing': 'GCP_TPS' });
+    expect(quicklookPlan(scene, option(odd))).toEqual({ kind: 'image', href: THUMB.href });
+  });
+
+  it('draws tiles for gcp_tps even where the registry names browse: quicklook', () => {
+    const misnamed = collection({ ...s1, 'earthx:viewer': viewer({ min_zoom: 7, max_zoom: 19, browse: 'quicklook' }) });
+    const scene = item({ thumbnail: THUMB, vv: { href: 'https://example.test/vv.tif', roles: ['data'] } });
+    expect(quicklookPlan(scene, option(misnamed))).toMatchObject({ kind: 'tiles', asset: 'vv' });
+  });
+
+  it('falls back to nothing, not the thumbnail, for gcp_tps without a standard visualisation', () => {
+    const bare = collection({ ...s1, 'earthx:default_render': null });
+    const scene = placeable({ thumbnail: THUMB, vv: { href: 'https://example.test/vv.tif', roles: ['data'], ...PLACED } as never });
+    expect(quicklookPlan(scene, option(bare))).toBeNull();
+  });
+
+  it('is null for a gcp_tps dataset that is not viewable', () => {
+    const hidden = collection({ ...s1, 'earthx:viewer': null });
+    const scene = item({ thumbnail: THUMB, vv: { href: 'https://example.test/vv.tif', roles: ['data'] } });
+    expect(quicklookPlan(scene, option(hidden))).toBeNull();
+  });
+});
+
 describe('zoomFloorHint', () => {
   function option(overrides: Partial<{ min: number; max: number }> = {}) {
     const { min = 8, max = 14 } = overrides;
