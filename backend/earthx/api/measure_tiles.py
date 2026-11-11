@@ -35,7 +35,8 @@ import multiprocessing
 import re
 import sys
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from typing import Any
@@ -280,6 +281,27 @@ def _filled(image: Any) -> float:
     return float(np.count_nonzero(valid)) / valid.size
 
 
+@contextmanager
+def _counting_gdal_lines() -> Iterator[_Downloads]:
+    """GDAL's lines go to a counter and nowhere else while the read runs; the logger is as it was afterwards.
+
+    The lines name the address, so they must not reach a handler of the process during the measurement. The tests
+    read in the process of pytest, where a changed logger would leak into the next test (#336).
+    """
+    downloads = _Downloads()
+    gdal_logger = logging.getLogger("rasterio")
+    level, propagate = gdal_logger.level, gdal_logger.propagate
+    gdal_logger.addHandler(downloads)
+    gdal_logger.setLevel(logging.DEBUG)
+    gdal_logger.propagate = False
+    try:
+        yield downloads
+    finally:
+        gdal_logger.removeHandler(downloads)
+        gdal_logger.setLevel(level)
+        gdal_logger.propagate = propagate
+
+
 def read_twice(
     scenes: Sequence[AssetPath],
     dataset_id: str,
@@ -293,31 +315,25 @@ def read_twice(
 
     Runs in the process of one zoom level. Any failure is a row with its kind, never with its text.
     """
-    downloads = _Downloads()
-    gdal_logger = logging.getLogger("rasterio")
-    gdal_logger.addHandler(downloads)
-    gdal_logger.setLevel(logging.DEBUG)
-    gdal_logger.propagate = False  # GDAL's lines name the address; only the counter sees them
     reader = MosaicTileReader(
         MosaicScenes(dataset_id, tuple(scenes), bounds), gdal_config={**gdal_config, "CPL_DEBUG": "ON"}
     )
     x, y, z = tile
     result: dict[str, Any] = {}
-    try:
-        for kind in ("cold", "warm"):
-            started = clock()
-            image = reader.tile(x, y, z, tilesize=TILE_SIZE)
-            result[f"{kind}_s"] = round(clock() - started, 3)
-            requests, total = downloads.take()
-            result[f"{kind}_requests"] = requests
-            result[f"{kind}_mb"] = round(total / 1e6, 3)
-        result["filled"] = round(_filled(image), 3)
-        result["tiff_kb"] = round(_tiff_bytes(image) / 1e3, 1)
-        result["status"] = "ok"
-    except Exception as error:  # noqa: BLE001 - a row names the kind of any failure; the text can hold an address
-        result["status"] = type(error).__name__
-    finally:
-        gdal_logger.removeHandler(downloads)
+    with _counting_gdal_lines() as downloads:
+        try:
+            for kind in ("cold", "warm"):
+                started = clock()
+                image = reader.tile(x, y, z, tilesize=TILE_SIZE)
+                result[f"{kind}_s"] = round(clock() - started, 3)
+                requests, total = downloads.take()
+                result[f"{kind}_requests"] = requests
+                result[f"{kind}_mb"] = round(total / 1e6, 3)
+            result["filled"] = round(_filled(image), 3)
+            result["tiff_kb"] = round(_tiff_bytes(image) / 1e3, 1)
+            result["status"] = "ok"
+        except Exception as error:  # noqa: BLE001 - a row names the kind of any failure; the text can hold an address
+            result["status"] = type(error).__name__
     return result
 
 
