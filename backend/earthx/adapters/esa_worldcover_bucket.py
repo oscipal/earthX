@@ -170,6 +170,7 @@ async def materialize_items(
     *,
     gateway: Gateway,
     known_version: str | None,
+    expected_items: int | None = None,
 ) -> MaterializeOutcome:
     """Build every item of one WorldCover state, or report "unchanged" against the ETag of the grid."""
     if config.source.item_holding is not ItemHolding.MATERIALIZED:

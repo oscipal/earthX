@@ -51,7 +51,7 @@ class FetchItem(Protocol):
 
 class MaterializeItems(Protocol):
     async def __call__(
-        self, config: DatasetConfig, *, gateway: Gateway, known_version: str | None
+        self, config: DatasetConfig, *, gateway: Gateway, known_version: str | None, expected_items: int | None = None
     ) -> MaterializeOutcome: ...
 
 
