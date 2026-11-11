@@ -8,12 +8,14 @@
 # lands in part 4 and is never left out, and no file runs in two parts as long as the
 # three named parts do not overlap (backend/tests/test_ci_backend_shards.py checks both).
 #
-# The split follows the durations of a full run (11.11.2026, 10358 tests, 4 cores): the
-# sum of the test times was about 3050 s, and each part carries about a quarter of it.
-#   1  integration                     779 s
-#   2  earthx/api                      769 s
-#   3  earthx/processing memory tests + earthx/runner   737 s
-#   4  the rest (processing without memory tests, jobs, access, catalog, ...)   767 s
+# The split follows the durations of a full run on 11.11.2026 (10358 tests, 4 cores), then
+# the first CI run of the four parts (pytest step: 390 s, 209 s, 291 s, 267 s) moved two
+# integration files from part 1 to the other two, so that no part runs far behind:
+#   1  integration (without the two files below)
+#   2  earthx/api and integration/test_api_federating.py
+#   3  earthx/processing memory tests and earthx/runner
+#   4  the rest: processing without memory tests, jobs, access, catalog, ...
+#      and integration/test_api_mixed_search.py
 # Move a directory or file between parts when a part runs clearly longer than the others
 # (the 50 slowest tests and the time of each part are in the log of each job);
 # backend/tests/test_ci_backend_shards.py keeps the rules.
@@ -25,8 +27,20 @@ set -euo pipefail
 shard="${1:-}"
 if [ $# -gt 0 ]; then shift; fi
 
-shard_1=(backend/tests/integration)
-shard_2=(backend/tests/earthx/api)
+# Integration tests wait on Postgres and ran longest per test in CI; two of its files
+# go to the parts that finished early (4 gets mixed_search without being told: it is
+# not named anywhere).
+integration=backend/tests/integration
+moved_to_2=("$integration/test_api_federating.py")
+moved_to_4=("$integration/test_api_mixed_search.py")
+shard_1=()
+for file in "$integration"/test_*.py; do
+  case " ${moved_to_2[*]} ${moved_to_4[*]} " in
+    *" $file "*) ;;
+    *) shard_1+=("$file") ;;
+  esac
+done
+shard_2=(backend/tests/earthx/api "${moved_to_2[@]}")
 # The memory tests measure peaks per process and need most of the time of this part; the
 # glob is expanded here, so a new test_memory_*.py file joins this part.
 shard_3=(backend/tests/earthx/runner backend/tests/earthx/processing/test_memory_*.py)
