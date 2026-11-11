@@ -22,14 +22,14 @@ from rasterio.enums import Resampling
 from rasterio.transform import from_origin
 from shapely.geometry import Point, box
 
-from earthx.access.resolve import ResolvedAsset
+from earthx.access.mosaic_tiles import MAX_MOSAIC_THREADS, MOSAIC_THREADS
 from earthx.api import measure_tiles
 from earthx.api.dependencies import policy_from_registry
 from earthx.api.measure_tiles import (
     CannotMeasure,
-    Gathered,
     ZoomRow,
     check_dataset,
+    choose,
     count_downloads,
     gather,
     measure_zoom,
@@ -37,8 +37,10 @@ from earthx.api.measure_tiles import (
     read_twice,
     render_json,
     render_table,
+    run,
     scenes_touching_tile,
     tile_at_centre,
+    tile_bounds,
 )
 from earthx.catalog.datasets import registry
 from earthx.catalog.registry import LicenseTier
@@ -63,6 +65,7 @@ def test_the_arguments_take_a_rectangle_and_give_defaults() -> None:
     assert args.bbox == (7.4, 46.9, 7.5, 47.0)
     assert args.zooms == tuple(range(15))
     assert (args.max_files, args.max_items, args.format, args.asset) == (64, 500, "table", None)
+    assert args.threads == MOSAIC_THREADS
     assert args.datetime == (None, None)
 
 
@@ -92,6 +95,15 @@ def test_one_zoom_level_and_one_day_are_enough() -> None:
 def test_the_caps_are_whole_numbers_above_zero(value: str) -> None:
     with pytest.raises(SystemExit):
         parse_args(["s", "--bbox", "7.4,46.9,7.5,47.0", "--max-files", value])
+
+
+def test_the_threads_are_one_to_sixteen() -> None:
+    args = ["s", "--bbox", "7.4,46.9,7.5,47.0", "--threads"]
+    assert parse_args([*args, "8"]).threads == 8
+    assert parse_args([*args, str(MAX_MOSAIC_THREADS)]).threads == 16
+    for value in ("0", "17", "-2", "many", "2.5"):
+        with pytest.raises(SystemExit):
+            parse_args([*args, value])
 
 
 # --- what may be measured
@@ -150,37 +162,162 @@ def test_the_scenes_of_a_tile_keep_the_order_of_the_mosaic() -> None:
     assert scenes_touching_tile(order, outlines, small) == ["t0"]
 
 
-def _gathered(outlines: dict[str, Any]) -> Gathered:
-    refs = {
-        item_id: ResolvedAsset("d", item_id, "a", "cog", f"https://host.example/{item_id}.tif", None, None, "geotransform")
-        for item_id in outlines
+def _item(item_id: str, west: float, state: str | None, host: str = "data.geo.admin.ch") -> dict[str, Any]:
+    properties: dict[str, Any] = {"datetime": "2021-01-01T00:00:00Z", "proj:code": "EPSG:2056"}
+    if state is not None:
+        properties["earthx:state"] = state
+    return {
+        "type": "Feature",
+        "id": item_id,
+        "bbox": [west, 46.94, west + 0.013, 46.953],
+        "geometry": box(west, 46.94, west + 0.013, 46.953).__geo_interface__,
+        "properties": properties,
+        "assets": {
+            "dtm": {"href": f"https://{host}/{SECRET_HOST_PART}/{item_id}.tif", "type": "image/tiff; application=geotiff"}
+        },
     }
-    return Gathered("d", "a", len(outlines), 1, tuple(sorted(outlines)), refs, outlines, {})
 
 
-def test_a_tile_without_scenes_and_a_tile_over_the_cap_are_not_read() -> None:
-    def never(*_: Any) -> dict[str, Any]:
-        raise AssertionError("not read")
-
-    gathered = _gathered(_outlines())
-    assert measure_zoom(gathered, 10, BBOX, 5, {}, read=never) == ZoomRow(10, 6, "over cap")
-    far = (8.5, 47.5, 8.6, 47.6)
-    assert measure_zoom(gathered, 10, far, 64, {}, read=never) == ZoomRow(10, 0, "no scenes")
+def _line(count: int, state: str | None = "2021", start: int = 0) -> list[dict[str, Any]]:
+    """``count`` neighbouring tiles in a row, each about 1 km wide, named after their number."""
+    return [_item(f"t{state}-{n}", 7.40 + 0.013 * n, state) for n in range(start, start + count)]
 
 
-def test_a_tile_is_read_with_its_scenes_in_order_and_a_failure_keeps_its_kind() -> None:
-    seen: list[Any] = []
+class _Source:
+    """A fake search: the items whose footprint meets the rectangle asked, cut at ``cut``; it records each ask."""
 
-    def fake(scenes: Any, dataset: str, bounds: Any, tile: Any, config: Any) -> dict[str, Any]:
-        seen.append(([s.item_id for s in scenes], dataset, tile, config))
+    def __init__(self, items: list[dict[str, Any]], cut: int = 10_000) -> None:
+        self.items, self.cut, self.asked = items, cut, []
+
+    def __call__(self, bbox: tuple[float, float, float, float]) -> list[dict[str, Any]]:
+        self.asked.append(bbox)
+        west, south, east, north = bbox
+        meeting = [
+            item
+            for item in self.items
+            if item["bbox"][0] <= east and item["bbox"][2] >= west and item["bbox"][1] <= north
+            and item["bbox"][3] >= south
+        ]  # fmt: skip
+        return meeting[: self.cut]
+
+
+class _Reads:
+    """A fake read: records what it was asked and answers with a row."""
+
+    def __init__(self) -> None:
+        self.asked: list[Any] = []
+
+    def __call__(self, scenes: Any, dataset: str, bounds: Any, tile: Any, config: Any, **options: Any) -> dict[str, Any]:
+        self.asked.append(([s.item_id for s in scenes], dataset, bounds, tile, config, options))
         return {"status": "ok", "cold_s": 1.5, "warm_s": 0.2, "cold_requests": 12, "unknown": 1}
 
-    row = measure_zoom(_gathered(_outlines()), 9, BBOX, 64, {"A": "1"}, read=fake)
-    assert seen[0][0] == ["t0", "t1", "t2", "t3", "t4", "t5"]
-    assert seen[0][1:] == ("d", (tuple(tile_at_centre(BBOX, 9))), {"A": "1"})
+
+def _zoom(source: _Source, zoom: int, reads: _Reads, *, max_files: int = 64, max_items: int = 500, **more: Any) -> ZoomRow:
+    reg = registry()
+    config = reg.get("swissalti3d")
+    chosen = choose(config, _line(6), None)
+    return measure_zoom(
+        config, chosen, zoom, BBOX, fetch=source, policy=policy_from_registry(reg), resolve=_public,
+        max_files=max_files, max_items=max_items, gdal_config={"A": "1"}, read=reads, **more,
+    )  # fmt: skip
+
+
+def test_each_zoom_level_fetches_the_items_in_the_bounds_of_its_own_tile() -> None:
+    source, reads = _Source(_line(6)), _Reads()
+    for zoom in (6, 9, 12):
+        _zoom(source, zoom, reads)
+    expected = [tile_bounds(tile_at_centre(BBOX, zoom)) for zoom in (6, 9, 12)]
+    assert source.asked == expected
+    west, south, east, north = expected[0]
+    assert (east - west) > (expected[1][2] - expected[1][0]) > (expected[2][2] - expected[2][0])
+    assert west < 7.44 < east and south < 46.95 < north
+
+
+def test_the_bounds_of_a_tile_stay_inside_the_valid_latitudes_and_longitudes(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert tile_bounds(tile_at_centre(BBOX, 0)) == (-180.0, -85.0511287798066, 180.0, 85.0511287798066)
+    monkeypatch.setattr(measure_tiles, "_TMS", SimpleNamespace(bounds=lambda _: (-181.0, -91.0, 181.0, 91.0)))
+    assert tile_bounds(None) == (-180.0, -90.0, 180.0, 90.0)  # type: ignore[arg-type]
+
+
+def test_a_tile_reads_the_files_of_its_bounds_that_the_rectangle_did_not_find() -> None:
+    # The rectangle holds six tiles; the tile of z8 reaches ten more along the row.
+    source, reads = _Source(_line(16)), _Reads()
+    row = _zoom(source, 8, reads)
+    assert row.files == row.read == 16 and row.status == "ok"
+    assert sorted(reads.asked[0][0]) == sorted(f"t2021-{n}" for n in range(16))
+
+
+def test_only_the_items_of_the_chosen_overpass_are_kept_and_read() -> None:
+    source, reads = _Source([*_line(6), *_line(9, "2019"), *_line(3, None, 20)]), _Reads()
+    row = _zoom(source, 9, reads)
+    assert reads.asked[0][0] == [f"t2021-{n}" for n in range(6)]
     assert (row.status, row.files, row.read, row.cold_s, row.cold_requests) == ("ok", 6, 6, 1.5, 12)
-    failed = measure_zoom(_gathered(_outlines()), 9, BBOX, 64, {}, read=lambda *_: {"status": "RasterioIOError"})
+
+
+def test_a_tile_is_read_with_its_scenes_in_order_its_config_and_threads() -> None:
+    reads = _Reads()
+    row = _zoom(_Source(_line(6)), 9, reads, threads=8)
+    scenes, dataset, bounds, tile, config, options = reads.asked[0]
+    assert (dataset, tile, config, options) == ("swissalti3d", tuple(tile_at_centre(BBOX, 9)), {"A": "1"}, {"threads": 8})
+    assert bounds == pytest.approx((7.40, 46.94, 7.40 + 0.013 * 6, 46.953))
+    assert row.status == "ok"
+
+
+def test_a_failure_of_the_read_keeps_its_kind() -> None:
+    failed = _zoom(_Source(_line(6)), 9, lambda *_, **__: {"status": "RasterioIOError"})  # type: ignore[arg-type]
     assert failed.status == "RasterioIOError" and failed.cold_s is None
+
+
+def test_a_tile_over_the_cap_is_not_read_and_says_how_many_files() -> None:
+    reads = _Reads()
+    assert _zoom(_Source(_line(6)), 10, reads, max_files=5) == ZoomRow(10, 6, "over cap")
+    assert reads.asked == []
+
+
+def test_a_tile_without_scenes_is_not_read() -> None:
+    reads = _Reads()
+    far = _Source([_item("far", 8.6, "2021")])
+    assert _zoom(far, 10, reads) == ZoomRow(10, 0, "no scenes")
+    assert _zoom(_Source(_line(6, "2019")), 10, reads) == ZoomRow(10, 0, "no scenes")
+    assert reads.asked == []
+
+
+def test_a_full_fetch_is_not_read_and_does_not_report_a_count_that_may_be_too_small() -> None:
+    reads = _Reads()
+    full = _Source(_line(16), cut=7)
+    row = _zoom(full, 8, reads, max_items=7)
+    assert (row.status, row.read) == ("over items cap", 0)
+    assert row.files == 7  # at least; the row's status says the list was cut
+    assert reads.asked == []
+    # Nothing of the overpass in a cut list is also not "no scenes".
+    assert _zoom(_Source(_line(7, "2019"), cut=7), 8, reads, max_items=7).status == "over items cap"
+    # One item short of the cap, the list is whole and is read.
+    assert _zoom(_Source(_line(6)), 8, reads, max_items=7).status == "ok"
+
+
+def test_a_full_fetch_over_the_file_cap_is_over_cap() -> None:
+    row = _zoom(_Source(_line(16), cut=7), 8, _Reads(), max_items=7, max_files=5)
+    assert (row.status, row.files) == ("over cap", 7)
+
+
+def test_a_run_chooses_by_the_rectangle_and_fetches_by_the_tile(capsys: Any) -> None:
+    source, reads = _Source([*_line(6), *_line(2, "2019", 3), *_line(10, start=6)]), _Reads()
+    args = parse_args(["swissalti3d", "--bbox", ",".join(map(str, BBOX)), "--zooms", "7-8", "--threads", "8"])
+    text = run(args, registry(), fetch=source, resolve=_public, read=reads)
+    assert source.asked[0] == BBOX
+    assert source.asked[1:] == [tile_bounds(tile_at_centre(BBOX, zoom)) for zoom in (7, 8)]
+    assert [ask[5] for ask in reads.asked] == [{"threads": 8}] * 2
+    header = text.splitlines()[0]
+    assert "8 threads" in header
+    assert "| 7 | 16 | ok |" in text and "| 8 | 16 | ok |" in text
+    for secret in ("t2021", "t2019", SECRET_HOST_PART, "7.4", "46.9"):
+        assert secret not in text
+
+
+def test_a_run_without_items_in_the_rectangle_says_so() -> None:
+    args = parse_args(["swissalti3d", "--bbox", ",".join(map(str, BBOX))])
+    with pytest.raises(CannotMeasure, match="no item in the rectangle"):
+        run(args, registry(), fetch=_Source([]), resolve=_public)
 
 
 # --- the read itself, with the mosaic tile's reader
@@ -226,22 +363,6 @@ def test_a_scene_that_cannot_be_read_ends_the_row_with_the_kind_and_without_its_
 # --- the overpass, its addresses and its order
 
 
-def _item(item_id: str, west: float, state: str | None, host: str = "data.geo.admin.ch") -> dict[str, Any]:
-    properties: dict[str, Any] = {"datetime": "2021-01-01T00:00:00Z", "proj:code": "EPSG:2056"}
-    if state is not None:
-        properties["earthx:state"] = state
-    return {
-        "type": "Feature",
-        "id": item_id,
-        "bbox": [west, 46.94, west + 0.013, 46.953],
-        "geometry": box(west, 46.94, west + 0.013, 46.953).__geo_interface__,
-        "properties": properties,
-        "assets": {
-            "dtm": {"href": f"https://{host}/{SECRET_HOST_PART}/{item_id}.tif", "type": "image/tiff; application=geotiff"}
-        },
-    }
-
-
 def test_the_largest_overpass_is_measured_and_what_cannot_be_read_is_only_counted() -> None:
     reg = registry()
     config = reg.get("swissalti3d")
@@ -275,11 +396,13 @@ def test_the_report_names_neither_the_rectangle_nor_an_address_nor_an_item() -> 
     items = [_item("tile-a", 7.400, "2021"), _item("tile-b", 7.413, "2021")]
     gathered = gather(reg.get("swissalti3d"), items, None, policy_from_registry(reg), _public)
     rows = [ZoomRow(13, 2, "ok", 2, 1.2, 0.3, 4, 0.8, 0, 0.0, 0.5, 120.0), ZoomRow(8, 70, "over cap")]
-    for text in (render_table(gathered, rows, 64), render_json(gathered, rows, 64)):
+    for text in (render_table(gathered, rows, 64, 8), render_json(gathered, rows, 64, 8)):
         for secret in ("tile-a", "tile-b", SECRET_HOST_PART, "data.geo.admin.ch", "7.4", "46.9"):
             assert secret not in text
     assert "| 13 | 2 | ok | 1.2 | 0.3 | 4 | 0.8 | 0 | 0.0 | 0.5 | 120.0 |" in render_table(gathered, rows, 64)
     assert json.loads(render_json(gathered, rows, 64))["rows"][1]["status"] == "over cap"
+    assert json.loads(render_json(gathered, rows, 64, 8))["threads"] == 8
+    assert "at most 64 files read per tile, 8 threads." in render_table(gathered, rows, 64, 8).splitlines()[0]
 
 
 def test_a_failure_of_the_run_is_reported_by_its_kind_only(monkeypatch: pytest.MonkeyPatch, capsys: Any) -> None:

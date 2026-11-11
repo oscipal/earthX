@@ -303,8 +303,12 @@ docker compose run --rm measure-tiles swissalti3d --bbox <W,S,E,N> --zooms 6-14
 
 `--datetime A/B` grenzt Szenen-Datensätze auf einen Zeitraum ein, `--asset` wählt ein anderes
 Asset, `--max-files` (Vorgabe 64) ist die Zahl der Dateien, über der eine Kachel nicht gelesen
-wird, `--format json` gibt JSON statt einer Markdown-Tabelle aus. Die Ausgabe nennt weder das
-Rechteck noch Adressen oder Item-IDs.
+wird, `--format json` gibt JSON statt einer Markdown-Tabelle aus. Das Rechteck wählt nur den
+Überflug und das Asset; jede Zoomstufe holt die Items im Ausschnitt ihrer eigenen Kachel (bis
+`--max-items`, Vorgabe 500; ist die Liste voll, steht `over items cap` statt einer zu kleinen
+Zahl). `--threads N` (1 bis 16, Vorgabe wie die Kachel-Route) setzt, wie viele Dateien der
+Mosaik-Leser gleichzeitig öffnet. Die Ausgabe nennt weder das Rechteck noch Adressen oder
+Item-IDs.
 
 ### Registry-Einträge ändern (seit M5-13)
 
