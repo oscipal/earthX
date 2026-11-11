@@ -12,6 +12,7 @@
 // out — and every difference between two datasets comes from here, never from
 // a branch on a dataset id somewhere in a component (M2-10).
 
+import { quicklookCoords } from './geoUtils';
 import { trueColorOf } from './processingOrder';
 import { appliedRenderFrom } from './render';
 import type { AppliedRender, BrowseMode, Collection, EarthxDefaultRender, StacAsset, StacItem } from './types';
@@ -125,8 +126,24 @@ export function acquisitionNote(collection: Collection): string | null {
 // The registry's standard visualisation (M2-04/D20) — what full-resolution
 // viewing (M2-07b) defaults to before the user touches the stretch/colormap
 // controls. `null` when the dataset has not set one yet.
-export function defaultRenderOf(collection: Collection): EarthxDefaultRender | null {
-  return collection['earthx:default_render'] ?? null;
+//
+// With `asset_selection: 'first_present'` (DS-04 F2, Sentinel-1: `vv` or `hh`) an item is drawn with the first asset of
+// the list it carries, alone, with the `rescale` pair at the same place; `null` for an item that carries none of them.
+// Without an item the first of the list stands for the dataset.
+export function defaultRenderOf(collection: Collection, item?: Pick<StacItem, 'assets'> | null): EarthxDefaultRender | null {
+  const render = collection['earthx:default_render'] ?? null;
+  if (!render || render.asset_selection !== 'first_present') return render;
+  const index = item ? render.assets.findIndex((key) => item.assets?.[key] !== undefined) : 0;
+  if (index < 0) return null;
+  return { ...render, assets: [render.assets[index]], rescale: render.rescale?.[index] ? [render.rescale[index]] : null };
+}
+
+// The assets of the standard visualisation the source files are offered for ("Originals"): the drawn one, or for
+// `first_present` every one of the list, of which an item has the one it carries.
+export function standardAssetsOf(collection: Collection): string[] {
+  const render = collection['earthx:default_render'];
+  if (!render) return [];
+  return render.asset_selection === 'first_present' ? render.assets : render.assets.slice(0, 1);
 }
 
 // Whether a colormap can colour the standard picture of the dataset. It cannot where the dataset has a true-colour picture
@@ -150,9 +167,9 @@ export function drawsClasses(collection: Collection): boolean {
 // the same one full-resolution viewing renders by default. `undefined` where
 // the dataset names none, which leaves those functions' `visual`/generic
 // fallback in charge, unchanged.
-export function preferredGeoreferencedAsset(dataset: DatasetOption): string | undefined {
+export function preferredGeoreferencedAsset(dataset: DatasetOption, item?: Pick<StacItem, 'assets'>): string | undefined {
   if (!dataset.viewable) return undefined;
-  return defaultRenderOf(dataset.collection)?.assets?.[0];
+  return defaultRenderOf(dataset.collection, item)?.assets?.[0];
 }
 
 // The released tile levels, or `null` where the dataset names none or names
@@ -242,38 +259,21 @@ export function maturityNote(collection: Collection): string | null {
   return maturity;
 }
 
-// Why the map shows no imagery for this dataset at this zoom, or `null` when
-// that is not the reason (M2-10).
+// Why the search results of this dataset show nothing at this zoom, or `null` when that is not the reason (M2-10): the
+// tooltip of the entry "Search results" in the layer manager says it (Otto, 10.11.2026; before, a standing line over the
+// map said "Zoom in to level n to see imagery …"). Below `min_zoom` MapLibre requests no tiles at all, a raster source has
+// no underzoom, so the scenes simply are not drawn. Above the floor this says nothing: an empty map then has another cause.
 //
-// Below `min_zoom` MapLibre requests no tiles at all — a raster source has no
-// underzoom — so the scenes simply are not drawn, and the map looks empty rather
-// than out of range. Above the floor this says nothing: an empty map then has
-// some other cause, and a hint that is always on is a hint nobody reads.
-//
-// Two limits worth knowing. It speaks for the *tile* paths, which is what a
-// released range bounds: a published quicklook is placed as an image and has no
-// floor, so for a dataset with `min_zoom > 0` whose items carry thumbnails this
-// would be wrong — no entry is in that position today (the COG one releases from
-// z0). And it follows the map's `moveend`, so during a long zoom gesture the map
-// is already empty while this still says nothing.
-//
-// M3-12 (Otto, 26.09.2026): only for `browse: 'preview_tiles'` — a dataset with
-// no coarse-tile preview at all (`full_resolution`, the DEM) shows no "zoom in"
-// hint when zoomed out; its tiles are per-item (M3-09), so there is nothing a
-// released range would be hiding several scenes behind (M3-12 plan step §3).
-//
-// It belongs wherever the app talks to the user and not in a panel that can be
-// slid away: the first version of this sat in the control panel, which
-// `runSearch` collapses, so it was never once visible in the situation it is
-// for (found locally by Otto, 22.09.2026).
+// Only for `browse: 'preview_tiles'` (M3-12, Otto, 26.09.2026): a dataset with no coarse-tile preview (`full_resolution`,
+// the DEM) draws its scenes at every released level; a published quicklook is placed as an image and has no floor.
 export function zoomFloorHint(dataset: DatasetOption | undefined, mapZoom: number): string | null {
   // A zoom that is not a number compares false against everything, which would
-  // otherwise turn a broken reading into a standing hint.
+  // otherwise turn a broken reading into a standing reason.
   if (!Number.isFinite(mapZoom)) return null;
   if (!dataset?.viewable || dataset.browse !== 'preview_tiles' || mapZoom >= dataset.zoom.min) return null;
   return (
-    `Zoom in to level ${dataset.zoom.min} to see imagery for ${dataset.title} — ` +
-    'below it one tile covers several scenes, which is what the coverage layer is for.'
+    `Nothing shown at this zoom: ${dataset.title} is drawn from zoom ${dataset.zoom.min}. ` +
+    'Below it one tile covers several scenes; the coverage shows where they are.'
   );
 }
 
@@ -323,7 +323,9 @@ export function quicklookAsset(item: StacItem): StacAsset | null {
 //
 // An item's own quicklook still wins first regardless of `browse`: a source that
 // starts publishing thumbnails tomorrow gets them without a change here, and one
-// that stops falls back to whatever `browse` says next.
+// that stops falls back to whatever `browse` says next. Only a quicklook the map
+// can place counts (`quicklookCoords`): Sentinel-1's lies in radar geometry with no
+// CRS, so its scenes get the tiles `browse` names instead of no preview (DS-04c).
 export type QuicklookPlan =
   | { kind: 'image'; href: string }
   // `render` is the registry's standard visualisation, carried because a preview
@@ -334,9 +336,9 @@ export type QuicklookPlan =
 
 export function quicklookPlan(item: StacItem, dataset: DatasetOption): QuicklookPlan | null {
   const asset = quicklookAsset(item);
-  if (asset?.href) return { kind: 'image', href: asset.href };
+  if (asset?.href && quicklookCoords(item, preferredGeoreferencedAsset(dataset, item))) return { kind: 'image', href: asset.href };
   if (!dataset.viewable || dataset.browse === 'quicklook') return null;
-  const render = defaultRenderOf(dataset.collection);
+  const render = defaultRenderOf(dataset.collection, item);
   const rendered = render?.assets?.[0];
   if (!render || !rendered) return null;
   const wholeScene = dataset.browse === 'full_resolution';

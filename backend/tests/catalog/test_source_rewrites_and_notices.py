@@ -1,4 +1,5 @@
-"""DS-04 plan §4.2–§4.4 and F2: href rewrites, the asset checksum, notices and the choice of the default asset."""
+"""DS-04 plan §4.2–§4.4 and F2: href rewrites, the asset checksum, notices, limitations, the texts for users and the
+choice of the default asset."""
 
 from __future__ import annotations
 
@@ -137,6 +138,55 @@ class TestNotices:
 
     def test_no_notice_is_published_as_an_empty_list(self, valid_config) -> None:
         assert to_stac_collection(valid_config)["earthx:notices"] == []
+
+
+class TestLimitations:
+    """The row "Limitations" of the Data catalogue (Otto, 10.11.2026, adr/0018 F2, Nachtrag DS-04c)."""
+
+    def test_sentences_are_accepted_and_published_in_their_order(self, vary) -> None:
+        built = to_stac_collection(vary(limitations=("Placed by its GCPs.", "Values are DN.")))
+        assert built["earthx:limitations"] == ["Placed by its GCPs.", "Values are DN."]
+
+    def test_none_is_published_as_an_empty_list(self, valid_config) -> None:
+        assert to_stac_collection(valid_config)["earthx:limitations"] == []
+
+    @pytest.mark.parametrize(
+        ("limitations", "match"),
+        [
+            (["Placed by its GCPs."], "tuple of sentences"),
+            (("",), "one line"),
+            ((" padded.",), "one line"),
+            (("two\nlines.",), "one line"),
+            ((3,), "one line"),
+            (("x" * 200 + ".",), "longer than 200"),
+            (("no full stop",), "full stop"),
+            (("Twice.", "Twice."), "twice"),
+        ],
+    )
+    def test_a_malformed_limitation_stops_the_start(self, vary, limitations, match) -> None:
+        with pytest.raises(ConfigError, match=match):
+            vary(limitations=limitations)
+
+
+class TestTextsForUsers:
+    """No text a user reads names one of our own documents (Otto, 10.11.2026)."""
+
+    @pytest.mark.parametrize("reference", ["adr/0018", "§3.1", "M5-07", "NM4-01", "DS-04", "UI-05", "KLAERUNGEN B10"])
+    @pytest.mark.parametrize("field", ["description", "citation", "limitations"])
+    def test_an_internal_reference_stops_the_start(self, vary, field, reference) -> None:
+        text = f"Read the data with care ({reference})."
+        with pytest.raises(ConfigError, match="no user can open"):
+            vary(**{field: (text,) if field == "limitations" else text})
+
+    def test_the_access_method_notices_and_filters_are_texts_for_users_too(self, vary, valid_config) -> None:
+        with pytest.raises(ConfigError, match="access.method"):
+            vary(access=replace(valid_config.access, method="anonymous HTTPS (adr/0003 §10.1)"))
+        with pytest.raises(ConfigError, match="notice"):
+            vary(notices=(replace(NOTICE, tooltip="See adr/0018 F2."),))
+
+    @pytest.mark.parametrize("text", ["Sentinel-2 Level-2A, Collection 1.", "Copernicus DEM GLO-30, 1° × 1° tiles.", "Band B04 at 10 m."])
+    def test_an_ordinary_text_passes(self, vary, text) -> None:
+        assert vary(description=text).description == text
 
 
 class TestAssetSelection:

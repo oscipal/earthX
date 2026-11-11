@@ -60,6 +60,133 @@ function combinedLonSpan(geometries: readonly GeoJSON.Geometry[]): number {
   return Number.isFinite(minLon) ? maxLon - minLon : 0;
 }
 
+// The scenes of one pass do not share their edges exactly: two slices of a Sentinel-1 datatake meet with their footprints
+// a few thousandths of a degree apart, now overlapping, now leaving a gap (measured on 9.11.2026: 282 of 689 pairs of
+// slices fell apart into two rings, or a ring with a hole, when united). The union then draws both edges, a double line
+// across the merged picture (Otto's browser check, 9.11.2026). Before the union the footprints of a group are snapped to
+// each other: a corner near a corner of an earlier footprint takes its place, and an edge that passes near a corner of
+// another footprint gets that corner, so the two share the same points along their common edge. 0.01° closes every
+// seam of those pairs and of 232 more in the polar seas, where 0.008° was the least that did; it moves an outline by at
+// most about a kilometre where scenes really meet, and nowhere else. A footprint smaller than ten times that (a tile of
+// swissALTI3D, 1 km) snaps within a tenth of its shorter side (`SNAP_SHARE_OF_SIDE`). Generic: any dataset's group goes
+// through it.
+const SNAP_TOLERANCE_DEG = 0.01;
+
+type Point = [number, number];
+
+const squaredDistance = (a: Point, b: Point): number => (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2;
+
+// Where `p` lies along the segment a→b (0 to 1, ends excluded) and how far from it, squared; `null` beyond the ends.
+function alongSegment(p: Point, a: Point, b: Point): { t: number; distance: number } | null {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const length = dx * dx + dy * dy;
+  if (length === 0) return null;
+  const t = ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / length;
+  if (t <= 0 || t >= 1) return null;
+  return { t, distance: squaredDistance(p, [a[0] + t * dx, a[1] + t * dy]) };
+}
+
+// The rings of a polygon or of every part of a multipolygon.
+const ringsOf = (geom: Geom): Point[][] => (typeof geom[0]?.[0]?.[0] === 'number' ? (geom as Point[][]) : (geom as Point[][][]).flat());
+
+function mapRings(geom: Geom, fn: (ring: Point[]) => Point[]): Geom {
+  return typeof geom[0]?.[0]?.[0] === 'number'
+    ? (geom as Point[][]).map(fn)
+    : (geom as Point[][][]).map((polygon) => polygon.map(fn));
+}
+
+type Box = [number, number, number, number];
+
+function boxOf(geom: Geom): Box {
+  const box: Box = [Infinity, Infinity, -Infinity, -Infinity];
+  for (const [x, y] of ringsOf(geom).flat()) {
+    box[0] = Math.min(box[0], x);
+    box[1] = Math.min(box[1], y);
+    box[2] = Math.max(box[2], x);
+    box[3] = Math.max(box[3], y);
+  }
+  return box;
+}
+
+const near = (a: Box, b: Box, tolerance: number): boolean =>
+  a[0] - tolerance <= b[2] && b[0] - tolerance <= a[2] && a[1] - tolerance <= b[3] && b[1] - tolerance <= a[3];
+
+// A ring this can snap: closed, with at least three corners. Anything else is left as it is, for the union to judge.
+const closedRing = (ring: Point[]): boolean => ring.length >= 4 && squaredDistance(ring[0], ring[ring.length - 1]) === 0;
+
+// The share of the shorter side of a footprint it may move by at most: a small tile (swissALTI3D, 1 km) snaps within its
+// own size, never onto the next corner of its neighbour, and a narrow strip cannot have its two long edges pulled across.
+const SNAP_SHARE_OF_SIDE = 0.1;
+
+export function snapFootprints(footprints: readonly Geom[], tolerance = SNAP_TOLERANCE_DEG): Geom[] {
+  const boxes = footprints.map(boxOf);
+  // The tolerance of each footprint, and of a pair the smaller of the two: 0.01° for scenes of a pass, a tenth of the
+  // shorter side for footprints that small.
+  const own = boxes.map((box) => Math.min(tolerance, SNAP_SHARE_OF_SIDE * Math.min(box[2] - box[0], box[3] - box[1])));
+  const limitOf = (i: number, j: number) => Math.min(own[i], own[j]) ** 2;
+  // Only the footprints that come within the tolerance of each other are compared, so a group of many scenes costs what
+  // their neighbours cost.
+  const neighbours = (index: number, before: number) =>
+    boxes.slice(0, before).flatMap((box, j) => (j !== index && near(box, boxes[index], tolerance) ? [j] : []));
+  // Corners first, each footprint onto those before it, so that two near corners become one point and not two that swapped.
+  // A corner that lies exactly on an earlier corner keeps it.
+  const snapped: Geom[] = [];
+  footprints.forEach((footprint, index) => {
+    const earlier = neighbours(index, index).map((j) => ({ corners: ringsOf(snapped[j]).flat(), limit: limitOf(index, j) }));
+    snapped.push(
+      mapRings(footprint, (ring) =>
+        !closedRing(ring)
+          ? ring
+          : ring.map((corner) => {
+              let best = corner;
+              let bestDistance = Infinity;
+              for (const { corners, limit } of earlier) {
+                for (const other of corners) {
+                  const distance = squaredDistance(corner, other);
+                  if (distance === 0) return corner;
+                  if (distance <= limit && distance <= bestDistance) {
+                    best = other;
+                    bestDistance = distance;
+                  }
+                }
+              }
+              return best;
+            }),
+      ),
+    );
+  });
+  // Then every edge takes the corners of the other footprints that lie near it, in their order along the edge.
+  return snapped.map((footprint, index) => {
+    const others = neighbours(index, snapped.length).flatMap((j) =>
+      ringsOf(snapped[j]).flatMap((ring) => ring.slice(0, -1).map((corner) => ({ corner, limit: limitOf(index, j) }))),
+    );
+    if (others.length === 0) return footprint;
+    return mapRings(footprint, (ring) => {
+      if (!closedRing(ring)) return ring;
+      const out: Point[] = [];
+      for (let k = 0; k < ring.length - 1; k++) {
+        const [a, b] = [ring[k], ring[k + 1]];
+        // Two corners snapped onto one point leave it once; a corner that is no number stays, for the union to refuse.
+        if (out.length === 0 || squaredDistance(a, out[out.length - 1]) !== 0) out.push(a);
+        const [x0, x1] = [Math.min(a[0], b[0]) - tolerance, Math.max(a[0], b[0]) + tolerance];
+        const [y0, y1] = [Math.min(a[1], b[1]) - tolerance, Math.max(a[1], b[1]) + tolerance];
+        const inserted: { corner: Point; t: number }[] = [];
+        for (const { corner, limit } of others) {
+          if (corner[0] < x0 || corner[0] > x1 || corner[1] < y0 || corner[1] > y1) continue;
+          if (squaredDistance(corner, a) <= limit || squaredDistance(corner, b) <= limit) continue;
+          const at = alongSegment(corner, a, b);
+          if (at && at.distance <= limit) inserted.push({ corner, t: at.t });
+        }
+        inserted.sort((x, y) => x.t - y.t);
+        for (const { corner } of inserted) if (squaredDistance(corner, out[out.length - 1]) !== 0) out.push(corner);
+      }
+      out.push(out[0]);
+      return out;
+    });
+  });
+}
+
 export interface GroupOutlineProperties {
   groupKey: string;
   // Set on a feature that could not be merged (an antimeridian risk, or the
@@ -115,7 +242,8 @@ export function groupOutlineFeatures(
     }
 
     try {
-      const unioned = union(footprintGeoms[0], ...footprintGeoms.slice(1));
+      const [first, ...rest] = snapFootprints(footprintGeoms);
+      const unioned = union(first, ...rest);
       const clipped = intersection(unioned, aoiGeom);
       const geometry = fromResult(clipped);
       if (geometry) features.push({ type: 'Feature', properties: { groupKey, fallback: false }, geometry });
