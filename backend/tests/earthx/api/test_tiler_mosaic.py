@@ -43,6 +43,7 @@ from earthx.access import mosaic_tiles as mosaic_reading
 from earthx.access.crop_rules import mosaic_order
 from earthx.adapters.errors import UnknownCollection
 from earthx.api import mosaic_tiles
+from earthx.api import tiler as tiler_module
 from earthx.api.tiler import MOSAIC_ROUTER_PREFIX, MOSAIC_SELECTION_ROUTE, build_app
 from earthx.catalog.mosaic_selection import selection_id
 from earthx.catalog.registry import DatasetRegistry, LicenseTier, SearchCapabilities
@@ -319,6 +320,85 @@ class TestTheOrderIsTheMosaicJobs:
         assert value_at(tile, SEAM_X - 1000.0) == 2
         assert value_at(tile, SEAM_X + 1000.0) == 3
         assert 1 not in numpy.unique(tile[0][tile[-1] != 0])
+
+
+class TestTheTileJsonNamesWhatTheSelectionStored:
+    def test_it_names_the_data_type_the_scenes_share_and_fetches_no_item(self, scenes: Scenes, client) -> None:
+        _seam(scenes)
+        for item in scenes.items.values():
+            item["assets"][ASSET]["raster:bands"] = [{"data_type": "uint8", "nodata": 0}]
+        api = client()
+        body = api.get(_tilejson_path(_select(api, ["WEST", "EAST"]))).json()
+        assert body["data_type"] == "uint8" and body["earthx:order"] == ["EAST", "WEST"]
+        assert scenes.fetched == []
+
+    def test_scenes_that_scale_the_asset_differently_are_refused_at_the_creation(self, scenes: Scenes, client) -> None:
+        _seam(scenes)
+        scenes.items["WEST"]["assets"][ASSET]["raster:bands"] = [{"data_type": "uint8", "raster:scale": 0.5}]
+        scenes.items["EAST"]["assets"][ASSET]["raster:bands"] = [{"data_type": "uint8", "raster:scale": 2.0}]
+        response = client().post(BASE, json={"items": ["WEST", "EAST"], "assets": [ASSET]})
+        assert response.status_code == 422
+        assert response.json()["detail"] == f"the scenes of the mosaic scale {ASSET!r} differently"
+        assert scenes.selections.rows == {}
+
+
+class TestOneOrderForEveryAsset:
+    """M5-30b part 3, F6: the selection stores one order, taken from the CRS of the scenes, for all its assets.
+
+    A Sentinel-2 item names its CRS once, in ``proj:code`` of the item (the Earth Search form; ``proj:epsg`` is the older
+    spelling of the same), and every asset of the scene lies in it. An overpass over two UTM zones, as over Austria, has
+    scenes of zone 32 and of zone 33, and each scene's assets lie in that scene's zone.
+    """
+
+    NAMES_32, NAMES_33 = ("A32", "B32"), ("C33", "D33", "E33")
+
+    def _overpass(self, scenes: Scenes) -> None:
+        x33, y33 = Transformer.from_crs(ZONE_32, ZONE_33, always_xy=True).transform(SEAM_X, SEAM_Y)
+        for n, name in enumerate(self.NAMES_32):
+            scenes.add(name, ZONE_32, SEAM_X - 60_000.0 + n * 20_000.0, 10_000.0, 10 + n, assets=("red", "nir"))
+        for n, name in enumerate(self.NAMES_33):
+            scenes.add(name, ZONE_33, x33 + n * 20_000.0, 10_000.0, 20 + n, top=y33 + 5000.0, assets=("red", "nir"))
+
+    def test_the_two_zones_of_one_overpass_are_taken_and_ordered_like_the_job_for_every_asset(
+        self, scenes: Scenes, client
+    ) -> None:
+        self._overpass(scenes)
+        assert {item["properties"]["proj:code"] for item in scenes.items.values()} == {ZONE_32, ZONE_33}
+        assert all("proj:code" not in asset for item in scenes.items.values() for asset in item["assets"].values())
+        everything = [*self.NAMES_32, *self.NAMES_33]
+        by_zone = {name: item["properties"]["proj:code"] for name, item in scenes.items.items()}
+        expected = mosaic_order(by_zone)
+        assert expected == [*self.NAMES_33, *self.NAMES_32]  # zone 33 has the most scenes, so it is the target
+        api = client()
+        stored = []
+        for assets in (("red", "nir"), ("nir",), ("red",)):
+            response = api.post(BASE, json={"items": everything, "assets": list(assets)})
+            assert response.status_code == 201, response.text
+            stored.append(scenes.selections.rows[response.json()["id"]][1]["order"])
+            if len(assets) == 1:  # a TileJSON without steps names one asset
+                assert api.get(response.json()["tilejson"]).json()["earthx:order"] == expected
+        assert stored == [expected] * 3
+
+    def test_assets_of_one_scene_in_different_crs_are_a_422_and_nothing_is_stored(
+        self, scenes: Scenes, client, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Items do not name a CRS per asset, so the resolution gives them one only if it changes; then one scene
+        could belong to two zones, and the one stored order could not stand for both assets."""
+        self._overpass(scenes)
+        resolve = tiler_module._resolve_ref
+
+        def resolve_nir_of_a32_in_zone_33(stac_item: Any, *, config: Any, item: str, asset: str) -> Any:
+            ref = resolve(stac_item, config=config, item=item, asset=asset)
+            return replace(ref, crs=ZONE_33) if (item, asset) == ("A32", "nir") else ref
+
+        monkeypatch.setattr(tiler_module, "_resolve_ref", resolve_nir_of_a32_in_zone_33)
+        api = client()
+        everything = [*self.NAMES_32, *self.NAMES_33]
+        response = api.post(BASE, json={"items": everything, "assets": ["red", "nir"]})
+        assert response.status_code == 422, response.text
+        assert "'A32'" in response.json()["detail"] and "different coordinate reference systems" in response.json()["detail"]
+        assert scenes.selections.rows == {}
+        assert api.post(BASE, json={"items": everything, "assets": ["red"]}).status_code == 201  # one asset cannot differ
 
 
 class TestTheTargetZoneComesFromTheWholeList:
