@@ -258,6 +258,7 @@ REPROJECT = Operator(
     lineage=_lineage,
     method=_method,
     extra_requirements=_extra_requirements,
+    passes_values=lambda params: params.resampling in _PICKING,
 )
 
 #: Accepted for recipes written before NM4-43b and computed as before: all bands in one warp, not listed.

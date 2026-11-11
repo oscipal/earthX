@@ -164,8 +164,9 @@ def test_an_integer_output_with_nodata_has_exact_percentiles(tmp_path: Path, mon
     assert tags["STATISTICS_MINIMUM"] == repr(area["minimum"])
 
 
-def test_a_value_rounded_onto_nodata_is_not_counted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """``uint16`` with nodata 0: a scaled value below 0.5 is written as 0 and reads back as nodata (review M4-32a)."""
+def test_a_value_rounded_to_0_stays_a_value_and_is_counted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """``uint16`` from a source with nodata 0: a scaled value below 0.5 is written as 0. Before M5-28 it read back
+    as nodata (review M4-32a); now the result's nodata is 65535, and file, statistics and ``valid_pixels`` agree."""
     raw = sources.ramp(300, 300, 100)
     bare = sources.build_band_cog(tmp_path / "bare.tif", raw, scale=None, offset=None)
     sources.serve({sources.url("band"): bare}, monkeypatch)
@@ -173,10 +174,10 @@ def test_a_value_rounded_onto_nodata_is_not_counted(tmp_path: Path, monkeypatch:
     data = _recipe(sources.whole(300, 300), dtype="uint16", step=shrink, scale=None, offset=None)
     result = _run(data, tmp_path / "work")
     written, _, tags = _files(result)
-    assert 0 < written.count() < raw.size - 64 - 1000  # many valid inputs became nodata on the way out
+    assert written.count() == raw.size - 64 == result.valid_pixels
     area = result.properties["bands"][0]["statistics"]
     _assert_matches(area, written.compressed(), written.size, exact=True)
-    assert area["minimum"] >= 1 and float(tags["STATISTICS_MINIMUM"]) >= 1
+    assert area["minimum"] == 0 and float(tags["STATISTICS_MINIMUM"]) == 0
     assert tags == gdal_tags(area)
 
 

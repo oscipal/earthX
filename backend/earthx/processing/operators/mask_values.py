@@ -210,5 +210,6 @@ MASK_VALUES = Operator(
     method=_method,
     properties=_properties,
     bands_used=_bands_used,
+    passes_values=lambda params: True,
     listed=True,
 )
