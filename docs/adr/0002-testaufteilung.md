@@ -199,3 +199,5 @@ auf prozessweiten Zustand verlassen, den ein früherer Test im selben Worker hin
 (etwa den `/vsicurl/`-Cache von GDAL; solche Prüfungen laufen in einem eigenen
 `spawn`-Prozess). „Gleichzeitig“ wird hergestellt, nicht abgewartet. Im Testprozess läuft rasterio ohne AWS-Sitzung, wie im Image
 (`backend/tests/conftest.py`).
+
+**Nachtrag 2026-11-11 (Auftrag Otto, [#338](https://github.com/oscipal/earthX/pull/338)).** In CI läuft `pytest` nicht mehr als ein Befehl, sondern in vier parallelen Teilen (`scripts/ci-backend-shard.sh 1` bis `4`, Matrix in `ci.yml`), weil der Backend-Job auf rund 15 Minuten gewachsen war. Der Pflicht-Check „Backend — lint and tests“ ist der Sammel-Job darüber. Die Regel „derselbe Befehl in Sitzung und CI“ gilt für den Inhalt weiter: Teil 4 ist `backend/tests` abzüglich der Teile 1 bis 3, zusammen laufen alle Testdateien genau einmal (`backend/tests/test_ci_backend_shards.py`). In der Sitzung bleibt `pytest` der eine Befehl.
