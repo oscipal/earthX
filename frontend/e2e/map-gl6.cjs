@@ -4,7 +4,7 @@
 //   1. the map does not start (WebGL2 is required since 6), or the page throws;
 //   2. the attribution is not open, loses its credit, or keeps a dangerous attribute of a source's attribution (the hole that
 //      made the step necessary: 5.24 kept the second of two event attributes in a row, 6.x keeps none);
-//   3. the zoom limits or the no-tilt rule of the map have moved (levels 0 to 22, pitch 0);
+//   3. the zoom limits or the no-tilt rule of the map in 2D have moved (levels 0 to 22, pitch 0; 3D lifts it, `terrain-3d.cjs`);
 //   4. "Globe" and "Mercator" in the menu do not change the projection of the map;
 //   5. the overlay "Relief" (its host is the one the cloud session can reach; it is no basemap since UI-04 part 4) draws no shading over mountains;
 //   6. the Point, Rectangle and Polygon tools set no AOI, an upload sets none or a wrong file changes the AOI;
@@ -127,7 +127,7 @@ const UPLOAD = { type: 'Polygon', coordinates: [[[10.0, 47.2], [10.3, 47.2], [10
     expect('the map zooms to 22 and not beyond', limits.maxZoom === 22 && limits.high.zoom === 22, JSON.stringify(limits));
     // MapLibre's own floor is -2; the world fills the window long before, so the map stops where it fits.
     expect('the map keeps MapLibre\'s floor of -2 and does not zoom out past the world', limits.minZoom === -2 && limits.low >= 0 && limits.low < 2, JSON.stringify(limits));
-    expect('the map cannot be tilted', limits.maxPitch === 0 && limits.high.pitch === 0, JSON.stringify(limits));
+    expect('the map cannot be tilted in 2D', limits.maxPitch === 0 && limits.high.pitch === 0, JSON.stringify(limits));
     await jump(10.5, 30, 1.6);
 
     // 4. The overlay "Relief" and the projection, through the panel "Settings" at the bottom of the rail.

@@ -33,6 +33,7 @@ import {
   Layers,
   Library,
   MapPin,
+  Minus,
   Monitor,
   Moon,
   Pause,
@@ -111,6 +112,7 @@ export const LayersIcon = icon('LayersIcon', Layers);
 export const LibraryIcon = icon('LibraryIcon', Library);
 export const JobsIcon = icon('JobsIcon', ClipboardList);
 export const MapPinIcon = icon('MapPinIcon', MapPin);
+export const MinusIcon = icon('MinusIcon', Minus);
 export const MonitorIcon = icon('MonitorIcon', Monitor);
 export const MoonIcon = icon('MoonIcon', Moon);
 export const PauseIcon = icon('PauseIcon', Pause);
