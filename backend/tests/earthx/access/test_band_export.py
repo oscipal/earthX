@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -10,12 +12,14 @@ from earthx.access.band_export import (
     BandMeta,
     BandsFile,
     ExportPlanError,
+    NoFreeNodata,
     band_count,
     band_meta,
     band_meta_of_items,
     band_table,
     bands_text,
     is_geotiff,
+    kept_nodata,
     plan_files,
     resampling_for,
 )
@@ -89,6 +93,37 @@ class TestThePlans:
     def test_what_is_no_plan_is_refused(self, form: str, bands: list[tuple[str, float | None]], common: float | None, message: str) -> None:
         with pytest.raises(ExportPlanError, match=message):
             plan_files(form, [meta(key, res) for key, res in bands], common)
+
+
+class TestTheNodataOfAFile:
+    """A file that keeps the source's values marks its gaps with a value no pixel holds (M5-28 R1, R6, F2)."""
+
+    def test_the_source_nodata_is_kept(self) -> None:
+        assert kept_nodata("uint16", 0) == 0.0
+        assert kept_nodata("float32", -9999) == -9999.0
+
+    @pytest.mark.parametrize("dtype", ["float32", "float64"])
+    def test_a_float_source_without_one_takes_nan_so_a_gap_is_never_0_m(self, dtype: str) -> None:
+        assert math.isnan(kept_nodata(dtype, None))
+
+    @pytest.mark.parametrize("dtype", ["uint8", "uint16", "int16", "int32"])
+    def test_an_integer_source_without_one_is_refused_with_the_reason(self, dtype: str) -> None:
+        with pytest.raises(NoFreeNodata, match=f"no nodata for its {dtype} values"):
+            kept_nodata(dtype, None)
+
+    def test_the_refusal_is_a_plan_error_and_so_a_422(self) -> None:
+        assert issubclass(NoFreeNodata, ExportPlanError)
+
+    @pytest.mark.parametrize(("form", "common"), [("per_resolution", None), ("multi_band", 10.0)])
+    def test_bands_that_differ_in_nodata_make_no_stacked_file(self, form: str, common: float | None) -> None:
+        other = replace(meta("b", 10), nodata=None)
+        with pytest.raises(ExportPlanError, match="differ in their nodata.*one file per band"):
+            plan_files(form, [meta("a", 10), other], common)
+
+    def test_they_may_differ_in_files_of_their_own(self) -> None:
+        other = replace(meta("b", 10), nodata=None)
+        assert len(plan_files("per_band", [meta("a", 10), other])) == 2
+        assert len(plan_files("per_resolution", [meta("a", 10), replace(meta("b", 20), nodata=None)])) == 2
 
 
 class TestTheConversion:

@@ -254,15 +254,18 @@ class TestRefusals:
         with pytest.raises(AssetRejected):
             _run(data, tmp_path)
 
-    def test_an_integer_output_needs_a_nodata(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_an_integer_output_of_a_source_without_nodata_takes_the_edge_of_its_type(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Refused before M5-28; now the edge, ``max`` for ``uint16`` (adr/0014 Nachtrag M5-28)."""
         bare = sources.build_band_cog(tmp_path / "bare.tif", sources.ramp(64, 64, 100) + 1, nodata=None)
         sources.serve({sources.url("bare"): bare}, monkeypatch)
         work = tmp_path / "work"
         work.mkdir()
-        data = _recipe([SCALE_2], assets=("bare",), dtype="uint16", aoi=sources.whole(64, 64))
-        with pytest.raises(UnsupportedRecipe, match="nodata"):
-            _run(data, work)
-        assert list(work.iterdir()) == []
+        result = _run(_recipe([SCALE_2], assets=("bare",), dtype="uint16", aoi=sources.whole(64, 64)), work)
+        with rasterio.open(result.path) as dataset:
+            assert dataset.nodata == 65535
+        assert result.valid_pixels == 64 * 64
 
 
 def test_an_integer_output_rounds_a_fraction_half_away_from_zero(

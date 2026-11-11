@@ -1,0 +1,114 @@
+# The evaluation set of the dataset search: the 50 questions of adr/0026 §8.3 word for word, released by Otto on
+# 06.11.2026 (F4); rules in §8.1, pass mark in F5. New questions and changed grades come by pull request with a
+# reason, and Otto releases them; a question never leaves because it fails (§8.1).
+#
+# Read by `tests/search_evaluation.py` (docs/plans/m5/m5-22-suche-lexikalisch.md §3.1). No prototype dataset ever
+# appears here (adr/0024 R7). An AOI is a coarse box in whole degrees named after a region, never a user's area.
+
+# The short names of §8.2 and the dataset id behind each. `null`: the id is not fixed yet, so the dataset cannot be in
+# the catalogue. `provisional: true`: the id is the one §8.2 expects, but the entry does not exist yet. Every other id
+# has to be in the registry.
+datasets:
+  S2: {id: sentinel-2-c1-l2a}
+  DEM: {id: cop-dem-glo-30}
+  S1: {id: sentinel-1-grd}
+  WC20: {id: esa-worldcover-2020}
+  WC21: {id: esa-worldcover-2021}
+  ALTI: {id: swissalti3d}
+  BEV: {id: bev-als-dgm, provisional: true}
+  MCH: {id: null}
+  HYR: {id: null}
+  CLC: {id: null}
+  LS: {id: null}
+
+# Per question: `language` (de, en); `kind` as in §8.3 (N name, T topic, X region in the text, R region as AOI, Z
+# time, F capability, S abbreviation or typo, K account entry, 0 no matching dataset); `grade_2` (wanted, should come
+# first), `grade_1` (fitting, may appear), `never` (must not appear: checks a hard filter); optional `aoi` with `name`
+# and `bbox` [west, south, east, north], `years` [first, last] (whole years, both included), `requires` (a capability
+# some dataset in the catalogue has). `name_only: true`: a bare name or abbreviation, counted only in the measure over
+# both languages (§8.1).
+questions:
+- {id: Q01, language: en, text: Sentinel-2, kind: N, grade_2: [S2], name_only: true}
+- {id: Q02, language: de, text: Sentinel-2 Bodenreflexion, kind: N, grade_2: [S2]}
+- {id: Q03, language: en, text: Copernicus DEM, kind: N, grade_2: [DEM], name_only: true}
+- {id: Q04, language: de, text: swissALTI3D, kind: N, grade_2: [ALTI], name_only: true}
+- {id: Q05, language: en, text: ESA WorldCover, kind: N, grade_2: [WC20, WC21], name_only: true}
+- {id: Q06, language: de, text: BEV Höhenraster 1 m, kind: N, grade_2: [BEV], grade_1: [ALTI]}
+- {id: Q07, language: en, text: Sentinel-1 GRD, kind: N, grade_2: [S1], name_only: true}
+- {id: Q08, language: de, text: MeteoSchweiz Klimagitter, kind: N, grade_2: [MCH]}
+- {id: Q09, language: de, text: Höhenmodell, kind: T, grade_2: [DEM, ALTI, BEV]}
+- {id: Q10, language: en, text: elevation model, kind: T, grade_2: [DEM, ALTI, BEV]}
+# Q11, Q12: a surface model (DSM) is not a terrain model (DTM); the Copernicus DEM is a DSM (adr/0023 §3.1, §4.2).
+- {id: Q11, language: en, text: digital terrain model bare earth, kind: T, grade_2: [ALTI, BEV], grade_1: [DEM]}
+- {id: Q12, language: de, text: digitales Oberflächenmodell, kind: T, grade_2: [DEM], grade_1: [ALTI, BEV]}
+- {id: Q13, language: de, text: Landbedeckung, kind: T, grade_2: [WC20, WC21, CLC]}
+- {id: Q14, language: en, text: land cover classification, kind: T, grade_2: [WC20, WC21, CLC]}
+- {id: Q15, language: en, text: multispectral optical imagery, kind: T, grade_2: [S2], grade_1: [LS]}
+- {id: Q16, language: de, text: Satellitenbilder in Echtfarben, kind: T, grade_2: [S2], grade_1: [LS]}
+- {id: Q17, language: en, text: radar backscatter, kind: T, grade_2: [S1]}
+- {id: Q18, language: de, text: Radarbilder bei Bewölkung, kind: T, grade_2: [S1]}
+- {id: Q19, language: de, text: Niederschlag, kind: T, grade_2: [MCH, HYR]}
+- {id: Q20, language: en, text: precipitation grid, kind: T, grade_2: [MCH, HYR]}
+- {id: Q21, language: en, text: daily air temperature, kind: T, grade_2: [MCH, HYR]}
+- {id: Q22, language: de, text: Sonnenscheindauer, kind: T, grade_2: [MCH]}
+# Q23-Q25: the region only in the text, no AOI; they rely on the place terms of the search text (adr/0026 F8).
+- {id: Q23, language: de, text: Höhenmodell Österreich, kind: X, grade_2: [BEV], grade_1: [DEM]}
+- {id: Q24, language: en, text: terrain model Switzerland, kind: X, grade_2: [ALTI], grade_1: [DEM]}
+- {id: Q25, language: en, text: rainfall Germany, kind: X, grade_2: [HYR]}
+# Q26 lies wholly in Austria and east of the box of Switzerland (to 10.5° E); Q27 west of Austria (from 9.5° E).
+- id: Q26
+  language: de
+  text: Höhenmodell
+  kind: R
+  aoi: {name: Österreich Mitte, bbox: [14, 47, 15, 48]}
+  grade_2: [BEV]
+  grade_1: [DEM]
+  never: [ALTI]
+- id: Q27
+  language: en
+  text: elevation
+  kind: R
+  aoi: {name: Western Switzerland, bbox: [7, 46, 8, 47]}
+  grade_2: [ALTI]
+  grade_1: [DEM]
+  never: [BEV]
+# WorldCover is global, CORINE covers Europe only.
+- id: Q28
+  language: en
+  text: land cover
+  kind: R
+  aoi: {name: Kenya, bbox: [36, -1, 37, 0]}
+  grade_2: [WC20, WC21]
+  never: [ALTI, BEV, MCH, HYR, CLC]
+# MeteoSchweiz does not cover the middle of Austria. HYR joins `never` only once it is shown that the HYRAS grid ends
+# at the German border (adr/0026 §8.3).
+- id: Q29
+  language: de
+  text: Niederschlag
+  kind: R
+  aoi: {name: Österreich Mitte, bbox: [14, 47, 15, 48]}
+  never: [MCH]
+- {id: Q30, language: de, text: Landbedeckung 2021, kind: Z, grade_2: [WC21], grade_1: [WC20]}
+- {id: Q31, language: en, text: land cover 2020, kind: Z, grade_2: [WC20], grade_1: [WC21]}
+# Sentinel-1 starts in 2014. The Copernicus DEM has no time axis, so a period never filters it out.
+- {id: Q32, language: en, text: radar, kind: Z, years: [2000, 2005], grade_1: [DEM], never: [S1]}
+- {id: Q33, language: de, text: Höhenmodell, kind: Z, years: [2024, 2024], grade_2: [DEM, ALTI, BEV]}
+# Q34, Q35 wait for the terrain operator (M5-10): only then do slope, aspect and hillshade stand in the search text.
+- {id: Q34, language: de, text: Hangneigung berechnen, kind: F, requires: terrain, grade_2: [DEM, ALTI, BEV]}
+- {id: Q35, language: en, text: hillshade, kind: F, requires: terrain, grade_2: [DEM, ALTI, BEV]}
+- {id: Q36, language: en, text: NDVI, kind: F, grade_2: [S2]}
+- {id: Q37, language: de, text: Vegetationsindex, kind: F, grade_2: [S2]}
+- {id: Q38, language: de, text: Schneebedeckung, kind: F, grade_2: [S2], grade_1: [WC20, WC21]}
+- {id: Q39, language: de, text: Wasserflächen erkennen, kind: F, grade_2: [S2], grade_1: [WC20, WC21, S1]}
+- {id: Q40, language: en, text: S2 L2A, kind: S, grade_2: [S2], name_only: true}
+- {id: Q41, language: de, text: DGM 1m, kind: S, grade_2: [BEV], grade_1: [ALTI]}
+- {id: Q42, language: en, text: Sentinal 2, kind: S, grade_2: [S2], name_only: true}
+- {id: Q43, language: de, text: Worldcovr, kind: S, grade_2: [WC20, WC21], name_only: true}
+- {id: Q44, language: en, text: SAR, kind: S, grade_2: [S1], name_only: true}
+- {id: Q45, language: en, text: CORINE land cover, kind: K, grade_2: [CLC], grade_1: [WC20, WC21]}
+- {id: Q46, language: de, text: Landsat, kind: K, grade_2: [LS], grade_1: [S2], name_only: true}
+# Nothing in the catalogue fits: the answer is an empty list (adr/0026 §4.3, minimum similarity).
+- {id: Q47, language: de, text: Luftqualität Stickstoffdioxid, kind: '0'}
+- {id: Q48, language: en, text: ocean salinity, kind: '0'}
+- {id: Q49, language: de, text: Bevölkerungsdichte, kind: '0'}
+- {id: Q50, language: en, text: hourly weather forecast, kind: '0'}
