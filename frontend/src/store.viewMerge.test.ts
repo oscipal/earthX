@@ -19,7 +19,7 @@ const collection = (id: string): Collection =>
     title: id,
     'earthx:format': 'cog',
     'earthx:capabilities': { roi: true, time_range: true, band_math: true, interpolation: true },
-    'earthx:viewer': { group_by: ['datetime'], min_zoom: 0, max_zoom: 19, browse: 'preview_tiles', quicklook_nodata_max: null, results_group_by: ['datetime'] },
+    'earthx:viewer': { group_by: ['datetime'], min_zoom: 0, max_zoom: 19, browse: 'preview_tiles', quicklook_nodata_max: null, results_group_by: ['datetime'], overview: 'own' as const, overview_resampling: null },
     'earthx:default_render': { title: 'True colour', assets: ['visual'], rescale: [[0, 3000]], colormap_name: null, expression: null, resampling: 'nearest' },
   }) as unknown as Collection;
 

@@ -46,9 +46,10 @@ export function noProcessingLicence(dataset: DatasetOption): string {
   return `${dataset.title}’s licence does not permit processing.`;
 }
 
-// "Merged per pass (job)" takes at most this many scenes per job
-// (`api/intake.py::MAX_ORDER_ITEMS`, M4-07b F5).
-export const MAX_JOB_SCENES = 25;
+// "Merged per pass (job)" takes at most this many scenes per job: a guard against
+// abuse, not a limit of the subject (`api/intake.py::MAX_ORDER_ITEMS`, adr/0032
+// §10.3). The size of a job is decided by its estimate.
+export const MAX_JOB_SCENES = 2000;
 
 // The text file of "Save link list": one address per line, built from the
 // links the dialog already shows (https, on the dataset's own hosts), nothing

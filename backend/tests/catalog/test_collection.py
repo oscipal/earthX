@@ -286,11 +286,18 @@ class TestTheViewerBlockCarriesTheReleasedZoomRange:
             "browse": "quicklook",
             "quicklook_nodata_max": 16,
             "results_group_by": ["datetime", "s2:datatake_id"],
+            # M5-30b: what is shown below `min_zoom` (adr/0032 §9).
+            "overview": "scenes",
+            "overview_resampling": None,
         }
 
     def test_the_second_dataset_carries_its_own_range(self) -> None:
         viewer = to_stac_collection(SYNTHETIC_ZARR)["earthx:viewer"]
         assert (viewer["min_zoom"], viewer["max_zoom"]) == (8, 14)
+
+    def test_a_pyramid_carries_its_resampling(self) -> None:
+        viewer = to_stac_collection(SYNTHETIC_ZARR)["earthx:viewer"]
+        assert (viewer["overview"], viewer["overview_resampling"]) == ("pyramid", "average")
 
     def test_a_dataset_without_a_viewer_block_stays_null(self, vary) -> None:
         """No guessed range for an entry that names none — the same nothing-guessed

@@ -30,7 +30,7 @@ from rio_tiler.models import ImageData
 from earthx.access import download as download_module
 from earthx.access.crop_rules import TEXT_FILES
 from earthx.api.item_source import OrderRefused
-from earthx.api.tiler import build_app
+from earthx.api.tiler import build_app, estimated_crop_seconds
 from earthx.catalog.registry import DatasetRegistry, LicenseInfo, LicenseTier
 from earthx.gateway import UpstreamError, check_url
 from earthx.processing.methods import DatasetFacts, methods_text
@@ -216,16 +216,16 @@ class TestAcceptanceCriteria:
         assert response.status_code == 400
         assert "does not touch" in response.json()["detail"]
 
-    def test_more_than_the_item_cap_is_413(self, client: TestClient) -> None:
-        """F4 (M3-18): a mosaic capped at 25 scenes, independent of the output size.
-
-        M3-17: the cap covers the whole request, summed over every group — 26
-        single-item groups trip it exactly as one 26-item group did before.
-        """
-        groups = [[f"{ITEM_ID}#{i}"] for i in range(26)]
-        response = _download(client, groups=groups, assets=["visual"])
+    def test_more_than_the_item_guard_is_413(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        """adr/0032 §10.3: 2001 scenes are refused as abuse, before anything is read, and no job is offered."""
+        reads: list[object] = []
+        monkeypatch.setattr("earthx.api.tiler.open_asset", lambda src_path, **_: reads.append(src_path))
+        too_many = download_module.MAX_DOWNLOAD_ITEMS + 1
+        response = _download(client, groups=[[f"{ITEM_ID}#{i}" for i in range(too_many)]])
         assert response.status_code == 413
-        assert "26 scenes" in response.json()["detail"]
+        assert f"{too_many} scenes" in response.json()["detail"]
+        assert "X-Export-Job" not in response.headers
+        assert reads == []
 
     def test_an_asset_without_size_metadata_falls_back_to_the_worst_case_and_is_413(
         self, client: TestClient
@@ -884,7 +884,7 @@ class TestOverTheCapAnExportJob:
             assert value in {"available", "too-large"}
 
     def test_too_many_scenes_is_offered_no_job(self, client: TestClient) -> None:
-        response = _download(client, groups=[[f"{ITEM_ID}#{i}"] for i in range(26)])
+        response = _download(client, groups=[[f"{ITEM_ID}#{i}" for i in range(download_module.MAX_DOWNLOAD_ITEMS + 1)]])
         assert response.status_code == 413
         assert "X-Export-Job" not in response.headers
 
@@ -901,6 +901,96 @@ class TestOverTheCapAnExportJob:
         response = _download(client)
         assert response.status_code == 413
         assert "X-Export-Job" not in response.headers
+
+
+class TestTheDurationOfACrop:
+    """adr/0032 §10.3 (F13): the estimated duration decides, not a count of 25 scenes."""
+
+    @staticmethod
+    def _reads(monkeypatch: pytest.MonkeyPatch) -> list[object]:
+        reads: list[object] = []
+        monkeypatch.setattr("earthx.api.tiler.open_asset", lambda src_path, **_: reads.append(src_path))
+        return reads
+
+    @staticmethod
+    def _scenes(count: int) -> list[list[str]]:
+        return [[f"{ITEM_ID}#{i}" for i in range(count)]]
+
+    @pytest.mark.parametrize("count", [26, 40])
+    def test_more_than_the_old_25_scenes_run_when_the_estimate_is_cheap(self, client: TestClient, count: int) -> None:
+        assert _download(client, groups=self._scenes(count)).status_code == 200
+
+    def test_a_few_hundred_scenes_pass_the_guard_and_meet_the_duration(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """300 scenes are no refusal of their own: only the estimate, here raised, may stop them."""
+        monkeypatch.setattr("earthx.api.tiler.MAX_CROP_SECONDS", 10_000.0)
+        assert _download(client, groups=self._scenes(300)).status_code == 200
+        monkeypatch.setattr("earthx.api.tiler.MAX_CROP_SECONDS", 60.0)
+        refused = _download(client, groups=self._scenes(300))
+        assert refused.status_code == 413
+        assert "scenes" not in refused.json()["detail"]
+        assert "Run it as a job" in refused.json()["detail"]
+
+    def test_an_estimate_over_60_seconds_is_413_with_the_job_offer_and_reads_nothing(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        reads = self._reads(monkeypatch)
+        response = _download(client, groups=self._scenes(61))
+        assert response.status_code == 413
+        detail = response.json()["detail"]
+        assert "about 6" in detail and "at most 60 s run here" in detail and detail.endswith("Run it as a job.")
+        assert response.headers["X-Export-Job"] == "available"
+        assert reads == []
+
+    def test_the_estimate_counts_scenes_times_assets(self, client: TestClient) -> None:
+        """31 scenes of one asset are 31 s; of two assets 62 s."""
+        assert _download(client, groups=self._scenes(31), assets=["visual"]).status_code == 200
+        response = _download(client, groups=self._scenes(31), assets=["visual", "red"])
+        assert response.status_code == 413
+        assert "Run it as a job" in response.json()["detail"]
+
+    def test_the_estimate_is_the_plan_s_cost_per_asset_plus_per_megabyte(self) -> None:
+        from earthx.processing.plan import SECONDS_PER_ASSET, SECONDS_PER_INPUT_MB
+
+        assert estimated_crop_seconds(10, 0) == 10 * SECONDS_PER_ASSET
+        assert estimated_crop_seconds(0, 100_000_000) == pytest.approx(100 * SECONDS_PER_INPUT_MB)
+
+    def test_a_zarr_dataset_over_the_duration_is_offered_no_job(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        zarr = SYNTHETIC_ZARR.zarr
+
+        class AsZarr:
+            def __getattr__(self, name: str) -> Any:
+                return zarr if name == "zarr" else getattr(SENTINEL_2_L2A, name)
+
+        monkeypatch.setattr("earthx.api.tiler._dataset_config", lambda state, dataset: AsZarr())
+        monkeypatch.setattr("earthx.api.tiler.MAX_CROP_SECONDS", 0.5)
+        response = _download(client)
+        assert response.status_code == 413
+        assert "X-Export-Job" not in response.headers
+        # No job reads Zarr (F6): the refusal does not send anyone to one.
+        assert "job" not in response.json()["detail"] and "smaller area" in response.json()["detail"]
+
+    def test_over_the_jobs_size_too_the_header_says_too_large(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("earthx.api.tiler.MAX_CROP_SECONDS", 0.5)
+        monkeypatch.setattr("earthx.api.tiler.MAX_JOB_BYTES", 1)
+        response = _download(client)
+        assert response.status_code == 413
+        assert response.headers["X-Export-Job"] == "too-large"
+
+    def test_the_size_refusal_comes_before_the_duration_refusal(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Over both: the message is the size one, as it always was."""
+        monkeypatch.setattr("earthx.api.tiler.MAX_CROP_SECONDS", 0.5)
+        response = _download(client, assets=["thumbnail"])
+        assert response.status_code == 413
+        detail = response.json()["detail"]
+        assert "MB" in detail and "Run it as a job" not in detail
 
 
 class TestTheYearOfTheAttribution:

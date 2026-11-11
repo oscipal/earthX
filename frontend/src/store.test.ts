@@ -33,6 +33,8 @@ const ZARR_LIKE: Collection = {
     browse: 'preview_tiles',
     quicklook_nodata_max: null,
     results_group_by: ['datetime'],
+    overview: 'pyramid' as const,
+    overview_resampling: 'average' as const,
   },
   'earthx:default_render': {
     title: 'True colour',
@@ -55,6 +57,8 @@ const COG_LIKE: Collection = {
     browse: 'quicklook',
     quicklook_nodata_max: 16,
     results_group_by: ['datetime'],
+    overview: 'own' as const,
+    overview_resampling: null,
   },
 };
 
@@ -852,6 +856,8 @@ describe('download outcome (M3-17 plan §4)', () => {
       browse: 'quicklook',
       quicklook_nodata_max: 16,
       results_group_by: ['datetime'],
+      overview: 'own' as const,
+      overview_resampling: null,
     },
     'earthx:format': 'cog',
     'earthx:source': { asset_hosts: ['data.test'] },
@@ -876,6 +882,8 @@ describe('download outcome (M3-17 plan §4)', () => {
       browse: 'preview_tiles',
       quicklook_nodata_max: null,
       results_group_by: ['datetime'],
+      overview: 'pyramid' as const,
+      overview_resampling: 'average' as const,
     },
     'earthx:format': 'zarr',
   };

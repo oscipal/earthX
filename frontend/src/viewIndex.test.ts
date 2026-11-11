@@ -188,7 +188,7 @@ describe('the words of the note', () => {
     expect(indexNote('zoom', 'NDVI')).toBe('Zoom in to compute NDVI');
     expect(indexNote('length', 'NDVI')).toBe('NDVI cannot be computed here');
     expect(indexNote('assets', 'EVI')).toBe('EVI cannot be computed here');
-    expect(indexNoteTip('zoom')).toBe('The quick calculation works from zoom 8. For whole scenes start a job in Processing.');
+    expect(indexNoteTip('zoom')).toBe('The quick calculation starts at the zoom where the image does. For whole scenes start a job in Processing.');
     expect(indexNoteTip('length')).toContain('start a job in Processing');
     expect(indexNoteTip('assets')).toBe(indexNoteTip('length'));
   });

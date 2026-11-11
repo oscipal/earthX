@@ -167,18 +167,21 @@ default_render:
 # One mosaic over all tiles, whatever their survey year (M5-08 §4.4, Auslegung A3): every loaded item carries the
 # same `earthx:state`.
 #
-# `min_zoom` 14: a mosaic tile reads at most 12 scenes (`api.mosaic_tiles.MAX_SCENES_PER_TILE`). Over Switzerland a
-# tile of z14 meets at most 9 tiles of 1 km, one of z13 up to 25 (computed for 300 random tiles per level from the
-# LV95 grid, plan §13). `max_zoom` 20: two levels past z18, the level of the native 0.5 m.
+# `min_zoom` 13 (M5-30b, adr/0032 §9): a mosaic tile reads at most 32 files (`api.mosaic_tiles.TILE_FILE_BUDGET`).
+# Over Switzerland a tile of z13 meets up to 25 tiles of 1 km, one of z12 about 60 (computed for random tiles per
+# level from the LV95 grid, M5-08 plan §13). `max_zoom` 20: two levels past z18, the level of the native 0.5 m.
 #
 # `browse: full_resolution` as for the DEM: no quicklook, the AOI crop in full resolution.
 viewer:
   group_by: ['earthx:state']
-  min_zoom: 14
+  min_zoom: 13
   max_zoom: 20
   browse: full_resolution
   quicklook_nodata_max: null
   results_group_by: ['earthx:state']
+  # What is shown below min_zoom (adr/0032 §9).
+  overview: pyramid
+  overview_resampling: average
 health:
   status: ok
 # A standard product of swisstopo, open government data since 2021.

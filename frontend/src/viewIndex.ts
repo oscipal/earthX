@@ -49,7 +49,7 @@ export function indexLookOf(preset: IndexPreset): AppliedRender {
 }
 
 // The text of the tooltip of the dropdown for an index: its title and formula (the same as the tooltip of the preset).
-export const INDEX_TIP = 'Quick calculation of an index of the scenes shown, from zoom 8. For whole scenes start a job in Processing.';
+export const INDEX_TIP = 'Quick calculation of an index of the scenes shown. For whole scenes start a job in Processing.';
 
 export type IndexBlock = 'zoom' | 'assets' | 'length';
 
@@ -58,7 +58,7 @@ export const indexNote = (block: IndexBlock, name: string): string =>
   block === 'zoom' ? `Zoom in to compute ${name}` : `${name} cannot be computed here`;
 export const indexNoteTip = (block: IndexBlock): string =>
   block === 'zoom'
-    ? 'The quick calculation works from zoom 8. For whole scenes start a job in Processing.'
+    ? 'The quick calculation starts at the zoom where the image does. For whole scenes start a job in Processing.'
     : 'The tile server cannot take this many scenes or bands in one request. Zoom in to fewer scenes, or start a job in Processing.';
 
 // The raster of the index for one raster of the view: a scene's tile for the raster of a scene, the mosaic's for the

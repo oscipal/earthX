@@ -6,7 +6,8 @@ the registry's HTTP mapping, so that they read and test alone; `api.tiler` compo
 dependency and maps :class:`~earthx.api.item_source.OrderRefused` to the answer of each refusal.
 
 * the **limits** of §5, as constants, because they hang on the tile grid and the source, not on a
-  dataset;
+  dataset — since M5-30b a **budget per tile** (files and time, adr/0032 §6.2) instead of a first zoom level
+  and a number of scenes; a tile over it is a part of the picture, said in a header and nowhere on the map;
 * the **shape of the query** — one asset (one to four with steps, NM4-04), two to 64 distinct ids that
   look like ids, at most :data:`MAX_MOSAIC_REQUEST_BYTES` in all, and none of the parameters that could
   carry an area, a free expression or an address;
@@ -25,6 +26,7 @@ import asyncio
 import logging
 import math
 from collections.abc import Collection, Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 import morecantile
@@ -45,11 +47,15 @@ __all__ = [
     "MAX_MOSAIC_ITEMS",
     "MAX_MOSAIC_OPERATOR_ASSETS",
     "MAX_MOSAIC_REQUEST_BYTES",
-    "MAX_SCENES_PER_TILE",
     "MIN_MOSAIC_ITEMS",
-    "MIN_MOSAIC_ZOOM",
+    "PARTIAL_HEADER",
     "ROUTER_PREFIX",
+    "TILE_FILE_BUDGET",
+    "TILE_TIME_BUDGET_S",
     "ItemFetches",
+    "TileOutcome",
+    "TileOutcomeHeaders",
+    "TileScenes",
     "check_length",
     "check_one_overpass",
     "check_query",
@@ -68,10 +74,17 @@ ROUTER_PREFIX = "/collections/{dataset}/mosaic"
 MIN_MOSAIC_ITEMS = 2
 #: Overpasses over a country-sized area have up to 60 scenes (§2.2); 64 ids are about 2.4 kB of URL (§2.7).
 MAX_MOSAIC_ITEMS = 64
-#: Scenes one tile may read after the footprint filter: at most 9 at z8 in six overpasses (§2.2).
-MAX_SCENES_PER_TILE = 12
-#: Below z8 a tile touches up to 13 (z7) or 27 (z6) scenes, which is the overview's job, not the tile path's.
-MIN_MOSAIC_ZOOM = 8
+#: Files one tile reads at most, in the order of the mosaic (adr/0032 §6.2, F6): scenes, or scenes times the assets of
+#: a tile with steps. Set from Otto's run of 11.11.2026 (plan M5-30b §8.6): a file of swissALTI3D costs 55-85 ms with
+#: four threads, cold or warm alike (opening and warping, not the network), so 32 files take 1.8-2.8 s; a z13 tile
+#: needs up to 25.
+TILE_FILE_BUDGET = 32
+#: Seconds one tile reads for at most (adr/0032 §6.2): under the 5 s of pgstac, because a map asks for many tiles at
+#: once; about 1.4 times what 32 files of swissALTI3D took cold (plan M5-30b §8.6).
+TILE_TIME_BUDGET_S = 4.0
+#: The header of a tile that shows only a part of its scenes: how many it left out, or ``time`` after the budget ran
+#: out. No mark on the map (Otto, 11.11.2026); the header is for a client that wants to say it.
+PARTIAL_HEADER = "X-EarthX-Partial"
 #: Item fetches at the source at the same time, in the whole process: under the five connections of the
 #: cache pool (`api.dependencies`) and the six per host of the gateway (`gateway.policy`).
 MAX_ITEM_FETCHES = 4
@@ -144,8 +157,8 @@ def check_query(
 def mosaic_tile(path_params: Mapping[str, Any]) -> tuple[morecantile.TileMatrixSet, morecantile.Tile] | None:
     """The tile a request asks for, or ``None`` for a TileJSON, which names none.
 
-    ``400`` below :data:`MIN_MOSAIC_ZOOM`, before any item is fetched; ``404`` for a tile outside the
-    matrix, the answer a tile outside an item gets too.
+    ``404`` for a tile outside the matrix, the answer a tile outside an item gets too. Every level of the
+    released range has a mosaic (adr/0032 §6.2); what a tile costs is bounded by its budget, not its level.
     """
     if "z" not in path_params:
         return None
@@ -154,8 +167,6 @@ def mosaic_tile(path_params: Mapping[str, Any]) -> tuple[morecantile.TileMatrixS
         zoom, column, row = (int(path_params[name]) for name in ("z", "x", "y"))
     except (KeyError, ValueError, morecantile.errors.MorecantileError):
         raise OrderRefused(400, "not a tile of a grid this tiler serves", "order") from None
-    if zoom < MIN_MOSAIC_ZOOM:
-        raise OrderRefused(400, f"mosaic tiles start at z{MIN_MOSAIC_ZOOM}", "order")
     if not tms.is_valid(column, row, zoom):
         raise OrderRefused(404, "the tile does not touch these items", "items")
     return tms, morecantile.Tile(column, row, zoom)
@@ -286,26 +297,90 @@ def union_bounds(outlines: Mapping[str, BaseGeometry]) -> tuple[float, float, fl
     return min(west), min(south), max(east), max(north)
 
 
+@dataclass(frozen=True, slots=True)
+class TileScenes:
+    """The scenes one tile reads, in the order of the mosaic, and how many that touch it the budget left out."""
+
+    read: list[str]
+    left_out: int
+
+
 def scenes_touching(
     order: Sequence[str],
     outlines: Mapping[str, BaseGeometry],
     grid: tuple[morecantile.TileMatrixSet, morecantile.Tile],
-) -> list[str]:
-    """The ids of ``order`` whose outline meets the tile, in the same order.
+    *,
+    files_per_scene: int = 1,
+) -> TileScenes:
+    """The ids of ``order`` whose outline meets the tile, in the same order, as far as the budget reaches.
 
-    ``404`` where none does and ``422`` ("zoom in") where more than :data:`MAX_SCENES_PER_TILE` do —
-    never a partial picture (KE3): a tile that left scenes out would show a gap no one can explain.
+    ``404`` where none does. Where more do than :data:`TILE_FILE_BUDGET` files allow, the tile reads the first of
+    them in the order of the mosaic and says how many it left out (adr/0032 §6.2): the same URL always gives the same
+    picture, and a CDN may keep it. ``files_per_scene`` is the number of assets each scene is read from.
     """
+    if files_per_scene < 1:
+        raise ValueError("a scene is read from at least one file")
     tms, tile = grid
     area = box(*tms.bounds(tile))
     touching = [item_id for item_id in order if outlines[item_id].intersects(area)]
     if not touching:
         raise OrderRefused(404, "the tile does not touch these items", "items")
-    if len(touching) > MAX_SCENES_PER_TILE:
-        raise OrderRefused(
-            422,
-            f"{len(touching)} scenes meet this tile, at most {MAX_SCENES_PER_TILE} are read; zoom in",
-            "items",
-        )
-    LOGGER.info("mosaic tile reads %d of %d scenes", len(touching), len(order))
-    return touching
+    reach = max(1, TILE_FILE_BUDGET // files_per_scene)
+    read = touching[:reach]
+    LOGGER.info("mosaic tile reads %d of %d scenes", len(read), len(order))
+    return TileScenes(read, len(touching) - len(read))
+
+
+class TileOutcome:
+    """What a mosaic tile knows about itself only after its scenes are chosen or read: kept for the response headers."""
+
+    __slots__ = ("budget", "left_out")
+
+    def __init__(self) -> None:
+        self.left_out = 0
+        self.budget: Any = None  # the `access.mosaic_tiles.ReadBudget` of the tile, once there is one
+
+    @property
+    def timed_out(self) -> bool:
+        return bool(self.budget is not None and self.budget.timed_out)
+
+    #: Where the outcome of a request lives in its ASGI scope, for the path dependency to find.
+    SCOPE_KEY = "earthx.tile_outcome"
+
+    @classmethod
+    def of(cls, scope: Mapping[str, Any]) -> TileOutcome | None:
+        outcome = scope.get(cls.SCOPE_KEY)
+        return outcome if isinstance(outcome, cls) else None
+
+
+class TileOutcomeHeaders:
+    """ASGI middleware: :data:`PARTIAL_HEADER` on a mosaic tile that left scenes out, and ``no-store`` after its time ran out.
+
+    TiTiler's tile route builds its own response, and the read that may run out of time ends inside it; so the path
+    dependency and the reader write a :class:`TileOutcome` that lives in the request's scope, and the headers are set
+    when the response starts. Only the paths under ``/collections/{dataset}/mosaic/`` get an outcome.
+    """
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
+        if scope.get("type") != "http" or "/mosaic/" not in scope.get("path", ""):
+            await self.app(scope, receive, send)
+            return
+        outcome = TileOutcome()
+        scope[TileOutcome.SCOPE_KEY] = outcome
+
+        async def with_headers(message: dict[str, Any]) -> None:
+            if message.get("type") == "http.response.start" and (outcome.left_out or outcome.timed_out):
+                headers = list(message.get("headers", []))
+                partial = str(outcome.left_out).encode()
+                if outcome.timed_out:
+                    headers = [header for header in headers if header[0].lower() != b"cache-control"]
+                    headers.append((b"cache-control", b"no-store"))
+                    partial = b"time"
+                headers.append((PARTIAL_HEADER.lower().encode(), partial))
+                message = {**message, "headers": headers}
+            await send(message)
+
+        await self.app(scope, receive, with_headers)
