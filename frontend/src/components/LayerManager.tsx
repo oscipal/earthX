@@ -3,9 +3,9 @@ import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, 
 import { zoomFloorHint } from '../datasets';
 import { flipIdOf } from '../layerFlip';
 import { layerShownName } from '../layerName';
-import type { MapLayer } from '../layers';
+import { EXPIRED_LAYER_TIP, LOCKED_LAYER_TIP, type MapLayer } from '../layers';
 import { RGB, RGB_LABEL } from '../processingBands';
-import { EXPIRED_PROCESS_TEXT, layerProcessBlock, NO_COPY_TEXT, PROCESS_RESULT_TEXT, useProcessingStore } from '../processingStore';
+import { EXPIRED_PROCESS_TEXT, layerProcessBlock, NO_COPY_TEXT, PROCESS_LAYER_TEXT, useProcessingStore } from '../processingStore';
 import { MIN_REMAINING_MS } from '../resultLayer';
 import { hasResultsPanel } from '../sections';
 import { clampResultsAt } from '../resultsEntry';
@@ -23,9 +23,6 @@ import Tip from './Tip';
 import { useRowDrag, type RowDrag } from './useRowDrag';
 
 export const EXPIRED_LAYER_TEXT = 'Expired: results are kept for 7 days. Start the job again.';
-export const DELETED_LAYER_TIP = 'Job deleted: restore it to show it';
-// The reason in the tooltip of what a layer of a deleted job locks (UI-04: a locked control says why).
-export const LOCKED_LAYER_TIP = 'Job deleted: restore it first';
 export const TOP_TIP = 'Already at the top';
 export const BOTTOM_TIP = 'Already at the bottom';
 const moveTip = (direction: 'up' | 'down', blocked: boolean) => (blocked ? (direction === 'up' ? TOP_TIP : BOTTOM_TIP) : direction === 'up' ? 'Move up' : 'Move down');
@@ -121,6 +118,8 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
   // A result of several bands draws one of them (NM4-43e PR 2).
   const bands = l.result?.bands;
   const shown = l.visible && !locked;
+  // What locks the band of a result: a deleted job, or an expired result.
+  const bandLock = locked ? LOCKED_LAYER_TIP : l.result?.expired ? EXPIRED_LAYER_TIP : null;
   // A result that was resampled says nothing here any more: the warning came before the job (NM4-65 part 7).
   const notes = [l.result?.expired && !locked ? EXPIRED_LAYER_TEXT : null].filter(
     (note): note is string => note !== null,
@@ -130,7 +129,7 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
   return (
     <li className={`layer-row${locked ? ' locked' : ''}${flipped ? ' flip' : ''}${dnd.className}`} aria-current={flipped || undefined}>
       <Grip dnd={dnd} />
-      <EyeButton row col="eye" shown={shown} locked={locked} tip={locked ? DELETED_LAYER_TIP : shown ? HIDE_LAYER_TIP : SHOW_LAYER_TIP} onToggle={() => toggleVis(l.id)} />
+      <EyeButton row col="eye" shown={shown} locked={locked} tip={locked ? LOCKED_LAYER_TIP : shown ? HIDE_LAYER_TIP : SHOW_LAYER_TIP} onToggle={() => toggleVis(l.id)} />
       {renaming ? (
         <span className="lm-name lm-renaming" data-col="name" data-tip-level="advanced" data-tip="A layer needs a name: an empty one keeps the name it had">
           <InlineRename
@@ -189,8 +188,8 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
           className="icon-btn sm"
           data-col="process"
           disabled={processBlock !== null}
-          data-tip={processBlock ?? (l.result ? (l.result.expired ? EXPIRED_PROCESS_TEXT : PROCESS_RESULT_TEXT) : 'Process this layer')}
-          aria-label="Process layer"
+          data-tip={processBlock ?? (l.result?.expired ? EXPIRED_PROCESS_TEXT : PROCESS_LAYER_TEXT)}
+          aria-label={PROCESS_LAYER_TEXT}
           onClick={() => void processLayer(l.id)}
         >
           <CogIcon size={14} />
@@ -211,18 +210,27 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
         <BandSelect
           label="Band"
           className="lm-band"
-          title={locked ? LOCKED_LAYER_TIP : l.result?.expired ? 'The result has expired: start the job again' : 'The band of the result this layer draws'}
+          title={bandLock ?? 'The band of the result this layer draws'}
           value={String(l.result?.band ?? 0)}
           options={[
             ...(l.result?.colour ? [{ value: RGB, label: RGB_LABEL }] : []),
             ...bands.map((b, place) => ({ value: String(place), label: b.name || `Band ${place + 1}` })),
           ]}
-          disabled={locked || l.result?.expired === true}
+          disabled={bandLock !== null}
           onChange={(place) => chooseBand(l.id, place === RGB ? RGB : Number(place))}
         />
       )}
-      {bands && bands.length > 1 && !locked && l.result?.expired !== true && (
-        <button type="button" className="icon-btn sm lm-add-band" data-tip-level="advanced" data-tip={ADD_BAND_TIP} aria-label={ADD_BAND_TIP} onClick={() => addBand(l.id)}>
+      {/* Locked with its reason while the job is deleted and can come back; gone with an expired result (Otto, 26.10.2026). */}
+      {bands && bands.length > 1 && l.result?.expired !== true && (
+        <button
+          type="button"
+          className="icon-btn sm lm-add-band"
+          disabled={locked}
+          data-tip-level="advanced"
+          data-tip={locked ? LOCKED_LAYER_TIP : ADD_BAND_TIP}
+          aria-label={ADD_BAND_TIP}
+          onClick={() => addBand(l.id)}
+        >
           <PlusIcon size={14} />
         </button>
       )}

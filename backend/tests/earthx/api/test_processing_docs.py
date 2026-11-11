@@ -308,6 +308,28 @@ class TestWhatThePanelReads:
         assert schema["$defs"]["step_reproject_v4"]["x-earthx-tiers"] == ["T2"]
         assert schema["$defs"]["step_reproject_v4"]["x-earthx-kind"] == "grid"
 
+    def test_each_step_says_whether_it_writes_only_values_it_read(self) -> None:
+        """Otto, 11.11.2026: the output types the panel offers follow from the registry, through the description (M5-28)."""
+        definitions = order_schema(REAL_OPERATORS)["$defs"]
+        said = {name: definition["x-earthx-passes-values"] for name, definition in definitions.items() if name.startswith("step_")}
+        assert said["step_band_math_v2"] is False and said["step_normalize_v4"] is False
+        assert said["step_mask_v2"] is True and said["step_mask_values_v1"] is True
+        assert said["step_reproject_v4"] == {"param": "resampling", "in": ["mode", "nearest"]}
+        for operator in REAL_OPERATORS.values():
+            definition = definitions.get(f"step_{operator.op}_v{operator.op_version}")
+            if definition is not None:
+                assert definition["x-earthx-passes-values"] == operator.passes_values.annotation()
+
+    def test_the_rule_of_a_parameter_answers_as_the_core_asks_it(self) -> None:
+        from types import SimpleNamespace
+
+        from earthx.processing.operators.base import MAKES_VALUES, PASSES_VALUES, PassesValues
+
+        picking = PassesValues(param="resampling", values=frozenset({"nearest", "mode"}))
+        assert picking(SimpleNamespace(resampling="nearest")) and not picking(SimpleNamespace(resampling="bilinear"))
+        assert PASSES_VALUES(SimpleNamespace()) and not MAKES_VALUES(SimpleNamespace())
+        assert (PASSES_VALUES.annotation(), MAKES_VALUES.annotation()) == (True, False)
+
     def test_the_newest_version_of_the_bands_steps_is_offered_and_the_older_ones_are_accepted_only(self) -> None:
         """NM4-43e: the panel builds the stock of bands (version 2); NM4-71: it builds version 4 of `normalize` (adr/0020 §11, §13)."""
         steps = order_schema(REAL_OPERATORS)["properties"]["steps"]["items"]["oneOf"]

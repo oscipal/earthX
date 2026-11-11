@@ -390,7 +390,7 @@ describe('a scale of its own for every band', () => {
     await afterDebounce();
     expect(rescale()).toBe('120,2400');
     expect(store().rangeByHand).toBe(false);
-    expect((button('Auto-scale') as HTMLButtonElement).disabled).toBe(true);
+    expect((button('Auto-scale') as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('measures over the AOI for "AOI only", takes the band from the answer by its name, and asks the order once for all bands', async () => {

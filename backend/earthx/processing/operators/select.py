@@ -13,7 +13,7 @@ from rio_tiler.models import ImageData
 
 from earthx.catalog.registry import LicenseTier
 from earthx.processing.errors import RecipeInvalid
-from earthx.processing.operators.base import Operator, RasterMeta, Requirement, Tier
+from earthx.processing.operators.base import PASSES_VALUES, Operator, RasterMeta, Requirement, Tier
 
 __all__ = ["SELECT_BANDS", "SelectParams"]
 
@@ -64,5 +64,5 @@ SELECT_BANDS = Operator(
     run=_run,
     lineage=lambda params: "",
     method=lambda params: "",
-    passes_values=lambda params: True,
+    passes_values=PASSES_VALUES,
 )

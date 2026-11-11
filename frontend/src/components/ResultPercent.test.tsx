@@ -107,11 +107,17 @@ describe('the switch in the settings of a result', () => {
     expect([...container.querySelectorAll('.vc-field > span')].map((s) => s.textContent)).toEqual(['Band', 'Scale', 'vmin', 'vmax', 'Colormap', 'Opacity']);
   });
 
-  it('is not there where nothing can be set: a result of whole numbers, one that is gone', () => {
-    open(layer(undefined, { dataType: 'uint16' }));
+  it('is not there where nothing can be set: a band of classes, one that is gone', () => {
+    open(layer(undefined, { dataType: 'uint8', classes: true }));
     expect(container.querySelector('.vc-unit')).toBeNull();
     open(layer(undefined, { expired: true }));
     expect(container.querySelector('.vc-unit')).toBeNull();
+  });
+
+  // Otto, 11.11.2026: whole numbers that are no classes have the settings of a float result.
+  it('is there for a result of whole numbers that is no class', () => {
+    open(layer(undefined, { dataType: 'uint16' }));
+    expect(unitText()).toBe('absolute');
   });
 
   it('opens in "%" for a layer whose look was typed that way', () => {

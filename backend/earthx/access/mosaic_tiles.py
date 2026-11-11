@@ -43,6 +43,7 @@ from earthx.readers.cog import AssetPath
 from earthx.readers.zarr_reader import ZarrAsset
 
 __all__ = [
+    "MAX_MOSAIC_THREADS",
     "MOSAIC_THREADS",
     "EarthxMosaicTilerFactory",
     "MosaicBandsDiffer",
@@ -54,6 +55,8 @@ __all__ = [
 
 #: Scenes read at the same time, and the size of the portion after which the tile is checked for full.
 MOSAIC_THREADS = 4
+#: The most threads a reader may be given (the measurement compares counts up to this one).
+MAX_MOSAIC_THREADS = 16
 
 
 class MosaicBandsDiffer(RioTilerError):
@@ -93,7 +96,11 @@ class MosaicReaderParams:
 
 
 class MosaicTileReader:
-    """What TiTiler's tile and TileJSON routes need of a reader, over the scenes of a mosaic."""
+    """What TiTiler's tile and TileJSON routes need of a reader, over the scenes of a mosaic.
+
+    ``threads`` is the number of scenes read at the same time and the size of a portion; the routes leave it at
+    :data:`MOSAIC_THREADS`, the measurement of the tile path (`api.measure_tiles`) compares other counts.
+    """
 
     def __init__(
         self,
@@ -101,10 +108,14 @@ class MosaicTileReader:
         *,
         tms: morecantile.TileMatrixSet | None = None,
         gdal_config: Mapping[str, Any] | None = None,
+        threads: int = MOSAIC_THREADS,
         **options: Any,
     ) -> None:
         if not isinstance(source, MosaicScenes):
             raise TypeError("a mosaic tile reads MosaicScenes")
+        if not 1 <= threads <= MAX_MOSAIC_THREADS:
+            raise ValueError(f"threads is 1 to {MAX_MOSAIC_THREADS}")
+        self.threads = threads
         self.source = source
         self.tms = tms or morecantile.tms.get("WebMercatorQuad")
         self.gdal_config = dict(gdal_config or {})
@@ -166,8 +177,8 @@ class MosaicTileReader:
                 tile_y,
                 tile_z,
                 pixel_selection=FirstMethod(),
-                threads=MOSAIC_THREADS,
-                chunk_size=MOSAIC_THREADS,
+                threads=self.threads,
+                chunk_size=self.threads,
                 allowed_exceptions=(TileOutsideBounds,),
                 **kwargs,
             )
