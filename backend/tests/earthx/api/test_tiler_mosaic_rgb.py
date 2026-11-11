@@ -114,9 +114,10 @@ class TestARefusedPicture:
 
 
 class TestTheTileJson:
-    def test_the_tiles_it_hands_out_carry_the_three_bands_in_order(self, client) -> None:
+    def test_it_names_the_three_bands_and_the_tiles_carry_them_in_order(self, client) -> None:
         api = client()
         body = api.get(_url(api, None) + _bands(*SHOWN)).json()
+        assert body["bands"] == list(SHOWN) and "band" not in body
         template = body["tiles"][0]
         positions = [template.index(f"band={quote(name)}") for name in SHOWN]
         assert positions == sorted(positions)

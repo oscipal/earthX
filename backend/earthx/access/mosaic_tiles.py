@@ -130,12 +130,17 @@ class MosaicScenes:
 class MosaicLayout:
     """What the TileJSON of a mosaic needs and no more: the order the scenes are read in and where the mosaic lies.
 
-    It comes from the stored selection and holds no scene, so nothing was fetched and no address cleared for it.
+    It comes from the stored selection and holds no scene, so nothing was fetched and no address cleared for it. What the
+    selection says of the bands is what the TileJSON names of them: ``bands`` the band or the three bands a picture with
+    steps shows, ``unit`` their common unit, ``data_type`` the data type the scenes share.
     """
 
     dataset_id: str
     order: tuple[str, ...]
     bounds: tuple[float, float, float, float]
+    bands: tuple[str, ...] | None = None
+    unit: str | None = None
+    data_type: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -243,8 +248,8 @@ class MosaicTileReader:
 class MosaicLayoutReader:
     """What the TileJSON route of the factory needs of a reader, over a :class:`MosaicLayout`: no file is opened.
 
-    The bands, the data type and the value range of the scenes are not known without one of them, so the document does
-    not carry them; it says the extent, the order and the levels.
+    The bands, the unit and the data type are those the selection stored when it was created. The value range and the
+    descriptions of the bands are in the files only, so the document does not carry them.
     """
 
     def __init__(self, source: MosaicLayout, *, tms: morecantile.TileMatrixSet | None = None, **_: Any) -> None:
@@ -269,13 +274,21 @@ class MosaicLayoutReader:
     def order(self) -> tuple[str, ...]:
         return self.source.order
 
+    @property
+    def bands(self) -> tuple[str, ...] | None:
+        return self.source.bands
+
+    @property
+    def unit(self) -> str | None:
+        return self.source.unit
+
     def get_geographic_bounds(self, crs: Any) -> tuple[float, float, float, float]:
         if crs == WGS84_CRS:
             return self.source.bounds
         return transform_bounds(WGS84_CRS, crs, *self.source.bounds, densify_pts=21)
 
     def info(self) -> SimpleNamespace:
-        return SimpleNamespace(band_descriptions=None, dtype=None, minmax=None)
+        return SimpleNamespace(band_descriptions=None, dtype=self.source.data_type, minmax=None)
 
 
 def open_mosaic(src_path: Any, **reader_params: Any) -> MosaicTileReader | MosaicLayoutReader:

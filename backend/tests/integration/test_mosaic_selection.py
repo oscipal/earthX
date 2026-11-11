@@ -54,7 +54,8 @@ class Clock:
 
 def _selection(selection_id: str, dataset: str = DATASET, items: tuple[str, ...] = ITEMS) -> Selection:
     sources = {item_id: {"bbox": [float(n), 0.0, float(n) + 1.0, 1.0]} for n, item_id in enumerate(items)}
-    return Selection.build(selection_id, dataset, ASSETS, sources, list(items))
+    described = {asset: {"stored": asset} for asset in ASSETS}
+    return Selection.build(selection_id, dataset, ASSETS, sources, list(items), described)
 
 
 @pytest.fixture
@@ -139,6 +140,7 @@ class TestTheStore:
         assert (loaded.dataset_id, loaded.assets, loaded.items, loaded.order) == (DATASET, ASSETS, ITEMS, ITEMS)
         assert loaded.bounds == (0.0, 0.0, 3.0, 1.0)
         assert sorted(loaded.outlines) == list(ITEMS)
+        assert loaded.described == {asset: {"stored": asset} for asset in ASSETS}
 
     async def test_an_expired_row_is_gone_for_a_process_that_has_not_seen_it(
         self, aconn_migrated: psycopg.AsyncConnection

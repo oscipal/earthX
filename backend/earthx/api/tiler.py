@@ -900,32 +900,20 @@ async def mosaic_scenes(
     assets = list(chosen.assets)
     if steps is None and len(assets) != 1:
         raise HTTPException(status_code=400, detail="a selection of several assets is for tiles with op")
+    plan = run_steps = judged = None
+    if steps is not None:
+        # What the steps and the bands the selection stored decide, before any item is fetched (KE1): the TileJSON refuses
+        # what a tile refuses, and the first scene a tile reads is no longer needed to say which assets the band needs.
+        plan, assets, run_steps, judged = _judge_on_selection(chosen, steps, bands)
     if grid is None:
-        return MosaicLayout(dataset, chosen.order, chosen.bounds)
+        return _layout(chosen, plan, judged, steps is not None)
     fetches, source = state.earthx_item_fetches, state.earthx_item_source
     try:
         touching = mosaic_tiles.touching_scenes(chosen.order, chosen.outlines, grid)
-        if steps is None:
-            cut = mosaic_tiles.scenes_touching(chosen.order, chosen.outlines, grid, touching=touching)
-            items = await mosaic_tiles.fetch_items(fetches, source, dataset, cut.read)
-            plan = None
-        else:
-            # The first scene it reads says which assets the shown band needs; only those are described and opened
-            # (NM4-43d), and how many there are decides how many scenes the budget lets the tile read.
-            items = await mosaic_tiles.fetch_items(fetches, source, dataset, touching[:1])
-            first = {key: _resolve_ref(items[touching[0]], config=config, item=touching[0], asset=key) for key in assets}
-            entries = [
-                _describe_one(items, {(touching[0], key): ref for key, ref in first.items()}, config, touching[0], key)
-                for key in assets
-            ]
-            plan = _band_plan(_operator_support(), entries, steps, bands)
-            assets = list(assets if plan is None else plan.assets)
-            if not set(assets) <= set(chosen.assets):
-                raise HTTPException(status_code=400, detail="the band needs assets the selection does not name")
-            cut = mosaic_tiles.scenes_touching(
-                chosen.order, chosen.outlines, grid, files_per_scene=len(assets), touching=touching
-            )
-            items |= await mosaic_tiles.fetch_items(fetches, source, dataset, [i for i in cut.read if i not in items])
+        cut = mosaic_tiles.scenes_touching(
+            chosen.order, chosen.outlines, grid, files_per_scene=len(assets), touching=touching
+        )
+        items = await mosaic_tiles.fetch_items(fetches, source, dataset, cut.read)
     except OrderRefused as error:
         raise HTTPException(status_code=error.status_code, detail=error.detail) from None
     read = cut.read
@@ -942,24 +930,71 @@ async def mosaic_scenes(
             for item_id in read
         )
         return MosaicScenes(dataset, scenes, chosen.bounds, budget)
-    run_steps = steps if plan is None else list(plan.steps)
-    described = _describe_mosaic(items, refs, config=config, order=read, assets=assets, steps=run_steps)
-    scenes_with_steps = tuple(
-        tuple(
-            (
-                described[(item_id, key)],
-                _open_ref(
-                    state,
-                    refs[(item_id, key)],
-                    target_gsd=target_gsd_for(request, items[item_id]),
-                    decode_cf=described[(item_id, key)].scaling == "store-cf",
-                ),
+    scenes_with_steps = []
+    for item_id in read:
+        described = {key: _describe_one(items, refs, config, item_id, key) for key in assets}
+        scenes_with_steps.append(
+            tuple(
+                (
+                    described[key],
+                    _open_ref(
+                        state,
+                        refs[(item_id, key)],
+                        target_gsd=target_gsd_for(request, items[item_id]),
+                        decode_cf=described[key].scaling == "store-cf",
+                    ),
+                )
+                for key in assets
             )
-            for key in assets
         )
-        for item_id in read
+    return MosaicOperatorInput(
+        dataset, tuple(scenes_with_steps), tuple(run_steps), chosen.bounds, None if plan is None else plan.bands
     )
-    return MosaicOperatorInput(dataset, scenes_with_steps, tuple(run_steps), chosen.bounds, None if plan is None else plan.bands)
+
+
+def _judge_on_selection(
+    chosen: Selection, steps: list[tuple[Any, Any]], bands: tuple[str, ...] | None
+) -> tuple[Any, list[str], list[tuple[Any, Any]], Any]:
+    """The band plan and the steps judged on what the selection stored of its assets: ``(plan, assets, steps, left)``.
+
+    The scenes of a selection were checked to scale, name and unit each asset alike when it was created, so the first
+    scene's description stands for all. The refusals are those of the tile of one item: ``422`` with the name for a
+    band the steps do not leave or a step that does not fit, ``400`` for a ``band`` next to a step of version 1.
+    ``left`` is what the steps leave of the bands (``None`` where the items do not say how many bands an asset has).
+    """
+    support = _operator_support()
+    entries = {key: support.resolved_input.model_validate(chosen.described[key]) for key in chosen.assets}
+    plan = _band_plan(support, list(entries.values()), steps, bands)
+    assets = list(chosen.assets if plan is None else plan.assets)
+    run_steps = steps if plan is None else list(plan.steps)
+    try:
+        left = support.judge_described_bands([entries[key] for key in assets], run_steps)
+    except support.recipe_invalid as error:
+        raise HTTPException(status_code=422, detail=str(error)) from None
+    return plan, assets, run_steps, left
+
+
+def _layout(chosen: Selection, plan: Any, left: Any, with_steps: bool) -> MosaicLayout:
+    """What the TileJSON of a selection says of the bands, from what the selection stored and no scene.
+
+    With steps the band or the three bands the picture shows (``None`` for steps of version 1), their unit where they
+    share one, and ``float32``, the type the steps compute in; without steps the data type the scenes share.
+    """
+    if with_steps:
+        units = {band.unit for band in left.bands} if left is not None else set()
+        return MosaicLayout(
+            chosen.dataset_id,
+            chosen.order,
+            chosen.bounds,
+            None if plan is None else tuple(plan.bands),
+            next(iter(units)) if len(units) == 1 else None,
+            "float32",
+        )
+    stored = _operator_support().resolved_input.model_validate(chosen.described[chosen.assets[0]])
+    types = {band.data_type for band in stored.bands}
+    return MosaicLayout(
+        chosen.dataset_id, chosen.order, chosen.bounds, data_type=next(iter(types)) if len(types) == 1 else None
+    )
 
 
 def _selection_answer(dataset: str, selection: str, status_code: int) -> JSONResponse:
@@ -1035,9 +1070,16 @@ async def create_mosaic_selection(
         items = await mosaic_tiles.fetch_selection_items(batches, dataset, ids)
         mosaic_tiles.check_one_overpass(items, viewer)
         refs = {(item_id, key): _resolve_ref(items[item_id], config=config, item=item_id, asset=key) for item_id in ids for key in assets}
+        _check_one_crs_per_scene(refs, ids, assets)
         order = mosaic_order({item_id: refs[(item_id, assets[0])].crs for item_id in ids})
+        described = _describe_alike(items, refs, config=config, order=order, assets=assets)
         chosen = Selection.build(
-            selection, dataset, assets, {item_id: outline_source(items[item_id]) for item_id in ids}, order
+            selection,
+            dataset,
+            assets,
+            {item_id: outline_source(items[item_id]) for item_id in ids},
+            order,
+            {key: described[(order[0], key)].model_dump(mode="json") for key in assets},
         )
         try:
             await store.put(chosen)
@@ -1125,21 +1167,37 @@ def _describe_one(
         raise HTTPException(status_code=502, detail=malformed_item_detail(item_id)) from None
 
 
-def _describe_mosaic(
+def _check_one_crs_per_scene(refs: dict[tuple[str, str], ResolvedAsset], ids: list[str], assets: list[str]) -> None:
+    """``422`` for a selection whose assets of one scene lie in different CRS (M5-30b part 3, F6).
+
+    The order of a mosaic is decided per scene from one CRS (:func:`~earthx.access.crop_rules.mosaic_order`), and the
+    selection stores one order for all its assets. A scene reads all its assets in the CRS its item names, so the
+    check can only fail where the resolution gives an asset a CRS of its own.
+    """
+    for item_id in ids:
+        if len({refs[(item_id, key)].crs for key in assets}) > 1:
+            raise OrderRefused(
+                422,
+                f"the assets of scene {item_id!r} lie in different coordinate reference systems; "
+                "a mosaic reads each scene in one",
+                "items",
+            )
+
+
+def _describe_alike(
     items: dict[str, dict[str, Any]],
     refs: dict[tuple[str, str], ResolvedAsset],
     *,
     config: DatasetConfig,
     order: list[str],
     assets: list[str],
-    steps: list[tuple[Any, Any]],
 ) -> dict[tuple[str, str], Any]:
     """Each asset of each scene with the bands and scaling its item describes, judged as the job judges them.
 
-    Over the scenes ``order`` names, which are those the tile reads (a tile fetches no other item, M5-30b part 3): the scenes
-    scale each asset alike and name the same units (the part of the job's ``check_alike`` the items decide; the files are
-    compared by the reader), a Zarr mosaic lies in one CRS (``check_scope``), and the steps know the bands the first
-    scene's items name (KE1). Nothing is opened.
+    At the creation of a selection, over **all** its scenes and assets, so that every tile of it gives the same answer
+    (NM4-04 §8.1) and no tile has to compare scenes: the scenes scale each asset alike and name the same units (the part of
+    the job's ``check_alike`` the items decide; the files are compared by the reader), and a Zarr mosaic lies in one CRS
+    (``check_scope``). ``422`` with the words of the mosaic job. Nothing is opened.
     """
     described = {(item_id, key): _describe_one(items, refs, config, item_id, key) for item_id in order for key in assets}
     first = order[0]
@@ -1151,23 +1209,18 @@ def _describe_mosaic(
                 anchor.scaling,
                 [(b.scale, b.offset) for b in anchor.bands],
             ):
-                raise HTTPException(status_code=422, detail=f"the scenes of the mosaic scale {key!r} differently")
+                raise OrderRefused(422, f"the scenes of the mosaic scale {key!r} differently", "items")
             if (entry.unit, [b.unit for b in entry.bands]) != (anchor.unit, [b.unit for b in anchor.bands]):
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"the scenes of the mosaic differ in the bands, data type, nodata or unit of {key!r}",
+                raise OrderRefused(
+                    422,
+                    f"the scenes of the mosaic differ in the bands, data type, nodata or unit of {key!r}",
+                    "items",
                 )
-    read = [refs[(item_id, key)] for item_id in order for key in assets]
+    read = list(refs.values())
     if any(ref.reader == "zarr" for ref in read) and len({ref.crs for ref in read}) > 1:
-        raise HTTPException(
-            status_code=422,
-            detail="a mosaic of Zarr scenes needs all scenes in one CRS; warping Zarr is not done yet",
+        raise OrderRefused(
+            422, "a mosaic of Zarr scenes needs all scenes in one CRS; warping Zarr is not done yet", "items"
         )
-    support = _operator_support()
-    try:
-        support.judge_described_bands([described[(first, key)] for key in assets], steps)
-    except support.recipe_invalid as error:
-        raise HTTPException(status_code=422, detail=str(error)) from None
     return described
 
 

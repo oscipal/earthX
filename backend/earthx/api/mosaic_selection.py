@@ -1,9 +1,10 @@
 """A mosaic selection as `api` holds it: what the tiles need of it, and where it is kept (M5-30b part 3, adr/0032 §10.2).
 
-The creation of a selection (``POST /collections/{dataset}/mosaic``) fetches its scenes once, checks them and derives
-what every tile of the mosaic then needs without fetching the scenes again: the order they are read in
-(`access.crop_rules.mosaic_order`), the outline of each as the item carries it, and the extent. A tile reads a selection
-by its id and fetches only the items it reads.
+The creation of a selection (``POST /collections/{dataset}/mosaic``) fetches its scenes once, checks them (one overpass,
+the same scaling, units and bands over all scenes and assets) and derives what every tile of the mosaic then needs
+without fetching the scenes again: the order they are read in (`access.crop_rules.mosaic_order`), the outline of each as
+the item carries it, the extent, and how the first scene describes each asset (the scenes are alike, so it stands for all).
+A tile reads a selection by its id and fetches only the items it reads; the TileJSON fetches none.
 
 The row of the selection is the truth (`catalog.mosaic_selection`, seven days). The process keeps the last ones in memory
 for a few minutes, which is safe because the content of an id never changes; after that the row is asked again, so an
@@ -15,7 +16,7 @@ from __future__ import annotations
 import time
 from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from shapely.geometry.base import BaseGeometry
@@ -52,6 +53,8 @@ class Selection:
     #: West, south, east, north in EPSG:4326 over every scene.
     bounds: tuple[float, float, float, float]
     outlines: Mapping[str, BaseGeometry]
+    #: Per asset the first scene's description (a ``ResolvedInput`` as JSON): the bands, scaling and unit all scenes share.
+    described: Mapping[str, dict[str, Any]] = field(default_factory=dict)
 
     @classmethod
     def build(
@@ -61,6 +64,7 @@ class Selection:
         assets: Sequence[str],
         sources: Mapping[str, dict[str, Any]],
         order: Sequence[str],
+        described: Mapping[str, dict[str, Any]],
     ) -> Selection:
         """From the outline sources of the items (checked as a tile would, :class:`OrderRefused` ``502`` for a broken one)."""
         outlines = footprints_of(sources)
@@ -73,6 +77,7 @@ class Selection:
             dict(sources),
             union_bounds(outlines),
             outlines,
+            dict(described),
         )
 
     def document(self) -> dict[str, Any]:
@@ -84,6 +89,7 @@ class Selection:
             "order": list(self.order),
             "outlines": dict(self.sources),
             "bounds": list(self.bounds),
+            "described": dict(self.described),
         }
 
     @classmethod
@@ -100,6 +106,7 @@ class Selection:
             dict(sources),
             (west, south, east, north),
             outlines,
+            dict(content["described"]),
         )
 
 

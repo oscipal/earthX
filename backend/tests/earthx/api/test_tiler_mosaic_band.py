@@ -149,15 +149,16 @@ class TestOnlyWhatTheBandNeedsIsRead:
 
 
 class TestARefusedBand:
-    def test_an_unknown_band_is_a_422_with_its_name_before_a_file_is_opened(self, client, source: Source) -> None:
-        response = _get(client(), _tiles()[0], band="EVI")
+    """What the steps and the stored description of the assets decide is refused by the tile and by the TileJSON alike,
+    before an item is fetched (M5-30b part 3, F5)."""
+
+    @pytest.mark.parametrize("route", ["tile", "tilejson"])
+    def test_an_unknown_band_is_a_422_with_its_name_before_an_item_is_fetched(
+        self, client, source: Source, route: str
+    ) -> None:
+        response = _get(client(), None if route == "tilejson" else _tiles()[0], band="EVI")
         assert response.status_code == 422, response.text
         assert "'EVI'" in response.json()["detail"]
-        assert source.fetched and source.opened == []
-
-    def test_the_tilejson_reads_no_scene_and_so_does_not_judge_the_band(self, client, source: Source) -> None:
-        response = _get(client(), None, band="EVI")
-        assert response.status_code == 200, response.text
         assert source.fetched == [] and source.opened == []
 
     def test_two_bands_and_a_band_without_steps_are_a_400_before_the_first_item(self, client, source: Source) -> None:
@@ -170,9 +171,20 @@ class TestARefusedBand:
 
 
 class TestTheTileJson:
-    def test_the_tiles_it_hands_out_carry_the_band_and_the_order_is_named(self, client) -> None:
-        for band in (None, "NDVI"):
+    def test_it_names_the_band_from_the_stored_description_and_the_tiles_carry_it(self, client, source: Source) -> None:
+        for band, shown in ((None, "Ratio"), ("NDVI", "NDVI")):
             body = _get(client(), None, band=band).json()
-            assert body["earthx:order"] == ["A", "B"]
+            assert body["band"] == shown and "bands" not in body and body["earthx:order"] == ["A", "B"]
+            assert body["data_type"] == "float32"
+            assert source.fetched == [] and source.opened == []
             assert ("band=NDVI" in body["tiles"][0]) is (band is not None)
             assert "hash" not in body["tiles"][0] and "item=" not in body["tiles"][0]
+
+    def test_it_names_the_unit_of_the_band_the_steps_leave(self, client, source: Source) -> None:
+        for name in "AB":
+            for asset in ("red", "nir"):
+                bands = source.items[name]["assets"][asset]["raster:bands"]
+                source.items[name]["assets"][asset]["raster:bands"] = [{**bands[0], "unit": "m"}]
+        shown = _get(client(), None, band="red").json()
+        assert shown["band"] == "red" and shown["unit"] == "m"
+        assert source.fetched == [] and source.opened == []

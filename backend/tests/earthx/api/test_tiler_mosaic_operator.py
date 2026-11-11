@@ -350,14 +350,17 @@ class TestTheTileJson:
         assert "op=mask" in body["tiles"][0] and "item=" not in body["tiles"][0]
         assert source.fetched == [] and source.opened == []  # no band, no unit either: that needs the first scene
 
-    def test_a_step_that_names_a_band_an_earlier_one_removed_is_a_422_of_the_tile_not_of_the_tilejson(self, client) -> None:
-        """Which bands the steps leave is judged on a scene (M5-30b part 3); the TileJSON reads none."""
+    def test_a_step_that_names_a_band_an_earlier_one_removed_is_a_422_of_the_tilejson_and_of_the_tile(
+        self, client, source: Source
+    ) -> None:
+        """Which bands the steps leave is judged on the stored description (M5-30b part 3, F5): no item is fetched."""
         api = client()
         steps = [("band_math", NDVI), ("mask", MASK)]
-        assert _get(api, None, steps).status_code == 200
-        response = _get(api, _tiles()[0], steps)
-        assert response.status_code == 422
-        assert response.json()["detail"].startswith("step 1: ")
+        for tile in (None, _tiles()[0]):
+            response = _get(api, tile, steps)
+            assert response.status_code == 422
+            assert response.json()["detail"].startswith("step 1: ")
+        assert source.fetched == [] and source.opened == []
 
 
 class TestRefusedBeforeTheFirstItemIsFetched:
@@ -432,24 +435,41 @@ class TestRefusedBeforeTheFirstFileIsOpened:
         response = _get(client(), _tiles()[0], [("band_math", {"expression": "swir - red"})], assets=("red", "nir"))
         assert response.status_code == 422
         assert "swir" in response.json()["detail"]
-        assert source.fetched and source.opened == []
+        assert source.fetched == [] and source.opened == []
 
-    def test_scenes_that_scale_an_asset_differently(self, client, source: Source) -> None:
-        source.items["B"] = _item("B", red_band={**_BAND, "raster:scale": 0.001})
-        tile, _, _ = _tile_at(X0 + 3500.0, Y0 - 1500.0)  # over both scenes
-        response = _get(client(), tile, [("band_math", NDVI)], assets=("red", "nir"))
-        assert response.status_code == 422
-        assert response.json()["detail"] == "the scenes of the mosaic scale 'red' differently"
-        assert source.opened == []
-
-    def test_a_tile_over_a_alone_fetches_and_compares_no_other_scene(self, client, source: Source) -> None:
-        """A tile reads the scenes it touches and fetches only those (M5-30b part 3), so it compares only those: what
-        the scenes it does not read would say is for the tiles that read them."""
-        source.items["B"] = _item("B", red_band={**_BAND, "raster:scale": 0.001})
+    def test_a_tile_over_a_alone_fetches_no_other_scene(self, client, source: Source) -> None:
+        """A tile reads the scenes it touches and fetches only those (M5-30b part 3)."""
         tile, _, _ = _tile_at(X0 + 50, Y0 - 50)  # over A only
         response = _get(client(), tile, [("band_math", NDVI)], assets=("red", "nir"))
         assert response.status_code == 200, response.text
         assert source.fetched == ["A"]
+
+
+class TestScenesThatDiffer:
+    """F5: the scenes of a selection are compared when it is created, over all of them and every asset, so that no tile
+    of it answers otherwise than another. The words are those of the mosaic job."""
+
+    def test_scenes_that_scale_an_asset_differently_are_refused_at_the_creation(self, client, source: Source) -> None:
+        source.items["B"] = _item("B", red_band={**_BAND, "raster:scale": 0.001})
+        response = client().post(f"/collections/{DATASET}/mosaic", json={"items": ["A", "B"], "assets": ["red", "nir"]})
+        assert response.status_code == 422, response.text
+        assert response.json()["detail"] == "the scenes of the mosaic scale 'red' differently"
+        assert source.opened == [] and source.selections.rows == {}
+
+    def test_scenes_that_differ_in_the_unit_of_an_asset_are_refused_at_the_creation(self, client, source: Source) -> None:
+        source.items["A"]["assets"]["nir"]["raster:bands"] = [{**_BAND, "unit": "m"}]
+        response = client().post(f"/collections/{DATASET}/mosaic", json={"items": ["A", "B"], "assets": ["red", "nir"]})
+        assert response.status_code == 422, response.text
+        assert "differ in the bands, data type, nodata or unit of 'nir'" in response.json()["detail"]
+        assert source.selections.rows == {}
+
+    def test_an_asset_that_differs_is_found_though_no_tile_reads_it_and_a_selection_without_it_is_taken(
+        self, client, source: Source
+    ) -> None:
+        source.items["B"]["assets"]["scl"]["raster:bands"] = [{"data_type": "uint8", "nodata": 0, "unit": "m"}]
+        api = client()
+        assert api.post(f"/collections/{DATASET}/mosaic", json={"items": ["A", "B"], "assets": ["red", "scl"]}).status_code == 422
+        assert api.post(f"/collections/{DATASET}/mosaic", json={"items": ["A", "B"], "assets": ["red", "nir"]}).status_code == 201
 
 
 class TestWithoutSteps:
