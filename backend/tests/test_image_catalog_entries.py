@@ -45,6 +45,11 @@ def test_the_released_entries_are_copied_to_where_the_loader_reads_them() -> Non
     assert ("catalog/retired.yaml", "./catalog/retired.yaml") in COPIES
 
 
+@pytest.mark.parametrize("name", ["places.json", "glossary.yaml", "capability_terms.yaml"])
+def test_the_files_of_the_search_text_are_copied_next_to_the_entries(name: str) -> None:
+    assert (f"catalog/{name}", f"./catalog/{name}") in COPIES
+
+
 def _reaches_a_held_back_directory(source: str) -> bool:
     path = source.removeprefix("./").rstrip("/")
     return path in {"", ".", "*", "catalog", "catalog/*"} or path.startswith(("catalog/prototype", "catalog/candidates"))
