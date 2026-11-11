@@ -97,6 +97,28 @@ services:
       catalog-load:
         condition: service_completed_successfully
 
+  # One-off, run by hand (M5-30b, adr/0032 §8.5, F11): tile times per zoom level over the real tile path, for the
+  # budgets of the mosaic tile. Under a profile like `materialize`: it reads real files at the source. The rectangle
+  # is an argument and never printed. Run it with:
+  #   docker compose run --rm measure-tiles <dataset_id> --bbox W,S,E,N [--datetime A/B] [--zooms 0-14]
+  measure-tiles:
+    profiles: ["measure"]
+    build:
+      context: ./backend
+      target: app
+    entrypoint: ["python", "-m", "earthx.api.measure_tiles"]
+    environment:
+      EARTHX_USER_AGENT: ${EARTHX_USER_AGENT:-}
+      EARTHX_PROFILE: ${EARTHX_PROFILE:-}
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+    depends_on:
+      catalog-load:
+        condition: service_completed_successfully
+
   # M3-23 (adr/0012): Garage replaces MinIO. Three parts, because Garage's
   # image has no shell (see below) and its `--default-bucket` flag reads the
   # S3 key only from an env var, not from a file — so secrets are generated

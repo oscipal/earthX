@@ -322,3 +322,33 @@ class TestTheScenes:
     def test_the_reader_takes_nothing_but_mosaic_scenes(self) -> None:
         with pytest.raises(TypeError, match="MosaicScenes"):
             MosaicTileReader("/vsicurl/https://anywhere.example.invalid/x.tif")  # type: ignore[arg-type]
+
+
+class TestThreads:
+    @staticmethod
+    def _recorded(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, **reader_options: Any) -> dict[str, Any]:
+        seen: dict[str, Any] = {}
+
+        def fake(*args: Any, **kwargs: Any) -> tuple[Any, list[str]]:
+            seen.update(threads=kwargs["threads"], chunk_size=kwargs["chunk_size"])
+            return "image", []
+
+        monkeypatch.setattr(mosaic_tiles, "mosaic_reader", fake)
+        scene = _scene(tmp_path / "a.tif", SEAM_X - 5000.0, 10000.0, 10)
+        reader = MosaicTileReader(MosaicScenes("synthetic", (scene,), _bounds([scene])), **reader_options)
+        assert reader.tile(TILE.x, TILE.y, TILE.z) == "image"
+        return seen
+
+    def test_the_route_reads_with_the_default_count(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        assert self._recorded(monkeypatch, tmp_path) == {"threads": MOSAIC_THREADS, "chunk_size": MOSAIC_THREADS}
+
+    def test_a_count_of_its_own_sets_the_threads_and_the_portion(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        assert self._recorded(monkeypatch, tmp_path, threads=8) == {"threads": 8, "chunk_size": 8}
+
+    @pytest.mark.parametrize("threads", [0, -1, 17])
+    def test_a_count_outside_one_to_sixteen_is_refused(self, tmp_path: Path, threads: int) -> None:
+        scene = _scene(tmp_path / "a.tif", SEAM_X - 5000.0, 10000.0, 10)
+        with pytest.raises(ValueError, match="threads"):
+            MosaicTileReader(MosaicScenes("synthetic", (scene,), _bounds([scene])), threads=threads)

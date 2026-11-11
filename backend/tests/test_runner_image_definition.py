@@ -52,5 +52,5 @@ def test_every_compose_build_of_the_backend_names_the_app_stage() -> None:
     services = yaml.safe_load((REPO / "docker-compose.yml").read_text())["services"]
     builds = {name: s["build"] for name, s in services.items() if "build" in s}
     backend = {name: b for name, b in builds.items() if b["context"] == "./backend"}
-    assert len(backend) == 9
+    assert len(backend) == 10  # with `measure-tiles` (M5-30b), a one-off under a profile like `materialize`
     assert {name: b.get("target") for name, b in backend.items()} == dict.fromkeys(backend, "app")
