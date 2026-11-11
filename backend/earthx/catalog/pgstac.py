@@ -321,6 +321,26 @@ async def fetch_item(conn: psycopg.AsyncConnection, dataset_id: str, item_id: st
     return None if row is None or row[0] is None else row[0]
 
 
+def search_items_in_bbox(
+    conn: psycopg.Connection, dataset_id: str, bbox: tuple[float, float, float, float], limit: int
+) -> list[dict[str, object]]:
+    """Up to ``limit`` items of a materialized dataset whose footprint meets ``bbox`` (EPSG:4326).
+
+    Through pgstac's own ``search``, so the items come back whole, as ``get_item`` gives them. Used by the
+    measurement of the tile path (M5-30b, `api.measure_tiles`); like :func:`fetch_item` it commits nothing.
+    """
+    if limit < 1:
+        raise ValueError("limit is at least 1")
+    use_pgstac_search_path(conn)
+    query = {"collections": [dataset_id], "bbox": list(bbox), "limit": limit}
+    with conn.cursor() as cur:
+        cur.execute("SELECT pgstac.search(%s::jsonb)", (json.dumps(query),))
+        row = cur.fetchone()
+    if row is None or row[0] is None:
+        return []
+    return list(row[0].get("features") or [])[:limit]
+
+
 async def read_item_holdings(conn: psycopg.AsyncConnection) -> dict[str, str | None]:
     """``earthx:source.item_holding`` of every collection in pgstac, by collection id.
 
