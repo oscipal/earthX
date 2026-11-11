@@ -3,15 +3,15 @@
 // platform can write it — and says which and why. The resampling method is no
 // recommendation: it changes the values, the user chooses it (B10).
 //
-// What a run accepts (`processing/core.py::_nodata_for`): a float type always
-// (NaN is its nodata); an integer type only when every band of the result
-// carries one finite nodata value. Band math ends in float32 with NaN, so an
-// integer type after it is refused for sure and not offered. A reprojection
-// keeps the nodata of its input, which the source *file* states and the item
-// may; `nearest` and `mode` on integer bands keep their values (they only pick
-// one), any interpolation does not (the core rounds a fraction when it writes an
-// integer). `normalize` ends in float32 with NaN like band math (Otto, 22.10.2026); the
-// process description does not state an operator's output type, so the two are named here.
+// The nodata of a result (`processing/nodata.py`, plan M5-28): a float type takes
+// NaN; an integer type keeps the source's nodata where the steps only pass the
+// source's integer values on (`nearest`, `mode`, masks), else it takes an edge of
+// the type (`max` unsigned, `min` signed), and a value that would land on it is
+// moved by one. A source nodata an integer type cannot hold (swissALTI3D −9999 in
+// `uint16`) is refused, so that type is not offered (Otto, 11.11.2026, F7).
+// Band math and normalize end in float32 with NaN (Otto, 22.10.2026); an integer
+// type after them is offered, not recommended. The process description does not
+// state an operator's output type, so the two are named here.
 
 import type { BandSource } from './processingOrder';
 
@@ -35,22 +35,53 @@ export interface StepChoice {
   resampling?: string;
 }
 
-export const AFTER_BAND_MATH =
-  'Band math ends in float32 with NaN as nodata, which an integer type cannot hold.';
-export const AFTER_NORMALIZE =
-  'Normalize ends in float32 with NaN as nodata, which an integer type cannot hold.';
-
-// The operators whose result is float32 with NaN as nodata, whatever goes in: what they give,
-// why no integer type is offered after them, and how the option is labelled.
-const FLOAT_RESULT: Record<string, { gives: string; after: string; label: string }> = {
-  band_math: { gives: 'Band math gives fractions.', after: AFTER_BAND_MATH, label: 'not after band math' },
-  normalize: { gives: 'Normalize gives fractions.', after: AFTER_NORMALIZE, label: 'not after normalize' },
+// The operators whose result is float32 with NaN as nodata, whatever goes in: why float32 is recommended after them.
+const FLOAT_RESULT: Record<string, { gives: string }> = {
+  band_math: { gives: 'Band math gives fractions.' },
+  normalize: { gives: 'Normalize gives fractions.' },
 };
+
+// The values each integer type holds.
+const RANGE: Record<string, readonly [number, number]> = {
+  uint8: [0, 255],
+  uint16: [0, 65535],
+  int16: [-32768, 32767],
+  uint32: [0, 4294967295],
+  int32: [-2147483648, 2147483647],
+};
+
+// The nodata of an integer type whose source gives none it can keep.
+export const edgeNodata = (dtype: string): number => (RANGE[dtype][0] === 0 ? RANGE[dtype][1] : RANGE[dtype][0]);
+
+// Why `dtype` cannot hold the nodata the source states, or `null` where it can (F7).
+export function nodataMisfit(dtype: string, bands: readonly BandSource[]): string | null {
+  if (!isIntegerType(dtype)) return null;
+  const [low, high] = RANGE[dtype];
+  const value = bands.map((band) => band.nodata).find((v) => v !== null && !(Number.isInteger(v) && v >= low && v <= high));
+  return value === undefined || value === null ? null : `The source marks missing pixels with ${value}, which ${dtype} cannot hold.`;
+}
 
 // The first step of the order that ends in float32, or `undefined`.
 const floatResultOf = (steps: readonly StepChoice[]) => {
   const found = steps.find((s) => s.op in FLOAT_RESULT);
   return found ? FLOAT_RESULT[found.op] : undefined;
+};
+
+// Whether an integer result keeps the source's nodata: integer bands, unscaled, one nodata, steps that only pick.
+const keepsSourceNodata = (steps: readonly StepChoice[], bands: readonly BandSource[]): boolean => {
+  const types = new Set(bands.map((band) => band.dataType));
+  const type = types.size === 1 ? [...types][0] : null;
+  const nodata = new Set(bands.map((band) => band.nodata));
+  return (
+    bands.length > 0 &&
+    type !== null &&
+    isIntegerType(type) &&
+    !bands.some((band) => band.scaled) &&
+    nodata.size === 1 &&
+    !nodata.has(null) &&
+    !floatResultOf(steps) &&
+    !steps.some((s) => s.op === 'reproject' && !PICKING.includes(s.resampling ?? ''))
+  );
 };
 
 // The type the order is sent with unless the user changes it. An order without
@@ -97,12 +128,17 @@ export interface DtypeOption {
   disabledReason: string | null;
 }
 
-// The types of the schema as options; those a run refuses for sure disabled with the reason.
-export function dtypeOptions(args: { dtypes: readonly string[]; steps: readonly StepChoice[] }): DtypeOption[] {
+// The types of the schema as options; those a run refuses for sure disabled with the reason. After band math or
+// normalize the result bands carry NaN, not the source's nodata, so no type is refused for it.
+export function dtypeOptions(args: {
+  dtypes: readonly string[];
+  steps: readonly StepChoice[];
+  bands: readonly BandSource[];
+}): DtypeOption[] {
   const floating = floatResultOf(args.steps);
   return args.dtypes.map((value) => {
-    const disabledReason = floating && isIntegerType(value) ? floating.after : null;
-    return { value, label: floating && disabledReason ? `${value} (${floating.label})` : value, disabledReason };
+    const disabledReason = floating ? null : nodataMisfit(value, args.bands);
+    return { value, label: disabledReason ? `${value} (nodata does not fit)` : value, disabledReason };
   });
 }
 
@@ -113,12 +149,8 @@ export function effectiveDtype(chosen: string | null, options: readonly DtypeOpt
   return option && !option.disabledReason ? option.value : automatic.value;
 }
 
-// A note for an integer type that is not surely taken: the run needs one nodata
-// value that every band states (`core._nodata_for`), which only the source file
-// knows for sure.
+// A note for an integer type that does not keep the source's nodata: which value marks a missing pixel instead.
 export function integerNote(dtype: string, steps: readonly StepChoice[], bands: readonly BandSource[]): string | null {
-  if (!isIntegerType(dtype) || floatResultOf(steps)) return null;
-  const nodata = new Set(bands.map((band) => band.nodata));
-  if (bands.length > 0 && nodata.size === 1 && !nodata.has(null)) return null;
-  return `${dtype} needs a nodata value that the source file states for every band; the job fails otherwise. float32 always works.`;
+  if (!isIntegerType(dtype) || keepsSourceNodata(steps, bands)) return null;
+  return `${dtype} marks missing pixels with ${edgeNodata(dtype)}; a value that would land on it is moved by one. float32 keeps every value.`;
 }
