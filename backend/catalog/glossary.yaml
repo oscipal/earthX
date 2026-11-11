@@ -1,0 +1,56 @@
+# The glossary of the dataset search (adr/0026 §4.2, F7; docs/plans/m5/m5-22-suche-lexikalisch.md §3.3).
+#
+# Each group holds terms that mean the same, German and English, abbreviations allowed. A term of a group in a query
+# makes the lexical arm search for every other term of the group as well; the search texts stay as they are. Only
+# terms that mean the same belong in one group, never terms that are merely alike: a surface model (DSM) is no terrain
+# model (DTM), so the two have groups of their own.
+#
+# Checked on load: at least two terms per group, no empty term, no term in two groups (after lower case and without
+# accents; a hyphen counts as a space). New technical terms of an onboarding go here (projektuebersicht.md §5 point 11).
+groups:
+# Names and abbreviations.
+- [Sentinel-2, S2]
+- [Sentinel-1, S1]
+- [WorldCover, World Cover]
+- [Copernicus DEM, COP-DEM]
+
+# Elevation (adr/0026 §4.2; M5-08 §9). Three groups, kept apart on purpose (Q11, Q12 of the evaluation set).
+- [Höhenmodell, digitales Höhenmodell, elevation model, digital elevation model, DEM, DHM]
+- [Geländemodell, digitales Geländemodell, DGM, DTM, terrain model, digital terrain model, bare-earth model, bare earth]
+- [Oberflächenmodell, digitales Oberflächenmodell, DOM, DSM, surface model, digital surface model]
+- [Befliegung, aerial survey]
+- [Landesvermessung, national survey]
+
+# Land cover (M5-07 §10).
+- [Landbedeckung, Bodenbedeckung, land cover, landcover]
+- [Landnutzung, land use]
+- [Klassifikation, Klassenkarte, classification, class map]
+- [Baumbestand, tree cover]
+- [Gebüsch, shrubland]
+- [Grasland, grassland]
+- [Acker, Ackerland, cropland]
+- [bebaute Fläche, built-up]
+- [spärlich bewachsen, bare/sparse vegetation, sparse vegetation]
+- [Schnee und Eis, snow and ice]
+- [Gewässer, Wasserfläche, Wasserflächen, water bodies, permanent water bodies]
+- [krautiges Feuchtgebiet, herbaceous wetland]
+- [Mangroven, mangroves]
+- [Moos und Flechten, moss and lichen]
+
+# Radar (DS-04 §8).
+- [Rückstreuung, backscatter]
+- [Radar mit synthetischer Apertur, synthetic aperture radar, SAR]
+- [Radarbild, Radarbilder, radar image, radar images, radar imagery]
+- [Polarisation, polarization]
+- [aufsteigende Bahn, ascending orbit]
+- [absteigende Bahn, descending orbit]
+- [relativer Orbit, relative orbit]
+- [GRD, ground range detected]
+
+# Optical (terms the active questions of the evaluation set use, M5-22 plan §3.3).
+- [Bodenreflexion, Oberflächenreflexion, surface reflectance]
+- [multispektral, multispectral]
+- [Echtfarben, Echtfarbbild, true color, true colour, natural color]
+- [Satellitenbild, Satellitenbilder, satellite image, satellite images, satellite imagery]
+- [Vegetationsindex, vegetation index]
+- [Schneebedeckung, snow cover]
