@@ -144,6 +144,9 @@ viewer:
   browse: full_resolution
   quicklook_nodata_max: null
   results_group_by: [start_datetime]
+  # What is shown below min_zoom (adr/0032 §9).
+  overview: pyramid
+  overview_resampling: mode
 health:
   status: ok
 maturity: stable

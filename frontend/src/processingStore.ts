@@ -86,6 +86,7 @@ import {
   resultGsd,
   resultLayerName,
   presetOfResultBand,
+  isClassBand,
   resultRender,
   resultStats,
   resultTileTemplate,
@@ -168,7 +169,7 @@ import {
   type PreviewSpec,
 } from './processingPreview';
 import type { ResultStats } from './render';
-import { chooseDtype, dtypeOptions, effectiveDtype, integerNote, type Choice, type DtypeOption } from './processingDefaults';
+import { chooseDtype, dtypeOptions, effectiveDtype, type Choice, type DtypeOption } from './processingDefaults';
 import { buildTileUrl } from './mapLayers';
 import type { PermalinkView } from './permalink';
 import { previewRangeOf } from './permalinkRange';
@@ -571,7 +572,6 @@ export interface OrderView {
   dtypeAutomatic: Choice | null;
   // The user changed it (and the choice stands); else the automatic type is sent.
   dtypeChosen: boolean;
-  dtypeNote: string | null;
   built: BuiltOrder | null;
   // The text of the order, or of all orders of a batch; `null` while one is missing.
   key: string | null;
@@ -749,13 +749,11 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
         ? inOutput.has(resultNameOf(step))
         : step.op !== 'normalize' || (typeof step.values.bands === 'string' && namesIn(step.values.bands).some((name) => inOutput.has(name))),
     )
-    .map((step) => ({
-      op: step.op,
-      ...(typeof step.values.resampling === 'string' ? { resampling: step.values.resampling } : {}),
-    }));
+    .map((step) => ({ op: step.op, values: step.values }));
   const dtypes = info?.dtypes ?? [];
-  const automatic = info ? chooseDtype({ steps: choices, bands: inOrder, allowed: dtypes }) : null;
-  const options = automatic ? dtypeOptions({ dtypes, steps: choices, bands: inOrder }) : [];
+  const typeArgs = { steps: choices, bands: inOrder, allowed: dtypes, operators: info?.operators ?? [] };
+  const automatic = info ? chooseDtype(typeArgs) : null;
+  const options = automatic ? dtypeOptions(typeArgs) : [];
   const dtype = automatic ? effectiveDtype(p.dtype, options, automatic) : '';
   // The results on screen are those of the open section; the extra scenes were fetched under the active dataset.
   const extraIds = new Set(p.extraScenes?.items.map((item) => item.id));
@@ -815,8 +813,9 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
     dtype,
     dtypeOptions: options,
     dtypeAutomatic: automatic,
-    dtypeChosen: p.dtype !== null && p.dtype === dtype,
-    dtypeNote: integerNote(dtype, choices, inOrder),
+    // A choice the chain no longer allows gives way to float32 without a word (Otto, 11.11.2026): where that is the automatic type too,
+    // the panel says "chosen automatically"; else it shows float32 as the choice.
+    dtypeChosen: p.dtype !== null && (p.dtype === dtype || dtype !== automatic?.value),
     built,
     key,
   };
@@ -828,8 +827,9 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
 // scenes is no scene; the licence is the dataset's, as for the selection. A result can be, where the browser keeps
 // the order of its job (adr/0019: F2); it needs no more than that, an expired result is run from the scenes all the same (F4).
 export const NO_COPY_TEXT = 'No copy of the original order is kept in this browser. Open its recipe.json instead.';
-export const PROCESS_RESULT_TEXT = 'Process further';
-export const EXPIRED_PROCESS_TEXT = 'Expired: runs everything again from the scenes.';
+// The name of "Process" for every layer, of a dataset or of a result (the `aria-label` of the button in the row).
+export const PROCESS_LAYER_TEXT = 'Process layer';
+export const EXPIRED_PROCESS_TEXT = 'Process layer: the result has expired, so the job runs again from the scenes';
 
 export function layerProcessBlock(
   layer: MapLayer,
@@ -1725,7 +1725,8 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       const place = startPlaceOf(job.bands, job.order, job.shownBand, colour);
       const stats = place === RGB ? colourStats(job.bands, colour!) : several ? job.bands[place].stats : job.statistics;
       const preset = place === RGB ? null : presetOfResultBand(job.bands[several ? place : 0], indexPresetsOf(dataset?.collection));
-      const render = resultRender(tileJson.dataType, get().range, stats, ownRangeOf(job, job.bands, place), place === RGB, preset);
+      const classes = place !== RGB && isClassBand(job.bands[several ? place : 0], tileJson.dataType, dataset?.collection);
+      const render = resultRender(tileJson.dataType, get().range, stats, ownRangeOf(job, job.bands, place), place === RGB, preset, classes);
       const template = resultTileTemplate(href);
       useAppStore.getState().pinDerivedLayer({
         name: resultLayerName(job.title),
@@ -1737,6 +1738,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
           resampled: job.resampled,
           expired: false,
           dataType: tileJson.dataType,
+          ...(classes ? { classes: true as const } : {}),
           stats,
           preset,
           ...(several ? { bands: job.bands, band: place, ...(colour ? { colour } : {}) } : {}),
@@ -2216,19 +2218,20 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       const stats = colour ? colourStats(info.bands, colour) : band!.stats;
       const dataset = app.datasets.find((d) => d.id === job.order?.inputs[0]?.dataset);
       const preset = colour ? null : presetOfResultBand(band ?? undefined, indexPresetsOf(dataset?.collection));
-      const render = resultRender(info.dataType, get().range, stats, ownRangeOf(job, info.bands, place), colour !== undefined, preset);
+      const classes = !colour && isClassBand(band ?? undefined, info.dataType, dataset?.collection);
+      const render = resultRender(info.dataType, get().range, stats, ownRangeOf(job, info.bands, place), colour !== undefined, preset, classes);
       useAppStore.setState({
         layers: app.layers.map((l) => {
           if (l.id !== layerId || !l.result) return l;
           // What was applied and not saved belongs to the band it was applied to: it goes with it.
-          const { savedTileUrl: _unsaved, savedPercent: _unsavedPercent, savedPercentChannels: _unsavedChannels, percent: _percent, percentChannels: _channels, ...kept } = l.result;
+          const { savedTileUrl: _unsaved, savedPercent: _unsavedPercent, savedPercentChannels: _unsavedChannels, percent: _percent, percentChannels: _channels, classes: _classes, ...kept } = l.result;
           let first = true;
           const overlays = l.overlays.map((o) => {
             if (o.kind !== 'raster' || !first) return o;
             first = false;
             return { ...o, tileUrl: colour ? colourTileUrl(o.tileUrl, colour, render) : bandTileUrl(o.tileUrl, place as number, render) };
           });
-          return { ...l, overlays, result: { ...kept, band: place, stats, preset, ...typedOf(ownRangeOf(job, info.bands!, place)) } };
+          return { ...l, overlays, result: { ...kept, band: place, ...(classes ? { classes: true as const } : {}), stats, preset, ...typedOf(ownRangeOf(job, info.bands!, place)) } };
         }),
       });
     },

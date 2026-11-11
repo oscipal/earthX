@@ -10,6 +10,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { DatasetOption } from '../datasets';
+import { MAX_JOB_SCENES } from '../download';
 import { bboxToPolygon } from '../geoUtils';
 import { placeAoi } from '../placeSearch';
 import s2 from '../fixtures/processes/sentinel-2-c1-l2a.json';
@@ -447,9 +448,9 @@ describe('Merged per pass (job)', () => {
     expect(container.querySelector('.dialog-mosaics')?.textContent).toContain('Contains modified Copernicus Sentinel data 2026');
   });
 
-  it('locks a pass over 25 scenes with the reason and starts nothing', async () => {
+  it('locks a pass over the scene guard with the reason and starts nothing', async () => {
     open();
-    const many = Array.from({ length: 26 }, (_, i) => scene(`S2_M${String(i).padStart(2, '0')}`));
+    const many = Array.from({ length: MAX_JOB_SCENES + 1 }, (_, i) => scene(`S2_M${String(i).padStart(2, '0')}`));
     useAppStore.setState({ downloadPasses: [{ label: '2026-07-03', items: many }] });
     await showMerged();
     expect(buttons(START)[0].disabled).toBe(true);
@@ -458,9 +459,9 @@ describe('Merged per pass (job)', () => {
     expect(placed()).toHaveLength(0);
   });
 
-  it('takes a pass of exactly 25 scenes', async () => {
+  it('takes a pass of exactly the scene guard', async () => {
     open();
-    const full = Array.from({ length: 25 }, (_, i) => scene(`S2_M${String(i).padStart(2, '0')}`));
+    const full = Array.from({ length: MAX_JOB_SCENES }, (_, i) => scene(`S2_M${String(i).padStart(2, '0')}`));
     useAppStore.setState({ downloadPasses: [{ label: '2026-07-03', items: full }] });
     await showMerged();
     expect(buttons(START)[0].disabled).toBe(false);
@@ -494,11 +495,12 @@ describe('starting the job', () => {
     expect(inputs.recipe).not.toHaveProperty('aoi');
   });
 
-  it('asks for float32 where the item does not state a nodata value', async () => {
+  // Otto, 11.11.2026: the mosaic of whole scenes passes the values on, so it keeps the type of the source (M5-28 picks the nodata).
+  it('asks for the type of the source, also where the item does not state a nodata value', async () => {
     open('processing', { data_type: 'uint8' });
     await showMerged();
     await press(START);
-    expect(JSON.parse(placed()[0][1].body).inputs.recipe.output.dtype).toBe('float32');
+    expect(JSON.parse(placed()[0][1].body).inputs.recipe.output.dtype).toBe('uint8');
   });
 
   it('shows the job with the row of the processing panel, and the button waits for it', async () => {

@@ -19,7 +19,7 @@ const [DEM] = datasetsFrom([
     id: 'dem',
     title: 'dem',
     'earthx:capabilities': { roi: true, time_range: false, band_math: true, interpolation: true },
-    'earthx:viewer': { group_by: ['datetime'], min_zoom: 0, max_zoom: 14, browse: 'full_resolution', quicklook_nodata_max: null, results_group_by: ['datetime'] },
+    'earthx:viewer': { group_by: ['datetime'], min_zoom: 0, max_zoom: 14, browse: 'full_resolution', quicklook_nodata_max: null, results_group_by: ['datetime'], overview: 'own' as const, overview_resampling: null },
     'earthx:default_render': { title: 'Standard', assets: ['data'], rescale: [[0, 4000]] as [number, number][], colormap_name: null, expression: null, resampling: 'nearest' },
   },
 ] as never);

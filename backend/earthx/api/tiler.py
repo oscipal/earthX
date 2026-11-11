@@ -1244,6 +1244,28 @@ EXPORT_JOB_HEADER = "X-Export-Job"
 EXPORT_JOB_AVAILABLE = "available"
 EXPORT_JOB_TOO_LARGE = "too-large"
 
+# The longest a crop may be estimated to take and still run in the request (adr/0032 §10.3, F13, Otto 11.11.2026).
+# Replaces the fixed 25 scenes: the estimate of `processing.plan` counts the files opened and the megabytes read.
+MAX_CROP_SECONDS = 60.0
+
+
+def estimated_crop_seconds(files: int, input_bytes: int) -> float:
+    """Seconds a crop is estimated to take: a first open per file plus the time per megabyte (adr/0014 §5.5)."""
+    from earthx.processing.plan import SECONDS_PER_ASSET, SECONDS_PER_INPUT_MB
+
+    return SECONDS_PER_ASSET * files + SECONDS_PER_INPUT_MB * input_bytes / 1_000_000
+
+
+def _export_job_headers(config: DatasetConfig, planned_total: int) -> dict[str, str] | None:
+    """Whether the refused crop fits an export job (M4-11 K5): COG only (F6), under the job's own cap (F5).
+
+    A word, no number and no geometry, like ``X-Skipped-Groups``.
+    """
+    if config.zarr is not None:
+        return None
+    return {EXPORT_JOB_HEADER: EXPORT_JOB_AVAILABLE if planned_total <= MAX_JOB_BYTES else EXPORT_JOB_TOO_LARGE}
+
+
 # The stages of `OrderRefused` at which a crop is refused rather than delivered without
 # its `recipe.json` (Otto, 07.10.2026): a foreign host, an input gone from its source.
 _RECIPE_ABORTS = frozenset({"hosts", "version"})
@@ -1333,8 +1355,9 @@ async def download_crop(
     Every check that can run before an asset is opened runs first, in the order
     M2-06's acceptance criteria list the failures: unknown dataset, licence tier,
     a malformed AOI, an unknown item, an AOI that touches none of the given items,
-    the item-count cap, then the output size cap (M3-18: built from the AOI and
-    the items' own metadata, not from how many items or assets were asked for)
+    the item-count guard, then the output size cap (M3-18: built from the AOI and
+    the items' own metadata, not from how many items or assets were asked for),
+    then the estimated duration (:data:`MAX_CROP_SECONDS`, adr/0032 §10.3)
     — only after all of that does anything reach `gateway`.
 
     **Per group, not per item (M3-17).** ``body.groups`` names one or more
@@ -1456,15 +1479,20 @@ async def download_crop(
     try:
         check_output_size_cap([output for planned in planned_by_group for output in planned])
     except AoiTooLarge as error:
-        # Over the synchronous cap, the same selection may still run as an export job (M4-11 K5):
-        # COG only (F6), under the job's own cap (F5). A word, no number and no geometry, like
-        # `X-Skipped-Groups` below.
-        if config.zarr is None:
-            fits = planned_total <= MAX_JOB_BYTES
-            headers = {EXPORT_JOB_HEADER: EXPORT_JOB_AVAILABLE if fits else EXPORT_JOB_TOO_LARGE}
-        else:
-            headers = None
-        raise HTTPException(status_code=413, detail=str(error), headers=headers) from None
+        # Over the synchronous cap, the same selection may still run as an export job (M4-11 K5).
+        raise HTTPException(status_code=413, detail=str(error), headers=_export_job_headers(config, planned_total)) from None
+    # After the size cap, so that no size refusal changes its place. The files the crop opens: every scene of
+    # every group, once per wanted asset.
+    seconds = estimated_crop_seconds(sum(len(matched) for matched, _ in surviving_groups) * len(wanted), planned_total)
+    if seconds > MAX_CROP_SECONDS:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"This crop would take about {seconds:.0f} s; at most {MAX_CROP_SECONDS:.0f} s run here. "
+                + ("Run it as a job." if config.zarr is None else "Select fewer scenes or draw a smaller area.")
+            ),
+            headers=_export_job_headers(config, planned_total),
+        )
 
     # The scenes of a group are read in the order of the mosaic job and the mosaic tile, not in the
     # order of the selection (NM4-02): where scenes overlap, the crop then keeps the pixels the

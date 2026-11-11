@@ -47,6 +47,8 @@ function collection(id: string, title: string, extra: Partial<Collection> = {}):
       browse: 'quicklook',
       quicklook_nodata_max: null,
       results_group_by: ['datetime'],
+      overview: 'own' as const,
+      overview_resampling: null,
     },
     ...extra,
   };
@@ -65,6 +67,8 @@ const COLLECTIONS = [
       browse: 'full_resolution',
       quicklook_nodata_max: null,
       results_group_by: ['start_datetime'],
+      overview: 'own' as const,
+      overview_resampling: null,
     },
   }),
 ];

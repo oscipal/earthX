@@ -21,6 +21,7 @@ import pytest
 
 from earthx.access.download import compute_crop_region, parse_aoi_geometry, plan_outputs
 from earthx.adapters.errors import UnknownCollection
+from earthx.api import intake
 from earthx.api.intake import (
     MAX_ORDER_ITEMS,
     MAX_ORDER_STEPS,
@@ -36,6 +37,7 @@ from earthx.api.intake import (
 from earthx.api.item_source import MaterializedCatalogUnavailable, MaterializedItemNotFound, Stage, fetch_item_or_refuse
 from earthx.catalog.registry import AcquisitionYears, DatasetConfig, DatasetRegistry, LicenseTier
 from earthx.gateway import Gateway, Policy, UpstreamError
+from earthx.processing.export import AttachmentsInvalid
 from earthx.processing.operators import OperatorRegistry, Tier
 from earthx.processing.plan import export_outputs
 from earthx.processing.recipe import cache_key, recipe_from_data, recipe_hash
@@ -798,11 +800,26 @@ class TestRefusals:
         accepted = await accept(export_order(assets=names), Source((S2, item)))
         assert accepted.recipe.inputs[0].assets == list(names)
 
-    async def test_exactly_at_the_cap_is_fine(self) -> None:
-        ids = [f"S2_{i}" for i in range(MAX_ORDER_ITEMS)]
+    @pytest.mark.parametrize("count", [26, 300])
+    async def test_more_than_the_old_25_items_are_taken(self, count: int) -> None:
+        """adr/0032 §10.3: 2000 is a guard against abuse; the bytes, memory and runtime of the estimate decide."""
+        ids = [f"S2_{i}" for i in range(count)]
         source = Source(*((S2, visual_item(item_id)) for item_id in ids))
         accepted = await accept(export_order(groups=tuple((i,) for i in ids)), source)
-        assert len(accepted.recipe.inputs[0].resolved) == MAX_ORDER_ITEMS
+        assert len(accepted.recipe.inputs[0].resolved) == count
+
+    async def test_the_guard_is_2000_items(self) -> None:
+        assert MAX_ORDER_ITEMS == 2000
+
+    async def test_an_export_whose_notes_outgrow_their_files_is_a_413_and_not_a_500(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def too_long(*_: object, **__: object) -> None:
+            raise AttachmentsInvalid("NOTICE.txt is UTF-8 text of at most 65536 bytes")
+
+        monkeypatch.setattr(intake, "export_attachments", too_long)
+        error = await refused(export_order(), Source((S2, visual_item("S2_A"))))
+        assert error.status_code == 413 and "select fewer" in error.detail
 
     async def test_an_item_the_source_does_not_have(self) -> None:
         error = await refused(order(), Source())

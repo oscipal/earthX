@@ -16,7 +16,7 @@ import httpx
 import pytest
 
 from earthx.access.download import compute_crop_region, parse_aoi_geometry, plan_outputs
-from earthx.api.intake import accept_order
+from earthx.api.intake import MAX_ORDER_ITEMS, accept_order
 from earthx.catalog.registry import DatasetRegistry, LicenseTier
 from earthx.gateway import UpstreamError
 from earthx.processing.operators import REGISTRY as REAL_OPERATORS
@@ -204,7 +204,8 @@ class TestWhatItTurnsAway:
         assert "secret.invalid" not in json.dumps(body)
 
     async def test_more_items_than_an_order_may_name_are_a_413_and_none_is_fetched(self, rig: Rig) -> None:
-        ids = tuple(f"S2_{n}" for n in range(26))
+        # The guard of adr/0032 §10.3 (2000), no longer the 25 of M4-07b.
+        ids = tuple(f"S2_{n}" for n in range(MAX_ORDER_ITEMS + 1))
         await self.refused(rig, order(groups=((*ids,),)), 413, "size")
         assert rig.source.calls == []
 

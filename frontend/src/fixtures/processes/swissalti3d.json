@@ -256,6 +256,7 @@
             "title": "Band math",
             "type": "object",
             "x-earthx-kind": "pixel",
+            "x-earthx-passes-values": false,
             "x-earthx-tiers": [
               "T1",
               "T2"
@@ -323,6 +324,7 @@
             "title": "Mask by value",
             "type": "object",
             "x-earthx-kind": "pixel",
+            "x-earthx-passes-values": true,
             "x-earthx-tiers": [
               "T1",
               "T2"
@@ -483,6 +485,7 @@
             "title": "Normalize",
             "type": "object",
             "x-earthx-kind": "pixel",
+            "x-earthx-passes-values": false,
             "x-earthx-tiers": [
               "T2"
             ]
@@ -579,6 +582,13 @@
             "title": "Reproject and resample",
             "type": "object",
             "x-earthx-kind": "grid",
+            "x-earthx-passes-values": {
+              "in": [
+                "mode",
+                "nearest"
+              ],
+              "param": "resampling"
+            },
             "x-earthx-tiers": [
               "T2"
             ]

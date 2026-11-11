@@ -14,7 +14,7 @@ const collection = (id: string, browse: 'full_resolution' | 'preview_tiles', min
   id,
   title: id,
   'earthx:capabilities': { roi: true, time_range: browse !== 'full_resolution', band_math: true, interpolation: true },
-  'earthx:viewer': { group_by: ['datetime'], min_zoom: minZoom, max_zoom: maxZoom, browse, quicklook_nodata_max: null, results_group_by: ['datetime'] },
+  'earthx:viewer': { group_by: ['datetime'], min_zoom: minZoom, max_zoom: maxZoom, browse, quicklook_nodata_max: null, results_group_by: ['datetime'], overview: 'own' as const, overview_resampling: null },
   'earthx:default_render': { title: 'Standard', assets: ['data'], rescale: [[0, 4000]] as [number, number][], colormap_name: 'terrain', expression: null, resampling: 'nearest' },
 });
 

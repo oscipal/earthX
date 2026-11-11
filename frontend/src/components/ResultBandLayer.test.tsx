@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { jobEntry, NOW } from '../fixtures/jobEntries';
 import type { Order } from '../processing';
 import { setTrackerOptions, useProcessingStore, type JobEntry } from '../processingStore';
+import { LOCKED_LAYER_TIP } from '../layers';
 import { resultBands } from '../resultLayer';
 import { useAppStore } from '../store';
 import { ADD_BAND_TIP } from './LayerManager';
@@ -131,11 +132,19 @@ describe('"Add band as layer"', () => {
     expect(addButton()).toBeNull();
   });
 
-  it('is not offered once the results are gone or while the job is deleted (nothing can be drawn from them)', async () => {
+  it('is not offered once the results are gone (nothing can be drawn from them)', async () => {
     await show();
     act(() => useAppStore.getState().expireResultLayers(Date.parse(layers()[0].result!.expires) + 1));
     act(() => root.render(<LayerManager />));
     expect(addButton()).toBeNull();
+  });
+
+  // The job can be restored for a day: what it locks stays in its place and says why (Otto, 11.11.2026).
+  it('is locked with the reason of the row while the job is deleted', async () => {
+    await show();
+    act(() => useAppStore.setState({ layers: layers().map((l) => ({ ...l, result: { ...l.result!, deleted: true } })) }));
+    act(() => root.render(<LayerManager />));
+    expect([addButton()?.disabled, addButton()?.getAttribute('data-tip')]).toEqual([true, LOCKED_LAYER_TIP]);
   });
 
   it('adds the band that is drawn, named after it, just above the layer it comes from', async () => {

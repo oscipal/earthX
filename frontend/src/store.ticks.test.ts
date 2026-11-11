@@ -17,7 +17,7 @@ const collection = (id: string, browse: 'quicklook' | 'full_resolution', groupBy
   id,
   title: id,
   'earthx:capabilities': { ...CAPABILITIES, time_range: timeRange },
-  'earthx:viewer': { group_by: [groupBy], min_zoom: browse === 'quicklook' ? 8 : 0, max_zoom: 14, browse, quicklook_nodata_max: browse === 'quicklook' ? 16 : null, results_group_by: [groupBy] },
+  'earthx:viewer': { group_by: [groupBy], min_zoom: browse === 'quicklook' ? 8 : 0, max_zoom: 14, browse, quicklook_nodata_max: browse === 'quicklook' ? 16 : null, results_group_by: [groupBy], overview: 'own' as const, overview_resampling: null },
   'earthx:default_render': { title: 'Standard', assets: ['visual'], rescale: [[0, 255]], colormap_name: null, expression: null, resampling: 'nearest' },
 });
 

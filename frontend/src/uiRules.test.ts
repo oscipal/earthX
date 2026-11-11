@@ -578,7 +578,7 @@ describe('two steps of tooltips (UI-04 part 3b, Otto, 4.11.2026): data-tip-level
     { what: '"Flip through layers"', file: 'components/LayerManager.tsx', test: /\blm-flip\b/u },
     { what: '"Reverse" the colormap', file: 'components/ColormapField.tsx', test: /\bvc-reverse\b/u },
     { what: '"Reverse" in the list of colormaps', file: 'components/ColormapPicker.tsx', test: /\bvc-reverse\b/u },
-    { what: '"Process layer"', file: 'components/LayerManager.tsx', test: /Process layer/u },
+    { what: '"Process layer"', file: 'components/LayerManager.tsx', test: /PROCESS_LAYER_TEXT/u },
     { what: '"Search results" to the top', file: 'components/ResultsToTop.tsx', test: /RESULTS_TO_TOP_TIP/u },
     { what: 'the actions of a job or a group', file: 'components/ProcessingManager.tsx', test: /Actions for/u },
   ];
@@ -819,6 +819,46 @@ describe('one frame, one ring (UI-04 part 3b, Otto, 4.11.2026): the ring is at t
   });
 });
 
+describe('the layer manager (Otto, 11.11.2026): a row of a dataset, of a result and "Search results" alike', () => {
+  // What a row of the manager is made of.
+  const ROW_PARTS = ['components/LayerManager.tsx', 'components/BandSelect.tsx', 'components/EyeButton.tsx', 'components/ResultsEye.tsx', 'components/LayerDownload.tsx'];
+
+  // A label that holds its tip back in the step "Simple" whatever the field in it is: a locked field there would not say why, since the label
+  // itself is not locked (`tipLevel.ts::tipShown`).
+  const lockedInAdvancedLabel = (text: string): string[] => {
+    const code = withoutComments(text);
+    return [...code.matchAll(/<label\b[^>]*\sdata-tip-level="advanced"[^>]*>/gu)].flatMap((m) => {
+      const inside = code.slice(m.index + m[0].length, code.indexOf('</label>', m.index));
+      return /\sdisabled[=\s>]/u.test(inside) ? [m[0].slice(0, 60)] : [];
+    });
+  };
+
+  it('shows the reason of a locked field in a label with a tip in either step', () => {
+    expect(ROW_PARTS.flatMap((part) => lockedInAdvancedLabel(SOURCES[`./${part}`]).map((fault) => `${part}: ${fault}`))).toEqual([]);
+    expect(lockedInAdvancedLabel('<label className="x" data-tip-level="advanced" data-tip={title}>\n<select disabled={disabled}>')).toHaveLength(1);
+    expect(lockedInAdvancedLabel("<label data-tip-level={disabled ? undefined : 'advanced'} data-tip={title}>\n<select disabled={disabled}>")).toEqual([]);
+  });
+
+  // The words of the guide (§4) for a deleted job, and one name of "Process" for every layer.
+  const OLD_WORDS = [/restore it to show it/u, /^Process this layer$/u, /^Process further$/u, /^Expired: runs everything again from the scenes\.$/u];
+  const oldWords = (text: string) => texts(text).filter((t) => OLD_WORDS.some((word) => word.test(t)));
+
+  it('has one reason for a deleted job and one name of "Process" for every layer', () => {
+    expect(sources.flatMap(([path, text]) => oldWords(text).map((word) => `${path}: ${word}`))).toEqual([]);
+    expect(oldWords("export const DELETED_LAYER_TIP = 'Job deleted: restore it to show it';")).toHaveLength(1);
+    expect(oldWords("data-tip={l.result ? 'Process further' : 'Process this layer'}")).toHaveLength(2);
+  });
+
+  // Only a band of classes is drawn as it is; a rule by the data type alone (`/^float/`) put every result of whole numbers there.
+  const byFloatAlone = (text: string) => /\/\^float\/|startsWith\('float'\)/u.test(withoutComments(text));
+
+  it('does not decide by the data type alone that a result has no range to set', () => {
+    expect(where(byFloatAlone)).toEqual([]);
+    expect(byFloatAlone("const adjustable = info.dataType !== null && /^float/.test(info.dataType);")).toBe(true);
+    expect(byFloatAlone('const adjustable = info.dataType !== null && !info.classes;')).toBe(false);
+  });
+});
+
 describe('the buttons at the bottom right of the map (UI-06, `docs/ui/leitfaden.md` §9)', () => {
   const NAVIGATION = /\bNavigationControl\b|\bTerrainControl\b/u;
   const CONTROLS = /<MapControls\b/u;
@@ -839,5 +879,22 @@ describe('the buttons at the bottom right of the map (UI-06, `docs/ui/leitfaden.
     const css = withoutCssComments(CSS);
     expect(css).toMatch(/\.compass-north \{\s*fill: var\(--danger\);/u);
     expect(css).toMatch(/\.compass-south \{\s*fill: var\(--text\);/u);
+  });
+});
+
+describe('the output types of an order (Otto, 11.11.2026): only those that make sense, by the rule of the registry', () => {
+  // The rule is the operators' (`x-earthx-passes-values` of the description): the file that offers the types names no operator or method.
+  const OWN_RULE = /['"](?:band_math|normalize|reproject|mask|mask_values|nearest|mode|bilinear)['"]/u;
+  // No type is shown locked or marked: what does not make sense is not offered.
+  const MARKED = /not recommended|nodata does not fit|These types are not offered|disabledReason/u;
+
+  it('takes the rule from the description, not from a list of its own', () => {
+    expect(OWN_RULE.test(withoutComments(SOURCES['./processingDefaults.ts']))).toBe(false);
+    expect(OWN_RULE.test("const FLOAT_RESULT = { band_math: 1 }; const PICKING = ['nearest', 'mode'];")).toBe(true);
+  });
+
+  it('offers no type it marks or locks', () => {
+    expect(where((code) => MARKED.test(code))).toEqual([]);
+    expect(MARKED.test('<option disabled={option.disabledReason !== null}>')).toBe(true);
   });
 });

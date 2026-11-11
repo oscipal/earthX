@@ -51,6 +51,8 @@ const COG_DATASET: Collection = {
     browse: 'quicklook',
     quicklook_nodata_max: 16,
     results_group_by: ['datetime'],
+    overview: 'own' as const,
+    overview_resampling: null,
   },
   'earthx:format': 'cog',
   'earthx:license_flags': {

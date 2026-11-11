@@ -38,7 +38,14 @@ from earthx.api.tiler import (
     SCENE_ORDER_ROUTE,
     build_app,
 )
-from earthx.catalog.registry import DatasetRegistry, LicenseTier, SearchCapabilities, ViewerInfo
+from earthx.catalog.registry import (
+    DatasetRegistry,
+    LicenseTier,
+    OverviewMode,
+    OverviewResampling,
+    SearchCapabilities,
+    ViewerInfo,
+)
 from earthx.gateway import (
     CachingResolver,
     UpstreamError,
@@ -382,7 +389,15 @@ class TestOnlyReleasedZoomLevels:
         """The same app against an entry released for z8..z14 only — the second
         dataset's range (D23), without needing its store."""
         return self._client_for(
-            replace(SENTINEL_2_L2A.viewer, min_zoom=8, max_zoom=14), client, fetched
+            replace(
+                SENTINEL_2_L2A.viewer,
+                min_zoom=8,
+                max_zoom=14,
+                overview=OverviewMode.PYRAMID,
+                overview_resampling=OverviewResampling.AVERAGE,
+            ),
+            client,
+            fetched,
         )
 
     @staticmethod

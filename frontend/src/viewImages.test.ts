@@ -9,7 +9,7 @@ import { datasetIdsOf, imagesOf, imagesOfDataset, platformLabel, satellitesOf, s
 const S2: Collection = {
   id: 's2',
   title: 'Sentinel-2 L2A',
-  'earthx:viewer': { group_by: ['datetime'], min_zoom: 0, max_zoom: 19, browse: 'preview_tiles', quicklook_nodata_max: null, results_group_by: ['datetime'] },
+  'earthx:viewer': { group_by: ['datetime'], min_zoom: 0, max_zoom: 19, browse: 'preview_tiles', quicklook_nodata_max: null, results_group_by: ['datetime'], overview: 'own' as const, overview_resampling: null },
   'earthx:default_render': { title: 'True colour', assets: ['visual'], rescale: null, colormap_name: null, expression: null, resampling: 'nearest' },
   'earthx:search_filters': [
     {

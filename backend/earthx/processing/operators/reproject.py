@@ -53,7 +53,7 @@ from rasterio.windows import Window
 
 from earthx.catalog.registry import LicenseTier
 from earthx.processing.errors import UnsupportedRecipe
-from earthx.processing.operators.base import BandMeta, Grid, Operator, RasterMeta, Requirement, Tier
+from earthx.processing.operators.base import BandMeta, Grid, Operator, PassesValues, RasterMeta, Requirement, Tier
 from earthx.processing.workfile import open_workfile_band
 
 __all__ = [
@@ -258,7 +258,7 @@ REPROJECT = Operator(
     lineage=_lineage,
     method=_method,
     extra_requirements=_extra_requirements,
-    passes_values=lambda params: params.resampling in _PICKING,
+    passes_values=PassesValues(param="resampling", values=_PICKING),
 )
 
 #: Accepted for recipes written before NM4-43b and computed as before: all bands in one warp, not listed.

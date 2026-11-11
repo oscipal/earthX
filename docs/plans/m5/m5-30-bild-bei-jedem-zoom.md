@@ -165,7 +165,7 @@ Vorschlag, unter Vorbehalt von F1–F3:
 - Abweichungen min_zoom 13 in Teil 2, kein Tooltip für Teilkacheln, Registry vor Pyramide: angenommen.
 - Befund aus #336: `measure_tiles.py` stellt den Logger `rasterio` nach dem Lesen wieder her (Teil 1, mit Test).
 
-**F7 — Ersatz-Datensatz statt Pyramide (Vorschlag Otto, 11.11.2026; vor den Teilen 7–9 zu entscheiden)?**
+**F7 — Ersatz-Datensatz statt Pyramide (Vorschlag Otto, 11.11.2026)?** **Antwort Otto (11.11.2026): 1** — Ersatz für swissALTI3D und BEV durch GLO-30, Copernicus in der Quellenzeile der Karte (Lizenzpflicht, kein Hinweis), Pyramide nur noch für GLO-30 und WorldCover.
 
 Vorschlag: `viewer.overview` bekommt neben `pyramid` die Art **`substitute`**. Unter `min_zoom` zeichnet die Karte einen anderen Datensatz, nur als Darstellung: swissALTI3D und BEV → Copernicus DEM GLO-30, GLO-30 bei sehr kleinem Zoom → GLO-90. Jobs, Download, Statistik, Histogramm und AOI-Messung kommen immer aus dem gewählten Datensatz; der Farbbereich bleibt der des gewählten Datensatzes; kein Hinweis im Frontend.
 
@@ -226,6 +226,13 @@ Teile 1–6 brauchen keine Antwort. **Teile 7–9 ruhen bis zu F1–F3.**
 2. Je Datei 0,25 s (doppelt so schnell, bei 1–2 Anfragen je Datei bis zu 8 Anfragen je Sekunde)
 3. Lesen über den HTTP-Client von `gateway` statt GDAL (ganze Datei, Abstand wie M5-18; rund 8 GB statt 3–7 GB für swissALTI3D)
 
+**F4 — Texte im ZIP eines Exports mit sehr vielen Szenen (gefunden in Teil 6)?** Seit die 25 fallen, kann ein Export mit einigen hundert bis 2 000 Szenen die Grenze von 64 KiB für die Textdateien seines ZIP (`processing/export.py`, `ATTACHMENT_LIMITS`) überschreiten. Teil 6 lehnt das jetzt mit `413` ab statt mit einem `500`.
+1. So lassen; wer so viele Szenen will, teilt den Auftrag **(Empfehlung bis zur Messung, wie oft es vorkommt)**
+2. Grenze der Texte mit der Zahl der Szenen wachsen lassen
+3. Die Texte nennen ab einer Zahl die Szenen nicht mehr einzeln, sondern nur Zahl und Zeitraum
+
+**F4 = 2 umgesetzt:** Die Grenze von `ATTRIBUTION.txt` wächst um 305 Byte je Szene (255 für die ID, 2 Trenner, 48 für den Kopf einer Gruppenzeile); `Attachments` trägt die Zahl `scenes` (höchstens 2 000), `api` und `jobs` rechnen mit derselben Zahl, die übrigen Dateien bleiben bei 64 KiB und 2 MiB.
+
 **F5 — Prüfungen über alle Szenen einer Auswahl (gefunden in Teil 3a)?** Mit bis zu 2 000 Szenen holt die TileJSON keine Items mehr; die Prüfung „gleiche Skalierung, Einheit, Bänder“ (`_describe_mosaic`, bei Kacheln mit Schritten) läuft nur noch über die Szenen, die eine Kachel liest. Zwei Kacheln derselben Auswahl können dann `200` und `422` antworten, und die TileJSON nennt keine Bänder und Einheit mehr (die Vorschau im Processing-Panel las Ablehnungen daraus).
 1. Beim Anlegen der Auswahl prüfen (die Items sind dort ohnehin geholt), für die Assets der Auswahl; die TileJSON liest Bänder und Einheit aus dem gespeicherten Ergebnis **(Empfehlung)**
 2. So lassen; die Karte zeigt die Ablehnung einer Kachel erst, wenn sie kommt
@@ -279,6 +286,13 @@ Die Tabellen in den PR kopieren; sie enthalten kein Rechteck und keine ID. Erwar
 - **Tests:** `test_measure_tiles.py` (Argumente, Datensatz, Zählen der GDAL-Zeilen, Kachel und Szenen, Lesen über den echten Leser mit synthetischen COGs, Ausgabe ohne Rechteck/Adresse/ID, Compose), `integration/test_pgstac_search_bbox.py`.
 - **Korrektur nach Ottos Lauf:** Das Skript holte die Items nur im `--bbox` und zählte deshalb bei kleinen Zoomstufen zu wenige Dateien (49 swissALTI3D-Kacheln bei z6–z11, eine Sentinel-1-Datei bei z0–z5). Jetzt wählt das Rechteck nur Überflug und Asset; jede Zoomstufe holt die Items im Ausschnitt ihrer Kachel (bis `--max-items`), behält die des gewählten Überflugs und löst sie wie zuvor auf. Ist die Liste voll und die berührten Dateien damit nicht alle bekannt, lautet der Status `over items cap`; über `--max-files` weiter `over cap`. Neu `--threads N` (Vorgabe `MOSAIC_THREADS`, 1–16; `MosaicTileReader(threads=…)` setzt `threads` und `chunk_size`), um paralleles Lesen zu vergleichen (die warme Zeit von swissALTI3D ohne Anfragen ist CPU, nicht Netz). Die Kopfzeile nennt die Zahl der Threads.
 
+### 8.3 Teil 6 — Zuschnitt und Job
+
+- Zuschnitt: `MAX_DOWNLOAD_ITEMS` 25 → 2 000 (Schutz); neu `MAX_CROP_SECONDS = 60` mit `estimated_crop_seconds` (Konstanten aus `processing.plan`, Dateien = Szenen × Assets). Darüber `413` mit demselben Angebot „als Job“ wie über 500 MB; bei Zarr ohne Angebot und mit dem Hinweis, weniger Szenen oder eine kleinere Fläche zu wählen (für Zarr gibt es keinen Export-Job, F6 von M4-11).
+- Auftrag: `MAX_ORDER_ITEMS` 25 → 2 000 (Schutz); Spiegel `MAX_JOB_SCENES` im Frontend.
+- **Gefunden:** Ein Export mit sehr vielen Szenen kann an der Grenze der Textdateien im ZIP scheitern; vorher ein `500`, jetzt `413` (F4).
+- F4 = 2 umgesetzt: Grenze des Hinweistexts = 64 KiB + 305 Byte × Szenen (`attachment_limits`); 2 000 Szenen mit IDs von 255 Zeichen passen, das `413` bleibt als Sicherheitsnetz.
+- **Unverändert gelassen** (nicht Teil von F13): `MAX_BATCH_JOBS = 25` im Frontend (Aufträge, die ein Klick gleichzeitig startet) und höchstens 64 Gruppen je Download-Anfrage (`DownloadRequest.groups`).
 ### 8.2 Teil 2 — Budget je Kachel
 
 - `api/mosaic_tiles.py`: `TILE_FILE_BUDGET = 32`, `TILE_TIME_BUDGET_S = 4.0` (Startwerte, A2) statt `MIN_MOSAIC_ZOOM`/`MAX_SCENES_PER_TILE`; `scenes_touching` kürzt auf das Budget (Szenen × Assets) und gibt die Zahl der weggelassenen zurück. Eine ASGI-Middleware (`TileOutcomeHeaders`) setzt `X-EarthX-Partial: <n>` bzw. `time` und nach Zeitabbruch `Cache-Control: no-store`, weil der Tile-Endpunkt von TiTiler seine Antwort selbst baut und der Zeitabbruch erst beim Lesen bekannt ist.
@@ -309,6 +323,33 @@ Lauf: swissALTI3D um eine Stadt z6–z14 (Asset `dtm`), dasselbe bei z10 mit `dt
 - **Größe und Bau der Pyramide swissALTI3D** [A aus M]: z12 ≈ 1 820 Kacheln, davon ≈ 930 über Land × 0,55 MB ≈ 0,5 GB, mit den Stufen darüber ≈ 0,7 GB (im Rahmen von `adr/0032` §8.1). Bau: ≈ 45 000 Dateien × 2 Anfragen ≈ 90 000 Anfragen, ≈ 4 GB; bei 0,25 s je Anfrage (F3 = 1) ≈ 6,3 h.
 
 **Paralleles Lesen:** Der Mosaik-Leser liest in Portionen von 4 Threads (`MOSAIC_THREADS`). Weil die Zeit im Rechnen liegt, kann mehr Parallelität bei mehreren Kernen helfen; das Skript bekommt dafür `--threads` (#329), der zweite Lauf vergleicht 4 und 8. Erst danach ändere ich `MOSAIC_THREADS`.
+**Zweiter Lauf (11.11.2026, mit ganzen Kacheln, endgültig):**
+
+| | Dateien | kalt 4 Thr. | kalt 8 Thr. | warm 4 / 8 Thr. | je Datei kalt (4/8) | je Datei warm |
+|---|---|---|---|---|---|---|
+| swissALTI3D z10 | 744 | 57,8 s | 42,6 s | 41,1 / 39,9 s | 78 / 57 ms | 54 ms |
+| swissALTI3D z11 | 200 | 12,2 s | 11,8 s | 11,3 / 10,7 s | 61 / 59 ms | 55 ms |
+| swissALTI3D z12 | 56 | 4,8 s | 3,5 s | 3,7 / 2,9 s | 85 / 62 ms | 52–67 ms |
+| Sentinel-1 z1 | 30 | 4,3 s | – | 2,3 s | 142 ms | 76 ms |
+| Sentinel-1 z3 | 19 | 2,4 s | – | 1,3 s | 124 ms | 71 ms |
+
+z8/z9 von swissALTI3D brechen mit über 2 000 Dateien ab, wie erwartet; Sentinel-1 z0 mit `over items cap` (die Weltkachel eines Tages hat mehr als 500 Items).
+
+**Endgültig festgelegt:**
+- **`TILE_FILE_BUDGET = 32`:** 32 Dateien swissALTI3D kosten kalt ≈ 2,7 s (4 Threads), warm ≈ 1,8 s. z12 mit 56 Dateien liegt mit 4,8 s kalt über dem Zeitbudget; das bestätigt `min_zoom` 13 und die Grenze der Originale.
+- **`TILE_TIME_BUDGET_S = 4.0`:** Bei Sentinel-1 braucht ein ganzer Überflug (30 Slices) bei z1 kalt 4,3 s, warm 2,3 s: kalt eine Teilkachel mit `no-store`, beim nächsten Mal vollständig. Das ist der Fall, für den die Zeitgrenze da ist.
+- **`MOSAIC_THREADS = 4` bleibt:** 8 Threads machen kalt 25 % schneller (z10 58 → 43 s, z12 4,8 → 3,5 s), warm nichts (≈ 40 s bei z10): das Lesen ist CPU-gebunden in einem Teil, der nicht parallel läuft (Ottos Beobachtung). Mehr Threads hießen mehr gleichzeitige Verbindungen zur Quelle, über die 6 je Host von `gateway` hinaus, für einen Gewinn nur beim ersten Abruf. Beide Budgets halten auch mit 4.
+- Der Gewinn warm liegt also nicht in Threads, sondern in weniger Dateien je Kachel: genau das, was Ersatz-Datensatz (F7 = 1) und Pyramide liefern.
+
+### 8.4 Teil 5 — Registry
+
+- `ViewerInfo.overview` (`own`, `pyramid`, `scenes`) und `overview_resampling` (`average`, `mode`, `nearest`), beide Pflicht ohne Vorgabe; `earthx:viewer` der Collection trägt sie, das Frontend liest sie nur durch.
+- **Prüfung „Bild bei z0“** beim Laden jedes Eintrags (also beim Start jedes Prozesses und in `catalog-load`): `own` und `scenes` verlangen `min_zoom` 0; `pyramid` verlangt ein Resampling; ein Resampling bei `own`/`scenes` wird abgelehnt.
+- Werte: Sentinel-1, Sentinel-2 `scenes`; swissALTI3D, DEM `pyramid`/`average`; WorldCover `pyramid`/`mode`. Kein `min_zoom` geändert (§3).
+- Der Docstring-Absatz „`min_zoom` als Kostenuntergrenze des DEM, darunter die Coverage“ ist gestrichen; er gilt nach `adr/0032` nicht mehr.
+- Der Frontend-Typ führt die Felder als Pflicht wie die Registry; deshalb tragen rund 60 Test-Fixtures zwei Zeilen mehr.
+- Test-Fixtures mit `min_zoom` > 0 (synthetischer Zarr-Datensatz, Mosaik-Tests mit eingeengtem Bereich) heißen jetzt `pyramid`/`average`, weil die Prüfung sie sonst ablehnt. Mit Teil 9 lesen solche Datensätze unter `min_zoom` die Pyramide; die Fixtures werden dann noch einmal angesehen.
+
 ### 8.5 Teil 3a — Auswahl-ID im Backend
 
 - Migration `017_mosaic_selection.sql` (umbenannt von 016, weil M5-22b auf `main` 016 belegt) (`public.earthx_mosaic_selection`, 7 Tage), `catalog/mosaic_selection.py` (kanonischer Inhalt, ID = erste 32 Hex von SHA-256, SQL), `api/mosaic_selection.py` (Auswahl mit Reihenfolge, Umrissen, Ausdehnung; LRU im Prozess, höchstens 120 s, danach wieder aus der Tabelle).

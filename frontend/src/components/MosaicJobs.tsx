@@ -79,7 +79,7 @@ export default function MosaicJobs({ dataset, passes, links, started, onStarted 
     const bands = bandSources(pass.items[0], dataset.collection['earthx:format'] ?? null, null).filter(
       (source) => source.asset === own,
     );
-    const dtype = chooseDtype({ steps: [], bands, allowed: info.dtypes }).value;
+    const dtype = chooseDtype({ steps: [], bands, allowed: info.dtypes, operators: info.operators }).value;
     onStarted(index, { state: 'starting' });
     const answer = await placeOrder(
       buildMosaicOrder({

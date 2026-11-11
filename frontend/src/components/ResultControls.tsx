@@ -65,7 +65,10 @@ const SAVE_TIP = {
   own: 'Keep these values for this layer only',
 };
 
-const WHOLE_NUMBERS_TIP = 'A result of whole numbers is drawn as it is: it has no range or colormap to set.';
+// Drawn as it is: a band of classes (`resultLayer.ts::isClassBand`), or a result whose type the tiler did not name. Every other result,
+// of whole numbers too, has a range and a colormap (Otto, 11.11.2026).
+export const CLASSES_TIP = 'A layer of classes is drawn as it is: it has no range or colormap to set.';
+export const NO_TYPE_TIP = 'The data type of this result is not known: it is drawn as it is.';
 
 function Controls({ layer }: { layer: MapLayer }) {
   const info = layer.result;
@@ -112,8 +115,8 @@ function Controls({ layer }: { layer: MapLayer }) {
     );
   const editChannelPercent = (channel: number, end: 'low' | 'high', text: string) =>
     editChannels(channelValues.map((range, index) => (index === channel ? { ...range, percent: { ...(range.percent ?? DEFAULT_PERCENT), [end]: text } } : range)));
-  const adjustable = info.dataType !== null && /^float/.test(info.dataType);
-  // What cannot be set at all is not shown: a result of whole numbers is drawn as it is, an expired one not at all.
+  const adjustable = info.dataType !== null && !info.classes;
+  // What cannot be set at all is not shown: a band of classes is drawn as it is, an expired result not at all.
   const settable = adjustable && !info.expired && !info.deleted;
   // The dropdown "Band" is there for a result of several bands, as the box of every layer has it where there is a choice.
   const bands = info.bands ?? [];
@@ -259,7 +262,7 @@ function Controls({ layer }: { layer: MapLayer }) {
     <div className="viewer-controls scene-view result-controls">
       <InspectorHead
         title={layerShownName(layer)}
-        mark={!adjustable && !info.expired && <Tip text={WHOLE_NUMBERS_TIP} />}
+        mark={!adjustable && !info.expired && <Tip text={info.classes ? CLASSES_TIP : NO_TYPE_TIP} />}
         onClose={() => close()}
         rename={{ name: layer.name, onRename: (name) => renameLayer(layer.id, name) }}
         // The scenes of the job the layer was made by, from its copy of the order; none where that is gone, and then no line.
