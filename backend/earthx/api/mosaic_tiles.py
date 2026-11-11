@@ -75,10 +75,12 @@ MIN_MOSAIC_ITEMS = 2
 #: Overpasses over a country-sized area have up to 60 scenes (§2.2); 64 ids are about 2.4 kB of URL (§2.7).
 MAX_MOSAIC_ITEMS = 64
 #: Files one tile reads at most, in the order of the mosaic (adr/0032 §6.2, F6): scenes, or scenes times the assets of
-#: a tile with steps. The start value of the ADR — swissALTI3D needs up to 25 at z13, an overpass of Sentinel-1 or -2
-#: at z4-z6 mostly fewer — until the measurement of M5-30b part 1 sets it.
+#: a tile with steps. Set from Otto's run of 11.11.2026 (plan M5-30b §8.6): a file of swissALTI3D costs 55-85 ms with
+#: four threads, cold or warm alike (opening and warping, not the network), so 32 files take 1.8-2.8 s; a z13 tile
+#: needs up to 25.
 TILE_FILE_BUDGET = 32
-#: Seconds one tile reads for at most (adr/0032 §6.2): under the 5 s of pgstac, because a map asks for many tiles at once.
+#: Seconds one tile reads for at most (adr/0032 §6.2): under the 5 s of pgstac, because a map asks for many tiles at
+#: once; about 1.4 times what 32 files of swissALTI3D took cold (plan M5-30b §8.6).
 TILE_TIME_BUDGET_S = 4.0
 #: The header of a tile that shows only a part of its scenes: how many it left out, or ``time`` after the budget ran
 #: out. No mark on the map (Otto, 11.11.2026); the header is for a client that wants to say it.
