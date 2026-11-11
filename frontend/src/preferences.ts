@@ -26,6 +26,7 @@ const OVERLAYS_KEY = 'earthx.overlays';
 const RESULTS_KEY = 'earthx.results';
 const TIP_LEVEL_KEY = 'earthx.tooltips';
 const JOB_FILTER_KEY = 'earthx.jobfilter';
+const TERRAIN_KEY = 'earthx.terrain';
 
 // What `earthx.theme` holds: the two themes keep the words they had before "System" came (so that a choice made then holds),
 // and `system` is the new one.
@@ -102,6 +103,16 @@ export function loadProjection(): Projection {
 
 export function saveProjection(projection: Projection): void {
   writeStored(PROJECTION_KEY, projection);
+}
+
+// Whether the map lies over the terrain in 3D (UI-06 F12): `on` or `off`; anything else, and a storage that cannot be read, is off.
+// Only the switch is kept, never the tilt or the turn of the map.
+export function loadTerrain(): boolean {
+  return readStored(TERRAIN_KEY, ['on', 'off'] as const, 'off') === 'on';
+}
+
+export function saveTerrain(on: boolean): void {
+  writeStored(TERRAIN_KEY, on ? 'on' : 'off');
 }
 
 export function loadBasemap(): BasemapId {

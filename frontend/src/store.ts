@@ -60,7 +60,7 @@ import type { Mosaics, SceneEntry } from './mosaic';
 import type { BasemapId } from './basemaps';
 import type { OverlayId, Overlays } from './overlays';
 import type { Appearance, Projection, Theme } from './preferences';
-import { loadAddedDatasets, loadAppearance, loadBasemap, loadOverlays, loadProjection, loadResultsOnMap, loadTipLevel, migrateReliefBasemap, saveAddedDatasets, saveAppearance, saveBasemap, saveOverlays, saveProjection, saveResultsOnMap, saveTipLevel, themeOf } from './preferences';
+import { loadAddedDatasets, loadAppearance, loadBasemap, loadOverlays, loadProjection, loadResultsOnMap, loadTerrain, loadTipLevel, migrateReliefBasemap, saveAddedDatasets, saveAppearance, saveBasemap, saveOverlays, saveProjection, saveResultsOnMap, saveTerrain, saveTipLevel, themeOf } from './preferences';
 import { setTipLevel, type TipLevel } from './tipLevel';
 import { zoomTarget } from './zoomSelection';
 import type { Percent } from './percentRange';
@@ -1470,6 +1470,8 @@ export interface AppState {
   projection: Projection;
   basemap: BasemapId;
   overlays: Overlays;
+  // The map lies over the terrain and may turn and tilt (UI-06, the button "3D"); in 2D it only pans and zooms (D27).
+  terrain: boolean;
   // --- coverage heatmap (M2-07c) ---
   showCoverage: boolean;
   // The dataset the coverage map is drawn for; `null` while it is off.
@@ -1856,10 +1858,13 @@ export interface AppState {
   followSystemTheme: (systemDark: boolean) => void;
   setTipLevel: (level: TipLevel) => void;
   setProjection: (projection: Projection) => void;
+  // Saved per browser unless `keep` is false (a permalink opens flat for its view only, UI-06 F11; a lost graphics context).
+  setTerrain: (on: boolean, keep?: boolean) => void;
   setBasemap: (basemap: BasemapId) => void;
   // The basemap and projection of an opened permalink (UI-02c): they hold for this view and are not written to the
   // browser, so the next visit opens with what the user chose in the menu.
   // `relief`: the link was made when Relief was a basemap; it opens with the overlay on (for this view only, like the rest).
+  // A link opens flat, without 3D (UI-06 F11), for this view only as well.
   showSharedLook: (look: { basemap: BasemapId; projection: Projection; relief?: boolean }) => void;
   setOverlay: (overlay: OverlayId, on: boolean) => void;
 }
@@ -1884,6 +1889,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   projection: loadProjection(),
   basemap: loadBasemap(),
   overlays: loadOverlays(),
+  terrain: loadTerrain(),
   showCoverage: false,
   coverageDatasetId: null,
   coverage: null,
@@ -3371,12 +3377,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     saveProjection(projection);
     set({ projection });
   },
+  setTerrain: (terrain, keep = true) => {
+    if (keep) saveTerrain(terrain);
+    set({ terrain });
+  },
   setBasemap: (basemap) => {
     saveBasemap(basemap);
     set({ basemap });
   },
   showSharedLook: ({ basemap, projection, relief }) =>
-    set((s) => ({ basemap, projection, ...(relief ? { overlays: { ...s.overlays, relief: true } } : {}) })),
+    set((s) => ({ basemap, projection, terrain: false, ...(relief ? { overlays: { ...s.overlays, relief: true } } : {}) })),
   setOverlay: (overlay, on) => {
     const overlays = { ...get().overlays, [overlay]: on };
     saveOverlays(overlays);
