@@ -39,7 +39,7 @@ from earthx.access.crop_rules import mosaic_order
 from earthx.adapters.errors import UnknownCollection
 from earthx.api import mosaic_tiles
 from earthx.api.tiler import MOSAIC_ROUTER_PREFIX, build_app
-from earthx.catalog.registry import DatasetRegistry, LicenseTier, SearchCapabilities
+from earthx.catalog.registry import DatasetRegistry, LicenseTier, OverviewMode, OverviewResampling, SearchCapabilities
 from earthx.gateway import UpstreamError, check_url
 from tests.catalog.entries import COP_DEM_GLO_30, SENTINEL_2_L2A
 from tests.conftest import own_log_text
@@ -77,6 +77,17 @@ REGISTRY = DatasetRegistry(
 )
 
 ROWS = 1000
+
+
+def _released(*, min_zoom: int, max_zoom: int) -> Any:
+    """The viewer of ``SYNTHETIC`` released for another zoom range; a pyramid serves what lies below it (adr/0032 §9)."""
+    return replace(
+        SYNTHETIC.viewer,
+        min_zoom=min_zoom,
+        max_zoom=max_zoom,
+        overview=OverviewMode.PYRAMID,
+        overview_resampling=OverviewResampling.AVERAGE,
+    )
 
 
 def _cog(path: Path, crs: str, left: float, width_m: float, value: int, *, top: float = TOP, bands: int = 1) -> Path:
@@ -541,7 +552,7 @@ class TestAnswersToWrongRequests:
         _seam(scenes)
         api = client()
         api.app.state.earthx_registry = DatasetRegistry(
-            (replace(SYNTHETIC, viewer=replace(SYNTHETIC.viewer, min_zoom=2, max_zoom=7)),)
+            (replace(SYNTHETIC, viewer=_released(min_zoom=2, max_zoom=7)),)
         )
         body = api.get(f"{BASE}/WebMercatorQuad/tilejson.json", params=_query(["WEST", "EAST"])).json()
         assert (body["minzoom"], body["maxzoom"]) == (2, 7)
@@ -553,7 +564,7 @@ class TestAnswersToWrongRequests:
         _seam(scenes)
         api = client()
         api.app.state.earthx_registry = DatasetRegistry(
-            (replace(SYNTHETIC, viewer=replace(SYNTHETIC.viewer, min_zoom=10, max_zoom=14)),)
+            (replace(SYNTHETIC, viewer=_released(min_zoom=10, max_zoom=14)),)
         )
         body = api.get(f"{BASE}/WebMercatorQuad/tilejson.json", params=_query(["WEST", "EAST"])).json()
         assert (body["minzoom"], body["maxzoom"]) == (10, 14)

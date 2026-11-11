@@ -149,6 +149,32 @@ class BrowseMode(Enum):
     FULL_RESOLUTION = "full_resolution"
 
 
+class OverviewMode(Enum):
+    """What the tile route shows below ``viewer.min_zoom`` (adr/0032 §5, §6, §9).
+
+    ``OWN`` — one file whose own overviews serve every level. ``PYRAMID`` — an
+    overview pyramid in the platform's object store serves the levels below
+    ``min_zoom`` (adr/0032 §5; built by the parts that follow this field).
+    ``SCENES`` — the chosen scenes, read through their own overviews at every
+    level, within the budget per tile (adr/0032 §6).
+
+    No default (KLAERUNGEN B10): the registry says what happens below
+    ``min_zoom`` instead of cutting the dataset off there.
+    """
+
+    OWN = "own"
+    PYRAMID = "pyramid"
+    SCENES = "scenes"
+
+
+class OverviewResampling(Enum):
+    """How the levels of an overview pyramid are made from the one above (``OverviewMode.PYRAMID`` only)."""
+
+    AVERAGE = "average"
+    MODE = "mode"
+    NEAREST = "nearest"
+
+
 class Maturity(Enum):
     """How settled the *source* itself is — not a measurement like ``HealthStatus``,
     a fact about the dataset that belongs with licence and attribution
@@ -712,13 +738,21 @@ class ViewerInfo:
     guessing one would let a client ask for a tile that costs a hundred times what
     the source can add to it.
 
-    **``min_zoom`` / ``max_zoom`` — the tile levels this dataset is released for.**
-    Below ``min_zoom`` one tile shows several scenes, which is the coverage map's job
-    and not the tile path's (adr/0007 §12.10). Above ``max_zoom`` the source has
-    nothing finer to give, so a client overzooms the last level instead of asking for
-    a tile that reads the same pixels again. Both are read by the viewer *and*
-    enforced by the tile route (``api.tiler``, Otto's first addition to F1): the field
-    is the boundary of the tile path, not a recommendation to a well-behaved client.
+    **``min_zoom`` / ``max_zoom`` — the tile levels.** From ``min_zoom`` on, a tile is
+    read from the original files. Below it, the way ``overview`` names serves the tile,
+    so the dataset shows an image at every level (adr/0032 §9). Above ``max_zoom`` the
+    source has nothing finer to give, so a client overzooms the last level instead of
+    asking for a tile that reads the same pixels again. ``max_zoom`` is enforced by the
+    tile route (``api.tiler``, Otto's first addition to F1): the field is the boundary
+    of the tile path, not a recommendation to a well-behaved client.
+
+    **``overview`` / ``overview_resampling`` — what happens below ``min_zoom``.** See
+    :class:`OverviewMode`; no default on either (B10). ``overview_resampling`` is
+    required for ``PYRAMID`` and ``None`` for the other two. With ``OWN`` or ``SCENES``
+    the dataset has no way below ``min_zoom`` but the original files, so ``min_zoom``
+    must be ``0``: an entry that would show no image below its ``min_zoom`` is refused
+    when it is loaded. With ``PYRAMID`` any ``min_zoom`` is allowed, because the
+    pyramid serves what lies below it.
 
     **``group_by`` — item property names, in the order in which they make the key.**
     ``properties.`` is implied and must not be written. One rule goes with the field,
@@ -761,16 +795,6 @@ class ViewerInfo:
     states the key that always applies, and a genuinely broken item still
     surfaces as ``MissingProperty``, the same way a broken ``group_by`` item
     always has.
-
-    A note on ``min_zoom`` for a dataset released from tiles that are already
-    clipped to their own item's extent (M3-09 onward: the tile URL of one item
-    is clipped to that item; the mosaic tile of M4-17 is the one URL that names
-    several items, from z8 up whatever ``min_zoom`` says): the reasoning above
-    ("below it one tile shows several scenes") does not hold there — an item's own tile costs the same
-    at every zoom down to where it stops touching its neighbours (measured for
-    the DEM, M3-12 plan step §3: z0 through z8 read the same overview block).
-    ``min_zoom`` is then a cost floor on how many tiles a viewport can ask for
-    at once, not a resolution floor; the DEM sets it to ``0`` on that basis.
     """
 
     group_by: tuple[str, ...]
@@ -779,12 +803,15 @@ class ViewerInfo:
     browse: BrowseMode
     quicklook_nodata_max: int | None
     results_group_by: tuple[str, ...]
+    overview: OverviewMode
+    overview_resampling: OverviewResampling | None
 
     def __post_init__(self) -> None:
         self._check_group_by()
         self._check_zoom()
         self._check_results_group_by()
         self._check_browse()
+        self._check_overview()
 
     def _check_group_by(self) -> None:
         _check_property_names("group_by", self.group_by)
@@ -804,6 +831,28 @@ class ViewerInfo:
             raise ConfigError(
                 f"viewer.quicklook_nodata_max is set but browse is {self.browse.value}, not quicklook "
                 "(a dataset without a browsable quicklook has nothing for it to key transparent)"
+            )
+
+    def _check_overview(self) -> None:
+        if not isinstance(self.overview, OverviewMode):
+            raise ConfigError(f"viewer.overview is one of {[mode.value for mode in OverviewMode]}")
+        if self.overview is OverviewMode.PYRAMID:
+            if not isinstance(self.overview_resampling, OverviewResampling):
+                raise ConfigError(
+                    f"viewer.overview_resampling is required for overview pyramid: "
+                    f"one of {[mode.value for mode in OverviewResampling]}"
+                )
+            return
+        if self.overview_resampling is not None:
+            raise ConfigError(
+                f"viewer.overview_resampling is set but overview is {self.overview.value}, not pyramid "
+                "(only a pyramid is resampled)"
+            )
+        if self.min_zoom != 0:
+            raise ConfigError(
+                f"viewer.min_zoom is {self.min_zoom} but overview is {self.overview.value}: the dataset would "
+                f"show no image below min_zoom, and an image at z0 is required (adr/0032 §9); "
+                "only overview pyramid may start above z0"
             )
 
     def _check_zoom(self) -> None:

@@ -25,6 +25,8 @@ from earthx.catalog.registry import (
     DefaultRender,
     ItemHolding,
     LicenseTier,
+    OverviewMode,
+    OverviewResampling,
     SourceInfo,
     SpatialExtent,
     TemporalExtent,
@@ -316,6 +318,8 @@ def full_viewer(**overrides) -> ViewerInfo:
         "browse": BrowseMode.FULL_RESOLUTION,
         "quicklook_nodata_max": None,
         "results_group_by": ("datetime",),
+        "overview": OverviewMode.OWN,
+        "overview_resampling": None,
     }
     return ViewerInfo(**{**fields, **overrides})
 
@@ -469,7 +473,8 @@ class TestMalformedInput:
             full_viewer(min_zoom=min_zoom, max_zoom=max_zoom)
 
     @pytest.mark.parametrize(
-        "missing", ["min_zoom", "max_zoom", "browse", "quicklook_nodata_max", "results_group_by"]
+        "missing",
+        ["min_zoom", "max_zoom", "browse", "quicklook_nodata_max", "results_group_by", "overview", "overview_resampling"],
     )
     def test_the_zoom_and_browse_fields_are_not_optional(self, missing) -> None:
         """KLAERUNGEN B10 again: a dataset nobody measured has no released range, and
@@ -483,6 +488,8 @@ class TestMalformedInput:
             "browse": BrowseMode.FULL_RESOLUTION,
             "quicklook_nodata_max": None,
             "results_group_by": ("datetime",),
+            "overview": OverviewMode.OWN,
+            "overview_resampling": None,
         }
         del fields[missing]
         with pytest.raises(TypeError):
@@ -491,7 +498,10 @@ class TestMalformedInput:
     def test_a_single_released_level_is_allowed(self) -> None:
         """min == max is the browse-mode preview of M2-10: exactly one level is read
         and everything above it is overzoomed, which is what a quicklook is."""
-        assert full_viewer(min_zoom=8, max_zoom=8).max_zoom == 8
+        viewer = full_viewer(
+            min_zoom=8, max_zoom=8, overview=OverviewMode.PYRAMID, overview_resampling=OverviewResampling.AVERAGE
+        )
+        assert viewer.max_zoom == 8
 
     def test_quicklook_nodata_max_may_be_a_number_under_quicklook(self) -> None:
         assert full_viewer(browse=BrowseMode.QUICKLOOK, quicklook_nodata_max=16).quicklook_nodata_max == 16
@@ -512,6 +522,41 @@ class TestMalformedInput:
     def test_quicklook_nodata_max_out_of_range_is_rejected(self, value) -> None:
         with pytest.raises(ConfigError, match="quicklook_nodata_max"):
             full_viewer(browse=BrowseMode.QUICKLOOK, quicklook_nodata_max=value)
+
+    @pytest.mark.parametrize("overview", [OverviewMode.OWN, OverviewMode.SCENES])
+    def test_an_image_at_z0_is_what_own_and_scenes_have_to_give(self, overview) -> None:
+        """adr/0032 §9: with `own` or `scenes` the original files are the only way below `min_zoom`, so a
+        `min_zoom` above 0 would leave the dataset without an image there."""
+        assert full_viewer(overview=overview, min_zoom=0).min_zoom == 0
+        with pytest.raises(ConfigError, match="no image below min_zoom"):
+            full_viewer(overview=overview, min_zoom=1)
+
+    @pytest.mark.parametrize("min_zoom", [0, 5, 13])
+    def test_a_pyramid_serves_below_any_min_zoom(self, min_zoom) -> None:
+        viewer = full_viewer(
+            overview=OverviewMode.PYRAMID, overview_resampling=OverviewResampling.MODE, min_zoom=min_zoom
+        )
+        assert (viewer.overview, viewer.overview_resampling) == (OverviewMode.PYRAMID, OverviewResampling.MODE)
+
+    def test_a_pyramid_needs_its_resampling(self) -> None:
+        with pytest.raises(ConfigError, match="overview_resampling is required"):
+            full_viewer(overview=OverviewMode.PYRAMID, overview_resampling=None, min_zoom=5)
+
+    @pytest.mark.parametrize("overview", [OverviewMode.OWN, OverviewMode.SCENES])
+    def test_the_resampling_of_something_that_is_no_pyramid_is_rejected(self, overview) -> None:
+        with pytest.raises(ConfigError, match="overview_resampling is set"):
+            full_viewer(overview=overview, overview_resampling=OverviewResampling.AVERAGE)
+
+    @pytest.mark.parametrize("value", ["pyramid", "tiles", None])
+    def test_an_overview_that_is_no_overview_mode_is_rejected(self, value) -> None:
+        """A string is not coerced: the YAML layer reads the value of an enum, the dataclass states the member."""
+        with pytest.raises(ConfigError, match="viewer.overview is one of"):
+            full_viewer(overview=value)
+
+    @pytest.mark.parametrize("value", ["average", "bilinear", 1])
+    def test_a_pyramid_resampling_that_is_no_overview_resampling_is_rejected(self, value) -> None:
+        with pytest.raises(ConfigError, match="overview_resampling is required"):
+            full_viewer(overview=OverviewMode.PYRAMID, overview_resampling=value, min_zoom=5)
 
     def test_an_asset_host_is_not_optional(self, valid_config) -> None:
         """KLAERUNGEN B10: a field with a default is a field nobody decided about."""
@@ -622,6 +667,18 @@ class TestEveryEntry:
 
     def test_the_grid_cap_fits_the_footprint(self, entry: DatasetConfig) -> None:
         assert entry.coverage.max_geotile_level <= max_geotile_level_for(entry.coverage.typical_footprint_km)
+
+    def test_a_viewer_says_what_happens_below_min_zoom(self, entry: DatasetConfig) -> None:
+        """adr/0032 §9: an image at every zoom. Enforced at construction already; pinned per entry by name."""
+        viewer = entry.viewer
+        if viewer is None:
+            pytest.skip("a catalogue-only entry shows no tiles")
+        assert isinstance(viewer.overview, OverviewMode)
+        if viewer.overview is OverviewMode.PYRAMID:
+            assert isinstance(viewer.overview_resampling, OverviewResampling)
+        else:
+            assert viewer.overview_resampling is None
+            assert viewer.min_zoom == 0
 
     def test_the_id_is_the_one_it_is_filed_under(self, entry: DatasetConfig) -> None:
         assert REGISTRY.get(entry.dataset_id) is entry
