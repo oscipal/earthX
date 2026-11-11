@@ -114,3 +114,59 @@ async def test_an_entry_without_rewrites_returns_the_items_untouched() -> None:
     async with gateway:
         page = await stac_api.search_items(SENTINEL_2_L2A, SearchParams(), gateway=gateway)
     assert list(page.items) == answer["features"]
+
+
+# Otto's browser check, 10.11.2026: the mosaic refused a Sentinel-1 pass with "the item points at a host this dataset
+# does not declare (asset_hosts)". The first form of DS-04b stored the source's items in the cache and rewrote them on
+# the way out; once the rewrite moved before the cache (M5-08b), such an entry came out as stored, with `s3://`. What
+# leaves the cache is rewritten again, so an entry from before the rewrite reaches no reader with the source's address.
+
+
+def _stored_as_before(cache: MemoryCache, key: str, value: dict[str, Any]) -> None:
+    cache.rows[key] = value
+
+
+async def test_an_item_the_cache_kept_with_the_source_address_comes_out_rewritten() -> None:
+    cache = MemoryCache()
+    raw = load("sentinel_1_search")["features"][1]
+    assert raw["assets"]["hh"]["href"].startswith("s3://")
+    _stored_as_before(cache, stac_api.item_cache_key(SENTINEL_1_GRD.dataset_id, "S1_HHHV"), {"item": raw})
+    gateway, seen = answering(httpx.Response(500), policy=POLICY)
+    async with gateway:
+        item = await stac_api.get_item(SENTINEL_1_GRD, "S1_HHHV", gateway=gateway, cache=cache)
+    assert seen == []
+    assert all(href.startswith(HOST) for href in hrefs(item))
+
+
+async def test_a_search_page_the_cache_kept_with_the_source_address_comes_out_rewritten() -> None:
+    cache = MemoryCache()
+    gateway, seen = answering(httpx.Response(200, json=load("sentinel_1_search")), policy=POLICY)
+    async with gateway:
+        await stac_api.search_items(SENTINEL_1_GRD, SearchParams(), gateway=gateway, cache=cache)
+        (key,) = cache.rows
+        cache.rows[key] = {**cache.rows[key], "features": load("sentinel_1_search")["features"]}
+        page = await stac_api.search_items(SENTINEL_1_GRD, SearchParams(), gateway=gateway, cache=cache)
+    assert len(seen) == 1
+    assert page.from_cache
+    assert all(href.startswith(HOST) for item in page.items for href in hrefs(item))
+
+
+async def test_a_rewritten_entry_is_not_rewritten_twice() -> None:
+    cache = MemoryCache()
+    item = load("sentinel_1_search")["features"][1]
+    gateway, _ = answering(httpx.Response(200, json=item), policy=POLICY)
+    async with gateway:
+        live = await stac_api.get_item(SENTINEL_1_GRD, "S1_HHHV", gateway=gateway, cache=cache)
+        again = await stac_api.get_item(SENTINEL_1_GRD, "S1_HHHV", gateway=gateway, cache=cache)
+    assert again == live
+    assert again["assets"]["hh"]["href"].count(HOST) == 1
+
+
+async def test_an_entry_without_rewrites_takes_its_cached_items_as_they_are() -> None:
+    cache = MemoryCache()
+    raw = load("sentinel_1_search")["features"][1]
+    cache.rows[stac_api.item_cache_key(SENTINEL_2_L2A.dataset_id, "S1_HHHV")] = {"item": raw}
+    gateway, _ = answering(httpx.Response(500))
+    async with gateway:
+        item = await stac_api.get_item(SENTINEL_2_L2A, "S1_HHHV", gateway=gateway, cache=cache)
+    assert item == raw

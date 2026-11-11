@@ -1351,15 +1351,19 @@ textarea:autofill {
 .coverage-note {
   color: var(--accent);
 }
+/* A fixed, small row (Otto, 10.11.2026): the bars share its width, more months make coarser bars, never a longer row. */
 .coverage-histogram {
   display: flex;
   align-items: flex-end;
   gap: var(--space-0);
   height: 32px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
 .histogram-bar {
-  flex: 1 1 auto;
-  min-width: 1px;
+  flex: 1 1 0;
+  min-width: 0;
   background: var(--panel-border);
   border-radius: var(--radius-xs);
 }
@@ -3229,9 +3233,6 @@ button.pm-open:hover {
 .status-stack > .toast {
   pointer-events: auto;
 }
-.status-stack > .toast.hint {
-  pointer-events: none;
-}
 .toast {
   display: flex;
   align-items: center;
@@ -3255,12 +3256,6 @@ button.pm-open:hover {
 }
 .toast.busy {
   color: var(--accent);
-}
-/* A standing state rather than an event: quieter than a notice, no dismiss
-   button, no fade (M2-10 — the hint below a dataset's lowest released level). */
-.toast.hint {
-  border-color: var(--panel-border);
-  color: var(--muted);
 }
 
 /* --- spinners --- */
