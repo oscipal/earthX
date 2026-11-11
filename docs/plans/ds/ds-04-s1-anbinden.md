@@ -1,6 +1,6 @@
 # DS-04 — Sentinel-1 GRD anbinden: Plan-Schritt
 
-**Status (08.11.2026):** Plan angenommen (Otto, 07.11.2026; Antworten in §9a). DS-04a (TPS) umgesetzt (§11, [#312](https://github.com/oscipal/earthX/pull/312)); DS-04b umgesetzt im Draft-PR [#318](https://github.com/oscipal/earthX/pull/318) (§12), F7–F10 beantwortet (§12.4a); DS-04c folgt. Ersetzt die frühere Datei, die den Text von DS-00 enthielt (`adr/0030` §9, Nebenbefund).
+**Status (09.11.2026):** Plan angenommen (Otto, 07.11.2026; Antworten in §9a). DS-04a (TPS) umgesetzt (§11, [#312](https://github.com/oscipal/earthX/pull/312)); DS-04b umgesetzt ([#318](https://github.com/oscipal/earthX/pull/318), §12), F7–F10 beantwortet (§12.4a); DS-04c umgesetzt im Draft-PR [#319](https://github.com/oscipal/earthX/pull/319) (§13), mit dem Fehler aus Ottos Browserprüfung vom 09.11.2026; F11 und F12 beantwortet (§13.5a), der Zuschnitt ohne Bandtabelle nachgezogen (§13.4); #319 fertig (Otto, 10.11.2026). Es folgen F11, dann F12, als eigene PRs. Ersetzt die frühere Datei, die den Text von DS-00 enthielt (`adr/0030` §9, Nebenbefund).
 **Aufgabe:** DS-04 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2. **Stufe B** (`adr/0030` §11; vorher A laut DS-00). Der Plan darf sofort entstehen; die Umsetzung beginnt erst, wenn M5-13 (YAML-Lader) gemergt ist. Dann wird `main` geholt, und der Eintrag entsteht als YAML (M5-Plan §6.3).
 **Modell:** Opus, Effort hoch.
 **Grundlagen:** `adr/0018` Teil A (§3.1, §4, F1–F3) mit Nachtrag M5-12 (§9.4); `adr/0030` §5.2, §8, §9, §11; `adr/0021` (Suchfilter); `adr/0022` und M5-07 (`data_region`); `adr/0024` (`legal_status`); `adr/0025` §7 (YAML unter `backend/catalog/`); `adr/0027` §6.1 (`access.account`); `adr/0014` §3.1, §4.6, §6.3 (Fassung, Bitgleichheit); `architekturplan.md` 3.1, 5.1, 6.4, 7.3; `projektuebersicht.md` §5 (Checkliste); `KLAERUNGEN.md` B8–B12.
@@ -395,3 +395,169 @@ $env:PYTHONPATH = 'backend'; pytest backend/tests_live/test_sentinel_1_grd_smoke
 ```
 
 Der tägliche Lauf nimmt `backend/tests_live/test_sentinel_1_grd_smoke.py` im Schritt mit `test_earth_search_smoke.py` mit (`.github/workflows/live-smoke.yml`, eine Zeile, von Otto am 08.11.2026 freigegeben).
+
+---
+
+## 13. Umsetzung DS-04c (09.11.2026)
+
+Auf `main` 05a3b1c (nach DS-04b #318), eigener Draft-PR, nur Frontend. Belegstufen wie oben; gemessen am 09.11.2026 nur Metadaten von Earth Search und das Vorschaubild einer Szene (im Kratzverzeichnis der Sitzung, nicht im Repo, keine IDs hier).
+
+### 13.1 Was gebaut ist
+
+- **`first_present` in der Darstellung (F2):** `defaultRenderOf(collection, item)` nimmt das erste Asset der Liste, das das Item trägt, mit dem Stretch-Paar an derselben Stelle; ein Item ohne eines davon hat keine Standarddarstellung. Ohne Item steht das erste der Liste für den Datensatz. Ansicht („View whole scene“, „Crop to AOI“), Vorschau-Kacheln, georeferenziertes Asset eines Quicklooks und Mosaik-Job nehmen das Band je Szene; Standard-Look, Bezugspunkt von „Temporary“ und Standardband im Band-Menü kommen von der ersten Szene des gezeigten Bildes (die Szenen eines Bildes sind ein Überflug); eine Szene ohne eines der Bänder fällt mit Meldung aus der Ansicht. „Originals“ bietet alle Assets der Liste an, jede Szene liefert das, das sie trägt. `all` und ein Backend ohne das Feld bleiben wie bisher.
+- **Vorschau nach der Suche (§12.3):** `quicklookPlan` nimmt das Thumbnail eines Items nur noch, wenn die Karte es platzieren kann (`quicklookCoords`: CRS und georeferenziertes Asset). Sentinel-1 bekommt damit die Kacheln, die `browse: preview_tiles` nennt (ab z7, Band je Szene); die Trefferliste zeigt das Thumbnail weiter neben der Szene. Allgemein, kein Zweig auf den Datensatz.
+- **Marken (§4.4, §4.6):** zuerst als je eine Marke gebaut; nach Ottos Review vom 10.11.2026 wieder entfernt und durch die Zeile „Limitations“ des Data catalogue ersetzt (§14.2).
+- **Browser-Skript** `frontend/e2e/s1-pass.cjs` (synthetisch, ohne Backend): Vorschau mit dem Band je Szene, kein Thumbnail in Radargeometrie auf der Karte, Marken mit Tooltip an allen drei Stellen, Kontur eines zusammengeführten Überflugs aus zwei Slices (Sentinel-1) und aus zwei Kacheln (Sentinel-2). Hell/Dunkel, breit und 360 px.
+
+### 13.2 Fehler aus Ottos Browserprüfung: Szenengrenzen im zusammengeführten Layer
+
+**Befund (Otto, 09.11.2026):** Bei „Crop and merge to AOI“ zeichnet die Karte innerhalb der AOI die Umrisse der einzelnen Szenen über das Mosaik; bei zwei Szenen eines Sentinel-1-Überflugs eine doppelte Linie quer durchs Bild.
+
+**Ursache, bestätigt [M]:** Die gelbe Kontur der zugeschnittenen Ansicht ist je Gruppe die Vereinigung der Footprints, geschnitten mit der AOI (`groupOutline.ts`, M3-09 §10). Zwei aufeinanderfolgende Slices eines Datatakes teilen bei Earth Search keine exakte Kante: Die Ecken der gemeinsamen Kante liegen 0,003 bis 0,0075° auseinander, mal überlappend, mal mit Lücke, und eine Seite hat dort teils eine Ecke mehr. Die Vereinigung zerfällt dann in zwei Ringe, in einen Ring mit Loch oder (nach dem Schnitt mit der AOI) in einen Ring mit einem langen schmalen Schlitz; alle drei werden als Doppellinie gezeichnet. Gemessen an 921 Paaren aufeinanderfolgender Slices (Europa, Amerika, Asien, Polargebiete, September/Oktober 2026): 387 (42 %) zerfallen. Andere Ebenen scheiden aus: Die Coverage-Footprints sind in der Ansicht aus, die Vorschau-Quicklooks liegen unter der Ansicht und zeichnen keine Linien. Sentinel-2-Kacheln eines Überflugs überlappen breit, ihre Vereinigung war in der Stichprobe (4 Überflüge, 200 Kacheln) je ein Stück.
+
+**Behebung (allgemein):** Vor der Vereinigung werden die Footprints einer Gruppe aneinander eingerastet (`snapFootprints`): Eine Ecke in höchstens 0,01° Abstand zu einer Ecke eines früheren Footprints übernimmt deren Lage, und eine Kante bekommt die Ecken anderer Footprints eingefügt, die in diesem Abstand an ihr liegen. Danach teilen beide Slices dieselben Punkte entlang der gemeinsamen Kante. Ergebnis an den 921 Paaren: 0 zerfallen (0,008° war die kleinste Toleranz, die alle schloss); bei Sentinel-2 ändert sich die Fläche der Kontur um höchstens 0,06 %. Die Toleranz verschiebt eine Kontur höchstens um rund 1 km, und nur dort, wo Szenen tatsächlich aneinanderstoßen; eine echte Lücke über 0,01° bleibt sichtbar (Test). Ein Fehler der Geometrie-Bibliothek fällt wie bisher auf die Footprints einzeln zurück. Nach dem Review: Eine Ecke genau auf einer früheren Ecke bleibt, wo sie ist; verglichen werden nur Footprints, deren Rahmen sich auf die Toleranz nahekommen (40 Footprints mit je 300 Ecken: 0,2 s statt 3,2 s); offene oder zu kurze Ringe und Footprints schmaler als drei Toleranzen bleiben unverändert, weil sonst Ecken eines Nachbarn auf beiden Längskanten landen und sie kreuzen.
+
+**Tests:** synthetische Slices in der Form von Earth Search: ohne Einrasten zerfällt die Vereinigung (Vorbedingung), mit Einrasten ein Ring, in der AOI keine Ecke außer ihrem Rand, unabhängig von der Reihenfolge; echte Lücke bleibt; zwei überlappende Kacheln unverändert; Randfälle (eine Fläche, leer, Toleranz 0, MultiPolygon, NaN fällt zurück). Gegenprobe: ohne Einrasten vier Tests rot; im Browser meldet `s1-pass.cjs` dann „1 rings and 4 corners inside the AOI“, mit Einrasten grün.
+
+### 13.3 Quicklook für Sentinel-1 [M]
+
+- Das Item trägt `thumbnail` (Rolle `thumbnail`, `image/png`) → `…/preview/quick-look.png` der SAFE-Struktur, nach der Abbildung aus §4.2 unter dem Asset-Host. **Anonym abrufbar:** `GET` 200, rund 340 kB, 532 × 341 Pixel, `Access-Control-Allow-Origin: *` (auch auf `OPTIONS`), also im Browser in ein Canvas ladbar.
+- Inhalt: RGB-Komposit (rot Ko-, grün Kreuzpolarisation, blau ihr Verhältnis), nicht das Graustufenbild der Kacheln (VV bzw. HH). Lage in Radargeometrie: bei der gemessenen aufsteigenden Szene liegt der Norden unten (erste Zeile = früheste Zeit = Süden), Westen links; bei absteigender Bahn ist es umgekehrt gespiegelt.
+- Neben dem Bild liegt `preview/map-overlay.kml` (rund 1 kB) mit einem `gx:LatLonQuad`: die vier Ecken des Vorschaubilds in der Reihenfolge unten links, unten rechts, oben rechts, oben links des Bildes, also mit der Spiegelung schon darin. Die Datei ist **kein Asset** des Items; ihre Adresse entstünde nur aus der Ordnerkonvention. Ihre Ecken weichen von den Ecken der Item-Geometrie um bis zu rund 0,1° ab.
+- Die Item-Geometrie hat 6 bis 10 Punkte: die vier Ecken der Szene und Zwischenpunkte an den Slice-Grenzen. Für eine Einpassung müssten die vier Ecken daraus bestimmt werden (z. B. über die Winkel) und je Bahnrichtung den Bildecken zugeordnet werden.
+- Nicht gebaut, Frage F11.
+
+### 13.4 Abweichungen und Auslegungen
+
+- **Marken „an der Ergebnisgruppe“** stehen unter dem Kasten des Datensatzes in den Suchergebnissen, nicht an jeder Zeitgruppe: Alle Gruppen eines Datensatzes haben dieselben Hinweise, zwei Marken je Gruppe würden die Liste verdoppeln. Im Kasten selbst gehen sie nicht, weil er bei einem Datensatz ein gesperrter Knopf ist, über dem kein Tooltip erscheint.
+- **Marken „am Layer“** stehen in einer eigenen Zeile unter dem Kopf der Einstellungen der Ansicht und eines daraus gehefteten Layers, nicht in der Layerzeile (deren elf Plätze sind fest, UI-03).
+- **Tooltip-Stufe:** Die Marken der Hinweise zeigen ihren Tooltip auch in der Stufe „simple“; die übrigen Marken bleiben „advanced“.
+- **Zuschnitt-Downloads** nehmen die Bänder aus der Bandtabelle des Dialogs (NM4-75). **Ohne Bandtabelle** (Otto, 10.11.2026, vor dem Merge): Der Zuschnitt einer Auswahl liest das `first_present`-Band ihrer Szenen; ein aus der Trefferliste gehefteter Layer behält beim Heften die Bänder seiner Szenen (`restore.assets`, fehlt bei älteren Layern, die wie bisher das erste der Liste nehmen); ein aus der Ansicht gehefteter Layer las sie schon je Szene. Szenen eines VV- und eines HH-Überflugs haben kein gemeinsames Band, und ein Zuschnitt liest eine Asset-Liste für alle Szenen (sonst `404` „the item carries no asset“): Der Dialog sagt „These scenes carry different bands (vv, hh): crop the scenes of one band at a time.“ und schickt nichts (Auslegung, angenommen von Otto am 10.11.2026).
+- **Nicht gebaut:** die Beschriftung der Originale als COG-Fassung des Bucket-Betreibers (§4.6), weil es dafür keine Registry-Angabe gibt und ein Text je Datensatz im Code gegen §10 verstieße; Frage F12.
+- **F7 (Wiedervorlage):** Die Kachelkosten der TPS sind in diesem PR nicht neu gemessen; ob Sentinel-1 im Browser spürbar langsam ist, sieht Otto bei der Prüfung (§13.6).
+
+### 13.5 Fragen an Otto
+
+**F11 — Quicklook für Sentinel-1 auf der Karte?**
+1. Das `thumbnail` über die vier Ecken der Item-Geometrie auf die Karte einpassen, Zuordnung der Bildecken je Bahnrichtung (`sat:orbit_state`) gespiegelt, mit der Marke „Approximate geolocation“; sichtbar auch unter z7, Kacheln ab z7 darüber. Allgemein über eine neue Registry-Angabe (z. B. `viewer.quicklook_placement: footprint_corners`), kein Zweig auf den Datensatz. Lage auf rund einen Kilometer, Farben als RGB-Komposit **(Empfehlung)**
+2. Wie 1, aber die Ecken aus `preview/map-overlay.kml` (Lage des Herstellers, Spiegelung schon darin); dafür eine zweite Anfrage je Szene an eine Datei, die kein Asset ist
+3. Vorschau aus dem `tiler` mit TPS, wie jetzt gebaut (exakte Lage, Graustufen wie die Ansicht, erst ab z7, je Kachel 0,1–0,3 s)
+4. Das Vorschaubild nur in der Trefferliste (heute schon so), auf der Karte die Kacheln aus 3
+
+**F12 — Beschriftung der Originale (§4.6)?**
+1. Neue allgemeine Registry-Angabe `source.originals_note` (englisch, ein Satz, ohne Vorgabe; bei den vier bisherigen Einträgen `null`), als Tooltip an „Originals“; Sentinel-1: „Cloud-optimized GeoTIFFs as the bucket operator converted them, not the ESA SAFE product.“ Kleiner eigener PR mit Backend **(Empfehlung)**
+2. Den Satz als dritten Hinweis in `notices` (erscheint dann auch als Marke)
+3. Weglassen
+
+### 13.5a Antworten Otto (09.11.2026)
+
+- **F11:** Option 1, mit Prüfung: Die eingepasste Lage (vier Ecken, Spiegelung je Bahnrichtung) wird in Tests gegen `map-overlay.kml` geprüft, je eine echte aufsteigende und absteigende Szene als Fixture; zur Laufzeit keine KML-Anfrage.
+- **F12:** Option 1 (`source.originals_note` als Tooltip), als eigener kleiner PR nach diesem.
+- **Vor dem Merge in diesem PR:** Zuschnitt ohne Bandtabelle fragt `vv` an; bei HH-Szenen `first_present` verwenden, mit Test. Umgesetzt (§13.4).
+- **Nachtrag 10.11.2026:** F11 kommt als eigener PR nach #319 und vor F12. Die Auslegung zu gemischten VV/HH-Szenen (§13.4) ist angenommen. #319 ist damit fertig.
+
+### 13.6 Prüfanleitung für Otto
+
+**Browser:** `main` mit diesem PR, lokal `npm run dev` und das Backend starten.
+
+1. Data catalogue: „Sentinel-1 GRD“ zeigt die Marken „Approximate geolocation“ und „Uncalibrated (DN)“; beim Überfahren steht der Satz aus F10 im Tooltip, auch mit Tooltips auf „simple“.
+2. Suche über Mitteleuropa: unter „Showing dataset“ dieselben zwei Marken. Ab Zoom 7 zeigt die Karte die Vorschau-Kacheln der Szenen in Graustufen (VV); eine Suche im Nordpolarmeer (EW, HH) zeigt sie ebenfalls (HH).
+3. Zwei Szenen eines Überflugs ankreuzen, AOI über ihre Grenze, „Crop and merge to AOI“: eine gelbe Kontur um das Mosaik, **keine Linie quer durchs Bild**; die Marken stehen unter dem Kopf der Ansicht. Dasselbe mit Sentinel-2 (zwei Kacheln eines Überflugs).
+4. „Download full scene“ → „Originals“: je Szene das Band der Ko-Polarisation (`vv` bzw. `hh`). „Download crop“ einer HH-Szene nennt „asset hh“; eine VV- und eine HH-Szene zusammen sperren „Download“ mit dem Satz aus §13.4.
+5. Ob die Kacheln spürbar langsam laden (Wiedervorlage F7).
+
+**Browser-Skript** (ohne Backend, braucht Playwright mit Chromium, das keine Abhängigkeit des Projekts ist), aus `frontend/`:
+
+```powershell
+npm run dev   # in einem zweiten Fenster
+node e2e/s1-pass.cjs
+```
+
+---
+
+## 14. Nachträge nach Ottos Prüfung (10.11.2026)
+
+Im selben Draft-PR [#319](https://github.com/oscipal/earthX/pull/319), auf Ottos Auftrag.
+
+### 14.1 Fehler: Mosaik weist Sentinel-1 ab („the item points at a host this dataset does not declare“)
+
+**Befund (Otto):** Beim Mosaik eines Sentinel-1-Überflugs meldet der Viewer „Could not load the mosaic (the item points at a host this dataset does not declare (asset_hosts)); its scenes are drawn one by one.“
+
+**Nachgestellt [M]:** zwei echte Slices eines Datatakes (nur Metadaten, per `curl` geholt, weil das Gateway aus der Sitzung nicht durch den Proxy kommt), die echten Routen des `tiler` (`build_app` mit der echten Registry):
+- Items so, wie `get_item` sie liefert (nach `normalize_for`, also `https`): Einzel-TileJSON, Mosaik-TileJSON und Szenenreihenfolge `200`.
+- Dieselben Items roh (`s3://`): Mosaik-TileJSON `502` mit genau Ottos Meldung, ebenso die Einzelkachel.
+- Rohe Items im Item-Cache, `get_item` als Item-Quelle: ohne Behebung `502`, mit Behebung `200`.
+
+**Ursache:** Die Host-Prüfung vergleicht richtig (der Host von `asset_hosts` und der abgebildeten Adresse sind gleich); bei der Route kommen aber Items mit der Adresse der Quelle an. Das kann nur der Item-Cache sein. In der ersten Fassung von DS-04b (Commit 4831410 auf dem Branch von #318) speicherte das STAC-Modul die Items roh und bildete erst beim Lesen ab. Beim Einarbeiten von M5-08b wanderte die Abbildung vor den Cache (`normalize_for`), und beim Lesen wurde nichts mehr abgebildet. Ein Eintrag aus der Zeit davor (Item 24 h, Suchseite bis 24 h gültig) kam deshalb mit `s3://` heraus, und `gateway` weist die Adresse ab. Dass einzelne Szenen gezeichnet wurden, passt dazu, wenn nur ein Teil der Items alt im Cache lag; Ottos Datenbank habe ich nicht eingesehen.
+
+**Behebung (gemeinsame Stelle, STAC-Modul):** Die Abbildung gilt auch für ein Item und eine Suchseite aus dem Cache. Sie ist idempotent: Ein altes Präfix ist nie `https`, ein neues immer (Startprüfung). Test ohne Netz: rohe Einträge im Cache kommen abgebildet heraus (ohne Behebung 2 Tests rot), ein abgebildeter Eintrag wird nicht doppelt abgebildet, ein Eintrag ohne Abbildung bleibt unverändert.
+
+**Andere Datensätze:** Sentinel-2 hat keine Abbildung; mit zwei echten Kacheln eines Überflugs liefern die drei Routen `200`. DEM und WorldCover haben keine Abbildung und werden aus pgstac gelesen, nicht aus dem Item-Cache. swissALTI3D hat auf `main` noch keinen Registry-Eintrag (M5-08c steht aus); die Behebung gilt für jeden Eintrag mit Abbildung, auch einen späteren.
+
+### 14.2 Hinweise: keine Marken, Zeile „Limitations“ (`adr/0018` F2, Nachtrag DS-04c)
+
+- Die Marken „Approximate geolocation“ und „Uncalibrated (DN)“ sind aus der Oberfläche entfernt: Panel, Suchergebnisse, Kopf von Ansicht und Layer, Liste und Kopf der Angaben im Data catalogue.
+- Neue Registry-Angabe `limitations` (ganze Sätze, englisch, je bis 200 Zeichen, mit Punkt; ohne Vorgabe, leer bei den vier übrigen Einträgen), veröffentlicht als `earthx:limitations`; im Data catalogue die Zeile „Limitations“ nach „Description“, ohne Einschränkung keine Zeile. Sentinel-1: „Placed only by the ground control points of each scene, without terrain correction; this holds for every pixel, not only the preview.“ und „Values are uncalibrated digital numbers (DN), not calibrated backscatter.“
+- Rezept (`provenance.notices`) und `ATTRIBUTION.txt` behalten die Hinweise; `ATTRIBUTION.txt` setzt für `{year}` das Aufnahmejahr ein (so schon gebaut, jetzt mit Test für Sentinel-1), der Katalog zeigt „[year]“.
+- Keine internen Verweise in Texten für Nutzer: Startprüfung auf `adr/…`, `§…`, Aufgabenkürzel und die Namen der Klärungsdokumente in Beschreibung, Zitierangabe, Zugangsweg, Einschränkungen, Hinweisen und Suchfiltern; die Beschreibungen von Sentinel-1, Sentinel-2 und DEM und der Zugangsweg aller fünf Einträge sind bereinigt, die Verweise stehen in YAML-Kommentaren.
+- Zeile „DOI“ nur bei einer DOI, sonst „Citation“.
+
+### 14.3 Kein „Zoom in“ über der Karte
+
+Der Hinweis „Zoom in to level n to see imagery …“ und die Marke „Zoom in“ entfallen. Ein Layer unter seiner Startzoomstufe sagt im Tooltip seiner Zeile im Layer-Manager „Nothing shown at this zoom: this layer is drawn from zoom n.“ (beide Tooltip-Stufen, nur solange es gilt); die Zeile „Search results“ sagt es für einen Datensatz mit Vorschau-Kacheln, die Marke „Preview“ für die Vorschau des Processing-Panels. Allgemein, für jeden Datensatz.
+
+### 14.4 Balken der Coverage
+
+Die Balken wuchsen mit jedem Monat um ein Pixel und einen Abstand; bei 146 Monaten (Sentinel-1 seit Oktober 2014) scrollte das Panel um 113 bis 141 px quer (gemessen im Browser, Gegenprobe). Jetzt eine feste Reihe von 32 px Höhe in der Breite des Panels: ein Balken je Monat bis 36, sonst je Quartal, sonst je Jahr; Tooltip mit Zeitraum und Zahl. Browser-Skript `frontend/e2e/coverage-histogram.cjs` (30, 60, 146 Monate).
+
+### 14.5 Auslegungen (bestätigt von Otto am 10.11.2026)
+
+- **Kein „Zoom in“ auch für die Vorschau des Panels:** Sie hat keine Layer-Zeile; der Grund steht im Tooltip von „Preview“.
+- **„Limitations“** ist eine eigene Angabe neben `notices`, nicht aus ihnen abgeleitet: Die Sätze für den Katalog sind andere als die Absätze in `ATTRIBUTION.txt`.
+- **Grenze von 36 Balken:** so viele passen ins schmalste Panel (360 px) mit sichtbarem Abstand.
+
+### 14.6 Nach dem Merge von #320 (swissALTI3D), 10.11.2026
+
+**`main` geholt** (d73852f, M5-08c #320). Konflikt nur in `architekturplan.md` 5.1 (Zeile `earthx:source` von `main`, Zeilen `notices`/`limitations` von hier). Der neue Eintrag `swissalti3d.yaml` bekommt `limitations: []` und einen Zugangsweg ohne internen Verweis; sonst hätte ihn die Startprüfung aus §14.2 abgewiesen.
+
+**Mosaik-Behebung und swissALTI3D [M]:** swissALTI3D ist materialisiert; seine Items kommen aus pgstac, nicht aus dem Item-Cache des STAC-Moduls, und haben keine Abbildung. Die Behebung aus §14.1 berührt sie nicht und muss es nicht: Die Materialisierung legt die Items nach `normalize_for` ab (feste Schlüssel `dtm`, `dtm_2m`, `xyz`, `xyz_2m` aus `asset_keys`). Nachgestellt mit 9 echten Kacheln (nur Metadaten der FSDI, so umgeformt, wie die Materialisierung sie speichert): Einzel-TileJSON, Mosaik-TileJSON und Szenenreihenfolge `200`.
+
+**Fehler „leere Karte nach Crop and merge, über 64 Kacheln“ — nicht nachgestellt.** Geprüft im Browser (Skript `frontend/e2e/many-scenes.cjs`, dazu eine Fassung mit der echten Collection von swissALTI3D und 72 echten Kacheln um Bern, nur Metadaten, im Kratzverzeichnis):
+- 70 bzw. 72 Szenen (über 64, Rückfall „Szene für Szene“), 60 Szenen mit Mosaik und mit vom `tiler` abgelehntem Mosaik;
+- Start bei z12,5 und bei z14,2, danach auf z14,2 bzw. z13,6 gezoomt; Ergebnisse vor dem Zuschnitt an und aus;
+- Antwortzeiten: Kachel 50–1500 ms, Reihenfolge 50–3000 ms, Statistik 400–2500 ms; Kacheln 1 × 1 und 256 × 256 Pixel.
+In allen Fällen fragt die Karte die Kacheln der Szenen ohne Kartenbewegung an und zeichnet sie (Bildpunkte in der AOI geprüft); Hinein- und Herauszoomen ändert nichts. Die Ursache ist damit offen, Frage F13.
+
+**Gefunden beim Nachstellen:**
+- **Naht in der Kontur bei kleinen Kacheln** (behoben): Die Schutzregel aus dem Review (§13.2) ließ jeden Footprint unter 0,03° Breite uneingerastet, also jede Kachel von 1 km. Kacheln, deren gemeinsame Kanten nur in den letzten Stellen abweichen, ergaben dann eine Linie quer durchs Mosaik. Die Toleranz ist jetzt 0,01°, aber nie mehr als ein Zehntel der kürzeren Seite eines Footprints. Die echten Kacheln von swissALTI3D teilen ihre Ecken genau und waren nicht betroffen; die 921 Sentinel-1-Paare schließen weiter ohne Naht.
+- **React-Warnung auf jeder Seite** (behoben): Den Teilen des Settings-Symbols fehlte das `key`, das Lucide für seine Liste erwartet (seit c0e295e).
+- **Höchstens 40 Szenen einzeln** (`MAX_MOSAIC_LAYERS`): Bei einem Überflug über 64 Szenen werden 40 gezeichnet, die übrigen nicht („… 30 of them not at all“); ein Teil der AOI bleibt dauerhaft leer, auch nach Zoomen. Das ist nicht Ottos Fehlerbild, aber eine Lücke; Frage F14.
+
+### 14.7 Fragen an Otto — beantwortet am 10.11.2026 (§14.7a)
+
+**F13 — Leere Karte nach „Crop and merge“ bei swissALTI3D: wie weiter?**
+1. Otto schickt aus einem Lauf: die Konsole des Browsers (Fehler und Warnungen), die Zahl der Szenen und ob die Meldung „A time step of N scenes is more than one mosaic takes“ kam, die Zoomstufe vor dem Klick und die Zeilen des `tiler` zu `tilejson.json`, `/scene-order` und `/statistics` (ohne IDs); damit stelle ich nach und behebe mit einem Test, der vorher rot ist **(Empfehlung)**
+2. Eine Diagnose im Entwicklungsmodus: Die Ansicht schreibt bei jedem Neuzeichnen Bank, Zahl der Ebenen und Zustand der Quellen in die Konsole; Otto wiederholt den Lauf damit
+3. Zurückstellen bis M5-30 (Grenze von 64)
+
+**F14 — Überflug mit mehr als 40 Szenen, Szene für Szene gezeichnet?**
+1. Bis M5-30 so lassen; die Meldung nennt die nicht gezeichneten Szenen **(Empfehlung)**
+2. Die 40 Szenen nach Lage wählen: zuerst die, die den sichtbaren Ausschnitt treffen, neu bei jeder Kartenbewegung
+3. Die Obergrenze anheben (Messung der Kosten im Browser vorher)
+
+**F15 — `limitations` für swissALTI3D?** Die Beschreibung sagt zwei Einschränkungen schon im Text.
+1. Zwei Sätze: „One area can combine tiles of different survey years; each tile keeps its own year.“ und „Placed in WGS 84 without a grid file, to about 1 m.“ **(Empfehlung)**
+2. Leer lassen
+
+**F16 — CI rot seit dem 10.11.2026 ab ca. 15:20 (`main` und #319)?** Auf `main` und hier schlagen dieselben drei Tests fehl, mit denselben Hashes: `test_band_math.py::TestBitStabilityAcrossCpuLevels::test_the_probe_would_notice_a_function_that_is_not_bit_stable` und zweimal `test_mosaic.py::TestTheRuleOfTheExport::test_both_compute_the_same_bytes_as_before_the_order_moved`; lokal grün. Vermutung: Runner mit anderer CPU, nicht belegt.
+1. Eigene Aufgabe von `main` aus: die CI schreibt CPU-Modell und -Merkmale ins Log; damit klären, ob der Export je CPU andere Bytes gibt **(Empfehlung)**
+2. Den Lauf später erneut starten
+3. Zurückstellen
+
+### 14.7a Antworten Otto (10.11.2026)
+
+- **F13:** Option 3. Die leere Karte nach „Crop and merge“ über 64 Kacheln ist zurückgestellt bis M5-30; `frontend/e2e/many-scenes.cjs` bleibt als Prüfung des Ablaufs.
+- **F14:** Option 1. Über 40 einzeln gezeichnete Szenen bleibt es bis M5-30, wie es ist; die Meldung nennt die nicht gezeichneten.
+- **F15:** Option 1. swissALTI3D hat in `limitations` zwei Sätze: „One area can combine tiles of different survey years; each tile keeps its own year.“ und „Placed in WGS 84 without a grid file, to about 1 m.“ Eingetragen in `backend/catalog/datasets/swissalti3d.yaml`.
+- **F16:** Option 1 (Otto, 10.11.2026). Die Ursache klärt eine eigene Aufgabe von `main` aus (CI-Fix); #319 bleibt unverändert. Gemergt wird, sobald `main` wieder grün ist und dieser Branch danach `main` geholt hat.
+

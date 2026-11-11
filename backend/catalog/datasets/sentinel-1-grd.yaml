@@ -9,10 +9,10 @@
 # The same id as the upstream collection, the rule of Sentinel-2 (DS-04 plan §4.5).
 dataset_id: sentinel-1-grd
 title: Sentinel-1 GRD
+# What the data cannot do stands in `limitations` below (adr/0018 §3.1; F2, Nachtrag DS-04c, Otto 10.11.2026).
 description: >-
   Sentinel-1 C-band SAR, Level-1 Ground Range Detected, as cloud-optimized GeoTIFF in radar geometry. Served by Earth
-  Search v1 (Element 84) from the Registry of Open Data on AWS. Placed by its ground control points without terrain
-  correction, and not calibrated: the values are digital numbers (adr/0018 §3.1).
+  Search v1 (Element 84) from the Registry of Open Data on AWS.
 # German and English (adr/0026 F7, DS-04 plan §4.5).
 keywords: [sentinel-1, radar, SAR, C-band, backscatter, Rückstreuung, GRD, copernicus]
 category: radar
@@ -90,7 +90,8 @@ legal_note: null
 access:
   # Earth Search answered 200 for the collection, the bucket 200 for `?requestPayment` [M, 08.11.2026].
   token_free_checked_at: 2026-11-08
-  method: anonymous HTTPS, no authentication header; the bucket is not requester pays (adr/0018 §3.1)
+  # The bucket is not requester pays (adr/0018 §3.1).
+  method: anonymous HTTPS, no authentication header; the bucket is not requester pays
   # `Access-Control-Allow-Origin: *` at Earth Search and at the bucket [M].
   cors: true
   # The items say `storage:requester_pays: true`, the bucket says otherwise; the live smoke checks the bucket
@@ -269,3 +270,10 @@ notices:
   tooltip: >-
     Values are the digital numbers of the GRD product, not calibrated backscatter, so dB thresholds from the
     literature do not apply.
+# The row "Limitations" of the Data catalogue: the two notices above as sentences (adr/0018 F2, Nachtrag DS-04c, Otto
+# 10.11.2026). The first holds for every pixel, not only for the preview.
+limitations:
+- >-
+  Placed only by the ground control points of each scene, without terrain correction; this holds for every pixel, not
+  only the preview.
+- Values are uncalibrated digital numbers (DN), not calibrated backscatter.

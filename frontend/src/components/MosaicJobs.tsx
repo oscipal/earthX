@@ -74,8 +74,10 @@ export default function MosaicJobs({ dataset, passes, links, started, onStarted 
 
   const start = async (index: number, pass: DownloadPass) => {
     if (!info || why || pass.items.length > MAX_JOB_SCENES || started[index]?.state === 'starting') return;
+    // The asset of the pass: for `first_present` the one its scenes carry (DS-04 F2).
+    const own = defaultRenderOf(dataset.collection, pass.items[0])?.assets[0] ?? asset;
     const bands = bandSources(pass.items[0], dataset.collection['earthx:format'] ?? null, null).filter(
-      (source) => source.asset === asset,
+      (source) => source.asset === own,
     );
     const dtype = chooseDtype({ steps: [], bands, allowed: info.dtypes }).value;
     onStarted(index, { state: 'starting' });
@@ -84,7 +86,7 @@ export default function MosaicJobs({ dataset, passes, links, started, onStarted 
         datasetId: dataset.id,
         itemIds: pass.items.map((i) => i.id),
         // The platform reads the assets the bands come from (adr/0020 §5); an asset the item does not describe is one band.
-        bands: bands.length > 0 ? bands.flatMap(bandNamesOf) : [asset],
+        bands: bands.length > 0 ? bands.flatMap(bandNamesOf) : [own],
         dtype,
       }),
       { title: jobTitle({ operators: ['Mosaic'], dataset: dataset.title, day: titleDay(pass.items, resultsGroupByOfOption(dataset)) }) },

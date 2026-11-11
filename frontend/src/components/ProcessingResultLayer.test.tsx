@@ -625,44 +625,27 @@ describe('"Overview" over the map', () => {
     expect(badge()).toBe('Overview');
   });
 
-  describe('"Zoom in" (Otto, 25.10.2026: the picture does not vanish without a word)', () => {
+  describe('no "Zoom in" over the map (Otto, 10.11.2026; the row of the layer says it)', () => {
     const from = (minZoom: number) => ({ overlays: [{ kind: 'raster' as const, tileUrl: 'https://t/{z}', bounds: [10, 50, 11, 51] as [number, number, number, number], minZoom, maxZoom: 14 }] });
     const chips = () => [...container.querySelectorAll('.preview-badge-dock .badge')].map((chip) => chip.textContent);
 
-    it('says from which zoom a layer is drawn, while the map is zoomed out of it', () => {
+    it('puts nothing over the map for a layer the map is zoomed out of', () => {
       result({ gsd: null }, from(8));
       act(() => useAppStore.setState({ mapZoom: 3 }));
       act(() => root.render(<PreviewBadge />));
-      expect(chips()).toEqual(['Zoom in']);
-      expect(container.querySelector('.preview-badge-dock .badge')?.getAttribute('data-tip')).toContain('is drawn from zoom 7.');
-      act(() => useAppStore.setState({ mapZoom: 7 }));
       expect(container.querySelector('.preview-badge-dock')).toBeNull();
     });
 
-    it.each([
-      ['switched off', {}, { visible: false }],
-      ['expired', { expired: true }, {}],
-    ])('says nothing for a layer that is %s', (_, over, layer) => {
-      result({ gsd: null, ...over }, { ...from(8), ...layer });
-      act(() => useAppStore.setState({ mapZoom: 3 }));
-      act(() => root.render(<PreviewBadge />));
-      expect(container.querySelector('.preview-badge-dock')).toBeNull();
-    });
-
-    it('says nothing for a layer drawn at this zoom', () => {
-      result({ gsd: null }, from(0));
-      act(() => useAppStore.setState({ mapZoom: 3 }));
-      act(() => root.render(<PreviewBadge />));
-      expect(container.querySelector('.preview-badge-dock')).toBeNull();
-    });
-
-    it('says it for the preview of the panel too, beside "Preview"', () => {
+    it('says it for the preview of the panel in the tooltip of "Preview", and only there', () => {
       useProcessingStore.setState({
         preview: { key: 'k', title: 'Band math', stepCount: 1, band: null, bands: null, probe: '', measure: '', sceneMeasure: '', areaOrder: null, expression: false, preset: null, mosaics: [], scenes: [{ id: 'A', bbox: [10, 50, 11, 51], url: 'u' }], perScene: false, minZoom: 8, maxZoom: 14, clipToAoi: false },
       });
       act(() => useAppStore.setState({ mapZoom: 3 }));
       act(() => root.render(<PreviewBadge />));
-      expect(chips()).toEqual(['Preview', 'Zoom in']);
+      expect(chips()).toEqual(['Preview']);
+      expect(container.querySelector('.preview-badge-dock .badge')?.getAttribute('data-tip')).toContain('Nothing shown at this zoom: the preview is drawn from zoom 7.');
+      act(() => useAppStore.setState({ mapZoom: 9 }));
+      expect(container.querySelector('.preview-badge-dock .badge')?.getAttribute('data-tip') ?? '').not.toContain('Nothing shown');
     });
   });
 

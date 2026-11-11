@@ -156,6 +156,9 @@ export interface EarthxDefaultRender {
   colormap_name: string | null;
   expression: string | null;
   resampling: string;
+  // Which of `assets` an item is drawn with (DS-04 F2): `all` of them, or the `first_present` one the item carries,
+  // with the `rescale` pair at its place. Absent on a backend before DS-04b, which means `all`.
+  asset_selection?: 'all' | 'first_present';
 }
 
 // The registry's licence flags (`earthx.catalog.collection._earthx_license_flags`),
@@ -254,6 +257,9 @@ export interface Collection {
   'earthx:auxiliary_assets'?: string[] | null;
   // The three bands of the colour picture, red, green, blue (NM4-64); empty for a dataset that has none.
   'earthx:true_color'?: string[] | null;
+  // What the data cannot do, as whole sentences for the row "Limitations" of the Data catalogue (adr/0018 F2, Nachtrag
+  // DS-04c); empty where there is none. Absent on a backend before it.
+  'earthx:limitations'?: unknown[] | null;
   // The filters the search offers for this dataset (DS-02), in the words of STAC queryables; read, and checked
   // entry by entry, by `searchFilters.ts`. Absent on a backend before DS-02a.
   'earthx:search_filters'?: unknown[] | null;

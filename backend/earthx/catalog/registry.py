@@ -1285,7 +1285,20 @@ def _is_whole_number(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
-#: A notice is a short mark with one sentence behind it (DS-04 plan §4.4, M5 plan §2 point 8).
+#: A limitation is one sentence of the Data catalogue (Otto, 10.11.2026, adr/0018 F2, Nachtrag DS-04c).
+MAX_LIMITATION_CHARS = 200
+
+#: What a text for users must not hold: a reference to our own documents, which no user can open (Otto, 10.11.2026).
+INTERNAL_REFERENCE = re.compile(r"adr/\d|§|KLAERUNGEN|ENTSCHEIDUNGEN|\b(?:M\d+|NM\d+|DS|UI)-\d")
+
+
+def internal_reference_in(text: str | None) -> str | None:
+    """The first internal reference in ``text`` (``adr/0018``, ``§3``, ``M5-07``), or ``None``."""
+    found = INTERNAL_REFERENCE.search(text) if isinstance(text, str) else None
+    return found.group(0) if found else None
+
+
+#: A notice is a short code with one sentence behind it (DS-04 plan §4.4, M5 plan §2 point 8).
 NOTICE_CODE = re.compile(r"[a-z][a-z0-9]*(?:_[a-z0-9]+)*")
 MAX_NOTICE_LABEL_CHARS = 32
 MAX_NOTICE_TOOLTIP_CHARS = 200
@@ -1295,9 +1308,10 @@ MAX_NOTICE_TOOLTIP_CHARS = 200
 class Notice:
     """A fact about the data a user should know before reading a pixel of it (DS-04 plan §4.4, adr/0018 F2).
 
-    ``code`` names it for recipe and tests, ``label`` is the mark the viewer shows (English, a few words), ``tooltip``
-    the one sentence behind it. Shown in the catalogue, on the results and the layer, and written into the recipe
-    and ``ATTRIBUTION.txt``; it never changes a cache key (Auslegung A1).
+    ``code`` names it for recipe and tests, ``label`` its name (English, a few words), ``tooltip`` the one sentence
+    behind it. Written into the recipe and ``ATTRIBUTION.txt``; it never changes a cache key (Auslegung A1). The
+    viewer shows no mark for it (Otto, 10.11.2026, adr/0018 F2, Nachtrag DS-04c): the Data catalogue says the same in
+    ``DatasetConfig.limitations``.
     """
 
     code: str
@@ -1416,6 +1430,10 @@ class DatasetConfig:
     # What a user should know about the data before reading it (DS-04 plan §4.4), published as `earthx:notices`. No
     # default (KLAERUNGEN B10): an entry says so, with an empty tuple where there is nothing to say.
     notices: tuple[Notice, ...]
+    # What the data cannot do, as sentences for the row "Limitations" of the Data catalogue (Otto, 10.11.2026, adr/0018
+    # F2, Nachtrag DS-04c), published as `earthx:limitations`. No default (KLAERUNGEN B10): an entry says so, with an
+    # empty tuple where there is none, and the catalogue then has no such row.
+    limitations: tuple[str, ...]
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "band_units", MappingProxyType(dict(self.band_units)))
@@ -1443,6 +1461,37 @@ class DatasetConfig:
         self._check_true_color()
         if problem := check_notices(self.notices):
             raise ConfigError(f"{self.dataset_id}: {problem}")
+        self._check_limitations()
+        self._check_user_texts()
+
+    def _check_limitations(self) -> None:
+        """Each limitation one sentence of one line, each once."""
+        if not isinstance(self.limitations, tuple):
+            raise ConfigError(f"{self.dataset_id}: limitations is a tuple of sentences")
+        for text in self.limitations:
+            if not isinstance(text, str) or not text.strip() or text != text.strip() or "\n" in text:
+                raise ConfigError(f"{self.dataset_id}: each limitation is one line of text")
+            if len(text) > MAX_LIMITATION_CHARS:
+                raise ConfigError(f"{self.dataset_id}: a limitation is longer than {MAX_LIMITATION_CHARS} characters")
+            if not text.endswith("."):
+                raise ConfigError(f"{self.dataset_id}: each limitation is a whole sentence, ending in a full stop")
+        if len(set(self.limitations)) != len(self.limitations):
+            raise ConfigError(f"{self.dataset_id}: a limitation is given twice")
+
+    def _check_user_texts(self) -> None:
+        """No text a user reads names one of our own documents (Otto, 10.11.2026): the place belongs in a comment."""
+        texts = {
+            "description": self.description,
+            "citation": self.citation,
+            "access.method": self.access.method,
+            "legal_note": self.legal_note,
+            **{f"limitations[{i}]": text for i, text in enumerate(self.limitations)},
+            **{f"notice {n.code}": f"{n.label} {n.tooltip}" for n in self.notices},
+            **{f"search filter {f.property}": f"{f.title} {f.description}" for f in self.search_filters},
+        }
+        for field_name, text in texts.items():
+            if reference := internal_reference_in(text):
+                raise ConfigError(f"{self.dataset_id}: {field_name} names {reference!r}, which no user can open")
 
     def search_filter(self, name: str) -> SearchFilter | None:
         """The filter on the property ``name``, or None where the entry offers none."""
