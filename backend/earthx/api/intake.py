@@ -424,8 +424,9 @@ async def _accept(
             years=prepared.years,
         )
     except AttachmentsInvalid:
-        # Since the 25 fell (adr/0032 §10.3), an export of many scenes can outgrow the texts of its ZIP: a refusal of
-        # the order's size, never a 500. Whether those texts should grow is open (plan M5-30b §6, F4).
+        # The limit of the notice grows with the scenes (F4 = 2, plan M5-30b §6): up to MAX_ORDER_ITEMS scenes with ids
+        # of full length fit, so this does not trigger for an order that passed the count above. A safety net: a
+        # refusal of the order's size, never a 500.
         raise OrderRefused(413, "this export names more scenes than the notes of its ZIP can list; select fewer", "size") from None
     return AcceptedOrder(
         recipe, False, prepared.skipped, attachments, acquired_on, prepared.years, scene_aoi=prepared.scene_aoi
@@ -655,6 +656,7 @@ def export_attachments(
         acquired_on=acquired_on,
         bands=tuple(bands),
         notes=tuple(layout_notes(recipe)) if bands else (),
+        scenes=sum(len(group) for group in entry.groups) + len(dropped),
     )
 
 
