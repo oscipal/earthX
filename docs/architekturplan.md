@@ -382,6 +382,8 @@ Seitenmarke bleibt dabei undurchsichtig (`adr/0005` Regel III).
 - **Hybrid-Suche in Postgres:** Volltext (tsvector) + Vektorähnlichkeit (pgvector) + strukturierte Filter (Raum, Zeit, Lizenz-Flags, Capabilities), zusammengeführt per Reciprocal Rank Fusion. Embedding-Text: Titel, Beschreibung, Schlagworte, Variablen/Bänder, Plattform/Instrument, kuratierte Synonyme (z. B. "Waldverlust" ↔ "forest loss" ↔ "deforestation").
 - **Selbst auffindbar sein:** Jede Datensatzseite bettet schema.org/Dataset als JSON-LD ein und steht in einer Sitemap.
 
+**Nachtrag 2026-11-10 (`adr/0026` F3, M5-22):** In M5 gibt es kein pgvector. Die Vektorähnlichkeit der Hybrid-Suche rechnet der Prozess `api` exakt über eine gewöhnliche Spalte in Postgres; harte Filter laufen vorher in SQL. pgvector kommt erst, wenn die Menge einen Index verlangt (eigene Entscheidung). Die Volltext-Suche über Collections ist eine eigene Tabelle neben pgstac in drei Textsuche-Konfigurationen (`simple`, `german`, `english`), nicht die Freitext-Suche von pgstac (fest englisch, ohne Index). Entsprechend gilt Punkt 9 in Abschnitt 0 ohne pgvector.
+
 ---
 
 ## 6. Zugriffs-Ebene
@@ -702,6 +704,8 @@ verbundener Runner folgen später (7f).
 | Identität | `user`, `api_key`, `quota_ledger`, `audit_log` | getrenntes Schema, eigene DB-Rolle |
 
 Regeln: Migrationen versioniert (Alembic); jede Komponente hat eine eigene DB-Rolle mit minimalen Rechten; personenbezogene Daten (Konto, AOIs in Rezepten, Suchanfragen) sind markiert und haben Aufbewahrungsfristen; Logs enthalten keine exakten AOIs.
+
+**Nachtrag 2026-11-10 (`adr/0026` F3, M5-22):** `dataset_embedding` trägt das Embedding als gewöhnliche Spalte, nicht als `vector` (kein pgvector in M5); dieselbe Tabelle hält Suchtext, `tsvector` und Prüfwert je Datensatz für den Volltext. Name und Spalten legt der Plan von M5-22 fest (`plans/m5/m5-22-suche-lexikalisch.md` §3.4).
 
 ---
 

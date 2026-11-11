@@ -64,4 +64,5 @@ SELECT_BANDS = Operator(
     run=_run,
     lineage=lambda params: "",
     method=lambda params: "",
+    passes_values=lambda params: True,
 )

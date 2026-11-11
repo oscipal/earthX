@@ -162,6 +162,7 @@ from earthx.access.band_export import (
     band_meta,
     bands_text,
     file_profile,
+    kept_nodata,
     plan_files,
     resampling_for,
     write_blocks,
@@ -560,8 +561,7 @@ def _write_native_windowed_cog(
         dataset, crs=dst_crs, transform=crop_transform, width=width, height=height,
         resampling=Resampling.nearest,
     ) as vrt:
-        nodata = vrt.nodata
-        fill_value = nodata if nodata is not None else 0
+        nodata = kept_nodata(vrt.dtypes[0], vrt.nodata)
         profile: dict[str, Any] = {
             "driver": "GTiff",
             "dtype": vrt.dtypes[0],
@@ -598,7 +598,7 @@ def _write_native_windowed_cog(
                         any_band_valid = ~numpy.ma.getmaskarray(block).all(axis=0)
                         if (inside.astype(bool) & any_band_valid).any():
                             any_valid_in_aoi = True
-                        dst.write(numpy.ma.filled(block, fill_value), window=window)
+                        dst.write(numpy.ma.filled(block, nodata), window=window)
                         mask_dst.write(inside, 1, window=window)
             if not any_valid_in_aoi:
                 raise AoiOutsideItems("the AOI does not cover any valid pixel of this item")
@@ -743,7 +743,8 @@ def _masked_array_to_cog_bytes(
     touches this file at all any more (module docstring); its own mask has a
     separate file (:func:`_write_mask_tif_bytes`).
     """
-    filled = numpy.ma.filled(array, nodata if nodata is not None else 0)
+    nodata = kept_nodata(array.dtype.name, nodata)
+    filled = numpy.ma.filled(array, nodata)
 
     count, height, width = filled.shape
     profile: dict[str, Any] = {

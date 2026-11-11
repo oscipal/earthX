@@ -56,11 +56,13 @@ from earthx.access.band_export import (
     BandsFile,
     ExportPlanError,
     FilePlan,
+    NoFreeNodata,
     StackReader,
     aoi_on_grid,
     apply_band_tags,
     bands_text,
     file_profile,
+    kept_nodata,
     plan_files,
     resampling_for,
     write_blocks,
@@ -375,8 +377,10 @@ class _Export:
             ]
             if len({(len(item.indexes), item.dtype) for item in items}) != 1:
                 raise UnsupportedRecipe("the items of a group differ in their bands or data type; no mosaic")
-            nodata = items[0].nodata
-            fill_value = nodata if nodata is not None else 0
+            try:
+                nodata = kept_nodata(items[0].dtype, items[0].nodata)
+            except NoFreeNodata as error:
+                raise UnsupportedRecipe(str(error)) from None
             profile = {
                 "driver": "GTiff",
                 "dtype": items[0].dtype,
@@ -409,7 +413,7 @@ class _Export:
                     )
                     if not any_valid and (inside.astype(bool) & ~block.mask.all(axis=0)).any():
                         any_valid = True
-                    dst.write(numpy.ma.filled(block, fill_value), window=window)
+                    dst.write(numpy.ma.filled(block, nodata), window=window)
                     mask_dst.write(inside, 1, window=window)
                     self.tick()
         if not any_valid:
@@ -481,7 +485,10 @@ class _Export:
                 datasets = [[self.open_dataset(entry, stack) for entry in entries] for entries in output.entries]
             if form != "per_band" and any(dataset.count != 1 for group in datasets for dataset in group):
                 raise UnsupportedRecipe("a band of a stacked file has exactly one band in its source")
-            reader = StackReader(datasets, methods, output.crs, output.transform, output.width, output.height, stack)
+            try:
+                reader = StackReader(datasets, methods, output.crs, output.transform, output.width, output.height, stack)
+            except ExportPlanError as error:
+                raise UnsupportedRecipe(str(error)) from None
             profile = file_profile(reader, block_size=BLOCK_SIZE)
             masks = mask_profile(height=output.height, width=output.width, crs=output.crs, transform=output.transform)
             self.new_file(plain_name)

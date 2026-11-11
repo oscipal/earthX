@@ -264,12 +264,13 @@ class TestTheJobsNumbers:
 
     @pytest.mark.parametrize("dtype", ["uint16", "int16"])
     def test_the_output_type_of_the_order(self, client: TestClient, tmp_path: Path, dtype: str) -> None:
-        """Reflectance below 0.5 rounded to whole numbers: every value falls onto nodata 0, and the job counts none."""
+        """Reflectance below 0.5 rounded to whole numbers is 0. Before M5-28 that fell onto nodata 0 and the job counted
+        none; now the nodata is an edge of the type and 0 is counted as the value it is, by route and job alike."""
         steps = [{"op": "mask", "op_version": 1, "params": MASK}]
         document = _order(assets=("red", "scl"), steps=steps, dtype=dtype)
         measured = _statistics(_post(client, document))
         assert measured == _job_statistics(document, tmp_path / "work")
-        assert measured[0] == {"count": 0, "valid_percent": 0.0}
+        assert measured[0]["count"] > 0 and measured[0]["minimum"] == measured[0]["maximum"] == 0
 
     def test_the_mosaic_of_an_overpass(self, client: TestClient, tmp_path: Path) -> None:
         aoi = mapping(box(*_footprint(*mosaic.GEOMETRY["A"])).union(box(*_footprint(*mosaic.GEOMETRY["B"]))).envelope)
@@ -330,12 +331,13 @@ class TestTheHistogram:
         assert sum(counts) == pytest.approx(statistics["count"])
         assert edges[0] == statistics["minimum"] and edges[-1] == statistics["maximum"]
 
-    def test_a_band_without_a_valid_value_has_none(self, client: TestClient) -> None:
-        """Reflectance below 0.5 cast to whole numbers falls onto nodata: nothing is counted, so nothing is drawn."""
+    def test_a_band_whose_values_all_round_to_0_has_one_for_them(self, client: TestClient) -> None:
+        """Reflectance below 0.5 cast to whole numbers is 0, a value since M5-28: the histogram counts every pixel."""
         steps = [{"op": "mask", "op_version": 1, "params": MASK}]
         response = _post(client, _order(assets=("red", "scl"), steps=steps, dtype="uint16"))
         assert response.status_code == 200, response.text
-        assert response.json()["bands"][0]["statistics"] == {"count": 0, "valid_percent": 0.0}
+        statistics = response.json()["bands"][0]["statistics"]
+        assert sum(statistics["histogram"][0]) == statistics["count"] > 0
 
     def test_it_counts_what_the_job_counts(self, client: TestClient, tmp_path: Path) -> None:
         counts = _post(client, _order()).json()["bands"][0]["statistics"]["histogram"][0]

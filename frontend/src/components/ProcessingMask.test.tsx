@@ -444,7 +444,7 @@ describe('the preview of a mask', () => {
 });
 
 describe('the data type after normalize (Otto, 22.10.2026)', () => {
-  it('is float32 on integer bands with a stated nodata, and no integer type is offered', async () => {
+  it('is float32 on integer bands with a stated nodata; integer types stay offered (M5-28)', async () => {
     select([scene('S2B_A')]);
     await openPanel();
     click(chip('red'));
@@ -456,9 +456,8 @@ describe('the data type after normalize (Otto, 22.10.2026)', () => {
     click([...bands.querySelectorAll<HTMLButtonElement>('.pp-chips .seg')].find((c) => c.textContent === 'red')!);
     expect(container.querySelector('[aria-label="Data type"]')!.textContent).toContain('float32');
     const options = [...container.querySelectorAll('select option')].map((o) => o.textContent);
-    expect(options).toContain('uint16 (not after normalize)');
-    expect(container.textContent).toContain('Normalize ends in float32 with NaN as nodata');
-    expect(container.textContent).not.toContain('Band math ends in float32');
+    expect(options).toContain('uint16');
+    expect(container.textContent).not.toContain('nodata does not fit');
   });
 });
 
