@@ -22,7 +22,8 @@ policy, M1-03, NM4-26), and :meth:`MosaicTileReader.tile` enters it again around
 from __future__ import annotations
 
 import threading
-from collections.abc import Mapping
+import time
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -47,9 +48,11 @@ __all__ = [
     "MOSAIC_THREADS",
     "EarthxMosaicTilerFactory",
     "MosaicBandsDiffer",
+    "MosaicOutOfTime",
     "MosaicReaderParams",
     "MosaicScenes",
     "MosaicTileReader",
+    "ReadBudget",
     "open_mosaic",
 ]
 
@@ -65,17 +68,55 @@ class MosaicBandsDiffer(RioTilerError):
     status_code = 422
 
 
+class MosaicOutOfTime(RioTilerError):
+    """The time of a tile ran out before any scene was read: a ``503`` the client may ask again (adr/0032 §6.2)."""
+
+    status_code = 503
+
+
+class ReadBudget:
+    """The time one mosaic tile may read for (adr/0032 §6.2, F6), and whether it ran out.
+
+    The clock starts with the read of the tile. A scene that has not begun when the time is up is not read: the tile
+    keeps what the scenes before it gave, in the order of the mosaic. Such a tile depends on how fast the source
+    answered, so the route sends it with ``no-store`` (``timed_out``); a scene already being read finishes.
+    """
+
+    def __init__(self, seconds: float, *, clock: Callable[[], float] = time.monotonic) -> None:
+        if not seconds > 0:
+            raise ValueError("a read budget is a positive number of seconds")
+        self.seconds = seconds
+        self._clock = clock
+        self._deadline: float | None = None
+        self.timed_out = False
+
+    def start(self) -> None:
+        self._deadline = self._clock() + self.seconds
+
+    def spent(self) -> bool:
+        """``True`` once the time is up; from then on the budget says it timed out."""
+        if self._deadline is not None and self._clock() >= self._deadline:
+            self.timed_out = True
+        return self.timed_out
+
+
+class _NotRead(Exception):
+    """A scene the budget left out; skipped like a scene outside the tile."""
+
+
 @dataclass(frozen=True, slots=True)
 class MosaicScenes:
     """The scenes of one mosaic tile in the order they are read, and where the whole mosaic lies.
 
     ``bounds`` is west, south, east, north in EPSG:4326 over every scene of the URL, not only
-    those of the tile: a TileJSON names the extent of the layer.
+    those of the tile: a TileJSON names the extent of the layer. ``budget`` is the time the tile may read
+    for; ``None`` for a TileJSON, which reads no tile.
     """
 
     dataset_id: str
     scenes: tuple[AssetPath | ZarrAsset, ...]
     bounds: tuple[float, float, float, float]
+    budget: ReadBudget | None = field(default=None, compare=False)
 
     def __post_init__(self) -> None:
         if not self.scenes:
@@ -153,14 +194,20 @@ class MosaicTileReader:
     def tile(self, tile_x: int, tile_y: int, tile_z: int, **kwargs: Any) -> ImageData:
         """The tile, scene by scene in the order of the list, the first valid pixel winning.
 
-        Only ``TileOutsideBounds`` skips a scene. Any other failure fails the tile: a scene left
-        out silently would let another one win where they overlap.
+        Only ``TileOutsideBounds`` skips a scene, and the end of the read budget: a scene that has not begun when
+        the time is up is left out, so the tile keeps what the scenes before it gave. Any other failure fails the
+        tile: a scene left out silently would let another one win where they overlap.
         """
 
         band_counts: set[int] = set()
         lock = threading.Lock()
+        budget = self.source.budget
+        if budget is not None:
+            budget.start()
 
         def read(scene: AssetPath | ZarrAsset, x: int, y: int, z: int, **options: Any) -> ImageData:
+            if budget is not None and budget.spent():
+                raise _NotRead
             with rasterio.Env(**self.gdal_config), open_asset(scene, tms=self.tms, **self.options) as reader:
                 image = reader.tile(x, y, z, **options)
             with lock:
@@ -179,10 +226,12 @@ class MosaicTileReader:
                 pixel_selection=FirstMethod(),
                 threads=self.threads,
                 chunk_size=self.threads,
-                allowed_exceptions=(TileOutsideBounds,),
+                allowed_exceptions=(TileOutsideBounds, _NotRead),
                 **kwargs,
             )
         except EmptyMosaicError:
+            if budget is not None and budget.timed_out:
+                raise MosaicOutOfTime("the tile ran out of time before a scene was read; ask again") from None
             raise TileOutsideBounds("the tile does not touch these scenes") from None
         return image
 

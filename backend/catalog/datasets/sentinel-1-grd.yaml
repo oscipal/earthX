@@ -142,12 +142,13 @@ default_render:
 # DS-04 plan F3 (Otto 07.11.2026): one step of the time line per pass, the slices of one datatake making one mosaic,
 # and the results grouped the same way. `datetime` enters as its UTC date (registry.ViewerInfo).
 #
-# The thumbnail lies in radar geometry (adr/0018 §4.2), so the browse view shows tiles. A z7 tile (about 313 km at
-# the equator) holds about one scene; below it the coverage map shows where scenes are. z19 as at Sentinel-2: the
-# pixel spacing of IW is 10 m too. A TPS tile from z7 to z13 costs 0.1 to 0.3 s (DS-04 plan §11).
+# The thumbnail lies in radar geometry (adr/0018 §4.2), so the browse view shows tiles. From z0 (M5-30b, adr/0032
+# §6.4): a scene reads one block of its coarsest overview at every level, and a mosaic tile reads the scenes of a
+# pass up to its budget. z19 as at Sentinel-2: the pixel spacing of IW is 10 m too. A TPS tile from z7 to z13 costs
+# 0.1 to 0.3 s (DS-04 plan §11).
 viewer:
   group_by: [datetime, 's1:datatake_id']
-  min_zoom: 7
+  min_zoom: 0
   max_zoom: 19
   browse: preview_tiles
   quicklook_nodata_max: null

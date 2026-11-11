@@ -262,7 +262,7 @@ describe('the note under the settings', () => {
   it('asks to zoom in where the map is too far out, and says why in its tooltip', () => {
     mount(SENTINEL_2_PRESETS, { mapZoom: 5, appliedRender: { index: 'NDVI', colormapName: 'rdylgn', rescale: '-1,1' } });
     expect(note()!.textContent).toBe('Zoom in to compute NDVI');
-    expect(tipOf(note()!)).toBe('The quick calculation works from zoom 8. For whole scenes start a job in Processing.');
+    expect(tipOf(note()!)).toBe('The quick calculation starts at the zoom where the image does. For whole scenes start a job in Processing.');
     expect(select().value).toBe('index:NDVI'); // the choice stays
   });
 

@@ -78,8 +78,9 @@ describe('what is a mosaic', () => {
     expect(isMosaicPass([entry('A'), entry('B', { asset: 'thumbnail' })])).toBe(false);
   });
 
-  it('needs a dataset that is released from z8 on somewhere (the tiler answers 400 below)', () => {
-    expect(isMosaicPass([entry('A', { maxZoom: 7 }), entry('B', { maxZoom: 7 })])).toBe(false);
+  it('is one whatever the zoom levels its dataset is released for, as the tiler has every level (adr/0032 §6.2)', () => {
+    expect(isMosaicPass([entry('A', { maxZoom: 7 }), entry('B', { maxZoom: 7 })])).toBe(true);
+    expect(isMosaicPass([entry('A', { minZoom: 0, maxZoom: 3 }), entry('B', { minZoom: 0, maxZoom: 3 })])).toBe(true);
     expect(isMosaicPass([entry('A', { minZoom: 8, maxZoom: 14 }), entry('B', { minZoom: 8, maxZoom: 14 })])).toBe(true);
   });
 
@@ -227,11 +228,11 @@ describe('the order of the scenes of a pass drawn scene by scene (NM4-24)', () =
     expect(orderKeyOf(DATASET, many)).toMatch(/^order\|/);
   });
 
-  // A dataset released below z8 only: no mosaic for it, its passes are drawn scene by scene.
-  const coarse = (...ids: string[]) => ids.map((id) => entry(id, { maxZoom: 6 }));
+  // Scenes of different assets: no mosaic for them, the pass is drawn scene by scene.
+  const mixed = (...ids: string[]) => ids.map((id, i) => entry(id, i === 0 ? {} : { asset: 'thumbnail' }));
 
   it('is the order of the scenes in a view drawn scene by scene, as the tiler gave it', () => {
-    const entries = coarse('B', 'A', 'C');
+    const entries = mixed('B', 'A', 'C');
     const key = orderKeyOf(DATASET, entries) as string;
     const view = viewOfPass(DATASET, entries, { [key]: { order: ['A', 'B', 'C'] } });
     expect(view).toEqual({ kind: 'scenes', order: ['A', 'B', 'C'] });
@@ -239,7 +240,7 @@ describe('the order of the scenes of a pass drawn scene by scene (NM4-24)', () =
   });
 
   it('is the order of the selection where the tiler has not given one, and where it could not', () => {
-    const entries = coarse('B', 'A');
+    const entries = mixed('B', 'A');
     const key = orderKeyOf(DATASET, entries) as string;
     expect(viewOfPass(DATASET, entries, {})).toEqual({ kind: 'scenes' });
     expect(viewOfPass(DATASET, entries, { [key]: null })).toEqual({ kind: 'scenes' });
