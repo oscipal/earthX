@@ -796,7 +796,7 @@ describe('resampling and data type (Otto, 12.10.2026)', () => {
     expect(dtypeLine()).toBe('Data type: float64 (chosen automatically)');
   });
 
-  it('band math: float32, integer types not offered, a type chosen before is given up', async () => {
+  it('band math: float32 recommended, integer types still offered and a type chosen before kept (M5-28)', async () => {
     select([scene('S2B_A')]);
     await openPanel();
     click(dataChip('red'));
@@ -805,11 +805,11 @@ describe('resampling and data type (Otto, 12.10.2026)', () => {
     choose(dtypeSelect(), 'uint16');
     expect(dtypeLine()).toBe('Data type: uint16 (your choice)');
     click(button('Band math'));
+    expect(dtypeLine()).toBe('Data type: uint16 (your choice)');
+    expect([...dtypeSelect().options].filter((o) => o.disabled)).toEqual([]);
+    expect(container.textContent).toContain('uint16 marks missing pixels with 65535');
+    choose(dtypeSelect(), '');
     expect(dtypeLine()).toBe('Data type: float32 (chosen automatically)');
-    const disabled = [...dtypeSelect().options].filter((o) => o.disabled).map((o) => o.value);
-    expect(disabled).toEqual(['uint8', 'uint16', 'int16', 'uint32', 'int32']);
-    expect(container.textContent).toContain('Band math ends in float32 with NaN as nodata');
-    expect(container.textContent).toContain('These types are not offered.');
   });
 
   it('the user can change the type and go back to the automatic one', async () => {
@@ -824,12 +824,12 @@ describe('resampling and data type (Otto, 12.10.2026)', () => {
     expect([...dtypeSelect().options][0].textContent).toBe('Automatic: float32');
   });
 
-  it('warns for an integer type on a source that states no nodata (the DEM with uint16)', async () => {
+  it('names the nodata an integer type takes on a source that states none (the DEM with uint16)', async () => {
     await reprojectDem();
     choose(dtypeSelect(), 'uint16');
-    expect(container.textContent).toContain('uint16 needs a nodata value that the source file states for every band');
+    expect(container.textContent).toContain('uint16 marks missing pixels with 65535');
     choose(dtypeSelect(), 'float32');
-    expect(container.textContent).not.toContain('needs a nodata value');
+    expect(container.textContent).not.toContain('marks missing pixels');
   });
 });
 

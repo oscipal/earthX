@@ -1,4 +1,5 @@
-"""``core._cast``: a float written to an integer type is rounded half away from zero and clamped (M4-26).
+"""``core._cast``: a float written to an integer type is rounded half away from zero and clamped (M4-26); an integer
+written to a narrower one is clamped too (M5-28).
 
 The rule is the one of GDAL's ``GDALCopyWords`` (``gcore/gdal_priv_templates.hpp``, read 13.10.2026): add 0.5 to
 the magnitude, drop the fraction, clamp to the type. NaN differs on purpose: GDAL writes 0, the core keeps it masked.
@@ -83,6 +84,29 @@ def test_a_float_target_is_not_rounded(dtype: str) -> None:
     assert _cast_values([1234.4, -0.5], dtype, source="float64").tolist() == [[pytest.approx(1234.4), -0.5]]
 
 
-def test_an_integer_source_is_cast_as_before() -> None:
-    data = numpy.ma.MaskedArray(numpy.array([[1, 70000]], dtype="int32"))
-    assert _cast(data, "uint16").tolist() == [[1, 70000 - 65536]]
+class TestIntegerToNarrowerInteger:
+    """An integer written to a narrower integer type is clamped to its range, never wrapped (M5-28, F3)."""
+
+    def test_values_over_the_range_clamp_to_its_maximum(self) -> None:
+        data = numpy.ma.MaskedArray(numpy.array([[1, 255, 256, 300, 65535]], dtype="uint16"))
+        assert _cast(data, "uint8").tolist() == [[1, 255, 255, 255, 255]]
+
+    def test_values_under_the_range_clamp_to_its_minimum(self) -> None:
+        data = numpy.ma.MaskedArray(numpy.array([[-70000, -1, 0, 70000]], dtype="int32"))
+        assert _cast(data, "uint16").tolist() == [[0, 0, 0, 65535]]
+        assert _cast(data, "int16").tolist() == [[-32768, -1, 0, 32767]]
+
+    def test_an_unsigned_source_into_a_signed_type_and_back(self) -> None:
+        unsigned = numpy.ma.MaskedArray(numpy.array([[0, 40000]], dtype="uint16"))
+        signed = numpy.ma.MaskedArray(numpy.array([[-5, 7]], dtype="int16"))
+        assert _cast(unsigned, "int16").tolist() == [[0, 32767]]
+        assert _cast(signed, "uint8").tolist() == [[0, 7]]
+
+    def test_the_type_and_the_mask_are_kept(self) -> None:
+        data = numpy.ma.MaskedArray(numpy.array([[300, 2]], dtype="uint16"), mask=[[True, False]])
+        result = _cast(data, "uint8")
+        assert result.dtype == numpy.dtype("uint8") and result.mask.tolist() == [[True, False]]
+
+    def test_a_wider_type_changes_nothing(self) -> None:
+        data = numpy.ma.MaskedArray(numpy.array([[0, 65535]], dtype="uint16"))
+        assert _cast(data, "int32").tolist() == [[0, 65535]]

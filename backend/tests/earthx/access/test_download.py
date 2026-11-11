@@ -23,6 +23,7 @@ from rio_tiler.models import ImageData
 
 from earthx.access import crop_rules
 from earthx.access import download as dl
+from earthx.access.band_export import NoFreeNodata
 from earthx.catalog.registry import AcquisitionYears, LicenseInfo, LicenseTier
 from earthx.readers.cog import AssetPath
 from tests.catalog.entries import SENTINEL_2_L2A
@@ -59,7 +60,8 @@ class FakeReader:
     ) -> ImageData:
         FakeReader.calls.append(self.src_path)
         data = (np.random.default_rng(0).random((3, 16, 16)) * 255).astype("uint8")
-        return ImageData(data, crs="EPSG:4326", bounds=(0, 0, 1, 1))
+        # As rio-tiler's own reader, which hands on the file's nodata (M5-28: a uint8 crop without one is refused).
+        return ImageData(data, crs="EPSG:4326", bounds=(0, 0, 1, 1), nodata=0)
 
 
 class OutsideReader(FakeReader):
@@ -781,18 +783,26 @@ class TestPerBandNodataNeverCombinedAcrossBands:
             assert out[0, 1, 0] == 7
             assert out[2, 1, 0] == 0
 
-    def test_no_nodata_means_no_tag_and_nothing_is_blanked(self) -> None:
-        """A source that declares no nodata at all is never treated as if it did."""
-        data = np.zeros((2, 2, 2), dtype="uint8")
-        data[:] = [[[1, 2], [3, 4]], [[5, 6], [7, 8]]]
-        array = np.ma.MaskedArray(data, mask=False)
+    def test_a_float_source_without_nodata_marks_gaps_with_nan_and_keeps_0_m(self) -> None:
+        """M5-28 R1: a gap of the Copernicus DEM was 0 without a tag, which reads as sea level."""
+        data = np.array([[[0.0, 12.5], [-3.0, 7.0]]], dtype="float32")
+        array = np.ma.MaskedArray(data, mask=[[[False, False], [False, True]]])
         transform = rasterio.transform.from_bounds(0, 0, 1, 1, 2, 2)
 
         cog_bytes = dl._masked_array_to_cog_bytes(array, transform, "EPSG:4326", None)
 
         with rasterio.io.MemoryFile(cog_bytes) as mf, mf.open() as ds:
-            assert ds.nodata is None
-            assert (ds.read() == data).all()
+            assert ds.nodata is not None and np.isnan(ds.nodata)
+            out = ds.read(masked=True)
+            assert out[0, 0, 0] == 0.0 and not out.mask[0, 0, 0]
+            assert out.mask[0, 1, 1]
+
+    def test_an_integer_source_without_nodata_is_refused(self) -> None:
+        """M5-28 F2: every value may be real, so none may mark a gap; the route answers 422."""
+        array = np.ma.MaskedArray(np.ones((1, 2, 2), dtype="uint8"), mask=False)
+        transform = rasterio.transform.from_bounds(0, 0, 1, 1, 2, 2)
+        with pytest.raises(NoFreeNodata, match="no nodata for its uint8 values"):
+            dl._masked_array_to_cog_bytes(array, transform, "EPSG:4326", None)
 
 
 class TestWindowedPerBandNodata:

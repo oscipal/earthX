@@ -93,6 +93,29 @@ class ExportPlanError(ValueError):
     """The bands and the form asked for do not make a plan; the text names no address and no area."""
 
 
+class NoFreeNodata(ExportPlanError):
+    """An integer source without nodata: every value may be real, so none may mark a pixel without data (M5-28, F2)."""
+
+
+def kept_nodata(dtype: str, nodata: float | None) -> float:
+    """The nodata of a file that keeps the source's values: crop, export and band download (M5-28 R1, R6).
+
+    The source's own where it states one; NaN for a float type without one, so that a gap is never 0 m or 0 °C;
+    :class:`NoFreeNodata` for an integer type without one, until the registry names a value that is never real.
+    """
+    if nodata is not None:
+        return float(nodata)
+    if numpy.issubdtype(numpy.dtype(dtype), numpy.floating):
+        return math.nan
+    raise NoFreeNodata(
+        f"the source states no nodata for its {dtype} values, so no value is free to mark a pixel without data"
+    )
+
+
+def _nodata_key(value: float) -> float | str:
+    return "nan" if math.isnan(value) else value
+
+
 @dataclass(frozen=True, slots=True)
 class BandMeta:
     """One asset as a band of the data: what the item says about it, and what the registry says of its kind."""
@@ -273,6 +296,20 @@ def _same(a: float | None, b: float | None) -> bool:
     return a is not None and b is not None and math.isclose(a, b, rel_tol=_SAME)
 
 
+_DIFFERENT_NODATA = (
+    "the bands of one file differ in their nodata, and a GeoTIFF has one for all its bands; choose one file per band"
+)
+
+
+def _same_nodata(plans: list[FilePlan], metas: Sequence[BandMeta]) -> list[FilePlan]:
+    """``plans``, or :class:`ExportPlanError` where the bands of one stacked file differ in the nodata the items state."""
+    nodata = {meta.asset: meta.nodata for meta in metas}
+    for plan in plans:
+        if len({"nan" if v is not None and math.isnan(v) else v for v in (nodata[a] for a in plan.assets)}) > 1:
+            raise ExportPlanError(_DIFFERENT_NODATA)
+    return plans
+
+
 def plan_files(form: str, metas: Sequence[BandMeta], common_resolution: float | None = None) -> list[FilePlan]:
     """The files of ``form`` for ``metas`` (in the order of the bands asked for), or :class:`ExportPlanError`."""
     if form not in FORMS:
@@ -302,7 +339,8 @@ def plan_files(form: str, metas: Sequence[BandMeta], common_resolution: float | 
             raise ExportPlanError("the common resolution is a positive number of metres")
         if any(meta.resolution_m is None for meta in metas):
             raise ExportPlanError("a band without a known pixel size cannot be brought to a common resolution")
-        return [FilePlan(f"bands_{format_resolution(common_resolution)}m.tif", tuple(m.asset for m in metas), common_resolution)]
+        plan = FilePlan(f"bands_{format_resolution(common_resolution)}m.tif", tuple(m.asset for m in metas), common_resolution)
+        return _same_nodata([plan], metas)
     groups: list[tuple[float | None, list[str]]] = []
     for meta in metas:
         for resolution, assets in groups:
@@ -311,7 +349,7 @@ def plan_files(form: str, metas: Sequence[BandMeta], common_resolution: float | 
                 break
         else:
             groups.append((meta.resolution_m, [meta.asset]))
-    return [
+    plans = [
         FilePlan(
             f"bands_{format_resolution(resolution)}m.tif" if resolution is not None else "bands.tif",
             tuple(assets),
@@ -319,6 +357,7 @@ def plan_files(form: str, metas: Sequence[BandMeta], common_resolution: float | 
         )
         for resolution, assets in sorted(groups, key=lambda group: (group[0] is None, group[0] or 0.0))
     ]
+    return _same_nodata(plans, metas)
 
 
 def resampling_for(meta: BandMeta, target_m: float | None) -> str:
@@ -375,11 +414,12 @@ class StackReader:
             )
         first = [vrts[0] for vrts in self._vrts]
         self.dtype = numpy.result_type(*[numpy.dtype(vrt.dtypes[0]) for vrt in first]).name
-        self.band_nodata = [vrt.nodata for vrt in first for _ in range(vrt.count)]
+        self.band_nodata = [kept_nodata(self.dtype, vrt.nodata) for vrt in first for _ in range(vrt.count)]
         self.count = len(self.band_nodata)
-        nodata = set(self.band_nodata)
-        #: One value for the file where the bands agree on it; a GeoTIFF has no nodata per band.
-        self.nodata: float | None = nodata.pop() if len(nodata) == 1 else None
+        if len({_nodata_key(value) for value in self.band_nodata}) > 1:
+            # A GeoTIFF has one nodata for all its bands (M5-28, F2).
+            raise ExportPlanError(_DIFFERENT_NODATA)
+        self.nodata = self.band_nodata[0]
 
     def read(self, window: Window) -> numpy.ma.MaskedArray:
         """The block of every band, masked where no item has a value."""
@@ -426,9 +466,9 @@ def write_blocks(
 
     ``aoi`` is in the CRS of the grid (:func:`aoi_on_grid`).
 
-    A pixel no item has a value for gets its band's own nodata, else 0. The mask never changes the data (M3-18 §3).
+    A pixel no item has a value for gets the file's nodata (:func:`kept_nodata`). The mask never changes the data (M3-18 §3).
     """
-    fills = [0 if nodata is None else nodata for nodata in reader.band_nodata]
+    fills = reader.band_nodata
     any_valid = False
     for window in _blocks(reader.width, reader.height, block_size):
         block = reader.read(window)
