@@ -306,6 +306,22 @@ def record_materialize_run(conn: psycopg.Connection, record: MaterializeRunRecor
         )
 
 
+def request_overview(conn: psycopg.Connection, dataset_id: str, source_version: str) -> None:
+    """Ask for the overview pyramid of ``source_version`` of a dataset (M5-30b part 8b, adr/0032 §5.2, F1).
+
+    The worker builds it (`jobs`, which reads this table with SQL; `discovery` writes through here and may not import
+    `jobs`). Idempotent per dataset and version: asking again only moves ``requested_at``, so a version that came back
+    is the latest again. The transaction is the caller's, like :func:`record_materialize_run`.
+    """
+    conn.execute(
+        """
+        INSERT INTO public.earthx_overview_request (dataset_id, source_version) VALUES (%s, %s)
+        ON CONFLICT (dataset_id, source_version) DO UPDATE SET requested_at = now()
+        """,
+        (dataset_id, source_version),
+    )
+
+
 async def fetch_item(conn: psycopg.AsyncConnection, dataset_id: str, item_id: str) -> dict[str, object] | None:
     """One item of a materialized dataset's own pgstac collection, or ``None``.
 

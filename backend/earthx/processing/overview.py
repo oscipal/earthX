@@ -250,18 +250,24 @@ def encode_tile(image: ImageData) -> bytes:
         return memory.read()
 
 
-def base_hash(items: Iterable[Mapping[str, object]]) -> str:
+def base_hash(items: Iterable[Mapping[str, object]]) -> str | None:
     """The hash of the items a base tile read: over each ``id`` and ``properties.updated``, whatever their order.
 
     The same hash for a new version means the tile need not be read again and may be copied (adr/0032 §5.2, F3). An
-    item without ``id`` or ``updated`` has no stable version, so that is a ``ValueError`` rather than a hash that
-    would match a changed item.
+    item without ``updated`` has no stable version (GLO-30 and WorldCover carry none), so the tile has no hash
+    (``None``) and is read again: a changed item must never match. An item without ``id`` is malformed and a
+    ``ValueError``.
     """
     pairs = []
+    versioned = True
     for item in items:
+        if not isinstance(item.get("id"), str) or not item["id"]:
+            raise ValueError("an item needs an id to be part of a tile's hash")
         properties = item.get("properties")
         updated = properties.get("updated") if isinstance(properties, Mapping) else None
-        if not isinstance(item.get("id"), str) or not item["id"] or not isinstance(updated, str) or not updated:
-            raise ValueError("an item needs an id and properties.updated to be part of a tile's hash")
+        if not isinstance(updated, str) or not updated:
+            versioned = False
         pairs.append([item["id"], updated])
+    if not versioned:
+        return None
     return hashlib.sha256(json.dumps(sorted(pairs), separators=(",", ":")).encode()).hexdigest()

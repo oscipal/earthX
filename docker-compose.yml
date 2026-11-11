@@ -190,9 +190,9 @@ services:
   # One-shot: imports the S3 key and creates the bucket over Garage's admin
   # API (port 3903, not published — compose-internal only), then grants the
   # key access. Since M4-06 also imports the service keys with their own
-  # rights and sets the lifecycle rule for `results/` (7 days, open multipart
-  # uploads after 1 day; adr/0015 §7.3), which `worker` checks before it
-  # starts. Idempotent.
+  # rights and sets the lifecycle rules for `results/` (7 days, open multipart
+  # uploads after 1 day; adr/0015 §7.3) and `overviews/` (31 days; adr/0032
+  # §5.2), which `worker` checks before it starts. Idempotent.
   objectstore-init:
     build:
       context: ./backend
@@ -349,8 +349,8 @@ services:
     # too tight for several slots.
     stop_grace_period: 30s
     # M4-06 (adr/0015 §9.1): the object store, read-write key. The worker does
-    # not start unless the bucket carries the `results/` lifecycle rule that
-    # objectstore-init sets (adr/0015 §7.3, F8).
+    # not start unless the bucket carries the `results/` and `overviews/` lifecycle
+    # rules that objectstore-init sets (adr/0015 §7.3, F8; adr/0032 §5.2).
     environment:
       # M5-18: the one User-Agent of this instance, on every outgoing request; empty = the built-in one.
       EARTHX_USER_AGENT: ${EARTHX_USER_AGENT:-}

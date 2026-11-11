@@ -18,7 +18,16 @@ from earthx.jobs.worker import Supervisor
 from earthx.objectstore.errors import LifecycleMissing, StoreConfigError
 from earthx.objectstore.results import Store
 
-from ..objectstore.conftest import ACCESS_KEY, BUCKET, ENDPOINT, REGION, RESULTS_RULE, SECRET_KEY, put_rules
+from ..objectstore.conftest import (
+    ACCESS_KEY,
+    BUCKET,
+    ENDPOINT,
+    OVERVIEWS_RULE,
+    REGION,
+    RESULTS_RULE,
+    SECRET_KEY,
+    put_rules,
+)
 
 REPO = Path(__file__).resolve().parents[4]
 CONFIG_VALUES = (ACCESS_KEY, SECRET_KEY, "objectstore", "localhost", BUCKET, REGION)
@@ -50,7 +59,7 @@ def _no_config_values(text: str) -> None:
 
 
 def test_the_worker_starts_with_the_rule(environment: Store) -> None:
-    put_rules(environment, [RESULTS_RULE])
+    put_rules(environment, [RESULTS_RULE, OVERVIEWS_RULE])
     with TestClient(main.app) as client:
         assert client.get("/health").json() == {"status": "ok", "service": "worker"}
         assert isinstance(main.app.state.store, Store)
@@ -64,7 +73,7 @@ def test_the_worker_starts_with_the_rule(environment: Store) -> None:
 def test_the_health_answer_is_503_while_the_supervisor_is_not_healthy(
     environment: Store, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    put_rules(environment, [RESULTS_RULE])
+    put_rules(environment, [RESULTS_RULE, OVERVIEWS_RULE])
     with TestClient(main.app) as client:
         monkeypatch.setattr(main.app.state.supervisor, "healthy", lambda: False)
         response = client.get("/health")
@@ -81,7 +90,7 @@ def test_without_a_supervisor_the_health_answer_is_what_it_always_was() -> None:
 def test_the_worker_does_not_start_without_the_queue_tables(
     environment: Store, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    put_rules(environment, [RESULTS_RULE])
+    put_rules(environment, [RESULTS_RULE, OVERVIEWS_RULE])
     monkeypatch.setenv("PGDATABASE", "template1")
     with pytest.raises(RuntimeError, match="migration 006"), TestClient(main.app):
         pass
@@ -91,7 +100,7 @@ def test_the_worker_does_not_start_without_the_queue_tables(
 def test_the_worker_does_not_start_when_the_database_is_unreachable_and_logs_only_the_class(
     environment: Store, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    put_rules(environment, [RESULTS_RULE])
+    put_rules(environment, [RESULTS_RULE, OVERVIEWS_RULE])
     monkeypatch.setenv("PGHOST", "127.0.0.1")
     monkeypatch.setenv("PGPORT", "1")
     with pytest.raises(psycopg.OperationalError), TestClient(main.app):
@@ -118,7 +127,7 @@ def test_the_worker_does_not_start_with_a_bad_setting_and_names_the_variable_not
     value: str,
     message: str,
 ) -> None:
-    put_rules(environment, [RESULTS_RULE])
+    put_rules(environment, [RESULTS_RULE, OVERVIEWS_RULE])
     monkeypatch.setenv(variable, value)
     with pytest.raises(WorkerConfigError, match=message), TestClient(main.app):
         pass
@@ -127,7 +136,11 @@ def test_the_worker_does_not_start_with_a_bad_setting_and_names_the_variable_not
 
 @pytest.mark.parametrize(
     "rules",
-    [[], [{**RESULTS_RULE, "Status": "Disabled"}], [{**RESULTS_RULE, "Expiration": {"Days": 30}}]],
+    [
+        [],
+        [{**RESULTS_RULE, "Status": "Disabled"}, OVERVIEWS_RULE],
+        [{**RESULTS_RULE, "Expiration": {"Days": 30}}, OVERVIEWS_RULE],
+    ],
     ids=["no-rule", "disabled", "30-days"],
 )
 def test_the_worker_does_not_start_without_the_rule(
@@ -139,6 +152,28 @@ def test_the_worker_does_not_start_without_the_rule(
         pass
     logged = _messages(caplog)
     assert "worker not started" in logged and "results/" in logged
+    _no_config_values(logged)
+
+
+@pytest.mark.parametrize(
+    "rules",
+    [
+        [RESULTS_RULE],
+        [RESULTS_RULE, {**OVERVIEWS_RULE, "Status": "Disabled"}],
+        [RESULTS_RULE, {**OVERVIEWS_RULE, "Expiration": {"Days": 30}}],
+        [RESULTS_RULE, {**OVERVIEWS_RULE, "Expiration": {"Days": 7}}],
+        [RESULTS_RULE, {**OVERVIEWS_RULE, "Filter": {"Prefix": "overview/"}}],
+    ],
+    ids=["only-results", "disabled", "30-days", "7-days", "other-prefix"],
+)
+def test_the_worker_does_not_start_without_the_rule_for_overviews(
+    environment: Store, rules: list[dict], caplog: pytest.LogCaptureFixture
+) -> None:
+    put_rules(environment, rules)
+    with pytest.raises(LifecycleMissing), TestClient(main.app):
+        pass
+    logged = _messages(caplog)
+    assert "worker not started" in logged and "overviews/" in logged
     _no_config_values(logged)
 
 
