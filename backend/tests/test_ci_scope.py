@@ -123,7 +123,7 @@ def jobs() -> dict[str, dict]:
     return yaml.safe_load(CI.read_text())["jobs"]
 
 
-@pytest.mark.parametrize("job", ["backend", "frontend", "import-boundaries", "compose-topology"])
+@pytest.mark.parametrize("job", ["frontend", "import-boundaries", "compose-topology"])
 def test_every_required_job_decides_first_and_skips_the_rest(job: str) -> None:
     steps = jobs()[job]["steps"]
     assert "if" not in jobs()[job], "the job itself must always run"
@@ -133,12 +133,7 @@ def test_every_required_job_decides_first_and_skips_the_rest(job: str) -> None:
     for step in steps[2:]:
         condition = str(step.get("if", ""))
         name = step.get("name") or step.get("uses") or step.get("run")
-        if step.get("name") == "Docs checks (docs-only pull request)":
-            assert job == "backend" and condition == "steps.scope.outputs.docs_only == 'true'"
-        elif step.get("uses", "").startswith("actions/setup-python@") and job == "backend":
-            assert "if" not in step, "the docs checks of the backend job need Python"
-        else:
-            assert GUARD in condition, f"{job}: step '{name}' runs on docs-only PRs"
+        assert GUARD in condition, f"{job}: step '{name}' runs on docs-only PRs"
 
 
 def test_docs_only_backend_job_runs_the_two_docs_checks() -> None:
@@ -146,3 +141,84 @@ def test_docs_only_backend_job_runs_the_two_docs_checks() -> None:
     for test in ("test_plans_layout.py", "test_decision_log_format.py"):
         assert (REPO / "backend" / "tests" / test).is_file()
         assert test in step["run"]
+
+
+# --- the backend check: scope job, four test parts, one collecting job -----------------
+
+REQUIRED_NAME = "Backend — lint and tests"  # what branch protection asks for
+
+
+def test_the_required_check_keeps_its_name_and_no_other_job_takes_it() -> None:
+    names = [job.get("name") for job in jobs().values()]
+    assert jobs()["backend"]["name"] == REQUIRED_NAME
+    assert names.count(REQUIRED_NAME) == 1
+
+
+def test_the_scope_job_always_runs_and_hands_its_answer_on() -> None:
+    job = jobs()["backend-scope"]
+    steps = job["steps"]
+    assert "if" not in job, "the scope must always be decided"
+    assert steps[0]["uses"].startswith("actions/checkout@") and steps[0]["with"]["fetch-depth"] == 0
+    assert steps[1]["id"] == "scope" and steps[1]["run"] == "scripts/ci-scope.sh"
+    assert job["outputs"] == {"docs_only": "${{ steps.scope.outputs.docs_only }}"}
+
+
+def test_the_test_parts_wait_for_the_scope_and_skip_on_docs_only() -> None:
+    job = jobs()["backend-tests"]
+    assert job["needs"] == "backend-scope"
+    assert job["if"] == "needs.backend-scope.outputs.docs_only != 'true'"
+    assert job["runs-on"] == "ubuntu-24.04", "the pin of #322"
+    assert not [s for s in job["steps"] if "docs_only" in str(s.get("if", ""))], "the job's own skip covers it"
+
+
+def test_the_matrix_runs_exactly_the_parts_the_script_knows() -> None:
+    job = jobs()["backend-tests"]
+    assert job["strategy"]["fail-fast"] is False, "one run should show every red part"
+    assert job["strategy"]["matrix"]["shard"] == [1, 2, 3, 4]
+    run = next(s["run"] for s in job["steps"] if s.get("name", "").startswith("Tests (pytest"))
+    assert run.startswith("scripts/ci-backend-shard.sh ${{ matrix.shard }}")
+
+
+def test_lint_runs_in_one_part_only() -> None:
+    steps = jobs()["backend-tests"]["steps"]
+    lint = [s for s in steps if "ruff check" in str(s.get("run", ""))]
+    assert len(lint) == 1 and lint[0]["if"] == "matrix.shard == 1"
+
+
+def test_the_collecting_job_waits_for_both_and_always_ends() -> None:
+    job = jobs()["backend"]
+    assert job["needs"] == ["backend-scope", "backend-tests"]
+    assert job["if"] == "always()", "a skipped required check can count as passed"
+    assert job["runs-on"] == "ubuntu-24.04"
+    first = job["steps"][0]
+    assert first["name"] == "Every part is green" and "if" not in first
+    for step in job["steps"][1:]:
+        assert step["if"] == "env.DOCS_ONLY == 'true'", step
+
+
+def verdict(scope: str, docs_only: str, tests: str) -> int:
+    run = jobs()["backend"]["steps"][0]["run"]
+    env = {"PATH": os.environ["PATH"], "SCOPE_RESULT": scope, "DOCS_ONLY": docs_only, "TESTS_RESULT": tests}
+    return subprocess.run(["bash", "-euo", "pipefail", "-c", run], env=env, capture_output=True).returncode
+
+
+@pytest.mark.parametrize(
+    ("scope", "docs_only", "tests", "green"),
+    [
+        ("success", "false", "success", True),
+        ("success", "true", "skipped", True),
+        ("success", "false", "failure", False),
+        ("success", "false", "cancelled", False),
+        ("success", "false", "skipped", False),
+        ("success", "true", "success", False),
+        ("success", "true", "failure", False),
+        ("failure", "", "skipped", False),
+        ("failure", "true", "skipped", False),
+        ("skipped", "false", "success", False),
+        ("cancelled", "", "skipped", False),
+        ("success", "", "success", True),
+        ("success", "", "skipped", False),
+    ],
+)
+def test_the_required_check_is_green_only_when_every_part_is(scope: str, docs_only: str, tests: str, green: bool) -> None:
+    assert (verdict(scope, docs_only, tests) == 0) is green
