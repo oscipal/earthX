@@ -3287,6 +3287,13 @@ button.pm-open:hover {
 .app[data-theme='tech'] .maplibregl-ctrl-attrib a {
   color: var(--text);
 }
+/* Their place in MapLibre's corner, above the attribution, as MapLibre places its own controls there. */
+.map-controls-host {
+  float: right;
+  clear: both;
+  margin: 0 var(--space-3) var(--space-3) 0;
+  pointer-events: auto;
+}
 /* The buttons at the bottom right of the map (UI-06, `MapControls.tsx`): one column on the panel, top to bottom the compass, zoom in,
    zoom out and "3D", each as high as a control (44 px for a finger and under 900 px). */
 .map-controls {
@@ -3300,7 +3307,8 @@ button.pm-open:hover {
   backdrop-filter: blur(10px);
   box-shadow: var(--glow);
 }
-.map-3d {
+/* Over the padding of `.btn.seg`, which leaves no room for "3D" in a square of 28 px. */
+.map-controls .btn.map-3d {
   width: var(--control-height);
   height: var(--control-height);
   padding: 0;

@@ -90,11 +90,11 @@ function reportViewport(map: MapLibreMap): void {
 }
 
 // The place of `MapControls` in the corner at the bottom right, where MapLibre keeps its controls (and the rules of `index.css`
-// move them beside an open side bar).
+// move them beside an open side bar). Not `maplibregl-ctrl`: MapLibre's styles of a button there would change the look of ours.
 class ControlsHost implements IControl {
   readonly element = document.createElement('div');
   constructor() {
-    this.element.className = 'maplibregl-ctrl';
+    this.element.className = 'map-controls-host';
   }
   onAdd(): HTMLElement {
     return this.element;
