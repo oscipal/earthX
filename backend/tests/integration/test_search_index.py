@@ -105,7 +105,7 @@ def test_catalog_load_writes_the_index_and_says_so(capsys):
     ("stored", "problem"),
     [
         ({}, "no row for a, b"),
-        ({"a": "1", "b": "0"}, "an old search text for b"),
+        ({"a": "1", "b": "0"}, "an old search text or extent for b"),
         ({"a": "1", "b": "2", "c": "3"}, "rows without an entry for c"),
     ],
 )
@@ -135,7 +135,17 @@ async def test_the_check_refuses_an_old_text_and_names_the_dataset(committed_ind
     committed_index.execute(
         "UPDATE public.earthx_dataset_search SET text_hash = 'old' WHERE dataset_id = 'swissalti3d'"
     )
-    with pytest.raises(SearchIndexMismatch, match="an old search text for swissalti3d"):
+    with pytest.raises(SearchIndexMismatch, match="an old search text or extent for swissalti3d"):
+        await check_search_index(REGISTRY, aconn)
+
+
+async def test_the_check_refuses_an_old_extent_with_the_text_unchanged(committed_index, aconn):
+    # A mission end added to an entry changes no word, but the time filter reads it.
+    write_search_index(committed_index, REGISTRY)
+    committed_index.execute(
+        "UPDATE public.earthx_dataset_search SET time_end = '2030-01-01T00:00:00Z' WHERE dataset_id = 'sentinel-2-c1-l2a'"
+    )
+    with pytest.raises(SearchIndexMismatch, match="an old search text or extent for sentinel-2-c1-l2a"):
         await check_search_index(REGISTRY, aconn)
 
 

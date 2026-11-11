@@ -9,7 +9,7 @@ search text cannot quietly run on an old index.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -112,35 +112,49 @@ class SearchIndexMismatch(RuntimeError):
     """The index is not the one this code would write from the registry; names the datasets, nothing else."""
 
 
-def compare_index(expected: dict[str, str], stored: dict[str, str]) -> list[str]:
-    """What differs between the hashes ``expected`` from the registry and those ``stored``, in words."""
+#: What the start check compares: the text by its hash, and every column the hard filters read.
+_CHECKED = ("text_hash", "west", "south", "east", "north", "time_start", "time_end", "has_time_axis", "item_holding")
+
+
+def compare_index(expected: Mapping[str, tuple], stored: Mapping[str, tuple]) -> list[str]:
+    """What differs between the rows ``expected`` from the registry and those ``stored``, in words."""
     problems = []
     if missing := sorted(expected.keys() - stored.keys()):
         problems.append(f"no row for {', '.join(missing)}")
     if stale := sorted(i for i in expected.keys() & stored.keys() if expected[i] != stored[i]):
-        problems.append(f"an old search text for {', '.join(stale)}")
+        problems.append(f"an old search text or extent for {', '.join(stale)}")
     if orphans := sorted(stored.keys() - expected.keys()):
         problems.append(f"rows without an entry for {', '.join(orphans)}")
     return problems
 
 
-def expected_hashes(configs: Iterable[DatasetConfig]) -> dict[str, str]:
-    return {config.dataset_id: search_text(config).text_hash for config in configs}
+def expected_rows(configs: Iterable[DatasetConfig]) -> dict[str, tuple]:
+    """Per entry the checked columns as :func:`write_search_index` writes them."""
+    rows = {}
+    for config in configs:
+        row = _row(config, search_text(config))
+        rows[config.dataset_id] = tuple(row[column] for column in _CHECKED)
+    return rows
 
 
 async def check_search_index(registry: DatasetRegistry, conn: Any) -> None:
     """Refuse to start where the index differs from the registry (plan §3.4, A3), like the check of item holdings.
 
-    Every entry needs a row with the hash this code computes, and no row may be left without an entry.
+    Every entry needs a row with the hash of the text this code builds and the extent, time axis and item holding the
+    filters read; no row may be left without an entry.
     """
     async with conn.cursor() as cur:
         await cur.execute("SELECT to_regclass('public.earthx_dataset_search')")
         row = await cur.fetchone()
         if row is None or row[0] is None:
             raise SearchIndexMismatch("the search index does not exist; run `python -m earthx.catalog.load`")
-        await cur.execute("SELECT dataset_id, text_hash FROM public.earthx_dataset_search")
-        stored = {dataset_id: text_hash for dataset_id, text_hash in await cur.fetchall()}
-    problems = compare_index(expected_hashes(registry), stored)
+        await cur.execute(
+            sql.SQL("SELECT dataset_id, {} FROM public.earthx_dataset_search").format(
+                sql.SQL(", ").join(map(sql.Identifier, _CHECKED))
+            )
+        )
+        stored = {found[0]: tuple(found[1:]) for found in await cur.fetchall()}
+    problems = compare_index(expected_rows(registry), stored)
     if problems:
         raise SearchIndexMismatch(
             f"the search index does not match the registry ({'; '.join(problems)}); run `python -m earthx.catalog.load`"

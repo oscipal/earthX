@@ -140,6 +140,10 @@ def _search_index_of_the_app(monkeypatch: pytest.MonkeyPatch) -> None:
     `api` with registries of their own; a deployment runs `catalog-load` with the registry of the process first, and
     this does the same for the test's registry, committed, right before the check. `test_search_index.py` puts the
     bare check back to test the refusal itself.
+
+    Committed, unlike the rest of these tests: the check reads over a connection of the app's own pool. In a parallel
+    run each worker has a database of its own; after a serial run against a database you keep, run `catalog-load`
+    before starting `api` on it again, as after the tests that call it themselves.
     """
     check = earthx.api.main.check_search_index
 

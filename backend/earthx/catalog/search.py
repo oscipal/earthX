@@ -208,7 +208,7 @@ async def search_datasets(
     """The datasets for ``text`` within ``area`` (a GeoJSON polygon in WGS 84) and ``period`` (either end open), ranked.
 
     ``conn`` is the caller's async connection; the search runs in a transaction (a savepoint inside the caller's) and
-    writes nothing. A ``text`` of only spaces is no text.
+    writes nothing. Inside a transaction of the caller, ``client_min_messages`` stays at ``warning`` until it ends. A ``text`` of only spaces is no text.
     """
     if text is not None and len(text) > MAX_QUERY_CHARS:
         raise QueryTooLong(f"the query is longer than {MAX_QUERY_CHARS} characters")
