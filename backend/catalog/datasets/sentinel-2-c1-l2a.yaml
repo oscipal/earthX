@@ -10,9 +10,10 @@
 # one.
 dataset_id: sentinel-2-c1-l2a
 title: Sentinel-2 L2A
+# The source as chosen in adr/0003 §3, Option B. No internal reference in a text for users (Otto, 10.11.2026).
 description: >-
   Sentinel-2 Level-2A, Collection 1, as cloud-optimized GeoTIFF from baseline 5.0 on. Served by Earth Search v1
-  (Element 84) from the Registry of Open Data on AWS (adr/0003 §3, Option B).
+  (Element 84) from the Registry of Open Data on AWS.
 keywords: [sentinel-2, optical, multispectral, surface reflectance, copernicus]
 category: optical
 # `providers` and `summaries.gsd` of the source's own collection (read 06.11.2026, UI-05 plan §5). The source links
@@ -108,9 +109,9 @@ license:
 legal_status: cleared
 legal_note: null
 access:
-  # Reachability of earth-search.aws.element84.com, measured in adr/0003 §10.1.
+  # Reachability of earth-search.aws.element84.com, measured in adr/0003 §10.1; the method as measured there.
   token_free_checked_at: 2026-09-18
-  method: anonymous HTTPS, no authentication header (adr/0003 §10.1)
+  method: anonymous HTTPS, no authentication header
   # Measured in adr/0006 §3.6, at the asset bucket and at Earth Search itself: `Access-Control-Allow-Origin: *`. The
   # viewer decides on this field whether it loads a quicklook straight from the source; for Sentinel-2 it may, and
   # that is why there is no asset proxy (D14).
@@ -558,3 +559,5 @@ index_presets:
 true_color: [red, green, blue]
 # DS-04 plan §4.4: nothing a user has to know before reading the data beyond its description.
 notices: []
+# The sentences of the row "Limitations" of the Data catalogue (adr/0018 F2, Nachtrag DS-04c); none for this entry.
+limitations: []

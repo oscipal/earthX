@@ -30,15 +30,17 @@ import {
 import type { DatasetOption } from './datasets';
 import { firstVisitDatasets, knownDatasets, notAddableReason } from './catalogue';
 import { prefilledDays, todayUtc } from './dateBounds';
-import { acquisitionNote, datasetsFrom, defaultRenderOf, preferredGeoreferencedAsset, quicklookPlan } from './datasets';
+import { acquisitionNote, datasetsFrom, defaultRenderOf, preferredGeoreferencedAsset, quicklookPlan, standardAssetsOf } from './datasets';
 import { fallbackNotice, findFallback, fullDayRange, NO_FALLBACK_MESSAGE } from './dateFallback';
 import {
   assetHostsOf,
+  cropAssetsOf,
   decideDownloadOutcomeForLayer,
   downloadRequestFor,
   downloadRequestForSelection,
   DRAW_AOI_TO_CROP,
   isCogFormat,
+  mixedBandsNote,
   noOriginalsReason,
   originalFileLinks,
   type DownloadPass,
@@ -707,22 +709,27 @@ function pinWhenLoaded(set: SetState, get: GetState, lists: SceneEntry[][], agai
   });
 }
 
-// The standard visualisation of a dataset as the look of its images ("RGB without colormap" for Sentinel-2, Otto 31.10.2026).
-function defaultLookOf(s: Pick<AppState, 'datasets'>, datasetId: string): AppliedRender {
-  const dataset = s.datasets.find((d) => d.id === datasetId);
-  const render = dataset ? defaultRenderOf(dataset.collection) : null;
+type LookSource = Pick<AppState, 'datasets' | 'sections' | 'openSectionId' | 'datasetId' | 'items' | 'groups'>;
+
+// The standard visualisation of a dataset as the look of one of its images ("RGB without colormap" for Sentinel-2, Otto
+// 31.10.2026). Read off the image's first scene: with `first_present` an image of HH scenes has the stretch of `hh`, not of
+// the first band of the list (DS-04c); the scenes of one image are one pass and carry the same bands.
+function defaultLookOf(s: LookSource, image: Pick<ViewImage, 'datasetId' | 'ids'>): AppliedRender {
+  const dataset = s.datasets.find((d) => d.id === image.datasetId);
+  const item = sectionsForView(s).flatMap((section) => section.items).find((it) => it.id === image.ids[0]);
+  const render = dataset ? defaultRenderOf(dataset.collection, item) : null;
   return render ? appliedRenderFrom(render) : {};
 }
 
 // The look an image is drawn with: for the one that is shown, what the map shows; for another, the first it has of
 // its own unsaved look, the look saved for its dataset and the standard one.
 export function lookOfImage(
-  s: Pick<AppState, 'datasets' | 'appliedRender' | 'shownImage' | 'viewLooks' | 'savedLooks'>,
+  s: LookSource & Pick<AppState, 'appliedRender' | 'shownImage' | 'viewLooks' | 'savedLooks'>,
   image: ViewImage,
   shown: ViewImage | null,
 ): AppliedRender {
   if (shown && image.key === shown.key) return s.appliedRender;
-  return s.viewLooks[image.key] ?? s.savedLooks[image.datasetId] ?? defaultLookOf(s, image.datasetId);
+  return s.viewLooks[image.key] ?? s.savedLooks[image.datasetId] ?? defaultLookOf(s, image);
 }
 
 // Moves the view to another image: what the one left shows is kept when it differs from what its dataset would show
@@ -730,11 +737,11 @@ export function lookOfImage(
 function moveToImage(s: AppState, target: ViewImage, from: ViewImage | null): Partial<AppState> {
   const viewLooks = { ...s.viewLooks };
   if (from) {
-    const baseline = s.savedLooks[from.datasetId] ?? defaultLookOf(s, from.datasetId);
+    const baseline = s.savedLooks[from.datasetId] ?? defaultLookOf(s, from);
     if (sameRender(s.appliedRender, baseline)) delete viewLooks[from.key];
     else viewLooks[from.key] = s.appliedRender;
   }
-  const look = viewLooks[target.key] ?? s.savedLooks[target.datasetId] ?? defaultLookOf(s, target.datasetId);
+  const look = viewLooks[target.key] ?? s.savedLooks[target.datasetId] ?? defaultLookOf(s, target);
   return { shownImage: target.key, viewLooks, appliedRender: look, ...pendingFieldsOf(look) };
 }
 
@@ -2202,7 +2209,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const plan = browsed ? quicklookPlan(it, browsed) : null;
       if (!plan) continue;
       if (plan.kind === 'image') {
-        const coords = quicklookCoords(it, browsed && preferredGeoreferencedAsset(browsed));
+        const coords = quicklookCoords(it, browsed && preferredGeoreferencedAsset(browsed, it));
         if (coords) {
           overlays.push({
             kind: 'image',
@@ -2247,6 +2254,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         aoi: s.aoi,
         cropToAoi: false,
         datasetId: s.datasetId,
+        ...(browsed?.viewable && browsed.collection['earthx:default_render']?.asset_selection === 'first_present'
+          ? { assets: cropAssetsOf(browsed, items) }
+          : {}),
       },
       0,
       viewDates(items),
@@ -2528,8 +2538,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (outcome !== 'originals') return;
     const datasetId = layer.restore.datasetId;
     const dataset = s.datasets.find((d) => d.id === datasetId);
-    const asset = dataset?.viewable ? defaultRenderOf(dataset.collection)?.assets[0] : undefined;
-    if (!datasetId || !dataset || !asset) {
+    const assets = dataset?.viewable ? standardAssetsOf(dataset.collection) : [];
+    if (!datasetId || !dataset || assets.length === 0) {
       set({ downloadOriginalLinks: [] });
       return;
     }
@@ -2545,7 +2555,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Still the dialog open for this same layer? The user may have closed
       // it, or opened another one, while the fetch was in flight.
       if (get().downloadDialogLayerId === id) {
-        set({ downloadOriginalLinks: originalFileLinks(groups, [asset], hosts), downloadPasses: groups });
+        set({ downloadOriginalLinks: originalFileLinks(groups, assets, hosts), downloadPasses: groups });
       }
     } catch (e) {
       if (get().downloadDialogLayerId === id) {
@@ -2574,7 +2584,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       return;
     }
     if (kind === 'crop') {
-      const req = downloadRequestForSelection(dataset, groupItemIdsFor(items.map((it) => it.id), s.groups), s.aoi);
+      const req = downloadRequestForSelection(dataset, groupItemIdsFor(items.map((it) => it.id), s.groups), s.aoi, items);
       if (!req) {
         set({ error: 'Nothing to download — pick a time step or select scenes first.' });
         return;
@@ -2595,7 +2605,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     // Originals: the dataset's default asset, straight from the source — also
     // with an AOI drawn (the AOI plays no part), Zusatz 1a.
-    const asset = dataset?.viewable ? defaultRenderOf(dataset.collection)?.assets[0] : undefined;
+    const assets = dataset?.viewable ? standardAssetsOf(dataset.collection) : [];
     const groupItemIds = groupItemIdsFor(
       items.map((it) => it.id),
       s.groups,
@@ -2604,7 +2614,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       label: s.groups[groupIndexOfItem(s.groups, ids[0])]?.label ?? `Group ${i + 1}`,
       items: items.filter((it) => ids.includes(it.id)),
     }));
-    const links = asset ? originalFileLinks(groups, [asset], assetHostsOf(dataset)) : [];
+    const links = originalFileLinks(groups, assets, assetHostsOf(dataset));
     set({
       downloadDialogLayerId: null,
       downloadSelection: true,
@@ -2658,9 +2668,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       void loadDownloadBands(image.datasetId, items.map((it) => it.id));
       return;
     }
-    const asset = dataset?.viewable ? defaultRenderOf(dataset.collection)?.assets[0] : undefined;
+    const assets = dataset?.viewable ? standardAssetsOf(dataset.collection) : [];
     const groups = [{ label: image.groupLabel || 'Group 1', items }];
-    set({ ...open, downloadOutcome: 'originals', downloadOriginalLinks: asset ? originalFileLinks(groups, [asset], assetHostsOf(dataset)) : [], downloadPasses: groups });
+    set({ ...open, downloadOutcome: 'originals', downloadOriginalLinks: originalFileLinks(groups, assets, assetHostsOf(dataset)), downloadPasses: groups });
     void loadDownloadBands(image.datasetId, items.map((it) => it.id));
   },
   closeDownloadDialog: () => {
@@ -2744,8 +2754,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     const layer = s.layers.find((l) => l.id === s.downloadDialogLayerId);
     const view = s.downloadSelection ? s.downloadView : null;
     const dataset = s.datasets.find((d) => d.id === (view?.datasetId ?? s.datasetId));
-    const sceneIds = view ? [view.items.map((it) => it.id)] : groupItemIdsFor(selectionItemsFrom(s).map((it) => it.id), s.groups);
-    const asked = s.downloadSelection ? downloadRequestForSelection(dataset, sceneIds, s.aoi) : layer && downloadRequestFor(layer, s.datasets);
+    const sceneItems = view ? view.items : selectionItemsFrom(s);
+    const sceneIds = view ? [sceneItems.map((it) => it.id)] : groupItemIdsFor(sceneItems.map((it) => it.id), s.groups);
+    const asked = s.downloadSelection ? downloadRequestForSelection(dataset, sceneIds, s.aoi, sceneItems) : layer && downloadRequestFor(layer, s.datasets);
     const name = s.downloadSelection
       ? `${dataset?.title ?? s.datasetId ?? '?'} · ${view?.label ?? s.groups[s.activeGroupIndex]?.label ?? ''}`
       : (layer?.name ?? '');
@@ -2788,6 +2799,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         set({ error: block });
         return;
       }
+    }
+    const mixed = table.length === 0 ? mixedBandsNote(downloadDatasetOf(s), asked.assets) : null;
+    if (mixed) {
+      set({ error: mixed });
+      return;
     }
     const req = withBandChoice(asked, table, s.downloadBands, s.downloadForm, s.downloadCommonResolution);
     const send = async () => {
@@ -2893,7 +2909,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     // The scenes of every dataset that is ticked (NM4-53), each with the standard visualisation of its own dataset. A
     // dataset that cannot be viewed is left out and said so; a scene id two datasets share keeps its first owner.
     const downloaded: Record<string, DownloadedInfo> = {};
-    const looks: Record<string, AppliedRender> = {};
     let problem: string | null = null;
     for (const { datasetId, items } of picked) {
       const dataset = s.datasets.find((d) => d.id === datasetId);
@@ -2906,10 +2921,15 @@ export const useAppStore = create<AppState>((set, get) => ({
         problem ??= `${dataset.title} has no default visualisation yet (earthx:default_render).`;
         continue;
       }
-      const asset = render.assets[0];
-      looks[dataset.id] = appliedRenderFrom(render);
       for (const it of items) {
         if (!it.bbox) continue;
+        // The asset the scene is drawn with: for `first_present` the one it carries (DS-04 F2), else the dataset's.
+        const own = defaultRenderOf(dataset.collection, it);
+        if (!own) {
+          problem ??= `Scene ${it.id} carries none of the assets ${dataset.title} is drawn from.`;
+          continue;
+        }
+        const asset = own.assets[0];
         // A scene the open view has already is not added again.
         if (open && it.id in s.downloaded) continue;
         if (it.id in downloaded) {
@@ -2941,7 +2961,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const shownBefore = open ? shownImageOf(viewImagesOf(s), s.shownImage) : null;
     const newImage = open ? images.find((image) => image.ids.some((id) => id in added) && !viewImagesOf(s).some((old) => old.key === image.key)) : undefined;
     const first = open ? (newImage ?? images.find((image) => image.key === shownBefore?.key) ?? firstImageOf(images, s)) : firstImageOf(images, s);
-    const applied = (first && looks[first.datasetId]) || {};
+    const applied = first ? defaultLookOf(s, first) : {};
     // Scenes of a time step too big for one mosaic are drawn one by one, and only so many of those.
     const groups = sectionsForView(s).flatMap((section) => section.groups);
     const passes = passesOf(Object.entries(all), groups);
@@ -3026,7 +3046,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Without an index the image goes back to what the dataset shows: the look saved for it ("Apply to all") unless that
       // names an index too, else the standard one.
       const saved = s.savedLooks[shown.datasetId];
-      const plain = saved && !saved.index && !saved.band ? saved : defaultLookOf(s, shown.datasetId);
+      const plain = saved && !saved.index && !saved.band ? saved : defaultLookOf(s, shown);
       const preset = name === null ? null : viewIndexOf({ index: name }, collection);
       if (name !== null && !preset) return {};
       // Only the fields change: the map draws it once "Apply" is pressed, like the colormap and the range.
@@ -3043,7 +3063,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const collection = s.datasets.find((d) => d.id === shown.datasetId)?.collection;
     if (band === null) {
       const saved = s.savedLooks[shown.datasetId];
-      set(pendingFieldsOf(saved && !saved.index && !saved.band ? saved : defaultLookOf(s, shown.datasetId)));
+      set(pendingFieldsOf(saved && !saved.index && !saved.band ? saved : defaultLookOf(s, shown)));
       return;
     }
     const item = sectionsForView(s).flatMap((x) => x.items).find((it) => it.id === shown.ids[0]);

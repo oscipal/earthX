@@ -153,6 +153,7 @@ def valid_config() -> DatasetConfig:
         index_presets=(),
         true_color=(),
         notices=(),
+        limitations=(),
     )
 
 

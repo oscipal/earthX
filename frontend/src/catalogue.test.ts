@@ -197,7 +197,7 @@ describe('the rows', () => {
 
   it('show "—" for what the collection does not carry, and "Last checked" always "—" until the health checks come', () => {
     const rows = rowsOf(collection('x', 'optical'));
-    for (const label of ['Provider', 'Source', 'License', 'Attribution', 'Resolution', 'Data region', 'DOI', 'Last checked']) {
+    for (const label of ['Provider', 'Source', 'License', 'Attribution', 'Resolution', 'Data region', 'Citation', 'Last checked']) {
       expect(rows[label].values.map((v) => v.text), label).toEqual(['—']);
     }
     expect(rows['Last checked'].tip).toBe('Not checked yet');
@@ -209,6 +209,24 @@ describe('the rows', () => {
       { text: '10.5281/zenodo.1', href: 'https://doi.org/10.5281/zenodo.1' },
       { text: 'Someone (2021)', href: null },
     ]);
+    expect(rowsOf(c).Citation).toBeUndefined();
+  });
+
+  it('name the row "Citation", not "DOI", where the dataset has no DOI (Otto, 10.11.2026)', () => {
+    const rows = rowsOf(collection('x', 'radar', { 'sci:doi': null, 'sci:citation': 'Copernicus Sentinel-1 Level-1 GRD' }));
+    expect(rows.DOI).toBeUndefined();
+    expect(rows.Citation.values).toEqual([{ text: 'Copernicus Sentinel-1 Level-1 GRD', href: null }]);
+    expect(rowsOf(collection('x', 'radar', { 'sci:doi': '' })).DOI).toBeUndefined();
+  });
+
+  it('list the limitations of a dataset after its description, one sentence each, and no row where it has none', () => {
+    const limitations = ['Placed only by the ground control points of each scene.', 'Values are uncalibrated digital numbers (DN).'];
+    const rows = catalogueRows(datasetsFrom([collection('x', 'radar', { 'earthx:limitations': limitations })])[0]);
+    expect(rows.map((row) => row.label).slice(0, 2)).toEqual(['Description', 'Limitations']);
+    expect(rows[1].values).toEqual(limitations.map((text) => ({ text, href: null })));
+    for (const none of [undefined, null, [], ['', 3]]) {
+      expect(rowsOf(collection('x', 'radar', { 'earthx:limitations': none as never })).Limitations, String(none)).toBeUndefined();
+    }
   });
 
   it('name the operators the capabilities switch on, and the quick processing a true-colour dataset offers', () => {

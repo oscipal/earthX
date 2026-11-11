@@ -166,7 +166,8 @@ beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock);
   useProcessingStore.getState().resetDraft();
   useProcessingStore.setState({ open: false, descriptions: {}, jobs: [], preview: null, previewNote: null });
-  useAppStore.setState({ mapZoom: 1.6, viewportBbox: null, layers: [], dock: null });
+  // A zoom the previews are drawn at: below it the tooltips say so first (Otto, 10.11.2026), which is not what these tests are about.
+  useAppStore.setState({ mapZoom: 12, viewportBbox: null, layers: [], dock: null });
   container = document.createElement('div');
   document.body.append(container);
   root = createRoot(container);

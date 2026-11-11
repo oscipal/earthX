@@ -108,7 +108,8 @@ legal_status: cleared
 legal_note: null
 access:
   token_free_checked_at: 2026-11-09
-  method: anonymous HTTPS to the STAC API of the FSDI and its assets, no authentication header (M5-08 plan §2)
+  # As measured in M5-08 plan §2.
+  method: anonymous HTTPS to the STAC API of the FSDI and its assets, no authentication header
   # `Access-Control-Allow-Origin: *` on the API and on an asset requested with an Origin (measured 09.11.2026).
   cors: true
   # Metadata and assets anonymous (adr/0027 §6.1): no account, no account path.
@@ -201,3 +202,8 @@ search_capabilities:
 index_presets: []
 true_color: []
 notices: []
+# The row "Limitations" of the Data catalogue (adr/0018 F2, Nachtrag DS-04c): the two limits the description names, as
+# sentences (DS-04 plan F15, Otto 10.11.2026).
+limitations:
+- One area can combine tiles of different survey years; each tile keeps its own year.
+- Placed in WGS 84 without a grid file, to about 1 m.

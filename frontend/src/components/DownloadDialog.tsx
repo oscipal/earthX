@@ -7,6 +7,7 @@ import {
   canExportLicense,
   downloadRequestFor,
   downloadRequestForSelection,
+  mixedBandsNote,
   termsNoticeText,
 } from '../download';
 import { groupItemIdsFor } from '../grouping';
@@ -208,12 +209,15 @@ export default function DownloadDialog() {
         selectionDataset,
         view ? [selectionItems.map((it) => it.id)] : groupItemIdsFor(selectionItems.map((it) => it.id), groups),
         selectionAoi,
+        selectionItems,
       )
     : layer
       ? downloadRequestFor(layer, datasets)
       : null;
   // The bands, form and common resolution of the choice are part of the request; a dataset whose scenes list no bands keeps its own.
   const req = asked && withBandChoice(asked, table, bandKeys, form, commonPicked);
+  // Scenes of two bands of a `first_present` dataset make no crop without a table of bands (DS-04c).
+  const mixed = req && table.length === 0 ? mixedBandsNote(dataset, req.assets) : null;
   const sceneCount = req?.groups.flat().length ?? 0;
   // No attribution line: its year is that of the scenes' acquisition, which a pinned layer does not keep,
   // and ATTRIBUTION.txt in the ZIP carries the text (Otto, 25.10.2026, NM4-01).
@@ -292,6 +296,12 @@ export default function DownloadDialog() {
               </p>
             )}
 
+            {mixed && (
+              <p className="hint warn" role="alert">
+                {mixed}
+              </p>
+            )}
+
             {!req && (
               <p className="hint">
                 {selectionMode ? 'Nothing left to crop.' : 'This layer has nothing left to crop.'}
@@ -312,7 +322,7 @@ export default function DownloadDialog() {
                 !req ||
                 !exportAllowed ||
                 downloading ||
-                (!index && (bandsLoading || block !== null)) ||
+                (!index && (bandsLoading || block !== null || mixed !== null)) ||
                 (index !== null && indexNote?.state !== 'ready' && indexNote?.state !== 'failed')
               }
             >

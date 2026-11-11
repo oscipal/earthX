@@ -3,6 +3,7 @@ import { useCallback, useLayoutEffect, useMemo, useRef, useState, type CSSProper
 import type { CoverageHistogramPoint, PlaceResult } from '../api';
 import { readAoiFile } from '../aoiFile';
 import { completenessNote } from '../coverage';
+import { barInRange, histogramBars } from '../coverageHistogram';
 import { DATASETS_PER_ROW, pageCount, pageOf, pageSlice, rowsThatFit, START_DATASET_ROWS } from '../datasetPages';
 import { clampDay, dateBounds, todayUtc, type DayBounds } from '../dateBounds';
 import { acquisitionNote, maturityLabel, maturityNote } from '../datasets';
@@ -525,10 +526,9 @@ function DatasetPicker() {
   );
 }
 
-// A bare bar row, one bar per monthly bucket (D22 — Earth Search ignores a
-// finer interval). `dateFrom`/`dateTo` are `YYYY-MM-DD` or empty; a bucket
-// counts as "in range" by comparing year-month, since that is exactly the
-// bucket's own resolution.
+// A bare bar row of a fixed, small size: one bar per month (D22 — Earth Search ignores a finer interval), per quarter or
+// per year where there are many months (`coverageHistogram.ts`, Otto, 10.11.2026). `dateFrom`/`dateTo` are `YYYY-MM-DD`
+// or empty; a bar is "in range" where any of its months is.
 function CoverageHistogram({
   histogram,
   dateFrom,
@@ -538,23 +538,18 @@ function CoverageHistogram({
   dateFrom: string;
   dateTo: string;
 }) {
-  const max = Math.max(1, ...histogram.map((b) => b.n));
-  const fromMonth = dateFrom.slice(0, 7);
-  const toMonth = dateTo.slice(0, 7);
+  const { step, bars } = histogramBars(histogram);
+  const max = Math.max(1, ...bars.map((bar) => bar.n));
   return (
-    <div className="coverage-histogram" role="img" aria-label="Acquisitions per month">
-      {histogram.map((bucket) => {
-        const month = bucket.t.slice(0, 7);
-        const inRange = (!fromMonth || month >= fromMonth) && (!toMonth || month <= toMonth);
-        return (
-          <span
-            key={bucket.t}
-            className={`histogram-bar${inRange ? ' in-range' : ''}`}
-            style={{ height: `${Math.max(2, (bucket.n / max) * 100)}%` }}
-            data-tip-level="advanced" data-tip={`${month}: ${bucket.n}`}
-          />
-        );
-      })}
+    <div className="coverage-histogram" role="img" aria-label={`Acquisitions per ${step}`}>
+      {bars.map((bar) => (
+        <span
+          key={bar.label}
+          className={`histogram-bar${barInRange(bar, dateFrom, dateTo) ? ' in-range' : ''}`}
+          style={{ height: `${Math.max(2, (bar.n / max) * 100)}%` }}
+          data-tip-level="advanced" data-tip={`${bar.label}: ${bar.n}`}
+        />
+      ))}
     </div>
   );
 }

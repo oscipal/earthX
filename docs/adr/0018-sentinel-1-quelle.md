@@ -687,6 +687,13 @@ Kosten je Kachel misst die Umsetzung.
 
 **Antwort F2: (1)** „Approximate geolocation“ und „Uncalibrated (DN)“.
 
+**Nachtrag DS-04c (Entscheidung Otto, 10.11.2026):**
+- Die beiden Hinweise erscheinen in der Oberfläche nirgends als Marke: nicht im Panel und in den Suchergebnissen, nicht im Kopf von Ansicht und Layer, nicht in der Liste und im Kopf der Angaben des Data catalogue.
+- Stattdessen haben die Angaben des Data catalogue eine Zeile **„Limitations“** aus der neuen Registry-Angabe `limitations` (ganze Sätze, englisch; veröffentlicht als `earthx:limitations`). Leer bei Datensätzen ohne Einschränkung, dann keine Zeile. Für Sentinel-1 zwei kurze Sätze: Lage nur über die Passpunkte der Szene, ohne Geländekorrektur, und das gilt für jedes Pixel, nicht nur für die Vorschau; Werte sind unkalibrierte DN.
+- Rezept (`provenance.notices`) und `ATTRIBUTION.txt` behalten die Hinweise; die Registry führt sie weiter als `notices` (`earthx:notices`), das Frontend liest das Feld nicht.
+- Texte für Nutzer (Beschreibung, Zitierangabe, Zugangsweg, Einschränkungen, Hinweise, Suchfilter) nennen keine internen Dokumente (`adr/…`, `§…`, Aufgabenkürzel); die Startprüfung weist das ab, der Verweis steht im YAML-Kommentar.
+- Die Zeile „DOI“ der Angaben steht nur bei einer echten DOI, sonst heißt sie „Citation“. `ATTRIBUTION.txt` setzt für `{year}` das Jahr der Aufnahme ein; der Katalog zeigt den Platzhalter „[year]“.
+
 **F3 — Operatoren auf GRD?**
 1. Nach §4.4: Zuschnitt, Band-Math innerhalb der Szene, Normalisierung, Reprojektion, Mosaik je Durchgang; keine festen Schwellen, keine Index-Knöpfe, kein Vergleich über Bahnen **(Empfehlung)**
 2. Alle generischen Operatoren freischalten, nur Hinweise
@@ -819,8 +826,10 @@ freigegeben. Das ist ein Nachtrag zu F3.
   `s3://`-Abbildung, Fassung per CRC64NVME, Live-Smoke mit
   Requester-Pays-Prüfung.
   *Stand 08.11.2026:* TPS umgesetzt mit DS-04a ([#312](https://github.com/oscipal/earthX/pull/312)); Eintrag,
-  Abbildung, Prüfsumme, Hinweise und Live-Smoke mit DS-04b (`plans/ds/ds-04-s1-anbinden.md` §12); das Frontend
-  (Marken, Originale, `first_present`) folgt mit DS-04c.
+  Abbildung, Prüfsumme, Hinweise und Live-Smoke mit DS-04b (`plans/ds/ds-04-s1-anbinden.md` §12).
+  *Stand 09.11.2026:* Frontend mit DS-04c (Marken, `first_present`, Vorschau-Kacheln nach der Suche; §13);
+  Quicklook auf der Karte (F11 = 1, Prüfung gegen `map-overlay.kml`) und Beschriftung der Originale (F12 = 1,
+  eigener PR) beantwortet von Otto am 09.11.2026, noch nicht gebaut.
 - **Teil B:** Ottos Messung (§11 C, mit CORS der Token-API); bei positivem
   Ergebnis die Nachträge aus §12 (den Satz in `ENTSCHEIDUNGEN` trägt Otto ein) und die Lizenz-Einstufung von
   `sentinel-1-rtc` (B11, Otto). Offen bleibt dann auch der lokale Runner

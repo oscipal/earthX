@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from 'react';
 
+import { zoomFloorHint } from '../datasets';
 import { flipIdOf } from '../layerFlip';
 import { layerShownName } from '../layerName';
 import type { MapLayer } from '../layers';
@@ -9,6 +10,7 @@ import { MIN_REMAINING_MS } from '../resultLayer';
 import { hasResultsPanel } from '../sections';
 import { clampResultsAt } from '../resultsEntry';
 import { useAppStore } from '../store';
+import { zoomReasonOf } from '../zoomHint';
 import BandSelect from './BandSelect';
 import EyeButton from './EyeButton';
 import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon, CogIcon, GripVerticalIcon, PencilIcon, PlusIcon, TrashIcon } from './icons';
@@ -109,6 +111,7 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
   const select = useAppStore((s) => s.selectLayer);
   const flipTo = useAppStore((s) => s.flipTo);
   const datasets = useAppStore((s) => s.datasets);
+  const mapZoom = useAppStore((s) => s.mapZoom);
   const processLayer = useProcessingStore((s) => s.processLayer);
   const chooseBand = useProcessingStore((s) => s.chooseResultBand);
   const addBand = useAppStore((s) => s.addBandAsLayer);
@@ -122,6 +125,8 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
   const notes = [l.result?.expired && !locked ? EXPIRED_LAYER_TEXT : null].filter(
     (note): note is string => note !== null,
   );
+  // A layer that shows nothing at this zoom says why, in either step of the tooltips: nothing over the map does (Otto, 10.11.2026).
+  const zoomReason = shown ? zoomReasonOf(l.overlays, mapZoom) : null;
   return (
     <li className={`layer-row${locked ? ' locked' : ''}${flipped ? ' flip' : ''}${dnd.className}`} aria-current={flipped || undefined}>
       <Grip dnd={dnd} />
@@ -144,7 +149,8 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
           type="button"
           className="lm-name"
           data-col="name"
-          data-tip-level="advanced" data-tip={l.note}
+          data-tip-level={zoomReason ? undefined : 'advanced'}
+          data-tip={[zoomReason, l.note].filter(Boolean).join(' ') || undefined}
           onClick={() => (flipping ? flipTo(l.id) : select(l.id))}
         >
           {layerShownName(l)}
@@ -228,11 +234,15 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
 // a grip, an eye and the two arrows only; the other places stay empty.
 function ResultsRow({ first, last, dnd }: { first: boolean; last: boolean; dnd: RowDnd }) {
   const move = useAppStore((s) => s.moveResults);
+  // The results of a dataset drawn from a zoom above this one show nothing (M2-10): the row says why, in either step.
+  const zoomReason = useAppStore((s) =>
+    s.resultsOnMap && !s.focusMode && hasResultsPanel(s.sections) ? zoomFloorHint(s.datasets.find((d) => d.id === s.datasetId), s.mapZoom) : null,
+  );
   return (
     <li className={`layer-row results-row${dnd.className}`}>
       <Grip dnd={dnd} />
       <ResultsEye />
-      <span className="lm-name results-name" data-col="name" data-tip-level="advanced" data-tip={RESULTS_ENTRY_TIP}>
+      <span className="lm-name results-name" data-col="name" data-tip-level={zoomReason ? undefined : 'advanced'} data-tip={zoomReason ? `${zoomReason} ${RESULTS_ENTRY_TIP}` : RESULTS_ENTRY_TIP}>
         Search results
       </span>
       <Slot col="rename" />

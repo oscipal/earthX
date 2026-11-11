@@ -44,7 +44,12 @@ const COLLECTIONS = [
   collection('relief', 'Relief model', 'elevation'),
   collection('beta', 'Beta optical', 'optical'),
   collection('alpha', 'Alpha optical', 'optical'),
-  collection('odd', 'Odd one', 'something-new'),
+  // The backend publishes `earthx:notices` (DS-04b); the viewer shows none of them (Otto, 10.11.2026).
+  collection('odd', 'Odd one', 'something-new', {
+    'earthx:notices': [
+      { code: 'approximate_geolocation', label: 'Approximate geolocation', tooltip: 'Placed by ground control points.' },
+    ],
+  } as Partial<Collection>),
   collection('broken', 'Broken entry', 'optical', { 'earthx:viewer': null }),
   collection('closed', 'Closed source', 'radar', { 'earthx:access': { cors: null, account: 'free_account' } }),
   collection('proto', 'Prototype source', 'radar', { 'earthx:legal_status': 'unclear', 'earthx:legal_note': 'The terms of reuse are not published' }),
@@ -231,6 +236,11 @@ describe('the list', () => {
     expect(marked).toHaveLength(1);
   });
 
+  it('shows the notices of a dataset as no mark: they are a sentence of its description (Otto, 10.11.2026)', () => {
+    expect(entry('Odd one').querySelector('.badge')).toBeNull();
+    expect(container.textContent).not.toContain('Approximate geolocation');
+  });
+
   it('has no tooltip at the name of a dataset', () => {
     for (const name of container.querySelectorAll('.catalogue-entry-name')) expect(name.hasAttribute('data-tip')).toBe(false);
   });
@@ -254,7 +264,7 @@ describe('the details', () => {
     const labels = [...container.querySelectorAll('.catalogue-row-pair dt')].map((dt) => dt.textContent);
     expect(labels).toEqual([
       'Description', 'Provider', 'Source', 'License', 'Attribution', 'Spatial extent', 'Temporal extent', 'Resolution',
-      'Bands', 'Data region', 'DOI', 'Last checked', 'Maturity', 'Processing', 'Quick processing',
+      'Bands', 'Data region', 'Citation', 'Last checked', 'Maturity', 'Processing', 'Quick processing',
     ]);
     expect(value('Provider')?.textContent).toBe('—');
     expect(value('Spatial extent')?.textContent).toBe('180° W – 180° E · 60° S – 84° N');
