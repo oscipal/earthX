@@ -80,8 +80,9 @@ async def test_a_full_object_checksum_is_the_version_and_was_asked_for() -> None
         {"x-amz-checksum-type": "FULL_OBJECT"},
         {"x-amz-checksum-type": "FULL_OBJECT", "x-amz-checksum-crc64nvme": "not base64 of eight bytes"},
         {"x-amz-checksum-type": "FULL_OBJECT", "x-amz-checksum-crc64nvme": CRC + "\n"},
+        {},
     ],
-    ids=["composite", "no type", "no value", "malformed value", "trailing newline"],
+    ids=["composite", "no type", "no value", "malformed value", "trailing newline", "object older than the checksum"],
 )
 async def test_without_a_usable_full_object_checksum_the_etag_holds(headers: dict[str, str]) -> None:
     accepted = await accept(s1_order(), Source((SENTINEL_1_GRD, s1_item())), answer(**headers))

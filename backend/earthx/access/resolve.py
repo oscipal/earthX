@@ -45,8 +45,10 @@ __all__ = [
     "InvalidAssetKey",
     "MalformedItem",
     "NoReader",
+    "NotARaster",
     "ReaderKind",
     "ResolvedAsset",
+    "check_is_raster",
     "open_asset_ref",
     "resolve_asset",
     "target_gsd_for",
@@ -74,6 +76,10 @@ class NoReader(AssetResolutionError):
 
 class InvalidAssetKey(AssetResolutionError):
     """The asset key is shaped wrong for this dataset — the caller's mistake."""
+
+
+class NotARaster(InvalidAssetKey):
+    """The asset is an auxiliary file of the entry that is no raster (an archive, an annotation), so no reader opens it."""
 
 
 class AssetNotOnItem(AssetResolutionError):
@@ -140,6 +146,21 @@ class ResolvedAsset:
         return cls(**data)
 
 
+def check_is_raster(item: Mapping[str, Any], config: DatasetConfig, asset: str) -> None:
+    """:class:`NotARaster` where ``asset`` is one the registry calls auxiliary and the item gives it a media type that is no image.
+
+    The registry's ``auxiliary_assets`` alone is not enough: the pictures of Sentinel-2 are auxiliary and are rasters, which
+    a tile may show. An asset the item does not carry or gives no media type is left to the reader.
+    """
+    if asset not in config.auxiliary_assets:
+        return
+    assets = item.get("assets")
+    entry = assets.get(asset) if isinstance(assets, Mapping) else None
+    media_type = entry.get("type") if isinstance(entry, Mapping) else None
+    if isinstance(media_type, str) and media_type.strip() and not media_type.strip().lower().startswith("image/"):
+        raise NotARaster(f"asset {asset!r} of {config.dataset_id!r} is no raster ({media_type.split(';')[0].strip()})")
+
+
 def resolve_asset(item: Mapping[str, Any], config: DatasetConfig, asset: str) -> ResolvedAsset:
     """What ``asset`` of ``item`` is, for a reader — without fetching or checking anything.
 
@@ -168,6 +189,7 @@ def resolve_asset(item: Mapping[str, Any], config: DatasetConfig, asset: str) ->
     item_id = item.get("id")
     if not isinstance(item_id, str) or not item_id:
         raise MalformedItem(f"an item of {config.dataset_id!r} carries no id")
+    check_is_raster(item, config, asset)
     return ResolvedAsset(
         dataset_id=config.dataset_id,
         item_id=item_id,

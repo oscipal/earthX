@@ -242,6 +242,7 @@ async def materialize_items(
     *,
     gateway: Gateway,
     known_version: str | None,
+    expected_items: int | None = None,
 ) -> MaterializeOutcome:
     """Build every DEM item this bucket currently offers, or report "unchanged".
 
