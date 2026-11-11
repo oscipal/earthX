@@ -203,15 +203,24 @@ class TestOneOverpass:
         accepted = await accept(whole("S2_A"), overpass(scene("S2_A")), registry=DatasetRegistry((no_warp,)))
         assert accepted.recipe.inputs[0].groups == [["S2_A"]]
 
-    async def test_the_cap_of_items_stays(self) -> None:
-        ids = [f"S2_{i:02d}" for i in range(MAX_ORDER_ITEMS + 1)]
+    async def test_the_guard_of_items_stays(self) -> None:
+        ids = [f"S2_{i:04d}" for i in range(MAX_ORDER_ITEMS + 1)]
         error = await refused(whole(*ids), overpass(*(scene(i) for i in ids)))
         assert error.status_code == 413
+        assert "size" == error.stage
 
-    async def test_exactly_at_the_cap_of_items_is_fine(self) -> None:
-        ids = [f"S2_{i:02d}" for i in range(MAX_ORDER_ITEMS)]
+    @pytest.mark.parametrize("count", [26, 100])
+    async def test_more_than_the_old_25_items_are_taken_when_the_estimate_fits(self, count: int) -> None:
+        """adr/0032 §10.3: the number of items is no limit of its own; the estimate of the job decides."""
+        ids = [f"S2_{i:04d}" for i in range(count)]
         accepted = await accept(whole(*ids), overpass(*(scene(i) for i in ids)))
-        assert len(accepted.recipe.inputs[0].groups[0]) == MAX_ORDER_ITEMS
+        assert len(accepted.recipe.inputs[0].groups[0]) == count
+
+    async def test_many_whole_scenes_are_refused_by_their_memory_not_by_their_number(self) -> None:
+        ids = [f"S2_{i:04d}" for i in range(300)]
+        error = await refused(whole(*ids), overpass(*(scene(i) for i in ids)))
+        assert error.status_code == 413
+        assert "memory" in error.detail and "items" not in error.detail
 
 
 class TestOtherDatasets:

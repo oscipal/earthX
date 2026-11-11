@@ -105,7 +105,7 @@ from earthx.catalog.registry import (
 )
 from earthx.gateway import Gateway, GatewayError, Policy, UpstreamError, UrlRejected, UrlTooLong, inspect_url
 from earthx.processing.errors import AoiOutsideInputs, JobTooLarge, RecipeInvalid, UnknownOperator, UnsupportedRecipe
-from earthx.processing.export import Attachments
+from earthx.processing.export import Attachments, AttachmentsInvalid
 from earthx.processing.methods import DatasetFacts, recipe_with_methods
 from earthx.processing.mosaic import lies_on_grid
 from earthx.processing.operators import OperatorRegistry, Tier, applicable
@@ -160,9 +160,10 @@ __all__ = [
 
 # The starting values of an order's size (Otto, M4-07b F5; the cap of 16 assets fell with NM4-43c, adr/0020 §7: the
 # memory estimate of a run guards the bands, `processing.plan.MAX_JOB_MEMORY_BYTES`). One input per order until
-# the licence of a combination is decided (architekturplan 7.1). M4-12 may raise the
-# item cap, with its own reason: whole scenes per overpass are more than a crop's 25.
-MAX_ORDER_ITEMS = 25
+# the licence of a combination is decided (architekturplan 7.1).
+# The number of items is a guard against abuse, not a limit of the subject (adr/0032 §10.3, F13, Otto 11.11.2026):
+# the size of a job is decided by its estimate (bytes, memory, runtime), not by a count of 25.
+MAX_ORDER_ITEMS = 2000
 MAX_ORDER_STEPS = 16
 
 #: The last day `api` takes an order of recipe version 1 and rewrites it (adr/0020 §11): 30 days after NM4-43e, the
@@ -410,17 +411,22 @@ async def _accept(
             aoi_provenance=dict(aoi_provenance) if aoi_provenance else None,
         )
     kept = {item_id for group in prepared.groups for item_id in group}
-    attachments = export_attachments(
-        prepared.config,
-        recipe,
-        bands=layout_bands(prepared, recipe) if recipe.output.layout is not None else (),
-        scene_aoi=prepared.scene_aoi,
-        dropped=[item_id for group in prepared.entry.groups if kept.isdisjoint(group) for item_id in group],
-        aoi_provenance=aoi_provenance,
-        accepted_at=datetime.now(UTC),
-        acquired_on=acquired_on,
-        years=prepared.years,
-    )
+    try:
+        attachments = export_attachments(
+            prepared.config,
+            recipe,
+            bands=layout_bands(prepared, recipe) if recipe.output.layout is not None else (),
+            scene_aoi=prepared.scene_aoi,
+            dropped=[item_id for group in prepared.entry.groups if kept.isdisjoint(group) for item_id in group],
+            aoi_provenance=aoi_provenance,
+            accepted_at=datetime.now(UTC),
+            acquired_on=acquired_on,
+            years=prepared.years,
+        )
+    except AttachmentsInvalid:
+        # Since the 25 fell (adr/0032 §10.3), an export of many scenes can outgrow the texts of its ZIP: a refusal of
+        # the order's size, never a 500. Whether those texts should grow is open (plan M5-30b §6, F4).
+        raise OrderRefused(413, "this export names more scenes than the notes of its ZIP can list; select fewer", "size") from None
     return AcceptedOrder(
         recipe, False, prepared.skipped, attachments, acquired_on, prepared.years, scene_aoi=prepared.scene_aoi
     )
