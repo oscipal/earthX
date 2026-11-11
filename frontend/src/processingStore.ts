@@ -86,6 +86,7 @@ import {
   resultGsd,
   resultLayerName,
   presetOfResultBand,
+  isClassBand,
   resultRender,
   resultStats,
   resultTileTemplate,
@@ -1725,7 +1726,8 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       const place = startPlaceOf(job.bands, job.order, job.shownBand, colour);
       const stats = place === RGB ? colourStats(job.bands, colour!) : several ? job.bands[place].stats : job.statistics;
       const preset = place === RGB ? null : presetOfResultBand(job.bands[several ? place : 0], indexPresetsOf(dataset?.collection));
-      const render = resultRender(tileJson.dataType, get().range, stats, ownRangeOf(job, job.bands, place), place === RGB, preset);
+      const classes = place !== RGB && isClassBand(job.bands[several ? place : 0], tileJson.dataType, dataset?.collection);
+      const render = resultRender(tileJson.dataType, get().range, stats, ownRangeOf(job, job.bands, place), place === RGB, preset, classes);
       const template = resultTileTemplate(href);
       useAppStore.getState().pinDerivedLayer({
         name: resultLayerName(job.title),
@@ -1737,6 +1739,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
           resampled: job.resampled,
           expired: false,
           dataType: tileJson.dataType,
+          ...(classes ? { classes: true as const } : {}),
           stats,
           preset,
           ...(several ? { bands: job.bands, band: place, ...(colour ? { colour } : {}) } : {}),
@@ -2216,19 +2219,20 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       const stats = colour ? colourStats(info.bands, colour) : band!.stats;
       const dataset = app.datasets.find((d) => d.id === job.order?.inputs[0]?.dataset);
       const preset = colour ? null : presetOfResultBand(band ?? undefined, indexPresetsOf(dataset?.collection));
-      const render = resultRender(info.dataType, get().range, stats, ownRangeOf(job, info.bands, place), colour !== undefined, preset);
+      const classes = !colour && isClassBand(band ?? undefined, info.dataType, dataset?.collection);
+      const render = resultRender(info.dataType, get().range, stats, ownRangeOf(job, info.bands, place), colour !== undefined, preset, classes);
       useAppStore.setState({
         layers: app.layers.map((l) => {
           if (l.id !== layerId || !l.result) return l;
           // What was applied and not saved belongs to the band it was applied to: it goes with it.
-          const { savedTileUrl: _unsaved, savedPercent: _unsavedPercent, savedPercentChannels: _unsavedChannels, percent: _percent, percentChannels: _channels, ...kept } = l.result;
+          const { savedTileUrl: _unsaved, savedPercent: _unsavedPercent, savedPercentChannels: _unsavedChannels, percent: _percent, percentChannels: _channels, classes: _classes, ...kept } = l.result;
           let first = true;
           const overlays = l.overlays.map((o) => {
             if (o.kind !== 'raster' || !first) return o;
             first = false;
             return { ...o, tileUrl: colour ? colourTileUrl(o.tileUrl, colour, render) : bandTileUrl(o.tileUrl, place as number, render) };
           });
-          return { ...l, overlays, result: { ...kept, band: place, stats, preset, ...typedOf(ownRangeOf(job, info.bands!, place)) } };
+          return { ...l, overlays, result: { ...kept, band: place, ...(classes ? { classes: true as const } : {}), stats, preset, ...typedOf(ownRangeOf(job, info.bands!, place)) } };
         }),
       });
     },
