@@ -46,6 +46,7 @@ from earthx.catalog.registry import (
     ViewerInfo,
 )
 from earthx.gateway import Gateway, Policy, check_url, host_of
+from tests.catalog.entries import registry_of
 from tests.earthx.readers import (
     mini_cog,
     mini_dem,
@@ -150,7 +151,7 @@ def build(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 
     return Chain(
         config=synthetic,
-        registry=DatasetRegistry((synthetic,)),
+        registry=registry_of(synthetic),
         item=item,
         render_asset=render_asset,
         aoi=_aoi(bounds),
@@ -446,7 +447,7 @@ def _build_worldcover(config: DatasetConfig, render_asset: str, tmp_path: Path, 
     resolve_from_memory(monkeypatch)
     return Chain(
         config=synthetic,
-        registry=DatasetRegistry((synthetic,)),
+        registry=registry_of(synthetic),
         item=item,
         render_asset=render_asset,
         # A few kilometres in the middle: half a 3° cell at the 10 m of the item is past the download limit.
@@ -542,7 +543,7 @@ def _build_fsdi(config: DatasetConfig, render_asset: str, tmp_path: Path, monkey
     properties = {**item["properties"], TILE_PROPERTY: mini_lv95.TILE, STATE_PROPERTY: state}
     return Chain(
         config=synthetic,
-        registry=DatasetRegistry((synthetic,)),
+        registry=registry_of(synthetic),
         item={**item, "collection": synthetic.dataset_id, "links": [], "properties": properties},
         render_asset=render_asset,
         aoi=aoi_wgs84(mini_lv95.BOUNDS),
@@ -574,7 +575,7 @@ def _build_materialized(
 
     return Chain(
         config=synthetic,
-        registry=DatasetRegistry((synthetic,)),
+        registry=registry_of(synthetic),
         item=item,
         render_asset=render_asset,
         aoi=aoi_wgs84(mini_dem.BOUNDS),

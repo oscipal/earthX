@@ -101,8 +101,9 @@ export interface StacProvider {
 export type BrowseMode = 'quicklook' | 'preview_tiles' | 'full_resolution';
 
 // What the tile route shows below `min_zoom` (registry `OverviewMode`, adr/0032 §9): one file's own overviews, a
-// pyramid in the platform's object store, or the chosen scenes through their own overviews.
-export type OverviewMode = 'own' | 'pyramid' | 'scenes';
+// pyramid in the platform's object store, the chosen scenes through their own overviews, or another dataset
+// (`substitute`, plan M5-30b §4.8).
+export type OverviewMode = 'own' | 'pyramid' | 'scenes' | 'substitute';
 export type OverviewResampling = 'average' | 'mode' | 'nearest';
 
 export interface EarthxViewer {
@@ -124,10 +125,11 @@ export interface EarthxViewer {
   // because a dataset may head its display by a property `group_by` deliberately
   // does not use (M3-02 F-01).
   results_group_by: string[];
-  // What happens below `min_zoom` (adr/0032 §9); read through, nothing is decided with it yet. The resampling is
-  // set for `pyramid` only.
+  // What happens below `min_zoom` (adr/0032 §9). The resampling is set for `pyramid` only, the substitute (a dataset
+  // id) for `substitute` only.
   overview: OverviewMode;
   overview_resampling: OverviewResampling | null;
+  overview_substitute: string | null;
 }
 
 // `earthx:capabilities` (architekturplan.md 5.1). Only `time_range` is read by

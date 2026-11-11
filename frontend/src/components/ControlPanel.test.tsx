@@ -476,6 +476,7 @@ describe('AcquisitionDateFields: a dataset without a time axis', () => {
       results_group_by: ['start_datetime'],
       overview: 'own' as const,
       overview_resampling: null,
+      overview_substitute: null,
     },
   };
 
@@ -492,6 +493,7 @@ describe('AcquisitionDateFields: a dataset without a time axis', () => {
       results_group_by: ['datetime'],
       overview: 'own' as const,
       overview_resampling: null,
+      overview_substitute: null,
     },
   };
 
@@ -568,6 +570,7 @@ describe('AcquisitionDateFields: the days of the ticked datasets', () => {
     results_group_by: ['datetime'],
     overview: 'own' as const,
     overview_resampling: null,
+    overview_substitute: null,
   };
   const timed = (id: string, interval: [string | null, string | null]): Collection => ({
     id,
@@ -699,6 +702,7 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
         results_group_by: ['datetime'],
         overview: 'own' as const,
         overview_resampling: null,
+        overview_substitute: null,
       },
       ...extra,
     };

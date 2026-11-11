@@ -36,6 +36,7 @@ function previewCollection(id: string, title: string): Collection {
       results_group_by: ['datetime'],
       overview: 'pyramid' as const,
       overview_resampling: 'average' as const,
+      overview_substitute: null,
     },
     'earthx:default_render': {
       title: 'True colour',
@@ -64,6 +65,7 @@ const DEM: Collection = {
     results_group_by: ['start_datetime'],
     overview: 'own' as const,
     overview_resampling: null,
+    overview_substitute: null,
   },
   'earthx:default_render': {
     title: 'Elevation',

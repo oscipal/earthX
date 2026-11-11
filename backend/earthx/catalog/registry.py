@@ -156,7 +156,9 @@ class OverviewMode(Enum):
     overview pyramid in the platform's object store serves the levels below
     ``min_zoom`` (adr/0032 §5; built by the parts that follow this field).
     ``SCENES`` — the chosen scenes, read through their own overviews at every
-    level, within the budget per tile (adr/0032 §6).
+    level, within the budget per tile (adr/0032 §6). ``SUBSTITUTE`` — another
+    dataset of the registry is drawn below ``min_zoom``, as a picture only
+    (plan M5-30b §4.8, F7); the dataset names it in ``viewer.overview_substitute``.
 
     No default (KLAERUNGEN B10): the registry says what happens below
     ``min_zoom`` instead of cutting the dataset off there.
@@ -165,6 +167,7 @@ class OverviewMode(Enum):
     OWN = "own"
     PYRAMID = "pyramid"
     SCENES = "scenes"
+    SUBSTITUTE = "substitute"
 
 
 class OverviewResampling(Enum):
@@ -748,11 +751,17 @@ class ViewerInfo:
 
     **``overview`` / ``overview_resampling`` — what happens below ``min_zoom``.** See
     :class:`OverviewMode`; no default on either (B10). ``overview_resampling`` is
-    required for ``PYRAMID`` and ``None`` for the other two. With ``OWN`` or ``SCENES``
+    required for ``PYRAMID`` and ``None`` for the others. With ``OWN`` or ``SCENES``
     the dataset has no way below ``min_zoom`` but the original files, so ``min_zoom``
     must be ``0``: an entry that would show no image below its ``min_zoom`` is refused
-    when it is loaded. With ``PYRAMID`` any ``min_zoom`` is allowed, because the
-    pyramid serves what lies below it.
+    when it is loaded. With ``PYRAMID`` or ``SUBSTITUTE`` any ``min_zoom`` is allowed,
+    because the pyramid or the substitute serves what lies below it.
+
+    **``overview_substitute``** — the id of the dataset drawn below ``min_zoom``, required for ``SUBSTITUTE``
+    and ``None`` for the others (no default, B10). The substitute is a picture only: statistics, crop, download
+    and jobs read the dataset's own items. That the substitute exists, may be displayed, has the same unit,
+    covers the extent and is no substitute itself is checked where the entries meet, in
+    :class:`DatasetRegistry` (plan M5-30b §4.8).
 
     **``group_by`` — item property names, in the order in which they make the key.**
     ``properties.`` is implied and must not be written. One rule goes with the field,
@@ -805,6 +814,7 @@ class ViewerInfo:
     results_group_by: tuple[str, ...]
     overview: OverviewMode
     overview_resampling: OverviewResampling | None
+    overview_substitute: str | None
 
     def __post_init__(self) -> None:
         self._check_group_by()
@@ -842,17 +852,29 @@ class ViewerInfo:
                     f"viewer.overview_resampling is required for overview pyramid: "
                     f"one of {[mode.value for mode in OverviewResampling]}"
                 )
+            self._check_substitute_unset()
             return
         if self.overview_resampling is not None:
             raise ConfigError(
                 f"viewer.overview_resampling is set but overview is {self.overview.value}, not pyramid "
                 "(only a pyramid is resampled)"
             )
+        if self.overview is OverviewMode.SUBSTITUTE:
+            if not isinstance(self.overview_substitute, str) or not self.overview_substitute.strip():
+                raise ConfigError("viewer.overview_substitute is required for overview substitute: a dataset id")
+            return
+        self._check_substitute_unset()
         if self.min_zoom != 0:
             raise ConfigError(
                 f"viewer.min_zoom is {self.min_zoom} but overview is {self.overview.value}: the dataset would "
                 f"show no image below min_zoom, and an image at z0 is required (adr/0032 §9); "
-                "only overview pyramid may start above z0"
+                "only overview pyramid or substitute may start above z0"
+            )
+
+    def _check_substitute_unset(self) -> None:
+        if self.overview_substitute is not None:
+            raise ConfigError(
+                f"viewer.overview_substitute is set but overview is {self.overview.value}, not substitute"
             )
 
     def _check_zoom(self) -> None:
@@ -2147,6 +2169,13 @@ class RetiredDataset:
         )
 
 
+def _default_band_unit(config: DatasetConfig) -> str | None:
+    """The unit of the first asset of the default render, or ``None`` where there is no render or no unit."""
+    if config.default_render is None:
+        return None
+    return config.band_unit(config.default_render.assets[0])
+
+
 class DatasetRegistry:
     """The entries, looked up by dataset id, and the datasets that left (adr/0017)."""
 
@@ -2162,6 +2191,35 @@ class DatasetRegistry:
         for gone in self._retired.values():
             if gone.successor not in self._by_id:
                 raise ConfigError(f"the successor of {gone.dataset_id!r} is not in the registry")
+        for entry in self._by_id.values():
+            self._check_substitute(entry)
+
+    def _check_substitute(self, entry: DatasetConfig) -> None:
+        """Where the entries meet: what a dataset with ``overview: substitute`` draws below its ``min_zoom`` must be fit to draw.
+
+        The substitute exists in this registry, may be displayed (tier ``display`` or higher, B11), is no
+        substitute itself (no chain), shows the same unit in its default band (the colour range of the
+        dataset is applied to it), and covers the extent of the dataset (plan M5-30b §4.8, F7).
+        """
+        viewer = entry.viewer
+        if viewer is None or viewer.overview is not OverviewMode.SUBSTITUTE:
+            return
+        name = viewer.overview_substitute
+        substitute = self._by_id.get(name) if name is not None else None
+        prefix = f"{entry.dataset_id}: viewer.overview_substitute {name!r}"
+        if substitute is None:
+            raise ConfigError(f"{prefix} is not in the registry")
+        if substitute.license.tier is LicenseTier.CATALOG:
+            raise ConfigError(f"{prefix} has tier catalog, below display: it is never drawn here (KLAERUNGEN B11)")
+        if substitute.viewer is None or substitute.viewer.overview is OverviewMode.SUBSTITUTE:
+            raise ConfigError(f"{prefix} has no viewer or is a substitute itself: no chain of substitutes")
+        own_unit, other_unit = (_default_band_unit(config) for config in (entry, substitute))
+        if own_unit is None or own_unit != other_unit:
+            raise ConfigError(f"{prefix} shows {other_unit!r} in its default band, the dataset {own_unit!r}")
+        west, south, east, north = entry.spatial_extent.bbox
+        s_west, s_south, s_east, s_north = substitute.spatial_extent.bbox
+        if not (s_west <= west and s_south <= south and s_east >= east and s_north >= north):
+            raise ConfigError(f"{prefix} does not cover the spatial extent of the dataset")
 
     def get(self, dataset_id: str) -> DatasetConfig:
         """Return the entry, or raise ``UnknownDatasetError`` — never None (adr/0005 rule I).

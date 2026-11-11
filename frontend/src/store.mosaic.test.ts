@@ -33,6 +33,7 @@ const COLLECTION: Collection = {
     results_group_by: ['datetime'],
     overview: 'own' as const,
     overview_resampling: null,
+    overview_substitute: null,
   },
   'earthx:default_render': {
     title: 'True colour',

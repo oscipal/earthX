@@ -38,6 +38,7 @@ from shapely.geometry.base import BaseGeometry
 
 from earthx.adapters.federated_search import ITEM_ID
 from earthx.api.item_source import ItemSource, OrderRefused, fetch_item_or_refuse, malformed_item_detail
+from earthx.catalog.pgstac import search_items_in_bbox_async
 from earthx.catalog.registry import MissingProperty, ViewerInfo, overpass_key
 
 LOGGER = logging.getLogger("earthx.api.mosaic_tiles")
@@ -48,8 +49,12 @@ __all__ = [
     "MAX_MOSAIC_OPERATOR_ASSETS",
     "MAX_MOSAIC_REQUEST_BYTES",
     "MIN_MOSAIC_ITEMS",
+    "OVERVIEW_ROUTER_PREFIX",
     "PARTIAL_HEADER",
     "ROUTER_PREFIX",
+    "SOURCE_HEADER",
+    "SUBSTITUTE_ITEM_CAP",
+    "SUBSTITUTE_SOURCE",
     "TILE_FILE_BUDGET",
     "TILE_TIME_BUDGET_S",
     "ItemFetches",
@@ -61,6 +66,7 @@ __all__ = [
     "check_query",
     "fetch_items",
     "footprints_of",
+    "items_in_tile",
     "mosaic_tile",
     "scenes_touching",
     "union_bounds",
@@ -68,6 +74,16 @@ __all__ = [
 
 #: Where the mosaic routes begin; the factory adds ``/tiles/…`` and ``/{tileMatrixSetId}/tilejson.json``.
 ROUTER_PREFIX = "/collections/{dataset}/mosaic"
+
+#: Where the tile route of a substitute begins (plan M5-30b §4.8); the factory adds ``/tiles/…`` and nothing else.
+OVERVIEW_ROUTER_PREFIX = "/collections/{dataset}/overview"
+#: The header that says where the pixels of a tile come from, for a tile that is not of the dataset in its URL.
+SOURCE_HEADER = "X-EarthX-Source"
+SUBSTITUTE_SOURCE = "substitute"
+#: Items of the substitute one tile looks at, before the budget cuts it to the files it reads: a tile of the world
+#: touches every item of a global dataset, and the order of the list is the one pgstac gives, the same for every client.
+#: Above it the tile says one more was left out (``X-EarthX-Partial``). Covers z4 of GLO-30 (about 300 files, plan §4.8).
+SUBSTITUTE_ITEM_CAP = 500
 
 # The limits of plan §5, with the measurement that gives each of them. Constants in the code and not a
 # field of the registry (KE6): they follow the tile grid and the source, not the dataset.
@@ -297,6 +313,26 @@ def union_bounds(outlines: Mapping[str, BaseGeometry]) -> tuple[float, float, fl
     return min(west), min(south), max(east), max(north)
 
 
+async def items_in_tile(
+    pool: Any, dataset_id: str, grid: tuple[morecantile.TileMatrixSet, morecantile.Tile]
+) -> tuple[list[dict[str, Any]], bool]:
+    """The items of a materialized dataset that touch the tile, at most :data:`SUBSTITUTE_ITEM_CAP`, and whether more do.
+
+    Read from our own pgstac through the pool of the tiler. ``503`` without a pool or when the database fails, as
+    for the item cache of a mosaic; the text of the driver's error can name host and user and is not passed on.
+    """
+    if pool is None:
+        raise OrderRefused(503, "the tile of a substitute needs the catalogue database, which is not reachable", "items")
+    tms, tile = grid
+    try:
+        async with pool.connection() as conn:
+            found = await search_items_in_bbox_async(conn, dataset_id, tuple(tms.bounds(tile)), SUBSTITUTE_ITEM_CAP + 1)
+    except _CACHE_FAILURES as error:
+        LOGGER.warning("the catalogue failed under the tile of a substitute: %s", type(error).__name__)
+        raise OrderRefused(503, "the tile of a substitute needs the catalogue database, which is not reachable", "items") from None
+    return found[:SUBSTITUTE_ITEM_CAP], len(found) > SUBSTITUTE_ITEM_CAP
+
+
 @dataclass(frozen=True, slots=True)
 class TileScenes:
     """The scenes one tile reads, in the order of the mosaic, and how many that touch it the budget left out."""
@@ -334,10 +370,11 @@ def scenes_touching(
 class TileOutcome:
     """What a mosaic tile knows about itself only after its scenes are chosen or read: kept for the response headers."""
 
-    __slots__ = ("budget", "left_out")
+    __slots__ = ("budget", "left_out", "source")
 
     def __init__(self) -> None:
         self.left_out = 0
+        self.source: str | None = None  # where the pixels come from where that is not the dataset of the URL
         self.budget: Any = None  # the `access.mosaic_tiles.ReadBudget` of the tile, once there is one
 
     @property
@@ -354,32 +391,38 @@ class TileOutcome:
 
 
 class TileOutcomeHeaders:
-    """ASGI middleware: :data:`PARTIAL_HEADER` on a mosaic tile that left scenes out, and ``no-store`` after its time ran out.
+    """ASGI middleware: the headers a tile knows only once its scenes are chosen or read.
 
-    TiTiler's tile route builds its own response, and the read that may run out of time ends inside it; so the path
-    dependency and the reader write a :class:`TileOutcome` that lives in the request's scope, and the headers are set
-    when the response starts. Only the paths under ``/collections/{dataset}/mosaic/`` get an outcome.
+    :data:`PARTIAL_HEADER` on a tile that left scenes out, ``no-store`` after its time ran out, and
+    :data:`SOURCE_HEADER` on the answer of a substitute's tile. TiTiler's tile route builds its own response, and the read
+    that may run out of time ends inside it; so the path dependency and the reader write a :class:`TileOutcome` that
+    lives in the request's scope, and the headers are set when the response starts. Only the paths under
+    ``/collections/{dataset}/mosaic/`` and ``/collections/{dataset}/overview/tiles/`` get an outcome.
     """
 
     def __init__(self, app: Any) -> None:
         self.app = app
 
     async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
-        if scope.get("type") != "http" or "/mosaic/" not in scope.get("path", ""):
+        path = scope.get("path", "")
+        if scope.get("type") != "http" or not ("/mosaic/" in path or "/overview/tiles/" in path):
             await self.app(scope, receive, send)
             return
         outcome = TileOutcome()
         scope[TileOutcome.SCOPE_KEY] = outcome
 
         async def with_headers(message: dict[str, Any]) -> None:
-            if message.get("type") == "http.response.start" and (outcome.left_out or outcome.timed_out):
+            if message.get("type") == "http.response.start":
                 headers = list(message.get("headers", []))
-                partial = str(outcome.left_out).encode()
-                if outcome.timed_out:
-                    headers = [header for header in headers if header[0].lower() != b"cache-control"]
-                    headers.append((b"cache-control", b"no-store"))
-                    partial = b"time"
-                headers.append((PARTIAL_HEADER.lower().encode(), partial))
+                if outcome.source and message.get("status") == 200:
+                    headers.append((SOURCE_HEADER.lower().encode(), outcome.source.encode()))
+                if outcome.left_out or outcome.timed_out:
+                    partial = str(outcome.left_out).encode()
+                    if outcome.timed_out:
+                        headers = [header for header in headers if header[0].lower() != b"cache-control"]
+                        headers.append((b"cache-control", b"no-store"))
+                        partial = b"time"
+                    headers.append((PARTIAL_HEADER.lower().encode(), partial))
                 message = {**message, "headers": headers}
             await send(message)
 

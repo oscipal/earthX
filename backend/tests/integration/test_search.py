@@ -12,7 +12,14 @@ import pytest
 
 from earthx.catalog.glossary import load_glossary
 from earthx.catalog.pgstac import load_collection, upsert_items, use_pgstac_search_path
-from earthx.catalog.registry import DatasetConfig, DatasetRegistry, SpatialExtent, TemporalExtent
+from earthx.catalog.registry import (
+    DatasetConfig,
+    DatasetRegistry,
+    OverviewMode,
+    OverviewResampling,
+    SpatialExtent,
+    TemporalExtent,
+)
 from earthx.catalog.search import (
     MAX_QUERY_CHARS,
     Joining,
@@ -31,6 +38,18 @@ from tests.catalog.entries import COP_DEM_GLO_30, SENTINEL_2_L2A, SWISSALTI3D
 GLOSSARY = load_glossary()
 
 
+# swissALTI3D with a pyramid of its own: the copies below stand without the substitute the released entry names.
+STATIC = dataclasses.replace(
+    SWISSALTI3D,
+    viewer=dataclasses.replace(
+        SWISSALTI3D.viewer,
+        overview=OverviewMode.PYRAMID,
+        overview_resampling=OverviewResampling.AVERAGE,
+        overview_substitute=None,
+    ),
+)
+
+
 def _entry(
     base: DatasetConfig, dataset_id: str, title: str, keywords: tuple[str, ...], **changes: Any
 ) -> DatasetConfig:
@@ -46,10 +65,10 @@ def _entry(
 
 # Three static rasters over one box, a time series, and a materialized dataset whose box is wide but whose items cover
 # one small square only. Keywords chosen so each test can tell them apart.
-TERRAIN = _entry(SWISSALTI3D, "test-terrain", "Terrain Alpha", ("digital terrain model", "alpine"))
-SURFACE = _entry(SWISSALTI3D, "test-surface", "Surface Beta", ("digital surface model", "alpine"))
+TERRAIN = _entry(STATIC, "test-terrain", "Terrain Alpha", ("digital terrain model", "alpine"))
+SURFACE = _entry(STATIC, "test-surface", "Surface Beta", ("digital surface model", "alpine"))
 KENYA = _entry(
-    SWISSALTI3D,
+    STATIC,
     "test-kenya",
     "Equator Gamma",
     ("land cover", "savanna"),

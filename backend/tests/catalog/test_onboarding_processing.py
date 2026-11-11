@@ -55,7 +55,7 @@ from earthx.processing.operators import REGISTRY as OPERATORS
 from earthx.processing.operators import applicable
 from earthx.processing.recipe import recipe_hash
 from tests.catalog import synthetic_chain
-from tests.catalog.entries import REGISTRY
+from tests.catalog.entries import REGISTRY, registry_of
 from tests.catalog.synthetic_chain import UnsupportedFormat
 from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR, TEST_ENTRIES
 from tests.catalog.test_onboarding_checklist import CHECKED_ELSEWHERE, CHECKLIST
@@ -171,7 +171,7 @@ def _federated(
     gateway, _ = synthetic_chain.gateway_answering_search(synthetic, item)
     return Scenario(
         config=synthetic,
-        registry=DatasetRegistry((synthetic,)),
+        registry=registry_of(synthetic),
         item=item,
         assets=assets,
         aoi=aoi,
@@ -240,7 +240,7 @@ def _dem(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     gateway, _ = synthetic_chain.gateway_answering_materialize(synthetic, item)
     return Scenario(
         config=synthetic,
-        registry=DatasetRegistry((synthetic,)),
+        registry=registry_of(synthetic),
         item=item,
         assets=["data"],
         aoi=synthetic_chain.aoi_wgs84(mini_dem.BOUNDS),

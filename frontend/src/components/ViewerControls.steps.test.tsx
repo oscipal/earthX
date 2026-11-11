@@ -29,7 +29,7 @@ const base = (id: string, title: string): Collection =>
     'earthx:format': 'cog',
     'earthx:capabilities': { roi: true, time_range: id === 's2', band_math: true, interpolation: true },
     'earthx:default_render': { title: 'Standard', assets: ['visual'], rescale: [[0, 255]], colormap_name: null, expression: null, resampling: 'nearest' },
-    'earthx:viewer': { group_by: ['datetime'], min_zoom: 8, max_zoom: 14, browse: 'quicklook', quicklook_nodata_max: null, results_group_by: ['datetime'], overview: 'pyramid' as const, overview_resampling: 'average' as const },
+    'earthx:viewer': { group_by: ['datetime'], min_zoom: 8, max_zoom: 14, browse: 'quicklook', quicklook_nodata_max: null, results_group_by: ['datetime'], overview: 'pyramid' as const, overview_resampling: 'average' as const, overview_substitute: null },
     ...(id === 's2' && s2TrueColor ? { 'earthx:true_color': s2TrueColor } : {}),
     'earthx:search_filters':
       id === 's2'
