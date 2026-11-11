@@ -1,0 +1,11 @@
+# Words the search text of a dataset gets for a capability it offers (docs/plans/m5/m5-22-suche-lexikalisch.md F5).
+#
+# `catalog` may not read the operator registry of `processing` (architekturplan.md 3.1), so the terms of an operator
+# bound to a capability stand here, English and German. A test compares this file with the operator registry: every
+# capability an operator needs is either here with its terms or under `general`.
+#
+# `general`: the capabilities of the general operators (band math, reprojection, masks, normalization). They tell no
+# dataset from another and stand in no search text. `terms`: empty until the first dataset-specific operator; M5-10
+# adds `terrain` (slope, aspect, hillshade, Hangneigung, Exposition, Schummerung).
+general: [band_math, masking, normalization, reprojection, value_masking]
+terms: {}

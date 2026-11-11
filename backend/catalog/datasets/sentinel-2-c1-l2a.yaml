@@ -14,7 +14,8 @@ title: Sentinel-2 L2A
 description: >-
   Sentinel-2 Level-2A, Collection 1, as cloud-optimized GeoTIFF from baseline 5.0 on. Served by Earth Search v1
   (Element 84) from the Registry of Open Data on AWS.
-keywords: [sentinel-2, optical, multispectral, surface reflectance, copernicus]
+# German and English (adr/0026 F7; the German ones added with M5-22b, F8).
+keywords: [sentinel-2, optical, multispectral, surface reflectance, copernicus, optisch, multispektral, Bodenreflexion]
 category: optical
 # `providers` and `summaries.gsd` of the source's own collection (read 06.11.2026, UI-05 plan §5). The source links
 # AWS over plain http only, so that provider stays without a link.

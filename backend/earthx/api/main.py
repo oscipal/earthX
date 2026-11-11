@@ -53,6 +53,7 @@ from earthx.api.processing_route import JobApi
 from earthx.api.processing_route import router as processing_router
 from earthx.catalog.datasets import registry as dataset_registry
 from earthx.catalog.registry import DatasetRegistry
+from earthx.catalog.search_index import check_search_index
 from earthx.gateway import CachingResolver, ReadSlots, user_agent_from_env
 from earthx.gateway.gdal import gdal_options
 from earthx.logging import RequestIdMiddleware, configure_logging
@@ -101,6 +102,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             # otherwise; a disagreement stops the start (Otto, M4-01a F2).
             async with pool.connection() as conn:
                 await check_item_holdings(app.state.earthx_registry, conn)
+                # M5-22 plan §3.4, A3: a new search text never runs on an old index.
+                await check_search_index(app.state.earthx_registry, conn)
             app.state.earthx_cache_pool = pool
             app.state.earthx_gateway = build_gateway(app.state.earthx_registry)
             # `timeout`: a request that waits for one of the four connections waits 5 s, not 30,

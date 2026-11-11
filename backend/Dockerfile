@@ -56,6 +56,11 @@ COPY earthx ./earthx
 # runner's included. `.dockerignore` keeps both out of the build context as a second guard.
 COPY catalog/datasets ./catalog/datasets
 COPY catalog/retired.yaml ./catalog/retired.yaml
+# What the search text needs besides the entries (M5-22b): country outlines from Natural Earth, the glossary of the
+# lexical arm and the terms per capability.
+COPY catalog/places.json ./catalog/places.json
+COPY catalog/glossary.yaml ./catalog/glossary.yaml
+COPY catalog/capability_terms.yaml ./catalog/capability_terms.yaml
 
 # The local runner (adr/0016 F1, F10): the same code and the same locked
 # dependencies as the services, run as an unprivileged user. EARTHX_COMMIT ends
