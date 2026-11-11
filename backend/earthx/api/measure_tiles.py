@@ -1,7 +1,7 @@
 """Tile times per zoom level over the real tile path (M5-30b part 1, adr/0032 §8.5, F11).
 
     python -m earthx.api.measure_tiles <dataset_id> --bbox W,S,E,N [--datetime A/B] [--asset KEY]
-        [--zooms 0-14] [--max-files 64] [--max-items 500] [--format table|json]
+        [--zooms 0-14] [--max-files 64] [--max-items 500] [--threads 4] [--format table|json]
 
 Run by hand through the compose profile ``measure`` (``docker compose run --rm measure-tiles …``), never by a plain
 ``docker compose up``: it reads real files at the source, which CI and an ordinary start must not.
@@ -11,7 +11,9 @@ What it measures is the cost of one mosaic tile at each zoom level, without the 
 (adr/0032 §6.2). Everything else is the tile path's own:
 
 * the items of one overpass (:func:`~earthx.catalog.registry.overpass_key`), the largest in the rectangle, in the
-  order of the mosaic (:func:`~earthx.access.crop_rules.mosaic_order`);
+  order of the mosaic (:func:`~earthx.access.crop_rules.mosaic_order`); the rectangle only chooses the overpass and
+  the asset, **each zoom level fetches the items in the bounds of its own tile** (up to ``--max-items``) and keeps
+  those of the chosen overpass;
 * each address resolved in `access` and cleared through the gateway policy of the registry, as the tiler does;
 * the scenes a tile touches read by the mosaic tile's own reader with the tiler's GDAL configuration.
 
@@ -22,6 +24,10 @@ are empty: once cold, then the same tile again warm. A CDN in front of the sourc
 kept or written. **No rectangle, address or item id** is printed, also not in an error, which names only its kind.
 
 **The source is spared:** a tile that touches more than ``--max-files`` files is not read; its row says how many.
+If the fetch of a tile returns ``--max-items`` items, the list may be cut and the files it touches are not all known:
+the row says ``over items cap`` instead of a count that is too small.
+
+``--threads`` is the number of scenes the mosaic reader opens at the same time (1 to 16, default the tile route's).
 """
 
 from __future__ import annotations
@@ -49,7 +55,7 @@ from shapely.geometry import box
 from shapely.geometry.base import BaseGeometry
 
 from earthx.access.crop_rules import mosaic_order
-from earthx.access.mosaic_tiles import MosaicScenes, MosaicTileReader
+from earthx.access.mosaic_tiles import MAX_MOSAIC_THREADS, MOSAIC_THREADS, MosaicScenes, MosaicTileReader
 from earthx.access.resolve import AssetResolutionError, ResolvedAsset, open_asset_ref, resolve_asset
 from earthx.adapters import ADAPTER_SPECS, MAX_LIMIT, AdapterSpecs, SearchParams, search_items
 from earthx.api.dependencies import policy_from_registry
@@ -65,6 +71,7 @@ from earthx.catalog.registry import (
     LicenseTier,
     MissingProperty,
     UnknownDatasetError,
+    ViewerInfo,
     group_by_overpass,
     overpass_key,
 )
@@ -77,16 +84,21 @@ from earthx.readers.errors import AssetRejected
 __all__ = [
     "TILE_SIZE",
     "CannotMeasure",
+    "Chosen",
     "Gathered",
     "ZoomRow",
+    "choose",
     "count_downloads",
     "main",
     "measure_zoom",
     "parse_args",
     "read_twice",
     "render_table",
+    "resolve_overpass",
+    "run",
     "scenes_touching_tile",
     "tile_at_centre",
+    "tile_bounds",
 ]
 
 LOGGER = logging.getLogger("earthx.api.measure_tiles")
@@ -99,6 +111,10 @@ _TMS = morecantile.tms.get("WebMercatorQuad")
 # The range of one request in GDAL's debug line; the address that follows it is never read.
 _DOWNLOADING = re.compile(r"Downloading ((?:\d+-\d+(?:,\s*)?)+)")
 _RANGE = re.compile(r"(\d+)-(\d+)")
+
+
+#: Fetches the items whose footprint meets a rectangle (west, south, east, north in EPSG:4326), at most ``--max-items``.
+Fetch = Callable[[tuple[float, float, float, float]], list[dict[str, Any]]]
 
 
 class CannotMeasure(Exception):
@@ -155,6 +171,16 @@ def _positive(value: str) -> int:
     return number
 
 
+def _threads(value: str) -> int:
+    try:
+        number = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"--threads is a whole number from 1 to {MAX_MOSAIC_THREADS}") from None
+    if not 1 <= number <= MAX_MOSAIC_THREADS:
+        raise argparse.ArgumentTypeError(f"--threads is a whole number from 1 to {MAX_MOSAIC_THREADS}")
+    return number
+
+
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="python -m earthx.api.measure_tiles",
@@ -167,8 +193,22 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--zooms", type=_zooms, default=tuple(range(15)), help="a level or a range, default 0-14")
     parser.add_argument("--max-files", type=_positive, default=64, help="tiles touching more files are not read")
     parser.add_argument("--max-items", type=_positive, default=500, help="items taken from the search at most")
+    parser.add_argument(
+        "--threads", type=_threads, default=MOSAIC_THREADS, help="scenes read at the same time, 1 to 16"
+    )
     parser.add_argument("--format", choices=("table", "json"), default="table")
     return parser.parse_args(list(argv))
+
+
+@dataclass(frozen=True, slots=True)
+class Chosen:
+    """The overpass that is measured and its asset, as the rectangle shows them."""
+
+    dataset_id: str
+    asset: str
+    key: tuple[str, ...]
+    items_found: int
+    overpasses: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -233,6 +273,12 @@ class _Downloads(logging.Handler):
         taken = self.requests, self.bytes
         self.requests = self.bytes = 0
         return taken
+
+
+def tile_bounds(tile: morecantile.Tile) -> tuple[float, float, float, float]:
+    """West, south, east, north of ``tile`` in EPSG:4326, kept inside the valid latitudes and longitudes."""
+    west, south, east, north = _TMS.bounds(tile)
+    return max(west, -180.0), max(south, -90.0), min(east, 180.0), min(north, 90.0)
 
 
 def tile_at_centre(bbox: tuple[float, float, float, float], zoom: int) -> morecantile.Tile:
@@ -309,6 +355,7 @@ def read_twice(
     tile: tuple[int, int, int],
     gdal_config: Mapping[str, str],
     *,
+    threads: int = MOSAIC_THREADS,
     clock: Callable[[], float] = time.perf_counter,
 ) -> dict[str, Any]:
     """Read ``tile`` from ``scenes`` with the mosaic tile's reader, cold and then warm, and say what each cost.
@@ -316,7 +363,7 @@ def read_twice(
     Runs in the process of one zoom level. Any failure is a row with its kind, never with its text.
     """
     reader = MosaicTileReader(
-        MosaicScenes(dataset_id, tuple(scenes), bounds), gdal_config={**gdal_config, "CPL_DEBUG": "ON"}
+        MosaicScenes(dataset_id, tuple(scenes), bounds), gdal_config={**gdal_config, "CPL_DEBUG": "ON"}, threads=threads
     )
     x, y, z = tile
     result: dict[str, Any] = {}
@@ -343,6 +390,7 @@ def _zoom_process(
     bounds: tuple[float, float, float, float],
     tile: tuple[int, int, int],
     gdal_config: dict[str, str],
+    threads: int,
     answer: Any,
 ) -> None:
     """One zoom level in a process of its own: the scenes cleared again through the registry's gateway policy, then read."""
@@ -353,7 +401,7 @@ def _zoom_process(
     except Exception as error:  # noqa: BLE001 - the kind only, as in `read_twice`
         answer.send({"status": type(error).__name__})
     else:
-        answer.send(read_twice(scenes, dataset_id, bounds, tile, gdal_config))  # type: ignore[arg-type]
+        answer.send(read_twice(scenes, dataset_id, bounds, tile, gdal_config, threads=threads))  # type: ignore[arg-type]
     answer.close()
 
 
@@ -363,13 +411,15 @@ def _in_own_process(
     bounds: tuple[float, float, float, float],
     tile: tuple[int, int, int],
     gdal_config: Mapping[str, str],
+    *,
+    threads: int = MOSAIC_THREADS,
 ) -> dict[str, Any]:
     """:func:`read_twice` in a spawned process, so GDAL starts with empty caches."""
     context = multiprocessing.get_context("spawn")
     receive, send = context.Pipe(duplex=False)
     plain = [ref.to_json() for ref in refs]
     process = context.Process(
-        target=_zoom_process, args=(plain, dataset_id, bounds, tile, dict(gdal_config), send), daemon=True
+        target=_zoom_process, args=(plain, dataset_id, bounds, tile, dict(gdal_config), threads, send), daemon=True
     )
     process.start()
     send.close()
@@ -385,24 +435,53 @@ def _in_own_process(
             process.kill()
 
 
+def _in_overpass(item: Mapping[str, Any], viewer: ViewerInfo, key: tuple[str, ...]) -> bool:
+    try:
+        return overpass_key(item, viewer) == key
+    except MissingProperty:
+        return False
+
+
 def measure_zoom(
-    gathered: Gathered,
+    config: DatasetConfig,
+    chosen: Chosen,
     zoom: int,
     bbox: tuple[float, float, float, float],
-    max_files: int,
-    gdal_config: Mapping[str, str],
     *,
+    fetch: Fetch,
+    policy: Policy,
+    resolve: Any,
+    max_files: int,
+    max_items: int,
+    gdal_config: Mapping[str, str],
+    threads: int = MOSAIC_THREADS,
     read: Callable[..., dict[str, Any]] = _in_own_process,
 ) -> ZoomRow:
+    """One zoom level: the items in the bounds of its tile, those of the chosen overpass, and the read of the tile."""
+    viewer = config.viewer
+    assert viewer is not None  # checked by the caller
     tile = tile_at_centre(bbox, zoom)
+    items = fetch(tile_bounds(tile))
+    # A full list may be cut: the files the tile touches are then not all known.
+    cut = len(items) >= max_items
+    unknown = "over items cap" if cut else "no scenes"
+    mine = [item for item in items if _in_overpass(item, viewer, chosen.key)]
+    if not mine:
+        return ZoomRow(zoom, 0, unknown)
+    try:
+        gathered = resolve_overpass(config, chosen, mine, policy, resolve)
+    except CannotMeasure:
+        return ZoomRow(zoom, 0, "over items cap" if cut else "unreadable")
     touching = scenes_touching_tile(gathered.order, gathered.outlines, tile)
     if not touching:
-        return ZoomRow(zoom, 0, "no scenes")
+        return ZoomRow(zoom, 0, unknown)
     if len(touching) > max_files:
         return ZoomRow(zoom, len(touching), "over cap")
-    bounds = union_bounds(gathered.outlines)
+    if cut:
+        return ZoomRow(zoom, len(touching), "over items cap")
+    bounds = union_bounds({item_id: gathered.outlines[item_id] for item_id in touching})
     scenes = [gathered.refs[item_id] for item_id in touching]
-    outcome = read(scenes, gathered.dataset_id, bounds, (tile.x, tile.y, tile.z), gdal_config)
+    outcome = read(scenes, chosen.dataset_id, bounds, (tile.x, tile.y, tile.z), gdal_config, threads=threads)
     known = {name: outcome[name] for name in ZoomRow.__dataclass_fields__ if name in outcome}
     return ZoomRow(zoom=zoom, files=len(touching), read=len(touching), **{"status": "failed", **known})
 
@@ -417,30 +496,47 @@ def _asset_of(config: DatasetConfig, items: Sequence[Mapping[str, Any]], asked: 
     raise CannotMeasure("the dataset names no default asset these items carry; pass --asset")
 
 
-def gather(
-    config: DatasetConfig,
-    items: Sequence[dict[str, Any]],
-    asked_asset: str | None,
-    policy: Policy,
-    resolve: Any,
+def choose(config: DatasetConfig, items: Sequence[dict[str, Any]], asked_asset: str | None) -> Chosen:
+    """The largest overpass of ``items`` (the first of equals) and the asset that is measured."""
+    viewer = config.viewer
+    assert viewer is not None  # checked by the caller
+    keyed = [item for item in items if _has_overpass_key(item, viewer)]
+    groups = group_by_overpass(keyed, viewer)
+    if not groups:
+        raise CannotMeasure("no item in the rectangle carries an overpass key")
+    key = max(groups, key=lambda candidate: len(groups[candidate]))
+    return Chosen(
+        dataset_id=config.dataset_id,
+        asset=_asset_of(config, groups[key], asked_asset),
+        key=key,
+        items_found=len(items),
+        overpasses=len(groups),
+    )
+
+
+def _has_overpass_key(item: Mapping[str, Any], viewer: ViewerInfo) -> bool:
+    try:
+        overpass_key(item, viewer)
+    except MissingProperty:
+        return False
+    return True
+
+
+def resolve_overpass(
+    config: DatasetConfig, chosen: Chosen, items: Sequence[dict[str, Any]], policy: Policy, resolve: Any
 ) -> Gathered:
-    """The largest overpass of ``items``, resolved and cleared as the mosaic tile does, in its order."""
+    """The items of ``chosen``'s overpass among ``items``, resolved and cleared as the mosaic tile does, in its order."""
     viewer = config.viewer
     assert viewer is not None  # checked by the caller
     skipped: dict[str, int] = {}
-    keyed: list[dict[str, Any]] = []
+    largest: list[dict[str, Any]] = []
     for item in items:
         try:
-            overpass_key(item, viewer)
+            if overpass_key(item, viewer) == chosen.key:
+                largest.append(item)
         except MissingProperty:
             skipped["no overpass key"] = skipped.get("no overpass key", 0) + 1
-            continue
-        keyed.append(item)
-    groups = [list(group) for group in group_by_overpass(keyed, viewer).values()]
-    if not groups:
-        raise CannotMeasure("no item in the rectangle carries an overpass key")
-    largest = max(groups, key=len)
-    asset = _asset_of(config, largest, asked_asset)
+    asset = chosen.asset
     refs: dict[str, ResolvedAsset] = {}
     crs: dict[str, str | None] = {}
     with_asset: dict[str, dict[str, Any]] = {}
@@ -467,7 +563,7 @@ def gather(
         dataset_id=config.dataset_id,
         asset=asset,
         items_found=len(items),
-        overpasses=len(groups),
+        overpasses=chosen.overpasses,
         order=tuple(mosaic_order(crs)),
         refs=refs,
         outlines=outlines,
@@ -475,16 +571,33 @@ def gather(
     )
 
 
+def gather(
+    config: DatasetConfig,
+    items: Sequence[dict[str, Any]],
+    asked_asset: str | None,
+    policy: Policy,
+    resolve: Any,
+) -> Gathered:
+    """The largest overpass of ``items``, resolved and cleared as the mosaic tile does, in its order."""
+    return resolve_overpass(config, choose(config, items, asked_asset), items, policy, resolve)
+
+
 async def _federated_items(
-    config: DatasetConfig, args: argparse.Namespace, policy: Policy, resolve: Any, adapters: AdapterSpecs
+    config: DatasetConfig,
+    bbox: tuple[float, float, float, float],
+    datetime_range: tuple[datetime | None, datetime | None],
+    max_items: int,
+    policy: Policy,
+    resolve: Any,
+    adapters: AdapterSpecs,
 ) -> list[dict[str, Any]]:
-    start, end = args.datetime
+    start, end = datetime_range
     found: list[dict[str, Any]] = []
     token: str | None = None
     async with Gateway(policy, resolve=resolve) as gateway:
-        while len(found) < args.max_items:
+        while len(found) < max_items:
             params = SearchParams(
-                bbox=args.bbox, start=start, end=end, limit=min(MAX_LIMIT, args.max_items - len(found)), page_token=token
+                bbox=bbox, start=start, end=end, limit=min(MAX_LIMIT, max_items - len(found)), page_token=token
             )
             page = await search_items(config, params, adapters=adapters, gateway=gateway)
             found.extend(page.items)
@@ -494,9 +607,22 @@ async def _federated_items(
     return found
 
 
-def _materialized_items(config: DatasetConfig, args: argparse.Namespace) -> list[dict[str, Any]]:
+def _materialized_items(
+    config: DatasetConfig, bbox: tuple[float, float, float, float], max_items: int
+) -> list[dict[str, Any]]:
     with psycopg.connect("") as conn:
-        return search_items_in_bbox(conn, config.dataset_id, args.bbox, args.max_items)  # type: ignore[return-value]
+        return search_items_in_bbox(conn, config.dataset_id, bbox, max_items)  # type: ignore[return-value]
+
+
+def make_fetch(
+    config: DatasetConfig, args: argparse.Namespace, policy: Policy, resolve: Any, adapters: AdapterSpecs
+) -> Fetch:
+    """The search of the dataset's source, for any rectangle, with the run's ``--datetime`` and ``--max-items``."""
+    if config.source.item_holding is ItemHolding.MATERIALIZED:
+        return lambda bbox: _materialized_items(config, bbox, args.max_items)
+    return lambda bbox: asyncio.run(
+        _federated_items(config, bbox, args.datetime, args.max_items, policy, resolve, adapters)
+    )
 
 
 def check_dataset(registry: DatasetRegistry, dataset_id: str) -> DatasetConfig:
@@ -512,15 +638,16 @@ def check_dataset(registry: DatasetRegistry, dataset_id: str) -> DatasetConfig:
     return config
 
 
-def render_table(gathered: Gathered, rows: Sequence[ZoomRow], max_files: int) -> str:
+def render_table(gathered: Gathered, rows: Sequence[ZoomRow], max_files: int, threads: int = MOSAIC_THREADS) -> str:
     def cell(value: Any) -> str:
         return "–" if value is None else str(value)
 
     skipped = ", ".join(f"{count} {kind}" for kind, count in sorted(gathered.skipped.items())) or "none"
     lines = [
-        f"Dataset `{gathered.dataset_id}`, asset `{gathered.asset}`: {gathered.items_found} items found, "
-        f"{gathered.overpasses} overpasses; measured the largest, {len(gathered.order)} scenes (skipped: {skipped}). "
-        f"Tile {TILE_SIZE} px over the middle of the rectangle; at most {max_files} files read per tile.",
+        f"Dataset `{gathered.dataset_id}`, asset `{gathered.asset}`: {gathered.items_found} items found in the rectangle, "
+        f"{gathered.overpasses} overpasses; measured the largest, {len(gathered.order)} scenes there "
+        f"(skipped: {skipped}). Tile {TILE_SIZE} px over the middle of the rectangle, the items fetched per tile; "
+        f"at most {max_files} files read per tile, {threads} threads.",
         "",
         "| z | files | status | cold s | warm s | cold requests | cold MB | warm requests | warm MB | filled | GeoTIFF kB |",
         "|---|---|---|---|---|---|---|---|---|---|---|",
@@ -540,7 +667,7 @@ def render_table(gathered: Gathered, rows: Sequence[ZoomRow], max_files: int) ->
     return "\n".join(lines)
 
 
-def render_json(gathered: Gathered, rows: Sequence[ZoomRow], max_files: int) -> str:
+def render_json(gathered: Gathered, rows: Sequence[ZoomRow], max_files: int, threads: int = MOSAIC_THREADS) -> str:
     return json.dumps(
         {
             "dataset": gathered.dataset_id,
@@ -551,27 +678,43 @@ def render_json(gathered: Gathered, rows: Sequence[ZoomRow], max_files: int) -> 
             "skipped": dict(gathered.skipped),
             "tile_size": TILE_SIZE,
             "max_files": max_files,
+            "threads": threads,
             "rows": [asdict(row) for row in rows],
         },
         indent=2,
     )
 
 
-def run(args: argparse.Namespace, registry: DatasetRegistry, *, adapters: AdapterSpecs = ADAPTER_SPECS) -> str:
+def run(
+    args: argparse.Namespace,
+    registry: DatasetRegistry,
+    *,
+    adapters: AdapterSpecs = ADAPTER_SPECS,
+    fetch: Fetch | None = None,
+    resolve: Any = None,
+    read: Callable[..., dict[str, Any]] = _in_own_process,
+) -> str:
     config = check_dataset(registry, args.dataset_id)
     policy = policy_from_registry(registry)
-    resolve = CachingResolver()
-    if config.source.item_holding is ItemHolding.MATERIALIZED:
-        items = _materialized_items(config, args)
-    else:
-        items = asyncio.run(_federated_items(config, args, policy, resolve, adapters))
+    resolve = CachingResolver() if resolve is None else resolve
+    if fetch is None:
+        fetch = make_fetch(config, args, policy, resolve, adapters)
+    items = fetch(args.bbox)
     if not items:
         raise CannotMeasure("no item in the rectangle")
-    gathered = gather(config, items, args.asset, policy, resolve)
+    chosen = choose(config, items, args.asset)
+    gathered = resolve_overpass(config, chosen, items, policy, resolve)
     gdal_config = tile_gdal_options(policy)
-    rows = [measure_zoom(gathered, zoom, args.bbox, args.max_files, gdal_config) for zoom in args.zooms]
-    render = render_json if args.format == "json" else render_table
-    return render(gathered, rows, args.max_files)
+    rows = [
+        measure_zoom(
+            config, chosen, zoom, args.bbox, fetch=fetch, policy=policy, resolve=resolve, max_files=args.max_files,
+            max_items=args.max_items, gdal_config=gdal_config, threads=args.threads, read=read,
+        )
+        for zoom in args.zooms
+    ]
+    if args.format == "json":
+        return render_json(gathered, rows, args.max_files, args.threads)
+    return render_table(gathered, rows, args.max_files, args.threads)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
