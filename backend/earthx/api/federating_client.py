@@ -69,6 +69,7 @@ from earthx.api.aoi_cloud_filter import (
     read_aoi_request,
     run_filter,
 )
+from earthx.api.collection_search import MAX_PAGE, CollectionsPostRequest, read_query, search_collections
 from earthx.api.item_source import build_item_source, item_holding_of
 from earthx.api.mixed_search import (
     REASON_TIMEOUT,
@@ -683,6 +684,38 @@ def _gateway_of(request: Request):
 class FederatingCoreCrudClient(CoreCrudClient):
     """Branches per collection on ``earthx:source`` instead of on the route."""
 
+    async def all_collections(  # type: ignore[override]
+        self,
+        request: Request,
+        q: str | None = None,
+        bbox: str | None = None,
+        datetime: str | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        """``GET /stac/collections``: without a parameter every collection, as before; else Collection Search (M5-22c).
+
+        An area by ``GET`` is a ``bbox`` only (adr/0026 §4.5): ``intersects`` belongs in the body of ``POST``.
+        """
+        names = frozenset(request.query_params)
+        _reject_keys(names, _DISALLOWED_QUERY_KEYS, "is not available for collections (M5-22 plan §3.7)")
+        if "intersects" in names:
+            raise HTTPException(status_code=400, detail="an area by GET is a bbox; send intersects by POST")
+        if not names:
+            return await super().all_collections(request, limit=MAX_PAGE, offset=0)
+        query = read_query(q=q, bbox=bbox, intersects=None, datetime=datetime, limit=limit, offset=offset)
+        return await search_collections(request, query)
+
+    async def post_all_collections(
+        self, search_request: CollectionsPostRequest, request: Request, **kwargs: Any
+    ) -> Any:
+        """``POST /stac/collections``: the search of ``GET`` with an area as ``bbox`` or ``intersects`` (F6)."""
+        if not search_request.model_fields_set:
+            return await super().all_collections(request, limit=MAX_PAGE, offset=0)
+        query = read_query(**{name: getattr(search_request, name) for name in CollectionsPostRequest.model_fields})
+        return await search_collections(request, query, body=search_request.model_dump(mode="json", exclude_unset=True))
+
     async def item_collection(
         self,
         collection_id: str,
@@ -1001,8 +1034,14 @@ class FederatingCoreCrudClient(CoreCrudClient):
             # for a single-collection search — not caught inside `_mixed_page` itself
             # because it happens before, or outside, any one source's own fan-out call.
             mixed = await self._mixed_page(
-                sources, request, bbox=bbox, intersects=intersects, ids=ids, datetime_value=datetime_value,
-                limit=limit, token=token,
+                sources,
+                request,
+                bbox=bbox,
+                intersects=intersects,
+                ids=ids,
+                datetime_value=datetime_value,
+                limit=limit,
+                token=token,
             )
         except InvalidQuery as error:
             raise _adapter_error_to_http(error) from error
@@ -1032,8 +1071,15 @@ class FederatingCoreCrudClient(CoreCrudClient):
     ) -> ItemCollection:
         try:
             page = await self._federated_search_raw(
-                collection_id, request, bbox=bbox, intersects=intersects, ids=ids,
-                datetime_value=datetime_value, limit=limit, token=token, conditions=conditions,
+                collection_id,
+                request,
+                bbox=bbox,
+                intersects=intersects,
+                ids=ids,
+                datetime_value=datetime_value,
+                limit=limit,
+                token=token,
+                conditions=conditions,
             )
         except _SOURCE_ERRORS as error:
             raise _adapter_error_to_http(error) from error
@@ -1101,8 +1147,15 @@ class FederatingCoreCrudClient(CoreCrudClient):
 
         async def fetch_page(marker: str | None) -> ItemPage:
             return await self._federated_search_raw(
-                source.collection_id, request, bbox=bbox, intersects=intersects, ids=ids,
-                datetime_value=source.effective_datetime, limit=PAGE_SIZE, token=marker, conditions=source.conditions,
+                source.collection_id,
+                request,
+                bbox=bbox,
+                intersects=intersects,
+                ids=ids,
+                datetime_value=source.effective_datetime,
+                limit=PAGE_SIZE,
+                token=marker,
+                conditions=source.conditions,
             )
 
         reading: dict[str, Any] = {
@@ -1224,7 +1277,9 @@ class FederatingCoreCrudClient(CoreCrudClient):
             features, next_marker = await self._native_group_page(
                 group, request, bbox=bbox, intersects=intersects, ids=ids, limit=PAGE_SIZE, marker=marker
             )
-            return ItemPage(items=tuple(features), matched=None, next_page_token=next_marker, from_cache=False, skipped=0)
+            return ItemPage(
+                items=tuple(features), matched=None, next_page_token=next_marker, from_cache=False, skipped=0
+            )
 
         async def no_measure(item: Mapping[str, Any]) -> None:
             raise AssertionError("a search with the coverage alone reads no pixel")
@@ -1349,9 +1404,7 @@ class FederatingCoreCrudClient(CoreCrudClient):
             for source in sources
             if isinstance(source, _FederatedSource) and source.conditions is not None
         }
-        aoi_keys = {
-            _collections_of(source)[0]: source.aoi.key for source in sources if source.aoi is not None
-        }
+        aoi_keys = {_collections_of(source)[0]: source.aoi.key for source in sources if source.aoi is not None}
         fingerprint = mixed_fingerprint(collection_ids, bbox, intersects, ids, datetime_value, conditions, aoi_keys)
         known_source_keys = {source.key for source in sources}
         by_key = {source.key: source for source in sources}
@@ -1403,8 +1456,14 @@ class FederatingCoreCrudClient(CoreCrudClient):
                 else:
                     page = await asyncio.wait_for(
                         self._federated_search_raw(
-                            source.collection_id, request, bbox=bbox, intersects=intersects, ids=ids,
-                            datetime_value=source.effective_datetime, limit=share, token=marker,
+                            source.collection_id,
+                            request,
+                            bbox=bbox,
+                            intersects=intersects,
+                            ids=ids,
+                            datetime_value=source.effective_datetime,
+                            limit=share,
+                            token=marker,
                             conditions=source.conditions,
                         ),
                         # Read off the module, not a name imported at load time
@@ -1474,14 +1533,12 @@ class FederatingCoreCrudClient(CoreCrudClient):
             IncompleteSource(collection=collection_id, reason=reason)
             for collection_id, reason in sorted(failed_total.items())
         )
-        open_collections = tuple(cid for source in sources if source.key in next_pending for cid in _collections_of(source))
-        return _MixedResult(
-            page=page, incomplete=incomplete, open_collections=open_collections, aoi_filter=aoi_counts
+        open_collections = tuple(
+            cid for source in sources if source.key in next_pending for cid in _collections_of(source)
         )
+        return _MixedResult(page=page, incomplete=incomplete, open_collections=open_collections, aoi_filter=aoi_counts)
 
-    async def _to_item_collection(
-        self, page: ItemPage, request: Request, *, collection_id: str
-    ) -> ItemCollection:
+    async def _to_item_collection(self, page: ItemPage, request: Request, *, collection_id: str) -> ItemCollection:
         links = await PagingLinks(request=request, next=page.next_page_token, prev=None).get_links()
         features = []
         for raw_item in page.items:
@@ -1494,9 +1551,9 @@ class FederatingCoreCrudClient(CoreCrudClient):
             # local check against the real EOPF source; the same gap exists for
             # Earth Search, whose synthetic search fixtures happened not to carry
             # per-item links and so never showed it).
-            item["links"] = await ItemLinks(
-                collection_id=collection_id, item_id=item["id"], request=request
-            ).get_links(extra_links=item.get("links"))
+            item["links"] = await ItemLinks(collection_id=collection_id, item_id=item["id"], request=request).get_links(
+                extra_links=item.get("links")
+            )
             features.append(item)
         result: ItemCollection = cast(
             ItemCollection,
