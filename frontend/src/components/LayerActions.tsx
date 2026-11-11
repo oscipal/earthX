@@ -2,9 +2,8 @@
 // The same for a pinned view and a result layer, with the rules of the layer manager: the same "Process", the same download, the same
 // removal (the settings close with the layer).
 
-import { layerDownloadKind } from '../download';
-import type { MapLayer } from '../layers';
-import { EXPIRED_PROCESS_TEXT, layerProcessBlock, NO_COPY_TEXT, PROCESS_RESULT_TEXT, useProcessingStore } from '../processingStore';
+import { LOCKED_LAYER_TIP, type MapLayer } from '../layers';
+import { EXPIRED_PROCESS_TEXT, layerProcessBlock, NO_COPY_TEXT, PROCESS_LAYER_TEXT, useProcessingStore } from '../processingStore';
 import { useAppStore } from '../store';
 import { CogIcon, PlusIcon, TrashIcon } from './icons';
 import LayerDownload from './LayerDownload';
@@ -34,17 +33,17 @@ export default function LayerActions({ layer, beforeCopy }: Props) {
         type="button"
         className="btn"
         disabled={processBlock !== null}
-        data-tip-level="advanced" data-tip={processBlock === NO_COPY_TEXT ? NO_COPY_TEXT : (processBlock ?? (layer.result ? (layer.result.expired ? EXPIRED_PROCESS_TEXT : PROCESS_RESULT_TEXT) : 'Process this layer'))}
+        data-tip-level="advanced" data-tip={processBlock === NO_COPY_TEXT ? NO_COPY_TEXT : (processBlock ?? (layer.result?.expired ? EXPIRED_PROCESS_TEXT : PROCESS_LAYER_TEXT))}
         onClick={() => void processLayer(layer.id)}
       >
         <CogIcon lead />Process
       </button>
-      {layerDownloadKind(layer) !== null ? <LayerDownload layer={layer} className="btn" label="Download" /> : <span />}
+      <LayerDownload layer={layer} className="btn" label="Download" empty={<span />} />
       <button
         type="button"
         className="btn vc-copy"
         disabled={locked}
-        data-tip-level="advanced" data-tip={COPY_TIP}
+        data-tip-level="advanced" data-tip={locked ? LOCKED_LAYER_TIP : COPY_TIP}
         onClick={() => {
           void (beforeCopy ? beforeCopy() : Promise.resolve(true)).then((drawn) => drawn && copy(layer.id));
         }}

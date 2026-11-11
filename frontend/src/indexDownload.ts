@@ -65,7 +65,7 @@ export function indexOrdersOfScenes(args: {
 }): { orders: Order[] } | { problem: string } {
   const { datasetId, groups, aoi, preset, dataset, info } = args;
   const step: DraftStep = { key: 0, op: 'band_math', opVersion: 2, values: { expression: preset.expression, name: preset.name } };
-  const dtype = chooseDtype({ steps: [{ op: 'band_math' }], bands: [], allowed: info.dtypes }).value;
+  const dtype = chooseDtype({ steps: [{ op: 'band_math' }], bands: [], allowed: info.dtypes, operators: info.operators }).value;
   const data = Object.keys(dataset.collection['earthx:band_units'] ?? {});
   const orders: Order[] = [];
   for (const itemIds of groups.filter((group) => group.length > 0)) {

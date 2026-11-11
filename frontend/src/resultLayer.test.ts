@@ -5,12 +5,14 @@ import { indexPresetsOf } from './indexPresets';
 import { RGB } from './processingBands';
 import { DEFAULT_RANGE } from './processingPreview';
 import { parseTileJson } from './processing';
+import type { Collection } from './types';
 import {
   bandTileUrl,
   colourPlacesOf,
   colourStats,
   colourTileUrl,
   defaultRange,
+  isClassBand,
   isOverview,
   isResultExpired,
   MIN_REMAINING_MS,
@@ -98,8 +100,13 @@ describe('how a result is drawn', () => {
     expect(resultRender('float64', { vmin: '0', vmax: '0.5', colormap: '' })).toEqual({ rescale: '0,0.5' });
   });
 
-  it.each(['uint16', 'int16', 'uint8', null])('draws a %s result as it is', (dataType) => {
-    expect(resultRender(dataType, DEFAULT_RANGE)).toEqual({});
+  it.each(['uint16', 'int16', 'uint8'])('draws a %s result with the range of the panel, as a float one', (dataType) => {
+    expect(resultRender(dataType, DEFAULT_RANGE)).toEqual({ rescale: '-1,1', colormapName: 'rdylgn' });
+  });
+
+  it('draws a band of classes, and a result of no known type, as it is', () => {
+    expect(resultRender('uint8', DEFAULT_RANGE, null, null, false, null, true)).toEqual({});
+    expect(resultRender(null, DEFAULT_RANGE)).toEqual({});
   });
 
   it('draws a float result without a range when the range is no range', () => {
@@ -149,6 +156,18 @@ describe('the statistics of a result', () => {
 });
 
 describe('the colour scale of a result (plan §6.7)', () => {
+  // Otto, 11.11.2026: drawn as it is only for classes; Sentinel-2 as uint16 and heights as int16 are quantities.
+  it.each(['uint8', 'uint16', 'int16', 'uint32', 'int32'])('is the 2nd to 98th percentile in viridis for whole numbers of %s too', (dataType) => {
+    expect(resultRender(dataType, DEFAULT_RANGE, stats(dem))).toEqual({ rescale: '180,1900', colormapName: 'viridis' });
+  });
+
+  it('is nothing for a band of classes, and for a result of no known type', () => {
+    expect(resultRender('uint8', DEFAULT_RANGE, stats(dem), null, false, null, true)).toEqual({});
+    expect(resultRender(null, DEFAULT_RANGE, stats(dem))).toEqual({});
+    expect(defaultRange({ dataType: 'uint8', stats: stats(dem), classes: true }, DEFAULT_RANGE)).toBeNull();
+    expect(defaultRange({ dataType: 'uint16', stats: stats(dem) }, DEFAULT_RANGE)).toEqual({ vmin: '180', vmax: '1900', colormap: 'viridis' });
+  });
+
   it('is 2–98 % of the statistics in viridis for a float result of an unknown quantity (rule 4)', () => {
     expect(resultRender('float32', DEFAULT_RANGE, stats(dem))).toEqual({ rescale: '180,1900', colormapName: 'viridis' });
   });
@@ -224,9 +243,13 @@ describe('the colour scale of a result (plan §6.7)', () => {
     expect(resultRender('float32', hand, stats(dem), null)).toEqual({ rescale: '180,1900', colormapName: 'viridis' });
   });
 
-  it('draws an integer result as it is, with or without statistics (rule 1)', () => {
-    expect(resultRender('uint16', DEFAULT_RANGE, stats(dem))).toEqual({});
-    expect(resultRender('int32', { vmin: '0', vmax: '3', colormap: 'terrain' }, stats(dem), DEFAULT_RANGE)).toEqual({});
+  it('draws a band of classes as it is, with or without statistics or a range of its own (rule 1)', () => {
+    expect(resultRender('uint16', DEFAULT_RANGE, stats(dem), null, false, null, true)).toEqual({});
+    expect(resultRender('int32', { vmin: '0', vmax: '3', colormap: 'terrain' }, stats(dem), DEFAULT_RANGE, false, null, true)).toEqual({});
+  });
+
+  it('draws whole numbers that are no classes with the range set by hand (rule 2)', () => {
+    expect(resultRender('int16', DEFAULT_RANGE, stats(dem), { vmin: '0', vmax: '3000', colormap: 'terrain' })).toEqual({ rescale: '0,3000', colormapName: 'terrain' });
   });
 
   it('is the range of the panel without statistics (rule 5)', () => {
@@ -377,10 +400,11 @@ describe('the range of a result layer in its view', () => {
     expect(rangeOfTileUrl(second)).toEqual({ vmin: '0', vmax: '1', colormap: 'greys' });
   });
 
-  it('has the default of the statistics for "auto", the range of the panel without them, none for whole numbers', () => {
+  it('has the default of the statistics for "auto", the range of the panel without them, none for classes', () => {
     expect(defaultRange({ dataType: 'float32', stats: DEM }, DEFAULT_RANGE)).toEqual({ vmin: '180', vmax: '1900', colormap: 'viridis' });
     expect(defaultRange({ dataType: 'float32', stats: null }, { vmin: '0', vmax: '2', colormap: 'plasma' })).toEqual({ vmin: '0', vmax: '2', colormap: 'plasma' });
-    expect(defaultRange({ dataType: 'uint16', stats: DEM }, DEFAULT_RANGE)).toBeNull();
+    expect(defaultRange({ dataType: 'uint16', stats: DEM }, DEFAULT_RANGE)).toEqual({ vmin: '180', vmax: '1900', colormap: 'viridis' });
+    expect(defaultRange({ dataType: 'uint16', stats: DEM, classes: true }, DEFAULT_RANGE)).toBeNull();
     expect(defaultRange({ dataType: null, stats: DEM }, DEFAULT_RANGE)).toBeNull();
   });
 });
@@ -527,8 +551,9 @@ describe('the colour picture of a result (NM4-64)', () => {
       expect(resultRender('float32', DEFAULT_RANGE, measure, own, true)).toEqual({ rescale: '0,2' });
     });
 
-    it('is drawn as it is where the values are whole numbers', () => {
-      expect(resultRender('uint8', DEFAULT_RANGE, measure, null, true)).toEqual({});
+    it('has one range for whole numbers too, and nothing for a band of classes', () => {
+      expect(resultRender('uint16', DEFAULT_RANGE, measure, null, true)).toEqual({ rescale: '0.05,0.6' });
+      expect(resultRender('uint8', DEFAULT_RANGE, measure, null, true, null, true)).toEqual({});
     });
 
     it('puts no colormap in the fields of "auto"', () => {
@@ -589,8 +614,8 @@ describe('the preset of an index (NM4-14b, D2)', () => {
     expect(resultRender('float32', DEFAULT_RANGE, stats(ndvi, true), own, false, NDWI)).toEqual({ rescale: '0,0.5', colormapName: 'magma' });
   });
 
-  it('draws an integer result as it is, a preset notwithstanding', () => {
-    expect(resultRender('uint8', DEFAULT_RANGE, stats(ndvi, true), null, false, NDWI)).toEqual({});
+  it('draws a band of classes as it is, a preset notwithstanding', () => {
+    expect(resultRender('uint8', DEFAULT_RANGE, stats(ndvi, true), null, false, NDWI, true)).toEqual({});
   });
 
   it('draws any other band by the rule it had: the index rule, then the 2–98 %', () => {
@@ -643,5 +668,28 @@ describe('the preset of an index (NM4-14b, D2)', () => {
       expect(presetOfResultBand(typed, [])).toBeNull();
       expect(presetOfResultBand(undefined, presets)).toBeNull();
     });
+  });
+});
+
+describe('a band of classes (Otto, 11.11.2026)', () => {
+  const mask = { asset: 'scl', band: 'scl', classes: [{ value: 4, label: 'VEGETATION' }], suggested: [], reference: '', note: '' };
+  const collection = { id: 's2', 'earthx:mask': mask } as unknown as Collection;
+
+  it('is the mask band of the registry, passed on as whole numbers', () => {
+    expect(isClassBand({ name: 'scl', expression: null }, 'uint8', collection)).toBe(true);
+    expect(isClassBand({ name: 'scl' }, 'uint16', collection)).toBe(true);
+  });
+
+  it.each([
+    ['another band', { name: 'red', expression: null }, 'uint16', collection],
+    ['a band of the same name made by Band math', { name: 'scl', expression: 'scl * 2' }, 'uint8', collection],
+    ['the mask band in floating point (interpolated)', { name: 'scl', expression: null }, 'float32', collection],
+    ['a type the tiler did not name', { name: 'scl', expression: null }, null, collection],
+    ['a dataset without a mask', { name: 'scl', expression: null }, 'uint8', { id: 's2' } as unknown as Collection],
+    ['a mask the registry did not write in full', { name: 'scl', expression: null }, 'uint8', { id: 's2', 'earthx:mask': { band: 'scl' } } as unknown as Collection],
+    ['no dataset', { name: 'scl', expression: null }, 'uint8', undefined],
+    ['no band', undefined, 'uint8', collection],
+  ])('is not %s', (_, band, dataType, where) => {
+    expect(isClassBand(band, dataType, where)).toBe(false);
   });
 });

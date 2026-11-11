@@ -130,9 +130,11 @@ export interface ResultLayerInfo {
   // The tile URL the layer is saved with while "Apply" draws another one that is not saved yet (NM4-50): the unsaved
   // look goes when the settings are closed (`revertResultLayer`), "Save" makes it the layer's own.
   savedTileUrl?: string;
-  // What the tiler named for the result (`float32`, `uint16` …); `null` if it did not say. A float result
-  // needs a range and a colormap to become a picture, any other is drawn as it is.
+  // What the tiler named for the result (`float32`, `uint16` …); `null` if it did not say, and then it is drawn as it is.
   dataType: string | null;
+  // Set where the band the layer draws is a band of classes (`resultLayer.ts::isClassBand`): it is drawn as it is, with no
+  // range or colormap to set. Every other result, of whole numbers too, has them. Left out in a layer made before this was written.
+  classes?: true;
   // The statistics of the AOI the default range comes from (M4-32); `null` for a result without them. Of a result of
   // several bands: those of the band the layer draws.
   stats: ResultStats | null;
@@ -159,3 +161,9 @@ export interface ResultLayerInfo {
   percentChannels?: (Percent | null)[];
   savedPercentChannels?: (Percent | null)[] | null;
 }
+
+// The reason in the tooltip of every control a layer of a deleted job locks in the layer manager, the eye too (UI-04: a locked control
+// says why).
+export const LOCKED_LAYER_TIP = 'Job deleted: restore it first';
+// The reason in the tooltip of every control an expired result locks; the (i) of the row says the rest.
+export const EXPIRED_LAYER_TIP = 'Expired: start the job again';

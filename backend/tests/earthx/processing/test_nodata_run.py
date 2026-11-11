@@ -147,6 +147,23 @@ class TestAValueOnTheNodataIsMoved:
         assert values[8:, :].min() >= 1 and values.max() == 255
 
 
+class TestRecomputedValuesInAnIntegerType:
+    """Otto, 11.11.2026: "histogram and range of a uint16 result make no sense". Not the edge nodata (the statistics leave it out,
+    `test_result_statistics.py`), but values that a step computed anew and the type rounds away: a ratio of 0.25 to 1 becomes 0 and 1.
+    The panel therefore offers only float32 after such a step."""
+
+    def test_a_ratio_into_uint16_keeps_two_values_where_float32_keeps_them_all(self, tmp_path: Path) -> None:
+        whole = _run(_recipe("counts", [_math("counts / 400")], ["x"], "uint16"), tmp_path)
+        values, nodata = _file(whole.path)
+        assert set(numpy.unique(values[values != nodata]).tolist()) <= {0, 1}
+        statistics = whole.properties["bands"][0]["statistics"]
+        assert (statistics["minimum"], statistics["maximum"]) == (0, 1)
+        (tmp_path / "second").mkdir()
+        fractions = _run(_recipe("counts", [_math("counts / 400")], ["x"], "float32"), tmp_path / "second")
+        kept, _ = _file(fractions.path)
+        assert numpy.unique(kept[numpy.isfinite(kept)]).size > 100
+
+
 class TestRefusal:
     """Otto, 11.11.2026, F7 as corrected: refused only where the source nodata would reach the result unchanged."""
 

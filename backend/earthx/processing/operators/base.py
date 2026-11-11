@@ -41,7 +41,7 @@ from rasterio.transform import Affine
 
 from earthx.catalog.registry import Capabilities, DataClass, DatasetConfig, LicenseTier
 
-__all__ = ["BandMeta", "BandUse", "Operator", "RasterMeta", "Requirement", "Tier"]
+__all__ = ["MAKES_VALUES", "PASSES_VALUES", "BandMeta", "BandUse", "Operator", "PassesValues", "RasterMeta", "Requirement", "Tier"]
 
 _OP_NAME = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _CAPABILITY_NAMES = frozenset(field.name for field in fields(Capabilities))
@@ -156,8 +156,29 @@ def _needs_no_percentiles(params: BaseModel) -> tuple[int, ...]:
     return ()
 
 
-def _makes_values(params: BaseModel) -> bool:
-    return False
+@dataclass(frozen=True, slots=True)
+class PassesValues:
+    """Whether every value a step writes is a value it read (selecting, hiding, ``nearest``, ``mode``), as data.
+
+    Always (:data:`PASSES_VALUES`), never (:data:`MAKES_VALUES`, the default) or while the parameter ``param`` is one of
+    ``values``. Called on the parameters it answers the core (:func:`~earthx.processing.nodata.output_nodata`, M5-28);
+    :meth:`annotation` is the same rule as the process description carries it (``x-earthx-passes-values``), so that the panel
+    offers an integer output type only where the values stay what they were (Otto, 11.11.2026) without a rule of its own.
+    """
+
+    always: bool = False
+    param: str | None = None
+    values: frozenset[str] = frozenset()
+
+    def __call__(self, params: BaseModel) -> bool:
+        return self.always if self.param is None else getattr(params, self.param) in self.values
+
+    def annotation(self) -> bool | dict[str, Any]:
+        return self.always if self.param is None else {"param": self.param, "in": sorted(self.values)}
+
+
+MAKES_VALUES = PassesValues()
+PASSES_VALUES = PassesValues(always=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -189,7 +210,7 @@ class Operator:
     bands_used: Callable[[BaseModel], BandUse] = field(default=_keeps_every_band)
     #: Whether every value the step writes is a value it read: selecting, hiding, ``nearest`` and ``mode``. Only then
     #: may an integer result keep the nodata of its source (:func:`~earthx.processing.nodata.output_nodata`, M5-28).
-    passes_values: Callable[[BaseModel], bool] = field(default=_makes_values)
+    passes_values: PassesValues = MAKES_VALUES
     #: The same step for a stock that the planner narrowed: ``restrict(params, kept)`` keeps of the bands the step changes
     #: only those in ``kept`` (``normalize``). ``None`` for a step that names no bands.
     restrict: Callable[[BaseModel, frozenset[str]], BaseModel] | None = None
