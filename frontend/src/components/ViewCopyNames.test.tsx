@@ -25,7 +25,7 @@ const collection = {
   'earthx:format': 'cog',
   'earthx:capabilities': { roi: true, time_range: true, band_math: true, interpolation: true },
   'earthx:default_render': { title: 'True colour', assets: ['visual'], rescale: [[0, 255]], colormap_name: null, expression: null, resampling: 'nearest' },
-  'earthx:viewer': { group_by: ['datetime'], min_zoom: 8, max_zoom: 14, browse: 'quicklook', quicklook_nodata_max: null, results_group_by: ['datetime'] },
+  'earthx:viewer': { group_by: ['datetime'], min_zoom: 8, max_zoom: 14, browse: 'quicklook', quicklook_nodata_max: null, results_group_by: ['datetime'], overview: 'pyramid' as const, overview_resampling: 'average' as const },
 } as unknown as Collection;
 
 const item = (id: string, day: string): StacItem => ({ id, collection: 'optical', bbox: [10, 47, 11, 48], properties: { datetime: `${day}T10:00:00Z` }, assets: {} });

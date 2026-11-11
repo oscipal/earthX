@@ -20,6 +20,7 @@ import psycopg
 import pytest
 from psycopg_pool import ConnectionPool
 
+from earthx.api.intake import MAX_ORDER_ITEMS
 from earthx.api.job_events import JobEvents
 from earthx.api.processing_route import _FAILURES, LINK_NAMES, MAX_BODY_BYTES, JobApi
 from earthx.catalog.registry import DatasetRegistry, LicenseTier
@@ -403,7 +404,8 @@ class TestWhatTheOrderMayNotBe:
         assert "100.123456" not in json.dumps(body)
 
     async def test_more_items_than_an_order_may_name_are_a_413(self, rig: Rig) -> None:
-        ids = tuple(f"S2_{n}" for n in range(26))
+        # The guard of adr/0032 §10.3 (2000), no longer the 25 of M4-07b.
+        ids = tuple(f"S2_{n}" for n in range(MAX_ORDER_ITEMS + 1))
         await self.refused(rig, order(groups=((*ids,),)), 413, "size")
         assert rig.source.calls == [], "no item was fetched for an order that is too big"
 

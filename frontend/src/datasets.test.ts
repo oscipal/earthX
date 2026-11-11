@@ -53,6 +53,8 @@ function viewer(overrides: Partial<EarthxViewer> = {}): EarthxViewer {
     browse: 'preview_tiles',
     quicklook_nodata_max: null,
     results_group_by: ['datetime'],
+    overview: 'own' as const,
+    overview_resampling: null,
     ...overrides,
   };
 }
@@ -120,6 +122,8 @@ describe('datasetsFrom', () => {
           browse: 'quicklook',
           quicklook_nodata_max: 16,
           results_group_by: ['datetime', 's2:datatake_id'],
+          overview: 'own' as const,
+          overview_resampling: null,
         }),
       }),
     ]);
@@ -150,7 +154,7 @@ describe('datasetsFrom', () => {
 
   it('a dataset without earthx:viewer.results_group_by is not viewable', () => {
     const [option] = datasetsFrom([
-      collection({ 'earthx:viewer': { ...viewer(), results_group_by: [] } }),
+      collection({ 'earthx:viewer': { ...viewer(), results_group_by: [], overview: 'own' as const, overview_resampling: null } }),
     ]);
     expect(option.viewable).toBe(false);
     if (!option.viewable) expect(option.reason).toMatch(/results_group_by/);
@@ -194,12 +198,12 @@ describe('browseOf', () => {
 describe('resultsGroupByOf', () => {
   it('reads earthx:viewer.results_group_by', () => {
     expect(
-      resultsGroupByOf(collection({ 'earthx:viewer': viewer({ results_group_by: ['start_datetime'] }) })),
+      resultsGroupByOf(collection({ 'earthx:viewer': viewer({ results_group_by: ['start_datetime'], overview: 'own' as const, overview_resampling: null }) })),
     ).toEqual(['start_datetime']);
   });
 
   it('is null when empty or earthx:viewer is missing', () => {
-    expect(resultsGroupByOf(collection({ 'earthx:viewer': viewer({ results_group_by: [] }) }))).toBeNull();
+    expect(resultsGroupByOf(collection({ 'earthx:viewer': viewer({ results_group_by: [], overview: 'own' as const, overview_resampling: null }) }))).toBeNull();
     expect(resultsGroupByOf(collection())).toBeNull();
   });
 });

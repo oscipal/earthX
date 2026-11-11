@@ -28,7 +28,7 @@ function radar(render: EarthxDefaultRender | null = FIRST_PRESENT, extra: Partia
     title: 'Radar',
     'earthx:format': 'cog',
     'earthx:capabilities': { roi: true, time_range: true },
-    'earthx:viewer': { group_by: ['datetime'], min_zoom: 7, max_zoom: 19, browse: 'preview_tiles', quicklook_nodata_max: null, results_group_by: ['datetime'] },
+    'earthx:viewer': { group_by: ['datetime'], min_zoom: 7, max_zoom: 19, browse: 'preview_tiles', quicklook_nodata_max: null, results_group_by: ['datetime'], overview: 'pyramid' as const, overview_resampling: 'average' as const },
     'earthx:default_render': render,
     ...extra,
   } as unknown as Collection;
@@ -127,7 +127,7 @@ describe('quicklookPlan for a dataset whose quicklook the map cannot place', () 
   });
 
   it('shows nothing for a `quicklook` dataset whose thumbnail cannot be placed, as before', () => {
-    const viewer = { group_by: ['datetime'], min_zoom: 0, max_zoom: 14, browse: 'quicklook', quicklook_nodata_max: null, results_group_by: ['datetime'] };
+    const viewer = { group_by: ['datetime'], min_zoom: 0, max_zoom: 14, browse: 'quicklook', quicklook_nodata_max: null, results_group_by: ['datetime'], overview: 'own' as const, overview_resampling: null };
     expect(quicklookPlan(scene(['vv']), dataset(radar(FIRST_PRESENT, { 'earthx:viewer': viewer } as never)))).toBeNull();
   });
 });

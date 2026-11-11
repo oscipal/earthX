@@ -100,16 +100,16 @@ export interface StacProvider {
 // full resolution straight away, for a dataset with neither.
 export type BrowseMode = 'quicklook' | 'preview_tiles' | 'full_resolution';
 
+// What the tile route shows below `min_zoom` (registry `OverviewMode`, adr/0032 §9): one file's own overviews, a
+// pyramid in the platform's object store, or the chosen scenes through their own overviews.
+export type OverviewMode = 'own' | 'pyramid' | 'scenes';
+export type OverviewResampling = 'average' | 'mode' | 'nearest';
+
 export interface EarthxViewer {
   group_by: string[];
   // The tile levels this dataset is released for (M2-10, registry `ViewerInfo`).
-  // Below `min_zoom` one tile shows several scenes, which is the coverage map's
-  // job; above `max_zoom` the source has nothing finer, so the last level is
-  // overzoomed. The tile route enforces both — asking outside the range is a 400,
-  // not a slow tile. (For a dataset released from tiles already clipped to their
-  // own item's extent — every tile URL is per-item since M3-09 — `min_zoom` is a
-  // cost floor on how many tiles a viewport can ask for at once instead: the DEM
-  // sets it to 0, M3-12 plan step §3.)
+  // From `min_zoom` on a tile is read from the original files; below it, the way `overview` names serves it
+  // (adr/0032 §9). Above `max_zoom` the source has nothing finer, so the last level is overzoomed.
   min_zoom: number;
   max_zoom: number;
   browse: BrowseMode;
@@ -124,6 +124,10 @@ export interface EarthxViewer {
   // because a dataset may head its display by a property `group_by` deliberately
   // does not use (M3-02 F-01).
   results_group_by: string[];
+  // What happens below `min_zoom` (adr/0032 §9); read through, nothing is decided with it yet. The resampling is
+  // set for `pyramid` only.
+  overview: OverviewMode;
+  overview_resampling: OverviewResampling | null;
 }
 
 // `earthx:capabilities` (architekturplan.md 5.1). Only `time_range` is read by

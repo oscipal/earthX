@@ -37,6 +37,8 @@ const COLLECTION: Collection = {
     browse: 'preview_tiles',
     quicklook_nodata_max: null,
     results_group_by: ['datetime'],
+    overview: 'own' as const,
+    overview_resampling: null,
   },
   'earthx:default_render': {
     title: 'True colour',

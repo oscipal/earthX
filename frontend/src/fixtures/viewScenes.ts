@@ -18,6 +18,8 @@ const viewer = (browse: 'preview_tiles' | 'quicklook', minZoom: number, maxZoom:
   browse,
   quicklook_nodata_max: nodata,
   results_group_by: ['datetime'],
+  overview: 'own' as const,
+  overview_resampling: null,
 });
 
 // A source that publishes no quicklook: its browse preview is a tile of the coarsest released level (released from z8).

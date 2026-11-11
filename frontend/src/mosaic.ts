@@ -4,24 +4,24 @@
 // per pass of a view, which of three things the map does:
 //
 //   scenes   one raster per scene, as before — one scene, a pass too big for the
-//            tiler, a dataset released below z8 only, or a mosaic the tiler refused;
+//            tiler, or a mosaic the tiler refused;
 //   pending  a mosaic that is not described yet: nothing is drawn, because the
 //            scenes drawn meanwhile would each ask for tiles the mosaic then replaces;
-//   mosaic   the mosaic from its first level up and, below it, the single scenes
-//            stacked in the order the mosaic reads them (`earthx:order`), so the
-//            scene on top of an overlap does not change when the map zooms across z8.
+//   mosaic   the mosaic from its first level up — the dataset's, since M5-30b (adr/0032 §6.2) — and, below it, the
+//            single scenes stacked in the order the mosaic reads them (`earthx:order`), so the scene on top of an
+//            overlap does not change when the map zooms across that level.
 
 import { buildMosaicTileTemplate } from './api';
 import { firstZoomOf } from './tileSize';
 import type { DownloadedInfo, TimeStepGroup } from './types';
 
-// Mirror `earthx.api.mosaic_tiles` (`MIN_MOSAIC_ZOOM`, `MIN_MOSAIC_ITEMS`, `MAX_MOSAIC_ITEMS`,
-// `MAX_MOSAIC_OPERATOR_ASSETS`, `MAX_MOSAIC_REQUEST_BYTES`); the tiler answers `400` (`414` for the length)
-// outside them. They are not read from the TileJSON, which comes only after the URL is built.
-export const MIN_MOSAIC_ZOOM = 8;
+// Mirror `earthx.api.mosaic_tiles` (`MIN_MOSAIC_ITEMS`, `MAX_MOSAIC_ITEMS`, `MAX_MOSAIC_OPERATOR_ASSETS`,
+// `MAX_MOSAIC_REQUEST_BYTES`); the tiler answers `400` (`414` for the length) outside them. They are not read from the
+// TileJSON, which comes only after the URL is built. A mosaic has every level its dataset is released for: what one
+// tile reads is bounded by its budget (adr/0032 §6.2), and a tile over it shows a part without a mark on the map.
 export const MIN_MOSAIC_SCENES = 2;
 export const MAX_MOSAIC_SCENES = 64;
-// A mosaic tile with steps reads at most this many assets of each scene, so that a tile opens 12 x 4 files at most.
+// A mosaic tile with steps reads at most this many assets of each scene.
 export const MAX_MOSAIC_OPERATOR_ASSETS = 4;
 // Path and query of a mosaic request as they arrive at the tiler: the longest a proxy or a CDN in front of it passes.
 export const MAX_MOSAIC_REQUEST_BYTES = 7168;
@@ -79,7 +79,7 @@ export function stackLikeView<T>(firstOnTop: readonly T[]): T[] {
 }
 
 // The key of the order of a pass's scenes in `Mosaics`: the one the tiler gives where there is no mosaic to follow, because
-// the pass is too big for one (over 64), the tiler refused it, or its dataset is released below z8 only.
+// the pass is too big for one (over 64) or the tiler refused it.
 export function orderKeyOf(datasetId: string, entries: SceneEntry[]): string | null {
   return entries.length >= MIN_MOSAIC_SCENES ? `order|${buildMosaicTileTemplate(datasetId, entries.map(([id]) => id), entries[0][1].asset)}` : null;
 }
@@ -89,7 +89,7 @@ export function isMosaicPass(entries: SceneEntry[]): boolean {
   return (
     entries.length >= MIN_MOSAIC_SCENES &&
     entries.length <= MAX_MOSAIC_SCENES &&
-    entries.every(([, info]) => info.asset === asset && info.maxZoom >= MIN_MOSAIC_ZOOM)
+    entries.every(([, info]) => info.asset === asset)
   );
 }
 
@@ -141,7 +141,7 @@ export function viewOfPass(datasetId: string | null, entries: SceneEntry[], mosa
       tileUrl: info.tileUrl,
       bounds: info.bounds,
       minZoom: info.minZoom,
-      maxZoom: mosaic.minZoom - 1, // `isMosaicPass`: every scene is released at least to z8
+      maxZoom: mosaic.minZoom - 1,
       // A source's `maxzoom` is a tile level, a layer's `maxzoom` a map zoom: the scenes step aside where the mosaic (512 px, level
       // L from map zoom L - 0.5, `tileSize.ts`) is first asked for. Between 6.5 and 7.5 they are level 7 stretched (their own
       // level 8 would come from 6.5 on).

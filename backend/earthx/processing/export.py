@@ -110,7 +110,10 @@ __all__ = [
     "Attachments",
     "AttachmentsInvalid",
     "ExportResult",
+    "MAX_ATTACHMENT_SCENES",
+    "NOTICE_BYTES_PER_SCENE",
     "OutputUnreadable",
+    "attachment_limits",
     "check_export",
     "export",
     "read_attachments",
@@ -124,15 +127,42 @@ EXPORT_NAME = "export.zip"
 #: Where `jobs` puts what `api` handed in, next to ``recipe.json``.
 ATTACHMENTS_NAME = "attachments.json"
 
-#: The files `api` builds, and the most each may hold in UTF-8 bytes (M4-11 K3). The AOI
-#: may be as large as the body of an order (1 MiB) and a little more as GeoJSON text.
+#: The files `api` builds, and the most each may hold in UTF-8 bytes (M4-11 K3) for a small order; the notice's
+#: limit grows with the scenes (:func:`attachment_limits`). The AOI may be as large as the body of an order (1 MiB)
+#: and a little more as GeoJSON text.
 ATTACHMENT_LIMITS: Mapping[str, int] = {
     NOTICE_FILENAME: 64 * 1024,
     CITATION_FILENAME: 64 * 1024,
     AOI_FILENAME: 2 * 1024 * 1024,
 }
+
+#: The most scenes an order names, as `api` guards it (`intake.MAX_ORDER_ITEMS`); the attachments take no more.
+MAX_ATTACHMENT_SCENES = 2000
+
+#: What one scene adds to ``NOTICE.txt`` at most, in UTF-8 bytes (plan M5-30b §6, F4 = 2). Only the notice grows with
+#: the scenes: ``citation.bib`` and ``aoi.geojson`` do not name them. A scene appears once, either in the "Items:" /
+#: "Group N:" lines or in the "left out" line, as its id plus ", " (or "\n\n" where a group has a line of its own):
+#:   item id          255   `ITEM_ID` allows 1 + 254 characters, all ASCII, so 1 byte each
+#:   separator          2   ", " or "\n\n"
+#:   head of a line    48   "Group 2000 (exports/group-2000): " is 33 bytes, in the worst case one group per scene
+#: 305 bytes; 2000 scenes make 610 000 bytes on top of the base limit. The longest line a scene adds fits in it.
+NOTICE_BYTES_PER_SCENE = 255 + 2 + 48
+
+
+def attachment_limits(scenes: int) -> dict[str, int]:
+    """The most each file may hold in UTF-8 bytes for an order of ``scenes`` scenes (F4 = 2).
+
+    :data:`ATTACHMENT_LIMITS` plus :data:`NOTICE_BYTES_PER_SCENE` per scene for ``NOTICE.txt``. `api` and `jobs`
+    call this with the ``scenes`` the attachments carry, so both sides compute the same number; the AOI's
+    limit is the same for every order.
+    """
+    limits = dict(ATTACHMENT_LIMITS)
+    limits[NOTICE_FILENAME] += scenes * NOTICE_BYTES_PER_SCENE
+    return limits
+
+
 _ATTRIBUTION_ENTRIES = 8
-_ATTACHMENT_KEYS = frozenset({"files", "attribution", "dataset", "acquired_on", "bands", "notes", "notices"})
+_ATTACHMENT_KEYS = frozenset({"files", "attribution", "dataset", "acquired_on", "bands", "notes", "notices", "scenes"})
 
 _ATTRIBUTION_CHARS = 1024
 
@@ -167,17 +197,23 @@ class Attachments:
     notes: tuple[str, ...] = ()
     #: The notices of the dataset for the provenance of ``recipe.json`` (DS-04 plan §4.4).
     notices: tuple[RecipeNotice, ...] = ()
+    #: The scenes the notice names, counted by `api` from the order; the limit of ``NOTICE.txt`` grows with it
+    #: (:func:`attachment_limits`), up to :data:`MAX_ATTACHMENT_SCENES`. 0 for attachments written before F4 = 2.
+    scenes: int = 0
 
     def __post_init__(self) -> None:
         if set(self.files) != set(ATTACHMENT_LIMITS):
             raise AttachmentsInvalid(f"an export takes exactly {', '.join(sorted(ATTACHMENT_LIMITS))}")
+        if type(self.scenes) is not int or not 0 <= self.scenes <= MAX_ATTACHMENT_SCENES:
+            raise AttachmentsInvalid(f"an export names at most {MAX_ATTACHMENT_SCENES} scenes")
+        limits = attachment_limits(self.scenes)
         for name, text in self.files.items():
             try:
                 size = len(text.encode("utf-8")) if isinstance(text, str) else None
             except UnicodeEncodeError:
                 size = None  # a lone surrogate: no UTF-8 form, no file
-            if size is None or size > ATTACHMENT_LIMITS[name]:
-                raise AttachmentsInvalid(f"{name} is UTF-8 text of at most {ATTACHMENT_LIMITS[name]} bytes")
+            if size is None or size > limits[name]:
+                raise AttachmentsInvalid(f"{name} is UTF-8 text of at most {limits[name]} bytes")
         if len(self.attribution) > _ATTRIBUTION_ENTRIES or not all(
             isinstance(entry, str) and len(entry) <= _ATTRIBUTION_CHARS for entry in self.attribution
         ):
@@ -195,6 +231,8 @@ class Attachments:
             data["notes"] = list(self.notes)
         if self.notices:
             data["notices"] = [notice.model_dump(mode="json") for notice in self.notices]
+        if self.scenes:
+            data["scenes"] = self.scenes
         return data
 
     @classmethod
@@ -214,7 +252,7 @@ class Attachments:
             raise AttachmentsInvalid("the attachments hold files and attribution") from None
         if not all(isinstance(note, str) and len(note) <= _ATTRIBUTION_CHARS for note in notes):
             raise AttachmentsInvalid("the notes are short texts")
-        return cls(dict(files), tuple(attribution), dataset, acquired_on, bands, notes, notices)
+        return cls(dict(files), tuple(attribution), dataset, acquired_on, bands, notes, notices, data.get("scenes", 0))
 
 
 @dataclass(frozen=True, slots=True)

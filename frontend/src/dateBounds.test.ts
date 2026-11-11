@@ -20,6 +20,8 @@ const VIEWER = {
   browse: 'quicklook' as const,
   quicklook_nodata_max: null,
   results_group_by: ['datetime'],
+  overview: 'own' as const,
+  overview_resampling: null,
 };
 
 function dataset(id: string, interval: unknown, timeAxis = true): Collection {

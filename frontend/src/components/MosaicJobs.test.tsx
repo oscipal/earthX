@@ -10,6 +10,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { DatasetOption } from '../datasets';
+import { MAX_JOB_SCENES } from '../download';
 import { bboxToPolygon } from '../geoUtils';
 import { placeAoi } from '../placeSearch';
 import s2 from '../fixtures/processes/sentinel-2-c1-l2a.json';
@@ -447,9 +448,9 @@ describe('Merged per pass (job)', () => {
     expect(container.querySelector('.dialog-mosaics')?.textContent).toContain('Contains modified Copernicus Sentinel data 2026');
   });
 
-  it('locks a pass over 25 scenes with the reason and starts nothing', async () => {
+  it('locks a pass over the scene guard with the reason and starts nothing', async () => {
     open();
-    const many = Array.from({ length: 26 }, (_, i) => scene(`S2_M${String(i).padStart(2, '0')}`));
+    const many = Array.from({ length: MAX_JOB_SCENES + 1 }, (_, i) => scene(`S2_M${String(i).padStart(2, '0')}`));
     useAppStore.setState({ downloadPasses: [{ label: '2026-07-03', items: many }] });
     await showMerged();
     expect(buttons(START)[0].disabled).toBe(true);
@@ -458,9 +459,9 @@ describe('Merged per pass (job)', () => {
     expect(placed()).toHaveLength(0);
   });
 
-  it('takes a pass of exactly 25 scenes', async () => {
+  it('takes a pass of exactly the scene guard', async () => {
     open();
-    const full = Array.from({ length: 25 }, (_, i) => scene(`S2_M${String(i).padStart(2, '0')}`));
+    const full = Array.from({ length: MAX_JOB_SCENES }, (_, i) => scene(`S2_M${String(i).padStart(2, '0')}`));
     useAppStore.setState({ downloadPasses: [{ label: '2026-07-03', items: full }] });
     await showMerged();
     expect(buttons(START)[0].disabled).toBe(false);

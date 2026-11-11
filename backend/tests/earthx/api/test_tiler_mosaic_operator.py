@@ -355,7 +355,7 @@ class TestRefusedBeforeTheFirstItemIsFetched:
             ({"steps": [("mask", {"source": "red", "classes": [3]})]}, 422),
             ({"items": ("A",)}, 400),
             ({"dataset": NO_REPROJECTION}, 422),
-            ({"tile": (7, 67, 42)}, 400),
+            ({"tile": (20, 1, 1)}, 400),
         ],
         ids=[
             "five steps",
@@ -365,7 +365,7 @@ class TestRefusedBeforeTheFirstItemIsFetched:
             "mask on another band",
             "one scene",
             "dataset without reprojection",
-            "below z8",
+            "above the released range",
         ],
     )
     def test_refusal(self, client, source: Source, change: dict[str, Any], status: int, request) -> None:
