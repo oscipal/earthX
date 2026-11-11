@@ -43,6 +43,11 @@ NM4-01: die Aufnahmejahre der Szenen eines Auftrags, aus denen die Attribution b
 zufälligen Kennung, die Frist das früheste Ende der Jobs, fest ab Erstellung. Keine AOI, kein Titel, keine Bytes;
 `api` schreibt und liest über `jobs/bundles.py`, der stündliche Aufräumer löscht.
 
+`016_dataset_search.sql` — die Tabelle `earthx_dataset_search` aus M5-22b: der Index der Datensatzsuche neben
+pgstac, eine Zeile je Registry-Eintrag mit den vier Teilen des Suchtexts, einem `tsvector` in `simple`, `german` und
+`english`, dem Text für Trigramme, der Box als vier Zahlen (kein PostGIS nötig) und der zeitlichen Ausdehnung. Legt
+`unaccent` und `pg_trgm` an. `catalog-load` schreibt sie, `api` prüft sie beim Start.
+
 Die Buchführungstabelle `earthx_migrations` gehört nicht hierher, sondern dem Läufer
 (`earthx/catalog/schema.py`) und wird von ihm angelegt. Sonst müsste jedes
 Migrationsverzeichnis sie erneut mitbringen.
