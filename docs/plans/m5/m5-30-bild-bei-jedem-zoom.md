@@ -222,3 +222,12 @@ Die Tabellen in den PR kopieren; sie enthalten kein Rechteck und keine ID. Erwar
   - **swissALTI3D `min_zoom` 14 → 13** schon hier statt in Teil 9: z13 braucht höchstens 25 Dateien und passt ins Budget; der Registry-Test „bei `min_zoom` passt jede Kachel ins Budget, eine Stufe darunter nicht“ verlangt genau 13.
 - Frontend: `MIN_MOSAIC_ZOOM` entfällt (`mosaic.ts`, `processingPreview.ts`), Index-Tooltips ohne „zoom 8“. Der Zweig „Szenen unter dem ersten Level des Mosaiks“ (`below`) in `processingPreview.ts` und `mosaic.ts::viewOfPass` wird damit nicht mehr erreicht; er geht mit Teil 3, der beide Dateien ohnehin umbaut.
 - Tests: Budget (Kopf, gleiche Bytes bei gleicher Liste), Zeitabbruch (`503`, `no-store`), z3 als Mosaik, Datensatz nur bis z7 mit Mosaik, Dateibudget zählt Assets, `ReadBudget` mit falscher Uhr; Frontend-Tests auf „Mosaik ab dem ersten Level des Datensatzes“ umgestellt.
+
+### 8.4 Teil 5 — Registry
+
+- `ViewerInfo.overview` (`own`, `pyramid`, `scenes`) und `overview_resampling` (`average`, `mode`, `nearest`), beide Pflicht ohne Vorgabe; `earthx:viewer` der Collection trägt sie, das Frontend liest sie nur durch.
+- **Prüfung „Bild bei z0“** beim Laden jedes Eintrags (also beim Start jedes Prozesses und in `catalog-load`): `own` und `scenes` verlangen `min_zoom` 0; `pyramid` verlangt ein Resampling; ein Resampling bei `own`/`scenes` wird abgelehnt.
+- Werte: Sentinel-1, Sentinel-2 `scenes`; swissALTI3D, DEM `pyramid`/`average`; WorldCover `pyramid`/`mode`. Kein `min_zoom` geändert (§3).
+- Der Docstring-Absatz „`min_zoom` als Kostenuntergrenze des DEM, darunter die Coverage“ ist gestrichen; er gilt nach `adr/0032` nicht mehr.
+- Der Frontend-Typ führt die Felder als Pflicht wie die Registry; deshalb tragen rund 60 Test-Fixtures zwei Zeilen mehr.
+- Test-Fixtures mit `min_zoom` > 0 (synthetischer Zarr-Datensatz, Mosaik-Tests mit eingeengtem Bereich) heißen jetzt `pyramid`/`average`, weil die Prüfung sie sonst ablehnt. Mit Teil 9 lesen solche Datensätze unter `min_zoom` die Pyramide; die Fixtures werden dann noch einmal angesehen.
