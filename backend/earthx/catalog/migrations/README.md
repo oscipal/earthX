@@ -43,7 +43,12 @@ NM4-01: die Aufnahmejahre der Szenen eines Auftrags, aus denen die Attribution b
 zufälligen Kennung, die Frist das früheste Ende der Jobs, fest ab Erstellung. Keine AOI, kein Titel, keine Bytes;
 `api` schreibt und liest über `jobs/bundles.py`, der stündliche Aufräumer löscht.
 
-`016_mosaic_selection.sql` — die Tabelle `earthx_mosaic_selection` aus M5-30b Teil 3 (`adr/0032` §10.2): die Auswahl hinter
+`016_dataset_search.sql` — die Tabelle `earthx_dataset_search` aus M5-22b: der Index der Datensatzsuche neben
+pgstac, eine Zeile je Registry-Eintrag mit den vier Teilen des Suchtexts, einem `tsvector` in `simple`, `german` und
+`english`, dem Text für Trigramme, der Box als vier Zahlen (kein PostGIS nötig) und der zeitlichen Ausdehnung. Legt
+`unaccent` und `pg_trgm` an. `catalog-load` schreibt sie, `api` prüft sie beim Start.
+
+`017_mosaic_selection.sql` — die Tabelle `earthx_mosaic_selection` aus M5-30b Teil 3 (`adr/0032` §10.2): die Auswahl hinter
 einer Mosaik-Kachel-URL unter der ID, die der Hash ihres Inhalts ist (Datensatz, Assets, Item-IDs), dazu Reihenfolge, Umrisse
 und Ausdehnung für die Kacheln. Frist 7 Tage, ein erneutes Anlegen verlängert sie; keine AOI. `api` schreibt und liest über
 `catalog/mosaic_selection.py`, der stündliche Aufräumer von `jobs` löscht.

@@ -16,6 +16,7 @@ each other's collections and the developer's database is left as it was found.
 
 from __future__ import annotations
 
+import asyncio
 import os
 from collections.abc import AsyncIterator, Iterator, Mapping
 from pathlib import Path
@@ -23,6 +24,10 @@ from pathlib import Path
 import psycopg
 import pytest
 from dotenv import load_dotenv
+
+import earthx.api.main
+from earthx.catalog.registry import DatasetRegistry
+from earthx.catalog.search_index import write_search_index
 
 # Written by scripts/setup-cloud-session.sh. Reading it here is what lets a session
 # run the same bare `pytest` that CI runs (adr/0002 §6); CI sets the variables on the
@@ -76,6 +81,7 @@ SHIPPED_TABLES = (
     "public.earthx_recipe",
     "public.earthx_permalink",
     "public.earthx_bundle",
+    "public.earthx_dataset_search",
     "public.earthx_mosaic_selection",
 )
 
@@ -125,6 +131,33 @@ def _object_store_env(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv(name, value)
     for name in ("S3_ACCESS_KEY_FILE", "S3_SECRET_KEY_FILE"):
         monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _search_index_of_the_app(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Write the search index for the registry of the `api` a test starts, then run the start check unchanged.
+
+    `api` refuses to start on an index that is not the one of its registry (M5-22 plan §3.4, A3). These tests build
+    `api` with registries of their own; a deployment runs `catalog-load` with the registry of the process first, and
+    this does the same for the test's registry, committed, right before the check. `test_search_index.py` puts the
+    bare check back to test the refusal itself.
+
+    Committed, unlike the rest of these tests: the check reads over a connection of the app's own pool. In a parallel
+    run each worker has a database of its own; after a serial run against a database you keep, run `catalog-load`
+    before starting `api` on it again, as after the tests that call it themselves.
+    """
+    check = earthx.api.main.check_search_index
+
+    def write(registry: DatasetRegistry) -> None:
+        with psycopg.connect() as connection:
+            write_search_index(connection, registry)
+            connection.commit()
+
+    async def write_then_check(registry: DatasetRegistry, conn: object) -> None:
+        await asyncio.to_thread(write, registry)
+        await check(registry, conn)
+
+    monkeypatch.setattr(earthx.api.main, "check_search_index", write_then_check)
 
 
 @pytest.fixture
