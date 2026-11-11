@@ -165,6 +165,51 @@ Vorschlag, unter Vorbehalt von F1–F3:
 - Abweichungen min_zoom 13 in Teil 2, kein Tooltip für Teilkacheln, Registry vor Pyramide: angenommen.
 - Befund aus #336: `measure_tiles.py` stellt den Logger `rasterio` nach dem Lesen wieder her (Teil 1, mit Test).
 
+**F7 — Ersatz-Datensatz statt Pyramide (Vorschlag Otto, 11.11.2026; vor den Teilen 7–9 zu entscheiden)?**
+
+Vorschlag: `viewer.overview` bekommt neben `pyramid` die Art **`substitute`**. Unter `min_zoom` zeichnet die Karte einen anderen Datensatz, nur als Darstellung: swissALTI3D und BEV → Copernicus DEM GLO-30, GLO-30 bei sehr kleinem Zoom → GLO-90. Jobs, Download, Statistik, Histogramm und AOI-Messung kommen immer aus dem gewählten Datensatz; der Farbbereich bleibt der des gewählten Datensatzes; kein Hinweis im Frontend.
+
+*Unterschiede [P, Registry; S wo markiert]:*
+
+| | swissALTI3D | BEV DGM | Copernicus GLO-30 |
+|---|---|---|---|
+| Modell | Geländemodell (ohne Bewuchs und Bauten) | Geländemodell | **Oberflächenmodell** (TanDEM-X, X-Band; Wald und Gebäude teils enthalten) |
+| Höhenbezug | LN02 (`swissalti3d.yaml:188`) | Gebrauchshöhen Adria [S] | EGM2008-Geoid [S] |
+| Auflösung | 0,5 m / 2 m | 1 m | 30 m (1″) |
+
+*Messung am Übergang [M, 11.11.2026]:* dieselbe Kachel aus swissALTI3D (`dtm_2m`) und GLO-30, bilinear auf 512 px, über einer Stadt (Bild an Otto, nicht im Repo, weil es einen Ort zeigt):
+
+| Stufe | GLO-30 − swissALTI3D: 5 % / Median / 95 % | Mittel \|d\| | Max |
+|---|---|---|---|
+| z12 | −0,7 / **+3,3** / +14,4 m | 4,6 m | 36,9 m |
+| z13 | −0,5 / **+3,4** / +13,4 m | 4,5 m | 31,7 m |
+
+Der Median von rund +3 m ist Höhenbezug plus Oberfläche im offenen Gelände; die Ausreißer sind Waldflächen (+20–35 m). Im Standard-Farbbereich von swissALTI3D (0–5 000 m) sind 14 m 0,3 % des Bereichs und nicht zu sehen; mit einem engen Bereich nach „Apply“ (z. B. 500–650 m) springen Wälder beim Übergang auf z13 sichtbar. Bei z12 (≈ 13 m je Pixel) ist GLO-30 (30 m) etwas weicher als die Originale.
+
+*GLO-90 hilft gegen das Budget nicht:* Es hat dieselbe Kachelung von 1° wie GLO-30 [S, Bucket-Struktur], also dieselbe Zahl Dateien je Kartenkachel (z6 ≈ 32, z4 ≈ 300, `adr/0032` §4); es spart nur Bytes. Unter z7 braucht GLO-30 deshalb weiter eine eigene Pyramide (z0–z6, wie `adr/0032` §5.2) — oder GLO-90 bekäme selbst eine. GLO-90 ist zudem kein Registry-Eintrag; seine Aufnahme hieße Onboarding und Lizenz-Einstufung (Ottos Entscheidung).
+
+*Kosten [A aus M]:*
+
+| | Pyramide swissALTI3D (Plan heute) | Ersatz durch GLO-30 |
+|---|---|---|
+| Speicher | ≈ 0,7 GB je Fassung | 0 (GLO-30-Pyramide z0–z6 < 1 GB brauchen beide Wege) |
+| Bau | ≈ 90 000 Anfragen, ≈ 6,3 h bei 0,25 s; Neubau geänderter Kacheln je Fassung, Prüfung je 30 Tage | keiner; GLO-30-Pyramide ≈ 26 000 Dateien ≈ 52 000 Anfragen ≈ 3,6 h, nur einmal (Quelle ändert sich praktisch nie) |
+| Je Kartenkachel z7–z12 | 1 Objekt aus dem eigenen Speicher | 1–16 GLO-30-Dateien (je ≈ 0,3–0,8 s kalt [A, gleiche Größenordnung wie Sentinel-1, nicht gemessen]) |
+| BEV | eigene Pyramide (≈ 55 Dateien bei z6) | entfällt |
+| Treue | Werte des gewählten Datensatzes | anderes Modell und anderer Höhenbezug (oben) |
+
+*Zwei Punkte, die mit der Vorgabe „kein Hinweis“ kollidieren:*
+- **Quellenangabe (B11, Lizenz):** Copernicus DEM verlangt eine Quellenangabe, wo seine Daten gezeigt werden. Ohne jeden Hinweis wäre die gezeigte Fläche nicht belegt. Das ist kein Hinweis auf das Bild, sondern die Quellenzeile der Karte.
+- **`adr/0032` F12** (Marke „Overview“ bei Pyramiden-Kacheln) gilt für einen Ersatz nicht; der Ersatz ersetzt in diesen Datensätzen die Pyramide, damit entfällt auch die Marke.
+
+*Optionen:*
+1. `substitute` für swissALTI3D und BEV → GLO-30 (z7 bis `min_zoom` − 1); GLO-30 und WorldCover behalten ihre Pyramide (GLO-30 z0–z6, WorldCover z0–z4); kein GLO-90; in der **Quellenzeile der Karte** steht Copernicus, solange der Ersatz gezeichnet wird, sonst kein Hinweis. Registry-Prüfung: Ersatz mit Stufe „Anzeige“, gleiche Einheit, deckt die Ausdehnung, kein Ersatz eines Ersatzes **(Empfehlung)**
+2. Wie 1, ohne Quellenangabe für den Ersatz (Lizenzfrage offen; nicht empfohlen)
+3. Wie 1, dazu GLO-90 als Ersatz für GLO-30 unter z7 statt der GLO-30-Pyramide (spart nichts am Budget; Onboarding von GLO-90 nötig)
+4. Bei der Pyramide bleiben (`adr/0032` wie angenommen)
+
+Mit 1 bis 3 wird `adr/0032` §5 und §9 per Nachtrag geändert (neue Art in F9, F1–F3 gelten dann nur noch für GLO-30 und WorldCover).
+
 Teile 1–6 brauchen keine Antwort. **Teile 7–9 ruhen bis zu F1–F3.**
 
 **F1 — Wie wird der Bau nach der Materialisierung angestoßen (`adr/0032` §5.2, „klärt V6“)?**
