@@ -191,6 +191,7 @@ MASK = Operator(
     method=_method,
     properties=_properties,
     dataset_check=_dataset_check,
+    passes_values=lambda params: True,
     stock=False,
     listed=False,
 )
