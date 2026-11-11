@@ -1,7 +1,7 @@
 """The evaluation set of the dataset search and its evaluator (docs/plans/m5/m5-22-suche-lexikalisch.md §3.1, §4).
 
-Three parts: the fixture says what adr/0026 §8.3 says; the measures follow §8.1 on a synthetic catalogue; and the zero
-point, the set put to a search that finds nothing over the catalogue of the registry (adr/0026 §6 step 1). Run with
+Three parts: the fixture keeps the shape of adr/0026 §8.3 (ids, languages, kinds, context; the cells were compared
+with the ADR once in review, M5-22a); the measures follow §8.1 on a synthetic catalogue; and the zero point, the set put to a search that finds nothing over the catalogue of the registry (adr/0026 §6 step 1). Run with
 ``-s`` to see the report.
 """
 
@@ -62,34 +62,52 @@ def test_every_fixed_id_is_in_the_registry():
             assert ref.id in REGISTRY, ref.short_name
 
 
-def test_the_set_names_no_prototype_dataset():
+def test_a_provisional_id_is_not_in_the_registry_yet():
+    # Once the entry arrives, drop `provisional` or correct the id; otherwise its questions rest on a wrong id.
     for ref in load_evaluation_set().datasets:
-        assert ref.id is None or not ref.id.startswith("proto-")
+        if ref.provisional:
+            assert ref.id not in REGISTRY, f"{ref.short_name}: {ref.id} is in the registry now"
 
 
 # --- the zero point ----------------------------------------------------------------------------------------------------
 
 
 def test_zero_point_without_a_search():
-    evaluation = evaluate(load_evaluation_set(), Catalogue.of(REGISTRY), lambda question: [])
+    # The numbers of plan §3.1 and §10 for the six entries of the registry; a new entry changes them on purpose.
+    evaluation = evaluate(load_evaluation_set(), Catalogue.of(REGISTRY), lambda query: [])
     print("\n" + report(evaluation))
+    assert (len(evaluation.active), len(evaluation.resting)) == (36, 14)
+    assert [evaluation.measures(language).questions for language in ("de", "en", "all")] == [11, 10, 30]
     overall = evaluation.measures()
-    assert overall.questions > 0
     assert (overall.recall_at_5, overall.mrr_at_10, overall.ndcg_at_10) == (0.0, 0.0, 0.0)
-    assert evaluation.filters and all(not o.never_hits for o in evaluation.filters)
+    assert sorted(o.question.id for o in evaluation.filters) == ["Q27", "Q28", "Q29", "Q32"]
+    assert all(not o.never_hits for o in evaluation.filters)
     assert len(evaluation.negatives) == 4 and all(not o.hits for o in evaluation.negatives)
-    assert {miss.split(":")[1].split()[0] for miss in shortfalls(evaluation, ADR_0026_F5)} == {"Recall@5", "MRR@10"}
+    assert shortfalls(evaluation, ADR_0026_F5) == [
+        "de: Recall@5 0.000 below 0.9",
+        "de: MRR@10 0.000 below 0.8",
+        "en: Recall@5 0.000 below 0.9",
+        "en: MRR@10 0.000 below 0.8",
+    ]
 
 
 # --- measures on a synthetic catalogue ---------------------------------------------------------------------------------
 
+# Z has an id but is not loaded, like BEV today; N has no id yet, like MeteoSchweiz.
 CATALOGUE = Catalogue({"a": frozenset(), "b": frozenset(), "c": frozenset({"terrain"}), "x": frozenset()})
 
 
 def _set(tmp_path: Path, questions: list[dict], datasets: dict | None = None) -> Path:
     data = {
         "datasets": datasets
-        or {"A": {"id": "a"}, "B": {"id": "b"}, "C": {"id": "c"}, "X": {"id": "x"}, "N": {"id": None}},
+        or {
+            "A": {"id": "a"},
+            "B": {"id": "b"},
+            "C": {"id": "c"},
+            "X": {"id": "x"},
+            "Z": {"id": "z"},
+            "N": {"id": None},
+        },
         "questions": questions,
     }
     path = tmp_path / "set.yaml"
@@ -98,12 +116,13 @@ def _set(tmp_path: Path, questions: list[dict], datasets: dict | None = None) ->
 
 
 def _q(qid: str = "Q1", language: str = "en", kind: str = "T", **fields) -> dict:
-    return {"id": qid, "language": language, "text": "words", "kind": kind, **fields}
+    return {"id": qid, "language": language, "text": f"text of {qid}", "kind": kind, **fields}
 
 
 def _run(tmp_path, questions, answers, catalogue=CATALOGUE):
+    """``answers`` by question id; the search itself sees only the text (``text of Q1``)."""
     evaluation_set = load_evaluation_set(_set(tmp_path, questions))
-    return evaluate(evaluation_set, catalogue, lambda question: answers.get(question.id, []))
+    return evaluate(evaluation_set, catalogue, lambda query: answers.get(query.text.removeprefix("text of "), []))
 
 
 def test_recall_counts_the_wanted_among_the_first_five(tmp_path):
@@ -137,24 +156,31 @@ def test_mrr_takes_the_first_wanted_hit(tmp_path):
 
 
 def test_ndcg_is_one_for_the_ideal_order_and_less_when_grade_one_leads(tmp_path):
-    questions = [_q(grade_2=["A"], grade_1=["B"])]
-    assert _run(tmp_path, questions, {"Q1": ["a", "b"]}).measures().ndcg_at_10 == pytest.approx(1.0)
-    assert _run(tmp_path, questions, {"Q1": ["b", "a"]}).measures().ndcg_at_10 < 1.0
+    # Grade 2 on `b`, grade 1 on `a`: the ideal list sorts by grade, not by id.
+    questions = [_q(grade_2=["B"], grade_1=["A"])]
+    assert _run(tmp_path, questions, {"Q1": ["b", "a"]}).measures().ndcg_at_10 == pytest.approx(1.0)
+    assert _run(tmp_path, questions, {"Q1": ["a", "b"]}).measures().ndcg_at_10 < 1.0
 
 
-def test_ndcg_ignores_graded_datasets_outside_the_catalogue(tmp_path):
-    # N has no id: the ideal list is `a` alone, so `a` first is ideal.
-    evaluation = _run(tmp_path, [_q(grade_2=["A", "N"])], {"Q1": ["a"]})
-    assert evaluation.measures().ndcg_at_10 == pytest.approx(1.0)
+@pytest.mark.parametrize("absent", ["Z", "N"])
+def test_graded_datasets_outside_the_catalogue_count_neither_for_recall_nor_for_the_ideal(tmp_path, absent):
+    evaluation = _run(tmp_path, [_q(grade_2=["A", absent], grade_1=["Z"] if absent == "N" else [])], {"Q1": ["a"]})
     assert evaluation.measures().recall_at_5 == 1.0
+    assert evaluation.measures().ndcg_at_10 == pytest.approx(1.0)
 
 
 def test_a_question_rests_while_no_wanted_dataset_is_in_the_catalogue(tmp_path):
     asked = []
     evaluation_set = load_evaluation_set(_set(tmp_path, [_q(grade_2=["N"])]))
-    evaluation = evaluate(evaluation_set, CATALOGUE, lambda question: asked.append(question) or [])
+    evaluation = evaluate(evaluation_set, CATALOGUE, lambda query: asked.append(query) or [])
     assert not asked and len(evaluation.resting) == 1
     assert evaluation.measures().questions == 0
+    with pytest.raises(ValueError, match="no recall"):
+        _ = evaluation.outcomes[0].recall
+
+
+def test_a_question_rests_while_its_wanted_dataset_has_an_id_but_is_not_loaded(tmp_path):
+    assert len(_run(tmp_path, [_q(grade_2=["Z"], grade_1=["A"])], {}).resting) == 1
 
 
 def test_a_question_rests_until_its_capability_is_offered(tmp_path):
@@ -164,9 +190,23 @@ def test_a_question_rests_until_its_capability_is_offered(tmp_path):
 
 
 def test_questions_without_grade_two_are_always_active(tmp_path):
-    evaluation = _run(tmp_path, [_q("Q1", kind="0"), _q("Q2", kind="R", never=["N"])], {})
-    assert len(evaluation.active) == 2
-    assert len(evaluation.negatives) == 1 and len(evaluation.filters) == 1
+    questions = [_q("Q1", kind="0"), _q("Q2", kind="R", never=["N"]), _q("Q3", kind="Z", never=["A"], requires="radar")]
+    evaluation = _run(tmp_path, questions, {})
+    assert len(evaluation.active) == 3
+    assert len(evaluation.negatives) == 1 and len(evaluation.filters) == 2
+
+
+def test_the_search_sees_text_and_context_but_no_grade(tmp_path):
+    asked = []
+    evaluation_set = load_evaluation_set(
+        _set(
+            tmp_path, [_q(grade_2=["A"], never=["X"], aoi={"name": "box", "bbox": [7, 46, 8, 47]}, years=[2020, 2021])]
+        )
+    )
+    evaluate(evaluation_set, CATALOGUE, lambda query: asked.append(query) or [])
+    (query,) = asked
+    assert (query.text, query.aoi.bbox, [d.year for d in query.period]) == ("text of Q1", (7, 46, 8, 47), [2020, 2021])
+    assert not hasattr(query, "grade_2") and not hasattr(query, "never")
 
 
 def test_bare_names_count_only_over_both_languages(tmp_path):
@@ -206,9 +246,9 @@ def test_one_negative_question_may_fail_two_may_not(tmp_path):
     ]
 
 
-@pytest.mark.parametrize("answer", [["a", "a"], ["a", "unknown"]])
-def test_a_search_that_answers_twice_or_outside_the_catalogue_is_an_error(tmp_path, answer):
-    with pytest.raises(ValueError, match="Q1"):
+@pytest.mark.parametrize("answer, message", [(["a", "a"], "Q1: .* twice"), (["a", "z"], "Q1: .* outside .*: z")])
+def test_a_search_that_answers_twice_or_outside_the_catalogue_is_an_error(tmp_path, answer, message):
+    with pytest.raises(ValueError, match=message):
         _run(tmp_path, [_q(grade_2=["A"])], {"Q1": answer})
 
 
@@ -263,6 +303,7 @@ def _set_key(path, value):
         (_break_question(text="  "), "'text' is a non-empty text"),
         (_break_question(language="fr"), "'language'"),
         (_break_question(kind="Q"), "'kind'"),
+        (_break_question(kind=["N"]), "'kind'"),
         (_break_question(grade_2=["Z"]), "does not list"),
         (_break_question(grade_2=["A", "A"]), "twice"),
         (_break_question(grade_1=["A"]), "more than one grade"),

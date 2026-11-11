@@ -22,10 +22,9 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from datetime import date
 from pathlib import Path
-from typing import Any
 
 from earthx.catalog.entry_files import read_yaml
 from earthx.catalog.registry import PROTOTYPE_PREFIX, DatasetRegistry
@@ -101,25 +100,23 @@ class Catalogue:
         return cls(
             {
                 entry.dataset_id: frozenset(
-                    name for name, value in vars_of(entry.capabilities).items() if value is True
+                    field.name
+                    for field in fields(entry.capabilities)
+                    if getattr(entry.capabilities, field.name) is True
                 )
                 for entry in registry
             }
         )
+
+    @property
+    def ids(self) -> frozenset[str]:
+        return frozenset(self.capabilities)
 
     def __contains__(self, dataset_id: object) -> bool:
         return dataset_id in self.capabilities
 
     def offers(self, capability: str) -> bool:
         return any(capability in offered for offered in self.capabilities.values())
-
-
-def vars_of(obj: object) -> dict[str, Any]:
-    """The fields of a dataclass with ``slots`` or without, by name."""
-    names = getattr(obj, "__dataclass_fields__", None)
-    if names is None:
-        raise TypeError(f"{type(obj).__name__} is not a dataclass")
-    return {name: getattr(obj, name) for name in names}
 
 
 # --- reading -----------------------------------------------------------------------------------------------------------
@@ -182,7 +179,7 @@ def _read_question(raw: object, ids: Mapping[str, str | None]) -> Question:
             raise EvaluationSetError(f"{name}: '{key}' is a non-empty text")
     if raw["language"] not in LANGUAGES:
         raise EvaluationSetError(f"{name}: 'language' is one of {', '.join(LANGUAGES)}")
-    if raw["kind"] not in KINDS:
+    if not isinstance(raw["kind"], str) or raw["kind"] not in KINDS:
         raise EvaluationSetError(f"{name}: 'kind' is one of {', '.join(sorted(KINDS))}")
     grades = {key: _short_names(raw.get(key, []), name, key, ids) for key in ("grade_2", "grade_1", "never")}
     every = [short for names in grades.values() for short in names]
@@ -258,7 +255,21 @@ def _read_years(raw: object, name: str) -> tuple[date, date] | None:
 
 # --- measuring ---------------------------------------------------------------------------------------------------------
 
-Search = Callable[[Question], Sequence[str]]
+
+@dataclass(frozen=True, slots=True)
+class Query:
+    """What a search is asked: the text and the context of a question, never its grades."""
+
+    text: str
+    aoi: Aoi | None
+    period: tuple[date, date] | None
+
+    @classmethod
+    def of(cls, question: Question) -> Query:
+        return cls(question.text, question.aoi, question.period)
+
+
+Search = Callable[[Query], Sequence[str]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -281,6 +292,8 @@ class Outcome:
 
     @property
     def recall(self) -> float:
+        if not self.wanted:
+            raise ValueError(f"{self.question.id}: no dataset of grade 2 in the catalogue, so no recall")
         return len(self.wanted & set(self.hits[:RECALL_AT])) / len(self.wanted)
 
     @property
@@ -367,20 +380,26 @@ class Evaluation:
 
 
 def evaluate(evaluation_set: EvaluationSet, catalogue: Catalogue, search: Search) -> Evaluation:
-    """Every question, the active ones put to ``search``; a hit the catalogue does not hold is an error of the search."""
+    """Every question, the active ones put to ``search`` as a :class:`Query`; an answer with an id twice or outside the
+    catalogue is an error of the search."""
     outcomes = []
     for question in evaluation_set.questions:
         wanted = frozenset(d for d in question.grade_2 if d in catalogue)
-        active = (bool(wanted) or not question.wanted) and (
-            question.requires is None or catalogue.offers(question.requires)
+        # §8.1: with grade 2, active once one of them is catalogued and the requirement holds; without, always.
+        active = not question.wanted or (
+            bool(wanted) and (question.requires is None or catalogue.offers(question.requires))
         )
         hits: tuple[str, ...] = ()
         if active:
-            hits = tuple(search(question))
-            strangers = [hit for hit in hits if hit not in catalogue]
-            if strangers or len(set(hits)) != len(hits):
-                raise ValueError(f"{question.id}: the search answered ids twice or outside the catalogue")
-        outcomes.append(Outcome(question, active, hits, wanted, frozenset(catalogue.capabilities)))
+            hits = tuple(search(Query.of(question)))
+            if len(set(hits)) != len(hits):
+                raise ValueError(f"{question.id}: the search answered an id twice")
+            strangers = sorted(set(hits) - catalogue.ids)
+            if strangers:
+                raise ValueError(
+                    f"{question.id}: the search answered ids outside the catalogue: {', '.join(strangers)}"
+                )
+        outcomes.append(Outcome(question, active, hits, wanted, catalogue.ids))
     return Evaluation(tuple(outcomes))
 
 
@@ -389,11 +408,12 @@ def evaluate(evaluation_set: EvaluationSet, catalogue: Catalogue, search: Search
 
 @dataclass(frozen=True, slots=True)
 class PassMark:
-    """What a run has to reach. ``recall_at_5`` and ``mrr_at_10`` hold per language (adr/0026 §8.1)."""
+    """What a run has to reach. ``recall_at_5`` and ``mrr_at_10`` hold per language (adr/0026 §8.1); a language without
+    a measured question misses the mark, since nothing shows it is met (plan Auslegung A8)."""
 
     recall_at_5: float
     mrr_at_10: float
-    #: How many active negative questions may fail.
+    #: How many active negative questions may fail: "three of four" as at most one, whatever their number (plan A9).
     negatives_may_fail: int = 1
 
 
