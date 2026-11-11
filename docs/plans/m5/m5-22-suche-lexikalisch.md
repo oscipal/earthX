@@ -1,6 +1,6 @@
 # M5-22 — Suche Teil 1: Bewertungs-Set, Suchtext, lexikalischer Arm, Collection Search: Plan-Schritt
 
-**Status (11.11.2026):** Plan angenommen (Otto, 11.11.2026; Antworten in §8a). Drei Teile nach F1: M5-22a umgesetzt im Draft-PR [#325](https://github.com/oscipal/earthX/pull/325) (§10); M5-22b umgesetzt im Draft-PR [#334](https://github.com/oscipal/earthX/pull/334) (§11, Antworten Otto in §11.6); M5-22c folgt als eigener PR.
+**Status (11.11.2026):** Plan angenommen (Otto, 11.11.2026; Antworten in §8a). Drei Teile nach F1: M5-22a umgesetzt im Draft-PR [#325](https://github.com/oscipal/earthX/pull/325) (§10); M5-22b umgesetzt im Draft-PR [#334](https://github.com/oscipal/earthX/pull/334) (§11, Antworten Otto in §11.6); M5-22c umgesetzt (§12).
 **Aufgabe:** M5-22 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2. **Stufe B.** Hängt von M5-13 ab (gemergt mit #311). M5-23 (Vektorarm, Suchfeld im Data catalogue) und M5-25 (JSON-LD, Sitemap) warten auf den Merge.
 **Grundlagen:** `adr/0026` §4.1–§4.6, §6 Schritte 1 und 2, §8, §10, §11 (F1–F9), §12 Folgen 2, 4, 6, 9, 10; `adr/0024` R5, R7; `adr/0027` §6.1; `KLAERUNGEN.md` B10, B13; `architekturplan.md` 3.1, 5.1, 5.3, 10; Glossar-Begriffe aus `plans/m5/m5-07-worldcover.md` §10, `plans/m5/m5-08-stac-adapter-swissalti3d.md` §9, `plans/ds/ds-04-s1-anbinden.md` §8.
 
@@ -311,3 +311,44 @@ Ein Review-Subagent fand drei Fehler, alle behoben: (1) Der Importvertrag `runne
 - **Eine Zahl oder Kennung an einem bekannten Namen fällt nicht weg.** Heute liefert „Sentinel-3“ vier Datensätze: „3“ (bzw. „sentinel-3“) kennt kein Suchtext und fällt unter `Joining.KNOWN` weg, die Trigramme finden „sentinel“. Künftig gilt: Hängt eine Zahl oder Kennung an einem bekannten Namen („Sentinel-3“, „Landsat 9“, „S2“), bleibt sie eine Bedingung; ohne passenden Datensatz ist die Liste leer (`adr/0026`, K9). Das betrifft beide Arme: den Volltext (die Einheit fällt nicht weg) und die Trigramme (sie dürfen den Namen ohne seine Zahl nicht allein tragen).
 - **Neue Negativfrage im Set:** „Sentinel-3“ (Art 0, ohne Datensatz), mit M5-22c. Nicht schon in M5-22b: Mit ihr hätten zwei aktive Negativfragen Treffer (Q48, die neue), und der harte Test nach A9 schlüge fehl, bevor die Regel oben gebaut ist. Wortlaut, Sprache und ob „Landsat 9“ eine eigene Frage wird, legt M5-22c mit der Begründung im PR fest (`adr/0026` §8.1, „Änderung“).
 
+---
+
+## 12. Umsetzung Teil 3: M5-22c (11.11.2026)
+
+Belegstufen wie oben; **M** heißt hier: im lokalen Postgres 16 der Sitzung gemessen, ohne Netz.
+
+### 12.1 Was gebaut ist
+
+- **Route:** `api/collection_search.py`. `GET /stac/collections` mit `q`, `bbox`, `datetime`, `limit`, `offset`; `POST /stac/collections` über `CollectionSearchPostExtension` mit denselben Feldern und `intersects` (F6). Ohne jeden Parameter (und bei `POST {}`) der bisherige Pfad der Bibliothek: dieselbe Antwort wie vorher, gemessen byte-gleich [M], alle Collections nach Kennung (A15 bestätigt: pgstac sortiert ohne `sortby` nach `id`). Sonst fragt die Route `catalog.search` und holt die Collection-Dokumente einer Seite in einem Aufruf aus pgstac, in der Rangfolge, ohne Punktzahl.
+- **Seiten:** mit `q` höchstens 20, Vorgabe 20 (A5); `next`-Link bei `GET` als URL, bei `POST` mit `method` und `body`; `numberMatched` ist die Zahl aller Treffer.
+- **Konformität:** Collection Search (in der Fassung der Bibliothek: `v1.0.0-rc.1/collection-search` und OGC `simple-query`), kein Free-text. `q` kommt über ein eigenes Anfragemodell ohne Konformitätsklasse; seine Beschreibung in der OpenAPI sagt, was `q` hier heißt (`adr/0026` §4.5).
+- **Eingaben:** `q` über 200 Zeichen, Box mit falscher Zahl von Werten oder außerhalb ±180/±90 oder mit Süd über Nord, Zeitraum ungültig oder verkehrt herum, `bbox` und `intersects` zugleich, Position einer Geometrie außerhalb ±180/±90, unbekanntes Feld im Body, `limit` < 1, `offset` < 0 → `400`. Keine Fehlermeldung nennt Text oder Koordinate.
+- **Logs:** weder `q` noch Fläche in einer Logzeile; ein Test prüft das Zugangsprotokoll für `GET` mit `q` und Box, `POST` mit `intersects` und eine abgewiesene Anfrage.
+- **Zahl am Namen (§11.7):** in `catalog/search.py`, siehe A18–A21. Negativfrage **Q51** „Sentinel-3“ im Set und in `adr/0026` §8.3 (Nachtrag).
+- **Tests:** `tests/integration/test_api_collection_search.py` (Route gegen Postgres und pgstac), `tests/earthx/api/test_collection_search.py` (Lesen der Anfrage ohne Datenbank), neue Fälle in `tests/integration/test_search.py` (Zahlen am Namen, synthetisch).
+
+### 12.2 Messung am Set [M]
+
+Gewählte Variante (`Joining.KNOWN`), Schwelle 0,5, Katalog der Registry mit sechs Einträgen, 37 Fragen aktiv, 14 ruhend:
+
+| | Fragen mit Note 2 | Recall@5 | MRR@10 | nDCG@10 |
+|---|---|---|---|---|
+| de | 11 | 0,727 | 0,727 | 0,753 |
+| en | 10 | 1,000 | 1,000 | 0,952 |
+| gesamt | 30 | 0,900 | 0,878 | 0,877 |
+
+Filterfragen 4/4, Negativfragen 4/5 (Q48 wie in M5-22b; Q51 leer). Alle Maße wie in M5-22b; die Sperrklinke bleibt. Ohne die Regel aus §11.7 lieferte Q51 vier Datensätze (Sentinel-1, Sentinel-2, beide WorldCover), der Test nach A9 schlüge fehl.
+
+Einzelne Anfragen vorher → nachher: „Sentinel 3“ 4 → 0, „Copernicus DEM 90“ 5 → 0, „Landsat 9“ 1 (Copernicus DEM, über die „9“ einer Beschreibung) → 0; „Sentinel-2“ verliert Sentinel-1 (kam nur über die Trigramme von „sentinel“), „Sentinal 2“ verliert swissALTI3D und Sentinel-1. „Höhenmodell 2024“, „Landbedeckung 2021“, „land cover 2020“, „S2 L2A“ unverändert.
+
+### 12.3 Auslegungen der Umsetzung (zur Bestätigung)
+
+- **A18** „Name“ ist ein Wort mit Buchstaben aus Kennung oder Titel eines Datensatzes im Index, „Zahl“ eine Ziffernfolge. Steht eine Zahl direkt nach einem Namen („Sentinel 3“, „Copernicus DEM 90“), muss sie in Kennung, Titel oder Schlagworten eines Treffers stehen, verglichen als Ziffernfolge. Nicht im Volltext, weil der „GLO-30“ in `glo` und `-30` zerlegt [M]. Schlagworte zählen mit, damit WorldCover (Schlagwort `sentinel-2`) bei „Sentinel-2“ bleibt wie bisher.
+- **A19** Im Trigramm-Arm gilt das für jede Zahl der Anfrage, nicht nur für eine nach einem Namen: Der Arm vergleicht nur Namen und Schlagworte, und „sentinel3“ oder „Sentinal 3“ (Tippfehler im Namen) sollen nichts finden.
+- **A20** Eine reine Zahl trägt im Volltext nie allein einen Treffer. Ohne das bliebe „Landsat 9“ (Landsat kennt der Katalog noch nicht) beim Copernicus DEM, weil eine „9“ in einem Text steht.
+- **A21** Eine Zahl nach einem Thema bleibt verzichtbar, wenn kein Text sie kennt: „Höhenmodell 2024“ findet weiter die Höhenmodelle; ein Zeitraum gehört in `datetime`.
+- **A22** Q51 ist englisch und `name_only` wie Q01 „Sentinel-2“ (ein reiner Name zählt nur im Gesamtmaß). „Landsat 9“ wird keine eigene Frage: LS (Landsat Collection 2 Level-2) enthält Landsat 9 und machte sie mit dem ersten W0-Eintrag zur gesuchten statt zur Negativfrage.
+- **A23** Ohne `q`, aber mit Fläche, Zeit, `limit` oder `offset`: eine Seite hält alle Treffer (bis 10 000, die Grenze der Bibliothek), außer `limit` sagt weniger. Die 20 aus A5 gelten nur mit Text.
+- **A24** Eine Box mit West östlich von Ost geht über den Antimeridian (Regel der STAC-API) und wird als zwei Boxen gesucht; eine Box mit sechs Werten (mit Höhe) wird flach gelesen. `intersects` nimmt jede GeoJSON-Geometrie wie `/stac/search`.
+- **A25** `ignored_filters` und `ignored_filters_by_collection` nennen nur Collections der ausgelieferten Seite.
+- **A26** `filter`, `sortby`, `query`, `fields` und `intersects` per `GET` sind ein `400` statt still übergangen (wie bei `/stac/search`); andere unbekannte Query-Parameter übergeht die Route wie bisher.
