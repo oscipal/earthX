@@ -13,6 +13,9 @@
   - **Nachtrag M5-12 (Otto, 2026-11-06):** Die Quick processings „VV dB“,
     „VH dB“ und „Dual-pol RGB“ sind auf GRD freigegeben, als Nachtrag zu F3
     (§9.4, `adr/0030`).
+  - **Nachtrag DS-04d (Otto, 2026-11-11):** Zuschnitt, Ergebnisse und Mosaik
+    je Durchgang bleiben in Radargeometrie, ohne CRS und ohne Reprojektion
+    (§9.5). Ändert §4.3 (Zuschnitt) und §4.4 (Reprojektion, Mosaik).
 - **Datum:** 2026-10-26
 - **Aufgabe:** DS-01 laut `docs/plans/ds/ds-01-s1-quelle.md` (Paket DS,
   `docs/plans/ds/ds-00-paket.md`).
@@ -356,6 +359,8 @@ bis 2,4 MB, z11 bis z13 2 bis 4 MB (Blöcke zu 1024 × 1024).
   ESA-SAFE.
 - **Zuschnitt:** wie üblich, mit der Methode aus §4.1, `uint16` DN, beide
   Hinweise in der Textdatei.
+  *Ersetzt durch §9.5 (DS-04d, 2026-11-11):* Pixel-Fenster der Szene in
+  Radargeometrie, ohne CRS, mit den verschobenen GCPs der Quelle.
 - **Coverage:** Upstream-Aggregation wie Sentinel-2 [M].
 - **Suche:** Felder aus §3.1 für DS-02.
 - **Fassung:** CRC64NVME per `HEAD` (§3.1), eine Anfrage je Asset.
@@ -376,8 +381,8 @@ Normalisierung, Reprojektion), Zuschnitt und Mosaik je Durchgang, dazu DS-05.
 | Band-Math mit festen Schwellen (z. B. Wasser unter −18 dB) | nein | DN sind kein σ⁰; Schwellen aus der Literatur gelten nicht |
 | Maske nach Werten (DS-06) | nur relativ (Perzentil, Bereich der Szene) | wie oben |
 | Normalisierung | ja | Darstellung |
-| Reprojektion, Resampling | ja, mit derselben Methode wie §4.1 | Ergebnis bleibt „approximate geolocation“ |
-| Mosaik je Durchgang (aufeinanderfolgende Slices einer Bahn) | ja | gleiche Bahn, gleiche Geometrie; Nähte möglich |
+| Reprojektion, Resampling | ~~ja, mit derselben Methode wie §4.1~~ **nein** (§9.5) | ~~Ergebnis bleibt „approximate geolocation“~~ ohne σ⁰ und Geländekorrektur nie georeferenziert ausgeliefert |
+| Mosaik je Durchgang (aufeinanderfolgende Slices einer Bahn) | ja, **in Radargeometrie aneinandergehängt** (§9.5) | gleiche Bahn, gleiche Geometrie; gemessen lückenlos und ohne Naht (§9.5) |
 | Mosaik oder Vergleich über Bahnen und Zeiten | nein | verschiedene Geometrie und Kalibrierung; Lagefehler addieren sich |
 | Speckle-Filter (DS-05) | ja, fachlich sogar am besten in Radargeometrie | T1 schwierig (Nachbarschaft), siehe DS-05 |
 | Index-Knöpfe, ML | nein | gelten für optische Daten |
@@ -816,6 +821,33 @@ freigegeben. Das ist ein Nachtrag zu F3.
   - die Hinweise „Approximate geolocation“ und „Uncalibrated (DN)“ bleiben (F2).
 - **RVI und Schwellenmasken** kommen erst nach einer σ⁰-Kalibrierung (`adr/0030` F5, DS-05d).
 - **Umsetzung:** DS-05a (dB) und DS-05c (Komposit) nach `adr/0030` §9.
+
+### 9.5 Nachtrag DS-04d (2026-11-11): Ausgabe in Radargeometrie
+
+Otto hat am 11.11.2026 entschieden: **Sentinel-1 GRD wird ohne richtige Bearbeitung (σ⁰ und
+Geländekorrektur) nie georeferenziert ausgeliefert.** Das ändert §4.3 (Zuschnitt) und §4.4
+(Reprojektion, Mosaik); F1 (TPS) bleibt für die Karte.
+
+- **Zuschnitt und Ergebnisse** (Download, Bänder-Download, Export-Job, Operatoren, Runner) bleiben in
+  Radargeometrie: kein CRS, kein Geotransform, keine Spiegelung. Die GCPs der Quelle bleiben in der Datei,
+  verschoben auf das ausgeschnittene Fenster.
+- **Zuschnitt:** umschließendes Pixel-Fenster der AOI über die TPS aus den GCPs, dazu eine Maske aus der
+  ungefähr übertragenen AOI-Form. Außerhalb der Form bleiben die Werte stehen, die Form steht nur in
+  `mask.tif` wie bei M3-18 (Otto, 11.11.2026, DS-04d F1 = 2; ersetzt „außerhalb nodata“ der ersten Fassung).
+- **Mosaik je Durchgang** bleibt, in Radargeometrie aneinandergehängt. Gemessen an zwei Paaren
+  aufeinanderfolgender Slices: lückenlos (Abstand eine Zeile), ganzzahliger Zeilenversatz, gleicher Beginn der
+  Bodenentfernung und Pixelabstand, keine radiometrische Naht.
+- **Reprojektion entfällt** für Sentinel-1 in Download und Processing; sie erscheint nicht (Registry-Angabe über
+  `georeferencing: gcp_tps`, kein Code je Datensatz).
+- **Karte** unverändert über TPS („approximate geolocation“).
+- **Textdatei** des Downloads nennt Radargeometrie, Szene und Pixel-Fenster (Zeile/Spalte); im Frontend keine
+  Hinweise, Erklärungen höchstens im Tooltip.
+
+Umsetzung, Messung und Antworten zu F1–F8 (Zeilenversatz aus den Item-Zeiten, GCPs des Mosaiks als Vereinigung,
+Nähte, die nicht passen, als eigene Gruppe bzw. `422`): `docs/plans/m5/ds-04d-radargeometrie.md` §9a.
+
+**Nebenbefund für DS-05d [M]:** Die Assets `schema-product-*` der Items zeigen auf die RFI-Annotation
+(`annotation/rfi/rfi-iw-*.xml`), nicht auf die Produkt-Annotation (`annotation/iw-*.xml`).
 
 ---
 
