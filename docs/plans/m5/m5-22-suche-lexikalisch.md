@@ -56,7 +56,7 @@ Im lokalen Postgres 16 der Sitzung:
 ### 3.1 Bewertungs-Set als Fixture
 
 - **Datei:** `backend/tests/fixtures/search/evaluation_set.yaml`, die 50 Fragen aus `adr/0026` §8.3 wörtlich, mit Kennung, Sprache, Text, Art, Kontext und Noten (2, 1, `never`). Dazu eine Tabelle der Kürzel (`S2` → `sentinel-2-c1-l2a`, …); Kürzel ohne Kennung (MCH, HYR, CLC, LS; BEV vorläufig `bev-als-dgm`) stehen mit `null` bzw. der vorläufigen Kennung.
-- **Kontext:** AOI als grobe Box in ganzen Grad mit Namen (`adr/0026` §8.1), Zeitraum als Jahresgrenzen, Voraussetzung als Bedingung, die aus den Daten prüfbar ist: Q34, Q35 `requires: {capability: terrain}` (aktiv, sobald ein Eintrag die Capability `terrain` hat; M5-10). So braucht der Test `processing` nicht.
+- **Kontext:** AOI als grobe Box in ganzen Grad mit Namen (`adr/0026` §8.1), Zeitraum als Jahresgrenzen, Voraussetzung als Bedingung, die aus den Daten prüfbar ist: Q34, Q35 `requires: terrain` (aktiv, sobald ein Eintrag die Capability `terrain` hat; M5-10). So braucht der Test `processing` nicht.
 - **Ruhen** (`adr/0026` §8.1): aktiv, wenn mindestens ein Datensatz mit Note 2 geladen ist und die Voraussetzung gilt; Fragen ohne Note 2 sind immer aktiv. Gemessen wird nur gegen geladene Datensätze. Stand heute: **36 aktiv** (30 mit Note 2, 2 Filterfragen Q29 und Q32, 4 Negativfragen), **14 ruhen** (Q06, Q08, Q19–Q23, Q25, Q26, Q34, Q35, Q41, Q45, Q46).
 - **Maße** wie §8.1: Recall@5, MRR@10, nDCG@10 (nur berichtet), Filterfragen, Negativfragen; je Sprache und gesamt. Reine Namen und Kürzel (Q01, Q03, Q04, Q05, Q07, Q40, Q42, Q43, Q44, Q46) nur im Gesamtmaß. Heute je Sprache: 11 deutsche, 10 englische Fragen mit Note 2.
 - **Auswerter:** `backend/tests/search_evaluation.py` (Maße, Ruhen, Bericht), getrennt vom Test, damit M5-23 ihn mit dem Vektorarm wiederverwendet. Eigener Code statt `ranx`: vier Maße über wenige Dutzend Fragen brauchen keine Abhängigkeit [A]; der gepaarte Vergleich zweier Varianten (`ranx`) kommt mit M5-23, wo er gebraucht wird.
@@ -145,6 +145,7 @@ Nichts, solange sie `/stac/collections` ohne Parameter rufen. `catalog-load` sch
 - **A4** Materialisierter Datensatz ohne geladene Items: Raumfilter über die Bbox.
 - **A5** Ohne Parameter alle Collections wie heute; mit `q` höchstens 20 je Seite, ein größeres `limit` wird gesenkt (die Spezifikation erlaubt dem Server weniger zu liefern [A]).
 - **A6** Ohne Text, aber mit Fläche oder Zeit: gefilterte Liste ohne Rang in der heutigen Reihenfolge.
+- **A7** Filterfragen zählen nach den Kürzeln in `never`, auch wenn ein Kürzel noch keine Kennung hat (M5-22a, §10).
 
 ---
 
@@ -223,3 +224,23 @@ Grob geschätzt [A], ohne Fixture: Auswerter und Test rund 300 Zeilen, Suchtext,
 - Keine Prototyp-Datensätze im Set (`adr/0024` R7).
 - `CLAUDE.md`, `.github/`, `.claude/` und `CODEOWNERS` bleiben unverändert; Compose nur nach F5 Option 2.
 - Vor „fertig“: `main` geholt, Lint, Typprüfung, Tests und Importregeln grün.
+
+---
+
+## 10. Umsetzung Teil 1: M5-22a (11.11.2026)
+
+- **Fixture** `backend/tests/fixtures/search/evaluation_set.yaml`: die 50 Fragen aus `adr/0026` §8.3 wörtlich, die Kürzel aus §8.2 mit Kennung (`null`, solange keine feststeht; BEV mit `provisional: true`), Hinweise aus §8.3 als Kommentare. AOI als Box in ganzen Grad, Zeitraum als `years: [erstes, letztes]`.
+- **Auswerter** `backend/tests/search_evaluation.py`: liest die Fixture mit dem strengen Lader der Registry (`entry_files.read_yaml`) und prüft die Regeln aus §8.1 (Noten getrennt, Negativfrage ohne Noten, ganze Grad, kein `proto-`); `evaluate` stellt die aktiven Fragen an eine beliebige Suche, `shortfalls` vergleicht mit einer Grenze (`ADR_0026_F5` als Konstante), `report` schreibt den Bericht je Frage. Eine Antwort mit doppelter oder unbekannter Kennung ist ein Fehler der Suche.
+- **Filterfragen** zählen nach den Kürzeln, nicht nach den Kennungen: Q29 prüft MCH, das noch keine Kennung hat, und bleibt so eine (bestandene) Filterfrage (Auslegung A7).
+- **Tests** `backend/tests/catalog/test_search_evaluation.py`: die Fixture gegen das ADR (Kennungen, Sprachen, Negativfragen, reine Namen, Voraussetzungen, Boxen, Zeiträume), feste Kennungen in der Registry, Maße auf einem synthetischen Katalog, 25 fehlerhafte Fixtures, Nullpunkt.
+
+**Nullpunkt** (keine Suche, Katalog der Registry mit sechs Einträgen; `pytest -n 0 -s backend/tests/catalog/test_search_evaluation.py`):
+
+| | Fragen mit Note 2 | Recall@5 | MRR@10 | nDCG@10 |
+|---|---|---|---|---|
+| de | 11 | 0 | 0 | 0 |
+| en | 10 | 0 | 0 | 0 |
+| gesamt | 30 | 0 | 0 | 0 |
+
+36 Fragen aktiv, 14 ruhend (wie §3.1). Filterfragen 4 von 4 (Q27, Q28, Q29, Q32), Negativfragen 4 von 4 bestanden. Gegen die Grenze aus F5 fehlen Recall@5 und MRR@10 in beiden Sprachen, sonst nichts.
+
