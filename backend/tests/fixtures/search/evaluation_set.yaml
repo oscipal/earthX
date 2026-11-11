@@ -1,6 +1,7 @@
 # The evaluation set of the dataset search: the 50 questions of adr/0026 §8.3 word for word, released by Otto on
-# 06.11.2026 (F4); rules in §8.1, pass mark in F5. New questions and changed grades come by pull request with a
-# reason, and Otto releases them; a question never leaves because it fails (§8.1).
+# 06.11.2026 (F4), and Q51 from M5-22c (Otto, 11.11.2026; plan §11.7); rules in §8.1, pass mark in F5. New questions
+# and changed grades come by pull request with a reason, and Otto releases them; a question never leaves because it
+# fails (§8.1).
 #
 # Read by `tests/search_evaluation.py` (docs/plans/m5/m5-22-suche-lexikalisch.md §3.1). No prototype dataset ever
 # appears here (adr/0024 R7). An AOI is a coarse box in whole degrees named after a region, never a user's area.
@@ -112,3 +113,7 @@ questions:
 - {id: Q48, language: en, text: ocean salinity, kind: '0'}
 - {id: Q49, language: de, text: Bevölkerungsdichte, kind: '0'}
 - {id: Q50, language: en, text: hourly weather forecast, kind: '0'}
+# M5-22c (plan §11.7, §12): a known name with a number no dataset has. The number must not drop out and leave the name
+# to carry Sentinel-1, Sentinel-2 and WorldCover. Sentinel-3 is planned for no milestone; "Landsat 9" is no question of
+# its own, because LS (Landsat Collection 2 Level-2) holds Landsat 9 and would turn it into a wanted one.
+- {id: Q51, language: en, text: Sentinel-3, kind: '0', name_only: true}

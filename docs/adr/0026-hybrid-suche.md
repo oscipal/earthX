@@ -373,7 +373,7 @@ Fragen zum Geländeoperator setzen voraus, dass er gebaut ist (M5-10), weil erst
 
 ### 8.3 Fragen
 
-25 deutsch, 25 englisch. Art: **N** Name, **T** Thema, **X** Region im Text, **R** Region als AOI, **Z** Zeit, **F** Fähigkeit, **S** Abkürzung oder Tippfehler, **K** Konto-Eintrag, **0** ohne passenden Datensatz.
+25 deutsch, 25 englisch, dazu Q51 (Nachtrag M5-22c). Art: **N** Name, **T** Thema, **X** Region im Text, **R** Region als AOI, **Z** Zeit, **F** Fähigkeit, **S** Abkürzung oder Tippfehler, **K** Konto-Eintrag, **0** ohne passenden Datensatz.
 
 | ID | Spr. | Frage | Kontext | Note 2 | Note 1 | nie | Art |
 |---|---|---|---|---|---|---|---|
@@ -427,6 +427,7 @@ Fragen zum Geländeoperator setzen voraus, dass er gebaut ist (M5-10), weil erst
 | Q48 | en | ocean salinity | — | — | — | — | 0 |
 | Q49 | de | Bevölkerungsdichte | — | — | — | — | 0 |
 | Q50 | en | hourly weather forecast | — | — | — | — | 0 |
+| Q51 | en | Sentinel-3 | — | — | — | — | 0 |
 
 Hinweise zu einzelnen Fragen:
 
@@ -440,6 +441,7 @@ Hinweise zu einzelnen Fragen:
 - **Q38, Q39:** Quick processings (NDSI, NDWI) stehen im Suchtext von Sentinel-2 (§4.1).
 - **Q42, Q43:** Tippfehler; der Trigramm-Arm muss sie finden.
 - **Q47–Q50:** Nichts im Katalog passt, je zwei Fragen auf Deutsch und Englisch. Erwartet ist eine leere Liste; dafür braucht der Vektorarm die Mindestähnlichkeit (§4.3).
+- **Q51** (Nachtrag M5-22c, Otto 11.11.2026, `plans/m5/m5-22-suche-lexikalisch.md` §11.7, §12): ein bekannter Name mit einer Zahl, die kein Datensatz hat. Die Zahl darf nicht wegfallen und den Namen allein Sentinel-1, Sentinel-2 und WorldCover finden lassen. Reiner Name, zählt nur im Gesamtmaß. „Landsat 9“ ist keine eigene Frage: LS enthält Landsat 9 und machte sie zur gesuchten.
 
 ### 8.4 Wie das Set läuft
 
