@@ -145,9 +145,9 @@ Nichts, solange sie `/stac/collections` ohne Parameter rufen. `catalog-load` sch
 - **A4** Materialisierter Datensatz ohne geladene Items: Raumfilter über die Bbox.
 - **A5** Ohne Parameter alle Collections wie heute; mit `q` höchstens 20 je Seite, ein größeres `limit` wird gesenkt (die Spezifikation erlaubt dem Server weniger zu liefern [A]).
 - **A6** Ohne Text, aber mit Fläche oder Zeit: gefilterte Liste ohne Rang in der heutigen Reihenfolge.
-- **A7** Filterfragen zählen nach den Kürzeln in `never`, auch wenn ein Kürzel noch keine Kennung hat (M5-22a, §10).
-- **A8** Eine Sprache ohne gemessene Frage verfehlt die Grenze: Nichts belegt, dass sie erreicht ist.
-- **A9** „Drei von vier Negativfragen“ heißt: höchstens eine aktive Negativfrage darf Treffer haben, auch wenn per PR weitere hinzukommen.
+- **A7** (bestätigt 11.11.2026) Filterfragen zählen nach den Kürzeln in `never`, auch wenn ein Kürzel noch keine Kennung hat (M5-22a, §10).
+- **A8** (bestätigt 11.11.2026) Eine Sprache ohne gemessene Frage verfehlt die Grenze: Nichts belegt, dass sie erreicht ist.
+- **A9** (bestätigt 11.11.2026) „Drei von vier Negativfragen“ heißt: höchstens eine aktive Negativfrage darf Treffer haben, auch wenn per PR weitere hinzukommen.
 
 ---
 
@@ -214,6 +214,7 @@ Grob geschätzt [A], ohne Fixture: Auswerter und Test rund 300 Zeilen, Suchtext,
 
 - **F1–F8 jeweils Option 1.** Damit: drei PRs (a, b, c); Wortverknüpfung am Set gewählt, Bestätigung im PR von M5-22b; Filter- und Negativfragen ab M5-22b hart, Sperrklinke für Recall@5 und MRR@10, Grenze aus `adr/0026` F5 ab M5-23; Begriffe je Capability als YAML in `catalog`; `POST` mit `bbox` und `intersects`; kein Zugangs- und Lizenzfilter in M5; deutsche Schlagworte für Sentinel-2 und Copernicus DEM in M5-22b.
 - **Auslegung A1 angenommen:** Schlagworte auf Gewicht B.
+- **Auslegungen A7, A8, A9 bestätigt (Otto, 11.11.2026, nach der Umsetzung von M5-22a).**
 - **F4, Natural Earth:** als Public Domain bestätigt; Einstufung frei, eine Quellenangabe ist nicht Pflicht. Freiwillig in den Hinweisen zu Dritten nennen (mit M5-22b, das die Datei bringt).
 
 ---
