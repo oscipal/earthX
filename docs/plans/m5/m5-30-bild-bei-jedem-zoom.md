@@ -57,7 +57,7 @@ Jeder Teil ist ein eigener Draft-PR. Der Branch eines Teils geht vom Branch sein
 | 6 | **V8** Zuschnitt und Job | 25 fallen; Zuschnitt nach geschätzter Dauer ≤ 60 s und ≤ 500 MB, sonst „As a job“; Job ohne Item-Grenze außer Schutzgrenze 2 000 | ≈ 250 | — |
 | 7 | **V6a** Lesen mit Abstand | `gateway`: Abstand je Host auch für GDAL-Lesen eines Baus (0,25 s, einstellbar); Kern `processing`: Basiskachel aus Dateien | ≈ 350 | 5, **F1–F3** |
 | 8 | **V6b** Bau als Job | Hülle in `jobs`: Anstoß, Stufen aus Kindern, Upload, Kopie unveränderter Kacheln; `objectstore` Präfix `overviews/` und Regel 31 Tage; Prüfung der Fassung nach 30 Tagen, Verlängerung; Aufräumen | ≈ 400, ggf. geteilt | 7 |
-| 9 | **V7** Kachelroute | z < `min_zoom` aus der Pyramide, `404` mit `X-EarthX-Overview: building`/`failed`; `X-EarthX-Source: overview`; Marke „Overview“; Quellenangabe „modified“; `min_zoom` von swissALTI3D, DEM, WorldCover nach `adr/0032` §9 | ≈ 350 | 8 |
+| 9 | **V7** Kachelroute | z < `min_zoom` aus der Pyramide, `404` mit `X-EarthX-Overview: building`/`failed`; `X-EarthX-Source: overview`; keine Marke, höchstens Tooltip am Layer (F12, korrigiert 11.11.2026); Quellenangabe „modified“; `min_zoom` von swissALTI3D, DEM, WorldCover nach `adr/0032` §9 | ≈ 350 | 8 |
 | 10 | **V9** Nachträge | `architekturplan.md` 6.3, 12.3; `projektuebersicht.md` §2; `adr/0006` §5; `adr/0015` §7.3; m4-17 §5 | ≈ 80 | mit 3 und 9 |
 
 **Warum diese Reihenfolge (Abweichung vom Vorschlag im Auftrag):**
@@ -142,7 +142,7 @@ Vorschlag, unter Vorbehalt von F1–F3:
 - **Lesen mit Abstand (Teil 7):** GDAL öffnet seine Verbindungen selbst; der Abstand aus M5-18 gilt nur im HTTP-Client. `gateway` bekommt einen Taktgeber je Host für Threads (`HostPacer`), aus `Policy.interval_for(host)`. Der Bau ruft ihn vor jeder Datei; danach zählt er die tatsächlichen Anfragen der Datei (GDAL-Debugzeilen wie im Messskript) und verschiebt den nächsten Start um Anfragen × Abstand. Damit gilt im Mittel höchstens eine Anfrage je 0,25 s und Host (F4). Der Abstand für den Bau ist eine eigene Einstellung, `EARTHX_OVERVIEW_HOST_INTERVAL_S` (Vorgabe 0,25), weil `host_intervals` heute aus dem Code kommt.
 - **Kern (Teil 7):** `processing/overview.py`: Basiskachel z = `min_zoom` − 1 aus den Dateien, die sie berühren (gröbste passende Übersicht, Resampling aus der Registry), als Array; Stufe darüber aus vier Kindern. Kein Objektspeicher, keine Datenbank (B9).
 - **Hülle (Teil 8):** `jobs/overviews.py`: Zustand je Datensatz und Fassung in einer eigenen Tabelle (F2), Upload nach `overviews/{dataset}/{fassung}/{z}/{x}/{y}.tif` mit Metadatum `checked-at`, Kopie unveränderter Basiskacheln aus der alten Fassung (Hash über ID und `updated` der Items je Kachel), höchstens ein Bau je Host. Lebenszyklusregel 31 Tage auf `overviews/` in `compose/objectstore/bootstrap.py`, Prüfung beim Start des Workers wie bei `results/`. Prototyp-Quellen: 7 Tage, keine Verlängerung, `overviews/proto-*` räumt `catalog-load` mit (`adr/0024` R6).
-- **Route (Teil 9):** Kachel z < `min_zoom` mit `overview: pyramid` liest das Objekt über `objectstore` (Leseschlüssel des `tiler`), rechnet Darstellung wie heute; `X-EarthX-Source: overview`; ohne Pyramide `404` mit `X-EarthX-Overview: building|failed`, Karte zeigt die Coverage, der Grund nur im Tooltip. Marke „Overview“ am Layer mit Tooltip (F12). Quellenangabe „modified“. Prototyp: `private, no-store`. TileJSON `minzoom: 0`. Statistik, Zuschnitt, Download, Jobs lesen nie aus der Pyramide.
+- **Route (Teil 9):** Kachel z < `min_zoom` mit `overview: pyramid` liest das Objekt über `objectstore` (Leseschlüssel des `tiler`), rechnet Darstellung wie heute; `X-EarthX-Source: overview`; ohne Pyramide `404` mit `X-EarthX-Overview: building|failed`, Karte zeigt die Coverage, der Grund nur im Tooltip. Keine Marke am Layer, höchstens ein Tooltip (F12, Korrektur Otto 11.11.2026). Quellenangabe „modified“. Prototyp: `private, no-store`. TileJSON `minzoom: 0`. Statistik, Zuschnitt, Download, Jobs lesen nie aus der Pyramide.
 
 ---
 
@@ -164,9 +164,9 @@ F7 = 1 ändert den Schnitt der Teile 7–9: **Teil 7 ist der Ersatz-Datensatz**,
 - **Abstand (F3):** je tatsächlicher GDAL-Anfrage 0,25 s je Host (gezählt aus den Debugzeilen wie im Messskript), einstellbar über `EARTHX_OVERVIEW_HOST_INTERVAL_S`.
 - Stufen: GLO-30 Basis z6 (`min_zoom` 7), WorldCover Basis z4 (`min_zoom` 5). Ablauf 30 Tage mit Verlängerung nach bestätigter Fassung (§5.3 des ADR); Regel 31 Tage auf `overviews/`.
 
-**Teil 9 — Kachelroute aus der Pyramide:** wie §4.7 (Route), für GLO-30 und WorldCover; `min_zoom` DEM 0 → 7, WorldCover 0 → 5; Marke „Overview“ nur für Pyramiden-Kacheln (F12); die Ersatzroute aus Teil 7 liest unter z7 die GLO-30-Pyramide.
+**Teil 9 — Kachelroute aus der Pyramide:** wie §4.7 (Route), für GLO-30 und WorldCover; `min_zoom` DEM 0 → 7, WorldCover 0 → 5; keine Marke, höchstens ein Tooltip am Layer (F12, Korrektur Otto 11.11.2026; `adr/0032` §14); Kopf `X-EarthX-Source: overview`, Quellenangabe „modified“, Statistik/Zuschnitt/Jobs nur aus Originalen bleiben; die Ersatzroute aus Teil 7 liest unter z7 die GLO-30-Pyramide.
 
-**Folge für `adr/0032`:** Nachtrag zu §5 (Pyramide nur noch für GLO-30 und WorldCover; swissALTI3D und BEV mit Ersatz), §9 (vierter Wert `substitute`), F12 (keine Marke beim Ersatz). Entwurf mit Teil 10.
+**Folge für `adr/0032`:** Nachtrag zu §5 (Pyramide nur noch für GLO-30 und WorldCover; swissALTI3D und BEV mit Ersatz), §9 (vierter Wert `substitute`), F12 (keine Marke, höchstens Tooltip; schon in §14 nachgetragen). Entwurf mit Teil 10.
 
 ## 5. Auslegungen (gelten, bis Otto widerspricht)
 
@@ -224,7 +224,7 @@ Der Median von rund +3 m ist Höhenbezug plus Oberfläche im offenen Gelände; d
 
 *Zwei Punkte, die mit der Vorgabe „kein Hinweis“ kollidieren:*
 - **Quellenangabe (B11, Lizenz):** Copernicus DEM verlangt eine Quellenangabe, wo seine Daten gezeigt werden. Ohne jeden Hinweis wäre die gezeigte Fläche nicht belegt. Das ist kein Hinweis auf das Bild, sondern die Quellenzeile der Karte.
-- **`adr/0032` F12** (Marke „Overview“ bei Pyramiden-Kacheln) gilt für einen Ersatz nicht; der Ersatz ersetzt in diesen Datensätzen die Pyramide, damit entfällt auch die Marke.
+- **`adr/0032` F12:** Nach Ottos Korrektur (11.11.2026) gibt es auch bei Pyramiden-Kacheln keine Marke, höchstens einen Tooltip; beim Ersatz gar keinen Hinweis.
 
 *Optionen:*
 1. `substitute` für swissALTI3D und BEV → GLO-30 (z7 bis `min_zoom` − 1); GLO-30 und WorldCover behalten ihre Pyramide (GLO-30 z0–z6, WorldCover z0–z4); kein GLO-90; in der **Quellenzeile der Karte** steht Copernicus, solange der Ersatz gezeichnet wird, sonst kein Hinweis. Registry-Prüfung: Ersatz mit Stufe „Anzeige“, gleiche Einheit, deckt die Ausdehnung, kein Ersatz eines Ersatzes **(Empfehlung)**
