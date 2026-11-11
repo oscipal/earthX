@@ -60,6 +60,16 @@ def test_a_continent_counts_once_half_of_it_is_in_the_box():
     assert "global" not in terms
 
 
+@pytest.mark.parametrize(("bbox", "named"), [((30.0, 60.0, 180.0, 90.0), True), ((20.0, 40.0, 180.0, 62.0), True)])
+def test_long_edges_along_a_parallel_are_measured_along_it(bbox, named):
+    # Measured before the fix: 0.11 and 1.00 of Russia, because the long edges counted as geodesics.
+    assert ("Russia" in place_terms(bbox)) is named
+
+
+def test_a_box_over_less_than_half_of_russia_leaves_it_out():
+    assert "Russia" not in place_terms((30.0, 60.0, 100.0, 90.0))
+
+
 def test_a_country_below_half_is_left_out():
     # A box over the west of Austria holds less than half of it.
     assert "Austria" not in place_terms((9.5, 46.3, 12.0, 47.8))

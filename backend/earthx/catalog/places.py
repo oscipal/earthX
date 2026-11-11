@@ -58,8 +58,14 @@ class Places:
     continents: Mapping[str, str]
 
 
+#: The longest edge, in degrees, before the geodesic area is taken. The edges of a box run along meridians and
+#: parallels; a long edge along a parallel would count as a geodesic and bend towards the pole (a box over Siberia
+#: from 30° to 180° E gave a tenth of Russia instead of half).
+_EDGE_DEG = 0.5
+
+
 def _area(geometry: BaseGeometry) -> float:
-    return abs(_GEOD.geometry_area_perimeter(geometry)[0])
+    return abs(_GEOD.geometry_area_perimeter(geometry.segmentize(_EDGE_DEG))[0])
 
 
 def _text(raw: Mapping[str, object], key: str, where: str) -> str:
