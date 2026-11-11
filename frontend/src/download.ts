@@ -212,9 +212,11 @@ export function downloadRequestFor(layer: MapLayer, datasets: DatasetOption[]): 
     return { datasetId: restore.datasetId, groups, assets, aoi: restore.aoi };
   }
   const dataset = datasets.find((d) => d.id === restore.datasetId);
-  const asset = dataset?.viewable ? defaultRenderOf(dataset.collection)?.assets[0] : undefined;
-  if (!asset) return null;
-  return { datasetId: restore.datasetId, groups, assets: [asset], aoi: restore.aoi };
+  if (!dataset?.viewable) return null;
+  // The bands the scenes were pinned with, where the standard picture picks one per scene (DS-04c); else the dataset's.
+  const assets = restore.assets?.length ? restore.assets : cropAssetsOf(dataset);
+  if (assets.length === 0) return null;
+  return { datasetId: restore.datasetId, groups, assets, aoi: restore.aoi };
 }
 
 // The outcome (§4) for a pinned layer: `cropToAoi` only means anything while
@@ -259,12 +261,35 @@ export function downloadRequestForSelection(
   dataset: DatasetOption | undefined,
   groups: string[][],
   aoi: GeoJSON.Geometry | null,
+  // The scenes of `groups`, where the caller has them: with `first_present` their bands decide the asset (DS-04c).
+  items?: readonly StacItem[],
 ): DownloadRequestInfo | null {
   const nonEmptyGroups = groups.filter((group) => group.length > 0);
   if (!aoi || !dataset || !dataset.viewable || nonEmptyGroups.length === 0) return null;
-  const asset = defaultRenderOf(dataset.collection)?.assets[0];
-  if (!asset) return null;
-  return { datasetId: dataset.id, groups: nonEmptyGroups, assets: [asset], aoi };
+  const ids = new Set(nonEmptyGroups.flat());
+  const assets = cropAssetsOf(dataset, items?.filter((item) => ids.has(item.id)));
+  if (assets.length === 0) return null;
+  return { datasetId: dataset.id, groups: nonEmptyGroups, assets, aoi };
+}
+
+// The assets a crop reads where the dialog has no table of bands: the dataset's standard one, and with `first_present`
+// (Sentinel-1: `vv` or `hh`) the one each scene carries, in the order of the list (DS-04c). One crop reads one list of
+// assets for all its scenes, so scenes that carry different ones give more than one, which `mixedBandsNote` refuses.
+export function cropAssetsOf(dataset: DatasetOption, items?: readonly Pick<StacItem, 'assets'>[]): string[] {
+  if (!items || items.length === 0) {
+    const asset = defaultRenderOf(dataset.collection)?.assets[0];
+    return asset ? [asset] : [];
+  }
+  const order = dataset.collection['earthx:default_render']?.assets ?? [];
+  const carried = new Set(items.flatMap((item) => defaultRenderOf(dataset.collection, item)?.assets[0] ?? []));
+  return [...carried].sort((a, b) => order.indexOf(a) - order.indexOf(b));
+}
+
+// Why a crop without a table of bands cannot be made: its scenes carry different bands of a `first_present` dataset
+// (a VV pass and an HH pass), and each would lack the other's file. `null` where it can.
+export function mixedBandsNote(dataset: DatasetOption | undefined, assets: readonly string[]): string | null {
+  if (!dataset || assets.length < 2 || dataset.collection['earthx:default_render']?.asset_selection !== 'first_present') return null;
+  return `These scenes carry different bands (${assets.join(', ')}): crop the scenes of one band at a time.`;
 }
 
 // `{year}` is the only placeholder the registry's attribution texts use

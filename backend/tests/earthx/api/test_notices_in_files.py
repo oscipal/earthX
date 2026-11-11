@@ -34,6 +34,15 @@ def provenance_of(document: bytes) -> dict[str, Any]:
     return json.loads(document)["provenance"]
 
 
+class TestAttributionYear:
+    def test_attribution_txt_names_the_year_of_acquisition_where_the_catalogue_shows_the_placeholder(self) -> None:
+        """Otto, 10.11.2026: the file fills in the year the scenes were taken; only the catalogue keeps "[year]"."""
+        text = build_notice_text(SENTINEL_1_GRD, item_ids=["S1_A"], years=AcquisitionYears(2025, 2026), at=AT)
+        assert "Contains modified Copernicus Sentinel data 2025–2026" in text
+        assert "{year}" not in text
+        assert "[year]" not in text
+
+
 class TestAttributionTxt:
     def test_each_notice_is_a_paragraph_of_its_own_and_nothing_else_changes(self) -> None:
         text = build_notice_text(SENTINEL_1_GRD, item_ids=["S1_A"], years=YEARS, at=AT)

@@ -1,5 +1,6 @@
 // Where a layer is on the map and where it is not (UI-01a). A layer whose tiles start at a level above the map's zoom
-// shows nothing there; the map then says from which zoom it is drawn instead of staying empty without a word.
+// shows nothing there; the tooltip of its row in the layer manager says from which zoom it is drawn (Otto, 10.11.2026:
+// nothing over the map says it any more), instead of the layer staying empty without a word.
 
 import type { LayerOverlay } from './layers';
 import { firstZoomOf } from './tileSize';
@@ -16,4 +17,10 @@ export function zoomInTo(overlays: readonly LayerOverlay[], zoom: number): numbe
   if (overlays.length === 0 || overlays.some((ov) => isDrawnAt(ov, zoom))) return null;
   const starts = overlays.flatMap((ov) => (ov.kind === 'raster' && firstZoomOf(ov.minZoom, ov.tileUrl) > zoom ? [firstZoomOf(ov.minZoom, ov.tileUrl)] : []));
   return starts.length > 0 ? Math.ceil(Math.min(...starts)) : null;
+}
+
+// What the row of a layer says while the layer shows nothing at this zoom, or `null` while it shows something.
+export function zoomReasonOf(overlays: readonly LayerOverlay[], zoom: number, subject = 'this layer'): string | null {
+  const from = Number.isFinite(zoom) ? zoomInTo(overlays, zoom) : null;
+  return from === null ? null : `Nothing shown at this zoom: ${subject} is drawn from zoom ${from}.`;
 }
