@@ -64,7 +64,7 @@ Wegwerf-Skript, nicht im Repo: Chromium der Sitzung (Software-Rendering, also nu
 - **Ziehen am Kompass (Vorschlag, F15):** in 3D dreht Ziehen um den Kompass die Karte (Winkel des Zeigers um die Mitte des Knopfs = Drehung); ein Klick ohne Bewegung (unter 4 px) richtet aus. In 2D gibt es kein Ziehen (D27). Per Tastatur: Fokus auf dem Kompass, ←/→ drehen in 3D um 15°, Enter oder Leertaste richtet aus.
 - **Tooltip** (advanced, Leitfaden §8a): „Reset north and tilt“; `aria-label` gleich. Der Name ist selbsterklärend genug für „advanced“; wer das Symbol nicht kennt, findet es per `aria-label`.
 - **Lage:** oberster Knopf der Gruppe unten rechts, über Zoom + (§5.2).
-- **Zeichnung:** Lucide hat keine Nadel mit roter Nordhälfte (`compass` ist eine einfarbige Raute im Kreis, `navigation-2` ein Pfeil). Die Nadel ist damit eine **eigene Zeichnung**, die zweite Ausnahme von Leitfaden §3 nach dem Symbol „Settings“; sie steht in einer Datei (`components/compassNeedle.ts`) und im Leitfaden (F17).
+- **Zeichnung:** Lucide hat keine Nadel mit roter Nordhälfte (`compass` ist eine einfarbige Raute im Kreis, `navigation-2` ein Pfeil). Die Nadel ist damit eine **eigene Zeichnung**, die zweite Ausnahme von Leitfaden §3 nach dem Symbol „Settings“; sie steht in einer Datei (`components/CompassNeedle.tsx`) und im Leitfaden (F17).
 
 ### 5.2 3D (Wunsch 2; Otto, F4 und F5)
 
@@ -116,7 +116,7 @@ Die Gesten an der Karte sind Vorgaben von MapLibre, nur eingeschaltet, solange 3
 
 ## 6. Nachtrag Leitfaden (eingetragen am 11.11.2026)
 
-Die Regeln stehen schon jetzt im Leitfaden, markiert mit *(folgt mit UI-06)*; die Markierung fällt mit der Umsetzung weg.
+Die Regeln standen zuerst mit der Markierung *(folgt mit UI-06)* im Leitfaden; mit der Umsetzung (§10) ist sie entfallen.
 
 - §2 Begriffe: „3D“ (der Knopf an der Karte), „Reset north and tilt“ (Kompass), „Zoom in“, „Zoom out“.
 - §3 Symbole: Kompass als zweite Ausnahme (eigene Nadel, Nordhälfte `--danger`), Zoom mit `plus` und `minus`, 3D als Text.
@@ -131,7 +131,7 @@ Die Regeln stehen schon jetzt im Leitfaden, markiert mit *(folgt mit UI-06)*; di
 
 ## 7. Umsetzung, Tests, Abnahme
 
-**Schnitt:** ein PR, Frontend allein, geschätzt rund 350 Zeilen ohne Tests [A]. Dateien: `MapView.tsx` (ohne `NavigationControl`), neue `terrain.ts` (Quelle, Ein/Aus, Sperren), neue `components/MapControls.tsx` und `components/compassNeedle.ts`, `relief.ts` (gemeinsame Adresse und Attribution), `icons.ts` (`MinusIcon`), `preferences.ts`, `store.ts` (Wert und Setter, flacher Ausschnitt für die Coverage), `index.css` (nur Tokens), Leitfaden (Markierung entfernen).
+**Schnitt:** ein PR, Frontend allein, geschätzt rund 350 Zeilen ohne Tests [A]. Dateien: `MapView.tsx` (ohne `NavigationControl`), neue `terrain.ts` (Quelle, Ein/Aus, Sperren), neue `components/MapControls.tsx` und `components/CompassNeedle.tsx`, `relief.ts` (gemeinsame Adresse und Attribution), `icons.ts` (`MinusIcon`), `preferences.ts`, `store.ts` (Wert und Setter, flacher Ausschnitt für die Coverage), `index.css` (nur Tokens), Leitfaden (Markierung entfernen).
 
 **Tests (Vitest):**
 - `terrain.test.ts`: An setzt Gelände, Neigungsgrenze und gibt Drehen frei; Aus kippt zurück, sperrt wieder; doppeltes An oder Aus ändert nichts; Aufruf ohne geladenen Stil wirft nicht.
@@ -243,7 +243,29 @@ Dazu: hell und dunkel, schmale Fenster (§6); Antworten im Leitfaden. Umsetzung 
 2. Gesperrt mit Grund „Already facing north“
 
 **F17 — Eigene Zeichnung der Nadel** (Leitfaden §3 erlaubt keine eigenen Zeichnungen)
-1. Zweite Ausnahme neben „Settings“: zwei Spitzen als SVG in `compassNeedle.ts`, Nord `--danger`, Süd `--text`, im Leitfaden vermerkt (**Empfehlung**; anders ist eine rote Nordhälfte nicht zu haben)
+1. Zweite Ausnahme neben „Settings“: zwei Spitzen als SVG in `CompassNeedle.tsx`, Nord `--danger`, Süd `--text`, im Leitfaden vermerkt (**Empfehlung**; anders ist eine rote Nordhälfte nicht zu haben)
 2. Lucide `navigation-2` in Rot, gedreht (Pfeil statt Nadel)
 
 **Antworten Otto (11.11.2026):** F15, F16 und F17 jeweils Option 1: Ziehen am Kompass dreht in 3D, Klick ohne Bewegung richtet aus, im Fokus ←/→ um 15°; der Kompass ist in 2D nicht gesperrt; die Nadel ist eine eigene Zeichnung als zweite Ausnahme von Leitfaden §3. Umsetzung freigegeben.
+
+## 10. Umgesetzt (11.11.2026)
+
+**Code** (Frontend allein, kein Backend, keine neue Abhängigkeit):
+- `terrain.ts`: Ein und Aus. An: eigene Quelle `terrain` (AWS Terrain Tiles, `maxzoom` 12), Überhöhung 1,5, Neigung bis 60°, Drehen und Kippen frei, Flug auf 50°. Aus: erst zurück nach Norden und flach, dann ohne Gelände und gesperrt (D27). Wird während des Rückflugs wieder eingeschaltet, bleibt das Gelände. `prefers-reduced-motion` und der erste Besuch springen ohne Flug. `flatViewBounds` gibt den flachen Ausschnitt für die Coverage (F10).
+- `components/MapControls.tsx` mit `CompassNeedle.tsx` ersetzt `NavigationControl`: Kompass, Zoom +, Zoom −, 3D. Der Kompass dreht mit der Karte, ein Klick ruft `resetNorthPitch`. In 3D dreht Ziehen am Kompass und ←/→ (15°) im Fokus; in 2D tut beides nichts. Er ist nie gesperrt. Zoom + und − sind an der Grenze gesperrt, mit Grund im Tooltip.
+- `MapView.tsx`: Die Gruppe steht in MapLibres Ecke unten rechts und rückt damit wie bisher neben Seitenleiste und Blatt. Der Platzhalter trägt bewusst **nicht** die Klasse `maplibregl-ctrl`, weil MapLibres Hover-Regel für Knöpfe dort sonst die Füllung von „3D“ überschreibt (im Browser gefunden). Ein Verlust des WebGL-Kontexts schaltet 3D für den Besuch aus, mit Meldung.
+- `preferences.ts`, `store.ts`: `earthx.terrain`; ein Permalink öffnet flach und lässt die gemerkte Wahl stehen (`showSharedLook`).
+- `stepKeys.ts`: Der Kompass gehört zu den Stellen mit eigenen Pfeiltasten.
+- `index.css`: Gruppe, runder Kompass, Nadel in `--danger` und `--text`; nur Tokens.
+
+**Tests:** `terrain.test.ts`, `components/MapControls.test.tsx`, `store.terrain.test.ts`, `preferences.test.ts`, `mapStyles.diff.test.ts` (Basemap-Wechsel in 3D, mit und ohne Relief), `uiRules.test.ts` (kein `NavigationControl`, kein „3D“ in „Settings“, Begriffe, zweite eigene Zeichnung, Farben der Nadel). Browser: `e2e/terrain-3d.cjs` (hell und dunkel, 1280, 360 und 320 px, Maus und Touch); `map-gl6.cjs` prüft die Sperre jetzt ausdrücklich für 2D, `settings-box.cjs` sucht Zoom + unter dem neuen Namen.
+
+**Grenzen der Prüfung:** Die Sitzung erreicht Esri und OpenFreeMap nicht; die Bildschirmfotos zeigen deshalb das Gelände ohne Bild darüber. Gesten mit zwei Fingern sind MapLibres eigene und werden im Browser-Test nicht gefahren; mit Touch prüft er Tippen auf Kompass und „3D“.
+
+**Prüfanleitung für Otto:**
+1. Karte in 2D: Kompass oben in der Gruppe unten rechts, Nadel nach oben (Nord rot). Rechts ziehen, Strg + Ziehen und Umschalt + Pfeiltasten drehen und kippen nichts.
+2. „3D“ drücken: Knopf gefüllt, Karte kippt auf etwa 50° über das Gelände (am besten in den Alpen, Zoom 9–11, Basemap Satellite, gern mit Overlay „Relief“). In der Attribution steht „Terrain: …“.
+3. Rechts ziehen dreht und kippt (höchstens 60°); die Nadel dreht mit. Am Kompass ziehen dreht die Karte; Tab auf den Kompass, ←/→ dreht um 15°. Ein Klick auf den Kompass richtet nach Norden aus und legt die Karte flach, 3D bleibt an.
+4. Gekippt: Basemap, Projektion (Globus) und Relief wechseln, das Gelände bleibt. Coverage einschalten: sie fragt nicht bis zum Horizont. Punkt und Polygon zeichnen.
+5. Neu laden: die Karte öffnet in 3D. „3D“ aus: zurück nach Norden und flach, kein Kippen mehr.
+6. Hell und dunkel, ein schmales Fenster (unter 900 px): Knöpfe 44 px, nichts verdeckt.
