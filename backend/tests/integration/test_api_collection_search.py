@@ -77,11 +77,17 @@ async def test_q_ranks_the_collections(client, method):
     assert "score" not in json.dumps(response.json())
 
 
-@pytest.mark.parametrize("text", ["Sentinel-3", "Landsat 9", "Bevölkerungsdichte"])
+@pytest.mark.parametrize("text", ["Sentinel-3", "Sentinel 3", "Copernicus DEM 90", "Landsat 9", "Bevölkerungsdichte"])
 async def test_nothing_fits_an_empty_list(client, text):
     response = await client.get("/stac/collections", params={"q": text})
     assert _ids(response) == []
     assert (response.json()["numberMatched"], _next(response)) == (0, None)
+
+
+async def test_a_resolution_is_no_number_of_a_name(client):
+    assert {"esa-worldcover-2020", "esa-worldcover-2021"} <= set(
+        _ids(await client.get("/stac/collections", params={"q": "ESA 10 m"}))
+    )
 
 
 async def test_a_comma_is_an_ordinary_separator(client):

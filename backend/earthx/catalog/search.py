@@ -11,10 +11,11 @@ with k = 60:
 * **Trigrams:** ``word_similarity`` of the normalized query with id, title and keywords, from
   :data:`TRIGRAM_THRESHOLD` on; it finds "Sentinal 2" and "Worldcovr".
 
-A number never drops out of a query that names a dataset (plan §11.7): in the trigram arm every number of the query,
-in the full text every number right after a word of an id or title ("Sentinel 3", "Copernicus DEM 90"), has to
-stand in the id, title or keywords of the dataset. A number on its own has to stand there as a word ("1" is not the
-one of "c1"); the digits of a word with letters ("sentinel3", "l2a") as a run of digits anywhere. Without such a
+A number never drops out of a query that names a dataset (plan §11.7, A18): in the trigram arm every number of the
+query, in the full text every number right after a name that carries a number itself ("Sentinel 3", "Copernicus DEM
+90"), has to stand in the id, title or keywords of the dataset. A number on its own has to stand there as a word ("1"
+is not the one of "c1"); the digits of a word with letters ("sentinel3", "l2a") as a run of digits anywhere. A number
+with a unit ("10 m") or a year is no number of a name and drops out like any unknown word. Without such a
 dataset the list is empty (adr/0026 K9); the full text cannot check this itself, as it splits "GLO-30" into "glo"
 and "-30". Nor does a bare number carry a dataset in the full text on its own: "Landsat 9", with no Landsat in the
 catalogue, finds nothing for its "9".
@@ -52,6 +53,9 @@ MIN_SHARE = 0.5
 TIME_FILTER = "datetime"
 _NUMBER = re.compile(r"[0-9]+")
 _LETTER = re.compile(r"[^\W\d_]")
+_YEAR = re.compile(r"(19|20)[0-9]{2}")
+_UNITS = frozenset({"m", "km", "cm"})
+_MEASURE = re.compile(r"[0-9]+(m|km|cm)")
 
 
 class Joining(Enum):
@@ -118,25 +122,52 @@ def _carries(words: str, runs: str | None = None) -> str:
     return condition if runs is None else f"{condition} AND %({runs})s::text[] <@ {_RUNS_OF_DIGITS}"
 
 
+def _name_numbers(words: Sequence[str]) -> list[int]:
+    """The positions of the words that can be the number of a name: digits only, no year, no unit after them."""
+    return [
+        position
+        for position, word in enumerate(words)
+        if _NUMBER.fullmatch(word)
+        and not _YEAR.fullmatch(word)
+        and (position + 1 == len(words) or words[position + 1] not in _UNITS)
+    ]
+
+
 def numbers_of(text: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """The words of digits in ``text`` (normalized), and the runs of digits in its words with letters."""
+    """The numbers of names in ``text`` (normalized), and the runs of digits in its words with letters.
+
+    A number with a unit after it ("10 m", "10m") and a year ("2021") are never part of a name (Otto, 11.11.2026).
+    """
     words = normalize(text).split()
-    numbers = tuple(word for word in words if _NUMBER.fullmatch(word))
-    codes = tuple(run for word in words if not _NUMBER.fullmatch(word) for run in _NUMBER.findall(word))
+    numbers = tuple(words[position] for position in _name_numbers(words))
+    codes = tuple(
+        run
+        for word in words
+        if not _NUMBER.fullmatch(word) and not _MEASURE.fullmatch(word)
+        for run in _NUMBER.findall(word)
+    )
     return numbers, codes
 
 
 def numbers_after_names(text: str, names: frozenset[str]) -> tuple[str, ...]:
-    """The words of digits in ``text`` right after a word of ``names``: "3" in "Sentinel 3"."""
+    """The numbers of names in ``text`` right after a word of ``names``: "3" in "Sentinel 3"."""
     words = normalize(text).split()
-    return tuple(
-        word for before, word in zip(words, words[1:], strict=False) if before in names and _NUMBER.fullmatch(word)
-    )
+    return tuple(words[position] for position in _name_numbers(words) if position and words[position - 1] in names)
 
 
-def name_words(rows: Sequence[str]) -> frozenset[str]:
-    """The words with a letter in the ids and titles of the index: the names a number can hang on."""
-    return frozenset(word for row in rows for word in normalize(row).split() if _LETTER.search(word))
+def numbered_names(rows: Sequence[str]) -> frozenset[str]:
+    """The words of the ids and titles in ``rows`` that come before a number of a name in the same row.
+
+    Only names that carry a number themselves ("Sentinel-2", "Copernicus DEM GLO-30") hold a number of the query to
+    account; "ESA WorldCover 2020" carries a year and none of its words does.
+    """
+    names: set[str] = set()
+    for row in rows:
+        words = normalize(row).split()
+        numbered = _name_numbers(words)
+        if numbered:
+            names.update(word for word in words[: numbered[-1]] if _LETTER.search(word))
+    return frozenset(names)
 
 
 _NAMES_SQL = "SELECT dataset_id || ' ' || title FROM public.earthx_dataset_search"
@@ -298,7 +329,7 @@ async def search_datasets(
                 if numbers:
                     async with conn.cursor() as cur:
                         await cur.execute(_NAMES_SQL)
-                        names = name_words([row[0] for row in await cur.fetchall()])
+                        names = numbered_names([row[0] for row in await cur.fetchall()])
                     named_numbers = numbers_after_names(text, names)
                 terms = {f"term_{n}_{i}": term for n, unit in enumerate(units) for i, term in enumerate(unit.terms)}
                 full_text = await run(

@@ -19,7 +19,7 @@ from earthx.catalog.search import (
     QueryTooLong,
     box_area,
     fuse,
-    name_words,
+    numbered_names,
     numbers_after_names,
     numbers_of,
     ranks,
@@ -207,8 +207,8 @@ async def test_two_hundred_characters_are_allowed_and_one_more_is_not(catalogue,
 # --- numbers at a name (plan §11.7) -------------------------------------------------------------------------------------
 
 # A mission with a number and a code with another one (like "c1" in the id of Sentinel-2), a product that names it as
-# a keyword (like WorldCover names Sentinel-2), and a model whose number stands behind a hyphen ("GLO-30", which the
-# full text splits into "glo" and "-30").
+# a keyword (like WorldCover names Sentinel-2) and whose own name carries no number, and a model whose number stands
+# behind a hyphen ("GLO-30", which the full text splits into "glo" and "-30").
 ORBITER = _entry(
     SENTINEL_2_L2A,
     "test-orbiter-2",
@@ -216,7 +216,9 @@ ORBITER = _entry(
     ("orbiter-2", "panchromatic", "c1"),
     description="Imagery of the second orbiter, 9 bands.",
 )
-PRODUCT = _entry(SENTINEL_2_L2A, "test-product", "Landuse Zeta", ("orbiter-2", "land use"))
+PRODUCT = _entry(
+    SENTINEL_2_L2A, "test-product", "Landuse Zeta", ("orbiter-2", "land use"), description="Land use at 10 m."
+)
 MAPPER = _entry(COP_DEM_GLO_30, "test-mapper", "Mapper GLO-30", ("relief",))
 NUMBERED = DatasetRegistry((ORBITER, PRODUCT, MAPPER))
 
@@ -257,8 +259,21 @@ async def test_a_number_after_a_topic_still_drops_out_where_unknown(numbered, ac
     assert await _ids(aconn, "panchromatic 2024") == ("test-orbiter-2",)
 
 
-def test_the_names_are_the_words_with_a_letter_of_ids_and_titles():
-    assert name_words(["test-orbiter-2 Orbiter-2 Imagery"]) == {"test", "orbiter", "imagery"}
+@pytest.mark.parametrize("text", ["Zeta 10 m", "Zeta 10m", "Landuse 7", "Mapper 2019"])
+async def test_a_unit_a_year_or_a_name_without_a_number_lets_the_number_drop_out(numbered, aconn, text):
+    # Otto, 11.11.2026 (A18): "10 m" is a resolution, 2019 a year; "Landuse Zeta" carries no number of its own.
+    expected = "test-mapper" if text.startswith("Mapper") else "test-product"
+    assert expected in await _ids(aconn, text)
+
+
+def test_only_names_that_carry_a_number_are_numbered():
+    rows = [
+        "test-orbiter-2 Orbiter-2 Imagery",
+        "esa-worldcover-2020 ESA WorldCover 2020",
+        "test-mapper Mapper GLO-30",
+        "test-grid Grid 10 m",
+    ]
+    assert numbered_names(rows) == {"test", "orbiter", "mapper", "glo"}
 
 
 @pytest.mark.parametrize(
@@ -268,6 +283,8 @@ def test_the_names_are_the_words_with_a_letter_of_ids_and_titles():
         ("Sentinel-3", ("3",)),
         ("Sentinel S3b", ()),
         ("Höhenmodell 2024", ()),
+        ("Sentinel 2024", ()),
+        ("Sentinel 10 m", ()),
         ("3 Sentinel", ()),
         ("Sentinel", ()),
     ],
@@ -277,7 +294,8 @@ def test_the_numbers_right_after_a_name(text, expected):
 
 
 def test_numbers_are_words_of_digits_and_codes_are_the_digits_of_other_words():
-    assert numbers_of("Sentinel-2 L2A 2020 sentinel3") == (("2", "2020"), ("2", "3"))
+    # A year and a number with a unit are neither.
+    assert numbers_of("Sentinel-2 L2A 2020 sentinel3 10 m 20km") == (("2",), ("2", "3"))
 
 
 # --- area --------------------------------------------------------------------------------------------------------------
