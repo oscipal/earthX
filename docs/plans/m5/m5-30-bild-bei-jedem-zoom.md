@@ -157,6 +157,14 @@ Vorschlag, unter Vorbehalt von F1–F3:
 
 ## 6. Fragen an Otto
 
+**Antworten (Otto, 11.11.2026):**
+- **F1:** Option 2 plus Option 1 — `materialize` schreibt einen Wunsch in eine Tabelle, der Bau beginnt sofort (wie `adr/0032` F1 = 2); die stündliche Runde des Workers fängt zusätzlich Wechsel der Quelle auf.
+- **F2 = 1**, **F3 = 1**, **F5 = 1** (Prüfung beim Anlegen der Auswahl).
+- **F4 = 2:** Die Grenze der Textdateien im ZIP wächst mit der Zahl der Szenen (Teil 6, F4 in §6 unten; F4 steht im Branch von Teil 6).
+- **F6:** Option 1 nur, wenn dadurch kein Mosaik eines Sentinel-2-Überflugs über zwei UTM-Zonen (z. B. 32/33 über Österreich) abgelehnt wird; sonst Option 2. Im PR belegen (Teil 3a; F6 steht im Branch von Teil 3a).
+- Abweichungen min_zoom 13 in Teil 2, kein Tooltip für Teilkacheln, Registry vor Pyramide: angenommen.
+- Befund aus #336: `measure_tiles.py` stellt den Logger `rasterio` nach dem Lesen wieder her (Teil 1, mit Test).
+
 Teile 1–6 brauchen keine Antwort. **Teile 7–9 ruhen bis zu F1–F3.**
 
 **F1 — Wie wird der Bau nach der Materialisierung angestoßen (`adr/0032` §5.2, „klärt V6“)?**

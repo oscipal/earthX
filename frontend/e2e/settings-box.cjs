@@ -164,7 +164,7 @@ async function measure(page) {
     const colormap = field('Colormap')?.querySelector('select');
     const body = bar.querySelector('.insp-body');
     const bottom = document.querySelector('.overlay.bottom .draggable');
-    const zoom = document.querySelector('.maplibregl-ctrl-zoom-in');
+    const zoom = document.querySelector('.map-zoom-in');
     const topButtons = rect(document.querySelector('.overlay.top-right'));
     return {
       bar: base,
