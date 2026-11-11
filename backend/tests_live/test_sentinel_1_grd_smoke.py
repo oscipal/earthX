@@ -1,16 +1,18 @@
 """T-D: is Earth Search's Sentinel-1 GRD still the source the entry describes? (DS-04 plan §4.7)
 
 Runs on the schedule of the live smokes in GitHub Actions, never in a pull request and never in a cloud session. Small
-on purpose (adr/0005 §3.6): five metadata requests, one `HEAD` and one range of 16 bytes, over a window long closed.
+on purpose (adr/0005 §3.6): a few metadata requests, two `HEAD`s and one range of 16 bytes, over windows long closed.
 
 It checks what the entry assumes and what the source's own metadata gets wrong (adr/0018 §3.1, Auslegung A4): the
 items say `storage:requester_pays: true` and write `s3://` addresses, while the bucket serves the objects anonymously
-over https and every object carries a CRC64NVME checksum over the whole file. Everything goes through the adapter and
-the gateway, as on the platform.
+over https. Objects written since early 2025 carry a CRC64NVME checksum over the whole file; older ones carry none,
+and their version is the ETag (DS-04 plan §4.3, measured 10.11.2026). Everything goes through the adapter and the
+gateway, as on the platform.
 """
 
 from __future__ import annotations
 
+import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -30,6 +32,10 @@ pytestmark = [pytest.mark.anyio, pytest.mark.live_dataset("sentinel-1-grd")]
 
 BBOX = (9.0, 48.0, 10.0, 49.0)
 WINDOW = (datetime(2024, 6, 1, tzinfo=timezone.utc), datetime(2024, 6, 15, tzinfo=timezone.utc))
+# Written after the bucket began to keep CRC64NVME (between February and March 2025).
+RECENT = (datetime(2026, 6, 1, tzinfo=timezone.utc), datetime(2026, 6, 15, tzinfo=timezone.utc))
+CHECKSUM_MODE = {"x-amz-checksum-mode": "ENABLED"}
+STRONG_ETAG = re.compile(r'"[0-9a-f]{32}(-[0-9]+)?"')
 ASSET_HOST = SENTINEL_1_GRD.source.asset_hosts[0]
 
 
@@ -47,10 +53,10 @@ async def gateway() -> AsyncIterator[Gateway]:
         yield gateway
 
 
-async def _first_item(gateway: Gateway) -> dict[str, Any]:
+async def _first_item(gateway: Gateway, window: tuple[datetime, datetime] = WINDOW) -> dict[str, Any]:
     page = await search_items(
         SENTINEL_1_GRD,
-        SearchParams(bbox=BBOX, start=WINDOW[0], end=WINDOW[1], limit=1),
+        SearchParams(bbox=BBOX, start=window[0], end=window[1], limit=1),
         adapters=ADAPTER_SPECS,
         gateway=gateway,
     )
@@ -73,18 +79,30 @@ async def test_the_collection_and_an_item_answer_with_https_addresses(gateway: G
         assert name in item["properties"], name
 
 
-async def test_the_bucket_is_read_anonymously_and_versions_by_crc64nvme(gateway: Gateway) -> None:
-    """A range of a data band is 206, the bucket's owner pays, and the checksum covers the whole object."""
-    item = await _first_item(gateway)
-    href = next(item["assets"][key]["href"] for key in ("vv", "hh", "vh", "hv") if key in item["assets"])
-    part = await gateway.get(href, headers={"Range": "bytes=0-15"})
+def _band_href(item: dict[str, Any]) -> str:
+    return next(item["assets"][key]["href"] for key in ("vv", "hh", "vh", "hv") if key in item["assets"])
+
+
+async def test_the_bucket_is_read_anonymously_and_paid_by_its_owner(gateway: Gateway) -> None:
+    """A range of a data band is 206, and the bucket's owner pays."""
+    part = await gateway.get(_band_href(await _first_item(gateway)), headers={"Range": "bytes=0-15"})
     assert part.status_code == 206
     assert len(part.content) == 16
     payment = await gateway.get(f"https://{ASSET_HOST}/?requestPayment")
     assert b"<Payer>BucketOwner</Payer>" in payment.content, "the bucket is no longer paid for by its owner"
-    head = await gateway.head(href, headers={"x-amz-checksum-mode": "ENABLED"})
+
+
+async def test_a_recent_object_versions_by_its_full_object_crc64nvme(gateway: Gateway) -> None:
+    head = await gateway.head(_band_href(await _first_item(gateway, RECENT)), headers=CHECKSUM_MODE)
     assert head.headers.get("x-amz-checksum-type") == "FULL_OBJECT"
     assert head.headers.get("x-amz-checksum-crc64nvme")
+
+
+async def test_an_older_object_without_a_checksum_still_has_a_strong_etag(gateway: Gateway) -> None:
+    """The version falls back to the ETag where an object predates the checksum (DS-04 plan §4.3)."""
+    head = await gateway.head(_band_href(await _first_item(gateway)), headers=CHECKSUM_MODE)
+    assert head.headers.get("x-amz-checksum-type") in (None, "FULL_OBJECT")
+    assert STRONG_ETAG.fullmatch(head.headers.get("etag", "")), "an older object has no version"
 
 
 async def test_in_on_the_polarizations_means_holds_one_of_them(gateway: Gateway) -> None:

@@ -264,6 +264,21 @@ def last_source_version(conn: psycopg.Connection, dataset_id: str) -> str | None
     return None if row is None else row[0]
 
 
+def last_loaded_count(conn: psycopg.Connection, dataset_id: str) -> int | None:
+    """``listed`` of the most recent run that loaded items, or ``None`` if there has never been one.
+
+    Only an estimate of how long the next run is; an "unchanged" run lists nothing and does not count.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT listed FROM public.earthx_materialize_runs "
+            "WHERE dataset_id = %s AND status = 'loaded' ORDER BY started_at DESC LIMIT 1",
+            (dataset_id,),
+        )
+        row = cur.fetchone()
+    return None if row is None else row[0]
+
+
 def record_materialize_run(conn: psycopg.Connection, record: MaterializeRunRecord) -> None:
     """Append one row. A run is never updated after it is written (migration
     004's own docstring) — a new run is always a new row.

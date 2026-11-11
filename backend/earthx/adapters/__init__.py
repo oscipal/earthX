@@ -153,8 +153,13 @@ async def materialize_items(
     adapters: AdapterSpecs,
     gateway: Gateway,
     known_version: str | None,
+    expected_items: int | None = None,
 ) -> MaterializeOutcome:
-    """Build the items of one materialized dataset, whichever adapter produced it."""
+    """Build the items of one materialized dataset, whichever adapter produced it.
+
+    ``expected_items`` is the item count of the last run, if any; an adapter that pages through a long listing uses it
+    to say how far a run has come, the others ignore it.
+    """
     if config.source.item_holding is not ItemHolding.MATERIALIZED:
         raise NotMaterialized(
             f"{config.dataset_id} is not materialized; adapters.materialize_items does not build its items"
@@ -164,7 +169,9 @@ async def materialize_items(
         raise UnsupportedSource(
             f"{config.dataset_id} is materialized by {config.source.adapter}, which no materializer dispatch knows"
         )
-    return await spec.materialize(config, gateway=gateway, known_version=known_version)
+    return await spec.materialize(
+        config, gateway=gateway, known_version=known_version, expected_items=expected_items
+    )
 
 
 async def coverage(
