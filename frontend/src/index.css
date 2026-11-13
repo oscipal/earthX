@@ -3273,6 +3273,15 @@ button.pm-open:hover {
     transform: rotate(360deg);
   }
 }
+/* A map layer that is loading (`components/LoadingMark.tsx`): the spinner in the place of the note of a row, centred in it. */
+.loading-mark {
+  justify-self: center;
+}
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
+}
 
 /* MapLibre sets its own family on the map; the attribution, the controls and the rest of the map's text use the one of the interface. */
 /* `.app` in front: MapLibre's own sheet is loaded after this one and would win at the same weight. */
