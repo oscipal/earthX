@@ -2155,8 +2155,11 @@ class RetiredDataset:
     successor: str
     #: Why it left, one English sentence without a full stop.
     reason: str
-    #: The limitations it had; the text file of a finished job names them like that of a current dataset.
-    limitations: tuple[str, ...] = ()
+
+    @property
+    def limitations(self) -> tuple[str, ...]:
+        """None: the file ``retired.yaml`` keeps no limitations, so the text file of a finished job has no such section."""
+        return ()
 
     def __post_init__(self) -> None:
         for name in ("dataset_id", "title", "successor", "reason"):
