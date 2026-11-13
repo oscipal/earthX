@@ -35,8 +35,7 @@ gsd: [3.5, 10.0, 25.0, 40.0]
 doi: null
 citation: >-
   Copernicus Sentinel-1 Level-1 GRD, European Space Agency; cloud-optimized GeoTIFF distributed by Element 84, Earth
-  Search v1, collection sentinel-1-grd, https://earth-search.aws.element84.com/v1/collections/sentinel-1-grd. The files
-  are the cloud-optimized GeoTIFFs as the bucket operator converted them, not the ESA SAFE product.
+  Search v1, collection sentinel-1-grd, https://earth-search.aws.element84.com/v1/collections/sentinel-1-grd
 data_class: raster-time-series
 format: cog
 # adr/0018 F1: a thin-plate spline through the GCPs in tile, crop, job and runner (DS-04a).

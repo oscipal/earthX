@@ -2130,6 +2130,9 @@ class Attributable(Protocol):
     @property
     def notices(self) -> tuple[Notice, ...]: ...
 
+    @property
+    def limitations(self) -> tuple[str, ...]: ...
+
 
 @dataclass(frozen=True, slots=True)
 class RetiredDataset:
@@ -2152,6 +2155,8 @@ class RetiredDataset:
     successor: str
     #: Why it left, one English sentence without a full stop.
     reason: str
+    #: The limitations it had; the text file of a finished job names them like that of a current dataset.
+    limitations: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         for name in ("dataset_id", "title", "successor", "reason"):
