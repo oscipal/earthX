@@ -1400,9 +1400,11 @@ export function syncResultsOverlay(map: MapLibreMap, s: PreviewState): void {
 // The yellow outline around selected scenes, in either mode. A plain GeoJSON
 // source update with no layer churn, so it is safe and cheap to run on every
 // selection change without going through `syncFocusRaster`/`syncBrowseMosaic`.
+// Not capped: an outline is a feature of one GeoJSON source, not a layer of its own, so every selected scene is drawn (Otto, 13.11.2026:
+// with 124 selected scenes the first 40 were outlined and the rest were not).
 export function syncSelectionHighlight(map: MapLibreMap, items: StacItem[], selectedIds: string[]): void {
-  const limited = items.slice(0, MAX_MOSAIC_LAYERS);
-  setData(map, SEL_SRC, footprintsFC(limited.filter((it) => selectedIds.includes(it.id))));
+  const selected = new Set(selectedIds);
+  setData(map, SEL_SRC, footprintsFC(items.filter((it) => selected.has(it.id))));
 }
 
 // M3-09 §10: in the cropped focus view ("Crop & merge to AOI"), the same
