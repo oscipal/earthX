@@ -26,11 +26,12 @@ export function zoomMap(initial?: string[]) {
   });
   // The events a map fires that the page listens to (`watchSubstituteHold`); every source has all its tiles.
   const handlers = new Map<string, ((event: { sourceId?: string }) => void)[]>();
-  Object.assign(live.map, {
+  // On a map of its own that reads the one of the test: the code that lays a picture over another looks for `on` on the map it is given.
+  const events = Object.assign(Object.create(live.map), {
     on: (name: string, handler: (event: { sourceId?: string }) => void) => handlers.set(name, [...(handlers.get(name) ?? []), handler]),
     isSourceLoaded: () => true,
   });
-  watchSubstituteHold(live.map as never);
+  watchSubstituteHold(events);
   const idle = () => {
     waiting.splice(0).forEach((listener) => listener());
     handlers.get('idle')?.forEach((handler) => handler({}));

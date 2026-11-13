@@ -2,12 +2,12 @@
 // and the view draws none: nothing below the first level and, over the first level, nothing until the mosaic has arrived. The component
 // cannot be rendered here (it needs a WebGL map), the browser check `e2e/layer-loading.cjs` draws it; this keeps the argument from going.
 
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+
+import source from './components/MapView.tsx?raw';
 
 describe('MapView', () => {
   it('hands the list of datasets to the sync of the view, and draws the view again when it changes', () => {
-    const source = readFileSync(new URL('./components/MapView.tsx', import.meta.url), 'utf8');
     const call = /syncFocusRaster\(map, \{([\s\S]*?)\}\);\s*\}\s*\}, \[([^\]]*)\]\);/.exec(source);
     expect(call).not.toBeNull();
     expect(call![1]).toMatch(/^\s*datasets,$/m);

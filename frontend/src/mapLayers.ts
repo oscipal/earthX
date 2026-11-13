@@ -1246,7 +1246,7 @@ export function syncFocusRaster(
     // a hundred scenes takes seconds, and the map shows nothing meanwhile (plan M5-30 §8.7, finding of 13.11.2026).
     const lyrId = dynamicId('tiles-lyr', tiles);
     if (substitute.hideFrom !== undefined) {
-      held = { map, lyrId, hideFrom: substitute.hideFrom, sources: [], started: new Set(), waiting: drawn.some(({ view }) => view.kind === 'pending') };
+      held = { lyrId, hideFrom: substitute.hideFrom, sources: [], started: new Set(), waiting: drawn.some(({ view }) => view.kind === 'pending') };
     }
     addTiles(map, substitute, tiles++, s.render, clip, held !== null);
   }
@@ -1273,7 +1273,6 @@ export function syncFocusRaster(
 // The substitute of a dataset (`overviewSubstitute.ts`) is laid under the view's own picture without its upper limit, and the
 // limit is set once that picture has loaded; `waiting`: a mosaic that is not known yet, which only the next sync has sources for.
 interface SubstituteHold {
-  map: MapLibreMap;
   lyrId: string;
   hideFrom: number;
   sources: string[];
@@ -1286,7 +1285,7 @@ let substituteHold: SubstituteHold | null = null;
 // tiles were not asked for yet does not count) or the map is at rest, and the picture is there or was not asked for.
 function settleSubstituteHold(map: MapLibreMap, atRest: boolean): void {
   const hold = substituteHold;
-  if (!hold || hold.map !== map || hold.waiting) return;
+  if (!hold || hold.waiting) return;
   const present = hold.sources.filter((id) => map.getSource(id));
   if (present.some((id) => !map.isSourceLoaded(id))) return;
   if (!atRest && !present.every((id) => hold.started.has(id))) return;
