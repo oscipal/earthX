@@ -3,7 +3,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { DOWNLOADED, GROUPS, ITEMS, LIST, MOSAICS } from './fixtures/swissalti';
-import { isOwnerLoading, viewWaitsForMosaic, watchLayerLoading } from './layerLoading';
+import { isMapLoading, isOwnerLoading, viewWaitsForMosaic, watchLayerLoading } from './layerLoading';
 import { ownerOfSource, RESULTS_OWNER } from './mapLayers';
 import { useAppStore } from './store';
 
@@ -24,29 +24,38 @@ describe('ownerOfSource', () => {
   );
 });
 
-describe('watchLayerLoading', () => {
-  function watched() {
-    const handlers = new Map<string, (event: { sourceId?: string }) => void>();
-    const sources = new Set(['m-tiles-src-0', 'layer-src-A-0', 'layer-src-A-1', 'layer-src-B-0', 'basemap']);
-    const pending = new Set<string>();
-    const map = {
-      on: (name: string, handler: (event: { sourceId?: string }) => void) => handlers.set(name, handler),
-      getSource: (id: string) => (sources.has(id) ? {} : undefined),
-      isSourceLoaded: (id: string) => !pending.has(id),
-    };
-    const told: string[][] = [];
-    watchLayerLoading(map as never, (owners) => told.push([...owners]));
-    const start = (id: string) => {
-      pending.add(id);
-      handlers.get('sourcedataloading')!({ sourceId: id });
-    };
-    const done = (id: string, event = 'sourcedata') => {
-      pending.delete(id);
-      handlers.get(event)!({ sourceId: id });
-    };
-    return { told, start, done, fire: (name: string) => handlers.get(name)!({}), sources, pending };
-  }
+// A fake map: each source has one layer of the same name, which can be switched off or limited in zoom.
+function watched() {
+  const handlers = new Map<string, (event: { sourceId?: string }) => void>();
+  const sources = new Set(['m-tiles-src-0', 'layer-src-A-0', 'layer-src-A-1', 'layer-src-B-0', 'basemap']);
+  const pending = new Set<string>();
+  const hidden = new Set<string>();
+  const zooms = new Map<string, [number, number]>();
+  let zoom = 13;
+  const map = {
+    on: (name: string, handler: (event: { sourceId?: string }) => void) => handlers.set(name, handler),
+    getSource: (id: string) => (sources.has(id) ? {} : undefined),
+    isSourceLoaded: (id: string) => !pending.has(id),
+    getZoom: () => zoom,
+    getLayersOrder: () => [...sources],
+    getLayer: (id: string) => (sources.has(id) ? { source: id, minzoom: zooms.get(id)?.[0] ?? 0, maxzoom: zooms.get(id)?.[1] ?? 24 } : undefined),
+    getLayoutProperty: (id: string) => (hidden.has(id) ? 'none' : 'visible'),
+  };
+  const told: string[][] = [];
+  watchLayerLoading(map as never, (owners) => told.push([...owners]));
+  const start = (id: string) => {
+    pending.add(id);
+    handlers.get('sourcedataloading')!({ sourceId: id });
+  };
+  const done = (id: string, event = 'sourcedata') => {
+    pending.delete(id);
+    handlers.get(event)!({ sourceId: id });
+  };
+  const fire = (name: string) => handlers.get(name)!({});
+  return { told, start, done, fire, sources, pending, hidden, zooms, zoomTo: (next: number) => (zoom = next) };
+}
 
+describe('watchLayerLoading', () => {
   it('says a row is loading from the first tile its source asks for to the last one it gets', () => {
     const { told, start, done } = watched();
     start('layer-src-A-0');
@@ -105,6 +114,76 @@ describe('watchLayerLoading', () => {
     done('layer-src-A-0', 'error');
     expect(told).toEqual([['A'], []]);
   });
+  it('says loading again for the tiles a zoom or a pan asks for, after the first load is done', () => {
+    const { told, start, done } = watched();
+    start('layer-src-A-0');
+    done('layer-src-A-0');
+    start('layer-src-A-0'); // zoom in: the tiles of the new level
+    done('layer-src-A-0');
+    start('layer-src-A-0'); // pan: the tiles of the new edge
+    done('layer-src-A-0');
+    expect(told).toEqual([['A'], [], ['A'], [], ['A'], []]);
+  });
+
+  it('stays loading while a pan asks for more tiles before the first ones are in', () => {
+    const { told, start, done } = watched();
+    start('layer-src-A-0');
+    start('layer-src-A-0');
+    start('layer-src-B-0');
+    done('layer-src-A-0');
+    expect(told).toEqual([['A'], ['A', 'B'], ['B']]);
+  });
+
+  it('ends a load whose tiles a zoom dropped (they ask for nothing more and fire no `sourcedata`) when the zoom ends', () => {
+    const { told, start, pending, fire } = watched();
+    start('layer-src-A-0');
+    pending.delete('layer-src-A-0');
+    fire('zoomend');
+    expect(told).toEqual([['A'], []]);
+  });
+
+  it('ends a load whose tiles a pan dropped when the move ends, and on an abort of the source', () => {
+    const { told, start, pending, fire } = watched();
+    start('layer-src-A-0');
+    pending.delete('layer-src-A-0');
+    fire('moveend');
+    start('layer-src-B-0');
+    pending.delete('layer-src-B-0');
+    fire('sourcedataabort');
+    expect(told).toEqual([['A'], [], ['B'], []]);
+  });
+
+  it('keeps loading through a move that leaves a tile in flight', () => {
+    const { told, start, fire } = watched();
+    start('layer-src-A-0');
+    fire('moveend');
+    fire('zoomend');
+    expect(told).toEqual([['A']]);
+  });
+
+  it('does not say a hidden layer is loading, and stops saying it when the layer is hidden while it loads', () => {
+    const { told, start, hidden, fire } = watched();
+    hidden.add('layer-src-B-0');
+    start('layer-src-B-0');
+    expect(told).toEqual([]);
+    start('layer-src-A-0');
+    expect(told).toEqual([['A']]);
+    hidden.add('layer-src-A-0');
+    fire('styledata');
+    expect(told).toEqual([['A'], []]);
+  });
+
+  it('does not say a layer is loading outside its zoom range, and does again when the zoom comes back into it', () => {
+    const { told, start, zooms, zoomTo, fire } = watched();
+    zooms.set('layer-src-A-0', [0, 12.5]);
+    start('layer-src-A-0');
+    expect(told).toEqual([]);
+    zooms.set('layer-src-A-0', [0, 24]);
+    zoomTo(12);
+    fire('zoomend');
+    expect(told).toEqual([['A']]);
+  });
+
 });
 
 describe('the rows that are loading now', () => {
@@ -153,5 +232,34 @@ describe('the rows that are loading now', () => {
     expect(viewWaitsForMosaic(useAppStore.getState())).toBe(false);
     useAppStore.setState({ focusMode: true, showDownloaded: false });
     expect(viewWaitsForMosaic(useAppStore.getState())).toBe(false);
+  });
+});
+
+describe('whether anything on the map is loading', () => {
+  beforeEach(() => {
+    useAppStore.setState({ mapLoading: [], focusMode: false, downloaded: {}, mosaics: {} });
+  });
+
+  it('is so while any row is loading, whichever one', () => {
+    expect(isMapLoading(useAppStore.getState())).toBe(false);
+    useAppStore.setState({ mapLoading: ['L1'] });
+    expect(isMapLoading(useAppStore.getState())).toBe(true);
+    useAppStore.setState({ mapLoading: [RESULTS_OWNER] });
+    expect(isMapLoading(useAppStore.getState())).toBe(true);
+    useAppStore.setState({ mapLoading: [] });
+    expect(isMapLoading(useAppStore.getState())).toBe(false);
+  });
+
+  it('is so while the view waits for its mosaic, and not once it has it', () => {
+    const open = (mosaics: typeof MOSAICS) =>
+      useAppStore.setState({
+        focusMode: true, showDownloaded: true, downloaded: DOWNLOADED, datasets: LIST, datasetId: 'terrain', items: ITEMS, groups: GROUPS,
+        sections: [{ datasetId: 'terrain', items: ITEMS, groups: GROUPS, notes: [], groupingError: null, origin: 'search' as const, incomplete: false }],
+        openSectionId: 'terrain', shownImage: null, mosaics,
+      });
+    open({});
+    expect(isMapLoading(useAppStore.getState())).toBe(true);
+    open(MOSAICS);
+    expect(isMapLoading(useAppStore.getState())).toBe(false);
   });
 });

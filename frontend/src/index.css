@@ -3298,10 +3298,31 @@ button.pm-open:hover {
 }
 /* Their place in MapLibre's corner, above the attribution, as MapLibre places its own controls there. */
 .map-controls-host {
+  position: relative;
   float: right;
   clear: both;
   margin: 0 var(--space-3) var(--space-3) 0;
   pointer-events: auto;
+}
+/* The mark of a layer that loads for long (`MapLoadingMark.tsx`): a round panel with the spinner, over the buttons and centred on them, in the
+   room above the column so that nothing moves when it comes and goes. It is no control and takes no click. */
+.map-loading {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  width: var(--control-height);
+  height: var(--control-height);
+  margin: 0 auto var(--space-1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--panel-bg);
+  border: var(--line-width) solid var(--panel-border);
+  border-radius: 50%;
+  backdrop-filter: blur(10px);
+  box-shadow: var(--glow);
+  pointer-events: none;
 }
 /* The buttons at the bottom right of the map (UI-06, `MapControls.tsx`): one column on the panel, top to bottom the compass, zoom in,
    zoom out and "3D", each as high as a control (44 px for a finger and under 900 px). */

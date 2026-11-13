@@ -45,7 +45,7 @@ describe('the outlines of the selected scenes', () => {
   it('draws the outlines of a selection beyond the first forty also through `syncHighlight` while browsing', () => {
     const all = scenes(124);
     const { map, features } = published();
-    syncHighlight(map as never, { items: all, selectedIds: all.map((it) => it.id), focusMode: false, cropToAoi: false, aoi: null, downloaded: {}, groups: null });
+    syncHighlight(map as never, { items: all, selectedIds: all.map((it) => it.id), focusMode: false, cropToAoi: false, aoi: null, downloaded: {}, groups: undefined });
     expect(features()).toHaveLength(124);
   });
 

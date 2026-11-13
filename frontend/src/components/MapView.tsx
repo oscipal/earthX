@@ -48,6 +48,7 @@ import { layersForMap, viewLayerOf, viewShown } from '../viewLayer';
 import { shownViewOf, useAppStore } from '../store';
 import type { Bbox, StacItem, ToolMode } from '../types';
 import { MapControls } from './MapControls';
+import MapLoadingMark from './MapLoadingMark';
 
 // Only one of density/footprints/area is ever drawn (mapLayers.ts): a one-off
 // product's extent (`area`, M3-12 F-07, ENTSCHEIDUNGEN §2) whenever the
@@ -578,6 +579,7 @@ export default function MapView() {
     <>
       <div ref={containerRef} className="map" />
       {controls && createPortal(<MapControls map={controls.map} />, controls.host)}
+      {controls && createPortal(<MapLoadingMark />, controls.host)}
     </>
   );
 }
