@@ -1115,8 +1115,10 @@ async def overview_scenes(
     (else ``400``); from there on the dataset's own tiles serve. What the pixels are is the substitute's picture, drawn
     with the display parameters of the request; the route has no statistics, no info and no TileJSON.
 
-    The items are those of the substitute that touch the tile, from our own pgstac, in the order of the mosaic
-    and cut to the budget per tile. The asset is the first of the substitute's default render that an item carries.
+    The items are those of the substitute that touch the tile where it lies over the extent of the dataset (a tile
+    over nothing of it is ``404``), from our own pgstac, the largest overlap first and cut to the budget per tile, so
+    that a tile of a low level reads the files over the dataset and not those of the rest of the tile. The scenes read
+    lie in the order of the mosaic. The asset is the first of the substitute's default render that an item carries.
     """
     state = request.app.state
     config = _dataset_config(state, dataset)
@@ -1146,7 +1148,9 @@ async def overview_scenes(
             # No dataset names a federated substitute yet: its items would come from the source's own search, which
             # this route has no budget for. Refused until a case exists and decides it.
             raise OrderRefused(501, "a federated dataset cannot serve as a substitute yet", "items")
-        found, capped = await mosaic_tiles.items_in_tile(getattr(state, "earthx_cache_pool", None), substitute.dataset_id, grid)
+        found, capped = await mosaic_tiles.items_in_tile(
+            getattr(state, "earthx_cache_pool", None), substitute.dataset_id, grid, config.spatial_extent.bbox
+        )
         refs: dict[str, ResolvedAsset] = {}
         items: dict[str, dict[str, Any]] = {}
         for stac_item in found:
@@ -1159,8 +1163,10 @@ async def overview_scenes(
         if not items:
             raise OrderRefused(404, "the tile does not touch these items", "items")
         outlines = mosaic_tiles.footprints_of(items)
-        order = mosaic_order({item_id: ref.crs for item_id, ref in refs.items()})
-        touching = mosaic_tiles.scenes_touching(order, outlines, grid)
+        # The budget goes to the scenes over the dataset first (the order of `found`); the scenes it reads are then laid
+        # in the order of the mosaic.
+        touching = mosaic_tiles.scenes_touching(list(items), outlines, grid)
+        touching = dataclasses.replace(touching, read=mosaic_order({item_id: refs[item_id].crs for item_id in touching.read}))
     except OrderRefused as error:
         raise HTTPException(status_code=error.status_code, detail=error.detail) from None
     budget = ReadBudget(mosaic_tiles.TILE_TIME_BUDGET_S)

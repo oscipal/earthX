@@ -82,6 +82,7 @@ __all__ = [
     "items_in_tile",
     "mosaic_tile",
     "scenes_touching",
+    "substitute_region",
     "touching_scenes",
     "union_bounds",
 ]
@@ -366,23 +367,59 @@ def union_bounds(outlines: Mapping[str, BaseGeometry]) -> tuple[float, float, fl
     return min(west), min(south), max(east), max(north)
 
 
+def _overlap_area(item: Mapping[str, Any], region: tuple[float, float, float, float]) -> float:
+    """The area, in degrees squared, in which the bbox of ``item`` lies over ``region``; 0 where it has none that can be read."""
+    try:
+        bbox = item["bbox"]
+        west, south, east, north = (bbox[0], bbox[1], bbox[2], bbox[3]) if len(bbox) == 4 else (bbox[0], bbox[1], bbox[3], bbox[4])
+        width = min(east, region[2]) - max(west, region[0])
+        height = min(north, region[3]) - max(south, region[1])
+    except (KeyError, IndexError, TypeError):
+        return 0.0
+    return width * height if width > 0 and height > 0 else 0.0
+
+
+def substitute_region(
+    grid: tuple[morecantile.TileMatrixSet, morecantile.Tile], extent: tuple[float, float, float, float]
+) -> tuple[float, float, float, float]:
+    """The part of the tile that lies over ``extent`` (west, south, east, north, EPSG:4326); ``404`` where none does.
+
+    The substitute stands in for the dataset and only where the dataset is (plan M5-30b §8.8, Auslegung 1): a tile
+    spends its budget on the files over the extent of the dataset and not on those of the rest of the tile.
+    """
+    west, south, east, north = extent
+    tile_west, tile_south, tile_east, tile_north = tuple(grid[0].bounds(grid[1]))
+    region = (max(west, tile_west), max(south, tile_south), min(east, tile_east), min(north, tile_north))
+    if region[0] > region[2] or region[1] > region[3]:
+        raise OrderRefused(404, "the tile lies outside the extent of the dataset", "items")
+    return region
+
+
 async def items_in_tile(
-    pool: Any, dataset_id: str, grid: tuple[morecantile.TileMatrixSet, morecantile.Tile]
+    pool: Any,
+    dataset_id: str,
+    grid: tuple[morecantile.TileMatrixSet, morecantile.Tile],
+    extent: tuple[float, float, float, float],
 ) -> tuple[list[dict[str, Any]], bool]:
-    """The items of a materialized dataset that touch the tile, at most :data:`SUBSTITUTE_ITEM_CAP`, and whether more do.
+    """The items of a materialized dataset that touch the tile where it lies over ``extent``, at most :data:`SUBSTITUTE_ITEM_CAP`, and whether more do.
+
+    ``extent`` is that of the dataset that is drawn (:func:`substitute_region`). The items come in the order of
+    their overlap with that part of the tile, the largest first and the id breaking a tie, so that the files the
+    budget of the tile reads are those over the dataset, wherever pgstac happens to put them.
 
     Read from our own pgstac through the pool of the tiler. ``503`` without a pool or when the database fails, as
     for the item cache of a mosaic; the text of the driver's error can name host and user and is not passed on.
     """
     if pool is None:
         raise OrderRefused(503, "the tile of a substitute needs the catalogue database, which is not reachable", "items")
-    tms, tile = grid
+    region = substitute_region(grid, extent)
     try:
         async with pool.connection() as conn:
-            found = await search_items_in_bbox_async(conn, dataset_id, tuple(tms.bounds(tile)), SUBSTITUTE_ITEM_CAP + 1)
+            found = await search_items_in_bbox_async(conn, dataset_id, region, SUBSTITUTE_ITEM_CAP + 1)
     except _CACHE_FAILURES as error:
         LOGGER.warning("the catalogue failed under the tile of a substitute: %s", type(error).__name__)
         raise OrderRefused(503, "the tile of a substitute needs the catalogue database, which is not reachable", "items") from None
+    found.sort(key=lambda item: (-_overlap_area(item, region), str(item.get("id"))))
     return found[:SUBSTITUTE_ITEM_CAP], len(found) > SUBSTITUTE_ITEM_CAP
 
 
