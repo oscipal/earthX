@@ -2130,6 +2130,9 @@ class Attributable(Protocol):
     @property
     def notices(self) -> tuple[Notice, ...]: ...
 
+    @property
+    def limitations(self) -> tuple[str, ...]: ...
+
 
 @dataclass(frozen=True, slots=True)
 class RetiredDataset:
@@ -2152,6 +2155,11 @@ class RetiredDataset:
     successor: str
     #: Why it left, one English sentence without a full stop.
     reason: str
+
+    @property
+    def limitations(self) -> tuple[str, ...]:
+        """None: the file ``retired.yaml`` keeps no limitations, so the text file of a finished job has no such section."""
+        return ()
 
     def __post_init__(self) -> None:
         for name in ("dataset_id", "title", "successor", "reason"):
