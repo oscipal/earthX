@@ -463,7 +463,9 @@ class TestConcurrentTiles:
         monkeypatch.setattr(mosaic_tiles, "mosaic_reader", lambda *a, **k: ("image", []))
         assert reader.tile(TILE.x, TILE.y, TILE.z) == "image"
 
-    def test_waiting_for_a_place_does_not_spend_the_budget(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    def test_waiting_for_a_place_does_not_spend_the_budget(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
         now = [0.0]
         budget = mosaic_tiles.ReadBudget(1.0, clock=lambda: now[0])
         reader = self._reader(tmp_path, budget)
