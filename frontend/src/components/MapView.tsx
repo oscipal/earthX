@@ -16,11 +16,15 @@ import { areaGeometry, isAreaAnswer, showFootprints } from '../coverage';
 import { bufferPointToPolygon, pointInFootprint, polygonBbox } from '../geoUtils';
 import { openIdsOf, resultsOnMapOf } from '../mapResults';
 import { mosaicsOfView, sameMosaics } from '../mosaic';
+import { setMapLoading, watchLayerLoading } from '../layerLoading';
+import { watchGoneSelections } from '../mosaicSelection';
+import { assetsOfExpression, viewIndexOf } from '../viewIndex';
 import type { CoverageDisplay } from '../mapLayers';
 import {
   ensureBaseLayers,
   hasOwnLayers,
   overlayBudgetNote,
+  rechooseScenes,
   setAoiData,
   setCoverageDisplay,
   setViewOpacity,
@@ -32,6 +36,7 @@ import {
   syncPreview,
   syncResultsOverlay,
   watchPreviewLoading,
+  watchSubstituteHold,
 } from '../mapLayers';
 import { DEFAULT_BASEMAP } from '../basemaps';
 import { applyMapBackground, applyProjection, ATTRIBUTION_CONTROL, baseMapStyle, createBasemapSwitcher, isInFirstStyle, mapBackgroundOf } from '../mapStyles';
@@ -43,6 +48,7 @@ import { layersForMap, viewLayerOf, viewShown } from '../viewLayer';
 import { shownViewOf, useAppStore } from '../store';
 import type { Bbox, StacItem, ToolMode } from '../types';
 import { MapControls } from './MapControls';
+import MapLoadingMark from './MapLoadingMark';
 
 // Only one of density/footprints/area is ever drawn (mapLayers.ts): a one-off
 // product's extent (`area`, M3-12 F-07, ENTSCHEIDUNGEN §2) whenever the
@@ -203,6 +209,8 @@ export default function MapView() {
     watchPreviewLoading(map, (loading) => {
       if (useProcessingStore.getState().previewTilesLoading !== loading) useProcessingStore.setState({ previewTilesLoading: loading });
     });
+    watchLayerLoading(map, setMapLoading);
+    watchSubstituteHold(map);
     const first = useAppStore.getState().basemap;
     basemapRef.current = createBasemapSwitcher(map, isInFirstStyle(first) ? first : null, (reason, keep, overlays) => {
       // The map keeps what it shows; the choice stays saved, so that the next visit tries it again.
@@ -325,7 +333,10 @@ export default function MapView() {
     // reload).
     map.on('moveend', () => {
       reportViewport(map);
+      rechooseScenes(map);
     });
+    // A selection that expired is created again and its tiles are loaded again (`mosaicSelection.ts`).
+    watchGoneSelections(map);
 
     // Clicking the displayed imagery toggles that scene's download selection
     // (only when no drawing tool is active, so it never eats draw clicks).
@@ -407,9 +418,14 @@ export default function MapView() {
     () => (focusMode ? shownViewOf({ downloaded, sections, openSectionId, datasetId, items, groups, datasets, shownImage }) : null),
     [focusMode, downloaded, sections, openSectionId, datasetId, items, groups, datasets, shownImage],
   );
+  // The assets the index of the look reads: the tiler makes the tile of an index from a selection of them.
+  const indexAssets = useMemo(() => {
+    const preset = viewIndexOf(appliedRender, view?.dataset?.collection);
+    return preset ? assetsOfExpression(preset.expression) : null;
+  }, [appliedRender, view]);
   const picked = useMemo(
-    () => (view ? mosaicsOfView(allMosaics, view.dataset?.id ?? null, Object.entries(view.downloaded), view.groups) : {}),
-    [allMosaics, view],
+    () => (view ? mosaicsOfView(allMosaics, view.dataset?.id ?? null, Object.entries(view.downloaded), view.groups, indexAssets) : {}),
+    [allMosaics, view, indexAssets],
   );
   const mosaicsRef = useRef(picked);
   if (!sameMosaics(mosaicsRef.current, picked)) mosaicsRef.current = picked;
@@ -466,11 +482,13 @@ export default function MapView() {
         cropToAoi,
         items: view.items,
         dataset: view.dataset,
+        // The substitute of a dataset is looked up in the list (its attribution comes from its collection, `overviewSubstitute.ts`).
+        datasets,
         groups: view.groups,
         mosaics,
       });
     }
-  }, [focusMode, view, appliedRender, showDownloaded, viewLayer, viewAoi, cropToAoi, mosaics]);
+  }, [focusMode, view, appliedRender, showDownloaded, viewLayer, viewAoi, cropToAoi, mosaics, datasets]);
 
   // --- the preview of the processing panel (M4-13c-2), a tier of "Results" over the results and the view
   // (`mapLayers.ts`); a new AOI cuts it again. ---
@@ -561,6 +579,7 @@ export default function MapView() {
     <>
       <div ref={containerRef} className="map" />
       {controls && createPortal(<MapControls map={controls.map} />, controls.host)}
+      {controls && createPortal(<MapLoadingMark />, controls.host)}
     </>
   );
 }

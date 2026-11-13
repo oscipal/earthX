@@ -53,10 +53,12 @@ import { datesOfIds, dateOf, knownItems } from './layerDate';
 import { flipNext, flipStart } from './layerFlip';
 import type { LayerOverlay, LayerRestore, MapLayer, ResultLayerInfo } from './layers';
 import { bandLayerOf, isResultExpired, restyledTileUrl } from './resultLayer';
-import { buildTileUrl, footprintsFC, MAX_MOSAIC_LAYERS } from './mapLayers';
+import { buildTileUrl, footprintsFC } from './mapLayers';
 import { assetOfLook, bandAssetsOf, withAsset } from './viewBand';
-import { isMosaicPass, mosaicTemplateOf, orderedPass, orderKeyOf, oversizeNote, passesOf, stackLikeView } from './mosaic';
+import { indexKeyOf, mosaicKeyOf, MAX_MOSAIC_OPERATOR_ASSETS, orderedPass, orderKeyOf, passesOf, stackLikeView } from './mosaic';
 import type { Mosaics, SceneEntry } from './mosaic';
+import { ensureSelection, withSelection } from './mosaicSelection';
+import type { IndexPreset } from './indexPresets';
 import type { BasemapId } from './basemaps';
 import type { OverlayId, Overlays } from './overlays';
 import type { Appearance, Projection, Theme } from './preferences';
@@ -97,7 +99,7 @@ import { imagesOf, satellitesOf, sectionsForView, type ViewImage } from './viewI
 import { viewDates } from './viewKind';
 import { layerOfView, sameRender } from './viewLayer';
 import { downloadIndexCrop, estimateIndexDownload, indexOfferedFor, type IndexNote } from './indexDownload';
-import { indexBlockOf, indexLookOf, indexNote, indexStatisticsUrl, viewIndexOf } from './viewIndex';
+import { assetsOfExpression, indexBlockOf, indexLookOf, indexNote, indexStatisticsUrl, viewIndexOf } from './viewIndex';
 import { canonicalJson } from './processing';
 import { areaQuestionOf, measureView, type ViewMeasure } from './viewMeasure';
 import type { AppliedRender, Bbox, DownloadedInfo, StacItem, TimeStepGroup, ToolMode } from './types';
@@ -696,19 +698,20 @@ const pinKey = (s: AppState) =>
 // one the view has not loaded yet is still on its way. Pinning waits for it ("Loading…") and then pins by
 // itself; if the tiler cannot give it, `fetchMosaics` has said why and nothing is pinned. A pin made
 // meanwhile from another selection, or another pin that changed the list, is not repeated.
-function pinWhenLoaded(set: SetState, get: GetState, lists: SceneEntry[][], again: () => void): void {
+function pinWhenLoaded(set: SetState, get: GetState, lists: { entries: SceneEntry[]; index: IndexPreset | null }[], again: () => void): void {
   const s = get();
   const key = pinKey(s);
   const groups = sectionsForView(s).flatMap((section) => section.groups);
-  const requests = lists.flatMap((entries) => passesOf(entries, groups).map((pass) => ({ datasetId: pass[0][1].datasetId, entries: pass })));
+  const requests = lists.flatMap(({ entries, index }) => passesOf(entries, groups).map((pass) => ({ datasetId: pass[0][1].datasetId, entries: pass, index })));
   set({ pinLoading: true, error: null });
   void fetchMosaics(set, get, requests).then(() => {
     const now = get();
     set({ pinLoading: false });
     if (pinKey(now) !== key) return;
+    // An index whose selection the tiler did not take is not a failure here: pinning again says why it cannot be pinned.
     const failed = requests.some((r) => {
-      const template = mosaicTemplateOf(r.datasetId, r.entries);
-      return template !== null && !now.mosaics[template];
+      const mosaic = mosaicKeyOf(r.datasetId, r.entries);
+      return mosaic !== null && !now.mosaics[mosaic];
     });
     if (!failed) again();
   });
@@ -823,7 +826,7 @@ function layerDraw(
   get: GetState,
   layer: MapLayer,
   render: AppliedRender,
-): LayerDrawn | { problem: string } | { need: { datasetId: string; entries: SceneEntry[] }[] } {
+): LayerDrawn | { problem: string } | { need: MosaicRequest[] } {
   const s = get();
   const clip = layer.restore.cropToAoi ? layer.restore.aoi : null;
   const entries = Object.entries(layer.restore.downloaded).map(([id, info]): SceneEntry => [id, withAsset(id, info, assetOfLook(info, render))]);
@@ -833,7 +836,7 @@ function layerDraw(
   const block = index && layer.restore.datasetId ? indexBlockOf({ datasetId: layer.restore.datasetId, entries, groups, mosaics: s.mosaics, preset: index, mapZoom: Infinity }) : null;
   if (index && block) return { problem: `${indexNote(block, index.name)}. Start a job in Processing for the whole scenes.` };
   const fresh = overlaysOfEntries({ ...s, appliedRender: render }, entries, clip);
-  if (fresh === null) return { need: passesOf(entries, groups).map((pass) => ({ datasetId: pass[0][1].datasetId, entries: pass })) };
+  if (fresh === null) return { need: passesOf(entries, groups).map((pass) => ({ datasetId: pass[0][1].datasetId, entries: pass, index })) };
   const current = s.layers.find((l) => l.id === layer.id) ?? layer;
   const quicklooks = index ? [] : current.overlays.some((o) => o.kind === 'image') ? current.overlays.filter((o) => o.kind === 'image') : fresh.filter((o) => o.kind === 'image');
   return { overlays: [...quicklooks, ...fresh.filter((o) => o.kind === 'raster')], restore: { downloaded: Object.fromEntries(entries), appliedRender: { ...render } } };
@@ -935,7 +938,12 @@ function pinViewImages(set: SetState, get: GetState, which: 'shown' | 'all'): vo
   const built = picked.map((pick) => ({ ...pick, overlays: overlaysOfEntries(s, pick.entries, clip, lookOfImage(s, pick.image, shown)) }));
   const waiting = built.filter((b) => b.overlays === null);
   if (waiting.length > 0) {
-    pinWhenLoaded(set, get, waiting.map((b) => b.entries), () => pinViewImages(set, get, which));
+    pinWhenLoaded(
+      set,
+      get,
+      waiting.map((b) => ({ entries: b.entries, index: viewIndexOf(lookOfImage(s, b.image, shown), s.datasets.find((d) => d.id === b.image.datasetId)?.collection) })),
+      () => pinViewImages(set, get, which),
+    );
     return;
   }
   const groups = sectionsForView(s).flatMap((section) => section.groups);
@@ -983,27 +991,29 @@ function pinViewImages(set: SetState, get: GetState, which: 'shown' | 'all'): vo
   });
 }
 
-// In flight, by the mosaic's template (or the key of an order): two views that want one mosaic ask the tiler once.
+// In flight, by the mosaic's key (or the key of an order, or of an index's selection): two views that want one mosaic ask once.
 const mosaicLoads = new Map<string, Promise<void>>();
 
-// Loads the TileJSON of each pass that a mosaic would draw, once. The tiler fills its item cache by
-// it, and the map learns the surface, the levels and the order of the scenes (`mosaic.ts`). A mosaic
-// the tiler cannot give is kept as `null` and its pass is drawn scene by scene; asking again after a
-// `null` asks the tiler again.
-async function fetchMosaics(
-  set: SetState,
-  get: GetState,
-  requests: { datasetId: string; entries: SceneEntry[] }[],
-): Promise<void> {
+// A pass the view or a layer draws, and the index the look computes over it, if any: its tiles are asked from the selection for
+// the assets that index reads.
+type MosaicRequest = { datasetId: string; entries: SceneEntry[]; index?: IndexPreset | null };
+
+// Creates the selection of each pass that a mosaic would draw, once, and loads its TileJSON. The map learns the surface and the
+// levels from it, and the tiler answers it from what it stored at the creation (`mosaic.ts`). A mosaic the tiler cannot give is
+// kept as `null` and its pass is drawn scene by scene; asking again after a `null` asks the tiler again.
+async function fetchMosaics(set: SetState, get: GetState, requests: MosaicRequest[]): Promise<void> {
   const failures: string[] = [];
   const orderFailures: string[] = [];
   await Promise.all(
-    requests.map(async ({ datasetId, entries }) => {
-      const template = mosaicTemplateOf(datasetId, entries);
-      if (template) await loadMosaic(set, get, datasetId, entries, template, failures);
-      // A pass drawn scene by scene (too big for a mosaic, a mosaic the tiler refused, a dataset released below z8 only)
+    requests.map(async ({ datasetId, entries, index }) => {
+      const key = mosaicKeyOf(datasetId, entries);
+      if (key) {
+        await loadMosaic(set, get, datasetId, entries, key, failures);
+        if (index) await loadIndexSelection(set, get, datasetId, entries, index);
+      }
+      // A pass drawn scene by scene (more scenes than a selection takes, other assets, a mosaic the tiler refused)
       // lies in the order of the mosaic, the crop and the export, which only the tiler knows (NM4-24).
-      if (template === null || get().mosaics[template] === null) await loadOrder(set, get, datasetId, entries, orderFailures);
+      if (key === null || get().mosaics[key] === null) await loadOrder(set, get, datasetId, entries, orderFailures);
     }),
   );
   if (failures.length > 0) set({ notice: `Could not load the mosaic (${failures[0]}); its scenes are drawn one by one.` });
@@ -1044,23 +1054,47 @@ async function loadMosaic(
   get: GetState,
   datasetId: string,
   entries: SceneEntry[],
-  template: string,
+  key: string,
   failures: string[],
 ): Promise<void> {
-  if (get().mosaics[template]) return;
-  let load = mosaicLoads.get(template);
+  if (get().mosaics[key]) return;
+  let load = mosaicLoads.get(key);
   if (!load) {
     load = (async () => {
       let info: Mosaics[string] = null;
       try {
-        const json = await api.fetchMosaicTileJson(datasetId, entries.map(([id]) => id), entries[0][1].asset);
-        info = { tileUrl: template, bounds: json.bounds, minZoom: json.minzoom, maxZoom: json.maxzoom, order: json.order };
+        const selection = await ensureSelection(datasetId, entries.map(([id]) => id), [entries[0][1].asset]);
+        const json = await withSelection(selection, api.fetchMosaicTileJson);
+        info = { tileUrl: api.buildMosaicTileTemplate(selection), bounds: json.bounds, minZoom: json.minzoom, maxZoom: json.maxzoom, order: json.order };
       } catch (e) {
         failures.push((e as Error).message);
       }
-      if (info || get().mosaics[template] === undefined) set({ mosaics: { ...get().mosaics, [template]: info } });
-    })().finally(() => mosaicLoads.delete(template));
-    mosaicLoads.set(template, load);
+      if (info || get().mosaics[key] === undefined) set({ mosaics: { ...get().mosaics, [key]: info } });
+    })().finally(() => mosaicLoads.delete(key));
+    mosaicLoads.set(key, load);
+  }
+  await load;
+}
+
+// The selection of a pass for the assets an index reads (the tile of the index is a mosaic with a step). One that the tiler does not
+// take, or an index of more assets than a selection holds, stays `null`, and the view says that the index cannot be computed here.
+async function loadIndexSelection(set: SetState, get: GetState, datasetId: string, entries: SceneEntry[], index: IndexPreset): Promise<void> {
+  const assets = assetsOfExpression(index.expression);
+  if (assets.length > MAX_MOSAIC_OPERATOR_ASSETS) return;
+  const key = indexKeyOf(datasetId, assets, entries);
+  if (get().mosaics[key]) return;
+  let load = mosaicLoads.get(key);
+  if (!load) {
+    load = (async () => {
+      let info: Mosaics[string] = null;
+      try {
+        info = { selection: await ensureSelection(datasetId, entries.map(([id]) => id), assets) };
+      } catch {
+        // The tiler's words are for the panel of the mosaic; the index says only that it cannot be computed here.
+      }
+      set({ mosaics: { ...get().mosaics, [key]: info } });
+    })().finally(() => mosaicLoads.delete(key));
+    mosaicLoads.set(key, load);
   }
   await load;
 }
@@ -1518,6 +1552,8 @@ export interface AppState {
   viewLooks: Record<string, AppliedRender>;
   savedLooks: Record<string, AppliedRender>;
   focusLoading: boolean; // fetching statistics while entering focus / "auto"
+  // The rows of the layer manager whose tiles are in flight on the map (`layerLoading.ts`); only the map writes it.
+  mapLoading: string[];
   // Whether the current focus view is cropped to `aoi` ("Crop to AOI") or
   // shows the whole selection uncropped ("View full selection", M3-09) —
   // meaningless while `focusMode` is false. Drives the map's AOI clipping
@@ -1915,6 +1951,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   viewLooks: {},
   savedLooks: {},
   focusLoading: false,
+  mapLoading: [],
   cropToAoi: false,
   viewAoi: null,
 
@@ -2973,15 +3010,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     const newImage = open ? images.find((image) => image.ids.some((id) => id in added) && !viewImagesOf(s).some((old) => old.key === image.key)) : undefined;
     const first = open ? (newImage ?? images.find((image) => image.key === shownBefore?.key) ?? firstImageOf(images, s)) : firstImageOf(images, s);
     const applied = first ? defaultLookOf(s, first) : {};
-    // Scenes of a time step too big for one mosaic are drawn one by one, and only so many of those.
-    const groups = sectionsForView(s).flatMap((section) => section.groups);
-    const passes = passesOf(Object.entries(all), groups);
-    const oneByOne = passes.filter((pass) => !isMosaicPass(pass)).reduce((sum, pass) => sum + pass.length, 0);
-    const oversize = oversizeNote(passes, Math.max(0, oneByOne - MAX_MOSAIC_LAYERS));
-    const note = oversize ?? problem;
     set({
       error: null,
-      ...(note ? { notice: note } : {}),
+      ...(problem ? { notice: problem } : {}),
       focusMode: true,
       viewOfLayer: false,
       resultViewLayerId: null,
@@ -3017,7 +3048,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     await fetchMosaics(
       set,
       get,
-      passesOf(Object.entries(s.downloaded), groups).map((entries) => ({ datasetId: entries[0][1].datasetId, entries })),
+      passesOf(Object.entries(s.downloaded), groups).map((entries) => ({
+        datasetId: entries[0][1].datasetId,
+        entries,
+        index: viewIndexOf(s.appliedRender, s.datasets.find((d) => d.id === entries[0][1].datasetId)?.collection),
+      })),
     );
   },
   // "Clear" in the view: takes the view off the map, nothing else. The choice of scenes, what was pinned and show or hide
@@ -3720,6 +3755,12 @@ function reconcileBands(): void {
   useAppStore.setState({ downloaded });
   void s.loadMosaics();
 }
+
+// The tile of an index is a mosaic with a step, asked from the selection of the assets the index reads: another index, or the image
+// of another look, asks for it.
+useAppStore.subscribe((s, prev) => {
+  if (s.focusMode && (s.appliedRender.index !== prev.appliedRender.index || s.shownImage !== prev.shownImage)) void s.loadMosaics();
+});
 
 useAppStore.subscribe((s, prev) => {
   if (s.appliedRender !== prev.appliedRender || s.viewLooks !== prev.viewLooks || s.savedLooks !== prev.savedLooks || s.shownImage !== prev.shownImage) {

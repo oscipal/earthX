@@ -12,6 +12,7 @@
 // Playwright and Chromium are not a dependency of the project (CI does not run this); the cloud session has both.
 
 const { chromium } = require('playwright');
+const { answersSelection } = require('./selectionMock.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
 const zlib = require('node:zlib');
@@ -76,6 +77,7 @@ async function open(browser, theme, viewport, scenario) {
     const json = (body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
     if (url.origin !== BASE) return route.abort();
     if (/^\/(src|@|node_modules|assets)/.test(url.pathname) || url.pathname === '/' || url.pathname.endsWith('.svg')) return route.continue();
+    if (answersSelection(route, url)) return;
     if (url.pathname.includes('/mosaic/') && url.pathname.endsWith('/tilejson.json')) {
       if (scenario === 'scenes') return json({ detail: 'refused' }, 422);
       return json({ tilejson: '3.0.0', bounds: FOOTPRINT, minzoom: 8, maxzoom: 14, 'earthx:order': SCENES });
@@ -164,7 +166,8 @@ async function checkSizes(browser, theme, viewport) {
     if (zoom === ZOOM) await opened.page.screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}.png`) });
     await opened.context.close();
   }
-  if (at[7.4].mosaic !== 0 || at[7.4].scene === 0) problems.push(`at zoom 7.4: ${at[7.4].mosaic} mosaic and ${at[7.4].scene} scene tiles, the scenes should be drawn alone`);
+  // The mosaic starts at the first level of the dataset (the TileJSON of this check says 8); below it no scene stands in (adr/0032 §6.2).
+  if (at[7.4].mosaic !== 0 || at[7.4].scene !== 0) problems.push(`at zoom 7.4: ${at[7.4].mosaic} mosaic and ${at[7.4].scene} scene tiles, none should be asked for`);
   if (at[7.6].mosaic === 0 || at[7.6].scene !== 0) problems.push(`at zoom 7.6: ${at[7.6].mosaic} mosaic and ${at[7.6].scene} scene tiles, the mosaic should be drawn alone`);
   if (at[ZOOM].mosaic === 0 || at[ZOOM].scene !== 0) problems.push(`at zoom ${ZOOM}: ${at[ZOOM].mosaic} mosaic and ${at[ZOOM].scene} scene tiles`);
   return { name, problems, detail: `tiles asked at 7.4 ${JSON.stringify(at[7.4])}, at 7.6 ${JSON.stringify(at[7.6])}, at ${ZOOM} ${JSON.stringify(at[ZOOM])}` };

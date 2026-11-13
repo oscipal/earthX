@@ -15,6 +15,7 @@
 // Playwright and Chromium are not a dependency of the project (CI does not run this); the cloud session has both.
 
 const { chromium } = require('playwright');
+const { answersSelection } = require('./selectionMock.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -58,6 +59,7 @@ async function run(browser, theme, viewport, results) {
     }
     if (url.origin !== BASE || /^\/(src|@|node_modules|assets)/.test(url.pathname) || url.pathname === '/' || url.pathname.endsWith('.svg')) return route.continue();
     if (url.pathname === '/colormaps') return json({ groups: [] });
+    if (answersSelection(route, url)) return;
     if (url.pathname.includes('/mosaic/') && url.pathname.endsWith('/tilejson.json')) return json({ tilejson: '3.0.0', bounds: [9.8, 47, 13, 49.7], minzoom: 7, maxzoom: 14, 'earthx:order': [] });
     if (url.pathname.includes('/statistics')) return json({ '1': { min: 0, max: 900, percentile_2: 80, percentile_98: 260, count: 9 } });
     if (url.pathname.includes('/tiles/')) {

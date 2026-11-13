@@ -1094,6 +1094,10 @@ def build_notice_text(
     # DS-04 plan §4.4: what a user should know about the values, as the viewer shows it beside the data.
     lines.extend(f"{notice.label}: {notice.tooltip}" for notice in config.notices)
 
+    # Otto, 13.11.2026: what the data cannot do, as its own section for every dataset that has limitations.
+    if config.limitations:
+        lines.append("\n".join(["Limitations:", *(f"- {text}" for text in config.limitations)]))
+
     if group_item_ids is not None and len(group_item_ids) > 1:
         for index, ids in enumerate(group_item_ids, start=1):
             lines.append(f"Group {index} ({group_prefix}{group_dirname(index - 1, len(group_item_ids))}): " + ", ".join(ids))

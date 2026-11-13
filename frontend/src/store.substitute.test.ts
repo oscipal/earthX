@@ -3,7 +3,9 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { json, selectionServer } from './fixtures/selectionTiler';
 import { datasetsFrom } from './datasets';
+import { resetSelections } from './mosaicSelection';
 import { useAppStore } from './store';
 import type { Collection, StacItem } from './types';
 
@@ -57,10 +59,6 @@ const SURFACE: Collection = {
 const AOI: GeoJSON.Polygon = { type: 'Polygon', coordinates: [[[7, 46], [8, 46], [8, 47], [7, 46]]] };
 const scene = (id: string): StacItem => ({ id, collection: 'terrain', bbox: [7, 46, 8, 47], properties: { 'earthx:state': '2026' }, assets: {} });
 
-function json(body: unknown): Response {
-  return { ok: true, status: 200, statusText: '', json: async () => body } as Response;
-}
-
 function open(items: StacItem[]) {
   useAppStore.setState({
     datasets: datasetsFrom([TERRAIN, SURFACE]),
@@ -87,10 +85,15 @@ function open(items: StacItem[]) {
 }
 
 beforeEach(() => {
+  resetSelections();
+  const selections = selectionServer({
+    tilejson: () => json({ bounds: [7, 46, 8, 47], minzoom: 13, maxzoom: 20, tiles: ['http://tiler.test/tiles'], 'earthx:order': ['A', 'B'] }),
+  });
   vi.stubGlobal(
     'fetch',
-    vi.fn(async (url: string) => {
-      if (url.includes('/mosaic/')) return json({ bounds: [7, 46, 8, 47], minzoom: 13, maxzoom: 20, tiles: ['http://tiler.test/tiles'], 'earthx:order': ['A', 'B'] });
+    vi.fn(async (url: string, init?: RequestInit) => {
+      const selected = await selections.answer(url, init);
+      if (selected) return selected;
       if (url.includes('/scene-order')) return json({ order: ['A', 'B'] });
       if (url.includes('/statistics')) return json({ '1': { min: 0, max: 4000, percentile_2: 0, percentile_98: 3000 } });
       throw new Error(`unexpected request: ${url}`);
@@ -111,7 +114,7 @@ describe('a layer pinned from the view of a dataset with a substitute', () => {
     expect(substitute.tileUrl).toContain('/collections/terrain/overview/tiles/');
     expect(substitute.tileUrl).toContain('colormap_name=terrain');
     expect(own.map((o) => o.tileUrl).every((url) => !url.includes('/overview/'))).toBe(true);
-    expect(own.at(-1)?.tileUrl).toContain('/mosaic/tiles/');
+    expect(own.at(-1)?.tileUrl).toMatch(/\/mosaic\/[0-9a-f]{32}\/tiles\//);
   });
 
   it('has exactly one substitute in each layer, never two', async () => {

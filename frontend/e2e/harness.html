@@ -17,11 +17,12 @@
       import * as maplibregl from 'maplibre-gl';
       import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
       import { fetchResultTileJson } from '/src/processing.ts';
-      import { ensureBaseLayers, syncBrowseMosaic, syncFocusRaster, syncLayers, buildTileUrl } from '/src/mapLayers.ts';
+      import { ensureBaseLayers, syncBrowseMosaic, syncFocusRaster, syncLayers, buildTileUrl, watchSubstituteHold } from '/src/mapLayers.ts';
       import { AOI_CLIP_PROTOCOL, aoiClipProtocol } from '/src/aoiClip.ts';
-      import { mosaicTemplateOf, orderKeyOf } from '/src/mosaic.ts';
+      import { mosaicKeyOf, orderKeyOf } from '/src/mosaic.ts';
       import { resultTileTemplate } from '/src/resultLayer.ts';
       import { overlaysOfPass, underlaysOf } from '/src/searchLayers.ts';
+      import * as swiss from '/src/fixtures/swissalti.ts';
       import { previewDataset, previewScene, quicklookDataset, quicklookScene, sceneInfo } from '/src/fixtures/viewScenes.ts';
 
       maplibregl.setWorkerUrl(workerUrl);
@@ -35,6 +36,8 @@
         fadeDuration: 0,
         canvasContextAttributes: { preserveDrawingBuffer: true },
       });
+      // As `MapView.tsx` does: the substitute of a dataset stays over its first level until the dataset's own picture has loaded.
+      watchSubstituteHold(map);
       const loaded = new Promise((resolve) => map.on('load', resolve));
       const idle = () => new Promise((resolve) => map.once('idle', resolve));
 
@@ -56,7 +59,20 @@
       };
       const AOI = { type: 'Polygon', coordinates: [[[10.4, 47.4], [10.6, 47.4], [10.6, 47.6], [10.4, 47.6], [10.4, 47.4]]] };
 
+      // The pixels in a square of `radius` around a longitude and latitude, where the map puts it (not the centre of the canvas: a map
+      // zoomed out to the whole world cannot centre on a latitude).
+      const blockAt = (lon, lat, radius = 2) => {
+        const point = map.project([lon, lat]);
+        const gl = map.getCanvas().getContext('webgl2') ?? map.getCanvas().getContext('webgl');
+        const ratio = gl.drawingBufferWidth / map.getCanvas().clientWidth;
+        const [x, y] = [Math.round(point.x * ratio), Math.round(point.y * ratio)];
+        const size = 2 * radius + 1;
+        const data = pixels(x - radius, y - radius, size, size);
+        return Array.from({ length: size * size }, (_, i) => [...data.slice(i * 4, i * 4 + 3)]);
+      };
+
       window.h = {
+        blockAt,
         pixelAt,
         loaded: loaded.then(() => {
           ensureBaseLayers(map);
@@ -125,17 +141,13 @@
             items: [previewScene('H1')],
             dataset: previewDataset(),
           }),
-        // Two scenes that overlap completely, ticked in the order `ids` (NM4-24), drawn below the first level of a mosaic:
-        // 'mosaic' has the mosaic with its order (A, B), 'order' a refused mosaic and the order the tiler gave (A, B), 'none' a
-        // refused mosaic and no order.
+        // Two scenes that overlap completely, ticked in the order `ids` (NM4-24), drawn one by one because the tiler refused the
+        // mosaic: 'order' has the order the tiler gave (A, B), 'none' no order.
         overlap: (ids, mode) => {
           const scenes = { A: previewScene('A'), B: previewScene('B') };
           const downloaded = Object.fromEntries(ids.map((id) => [id, sceneInfo(scenes[id], 0, 14)]));
           const entries = Object.entries(downloaded);
-          const template = mosaicTemplateOf('quicklook-source', entries);
-          const mosaics = {};
-          if (mode === 'mosaic') mosaics[template] = { tileUrl: template, bounds: [10, 47, 11, 48], minZoom: 8, maxZoom: 14, order: ['A', 'B'] };
-          else mosaics[template] = null;
+          const mosaics = { [mosaicKeyOf('quicklook-source', entries)]: null };
           if (mode === 'order') mosaics[orderKeyOf('quicklook-source', entries)] = { order: ['A', 'B'] };
           syncFocusRaster(map, {
             downloaded,
@@ -158,6 +170,22 @@
             items: [previewScene('H1')],
             dataset: previewDataset(),
           }),
+        // "Crop and merge to AOI" of a dataset released from z13 that shows another below it (swissALTI3D with GLO-30), the mosaic of its
+        // scenes known: `aoi` is the area it is cropped to, `null` for the whole scenes. The centre of the area, for the check to jump to.
+        swissCrop: (aoi) => {
+          syncFocusRaster(map, {
+            downloaded: swiss.DOWNLOADED,
+            render: {},
+            showDownloaded: true,
+            aoi,
+            cropToAoi: aoi !== null,
+            items: swiss.ITEMS,
+            dataset: swiss.TERRAIN,
+            datasets: swiss.LIST,
+            groups: swiss.GROUPS,
+            mosaics: swiss.MOSAICS,
+          });
+        },
         // A layer pinned from a scene whose dataset has a quicklook and releases its tiles from z8, as the store pins it.
         pinScene: (quicklook = true) => {
           const item = quicklookScene('E2E');

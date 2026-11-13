@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, 
 import { zoomFloorHint } from '../datasets';
 import { flipIdOf } from '../layerFlip';
 import { layerShownName } from '../layerName';
+import { RESULTS_OWNER } from '../mapLayers';
 import { EXPIRED_LAYER_TIP, LOCKED_LAYER_TIP, type MapLayer } from '../layers';
 import { RGB, RGB_LABEL } from '../processingBands';
 import { EXPIRED_PROCESS_TEXT, layerProcessBlock, NO_COPY_TEXT, PROCESS_LAYER_TEXT, useProcessingStore } from '../processingStore';
@@ -18,8 +19,10 @@ import InlineRename from './InlineRename';
 import { RENAME_TIP } from './InspectorParts';
 import { REMOVE_TIP } from './LayerActions';
 import LayerDownload from './LayerDownload';
+import LoadingMark from './LoadingMark';
 import ResultsEye from './ResultsEye';
 import Tip from './Tip';
+import useLayerLoading from './useLayerLoading';
 import { useRowDrag, type RowDrag } from './useRowDrag';
 
 export const EXPIRED_LAYER_TEXT = 'Expired: results are kept for 7 days. Start the job again.';
@@ -97,7 +100,8 @@ function Grip({ dnd }: { dnd: RowDnd }) {
   );
 }
 
-// One row, eleven places in a fixed order: grip, name and its pencil, then eye, opacity, up, down, process, download, note, remove.
+// One row, eleven places in a fixed order: grip, name and its pencil, then eye, opacity, up, down, process, download, note, remove. The
+// note's place holds the mark of a layer that is loading (`LoadingMark`) while the layer has no note.
 function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: MapLayer; index: number; last: boolean; dnd: RowDnd; flipped: boolean; flipping: boolean }) {
   const remove = useAppStore((s) => s.removeLayer);
   const rename = useAppStore((s) => s.renameLayer);
@@ -126,6 +130,7 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
   );
   // A layer that shows nothing at this zoom says why, in either step of the tooltips: nothing over the map does (Otto, 10.11.2026).
   const zoomReason = shown ? zoomReasonOf(l.overlays, mapZoom) : null;
+  const loading = useLayerLoading(l.id) && shown;
   return (
     <li className={`layer-row${locked ? ' locked' : ''}${flipped ? ' flip' : ''}${dnd.className}`} aria-current={flipped || undefined}>
       <Grip dnd={dnd} />
@@ -200,6 +205,8 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
         <span className="lm-note" data-col="note">
           <Tip text={notes.join(' ')} tone="warn" />
         </span>
+      ) : loading ? (
+        <LoadingMark col="note" />
       ) : (
         <Slot col="note" />
       )}
@@ -246,6 +253,7 @@ function ResultsRow({ first, last, dnd }: { first: boolean; last: boolean; dnd: 
   const zoomReason = useAppStore((s) =>
     s.resultsOnMap && !s.focusMode && hasResultsPanel(s.sections) ? zoomFloorHint(s.datasets.find((d) => d.id === s.datasetId), s.mapZoom) : null,
   );
+  const loading = useLayerLoading(RESULTS_OWNER);
   return (
     <li className={`layer-row results-row${dnd.className}`}>
       <Grip dnd={dnd} />
@@ -263,7 +271,7 @@ function ResultsRow({ first, last, dnd }: { first: boolean; last: boolean; dnd: 
       </button>
       <Slot col="process" />
       <Slot col="download" />
-      <Slot col="note" />
+      {loading ? <LoadingMark col="note" /> : <Slot col="note" />}
       <Slot col="remove" />
     </li>
   );

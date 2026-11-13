@@ -19,6 +19,7 @@
 import { create } from 'zustand';
 
 import { fetchItem, fetchStatisticsAt, HttpError, postAreaStatistics, withPercentiles, type AreaStatistics } from './api';
+import { ensureSelection, knownSelections, renewSelection, selectionIdOfUrl, selectionKeyOf } from './mosaicSelection';
 import { CHANNEL_NAMES, channelsAtOwnPercent, withoutChannels, type ChannelRange } from './channels';
 import { checkPercent, NO_RANGE_AT_PERCENT, rescaleAtPercent, type Percent } from './percentRange';
 import { crsBlockReason, type CrsEntry } from './crsUnit';
@@ -2513,6 +2514,7 @@ function wantedPreview(limit?: number): PreviewSpec | null {
     area: view.area,
     jobs,
     answers: mosaicAnswers,
+    selections: knownSelections,
     order,
     band: read.band,
     bands: read.bands,
@@ -2682,6 +2684,33 @@ const mosaicAnswers = new Map<string, MosaicAnswer>();
 const askingMosaics = new Map<string, Promise<void>>();
 let mosaicEpoch = 0;
 
+// Creates the selections the mosaics of a preview are drawn from (`PreviewSpec.needs`). One the tiler does not take — a pass of several
+// overpasses, a scale or a unit that differs — is the answer "scenes" for that mosaic, as a TileJSON that refuses it was; a question that failed
+// on the way is asked again with the next change.
+const SELECTION_REFUSED = [400, 404, 413, 414, 422, 501];
+
+async function createSelections(needs: PreviewSpec['needs']): Promise<void> {
+  const epoch = mosaicEpoch;
+  await Promise.all(
+    needs.map(async ({ datasetId, ids, assets }) => {
+      try {
+        await ensureSelection(datasetId, ids, assets);
+      } catch (e) {
+        if (epoch !== mosaicEpoch) return;
+        const refused = e instanceof HttpError && SELECTION_REFUSED.includes(e.status);
+        mosaicAnswers.set(selectionKeyOf(datasetId, assets, ids), refused ? { state: 'scenes' } : { state: 'scenes', retry: true });
+      }
+    }),
+  );
+}
+
+// The question to the TileJSON of a mosaic; where the selection has expired, it is created again and the question asked once more.
+async function probeAgain(probe: string): Promise<MosaicAnswer> {
+  const answer = await probeMosaic(probe);
+  const id = answer.state === 'scenes' && answer.gone ? selectionIdOfUrl(probe) : null;
+  return id !== null && (await renewSelection(id)) ? probeMosaic(probe) : answer;
+}
+
 async function askMosaics(spec: PreviewSpec | null): Promise<void> {
   await Promise.all(
     (spec?.mosaics ?? [])
@@ -2690,7 +2719,7 @@ async function askMosaics(spec: PreviewSpec | null): Promise<void> {
         let request = askingMosaics.get(probe);
         if (!request) {
           const epoch = mosaicEpoch;
-          request = probeMosaic(probe)
+          request = probeAgain(probe)
             .then((answer) => {
               if (epoch !== mosaicEpoch) return;
               if (mosaicAnswers.size >= PROBES_KEPT) mosaicAnswers.delete(mosaicAnswers.keys().next().value!);
@@ -2739,7 +2768,14 @@ async function settle(wanted: PreviewSpec): Promise<void> {
   }
 }
 
-async function settleAs(run: number, wanted: PreviewSpec): Promise<void> {
+async function settleAs(run: number, first: PreviewSpec): Promise<void> {
+  let wanted = first;
+  // The mosaics are drawn from selections of the tiler; the scenes are drawn one by one until they are there.
+  if (wanted.needs.length > 0) {
+    await createSelections(wanted.needs);
+    if (run !== settleRun) return;
+    wanted = wantedPreview() ?? wanted;
+  }
   const refused = await chainRefusal(wanted);
   if (run !== settleRun) return;
   // The steps the tiler takes: all of them, or the ones before the step it refuses.

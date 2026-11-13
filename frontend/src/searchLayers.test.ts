@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { buildTileTemplate } from './api';
-import { mosaicTemplateOf, orderKeyOf } from './mosaic';
+import { mosaicKeyOf, orderKeyOf } from './mosaic';
 import type { Mosaics, SceneEntry } from './mosaic';
 import { overlaysOfPass } from './searchLayers';
 import type { AppliedRender } from './types';
@@ -14,12 +14,12 @@ const entry = (id: string): SceneEntry => [
   { datasetId: 'sentinel-2-c1-l2a', tileUrl: buildTileTemplate('dem', id, 'data'), bounds: [10, 47, 11, 48], asset: 'data', minZoom: 0, maxZoom: 15 },
 ];
 
-// The overlays a pinned layer draws for a pass of scenes: its mosaic under the scenes that step aside, else the scenes.
+// The overlays a pinned layer draws for a pass of scenes: its mosaic, else the scenes.
 describe('overlaysOfPass', () => {
   const entries = [entry('a'), entry('b')];
   const mosaicOf = (order = ['a', 'b']): Mosaics => {
-    const tileUrl = mosaicTemplateOf('dem', entries) as string;
-    return { [tileUrl]: { tileUrl, bounds: [9, 46, 12, 49], minZoom: 8, maxZoom: 15, order } };
+    const tileUrl = '/collections/dem/mosaic/0123456789abcdef0123456789abcdef/tiles/WebMercatorQuad/{z}/{x}/{y}?tilesize=512';
+    return { [mosaicKeyOf('dem', entries) as string]: { tileUrl, bounds: [9, 46, 12, 49], minZoom: 8, maxZoom: 15, order } };
   };
   const rasters = (overlays: ReturnType<typeof overlaysOfPass>) =>
     (overlays ?? []).map((o) => {
@@ -27,24 +27,18 @@ describe('overlaysOfPass', () => {
       return o;
     });
 
-  it('is one mosaic overlay under the two scenes that step aside from z8, all clipped', () => {
+  it('is one mosaic overlay of the selection, clipped, with no scene under it', () => {
     const overlays = rasters(overlaysOfPass('dem', entries, mosaicOf(), RENDER, AOI));
-    expect(overlays).toHaveLength(3);
-    expect(overlays.every((o) => o.tileUrl.startsWith('earthx-clip://'))).toBe(true);
-    expect(overlays.slice(0, 2).map((o) => [o.maxZoom, o.hideFrom])).toEqual([[7, 7.5], [7, 7.5]]);
-    expect(overlays[2].tileUrl).toContain('/collections/dem/mosaic/tiles/');
-    expect(overlays[2].tileUrl).toContain('colormap_name=terrain');
-    expect([overlays[2].minZoom, overlays[2].maxZoom, overlays[2].hideFrom]).toEqual([8, 15, undefined]);
-  });
-
-  it('stacks the scenes in the order the mosaic reads them, the first on top', () => {
-    const [bottom, top] = rasters(overlaysOfPass('dem', entries, mosaicOf(['b', 'a']), RENDER, AOI));
-    expect(bottom.tileUrl).toContain('/items/a/');
-    expect(top.tileUrl).toContain('/items/b/');
+    expect(overlays).toHaveLength(1);
+    expect(overlays[0].tileUrl.startsWith('earthx-clip://')).toBe(true);
+    expect(overlays[0].tileUrl).toContain('/collections/dem/mosaic/0123456789abcdef0123456789abcdef/tiles/');
+    expect(overlays[0].tileUrl).not.toContain('item=');
+    expect(overlays[0].tileUrl).toContain('colormap_name=terrain');
+    expect([overlays[0].minZoom, overlays[0].maxZoom, overlays[0].hideFrom]).toEqual([8, 15, undefined]);
   });
 
   it('stacks the scenes drawn one by one in the order the tiler gave, not in the order they were ticked (NM4-24)', () => {
-    const refused = { [mosaicTemplateOf('dem', entries) as string]: null, [orderKeyOf('dem', entries) as string]: { order: ['b', 'a'] } };
+    const refused = { [mosaicKeyOf('dem', entries) as string]: null, [orderKeyOf('dem', entries) as string]: { order: ['b', 'a'] } };
     const [bottom, top] = rasters(overlaysOfPass('dem', entries, refused, RENDER, AOI));
     expect(bottom.tileUrl).toContain('/items/a/');
     expect(top.tileUrl).toContain('/items/b/');

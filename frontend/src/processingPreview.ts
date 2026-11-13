@@ -14,6 +14,7 @@ import {
   MOSAIC_TILEJSON_TIMEOUT_MS,
   type AreaStatistics,
   type BandStatistics,
+  type MosaicSelection,
   type ShownBands,
 } from './api';
 import type { DatasetOption } from './datasets';
@@ -23,11 +24,12 @@ import { buildTileUrl } from './mapLayers';
 import {
   MAX_MOSAIC_OPERATOR_ASSETS,
   MAX_MOSAIC_REQUEST_BYTES,
-  MAX_MOSAIC_SCENES,
+  MAX_SELECTION_ITEMS,
   MIN_MOSAIC_SCENES,
   mosaicRequestBytes,
 } from './mosaic';
-import { MOSAIC_TILE_SIZE, TILE_SIZE, tileLevelAhead, tileMetres } from './tileSize';
+import { selectionKeyOf } from './mosaicSelection';
+import { MOSAIC_TILE_SIZE, TILE_SIZE, tileMetres } from './tileSize';
 import { canonicalJson, type Order } from './processing';
 import { indexPresetsOf, presetFor, presetRange } from './indexPresets';
 import { assetsCarrying, bandLabel, isBandMath, resultNameOf, resultsOf, RGB, startBand } from './processingBands';
@@ -276,15 +278,17 @@ export async function probeChain(url: string, steps: number, fetchImpl: typeof f
   }
 }
 
-// What the tiler said to the TileJSON of a mosaic with steps (NM4-04): it takes it and names the scenes in the order a tile
-// reads them, it refuses a step (the same words as for one scene), or it does not take the mosaic as such — too long
-// a request, a pass it cannot mosaic, a failing source, a network that fails — and the scenes are drawn one by one.
+// What the tiler said to the TileJSON of a mosaic with steps (NM4-04), or to the creation of its selection: it takes it and names
+// the scenes in the order a tile reads them, it refuses a step (the same words as for one scene), or it does not take the mosaic as
+// such — too long a request, a pass it cannot mosaic, a scale or unit that differs between its scenes, a failing source, a network
+// that fails — and the scenes are drawn one by one.
 // `retry`: the question failed on the way (a busy tiler, a failing source, a network that fails, no answer in time) and
 // says nothing about the mosaic: the scenes are drawn for now and the mosaic is asked again at the next change.
+// `gone`: the selection expired (`410`); it is created again and asked again (`askMosaics`).
 export type MosaicAnswer =
   | { state: 'taken'; order: string[] }
   | { state: 'refused'; refused: RefusedStep }
-  | { state: 'scenes'; retry?: true };
+  | { state: 'scenes'; retry?: true; gone?: true };
 
 export async function probeMosaic(url: string, fetchImpl: typeof fetch = fetch): Promise<MosaicAnswer> {
   try {
@@ -297,6 +301,7 @@ export async function probeMosaic(url: string, fetchImpl: typeof fetch = fetch):
     }
     const refused = refusedStepOf((body as { detail?: unknown } | null)?.detail);
     if (refused && (response.status === 400 || response.status === 422)) return { state: 'refused', refused };
+    if (response.status === 410) return { state: 'scenes', retry: true, gone: true };
     return [400, 414, 422, 501].includes(response.status) ? { state: 'scenes' } : { state: 'scenes', retry: true };
   } catch {
     return { state: 'scenes', retry: true };
@@ -327,9 +332,6 @@ export interface PreviewScene {
   bbox: Bbox;
   // The tile template of the scene, without any AOI clip.
   url: string;
-  // Set for a scene of a mosaic: the first level of the mosaic. The scene is drawn below it, stacked in the order of
-  // the mosaic, and steps aside for the mosaic from there (`mosaic.ts::viewOfPass`).
-  below?: number;
 }
 
 // The pass of one job drawn as one surface, the mosaic the job makes (NM4-04): the tiler reads its scenes, the first
@@ -376,10 +378,12 @@ export interface PreviewSpec {
   // The range and colormap of the preset (NM4-14) whose expression the band shown has, in the presets of the dataset; `null`
   // for any other band. It goes before the measure: an index is drawn alike wherever it is made.
   preset: PreviewRange | null;
-  // The passes drawn as a mosaic from their first level up, and the scenes: those below a mosaic, those of a pass
-  // that is drawn scene by scene.
+  // The passes drawn as a mosaic, and the scenes of a pass that is drawn scene by scene.
   mosaics: PreviewMosaic[];
   scenes: PreviewScene[];
+  // The selections the mosaics of the jobs would be drawn from and that are not created yet: until they are (`ensureSelection`),
+  // the scenes are drawn one by one, and the picture is made again once they are there.
+  needs: { datasetId: string; ids: string[]; assets: string[] }[];
   // A pass the job makes a mosaic of is drawn scene by scene: the tiler would not take its mosaic.
   perScene: boolean;
   minZoom: number;
@@ -440,8 +444,11 @@ export function previewSpec(args: {
   // The scenes of each job of the order: a job of several scenes is a mosaic (NM4-04), and the preview draws it
   // as one where the tiler takes it. Without them every scene is drawn alone.
   jobs?: readonly (readonly StacItem[])[];
-  // What the tiler said of the mosaics asked so far, by TileJSON URL; one not asked yet is taken to be taken.
+  // What the tiler said of the mosaics asked so far, by TileJSON URL, and of the selections it did not take, by `selectionKeyOf`;
+  // one not asked yet is taken to be taken.
   answers?: ReadonlyMap<string, MosaicAnswer>;
+  // The selections created so far, by `selectionKeyOf`; a mosaic is drawn once its selection is there.
+  selections?: ReadonlyMap<string, MosaicSelection>;
   // The order of the first job, `null` while it is not complete: with "AOI only" it is what the range is measured on.
   order?: Order | null;
   // The band the tiles show and, where the output has more than one, the preview is named after it. For "RGB" the three
@@ -452,7 +459,7 @@ export function previewSpec(args: {
   // The AOI the tiles are cut to where it is not the map's (the part of it in a result), for "AOI only".
   clipAoi?: GeoJSON.Geometry;
 }): PreviewSpec | null {
-  const { dataset, items, assets, info, plan, range, area, jobs = [], answers, order = null, band = null, named = false } = args;
+  const { dataset, items, assets, info, plan, range, area, jobs = [], answers, selections, order = null, band = null, named = false } = args;
   const clipAoi = area === 'aoi' ? args.clipAoi : undefined;
   if (!dataset?.viewable || assets.length === 0 || assets.length > MAX_PREVIEW_ASSETS) return null;
   if (band === RGB && args.bands?.length !== 3) return null;
@@ -473,25 +480,33 @@ export function previewSpec(args: {
   const maxZoom = maxZoomOf(TILE_SIZE);
   // The mosaic's tiles are 512 px, a level finer than the scenes' at the same level.
   const mosaicMaxZoom = maxZoomOf(MOSAIC_TILE_SIZE);
-  // The levels from which a pass is one mosaic: the dataset's own (adr/0032 §6.2).
+  // A mosaic has every level of the dataset (adr/0032 §6.2).
   const firstLevel = dataset.zoom.min;
 
   // The mosaic of one job, or `null` for the scenes one by one: not a pass of several scenes, more than the tile route
-  // takes (scenes, assets, bytes of the request, levels), or a mosaic the tiler did not take.
+  // takes (scenes, assets, bytes of the request), a selection or a mosaic the tiler did not take, or a selection not created yet.
+  const needs: PreviewSpec['needs'] = [];
   const mosaicOf = (unit: readonly StacItem[]): PreviewMosaic | null => {
     const bounds = unionBbox(unit.map((item) => item.bbox));
     if (
       !bounds ||
       unit.length < MIN_MOSAIC_SCENES ||
-      unit.length > MAX_MOSAIC_SCENES ||
+      unit.length > MAX_SELECTION_ITEMS ||
       assets.length > MAX_MOSAIC_OPERATOR_ASSETS
     ) {
       return null;
     }
     const ids = unit.map((item) => item.id);
-    const url = buildTileUrl(buildMosaicOperatorTileTemplate(dataset.id, ids, assets, chain, asked), render);
+    const key = selectionKeyOf(dataset.id, assets, ids);
+    if (answers?.get(key)?.state === 'scenes') return null;
+    const selection = selections?.get(key);
+    if (!selection) {
+      needs.push({ datasetId: dataset.id, ids, assets: [...assets] });
+      return null;
+    }
+    const url = buildTileUrl(buildMosaicOperatorTileTemplate(selection, chain, asked), render);
     if (mosaicRequestBytes(url, mosaicMaxZoom) > MAX_MOSAIC_REQUEST_BYTES) return null;
-    const probe = buildMosaicOperatorTileJsonUrl(dataset.id, ids, assets, chain, asked);
+    const probe = buildMosaicOperatorTileJsonUrl(selection, chain, asked);
     const answer = answers?.get(probe);
     if (answer?.state === 'scenes') return null;
     return { order: readOrder(answer?.state === 'taken' ? answer.order : [], ids), bounds, url, probe, minZoom: firstLevel, maxZoom: mosaicMaxZoom };
@@ -499,25 +514,13 @@ export function previewSpec(args: {
   const mosaics = jobs.flatMap((unit) => mosaicOf(unit) ?? []);
   const mosaicked = new Set(mosaics.flatMap((mosaic) => mosaic.order));
 
-  // The scenes below a mosaic come first, in the order the mosaic reads them, then the scenes drawn alone. The map
-  // draws so many rasters and no more: the scenes drawn alone have their places first, for they are the only picture
-  // of their scene at every level, the ones below a mosaic take what is left.
-  const known = new Map([...items, ...jobs.flat()].map((item) => [item.id, item]));
-  const below = dataset.zoom.min < firstLevel ? firstLevel : undefined;
+  // The scenes of a pass drawn one by one. The map draws so many rasters and no more.
   const places = Math.max(0, MAX_PREVIEW_SCENES - mosaics.length);
-  const alone: { item: StacItem; below?: number }[] = items.filter((item) => !mosaicked.has(item.id)).slice(0, places).map((item) => ({ item }));
-  const under: { item: StacItem; below?: number }[] =
-    below === undefined ? [] : mosaics.flatMap((mosaic) => mosaic.order.map((id) => ({ item: known.get(id)!, below }))).slice(0, places - alone.length);
   const scenes: PreviewScene[] = [];
   let probe = '';
-  for (const { item, below: underLevel } of [...under, ...alone]) {
+  for (const item of items.filter((one) => !mosaicked.has(one.id)).slice(0, places)) {
     if (!item.bbox) continue;
-    scenes.push({
-      id: item.id,
-      bbox: item.bbox,
-      url: buildTileUrl(buildOperatorTileTemplate(dataset.id, item.id, assets, chain, asked), render),
-      ...(underLevel === undefined ? {} : { below: underLevel }),
-    });
+    scenes.push({ id: item.id, bbox: item.bbox, url: buildTileUrl(buildOperatorTileTemplate(dataset.id, item.id, assets, chain, asked), render) });
     if (!probe) probe = buildOperatorTileJsonUrl(dataset.id, item.id, assets, chain, asked);
   }
   // The scene that wins where the scenes of the first mosaic overlap is the one measured.
@@ -530,7 +533,7 @@ export function previewSpec(args: {
   return {
     key: canonicalJson({
       urls: scenes.map((s) => s.url),
-      ...(mosaics.length > 0 ? { mosaics: mosaics.map((m) => [m.url, m.order, m.maxZoom]), below: scenes.map((s) => s.below ?? null) } : {}),
+      ...(mosaics.length > 0 ? { mosaics: mosaics.map((m) => [m.url, m.order, m.maxZoom]) } : {}),
       minZoom: dataset.zoom.min,
       maxZoom,
       clipToAoi,
@@ -548,6 +551,7 @@ export function previewSpec(args: {
     preset: presetOfBand(dataset, plan, band),
     mosaics,
     scenes,
+    needs,
     perScene: jobs.some((unit) => unit.length >= MIN_MOSAIC_SCENES && !mosaicked.has(unit[0].id)),
     minZoom: dataset.zoom.min,
     maxZoom,
@@ -649,8 +653,7 @@ export function measuredRange(measure: PreviewMeasure | null): PreviewRange | nu
 // What the panel says when the measure could not be had: the preview then keeps the start range.
 export const NO_MEASURE = 'The range could not be measured, so the preview uses its start range. Set it by hand or try Auto-scale.';
 
-// The overlays of a preview, as the map and a layer hold them, the first on top: the mosaics, then the scenes. A scene
-// below a mosaic is drawn up to the level before it and steps aside for it (`hideFrom`, as in `mosaic.ts::viewOfPass`).
+// The overlays of a preview, as the map and a layer hold them, the first on top: the mosaics, then the scenes.
 export function previewOverlays(spec: PreviewSpec, aoi: GeoJSON.Geometry | null): LayerOverlay[] {
   const clip = spec.clipToAoi ? (spec.clipAoi ?? aoi) : null;
   const mosaics = spec.mosaics.map((mosaic) => ({
@@ -666,8 +669,7 @@ export function previewOverlays(spec: PreviewSpec, aoi: GeoJSON.Geometry | null)
     tileUrl: clipTileUrl(scene.url, clip),
     bounds: scene.bbox,
     minZoom: spec.minZoom,
-    maxZoom: scene.below === undefined ? spec.maxZoom : Math.min(spec.maxZoom, scene.below - 1),
-    ...(scene.below === undefined ? {} : { hideFrom: scene.below - tileLevelAhead(MOSAIC_TILE_SIZE) }),
+    maxZoom: spec.maxZoom,
     preview: true as const,
   }));
   return [...mosaics, ...scenes];

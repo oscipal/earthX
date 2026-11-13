@@ -8,7 +8,7 @@ import { datasetsFrom } from './datasets';
 import type { LayerOverlay } from './layers';
 import { syncFocusRaster, syncPreview } from './mapLayers';
 import { liveMap } from './fixtures/liveMap';
-import { mosaicTemplateOf } from './mosaic';
+import { mosaicKeyOf } from './mosaic';
 import type { SceneEntry } from './mosaic';
 import { previewOverlays } from './processingPreview';
 import type { PreviewSpec } from './processingPreview';
@@ -71,7 +71,7 @@ const refused = (groups: TimeStepGroup[], downloaded: Record<string, DownloadedI
   Object.fromEntries(
     groups.map((g) => {
       const entries = g.items.map((it) => [it.id, downloaded[it.id]] as SceneEntry);
-      return [mosaicTemplateOf(ID, entries) as string, null];
+      return [mosaicKeyOf(ID, entries) as string, null];
     }),
   );
 

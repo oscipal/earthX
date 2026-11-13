@@ -5,15 +5,15 @@ import {
   buildMosaicTileTemplate,
   buildOperatorTileTemplate,
   buildTileTemplate,
+  type MosaicSelection,
   type TileStep,
 } from './api';
 import { clipTileUrl } from './aoiClip';
 import { liveMap, lyr, pinned } from './fixtures/liveMap';
-import { zoomMap } from './fixtures/zoomMap';
 import type { LayerOverlay } from './layers';
 import { buildTileUrl, syncLayers, syncPreview } from './mapLayers';
-import { MAX_MOSAIC_REQUEST_BYTES, mosaicRequestBytes, viewOfPass } from './mosaic';
-import type { MosaicInfo, SceneEntry } from './mosaic';
+import { MAX_MOSAIC_REQUEST_BYTES, mosaicRequestBytes } from './mosaic';
+import type { MosaicInfo } from './mosaic';
 import { isOverview, resultTileTemplate } from './resultLayer';
 import { levelAskedAt, MOSAIC_TILE_SIZE, TILE_SIZE, tileLevelAhead, tileMetres, tileSizeOf } from './tileSize';
 import type { DownloadedInfo } from './types';
@@ -21,6 +21,12 @@ import { isDrawnAt, zoomInTo } from './zoomHint';
 
 const DATASET = 'sentinel-2-c1-l2a';
 const STEP: TileStep = { op: 'band_math', opVersion: 2, paramsJson: '{"expression":"(B08-B04)/(B08+B04)","name":"NDVI"}' };
+const SELECTION: MosaicSelection = {
+  id: '0123456789abcdef0123456789abcdef',
+  datasetId: DATASET,
+  tiles: `/collections/${DATASET}/mosaic/0123456789abcdef0123456789abcdef/tiles/WebMercatorQuad/{z}/{x}/{y}`,
+  tilejson: `/collections/${DATASET}/mosaic/0123456789abcdef0123456789abcdef/WebMercatorQuad/tilejson.json`,
+};
 const RESULT = '/results/AAAAAAAAAAAAAAAAAAAAAA/WebMercatorQuad/tilejson.json';
 
 // What each kind of tile asks for (plan §15): 512 px for the mosaic and the mosaic with steps; 256 px for a scene, the
@@ -29,8 +35,8 @@ const TEMPLATES = {
   scene: buildTileTemplate(DATASET, 'S2A_1', 'visual'),
   sceneWithSteps: buildOperatorTileTemplate(DATASET, 'S2A_1', ['B04', 'B08'], [STEP], 'NDVI'),
   result: resultTileTemplate(RESULT),
-  mosaic: buildMosaicTileTemplate(DATASET, ['S2A_1', 'S2A_2'], 'visual'),
-  mosaicWithSteps: buildMosaicOperatorTileTemplate(DATASET, ['S2A_1', 'S2A_2'], ['B04', 'B08'], [STEP], 'NDVI'),
+  mosaic: buildMosaicTileTemplate(SELECTION),
+  mosaicWithSteps: buildMosaicOperatorTileTemplate(SELECTION, [STEP], 'NDVI'),
 } as const;
 
 const SIZE_OF = {
@@ -134,28 +140,13 @@ describe('the level the map asks for (NM4-29b)', () => {
       minZoom: 0,
       maxZoom: 19,
     });
-    const entries: SceneEntry[] = [['A', info('A')], ['B', info('B')]];
     const mosaic: MosaicInfo = {
-      tileUrl: buildMosaicTileTemplate(DATASET, ['A', 'B'], 'visual'),
+      tileUrl: buildMosaicTileTemplate(SELECTION),
       bounds: [9, 46, 12, 49],
       minZoom: 8,
       maxZoom: 19,
       order: ['A', 'B'],
     };
-
-    it('is the mosaic seen from map zoom 7.5 and the scenes up to it, and never both or neither', () => {
-      const view = viewOfPass(DATASET, entries, { [mosaic.tileUrl]: mosaic });
-      if (view.kind !== 'mosaic') throw new Error('expected a mosaic');
-      const live = zoomMap();
-      syncPreview(live.map as never, view.rasters.map((raster) => ({ kind: 'raster', ...raster })));
-      const mosaicLayer = [...live.layers.values()].find((l) => l.maxzoom === undefined)!.id;
-      for (const zoom of live.sweep()) {
-        const drawn = live.picturesAt(zoom);
-        if (zoom < 7.5) expect(drawn, `at ${zoom}`).not.toContain(mosaicLayer);
-        else expect(drawn, `at ${zoom}`).toEqual([mosaicLayer]);
-        if (zoom < 7.5 && zoom >= 5.5) expect(drawn, `at ${zoom}`).toHaveLength(2); // the two scenes, level 7 from 5.5 on
-      }
-    });
 
     it('is told by the zoom hint with the level the mosaic starts at, and with the scene\'s for a scene', () => {
       const mosaicOverlay = overlay(mosaic.tileUrl);
@@ -191,27 +182,19 @@ describe('the pixel size of a result stays at 256 px (NM4-29b)', () => {
 });
 
 describe('the request of a mosaic tile counts its size (NM4-29b)', () => {
-  const ids = (n: number) => Array.from({ length: n }, (_, i) => `S2B_MSIL2A_20260${(i % 9) + 1}01T101559_N0511_R022_T32TQT_${String(i).padStart(4, '0')}`);
-
-  it('is the template of the tile with `&tilesize=512`, 13 bytes longer than it was', () => {
+  it('is the template of the tile with `?tilesize=512`, 13 bytes longer than it was', () => {
     const bytes = (template: string) => mosaicRequestBytes(template, 14);
-    const without = buildMosaicTileTemplate(DATASET, ids(8), 'visual').replace('&tilesize=512', '');
-    expect(bytes(buildMosaicTileTemplate(DATASET, ids(8), 'visual')) - bytes(without)).toBe('&tilesize=512'.length);
-    expect('&tilesize=512'.length).toBe(13);
+    const without = buildMosaicTileTemplate(SELECTION).replace('?tilesize=512', '');
+    expect(bytes(buildMosaicTileTemplate(SELECTION)) - bytes(without)).toBe('?tilesize=512'.length);
+    expect('?tilesize=512'.length).toBe(13);
   });
 
-  it('is over the limit the tiler passes for a request that stayed under it without the size', () => {
-    // Two scenes with ids as long as it takes: the request grows by two bytes with each character of an id.
-    const request = (length: number) => buildMosaicTileTemplate(DATASET, ['a'.repeat(length), 'b'.repeat(length)], 'visual');
-    let length = 1;
-    while (mosaicRequestBytes(request(length), 14) <= MAX_MOSAIC_REQUEST_BYTES) length++;
-    const bare = request(length).replace('&tilesize=512', '');
-    expect(mosaicRequestBytes(request(length), 14)).toBeGreaterThan(MAX_MOSAIC_REQUEST_BYTES);
-    expect(mosaicRequestBytes(bare, 14)).toBeLessThanOrEqual(MAX_MOSAIC_REQUEST_BYTES);
+  it('is short and the same for any number of scenes: the id stands for them', () => {
+    expect(mosaicRequestBytes(buildMosaicTileTemplate(SELECTION), 19)).toBeLessThan(MAX_MOSAIC_REQUEST_BYTES / 10);
   });
 
   it('is counted for a mosaic with steps as well', () => {
-    const template = buildMosaicOperatorTileTemplate(DATASET, ids(40), ['B04', 'B08'], [STEP], 'NDVI');
+    const template = buildMosaicOperatorTileTemplate(SELECTION, [STEP], 'NDVI');
     const bare = template.replace('&tilesize=512', '');
     expect(mosaicRequestBytes(template, 19) - mosaicRequestBytes(bare, 19)).toBe(13);
   });

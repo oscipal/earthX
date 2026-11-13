@@ -13,6 +13,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
+import attrs
 import morecantile
 import numpy
 import pytest
@@ -409,3 +410,95 @@ class TestThreads:
         scene = _scene(tmp_path / "a.tif", SEAM_X - 5000.0, 10000.0, 10)
         with pytest.raises(ValueError, match="threads"):
             MosaicTileReader(MosaicScenes("synthetic", (scene,), _bounds([scene])), threads=threads)
+
+
+class TestConcurrentTiles:
+    """Otto, 13.11.2026 (plan M5-30b §8.7): at most two mosaic tiles are read at once in a process, and a tile waits
+    for its place before its time budget starts."""
+
+    @staticmethod
+    def _reader(tmp_path: Path, budget: Any = None) -> MosaicTileReader:
+        scene = _scene(tmp_path / "a.tif", SEAM_X - 5000.0, 10000.0, 10)
+        return MosaicTileReader(MosaicScenes("synthetic", (scene,), _bounds([scene]), budget))
+
+    def test_the_limit_is_two(self) -> None:
+        assert mosaic_tiles.MAX_CONCURRENT_TILES == 2
+
+    def test_never_more_than_two_tiles_are_read_at_once(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        reader = self._reader(tmp_path)
+        running, most, lock = 0, 0, threading.Lock()
+
+        def fake(*args: Any, **kwargs: Any) -> tuple[Any, list[str]]:
+            nonlocal running, most
+            with lock:
+                running += 1
+                most = max(most, running)
+            threading.Event().wait(0.05)
+            with lock:
+                running -= 1
+            return "image", []
+
+        monkeypatch.setattr(mosaic_tiles, "mosaic_reader", fake)
+        results: list[Any] = []
+        threads = [
+            threading.Thread(target=lambda: results.append(reader.tile(TILE.x, TILE.y, TILE.z))) for _ in range(8)
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        assert results == ["image"] * 8
+        assert most == 2
+
+    def test_a_tile_that_fails_gives_its_place_back(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        reader = self._reader(tmp_path)
+
+        def broken(*args: Any, **kwargs: Any) -> tuple[Any, list[str]]:
+            raise RuntimeError("the source failed")
+
+        monkeypatch.setattr(mosaic_tiles, "mosaic_reader", broken)
+        for _ in range(mosaic_tiles.MAX_CONCURRENT_TILES * 3):
+            with pytest.raises(RuntimeError, match="source failed"):
+                reader.tile(TILE.x, TILE.y, TILE.z)
+        monkeypatch.setattr(mosaic_tiles, "mosaic_reader", lambda *a, **k: ("image", []))
+        assert reader.tile(TILE.x, TILE.y, TILE.z) == "image"
+
+    def test_waiting_for_a_place_does_not_spend_the_budget(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        now = [0.0]
+        budget = mosaic_tiles.ReadBudget(1.0, clock=lambda: now[0])
+        reader = self._reader(tmp_path, budget)
+        taken = [mosaic_tiles._TILE_SLOTS.acquire() for _ in range(mosaic_tiles.MAX_CONCURRENT_TILES)]
+        assert all(taken)
+        started = threading.Event()
+        monkeypatch.setattr(mosaic_tiles, "mosaic_reader", lambda *a, **k: ("image", []))
+        original_start = budget.start
+        budget.start = lambda: (started.set(), original_start())[1]  # type: ignore[method-assign]
+        worker = threading.Thread(target=lambda: reader.tile(TILE.x, TILE.y, TILE.z))
+        worker.start()
+        try:
+            worker.join(0.2)
+            # The tile waits: its clock has not started, though the time of the page moves on.
+            assert worker.is_alive() and not started.is_set()
+            now[0] = 30.0
+        finally:
+            for _ in taken:
+                mosaic_tiles._TILE_SLOTS.release()
+        worker.join(5)
+        assert started.is_set()
+        # The clock began when the place came: the 30 s of waiting did not count.
+        assert not budget.spent() and not budget.timed_out
+
+    def test_every_place_is_free_after_the_tiles_are_done(self, tmp_path: Path) -> None:
+        reader = self._reader(tmp_path)
+        reader.tile(TILE.x, TILE.y, TILE.z)
+        free = [mosaic_tiles._TILE_SLOTS.acquire(blocking=False) for _ in range(mosaic_tiles.MAX_CONCURRENT_TILES)]
+        try:
+            assert all(free)
+        finally:
+            for _ in free:
+                mosaic_tiles._TILE_SLOTS.release()
+
+    def test_the_tile_of_a_substitute_reads_with_the_same_reader_and_so_under_the_same_limit(self) -> None:
+        assert attrs.fields(mosaic_tiles.EarthxOverviewTilerFactory).reader.default is mosaic_tiles.open_mosaic
