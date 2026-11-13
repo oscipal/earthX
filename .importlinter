@@ -245,6 +245,7 @@ forbidden_modules =
     earthx.catalog.glossary
     earthx.catalog.load
     earthx.catalog.local_coverage
+    earthx.catalog.mosaic_selection
     earthx.catalog.pgstac
     earthx.catalog.places
     earthx.catalog.schema

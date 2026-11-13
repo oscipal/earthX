@@ -145,6 +145,48 @@ class TestTheStatisticsCache:
         assert any(getattr(record, "statistics", None) == 1 for record in caplog.records)
 
 
+class TestTheMosaicSelections:
+    """M5-30b part 3: an expired selection of a mosaic goes with the hourly sweep; the rest stays."""
+
+    @staticmethod
+    def _entry(db: psycopg.Connection, selection_id: str, ends_in: str) -> None:
+        db.execute(
+            "INSERT INTO public.earthx_mosaic_selection (selection_id, dataset_id, content, expires_at) "
+            "VALUES (%s, 'synthetic', '{}'::jsonb, clock_timestamp() + %s::interval)",
+            (selection_id, ends_in),
+        )
+
+    def test_what_has_expired_is_gone_and_the_rest_stays(self, db: psycopg.Connection, store: Store) -> None:
+        self._entry(db, "a" * 32, "-1 minute")
+        self._entry(db, "b" * 32, "6 days 23 hours")
+        result = cleanup(db, store)
+        assert result.selections == 1 and result.total == 1
+        assert [r[0] for r in db.execute("SELECT selection_id FROM public.earthx_mosaic_selection")] == ["b" * 32]
+
+    def test_batches_go_on_until_none_is_left(self, db: psycopg.Connection, store: Store) -> None:
+        for index in range(5):
+            self._entry(db, f"{index}" * 32, "-1 day")
+        assert cleanup(db, store, batch=2).selections == 5 and _count(db, "earthx_mosaic_selection") == 0
+
+    def test_a_selection_that_was_created_again_stays(self, db: psycopg.Connection, store: Store) -> None:
+        self._entry(db, "a" * 32, "-1 minute")
+        db.execute(
+            "UPDATE public.earthx_mosaic_selection SET expires_at = clock_timestamp() + interval '7 days' "
+            "WHERE selection_id = %s",
+            ("a" * 32,),
+        )
+        assert cleanup(db, store).selections == 0 and _count(db, "earthx_mosaic_selection") == 1
+
+    def test_the_log_counts_and_names_no_id(
+        self, db: psycopg.Connection, store: Store, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        self._entry(db, "c" * 32, "-1 minute")
+        with caplog.at_level(logging.INFO, logger="earthx.jobs"):
+            cleanup(db, store)
+        assert all("c" * 32 not in own_log_text(record) for record in caplog.records)
+        assert any(getattr(record, "selections", None) == 1 for record in caplog.records)
+
+
 class TestBundles:
     """UI-01e: the term is the one stored at creation; the row goes whole, and looking never lengthens it."""
 

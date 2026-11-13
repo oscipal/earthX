@@ -31,6 +31,7 @@ PINNED = {
     "014_bundle": "3167ff08037bdfcaf497b607a24e83f5a243580b3b683e0f680c2267360cf4b9",
     "015_job_deleted": "874e012f886e1d3ba1e2f1f08c46d1932b33b79dddfea22ed984ed5221dac6df",
     "016_dataset_search": "1add871d20d56941a855822f398eae80c86a3c7f961beb0ab851ee09d0ac9e57",
+    "017_mosaic_selection": "cbf22e4bf20f0dcca0036595d576a750b66e978bcd11a62980b841cb260563d3",
 }
 
 

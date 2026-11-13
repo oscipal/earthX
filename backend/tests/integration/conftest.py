@@ -82,6 +82,7 @@ SHIPPED_TABLES = (
     "public.earthx_permalink",
     "public.earthx_bundle",
     "public.earthx_dataset_search",
+    "public.earthx_mosaic_selection",
 )
 
 

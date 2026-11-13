@@ -109,7 +109,7 @@ docker compose run --rm measure-tiles <dataset_id> --bbox W,S,E,N [--datetime A/
 ### 4.3 Teil 3 — Auswahl-ID (V3, F8, F14)
 
 - **ID:** SHA-256 über die kanonische Form `{dataset, asset(s), items sortiert}` (JSON, sortierte Schlüssel), gekürzt auf 32 Hex-Zeichen. Gleiche Liste, gleiche ID; die ID kann nie ein anderes Bild bedeuten (`adr/0032` §10.2).
-- **Ablage:** neue Tabelle `earthx_mosaic_selection` (Migration 016, `catalog/migrations`) mit `id`, `dataset`, `content jsonb`, `expires_at` (7 Tage); Lesen und Schreiben über den Pool des `tiler`; Aufräumen in `jobs/cleanup.py` wie beim Statistik-Cache.
+- **Ablage:** neue Tabelle `earthx_mosaic_selection` (Migration 017, `catalog/migrations`; 016 hat M5-22b) mit `id`, `dataset`, `content jsonb`, `expires_at` (7 Tage); Lesen und Schreiben über den Pool des `tiler`; Aufräumen in `jobs/cleanup.py` wie beim Statistik-Cache.
 - **Routen:** `POST /collections/{dataset}/mosaic` mit `{items, asset}` → `{id}` (Schutzgrenze 2 000 Items bzw. 128 kB Body, `413`); Kachel und TileJSON unter `/collections/{dataset}/mosaic/{id}/…`. Unbekannte oder abgelaufene ID: `410`. Die alte Form mit `?item=` entfällt (Auslegung A1).
 - **Frontend:** legt vor dem Zeichnen an, merkt sich die ID je Vorlage, legt bei `410` dieselbe Liste neu an. `MAX_MOSAIC_SCENES` entfällt; `oversizeNote` entfällt. Der Rückfall „Szene für Szene“ bleibt nur für Gruppen, die kein Mosaik sein können (verschiedene Assets, eine Szene); dort bleiben 40 Ebenen, gewählt nach Lage: zuerst die Szenen im sichtbaren Ausschnitt, neu bei jeder Bewegung.
 - Tests: ID stabil gegen Reihenfolge, verschieden bei anderem Asset/Datensatz; `410`; Schutzgrenze; Kachel über ID gleich der Kachel über die alte Liste (Bitgleichheit mit vorhandener Fixture); Frontend: Anlegen, Neu-Anlegen nach `410`, Auswahl nach Lage.
@@ -257,6 +257,19 @@ Teile 1–6 brauchen keine Antwort. **Teile 7–9 ruhen bis zu F1–F3.**
 
 **F4 = 2 umgesetzt:** Die Grenze von `ATTRIBUTION.txt` wächst um 305 Byte je Szene (255 für die ID, 2 Trenner, 48 für den Kopf einer Gruppenzeile); `Attachments` trägt die Zahl `scenes` (höchstens 2 000), `api` und `jobs` rechnen mit derselben Zahl, die übrigen Dateien bleiben bei 64 KiB und 2 MiB.
 
+**F5 — Prüfungen über alle Szenen einer Auswahl (gefunden in Teil 3a)?** Mit bis zu 2 000 Szenen holt die TileJSON keine Items mehr; die Prüfung „gleiche Skalierung, Einheit, Bänder“ (`_describe_mosaic`, bei Kacheln mit Schritten) läuft nur noch über die Szenen, die eine Kachel liest. Zwei Kacheln derselben Auswahl können dann `200` und `422` antworten, und die TileJSON nennt keine Bänder und Einheit mehr (die Vorschau im Processing-Panel las Ablehnungen daraus).
+1. Beim Anlegen der Auswahl prüfen (die Items sind dort ohnehin geholt), für die Assets der Auswahl; die TileJSON liest Bänder und Einheit aus dem gespeicherten Ergebnis **(Empfehlung)**
+2. So lassen; die Karte zeigt die Ablehnung einer Kachel erst, wenn sie kommt
+3. Die TileJSON liest wieder die erste Szene (eine Datei), nur für Bänder und Einheit
+
+*Umgesetzt (Option 1):* Die Prüfung läuft beim Anlegen über alle Szenen und alle Assets und lehnt mit `422` in den Worten von vorher ab; die Auswahl speichert die Beschreibung der ersten Szene je Asset, und die TileJSON nennt `band`/`bands`, `unit` und `data_type` daraus, ohne ein Item zu holen; Ablehnungen, die nur von den Schritten und der gespeicherten Beschreibung abhängen (unbekanntes Band, entferntes Band), kommen wieder aus der TileJSON und ebenso von der Kachel vor dem ersten Abruf. `band_descriptions` und `minmax` standen nur in der Datei und entfallen.
+
+**F6 — Reihenfolge des Mosaiks mit Schritten (Teil 3a)?** Die Reihenfolge wird beim Anlegen aus dem CRS des ersten Assets (sortiert) festgelegt; vorher kam sie bei Schritten aus dem ersten Asset der gezeigten Bänder. Bei Datensätzen, deren Assets einer Szene im selben CRS liegen (alle heutigen), ist das gleich.
+1. So lassen; eine Prüfung beim Anlegen lehnt Assets einer Szene in verschiedenen CRS ab **(Empfehlung)**
+2. Je Asset eine eigene Reihenfolge speichern
+
+*Umgesetzt (Option 1):* Das CRS steht bei Sentinel-2 einmal am Item (`proj:code`, älter `proj:epsg`), jedes Asset einer Szene liegt darin; ein Überflug über die UTM-Zonen 32 und 33 wird deshalb angenommen und für jedes Asset gleich geordnet (Beleg: `test_tiler_mosaic.py::TestOneOrderForEveryAsset::test_the_two_zones_of_one_overpass_are_taken_and_ordered_like_the_job_for_every_asset`); eine Szene, deren Assets in verschiedenen CRS liegen, lehnt das Anlegen mit `422` ab (`test_assets_of_one_scene_in_different_crs_are_a_422_and_nothing_is_stored`, nur über eine ersetzte Auflösung erreichbar, weil Items kein CRS je Asset nennen).
+
 ---
 
 ## 7. Prüfanleitung
@@ -360,6 +373,14 @@ z8/z9 von swissALTI3D brechen mit über 2 000 Dateien ab, wie erwartet; Sentinel
 - Der Docstring-Absatz „`min_zoom` als Kostenuntergrenze des DEM, darunter die Coverage“ ist gestrichen; er gilt nach `adr/0032` nicht mehr.
 - Der Frontend-Typ führt die Felder als Pflicht wie die Registry; deshalb tragen rund 60 Test-Fixtures zwei Zeilen mehr.
 - Test-Fixtures mit `min_zoom` > 0 (synthetischer Zarr-Datensatz, Mosaik-Tests mit eingeengtem Bereich) heißen jetzt `pyramid`/`average`, weil die Prüfung sie sonst ablehnt. Mit Teil 9 lesen solche Datensätze unter `min_zoom` die Pyramide; die Fixtures werden dann noch einmal angesehen.
+
+### 8.5 Teil 3a — Auswahl-ID im Backend
+
+- Migration `017_mosaic_selection.sql` (umbenannt von 016, weil M5-22b auf `main` 016 belegt) (`public.earthx_mosaic_selection`, 7 Tage), `catalog/mosaic_selection.py` (kanonischer Inhalt, ID = erste 32 Hex von SHA-256, SQL), `api/mosaic_selection.py` (Auswahl mit Reihenfolge, Umrissen, Ausdehnung; LRU im Prozess, höchstens 120 s, danach wieder aus der Tabelle).
+- `POST /collections/{dataset}/mosaic` mit `{items, assets}`: bis 2 000 Items, 128 kB; Items in Seiten zu 100 über die ID-Suche (föderiert) bzw. pgstac (materialisiert), ein Überflug, ein CRS je Szene, gleiche Skalierung und Einheit über alle Szenen und Assets (F5, F6), Reihenfolge, Umrisse, Beschreibung der ersten Szene je Asset. `201` neu, `200` erneuert ohne Abruf. Kachel und TileJSON unter `/collections/{dataset}/mosaic/{selection}/…`; unbekannt oder abgelaufen `410`, falsche Form `400`, fremder Datensatz `404`. Eine Kachel holt nur die Items, die sie liest; die TileJSON keine.
+- `jobs/cleanup.py` löscht abgelaufene Auswahlen. `.importlinter`: der Runner darf das neue Modul nicht importieren (Verschärfung, keine Lockerung).
+- **Abweichungen:** `asset_hosts` wird erst auf der Kachel geprüft (beim Anlegen wären es bis zu 8 000 Adressen mit Namensauflösung), eine Kachel antwortet dann `502` und liest nichts; die Grenzen des Körpers prüft die Route selbst mit `400`, damit eine Ablehnung nicht die ganze ID-Liste zurückschickt.
+- **Nicht allein mergen:** Das Frontend baut noch Item-Listen in die URL und ist gegen diesen Stand kaputt, bis Teil 3b kommt. Ebenso veraltet: `scripts/tile-bench/*.py` und `frontend/e2e/*` (Mosaik-URLs mit `?item=`).
 
 ### 8.8 Teil 7 — Ersatz-Datensatz
 

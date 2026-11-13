@@ -37,6 +37,7 @@ from earthx.gateway import UpstreamError, check_url
 from earthx.processing import run
 from earthx.processing.operators import REGISTRY as OPERATORS
 from tests.catalog.entries import SENTINEL_2_L2A
+from tests.earthx.api.mosaic_selections import MemorySelections, batch_source_of, create
 from tests.earthx.api.test_tiler_chain import _decode
 from tests.earthx.processing import sources
 from tests.earthx.processing.recipes import recipe_of_data, resolved
@@ -146,7 +147,9 @@ class Source:
 
     def __init__(self) -> None:
         self.items = {item: _item(item) for item in "AB"}
-        self.fetched: list[str] = []
+        self.fetched: list[str] = []  # the items a tile fetched one by one
+        self.batches: list[list[str]] = []  # the calls that fetched items by id, as the creation of a selection does
+        self.selections = MemorySelections()
         self.opened: list[str] = []  # the addresses a reader opened (they pass `check_url` there)
 
     async def __call__(self, dataset_id: str, item_id: str) -> dict[str, Any]:
@@ -171,7 +174,9 @@ def _app(source: Source) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.earthx_item_source = source
+        app.state.earthx_item_batches = lambda dataset_id, ids: batch_source_of(source.items, source.batches)(dataset_id, ids)
         app.state.earthx_cache_pool = POOL
+        app.state.earthx_mosaic_selections = source.selections
         yield
 
     app = build_app(REGISTRY, lifespan=lifespan)
@@ -197,6 +202,7 @@ def _steps(steps: Sequence[tuple[Any, ...]]) -> list[str]:
 
 
 def _url(
+    api: TestClient,
     tile: tuple[int, int, int] | None,
     steps: Sequence[tuple[str, dict | str]],
     *,
@@ -205,15 +211,19 @@ def _url(
     dataset: str = DATASET,
     size: int = 256,
 ) -> str:
-    query = [f"item={item}" for item in items] + [f"asset={quote(asset)}" for asset in assets] + _steps(steps)
-    if size != 256:
-        query.append(f"tilesize={size}")
+    """The URL of a tile or TileJSON of the selection of ``items`` and ``assets``, created through ``api`` first."""
+    selection = create(api, dataset, items, assets)
+    query = _steps(steps) + ([f"tilesize={size}"] if size != 256 else [])
     if tile is None:
         path = "WebMercatorQuad/tilejson.json"
     else:
         z, x, y = tile
         path = f"tiles/WebMercatorQuad/{z}/{x}/{y}.tif"
-    return f"/collections/{dataset}/mosaic/{path}?{'&'.join(query)}"
+    return f"/collections/{dataset}/mosaic/{selection}/{path}?{'&'.join(query)}"
+
+
+def _get(api: TestClient, *args: Any, **options: Any) -> Any:
+    return api.get(_url(api, *args, **options))
 
 
 def _tiles(zoom: int = ZOOM) -> list[tuple[int, int, int]]:
@@ -285,7 +295,7 @@ class TestTheTileEqualsTheJobOnTheNativeLevel:
         api = client()
         compared = masked = 0
         for tile in _tiles(NATIVE[size]):
-            response = api.get(_url(tile, chain, assets=assets, size=size))
+            response = api.get(_url(api, tile, chain, assets=assets, size=size))
             assert response.status_code == 200, response.text
             from_tile, from_job = _decode(response.content), _job_tile(job, tile, size)
             assert from_tile.shape == from_job.shape, tile
@@ -300,7 +310,7 @@ class TestTheTileEqualsTheJobOnTheNativeLevel:
         """First the mosaic per band, then the index: neither A's hole nor B's ``red``."""
         row, col = 125, 350  # inside NIR_GAP, in A's pixels; B's column there is 50
         tile, tile_row, tile_col = _tile_at(X0 + col * 10 + 5, Y0 - row * 10 - 5)
-        value = _decode(client().get(_url(tile, [("band_math", NDVI)], assets=("red", "nir"))).content)
+        value = _decode(_get(client(), tile, [("band_math", NDVI)], assets=("red", "nir")).content)
         assert not value.mask[0, tile_row, tile_col]
         mixed = _ndvi(_physical("A", "red", row, col), _physical("B", "nir", row, col - 300))
         only_b = _ndvi(_physical("B", "red", row, col - 300), _physical("B", "nir", row, col - 300))
@@ -312,7 +322,7 @@ class TestTheTileEqualsTheJobOnTheNativeLevel:
         x, y = X0 + 350 * 10 + 5, Y0 - 230 * 10 - 5  # inside CLOUD
         tile, tile_row, tile_col = _tile_at(x, y)
         api = client()
-        mosaic = _decode(api.get(_url(tile, CLOUDS_THEN_NDVI)).content)
+        mosaic = _decode(_get(api, tile, CLOUDS_THEN_NDVI).content)
         assert mosaic.mask[0, tile_row, tile_col]
         b_alone = api.get(
             f"/collections/{DATASET}/items/B/tiles/WebMercatorQuad/{tile[0]}/{tile[1]}/{tile[2]}.tif?"
@@ -322,24 +332,35 @@ class TestTheTileEqualsTheJobOnTheNativeLevel:
 
     def test_the_order_of_the_ids_and_a_fresh_app_do_not_change_the_bytes(self, client) -> None:
         tile = _tiles()[len(_tiles()) // 2]
-        first = client().get(_url(tile, CLOUDS_THEN_NDVI, items=("A", "B")))
-        second = client().get(_url(tile, CLOUDS_THEN_NDVI, items=("B", "A")))
+        first_url = _url(first_api := client(), tile, CLOUDS_THEN_NDVI, items=("A", "B"))
+        second_url = _url(second_api := client(), tile, CLOUDS_THEN_NDVI, items=("B", "A"))
+        assert first_url == second_url  # the same content, the same id
+        first, second = first_api.get(first_url), second_api.get(second_url)
         assert first.status_code == second.status_code == 200
         assert first.content == second.content
 
 
 class TestTheTileJson:
-    def test_it_names_the_order_and_the_unit(self, client) -> None:
-        response = client().get(_url(None, CLOUDS_THEN_NDVI))
+    def test_it_names_the_order_and_the_tiles_and_fetches_nothing(self, client, source: Source) -> None:
+        api = client()
+        response = _get(api, None, CLOUDS_THEN_NDVI)
         assert response.status_code == 200, response.text
         body = response.json()
         assert body["earthx:order"] == ["A", "B"]
-        assert "op=mask" in body["tiles"][0] and "item=B" in body["tiles"][0]
+        assert "op=mask" in body["tiles"][0] and "item=" not in body["tiles"][0]
+        assert source.fetched == [] and source.opened == []  # no band, no unit either: that needs the first scene
 
-    def test_a_step_that_names_a_band_an_earlier_one_removed_is_a_422_that_names_it(self, client) -> None:
-        response = client().get(_url(None, [("band_math", NDVI), ("mask", MASK)]))
-        assert response.status_code == 422
-        assert response.json()["detail"].startswith("step 1: ")
+    def test_a_step_that_names_a_band_an_earlier_one_removed_is_a_422_of_the_tilejson_and_of_the_tile(
+        self, client, source: Source
+    ) -> None:
+        """Which bands the steps leave is judged on the stored description (M5-30b part 3, F5): no item is fetched."""
+        api = client()
+        steps = [("band_math", NDVI), ("mask", MASK)]
+        for tile in (None, _tiles()[0]):
+            response = _get(api, tile, steps)
+            assert response.status_code == 422
+            assert response.json()["detail"].startswith("step 1: ")
+        assert source.fetched == [] and source.opened == []
 
 
 class TestRefusedBeforeTheFirstItemIsFetched:
@@ -353,7 +374,6 @@ class TestRefusedBeforeTheFirstItemIsFetched:
             ({"steps": [("no_such_operator", NDVI)]}, 422),
             ({"steps": [("reproject", {"crs": "EPSG:3035"}, 2)]}, 422),
             ({"steps": [("mask", {"source": "red", "classes": [3]})]}, 422),
-            ({"items": ("A",)}, 400),
             ({"dataset": NO_REPROJECTION}, 422),
             ({"tile": (20, 1, 1)}, 400),
         ],
@@ -363,7 +383,6 @@ class TestRefusedBeforeTheFirstItemIsFetched:
             "unknown operator",
             "not a tile operator",
             "mask on another band",
-            "one scene",
             "dataset without reprojection",
             "above the released range",
         ],
@@ -371,7 +390,7 @@ class TestRefusedBeforeTheFirstItemIsFetched:
     def test_refusal(self, client, source: Source, change: dict[str, Any], status: int, request) -> None:
         tile = change.pop("tile", _tiles()[0])
         options = {"steps": CLOUDS_THEN_NDVI, **change}
-        response = client().get(_url(tile, options.pop("steps"), **options))
+        response = _get(client(), tile, options.pop("steps"), **options)
         assert response.status_code == status, response.text
         assert source.fetched == []
         if request.node.callspec.id == "not a tile operator":
@@ -379,63 +398,92 @@ class TestRefusedBeforeTheFirstItemIsFetched:
 
     def test_a_request_over_the_limit_is_a_414_before_anything_else(self, client, source: Source) -> None:
         long = {"expression": "nir + " * 340 + "red"}
-        url = _url(_tiles()[0], [("band_math", long)] * 4)
+        api = client()
+        url = _url(api, _tiles()[0], [("band_math", long)] * 4)
         assert len(url) > mosaic_tiles.MAX_MOSAIC_REQUEST_BYTES
-        response = client().get(url)
+        response = api.get(url)
         assert response.status_code == 414
         assert str(mosaic_tiles.MAX_MOSAIC_REQUEST_BYTES) in response.json()["detail"]
         assert source.fetched == []
 
     def test_one_byte_under_the_limit_is_not_refused_for_its_length(self, client) -> None:
-        base = _url(_tiles()[0], [("band_math", NDVI)], assets=("red", "nir"))
+        api = client()
+        base = _url(api, _tiles()[0], [("band_math", NDVI)], assets=("red", "nir"))
         padding = mosaic_tiles.MAX_MOSAIC_REQUEST_BYTES - len(base) - len("&rescale=") - 4
-        response = client().get(base + "&rescale=" + "0" * padding + ",1.0")
+        response = api.get(base + "&rescale=" + "0" * padding + ",1.0")
         assert len(base) + len("&rescale=") + padding + 4 == mosaic_tiles.MAX_MOSAIC_REQUEST_BYTES
         assert response.status_code == 200, response.text
 
     @pytest.mark.parametrize("extra", ["expression=nir", "algorithm=hillshade", "bbox=1,2,3,4", "aoi=x"])
     def test_a_free_expression_or_an_area_next_to_the_steps_is_a_400(self, client, source: Source, extra: str) -> None:
-        response = client().get(_url(_tiles()[0], CLOUDS_THEN_NDVI) + f"&{extra}")
+        api = client()
+        response = api.get(_url(api, _tiles()[0], CLOUDS_THEN_NDVI) + f"&{extra}")
         assert response.status_code == 400
         assert source.fetched == []
 
     def test_half_a_step_is_a_400(self, client, source: Source) -> None:
-        url = _url(_tiles()[0], [("band_math", NDVI)]) + "&params=" + quote(json.dumps(NDVI))
-        assert client().get(url).status_code == 400
+        api = client()
+        url = _url(api, _tiles()[0], [("band_math", NDVI)]) + "&params=" + quote(json.dumps(NDVI))
+        assert api.get(url).status_code == 400
         assert source.fetched == []
 
 
 class TestRefusedBeforeTheFirstFileIsOpened:
-    """KE1, §8.1: what the items decide is judged on all of them, before any file is read."""
+    """KE1, §8.1: what the items decide is judged on the scenes the tile reads, before any file is read."""
 
     def test_a_band_the_assets_do_not_have(self, client, source: Source) -> None:
-        response = client().get(_url(_tiles()[0], [("band_math", {"expression": "swir - red"})], assets=("red", "nir")))
+        response = _get(client(), _tiles()[0], [("band_math", {"expression": "swir - red"})], assets=("red", "nir"))
         assert response.status_code == 422
         assert "swir" in response.json()["detail"]
-        assert source.fetched and source.opened == []
+        assert source.fetched == [] and source.opened == []
 
-    def test_scenes_that_scale_an_asset_differently(self, client, source: Source) -> None:
-        source.items["B"] = _item("B", red_band={**_BAND, "raster:scale": 0.001})
-        response = client().get(_url(_tiles()[0], [("band_math", NDVI)], assets=("red", "nir")))
-        assert response.status_code == 422
-        assert response.json()["detail"] == "the scenes of the mosaic scale 'red' differently"
-        assert source.opened == []
-
-    def test_a_tile_of_a_away_from_b_still_compares_b(self, client, source: Source) -> None:
-        """The rule holds for every tile of the mosaic, not only for those over both scenes."""
-        source.items["B"] = _item("B", red_band={**_BAND, "raster:scale": 0.001})
+    def test_a_tile_over_a_alone_fetches_no_other_scene(self, client, source: Source) -> None:
+        """A tile reads the scenes it touches and fetches only those (M5-30b part 3)."""
         tile, _, _ = _tile_at(X0 + 50, Y0 - 50)  # over A only
-        response = client().get(_url(tile, [("band_math", NDVI)], assets=("red", "nir")))
-        assert response.status_code == 422
+        response = _get(client(), tile, [("band_math", NDVI)], assets=("red", "nir"))
+        assert response.status_code == 200, response.text
+        assert source.fetched == ["A"]
+
+
+class TestScenesThatDiffer:
+    """F5: the scenes of a selection are compared when it is created, over all of them and every asset, so that no tile
+    of it answers otherwise than another. The words are those of the mosaic job."""
+
+    def test_scenes_that_scale_an_asset_differently_are_refused_at_the_creation(self, client, source: Source) -> None:
+        source.items["B"] = _item("B", red_band={**_BAND, "raster:scale": 0.001})
+        response = client().post(f"/collections/{DATASET}/mosaic", json={"items": ["A", "B"], "assets": ["red", "nir"]})
+        assert response.status_code == 422, response.text
+        assert response.json()["detail"] == "the scenes of the mosaic scale 'red' differently"
+        assert source.opened == [] and source.selections.rows == {}
+
+    def test_scenes_that_differ_in_the_unit_of_an_asset_are_refused_at_the_creation(self, client, source: Source) -> None:
+        source.items["A"]["assets"]["nir"]["raster:bands"] = [{**_BAND, "unit": "m"}]
+        response = client().post(f"/collections/{DATASET}/mosaic", json={"items": ["A", "B"], "assets": ["red", "nir"]})
+        assert response.status_code == 422, response.text
+        assert "differ in the bands, data type, nodata or unit of 'nir'" in response.json()["detail"]
+        assert source.selections.rows == {}
+
+    def test_an_asset_that_differs_is_found_though_no_tile_reads_it_and_a_selection_without_it_is_taken(
+        self, client, source: Source
+    ) -> None:
+        source.items["B"]["assets"]["scl"]["raster:bands"] = [{"data_type": "uint8", "nodata": 0, "unit": "m"}]
+        api = client()
+        assert api.post(f"/collections/{DATASET}/mosaic", json={"items": ["A", "B"], "assets": ["red", "scl"]}).status_code == 422
+        assert api.post(f"/collections/{DATASET}/mosaic", json={"items": ["A", "B"], "assets": ["red", "nir"]}).status_code == 201
 
 
 class TestWithoutSteps:
     def test_the_mosaic_of_one_asset_is_as_before(self, client) -> None:
         tile = _tiles()[0]
-        response = client().get(f"/collections/{DATASET}/mosaic/tiles/WebMercatorQuad/{tile[0]}/{tile[1]}/{tile[2]}.tif?item=A&item=B&asset=red")
+        response = _get(client(), tile, [], assets=("red",))
         assert response.status_code == 200, response.text
 
     def test_two_assets_without_steps_are_a_400(self, client, source: Source) -> None:
-        response = client().get(_url(_tiles()[0], [], assets=("red", "nir")))
+        response = _get(client(), _tiles()[0], [], assets=("red", "nir"))
         assert response.status_code == 400
         assert source.fetched == []
+
+    def test_a_selection_of_one_scene_is_refused_at_its_creation(self, client, source: Source) -> None:
+        response = client().post(f"/collections/{DATASET}/mosaic", json={"items": ["A"], "assets": ["red"]})
+        assert response.status_code == 400
+        assert source.fetched == [] and source.batches == []

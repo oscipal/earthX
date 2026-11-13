@@ -16,7 +16,7 @@ and refuses to start where they disagree (Otto, M4-01a F2).
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Any, Literal
 
 from earthx.adapters import (
@@ -27,8 +27,10 @@ from earthx.adapters import (
     UnsupportedSource,
     dataset_config,
     get_item,
+    search_items,
 )
-from earthx.catalog.pgstac import fetch_item, read_item_holdings
+from earthx.adapters.federated_search import SearchParams
+from earthx.catalog.pgstac import fetch_item, read_item_holdings, search_items_by_ids
 from earthx.catalog.registry import DatasetRegistry, ItemHolding
 from earthx.catalog.search_cache import PostgresSearchCache
 from earthx.gateway import Gateway, GatewayError, UpstreamError, UpstreamTimeout
@@ -36,17 +38,22 @@ from earthx.gateway import Gateway, GatewayError, UpstreamError, UpstreamTimeout
 LOGGER = logging.getLogger("earthx.api.item_source")
 
 ItemSource = Callable[[str, str], Awaitable[dict[str, Any]]]
+#: Many items of one dataset by id in one call (at most ``adapters.MAX_IDS``); the ones the source has, in no set order.
+ItemBatchSource = Callable[[str, Sequence[str]], Awaitable[list[dict[str, Any]]]]
 
 __all__ = [
+    "ItemBatchSource",
     "ItemHoldingMismatch",
     "ItemSource",
     "MaterializedCatalogUnavailable",
     "MaterializedItemNotFound",
     "OrderRefused",
     "Stage",
+    "build_item_batch_source",
     "build_item_source",
     "check_item_holdings",
     "fetch_item_or_refuse",
+    "fetch_items_or_refuse",
     "item_holding_of",
     "malformed_item_detail",
 ]
@@ -102,6 +109,30 @@ def build_item_source(registry: DatasetRegistry, adapters: AdapterSpecs, gateway
             return await get_item(config, item_id, adapters=adapters, gateway=gateway, cache=PostgresSearchCache(conn))
 
     return item_source
+
+
+def build_item_batch_source(
+    registry: DatasetRegistry, adapters: AdapterSpecs, gateway: Gateway, pool: Any
+) -> ItemBatchSource:
+    """How a process gets up to ``MAX_IDS`` items by id in one request: one search of the source, or one query of pgstac.
+
+    The creation of a mosaic selection names up to two thousand scenes, too many for one request each
+    (:func:`build_item_source`). Neither the item cache nor the search cache is used: a selection that exists is not
+    fetched again, and one that does not is created once.
+    """
+
+    async def batch_source(dataset_id: str, item_ids: Sequence[str]) -> list[dict[str, Any]]:
+        config = dataset_config(registry, dataset_id)
+        if config.source.item_holding is ItemHolding.MATERIALIZED:
+            if pool is None:
+                raise MaterializedCatalogUnavailable(dataset_id)
+            async with pool.connection() as conn:
+                return await search_items_by_ids(conn, dataset_id, item_ids)  # type: ignore[return-value]
+        params = SearchParams(ids=tuple(item_ids), limit=len(item_ids))
+        page = await search_items(config, params, adapters=adapters, gateway=gateway)
+        return list(page.items)
+
+    return batch_source
 
 
 async def check_item_holdings(registry: DatasetRegistry, conn: Any) -> tuple[str, ...]:
@@ -175,8 +206,41 @@ async def fetch_item_or_refuse(item_source: ItemSource, dataset: str, item: str,
     gets opened is named after the item's own id, and a tile must not show another
     scene under the name it asked for.
     """
+    fetched = await _or_refuse(
+        item_source(dataset, item), dataset, f"no item {item!r} in {dataset!r}", "the source did not deliver the item", not_found
+    )
+    if fetched.get("id") != item:
+        raise OrderRefused(502, malformed_item_detail(item), "items")
+    return fetched
+
+
+async def fetch_items_or_refuse(
+    batch_source: ItemBatchSource, dataset: str, item_ids: Sequence[str]
+) -> dict[str, dict[str, Any]]:
+    """The items with these ids, by id, from one call of ``batch_source``, or the :class:`OrderRefused` of its failure.
+
+    A source failure maps as it does for one item (:func:`fetch_item_or_refuse`). An id the source does not return is a
+    ``404`` that names it; an item it returns under an id nobody asked for is left out.
+    """
+    found = await _or_refuse(
+        batch_source(dataset, item_ids),
+        dataset,
+        f"no items in {dataset!r}",
+        "the source did not deliver the items",
+        404,
+    )
+    wanted = set(item_ids)
+    by_id = {item["id"]: item for item in found if isinstance(item, dict) and item.get("id") in wanted}
+    missing = sorted(wanted - by_id.keys())
+    if missing:
+        raise OrderRefused(404, f"no item {missing[0]!r} in {dataset!r}", "items")
+    return by_id
+
+
+async def _or_refuse(call: Awaitable[Any], dataset: str, absent: str, not_delivered: str, not_found: int) -> Any:
+    """``await call``, with the failures of the item source mapped to :class:`OrderRefused`; ``absent`` says what a 404 meant."""
     try:
-        fetched = await item_source(dataset, item)
+        return await call
     except RetiredCollection as error:
         raise OrderRefused(410, error.retired.message, "items") from None
     except UnknownCollection:
@@ -184,7 +248,7 @@ async def fetch_item_or_refuse(item_source: ItemSource, dataset: str, item: str,
     except MaterializedItemNotFound:
         # The materialized counterpart of the federated `UpstreamError` 404 below —
         # same message, so a caller cannot tell which path answered it.
-        raise OrderRefused(not_found, f"no item {item!r} in {dataset!r}", "items") from None
+        raise OrderRefused(not_found, absent, "items") from None
     except MaterializedCatalogUnavailable:
         raise OrderRefused(503, "the catalogue is not available", "items") from None
     except UnsupportedSource as error:
@@ -193,10 +257,10 @@ async def fetch_item_or_refuse(item_source: ItemSource, dataset: str, item: str,
         raise OrderRefused(400, str(error), "items") from None
     except UpstreamError as error:
         if error.status_code == 404:
-            raise OrderRefused(not_found, f"no item {item!r} in {dataset!r}", "items") from None
+            raise OrderRefused(not_found, absent, "items") from None
         # The source answered something we do not pass on. Its text is not repeated:
         # it can carry the query, and the query can carry an AOI (projektplan.md 7).
-        raise OrderRefused(502, "the source did not deliver the item", "items") from None
+        raise OrderRefused(502, not_delivered, "items") from None
     except UpstreamTimeout:
         raise OrderRefused(504, "the source did not answer in time", "items") from None
     except GatewayError:
@@ -204,6 +268,3 @@ async def fetch_item_or_refuse(item_source: ItemSource, dataset: str, item: str,
         # Broad on purpose — a gateway error that has no branch of its own is still an
         # answer about the source, and a 500 would call it our mistake.
         raise OrderRefused(502, "the item could not be fetched", "items") from None
-    if fetched.get("id") != item:
-        raise OrderRefused(502, malformed_item_detail(item), "items")
-    return fetched

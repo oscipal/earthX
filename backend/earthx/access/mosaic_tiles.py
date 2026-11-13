@@ -25,6 +25,7 @@ import threading
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 from typing import Any
 
 import morecantile
@@ -49,6 +50,8 @@ __all__ = [
     "EarthxMosaicTilerFactory",
     "EarthxOverviewTilerFactory",
     "MosaicBandsDiffer",
+    "MosaicLayout",
+    "MosaicLayoutReader",
     "MosaicOutOfTime",
     "MosaicReaderParams",
     "MosaicScenes",
@@ -127,6 +130,23 @@ class MosaicScenes:
         for scene in self.scenes:
             if not isinstance(scene, (AssetPath, ZarrAsset)):
                 raise TypeError("a mosaic reads scenes the gateway cleared, not plain strings (KLAERUNGEN B8)")
+
+
+@dataclass(frozen=True, slots=True)
+class MosaicLayout:
+    """What the TileJSON of a mosaic needs and no more: the order the scenes are read in and where the mosaic lies.
+
+    It comes from the stored selection and holds no scene, so nothing was fetched and no address cleared for it. What the
+    selection says of the bands is what the TileJSON names of them: ``bands`` the band or the three bands a picture with
+    steps shows, ``unit`` their common unit, ``data_type`` the data type the scenes share.
+    """
+
+    dataset_id: str
+    order: tuple[str, ...]
+    bounds: tuple[float, float, float, float]
+    bands: tuple[str, ...] | None = None
+    unit: str | None = None
+    data_type: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -239,8 +259,56 @@ class MosaicTileReader:
         return image
 
 
-def open_mosaic(src_path: Any, **reader_params: Any) -> MosaicTileReader:
+class MosaicLayoutReader:
+    """What the TileJSON route of the factory needs of a reader, over a :class:`MosaicLayout`: no file is opened.
+
+    The bands, the unit and the data type are those the selection stored when it was created. The value range and the
+    descriptions of the bands are in the files only, so the document does not carry them.
+    """
+
+    def __init__(self, source: MosaicLayout, *, tms: morecantile.TileMatrixSet | None = None, **_: Any) -> None:
+        self.source = source
+        self.tms = tms or morecantile.tms.get("WebMercatorQuad")
+
+    def __enter__(self) -> MosaicLayoutReader:
+        return self
+
+    def __exit__(self, *exc_info: Any) -> None:
+        return None
+
+    @property
+    def minzoom(self) -> int:
+        return self.tms.minzoom
+
+    @property
+    def maxzoom(self) -> int:
+        return self.tms.maxzoom
+
+    @property
+    def order(self) -> tuple[str, ...]:
+        return self.source.order
+
+    @property
+    def bands(self) -> tuple[str, ...] | None:
+        return self.source.bands
+
+    @property
+    def unit(self) -> str | None:
+        return self.source.unit
+
+    def get_geographic_bounds(self, crs: Any) -> tuple[float, float, float, float]:
+        if crs == WGS84_CRS:
+            return self.source.bounds
+        return transform_bounds(WGS84_CRS, crs, *self.source.bounds, densify_pts=21)
+
+    def info(self) -> SimpleNamespace:
+        return SimpleNamespace(band_descriptions=None, dtype=self.source.data_type, minmax=None)
+
+
+def open_mosaic(src_path: Any, **reader_params: Any) -> MosaicTileReader | MosaicLayoutReader:
     """The reader of the mosaic factory, in the shape TiTiler calls it (``self.reader(src_path, …)``)."""
+    if isinstance(src_path, MosaicLayout):
+        return MosaicLayoutReader(src_path, **reader_params)
     return MosaicTileReader(src_path, **reader_params)
 
 
