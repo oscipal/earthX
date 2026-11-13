@@ -29,7 +29,7 @@ const VIEWPORTS = { wide: { width: 1280, height: 800 }, narrow: { width: 360, he
 const FOOTPRINT = [10, 50, 11, 51];
 const SCENES = ['SYNTH_A', 'SYNTH_B'];
 const TIP_NDWI = 'Normalized Difference Water Index (McFeeters 1996): (G - N) / (G + N). Formula: Awesome Spectral Indices.';
-const NOTE_TIP = 'The quick calculation works from zoom 8. For whole scenes start a job in Processing.';
+const NOTE_TIP = 'The quick calculation starts at the zoom where the image does. For whole scenes start a job in Processing.';
 const PRESETS = [
   ['NDVI', 'Normalized Difference Vegetation Index', '(nir - red) / (nir + red)', 'rdylgn', '(N - R)/(N + R)'],
   ['NDWI', 'Normalized Difference Water Index (McFeeters 1996)', '(green - nir) / (green + nir)', 'rdbu', '(G - N) / (G + N)'],

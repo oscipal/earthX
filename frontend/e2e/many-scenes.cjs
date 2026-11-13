@@ -182,7 +182,12 @@ async function run(browser, theme, viewport, results) {
   const before = { ...asked };
   await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.getState().enterFocus(true));
   const notice = await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.getState().notice);
-  await page.waitForTimeout(3000);
+  // The preview of the results asks for its tiles in a queue (six at a time per host, each answered after a delay): the view is settled
+  // when no tile of a single scene has been asked for during 2 s, not after a fixed time. A page that paints more per frame (a spinner
+  // that turns, in the software renderer of this session) drains the queue more slowly, and a fixed 3 s counted the rest as the view's.
+  for (let quiet = Date.now(), seen = asked.scene, until = Date.now() + 20000; Date.now() - quiet < 2000 && Date.now() < until; await later(200)) {
+    if (asked.scene !== seen) { seen = asked.scene; quiet = Date.now(); }
+  }
   // What was asked for before the view settled belongs to the preview of the results, which the crop takes off the map.
   const settled = { ...asked };
   await page.evaluate(async (zoom) => (await import('/src/store.ts')).useAppStore.setState({ flyToView: { center: [7.465, 46.96], zoom } }), THEN_ZOOM);

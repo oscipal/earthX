@@ -7,7 +7,8 @@
 // Tiles are plain colours, one per dataset and colormap, and the check counts the pixels of the map.
 //
 //   cd frontend && npm run dev &                # the dev server; no backend is needed
-//   node e2e/dem-layers.cjs                     # BASE=http://localhost:5173 OUT=<directory for the screenshots>
+//   node e2e/dem-layers.cjs                     # BASE=http://localhost:5173 OUT=<directory for the screenshots>; takes about 5 minutes (12 cases, 10 to 50 s each),
+//                                               so a runner with a limit of 2 minutes aborts it without a result
 //
 // Playwright and Chromium are not a dependency of the project (CI does not run this); the cloud session has both.
 
@@ -97,7 +98,9 @@ const CASES = {
   },
 };
 
-// How many pixels of the page are (near) this colour.
+// How many pixels of the map are (near) this colour: the canvas without what lies over it (the panels, the buttons, the attribution).
+// Red and green things of the interface (the needle of the compass, the trash can, the check marks) come within the tolerance of a
+// tile colour; counted, they made "Hide results" look like it left a scene on the map in the light theme.
 async function count(page, [r, g, b]) {
   // In a narrow window the open panel covers the map: it is folded away for the count.
   const narrow = page.viewportSize().width < 600;
@@ -109,8 +112,14 @@ async function count(page, [r, g, b]) {
   }) : null;
   if (narrow) await page.waitForTimeout(400);
   const shot = (await page.screenshot()).toString('base64');
+  const rects = await page.evaluate(() => {
+    const of = (el) => { const q = el.getBoundingClientRect(); return [q.left, q.top, q.right, q.bottom]; };
+    const canvas = document.querySelector('.maplibregl-canvas');
+    const over = [...document.querySelectorAll('.overlay, .map-controls-host, .inspector, .sheet, .maplibregl-ctrl, .rail, .app-rail, .toast')].filter((el) => el.getClientRects().length > 0).map(of);
+    return { canvas: canvas ? of(canvas) : [0, 0, innerWidth, innerHeight], over };
+  });
   if (dock) await page.evaluate(async (was) => (await import('/src/store.ts')).useAppStore.setState({ dock: was }), dock);
-  return page.evaluate(async ({ shot, r, g, b }) => {
+  return page.evaluate(async ({ shot, r, g, b, rects }) => {
     const img = new Image();
     img.src = `data:image/png;base64,${shot}`;
     await img.decode();
@@ -120,10 +129,17 @@ async function count(page, [r, g, b]) {
     const ctx = canvas.getContext('2d');
     ctx.drawImage(img, 0, 0);
     const { data } = ctx.getImageData(0, 0, img.width, img.height);
+    const covered = (x, y) => rects.over.some(([l, t, rr, bb]) => x >= l && x < rr && y >= t && y < bb);
     let n = 0;
-    for (let i = 0; i < data.length; i += 4) if (Math.abs(data[i] - r) < 45 && Math.abs(data[i + 1] - g) < 45 && Math.abs(data[i + 2] - b) < 45) n++;
+    for (let i = 0; i < data.length; i += 4) {
+      if (!(Math.abs(data[i] - r) < 45 && Math.abs(data[i + 1] - g) < 45 && Math.abs(data[i + 2] - b) < 45)) continue;
+      const x = (i / 4) % img.width;
+      const y = Math.floor(i / 4 / img.width);
+      if (x < rects.canvas[0] || x >= rects.canvas[2] || y < rects.canvas[1] || y >= rects.canvas[3] || covered(x, y)) continue;
+      n++;
+    }
     return n;
-  }, { shot, r, g, b });
+  }, { shot, r, g, b, rects });
 }
 
 let lastPage = null;
