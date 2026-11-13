@@ -95,9 +95,10 @@ OVERVIEW_ROUTER_PREFIX = "/collections/{dataset}/overview"
 #: The header that says where the pixels of a tile come from, for a tile that is not of the dataset in its URL.
 SOURCE_HEADER = "X-EarthX-Source"
 SUBSTITUTE_SOURCE = "substitute"
-#: Items of the substitute one tile looks at, before the budget cuts it to the files it reads: a tile of the world
-#: touches every item of a global dataset, and the order of the list is the one pgstac gives, the same for every client.
-#: Above it the tile says one more was left out (``X-EarthX-Partial``). Covers z4 of GLO-30 (about 300 files, plan §4.8).
+#: Item records of the substitute one tile fetches from pgstac and sorts by overlap, before the budget
+#: (:data:`TILE_FILE_BUDGET` files, :data:`TILE_TIME_BUDGET_S` s) cuts them to the files it reads. No file is opened
+#: for them; the cap guards the query and the sort. Only the part of the tile over the dataset's extent is searched,
+#: so for swissALTI3D about 15 GLO-30 items come back at any zoom. Above it the tile says so (``X-EarthX-Partial``).
 SUBSTITUTE_ITEM_CAP = 500
 
 # The limits of plan §5, with the measurement that gives each of them. Constants in the code and not a
