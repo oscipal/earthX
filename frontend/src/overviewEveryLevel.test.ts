@@ -35,6 +35,7 @@ describe('swissALTI3D in "Crop and merge to AOI"', () => {
   it('draws an image at every map zoom from 0 to 13.9: the substitute below level 13, the mosaic from there on', () => {
     const live = zoomMap();
     syncFocusRaster(live.map as never, view());
+    live.idle();
     expect(hole(live)).toEqual([]);
     expect(live.picturesAt(0)).toHaveLength(1);
     expect(urlOf(live, live.picturesAt(0)[0])).toContain('/collections/terrain/overview/tiles/');

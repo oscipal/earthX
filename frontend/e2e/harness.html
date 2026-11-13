@@ -17,7 +17,7 @@
       import * as maplibregl from 'maplibre-gl';
       import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
       import { fetchResultTileJson } from '/src/processing.ts';
-      import { ensureBaseLayers, syncBrowseMosaic, syncFocusRaster, syncLayers, buildTileUrl } from '/src/mapLayers.ts';
+      import { ensureBaseLayers, syncBrowseMosaic, syncFocusRaster, syncLayers, buildTileUrl, watchSubstituteHold } from '/src/mapLayers.ts';
       import { AOI_CLIP_PROTOCOL, aoiClipProtocol } from '/src/aoiClip.ts';
       import { mosaicKeyOf, orderKeyOf } from '/src/mosaic.ts';
       import { resultTileTemplate } from '/src/resultLayer.ts';
@@ -36,6 +36,8 @@
         fadeDuration: 0,
         canvasContextAttributes: { preserveDrawingBuffer: true },
       });
+      // As `MapView.tsx` does: the substitute of a dataset stays over its first level until the dataset's own picture has loaded.
+      watchSubstituteHold(map);
       const loaded = new Promise((resolve) => map.on('load', resolve));
       const idle = () => new Promise((resolve) => map.once('idle', resolve));
 

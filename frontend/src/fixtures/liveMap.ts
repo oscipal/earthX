@@ -42,6 +42,9 @@ export function liveMap(initial: string[] = ['layers-top', 'aoi-fill', 'aoi-line
       place(id, before);
       log.moved.push(id);
     },
+    setLayerZoomRange: (id: string, _minzoom: number, maxzoom: number) => {
+      layers.get(id)!.maxzoom = maxzoom;
+    },
     setLayoutProperty: (id: string, name: string, value: unknown) => {
       layers.get(id)!.layout[name] = value;
     },

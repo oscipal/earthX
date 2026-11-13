@@ -171,6 +171,7 @@ describe('the view of a dataset with a substitute', () => {
   it('draws a second source on the route of the substitute, below its own scene and in its look', () => {
     const live = zoomMap();
     syncFocusRaster(live.map as never, view(TERRAIN));
+    live.idle();
     const [first, second] = sourcesOf(live);
     expect(first[1]).toMatchObject({ type: 'raster', tileSize: 512, minzoom: 0, maxzoom: 12, attribution: SURFACE_TEXT });
     const url = (first[1].tiles as string[])[0];
@@ -202,6 +203,7 @@ describe('the view of a dataset with a substitute', () => {
   it('shows the picture of the substitute below the first level and the scene from there on, with no gap and no overlap of the two sources', () => {
     const live = zoomMap();
     syncFocusRaster(live.map as never, view(TERRAIN));
+    live.idle();
     const [[ownSub], [ownScene]] = sourcesOf(live);
     const layers = [...live.layers.values()];
     const sub = layers.find((l) => l.source === ownSub)!.id;
@@ -215,6 +217,7 @@ describe('the view of a dataset with a substitute', () => {
   it('names the substitute in the attribution line below the first level and not above it', () => {
     const live = zoomMap();
     syncFocusRaster(live.map as never, view(TERRAIN));
+    live.idle();
     expect(live.attributionAt(6)).toEqual([SURFACE_TEXT]);
     expect(live.attributionAt(12.4)).toEqual([SURFACE_TEXT]);
     expect(live.attributionAt(12.5)).toEqual([]);

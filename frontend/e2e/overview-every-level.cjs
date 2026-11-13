@@ -3,7 +3,8 @@
 // its mosaic from z13 and the picture of its substitute below, and the map zooms out step by step from z14 to z0. It fails when
 //   1. a whole level has no tile of the layer asked for and answered (the substitute below z12.5, the mosaic from there on);
 //   2. a step, whole or half level, draws nothing where the area cropped to lies (only the background colour, magenta, there);
-//   3. a request is not for the route of its level: the mosaic below z12.5, the substitute from there on.
+//   3. a request is not for the route of its level: the substitute below z12.5, the mosaic from there on (the first step, where the mosaic
+//      is not there yet, may ask for both).
 // Once for an area around a city (requests at every step; the picture is checked from z5, where the area is more than a pixel) and
 // once for a region as large as the dataset (the picture at every step, z0 included).
 //
@@ -79,7 +80,8 @@ async function run(browser, name, { aoi, centre, pictureFrom }, results) {
     const wanted = zoom < MOSAIC_FROM ? 'substitute' : 'mosaic';
     // A tile loaded at the step before (the same level at a half zoom) is not asked for again: only at a whole level is a request certain.
     if (Number.isInteger(zoom) && asked.every((request) => request.route !== wanted)) problems.push(`${label}: no tile of the ${wanted} was asked for`);
-    const wrong = asked.filter((request) => request.route !== wanted);
+    // At the first step the mosaic is not there yet and the substitute lies over its level until it is (`mapLayers.ts::substituteHold`).
+    const wrong = asked.filter((request) => request.route !== wanted && !(zoom === ZOOMS[0] && request.route === 'substitute'));
     if (wrong.length) problems.push(`${label}: tiles of the ${wrong[0].route} were asked for where the ${wanted} draws`);
     if (zoom >= pictureFrom) {
       const block = await page.evaluate(([lon, lat]) => window.h.blockAt(lon, lat), centre);

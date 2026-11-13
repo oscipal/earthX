@@ -40,6 +40,17 @@ const MAX_DYNAMIC_LAYERS = 200;
 const PREVIEW_SRC = 'preview-src-';
 const PREVIEW_LYR = 'preview-lyr-';
 
+// The entry of the layer manager that holds the search results, the view and the preview of the processing panel (`LayerManager.tsx`).
+export const RESULTS_OWNER = 'results';
+
+// The row of the layer manager the tiles of a raster source are drawn for: the pinned layer they were made for (`layer-src-<layer>-<n>`),
+// or "Results" for the view, the search results and the preview. `null` for what is no layer: the basemap, the coverage, the AOI.
+export function ownerOfSource(sourceId: string): string | null {
+  const pinned = /^layer-src-(.+)-\d+$/.exec(sourceId);
+  if (pinned) return pinned[1];
+  return /^(?:[mn]|res)-tiles-src-c?\d+$/.test(sourceId) || sourceId.startsWith(PREVIEW_SRC) ? RESULTS_OWNER : null;
+}
+
 // What each of the view's own rasters draws (`overlaySignature`), and which of them are out of sight
 // because a pinned layer that is switched on draws the same (`settleViewTwin`).
 const viewPictures = new Map<string, string>();
@@ -907,12 +918,15 @@ function addTiles(
   i: number,
   render: AppliedRender,
   clip: GeoJSON.Geometry | null,
+  openUntilLoaded = false,
 ): void {
   const srcId = dynamicId('tiles-src', i);
   const lyrId = dynamicId('tiles-lyr', i);
   keyResults(lyrId, 'view');
   const tileUrl = buildTileUrl(info.tileUrl, render);
-  placeRaster(map, srcId, lyrId, clipTileUrl(tileUrl, clip), info.bounds, viewOpacity, info);
+  // The layer of a raster that steps aside for a picture above it (`hideFrom`) is laid without that limit where the picture is
+  // not there yet (`substituteHold`); the signature below keeps it, so that the twin of a pinned layer is still found.
+  placeRaster(map, srcId, lyrId, clipTileUrl(tileUrl, clip), info.bounds, viewOpacity, openUntilLoaded ? { ...info, hideFrom: undefined } : info);
   redraws.set(lyrId, { kind: 'tiles', tileUrl, bounds: info.bounds, zoom: info, clippedTo: clip });
   drawsPicture(map, lyrId, tilesPicture(info, render, clip));
 }
@@ -1226,7 +1240,17 @@ export function syncFocusRaster(
   // Below the first level of a dataset with a substitute the view draws the picture of that dataset, under everything it draws
   // of its own (`overviewSubstitute.ts`); a layer pinned from the view draws it with its own rasters.
   const substitute = !s.tilesInLayer && !s.render.index && drawn.length > 0 ? substituteRasterOf(dataset, s.datasets) : null;
-  if (substitute) addTiles(map, substitute, tiles++, s.render, clip);
+  let held: SubstituteHold | null = null;
+  if (substitute) {
+    // Over the level where the dataset's own picture takes over, the substitute stays until that picture has arrived: a mosaic of
+    // a hundred scenes takes seconds, and the map shows nothing meanwhile (plan M5-30 §8.7, finding of 13.11.2026).
+    const lyrId = dynamicId('tiles-lyr', tiles);
+    if (substitute.hideFrom !== undefined) {
+      held = { map, lyrId, hideFrom: substitute.hideFrom, sources: [], started: new Set(), waiting: drawn.some(({ view }) => view.kind === 'pending') };
+    }
+    addTiles(map, substitute, tiles++, s.render, clip, held !== null);
+  }
+  const firstOwn = tiles;
   for (const { entries, view } of stackLikeView(drawn)) {
     if (view.kind === 'pending' && !s.tilesInLayer) continue;
     stackLikeView(entries).forEach(([itemId, info]) => {
@@ -1240,8 +1264,42 @@ export function syncFocusRaster(
     });
     if (view.kind === 'mosaic' && !s.tilesInLayer) view.rasters.forEach((raster) => place(raster, entries));
   }
+  if (held) held.sources = Array.from({ length: tiles - firstOwn }, (_, n) => dynamicId('tiles-src', firstOwn + n));
+  substituteHold = held;
   restackAll(map);
   settleRetired(map);
+}
+
+// The substitute of a dataset (`overviewSubstitute.ts`) is laid under the view's own picture without its upper limit, and the
+// limit is set once that picture has loaded; `waiting`: a mosaic that is not known yet, which only the next sync has sources for.
+interface SubstituteHold {
+  map: MapLibreMap;
+  lyrId: string;
+  hideFrom: number;
+  sources: string[];
+  started: Set<string>;
+  waiting: boolean;
+}
+let substituteHold: SubstituteHold | null = null;
+
+// Puts the limit on the substitute where the own picture of the view has loaded (`sourcedata`, seen to have started, so that a source whose
+// tiles were not asked for yet does not count) or the map is at rest, and the picture is there or was not asked for.
+function settleSubstituteHold(map: MapLibreMap, atRest: boolean): void {
+  const hold = substituteHold;
+  if (!hold || hold.map !== map || hold.waiting) return;
+  const present = hold.sources.filter((id) => map.getSource(id));
+  if (present.some((id) => !map.isSourceLoaded(id))) return;
+  if (!atRest && !present.every((id) => hold.started.has(id))) return;
+  substituteHold = null;
+  if (map.getLayer(hold.lyrId)) map.setLayerZoomRange(hold.lyrId, 0, hold.hideFrom);
+}
+
+export function watchSubstituteHold(map: MapLibreMap): void {
+  map.on('sourcedataloading', (event) => {
+    if (substituteHold && event.sourceId) substituteHold.started.add(event.sourceId);
+  });
+  map.on('sourcedata', () => settleSubstituteHold(map, false));
+  map.on('idle', () => settleSubstituteHold(map, true));
 }
 
 // Browse-mode preview overlays: one per scene of `items` (the active time

@@ -16,6 +16,7 @@ import { areaGeometry, isAreaAnswer, showFootprints } from '../coverage';
 import { bufferPointToPolygon, pointInFootprint, polygonBbox } from '../geoUtils';
 import { openIdsOf, resultsOnMapOf } from '../mapResults';
 import { mosaicsOfView, sameMosaics } from '../mosaic';
+import { setMapLoading, watchLayerLoading } from '../layerLoading';
 import { watchGoneSelections } from '../mosaicSelection';
 import { assetsOfExpression, viewIndexOf } from '../viewIndex';
 import type { CoverageDisplay } from '../mapLayers';
@@ -35,6 +36,7 @@ import {
   syncPreview,
   syncResultsOverlay,
   watchPreviewLoading,
+  watchSubstituteHold,
 } from '../mapLayers';
 import { DEFAULT_BASEMAP } from '../basemaps';
 import { applyMapBackground, applyProjection, ATTRIBUTION_CONTROL, baseMapStyle, createBasemapSwitcher, isInFirstStyle, mapBackgroundOf } from '../mapStyles';
@@ -206,6 +208,8 @@ export default function MapView() {
     watchPreviewLoading(map, (loading) => {
       if (useProcessingStore.getState().previewTilesLoading !== loading) useProcessingStore.setState({ previewTilesLoading: loading });
     });
+    watchLayerLoading(map, setMapLoading);
+    watchSubstituteHold(map);
     const first = useAppStore.getState().basemap;
     basemapRef.current = createBasemapSwitcher(map, isInFirstStyle(first) ? first : null, (reason, keep, overlays) => {
       // The map keeps what it shows; the choice stays saved, so that the next visit tries it again.
@@ -477,11 +481,13 @@ export default function MapView() {
         cropToAoi,
         items: view.items,
         dataset: view.dataset,
+        // The substitute of a dataset is looked up in the list (its attribution comes from its collection, `overviewSubstitute.ts`).
+        datasets,
         groups: view.groups,
         mosaics,
       });
     }
-  }, [focusMode, view, appliedRender, showDownloaded, viewLayer, viewAoi, cropToAoi, mosaics]);
+  }, [focusMode, view, appliedRender, showDownloaded, viewLayer, viewAoi, cropToAoi, mosaics, datasets]);
 
   // --- the preview of the processing panel (M4-13c-2), a tier of "Results" over the results and the view
   // (`mapLayers.ts`); a new AOI cuts it again. ---
