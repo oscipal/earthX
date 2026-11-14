@@ -206,7 +206,7 @@ Namen wie in M5-35 §5.3. Zahlen aus §4 (D = 384, 4 vCPU), Bewertung [A].
 
 Im Einzelnen (Vorschlag für M5-23, Stufe B):
 
-1. **Spalte** `embedding halfvec(D)` in `earthx_dataset_search` (D aus dem gewählten Modell; neue Migration in M5-23). `halfvec` statt `vector`: halbe Tabelle, bei D = 768 bleibt die Zeile unter der TOAST-Grenze (exakt 70 statt 340 ms bei 10⁵), Recall gegen float32 0,998–1,0 [M].
+1. **Spalte** `embedding halfvec(D)` in `earthx_dataset_search` (D aus dem gewählten Modell; neue Migration in M5-23). Ob gelistete Einträge als pgstac-Collections oder in einer eigenen Tabelle liegen, entscheidet M5-40 (`adr/0033` §2.3, §13); für den Vektorarm zählt, dass volle und gelistete Einträge in **einer** Suchtabelle mit einer Spalte und einem Index stehen, sonst wären es zwei ANN-Suchen mit eigener Zusammenführung [A]. `halfvec` statt `vector`: halbe Tabelle, bei D = 768 bleibt die Zeile unter der TOAST-Grenze (exakt 70 statt 340 ms bei 10⁵), Recall gegen float32 0,998–1,0 [M].
 2. **Index** `USING hnsw (embedding halfvec_cosine_ops)` mit den Vorgaben `m` 16, `ef_construction` 64; `SET LOCAL hnsw.ef_search = 200` je Anfrage (Recall@10 0,975–0,98 bei 10⁶ für 0,4–0,8 ms mehr als mit 100) [M]. `ef_search` nie kleiner als die Tiefe der Liste des Vektorarms für die RRF.
 3. **Zwei Wege, im Code gewählt, nicht vom Planer:**
    - **ohne harten Filter:** HNSW-Index-Scan, `LIMIT` = Tiefe des Arms;
