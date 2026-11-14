@@ -1,6 +1,6 @@
 # M5-10 — Geländeoperator `terrain` und Operator-Art `focal`
 
-**Stand:** 14.11.2026, freigegeben von Otto (Antworten in §9a); PR A in Umsetzung, PR B wartet auf M5-30b Teil 9.
+**Stand:** 14.11.2026, freigegeben von Otto (Antworten in §9a); PR A umgesetzt (§9b), PR B wartet auf M5-30b Teil 9.
 **Stufe B.** Erst Plan mit Fragen im Draft-PR, Umsetzung nach Ottos Antworten im selben PR (höchstens zwei PRs, F1).
 **Aufgabe:** M5-10 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2.
 **Grundlage:** `adr/0030` F3 (Operator-Art `focal`), §3 B4, §5.3, §5.4, §7, §8, §11; `adr/0023` F5 (Capability `terrain`, zwei Pflichtpunkte); `adr/0014` §5, §6, F10; `adr/0026` Q34/Q35; Plan M5-22 F5 (`capability_terms.yaml`); M5-Plan §2 Punkte 8 und 9.
@@ -223,6 +223,19 @@ F1 bis F7 jeweils Option 1 (Empfehlung).
 
 - **Reihenfolge (Otto):** PR A (dieser PR, [#350](https://github.com/oscipal/earthX/pull/350): Job, Runner, Operator, Capability, Suche) jetzt. PR B (Kachel, Frontend, Vorschau unter `min_zoom` nach F6) startet erst, wenn M5-30b Teil 9 (Kachelroute aus der Pyramide) auf `main` ist, weil er dieselben Stellen ändert; Otto gibt Bescheid.
 - **Folge für PR A:** `terrain` ist in der Registry schon T1 und T2, die Kachel weist `focal` aber bis PR B ab (`422`, wie heute jede Art außer `pixel`); das Panel zeigt dafür keine Vorschau, weil es nur `pixel` zeichnet. `split_tiers` bleibt bis PR B unverändert: Ein `focal`-Schritt gehört zum Job.
+
+## 9b. Umsetzung PR A (14.11.2026)
+
+Umgesetzt wie §4.1, §4.2, §4.4, §4.5 mit F1–F7 = 1. Auslegungen, gelten bis Widerspruch:
+
+- **`terrain` angenommen, aber noch nicht angeboten (`listed=False`).** Das Panel baut Formulare nur aus einfachen Feldern; die Felder von `terrain` hängen vom Produkt ab (optionale Felder als `anyOf`, wie bei `normalize` v4, das deshalb ein eigenes Formular hat). Bis PR B nimmt die API Rezepte mit `terrain` an, das Panel zeigt den Operator nicht; so erscheint kein Eintrag „not supported by this panel“. PR B baut das Formular und setzt `listed=True`.
+- **z-Faktor nur bei der Schummerung**, nicht bei der Neigung (wie `gdaldem`; die Höhe ist ohnehin in Metern, `dataset_check` verlangt `m`). §4.4 nannte ihn auch für `slope`.
+- **Schummerung 1–255 wie `gdaldem`**: 1, wo das Licht nicht hinkommt, als `float32` ohne Runden; Fehlstellen sind NaN.
+- **Exposition mit Pixelgröße:** `gdaldem` rechnet die Exposition ohne Pixelgröße (nur bei quadratischen Pixeln richtig); hier mit den Metern je Zeile, damit sie bei GLO-30 (rund 21 × 31 m in den Alpen) stimmt. Bei quadratischen Pixeln gleich `gdaldem` (Test).
+- **Einheit am Band** aus der Vorgabe: Neigung `deg` bzw. `%`, Exposition `deg`, Schummerung keine. Eine Höhe, die eine Formel verändert hat (`band_math` `dem * 2`), hat keine Einheit mehr und wird abgewiesen.
+- **Bitgleich bei jeder Blockgröße** ist für projizierte CRS getestet (1024, 48, 16). Bei geographischen CRS hängt die Breite einer Zeile an den Grenzen des Blocks; Abweichungen in der letzten Stelle von `float64` gehen beim Schreiben in `float32` praktisch immer unter, sind aber nicht ausgeschlossen. Job und Runner nutzen denselben Kern mit derselben Blockgröße und bleiben bitgleich.
+- **Frontend unverändert:** Der Typ `Capabilities` in `frontend/src/types.ts` bekommt `terrain` erst in PR B, wenn das Frontend das Flag liest.
+- **Untergrenze der Suche:** Mit Q34 und Q35 steigt Deutsch auf 9 von 12 (Recall@5 und MRR@10 0,750, vorher 0,727); die Untergrenze im Integrationstest folgt.
 
 ## 10. Grenzen
 
