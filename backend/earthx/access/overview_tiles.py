@@ -6,14 +6,16 @@
 handling are those of every other tile of the dataset (adr/0032 §5.2: the pyramid holds values, not pictures). Nothing
 here opens an address, and the bytes never leave the process.
 
-A pyramid tile is **one read of an object that is already in memory**: it takes no place of the gate of
-:mod:`earthx.access.mosaic_tiles` and has no read budget.
+A pyramid tile is **one read of an object** and has no read budget. It takes no place of the gate of the file reads
+(:data:`~earthx.access.mosaic_tiles.TILE_GATE`), so it never queues behind them, but a place of its own gate
+(:data:`PYRAMID_GATE`): it, too, holds a thread of the shared pool for the read of the object and for the rendering, and a
+zoomed-out view over a slow store must not fill that pool (plan M5-30b §8.11).
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import morecantile
@@ -25,16 +27,24 @@ from rio_tiler.errors import RioTilerError, TileOutsideBounds
 from rio_tiler.io.rasterio import Reader
 from rio_tiler.models import ImageData
 
-from earthx.access.mosaic_tiles import EarthxMosaicTilerFactory, open_mosaic
+from earthx.access.mosaic_tiles import EarthxMosaicTilerFactory, TileGate, TilePlace, open_mosaic
 
 __all__ = [
     "EarthxOverviewTilerFactory",
+    "PYRAMID_GATE",
+    "PYRAMID_PLACES",
     "PyramidBandRefused",
     "PyramidTile",
     "PyramidTileInvalid",
     "PyramidTileReader",
     "open_overview",
 ]
+
+#: Pyramid tiles read at once in a process. Eight: a tile is a read of one object of about half a megabyte and a rendering,
+#: some tens of milliseconds on a store next door, so eight places carry well over a hundred tiles a second, and they hold at
+#: most eight of the roughly 40 threads of the pool the other synchronous routes share, however slow the store is.
+PYRAMID_PLACES = 8
+PYRAMID_GATE = TileGate(PYRAMID_PLACES)
 
 #: How far (metres) the corners of a stored tile may lie from those of the tile it is stored for: a tile of this grid is
 #: written from the grid itself, so anything beyond float noise is a foreign file.
@@ -57,6 +67,7 @@ class PyramidBandRefused(RioTilerError):
 class PyramidTile:
     """One tile of a pyramid as bytes, and where its picture ends.
 
+    ``place`` is the place at :data:`PYRAMID_GATE` the tile waited for; the reader gives it back when it is done.
     ``extent`` is west, south, east, north in EPSG:4326, or ``None``: pixels outside it are transparent. A dataset
     draws its own pyramid whole; a substitute's pyramid lies under another dataset and stops at that dataset's extent
     (plan M5-30b §8.8, "Ausdehnung = gewählter Datensatz").
@@ -65,6 +76,7 @@ class PyramidTile:
     dataset_id: str
     data: bytes
     extent: tuple[float, float, float, float] | None = None
+    place: TilePlace | None = field(default=None, compare=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.data, bytes) or not self.data:
@@ -106,17 +118,21 @@ class PyramidTileReader:
 
     def tile(self, tile_x: int, tile_y: int, tile_z: int, **kwargs: Any) -> ImageData:
         """The stored tile, read as a tile of this grid, at the size and with the options of the request."""
-        indexes = kwargs.get("indexes")
-        if indexes is not None and any(index != 1 for index in ((indexes,) if isinstance(indexes, int) else indexes)):
-            raise PyramidBandRefused("a tile of an overview has one band; bidx is 1")
         try:
-            with MemoryFile(self.source.data) as memory, memory.open() as dataset:
-                image = self._read(dataset, tile_x, tile_y, tile_z, **kwargs)
-        except rasterio.errors.RasterioError:
-            raise PyramidTileInvalid("the stored overview tile is not a readable raster") from None
-        if self.source.extent is not None:
-            image = self._cut_to_extent(image, self.source.extent)
-        return image
+            indexes = kwargs.get("indexes")
+            if indexes is not None and any(index != 1 for index in ((indexes,) if isinstance(indexes, int) else indexes)):
+                raise PyramidBandRefused("a tile of an overview has one band; bidx is 1")
+            try:
+                with MemoryFile(self.source.data) as memory, memory.open() as dataset:
+                    image = self._read(dataset, tile_x, tile_y, tile_z, **kwargs)
+            except rasterio.errors.RasterioError:
+                raise PyramidTileInvalid("the stored overview tile is not a readable raster") from None
+            if self.source.extent is not None:
+                image = self._cut_to_extent(image, self.source.extent)
+            return image
+        finally:
+            if self.source.place is not None:
+                self.source.place.release()
 
     def _read(self, dataset: Any, tile_x: int, tile_y: int, tile_z: int, **kwargs: Any) -> ImageData:
         wanted = self.tms.xy_bounds(morecantile.Tile(tile_x, tile_y, tile_z))

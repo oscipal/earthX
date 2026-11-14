@@ -16,6 +16,7 @@ import asyncio
 import threading
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 import anyio.to_thread
@@ -24,10 +25,16 @@ import pytest
 from fastapi import FastAPI
 
 from earthx.access import mosaic_tiles as reading
-from earthx.api import mosaic_tiles
+from earthx.access.overview_tiles import PYRAMID_GATE, PYRAMID_PLACES
+from earthx.api import mosaic_tiles, overview_tiles
 from earthx.api.tiler import build_app
+from earthx.objectstore.client import S3
 from tests.earthx.api.test_tiler_mosaic import Scenes, _serve
 from tests.earthx.api.test_tiler_overview import REGISTRY, WITH_POOL, Catalogue, _path, _seam
+from tests.earthx.api.test_tiler_pyramid import REGISTRY as PYRAMID_REGISTRY
+from tests.earthx.api.test_tiler_pyramid import RELIEF_ID, pyramids, rows  # noqa: F401 - fixtures
+from tests.earthx.api.test_tiler_pyramid import path as pyramid_path
+from tests.earthx.objectstore.conftest import store, store_env  # noqa: F401 - fixtures
 from tests.earthx.readers import mini_zarr
 
 READ_S = 0.15
@@ -42,6 +49,7 @@ class Rig:
         self.app = app
         self.read_s = READ_S
         self.reading = 0
+        self.started = 0
         self.most_reading = 0
         self.lock = threading.Lock()
 
@@ -136,22 +144,33 @@ async def _end(tasks: list[asyncio.Task[httpx.Response]], client: httpx.AsyncCli
 
 
 def test_a_cheap_synchronous_route_stays_responsive_while_fifty_tiles_wait(rig: Rig, capsys: pytest.CaptureFixture[str]) -> None:
-    async def scenario() -> tuple[float, int]:
-        tasks, client = await _storm(rig, WAITING)
+    """The threads held are the check; the latency is a wide bound, so that a loaded CI machine does not make it flake.
+
+    Before the gate 40 of the 40 threads were held and `/health` waited about as long as ten tiles of reading (0.4 s a
+    scene here: seconds); with the gate two threads are held and it answers in a few hundred milliseconds at the most.
+    """
+    rig.read_s = 0.4
+
+    async def scenario() -> tuple[float, float, int]:
+        client = rig.client()
+        started = time.monotonic()
+        assert (await client.get("/health")).status_code == 200
+        idle = time.monotonic() - started  # the same route with nothing waiting: what this machine answers in just now
+        tasks, _ = await _storm(rig, WAITING)
         borrowed = anyio.to_thread.current_default_thread_limiter().borrowed_tokens
         started = time.monotonic()
         health = await client.get("/health")
         answered = time.monotonic() - started
         assert health.status_code == 200
         await _end(tasks, client)
-        return answered, borrowed
+        return idle, answered, borrowed
 
-    answered, borrowed = asyncio.run(scenario())
+    idle, answered, borrowed = asyncio.run(scenario())
     with capsys.disabled():
-        print(f"\n[tile waiting] {WAITING} tiles waiting: /health answered in {answered * 1000:.0f} ms, pool threads borrowed: {borrowed}")
+        print(f"\n[tile waiting] {WAITING} tiles waiting: /health answered in {answered * 1000:.0f} ms (idle {idle * 1000:.0f} ms), pool threads borrowed: {borrowed}")
     assert rig.most_reading <= reading.MAX_CONCURRENT_TILES, "never more than two tiles are read at once"
     assert borrowed <= reading.MAX_CONCURRENT_TILES + 2, f"{borrowed} threads of the pool are held by tiles"
-    assert answered < 1.0, f"/health waited {answered:.2f} s behind the tiles"
+    assert answered < idle + 1.5, f"/health waited {answered:.2f} s behind the tiles (idle: {idle:.2f} s)"
 
 
 def test_the_tiles_themselves_are_read_two_at_a_time_and_all_are_answered(rig: Rig) -> None:
@@ -219,3 +238,135 @@ def test_a_tile_of_a_pyramid_does_not_wait_behind_the_tiles_of_a_mosaic(rig: Rig
         return waited
 
     assert asyncio.run(scenario()) < 0.3
+
+
+# The pyramid tiles: one read of an object, and a rendering, each in a thread of the pool. A slow store must not fill it.
+
+
+@pytest.fixture
+def slow_store(rows: Any, pyramids: Any, store: Any, monkeypatch: pytest.MonkeyPatch) -> Rig:  # noqa: F811
+    """The app over a pyramid whose store takes 0.4 s for an object; counts the objects being read at once."""
+    rows.ready(RELIEF_ID)
+    pyramids.put(RELIEF_ID, 6)
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> Any:  # pragma: no cover
+        yield
+
+    app = build_app(PYRAMID_REGISTRY, lifespan=lifespan)
+    app.state.earthx_cache_pool = WITH_POOL
+    app.state.earthx_overviews = overview_tiles.OverviewSources(store)
+    made = Rig(Scenes(Path("/nonexistent")), app)  # only the app and the counters are used
+    made.read_s = 0.4
+    counted = S3.get_bytes_and_metadata  # the double of the `pyramids` fixture: it still reads the real (moto) object
+
+    def slow(client: S3, key: str) -> Any:
+        with made.lock:
+            made.reading += 1
+            made.started += 1
+            made.most_reading = max(made.most_reading, made.reading)
+        try:
+            time.sleep(made.read_s)
+            return counted(client, key)
+        finally:
+            with made.lock:
+                made.reading -= 1
+
+    monkeypatch.setattr(S3, "get_bytes_and_metadata", slow)
+    return made
+
+
+async def _pyramid_storm(
+    rig: Rig, count: int, *, settle: float = 1.0
+) -> tuple[list[asyncio.Task[httpx.Response]], httpx.AsyncClient]:
+    client = rig.client()
+    tasks = [asyncio.ensure_future(client.get(pyramid_path(RELIEF_ID, 6))) for _ in range(count)]
+    await asyncio.sleep(settle)
+    return tasks, client
+
+
+def test_a_cheap_route_stays_responsive_while_fifty_pyramid_tiles_wait_on_a_slow_store(
+    slow_store: Rig, capsys: pytest.CaptureFixture[str]
+) -> None:
+    async def scenario() -> tuple[float, float, int]:
+        client = slow_store.client()
+        started = time.monotonic()
+        assert (await client.get("/health")).status_code == 200
+        idle = time.monotonic() - started
+        tasks, storm_client = await _pyramid_storm(slow_store, WAITING)
+        borrowed = anyio.to_thread.current_default_thread_limiter().borrowed_tokens
+        started = time.monotonic()
+        assert (await client.get("/health")).status_code == 200
+        answered = time.monotonic() - started
+        await _end(tasks, storm_client)
+        await client.aclose()
+        return idle, answered, borrowed
+
+    idle, answered, borrowed = asyncio.run(scenario())
+    with capsys.disabled():
+        print(f"\n[pyramid waiting] {WAITING} tiles waiting: /health answered in {answered * 1000:.0f} ms (idle {idle * 1000:.0f} ms), pool threads borrowed: {borrowed}")
+    assert slow_store.most_reading <= PYRAMID_PLACES, "no more objects are read at once than the gate has places"
+    assert borrowed <= PYRAMID_PLACES + 2, f"{borrowed} threads of the pool are held by pyramid tiles"
+    assert answered < idle + 1.5, f"/health waited {answered:.2f} s behind the tiles (idle: {idle:.2f} s)"
+
+
+def test_the_tiles_of_a_pyramid_all_come_and_the_gate_is_free_afterwards(slow_store: Rig) -> None:
+    slow_store.read_s = 0.02
+
+    async def scenario() -> list[int]:
+        client = slow_store.client()
+        responses = await asyncio.gather(*(client.get(pyramid_path(RELIEF_ID, 6)) for _ in range(30)))
+        await client.aclose()
+        return [r.status_code for r in responses]
+
+    assert asyncio.run(scenario()) == [200] * 30
+    assert 1 < slow_store.most_reading <= PYRAMID_PLACES
+    async def free() -> None:
+        taken = [await asyncio.wait_for(PYRAMID_GATE.enter(_never_gone), 0.3) for _ in range(PYRAMID_PLACES)]
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(PYRAMID_GATE.enter(_never_gone), 0.05)
+        for place in taken:
+            place.release()
+
+    asyncio.run(free())
+
+
+async def _never_gone() -> bool:
+    return False
+
+
+def test_a_client_that_hangs_up_while_its_pyramid_tile_waits_reads_nothing(slow_store: Rig) -> None:
+    slow_store.read_s = 2.0
+
+    async def scenario() -> tuple[int, int]:
+        tasks, client = await _pyramid_storm(slow_store, PYRAMID_PLACES, settle=0.5)  # every place is taken, for 2 s
+        reads_before = slow_store.started
+        status, _ = await _call(slow_store.app, pyramid_path(RELIEF_ID, 6), hang_up_after=0.1)
+        await asyncio.gather(*tasks)
+        await client.aclose()
+        return status, slow_store.started - reads_before
+
+    status, reads_for_it = asyncio.run(scenario())
+    assert (status, reads_for_it) == (499, 0), "nothing was read for a client that was no longer there"
+    assert slow_store.most_reading <= PYRAMID_PLACES
+
+
+def test_a_pyramid_tile_does_not_wait_behind_the_file_reads_of_a_mosaic(slow_store: Rig) -> None:
+    """The two gates are apart: both places of the file reads taken, a pyramid tile still comes at once."""
+    from earthx.access.mosaic_tiles import TILE_GATE
+
+    slow_store.read_s = 0.01
+
+    async def scenario() -> float:
+        taken = [await TILE_GATE.enter(_never_gone) for _ in range(TILE_GATE.places)]
+        client = slow_store.client()
+        started = time.monotonic()
+        response = await client.get(pyramid_path(RELIEF_ID, 6))
+        took = time.monotonic() - started
+        for place in taken:
+            place.release()
+        await client.aclose()
+        assert response.status_code == 200
+        return took
+
+    assert asyncio.run(scenario()) < 1.0

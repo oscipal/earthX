@@ -96,9 +96,11 @@ from earthx.access.mosaic_tiles import (
     MosaicLayout,
     MosaicScenes,
     ReadBudget,
+    TileGate,
+    TilePlace,
     open_mosaic,
 )
-from earthx.access.overview_tiles import EarthxOverviewTilerFactory, PyramidTile
+from earthx.access.overview_tiles import PYRAMID_GATE, EarthxOverviewTilerFactory, PyramidTile
 from earthx.access.radar import item_line_times
 from earthx.access.resolve import (
     AssetNotOnItem,
@@ -1234,22 +1236,28 @@ async def _pyramid_tile(
     found = await sources.state(getattr(request.app.state, "earthx_cache_pool", None), owner.dataset_id)
     if found.status != "ready" or found.version is None:
         raise overview_tiles.refusal_of(found)
-    data = await sources.tile(owner.dataset_id, found.version, grid)
-    return PyramidTile(owner.dataset_id, data, extent)
+    # The read of the object and the rendering hold threads of the shared pool: they wait in the event loop first, at a gate
+    # of their own, apart from the file reads (plan M5-30b §8.11).
+    place = await _wait_for_a_place(request, PYRAMID_GATE)
+    try:
+        data = await sources.tile(owner.dataset_id, found.version, grid)
+    except BaseException:
+        place.release()
+        raise
+    return PyramidTile(owner.dataset_id, data, extent, place)
 
 
-async def _wait_for_a_place(request: Request, scenes: MosaicScenes) -> MosaicScenes:
-    """``scenes`` with the place at the gate of the tile reads, waited for in the event loop (plan M5-30b §8.11).
+async def _wait_for_a_place(request: Request, gate: TileGate) -> TilePlace:
+    """A place at ``gate``, waited for in the event loop (plan M5-30b §8.11).
 
     The wait is an ``await`` here, before TiTiler's synchronous tile function takes a thread of the pool the whole app
     shares; the place is given back by the reader when it has read the tile, or by the request that took it. A client that
     hangs up while it waits leaves the queue (``499``: nobody reads the answer).
     """
     try:
-        place = await TILE_GATE.enter(request.is_disconnected)
+        return await gate.enter(request.is_disconnected)
     except ClientGone:
         raise HTTPException(status_code=499, detail="the client hung up while its tile waited") from None
-    return dataclasses.replace(scenes, place=place)
 
 
 async def placed_mosaic_scenes(
@@ -1266,7 +1274,7 @@ async def placed_mosaic_scenes(
     if not isinstance(scenes, MosaicScenes):
         yield scenes
         return
-    scenes = await _wait_for_a_place(request, scenes)
+    scenes = dataclasses.replace(scenes, place=await _wait_for_a_place(request, TILE_GATE))
     try:
         yield scenes
     finally:
@@ -1277,20 +1285,19 @@ async def placed_mosaic_scenes(
 async def placed_overview_scenes(
     request: Request, dataset: Annotated[str, Path(description="dataset id of the registry")]
 ) -> AsyncIterator[MosaicScenes | PyramidTile]:
-    """:func:`overview_scenes`, and for the files of a substitute the place at the gate; a stored tile of a pyramid takes none.
+    """:func:`overview_scenes`, and for the files of a substitute the place at the gate of the file reads.
 
-    A pyramid tile is one object that is read in a moment and has no budget: it does not wait behind the files of a mosaic.
+    A stored tile of a pyramid has its place at the gate of the pyramid tiles already (:func:`_pyramid_tile`); it does not
+    wait behind the files of a mosaic. Either place is given back here if the reader never ran.
     """
     scenes = await overview_scenes(request, dataset)
-    if not isinstance(scenes, MosaicScenes):
-        yield scenes
-        return
-    scenes = await _wait_for_a_place(request, scenes)
+    if isinstance(scenes, MosaicScenes):
+        scenes = dataclasses.replace(scenes, place=await _wait_for_a_place(request, TILE_GATE))
     try:
         yield scenes
     finally:
-        assert scenes.place is not None
-        scenes.place.release()
+        if scenes.place is not None:
+            scenes.place.release()
 
 
 def overview_post_process() -> None:
