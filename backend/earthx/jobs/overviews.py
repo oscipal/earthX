@@ -32,6 +32,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from earthx.jobs.queue import RETRYABLE
+from earthx.objectstore.overviews import OVERVIEW_TTL, PROTOTYPE_PREFIX, PROTOTYPE_TTL
 
 __all__ = [
     "MAX_ATTEMPTS",
@@ -40,17 +41,25 @@ __all__ = [
     "Build",
     "Previous",
     "claim",
+    "expired",
     "finish_failed",
     "finish_ready",
     "heartbeat",
+    "known_versions",
+    "mark_expired",
+    "mark_extended",
     "previous_ready",
     "release",
     "request_missing",
+    "to_extend",
     "write_progress",
 ]
 
 # A third fixed key for `pg_advisory_xact_lock`, next to those of `queue.py`: 'jobs' in ASCII, plus 3.
 OVERVIEW_LOCK_KEY = 0x6A6F6273_00000003
+
+#: The failure kind of a pyramid whose term ran out; it is not in `RETRYABLE`, so nothing builds it again (adr/0032 §5.3).
+EXPIRED = "expired"
 
 #: A build is tried this many times in all (the first included).
 MAX_ATTEMPTS = 3
@@ -296,3 +305,83 @@ def release(conn: psycopg.Connection, build: Build) -> bool:
                 (_LEASE_LOST, build.dataset_id, build.version, build.attempt),
             ).fetchone()
     return row is not None
+
+
+def expired(conn: psycopg.Connection) -> list[tuple[str, str, datetime]]:
+    """The ready pyramids whose term ran out and that no confirmation is waiting to extend: ``(dataset, version, checked_at)``.
+
+    The term is 30 days from ``checked_at``, 7 for a prototype source (:func:`~earthx.objectstore.overviews.term_of`). A
+    pyramid with a confirmation newer than ``checked_at`` is left to :func:`to_extend`, so a confirmed pyramid is
+    never expired by a round that came first.
+    """
+    return [
+        (row[0], row[1], row[2])
+        for row in conn.execute(
+            """
+            SELECT dataset_id, version, checked_at FROM public.earthx_overview
+            WHERE status = 'ready' AND (confirmed_at IS NULL OR confirmed_at <= checked_at)
+              AND checked_at + CASE WHEN left(dataset_id, %(length)s) = %(prefix)s THEN %(proto)s ELSE %(term)s END
+                  < clock_timestamp()
+            ORDER BY checked_at
+            """,
+            {
+                "length": len(PROTOTYPE_PREFIX),
+                "prefix": PROTOTYPE_PREFIX,
+                "proto": PROTOTYPE_TTL,
+                "term": OVERVIEW_TTL,
+            },
+        ).fetchall()
+    ]
+
+
+def mark_expired(conn: psycopg.Connection, dataset_id: str, version: str, checked_at: datetime) -> bool:
+    """Close a ready pyramid as ``failed`` with ``expired``, once its objects are gone; ``False`` if it is not that row any more.
+
+    The row stays, so the hourly round does not ask for the same version again: the next build is that of the next
+    version (adr/0032 §5.3, Otto 13.11.2026: until the next build there is no pyramid).
+    """
+    row = conn.execute(
+        """
+        UPDATE public.earthx_overview
+        SET status = 'failed', failure_kind = %s, updated_at = clock_timestamp()
+        WHERE dataset_id = %s AND version = %s AND status = 'ready' AND checked_at = %s RETURNING 1
+        """,
+        (EXPIRED, dataset_id, version, checked_at),
+    ).fetchone()
+    return row is not None
+
+
+def to_extend(conn: psycopg.Connection, datasets: Collection[str]) -> list[tuple[str, str, datetime]]:
+    """The ready pyramids of ``datasets`` that the source confirmed after their ``checked_at``: ``(dataset, version, confirmed_at)``.
+
+    A prototype source's pyramid is never extended (adr/0032 §8.4).
+    """
+    return [
+        (row[0], row[1], row[2])
+        for row in conn.execute(
+            """
+            SELECT dataset_id, version, confirmed_at FROM public.earthx_overview
+            WHERE status = 'ready' AND confirmed_at > checked_at AND dataset_id = ANY(%s)
+              AND left(dataset_id, %s) <> %s
+            ORDER BY confirmed_at
+            """,
+            (sorted(datasets), len(PROTOTYPE_PREFIX), PROTOTYPE_PREFIX),
+        ).fetchall()
+    ]
+
+
+def mark_extended(conn: psycopg.Connection, dataset_id: str, version: str, confirmed_at: datetime) -> bool:
+    """``checked_at`` := ``confirmed_at`` once every object carries it; ``False`` if the row is not ready or already at least that new."""
+    row = conn.execute(
+        """
+        UPDATE public.earthx_overview SET checked_at = %s, updated_at = clock_timestamp()
+        WHERE dataset_id = %s AND version = %s AND status = 'ready' AND checked_at < %s RETURNING 1
+        """,
+        (confirmed_at, dataset_id, version, confirmed_at),
+    ).fetchone()
+    return row is not None
+
+
+def known_versions(conn: psycopg.Connection) -> set[tuple[str, str]]:
+    """``(dataset, version)`` of every row of `earthx_overview`, in any state."""
+    return {(row[0], row[1]) for row in conn.execute("SELECT dataset_id, version FROM public.earthx_overview")}
