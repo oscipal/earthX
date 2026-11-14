@@ -433,7 +433,11 @@ npm install
 npm run dev
 ```
 
-Dann `http://localhost:5173` öffnen.
+Dann `http://localhost:5173` öffnen. Das Runner-Image (Schritt 3 und 6) einmal bauen, im Wurzelverzeichnis:
+
+```powershell
+docker build --target runner --build-arg "EARTHX_COMMIT=$(git rev-parse --short HEAD)" -t earthx-runner:0.5.2 backend
+```
 
 **2. „Reproject“ fehlt bei Sentinel-1.** Data catalogue → „Sentinel-1 GRD“, eine AOI zeichnen, suchen, eine Szene
 wählen, im Panel „Processing“ die Knöpfe unter „Add step:“ ansehen: kein „Reproject and resample“. Gegenprobe mit
@@ -442,7 +446,7 @@ Sentinel-2 L2A: dort ist er da.
 **3. Zuschnitt einer Szene.** Eine kleine AOI (einige km) in einer Szene, „Download“. Erwartet im ZIP:
 `exports/vv_10m.tif` (der Name nennt Band und Pixelgröße, bei HH `hh_…`), die Maskendatei daneben, `ATTRIBUTION.txt` mit der Zeile „Grid: radar geometry of
 the source scenes, not map-projected …“ und „Scene <id>: rows …, columns … (0-based, inclusive)“, keine Zeile
-„Resolution: native“. Die Datei prüfen (das Runner-Image aus Schritt 6 bringt `rio` mit; ZIP vorher nach `.\zip`
+„Resolution: native“. Die Datei prüfen (das Runner-Image bringt `rio` mit; ZIP vorher nach `.\zip`
 entpacken):
 
 ```powershell
@@ -461,14 +465,8 @@ Grenze.
 anbietet; Job starten, ZIP herunterladen. Erwartet: dieselbe Form wie Schritt 4 (eine Datei, GCPs, kein CRS), in
 `ATTRIBUTION.txt` die Zeile „Items: <beide Szenen>“ und die beiden Zeilen „Scene …“.
 
-**6. Runner-Image bauen und Hash-Vergleich.** Ein Raster-Job über die beiden Slices: im Panel „Processing“ einen
-Schritt „Normalize“ auf VV, „Review“, „Start job“; fertig → „Download (ZIP)“. Dann:
-
-```powershell
-docker build --target runner --build-arg "EARTHX_COMMIT=$(git rev-parse --short HEAD)" -t earthx-runner:0.5.2 backend
-```
-
-`recipe.json` aus dem ZIP des Jobs nach `.\in` legen, `result.tif` und `mask.tif` des Jobs nach `.\cloud`:
+**6. Hash-Vergleich mit dem Runner.** Ein Raster-Job über die beiden Slices: im Panel „Processing“ unter „Add step:“
+„Normalize“ auf VV, „Review“, „Start job“; fertig → „Download (ZIP)“. `recipe.json` aus dem ZIP des Jobs nach `.\in` legen, `result.tif` und `mask.tif` des Jobs nach `.\cloud`:
 
 ```powershell
 docker run --rm --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges -v "${PWD}\in:/in:ro" -v "${PWD}\out:/out" earthx-runner:0.5.2 run /in/recipe.json
