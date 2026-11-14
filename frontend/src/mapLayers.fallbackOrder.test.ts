@@ -1,5 +1,5 @@
-// NM4-24: where the view falls back to the scenes one by one (a mosaic the tiler refused, a time step over 64 scenes, a dataset
-// released below z8 only), the scene that lies on top in an overlap is the one the mosaic has on top, the crop and the export
+// NM4-24: where the view falls back to the scenes one by one (a mosaic the tiler refused, scenes of different assets, a time step
+// over what a selection takes), the scene that lies on top in an overlap is the one the mosaic has on top, the crop and the export
 // read first - whichever of the scenes was ticked first.
 
 import { describe, expect, it } from 'vitest';
@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { liveMap } from './fixtures/liveMap';
 import { previewDataset, previewScene, sceneInfo } from './fixtures/viewScenes';
 import { ensureBaseLayers, syncFocusRaster } from './mapLayers';
-import { mosaicTemplateOf, orderKeyOf } from './mosaic';
+import { mosaicKeyOf, orderKeyOf } from './mosaic';
 import type { Mosaics, SceneEntry } from './mosaic';
 import type { DownloadedInfo, TimeStepGroup } from './types';
 
@@ -20,8 +20,7 @@ const info = (id: string, minZoom = 0): DownloadedInfo => sceneInfo(id === 'A' ?
 const ticked = (...ids: string[]): Record<string, DownloadedInfo> => Object.fromEntries(ids.map((id) => [id, info(id)]));
 const entriesOf = (downloaded: Record<string, DownloadedInfo>): SceneEntry[] => Object.entries(downloaded);
 
-// The scene on top of the scenes drawn one by one: the last raster of a single scene names it in its tile address (the
-// mosaic, where there is one, lies over all of them from z8).
+// The scene on top of the scenes drawn one by one: the last raster of a single scene names it in its tile address.
 function topScene(downloaded: Record<string, DownloadedInfo>, mosaics: Mosaics): string {
   const live = liveMap();
   ensureBaseLayers(live.map as never);
@@ -33,22 +32,12 @@ function topScene(downloaded: Record<string, DownloadedInfo>, mosaics: Mosaics):
   return /items\/([A-Z])\//.exec(rasters.at(-1)!)![1];
 }
 
-// What the tiler gives for the two scenes, A first (the order of the mosaic job: the target CRS, then by id).
-const mosaicOf = (downloaded: Record<string, DownloadedInfo>): Mosaics => ({
-  [mosaicTemplateOf(dataset.id, entriesOf(downloaded))!]: {
-    tileUrl: mosaicTemplateOf(dataset.id, entriesOf(downloaded))!,
-    bounds: [10, 47, 11, 48],
-    minZoom: 8,
-    maxZoom: 14,
-    order: ['A', 'B'],
-  },
-});
 const refusedWithOrder = (downloaded: Record<string, DownloadedInfo>): Mosaics => ({
-  [mosaicTemplateOf(dataset.id, entriesOf(downloaded))!]: null,
+  [mosaicKeyOf(dataset.id, entriesOf(downloaded))!]: null,
   [orderKeyOf(dataset.id, entriesOf(downloaded))!]: { order: ['A', 'B'] },
 });
 const refused = (downloaded: Record<string, DownloadedInfo>): Mosaics => ({
-  [mosaicTemplateOf(dataset.id, entriesOf(downloaded))!]: null,
+  [mosaicKeyOf(dataset.id, entriesOf(downloaded))!]: null,
 });
 
 describe.each([
@@ -56,10 +45,6 @@ describe.each([
   ['B, then A', ['B', 'A']],
 ])('the overlap of two scenes ticked %s', (_name, order) => {
   const downloaded = ticked(...order);
-
-  it('has the first scene of the mosaic order on top below the mosaic, as the mosaic reads it', () => {
-    expect(topScene(downloaded, mosaicOf(downloaded))).toBe('A');
-  });
 
   it('has the same scene on top where the tiler refused the mosaic and gave the order', () => {
     expect(topScene(downloaded, refusedWithOrder(downloaded))).toBe('A');

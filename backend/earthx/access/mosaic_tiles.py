@@ -45,6 +45,7 @@ from earthx.readers.cog import AssetPath
 from earthx.readers.zarr_reader import ZarrAsset
 
 __all__ = [
+    "MAX_CONCURRENT_TILES",
     "MAX_MOSAIC_THREADS",
     "MOSAIC_THREADS",
     "EarthxMosaicTilerFactory",
@@ -66,6 +67,12 @@ __all__ = [
 MOSAIC_THREADS = 4
 #: The most threads a reader may be given (the measurement compares counts up to this one).
 MAX_MOSAIC_THREADS = 16
+#: Mosaic tiles read at the same time in one process, the tile of a selection and the tile of a substitute alike. Two, by
+#: Otto, 13.11.2026 (plan M5-30b §8.7): the read is bound by the CPU, so six tiles at once all finish late (the first view of
+#: 124 swissALTI3D scenes drew its first tile after 3.9 s); two let the first come after about a second and cost the last
+#: a little. The others wait for a place before their time budget starts, so waiting does not eat the 4 s.
+MAX_CONCURRENT_TILES = 2
+_TILE_SLOTS = threading.BoundedSemaphore(MAX_CONCURRENT_TILES)
 
 
 class MosaicBandsDiffer(RioTilerError):
@@ -220,8 +227,14 @@ class MosaicTileReader:
         Only ``TileOutsideBounds`` skips a scene, and the end of the read budget: a scene that has not begun when
         the time is up is left out, so the tile keeps what the scenes before it gave. Any other failure fails the
         tile: a scene left out silently would let another one win where they overlap.
-        """
 
+        At most :data:`MAX_CONCURRENT_TILES` tiles are read at once in the process; a tile waits for its place before
+        its budget starts.
+        """
+        with _TILE_SLOTS:
+            return self._read_tile(tile_x, tile_y, tile_z, **kwargs)
+
+    def _read_tile(self, tile_x: int, tile_y: int, tile_z: int, **kwargs: Any) -> ImageData:
         band_counts: set[int] = set()
         lock = threading.Lock()
         budget = self.source.budget

@@ -12,6 +12,7 @@
 // not a dependency of the project (CI does not run this); the cloud session has both.
 
 const { chromium } = require('playwright');
+const { answersSelection, isSelectionTile } = require('./selectionMock.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
 const zlib = require('node:zlib');
@@ -80,12 +81,13 @@ async function check(browser, theme, viewport, scenario) {
     const json = (body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
     if (url.origin !== BASE || /^\/(src|@|node_modules|assets)/.test(url.pathname) || url.pathname === '/' || url.pathname.endsWith('.svg')) return route.continue();
     if (url.pathname === '/processing/processes/recipe') return json(DESCRIPTION);
+    if (answersSelection(route, url)) return;
     if (url.pathname.includes('/mosaic/') && url.pathname.endsWith('/tilejson.json')) {
       seen.mosaicProbes.push(url.search);
       if (scenario === 'refused') return json({ detail: "'sentinel-2-c1-l2a' does not allow reprojection, which a mosaic of scenes may need" }, 422);
       return json({ tilejson: '3.0.0', bounds: FOOTPRINT, minzoom: 8, maxzoom: 14, 'earthx:order': ORDER });
     }
-    if (url.pathname.includes('/mosaic/tiles/')) {
+    if (isSelectionTile(url.pathname)) {
       seen.mosaicTiles.push(url.search);
       await sleep(COLD_TILE_MS);
       tilesDelivered = Date.now();
@@ -185,8 +187,9 @@ async function check(browser, theme, viewport, scenario) {
     if (seen.itemProbes.length !== 0) problems.push(`a scene was asked for its TileJSON ${seen.itemProbes.length} time(s)`);
     if (seen.statistics.length !== 1 || !seen.statistics[0].includes(`/items/${ORDER[0]}/statistics`)) problems.push(`the statistics asked: ${seen.statistics.join(', ')}; not once over ${ORDER[0]}`);
     const first = new URLSearchParams(seen.mosaicTiles[0] ?? '');
-    if (JSON.stringify(first.getAll('item')) !== JSON.stringify([...SCENES].sort())) problems.push(`the mosaic tile names the scenes ${first.getAll('item')}`);
-    for (const key of first.keys()) if (!['item', 'asset', 'op', 'op_version', 'params', 'rescale', 'colormap_name', 'band', 'tilesize'].includes(key)) problems.push(`the mosaic tile carries ${key}`);
+    // The scenes and the assets are in the selection (adr/0032 §10.2), not in the URL of the tile.
+    if (first.has('item') || first.has('asset')) problems.push(`the mosaic tile names the scenes or the assets ${first}`);
+    for (const key of first.keys()) if (!['op', 'op_version', 'params', 'rescale', 'colormap_name', 'band', 'tilesize'].includes(key)) problems.push(`the mosaic tile carries ${key}`);
     // NM4-29b: the tiles of a mosaic are 512 px; those of a scene are not asked in a size (the tiler's 256).
     if (seen.mosaicTiles.some((search) => new URLSearchParams(search).get('tilesize') !== '512')) problems.push('a mosaic tile does not ask for tilesize=512');
     if ((await badges().first().getAttribute('data-tip')) !== null) problems.push('"Preview" carries a hint though the mosaic is drawn');

@@ -280,6 +280,16 @@ describe('ATTRIBUTION.txt', () => {
     const out = attributionFileText({ collection: collection({ 'sci:citation': 'Doe (2026), Some data.' }), scenes: [], files: [], years: '2026', now });
     expect(out).toContain('Doe (2026), Some data.');
   });
+
+  it('the limitations come as a section of their own, and a collection without any has none', () => {
+    const limited = collection({ 'earthx:limitations': ['First one.', 'Second one.'] });
+    const out = attributionFileText({ collection: limited, scenes: [], files: [], years: '2026', now });
+    expect(out.split('\n\n')).toContain('Limitations:\n- First one.\n- Second one.');
+    for (const none of [undefined, [], null]) {
+      const bare = attributionFileText({ collection: collection({ 'earthx:limitations': none }), scenes: [], files: [], years: '2026', now });
+      expect(bare).not.toContain('Limitations');
+    }
+  });
 });
 
 describe('the job for the service worker', () => {

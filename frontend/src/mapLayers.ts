@@ -18,11 +18,11 @@ import type { LayerOverlay, MapLayer } from './layers';
 import { indexRasterOf, viewIndexOf } from './viewIndex';
 import { underlayOf } from './underlay';
 import type { ImageOverlay } from './underlay';
-import { inStackOrder, passesOf, stackLikeView, viewOfPass } from './mosaic';
-import type { Mosaics, PlannedRaster, SceneEntry } from './mosaic';
+import { chosenByView, inStackOrder, passesOf, stackLikeView, viewOfPass } from './mosaic';
+import type { Mosaics, PassView, PlannedRaster, SceneEntry } from './mosaic';
 import { substituteRasterOf } from './overviewSubstitute';
 import { tileSizeOf } from './tileSize';
-import type { AppliedRender, DownloadedInfo, StacItem, TimeStepGroup } from './types';
+import type { AppliedRender, Bbox, DownloadedInfo, StacItem, TimeStepGroup } from './types';
 
 const AOI_SRC = 'aoi-src';
 const SEL_SRC = 'mosaicsel-src'; // highlighted (selected-for-download) footprints
@@ -33,13 +33,23 @@ const COVERAGE_AREA_SRC = 'coverage-area-src'; // a one-off product's extent (M3
 
 const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
 export const MAX_MOSAIC_LAYERS = 40;
-// Every dynamic id the focus view and the browse preview hand out is below this; a mosaic
-// adds the scenes it stacks below its first level to its own layer (`mosaic.ts`).
+// Every dynamic id the focus view and the browse preview hand out is below this.
 const MAX_DYNAMIC_LAYERS = 200;
 // The preview of the processing panel (M4-13c-2): above every raster the map
 // draws, under the AOI outline.
 const PREVIEW_SRC = 'preview-src-';
 const PREVIEW_LYR = 'preview-lyr-';
+
+// The entry of the layer manager that holds the search results, the view and the preview of the processing panel (`LayerManager.tsx`).
+export const RESULTS_OWNER = 'results';
+
+// The row of the layer manager the tiles of a raster source are drawn for: the pinned layer they were made for (`layer-src-<layer>-<n>`),
+// or "Results" for the view, the search results and the preview. `null` for what is no layer: the basemap, the coverage, the AOI.
+export function ownerOfSource(sourceId: string): string | null {
+  const pinned = /^layer-src-(.+)-\d+$/.exec(sourceId);
+  if (pinned) return pinned[1];
+  return /^(?:[mn]|res)-tiles-src-c?\d+$/.test(sourceId) || sourceId.startsWith(PREVIEW_SRC) ? RESULTS_OWNER : null;
+}
 
 // What each of the view's own rasters draws (`overlaySignature`), and which of them are out of sight
 // because a pinned layer that is switched on draws the same (`settleViewTwin`).
@@ -796,11 +806,17 @@ export function footprintsFC(items: StacItem[]): GeoJSON.FeatureCollection {
   return { type: 'FeatureCollection', features };
 }
 
-// One scene in the browse view. A source that publishes a quicklook gets the
-// image it publishes, keyed transparent and placed on the scene's own pixel grid;
-// a source that publishes none (adr/0007 §12.7) gets tiles instead, pinned to the
-// coarsest level it releases and overzoomed above it — the cheap server-rendered
-// preview of `adr/0007` §6 point 5, and no new endpoint for it (M2-10, F3 a).
+// One scene in the browse view. A source that publishes a quicklook the map can place
+// gets the image it publishes, keyed transparent and placed on the scene's own pixel
+// grid; a source that publishes none (adr/0007 §12.7) gets tiles instead — the cheap
+// server-rendered preview of `adr/0007` §6 point 5, and no new endpoint for it (M2-10,
+// F3 a). Which tiles `quicklookPlan` says (`datasets.ts`): pinned to the coarsest level the
+// dataset releases and overzoomed above it (`browse: preview_tiles`), or at every released level,
+// `min_zoom` to `max_zoom` (`browse: full_resolution`, and every dataset that places its files
+// through ground control points, `georeferencing: gcp_tps`, F11 to #319, adr/0018 §4.2: those
+// get tiles even where a thumbnail exists, never the thumbnail: that lies in the files' own
+// geometry, and a tile is placed by the same thin-plate spline as the full view). This function
+// draws what the plan says and decides none of it.
 function addPreview(
   map: MapLibreMap,
   item: StacItem,
@@ -902,12 +918,15 @@ function addTiles(
   i: number,
   render: AppliedRender,
   clip: GeoJSON.Geometry | null,
+  openUntilLoaded = false,
 ): void {
   const srcId = dynamicId('tiles-src', i);
   const lyrId = dynamicId('tiles-lyr', i);
   keyResults(lyrId, 'view');
   const tileUrl = buildTileUrl(info.tileUrl, render);
-  placeRaster(map, srcId, lyrId, clipTileUrl(tileUrl, clip), info.bounds, viewOpacity, info);
+  // The layer of a raster that steps aside for a picture above it (`hideFrom`) is laid without that limit where the picture is
+  // not there yet (`substituteHold`); the signature below keeps it, so that the twin of a pinned layer is still found.
+  placeRaster(map, srcId, lyrId, clipTileUrl(tileUrl, clip), info.bounds, viewOpacity, openUntilLoaded ? { ...info, hideFrom: undefined } : info);
   redraws.set(lyrId, { kind: 'tiles', tileUrl, bounds: info.bounds, zoom: info, clippedTo: clip });
   drawsPicture(map, lyrId, tilesPicture(info, render, clip));
 }
@@ -1139,6 +1158,44 @@ export interface MosaicState {
   tilesInLayer?: boolean;
 }
 
+// The part of the world in view, `null` where the map cannot say.
+const viewOf = (map: MapLibreMap): Bbox | null => {
+  const bounds = map.getBounds?.();
+  return bounds ? [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()] : null;
+};
+
+type DrawnPass = { entries: SceneEntry[]; view: PassView };
+
+// Each pass is a mosaic, scene by scene, or not yet known (`mosaic.ts`). A pass that cannot be a mosaic is drawn scene by scene,
+// and the map draws only so many of those: the scenes in the view first, so that a time step of hundreds of scenes shows
+// where the person looks and not where the list starts (`adr/0032` §10.4).
+function passesToDraw(map: MapLibreMap, s: Pick<MosaicState, 'downloaded' | 'groups' | 'dataset' | 'mosaics'>): DrawnPass[] {
+  let single = 0;
+  const view = viewOf(map);
+  return passesOf(Object.entries(s.downloaded), s.groups).map((entries) => {
+    const planned = viewOfPass(s.dataset?.id ?? null, entries, s.mosaics);
+    if (planned.kind === 'scenes') {
+      // In the order of the mosaic where the tiler gave it (NM4-24), else of the selection.
+      const own = chosenByView(inStackOrder(entries, planned.order), view, MAX_MOSAIC_LAYERS - single);
+      single += own.length;
+      return { entries: own, view: planned };
+    }
+    return { entries, view: planned };
+  });
+}
+
+const chosenKey = (drawn: readonly DrawnPass[]): string =>
+  JSON.stringify(drawn.map(({ entries, view }) => (view.kind === 'scenes' ? entries.map(([id]) => id) : null)));
+
+// What the view was last drawn from and which scenes it chose, for `rechooseScenes`.
+let lastFocus: { state: Parameters<typeof syncFocusRaster>[1]; chosen: string } | null = null;
+
+// The map moved: where the scenes drawn one by one are not the ones in view any more, the view is drawn again. A pass that is
+// a mosaic, or has no more scenes than the map draws, is left alone, and so are the tiles of the scenes still chosen.
+export function rechooseScenes(map: MapLibreMap): void {
+  if (lastFocus && chosenKey(passesToDraw(map, lastFocus.state)) !== lastFocus.chosen) syncFocusRaster(map, lastFocus.state);
+}
+
 // Full-resolution raster tiles (M2-07b). Tearing the existing layers down and
 // re-adding them is visible as the image disappearing and reappearing, so
 // this must only run when what should be drawn actually changes — which
@@ -1162,30 +1219,14 @@ export function syncFocusRaster(
   const clip = s.cropToAoi ? (s.aoi ?? null) : null;
   if (clip) clipRetired(map, clip);
   const dataset = s.dataset;
-  // Each pass is a mosaic, scene by scene, or not yet known (`mosaic.ts`). The scenes drawn one by
-  // one are capped, first come first served, as they always were.
-  let single = 0;
-  const drawn = passesOf(Object.entries(s.downloaded), s.groups).map((entries) => {
-    const view = viewOfPass(dataset?.id ?? null, entries, s.mosaics);
-    if (view.kind === 'scenes') {
-      // In the order of the mosaic where the tiler gave it (NM4-24), else of the selection.
-      const own = inStackOrder(entries, view.order).slice(0, Math.max(0, MAX_MOSAIC_LAYERS - single));
-      single += own.length;
-      return { entries: own, view };
-    }
-    return { entries, view };
-  });
+  const drawn = passesToDraw(map, s);
+  lastFocus = { state: s, chosen: chosenKey(drawn) };
   // Drawn in reverse selection order, so the *first*-selected scene ends up
   // topmost — the same "first valid pixel wins" rule the download's mosaic
   // uses (rio_tiler's `FirstMethod`, `adr/0006` §3.5), so overlapping scenes
   // agree between the view and the downloaded file. This used to draw in
   // selection order, putting the *last*-selected scene on top instead
   // (M3-09 finding). A mosaic applies that rule on the server.
-  // Short of ids, a mosaic gives up the single scenes under it before any mosaic is lost.
-  const wanted = drawn.reduce(
-    (sum, { entries, view }) => sum + (view.kind === 'mosaic' ? view.rasters.length : view.kind === 'scenes' ? entries.length : 0),
-    0,
-  );
   let tiles = 0;
   let underlays = 0;
   // An index in the look (NM4-14b) is computed by the tile route with an operator, with no quicklook under it: that would
@@ -1193,13 +1234,23 @@ export function syncFocusRaster(
   const index = dataset ? viewIndexOf(s.render, dataset.collection) : null;
   const place = (raster: PlannedRaster, pass: SceneEntry[]) => {
     if (tiles >= MAX_DYNAMIC_LAYERS) return;
-    const drawing = index && dataset ? indexRasterOf(raster, pass, dataset.id, index) : raster;
+    const drawing = index && dataset ? indexRasterOf(raster, pass, dataset.id, index, s.mosaics) : raster;
     if (typeof drawing !== 'string') addTiles(map, drawing, tiles++, s.render, clip);
   };
   // Below the first level of a dataset with a substitute the view draws the picture of that dataset, under everything it draws
   // of its own (`overviewSubstitute.ts`); a layer pinned from the view draws it with its own rasters.
   const substitute = !s.tilesInLayer && !s.render.index && drawn.length > 0 ? substituteRasterOf(dataset, s.datasets) : null;
-  if (substitute) addTiles(map, substitute, tiles++, s.render, clip);
+  let held: SubstituteHold | null = null;
+  if (substitute) {
+    // Over the level where the dataset's own picture takes over, the substitute stays until that picture has arrived: a mosaic of
+    // a hundred scenes takes seconds, and the map shows nothing meanwhile (plan M5-30 §8.7, finding of 13.11.2026).
+    const lyrId = dynamicId('tiles-lyr', tiles);
+    if (substitute.hideFrom !== undefined) {
+      held = { lyrId, hideFrom: substitute.hideFrom, sources: [], started: new Set(), waiting: drawn.some(({ view }) => view.kind === 'pending') };
+    }
+    addTiles(map, substitute, tiles++, s.render, clip, held !== null);
+  }
+  const firstOwn = tiles;
   for (const { entries, view } of stackLikeView(drawn)) {
     if (view.kind === 'pending' && !s.tilesInLayer) continue;
     stackLikeView(entries).forEach(([itemId, info]) => {
@@ -1211,12 +1262,43 @@ export function syncFocusRaster(
       if (underlay && !index) addQuicklookUnderlay(map, underlay, underlays++, gen, clip, (c) => (item ? underlayOf(item, dataset, c)?.clipRings ?? null : null));
       if (view.kind === 'scenes' && !s.tilesInLayer) place(info, entries);
     });
-    if (view.kind === 'mosaic' && !s.tilesInLayer) {
-      (wanted > MAX_DYNAMIC_LAYERS ? view.rasters.slice(-1) : view.rasters).forEach((raster) => place(raster, entries));
-    }
+    if (view.kind === 'mosaic' && !s.tilesInLayer) view.rasters.forEach((raster) => place(raster, entries));
   }
+  if (held) held.sources = Array.from({ length: tiles - firstOwn }, (_, n) => dynamicId('tiles-src', firstOwn + n));
+  substituteHold = held;
   restackAll(map);
   settleRetired(map);
+}
+
+// The substitute of a dataset (`overviewSubstitute.ts`) is laid under the view's own picture without its upper limit, and the
+// limit is set once that picture has loaded; `waiting`: a mosaic that is not known yet, which only the next sync has sources for.
+interface SubstituteHold {
+  lyrId: string;
+  hideFrom: number;
+  sources: string[];
+  started: Set<string>;
+  waiting: boolean;
+}
+let substituteHold: SubstituteHold | null = null;
+
+// Puts the limit on the substitute where the own picture of the view has loaded (`sourcedata`, seen to have started, so that a source whose
+// tiles were not asked for yet does not count) or the map is at rest, and the picture is there or was not asked for.
+function settleSubstituteHold(map: MapLibreMap, atRest: boolean): void {
+  const hold = substituteHold;
+  if (!hold || hold.waiting) return;
+  const present = hold.sources.filter((id) => map.getSource(id));
+  if (present.some((id) => !map.isSourceLoaded(id))) return;
+  if (!atRest && !present.every((id) => hold.started.has(id))) return;
+  substituteHold = null;
+  if (map.getLayer(hold.lyrId)) map.setLayerZoomRange(hold.lyrId, 0, hold.hideFrom);
+}
+
+export function watchSubstituteHold(map: MapLibreMap): void {
+  map.on('sourcedataloading', (event) => {
+    if (substituteHold && event.sourceId) substituteHold.started.add(event.sourceId);
+  });
+  map.on('sourcedata', () => settleSubstituteHold(map, false));
+  map.on('idle', () => settleSubstituteHold(map, true));
 }
 
 // Browse-mode preview overlays: one per scene of `items` (the active time
@@ -1318,9 +1400,11 @@ export function syncResultsOverlay(map: MapLibreMap, s: PreviewState): void {
 // The yellow outline around selected scenes, in either mode. A plain GeoJSON
 // source update with no layer churn, so it is safe and cheap to run on every
 // selection change without going through `syncFocusRaster`/`syncBrowseMosaic`.
+// Not capped: an outline is a feature of one GeoJSON source, not a layer of its own, so every selected scene is drawn (Otto, 13.11.2026:
+// with 124 selected scenes the first 40 were outlined and the rest were not).
 export function syncSelectionHighlight(map: MapLibreMap, items: StacItem[], selectedIds: string[]): void {
-  const limited = items.slice(0, MAX_MOSAIC_LAYERS);
-  setData(map, SEL_SRC, footprintsFC(limited.filter((it) => selectedIds.includes(it.id))));
+  const selected = new Set(selectedIds);
+  setData(map, SEL_SRC, footprintsFC(items.filter((it) => selected.has(it.id))));
 }
 
 // M3-09 §10: in the cropped focus view ("Crop & merge to AOI"), the same

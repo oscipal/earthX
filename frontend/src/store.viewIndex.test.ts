@@ -7,7 +7,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { datasetsFrom } from './datasets';
 import { SENTINEL_2_PRESETS } from './fixtures/indexPresets';
-import { mosaicTemplateOf } from './mosaic';
+import { selectionServer, selectionIdOf, json } from './fixtures/selectionTiler';
+import { assetsOfExpression } from './viewIndex';
+import { indexKeyOf, mosaicKeyOf } from './mosaic';
+import { resetSelections } from './mosaicSelection';
 import { lookChanged } from './render';
 import { datasetSavable, useAppStore } from './store';
 import type { Collection, DownloadedInfo, StacItem } from './types';
@@ -247,9 +250,8 @@ describe('"Add to layers" with an index', () => {
     expect(looks).toEqual({ a1: NDVI, b1: DEFAULT });
   });
 
-  it('is not pinned where the tile route cannot take the index: an error with what to do, no empty layer', () => {
-    const many = Object.fromEntries(Array.from({ length: 64 }, (_, i) => [`S2_${'x'.repeat(110)}${i}`, undefined]));
-    const ids = Object.keys(many);
+  it('is not pinned where the tiler did not take the selection of the assets of the index: an error with what to do, no empty layer', () => {
+    const ids = ['a1', 'a2', 'a3'];
     const items = ids.map((id) => item(id, '2026-07-01'));
     const downloaded = Object.fromEntries(ids.map((id) => [id, info(id)]));
     const entries = ids.map((id) => [id, downloaded[id]] as [string, DownloadedInfo]);
@@ -258,7 +260,10 @@ describe('"Add to layers" with an index', () => {
       groups: [{ key: ['a'], label: 'a', items }],
       downloaded,
       selectedIds: ids,
-      mosaics: { [mosaicTemplateOf('s2', entries)!]: { tileUrl: '/m/{z}/{x}/{y}', bounds: [10, 47, 11, 48], minZoom: 8, maxZoom: 14, order: ids } },
+      mosaics: {
+        [mosaicKeyOf('s2', entries)!]: { tileUrl: '/m/{z}/{x}/{y}', bounds: [10, 47, 11, 48], minZoom: 8, maxZoom: 14, order: ids },
+        [indexKeyOf('s2', ['nir', 'red', 'blue'], entries)]: null,
+      },
     });
     apply('EVI');
     state().addCurrentToLayers();
@@ -296,5 +301,96 @@ describe('"auto-scale" with an index', () => {
     const url = new URL(String((fetchMock.mock.calls[0] as unknown[])[0]), 'http://x');
     expect(url.searchParams.getAll('asset')).toEqual(['visual']);
     expect(url.searchParams.has('op')).toBe(false);
+  });
+});
+
+// The tile of an index over a mosaic is asked from the selection of the assets the index reads (M5-30b part 3): created once the index is
+// applied, shared with the layer that is pinned from it, and the same id wherever the same scenes are listed.
+describe('the selection of the assets of an index', () => {
+  const ids = ['a1', 'a2', 'a3'];
+  const entries = () => ids.map((id) => [id, info(id)] as [string, DownloadedInfo]);
+  const plain = () => ({
+    [mosaicKeyOf('s2', entries())!]: { tileUrl: '/m/{z}/{x}/{y}?tilesize=512', bounds: [10, 47, 11, 48] as [number, number, number, number], minZoom: 8, maxZoom: 14, order: ids },
+  });
+  const created = (server: ReturnType<typeof selectionServer>) => server.created.map((c) => ({ items: c.items, assets: c.assets }));
+
+  function openMosaic(server: ReturnType<typeof selectionServer>) {
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => (await server.answer(url, init)) ?? new Response('{}', { status: 404 })));
+    const items = ids.map((id) => item(id, '2026-07-01'));
+    useAppStore.setState({
+      items,
+      groups: [{ key: ['a'], label: 'a', items }],
+      downloaded: Object.fromEntries(entries()),
+      selectedIds: [],
+      mosaics: plain(),
+    });
+  }
+
+  beforeEach(() => resetSelections());
+
+  it('is created for the assets the index reads once it is applied, and kept under the key of the pass', async () => {
+    const server = selectionServer();
+    openMosaic(server);
+    apply('NDVI');
+    await vi.waitFor(() => expect(state().mosaics[indexKeyOf('s2', ['nir', 'red'], entries())]).toBeDefined());
+    expect(created(server)).toEqual([{ items: ids, assets: ['nir', 'red'] }]);
+    expect(state().mosaics[indexKeyOf('s2', ['nir', 'red'], entries())]).toMatchObject({ selection: { id: selectionIdOf('s2', ['nir', 'red'], ids) } });
+  });
+
+  it('is created once for an index however often the look is applied, and again for another index', async () => {
+    const server = selectionServer();
+    openMosaic(server);
+    apply('NDVI');
+    await vi.waitFor(() => expect(created(server)).toHaveLength(1));
+    apply('NDWI');
+    await vi.waitFor(() => expect(created(server)).toHaveLength(2));
+    apply('NDVI');
+    await state().loadMosaics();
+    expect(created(server).map((c) => c.assets)).toEqual([['nir', 'red'], ['green', 'nir']]);
+  });
+
+  it('leaves the pass of the view as it is: the mosaic without an index is not asked again', async () => {
+    const server = selectionServer();
+    openMosaic(server);
+    apply('NDVI');
+    await vi.waitFor(() => expect(created(server)).toHaveLength(1));
+    expect(server.tilejsonCalls).toEqual([]);
+    expect(state().mosaics[mosaicKeyOf('s2', entries())!]).toEqual(plain()[mosaicKeyOf('s2', entries())!]);
+  });
+
+  it('is kept as refused when the tiler does not take it, and the index cannot be computed there', async () => {
+    const server = selectionServer({ create: () => json({ detail: 'the scenes differ in their unit' }, 422) });
+    openMosaic(server);
+    apply('NDVI');
+    const key = indexKeyOf('s2', ['nir', 'red'], entries());
+    await vi.waitFor(() => expect(state().mosaics[key]).toBeNull());
+  });
+
+  it('is waited for by "Add to layers", which pins by itself once it is created, with the URL of the selection and the step', async () => {
+    const server = selectionServer();
+    openMosaic(server);
+    apply('NDVI');
+    state().addCurrentToLayers();
+    await vi.waitFor(() => expect(state().layers).toHaveLength(1));
+    const [raster] = state().layers[0].overlays;
+    const url = new URL((raster as { tileUrl: string }).tileUrl, 'http://x');
+    expect(decodeURIComponent(url.pathname)).toContain(`/mosaic/${selectionIdOf('s2', ['nir', 'red'], ids)}/tiles/`);
+    expect(url.searchParams.getAll('op')).toEqual(['band_math']);
+    expect(url.searchParams.get('band')).toBe('NDVI');
+    expect(url.searchParams.has('item') || url.searchParams.has('asset')).toBe(false);
+    expect(state().error).toBeNull();
+  });
+
+  it('is refused for a pin with the reason, not with a layer that stays empty', async () => {
+    const server = selectionServer({ create: () => json({ detail: 'no' }, 422) });
+    openMosaic(server);
+    apply('NDVI');
+    state().addCurrentToLayers();
+    await vi.waitFor(() => expect(state().error).toBe('NDVI cannot be computed here. Start a job in Processing for the whole scenes.'));
+    expect(state().layers).toEqual([]);
+  });
+
+  it('asks for the assets the expression names, which are the ones of the preset', () => {
+    expect(assetsOfExpression('(nir - red) / (nir + red)')).toEqual(['nir', 'red']);
   });
 });

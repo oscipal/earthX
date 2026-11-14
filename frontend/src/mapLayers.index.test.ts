@@ -8,7 +8,8 @@ import { datasetsFrom } from './datasets';
 import { SENTINEL_2_PRESETS } from './fixtures/indexPresets';
 import { liveMap } from './fixtures/liveMap';
 import { ensureBaseLayers, syncFocusRaster } from './mapLayers';
-import { mosaicTemplateOf, type Mosaics, type SceneEntry } from './mosaic';
+import { indexKeyOf, mosaicKeyOf, type Mosaics, type SceneEntry } from './mosaic';
+import { assetsOfExpression } from './viewIndex';
 import type { DownloadedInfo, StacItem } from './types';
 
 const collection = (presets: unknown[]) =>
@@ -37,7 +38,11 @@ const ids = ['A', 'B', 'C'];
 const downloaded = Object.fromEntries(ids.map((id) => [id, info(id)]));
 const items: StacItem[] = ids.map((id) => ({ id, collection: 's2', bbox: [10, 47, 11, 48], properties: { datetime: '2026-07-01T10:00:00Z' }, assets: {} }));
 const entries: SceneEntry[] = ids.map((id) => [id, downloaded[id]]);
-const mosaics: Mosaics = { [mosaicTemplateOf('s2', entries)!]: { tileUrl: '/collections/s2/mosaic/tiles/WebMercatorQuad/{z}/{x}/{y}?plain', bounds: [10, 47, 11, 48], minZoom: 8, maxZoom: 14, order: ids } };
+const SELECTION = { id: '0123456789abcdef0123456789abcdef', datasetId: 's2', tiles: '/collections/s2/mosaic/0123456789abcdef0123456789abcdef/tiles/WebMercatorQuad/{z}/{x}/{y}', tilejson: '' };
+const plain: Mosaics = { [mosaicKeyOf('s2', entries)!]: { tileUrl: `${SELECTION.tiles}?tilesize=512`, bounds: [10, 47, 11, 48], minZoom: 8, maxZoom: 14, order: ids } };
+// The selection of the assets an index reads, once it is created (`store.ts::loadIndexSelection`).
+const withIndexSelection = (expression: string): Mosaics => ({ ...plain, [indexKeyOf('s2', assetsOfExpression(expression), entries)]: { selection: SELECTION } });
+const mosaics = withIndexSelection('(nir - red) / (nir + red)');
 
 const freshMap = () => {
   const live = liveMap([]);
@@ -73,8 +78,8 @@ describe('the view with an index in its look', () => {
     draw(live, INDEX, { groups: [{ label: 'a', key: ['a'], items }], mosaics });
     expect(urls(live)).toHaveLength(1);
     const url = new URL(urls(live)[0], 'http://x');
-    expect(decodeURIComponent(url.pathname)).toContain('/collections/s2/mosaic/tiles/');
-    expect(url.searchParams.getAll('item')).toEqual(ids);
+    expect(decodeURIComponent(url.pathname)).toContain('/collections/s2/mosaic/0123456789abcdef0123456789abcdef/tiles/');
+    expect(url.searchParams.has('item') || url.searchParams.has('asset')).toBe(false);
     expect(url.searchParams.get('band')).toBe('NDVI');
     expect(url.searchParams.get('rescale')).toBe('-1,1');
     expect(sources(live)[0]).toMatchObject({ minzoom: 8, maxzoom: 14 });
@@ -86,9 +91,22 @@ describe('the view with an index in its look', () => {
     expect(urls(live)).toEqual([]);
   });
 
+  it('waits, and draws no raw band meanwhile, while the selection of the assets of the index is created', () => {
+    const live = freshMap();
+    draw(live, INDEX, { groups: [{ label: 'a', key: ['a'], items }], mosaics: plain });
+    expect(urls(live)).toEqual([]);
+  });
+
   it('draws nothing for a pass the mosaic route cannot take, and no raw band in its place', () => {
     const live = freshMap();
     draw(live, { ...INDEX, index: 'WIDE' }, { dataset: wideDataset, groups: [{ label: 'a', key: ['a'], items }], mosaics });
+    expect(urls(live)).toEqual([]);
+  });
+
+  it('draws nothing for a pass whose selection for the index the tiler did not take', () => {
+    const live = freshMap();
+    const refused = { ...plain, [indexKeyOf('s2', ['nir', 'red'], entries)]: null };
+    draw(live, INDEX, { groups: [{ label: 'a', key: ['a'], items }], mosaics: refused });
     expect(urls(live)).toEqual([]);
   });
 
