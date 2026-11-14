@@ -400,3 +400,7 @@ bitgleich mit dem Zuschnitt, Teilung, Rezeptfeld und Hash, ungültige Zeilenzeit
 `tests/earthx/processing/test_radar_job.py` (Mosaik-Job ohne CRS, gleiche Bytes zweier Läufe, Nähte, die nicht passen,
 Pixel-Schritt, Flächenstatistik, Ergebnis-Kachel über TPS); dazu Registry, Annahme und Onboarding-Kette angepasst.
 Fixture `tests/earthx/readers/mini_pass.py`: zwei synthetische Slices wie gemessen (§2).
+
+**Prüfungen (14.11.2026):** voller `pytest`-Lauf aus der Repo-Wurzel 10904 bestanden, 25 übersprungen, 0
+fehlgeschlagen; `ruff check backend` grün; `lint-imports` 16 Verträge eingehalten; Frontend `npm run lint`, `tsc -b`
+und `vitest` (6643 Tests) grün; `main` geholt, nichts Neues seit dem Merge von #335 und #341.
