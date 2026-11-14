@@ -846,6 +846,11 @@ Geländekorrektur) nie georeferenziert ausgeliefert.** Das ändert §4.3 (Zuschn
 Umsetzung, Messung und Antworten zu F1–F8 (Zeilenversatz aus den Item-Zeiten, GCPs des Mosaiks als Vereinigung,
 Nähte, die nicht passen, als eigene Gruppe bzw. `422`): `docs/plans/m5/ds-04d-radargeometrie.md` §9a.
 
+**Umsetzung (DS-04d, 2026-11-14):** Lesen im Pixelraster (`CogReader.raw`), Fenster, Maske und verschobene GCPs
+(`access/radar.py`) in Zuschnitt, Bänder-Download, Export-Job, Job und Runner; Mosaik je Durchgang über die
+Registry-Angabe `line_times`; `reprojection: false` mit Startprüfung; Ergebnis-Kacheln lesen eine Datei, wie sie
+geschrieben ist (TPS bei GCPs). Einzelheiten und Auslegungen: Plan §12.
+
 **Nebenbefund für DS-05d [M]:** Die Assets `schema-product-*` der Items zeigen auf die RFI-Annotation
 (`annotation/rfi/rfi-iw-*.xml`), nicht auf die Produkt-Annotation (`annotation/iw-*.xml`).
 

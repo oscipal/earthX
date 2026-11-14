@@ -1,7 +1,7 @@
 # DS-04d — Sentinel-1 GRD bleibt in Radargeometrie: Plan-Schritt
 
-**Stand:** 11.11.2026, Stufe B. Beauftragt von Otto am 11.11.2026. Fragen F1–F8 beantwortet (§9a); gebaut wird,
-sobald #335 und #341 auf `main` sind, im selben Draft-PR.
+**Stand:** 14.11.2026, Stufe B. Beauftragt von Otto am 11.11.2026. Fragen F1–F8 beantwortet (§9a); umgesetzt nach dem
+Merge von #335 und #341 im selben Draft-PR (§12).
 
 Bezug: `adr/0018` §4.1, §4.3, §4.4 (Nachtrag DS-04d), `plans/ds/ds-04-s1-anbinden.md`, `plans/m5/m5-28-nodata-ergebnisse.md`,
 `adr/0028` (Raster der Quelle), M3-18 (Maske statt nodata, `access/download.py`).
@@ -320,3 +320,63 @@ möglich.
 - `CLAUDE.md`, `.github/`, `.claude/`, `CODEOWNERS` und das Backlog bleiben unverändert.
 - Abnahme: Tests aus §6 grün; `ruff check backend`, `pytest`, `lint-imports` grün; Frontend-Lint und `tsc` grün,
   falls das Frontend berührt wird; vor „fertig“ `main` geholt.
+
+## 12. Umsetzung (14.11.2026)
+
+`main` mit #335, #340 und #341 geholt; keine Konflikte. Commits nach Teilen wie §8.
+
+### 12.1 Was gebaut ist
+
+- **Lesen und Raster** (`readers/cog.py`, `access/radar.py`): `CogReader.raw` ist die Datei im eigenen Pixelraster neben
+  dem TPS-Warp; `RadarGrid` bildet die AOI (verdichtet auf höchstens 0,001°) über die inverse TPS in Pixel ab, gibt das
+  umschließende Fenster und die Maske (`all_touched`) und verschiebt alle GCPs auf ein Fenster; `join_slices` hängt
+  Slices am Versatz ihrer Zeilenzeiten untereinander und prüft jede Naht wie §4.6.
+- **Registry** (`catalog/registry.py`, YAML): neues Pflichtfeld `line_times` (`first`/`last`, Namen von Item-Feldern,
+  nur mit `gcp_tps`; Sentinel-1 `start_datetime`/`end_datetime`, alle anderen `null`); Startprüfung „`gcp_tps` ⇒
+  `reprojection: false`“; Sentinel-1 `reprojection: false`. Die Prozessbeschreibung für das Panel verliert „Reproject“.
+- **Zuschnitt und Export-Job** (`access/download.py`, `processing/export.py`): Pixel-Fenster je zusammenhängendem Lauf
+  von Slices, Werte der Quelle unverändert, Form nur in `mask.tif` (F1 = 2), GCPs verschoben, kein CRS, COG über GDALs
+  COG-Treiber; eine Gruppe, deren Slices nicht passen, wird zu einer Gruppe je Lauf (F4); Export bitgleich mit dem
+  Zuschnitt. Textdatei: Zeile „Grid: radar geometry …“ statt „Resolution: native“, je Szene „Scene <id>: rows a-b,
+  columns c-d (0-based, inclusive)“, je Teilung „Not joined into one file: <Grund>.“
+- **Job, Runner, Statistik** (`processing/source.py`, `mosaic.py`, `core.py`): `RadarSource` liest im Pixelraster,
+  das Mosaik eines Durchgangs hängt die Slices an; `result.tif`/`mask.tif` mit verschobenen GCPs, ohne CRS;
+  `earthx:georeferencing: gcp_tps` statt `proj:code`/`gsd`; Flächenstatistik im selben Raster.
+- **Rezept** (`processing/recipe.py`, `api/intake.py`): `inputs[].line_times` je Item, nur wo die Registry
+  `line_times` nennt (A9).
+- **Karte** (`api/result_tiles.py`): Ergebnisse werden gelesen, wie sie geschrieben sind (`as_written`): mit GCPs über
+  die TPS, sonst über die Geotransformation; Ergebnis-Statistik im Pixelraster der Datei. Der 502 entfällt (A3).
+- **Version:** `earthx.__version__` 0.5.2 (F7); `adr/0014` §15 Nachtrag DS-04d.
+
+### 12.2 Auslegungen und Abweichungen (Vorschlag, gelten bis Otto widerspricht)
+
+- **A7 – F4 im Job:** Die Annahme öffnet keine Dateien; ob Slices passen, zeigen erst GCPs und Zeilenzahl der Dateien.
+  Der Lauf schlägt deshalb mit `grid_mismatch` und dem Grund fehl („the slices of this pass do not join: a slice of
+  the pass is missing“), nicht die Annahme mit `422`.
+- **A8 – F5:** Die Frage ging von einem gröberen Faktor im Zuschnitt aus (F10c); den gibt es seit 03.11.2026 nicht
+  mehr. Es bleibt die gemeinsame Auflösung einer Mehrband-Datei: in Radargeometrie nur die eigene Pixelgröße der
+  Bänder, alles andere `422` vor dem Lesen. VV und VH einer Szene haben dieselbe, also ist bei Sentinel-1 nichts zu
+  vergröbern.
+- **A9 – Rezeptfeld:** `line_times` steht wie `footprints` (M4-11a) und `georeferencing` (DS-04a) auf der aufgelösten
+  Seite und fehlt, wo es nicht gesetzt ist; `recipe_version` bleibt 2 (`adr/0014` §15 Nachtrag DS-04d).
+- **A10 – Speicher:** GDALs COG-Treiber braucht beim Schreiben flächenabhängig mehr Speicher als `cog_translate`
+  (gemessen in NM4-43c: +44/+59/+94 MB bei 2048²/4096²/8192² × 4 Bänder). Er gilt nur für Dateien in Radargeometrie;
+  die Speichertests (Sentinel-2-artig) sind nicht betroffen.
+- **A11 – Textdatei des Export-Jobs:** `api` schreibt sie bei der Annahme mit der Zeile „Grid: …“; die Fenster setzt
+  der Lauf dahinter. Ein Lauf, den die AOI nicht erreicht, steht dort als eigene Zeile „Not covered by the AOI, left
+  out“, im Zuschnitt in der Zeile der ausgelassenen Szenen.
+- **A12 – Flächenstatistik auf gröberem Raster:** in Radargeometrie das Pixel in der Mitte jeder Zelle (nearest),
+  Zeile für Zeile gelesen, damit ein grober Block nicht seine volle Auflösung im Speicher hält.
+- **A13 – Mosaik-Kachel mit Operator:** bleibt für `gcp_tps` erlaubt (die Karte zeigt über TPS, Punkt 5); die Sperre
+  ohne `reprojection` gilt nur für Datensätze mit Geotransformation.
+- **A14 – Szene ohne Zeilenzeiten:** wird im Zuschnitt allein ein Lauf; im Job eines Durchgangs `grid_mismatch`.
+
+### 12.3 Tests
+
+Neu: `tests/earthx/access/test_radar.py` (Fenster, Maske, GCP-Verschiebung, Lesen, Nähte),
+`tests/earthx/api/test_download_radar.py` (Route: ein Mosaik über die Naht, Werte außerhalb der Form bleiben,
+Textdatei, Teilung bei fehlendem Slice, Abweisungen, kein CRS), `tests/earthx/processing/test_export_radar.py` (Export
+bitgleich mit dem Zuschnitt, Teilung, Rezeptfeld und Hash, ungültige Zeilenzeiten),
+`tests/earthx/processing/test_radar_job.py` (Mosaik-Job ohne CRS, gleiche Bytes zweier Läufe, Nähte, die nicht passen,
+Pixel-Schritt, Flächenstatistik, Ergebnis-Kachel über TPS); dazu Registry, Annahme und Onboarding-Kette angepasst.
+Fixture `tests/earthx/readers/mini_pass.py`: zwei synthetische Slices wie gemessen (§2).
