@@ -17,6 +17,10 @@ state is the row of `earthx_overview` (:mod:`earthx.jobs.overviews`).
    with ``checked-at``, reused base tiles are copied on the store's side from the old version (a copy keeps its old
    ``checked-at``); the row closes as ready with the oldest ``checked-at`` and the hashes of the base tiles.
 
+**Between builds,** once an hour like the clean-up, the thread extends the pyramids the source confirmed
+(:mod:`earthx.jobs.overview_upkeep`): thousands of copies on the store's side, which the maintenance thread, that also
+sweeps the leases of the runs, must not wait for.
+
 **How a build ends**, as for a run (`worker.py`): the lease was lost (the row is not ours, nothing is written, the child
 is killed); shutdown (the child is ended and the build given back without using up an attempt,
 :func:`~earthx.jobs.overviews.release`); the child said ``failed`` (its name goes to the row; :func:`claim
@@ -43,7 +47,7 @@ from typing import Any
 
 import psycopg
 
-from earthx.jobs import overviews
+from earthx.jobs import overview_upkeep, overviews
 from earthx.jobs.config import WorkerConfig
 from earthx.jobs.entry import ChildTarget
 from earthx.objectstore.errors import ObjectStoreError
@@ -146,6 +150,7 @@ class OverviewBuilder:
     def run(self) -> None:
         """Claim and build until the worker stops; whatever goes wrong is logged by its class and the thread goes on."""
         conn: psycopg.Connection | None = None
+        next_extension = time.monotonic() + self._config.cleanup_first_seconds
         while not self._stopping.is_set():
             try:
                 conn = conn if conn is not None and not conn.closed else self._connect()
@@ -154,6 +159,9 @@ class OverviewBuilder:
                 )
                 self._database_ok()
                 if build is None:
+                    if time.monotonic() >= next_extension:
+                        next_extension = time.monotonic() + self._config.cleanup_seconds
+                        self._extend(conn)
                     self._stopping.wait(self._config.poll_seconds)
                     continue
                 if self._stopping.is_set():
@@ -170,6 +178,13 @@ class OverviewBuilder:
             except Exception as error:  # noqa: BLE001 - the build it held runs out its lease; only the class is logged
                 LOGGER.error("overview thread failed", extra={"error": type(error).__name__})
                 self._stopping.wait(1.0)
+
+    def _extend(self, conn: psycopg.Connection) -> None:
+        """Hourly, when no build waits: extend the pyramids the source confirmed since (adr/0032 §5.3)."""
+        try:
+            overview_upkeep.extend(conn, self._store, set(self._pyramids), self._stopping)
+        except ObjectStoreError as error:
+            LOGGER.warning("overview extension failed at the object store", extra={"error": type(error).__name__})
 
     # --- one build -------------------------------------------------------------------
 

@@ -24,7 +24,12 @@ command reaches (e.g. ``copernicus-dem-30m.s3.amazonaws.com``) must never be
 asked by CI or by an ordinary local start.
 
 A run that loaded a new source version of a dataset with ``viewer.overview: pyramid`` also asks for its overview
-pyramid (:func:`~earthx.catalog.pgstac.request_overview`), in the same transaction; an unchanged run asks for nothing.
+pyramid (:func:`~earthx.catalog.pgstac.request_overview`), in the same transaction. An unchanged run asks for nothing but
+confirms the pyramid of that version (:func:`~earthx.catalog.pgstac.confirm_overview`): the worker then extends its term.
+Until the `harvester` takes over the schedule (M5-24) the command runs by hand; a pyramid whose version nobody confirms
+expires (adr/0032 §5.3). Any successful run, unchanged or loaded (``--force`` included), also makes a pyramid of that
+version that failed for good or expired buildable again (:func:`~earthx.catalog.pgstac.rearm_overview`): "the next
+successful run builds anew" (adr/0032 §5).
 
 Connection details come from the environment (``PGHOST`` and friends), like
 ``catalog.load``. ``--force`` skips the "unchanged" check and reloads
@@ -55,9 +60,11 @@ from earthx.catalog.pgstac import (
     MaterializeRunRecord,
     PgstacError,
     check_pgstac_version,
+    confirm_overview,
     delete_items_except,
     last_loaded_count,
     last_source_version,
+    rearm_overview,
     record_materialize_run,
     request_overview,
     upsert_items,
@@ -130,6 +137,10 @@ async def run_materialize(
                 withheld=0,
             ),
         )
+        if config.viewer is not None and config.viewer.overview is OverviewMode.PYRAMID:
+            # The source still has the version the pyramid was built from: the worker may extend its term (adr/0032 §5.3).
+            confirm_overview(conn, config.dataset_id, outcome.source_version)
+            rearm_overview(conn, config.dataset_id, outcome.source_version)
         return MaterializeResult(outcome=outcome, items_written=0, items_deleted=0)
 
     written = upsert_items(conn, config, outcome.items)
@@ -151,6 +162,7 @@ async def run_materialize(
     )
     if config.viewer is not None and config.viewer.overview is OverviewMode.PYRAMID:
         # A new source version of a dataset with an overview pyramid: ask the worker for one (adr/0032 §5.2, F1).
+        rearm_overview(conn, config.dataset_id, outcome.source_version)
         request_overview(conn, config.dataset_id, outcome.source_version)
     return MaterializeResult(outcome=outcome, items_written=written, items_deleted=deleted)
 

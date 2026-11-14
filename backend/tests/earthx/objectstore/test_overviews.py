@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from earthx.objectstore.errors import ObjectStoreError
+from earthx.objectstore.errors import ObjectStoreError, ResultNotFound
 from earthx.objectstore.overviews import (
     CHECKED_AT,
     NO_STORE,
@@ -16,8 +16,11 @@ from earthx.objectstore.overviews import (
     OVERVIEW_TTL,
     PROTOTYPE_TTL,
     StoredTile,
+    delete_keys,
     delete_version,
+    extend_version,
     overview_key,
+    overview_keys,
     overviews_lifecycle_ok,
     read_tile,
     term_of,
@@ -196,3 +199,81 @@ class TestReadDelete:
         store.s3.put_object("results/abc/result.tif", tile_file.open("rb"), "image/tiff")
         delete_version(store, "dem", VERSION)
         assert list(store.s3.list_keys("results/")) == ["results/abc/result.tif"]
+
+
+class TestExtend:
+    LATER = datetime(2026, 12, 1, 8, 30, tzinfo=UTC)
+
+    def test_every_object_of_the_version_gets_the_new_time_and_keeps_its_bytes_and_type(
+        self, store: Store, tile_file: Path
+    ) -> None:
+        for z, x, y in ((1, 0, 0), (1, 1, 1), (2, 3, 3)):
+            upload_tile(store, "dem", VERSION, z, x, y, tile_file, checked_at=WHEN)
+        upload_tile(store, "dem", OTHER, 1, 0, 0, tile_file, checked_at=WHEN)
+        before = _head(store, f"overviews/dem/{VERSION}/1/0/0.tif")["LastModified"]
+
+        assert extend_version(store, "dem", VERSION, self.LATER) == 3
+
+        for z, x, y in ((1, 0, 0), (1, 1, 1), (2, 3, 3)):
+            head = _head(store, f"overviews/dem/{VERSION}/{z}/{x}/{y}.tif")
+            assert head["Metadata"] == {CHECKED_AT: self.LATER.isoformat()}
+            assert head["ContentType"] == "image/tiff; application=geotiff"
+            assert "CacheControl" not in head
+            assert read_tile(store, "dem", VERSION, z, x, y) == StoredTile(tile_file.read_bytes(), self.LATER)
+        assert _head(store, f"overviews/dem/{VERSION}/1/0/0.tif")["LastModified"] >= before, "the bucket rule counts from now"
+        assert _head(store, f"overviews/dem/{OTHER}/1/0/0.tif")["Metadata"] == {CHECKED_AT: WHEN.isoformat()}
+
+    def test_a_version_without_objects_extends_nothing(self, store: Store) -> None:
+        assert extend_version(store, "dem", VERSION, self.LATER) == 0
+
+    def test_a_prototype_source_is_never_extended(self, store: Store, tile_file: Path) -> None:
+        upload_tile(store, "proto-dem", VERSION, 0, 0, 0, tile_file, checked_at=WHEN)
+        with pytest.raises(ValueError, match="prototype"):
+            extend_version(store, "proto-dem", VERSION, self.LATER)
+        assert _head(store, f"overviews/proto-dem/{VERSION}/0/0/0.tif")["Metadata"] == {CHECKED_AT: WHEN.isoformat()}
+
+    def test_a_naive_time_is_refused_and_nothing_is_rewritten(self, store: Store, tile_file: Path) -> None:
+        upload_tile(store, "dem", VERSION, 0, 0, 0, tile_file, checked_at=WHEN)
+        with pytest.raises(ValueError, match="timezone"):
+            extend_version(store, "dem", VERSION, datetime(2026, 12, 1))
+        assert _head(store, f"overviews/dem/{VERSION}/0/0/0.tif")["Metadata"] == {CHECKED_AT: WHEN.isoformat()}
+
+    def test_an_object_that_vanishes_meanwhile_is_not_found(
+        self, store: Store, tile_file: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The listing names a key the copy then does not find: the rule of the bucket was faster."""
+        upload_tile(store, "dem", VERSION, 0, 0, 0, tile_file, checked_at=WHEN)
+        listing = store.s3.list_keys
+
+        def listed_then_gone(prefix: str):
+            keys = list(listing(prefix))
+            store.s3._internal.delete_object(Bucket=BUCKET, Key=keys[0])
+            return iter(keys)
+
+        object.__setattr__(store.s3, "list_keys", listed_then_gone)
+        with pytest.raises(ResultNotFound):
+            extend_version(store, "dem", VERSION, self.LATER)
+
+
+class TestKeysAndDeleteKeys:
+    def test_only_keys_under_overviews_are_listed(self, store: Store, tile_file: Path) -> None:
+        upload_tile(store, "dem", VERSION, 0, 0, 0, tile_file, checked_at=WHEN)
+        store.s3.put_object("results/x/result.tif", tile_file.open("rb"), "image/tiff")
+        assert list(overview_keys(store)) == [f"overviews/dem/{VERSION}/0/0/0.tif"]
+
+    def test_keys_outside_the_prefix_are_refused_before_anything_is_deleted(self, store: Store, tile_file: Path) -> None:
+        upload_tile(store, "dem", VERSION, 0, 0, 0, tile_file, checked_at=WHEN)
+        store.s3.put_object("results/x/result.tif", tile_file.open("rb"), "image/tiff")
+        with pytest.raises(ValueError, match="overviews/"):
+            delete_keys(store, [f"overviews/dem/{VERSION}/0/0/0.tif", "results/x/result.tif"])
+        assert list(store.s3.list_keys("results/")) == ["results/x/result.tif"]
+
+    def test_more_than_a_batch_is_deleted_in_batches(self, store: Store, tile_file: Path) -> None:
+        keys = [f"overviews/dem/{VERSION}/9/{n}/0.tif" for n in range(1005)]
+        for key in keys:
+            store.s3.put_object(key, tile_file.open("rb"), "image/tiff")
+        assert delete_keys(store, iter(keys)) == 1005
+        assert list(overview_keys(store)) == []
+
+    def test_nothing_to_delete_is_zero(self, store: Store) -> None:
+        assert delete_keys(store, []) == 0

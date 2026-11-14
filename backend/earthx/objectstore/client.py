@@ -152,6 +152,28 @@ class S3:
             ),
         )
 
+    def rewrite_object(
+        self, key: str, *, content_type: str, cache_control: str | None, metadata: Mapping[str, str]
+    ) -> None:
+        """Copy an object onto itself with new metadata (``MetadataDirective=REPLACE``): the content stays, the write date moves.
+
+        REPLACE drops every header the call does not name, so the caller names the content type and cache control again.
+        :class:`ResultNotFound` if there is no such object.
+        """
+        extra: dict[str, Any] = {} if cache_control is None else {"CacheControl": cache_control}
+        self._call(
+            "CopyObject",
+            lambda: self._internal.copy_object(
+                Bucket=self._config.bucket,
+                Key=key,
+                CopySource={"Bucket": self._config.bucket, "Key": key},
+                MetadataDirective="REPLACE",
+                ContentType=content_type,
+                Metadata=dict(metadata),
+                **extra,
+            ),
+        )
+
     def get_bytes(self, key: str) -> bytes:
         """The whole object, for one that is known to be small; :class:`ResultNotFound` if there is none."""
         return self.get_bytes_and_metadata(key)[0]

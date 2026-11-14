@@ -56,7 +56,7 @@ from typing import Any
 
 import psycopg
 
-from earthx.jobs import overviews, queue
+from earthx.jobs import overview_upkeep, overviews, queue
 from earthx.jobs.cleanup import cleanup
 from earthx.jobs.config import WorkerConfig
 from earthx.jobs.entry import ChildTarget
@@ -243,7 +243,7 @@ class Supervisor:
             wake.set()
 
     def _maintain(self) -> None:
-        """Queue runs whose lease ran out; hourly ask for the pyramids that are missing and clean up what expired."""
+        """Queue runs whose lease ran out; hourly ask for the pyramids that are missing, clean up what expired and sweep the pyramids."""
         conn: psycopg.Connection | None = None
         next_cleanup = time.monotonic() + self.config.cleanup_first_seconds
         while not self._stopping.is_set():
@@ -260,6 +260,11 @@ class Supervisor:
                     if asked:
                         LOGGER.info("overview pyramids asked for", extra={"datasets": asked})
                     cleanup(conn, self.store)
+                    # Its own step: the object store failing under the sweep leaves the clean-up above done.
+                    try:
+                        overview_upkeep.sweep(conn, self.store)
+                    except ObjectStoreError as error:
+                        LOGGER.warning("overview sweep failed at the object store", extra={"error": type(error).__name__})
             except psycopg.Error as error:
                 self._database_error("maintain", error)
                 self._close(conn)
