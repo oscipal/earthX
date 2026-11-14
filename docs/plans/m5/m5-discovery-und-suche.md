@@ -121,6 +121,7 @@ Stufe A: ohne Plan-Datei, direkt umsetzen. Stufe B: Plan unter `docs/plans/m5/` 
 | **M5-30b** | Teil 3a/3b (Frontend, mit #335 zusammen mergen), Teil 7 (Ersatz GLO-30, Plan §4.8), Teile 8 und 9 (Pyramide GLO-30 und WorldCover), Teil 10 (Nachträge) | läuft |
 | **M5-22 Teil c** | Collection Search mit `q`, Zahl am Namen (A18 nach Ottos Antwort), Negativfrage Q51 | #337 |
 | **F11** | Quicklook für Sentinel-1 über Kacheln statt PNG (`adr/0018` §4.2), Regel an `georeferencing: gcp_tps`, nur Frontend | läuft, Merge nach #339 |
+| **M5-35** | Skalierbarkeit der Bausteine aus M4 und M5 mit mehreren Instanzen je Prozesstyp (Vorgabe Otto, 14.11.2026), Stufe C, Bericht `m5-35-skalierbarkeit.md` | Bericht im Draft-PR, Fragen F1–F7 beantwortet (14.11.2026), Folgeaufgaben M5-36 bis M5-42 |
 
 **Noch nicht gestartet:**
 
