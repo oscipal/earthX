@@ -12,7 +12,7 @@ and no connection string in code.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from importlib.metadata import PackageNotFoundError
@@ -21,7 +21,7 @@ from importlib.metadata import version as installed_version
 import psycopg
 
 from earthx.catalog.collection import to_stac_collection
-from earthx.catalog.registry import DatasetConfig, DatasetRegistry, ItemHolding
+from earthx.catalog.registry import PROTOTYPE_PREFIX, DatasetConfig, DatasetRegistry, ItemHolding
 
 # pgstac.upsert_items stages a batch through `items_staging_upsert`; a very large
 # generator (the Copernicus DEM's 26,450 tiles, M3-11b) is sent in pieces so this
@@ -320,6 +320,42 @@ def request_overview(conn: psycopg.Connection, dataset_id: str, source_version: 
         """,
         (dataset_id, source_version),
     )
+
+
+def confirm_overview(conn: psycopg.Connection, dataset_id: str, source_version: str) -> bool:
+    """Record that the source still has ``source_version``, for the pyramid built from it (M5-30b part 8b-3, adr/0032 §5.3).
+
+    Called by an unchanged `materialize` run: ``confirmed_at`` of the ready pyramid of that version becomes now, and the
+    worker then extends its term (`jobs`, which reads this column with SQL). ``True`` if a ready pyramid was marked;
+    ``False`` when there is none (not built yet, failed, expired), which is no error: nothing is asked for here. The
+    transaction is the caller's, like :func:`request_overview`.
+    """
+    row = conn.execute(
+        """
+        UPDATE public.earthx_overview SET confirmed_at = now(), updated_at = now()
+        WHERE dataset_id = %s AND version = public.earthx_overview_version(%s) AND status = 'ready' RETURNING 1
+        """,
+        (dataset_id, source_version),
+    ).fetchone()
+    return row is not None
+
+
+def remove_prototype_overviews(conn: psycopg.Connection, registered: Collection[str]) -> int:
+    """Delete the pyramid rows and requests of prototype sources that are not in the registry; the number of rows deleted.
+
+    `catalog-load` without the prototype switch loads no ``proto-`` entry, so every such row goes (adr/0024 R6,
+    plan M5-30b §8.10, Otto 13.11.2026). The objects under ``overviews/proto-*`` then have no row, and the hourly round of
+    the worker deletes them: `catalog` does not reach the object store. With the switch on, the rows of the entries that
+    are loaded stay. The transaction is the caller's.
+    """
+    keep = sorted(registered)
+    deleted = 0
+    for table in ("earthx_overview", "earthx_overview_request"):
+        deleted += conn.execute(
+            f"DELETE FROM public.{table} WHERE left(dataset_id, %s) = %s AND NOT (dataset_id = ANY(%s))",
+            (len(PROTOTYPE_PREFIX), PROTOTYPE_PREFIX, keep),
+        ).rowcount
+    return deleted
 
 
 async def fetch_item(conn: psycopg.AsyncConnection, dataset_id: str, item_id: str) -> dict[str, object] | None:

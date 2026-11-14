@@ -227,6 +227,108 @@ class TestOverviewRequest:
         assert _requests(conn, PYRAMID.dataset_id) == []
 
 
+def _ready(conn: psycopg.Connection, dataset_id: str, source_version: str) -> str:
+    """A ready pyramid of ``source_version``, built long ago and never confirmed; its version."""
+    row = conn.execute(
+        """
+        INSERT INTO public.earthx_overview (dataset_id, version, status, checked_at)
+        VALUES (%s, public.earthx_overview_version(%s), 'ready', now() - interval '20 days') RETURNING version
+        """,
+        (dataset_id, source_version),
+    ).fetchone()
+    return row[0]
+
+
+def _confirmed(conn: psycopg.Connection, dataset_id: str, version: str) -> object:
+    return conn.execute(
+        "SELECT confirmed_at FROM public.earthx_overview WHERE dataset_id = %s AND version = %s", (dataset_id, version)
+    ).fetchone()[0]
+
+
+class TestConfirmation:
+    """An unchanged run says the source still has the version the pyramid was built from (M5-30b part 8b-3, adr/0032 §5.3)."""
+
+    async def test_an_unchanged_run_confirms_the_pyramid_of_that_version(self, conn: psycopg.Connection) -> None:
+        load_collection(conn, PYRAMID)
+        await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+        version = _ready(conn, PYRAMID.dataset_id, '"v1"')
+        assert _confirmed(conn, PYRAMID.dataset_id, version) is None
+
+        unchanged = await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+
+        assert unchanged.outcome.status == "unchanged"
+        assert _confirmed(conn, PYRAMID.dataset_id, version) is not None
+
+    async def test_a_run_that_loads_a_new_version_confirms_nothing_and_leaves_the_old_pyramid_as_it_is(
+        self, conn: psycopg.Connection
+    ) -> None:
+        load_collection(conn, PYRAMID)
+        await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+        version = _ready(conn, PYRAMID.dataset_id, '"v1"')
+        await _run(conn, tile_names=[TILE_A], etag='"v2"', config=PYRAMID)
+        assert _confirmed(conn, PYRAMID.dataset_id, version) is None
+
+    async def test_a_forced_reload_is_no_confirmation(self, conn: psycopg.Connection) -> None:
+        """Only an unchanged run confirms (Otto, 13.11.2026); a forced one is a load."""
+        load_collection(conn, PYRAMID)
+        await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+        version = _ready(conn, PYRAMID.dataset_id, '"v1"')
+        await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID, force=True)
+        assert _confirmed(conn, PYRAMID.dataset_id, version) is None
+
+    async def test_a_source_that_cannot_be_reached_confirms_nothing(self, conn: psycopg.Connection) -> None:
+        load_collection(conn, PYRAMID)
+        await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+        version = _ready(conn, PYRAMID.dataset_id, '"v1"')
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(503)
+
+        async def sleep(seconds: float) -> None:
+            return None
+
+        gateway = Gateway(
+            Policy(allowed_hosts=frozenset({HOST})), transport=httpx.MockTransport(handler), resolve=_public, sleep=sleep
+        )
+        with pytest.raises(UpstreamError):
+            await run_materialize(conn, PYRAMID, gateway=gateway, force=False)
+        assert _confirmed(conn, PYRAMID.dataset_id, version) is None
+
+    async def test_an_unchanged_run_without_a_ready_pyramid_is_no_error_and_writes_nothing(
+        self, conn: psycopg.Connection
+    ) -> None:
+        load_collection(conn, PYRAMID)
+        await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+        building = conn.execute(
+            """
+            INSERT INTO public.earthx_overview (dataset_id, version, status, lease_until)
+            VALUES (%s, public.earthx_overview_version('"v1"'), 'building', now() + interval '1 minute') RETURNING version
+            """,
+            (PYRAMID.dataset_id,),
+        ).fetchone()[0]
+        unchanged = await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+        assert unchanged.outcome.status == "unchanged"
+        assert _confirmed(conn, PYRAMID.dataset_id, building) is None
+
+    async def test_a_dataset_without_a_pyramid_confirms_nothing_even_if_a_row_of_that_name_exists(
+        self, conn: psycopg.Connection
+    ) -> None:
+        load_collection(conn, MATERIALIZED)
+        await _run(conn, tile_names=[TILE_A], etag='"v1"')
+        version = _ready(conn, MATERIALIZED.dataset_id, '"v1"')
+        await _run(conn, tile_names=[TILE_A], etag='"v1"')
+        assert _confirmed(conn, MATERIALIZED.dataset_id, version) is None
+
+    async def test_the_pyramid_of_another_dataset_with_the_same_version_is_not_confirmed(
+        self, conn: psycopg.Connection
+    ) -> None:
+        load_collection(conn, PYRAMID)
+        await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+        other = _ready(conn, "some-other-dataset", '"v1"')
+        await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+        assert _confirmed(conn, "some-other-dataset", other) is None
+
+
 class TestForce:
     async def test_force_reloads_even_though_the_version_is_unchanged(self, conn: psycopg.Connection) -> None:
         load_collection(conn, MATERIALIZED)
