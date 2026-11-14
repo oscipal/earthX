@@ -276,9 +276,11 @@ notices:
     Values are the digital numbers of the GRD product, not calibrated backscatter, so dB thresholds from the
     literature do not apply.
 # The row "Limitations" of the Data catalogue: the two notices above as sentences (adr/0018 F2, Nachtrag DS-04c, Otto
-# 10.11.2026). The first holds for every pixel, not only for the preview.
+# 10.11.2026), and what the original files are (DS-04 plan F12, Otto 11.11.2026). The first holds for every pixel, not
+# only for the preview.
 limitations:
 - >-
   Placed only by the ground control points of each scene, without terrain correction; this holds for every pixel, not
   only the preview.
 - Values are uncalibrated digital numbers (DN), not calibrated backscatter.
+- The original files are the cloud-optimized GeoTIFFs as the bucket operator converted them, not the ESA SAFE product.

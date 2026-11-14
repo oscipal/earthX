@@ -6,7 +6,9 @@ import s2 from './fixtures/processes/sentinel-2-c1-l2a.json';
 import zarr from './fixtures/processes/synthetic-zarr.json';
 import { bboxToPolygon } from './geoUtils';
 import { canonicalJson, type Order, type ProcessDescription } from './processing';
-import { MAX_MOSAIC_OPERATOR_ASSETS, MAX_MOSAIC_REQUEST_BYTES, MAX_MOSAIC_SCENES, mosaicRequestBytes } from './mosaic';
+import { selectionIdOf } from './fixtures/selectionTiler';
+import { MAX_MOSAIC_OPERATOR_ASSETS, MAX_MOSAIC_REQUEST_BYTES, MAX_SELECTION_ITEMS, mosaicRequestBytes } from './mosaic';
+import { selectionKeyOf } from './mosaicSelection';
 import { RGB } from './processingBands';
 import { processInfo, type BandSource, type DraftStep, type ProcessInfo } from './processingOrder';
 import {
@@ -106,6 +108,17 @@ function ready(steps: DraftStep[]): Extract<PreviewPlan, { state: 'ready' }> {
   if (plan.state !== 'ready') throw new Error(`no plan: ${JSON.stringify(plan)}`);
   return plan;
 }
+
+// The selections the tiler made for the jobs, by `selectionKeyOf`: a mosaic is drawn once its selection is there (adr/0032 §10.2).
+const selectionsFor = (assets: readonly string[], ...jobs: readonly (readonly StacItem[])[]) =>
+  new Map(
+    jobs.map((unit) => {
+      const unitIds = unit.map((i) => i.id);
+      const id = selectionIdOf(DATASET.id, assets, unitIds);
+      const base = `/collections/${DATASET.id}/mosaic/${id}`;
+      return [selectionKeyOf(DATASET.id, assets, unitIds), { id, datasetId: DATASET.id, tiles: `${base}/tiles/WebMercatorQuad/{z}/{x}/{y}`, tilejson: `${base}/WebMercatorQuad/tilejson.json` }] as const;
+    }),
+  );
 
 describe('planPreview (adr/0014 §6.1)', () => {
   it('says nothing without steps or a description', () => {
@@ -432,19 +445,21 @@ describe('previewSpec: the mosaic of a job (NM4-04b)', () => {
   const ids = ['S2_C', 'S2_A', 'S2_B', 'S2_D'];
   const items = ids.map((id) => item(id, { gsd: 10 }));
   const plan = ready([bandMath('(nir - red) / (nir + red)')]);
-  const base = { dataset: DATASET, items, assets: ['red', 'nir'], info: S2, range: DEFAULT_RANGE, area: 'scene' as const, plan, jobs: [items] };
+  const base = { dataset: DATASET, items, assets: ['red', 'nir'], info: S2, range: DEFAULT_RANGE, area: 'scene' as const, plan, jobs: [items], selections: selectionsFor(['red', 'nir'], items) };
+  const idOfJob = (unit: readonly StacItem[], assets = ['red', 'nir']) => selectionIdOf(DATASET.id, assets, unit.map((i) => i.id));
   // A dataset released from a lower level than the default one: the mosaic starts at the dataset's own first level.
   const wide: DatasetOption = { ...DATASET, zoom: { min: 5, max: 14 } };
   const taken = (order: string[]): MosaicAnswer => ({ state: 'taken', order });
   const query = (url: string) => new URL(url, 'http://localhost');
 
-  it('draws a job of several scenes as one mosaic: the scenes by id, the assets and the steps', () => {
+  it('draws a job of several scenes as one mosaic: the URL of its selection and the steps, no scene and no asset in it', () => {
     const spec = previewSpec(base)!;
     expect(spec.mosaics).toHaveLength(1);
     const url = query(spec.mosaics[0].url);
-    expect(spec.mosaics[0].url.split('?')[0]).toBe('/collections/sentinel-2-c1-l2a/mosaic/tiles/WebMercatorQuad/{z}/{x}/{y}');
-    expect(url.searchParams.getAll('item')).toEqual(['S2_A', 'S2_B', 'S2_C', 'S2_D']);
-    expect(url.searchParams.getAll('asset')).toEqual(['red', 'nir']);
+    expect(spec.mosaics[0].url.split('?')[0]).toBe(`/collections/sentinel-2-c1-l2a/mosaic/${idOfJob(items)}/tiles/WebMercatorQuad/{z}/{x}/{y}`);
+    expect(spec.mosaics[0].probe.split('?')[0]).toBe(`/collections/sentinel-2-c1-l2a/mosaic/${idOfJob(items)}/WebMercatorQuad/tilejson.json`);
+    expect(url.searchParams.has('item') || url.searchParams.has('asset')).toBe(false);
+    expect(spec.needs).toEqual([]);
     expect(url.searchParams.getAll('op')).toEqual(['band_math']);
     expect(url.searchParams.getAll('op_version')).toEqual(['2']);
     expect(url.searchParams.get('params')).toBe('{"expression":"(nir - red) / (nir + red)","name":"Band_Math_1"}');
@@ -463,9 +478,10 @@ describe('previewSpec: the mosaic of a job (NM4-04b)', () => {
 
   it('carries no AOI, no id of a job, a recipe or a permalink and no hash, in any URL it builds', () => {
     const spec = previewSpec({ ...base, area: 'aoi', dataset: wide })!;
-    const known = new Set(['item', 'asset', 'op', 'op_version', 'params', 'rescale', 'colormap_name', 'tilesize']);
+    const known = new Set(['asset', 'op', 'op_version', 'params', 'rescale', 'colormap_name', 'tilesize']);
     for (const url of [spec.mosaics[0].url, spec.mosaics[0].probe, spec.probe, spec.measure, ...spec.scenes.map((s) => s.url)]) {
       expect(url).not.toContain('#');
+      if (url.includes('/mosaic/')) expect(query(url).searchParams.has('item') || query(url).searchParams.has('asset')).toBe(false);
       expect([...new Set(query(url).searchParams.keys())].filter((name) => !known.has(name))).toEqual([]);
     }
     expect(spec.clipToAoi).toBe(true);
@@ -474,11 +490,8 @@ describe('previewSpec: the mosaic of a job (NM4-04b)', () => {
   it('draws one mosaic for each job of a batch per pass, and a job of one scene alone', () => {
     const second = [item('S2_E', { gsd: 10 }), item('S2_F', { gsd: 10 })];
     const lone = item('S2_G', { gsd: 10 });
-    const spec = previewSpec({ ...base, items: [...items, ...second, lone], jobs: [items, second, [lone]] })!;
-    expect(spec.mosaics.map((m) => query(m.url).searchParams.getAll('item'))).toEqual([
-      ['S2_A', 'S2_B', 'S2_C', 'S2_D'],
-      ['S2_E', 'S2_F'],
-    ]);
+    const spec = previewSpec({ ...base, items: [...items, ...second, lone], jobs: [items, second, [lone]], selections: selectionsFor(['red', 'nir'], items, second) })!;
+    expect(spec.mosaics.map((m) => /\/mosaic\/([0-9a-f]{32})\//.exec(m.url)![1])).toEqual([idOfJob(items), idOfJob(second)]);
     expect(spec.scenes.map((s) => s.id)).toEqual(['S2_G']);
     expect(spec.perScene).toBe(false);
   });
@@ -529,8 +542,8 @@ describe('previewSpec: the mosaic of a job (NM4-04b)', () => {
   describe('falls back to the scenes one by one, and says so', () => {
     const scenesOnly = (spec: ReturnType<typeof previewSpec>) => {
       expect(spec).toMatchObject({ mosaics: [], perScene: true });
-      expect(spec!.scenes.map((s) => s.below)).toEqual(Array(spec!.scenes.length).fill(undefined));
     };
+    const many = (count: number) => Array.from({ length: count }, (_, i) => item(`S${String(i).padStart(4, '0')}`, { gsd: 10 }));
 
     it(`for more than ${MAX_MOSAIC_OPERATOR_ASSETS} assets`, () => {
       const assets = ['a', 'b', 'c', 'd', 'e'];
@@ -540,34 +553,31 @@ describe('previewSpec: the mosaic of a job (NM4-04b)', () => {
     });
 
     it(`keeps the mosaic for ${MAX_MOSAIC_OPERATOR_ASSETS} assets`, () => {
-      expect(previewSpec({ ...base, assets: ['a', 'b', 'c', 'd'] })!.mosaics).toHaveLength(1);
+      const assets = ['a', 'b', 'c', 'd'];
+      expect(previewSpec({ ...base, assets, selections: selectionsFor(assets, items) })!.mosaics).toHaveLength(1);
     });
 
-    it(`for more than ${MAX_MOSAIC_SCENES} scenes, and keeps the mosaic for ${MAX_MOSAIC_SCENES}`, () => {
-      const many = (count: number) => Array.from({ length: count }, (_, i) => item(`S${String(i).padStart(3, '0')}`, { gsd: 10 }));
-      const sixtyFive = many(MAX_MOSAIC_SCENES + 1);
-      scenesOnly(previewSpec({ ...base, items: sixtyFive, jobs: [sixtyFive] }));
-      const sixtyFour = many(MAX_MOSAIC_SCENES);
-      expect(previewSpec({ ...base, items: sixtyFour, jobs: [sixtyFour] })!.mosaics).toHaveLength(1);
+    it(`for more than ${MAX_SELECTION_ITEMS} scenes, and keeps the mosaic for ${MAX_SELECTION_ITEMS}`, () => {
+      const over = many(MAX_SELECTION_ITEMS + 1);
+      scenesOnly(previewSpec({ ...base, items: over, jobs: [over], selections: selectionsFor(['red', 'nir'], over) }));
+      const limit = many(MAX_SELECTION_ITEMS);
+      expect(previewSpec({ ...base, items: limit, jobs: [limit], selections: selectionsFor(['red', 'nir'], limit) })!.mosaics).toHaveLength(1);
     });
 
-    it('for a request longer than the tiler takes, and keeps the mosaic at the limit', () => {
-      const long = (length: number) => Array.from({ length: 40 }, (_, i) => item(`${String(i).padStart(2, '0')}${'x'.repeat(length)}`, { gsd: 10 }));
-      const fits = long(60);
-      expect(previewSpec({ ...base, items: fits, jobs: [fits] })!.mosaics).toHaveLength(1);
-      const tooLong = long(260);
-      scenesOnly(previewSpec({ ...base, items: tooLong, jobs: [tooLong] }));
+    it('draws a job of hundreds of scenes as one mosaic: the scenes are not in the request', () => {
+      const hundreds = many(500);
+      const spec = previewSpec({ ...base, items: hundreds, jobs: [hundreds], selections: selectionsFor(['red', 'nir'], hundreds) })!;
+      expect(spec.mosaics).toHaveLength(1);
+      expect(mosaicRequestBytes(spec.mosaics[0].url, spec.maxZoom)).toBeLessThan(MAX_MOSAIC_REQUEST_BYTES / 4);
     });
 
-    it(`at ${MAX_MOSAIC_REQUEST_BYTES} bytes of request and not at ${MAX_MOSAIC_REQUEST_BYTES + 1}`, () => {
-      const padded = (extra: number) => items.map((it, i) => (i === 0 ? { ...it, id: `${it.id}${'x'.repeat(extra)}` } : it));
-      const first = previewSpec({ ...base })!;
-      const room = MAX_MOSAIC_REQUEST_BYTES - mosaicRequestBytes(first.mosaics[0].url, first.maxZoom);
-      const exact = padded(room);
-      const atLimit = previewSpec({ ...base, items: exact, jobs: [exact] })!;
+    it(`at ${MAX_MOSAIC_REQUEST_BYTES} bytes of request and not at ${MAX_MOSAIC_REQUEST_BYTES + 1}: what is asked for in the URL makes it long, not the scenes`, () => {
+      const named = (length: number) => ({ ...base, band: 'x'.repeat(length) });
+      const first = previewSpec(named(1))!;
+      const room = MAX_MOSAIC_REQUEST_BYTES - mosaicRequestBytes(first.mosaics[0].url, first.maxZoom) + 1;
+      const atLimit = previewSpec(named(room))!;
       expect(mosaicRequestBytes(atLimit.mosaics[0].url, atLimit.maxZoom)).toBe(MAX_MOSAIC_REQUEST_BYTES);
-      const over = padded(room + 1);
-      scenesOnly(previewSpec({ ...base, items: over, jobs: [over] }));
+      scenesOnly(previewSpec(named(room + 1)));
     });
 
     it('for a mosaic the tiler did not take', () => {
@@ -575,8 +585,15 @@ describe('previewSpec: the mosaic of a job (NM4-04b)', () => {
       scenesOnly(previewSpec({ ...base, answers: new Map([[probe, { state: 'scenes' }]]) }));
     });
 
+    it('for a selection the tiler refused to create, which is asked for no more', () => {
+      const answers = new Map<string, MosaicAnswer>([[selectionKeyOf(DATASET.id, ['red', 'nir'], ids), { state: 'scenes' }]]);
+      const spec = previewSpec({ ...base, selections: undefined, answers });
+      scenesOnly(spec);
+      expect(spec!.needs).toEqual([]);
+    });
+
     it('for the one job that is too big, and the mosaic for the other', () => {
-      const big = Array.from({ length: MAX_MOSAIC_SCENES + 1 }, (_, i) => item(`B${String(i).padStart(3, '0')}`, { gsd: 10 }));
+      const big = Array.from({ length: MAX_SELECTION_ITEMS + 1 }, (_, i) => item(`B${String(i).padStart(4, '0')}`, { gsd: 10 }));
       const spec = previewSpec({ ...base, items: [...items, ...big], jobs: [items, big] })!;
       expect(spec.mosaics).toHaveLength(1);
       expect(spec.perScene).toBe(true);
@@ -586,14 +603,35 @@ describe('previewSpec: the mosaic of a job (NM4-04b)', () => {
     it('keeps the places of the scenes drawn alone when a mosaic is big, and takes one of them for the mosaic', () => {
       const big = Array.from({ length: 45 }, (_, i) => item(`A${String(i).padStart(2, '0')}`, { gsd: 10 }));
       const lone = Array.from({ length: MAX_PREVIEW_SCENES + 5 }, (_, i) => item(`B${String(i).padStart(2, '0')}`, { gsd: 10 }));
-      const spec = previewSpec({ ...base, dataset: wide, items: [...big, ...lone], jobs: [big, ...lone.map((l) => [l])] })!;
+      const spec = previewSpec({ ...base, dataset: wide, items: [...big, ...lone], jobs: [big, ...lone.map((l) => [l])], selections: selectionsFor(['red', 'nir'], big) })!;
       expect(spec.mosaics).toHaveLength(1);
       expect(spec.scenes.map((s) => s.id)).toEqual(lone.map((l) => l.id).slice(0, MAX_PREVIEW_SCENES - 1));
-      expect(spec.scenes.every((s) => s.below === undefined)).toBe(true);
     });
 
     it('with the hint a person can read', () => {
       expect(SCENE_PREVIEW_HINT).toBe('Preview per scene – may differ from the job where scenes overlap');
+    });
+  });
+
+  describe('while the selection of a mosaic is not created yet', () => {
+    it('draws the scenes one by one for now and names the selection it needs: the assets and the scenes of the job', () => {
+      const spec = previewSpec({ ...base, selections: undefined })!;
+      expect(spec.mosaics).toEqual([]);
+      expect(spec.needs).toEqual([{ datasetId: 'sentinel-2-c1-l2a', ids, assets: ['red', 'nir'] }]);
+      expect(spec.scenes).toHaveLength(4);
+    });
+
+    it('needs one selection for each job of a batch that is a mosaic, and none for a job of one scene', () => {
+      const second = [item('S2_E', { gsd: 10 }), item('S2_F', { gsd: 10 })];
+      const lone = item('S2_G', { gsd: 10 });
+      const spec = previewSpec({ ...base, items: [...items, ...second, lone], jobs: [items, second, [lone]], selections: selectionsFor(['red', 'nir'], items) })!;
+      expect(spec.needs.map((need) => need.ids)).toEqual([['S2_E', 'S2_F']]);
+    });
+
+    it('needs nothing for a job that cannot be a mosaic, and nothing once it is created', () => {
+      expect(previewSpec({ ...base, assets: ['a', 'b', 'c', 'd', 'e'], selections: undefined })!.needs).toEqual([]);
+      expect(previewSpec({ ...base, jobs: items.map((i) => [i]), selections: undefined })!.needs).toEqual([]);
+      expect(previewSpec(base)!.needs).toEqual([]);
     });
   });
 
@@ -619,6 +657,10 @@ describe('probeMosaic (NM4-04b)', () => {
   const answer = (status: number, body: unknown) => async () =>
     new Response(typeof body === 'string' ? body : JSON.stringify(body), { status });
   const probe = (reply: () => Promise<Response>) => probeMosaic('/mosaic/tilejson.json?item=A', reply as unknown as typeof fetch);
+
+  it('says that the selection has expired, to create it again, for a 410', async () => {
+    expect(await probe(answer(410, { detail: 'no selection: it expired or never existed' }))).toEqual({ state: 'scenes', retry: true, gone: true });
+  });
 
   it('takes the mosaic and the order of its scenes', async () => {
     expect(await probe(answer(200, { tilejson: '3.0.0', 'earthx:order': ['B', 'A'] }))).toEqual({ state: 'taken', order: ['B', 'A'] });
@@ -1183,7 +1225,7 @@ describe('previewSpec: the band shown (NM4-43e PR 2)', () => {
 
   it('puts it in the address of a mosaic as well', () => {
     const jobs = [items];
-    const spec = previewSpec({ ...base, plan, band: 'Band_Math_1', jobs })!;
+    const spec = previewSpec({ ...base, plan, band: 'Band_Math_1', jobs, selections: selectionsFor(['red', 'nir'], items) })!;
     expect(spec.mosaics).toHaveLength(1);
     for (const url of [spec.mosaics[0].url, spec.mosaics[0].probe]) {
       expect(new URL(url, 'http://localhost').searchParams.getAll('band')).toEqual(['Band_Math_1']);
@@ -1355,7 +1397,7 @@ describe('previewSpec: the colour picture (NM4-64)', () => {
   });
 
   it('asks the mosaic for the three bands as well', () => {
-    const spec = previewSpec({ ...base, jobs: [items] })!;
+    const spec = previewSpec({ ...base, jobs: [items], selections: selectionsFor(base.assets, items) })!;
     expect(spec.mosaics).toHaveLength(1);
     expect(query(spec.mosaics[0].url).getAll('band')).toEqual(['red', 'green', 'blue']);
     expect(query(spec.mosaics[0].url).has('colormap_name')).toBe(false);

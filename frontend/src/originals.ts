@@ -13,6 +13,7 @@ import {
 import type { DownloadPass, OriginalFileLink } from './download';
 import { attributionText, isDirectDownloadHref, termsNoticeText } from './download';
 import type { ZipJob } from './originalsZip';
+import { limitationsOf } from './catalogue';
 import { formatBytes } from './numberFormat';
 import type { Collection, LicenseFlags, StacItem } from './types';
 
@@ -251,6 +252,8 @@ export function attributionFileText(args: {
   if (flags?.terms_url && !terms?.includes(flags.terms_url)) lines.push(flags.terms_url);
   if (collection['sci:citation']) lines.push(collection['sci:citation']);
   if (collection['sci:doi']) lines.push(`DOI: https://doi.org/${collection['sci:doi']}`);
+  const limitations = limitationsOf(collection);
+  if (limitations.length > 0) lines.push(['Limitations:', ...limitations.map((text) => oneLine(`- ${text}`))].join('\n'));
   lines.push(`${scenes.length === 1 ? 'Scene' : 'Scenes'}: ${scenes.map((scene) => oneLine(scene.item.id)).join(', ')}`);
   lines.push(
     ['Files:', ...files.map((file) => oneLine(`  ${file.name} (${file.itemId}, asset ${file.asset})`))].join('\n'),

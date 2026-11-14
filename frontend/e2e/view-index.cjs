@@ -18,6 +18,7 @@
 // Playwright and Chromium are not a dependency of the project (CI does not run this); the cloud session has both.
 
 const { chromium } = require('playwright');
+const { answersSelection } = require('./selectionMock.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -28,7 +29,7 @@ const VIEWPORTS = { wide: { width: 1280, height: 800 }, narrow: { width: 360, he
 const FOOTPRINT = [10, 50, 11, 51];
 const SCENES = ['SYNTH_A', 'SYNTH_B'];
 const TIP_NDWI = 'Normalized Difference Water Index (McFeeters 1996): (G - N) / (G + N). Formula: Awesome Spectral Indices.';
-const NOTE_TIP = 'The quick calculation works from zoom 8. For whole scenes start a job in Processing.';
+const NOTE_TIP = 'The quick calculation starts at the zoom where the image does. For whole scenes start a job in Processing.';
 const PRESETS = [
   ['NDVI', 'Normalized Difference Vegetation Index', '(nir - red) / (nir + red)', 'rdylgn', '(N - R)/(N + R)'],
   ['NDWI', 'Normalized Difference Water Index (McFeeters 1996)', '(green - nir) / (green + nir)', 'rdbu', '(G - N) / (G + N)'],
@@ -58,6 +59,7 @@ async function open(browser, theme, viewport, presets) {
     const url = new URL(route.request().url());
     const json = (body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
     if (url.origin !== BASE || /^\/(src|@|node_modules|assets)/.test(url.pathname) || url.pathname === '/' || url.pathname.endsWith('.svg')) return route.continue();
+    if (answersSelection(route, url)) return;
     if (url.pathname.includes('/mosaic/') && url.pathname.endsWith('/tilejson.json')) return json({ tilejson: '3.0.0', bounds: FOOTPRINT, minzoom: 8, maxzoom: 14, 'earthx:order': SCENES });
     if (url.pathname === '/processing/processes/recipe') return json(DESCRIPTION);
     if (url.pathname === '/processing/processes/recipe/estimate') return json({ estimate: { size: 12_400_000, duration: 'PT9.2S', outputPixels: 1e6, inputPixels: 4e6, inputBytes: 8e6, assets: 2, units: 1 }, skippedItems: [] });
@@ -180,9 +182,9 @@ async function checkDraw(browser, theme, viewport) {
   const query = new URLSearchParams(mine[0]?.split('?')[1] ?? '');
   if (query.getAll('op').join() !== 'band_math') problems.push(`the tile asks for op=${query.getAll('op')}`);
   if (query.get('band') !== 'NDWI') problems.push(`the tile asks for band=${query.get('band')}`);
-  if (query.getAll('asset').join() !== 'green,nir') problems.push(`the tile reads the assets ${query.getAll('asset')}`);
   if (query.get('rescale') !== '-1,1' || query.get('colormap_name') !== 'rdbu') problems.push(`the tile asks for ${query.get('rescale')} in ${query.get('colormap_name')}`);
-  if (query.getAll('item').join() !== SCENES.join()) problems.push(`the tile names the scenes ${query.getAll('item')}`);
+  // The scenes and the assets (green, nir) are in the selection the tile is asked from (adr/0032 §10.2), not in its URL.
+  if (query.has('item') || query.has('asset')) problems.push(`the tile names the scenes or the assets ${query}`);
   if ((await field(page).getAttribute('data-tip')) !== TIP_NDWI) problems.push(`the tooltip is ${await field(page).getAttribute('data-tip')}`);
   if ((await page.locator('.scene-view .hint.warn[role="status"]').count()) !== 0) problems.push('a note at zoom 9');
   if ((await page.locator('.scene-view .vc-colormap select').inputValue()) !== 'rdbu') problems.push('the colormap field does not show rdbu');

@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import CSS from '../index.css?raw';
 import { datasetsFrom } from '../datasets';
 import { SENTINEL_2_PRESETS } from '../fixtures/indexPresets';
-import { mosaicTemplateOf } from '../mosaic';
+import { indexKeyOf, mosaicKeyOf } from '../mosaic';
 import { SHORT_COLORMAPS } from '../colormaps';
 import { useAppStore, type AppState } from '../store';
 import type { Collection, DownloadedInfo, StacItem } from '../types';
@@ -177,9 +177,9 @@ describe('"Quick processing" (UI-03d, Otto, 2.11.2026)', () => {
     // The field "Band" says what is drawn, and the index is no band to pick there.
     expect(select().value).toBe('index:NDWI');
     expect([...select().options].find((o) => o.value === 'index:NDWI')!.disabled).toBe(true);
-    // No request but the statistics: no job is placed.
+    // No request but the statistics and the selection of the mosaic for the assets of the index: no job is placed.
     const calls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
-    expect(calls.every((url) => url.includes('/statistics') || url.endsWith('/colormaps'))).toBe(true);
+    expect(calls.every((url) => url.includes('/statistics') || url.endsWith('/colormaps') || /\/collections\/[^/]+\/mosaic$/.test(url))).toBe(true);
     await press('NDWI');
     expect(pressed()).toEqual([]);
     expect(useAppStore.getState().appliedRender.index).toBe('NDWI');
@@ -285,8 +285,8 @@ describe('the note under the settings', () => {
     expect(note()!.closest('.insp-section')!.querySelector('.insp-heading')!.textContent).toBe('Quick processing');
   });
 
-  it('says it cannot be computed where the tile route cannot take the scenes (the request is too long), at any zoom', () => {
-    const ids = Array.from({ length: 64 }, (_, i) => `S2_${'x'.repeat(110)}${i}`);
+  it('says it cannot be computed where the tiler did not take the selection for the assets of the index, at any zoom', () => {
+    const ids = Array.from({ length: 4 }, (_, i) => `S2_${i}`);
     const items = ids.map(item);
     const downloaded = Object.fromEntries(ids.map((id) => [id, info(id)]));
     const entries = ids.map((id) => [id, downloaded[id]] as [string, DownloadedInfo]);
@@ -294,7 +294,10 @@ describe('the note under the settings', () => {
       items,
       groups: [{ key: ['a'], label: 'a', items }],
       downloaded,
-      mosaics: { [mosaicTemplateOf('optical', entries)!]: { tileUrl: '/m/{z}/{x}/{y}', bounds: [0, 0, 1, 1], minZoom: 8, maxZoom: 14, order: ids } },
+      mosaics: {
+        [mosaicKeyOf('optical', entries)!]: { tileUrl: '/m/{z}/{x}/{y}', bounds: [0, 0, 1, 1], minZoom: 8, maxZoom: 14, order: ids },
+        [indexKeyOf('optical', ['nir', 'red', 'blue'], entries)]: null,
+      },
       mapZoom: 14,
       appliedRender: { index: 'EVI', colormapName: 'rdylgn', rescale: '-1,1' },
     });

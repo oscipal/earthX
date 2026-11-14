@@ -16,6 +16,7 @@ from earthx.api.tiler import MOSAIC_ROUTER_PREFIX, RESULT_ROUTER_PREFIX, ROUTER_
 PLACEHOLDERS = {
     "{dataset}": "no-such-dataset",
     "{item}": "NO_SUCH_ITEM",
+    "{selection}": "0" * 32,
     "{result_id}": "no-such-result",
     "{tileMatrixSetId}": "WebMercatorQuad",
     "{z}": "10",

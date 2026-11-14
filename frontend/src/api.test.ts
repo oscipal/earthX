@@ -2,8 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   type CoverageParams,
+  type MosaicSelection,
   buildCoverageUrl,
+  buildMosaicOperatorTileJsonUrl,
+  buildMosaicOperatorTileTemplate,
   buildMosaicTileTemplate,
+  createMosaicSelection,
   buildSearchBody,
   buildStatisticsUrl,
   buildTileTemplate,
@@ -736,41 +740,76 @@ describe('ignored_filters_by_collection and incomplete_collections (M3-10)', () 
   });
 });
 
-describe('the mosaic of a time step (M4-17)', () => {
-  it('names the scenes in the URL, sorted, with the asset and the tile placeholders', () => {
-    const template = buildMosaicTileTemplate('sentinel-2-c1-l2a', ['S2B_2', 'S2A_1', 'S2A_3'], 'visual');
-    expect(template.startsWith('/collections/sentinel-2-c1-l2a/mosaic/tiles/WebMercatorQuad/{z}/{x}/{y}?')).toBe(true);
-    const params = new URL(template, 'http://localhost').searchParams;
-    expect(params.getAll('item')).toEqual(['S2A_1', 'S2A_3', 'S2B_2']);
-    expect(params.getAll('asset')).toEqual(['visual']);
+const SELECTION: MosaicSelection = {
+  id: '0123456789abcdef0123456789abcdef',
+  datasetId: 'sentinel-2-c1-l2a',
+  tiles: '/collections/sentinel-2-c1-l2a/mosaic/0123456789abcdef0123456789abcdef/tiles/WebMercatorQuad/{z}/{x}/{y}',
+  tilejson: '/collections/sentinel-2-c1-l2a/mosaic/0123456789abcdef0123456789abcdef/WebMercatorQuad/tilejson.json',
+};
+
+describe('the selection of a mosaic (M5-30b part 3)', () => {
+  const created = (status: number, body: unknown) => vi.fn().mockResolvedValue({ ok: status < 300, status, statusText: '', json: async () => body } as Response);
+  const ANSWER = { id: SELECTION.id, tiles: SELECTION.tiles, tilejson: SELECTION.tilejson };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
-  it('is one URL for one selection, whatever order it was made in', () => {
-    expect(buildMosaicTileTemplate('d', ['b', 'a'], 'x')).toBe(buildMosaicTileTemplate('d', ['a', 'b'], 'x'));
+  it('is created by a POST with the scenes and the assets, each once and sorted, never in the URL', async () => {
+    vi.stubGlobal('fetch', created(201, ANSWER));
+    const selection = await createMosaicSelection('sentinel-2-c1-l2a', ['S2B_2', 'S2A_1', 'S2B_2'], ['visual', 'B04', 'visual']);
+    const [url, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('/collections/sentinel-2-c1-l2a/mosaic');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ items: ['S2A_1', 'S2B_2'], assets: ['B04', 'visual'] });
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+    expect(selection).toEqual(SELECTION);
   });
 
-  it('carries no area, and escapes what it is given', () => {
-    const template = buildMosaicTileTemplate('a b', ['x&y=1', 'z/../w'], 'SR_10m:b04,b03');
-    expect(template).toContain('/collections/a%20b/mosaic/');
-    const params = new URL(template, 'http://localhost').searchParams;
-    expect(params.getAll('item')).toEqual(['x&y=1', 'z/../w']);
-    expect([...params.keys()].sort()).toEqual(['asset', 'item', 'item', 'tilesize']);
+  it('escapes the name of the dataset in the path', async () => {
+    vi.stubGlobal('fetch', created(200, ANSWER));
+    await createMosaicSelection('a b/c', ['x', 'y'], ['v']);
+    expect(vi.mocked(fetch).mock.calls[0][0]).toBe('/collections/a%20b%2Fc/mosaic');
+  });
+
+  it.each([
+    ['a selection the tiler refuses', 422, { detail: 'the scenes are of different passes' }, 'the scenes are of different passes'],
+    ['a body that is too large', 413, { detail: 'the body of a selection is at most 131072 bytes' }, 'the body of a selection is at most 131072 bytes'],
+  ])("throws the tiler's reason for %s", async (_name, status, body, message) => {
+    vi.stubGlobal('fetch', created(status, body));
+    await expect(createMosaicSelection('d', ['a', 'b'], ['v'])).rejects.toMatchObject({ status, message });
+  });
+
+  it.each([
+    ['no id', { ...ANSWER, id: undefined }],
+    ['no tile template', { ...ANSWER, tiles: undefined }],
+    ['a TileJSON that is no text', { ...ANSWER, tilejson: 7 }],
+  ])('refuses an answer with %s rather than drawing from it', async (_name, body) => {
+    vi.stubGlobal('fetch', created(201, body));
+    await expect(createMosaicSelection('d', ['a', 'b'], ['v'])).rejects.toThrow(/cannot read/);
+  });
+
+  it('draws from the id alone: no scene, no asset and no area in the tile template', () => {
+    const template = buildMosaicTileTemplate(SELECTION);
+    expect(template).toBe(`${SELECTION.tiles}?tilesize=512`);
+    expect(template).not.toMatch(/item=|asset=|aoi|bbox/);
   });
 
   it('asks for 512-px tiles, which the tiler takes as 256 or 512 (NM4-29b)', () => {
-    expect(new URL(buildMosaicTileTemplate('d', ['a', 'b'], 'x'), 'http://localhost').searchParams.get('tilesize')).toBe('512');
-    expect(tileSizeOf(buildMosaicTileTemplate('d', ['a', 'b'], 'x'))).toBe(512);
+    expect(tileSizeOf(buildMosaicTileTemplate(SELECTION))).toBe(512);
   });
 
-  it('leaves the TileJSON of the same pass without a size', async () => {
-    const urls: string[] = [];
-    vi.stubGlobal('fetch', async (url: string) => {
-      urls.push(url);
-      return { ok: true, status: 200, statusText: '', json: async () => ({ bounds: [0, 0, 1, 1], minzoom: 8, maxzoom: 19, 'earthx:order': ['a'] }) } as Response;
-    });
-    await fetchMosaicTileJson('d', ['a', 'b'], 'x');
-    vi.unstubAllGlobals();
-    expect(urls[0]).not.toContain('tilesize');
+  it('puts the steps of an operator mosaic in the query and the assets nowhere (they are the selection\'s)', () => {
+    const steps = [{ op: 'band_math', opVersion: 2, paramsJson: '{"expression":"a+b","name":"x"}' }];
+    const template = buildMosaicOperatorTileTemplate(SELECTION, steps, 'x');
+    const params = new URL(template, 'http://localhost').searchParams;
+    expect(template.startsWith(`${SELECTION.tiles}?`)).toBe(true);
+    expect(params.getAll('op')).toEqual(['band_math']);
+    expect(params.getAll('op_version')).toEqual(['2']);
+    expect(params.getAll('params')).toEqual(['{"expression":"a+b","name":"x"}']);
+    expect(params.getAll('band')).toEqual(['x']);
+    expect(params.has('asset') || params.has('item')).toBe(false);
+    expect(buildMosaicOperatorTileJsonUrl(SELECTION, steps, 'x')).toBe(`${SELECTION.tilejson}?${template.split('?')[1].replace('&tilesize=512', '')}`);
   });
 });
 
@@ -791,22 +830,23 @@ describe('fetchMosaicTileJson', () => {
     vi.unstubAllGlobals();
   });
 
-  it('asks the TileJSON route with the same query as the tiles, and reads surface, levels and order', async () => {
+  it('asks the TileJSON of the selection, without a size, and reads surface, levels and order', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, TILEJSON)));
-    const json = await fetchMosaicTileJson('sentinel-2-c1-l2a', ['B', 'A'], 'visual');
+    const json = await fetchMosaicTileJson(SELECTION);
     const url = vi.mocked(fetch).mock.calls[0][0] as string;
-    expect(url).toBe('/collections/sentinel-2-c1-l2a/mosaic/WebMercatorQuad/tilejson.json?item=A&item=B&asset=visual');
+    expect(url).toBe(SELECTION.tilejson);
+    expect(url).not.toContain('tilesize');
     const init = vi.mocked(fetch).mock.calls[0][1] as RequestInit;
     expect(init.signal).toBeInstanceOf(AbortSignal); // it ends on its own if the tiler never answers
     expect(json).toEqual({ bounds: [10, 47, 12, 48], minzoom: 8, maxzoom: 19, order: ['B', 'A'] });
   });
 
   it.each([
-    ['a refused mosaic', 422, { detail: 'the items are of different passes' }, 'the items are of different passes'],
+    ['an expired selection', 410, { detail: 'no selection: it expired or never existed' }, 'no selection: it expired or never existed'],
     ['a missing item cache', 503, { detail: 'mosaic tiles need the item cache' }, 'mosaic tiles need the item cache'],
-  ])('throws the tiler\'s reason for %s', async (_name, status, body, message) => {
+  ])("throws the tiler's reason for %s", async (_name, status, body, message) => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(status, body)));
-    await expect(fetchMosaicTileJson('d', ['A', 'B'], 'visual')).rejects.toMatchObject({ status, message });
+    await expect(fetchMosaicTileJson(SELECTION)).rejects.toMatchObject({ status, message });
   });
 
   it.each([
@@ -818,7 +858,7 @@ describe('fetchMosaicTileJson', () => {
     ['an infinite last level', { ...TILEJSON, maxzoom: Number.POSITIVE_INFINITY }],
   ])('refuses an answer with %s rather than drawing from it', async (_name, body) => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, body)));
-    await expect(fetchMosaicTileJson('d', ['A', 'B'], 'visual')).rejects.toThrow(/cannot read/);
+    await expect(fetchMosaicTileJson(SELECTION)).rejects.toThrow(/cannot read/);
   });
 });
 
