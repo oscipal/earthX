@@ -37,7 +37,16 @@ from typing import Annotated, Any, Literal, Protocol
 
 import numpy
 import rasterio
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, model_serializer, model_validator
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    ValidationError,
+    model_serializer,
+    model_validator,
+)
 from shapely.errors import ShapelyError
 from shapely.geometry import shape as shapely_shape
 
@@ -55,6 +64,7 @@ __all__ = [
     "CropOutput",
     "Footprint",
     "Input",
+    "LineTime",
     "InputRequest",
     "InputVersion",
     "MultiPolygon",
@@ -362,6 +372,23 @@ class Footprint(_Model):
     coordinates: JsonValue
 
 
+class LineTime(_Model):
+    """When the first and the last line of a scene were taken, as its item gives them (DS-04d F2).
+
+    Only for a dataset whose registry entry names ``line_times``: the slices of a pass hang one under the other at
+    the offset these times give (``access.radar.join_slices``).
+    """
+
+    first: AwareDatetime
+    last: AwareDatetime
+
+    @model_validator(mode="after")
+    def _ordered(self) -> LineTime:
+        if self.last < self.first:
+            raise ValueError("the last line of a scene is not taken before its first")
+        return self
+
+
 class Input(InputRequest):
     """An input of a recipe: the order's input plus one resolved entry per item and asset.
 
@@ -375,6 +402,9 @@ class Input(InputRequest):
     assets: list[Text] = Field(min_length=1)
     resolved: list[ResolvedInput] = Field(min_length=1)
     footprints: dict[str, Footprint | None] | None = None
+    #: DS-04d F2: the times of the lines of every item, ``None`` for an item that gives none; only for a dataset whose
+    #: entry names ``line_times``. Left out of the dump when unset, as ``footprints``, so no other recipe changes.
+    line_times: dict[str, LineTime | None] | None = None
 
     @model_validator(mode="after")
     def _complete(self) -> Input:
@@ -386,13 +416,16 @@ class Input(InputRequest):
             raise ValueError("a resolved asset belongs to another dataset")
         if self.footprints is not None and set(self.footprints) != {item for group in self.groups for item in group}:
             raise ValueError("footprints holds exactly one entry per item")
+        if self.line_times is not None and set(self.line_times) != {item for group in self.groups for item in group}:
+            raise ValueError("line_times holds exactly one entry per item")
         return self
 
     @model_serializer(mode="wrap")
     def _without_unset_footprints(self, handler: Any) -> dict[str, Any]:
         data = handler(self)
-        if data.get("footprints") is None:
-            data.pop("footprints", None)
+        for name in ("footprints", "line_times"):
+            if data.get(name) is None:
+                data.pop(name, None)
         return data
 
 

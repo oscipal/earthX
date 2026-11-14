@@ -33,7 +33,12 @@ PLAIN = replace(
     dataset_id="synthetic-plain",
     source=replace(SENTINEL_2_L2A.source, asset_hosts=(HOST,)),
 )
-GCP = replace(PLAIN, dataset_id="synthetic-gcp", georeferencing=Georeferencing.GCP_TPS)
+GCP = replace(
+    PLAIN,
+    dataset_id="synthetic-gcp",
+    georeferencing=Georeferencing.GCP_TPS,
+    capabilities=replace(PLAIN.capabilities, reprojection=False),
+)
 REGISTRY = DatasetRegistry((PLAIN, GCP))
 
 ITEM_JSON: dict[str, Any] = {

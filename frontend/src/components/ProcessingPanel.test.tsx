@@ -872,6 +872,23 @@ describe('the unit of a band (M4-19b)', () => {
     expect(dataChips()).toEqual(['red', 'nir']);
   });
 
+  it('is not written for "DN", digital numbers that are no physical unit, whoever names it (Otto, 14.11.2026)', async () => {
+    const item: StacItem = {
+      ...scene('S2B_A'),
+      assets: {
+        vv: { href: 'https://example.org/vv.tif', type: COG, 'raster:bands': [{ data_type: 'uint16' }] },
+        vh: { href: 'https://example.org/vh.tif', type: COG, 'raster:bands': [{ unit: 'DN' }] },
+        height: { href: 'https://example.org/h.tif', type: COG, 'raster:bands': [{ unit: 'm' }] },
+      },
+    };
+    select([item], 'processing', withUnits({ vv: 'DN', vh: 'DN', height: null }));
+    await openPanel();
+    expect(infoChips()).toEqual(['vv', 'vh', 'height · m']);
+    expect(dataChips()).toEqual(['vv', 'vh', 'height · m']);
+    // Nor as a mark in a tooltip.
+    expect(document.querySelector('[data-tip*="DN"]')).toBeNull();
+  });
+
   it('is the registry\'s for an asset the item describes with no band', async () => {
     const dem: StacItem = { ...scene('DEM_A'), assets: { data: { href: 'https://example.org/dem.tif', type: COG } } };
     select([dem], 'processing', withUnits({ data: 'm' }));

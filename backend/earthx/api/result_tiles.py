@@ -58,10 +58,11 @@ from starlette.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse
 from titiler.core.dependencies import BidxParams
 
+from earthx.access.radar import gcp_key
 from earthx.access.tiles import EarthxTilerFactory
 from earthx.objectstore.errors import ObjectStoreError, ResultExpiring, ResultNotFound
 from earthx.objectstore.results import MIN_REMAINING, RESULT_TTL, Store, is_result_id, result_modified, signed_read
-from earthx.readers.cog import AssetPath, CogReader
+from earthx.readers.cog import AS_WRITTEN, AssetPath, CogReader
 
 LOGGER = logging.getLogger("earthx.api.result_tiles")
 
@@ -170,7 +171,8 @@ class ResultPath(AssetPath):
     __slots__ = ("mask",)
 
     def __new__(cls, path: str, *, mask: AssetPath) -> ResultPath:
-        self = super().__new__(cls, path, dataset_id=_NO_DATASET, item_id="", asset=RESULT_FILE)
+        # Read as the file says (DS-04d A3): a result in radar geometry by the spline of its GCPs, like its scenes.
+        self = super().__new__(cls, path, dataset_id=_NO_DATASET, item_id="", asset=RESULT_FILE, georeferencing=AS_WRITTEN)
         self.mask = mask
         return self
 
@@ -207,11 +209,15 @@ class ResultReader(CogReader):
         count = self.dataset.count
         if any(not 1 <= index <= count for index in kwargs.get("indexes") or ()):
             raise HTTPException(status_code=400, detail=f"the result has {count} band(s); bidx is 1 to {count}")
-        image = super().tile(tile_x, tile_y, tile_z, **kwargs)
+        # A result in radar geometry is drawn slice by slice as its scenes are, pixel on pixel (DS-04d); its mask too.
+        image = self.tile_by_slices(tile_x, tile_y, tile_z, **kwargs)
+        if image is None:
+            image = super().tile(tile_x, tile_y, tile_z, **kwargs)
         with CogReader(self.input.mask, tms=self.tms) as mask:
-            inside = mask.tile(
-                tile_x, tile_y, tile_z, tilesize=image.width, indexes=1, resampling_method="nearest"
-            )
+            options = {"tilesize": image.width, "indexes": 1, "resampling_method": "nearest"}
+            inside = mask.tile_by_slices(tile_x, tile_y, tile_z, **options)
+            if inside is None:
+                inside = mask.tile(tile_x, tile_y, tile_z, **options)
         outside = numpy.ma.getdata(inside.array)[0] == 0
         image.array = numpy.ma.MaskedArray(
             numpy.ma.getdata(image.array), mask=numpy.ma.getmaskarray(image.array) | outside[None]
@@ -249,7 +255,7 @@ async def result_path(
     except ObjectStoreError:
         LOGGER.warning("the result store could not be read")
         raise HTTPException(status_code=503, detail="the result store is not available; try again") from None
-    mask = AssetPath(gdal_path(mask_url), dataset_id=_NO_DATASET, item_id="", asset=MASK_FILE)
+    mask = AssetPath(gdal_path(mask_url), dataset_id=_NO_DATASET, item_id="", asset=MASK_FILE, georeferencing=AS_WRITTEN)
     return ResultPath(gdal_path(result_url), mask=mask)
 
 
@@ -265,8 +271,9 @@ def result_statistics(path: ResultPath, env: dict[str, str]) -> list[dict[str, A
     from earthx.processing.statistics import MEASURE_PERCENTILES, BandStatistics
 
     with rasterio.Env(**env), CogReader(path) as result, CogReader(path.mask) as mask:
-        raster, marks = result.dataset, mask.dataset
-        same_grid = (marks.width, marks.height) == (raster.width, raster.height)
+        # The files' own pixels, never warped: a result in radar geometry is counted as the job counted it (DS-04d).
+        raster, marks = result.raw, mask.raw
+        same_grid = (marks.width, marks.height) == (raster.width, raster.height) and gcp_key(marks) == gcp_key(raster)
         if not same_grid or not marks.transform.almost_equals(raster.transform):
             raise HTTPException(status_code=502, detail="the mask does not belong to the result")
         try:

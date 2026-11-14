@@ -60,11 +60,19 @@ from shapely.geometry import mapping as shapely_mapping
 from starlette.concurrency import run_in_threadpool
 from titiler.core.dependencies import BidxParams
 
-from earthx.access.band_export import ExportPlanError, band_count, band_meta_of_items, band_table, plan_files
+from earthx.access.band_export import (
+    ExportPlanError,
+    band_count,
+    band_meta_of_items,
+    band_table,
+    plan_files,
+    resampling_for,
+)
 from earthx.access.colormaps import catalog as colormap_catalog
 from earthx.access.crop_rules import MAX_JOB_BYTES, mosaic_order, target_crs
 from earthx.access.download import (
     LARGE_DOWNLOAD_THRESHOLD_BYTES,
+    RADAR_ONE_RESOLUTION,
     AoiOutsideItems,
     AoiTooLarge,
     AssetCrop,
@@ -89,6 +97,7 @@ from earthx.access.mosaic_tiles import (
     ReadBudget,
     open_mosaic,
 )
+from earthx.access.radar import item_line_times
 from earthx.access.resolve import (
     AssetNotOnItem,
     InvalidAssetKey,
@@ -126,6 +135,7 @@ from earthx.catalog.registry import (
     AcquisitionYearMissing,
     DatasetConfig,
     DatasetRegistry,
+    Georeferencing,
     ItemHolding,
     LicenseTier,
     OverviewMode,
@@ -900,8 +910,9 @@ async def mosaic_scenes(
     if steps is None and "band" in request.query_params:
         raise HTTPException(status_code=400, detail="band is for tiles with op")
     try:
-        if steps is not None and not config.capabilities.reprojection:
-            # The words of the mosaic job's order (`api.intake._one_overpass`): the tile shows nothing it refuses.
+        if steps is not None and not config.capabilities.reprojection and config.georeferencing is not Georeferencing.GCP_TPS:
+            # The words of the mosaic job's order (`api.intake._one_overpass`): the tile shows nothing it refuses. A pass
+            # in radar geometry is joined, not warped (DS-04d F6).
             raise OrderRefused(
                 422, f"{config.dataset_id!r} does not allow reprojection, which a mosaic of scenes may need", "applicable"
             )
@@ -1560,6 +1571,11 @@ async def download_crop(
         plan_files(body.form, [band_metas[asset] for asset in wanted], body.common_resolution)
     except ExportPlanError as error:
         raise HTTPException(status_code=422, detail=str(error)) from None
+    if config.georeferencing is Georeferencing.GCP_TPS and any(
+        resampling_for(band_metas[asset], body.common_resolution) != "none" for asset in wanted
+    ):
+        # Radar geometry is never resampled (DS-04d): one multi-band file only at the bands' own pixel size.
+        raise HTTPException(status_code=422, detail=RADAR_ONE_RESOLUTION)
 
     # Each file at the resolution of its source, or all at the common one (NM4-75).
     planned_by_group: list[list[PlannedOutput]] = [
@@ -1704,6 +1720,15 @@ async def download_crop(
             common_resolution=body.common_resolution,
             band_metas=band_metas,
             bands_notes=bands_notes,
+            line_times=(
+                None
+                if config.line_times is None
+                else {
+                    str(item["id"]): item_line_times(item, config.line_times.first, config.line_times.last)
+                    for matched, _ in surviving_groups
+                    for item in matched
+                }
+            ),
             # The GDAL/VSI settings `gateway` also uses for the tile path
             # (timeouts, the read cache, no directory listings on open) —
             # missing here until M3-18 (F7 Nebenbefund), so a crop's reads

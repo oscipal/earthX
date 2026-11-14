@@ -179,8 +179,13 @@ describe('the rows', () => {
       'earthx:auxiliary_assets': ['visual'],
       'earthx:mask': { asset: 'scl', band: 'scl', classes: [], suggested: [], reference: 'https://example.org', note: '' },
     });
-    expect(textOf(c, 'Bands')).toBe('red, vv · dB, height');
+    expect(textOf(c, 'Bands')).toBe('red · 1, dimensionless, vv · dB, height');
     expect(textOf(c, 'Mask')).toBe('scl');
+  });
+
+  it('name the kind of values where the unit is no physical one, as the map does not (Otto, 14.11.2026)', () => {
+    const c = collection('x', 'radar', { 'earthx:band_units': { vv: 'DN', vh: 'DN', dtm: 'm' } });
+    expect(textOf(c, 'Bands')).toBe('vv · DN, uncalibrated digital numbers, vh · DN, uncalibrated digital numbers, dtm · m');
   });
 
   it('write the attribution with "[year]" for the placeholder, and the tier of the licence', () => {

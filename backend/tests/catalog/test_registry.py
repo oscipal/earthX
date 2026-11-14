@@ -23,8 +23,10 @@ from earthx.catalog.registry import (
     DatasetConfig,
     DatasetRegistry,
     DefaultRender,
+    Georeferencing,
     ItemHolding,
     LicenseTier,
+    LineTimes,
     OverviewMode,
     OverviewResampling,
     SourceInfo,
@@ -81,8 +83,33 @@ class TestCapabilitiesAreExplicit:
 
     @pytest.mark.parametrize("entry", list(REGISTRY), ids=lambda entry: entry.dataset_id)
     def test_every_entry_switches_reprojection_on_itself(self, entry) -> None:
-        # M4 R3 (Otto, 05.10.2026): all three entries set the flag explicitly.
-        assert entry.capabilities.reprojection is True
+        # M4 R3 (Otto, 05.10.2026): every entry sets the flag explicitly; a GCP file is never reprojected (DS-04d F6).
+        assert entry.capabilities.reprojection is (entry.georeferencing is not Georeferencing.GCP_TPS)
+
+
+class TestRadarGeometry:
+    """DS-04d (Otto, 11.11.2026): a GCP file is never reprojected, and only it hangs slices by their line times."""
+
+    def gcp(self, vary, valid_config, **changes):
+        capabilities = replace(valid_config.capabilities, reprojection=False)
+        return vary(georeferencing=Georeferencing.GCP_TPS, capabilities=capabilities, **changes)
+
+    def test_a_gcp_entry_without_reprojection_is_valid(self, vary, valid_config) -> None:
+        entry = self.gcp(vary, valid_config, line_times=LineTimes(first="start_datetime", last="end_datetime"))
+        assert entry.line_times.first == "start_datetime"
+
+    def test_a_gcp_entry_that_offers_reprojection_is_rejected(self, vary) -> None:
+        with pytest.raises(ConfigError, match="never reprojected"):
+            vary(georeferencing=Georeferencing.GCP_TPS)
+
+    def test_line_times_without_gcps_are_rejected(self, vary) -> None:
+        with pytest.raises(ConfigError, match="line_times go with"):
+            vary(line_times=LineTimes(first="start_datetime", last="end_datetime"))
+
+    @pytest.mark.parametrize(("first", "last"), [("", "end_datetime"), ("start_datetime", "  ")])
+    def test_blank_line_times_are_rejected(self, vary, valid_config, first: str, last: str) -> None:
+        with pytest.raises(ConfigError, match="two item properties"):
+            self.gcp(vary, valid_config, line_times=LineTimes(first=first, last=last))
 
 
 class TestKeywords:

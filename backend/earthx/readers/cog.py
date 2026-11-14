@@ -23,25 +23,37 @@ kilometres apart (adr/0018 §4.1). :class:`CogReader` therefore opens a GCP file
 with a thin-plate spline through the GCPs, and hands that to rio-tiler as its ``dataset``. Tile, crop,
 export, mosaic and job all read through ``CogReader.dataset``, so all of them see the same grid. The path
 carries the method the registry names; a file that disagrees with it is not read.
+
+**Radar geometry (DS-04d, adr/0018 §9.5).** A GCP file is shown by the spline, but never delivered placed by it:
+crop, export and job read :attr:`CogReader.raw`, the file's own pixel grid, and write its GCPs along. A file the
+platform wrote itself (a job result) is read ``as_written``: by its GCPs where it carries them, else by its geotransform.
 """
 
 from __future__ import annotations
 
-from typing import Literal, get_args
+from contextlib import ExitStack
+from typing import Any, Literal, get_args
 
+import numpy
 import rasterio
 from rasterio.vrt import WarpedVRT
+from rio_tiler.errors import TileOutsideBounds
 from rio_tiler.io.rasterio import Reader
+from rio_tiler.models import ImageData
 from rio_tiler.utils import has_alpha_band
 
 from earthx.gateway import GatewayError, Policy, Resolver, check_url, resolve_host
 from earthx.gateway.gdal import vsicurl_path
 from earthx.readers.errors import AssetRejected, GeoreferenceMismatch
+from earthx.readers.radar_slices import slice_document, slices_of
 
-__all__ = ["AssetPath", "CogReader", "Georeferencing", "asset_path", "warp_options"]
+__all__ = ["AS_WRITTEN", "AssetPath", "CogReader", "Georeferencing", "asset_path", "warp_options"]
 
 #: How a file is placed; the values of ``earthx.catalog.registry.Georeferencing``, which this module may not import.
 Georeferencing = Literal["geotransform", "gcp_tps"]
+
+#: How a file the platform wrote itself is placed: as the file says, by its GCPs or by its geotransform (DS-04d A3).
+AS_WRITTEN = "as_written"
 
 
 def warp_options(georeferencing: Georeferencing) -> dict[str, str]:
@@ -69,10 +81,10 @@ class AssetPath(str):
         dataset_id: str,
         item_id: str,
         asset: str,
-        georeferencing: Georeferencing = "geotransform",
+        georeferencing: Georeferencing | Literal["as_written"] = "geotransform",
     ) -> AssetPath:
-        if georeferencing not in get_args(Georeferencing):
-            raise ValueError(f"georeferencing is one of {get_args(Georeferencing)}")
+        if georeferencing not in (*get_args(Georeferencing), AS_WRITTEN):
+            raise ValueError(f"georeferencing is one of {(*get_args(Georeferencing), AS_WRITTEN)}")
         self = super().__new__(cls, path)
         self.dataset_id = dataset_id
         self.item_id = item_id
@@ -134,7 +146,12 @@ class CogReader(Reader):
     ``gcp_tps`` file must carry GCPs and is read through a thin-plate spline (module docstring), a
     ``geotransform`` file must not carry them. Either mismatch is :class:`GeoreferenceMismatch`, never a
     silent approximation.
+
+    :attr:`raw` is the file in its own pixel grid, never warped: the same as ``dataset`` for a geotransform, the file
+    under the spline for GCPs (DS-04d).
     """
+
+    raw: rasterio.DatasetReader | None = None
 
     def __attrs_post_init__(self) -> None:
         if not isinstance(self.input, AssetPath):
@@ -144,8 +161,12 @@ class CogReader(Reader):
             )
         if not self.dataset:
             self.dataset = self._ctx_stack.enter_context(rasterio.open(self.input))
+        self.raw = self.dataset
         gcps, gcp_crs = self.dataset.gcps
-        if self.input.georeferencing == "gcp_tps":
+        placing = self.input.georeferencing
+        if placing == AS_WRITTEN:
+            placing = "gcp_tps" if gcps and gcp_crs is not None else "geotransform"
+        if placing == "gcp_tps":
             if not gcps or gcp_crs is None:
                 self._ctx_stack.close()
                 raise GeoreferenceMismatch("the registry places this asset by its GCPs, but it carries none")
@@ -156,6 +177,40 @@ class CogReader(Reader):
             self._ctx_stack.close()
             raise GeoreferenceMismatch("this asset carries GCPs, but the registry places it by its geotransform")
         super().__attrs_post_init__()
+
+    def tile_by_slices(self, tile_x: int, tile_y: int, tile_z: int, **kwargs: Any) -> ImageData | None:
+        """The tile of a result in radar geometry drawn slice by slice as its scenes are (``readers.radar_slices``);
+        ``None`` for a file that names no slices. Each slice is warped exactly as its scene: the same size, the same
+        GCPs, the same spline and options, so every pixel lands where its source pixel lands. Where two slices meet,
+        the first valid pixel wins (they do not overlap)."""
+        pieces = slices_of(self.raw.tags())
+        if pieces is None:
+            return None
+        images = []
+        with ExitStack() as stack:
+            for piece in pieces:
+                document = slice_document(str(self.input), self.raw, piece)
+                if document is None:
+                    continue
+                virtual = stack.enter_context(rasterio.open(document))
+                warped = stack.enter_context(
+                    WarpedVRT(virtual, crs=virtual.gcps[1], **_gcp_vrt_options(virtual))
+                )
+                reader = stack.enter_context(Reader(input=str(self.input), dataset=warped, tms=self.tms))
+                try:
+                    images.append(reader.tile(tile_x, tile_y, tile_z, **kwargs))
+                except TileOutsideBounds:
+                    continue
+        if not images:
+            raise TileOutsideBounds(f"Tile {tile_z}/{tile_x}/{tile_y} is outside the result")
+        first = images[0]
+        data, mask = numpy.ma.getdata(first.array).copy(), numpy.ma.getmaskarray(first.array).copy()
+        for image in images[1:]:
+            fill = mask & ~numpy.ma.getmaskarray(image.array)
+            data[fill] = numpy.ma.getdata(image.array)[fill]
+            mask &= ~fill
+        first.array = numpy.ma.MaskedArray(data, mask=mask)
+        return first
 
 
 def _gcp_vrt_options(dataset: rasterio.DatasetReader) -> dict[str, object]:

@@ -67,6 +67,20 @@ class Georeferencing(Enum):
     GCP_TPS = "gcp_tps"
 
 
+@dataclass(frozen=True, slots=True)
+class LineTimes:
+    """Which item properties give the time of the first and of the last line of a scene (DS-04d F2).
+
+    A pass of a radar instrument is cut into slices; the slices of one pass hang one under the other in the
+    grid of the file (DS-04d, adr/0018 §9.5) at the offset these times give, one line every
+    ``(last - first) / (lines - 1)``. Measured for Sentinel-1 GRD at Earth Search: ``start_datetime`` and
+    ``end_datetime`` equal the first and last line of the product annotation to the microsecond (plan §2).
+    """
+
+    first: str
+    last: str
+
+
 class LicenseTier(Enum):
     """What the licence allows the platform to do (KLAERUNGEN B11)."""
 
@@ -1447,6 +1461,9 @@ class DatasetConfig:
     # How the readers place the pixels (adr/0018 F1, DS-04a), published as `earthx:georeferencing`. No default
     # (KLAERUNGEN B10): an entry names it, and a file that disagrees with it is not read.
     georeferencing: Georeferencing
+    # Where the slices of a pass get their place in a joined file (DS-04d F2): only with ``gcp_tps``, and ``None``
+    # where the scenes of a pass are not hung one under the other. No default (KLAERUNGEN B10).
+    line_times: LineTimes | None
     spatial_extent: SpatialExtent
     temporal_extent: TemporalExtent
     capabilities: Capabilities
@@ -2065,11 +2082,20 @@ class DatasetConfig:
             )
 
     def _check_georeferencing(self) -> None:
-        """Ground control points are read from a COG only; a Zarr store is placed by its own coordinates."""
+        """Ground control points are read from a COG only (a Zarr store is placed by its own coordinates), never
+        reprojected, and only they hang slices by their line times (DS-04d)."""
         if not isinstance(self.georeferencing, Georeferencing):
             raise ConfigError(f"{self.dataset_id}: georeferencing is a Georeferencing")
         if self.georeferencing is Georeferencing.GCP_TPS and self.format is not DataFormat.COG:
             raise ConfigError(f"{self.dataset_id}: georeferencing gcp_tps needs format cog, not {self.format.value}")
+        if self.georeferencing is Georeferencing.GCP_TPS and self.capabilities.reprojection:
+            # Delivered in its own grid until calibrated and terrain corrected (DS-04d F6, adr/0018 §9.5).
+            raise ConfigError(f"{self.dataset_id}: georeferencing gcp_tps is never reprojected; set reprojection false")
+        if self.line_times is not None:
+            if self.georeferencing is not Georeferencing.GCP_TPS:
+                raise ConfigError(f"{self.dataset_id}: line_times go with georeferencing gcp_tps")
+            if not (self.line_times.first.strip() and self.line_times.last.strip()):
+                raise ConfigError(f"{self.dataset_id}: line_times name two item properties")
 
     def _check_browse_cors(self) -> None:
         """M3-12, F-11: a quicklook the browser keys transparent on its own canvas
@@ -2288,6 +2314,7 @@ for _entry_part in (
     SearchCapabilities,
     IndexPreset,
     Notice,
+    LineTimes,
     DatasetConfig,
     RetiredDataset,
 ):
