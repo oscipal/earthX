@@ -12,18 +12,29 @@ from the extension. A dataset whose id starts with ``proto-`` (adr/0024) lives 7
 
 from __future__ import annotations
 
-from datetime import timedelta
+import contextlib
+import re
+from datetime import datetime, timedelta
+from pathlib import Path
 
+from earthx.objectstore.errors import ResultNotFound
 from earthx.objectstore.results import Store, is_expiry_rule
 
 __all__ = [
+    "CHECKED_AT",
+    "NO_STORE",
     "OVERVIEW_PREFIX",
     "OVERVIEW_RULE_DAYS",
     "OVERVIEW_TTL",
     "PROTOTYPE_PREFIX",
     "PROTOTYPE_TTL",
+    "copy_tile",
+    "delete_version",
+    "overview_key",
     "overviews_lifecycle_ok",
+    "read_tile",
     "term_of",
+    "upload_tile",
 ]
 
 OVERVIEW_PREFIX = "overviews/"
@@ -46,3 +57,82 @@ def overviews_lifecycle_ok(store: Store) -> bool:
     return any(
         is_expiry_rule(rule, prefix=OVERVIEW_PREFIX, days=OVERVIEW_RULE_DAYS) for rule in store.s3.lifecycle_rules()
     )
+
+
+#: The metadatum that carries the time a tile was last confirmed at the source (adr/0032 §5.2).
+CHECKED_AT = "checked-at"
+#: What a prototype source's objects are served with (adr/0024 R7).
+NO_STORE = "no-store"
+_CONTENT_TYPE = "image/tiff; application=geotiff"
+_DATASET = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
+_VERSION = re.compile(r"^[0-9a-f]{16}$")
+
+
+def _version_prefix(dataset_id: str, version: str) -> str:
+    if not _DATASET.match(dataset_id):
+        raise ValueError("a dataset id is lowercase letters, digits and hyphens")
+    if not _VERSION.match(version):
+        raise ValueError("a version is 16 hex digits (earthx_overview_version)")
+    return f"{OVERVIEW_PREFIX}{dataset_id}/{version}/"
+
+
+def overview_key(dataset_id: str, version: str, z: int, x: int, y: int) -> str:
+    """``overviews/{dataset_id}/{version}/{z}/{x}/{y}.tif``; a part that is not of its shape is a ``ValueError``."""
+    prefix = _version_prefix(dataset_id, version)
+    if any(isinstance(n, bool) or not isinstance(n, int) for n in (z, x, y)) or not (
+        0 <= z <= 30 and 0 <= x < 2**z and 0 <= y < 2**z
+    ):
+        raise ValueError("a tile is z, x, y of the WebMercatorQuad grid")
+    return f"{prefix}{z}/{x}/{y}.tif"
+
+
+def upload_tile(
+    store: Store, dataset_id: str, version: str, z: int, x: int, y: int, path: Path, *, checked_at: datetime
+) -> None:
+    """Upload one stored tile with ``checked-at``; a prototype source's tile is also ``Cache-Control: no-store`` (adr/0024 R7)."""
+    if checked_at.tzinfo is None:
+        raise ValueError("checked_at must be timezone-aware")
+    key = overview_key(dataset_id, version, z, x, y)
+    with path.open("rb") as body:
+        store.s3.put_object(
+            key,
+            body,
+            _CONTENT_TYPE,
+            cache_control=NO_STORE if dataset_id.startswith(PROTOTYPE_PREFIX) else None,
+            metadata={CHECKED_AT: checked_at.isoformat()},
+        )
+
+
+def copy_tile(store: Store, dataset_id: str, from_version: str, to_version: str, z: int, x: int, y: int) -> None:
+    """Copy a tile of an older version to the new version on the store's side, ``checked-at`` and all (adr/0032 §5.2).
+
+    A copy keeps the time its source had: it is a new object (the bucket rule counts from now), but the content was
+    not confirmed again, so the term does not move.
+    """
+    store.s3.copy_object(
+        overview_key(dataset_id, from_version, z, x, y), overview_key(dataset_id, to_version, z, x, y)
+    )
+
+
+def read_tile(store: Store, dataset_id: str, version: str, z: int, x: int, y: int) -> bytes | None:
+    """The bytes of one stored tile, or ``None`` if there is none."""
+    try:
+        return store.s3.get_bytes(overview_key(dataset_id, version, z, x, y))
+    except ResultNotFound:
+        return None
+
+
+def delete_version(store: Store, dataset_id: str, version: str) -> None:
+    """Delete every object of one version and abort its open uploads."""
+    prefix = _version_prefix(dataset_id, version)
+    batch: list[str] = []
+    for key in store.s3.list_keys(prefix):
+        batch.append(key)
+        if len(batch) == 1000:
+            store.s3.delete_objects(batch)
+            batch = []
+    if batch:
+        store.s3.delete_objects(batch)
+    for key, upload_id in store.s3.list_multipart_uploads(prefix):
+        with contextlib.suppress(ResultNotFound):
+            store.s3.abort_multipart_upload(key, upload_id)

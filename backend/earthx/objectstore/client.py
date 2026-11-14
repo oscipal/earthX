@@ -16,7 +16,7 @@ endpoint, §3.2, §9.2).
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, BinaryIO, TypeVar
@@ -131,11 +131,44 @@ class S3:
     def _redact(self, text: str) -> str:
         return redact(text, self._config.secret_key, self._config.access_key)
 
-    def put_object(self, key: str, body: BinaryIO, content_type: str) -> None:
+    def put_object(
+        self,
+        key: str,
+        body: BinaryIO,
+        content_type: str,
+        *,
+        cache_control: str | None = None,
+        metadata: Mapping[str, str] | None = None,
+    ) -> None:
+        extra: dict[str, Any] = {}
+        if cache_control is not None:
+            extra["CacheControl"] = cache_control
+        if metadata:
+            extra["Metadata"] = dict(metadata)
         self._call(
             "PutObject",
-            lambda: self._internal.put_object(Bucket=self._config.bucket, Key=key, Body=body, ContentType=content_type),
+            lambda: self._internal.put_object(
+                Bucket=self._config.bucket, Key=key, Body=body, ContentType=content_type, **extra
+            ),
         )
+
+    def copy_object(self, source_key: str, key: str) -> None:
+        """Copy one object to another key inside the bucket, content and metadata as they are (server side)."""
+        self._call(
+            "CopyObject",
+            lambda: self._internal.copy_object(
+                Bucket=self._config.bucket, Key=key, CopySource={"Bucket": self._config.bucket, "Key": source_key}
+            ),
+        )
+
+    def get_bytes(self, key: str) -> bytes:
+        """The whole object, for one that is known to be small; :class:`ResultNotFound` if there is none."""
+        response = self._call("GetObject", lambda: self._internal.get_object(Bucket=self._config.bucket, Key=key))
+        stream = ObjectRange(response["Body"])
+        try:
+            return b"".join(iter(lambda: stream.read(1024 * 1024), b""))
+        finally:
+            stream.close()
 
     def create_multipart_upload(self, key: str, content_type: str) -> str:
         response = self._call(
