@@ -27,9 +27,7 @@ from earthx.processing.overview_build import (
     JOB_NAME,
     MANIFEST_NAME,
     PLAN_NAME,
-    PYRAMID_MIN_ZOOM,
     build_pyramid,
-    first_zoom,
     plan_pyramid,
     pyramid_hosts,
     tile_hash,
@@ -41,7 +39,7 @@ from tests.earthx.processing import sources
 pytestmark = pytest.mark.filterwarnings("ignore:The dataset has no Overviews")
 
 HOST = sources.HOST
-BASE = 6  # cop-dem-glo-30: min_zoom 7 in PYRAMID_MIN_ZOOM, so the base level is z6
+BASE = 6  # cop-dem-glo-30: min_zoom 7 in the registry, so the base level is z6
 TMS = morecantile.tms.get("WebMercatorQuad")
 
 
@@ -90,18 +88,17 @@ def _build(work: Path) -> tuple[dict, list[tuple[int, int]]]:
 
 
 class TestLevels:
-    def test_the_registry_says_zero_so_the_constant_decides(self) -> None:
-        assert PYRAMID_MIN_ZOOM == {"cop-dem-glo-30": 7, "esa-worldcover-2020": 5, "esa-worldcover-2021": 5}
-        assert first_zoom("cop-dem-glo-30", 0) == 7
-        assert overview.base_zoom(first_zoom("esa-worldcover-2021", 0)) == 4
+    def test_the_registry_names_the_first_level_and_the_base_is_one_below(self) -> None:
+        """Part 9 moved the levels from a constant of this module into the YAML: GLO-30 z0-z6, WorldCover z0-z4."""
+        released = registry()
+        assert overview.base_zoom(released.get("cop-dem-glo-30").viewer.min_zoom) == 6
+        for dataset_id in ("esa-worldcover-2020", "esa-worldcover-2021"):
+            assert overview.base_zoom(released.get(dataset_id).viewer.min_zoom) == 4
 
-    def test_a_registry_value_of_one_or_more_wins_so_part_nine_changes_yaml_only(self) -> None:
-        assert first_zoom("cop-dem-glo-30", 9) == 9
-        assert first_zoom("anything", 3) == 3
+    def test_there_is_no_constant_left_that_names_a_level(self) -> None:
+        import earthx.processing.overview_build as module
 
-    def test_a_dataset_with_neither_is_refused(self) -> None:
-        with pytest.raises(ValueError, match="PYRAMID_MIN_ZOOM"):
-            first_zoom("not-listed", 0)
+        assert not hasattr(module, "PYRAMID_MIN_ZOOM") and not hasattr(module, "first_zoom")
 
     def test_every_dataset_with_a_pyramid_in_the_registry_can_be_built(self) -> None:
         hosts = pyramid_hosts()
@@ -110,9 +107,11 @@ class TestLevels:
         for dataset_id in hosts:
             assert registry().get(dataset_id).viewer.overview is OverviewMode.PYRAMID
 
-    def test_an_entry_the_constant_does_not_know_stops_the_listing(self) -> None:
+    def test_an_entry_with_no_level_to_build_from_stops_the_listing(self) -> None:
         cfg = registry().get("cop-dem-glo-30")
-        odd = replace(cfg, dataset_id="odd-dem", viewer=replace(cfg.viewer, min_zoom=0))
+        viewer = replace(cfg.viewer, min_zoom=1)
+        object.__setattr__(viewer, "min_zoom", 0)  # what no registry would let in: the worker does not rely on it alone
+        odd = replace(cfg, dataset_id="odd-dem", viewer=viewer)
         with pytest.raises(ValueError, match="odd-dem"):
             pyramid_hosts([odd])  # type: ignore[arg-type]
 

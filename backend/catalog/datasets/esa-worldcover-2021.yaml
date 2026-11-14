@@ -138,10 +138,11 @@ default_render:
   # Every asset of the list (DS-04 plan F2).
   asset_selection: all
 # As for the DEM: one period for every tile, so one group; the AOI crop in full resolution, no quicklook (no CORS).
-# `min_zoom` 0: the file has overviews down to 1:64, so a tile of the world reads them, like the DEM's.
+# `min_zoom` 5 (M5-30b part 9, adr/0032 §5.2, §9): from z5 a tile reads the original files; below it the tiler serves the
+# overview pyramid z0-z4 that the worker builds after `materialize` (`overview: pyramid`, `mode` for classes), like the DEM's.
 viewer:
   group_by: [start_datetime]
-  min_zoom: 0
+  min_zoom: 5
   max_zoom: 15
   browse: full_resolution
   quicklook_nodata_max: null

@@ -769,7 +769,10 @@ class ViewerInfo:
     the dataset has no way below ``min_zoom`` but the original files, so ``min_zoom``
     must be ``0``: an entry that would show no image below its ``min_zoom`` is refused
     when it is loaded. With ``PYRAMID`` or ``SUBSTITUTE`` any ``min_zoom`` is allowed,
-    because the pyramid or the substitute serves what lies below it.
+    because the pyramid or the substitute serves what lies below it; a ``PYRAMID`` needs
+    a ``min_zoom`` of 1 or more, since the worker builds its levels z0 up to
+    ``min_zoom`` - 1 (GLO-30 7, WorldCover 5), and the tile route serves them below it
+    (plan M5-30b part 9).
 
     **``overview_substitute``** — the id of the dataset drawn below ``min_zoom``, required for ``SUBSTITUTE``
     and ``None`` for the others (no default, B10). The substitute is a picture only: statistics, crop, download
@@ -867,6 +870,11 @@ class ViewerInfo:
                     f"one of {[mode.value for mode in OverviewResampling]}"
                 )
             self._check_substitute_unset()
+            if self.min_zoom < 1:
+                raise ConfigError(
+                    "viewer.min_zoom is 0 but overview is pyramid: the pyramid lies below min_zoom, so it "
+                    "needs a min_zoom of 1 or more (its base level is min_zoom - 1)"
+                )
             return
         if self.overview_resampling is not None:
             raise ConfigError(

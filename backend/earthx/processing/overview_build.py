@@ -10,9 +10,9 @@ into it what it read from the database and the store, starts a child, and upload
   tile that `jobs` put there beforehand (its key is in ``reuse``) is neither read nor written again, only decoded for the
   levels above.
 
-**Levels.** The base level is one below the first level the tiles are drawn from (:func:`first_zoom`: the registry's
-``viewer.min_zoom``, and for the datasets whose registry value is still 0, the constant of :data:`PYRAMID_MIN_ZOOM`, so
-that the part that sets the registry only changes the YAML). Every level above is made from four tiles below it.
+**Levels.** The base level is one below the first level the tiles are drawn from: the registry's ``viewer.min_zoom``
+(GLO-30 7, WorldCover 5; part 9 of plan M5-30b moved them there from a constant of this module). Every level above is
+made from four tiles below it.
 
 **Which files.** A base tile reads the items whose bounding box meets it, in the order of their ids, the first valid
 pixel winning (the datasets of a pyramid tile the globe without overlap). The first asset of the default render that an
@@ -25,7 +25,6 @@ import hashlib
 import json
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from types import MappingProxyType
 from typing import Any
 
 import morecantile
@@ -43,10 +42,8 @@ __all__ = [
     "JOB_NAME",
     "MANIFEST_NAME",
     "PLAN_NAME",
-    "PYRAMID_MIN_ZOOM",
     "TILES_DIR",
     "build_pyramid",
-    "first_zoom",
     "plan_pyramid",
     "pyramid_hosts",
     "tile_hash",
@@ -59,36 +56,23 @@ PLAN_NAME = "plan.json"
 MANIFEST_NAME = "manifest.json"
 TILES_DIR = "tiles"
 
-#: Where the tiles are drawn from the files, for the datasets whose ``viewer.min_zoom`` is still 0 in the registry
-#: (adr/0032 §5.2, plan M5-30b §8.10). A registry value of 1 or more wins, so the part that sets 7 and 5 changes YAML only.
-PYRAMID_MIN_ZOOM: Mapping[str, int] = MappingProxyType(
-    {"cop-dem-glo-30": 7, "esa-worldcover-2020": 5, "esa-worldcover-2021": 5}
-)
-
 _TMS = morecantile.tms.get("WebMercatorQuad")
 Progress = Callable[[int, int], None]
-
-
-def first_zoom(dataset_id: str, min_zoom: int) -> int:
-    """The level the tiles are drawn from the files at: the registry's ``min_zoom``, else the constant; ``ValueError`` if neither."""
-    if min_zoom >= 1:
-        return min_zoom
-    known = PYRAMID_MIN_ZOOM.get(dataset_id)
-    if known is None:
-        raise ValueError(f"{dataset_id}: a pyramid needs a viewer.min_zoom of 1 or more, or an entry in PYRAMID_MIN_ZOOM")
-    return known
 
 
 def pyramid_hosts(registry: DatasetRegistry | None = None) -> dict[str, tuple[str, ...]]:
     """The datasets with ``viewer.overview: pyramid`` and the hosts each reads from: plain data for the supervisor.
 
-    A dataset with no level to build from raises ``ValueError``, so the worker does not start with an entry it could
-    never build (the same loudness as the other checks of its start).
+    A dataset with no level to build from (a ``min_zoom`` below 1) raises ``ValueError``, so the worker does not start with an
+    entry it could never build (the same loudness as the other checks of its start).
     """
     found: dict[str, tuple[str, ...]] = {}
     for config in registry if registry is not None else default_registry():
         if config.viewer is not None and config.viewer.overview is OverviewMode.PYRAMID:
-            first_zoom(config.dataset_id, config.viewer.min_zoom)
+            try:
+                overview.base_zoom(config.viewer.min_zoom)
+            except ValueError:
+                raise ValueError(f"{config.dataset_id}: a pyramid needs a viewer.min_zoom of 1 or more") from None
             found[config.dataset_id] = tuple(config.source.asset_hosts)
     return found
 
@@ -116,7 +100,7 @@ def _config(dataset_id: str, registry: DatasetRegistry | None) -> tuple[DatasetC
     config = (registry if registry is not None else default_registry()).get(dataset_id)
     if config.viewer is None or config.viewer.overview is not OverviewMode.PYRAMID or config.viewer.overview_resampling is None:
         raise ValueError(f"{dataset_id}: no overview pyramid in the registry")
-    return config, overview.base_zoom(first_zoom(dataset_id, config.viewer.min_zoom))
+    return config, overview.base_zoom(config.viewer.min_zoom)
 
 
 def _bbox(item: Mapping[str, Any]) -> tuple[float, float, float, float]:
