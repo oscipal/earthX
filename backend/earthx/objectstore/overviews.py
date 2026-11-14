@@ -15,6 +15,7 @@ from __future__ import annotations
 import contextlib
 import re
 from collections.abc import Iterable, Iterator
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -29,7 +30,7 @@ __all__ = [
     "OVERVIEW_TTL",
     "PROTOTYPE_PREFIX",
     "PROTOTYPE_TTL",
-    "copy_tile",
+    "StoredTile",
     "delete_keys",
     "delete_version",
     "extend_version",
@@ -107,23 +108,29 @@ def upload_tile(
         )
 
 
-def copy_tile(store: Store, dataset_id: str, from_version: str, to_version: str, z: int, x: int, y: int) -> None:
-    """Copy a tile of an older version to the new version on the store's side, ``checked-at`` and all (adr/0032 §5.2).
+@dataclass(frozen=True, slots=True)
+class StoredTile:
+    """The bytes of a stored tile and the ``checked-at`` it carries (``None`` if the metadatum is missing or unreadable)."""
 
-    A copy keeps the time its source had: it is a new object (the bucket rule counts from now), but the content was
-    not confirmed again, so the term does not move.
+    data: bytes
+    checked_at: datetime | None
+
+
+def read_tile(store: Store, dataset_id: str, version: str, z: int, x: int, y: int) -> StoredTile | None:
+    """One stored tile with its ``checked-at``, or ``None`` if there is none.
+
+    A build that reuses a tile of an older version uploads these bytes itself, with this time: it never asks that version
+    again, which may have expired by the time the build ends.
     """
-    store.s3.copy_object(
-        overview_key(dataset_id, from_version, z, x, y), overview_key(dataset_id, to_version, z, x, y)
-    )
-
-
-def read_tile(store: Store, dataset_id: str, version: str, z: int, x: int, y: int) -> bytes | None:
-    """The bytes of one stored tile, or ``None`` if there is none."""
     try:
-        return store.s3.get_bytes(overview_key(dataset_id, version, z, x, y))
+        data, metadata = store.s3.get_bytes_and_metadata(overview_key(dataset_id, version, z, x, y))
     except ResultNotFound:
         return None
+    try:
+        checked_at = datetime.fromisoformat(metadata[CHECKED_AT])
+    except (KeyError, ValueError):
+        return StoredTile(data, None)
+    return StoredTile(data, checked_at if checked_at.tzinfo is not None else None)
 
 
 def extend_version(store: Store, dataset_id: str, version: str, checked_at: datetime) -> int:

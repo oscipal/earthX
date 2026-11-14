@@ -14,6 +14,7 @@ import pytest
 from earthx.jobs.config import WorkerConfig
 from earthx.jobs.overviews import (
     MAX_ATTEMPTS,
+    REUSE_MARGIN,
     Build,
     claim,
     finish_failed,
@@ -481,27 +482,41 @@ class TestHourlyRound:
 
 class TestPreviousReady:
     @staticmethod
-    def _ready(db: psycopg.Connection, dataset_id: str, version: str, checked: str, hashes: str = "{}") -> None:
+    def _ready(db: psycopg.Connection, dataset_id: str, version: str, ago: str, hashes: str = "{}") -> None:
+        """A ready pyramid last checked ``ago`` before now."""
         db.execute(
             """
             INSERT INTO public.earthx_overview (dataset_id, version, status, checked_at, base_hashes)
-            VALUES (%s, %s, 'ready', %s, %s::jsonb)
+            VALUES (%s, %s, 'ready', clock_timestamp() - %s::interval, %s::jsonb)
             """,
-            (dataset_id, version, checked, hashes),
+            (dataset_id, version, ago, hashes),
         )
 
     def test_none_without_a_ready_pyramid(self, db: psycopg.Connection) -> None:
         assert previous_ready(db, "dem", "0" * 16) is None
 
     def test_the_newest_ready_pyramid_of_the_dataset_other_than_the_version(self, db: psycopg.Connection) -> None:
-        self._ready(db, "dem", "a" * 16, "2026-10-01T00:00:00Z", '{"1/1": "h"}')
-        self._ready(db, "dem", "b" * 16, "2026-10-20T00:00:00Z")
-        self._ready(db, "dem", "c" * 16, "2026-11-01T00:00:00Z")
-        self._ready(db, "land", "d" * 16, "2026-11-05T00:00:00Z")
+        self._ready(db, "dem", "a" * 16, "15 days", '{"1/1": "h"}')
+        self._ready(db, "dem", "b" * 16, "10 days")
+        self._ready(db, "dem", "c" * 16, "5 days")
+        self._ready(db, "land", "d" * 16, "1 day")
         found = previous_ready(db, "dem", "c" * 16)
         assert found is not None and found.version == "b" * 16
         older = previous_ready(db, "dem", "b" * 16)
         assert older is not None and older.version == "c" * 16
+
+    def test_a_pyramid_with_less_than_the_margin_of_its_term_left_is_no_source(self, db: psycopg.Connection) -> None:
+        """30 days of term, 7 of margin: 24 days old is out, 22 days old is in."""
+        self._ready(db, "dem", "a" * 16, "24 days")
+        assert previous_ready(db, "dem", "z" * 16) is None
+        self._ready(db, "dem", "b" * 16, "22 days")
+        found = previous_ready(db, "dem", "z" * 16)
+        assert found is not None and found.version == "b" * 16
+        assert REUSE_MARGIN == timedelta(days=7)
+
+    def test_a_prototype_source_with_its_seven_days_never_has_a_margin_left(self, db: psycopg.Connection) -> None:
+        self._ready(db, "proto-dem", "a" * 16, "1 minute")
+        assert previous_ready(db, "proto-dem", "z" * 16) is None
 
     def test_a_building_or_failed_row_is_nothing_to_copy_from(self, db: psycopg.Connection) -> None:
         _request(db, "dem", "v1")
@@ -512,7 +527,7 @@ class TestPreviousReady:
         assert previous_ready(db, "dem", "0" * 16) is None
 
     def test_the_hashes_come_back_as_a_dict(self, db: psycopg.Connection) -> None:
-        self._ready(db, "dem", "a" * 16, "2026-10-01T00:00:00Z", '{"1/1": "h"}')
+        self._ready(db, "dem", "a" * 16, "5 days", '{"1/1": "h"}')
         found = previous_ready(db, "dem", "b" * 16)
         assert found is not None and found.base_hashes == {"1/1": "h"} and found.checked_at.tzinfo is not None
 

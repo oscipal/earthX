@@ -152,15 +152,6 @@ class S3:
             ),
         )
 
-    def copy_object(self, source_key: str, key: str) -> None:
-        """Copy one object to another key inside the bucket, content and metadata as they are (server side)."""
-        self._call(
-            "CopyObject",
-            lambda: self._internal.copy_object(
-                Bucket=self._config.bucket, Key=key, CopySource={"Bucket": self._config.bucket, "Key": source_key}
-            ),
-        )
-
     def rewrite_object(
         self, key: str, *, content_type: str, cache_control: str | None, metadata: Mapping[str, str]
     ) -> None:
@@ -185,10 +176,14 @@ class S3:
 
     def get_bytes(self, key: str) -> bytes:
         """The whole object, for one that is known to be small; :class:`ResultNotFound` if there is none."""
+        return self.get_bytes_and_metadata(key)[0]
+
+    def get_bytes_and_metadata(self, key: str) -> tuple[bytes, dict[str, str]]:
+        """The whole object and its user metadata, for one that is known to be small; :class:`ResultNotFound` if none."""
         response = self._call("GetObject", lambda: self._internal.get_object(Bucket=self._config.bucket, Key=key))
         stream = ObjectRange(response["Body"])
         try:
-            return b"".join(iter(lambda: stream.read(1024 * 1024), b""))
+            return b"".join(iter(lambda: stream.read(1024 * 1024), b"")), dict(response.get("Metadata") or {})
         finally:
             stream.close()
 

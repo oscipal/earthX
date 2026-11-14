@@ -10,6 +10,7 @@ import json
 import shutil
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import morecantile
@@ -19,7 +20,7 @@ import rasterio
 from rasterio.transform import from_bounds
 
 from earthx.catalog.datasets import registry
-from earthx.catalog.registry import OverviewMode
+from earthx.catalog.registry import OverviewMode, OverviewResampling
 from earthx.processing import overview, overview_build
 from earthx.processing.overview_build import (
     ITEMS_NAME,
@@ -31,6 +32,7 @@ from earthx.processing.overview_build import (
     first_zoom,
     plan_pyramid,
     pyramid_hosts,
+    tile_hash,
     tile_path,
 )
 from earthx.readers.errors import AssetRejected
@@ -115,6 +117,50 @@ class TestLevels:
             pyramid_hosts([odd])  # type: ignore[arg-type]
 
 
+class TestTheHashOfATile:
+    """Review 8b-2 finding 6: the hash decides reuse, so it carries the level, the resampling and the assets too."""
+
+    ITEMS = [_item("a", (8, 46, 9, 47)), _item("b", (9, 46, 10, 47))]
+
+    def test_the_same_items_level_resampling_and_assets_give_the_same_hash_in_any_order(self) -> None:
+        config = registry().get("cop-dem-glo-30")
+        one = tile_hash(self.ITEMS, zoom=6, config=config)
+        assert one is not None and one == tile_hash(self.ITEMS[::-1], zoom=6, config=config)
+
+    def test_another_level_gives_another_hash(self) -> None:
+        config = registry().get("cop-dem-glo-30")
+        assert tile_hash(self.ITEMS, zoom=6, config=config) != tile_hash(self.ITEMS, zoom=8, config=config)
+
+    def test_another_resampling_gives_another_hash(self) -> None:
+        config = registry().get("cop-dem-glo-30")
+        other = replace(config, viewer=replace(config.viewer, overview_resampling=OverviewResampling.NEAREST))
+        assert config.viewer.overview_resampling is not OverviewResampling.NEAREST
+        assert tile_hash(self.ITEMS, zoom=6, config=config) != tile_hash(self.ITEMS, zoom=6, config=other)  # type: ignore[arg-type]
+
+    def test_other_assets_give_another_hash(self) -> None:
+        config = registry().get("cop-dem-glo-30")
+        other = SimpleNamespace(viewer=config.viewer, default_render=SimpleNamespace(assets=("other",)))  # the registry refuses such an entry
+        assert tile_hash(self.ITEMS, zoom=6, config=config) != tile_hash(self.ITEMS, zoom=6, config=other)  # type: ignore[arg-type]
+
+    def test_items_without_updated_still_have_none(self) -> None:
+        config = registry().get("cop-dem-glo-30")
+        assert tile_hash([_item("a", (8, 46, 9, 47), updated=None)], zoom=6, config=config) is None
+
+    def test_a_changed_item_gives_another_hash(self) -> None:
+        config = registry().get("cop-dem-glo-30")
+        changed = [self.ITEMS[0], _item("b", (9, 46, 10, 47), updated="2026-02-01T00:00:00Z")]
+        assert tile_hash(self.ITEMS, zoom=6, config=config) != tile_hash(changed, zoom=6, config=config)
+
+    def test_a_plan_at_another_level_gives_other_hashes_for_the_same_items(self, workdir: Path) -> None:
+        base = plan_pyramid(workdir)
+        cfg = registry().get("cop-dem-glo-30")
+        deeper = replace(cfg, viewer=replace(cfg.viewer, min_zoom=8))
+        from earthx.catalog.registry import DatasetRegistry
+
+        again = plan_pyramid(workdir, registry=DatasetRegistry((deeper,)))
+        assert again["base_zoom"] == 7 and set(again["tiles"].values()).isdisjoint(base["tiles"].values())
+
+
 class TestPlan:
     def test_it_names_the_base_tiles_and_the_hash_of_their_items_without_reading_a_source(
         self, workdir: Path, monkeypatch: pytest.MonkeyPatch
@@ -125,8 +171,9 @@ class TestPlan:
         assert set(plan["tiles"]) == {"33/22", "34/22"}
         assert json.loads((workdir / PLAN_NAME).read_text()) == plan
         items = [json.loads(line) for line in (workdir / ITEMS_NAME).read_text().splitlines()]
-        assert plan["tiles"]["33/22"] == overview.base_hash(items[:2])
-        assert plan["tiles"]["34/22"] == overview.base_hash(items[2:])
+        config = registry().get("cop-dem-glo-30")
+        assert plan["tiles"]["33/22"] == tile_hash(items[:2], zoom=BASE, config=config)
+        assert plan["tiles"]["34/22"] == tile_hash(items[2:], zoom=BASE, config=config)
 
     def test_items_without_updated_have_no_hash_so_every_tile_is_read_again(self, workdir: Path) -> None:
         items = [_item("a", (8, 46, 9, 47), updated=None), _item("c", (12, 46, 13, 47))]
