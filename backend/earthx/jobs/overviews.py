@@ -32,11 +32,13 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from earthx.jobs.queue import RETRYABLE
+from earthx.objectstore.overviews import term_of
 
 __all__ = [
     "MAX_ATTEMPTS",
     "OVERVIEW_LOCK_KEY",
     "RETRY_AFTER",
+    "REUSE_MARGIN",
     "Build",
     "Previous",
     "claim",
@@ -54,6 +56,9 @@ OVERVIEW_LOCK_KEY = 0x6A6F6273_00000003
 
 #: A build is tried this many times in all (the first included).
 MAX_ATTEMPTS = 3
+#: A tile or a pyramid of an older version is a source for reuse only while at least this much of its term is left: a new
+#: pyramid takes the oldest time of what it reuses, so a tile near its end would shorten the whole pyramid to that.
+REUSE_MARGIN = timedelta(days=7)
 #: A failed build waits this long for its next attempt; a lost lease does not wait.
 RETRY_AFTER = timedelta(hours=1)
 
@@ -255,17 +260,18 @@ def request_missing(conn: psycopg.Connection, datasets: Collection[str]) -> int:
 
 
 def previous_ready(conn: psycopg.Connection, dataset_id: str, version: str) -> Previous | None:
-    """The newest ready pyramid of ``dataset_id`` other than ``version``, or ``None``.
+    """The newest ready pyramid of ``dataset_id`` other than ``version`` with at least :data:`REUSE_MARGIN` of its term left, or ``None``.
 
-    "Newest" is by ``checked_at``. Its tiles are the ones a build of ``version`` may copy when their hash is the same.
+    "Newest" is by ``checked_at``. Its tiles are the ones a build of ``version`` may reuse when their hash is the same; one
+    whose term ends within the margin (or has ended) is no source, so a new pyramid is never cut short by an old one.
     """
     row = conn.execute(
         """
         SELECT version, checked_at, base_hashes FROM public.earthx_overview
-        WHERE dataset_id = %s AND version <> %s AND status = 'ready'
+        WHERE dataset_id = %s AND version <> %s AND status = 'ready' AND checked_at + %s - %s > clock_timestamp()
         ORDER BY checked_at DESC LIMIT 1
         """,
-        (dataset_id, version),
+        (dataset_id, version, term_of(dataset_id), REUSE_MARGIN),
     ).fetchone()
     return None if row is None else Previous(row[0], row[1], dict(row[2]))
 

@@ -47,7 +47,7 @@ from earthx.jobs import overviews
 from earthx.jobs.config import WorkerConfig
 from earthx.jobs.entry import ChildTarget
 from earthx.objectstore.errors import ObjectStoreError
-from earthx.objectstore.overviews import copy_tile, delete_version, read_tile, upload_tile
+from earthx.objectstore.overviews import delete_version, read_tile, term_of, upload_tile
 from earthx.objectstore.results import Store
 
 __all__ = ["DISK_BYTES", "STALL_SECONDS", "WORKDIR", "OverviewBuilder", "write_items"]
@@ -224,17 +224,21 @@ class OverviewBuilder:
         previous = overviews.previous_ready(conn, build.dataset_id, build.version)
         reuse = self._fetch_reusable(build, workdir, base, plan["tiles"], previous, beat)
         read_at = datetime.now(UTC)
-        self._step(conn, build, workdir, {**job, "mode": "build", "reuse": reuse}, beat)
+        self._step(conn, build, workdir, {**job, "mode": "build", "reuse": sorted(reuse)}, beat)
         manifest = json.loads((workdir / MANIFEST_NAME).read_text(encoding="utf-8"))
-        checked_at = min(read_at, previous.checked_at) if reuse and previous is not None else read_at
+        # The pyramid is as old as the oldest of what it holds: the read of this build, or a reused tile's own time.
+        checked_at = min([read_at, *reuse.values()])
         try:
-            self._publish(build, workdir, manifest["tiles"], base, set(reuse), previous, checked_at, beat)
+            self._own(conn, build)
+            # An earlier attempt of this version may have left objects; this attempt's tiles are the only ones that stay.
+            delete_version(self._store, build.dataset_id, build.version)
+            self._publish(build, workdir, manifest["tiles"], base, reuse, read_at, beat)
         except (ObjectStoreError, OSError) as error:
             LOGGER.warning("overview upload failed", extra={"error": type(error).__name__})
-            self._forget(build)
+            self._forget(conn, build)
             raise _Failed("upload_failed") from None
         except _Shutdown:
-            self._forget(build)
+            self._forget(conn, build)
             raise
         if not overviews.finish_ready(conn, build, checked_at=checked_at, base_hashes=manifest["base_hashes"]):
             return "lease_lost_here"
@@ -256,8 +260,20 @@ class OverviewBuilder:
 
         return beat
 
-    def _forget(self, build: overviews.Build) -> None:
-        """Delete what an attempt that did not finish put in the store; the sweep of the hourly round is the net."""
+    def _own(self, conn: psycopg.Connection, build: overviews.Build) -> None:
+        """Renew the lease now and raise :class:`_LeaseLost` if this attempt no longer owns the build."""
+        if not overviews.heartbeat(conn, build, self._config.lease_seconds):
+            raise _LeaseLost
+        self._database_ok()
+
+    def _forget(self, conn: psycopg.Connection, build: overviews.Build) -> None:
+        """Delete what this attempt put in the store, but only while the build is still its own.
+
+        A stale attempt (its lease ran out, another one took over and may have finished the same version) must not delete
+        what the new owner uploaded; the sweep of the hourly round is the net for what stays.
+        """
+        if not overviews.heartbeat(conn, build, self._config.lease_seconds):
+            return
         with contextlib.suppress(ObjectStoreError):
             delete_version(self._store, build.dataset_id, build.version)
 
@@ -343,27 +359,33 @@ class OverviewBuilder:
         hashes: Mapping[str, str | None],
         previous: overviews.Previous | None,
         beat: Callable[[], None],
-    ) -> list[str]:
-        """Put the tiles of the last ready version whose items did not change into the work directory; their ``x/y`` keys."""
+    ) -> dict[str, datetime]:
+        """Put the tiles of the last ready version whose hash did not change into the work directory.
+
+        Returns their ``x/y`` keys with the ``checked-at`` each object carries. A tile whose own term has less than
+        :data:`~earthx.jobs.overviews.REUSE_MARGIN` left, or that carries no readable time, is read again instead.
+        """
+        reuse: dict[str, datetime] = {}
         if previous is None:
-            return []
-        reuse: list[str] = []
+            return reuse
+        now = datetime.now(UTC)
+        term = term_of(build.dataset_id)
         for key, digest in hashes.items():
             if digest is None or previous.base_hashes.get(key) != digest:
                 continue
             beat()
             x, y = (int(part) for part in key.split("/"))
             try:
-                data = read_tile(self._store, build.dataset_id, previous.version, base, x, y)
+                stored = read_tile(self._store, build.dataset_id, previous.version, base, x, y)
             except ObjectStoreError as error:
                 LOGGER.warning("overview reuse failed", extra={"error": type(error).__name__})
                 raise _Failed("store_failed") from None
-            if data is None:
+            if stored is None or stored.checked_at is None or stored.checked_at + term - overviews.REUSE_MARGIN <= now:
                 continue
             path = workdir / TILES_DIR / str(base) / str(x) / f"{y}.tif"
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(data)
-            reuse.append(key)
+            path.write_bytes(stored.data)
+            reuse[key] = stored.checked_at
         return reuse
 
     def _publish(
@@ -372,16 +394,14 @@ class OverviewBuilder:
         workdir: Path,
         tiles: Sequence[str],
         base: int,
-        reuse: set[str],
-        previous: overviews.Previous | None,
-        checked_at: datetime,
+        reuse: Mapping[str, datetime],
+        read_at: datetime,
         beat: Callable[[], None],
     ) -> None:
+        """Upload every tile in the work directory: the time of the read for what this build made, a reused base tile's own."""
         for name in tiles:
             beat()
             z, x, y = (int(part) for part in name.split("/"))
-            if z == base and f"{x}/{y}" in reuse and previous is not None:
-                copy_tile(self._store, build.dataset_id, previous.version, build.version, z, x, y)
-            else:
-                path = workdir / TILES_DIR / str(z) / str(x) / f"{y}.tif"
-                upload_tile(self._store, build.dataset_id, build.version, z, x, y, path, checked_at=checked_at)
+            own = reuse.get(f"{x}/{y}") if z == base else None
+            path = workdir / TILES_DIR / str(z) / str(x) / f"{y}.tif"
+            upload_tile(self._store, build.dataset_id, build.version, z, x, y, path, checked_at=own or read_at)

@@ -9,6 +9,7 @@ pgstac in `tests/integration/test_overview_items.py`. Times are short: a lease o
 from __future__ import annotations
 
 import ast
+import io
 import json
 import logging
 import multiprocessing
@@ -18,7 +19,7 @@ import tempfile
 import threading
 import time
 from collections.abc import Callable, Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -53,7 +54,7 @@ FAST: dict[str, Any] = {
     "cleanup_seconds": 1e9,
     "backoff_seconds": 0.0,
 }
-OLD = datetime(2026, 10, 20, 12, 0, tzinfo=UTC)
+OLD = datetime.now(UTC).replace(microsecond=0) - timedelta(days=10)
 PREVIOUS = "aaaaaaaaaaaaaaaa"
 
 
@@ -185,7 +186,8 @@ class TestABuild:
         supervisor = make()
         _wait_for(db, "dem", version, "ready")
         wait_until(lambda: not _children())
-        assert not (supervisor.config.workdir / overview_builder.WORKDIR).exists()
+        # The row closes before the work directory is removed: wait for the clean-up, do not race it.
+        wait_until(lambda: not (supervisor.config.workdir / overview_builder.WORKDIR).exists())
 
     def test_the_tiles_of_a_prototype_source_are_served_with_no_store(
         self, db: psycopg.Connection, store: Store, make: Callable[..., Supervisor]
@@ -439,26 +441,20 @@ class TestTheLease:
 
 
 class TestReuse:
-    def test_a_base_tile_whose_items_did_not_change_is_copied_from_the_old_version_and_not_read(
+    def test_a_base_tile_whose_items_did_not_change_is_reused_from_the_old_version_and_not_read(
         self, db: psycopg.Connection, store: Store, make: Callable[..., Supervisor], monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("PLAN_HASHES", json.dumps({"1/1": "h1", "2/1": "h2"}))
         _previous(db, store, {"1/1": "h1", "2/1": "other"}, ["2/1/1", "2/2/1"])
         version = _request(db, "dem", "v2")
-        uploaded: list[tuple] = []
-        real = overview_builder.upload_tile
-        monkeypatch.setattr(
-            overview_builder, "upload_tile", lambda *a, **k: (uploaded.append(a[3:6]), real(*a, **k))[1]
-        )
         make()
         _wait_for(db, "dem", version, "ready")
         key = f"overviews/dem/{version}/2/1/1.tif"
-        assert store.s3.get_bytes(key) == b"old-tile", "copied, not read"
+        assert store.s3.get_bytes(key) == b"old-tile", "reused, not read"
         assert store.s3.get_bytes(f"overviews/dem/{version}/2/2/1.tif") == b"read", "its items changed: read again"
-        assert (2, 1, 1) not in uploaded and (2, 2, 1) in uploaded
-        assert _head(store, key)["Metadata"] == {CHECKED_AT: OLD.isoformat()}, "a copy keeps the term of its source"
+        assert _head(store, key)["Metadata"] == {CHECKED_AT: OLD.isoformat()}, "a reused tile keeps the term of its source"
 
-    def test_the_row_takes_the_older_time_when_a_tile_was_copied(
+    def test_the_row_takes_the_older_time_when_a_tile_was_reused(
         self, db: psycopg.Connection, store: Store, make: Callable[..., Supervisor], monkeypatch: pytest.MonkeyPatch
     ) -> None:
         _previous(db, store, {"1/1": "h1"}, ["2/1/1"])
@@ -467,7 +463,8 @@ class TestReuse:
         _wait_for(db, "dem", version, "ready")
         row = _row(db, "dem", version)
         assert row["checked_at"] == OLD
-        assert _head(store, f"overviews/dem/{version}/1/0/0.tif")["Metadata"] == {CHECKED_AT: OLD.isoformat()}
+        level = datetime.fromisoformat(_head(store, f"overviews/dem/{version}/1/0/0.tif")["Metadata"][CHECKED_AT])
+        assert level > OLD, "a level made by this build carries the time of the read; the row carries the oldest"
 
     def test_items_without_updated_have_no_hash_and_every_tile_is_read_again(
         self, db: psycopg.Connection, store: Store, make: Callable[..., Supervisor], monkeypatch: pytest.MonkeyPatch
@@ -481,7 +478,7 @@ class TestReuse:
         row = _row(db, "dem", version)
         assert row["base_hashes"] == {} and row["checked_at"] > OLD
 
-    def test_a_pyramid_without_hashes_in_its_row_gives_nothing_to_copy(
+    def test_a_pyramid_without_hashes_in_its_row_gives_nothing_to_reuse(
         self, db: psycopg.Connection, store: Store, make: Callable[..., Supervisor]
     ) -> None:
         _previous(db, store, {}, ["2/1/1"])
@@ -500,7 +497,7 @@ class TestReuse:
         assert store.s3.get_bytes(f"overviews/dem/{version}/2/1/1.tif") == b"read"
         assert _row(db, "dem", version)["checked_at"] > OLD
 
-    def test_only_a_ready_pyramid_of_the_same_dataset_is_copied_from(
+    def test_only_a_ready_pyramid_of_the_same_dataset_is_reused_from(
         self, db: psycopg.Connection, store: Store, make: Callable[..., Supervisor]
     ) -> None:
         _previous(db, store, {"1/1": "h1"}, ["2/1/1"])
@@ -585,7 +582,7 @@ class TestARealChild:
 
         second = _request(db, "cop-dem-glo-30", "v2")
         _wait_for(db, "cop-dem-glo-30", second, "ready", timeout=120)
-        assert store.s3.get_bytes(f"overviews/cop-dem-glo-30/{second}/6/33/22.tif") == base, "copied: the same bytes"
+        assert store.s3.get_bytes(f"overviews/cop-dem-glo-30/{second}/6/33/22.tif") == base, "reused: the same bytes"
         copied = _head(store, f"overviews/cop-dem-glo-30/{second}/6/33/22.tif")["Metadata"]
         assert copied == _head(store, f"overviews/cop-dem-glo-30/{first}/6/33/22.tif")["Metadata"]
         assert _row(db, "cop-dem-glo-30", second)["checked_at"] == row["checked_at"]
@@ -615,6 +612,133 @@ class TestARealChild:
         status, kind, _ = _status(db, "cop-dem-glo-30", version)
         assert kind == "rejected", "not a kind a second attempt can help"
         assert _keys(store, "cop-dem-glo-30", version) == []
+
+
+class TestTheReusedBytesAreUploadedFromTheWorkDirectory:
+    """The old version may be gone by the end of a build that takes hours: nothing reads it then (review 8b-2 finding 1)."""
+
+    def test_a_previous_version_deleted_while_the_build_runs_does_not_fail_the_upload(
+        self, db: psycopg.Connection, store: Store, make: Callable[..., Supervisor], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _previous(db, store, {"1/1": "h1"}, ["2/1/1"])
+        monkeypatch.setenv("OVERVIEW_DELAY", "2")
+        version = _request(db, "dem", "v2")
+        supervisor = make()
+        job = supervisor.config.workdir / overview_builder.WORKDIR / "job.json"
+        # The build step has begun once job.json names it; by then the old tile is in the work directory.
+        wait_until(lambda: job.exists() and json.loads(job.read_text())["mode"] == "build" and len(_children()) == 1)
+        overview_builder.delete_version(store, "dem", PREVIOUS)
+        _wait_for(db, "dem", version, "ready")
+        assert store.s3.get_bytes(f"overviews/dem/{version}/2/1/1.tif") == b"old-tile"
+
+    def test_a_reused_tile_keeps_the_time_of_its_own_object_and_the_row_takes_the_oldest(
+        self, db: psycopg.Connection, store: Store, make: Callable[..., Supervisor], tmp_path: Path
+    ) -> None:
+        _previous(db, store, {"1/1": "h1"}, ["2/1/1"])
+        older = OLD - timedelta(days=2)
+        with tempfile.NamedTemporaryFile() as handle:
+            handle.write(b"old-tile")
+            handle.flush()
+            upload_tile(store, "dem", PREVIOUS, 2, 1, 1, Path(handle.name), checked_at=older)
+        version = _request(db, "dem", "v2")
+        make()
+        _wait_for(db, "dem", version, "ready")
+        assert _row(db, "dem", version)["checked_at"] == older
+        assert _head(store, f"overviews/dem/{version}/2/1/1.tif")["Metadata"] == {CHECKED_AT: older.isoformat()}
+        fresh = _head(store, f"overviews/dem/{version}/2/2/1.tif")["Metadata"][CHECKED_AT]
+        assert datetime.fromisoformat(fresh) > OLD, "tiles that were read now carry the time of the read"
+
+    def test_a_tile_with_too_little_term_left_is_read_again_not_reused(
+        self, db: psycopg.Connection, store: Store, make: Callable[..., Supervisor]
+    ) -> None:
+        """Its term ends within the margin: reusing it would shorten the new pyramid to that (review 8b-2 finding 1)."""
+        _previous(db, store, {"1/1": "h1"}, [])
+        with tempfile.NamedTemporaryFile() as handle:
+            handle.write(b"old-tile")
+            handle.flush()
+            almost = datetime.now(UTC) - timedelta(days=26)
+            upload_tile(store, "dem", PREVIOUS, 2, 1, 1, Path(handle.name), checked_at=almost)
+        db.execute("UPDATE public.earthx_overview SET checked_at = clock_timestamp() - interval '10 days'")
+        version = _request(db, "dem", "v2")
+        make()
+        _wait_for(db, "dem", version, "ready")
+        assert store.s3.get_bytes(f"overviews/dem/{version}/2/1/1.tif") == b"read"
+        assert _row(db, "dem", version)["checked_at"] > OLD
+
+    def test_a_previous_version_with_too_little_term_left_is_not_a_source_at_all(
+        self, db: psycopg.Connection, store: Store, make: Callable[..., Supervisor]
+    ) -> None:
+        _previous(db, store, {"1/1": "h1"}, ["2/1/1"])
+        db.execute("UPDATE public.earthx_overview SET checked_at = clock_timestamp() - interval '26 days'")
+        version = _request(db, "dem", "v2")
+        make()
+        _wait_for(db, "dem", version, "ready")
+        assert store.s3.get_bytes(f"overviews/dem/{version}/2/1/1.tif") == b"read"
+
+
+class TestObjectsOfOtherAttempts:
+    def test_a_stale_attempt_that_fails_does_not_delete_the_objects_of_the_attempt_that_took_over(
+        self, db: psycopg.Connection, store: Store, make: Callable[..., Supervisor], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Review 8b-2 finding 2: the clean-up after a failed upload checks that the build is still its own."""
+        version = _request(db, "dem", "v1")
+        real, calls = overview_builder.upload_tile, []
+
+        def taken_over(*args: Any, **kwargs: Any) -> None:
+            calls.append(1)
+            if len(calls) == 2:
+                # Another attempt finished the same version meanwhile and its objects stand there.
+                db.execute(
+                    "UPDATE public.earthx_overview SET attempts = 2, status = 'ready', worker = NULL, lease_until = NULL,"
+                    " checked_at = now()"
+                )
+                with tempfile.NamedTemporaryFile() as handle:
+                    handle.write(b"theirs")
+                    handle.flush()
+                    real(store, "dem", version, 9, 9, 9, Path(handle.name), checked_at=datetime.now(UTC))
+                raise StoreUnavailable("object store PutObject failed")
+            real(*args, **kwargs)
+
+        monkeypatch.setattr(overview_builder, "upload_tile", taken_over)
+        make()
+        wait_until(lambda: len(calls) >= 2 and not _children() and _status(db, "dem", version)[0] == "ready", 20)
+        time.sleep(0.5)
+        assert store.s3.get_bytes(f"overviews/dem/{version}/9/9/9.tif") == b"theirs"
+        assert _row(db, "dem", version)["attempts"] == 2 and _status(db, "dem", version)[0] == "ready"
+
+    def test_a_stale_attempt_that_is_stopped_does_not_delete_them_either(
+        self, db: psycopg.Connection, store: Store, make: Callable[..., Supervisor], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        version = _request(db, "dem", "v1")
+        real, calls = overview_builder.upload_tile, []
+        holder: list[Supervisor] = []
+
+        def taken_over_then_stop(*args: Any, **kwargs: Any) -> None:
+            calls.append(1)
+            if len(calls) == 2:
+                db.execute("UPDATE public.earthx_overview SET attempts = 2")
+                with tempfile.NamedTemporaryFile() as handle:
+                    handle.write(b"theirs")
+                    handle.flush()
+                    real(store, "dem", version, 9, 9, 9, Path(handle.name), checked_at=datetime.now(UTC))
+                holder[0]._stopping.set()
+            real(*args, **kwargs)
+
+        monkeypatch.setattr(overview_builder, "upload_tile", taken_over_then_stop)
+        holder.append(make())
+        wait_until(lambda: len(calls) >= 2 and not _children(), 20)
+        time.sleep(0.5)
+        assert store.s3.get_bytes(f"overviews/dem/{version}/9/9/9.tif") == b"theirs"
+
+    def test_objects_an_earlier_attempt_left_under_the_same_version_are_removed_before_the_upload(
+        self, db: psycopg.Connection, store: Store, make: Callable[..., Supervisor]
+    ) -> None:
+        version = _request(db, "dem", "v1")
+        store.s3.put_object(f"overviews/dem/{version}/9/0/0.tif", io.BytesIO(b"stale"), "image/tiff")
+        make()
+        _wait_for(db, "dem", version, "ready")
+        assert len(_keys(store, "dem", version)) == 5, "only the tiles of this attempt"
+        assert not any("/9/0/0.tif" in key for key in _keys(store, "dem", version))
 
 
 class TestTheShellAndTheCore:

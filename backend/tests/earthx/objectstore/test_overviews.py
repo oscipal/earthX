@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from earthx.objectstore.errors import ObjectStoreError, ResultNotFound
+from earthx.objectstore.errors import ObjectStoreError
 from earthx.objectstore.overviews import (
     CHECKED_AT,
     NO_STORE,
@@ -15,7 +15,7 @@ from earthx.objectstore.overviews import (
     OVERVIEW_RULE_DAYS,
     OVERVIEW_TTL,
     PROTOTYPE_TTL,
-    copy_tile,
+    StoredTile,
     delete_version,
     overview_key,
     overviews_lifecycle_ok,
@@ -141,7 +141,7 @@ class TestUpload:
         assert head["Metadata"] == {CHECKED_AT: WHEN.isoformat()}
         assert head["ContentType"] == "image/tiff; application=geotiff"
         assert "CacheControl" not in head
-        assert read_tile(store, "cop-dem-glo-30", VERSION, 3, 4, 2) == tile_file.read_bytes()
+        assert read_tile(store, "cop-dem-glo-30", VERSION, 3, 4, 2) == StoredTile(tile_file.read_bytes(), WHEN)
 
     def test_a_prototype_source_is_served_with_no_store(self, store: Store, tile_file: Path) -> None:
         upload_tile(store, "proto-anything", VERSION, 0, 0, 0, tile_file, checked_at=WHEN)
@@ -164,18 +164,18 @@ class TestUpload:
         assert "PutObject" in str(caught.value) and "dem" not in str(caught.value)
 
 
-class TestCopyReadDelete:
-    def test_a_copy_has_the_bytes_and_the_checked_at_of_its_source(self, store: Store, tile_file: Path) -> None:
+class TestReadDelete:
+    def test_a_read_gives_the_bytes_and_the_time_the_object_carries(self, store: Store, tile_file: Path) -> None:
         upload_tile(store, "dem", VERSION, 5, 1, 1, tile_file, checked_at=WHEN)
-        copy_tile(store, "dem", VERSION, OTHER, 5, 1, 1)
-        copied = _head(store, f"overviews/dem/{OTHER}/5/1/1.tif")
-        assert copied["Metadata"] == {CHECKED_AT: WHEN.isoformat()}
-        assert read_tile(store, "dem", OTHER, 5, 1, 1) == tile_file.read_bytes()
+        assert read_tile(store, "dem", VERSION, 5, 1, 1) == StoredTile(tile_file.read_bytes(), WHEN)
 
-    def test_a_copy_of_a_tile_that_is_not_there_is_an_error_and_writes_nothing(self, store: Store) -> None:
-        with pytest.raises(ResultNotFound):
-            copy_tile(store, "dem", VERSION, OTHER, 5, 1, 1)
-        assert list(store.s3.list_keys("overviews/")) == []
+    @pytest.mark.parametrize("metadata", [{}, {CHECKED_AT: "yesterday"}, {CHECKED_AT: "2026-11-14T12:00:00"}])
+    def test_a_time_that_is_missing_or_unreadable_or_naive_reads_as_none(
+        self, store: Store, tile_file: Path, metadata: dict
+    ) -> None:
+        key = f"overviews/dem/{VERSION}/5/1/1.tif"
+        store.s3._internal.put_object(Bucket=BUCKET, Key=key, Body=tile_file.read_bytes(), Metadata=metadata)
+        assert read_tile(store, "dem", VERSION, 5, 1, 1) == StoredTile(tile_file.read_bytes(), None)
 
     def test_a_tile_that_is_not_there_reads_as_none(self, store: Store) -> None:
         assert read_tile(store, "dem", VERSION, 1, 0, 0) is None

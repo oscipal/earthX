@@ -21,6 +21,7 @@ item carries is the one read, cleared through the policy of `readers` against th
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
@@ -48,6 +49,7 @@ __all__ = [
     "first_zoom",
     "plan_pyramid",
     "pyramid_hosts",
+    "tile_hash",
     "tile_path",
 ]
 
@@ -134,12 +136,31 @@ def base_tiles(items: Sequence[Mapping[str, Any]], zoom: int) -> dict[morecantil
     return dict(sorted(found.items(), key=lambda pair: (pair[0].y, pair[0].x)))
 
 
+def tile_hash(
+    items: Sequence[Mapping[str, Any]], *, zoom: int, config: DatasetConfig
+) -> str | None:
+    """What decides that a stored base tile may be reused: the hash of its items (:func:`overview.base_hash`), the level
+    it lies at, the resampling and the assets read.
+
+    A tile of another level, made with another resampling or from another asset is never the same tile, whatever its
+    items say: a change of ``min_zoom`` (part 9) or of ``overview_resampling`` in the registry must not let an old tile
+    through. ``None`` where the items give no hash.
+    """
+    digest = overview.base_hash(items)
+    if digest is None:
+        return None
+    assert config.viewer is not None and config.viewer.overview_resampling is not None
+    assert config.default_render is not None
+    salt = f"{digest}|z{zoom}|{config.viewer.overview_resampling.value}|{','.join(config.default_render.assets)}"
+    return hashlib.sha256(salt.encode()).hexdigest()
+
+
 def plan_pyramid(workdir: Path, *, registry: DatasetRegistry | None = None) -> dict[str, Any]:
     """Write ``plan.json``: the base level and, per base tile ``x/y``, the hash of its items (``null`` without ``updated``)."""
     job = _job(workdir)
-    _, base = _config(job["dataset_id"], registry)
+    config, base = _config(job["dataset_id"], registry)
     tiles = {
-        f"{tile.x}/{tile.y}": overview.base_hash(members)
+        f"{tile.x}/{tile.y}": tile_hash(members, zoom=base, config=config)
         for tile, members in base_tiles(_items(workdir), base).items()
     }
     plan = {"base_zoom": base, "tiles": tiles}
@@ -215,7 +236,7 @@ def build_pyramid(
                 _write(path, overview.encode_tile(image))
         if path.is_file():
             written.append(f"{tile.z}/{tile.x}/{tile.y}")
-            if (digest := overview.base_hash(members)) is not None:
+            if (digest := tile_hash(members, zoom=base, config=config)) is not None:
                 hashes[key] = digest
         done += 1
         progress(done, total)
