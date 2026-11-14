@@ -404,18 +404,26 @@ class OverviewState:
     failure_kind: str | None = None
 
 
-async def overview_state_async(conn: psycopg.AsyncConnection, dataset_id: str, *, fresh_after: datetime) -> OverviewState:
+async def overview_state_async(
+    conn: psycopg.AsyncConnection,
+    dataset_id: str,
+    *,
+    fresh_after: datetime,
+    confirmed_after: datetime | None = None,
+) -> OverviewState:
     """The state of the pyramid of a dataset for the tile route: the newest ready version in its term, else the state of the rest.
 
     A ready pyramid counts while ``checked_at`` is later than ``fresh_after`` (the caller subtracts the term of the dataset
-    from now), or while the source has confirmed its version since (``confirmed_at`` after ``checked_at``: the worker
-    extends it in its next round, adr/0032 §5.3). The hourly round of the worker closes the others, and the route does not
-    wait for it. Without a ready pyramid a running build is ``building``, otherwise the newest row
-    decides: ``failed``, an expired ready row as ``failed`` with the kind ``expired``. Read-only on the caller's connection,
-    like :func:`fetch_item`.
+    from now). The source's confirmation (``confirmed_at`` after ``checked_at``) holds it back only while the worker can still
+    extend it, as the worker's own sweep reads it (adr/0032 §5.3): ``confirmed_after`` is the start of that window (now minus
+    ``EXTEND_WINDOW``), and a pyramid checked before it expires whatever the confirmation. ``None`` (a prototype source: it is
+    never extended, adr/0032 §8.4) means a confirmation counts for nothing. The hourly round of the worker closes the
+    expired rows, and the route does not wait for it. Without a ready pyramid a running build is ``building``, otherwise the
+    newest row decides: ``failed``, an expired ready row as ``failed`` with the kind ``expired``. Read-only on the caller's
+    connection, like :func:`fetch_item`.
     """
-    if fresh_after.tzinfo is None:
-        raise ValueError("fresh_after must be timezone-aware")
+    if fresh_after.tzinfo is None or (confirmed_after is not None and confirmed_after.tzinfo is None):
+        raise ValueError("fresh_after and confirmed_after must be timezone-aware")
     async with conn.cursor() as cur:
         await cur.execute(
             """
@@ -428,7 +436,13 @@ async def overview_state_async(conn: psycopg.AsyncConnection, dataset_id: str, *
     if not rows:
         return OverviewState("none")
     for status, version, _, checked_at, confirmed_at in rows:
-        if status == "ready" and (checked_at > fresh_after or (confirmed_at is not None and confirmed_at > checked_at)):
+        extendable = (
+            confirmed_after is not None
+            and confirmed_at is not None
+            and confirmed_at > checked_at
+            and checked_at > confirmed_after
+        )
+        if status == "ready" and (checked_at > fresh_after or extendable):
             return OverviewState("ready", version)
     if any(status == "building" for status, *_ in rows):
         return OverviewState("building")

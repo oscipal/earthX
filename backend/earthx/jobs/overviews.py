@@ -33,7 +33,7 @@ from psycopg.types.json import Jsonb
 
 from earthx.jobs.queue import RETRYABLE
 from earthx.objectstore.overviews import (
-    OVERVIEW_RULE_DAYS,
+    EXTEND_WINDOW,
     OVERVIEW_TTL,
     PROTOTYPE_PREFIX,
     PROTOTYPE_TTL,
@@ -67,9 +67,6 @@ __all__ = [
 # A third fixed key for `pg_advisory_xact_lock`, next to those of `queue.py`: 'jobs' in ASCII, plus 3.
 OVERVIEW_LOCK_KEY = 0x6A6F6273_00000003
 
-#: How long after ``checked_at`` an extension is still allowed: until the bucket rule can begin to delete (31 days from
-#: the write of an object, never before ``checked_at``), less 12 hours for clock differences and the length of a round.
-EXTEND_WINDOW = timedelta(days=OVERVIEW_RULE_DAYS) - timedelta(hours=12)
 #: The failure kind of a pyramid whose term ran out; it is not in `RETRYABLE`, so :func:`claim` does not retry it; a successful `materialize` run of the same version
 #: makes it buildable again (`catalog.pgstac.rearm_overview`, adr/0032 §5: the next successful run builds anew).
 EXPIRED = "expired"

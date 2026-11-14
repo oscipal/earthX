@@ -32,7 +32,7 @@ from starlette.concurrency import run_in_threadpool
 
 from earthx.catalog.pgstac import OverviewState, overview_state_async
 from earthx.objectstore.errors import ObjectStoreError
-from earthx.objectstore.overviews import PROTOTYPE_PREFIX, read_tile, term_of
+from earthx.objectstore.overviews import EXTEND_WINDOW, PROTOTYPE_PREFIX, read_tile, term_of
 from earthx.objectstore.results import Store
 
 LOGGER = logging.getLogger("earthx.api.overview_tiles")
@@ -104,10 +104,13 @@ class OverviewSources:
                 return state
         if pool is None:
             raise HTTPException(status_code=503, detail="overviews need the catalogue database, which is not reachable")
-        fresh_after = self._now() - term_of(dataset_id)
+        now = self._now()
+        # A confirmation holds a pyramid back only inside the window the worker can still extend it in, and never for a
+        # prototype source (the same rule as the worker's sweep, `jobs.overviews`).
+        confirmed_after = None if is_prototype(dataset_id) else now - EXTEND_WINDOW
         try:
             async with pool.connection() as conn:
-                state = await overview_state_async(conn, dataset_id, fresh_after=fresh_after)
+                state = await overview_state_async(conn, dataset_id, fresh_after=now - term_of(dataset_id), confirmed_after=confirmed_after)
         except psycopg.Error as error:
             # The kind of failure only: the driver's text can name the host and the user.
             LOGGER.warning("the catalogue failed under the tile of an overview: %s", type(error).__name__)

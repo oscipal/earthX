@@ -9,6 +9,7 @@ import pytest
 
 from earthx.catalog.pgstac import OverviewState, overview_state_async
 from earthx.catalog.schema import discover_migrations
+from earthx.objectstore.overviews import EXTEND_WINDOW
 
 from .conftest import SHIPPED_TABLES
 
@@ -51,8 +52,12 @@ async def _row(
     )
 
 
+#: The start of the window a confirmation counts in, as the route computes it (`EXTEND_WINDOW` before now).
+CONFIRMED_AFTER = NOW - EXTEND_WINDOW
+
+
 async def _state(conn: psycopg.AsyncConnection, dataset: str = DATASET) -> OverviewState:
-    return await overview_state_async(conn, dataset, fresh_after=FRESH_AFTER)
+    return await overview_state_async(conn, dataset, fresh_after=FRESH_AFTER, confirmed_after=CONFIRMED_AFTER)
 
 
 async def test_no_row_is_none(rows: psycopg.AsyncConnection) -> None:
@@ -95,6 +100,25 @@ async def test_a_pyramid_the_source_confirmed_after_its_term_is_still_served_unt
     assert await _state(rows) == OverviewState("ready", V1)
 
 
+async def test_a_confirmation_after_the_window_of_the_worker_no_longer_keeps_a_pyramid(
+    rows: psycopg.AsyncConnection,
+) -> None:
+    """The worker extends only inside the window; after it a pyramid expires whatever the source confirmed (adr/0032 §5.3)."""
+    old = NOW - EXTEND_WINDOW - timedelta(hours=1)
+    await _row(rows, V1, "ready", checked=old, confirmed=NOW - timedelta(days=1))
+    assert await _state(rows) == OverviewState("failed", failure_kind="expired")
+
+
+async def test_a_prototype_pyramid_expires_after_seven_days_whatever_the_confirmation(
+    rows: psycopg.AsyncConnection,
+) -> None:
+    """A prototype source is never extended (adr/0032 §8.4): the route passes no window, and a confirmation counts for nothing."""
+    checked = NOW - timedelta(days=8)
+    await _row(rows, V1, "ready", checked=checked, confirmed=NOW - timedelta(days=1), dataset="proto-x")
+    state = await overview_state_async(rows, "proto-x", fresh_after=NOW - timedelta(days=7), confirmed_after=None)
+    assert state == OverviewState("failed", failure_kind="expired")
+
+
 async def test_a_confirmation_older_than_the_check_does_not_keep_a_pyramid(rows: psycopg.AsyncConnection) -> None:
     old = FRESH_AFTER - timedelta(hours=2)
     await _row(rows, V1, "ready", checked=old, confirmed=old - timedelta(days=1))
@@ -125,3 +149,5 @@ async def test_another_dataset_has_its_own_state(rows: psycopg.AsyncConnection) 
 async def test_a_term_without_a_time_zone_is_refused(rows: psycopg.AsyncConnection) -> None:
     with pytest.raises(ValueError, match="timezone-aware"):
         await overview_state_async(rows, DATASET, fresh_after=datetime(2026, 1, 1))
+    with pytest.raises(ValueError, match="timezone-aware"):
+        await overview_state_async(rows, DATASET, fresh_after=NOW, confirmed_after=datetime(2026, 1, 1))

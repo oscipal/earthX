@@ -42,7 +42,7 @@ from earthx.catalog.registry import (
 )
 from earthx.objectstore.client import S3
 from earthx.objectstore.errors import StoreUnavailable
-from earthx.objectstore.overviews import upload_tile
+from earthx.objectstore.overviews import EXTEND_WINDOW, upload_tile
 from earthx.objectstore.results import Store
 from earthx.processing.overview import encode_tile, tile_image
 from tests.catalog.entries import SENTINEL_2_L2A
@@ -119,14 +119,18 @@ class Rows:
     def __init__(self) -> None:
         self.states: dict[str, OverviewState] = {}
         self.asked: list[tuple[str, datetime]] = []
+        self.confirmed_after: dict[str, datetime | None] = {}
         self.fail: Exception | None = None
 
     def ready(self, *dataset_ids: str) -> None:
         for dataset_id in dataset_ids:
             self.states[dataset_id] = OverviewState("ready", VERSION)
 
-    async def __call__(self, conn: Any, dataset_id: str, *, fresh_after: datetime) -> OverviewState:
+    async def __call__(
+        self, conn: Any, dataset_id: str, *, fresh_after: datetime, confirmed_after: datetime | None = None
+    ) -> OverviewState:
         self.asked.append((dataset_id, fresh_after))
+        self.confirmed_after[dataset_id] = confirmed_after
         if self.fail is not None:
             raise self.fail
         return self.states.get(dataset_id, OverviewState("none"))
@@ -298,6 +302,21 @@ class TestTheTileOfAPyramid:
         api.get(path(PROTO_ID, 6))
         (_, regular), (_, prototype) = rows.asked
         assert (clock.wall() - regular).days == 30 and (clock.wall() - prototype).days == 7
+
+    def test_a_confirmation_counts_inside_the_window_of_the_worker_for_a_regular_source_and_never_for_a_prototype(
+        self, rows, pyramids, client, clock
+    ) -> None:
+        rows.ready(RELIEF_ID, PROTO_ID)
+        pyramids.put(RELIEF_ID, 6)
+        pyramids.put(PROTO_ID, 6)
+        api = client()
+        api.get(path(RELIEF_ID, 6))
+        api.get(path(PROTO_ID, 6))
+        assert clock.wall() - rows.confirmed_after[RELIEF_ID] == EXTEND_WINDOW
+        from earthx.jobs import overviews as worker_rules
+
+        assert worker_rules.EXTEND_WINDOW is EXTEND_WINDOW, "the sweep of the worker and the route read one window"
+        assert rows.confirmed_after[PROTO_ID] is None
 
 
 class TestWithoutAPyramid:
