@@ -158,6 +158,9 @@ class TileGate:
             left = await gone()
         except Exception:  # a transport that cannot say: the client is taken to be there
             left = False
+        except BaseException:  # cancelled at this await: the place is taken and nobody else would give it back
+            place.release()
+            raise
         if left:
             place.release()
             raise ClientGone("the client hung up")
@@ -181,9 +184,12 @@ class TileGate:
     @staticmethod
     async def _abandon(acquiring: asyncio.Future[bool], free: asyncio.Semaphore) -> None:
         acquiring.cancel()
-        await asyncio.wait({acquiring})
-        if not acquiring.cancelled():  # the place came in the same moment: it is nobody's, so it goes back
-            free.release()
+        try:
+            await asyncio.wait({acquiring})
+        finally:
+            # The place came in the same moment: it is nobody's, so it goes back, however often this await is cancelled.
+            if acquiring.done() and not acquiring.cancelled():
+                free.release()
 
     async def _until_gone(self, gone: Callable[[], Awaitable[bool]]) -> None:
         """Returns when the client has gone; never returns if the transport cannot say (the wait then goes on as it was)."""

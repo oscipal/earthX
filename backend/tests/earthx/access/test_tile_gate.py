@@ -198,3 +198,61 @@ def test_the_gate_follows_the_event_loop_it_is_used_in() -> None:
 @pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"
+
+
+async def _all_places_free(gate: TileGate) -> None:
+    """The gate hands out every one of its places, at once, and no more."""
+    taken = [await asyncio.wait_for(gate.enter(_here), 0.3) for _ in range(gate.places)]
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(gate.enter(_here), 0.05)
+    for place in taken:
+        place.release()
+
+
+@pytest.mark.anyio
+async def test_a_request_cancelled_after_its_place_came_gives_the_place_back() -> None:
+    """The look at the client after the place is an await too, and a cancellation there must not keep the place."""
+    gate = TileGate(1)
+
+    async def slow_look() -> bool:
+        await asyncio.sleep(10)
+        return False
+
+    task = asyncio.ensure_future(gate.enter(slow_look))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    await _all_places_free(gate)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("cancels", [1, 2, 3])
+async def test_a_request_cancelled_again_while_it_leaves_the_queue_keeps_no_place(cancels: int) -> None:
+    """A server that cancels at every await (anyio) can cancel the request again while it is abandoning the queue."""
+    gate = TileGate(1)
+    held = await gate.enter(_here)
+    waiting = asyncio.ensure_future(gate.enter(_here))
+    await asyncio.sleep(0.01)
+    held.release()  # the place comes in the very moment the request is cancelled
+    for _ in range(cancels):
+        waiting.cancel()
+        await asyncio.sleep(0)
+    with pytest.raises(asyncio.CancelledError):
+        await waiting
+    await asyncio.sleep(0.01)
+    await _all_places_free(gate)
+
+
+@pytest.mark.anyio
+async def test_a_place_that_came_is_given_back_even_when_the_abandoning_is_cancelled_too() -> None:
+    free = asyncio.Semaphore(1)
+    came = asyncio.ensure_future(free.acquire())  # the place came: the acquire is done and the semaphore is at 0
+    await asyncio.sleep(0)
+    assert came.done() and free.locked()
+    abandoning = asyncio.ensure_future(TileGate._abandon(came, free))
+    await asyncio.sleep(0)
+    abandoning.cancel()  # the second cancellation, at the await inside `_abandon`
+    with pytest.raises(asyncio.CancelledError):
+        await abandoning
+    assert not free.locked(), "the place that came is lost"
