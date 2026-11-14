@@ -472,12 +472,13 @@ def scenes_touching(
 class TileOutcome:
     """What a mosaic tile knows about itself only after its scenes are chosen or read: kept for the response headers."""
 
-    __slots__ = ("budget", "left_out", "source")
+    __slots__ = ("budget", "left_out", "no_store", "source")
 
     def __init__(self) -> None:
         self.left_out = 0
         self.source: str | None = None  # where the pixels come from where that is not the dataset of the URL
         self.budget: Any = None  # the `access.mosaic_tiles.ReadBudget` of the tile, once there is one
+        self.no_store = False  # a tile of a prototype source's pyramid: never kept (adr/0024 R7)
 
     @property
     def timed_out(self) -> bool:
@@ -495,8 +496,8 @@ class TileOutcome:
 class TileOutcomeHeaders:
     """ASGI middleware: the headers a tile knows only once its scenes are chosen or read.
 
-    :data:`PARTIAL_HEADER` on a tile that left scenes out, ``no-store`` after its time ran out, and
-    :data:`SOURCE_HEADER` on the answer of a substitute's tile. TiTiler's tile route builds its own response, and the read
+    :data:`PARTIAL_HEADER` on a tile that left scenes out, ``no-store`` after its time ran out or for a prototype
+    source's pyramid, and :data:`SOURCE_HEADER` on the answer of a substitute's or a pyramid's tile. TiTiler's tile route builds its own response, and the read
     that may run out of time ends inside it; so the path dependency and the reader write a :class:`TileOutcome` that
     lives in the request's scope, and the headers are set when the response starts. Only the paths under
     ``/collections/{dataset}/mosaic/`` and ``/collections/{dataset}/overview/tiles/`` get an outcome.
@@ -518,13 +519,11 @@ class TileOutcomeHeaders:
                 headers = list(message.get("headers", []))
                 if outcome.source and message.get("status") == 200:
                     headers.append((SOURCE_HEADER.lower().encode(), outcome.source.encode()))
+                if outcome.timed_out or outcome.no_store:
+                    headers = [header for header in headers if header[0].lower() != b"cache-control"]
+                    headers.append((b"cache-control", b"no-store"))
                 if outcome.left_out or outcome.timed_out:
-                    partial = str(outcome.left_out).encode()
-                    if outcome.timed_out:
-                        headers = [header for header in headers if header[0].lower() != b"cache-control"]
-                        headers.append((b"cache-control", b"no-store"))
-                        partial = b"time"
-                    headers.append((PARTIAL_HEADER.lower().encode(), partial))
+                    headers.append((PARTIAL_HEADER.lower().encode(), b"time" if outcome.timed_out else str(outcome.left_out).encode()))
                 message = {**message, "headers": headers}
             await send(message)
 

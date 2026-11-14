@@ -390,6 +390,52 @@ def remove_prototype_overviews(conn: psycopg.Connection, registered: Collection[
     return deleted
 
 
+@dataclass(frozen=True, slots=True)
+class OverviewState:
+    """What the tile route needs to know of the pyramid of one dataset (plan M5-30b §8.11).
+
+    ``ready`` has a ``version``: the newest pyramid whose term has not run out. ``building`` means a build is running;
+    ``failed`` a build that failed (``failure_kind`` names it; a retry that is waiting still reads ``failed``) or a pyramid
+    whose term ran out (``expired``); ``none`` that there is no row at all.
+    """
+
+    status: str
+    version: str | None = None
+    failure_kind: str | None = None
+
+
+async def overview_state_async(conn: psycopg.AsyncConnection, dataset_id: str, *, fresh_after: datetime) -> OverviewState:
+    """The state of the pyramid of a dataset for the tile route: the newest ready version in its term, else the state of the rest.
+
+    A ready pyramid counts while ``checked_at`` is later than ``fresh_after`` (the caller subtracts the term of the dataset
+    from now), or while the source has confirmed its version since (``confirmed_at`` after ``checked_at``: the worker
+    extends it in its next round, adr/0032 §5.3). The hourly round of the worker closes the others, and the route does not
+    wait for it. Without a ready pyramid a running build is ``building``, otherwise the newest row
+    decides: ``failed``, an expired ready row as ``failed`` with the kind ``expired``. Read-only on the caller's connection,
+    like :func:`fetch_item`.
+    """
+    if fresh_after.tzinfo is None:
+        raise ValueError("fresh_after must be timezone-aware")
+    async with conn.cursor() as cur:
+        await cur.execute(
+            """
+            SELECT status, version, failure_kind, checked_at, confirmed_at
+            FROM public.earthx_overview WHERE dataset_id = %s ORDER BY created_at DESC LIMIT 50
+            """,
+            (dataset_id,),
+        )
+        rows = await cur.fetchall()
+    if not rows:
+        return OverviewState("none")
+    for status, version, _, checked_at, confirmed_at in rows:
+        if status == "ready" and (checked_at > fresh_after or (confirmed_at is not None and confirmed_at > checked_at)):
+            return OverviewState("ready", version)
+    if any(status == "building" for status, *_ in rows):
+        return OverviewState("building")
+    status, _, kind, *_ = rows[0]
+    return OverviewState("failed", failure_kind="expired" if status == "ready" else kind)
+
+
 async def fetch_item(conn: psycopg.AsyncConnection, dataset_id: str, item_id: str) -> dict[str, object] | None:
     """One item of a materialized dataset's own pgstac collection, or ``None``.
 

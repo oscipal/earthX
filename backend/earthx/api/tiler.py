@@ -91,12 +91,12 @@ from earthx.access.download import (
 )
 from earthx.access.mosaic_tiles import (
     EarthxMosaicTilerFactory,
-    EarthxOverviewTilerFactory,
     MosaicLayout,
     MosaicScenes,
     ReadBudget,
     open_mosaic,
 )
+from earthx.access.overview_tiles import EarthxOverviewTilerFactory, PyramidTile
 from earthx.access.radar import item_line_times
 from earthx.access.resolve import (
     AssetNotOnItem,
@@ -115,7 +115,7 @@ from earthx.adapters import (
     AdapterSpecs,
     check_adapter_specs,
 )
-from earthx.api import mosaic_tiles
+from earthx.api import mosaic_tiles, overview_tiles
 from earthx.api.area_statistics import AREA_STATISTICS_ROUTE, area_statistics_endpoint
 from earthx.api.citation import citation_bib
 from earthx.api.dependencies import cache_pool, policy_from_registry
@@ -1117,29 +1117,35 @@ async def create_mosaic_selection(
 
 async def overview_scenes(
     request: Request, dataset: Annotated[str, Path(description="dataset id of the registry")]
-) -> MosaicScenes:
-    """The scenes of the substitute that a tile below the first level of ``dataset`` reads (plan M5-30b §4.8, A5).
+) -> MosaicScenes | PyramidTile:
+    """What the tile below the first level of ``dataset`` shows (plan M5-30b §4.8, §8.11, A5).
 
     The route hangs on the dataset and the tile alone, so that a tile has the same URL and the same picture for every
-    user, whatever they selected. Only a dataset with ``overview: substitute`` has it (else ``404``), and the licence of
-    the dataset and of the substitute allow display. The level has to lie below the first level of the dataset
-    (else ``400``); from there on the dataset's own tiles serve. What the pixels are is the substitute's picture, drawn
-    with the display parameters of the request; the route has no statistics, no info and no TileJSON.
+    user, whatever they selected. The dataset has ``overview: pyramid`` (its own pyramid in the object store) or
+    ``overview: substitute`` (the picture of another dataset), else ``404``; the licence of the dataset and of the
+    substitute allow display. The level has to lie below the first level of the dataset (else ``400``); from there on
+    the dataset's own tiles serve. The route has no statistics, no info and no TileJSON.
 
-    The items are those of the substitute that touch the tile where it lies over the extent of the dataset (a tile
-    over nothing of it is ``404``), from our own pgstac, the largest overlap first and cut to the budget per tile, so
-    that a tile of a low level reads the files over the dataset and not those of the rest of the tile. The scenes read
-    lie in the order of the mosaic. The asset is the first of the substitute's default render that an item carries.
+    **A pyramid** is read from the object store, one tile, with no read budget (:func:`_pyramid_tile`); a dataset
+    without a ready pyramid answers ``404`` with ``X-EarthX-Overview``. **A substitute** reads below the first level of
+    the stand-in the stand-in's own pyramid, cut to the extent of the dataset; from there on the files: the items of the
+    substitute that touch the tile where it lies over the extent of the dataset (a tile over nothing of it is ``404``),
+    from our own pgstac, the largest overlap first and cut to the budget per tile, so that a tile of a low level reads
+    the files over the dataset and not those of the rest of the tile. The scenes read lie in the order of the mosaic. The
+    asset is the first of the substitute's default render that an item carries.
     """
     state = request.app.state
     config = _dataset_config(state, dataset)
     _check_display_allowed(config)
     viewer = config.viewer
-    if viewer is None or viewer.overview is not OverviewMode.SUBSTITUTE or viewer.overview_substitute is None:
-        raise HTTPException(status_code=404, detail=f"{dataset!r} draws no substitute below its first level")
-    substitute = _dataset_config(state, viewer.overview_substitute)
-    _check_display_allowed(substitute)
-    assert substitute.default_render is not None  # the registry compares the unit of its default band
+    if viewer is None or viewer.overview not in (OverviewMode.SUBSTITUTE, OverviewMode.PYRAMID):
+        raise HTTPException(status_code=404, detail=f"{dataset!r} draws nothing below its first level but its own files")
+    substitute: DatasetConfig | None = None
+    if viewer.overview is OverviewMode.SUBSTITUTE:
+        assert viewer.overview_substitute is not None  # the registry requires the id of a substitute
+        substitute = _dataset_config(state, viewer.overview_substitute)
+        _check_display_allowed(substitute)
+        assert substitute.default_render is not None  # the registry compares the unit of its default band
     _refuse_free_parameters(request)
     try:
         try:
@@ -1155,12 +1161,20 @@ async def overview_scenes(
         grid = mosaic_tiles.mosaic_tile(request.path_params)
         assert grid is not None  # the path has a level
         await _validate_before_fetching(request)
+        if substitute is None:
+            return await _pyramid_tile(request, config, grid, source=overview_tiles.OVERVIEW_SOURCE, extent=None)
+        assert substitute.viewer is not None  # the registry gives a substitute a viewer
+        extent = config.spatial_extent.bbox
+        if substitute.viewer.overview is OverviewMode.PYRAMID and zoom < substitute.viewer.min_zoom:
+            # The stand-in has no files at this level either, only its pyramid; the tile over nothing of the dataset is 404.
+            mosaic_tiles.substitute_region(grid, extent)
+            return await _pyramid_tile(request, substitute, grid, source=mosaic_tiles.SUBSTITUTE_SOURCE, extent=extent)
         if substitute.source.item_holding is not ItemHolding.MATERIALIZED:
             # No dataset names a federated substitute yet: its items would come from the source's own search, which
             # this route has no budget for. Refused until a case exists and decides it.
             raise OrderRefused(501, "a federated dataset cannot serve as a substitute yet", "items")
         found, capped = await mosaic_tiles.items_in_tile(
-            getattr(state, "earthx_cache_pool", None), substitute.dataset_id, grid, config.spatial_extent.bbox
+            getattr(state, "earthx_cache_pool", None), substitute.dataset_id, grid, extent
         )
         refs: dict[str, ResolvedAsset] = {}
         items: dict[str, dict[str, Any]] = {}
@@ -1190,6 +1204,35 @@ async def overview_scenes(
         _open_ref(state, refs[item_id], target_gsd=target_gsd_for(request, items[item_id])) for item_id in touching.read
     )
     return MosaicScenes(substitute.dataset_id, scenes, mosaic_tiles.union_bounds(outlines), budget)
+
+
+async def _pyramid_tile(
+    request: Request,
+    owner: DatasetConfig,
+    grid: tuple[Any, Any],
+    *,
+    source: str,
+    extent: tuple[float, float, float, float] | None,
+) -> PyramidTile:
+    """The stored tile of ``owner``'s pyramid, or the answer that says why there is none (plan M5-30b §8.11).
+
+    ``source`` is the ``X-EarthX-Source`` of the answer: ``overview`` for the pyramid of the dataset in the path,
+    ``substitute`` where it is the stand-in's. ``extent`` cuts the picture to the dataset a stand-in draws for. A prototype
+    source's tile is sent ``no-store`` (adr/0024 R7). The read is one object and has no budget and no place at the gate
+    of the mosaic reads.
+    """
+    sources: overview_tiles.OverviewSources | None = getattr(request.app.state, "earthx_overviews", None)
+    if sources is None:
+        raise HTTPException(status_code=503, detail="overviews are not served by this process")
+    found = await sources.state(getattr(request.app.state, "earthx_cache_pool", None), owner.dataset_id)
+    if found.status != "ready" or found.version is None:
+        raise overview_tiles.refusal_of(found)
+    data = await sources.tile(owner.dataset_id, found.version, grid)
+    outcome = mosaic_tiles.TileOutcome.of(request.scope)
+    if outcome is not None:
+        outcome.source = source
+        outcome.no_store = overview_tiles.is_prototype(owner.dataset_id)
+    return PyramidTile(owner.dataset_id, data, extent)
 
 
 def overview_post_process() -> None:
@@ -1899,6 +1942,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         app.state.earthx_mosaic_selections = None if pool is None else SelectionStore(pool)
         app.state.earthx_results = _result_sources()
+        app.state.earthx_overviews = _overview_sources()
         yield
 
 
@@ -1913,6 +1957,19 @@ def _result_sources() -> ResultSources | None:
         return ResultSources(Store.from_environ(), clock=time.monotonic)
     except StoreConfigError as error:
         LOGGER.warning("job results are not served: %s", error)
+        return None
+
+
+def _overview_sources() -> overview_tiles.OverviewSources | None:
+    """The overview pyramids (M5-30b part 9), or ``None`` when this process has no key for the store.
+
+    The same read-only key as the results: the tiler reads ``overviews/`` and never writes it. Without the `S3_*`
+    environment the tile of a pyramid answers ``503``; every other tile is served as before.
+    """
+    try:
+        return overview_tiles.OverviewSources(Store.from_environ())
+    except StoreConfigError as error:
+        LOGGER.warning("overview pyramids are not served: %s", error)
         return None
 
 
@@ -2014,6 +2071,7 @@ def build_app(
     app.include_router(overview_factory.router, prefix=OVERVIEW_ROUTER_PREFIX, tags=["Overview tiles"])
     # The tiles of a finished job (M4-13c-5): read from the object store, not through the registry.
     app.state.earthx_results = None
+    app.state.earthx_overviews = None
     app.include_router(build_result_factory().router, prefix=RESULT_ROUTER_PREFIX, tags=["Results"])
     app.add_api_route(
         SCENE_ORDER_ROUTE,
