@@ -90,6 +90,8 @@ from earthx.access.download import (
     plan_outputs,
 )
 from earthx.access.mosaic_tiles import (
+    TILE_GATE,
+    ClientGone,
     EarthxMosaicTilerFactory,
     MosaicLayout,
     MosaicScenes,
@@ -804,7 +806,7 @@ async def _validate_before_fetching(request: Request) -> None:
     ``422`` FastAPI would have answered, with nothing asked of the source.
     """
     route = request.scope["route"]
-    skipped = (mosaic_scenes, mosaic_post_process, overview_scenes)
+    skipped = (placed_mosaic_scenes, mosaic_post_process, placed_overview_scenes)
     dependant = dataclasses.replace(
         route.dependant, dependencies=[sub for sub in route.dependant.dependencies if sub.call not in skipped]
     )
@@ -1235,6 +1237,61 @@ async def _pyramid_tile(
     return PyramidTile(owner.dataset_id, data, extent)
 
 
+async def _wait_for_a_place(request: Request, scenes: MosaicScenes) -> MosaicScenes:
+    """``scenes`` with the place at the gate of the tile reads, waited for in the event loop (plan M5-30b §8.11).
+
+    The wait is an ``await`` here, before TiTiler's synchronous tile function takes a thread of the pool the whole app
+    shares; the place is given back by the reader when it has read the tile, or by the request that took it. A client that
+    hangs up while it waits leaves the queue (``499``: nobody reads the answer).
+    """
+    try:
+        place = await TILE_GATE.enter(request.is_disconnected)
+    except ClientGone:
+        raise HTTPException(status_code=499, detail="the client hung up while its tile waited") from None
+    return dataclasses.replace(scenes, place=place)
+
+
+async def placed_mosaic_scenes(
+    request: Request,
+    dataset: Annotated[str, Path(description="dataset id of the registry")],
+    selection: Annotated[str, Path(description="id of a selection, from `POST /collections/{dataset}/mosaic`")],
+) -> AsyncIterator[MosaicScenes | MosaicOperatorInput | MosaicLayout]:
+    """:func:`mosaic_scenes`, and for the scenes a tile reads itself the place at the gate of the tile reads.
+
+    A TileJSON (:class:`MosaicLayout`) and a tile with steps (read by the worker core, :class:`MosaicOperatorInput`) take no
+    place: the first reads no file and the second has its own limits.
+    """
+    scenes = await mosaic_scenes(request, dataset, selection)
+    if not isinstance(scenes, MosaicScenes):
+        yield scenes
+        return
+    scenes = await _wait_for_a_place(request, scenes)
+    try:
+        yield scenes
+    finally:
+        assert scenes.place is not None
+        scenes.place.release()
+
+
+async def placed_overview_scenes(
+    request: Request, dataset: Annotated[str, Path(description="dataset id of the registry")]
+) -> AsyncIterator[MosaicScenes | PyramidTile]:
+    """:func:`overview_scenes`, and for the files of a substitute the place at the gate; a stored tile of a pyramid takes none.
+
+    A pyramid tile is one object that is read in a moment and has no budget: it does not wait behind the files of a mosaic.
+    """
+    scenes = await overview_scenes(request, dataset)
+    if not isinstance(scenes, MosaicScenes):
+        yield scenes
+        return
+    scenes = await _wait_for_a_place(request, scenes)
+    try:
+        yield scenes
+    finally:
+        assert scenes.place is not None
+        scenes.place.release()
+
+
 def overview_post_process() -> None:
     """The ``process_dependency`` of the substitute's tile: none. No ``algorithm``, no steps; a picture only."""
     return None
@@ -1373,7 +1430,7 @@ def _describe_alike(
 
 
 def mosaic_post_process(
-    src_path: Annotated[Any, Depends(mosaic_scenes)],
+    src_path: Annotated[Any, Depends(placed_mosaic_scenes)],
     op: _OpQuery = None,
     op_version: _OpVersionQuery = None,
     params: _ParamsQuery = None,
@@ -2035,7 +2092,7 @@ def build_app(
     # nothing but the item fetches that are running.
     app.state.earthx_item_fetches = mosaic_tiles.ItemFetches()
     mosaic_factory = EarthxMosaicTilerFactory(
-        path_dependency=mosaic_scenes,
+        path_dependency=placed_mosaic_scenes,
         layer_dependency=BidxParams,
         process_dependency=mosaic_post_process,
         reader=_open_mosaic_reader,
@@ -2061,7 +2118,7 @@ def build_app(
     )
     # The picture a dataset shows below its first level where another dataset stands in (plan M5-30b §4.8): one tile route.
     overview_factory = EarthxOverviewTilerFactory(
-        path_dependency=overview_scenes,
+        path_dependency=placed_overview_scenes,
         layer_dependency=BidxParams,
         process_dependency=overview_post_process,
         environment_dependency=gdal_environment,
@@ -2208,4 +2265,6 @@ __all__ = [
     "dataset_asset_path",
     "download_crop",
     "mosaic_scenes",
+    "placed_mosaic_scenes",
+    "placed_overview_scenes",
 ]

@@ -89,24 +89,12 @@ class PyramidTileReader:
             raise TypeError("a pyramid tile reader reads a PyramidTile")
         self.source = source
         self.tms = tms or morecantile.tms.get("WebMercatorQuad")
-        self._memory: MemoryFile | None = None
-        self._dataset: Any = None
 
     def __enter__(self) -> PyramidTileReader:
-        try:
-            self._memory = MemoryFile(self.source.data)
-            self._dataset = self._memory.open()
-        except rasterio.errors.RasterioError:
-            self.__exit__()
-            raise PyramidTileInvalid("the stored overview tile is not a readable raster") from None
         return self
 
     def __exit__(self, *exc_info: Any) -> None:
-        if self._dataset is not None:
-            self._dataset.close()
-        if self._memory is not None:
-            self._memory.close()
-        self._dataset = self._memory = None
+        return None
 
     @property
     def minzoom(self) -> int:
@@ -121,7 +109,16 @@ class PyramidTileReader:
         indexes = kwargs.get("indexes")
         if indexes is not None and any(index != 1 for index in ((indexes,) if isinstance(indexes, int) else indexes)):
             raise PyramidBandRefused("a tile of an overview has one band; bidx is 1")
-        dataset = self._dataset
+        try:
+            with MemoryFile(self.source.data) as memory, memory.open() as dataset:
+                image = self._read(dataset, tile_x, tile_y, tile_z, **kwargs)
+        except rasterio.errors.RasterioError:
+            raise PyramidTileInvalid("the stored overview tile is not a readable raster") from None
+        if self.source.extent is not None:
+            image = self._cut_to_extent(image, self.source.extent)
+        return image
+
+    def _read(self, dataset: Any, tile_x: int, tile_y: int, tile_z: int, **kwargs: Any) -> ImageData:
         wanted = self.tms.xy_bounds(morecantile.Tile(tile_x, tile_y, tile_z))
         left, bottom, right, top = dataset.bounds
         misplaced = max(abs(left - wanted.left), abs(bottom - wanted.bottom), abs(right - wanted.right), abs(top - wanted.top))
@@ -129,12 +126,9 @@ class PyramidTileReader:
             raise PyramidTileInvalid("the stored overview tile does not lie where its key says")
         with Reader(input="overview", dataset=dataset, tms=self.tms) as reader:
             try:
-                image = reader.tile(tile_x, tile_y, tile_z, **kwargs)
+                return reader.tile(tile_x, tile_y, tile_z, **kwargs)
             except TileOutsideBounds:
                 raise PyramidTileInvalid("the stored overview tile does not lie where its key says") from None
-        if self.source.extent is not None:
-            image = self._cut_to_extent(image, self.source.extent)
-        return image
 
     def _cut_to_extent(self, image: ImageData, extent: tuple[float, float, float, float]) -> ImageData:
         """Mask the pixels whose centre lies outside ``extent``; the box of a lon/lat rectangle is a rectangle in this grid."""
