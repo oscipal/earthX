@@ -32,8 +32,8 @@ textarea {
 }
 
 .app {
-  /* The boxes over the map stand where they are anchored, whether a panel is open or not (NM4-66): they are centred in
-     the map beside the rail (widths: `tokens.css`, UI-01 §6.9). */
+  /* The bands at the bottom stand where they are anchored, whether a panel at the left is open or not (NM4-66): they are centred in
+     the map beside the rail (widths: `tokens.css`, UI-01 §6.9). The status box is the one that makes room for it (`mapEdges.ts`). */
   position: relative;
   width: 100vw;
   height: 100vh;

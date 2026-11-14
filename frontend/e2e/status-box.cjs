@@ -33,7 +33,6 @@ const MIN_WIDTH = 240;
 const MAX_WIDTH = 560;
 const RAIL = 48;
 const LONG = 'The search could not be completed because the catalogue answered with an error that has a long text, which has to wrap and must not reach beyond the box';
-const later = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const overlaps = (a, b) => a.x < b.x + b.width - 0.5 && b.x < a.x + a.width - 0.5 && a.y < b.y + b.height - 0.5 && b.y < a.y + a.height - 0.5;
 
 // What stands at the left, at the right and at the top, and what the box is, read from the page.
