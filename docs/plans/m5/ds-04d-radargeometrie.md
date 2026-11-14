@@ -483,3 +483,6 @@ Erwartet: je zwei gleiche SHA-256 für `result.tif` und für `mask.tif`; `proven
 **7. Ergebnis-Layer auf der Karte.** Der Job aus Schritt 6 erscheint im Layer-Manager. Erwartet: Er liegt auf der Karte
 über den beiden Szenen, ohne Versatz an der Grenze der Slices; keine Fehlermeldung (früher `502`); Histogramm und
 Bereich im Layer-Manager gefüllt.
+
+**Prüfungen nach der Korrektur A15 (14.11.2026):** voller `pytest`-Lauf aus der Repo-Wurzel 10908 bestanden,
+25 übersprungen, 0 fehlgeschlagen; `ruff check backend` grün; `main` geholt, unverändert.
