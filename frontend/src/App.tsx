@@ -20,6 +20,7 @@ import StatusBar from './components/StatusBar';
 import TipLayer from './components/TipLayer';
 import { dockPanelId } from './dock';
 import { inspectorKindOf } from './inspectorKind';
+import { mapEdgeClasses } from './mapEdges';
 import { openPermalinkInAddress } from './permalink';
 import { forgetJobsWindow } from './preferences';
 import { useProcessingStore } from './processingStore';
@@ -72,7 +73,7 @@ export default function App() {
   }, [resumeJobs]);
 
   return (
-    <div className={`app${inspectorOpen && !processingOpen ? ' has-inspector' : ''}${processingOpen ? ' has-sheet' : ''}`} data-theme={theme}>
+    <div className={`app${mapEdgeClasses({ dock: dock !== null, inspector: inspectorOpen, processing: processingOpen })}`} data-theme={theme}>
       <MapView />
 
       <AppRail />

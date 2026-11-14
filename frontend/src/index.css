@@ -857,13 +857,29 @@ svg.lucide.icon-lead {
 }
 /* The column is taken from the map: what stands at the bottom and the map controls move left of it. */
 @media (min-width: 900px) {
+  /* The free area of the map: from the rail and the panel beside it to the settings bar or the sheet (the classes of `mapEdges.ts`).
+     The status box is centred in it, as wide as 560 px, and narrower, down to its minimum, where the free area is. The Data catalogue is
+     a window that may cover it, so it takes nothing from the area. Below 900 px a panel covers the whole map; the rule there is above. */
+  .app {
+    --map-left: var(--rail-width);
+    --map-right: 0px;
+  }
+  .app.has-dock {
+    --map-left: calc(var(--rail-width) + var(--dock-width));
+  }
+  .app.has-inspector {
+    --map-right: var(--inspector-width);
+  }
+  .app.has-sheet {
+    --map-right: var(--sheet-wide-width);
+  }
+  .overlay.status {
+    left: calc((100% + var(--map-left) - var(--map-right)) / 2);
+    width: max(var(--status-min-width), min(560px, calc(100% - var(--map-left) - var(--map-right) - 2 * var(--space-4))));
+  }
   .app.has-inspector .overlay.bottom {
     left: calc((100% + var(--rail-width) - var(--inspector-width)) / 2);
     width: min(760px, calc(100vw - var(--rail-width) - var(--inspector-width) - 32px));
-  }
-  .app.has-inspector .overlay.status {
-    left: calc((100% + var(--rail-width) - var(--inspector-width)) / 2);
-    width: min(560px, calc(100vw - var(--rail-width) - var(--inspector-width) - 32px));
   }
   .app.has-inspector .maplibregl-ctrl-bottom-right {
     right: var(--inspector-width);
@@ -878,10 +894,6 @@ svg.lucide.icon-lead {
   /* The wide sheet of the processing panel takes the same column: the map controls and the line of the status stand left of it. */
   .app.has-sheet .maplibregl-ctrl-bottom-right {
     right: var(--sheet-wide-width);
-  }
-  .app.has-sheet .overlay.status {
-    left: calc((100% + var(--rail-width) - var(--sheet-wide-width)) / 2);
-    width: min(560px, calc(100vw - var(--rail-width) - var(--sheet-wide-width) - var(--space-6)));
   }
 }
 /* Narrow windows: a sheet from the bottom with the grip of the processing panel, at most 55 % high; what stands at the bottom lies above
