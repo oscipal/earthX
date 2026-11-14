@@ -32,9 +32,17 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from earthx.jobs.queue import RETRYABLE
-from earthx.objectstore.overviews import OVERVIEW_TTL, PROTOTYPE_PREFIX, PROTOTYPE_TTL, term_of
+from earthx.objectstore.overviews import (
+    OVERVIEW_RULE_DAYS,
+    OVERVIEW_TTL,
+    PROTOTYPE_PREFIX,
+    PROTOTYPE_TTL,
+    term_of,
+)
 
 __all__ = [
+    "EXPIRED",
+    "EXTEND_WINDOW",
     "MAX_ATTEMPTS",
     "OVERVIEW_LOCK_KEY",
     "RETRY_AFTER",
@@ -46,10 +54,10 @@ __all__ = [
     "finish_failed",
     "finish_ready",
     "heartbeat",
-    "known_versions",
     "mark_expired",
     "mark_extended",
     "previous_ready",
+    "protected_versions",
     "release",
     "request_missing",
     "to_extend",
@@ -59,7 +67,11 @@ __all__ = [
 # A third fixed key for `pg_advisory_xact_lock`, next to those of `queue.py`: 'jobs' in ASCII, plus 3.
 OVERVIEW_LOCK_KEY = 0x6A6F6273_00000003
 
-#: The failure kind of a pyramid whose term ran out; it is not in `RETRYABLE`, so nothing builds it again (adr/0032 §5.3).
+#: How long after ``checked_at`` an extension is still allowed: until the bucket rule can begin to delete (31 days from
+#: the write of an object, never before ``checked_at``), less 12 hours for clock differences and the length of a round.
+EXTEND_WINDOW = timedelta(days=OVERVIEW_RULE_DAYS) - timedelta(hours=12)
+#: The failure kind of a pyramid whose term ran out; it is not in `RETRYABLE`, so :func:`claim` does not retry it; a successful `materialize` run of the same version
+#: makes it buildable again (`catalog.pgstac.rearm_overview`, adr/0032 §5: the next successful run builds anew).
 EXPIRED = "expired"
 
 #: A build is tried this many times in all (the first included).
@@ -312,81 +324,119 @@ def release(conn: psycopg.Connection, build: Build) -> bool:
     return row is not None
 
 
-def expired(conn: psycopg.Connection) -> list[tuple[str, str, datetime]]:
-    """The ready pyramids whose term ran out and that no confirmation is waiting to extend: ``(dataset, version, checked_at)``.
+# The ready pyramids whose term ran out and that nothing can still extend. A confirmation newer than ``checked_at`` holds
+# an ordinary pyramid back only while the extension is possible (:data:`EXTEND_WINDOW`); a prototype source's is never
+# extended, so a confirmation means nothing for it (a run does not even write one).
+_EXPIRABLE = """
+    status = 'ready'
+    AND checked_at + CASE WHEN left(dataset_id, %(length)s) = %(prefix)s THEN %(proto)s ELSE %(term)s END < clock_timestamp()
+    AND (left(dataset_id, %(length)s) = %(prefix)s OR confirmed_at IS NULL OR confirmed_at <= checked_at
+         OR checked_at + %(window)s < clock_timestamp())
+"""
 
-    The term is 30 days from ``checked_at``, 7 for a prototype source (:func:`~earthx.objectstore.overviews.term_of`). A
-    pyramid with a confirmation newer than ``checked_at`` is left to :func:`to_extend`, so a confirmed pyramid is
-    never expired by a round that came first.
+
+def _terms() -> dict[str, object]:
+    return {
+        "length": len(PROTOTYPE_PREFIX),
+        "prefix": PROTOTYPE_PREFIX,
+        "proto": PROTOTYPE_TTL,
+        "term": OVERVIEW_TTL,
+        "window": EXTEND_WINDOW,
+    }
+
+
+def expired(conn: psycopg.Connection) -> list[tuple[str, str, datetime]]:
+    """The ready pyramids that ran out: ``(dataset, version, checked_at)``.
+
+    The term is 30 days from ``checked_at``, 7 for a prototype source (:func:`~earthx.objectstore.overviews.term_of`).
+    A pyramid the source confirmed after its ``checked_at`` is left to :func:`to_extend` while the extension is still
+    possible (:data:`EXTEND_WINDOW`), so that a round that came first does not expire a confirmed pyramid; after the
+    window, whatever the confirmation, and for a prototype source at all times, it expires.
     """
     return [
         (row[0], row[1], row[2])
         for row in conn.execute(
-            """
-            SELECT dataset_id, version, checked_at FROM public.earthx_overview
-            WHERE status = 'ready' AND (confirmed_at IS NULL OR confirmed_at <= checked_at)
-              AND checked_at + CASE WHEN left(dataset_id, %(length)s) = %(prefix)s THEN %(proto)s ELSE %(term)s END
-                  < clock_timestamp()
-            ORDER BY checked_at
-            """,
-            {
-                "length": len(PROTOTYPE_PREFIX),
-                "prefix": PROTOTYPE_PREFIX,
-                "proto": PROTOTYPE_TTL,
-                "term": OVERVIEW_TTL,
-            },
+            f"SELECT dataset_id, version, checked_at FROM public.earthx_overview WHERE {_EXPIRABLE} ORDER BY checked_at",
+            _terms(),
         ).fetchall()
     ]
 
 
-def mark_expired(conn: psycopg.Connection, dataset_id: str, version: str, checked_at: datetime) -> bool:
-    """Close a ready pyramid as ``failed`` with ``expired``, once its objects are gone; ``False`` if it is not that row any more.
+def mark_expired(
+    conn: psycopg.Connection, dataset_id: str, version: str, checked_at: datetime, *, lost: bool = False
+) -> bool:
+    """Close a ready pyramid as ``failed`` with ``expired``; ``True`` only if this call did it.
 
-    The row stays, so the hourly round does not ask for the same version again: the next build is that of the next
-    version (adr/0032 §5.3, Otto 13.11.2026: until the next build there is no pyramid).
+    It is the first step, before any object is deleted: the update is conditional on the row still being ready at
+    ``checked_at`` and still expirable (a pyramid that was extended meanwhile is neither), so only the caller whose update
+    matched deletes the objects. ``lost`` is for a pyramid whose objects are already gone (the bucket rule was faster):
+    the term and the confirmation then no longer matter.
+
+    The row stays, so nothing builds the same version again by itself (:func:`request_missing` finds a row); a
+    successful `materialize` run of that version makes it buildable again (``catalog.pgstac.rearm_overview``).
     """
+    condition = "status = 'ready'" if lost else _EXPIRABLE
     row = conn.execute(
-        """
+        f"""
         UPDATE public.earthx_overview
-        SET status = 'failed', failure_kind = %s, updated_at = clock_timestamp()
-        WHERE dataset_id = %s AND version = %s AND status = 'ready' AND checked_at = %s RETURNING 1
+        SET status = 'failed', failure_kind = %(kind)s, updated_at = clock_timestamp()
+        WHERE dataset_id = %(dataset)s AND version = %(version)s AND checked_at = %(checked)s AND {condition}
+        RETURNING 1
         """,
-        (EXPIRED, dataset_id, version, checked_at),
+        {**_terms(), "kind": EXPIRED, "dataset": dataset_id, "version": version, "checked": checked_at},
     ).fetchone()
     return row is not None
 
 
 def to_extend(conn: psycopg.Connection, datasets: Collection[str]) -> list[tuple[str, str, datetime]]:
-    """The ready pyramids of ``datasets`` that the source confirmed after their ``checked_at``: ``(dataset, version, confirmed_at)``.
+    """The ready pyramids of ``datasets`` that the source confirmed after their ``checked_at`` and that can still be extended:
+    ``(dataset, version, confirmed_at)``.
 
-    A prototype source's pyramid is never extended (adr/0032 §8.4).
+    Only within :data:`EXTEND_WINDOW` of ``checked_at``: later, the bucket rule may have deleted a part of the objects, and
+    an extension would make a pyramid with holes look whole. A prototype source's pyramid is never extended (adr/0032 §8.4).
     """
     return [
         (row[0], row[1], row[2])
         for row in conn.execute(
             """
             SELECT dataset_id, version, confirmed_at FROM public.earthx_overview
-            WHERE status = 'ready' AND confirmed_at > checked_at AND dataset_id = ANY(%s)
-              AND left(dataset_id, %s) <> %s
+            WHERE status = 'ready' AND confirmed_at > checked_at AND dataset_id = ANY(%(datasets)s)
+              AND left(dataset_id, %(length)s) <> %(prefix)s AND checked_at + %(window)s > clock_timestamp()
             ORDER BY confirmed_at
             """,
-            (sorted(datasets), len(PROTOTYPE_PREFIX), PROTOTYPE_PREFIX),
+            {**_terms(), "datasets": sorted(datasets)},
         ).fetchall()
     ]
 
 
 def mark_extended(conn: psycopg.Connection, dataset_id: str, version: str, confirmed_at: datetime) -> bool:
-    """``checked_at`` := ``confirmed_at`` once every object carries it; ``False`` if the row is not ready or already at least that new."""
+    """``checked_at`` := ``confirmed_at`` once every object carries it; ``False`` if the row is not ready, already at least
+    that new, or past :data:`EXTEND_WINDOW`."""
     row = conn.execute(
         """
-        UPDATE public.earthx_overview SET checked_at = %s, updated_at = clock_timestamp()
-        WHERE dataset_id = %s AND version = %s AND status = 'ready' AND checked_at < %s RETURNING 1
+        UPDATE public.earthx_overview SET checked_at = %(confirmed)s, updated_at = clock_timestamp()
+        WHERE dataset_id = %(dataset)s AND version = %(version)s AND status = 'ready' AND checked_at < %(confirmed)s
+          AND checked_at + %(window)s > clock_timestamp()
+        RETURNING 1
         """,
-        (confirmed_at, dataset_id, version, confirmed_at),
+        {"confirmed": confirmed_at, "dataset": dataset_id, "version": version, "window": EXTEND_WINDOW},
     ).fetchone()
     return row is not None
 
 
-def known_versions(conn: psycopg.Connection) -> set[tuple[str, str]]:
-    """``(dataset, version)`` of every row of `earthx_overview`, in any state."""
-    return {(row[0], row[1]) for row in conn.execute("SELECT dataset_id, version FROM public.earthx_overview")}
+def protected_versions(conn: psycopg.Connection) -> set[tuple[str, str]]:
+    """``(dataset, version)`` whose objects may stay: a build in progress, a ready pyramid, and a failed one that
+    :func:`claim` will try again. The objects of any other row (a failure that is not retried, an expired pyramid) and
+    of no row at all belong to nobody.
+    """
+    return {
+        (row[0], row[1])
+        for row in conn.execute(
+            """
+            SELECT dataset_id, version FROM public.earthx_overview
+            WHERE status IN ('building', 'ready')
+               OR (status = 'failed' AND failure_kind = ANY(%s) AND attempts < %s)
+            """,
+            (sorted(RETRYABLE), MAX_ATTEMPTS),
+        )
+    }

@@ -17,7 +17,7 @@ import pytest
 from earthx.jobs import overview_upkeep, overviews
 from earthx.jobs.config import WorkerConfig
 from earthx.jobs.worker import Supervisor
-from earthx.objectstore.errors import ObjectStoreError
+from earthx.objectstore.errors import ObjectStoreError, ResultNotFound
 from earthx.objectstore.overviews import CHECKED_AT, upload_tile
 from earthx.objectstore.results import Store
 from tests.earthx.jobs.support import wait_until
@@ -42,19 +42,21 @@ def _row(
     status: str = "ready",
     checked: str | None = "5 days",
     confirmed: str | None = None,
+    kind: str = "source_4xx",
+    attempts: int = 1,
 ) -> None:
-    """A pyramid row; ``checked``/``confirmed`` say how long ago (``None`` for never)."""
+    """A pyramid row; ``checked``/``confirmed`` say how long ago (``None`` for never), ``kind`` is the failure of a failed one."""
     db.execute(
         """
         INSERT INTO public.earthx_overview
-            (dataset_id, version, status, failure_kind, checked_at, confirmed_at, lease_until)
+            (dataset_id, version, status, failure_kind, checked_at, confirmed_at, lease_until, attempts)
         VALUES (%(d)s, %(v)s, %(s)s,
-                CASE WHEN %(s)s = 'failed' THEN 'source_4xx' END,
+                CASE WHEN %(s)s = 'failed' THEN %(k)s END,
                 CASE WHEN %(c)s::text IS NULL THEN NULL ELSE clock_timestamp() - %(c)s::interval END,
                 CASE WHEN %(f)s::text IS NULL THEN NULL ELSE clock_timestamp() - %(f)s::interval END,
-                CASE WHEN %(s)s = 'building' THEN clock_timestamp() + interval '1 hour' END)
+                CASE WHEN %(s)s = 'building' THEN clock_timestamp() + interval '1 hour' END, %(a)s)
         """,
-        {"d": dataset_id, "v": version, "s": status, "c": checked, "f": confirmed},
+        {"d": dataset_id, "v": version, "s": status, "c": checked, "f": confirmed, "k": kind, "a": attempts},
     )
 
 
@@ -164,7 +166,7 @@ class TestExtend:
         self, db: psycopg.Connection, store: Store
     ) -> None:
         """The bucket rule was faster than the confirmation: the next version builds a new one."""
-        _row(db, "dem", V1, checked="40 days", confirmed="1 hour")
+        _row(db, "dem", V1, checked="25 days", confirmed="1 hour")
         assert overview_upkeep.extend(db, store, {"dem"}, threading.Event()) == 0
         assert _state(db, "dem", V1) == ("failed", "expired")
 
@@ -223,7 +225,7 @@ class TestExpiry:
     def test_a_pyramid_the_source_confirmed_is_left_to_the_extension_not_expired(
         self, db: psycopg.Connection, store: Store, tile: Path
     ) -> None:
-        _row(db, "dem", V1, checked="35 days", confirmed="1 hour")
+        _row(db, "dem", V1, checked="30 days 2 hours", confirmed="1 hour")
         _objects(store, tile, "dem", V1)
         assert overview_upkeep.sweep(db, store).expired == 0
         assert _state(db, "dem", V1) == ("ready", None) and len(_keys(store)) == 2
@@ -240,11 +242,12 @@ class TestExpiry:
         _row(db, "dem", V2, status="failed", checked=None)
         assert overview_upkeep.sweep(db, store).expired == 0
 
-    def test_a_store_that_fails_leaves_the_row_ready_for_the_next_round(
+    def test_a_store_that_fails_after_the_row_is_closed_leaves_objects_the_next_round_deletes_as_orphans(
         self, db: psycopg.Connection, store: Store, tile: Path
     ) -> None:
         _row(db, "dem", V1, checked="31 days")
         _objects(store, tile, "dem", V1)
+        working = store.s3.delete_objects
 
         def refuse(*args: Any, **kwargs: Any) -> None:
             raise RuntimeError("the store went away")
@@ -252,7 +255,10 @@ class TestExpiry:
         object.__setattr__(store.s3, "delete_objects", refuse)
         with pytest.raises(RuntimeError):
             overview_upkeep.sweep(db, store)
-        assert _state(db, "dem", V1) == ("ready", None)
+        assert _state(db, "dem", V1) == ("failed", "expired") and len(_keys(store)) == 2
+        object.__setattr__(store.s3, "delete_objects", working)
+        assert overview_upkeep.sweep(db, store).orphans == 2
+        assert _keys(store) == []
 
 
 class TestOrphans:
@@ -261,7 +267,7 @@ class TestOrphans:
     ) -> None:
         _row(db, "dem", V1)
         _row(db, "dem", V2, status="building", checked=None)
-        _row(db, "dem", V3, status="failed", checked=None)
+        _row(db, "dem", V3, status="failed", checked=None, kind="source_timeout")
         for version in (V1, V2, V3):
             _objects(store, tile, "dem", version, count=1)
         _objects(store, tile, "dem", "4" * 16, count=1)
@@ -269,6 +275,18 @@ class TestOrphans:
         swept = overview_upkeep.sweep(db, store)
         assert swept.orphans == 2
         assert [key.split("/")[1:3] for key in _keys(store)] == [["dem", V1], ["dem", V2], ["dem", V3]]
+
+    def test_the_objects_of_a_failure_that_is_not_retried_are_orphans_too(
+        self, db: psycopg.Connection, store: Store, tile: Path
+    ) -> None:
+        """Review 8b-2 finding 3: a failed build's leftovers go; a failure that waits for its retry keeps them."""
+        _row(db, "dem", V1, status="failed", checked=None, kind="source_4xx")
+        _row(db, "dem", V2, status="failed", checked=None, kind="source_timeout", attempts=3)
+        _row(db, "dem", V3, status="failed", checked=None, kind="source_timeout", attempts=1)
+        for version in (V1, V2, V3):
+            _objects(store, tile, "dem", version, count=1)
+        assert overview_upkeep.sweep(db, store).orphans == 2
+        assert [key.split("/")[2] for key in _keys(store)] == [V3]
 
     def test_the_rows_of_a_prototype_source_that_catalog_load_removed_leave_orphans_that_go(
         self, db: psycopg.Connection, store: Store, tile: Path
@@ -391,4 +409,98 @@ class TestInTheWorker:
         supervisor = start()
         time.sleep(1.5)
         assert supervisor.healthy()
-        assert _state(db, "dem", V1) == ("ready", None)
+        assert len(_keys(store)) == 2, "nothing could be deleted, and the worker went on"
+
+class TestTheFindingsOfTheReview:
+    """Review of #349."""
+
+    def test_a_confirmed_prototype_pyramid_still_expires(self, db: psycopg.Connection, store: Store, tile: Path) -> None:
+        """Finding 1 (high): a prototype source is never extended, so a confirmation must not keep it alive."""
+        _row(db, "proto-dem", V1, checked="8 days", confirmed="1 hour")
+        _objects(store, tile, "proto-dem", V1)
+        assert [(d, v) for d, v, _ in overviews.expired(db)] == [("proto-dem", V1)]
+        assert overview_upkeep.sweep(db, store).expired == 1
+        assert _state(db, "proto-dem", V1) == ("failed", "expired")
+
+    def test_any_pyramid_expires_after_the_window_whatever_its_confirmation_and_whoever_has_it(
+        self, db: psycopg.Connection, store: Store, tile: Path
+    ) -> None:
+        _row(db, "unknown-to-every-worker", V1, checked="32 days", confirmed="1 hour")
+        _row(db, "dem", V2, checked="32 days", confirmed="2 days")
+        _objects(store, tile, "unknown-to-every-worker", V1)
+        assert overview_upkeep.sweep(db, store).expired == 2
+        assert _state(db, "unknown-to-every-worker", V1) == ("failed", "expired")
+
+    def test_a_pyramid_confirmed_inside_the_window_is_held_back_and_after_it_expired(
+        self, db: psycopg.Connection
+    ) -> None:
+        _row(db, "dem", V1, checked="30 days 2 hours", confirmed="1 hour")
+        _row(db, "dem", V2, checked="30 days 13 hours", confirmed="1 hour")
+        assert [v for _, v, _ in overviews.expired(db)] == [V2]
+        assert [v for _, v, _ in overviews.to_extend(db, {"dem"})] == [V1]
+
+    def test_an_extension_after_the_window_is_refused_and_the_pyramid_expires_instead(
+        self, db: psycopg.Connection, store: Store, tile: Path
+    ) -> None:
+        """Finding 4: the bucket rule may have deleted a part of the objects; extending would hide the holes."""
+        _row(db, "dem", V1, checked="30 days 13 hours", confirmed="1 hour")
+        _objects(store, tile, "dem", V1)
+        assert overview_upkeep.extend(db, store, {"dem"}, threading.Event()) == 0
+        assert {_metadata(store, key)[CHECKED_AT] for key in _keys(store)} == {LONG_AGO.isoformat()}
+        assert overview_upkeep.sweep(db, store).expired == 1
+        assert _keys(store) == []
+
+    def test_a_pyramid_that_lost_part_of_its_objects_to_the_bucket_rule_is_not_marked_extended(
+        self, db: psycopg.Connection, store: Store, tile: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The window closes while a round is on its way: the second look before each pyramid sees it."""
+        _row(db, "dem", V1, checked="30 days 11 hours 59 minutes", confirmed="1 minute")
+        _objects(store, tile, "dem", V1)
+        calls = []
+        real = overviews.to_extend
+
+        def window_closes(conn: psycopg.Connection, datasets: object) -> list:
+            calls.append(1)
+            if len(calls) == 2:
+                conn.execute("UPDATE public.earthx_overview SET checked_at = checked_at - interval '1 hour'")
+            return real(conn, datasets)
+
+        monkeypatch.setattr(overviews, "to_extend", window_closes)
+        assert overview_upkeep.extend(db, store, {"dem"}, threading.Event()) == 0
+        assert {_metadata(store, key)[CHECKED_AT] for key in _keys(store)} == {LONG_AGO.isoformat()}
+
+    def test_the_row_is_closed_before_the_objects_go_and_a_pyramid_extended_meanwhile_keeps_them(
+        self, db: psycopg.Connection, store: Store, tile: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Finding 3: a stale list of expired pyramids must not delete what an extension just renewed."""
+        _row(db, "dem", V1, checked="31 days")
+        _objects(store, tile, "dem", V1)
+        stale = overviews.expired(db)
+        assert len(stale) == 1
+        db.execute("UPDATE public.earthx_overview SET checked_at = clock_timestamp()")  # extended after the list was made
+        monkeypatch.setattr(overviews, "expired", lambda conn: stale)
+        assert overview_upkeep.sweep(db, store).expired == 0
+        assert _state(db, "dem", V1) == ("ready", None) and len(_keys(store)) == 2
+
+    def test_the_caller_that_lost_the_update_deletes_nothing(
+        self, db: psycopg.Connection, store: Store, tile: Path
+    ) -> None:
+        _row(db, "dem", V1, checked="31 days")
+        _objects(store, tile, "dem", V1)
+        [(dataset_id, version, checked)] = overviews.expired(db)
+        assert overviews.mark_expired(db, dataset_id, version, checked)
+        assert not overviews.mark_expired(db, dataset_id, version, checked), "a second caller finds it closed"
+
+    def test_an_extension_that_finds_the_objects_gone_does_not_delete_what_another_caller_closed(
+        self, db: psycopg.Connection, store: Store, tile: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _row(db, "dem", V1, checked="20 days", confirmed="1 hour")
+        _objects(store, tile, "dem", V1)
+
+        def gone_and_taken(*args: Any, **kwargs: Any) -> int:
+            db.execute("UPDATE public.earthx_overview SET status = 'failed', failure_kind = 'expired'")
+            raise ResultNotFound("gone")
+
+        monkeypatch.setattr(overview_upkeep, "extend_version", gone_and_taken)
+        assert overview_upkeep.extend(db, store, {"dem"}, threading.Event()) == 0
+        assert len(_keys(store)) == 2, "the caller whose update matched deletes, not this one"

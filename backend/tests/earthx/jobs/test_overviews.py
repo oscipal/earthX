@@ -572,3 +572,23 @@ class TestRelease:
         assert finish_ready(db, build, checked_at=NOW, base_hashes={})
         assert not release(db, build)
         assert db.execute("SELECT status FROM public.earthx_overview").fetchone() == ("ready",)
+
+
+class TestRebuildAfterARearm:
+    """A successful `materialize` run of the same version makes an expired or failed pyramid buildable again (adr/0032 §5)."""
+
+    @pytest.mark.parametrize("kind", ["expired", "source_4xx", "child_crashed"])
+    def test_the_next_claim_builds_it_as_a_new_pyramid_with_its_attempts_counted_from_one(
+        self, db: psycopg.Connection, kind: str
+    ) -> None:
+        from earthx.catalog.pgstac import rearm_overview
+
+        version = _request(db, "dem", "v1")
+        build = _claim(db)
+        assert build is not None
+        _fail(db, build, kind)
+        _age(db, "dem", version, updated="3 hours")
+        assert _claim(db) is None, "a failure that is not retried stays failed on its own"
+        assert rearm_overview(db, "dem", "v1")
+        again = _claim(db)
+        assert again is not None and (again.version, again.attempt) == (version, 1)

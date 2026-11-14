@@ -327,16 +327,48 @@ def confirm_overview(conn: psycopg.Connection, dataset_id: str, source_version: 
 
     Called by an unchanged `materialize` run: ``confirmed_at`` of the ready pyramid of that version becomes now, and the
     worker then extends its term (`jobs`, which reads this column with SQL). ``True`` if a ready pyramid was marked;
-    ``False`` when there is none (not built yet, failed, expired), which is no error: nothing is asked for here. The
-    transaction is the caller's, like :func:`request_overview`.
+    ``False`` when there is none (not built yet, failed, expired), which is no error: nothing is asked for here. A
+    prototype source's pyramid is never confirmed: it is never extended (adr/0032 §8.4), so a confirmation would only
+    keep it from expiring. The transaction is the caller's, like :func:`request_overview`.
     """
     row = conn.execute(
         """
         UPDATE public.earthx_overview SET confirmed_at = now(), updated_at = now()
-        WHERE dataset_id = %s AND version = public.earthx_overview_version(%s) AND status = 'ready' RETURNING 1
+        WHERE dataset_id = %s AND version = public.earthx_overview_version(%s) AND status = 'ready'
+          AND left(dataset_id, %s) <> %s
+        RETURNING 1
         """,
-        (dataset_id, source_version),
+        (dataset_id, source_version, len(PROTOTYPE_PREFIX), PROTOTYPE_PREFIX),
     ).fetchone()
+    return row is not None
+
+
+#: The failure kinds `jobs` retries and the attempts it makes (`jobs.queue.RETRYABLE`, `jobs.overviews.MAX_ATTEMPTS`);
+#: `catalog` may not import `jobs`, a test holds the copies together.
+_RETRYABLE = ("source_timeout", "source_5xx", "lease_lost")
+_MAX_ATTEMPTS = 3
+
+
+def rearm_overview(conn: psycopg.Connection, dataset_id: str, source_version: str) -> bool:
+    """Make a pyramid buildable again after a successful run saw its version (M5-30b part 8b-3, adr/0032 §5).
+
+    A pyramid of ``source_version`` that is ``failed`` and will not be tried again by itself (a failure that is not
+    retryable, ``expired`` included, or one whose attempts are used up) is deleted; the request for that version stands,
+    so the worker's next claim builds it as a new one, with its attempts counted from 1. A failure that is still
+    waiting for its retry is left alone (the retry rules stay as they are), and so is every other state. ``True`` if a
+    row was deleted. The transaction is the caller's.
+    """
+    row = conn.execute(
+        """
+        DELETE FROM public.earthx_overview
+        WHERE dataset_id = %s AND version = public.earthx_overview_version(%s) AND status = 'failed'
+          AND (NOT failure_kind = ANY(%s) OR attempts >= %s)
+        RETURNING 1
+        """,
+        (dataset_id, source_version, list(_RETRYABLE), _MAX_ATTEMPTS),
+    ).fetchone()
+    if row is not None:
+        request_overview(conn, dataset_id, source_version)
     return row is not None
 
 

@@ -329,6 +329,84 @@ class TestConfirmation:
         assert _confirmed(conn, "some-other-dataset", other) is None
 
 
+def _failed(conn: psycopg.Connection, dataset_id: str, source_version: str, kind: str = "expired", attempts: int = 1) -> None:
+    conn.execute(
+        """
+        INSERT INTO public.earthx_overview (dataset_id, version, status, failure_kind, attempts)
+        VALUES (%s, public.earthx_overview_version(%s), 'failed', %s, %s)
+        """,
+        (dataset_id, source_version, kind, attempts),
+    )
+
+
+def _rows(conn: psycopg.Connection, dataset_id: str) -> list[tuple[str, str]]:
+    return conn.execute(
+        "SELECT status, failure_kind FROM public.earthx_overview WHERE dataset_id = %s", (dataset_id,)
+    ).fetchall()
+
+
+class TestRebuildAfterASuccessfulRun:
+    """"The next successful run builds anew" (adr/0032 §5): a run that sees a failed or expired version makes it buildable."""
+
+    @pytest.mark.parametrize("force", [False, True])
+    async def test_an_expired_pyramid_is_made_buildable_again_by_an_unchanged_or_a_forced_run(
+        self, conn: psycopg.Connection, force: bool
+    ) -> None:
+        load_collection(conn, PYRAMID)
+        await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+        _failed(conn, PYRAMID.dataset_id, '"v1"', "expired")
+
+        result = await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID, force=force)
+
+        assert result.outcome.status == ("loaded" if force else "unchanged")
+        assert _rows(conn, PYRAMID.dataset_id) == [], "no row: the worker's claim takes the request"
+        assert [r[0] for r in _requests(conn, PYRAMID.dataset_id)] == ['"v1"']
+
+    async def test_a_failure_that_is_not_retried_is_made_buildable_too_and_a_waiting_retry_is_not(
+        self, conn: psycopg.Connection
+    ) -> None:
+        load_collection(conn, PYRAMID)
+        await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+        _failed(conn, PYRAMID.dataset_id, '"v1"', "source_4xx")
+        await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+        assert _rows(conn, PYRAMID.dataset_id) == []
+        _failed(conn, PYRAMID.dataset_id, '"v1"', "source_timeout", 1)
+        await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+        assert _rows(conn, PYRAMID.dataset_id) == [("failed", "source_timeout")]
+
+    async def test_a_run_that_cannot_reach_the_source_rebuilds_nothing(self, conn: psycopg.Connection) -> None:
+        load_collection(conn, PYRAMID)
+        await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+        _failed(conn, PYRAMID.dataset_id, '"v1"', "expired")
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(503)
+
+        async def sleep(seconds: float) -> None:
+            return None
+
+        gateway = Gateway(
+            Policy(allowed_hosts=frozenset({HOST})), transport=httpx.MockTransport(handler), resolve=_public, sleep=sleep
+        )
+        with pytest.raises(UpstreamError):
+            await run_materialize(conn, PYRAMID, gateway=gateway, force=False)
+        assert _rows(conn, PYRAMID.dataset_id) == [("failed", "expired")]
+
+    async def test_a_new_version_leaves_the_failure_of_the_old_one_and_a_dataset_without_a_pyramid_is_untouched(
+        self, conn: psycopg.Connection
+    ) -> None:
+        load_collection(conn, PYRAMID)
+        await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+        _failed(conn, PYRAMID.dataset_id, '"v1"', "expired")
+        await _run(conn, tile_names=[TILE_A], etag='"v2"', config=PYRAMID)
+        assert _rows(conn, PYRAMID.dataset_id) == [("failed", "expired")], "the failure belongs to the old version"
+        load_collection(conn, MATERIALIZED)
+        await _run(conn, tile_names=[TILE_A], etag='"v1"')
+        _failed(conn, MATERIALIZED.dataset_id, '"v1"', "expired")
+        await _run(conn, tile_names=[TILE_A], etag='"v1"')
+        assert _rows(conn, MATERIALIZED.dataset_id) == [("failed", "expired")]
+
+
 class TestForce:
     async def test_force_reloads_even_though_the_version_is_unchanged(self, conn: psycopg.Connection) -> None:
         load_collection(conn, MATERIALIZED)
