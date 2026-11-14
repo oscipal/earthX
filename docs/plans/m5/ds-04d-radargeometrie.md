@@ -486,3 +486,46 @@ Bereich im Layer-Manager gefüllt.
 
 **Prüfungen nach der Korrektur A15 (14.11.2026):** voller `pytest`-Lauf aus der Repo-Wurzel 10908 bestanden,
 25 übersprungen, 0 fehlgeschlagen; `ruff check backend` grün; `main` geholt, unverändert.
+
+### 12.8 Befund Otto zu Schritt 6 (14.11.2026): „The assets do not share one grid“
+
+**Fall:** Raster-Job über zwei Slices eines Durchgangs, Normalize auf VV (linear, 0..1000 → 0..1, clip), AOI only →
+`Failed`, „The assets do not share one grid“.
+
+**Was die Meldung war:** die feste Überschrift der Fehlerart `grid_mismatch`. Ein Job meldet nur die Art, nie den Text
+(`processing/failures.py`). Unter `grid_mismatch` liefen zwei verschiedene Fälle: Assets ohne gemeinsames Raster
+(`source.common_grid`, die alte Regel) und Slices, deren Naht nicht passt (A7). Der Grund war deshalb nicht zu sehen.
+
+**Nachgestellt [M]:** mit echten Slices (Datatake vom 26.10.2026) über die echte Annahme (`api/intake`, Rezept mit
+`line_times` und `gcp_tps`) und den Job-Kern: läuft durch (564 × 726 Pixel), auch mit VV und VH. Die alte Regel greift
+für Radar-Quellen nicht (eine `RadarSource` je Asset auf dem gemeinsamen Raster des Durchgangs). Bei dir ist es also
+sehr wahrscheinlich der Fall A7: Die Naht hat eine Prüfung nicht bestanden. Welche, ließ sich ohne deine Szenen nicht
+bestimmen.
+
+**Messung der Nahtprüfung an echten Paaren [M]:** 90 Paare aufeinanderfolgender Slices, 2019–2026, acht Regionen:
+- 88 passen. Der Zeilenabstand zweier Slices weicht höchstens um 1,2·10⁻⁷ ab (Toleranz 10⁻⁶). Der Beginn der zweiten
+  Slice liegt bis 0,029 Zeilen neben einer ganzen Zeile; die alte Toleranz von 0,05 Zeilen war damit knapp.
+- 2 passen nicht, beide 2019: Ein Datatake enthält dort zwei Produktsätze derselben Strecke (NRT-3h und Fast-24h),
+  die sich überlappen; die Zeitleiste fasst beide in einen Durchgang. Die Prüfung meldete das als „anderer
+  Zeilenabstand“ statt als Überlappung. In Daten von 2025 und 2026 kam die Mischung nicht vor.
+
+**Behoben:**
+- Eigene Fehlerarten mit verständlicher Meldung statt `grid_mismatch` (A7):
+  - `pass_slice_missing`: „The scenes of this pass do not join: a scene between them is missing. Select the scenes in
+    between too, or run one scene“
+  - `pass_slices_overlap`: „Two scenes of this pass overlap: the source holds two versions of the same stretch. Select
+    scenes that follow each other, or run one scene“
+  - `pass_slices_misaligned`: „The scenes of this pass do not line up row by row, so they cannot be joined. Run one
+    scene at a time“
+  - `pass_no_line_times`: „The scenes of this pass give no times of their lines, so they cannot be joined. Run one
+    scene at a time“
+  Alle `422`; die Oberfläche bietet für sie „Run again“ nicht an, wie für `grid_mismatch`.
+- Lücke und Überlappung werden zuerst aus den Zeiten erkannt, vor dem Zeilenabstand; so heißt der Fall von 2019
+  „overlap“.
+- Toleranz für den Beginn einer Slice 0,25 Zeilen statt 0,05 (2,5 m bei 10-m-Pixeln; gemessen höchstens 0,029).
+- Test genau für den Fall: zwei Slices eines Durchgangs, Normalize v4 linear 0..1000 → 0..1 mit clip, AOI only, durch
+  die Annahme und den Kern (`test_two_slices_of_a_pass_normalized_over_an_aoi_run_in_radar_geometry`); dazu Lücke und
+  Überlappung mit ihrer Fehlerart und Meldung.
+
+**Für deinen erneuten Lauf:** Läuft er durch, war es sehr wahrscheinlich die knappe Toleranz. Schlägt er fehl, nennt
+die Meldung jetzt den Grund.
