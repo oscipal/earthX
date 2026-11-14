@@ -7,7 +7,7 @@ import { maturityLabel, maturityNote } from './datasets';
 import { utcDay } from './dateBounds';
 import { indexPresetsOf } from './indexPresets';
 import { formatNumber } from './numberFormat';
-import { shownUnit, trueColorOf } from './processingOrder';
+import { catalogueUnit, trueColorOf } from './processingOrder';
 import type { Collection } from './types';
 
 // The groups in the order of the registry field `category` (UI-05 F1). A collection without one, or with one this viewer
@@ -175,7 +175,7 @@ function bandsText(collection: Collection): string {
   const bands = Object.entries(units)
     .filter(([key]) => !auxiliary.includes(key) && key !== mask)
     .map(([key, unit]) => {
-      const shown = shownUnit(unit);
+      const shown = catalogueUnit(unit);
       return shown ? `${key} · ${shown}` : key;
     });
   return bands.length > 0 ? bands.join(', ') : NONE;
