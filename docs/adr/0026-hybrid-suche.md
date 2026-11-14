@@ -2,6 +2,7 @@
 
 - **Status:** Angenommen (fest, Otto, 06.11.2026; Antworten in §11). F1 und F4–F9 jeweils Option 1, F2 Option 1 mit zwei Bedingungen, F3 Option 2 (kein pgvector in M5). Die Nummer 0026 ist im M5-Plan fest vergeben (`plans/m5/m5-discovery-und-suche.md` §5a).
 - **Datum:** 2026-11-06 (Entwurf, Draft-PR #301); angenommen 2026-11-06.
+- **Nachtrag M5-41 (Entwurf, 14.11.2026):** §14 öffnet F3 neu für 10⁶ Einträge (pgvector mit HNSW); offen bis zu Ottos Antwort.
 - **Aufgabe:** M5-04 laut `docs/plans/m5/m5-discovery-und-suche.md` §5a (Entscheidungsvorlage C, §4).
 - **Autonomiestufe:** C. Kein Produktivcode.
   - Geändert werden nur dieses ADR und eine Zeile im Entscheidungslog.
@@ -606,3 +607,19 @@ Abgerufen am 06.11.2026. Belegstufe in Klammern.
 - Google Dataset Search: https://research.google/pubs/pub47845/
 - Größe von Testsets: https://www.staff.city.ac.uk/~sbrp622/papers/FewerTopics.pdf
 - Preise gehosteter Embeddings: https://aiapiprices.com/embeddings-api-pricing/
+
+---
+
+## 14. Nachtrag M5-41: F3 neu — pgvector mit HNSW (Entwurf, 14.11.2026)
+
+Anlass: Zielgröße 10⁶ gelistete Einträge (Otto, 14.11.2026, `plans/m5/m5-35-skalierbarkeit.md` F3 = 1); F3 wird vor M5-23 neu geöffnet (dort F5 = 1). Bericht mit Recherche aus Primärquellen, Messungen und Optionen: `plans/m5/m5-41-pgvector.md`. Messskript: `scripts/m5-41-vector-bench/bench.py`. **Noch nicht entschieden**; F3 = 2 gilt bis zur Antwort auf G1.
+
+**Vorschlag (G1–G6 im Bericht §10, je Option 1):**
+
+1. **Vektorarm in Postgres mit pgvector ≥ 0.8.4** (Image fest auf 0.8.7). Spalte `halfvec(D)` in `earthx_dataset_search`, HNSW mit `halfvec_cosine_ops` (`m` 16, `ef_construction` 64), `hnsw.ef_search` 200 je Anfrage. Gemessen bei 10⁶ synthetischen Vektoren: 2–3 ms, Recall@10 0,975–0,98 ohne Filter (Bericht §4.3).
+2. **Harte Filter bleiben exakt (§4.3, §4.4 dieses ADR):** Mit Filter wählt der Code, nicht der Planer. Bis 5·10⁴ passende Zeilen exakt über den Index der Filterspalten (gemessen 22–29 ms bei 10⁴ Zeilen, Recall 1,0), darüber HNSW mit `hnsw.iterative_scan = relaxed_order` in einer `MATERIALIZED`-CTE. Begründung: HNSW filtert nach dem Index-Scan; bei AOI-artigen Filtern lag der Recall auch mit iterativem Scan bei 0,51–0,89, und der Planer nahm bei 10⁶ immer den HNSW-Index (Bericht §4.5).
+3. **Mindestähnlichkeit** (§4.3) außerhalb der CTE; `ef_search` nie kleiner als die Tiefe der Liste für die RRF.
+4. **Image:** eigenes Dockerfile auf `postgis/postgis:16-3.7` mit pgvector für Compose und CI; das heutige `postgis/postgis:16-3.4` wird seit Oktober 2024 nicht mehr gebaut. Cloud-Sitzung: pgvector aus dem Quelltext im Setup (Ubuntu hat nur 0.6.0).
+5. **Unverändert:** Modell und Einbetten der Anfrage im Prozess `api` (F2), RRF mit k = 60, Schnittstelle (F9), Bewertungs-Set und Fixture (§8.4).
+
+**Folgen, wenn angenommen:** §0 Punkt 2 und 6, §4.3 („Vergleich im Prozess `api`, ohne pgvector“), §9 (Datenbank), §12 Punkt 1 und 10 sowie die Nachträge vom 10.11.2026 in `architekturplan.md` 5.3 und 10 werden ersetzt; `architekturplan.md` 0 Punkt 9 gilt wieder mit pgvector. Änderungen an `docker-compose.yml`, `.github/workflows/ci.yml` und dem Setup der Cloud-Umgebung nur mit Ottos Freigabe (G5).
