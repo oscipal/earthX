@@ -219,7 +219,7 @@ class TestExtend:
             assert head["Metadata"] == {CHECKED_AT: self.LATER.isoformat()}
             assert head["ContentType"] == "image/tiff; application=geotiff"
             assert "CacheControl" not in head
-            assert read_tile(store, "dem", VERSION, z, x, y) == tile_file.read_bytes()
+            assert read_tile(store, "dem", VERSION, z, x, y) == StoredTile(tile_file.read_bytes(), self.LATER)
         assert _head(store, f"overviews/dem/{VERSION}/1/0/0.tif")["LastModified"] >= before, "the bucket rule counts from now"
         assert _head(store, f"overviews/dem/{OTHER}/1/0/0.tif")["Metadata"] == {CHECKED_AT: WHEN.isoformat()}
 
