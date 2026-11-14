@@ -5,6 +5,7 @@ through the spline of its GCPs (A3). Synthetic slices (`mini_pass`), read throug
 from __future__ import annotations
 
 import copy
+import math
 import warnings
 from pathlib import Path
 from typing import Any
@@ -304,3 +305,94 @@ def test_slices_of_a_pass_that_do_not_join_say_why(tmp_path: Path, gap_lines: in
     assert failure_kind(error.value) == kind
     status, title = _FAILURES[kind]
     assert status == 422 and "grid" not in title and "scene" in title
+
+
+# --- Otto's check of step 7 (14.11.2026): the result lies pixel on pixel on its scenes, and keeps to the AOI -------
+
+TRIANGLE = {
+    "type": "Polygon",
+    "coordinates": [[list(mini_pass.position(*corner)) for corner in ((40, 5), (40, 70), (90, 5), (40, 5))]],
+}
+
+
+def _scene_tile(slices: dict[str, Path], names: list[str], tile: Any) -> numpy.ndarray:
+    """The tile of the scenes as the map draws them: each by its own spline, the first scene of the pass first."""
+    mosaic = None
+    for name in names:
+        path = AssetPath(str(slices[name]), dataset_id="d", item_id=name, asset="vv", georeferencing="gcp_tps")
+        with CogReader(path) as reader:
+            image = reader.tile(tile.x, tile.y, tile.z, indexes=(1,), resampling_method="nearest")
+        values = numpy.where(numpy.ma.getmaskarray(image.array[0]), 0, numpy.ma.getdata(image.array[0])).astype(int)
+        mosaic = values if mosaic is None else numpy.where(mosaic > 0, mosaic, values)
+    assert mosaic is not None
+    return mosaic
+
+
+def _result_tile(result: Any, tile: Any) -> numpy.ma.MaskedArray:
+    mask = AssetPath(str(result.mask_path), dataset_id="", item_id="", asset="mask.tif", georeferencing=AS_WRITTEN)
+    with ResultReader(ResultPath(str(result.path), mask=mask)) as reader:
+        return reader.tile(tile.x, tile.y, tile.z, indexes=(1,), resampling_method="nearest").array[0]
+
+
+@pytest.mark.usefixtures("served")
+@pytest.mark.parametrize(
+    ("names", "aoi", "line", "col"),
+    [(["slice-0"], area(10, 10, 50, 60), 30, 35), (ITEMS, TRIANGLE, mini_pass.HEIGHT, 30)],
+    ids=["one scene", "two slices, at the seam"],
+)
+@pytest.mark.parametrize("zoom", [15, 16, 17, 18])
+def test_a_radar_result_lies_pixel_on_pixel_on_its_scenes(
+    tmp_path: Path, slices: dict[str, Path], names: list[str], aoi: dict, line: int, col: int, zoom: int
+) -> None:
+    """Otto, 14.11.2026: drawn slice by slice as its scenes, every pixel of the result on its source pixel. A pixel
+    step changes values only; the result of ``scale`` 2 is twice the source pixel it lies on, or it lies wrong."""
+    from earthx.readers.radar_slices import SLICES_TAG
+
+    steps = [{"op": "scale", "op_version": 1, "params": {"factor": 2.0}}]
+    result = run(recipe(names, aoi, steps=steps), workdir=tmp_path, progress=lambda *_: None, operators=OPERATORS)
+    with rasterio.open(result.path) as out, rasterio.open(result.mask_path) as mask:
+        assert SLICES_TAG in out.tags() and SLICES_TAG in mask.tags()
+    lon, lat = mini_pass.position(line, col)
+    tile = WEB_MERCATOR_TMS.tile(lon, lat, zoom)
+    scenes = _scene_tile(slices, names, tile)
+    drawn = _result_tile(result, tile)
+    shown = ~numpy.ma.getmaskarray(drawn)
+    assert shown.any()
+    # Nothing drawn where no scene is, and every drawn pixel twice the value of the scene pixel under it.
+    assert (scenes[shown] > 0).all()
+    assert (numpy.ma.getdata(drawn)[shown] == 2 * scenes[shown]).all()
+
+
+@pytest.mark.usefixtures("served")
+def test_a_radar_result_keeps_to_the_aoi_on_the_map(tmp_path: Path, slices: dict[str, Path]) -> None:
+    """As every result: the map shows the pixels ``mask.tif`` marks (all touched). Drawn pixel on pixel, what shows
+    outside the AOI lies within one pixel of its edge, and what lies more than two pixels inside it shows where the
+    scenes show."""
+    from rasterio.warp import transform
+    from shapely.geometry import Point, shape
+
+    result = run(recipe(ITEMS, TRIANGLE), workdir=tmp_path, progress=lambda *_: None, operators=OPERATORS)
+    aoi = shape(TRIANGLE)
+    lon, lat = mini_pass.position(65, 30)
+    tile = WEB_MERCATOR_TMS.tile(lon, lat, 17)
+    # The diagonal of the largest pixel of the fixture (its bend stretches some by up to a tenth), plus the pixel of the
+    # tile at which the map samples it.
+    largest = max(
+        math.dist(mini_pass.position(row, col), mini_pass.position(row + 1, col + 1))
+        for row in range(2 * mini_pass.HEIGHT)
+        for col in range(mini_pass.WIDTH)
+    )
+    pixel = largest + (WEB_MERCATOR_TMS.bounds(tile).right - WEB_MERCATOR_TMS.bounds(tile).left) / 256
+    shown = ~numpy.ma.getmaskarray(_result_tile(result, tile))
+    bounds = WEB_MERCATOR_TMS.xy_bounds(tile)
+    size = shown.shape[0]
+    xs = bounds.left + (numpy.arange(size) + 0.5) * (bounds.right - bounds.left) / size
+    ys = bounds.top - (numpy.arange(size) + 0.5) * (bounds.top - bounds.bottom) / size
+    lons, lats = transform("EPSG:3857", "EPSG:4326", *(axis.ravel() for axis in numpy.meshgrid(xs, ys)))
+    points = [Point(x, y) for x, y in zip(lons, lats, strict=True)]
+    outside = numpy.array([aoi.distance(point) for point in points]).reshape(shown.shape)
+    inside = numpy.array([aoi.exterior.distance(point) if aoi.contains(point) else 0.0 for point in points])
+    assert outside[shown].max() <= pixel
+    # Where the scenes show (the splines of two slices need not meet at the seam, for scenes and result alike).
+    scenes = _scene_tile(slices, ITEMS, tile).ravel() > 0
+    assert shown.ravel()[(inside > 2 * pixel) & scenes].all()

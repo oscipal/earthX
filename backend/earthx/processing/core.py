@@ -89,6 +89,7 @@ from earthx.processing.source import Source, common_grid, merge_images
 from earthx.processing.statistics import BandStatistics, PercentileRefinement, gdal_tags, summarize
 from earthx.processing.workfile import open_workfile, workfile_path
 from earthx.readers import process_gdal_options, read_access_for
+from earthx.readers.radar_slices import SLICES_TAG, slices_tag
 
 __all__ = [
     "BLOCK_SIZE",
@@ -334,6 +335,8 @@ class _Run:
         self.measured: list[dict[str, Any]] = []
         #: The grid of an input placed by its GCPs, whose files carry them (DS-04d).
         self.radar: RadarGrid | None = None
+        #: The tags of result and mask that draw them slice by slice as the scenes (`readers.radar_slices`).
+        self.slice_tags: dict[str, str] = {}
 
     def tick(self) -> None:
         self.done += 1
@@ -376,6 +379,7 @@ class _Run:
             )
             mask = files.enter_context(open_workfile(self.workdir, MASK_NAME)) if count_valid else None
             if count_valid:
+                dst.update_tags(**self.slice_tags)
                 # The name of the band, which rio-cogeo carries into the COG; the unit stays in the properties:
                 # ``cog_translate`` drops it, and GDAL's COG driver, which keeps it, holds memory that grows with the
                 # area (adr/0014 Nachtrag NM4-43c).
@@ -572,6 +576,30 @@ def _aoi_on(aoi: dict, meta: RasterMeta, radar: RadarGrid | None) -> Any:
     return transform_geom("EPSG:4326", meta.crs, aoi)
 
 
+def _slice_tags(finest: Source, window: Window) -> dict[str, str]:
+    """For a result in radar geometry: each slice the window reaches, where its first pixel lies in the result, its size
+    and its own GCPs (`readers.radar_slices`), so the map draws the result as it draws the scenes. Empty otherwise."""
+    joined = getattr(finest, "joined", None)
+    if joined is None:
+        return {}
+    pieces = []
+    for piece, offset in zip(joined.slices, joined.offsets, strict=True):
+        row, col = offset - int(window.row_off), -int(window.col_off)
+        if row >= window.height or row + piece.grid.height <= 0:
+            continue
+        pieces.append(
+            {
+                "width": piece.grid.width,
+                "height": piece.grid.height,
+                "row": row,
+                "col": col,
+                "gcp_crs": piece.grid.gcp_crs,
+                "gcps": [[p.row, p.col, p.x, p.y, p.z] for p in piece.grid.gcps],
+            }
+        )
+    return {SLICES_TAG: slices_tag(pieces)}
+
+
 def _window(aoi: dict, finest: Source) -> tuple[Window, Affine]:
     """The window ``bbox(AOI ∩ raster)`` of the finest source and its transform; a radar grid's through its GCPs."""
     if finest.radar is None:
@@ -587,6 +615,7 @@ def _write_mask(state: _Run, meta: RasterMeta, aoi: dict) -> None:
     geometry = _aoi_on(aoi, meta, state.radar)
     profile = {**_profile(meta, "uint8", 0, radar=state.radar), "count": 1, "nodata": None}
     with open_workfile(state.workdir, state.new_file(MASK_NAME), "w", **profile) as dst:
+        dst.update_tags(**state.slice_tags)
         for window in _blocks(meta.width, meta.height):
             dst.write(_mask_block(geometry, window, meta.transform), 1, window=window)
 
@@ -625,6 +654,7 @@ def run(
             aoi = recipe.aoi.model_dump(mode="json")
             state.radar = finest.radar
             window, transform = _window(aoi, finest)
+            state.slice_tags = _slice_tags(finest, window)
             metas = [_source_meta(sources, finest, window, transform)]
             passes = segments(stock_steps(metas[0], planned, output.bands))
             for segment in passes:

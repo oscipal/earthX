@@ -154,6 +154,8 @@ class RadarSource(Source):
         self.crs = None  # type: ignore[assignment]
         self.transform = Affine.identity()
         self.radar = joined.grid
+        #: The slices and where they lie, for the result's tag that draws it as its scenes (`readers.radar_slices`).
+        self.joined = joined
         self.width, self.height = joined.grid.width, joined.grid.height
         self._raws = list(raws)
         self._offsets = list(joined.offsets)

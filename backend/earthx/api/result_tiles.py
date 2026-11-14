@@ -209,11 +209,15 @@ class ResultReader(CogReader):
         count = self.dataset.count
         if any(not 1 <= index <= count for index in kwargs.get("indexes") or ()):
             raise HTTPException(status_code=400, detail=f"the result has {count} band(s); bidx is 1 to {count}")
-        image = super().tile(tile_x, tile_y, tile_z, **kwargs)
+        # A result in radar geometry is drawn slice by slice as its scenes are, pixel on pixel (DS-04d); its mask too.
+        image = self.tile_by_slices(tile_x, tile_y, tile_z, **kwargs)
+        if image is None:
+            image = super().tile(tile_x, tile_y, tile_z, **kwargs)
         with CogReader(self.input.mask, tms=self.tms) as mask:
-            inside = mask.tile(
-                tile_x, tile_y, tile_z, tilesize=image.width, indexes=1, resampling_method="nearest"
-            )
+            options = {"tilesize": image.width, "indexes": 1, "resampling_method": "nearest"}
+            inside = mask.tile_by_slices(tile_x, tile_y, tile_z, **options)
+            if inside is None:
+                inside = mask.tile(tile_x, tile_y, tile_z, **options)
         outside = numpy.ma.getdata(inside.array)[0] == 0
         image.array = numpy.ma.MaskedArray(
             numpy.ma.getdata(image.array), mask=numpy.ma.getmaskarray(image.array) | outside[None]

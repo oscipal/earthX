@@ -31,16 +31,21 @@ platform wrote itself (a job result) is read ``as_written``: by its GCPs where i
 
 from __future__ import annotations
 
-from typing import Literal, get_args
+from contextlib import ExitStack
+from typing import Any, Literal, get_args
 
+import numpy
 import rasterio
 from rasterio.vrt import WarpedVRT
+from rio_tiler.errors import TileOutsideBounds
 from rio_tiler.io.rasterio import Reader
+from rio_tiler.models import ImageData
 from rio_tiler.utils import has_alpha_band
 
 from earthx.gateway import GatewayError, Policy, Resolver, check_url, resolve_host
 from earthx.gateway.gdal import vsicurl_path
 from earthx.readers.errors import AssetRejected, GeoreferenceMismatch
+from earthx.readers.radar_slices import slice_document, slices_of
 
 __all__ = ["AS_WRITTEN", "AssetPath", "CogReader", "Georeferencing", "asset_path", "warp_options"]
 
@@ -172,6 +177,40 @@ class CogReader(Reader):
             self._ctx_stack.close()
             raise GeoreferenceMismatch("this asset carries GCPs, but the registry places it by its geotransform")
         super().__attrs_post_init__()
+
+    def tile_by_slices(self, tile_x: int, tile_y: int, tile_z: int, **kwargs: Any) -> ImageData | None:
+        """The tile of a result in radar geometry drawn slice by slice as its scenes are (``readers.radar_slices``);
+        ``None`` for a file that names no slices. Each slice is warped exactly as its scene: the same size, the same
+        GCPs, the same spline and options, so every pixel lands where its source pixel lands. Where two slices meet,
+        the first valid pixel wins (they do not overlap)."""
+        pieces = slices_of(self.raw.tags())
+        if pieces is None:
+            return None
+        images = []
+        with ExitStack() as stack:
+            for piece in pieces:
+                document = slice_document(str(self.input), self.raw, piece)
+                if document is None:
+                    continue
+                virtual = stack.enter_context(rasterio.open(document))
+                warped = stack.enter_context(
+                    WarpedVRT(virtual, crs=virtual.gcps[1], **_gcp_vrt_options(virtual))
+                )
+                reader = stack.enter_context(Reader(input=str(self.input), dataset=warped, tms=self.tms))
+                try:
+                    images.append(reader.tile(tile_x, tile_y, tile_z, **kwargs))
+                except TileOutsideBounds:
+                    continue
+        if not images:
+            raise TileOutsideBounds(f"Tile {tile_z}/{tile_x}/{tile_y} is outside the result")
+        first = images[0]
+        data, mask = numpy.ma.getdata(first.array).copy(), numpy.ma.getmaskarray(first.array).copy()
+        for image in images[1:]:
+            fill = mask & ~numpy.ma.getmaskarray(image.array)
+            data[fill] = numpy.ma.getdata(image.array)[fill]
+            mask &= ~fill
+        first.array = numpy.ma.MaskedArray(data, mask=mask)
+        return first
 
 
 def _gcp_vrt_options(dataset: rasterio.DatasetReader) -> dict[str, object]:
