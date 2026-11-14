@@ -67,7 +67,8 @@ from tests.earthx.readers import mini_dem, mini_zarr, mini_zarr_cf
 #: (DS-04 plan §4.7, Checkliste Punkt 9); reprojection out of LV95 for swissALTI3D (M5-08 plan §4.6 point 9).
 OPERATOR_FOR = {
     "sentinel-2-c1-l2a": "band_math",
-    "sentinel-1-grd": "reproject",
+    # Never reprojected (DS-04d F6): stretched in its own grid.
+    "sentinel-1-grd": "normalize",
     "synthetic-zarr": "band_math",
     "cop-dem-glo-30": "reproject",
     "esa-worldcover-2020": "mask",
@@ -82,6 +83,8 @@ SIDE = 300  # pixels of a synthetic Sentinel-2 band
 ZOOM = 14  # a level that reads the native resolution of both stores
 ZARR_ASSET = "SR_10m:b04,b08"
 REPROJECT = {"crs": "EPSG:32632", "resolution": 100.0, "resampling": "bilinear"}
+#: Stretch digital numbers onto 0..1, the panel's form of version 1.
+NORMALIZE = {"in_min": 0.0, "in_max": 1000.0, "out_min": 0.0, "out_max": 1.0, "clip": True}
 #: Hide water and built-up land in the map of classes.
 MASK = {"source": "map", "classes": [50, 80]}
 BAND = {"data_type": "uint16", "nodata": 0, "raster:scale": sources.SCALE, "raster:offset": sources.OFFSET}
@@ -291,7 +294,7 @@ def _lv95(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 
 
 def _gcp(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Scenario:
-    """A file placed by its GCPs only, read through the thin-plate spline and reprojected (DS-04 plan §4.7)."""
+    """A file placed by its GCPs only, stretched in its own grid (DS-04 plan §4.7, DS-04d)."""
     sources.serve({}, monkeypatch)  # the resolver; the COG itself is served by the chain
     chain = synthetic_chain.build(config, tmp_path, monkeypatch)
     asset = chain.render_asset
@@ -303,7 +306,7 @@ def _gcp(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
         item=chain.item,
         assets=[asset],
         aoi=chain.aoi,
-        step={"op": "reproject", "op_version": 2, "params": REPROJECT},
+        step={"op": "normalize", "op_version": 1, "params": NORMALIZE},
         scaling="none",
         gateway=chain.gateway,
         result_bands=[asset],
@@ -412,7 +415,7 @@ def test_every_assigned_operator_exists_and_applies_to_its_entry() -> None:
     for config in ENTRIES:
         op = OPERATOR_FOR[config.dataset_id]
         operator = OPERATORS.operator(op, 2 if op in ("reproject", "mask") else 1)
-        params = operator.params.model_validate({"reproject": REPROJECT, "mask": MASK}.get(op, {"expression": "a + b"}))
+        params = operator.params.model_validate({"reproject": REPROJECT, "mask": MASK, "normalize": NORMALIZE}.get(op, {"expression": "a + b"}))
         assert applicable(operator, config, params) == [], config.dataset_id
 
 

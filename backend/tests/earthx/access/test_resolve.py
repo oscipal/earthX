@@ -79,7 +79,9 @@ class TestResolveAsset:
         )
 
     def test_the_registrys_georeferencing_travels_with_the_asset(self) -> None:
-        tps = replace(COG, georeferencing=Georeferencing.GCP_TPS)
+        tps = replace(
+            COG, georeferencing=Georeferencing.GCP_TPS, capabilities=replace(COG.capabilities, reprojection=False)
+        )
         assert resolve_asset(COG_ITEM, tps, "visual").georeferencing == "gcp_tps"
 
     def test_a_zarr_key_is_split_at_the_registrys_separator(self) -> None:
@@ -219,7 +221,9 @@ class TestOpenAssetRef:
         assert opened.georeferencing == "geotransform"
 
     def test_a_gcp_asset_opens_with_its_method(self) -> None:
-        tps = replace(COG, georeferencing=Georeferencing.GCP_TPS)
+        tps = replace(
+            COG, georeferencing=Georeferencing.GCP_TPS, capabilities=replace(COG.capabilities, reprojection=False)
+        )
         assert open_asset_ref(resolve_asset(COG_ITEM, tps, "visual"), POLICY, public).georeferencing == "gcp_tps"
 
     def test_a_zarr_asset_opens_with_group_variable_crs_and_level(self) -> None:

@@ -37,6 +37,9 @@ from tests.earthx.readers.mini_cog import build_mini_cog
 
 URL = sources.url("gcp")
 
+#: A GCP file is never reprojected (DS-04d F6).
+NO_REPROJECTION = replace(SENTINEL_2_L2A.capabilities, reprojection=False)
+
 
 @pytest.fixture(scope="module")
 def gcp_file(tmp_path_factory: pytest.TempPathFactory) -> Path:
@@ -175,7 +178,10 @@ class TestTheMethodIsChecked:
             warp_options("polynomial")  # type: ignore[arg-type]
 
     def test_the_registry_allows_the_spline_only_for_a_cog(self) -> None:
-        assert replace(SENTINEL_2_L2A, georeferencing=Georeferencing.GCP_TPS).georeferencing is Georeferencing.GCP_TPS
+        assert (
+            replace(SENTINEL_2_L2A, georeferencing=Georeferencing.GCP_TPS, capabilities=NO_REPROJECTION).georeferencing
+            is Georeferencing.GCP_TPS
+        )
         with pytest.raises(ConfigError, match="needs format cog"):
             replace(SYNTHETIC_ZARR, georeferencing=Georeferencing.GCP_TPS)
 
@@ -187,7 +193,9 @@ class TestTheMethodIsChecked:
         from earthx.catalog.collection import to_stac_collection
 
         assert to_stac_collection(SENTINEL_2_L2A)["earthx:georeferencing"] == "geotransform"
-        tps = replace(SENTINEL_2_L2A, georeferencing=Georeferencing.GCP_TPS, format=DataFormat.COG)
+        tps = replace(
+            SENTINEL_2_L2A, georeferencing=Georeferencing.GCP_TPS, format=DataFormat.COG, capabilities=NO_REPROJECTION
+        )
         assert to_stac_collection(tps)["earthx:georeferencing"] == "gcp_tps"
 
 

@@ -48,6 +48,8 @@ data_class: raster-static
 format: cog
 # The files carry a CRS and a geotransform (adr/0018 F1, DS-04a).
 georeferencing: geotransform
+# Scenes are not slices of a pass hung one under the other (DS-04d F2).
+line_times: null
 # The outer edge of the tile grid (measured): no tiles south of 60° S.
 spatial_extent:
   bbox: [-180.0, -60.0, 180.0, 84.0]

@@ -53,6 +53,8 @@ data_class: raster-static
 format: cog
 # The files carry a CRS (EPSG:2056) and a geotransform [M].
 georeferencing: geotransform
+# Scenes are not slices of a pass hung one under the other (DS-04d F2).
+line_times: null
 # The extent of the collection [M].
 spatial_extent:
   bbox: [5.9503666, 45.7213375, 10.4998461, 47.8216742]
