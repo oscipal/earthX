@@ -10,6 +10,7 @@ dataset released from z13 that has ``RELIEF`` as its substitute, as swissALTI3D 
 from __future__ import annotations
 
 import ast
+import asyncio
 import io
 import logging
 from collections.abc import Callable, Iterator
@@ -630,3 +631,102 @@ def test_only_the_tile_route_of_the_overview_can_reach_a_pyramid() -> None:
             found[path.relative_to(root).as_posix()] = places
     assert set(found) == {"api/overview_tiles.py", "api/tiler.py"}
     assert found["api/tiler.py"] == {"_pyramid_tile", "_overview_sources", "_lifespan", "build_app"}
+
+
+class TestTheStateIsAskedOnceForTilesThatAskTogether:
+    """Single flight: a view asks for a dozen tiles of a dataset nobody has asked about, and the rows are read once."""
+
+    @staticmethod
+    def _sources(store: Store) -> overview_tiles.OverviewSources:  # noqa: F811
+        return overview_tiles.OverviewSources(store)
+
+    def test_tiles_that_ask_together_share_one_query(self, store, rows, monkeypatch) -> None:  # noqa: F811
+        calls = []
+
+        async def slow(conn: Any, dataset_id: str, *, fresh_after: datetime, confirmed_after: datetime | None = None) -> Any:
+            calls.append(dataset_id)
+            await asyncio.sleep(0.05)
+            return OverviewState("ready", VERSION)
+
+        monkeypatch.setattr(overview_tiles, "overview_state_async", slow)
+        sources_ = self._sources(store)
+
+        async def scenario() -> list[OverviewState]:
+            return await asyncio.gather(*(sources_.state(WITH_POOL, RELIEF_ID) for _ in range(10)))
+
+        answers = asyncio.run(scenario())
+        assert calls == [RELIEF_ID] and answers == [OverviewState("ready", VERSION)] * 10
+
+    def test_a_failure_is_shared_too_and_the_next_ask_tries_again(self, store, monkeypatch) -> None:  # noqa: F811
+        calls = []
+
+        async def failing(conn: Any, dataset_id: str, **_: Any) -> Any:
+            calls.append(dataset_id)
+            await asyncio.sleep(0.02)
+            raise psycopg.OperationalError("connection to server at db.internal.invalid failed")
+
+        monkeypatch.setattr(overview_tiles, "overview_state_async", failing)
+        sources_ = self._sources(store)
+
+        async def scenario() -> list[Any]:
+            first = await asyncio.gather(*(sources_.state(WITH_POOL, RELIEF_ID) for _ in range(5)), return_exceptions=True)
+            second = await asyncio.gather(sources_.state(WITH_POOL, RELIEF_ID), return_exceptions=True)
+            return [*first, *second]
+
+        answers = asyncio.run(scenario())
+        assert len(calls) == 2, "one query for the five, and a new one after the failure"
+        assert all(getattr(answer, "status_code", None) == 503 for answer in answers)
+
+    def test_a_request_that_is_cancelled_does_not_take_the_query_from_the_others(self, store, monkeypatch) -> None:  # noqa: F811
+        calls = []
+
+        async def slow(conn: Any, dataset_id: str, **_: Any) -> Any:
+            calls.append(dataset_id)
+            await asyncio.sleep(0.05)
+            return OverviewState("ready", VERSION)
+
+        monkeypatch.setattr(overview_tiles, "overview_state_async", slow)
+        sources_ = self._sources(store)
+
+        async def scenario() -> OverviewState:
+            first = asyncio.ensure_future(sources_.state(WITH_POOL, RELIEF_ID))
+            await asyncio.sleep(0.01)
+            second = asyncio.ensure_future(sources_.state(WITH_POOL, RELIEF_ID))
+            await asyncio.sleep(0.01)
+            first.cancel()
+            return await second
+
+        assert asyncio.run(scenario()) == OverviewState("ready", VERSION)
+        assert calls == [RELIEF_ID]
+
+
+class TestAMissingObjectMakesTheNextTileAskAgain:
+    def test_a_tile_without_an_object_drops_the_belief_in_its_version(self, rows, pyramids, client) -> None:
+        rows.ready(RELIEF_ID)
+        api = client()
+        assert api.get(path(RELIEF_ID, 5)).status_code == 404
+        assert api.get(path(RELIEF_ID, 5)).status_code == 404
+        assert len(rows.asked) == 2, "the second tile asked the rows again instead of believing the version for 30 s"
+
+    def test_a_version_whose_objects_are_gone_is_not_served_headless_for_the_rest_of_its_30_seconds(
+        self, rows, pyramids, client
+    ) -> None:
+        rows.ready(RELIEF_ID)
+        pyramids.put(RELIEF_ID, 6)
+        api = client()
+        assert api.get(path(RELIEF_ID, 6)).status_code == 200
+        tile = tile_at(6)
+        pyramids.store.s3.delete_objects([f"overviews/{RELIEF_ID}/{VERSION}/6/{tile.x}/{tile.y}.tif"])
+        newer = "fedcba9876543210"
+        rows.states[RELIEF_ID] = OverviewState("ready", newer)  # the build of another version ended meanwhile
+        pyramids.put(RELIEF_ID, 6, version=newer)
+        assert api.get(path(RELIEF_ID, 6)).status_code == 404  # the old version, believed, but its object is gone
+        assert api.get(path(RELIEF_ID, 6)).status_code == 200, "no wait for the 30 s: the version was asked for again"
+
+    def test_a_belief_in_another_version_is_left_alone(self, store) -> None:  # noqa: F811
+        sources_ = overview_tiles.OverviewSources(store)
+        sources_._states[RELIEF_ID] = (0.0, OverviewState("ready", "aaaaaaaaaaaaaaaa"))
+        sources_.forget(RELIEF_ID, "bbbbbbbbbbbbbbbb")
+        assert RELIEF_ID in sources_._states
+        sources_.forget(RELIEF_ID, "aaaaaaaaaaaaaaaa")
+        assert RELIEF_ID not in sources_._states

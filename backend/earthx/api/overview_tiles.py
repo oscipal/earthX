@@ -8,7 +8,8 @@ dependency of that route, and nothing else:
 * **Which version?** The newest ``ready`` row of ``earthx_overview`` for the dataset whose term has not run out
   (:func:`earthx.catalog.pgstac.overview_state_async`). Asked at most every :data:`READY_KEPT` for a ready answer and every
   :data:`UNREADY_KEPT` for the others, per dataset, in this process: a view asks for a dozen tiles at once and the rows
-  change when a build ends, not per tile. Neither is state a second instance would miss: two instances read the same rows.
+  change when a build ends, not per tile. Tiles that ask at the same moment share one query, and a missing object makes the
+  next tile ask again. Neither is state a second instance would miss: two instances read the same rows.
 * **The bytes.** One ``GetObject`` with the read key of the tiler (`objectstore`, KLAERUNGEN B8 Nachtrag, adr/0015
   §14c: the store is our own and does not pass `gateway`), in the thread pool because the client is blocking. A tile
   without data is not stored, so an absent object is a tile with nothing in it: ``404``, like a tile outside an item.
@@ -19,6 +20,7 @@ never a read of the original files (they are why a pyramid exists).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from collections.abc import Callable
@@ -94,9 +96,14 @@ class OverviewSources:
         self._clock = clock
         self._now = now
         self._states: dict[str, tuple[float, OverviewState]] = {}
+        self._flights: dict[str, tuple[asyncio.AbstractEventLoop, asyncio.Task[OverviewState]]] = {}
 
     async def state(self, pool: Any, dataset_id: str) -> OverviewState:
-        """The state of the pyramid of ``dataset_id``; ``503`` where the database is not there or fails."""
+        """The state of the pyramid of ``dataset_id``; ``503`` where the database is not there or fails.
+
+        Single flight: the tiles of a view that ask at the same moment for a dataset nobody has asked about share **one**
+        query (and one failure). The query is a task of its own that a cancelled request does not take down with it.
+        """
         kept = self._states.get(dataset_id)
         if kept is not None:
             at, state = kept
@@ -104,13 +111,31 @@ class OverviewSources:
                 return state
         if pool is None:
             raise HTTPException(status_code=503, detail="overviews need the catalogue database, which is not reachable")
+        loop = asyncio.get_running_loop()
+        flight = self._flights.get(dataset_id)
+        if flight is None or flight[0] is not loop:
+            task = loop.create_task(self._ask(pool, dataset_id))
+            flight = (loop, task)
+            self._flights[dataset_id] = flight
+            task.add_done_callback(lambda done: self._landed(dataset_id, done))
+        return await asyncio.shield(flight[1])
+
+    def _landed(self, dataset_id: str, task: asyncio.Task[OverviewState]) -> None:
+        if self._flights.get(dataset_id, (None, None))[1] is task:
+            del self._flights[dataset_id]
+        if not task.cancelled():
+            task.exception()  # an answer every waiter gave up on must not log "never retrieved"
+
+    async def _ask(self, pool: Any, dataset_id: str) -> OverviewState:
         now = self._now()
         # A confirmation holds a pyramid back only inside the window the worker can still extend it in, and never for a
         # prototype source (the same rule as the worker's sweep, `jobs.overviews`).
         confirmed_after = None if is_prototype(dataset_id) else now - EXTEND_WINDOW
         try:
             async with pool.connection() as conn:
-                state = await overview_state_async(conn, dataset_id, fresh_after=now - term_of(dataset_id), confirmed_after=confirmed_after)
+                state = await overview_state_async(
+                    conn, dataset_id, fresh_after=now - term_of(dataset_id), confirmed_after=confirmed_after
+                )
         except psycopg.Error as error:
             # The kind of failure only: the driver's text can name the host and the user.
             LOGGER.warning("the catalogue failed under the tile of an overview: %s", type(error).__name__)
@@ -121,6 +146,12 @@ class OverviewSources:
             self._states.clear()
         self._states[dataset_id] = (self._clock(), state)
         return state
+
+    def forget(self, dataset_id: str, version: str) -> None:
+        """Drop what is believed of ``dataset_id`` if it names ``version``: the object of that version was not there."""
+        kept = self._states.get(dataset_id)
+        if kept is not None and kept[1].version == version:
+            del self._states[dataset_id]
 
     async def tile(
         self, dataset_id: str, version: str, grid: tuple[morecantile.TileMatrixSet, morecantile.Tile]
@@ -134,5 +165,8 @@ class OverviewSources:
             LOGGER.warning("the overview store could not be read: %s", type(error).__name__)
             raise HTTPException(status_code=503, detail="the overview store is not available; try again") from None
         if stored is None:
+            # A tile without data is not stored, but a version whose objects are gone looks the same: do not go on believing
+            # the version for the rest of its 30 s; the next tile asks the rows again (one query for all that ask at once).
+            self.forget(dataset_id, version)
             raise HTTPException(status_code=404, detail="the tile has no data")
         return stored.data
