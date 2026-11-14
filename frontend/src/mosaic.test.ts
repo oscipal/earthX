@@ -1,17 +1,18 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildMosaicOperatorTileTemplate, buildMosaicTileTemplate } from './api';
+import { buildMosaicOperatorTileTemplate, type MosaicSelection } from './api';
 import {
+  chosenByView,
+  indexKeyOf,
   inStackOrder,
   isMosaicPass,
   MAX_MOSAIC_REQUEST_BYTES,
-  MAX_MOSAIC_SCENES,
+  MAX_SELECTION_ITEMS,
+  mosaicKeyOf,
   mosaicRequestBytes,
   mosaicsOfView,
-  mosaicTemplateOf,
   orderedPass,
   orderKeyOf,
-  oversizeNote,
   passesOf,
   sameMosaics,
   viewOfPass,
@@ -39,10 +40,19 @@ const pass = (...ids: string[]) => ids.map((id) => entry(id));
 const stac = (id: string): StacItem => ({ id, properties: {}, assets: {} });
 const group = (...ids: string[]): TimeStepGroup => ({ key: [ids[0]], label: ids[0], items: ids.map(stac) });
 
+// What the page holds of a mosaic once its selection is created: the template of the selection, under the key of the pass.
+const SELECTION_TILES = '/collections/sentinel-2-c1-l2a/mosaic/0123456789abcdef0123456789abcdef/tiles/WebMercatorQuad/{z}/{x}/{y}?tilesize=512';
+
 function mosaicOf(entries: SceneEntry[], overrides: Partial<MosaicInfo> = {}): Mosaics {
-  const tileUrl = mosaicTemplateOf(DATASET, entries) as string;
   return {
-    [tileUrl]: { tileUrl, bounds: [9, 46, 12, 49], minZoom: 8, maxZoom: 19, order: entries.map(([id]) => id), ...overrides },
+    [mosaicKeyOf(DATASET, entries) as string]: {
+      tileUrl: SELECTION_TILES,
+      bounds: [9, 46, 12, 49],
+      minZoom: 8,
+      maxZoom: 19,
+      order: entries.map(([id]) => id),
+      ...overrides,
+    },
   };
 }
 
@@ -65,10 +75,11 @@ describe('passesOf', () => {
 });
 
 describe('what is a mosaic', () => {
-  it('needs two to 64 scenes', () => {
+  it('needs two scenes up to what a selection takes, however many a time step has (adr/0032 §10.2)', () => {
     expect(isMosaicPass(pass('A'))).toBe(false);
     expect(isMosaicPass(pass('A', 'B'))).toBe(true);
-    const ids = Array.from({ length: MAX_MOSAIC_SCENES }, (_, i) => `S${i}`);
+    const ids = Array.from({ length: MAX_SELECTION_ITEMS }, (_, i) => `S${i}`);
+    expect(isMosaicPass(pass(...ids.slice(0, 65)))).toBe(true); // the 64 of the URL are gone
     expect(isMosaicPass(pass(...ids))).toBe(true);
     expect(isMosaicPass(pass(...ids, 'one more'))).toBe(false);
     expect(isMosaicPass([])).toBe(false);
@@ -84,11 +95,21 @@ describe('what is a mosaic', () => {
     expect(isMosaicPass([entry('A', { minZoom: 8, maxZoom: 14 }), entry('B', { minZoom: 8, maxZoom: 14 })])).toBe(true);
   });
 
-  it('is named by the sorted scenes and the asset, so one selection is one URL', () => {
-    const forward = mosaicTemplateOf(DATASET, pass('B', 'A', 'C'));
-    expect(forward).toBe(mosaicTemplateOf(DATASET, pass('C', 'B', 'A')));
-    expect(forward).toBe(buildMosaicTileTemplate(DATASET, ['A', 'B', 'C'], 'visual'));
-    expect(mosaicTemplateOf(DATASET, pass('A'))).toBeNull();
+  it('is keyed by the dataset, the asset and the sorted scenes, and the key carries no URL', () => {
+    const forward = mosaicKeyOf(DATASET, pass('B', 'A', 'C'));
+    expect(forward).toBe(mosaicKeyOf(DATASET, pass('C', 'B', 'A')));
+    expect(forward).toContain(DATASET);
+    expect(forward).not.toMatch(/item=|\/collections\//);
+    expect(mosaicKeyOf(DATASET, pass('A', 'B'))).not.toBe(mosaicKeyOf('other', pass('A', 'B')));
+    expect(mosaicKeyOf(DATASET, [entry('A'), entry('B', { asset: 'thumbnail' })])).toBeNull();
+    expect(mosaicKeyOf(DATASET, pass('A'))).toBeNull();
+  });
+
+  it('has a key for the selection an index asks for, apart from the mosaic of the pass', () => {
+    const entries = pass('B', 'A');
+    expect(indexKeyOf(DATASET, ['nir', 'red'], entries)).toBe(indexKeyOf(DATASET, ['red', 'nir'], pass('A', 'B')));
+    expect(indexKeyOf(DATASET, ['visual'], entries)).not.toBe(mosaicKeyOf(DATASET, entries));
+    expect(indexKeyOf(DATASET, ['red'], entries)).not.toBe(indexKeyOf(DATASET, ['nir'], entries));
   });
 });
 
@@ -106,57 +127,51 @@ describe('viewOfPass', () => {
   });
 
   it('draws scene by scene once the tiler has refused the mosaic', () => {
-    const refused = { [mosaicTemplateOf(DATASET, entries) as string]: null };
+    const refused = { [mosaicKeyOf(DATASET, entries) as string]: null };
     expect(viewOfPass(DATASET, entries, refused)).toEqual({ kind: 'scenes' });
   });
 
-  it('puts the mosaic on top and, below its first level, the scenes in the order it reads them', () => {
+  it('draws the mosaic alone, from the URL of its selection and at every level its tiler gave', () => {
     const view = viewOfPass(DATASET, entries, mosaicOf(entries, { order: ['C', 'A', 'B'] }));
     if (view.kind !== 'mosaic') throw new Error('expected a mosaic');
-    const [c, a, b] = view.rasters.slice(0, 3).reverse(); // top to bottom
-    expect([c, a, b].map((r) => r.tileUrl.split('/items/')[1].split('/')[0])).toEqual(['C', 'A', 'B']);
-    const mosaic = view.rasters[view.rasters.length - 1];
-    expect(mosaic.tileUrl).toBe(mosaicTemplateOf(DATASET, entries));
+    expect(view.rasters).toHaveLength(1);
+    const [mosaic] = view.rasters;
+    expect(mosaic.tileUrl).toBe(SELECTION_TILES);
+    expect(mosaic.tileUrl).not.toContain('item=');
     expect(mosaic.bounds).toEqual([9, 46, 12, 49]);
     expect([mosaic.minZoom, mosaic.maxZoom, mosaic.hideFrom]).toEqual([8, 19, undefined]);
   });
 
-  it('steps each scene aside where the mosaic is first asked for (7.5), and asks them for no level above z7', () => {
-    const view = viewOfPass(DATASET, entries, mosaicOf(entries));
-    if (view.kind !== 'mosaic') throw new Error('expected a mosaic');
-    // The mosaic's 512-px tiles of level 8 are asked for from map zoom 7.5 (a 256-px source only from 6.5, NM4-29b).
-    for (const scene of view.rasters.slice(0, -1)) {
-      expect([scene.minZoom, scene.maxZoom, scene.hideFrom]).toEqual([0, 7, 7.5]);
-    }
-  });
-
-  it('draws no single scene for a dataset that is released from the mosaic level on', () => {
-    const zarr = [entry('A', { minZoom: 8, maxZoom: 14 }), entry('B', { minZoom: 8, maxZoom: 14 })];
-    const view = viewOfPass(DATASET, zarr, mosaicOf(zarr, { maxZoom: 14 }));
-    if (view.kind !== 'mosaic') throw new Error('expected a mosaic');
-    expect(view.rasters).toHaveLength(1);
-  });
-
-  it('puts a scene the tiler left out of its order below the others', () => {
-    const view = viewOfPass(DATASET, entries, mosaicOf(entries, { order: ['A'] }));
-    if (view.kind !== 'mosaic') throw new Error('expected a mosaic');
-    expect(view.rasters[2].tileUrl).toContain('/items/A/'); // topmost of the scenes
+  it('takes an entry of the selection of an index for no mosaic', () => {
+    const selection: MosaicSelection = { id: '0'.repeat(32), datasetId: DATASET, tiles: 't', tilejson: 'j' };
+    expect(viewOfPass(DATASET, entries, { [mosaicKeyOf(DATASET, entries) as string]: { selection } })).toEqual({ kind: 'scenes' });
   });
 });
 
-describe('oversizeNote', () => {
-  const ids = (n: number) => Array.from({ length: n }, (_, i) => `S${i}`);
+describe('the scenes drawn one by one that the map chooses by position (adr/0032 §10.4)', () => {
+  // A row of scenes, one degree wide each, from west to east.
+  const row = Array.from({ length: 10 }, (_, i) => entry(`S${i}`, { bounds: [i, 47, i + 1, 48] }));
+  const names = (entries: SceneEntry[]) => entries.map(([id]) => id);
 
-  it('says nothing while every pass fits one mosaic', () => {
-    expect(oversizeNote([pass(...ids(64)), pass('X')], 0)).toBeNull();
-    expect(oversizeNote([], 0)).toBeNull();
+  it('takes those that meet the view first, in the order they have, then the others', () => {
+    expect(names(chosenByView(row, [6.5, 47.2, 8.5, 47.8], 4))).toEqual(['S6', 'S7', 'S8', 'S0']);
   });
 
-  it('says how big the time step is and how many scenes are not drawn', () => {
-    expect(oversizeNote([pass(...ids(70))], 30)).toBe(
-      'A time step of 70 scenes is more than one mosaic takes (64); its scenes are drawn one by one, 30 of them not at all.',
-    );
-    expect(oversizeNote([pass(...ids(65))], 0)).not.toContain('not at all');
+  it('moves with the view', () => {
+    expect(names(chosenByView(row, [0.2, 47.2, 1.5, 47.8], 3))).toEqual(['S0', 'S1', 'S2']);
+    expect(names(chosenByView(row, [8.2, 47.2, 9.5, 47.8], 3))).toEqual(['S8', 'S9', 'S0']);
+  });
+
+  it('keeps the order alone without a view, and takes none for a limit of nothing', () => {
+    expect(names(chosenByView(row, null, 3))).toEqual(['S0', 'S1', 'S2']);
+    expect(chosenByView(row, [0, 47, 1, 48], 0)).toEqual([]);
+    expect(chosenByView(row, [0, 47, 1, 48], -5)).toEqual([]);
+  });
+
+  it('draws every scene when there are not more than the limit, and leaves the input alone', () => {
+    const before = names(row);
+    expect(chosenByView(row, [9, 47, 10, 48], 40)).toHaveLength(10);
+    expect(names(row)).toEqual(before);
   });
 });
 
@@ -167,7 +182,7 @@ describe('the mosaics a view asks for', () => {
 
   it('are those of its own time steps, not those of another view', () => {
     const picked = mosaicsOfView(known, DATASET, view, [group('A', 'B')]);
-    expect(Object.keys(picked)).toEqual([mosaicTemplateOf(DATASET, view)]);
+    expect(Object.keys(picked)).toEqual([mosaicKeyOf(DATASET, view)]);
   });
 
   it('leaves out one that has not answered, and picks nothing without a dataset', () => {
@@ -183,13 +198,29 @@ describe('the mosaics a view asks for', () => {
     expect(sameMosaics(before, {})).toBe(false);
     expect(sameMosaics(before, mosaicOf(view, { order: ['B', 'A'] }))).toBe(false); // another answer for it
   });
+
+  it('holds the selection of an index only for the assets the index reads', () => {
+    const selection: MosaicSelection = { id: '0'.repeat(32), datasetId: DATASET, tiles: 't', tilejson: 'j' };
+    const indexKey = indexKeyOf(DATASET, ['nir', 'red'], view);
+    const all = { ...known, [indexKey]: { selection }, [indexKeyOf(DATASET, ['nir', 'red'], other)]: { selection } };
+    const groups = [group('A', 'B')];
+    expect(Object.keys(mosaicsOfView(all, DATASET, view, groups))).toEqual([mosaicKeyOf(DATASET, view)]);
+    expect(Object.keys(mosaicsOfView(all, DATASET, view, groups, ['red', 'nir'])).sort()).toEqual([indexKey, mosaicKeyOf(DATASET, view) as string].sort());
+    expect(Object.keys(mosaicsOfView(all, DATASET, view, groups, ['red']))).toEqual([mosaicKeyOf(DATASET, view)]);
+  });
 });
 
 describe('the length of a mosaic request (NM4-04b)', () => {
   const step = { op: 'band_math', opVersion: 1, paramsJson: '{"expression":"red"}' };
+  const selection: MosaicSelection = {
+    id: '0123456789abcdef0123456789abcdef',
+    datasetId: DATASET,
+    tiles: `/collections/${DATASET}/mosaic/0123456789abcdef0123456789abcdef/tiles/WebMercatorQuad/{z}/{x}/{y}`,
+    tilejson: '',
+  };
 
   it('counts path and query as the tiler does: the largest tile of the level in the grid, no address of the API', () => {
-    const template = buildMosaicOperatorTileTemplate(DATASET, ['B', 'A'], ['red', 'nir'], [step]);
+    const template = buildMosaicOperatorTileTemplate(selection, [step]);
     const request = template.slice(template.indexOf('/collections/'));
     expect(mosaicRequestBytes(`https://api.example.org${template}`, 10)).toBe(
       request.replace('{z}', '10').replace('{x}', '1023').replace('{y}', '1023').length,
@@ -197,34 +228,29 @@ describe('the length of a mosaic request (NM4-04b)', () => {
     expect(mosaicRequestBytes(template, 10)).toBe(mosaicRequestBytes(`https://api.example.org/v1${template}`, 10));
   });
 
-  it('grows with the level, and with every scene', () => {
-    const one = buildMosaicOperatorTileTemplate(DATASET, ['A'], ['red'], [step]);
-    const two = buildMosaicOperatorTileTemplate(DATASET, ['A', 'B'], ['red'], [step]);
+  it('grows with the level and with every step, and with nothing else: the scenes are not in it', () => {
+    const one = buildMosaicOperatorTileTemplate(selection, [step]);
+    const two = buildMosaicOperatorTileTemplate(selection, [step, step]);
     expect(mosaicRequestBytes(one, 14)).toBeGreaterThan(mosaicRequestBytes(one, 8));
     expect(mosaicRequestBytes(two, 8)).toBeGreaterThan(mosaicRequestBytes(one, 8));
-  });
-
-  it('is under the limit of the tiler for a pass of 64 scenes of 60 characters and the usual chain', () => {
-    const ids = Array.from({ length: MAX_MOSAIC_SCENES }, (_, i) => `${'S'.repeat(57)}${String(i).padStart(3, '0')}`);
-    const template = buildMosaicOperatorTileTemplate(DATASET, ids, ['red', 'nir', 'scl'], [step, step]);
-    expect(mosaicRequestBytes(template, 14)).toBeLessThan(MAX_MOSAIC_REQUEST_BYTES);
+    expect(mosaicRequestBytes(two, 14)).toBeLessThan(MAX_MOSAIC_REQUEST_BYTES);
   });
 });
 
 describe('the order of the scenes of a pass drawn scene by scene (NM4-24)', () => {
   const ids = (entries: SceneEntry[]) => entries.map(([id]) => id);
 
-  it('has a key of its own, apart from the mosaic template, and none for a single scene', () => {
+  it('has a key of its own, apart from the key of the mosaic, and none for a single scene', () => {
     const entries = pass('A', 'B');
-    expect(orderKeyOf(DATASET, entries)).toBe(`order|${mosaicTemplateOf(DATASET, entries)}`);
+    expect(orderKeyOf(DATASET, entries)).toBe((mosaicKeyOf(DATASET, entries) as string).replace('mosaic|', 'order|'));
     expect(orderKeyOf(DATASET, pass('A'))).toBeNull();
     // Whatever the order of the selection, the same key: the scenes of the pass are the question.
     expect(orderKeyOf(DATASET, pass('B', 'A'))).toBe(orderKeyOf(DATASET, entries));
   });
 
-  it('has a key for a pass too big for a mosaic, which has no template', () => {
-    const many = pass(...Array.from({ length: MAX_MOSAIC_SCENES + 1 }, (_, i) => `S${i}`));
-    expect(mosaicTemplateOf(DATASET, many)).toBeNull();
+  it('has a key for a pass too big for a selection, which has no mosaic', () => {
+    const many = pass(...Array.from({ length: MAX_SELECTION_ITEMS + 1 }, (_, i) => `S${i}`));
+    expect(mosaicKeyOf(DATASET, many)).toBeNull();
     expect(orderKeyOf(DATASET, many)).toMatch(/^order\|/);
   });
 
@@ -249,7 +275,7 @@ describe('the order of the scenes of a pass drawn scene by scene (NM4-24)', () =
 
   it('follows a mosaic the tiler refused (null) with the order it gave for the scenes', () => {
     const entries = pass('B', 'A');
-    const mosaics: Mosaics = { [mosaicTemplateOf(DATASET, entries) as string]: null, [orderKeyOf(DATASET, entries) as string]: { order: ['A', 'B'] } };
+    const mosaics: Mosaics = { [mosaicKeyOf(DATASET, entries) as string]: null, [orderKeyOf(DATASET, entries) as string]: { order: ['A', 'B'] } };
     expect(ids(orderedPass(DATASET, entries, mosaics))).toEqual(['A', 'B']);
   });
 

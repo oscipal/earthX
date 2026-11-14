@@ -7,21 +7,26 @@ import { useEffect, useState } from 'react';
 
 import { useProcessingStore } from '../processingStore';
 
+// The wait after which anything on the page says it is loading: the badge of the preview and the mark of a layer (`LoadingMark`).
 export const LOADING_AFTER_MS = 600;
 export const LOADING_TITLE = 'Reading the scenes. The first tile of a mosaic can take several seconds.';
 
-export default function usePreviewLoading(): boolean {
-  const settling = useProcessingStore((s) => s.previewSettling);
-  const tilesLoading = useProcessingStore((s) => s.previewTilesLoading && s.preview !== null);
-  const loading = settling || tilesLoading;
+// `active` once it has lasted `LOADING_AFTER_MS` without a break, `false` from the moment it ends.
+export function useAfterDelay(active: boolean): boolean {
   const [held, setHeld] = useState(false);
   useEffect(() => {
-    if (!loading) {
+    if (!active) {
       setHeld(false);
       return;
     }
     const timer = setTimeout(() => setHeld(true), LOADING_AFTER_MS);
     return () => clearTimeout(timer);
-  }, [loading]);
-  return loading && held;
+  }, [active]);
+  return active && held;
+}
+
+export default function usePreviewLoading(): boolean {
+  const settling = useProcessingStore((s) => s.previewSettling);
+  const tilesLoading = useProcessingStore((s) => s.previewTilesLoading && s.preview !== null);
+  return useAfterDelay(settling || tilesLoading);
 }

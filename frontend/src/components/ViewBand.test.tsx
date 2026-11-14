@@ -11,6 +11,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { datasetsFrom } from '../datasets';
 import { SENTINEL_2_PRESETS } from '../fixtures/indexPresets';
+import { selectionIdOf, selectionServer } from '../fixtures/selectionTiler';
+import { resetSelections } from '../mosaicSelection';
 import { useAppStore, type AppState } from '../store';
 import type { Collection, DownloadedInfo, StacAsset, StacItem } from '../types';
 import { viewLayerOf } from '../viewLayer';
@@ -96,14 +98,13 @@ function mount(over: Partial<AppState> = {}, coll: Collection = collection(), as
 
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
-  fetchMock = vi.fn(async (url: string) => {
+  resetSelections();
+  const tiler = selectionServer({ tilejson: () => json({ bounds: [0, 0, 1, 1], minzoom: 8, maxzoom: 14, tiles: ['x'], 'earthx:order': ['s0', 's1'] }) });
+  fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     if (url.includes('/statistics')) {
       return json({ b1: { min: 100, max: 4000, percentile_2: 150, percentile_98: 2500 } });
     }
-    if (url.includes('/mosaic/')) {
-      return json({ bounds: [0, 0, 1, 1], minzoom: 8, maxzoom: 14, tiles: ['x'], 'earthx:order': ['s0', 's1'] });
-    }
-    return json({ detail: 'not found' }, 404);
+    return (await tiler.answer(url, init)) ?? json({ detail: 'not found' }, 404);
   });
   vi.stubGlobal('fetch', fetchMock);
   container = document.createElement('div');
@@ -211,8 +212,12 @@ describe('choosing a band', () => {
       expect(store().downloaded[id]).toMatchObject({ asset: 'B04', baseAsset: 'visual' });
       expect(store().downloaded[id].tileUrl).toContain('asset=B04');
     }
+    // The selection of the band's asset is created and its TileJSON asked for, with no asset in the URL.
+    const created = fetchMock.mock.calls.filter(([url, init]) => /\/mosaic$/.test(String(url)) && init?.method === 'POST').map(([, init]) => JSON.parse(String(init.body)));
+    expect(created).toContainEqual({ items: ['s0', 's1'], assets: ['B04'] });
     const asked = fetchMock.mock.calls.map(([url]) => String(url)).filter((url) => url.includes('/mosaic/'));
-    expect(asked.some((url) => url.includes('asset=B04'))).toBe(true);
+    expect(asked.some((url) => url.includes(selectionIdOf('optical', ['B04'], ['s0', 's1'])))).toBe(true);
+    expect(asked.some((url) => url.includes('asset='))).toBe(false);
   });
 
   it('goes back to the standard picture with "RGB": the scenes are drawn from the asset they were opened with', async () => {

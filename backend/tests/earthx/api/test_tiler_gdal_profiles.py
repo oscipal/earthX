@@ -29,7 +29,7 @@ from tests.catalog import synthetic_chain
 from tests.catalog.entries import REGISTRY, SENTINEL_2_L2A
 from tests.earthx.access.test_mosaic_tiles import SEAM_X
 from tests.earthx.api.test_download_route import DATASET, FIXTURE, GOOD_AOI, ITEM_ID, _client_for
-from tests.earthx.api.test_tiler_mosaic import ZONE_32, Scenes, _app, _query, _serve, _tile_path
+from tests.earthx.api.test_tiler_mosaic import ZONE_32, Scenes, _app, _select, _serve, _tile_path
 
 POLICY = policy_from_registry(REGISTRY)
 TILE_PROFILE = tile_gdal_options(POLICY)
@@ -141,7 +141,7 @@ class TestTheMosaicTile:
 
         monkeypatch.setattr(mosaic_reading, "open_asset", recording)
         with TestClient(_app(scenes)) as client:
-            response = client.get(_tile_path(), params=_query(["WEST", "EAST"]))
+            response = client.get(_tile_path(_select(client, ["WEST", "EAST"])))
         assert response.status_code == 200, response.text
         assert len(recorded) >= 2 and set(recorded) == {TILE_SEEN}
 

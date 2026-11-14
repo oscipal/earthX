@@ -48,11 +48,16 @@ pgstac, eine Zeile je Registry-Eintrag mit den vier Teilen des Suchtexts, einem 
 `english`, dem Text für Trigramme, der Box als vier Zahlen (kein PostGIS nötig) und der zeitlichen Ausdehnung. Legt
 `unaccent` und `pg_trgm` an. `catalog-load` schreibt sie, `api` prüft sie beim Start.
 
+`017_mosaic_selection.sql` — die Tabelle `earthx_mosaic_selection` aus M5-30b Teil 3 (`adr/0032` §10.2): die Auswahl hinter
+einer Mosaik-Kachel-URL unter der ID, die der Hash ihres Inhalts ist (Datensatz, Assets, Item-IDs), dazu Reihenfolge, Umrisse
+und Ausdehnung für die Kacheln. Frist 7 Tage, ein erneutes Anlegen verlängert sie; keine AOI. `api` schreibt und liest über
+`catalog/mosaic_selection.py`, der stündliche Aufräumer von `jobs` löscht.
+
 `018_overview.sql` — die Tabellen der Übersichtspyramide aus M5-30b Teil 8b (`adr/0032` §5.2, §5.3): `earthx_overview_request`
 („dieser Datensatz hat jetzt diese Fassung der Quelle“, geschrieben von `materialize` über `catalog`) und `earthx_overview` (eine
 Zeile je Datensatz und Fassung: Status `building`/`ready`/`failed` mit Frist, Fehlerart, Hashes der Basiskacheln, `checked_at`,
 `confirmed_at`; geschrieben von `jobs` nur mit SQL). Dazu die Funktion `earthx_overview_version` (die 16 Hexziffern der Fassung im
-Objektschlüssel). Die Nummer 017 gehört Teil 3a auf einem anderen Zweig.
+Objektschlüssel).
 
 Die Buchführungstabelle `earthx_migrations` gehört nicht hierher, sondern dem Läufer
 (`earthx/catalog/schema.py`) und wird von ihm angelegt. Sonst müsste jedes

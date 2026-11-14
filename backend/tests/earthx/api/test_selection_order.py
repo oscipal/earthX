@@ -43,7 +43,7 @@ from tests.earthx.api.test_tiler_mosaic import (
     Scenes,
     _app,
     _array,
-    _query,
+    _select,
     _serve,
     _tile_path,
 )
@@ -160,7 +160,8 @@ def test_the_order_the_paths_share_puts_a_before_b() -> None:
 
 @pytest.mark.parametrize("selection", ASKED)
 def test_the_mosaic_tile_shows_a_in_the_overlap(scenes: Scenes, client, selection: list[str]) -> None:
-    tile = _array(client().get(_tile_path(), params=_query(selection)))
+    api = client()
+    tile = _array(api.get(_tile_path(_select(api, selection))))
     assert value_at(tile, SEAM_X) == FIRST
 
 

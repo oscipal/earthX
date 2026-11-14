@@ -12,6 +12,7 @@
 // made up or refused, so that nothing leaves the machine. Playwright and Chromium are not a dependency of the project.
 
 const { chromium } = require('playwright');
+const { isSelectionTile } = require('./selectionMock.cjs');
 
 const BASE = process.env.BASE ?? 'http://localhost:5173';
 const TAG = process.env.TAG ?? 'run';
@@ -35,7 +36,7 @@ async function measure(browser) {
     return route.fulfill({ status: 404, contentType: 'application/json', body: '{"detail":"not made up"}' });
   });
   page.on('request', (request) => {
-    if (request.url().includes('/mosaic/tiles/')) asked.set(request, performance.now());
+    if (isSelectionTile(request.url())) asked.set(request, performance.now());
   });
   page.on('response', async (response) => {
     const request = response.request();

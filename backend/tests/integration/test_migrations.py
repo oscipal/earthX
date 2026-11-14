@@ -57,6 +57,7 @@ class TestDiscovery:
             ("014", "bundle"),
             ("015", "job_deleted"),
             ("016", "dataset_search"),
+            ("017", "mosaic_selection"),
             ("018", "overview"),
         ]
 

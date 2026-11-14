@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { hasResultsPanel } from '../sections';
 import { useAppStore } from '../store';
 import CloseButton from './CloseButton';
+import useMapLoading from './useMapLoading';
 
 export default function StatusBar() {
   const error = useAppStore((s) => s.error);
@@ -24,14 +25,18 @@ export default function StatusBar() {
   const checking = useAppStore((s) => s.aoiWalking && !hasResultsPanel(s.sections));
   const counts = useAppStore((s) => Object.values(s.searchContext?.answer?.aoiFilter ?? {})[0]);
   const stopSearch = useAppStore((s) => s.stopSearch);
+  const mapLoading = useMapLoading();
 
+  // One busy toast whatever runs: a search, then a download, then tiles on the map, in that order of priority (Otto, 14.11.2026).
   const busy = searching
     ? checking && counts
       ? `Checking scenes · ${counts.found} found / ${counts.checked} checked${counts.unreadable > 0 ? ` / ${counts.unreadable} skipped` : ''}`
       : 'Searching STAC catalog…'
     : downloading
       ? 'Processing on the server (crop / decomposition)…'
-      : null;
+      : mapLoading
+        ? 'Loading data'
+        : null;
 
   return (
     <div className="status-stack">

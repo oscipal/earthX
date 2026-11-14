@@ -128,20 +128,22 @@ def judge_steps(meta: RasterMeta, steps: Sequence[tuple[Operator, BaseModel]]) -
     return meta
 
 
-def judge_described_bands(entries: Sequence[ResolvedInput], steps: Sequence[tuple[Operator, BaseModel]]) -> None:
+def judge_described_bands(
+    entries: Sequence[ResolvedInput], steps: Sequence[tuple[Operator, BaseModel]]
+) -> RasterMeta | None:
     """:func:`judge_steps` on the bands the item describes, before any file is opened (NM4-04 KE1).
 
-    Where the item does not say how many bands an asset has, only the file knows, and the reader judges
-    again before the first pixel; nothing is judged here then.
+    Returns the bands the steps leave. Where the item does not say how many bands an asset has, only the file knows, and
+    the reader judges again before the first pixel; nothing is judged here then, and the answer is ``None``.
     """
     bands = []
     for entry in entries:
         names = expected_band_names(entry)
         if names is None:
-            return
+            return None
         units = units_of(entry, len(names))
         bands += [BandMeta(name, "float32", None, unit) for name, unit in zip(names, units, strict=True)]
-    judge_steps(RasterMeta(entries[0].asset.crs or "EPSG:4326", Affine.identity(), 1, 1, tuple(bands)), steps)
+    return judge_steps(RasterMeta(entries[0].asset.crs or "EPSG:4326", Affine.identity(), 1, 1, tuple(bands)), steps)
 
 
 @dataclass(frozen=True, slots=True)
