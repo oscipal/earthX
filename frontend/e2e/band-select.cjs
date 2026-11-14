@@ -76,7 +76,7 @@ async function check(browser, { name, theme, viewport }) {
   // The section at the top only informs: none of its chips is a switch.
   expect('switches in the section "Bands"', await page.locator('section[aria-label="Bands"] [aria-pressed]').count(), 0);
   expect('on opening', await pressed(), spec.opening);
-  expect('the summary on opening', await summary(), `${spec.opening.length} band${spec.opening.length === 1 ? '' : 's'} · float32`);
+  expect('the summary on opening', await summary(), `${spec.opening.length} band${spec.opening.length === 1 ? '' : 's'} · ${spec.opening.length ? 'uint16' : 'float32'}`);
 
   const all = output.getByRole('button', { name: 'All', exact: true });
   if (spec.opening.length < spec.all.length) {
@@ -84,7 +84,7 @@ async function check(browser, { name, theme, viewport }) {
     else await all.click();
   } else if ((await all.count()) > 0) problems.push('"All" is offered with every band in the output');
   expect('after "All"', await pressed(), spec.all);
-  expect('the summary after "All"', await summary(), `${spec.all.length} band${spec.all.length === 1 ? '' : 's'} · float32`);
+  expect('the summary after "All"', await summary(), `${spec.all.length} band${spec.all.length === 1 ? '' : 's'} · uint16`);
   const chips = await offered();
   // The layer of the mask is listed, but "All" leaves it out; the auxiliary assets are not listed at all.
   expect('the bands offered', chips, spec.mask ? [...spec.all, 'scl'] : spec.all);
