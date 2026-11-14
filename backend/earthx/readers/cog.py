@@ -23,6 +23,10 @@ kilometres apart (adr/0018 §4.1). :class:`CogReader` therefore opens a GCP file
 with a thin-plate spline through the GCPs, and hands that to rio-tiler as its ``dataset``. Tile, crop,
 export, mosaic and job all read through ``CogReader.dataset``, so all of them see the same grid. The path
 carries the method the registry names; a file that disagrees with it is not read.
+
+**Radar geometry (DS-04d, adr/0018 §9.5).** A GCP file is shown by the spline, but never delivered placed by it:
+crop, export and job read :attr:`CogReader.raw`, the file's own pixel grid, and write its GCPs along. A file the
+platform wrote itself (a job result) is read ``as_written``: by its GCPs where it carries them, else by its geotransform.
 """
 
 from __future__ import annotations
@@ -38,10 +42,13 @@ from earthx.gateway import GatewayError, Policy, Resolver, check_url, resolve_ho
 from earthx.gateway.gdal import vsicurl_path
 from earthx.readers.errors import AssetRejected, GeoreferenceMismatch
 
-__all__ = ["AssetPath", "CogReader", "Georeferencing", "asset_path", "warp_options"]
+__all__ = ["AS_WRITTEN", "AssetPath", "CogReader", "Georeferencing", "asset_path", "warp_options"]
 
 #: How a file is placed; the values of ``earthx.catalog.registry.Georeferencing``, which this module may not import.
 Georeferencing = Literal["geotransform", "gcp_tps"]
+
+#: How a file the platform wrote itself is placed: as the file says, by its GCPs or by its geotransform (DS-04d A3).
+AS_WRITTEN = "as_written"
 
 
 def warp_options(georeferencing: Georeferencing) -> dict[str, str]:
@@ -69,10 +76,10 @@ class AssetPath(str):
         dataset_id: str,
         item_id: str,
         asset: str,
-        georeferencing: Georeferencing = "geotransform",
+        georeferencing: Georeferencing | Literal["as_written"] = "geotransform",
     ) -> AssetPath:
-        if georeferencing not in get_args(Georeferencing):
-            raise ValueError(f"georeferencing is one of {get_args(Georeferencing)}")
+        if georeferencing not in (*get_args(Georeferencing), AS_WRITTEN):
+            raise ValueError(f"georeferencing is one of {(*get_args(Georeferencing), AS_WRITTEN)}")
         self = super().__new__(cls, path)
         self.dataset_id = dataset_id
         self.item_id = item_id
@@ -134,7 +141,12 @@ class CogReader(Reader):
     ``gcp_tps`` file must carry GCPs and is read through a thin-plate spline (module docstring), a
     ``geotransform`` file must not carry them. Either mismatch is :class:`GeoreferenceMismatch`, never a
     silent approximation.
+
+    :attr:`raw` is the file in its own pixel grid, never warped: the same as ``dataset`` for a geotransform, the file
+    under the spline for GCPs (DS-04d).
     """
+
+    raw: rasterio.DatasetReader | None = None
 
     def __attrs_post_init__(self) -> None:
         if not isinstance(self.input, AssetPath):
@@ -144,8 +156,12 @@ class CogReader(Reader):
             )
         if not self.dataset:
             self.dataset = self._ctx_stack.enter_context(rasterio.open(self.input))
+        self.raw = self.dataset
         gcps, gcp_crs = self.dataset.gcps
-        if self.input.georeferencing == "gcp_tps":
+        placing = self.input.georeferencing
+        if placing == AS_WRITTEN:
+            placing = "gcp_tps" if gcps and gcp_crs is not None else "geotransform"
+        if placing == "gcp_tps":
             if not gcps or gcp_crs is None:
                 self._ctx_stack.close()
                 raise GeoreferenceMismatch("the registry places this asset by its GCPs, but it carries none")
