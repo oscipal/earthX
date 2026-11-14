@@ -82,7 +82,9 @@ PYRAMID = replace(
     MATERIALIZED,
     dataset_id="earthx-test-materialize-pyramid",
     source=replace(MATERIALIZED.source, source_collection_id="earthx-test-materialize-pyramid"),
-    viewer=replace(MATERIALIZED.viewer, overview=OverviewMode.PYRAMID, overview_resampling=OverviewResampling.AVERAGE),
+    viewer=replace(
+        MATERIALIZED.viewer, overview=OverviewMode.PYRAMID, overview_resampling=OverviewResampling.AVERAGE, min_zoom=7
+    ),
 )
 
 TILE_A = "Copernicus_DSM_COG_10_N46_00_E010_00_DEM"

@@ -179,6 +179,8 @@ Und die Auflösung der gröbsten Übersicht je Datei, also bis zu welcher Stufe 
 
 ### 5.2 Empfehlung P1 im Einzelnen
 
+*Nachtrag 14.11.2026 (M5-30b): Pyramide nur für GLO-30 und WorldCover; Stufen baut der Kern im Kind; Aufräumen im Faden `overview`; siehe „Nachtrag 14.11.2026“ vor §15.*
+
 **Was in der Pyramide liegt.** Werte, nicht Bilder: das erste Band bzw. die Bänder der Standardansicht im Datentyp der Quelle, Nodata wie die Quelle. Farbe, Stretch, Colormap und Band-Math (T1) rechnet der `tiler` wie heute auf der Kachel. So gilt die Pyramide für jede Darstellung.
 
 **Wann sie entsteht (F1 = 2, Otto 11.11.2026).** Als Job, nie synchron in der Kachelanfrage:
@@ -324,6 +326,8 @@ Für das Budget zählt bei Gittern statt der Zahl der Dateien die Zahl der Chunk
 
 ### 8.2 Rücksicht auf die Quellen (`adr/0025` §6.2, F4)
 
+*Nachtrag 14.11.2026 (M5-30b): Der Unterbrecher gilt nicht für das Lesen durch GDAL; siehe „Nachtrag 14.11.2026“ vor §15.*
+
 - Der Bau läuft über `gateway`: 6 Verbindungen je Host, `User-Agent` der Plattform, Unterbrecher nach 3 Fehlern in Folge (der Job pausiert und versucht es später; Fehlerart wie `source_timeout`).
 - **Mindestabstand (F4, Otto 11.11.2026):** **0,25 s je Host**, also höchstens 4 Anfragen je Sekunde, einstellbar über `host_intervals` (M5-18) auch für den Bau. Grund sind die Fair-Use-Regeln der FSDI: swisstopo kann den Zugang bei übermäßiger Nutzung einschränken (`adr/0023` §3.1, Quelle dort: geo.admin.ch „change limits, fair use“). Das CDN vor den Dateien nimmt einen Teil der Last [A].
 - Höchstens ein Bau je Host gleichzeitig.
@@ -356,6 +360,8 @@ Ein Messskript dafür über `gateway` gehört in den ersten Umsetzungs-PR (V1, �
 ---
 
 ## 9. Punkt 5: `min_zoom` in der Registry (F9)
+
+*Nachtrag 14.11.2026 (M5-30b): vierter Wert `substitute`, Werte der Datensätze, eine Route für Ersatz und Pyramide; siehe „Nachtrag 14.11.2026“ vor §15.*
 
 | | Weg | Bewertung |
 |---|---|---|
@@ -585,6 +591,22 @@ Je unter dem Richtwert. Keine davon ist Teil dieses PR; Backlog und M5-Plan blei
 3. Die 40 ganz streichen
 
 **Antwort F14 (Otto, 2026-11-11): 1.**
+
+---
+
+## Nachtrag 14.11.2026 (M5-30b)
+
+Die Umsetzung (`plans/m5/m5-30-bild-bei-jedem-zoom.md`, alle Teile 1–10) hat an angenommenen Stellen dieses ADR etwas geändert oder präzisiert. Die Entscheidungen oben bleiben stehen; wo sie abweichen, gilt dieser Nachtrag. Belege stehen in den Abschnitten des Plans, auf die jeder Punkt zeigt.
+
+- **§5 (Pyramide), F7 = 1 (Otto, 11.11.2026):** Eine Übersichtspyramide gibt es nur für **GLO-30** (z0–z6) und **WorldCover** (z0–z4). swissALTI3D und später BEV haben keine eigene: Sie zeichnen unter ihrem `min_zoom` das Bild von GLO-30 (`viewer.overview: substitute`, Plan §4.8, §8.8). Die Zeilen swissALTI3D und BEV der Tabelle in §5.2 und die Kosten für swissALTI3D in §8.1 entfallen damit. Unter z7 liest die Ersatz-Route von swissALTI3D die Pyramide von GLO-30 (auf die Ausdehnung von swissALTI3D zugeschnitten), von z7 bis `min_zoom` − 1 die Dateien von GLO-30 mit dem Budget je Kachel (Plan §8.11).
+- **§5.2 „Wer baut“:** Die Stufen über der Basis baut der **Kern im Kind** (`processing/overview_build.py`), nicht die Hülle. Die Hülle (`jobs`, Faden `overview`) lädt hoch. Wiederverwendbare Basiskacheln der alten Fassung holt sie vor dem Bau in den Arbeitsordner und lädt sie am Ende selbst hoch, mit ihrem alten `checked-at`; serverseitig kopiert wird nichts, weil die alte Fassung nach Stunden abgelaufen sein kann (Plan §8.10, Korrektur nach der Prüfung von #348).
+- **§5.2 „Verfall“, Aufräumen:** `jobs/cleanup.py` löscht nach `checked-at` **nicht**. Verlängerung (stündlich, nach `confirmed_at`) und Ablauf samt Waisen räumen der Faden `overview` und der Wartungsfaden des Aufsehers (`jobs/overview_upkeep.py`); `cleanup.py` bleibt bei `results/` und den Auswahlen (Plan §8.10).
+- **§8.2 „Unterbrecher nach 3 Fehlern, der Job pausiert“:** Gilt für den HTTP-Client von `gateway`, **nicht** für das Lesen durch GDAL im Pyramidenbau. An seiner Stelle wiederholt `jobs` einen Bau nach `source_timeout`, `source_5xx` und `lease_lost` höchstens dreimal, frühestens nach einer Stunde; jede andere Fehlerart bleibt `failed`, bis ein erfolgreicher Lauf von `materialize` neu baut (Plan §8.10).
+- **§9 `viewer.overview`:** Ein **vierter Wert `substitute`** mit dem Pflichtfeld `viewer.overview_substitute` (Plan §4.8, §8.8). Registry-Prüfung beim Laden: der Ersatz existiert, hat Stufe „Anzeige“ oder höher, dieselbe Einheit und eine Ausdehnung, die die des Datensatzes enthält, und ist kein Ersatz. Neu: ein Eintrag mit `pyramid` braucht ein `min_zoom` von 1 oder mehr (seine Basis ist `min_zoom` − 1). Werte: Sentinel-1 und -2 `scenes` (`min_zoom` 0), swissALTI3D `substitute` (13), GLO-30 `pyramid` (7), WorldCover 2020 und 2021 `pyramid` (5). Die Konstante `PYRAMID_MIN_ZOOM` des Baus, die bis Teil 9 die Stufen hielt, ist entfallen.
+- **Route (§5.2, §9):** Ersatz und Pyramide liegen auf **einer** Route `GET /collections/{dataset}/overview/tiles/WebMercatorQuad/{z}/{x}/{y}` ohne Items und ohne Auswahl-ID, für z < `min_zoom`; Statistik, Zuschnitt, Download und Jobs lesen nie daraus. Kopf `X-EarthX-Source`: `overview` (Pyramide des Datensatzes) oder `substitute` (Bild des Ersatzes, auch aus dessen Pyramide); ohne fertige Pyramide `404` mit `X-EarthX-Overview: building` oder `failed` und `no-store`; Prototyp-Quellen `no-store` (`adr/0024` R7). Auslegungen dazu in Plan §8.11.
+- **F12:** Keine Marke „Overview“ (schon in §14 korrigiert). Umgesetzt: kein Zeichen auf Karte oder in der Zeile; ein Satz im Tooltip des Layer-Namens (Feld `note`) und des Eintrags „Search results“ für Datensätze mit Pyramide; die Quellenzeile nennt `attribution_modified`, solange die Übersicht gezeichnet wird; der Ersatz hat keinen Hinweis außer der Quellenzeile. Die Marke „Overview“ bei Job-Ergebnissen (`PreviewBadge`, M4-13c-5) ist eine andere Sache und entfällt als eigene UI-Aufgabe nach M5-30b (Entscheidungslog 14.11.2026).
+- **§6.2 Budgets (Ottos Messlauf 11.11.2026, Plan §8.6):** 32 Dateien und 4 s je Kachel, 4 Threads je Kachel (`MOSAIC_THREADS`), und neu **höchstens 2 Kacheln gleichzeitig** je Prozess (Otto, 13.11.2026, Plan §8.7). Das Warten darauf geschieht seit Teil 9 **im Event-Loop** (`TileGate`) und nicht mehr in einem Thread des gemeinsamen Pools der synchronen Routen; die Wartezeit zählt nicht zum Budget (Plan §8.11).
+- **§10.4 und #319 F13:** Der Browser-Test aus `frontend/e2e/many-scenes.cjs` (Teil 4) ist auf dem Stand vor der Auswahl-ID rot und danach grün; die Annahme von §10.4, dass die Karte nach „Crop and merge“ ohne Bewegung nicht vollständig zeigt, was sie zeigen soll, ist damit bestätigt. Im Einzelnen zeigte der alte Stand bei 70 Szenen einen Teil der Szenen (40 Ebenen, 30 Szenen nicht), nicht keine; welche der drei Bedingungen den Ausschlag gab, trennt der Test nicht (Plan §8.11).
 
 ---
 
