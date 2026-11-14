@@ -780,16 +780,18 @@ def _read_block(
 
 
 def _with_halo(read: Callable[[Window], ImageData], block: Window, halo: int, limits: Window) -> ImageData:
-    """``block`` grown by ``halo`` pixels on every side: the part inside ``limits`` read, the rest masked.
+    """``block`` grown by ``halo`` pixels on every side: the block and the part of the halo inside ``limits`` read, the
+    rest of the halo masked.
 
     The bounds of the image are those of the grown block, so that a kernel finds where each of its pixels lies."""
     if halo == 0:
         return read(block)
     col0, row0 = int(block.col_off) - halo, int(block.row_off) - halo
     col1, row1 = int(block.col_off + block.width) + halo, int(block.row_off + block.height) + halo
-    left_col, top_row = max(col0, int(limits.col_off)), max(row0, int(limits.row_off))
-    right_col = min(col1, int(limits.col_off + limits.width))
-    bottom_row = min(row1, int(limits.row_off + limits.height))
+    left_col = max(col0, min(int(limits.col_off), int(block.col_off)))
+    top_row = max(row0, min(int(limits.row_off), int(block.row_off)))
+    right_col = min(col1, max(int(limits.col_off + limits.width), int(block.col_off + block.width)))
+    bottom_row = min(row1, max(int(limits.row_off + limits.height), int(block.row_off + block.height)))
     image = read(Window(left_col, top_row, right_col - left_col, bottom_row - top_row))
     pads = ((0, 0), (top_row - row0, row1 - bottom_row), (left_col - col0, col1 - right_col))
     if not any(before or after for before, after in pads):

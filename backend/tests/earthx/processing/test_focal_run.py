@@ -13,11 +13,12 @@ import numpy
 import pytest
 import rasterio
 from rasterio.crs import CRS
+from rasterio.windows import Window
 from rio_tiler.models import ImageData
 
 from earthx.processing import core as core_module
 from earthx.processing import run
-from earthx.processing.core import area_statistics
+from earthx.processing.core import _with_halo, area_statistics
 from earthx.processing.errors import RecipeInvalid
 from earthx.processing.operators import REGISTRY, TERRAIN, TerrainParams
 from earthx.processing.plan import plan_steps, segments
@@ -193,3 +194,22 @@ def test_a_focal_step_stays_in_the_pass_of_the_pixel_steps() -> None:
     planned = plan_steps(recipe_of_data(_recipe([copy, _step(SLOPE), _step(HILLSHADE)]), REGISTRY).steps, REGISTRY)
     passes = segments(planned)
     assert [(segment.kind, len(segment.steps), segment.halo) for segment in passes] == [("pixel", 3, 2)]
+
+
+def test_the_halo_is_read_where_the_limits_allow_and_the_block_always() -> None:
+    asked: list[Window] = []
+
+    def read(window: Window) -> ImageData:
+        asked.append(window)
+        data = numpy.ma.MaskedArray(numpy.ones((1, int(window.height), int(window.width)), dtype="float32"))
+        left, top = window.col_off, -window.row_off
+        bounds = (left, top - window.height, left + window.width, top)
+        return ImageData(data, bounds=bounds, crs=CRS.from_string(sources.CRS), band_names=["dem"])
+
+    # The block sticks out past the limits (the last coarse column of a measure): it is read, only the halo is cut.
+    image = _with_halo(read, Window(8, 0, 4, 4), 1, Window(0, 0, 10, 3))
+    assert asked == [Window(7, 0, 5, 4)]
+    assert image.array.shape == (1, 6, 6)
+    mask = numpy.ma.getmaskarray(image.array[0])
+    assert mask[0].all() and mask[:, -1].all() and not mask[1:-1, :-1].any()
+    assert image.bounds == (7.0, -5.0, 13.0, 1.0)

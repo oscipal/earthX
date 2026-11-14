@@ -14,8 +14,8 @@ length, as ``gdaldem`` does.
 **Edges** (plan M5-10 F2): a pixel whose window reaches a masked pixel or past the raster is masked, as ``gdaldem``
 does without ``-compute_edges``. The core reads the halo from the data, past the AOI too.
 
-Values are computed in ``float64`` and returned as ``float32``; each pixel from its own window in a fixed order, so
-the job and the runner agree to the bit.
+Values are computed in ``float64`` and returned as ``float32``; each pixel from its own window in a fixed order, and
+the angles with + − × ÷ and √ only, so the job and the runner agree to the bit on any machine.
 """
 
 from __future__ import annotations
@@ -109,8 +109,61 @@ def _parsed(wkt: str) -> pyproj.CRS:
     return pyproj.CRS.from_wkt(wkt)
 
 
-def _radii(crs: pyproj.CRS, latitude: numpy.ndarray) -> tuple[numpy.ndarray, numpy.ndarray]:
-    """The radius of curvature along the parallel (``N cos φ``) and along the meridian (``M``) at ``latitude``."""
+# The angles below are computed with + − × ÷ and √ only, which IEEE 754 rounds the same way on every machine and in
+# every lane of a vector; numpy's and libm's trigonometric functions do not (adr/0014 §15c), and the job and the
+# runner agree to the bit (adr/0030 F3). Each series is cut where its next term is below 1e-17 of the result.
+
+_RADIANS_PER_DEGREE = math.pi / 180
+_DEGREES_PER_RADIAN = 180 / math.pi
+_ATAN_TERMS = tuple((-1) ** k / (2 * k + 1) for k in range(12))
+_SIN_TERMS = tuple((-1) ** k / math.factorial(2 * k + 1) for k in range(10))
+_COS_TERMS = tuple((-1) ** k / math.factorial(2 * k) for k in range(10))
+
+
+def _series(square: numpy.ndarray, terms: tuple[float, ...]) -> numpy.ndarray:
+    total = numpy.full(square.shape, terms[-1])
+    for term in reversed(terms[:-1]):
+        total = total * square + term
+    return total
+
+
+def _atan(x: numpy.ndarray) -> numpy.ndarray:
+    """``arctan`` of ``x ≥ 0`` in radians: past 1 by its reciprocal, then halved twice to at most tan(π/16)."""
+    beyond = x > 1
+    t = numpy.where(beyond, 1 / numpy.where(beyond, x, 1.0), x)
+    for _ in range(2):
+        t = t / (1 + numpy.sqrt(1 + t * t))
+    angle = 4 * t * _series(t * t, _ATAN_TERMS)
+    return numpy.where(beyond, math.pi / 2 - angle, angle)
+
+
+def _atan2(y: numpy.ndarray, x: numpy.ndarray) -> numpy.ndarray:
+    """``arctan2`` in radians, −π to π; 0 where both are 0."""
+    ay, ax = numpy.abs(y), numpy.abs(x)
+    steeper = ay > ax
+    ratio = numpy.where(steeper, ax / numpy.where(steeper, ay, 1.0), ay / numpy.where(ax > 0, ax, 1.0))
+    angle = _atan(ratio)
+    angle = numpy.where(steeper, math.pi / 2 - angle, angle)
+    angle = numpy.where(x < 0, math.pi - angle, angle)
+    return numpy.where(y < 0, -angle, angle)
+
+
+def _sin_cos(degrees: numpy.ndarray | float) -> tuple[numpy.ndarray, numpy.ndarray]:
+    """Sine and cosine of an angle in degrees: brought to ±45° around a multiple of 90°, then the series."""
+    turned = numpy.asarray(degrees, dtype="float64") % 360.0
+    quarter = numpy.floor(turned / 90 + 0.5)
+    r = (turned - 90 * quarter) * _RADIANS_PER_DEGREE
+    square = r * r
+    sine, cosine = r * _series(square, _SIN_TERMS), _series(square, _COS_TERMS)
+    quarter = quarter.astype("int64") % 4
+    return (
+        numpy.choose(quarter, [sine, cosine, -sine, -cosine]),
+        numpy.choose(quarter, [cosine, -sine, -cosine, sine]),
+    )
+
+
+def _radii(crs: pyproj.CRS, sine: numpy.ndarray, cosine: numpy.ndarray) -> tuple[numpy.ndarray, numpy.ndarray]:
+    """The radius of curvature along the parallel (``N cos φ``) and along the meridian (``M``) at a latitude."""
     ellipsoid = crs.ellipsoid
     if ellipsoid is None:
         raise UnsupportedRecipe("terrain needs a coordinate reference system with an ellipsoid")
@@ -120,8 +173,31 @@ def _radii(crs: pyproj.CRS, latitude: numpy.ndarray) -> tuple[numpy.ndarray, num
         if not ellipsoid.inverse_flattening
         else (2 - 1 / ellipsoid.inverse_flattening) / ellipsoid.inverse_flattening
     )
-    w = numpy.sqrt(1 - e2 * numpy.sin(latitude) ** 2)
-    return a / w * numpy.cos(latitude), a * (1 - e2) / w**3
+    w = numpy.sqrt(1 - e2 * sine * sine)
+    return a / w * cosine, a * (1 - e2) / (w * w * w)
+
+
+def _snapped(value: float) -> float:
+    """``value`` to ten significant digits: the size of a pixel as the grid has it, whatever block it was taken from."""
+    return float(f"{value:.10g}")
+
+
+def _grid_rows(image: ImageData) -> tuple[float, float, numpy.ndarray]:
+    """The size of a pixel and the centre of each row inside the halo, in the units of the CRS, from the grid alone.
+
+    The bounds of a block carry rounding that depends on where the block starts. So the size is snapped, the rows are
+    counted as whole numbers of pixels from the origin of the CRS, and the centre of a row is that number plus the
+    phase of the grid, times the size: the same row gives the same centre in every block, to the bit."""
+    left, bottom, right, top = image.bounds
+    x_size = _snapped(abs(right - left) / image.width)
+    y_size = _snapped(abs(top - bottom) / image.height)
+    position = top / y_size
+    # Three decimals: the snapped size is off by up to 1e-11 of itself, which over the rows from the origin of the CRS
+    # moves the phase by a few millionths; the centre of a row moves by less than a millimetre on the ground.
+    phase = round(position - math.floor(position), 3) % 1.0
+    first = round(position - phase)
+    rows = first - numpy.arange(_HALO, image.height - _HALO, dtype="int64")
+    return x_size, y_size, (rows + (phase - 0.5)) * y_size
 
 
 def pixel_metres(image: ImageData) -> tuple[numpy.ndarray, numpy.ndarray]:
@@ -131,23 +207,22 @@ def pixel_metres(image: ImageData) -> tuple[numpy.ndarray, numpy.ndarray]:
     if image.crs is None:
         raise UnsupportedRecipe("terrain needs a raster placed in a coordinate reference system")
     crs = _parsed(image.crs.to_wkt())
-    left, bottom, right, top = image.bounds
-    x_size = abs(right - left) / image.width
-    y_size = abs(top - bottom) / image.height
-    centres = top - (numpy.arange(_HALO, image.height - _HALO, dtype="float64") + 0.5) * (top - bottom) / image.height
+    x_size, y_size, centres = _grid_rows(image)
     if crs.is_geographic:
         if crs.axis_info[0].unit_name != "degree":
             raise UnsupportedRecipe("terrain reads a geographic CRS in degrees only")
-        along_parallel, along_meridian = _radii(crs, numpy.radians(centres))
-        east, north = math.radians(x_size) * along_parallel, math.radians(y_size) * along_meridian
+        along_parallel, along_meridian = _radii(crs, *_sin_cos(centres))
+        east = x_size * _RADIANS_PER_DEGREE * along_parallel
+        north = y_size * _RADIANS_PER_DEGREE * along_meridian
     elif (
         crs.is_projected
         and crs.coordinate_operation is not None
         and crs.coordinate_operation.method_name == _PSEUDO_MERCATOR
     ):
         radius = crs.ellipsoid.semi_major_metre if crs.ellipsoid is not None else 6378137.0
+        # Only the tiles, which are a preview (adr/0030 F3), are drawn in Web Mercator; no job runs there.
         latitude = numpy.arctan(numpy.sinh(centres / radius))
-        along_parallel, along_meridian = _radii(crs, latitude)
+        along_parallel, along_meridian = _radii(crs, numpy.sin(latitude), numpy.cos(latitude))
         # x is radius · λ and y grows by radius / cos φ per radian of latitude.
         east, north = x_size * along_parallel / radius, y_size * along_meridian * numpy.cos(latitude) / radius
     elif crs.is_projected:
@@ -174,18 +249,18 @@ def _hillshade(gx: numpy.ndarray, gy: numpy.ndarray, params: TerrainParams) -> n
     """``gdaldem hillshade``: 1 where the light does not reach, up to 255 facing it."""
     assert params.altitude is not None and params.z_factor is not None
     z = params.z_factor
-    sin_alt = math.sin(math.radians(params.altitude))
-    cos_alt_z = math.cos(math.radians(params.altitude)) * z
+    sin_alt, cos_alt = (float(value) for value in _sin_cos(params.altitude))
+    cos_alt_z = cos_alt * z
     squared = gx * gx + gy * gy
     root = numpy.sqrt(1 + z * z * squared)
     if not params.multidirectional:
         assert params.azimuth is not None
-        azimuth = math.radians(params.azimuth)
-        cang = (sin_alt - cos_alt_z * (gx * math.sin(azimuth) + gy * math.cos(azimuth))) / root
+        sin_az, cos_az = (float(value) for value in _sin_cos(params.azimuth))
+        cang = (sin_alt - cos_alt_z * (gx * sin_az + gy * cos_az)) / root
         return numpy.where(cang <= 0, 1.0, 1 + 254 * cang)
     # gdaldem's weights of the lights from 225, 270, 315 and 360 degrees (Mark 1992), in its own signs.
     x, y = -gx, gy
-    cos225 = math.cos(math.radians(225))
+    cos225 = float(_sin_cos(225.0)[1])
     lights = [
         numpy.maximum(sin_alt + (x - y) * cos225 * cos_alt_z, 0),
         numpy.maximum(sin_alt - x * cos_alt_z, 0),
@@ -212,9 +287,9 @@ def _computed(
             mask |= invalid[dr : rows - 2 + dr, dc : cols - 2 + dc]
     if params.product == "slope":
         steepness = numpy.sqrt(gx * gx + gy * gy)
-        values = 100 * steepness if params.slope_unit == "percent" else numpy.degrees(numpy.arctan(steepness))
+        values = 100 * steepness if params.slope_unit == "percent" else _atan(steepness) * _DEGREES_PER_RADIAN
     elif params.product == "aspect":
-        values = numpy.degrees(numpy.arctan2(-gx, -gy)) % 360
+        values = (_atan2(-gx, -gy) * _DEGREES_PER_RADIAN) % 360
         mask |= (gx == 0) & (gy == 0)
     else:
         values = _hillshade(gx, gy, params)

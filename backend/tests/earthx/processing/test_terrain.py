@@ -8,13 +8,23 @@ import math
 
 import numpy
 import pytest
+from affine import Affine
 from pydantic import ValidationError
 from rasterio.crs import CRS
 from rio_tiler.models import ImageData
 
 from earthx.catalog.datasets import registry
 from earthx.processing.errors import RecipeInvalid, UnsupportedRecipe
-from earthx.processing.operators import REGISTRY, TERRAIN, BandMeta, Operator, RasterMeta, TerrainParams, applicable
+from earthx.processing.operators import (
+    REGISTRY,
+    TERRAIN,
+    BandMeta,
+    Operator,
+    RasterMeta,
+    TerrainParams,
+    applicable,
+    terrain,
+)
 from earthx.processing.operators.terrain import pixel_metres
 
 UTM = CRS.from_epsg(32632)
@@ -384,3 +394,43 @@ def test_the_result_names_what_was_computed() -> None:
         "earthx:terrain": {"product": "aspect", "bands": ["dem"], "name": "aspect", "method": "horn"}
     }
     assert isinstance(TERRAIN, Operator)
+
+
+# --- the same bits in every block and on every machine ----------------------------------------------------------------
+
+
+@pytest.mark.parametrize("product", [SLOPE, ASPECT, HILLSHADE], ids=lambda p: p["product"])
+def test_a_geographic_grid_gives_the_same_bits_in_blocks_of_any_size(product: dict) -> None:
+    # The grid of the Copernicus DEM: 1″ pixels, the origin half a pixel off whole degrees, bounds as a block has them.
+    grid = Affine(1 / 3600, 0, 7.0001388888888, 0, -1 / 3600, 47.0001388888888)
+    heights = (numpy.random.default_rng(0).random((202, 202)) * 50 + 1000).astype("float32")
+    params = _params(product)
+
+    def block(row: int, col: int, rows: int, cols: int) -> numpy.ndarray:
+        left, top = grid @ (col, row)
+        right, bottom = grid @ (col + cols, row + rows)
+        data = numpy.ma.MaskedArray(heights[None, row : row + rows, col : col + cols])
+        image = ImageData(data, bounds=(left, bottom, right, top), crs=CRS.from_epsg(4326), band_names=["dem"])
+        return TERRAIN.run(image, params).array[1].filled(numpy.nan)
+
+    whole = block(0, 0, 202, 202)
+    for size in (37, 64):
+        tiled = numpy.full((200, 200), numpy.nan, dtype="float32")
+        for row in range(0, 200, size):
+            for col in range(0, 200, size):
+                rows, cols = min(size, 200 - row), min(size, 200 - col)
+                tiled[row : row + rows, col : col + cols] = block(row, col, rows + 2, cols + 2)
+        assert tiled.tobytes() == whole.tobytes()
+
+
+def test_the_angles_are_those_of_numpy_to_the_last_digits() -> None:
+    generator = numpy.random.default_rng(3)
+    x = numpy.concatenate([numpy.linspace(0, 50, 20001), [0.0, 1.0, 1e-300, 1e300]])
+    numpy.testing.assert_allclose(terrain._atan(x), numpy.arctan(x), rtol=0, atol=1e-15)
+    y, z = generator.normal(size=20000), generator.normal(size=20000)
+    numpy.testing.assert_allclose(terrain._atan2(y, z), numpy.arctan2(y, z), rtol=0, atol=2e-15)
+    assert terrain._atan2(numpy.array([0.0]), numpy.array([0.0]))[0] == 0
+    degrees = numpy.linspace(-720, 720, 14401)
+    sine, cosine = terrain._sin_cos(degrees)
+    numpy.testing.assert_allclose(sine, numpy.sin(numpy.radians(degrees)), rtol=0, atol=2e-15)
+    numpy.testing.assert_allclose(cosine, numpy.cos(numpy.radians(degrees)), rtol=0, atol=2e-15)
