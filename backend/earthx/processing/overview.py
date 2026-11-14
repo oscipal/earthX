@@ -40,6 +40,7 @@ __all__ = [
     "base_tile",
     "base_zoom",
     "children_of",
+    "decode_tile",
     "encode_tile",
     "levels",
     "parent_tile",
@@ -250,18 +251,48 @@ def encode_tile(image: ImageData) -> bytes:
         return memory.read()
 
 
-def base_hash(items: Iterable[Mapping[str, object]]) -> str:
+def decode_tile(data: bytes) -> tuple[np.ma.MaskedArray, float | None]:
+    """A stored tile's values and its nodata: the inverse of :func:`encode_tile`.
+
+    Pixels with the nodata value (or NaN) are masked. Bytes that are not a stored tile (not a GeoTIFF, not 512 px
+    square, not one band, not EPSG:3857) are a ``ValueError``: a pyramid is made from tiles it wrote itself, and a
+    foreign file in their place must not become a level.
+    """
+    if not data:
+        raise ValueError("not a stored tile: no bytes")
+    try:
+        with MemoryFile(data) as memory, memory.open() as source:
+            if (source.width, source.height, source.count) != (TILE_SIZE, TILE_SIZE, 1):
+                raise ValueError(f"a stored tile is {TILE_SIZE} px square with one band")
+            if source.crs is None or source.crs != _TMS.rasterio_crs:
+                raise ValueError("a stored tile lies in EPSG:3857")
+            array = source.read(1, masked=True)
+            nodata = source.nodata
+    except rasterio.errors.RasterioError:
+        raise ValueError("not a stored tile: the bytes are no GeoTIFF") from None
+    if np.issubdtype(array.dtype, np.floating):
+        array = np.ma.masked_invalid(array)
+    return array, nodata
+
+
+def base_hash(items: Iterable[Mapping[str, object]]) -> str | None:
     """The hash of the items a base tile read: over each ``id`` and ``properties.updated``, whatever their order.
 
     The same hash for a new version means the tile need not be read again and may be copied (adr/0032 §5.2, F3). An
-    item without ``id`` or ``updated`` has no stable version, so that is a ``ValueError`` rather than a hash that
-    would match a changed item.
+    item without ``updated`` has no stable version (GLO-30 and WorldCover carry none), so the tile has no hash
+    (``None``) and is read again: a changed item must never match. An item without ``id`` is malformed and a
+    ``ValueError``.
     """
     pairs = []
+    versioned = True
     for item in items:
+        if not isinstance(item.get("id"), str) or not item["id"]:
+            raise ValueError("an item needs an id to be part of a tile's hash")
         properties = item.get("properties")
         updated = properties.get("updated") if isinstance(properties, Mapping) else None
-        if not isinstance(item.get("id"), str) or not item["id"] or not isinstance(updated, str) or not updated:
-            raise ValueError("an item needs an id and properties.updated to be part of a tile's hash")
+        if not isinstance(updated, str) or not updated:
+            versioned = False
         pairs.append([item["id"], updated])
+    if not versioned:
+        return None
     return hashlib.sha256(json.dumps(sorted(pairs), separators=(",", ":")).encode()).hexdigest()

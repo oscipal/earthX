@@ -36,7 +36,14 @@ from earthx.catalog.pgstac import (
     upsert_items,
     use_pgstac_search_path,
 )
-from earthx.catalog.registry import AdapterKind, CoverageProvider, ItemHolding, SearchCapabilities
+from earthx.catalog.registry import (
+    AdapterKind,
+    CoverageProvider,
+    ItemHolding,
+    OverviewMode,
+    OverviewResampling,
+    SearchCapabilities,
+)
 from earthx.discovery import materialize as materialize_module
 from earthx.discovery.materialize import _policy_for, main, run_materialize
 from earthx.gateway import Policy, UpstreamError
@@ -69,6 +76,13 @@ MATERIALIZED = replace(
     # The DEM adapter stamps every item with the entry's own acquisition period
     # (adr/0011 F3), so this entry needs a closed one, as the real DEM entry has.
     temporal_extent=COP_DEM_GLO_30.temporal_extent,
+)
+
+PYRAMID = replace(
+    MATERIALIZED,
+    dataset_id="earthx-test-materialize-pyramid",
+    source=replace(MATERIALIZED.source, source_collection_id="earthx-test-materialize-pyramid"),
+    viewer=replace(MATERIALIZED.viewer, overview=OverviewMode.PYRAMID, overview_resampling=OverviewResampling.AVERAGE),
 )
 
 TILE_A = "Copernicus_DSM_COG_10_N46_00_E010_00_DEM"
@@ -112,10 +126,18 @@ def _item_count(conn: psycopg.Connection, collection_id: str) -> int:
         return cur.fetchone()[0]
 
 
-async def _run(conn: psycopg.Connection, *, tile_names: list[str], etag: str, force: bool = False):
-    """`run_materialize` against `MATERIALIZED` and a bucket answering `tile_names`."""
+async def _run(conn: psycopg.Connection, *, tile_names: list[str], etag: str, force: bool = False, config=MATERIALIZED):
+    """`run_materialize` against `MATERIALIZED` (or ``config``) and a bucket answering `tile_names`."""
     gateway = _bucket_gateway(tile_names=tile_names, etag=etag)
-    return await run_materialize(conn, MATERIALIZED, gateway=gateway, force=force)
+    return await run_materialize(conn, config, gateway=gateway, force=force)
+
+
+def _requests(conn: psycopg.Connection, dataset_id: str) -> list[tuple[str, str]]:
+    """``(source_version, version)`` of the overview requests of a dataset, oldest first."""
+    return conn.execute(
+        "SELECT source_version, version FROM public.earthx_overview_request WHERE dataset_id = %s ORDER BY requested_at",
+        (dataset_id,),
+    ).fetchall()
 
 
 class TestRunMaterializeLoadsAndIsIdempotent:
@@ -151,6 +173,238 @@ class TestRunMaterializeLoadsAndIsIdempotent:
         assert result.outcome.status == "loaded"
         assert result.items_written == 2
         assert _item_count(conn, MATERIALIZED.dataset_id) == 2
+
+
+class TestOverviewRequest:
+    """A run that loads a new source version of a pyramid dataset asks for its pyramid (M5-30b part 8b, F1)."""
+
+    async def test_a_loaded_run_of_a_pyramid_dataset_asks_for_the_pyramid_of_its_version(
+        self, conn: psycopg.Connection
+    ) -> None:
+        load_collection(conn, PYRAMID)
+        await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+
+        [(source_version, version)] = _requests(conn, PYRAMID.dataset_id)
+        assert source_version == '"v1"'
+        assert conn.execute("SELECT public.earthx_overview_version(%s)", (source_version,)).fetchone() == (version,)
+
+    async def test_a_new_version_adds_a_request_and_an_unchanged_run_adds_none(self, conn: psycopg.Connection) -> None:
+        load_collection(conn, PYRAMID)
+        await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+        unchanged = await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+        assert unchanged.outcome.status == "unchanged"
+        assert [r[0] for r in _requests(conn, PYRAMID.dataset_id)] == ['"v1"']
+
+        await _run(conn, tile_names=[TILE_A], etag='"v2"', config=PYRAMID)
+        assert [r[0] for r in _requests(conn, PYRAMID.dataset_id)] == ['"v1"', '"v2"']
+
+    async def test_a_forced_run_of_the_same_version_asks_once(self, conn: psycopg.Connection) -> None:
+        load_collection(conn, PYRAMID)
+        await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+        await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID, force=True)
+        assert [r[0] for r in _requests(conn, PYRAMID.dataset_id)] == ['"v1"']
+
+    async def test_a_dataset_without_a_pyramid_asks_for_none(self, conn: psycopg.Connection) -> None:
+        load_collection(conn, MATERIALIZED)
+        result = await _run(conn, tile_names=[TILE_A], etag='"v1"')
+        assert result.outcome.status == "loaded"
+        assert _requests(conn, MATERIALIZED.dataset_id) == []
+
+    async def test_a_failed_run_asks_for_nothing(self, conn: psycopg.Connection) -> None:
+        load_collection(conn, PYRAMID)
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(500)
+
+        async def sleep(seconds: float) -> None:
+            return None
+
+        gateway = Gateway(
+            Policy(allowed_hosts=frozenset({HOST})), transport=httpx.MockTransport(handler), resolve=_public, sleep=sleep
+        )
+        with pytest.raises(UpstreamError):
+            await run_materialize(conn, PYRAMID, gateway=gateway, force=False)
+        assert _requests(conn, PYRAMID.dataset_id) == []
+
+
+def _ready(conn: psycopg.Connection, dataset_id: str, source_version: str) -> str:
+    """A ready pyramid of ``source_version``, built long ago and never confirmed; its version."""
+    row = conn.execute(
+        """
+        INSERT INTO public.earthx_overview (dataset_id, version, status, checked_at)
+        VALUES (%s, public.earthx_overview_version(%s), 'ready', now() - interval '20 days') RETURNING version
+        """,
+        (dataset_id, source_version),
+    ).fetchone()
+    return row[0]
+
+
+def _confirmed(conn: psycopg.Connection, dataset_id: str, version: str) -> object:
+    return conn.execute(
+        "SELECT confirmed_at FROM public.earthx_overview WHERE dataset_id = %s AND version = %s", (dataset_id, version)
+    ).fetchone()[0]
+
+
+class TestConfirmation:
+    """An unchanged run says the source still has the version the pyramid was built from (M5-30b part 8b-3, adr/0032 §5.3)."""
+
+    async def test_an_unchanged_run_confirms_the_pyramid_of_that_version(self, conn: psycopg.Connection) -> None:
+        load_collection(conn, PYRAMID)
+        await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+        version = _ready(conn, PYRAMID.dataset_id, '"v1"')
+        assert _confirmed(conn, PYRAMID.dataset_id, version) is None
+
+        unchanged = await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+
+        assert unchanged.outcome.status == "unchanged"
+        assert _confirmed(conn, PYRAMID.dataset_id, version) is not None
+
+    async def test_a_run_that_loads_a_new_version_confirms_nothing_and_leaves_the_old_pyramid_as_it_is(
+        self, conn: psycopg.Connection
+    ) -> None:
+        load_collection(conn, PYRAMID)
+        await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+        version = _ready(conn, PYRAMID.dataset_id, '"v1"')
+        await _run(conn, tile_names=[TILE_A], etag='"v2"', config=PYRAMID)
+        assert _confirmed(conn, PYRAMID.dataset_id, version) is None
+
+    async def test_a_forced_reload_is_no_confirmation(self, conn: psycopg.Connection) -> None:
+        """Only an unchanged run confirms (Otto, 13.11.2026); a forced one is a load."""
+        load_collection(conn, PYRAMID)
+        await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+        version = _ready(conn, PYRAMID.dataset_id, '"v1"')
+        await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID, force=True)
+        assert _confirmed(conn, PYRAMID.dataset_id, version) is None
+
+    async def test_a_source_that_cannot_be_reached_confirms_nothing(self, conn: psycopg.Connection) -> None:
+        load_collection(conn, PYRAMID)
+        await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+        version = _ready(conn, PYRAMID.dataset_id, '"v1"')
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(503)
+
+        async def sleep(seconds: float) -> None:
+            return None
+
+        gateway = Gateway(
+            Policy(allowed_hosts=frozenset({HOST})), transport=httpx.MockTransport(handler), resolve=_public, sleep=sleep
+        )
+        with pytest.raises(UpstreamError):
+            await run_materialize(conn, PYRAMID, gateway=gateway, force=False)
+        assert _confirmed(conn, PYRAMID.dataset_id, version) is None
+
+    async def test_an_unchanged_run_without_a_ready_pyramid_is_no_error_and_writes_nothing(
+        self, conn: psycopg.Connection
+    ) -> None:
+        load_collection(conn, PYRAMID)
+        await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+        building = conn.execute(
+            """
+            INSERT INTO public.earthx_overview (dataset_id, version, status, lease_until)
+            VALUES (%s, public.earthx_overview_version('"v1"'), 'building', now() + interval '1 minute') RETURNING version
+            """,
+            (PYRAMID.dataset_id,),
+        ).fetchone()[0]
+        unchanged = await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+        assert unchanged.outcome.status == "unchanged"
+        assert _confirmed(conn, PYRAMID.dataset_id, building) is None
+
+    async def test_a_dataset_without_a_pyramid_confirms_nothing_even_if_a_row_of_that_name_exists(
+        self, conn: psycopg.Connection
+    ) -> None:
+        load_collection(conn, MATERIALIZED)
+        await _run(conn, tile_names=[TILE_A], etag='"v1"')
+        version = _ready(conn, MATERIALIZED.dataset_id, '"v1"')
+        await _run(conn, tile_names=[TILE_A], etag='"v1"')
+        assert _confirmed(conn, MATERIALIZED.dataset_id, version) is None
+
+    async def test_the_pyramid_of_another_dataset_with_the_same_version_is_not_confirmed(
+        self, conn: psycopg.Connection
+    ) -> None:
+        load_collection(conn, PYRAMID)
+        await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+        other = _ready(conn, "some-other-dataset", '"v1"')
+        await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+        assert _confirmed(conn, "some-other-dataset", other) is None
+
+
+def _failed(conn: psycopg.Connection, dataset_id: str, source_version: str, kind: str = "expired", attempts: int = 1) -> None:
+    conn.execute(
+        """
+        INSERT INTO public.earthx_overview (dataset_id, version, status, failure_kind, attempts)
+        VALUES (%s, public.earthx_overview_version(%s), 'failed', %s, %s)
+        """,
+        (dataset_id, source_version, kind, attempts),
+    )
+
+
+def _rows(conn: psycopg.Connection, dataset_id: str) -> list[tuple[str, str]]:
+    return conn.execute(
+        "SELECT status, failure_kind FROM public.earthx_overview WHERE dataset_id = %s", (dataset_id,)
+    ).fetchall()
+
+
+class TestRebuildAfterASuccessfulRun:
+    """"The next successful run builds anew" (adr/0032 §5): a run that sees a failed or expired version makes it buildable."""
+
+    @pytest.mark.parametrize("force", [False, True])
+    async def test_an_expired_pyramid_is_made_buildable_again_by_an_unchanged_or_a_forced_run(
+        self, conn: psycopg.Connection, force: bool
+    ) -> None:
+        load_collection(conn, PYRAMID)
+        await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+        _failed(conn, PYRAMID.dataset_id, '"v1"', "expired")
+
+        result = await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID, force=force)
+
+        assert result.outcome.status == ("loaded" if force else "unchanged")
+        assert _rows(conn, PYRAMID.dataset_id) == [], "no row: the worker's claim takes the request"
+        assert [r[0] for r in _requests(conn, PYRAMID.dataset_id)] == ['"v1"']
+
+    async def test_a_failure_that_is_not_retried_is_made_buildable_too_and_a_waiting_retry_is_not(
+        self, conn: psycopg.Connection
+    ) -> None:
+        load_collection(conn, PYRAMID)
+        await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+        _failed(conn, PYRAMID.dataset_id, '"v1"', "source_4xx")
+        await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+        assert _rows(conn, PYRAMID.dataset_id) == []
+        _failed(conn, PYRAMID.dataset_id, '"v1"', "source_timeout", 1)
+        await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+        assert _rows(conn, PYRAMID.dataset_id) == [("failed", "source_timeout")]
+
+    async def test_a_run_that_cannot_reach_the_source_rebuilds_nothing(self, conn: psycopg.Connection) -> None:
+        load_collection(conn, PYRAMID)
+        await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+        _failed(conn, PYRAMID.dataset_id, '"v1"', "expired")
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(503)
+
+        async def sleep(seconds: float) -> None:
+            return None
+
+        gateway = Gateway(
+            Policy(allowed_hosts=frozenset({HOST})), transport=httpx.MockTransport(handler), resolve=_public, sleep=sleep
+        )
+        with pytest.raises(UpstreamError):
+            await run_materialize(conn, PYRAMID, gateway=gateway, force=False)
+        assert _rows(conn, PYRAMID.dataset_id) == [("failed", "expired")]
+
+    async def test_a_new_version_leaves_the_failure_of_the_old_one_and_a_dataset_without_a_pyramid_is_untouched(
+        self, conn: psycopg.Connection
+    ) -> None:
+        load_collection(conn, PYRAMID)
+        await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+        _failed(conn, PYRAMID.dataset_id, '"v1"', "expired")
+        await _run(conn, tile_names=[TILE_A], etag='"v2"', config=PYRAMID)
+        assert _rows(conn, PYRAMID.dataset_id) == [("failed", "expired")], "the failure belongs to the old version"
+        load_collection(conn, MATERIALIZED)
+        await _run(conn, tile_names=[TILE_A], etag='"v1"')
+        _failed(conn, MATERIALIZED.dataset_id, '"v1"', "expired")
+        await _run(conn, tile_names=[TILE_A], etag='"v1"')
+        assert _rows(conn, MATERIALIZED.dataset_id) == [("failed", "expired")]
 
 
 class TestForce:

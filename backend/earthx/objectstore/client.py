@@ -16,7 +16,7 @@ endpoint, §3.2, §9.2).
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, BinaryIO, TypeVar
@@ -131,11 +131,61 @@ class S3:
     def _redact(self, text: str) -> str:
         return redact(text, self._config.secret_key, self._config.access_key)
 
-    def put_object(self, key: str, body: BinaryIO, content_type: str) -> None:
+    def put_object(
+        self,
+        key: str,
+        body: BinaryIO,
+        content_type: str,
+        *,
+        cache_control: str | None = None,
+        metadata: Mapping[str, str] | None = None,
+    ) -> None:
+        extra: dict[str, Any] = {}
+        if cache_control is not None:
+            extra["CacheControl"] = cache_control
+        if metadata:
+            extra["Metadata"] = dict(metadata)
         self._call(
             "PutObject",
-            lambda: self._internal.put_object(Bucket=self._config.bucket, Key=key, Body=body, ContentType=content_type),
+            lambda: self._internal.put_object(
+                Bucket=self._config.bucket, Key=key, Body=body, ContentType=content_type, **extra
+            ),
         )
+
+    def rewrite_object(
+        self, key: str, *, content_type: str, cache_control: str | None, metadata: Mapping[str, str]
+    ) -> None:
+        """Copy an object onto itself with new metadata (``MetadataDirective=REPLACE``): the content stays, the write date moves.
+
+        REPLACE drops every header the call does not name, so the caller names the content type and cache control again.
+        :class:`ResultNotFound` if there is no such object.
+        """
+        extra: dict[str, Any] = {} if cache_control is None else {"CacheControl": cache_control}
+        self._call(
+            "CopyObject",
+            lambda: self._internal.copy_object(
+                Bucket=self._config.bucket,
+                Key=key,
+                CopySource={"Bucket": self._config.bucket, "Key": key},
+                MetadataDirective="REPLACE",
+                ContentType=content_type,
+                Metadata=dict(metadata),
+                **extra,
+            ),
+        )
+
+    def get_bytes(self, key: str) -> bytes:
+        """The whole object, for one that is known to be small; :class:`ResultNotFound` if there is none."""
+        return self.get_bytes_and_metadata(key)[0]
+
+    def get_bytes_and_metadata(self, key: str) -> tuple[bytes, dict[str, str]]:
+        """The whole object and its user metadata, for one that is known to be small; :class:`ResultNotFound` if none."""
+        response = self._call("GetObject", lambda: self._internal.get_object(Bucket=self._config.bucket, Key=key))
+        stream = ObjectRange(response["Body"])
+        try:
+            return b"".join(iter(lambda: stream.read(1024 * 1024), b"")), dict(response.get("Metadata") or {})
+        finally:
+            stream.close()
 
     def create_multipart_upload(self, key: str, content_type: str) -> str:
         response = self._call(

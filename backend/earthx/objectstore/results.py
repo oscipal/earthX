@@ -210,18 +210,23 @@ def lifecycle_ok(store: Store) -> bool:
 
 
 def _is_results_rule(rule: Mapping[str, Any]) -> bool:
+    return is_expiry_rule(rule, prefix=RESULT_PREFIX, days=RESULT_TTL.days)
+
+
+def is_expiry_rule(rule: Mapping[str, Any], *, prefix: str, days: int) -> bool:
+    """Whether ``rule`` expires everything under ``prefix`` after ``days`` and aborts open uploads after a day."""
     filter_ = rule.get("Filter")
     # The legacy form puts the prefix at the top level; a filter with `And`
     # narrows it further (size), which would leave objects behind.
-    prefix = filter_.get("Prefix") if isinstance(filter_, Mapping) else rule.get("Prefix")
+    found = filter_.get("Prefix") if isinstance(filter_, Mapping) else rule.get("Prefix")
     if isinstance(filter_, Mapping) and set(filter_) - {"Prefix"}:
         return False
     expiration = rule.get("Expiration") or {}
     abort = rule.get("AbortIncompleteMultipartUpload") or {}
     return (
         rule.get("Status") == "Enabled"
-        and prefix == RESULT_PREFIX
-        and expiration.get("Days") == RESULT_TTL.days
+        and found == prefix
+        and expiration.get("Days") == days
         and abort.get("DaysAfterInitiation") == MULTIPART_ABORT_DAYS
     )
 
