@@ -15,6 +15,9 @@ Two kinds, because they need different things from the core:
   params) -> MaskedArray``. Its plan (block size, ``tolerance``,
   ``warp_mem_limit``) is part of the operator and versioned with ``op_version``
   (§3.4). Only ``T2``.
+* ``focal`` — a kernel like ``pixel`` that needs the neighbours of each pixel (adr/0030 F3, B4): it is handed the
+  block grown by :attr:`Operator.halo` pixels on every side and returns the block without them. The core reads the
+  grown block, masked where it leaves the raster; T1 and T2 call the same function, the tile only as the first step.
 
 Deviations from the sketch in §5.2: ``cost_factor`` instead of a full ``estimate``
 (the estimate itself is computed once, in :mod:`earthx.processing.plan`),
@@ -194,7 +197,7 @@ class Operator:
     params: type[BaseModel]
     requires: Requirement
     tiers: frozenset[Tier]
-    kind: Literal["pixel", "grid"]
+    kind: Literal["pixel", "grid", "focal"]
     cost_factor: Callable[[BaseModel], float]
     transform: Callable[[RasterMeta, BaseModel], RasterMeta]
     run: Callable[..., Any]
@@ -246,6 +249,9 @@ class Operator:
     place: Callable[[RasterMeta, BaseModel], Grid] | None = None
     #: ``transform`` on a grid that :attr:`place` gave for the same raster and parameters; the same result as ``transform``.
     transform_on: Callable[[RasterMeta, BaseModel, Grid], RasterMeta] | None = None
+    #: For a ``focal`` step: how many pixels of neighbours it needs on every side of a block (adr/0030 F3); ``0`` for
+    #: the others.
+    halo: int = 0
 
     def __post_init__(self) -> None:
         if not _OP_NAME.match(self.op):
@@ -256,6 +262,8 @@ class Operator:
             raise ValueError(f"{self.op} runs in no tier")
         if self.kind == "grid" and self.tiers != frozenset({Tier.T2}):
             raise ValueError(f"{self.op}: a grid operator runs in T2 only (§6.1)")
+        if (self.kind == "focal") != (self.halo > 0) or self.halo < 0:
+            raise ValueError(f"{self.op}: a focal operator has a halo of at least one pixel, the others none")
         if self.measures is not _measures_nothing and (
             self.kind != "pixel"
             or self.tiers != frozenset({Tier.T2})
