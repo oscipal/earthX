@@ -46,12 +46,14 @@ __all__ = [
     "DENSIFY_DEGREES",
     "RADAR_GRID_LINE",
     "SCENE_LINE",
+    "SEAM_REASONS",
     "JoinedPass",
     "RadarGrid",
     "RadarGridError",
     "RadarStackReader",
     "Slice",
     "SlicesDoNotJoin",
+    "check_seam",
     "join_slices",
     "copy_to_cog",
     "gcp_key",
@@ -71,8 +73,9 @@ DENSIFY_DEGREES = 0.001
 #: The fewest GCPs a thin-plate spline is laid through.
 MIN_GCPS = 3
 
-#: Two slices join when the second starts this close (in lines) to a whole line after the first.
-LINE_TOLERANCE = 0.05
+#: Two slices join when the second starts this close (in lines) to a whole line after the first. Measured on 26 pairs
+#: of real slices (2019-2026): at most 0.021 lines; a quarter of a line is 2.5 m at 10 m pixels.
+LINE_TOLERANCE = 0.25
 
 #: The line intervals of two slices that join agree to this relative difference (measured: below 2e-8).
 INTERVAL_TOLERANCE = 1e-6
@@ -88,8 +91,23 @@ class RadarGridError(ValueError):
     """The file cannot be delivered in its own grid: it lacks GCPs, or they place nothing."""
 
 
+#: Why slices do not join, in the words a job reports (`processing.failure_kind`): a slice between them is missing,
+#: two overlap (a datatake can hold two versions of the same stretch, NRT-3h and Fast-24h, measured 2019), their
+#: rows or columns do not line up, or their items give no times of their lines.
+SEAM_REASONS = ("slice_missing", "slices_overlap", "slices_misaligned", "no_line_times")
+
+
 class SlicesDoNotJoin(ValueError):
-    """The slices of a pass do not hang one under the other; the text says which check failed, never a place."""
+    """The slices of a pass do not hang one under the other; the text says which check failed, never a place.
+
+    ``reason`` is one of :data:`SEAM_REASONS`.
+    """
+
+    def __init__(self, message: str, reason: str = "slices_misaligned") -> None:
+        if reason not in SEAM_REASONS:
+            raise ValueError(f"reason is one of {SEAM_REASONS}")
+        super().__init__(message)
+        self.reason = reason
 
 
 @dataclass(frozen=True)
@@ -193,7 +211,7 @@ class Slice:
     def interval(self) -> float:
         """Seconds from one line to the next."""
         if self.first_line is None or self.last_line is None:
-            raise SlicesDoNotJoin("the dataset names no times of the lines of its scenes")
+            raise SlicesDoNotJoin("the dataset names no times of the lines of its scenes", "no_line_times")
         if self.grid.height < 2:
             raise SlicesDoNotJoin("a slice of one line has no line interval")
         return (self.last_line - self.first_line).total_seconds() / (self.grid.height - 1)
@@ -203,13 +221,13 @@ def line_time(item: Mapping[str, Any], name: str) -> datetime:
     """The time an item's property ``name`` gives, or :class:`SlicesDoNotJoin` where it has none."""
     value = (item.get("properties") or {}).get(name)
     if not isinstance(value, str):
-        raise SlicesDoNotJoin(f"a slice lacks the time of a line ({name})")
+        raise SlicesDoNotJoin(f"a slice lacks the time of a line ({name})", "no_line_times")
     try:
         parsed = datetime.fromisoformat(value)
     except ValueError:
-        raise SlicesDoNotJoin(f"a slice gives no readable time of a line ({name})") from None
+        raise SlicesDoNotJoin(f"a slice gives no readable time of a line ({name})", "no_line_times") from None
     if parsed.tzinfo is None:
-        raise SlicesDoNotJoin(f"a slice gives a time of a line without a time zone ({name})")
+        raise SlicesDoNotJoin(f"a slice gives a time of a line without a time zone ({name})", "no_line_times")
     return parsed
 
 
@@ -238,19 +256,22 @@ def _first_column(points: Sequence[GroundControlPoint]) -> list[GroundControlPoi
     return sorted((point for point in points if abs(point.col - column) < 0.5), key=lambda point: point.row)
 
 
-def _check_seam(upper: Slice, lower: Slice) -> None:
+def check_seam(upper: Slice, lower: Slice) -> None:
     """:class:`SlicesDoNotJoin` unless ``lower`` begins on the line after the last one of ``upper``."""
     interval = upper.interval
+    assert lower.first_line is not None and upper.last_line is not None  # checked by `interval`
+    # First what a person can act on: an overlap or a gap shows in the times alone, whatever the intervals.
+    step = (lower.first_line - upper.last_line).total_seconds() / interval
+    if step < 0.5:
+        raise SlicesDoNotJoin("two slices of the pass overlap", "slices_overlap")
+    if step > 1.5:
+        raise SlicesDoNotJoin("a slice of the pass is missing", "slice_missing")
     if not math.isclose(lower.interval, interval, rel_tol=INTERVAL_TOLERANCE):
         raise SlicesDoNotJoin("two slices of the pass differ in their line interval")
-    assert lower.first_line is not None and upper.first_line is not None  # checked by `interval`
+    assert upper.first_line is not None
     offset = (lower.first_line - upper.first_line).total_seconds() / interval
-    if abs(offset - round(offset)) > LINE_TOLERANCE:
-        raise SlicesDoNotJoin("a slice does not begin on a whole line of the one before")
-    if round(offset) < upper.grid.height:
-        raise SlicesDoNotJoin("two slices of the pass overlap")
-    if round(offset) > upper.grid.height:
-        raise SlicesDoNotJoin("a slice of the pass is missing")
+    if abs(offset - round(offset)) > LINE_TOLERANCE or round(offset) != upper.grid.height:
+        raise SlicesDoNotJoin("a slice does not begin on the line after the last one of the slice before")
     above, below = _first_column(upper.grid.gcps), _first_column(lower.grid.gcps)
     if len(above) < 2 or not below or abs(above[-1].col - below[0].col) >= 0.5:
         raise SlicesDoNotJoin("the GCPs of two slices do not show where their columns begin")
@@ -287,7 +308,7 @@ def join_slices(slices: Sequence[Slice]) -> tuple[list[JoinedPass], list[str]]:
     """The runs of slices that join, in the order of their first lines, and why a run ended where it did.
 
     One run is one file: a narrower slice is filled with nodata on the right (§4.6). A seam that fails a check of
-    :func:`_check_seam` starts a new run; the reason is that check's text.
+    :func:`check_seam` starts a new run; the reason is that check's text.
     """
     if not slices:
         raise SlicesDoNotJoin("a pass has at least one slice")
@@ -298,7 +319,7 @@ def join_slices(slices: Sequence[Slice]) -> tuple[list[JoinedPass], list[str]]:
     reasons: list[str] = []
     for upper, lower in zip(ordered, ordered[1:], strict=False):
         try:
-            _check_seam(upper, lower)
+            check_seam(upper, lower)
         except SlicesDoNotJoin as error:
             reasons.append(str(error))
             runs.append([lower])

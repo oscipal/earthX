@@ -215,3 +215,92 @@ def test_a_scene_without_nodata_keeps_its_one_band(tmp_path: Path) -> None:
         source = Source.open(entry, path, stack)
         assert isinstance(source.reader, CogReader) and source.reader.dataset.count == 2  # the warp adds alpha
         assert source.names == ["vv"] and source.nodata == [None]
+
+
+# --- Otto's check of step 6 (14.11.2026): two slices of a pass, Normalize, AOI only, through the intake ------------
+
+NORMALIZE = {
+    "op": "normalize",
+    "op_version": 4,
+    "params": {"method": "linear", "bands": ["vv"], "in_min": 0.0, "in_max": 1000.0, "out_min": 0.0, "out_max": 1.0, "clip": True},
+}
+
+
+def _stac(index: int, gap_lines: int = 0) -> dict[str, Any]:
+    from tests.earthx.api.test_download_radar import footprint
+
+    stac = mini_pass.item(index, gap_lines=gap_lines)
+    name = stac["id"]
+    stac["geometry"] = footprint(index)
+    lons, lats = zip(*stac["geometry"]["coordinates"][0], strict=True)
+    stac["bbox"] = [min(lons), min(lats), max(lons), max(lats)]
+    stac["properties"].update({"gsd": 10.0, "s1:datatake_id": "40282"})
+    stac["assets"] = {
+        "vv": {
+            "href": sources.url(name),
+            "type": "image/tiff; application=geotiff",
+            "file:checksum": f"1220{name}",
+            "raster:bands": [{"data_type": "uint16", "nodata": 0}],
+        }
+    }
+    return stac
+
+
+def _accepted(gap_lines: int = 0) -> Any:
+    import asyncio
+    from dataclasses import replace
+
+    from earthx.catalog.registry import DatasetRegistry
+    from earthx.processing.operators import REGISTRY
+    from tests.earthx.api.test_download_radar import RADAR
+    from tests.earthx.api.test_intake import Source, accept
+
+    # A pass as Sentinel-1 names it: the day and the datatake (`sentinel-1-grd.yaml`, `viewer.group_by`).
+    take = ("datetime", "s1:datatake_id")
+    config = replace(
+        RADAR,
+        source=replace(RADAR.source, asset_hosts=(sources.HOST,)),
+        viewer=replace(RADAR.viewer, group_by=take, results_group_by=take),
+    )
+    order = {
+        "recipe_version": 2,
+        "inputs": [{"name": "s1", "dataset": config.dataset_id, "groups": [ITEMS]}],
+        "aoi": ACROSS,
+        "steps": [NORMALIZE],
+        "output": {"kind": "raster", "format": "cog", "dtype": "float32", "bands": ["vv"]},
+    }
+    items = Source((config, _stac(0)), (config, _stac(1, gap_lines)))
+    return asyncio.run(accept(order, items, registry=DatasetRegistry((config,)), operators=REGISTRY)).recipe
+
+
+@pytest.mark.usefixtures("served")
+def test_two_slices_of_a_pass_normalized_over_an_aoi_run_in_radar_geometry(tmp_path: Path) -> None:
+    from earthx.processing.operators import REGISTRY
+
+    recipe = _accepted()
+    entry = recipe.inputs[0]
+    assert entry.groups == [ITEMS] and entry.line_times is not None
+    assert {item.asset.georeferencing for item in entry.resolved} == {"gcp_tps"}
+    result = run(recipe, workdir=tmp_path, progress=lambda *_: None, operators=REGISTRY)
+    with rasterio.open(result.path) as out:
+        assert out.crs is None and out.gcps[0] and out.dtypes[0] == "float32"
+        values = out.read(1, masked=True)
+    assert 0.0 <= float(values.min()) and float(values.max()) <= 1.0
+    assert result.properties["processing:lineage"].startswith("mosaic of 2 scenes")
+
+
+@pytest.mark.usefixtures("served")
+@pytest.mark.parametrize(
+    ("gap_lines", "kind"),
+    [(mini_pass.HEIGHT, "pass_slice_missing"), (-mini_pass.HEIGHT // 2, "pass_slices_overlap")],
+)
+def test_slices_of_a_pass_that_do_not_join_say_why(tmp_path: Path, gap_lines: int, kind: str) -> None:
+    from earthx.api.processing_route import _FAILURES
+    from earthx.processing import failure_kind
+    from earthx.processing.operators import REGISTRY
+
+    with pytest.raises(GridMismatch) as error:
+        run(_accepted(gap_lines), workdir=tmp_path, progress=lambda *_: None, operators=REGISTRY)
+    assert failure_kind(error.value) == kind
+    status, title = _FAILURES[kind]
+    assert status == 422 and "grid" not in title and "scene" in title

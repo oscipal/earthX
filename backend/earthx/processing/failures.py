@@ -12,6 +12,7 @@ from __future__ import annotations
 from earthx.processing.errors import (
     AoiOutsideInputs,
     GridMismatch,
+    PassDoesNotJoin,
     RecipeInvalid,
     RunCancelled,
     ScalingMismatch,
@@ -34,6 +35,8 @@ def failure_kind(error: BaseException) -> str:
         return "unsupported_recipe"
     if isinstance(error, ScalingMismatch):
         return "scaling_mismatch"
+    if isinstance(error, PassDoesNotJoin):
+        return error.kind
     if isinstance(error, GridMismatch):
         return "grid_mismatch"
     if isinstance(error, AoiOutsideInputs):

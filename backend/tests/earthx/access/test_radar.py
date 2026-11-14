@@ -301,11 +301,49 @@ def test_a_slice_off_the_line_grid_does_not_join(slice_files: tuple[Path, Path])
     b = slice_of(slice_files[1], mini_pass.item(1))
     late = dataclasses.replace(
         b,
-        first_line=b.first_line + mini_pass.LINE_INTERVAL / 2,
-        last_line=b.last_line + mini_pass.LINE_INTERVAL / 2,
+        first_line=b.first_line + mini_pass.LINE_INTERVAL * 0.4,
+        last_line=b.last_line + mini_pass.LINE_INTERVAL * 0.4,
     )
     runs, reasons = join_slices([a, late])
-    assert len(runs) == 2 and "whole line" in reasons[0]
+    assert len(runs) == 2 and "line after the last one" in reasons[0]
+
+
+def test_a_slice_a_little_off_the_line_grid_still_joins(slice_files: tuple[Path, Path]) -> None:
+    """Real slices start up to 0.021 lines off a whole line (26 pairs, 2019-2026, plan §12.8)."""
+    a = slice_of(slice_files[0], mini_pass.item(0))
+    b = slice_of(slice_files[1], mini_pass.item(1))
+    shift = mini_pass.LINE_INTERVAL * 0.1
+    near = dataclasses.replace(b, first_line=b.first_line + shift, last_line=b.last_line + shift)
+    runs, reasons = join_slices([a, near])
+    assert len(runs) == 1 and reasons == []
+
+
+@pytest.mark.parametrize(
+    ("gap_lines", "reason"),
+    [(mini_pass.HEIGHT, "slice_missing"), (-3, "slices_overlap"), (-mini_pass.HEIGHT // 2, "slices_overlap")],
+)
+def test_a_gap_or_an_overlap_names_its_reason(slice_files: tuple[Path, Path], gap_lines: int, reason: str) -> None:
+    a = slice_of(slice_files[0], mini_pass.item(0))
+    b = slice_of(slice_files[1], mini_pass.item(1, gap_lines=gap_lines))
+    with pytest.raises(SlicesDoNotJoin) as error:
+        radar.check_seam(a, b)
+    assert error.value.reason == reason
+
+
+def test_an_overlap_of_two_versions_of_a_stretch_is_an_overlap(slice_files: tuple[Path, Path]) -> None:
+    """A datatake can hold two versions of one stretch (NRT-3h and Fast-24h, measured 2019) with other line
+    intervals: the overlap is what the person can act on, not the interval."""
+    a = slice_of(slice_files[0], mini_pass.item(0))
+    b = slice_of(slice_files[1], mini_pass.item(1, gap_lines=-mini_pass.HEIGHT // 3))
+    other = dataclasses.replace(b, last_line=b.last_line + mini_pass.LINE_INTERVAL * 0.1)
+    with pytest.raises(SlicesDoNotJoin) as error:
+        radar.check_seam(a, other)
+    assert error.value.reason == "slices_overlap"
+
+
+def test_a_reason_must_be_one_of_the_known() -> None:
+    with pytest.raises(ValueError):
+        SlicesDoNotJoin("x", "somewhere")
 
 
 def test_slices_of_another_line_interval_do_not_join(slice_files: tuple[Path, Path]) -> None:

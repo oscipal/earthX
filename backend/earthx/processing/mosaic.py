@@ -43,9 +43,9 @@ from rasterio.windows import Window
 from rio_tiler.models import ImageData
 
 from earthx.access.crop_rules import merge_first_valid
-from earthx.access.radar import Slice, SlicesDoNotJoin, join_slices
+from earthx.access.radar import Slice, SlicesDoNotJoin, check_seam, join_slices
 from earthx.access.resolve import open_asset_ref
-from earthx.processing.errors import GridMismatch, UnsupportedRecipe
+from earthx.processing.errors import GridMismatch, PassDoesNotJoin, UnsupportedRecipe
 from earthx.processing.operators.reproject import TOLERANCE, WARP_MEM_LIMIT_MB
 from earthx.processing.recipe import Recipe
 from earthx.processing.source import RadarSource, Source
@@ -258,11 +258,14 @@ def _open_radar_pass(recipe: Recipe, stack: ExitStack) -> list[RadarSource]:
         assert scene.radar is not None
         slices.append(Slice(scene.entry.asset.item_id, scene.radar, *((pair.first, pair.last) if pair else (None, None))))
     try:
-        runs, reasons = join_slices(slices)
+        runs, _ = join_slices(slices)
+        if len(runs) > 1:
+            # The first seam that failed, with its reason (the reasons of `join_slices` are its texts only).
+            ordered = [piece for run in runs for piece in run.slices]
+            for upper, lower in zip(ordered, ordered[1:], strict=False):
+                check_seam(upper, lower)
     except SlicesDoNotJoin as error:
-        raise GridMismatch(f"the slices of this pass do not join: {error}") from None
-    if len(runs) > 1:
-        raise GridMismatch(f"the slices of this pass do not join: {reasons[0]}")
+        raise PassDoesNotJoin(f"the slices of this pass do not join: {error}", error.reason) from None
     joined = runs[0]
     sources = []
     for scenes in singles.values():

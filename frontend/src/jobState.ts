@@ -85,6 +85,11 @@ const FAILS_AGAIN: ReadonlySet<string> = new Set([
   'unsupported_recipe',
   'scaling_mismatch',
   'grid_mismatch',
+  // Scenes of a pass in radar geometry that do not join (DS-04d A7): the same scenes fail the same way.
+  'pass_slice_missing',
+  'pass_slices_overlap',
+  'pass_slices_misaligned',
+  'pass_no_line_times',
   'aoi_outside_inputs',
   'rejected',
   'source_4xx',

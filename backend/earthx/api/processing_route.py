@@ -178,6 +178,25 @@ _FAILURES: dict[str, tuple[int, str]] = {
     "unsupported_recipe": (422, "The recipe asks for what the platform does not run yet"),
     "scaling_mismatch": (422, "The scaling of the items disagrees with the recipe"),
     "grid_mismatch": (422, "The assets do not share one grid"),
+    # Scenes of a pass in radar geometry that cannot be joined (DS-04d A7): the reason, and what to do instead.
+    "pass_slice_missing": (
+        422,
+        "The scenes of this pass do not join: a scene between them is missing. Select the scenes in between too, "
+        "or run one scene",
+    ),
+    "pass_slices_overlap": (
+        422,
+        "Two scenes of this pass overlap: the source holds two versions of the same stretch. Select scenes that "
+        "follow each other, or run one scene",
+    ),
+    "pass_slices_misaligned": (
+        422,
+        "The scenes of this pass do not line up row by row, so they cannot be joined. Run one scene at a time",
+    ),
+    "pass_no_line_times": (
+        422,
+        "The scenes of this pass give no times of their lines, so they cannot be joined. Run one scene at a time",
+    ),
     "aoi_outside_inputs": (422, "The area of interest lies outside the inputs"),
     "source_4xx": (502, "The source refused a read"),
     "source_429": (502, "The source asked for fewer requests"),
