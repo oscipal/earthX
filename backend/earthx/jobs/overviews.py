@@ -38,10 +38,13 @@ __all__ = [
     "OVERVIEW_LOCK_KEY",
     "RETRY_AFTER",
     "Build",
+    "Previous",
     "claim",
     "finish_failed",
     "finish_ready",
     "heartbeat",
+    "previous_ready",
+    "release",
     "request_missing",
     "write_progress",
 ]
@@ -122,6 +125,17 @@ class Build:
     source_version: str
     attempt: int
     hosts: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class Previous:
+    """A ready pyramid of an older version of the same dataset: what a new build may copy tiles from."""
+
+    version: str
+    #: The oldest time any of its objects was confirmed at the source.
+    checked_at: datetime
+    #: ``x/y`` of a base tile to the hash of the items it read, for the tiles that were stored and have a hash.
+    base_hashes: dict[str, str]
 
 
 def claim(
@@ -238,3 +252,47 @@ def request_missing(conn: psycopg.Connection, datasets: Collection[str]) -> int:
     if not datasets:
         return 0
     return conn.execute(_MISSING_SQL, (sorted(datasets),)).rowcount
+
+
+def previous_ready(conn: psycopg.Connection, dataset_id: str, version: str) -> Previous | None:
+    """The newest ready pyramid of ``dataset_id`` other than ``version``, or ``None``.
+
+    "Newest" is by ``checked_at``. Its tiles are the ones a build of ``version`` may copy when their hash is the same.
+    """
+    row = conn.execute(
+        """
+        SELECT version, checked_at, base_hashes FROM public.earthx_overview
+        WHERE dataset_id = %s AND version <> %s AND status = 'ready'
+        ORDER BY checked_at DESC LIMIT 1
+        """,
+        (dataset_id, version),
+    ).fetchone()
+    return None if row is None else Previous(row[0], row[1], dict(row[2]))
+
+
+def release(conn: psycopg.Connection, build: Build) -> bool:
+    """Give a build back at a shutdown, without it counting as an attempt; ``False`` if this attempt no longer owns it.
+
+    The first attempt leaves no row at all (the request is a candidate again); a later one goes back to ``failed`` with
+    ``lease_lost`` and its earlier number, which :func:`claim` takes up at once.
+    """
+    with conn.transaction():
+        if build.attempt == 1:
+            row = conn.execute(
+                """
+                DELETE FROM public.earthx_overview
+                WHERE dataset_id = %s AND version = %s AND attempts = 1 AND status = 'building' RETURNING 1
+                """,
+                (build.dataset_id, build.version),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                """
+                UPDATE public.earthx_overview
+                SET status = 'failed', failure_kind = %s, worker = NULL, lease_until = NULL, attempts = attempts - 1,
+                    updated_at = clock_timestamp()
+                WHERE dataset_id = %s AND version = %s AND attempts = %s AND status = 'building' RETURNING 1
+                """,
+                (_LEASE_LOST, build.dataset_id, build.version, build.attempt),
+            ).fetchone()
+    return row is not None

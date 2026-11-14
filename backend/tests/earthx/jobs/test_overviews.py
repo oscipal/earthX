@@ -19,6 +19,8 @@ from earthx.jobs.overviews import (
     finish_failed,
     finish_ready,
     heartbeat,
+    previous_ready,
+    release,
     request_missing,
     write_progress,
 )
@@ -475,3 +477,83 @@ class TestHourlyRound:
             assert TestRequestMissing._requests(db) == [("dem", "v1")]
         finally:
             supervisor.stop(30)
+
+
+class TestPreviousReady:
+    @staticmethod
+    def _ready(db: psycopg.Connection, dataset_id: str, version: str, checked: str, hashes: str = "{}") -> None:
+        db.execute(
+            """
+            INSERT INTO public.earthx_overview (dataset_id, version, status, checked_at, base_hashes)
+            VALUES (%s, %s, 'ready', %s, %s::jsonb)
+            """,
+            (dataset_id, version, checked, hashes),
+        )
+
+    def test_none_without_a_ready_pyramid(self, db: psycopg.Connection) -> None:
+        assert previous_ready(db, "dem", "0" * 16) is None
+
+    def test_the_newest_ready_pyramid_of_the_dataset_other_than_the_version(self, db: psycopg.Connection) -> None:
+        self._ready(db, "dem", "a" * 16, "2026-10-01T00:00:00Z", '{"1/1": "h"}')
+        self._ready(db, "dem", "b" * 16, "2026-10-20T00:00:00Z")
+        self._ready(db, "dem", "c" * 16, "2026-11-01T00:00:00Z")
+        self._ready(db, "land", "d" * 16, "2026-11-05T00:00:00Z")
+        found = previous_ready(db, "dem", "c" * 16)
+        assert found is not None and found.version == "b" * 16
+        older = previous_ready(db, "dem", "b" * 16)
+        assert older is not None and older.version == "c" * 16
+
+    def test_a_building_or_failed_row_is_nothing_to_copy_from(self, db: psycopg.Connection) -> None:
+        _request(db, "dem", "v1")
+        build = _claim(db)
+        assert build is not None
+        assert previous_ready(db, "dem", "0" * 16) is None
+        _fail(db, build, "source_4xx")
+        assert previous_ready(db, "dem", "0" * 16) is None
+
+    def test_the_hashes_come_back_as_a_dict(self, db: psycopg.Connection) -> None:
+        self._ready(db, "dem", "a" * 16, "2026-10-01T00:00:00Z", '{"1/1": "h"}')
+        found = previous_ready(db, "dem", "b" * 16)
+        assert found is not None and found.base_hashes == {"1/1": "h"} and found.checked_at.tzinfo is not None
+
+
+class TestRelease:
+    def test_a_first_attempt_leaves_no_row_so_the_request_is_a_candidate_again(self, db: psycopg.Connection) -> None:
+        version = _request(db, "dem", "v1")
+        build = _claim(db)
+        assert build is not None and release(db, build)
+        assert db.execute("SELECT count(*) FROM public.earthx_overview").fetchone() == (0,)
+        again = _claim(db)
+        assert again is not None and again.version == version and again.attempt == 1
+
+    def test_a_later_attempt_goes_back_to_lease_lost_with_its_earlier_number_and_is_taken_at_once(
+        self, db: psycopg.Connection
+    ) -> None:
+        version = _request(db, "dem", "v1")
+        first = _claim(db)
+        assert first is not None
+        _fail(db, first, "source_timeout")
+        _age(db, "dem", version)
+        second = _claim(db)
+        assert second is not None and second.attempt == 2
+        assert release(db, second)
+        row = _row(db, "dem", version)
+        assert (row["status"], row["failure_kind"], row["attempts"], row["lease_until"]) == ("failed", "lease_lost", 1, None)
+        third = _claim(db)
+        assert third is not None and third.attempt == 2, "no hour to wait, and the attempt was not used up"
+
+    def test_a_build_this_attempt_no_longer_owns_is_left_alone(self, db: psycopg.Connection) -> None:
+        version = _request(db, "dem", "v1")
+        build = _claim(db)
+        assert build is not None
+        db.execute("UPDATE public.earthx_overview SET attempts = 2")
+        assert not release(db, build)
+        assert (_row(db, "dem", version)["status"], _row(db, "dem", version)["attempts"]) == ("building", 2)
+
+    def test_a_finished_build_is_not_released(self, db: psycopg.Connection) -> None:
+        _request(db, "dem", "v1")
+        build = _claim(db)
+        assert build is not None
+        assert finish_ready(db, build, checked_at=NOW, base_hashes={})
+        assert not release(db, build)
+        assert db.execute("SELECT status FROM public.earthx_overview").fetchone() == ("ready",)

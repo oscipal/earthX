@@ -70,6 +70,29 @@ def test_the_worker_starts_with_the_rule(environment: Store) -> None:
     assert main.app.state.supervisor is None
 
 
+def test_the_supervisor_gets_the_pyramid_datasets_and_their_hosts_from_the_registry(environment: Store) -> None:
+    from earthx.catalog.datasets import registry
+
+    put_rules(environment, [RESULTS_RULE, OVERVIEWS_RULE])
+    with TestClient(main.app) as client:
+        supervisor = main.app.state.supervisor
+        assert set(supervisor.pyramids) == {"cop-dem-glo-30", "esa-worldcover-2020", "esa-worldcover-2021"}
+        assert supervisor.pyramids["cop-dem-glo-30"] == tuple(registry().get("cop-dem-glo-30").source.asset_hosts)
+        assert "overview" in {thread.name for thread in supervisor._threads}
+        assert client.get("/health").json() == {"status": "ok", "service": "worker"}
+
+
+def test_the_worker_does_not_start_with_a_pyramid_entry_it_could_never_build(
+    environment: Store, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    put_rules(environment, [RESULTS_RULE, OVERVIEWS_RULE])
+    monkeypatch.setattr(main, "pyramid_hosts", lambda: (_ for _ in ()).throw(ValueError("odd-dem: a pyramid needs a level")))
+    caplog.set_level(logging.ERROR)
+    with pytest.raises(ValueError, match="odd-dem"), TestClient(main.app):
+        pass
+    assert "worker not started: odd-dem" in _messages(caplog)
+
+
 def test_the_health_answer_is_503_while_the_supervisor_is_not_healthy(
     environment: Store, monkeypatch: pytest.MonkeyPatch
 ) -> None:
