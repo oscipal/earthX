@@ -5,7 +5,8 @@ import { describe, expect, it } from 'vitest';
 
 import { SENTINEL_2_PRESETS } from './fixtures/indexPresets';
 import { indexPresetsOf } from './indexPresets';
-import { MAX_MOSAIC_REQUEST_BYTES, mosaicRequestBytes, mosaicTemplateOf, type MosaicInfo, type SceneEntry } from './mosaic';
+import type { MosaicSelection } from './api';
+import { indexKeyOf, MAX_MOSAIC_REQUEST_BYTES, mosaicKeyOf, mosaicRequestBytes, type Mosaics, type MosaicInfo, type SceneEntry } from './mosaic';
 import type { Collection, DownloadedInfo, TimeStepGroup } from './types';
 import {
   assetsOfExpression,
@@ -30,16 +31,25 @@ const info = (id: string, minZoom = 8): DownloadedInfo => ({
   minZoom,
   maxZoom: 14,
 });
-const entries = (n: number, minZoom = 8, pad = 3): SceneEntry[] =>
+const entries = (n: number, minZoom = 8): SceneEntry[] =>
   Array.from({ length: n }, (_, i) => {
-    const id = `S2_${String(i).padStart(pad, '0')}`;
+    const id = `S2_${String(i).padStart(3, '0')}`;
     return [id, info(id, minZoom)];
   });
-// The scenes of the longest time step the tiler takes (64) with ids long enough that the request is above 7168 bytes.
-const LONG = 110;
+// An expression of four assets long enough that the request is above 7168 bytes: the scenes are in the selection, not in the URL.
+const LONG = { ...NDVI, expression: Array.from({ length: 1000 }, () => 'nir').join(' + ') };
+const SELECTION: MosaicSelection = {
+  id: '0123456789abcdef0123456789abcdef',
+  datasetId: 's2',
+  tiles: '/collections/s2/mosaic/0123456789abcdef0123456789abcdef/tiles/WebMercatorQuad/{z}/{x}/{y}',
+  tilejson: '/collections/s2/mosaic/0123456789abcdef0123456789abcdef/WebMercatorQuad/tilejson.json',
+};
+// What the page knows once the selections of the assets of these indexes are created for the pass.
+const selectionsFor = (list: SceneEntry[], ...presets: { expression: string }[]): Mosaics =>
+  Object.fromEntries(presets.map((preset) => [indexKeyOf('s2', assetsOfExpression(preset.expression), list), { selection: SELECTION }]));
 const group = (list: SceneEntry[]): TimeStepGroup[] => [{ label: 'a', key: ['a'], items: list.map(([id]) => ({ id, bbox: [10, 47, 11, 48], properties: {}, assets: {} })) } as unknown as TimeStepGroup];
 const mosaicsOf = (list: SceneEntry[]): Record<string, MosaicInfo> => ({
-  [mosaicTemplateOf('s2', list)!]: { tileUrl: '/collections/s2/mosaic/tiles/WebMercatorQuad/{z}/{x}/{y}?plain', bounds: [10, 47, 11, 48], minZoom: 8, maxZoom: 14, order: list.map(([id]) => id) },
+  [mosaicKeyOf('s2', list)!]: { tileUrl: '/collections/s2/mosaic/0123456789abcdef0123456789abcdef/tiles/WebMercatorQuad/{z}/{x}/{y}?tilesize=512', bounds: [10, 47, 11, 48], minZoom: 8, maxZoom: 14, order: list.map(([id]) => id) },
 });
 
 describe('the look of an index', () => {
@@ -96,57 +106,78 @@ describe('the tile of a scene', () => {
 
 describe('the tile of a mosaic', () => {
   const list = entries(3);
-  const mosaic = mosaicsOf(list)[mosaicTemplateOf('s2', list)!]!;
+  const mosaic = mosaicsOf(list)[mosaicKeyOf('s2', list)!]!;
+  const made = selectionsFor(list, NDWI, NDVI, EVI, LONG);
 
-  it('is the mosaic route with the scenes as one item each, the same assets and step', () => {
-    const raster = indexRasterOf(mosaic, list, 's2', NDWI);
+  it('is the route of the selection made for the assets of the index, with the step and no scene and no asset in the URL', () => {
+    const raster = indexRasterOf(mosaic, list, 's2', NDWI, made);
     const url = new URL((raster as { tileUrl: string }).tileUrl, 'http://x');
-    expect(decodeURIComponent(url.pathname)).toBe('/collections/s2/mosaic/tiles/WebMercatorQuad/{z}/{x}/{y}');
-    expect(url.searchParams.getAll('item')).toEqual(['S2_000', 'S2_001', 'S2_002']);
-    expect(url.searchParams.getAll('asset')).toEqual(['green', 'nir']);
+    expect(decodeURIComponent(url.pathname)).toBe('/collections/s2/mosaic/0123456789abcdef0123456789abcdef/tiles/WebMercatorQuad/{z}/{x}/{y}');
+    expect(url.searchParams.getAll('op')).toEqual(['band_math']);
+    expect(JSON.parse(url.searchParams.get('params')!)).toEqual({ expression: '(green - nir) / (green + nir)', name: 'NDWI' });
     expect(url.searchParams.get('band')).toBe('NDWI');
+    expect(url.searchParams.has('item') || url.searchParams.has('asset')).toBe(false);
     expect(raster).toMatchObject({ minZoom: 8, maxZoom: 14 });
+  });
+
+  it('is asked for from a selection of its own for the assets of each index', () => {
+    expect(indexKeyOf('s2', assetsOfExpression(NDWI.expression), list)).not.toBe(indexKeyOf('s2', assetsOfExpression(NDVI.expression), list));
+  });
+
+  it('waits where the selection for these assets is not created yet, and draws nothing meanwhile', () => {
+    expect(indexRasterOf(mosaic, list, 's2', NDWI, {})).toBe('waiting');
+    expect(indexRasterOf(mosaic, list, 's2', NDWI)).toBe('waiting');
+    expect(indexRasterOf(mosaic, list, 's2', NDWI, selectionsFor(list, NDVI))).toBe('waiting'); // another index's assets
+  });
+
+  it('is refused where the tiler did not take the selection of its assets', () => {
+    expect(indexRasterOf(mosaic, list, 's2', NDWI, { [indexKeyOf('s2', ['green', 'nir'], list)]: null })).toBe('assets');
   });
 
   it('is one URL for the same scenes in another order', () => {
     const reversed = [...list].reverse();
-    expect((indexRasterOf(mosaic, reversed, 's2', NDWI) as { tileUrl: string }).tileUrl).toBe((indexRasterOf(mosaic, list, 's2', NDWI) as { tileUrl: string }).tileUrl);
+    expect((indexRasterOf(mosaic, reversed, 's2', NDWI, made) as { tileUrl: string }).tileUrl).toBe((indexRasterOf(mosaic, list, 's2', NDWI, made) as { tileUrl: string }).tileUrl);
   });
 
   it('is refused where the index reads more assets than a mosaic tile takes', () => {
     const wide = { ...NDVI, expression: 'a + b + c + d + e' };
-    expect(indexRasterOf(mosaic, list, 's2', wide)).toBe('assets');
+    expect(indexRasterOf(mosaic, list, 's2', wide, made)).toBe('assets');
     // One scene is no mosaic: the same index is a tile of the scene.
     const [scene] = list;
     expect(typeof indexRasterOf(scene[1], [scene], 's2', wide)).toBe('object');
   });
 
-  it('is refused where the request is longer than the tiler passes (414)', () => {
-    const many = entries(64, 8, LONG);
-    const big = mosaicsOf(many)[mosaicTemplateOf('s2', many)!]!;
-    const refused = indexRasterOf(big, many, 's2', EVI);
-    expect(refused).toBe('length');
-    // Three scenes of the same kind fit.
-    const fitting = indexRasterOf(mosaic, list, 's2', EVI) as { tileUrl: string };
+  it('is refused where the request is longer than the tiler passes (414), however few the scenes', () => {
+    expect(indexRasterOf(mosaic, list, 's2', LONG, made)).toBe('length');
+    const fitting = indexRasterOf(mosaic, list, 's2', EVI, made) as { tileUrl: string };
     expect(mosaicRequestBytes(fitting.tileUrl, 14)).toBeLessThanOrEqual(MAX_MOSAIC_REQUEST_BYTES);
   });
 });
 
 describe('the rasters of a pass', () => {
   it('are all made into the index, or none: a refused raster blocks the pass', () => {
-    const many = entries(64, 8, LONG);
-    const big = mosaicsOf(many)[mosaicTemplateOf('s2', many)!]!;
-    expect(indexRastersOfPass([big], many, 's2', EVI)).toEqual({ rasters: [], block: 'length' });
+    const list = entries(3);
+    const mosaic = mosaicsOf(list)[mosaicKeyOf('s2', list)!]!;
+    expect(indexRastersOfPass([mosaic], list, 's2', LONG, selectionsFor(list, LONG))).toEqual({ rasters: [], block: 'length', waiting: false });
     const [scene] = entries(1);
     const one = indexRastersOfPass([scene[1]], [scene], 's2', EVI);
     expect(one.block).toBeNull();
     expect(one.rasters).toHaveLength(1);
   });
+
+  it('are none while a selection is on its way, and say so', () => {
+    const list = entries(3);
+    const mosaic = mosaicsOf(list)[mosaicKeyOf('s2', list)!]!;
+    expect(indexRastersOfPass([mosaic], list, 's2', NDVI, {})).toEqual({ rasters: [], block: null, waiting: true });
+    const done = indexRastersOfPass([mosaic], list, 's2', NDVI, selectionsFor(list, NDVI));
+    expect(done).toMatchObject({ block: null, waiting: false });
+    expect(done.rasters).toHaveLength(1);
+  });
 });
 
 describe('why an index is not drawn (indexBlockOf)', () => {
   const list = entries(3);
-  const args = { datasetId: 's2', entries: list, groups: group(list), mosaics: mosaicsOf(list), preset: NDVI, mapZoom: 12 };
+  const args = { datasetId: 's2', entries: list, groups: group(list), mosaics: { ...mosaicsOf(list), ...selectionsFor(list, NDVI) }, preset: NDVI, mapZoom: 12 };
 
   it('is nothing where it can be drawn', () => {
     expect(indexBlockOf(args)).toBeNull();
@@ -168,8 +199,7 @@ describe('why an index is not drawn (indexBlockOf)', () => {
   });
 
   it('is the request first, which zooming does not mend', () => {
-    const many = entries(64, 8, LONG);
-    expect(indexBlockOf({ ...args, entries: many, groups: group(many), mosaics: mosaicsOf(many), preset: EVI, mapZoom: 3 })).toBe('length');
+    expect(indexBlockOf({ ...args, mosaics: { ...mosaicsOf(list), ...selectionsFor(list, LONG) }, preset: LONG, mapZoom: 3 })).toBe('length');
     const wide = { ...NDVI, expression: 'a + b + c + d + e' };
     expect(indexBlockOf({ ...args, preset: wide, mapZoom: 3 })).toBe('assets');
   });
@@ -180,6 +210,16 @@ describe('why an index is not drawn (indexBlockOf)', () => {
 
   it('is the zoom of the scenes where the mosaic is not known yet', () => {
     expect(indexBlockOf({ ...args, mosaics: {}, mapZoom: 5 })).toBe('zoom');
+  });
+
+  it('is nothing, not a refusal, while the selection of the index is on its way, and the zoom as before', () => {
+    expect(indexBlockOf({ ...args, mosaics: mosaicsOf(list), mapZoom: 12 })).toBeNull();
+    expect(indexBlockOf({ ...args, mosaics: mosaicsOf(list), mapZoom: 5 })).toBe('zoom');
+  });
+
+  it('is the refusal of the tiler for a selection it did not take', () => {
+    const refused = { ...mosaicsOf(list), [indexKeyOf('s2', assetsOfExpression(NDVI.expression), list)]: null };
+    expect(indexBlockOf({ ...args, mosaics: refused })).toBe('assets');
   });
 });
 

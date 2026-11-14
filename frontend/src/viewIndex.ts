@@ -7,9 +7,10 @@
 // many bands for a mosaic, a request longer than the tiler passes) nothing is drawn and `indexBlockOf` says why: the view
 // never falls back to a raw band behind the person's back.
 
-import { buildMosaicOperatorTileTemplate, buildOperatorStatisticsUrl, buildOperatorTileTemplate, type TileStep } from './api';
+import { buildMosaicOperatorTileTemplate, buildOperatorStatisticsUrl, buildOperatorTileTemplate, type MosaicSelection, type TileStep } from './api';
 import { indexPresetsOf, presetRange, type IndexPreset } from './indexPresets';
 import {
+  indexKeyOf,
   MAX_MOSAIC_OPERATOR_ASSETS,
   MAX_MOSAIC_REQUEST_BYTES,
   mosaicRequestBytes,
@@ -61,28 +62,50 @@ export const indexNoteTip = (block: IndexBlock): string =>
     ? 'The quick calculation starts at the zoom where the image does. For whole scenes start a job in Processing.'
     : 'The tile server cannot take this many scenes or bands in one request. Zoom in to fewer scenes, or start a job in Processing.';
 
+// The id a selection has, as long as it is not known: the length of the request does not depend on it.
+const SOME_SELECTION: MosaicSelection = {
+  id: '0'.repeat(32),
+  datasetId: '',
+  tiles: `/collections/-/mosaic/${'0'.repeat(32)}/tiles/WebMercatorQuad/{z}/{x}/{y}`,
+  tilejson: '',
+};
+
 // The raster of the index for one raster of the view: a scene's tile for the raster of a scene, the mosaic's for the
-// mosaic of the pass; or why the tile route cannot take it.
-export function indexRasterOf(raster: PlannedRaster, entries: SceneEntry[], datasetId: string, preset: IndexPreset): PlannedRaster | IndexBlock {
+// mosaic of the pass; or why the tile route cannot take it. `waiting`: the selection of the pass for the assets of the index is
+// not created yet (`store.ts::fetchMosaics`), and nothing is drawn meanwhile.
+export function indexRasterOf(
+  raster: PlannedRaster,
+  entries: SceneEntry[],
+  datasetId: string,
+  preset: IndexPreset,
+  mosaics?: Mosaics,
+): PlannedRaster | IndexBlock | 'waiting' {
   const assets = assetsOfExpression(preset.expression);
   const scene = entries.find(([, info]) => info.tileUrl === raster.tileUrl);
   if (scene) return { ...raster, tileUrl: buildOperatorTileTemplate(datasetId, scene[0], assets, stepsOf(preset), preset.name) };
   if (assets.length > MAX_MOSAIC_OPERATOR_ASSETS) return 'assets';
-  const tileUrl = buildMosaicOperatorTileTemplate(datasetId, entries.map(([id]) => id), assets, stepsOf(preset), preset.name);
-  return mosaicRequestBytes(tileUrl, raster.maxZoom) > MAX_MOSAIC_REQUEST_BYTES ? 'length' : { ...raster, tileUrl };
+  const steps = stepsOf(preset);
+  if (mosaicRequestBytes(buildMosaicOperatorTileTemplate(SOME_SELECTION, steps, preset.name), raster.maxZoom) > MAX_MOSAIC_REQUEST_BYTES) return 'length';
+  const made = mosaics?.[indexKeyOf(datasetId, assets, entries)];
+  if (made === undefined) return 'waiting';
+  // The tiler did not take the selection of these assets: the index cannot be computed over this mosaic.
+  if (made === null || !('selection' in made)) return 'assets';
+  return { ...raster, tileUrl: buildMosaicOperatorTileTemplate(made.selection, steps, preset.name) };
 }
 
-// What the map draws for a pass under the index: its rasters bottom to top, or `blocked`. `null`: the mosaic of the pass is not
-// known yet (the same wait as without an index).
+// What the map draws for a pass under the index: its rasters bottom to top, or `blocked`; `waiting` where a selection is not
+// created yet (the same wait as without an index).
 export function indexRastersOfPass(
   rasters: readonly PlannedRaster[],
   entries: SceneEntry[],
   datasetId: string,
   preset: IndexPreset,
-): { rasters: PlannedRaster[]; block: IndexBlock | null } {
-  const made = rasters.map((raster) => indexRasterOf(raster, entries, datasetId, preset));
-  const block = made.find((one): one is IndexBlock => typeof one === 'string') ?? null;
-  return { rasters: block ? [] : (made as PlannedRaster[]), block };
+  mosaics?: Mosaics,
+): { rasters: PlannedRaster[]; block: IndexBlock | null; waiting: boolean } {
+  const made = rasters.map((raster) => indexRasterOf(raster, entries, datasetId, preset, mosaics));
+  const block = made.find((one): one is IndexBlock => one !== 'waiting' && typeof one === 'string') ?? null;
+  const waiting = made.includes('waiting');
+  return { rasters: block || waiting ? [] : (made as PlannedRaster[]), block, waiting };
 }
 
 // Why the index of the shown image cannot be drawn now, or `null` where it can: first what zooming does not mend (the
@@ -101,9 +124,9 @@ export function indexBlockOf(args: {
     const view = viewOfPass(datasetId, pass, mosaics);
     // A mosaic that is not known yet draws nothing, and the zoom note is true of its scenes all the same.
     const rasters = view.kind === 'mosaic' ? view.rasters : pass.map(([, info]) => info);
-    const planned = view.kind === 'pending' ? { rasters, block: null } : indexRastersOfPass(rasters, pass, datasetId, preset);
+    const planned = view.kind === 'pending' ? { rasters, block: null, waiting: true } : indexRastersOfPass(rasters, pass, datasetId, preset, mosaics);
     if (planned.block) return planned.block;
-    for (const raster of planned.rasters) lowest = Math.min(lowest, firstZoomOf(raster.minZoom, raster.tileUrl));
+    for (const raster of planned.waiting ? rasters : planned.rasters) lowest = Math.min(lowest, firstZoomOf(raster.minZoom, raster.tileUrl));
   }
   return lowest !== Infinity && mapZoom < lowest ? 'zoom' : null;
 }
