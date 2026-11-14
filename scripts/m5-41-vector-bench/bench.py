@@ -5,7 +5,7 @@
     PGDATABASE=<scratch database> python scripts/m5-41-vector-bench/bench.py --corpus c.npy --queries q.npy
 
 The connection comes from the libpq variables (``PGHOST``, ``PGUSER``, ``PGPASSWORD``, ``PGDATABASE``). The database
-needs ``vector`` 0.8.0 or later and must be a scratch database: the script creates and drops ``m541_*`` tables in it.
+needs ``vector`` 0.8.0 or later (iterative scans) and must be a scratch database: the script creates and drops ``m541_*`` tables in it.
 
 Without ``--corpus`` the vectors are synthetic (``synthetic``): unit vectors with a common direction, clustered on a
 low-dimensional subspace, so that pairs are as similar as text embeddings tend to be. Recall on them does not carry over
@@ -20,7 +20,12 @@ and 10 % of the rows.
 Measured per step, one JSON line each: the in-process search with numpy on one thread (option V2 of
 ``plans/m5/m5-35-skalierbarkeit.md`` §5.3), the fetch of the filtered vectors per query (V1), pgvector without index
 (V3), HNSW on ``vector`` and on ``halfvec`` with ``ef_search`` 40/100/200, iterative scans off/strict/relaxed (V4),
-and binary quantisation with re-ranking. Recall is against the exact float32 top k among the rows that pass the filter.
+a wider iterative scan, the planner's own choice with B-tree indexes on the filter columns (``*_planner``), the exact
+search behind those indexes (``*_filtered_exact``), throughput with 1 and 4 clients, and binary quantisation with
+re-ranking. Recall is against the exact float32 top k among the rows that pass the filter.
+
+``--filtered-exact-only`` loads the tables and measures only ``*_filtered_exact``. The numbers of M5-41 come from a
+database with ``shared_buffers`` 4 GB on 4 vCPU (``plans/m5/m5-41-pgvector.md`` §4.1).
 """
 
 import argparse
@@ -82,7 +87,10 @@ def similarity_profile(corpus, queries):
     a = corpus[rng.integers(len(corpus), size=2000)]
     b = corpus[rng.integers(len(corpus), size=2000)]
     nearest = (queries[:50] @ corpus.T).max(axis=1)
-    return {"pair_cos_mean": round(float((a * b).sum(axis=1).mean()), 3), "nn1_cos_mean": round(float(nearest.mean()), 3)}
+    return {
+        "pair_cos_mean": round(float((a * b).sum(axis=1).mean()), 3),
+        "nn1_cos_mean": round(float(nearest.mean()), 3),
+    }
 
 
 def filters(corpus, seed):
@@ -134,7 +142,8 @@ def in_process(corpus, queries, cases, repeat):
         for q in queries[:repeat]:
             t0 = time.perf_counter()
             scores = corpus @ q if name == "none" else corpus[numpy.flatnonzero(mask)] @ q
-            top = numpy.argpartition(-scores, K_MAX)[:K_MAX]
+            k = min(K_MAX, len(scores) - 1)
+            top = numpy.argpartition(-scores, k)[:k]
             top[numpy.argsort(-scores[top])]
             times.append(time.perf_counter() - t0)
         emit("numpy", filter=name, rows=int(mask.sum()), p50_ms=pct(times, 50), p95_ms=pct(times, 95))
@@ -145,8 +154,17 @@ def copy_binary(conn, corpus, u, grp):
     n, dim = corpus.shape
     row = numpy.dtype(
         [
-            ("nf", ">i2"), ("l1", ">i4"), ("id", ">i4"), ("l2", ">i4"), ("u", ">i4"), ("l3", ">i4"), ("grp", ">i4"),
-            ("l4", ">i4"), ("dim", ">i2"), ("unused", ">i2"), ("v", ">f4", (dim,)),
+            ("nf", ">i2"),
+            ("l1", ">i4"),
+            ("id", ">i4"),
+            ("l2", ">i4"),
+            ("u", ">i4"),
+            ("l3", ">i4"),
+            ("grp", ">i4"),
+            ("l4", ">i4"),
+            ("dim", ">i2"),
+            ("unused", ">i2"),
+            ("v", ">f4", (dim,)),
         ]
     )
     with conn.cursor().copy(f"COPY {TABLE} (id, u, grp, emb) FROM STDIN (FORMAT binary)") as copy:
@@ -192,10 +210,16 @@ def run_queries(conn, sql, queries, case_param, k, truth, settings, label, **ext
             recalls.append(len(set(ids) & set(want.tolist())) / len(want))
             counts.append(len(ids))
     emit(
-        label, k=k, **extra, **{k_: v for k_, v in settings.items() if k_.startswith("hnsw")},
+        label,
+        k=k,
+        **extra,
+        **{k_: v for k_, v in settings.items() if k_.startswith("hnsw")},
         plan=node["Node Type"] + (":" + node.get("Index Name", "") if "Index Name" in node else ""),
-        recall=round(float(numpy.mean(recalls)), 4), returned_mean=round(float(numpy.mean(counts)), 1),
-        p50_ms=pct(times, 50), p95_ms=pct(times, 95), queries=len(queries),
+        recall=round(float(numpy.mean(recalls)), 4),
+        returned_mean=round(float(numpy.mean(counts)), 1),
+        p50_ms=pct(times, 50),
+        p95_ms=pct(times, 95),
+        queries=len(queries),
     )
 
 
@@ -213,21 +237,71 @@ def hnsw_sweep(conn, table, dim, queries, cases, truths, label, cast=None):
             for ef in EF_SEARCH:
                 for it in ITERATIVE if name != "none" or k == K_MAX else ("off",):
                     run_queries(
-                        conn, sql, queries, param, k, truths[name],
+                        conn,
+                        sql,
+                        queries,
+                        param,
+                        k,
+                        truths[name],
                         {"hnsw.ef_search": ef, "hnsw.iterative_scan": it, "enable_seqscan": "off"},
-                        label, filter=name,
+                        label,
+                        filter=name,
                     )
+    for name in ("grp1", "grp10"):
+        where, param, _ = cases[name]
+        run_queries(
+            conn,
+            knn_sql(table, dim, cast, where),
+            queries,
+            param,
+            10,
+            truths[name],
+            {
+                "hnsw.ef_search": 100,
+                "hnsw.iterative_scan": "relaxed_order",
+                "enable_seqscan": "off",
+                "hnsw.max_scan_tuples": 200_000,
+                "hnsw.scan_mem_multiplier": 8,
+            },
+            label + "_wide",
+            filter=name,
+        )
     conn.execute(f"CREATE INDEX {table}_u ON {table} (u)")
     conn.execute(f"CREATE INDEX {table}_grp ON {table} (grp)")
     conn.execute(f"ANALYZE {table}")
     for name, (where, param, _) in cases.items():
         for k in (10, K_MAX):
             run_queries(
-                conn, knn_sql(table, dim, cast, where), queries, param, k, truths[name],
+                conn,
+                knn_sql(table, dim, cast, where),
+                queries,
+                param,
+                k,
+                truths[name],
                 {"hnsw.ef_search": 100, "hnsw.iterative_scan": "relaxed_order"},
-                label + "_planner", filter=name,
+                label + "_planner",
+                filter=name,
             )
+    filtered_exact(conn, table, dim, cast, queries, cases, truths, label)
     conn.execute(f"DROP INDEX {table}_u, {table}_grp")
+
+
+def filtered_exact(conn, table, dim, cast, queries, cases, truths, label):
+    """Exact search over the rows the filter index finds: no HNSW index scan, bitmap scan on the filter column."""
+    for name in ("u1", "grp1", "u10", "grp10"):
+        where, param, _ = cases[name]
+        for k in (10, K_MAX):
+            run_queries(
+                conn,
+                knn_sql(table, dim, cast, where),
+                queries,
+                param,
+                k,
+                truths[name],
+                {"enable_indexscan": "off", "max_parallel_workers_per_gather": 0},
+                label + "_filtered_exact",
+                filter=name,
+            )
 
 
 def main():
@@ -241,6 +315,9 @@ def main():
     parser.add_argument("--workers", type=int, default=3, help="max_parallel_maintenance_workers (plus the leader)")
     parser.add_argument("--build-mem", default="5GB", help="maintenance_work_mem for the index builds")
     parser.add_argument("--skip-vector-index", action="store_true", help="build HNSW on halfvec only")
+    parser.add_argument(
+        "--filtered-exact-only", action="store_true", help="only the exact search behind a filter index"
+    )
     args = parser.parse_args()
 
     if args.corpus:
@@ -273,7 +350,20 @@ def main():
         conn.execute(f"ALTER TABLE {HALF_TABLE} ADD PRIMARY KEY (id)")
         conn.execute(f"ANALYZE {TABLE}")
         conn.execute(f"ANALYZE {HALF_TABLE}")
-        emit("table_size", vector_mb=round(size(conn, TABLE) / 2**20, 1), halfvec_mb=round(size(conn, HALF_TABLE) / 2**20, 1))
+        emit(
+            "table_size",
+            vector_mb=round(size(conn, TABLE) / 2**20, 1),
+            halfvec_mb=round(size(conn, HALF_TABLE) / 2**20, 1),
+        )
+
+        if args.filtered_exact_only:
+            for t, c, lbl in ((TABLE, None, "vector"), (HALF_TABLE, "halfvec", "halfvec")):
+                conn.execute(f"CREATE INDEX ON {t} (u)")
+                conn.execute(f"CREATE INDEX ON {t} (grp)")
+                conn.execute(f"ANALYZE {t}")
+                filtered_exact(conn, t, dim, c, queries, cases, truths, lbl)
+                conn.execute(f"DROP TABLE {t}")
+            return
 
         t0 = time.perf_counter()
         buf = bytearray()
@@ -304,9 +394,16 @@ def main():
                 for name in ("none", "u10", "grp1"):
                     where, param, _ = cases[name]
                     run_queries(
-                        conn, knn_sql(table, dim, cast, where), exact_q, param, 10, exact_truth[name],
+                        conn,
+                        knn_sql(table, dim, cast, where),
+                        exact_q,
+                        param,
+                        10,
+                        exact_truth[name],
                         {"max_parallel_workers_per_gather": workers, "enable_indexscan": "off"},
-                        label, filter=name, workers=workers,
+                        label,
+                        filter=name,
+                        workers=workers,
                     )
 
         conn.execute(f"SET maintenance_work_mem = '{args.build_mem}'")
@@ -319,7 +416,9 @@ def main():
             t0 = time.perf_counter()
             conn.execute(f"CREATE INDEX {table}_hnsw ON {table} USING hnsw (emb {ops})")
             emit(
-                f"{label}_build", seconds=round(time.perf_counter() - t0, 1), workers=args.workers + 1,
+                f"{label}_build",
+                seconds=round(time.perf_counter() - t0, 1),
+                workers=args.workers + 1,
                 index_mb=round(conn.execute(f"SELECT pg_relation_size('{table}_hnsw')").fetchone()[0] / 2**20, 1),
             )
             hnsw_sweep(conn, table, dim, queries, cases, truths, label, cast=cast)
@@ -359,11 +458,10 @@ def throughput(queries, dim):
 def binary_quantisation(conn, dim, queries, truth):
     """HNSW on binary_quantize(emb) with Hamming distance, re-ranked by the full vector (pgvector README)."""
     t0 = time.perf_counter()
-    conn.execute(
-        f"CREATE INDEX {TABLE}_bq ON {TABLE} USING hnsw ((binary_quantize(emb)::bit({dim})) bit_hamming_ops)"
-    )
+    conn.execute(f"CREATE INDEX {TABLE}_bq ON {TABLE} USING hnsw ((binary_quantize(emb)::bit({dim})) bit_hamming_ops)")
     emit(
-        "bq_build", seconds=round(time.perf_counter() - t0, 1),
+        "bq_build",
+        seconds=round(time.perf_counter() - t0, 1),
         index_mb=round(conn.execute(f"SELECT pg_relation_size('{TABLE}_bq')").fetchone()[0] / 2**20, 1),
     )
     for depth in (40, 200):
@@ -380,7 +478,13 @@ def binary_quantisation(conn, dim, queries, truth):
                 ids = [r[0] for r in conn.execute(sql, [lit, lit]).fetchall()]
                 times.append(time.perf_counter() - t0)
                 recalls.append(len(set(ids) & set(truth[i][:10].tolist())) / 10)
-        emit("bq_rerank", depth=depth, recall=round(float(numpy.mean(recalls)), 4), p50_ms=pct(times, 50), p95_ms=pct(times, 95))
+        emit(
+            "bq_rerank",
+            depth=depth,
+            recall=round(float(numpy.mean(recalls)), 4),
+            p50_ms=pct(times, 50),
+            p95_ms=pct(times, 95),
+        )
     conn.execute(f"DROP INDEX {TABLE}_bq")
 
 
