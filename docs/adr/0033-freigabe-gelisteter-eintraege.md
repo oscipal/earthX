@@ -1,11 +1,13 @@
 # ADR 0033 — Freigabe gelisteter Einträge
 
-- **Status:** **Entwurf** (Entscheidungsvorlage). Fragen F1–F12 an Otto in §16.
-- **Datum:** 2026-11-14
+- **Status:** **Angenommen** von Otto am 2026-11-14: F1–F11 jeweils Option 1 (Empfehlung), mit zwei Abweichungen bzw. Ergänzungen (§16):
+  - F12: keine eigene Doku-Aufgabe; die Nachträge aus §14 macht M5-40 als ersten Commit;
+  - die Freigabedatei eines Laufs kommt, wo möglich, in denselben täglichen Sammel-PR wie das automatische Onboarding (`adr/0031`), damit nicht zwei PRs am Tag nötig sind (§8.4).
+- **Datum:** 2026-11-14 (Entwurf, Draft-PR [#352](https://github.com/oscipal/earthX/pull/352)); 2026-11-14 angenommen.
 - **Aufgabe:** M5-39, Auftrag von Otto vom 14.11.2026 (Folgeaufgabe aus `plans/m5/m5-35-skalierbarkeit.md` §10, Bedingung zu F4). Die Nummer 0033 ist vom Auftrag vorgegeben; auf `main` endet die Reihe mit 0032.
 - **Autonomiestufe:** C. Kein Produktivcode.
   - Geändert sind nur dieses ADR und eine Zeile im Entscheidungslog.
-  - Unverändert bleiben `backend/`, `frontend/`, `scripts/`, Registry, Fixtures, Backlog, M5-Plan, `.importlinter`, `.github/`, `.claude/`, `CODEOWNERS` und `CLAUDE.md`. Die Nachträge in `adr/0025` und `adr/0031` sind in §14 benannt, nicht ausgeführt.
+  - Unverändert bleiben `backend/`, `frontend/`, `scripts/`, Registry, Fixtures, Backlog, M5-Plan, `.importlinter`, `.github/`, `.claude/`, `CODEOWNERS` und `CLAUDE.md`. Die Nachträge in `adr/0025` und `adr/0031` sind in §14 benannt, nicht ausgeführt; sie kommen als erster Commit von M5-40 (F12).
 - **Vorgaben Otto (14.11.2026):**
   - Ziel sind **alle Geodaten der Anbieter**, gelistet im Data catalogue: alle Datentypen (auch Tabellen, Vektor, Dokumente, Dienste) und auch Daten ohne direkten Download (Bestellung, Konto, kostenpflichtig, auf Anfrage).
   - Jeder Eintrag mit Link zur Quelle, Art des Zugangs, Lizenz, räumlicher und zeitlicher Ausdehnung (Filter nach AOI, Region, Zeit).
@@ -38,6 +40,8 @@ Belegstufen wie in `adr/0025` und `adr/0031`:
 ---
 
 ## 0. Kurzfassung
+
+**Entscheidung (Otto, 14.11.2026):** F1–F11 jeweils Option 1. F12: Die Nachträge aus §14 macht M5-40 als ersten Commit, ohne eigene Doku-Aufgabe. Ergänzung: Die Freigabedatei eines Laufs kommt, wo möglich, in den täglichen Sammel-PR des automatischen Onboardings (§8.4). Die Punkte unten sind der Stand der Vorlage, ergänzt um diese Antworten.
 
 1. **Was nicht trägt [A]:** Mit 10⁶ Einträgen und höchstens 20 Kandidaten je PR (`adr/0025` F4) wären es 50 000 PRs. Auch ein Sammel-PR je Lauf mit allen Einträgen als Datei ist für einen Menschen nicht lesbar. Ottos Prüfaufwand muss mit der Zahl der **Lizenzen und Herausgeber** wachsen, nicht mit der Zahl der Einträge.
 2. **Gemessen [M]:** GovData führt 165 427 Datensätze, davon 68 017 mit räumlicher Angabe, von 2 444 Herausgebern. In einer Stichprobe von 2 000 Geodatensätzen stehen 24 verschiedene Lizenzangaben, aber 300 Paare aus Herausgeber und Lizenz; die 100 häufigsten Paare decken 87 % ab (§2.2). pgstac legt für Collections keine Partitionen an, sucht bei 10⁵ Collections ohne eigene Indizes aber in 160–740 ms (§2.3).
@@ -181,7 +185,7 @@ Vorschlag für M5-40 und M5-20, nach Ottos Vorgabe. Die rechte Spalte sagt, welc
 | **L2** | **Lizenzkatalog plus Freigaben je Herausgeber:** Jede Lizenz wird **einmal** eingestuft (Katalog mit den genauen URIs und Schreibweisen, die sie meinen); je Quelle eine Liste „Herausgeber → erlaubte Lizenzen“, genau benannt | 24 Einstufungen und 300 Zeilen „Herausgeber: Lizenzen“ | gleiche Genauigkeit wie L1 (Paar wörtlich); die Einstufung ist an einer Stelle; ein neuer Herausgeber mit bekannter Lizenz ist eine Zeile |
 | **L3** | **Regel nur nach Lizenz** je Quelle, jeder Herausgeber, mit Sperrliste für Herausgeber | 24 | wenigste Arbeit; aber ein Herausgeber, der eine fremde Lizenz behauptet, wird ohne Ottos Blick gelistet. Widerspricht `adr/0025` §6.7 („keine Regel nur nach Lizenz“) und Ottos Bedingung |
 
-**Empfehlung L2 (F2).** Die Regel bleibt „Herausgeber + Lizenz-URI → Stufe“, beide wörtlich. Nur die Ablage trennt, was Otto zweimal unabhängig entscheidet: was eine Lizenz bedeutet, und wer sie für seine Daten nutzen darf.
+**Empfehlung L2, entschieden (F2 = 1).** Die Regel bleibt „Herausgeber + Lizenz-URI → Stufe“, beide wörtlich. Nur die Ablage trennt, was Otto zweimal unabhängig entscheidet: was eine Lizenz bedeutet, und wer sie für seine Daten nutzen darf.
 
 ### 6.2 Form (Vorschlag)
 
@@ -207,7 +211,7 @@ Vorschlag für M5-40 und M5-20, nach Ottos Vorgabe. Die rechte Spalte sagt, welc
 | **H2** | **Warteliste in Postgres:** Fund bleibt im Zustand `needs_rule`, unsichtbar; der Bericht gruppiert nach Paar (Quelle, Herausgeber, Lizenzangabe) mit der Zahl der Einträge, die größten zuerst | Otto sieht, welche Regel wie viele Einträge bringt (§2.2: 100 Paare decken 87 %); kein zusätzlicher Speicher, der Zustand liegt schon in `earthx_record_state` (`adr/0025` §5.3); kommt eine Regel dazu, gehen die Funde in den nächsten Lauf-Stapel ohne neue Anfrage |
 | H3 | **Gelistet mit Rohangabe** „Lizenz nicht eingestuft“ und dem Text der Quelle | schnellste Abdeckung; aber eine Lizenz-Aussage ohne Ottos Einstufung, widerspricht K1 |
 
-**Empfehlung H2 (F3).** Weitere Gründe für die Warteliste, je mit eigenem Zustand im Bericht: Lizenzangabe fehlt (`no_licence`), mehrere Lizenzen mit einer ohne Regel, Pflichtfeld fehlt (`invalid`), Host oder Herausgeber gesperrt (`blocked`). Eine Warteliste ohne Ende braucht eine Grenze [A]: Funde, die 12 Monate ohne Regel warten, verlieren ihre Rohantwort und bleiben nur als Zeile mit Paar und Zähler.
+**Empfehlung H2, entschieden (F3 = 1).** Weitere Gründe für die Warteliste, je mit eigenem Zustand im Bericht: Lizenzangabe fehlt (`no_licence`), mehrere Lizenzen mit einer ohne Regel, Pflichtfeld fehlt (`invalid`), Host oder Herausgeber gesperrt (`blocked`). Eine Warteliste ohne Ende braucht eine Grenze [A]: Funde, die 12 Monate ohne Regel warten, verlieren ihre Rohantwort und bleiben nur als Zeile mit Paar und Zähler.
 
 ## 8. Lauf-Bericht, Stichprobe und Sammel-Freigabe
 
@@ -235,7 +239,7 @@ Vorschlag für M5-40 und M5-20, nach Ottos Vorgabe. Die rechte Spalte sagt, welc
 | **N2** | **30 je Lauf:** 15 zufällig über den Stapel; 15 gezielt: je eine für erstmals treffende Regeln (größte zuerst), dann Einträge mit neuem Host oder neuer Zugangsart | unter rund 10 % je Lauf; über mehrere Läufe derselben Regel enger | 15 min |
 | N3 | 60 je Lauf, alle zufällig | unter rund 5 % | 30 min |
 
-**Empfehlung N2 (F4).** Gezogen wird mit dem Fingerabdruck des Stapels als Startwert, damit die Auswahl im Nachhinein nachvollziehbar ist und die Pipeline nicht „gute“ Einträge wählen kann [A]. Ist der Stapel kleiner als 30, prüft Otto alle.
+**Empfehlung N2, entschieden (F4 = 1).** Gezogen wird mit dem Fingerabdruck des Stapels als Startwert, damit die Auswahl im Nachhinein nachvollziehbar ist und die Pipeline nicht „gute“ Einträge wählen kann [A]. Ist der Stapel kleiner als 30, prüft Otto alle.
 
 **Fehler in der Stichprobe** (Otto schreibt je Fehler eine Zeile in die Freigabedatei):
 
@@ -251,11 +255,21 @@ Vorschlag für M5-40 und M5-20, nach Ottos Vorgabe. Die rechte Spalte sagt, welc
 | A2 | Befehl `discovery approve <lauf>` schreibt die Freigabe direkt in Postgres | weniger Schritte; aber keine Spur außerhalb der Datenbank, und wer den Befehl ausführt, ist nicht festgestellt |
 | A3 | Freigabe-Oberfläche mit Anmeldung | bequem am Handy; braucht `identity` und Rollen (M6 oder später) |
 
-**Empfehlung A1 (F5)** für M5; A3 als Frage mit M6. Ein Lauf ohne neue oder geänderte Einträge erzeugt keinen Branch (`adr/0025` K5).
+**Empfehlung A1, entschieden (F5 = 1)** für M5; A3 als Frage mit M6. Ein Lauf ohne neue oder geänderte Einträge erzeugt keinen Branch (`adr/0025` K5).
 
 - **Takt [A]:** Freigaben sammeln sich; Otto muss nicht jeden Lauf freigeben. Ein späterer Lauf derselben Quelle stellt Funde, die noch in einem unfreigegebenen Stapel stehen, in seinen eigenen Stapel; der ältere verfällt.
 - **Rücknahme einer Freigabe:** Ein Feld `revoked_on` in der Freigabedatei verbirgt die Einträge, die nur durch diesen Lauf sichtbar wurden (Zustand zurück in `in_review`).
 - **Vorgelagert statt nachgelagert:** Eine Variante wäre, Einträge mit Regel sofort zu zeigen und die Stichprobe danach zu ziehen (Prinzip 12 erlaubt das). Das spart Wartezeit, zeigt aber Einträge vor Ottos Blick. In M5 läuft der Harvest nur lokal, die Wartezeit kostet nichts; die Frage stellt sich mit dem Betrieb in M6 (F1, Option 2).
+
+### 8.4 Im täglichen Sammel-PR (Ergänzung, Otto 14.11.2026)
+
+Die Freigabedatei eines Laufs kommt, wo möglich, in denselben täglichen Sammel-PR wie das automatische Onboarding (`adr/0031` §5), damit Otto nicht zwei PRs am Tag prüft.
+
+- **Weg [A]:** `discovery report` legt Bericht und Freigabedatei bei Otto lokal in einem eigenen Commit auf einen Branch `harvest/<datum>-<quelle>`; Otto pusht ihn wie bei `discovery propose` (`adr/0025` P1; das Skript pusht nie selbst). Der nächste geplante Onboarding-Lauf übernimmt die Commits offener `harvest/`-Branches unverändert in seinen Branch `onboarding/<datum>` (Cherry-Pick, kein Umschreiben) und löscht den Harvest-Branch nicht; Otto räumt ihn nach dem Merge ab. Der Onboarding-Lauf erntet nicht und erreicht Ottos Datenbank nicht; er trägt nur die Dateien weiter.
+- **Bericht im PR-Text:** ein eigener Abschnitt „Lauf-Freigaben gelisteter Einträge“ mit Zahlen, Warteliste und Stichprobe je Freigabedatei; die Häkchen der Stichprobe stehen in der Datei, nicht im PR-Text.
+- **Ein Merge, zwei Aussagen getrennt:** Die Freigabedatei hat ein Feld `decision` mit `pending`, `approved` oder `rejected`; die Session legt sie mit `pending` an, Otto setzt den Wert (am Handy im Datei-Editor von GitHub). `discovery publish` macht einen Stapel nur bei `approved` sichtbar. Merged Otto den Sammel-PR mit `pending` oder `rejected`, sind die vollen Einträge angenommen und der Lauf nicht; der nächste Lauf derselben Quelle legt die Funde neu vor (§8.3, Takt). So bleibt die Lauf-Freigabe herausnehmbar, ohne den Tages-PR aufzuhalten (`adr/0031` K3).
+- **Wo es nicht geht, eigener PR** wie in §8.3: kein Onboarding-Lauf an dem Tag, Rückstau-Regel (`adr/0031` §5.1 Punkt 2: zwei offene Onboarding-PRs) oder ein Konflikt zwischen Harvest- und Onboarding-Branch. Die Session meldet das im Bericht und lässt den Harvest-Branch für einen eigenen PR stehen.
+- **Bis die geplante Aufgabe läuft** (`adr/0031` V1–V7): eigener PR je Freigabedatei.
 
 ## 9. Rücknahme und Löschung
 
@@ -275,7 +289,7 @@ Vorschlag für M5-40 und M5-20, nach Ottos Vorgabe. Die rechte Spalte sagt, welc
 | **D2** | **Sperrliste in Git und Grabstein in Postgres:** Inhalt und Rohantwort gelöscht; es bleiben ID, Schlüssel bei der Quelle, Grundcode und Datum. `api` antwortet für die ID mit `410` und einem allgemeinen Text je Grundcode | entfernt den Inhalt wirklich; kommt nicht wieder; Links von außen enden verständlich wie bei `adr/0017` |
 | D3 | nur verbergen, Inhalt bleibt | rückholbar; erfüllt einen Löschwunsch nicht |
 
-**Empfehlung D2 (F6).**
+**Empfehlung D2, entschieden (F6 = 1).**
 
 - **`backend/catalog/blocked.yaml`** mit Geltungsbereich (`entry` mit Quelle und Schlüssel, `publisher` je Quelle, `host`, `source`), Grundcode (`provider_request`, `not_geodata`, `quality`, `legal`, `other`) und Datum. **Nie** Name, Mail-Adresse oder Wortlaut der Anfrage eines Anbieters; das Repo ist öffentlich (`ENTSCHEIDUNGEN` §4). Die Datei ersetzt das geplante `rejected.yaml` (`adr/0025` §5.4) für beide Wege; der Hash der Lizenzangabe aus `rejected.yaml` bleibt als optionales Feld für „neu vorlegen, wenn sich die Lizenz ändert“.
 - **Wirkung:** Der Harvester prüft die Sperrliste vor Normalize; `catalog-load` (bzw. `discovery publish`) setzt bestehende Einträge auf Grabstein. In M5 wirkt das beim nächsten Start von `catalog-load` bei Otto. Für den Betrieb ab M6 Vorschlag [A]: binnen eines Arbeitstags nach Ottos Entscheidung.
@@ -312,7 +326,7 @@ Der Harvest erkennt Änderungen am Inhalts-Hash (`adr/0025` §5.1). Dann gilt je
 | U2 | alte Fassung sichtbar bis zur Freigabe | kein Fehlen; aber eine Lizenz, die die Quelle nicht mehr nennt |
 | U3 | jede Änderung nur mit Freigabe | sicher, aber Ottos Aufwand wächst mit jeder Textkorrektur der Quelle |
 
-**Empfehlung U1 (F7).** Lizenzwechsel sind selten [A]; eine falsche Lizenz-Aussage wiegt schwerer als ein Eintrag, der einige Tage fehlt. Ein Hostwechsel gehört dazu, weil ein Link auf einen neuen Host bei einer übernommenen Quelle auf eine fremde Seite führen kann (Prinzip 15).
+**Empfehlung U1, entschieden (F7 = 1).** Lizenzwechsel sind selten [A]; eine falsche Lizenz-Aussage wiegt schwerer als ein Eintrag, der einige Tage fehlt. Ein Hostwechsel gehört dazu, weil ein Link auf einen neuen Host bei einer übernommenen Quelle auf eine fremde Seite führen kann (Prinzip 15).
 
 **Gelistet wird voll:** Kommt für einen gelisteten Eintrag ein Adapter, ein Format und ein Profil dazu, schreibt `discovery propose` eine Kandidatendatei für den vollen Weg (`adr/0031` §8). Der volle Eintrag übernimmt die ID; `catalog-load` lädt ihn aus `datasets/` und markiert die Zeile des gelisteten Eintrags als abgelöst.
 
@@ -323,22 +337,23 @@ Der Harvest erkennt Änderungen am Inhalts-Hash (`adr/0025` §5.1). Dann gilt je
 | **P1** | **Gelistete Einträge sind nie Prototyp:** Eine Regel nennt nie `unclear` (`adr/0025` §6.7); eine unklare Lizenz heißt Warteliste. Prototyp-Quellen bleiben volle Einträge als YAML unter `backend/catalog/prototype/` nach `adr/0024` R4, R5 | keine zweite Art Prototyp; in Postgres gibt es dann keine `proto-`-Zeilen, die `catalog-load` aufräumen müsste (R6 bleibt, wie er ist) |
 | P2 | Prototyp-Gelistete nur in Ottos lokaler Datenbank, mit `proto-`-ID und eigener Regelart | erprobt Listungen unklarer Quellen; aber ein Katalogeintrag ohne Lizenz-Einstufung hat lokal keinen Nutzen, den die Quelle selbst nicht hat |
 
-**Empfehlung P1 (F8).** Der Harvester legt weiter nie selbst einen Prototyp-Eintrag an (R1). Ottos lokale Instanz mit gesetztem Schalter hält gelistete Einträge wie jede andere; R7 und R11 betreffen sie nicht, weil gelistete Einträge keine Kacheln, Ergebnisse oder Permalinks haben.
+**Empfehlung P1, entschieden (F8 = 1).** Der Harvester legt weiter nie selbst einen Prototyp-Eintrag an (R1). Ottos lokale Instanz mit gesetztem Schalter hält gelistete Einträge wie jede andere; R7 und R11 betreffen sie nicht, weil gelistete Einträge keine Kacheln, Ergebnisse oder Permalinks haben.
 
 ## 13. Was M5-40 baut und was später
 
 | Wann | Inhalt |
 |---|---|
-| **M5-40** (B, vor M5-17) | Tabelle(n) gelisteter Einträge in Postgres mit Zustand, Herkunftsfeldern (§10) und Grabstein; Felder aus §5; Prozesse laden gelistete Einträge nie in die Registry; Lesepfad: Seiten statt Gesamtliste, Filter nach AOI, Region und Zeit über Indizes; Wahl pgstac-Collections oder eigene Tabelle mit Messung bei 10⁶ synthetischen Einträgen (§2.3); Frontend blättert; `blocked.yaml` mit Prüfung beim Laden, `410` für Grabsteine; Handeinträge aus `backend/catalog/listed/` (M5-17: CORINE, Landsat) schreibt `catalog-load` in dieselbe Tabelle (F11) |
+| **M5-40** (B, vor M5-17) | Tabelle(n) gelisteter Einträge in Postgres mit Zustand, Herkunftsfeldern (§10) und Grabstein; Felder aus §5; Prozesse laden gelistete Einträge nie in die Registry; Lesepfad: Seiten statt Gesamtliste, Filter nach AOI, Region und Zeit über Indizes; Wahl pgstac-Collections oder eigene Tabelle mit Messung bei 10⁶ synthetischen Einträgen (§2.3); Frontend blättert; `blocked.yaml` mit Prüfung beim Laden, `410` für Grabsteine; Handeinträge aus `backend/catalog/listed/` (M5-17: CORINE, Landsat) schreibt `catalog-load` in dieselbe Tabelle (F11); **erster Commit: die Nachträge aus §14** (F12) |
 | **M5-17** | erste Handeinträge wie geplant, als YAML unter `listed/`, nur von `catalog-load` gelesen |
 | **M5-19** | Extract für alle Datentypen; Filter „räumliche Angabe vorhanden“ statt Rasterfilter; Personenfelder verworfen (§5) |
-| **M5-20** (erweitert) | Lizenzkatalog und `grants/` (L2) statt `license_rules.yaml`; Warteliste (H2); `discovery report` mit Stapel, Bericht und Stichprobe (N2); Freigabedatei und `discovery publish` (A1); Regeln für Aktualisierungen (U1); Verify für gelistete Einträge nur in der Stichprobe (§14); Anleitung für Ottos lokalen Lauf um Bericht und Freigabe ergänzt |
+| **M5-20** (erweitert) | Lizenzkatalog und `grants/` (L2) statt `license_rules.yaml`; Warteliste (H2); `discovery report` mit Stapel, Bericht und Stichprobe (N2); Freigabedatei mit Feld `decision` auf einem Branch `harvest/<datum>-<quelle>` und `discovery publish` (A1, §8.4); Regeln für Aktualisierungen (U1); Verify für gelistete Einträge nur in der Stichprobe (§14); Anleitung für Ottos lokalen Lauf um Bericht und Freigabe ergänzt |
+| **`adr/0031` V6, V7** | der Onboarding-Lauf übernimmt offene `harvest/`-Branches in den Tages-PR und berichtet die Lauf-Freigaben (§8.4) |
 | **M5-24** | Health-Check gelisteter Einträge nur rotierend: der Link einer Teilmenge je Tag, jeder Eintrag einmal im Monat, mit dem Zeiger je Host aus M5-37 [A] |
 | **M6 oder später** | Freigabe-Oberfläche mit Anmeldung (A3); automatischer Harvest in der Cloud und der Weg der Freigabe dort (`adr/0025` §6.5 P2/P3); vor- oder nachgelagerte Stichprobe (F1); Kontaktweg für Anbieter und Frist für Sperren; Sicherung der Datenbank (gelistete Einträge liegen nur dort); eigene Datenbank-Rolle für `published`; Bestand in der Cloud neu ernten statt Ottos lokale Datenbank zu übertragen |
 
 ## 14. Nötige Nachträge
 
-Nicht in diesem PR. Vorschlag: eine Doku-Aufgabe nach der Annahme (F12).
+Nicht in diesem PR. Ausgeführt als **erster Commit von M5-40**, ohne eigene Doku-Aufgabe (F12, Otto 14.11.2026).
 
 **`adr/0025`:**
 
@@ -372,7 +387,9 @@ Nicht in diesem PR. Vorschlag: eine Doku-Aufgabe nach der Annahme (F12).
 
 - **§4.1 Q1 „freigegeben“:** gilt für den vollen Weg unverändert; für gelistete Einträge ist die Freigabe die Lauf-Freigabe (§8).
 - **§4.2 Warteschlange:** Eingang nur Kandidaten des vollen Wegs; der Abzug „ID schon in `listed/`“ wird „ID schon in `datasets/`“, weil ein gelisteter Eintrag in den vollen Weg wechseln darf (§11).
-- **§5.4 Bericht:** Abschnitt zu gelisteten Einträgen entfällt.
+- **§5.1 Ablauf:** Der Lauf übernimmt offene `harvest/`-Branches mit Lauf-Freigaben in den Tages-PR, bevor er Neues anbindet; wo das nicht geht, bleibt der Branch für einen eigenen PR (§8.4).
+- **§5.4 Bericht:** Der Abschnitt mit einzelnen gelisteten Einträgen entfällt; neu ist ein Abschnitt „Lauf-Freigaben gelisteter Einträge“ mit Zahlen, Warteliste und Stichprobe je Freigabedatei (§8.4).
+- **§12 V6, V7:** Übernahme der `harvest/`-Branches in `queue` bzw. das Lauf-Dokument.
 - **§8 Zwei Wege:** „`listed/<id>.yaml` wird `datasets/<id>.yaml`“ wird „der volle Eintrag löst die Zeile in Postgres ab“ (§11). **F10** (gelistete im Tages-PR, höchstens 20) ist aufgehoben: gelistete Einträge kommen nur über Lauf-Freigaben.
 - **§9 Abbruchregeln, Fall 5** (Konto-Quellen nur mit `way: listed`): gilt nur für den vollen Weg; auf dem gelisteten Weg sind Konto, kostenpflichtig, Bestellung und auf Anfrage nach Ottos Vorgabe der Normalfall.
 - **§6.6 Live-Smoke:** gelistete Einträge nicht im Smoke (kein Leseweg); ihre Links prüft der rotierende Health-Check (§13).
@@ -390,65 +407,91 @@ Nicht in diesem PR. Vorschlag: eine Doku-Aufgabe nach der Annahme (F12).
 - **GovData-Stichprobe** ist nicht zufällig (zwei Seiten in Standard-Reihenfolge). Die Zahlen zeigen die Form der Verteilung, nicht ihre genauen Werte.
 - **Stufe C:** Grenzen (30 Stichproben, 12 Monate Warteliste, ein Arbeitstag für Sperren, Health-Check monatlich) sind Vorschläge.
 
-## 16. Fragen an Otto
+## 16. Fragen an Otto — beantwortet am 2026-11-14
+
+**Antworten (Otto, 14.11.2026):** F1–F11 jeweils **Option 1** (Empfehlung). **F12:** keine eigene Doku-Aufgabe; die Nachträge (`adr/0025` mit neuer Tabelle §7.1, `adr/0031` und die übrigen aus §14) macht M5-40 als ersten Commit. **Ergänzung:** Die Freigabedatei eines Laufs kommt, wo möglich, in denselben täglichen Sammel-PR wie das automatische Onboarding (`adr/0031`), damit nicht zwei PRs am Tag nötig sind. Eingetragen in §8.4, §13, §14.
 
 **F1 — Grundsatz der Freigabe (§4)?**
 1. Drei Ebenen (Quelle, Lizenzregel, Lauf mit Stichprobe) plus Sperrliste; Entscheidungen in Git, Inhalte in Postgres; neue Einträge erst nach der Lauf-Freigabe sichtbar **(Empfehlung)**
 2. Wie 1, aber nachgelagert: Einträge mit Regel sofort sichtbar, Stichprobe danach
 3. Ein PR je Lauf mit allen Einträgen als Datei
 
+**Antwort F1 (Otto, 2026-11-14): 1.**
+
 **F2 — Form der Lizenzregeln (§6)?**
 1. Lizenzkatalog (jede Lizenz einmal eingestuft) plus je Quelle „Herausgeber → Lizenzen“, beides wörtlich (L2) **(Empfehlung)**
 2. Eine Regel je Paar mit allen Feldern, wie `adr/0025` §6.7 (L1)
 3. Regel nur nach Lizenz je Quelle, mit Sperrliste für Herausgeber (L3)
+
+**Antwort F2 (Otto, 2026-11-14): 1.**
 
 **F3 — Fund ohne Regel (§7)?**
 1. Warteliste in Postgres, unsichtbar; Bericht nach Paaren mit den meisten Einträgen zuerst, mit Regelvorschlag (H2) **(Empfehlung)**
 2. Nicht speichern (H1)
 3. Listen mit der Lizenzangabe der Quelle als „nicht eingestuft“ (H3)
 
+**Antwort F3 (Otto, 2026-11-14): 1.**
+
 **F4 — Stichprobe je Lauf (§8.2)?**
 1. 30 Einträge: 15 zufällig, 15 gezielt (neue Regeln, neue Hosts, neue Zugangsart); rund 15 min (N2) **(Empfehlung)**
 2. 10 Einträge, rund 5 min (N1)
 3. 60 zufällige Einträge, rund 30 min (N3)
+
+**Antwort F4 (Otto, 2026-11-14): 1.**
 
 **F5 — Weg der Freigabe (§8.3)?**
 1. Freigabedatei je Lauf und Quelle per PR mit deinem Zugang; `discovery publish` prüft den Fingerabdruck (A1) **(Empfehlung)**
 2. Befehl, der die Freigabe direkt in die Datenbank schreibt (A2)
 3. Erst mit einer Freigabe-Oberfläche (A3)
 
+**Antwort F5 (Otto, 2026-11-14): 1,** mit der Ergänzung, die Freigabedatei wo möglich in den täglichen Sammel-PR des Onboardings zu legen (§8.4).
+
 **F6 — Rücknahme und Löschung (§9)?**
 1. Sperrliste `blocked.yaml` in Git (ohne Namen von Anfragenden) plus Grabstein in Postgres mit `410`; ersetzt `rejected.yaml` (D2) **(Empfehlung)**
 2. Zeile löschen ohne Spur (D1)
 3. Nur verbergen (D3)
+
+**Antwort F6 (Otto, 2026-11-14): 1.**
 
 **F7 — Wechsel von Lizenz, Herausgeber, Zugangsart oder Host bei der Quelle (§11)?**
 1. Eintrag unsichtbar bis zur nächsten Lauf-Freigabe; beschreibende Änderungen ohne Freigabe (U1) **(Empfehlung)**
 2. Alte Fassung sichtbar bis zur Freigabe (U2)
 3. Jede Änderung nur mit Freigabe (U3)
 
+**Antwort F7 (Otto, 2026-11-14): 1.**
+
 **F8 — Prototyp-Quellen (§12)?**
 1. Gelistete Einträge nie Prototyp; unklare Lizenz heißt Warteliste (P1) **(Empfehlung)**
 2. Prototyp-Gelistete nur lokal mit `proto-`-ID (P2)
+
+**Antwort F8 (Otto, 2026-11-14): 1.**
 
 **F9 — Welche Funde einer Quelle kommen in Frage (§5, §14)?**
 1. Alle mit räumlicher Angabe, jeder Datentyp; die Herausgeberliste für CKAN entfällt als Filter, die Regeln und die Warteliste übernehmen ihre Rolle **(Empfehlung)**
 2. Räumliche Angabe als Filter, Herausgeberliste bleibt und wird erweitert
 3. Rasterfilter und Herausgeberliste bleiben wie entschieden
 
+**Antwort F9 (Otto, 2026-11-14): 1.**
+
 **F10 — Felder für Zugang und Datentyp (§5)?**
 1. `access.account` um `paid` erweitert; neu `access.delivery` (`download`, `service`, `order`, `on_request`), `earthx:data_kind`, `earthx:regions` aus der Geometrie; Nachtrag `adr/0027` §6.1 **(Empfehlung)**
 2. Zugangsart als Freitext der Quelle
 3. Erst im Plan von M5-40 entscheiden
+
+**Antwort F10 (Otto, 2026-11-14): 1.**
 
 **F11 — Schnitt (§13)?**
 1. M5-40 Ablage, Lesepfad, Sperrliste, Grabstein, Handeinträge aus `listed/` über `catalog-load`; Freigabe-Ablauf mit M5-20; Oberfläche, Cloud-Harvest, Kontaktweg, Sicherung später **(Empfehlung)**
 2. Wie 1, aber der Freigabe-Ablauf schon in M5-40
 3. Auch Handeinträge nur in Postgres, ohne `listed/` (M5-17 wartet auf den Harvest)
 
+**Antwort F11 (Otto, 2026-11-14): 1.**
+
 **F12 — Nachträge (§14)?**
 1. Nach der Annahme als eigene Doku-Aufgabe in `adr/0025`, `adr/0031`, `adr/0027`, `KLAERUNGEN` B13, `architekturplan.md`, `projektuebersicht.md` Prinzip 13 und im M5-Plan **(Empfehlung)**
 2. Nach der Annahme in diesem PR
+
+**Antwort F12 (Otto, 2026-11-14):** keine eigene Doku-Aufgabe; die Nachträge macht M5-40 als ersten Commit.
 
 ## 17. Quellen
 
