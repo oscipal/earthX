@@ -7,8 +7,8 @@ import { describe, expect, it } from 'vitest';
 import { datasetsFrom } from './datasets';
 import { zoomMap } from './fixtures/zoomMap';
 import { syncFocusRaster, syncLayers } from './mapLayers';
-import { substituteRasterOf } from './overviewSubstitute';
-import { substituteOverlaysOf } from './searchLayers';
+import { overviewRasterOf } from './overviewSubstitute';
+import { overviewOverlaysOf } from './searchLayers';
 import { sceneInfo } from './fixtures/viewScenes';
 import type { Collection, LicenseFlags, StacItem } from './types';
 
@@ -75,7 +75,7 @@ const PLAIN = datasetsFrom([terrain({ overview: 'own', overview_substitute: null
 
 describe('the raster below the first level', () => {
   it('is the substitute route of the dataset, 512 px, from z0 to the level before its first, stepping aside for the mosaic', () => {
-    const raster = substituteRasterOf(TERRAIN, LIST)!;
+    const raster = overviewRasterOf(TERRAIN, LIST)!;
     expect(raster.tileUrl).toMatch(/\/collections\/terrain\/overview\/tiles\/WebMercatorQuad\/\{z\}\/\{x\}\/\{y\}\?tilesize=512$/);
     expect(raster).toMatchObject({ minZoom: 0, maxZoom: 12 });
     // a 512-px mosaic of level 13 is asked for from map zoom 12.5 (`tileSize.ts`)
@@ -83,46 +83,46 @@ describe('the raster below the first level', () => {
   });
 
   it('names the substitute in the attribution of the map, with the text of its licence for modified data', () => {
-    expect(substituteRasterOf(TERRAIN, LIST)!.attribution).toBe(SURFACE_TEXT);
+    expect(overviewRasterOf(TERRAIN, LIST)!.attribution).toBe(SURFACE_TEXT);
   });
 
   it('lies where the dataset does, not over the world, so that a map fitted to the layer stays on it', () => {
-    expect(substituteRasterOf(TERRAIN, LIST)!.bounds).toEqual([5.9, 45.7, 10.5, 47.8]);
+    expect(overviewRasterOf(TERRAIN, LIST)!.bounds).toEqual([5.9, 45.7, 10.5, 47.8]);
   });
 
   it('is none for a dataset without a substitute, or one that is not viewable, or none at all', () => {
-    expect(substituteRasterOf(PLAIN, LIST)).toBeNull();
-    expect(substituteRasterOf(SURFACE, LIST)).toBeNull();
-    expect(substituteRasterOf(null, LIST)).toBeNull();
-    expect(substituteRasterOf(undefined, LIST)).toBeNull();
+    expect(overviewRasterOf(PLAIN, LIST)).toBeNull();
+    expect(overviewRasterOf(SURFACE, LIST)).toBeNull();
+    expect(overviewRasterOf(null, LIST)).toBeNull();
+    expect(overviewRasterOf(undefined, LIST)).toBeNull();
     const unviewable = datasetsFrom([{ ...terrain(), 'earthx:viewer': undefined }])[0];
-    expect(substituteRasterOf(unviewable, LIST)).toBeNull();
+    expect(overviewRasterOf(unviewable, LIST)).toBeNull();
   });
 
   it('is none where there is no level below the first, or the substitute is not in the list', () => {
-    expect(substituteRasterOf(datasetsFrom([terrain({ min_zoom: 0 })])[0], LIST)).toBeNull();
-    expect(substituteRasterOf(TERRAIN, [TERRAIN])).toBeNull();
-    expect(substituteRasterOf(TERRAIN, undefined)).toBeNull();
+    expect(overviewRasterOf(datasetsFrom([terrain({ min_zoom: 0 })])[0], LIST)).toBeNull();
+    expect(overviewRasterOf(TERRAIN, [TERRAIN])).toBeNull();
+    expect(overviewRasterOf(TERRAIN, undefined)).toBeNull();
   });
 
   it('is not drawn where the licence asks for an attribution that cannot be written', () => {
     const list = datasetsFrom([terrain(), surface({ attribution_modified: null, attribution_unmodified: null })]);
-    expect(substituteRasterOf(list[0], list)).toBeNull();
+    expect(overviewRasterOf(list[0], list)).toBeNull();
     const yearly = datasetsFrom([terrain(), surface({ attribution_modified: '© Provider {year}' })]);
-    expect(substituteRasterOf(yearly[0], yearly)).toBeNull();
+    expect(overviewRasterOf(yearly[0], yearly)).toBeNull();
   });
 
   it('is drawn without a text where the licence asks for none', () => {
     const list = datasetsFrom([terrain(), surface({ attribution_required: false, attribution_modified: null, attribution_unmodified: null })]);
-    expect(substituteRasterOf(list[0], list)).not.toBeNull();
-    expect(substituteRasterOf(list[0], list)).not.toHaveProperty('attribution');
+    expect(overviewRasterOf(list[0], list)).not.toBeNull();
+    expect(overviewRasterOf(list[0], list)).not.toHaveProperty('attribution');
   });
 
   it('does not take a bounding box with the poles: a Web Mercator source would not load', () => {
     const poles = datasetsFrom([{ ...terrain(), extent: { spatial: { bbox: [[-180, -90, 180, 90]] } } }, surface()]);
-    expect(substituteRasterOf(poles[0], poles)!.bounds).toEqual([-180, -85.0511, 180, 85.0511]);
+    expect(overviewRasterOf(poles[0], poles)!.bounds).toEqual([-180, -85.0511, 180, 85.0511]);
     const nobox = datasetsFrom([{ ...terrain(), extent: undefined }, surface()]);
-    expect(substituteRasterOf(nobox[0], nobox)).toBeNull();
+    expect(overviewRasterOf(nobox[0], nobox)).toBeNull();
   });
 });
 
@@ -130,7 +130,7 @@ describe('the overlays of a layer', () => {
   const look = { rescale: '0,3000', colormapName: 'viridis' };
 
   it('carry the look of the layer to the substitute: its range and its colormap', () => {
-    const [overlay] = substituteOverlaysOf(['terrain'], LIST, look, null);
+    const [overlay] = overviewOverlaysOf(['terrain'], LIST, look, null);
     expect(overlay).toMatchObject({ kind: 'raster', minZoom: 0, maxZoom: 12, hideFrom: 12.5, attribution: SURFACE_TEXT });
     const url = (overlay as { tileUrl: string }).tileUrl;
     expect(url).toContain('rescale=0%2C3000');
@@ -141,13 +141,13 @@ describe('the overlays of a layer', () => {
 
   it('are one for a dataset however many passes it has, and none for a dataset without a substitute', () => {
     const list = [...LIST, ...datasetsFrom([{ ...terrain({ overview: 'own', overview_substitute: null, min_zoom: 0 }), id: 'plain' }])];
-    expect(substituteOverlaysOf(['terrain', 'terrain', 'plain'], list, look, null)).toHaveLength(1);
-    expect(substituteOverlaysOf(['plain'], list, look, null)).toEqual([]);
-    expect(substituteOverlaysOf([], list, look, null)).toEqual([]);
+    expect(overviewOverlaysOf(['terrain', 'terrain', 'plain'], list, look, null)).toHaveLength(1);
+    expect(overviewOverlaysOf(['plain'], list, look, null)).toEqual([]);
+    expect(overviewOverlaysOf([], list, look, null)).toEqual([]);
   });
 
   it('have none where the look is an index, which only a route with steps computes', () => {
-    expect(substituteOverlaysOf(['terrain'], LIST, { ...look, index: 'ndvi' }, null)).toEqual([]);
+    expect(overviewOverlaysOf(['terrain'], LIST, { ...look, index: 'ndvi' }, null)).toEqual([]);
   });
 });
 
@@ -227,7 +227,7 @@ describe('the view of a dataset with a substitute', () => {
 
 describe('a pinned layer with a substitute', () => {
   const layer = (visible: boolean) => {
-    const [overlay] = substituteOverlaysOf(['terrain'], LIST, { rescale: '0,3000' }, null);
+    const [overlay] = overviewOverlaysOf(['terrain'], LIST, { rescale: '0,3000' }, null);
     return {
       id: 'a',
       name: 'Terrain',

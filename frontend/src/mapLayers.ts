@@ -20,7 +20,7 @@ import { underlayOf } from './underlay';
 import type { ImageOverlay } from './underlay';
 import { chosenByView, inStackOrder, passesOf, stackLikeView, viewOfPass } from './mosaic';
 import type { Mosaics, PassView, PlannedRaster, SceneEntry } from './mosaic';
-import { substituteRasterOf } from './overviewSubstitute';
+import { overviewRasterOf } from './overviewSubstitute';
 import { tileSizeOf } from './tileSize';
 import type { AppliedRender, Bbox, DownloadedInfo, StacItem, TimeStepGroup } from './types';
 
@@ -1237,9 +1237,9 @@ export function syncFocusRaster(
     const drawing = index && dataset ? indexRasterOf(raster, pass, dataset.id, index, s.mosaics) : raster;
     if (typeof drawing !== 'string') addTiles(map, drawing, tiles++, s.render, clip);
   };
-  // Below the first level of a dataset with a substitute the view draws the picture of that dataset, under everything it draws
+  // Below the first level of a dataset with a substitute or a pyramid the view draws that picture, under everything it draws
   // of its own (`overviewSubstitute.ts`); a layer pinned from the view draws it with its own rasters.
-  const substitute = !s.tilesInLayer && !s.render.index && drawn.length > 0 ? substituteRasterOf(dataset, s.datasets) : null;
+  const substitute = !s.tilesInLayer && !s.render.index && drawn.length > 0 ? overviewRasterOf(dataset, s.datasets) : null;
   let held: SubstituteHold | null = null;
   if (substitute) {
     // Over the level where the dataset's own picture takes over, the substitute stays until that picture has arrived: a mosaic of

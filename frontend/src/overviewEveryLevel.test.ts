@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 import { AOI, DOWNLOADED, ENTRIES, GROUPS, ITEMS, LIST, MOSAICS, TERRAIN } from './fixtures/swissalti';
 import { zoomMap } from './fixtures/zoomMap';
 import { syncFocusRaster, syncLayers } from './mapLayers';
-import { overlaysOfPass, substituteOverlaysOf } from './searchLayers';
+import { overlaysOfPass, overviewOverlaysOf } from './searchLayers';
 
 // Every map zoom from 0 to 13.9 in tenths: below 13 the substitute, from 12.5 the mosaic (512 px tiles of level 13).
 const ZOOMS = Array.from({ length: 140 }, (_, i) => i / 10);
@@ -78,7 +78,7 @@ describe('swissALTI3D in "Crop and merge to AOI"', () => {
 describe('the layer pinned from that view', () => {
   const overlays = () => {
     const own = overlaysOfPass('terrain', ENTRIES, MOSAICS, { rescale: '0,3000' }, AOI);
-    return [...substituteOverlaysOf(['terrain'], LIST, { rescale: '0,3000' }, AOI), ...(own ?? [])];
+    return [...overviewOverlaysOf(['terrain'], LIST, { rescale: '0,3000' }, AOI), ...(own ?? [])];
   };
 
   it('has an image at every map zoom from 0 to 13.9', () => {
