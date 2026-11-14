@@ -467,11 +467,35 @@ def test_other_properties_of_an_item_do_not_change_the_hash() -> None:
 
 
 @pytest.mark.parametrize(
-    "bad", [{"properties": {"updated": "x"}}, item("a", None), {"id": "", "properties": {"updated": "x"}}, {"id": "a"}]
+    "bad", [{"properties": {"updated": "x"}}, {"id": "", "properties": {"updated": "x"}}, {"updated": "x"}]
 )
-def test_an_item_without_a_version_is_no_part_of_a_hash(bad: dict) -> None:
+def test_an_item_without_an_id_is_malformed(bad: dict) -> None:
     with pytest.raises(ValueError):
         base_hash([item("ok"), bad])
+    with pytest.raises(ValueError):
+        base_hash([bad])
+
+
+@pytest.mark.parametrize(
+    "unversioned",
+    [
+        item("a", None),
+        item("a", ""),
+        {"id": "a"},
+        {"id": "a", "properties": None},
+        {"id": "a", "properties": {"updated": 5}},
+    ],
+)
+def test_an_item_without_updated_gives_no_hash_instead_of_a_wrong_one(unversioned: dict) -> None:
+    """GLO-30 and WorldCover items carry no `updated`: every tile is read again, none is copied (plan 8b)."""
+    assert base_hash([unversioned]) is None
+    assert base_hash([item("ok"), unversioned]) is None
+    assert base_hash([unversioned, item("ok")]) is None
+
+
+def test_an_empty_tile_has_a_hash() -> None:
+    assert base_hash([]) == base_hash(iter([]))
+    assert base_hash([]) != base_hash([item("a")])
 
 
 @pytest.mark.parametrize(("min_zoom", "base"), [(7, 6), (5, 4), (1, 0)])

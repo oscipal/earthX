@@ -10,6 +10,8 @@ the one factory that turns the addresses of a recipe into what the readers need:
   start, in its main thread, before it knows which job it runs (§7.3 point 2).
 * :func:`counting_gdal_lines` — `gateway`'s counter of the requests GDAL makes, passed on because the core may not
   import `gateway` (M5-30b part 8).
+* :func:`host_pacer` — the spacing per host of a pyramid build (M5-30b part 8b), made here because the core may not
+  import `gateway`.
 * :func:`read_access_for` — one job's :class:`ReadAccess`: an allowlist of exactly
   the hosts its addresses name (KLAERUNGEN B9, word for word), the same GDAL
   options, and one :class:`~earthx.gateway.CachingResolver` for the whole run.
@@ -26,6 +28,7 @@ from types import MappingProxyType
 
 from earthx.gateway import (
     CachingResolver,
+    HostPacer,
     Policy,
     Resolver,
     UrlRejected,
@@ -41,6 +44,7 @@ __all__ = [
     "GDAL_CACHEMAX_BYTES",
     "ReadAccess",
     "counting_gdal_lines",
+    "host_pacer",
     "process_gdal_options",
     "read_access_for",
 ]
@@ -61,6 +65,11 @@ class ReadAccess:
     policy: Policy
     gdal_options: Mapping[str, str | int]
     resolve: Resolver
+
+
+def host_pacer() -> HostPacer:
+    """A spacing per host for one build, at ``EARTHX_OVERVIEW_HOST_INTERVAL_S`` (0.25 s unless set); a bad value is a ``ValueError`` naming the variable."""
+    return HostPacer.from_env()
 
 
 def process_gdal_options() -> Mapping[str, str | int]:
