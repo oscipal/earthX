@@ -348,7 +348,7 @@ möglich.
   die TPS, sonst über die Geotransformation; Ergebnis-Statistik im Pixelraster der Datei. Der 502 entfällt (A3).
 - **Version:** `earthx.__version__` 0.5.2 (F7); `adr/0014` §15 Nachtrag DS-04d.
 
-### 12.2 Auslegungen und Abweichungen (Vorschlag, gelten bis Otto widerspricht)
+### 12.2 Auslegungen und Abweichungen (A7–A14 angenommen von Otto am 14.11.2026, A15 korrigiert, siehe §12.6)
 
 - **A7 – F4 im Job:** Die Annahme öffnet keine Dateien; ob Slices passen, zeigen erst GCPs und Zeilenzahl der Dateien.
   Der Lauf schlägt deshalb mit `grid_mismatch` und dem Grund fehl („the slices of this pass do not join: a slice of
@@ -371,11 +371,8 @@ möglich.
   ohne `reprojection` gilt nur für Datensätze mit Geotransformation.
 - **A14 – Szene ohne Zeilenzeiten:** wird im Zuschnitt allein ein Lauf; im Job eines Durchgangs `grid_mismatch`.
 
-- **A15 – Export-Job, geteilte Gruppe:** Die Gruppen- und Item-Zeilen der Textdatei schreibt `api` bei der Annahme
-  nach den Gruppen des Rezepts. Teilt sich eine Gruppe erst im Lauf (fehlender Slice), hat das ZIP mehr
-  `group-NN/`-Ordner als diese Zeilen nennen; die richtige Aufteilung steht in den Zeilen „Group N: Scene …“ und
-  „Not joined into one file: …“ darunter. Selten (ein Slice fehlt mitten in einem gewählten Durchgang); nicht weiter
-  angeglichen.
+- ~~**A15 – Export-Job, geteilte Gruppe:** Gruppenzeilen nach den Gruppen des Rezepts, die Aufteilung nur in den
+  Szenenzeilen.~~ Korrigiert von Otto am 14.11.2026, siehe §12.6.
 
 ### 12.3 Review vor dem Fertigmelden
 
@@ -404,3 +401,87 @@ Fixture `tests/earthx/readers/mini_pass.py`: zwei synthetische Slices wie gemess
 **Prüfungen (14.11.2026):** voller `pytest`-Lauf aus der Repo-Wurzel 10904 bestanden, 25 übersprungen, 0
 fehlgeschlagen; `ruff check backend` grün; `lint-imports` 16 Verträge eingehalten; Frontend `npm run lint`, `tsc -b`
 und `vitest` (6643 Tests) grün; `main` geholt, nichts Neues seit dem Merge von #335 und #341.
+
+### 12.6 Antworten Otto (14.11.2026) und Korrektur A15
+
+A7–A14 angenommen. **A15 korrigiert:** Die Gruppenzeilen der Textdatei des Export-Jobs nennen die tatsächliche
+Aufteilung nach dem Lauf, nicht die Gruppen des Rezepts. Umgesetzt: Der Lauf schreibt die Zeilen „Items: …“ bzw.
+„Group N (exports/group-NN/): …“ an ihrer Stelle neu, nach denselben Regeln wie der Zuschnitt (eine Funktion
+`crop_rules.group_lines` für beide); teilt sich ein Durchgang, stimmen sie mit dem Zuschnitt überein (Test
+`test_a_missing_slice_splits_the_export_as_it_splits_the_crop`), sonst bleibt die eine Zeile „Items: …“.
+
+### 12.7 Prüfanleitung für Otto (Windows, PowerShell, ohne Python)
+
+Im Wurzelverzeichnis des Repos, Branch `claude/dreamy-shannon-uqn7ql`. In der Sitzung nicht geprüft: Image-Bau und
+Browser (der Bau scheitert dort an der TLS-Kette des Proxys, `plans/m4/m4-16-lokaler-runner.md` §10).
+
+**1. Stand holen und starten.** Neue Images, weil sich der Code geändert hat; `catalog-load` läuft mit und liest die
+Registry neu.
+
+```powershell
+git fetch origin
+git switch claude/dreamy-shannon-uqn7ql
+git pull
+docker compose up --build
+```
+
+In einem zweiten Fenster das Frontend:
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+Dann `http://localhost:5173` öffnen.
+
+**2. „Reproject“ fehlt bei Sentinel-1.** Data catalogue → „Sentinel-1 GRD“, eine AOI zeichnen, suchen, eine Szene
+wählen, im Panel „Processing“ die Knöpfe unter „Add step:“ ansehen: kein „Reproject and resample“. Gegenprobe mit
+Sentinel-2 L2A: dort ist er da.
+
+**3. Zuschnitt einer Szene.** Eine kleine AOI (einige km) in einer Szene, „Download“. Erwartet im ZIP:
+`exports/vv_10m.tif` (der Name nennt Band und Pixelgröße, bei HH `hh_…`), die Maskendatei daneben, `ATTRIBUTION.txt` mit der Zeile „Grid: radar geometry of
+the source scenes, not map-projected …“ und „Scene <id>: rows …, columns … (0-based, inclusive)“, keine Zeile
+„Resolution: native“. Die Datei prüfen (das Runner-Image aus Schritt 6 bringt `rio` mit; ZIP vorher nach `.\zip`
+entpacken):
+
+```powershell
+docker run --rm --entrypoint rio -v "${PWD}\zip:/data:ro" earthx-runner:0.5.2 info /data/exports/vv_10m.tif
+```
+
+Erwartet: `"crs": null`, `"transform": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, …]` und ein Eintrag `"gcps"`. In der
+Maskendatei dieselben GCPs; die Werte der Datendatei außerhalb der AOI-Form sind nicht 0 (F1 = 2).
+
+**4. Mosaik aus zwei Slices eines Durchgangs.** Eine AOI über die Grenze zweier aufeinanderfolgender Szenen
+derselben Bahn (ein Schritt der Zeitleiste), beide wählen, „Download“. Erwartet: **eine** Datendatei, in
+`ATTRIBUTION.txt` zwei Zeilen „Scene …“, die zweite beginnt bei „rows 0-“. Im Bild keine Naht und kein Versatz an der
+Grenze.
+
+**5. Export-Job.** Dieselben zwei Slices mit einer größeren AOI (einige zehn km), bis der Dialog „Export as job“
+anbietet; Job starten, ZIP herunterladen. Erwartet: dieselbe Form wie Schritt 4 (eine Datei, GCPs, kein CRS), in
+`ATTRIBUTION.txt` die Zeile „Items: <beide Szenen>“ und die beiden Zeilen „Scene …“.
+
+**6. Runner-Image bauen und Hash-Vergleich.** Ein Raster-Job über die beiden Slices: im Panel „Processing“ einen
+Schritt „Normalize“ auf VV, „Review“, „Start job“; fertig → „Download (ZIP)“. Dann:
+
+```powershell
+docker build --target runner --build-arg "EARTHX_COMMIT=$(git rev-parse --short HEAD)" -t earthx-runner:0.5.2 backend
+```
+
+`recipe.json` aus dem ZIP des Jobs nach `.\in` legen, `result.tif` und `mask.tif` des Jobs nach `.\cloud`:
+
+```powershell
+docker run --rm --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges -v "${PWD}\in:/in:ro" -v "${PWD}\out:/out" earthx-runner:0.5.2 run /in/recipe.json
+```
+
+```powershell
+$run = Get-ChildItem .\out -Directory | Sort-Object LastWriteTime | Select-Object -Last 1
+Get-FileHash .\cloud\result.tif, "$($run.FullName)\result.tif", .\cloud\mask.tif, "$($run.FullName)\mask.tif"
+```
+
+Erwartet: je zwei gleiche SHA-256 für `result.tif` und für `mask.tif`; `provenance.json` im Ordner nennt
+`0.5.2+<commit>`. `rio info` (wie in Schritt 3) auf `result.tif`: `"crs": null` und `"gcps"`.
+
+**7. Ergebnis-Layer auf der Karte.** Der Job aus Schritt 6 erscheint im Layer-Manager. Erwartet: Er liegt auf der Karte
+über den beiden Szenen, ohne Versatz an der Grenze der Slices; keine Fehlermeldung (früher `502`); Histogramm und
+Bereich im Layer-Manager gefüllt.
