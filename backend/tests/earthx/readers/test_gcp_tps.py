@@ -22,6 +22,7 @@ from rasterio import transform as rio_transform
 from rasterio.errors import NotGeoreferencedWarning
 from rasterio.vrt import WarpedVRT
 
+from earthx.access.radar import gcp_key
 from earthx.catalog.registry import ConfigError, DataFormat, Georeferencing
 from earthx.processing import failure_kind, run
 from earthx.processing.operators import REGISTRY as OPERATORS
@@ -114,19 +115,24 @@ class TestTheReaderPlacesByTheSpline:
                 found.append(max(abs(source_row - (gcp.row - 0.5)), abs(source_col - (gcp.col - 0.5))))
         assert max(found) <= 1
 
-    def test_a_job_reads_the_same_pixels_as_the_reader(self, gcp_file: Path, tmp_path: Path, monkeypatch) -> None:
-        """The core reads the reader's own grid with exact windows: what a tile shows at the native level."""
+    def test_a_job_keeps_the_source_pixels_in_radar_geometry(self, gcp_file: Path, tmp_path: Path, monkeypatch) -> None:
+        """DS-04d: no CRS, no geotransform, no warp; every pixel of the result is the source pixel of its row and
+        column in the window, and the GCPs of the source, shifted onto the window, place it."""
         sources.serve({URL: gcp_file}, monkeypatch)
         result = run(recipe_from_data(gcp_recipe(), OPERATORS), workdir=tmp_path, progress=lambda *_: None)
-        with tps_reader(gcp_file) as reader, rasterio.open(result.path) as out:
-            assert out.crs == reader.crs
-            window = reader.dataset.window(*out.bounds).round_offsets().round_lengths()
-            expected = reader.dataset.read(1, window=window)
-            assert window.width == out.width and window.height == out.height
+        with rasterio.open(result.path) as out, rasterio.open(result.mask_path) as mask:
+            assert out.crs is None and out.transform.is_identity
+            gcps, gcp_crs = out.gcps
+            assert gcp_crs == mini_gcp.GCP_CRS and len(gcps) == len(mini_gcp.gcps())
+            assert gcp_key(mask) == gcp_key(out)
             got = out.read(1)
-        valid = expected != mini_gcp.NODATA
-        assert valid.any()
-        assert numpy.array_equal(got[valid], expected[valid].astype(got.dtype))
+        rows, cols = numpy.vectorize(mini_gcp.source_pixel)(got)
+        row0, col0 = int(rows[0, 0]), int(cols[0, 0])
+        assert (rows == row0 + numpy.arange(got.shape[0])[:, None]).all()
+        assert (cols == col0 + numpy.arange(got.shape[1])[None, :]).all()
+        shifted = {(point.row, point.col) for point in gcps}
+        assert {(point.row - row0, point.col - col0) for point in mini_gcp.gcps()} == shifted
+        assert result.properties["earthx:georeferencing"] == "gcp_tps" and "proj:code" not in result.properties
 
     def test_two_runs_of_one_recipe_give_the_same_bytes(self, gcp_file: Path, tmp_path: Path, monkeypatch) -> None:
         """The local runner runs the same core: the same recipe gives the same file (adr/0014 §6.3)."""

@@ -131,7 +131,9 @@ class TestApplicable:
         """Except where an entry leaves band math off on purpose (classes, M5-07): the scaling is band math."""
         refused = [] if config.capabilities.band_math else [f"{config.dataset_id} does not allow band_math"]
         assert applicable(SCALE, config, ScaleParams(factor=1.0)) == refused
-        assert applicable(COARSEN, config, CoarsenParams(factor=2)) == []
+        # A grid step needs reprojection, which an entry placed by GCPs never offers (DS-04d F6).
+        grid = [] if config.capabilities.reprojection else [f"{config.dataset_id} does not allow reprojection"]
+        assert applicable(COARSEN, config, CoarsenParams(factor=2)) == grid
 
     def test_a_flag_the_entry_does_not_set(self) -> None:
         config = next(iter(DATASETS))

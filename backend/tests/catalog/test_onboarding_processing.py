@@ -501,7 +501,10 @@ def test_the_result_is_a_readable_cog_with_transformed_metadata(scenario: Scenar
     with rasterio.open(result.path) as dataset:
         assert dataset.count == len(scenario.result_bands) and dataset.dtypes[0] == "float32"
         assert (dataset.width, dataset.height) == (result.meta.width, result.meta.height)
-        crs = dataset.crs.to_string()
+        crs = None if dataset.crs is None else dataset.crs.to_string()
+        if scenario.config.georeferencing is Georeferencing.GCP_TPS:
+            # Radar geometry (DS-04d): no CRS, the GCPs of the source.
+            assert crs is None and dataset.gcps[0]
     assert [band.name for band in result.meta.bands] == scenario.result_bands
     assert result.properties["processing:lineage"].startswith(scenario.step["op"].replace("_", " "))
     if scenario.step["op"] == "reproject":

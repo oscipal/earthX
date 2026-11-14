@@ -21,18 +21,20 @@ from collections.abc import Sequence
 from contextlib import ExitStack
 from typing import Any
 
+import numpy
 from rasterio.crs import CRS
 from rasterio.transform import Affine
 from rasterio.windows import Window
 from rio_tiler.models import ImageData
 
-from earthx.processing.errors import GridMismatch
+from earthx.access.radar import JoinedPass, RadarGrid, RadarGridError, read_joined
+from earthx.processing.errors import GridMismatch, UnsupportedRecipe
 from earthx.processing.recipe import ResolvedInput
 from earthx.processing.scaling import Scaling, apply_scaling, scaling_for_cog, scaling_for_zarr
 from earthx.readers.cog import AssetPath, CogReader
 from earthx.readers.zarr_reader import VARIABLE_LIST_SEPARATOR, ZarrAsset, ZarrReader
 
-__all__ = ["Source", "common_grid", "expected_band_names", "merge_images", "units_of"]
+__all__ = ["RadarSource", "Source", "common_grid", "expected_band_names", "merge_images", "units_of"]
 
 #: Relative slack when comparing pixel sizes and extents of two rasters.
 _GRID_TOLERANCE = 1e-6
@@ -43,6 +45,9 @@ class Source:
 
     #: Whether reading this source warps anything onto its grid; only a mosaic does (M4-12a).
     warps = False
+
+    #: The grid of a source placed by its GCPs, read in its own pixels (DS-04d); ``None`` for a CRS and a geotransform.
+    radar: RadarGrid | None = None
 
     def __init__(self, entry: ResolvedInput, reader: CogReader | ZarrReader) -> None:
         self.entry = entry
@@ -74,6 +79,8 @@ class Source:
         """The reader for ``target`` entered into ``stack`` (closed with it), and the source on top of it."""
         reader = CogReader(target) if isinstance(target, AssetPath) else ZarrReader(target)
         stack.enter_context(reader)
+        if isinstance(target, AssetPath) and target.georeferencing == "gcp_tps":
+            return RadarSource.single(entry, reader)
         return cls(entry, reader)
 
     def same_grid(self, other: Source) -> bool:
@@ -123,6 +130,67 @@ class Source:
     def read_tile(self, x: int, y: int, z: int, **options: Any) -> ImageData:
         """One map tile, in physical values; ``options`` are the reader's own (``tilesize`` and the like)."""
         return self.physical(self.reader.tile(x, y, z, **options))
+
+
+class RadarSource(Source):
+    """An input placed by its GCPs, read in its own pixel grid (DS-04d, adr/0018 §9.5): no CRS, the identity as its
+    transform (one unit a pixel, lines downward), its GCPs as :attr:`radar`. A pass of slices joined one under the
+    other is one such source (:meth:`joined`). Nothing is warped or resampled for a job; the tile still reads through
+    the spline of the reader (:meth:`Source.read_tile`), the placing the map shows (adr/0018 F1)."""
+
+    def __init__(self, entry: ResolvedInput, reader: CogReader, raws: Sequence[Any], joined: JoinedPass) -> None:
+        super().__init__(entry, reader)
+        self.crs = None  # type: ignore[assignment]
+        self.transform = Affine.identity()
+        self.radar = joined.grid
+        self.width, self.height = joined.grid.width, joined.grid.height
+        self._raws = list(raws)
+        self._offsets = list(joined.offsets)
+
+    @classmethod
+    def single(cls, entry: ResolvedInput, reader: CogReader) -> RadarSource:
+        """One scene in its own grid; :class:`UnsupportedRecipe` for a file that GCPs do not place."""
+        from earthx.access.radar import Slice, join_slices
+
+        try:
+            grid = RadarGrid.of(reader.raw)
+        except RadarGridError as error:
+            raise UnsupportedRecipe(str(error)) from None
+        joined = join_slices([Slice(entry.asset.item_id, grid, None, None)])[0][0]
+        return cls(entry, reader, [reader.raw], joined)
+
+    def same_grid(self, other: Source) -> bool:
+        return isinstance(other, RadarSource) and (self.width, self.height) == (other.width, other.height)
+
+    def _dtype(self) -> str:
+        return "float32" if self.scaling.applied_by_core else self.data_types[0]
+
+    def _image(self, array: numpy.ma.MaskedArray, bounds: tuple[float, float, float, float]) -> ImageData:
+        nodata = self.nodata[0] if len(set(self.nodata)) == 1 else None
+        return self.physical(ImageData(array, bounds=bounds, crs=None, band_names=list(self.names), nodata=nodata))
+
+    def read(self, window: Window, grid: Affine | None = None) -> ImageData:
+        """``window`` of the grid ``grid`` (this source's own pixels by default); a coarser grid takes every pixel at
+        the centre of its cell, nearest, as the coarse read of an area does (NM4-19)."""
+        if grid is None or grid.almost_equals(self.transform):
+            array = read_joined(self._raws, self._offsets, window, self.data_types[0])
+            bounds = (window.col_off, window.row_off + window.height, window.col_off + window.width, window.row_off)
+            return self._image(array, bounds)
+        left, top = grid @ (window.col_off, window.row_off)
+        right, bottom = grid @ (window.col_off + window.width, window.row_off + window.height)
+        return self.read_preview((left, bottom, right, top), int(window.width), int(window.height))
+
+    def read_preview(self, bounds: tuple[float, float, float, float], width: int, height: int) -> ImageData:
+        """The pixels ``bounds`` (columns and lines of this grid) as ``width`` × ``height``, nearest at the centres."""
+        left, bottom, right, top = bounds
+        row0, row1 = min(top, bottom), max(top, bottom)
+        cols = numpy.floor(left + (numpy.arange(width) + 0.5) * (right - left) / width).astype(int)
+        rows = numpy.floor(row0 + (numpy.arange(height) + 0.5) * (row1 - row0) / height).astype(int)
+        col0, span = int(cols.min()), int(cols.max() - cols.min() + 1)
+        # One line at a time, so a coarse block never holds its full-resolution area in memory.
+        lines = [read_joined(self._raws, self._offsets, Window(col0, int(row), span, 1), self.data_types[0]) for row in rows]
+        array = numpy.ma.concatenate(lines, axis=1)[:, :, cols - col0]
+        return self._image(array, (left, row1, right, row0))
 
 
 def units_of(entry: ResolvedInput, count: int) -> list[str | None]:

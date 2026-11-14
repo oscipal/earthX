@@ -74,8 +74,10 @@ from rio_cogeo.cogeo import cog_translate
 from rio_cogeo.profiles import cog_profiles
 from rio_tiler.models import ImageData
 
+from earthx.access.crop_rules import AoiOutsideItems
+from earthx.access.radar import RadarGrid, copy_to_cog
 from earthx.access.resolve import open_asset_ref
-from earthx.processing.errors import UnsupportedRecipe
+from earthx.processing.errors import AoiOutsideInputs, UnsupportedRecipe
 from earthx.processing.export import Attachments, ExportResult, check_export, export
 from earthx.processing.mosaic import open_mosaic
 from earthx.processing.nodata import avoid_nodata, output_nodata
@@ -256,8 +258,18 @@ def _nodata_for(dtype: str, meta: RasterMeta, steps: Sequence[PlannedStep]) -> f
     return output_nodata(dtype, meta.bands, all(step.operator.passes_values(step.params) for step in steps))
 
 
-def _profile(meta: RasterMeta, dtype: str, nodata: float, interleave: str | None = None) -> dict[str, Any]:
-    """The profile of a work file; ``interleave`` is GDAL's ``INTERLEAVE``, ``None`` leaves it to GDAL (pixel)."""
+def _profile(
+    meta: RasterMeta, dtype: str, nodata: float, interleave: str | None = None, radar: RadarGrid | None = None
+) -> dict[str, Any]:
+    """The profile of a work file; ``interleave`` is GDAL's ``INTERLEAVE``, ``None`` leaves it to GDAL (pixel).
+
+    ``radar`` (DS-04d): the grid of an input placed by its GCPs; the file then carries them, shifted onto its window
+    (``meta.transform`` is the window's place in that grid), and neither a CRS nor a geotransform.
+    """
+    if radar is not None:
+        window = Window(meta.transform.c, meta.transform.f, meta.width, meta.height)
+        plain = {key: value for key, value in _profile(meta, dtype, nodata, interleave).items() if key not in ("crs", "transform")}
+        return {**plain, **radar.cut(window).profile()}
     profile = {
         "driver": "GTiff",
         "dtype": dtype,
@@ -320,6 +332,8 @@ class _Run:
         self.resolved: dict[int, Any] = {}
         #: The report of each step that measured, in the order they ran, for the property ``earthx:normalize``.
         self.measured: list[dict[str, Any]] = []
+        #: The grid of an input placed by its GCPs, whose files carry them (DS-04d).
+        self.radar: RadarGrid | None = None
 
     def tick(self) -> None:
         self.done += 1
@@ -358,7 +372,7 @@ class _Run:
             # the source of ``result.tif``, and the mask keep GDAL's layout, so the files of a job stay as they were.
             interleave = None if count_valid else "band"
             dst = files.enter_context(
-                open_workfile(self.workdir, self.new_file(name), "w", **_profile(meta, dtype, nodata, interleave))
+                open_workfile(self.workdir, self.new_file(name), "w", **_profile(meta, dtype, nodata, interleave, self.radar))
             )
             mask = files.enter_context(open_workfile(self.workdir, MASK_NAME)) if count_valid else None
             if count_valid:
@@ -401,10 +415,10 @@ class _Measure:
     before it the grid of the stock, which the mask file does not cover (plan NM4-71, Otto's decision of 01.11.2026).
     """
 
-    def __init__(self, step: PlannedStep, meta: RasterMeta, aoi: dict) -> None:
+    def __init__(self, step: PlannedStep, meta: RasterMeta, aoi: dict, radar: RadarGrid | None = None) -> None:
         self.step = step
         self.transform = meta.transform
-        self.geometry = transform_geom("EPSG:4326", meta.crs, aoi)
+        self.geometry = _aoi_on(aoi, meta, radar)
         wanted = step.operator.measures(step.params)
         self.indices = [index for index, band in enumerate(meta.bands) if band.name in wanted]
         self.names = [meta.bands[index].name for index in self.indices]
@@ -488,7 +502,8 @@ def _source_meta(sources: list[Source], finest: Source, window: Window, transfor
         ):
             data_type = "float32" if source.scaling.applied_by_core else data_type
             bands.append(BandMeta(name=name, data_type=data_type, nodata=nodata, unit=unit, resampled=moved))
-    return RasterMeta(finest.crs.to_string(), transform, int(window.width), int(window.height), tuple(bands))
+    crs = None if finest.crs is None else finest.crs.to_string()
+    return RasterMeta(crs, transform, int(window.width), int(window.height), tuple(bands))  # type: ignore[arg-type]
 
 
 def _properties(
@@ -503,11 +518,16 @@ def _properties(
     lineage, honesty flag, and where steps measured (NM4-71) the numbers they used.
 
     ``planned`` holds a measuring step with the numbers it ran with, so lineage names what was converted."""
-    crs = CRS.from_user_input(meta.crs)
-    epsg = crs.to_epsg()
-    properties: dict[str, Any] = {"proj:code": f"EPSG:{epsg}"} if epsg is not None else {"proj:wkt2": crs.to_wkt()}
-    if crs.is_projected:
-        properties["gsd"] = meta.resolution[0]
+    properties: dict[str, Any]
+    if meta.crs is None:
+        # Radar geometry (DS-04d): no projection; the file is placed by its GCPs alone.
+        properties = {"earthx:georeferencing": "gcp_tps"}
+    else:
+        crs = CRS.from_user_input(meta.crs)
+        epsg = crs.to_epsg()
+        properties = {"proj:code": f"EPSG:{epsg}"} if epsg is not None else {"proj:wkt2": crs.to_wkt()}
+        if crs.is_projected:
+            properties["gsd"] = meta.resolution[0]
     properties["bands"] = [
         {
             "name": band.name,
@@ -545,9 +565,27 @@ def _mask_block(geometry: dict, window: Window, transform: Affine) -> numpy.ndar
     )
 
 
+def _aoi_on(aoi: dict, meta: RasterMeta, radar: RadarGrid | None) -> Any:
+    """The AOI (EPSG:4326) on the grid of ``meta``: in its CRS, or in the pixels of a radar grid (DS-04d)."""
+    if radar is not None:
+        return radar.pixel_geometry(aoi)
+    return transform_geom("EPSG:4326", meta.crs, aoi)
+
+
+def _window(aoi: dict, finest: Source) -> tuple[Window, Affine]:
+    """The window ``bbox(AOI ∩ raster)`` of the finest source and its transform; a radar grid's through its GCPs."""
+    if finest.radar is None:
+        return crop_window(aoi, finest.crs.to_string(), finest.transform, finest.width, finest.height)
+    try:
+        window = finest.radar.window(aoi)
+    except AoiOutsideItems:
+        raise AoiOutsideInputs("the AOI does not overlap the input raster") from None
+    return window, Affine.translation(window.col_off, window.row_off)
+
+
 def _write_mask(state: _Run, meta: RasterMeta, aoi: dict) -> None:
-    geometry = transform_geom("EPSG:4326", meta.crs, aoi)
-    profile = {**_profile(meta, "uint8", 0), "count": 1, "nodata": None}
+    geometry = _aoi_on(aoi, meta, state.radar)
+    profile = {**_profile(meta, "uint8", 0, radar=state.radar), "count": 1, "nodata": None}
     with open_workfile(state.workdir, state.new_file(MASK_NAME), "w", **profile) as dst:
         for window in _blocks(meta.width, meta.height):
             dst.write(_mask_block(geometry, window, meta.transform), 1, window=window)
@@ -585,7 +623,8 @@ def run(
             sources = _open_sources(recipe, stack)
             finest, _ = common_grid(sources)  # refuses assets that are neither one grid nor nested
             aoi = recipe.aoi.model_dump(mode="json")
-            window, transform = crop_window(aoi, finest.crs.to_string(), finest.transform, finest.width, finest.height)
+            state.radar = finest.radar
+            window, transform = _window(aoi, finest)
             metas = [_source_meta(sources, finest, window, transform)]
             passes = segments(stock_steps(metas[0], planned, output.bands))
             for segment in passes:
@@ -601,7 +640,7 @@ def run(
             for index, segment in enumerate(passes):
                 last = index == len(passes) - 1
                 upcoming = None if last else passes[index + 1].measuring
-                measure = None if upcoming is None else _Measure(upcoming, metas[index + 1], aoi)
+                measure = None if upcoming is None else _Measure(upcoming, metas[index + 1], aoi, state.radar)
                 written = _run_pass(
                     state,
                     segment,
@@ -629,14 +668,19 @@ def run(
             )
             result = state.new_file(RESULT_NAME)
             with open_workfile(workdir, previous) as plain:
-                cog_translate(
-                    plain,
-                    str(workfile_path(workdir, result)),
-                    cog_profiles.get(_COG_PROFILE),
-                    in_memory=False,
-                    quiet=True,
-                    forward_band_tags=True,
-                )
+                if state.radar is not None:
+                    # rio-cogeo would place a file with GCPs by an affine fit; GDAL's COG driver keeps it unplaced
+                    # (DS-04d), with the band tags, at the cost of more memory over large areas (adr/0014 NM4-43c).
+                    copy_to_cog(plain, str(workfile_path(workdir, result)))
+                else:
+                    cog_translate(
+                        plain,
+                        str(workfile_path(workdir, result)),
+                        cog_profiles.get(_COG_PROFILE),
+                        in_memory=False,
+                        quiet=True,
+                        forward_band_tags=True,
+                    )
             for name in list(state.written):
                 if name not in (RESULT_NAME, MASK_NAME):
                     workfile_path(workdir, name).unlink(missing_ok=True)
@@ -747,7 +791,7 @@ def area_statistics(
     with ExitStack() as stack:
         sources = _open_sources(recipe, stack)
         finest, _ = common_grid(sources)
-        window, transform = crop_window(aoi, finest.crs.to_string(), finest.transform, finest.width, finest.height)
+        window, transform = _window(aoi, finest)
         source_meta = _source_meta(sources, finest, window, transform)
         steps = tuple(stock_steps(source_meta, planned, output.bands))
         meta = _transform_meta(source_meta, steps)
@@ -755,7 +799,7 @@ def area_statistics(
         factor = area_factor(meta.width, meta.height, max_pixels)
         width, height = -(-meta.width // factor), -(-meta.height // factor)
         coarse = meta.transform @ Affine.scale(factor)
-        geometry = transform_geom("EPSG:4326", meta.crs, aoi)
+        geometry = _aoi_on(aoi, meta, finest.radar)
         area = [BandStatistics(output.dtype) for _ in meta.bands]
         inside_pixels = 0
         for block in _blocks(width, height):

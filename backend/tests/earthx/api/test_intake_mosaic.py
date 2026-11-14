@@ -15,7 +15,7 @@ from shapely.geometry import box
 from shapely.geometry import shape as shapely_shape
 
 from earthx.api.intake import MAX_ORDER_ITEMS, estimate_order
-from earthx.catalog.registry import DatasetRegistry
+from earthx.catalog.registry import DatasetRegistry, Georeferencing, LineTimes
 from earthx.processing.plan import estimate
 from earthx.processing.recipe import cache_key, recipe_hash
 from tests.earthx.api.test_intake import (
@@ -197,6 +197,22 @@ class TestOneOverpass:
             whole("S2_A", "S2_B"), overpass(scene("S2_A"), scene("S2_B")), registry=DatasetRegistry((no_warp,))
         )
         assert error.status_code == 422 and error.stage == "applicable" and "reprojection" in error.detail
+
+    async def test_a_pass_in_radar_geometry_mosaics_without_reprojection(self) -> None:
+        """DS-04d F6: the slices are joined, never warped; the recipe carries the times of their lines (F2)."""
+        radar = replace(
+            S2,
+            georeferencing=Georeferencing.GCP_TPS,
+            line_times=LineTimes(first="start_datetime", last="end_datetime"),
+            capabilities=replace(S2.capabilities, reprojection=False),
+        )
+        first, second = scene("S2_A"), scene("S2_B")
+        first["properties"].update(start_datetime="2026-06-01T10:00:00.000000Z", end_datetime="2026-06-01T10:00:24.998500Z")
+        second["properties"].update(start_datetime="2026-06-01T10:00:25Z")
+        accepted = await accept(whole("S2_A", "S2_B"), Source((radar, first), (radar, second)), registry=DatasetRegistry((radar,)))
+        times = accepted.recipe.inputs[0].line_times
+        assert times is not None and times["S2_B"] is None
+        assert times["S2_A"] is not None and times["S2_A"].last > times["S2_A"].first
 
     async def test_one_scene_does_not_need_the_flag(self) -> None:
         no_warp = replace(S2, capabilities=replace(S2.capabilities, reprojection=False))

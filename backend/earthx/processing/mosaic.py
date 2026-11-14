@@ -43,11 +43,12 @@ from rasterio.windows import Window
 from rio_tiler.models import ImageData
 
 from earthx.access.crop_rules import merge_first_valid
+from earthx.access.radar import Slice, SlicesDoNotJoin, join_slices
 from earthx.access.resolve import open_asset_ref
-from earthx.processing.errors import UnsupportedRecipe
+from earthx.processing.errors import GridMismatch, UnsupportedRecipe
 from earthx.processing.operators.reproject import TOLERANCE, WARP_MEM_LIMIT_MB
 from earthx.processing.recipe import Recipe
-from earthx.processing.source import Source
+from earthx.processing.source import RadarSource, Source
 from earthx.processing.warped import WarpedItem, cache_per_item
 from earthx.readers import read_access_for
 from earthx.readers.cog import CogReader
@@ -229,6 +230,51 @@ class MosaicSource(Source):
         )
 
 
+def _open_radar_pass(recipe: Recipe, stack: ExitStack) -> list[RadarSource]:
+    """The slices of a pass in radar geometry, hung one under the other at the offset of their line times (DS-04d).
+
+    One :class:`RadarSource` per asset; nothing is warped. Slices that do not join (a gap, an overlap, columns that
+    begin elsewhere, no line times) are :class:`GridMismatch` with the reason: a job reads one joined file (F4).
+    """
+    entry = recipe.inputs[0]
+    access = read_access_for(recipe.hrefs())
+    resolved = {(item.asset.item_id, item.asset.asset): item for item in entry.resolved}
+    items = entry.groups[0]
+    singles: dict[str, list[Source]] = {asset: [] for asset in entry.assets}
+    with rasterio.Env(VSI_CACHE_SIZE=str(cache_per_item(len(items) * len(entry.assets)))):
+        for item_id in items:
+            for asset in entry.assets:
+                scene = resolved[(item_id, asset)]
+                target = open_asset_ref(scene.asset.to_asset(), access.policy, access.resolve)
+                singles[asset].append(Source.open(scene, target, stack))
+    for asset, scenes in singles.items():
+        if not all(isinstance(scene, RadarSource) for scene in scenes):
+            raise UnsupportedRecipe("the scenes of a pass are placed in different ways")
+        check_alike(asset, scenes)
+    times = entry.line_times or {}
+    slices = []
+    for scene in singles[entry.assets[0]]:
+        pair = times.get(scene.entry.asset.item_id)
+        assert scene.radar is not None
+        slices.append(Slice(scene.entry.asset.item_id, scene.radar, *((pair.first, pair.last) if pair else (None, None))))
+    try:
+        runs, reasons = join_slices(slices)
+    except SlicesDoNotJoin as error:
+        raise GridMismatch(f"the slices of this pass do not join: {error}") from None
+    if len(runs) > 1:
+        raise GridMismatch(f"the slices of this pass do not join: {reasons[0]}")
+    joined = runs[0]
+    sources = []
+    for scenes in singles.values():
+        by_item = {scene.entry.asset.item_id: scene for scene in scenes}
+        ordered = [by_item[piece.item_id] for piece in joined.slices]
+        if any((scene.width, scene.height) != (piece.grid.width, piece.grid.height) for scene, piece in zip(ordered, joined.slices, strict=True)):
+            raise GridMismatch("the bands of a scene in radar geometry lie on different grids")
+        raws = [scene.reader.raw for scene in ordered]  # type: ignore[union-attr]  # COGs, checked at opening
+        sources.append(RadarSource(ordered[0].entry, ordered[0].reader, raws, joined))  # type: ignore[arg-type]
+    return sources
+
+
 def _chain(first: numpy.ma.MaskedArray, rest: Iterator[numpy.ma.MaskedArray]) -> Iterator[numpy.ma.MaskedArray]:
     yield first
     yield from rest
@@ -262,6 +308,8 @@ def open_mosaic(recipe: Recipe, stack: ExitStack) -> list[MosaicSource]:
     a mosaic of many scenes costs what one scene costs.
     """
     entry = recipe.inputs[0]
+    if any(item.asset.georeferencing == "gcp_tps" for item in entry.resolved):
+        return _open_radar_pass(recipe, stack)  # type: ignore[return-value]
     access = read_access_for(recipe.hrefs())
     resolved = {(item.asset.item_id, item.asset.asset): item for item in entry.resolved}
     items = entry.groups[0]
