@@ -94,7 +94,7 @@ questions:
 # Sentinel-1 starts in 2014. The Copernicus DEM has no time axis, so a period never filters it out.
 - {id: Q32, language: en, text: radar, kind: Z, years: [2000, 2005], grade_1: [DEM], never: [S1]}
 - {id: Q33, language: de, text: Höhenmodell, kind: Z, years: [2024, 2024], grade_2: [DEM, ALTI, BEV]}
-# Q34, Q35 wait for the terrain operator (M5-10): only then do slope, aspect and hillshade stand in the search text.
+# Q34, Q35 ask for the terrain operator (M5-10): slope, aspect and hillshade stand in the search text of the models of heights.
 - {id: Q34, language: de, text: Hangneigung berechnen, kind: F, requires: terrain, grade_2: [DEM, ALTI, BEV]}
 - {id: Q35, language: en, text: hillshade, kind: F, requires: terrain, grade_2: [DEM, ALTI, BEV]}
 - {id: Q36, language: en, text: NDVI, kind: F, grade_2: [S2]}
