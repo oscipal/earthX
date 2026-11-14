@@ -60,6 +60,7 @@ def valid_config() -> DatasetConfig:
         data_class=DataClass.RASTER_TIME_SERIES,
         format=DataFormat.COG,
         georeferencing=Georeferencing.GEOTRANSFORM,
+        line_times=None,
         spatial_extent=SpatialExtent(bbox=(-10.0, -10.0, 10.0, 10.0)),
         temporal_extent=TemporalExtent(
             start=datetime(2020, 1, 1, tzinfo=timezone.utc),

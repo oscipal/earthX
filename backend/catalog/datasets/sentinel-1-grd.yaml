@@ -40,6 +40,12 @@ data_class: raster-time-series
 format: cog
 # adr/0018 F1: a thin-plate spline through the GCPs in tile, crop, job and runner (DS-04a).
 georeferencing: gcp_tps
+# DS-04d F2 (Otto 11.11.2026): the slices of a pass hang one under the other at the offset of their first lines.
+# `start_datetime` and `end_datetime` are the first and last line of the product annotation to the microsecond [M,
+# 11.11.2026, plan docs/plans/m5/ds-04d-radargeometrie.md §2].
+line_times:
+  first: start_datetime
+  last: end_datetime
 # Both extents as the collection states them [M]; the end stays open because the archive still grows.
 spatial_extent:
   bbox: [-180.0, -90.0, 180.0, 90.0]
@@ -52,7 +58,9 @@ capabilities:
   time_range: true
   band_math: true
   interpolation: true
-  reprojection: true
+  # DS-04d F6 (Otto 11.11.2026): never delivered georeferenced before calibration and terrain correction; crop and
+  # results stay in radar geometry (adr/0018 §9.5).
+  reprojection: false
   # No class layer.
   masking: false
   # DS-04 plan F4: off until DS-05d (σ⁰); `mask_values` knows fixed values only, and DN are not σ⁰.

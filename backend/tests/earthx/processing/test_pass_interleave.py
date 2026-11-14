@@ -62,7 +62,11 @@ def _run(tmp_path: Path, count: int, version: int = 4, *, gdal_layout: bool = Fa
     """One run; with ``gdal_layout`` every work file gets GDAL's own layout, as before NM4-43b."""
     if gdal_layout:
         original = core._profile
-        monkeypatch.setattr(core, "_profile", lambda meta, dtype, nodata, interleave=None: original(meta, dtype, nodata))
+        monkeypatch.setattr(
+            core,
+            "_profile",
+            lambda meta, dtype, nodata, interleave=None, radar=None: original(meta, dtype, nodata, radar=radar),
+        )
     tmp_path.mkdir()
     return run(
         recipe_of_data(_recipe(count, version), REGISTRY), workdir=tmp_path, progress=lambda done, total: None

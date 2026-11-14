@@ -176,11 +176,23 @@ export function registryUnit(collection: Collection | undefined, key: string): s
   return null;
 }
 
-// The unit to write beside a band: none for "1", the unit of a dimensionless quantity (Otto, 24.10.2026). The data
-// keep "1" (`bands[].unit`, `earthx:band_units`); this is the one place a frontend display turns a unit into text,
-// so that the chips of the panel and whatever shows units later (M4-19c) agree.
+// The units that are no physical unit, with what their values are: "1" for a dimensionless quantity (Otto, 24.10.2026),
+// "DN" for the digital numbers of a sensor that are not calibrated (Otto, 14.11.2026, DS-04d). Exact, as the data write
+// them; a new one comes here, nowhere else.
+const NOT_PHYSICAL: Readonly<Record<string, string>> = { '1': 'dimensionless', DN: 'uncalibrated digital numbers' };
+
+// The unit to write beside a band on the map and in its menus: a physical one only (Otto, 14.11.2026). The data keep
+// "1" and "DN" (`bands[].unit`, `earthx:band_units`); this is the one place a frontend display turns a unit into
+// text, so that the chips of the panel and whatever shows units later (M4-19c) agree.
 export function shownUnit(unit: string | null | undefined): string | null {
-  return typeof unit === 'string' && unit !== '' && unit !== '1' ? unit : null;
+  return typeof unit === 'string' && unit !== '' && !Object.hasOwn(NOT_PHYSICAL, unit) ? unit : null;
+}
+
+// What the Data catalogue writes for the values of a band: always the unit, and what the values are where the unit is
+// no physical one ("DN, uncalibrated digital numbers"); `null` where the data name no unit (Otto, 14.11.2026).
+export function catalogueUnit(unit: unknown): string | null {
+  if (typeof unit !== 'string' || unit === '') return null;
+  return Object.hasOwn(NOT_PHYSICAL, unit) ? `${unit}, ${NOT_PHYSICAL[unit]}` : unit;
 }
 
 // The unit an item states for one of its bands, if it does.

@@ -243,7 +243,9 @@ def _meta_of(sources: list[Source], steps: Sequence[tuple[Operator, BaseModel]])
         for source in sources
         for name, unit in zip(source.names, source.units, strict=True)
     )
-    meta = RasterMeta(finest.crs.to_string(), finest.transform, finest.width, finest.height, bands, resampled)
+    # A source in radar geometry has no CRS (DS-04d); its tile still reads through the spline of the reader.
+    crs = None if finest.crs is None else finest.crs.to_string()
+    meta = RasterMeta(crs, finest.transform, finest.width, finest.height, bands, resampled)  # type: ignore[arg-type]
     return finest, judge_steps(meta, steps)
 
 

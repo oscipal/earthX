@@ -421,109 +421,6 @@
             "x-earthx-tiers": [
               "T2"
             ]
-          },
-          "step_reproject_v4": {
-            "additionalProperties": false,
-            "description": "Bring the raster into another CRS at a chosen pixel size, with a chosen resampling.",
-            "properties": {
-              "op": {
-                "const": "reproject"
-              },
-              "op_version": {
-                "const": 4
-              },
-              "params": {
-                "additionalProperties": false,
-                "description": "The panel's form (K8); names follow openEO ``resample_spatial``.",
-                "properties": {
-                  "align": {
-                    "default": false,
-                    "description": "Lay the pixel grid on whole multiples of the resolution in the target CRS, e.g. at 30 m, 60 m, 90 m for a resolution of 30 m. Results for different areas or dates then line up pixel by pixel. The result may reach up to one pixel further out on each side.",
-                    "title": "Align",
-                    "type": "boolean"
-                  },
-                  "crs": {
-                    "description": "Target CRS as an EPSG code, e.g. EPSG:3035.",
-                    "pattern": "^EPSG:[0-9]{4,6}$",
-                    "title": "Crs",
-                    "type": "string"
-                  },
-                  "resampling": {
-                    "description": "No default: the choice changes the values. Anything but nearest and mode interpolates.",
-                    "oneOf": [
-                      {
-                        "const": "nearest",
-                        "description": "Value of the nearest source pixel; for class data and masks.",
-                        "title": "nearest"
-                      },
-                      {
-                        "const": "bilinear",
-                        "description": "Distance-weighted mean of the 2x2 nearest pixels; for continuous data.",
-                        "title": "bilinear"
-                      },
-                      {
-                        "const": "cubic",
-                        "description": "Cubic convolution over 4x4 pixels; sharper than bilinear, for continuous data.",
-                        "title": "cubic"
-                      },
-                      {
-                        "const": "cubicspline",
-                        "description": "Cubic B-spline over 4x4 pixels; smoothest, for continuous data.",
-                        "title": "cubicspline"
-                      },
-                      {
-                        "const": "lanczos",
-                        "description": "Lanczos windowed sinc over 6x6 pixels; sharpest, may overshoot at edges.",
-                        "title": "lanczos"
-                      },
-                      {
-                        "const": "average",
-                        "description": "Mean of all source pixels per target pixel; for coarsening continuous data.",
-                        "title": "average"
-                      },
-                      {
-                        "const": "mode",
-                        "description": "Most frequent source value per target pixel; for class data.",
-                        "title": "mode"
-                      }
-                    ],
-                    "title": "Resampling",
-                    "type": "string"
-                  },
-                  "resolution": {
-                    "description": "Pixel size in the units of the target CRS, square pixels.",
-                    "exclusiveMinimum": 0,
-                    "title": "Resolution",
-                    "type": "number"
-                  }
-                },
-                "required": [
-                  "crs",
-                  "resolution",
-                  "resampling"
-                ],
-                "title": "ReprojectParams",
-                "type": "object"
-              }
-            },
-            "required": [
-              "op",
-              "op_version",
-              "params"
-            ],
-            "title": "Reproject and resample",
-            "type": "object",
-            "x-earthx-kind": "grid",
-            "x-earthx-passes-values": {
-              "in": [
-                "mode",
-                "nearest"
-              ],
-              "param": "resampling"
-            },
-            "x-earthx-tiers": [
-              "T2"
-            ]
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -584,9 +481,6 @@
                 },
                 {
                   "$ref": "#/$defs/step_normalize_v4"
-                },
-                {
-                  "$ref": "#/$defs/step_reproject_v4"
                 }
               ]
             },

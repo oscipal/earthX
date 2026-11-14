@@ -689,7 +689,8 @@ class TestResults:
 
     def test_the_statuses_are_the_ones_the_plan_chose(self) -> None:
         expected = {
-            422: {"recipe_invalid", "unsupported_recipe", "scaling_mismatch", "grid_mismatch", "aoi_outside_inputs"},
+            422: {"recipe_invalid", "unsupported_recipe", "scaling_mismatch", "grid_mismatch", "aoi_outside_inputs",
+                  "pass_slice_missing", "pass_slices_overlap", "pass_slices_misaligned", "pass_no_line_times"},
             502: {"source_4xx", "source_429", "source_5xx", "source_unreachable", "source_georeference", "rejected"},
             504: {"source_timeout"},
             500: {"out_of_memory", "child_crashed", "runtime_exceeded", "upload_failed", "lease_lost", "cancelled", "unknown",

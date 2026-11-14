@@ -125,7 +125,10 @@ class TestWhereItApplies:
         for classes, M5-07)."""
         for resampling in METHODS:
             reasons = applicable(REPROJECT, config, _params(resampling=resampling))
-            if resampling in reproject_module._PICKING or config.capabilities.interpolation:
+            if not config.capabilities.reprojection:
+                # An entry placed by GCPs is never reprojected (DS-04d F6).
+                assert f"{config.dataset_id} does not allow reprojection" in reasons, resampling
+            elif resampling in reproject_module._PICKING or config.capabilities.interpolation:
                 assert reasons == [], resampling
             else:
                 assert reasons == [f"{config.dataset_id} does not allow interpolation"], resampling

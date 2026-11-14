@@ -54,6 +54,18 @@ class GridMismatch(ProcessingError):
     """The assets of a pixel step do not share one grid."""
 
 
+class PassDoesNotJoin(GridMismatch):
+    """The slices of a pass in radar geometry do not hang one under the other (DS-04d F4, A7).
+
+    ``kind`` is what the run reports (`failure_kind`): ``pass_`` and the reason of ``access.radar.SEAM_REASONS``, so
+    that the person learns why from the job, not only that the grids differ.
+    """
+
+    def __init__(self, message: str, reason: str) -> None:
+        super().__init__(message)
+        self.kind = f"pass_{reason}"
+
+
 class AoiOutsideInputs(ProcessingError):
     """The AOI does not overlap the inputs' rasters."""
 

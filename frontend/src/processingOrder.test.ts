@@ -30,6 +30,7 @@ import {
   processInfo,
   registryUnit,
   selectableAssets,
+  catalogueUnit,
   shownUnit,
   stepOfRefusal,
   type BandSource,
@@ -238,6 +239,12 @@ describe('shownUnit (Otto, 24.10.2026)', () => {
 
   it('writes nothing for "1", for no unit and for what is no unit', () => {
     for (const unit of ['1', '', null, undefined, 1, ['m']]) expect(shownUnit(unit as never)).toBeNull();
+  });
+
+  it('writes no unit that is no physical one: "DN" of uncalibrated digital numbers (Otto, 14.11.2026)', () => {
+    expect(shownUnit('DN')).toBeNull();
+    // Exact, as the data write it: "dB" is a physical unit of a ratio, "dn" no unit the platform knows.
+    expect(shownUnit('dB')).toBe('dB');
   });
 
   it('writes "10" and " 1" as they are: only the exact "1" is dimensionless', () => {
@@ -964,5 +971,17 @@ describe('small rules', () => {
     expect(processBlockReason({ viewable: true, collection: collection('display') }, 1)).toMatch(/tier: display/);
     expect(processBlockReason({ viewable: true, collection: collection('processing') }, 0)).toMatch(/scene/);
     expect(processBlockReason(undefined, 1)).toMatch(/dataset/);
+  });
+});
+
+describe('catalogueUnit (Otto, 14.11.2026)', () => {
+  it('writes a physical unit as it is and says what the values are where the unit is none', () => {
+    expect(catalogueUnit('m')).toBe('m');
+    expect(catalogueUnit('DN')).toBe('DN, uncalibrated digital numbers');
+    expect(catalogueUnit('1')).toBe('1, dimensionless');
+  });
+
+  it('writes nothing where the data name no unit', () => {
+    for (const unit of ['', null, undefined, 1]) expect(catalogueUnit(unit)).toBeNull();
   });
 });
