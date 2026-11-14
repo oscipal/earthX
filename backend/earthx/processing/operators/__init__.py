@@ -22,6 +22,7 @@ from earthx.processing.operators.reproject import (
     ReprojectParams,
     ReprojectParamsV2,
 )
+from earthx.processing.operators.terrain import TERRAIN, TerrainParams
 
 __all__ = [
     "JSON_SCHEMA_DIALECT",
@@ -55,6 +56,8 @@ __all__ = [
     "ReprojectParams",
     "ReprojectParamsV2",
     "Requirement",
+    "TERRAIN",
+    "TerrainParams",
     "Tier",
     "applicable",
 ]
