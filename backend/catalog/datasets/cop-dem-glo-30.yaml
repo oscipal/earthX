@@ -73,6 +73,8 @@ capabilities:
   ml_processing: true
   # No complex quad-pol data: decomp.py stays out (ENTSCHEIDUNGEN §3).
   quad_pol: false
+  # A model of heights in metres: slope, aspect and hillshade (adr/0023 F5, M5-10).
+  terrain: true
   # One elevation model, not a time series: extent, not density (adr/0004 §5).
   single_coverage_product: true
 license:
