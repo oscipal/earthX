@@ -21,7 +21,9 @@ from earthx.processing import run
 from earthx.processing.core import area_statistics
 from earthx.processing.errors import AoiOutsideInputs, GridMismatch
 from earthx.processing.recipe import recipe_from_data
-from earthx.readers.cog import AS_WRITTEN, AssetPath
+from earthx.processing.source import Source
+from earthx.processing.tile import OperatorTileReader
+from earthx.readers.cog import AS_WRITTEN, AssetPath, CogReader
 from tests.earthx.processing import sources
 from tests.earthx.processing.recipes import recipe_data, resolved
 from tests.earthx.processing.testops import OPERATORS
@@ -174,3 +176,42 @@ def test_the_map_shows_a_radar_result_through_its_spline(tmp_path: Path) -> None
         statistics = result_statistics(path, {})
     assert (~numpy.ma.getmaskarray(image.array)).any()
     assert statistics[0]["statistics"]["count"] > 0
+
+
+class _Inputs:
+    """What `api` hands a tile reader: the assets and no steps."""
+
+    def __init__(self, inputs: tuple) -> None:
+        self.inputs = inputs
+        self.steps = ()
+        self.bands = None
+
+
+def test_a_tile_with_an_operator_still_reads_through_the_spline(slices: dict[str, Path]) -> None:
+    entry = recipe(["slice-0"]).inputs[0].resolved[0]
+    path = AssetPath(str(slices["slice-0"]), dataset_id="synthetic", item_id="slice-0", asset="vv", georeferencing="gcp_tps")
+    lon, lat = mini_pass.position(mini_pass.HEIGHT / 2, 40)
+    tile = WEB_MERCATOR_TMS.tile(lon, lat, 16)
+    with OperatorTileReader(_Inputs(((entry, path),))) as reader:
+        image = reader.tile(tile.x, tile.y, tile.z)
+        preview = reader.preview(max_size=32)
+    assert (~numpy.ma.getmaskarray(image.array)).any()
+    assert preview.width <= 32 and (~numpy.ma.getmaskarray(preview.array)).any()
+
+
+def test_a_scene_without_nodata_keeps_its_one_band(tmp_path: Path) -> None:
+    with rasterio.open(mini_pass.build_slice(tmp_path / "a.tif", 0)) as source:
+        profile, data = source.profile, source.read()
+        gcps = source.gcps
+    profile.pop("nodata")
+    plain = tmp_path / "plain.tif"
+    with rasterio.open(plain, "w", **{**profile, "gcps": gcps[0], "crs": gcps[1]}) as dst:
+        dst.write(data)
+    entry = recipe(["slice-0"]).inputs[0].resolved[0]
+    path = AssetPath(str(plain), dataset_id="synthetic", item_id="slice-0", asset="vv", georeferencing="gcp_tps")
+    from contextlib import ExitStack
+
+    with ExitStack() as stack:
+        source = Source.open(entry, path, stack)
+        assert isinstance(source.reader, CogReader) and source.reader.dataset.count == 2  # the warp adds alpha
+        assert source.names == ["vv"] and source.nodata == [None]

@@ -20,7 +20,7 @@ from rasterio.windows import Window
 
 from earthx.access import radar
 from earthx.access.crop_rules import AoiOutsideItems
-from earthx.access.radar import RadarGrid, RadarGridError, Slice, SlicesDoNotJoin, join_slices, line_time
+from earthx.access.radar import RadarGrid, RadarGridError, Slice, SlicesDoNotJoin, join_slices, line_time, pass_runs
 from earthx.readers.cog import AssetPath, CogReader
 from tests.earthx.readers import mini_gcp, mini_pass
 
@@ -72,6 +72,14 @@ def test_a_window_at_the_edge_stays_inside_the_scene(grid: RadarGrid) -> None:
 def test_an_aoi_beside_the_scene_has_no_window(grid: RadarGrid) -> None:
     with pytest.raises(AoiOutsideItems):
         grid.window(box_of(200, 200, 260, 260))
+
+
+@pytest.mark.parametrize(
+    "corners", [(-60, 10, -20, 50), (10, -60, 50, -20)], ids=["above the first line", "left of the first column"]
+)
+def test_an_aoi_on_the_near_side_of_the_scene_has_no_window(grid: RadarGrid, corners: tuple) -> None:
+    with pytest.raises(AoiOutsideItems):
+        grid.window(box_of(*corners))
 
 
 def test_a_point_has_a_window_of_one_pixel(grid: RadarGrid) -> None:
@@ -327,3 +335,15 @@ def test_no_slices_is_no_pass() -> None:
 def test_a_slice_without_a_readable_time_does_not_join(properties: dict) -> None:
     with pytest.raises(SlicesDoNotJoin):
         line_time({"properties": properties}, "start_datetime")
+
+
+def test_a_run_of_a_split_pass_the_region_misses_is_left_out(slice_files: tuple[Path, Path]) -> None:
+    from shapely.geometry import shape
+
+    a = slice_of(slice_files[0], mini_pass.item(0))
+    b = slice_of(slice_files[1], mini_pass.item(1, gap_lines=mini_pass.HEIGHT))
+    ring = [list(mini_pass.position(line, col)) for line, col in ((10, 10), (10, 50), (30, 50), (30, 10))]
+    region = shape({"type": "Polygon", "coordinates": [[*ring, ring[0]]]})
+    placed, reasons, missed = pass_runs([a, b], region)
+    assert [joined.slices[0].item_id for joined, _ in placed] == ["slice-0"]
+    assert missed == ["slice-1"] and "missing" in reasons[0]

@@ -139,7 +139,18 @@ class RadarSource(Source):
     the spline of the reader (:meth:`Source.read_tile`), the placing the map shows (adr/0018 F1)."""
 
     def __init__(self, entry: ResolvedInput, reader: CogReader, raws: Sequence[Any], joined: JoinedPass) -> None:
-        super().__init__(entry, reader)
+        # Not `Source.__init__`: bands, types, nodata and scaling are the file's own, not those of the warp over it,
+        # which adds an alpha band where the file has no nodata.
+        self.entry = entry
+        self.reader = reader
+        raw = raws[0]
+        what = f"{entry.asset.dataset_id}/{entry.asset.item_id}/{entry.asset.asset}"
+        self.scaling = scaling_for_cog(entry.scaling, entry.bands, raw.scales, raw.offsets, what)
+        count = raw.count
+        self.names = [entry.asset.asset] if count == 1 else [f"{entry.asset.asset}_{i + 1}" for i in range(count)]
+        self.data_types = list(raw.dtypes)
+        self.nodata = [None if raw.nodata is None else float(raw.nodata)] * count
+        self.units = units_of(entry, count)
         self.crs = None  # type: ignore[assignment]
         self.transform = Affine.identity()
         self.radar = joined.grid
@@ -160,7 +171,7 @@ class RadarSource(Source):
         return cls(entry, reader, [reader.raw], joined)
 
     def same_grid(self, other: Source) -> bool:
-        return isinstance(other, RadarSource) and (self.width, self.height) == (other.width, other.height)
+        return isinstance(other, RadarSource) and other.radar is not None and self.radar.same_place(other.radar)
 
     def _dtype(self) -> str:
         return "float32" if self.scaling.applied_by_core else self.data_types[0]

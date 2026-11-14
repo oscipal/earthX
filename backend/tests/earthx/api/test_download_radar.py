@@ -211,6 +211,18 @@ def test_a_missing_slice_splits_the_pass_into_two_groups(files: dict[str, Path],
     assert "Group 1: Scene slice-0" in notice and "Group 2: Scene slice-1" in notice
 
 
+def test_a_part_of_a_split_pass_the_aoi_misses_is_left_out(files: dict[str, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    items = {"slice-0": item(0), "slice-1": item(1, gap_lines=mini_pass.HEIGHT)}
+    with client_for(files, items, monkeypatch) as client:
+        response = download(client, aoi=area(10, 10, 30, 50))
+    assert response.status_code == 200, response.text
+    names = members(response)
+    # The route leaves a scene out by its footprint before anything is read; the run of the other slice is written.
+    assert len([name for name in names if name.endswith(".tif")]) == 2
+    notice = names["ATTRIBUTION.txt"].decode("utf-8")
+    assert "Scene slice-0" in notice and "Scene slice-1" not in notice
+
+
 def test_another_common_resolution_is_refused_before_anything_is_read(joined: TestClient) -> None:
     response = download(joined, form="multi_band", common_resolution=20.0)
     assert response.status_code == 422

@@ -136,11 +136,13 @@ class RadarGrid:
     def window(self, aoi: Mapping[str, Any] | BaseGeometry) -> Window:
         """The pixel window around ``aoi``, whole pixels, inside the grid; :class:`AoiOutsideItems` where it misses."""
         minx, miny, maxx, maxy = self.pixel_geometry(aoi).bounds
+        # Beside the grid on any side, a point on its edge included: checked before anything is clamped.
+        if maxx < 0 or maxy < 0 or minx >= self.width or miny >= self.height:
+            raise AoiOutsideItems("the AOI does not cover the scene")
         col0, row0 = max(0, math.floor(minx)), max(0, math.floor(miny))
         col1, row1 = min(self.width, math.ceil(maxx)), min(self.height, math.ceil(maxy))
-        col1, row1 = max(col1, min(col0 + 1, self.width)), max(row1, min(row0 + 1, self.height))
-        if col0 >= self.width or row0 >= self.height or col1 <= 0 or row1 <= 0 or col1 <= col0 or row1 <= row0:
-            raise AoiOutsideItems("the AOI does not cover the scene")
+        # A point or a line still has a pixel.
+        col1, row1 = max(col1, col0 + 1), max(row1, row0 + 1)
         return Window(col0, row0, col1 - col0, row1 - row0)
 
     def mask(self, aoi: Mapping[str, Any] | BaseGeometry, window: Window) -> numpy.ndarray:
@@ -163,6 +165,13 @@ class RadarGrid:
             for point in self.gcps
         )
         return RadarGrid(int(window.width), int(window.height), shifted, self.gcp_crs)
+
+    def same_place(self, other: RadarGrid) -> bool:
+        """Whether two grids are the same size and placed by the same GCPs."""
+        def key(grid: RadarGrid) -> tuple[Any, ...]:
+            return (grid.width, grid.height, grid.gcp_crs, tuple((p.row, p.col, p.x, p.y, p.z) for p in grid.gcps))
+
+        return key(self) == key(other)
 
     def profile(self) -> dict[str, Any]:
         """What a rasterio profile needs to write this grid: the GCPs and their CRS, no geotransform."""
@@ -441,5 +450,6 @@ def notice_with_scenes(notice: str, lines: Sequence[str]) -> str:
     if not lines:
         return notice
     if RADAR_GRID_LINE not in notice:
-        raise ValueError("the notice of a radar export names its grid")
+        # An export accepted before DS-04d: its notice still says "Resolution: native"; the grid comes in front.
+        return notice.rstrip("\n") + "\n\n" + "\n\n".join([RADAR_GRID_LINE, *lines]) + "\n"
     return notice.replace(RADAR_GRID_LINE, "\n\n".join([RADAR_GRID_LINE, *lines]), 1)

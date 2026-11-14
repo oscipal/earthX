@@ -62,12 +62,21 @@ from shapely.geometry import box, mapping
 from shapely.geometry import shape as shapely_shape
 from shapely.ops import unary_union
 
-from earthx.access.band_export import EXPORTS_DIR, BandMeta, ExportPlanError, band_count, band_meta_of_items, plan_files
+from earthx.access.band_export import (
+    EXPORTS_DIR,
+    BandMeta,
+    ExportPlanError,
+    band_count,
+    band_meta_of_items,
+    plan_files,
+    resampling_for,
+)
 from earthx.access.crop_rules import mosaic_order, target_crs
 from earthx.access.download import (
     AOI_FILENAME,
     CITATION_FILENAME,
     NOTICE_FILENAME,
+    RADAR_ONE_RESOLUTION,
     AoiOutsideItems,
     InvalidAoi,
     asset_gsd,
@@ -539,6 +548,11 @@ def layout_bands(prepared: _Prepared, recipe: Recipe) -> list[BandMeta]:
         plan_files(layout.form, bands, layout.resolution_m)
     except ExportPlanError as error:
         raise OrderRefused(422, str(error), "scope") from None
+    if prepared.config.georeferencing is Georeferencing.GCP_TPS and any(
+        resampling_for(meta, layout.resolution_m) != "none" for meta in bands
+    ):
+        # Radar geometry is never resampled (DS-04d), refused before the queue as the download refuses it.
+        raise OrderRefused(422, RADAR_ONE_RESOLUTION, "scope")
     return bands
 
 

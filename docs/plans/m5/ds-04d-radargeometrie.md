@@ -371,7 +371,27 @@ möglich.
   ohne `reprojection` gilt nur für Datensätze mit Geotransformation.
 - **A14 – Szene ohne Zeilenzeiten:** wird im Zuschnitt allein ein Lauf; im Job eines Durchgangs `grid_mismatch`.
 
-### 12.3 Tests
+- **A15 – Export-Job, geteilte Gruppe:** Die Gruppen- und Item-Zeilen der Textdatei schreibt `api` bei der Annahme
+  nach den Gruppen des Rezepts. Teilt sich eine Gruppe erst im Lauf (fehlender Slice), hat das ZIP mehr
+  `group-NN/`-Ordner als diese Zeilen nennen; die richtige Aufteilung steht in den Zeilen „Group N: Scene …“ und
+  „Not joined into one file: …“ darunter. Selten (ein Slice fehlt mitten in einem gewählten Durchgang); nicht weiter
+  angeglichen.
+
+### 12.3 Review vor dem Fertigmelden
+
+Ein Review des Diffs (Subagent `reviewer`) fand zwei Fehler, beide behoben und mit Test:
+
+- Kachel, Vorschau und Statistik mit Operator auf Sentinel-1 gaben `500` (`processing/tile.py` nahm das CRS der
+  Quelle, das es in Radargeometrie nicht gibt); die Kachel liest weiter über die TPS des Readers.
+- Eine AOI links oder oberhalb des Rasters bekam ein Fenster von einer Pixelreihe statt `AoiOutsideItems`; damit
+  hätte ein Job daneben ein leeres Ergebnis geliefert und ein geteilter Download den Teil ohne AOI nicht ausgelassen.
+
+Dazu: Bänder, Typ, nodata und Skalierung einer `RadarSource` kommen aus der Datei, nicht aus dem Warp (der ohne nodata
+einen Alpha-Kanal anhängt); gleiche Gitter vergleichen auch die GCPs; eine Textdatei ohne Zeile „Grid“ (Export, vor
+DS-04d angenommen) bekommt sie angehängt statt eines Fehlers; eine Mehrband-Datei mit anderer gemeinsamer Auflösung
+weist auch die Annahme des Export-Jobs mit `422` ab, nicht erst der Lauf.
+
+### 12.4 Tests
 
 Neu: `tests/earthx/access/test_radar.py` (Fenster, Maske, GCP-Verschiebung, Lesen, Nähte),
 `tests/earthx/api/test_download_radar.py` (Route: ein Mosaik über die Naht, Werte außerhalb der Form bleiben,
