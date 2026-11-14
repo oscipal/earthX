@@ -184,6 +184,7 @@ from earthx.access.crop_rules import (
     crop_filename,
     estimate_output_dims,
     group_dirname,
+    group_lines,
     mask_filename,
     mask_profile,
     native_crop_grid,
@@ -1213,10 +1214,9 @@ def build_notice_text(
         lines.append("\n".join(["Limitations:", *(f"- {text}" for text in config.limitations)]))
 
     if group_item_ids is not None and len(group_item_ids) > 1:
-        for index, ids in enumerate(group_item_ids, start=1):
-            lines.append(f"Group {index} ({group_prefix}{group_dirname(index - 1, len(group_item_ids))}): " + ", ".join(ids))
+        lines.extend(group_lines(group_item_ids, group_prefix))
     else:
-        lines.append("Items: " + ", ".join(item_ids))
+        lines.extend(group_lines([item_ids]))
     if skipped_item_ids:
         lines.append("Not covered by the AOI, left out: " + ", ".join(skipped_item_ids))
     if assets and not raster_result:

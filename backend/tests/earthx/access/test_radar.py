@@ -20,7 +20,16 @@ from rasterio.windows import Window
 
 from earthx.access import radar
 from earthx.access.crop_rules import AoiOutsideItems
-from earthx.access.radar import RadarGrid, RadarGridError, Slice, SlicesDoNotJoin, join_slices, line_time, pass_runs
+from earthx.access.radar import (
+    RadarGrid,
+    RadarGridError,
+    Slice,
+    SlicesDoNotJoin,
+    join_slices,
+    line_time,
+    notice_with_groups,
+    pass_runs,
+)
 from earthx.readers.cog import AssetPath, CogReader
 from tests.earthx.readers import mini_gcp, mini_pass
 
@@ -347,3 +356,22 @@ def test_a_run_of_a_split_pass_the_region_misses_is_left_out(slice_files: tuple[
     placed, reasons, missed = pass_runs([a, b], region)
     assert [joined.slices[0].item_id for joined, _ in placed] == ["slice-0"]
     assert missed == ["slice-1"] and "missing" in reasons[0]
+
+
+NOTICE = "Title\n\nItems: a, b, c\n\nGrid: radar geometry\n\nGenerated: now\n"
+
+
+def test_the_groups_of_a_notice_become_those_of_the_zip() -> None:
+    written = notice_with_groups(NOTICE, [["a", "b"], ["c"]], "exports/")
+    assert written.split("\n\n")[1:3] == ["Group 1 (exports/group-01/): a, b", "Group 2 (exports/group-02/): c"]
+    assert "Items: " not in written and written.endswith("Generated: now\n")
+
+
+def test_groups_of_a_notice_that_join_again_become_one_line_of_items() -> None:
+    two = "Title\n\nGroup 1 (group-01/): a\n\nGroup 2 (group-02/): b\n\nGenerated: now\n"
+    assert notice_with_groups(two, [["a", "b"]], "") == "Title\n\nItems: a, b\n\nGenerated: now\n"
+
+
+def test_a_notice_without_lines_of_groups_is_left_as_it_is() -> None:
+    plain = "Title\n\nGroup 1: Scene a: rows 0-1, columns 0-1 (0-based, inclusive)\n"
+    assert notice_with_groups(plain, [["a"], ["b"]], "") == plain

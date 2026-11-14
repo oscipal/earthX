@@ -168,6 +168,25 @@ def test_a_missing_slice_splits_the_export_as_it_splits_the_crop(tmp_path: Path)
         assert any("group-02/" in name for name in names)
         notice = exported.read("ATTRIBUTION.txt").decode("utf-8")
     assert "Not joined into one file: a slice of the pass is missing." in notice
+    # The lines of the groups name the folders of the ZIP, not the one group of the recipe (Otto, A15).
+    assert "Items: " not in notice
+    assert group_lines(notice) == [
+        "Group 1 (exports/group-01/): slice-0",
+        "Group 2 (exports/group-02/): slice-1",
+    ]
+    assert group_lines(notice) == group_lines(crop.read("ATTRIBUTION.txt").decode("utf-8"))
+
+
+@pytest.mark.usefixtures("served")
+def test_a_pass_that_joins_keeps_the_one_line_of_its_items(tmp_path: Path) -> None:
+    _, result = export(items(), ACROSS, tmp_path)
+    with zipfile.ZipFile(result.path) as exported:
+        notice = exported.read("ATTRIBUTION.txt").decode("utf-8")
+    assert group_lines(notice) == ["Items: slice-0, slice-1"]
+
+
+def group_lines(text: str) -> list[str]:
+    return [line for line in text.split("\n\n") if line.startswith(("Items: ", "Group 1 (", "Group 2 ("))]
 
 
 @pytest.mark.usefixtures("served")

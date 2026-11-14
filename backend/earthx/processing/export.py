@@ -94,6 +94,7 @@ from earthx.access.radar import (
     Slice,
     copy_to_cog,
     gcp_key,
+    notice_with_groups,
     notice_with_scenes,
     pass_runs,
     radar_profiles,
@@ -419,8 +420,8 @@ class _Export:
         assert isinstance(target, AssetPath)  # `check_export`: COG only
         return stack.enter_context(CogReader(target)).raw
 
-    def plan_radar(self, bands: tuple[BandMeta, ...]) -> tuple[list[_RadarOutput], int, list[str]]:
-        """Every file of an export in radar geometry, the number of its groups, and the lines of its notice.
+    def plan_radar(self, bands: tuple[BandMeta, ...]) -> tuple[list[_RadarOutput], list[list[str]], list[str]]:
+        """Every file of an export in radar geometry, the items of each of its groups, and the lines of its notice.
 
         The slices of a group that join make one group; one that does not join splits (F4), so the groups of the
         ZIP can be more than the recipe's. Without a layout every asset is a file of its own, named as before.
@@ -476,7 +477,7 @@ class _Export:
                 )
                 members = tuple(by_asset[asset] for asset in plan.assets)
                 outputs.append(_RadarOutput(index, plan, members, entries, joined, window))
-        return outputs, len(placed), lines
+        return outputs, [[piece.item_id for piece in joined.slices] for joined, _ in placed], lines
 
     def write_radar(self, index: int, output: _RadarOutput, form: str | None) -> tuple[str, str, str]:
         """The data COG and the mask of one file in radar geometry; their work file names and the data type."""
@@ -755,8 +756,10 @@ def export(recipe: Recipe, *, workdir: Path, progress: Progress, attachments: At
             layout = recipe.output.layout  # type: ignore[union-attr]  # `check_export`: a crop
             notice = attachments.files[NOTICE_FILENAME]
             if is_radar(recipe):
-                radar, group_count, lines = state.plan_radar(attachments.bands if layout is not None else ())
-                notice = notice_with_scenes(notice, lines)
+                radar, groups, lines = state.plan_radar(attachments.bands if layout is not None else ())
+                group_count = len(groups)
+                # The groups as the ZIP holds them, which a pass that splits makes more than the recipe's (A15).
+                notice = notice_with_groups(notice_with_scenes(notice, lines), groups, EXPORTS_DIR if layout else "")
                 state.total = sum(output.blocks for output in radar) + 1
                 for index, output in enumerate(radar):
                     data_name, mask_name, dtype = state.write_radar(index, output, layout.form if layout else None)

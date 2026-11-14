@@ -61,6 +61,7 @@ __all__ = [
     "dtype_bytes",
     "estimate_output_dims",
     "group_dirname",
+    "group_lines",
     "mask_filename",
     "mask_profile",
     "merge_first_valid",
@@ -470,6 +471,17 @@ def mask_filename(asset: str) -> str:
     one asset sort next to each other and the pairing is obvious without reading the notice file.
     """
     return f"{crop_filename(asset)[:-4]}_mask.tif"
+
+
+def group_lines(groups: Sequence[Sequence[str]], prefix: str = "") -> list[str]:
+    """The lines of the notice that name the items of a ZIP: one ``Group N (<folder>): …`` per group where there
+    are several, else one ``Items: …`` line (M3-17). ``prefix`` is the folder the group folders lie in."""
+    if len(groups) > 1:
+        return [
+            f"Group {index} ({prefix}{group_dirname(index - 1, len(groups))}): " + ", ".join(ids)
+            for index, ids in enumerate(groups, start=1)
+        ]
+    return ["Items: " + ", ".join(item for ids in groups for item in ids)]
 
 
 def group_dirname(index: int, group_count: int) -> str:

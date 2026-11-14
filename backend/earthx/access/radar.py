@@ -20,6 +20,7 @@ pure apart from reading the GCPs of an open dataset, so the synchronous crop of 
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -39,7 +40,7 @@ from shapely.geometry import shape as shapely_shape
 from shapely.geometry.base import BaseGeometry
 
 from earthx.access.band_export import ExportPlanError, kept_nodata
-from earthx.access.crop_rules import AoiOutsideItems, mask_profile
+from earthx.access.crop_rules import AoiOutsideItems, group_lines, mask_profile
 
 __all__ = [
     "DENSIFY_DEGREES",
@@ -56,6 +57,7 @@ __all__ = [
     "gcp_key",
     "item_line_times",
     "line_time",
+    "notice_with_groups",
     "notice_with_scenes",
     "pass_runs",
     "radar_profiles",
@@ -453,3 +455,22 @@ def notice_with_scenes(notice: str, lines: Sequence[str]) -> str:
         # An export accepted before DS-04d: its notice still says "Resolution: native"; the grid comes in front.
         return notice.rstrip("\n") + "\n\n" + "\n\n".join([RADAR_GRID_LINE, *lines]) + "\n"
     return notice.replace(RADAR_GRID_LINE, "\n\n".join([RADAR_GRID_LINE, *lines]), 1)
+
+
+#: A paragraph of the notice that names the items of the ZIP (:func:`~earthx.access.crop_rules.group_lines`).
+_GROUP_PARAGRAPH = re.compile(r"(Items: |Group \d+ \()")
+
+
+def notice_with_groups(notice: str, groups: Sequence[Sequence[str]], prefix: str) -> str:
+    """``notice`` with its lines of groups and items as the export wrote them, in their place (Otto, A15).
+
+    `api` writes those lines for the groups of the recipe; a group whose slices do not join splits only while the
+    export runs (F4), into more folders than the recipe had groups.
+    """
+    paragraphs = notice.rstrip("\n").split("\n\n")
+    places = [index for index, paragraph in enumerate(paragraphs) if _GROUP_PARAGRAPH.match(paragraph)]
+    if not places:
+        return notice
+    kept = [paragraph for index, paragraph in enumerate(paragraphs) if index not in places]
+    kept[places[0] : places[0]] = group_lines(groups, prefix)
+    return "\n\n".join(kept) + "\n"
