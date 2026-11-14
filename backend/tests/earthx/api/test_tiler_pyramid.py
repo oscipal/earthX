@@ -284,14 +284,29 @@ class TestTheTileOfAPyramid:
         upload_tile(pyramids.store, RELIEF_ID, VERSION, 0, tile.x, tile.y, path_, checked_at=datetime(2026, 11, 14, tzinfo=UTC))
         assert client().get(path(RELIEF_ID, 0)).status_code == 200
 
-    def test_a_prototype_source_is_sent_no_store(self, rows, pyramids, client) -> None:
+    def test_a_prototype_source_is_sent_private_no_store(self, rows, pyramids, client) -> None:
+        """The words of adr/0024 R7, on the tile of a pyramid and on every other answer for the source."""
         rows.ready(PROTO_ID, RELIEF_ID)
         pyramids.put(PROTO_ID, 6)
         pyramids.put(RELIEF_ID, 6)
         api = client()
         proto = api.get(path(PROTO_ID, 6))
-        assert proto.status_code == 200 and proto.headers["cache-control"] == "no-store"
+        assert proto.status_code == 200 and proto.headers["cache-control"] == "private, no-store"
         assert "no-store" not in api.get(path(RELIEF_ID, 6)).headers.get("cache-control", "")
+
+    def test_the_answers_without_a_tile_of_a_prototype_source_are_private_no_store_too(
+        self, rows, pyramids, client
+    ) -> None:
+        rows.ready(PROTO_ID)
+        api = client()
+        no_data = api.get(path(PROTO_ID, 5))  # ready, and no object for this tile
+        assert no_data.status_code == 404 and no_data.headers["cache-control"] == "private, no-store"
+        rows.states[PROTO_ID] = OverviewState("building")
+        api2 = client()
+        building = api2.get(path(PROTO_ID, 5))
+        assert building.status_code == 404 and building.headers["cache-control"] == "private, no-store"
+        assert building.headers[overview_tiles.OVERVIEW_HEADER] == "building"
+        assert client(sources_=None).get(path(PROTO_ID, 5)).headers["cache-control"] == "private, no-store"
 
     def test_the_term_asked_for_is_that_of_the_dataset(self, rows, pyramids, client, clock) -> None:
         rows.ready(RELIEF_ID, PROTO_ID)

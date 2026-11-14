@@ -60,6 +60,7 @@ __all__ = [
     "MIN_MOSAIC_ITEMS",
     "OVERVIEW_ROUTER_PREFIX",
     "PARTIAL_HEADER",
+    "PROTOTYPE_CACHE_CONTROL",
     "ROUTER_PREFIX",
     "SOURCE_HEADER",
     "SUBSTITUTE_ITEM_CAP",
@@ -94,6 +95,8 @@ ROUTER_PREFIX = "/collections/{dataset}/mosaic/{selection}"
 OVERVIEW_ROUTER_PREFIX = "/collections/{dataset}/overview"
 #: The header that says where the pixels of a tile come from, for a tile that is not of the dataset in its URL.
 SOURCE_HEADER = "X-EarthX-Source"
+#: What every answer of a prototype source carries (adr/0024 R7).
+PROTOTYPE_CACHE_CONTROL = b"private, no-store"
 SUBSTITUTE_SOURCE = "substitute"
 #: Item records of the substitute one tile fetches from pgstac and sorts by overlap, before the budget
 #: (:data:`TILE_FILE_BUDGET` files, :data:`TILE_TIME_BUDGET_S` s) cuts them to the files it reads. No file is opened
@@ -496,8 +499,8 @@ class TileOutcome:
 class TileOutcomeHeaders:
     """ASGI middleware: the headers a tile knows only once its scenes are chosen or read.
 
-    :data:`PARTIAL_HEADER` on a tile that left scenes out, ``no-store`` after its time ran out or for a prototype
-    source's pyramid, and :data:`SOURCE_HEADER` on the answer of a substitute's or a pyramid's tile. TiTiler's tile route builds its own response, and the read
+    :data:`PARTIAL_HEADER` on a tile that left scenes out, ``no-store`` after its time ran out, ``private, no-store`` for a prototype
+    source's pyramid (every answer, whatever its status), and :data:`SOURCE_HEADER` on the answer of a substitute's or a pyramid's tile. TiTiler's tile route builds its own response, and the read
     that may run out of time ends inside it; so the path dependency and the reader write a :class:`TileOutcome` that
     lives in the request's scope, and the headers are set when the response starts. Only the paths under
     ``/collections/{dataset}/mosaic/`` and ``/collections/{dataset}/overview/tiles/`` get an outcome.
@@ -521,7 +524,8 @@ class TileOutcomeHeaders:
                     headers.append((SOURCE_HEADER.lower().encode(), outcome.source.encode()))
                 if outcome.timed_out or outcome.no_store:
                     headers = [header for header in headers if header[0].lower() != b"cache-control"]
-                    headers.append((b"cache-control", b"no-store"))
+                    # A prototype source says it as adr/0024 R7 does; a tile that ran out of time is merely not kept.
+                    headers.append((b"cache-control", PROTOTYPE_CACHE_CONTROL if outcome.no_store else b"no-store"))
                 if outcome.left_out or outcome.timed_out:
                     headers.append((PARTIAL_HEADER.lower().encode(), b"time" if outcome.timed_out else str(outcome.left_out).encode()))
                 message = {**message, "headers": headers}

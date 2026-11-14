@@ -1220,9 +1220,14 @@ async def _pyramid_tile(
 
     ``source`` is the ``X-EarthX-Source`` of the answer: ``overview`` for the pyramid of the dataset in the path,
     ``substitute`` where it is the stand-in's. ``extent`` cuts the picture to the dataset a stand-in draws for. A prototype
-    source's tile is sent ``no-store`` (adr/0024 R7). The read is one object and has no budget and no place at the gate
+    source's every answer is sent ``private, no-store`` (adr/0024 R7). The read is one object and has no budget and no place at the gate
     of the mosaic reads.
     """
+    # Before anything is read, so that every answer for a prototype source (a 404 for a tile without data, a 503) carries it.
+    outcome = mosaic_tiles.TileOutcome.of(request.scope)
+    if outcome is not None:
+        outcome.source = source
+        outcome.no_store = overview_tiles.is_prototype(owner.dataset_id)
     sources: overview_tiles.OverviewSources | None = getattr(request.app.state, "earthx_overviews", None)
     if sources is None:
         raise HTTPException(status_code=503, detail="overviews are not served by this process")
@@ -1230,10 +1235,6 @@ async def _pyramid_tile(
     if found.status != "ready" or found.version is None:
         raise overview_tiles.refusal_of(found)
     data = await sources.tile(owner.dataset_id, found.version, grid)
-    outcome = mosaic_tiles.TileOutcome.of(request.scope)
-    if outcome is not None:
-        outcome.source = source
-        outcome.no_store = overview_tiles.is_prototype(owner.dataset_id)
     return PyramidTile(owner.dataset_id, data, extent)
 
 
