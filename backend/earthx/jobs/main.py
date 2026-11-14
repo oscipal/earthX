@@ -26,6 +26,7 @@ from earthx.objectstore.errors import LifecycleMissing, ObjectStoreError
 from earthx.objectstore.overviews import overviews_lifecycle_ok
 from earthx.objectstore.results import Store, lifecycle_ok
 from earthx.processing import check_instance_settings
+from earthx.processing.overview_build import pyramid_hosts
 
 # M3-16: this process's own JSON logging, before anything can log a line
 # (K-01/K-02) — the compose command starts it with `--no-access-log`, so
@@ -78,9 +79,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         raise
     supervisor = None
     try:
-        supervisor = Supervisor(WorkerConfig.from_environ(), app.state.store)
+        # The datasets with an overview pyramid and their hosts, as plain data: the supervisor imports no registry.
+        supervisor = Supervisor(WorkerConfig.from_environ(), app.state.store, pyramids=pyramid_hosts())
         await run_in_threadpool(supervisor.start)
-    except (WorkerConfigError, RuntimeError) as exc:
+    except (WorkerConfigError, RuntimeError, ValueError) as exc:
         # Our own texts: they name a variable or a missing migration, never a value.
         logger.error("worker not started: %s", exc)
         raise

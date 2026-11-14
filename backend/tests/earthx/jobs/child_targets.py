@@ -106,6 +106,18 @@ def probe_modules(conn: Any) -> None:
     conn.close()
 
 
+def probe_overview_modules(conn: Any) -> None:
+    """What the child of a pyramid build has loaded after it imported what `jobs` makes it import; `boto3` hidden."""
+    import multiprocessing
+
+    sys.modules["boto3"] = None  # type: ignore[assignment]
+    import earthx.jobs.overview_child  # noqa: F401
+
+    loaded = sorted(name for name, module in sys.modules.items() if module is not None)
+    conn.send((multiprocessing.get_start_method(), loaded))
+    conn.close()
+
+
 def measure_high_water(conn: Any) -> None:
     """The high-water mark before a 150 MB block, with it, and after it is freed, in a process of its own.
 
@@ -137,6 +149,21 @@ def end_to_end(workdir: str, conn: Any) -> None:
 
     cog = os.environ["CHILD_COG"]
     cog_reader.vsicurl_path = lambda checked: cog
+    read_access.resolve_host = lambda host, port=443: ("93.184.216.34",)
+    run_child(workdir, conn)
+
+
+def overview_end_to_end(workdir: str, conn: Any) -> None:
+    """The real child of a pyramid build, its sources behind the two seams of `end_to_end`: ``CHILD_FILES`` maps address to file."""
+    import json
+
+    sys.modules["boto3"] = None  # type: ignore[assignment]
+    import earthx.readers.access as read_access
+    import earthx.readers.cog as cog_reader
+    from earthx.jobs.overview_child import run_child
+
+    files = json.loads(os.environ["CHILD_FILES"])
+    cog_reader.vsicurl_path = lambda checked: files[getattr(checked, "url", str(checked))]
     read_access.resolve_host = lambda host, port=443: ("93.184.216.34",)
     run_child(workdir, conn)
 

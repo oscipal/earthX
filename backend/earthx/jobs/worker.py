@@ -2,7 +2,8 @@
 
 One supervisor per worker container. It holds ``slots`` threads, each with a connection of
 its own, one connection that listens for the wake-up call, and one for the sweeper and the
-clean-up: with the default two slots, four connections. A slot picks up a run, writes the
+clean-up: with the default two slots, four connections. With ``pyramids`` it holds one more thread, ``overview``, with
+a connection of its own: it builds overview pyramids in a child and is no slot (:mod:`earthx.jobs.overview_builder`). A slot picks up a run, writes the
 recipe into a work directory, starts a child through ``get_context("spawn")``, and then only
 watches: it reads the pipe, renews the lease, writes the progress, passes on a cancel, and
 decides from what the child said, or did not say, how the run ends.
@@ -55,10 +56,12 @@ from typing import Any
 
 import psycopg
 
-from earthx.jobs import overviews, queue
+from earthx.jobs import overview_upkeep, overviews, queue
 from earthx.jobs.cleanup import cleanup
 from earthx.jobs.config import WorkerConfig
 from earthx.jobs.entry import ChildTarget
+from earthx.jobs.overview_builder import WORKDIR as OVERVIEW_WORKDIR
+from earthx.jobs.overview_builder import OverviewBuilder
 from earthx.objectstore.errors import ObjectStoreError
 from earthx.objectstore.results import FILES_META, Store, delete_result, file_facts, new_result_id, upload_result
 
@@ -111,6 +114,7 @@ class Supervisor:
         target: Callable[[str, Any], None] | None = None,
         name: str | None = None,
         pyramids: Mapping[str, Sequence[str]] | None = None,
+        overview_target: Callable[[str, Any], None] | None = None,
     ) -> None:
         self.config = config
         self.store = store
@@ -121,6 +125,21 @@ class Supervisor:
         self.name = name or f"{socket.gethostname()}-{os.getpid()}-{secrets.token_hex(2)}"
         self._context = _SPAWN
         self._stopping = threading.Event()
+        self._overview_builder = (
+            OverviewBuilder(
+                config,
+                store,
+                name=self.name,
+                pyramids=self.pyramids,
+                context=self._context,
+                stopping=self._stopping,
+                connect=self._connect,
+                database_ok=self._database_ok,
+                target=overview_target,
+            )
+            if self.pyramids
+            else None
+        )
         self._wakes = [threading.Event() for _ in range(config.slots)]
         self._threads: list[threading.Thread] = []
         self._last_database_ok = 0.0
@@ -141,6 +160,9 @@ class Supervisor:
                 for index in range(self.config.slots)
             ),
         ]
+        if self._overview_builder is not None:
+            # A thread of its own, not a slot: a build takes hours and must not hold one of the slots of the runs.
+            self._threads.append(threading.Thread(target=self._overview_builder.run, name="overview", daemon=True))
         for thread in self._threads:
             thread.start()
         self._started = True
@@ -183,7 +205,7 @@ class Supervisor:
         root = self.config.workdir
         root.mkdir(parents=True, exist_ok=True)
         for entry in root.iterdir():
-            if _RUN_DIRECTORY.match(entry.name) and entry.is_dir() and not entry.is_symlink():
+            if (_RUN_DIRECTORY.match(entry.name) or entry.name == OVERVIEW_WORKDIR) and entry.is_dir() and not entry.is_symlink():
                 shutil.rmtree(entry, ignore_errors=True)
 
     @staticmethod
@@ -221,7 +243,7 @@ class Supervisor:
             wake.set()
 
     def _maintain(self) -> None:
-        """Queue runs whose lease ran out; hourly ask for the pyramids that are missing and clean up what expired."""
+        """Queue runs whose lease ran out; hourly ask for the pyramids that are missing, clean up what expired and sweep the pyramids."""
         conn: psycopg.Connection | None = None
         next_cleanup = time.monotonic() + self.config.cleanup_first_seconds
         while not self._stopping.is_set():
@@ -238,6 +260,11 @@ class Supervisor:
                     if asked:
                         LOGGER.info("overview pyramids asked for", extra={"datasets": asked})
                     cleanup(conn, self.store)
+                    # Its own step: the object store failing under the sweep leaves the clean-up above done.
+                    try:
+                        overview_upkeep.sweep(conn, self.store)
+                    except ObjectStoreError as error:
+                        LOGGER.warning("overview sweep failed at the object store", extra={"error": type(error).__name__})
             except psycopg.Error as error:
                 self._database_error("maintain", error)
                 self._close(conn)

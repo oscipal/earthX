@@ -40,6 +40,7 @@ __all__ = [
     "base_tile",
     "base_zoom",
     "children_of",
+    "decode_tile",
     "encode_tile",
     "levels",
     "parent_tile",
@@ -248,6 +249,30 @@ def encode_tile(image: ImageData) -> bytes:
         with memory.open(**profile) as target:
             target.write(values.astype(band.dtype), 1)
         return memory.read()
+
+
+def decode_tile(data: bytes) -> tuple[np.ma.MaskedArray, float | None]:
+    """A stored tile's values and its nodata: the inverse of :func:`encode_tile`.
+
+    Pixels with the nodata value (or NaN) are masked. Bytes that are not a stored tile (not a GeoTIFF, not 512 px
+    square, not one band, not EPSG:3857) are a ``ValueError``: a pyramid is made from tiles it wrote itself, and a
+    foreign file in their place must not become a level.
+    """
+    if not data:
+        raise ValueError("not a stored tile: no bytes")
+    try:
+        with MemoryFile(data) as memory, memory.open() as source:
+            if (source.width, source.height, source.count) != (TILE_SIZE, TILE_SIZE, 1):
+                raise ValueError(f"a stored tile is {TILE_SIZE} px square with one band")
+            if source.crs is None or source.crs != _TMS.rasterio_crs:
+                raise ValueError("a stored tile lies in EPSG:3857")
+            array = source.read(1, masked=True)
+            nodata = source.nodata
+    except rasterio.errors.RasterioError:
+        raise ValueError("not a stored tile: the bytes are no GeoTIFF") from None
+    if np.issubdtype(array.dtype, np.floating):
+        array = np.ma.masked_invalid(array)
+    return array, nodata
 
 
 def base_hash(items: Iterable[Mapping[str, object]]) -> str | None:

@@ -14,11 +14,14 @@ import pytest
 from earthx.jobs.config import WorkerConfig
 from earthx.jobs.overviews import (
     MAX_ATTEMPTS,
+    REUSE_MARGIN,
     Build,
     claim,
     finish_failed,
     finish_ready,
     heartbeat,
+    previous_ready,
+    release,
     request_missing,
     write_progress,
 )
@@ -475,3 +478,117 @@ class TestHourlyRound:
             assert TestRequestMissing._requests(db) == [("dem", "v1")]
         finally:
             supervisor.stop(30)
+
+
+class TestPreviousReady:
+    @staticmethod
+    def _ready(db: psycopg.Connection, dataset_id: str, version: str, ago: str, hashes: str = "{}") -> None:
+        """A ready pyramid last checked ``ago`` before now."""
+        db.execute(
+            """
+            INSERT INTO public.earthx_overview (dataset_id, version, status, checked_at, base_hashes)
+            VALUES (%s, %s, 'ready', clock_timestamp() - %s::interval, %s::jsonb)
+            """,
+            (dataset_id, version, ago, hashes),
+        )
+
+    def test_none_without_a_ready_pyramid(self, db: psycopg.Connection) -> None:
+        assert previous_ready(db, "dem", "0" * 16) is None
+
+    def test_the_newest_ready_pyramid_of_the_dataset_other_than_the_version(self, db: psycopg.Connection) -> None:
+        self._ready(db, "dem", "a" * 16, "15 days", '{"1/1": "h"}')
+        self._ready(db, "dem", "b" * 16, "10 days")
+        self._ready(db, "dem", "c" * 16, "5 days")
+        self._ready(db, "land", "d" * 16, "1 day")
+        found = previous_ready(db, "dem", "c" * 16)
+        assert found is not None and found.version == "b" * 16
+        older = previous_ready(db, "dem", "b" * 16)
+        assert older is not None and older.version == "c" * 16
+
+    def test_a_pyramid_with_less_than_the_margin_of_its_term_left_is_no_source(self, db: psycopg.Connection) -> None:
+        """30 days of term, 7 of margin: 24 days old is out, 22 days old is in."""
+        self._ready(db, "dem", "a" * 16, "24 days")
+        assert previous_ready(db, "dem", "z" * 16) is None
+        self._ready(db, "dem", "b" * 16, "22 days")
+        found = previous_ready(db, "dem", "z" * 16)
+        assert found is not None and found.version == "b" * 16
+        assert REUSE_MARGIN == timedelta(days=7)
+
+    def test_a_prototype_source_with_its_seven_days_never_has_a_margin_left(self, db: psycopg.Connection) -> None:
+        self._ready(db, "proto-dem", "a" * 16, "1 minute")
+        assert previous_ready(db, "proto-dem", "z" * 16) is None
+
+    def test_a_building_or_failed_row_is_nothing_to_copy_from(self, db: psycopg.Connection) -> None:
+        _request(db, "dem", "v1")
+        build = _claim(db)
+        assert build is not None
+        assert previous_ready(db, "dem", "0" * 16) is None
+        _fail(db, build, "source_4xx")
+        assert previous_ready(db, "dem", "0" * 16) is None
+
+    def test_the_hashes_come_back_as_a_dict(self, db: psycopg.Connection) -> None:
+        self._ready(db, "dem", "a" * 16, "5 days", '{"1/1": "h"}')
+        found = previous_ready(db, "dem", "b" * 16)
+        assert found is not None and found.base_hashes == {"1/1": "h"} and found.checked_at.tzinfo is not None
+
+
+class TestRelease:
+    def test_a_first_attempt_leaves_no_row_so_the_request_is_a_candidate_again(self, db: psycopg.Connection) -> None:
+        version = _request(db, "dem", "v1")
+        build = _claim(db)
+        assert build is not None and release(db, build)
+        assert db.execute("SELECT count(*) FROM public.earthx_overview").fetchone() == (0,)
+        again = _claim(db)
+        assert again is not None and again.version == version and again.attempt == 1
+
+    def test_a_later_attempt_goes_back_to_lease_lost_with_its_earlier_number_and_is_taken_at_once(
+        self, db: psycopg.Connection
+    ) -> None:
+        version = _request(db, "dem", "v1")
+        first = _claim(db)
+        assert first is not None
+        _fail(db, first, "source_timeout")
+        _age(db, "dem", version)
+        second = _claim(db)
+        assert second is not None and second.attempt == 2
+        assert release(db, second)
+        row = _row(db, "dem", version)
+        assert (row["status"], row["failure_kind"], row["attempts"], row["lease_until"]) == ("failed", "lease_lost", 1, None)
+        third = _claim(db)
+        assert third is not None and third.attempt == 2, "no hour to wait, and the attempt was not used up"
+
+    def test_a_build_this_attempt_no_longer_owns_is_left_alone(self, db: psycopg.Connection) -> None:
+        version = _request(db, "dem", "v1")
+        build = _claim(db)
+        assert build is not None
+        db.execute("UPDATE public.earthx_overview SET attempts = 2")
+        assert not release(db, build)
+        assert (_row(db, "dem", version)["status"], _row(db, "dem", version)["attempts"]) == ("building", 2)
+
+    def test_a_finished_build_is_not_released(self, db: psycopg.Connection) -> None:
+        _request(db, "dem", "v1")
+        build = _claim(db)
+        assert build is not None
+        assert finish_ready(db, build, checked_at=NOW, base_hashes={})
+        assert not release(db, build)
+        assert db.execute("SELECT status FROM public.earthx_overview").fetchone() == ("ready",)
+
+
+class TestRebuildAfterARearm:
+    """A successful `materialize` run of the same version makes an expired or failed pyramid buildable again (adr/0032 §5)."""
+
+    @pytest.mark.parametrize("kind", ["expired", "source_4xx", "child_crashed"])
+    def test_the_next_claim_builds_it_as_a_new_pyramid_with_its_attempts_counted_from_one(
+        self, db: psycopg.Connection, kind: str
+    ) -> None:
+        from earthx.catalog.pgstac import rearm_overview
+
+        version = _request(db, "dem", "v1")
+        build = _claim(db)
+        assert build is not None
+        _fail(db, build, kind)
+        _age(db, "dem", version, updated="3 hours")
+        assert _claim(db) is None, "a failure that is not retried stays failed on its own"
+        assert rearm_overview(db, "dem", "v1")
+        again = _claim(db)
+        assert again is not None and (again.version, again.attempt) == (version, 1)
