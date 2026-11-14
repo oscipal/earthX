@@ -380,6 +380,7 @@ class TestFailures:
         version = _request(db, "dem", "v1")
         make()
         _wait_for(db, "dem", version, "failed")
+        wait_until(lambda: "overview build ended" in caplog.text)
         assert _status(db, "dem", version)[1] == "unknown"
         assert "secret-looking-detail" not in caplog.text
 
@@ -800,6 +801,11 @@ class TestLogs:
         failed = _request(db, "dem", "v1")
         make("fail")
         _wait_for(db, "dem", failed, "failed")
-        text = " ".join(f"{record.getMessage()} {record.__dict__}" for record in caplog.records if "earthx" in record.name)
+
+        def lines() -> str:
+            return " ".join(f"{record.getMessage()} {record.__dict__}" for record in caplog.records if "earthx" in record.name)
+
+        wait_until(lambda: "overview build ended" in lines())
+        text = lines()
         assert "dem.example.invalid" not in text and "overviews/" not in text
         assert "overview build ended" in text and "source_timeout" in text
