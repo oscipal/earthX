@@ -235,6 +235,7 @@ Umgesetzt wie §4.1, §4.2, §4.4, §4.5 mit F1–F7 = 1. Auslegungen, gelten bi
 - **Einheit am Band** aus der Vorgabe: Neigung `deg` bzw. `%`, Exposition `deg`, Schummerung keine. Eine Höhe, die eine Formel verändert hat (`band_math` `dem * 2`), hat keine Einheit mehr und wird abgewiesen.
 - **Bitgleich bei jeder Blockgröße** ist für projizierte CRS getestet (1024, 48, 16). Bei geographischen CRS hängt die Breite einer Zeile an den Grenzen des Blocks; Abweichungen in der letzten Stelle von `float64` gehen beim Schreiben in `float32` praktisch immer unter, sind aber nicht ausgeschlossen. Job und Runner nutzen denselben Kern mit derselben Blockgröße und bleiben bitgleich.
 - **Frontend unverändert:** Der Typ `Capabilities` in `frontend/src/types.ts` bekommt `terrain` erst in PR B, wenn das Frontend das Flag liest.
+- **Skalierbarkeit (Vorgabe Otto vom 14.11.2026, M5-35):** `focal` hält keinen Zustand und liest je Block (1 024 px) einen Rand von einem Pixel mit, rund 0,4 % mehr; Kosten und Speicher wachsen linear mit den Pixeln wie bei `band_math`. Keine neue Tabelle, kein neuer Dienst, keine Grenze je Host.
 - **Untergrenze der Suche:** Mit Q34 und Q35 steigt Deutsch auf 9 von 12 (Recall@5 und MRR@10 0,750, vorher 0,727); die Untergrenze im Integrationstest folgt.
 
 ## 10. Grenzen
