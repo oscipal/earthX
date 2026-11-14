@@ -529,3 +529,40 @@ bestimmen.
 
 **Für deinen erneuten Lauf:** Läuft er durch, war es sehr wahrscheinlich die knappe Toleranz. Schlägt er fehl, nennt
 die Meldung jetzt den Grund.
+
+### 12.9 Befunde Otto zu Schritt 7 (14.11.2026): AOI-Grenze und Pixel des Ergebnis-Layers
+
+**Befunde:** (1) Das Ergebnis hält die AOI-Grenze auf der Karte nicht ein. (2) Die Pixel des Ergebnisses liegen nicht
+genau über den Pixeln der Szenen, auch nicht an der Naht.
+
+**Nachgestellt [M]** mit den synthetischen Slices, Kachel für Kachel, über die eindeutigen Werte der Fixture:
+- Eine Slice: bei z17 lagen 43 361 von 65 536 Kachelpixeln des Ergebnisses auf einem anderen Quellpixel als die
+  Szene. Zwei Slices: ebenso, dazu die Naht.
+- Die Datei war richtig: Die verschobenen GCPs geben dieselbe TPS wie die Quelle (§2, Test bis 10⁻¹² °).
+
+**Ursache: die Anzeige**, nicht Fenster und nicht GCP-Verschiebung.
+- GDAL legt für eine GCP-Datei ein Zwischenraster in EPSG:4326 an, dessen Ursprung und Pixelgröße aus Größe und GCPs
+  der Datei folgen. Szene und Ergebnis-Ausschnitt bekamen verschiedene Zwischenraster (gemessen 0,0001161° gegen
+  0,0001188°, anderer Ursprung); „nearest“ wählte dann andere Quellpixel.
+- Ein Mosaik wurde mit einer TPS über die GCPs beider Slices gezeichnet, die Szenen je mit ihrer eigenen (§2: bis
+  einige hundert Meter an der Naht im Relief).
+- Befund 1 folgt daraus: Der Zuschnitt auf der Karte läuft wie bei allen Datensätzen über `mask.tif`
+  (`api/result_tiles.py`, Regel „all touched“); die Maske wurde mit demselben Versatz gezeichnet.
+
+**Behoben:**
+- Der Job schreibt in `result.tif` und `mask.tif` je Slice, wo ihr erstes Pixel im Ergebnis liegt, ihre Größe und
+  ihre eigenen GCPs (Tag `EARTHX_RADAR_SLICES`, `readers/radar_slices.py`). Die GCPs der Datei bleiben die
+  Vereinigung (F3 = 1).
+- Die Ergebnis-Kachel baut daraus je Slice eine virtuelle Datei mit Größe und GCPs der Szene, die Zeilen des
+  Ergebnisses an ihrer Stelle, und zeichnet sie genau wie die Szene (dieselbe TPS, dasselbe Zwischenraster, dieselben
+  Optionen). Wo zwei Slices aneinanderstoßen, gilt das erste gültige Pixel, wie im Mosaik der Szenen. Die Maske wird
+  ebenso gezeichnet.
+- Ergebnisse mit Geotransformation sind unverändert.
+
+**Tests:** `test_a_radar_result_lies_pixel_on_pixel_on_its_scenes` (eine Szene und zwei Slices an der Naht, z15–z18:
+jedes gezeichnete Pixel eines Ergebnisses mit `scale` 2 ist das Doppelte des Szenenpixels darunter, also 0 Pixel
+Abweichung), `test_a_radar_result_keeps_to_the_aoi_on_the_map` (außerhalb der AOI höchstens ein Pixel, innerhalb
+alles, wo die Szenen zeichnen), `tests/earthx/readers/test_radar_slices.py`.
+
+**Grenze:** Die Splines zweier Slices treffen sich an der Naht nicht immer genau (§2); dort zeigen Szenen und
+Ergebnis dieselbe kleine Lücke oder Überdeckung, mit der ersten Slice zuerst.
