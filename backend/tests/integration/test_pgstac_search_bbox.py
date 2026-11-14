@@ -8,7 +8,13 @@ from typing import Any
 import psycopg
 import pytest
 
-from earthx.catalog.pgstac import load_collection, search_items_in_bbox, upsert_items, use_pgstac_search_path
+from earthx.catalog.pgstac import (
+    load_collection,
+    search_items_in_bbox,
+    search_items_in_bbox_async,
+    upsert_items,
+    use_pgstac_search_path,
+)
 from earthx.catalog.registry import CoverageProvider, ItemHolding, SearchCapabilities
 from tests.catalog.entries import SENTINEL_2_L2A
 
@@ -66,3 +72,17 @@ def test_the_limit_holds_and_a_rectangle_elsewhere_finds_nothing(loaded: None) -
         assert search_items_in_bbox(conn, MATERIALIZED.dataset_id, (40.0, 40.0, 41.0, 41.0), 10) == []
         with pytest.raises(ValueError):
             search_items_in_bbox(conn, MATERIALIZED.dataset_id, (0.0, 0.0, 1.0, 1.0), 0)
+
+
+@pytest.mark.anyio
+async def test_the_async_search_gives_the_same_items_on_a_connection_that_keeps_its_search_path(loaded: None) -> None:
+    """The tile of a substitute reads through the pool of the tiler: shared connections, so no ``search_path`` is left on one."""
+    async with await psycopg.AsyncConnection.connect(autocommit=True) as conn:
+        before = await (await conn.execute("SHOW search_path")).fetchone()
+        found = await search_items_in_bbox_async(conn, MATERIALIZED.dataset_id, (1.5, 0.2, 3.5, 0.8), 100)
+        assert await (await conn.execute("SHOW search_path")).fetchone() == before
+        assert len(await search_items_in_bbox_async(conn, MATERIALIZED.dataset_id, (0.0, 0.0, 5.0, 1.0), 2)) == 2
+        assert await search_items_in_bbox_async(conn, MATERIALIZED.dataset_id, (40.0, 40.0, 41.0, 41.0), 10) == []
+        with pytest.raises(ValueError):
+            await search_items_in_bbox_async(conn, MATERIALIZED.dataset_id, (0.0, 0.0, 1.0, 1.0), 0)
+    assert sorted(item["id"] for item in found) == ["t1", "t2", "t3"]

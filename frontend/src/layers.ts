@@ -39,6 +39,8 @@ export type LayerOverlay =
       // From this zoom up the layer is not drawn (MapLibre's layer `maxzoom`): a scene stacked
       // below the first level of a mosaic (`mosaic.ts`) steps aside for it.
       hideFrom?: number;
+      // The text the map's attribution line carries while this raster is drawn (`mosaic.ts::PlannedRaster`).
+      attribution?: string;
       preview?: true;
     };
 

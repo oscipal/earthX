@@ -45,6 +45,7 @@ const COLLECTION = {
     results_group_by: ['datetime'],
     overview: 'pyramid' as const,
     overview_resampling: 'average' as const,
+    overview_substitute: null,
   },
 } as unknown as Collection;
 

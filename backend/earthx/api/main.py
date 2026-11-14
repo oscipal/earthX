@@ -27,6 +27,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from psycopg_pool import ConnectionPool
+from stac_fastapi.extensions.collection_search import CollectionSearchPostExtension
 from stac_fastapi.pgstac.app import instantiate_api
 from stac_fastapi.pgstac.config import Settings
 from stac_fastapi.pgstac.db import close_db_connection, connect_to_db
@@ -35,6 +36,7 @@ from stac_fastapi.pgstac.models.extensions import Extensions
 from earthx.adapters import ADAPTER_SPECS, AdapterSpecs, check_adapter_specs
 from earthx.api.aoi_cloud_filter import settle
 from earthx.api.aoi_upload_route import router as aoi_upload_router
+from earthx.api.collection_search import collection_search_extension, keep_searches_out_of_errors
 from earthx.api.coverage_route import build_router as build_coverage_router
 from earthx.api.crs_info import switch_off_proj_network
 from earthx.api.dependencies import (
@@ -63,6 +65,20 @@ from earthx.processing.operators import REGISTRY as OPERATORS
 from earthx.processing.operators import OperatorRegistry
 
 LOGGER = logging.getLogger("earthx.api.main")
+
+
+class _Extensions(Extensions):
+    """The extensions of pgstac, with Collection Search by ``GET`` and ``POST`` and ``q`` (M5-22 plan §3.7).
+
+    Not from ``ENABLED_EXTENSIONS``: the library's own Collection Search is ``GET`` only, and its Free-text extension
+    claims a conformance class this search does not meet (adr/0026 §4.5). The ``POST`` route gets a client of its own,
+    because ``instantiate_api`` builds the one of the other routes itself.
+    """
+
+    @property
+    def collection_search(self) -> CollectionSearchPostExtension:  # type: ignore[override]
+        return collection_search_extension(FederatingCoreCrudClient(), self.settings)
+
 
 # adr/0005 rule VI, plan §6 F2, M3-13 F5: `pagination` describes our own paging;
 # `filter` (CQL2) and `sort` are two extensions the federated path cannot yet honour,
@@ -190,10 +206,11 @@ def build_app(
     # `Settings()` that never sees `_ENABLED_EXTENSIONS` — passing `settings` here
     # explicitly is what makes the hard-set extension list actually reach the
     # routes `instantiate_api` builds, not just the object this function holds.
-    extensions = Extensions(settings=settings)
+    extensions = _Extensions(settings=settings)
     api = instantiate_api(client=FederatingCoreCrudClient, settings=settings, extensions=extensions, lifespan=_lifespan)
     app = api.app
     app.add_middleware(RequestIdMiddleware)
+    keep_searches_out_of_errors(app, f"{_PREFIX_PATH}/collections")
     # What routes a collection federated or materialized (adr/0011 §7 D2), and
     # what the gateway's allowlist and the start-up comparison are built from.
     app.state.earthx_registry = registry

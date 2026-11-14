@@ -69,6 +69,7 @@ from earthx.api.aoi_cloud_filter import (
     read_aoi_request,
     run_filter,
 )
+from earthx.api.collection_search import MAX_PAGE, CollectionsPostRequest, read_query, search_collections
 from earthx.api.item_source import build_item_source, item_holding_of
 from earthx.api.mixed_search import (
     REASON_TIMEOUT,
@@ -682,6 +683,38 @@ def _gateway_of(request: Request):
 
 class FederatingCoreCrudClient(CoreCrudClient):
     """Branches per collection on ``earthx:source`` instead of on the route."""
+
+    async def all_collections(  # type: ignore[override]
+        self,
+        request: Request,
+        q: str | None = None,
+        bbox: str | None = None,
+        datetime: str | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        """``GET /stac/collections``: without a parameter every collection, as before; else Collection Search (M5-22c).
+
+        An area by ``GET`` is a ``bbox`` only (adr/0026 §4.5): ``intersects`` belongs in the body of ``POST``.
+        """
+        names = frozenset(request.query_params)
+        _reject_keys(names, _DISALLOWED_QUERY_KEYS, "is not available for collections (M5-22 plan §3.7)")
+        if "intersects" in names:
+            raise HTTPException(status_code=400, detail="an area by GET is a bbox; send intersects by POST")
+        if not names:
+            return await super().all_collections(request, limit=MAX_PAGE, offset=0)
+        query = read_query(q=q, bbox=bbox, intersects=None, datetime=datetime, limit=limit, offset=offset)
+        return await search_collections(request, query)
+
+    async def post_all_collections(
+        self, search_request: CollectionsPostRequest, request: Request, **kwargs: Any
+    ) -> Any:
+        """``POST /stac/collections``: the search of ``GET`` with an area as ``bbox`` or ``intersects`` (F6)."""
+        if not search_request.model_fields_set:
+            return await super().all_collections(request, limit=MAX_PAGE, offset=0)
+        query = read_query(**{name: getattr(search_request, name) for name in CollectionsPostRequest.model_fields})
+        return await search_collections(request, query, body=search_request.model_dump(mode="json", exclude_unset=True))
 
     async def item_collection(
         self,

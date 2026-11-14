@@ -59,6 +59,7 @@ describe('LayerManager', () => {
           results_group_by: ['datetime'],
           overview: 'own' as const,
           overview_resampling: null,
+          overview_substitute: null,
         },
       },
     ]);

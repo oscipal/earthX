@@ -98,6 +98,7 @@ const dataset = () =>
         results_group_by: ['datetime'],
         overview: 'pyramid' as const,
         overview_resampling: 'average' as const,
+        overview_substitute: null,
       },
       'earthx:default_render': {
         title: 'True colour',

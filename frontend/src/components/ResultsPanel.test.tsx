@@ -49,6 +49,7 @@ function collection(id: string, title: string, extra: Partial<Collection> = {}):
       results_group_by: ['datetime'],
       overview: 'own' as const,
       overview_resampling: null,
+      overview_substitute: null,
     },
     ...extra,
   };
@@ -69,6 +70,7 @@ const COLLECTIONS = [
       results_group_by: ['start_datetime'],
       overview: 'own' as const,
       overview_resampling: null,
+      overview_substitute: null,
     },
   }),
 ];

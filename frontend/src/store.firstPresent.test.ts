@@ -17,7 +17,7 @@ const RADAR = {
   title: 'Radar',
   'earthx:format': 'cog',
   'earthx:capabilities': { roi: true, time_range: true, band_math: true, interpolation: true },
-  'earthx:viewer': { group_by: ['datetime'], min_zoom: 7, max_zoom: 19, browse: 'preview_tiles', quicklook_nodata_max: null, results_group_by: ['datetime'], overview: 'pyramid' as const, overview_resampling: 'average' as const },
+  'earthx:viewer': { group_by: ['datetime'], min_zoom: 7, max_zoom: 19, browse: 'preview_tiles', quicklook_nodata_max: null, results_group_by: ['datetime'], overview: 'pyramid' as const, overview_resampling: 'average' as const, overview_substitute: null },
   'earthx:default_render': {
     title: 'Co-polarisation (VV or HH)',
     assets: ['vv', 'hh'],

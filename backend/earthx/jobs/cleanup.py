@@ -13,7 +13,8 @@ hit does not: the bucket rule counts from the write of the object, so a run whos
 had moved would point at deleted bytes (adr/0015 F13, as amended in §7.1). A permalink has a fixed term from its creation and is deleted whole
 (M4-19e, adr/0015 §13), a bundle of jobs likewise (UI-01e). An entry of the statistics cache goes when its
 ``expires_at`` has passed (NM4-19 KE9): the measure of an area is keyed by a hash over its AOI and lives no longer
-than a recipe, seven days; the statistics of one asset, thirty. Nothing here is lengthened by looking.
+than a recipe, seven days; the statistics of one asset, thirty. A mosaic selection (M5-30b part 3) goes the same way when
+its ``expires_at`` has passed: seven days, which creating it again moves. Nothing here is lengthened by looking.
 
 **A deleted job (NM4-27)** goes when its term ends (``deleted_until``), earlier than its run would. Its row goes
 always. The result goes with it only if nothing else needs it: no job on the run is alive, none is still inside its
@@ -60,10 +61,21 @@ class CleanupResult:
     deleted_jobs: int = 0
     #: Expired entries of the statistics cache (NM4-19 KE9).
     statistics: int = 0
+    #: Expired selections of mosaic tiles (M5-30b part 3).
+    selections: int = 0
 
     @property
     def total(self) -> int:
-        return self.runs + self.jobs + self.recipes + self.permalinks + self.bundles + self.deleted_jobs + self.statistics
+        return (
+            self.runs
+            + self.jobs
+            + self.recipes
+            + self.permalinks
+            + self.bundles
+            + self.deleted_jobs
+            + self.statistics
+            + self.selections
+        )
 
 
 def cleanup_batch(conn: psycopg.Connection, store: Store, *, batch: int = BATCH) -> CleanupResult | None:
@@ -137,6 +149,15 @@ def cleanup_batch(conn: psycopg.Connection, store: Store, *, batch: int = BATCH)
             """,
             (batch,),
         ).rowcount
+        selections = conn.execute(
+            """
+            DELETE FROM public.earthx_mosaic_selection WHERE selection_id IN (
+                SELECT selection_id FROM public.earthx_mosaic_selection
+                WHERE expires_at < clock_timestamp() ORDER BY expires_at LIMIT %s
+            )
+            """,
+            (batch,),
+        ).rowcount
         return CleanupResult(
             runs=runs,
             jobs=jobs,
@@ -146,6 +167,7 @@ def cleanup_batch(conn: psycopg.Connection, store: Store, *, batch: int = BATCH)
             bundles=bundles,
             deleted_jobs=deleted_jobs,
             statistics=statistics,
+            selections=selections,
         )
 
 
@@ -215,12 +237,12 @@ def _deleted_jobs(conn: psycopg.Connection, store: Store, batch: int) -> tuple[i
 
 def cleanup(conn: psycopg.Connection, store: Store, *, batch: int = BATCH) -> CleanupResult:
     """Batches until nothing expired is left; the sum of what was deleted."""
-    runs = jobs = recipes = objects = permalinks = bundles = deleted_jobs = statistics = 0
+    runs = jobs = recipes = objects = permalinks = bundles = deleted_jobs = statistics = selections = 0
     while True:
         done = cleanup_batch(conn, store, batch=batch)
         if done is None or done.total == 0:
             break
-        runs, jobs, recipes, objects, permalinks, bundles, deleted_jobs, statistics = (
+        runs, jobs, recipes, objects, permalinks, bundles, deleted_jobs, statistics, selections = (
             runs + done.runs,
             jobs + done.jobs,
             recipes + done.recipes,
@@ -229,6 +251,7 @@ def cleanup(conn: psycopg.Connection, store: Store, *, batch: int = BATCH) -> Cl
             bundles + done.bundles,
             deleted_jobs + done.deleted_jobs,
             statistics + done.statistics,
+            selections + done.selections,
         )
         if (
             done.runs < batch
@@ -237,12 +260,13 @@ def cleanup(conn: psycopg.Connection, store: Store, *, batch: int = BATCH) -> Cl
             and done.bundles < batch
             and done.deleted_jobs < batch
             and done.statistics < batch
+            and done.selections < batch
         ):
             break
-    result = CleanupResult(runs, jobs, recipes, objects, permalinks, bundles, deleted_jobs, statistics)
+    result = CleanupResult(runs, jobs, recipes, objects, permalinks, bundles, deleted_jobs, statistics, selections)
     if result.total:
         LOGGER.info(
-            "expired runs, deleted jobs, permalinks, bundles and statistics cleaned up",
+            "expired runs, deleted jobs, permalinks, bundles, statistics and selections cleaned up",
             extra={
                 "runs": runs,
                 "jobs": jobs,
@@ -252,6 +276,7 @@ def cleanup(conn: psycopg.Connection, store: Store, *, batch: int = BATCH) -> Cl
                 "bundles": bundles,
                 "deleted_jobs": deleted_jobs,
                 "statistics": statistics,
+                "selections": selections,
             },
         )
     return result

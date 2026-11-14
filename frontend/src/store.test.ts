@@ -5,10 +5,10 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { buildMosaicTileTemplate } from './api';
+import { mosaicKeyOf } from './mosaic';
 import { datasetsFrom } from './datasets';
 import { useAppStore } from './store';
-import type { Collection, StacItem } from './types';
+import type { Collection, DownloadedInfo, StacItem } from './types';
 
 // M3-12: a full `earthx:capabilities` block, reused by both fixtures below —
 // only `time_range` matters to anything here, so one constant says so once.
@@ -35,6 +35,7 @@ const ZARR_LIKE: Collection = {
     results_group_by: ['datetime'],
     overview: 'pyramid' as const,
     overview_resampling: 'average' as const,
+    overview_substitute: null,
   },
   'earthx:default_render': {
     title: 'True colour',
@@ -59,6 +60,7 @@ const COG_LIKE: Collection = {
     results_group_by: ['datetime'],
     overview: 'own' as const,
     overview_resampling: null,
+    overview_substitute: null,
   },
 };
 
@@ -168,7 +170,7 @@ describe('addCurrentToLayers while cropped in focus mode (M3-09 §10)', () => {
       downloaded: { S1: focusedDownload('S1'), S2: focusedDownload('S2'), S3: focusedDownload('S3') },
       // The tiler refused the mosaic of S1 and S2, so they are pinned scene by scene; what a
       // loaded mosaic pins is in `store.mosaic.test.ts`.
-      mosaics: { [buildMosaicTileTemplate(COG_LIKE.id, ['S1', 'S2'], 'visual')]: null },
+      mosaics: { [mosaicKeyOf(COG_LIKE.id, ['S1', 'S2'].map((id): [string, DownloadedInfo] => [id, focusedDownload(id)]))!]: null },
       layers: [],
       error: null,
       notice: null,
@@ -858,6 +860,7 @@ describe('download outcome (M3-17 plan §4)', () => {
       results_group_by: ['datetime'],
       overview: 'own' as const,
       overview_resampling: null,
+      overview_substitute: null,
     },
     'earthx:format': 'cog',
     'earthx:source': { asset_hosts: ['data.test'] },
@@ -884,6 +887,7 @@ describe('download outcome (M3-17 plan §4)', () => {
       results_group_by: ['datetime'],
       overview: 'pyramid' as const,
       overview_resampling: 'average' as const,
+      overview_substitute: null,
     },
     'earthx:format': 'zarr',
   };

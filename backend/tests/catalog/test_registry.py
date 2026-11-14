@@ -320,6 +320,7 @@ def full_viewer(**overrides) -> ViewerInfo:
         "results_group_by": ("datetime",),
         "overview": OverviewMode.OWN,
         "overview_resampling": None,
+        "overview_substitute": None,
     }
     return ViewerInfo(**{**fields, **overrides})
 
@@ -474,7 +475,16 @@ class TestMalformedInput:
 
     @pytest.mark.parametrize(
         "missing",
-        ["min_zoom", "max_zoom", "browse", "quicklook_nodata_max", "results_group_by", "overview", "overview_resampling"],
+        [
+            "min_zoom",
+            "max_zoom",
+            "browse",
+            "quicklook_nodata_max",
+            "results_group_by",
+            "overview",
+            "overview_resampling",
+            "overview_substitute",
+        ],
     )
     def test_the_zoom_and_browse_fields_are_not_optional(self, missing) -> None:
         """KLAERUNGEN B10 again: a dataset nobody measured has no released range, and
@@ -490,6 +500,7 @@ class TestMalformedInput:
             "results_group_by": ("datetime",),
             "overview": OverviewMode.OWN,
             "overview_resampling": None,
+            "overview_substitute": None,
         }
         del fields[missing]
         with pytest.raises(TypeError):
@@ -553,6 +564,33 @@ class TestMalformedInput:
         with pytest.raises(ConfigError, match="viewer.overview is one of"):
             full_viewer(overview=value)
 
+    @pytest.mark.parametrize("min_zoom", [0, 5, 13])
+    def test_a_substitute_serves_below_any_min_zoom(self, min_zoom) -> None:
+        viewer = full_viewer(overview=OverviewMode.SUBSTITUTE, overview_substitute="cop-dem-glo-30", min_zoom=min_zoom)
+        assert (viewer.overview, viewer.overview_substitute) == (OverviewMode.SUBSTITUTE, "cop-dem-glo-30")
+
+    @pytest.mark.parametrize("value", [None, "", "  ", 3])
+    def test_a_substitute_needs_the_id_of_a_dataset(self, value) -> None:
+        with pytest.raises(ConfigError, match="overview_substitute is required"):
+            full_viewer(overview=OverviewMode.SUBSTITUTE, overview_substitute=value, min_zoom=5)
+
+    @pytest.mark.parametrize("overview", [mode for mode in OverviewMode if mode is not OverviewMode.SUBSTITUTE])
+    def test_only_a_substitute_names_a_substitute(self, overview) -> None:
+        fields = {"overview": overview, "overview_substitute": "cop-dem-glo-30"}
+        if overview is OverviewMode.PYRAMID:
+            fields.update(overview_resampling=OverviewResampling.AVERAGE, min_zoom=5)
+        with pytest.raises(ConfigError, match="overview_substitute is set"):
+            full_viewer(**fields)
+
+    def test_a_substitute_is_not_resampled(self) -> None:
+        with pytest.raises(ConfigError, match="overview_resampling is set"):
+            full_viewer(
+                overview=OverviewMode.SUBSTITUTE,
+                overview_substitute="cop-dem-glo-30",
+                overview_resampling=OverviewResampling.AVERAGE,
+                min_zoom=5,
+            )
+
     @pytest.mark.parametrize("value", ["average", "bilinear", 1])
     def test_a_pyramid_resampling_that_is_no_overview_resampling_is_rejected(self, value) -> None:
         with pytest.raises(ConfigError, match="overview_resampling is required"):
@@ -590,6 +628,85 @@ class TestMalformedInput:
                 asset_hosts=valid_config.source.asset_hosts,
                 item_holding=valid_config.source.item_holding,
             )
+
+
+def _terrain(dataset_id: str, **changes) -> DatasetConfig:
+    """swissALTI3D under another id, the viewer replaced by what ``changes`` say of it."""
+    base = REGISTRY.get("swissalti3d")
+    return replace(base, dataset_id=dataset_id, viewer=replace(base.viewer, **changes))
+
+
+def _surface(dataset_id: str = "cop-dem-glo-30", **changes) -> DatasetConfig:
+    """The released GLO-30 entry with fields replaced: what a dataset names as its substitute."""
+    return replace(REGISTRY.get("cop-dem-glo-30"), dataset_id=dataset_id, **changes)
+
+
+class TestOverviewSubstituteAcrossEntries:
+    """Plan M5-30b §4.8: the substitute is looked for where the entries meet, so every process refuses a bad one at start."""
+
+    SUBSTITUTE = {"overview": OverviewMode.SUBSTITUTE, "overview_resampling": None, "overview_substitute": "surface"}
+
+    def registry(self, surface: DatasetConfig | None, **viewer: object) -> DatasetRegistry:
+        dataset = _terrain("terrain", **{**self.SUBSTITUTE, **viewer})
+        return DatasetRegistry((dataset, *([] if surface is None else [surface])))
+
+    def test_the_released_entries_pair_swissalti3d_with_the_dem(self) -> None:
+        viewer = REGISTRY.get("swissalti3d").viewer
+        assert (viewer.overview, viewer.overview_substitute) == (OverviewMode.SUBSTITUTE, "cop-dem-glo-30")
+
+    def test_a_substitute_that_fits_is_accepted(self) -> None:
+        assert len(self.registry(_surface("surface"))) == 2
+
+    def test_a_substitute_that_is_not_in_the_registry_is_refused(self) -> None:
+        with pytest.raises(ConfigError, match="'surface' is not in the registry"):
+            self.registry(None)
+
+    def test_a_substitute_below_display_is_refused(self) -> None:
+        catalogue = replace(
+            _surface("surface").license, tier=LicenseTier.CATALOG, distribution=False, derivatives=False
+        )
+        with pytest.raises(ConfigError, match="tier catalog"):
+            self.registry(replace(_surface("surface"), license=catalogue, viewer=None))
+
+    def test_a_substitute_of_tier_display_is_accepted(self) -> None:
+        display = replace(_surface("surface").license, tier=LicenseTier.DISPLAY)
+        assert len(self.registry(replace(_surface("surface"), license=display))) == 2
+
+    def test_a_chain_of_substitutes_is_refused(self) -> None:
+        other = replace(_surface("surface"), viewer=replace(_surface().viewer, **{**self.SUBSTITUTE, "overview_substitute": "terrain"}))
+        with pytest.raises(ConfigError, match="substitute itself"):
+            DatasetRegistry((_terrain("terrain", **{**self.SUBSTITUTE, "overview_substitute": "surface"}), other))
+
+    def test_a_dataset_that_is_its_own_substitute_is_refused(self) -> None:
+        with pytest.raises(ConfigError, match="substitute itself"):
+            DatasetRegistry((_terrain("terrain", **{**self.SUBSTITUTE, "overview_substitute": "terrain"}),))
+
+    def test_a_substitute_without_a_viewer_is_refused(self) -> None:
+        with pytest.raises(ConfigError, match="no viewer"):
+            self.registry(replace(_surface("surface"), viewer=None))
+
+    def test_another_unit_is_refused(self) -> None:
+        feet = replace(_surface("surface"), band_units={"data": "ft"})
+        with pytest.raises(ConfigError, match="'ft' in its default band, the dataset 'm'"):
+            self.registry(feet)
+
+    def test_an_unknown_unit_is_refused(self) -> None:
+        with pytest.raises(ConfigError, match="in its default band"):
+            self.registry(replace(_surface("surface"), band_units={"data": None}))
+
+    def test_a_substitute_that_does_not_cover_the_extent_is_refused(self) -> None:
+        small = replace(_surface("surface"), spatial_extent=SpatialExtent((6.0, 45.0, 10.0, 47.8)))
+        with pytest.raises(ConfigError, match="does not cover the spatial extent"):
+            self.registry(small)
+
+    def test_a_substitute_that_covers_it_exactly_is_accepted(self) -> None:
+        extent = REGISTRY.get("swissalti3d").spatial_extent
+        assert len(self.registry(replace(_surface("surface"), spatial_extent=extent))) == 2
+
+    def test_the_check_runs_for_the_released_registry_alone(self) -> None:
+        without = tuple(entry for entry in REGISTRY if entry.dataset_id != "cop-dem-glo-30")
+        with pytest.raises(ConfigError, match="not in the registry"):
+            DatasetRegistry(without)
 
 
 class TestDataRegion:
@@ -678,6 +795,11 @@ class TestEveryEntry:
             assert isinstance(viewer.overview_resampling, OverviewResampling)
         else:
             assert viewer.overview_resampling is None
+        if viewer.overview is OverviewMode.SUBSTITUTE:
+            assert viewer.overview_substitute in REGISTRY
+        else:
+            assert viewer.overview_substitute is None
+        if viewer.overview in (OverviewMode.OWN, OverviewMode.SCENES):
             assert viewer.min_zoom == 0
 
     def test_the_id_is_the_one_it_is_filed_under(self, entry: DatasetConfig) -> None:

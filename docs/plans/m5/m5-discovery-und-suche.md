@@ -1,7 +1,7 @@
 # M5 — Discovery und Suche
 
-**Stand:** 06.11.2026, **Fassung 3**, angenommen von Otto am 06.11.2026 (§8: F1 und F2 jeweils Option 1). Fassung 2 (angenommen 06.11.2026) schnitt den ersten Teil der Umsetzung. Fassung 3 schneidet den Rest, nachdem alle Entscheidungsvorlagen angenommen sind (`adr/0023` bis `adr/0027`, `adr/0029`, `adr/0030`), und legt die Abnahme von M5 fest.
-**Grundlage:** `projektplan.md` §4 M5, `architekturplan.md` Abschnitte 4 (Discovery) und 5 (Katalog), `projektuebersicht.md` §5, `KLAERUNGEN.md` B10–B13, `adr/0018` (Sentinel-1), `adr/0021` (Suchfilter), `adr/0022` (Datennähe), `adr/0023` (Quellenkatalog), `adr/0024` (Prototyp-Quellen), `adr/0025` (Harvest-Pipeline), `adr/0026` (Hybrid-Suche), `adr/0027` (Quellen mit Konto), `adr/0029` (Leseweg NetCDF), `adr/0030` (Operatoren je Datensatz), Backlog `docs/plans/nach-m4-backlog.md`.
+**Stand:** 11.11.2026, **Fassung 3.1** (Nachführung). Fassung 3 (angenommen von Otto am 06.11.2026, §8: F1 und F2 jeweils Option 1) schnitt den Rest der Umsetzung und legte die Abnahme fest. Fassung 3.1 trifft keine neue Entscheidung: Sie trägt den Stand nach (§6.1), die seither entstandenen Aufgaben M5-28 bis M5-30, UI-06, F11, F12 und die Vorarbeiten V1–V9 aus `adr/0031` (§6.2), die Vorgaben Ottos seit dem 07.11. (§2 Punkt 9) und die neue Reihenfolge (§6.3). Die Entscheidungen dazu stehen bereits im Entscheidungslog.
+**Grundlage:** `projektplan.md` §4 M5, `architekturplan.md` Abschnitte 4 (Discovery) und 5 (Katalog), `projektuebersicht.md` §5, `KLAERUNGEN.md` B10–B13, `adr/0018` (Sentinel-1), `adr/0021` (Suchfilter), `adr/0022` (Datennähe), `adr/0023` (Quellenkatalog), `adr/0024` (Prototyp-Quellen), `adr/0025` (Harvest-Pipeline), `adr/0026` (Hybrid-Suche), `adr/0027` (Quellen mit Konto), `adr/0029` (Leseweg NetCDF), `adr/0030` (Operatoren je Datensatz), `adr/0031` (automatisches Onboarding), `adr/0032` (Übersicht und Mosaik bei kleinem Zoom), Backlog `docs/plans/nach-m4-backlog.md`.
 **Rangfolge:** ENTSCHEIDUNGEN_2026-09-18.md > KLAERUNGEN.md > dieser Plan > CLAUDE.md.
 
 ## 1. Ziel (Projektplan)
@@ -29,11 +29,17 @@ Daraus:
 7. **Jeder Datensatz hat Eigenheiten (Otto, 31.10.2026):** beim Processing (Fähigkeiten, eigene Operatoren), bei der erweiterten Suche (Filter, DS-02) und bei Schnellrechnungen (Index-Knöpfe, NM4-14). Das Onboarding jedes Datensatzes legt diese drei Teile ausdrücklich fest; sie stehen in der Registry, nicht im Code des Frontends. Was je Datensatz sinnvoll ist, legt `adr/0030` fest.
 8. **Zusatz Otto (06.11.2026):**
    - **Operatoren je Datensatz:** → `adr/0030` (M5-12, erledigt).
-   - **Control Panel:** je Seite so viele Datensätze, wie ohne Scrollen passen, ohne Obergrenze (Otto, 07.11.2026; bis dahin höchstens sechs); Seitenpfeile klein oben neben „Datasets“ (Otto, 06.11.2026 abends). Die Vorauswahl beim ersten Besuch bleibt bei höchstens sechs.
+   - **Control Panel:** je Seite so viele Datensätze, wie ohne Scrollen passen, ohne Obergrenze (Otto, 07.11.2026; Vorauswahl beim ersten Besuch höchstens sechs); Seitenpfeile klein oben neben „Datasets“ (Otto, 06.11.2026 abends).
    - **„Advanced search“** immer sichtbar.
    - **Kein zusätzlicher Text** im Panel.
    - **Datum:** begrenzt auf den verfügbaren Zeitraum und am Anfang mit frühestem und spätestem Aufnahmedatum des Datensatzes vorausgefüllt (Otto, 06.11.2026 abends).
    - **Data catalogue:** größeres Fenster über der Karte, geöffnet über ein Symbol in der linken Leiste (UI-05 F5); gruppiert, mit Angaben wie bei STAC und der Quelle; darin später die Suche (`adr/0026` §7).
+9. **Zusätze Otto (07.–11.11.2026)**, gelten für alle Aufgaben mit Frontend:
+   - **Keine Hinweise, Marken oder Zusatztexte** im Frontend; nötige Erklärungen höchstens im Tooltip. Lizenzpflichtige Nennungen (z. B. Copernicus beim Ersatz-Datensatz) stehen in der Quellenzeile der Karte, nicht als Hinweis.
+   - **Das Panel scrollt nie.**
+   - **Nie verschwindet ein Bild beim Herauszoomen** (`adr/0032`): unter `min_zoom` eine Übersicht oder ein Ersatz-Datensatz, nie eine leere Karte.
+   - **Kompass immer sichtbar** wie bei Google Maps, 3D-Knopf unter den Zoom-Knöpfen (UI-06).
+   - **Ausgabetypen nur, wo sie Sinn machen** (#333): Werte unverändert → Typ der Quelle plus `float32`; neu gerechnet → nur `float32`, bei Quelle `float64` dann `float64` (Vorgabe) und `float32`; Angabe `x-earthx-passes-values` aus der Operator-Registry. Wiedervorlage `float64` bei M5-11.
 
 ## 3. Was mit M5 zusätzlich ansteht
 
@@ -43,7 +49,7 @@ Daraus:
 - **Health-Checks** je Quelle, „zuletzt erfolgreich geprüft“ sichtbar: M5-24.
 - **Earth Search v2** (Backlog 36): weiter Beta ohne öffentlichen Endpunkt; keine Aufgabe in M5, solange das so bleibt.
 - **`harvester`**: heute eine leere Hülle (`adr/0025` §2); wird mit M5-24 zum Takt der Pipeline.
-- **Mosaik-Zoom bei groben Rastern** (Backlog 29): Prüfpunkt in M5-11.
+- **Mosaik-Zoom bei groben Rastern** (Backlog 29): durch `adr/0032` geregelt (M5-30); Prüfpunkt bleibt in M5-11 für das erste NetCDF-Raster.
 
 ## 4. Entscheidungsvorlagen (alle angenommen)
 
@@ -56,6 +62,8 @@ Daraus:
 | E | Quellen mit kostenlosem Konto | `adr/0027` | #261 |
 | — | Leseweg NetCDF/HDF5 | `adr/0029` | #303 |
 | — | Operatoren und Quick processings je Datensatz | `adr/0030` | #302 |
+| — | Automatisches Onboarding (M5-29) | `adr/0031` | siehe Log |
+| — | Übersicht und Mosaik bei kleinem Zoom (M5-30) | `adr/0032` | siehe Log |
 
 Kernpunkte für die Umsetzung:
 
@@ -65,6 +73,8 @@ Kernpunkte für die Umsetzung:
 - **`adr/0026`:** Volltext (`simple`, `german`, `english`, `unaccent`, Trigramme, Glossar) und Vektor (multilingual-e5-small/-base, int8, im Prozess `api`, nicht im Runner-Image), **ohne pgvector** (Vektor als Spalte, Vergleich in `api`); RRF k = 60; harte Filter vor der Fusion; Collection Search mit `q`, Fläche nur per `POST`; Index in `catalog-load`; Bewertungs-Set mit 50 Fragen, Grenze Recall@5 ≥ 0,9 und MRR@10 ≥ 0,8 je Sprache.
 - **`adr/0027`:** Konto-Quellen nur als Katalogeintrag mit Link; `access.account` (`none`, `anonymous_token`, `free_account`, `requester_pays`); Regel R-Z.
 - **`adr/0029`:** eigene virtuelle Verweise (h5py nur in `discovery`), ein Item je Zeitschritt, Verweise im Item, ETag-Prüfung beim Lesen, Fehlerart `source_changed`; zuerst nur abgeschlossene Jahresdateien; ARCO-ERA5 nicht in M5.
+- **`adr/0031`:** geplante Aufgabe, ein Sammel-PR je Tag mit neuen Datensätzen, Profile je Quellenart, Prüflauf in GitHub Actions; vorher die Vorarbeiten V1–V9 (§6.2); Lizenz-Einstufung bleibt bei Otto.
+- **`adr/0032`:** Übersicht bei kleinem Zoom; Budget je Kachel 32 Dateien und 4 s, `MOSAIC_THREADS` 4; Teilkacheln mit Kopf `X-EarthX-Partial`, `no-store`, ohne Marke; Mosaik-ID aus dem Hash der Item-Liste (bis 2000 Items); Kostenschätzung statt 25er-Grenze; Pyramide nur für GLO-30 und WorldCover (Bau gleich nach `materialize`, 0,25 s Abstand, Ablauf 30 Tage mit Verlängerung nach bedingter Prüfung); unter `min_zoom` von swissALTI3D und BEV zeigt GLO-30 als Ersatz (F7 = 1), Copernicus in der Quellenzeile.
 - **`adr/0030`:** Operator-Art `focal` (in M5-10), `sar_db` mit Wertetabelle, Speckle-Filter Boxcar/Lee, σ⁰-Kalibrierung, Felder `composite_presets` und `step_presets`, vier Sentinel-2-Presets, Klassenanteile WorldCover; keine eigene InSAR, kein Pauli; Quick processings auf S1 als Nachtrag M5-12 zu `adr/0018` F3.
 
 ## 5. Antworten Otto (31.10.2026)
@@ -83,58 +93,76 @@ Kernpunkte für die Umsetzung:
 | Aufgabe | Inhalt | PR |
 |---|---|---|
 | M5-01 bis M5-06, M5-12 | Entscheidungsvorlagen (§4) | #260–#262, #295, #300–#303 |
+| M5-29, M5-30 (ADR) | `adr/0031`, `adr/0032` | siehe Log |
 | M5-07 | ESA WorldCover 2020/2021, `data_region` für alle Datensätze | #298 |
 | UI-05 Teil 1 | Control Panel mit Seiten, „Advanced search“ immer sichtbar, Datum begrenzt, kein Zusatztext | #299 |
-| — | CI: Doku-PRs schnell (`scripts/ci-scope.sh`) | #304 |
+| UI-05 Teil 2 (UI-05b) | Data catalogue als Fenster, Registry-Felder für Gruppe, `providers`, `gsd` | siehe Log |
+| UI-06 | 3D-Ansicht, Kompass immer sichtbar | siehe Log |
+| M5-13 | YAML-Lader, alle Einträge unter `backend/catalog/datasets/` | siehe Log |
+| M5-18 | `gateway`: `User-Agent`, Abstand je Host, `robots.txt` | siehe Log |
+| M5-08 a–c | Allgemeiner STAC-Adapter, swissALTI3D, mehrere Stände je Kachel | siehe Log |
+| DS-04 a–c | Sentinel-1 GRD (TPS, Fassung über CRC64NVME mit Rückfall auf ETag) | siehe Log, #327 |
+| M5-15 | Sentinel-2-Presets NDMI, MNDWI, NDREI, SAVI | siehe Log |
+| M5-22 Teile 1 und b | Bewertungs-Set, Suchtext, lexikalischer Arm mit Glossar | siehe Log |
+| M5-28 | nodata-Regeln (float → NaN; Ganzzahl: Randwert, Verschieben bei Kollision, Klemmen), Runner 0.5.1 | siehe Log |
+| M5-30b Teile 1, 2, 5, 6 | Übersicht und Mosaik bei kleinem Zoom, Messung, Budgets | #329–#332, #339 |
+| — | Ausgabetypen nur, wo sinnvoll (§2 Punkt 9) | #333 |
+| — | CI: Doku-PRs schnell; Pin `ubuntu-24.04`; Logger-Fix im Test; Backend in vier parallelen Teilen (6 statt 15 min) | #304, #322, #336, #338 |
+| — | Weitere Nachträge | #316, #328 |
 
 ### 6.2 Offen
 
 Stufe A: ohne Plan-Datei, direkt umsetzen. Stufe B: Plan unter `docs/plans/m5/` (UI unter `docs/plans/vp3/`) mit Fragen im Draft-PR, Umsetzung nach Ottos Antworten im selben PR. Stufe C: nur Entwurf (ADR, Bericht).
 
+**In Arbeit (11.11.2026):**
+
+| Aufgabe | Inhalt | Stand |
+|---|---|---|
+| **M5-30b** | Teil 3a/3b (Frontend, mit #335 zusammen mergen), Teil 7 (Ersatz GLO-30, Plan §4.8), Teile 8 und 9 (Pyramide GLO-30 und WorldCover), Teil 10 (Nachträge) | läuft |
+| **M5-22 Teil c** | Collection Search mit `q`, Zahl am Namen (A18 nach Ottos Antwort), Negativfrage Q51 | #337 |
+| **F11** | Quicklook für Sentinel-1 über Kacheln statt PNG (`adr/0018` §4.2), Regel an `georeferencing: gcp_tps`, nur Frontend | läuft, Merge nach #339 |
+
+**Noch nicht gestartet:**
+
 | Aufgabe | Inhalt | Stufe | Modell, Effort | Hängt ab von |
 |---|---|---|---|---|
-| **UI-05b** | UI-05 Teil 2: Data catalogue als Fenster, Registry-Felder für Gruppe, `providers`, `gsd`, Auswahl im Browser, Vorauswahl | B (Plan fertig) | Opus, hoch | — |
-| **M5-18** | `gateway`: `User-Agent` Pflicht, Abstand je Host, `robots.txt` (`adr/0025` Schnitt 3) | B | Opus, mittel | — |
-| **M5-13** | YAML-Lader (`adr/0025` §7, Schnitt 1): Umzug aller Einträge bitgleich, `legal_status`, `proto-`, Startprüfung (`adr/0024` R5), `access.account` (`adr/0027` §6.1), `EARTHX_PROFILE`, Dockerfile | B | Opus, hoch | UI-05b gemergt |
-| **M5-08** | Allgemeiner STAC-Adapter und swissALTI3D; Regel für mehrere Stände je Kachel | B | Opus, hoch | M5-13 gemergt |
-| **DS-04** | Sentinel-1 GRD anbinden (`adr/0018` Teil A); Plan neu schreiben (der alte enthält den Text von DS-00) | B | Opus, hoch | Plan sofort; Umsetzung nach M5-13 |
-| **M5-22** | Suche Teil 1 (`adr/0026` §6 Schritte 1, 2 und API): Bewertungs-Set als Fixture und Test, Suchtext, lexikalischer Arm mit Glossar, Collection Search mit `q` | B | Opus, hoch | M5-13 gemergt |
-| **M5-10** | Geländeoperator mit Capability `terrain` und Operator-Art `focal` (`adr/0030` F3) | B | Opus, hoch | M5-08 gemergt |
-| **M5-09** | BEV ALS-DGM 1 m über ATOM, EPSG:3035 | B | Opus, mittel | M5-08 gemergt |
-| **M5-15** | Sentinel-2-Presets NDMI, MNDWI, NDREI, SAVI (`adr/0030` F8) | A | Sonnet, mittel | M5-13 gemergt |
-| **M5-17** | Stufe „gelistet“ (`adr/0025` §6.1a, Schnitt 2) und erste Katalogeinträge mit Link: CORINE (`free_account`), Landsat (`requester_pays`) (`adr/0027` W0) | B | Opus, mittel | M5-13 gemergt |
-| **M5-19** | Harvest-Kern (`adr/0025` Schnitt 4): Tabellen, Fetch und Extract für STAC-API und CKAN, Lauf-Befehl | B | Opus, hoch | M5-13, M5-18 gemergt |
-| **M5-14** | Preset-Felder `composite_presets` und `step_presets` (`adr/0030` F7), Anzeige in „Quick processing“ | B | Opus, mittel | M5-13 gemergt |
-| **M5-11** | Erste Meteorologie-Quelle MeteoSchweiz nach `adr/0029` (zwei PRs: Verweise und Lesen; Datensatz) | B | Opus, hoch | M5-08 gemergt |
+| **F12** | Hinweis an den Originalen (Befund F12 aus #319), Text-Auftrag | A | Sonnet, mittel | — |
+| **M5-10** | Geländeoperator mit Capability `terrain` und Operator-Art `focal` (`adr/0030` F3) | B | Opus, hoch | — |
+| **M5-09** | BEV ALS-DGM 1 m über ATOM, EPSG:3035; Ersatz GLO-30 unter `min_zoom` wie swissALTI3D | B | Opus, mittel | M5-30b Teil 7 gemergt |
+| **M5-17** | Stufe „gelistet“ (`adr/0025` §6.1a, Schnitt 2) und erste Katalogeinträge mit Link: CORINE (`free_account`), Landsat (`requester_pays`) (`adr/0027` W0) | B | Opus, mittel | — |
+| **M5-19** | Harvest-Kern (`adr/0025` Schnitt 4): Tabellen, Fetch und Extract für STAC-API und CKAN, Lauf-Befehl | B | Opus, hoch | — |
+| **M5-14** | Preset-Felder `composite_presets` und `step_presets` (`adr/0030` F7), Anzeige in „Quick processing“ | B | Opus, mittel | — |
+| **M5-11** | Erste Meteorologie-Quelle MeteoSchweiz nach `adr/0029` (zwei PRs: Verweise und Lesen; Datensatz); Wiedervorlage `float64` (§2 Punkt 9) | B | Opus, hoch | — |
 | **M5-20** | Verify, Enrich, Dedupe, Kandidaten, `discovery propose`, Lizenzregeln, Skript und Anleitung für Ottos lokalen Lauf (`adr/0025` Schnitt 5, §6.7) | B | Opus, hoch | M5-19, M5-17 gemergt |
+| **V1–V9** | Vorarbeiten für das automatische Onboarding (`adr/0031`), danach richtet Claude im Planungs-Chat die geplante Aufgabe ein | B | laut `adr/0031` | laut `adr/0031` (in der Liste nach M5-20) |
 | **M5-16** | WorldCover: Klassenanteile in der AOI aus der Ergebnis-Statistik (`adr/0030` F9) | B | Opus, mittel | — |
-| **M5-23** | Suche Teil 2 (`adr/0026` §6 Schritte 3 und 4): Vektorarm, Modellwahl am Set, eigene Dockerfile-Stufe, RRF; Suchfeld und AOI-Schalter im Data catalogue | B | Opus, hoch | M5-22, UI-05b gemergt |
-| **DS-05a** | `sar_db` mit Wertetabelle, `sar_backscatter`, Schritt-Presets „VV dB“/„VH dB“ | B | Opus, hoch | DS-04, M5-14 gemergt |
+| **M5-23** | Suche Teil 2 (`adr/0026` §6 Schritte 3 und 4): Vektorarm, Modellwahl am Set, eigene Dockerfile-Stufe, RRF; Suchfeld und AOI-Schalter im Data catalogue; schließt die Lücke Deutsch (Recall@5/MRR@10 nach Teil c: 0,727) | B | Opus, hoch | M5-22 Teil c gemergt |
+| **DS-05a** | `sar_db` mit Wertetabelle, `sar_backscatter`, Schritt-Presets „VV dB“/„VH dB“ | B | Opus, hoch | M5-14 gemergt |
 | **DS-05c** | Komposit „Dual-pol RGB“ | A | Sonnet, mittel | DS-05a gemergt |
 | **M5-21** | Extraktoren GeoSphere, INSPIRE-ATOM, STAC Index als Register (`adr/0025` Schnitt 6) | B | Opus, mittel | M5-20 gemergt |
 | **M5-24** | Prozess `harvester` als Takt, Health-Checks, „Last checked“ (`adr/0025` Schnitt 7, §6.6) | B | Opus, mittel | M5-20 gemergt |
 | **DS-05b** | Speckle-Filter Boxcar und Lee auf `focal` | B | Opus, hoch | M5-10, DS-05a gemergt |
 | **DS-05d** | σ⁰-Kalibrierung, danach RVI | B | Opus, hoch | DS-05a gemergt |
-| **M5-25** | JSON-LD und Sitemap für die Datensätze | B | Opus, mittel | M5-22 gemergt |
+| **M5-25** | JSON-LD und Sitemap für die Datensätze | B | Opus, mittel | M5-22 Teil c gemergt |
 | **M5-26** | ADR: Operatoren über mehrere Eingaben oder Zeitschritte (`adr/0030` F10) | C | Opus, hoch | M5-11 gemergt |
 | **M5-27** | Abnahmebericht M5 (§7) | C | Opus, hoch | alle übrigen |
 
-**Text-Aufträge ohne Nummer** (bei Bedarf): Browser-Skripte reparieren (sieben scheitern auf `main`, Befund #299); Nachtrag UI-05 Teil 1 (Seitenpfeile oben, Datum vorausgefüllt), falls nicht in #299.
+**Vorgemerkt, ohne Nummer und ohne Termin:** Tests aufräumen (pytest-Temp-Verzeichnisse, eindeutige Namen der Worker-DBs, Verursacher der verstellten Logger); TPS-Cache, falls Sentinel-1 träge ist (M5-30b F7); Gitterdatei für LV95; ältere Stände von swissALTI3D; BSH; W3 nach M6; Runner-Image 0.5.1 bei Gelegenheit; schlankere PR-Läufe (Vorschlag in #338); Browser-Skripte reparieren (Befund #299).
 
 ### 6.3 Reihenfolge
 
-- Höchstens **zwei Sessions der Stufe B** und höchstens **zwei mit Frontend** gleichzeitig (Übergabe §3); Stufe A und C zählen nicht mit.
+- Höchstens **zwei Sessions der Stufe B** und höchstens **zwei mit Frontend** gleichzeitig; Stufe A und C zählen nicht mit.
 - Ist ein Platz frei, startet die nächste Aufgabe dieser Liste, deren Abhängigkeiten erfüllt sind:
-  1. UI-05b · 2. M5-18 · 3. M5-13 · 4. M5-08 · 5. DS-04 · 6. M5-22 · 7. M5-10 · 8. M5-09 · 9. M5-17 · 10. M5-19 · 11. M5-14 · 12. M5-11 · 13. M5-20 · 14. M5-16 · 15. M5-23 · 16. DS-05a · 17. M5-21 · 18. M5-24 · 19. DS-05b · 20. DS-05d · 21. M5-25 · 22. M5-27.
-- Stufe A (M5-15, DS-05c) und C (M5-26) laufen daneben, sobald ihre Abhängigkeit erfüllt ist.
-- **Registry:** UI-05b, M5-13 und M5-08 ändern dieselben Dateien und laufen deshalb nacheinander. Nach M5-13 stehen alle Einträge als YAML; jede spätere Aufgabe schreibt YAML.
-- Der Plan von DS-04 darf sofort entstehen (Stufe B, nur Doku), die Umsetzung erst nach M5-13.
+  1. F12 · 2. M5-10 · 3. M5-09 · 4. M5-17 · 5. M5-19 · 6. M5-14 · 7. M5-11 · 8. M5-20 · 9. V1–V9 · 10. M5-16 · 11. M5-23 · 12. DS-05a · 13. M5-21 · 14. M5-24 · 15. DS-05b · 16. DS-05d · 17. M5-25 · 18. M5-27.
+- Stufe A (DS-05c) und C (M5-26) laufen daneben, sobald ihre Abhängigkeit erfüllt ist.
+- Gestapelte PRs: nach dem Merge der Basis zeigt GitHub die Folge-PRs auf `main` (Einstellung „Automatically delete head branches“ ist seit 11.11. an). Gestapelte PRs und Onboarding-PRs mit Merge-Commit, Squash nur bei Merge- oder WIP-Commits.
 
 ### 6.4 Startsätze
 
 - Stufe A, B, C: „Führe Aufgabe M5-xx aus `docs/plans/m5/m5-discovery-und-suche.md` (§6.2) aus.“
-- UI-05b: „Führe UI-05 Teil 2 aus `docs/plans/vp3/ui-05-data-catalogue.md` aus (Antworten §8a).“
-- DS-04, DS-05x: „Führe Aufgabe DS-0x aus `docs/plans/m5/m5-discovery-und-suche.md` (§6.2) aus; Grundlage `adr/0018` und `adr/0030` §9.“
+- DS-05x: „Führe Aufgabe DS-05x aus `docs/plans/m5/m5-discovery-und-suche.md` (§6.2) aus; Grundlage `adr/0018` und `adr/0030` §9.“
+- V1–V9: „Führe die Vorarbeiten V1–V9 aus `adr/0031` aus; Rahmen `docs/plans/m5/m5-discovery-und-suche.md` §6.2.“
+- Zu jedem Startsatz nennt der Planungs-Chat Modell und Effort.
 
 ### 6.5 Was für alle Aufgaben aus §6 gilt
 
@@ -142,7 +170,8 @@ Stufe A: ohne Plan-Datei, direkt umsetzen. Stufe B: Plan unter `docs/plans/m5/` 
 - Eigenheiten (§2 Punkt 7) ausdrücklich in der Registry; was nicht geht, erscheint nicht.
 - Lizenz-Einstufung nach `adr/0023` §7.2; Wortlaut der Attribution bestätigt Otto im PR vor dem Merge.
 - Live-Abrufe gegen Quellen laufen nicht aus Cloud-Sessions über `gateway` (`adr/0002`); Laden von Items und Harvest-Läufe macht Otto lokal, die Session nennt die Befehle.
-- Entscheidungslog nur ergänzen (Regel im Log-Kopf).
+- Entscheidungslog nur ergänzen (Regel im Log-Kopf; `merge=union` löst gleichzeitige Zeilen).
+- Frontend nach §2 Punkte 8 und 9 und `docs/ui/leitfaden.md`.
 
 ## 7. Abnahme M5
 
@@ -176,8 +205,9 @@ Otto: F1 und F2 jeweils Option 1.
 
 ## 9. Nächste Schritte
 
-1. Starten: UI-05b und M5-18 (Stufe B), dazu der Plan von DS-04, sobald ein Platz der Stufe B frei ist.
-2. Otto lokal: WorldCover-Items laden (`python -m earthx.discovery.materialize esa-worldcover-2020` bzw. `-2021`), `live-smoke` einmal von Hand.
+1. Laufend zu Ende bringen: M5-30b (3b mit #335, dann Teile 7–10), M5-22 Teil c (#337), F11 (nach #339).
+2. Nächster freier Platz nach §6.3; Plätze mit Frontend sind belegt, solange M5-30b Teil 3b und F11 laufen.
+3. Dieser Doku-PR ist zugleich der Nachweis für den Doku-Pfad der neuen CI (#338): Der Pflicht-Check „Backend — lint and tests“ muss mit übersprungenen Teilen grün werden.
 
 ## 10. Grenzen (gelten für alle M5-Aufgaben)
 

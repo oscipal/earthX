@@ -16,7 +16,7 @@ const collection = (format: 'cog' | 'zarr'): Collection =>
     id: 'optical',
     title: 'Optical',
     'earthx:capabilities': { roi: true, time_range: true, band_math: true, interpolation: true },
-    'earthx:viewer': { group_by: ['datetime'], min_zoom: 0, max_zoom: 19, browse: 'quicklook', quicklook_nodata_max: 16, results_group_by: ['datetime'], overview: 'own' as const, overview_resampling: null },
+    'earthx:viewer': { group_by: ['datetime'], min_zoom: 0, max_zoom: 19, browse: 'quicklook', quicklook_nodata_max: 16, results_group_by: ['datetime'], overview: 'own' as const, overview_resampling: null, overview_substitute: null },
     'earthx:format': format,
     'earthx:source': { asset_hosts: ['data.test'] },
     'earthx:default_render': { title: 'True colour', assets: ['visual'], rescale: null, colormap_name: null, expression: null, resampling: 'nearest' },

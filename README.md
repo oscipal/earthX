@@ -331,6 +331,15 @@ nur Begriffe, die wirklich dasselbe meinen (ein Oberflächenmodell ist kein Gel�
 nur auf die Anfrage und braucht keinen neuen Index; Begriffe zu Operatoren je Capability stehen in
 `backend/catalog/capability_terms.yaml`.
 
+**Datensatzsuche über die STAC-API (M5-22c):** `/stac/collections` ist STAC Collection Search mit `q`.
+Ohne Parameter kommen wie bisher alle Collections. `GET /stac/collections?q=Höhenmodell` sucht im Index
+(Volltext deutsch und englisch mit Glossar, Trigramme für Tippfehler) und liefert die Collections in der
+Rangfolge, höchstens 20 je Seite mit `next`-Link; dazu `bbox`, `datetime`, `limit`, `offset`. Eine Fläche als
+Geometrie geht nur im Body von `POST /stac/collections` (`intersects`, sonst dieselben Felder), damit sie nicht in
+einer URL steht. Ein Komma in `q` trennt nur Wörter (keine Free-text-Syntax), die Landing Page erklärt deshalb
+Collection Search, aber nicht Free-text. Die Zahl eines nummerierten Namens bleibt Bedingung: `q=Sentinel-3` liefert
+eine leere Liste, solange kein Sentinel-3 im Katalog steht; eine Zahl mit Einheit (`q=ESA 10 m`) oder ein Jahr nicht.
+
 `backend/catalog/prototype/` hält Einträge von Quellen mit unklarer Rechtslage
 (`docs/adr/0024-prototyp-quellen.md`). Das Verzeichnis kommt nie ins Image; geladen wird es
 nur mit `EARTHX_PROTOTYPE_SOURCES` (Pfad), `EARTHX_PROFILE=local` und ohne `CI`. Jede andere

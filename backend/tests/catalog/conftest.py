@@ -144,6 +144,7 @@ def valid_config() -> DatasetConfig:
             results_group_by=("datetime",),
             overview=OverviewMode.SCENES,
             overview_resampling=None,
+            overview_substitute=None,
         ),
         health=HealthInfo(status=HealthStatus.OK),
         maturity=Maturity.STABLE,

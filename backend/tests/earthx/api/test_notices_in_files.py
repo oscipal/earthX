@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 
 from earthx.access.download import build_notice_text
+from earthx.api.citation import citation_bib
 from earthx.api.intake import job_recipe_json, recipe_notices
 from earthx.catalog.registry import AcquisitionYears
 from earthx.processing.export import Attachments, AttachmentsInvalid
@@ -41,6 +42,33 @@ class TestAttributionYear:
         assert "Contains modified Copernicus Sentinel data 2025–2026" in text
         assert "{year}" not in text
         assert "[year]" not in text
+
+
+class TestOriginalsAreTheBucketOperatorsCogs:
+    """DS-04 plan F12 (Otto, 13.11.2026): no label in the viewer; limitations and ATTRIBUTION.txt say what the files are."""
+
+    SENTENCE = "cloud-optimized GeoTIFFs as the bucket operator converted them, not the ESA SAFE product"
+
+    def test_the_limitations_say_it_in_at_most_three_sentences(self) -> None:
+        assert len(SENTINEL_1_GRD.limitations) <= 3
+        assert any(self.SENTENCE in text for text in SENTINEL_1_GRD.limitations)
+
+    def test_attribution_txt_has_the_limitations_as_a_section_of_their_own(self) -> None:
+        text = build_notice_text(SENTINEL_1_GRD, item_ids=["S1_A"], years=YEARS, at=AT)
+        section = "Limitations:\n" + "\n".join(f"- {sentence}" for sentence in SENTINEL_1_GRD.limitations)
+        assert section in text.split("\n\n")
+        assert self.SENTENCE in text
+
+    def test_citation_and_citation_bib_do_not_carry_it(self) -> None:
+        assert self.SENTENCE not in (SENTINEL_1_GRD.citation or "")
+        bib = citation_bib(SENTINEL_1_GRD, downloaded=AT.date(), years=YEARS).decode()
+        assert "bucket operator" not in bib
+
+    def test_a_dataset_without_limitations_gets_no_section(self) -> None:
+        assert SENTINEL_2_L2A.limitations == ()
+        text = build_notice_text(SENTINEL_2_L2A, item_ids=["S2_A"], years=YEARS, at=AT)
+        assert "Limitations" not in text
+        assert "bucket operator" not in text
 
 
 class TestAttributionTxt:

@@ -12,13 +12,23 @@ import pytest
 
 from earthx.catalog.glossary import load_glossary
 from earthx.catalog.pgstac import load_collection, upsert_items, use_pgstac_search_path
-from earthx.catalog.registry import DatasetConfig, DatasetRegistry, SpatialExtent, TemporalExtent
+from earthx.catalog.registry import (
+    DatasetConfig,
+    DatasetRegistry,
+    OverviewMode,
+    OverviewResampling,
+    SpatialExtent,
+    TemporalExtent,
+)
 from earthx.catalog.search import (
     MAX_QUERY_CHARS,
     Joining,
     QueryTooLong,
     box_area,
     fuse,
+    numbered_names,
+    numbers_after_names,
+    numbers_of,
     ranks,
     search_datasets,
 )
@@ -26,6 +36,18 @@ from earthx.catalog.search_index import write_search_index
 from tests.catalog.entries import COP_DEM_GLO_30, SENTINEL_2_L2A, SWISSALTI3D
 
 GLOSSARY = load_glossary()
+
+
+# swissALTI3D with a pyramid of its own: the copies below stand without the substitute the released entry names.
+STATIC = dataclasses.replace(
+    SWISSALTI3D,
+    viewer=dataclasses.replace(
+        SWISSALTI3D.viewer,
+        overview=OverviewMode.PYRAMID,
+        overview_resampling=OverviewResampling.AVERAGE,
+        overview_substitute=None,
+    ),
+)
 
 
 def _entry(
@@ -43,10 +65,10 @@ def _entry(
 
 # Three static rasters over one box, a time series, and a materialized dataset whose box is wide but whose items cover
 # one small square only. Keywords chosen so each test can tell them apart.
-TERRAIN = _entry(SWISSALTI3D, "test-terrain", "Terrain Alpha", ("digital terrain model", "alpine"))
-SURFACE = _entry(SWISSALTI3D, "test-surface", "Surface Beta", ("digital surface model", "alpine"))
+TERRAIN = _entry(STATIC, "test-terrain", "Terrain Alpha", ("digital terrain model", "alpine"))
+SURFACE = _entry(STATIC, "test-surface", "Surface Beta", ("digital surface model", "alpine"))
 KENYA = _entry(
-    SWISSALTI3D,
+    STATIC,
     "test-kenya",
     "Equator Gamma",
     ("land cover", "savanna"),
@@ -199,6 +221,100 @@ async def test_two_hundred_characters_are_allowed_and_one_more_is_not(catalogue,
     await _ids(aconn, "a" * MAX_QUERY_CHARS)
     with pytest.raises(QueryTooLong):
         await _ids(aconn, "a" * (MAX_QUERY_CHARS + 1))
+
+
+# --- numbers at a name (plan §11.7) -------------------------------------------------------------------------------------
+
+# A mission with a number and a code with another one (like "c1" in the id of Sentinel-2), a product that names it as
+# a keyword (like WorldCover names Sentinel-2) and whose own name carries no number, and a model whose number stands
+# behind a hyphen ("GLO-30", which the full text splits into "glo" and "-30").
+ORBITER = _entry(
+    SENTINEL_2_L2A,
+    "test-orbiter-2",
+    "Orbiter-2 Imagery",
+    ("orbiter-2", "panchromatic", "c1"),
+    description="Imagery of the second orbiter, 9 bands.",
+)
+PRODUCT = _entry(
+    SENTINEL_2_L2A, "test-product", "Landuse Zeta", ("orbiter-2", "land use"), description="Land use at 10 m."
+)
+MAPPER = _entry(COP_DEM_GLO_30, "test-mapper", "Mapper GLO-30", ("relief",))
+NUMBERED = DatasetRegistry((ORBITER, PRODUCT, MAPPER))
+
+
+@pytest.fixture
+def numbered(require_postgres_env: None) -> Iterator[None]:
+    with psycopg.connect(autocommit=True) as conn:
+        write_search_index(conn, NUMBERED)
+        yield
+        conn.execute("DELETE FROM public.earthx_dataset_search")
+
+
+@pytest.mark.parametrize(
+    "text", ["Orbiter-3", "Orbiter 3", "orbiter3", "Orbitr 3", "Orbiter 1", "Mapper GLO-90", "Mapper 90"]
+)
+async def test_a_name_with_a_number_no_dataset_has_finds_nothing(numbered, aconn, text):
+    assert await _ids(aconn, text) == ()
+
+
+@pytest.mark.parametrize("text", ["Orbiter-2", "Orbiter 2", "orbiter2", "Orbitr 2"])
+async def test_the_number_finds_the_name_and_where_it_is_a_keyword(numbered, aconn, text):
+    assert set(await _ids(aconn, text)) == {"test-orbiter-2", "test-product"}
+
+
+async def test_a_number_behind_a_hyphen_is_still_the_number(numbered, aconn):
+    assert await _ids(aconn, "Mapper GLO 30") == ("test-mapper",)
+    assert await _ids(aconn, "Mapper 30", threshold=1.1) == ("test-mapper",)
+
+
+async def test_a_bare_number_carries_no_dataset(numbered, aconn):
+    # "9" stands in the description of the orbiter; "Landsat" in no text.
+    assert await _ids(aconn, "Landsat 9") == ()
+    assert await _ids(aconn, "9", threshold=1.1) == ()
+
+
+async def test_a_number_after_a_topic_still_drops_out_where_unknown(numbered, aconn):
+    # "panchromatic" is a keyword, no name: "2024" is a word no text has, dropped as under Joining.KNOWN before.
+    assert await _ids(aconn, "panchromatic 2024") == ("test-orbiter-2",)
+
+
+@pytest.mark.parametrize("text", ["Zeta 10 m", "Zeta 10m", "Landuse 7", "Mapper 2019"])
+async def test_a_unit_a_year_or_a_name_without_a_number_lets_the_number_drop_out(numbered, aconn, text):
+    # Otto, 11.11.2026 (A18): "10 m" is a resolution, 2019 a year; "Landuse Zeta" carries no number of its own.
+    expected = "test-mapper" if text.startswith("Mapper") else "test-product"
+    assert expected in await _ids(aconn, text)
+
+
+def test_only_names_that_carry_a_number_are_numbered():
+    rows = [
+        "test-orbiter-2 Orbiter-2 Imagery",
+        "esa-worldcover-2020 ESA WorldCover 2020",
+        "test-mapper Mapper GLO-30",
+        "test-grid Grid 10 m",
+    ]
+    assert numbered_names(rows) == {"test", "orbiter", "mapper", "glo"}
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Sentinel 3", ("3",)),
+        ("Sentinel-3", ("3",)),
+        ("Sentinel S3b", ()),
+        ("Höhenmodell 2024", ()),
+        ("Sentinel 2024", ()),
+        ("Sentinel 10 m", ()),
+        ("3 Sentinel", ()),
+        ("Sentinel", ()),
+    ],
+)
+def test_the_numbers_right_after_a_name(text, expected):
+    assert numbers_after_names(text, frozenset({"sentinel"})) == expected
+
+
+def test_numbers_are_words_of_digits_and_codes_are_the_digits_of_other_words():
+    # A year and a number with a unit are neither.
+    assert numbers_of("Sentinel-2 L2A 2020 sentinel3 10 m 20km") == (("2",), ("2", "3"))
 
 
 # --- area --------------------------------------------------------------------------------------------------------------

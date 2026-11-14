@@ -22,6 +22,7 @@ const VIEWER = {
   results_group_by: ['datetime'],
   overview: 'own' as const,
   overview_resampling: null,
+  overview_substitute: null,
 };
 
 function dataset(id: string, interval: unknown, timeAxis = true): Collection {

@@ -77,6 +77,7 @@ SYNTHETIC_ZARR: DatasetConfig = replace(
         # Released from z8 up, so the levels below need a pyramid to show an image (adr/0032 §9).
         overview=OverviewMode.PYRAMID,
         overview_resampling=OverviewResampling.AVERAGE,
+        overview_substitute=None,
     ),
     zarr=ZarrInfo(variable_separator=":", multiscales_convention="zarr-conventions/multiscales v0.1 (pilot)"),
     mask=MaskSource(

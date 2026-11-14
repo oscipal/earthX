@@ -289,6 +289,7 @@ class TestTheViewerBlockCarriesTheReleasedZoomRange:
             # M5-30b: what is shown below `min_zoom` (adr/0032 §9).
             "overview": "scenes",
             "overview_resampling": None,
+            "overview_substitute": None,
         }
 
     def test_the_second_dataset_carries_its_own_range(self) -> None:
@@ -298,6 +299,14 @@ class TestTheViewerBlockCarriesTheReleasedZoomRange:
     def test_a_pyramid_carries_its_resampling(self) -> None:
         viewer = to_stac_collection(SYNTHETIC_ZARR)["earthx:viewer"]
         assert (viewer["overview"], viewer["overview_resampling"]) == ("pyramid", "average")
+
+    def test_a_substitute_carries_the_id_of_its_dataset(self) -> None:
+        viewer = to_stac_collection(REGISTRY.get("swissalti3d"))["earthx:viewer"]
+        assert (viewer["overview"], viewer["overview_resampling"], viewer["overview_substitute"]) == (
+            "substitute",
+            None,
+            "cop-dem-glo-30",
+        )
 
     def test_a_dataset_without_a_viewer_block_stays_null(self, vary) -> None:
         """No guessed range for an entry that names none — the same nothing-guessed

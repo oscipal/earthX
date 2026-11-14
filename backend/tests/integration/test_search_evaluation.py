@@ -72,6 +72,9 @@ async def test_the_lexical_arm_holds_the_ratchet(registry_index, aconn):
         recall, mrr = RATCHET[language]
         assert measures.recall_at_5 >= recall - 1e-9, (language, measures)
         assert measures.mrr_at_10 >= mrr - 1e-9, (language, measures)
+    # Otto, 11.11.2026 (plan §12.5): a resolution after a name keeps WorldCover among the first five.
+    (esa_10_m,) = [o for o in evaluation.active if o.question.id == "Q52"]
+    assert esa_10_m.recall == 1.0, esa_10_m.hits
 
 
 @pytest.mark.parametrize("joining", list(Joining))

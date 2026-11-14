@@ -111,6 +111,7 @@ function viewable(
       results_group_by: ['datetime'],
       overview: 'pyramid' as const,
       overview_resampling: 'average' as const,
+      overview_substitute: null,
     },
     ...(filters ? { 'earthx:search_filters': filters } : {}),
     ...(mask ? { 'earthx:mask': mask } : {}),

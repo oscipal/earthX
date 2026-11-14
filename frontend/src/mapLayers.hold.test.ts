@@ -22,7 +22,7 @@ const [dataset] = datasetsFrom([
     id: 'synthetic',
     title: 'Synthetic dataset',
     'earthx:capabilities': CAPABILITIES,
-    'earthx:viewer': { group_by: ['datetime'], min_zoom: 0, max_zoom: 14, browse: 'full_resolution', quicklook_nodata_max: null, results_group_by: ['datetime'], overview: 'own' as const, overview_resampling: null },
+    'earthx:viewer': { group_by: ['datetime'], min_zoom: 0, max_zoom: 14, browse: 'full_resolution', quicklook_nodata_max: null, results_group_by: ['datetime'], overview: 'own' as const, overview_resampling: null, overview_substitute: null },
     'earthx:default_render': { title: 'Grey', assets: ['data'], rescale: [[0, 1]] as [number, number][], colormap_name: null, expression: null, resampling: 'nearest' },
   },
 ]);

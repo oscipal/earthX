@@ -179,9 +179,12 @@ viewer:
   browse: full_resolution
   quicklook_nodata_max: null
   results_group_by: ['earthx:state']
-  # What is shown below min_zoom (adr/0032 §9).
-  overview: pyramid
-  overview_resampling: average
+  # What is shown below min_zoom (adr/0032 §9): the picture of Copernicus DEM GLO-30, not a pyramid of this dataset
+  # (Otto, 11.11.2026, F7 = 1, M5-30b plan §4.8). The route draws it only; statistics, crop, download and jobs read
+  # the tiles of swissALTI3D. The unit of both default bands is `m`.
+  overview: substitute
+  overview_resampling: null
+  overview_substitute: cop-dem-glo-30
 health:
   status: ok
 # A standard product of swisstopo, open government data since 2021.

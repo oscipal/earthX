@@ -40,7 +40,7 @@ const COLLECTION = {
   'earthx:format': 'cog',
   'earthx:capabilities': { roi: true, time_range: true, band_math: true, interpolation: true },
   'earthx:default_render': { title: 'True colour', assets: ['visual'], rescale: [[0, 3000]], colormap_name: null, expression: null, resampling: 'nearest' },
-  'earthx:viewer': { group_by: ['datetime'], min_zoom: 8, max_zoom: 14, browse: 'quicklook', quicklook_nodata_max: null, results_group_by: ['datetime'], overview: 'pyramid' as const, overview_resampling: 'average' as const },
+  'earthx:viewer': { group_by: ['datetime'], min_zoom: 8, max_zoom: 14, browse: 'quicklook', quicklook_nodata_max: null, results_group_by: ['datetime'], overview: 'pyramid' as const, overview_resampling: 'average' as const, overview_substitute: null },
 } as unknown as Collection;
 
 const scene = (id: string, day: string): StacItem => {
@@ -277,11 +277,13 @@ describe('the bands and the panels beside the rail (NM4-66)', () => {
     }
   });
 
-  it('are not shifted by a class or a variable of the open panel: the style sheet knows neither', () => {
+  it('are not shifted by a class or a variable of the open panel: the style sheet knows neither for them', () => {
     expect(CSS).not.toMatch(/dock-offset|dock-open/u);
     expect(container.querySelector('.app')!.className).toBe('app');
     act(() => useAppStore.setState({ dock: 'results' }));
-    expect(container.querySelector('.app')!.className).toBe('app');
+    // The open panel marks `.app` for the status box alone (`mapEdges.ts`, Otto, 14.11.2026); no rule of the bands reads the mark.
+    expect(container.querySelector('.app')!.className).toBe('app has-dock');
+    expect(CSS).not.toMatch(/\.has-dock[^{]*\.(?:overlay\.)?bottom|\.bottom[^{]*\.has-dock/u);
     // The stack is centred in the map beside the rail, and as wide as the window allows beside it.
     const bottom = CSS.slice(CSS.indexOf('\n.bottom {'), CSS.indexOf('}', CSS.indexOf('\n.bottom {')));
     expect(bottom).toContain('left: calc((100% + var(--rail-width)) / 2)');

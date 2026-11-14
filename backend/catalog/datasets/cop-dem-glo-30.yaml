@@ -180,6 +180,7 @@ viewer:
   # What is shown below min_zoom (adr/0032 §9).
   overview: pyramid
   overview_resampling: average
+  overview_substitute: null
 health:
   status: ok
 # A released, versioned product (state of 9 May 2022), not a pilot.

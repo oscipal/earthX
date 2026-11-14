@@ -12,7 +12,7 @@ and no connection string in code.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from importlib.metadata import PackageNotFoundError
@@ -336,6 +336,49 @@ def search_items_in_bbox(
     with conn.cursor() as cur:
         cur.execute("SELECT pgstac.search(%s::jsonb)", (json.dumps(query),))
         row = cur.fetchone()
+    if row is None or row[0] is None:
+        return []
+    return list(row[0].get("features") or [])[:limit]
+
+
+async def search_items_by_ids(
+    conn: psycopg.AsyncConnection, dataset_id: str, item_ids: Sequence[str]
+) -> list[dict[str, object]]:
+    """The items of a materialized dataset's own collection with these ids, whole, as ``get_item`` gives them.
+
+    One query for all of them, where :func:`fetch_item` is one per item: a selection of a thousand scenes is created
+    from a few of these (M5-30b part 3). An id without an item is left out of the answer, not an error; the caller says
+    which. Like :func:`fetch_item` it uses the caller's connection and commits nothing; the search path of pgstac is set
+    for the transaction only, so it does not stay on a pooled connection.
+    """
+    if not item_ids:
+        return []
+    query = {"collections": [dataset_id], "ids": list(item_ids), "limit": len(item_ids)}
+    async with conn.transaction(), conn.cursor() as cur:
+        await cur.execute("SET LOCAL search_path TO pgstac, public")
+        await cur.execute("SELECT pgstac.search(%s::jsonb)", (json.dumps(query),))
+        row = await cur.fetchone()
+    if row is None or row[0] is None:
+        return []
+    return list(row[0].get("features") or [])
+
+
+async def search_items_in_bbox_async(
+    conn: psycopg.AsyncConnection, dataset_id: str, bbox: tuple[float, float, float, float], limit: int
+) -> list[dict[str, object]]:
+    """:func:`search_items_in_bbox` on the caller's async connection, from the pool of the tiler (plan M5-30b §4.8).
+
+    The pool's connections are in autocommit, and its connections are shared: ``search_path`` is set for one transaction
+    only (``SET LOCAL``), never for the connection, which the next user of the pool would inherit.
+    """
+    if limit < 1:
+        raise ValueError("limit is at least 1")
+    query = {"collections": [dataset_id], "bbox": list(bbox), "limit": limit}
+    async with conn.transaction():
+        await conn.execute("SET LOCAL search_path TO pgstac, public")
+        async with conn.cursor() as cur:
+            await cur.execute("SELECT pgstac.search(%s::jsonb)", (json.dumps(query),))
+            row = await cur.fetchone()
     if row is None or row[0] is None:
         return []
     return list(row[0].get("features") or [])[:limit]

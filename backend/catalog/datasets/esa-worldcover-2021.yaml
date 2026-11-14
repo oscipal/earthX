@@ -147,6 +147,7 @@ viewer:
   # What is shown below min_zoom (adr/0032 §9).
   overview: pyramid
   overview_resampling: mode
+  overview_substitute: null
 health:
   status: ok
 maturity: stable

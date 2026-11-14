@@ -13,7 +13,7 @@ wall time and the client-side times (waiting for a connection included, as DevTo
 of W x H CSS pixels at map zoom Z, centred on the scene, for a raster source of ``--tilesize`` px. MapLibre's world
 is 512 px at zoom 0 and a raster source rounds, so the level is ``round(Z + log2(512 / tilesize))``; tiles outside
 the scene's footprint are not asked, as a source with ``bounds`` does not. ``--mosaic`` asks one mosaic tile of all
-scenes per position (``/mosaic/tiles/...``) instead of one tile per scene.
+scenes per position (``/mosaic/{id}/tiles/...``, from a selection the script creates first) instead of one tile per scene.
 """
 
 import argparse
@@ -60,14 +60,29 @@ def viewport_tiles(width: int, height: int, map_zoom: float, tilesize: int) -> l
             for x in range(math.floor(cx - hx), math.ceil(cx + hx)) if (x, y) in inside]
 
 
+def create_selection(base: str, ids: list[str], assets: list[str]) -> str:
+    """The tile path of the selection of ``ids`` read from ``assets``: ``POST /collections/{dataset}/mosaic`` (adr/0032 §10.2).
+
+    The scenes and the assets are in the body, never in the URL of a tile; the id that comes back is the hash of them.
+    """
+    response = httpx.post(f"{base}/collections/sentinel-2-c1-l2a/mosaic", json={"items": sorted(ids), "assets": sorted(assets)},
+                          timeout=300)
+    response.raise_for_status()
+    return response.json()["tiles"]
+
+
+def without_assets(query: str) -> str:
+    """The query of a mosaic tile: the assets are the selection's, the steps and the display stay."""
+    return "&".join(part for part in query.split("&") if not part.startswith("asset="))
+
+
 def tile_urls(tiles: list[tuple[int, int, int]], base: str, mode: str, scenes: int, tilesize: int,
               mosaic: bool = False) -> list[str]:
     query = (NDVI if mode == "ndvi" else "asset=visual") + (f"&tilesize={tilesize}" if tilesize != 256 else "")
     ids = scene_ids(scenes)
     if mosaic:
-        items = "&".join(f"item={scene}" for scene in sorted(ids))
-        return [f"{base}/collections/sentinel-2-c1-l2a/mosaic/tiles/WebMercatorQuad/{z}/{x}/{y}.png?{items}&{query}"
-                for z, x, y in tiles]
+        path = create_selection(base, ids, ["nir", "red"] if mode == "ndvi" else ["visual"])
+        return [f"{base}{path.format(z=z, x=x, y=y)}.png?{without_assets(query)}" for z, x, y in tiles]
     return [f"{base}/collections/sentinel-2-c1-l2a/items/{scene}/tiles/WebMercatorQuad/{z}/{x}/{y}.png?{query}"
             for z, x, y in tiles for scene in ids]
 

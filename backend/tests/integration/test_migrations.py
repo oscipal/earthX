@@ -57,6 +57,7 @@ class TestDiscovery:
             ("014", "bundle"),
             ("015", "job_deleted"),
             ("016", "dataset_search"),
+            ("017", "mosaic_selection"),
         ]
 
     def test_a_missing_directory_is_an_error_not_an_empty_run(self, tmp_path) -> None:
