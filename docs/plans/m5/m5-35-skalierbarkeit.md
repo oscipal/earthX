@@ -1,6 +1,6 @@
 # M5-35 — Skalierbarkeit der Bausteine aus M4 und M5: Bericht
 
-**Status (14.11.2026):** Bericht, **Stufe C** (nur lesen und berichten, kein Produktivcode). Fragen an Otto in §8.
+**Status (14.11.2026):** Bericht, **Stufe C** (nur lesen und berichten, kein Produktivcode). Fragen F1–F7 von Otto am 14.11.2026 beantwortet (§8a); Folgeaufgaben M5-36 bis M5-42 und M6 (§10).
 **Aufgabe:** M5-35, Auftrag von Otto vom 14.11.2026 (steht noch nicht in `docs/plans/m5/m5-discovery-und-suche.md` §6.2).
 **Maßstab:** `projektuebersicht.md` Prinzip 16 und Abschnitt „Skalierbarkeit & Cloud-Portabilität“; `architekturplan.md` 1.1 Qualitätsziel 2 („zustandslos, horizontale Skalierung pro Prozesstyp“), 3.2 (Prozesstypen), 6.5 (Fetch-Gateway), 12.3 (Caching-Ebenen).
 **Neue Vorgabe Otto (14.11.2026):** Alles, was entschieden wird, muss skalierbar sein. Neues Ziel für den Katalog: **alle Geodaten der Anbieter gelistet**, auch Tabellen und Daten ohne direkten Download.
@@ -218,7 +218,7 @@ Bei Hunderten Einträgen egal, bei 10⁵–10⁶ ein voller Tabellenscan mit Ran
 
 ---
 
-## 8. Fragen an Otto
+## 8. Fragen an Otto (beantwortet, §8a)
 
 **F1 — Rücksicht auf die Quellen über alle Instanzen (B1)?**
 1. Jetzt: Grenzen je Host in die Registry, Zarr teilt das Gateway, `ReadSlots` auch im `tiler`; Harvester, `materialize` und Pyramide über einen Zeiger je Host in Postgres; Kacheln mit festem Teilbudget je Instanz bis zum Egress-Proxy in M6 **(Empfehlung)**
@@ -251,6 +251,18 @@ Bei Hunderten Einträgen egal, bei 10⁵–10⁶ ein voller Tabellenscan mit Ran
 **F7 — Wie geht es weiter?**
 1. Folgeaufgaben aus §10 in den M5-Plan (§6.2) bzw. das Backlog für M6 übernehmen, Reihenfolge durch den Planungs-Chat **(Empfehlung)**
 2. Erst ein ADR „Skalierung und Rücksicht über Instanzen“ (Stufe C), dann Aufgaben
+
+### 8a. Antworten Otto (14.11.2026)
+
+| Frage | Antwort | Folge |
+|---|---|---|
+| F1 | 1 | M5-36, M5-37; Egress-Proxy in M6 |
+| F2 | 1 | M5-38 |
+| F3 | 1: mit 10⁶ gelisteten Einträgen planen | Maßstab für M5-40, M5-41, M5-42 |
+| F4 | 1 **mit Bedingung:** Die Freigabe durch Otto bleibt (`adr/0025` P1, Lizenz immer durch Otto). Für Einträge in Postgres geschieht sie über freigegebene Lizenzregeln und Stichproben statt über einen PR je Eintrag; wie genau, klärt eine eigene Vorlage vor dem Umbau. | M5-39 (Vorlage), dann M5-40 |
+| F5 | 1, als **Neuentscheidung mit Recherche aus Primärquellen vor M5-23** (die Quellen in §9 sind zum Teil nur Suchtreffer) | M5-41 |
+| F6 | 1 | M6 |
+| F7 | 1: Folgeaufgaben in den M5-Plan | §10 |
 
 ---
 
@@ -293,15 +305,16 @@ Weitere: AnyIO-Standard von 40 Fäden in der Sitzung abgefragt (AnyIO 4.15.1); p
 
 ---
 
-## 10. Folgeaufgaben (Vorschlag, nach Ottos Antworten)
+## 10. Folgeaufgaben (von Otto am 14.11.2026 in den M5-Plan übernommen)
 
-| Vorschlag | Stufe | hängt an |
-|---|---|---|
-| Grenzen je Host in der Registry; Zarr teilt das Gateway; `ReadSlots` im `tiler`; Mosaik-Platz vor dem Thread-Pool | B | F1 |
-| Zeiger und Unterbrecher je Host in Postgres für Harvester, `materialize`, Pyramide; M5-24 baut darauf | B | F1, vor M5-24 |
-| `extend` und `sweep` der Pyramiden unter Sperre | A | F2 |
-| Gelistete Einträge in Postgres; Frontend blättert; Nachträge `adr/0025` §7.1, `adr/0031` | B (mit ADR-Nachtrag) | F3, F4, vor M5-17 |
-| `adr/0026` F3 neu: pgvector ≥ 0.8.0, Postgres-Image | C, dann B in M5-23 | F3, F5 |
-| Lexikalische Suche indexfähig (B7) | B | F3 |
-| `host_cap` je Host, `global_cap` je Pool | B | F6, M6 |
-| M6: Egress-Proxy mit Grenzen je Ziel, Pooler, CDN, Lasttest mit N Instanzen je Prozesstyp (`architekturplan.md` 12.4) | M6 | — |
+| Aufgabe | Inhalt | Stufe | Befund | Reihenfolge |
+|---|---|---|---|---|
+| **M5-36** | Grenzen je Host in der Registry; Zarr teilt das Gateway; `ReadSlots` im `tiler`; Teilbudget je Instanz für Kacheln | B | B1 | nach M5-30b Teil 9 |
+| — | Mosaik-Platz vor dem Thread-Pool (§4.2) | — | B3 | kommt schon mit M5-30b Teil 9 |
+| **M5-37** | Zeiger und Unterbrecher je Host in Postgres für Harvester, `materialize`, Pyramide (W6, W7) | B | B1 | vor M5-19 und M5-24 |
+| **M5-38** | `extend` und `sweep` der Pyramiden unter Sperre (W5) | A | B2 | — |
+| **M5-39** | Vorlage zur Freigabe gelisteter Einträge in Postgres (Bedingung zu F4: Lizenzregeln und Stichproben statt PR je Eintrag); Nachträge `adr/0025` §7.1, `adr/0031` | C | B5 | vor M5-40 |
+| **M5-40** | Gelistete Einträge in Postgres, Frontend blättert statt Gesamtliste | B | B5 | nach M5-39, vor M5-17 |
+| **M5-41** | Nachtrag `adr/0026` F3: pgvector ≥ 0.8.0 mit HNSW, Recherche aus Primärquellen | C | B4 | vor M5-23 |
+| **M5-42** | Lexikalische Suche indexfähig | B | B7 | — |
+| **M6** | `host_cap` je Host und `global_cap` je Pool (B6); Egress-Proxy mit Grenzen je Ziel (B1); Pooler (W1); CDN (B3); Lasttest mit N Instanzen je Prozesstyp (`architekturplan.md` 12.4) | — | B1, B3, B6, W1 | M6 |
