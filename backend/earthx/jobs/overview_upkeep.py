@@ -30,9 +30,10 @@ requests and run in the hourly round of the maintenance thread. Neither logs a d
 
 **One worker at a time** (M5-38, :func:`extend_in_turn`, :func:`sweep_in_turn`). Every worker has both rounds, but only
 the one that takes the turn of the task in the database works (:func:`~earthx.jobs.overviews.take_turn`); the others
-skip their round. The turn is renewed while the objects are copied, listed or deleted; a worker that loses it (it hung
+skip their round. The turn is renewed for each object copied, listed or deleted; a worker that loses it (it hung
 past its lease, and another took over) stops, and the conditional updates above keep the rows right either way. A
-sweep counts for all workers until shortly before the next hourly round. An extension does not: a worker extends only
+sweep counts for all workers until shortly before the next hourly round, a failed one too: the store is tried again
+by the next round, as before by each worker's own. An extension does not: a worker extends only
 the datasets it knows, so the turn only keeps two extensions from running at once.
 """
 
@@ -99,7 +100,7 @@ def sweep(conn: psycopg.Connection, store: Store, beat: Callable[[], None] | Non
         # no longer protected: the orphan sweep below takes them in the next round.
         if overviews.mark_expired(conn, dataset_id, version, checked_at):
             expired += 1
-            delete_version(store, dataset_id, version)
+            delete_version(store, dataset_id, version, beat)
     keys = list(_beating(overview_keys(store), beat))
     protected = overviews.protected_versions(conn)
     stray = [key for key in keys if _owner(key) not in protected]
@@ -174,14 +175,22 @@ def _in_turn(
             overviews.end_turn(conn, turn)
 
 
-def sweep_in_turn(conn: psycopg.Connection, store: Store, *, worker: str, config: WorkerConfig) -> Swept | None:
-    """:func:`sweep` if this worker gets the turn; ``None`` if another worker has it or swept within this round."""
+def sweep_in_turn(
+    conn: psycopg.Connection, store: Store, *, worker: str, config: WorkerConfig, round_started: float | None = None
+) -> Swept | None:
+    """:func:`sweep` if this worker gets the turn; ``None`` if another worker has it or swept within this round.
+
+    ``round_started`` is the :func:`time.monotonic` at which the worker's hourly round began. The gap to the next sweep
+    counts from it, not from this call, so the steps before the sweep (the clean-up of the runs, which can take long
+    once and be quick the next time) do not make a single worker miss its next round.
+    """
+    elapsed = 0.0 if round_started is None else max(0.0, time.monotonic() - round_started)
     turn = overviews.take_turn(
         conn,
         "sweep",
         worker=worker,
         lease_seconds=config.lease_seconds,
-        gap_seconds=config.cleanup_seconds * SWEEP_SHARE,
+        gap_seconds=max(0.0, config.cleanup_seconds * SWEEP_SHARE - elapsed),
     )
     if turn is None:
         return None

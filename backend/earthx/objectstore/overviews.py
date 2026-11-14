@@ -180,11 +180,16 @@ def delete_keys(store: Store, keys: Iterable[str]) -> int:
     return count
 
 
-def delete_version(store: Store, dataset_id: str, version: str) -> None:
-    """Delete every object of one version and abort its open uploads."""
+def delete_version(store: Store, dataset_id: str, version: str, beat: Callable[[], None] | None = None) -> None:
+    """Delete every object of one version and abort its open uploads.
+
+    ``beat`` is called for each key listed; what it raises ends the deletion there.
+    """
     prefix = _version_prefix(dataset_id, version)
     batch: list[str] = []
     for key in store.s3.list_keys(prefix):
+        if beat is not None:
+            beat()
         batch.append(key)
         if len(batch) == 1000:
             store.s3.delete_objects(batch)
