@@ -78,6 +78,7 @@ from earthx.access.download import (
     filter_items_intersecting_aoi,
     parse_aoi_geometry,
 )
+from earthx.access.radar import RADAR_GRID_LINE, item_line_times
 from earthx.access.resolve import (
     AssetNotOnItem,
     InvalidAssetKey,
@@ -96,6 +97,7 @@ from earthx.catalog.registry import (
     Attributable,
     DatasetConfig,
     DatasetRegistry,
+    Georeferencing,
     LicenseTier,
     MissingProperty,
     RetiredDatasetError,
@@ -480,6 +482,7 @@ def _recipe_of(
                     if isinstance(request.output, CropOutput)
                     else {}
                 ),
+                **line_times_of(prepared.config, {target.item["id"]: target.item for target in prepared.targets}.values()),
             }
         ],
         "aoi": prepared.aoi,
@@ -597,6 +600,8 @@ def side_files(
         file_names=names,
         common_resolution=common,
         group_prefix=EXPORTS_DIR if layout is not None else "",
+        # DS-04d: files placed by GCPs stay in radar geometry; an export adds each scene's window when it runs.
+        radar_lines=[RADAR_GRID_LINE] if getattr(config, "georeferencing", None) is Georeferencing.GCP_TPS else [],
     )
     return {
         NOTICE_FILENAME: notice,
@@ -888,7 +893,8 @@ def _one_overpass(
         return groups
     if config.viewer is None:
         raise OrderRefused(422, f"{config.dataset_id!r} names no overpass, so its scenes are not mosaicked", "applicable")
-    if not config.capabilities.reprojection:
+    if not config.capabilities.reprojection and config.georeferencing is not Georeferencing.GCP_TPS:
+        # Scenes in radar geometry are hung one under the other, never warped (DS-04d F6).
         raise OrderRefused(
             422, f"{config.dataset_id!r} does not allow reprojection, which a mosaic of scenes may need", "applicable"
         )
@@ -1432,6 +1438,21 @@ def footprint_of(item: Mapping[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+def line_times_of(config: DatasetConfig, items: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
+    """``{"line_times": ...}`` for the recipe where the registry names them (DS-04d F2), else nothing.
+
+    Per item the times of its first and last line, ``None`` for an item that gives no readable pair: such a scene
+    is read alone, never joined to another (``access.radar.join_slices``).
+    """
+    if config.line_times is None:
+        return {}
+    times: dict[str, Any] = {}
+    for item in items:
+        pair = item_line_times(item, config.line_times.first, config.line_times.last)
+        times[item["id"]] = None if pair is None else {"first": pair[0].isoformat(), "last": pair[1].isoformat()}
+    return {"line_times": times}
+
+
 def crop_recipe_json(
     config: DatasetConfig,
     *,
@@ -1477,6 +1498,7 @@ def crop_recipe_json(
                 "assets": list(assets),
                 "resolved": [_resolved_json(target, _version(target.item, target.item_asset)) for target in targets],
                 "footprints": {item["id"]: footprint_of(item) for group in groups for item in group},
+                **line_times_of(config, [item for group in groups for item in group]),
             }
         ],
         # The geometry alone: a place-search AOI carries `properties` for the notice and

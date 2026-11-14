@@ -190,7 +190,20 @@ from earthx.access.crop_rules import (
     rasterize_aoi,
     source_crop_grid,
 )
-from earthx.catalog.registry import AcquisitionYears, Attributable, DatasetConfig, acquisition_years
+from earthx.access.radar import (
+    RADAR_GRID_LINE,
+    JoinedPass,
+    RadarGrid,
+    RadarGridError,
+    RadarStackReader,
+    Slice,
+    copy_to_cog,
+    gcp_key,
+    pass_runs,
+    radar_profiles,
+    scene_lines,
+)
+from earthx.catalog.registry import AcquisitionYears, Attributable, DatasetConfig, Georeferencing, acquisition_years
 from earthx.readers.cog import AssetPath
 from earthx.readers.zarr_reader import ZarrAsset
 
@@ -809,8 +822,8 @@ def _verify_asset_crop(crop: AssetCropBytes) -> None:
                 raise CorruptOutput("a generated file is not a GeoTIFF")
             if mask_ds.count != 1 or mask_ds.dtypes[0] != "uint8":
                 raise CorruptOutput("the mask file is not a single uint8 band")
-            if (data_ds.width, data_ds.height, data_ds.transform, data_ds.crs) != (
-                mask_ds.width, mask_ds.height, mask_ds.transform, mask_ds.crs
+            if (data_ds.width, data_ds.height, data_ds.transform, data_ds.crs, gcp_key(data_ds)) != (
+                mask_ds.width, mask_ds.height, mask_ds.transform, mask_ds.crs, gcp_key(mask_ds)
             ):
                 raise CorruptOutput("the data file and its mask are not on the same grid")
             _read_every_block(data_ds)
@@ -921,6 +934,103 @@ def _laid_out_crop_bytes(
     return _checked(write, plan.name)
 
 
+#: Why a multi-band file of other resolutions is not made in radar geometry: it would need resampling.
+RADAR_ONE_RESOLUTION = "in radar geometry a multi-band file is made at the bands' own pixel size only"
+
+
+@dataclass(frozen=True)
+class RadarRun:
+    """Slices of one group that join (DS-04d), the files' window in their joined grid, and the group they came from."""
+
+    crop: GroupCrop
+    joined: JoinedPass
+    window: Window
+    group: int
+
+
+def radar_runs(
+    open_reader: Callable[..., BaseReader],
+    groups: Sequence[GroupCrop],
+    line_times: Mapping[str, tuple[datetime, datetime] | None],
+) -> tuple[list[RadarRun], list[str], list[str]]:
+    """The runs of every group that join, why groups split, and the items whose run the region does not reach.
+
+    Joined on the first asset (all assets of a scene share its grid, which :class:`RadarStackReader` checks). A
+    group whose slices do not join becomes one run per joining part, each a file and a folder of its own (F4).
+    """
+    runs: list[RadarRun] = []
+    reasons: list[str] = []
+    missed: list[str] = []
+    for index, group in enumerate(groups):
+        first = group.crops[0]
+        slices = []
+        with ExitStack() as stack:
+            for path in first.paths:
+                if not isinstance(path, AssetPath):
+                    raise NoRasterToRead("a radar crop reads COGs only")
+                raw = getattr(stack.enter_context(open_reader(path)), "raw", None)
+                if raw is None:
+                    raise NoRasterToRead("these bands cannot be laid out: the source has no raster to read")
+                try:
+                    grid = RadarGrid.of(raw)
+                except RadarGridError as error:
+                    raise ExportPlanError(str(error)) from None
+                times = line_times.get(path.item_id)
+                slices.append(Slice(path.item_id, grid, *(times or (None, None))))
+        placed, split, lost = pass_runs(slices, shapely_shape(group.region_geometry))
+        reasons.extend(split)
+        missed.extend(lost)
+        for joined, window in placed:
+            ids = [piece.item_id for piece in joined.slices]
+            crops = [
+                AssetCrop(crop.asset, tuple(path for item_id in ids for path in crop.paths if path.item_id == item_id))
+                for crop in group.crops
+            ]
+            runs.append(RadarRun(GroupCrop(ids, crops, group.region_geometry), joined, window, index))
+    return runs, reasons, missed
+
+
+def _radar_crop_bytes(
+    open_reader: Callable[..., BaseReader],
+    plan: FilePlan,
+    metas: Sequence[BandMeta],
+    run: RadarRun,
+    mask_geometry: Mapping[str, Any],
+    *,
+    form: str,
+) -> AssetCropBytes:
+    """One file of a layout in radar geometry and its mask (DS-04d): the run's window, the source's pixels, the GCPs
+    shifted onto it, nothing warped. The mask is the AOI's shape through the spline; the data keep every value (F1)."""
+    if form == FORM_MULTI_BAND and any(resampling_for(meta, plan.resolution_m) != "none" for meta in metas):
+        raise ExportPlanError(RADAR_ONE_RESOLUTION)
+    by_asset = {crop.asset: crop for crop in run.crop.crops}
+    crops = [by_asset[asset] for asset in plan.assets]
+    pixel_aoi = run.joined.grid.pixel_geometry(mask_geometry)
+
+    def write() -> AssetCropBytes:
+        with ExitStack() as stack:
+            datasets = []
+            for crop in crops:
+                by_item = {path.item_id: path for path in crop.paths}
+                opened = [stack.enter_context(open_reader(by_item[piece.item_id])) for piece in run.joined.slices]
+                datasets.append([reader.raw for reader in opened])
+            if form != FORM_PER_BAND and any(ds.count != 1 for group in datasets for ds in group):
+                raise ExportPlanError("a band of a stacked file has exactly one band in its source")
+            reader = RadarStackReader(datasets, run.joined, run.window)
+            profile, masks = radar_profiles(reader, block_size=BLOCK_SIZE)
+            with MemoryFile() as plain_mem, MemoryFile() as mask_mem, MemoryFile() as cog_mem:
+                with plain_mem.open(**profile) as dst, mask_mem.open(**masks) as mask_dst:
+                    if reader.count == len(metas):
+                        apply_band_tags(dst, metas)
+                    if not write_blocks(reader, dst, mask_dst, pixel_aoi, block_size=BLOCK_SIZE):
+                        raise AoiOutsideItems("the AOI does not cover any valid pixel of these bands")
+                with plain_mem.open() as plain_ds:
+                    copy_to_cog(plain_ds, cog_mem.name)
+                return AssetCropBytes(data=cog_mem.read(), mask=mask_mem.read())
+
+    return _checked(write, plan.name)
+
+
 def _verify_zip(buffer: BytesIO) -> None:
     """Check the CRC of every ZIP entry (M3-22, F1). No retry: the ZIP is written by Python alone."""
     try:
@@ -1021,6 +1131,7 @@ def build_notice_text(
     file_names: Mapping[str, tuple[str, str]] | None = None,
     common_resolution: float | None = None,
     group_prefix: str = "",
+    radar_lines: Sequence[str] = (),
 ) -> str:
     """Attribution, the source's terms and a citation, as one plain-text file.
 
@@ -1072,6 +1183,9 @@ def build_notice_text(
     ``file_names`` (NM4-75): the data file and the mask file each asset ended up in, where the names are not the
     cleaned asset keys (a stacked file holds several assets). ``common_resolution``: the pixel size, in metres, of
     a file made at one resolution. ``group_prefix``: the folder the ``group-NN/`` folders lie in (``exports/``).
+
+    ``radar_lines`` (DS-04d, plan §4.9): for files in radar geometry, the grid and each scene's rows and columns,
+    written instead of the resolution.
     """
     if recipe_omitted_cause is not None and not _CAUSE_CODE.fullmatch(recipe_omitted_cause):
         raise ValueError("recipe_omitted_cause is a short lower-case code")
@@ -1121,9 +1235,12 @@ def build_notice_text(
             )
         )
     if raster_result:
+        lines.extend(radar_lines)
         lines.append(f"Mask: {AOI_FILENAME} carries the area; mask.tif is 1 inside it, 0 outside.")
     else:
-        if common_resolution is not None:
+        if radar_lines:
+            lines.extend(radar_lines)
+        elif common_resolution is not None:
             lines.append(f"Resolution: {common_resolution:g} m for all bands (chosen explicitly); see exports/BANDS.txt")
         else:
             lines.append("Resolution: native")
@@ -1194,6 +1311,7 @@ def build_download_zip(
     common_resolution: float | None = None,
     band_metas: Mapping[str, BandMeta] | None = None,
     bands_notes: Sequence[str] = (),
+    line_times: Mapping[str, tuple[datetime, datetime] | None] | None = None,
 ) -> bytes:
     """The finished ZIP: the data files of the chosen form and their masks in ``exports/``, ``exports/BANDS.txt``,
     the AOI as GeoJSON, plus :data:`NOTICE_FILENAME`.
@@ -1244,9 +1362,26 @@ def build_download_zip(
     This function does not look inside them (`access` may not import `processing`);
     ``None`` leaves the file out; ``recipe_omitted_cause`` then says so in the notice
     (:func:`build_notice_text`).
+
+    A dataset placed by GCPs (DS-04d) is cropped in radar geometry: the slices of a group that join make one file
+    (:func:`radar_runs`, ``line_times`` by item id), one that does not join starts a group of its own, and the
+    notice names each scene's rows and columns instead of a resolution.
     """
     region_geometry = region_geometry if region_geometry is not None else aoi_geometry
     groups = [GroupCrop(item_ids=item_ids, crops=crops, region_geometry=region_geometry), *additional_groups]
+    runs: list[RadarRun] | None = None
+    radar_lines: list[str] = []
+    if config.georeferencing is Georeferencing.GCP_TPS:
+        with rasterio.Env(**(gdal_env or {})):
+            runs, reasons, missed = radar_runs(open_reader, groups, line_times or {})
+        if not runs:
+            raise AoiOutsideItems("the AOI does not cover the scenes")
+        groups = [run.crop for run in runs]
+        skipped_item_ids = [*skipped_item_ids, *missed]
+        radar_lines = [RADAR_GRID_LINE, *(f"Not joined into one file: {reason}." for reason in reasons)]
+        for index, run in enumerate(runs):
+            prefix = f"Group {index + 1}: " if len(runs) > 1 else ""
+            radar_lines.extend(prefix + line for line in scene_lines(run.joined, run.window))
     group_count = len(groups)
     given = band_metas or {}
     metas = {crop.asset: given.get(crop.asset) or band_meta({}, crop.asset) for crop in groups[0].crops}
@@ -1261,7 +1396,17 @@ def build_download_zip(
                 for plan in plans:
                     members = [metas[asset] for asset in plan.assets]
                     crop_bytes = None
-                    if form == FORM_PER_BAND:
+                    if runs is not None:
+                        crop_bytes = _radar_crop_bytes(
+                            open_reader, plan, members, runs[index], aoi_geometry, form=form
+                        )  # fmt: skip
+                        methods = ["none"] * len(members)
+                        exports = [meta.resolution_m for meta in members]
+                        written = None
+                        if form != FORM_PER_BAND:
+                            with MemoryFile(crop_bytes.data) as written_mem, written_mem.open() as written_ds:
+                                written = written_ds.dtypes[0]
+                    elif form == FORM_PER_BAND:
                         crop = crops_by_asset[plan.assets[0]]
                         if not isinstance(crop.paths[0], ZarrAsset):
                             try:
@@ -1323,6 +1468,7 @@ def build_download_zip(
                     },
                     common_resolution=common_resolution,
                     group_prefix=EXPORTS_DIR,
+                    radar_lines=radar_lines,
                 ),
             )
         _verify_zip(buffer)

@@ -26,6 +26,8 @@ from datetime import datetime
 from typing import Any
 
 import numpy
+import rasterio
+import rasterio.shutil
 import shapely
 from rasterio.control import GroundControlPoint
 from rasterio.crs import CRS
@@ -36,17 +38,29 @@ from rasterio.windows import Window
 from shapely.geometry import shape as shapely_shape
 from shapely.geometry.base import BaseGeometry
 
-from earthx.access.crop_rules import AoiOutsideItems
+from earthx.access.band_export import ExportPlanError, kept_nodata
+from earthx.access.crop_rules import AoiOutsideItems, mask_profile
 
 __all__ = [
     "DENSIFY_DEGREES",
+    "RADAR_GRID_LINE",
+    "SCENE_LINE",
     "JoinedPass",
     "RadarGrid",
     "RadarGridError",
+    "RadarStackReader",
     "Slice",
     "SlicesDoNotJoin",
     "join_slices",
+    "copy_to_cog",
+    "gcp_key",
+    "item_line_times",
     "line_time",
+    "notice_with_scenes",
+    "pass_runs",
+    "radar_profiles",
+    "read_joined",
+    "scene_lines",
 ]
 
 #: The longest edge of the AOI between two points mapped through the spline, in degrees (about 100 m).
@@ -161,12 +175,14 @@ class Slice:
 
     item_id: str
     grid: RadarGrid
-    first_line: datetime
-    last_line: datetime
+    first_line: datetime | None
+    last_line: datetime | None
 
     @property
     def interval(self) -> float:
         """Seconds from one line to the next."""
+        if self.first_line is None or self.last_line is None:
+            raise SlicesDoNotJoin("the dataset names no times of the lines of its scenes")
         if self.grid.height < 2:
             raise SlicesDoNotJoin("a slice of one line has no line interval")
         return (self.last_line - self.first_line).total_seconds() / (self.grid.height - 1)
@@ -184,6 +200,15 @@ def line_time(item: Mapping[str, Any], name: str) -> datetime:
     if parsed.tzinfo is None:
         raise SlicesDoNotJoin(f"a slice gives a time of a line without a time zone ({name})")
     return parsed
+
+
+def item_line_times(item: Mapping[str, Any], first: str, last: str) -> tuple[datetime, datetime] | None:
+    """The times of the first and last line an item gives under ``first`` and ``last``, or ``None``."""
+    try:
+        start, end = line_time(item, first), line_time(item, last)
+    except SlicesDoNotJoin:
+        return None
+    return None if end < start else (start, end)
 
 
 def _distance(a: GroundControlPoint, b: GroundControlPoint, crs: str) -> float:
@@ -207,6 +232,7 @@ def _check_seam(upper: Slice, lower: Slice) -> None:
     interval = upper.interval
     if not math.isclose(lower.interval, interval, rel_tol=INTERVAL_TOLERANCE):
         raise SlicesDoNotJoin("two slices of the pass differ in their line interval")
+    assert lower.first_line is not None and upper.first_line is not None  # checked by `interval`
     offset = (lower.first_line - upper.first_line).total_seconds() / interval
     if abs(offset - round(offset)) > LINE_TOLERANCE:
         raise SlicesDoNotJoin("a slice does not begin on a whole line of the one before")
@@ -256,7 +282,7 @@ def join_slices(slices: Sequence[Slice]) -> tuple[list[JoinedPass], list[str]]:
         raise SlicesDoNotJoin("a pass has at least one slice")
     if len({piece.grid.gcp_crs for piece in slices}) != 1:
         raise SlicesDoNotJoin("the slices of a pass name their GCPs in different CRS")
-    ordered = sorted(slices, key=lambda piece: (piece.first_line, piece.item_id))
+    ordered = sorted(slices, key=lambda piece: (piece.first_line is None, piece.first_line or 0, piece.item_id))
     runs: list[list[Slice]] = [[ordered[0]]]
     reasons: list[str] = []
     for upper, lower in zip(ordered, ordered[1:], strict=False):
@@ -268,3 +294,152 @@ def join_slices(slices: Sequence[Slice]) -> tuple[list[JoinedPass], list[str]]:
         else:
             runs[-1].append(lower)
     return [_joined(run) for run in runs], reasons
+
+
+def pass_runs(
+    slices: Sequence[Slice], region: BaseGeometry
+) -> tuple[list[tuple[JoinedPass, Window]], list[str], list[str]]:
+    """The runs of a group's slices with each one's window around ``region``, why the group split, and the items
+    of runs ``region`` does not reach (DS-04d F4). A group with no times of its lines is one run per scene."""
+    try:
+        runs, reasons = join_slices(slices)
+    except SlicesDoNotJoin as error:
+        runs, reasons = [join_slices([piece])[0][0] for piece in slices], [str(error)]
+    placed, missed = [], []
+    for joined in runs:
+        try:
+            placed.append((joined, joined.grid.window(region)))
+        except (AoiOutsideItems, RadarGridError):
+            missed.extend(piece.item_id for piece in joined.slices)
+    return placed, reasons, missed
+
+
+#: How the text file of a download names the part of a scene in a file (DS-04d, plan §4.9, A4).
+SCENE_LINE = "Scene {item}: rows {row0}-{row1}, columns {col0}-{col1} (0-based, inclusive)"
+
+
+def scene_lines(joined: JoinedPass, window: Window) -> list[str]:
+    """One :data:`SCENE_LINE` per slice the window reaches, in the slice's own rows and columns."""
+    lines = []
+    row0, row1 = int(window.row_off), int(window.row_off + window.height)
+    col0, col1 = int(window.col_off), int(window.col_off + window.width)
+    for piece, offset in zip(joined.slices, joined.offsets, strict=True):
+        top, bottom = max(row0, offset), min(row1, offset + piece.grid.height)
+        right = min(col1, piece.grid.width)
+        if bottom <= top or right <= col0:
+            continue
+        lines.append(
+            SCENE_LINE.format(item=piece.item_id, row0=top - offset, row1=bottom - offset - 1, col0=col0, col1=right - 1)
+        )
+    return lines
+
+
+class RadarStackReader:
+    """The bands of one file in radar geometry, read block by block from the slices of a joined pass (DS-04d).
+
+    ``assets`` holds, per asset of the file, the raw datasets of the slices in the order of ``joined``; each
+    lies at its offset in lines, nothing is resampled and nothing warped. ``window`` is the part of the joined grid
+    the file holds. Pixels a slice does not reach (right of a narrower slice) are masked. ``transform`` is the window's
+    place in the pixels of the joined grid, for laying the AOI in pixels (:meth:`RadarGrid.pixel_geometry`) on a block;
+    it is never written into a file (:meth:`RadarGrid.profile`).
+    """
+
+    def __init__(self, assets: Sequence[Sequence[Any]], joined: JoinedPass, window: Window) -> None:
+        self.joined = joined
+        self.window = window
+        self.width = int(window.width)
+        self.height = int(window.height)
+        self.transform = Affine.translation(window.col_off, window.row_off)
+        self.grid = joined.grid.cut(window)
+        self._assets = [list(datasets) for datasets in assets]
+        for datasets in self._assets:
+            if len(datasets) != len(joined.slices):
+                raise ExportPlanError("every band of a radar file comes from every slice of its pass")
+            if len({dataset.count for dataset in datasets}) != 1:
+                raise ExportPlanError("the scenes of a mosaic differ in their bands")
+            for dataset, piece in zip(datasets, joined.slices, strict=True):
+                if (dataset.width, dataset.height) != (piece.grid.width, piece.grid.height):
+                    raise ExportPlanError("the bands of a scene in radar geometry lie on different grids")
+        first = [datasets[0] for datasets in self._assets]
+        self.dtype = numpy.result_type(*[numpy.dtype(dataset.dtypes[0]) for dataset in first]).name
+        self.band_nodata = [kept_nodata(self.dtype, dataset.nodata) for dataset in first for _ in range(dataset.count)]
+        self.count = len(self.band_nodata)
+        if len({"nan" if math.isnan(value) else value for value in self.band_nodata}) > 1:
+            raise ExportPlanError("these bands differ in their nodata, and one GeoTIFF has one nodata for all its bands")
+        self.nodata = self.band_nodata[0]
+
+    def read(self, block: Window) -> numpy.ma.MaskedArray:
+        """``block`` of this file's window: every band, masked where no slice has a value."""
+        absolute = Window(self.window.col_off + block.col_off, self.window.row_off + block.row_off, block.width, block.height)
+        planes = [read_joined(datasets, self.joined.offsets, absolute, self.dtype) for datasets in self._assets]
+        return numpy.ma.concatenate(planes, axis=0)
+
+
+def read_joined(datasets: Sequence[Any], offsets: Sequence[int], window: Window, dtype: str) -> numpy.ma.MaskedArray:
+    """``window`` of a joined pass (in its pixels): each slice's rows at its offset, masked where none reaches.
+
+    Nothing is resampled: a row of the result is a row of one slice. A window past the edge of the pass is masked
+    there, so a block of a coarse grid may reach beyond it.
+    """
+    row0, col0 = int(window.row_off), int(window.col_off)
+    height, width = int(window.height), int(window.width)
+    count = datasets[0].count
+    plane = numpy.ma.MaskedArray(numpy.zeros((count, height, width), dtype), mask=numpy.ones((count, height, width), bool))
+    for dataset, offset in zip(datasets, offsets, strict=True):
+        top, bottom = max(row0, offset), min(row0 + height, offset + dataset.height)
+        left, right = max(col0, 0), min(col0 + width, dataset.width)
+        if bottom <= top or right <= left:
+            continue
+        part = dataset.read(window=Window(left, top - offset, right - left, bottom - top), masked=True)
+        rows, cols = slice(top - row0, bottom - row0), slice(left - col0, right - col0)
+        plane.data[:, rows, cols] = numpy.ma.getdata(part)
+        plane.mask[:, rows, cols] = numpy.ma.getmaskarray(part)
+    return plane
+
+
+#: The GDAL options of a data file in radar geometry: those of the crop's COG (`crop_rules.COG_PROFILE`, DEFLATE in
+#: blocks of 512, nearest overviews). GDAL's own COG driver writes it, because rio-cogeo would place a file with GCPs
+#: by an affine fit through them, and the file is delivered unplaced (DS-04d).
+COG_OPTIONS = {"COMPRESS": "DEFLATE", "BLOCKSIZE": "512", "OVERVIEWS": "AUTO", "RESAMPLING": "NEAREST"}
+
+
+def radar_profiles(reader: RadarStackReader, *, block_size: int) -> tuple[dict[str, Any], dict[str, Any]]:
+    """The plain GeoTIFF profiles of a data file and its mask on ``reader``'s window: GCPs, no CRS, no geotransform."""
+    placed = reader.grid.profile()
+    data = {
+        "driver": "GTiff", "dtype": reader.dtype, "count": reader.count, "height": reader.height, "width": reader.width,
+        "tiled": True, "blockxsize": block_size, "blockysize": block_size, "nodata": reader.nodata, **placed,
+    }  # fmt: skip
+    mask = mask_profile(height=reader.height, width=reader.width, crs=None, transform=Affine.identity())
+    del mask["transform"]
+    return data, {**mask, **placed}
+
+
+def copy_to_cog(dataset: Any, path: str) -> None:
+    """``dataset`` as a COG at ``path``, its GCPs kept and nothing placed by them (:data:`COG_OPTIONS`)."""
+    rasterio.shutil.copy(dataset, path, driver="COG", **COG_OPTIONS)
+
+
+def gcp_key(dataset: Any) -> tuple[Any, ...]:
+    """The GCPs of an open file as plain numbers, to compare two files."""
+    points, crs = dataset.gcps
+    return (str(crs), tuple((point.row, point.col, point.x, point.y, point.z) for point in points))
+
+
+#: The line of the notice for files in radar geometry (DS-04d, plan §4.9), instead of "Resolution: native".
+RADAR_GRID_LINE = (
+    "Grid: radar geometry of the source scenes, not map-projected; each file keeps the scenes' ground control "
+    "points, shifted to its window."
+)
+
+
+def notice_with_scenes(notice: str, lines: Sequence[str]) -> str:
+    """``notice`` with ``lines`` after its :data:`RADAR_GRID_LINE`, as paragraphs like the notice's own lines.
+
+    The export job learns the windows only while it runs, after `api` wrote the notice (DS-04d).
+    """
+    if not lines:
+        return notice
+    if RADAR_GRID_LINE not in notice:
+        raise ValueError("the notice of a radar export names its grid")
+    return notice.replace(RADAR_GRID_LINE, "\n\n".join([RADAR_GRID_LINE, *lines]), 1)

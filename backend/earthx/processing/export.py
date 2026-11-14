@@ -60,6 +60,7 @@ from earthx.access.band_export import (
     StackReader,
     aoi_on_grid,
     apply_band_tags,
+    band_meta,
     bands_text,
     file_profile,
     kept_nodata,
@@ -84,6 +85,19 @@ from earthx.access.crop_rules import (
     native_crop_grid,
     rasterize_aoi,
     source_crop_grid,
+)
+from earthx.access.radar import (
+    JoinedPass,
+    RadarGrid,
+    RadarGridError,
+    RadarStackReader,
+    Slice,
+    copy_to_cog,
+    gcp_key,
+    notice_with_scenes,
+    pass_runs,
+    radar_profiles,
+    scene_lines,
 )
 from earthx.access.resolve import open_asset_ref
 from earthx.processing.errors import AoiOutsideInputs, ProcessingError, UnsupportedRecipe
@@ -345,6 +359,27 @@ class _LayoutOutput:
         return -(-self.width // BLOCK_SIZE) * -(-self.height // BLOCK_SIZE)
 
 
+@dataclass(frozen=True, slots=True)
+class _RadarOutput:
+    """One file of an export in radar geometry (DS-04d): its run of joined slices, its window, its bands' reads."""
+
+    group: int
+    plan: FilePlan
+    members: tuple[BandMeta, ...]
+    entries: tuple[tuple[ResolvedInput, ...], ...]
+    joined: JoinedPass
+    window: Window
+
+    @property
+    def blocks(self) -> int:
+        return -(-int(self.window.width) // BLOCK_SIZE) * -(-int(self.window.height) // BLOCK_SIZE)
+
+
+def is_radar(recipe: Recipe) -> bool:
+    """Whether the recipe reads files placed by their GCPs, which are delivered in their own grid (DS-04d)."""
+    return any(entry.asset.georeferencing == "gcp_tps" for entry in recipe.inputs[0].resolved)
+
+
 class _Export:
     def __init__(self, recipe: Recipe, workdir: Path, progress: Progress) -> None:
         self.recipe = recipe
@@ -377,6 +412,107 @@ class _Export:
         target = open_asset_ref(entry.asset.to_asset(), self.access.policy, self.access.resolve)
         assert isinstance(target, AssetPath)  # `check_export`: COG only
         return stack.enter_context(CogReader(target)).dataset
+
+    def open_raw(self, entry: ResolvedInput, stack: ExitStack) -> Any:
+        """The file of ``entry`` in its own pixel grid, never warped (DS-04d)."""
+        target = open_asset_ref(entry.asset.to_asset(), self.access.policy, self.access.resolve)
+        assert isinstance(target, AssetPath)  # `check_export`: COG only
+        return stack.enter_context(CogReader(target)).raw
+
+    def plan_radar(self, bands: tuple[BandMeta, ...]) -> tuple[list[_RadarOutput], int, list[str]]:
+        """Every file of an export in radar geometry, the number of its groups, and the lines of its notice.
+
+        The slices of a group that join make one group; one that does not join splits (F4), so the groups of the
+        ZIP can be more than the recipe's. Without a layout every asset is a file of its own, named as before.
+        """
+        layout = self.recipe.output.layout  # type: ignore[union-attr]
+        entry = self.recipe.inputs[0]
+        if layout is None:
+            plans = [FilePlan(crop_filename(asset), (asset,), None) for asset in entry.assets]
+            by_asset = {asset: band_meta({}, asset) for asset in entry.assets}
+        else:
+            by_asset, by_plan = self.layout_plans(bands)
+            plans = list({plan.name: plan for plan in by_plan.values()}.values())
+            if layout.form == "multi_band" and any(
+                resampling_for(by_asset[asset], layout.resolution_m) != "none" for asset in entry.assets
+            ):
+                raise UnsupportedRecipe("in radar geometry a multi-band file is made at the bands' own pixel size only")
+        footprints = entry.footprints or {}
+        times = entry.line_times or {}
+        resolved = {(item.asset.item_id, item.asset.asset): item for item in entry.resolved}
+        placed: list[tuple[JoinedPass, Window]] = []
+        reasons: list[str] = []
+        missed: list[str] = []
+        for group in entry.groups:
+            items = [{"geometry": _geometry(footprints.get(item_id))} for item_id in group]
+            try:
+                region = compute_crop_region(items, self.aoi)
+            except AoiOutsideItems:
+                raise AoiOutsideInputs("the AOI does not touch the footprint of a group") from None
+            slices = []
+            for item_id in group:
+                with ExitStack() as stack:
+                    try:
+                        grid = RadarGrid.of(self.open_raw(resolved[(item_id, entry.assets[0])], stack))
+                    except RadarGridError as error:
+                        raise UnsupportedRecipe(str(error)) from None
+                pair = times.get(item_id)
+                slices.append(Slice(item_id, grid, *((pair.first, pair.last) if pair is not None else (None, None))))
+            runs, split, lost = pass_runs(slices, region)
+            placed += runs
+            reasons += split
+            missed += lost
+        if not placed:
+            raise AoiOutsideInputs("the AOI does not cover the scenes")
+        outputs, lines = [], [f"Not joined into one file: {reason}." for reason in reasons]
+        if missed:
+            lines.append("Not covered by the AOI, left out: " + ", ".join(missed))
+        for index, (joined, window) in enumerate(placed):
+            prefix = f"Group {index + 1}: " if len(placed) > 1 else ""
+            lines += [prefix + line for line in scene_lines(joined, window)]
+            for plan in plans:
+                entries = tuple(
+                    tuple(resolved[(piece.item_id, asset)] for piece in joined.slices) for asset in plan.assets
+                )
+                members = tuple(by_asset[asset] for asset in plan.assets)
+                outputs.append(_RadarOutput(index, plan, members, entries, joined, window))
+        return outputs, len(placed), lines
+
+    def write_radar(self, index: int, output: _RadarOutput, form: str | None) -> tuple[str, str, str]:
+        """The data COG and the mask of one file in radar geometry; their work file names and the data type."""
+        stem = f"out-{index}"
+        plain_name, data_name, mask_name = f"{stem}-plain.tif", f"{stem}.tif", f"{stem}-mask.tif"
+        with ExitStack() as stack:
+            count = max(len(entries) for entries in output.entries)
+            with rasterio.Env(VSI_CACHE_SIZE=str(cache_per_item(count * len(output.entries)))):
+                datasets = [[self.open_raw(entry, stack) for entry in entries] for entries in output.entries]
+            if form not in (None, "per_band") and any(dataset.count != 1 for group in datasets for dataset in group):
+                raise UnsupportedRecipe("a band of a stacked file has exactly one band in its source")
+            try:
+                reader = RadarStackReader(datasets, output.joined, output.window)
+            except (ExportPlanError, NoFreeNodata) as error:
+                raise UnsupportedRecipe(str(error)) from None
+            profile, masks = radar_profiles(reader, block_size=BLOCK_SIZE)
+            self.new_file(plain_name)
+            self.new_file(mask_name)
+            with (
+                open_workfile(self.workdir, plain_name, "w", **profile) as dst,
+                open_workfile(self.workdir, mask_name, "w", **masks) as mask_dst,
+            ):
+                if reader.count == len(output.members):
+                    apply_band_tags(dst, output.members)
+                pixel_aoi = output.joined.grid.pixel_geometry(self.aoi)
+                any_valid = write_blocks(reader, dst, mask_dst, pixel_aoi, block_size=BLOCK_SIZE, on_block=self.tick)
+        if not any_valid:
+            raise AoiOutsideInputs("the AOI does not cover any valid pixel of a group")
+        data_path = self.new_file(data_name)
+        with open_workfile(self.workdir, plain_name) as plain:
+            copy_to_cog(plain, str(data_path))
+        self.forget(plain_name)
+        _verify(self.workdir, data_name, mask_name)
+        with open_workfile(self.workdir, data_name) as written:
+            dtype = written.dtypes[0]
+        return data_name, mask_name, dtype
 
     def plan(self) -> list[_Output]:
         """Every output file with its grid, before the first block is read: the total for the progress."""
@@ -586,8 +722,8 @@ def _verify(workdir: Path, data_name: str, mask_name: str) -> None:
     """Both files read back completely, overviews included, on one grid (as the crop checks, M3-22)."""
     try:
         with open_workfile(workdir, data_name) as data, open_workfile(workdir, mask_name) as mask:
-            if (data.width, data.height, data.transform, data.crs) != (
-                mask.width, mask.height, mask.transform, mask.crs
+            if (data.width, data.height, data.transform, data.crs, gcp_key(data)) != (
+                mask.width, mask.height, mask.transform, mask.crs, gcp_key(mask)
             ):
                 raise OutputUnreadable("the data file and its mask are not on the same grid")
             if mask.count != 1 or mask.dtypes[0] != "uint8":
@@ -617,7 +753,32 @@ def export(recipe: Recipe, *, workdir: Path, progress: Progress, attachments: At
             files: list[tuple[str, str]] = []
             listed: list[BandsFile] = []
             layout = recipe.output.layout  # type: ignore[union-attr]  # `check_export`: a crop
-            if layout is None:
+            notice = attachments.files[NOTICE_FILENAME]
+            if is_radar(recipe):
+                radar, group_count, lines = state.plan_radar(attachments.bands if layout is not None else ())
+                notice = notice_with_scenes(notice, lines)
+                state.total = sum(output.blocks for output in radar) + 1
+                for index, output in enumerate(radar):
+                    data_name, mask_name, dtype = state.write_radar(index, output, layout.form if layout else None)
+                    if layout is None:
+                        folder = group_dirname(output.group, group_count)
+                        asset = output.plan.assets[0]
+                        files.append((folder + crop_filename(asset), data_name))
+                        files.append((folder + mask_filename(asset), mask_name))
+                        continue
+                    folder = EXPORTS_DIR + group_dirname(output.group, group_count)
+                    files.append((folder + output.plan.name, data_name))
+                    files.append((folder + output.plan.mask_name, mask_name))
+                    listed.append(
+                        BandsFile(
+                            folder + output.plan.name,
+                            output.members,
+                            ["none"] * len(output.members),
+                            [meta.resolution_m for meta in output.members],
+                            dtype if layout.form != "per_band" else None,
+                        )
+                    )
+            elif layout is None:
                 outputs = state.plan()
                 state.total = sum(output.blocks for output in outputs) + 1
                 for index, output in enumerate(outputs):
@@ -663,7 +824,7 @@ def export(recipe: Recipe, *, workdir: Path, progress: Progress, attachments: At
                 (AOI_FILENAME, attachments.files[AOI_FILENAME].encode("utf-8")),
                 (RECIPE_FILENAME, document),
                 (CITATION_FILENAME, attachments.files[CITATION_FILENAME].encode("utf-8")),
-                (NOTICE_FILENAME, attachments.files[NOTICE_FILENAME].encode("utf-8")),
+                (NOTICE_FILENAME, notice.encode("utf-8")),
             ]
             if layout is not None:
                 texts.append(
