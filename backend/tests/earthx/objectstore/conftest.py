@@ -58,3 +58,11 @@ RESULTS_RULE = {
     "Expiration": {"Days": 7},
     "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 1},
 }
+
+OVERVIEWS_RULE = {
+    "ID": "overviews-31d",
+    "Status": "Enabled",
+    "Filter": {"Prefix": "overviews/"},
+    "Expiration": {"Days": 31},
+    "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 1},
+}

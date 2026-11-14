@@ -38,11 +38,9 @@ import json
 import logging
 import math
 import multiprocessing
-import re
 import sys
 import time
-from collections.abc import Callable, Iterator, Mapping, Sequence
-from contextlib import contextmanager
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from typing import Any
@@ -76,7 +74,7 @@ from earthx.catalog.registry import (
     overpass_key,
 )
 from earthx.gateway import CachingResolver, Gateway, Policy, user_agent_from_env
-from earthx.gateway.gdal import tile_gdal_options
+from earthx.gateway.gdal import count_downloads, counting_gdal_lines, tile_gdal_options
 from earthx.logging import configure_logging
 from earthx.readers.cog import AssetPath
 from earthx.readers.errors import AssetRejected
@@ -108,9 +106,6 @@ TILE_SIZE = 512
 #: The longest one zoom level may take before its process is stopped.
 ZOOM_TIMEOUT_S = 900.0
 _TMS = morecantile.tms.get("WebMercatorQuad")
-# The range of one request in GDAL's debug line; the address that follows it is never read.
-_DOWNLOADING = re.compile(r"Downloading ((?:\d+-\d+(?:,\s*)?)+)")
-_RANGE = re.compile(r"(\d+)-(\d+)")
 
 
 #: Fetches the items whose footprint meets a rectangle (west, south, east, north in EPSG:4326), at most ``--max-items``.
@@ -243,38 +238,6 @@ class ZoomRow:
     tiff_kb: float | None = None
 
 
-def count_downloads(messages: Sequence[str]) -> tuple[int, int]:
-    """Requests and bytes in GDAL's ``VSICURL: Downloading a-b[, c-d]`` lines; a line is one request."""
-    requests = 0
-    total = 0
-    for message in messages:
-        found = _DOWNLOADING.search(message)
-        if found is None:
-            continue
-        requests += 1
-        total += sum(int(end) - int(start) + 1 for start, end in _RANGE.findall(found.group(1)))
-    return requests, total
-
-
-class _Downloads(logging.Handler):
-    """Counts GDAL's download lines; keeps the numbers, never the text."""
-
-    def __init__(self) -> None:
-        super().__init__(logging.DEBUG)
-        self.requests = 0
-        self.bytes = 0
-
-    def emit(self, record: logging.LogRecord) -> None:
-        requests, total = count_downloads([record.getMessage()])
-        self.requests += requests
-        self.bytes += total
-
-    def take(self) -> tuple[int, int]:
-        taken = self.requests, self.bytes
-        self.requests = self.bytes = 0
-        return taken
-
-
 def tile_bounds(tile: morecantile.Tile) -> tuple[float, float, float, float]:
     """West, south, east, north of ``tile`` in EPSG:4326, kept inside the valid latitudes and longitudes."""
     west, south, east, north = _TMS.bounds(tile)
@@ -327,27 +290,6 @@ def _filled(image: Any) -> float:
     return float(np.count_nonzero(valid)) / valid.size
 
 
-@contextmanager
-def _counting_gdal_lines() -> Iterator[_Downloads]:
-    """GDAL's lines go to a counter and nowhere else while the read runs; the logger is as it was afterwards.
-
-    The lines name the address, so they must not reach a handler of the process during the measurement. The tests
-    read in the process of pytest, where a changed logger would leak into the next test (#336).
-    """
-    downloads = _Downloads()
-    gdal_logger = logging.getLogger("rasterio")
-    level, propagate = gdal_logger.level, gdal_logger.propagate
-    gdal_logger.addHandler(downloads)
-    gdal_logger.setLevel(logging.DEBUG)
-    gdal_logger.propagate = False
-    try:
-        yield downloads
-    finally:
-        gdal_logger.removeHandler(downloads)
-        gdal_logger.setLevel(level)
-        gdal_logger.propagate = propagate
-
-
 def read_twice(
     scenes: Sequence[AssetPath],
     dataset_id: str,
@@ -367,7 +309,7 @@ def read_twice(
     )
     x, y, z = tile
     result: dict[str, Any] = {}
-    with _counting_gdal_lines() as downloads:
+    with counting_gdal_lines() as downloads:
         try:
             for kind in ("cold", "warm"):
                 started = clock()

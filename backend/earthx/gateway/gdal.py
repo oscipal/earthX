@@ -16,6 +16,12 @@ passed :func:`earthx.gateway.check_url` before GDAL sees it — which is why
 
 from __future__ import annotations
 
+import logging
+import re
+import threading
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
+
 from earthx.gateway.checks import CheckedUrl
 from earthx.gateway.policy import Policy
 
@@ -111,3 +117,82 @@ def vsicurl_path(checked: CheckedUrl) -> str:
     if not isinstance(checked, CheckedUrl):
         raise TypeError("a GDAL path is built from a CheckedUrl, not from a plain string")
     return f"/vsicurl/{checked.url}"
+
+
+# The range of one request in GDAL's debug line; the address that follows it is never read.
+_DOWNLOADING = re.compile(r"Downloading ((?:\d+-\d+(?:,\s*)?)+)")
+_RANGE = re.compile(r"(\d+)-(\d+)")
+_GDAL_LOGGER = "rasterio"
+_counting_lock = threading.Lock()
+# The logger is shared by the process: how many counters are in, and what it was before the first one.
+_users = 0
+_saved: tuple[int, bool] = (logging.NOTSET, True)
+
+
+def count_downloads(messages: Sequence[str]) -> tuple[int, int]:
+    """Requests and bytes in GDAL's ``VSICURL: Downloading a-b[, c-d]`` lines; a line is one request."""
+    requests = 0
+    total = 0
+    for message in messages:
+        found = _DOWNLOADING.search(message)
+        if found is None:
+            continue
+        requests += 1
+        total += sum(int(end) - int(start) + 1 for start, end in _RANGE.findall(found.group(1)))
+    return requests, total
+
+
+class DownloadCounter(logging.Handler):
+    """Counts GDAL's download lines; keeps the numbers, never the text.
+
+    With ``thread`` set it counts only the lines logged by that thread (GDAL logs in the thread that reads), so
+    readers in several threads of one process each see their own requests.
+    """
+
+    def __init__(self, thread: int | None = None) -> None:
+        super().__init__(logging.DEBUG)
+        self.thread = thread
+        self.requests = 0
+        self.bytes = 0
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if self.thread is not None and record.thread != self.thread:
+            return
+        requests, total = count_downloads([record.getMessage()])
+        self.requests += requests
+        self.bytes += total
+
+    def take(self) -> tuple[int, int]:
+        taken = self.requests, self.bytes
+        self.requests = self.bytes = 0
+        return taken
+
+
+@contextmanager
+def counting_gdal_lines(*, own_thread_only: bool = False) -> Iterator[DownloadCounter]:
+    """GDAL's lines go to a counter and nowhere else while the read runs; the logger is as it was afterwards.
+
+    The lines name the address, so they must not reach a handler of the process during a read. The caller sets
+    ``CPL_DEBUG=ON`` for the read. The logger is shared by the process: the first reader in changes it, the last
+    one out restores it, so readers in several threads can count at once (``own_thread_only=True``) and a test in
+    the process of pytest leaves nothing behind (#336).
+    """
+    global _users, _saved
+    counter = DownloadCounter(threading.get_ident() if own_thread_only else None)
+    logger = logging.getLogger(_GDAL_LOGGER)
+    with _counting_lock:
+        if _users == 0:
+            _saved = (logger.level, logger.propagate)
+            logger.setLevel(logging.DEBUG)
+            logger.propagate = False
+        _users += 1
+        logger.addHandler(counter)
+    try:
+        yield counter
+    finally:
+        with _counting_lock:
+            logger.removeHandler(counter)
+            _users -= 1
+            if _users == 0:
+                logger.setLevel(_saved[0])
+                logger.propagate = _saved[1]

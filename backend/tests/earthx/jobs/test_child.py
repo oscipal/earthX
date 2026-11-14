@@ -80,6 +80,30 @@ class TestWhatTheChildLoads:
         ]
         assert supervisor == []
 
+    def test_the_child_of_a_pyramid_build_has_no_database_pool_or_object_store_either(self) -> None:
+        """The same K3 for the second child (M5-30b part 8b-2): it reads items from the work directory and knows no database."""
+        process, parent = _start("spawn", child_targets.probe_overview_modules)
+        (method, loaded), *rest = _messages(process, parent)
+        assert rest == [] and method == "spawn"
+        assert "earthx.jobs.overview_child" in loaded and "earthx.processing.overview_build" in loaded
+        offenders = [name for name in loaded if name.split(".")[0] in FORBIDDEN or name.startswith(FORBIDDEN)]
+        assert offenders == []
+        supervisor = [
+            name
+            for name in loaded
+            if name
+            in {
+                "earthx.jobs.worker",
+                "earthx.jobs.queue",
+                "earthx.jobs.overviews",
+                "earthx.jobs.overview_builder",
+                "earthx.jobs.submit",
+                "earthx.jobs.cleanup",
+                "earthx.jobs.main",
+            }
+        ]
+        assert supervisor == []
+
     def test_counter_sample_a_forked_child_inherits_the_database_driver(self) -> None:
         """M9 of adr/0013: `fork` carried psycopg into the child. If this stops seeing it, the check above proves nothing."""
         with warnings.catch_warnings():

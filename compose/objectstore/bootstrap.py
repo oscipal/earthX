@@ -10,7 +10,7 @@ source, so it does not fall under `gateway` (KLAERUNGEN B8: that rule covers
 how the *application* reaches data sources). How the application itself will
 reach the object store is `earthx.objectstore` (M4-06, adr/0015); this
 script only prepares the store for it: the keys `api`, `tiler` and `worker` use, and the
-bucket rule the worker checks before it starts.
+bucket rules the worker checks before it starts.
 
 Garage's image is `FROM scratch` (no shell, no curl), so this script cannot
 run *inside* that container. Instead it runs as two one-shot steps built
@@ -26,7 +26,7 @@ from the backend image, before and after Garage starts:
             and create the bucket if missing, then grant the key full
             access; import the service keys with their own rights (`jobs`
             reads and writes, `api` and `tiler` only read) and set the
-            lifecycle rule for `results/` (adr/0015 §7.3). Idempotent.
+            lifecycle rules for `results/` (adr/0015 §7.3) and `overviews/` (adr/0032 §5.2). Idempotent.
   show      Print the S3 access key id and secret from the secrets volume,
             and the service keys, for a person to use locally (e.g. with
             the `aws` CLI) and for the CI smoke step, which masks them. Never
@@ -105,14 +105,25 @@ SERVICE_KEYS = (
     ),
 )
 
-# adr/0015 §7.3. The worker recognises it by content, not by its ID (plan M4-06 F4).
-LIFECYCLE_RULE = {
-    "ID": "results-7d",
-    "Status": "Enabled",
-    "Filter": {"Prefix": "results/"},
-    "Expiration": {"Days": 7},
-    "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 1},
-}
+# adr/0015 §7.3 and adr/0032 §5.2. The worker recognises them by content, not by their IDs (plan M4-06 F4).
+# `overviews/` has 31 days: the clean-up of the worker deletes a pyramid after 30 days from its last confirmation at the
+# source, and a confirmed one is rewritten, so the rule only catches what the clean-up left behind.
+LIFECYCLE_RULES = (
+    {
+        "ID": "results-7d",
+        "Status": "Enabled",
+        "Filter": {"Prefix": "results/"},
+        "Expiration": {"Days": 7},
+        "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 1},
+    },
+    {
+        "ID": "overviews-31d",
+        "Status": "Enabled",
+        "Filter": {"Prefix": "overviews/"},
+        "Expiration": {"Days": 31},
+        "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 1},
+    },
+)
 
 
 class BootstrapError(RuntimeError):
@@ -437,42 +448,44 @@ def _init_service_key(base_url: str, admin_token: str, bucket_id: str, key: Serv
     print(f"objectstore-init: service key for {key.label} may {rights}")
 
 
-def _is_lifecycle_rule(rule: dict) -> bool:
-    """The rule of adr/0015 §7.3, by content (the same test as `earthx.objectstore`)."""
+def _is_lifecycle_rule(rule: dict, wanted: dict) -> bool:
+    """Whether ``rule`` is ``wanted`` by content (the same test as `earthx.objectstore`)."""
     filter_ = rule.get("Filter") or {}
     return (
         rule.get("Status") == "Enabled"
         and set(filter_) == {"Prefix"}
-        and filter_.get("Prefix") == LIFECYCLE_RULE["Filter"]["Prefix"]
-        and (rule.get("Expiration") or {}).get("Days") == LIFECYCLE_RULE["Expiration"]["Days"]
+        and filter_.get("Prefix") == wanted["Filter"]["Prefix"]
+        and (rule.get("Expiration") or {}).get("Days") == wanted["Expiration"]["Days"]
         and (rule.get("AbortIncompleteMultipartUpload") or {}).get("DaysAfterInitiation")
-        == LIFECYCLE_RULE["AbortIncompleteMultipartUpload"]["DaysAfterInitiation"]
+        == wanted["AbortIncompleteMultipartUpload"]["DaysAfterInitiation"]
     )
 
 
 def _set_lifecycle_rule(base_url: str, admin_token: str, bucket_id: str, error_text) -> None:
-    """Set the bucket's lifecycle rules to exactly the `results/` rule, then read them back.
+    """Set the bucket's lifecycle rules to exactly the rules of `LIFECYCLE_RULES`, then read them back.
 
     Over the admin API (adr/0015 §7.3, W1): the application's keys never change the
     bucket configuration. Further prefixes get rules of their own when they arise.
     """
     status, info = _admin_request(
-        base_url, admin_token, "POST", f"/v2/UpdateBucket?id={bucket_id}", {"lifecycleRules": [LIFECYCLE_RULE]}
+        base_url, admin_token, "POST", f"/v2/UpdateBucket?id={bucket_id}", {"lifecycleRules": list(LIFECYCLE_RULES)}
     )
     if status != 200:
         raise BootstrapError(f"UpdateBucket failed ({error_text(status, info)})")
     status, info = _admin_request(base_url, admin_token, "GET", f"/v2/GetBucketInfo?id={bucket_id}")
     if status != 200:
         raise BootstrapError(f"GetBucketInfo failed ({error_text(status, info)})")
-    rules = [rule for rule in info.get("lifecycleRules") or [] if _is_lifecycle_rule(rule)]
-    if not rules:
-        raise BootstrapError("the lifecycle rule for results/ did not read back after UpdateBucket")
-    rule = rules[0]
-    print(
-        f"objectstore-init: lifecycle rule {rule.get('ID', '(no id)')} set "
-        f"(prefix {rule['Filter']['Prefix']}, expire after {rule['Expiration']['Days']} days, "
-        f"abort multipart after {rule['AbortIncompleteMultipartUpload']['DaysAfterInitiation']} day)"
-    )
+    for wanted in LIFECYCLE_RULES:
+        prefix = wanted["Filter"]["Prefix"]
+        rules = [rule for rule in info.get("lifecycleRules") or [] if _is_lifecycle_rule(rule, wanted)]
+        if not rules:
+            raise BootstrapError(f"the lifecycle rule for {prefix} did not read back after UpdateBucket")
+        rule = rules[0]
+        print(
+            f"objectstore-init: lifecycle rule {rule.get('ID', '(no id)')} set "
+            f"(prefix {rule['Filter']['Prefix']}, expire after {rule['Expiration']['Days']} days, "
+            f"abort multipart after {rule['AbortIncompleteMultipartUpload']['DaysAfterInitiation']} day)"
+        )
 
 
 def cmd_show(_: argparse.Namespace) -> None:

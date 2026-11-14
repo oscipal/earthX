@@ -141,14 +141,19 @@ class Policy:
         intervals = {normalize_host(host): _check_interval(value) for host, value in self.host_intervals.items()}
         object.__setattr__(self, "host_intervals", MappingProxyType(intervals))
 
-    def interval_for(self, host: str) -> float:
-        """The spacing for ``host``: its own entry, the nearest parent's, else ``min_interval_s``."""
+    def host_interval(self, host: str) -> float | None:
+        """The entry of ``host`` in ``host_intervals`` or of its nearest parent, ``None`` if there is none."""
         labels = host.split(".")
         for start in range(len(labels) - 1):
             value = self.host_intervals.get(".".join(labels[start:]))
             if value is not None:
                 return value
-        return self.min_interval_s
+        return None
+
+    def interval_for(self, host: str) -> float:
+        """The spacing for ``host``: its own entry, the nearest parent's, else ``min_interval_s``."""
+        value = self.host_interval(host)
+        return self.min_interval_s if value is None else value
 
     def allows_host(self, host: str) -> bool:
         """True for the host itself and for its real subdomains, nothing else."""

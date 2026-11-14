@@ -53,6 +53,12 @@ einer Mosaik-Kachel-URL unter der ID, die der Hash ihres Inhalts ist (Datensatz,
 und Ausdehnung für die Kacheln. Frist 7 Tage, ein erneutes Anlegen verlängert sie; keine AOI. `api` schreibt und liest über
 `catalog/mosaic_selection.py`, der stündliche Aufräumer von `jobs` löscht.
 
+`018_overview.sql` — die Tabellen der Übersichtspyramide aus M5-30b Teil 8b (`adr/0032` §5.2, §5.3): `earthx_overview_request`
+(„dieser Datensatz hat jetzt diese Fassung der Quelle“, geschrieben von `materialize` über `catalog`) und `earthx_overview` (eine
+Zeile je Datensatz und Fassung: Status `building`/`ready`/`failed` mit Frist, Fehlerart, Hashes der Basiskacheln, `checked_at`,
+`confirmed_at`; geschrieben von `jobs` nur mit SQL). Dazu die Funktion `earthx_overview_version` (die 16 Hexziffern der Fassung im
+Objektschlüssel).
+
 Die Buchführungstabelle `earthx_migrations` gehört nicht hierher, sondern dem Läufer
 (`earthx/catalog/schema.py`) und wird von ihm angelegt. Sonst müsste jedes
 Migrationsverzeichnis sie erneut mitbringen.
