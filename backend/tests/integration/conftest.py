@@ -87,6 +87,7 @@ SHIPPED_TABLES = (
     "public.earthx_overview",
     "public.earthx_overview_upkeep",
     "public.earthx_overview_omitted",
+    "public.earthx_overview_host",
 )
 
 

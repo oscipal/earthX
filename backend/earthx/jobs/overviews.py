@@ -58,6 +58,7 @@ __all__ = [
     "Turn",
     "claim",
     "expired",
+    "HostLease",
     "end_turn",
     "finish_failed",
     "finish_ready",
@@ -70,8 +71,11 @@ __all__ = [
     "protected_versions",
     "settle_retry",
     "release",
+    "release_hosts",
+    "renew_hosts",
     "renew_turn",
     "request_missing",
+    "take_hosts",
     "take_turn",
     "to_extend",
     "write_progress",
@@ -127,6 +131,8 @@ WHERE o.version IS NULL
        AND (o.failure_kind = %(lease_lost)s OR o.updated_at < clock_timestamp() - %(retry_after)s))
 ORDER BY r.requested_at
 """
+
+_LIVE_HOSTS_SQL = "SELECT host FROM public.earthx_overview_host WHERE lease_until > clock_timestamp()"
 
 _START_SQL = """
 INSERT INTO public.earthx_overview (dataset_id, version, status, hosts, worker, lease_until)
@@ -209,6 +215,8 @@ def claim(
             for (building,) in conn.execute("SELECT hosts FROM public.earthx_overview WHERE status = 'building'")
             for host in building
         }
+        # A host the retry of the omitted tiles reads from (`take_hosts`) is busy as long as its lease lives.
+        busy.update(host for (host,) in conn.execute(_LIVE_HOSTS_SQL))
         for dataset_id, version, source_version in candidates:
             wanted = tuple(hosts[dataset_id])
             if busy.intersection(wanted):
@@ -450,6 +458,87 @@ def release(conn: psycopg.Connection, build: Build) -> bool:
                 (_LEASE_LOST, build.dataset_id, build.version, build.attempt),
             ).fetchone()
     return row is not None
+
+
+@dataclass(frozen=True, slots=True)
+class HostLease:
+    """One worker's lease on the hosts a retry reads from: each host with the number of its take."""
+
+    turns: tuple[tuple[str, int], ...]
+
+
+# One host: free when no lease holds it or its lease ran out; a lease that ran out is taken over (the number of the take counts up).
+_TAKE_HOST_SQL = """
+INSERT INTO public.earthx_overview_host AS h (host, worker, lease_until)
+VALUES (%(host)s, %(worker)s, clock_timestamp() + make_interval(secs => %(lease)s))
+ON CONFLICT (host) DO UPDATE
+SET turn = h.turn + 1, worker = EXCLUDED.worker, lease_until = EXCLUDED.lease_until
+WHERE h.lease_until IS NULL OR h.lease_until < clock_timestamp()
+RETURNING turn
+"""
+
+
+def take_hosts(
+    conn: psycopg.Connection, hosts: Sequence[str], *, worker: str, lease_seconds: float
+) -> HostLease | None:
+    """Lease all of ``hosts`` for ``worker``, or ``None`` if a build is reading from one of them or another lease lives on it.
+
+    The same advisory lock as :func:`claim` is taken, in a transaction of its own, so a build that starts and a retry that
+    begins cannot both pass: whichever comes second sees the first. Nothing is taken unless every host is (the
+    transaction is rolled back). The lease runs ``lease_seconds`` and :func:`renew_hosts` keeps it.
+    """
+    if not lease_seconds > 0:
+        raise ValueError("a host lease needs a positive lease")
+    lease: HostLease | None = None
+    with conn.transaction():
+        conn.execute("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
+        conn.execute("SELECT pg_advisory_xact_lock(%s)", (OVERVIEW_LOCK_KEY,))
+        building = {
+            host
+            for (names,) in conn.execute(
+                "SELECT hosts FROM public.earthx_overview WHERE status = 'building' AND lease_until > clock_timestamp()"
+            )
+            for host in names
+        }
+        if building.intersection(hosts):
+            raise psycopg.Rollback
+        turns: list[tuple[str, int]] = []
+        for host in sorted(set(hosts)):
+            row = conn.execute(_TAKE_HOST_SQL, {"host": host, "worker": worker, "lease": lease_seconds}).fetchone()
+            if row is None:
+                raise psycopg.Rollback
+            turns.append((host, row[0]))
+        lease = HostLease(tuple(turns))
+    return lease
+
+
+def renew_hosts(conn: psycopg.Connection, lease: HostLease, lease_seconds: float) -> bool:
+    """Renew the lease on every host; ``False`` if one is over (released, or taken over after its lease ran out)."""
+    if not lease.turns:
+        return True
+    renewed = conn.execute(
+        """
+        UPDATE public.earthx_overview_host AS h
+        SET lease_until = clock_timestamp() + make_interval(secs => %s)
+        FROM unnest(%s::text[], %s::bigint[]) AS t(host, turn)
+        WHERE h.host = t.host AND h.turn = t.turn AND h.lease_until IS NOT NULL
+        """,
+        (lease_seconds, [h for h, _ in lease.turns], [n for _, n in lease.turns]),
+    ).rowcount
+    return renewed == len(lease.turns)
+
+
+def release_hosts(conn: psycopg.Connection, lease: HostLease) -> None:
+    """End the lease, so the next reader need not wait for it to run out; leases already over are left alone."""
+    if lease.turns:
+        conn.execute(
+            """
+            UPDATE public.earthx_overview_host AS h SET worker = NULL, lease_until = NULL
+            FROM unnest(%s::text[], %s::bigint[]) AS t(host, turn)
+            WHERE h.host = t.host AND h.turn = t.turn
+            """,
+            ([h for h, _ in lease.turns], [n for _, n in lease.turns]),
+        )
 
 
 @dataclass(frozen=True, slots=True)

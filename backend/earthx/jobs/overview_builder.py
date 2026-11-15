@@ -428,8 +428,8 @@ class OverviewBuilder:
         ``retry``): the others skip the round, and ``None`` is returned if another worker has the turn or a round of
         another worker counts for this one. Nothing that is served is touched: the version is not deleted, only the
         omitted base tiles and the tiles above them are made again and put over the version, each object with the time of
-        this read, and the row's ``checked_at`` stays the oldest. A pyramid whose host a build is reading from is left for
-        the next round.
+        this read, and the row's ``checked_at`` stays the oldest. A pyramid whose host a build, or another retry, is reading
+        from is left for the next round (a lease per host in the database, :func:`~earthx.jobs.overviews.take_hosts`).
         """
         with contextlib.suppress(psycopg.Error):
             overviews.drop_stale_omitted(conn)
@@ -438,24 +438,35 @@ class OverviewBuilder:
             return 0
 
         def work(renew: Callable[[], None]) -> int:
-            def beat() -> None:
-                if self._stopping.is_set():
-                    raise _Shutdown
-                renew()
-
             recovered = 0
             try:
                 for (dataset_id, version), tiles in due.items():
-                    busy = {
-                        host
-                        for (hosts,) in conn.execute(
-                            "SELECT hosts FROM public.earthx_overview WHERE status = 'building' AND lease_until > clock_timestamp()"
-                        )
-                        for host in hosts
-                    }
-                    if busy.intersection(self._pyramids[dataset_id]):
+                    # A build, or another retry, reading from the host keeps this one out: a lease row per host in the
+                    # database, decided under the lock `claim` takes (`overviews.take_hosts`).
+                    hosts = overviews.take_hosts(
+                        conn, self._pyramids[dataset_id], worker=self._name, lease_seconds=self._config.lease_seconds
+                    )
+                    if hosts is None:
                         continue
-                    recovered += self._retry_one(conn, dataset_id, version, tiles, beat)
+                    last = time.monotonic()
+
+                    def beat(hosts: overviews.HostLease = hosts) -> None:
+                        nonlocal last
+                        if self._stopping.is_set():
+                            raise _Shutdown
+                        renew()
+                        if time.monotonic() - last >= self._config.heartbeat_seconds:
+                            last = time.monotonic()
+                            if not overviews.renew_hosts(conn, hosts, self._config.lease_seconds):
+                                raise _LeaseLost
+
+                    try:
+                        recovered += self._retry_one(conn, dataset_id, version, tiles, beat)
+                    except _LeaseLost:
+                        LOGGER.warning("overview retry stopped", extra={"dataset": dataset_id, "reason": "host lease lost"})
+                    finally:
+                        with contextlib.suppress(psycopg.Error):
+                            overviews.release_hosts(conn, hosts)
             except _Shutdown:
                 LOGGER.warning("overview retry stopped", extra={"reason": "worker stopping"})
             return recovered

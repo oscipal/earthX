@@ -155,3 +155,21 @@ def test_the_retry_is_a_task_with_a_free_row_and_other_tasks_are_still_refused(s
     assert row == (1, None, None, True)
     with pytest.raises(psycopg.errors.CheckViolation):
         schema.execute("INSERT INTO public.earthx_overview_upkeep (task, next_at) VALUES ('build', now())")
+
+
+def test_a_host_lease_names_its_worker_and_its_end_together_or_neither(schema: psycopg.Connection) -> None:
+    schema.execute("INSERT INTO public.earthx_overview_host (host) VALUES ('a.example.invalid')")
+    schema.execute(
+        "INSERT INTO public.earthx_overview_host (host, worker, lease_until) VALUES ('b.example.invalid', 'w', now())"
+    )
+    for columns in ("(host, worker) VALUES ('c.example.invalid', 'w')", "(host, lease_until) VALUES ('d.example.invalid', now())"):
+        with pytest.raises(psycopg.errors.CheckViolation), schema.transaction():
+            schema.execute(f"INSERT INTO public.earthx_overview_host {columns}")
+
+
+def test_a_host_lease_row_is_for_one_host_with_a_name(schema: psycopg.Connection) -> None:
+    schema.execute("INSERT INTO public.earthx_overview_host (host) VALUES ('a.example.invalid')")
+    with pytest.raises(psycopg.errors.UniqueViolation), schema.transaction():
+        schema.execute("INSERT INTO public.earthx_overview_host (host) VALUES ('a.example.invalid')")
+    with pytest.raises(psycopg.errors.CheckViolation), schema.transaction():
+        schema.execute("INSERT INTO public.earthx_overview_host (host) VALUES ('')")

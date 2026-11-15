@@ -16,13 +16,17 @@ from earthx.jobs.overviews import (
     MAX_ATTEMPTS,
     REUSE_MARGIN,
     Build,
+    HostLease,
     claim,
     finish_failed,
     finish_ready,
     heartbeat,
     previous_ready,
     release,
+    release_hosts,
+    renew_hosts,
     request_missing,
+    take_hosts,
     write_progress,
 )
 from earthx.jobs.worker import Supervisor
@@ -177,6 +181,114 @@ class TestOneBuildPerHost:
             thread.join()
         assert len([build for build in picked if build is not None]) == 1
         assert db.execute("SELECT count(*) FROM public.earthx_overview WHERE status = 'building'").fetchone() == (1,)
+
+
+DEM = "dem.example.invalid"
+LAND = "land.example.invalid"
+
+
+def _take(db: psycopg.Connection, *hosts: str, worker: str = "r1") -> HostLease | None:
+    return take_hosts(db, hosts, worker=worker, lease_seconds=60)
+
+
+def _host_row(db: psycopg.Connection, host: str) -> tuple[int, str | None, bool | None]:
+    row = db.execute(
+        "SELECT turn, worker, lease_until > clock_timestamp() FROM public.earthx_overview_host WHERE host = %s", (host,)
+    ).fetchone()
+    assert row is not None
+    return row
+
+
+class TestAHostIsReadFromByOne:
+    """A build and the retry of the omitted tiles never read from the same host (a lease row per host, one lock)."""
+
+    def test_no_build_starts_on_a_host_a_retry_reads_from(self, db: psycopg.Connection) -> None:
+        _request(db, "dem", "v1")
+        lease = _take(db, DEM)
+        assert lease is not None
+        assert _claim(db) is None
+        release_hosts(db, lease)
+        assert _claim(db) is not None
+
+    def test_no_retry_reads_from_a_host_a_build_reads_from(self, db: psycopg.Connection) -> None:
+        _request(db, "dem", "v1")
+        build = _claim(db)
+        assert build is not None
+        assert _take(db, DEM) is None
+        assert finish_ready(db, build, checked_at=NOW, base_hashes={})
+        assert _take(db, DEM) is not None
+
+    def test_a_retry_that_cannot_have_every_host_takes_none(self, db: psycopg.Connection) -> None:
+        assert _take(db, LAND, worker="r2") is not None
+        assert _take(db, DEM, LAND) is None
+        assert db.execute("SELECT count(*) FROM public.earthx_overview_host WHERE host = %s", (DEM,)).fetchone() == (0,)
+
+    def test_a_second_retry_waits_for_the_first(self, db: psycopg.Connection) -> None:
+        first = _take(db, DEM)
+        assert first is not None and _take(db, DEM, worker="r2") is None
+        release_hosts(db, first)
+        assert _take(db, DEM, worker="r2") is not None
+
+    def test_other_hosts_are_not_held_back(self, db: psycopg.Connection) -> None:
+        _request(db, "land", "v1")
+        assert _take(db, DEM) is not None
+        build = _claim(db)
+        assert build is not None and build.dataset_id == "land", "a build on another host starts while a retry reads"
+        assert _take(db, LAND) is None, "and the retry cannot read from the host of that build"
+        assert _take(db, "third.example.invalid", worker="r2") is not None, "a third host is free for another retry"
+
+    def test_an_expired_lease_is_taken_over_by_the_next_retry_and_by_a_build(self, db: psycopg.Connection) -> None:
+        old = _take(db, DEM)
+        assert old is not None
+        db.execute("UPDATE public.earthx_overview_host SET lease_until = clock_timestamp() - interval '1 second'")
+        _request(db, "dem", "v1")
+        assert _claim(db) is not None, "a build does not wait for a lease that ran out"
+        db.execute("TRUNCATE public.earthx_overview RESTART IDENTITY")
+        new = _take(db, DEM, worker="r2")
+        assert new is not None and _host_row(db, DEM)[:2] == (2, "r2")
+        assert not renew_hosts(db, old, 60), "the worker that woke up late renews nothing"
+        release_hosts(db, old)
+        assert _host_row(db, DEM)[:2] == (2, "r2"), "and ends nothing"
+        assert renew_hosts(db, new, 60)
+
+    def test_a_lease_that_was_ended_cannot_be_renewed(self, db: psycopg.Connection) -> None:
+        lease = _take(db, DEM)
+        assert lease is not None and renew_hosts(db, lease, 60)
+        release_hosts(db, lease)
+        assert not renew_hosts(db, lease, 60) and _host_row(db, DEM) == (1, None, None)
+
+    def test_a_lease_needs_a_positive_time(self, db: psycopg.Connection) -> None:
+        with pytest.raises(ValueError):
+            take_hosts(db, [DEM], worker="r1", lease_seconds=0)
+
+    def test_a_build_and_a_retry_that_start_at_the_same_moment_do_not_both_read(self, db: psycopg.Connection) -> None:
+        for round_ in range(4):
+            db.execute("TRUNCATE public.earthx_overview, public.earthx_overview_host RESTART IDENTITY")
+            _request(db, "dem", f"v{round_}")
+            assert len(_race(["build"] * 4 + ["retry"] * 4)) == 1
+
+
+def _race(roles: list[str]) -> list[str]:
+    """Each role is a worker on a connection of its own; they all start at one moment, the roles that got the host are returned."""
+    won: list[str] = []
+    barrier = threading.Barrier(len(roles))
+
+    def work(role: str, name: str) -> None:
+        with psycopg.connect(autocommit=True) as conn:
+            barrier.wait()
+            if role == "build":
+                got = claim(conn, worker=name, lease_seconds=60, hosts=HOSTS) is not None
+            else:
+                got = take_hosts(conn, [DEM], worker=name, lease_seconds=60) is not None
+            if got:
+                won.append(role)
+
+    threads = [threading.Thread(target=work, args=(role, f"w{n}")) for n, role in enumerate(roles)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    return won
 
 
 class TestLease:

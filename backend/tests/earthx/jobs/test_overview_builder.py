@@ -1090,3 +1090,55 @@ class TestTheRetryTakesTurns:
         assert _row(db, "dem", version)["base_hashes"] == row["base_hashes"]
         assert self._turn(db) == (2, "other"), "the turn the other worker has is not ended by the one that lost it"
         assert not _children()
+
+
+class TestARetryHoldsItsHost:
+    """The retry leases the hosts it reads from (a row per host in the database): no build starts on them meanwhile."""
+
+    FAST_ROUND = TestTheHourlyRetry.FAST_ROUND
+    SHARED = {**HOSTS, "dem2": HOSTS["dem"]}
+
+    def _reading(self, tmp_path: Path) -> list[Path]:
+        return list(tmp_path.glob("work*/*/started"))
+
+    def test_no_build_starts_on_the_host_while_the_retry_reads_from_it(
+        self, db: psycopg.Connection, store: Store, make: Callable[..., Supervisor], tmp_path: Path
+    ) -> None:
+        helper = TestTheHourlyRetry()
+        version = helper._pyramid(db, store, make, "patch_slow")
+        _age_omitted(db, "dem", version)
+        make("patch_slow", pyramids=self.SHARED, **self.FAST_ROUND)  # the worker that retries
+        make("succeed", pyramids=self.SHARED, cleanup_first_seconds=1e9)  # another worker, that builds
+        wait_until(lambda: self._reading(tmp_path), 30)
+        other = _request(db, "dem2", '"etag-2"')
+        time.sleep(1.5)
+        assert db.execute("SELECT count(*) FROM public.earthx_overview WHERE dataset_id = 'dem2'").fetchone() == (0,)
+        assert _omitted(db, "dem", version) != {}, "the retry is still reading"
+        _wait_for(db, "dem2", other, "ready", timeout=60)
+        assert _omitted(db, "dem", version) == {}, "the build came after the retry"
+        assert db.execute("SELECT worker, lease_until FROM public.earthx_overview_host").fetchall() == [(None, None)]
+
+    def test_a_host_lease_lost_during_the_retry_stops_it_without_uploading(
+        self, db: psycopg.Connection, store: Store, make: Callable[..., Supervisor], tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        caplog.set_level(logging.DEBUG, logger="earthx")
+        helper = TestTheHourlyRetry()
+        version = helper._pyramid(db, store, make, "patch_slow")
+        before = helper._objects(store, version)
+        _age_omitted(db, "dem", version)
+        make("patch_slow", **self.FAST_ROUND)
+        wait_until(lambda: self._reading(tmp_path), 30)
+        db.execute(
+            "UPDATE public.earthx_overview_host SET turn = turn + 1, worker = 'other', "
+            "lease_until = clock_timestamp() + interval '1 hour' WHERE host = 'dem.example.invalid'"
+        )
+        wait_until(lambda: any(r.getMessage() == "overview retry stopped" for r in caplog.records), 30)
+        time.sleep(0.5)
+        stopped = next(r for r in caplog.records if r.getMessage() == "overview retry stopped")
+        assert (stopped.dataset, stopped.reason) == ("dem", "host lease lost")
+        assert helper._objects(store, version) == before, "nothing was uploaded"
+        assert list(_omitted(db, "dem", version)) == ["2/1"]
+        assert db.execute("SELECT turn, worker FROM public.earthx_overview_host").fetchall() == [(2, "other")], (
+            "the lease the other worker took over is not ended by the one that lost it"
+        )
+        assert not _children()
