@@ -61,10 +61,13 @@ __all__ = [
     "finish_failed",
     "finish_ready",
     "heartbeat",
+    "drop_stale_omitted",
     "mark_expired",
+    "omitted_due",
     "mark_extended",
     "previous_ready",
     "protected_versions",
+    "settle_retry",
     "release",
     "renew_turn",
     "request_missing",
@@ -88,7 +91,7 @@ REUSE_MARGIN = timedelta(days=7)
 #: A failed build waits this long for its next attempt; a lost lease does not wait.
 RETRY_AFTER = timedelta(hours=1)
 #: The tasks of the upkeep that take turns (the rows of `earthx_overview_upkeep`).
-UPKEEP_TASKS = frozenset({"extend", "sweep"})
+UPKEEP_TASKS = frozenset({"extend", "sweep", "retry"})
 
 _KIND = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
 _LEASE_LOST = "lease_lost"
@@ -245,22 +248,133 @@ def write_progress(conn: psycopg.Connection, build: Build, percent: int) -> bool
 
 
 def finish_ready(
-    conn: psycopg.Connection, build: Build, *, checked_at: datetime, base_hashes: Mapping[str, str]
+    conn: psycopg.Connection,
+    build: Build,
+    *,
+    checked_at: datetime,
+    base_hashes: Mapping[str, str],
+    omitted: Mapping[str, Mapping[str, str]] | None = None,
 ) -> bool:
     """Close the build as ready, only for the attempt that owns it; ``False`` if it no longer does.
 
     ``checked_at`` is the oldest time any object of the pyramid was read at the source (the term counts from it);
     ``base_hashes`` maps ``x/y`` of a base tile to the hash of the items it read, empty where the items allow none.
+    ``omitted`` maps ``x/y`` of each base tile left out (a file of it stayed unreadable) to its ``kind``, ``error`` and
+    ``reason``; they are written with the row, in one transaction, so a pyramid is never ready with a gap nobody recorded.
     """
     if checked_at.tzinfo is None:
         raise ValueError("checked_at must be timezone-aware")
-    return _own(
-        conn,
-        build,
-        "status = 'ready', failure_kind = NULL, worker = NULL, lease_until = NULL, progress = 100, "
-        "checked_at = %(checked_at)s, base_hashes = %(hashes)s",
-        {"checked_at": checked_at, "hashes": Jsonb(dict(base_hashes))},
-    )
+    with conn.transaction():
+        owned = _own(
+            conn,
+            build,
+            "status = 'ready', failure_kind = NULL, worker = NULL, lease_until = NULL, progress = 100, "
+            "checked_at = %(checked_at)s, base_hashes = %(hashes)s",
+            {"checked_at": checked_at, "hashes": Jsonb(dict(base_hashes))},
+        )
+        if not owned:
+            raise psycopg.Rollback
+        conn.execute(
+            "DELETE FROM public.earthx_overview_omitted WHERE dataset_id = %s AND version = %s",
+            (build.dataset_id, build.version),
+        )
+        for tile, detail in (omitted or {}).items():
+            conn.execute(_INSERT_OMITTED_SQL, _omitted_values(build.dataset_id, build.version, tile, detail))
+    return owned
+
+
+_INSERT_OMITTED_SQL = """
+INSERT INTO public.earthx_overview_omitted (dataset_id, version, tile, kind, error, reason)
+VALUES (%(dataset)s, %(version)s, %(tile)s, %(kind)s, %(error)s, %(reason)s)
+"""
+
+
+def _omitted_values(dataset_id: str, version: str, tile: str, detail: Mapping[str, str]) -> dict[str, str]:
+    return {
+        "dataset": dataset_id,
+        "version": version,
+        "tile": tile,
+        "kind": detail["kind"],
+        "error": detail["error"][:80],
+        "reason": detail.get("reason", "")[:160],
+    }
+
+
+def omitted_due(conn: psycopg.Connection, datasets: Collection[str]) -> dict[tuple[str, str], list[str]]:
+    """The base tiles to read again: ``(dataset, version)`` of each ready pyramid to the ``x/y`` of its omitted tiles.
+
+    Only tiles whose last try is at least :data:`RETRY_AFTER` old, so a tile is tried once an hour as long as its pyramid
+    lives (the round of the worker is hourly) and a pyramid that was built a minute ago is left alone. Only datasets this
+    worker knows, and only ready pyramids.
+    """
+    found: dict[tuple[str, str], list[str]] = {}
+    for dataset_id, version, tile in conn.execute(
+        """
+        SELECT m.dataset_id, m.version, m.tile
+        FROM public.earthx_overview_omitted m
+        JOIN public.earthx_overview o ON o.dataset_id = m.dataset_id AND o.version = m.version AND o.status = 'ready'
+        WHERE m.dataset_id = ANY(%s) AND m.tried_at < clock_timestamp() - %s
+        ORDER BY m.dataset_id, m.version, m.tile
+        """,
+        (sorted(datasets), RETRY_AFTER),
+    ):
+        found.setdefault((dataset_id, version), []).append(tile)
+    return found
+
+
+def settle_retry(
+    conn: psycopg.Connection,
+    dataset_id: str,
+    version: str,
+    *,
+    recovered: Collection[str],
+    still: Mapping[str, Mapping[str, str]],
+    base_hashes: Mapping[str, str],
+) -> bool:
+    """Record the end of a retry of a ready pyramid: the recovered tiles leave the table (their hashes join the row's), the
+    others get one more attempt with the new reason. ``False`` (nothing written) if the pyramid is no longer ready.
+
+    The row's ``checked_at`` stays what it was: the pyramid is as old as its oldest object, and a repaired tile is newer.
+    """
+    with conn.transaction():
+        row = conn.execute(
+            """
+            UPDATE public.earthx_overview SET base_hashes = base_hashes || %s, updated_at = clock_timestamp()
+            WHERE dataset_id = %s AND version = %s AND status = 'ready' RETURNING 1
+            """,
+            (Jsonb(dict(base_hashes)), dataset_id, version),
+        ).fetchone()
+        if row is None:
+            raise psycopg.Rollback
+        for tile in recovered:
+            conn.execute(
+                "DELETE FROM public.earthx_overview_omitted WHERE dataset_id = %s AND version = %s AND tile = %s",
+                (dataset_id, version, tile),
+            )
+        for tile, detail in still.items():
+            conn.execute(
+                """
+                UPDATE public.earthx_overview_omitted
+                SET kind = %(kind)s, error = %(error)s, reason = %(reason)s, attempts = attempts + 1,
+                    tried_at = clock_timestamp()
+                WHERE dataset_id = %(dataset)s AND version = %(version)s AND tile = %(tile)s
+                """,
+                _omitted_values(dataset_id, version, tile, detail),
+            )
+    return True
+
+
+def drop_stale_omitted(conn: psycopg.Connection) -> int:
+    """Delete the rows of omitted tiles whose pyramid is no longer ready (failed, expired, rebuilt, gone); the number deleted."""
+    return conn.execute(
+        """
+        DELETE FROM public.earthx_overview_omitted m
+        WHERE NOT EXISTS (
+            SELECT 1 FROM public.earthx_overview o
+            WHERE o.dataset_id = m.dataset_id AND o.version = m.version AND o.status = 'ready'
+        )
+        """
+    ).rowcount
 
 
 def finish_failed(conn: psycopg.Connection, build: Build, kind: str) -> bool:
@@ -364,7 +478,7 @@ def take_turn(
     needs no lock of its own.
     """
     if task not in UPKEEP_TASKS:
-        raise ValueError("an upkeep task is one of extend, sweep")
+        raise ValueError("an upkeep task is one of extend, sweep, retry")
     if not lease_seconds > 0 or not gap_seconds >= 0:
         raise ValueError("a turn needs a positive lease and a gap that is not negative")
     row = conn.execute(

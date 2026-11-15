@@ -50,13 +50,18 @@ def high_water_mb() -> float:
     return 0.0
 
 
-def guard(conn: Any, work: Callable[[], None]) -> None:
-    """Run ``work``; whatever it raises becomes ``("failed", kind)`` and nothing else leaves the child."""
+def guard(conn: Any, work: Callable[[], None], *, detail: Callable[[BaseException], dict[str, str]] | None = None) -> None:
+    """Run ``work``; whatever it raises becomes ``("failed", kind)`` and nothing else leaves the child.
+
+    With ``detail`` the message carries a third part, ``detail(error)``: short strings the supervisor writes to its log
+    (the pyramid build says where and why; a run's failure stays a bare name).
+    """
     try:
         work()
     except BaseException as error:  # noqa: BLE001 - the child's edge: every failure is named, none escapes
         try:
-            conn.send(("failed", failure_kind(error)))
+            kind = failure_kind(error)
+            conn.send(("failed", kind) if detail is None else ("failed", kind, detail(error)))
         except OSError:
             pass  # the supervisor is gone; the run is its to settle
         finally:

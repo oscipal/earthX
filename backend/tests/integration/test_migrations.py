@@ -60,6 +60,7 @@ class TestDiscovery:
             ("017", "mosaic_selection"),
             ("018", "overview"),
             ("019", "overview_upkeep"),
+            ("020", "overview_omitted"),
         ]
 
     def test_a_missing_directory_is_an_error_not_an_empty_run(self, tmp_path) -> None:

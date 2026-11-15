@@ -67,6 +67,17 @@ def fail(workdir: str, conn: Any) -> None:
     conn.close()
 
 
+def fail_with_detail(workdir: str, conn: Any) -> None:
+    """The build step fails as the real child does for a bug it does not know: ``unknown`` with where and why."""
+    if _job(workdir)["mode"] == "plan":
+        _plan(workdir, conn)
+        return
+    conn.send(("progress", 1, 5, 1.0))
+    detail = {"step": "build", "error": "RasterioIOError", "reason": "HTTP response code on <address> 0", "tile": "6/33/22"}
+    conn.send(("failed", "unknown", detail))
+    conn.close()
+
+
 def fail_once(workdir: str, conn: Any) -> None:
     """The first build step of the container reports ``CHILD_KIND``, the later ones succeed (a marker file next to the work directory)."""
     marker = Path(workdir).parent / "failed-once"
@@ -106,3 +117,89 @@ def hang(workdir: str, conn: Any) -> None:
 def plan_fails(workdir: str, conn: Any) -> None:
     conn.send(("failed", os.environ["CHILD_KIND"]))
     conn.close()
+
+
+OMITTED = {"2/1": {"kind": "unreadable", "error": "RasterioIOError", "reason": "not recognized as a supported file format"}}
+
+
+def omit(workdir: str, conn: Any) -> None:
+    """The build step leaves the base tile ``2/1`` out, as a file that stays unreadable does, and makes the levels above."""
+    if _job(workdir)["mode"] == "plan":
+        _plan(workdir, conn)
+        return
+    root = Path(workdir)
+    tiles = [name for name in TILES if name != "2/2/1"]
+    for index, name in enumerate(tiles, start=1):
+        path = root / "tiles" / f"{name}.tif"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"read")
+        conn.send(("progress", index, len(tiles), 1.0))
+    manifest = {"base_zoom": BASE, "tiles": tiles, "base_hashes": {"1/1": "h1"}, "omitted": OMITTED}
+    (root / "manifest.json").write_text(json.dumps(manifest))
+    conn.send(("done", {"tiles": len(tiles), "peak_mb": 1.0}))
+    conn.close()
+
+
+def _patch_plan(workdir: str, conn: Any) -> None:
+    only = _job(workdir)["only"]
+    assert only == ["2/1"], only
+    (Path(workdir) / "plan.json").write_text(json.dumps({"base_zoom": BASE, "fetch": ["2/1/1", "1/0/0", "1/1/0"]}))
+    conn.send(("done", {"tiles": 3, "peak_mb": 1.0}))
+    conn.close()
+
+
+def _fetched(workdir: str) -> None:
+    """The stored tiles the levels above need were put in the work directory before the step ran."""
+    for name in ("2/1/1", "1/0/0", "1/1/0"):
+        if not (Path(workdir) / "tiles" / f"{name}.tif").is_file():
+            raise FileNotFoundError("a sibling of the retry was not fetched")
+
+
+def patch_ok(workdir: str, conn: Any) -> None:
+    """The retry reads the omitted tile now: it makes it and the tiles above, and recovers it."""
+    mode = _job(workdir)["mode"]
+    if mode == "plan":
+        _plan(workdir, conn)
+    elif mode == "build":
+        omit(workdir, conn)
+    elif mode == "patch_plan":
+        _patch_plan(workdir, conn)
+    else:
+        _fetched(workdir)
+        root = Path(workdir)
+        tiles = ["2/2/1", "1/1/0", "0/0/0"]
+        for name in tiles:
+            path = root / "tiles" / f"{name}.tif"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"made again")
+        manifest = {"base_zoom": BASE, "tiles": tiles, "base_hashes": {"2/1": "h2"}, "omitted": {}, "recovered": ["2/1"]}
+        (root / "manifest.json").write_text(json.dumps(manifest))
+        conn.send(("done", {"tiles": 3, "peak_mb": 1.0}))
+        conn.close()
+
+
+def patch_again(workdir: str, conn: Any) -> None:
+    """The retry fails again for the file: nothing is made, the tile stays omitted with the new reason."""
+    mode = _job(workdir)["mode"]
+    if mode == "plan":
+        _plan(workdir, conn)
+    elif mode == "build":
+        omit(workdir, conn)
+    elif mode == "patch_plan":
+        _patch_plan(workdir, conn)
+    else:
+        _fetched(workdir)
+        again = {"2/1": {"kind": "source_5xx", "error": "RasterioIOError", "reason": "HTTP response code: 503"}}
+        manifest = {"base_zoom": BASE, "tiles": [], "base_hashes": {}, "omitted": again, "recovered": []}
+        (Path(workdir) / "manifest.json").write_text(json.dumps(manifest))
+        conn.send(("done", {"tiles": 0, "peak_mb": 1.0}))
+        conn.close()
+
+
+def patch_breaks(workdir: str, conn: Any) -> None:
+    """The retry fails for a reason that is not a file: the step says so and the pyramid is left as it is."""
+    if _job(workdir)["mode"] == "patch":
+        conn.send(("failed", "unknown", {"step": "patch", "error": "ArithmeticError", "reason": "a bug", "tile": "2/2/1"}))
+        conn.close()
+    else:
+        patch_ok(workdir, conn)

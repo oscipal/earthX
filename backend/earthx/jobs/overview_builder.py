@@ -69,6 +69,13 @@ STALL_SECONDS = 1800.0
 ITEMS_NAME, JOB_NAME, PLAN_NAME, MANIFEST_NAME, TILES_DIR = "items.jsonl", "job.json", "plan.json", "manifest.json", "tiles"
 
 _PAGE = 1000
+#: What an outcome that is not a failure is called in the log; any other outcome is the kind of a failed build.
+_STATUS = {"ready": "ready", "released": "released", "lease_lost_here": "lease_lost"}
+#: The parts of what a failed child says that the supervisor logs, and no others (a child is trusted, a log line is not).
+_DETAIL = ("step", "error", "reason", "tile")
+_DETAIL_LENGTH = 200
+#: The omitted tiles of a build the log names one by one; more are counted.
+_OMITTED_LOGGED = 20
 
 _ITEMS_SQL = """
 SELECT i.id, pgstac.get_item(i.id, i.collection)
@@ -162,6 +169,7 @@ class OverviewBuilder:
                     if time.monotonic() >= next_extension:
                         next_extension = time.monotonic() + self._config.cleanup_seconds
                         self._extend(conn)
+                        self._retry_omitted(conn)
                     self._stopping.wait(self._config.poll_seconds)
                     continue
                 if self._stopping.is_set():
@@ -199,12 +207,17 @@ class OverviewBuilder:
             outcome = self._attempt(conn, build, workdir)
         finally:
             shutil.rmtree(workdir, ignore_errors=True)
-        LOGGER.info(
+        # ``outcome`` is the short name the row got; ``status`` says plainly whether the build worked, and a failed one is a warning.
+        status = _STATUS.get(outcome, "failed")
+        LOGGER.log(
+            logging.INFO if status != "failed" else logging.WARNING,
             "overview build ended",
             extra={
                 "dataset": build.dataset_id,
                 "attempt": build.attempt,
                 "outcome": outcome,
+                "status": status,
+                **({"failure_kind": outcome} if status == "failed" else {}),
                 "seconds": round(time.monotonic() - started, 1),
             },
         )
@@ -257,8 +270,12 @@ class OverviewBuilder:
         except _Shutdown:
             self._forget(conn, build)
             raise
-        if not overviews.finish_ready(conn, build, checked_at=checked_at, base_hashes=manifest["base_hashes"]):
+        omitted: dict[str, dict[str, str]] = manifest.get("omitted") or {}
+        if not overviews.finish_ready(
+            conn, build, checked_at=checked_at, base_hashes=manifest["base_hashes"], omitted=omitted
+        ):
             return "lease_lost_here"
+        self._log_omitted(build.dataset_id, base, omitted)
         return "ready"
 
     def _beater(self, conn: psycopg.Connection, build: overviews.Build) -> Callable[[], None]:
@@ -303,15 +320,20 @@ class OverviewBuilder:
         workdir: Path,
         job: dict[str, Any],
         beat: Callable[[], None],
+        *,
+        write_progress: bool = True,
     ) -> dict[str, Any]:
-        """Run one child on ``job``; its ``done`` info, else the build ends here with the reason."""
+        """Run one child on ``job``; its ``done`` info, else the build ends here with the reason.
+
+        ``write_progress`` is off for the retry of omitted tiles, which has no build row to write to.
+        """
         (workdir / JOB_NAME).write_text(json.dumps(job), encoding="utf-8")
         parent, child = self._context.Pipe(duplex=True)
         process = self._context.Process(target=self._target, args=(str(workdir), child), name="earthx-overview", daemon=True)
         process.start()
         child.close()
         try:
-            return self._watch(conn, build, process, parent, beat)
+            return self._watch(conn, build, process, parent, beat, write_progress)
         finally:
             if process.is_alive():
                 process.kill()
@@ -325,9 +347,11 @@ class OverviewBuilder:
         process: multiprocessing.process.BaseProcess,
         pipe: Any,
         beat: Callable[[], None],
+        write_progress: bool = True,
     ) -> dict[str, Any]:
         config = self._config
         final: tuple[str, Any] | None = None
+        said: dict[Any, Any] = {}
         pipe_open = True
         last_word = last_write = time.monotonic()
         last_percent = -1
@@ -340,14 +364,15 @@ class OverviewBuilder:
                         if isinstance(message, tuple) and message:
                             if message[0] == "progress" and len(message) == 4:
                                 percent = int(100 * message[1] / message[2]) if message[2] else 0
-                                if percent != last_percent and time.monotonic() - last_write >= config.progress_seconds:
+                                if write_progress and percent != last_percent and time.monotonic() - last_write >= config.progress_seconds:
                                     last_percent, last_write = percent, time.monotonic()
                                     if not overviews.write_progress(conn, build, percent):
                                         raise _LeaseLost
                             elif message[0] == "done" and len(message) == 2 and isinstance(message[1], dict):
                                 final = ("done", message[1])
-                            elif message[0] == "failed" and len(message) == 2 and isinstance(message[1], str):
+                            elif message[0] == "failed" and len(message) in (2, 3) and isinstance(message[1], str):
                                 final = ("failed", message[1])
+                                said = message[2] if len(message) == 3 and isinstance(message[2], dict) else {}
                 except (EOFError, OSError):
                     pipe_open = False
             else:
@@ -363,8 +388,145 @@ class OverviewBuilder:
             LOGGER.warning("child ended without a word", extra={"dataset": build.dataset_id, "exitcode": process.exitcode})
             raise _Failed("child_crashed")
         if final[0] == "failed":
+            # The kind, where it happened and why (class and a reason with no address), so that a failed build is not a mystery.
+            LOGGER.warning(
+                "overview child failed",
+                extra={
+                    "dataset": build.dataset_id,
+                    "attempt": build.attempt,
+                    "failure_kind": final[1],
+                    **{key: str(said[key])[:_DETAIL_LENGTH] for key in _DETAIL if key in said},
+                },
+            )
             raise _Failed(final[1])
         return final[1]
+
+    def _log_omitted(self, dataset_id: str, base: int, omitted: Mapping[str, Mapping[str, str]]) -> None:
+        """One warning for each tile the pyramid was built without (the first :data:`_OMITTED_LOGGED`), then the count."""
+        for key in sorted(omitted)[:_OMITTED_LOGGED]:
+            detail = omitted[key]
+            LOGGER.warning(
+                "overview base tile omitted",
+                extra={
+                    "dataset": dataset_id,
+                    "tile": f"{base}/{key}",
+                    "failure_kind": str(detail.get("kind", ""))[:_DETAIL_LENGTH],
+                    "error": str(detail.get("error", ""))[:_DETAIL_LENGTH],
+                    "reason": str(detail.get("reason", ""))[:_DETAIL_LENGTH],
+                },
+            )
+        if len(omitted) > _OMITTED_LOGGED:
+            LOGGER.warning("overview base tiles omitted", extra={"dataset": dataset_id, "count": len(omitted)})
+
+    # --- the retry of the omitted tiles --------------------------------------------------
+
+    def _retry_omitted(self, conn: psycopg.Connection) -> int:
+        """Hourly, when no build waits: read the omitted base tiles of the ready pyramids again; the number of tiles recovered.
+
+        One worker at a time (a turn of the task ``retry``, like the extension). Nothing that is served is touched: the
+        version is not deleted, only the omitted base tiles and the tiles above them are made again and put over the
+        version, each object with the time of this read, and the row's ``checked_at`` stays the oldest. A pyramid whose
+        host a build is reading from is left for the next round.
+        """
+        with contextlib.suppress(psycopg.Error):
+            overviews.drop_stale_omitted(conn)
+        due = overviews.omitted_due(conn, self._pyramids)
+        if not due:
+            return 0
+        turn = overviews.take_turn(conn, "retry", worker=self._name, lease_seconds=self._config.lease_seconds, gap_seconds=0)
+        if turn is None:
+            return 0
+        last = time.monotonic()
+
+        def beat() -> None:
+            nonlocal last
+            if self._stopping.is_set():
+                raise _Shutdown
+            if time.monotonic() - last >= self._config.heartbeat_seconds:
+                last = time.monotonic()
+                if not overviews.renew_turn(conn, turn, self._config.lease_seconds):
+                    raise _LeaseLost
+
+        recovered = 0
+        try:
+            for (dataset_id, version), tiles in due.items():
+                busy = {
+                    host
+                    for (hosts,) in conn.execute(
+                        "SELECT hosts FROM public.earthx_overview WHERE status = 'building' AND lease_until > clock_timestamp()"
+                    )
+                    for host in hosts
+                }
+                if busy.intersection(self._pyramids[dataset_id]):
+                    continue
+                recovered += self._retry_one(conn, dataset_id, version, tiles, beat)
+        except (_LeaseLost, _Shutdown):
+            LOGGER.warning("overview retry stopped", extra={"reason": "turn lost or worker stopping"})
+        finally:
+            with contextlib.suppress(psycopg.Error):
+                overviews.end_turn(conn, turn)
+        return recovered
+
+    def _retry_one(
+        self, conn: psycopg.Connection, dataset_id: str, version: str, tiles: Sequence[str], beat: Callable[[], None]
+    ) -> int:
+        workdir = self._config.workdir / WORKDIR
+        shutil.rmtree(workdir, ignore_errors=True)
+        workdir.mkdir(parents=True)
+        build = overviews.Build(dataset_id, version, "", 0, tuple(self._pyramids[dataset_id]))
+        try:
+            if free_bytes(workdir) < DISK_BYTES:
+                LOGGER.warning("overview retry skipped", extra={"dataset": dataset_id, "failure_kind": "disk_space"})
+                return 0
+            if write_items(conn, dataset_id, workdir / ITEMS_NAME, beat) == 0:
+                return 0
+            job = {"dataset_id": dataset_id, "hosts": list(build.hosts), "only": list(tiles)}
+            self._step(conn, build, workdir, {**job, "mode": "patch_plan"}, beat, write_progress=False)
+            needs = json.loads((workdir / PLAN_NAME).read_text(encoding="utf-8"))["fetch"]
+            for name in needs:
+                beat()
+                z, x, y = (int(part) for part in name.split("/"))
+                stored = read_tile(self._store, dataset_id, version, z, x, y)
+                if stored is not None:
+                    path = workdir / TILES_DIR / str(z) / str(x) / f"{y}.tif"
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(stored.data)
+            read_at = datetime.now(UTC)
+            self._step(conn, build, workdir, {**job, "mode": "patch"}, beat, write_progress=False)
+            manifest = json.loads((workdir / MANIFEST_NAME).read_text(encoding="utf-8"))
+            base = int(manifest["base_zoom"])
+            for name in manifest["tiles"]:
+                beat()
+                z, x, y = (int(part) for part in name.split("/"))
+                path = workdir / TILES_DIR / str(z) / str(x) / f"{y}.tif"
+                upload_tile(self._store, dataset_id, version, z, x, y, path, checked_at=read_at)
+            still = manifest.get("omitted") or {}
+            if not overviews.settle_retry(
+                conn,
+                dataset_id,
+                version,
+                recovered=manifest.get("recovered") or [],
+                still=still,
+                base_hashes=manifest.get("base_hashes") or {},
+            ):
+                return 0
+            self._log_omitted(dataset_id, base, still)
+            LOGGER.info(
+                "overview retry ended",
+                extra={"dataset": dataset_id, "recovered": len(manifest.get("recovered") or []), "omitted": len(still)},
+            )
+            return len(manifest.get("recovered") or [])
+        except (_LeaseLost, _Shutdown):
+            raise
+        except _Failed as failed:
+            # Said by the child with its detail already (`overview child failed`); nothing about the pyramid changes.
+            LOGGER.warning("overview retry failed", extra={"dataset": dataset_id, "failure_kind": failed.kind})
+            return 0
+        except (ObjectStoreError, OSError) as error:
+            LOGGER.warning("overview retry failed", extra={"dataset": dataset_id, "error": type(error).__name__})
+            return 0
+        finally:
+            shutil.rmtree(workdir, ignore_errors=True)
 
     # --- reuse and upload --------------------------------------------------------------
 
