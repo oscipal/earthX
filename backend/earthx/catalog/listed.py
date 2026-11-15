@@ -13,14 +13,14 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import date
 from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from earthx.catalog.categories import load_categories
+from earthx.catalog.categories import Categories, load_categories
 from earthx.catalog.collection import (
     SCIENTIFIC_EXTENSION,
     STAC_VERSION,
@@ -66,6 +66,7 @@ __all__ = [
     "content_sha256",
     "file_sha256",
     "link_host",
+    "listed_keywords",
     "load_blocked",
     "load_listed",
     "load_regions",
@@ -341,6 +342,52 @@ def load_regions(path: Path = REGIONS_FILE) -> tuple[Region, ...]:
     return tuple(regions)
 
 
+#: The longest keyword kept; a longer one is a sentence or a list, not a keyword.
+MAX_KEYWORD_CHARS = 80
+_LETTER = re.compile(r"[^\W\d_]")
+_UUID = re.compile(r"[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}")
+_HEX = re.compile(r"[0-9a-f]{16,}")
+#: Words of a category's title that say nothing on their own.
+_JOINING_WORDS = frozenset({"and"})
+
+
+def _is_technical(keyword: str) -> bool:
+    """A keyword that is an address, an identifier or no word at all (M5-40 plan A11): checked by its form only."""
+    return (
+        len(keyword) > MAX_KEYWORD_CHARS
+        or _LETTER.search(keyword) is None
+        or "://" in keyword
+        or "@" in keyword
+        or keyword.startswith("www.")
+        or _UUID.fullmatch(keyword) is not None
+        or _HEX.fullmatch(keyword) is not None
+    )
+
+
+def listed_keywords(raw: Iterable[object], category: str, categories: Categories | None = None) -> tuple[str, ...]:
+    """The keywords of a listed entry from those of its source (CKAN tags, DCAT keywords, INSPIRE keywords).
+
+    Lower case, every run of white space one space, each once in the order the source gives them; empty and technical
+    ones (:func:`_is_technical`) are dropped. Where none is left, the words of the title of the entry's category in
+    ``categories.yaml`` stand in, so that no entry is without keywords (Otto, 15.11.2026). Pure: the harvest calls it
+    (M5-19), ``catalog-load`` for the hand entries.
+    """
+    kept: dict[str, None] = {}
+    for value in (raw,) if isinstance(raw, str) else raw:
+        if not isinstance(value, str):
+            continue
+        keyword = " ".join(value.lower().split())
+        if keyword and not _is_technical(keyword):
+            kept.setdefault(keyword, None)
+    if kept:
+        return tuple(kept)
+    categories = load_categories() if categories is None else categories
+    if category not in categories.titles:
+        raise ConfigError(f"category {category!r} is not one of categories.yaml")
+    words = (word.strip(",") for word in categories.titles[category].lower().split())
+    return tuple(dict.fromkeys(word for word in words if word and word not in _JOINING_WORDS))
+
+
 def sort_title(title: str) -> str:
     """The key of the order of the catalogue: the title in lower case, without accents, words joined by one space."""
     return normalize(title)
@@ -369,7 +416,8 @@ def to_listed_collection(entry: ListedEntry) -> dict[str, object]:
         "id": entry.dataset_id,
         "title": entry.title,
         "description": entry.description,
-        "keywords": list(entry.keywords),
+        # Normalized like the keywords of a harvested entry, and the same as the column (M5-40, Otto 15.11.2026).
+        "keywords": list(listed_keywords(entry.keywords, entry.category)),
         "license": _stac_license(entry.license),
         "providers": _providers(entry),  # type: ignore[arg-type]
         "extent": {

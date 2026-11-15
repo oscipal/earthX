@@ -43,7 +43,7 @@ COUNTRY = {"type": "Polygon", "coordinates": [[[5.9, 47.3], [15.0, 47.3], [15.0,
 _FILL = """
 INSERT INTO public.earthx_listed_entry (
     dataset_id, source_id, source_key, state, content, content_sha256, sort_title, footprint, time_span, regions,
-    data_kind, category, account, delivery, publisher, link_host, published_at)
+    keywords, data_kind, category, account, delivery, publisher, link_host, published_at)
 SELECT 'syn-' || lpad(g.i::text, 7, '0'), 'bench-' || (g.i %% 8), g.i::text, 'published',
        jsonb_build_object('type', 'Collection', 'id', 'syn-' || lpad(g.i::text, 7, '0'), 'title', g.title,
                           'description', repeat('synthetic description ', 60), 'links', '[]'::jsonb),
@@ -51,7 +51,7 @@ SELECT 'syn-' || lpad(g.i::text, 7, '0'), 'bench-' || (g.i %% 8), g.i::text, 'pu
        CASE WHEN g.r_time < 0.35 THEN NULL
             WHEN g.r_time < 0.55 THEN tstzrange(g.t0, NULL, '[]')
             ELSE tstzrange(g.t0, g.t0 + (g.r_t1 * 3650) * interval '1 day', '[]') END,
-       '{}', (ARRAY['raster','vector','vector','vector','table','document','service','other'])[1 + floor(g.r_kind * 8)::int],
+       '{}', ARRAY['synthetic', 'keyword ' || (g.i %% 500)], (ARRAY['raster','vector','vector','vector','table','document','service','other'])[1 + floor(g.r_kind * 8)::int],
        (ARRAY['optical','elevation','land_cover','water','nature','boundaries','infrastructure','other'])
            [1 + floor(g.r_acc * 8)::int],
        (ARRAY['none','none','none','none','none','none','free_account','paid','requester_pays','anonymous_token'])

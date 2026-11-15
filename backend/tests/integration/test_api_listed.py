@@ -638,10 +638,10 @@ def _bulk(count: int, first: int = 1) -> None:
         conn.execute(
             """
             INSERT INTO public.earthx_listed_entry (dataset_id, source_id, source_key, state, content, content_sha256,
-                sort_title, footprint, regions, data_kind, category, account, delivery, publisher, link_host)
+                sort_title, footprint, regions, keywords, data_kind, category, account, delivery, publisher, link_host)
             SELECT 'bulk-' || n, 'bulk', 'bulk-' || n, 'published',
                    jsonb_build_object('type', 'Collection', 'id', 'bulk-' || n, 'title', 'zz bulk ' || n),
-                   'x', 'zz bulk ' || lpad(n::text, 8, '0'), ST_MakeEnvelope(0, 0, 1, 1, 4326), '{}', 'vector', 'other', 'none',
+                   'x', 'zz bulk ' || lpad(n::text, 8, '0'), ST_MakeEnvelope(0, 0, 1, 1, 4326), '{}', '{bulk}', 'vector', 'other', 'none',
                    'download', 'P', 'bulk.example.org'
             FROM generate_series(%s::int, %s::int) AS n
             """,

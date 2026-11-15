@@ -28,6 +28,7 @@ from earthx.catalog.listed import (
     Region,
     content_sha256,
     link_host,
+    listed_keywords,
     sort_title,
     to_listed_collection,
 )
@@ -47,7 +48,7 @@ PART_POINTS = 128
 #: Everything a tombstone drops (adr/0033 §9); the table's checks hold it to exactly this.
 _TOMBSTONE = """
     state = 'tombstone', content = NULL, content_sha256 = NULL, sort_title = NULL, footprint = NULL,
-    time_span = NULL, regions = NULL, data_kind = NULL, category = NULL, account = NULL, delivery = NULL, publisher = NULL,
+    time_span = NULL, regions = NULL, keywords = NULL, data_kind = NULL, category = NULL, account = NULL, delivery = NULL, publisher = NULL,
     link_host = NULL, license_ref = NULL
 """
 
@@ -110,18 +111,19 @@ _UPSERT = sql.SQL(
     """
     INSERT INTO public.earthx_listed_entry AS stored (
         dataset_id, source_id, source_key, state, content, content_sha256, sort_title, footprint, time_span, regions,
+        keywords,
         data_kind, category, account, delivery, publisher, link_host, approval_file, approval_sha256, approved_on,
         published_at,
         removed_reason, removed_on
     )
     SELECT %(id)s, %(source)s, %(id)s, 'published', %(content)s::jsonb, %(content_sha256)s, %(sort_title)s, f.geom,
-           %(time_span)s::tstzrange, {regions}, %(data_kind)s, %(category)s, %(account)s, %(delivery)s, %(publisher)s,
+           %(time_span)s::tstzrange, {regions}, %(keywords)s, %(data_kind)s, %(category)s, %(account)s, %(delivery)s, %(publisher)s,
            %(host)s, %(approval_file)s, %(approval_sha256)s, %(approved_on)s, now(), NULL, NULL
     FROM (SELECT ST_MakeEnvelope(%(west)s, %(south)s, %(east)s, %(north)s, 4326) AS geom) f
     ON CONFLICT (dataset_id) DO UPDATE SET
         state = EXCLUDED.state, content = EXCLUDED.content, content_sha256 = EXCLUDED.content_sha256,
         sort_title = EXCLUDED.sort_title, footprint = EXCLUDED.footprint, time_span = EXCLUDED.time_span,
-        regions = EXCLUDED.regions, data_kind = EXCLUDED.data_kind, category = EXCLUDED.category,
+        regions = EXCLUDED.regions, keywords = EXCLUDED.keywords, data_kind = EXCLUDED.data_kind, category = EXCLUDED.category,
         account = EXCLUDED.account,
         delivery = EXCLUDED.delivery, publisher = EXCLUDED.publisher, link_host = EXCLUDED.link_host,
         approval_file = EXCLUDED.approval_file, approval_sha256 = EXCLUDED.approval_sha256,
@@ -191,6 +193,7 @@ def write_hand_entries(
                     "time_span": _time_span(entry),
                     "data_kind": entry.data_kind.value,
                     "category": entry.category,
+                    "keywords": list(listed_keywords(entry.keywords, entry.category)),
                     "account": entry.access.account.value,
                     "delivery": entry.access.delivery.value,
                     "publisher": entry.publisher,

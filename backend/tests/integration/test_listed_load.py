@@ -40,6 +40,7 @@ CONTENT_COLUMNS = (
     "footprint",
     "time_span",
     "regions",
+    "keywords",
     "data_kind",
     "category",
     "account",
@@ -609,9 +610,9 @@ def test_the_blocklist_and_the_removal_leave_a_superseded_row_alone(conn: psycop
 
 _PUBLISHED = """
     INSERT INTO public.earthx_listed_entry (dataset_id, source_id, source_key, state, content, content_sha256, sort_title,
-        footprint, regions, data_kind, category, account, delivery, link_host)
+        footprint, regions, keywords, data_kind, category, account, delivery, link_host)
     VALUES (%(id)s, 'src-1', %(key)s, 'published', '{}'::jsonb, 'x', 't', ST_MakeEnvelope(0, 0, 1, 1, 4326), '{}',
-            'vector', 'other', 'none', 'download', 'h.example.org')
+            '{example}', 'vector', 'other', 'none', 'download', 'h.example.org')
 """
 
 
@@ -647,6 +648,7 @@ def test_the_table_refuses_a_tombstone_that_holds_content(conn: psycopg.Connecti
         "footprint": "ST_MakeEnvelope(0, 0, 1, 1, 4326)",
         "time_span": "tstzrange(now(), now() + interval '1 day')",
         "regions": "'{}'",
+        "keywords": "'{example}'",
         "data_kind": "'raster'",
         "category": "'water'",
         "account": "'none'",
@@ -698,6 +700,7 @@ def test_the_table_refuses_a_reason_on_a_row_that_is_no_tombstone(conn: psycopg.
         "sort_title",
         "footprint",
         "regions",
+        "keywords",
         "data_kind",
         "category",
         "account",
@@ -799,3 +802,28 @@ def test_the_keys_of_the_order_compare_by_bytes(conn: psycopg.Connection, column
         (column,),
     ).fetchone()[0]
     assert collation == "C"
+
+
+# --- keywords (Otto, 15.11.2026) --------------------------------------------------------------------------------------
+
+
+def test_a_hand_entry_stores_its_keywords_normalized_in_column_and_document(
+    conn: psycopg.Connection, tmp_path: Path
+) -> None:
+    _put(conn, tmp_path, listed_entry("example-atlas", keywords=("Höhenmodell", " DGM  1m ", "höhenmodell", "2024")))
+    row = _row(conn, "example-atlas")
+    assert row["keywords"] == ["höhenmodell", "dgm 1m"]
+    assert row["content"]["keywords"] == ["höhenmodell", "dgm 1m"]
+
+
+def test_a_hand_entry_with_only_technical_keywords_gets_the_words_of_its_category(
+    conn: psycopg.Connection, tmp_path: Path
+) -> None:
+    _put(conn, tmp_path, listed_entry("example-atlas", category="boundaries", keywords=("https://example.org/x", "42")))
+    assert _row(conn, "example-atlas")["keywords"] == ["boundaries", "addresses", "cadastre"]
+
+
+@pytest.mark.parametrize("keywords", ["'{}'", "NULL"])
+def test_the_table_refuses_a_published_row_without_keywords(conn: psycopg.Connection, keywords: str) -> None:
+    conn.execute(_PUBLISHED, {"id": "example-x", "key": "k"})
+    _refused(conn, f"UPDATE public.earthx_listed_entry SET keywords = {keywords}", {}, psycopg.errors.CheckViolation)

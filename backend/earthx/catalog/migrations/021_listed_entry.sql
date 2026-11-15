@@ -49,6 +49,8 @@ CREATE TABLE public.earthx_listed_entry (
     footprint         geometry(Geometry, 4326),
     time_span         tstzrange,
     regions           text[],
+    -- The keywords of the entry, normalized (lower case, each once, none technical), never none (Otto, 15.11.2026).
+    keywords          text[],
     data_kind         text        CHECK (data_kind IN ('raster', 'vector', 'table', 'document', 'service', 'other')),
     -- An id of `backend/catalog/categories.yaml` (M5-40 G4, G5); which ids exist, `catalog-load` and the harvest check.
     category          text        CHECK (category ~ '^[a-z][a-z_]{0,31}$'),
@@ -73,10 +75,11 @@ CREATE TABLE public.earthx_listed_entry (
     -- A tombstone keeps nothing of the entry but its id, its key at the source, the reason and the day.
     CHECK ((state = 'tombstone') = (removed_reason IS NOT NULL AND removed_on IS NOT NULL)),
     CHECK (state <> 'tombstone' OR num_nonnulls(content, content_sha256, sort_title, footprint, time_span, regions,
-                                                data_kind, category, account, delivery, publisher, link_host,
-                                                license_ref) = 0),
-    CHECK (state = 'tombstone' OR num_nulls(content, content_sha256, sort_title, footprint, regions, data_kind, category,
-                                            account, delivery, link_host) = 0)
+                                                keywords, data_kind, category, account, delivery, publisher,
+                                                link_host, license_ref) = 0),
+    CHECK (state = 'tombstone' OR num_nulls(content, content_sha256, sort_title, footprint, regions, keywords, data_kind,
+                                            category, account, delivery, link_host) = 0),
+    CHECK (state = 'tombstone' OR cardinality(keywords) > 0)
 )
 -- The document goes out of the row as soon as the row is larger than 128 bytes, so that the columns the filters and the
 -- order read lie close together and a page of matches reads few blocks.
@@ -94,6 +97,8 @@ CREATE INDEX earthx_listed_entry_category_page_idx ON public.earthx_listed_entry
 CREATE INDEX earthx_listed_entry_footprint_idx ON public.earthx_listed_entry USING gist (footprint)
     WHERE state = 'published';
 CREATE INDEX earthx_listed_entry_time_idx ON public.earthx_listed_entry USING gist (time_span)
+    WHERE state = 'published';
+CREATE INDEX earthx_listed_entry_keywords_idx ON public.earthx_listed_entry USING gin (keywords)
     WHERE state = 'published';
 CREATE INDEX earthx_listed_entry_regions_idx ON public.earthx_listed_entry USING gin (regions)
     WHERE state = 'published';

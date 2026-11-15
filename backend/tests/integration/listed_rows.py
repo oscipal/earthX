@@ -32,9 +32,9 @@ def insert_row(
         """
         INSERT INTO public.earthx_listed_entry (
             dataset_id, source_id, source_key, state, content, content_sha256, sort_title, footprint, regions,
-            data_kind, category, account, delivery, publisher, link_host
+            keywords, data_kind, category, account, delivery, publisher, link_host
         ) VALUES (%s, %s, %s, %s, %s::jsonb, %s, lower(%s), ST_MakeEnvelope(%s, %s, %s, %s, 4326), '{}',
-                  'vector', 'other', 'none', 'download', %s, %s)
+                  '{harvested}', 'vector', 'other', 'none', 'download', %s, %s)
         """,
         (
             dataset_id,
