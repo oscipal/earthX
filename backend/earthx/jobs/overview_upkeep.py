@@ -55,7 +55,7 @@ from earthx.objectstore.errors import ResultNotFound
 from earthx.objectstore.overviews import delete_keys, delete_version, extend_version, overview_keys
 from earthx.objectstore.results import Store
 
-__all__ = ["Swept", "extend", "extend_in_turn", "sweep", "sweep_in_turn"]
+__all__ = ["Swept", "extend", "extend_in_turn", "retry_in_turn", "sweep", "sweep_in_turn"]
 
 LOGGER = logging.getLogger("earthx.jobs")
 T = TypeVar("T")
@@ -211,3 +211,31 @@ def extend_in_turn(
     if turn is None:
         return None
     return _in_turn(conn, turn, config, lambda beat: extend(conn, store, datasets, stopping, beat))
+
+
+def retry_in_turn(
+    conn: psycopg.Connection,
+    work: Callable[[Callable[[], None]], T],
+    *,
+    worker: str,
+    config: WorkerConfig,
+    round_started: float | None = None,
+) -> T | None:
+    """``work`` (the retry of the omitted base tiles, M5-30b) if this worker gets the turn; ``None`` otherwise.
+
+    The turn is the one of :func:`extend_in_turn` and :func:`sweep_in_turn` (task ``retry``): one worker at a time, and the
+    next turn not within :data:`SWEEP_SHARE` of the round after the last one began, so a round done by one worker counts
+    for all. ``work`` gets the function that renews the turn when due and raises when it was lost; it must call it before
+    each step that changes anything (a lost turn ends the work and ``None`` is returned).
+    """
+    elapsed = 0.0 if round_started is None else max(0.0, time.monotonic() - round_started)
+    turn = overviews.take_turn(
+        conn,
+        "retry",
+        worker=worker,
+        lease_seconds=config.lease_seconds,
+        gap_seconds=max(0.0, config.cleanup_seconds * SWEEP_SHARE - elapsed),
+    )
+    if turn is None:
+        return None
+    return _in_turn(conn, turn, config, work)

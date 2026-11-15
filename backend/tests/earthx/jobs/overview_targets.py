@@ -203,3 +203,11 @@ def patch_breaks(workdir: str, conn: Any) -> None:
         conn.close()
     else:
         patch_ok(workdir, conn)
+
+
+def patch_slow(workdir: str, conn: Any) -> None:
+    """The retry's read takes a while: a marker says it began, so a test can take the turn away meanwhile."""
+    if _job(workdir)["mode"] == "patch":
+        (Path(workdir) / "started").write_text("")
+        time.sleep(3.0)
+    patch_ok(workdir, conn)

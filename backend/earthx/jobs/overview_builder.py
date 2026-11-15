@@ -167,9 +167,10 @@ class OverviewBuilder:
                 self._database_ok()
                 if build is None:
                     if time.monotonic() >= next_extension:
-                        next_extension = time.monotonic() + self._config.cleanup_seconds
+                        round_started = time.monotonic()
+                        next_extension = round_started + self._config.cleanup_seconds
                         self._extend(conn)
-                        self._retry_omitted(conn)
+                        self._retry_omitted(conn, round_started)
                     self._stopping.wait(self._config.poll_seconds)
                     continue
                 if self._stopping.is_set():
@@ -420,52 +421,46 @@ class OverviewBuilder:
 
     # --- the retry of the omitted tiles --------------------------------------------------
 
-    def _retry_omitted(self, conn: psycopg.Connection) -> int:
+    def _retry_omitted(self, conn: psycopg.Connection, round_started: float) -> int | None:
         """Hourly, when no build waits: read the omitted base tiles of the ready pyramids again; the number of tiles recovered.
 
-        One worker at a time (a turn of the task ``retry``, like the extension). Nothing that is served is touched: the
-        version is not deleted, only the omitted base tiles and the tiles above them are made again and put over the
-        version, each object with the time of this read, and the row's ``checked_at`` stays the oldest. A pyramid whose
-        host a build is reading from is left for the next round.
+        One worker at a time, on the turn of the upkeep (:func:`~earthx.jobs.overview_upkeep.retry_in_turn`, task
+        ``retry``): the others skip the round, and ``None`` is returned if another worker has the turn or a round of
+        another worker counts for this one. Nothing that is served is touched: the version is not deleted, only the
+        omitted base tiles and the tiles above them are made again and put over the version, each object with the time of
+        this read, and the row's ``checked_at`` stays the oldest. A pyramid whose host a build is reading from is left for
+        the next round.
         """
         with contextlib.suppress(psycopg.Error):
             overviews.drop_stale_omitted(conn)
         due = overviews.omitted_due(conn, self._pyramids)
         if not due:
             return 0
-        turn = overviews.take_turn(conn, "retry", worker=self._name, lease_seconds=self._config.lease_seconds, gap_seconds=0)
-        if turn is None:
-            return 0
-        last = time.monotonic()
 
-        def beat() -> None:
-            nonlocal last
-            if self._stopping.is_set():
-                raise _Shutdown
-            if time.monotonic() - last >= self._config.heartbeat_seconds:
-                last = time.monotonic()
-                if not overviews.renew_turn(conn, turn, self._config.lease_seconds):
-                    raise _LeaseLost
+        def work(renew: Callable[[], None]) -> int:
+            def beat() -> None:
+                if self._stopping.is_set():
+                    raise _Shutdown
+                renew()
 
-        recovered = 0
-        try:
-            for (dataset_id, version), tiles in due.items():
-                busy = {
-                    host
-                    for (hosts,) in conn.execute(
-                        "SELECT hosts FROM public.earthx_overview WHERE status = 'building' AND lease_until > clock_timestamp()"
-                    )
-                    for host in hosts
-                }
-                if busy.intersection(self._pyramids[dataset_id]):
-                    continue
-                recovered += self._retry_one(conn, dataset_id, version, tiles, beat)
-        except (_LeaseLost, _Shutdown):
-            LOGGER.warning("overview retry stopped", extra={"reason": "turn lost or worker stopping"})
-        finally:
-            with contextlib.suppress(psycopg.Error):
-                overviews.end_turn(conn, turn)
-        return recovered
+            recovered = 0
+            try:
+                for (dataset_id, version), tiles in due.items():
+                    busy = {
+                        host
+                        for (hosts,) in conn.execute(
+                            "SELECT hosts FROM public.earthx_overview WHERE status = 'building' AND lease_until > clock_timestamp()"
+                        )
+                        for host in hosts
+                    }
+                    if busy.intersection(self._pyramids[dataset_id]):
+                        continue
+                    recovered += self._retry_one(conn, dataset_id, version, tiles, beat)
+            except _Shutdown:
+                LOGGER.warning("overview retry stopped", extra={"reason": "worker stopping"})
+            return recovered
+
+        return overview_upkeep.retry_in_turn(conn, work, worker=self._name, config=self._config, round_started=round_started)
 
     def _retry_one(
         self, conn: psycopg.Connection, dataset_id: str, version: str, tiles: Sequence[str], beat: Callable[[], None]

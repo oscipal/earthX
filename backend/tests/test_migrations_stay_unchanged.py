@@ -34,7 +34,7 @@ PINNED = {
     "017_mosaic_selection": "cbf22e4bf20f0dcca0036595d576a750b66e978bcd11a62980b841cb260563d3",
     "018_overview": "cad2d8957e52e6a40a141e3138e3ac2d7338103e983d6b4b2a25cdf2e86355cd",
     "019_overview_upkeep": "9ca8c2076a1a80c5294b36c14a6be10be1a4f3ecfd89a8762f876f3157a79ada",
-    "020_overview_omitted": "a13f67d8a62d99eb1d3764debe826effe8a8dacafef327b91fba8f35ae1632e1",
+    "020_overview_omitted": "80784ea3ad15ad0a267051fc4d819aa03e8e277ba7fe172305c784edd002f0df",
 }
 
 

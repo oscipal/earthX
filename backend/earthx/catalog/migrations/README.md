@@ -63,7 +63,7 @@ Objektschlüssel).
 `sweep`) mit Zug-Nummer, Worker, Frist und frühestem nächsten Zug. Ein Worker nimmt den Zug, bevor er verlängert oder aufräumt;
 die anderen lassen die Runde aus. Eine abgelaufene Frist wird übernommen. Geschrieben von `jobs` nur mit SQL.
 
-`020_overview_omitted.sql` — die Tabelle `earthx_overview_omitted` (M5-30b, `adr/0032` Nachtrag 15.11.2026): je ausgelassener Basiskachel einer Pyramide eine Zeile (`x/y`, Fehlerart, Klasse, kurzer Grund ohne Adresse, Versuche, Zeit des letzten Versuchs). Eine Datei, die nach den Wiederholungen unlesbar bleibt, lässt nur ihre Basiskachel aus, die Pyramide wird `ready`, die stündliche Runde liest die Kachel erneut. Dazu erlaubt die Prüfung von `earthx_overview_upkeep.task` die Aufgabe `retry`. Geschrieben von `jobs` nur mit SQL.
+`020_overview_omitted.sql` — die Tabelle `earthx_overview_omitted` (M5-30b, `adr/0032` Nachtrag 15.11.2026): je ausgelassener Basiskachel einer Pyramide eine Zeile (`x/y`, Fehlerart, Klasse, kurzer Grund ohne Adresse, Versuche, Zeit des letzten Versuchs). Eine Datei, die nach den Wiederholungen unlesbar bleibt, lässt nur ihre Basiskachel aus, die Pyramide wird `ready`, die stündliche Runde liest die Kachel erneut. Dazu erlaubt die Prüfung von `earthx_overview_upkeep.task` die Aufgabe `retry` und die Migration legt deren Zeile an (frei, `next_at` = jetzt); die Wiederholung nimmt Züge wie Verlängern und Aufräumen (019), ein Worker zugleich. Geschrieben von `jobs` nur mit SQL.
 
 Die Buchführungstabelle `earthx_migrations` gehört nicht hierher, sondern dem Läufer
 (`earthx/catalog/schema.py`) und wird von ihm angelegt. Sonst müsste jedes

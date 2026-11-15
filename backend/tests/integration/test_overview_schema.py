@@ -150,7 +150,8 @@ def test_one_row_per_omitted_tile_of_a_version(schema: psycopg.Connection) -> No
         _omitted_row(schema)
 
 
-def test_the_retry_is_a_task_that_takes_turns_and_other_tasks_are_still_refused(schema: psycopg.Connection) -> None:
-    schema.execute("INSERT INTO public.earthx_overview_upkeep (task, next_at) VALUES ('retry', now())")
+def test_the_retry_is_a_task_with_a_free_row_and_other_tasks_are_still_refused(schema: psycopg.Connection) -> None:
+    row = schema.execute("SELECT turn, worker, lease_until, next_at <= now() FROM public.earthx_overview_upkeep WHERE task = 'retry'").fetchone()
+    assert row == (1, None, None, True)
     with pytest.raises(psycopg.errors.CheckViolation):
         schema.execute("INSERT INTO public.earthx_overview_upkeep (task, next_at) VALUES ('build', now())")

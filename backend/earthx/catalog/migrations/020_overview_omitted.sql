@@ -20,7 +20,9 @@ CREATE TABLE public.earthx_overview_omitted (
     PRIMARY KEY (dataset_id, version, tile)
 );
 
--- The retry of the omitted tiles takes turns like the extension and the sweep (019): one worker at a time.
+-- The retry of the omitted tiles takes turns like the extension and the sweep (019): one worker at a time, and a round
+-- done by one worker counts for all (`next_at`). The row is made here, free from now on; a turn updates it.
 ALTER TABLE public.earthx_overview_upkeep DROP CONSTRAINT earthx_overview_upkeep_task_check;
 ALTER TABLE public.earthx_overview_upkeep
     ADD CONSTRAINT earthx_overview_upkeep_task_check CHECK (task IN ('extend', 'sweep', 'retry'));
+INSERT INTO public.earthx_overview_upkeep (task, next_at) VALUES ('retry', now()) ON CONFLICT (task) DO NOTHING;

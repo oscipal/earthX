@@ -76,7 +76,7 @@ def test_the_child_sends_kind_and_detail_for_a_failure_in_the_build_step(
     (tmp_path / overview_build.JOB_NAME).write_text(json.dumps({"dataset_id": "x", "mode": "build"}))
 
     def broken(workdir: Path, progress: Any) -> None:
-        error = RasterioIOError("HTTP response code on /vsicurl/https://bucket.example.invalid/a.tif: 0")
+        error = RasterioIOError("Cannot open /vsicurl/https://bucket.example.invalid/a.tif: unsupported layout")
         setattr(error, overview_build.TILE_ATTRIBUTE, "4/8/5")
         raise error
 
@@ -86,7 +86,7 @@ def test_the_child_sends_kind_and_detail_for_a_failure_in_the_build_step(
     overview_child.run_child(str(tmp_path), pipe)
     ((tag, kind, detail),) = pipe.sent
     assert (tag, kind) == ("failed", "unknown")
-    assert detail == {"step": "build", "error": "RasterioIOError", "reason": "HTTP response code on <address> 0", "tile": "4/8/5"}
+    assert detail == {"step": "build", "error": "RasterioIOError", "reason": "Cannot open <address> unsupported layout", "tile": "4/8/5"}
 
 
 def test_a_child_that_cannot_read_its_job_says_the_step_it_never_got_to() -> None:

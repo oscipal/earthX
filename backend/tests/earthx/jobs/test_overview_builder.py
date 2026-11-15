@@ -1010,3 +1010,83 @@ class TestTheHourlyRetry:
         make("patch_ok", **self.FAST_ROUND)
         time.sleep(1.5)
         assert list(_omitted(db, "dem", version)) == ["2/1"]
+
+
+class TestTheRetryTakesTurns:
+    """The retry is a task of the upkeep (migration 020): one worker at a time, one round for all, a lost turn stops it."""
+
+    FAST_ROUND = TestTheHourlyRetry.FAST_ROUND
+
+    def _turn(self, db: psycopg.Connection) -> tuple[int, str | None] | None:
+        row = db.execute("SELECT turn, worker FROM public.earthx_overview_upkeep WHERE task = 'retry'").fetchone()
+        return None if row is None else (row[0], row[1])
+
+    def test_a_worker_skips_the_round_while_another_holds_the_turn(
+        self, db: psycopg.Connection, store: Store, make: Callable[..., Supervisor]
+    ) -> None:
+        helper = TestTheHourlyRetry()
+        version = helper._pyramid(db, store, make, "patch_ok")
+        _age_omitted(db, "dem", version)
+        before = helper._objects(store, version)
+        db.execute(
+            "INSERT INTO public.earthx_overview_upkeep (task, worker, lease_until, next_at) "
+            "VALUES ('retry', 'other', clock_timestamp() + interval '1 hour', clock_timestamp())"
+        )
+        make("patch_ok", **self.FAST_ROUND)
+        time.sleep(1.5)
+        assert self._turn(db) == (1, "other") and list(_omitted(db, "dem", version)) == ["2/1"]
+        assert helper._objects(store, version) == before
+
+    def test_of_two_workers_with_a_due_round_only_one_retries(
+        self, db: psycopg.Connection, store: Store, make: Callable[..., Supervisor], caplog: pytest.LogCaptureFixture
+    ) -> None:
+        caplog.set_level(logging.DEBUG, logger="earthx")
+        helper = TestTheHourlyRetry()
+        version = helper._pyramid(db, store, make, "patch_again")
+        _age_omitted(db, "dem", version)
+        make("patch_again", **self.FAST_ROUND)
+        make("patch_again", **self.FAST_ROUND)
+        wait_until(lambda: _omitted(db, "dem", version)["2/1"][3] == 2, 30)
+        time.sleep(1.5)
+        assert _omitted(db, "dem", version)["2/1"][3] == 2, "tried once, not once for each worker"
+        assert sum(r.getMessage() == "overview retry ended" for r in caplog.records) == 1
+        assert self._turn(db) == (1, None), "one turn was taken, and it has ended"
+
+    def test_one_round_counts_for_all_workers(
+        self, db: psycopg.Connection, store: Store, make: Callable[..., Supervisor]
+    ) -> None:
+        helper = TestTheHourlyRetry()
+        version = helper._pyramid(db, store, make, "patch_again")
+        _age_omitted(db, "dem", version)
+        make("patch_again", **self.FAST_ROUND)
+        wait_until(lambda: _omitted(db, "dem", version)["2/1"][3] == 2, 30)
+        wait_until(lambda: self._turn(db) == (1, None), 30)
+        _age_omitted(db, "dem", version)  # due again, but the round of the first worker holds for the others
+        make("patch_again", **self.FAST_ROUND)
+        time.sleep(1.5)
+        assert _omitted(db, "dem", version)["2/1"][3] == 2 and self._turn(db) == (1, None)
+        next_at = db.execute("SELECT next_at - clock_timestamp() FROM public.earthx_overview_upkeep WHERE task = 'retry'").fetchone()
+        assert next_at is not None and next_at[0].total_seconds() > 3600 * 24 * 365, "the next round is a whole round away"
+
+    def test_a_turn_lost_during_the_retry_stops_it_without_uploading(
+        self, db: psycopg.Connection, store: Store, make: Callable[..., Supervisor], tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        caplog.set_level(logging.DEBUG, logger="earthx")
+        helper = TestTheHourlyRetry()
+        version = helper._pyramid(db, store, make, "patch_slow")
+        before = helper._objects(store, version)
+        row = _row(db, "dem", version)
+        _age_omitted(db, "dem", version)
+        make("patch_slow", **self.FAST_ROUND)
+        wait_until(lambda: list(tmp_path.glob("work*/*/started")), 30)
+        db.execute(
+            "UPDATE public.earthx_overview_upkeep SET turn = turn + 1, worker = 'other', "
+            "lease_until = clock_timestamp() + interval '1 hour' WHERE task = 'retry'"
+        )
+        wait_until(lambda: any(r.getMessage() == "overview upkeep turn lost" for r in caplog.records), 30)
+        time.sleep(0.5)
+        assert helper._objects(store, version) == before, "nothing was uploaded"
+        assert list(_omitted(db, "dem", version)) == ["2/1"]
+        assert _row(db, "dem", version)["base_hashes"] == row["base_hashes"]
+        assert self._turn(db) == (2, "other"), "the turn the other worker has is not ended by the one that lost it"
+        assert not _children()
