@@ -29,7 +29,7 @@ from rio_tiler.models import ImageData
 from shapely.geometry.base import BaseGeometry
 
 from earthx.access.footprint_mask import cut_to_footprints
-from earthx.access.mosaic_tiles import EarthxMosaicTilerFactory, TileGate, TilePlace, open_mosaic
+from earthx.access.mosaic_tiles import EarthxMosaicTilerFactory, TileGate, TilePlace, grown_options, open_mosaic
 
 __all__ = [
     "EarthxOverviewTilerFactory",
@@ -82,6 +82,12 @@ class PyramidTile:
     #: Footprints (EPSG:4326) the picture is masked to, or ``None``: the pyramid of a search is drawn over its hits only
     #: (adr/0032 Nachtrag 15.11.2026). Pixels outside are transparent.
     mask: BaseGeometry | None = field(default=None, compare=False)
+    #: Steps run on the tile (M5-10 part B): its values are read with the file's scale and offset.
+    physical: bool = False
+    #: The pixels a ``focal`` first step needs around the tile; the stored tiles around it are ``neighbours``.
+    halo: int = 0
+    #: The stored tiles around this one as ``(dx, dy, bytes)``, one step of the grid away; a tile without data is missing.
+    neighbours: tuple[tuple[int, int, bytes], ...] = field(default=(), compare=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.data, bytes) or not self.data:
@@ -127,9 +133,13 @@ class PyramidTileReader:
             indexes = kwargs.get("indexes")
             if indexes is not None and any(index != 1 for index in ((indexes,) if isinstance(indexes, int) else indexes)):
                 raise PyramidBandRefused("a tile of an overview has one band; bidx is 1")
+            options = grown_options(self.source.halo, self.source.physical, kwargs)
             try:
-                with MemoryFile(self.source.data) as memory, memory.open() as dataset:
-                    image = self._read(dataset, tile_x, tile_y, tile_z, **kwargs)
+                if self.source.halo:
+                    image = self._read_grown(tile_x, tile_y, tile_z, **options)
+                else:
+                    with MemoryFile(self.source.data) as memory, memory.open() as dataset:
+                        image = self._read(dataset, tile_x, tile_y, tile_z, **options)
             except rasterio.errors.RasterioError:
                 raise PyramidTileInvalid("the stored overview tile is not a readable raster") from None
             if self.source.extent is not None:
@@ -141,12 +151,57 @@ class PyramidTileReader:
             if self.source.place is not None:
                 self.source.place.release()
 
-    def _read(self, dataset: Any, tile_x: int, tile_y: int, tile_z: int, **kwargs: Any) -> ImageData:
+    def _check_place(self, dataset: Any, tile_x: int, tile_y: int, tile_z: int) -> None:
         wanted = self.tms.xy_bounds(morecantile.Tile(tile_x, tile_y, tile_z))
         left, bottom, right, top = dataset.bounds
         misplaced = max(abs(left - wanted.left), abs(bottom - wanted.bottom), abs(right - wanted.right), abs(top - wanted.top))
         if dataset.crs != self.tms.rasterio_crs or misplaced > _CORNER_TOLERANCE_M:
             raise PyramidTileInvalid("the stored overview tile does not lie where its key says")
+
+    def _read_grown(self, tile_x: int, tile_y: int, tile_z: int, **options: Any) -> ImageData:
+        """The tile grown by its halo, from the stored tile and those around it, the first valid pixel winning.
+
+        Each stored tile is read over the grown bounds and is empty where it does not reach; a neighbour without data is
+        missing and leaves its part empty (G4: no seams where there are data)."""
+        halo = int(options.pop("buffer"))
+        size = int(options.pop("tilesize", 256) or 256)
+        bounds = self.tms.xy_bounds(morecantile.Tile(tile_x, tile_y, tile_z))
+        step = (bounds.right - bounds.left) / size
+        grown = (bounds.left - halo * step, bounds.bottom - halo * step, bounds.right + halo * step, bounds.top + halo * step)
+        side = size + 2 * halo
+        merged: ImageData | None = None
+        for dx, dy, data in ((0, 0, self.source.data), *self.source.neighbours):
+            with MemoryFile(data) as memory, memory.open() as dataset:
+                self._check_place(dataset, tile_x + dx, tile_y + dy, tile_z)
+                with Reader(input="overview", dataset=dataset, tms=self.tms) as reader:
+                    part = reader.part(
+                        grown,
+                        dst_crs=self.tms.rasterio_crs,
+                        bounds_crs=self.tms.rasterio_crs,
+                        width=side,
+                        height=side,
+                        max_size=None,
+                        **options,
+                    )
+            # Each stored tile gives the pixels of the grown tile that lie in it, and no more: GDAL's bilinear reads past the
+            # edge of a file with the edge's value, which would cover the neighbour's real one.
+            own = numpy.zeros((side, side), dtype=bool)
+            rows = slice(halo + dy * size, halo + (dy + 1) * size)
+            columns = slice(halo + dx * size, halo + (dx + 1) * size)
+            own[max(rows.start, 0) : max(rows.stop, 0), max(columns.start, 0) : max(columns.stop, 0)] = True
+            empty = ~own[None] | numpy.ma.getmaskarray(part.array)
+            if merged is None:
+                merged = part
+                merged.array = numpy.ma.MaskedArray(numpy.ma.getdata(part.array), mask=empty)
+                continue
+            filled = ~numpy.ma.getmaskarray(merged.array)
+            values = numpy.where(filled, numpy.ma.getdata(merged.array), numpy.ma.getdata(part.array))
+            merged.array = numpy.ma.MaskedArray(values, mask=~filled & empty)
+        assert merged is not None  # the stored tile itself is always read
+        return merged
+
+    def _read(self, dataset: Any, tile_x: int, tile_y: int, tile_z: int, **kwargs: Any) -> ImageData:
+        self._check_place(dataset, tile_x, tile_y, tile_z)
         with Reader(input="overview", dataset=dataset, tms=self.tms) as reader:
             try:
                 return reader.tile(tile_x, tile_y, tile_z, **kwargs)
