@@ -24,6 +24,7 @@ from earthx.objectstore.results import Store, is_expiry_rule
 
 __all__ = [
     "CHECKED_AT",
+    "EXTEND_WINDOW",
     "NO_STORE",
     "OVERVIEW_PREFIX",
     "OVERVIEW_RULE_DAYS",
@@ -50,6 +51,11 @@ OVERVIEW_RULE_DAYS = 31
 #: A prototype source (adr/0024): 7 days like a result, and no extension (adr/0032 §8.4).
 PROTOTYPE_PREFIX = "proto-"
 PROTOTYPE_TTL = timedelta(days=7)
+#: How long after ``checked_at`` an extension is still allowed: until the bucket rule can begin to delete (31 days from
+#: the write of an object, never before ``checked_at``), less 12 hours for clock differences and the length of a round. A
+#: confirmation by the source holds a pyramid back from expiring only inside this window (the worker's sweep and the tile
+#: route both read it from here).
+EXTEND_WINDOW = timedelta(days=OVERVIEW_RULE_DAYS) - timedelta(hours=12)
 
 
 def term_of(dataset_id: str) -> timedelta:

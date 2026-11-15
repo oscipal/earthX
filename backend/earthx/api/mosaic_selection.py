@@ -20,11 +20,20 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from shapely.geometry.base import BaseGeometry
+from shapely.ops import unary_union
 
 from earthx.api.mosaic_tiles import footprints_of, union_bounds
 from earthx.catalog import mosaic_selection as stored
 
-__all__ = ["LOADED_KEPT_S", "LOADED_MAX_ENTRIES", "LOADED_MAX_ITEMS", "Selection", "SelectionStore", "outline_source"]
+__all__ = [
+    "LOADED_KEPT_S",
+    "LOADED_MAX_ENTRIES",
+    "LOADED_MAX_ITEMS",
+    "FootprintSelection",
+    "Selection",
+    "SelectionStore",
+    "outline_source",
+]
 
 #: How long a loaded selection may be served from memory before its row is asked again.
 LOADED_KEPT_S = 120.0
@@ -110,6 +119,52 @@ class Selection:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class FootprintSelection:
+    """The outlines of the hits of a search, which the picture below ``min_zoom`` is masked to (adr/0032 Nachtrag 15.11.2026).
+
+    A selection of its own kind in the same table: no assets, no order, no overpass, one scene is enough. Its id is the hash of
+    the dataset and the item ids.
+    """
+
+    selection_id: str
+    dataset_id: str
+    items: tuple[str, ...]
+    sources: Mapping[str, dict[str, Any]]
+    #: West, south, east, north in EPSG:4326 over every footprint.
+    bounds: tuple[float, float, float, float]
+    #: The union of the footprints, EPSG:4326.
+    union: BaseGeometry
+
+    @classmethod
+    def build(
+        cls, selection_id: str, dataset_id: str, sources: Mapping[str, dict[str, Any]]
+    ) -> FootprintSelection:
+        """From the outline sources of the items (:class:`OrderRefused` ``502`` for a broken one)."""
+        outlines = footprints_of(sources)
+        return cls(
+            selection_id,
+            dataset_id,
+            tuple(sorted(sources)),
+            dict(sources),
+            union_bounds(outlines),
+            unary_union(list(outlines.values())),
+        )
+
+    def document(self) -> dict[str, Any]:
+        return {
+            "kind": stored.FOOTPRINTS,
+            "dataset": self.dataset_id,
+            "items": list(self.items),
+            "outlines": dict(self.sources),
+            "bounds": list(self.bounds),
+        }
+
+    @classmethod
+    def from_document(cls, selection_id: str, dataset_id: str, content: Mapping[str, Any]) -> FootprintSelection:
+        return cls.build(selection_id, dataset_id, content["outlines"])
+
+
 class SelectionStore:
     """The selections of the tiler: the table over a pool, with the last ones in memory.
 
@@ -130,10 +185,19 @@ class SelectionStore:
         self._kept_s = kept_s
         self._max_entries = max_entries
         self._max_items = max_items
-        self._loaded: OrderedDict[str, tuple[float, Selection]] = OrderedDict()
+        self._loaded: OrderedDict[str, tuple[float, Selection | FootprintSelection]] = OrderedDict()
 
     async def get(self, selection_id: str) -> Selection | None:
-        """The selection, or ``None`` if there is none by this id or it has expired."""
+        """The mosaic selection, or ``None`` if there is none by this id (a footprint selection is none), or it has expired."""
+        found = await self._get(selection_id)
+        return found if isinstance(found, Selection) else None
+
+    async def get_footprints(self, selection_id: str) -> FootprintSelection | None:
+        """The footprint selection, or ``None`` if there is none by this id (a mosaic selection is none), or it has expired."""
+        found = await self._get(selection_id)
+        return found if isinstance(found, FootprintSelection) else None
+
+    async def _get(self, selection_id: str) -> Selection | FootprintSelection | None:
         kept = self._loaded.get(selection_id)
         if kept is not None:
             if self._clock() - kept[0] <= self._kept_s:
@@ -144,7 +208,12 @@ class SelectionStore:
             row = await stored.load(conn, selection_id)
         if row is None:
             return None
-        selection = Selection.from_document(selection_id, *row)
+        dataset_id, content = row
+        selection: Selection | FootprintSelection
+        if content.get("kind") == stored.FOOTPRINTS:
+            selection = FootprintSelection.from_document(selection_id, dataset_id, content)
+        else:
+            selection = Selection.from_document(selection_id, dataset_id, content)
         self._remember(selection)
         return selection
 
@@ -153,12 +222,12 @@ class SelectionStore:
         async with self._pool.connection() as conn:
             return await stored.renew(conn, selection_id)
 
-    async def put(self, selection: Selection) -> None:
+    async def put(self, selection: Selection | FootprintSelection) -> None:
         async with self._pool.connection() as conn:
             await stored.save(conn, selection.selection_id, selection.dataset_id, selection.document())
         self._remember(selection)
 
-    def _remember(self, selection: Selection) -> None:
+    def _remember(self, selection: Selection | FootprintSelection) -> None:
         self._loaded[selection.selection_id] = (self._clock(), selection)
         self._loaded.move_to_end(selection.selection_id)
         weight = sum(len(kept.items) for _, kept in self._loaded.values())

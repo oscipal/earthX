@@ -186,3 +186,57 @@ def test_the_names_are_the_declared_ones() -> None:
         "source_georeference",
         "rejected",
     } == SOURCE_KINDS
+
+
+class TestTheTransportErrorsOfGdal:
+    """The errors libcurl reports through GDAL are the source not answering (a retry can help), not an unknown failure."""
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "CURL error: Connection reset by peer",
+            "CURL error: SSL connect error",
+            "CURL error: Could not resolve host: bucket.example.invalid",
+            "CURL error: Recv failure: Connection reset by peer",
+            "HTTP response code on https://bucket.example.invalid/a.tif: 0",
+            "HTTP response code: 0",
+        ],
+    )
+    def test_they_are_source_unreachable(self, text: str) -> None:
+        from earthx.readers import source_failure_kind
+
+        assert source_failure_kind(RasterioIOError(text)) == "source_unreachable"
+
+    def test_a_timeout_and_a_status_keep_their_own_names(self) -> None:
+        from earthx.readers import source_failure_kind
+
+        assert source_failure_kind(RasterioIOError("CURL error: Operation timed out after 30000 ms")) == "source_timeout"
+        assert source_failure_kind(RasterioIOError("HTTP response code: 503")) == "source_5xx"
+
+    @pytest.mark.parametrize("text", ["not recognized as a supported file format", "HTTP response code: 302", "no such file"])
+    def test_a_file_problem_is_not_the_source_not_answering(self, text: str) -> None:
+        from earthx.readers import source_failure_kind
+
+        assert source_failure_kind(RasterioIOError(text)) is None
+
+
+class TestRetryAfter:
+    def test_it_reads_the_seconds_a_failure_carries_even_from_its_cause(self) -> None:
+        from earthx.readers import retry_after
+
+        inner = RuntimeError("slow down")
+        inner.retry_after = 7  # type: ignore[attr-defined]
+        try:
+            raise ValueError("outer") from inner
+        except ValueError as outer:
+            assert retry_after(outer) == 7.0
+
+    def test_it_is_capped_and_ignores_what_is_no_wait(self) -> None:
+        from earthx.readers import retry_after
+        from earthx.readers.failures import RETRY_AFTER_CAP_S
+
+        for value, expected in ((86_400, RETRY_AFTER_CAP_S), (-1, None), (True, None), ("7", None)):
+            error = RuntimeError("x")
+            error.retry_after = value  # type: ignore[attr-defined]
+            assert retry_after(error) == expected
+        assert retry_after(RuntimeError("no header")) is None

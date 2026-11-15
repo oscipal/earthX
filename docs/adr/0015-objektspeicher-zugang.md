@@ -749,6 +749,8 @@ gesetzt. Ein Test belegt beides.
 `virtual/`, architekturplan 10) bekommen eigene Regeln, wenn sie entstehen.
 Garage kennt im Filter nur Präfix und Größe (`adr/0012` §4.1) **[P]**.
 
+**Nachtrag 14.11.2026 (M5-30b, `adr/0032` §5.2; `plans/m5/m5-30-bild-bei-jedem-zoom.md` §8.10, §8.11):** Das Präfix `overviews/` hat die angekündigte eigene Regel: `overviews-31d` (Präfix `overviews/`, Ablauf nach **31 Tagen**, offene Multipart-Uploads nach einem Tag), gesetzt wie die für `results/` (W1) von `objectstore-init` und beim Start vom Worker gelesen; der Worker startet nur, wenn **beide** Regeln da sind. Die 31 Tage sind das Netz unter der Frist von 30 Tagen ab `checked-at`, die der Faden `overview` des Aufsehers durchsetzt (Verlängerung, Ablauf, Waisen; nicht `jobs/cleanup.py`). Eine Verlängerung schreibt jedes Objekt der Fassung neu (`CopyObject` auf sich selbst), die Regel zählt also ab dann. Der `tiler` liest `overviews/` mit seinem Leseschlüssel `earthx-tiler` über `objectstore` (eigener Speicher, Ausnahme vom Nachtrag zu B8 vom 2026-10-05; Nachtrag §14c gilt entsprechend), ohne Signatur und ohne `gateway`. Nicht prüfbar in der Sitzung: die zweite Regel und die Verlängerung am echten Garage (Tests gegen `moto`).
+
 ### 7.4 Beleg nach `adr/0012` §9 Punkt 5
 
 | Option | Was belegt den Ablauf | Aufwand |

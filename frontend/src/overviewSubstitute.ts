@@ -1,8 +1,9 @@
-// The picture a dataset shows below its first level where another dataset stands in (registry `viewer.overview:
-// substitute`, plan M5-30b §4.8): swissALTI3D shows Copernicus DEM GLO-30 below z13. The tiler serves it on one route per
-// dataset (`api.ts::buildOverviewTileTemplate`), in the look of the dataset that is drawn. It is a picture and nothing
-// else: no text, no tooltip, no mark. Only the attribution line of the map names the substitute while it is drawn,
-// which MapLibre does by itself for the `attribution` of a source whose layer is not hidden at the zoom.
+// The picture a dataset shows below its first level where it has no original files to draw (registry `viewer.overview:
+// substitute` or `pyramid`, plan M5-30b §4.8 and part 9): swissALTI3D shows Copernicus DEM GLO-30 below z13, GLO-30 and
+// WorldCover show their own overview pyramid below z7 and z5. The tiler serves it on one route per dataset
+// (`api.ts::buildOverviewTileTemplate`), in the look of the dataset that is drawn. It is a picture: no mark, no text over the map.
+// Only the attribution line of the map names its source while it is drawn, which MapLibre does by itself for the `attribution` of a
+// source whose layer is not hidden at the zoom; and the tooltip of a pyramid dataset's layer says what the picture is (`overviewNoteOf`).
 
 import { buildOverviewTileTemplate } from './api';
 import type { DatasetOption } from './datasets';
@@ -23,18 +24,21 @@ function extentOf(collection: Collection): Bbox | null {
   return [west, Math.max(south, -MAX_LATITUDE), east, Math.min(north, MAX_LATITUDE)];
 }
 
-// The raster below `dataset`'s first level, or `null` for a dataset without a substitute. The substitute has to be in the
-// list (its attribution comes from its collection), and where its licence requires an attribution that cannot be written
-// the picture is not drawn at all: the licence asks for the text, not for the picture.
-export function substituteRasterOf(dataset: DatasetOption | null | undefined, datasets: readonly DatasetOption[] | undefined): PlannedRaster | null {
+// The raster below `dataset`'s first level, or `null` for a dataset that draws nothing there but its own files. Two ways, one
+// route (`api.ts::buildOverviewTileTemplate`): a dataset with `overview: substitute` draws another dataset of the list (it has
+// to be in the list: its attribution comes from its collection); one with `overview: pyramid` draws its own pyramid, which the
+// platform builds from the original files (plan M5-30b part 9), under its own attribution for modified data. Where the licence
+// requires an attribution that cannot be written the picture is not drawn at all: the licence asks for the text, not for the
+// picture.
+export function overviewRasterOf(dataset: DatasetOption | null | undefined, datasets: readonly DatasetOption[] | undefined): PlannedRaster | null {
   if (!dataset?.viewable) return null;
   const viewer = dataset.collection['earthx:viewer'];
-  if (viewer?.overview !== 'substitute' || !viewer.overview_substitute) return null;
+  if (viewer?.overview !== 'substitute' && viewer?.overview !== 'pyramid') return null;
   const firstLevel = dataset.zoom.min;
-  const substitute = datasets?.find((d) => d.id === viewer.overview_substitute);
+  const drawn = viewer.overview === 'pyramid' ? dataset : datasets?.find((d) => d.id === viewer.overview_substitute);
   const bounds = extentOf(dataset.collection);
-  if (firstLevel < 1 || !substitute || !bounds) return null;
-  const flags = substitute.collection['earthx:license_flags'];
+  if (firstLevel < 1 || !drawn || !bounds) return null;
+  const flags = drawn.collection['earthx:license_flags'];
   const attribution = attributionText(flags, null);
   if (flags?.attribution_required && !attribution) return null;
   const tileUrl = buildOverviewTileTemplate(dataset.id);
@@ -42,10 +46,25 @@ export function substituteRasterOf(dataset: DatasetOption | null | undefined, da
     tileUrl,
     bounds,
     minZoom: 0,
-    // The substitute's own levels end where the dataset's begin; the layer steps aside for the mosaic (512 px, level L from
+    // The picture's own levels end where the dataset's begin; the layer steps aside for the mosaic (512 px, level L from
     // map zoom L - 0.5) as the scenes below a mosaic do (`mosaic.ts::viewOfPass`).
     maxZoom: firstLevel - 1,
     hideFrom: firstZoomOf(firstLevel, tileUrl),
     ...(attribution ? { attribution } : {}),
   };
+}
+
+// The sentence the tooltip of a layer of this dataset adds for its pyramid, or `null` for any other dataset: below the first level
+// the map shows an overview that the platform resampled from the original files. Nothing but a tooltip: no mark on the map or in the
+// row (Otto, 11.11.2026, `adr/0032` §14 F12). A substitute says nothing at all (plan M5-30b §4.8).
+export function overviewNoteOf(dataset: DatasetOption | null | undefined): string | null {
+  if (!dataset?.viewable || dataset.collection['earthx:viewer']?.overview !== 'pyramid' || dataset.zoom.min < 1) return null;
+  const from = Math.ceil(firstZoomOf(dataset.zoom.min, buildOverviewTileTemplate(dataset.id)));
+  return `Below zoom ${from} the map shows an overview of ${dataset.title}, resampled from the original files; zoom in to ${from} for the originals.`;
+}
+
+// `overviewNoteOf` as the field of a layer the tooltip of its name reads (`MapLayer.note`), for the places that make a layer.
+export function noteOfOverview(dataset: DatasetOption | null | undefined): { note?: string } {
+  const note = overviewNoteOf(dataset);
+  return note ? { note } : {};
 }

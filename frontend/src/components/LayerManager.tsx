@@ -11,6 +11,7 @@ import { MIN_REMAINING_MS } from '../resultLayer';
 import { hasResultsPanel } from '../sections';
 import { clampResultsAt } from '../resultsEntry';
 import { useAppStore } from '../store';
+import { overviewNoteOf } from '../overviewSubstitute';
 import { zoomReasonOf } from '../zoomHint';
 import BandSelect from './BandSelect';
 import EyeButton from './EyeButton';
@@ -253,12 +254,14 @@ function ResultsRow({ first, last, dnd }: { first: boolean; last: boolean; dnd: 
   const zoomReason = useAppStore((s) =>
     s.resultsOnMap && !s.focusMode && hasResultsPanel(s.sections) ? zoomFloorHint(s.datasets.find((d) => d.id === s.datasetId), s.mapZoom) : null,
   );
+  // What the view of a dataset with a pyramid draws below its first level, in the tooltip and nowhere else.
+  const overviewNote = useAppStore((s) => (s.resultsOnMap ? overviewNoteOf(s.datasets.find((d) => d.id === s.datasetId)) : null));
   const loading = useLayerLoading(RESULTS_OWNER);
   return (
     <li className={`layer-row results-row${dnd.className}`}>
       <Grip dnd={dnd} />
       <ResultsEye />
-      <span className="lm-name results-name" data-col="name" data-tip-level={zoomReason ? undefined : 'advanced'} data-tip={zoomReason ? `${zoomReason} ${RESULTS_ENTRY_TIP}` : RESULTS_ENTRY_TIP}>
+      <span className="lm-name results-name" data-col="name" data-tip-level={zoomReason ? undefined : 'advanced'} data-tip={[zoomReason, overviewNote, RESULTS_ENTRY_TIP].filter(Boolean).join(' ')}>
         Search results
       </span>
       <Slot col="rename" />

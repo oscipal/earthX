@@ -21,9 +21,10 @@ policy, M1-03, NM4-26), and :meth:`MosaicTileReader.tile` enters it again around
 
 from __future__ import annotations
 
+import asyncio
 import threading
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Any
@@ -38,8 +39,10 @@ from rio_tiler.errors import EmptyMosaicError, RioTilerError, TileOutsideBounds
 from rio_tiler.models import ImageData
 from rio_tiler.mosaic import mosaic_reader
 from rio_tiler.mosaic.methods.defaults import FirstMethod
+from shapely.geometry.base import BaseGeometry
 from titiler.core.dependencies import DefaultDependency
 
+from earthx.access.footprint_mask import cut_to_footprints
 from earthx.access.tiles import EarthxTilerFactory, open_asset
 from earthx.readers.cog import AssetPath
 from earthx.readers.zarr_reader import ZarrAsset
@@ -48,8 +51,9 @@ __all__ = [
     "MAX_CONCURRENT_TILES",
     "MAX_MOSAIC_THREADS",
     "MOSAIC_THREADS",
+    "TILE_GATE",
+    "ClientGone",
     "EarthxMosaicTilerFactory",
-    "EarthxOverviewTilerFactory",
     "MosaicBandsDiffer",
     "MosaicLayout",
     "MosaicLayoutReader",
@@ -58,6 +62,8 @@ __all__ = [
     "MosaicScenes",
     "MosaicTileReader",
     "ReadBudget",
+    "TileGate",
+    "TilePlace",
     "open_mosaic",
 ]
 
@@ -73,6 +79,137 @@ MAX_MOSAIC_THREADS = 16
 #: a little. The others wait for a place before their time budget starts, so waiting does not eat the 4 s.
 MAX_CONCURRENT_TILES = 2
 _TILE_SLOTS = threading.BoundedSemaphore(MAX_CONCURRENT_TILES)
+
+
+class ClientGone(Exception):
+    """The client of a tile hung up while the tile waited for its place: nobody reads the answer, so nothing is read for it."""
+
+
+class TilePlace:
+    """One of the places of the :class:`TileGate`, held from the gate until the reader has read the tile.
+
+    Released once, from any thread: by the reader when it is done (so the place is held for the read and not for the
+    rendering or the sending of the answer, which a slow client could stretch), or by the request that took it when the
+    reader never ran. A second release does nothing.
+    """
+
+    def __init__(self, gate: TileGate, loop: asyncio.AbstractEventLoop) -> None:
+        self._gate = gate
+        self._loop = loop
+        self._lock = threading.Lock()
+        self._released = False
+
+    def release(self) -> None:
+        with self._lock:
+            if self._released:
+                return
+            self._released = True
+        try:
+            self._loop.call_soon_threadsafe(self._gate._give_back, self._loop)
+        except RuntimeError:  # the loop is closed: the process is going down, and the gate with it
+            pass
+
+
+class TileGate:
+    """Where a tile waits for one of the :data:`MAX_CONCURRENT_TILES` places, **in the event loop** and not in a thread.
+
+    The tile route of TiTiler is a synchronous function and runs in the thread pool the whole app shares (about 40
+    threads). A tile that waited for its place inside the reader (:data:`_TILE_SLOTS`) held one of those threads while it
+    waited, so a view of a hundred tiles of a big selection could leave the other synchronous routes of the app with no
+    thread (plan M5-30b §8.11). Here the wait is an ``await`` before the tile is handed to the pool: a waiting tile costs
+    a coroutine, and only the tiles that hold a place hold a thread.
+
+    * **Order.** First come, first served (``asyncio.Semaphore`` wakes its waiters in order).
+    * **A client that hangs up while it waits** is noticed (``gone`` is asked every :data:`POLL_S`) and leaves the queue
+      without having taken a place; one that hangs up in the instant its place comes gives it back at once.
+    * **The time budget** of the tile starts in the reader, after the place; waiting does not spend it.
+    * **One loop.** A process has one event loop; the gate follows the loop it is used in (a test client may start one
+      per request), as :class:`earthx.api.mosaic_tiles.ItemFetches` does.
+    """
+
+    #: Seconds between two looks at whether a waiting client is still there.
+    POLL_S = 0.25
+
+    def __init__(self, places: int = MAX_CONCURRENT_TILES) -> None:
+        if places < 1:
+            raise ValueError("a gate has at least one place")
+        self.places = places
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._free: asyncio.Semaphore | None = None
+        #: Tiles waiting for a place right now, in the loop the gate follows.
+        self.waiting = 0
+
+    def _semaphore(self) -> asyncio.Semaphore:
+        loop = asyncio.get_running_loop()
+        if loop is not self._loop or self._free is None:
+            self._loop, self._free, self.waiting = loop, asyncio.Semaphore(self.places), 0
+        return self._free
+
+    def _give_back(self, loop: asyncio.AbstractEventLoop) -> None:
+        if loop is self._loop and self._free is not None:
+            self._free.release()
+
+    async def enter(self, gone: Callable[[], Awaitable[bool]]) -> TilePlace:
+        """Wait for a place and return it; :class:`ClientGone` if ``gone()`` says the client left before or as it came."""
+        free = self._semaphore()
+        loop = asyncio.get_running_loop()
+        if free.locked():
+            self.waiting += 1
+            try:
+                await self._wait(free, gone)
+            finally:
+                self.waiting -= 1
+        else:
+            await free.acquire()
+        place = TilePlace(self, loop)
+        try:
+            left = await gone()
+        except Exception:  # a transport that cannot say: the client is taken to be there
+            left = False
+        except BaseException:  # cancelled at this await: the place is taken and nobody else would give it back
+            place.release()
+            raise
+        if left:
+            place.release()
+            raise ClientGone("the client hung up")
+        return place
+
+    async def _wait(self, free: asyncio.Semaphore, gone: Callable[[], Awaitable[bool]]) -> None:
+        acquiring = asyncio.ensure_future(free.acquire())
+        watching = asyncio.ensure_future(self._until_gone(gone))
+        try:
+            await asyncio.wait({acquiring, watching}, return_when=asyncio.FIRST_COMPLETED)
+        except BaseException:
+            # This request itself was cancelled while it waited: leave the queue, and give back a place that came at once.
+            watching.cancel()
+            await self._abandon(acquiring, free)
+            raise
+        watching.cancel()
+        if not (acquiring.done() and not acquiring.cancelled()):
+            await self._abandon(acquiring, free)
+            raise ClientGone("the client hung up while its tile waited")
+
+    @staticmethod
+    async def _abandon(acquiring: asyncio.Future[bool], free: asyncio.Semaphore) -> None:
+        acquiring.cancel()
+        try:
+            await asyncio.wait({acquiring})
+        finally:
+            # The place came in the same moment: it is nobody's, so it goes back, however often this await is cancelled.
+            if acquiring.done() and not acquiring.cancelled():
+                free.release()
+
+    async def _until_gone(self, gone: Callable[[], Awaitable[bool]]) -> None:
+        """Returns when the client has gone; never returns if the transport cannot say (the wait then goes on as it was)."""
+        try:
+            while not await gone():
+                await asyncio.sleep(self.POLL_S)
+        except Exception:
+            await asyncio.get_running_loop().create_future()
+
+
+#: The gate of the process, shared by the tile of a selection and the tile of a substitute (`api.tiler`).
+TILE_GATE = TileGate()
 
 
 class MosaicBandsDiffer(RioTilerError):
@@ -123,13 +260,17 @@ class MosaicScenes:
 
     ``bounds`` is west, south, east, north in EPSG:4326 over every scene of the URL, not only
     those of the tile: a TileJSON names the extent of the layer. ``budget`` is the time the tile may read
-    for; ``None`` for a TileJSON, which reads no tile.
+    for; ``None`` for a TileJSON, which reads no tile. ``place`` is the place at the :class:`TileGate` the tile waited for
+    in the event loop; the reader gives it back when it has read the tile.
     """
 
     dataset_id: str
     scenes: tuple[AssetPath | ZarrAsset, ...]
     bounds: tuple[float, float, float, float]
     budget: ReadBudget | None = field(default=None, compare=False)
+    place: TilePlace | None = field(default=None, compare=False)
+    #: Footprints (EPSG:4326) the tile is masked to, for the picture a substitute draws over the hits of a search; ``None`` otherwise.
+    mask: BaseGeometry | None = field(default=None, compare=False)
 
     def __post_init__(self) -> None:
         if not self.scenes:
@@ -229,10 +370,19 @@ class MosaicTileReader:
         tile: a scene left out silently would let another one win where they overlap.
 
         At most :data:`MAX_CONCURRENT_TILES` tiles are read at once in the process; a tile waits for its place before
-        its budget starts.
+        its budget starts. A tile of the routes has waited at the :class:`TileGate` already, in the event loop and not in a
+        thread, so this guard does not block a thread of the pool for them; it holds for a reader that is called without the
+        gate (the measurement of the tile path).
         """
-        with _TILE_SLOTS:
-            return self._read_tile(tile_x, tile_y, tile_z, **kwargs)
+        try:
+            with _TILE_SLOTS:
+                image = self._read_tile(tile_x, tile_y, tile_z, **kwargs)
+            if self.source.mask is not None:
+                image = cut_to_footprints(image, self.source.mask, self.tms.rasterio_crs)
+            return image
+        finally:
+            if self.source.place is not None:
+                self.source.place.release()
 
     def _read_tile(self, tile_x: int, tile_y: int, tile_z: int, **kwargs: Any) -> ImageData:
         band_counts: set[int] = set()
@@ -361,16 +511,3 @@ class EarthxMosaicTilerFactory(EarthxTilerFactory):
     def register_routes(self) -> None:
         self.tile()
         self.tilejson()
-
-
-@define(kw_only=True)
-class EarthxOverviewTilerFactory(EarthxMosaicTilerFactory):
-    """The tile of the mosaic factory, over the scenes of a substitute dataset, and no other route (plan M5-30b §4.8).
-
-    A TileJSON, statistics, info and point of a substitute would make it something a client can ask about; it is a
-    picture below the first level of another dataset and nothing more. The scenes come from the path dependency,
-    which `api` writes for this route; the reader and the budget are those of the mosaic.
-    """
-
-    def register_routes(self) -> None:
-        self.tile()

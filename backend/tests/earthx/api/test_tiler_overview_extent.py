@@ -1,8 +1,9 @@
-"""swissALTI3D shows an image at every level z0-z12 through its substitute (plan M5-30b §8.8, finding of 13.11.2026).
+"""swissALTI3D shows an image at every level z7-z12 through the files of its substitute (plan M5-30b §8.8, finding of 13.11.2026).
 
-Below z13 the picture is Copernicus GLO-30. A tile of a low level touches hundreds of its 1 degree files, and the
-tile reads at most `TILE_FILE_BUDGET` of them: if they are chosen over the whole tile and not over the extent of the
-dataset, they can all lie outside it and the tile over the dataset is empty. The items here are 1 degree cells of a
+Below z13 the picture is Copernicus GLO-30. From the first level of GLO-30, z7, a tile is read from its files, and a tile of
+a low level touches many of its 1 degree files and reads at most `TILE_FILE_BUDGET` of them: if they are chosen over the
+whole tile and not over the extent of the dataset, they can all lie outside it and the tile over the dataset is empty.
+Below z7 the picture is the pyramid of GLO-30 (part 9, `test_tiler_pyramid.py`) and no file is read. The items here are 1 degree cells of a
 large area in the order of their ids, the first of which lie far from the dataset, and the catalogue double
 filters by rectangle and cuts at the limit as pgstac does.
 """
@@ -153,7 +154,16 @@ def test_the_fixture_is_large_and_the_first_cells_by_id_lie_away_from_the_datase
     )  # fmt: skip
 
 
-@pytest.mark.parametrize("z", range(0, TERRAIN.viewer.min_zoom))  # type: ignore[union-attr]
+#: The first level a tile of the substitute is read from its files (GLO-30: z7); the levels below are its pyramid.
+FIRST_FILE_LEVEL = SURFACE.viewer.min_zoom  # type: ignore[union-attr]
+
+
+def _tile_path(z: int = FIRST_FILE_LEVEL) -> tuple[str, Any]:
+    holder = TMS.tile(*CENTRE, z)
+    return f"{BASE}/tiles/WebMercatorQuad/{z}/{holder.x}/{holder.y}.npy", holder
+
+
+@pytest.mark.parametrize("z", range(FIRST_FILE_LEVEL, TERRAIN.viewer.min_zoom))  # type: ignore[union-attr]
 def test_the_tile_over_the_dataset_has_an_image_at_every_level_below_its_first(client: Any, z: int) -> None:
     api, _, _ = client()
     holder = TMS.tile(*CENTRE, z)
@@ -174,10 +184,14 @@ def _meets_extent(item: dict[str, Any]) -> bool:
 class TestWhereTheSubstituteStandsIn:
     def test_the_catalogue_is_asked_for_the_tile_where_it_lies_over_the_dataset(self, client: Any) -> None:
         api, pgstac, _ = client()
-        assert api.get(f"{BASE}/tiles/WebMercatorQuad/0/0/0.npy").status_code == 200
+        path, holder = _tile_path()
+        assert api.get(path).status_code == 200
         ((dataset_id, bbox, _),) = pgstac.asked
         assert dataset_id == SURFACE.dataset_id
-        assert bbox == pytest.approx(TERRAIN.spatial_extent.bbox)
+        west, south, east, north = TERRAIN.spatial_extent.bbox
+        tile_west, tile_south, tile_east, tile_north = TMS.bounds(holder)
+        expected = (max(west, tile_west), max(south, tile_south), min(east, tile_east), min(north, tile_north))
+        assert bbox == pytest.approx(expected)
 
     def test_a_tile_beside_the_dataset_is_a_404_and_asks_nothing(self, client: Any) -> None:
         api, pgstac, scenes = client()
@@ -191,7 +205,7 @@ class TestWhereTheSubstituteStandsIn:
     ) -> None:
         api, _, scenes = client()
         monkeypatch.setattr(mosaic_tiles, "TILE_FILE_BUDGET", 4)
-        response = api.get(f"{BASE}/tiles/WebMercatorQuad/0/0/0.npy")
+        response = api.get(_tile_path()[0])
         assert response.status_code == 200, response.text
         assert len(scenes.opened) == 4
         assert all(_meets_extent(scenes.items[item_id]) for item_id in scenes.opened)
@@ -202,7 +216,7 @@ class TestWhereTheSubstituteStandsIn:
     ) -> None:
         api, _, scenes = client()
         monkeypatch.setattr(mosaic_tiles, "TILE_FILE_BUDGET", 1)
-        assert api.get(f"{BASE}/tiles/WebMercatorQuad/0/0/0.npy").status_code == 200
+        assert api.get(_tile_path()[0]).status_code == 200
         west, south, east, north = TERRAIN.spatial_extent.bbox
         (opened,) = scenes.opened
         bbox = scenes.items[opened]["bbox"]
@@ -214,7 +228,7 @@ class TestWhereTheSubstituteStandsIn:
     ) -> None:
         api, _, scenes = client()
         monkeypatch.setattr(mosaic_tiles, "SUBSTITUTE_ITEM_CAP", 3)
-        response = api.get(f"{BASE}/tiles/WebMercatorQuad/0/0/0.npy")
+        response = api.get(_tile_path()[0])
         assert response.status_code == 200, response.text
         assert len(scenes.opened) == 3
         assert all(_meets_extent(scenes.items[item_id]) for item_id in scenes.opened)

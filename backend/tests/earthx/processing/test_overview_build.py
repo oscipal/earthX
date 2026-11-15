@@ -17,31 +17,34 @@ import morecantile
 import numpy as np
 import pytest
 import rasterio
+from rasterio.errors import RasterioIOError
 from rasterio.transform import from_bounds
 
 from earthx.catalog.datasets import registry
 from earthx.catalog.registry import OverviewMode, OverviewResampling
+from earthx.gateway import UpstreamError
 from earthx.processing import overview, overview_build
 from earthx.processing.overview_build import (
     ITEMS_NAME,
     JOB_NAME,
     MANIFEST_NAME,
     PLAN_NAME,
-    PYRAMID_MIN_ZOOM,
+    TILE_ATTRIBUTE,
     build_pyramid,
-    first_zoom,
+    patch_pyramid,
     plan_pyramid,
     pyramid_hosts,
     tile_hash,
     tile_path,
 )
 from earthx.readers.errors import AssetRejected
+from earthx.readers.failures import RETRY_AFTER_CAP_S
 from tests.earthx.processing import sources
 
 pytestmark = pytest.mark.filterwarnings("ignore:The dataset has no Overviews")
 
 HOST = sources.HOST
-BASE = 6  # cop-dem-glo-30: min_zoom 7 in PYRAMID_MIN_ZOOM, so the base level is z6
+BASE = 6  # cop-dem-glo-30: min_zoom 7 in the registry, so the base level is z6
 TMS = morecantile.tms.get("WebMercatorQuad")
 
 
@@ -90,18 +93,17 @@ def _build(work: Path) -> tuple[dict, list[tuple[int, int]]]:
 
 
 class TestLevels:
-    def test_the_registry_says_zero_so_the_constant_decides(self) -> None:
-        assert PYRAMID_MIN_ZOOM == {"cop-dem-glo-30": 7, "esa-worldcover-2020": 5, "esa-worldcover-2021": 5}
-        assert first_zoom("cop-dem-glo-30", 0) == 7
-        assert overview.base_zoom(first_zoom("esa-worldcover-2021", 0)) == 4
+    def test_the_registry_names_the_first_level_and_the_base_is_one_below(self) -> None:
+        """Part 9 moved the levels from a constant of this module into the YAML: GLO-30 z0-z6, WorldCover z0-z4."""
+        released = registry()
+        assert overview.base_zoom(released.get("cop-dem-glo-30").viewer.min_zoom) == 6
+        for dataset_id in ("esa-worldcover-2020", "esa-worldcover-2021"):
+            assert overview.base_zoom(released.get(dataset_id).viewer.min_zoom) == 4
 
-    def test_a_registry_value_of_one_or_more_wins_so_part_nine_changes_yaml_only(self) -> None:
-        assert first_zoom("cop-dem-glo-30", 9) == 9
-        assert first_zoom("anything", 3) == 3
+    def test_there_is_no_constant_left_that_names_a_level(self) -> None:
+        import earthx.processing.overview_build as module
 
-    def test_a_dataset_with_neither_is_refused(self) -> None:
-        with pytest.raises(ValueError, match="PYRAMID_MIN_ZOOM"):
-            first_zoom("not-listed", 0)
+        assert not hasattr(module, "PYRAMID_MIN_ZOOM") and not hasattr(module, "first_zoom")
 
     def test_every_dataset_with_a_pyramid_in_the_registry_can_be_built(self) -> None:
         hosts = pyramid_hosts()
@@ -110,9 +112,11 @@ class TestLevels:
         for dataset_id in hosts:
             assert registry().get(dataset_id).viewer.overview is OverviewMode.PYRAMID
 
-    def test_an_entry_the_constant_does_not_know_stops_the_listing(self) -> None:
+    def test_an_entry_with_no_level_to_build_from_stops_the_listing(self) -> None:
         cfg = registry().get("cop-dem-glo-30")
-        odd = replace(cfg, dataset_id="odd-dem", viewer=replace(cfg.viewer, min_zoom=0))
+        viewer = replace(cfg.viewer, min_zoom=1)
+        object.__setattr__(viewer, "min_zoom", 0)  # what no registry would let in: the worker does not rely on it alone
+        odd = replace(cfg, dataset_id="odd-dem", viewer=viewer)
         with pytest.raises(ValueError, match="odd-dem"):
             pyramid_hosts([odd])  # type: ignore[arg-type]
 
@@ -300,11 +304,213 @@ class TestBuild:
         with pytest.raises(ValueError, match="assets of the default render"):
             _build(workdir)
 
+    def test_a_failure_in_a_level_above_the_base_names_that_tile(self, workdir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        def broken(*args: object, **kwargs: object) -> None:
+            raise ArithmeticError("a level went wrong")
+
+        monkeypatch.setattr(overview, "parent_tile", broken)
+        with pytest.raises(ArithmeticError) as caught:
+            _build(workdir)
+        assert getattr(caught.value, TILE_ATTRIBUTE) == f"{BASE - 1}/16/11"
+
     def test_one_pacer_serves_the_whole_build(self, workdir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         made: list[object] = []
         monkeypatch.setattr(overview_build, "host_pacer", lambda: made.append(object()) or made[-1])
         _build(workdir)
         assert len(made) == 1
+
+
+class _Reads:
+    """The first ``failures`` reads of the file of item ``c`` raise ``error``; every wait is recorded instead of slept."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, *, error: Exception, failures: int) -> None:
+        self.waits: list[float] = []
+        self.tried = 0
+        self.failed = 0
+        real = overview._read_once
+        monkeypatch.setattr(overview, "_sleep", self.waits.append)
+
+        def read(scene: object, *args: Any, **kwargs: Any) -> Any:
+            if str(scene).endswith("/c.tif"):
+                self.tried += 1
+                if self.failed < failures:
+                    self.failed += 1
+                    raise error
+            return real(scene, *args, **kwargs)
+
+        monkeypatch.setattr(overview, "_read_once", read)
+
+
+class TestOneFileMustNotFailTheBuild:
+    """Otto, 15.11.2026: a file that fails is read again after a wait; one that stays unreadable omits only its base tile."""
+
+    TRANSIENT = RasterioIOError("CURL error: Connection reset by peer")
+
+    def test_a_file_that_fails_once_is_read_again_after_a_wait_and_leaves_no_gap(self, workdir: Path, monkeypatch) -> None:
+        reads = _Reads(monkeypatch, error=self.TRANSIENT, failures=1)
+        manifest, _ = _build(workdir)
+        assert manifest["omitted"] == {} and f"{BASE}/34/22" in manifest["tiles"]
+        assert reads.waits == [overview.RETRY_BASE_S] and reads.tried == 2
+
+    def test_the_waits_grow_by_the_factor_up_to_the_cap_and_the_reads_are_bounded(self, workdir: Path, monkeypatch) -> None:
+        reads = _Reads(monkeypatch, error=self.TRANSIENT, failures=99)
+        manifest, _ = _build(workdir)
+        assert reads.waits == [5.0, 20.0, 60.0] and reads.tried == overview.READ_ATTEMPTS == 4
+        assert list(manifest["omitted"]) == ["34/22"]
+
+    def test_a_retry_after_of_the_source_is_waited_for_instead_of_the_backoff(self, workdir: Path, monkeypatch) -> None:
+        error = UpstreamError(429, "slow down")
+        error.retry_after = 7  # type: ignore[attr-defined]
+        reads = _Reads(monkeypatch, error=error, failures=2)
+        manifest, _ = _build(workdir)
+        assert reads.waits == [7.0, 7.0] and manifest["omitted"] == {}
+
+    def test_a_retry_after_is_capped(self, workdir: Path, monkeypatch) -> None:
+        error = UpstreamError(503, "later")
+        error.retry_after = 86_400  # type: ignore[attr-defined]
+        reads = _Reads(monkeypatch, error=error, failures=1)
+        _build(workdir)
+        assert reads.waits == [RETRY_AFTER_CAP_S]
+
+    def test_a_failure_that_a_second_read_cannot_help_is_not_read_again(self, workdir: Path, monkeypatch) -> None:
+        reads = _Reads(monkeypatch, error=UpstreamError(404, "gone"), failures=99)
+        manifest, _ = _build(workdir)
+        assert reads.waits == [] and reads.tried == 1
+        assert manifest["omitted"]["34/22"]["kind"] == "source_4xx"
+
+    def test_every_read_goes_through_the_host_pacer_a_repeated_one_too(self, workdir: Path, monkeypatch) -> None:
+        waited: list[str] = []
+
+        class Pacer:
+            def wait(self, host: str) -> None:
+                waited.append(host)
+
+            def account(self, host: str, requests: int) -> None:
+                pass
+
+        monkeypatch.setattr(overview_build, "host_pacer", lambda: Pacer())
+        monkeypatch.setattr(overview, "asset_host", lambda scene: HOST)  # the local files stand in for a remote host
+        monkeypatch.setattr(overview, "_sleep", lambda seconds: None)
+        failing = {"left": 2}
+        real = overview.CogReader
+
+        class Flaky(real):  # type: ignore[misc, valid-type]
+            def __attrs_post_init__(self) -> None:
+                if str(self.input).endswith("/c.tif") and failing["left"]:
+                    failing["left"] -= 1
+                    raise RasterioIOError("CURL error: Connection reset by peer")
+                super().__attrs_post_init__()
+
+        monkeypatch.setattr(overview, "CogReader", Flaky)
+        _build(workdir)
+        assert waited.count(HOST) == 2 + 3, "the files a and b once, the file c three times"
+
+    def test_a_file_that_stays_unreadable_omits_only_its_base_tile_and_the_build_goes_on(
+        self, workdir: Path, tmp_path: Path
+    ) -> None:
+        (tmp_path / "c.tif").write_bytes(b"this is no raster at all")  # the file of the item that lies in the tile 34/22
+        manifest, seen = _build(workdir)
+        omitted = manifest["omitted"]["34/22"]
+        assert omitted["kind"] == "unreadable" and omitted["error"] == "RasterioIOError"
+        assert omitted["tile"] == f"{BASE}/34/22" and "tmp" not in omitted["reason"] and HOST not in omitted["reason"]
+        assert f"{BASE}/33/22" in manifest["tiles"] and f"{BASE}/34/22" not in manifest["tiles"]
+        assert "0/0/0" in manifest["tiles"], "the levels above are made from what exists"
+        assert seen and seen[-1][0] == len(seen)
+        assert json.loads((workdir / MANIFEST_NAME).read_text())["omitted"] == manifest["omitted"]
+
+    @pytest.mark.parametrize("error", [rasterio.errors.WarpOperationError("warp failed"), rasterio.errors.CRSError("no crs")])
+    def test_any_failure_of_rasterio_on_a_file_omits_its_tile_not_only_a_failed_read(
+        self, workdir: Path, monkeypatch: pytest.MonkeyPatch, error: Exception
+    ) -> None:
+        _Reads(monkeypatch, error=error, failures=99)
+        manifest, _ = _build(workdir)
+        assert manifest["omitted"]["34/22"]["error"] == type(error).__name__
+
+    def test_a_tile_with_two_files_one_of_which_fails_is_omitted_whole(self, workdir: Path, tmp_path: Path) -> None:
+        (tmp_path / "b.tif").write_bytes(b"this is no raster at all")  # a and b lie together in the tile 33/22
+        manifest, _ = _build(workdir)
+        assert list(manifest["omitted"]) == ["33/22"] and f"{BASE}/33/22" not in manifest["tiles"]
+        assert f"{BASE}/34/22" in manifest["tiles"]
+        assert "33/22" not in manifest["base_hashes"]
+
+    def test_an_outage_is_a_failed_build_with_the_kind_of_its_failure_not_an_empty_pyramid(
+        self, workdir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(overview_build, "MAX_OMITTED", 0)
+        monkeypatch.setattr(overview_build, "MAX_OMITTED_FRACTION", 0.0)
+        monkeypatch.setattr(overview, "_sleep", lambda seconds: None)
+
+        def down(*args: Any, **kwargs: Any) -> Any:
+            raise RasterioIOError("CURL error: Could not resolve host")
+
+        monkeypatch.setattr(overview, "_read_once", down)
+        with pytest.raises(RasterioIOError) as caught:
+            _build(workdir)
+        assert getattr(caught.value, TILE_ATTRIBUTE).startswith(f"{BASE}/")
+
+    def test_a_failure_that_is_not_about_a_file_fails_the_build_as_before(self, workdir: Path, monkeypatch) -> None:
+        def broken(*args: Any, **kwargs: Any) -> Any:
+            raise ArithmeticError("a bug of ours")
+
+        monkeypatch.setattr(overview, "_read_once", broken)
+        with pytest.raises(ArithmeticError):
+            _build(workdir)
+
+    def test_a_failure_in_a_level_above_the_base_names_that_tile_and_is_no_omission(
+        self, workdir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def broken(*args: object, **kwargs: object) -> None:
+            raise ArithmeticError("a level went wrong")
+
+        monkeypatch.setattr(overview, "parent_tile", broken)
+        with pytest.raises(ArithmeticError) as caught:
+            _build(workdir)
+        assert getattr(caught.value, TILE_ATTRIBUTE) == f"{BASE - 1}/16/11"
+
+
+class TestPatch:
+    """The hourly retry of the omitted base tiles: the tile and the tiles above it, from what the store still holds."""
+
+    def _omit(self, workdir: Path, tmp_path: Path) -> tuple[dict, bytes]:
+        good = (tmp_path / "c.tif").read_bytes()
+        (tmp_path / "c.tif").write_bytes(b"this is no raster at all")
+        manifest, _ = _build(workdir)
+        assert list(manifest["omitted"]) == ["34/22"]
+        return manifest, good
+
+    def _patch(self, workdir: Path, only: list[str]) -> dict:
+        _job(workdir, mode="patch", only=only)
+        return patch_pyramid(workdir, lambda done, total: None)
+
+    def test_a_tile_that_reads_now_is_recovered_with_its_hash_and_the_tiles_above_it_are_made(
+        self, workdir: Path, tmp_path: Path
+    ) -> None:
+        built, good = self._omit(workdir, tmp_path)
+        (tmp_path / "c.tif").write_bytes(good)
+        after = self._patch(workdir, ["34/22"])
+        assert after["recovered"] == ["34/22"] and after["omitted"] == {}
+        assert f"{BASE}/34/22" in after["tiles"] and "0/0/0" in after["tiles"]
+        assert set(after["base_hashes"]) == {"34/22"}
+        assert not set(after["tiles"]) & {f"{BASE}/33/22"}, "a tile that was not asked for is not made again"
+
+    def test_a_tile_that_fails_again_stays_omitted_with_the_new_reason_and_nothing_else_changes(
+        self, workdir: Path, tmp_path: Path
+    ) -> None:
+        built, _ = self._omit(workdir, tmp_path)
+        before = sorted(p.relative_to(workdir).as_posix() for p in (workdir / "tiles").rglob("*.tif"))
+        after = self._patch(workdir, ["34/22"])
+        assert list(after["omitted"]) == ["34/22"] and after["recovered"] == [] and after["tiles"] == []
+        assert sorted(p.relative_to(workdir).as_posix() for p in (workdir / "tiles").rglob("*.tif")) == before
+
+    def test_a_failure_that_is_not_about_a_file_fails_the_step(self, workdir: Path, tmp_path: Path, monkeypatch) -> None:
+        self._omit(workdir, tmp_path)
+
+        def broken(*args: Any, **kwargs: Any) -> Any:
+            raise ArithmeticError("a bug of ours")
+
+        monkeypatch.setattr(overview, "_read_once", broken)
+        with pytest.raises(ArithmeticError):
+            self._patch(workdir, ["34/22"])
 
 
 class TestPacerFactory:

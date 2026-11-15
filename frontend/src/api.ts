@@ -403,6 +403,33 @@ export function buildOverviewTileTemplate(datasetId: string): string {
   return `${BASE}/collections/${encodeURIComponent(datasetId)}/overview/tiles/${TILE_MATRIX_SET}/{z}/{x}/{y}?tilesize=${MOSAIC_TILE_SIZE}`;
 }
 
+// The footprint selection of the hits of a search (adr/0032 Nachtrag 15.11.2026): the item ids go in the body, the id is the hash of
+// the dataset and the ids, so the same hits are the same id and the same tile URL. `tiles` is the overview route of the id, which draws
+// the picture below the first level of the dataset over the footprints of the hits only (`overviewHits.ts`). The tiler refuses
+// a dataset without a pyramid or a substitute, a federated one, an unknown id and more than 200 hits with an `HttpError`.
+export interface FootprintSelection {
+  id: string;
+  tiles: string;
+}
+
+export async function createFootprintSelection(datasetId: string, itemIds: readonly string[]): Promise<FootprintSelection> {
+  const res = await fetch(`${BASE}/collections/${encodeURIComponent(datasetId)}/overview/footprints`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ items: [...new Set(itemIds)].sort() }),
+    signal: AbortSignal.timeout(MOSAIC_TILEJSON_TIMEOUT_MS),
+  });
+  const body = await jsonOrThrow<Record<string, unknown>>(res);
+  const { id, tiles } = body;
+  if (!isText(id) || !isText(tiles)) throw new Error('The tile server sent a footprint selection this page cannot read.');
+  return { id, tiles: `${BASE}${tiles}` };
+}
+
+// The tile template of the overview of a footprint selection: 512 px like every overview tile; the display parameters are added by `buildTileUrl`.
+export function buildMaskedOverviewTileTemplate(selection: FootprintSelection): string {
+  return `${selection.tiles}?tilesize=${MOSAIC_TILE_SIZE}`;
+}
+
 // What the client reads of a mosaic's TileJSON: the surface (`bounds`), the levels it
 // serves, and `earthx:order` — the scene ids in the order a tile reads them, which the
 // map below the first level stacks single scenes by.

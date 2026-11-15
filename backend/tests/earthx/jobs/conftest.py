@@ -59,6 +59,6 @@ def reset(connection: psycopg.Connection) -> None:
     connection.execute(
         "TRUNCATE public.earthx_job, public.earthx_run, public.earthx_recipe, public.earthx_permalink, public.earthx_bundle, "
         "public.earthx_stats_cache, public.earthx_mosaic_selection, public.earthx_overview, public.earthx_overview_request, "
-        "public.earthx_overview_upkeep, public.earthx_materialize_runs RESTART IDENTITY"
+        "public.earthx_overview_upkeep, public.earthx_overview_omitted, public.earthx_overview_host, public.earthx_materialize_runs RESTART IDENTITY"
     )
     connection.execute("UPDATE public.earthx_job_limits SET global_cap = 4, host_cap = 2")

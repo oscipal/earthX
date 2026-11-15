@@ -111,3 +111,65 @@ def test_the_states_that_make_sense_are_accepted(schema: psycopg.Connection) -> 
 def test_progress_is_a_percentage(schema: psycopg.Connection, progress: int) -> None:
     with pytest.raises(psycopg.errors.CheckViolation), schema.transaction():
         _overview(schema, "failed", failure_kind="unknown", progress=progress)
+
+
+def _omitted_row(conn: psycopg.Connection, **columns: object) -> None:
+    values = {"dataset_id": "d", "version": "0123456789abcdef", "tile": "33/22", "kind": "unreadable", "error": "RasterioIOError", **columns}
+    conn.execute(
+        f"INSERT INTO public.earthx_overview_omitted ({', '.join(values)}) VALUES ({', '.join(['%s'] * len(values))})",
+        tuple(values.values()),
+    )
+
+
+def test_an_omitted_tile_is_a_base_tile_of_a_version_with_a_kind_and_a_short_reason(schema: psycopg.Connection) -> None:
+    _omitted_row(schema, reason="HTTP response code: 503")
+    row = schema.execute("SELECT attempts, reason FROM public.earthx_overview_omitted").fetchone()
+    assert row == (1, "HTTP response code: 503")
+
+
+@pytest.mark.parametrize(
+    "columns",
+    [
+        {"tile": "33-22"},
+        {"tile": "https://host/33/22"},
+        {"version": "not-a-version"},
+        {"kind": "Not A Kind"},
+        {"error": ""},
+        {"reason": "x" * 161},
+        {"attempts": 0},
+    ],
+)
+def test_an_omitted_tile_cannot_hold_an_address_or_a_malformed_value(schema: psycopg.Connection, columns: dict) -> None:
+    with pytest.raises(psycopg.errors.CheckViolation):
+        _omitted_row(schema, **columns)
+
+
+def test_one_row_per_omitted_tile_of_a_version(schema: psycopg.Connection) -> None:
+    _omitted_row(schema)
+    with pytest.raises(psycopg.errors.UniqueViolation):
+        _omitted_row(schema)
+
+
+def test_the_retry_is_a_task_with_a_free_row_and_other_tasks_are_still_refused(schema: psycopg.Connection) -> None:
+    row = schema.execute("SELECT turn, worker, lease_until, next_at <= now() FROM public.earthx_overview_upkeep WHERE task = 'retry'").fetchone()
+    assert row == (1, None, None, True)
+    with pytest.raises(psycopg.errors.CheckViolation):
+        schema.execute("INSERT INTO public.earthx_overview_upkeep (task, next_at) VALUES ('build', now())")
+
+
+def test_a_host_lease_names_its_worker_and_its_end_together_or_neither(schema: psycopg.Connection) -> None:
+    schema.execute("INSERT INTO public.earthx_overview_host (host) VALUES ('a.example.invalid')")
+    schema.execute(
+        "INSERT INTO public.earthx_overview_host (host, worker, lease_until) VALUES ('b.example.invalid', 'w', now())"
+    )
+    for columns in ("(host, worker) VALUES ('c.example.invalid', 'w')", "(host, lease_until) VALUES ('d.example.invalid', now())"):
+        with pytest.raises(psycopg.errors.CheckViolation), schema.transaction():
+            schema.execute(f"INSERT INTO public.earthx_overview_host {columns}")
+
+
+def test_a_host_lease_row_is_for_one_host_with_a_name(schema: psycopg.Connection) -> None:
+    schema.execute("INSERT INTO public.earthx_overview_host (host) VALUES ('a.example.invalid')")
+    with pytest.raises(psycopg.errors.UniqueViolation), schema.transaction():
+        schema.execute("INSERT INTO public.earthx_overview_host (host) VALUES ('a.example.invalid')")
+    with pytest.raises(psycopg.errors.CheckViolation), schema.transaction():
+        schema.execute("INSERT INTO public.earthx_overview_host (host) VALUES ('')")

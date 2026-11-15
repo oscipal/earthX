@@ -15,7 +15,7 @@ thing in one transaction.
 * At most one build per host at a time (adr/0032 §8.2), counted from the rows under a lock taken in a statement of its
   own, like the cap of the queue (`queue.claim`). A build whose lease ran out is over: its row becomes ``failed`` with
   ``lease_lost`` before anything is picked.
-* A failed build is tried again by the next claim only for a reason a second attempt can help (`queue.RETRYABLE`), at
+* A failed build is tried again by the next claim only for a reason a second attempt can help (:data:`RETRYABLE_BUILD`), at
   most :data:`MAX_ATTEMPTS` times in all, and not before :data:`RETRY_AFTER` has passed, except after a lost lease. Any
   other failure stays ``failed`` until a new source version is requested.
 * A failure is a short name (:func:`finish_failed` refuses anything else): never an address, a path or a tile.
@@ -37,7 +37,7 @@ from psycopg.types.json import Jsonb
 
 from earthx.jobs.queue import RETRYABLE
 from earthx.objectstore.overviews import (
-    OVERVIEW_RULE_DAYS,
+    EXTEND_WINDOW,
     OVERVIEW_TTL,
     PROTOTYPE_PREFIX,
     PROTOTYPE_TTL,
@@ -48,6 +48,7 @@ __all__ = [
     "EXPIRED",
     "EXTEND_WINDOW",
     "MAX_ATTEMPTS",
+    "RETRYABLE_BUILD",
     "OVERVIEW_LOCK_KEY",
     "RETRY_AFTER",
     "REUSE_MARGIN",
@@ -57,17 +58,24 @@ __all__ = [
     "Turn",
     "claim",
     "expired",
+    "HostLease",
     "end_turn",
     "finish_failed",
     "finish_ready",
     "heartbeat",
+    "drop_stale_omitted",
     "mark_expired",
+    "omitted_due",
     "mark_extended",
     "previous_ready",
     "protected_versions",
+    "settle_retry",
     "release",
+    "release_hosts",
+    "renew_hosts",
     "renew_turn",
     "request_missing",
+    "take_hosts",
     "take_turn",
     "to_extend",
     "write_progress",
@@ -76,12 +84,14 @@ __all__ = [
 # A third fixed key for `pg_advisory_xact_lock`, next to those of `queue.py`: 'jobs' in ASCII, plus 3.
 OVERVIEW_LOCK_KEY = 0x6A6F6273_00000003
 
-#: How long after ``checked_at`` an extension is still allowed: until the bucket rule can begin to delete (31 days from
-#: the write of an object, never before ``checked_at``), less 12 hours for clock differences and the length of a round.
-EXTEND_WINDOW = timedelta(days=OVERVIEW_RULE_DAYS) - timedelta(hours=12)
-#: The failure kind of a pyramid whose term ran out; it is not in `RETRYABLE`, so :func:`claim` does not retry it; a successful `materialize` run of the same version
+#: The failure kind of a pyramid whose term ran out; it is not in `RETRYABLE_BUILD`, so :func:`claim` does not retry it; a successful `materialize` run of the same version
 #: makes it buildable again (`catalog.pgstac.rearm_overview`, adr/0032 §5: the next successful run builds anew).
 EXPIRED = "expired"
+
+#: The failures after which a *pyramid build* is tried again: those of the recipe jobs (`queue.RETRYABLE`, which this module
+#: does not change) and a source that could not be reached at all (`source_unreachable`: a connection that broke or a
+#: host that did not answer), which the next hour may well fix. A recipe job does not retry it.
+RETRYABLE_BUILD = RETRYABLE | {"source_unreachable"}
 
 #: A build is tried this many times in all (the first included).
 MAX_ATTEMPTS = 3
@@ -91,7 +101,7 @@ REUSE_MARGIN = timedelta(days=7)
 #: A failed build waits this long for its next attempt; a lost lease does not wait.
 RETRY_AFTER = timedelta(hours=1)
 #: The tasks of the upkeep that take turns (the rows of `earthx_overview_upkeep`).
-UPKEEP_TASKS = frozenset({"extend", "sweep"})
+UPKEEP_TASKS = frozenset({"extend", "sweep", "retry"})
 
 _KIND = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
 _LEASE_LOST = "lease_lost"
@@ -121,6 +131,8 @@ WHERE o.version IS NULL
        AND (o.failure_kind = %(lease_lost)s OR o.updated_at < clock_timestamp() - %(retry_after)s))
 ORDER BY r.requested_at
 """
+
+_LIVE_HOSTS_SQL = "SELECT host FROM public.earthx_overview_host WHERE lease_until > clock_timestamp()"
 
 _START_SQL = """
 INSERT INTO public.earthx_overview (dataset_id, version, status, hosts, worker, lease_until)
@@ -192,7 +204,7 @@ def claim(
             _CANDIDATES_SQL,
             {
                 "datasets": sorted(hosts),
-                "retryable": sorted(RETRYABLE),
+                "retryable": sorted(RETRYABLE_BUILD),
                 "max_attempts": MAX_ATTEMPTS,
                 "lease_lost": _LEASE_LOST,
                 "retry_after": RETRY_AFTER,
@@ -203,6 +215,8 @@ def claim(
             for (building,) in conn.execute("SELECT hosts FROM public.earthx_overview WHERE status = 'building'")
             for host in building
         }
+        # A host the retry of the omitted tiles reads from (`take_hosts`) is busy as long as its lease lives.
+        busy.update(host for (host,) in conn.execute(_LIVE_HOSTS_SQL))
         for dataset_id, version, source_version in candidates:
             wanted = tuple(hosts[dataset_id])
             if busy.intersection(wanted):
@@ -248,22 +262,133 @@ def write_progress(conn: psycopg.Connection, build: Build, percent: int) -> bool
 
 
 def finish_ready(
-    conn: psycopg.Connection, build: Build, *, checked_at: datetime, base_hashes: Mapping[str, str]
+    conn: psycopg.Connection,
+    build: Build,
+    *,
+    checked_at: datetime,
+    base_hashes: Mapping[str, str],
+    omitted: Mapping[str, Mapping[str, str]] | None = None,
 ) -> bool:
     """Close the build as ready, only for the attempt that owns it; ``False`` if it no longer does.
 
     ``checked_at`` is the oldest time any object of the pyramid was read at the source (the term counts from it);
     ``base_hashes`` maps ``x/y`` of a base tile to the hash of the items it read, empty where the items allow none.
+    ``omitted`` maps ``x/y`` of each base tile left out (a file of it stayed unreadable) to its ``kind``, ``error`` and
+    ``reason``; they are written with the row, in one transaction, so a pyramid is never ready with a gap nobody recorded.
     """
     if checked_at.tzinfo is None:
         raise ValueError("checked_at must be timezone-aware")
-    return _own(
-        conn,
-        build,
-        "status = 'ready', failure_kind = NULL, worker = NULL, lease_until = NULL, progress = 100, "
-        "checked_at = %(checked_at)s, base_hashes = %(hashes)s",
-        {"checked_at": checked_at, "hashes": Jsonb(dict(base_hashes))},
-    )
+    with conn.transaction():
+        owned = _own(
+            conn,
+            build,
+            "status = 'ready', failure_kind = NULL, worker = NULL, lease_until = NULL, progress = 100, "
+            "checked_at = %(checked_at)s, base_hashes = %(hashes)s",
+            {"checked_at": checked_at, "hashes": Jsonb(dict(base_hashes))},
+        )
+        if not owned:
+            raise psycopg.Rollback
+        conn.execute(
+            "DELETE FROM public.earthx_overview_omitted WHERE dataset_id = %s AND version = %s",
+            (build.dataset_id, build.version),
+        )
+        for tile, detail in (omitted or {}).items():
+            conn.execute(_INSERT_OMITTED_SQL, _omitted_values(build.dataset_id, build.version, tile, detail))
+    return owned
+
+
+_INSERT_OMITTED_SQL = """
+INSERT INTO public.earthx_overview_omitted (dataset_id, version, tile, kind, error, reason)
+VALUES (%(dataset)s, %(version)s, %(tile)s, %(kind)s, %(error)s, %(reason)s)
+"""
+
+
+def _omitted_values(dataset_id: str, version: str, tile: str, detail: Mapping[str, str]) -> dict[str, str]:
+    return {
+        "dataset": dataset_id,
+        "version": version,
+        "tile": tile,
+        "kind": detail["kind"],
+        "error": detail["error"][:80],
+        "reason": detail.get("reason", "")[:160],
+    }
+
+
+def omitted_due(conn: psycopg.Connection, datasets: Collection[str]) -> dict[tuple[str, str], list[str]]:
+    """The base tiles to read again: ``(dataset, version)`` of each ready pyramid to the ``x/y`` of its omitted tiles.
+
+    Only tiles whose last try is at least :data:`RETRY_AFTER` old, so a tile is tried once an hour as long as its pyramid
+    lives (the round of the worker is hourly) and a pyramid that was built a minute ago is left alone. Only datasets this
+    worker knows, and only ready pyramids.
+    """
+    found: dict[tuple[str, str], list[str]] = {}
+    for dataset_id, version, tile in conn.execute(
+        """
+        SELECT m.dataset_id, m.version, m.tile
+        FROM public.earthx_overview_omitted m
+        JOIN public.earthx_overview o ON o.dataset_id = m.dataset_id AND o.version = m.version AND o.status = 'ready'
+        WHERE m.dataset_id = ANY(%s) AND m.tried_at < clock_timestamp() - %s
+        ORDER BY m.dataset_id, m.version, m.tile
+        """,
+        (sorted(datasets), RETRY_AFTER),
+    ):
+        found.setdefault((dataset_id, version), []).append(tile)
+    return found
+
+
+def settle_retry(
+    conn: psycopg.Connection,
+    dataset_id: str,
+    version: str,
+    *,
+    recovered: Collection[str],
+    still: Mapping[str, Mapping[str, str]],
+    base_hashes: Mapping[str, str],
+) -> bool:
+    """Record the end of a retry of a ready pyramid: the recovered tiles leave the table (their hashes join the row's), the
+    others get one more attempt with the new reason. ``False`` (nothing written) if the pyramid is no longer ready.
+
+    The row's ``checked_at`` stays what it was: the pyramid is as old as its oldest object, and a repaired tile is newer.
+    """
+    with conn.transaction():
+        row = conn.execute(
+            """
+            UPDATE public.earthx_overview SET base_hashes = base_hashes || %s, updated_at = clock_timestamp()
+            WHERE dataset_id = %s AND version = %s AND status = 'ready' RETURNING 1
+            """,
+            (Jsonb(dict(base_hashes)), dataset_id, version),
+        ).fetchone()
+        if row is None:
+            raise psycopg.Rollback
+        for tile in recovered:
+            conn.execute(
+                "DELETE FROM public.earthx_overview_omitted WHERE dataset_id = %s AND version = %s AND tile = %s",
+                (dataset_id, version, tile),
+            )
+        for tile, detail in still.items():
+            conn.execute(
+                """
+                UPDATE public.earthx_overview_omitted
+                SET kind = %(kind)s, error = %(error)s, reason = %(reason)s, attempts = attempts + 1,
+                    tried_at = clock_timestamp()
+                WHERE dataset_id = %(dataset)s AND version = %(version)s AND tile = %(tile)s
+                """,
+                _omitted_values(dataset_id, version, tile, detail),
+            )
+    return True
+
+
+def drop_stale_omitted(conn: psycopg.Connection) -> int:
+    """Delete the rows of omitted tiles whose pyramid is no longer ready (failed, expired, rebuilt, gone); the number deleted."""
+    return conn.execute(
+        """
+        DELETE FROM public.earthx_overview_omitted m
+        WHERE NOT EXISTS (
+            SELECT 1 FROM public.earthx_overview o
+            WHERE o.dataset_id = m.dataset_id AND o.version = m.version AND o.status = 'ready'
+        )
+        """
+    ).rowcount
 
 
 def finish_failed(conn: psycopg.Connection, build: Build, kind: str) -> bool:
@@ -336,6 +461,87 @@ def release(conn: psycopg.Connection, build: Build) -> bool:
 
 
 @dataclass(frozen=True, slots=True)
+class HostLease:
+    """One worker's lease on the hosts a retry reads from: each host with the number of its take."""
+
+    turns: tuple[tuple[str, int], ...]
+
+
+# One host: free when no lease holds it or its lease ran out; a lease that ran out is taken over (the number of the take counts up).
+_TAKE_HOST_SQL = """
+INSERT INTO public.earthx_overview_host AS h (host, worker, lease_until)
+VALUES (%(host)s, %(worker)s, clock_timestamp() + make_interval(secs => %(lease)s))
+ON CONFLICT (host) DO UPDATE
+SET turn = h.turn + 1, worker = EXCLUDED.worker, lease_until = EXCLUDED.lease_until
+WHERE h.lease_until IS NULL OR h.lease_until < clock_timestamp()
+RETURNING turn
+"""
+
+
+def take_hosts(
+    conn: psycopg.Connection, hosts: Sequence[str], *, worker: str, lease_seconds: float
+) -> HostLease | None:
+    """Lease all of ``hosts`` for ``worker``, or ``None`` if a build is reading from one of them or another lease lives on it.
+
+    The same advisory lock as :func:`claim` is taken, in a transaction of its own, so a build that starts and a retry that
+    begins cannot both pass: whichever comes second sees the first. Nothing is taken unless every host is (the
+    transaction is rolled back). The lease runs ``lease_seconds`` and :func:`renew_hosts` keeps it.
+    """
+    if not lease_seconds > 0:
+        raise ValueError("a host lease needs a positive lease")
+    lease: HostLease | None = None
+    with conn.transaction():
+        conn.execute("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
+        conn.execute("SELECT pg_advisory_xact_lock(%s)", (OVERVIEW_LOCK_KEY,))
+        building = {
+            host
+            for (names,) in conn.execute(
+                "SELECT hosts FROM public.earthx_overview WHERE status = 'building' AND lease_until > clock_timestamp()"
+            )
+            for host in names
+        }
+        if building.intersection(hosts):
+            raise psycopg.Rollback
+        turns: list[tuple[str, int]] = []
+        for host in sorted(set(hosts)):
+            row = conn.execute(_TAKE_HOST_SQL, {"host": host, "worker": worker, "lease": lease_seconds}).fetchone()
+            if row is None:
+                raise psycopg.Rollback
+            turns.append((host, row[0]))
+        lease = HostLease(tuple(turns))
+    return lease
+
+
+def renew_hosts(conn: psycopg.Connection, lease: HostLease, lease_seconds: float) -> bool:
+    """Renew the lease on every host; ``False`` if one is over (released, or taken over after its lease ran out)."""
+    if not lease.turns:
+        return True
+    renewed = conn.execute(
+        """
+        UPDATE public.earthx_overview_host AS h
+        SET lease_until = clock_timestamp() + make_interval(secs => %s)
+        FROM unnest(%s::text[], %s::bigint[]) AS t(host, turn)
+        WHERE h.host = t.host AND h.turn = t.turn AND h.lease_until IS NOT NULL
+        """,
+        (lease_seconds, [h for h, _ in lease.turns], [n for _, n in lease.turns]),
+    ).rowcount
+    return renewed == len(lease.turns)
+
+
+def release_hosts(conn: psycopg.Connection, lease: HostLease) -> None:
+    """End the lease, so the next reader need not wait for it to run out; leases already over are left alone."""
+    if lease.turns:
+        conn.execute(
+            """
+            UPDATE public.earthx_overview_host AS h SET worker = NULL, lease_until = NULL
+            FROM unnest(%s::text[], %s::bigint[]) AS t(host, turn)
+            WHERE h.host = t.host AND h.turn = t.turn
+            """,
+            ([h for h, _ in lease.turns], [n for _, n in lease.turns]),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class Turn:
     """One worker's turn at a task of the upkeep."""
 
@@ -367,7 +573,7 @@ def take_turn(
     needs no lock of its own.
     """
     if task not in UPKEEP_TASKS:
-        raise ValueError("an upkeep task is one of extend, sweep")
+        raise ValueError("an upkeep task is one of extend, sweep, retry")
     if not lease_seconds > 0 or not gap_seconds >= 0:
         raise ValueError("a turn needs a positive lease and a gap that is not negative")
     row = conn.execute(
@@ -515,6 +721,6 @@ def protected_versions(conn: psycopg.Connection) -> set[tuple[str, str]]:
             WHERE status IN ('building', 'ready')
                OR (status = 'failed' AND failure_kind = ANY(%s) AND attempts < %s)
             """,
-            (sorted(RETRYABLE), MAX_ATTEMPTS),
+            (sorted(RETRYABLE_BUILD), MAX_ATTEMPTS),
         )
     }

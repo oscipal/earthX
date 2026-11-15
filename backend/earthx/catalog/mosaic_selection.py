@@ -20,7 +20,18 @@ from typing import Any
 import psycopg
 from psycopg.types.json import Jsonb
 
-__all__ = ["SELECTION_ID", "TABLE", "TERM_S", "canonical_content", "load", "renew", "save", "selection_id"]
+__all__ = [
+    "FOOTPRINTS",
+    "SELECTION_ID",
+    "TABLE",
+    "TERM_S",
+    "canonical_content",
+    "footprint_selection_id",
+    "load",
+    "renew",
+    "save",
+    "selection_id",
+]
 
 TABLE = "public.earthx_mosaic_selection"
 
@@ -61,6 +72,22 @@ def canonical_content(dataset_id: str, assets: Iterable[str], items: Iterable[st
 def selection_id(dataset_id: str, assets: Iterable[str], items: Iterable[str]) -> str:
     """The id of this content: the first 32 hex characters of the SHA-256 of :func:`canonical_content`."""
     return hashlib.sha256(canonical_content(dataset_id, assets, items).encode("utf-8")).hexdigest()[:32]
+
+
+#: The ``kind`` of the content of a footprint selection (adr/0032 Nachtrag 15.11.2026): the outlines of the hits of a search,
+#: which mask the picture below ``min_zoom``. A mosaic selection has no ``kind``.
+FOOTPRINTS = "footprints"
+
+
+def footprint_selection_id(dataset_id: str, items: Iterable[str]) -> str:
+    """The id of a footprint selection: the first 32 hex characters of the SHA-256 of its dataset and sorted item ids.
+
+    The content carries the kind, so no footprint selection has the id of a mosaic selection and the other way round.
+    """
+    content = json.dumps(
+        {"kind": FOOTPRINTS, "dataset": dataset_id, "items": sorted(set(items))}, sort_keys=True, separators=(",", ":")
+    )
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()[:32]
 
 
 async def load(conn: psycopg.AsyncConnection, selection: str) -> tuple[str, dict[str, Any]] | None:

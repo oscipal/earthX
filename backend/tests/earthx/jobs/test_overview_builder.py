@@ -792,7 +792,51 @@ class TestTheShellAndTheCore:
 
 
 class TestLogs:
-    def test_no_line_names_an_item_an_address_or_a_tile(
+    @staticmethod
+    def _lines(caplog: pytest.LogCaptureFixture) -> str:
+        return " ".join(f"{record.getMessage()} {record.__dict__}" for record in caplog.records if "earthx" in record.name)
+
+    def test_a_failed_child_is_logged_with_its_kind_where_and_why_and_the_build_says_it_failed(
+        self, db: psycopg.Connection, make: Callable[..., Supervisor], caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Otto, 15.11.2026: the kind, the exception class with a short reason, and the tile as z/x/y, for every child failure."""
+        caplog.set_level(logging.DEBUG, logger="earthx")
+        failed = _request(db, "dem", "v1")
+        make("fail_with_detail")
+        _wait_for(db, "dem", failed, "failed")
+        wait_until(lambda: "overview build ended" in self._lines(caplog))
+        child = next(r for r in caplog.records if r.getMessage() == "overview child failed")
+        assert (child.failure_kind, child.step, child.error, child.tile) == ("unknown", "build", "RasterioIOError", "6/33/22")
+        assert child.reason == "HTTP response code on <address> 0" and child.dataset == "dem" and child.levelno == logging.WARNING
+        ended = next(r for r in caplog.records if r.getMessage() == "overview build ended")
+        assert (ended.status, ended.failure_kind, ended.outcome) == ("failed", "unknown", "unknown")
+        assert ended.levelno == logging.WARNING
+
+    def test_a_bare_kind_from_a_child_is_still_logged_and_a_ready_build_is_not_a_failure(
+        self, db: psycopg.Connection, make: Callable[..., Supervisor], caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        caplog.set_level(logging.DEBUG, logger="earthx")
+        monkeypatch.setenv("CHILD_KIND", "source_timeout")
+        failed = _request(db, "dem", "v1")
+        make("fail")
+        _wait_for(db, "dem", failed, "failed")
+        wait_until(lambda: "overview child failed" in self._lines(caplog))
+        child = next(r for r in caplog.records if r.getMessage() == "overview child failed")
+        assert child.failure_kind == "source_timeout" and not hasattr(child, "tile")
+
+    def test_a_build_that_worked_says_ready_at_info(
+        self, db: psycopg.Connection, make: Callable[..., Supervisor], caplog: pytest.LogCaptureFixture
+    ) -> None:
+        caplog.set_level(logging.DEBUG, logger="earthx")
+        ready = _request(db, "dem", "v1")
+        make()
+        _wait_for(db, "dem", ready, "ready")
+        wait_until(lambda: "overview build ended" in self._lines(caplog))
+        ended = next(r for r in caplog.records if r.getMessage() == "overview build ended")
+        assert (ended.status, ended.levelno) == ("ready", logging.INFO) and not hasattr(ended, "failure_kind")
+
+    def test_no_line_names_an_item_or_an_address_and_only_the_failure_line_names_a_tile(
         self, db: psycopg.Connection, make: Callable[..., Supervisor], caplog: pytest.LogCaptureFixture,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
@@ -803,9 +847,298 @@ class TestLogs:
         _wait_for(db, "dem", failed, "failed")
 
         def lines() -> str:
-            return " ".join(f"{record.getMessage()} {record.__dict__}" for record in caplog.records if "earthx" in record.name)
+            return TestLogs._lines(caplog)
 
         wait_until(lambda: "overview build ended" in lines())
         text = lines()
         assert "dem.example.invalid" not in text and "overviews/" not in text
         assert "overview build ended" in text and "source_timeout" in text
+
+
+def _omitted(db: psycopg.Connection, dataset_id: str, version: str) -> dict[str, tuple[str, str, str, int]]:
+    return {
+        tile: (kind, error, reason, attempts)
+        for tile, kind, error, reason, attempts in db.execute(
+            "SELECT tile, kind, error, reason, attempts FROM public.earthx_overview_omitted "
+            "WHERE dataset_id = %s AND version = %s",
+            (dataset_id, version),
+        )
+    }
+
+
+def _age_omitted(db: psycopg.Connection, dataset_id: str, version: str, interval: str = "2 hours") -> None:
+    db.execute(
+        "UPDATE public.earthx_overview_omitted SET tried_at = clock_timestamp() - %s::interval "
+        "WHERE dataset_id = %s AND version = %s",
+        (interval, dataset_id, version),
+    )
+
+
+class TestAnOmittedTile:
+    """One file that stays unreadable omits only its base tile; the pyramid is ready, with the gap recorded and logged."""
+
+    def test_the_build_is_ready_with_the_gap_in_the_table_and_in_the_log(
+        self, db: psycopg.Connection, store: Store, make: Callable[..., Supervisor], caplog: pytest.LogCaptureFixture
+    ) -> None:
+        caplog.set_level(logging.DEBUG, logger="earthx")
+        version = _request(db, "dem", '"etag-1"')
+        make("omit")
+        _wait_for(db, "dem", version, "ready")
+        wait_until(lambda: any(r.getMessage() == "overview build ended" for r in caplog.records))
+        assert _status(db, "dem", version) == ("ready", None, 1)
+        assert _omitted(db, "dem", version) == {
+            "2/1": ("unreadable", "RasterioIOError", "not recognized as a supported file format", 1)
+        }
+        assert "overviews/dem/%s/2/2/1.tif" % version not in _keys(store, "dem", version)
+        assert "2/1/1" in " ".join(k.removeprefix(f"overviews/dem/{version}/") for k in _keys(store, "dem", version))
+        line = next(r for r in caplog.records if r.getMessage() == "overview base tile omitted")
+        assert (line.dataset, line.tile, line.failure_kind, line.error) == ("dem", "2/2/1", "unreadable", "RasterioIOError")
+        assert line.reason == "not recognized as a supported file format" and line.levelno == logging.WARNING
+        text = " ".join(f"{r.getMessage()} {r.__dict__}" for r in caplog.records if "earthx" in r.name)
+        assert "example.invalid" not in text and "overviews/" not in text and '"a"' not in text
+        ended = next(r for r in caplog.records if r.getMessage() == "overview build ended")
+        assert ended.status == "ready" and ended.levelno == logging.INFO
+
+    def test_a_pyramid_without_a_gap_has_no_rows(self, db: psycopg.Connection, make: Callable[..., Supervisor]) -> None:
+        version = _request(db, "dem", '"etag-1"')
+        make()
+        _wait_for(db, "dem", version, "ready")
+        assert _omitted(db, "dem", version) == {}
+
+
+class TestTheHourlyRetry:
+    """The retry reads the omitted tiles again, once an hour, and puts the tiles it makes over the served version."""
+
+    FAST_ROUND: dict[str, Any] = {"cleanup_first_seconds": 0.2, "cleanup_seconds": 1e9}
+
+    def _pyramid(self, db: psycopg.Connection, store: Store, make: Callable[..., Supervisor], target: str) -> str:
+        """A ready pyramid with a gap, as the build leaves it, built by a supervisor that is then stopped."""
+        version = _request(db, "dem", '"etag-1"')
+        supervisor = make("omit", cleanup_first_seconds=1e9)
+        _wait_for(db, "dem", version, "ready")
+        supervisor.stop(30)
+        assert list(_omitted(db, "dem", version)) == ["2/1"]
+        return version
+
+    def _objects(self, store: Store, version: str) -> dict[str, tuple[bytes, str]]:
+        found = {}
+        for key in _keys(store, "dem", version):
+            head = _head(store, key)
+            body = store.s3._internal.get_object(Bucket=BUCKET, Key=key)["Body"].read()
+            found[key] = (body, head["Metadata"][CHECKED_AT])
+        return found
+
+    def test_the_retry_fills_the_gap_without_deleting_what_is_served(
+        self, db: psycopg.Connection, store: Store, make: Callable[..., Supervisor]
+    ) -> None:
+        version = self._pyramid(db, store, make, "patch_ok")
+        before = self._objects(store, version)
+        row = _row(db, "dem", version)
+        _age_omitted(db, "dem", version)
+        make("patch_ok", **self.FAST_ROUND)
+        wait_until(lambda: _omitted(db, "dem", version) == {}, 30)
+        after = self._objects(store, version)
+        assert set(before) < set(after), "nothing was deleted, and the omitted tile is there now"
+        assert f"overviews/dem/{version}/2/2/1.tif" in after
+        made = {key for key in after if after[key][0] == b"made again"}
+        assert made == {f"overviews/dem/{version}/{name}.tif" for name in ("2/2/1", "1/1/0", "0/0/0")}
+        for key in set(before) - made:
+            assert after[key] == before[key], "an object that was served is untouched, its checked-at too"
+        for key in made:
+            assert after[key][1] > row["checked_at"].isoformat(), "each object made again has its own, later checked-at"
+        again = _row(db, "dem", version)
+        assert again["status"] == "ready" and again["checked_at"] == row["checked_at"]
+        assert again["base_hashes"]["2/1"] == "h2" and again["base_hashes"]["1/1"] == "h1"
+
+    def test_a_retry_that_fails_again_is_recorded_and_changes_nothing_else(
+        self, db: psycopg.Connection, store: Store, make: Callable[..., Supervisor], caplog: pytest.LogCaptureFixture
+    ) -> None:
+        caplog.set_level(logging.DEBUG, logger="earthx")
+        version = self._pyramid(db, store, make, "patch_again")
+        before = self._objects(store, version)
+        row = _row(db, "dem", version)
+        _age_omitted(db, "dem", version)
+        make("patch_again", **self.FAST_ROUND)
+        wait_until(lambda: _omitted(db, "dem", version)["2/1"][3] == 2, 30)
+        assert _omitted(db, "dem", version)["2/1"][:3] == ("source_5xx", "RasterioIOError", "HTTP response code: 503")
+        assert self._objects(store, version) == before
+        again = _row(db, "dem", version)
+        assert (again["status"], again["checked_at"], again["base_hashes"]) == ("ready", row["checked_at"], row["base_hashes"])
+        wait_until(lambda: any(r.getMessage() == "overview retry ended" for r in caplog.records))
+        retried = [r for r in caplog.records if r.getMessage() == "overview base tile omitted"]
+        assert retried[-1].failure_kind == "source_5xx" and retried[-1].tile == "2/2/1"
+
+    def test_a_tile_is_tried_once_an_hour_not_sooner(
+        self, db: psycopg.Connection, store: Store, make: Callable[..., Supervisor]
+    ) -> None:
+        version = self._pyramid(db, store, make, "patch_ok")
+        make("patch_ok", **self.FAST_ROUND)  # the tile was tried a moment ago, by the build
+        time.sleep(1.5)
+        assert list(_omitted(db, "dem", version)) == ["2/1"]
+
+    def test_a_retry_whose_step_breaks_for_another_reason_leaves_the_pyramid_as_it_is(
+        self, db: psycopg.Connection, store: Store, make: Callable[..., Supervisor], caplog: pytest.LogCaptureFixture
+    ) -> None:
+        caplog.set_level(logging.DEBUG, logger="earthx")
+        version = self._pyramid(db, store, make, "patch_breaks")
+        before = self._objects(store, version)
+        _age_omitted(db, "dem", version)
+        make("patch_breaks", **self.FAST_ROUND)
+        wait_until(lambda: any(r.getMessage() == "overview retry failed" for r in caplog.records), 30)
+        child = next(r for r in caplog.records if r.getMessage() == "overview child failed")
+        assert (child.step, child.error, child.tile) == ("patch", "ArithmeticError", "2/2/1")
+        assert list(_omitted(db, "dem", version)) == ["2/1"] and self._objects(store, version) == before
+
+    def test_the_rows_of_a_pyramid_that_is_no_longer_ready_are_dropped(
+        self, db: psycopg.Connection, store: Store, make: Callable[..., Supervisor]
+    ) -> None:
+        version = self._pyramid(db, store, make, "patch_ok")
+        db.execute("UPDATE public.earthx_overview SET status = 'failed', failure_kind = 'expired' WHERE dataset_id = 'dem'")
+        make("patch_ok", **self.FAST_ROUND)
+        wait_until(lambda: _omitted(db, "dem", version) == {}, 30)
+        assert not any("made again" in str(v[0]) for v in self._objects(store, version).values())
+
+    def test_no_retry_reads_from_a_host_a_build_is_reading_from(
+        self, db: psycopg.Connection, store: Store, make: Callable[..., Supervisor]
+    ) -> None:
+        version = self._pyramid(db, store, make, "patch_ok")
+        _age_omitted(db, "dem", version)
+        db.execute(
+            "INSERT INTO public.earthx_overview (dataset_id, version, status, hosts, worker, lease_until) "
+            "VALUES ('proto-dem', 'bbbbbbbbbbbbbbbb', 'building', ARRAY['dem.example.invalid'], 'other', clock_timestamp() + interval '1 hour')"
+        )
+        make("patch_ok", **self.FAST_ROUND)
+        time.sleep(1.5)
+        assert list(_omitted(db, "dem", version)) == ["2/1"]
+
+
+class TestTheRetryTakesTurns:
+    """The retry is a task of the upkeep (migration 020): one worker at a time, one round for all, a lost turn stops it."""
+
+    FAST_ROUND = TestTheHourlyRetry.FAST_ROUND
+
+    def _turn(self, db: psycopg.Connection) -> tuple[int, str | None] | None:
+        row = db.execute("SELECT turn, worker FROM public.earthx_overview_upkeep WHERE task = 'retry'").fetchone()
+        return None if row is None else (row[0], row[1])
+
+    def test_a_worker_skips_the_round_while_another_holds_the_turn(
+        self, db: psycopg.Connection, store: Store, make: Callable[..., Supervisor]
+    ) -> None:
+        helper = TestTheHourlyRetry()
+        version = helper._pyramid(db, store, make, "patch_ok")
+        _age_omitted(db, "dem", version)
+        before = helper._objects(store, version)
+        db.execute(
+            "INSERT INTO public.earthx_overview_upkeep (task, worker, lease_until, next_at) "
+            "VALUES ('retry', 'other', clock_timestamp() + interval '1 hour', clock_timestamp())"
+        )
+        make("patch_ok", **self.FAST_ROUND)
+        time.sleep(1.5)
+        assert self._turn(db) == (1, "other") and list(_omitted(db, "dem", version)) == ["2/1"]
+        assert helper._objects(store, version) == before
+
+    def test_of_two_workers_with_a_due_round_only_one_retries(
+        self, db: psycopg.Connection, store: Store, make: Callable[..., Supervisor], caplog: pytest.LogCaptureFixture
+    ) -> None:
+        caplog.set_level(logging.DEBUG, logger="earthx")
+        helper = TestTheHourlyRetry()
+        version = helper._pyramid(db, store, make, "patch_again_slow")
+        _age_omitted(db, "dem", version)
+        make("patch_again_slow", **self.FAST_ROUND)
+        make("patch_again_slow", **self.FAST_ROUND)
+        wait_until(lambda: _omitted(db, "dem", version)["2/1"][3] == 2, 30)
+        time.sleep(1.5)
+        assert _omitted(db, "dem", version)["2/1"][3] == 2, "tried once, not once for each worker"
+        assert sum(r.getMessage() == "overview retry ended" for r in caplog.records) == 1
+        assert self._turn(db) == (1, None), "one turn was taken, and it has ended"
+
+    def test_one_round_counts_for_all_workers(
+        self, db: psycopg.Connection, store: Store, make: Callable[..., Supervisor]
+    ) -> None:
+        helper = TestTheHourlyRetry()
+        version = helper._pyramid(db, store, make, "patch_again")
+        _age_omitted(db, "dem", version)
+        make("patch_again", **self.FAST_ROUND)
+        wait_until(lambda: _omitted(db, "dem", version)["2/1"][3] == 2, 30)
+        wait_until(lambda: self._turn(db) == (1, None), 30)
+        _age_omitted(db, "dem", version)  # due again, but the round of the first worker holds for the others
+        make("patch_again", **self.FAST_ROUND)
+        time.sleep(1.5)
+        assert _omitted(db, "dem", version)["2/1"][3] == 2 and self._turn(db) == (1, None)
+        next_at = db.execute("SELECT next_at - clock_timestamp() FROM public.earthx_overview_upkeep WHERE task = 'retry'").fetchone()
+        assert next_at is not None and next_at[0].total_seconds() > 3600 * 24 * 365, "the next round is a whole round away"
+
+    def test_a_turn_lost_during_the_retry_stops_it_without_uploading(
+        self, db: psycopg.Connection, store: Store, make: Callable[..., Supervisor], tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        caplog.set_level(logging.DEBUG, logger="earthx")
+        helper = TestTheHourlyRetry()
+        version = helper._pyramid(db, store, make, "patch_slow")
+        before = helper._objects(store, version)
+        row = _row(db, "dem", version)
+        _age_omitted(db, "dem", version)
+        make("patch_slow", **self.FAST_ROUND)
+        wait_until(lambda: list(tmp_path.glob("work*/*/started")), 30)
+        db.execute(
+            "UPDATE public.earthx_overview_upkeep SET turn = turn + 1, worker = 'other', "
+            "lease_until = clock_timestamp() + interval '1 hour' WHERE task = 'retry'"
+        )
+        wait_until(lambda: any(r.getMessage() == "overview upkeep turn lost" for r in caplog.records), 30)
+        time.sleep(0.5)
+        assert helper._objects(store, version) == before, "nothing was uploaded"
+        assert list(_omitted(db, "dem", version)) == ["2/1"]
+        assert _row(db, "dem", version)["base_hashes"] == row["base_hashes"]
+        assert self._turn(db) == (2, "other"), "the turn the other worker has is not ended by the one that lost it"
+        assert not _children()
+
+
+class TestARetryHoldsItsHost:
+    """The retry leases the hosts it reads from (a row per host in the database): no build starts on them meanwhile."""
+
+    FAST_ROUND = TestTheHourlyRetry.FAST_ROUND
+    SHARED = {**HOSTS, "dem2": HOSTS["dem"]}
+
+    def _reading(self, tmp_path: Path) -> list[Path]:
+        return list(tmp_path.glob("work*/*/started"))
+
+    def test_no_build_starts_on_the_host_while_the_retry_reads_from_it(
+        self, db: psycopg.Connection, store: Store, make: Callable[..., Supervisor], tmp_path: Path
+    ) -> None:
+        helper = TestTheHourlyRetry()
+        version = helper._pyramid(db, store, make, "patch_slow")
+        _age_omitted(db, "dem", version)
+        make("patch_slow", pyramids=self.SHARED, **self.FAST_ROUND)  # the worker that retries
+        make("succeed", pyramids=self.SHARED, cleanup_first_seconds=1e9)  # another worker, that builds
+        wait_until(lambda: self._reading(tmp_path), 30)
+        other = _request(db, "dem2", '"etag-2"')
+        time.sleep(1.5)
+        assert db.execute("SELECT count(*) FROM public.earthx_overview WHERE dataset_id = 'dem2'").fetchone() == (0,)
+        assert _omitted(db, "dem", version) != {}, "the retry is still reading"
+        _wait_for(db, "dem2", other, "ready", timeout=60)
+        assert _omitted(db, "dem", version) == {}, "the build came after the retry"
+        assert db.execute("SELECT worker, lease_until FROM public.earthx_overview_host").fetchall() == [(None, None)]
+
+    def test_a_host_lease_lost_during_the_retry_stops_it_without_uploading(
+        self, db: psycopg.Connection, store: Store, make: Callable[..., Supervisor], tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        caplog.set_level(logging.DEBUG, logger="earthx")
+        helper = TestTheHourlyRetry()
+        version = helper._pyramid(db, store, make, "patch_slow")
+        before = helper._objects(store, version)
+        _age_omitted(db, "dem", version)
+        make("patch_slow", **self.FAST_ROUND)
+        wait_until(lambda: self._reading(tmp_path), 30)
+        db.execute(
+            "UPDATE public.earthx_overview_host SET turn = turn + 1, worker = 'other', "
+            "lease_until = clock_timestamp() + interval '1 hour' WHERE host = 'dem.example.invalid'"
+        )
+        wait_until(lambda: any(r.getMessage() == "overview retry stopped" for r in caplog.records), 30)
+        time.sleep(0.5)
+        stopped = next(r for r in caplog.records if r.getMessage() == "overview retry stopped")
+        assert (stopped.dataset, stopped.reason) == ("dem", "host lease lost")
+        assert helper._objects(store, version) == before, "nothing was uploaded"
+        assert list(_omitted(db, "dem", version)) == ["2/1"]
+        assert db.execute("SELECT turn, worker FROM public.earthx_overview_host").fetchall() == [(2, "other")], (
+            "the lease the other worker took over is not ended by the one that lost it"
+        )
+        assert not _children()
