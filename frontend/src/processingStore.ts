@@ -1084,7 +1084,9 @@ function missingBands(draft: { steps: readonly DraftStep[]; bands: readonly stri
   const used = [
     ...draft.bands,
     ...bandMathExpressions(draft.steps).flatMap((expression) => [...namesInExpression(expression)]),
-    ...draft.steps.flatMap((step) => (step.op === 'normalize' && typeof step.values.bands === 'string' ? namesIn(step.values.bands) : [])),
+    ...draft.steps.flatMap((step) =>
+      (step.op === 'normalize' || step.op === 'terrain') && typeof step.values.bands === 'string' ? namesIn(step.values.bands) : [],
+    ),
     ...maskedBands(draft.steps),
   ];
   return [...new Set(used.filter((name) => !known.has(name)))].map((name) => `Band ${name} is not in this selection.`);
