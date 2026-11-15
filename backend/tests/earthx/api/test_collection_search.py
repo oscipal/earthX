@@ -7,7 +7,7 @@ from fastapi import HTTPException
 from pydantic import TypeAdapter
 from stac_pydantic.api.search import Intersection
 
-from earthx.api.collection_search import MAX_PAGE, MAX_TEXT_PAGE, read_query
+from earthx.api.collection_search import DEFAULT_PAGE, MAX_LISTING_PAGE, MAX_TEXT_PAGE, read_query
 
 
 def _read(**given):
@@ -21,8 +21,11 @@ def test_a_text_search_pages_by_twenty_at_most(limit, expected):
     assert _read(q="elevation", limit=limit).limit == expected
 
 
-@pytest.mark.parametrize(("limit", "expected"), [(None, MAX_PAGE), (50, 50), (MAX_PAGE + 1, MAX_PAGE)])
-def test_without_text_a_page_holds_every_match_unless_limited(limit, expected):
+@pytest.mark.parametrize(
+    ("limit", "expected"), [(None, DEFAULT_PAGE), (50, 50), (MAX_LISTING_PAGE + 1, MAX_LISTING_PAGE)]
+)
+def test_without_text_a_page_holds_the_default_unless_limited(limit, expected):
+    # M5-40 plan F3: without text the catalogue pages, full and listed entries together.
     assert _read(bbox="7,46,8,47", limit=limit).limit == expected
 
 
