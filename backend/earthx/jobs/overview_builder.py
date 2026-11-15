@@ -19,7 +19,7 @@ state is the row of `earthx_overview` (:mod:`earthx.jobs.overviews`).
 
 **Between builds,** once an hour like the clean-up, the thread extends the pyramids the source confirmed
 (:mod:`earthx.jobs.overview_upkeep`): thousands of copies on the store's side, which the maintenance thread, that also
-sweeps the leases of the runs, must not wait for.
+sweeps the leases of the runs, must not wait for. While another worker extends, the thread skips its round.
 
 **How a build ends**, as for a run (`worker.py`): the lease was lost (the row is not ours, nothing is written, the child
 is killed); shutdown (the child is ended and the build given back without using up an attempt,
@@ -180,9 +180,11 @@ class OverviewBuilder:
                 self._stopping.wait(1.0)
 
     def _extend(self, conn: psycopg.Connection) -> None:
-        """Hourly, when no build waits: extend the pyramids the source confirmed since (adr/0032 §5.3)."""
+        """Hourly, when no build waits: extend the pyramids the source confirmed since (adr/0032 §5.3), if no other worker does."""
         try:
-            overview_upkeep.extend(conn, self._store, set(self._pyramids), self._stopping)
+            overview_upkeep.extend_in_turn(
+                conn, self._store, set(self._pyramids), self._stopping, worker=self._name, config=self._config
+            )
         except ObjectStoreError as error:
             LOGGER.warning("overview extension failed at the object store", extra={"error": type(error).__name__})
 
