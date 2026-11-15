@@ -40,6 +40,7 @@ from rio_tiler.models import ImageData
 from rio_tiler.mosaic import mosaic_reader
 from rio_tiler.mosaic.methods.defaults import FirstMethod
 
+from earthx.access.footprint_mask import cut_to_raster
 from earthx.access.mosaic_tiles import MOSAIC_THREADS
 from earthx.processing.errors import GridMismatch, RecipeInvalid, ScalingMismatch, UnsupportedRecipe
 from earthx.processing.mosaic import check_alike
@@ -264,6 +265,17 @@ def _tile_options(
     return options
 
 
+def _read_own(source: Source, x: int, y: int, z: int, options: dict[str, Any], halo: int) -> ImageData:
+    """The tile of ``source``; with a halo only the pixels that lie in its raster: read ``bilinear``, the edge of a scene
+    would otherwise give its value to the pixels past it, a neighbour the job does not have (M5-10, adr/0030 F3)."""
+    image = source.read_tile(x, y, z, **options)
+    if not halo or source.crs is None:  # radar geometry is placed by its spline, not by bounds
+        return image
+    left, top = source.transform @ (0, 0)
+    right, bottom = source.transform @ (source.width, source.height)
+    return cut_to_raster(image, source.crs, (min(left, right), min(top, bottom), max(left, right), max(top, bottom)))
+
+
 def _meta_of(sources: list[Source], steps: Sequence[tuple[Operator, BaseModel]]) -> tuple[Source, RasterMeta]:
     """The grid the sources are read onto, and the bands the steps leave of them; refusals before the first pixel."""
     finest, resampled = common_grid(sources)
@@ -351,8 +363,9 @@ class OperatorTileReader:
         **refused: Any,
     ) -> ImageData:
         """The merged tile, in physical values; options that would change the values are refused."""
-        options = _tile_options(tilesize, resampling_method, buffer, padding, refused, halo_of(self._input.steps))
-        return merge_images([source.read_tile(x, y, z, **options) for source in self._sources])
+        halo = halo_of(self._input.steps)
+        options = _tile_options(tilesize, resampling_method, buffer, padding, refused, halo)
+        return merge_images([_read_own(source, x, y, z, options, halo) for source in self._sources])
 
     def preview(
         self,
@@ -468,14 +481,15 @@ class MosaicOperatorTileReader:
 
     def _scene(self, index: int, x: int, y: int, z: int, options: dict[str, Any]) -> ImageData:
         """One scene's assets as one image in physical values; the first scene from what ``__enter__`` opened."""
+        halo = halo_of(self._input.steps)
         with rasterio.Env(**self.gdal_config):
             if index == 0:
-                return merge_images([source.read_tile(x, y, z, **options) for source in self._first])
+                return merge_images([_read_own(source, x, y, z, options, halo) for source in self._first])
             with ExitStack() as stack:
                 sources = [Source.open(entry, target, stack) for entry, target in self._input.scenes[index]]
                 for first, source in zip(self._first, sources, strict=True):
                     check_alike(first.entry.asset.asset, [first, source])
-                return merge_images([source.read_tile(x, y, z, **options) for source in sources])
+                return merge_images([_read_own(source, x, y, z, options, halo) for source in sources])
 
     def tile(
         self,
