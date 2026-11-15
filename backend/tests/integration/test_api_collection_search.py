@@ -13,8 +13,8 @@ import httpx
 import pytest
 
 from earthx.api.main import app
-from earthx.catalog.load import main as load_catalog
 from earthx.catalog.listed import sort_title
+from earthx.catalog.load import main as load_catalog
 from earthx.catalog.search import MAX_QUERY_CHARS
 from tests.catalog.entries import REGISTRY
 from tests.conftest import log_line_without_timestamp
