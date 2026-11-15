@@ -182,6 +182,8 @@ export function spatialExtentText(collection: Collection): string {
 export function temporalExtentText(collection: Collection): string {
   const interval = collection.extent?.temporal?.interval?.[0];
   const [start, end] = Array.isArray(interval) ? interval : [undefined, undefined];
+  // Both ends open is no period at all (a listed entry without one, M5-40), not one that runs until today.
+  if (start === null && end === null) return NONE;
   const from = typeof start === 'string' ? utcDay(start) : null;
   const to = end === null ? 'today' : typeof end === 'string' ? utcDay(end) : null;
   if (!from && !to) return NONE;

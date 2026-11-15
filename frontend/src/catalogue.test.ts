@@ -197,6 +197,7 @@ describe('the rows', () => {
     expect(period(['2010-12-01T00:00:00Z', '2015-01-31T23:59:59Z'], false)).toBe('No time axis · 2010-12-01 – 2015-01-31');
     expect(period(['not a date', 'neither'])).toBe('—');
     expect(period([null, '2020-01-01T00:00:00Z'])).toBe('— – 2020-01-01');
+    expect(period([null, null])).toBe('—');
     expect(temporalExtentText(collection('x', 'optical'))).toBe('—');
   });
 
