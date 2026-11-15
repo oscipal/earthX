@@ -5,6 +5,9 @@ The rig of ``test_tiler_pyramid``: synthetic pyramid tiles in an in-process S3 a
 pyramid from z7 down; ``TERRAIN`` stands in with RELIEF below z13, and names two bands of heights (G3).
 """
 
+# The fixtures of test_tiler_pyramid are imported by name, and every test takes them as arguments of the same name.
+# ruff: noqa: F811
+
 from __future__ import annotations
 
 import io
