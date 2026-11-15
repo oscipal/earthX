@@ -53,11 +53,14 @@ LOGGER = logging.getLogger("earthx.api.mosaic_tiles")
 
 __all__ = [
     "MAX_ITEM_FETCHES",
+    "MAX_FOOTPRINT_BODY_BYTES",
+    "MAX_FOOTPRINT_ITEMS",
     "MAX_MOSAIC_OPERATOR_ASSETS",
     "MAX_MOSAIC_REQUEST_BYTES",
     "MAX_SELECTION_BODY_BYTES",
     "MAX_SELECTION_ITEMS",
     "MIN_MOSAIC_ITEMS",
+    "OVERVIEW_MASKED_ROUTER_PREFIX",
     "OVERVIEW_ROUTER_PREFIX",
     "PARTIAL_HEADER",
     "PROTOTYPE_CACHE_CONTROL",
@@ -68,10 +71,12 @@ __all__ = [
     "TILE_FILE_BUDGET",
     "TILE_TIME_BUDGET_S",
     "ItemFetches",
+    "FootprintRequest",
     "SelectionRequest",
     "TileOutcome",
     "TileOutcomeHeaders",
     "TileScenes",
+    "check_footprint_items",
     "check_length",
     "check_one_overpass",
     "check_query",
@@ -81,6 +86,8 @@ __all__ = [
     "fetch_selection_items",
     "footprints_of",
     "items_in_tile",
+    "masked_extent",
+    "masked_region",
     "mosaic_tile",
     "scenes_touching",
     "substitute_region",
@@ -93,6 +100,8 @@ ROUTER_PREFIX = "/collections/{dataset}/mosaic/{selection}"
 
 #: Where the tile route of a substitute begins (plan M5-30b §4.8); the factory adds ``/tiles/…`` and nothing else.
 OVERVIEW_ROUTER_PREFIX = "/collections/{dataset}/overview"
+#: The overview of the hits of a search: the same picture, masked to the footprints of a selection (adr/0032 Nachtrag 15.11.2026).
+OVERVIEW_MASKED_ROUTER_PREFIX = "/collections/{dataset}/overview/{selection}"
 #: The header that says where the pixels of a tile come from, for a tile that is not of the dataset in its URL.
 SOURCE_HEADER = "X-EarthX-Source"
 #: What every answer of a prototype source carries (adr/0024 R7).
@@ -206,6 +215,61 @@ def check_selection(items: Sequence[str], assets: Sequence[str]) -> tuple[list[s
     if len(set(assets)) != len(assets) or not all(isinstance(key, str) and 1 <= len(key) <= 128 for key in assets):
         raise OrderRefused(400, "name each asset once, as a key of at most 128 characters", "order")
     return sorted(items), sorted(assets)
+
+
+#: Hits in one footprint selection: the map draws the first 40 of a search (`MAX_MOSAIC_LAYERS`); the rest is slack for a
+#: client that draws more. A protection for the table and the creation, not a limit of the picture.
+MAX_FOOTPRINT_ITEMS = 200
+#: The body of the creation: 200 ids of at most 255 characters are 52 kB, real ids are 20 to 60 (about 12 kB).
+MAX_FOOTPRINT_BODY_BYTES = 64 * 1024
+
+
+class FootprintRequest(BaseModel):
+    """Body of ``POST /collections/{dataset}/overview/footprints``: the hits of a search, by item id.
+
+    Only the shape is the model's; what the list may hold is :func:`check_footprint_items`. A field the route does not know is refused.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[str]
+
+
+def check_footprint_items(items: Sequence[str]) -> list[str]:
+    """The item ids of a footprint selection, sorted, or the ``400`` it earns: one to :data:`MAX_FOOTPRINT_ITEMS`, each once."""
+    if not 1 <= len(items) <= MAX_FOOTPRINT_ITEMS:
+        raise OrderRefused(400, f"a footprint selection takes 1 to {MAX_FOOTPRINT_ITEMS} items, not {len(items)}", "order")
+    if len(set(items)) != len(items):
+        raise OrderRefused(400, "name each item once", "order")
+    if not all(isinstance(item_id, str) and ITEM_ID.match(item_id) for item_id in items):
+        raise OrderRefused(400, "an item id has the shape the sources give theirs", "order")
+    return sorted(items)
+
+
+def masked_region(
+    grid: tuple[morecantile.TileMatrixSet, morecantile.Tile], footprints: BaseGeometry
+) -> tuple[float, float, float, float]:
+    """The part of the tile (west, south, east, north, EPSG:4326) that lies over the bounds of ``footprints``; ``404`` where none does.
+
+    A tile that touches no footprint has no picture: it is refused before an object or a file is read.
+    """
+    tile_box = box(*tuple(grid[0].bounds(grid[1])))
+    if not tile_box.intersects(footprints):
+        raise OrderRefused(404, "the tile lies outside the footprints of the selection", "items")
+    west, south, east, north = footprints.bounds
+    tile_west, tile_south, tile_east, tile_north = tile_box.bounds
+    return (max(west, tile_west), max(south, tile_south), min(east, tile_east), min(north, tile_north))
+
+
+def masked_extent(
+    extent: tuple[float, float, float, float], footprints: BaseGeometry
+) -> tuple[float, float, float, float]:
+    """``extent`` cut to the bounds of ``footprints`` (west, south, east, north, EPSG:4326); ``404`` where they do not meet."""
+    west, south, east, north = footprints.bounds
+    cut = (max(extent[0], west), max(extent[1], south), min(extent[2], east), min(extent[3], north))
+    if cut[0] > cut[2] or cut[1] > cut[3]:
+        raise OrderRefused(404, "the hits lie outside the extent of the dataset", "items")
+    return cut
 
 
 def mosaic_tile(path_params: Mapping[str, Any]) -> tuple[morecantile.TileMatrixSet, morecantile.Tile] | None:
@@ -503,7 +567,7 @@ class TileOutcomeHeaders:
     source's pyramid (every answer, whatever its status), and :data:`SOURCE_HEADER` on the answer of a substitute's or a pyramid's tile. TiTiler's tile route builds its own response, and the read
     that may run out of time ends inside it; so the path dependency and the reader write a :class:`TileOutcome` that
     lives in the request's scope, and the headers are set when the response starts. Only the paths under
-    ``/collections/{dataset}/mosaic/`` and ``/collections/{dataset}/overview/tiles/`` get an outcome.
+    ``/collections/{dataset}/mosaic/``, ``/collections/{dataset}/overview/tiles/`` and ``/collections/{dataset}/overview/{selection}/tiles/`` get an outcome.
     """
 
     def __init__(self, app: Any) -> None:
@@ -511,7 +575,7 @@ class TileOutcomeHeaders:
 
     async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
         path = scope.get("path", "")
-        if scope.get("type") != "http" or not ("/mosaic/" in path or "/overview/tiles/" in path):
+        if scope.get("type") != "http" or not ("/mosaic/" in path or "/overview/tiles/" in path or ("/overview/" in path and "/tiles/" in path)):
             await self.app(scope, receive, send)
             return
         outcome = TileOutcome()

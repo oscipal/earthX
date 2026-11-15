@@ -45,7 +45,7 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, TypeVar
 
 import psycopg
 from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request
@@ -57,6 +57,7 @@ from rasterio.errors import RasterioError, RasterioIOError
 from rio_tiler.errors import RioTilerError, TileOutsideBounds
 from rio_tiler.models import ImageData
 from shapely.geometry import mapping as shapely_mapping
+from shapely.geometry.base import BaseGeometry
 from starlette.concurrency import run_in_threadpool
 from titiler.core.dependencies import BidxParams
 
@@ -130,11 +131,11 @@ from earthx.api.item_source import (
     check_item_holdings,
     malformed_item_detail,
 )
-from earthx.api.mosaic_selection import Selection, SelectionStore, outline_source
+from earthx.api.mosaic_selection import FootprintSelection, Selection, SelectionStore, outline_source
 from earthx.api.result_tiles import ROUTER_PREFIX as RESULT_ROUTER_PREFIX
 from earthx.api.result_tiles import ResultSources, build_result_factory
 from earthx.catalog.datasets import registry as dataset_registry
-from earthx.catalog.mosaic_selection import selection_id
+from earthx.catalog.mosaic_selection import footprint_selection_id, selection_id
 from earthx.catalog.registry import (
     AcquisitionYearMissing,
     DatasetConfig,
@@ -145,6 +146,7 @@ from earthx.catalog.registry import (
     OverviewMode,
     RetiredDatasetError,
     UnknownDatasetError,
+    ViewerInfo,
 )
 from earthx.catalog.stats_cache import PooledStatsCache, PostgresStatsCache
 from earthx.gateway import CachingResolver, Gateway, GatewayError, user_agent_from_env
@@ -170,6 +172,9 @@ MOSAIC_SELECTION_ROUTE = "/collections/{dataset}/mosaic"
 
 # The tile of the substitute a dataset shows below its first level (plan M5-30b §4.8).
 OVERVIEW_ROUTER_PREFIX = mosaic_tiles.OVERVIEW_ROUTER_PREFIX
+OVERVIEW_MASKED_ROUTER_PREFIX = mosaic_tiles.OVERVIEW_MASKED_ROUTER_PREFIX
+# Creates the footprint selection of the hits of a search (adr/0032 Nachtrag 15.11.2026).
+FOOTPRINT_SELECTION_ROUTE = "/collections/{dataset}/overview/footprints"
 
 # Where the tiles of a job result begin (`result_tiles.ROUTER_PREFIX` up to its identifier).
 RESULT_PATH_START = "/results/"
@@ -808,7 +813,7 @@ async def _validate_before_fetching(request: Request) -> None:
     ``422`` FastAPI would have answered, with nothing asked of the source.
     """
     route = request.scope["route"]
-    skipped = (placed_mosaic_scenes, mosaic_post_process, placed_overview_scenes)
+    skipped = (placed_mosaic_scenes, mosaic_post_process, placed_overview_scenes, placed_masked_overview_scenes)
     dependant = dataclasses.replace(
         route.dependant, dependencies=[sub for sub in route.dependant.dependencies if sub.call not in skipped]
     )
@@ -1033,13 +1038,19 @@ def _selection_answer(dataset: str, selection: str, status_code: int) -> JSONRes
     )
 
 
-async def _read_selection_body(request: Request) -> mosaic_tiles.SelectionRequest:
-    """The body of the creation, read up to :data:`~earthx.api.mosaic_tiles.MAX_SELECTION_BODY_BYTES` and no further.
+_BodyModel = TypeVar("_BodyModel", bound=BaseModel)
+
+
+async def _read_selection_body(
+    request: Request,
+    model: type[_BodyModel],
+    limit: int = mosaic_tiles.MAX_SELECTION_BODY_BYTES,
+) -> _BodyModel:
+    """The body of a creation, read up to ``limit`` bytes and no further.
 
     ``413`` from the ``Content-Length`` before a byte is read, and from the bytes read for a body that did not say; ``422``
     for one that is no JSON of the right shape, with the names of the fields and no value.
     """
-    limit = mosaic_tiles.MAX_SELECTION_BODY_BYTES
     too_large = OrderRefused(413, f"the body of a selection is at most {limit} bytes", "order")
     declared = request.headers.get("content-length", "")
     if declared.isdecimal() and int(declared) > limit:
@@ -1050,7 +1061,7 @@ async def _read_selection_body(request: Request) -> mosaic_tiles.SelectionReques
         if len(raw) > limit:
             raise too_large
     try:
-        return mosaic_tiles.SelectionRequest.model_validate_json(bytes(raw))
+        return model.model_validate_json(bytes(raw))
     except ValidationError as error:
         problems = "; ".join(
             f"{'.'.join(map(str, entry['loc'])) or 'body'}: {entry['msg']}"
@@ -1081,7 +1092,7 @@ async def create_mosaic_selection(
     viewer = config.viewer
     assert viewer is not None  # `_mosaic_zooms` answered 501 otherwise
     try:
-        body = await _read_selection_body(request)
+        body = await _read_selection_body(request, mosaic_tiles.SelectionRequest)
         ids, assets = mosaic_tiles.check_selection(body.items, body.assets)
         store = _selection_store(state)
         selection = selection_id(dataset, assets, ids)
@@ -1119,8 +1130,114 @@ async def create_mosaic_selection(
     return _selection_answer(dataset, selection, 201)
 
 
-async def overview_scenes(
+def _overview_dataset(state: Any, dataset: str) -> tuple[DatasetConfig, ViewerInfo]:
+    """The config of a dataset that draws something below its first level (a pyramid or a substitute), or the ``404`` that says it does not."""
+    config = _dataset_config(state, dataset)
+    _check_display_allowed(config)
+    viewer = config.viewer
+    if viewer is None or viewer.overview not in (OverviewMode.SUBSTITUTE, OverviewMode.PYRAMID):
+        raise HTTPException(status_code=404, detail=f"{dataset!r} draws nothing below its first level but its own files")
+    return config, viewer
+
+
+def _footprint_answer(dataset: str, selection: str, status_code: int) -> JSONResponse:
+    """The answer of the creation of a footprint selection: the id and where its tiles are, relative to this app."""
+    base = f"/collections/{dataset}/overview/{selection}"
+    return JSONResponse(status_code=status_code, content={"id": selection, "tiles": f"{base}/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}"})
+
+
+async def create_footprint_selection(
     request: Request, dataset: Annotated[str, Path(description="dataset id of the registry")]
+) -> JSONResponse:
+    """Create the footprint selection of the hits of a search: ``{"id", "tiles"}``, ``201``, or ``200`` where it exists.
+
+    Adr/0032 Nachtrag 15.11.2026. The body is ``{"items": [...]}``: one to :data:`~earthx.api.mosaic_tiles.MAX_FOOTPRINT_ITEMS`
+    item ids of a dataset that draws a pyramid or a substitute below its first level, each once; no overpass, no asset. The
+    id is the hash of the dataset and the ids, so the same hits are the same id and the same tile URL for everyone. The
+    outlines come from our own pgstac (no request to a source; a dataset that is not materialized is ``501``) and are kept
+    in ``earthx_mosaic_selection`` for seven days, which creating the same selection again renews. The overview route of
+    the id masks the picture to the union of the outlines.
+    """
+    state = request.app.state
+    config, _viewer = _overview_dataset(state, dataset)
+    if config.source.item_holding is not ItemHolding.MATERIALIZED:
+        raise HTTPException(status_code=501, detail="the footprints of a federated dataset are not served yet")
+    try:
+        body = await _read_selection_body(request, mosaic_tiles.FootprintRequest, mosaic_tiles.MAX_FOOTPRINT_BODY_BYTES)
+        ids = mosaic_tiles.check_footprint_items(body.items)
+        store = _selection_store(state)
+        selection = footprint_selection_id(dataset, ids)
+        try:
+            if await store.renew(selection):
+                return _footprint_answer(dataset, selection, 200)
+        except psycopg.Error as error:
+            LOGGER.warning("the catalogue database failed under a footprint selection: %s", type(error).__name__)
+            raise OrderRefused(503, _SELECTION_DATABASE_DETAIL, "items") from None
+        batches = getattr(state, "earthx_item_batches", None)
+        if batches is None:
+            raise OrderRefused(503, _SELECTION_DATABASE_DETAIL, "items")
+        items = await mosaic_tiles.fetch_selection_items(batches, dataset, ids)
+        chosen = FootprintSelection.build(selection, dataset, {item_id: outline_source(items[item_id]) for item_id in ids})
+        try:
+            await store.put(chosen)
+        except psycopg.Error as error:
+            LOGGER.warning("the catalogue database failed under a footprint selection: %s", type(error).__name__)
+            raise OrderRefused(503, _SELECTION_DATABASE_DETAIL, "items") from None
+    except OrderRefused as error:
+        raise HTTPException(status_code=error.status_code, detail=error.detail) from None
+    LOGGER.info("footprint selection created with %d hits", len(ids))
+    return _footprint_answer(dataset, selection, 201)
+
+
+async def _load_footprints(state: Any, dataset: str, selection: str) -> FootprintSelection:
+    """The footprint selection an overview URL names: ``410`` where it is gone, ``404`` where it belongs to another dataset.
+
+    As for a mosaic selection (:func:`_load_selection`): one that expired or never was is gone, and the map creates it
+    again from the hits it shows, which gives the same id.
+    """
+    mosaic_tiles.check_selection_id(selection)
+    store = _selection_store(state)
+    try:
+        chosen = await store.get_footprints(selection)
+    except psycopg.Error as error:
+        LOGGER.warning("the catalogue database failed under an overview tile: %s", type(error).__name__)
+        raise OrderRefused(503, _SELECTION_DATABASE_DETAIL, "items") from None
+    if chosen is None:
+        raise OrderRefused(
+            410,
+            f"no footprint selection {selection!r}: it expired or never existed; create it again with POST /collections/{dataset}/overview/footprints",
+            "items",
+        )
+    if chosen.dataset_id != dataset:
+        raise OrderRefused(404, f"no footprint selection {selection!r} of {dataset!r}", "items")
+    return chosen
+
+
+async def masked_overview_scenes(
+    request: Request,
+    dataset: Annotated[str, Path(description="dataset id of the registry")],
+    selection: Annotated[str, Path(description="id of a footprint selection, from `POST /collections/{dataset}/overview/footprints`")],
+) -> MosaicScenes | PyramidTile:
+    """:func:`overview_scenes` for the hits of a search: the same picture, masked to the footprints of the selection.
+
+    Adr/0032 Nachtrag 15.11.2026. A tile that touches no footprint is ``404``, before an object or a file is read; the
+    pixels of the others outside the footprints are transparent. A prototype source's every answer is ``private, no-store``.
+    """
+    outcome = mosaic_tiles.TileOutcome.of(request.scope)
+    if outcome is not None:
+        outcome.no_store = overview_tiles.is_prototype(dataset)
+    _overview_dataset(request.app.state, dataset)
+    try:
+        chosen = await _load_footprints(request.app.state, dataset, selection)
+    except OrderRefused as error:
+        raise HTTPException(status_code=error.status_code, detail=error.detail) from None
+    return await overview_scenes(request, dataset, footprints=chosen.union)
+
+
+async def overview_scenes(
+    request: Request,
+    dataset: Annotated[str, Path(description="dataset id of the registry")],
+    footprints: BaseGeometry | None = None,
 ) -> MosaicScenes | PyramidTile:
     """What the tile below the first level of ``dataset`` shows (plan M5-30b §4.8, §8.11, A5).
 
@@ -1138,13 +1255,12 @@ async def overview_scenes(
     from our own pgstac, the largest overlap first and cut to the budget per tile, so that a tile of a low level reads
     the files over the dataset and not those of the rest of the tile. The scenes read lie in the order of the mosaic. The
     asset is the first of the substitute's default render that an item carries.
+
+    With ``footprints`` (EPSG:4326, set only by :func:`masked_overview_scenes`) the picture is masked to them, and a tile that
+    touches none is ``404``.
     """
     state = request.app.state
-    config = _dataset_config(state, dataset)
-    _check_display_allowed(config)
-    viewer = config.viewer
-    if viewer is None or viewer.overview not in (OverviewMode.SUBSTITUTE, OverviewMode.PYRAMID):
-        raise HTTPException(status_code=404, detail=f"{dataset!r} draws nothing below its first level but its own files")
+    config, viewer = _overview_dataset(state, dataset)
     substitute: DatasetConfig | None = None
     if viewer.overview is OverviewMode.SUBSTITUTE:
         assert viewer.overview_substitute is not None  # the registry requires the id of a substitute
@@ -1166,10 +1282,16 @@ async def overview_scenes(
         grid = mosaic_tiles.mosaic_tile(request.path_params)
         assert grid is not None  # the path has a level
         await _validate_before_fetching(request)
+        if footprints is not None:
+            mosaic_tiles.masked_region(grid, footprints)  # 404 for a tile over none of the hits, before anything is read
         if substitute is None:
-            return await _pyramid_tile(request, config, grid, source=overview_tiles.OVERVIEW_SOURCE, extent=None)
+            return await _pyramid_tile(
+                request, config, grid, source=overview_tiles.OVERVIEW_SOURCE, extent=None, mask=footprints
+            )
         assert substitute.viewer is not None  # the registry gives a substitute a viewer
         extent = config.spatial_extent.bbox
+        # Over the hits of a search the picture is where the dataset is and a hit is: hits outside the extent leave nothing to draw.
+        reach = extent if footprints is None else mosaic_tiles.masked_extent(extent, footprints)
         if substitute.viewer.overview is OverviewMode.PYRAMID and zoom < substitute.viewer.min_zoom:
             # The tile over nothing of the dataset is 404. Otherwise the stand-in's pyramid; where there is none to read (no row,
             # building, failed, expired, or the store or the rows cannot be reached) the files of the stand-in over the
@@ -1177,7 +1299,7 @@ async def overview_scenes(
             # the object is a tile without data and no reason to read files.
             mosaic_tiles.substitute_region(grid, extent)
             stored = await _pyramid_tile(
-                request, substitute, grid, source=mosaic_tiles.SUBSTITUTE_SOURCE, extent=extent, fallback=True
+                request, substitute, grid, source=mosaic_tiles.SUBSTITUTE_SOURCE, extent=extent, fallback=True, mask=footprints
             )
             if stored is not None:
                 return stored
@@ -1187,7 +1309,7 @@ async def overview_scenes(
             # this route has no budget for. Refused until a case exists and decides it.
             raise OrderRefused(501, "a federated dataset cannot serve as a substitute yet", "items")
         found, capped = await mosaic_tiles.items_in_tile(
-            getattr(state, "earthx_cache_pool", None), substitute.dataset_id, grid, extent
+            getattr(state, "earthx_cache_pool", None), substitute.dataset_id, grid, reach
         )
         refs: dict[str, ResolvedAsset] = {}
         items: dict[str, dict[str, Any]] = {}
@@ -1216,7 +1338,7 @@ async def overview_scenes(
     scenes = tuple(
         _open_ref(state, refs[item_id], target_gsd=target_gsd_for(request, items[item_id])) for item_id in touching.read
     )
-    return MosaicScenes(substitute.dataset_id, scenes, mosaic_tiles.union_bounds(outlines), budget)
+    return MosaicScenes(substitute.dataset_id, scenes, mosaic_tiles.union_bounds(outlines), budget, mask=footprints)
 
 
 async def _pyramid_tile(
@@ -1227,11 +1349,13 @@ async def _pyramid_tile(
     source: str,
     extent: tuple[float, float, float, float] | None,
     fallback: bool = False,
+    mask: BaseGeometry | None = None,
 ) -> PyramidTile | None:
     """The stored tile of ``owner``'s pyramid, or the answer that says why there is none (plan M5-30b §8.11).
 
     ``source`` is the ``X-EarthX-Source`` of the answer: ``overview`` for the pyramid of the dataset in the path,
-    ``substitute`` where it is the stand-in's. ``extent`` cuts the picture to the dataset a stand-in draws for. A prototype
+    ``substitute`` where it is the stand-in's. ``extent`` cuts the picture to the dataset a stand-in draws for; ``mask`` to the
+    footprints of the hits of a search (EPSG:4326). A prototype
     source's every answer is sent ``private, no-store`` (adr/0024 R7). The read is one object and has no budget; it waits at
     the gate of the pyramid tiles, apart from the file reads.
 
@@ -1270,7 +1394,7 @@ async def _pyramid_tile(
     except BaseException:
         place.release()
         raise
-    return PyramidTile(owner.dataset_id, data, extent, place)
+    return PyramidTile(owner.dataset_id, data, extent, place, mask)
 
 
 async def _wait_for_a_place(request: Request, gate: TileGate) -> TilePlace:
@@ -1317,6 +1441,22 @@ async def placed_overview_scenes(
     wait behind the files of a mosaic. Either place is given back here if the reader never ran.
     """
     scenes = await overview_scenes(request, dataset)
+    if isinstance(scenes, MosaicScenes):
+        scenes = dataclasses.replace(scenes, place=await _wait_for_a_place(request, TILE_GATE))
+    try:
+        yield scenes
+    finally:
+        if scenes.place is not None:
+            scenes.place.release()
+
+
+async def placed_masked_overview_scenes(
+    request: Request,
+    dataset: Annotated[str, Path(description="dataset id of the registry")],
+    selection: Annotated[str, Path(description="id of a footprint selection")],
+) -> AsyncIterator[MosaicScenes | PyramidTile]:
+    """:func:`masked_overview_scenes`, with the place at the gate that :func:`placed_overview_scenes` gives the files of a substitute."""
+    scenes = await masked_overview_scenes(request, dataset, selection)
     if isinstance(scenes, MosaicScenes):
         scenes = dataclasses.replace(scenes, place=await _wait_for_a_place(request, TILE_GATE))
     try:
@@ -2160,6 +2300,30 @@ def build_app(
         name="overview-tiles",
     )
     app.include_router(overview_factory.router, prefix=OVERVIEW_ROUTER_PREFIX, tags=["Overview tiles"])
+    # The same picture masked to the footprints of the hits of a search (adr/0032 Nachtrag 15.11.2026): a selection of its own kind.
+    masked_factory = EarthxOverviewTilerFactory(
+        path_dependency=placed_masked_overview_scenes,
+        layer_dependency=BidxParams,
+        process_dependency=overview_post_process,
+        environment_dependency=gdal_environment,
+        router_prefix=OVERVIEW_MASKED_ROUTER_PREFIX,
+        name="overview-masked-tiles",
+    )
+    app.include_router(masked_factory.router, prefix=OVERVIEW_MASKED_ROUTER_PREFIX, tags=["Overview tiles"])
+    app.add_api_route(
+        FOOTPRINT_SELECTION_ROUTE,
+        create_footprint_selection,
+        methods=["POST"],
+        status_code=201,
+        tags=["Overview tiles"],
+        summary="Create the footprint selection of the hits of a search; its id goes into the overview tile URL",
+        openapi_extra={
+            "requestBody": {
+                "required": True,
+                "content": {"application/json": {"schema": mosaic_tiles.FootprintRequest.model_json_schema()}},
+            }
+        },
+    )
     # The tiles of a finished job (M4-13c-5): read from the object store, not through the registry.
     app.state.earthx_results = None
     app.state.earthx_overviews = None
@@ -2290,6 +2454,7 @@ __all__ = [
     "BANDS_ROUTE",
     "DOWNLOAD_ROUTE",
     "MOSAIC_ROUTER_PREFIX",
+    "FOOTPRINT_SELECTION_ROUTE",
     "MOSAIC_SELECTION_ROUTE",
     "OVERVIEW_ROUTER_PREFIX",
     "ROUTER_PREFIX",
@@ -2300,5 +2465,6 @@ __all__ = [
     "download_crop",
     "mosaic_scenes",
     "placed_mosaic_scenes",
+    "placed_masked_overview_scenes",
     "placed_overview_scenes",
 ]
