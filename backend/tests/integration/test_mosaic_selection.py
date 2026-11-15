@@ -18,7 +18,7 @@ import psycopg
 import pytest
 from fastapi.testclient import TestClient
 
-from earthx.api.mosaic_selection import Selection, SelectionStore
+from earthx.api.mosaic_selection import FootprintSelection, Selection, SelectionStore
 from earthx.api.tiler import build_app
 from earthx.catalog import mosaic_selection as stored
 from earthx.catalog.pgstac import load_collection, search_items_by_ids, upsert_items, use_pgstac_search_path
@@ -182,6 +182,55 @@ class TestTheStore:
         assert await store.renew("a" * 32) is False
         await store.put(_selection("a" * 32))
         assert await store.renew("a" * 32) is True
+
+
+def _footprints(selection_id: str, dataset: str = DATASET, items: tuple[str, ...] = ITEMS) -> FootprintSelection:
+    sources = {item_id: {"bbox": [float(n), 0.0, float(n) + 1.0, 1.0]} for n, item_id in enumerate(items)}
+    return FootprintSelection.build(selection_id, dataset, sources)
+
+
+@pytest.mark.anyio
+class TestTheFootprintSelection:
+    """A selection of its own kind in the same table (adr/0032 Nachtrag 15.11.2026): same term, same renewal, no migration."""
+
+    async def test_it_comes_back_with_its_outlines_and_their_union(self, aconn_migrated: psycopg.AsyncConnection) -> None:
+        await SelectionStore(OneConnection(aconn_migrated)).put(_footprints("a" * 32))
+        loaded = await SelectionStore(OneConnection(aconn_migrated)).get_footprints("a" * 32)
+        assert loaded is not None
+        assert (loaded.dataset_id, loaded.items, loaded.bounds) == (DATASET, ITEMS, (0.0, 0.0, 3.0, 1.0))
+        assert loaded.union.area == pytest.approx(3.0)
+
+    async def test_the_row_says_what_kind_it_is_and_the_term_is_that_of_a_mosaic_selection(
+        self, aconn_migrated: psycopg.AsyncConnection
+    ) -> None:
+        await SelectionStore(OneConnection(aconn_migrated)).put(_footprints("a" * 32))
+        row = await stored.load(aconn_migrated, "a" * 32)
+        assert row is not None and row[1]["kind"] == stored.FOOTPRINTS
+        assert (await _term(aconn_migrated, "a" * 32)).total_seconds() == stored.TERM_S
+
+    async def test_each_kind_is_found_only_as_itself(self, aconn_migrated: psycopg.AsyncConnection) -> None:
+        store = SelectionStore(OneConnection(aconn_migrated))
+        await store.put(_footprints("a" * 32))
+        await store.put(_selection("b" * 32))
+        fresh = SelectionStore(OneConnection(aconn_migrated))
+        assert await fresh.get("a" * 32) is None and await fresh.get_footprints("a" * 32) is not None
+        assert await fresh.get("b" * 32) is not None and await fresh.get_footprints("b" * 32) is None
+        # and the same from memory
+        assert await store.get("a" * 32) is None and await store.get_footprints("b" * 32) is None
+
+    async def test_an_expired_footprint_selection_is_gone_and_a_renewal_moves_it_seven_days_out(
+        self, aconn_migrated: psycopg.AsyncConnection
+    ) -> None:
+        store = SelectionStore(OneConnection(aconn_migrated))
+        await store.put(_footprints("a" * 32))
+        await aconn_migrated.execute(
+            f"UPDATE {stored.TABLE} SET expires_at = now() + interval '1 day' WHERE selection_id = %s", ("a" * 32,)
+        )
+        assert await store.renew("a" * 32) is True
+        assert (await _term(aconn_migrated, "a" * 32)).total_seconds() == stored.TERM_S
+        await _expire(aconn_migrated, "a" * 32)
+        assert await SelectionStore(OneConnection(aconn_migrated)).get_footprints("a" * 32) is None
+        assert await store.renew("a" * 32) is False
 
 
 @pytest.mark.anyio

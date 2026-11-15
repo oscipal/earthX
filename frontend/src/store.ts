@@ -81,7 +81,8 @@ import {
   needsFallback,
   withSourceState,
 } from './sections';
-import { overlaysOfPass, substituteOverlaysOf, underlaysOf } from './searchLayers';
+import { noteOfOverview } from './overviewSubstitute';
+import { overlaysOfPass, overviewOverlaysOf, underlaysOf } from './searchLayers';
 import { clampResultsAt, moveEntry, moveEntryTo, resultsAtAfterAdding, resultsAtAfterRemoving } from './resultsEntry';
 import {
   filterQuery,
@@ -621,9 +622,9 @@ function overlaysOfEntries(
     return overlaysOfPass(datasetId, pass, s.mosaics, look, clip, underlaysOf(pass, items, dataset, clip), viewIndexOf(look, dataset?.collection));
   });
   if (overlays.some((o) => o === null)) return null;
-  // The substitute of a dataset below its first level lies under everything the layer draws of its own.
+  // The picture below the first level of a dataset (its substitute's or its own pyramid) lies under everything the layer draws of its own.
   const datasetIds = passList.map((first) => first[0][1].datasetId);
-  const substitutes = substituteOverlaysOf(datasetIds, s.datasets, look, clip);
+  const substitutes = overviewOverlaysOf(datasetIds, s.datasets, look, clip);
   return [...substitutes, ...stackLikeView(overlays).flatMap((o) => o ?? [])];
 }
 
@@ -962,6 +963,7 @@ function pinViewImages(set: SetState, get: GetState, which: 'shown' | 'all'): vo
       opacity: s.viewOpacity,
       overlays: overlays ?? [],
       ...dateOf(datesOfIds(itemIds, known)),
+      ...noteOfOverview(s.datasets.find((d) => d.id === image.datasetId)),
       restore: {
         focusMode: true,
         downloaded: Object.fromEntries(entries),
@@ -2241,6 +2243,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       opacity: 1,
       overlays,
       ...dateOf(date),
+      ...noteOfOverview(dataset),
       restore,
     });
 

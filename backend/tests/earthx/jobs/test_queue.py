@@ -346,6 +346,11 @@ class TestAttemptsAndShielding:
         assert timedelta(days=7).total_seconds() - 5 < left <= timedelta(days=7).total_seconds()
 
 
+
+def test_a_recipe_job_does_not_retry_an_unreachable_source() -> None:
+    """Only a pyramid build retries `source_unreachable` (`overviews.RETRYABLE_BUILD`); the recipe jobs are as they were."""
+    assert "source_unreachable" not in RETRYABLE and RETRYABLE == {"source_timeout", "source_5xx", "lease_lost"}
+
 @pytest.mark.parametrize(
     ("error", "retries"),
     [

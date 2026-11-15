@@ -595,6 +595,8 @@ gleichzeitig), nicht je Anfrage; je Anfrage ≤ 4 folgt daraus. Ohne Pool und be
 einem Pool-Fehler antwortet die Mosaik-Kachel mit `503` und Grund (Plan §14).
 - **Form:** `item` wiederholt statt `items=` mit Kommas, wie `asset`.
 
+**Nachtrag 14.11.2026 (M5-30b, `adr/0032` §10.2, §6.2, `plans/m5/m5-30-bild-bei-jedem-zoom.md` §8.5, §8.7, §8.11):** Das Mosaik im Kachel-Pfad hat die Item-Liste in der URL verlassen; die Nachträge M4-17 und M4-17b oben beschreiben den Stand bis dahin. Was sich ändert: (1) Die Szenen sind eine **Auswahl** (`POST /collections/{dataset}/mosaic`, bis 2 000 Items), ihre ID im Pfad ist der Hash des Inhalts, sieben Tage abgelegt, `410` bei einer abgelaufenen und Neuanlegen durch die Karte. Das ist keine Such-ID im Sinn von §5 („eine ID, deren Eintrag ablaufen kann“): dieselbe Liste gibt immer dieselbe ID und damit dasselbe Bild, der Grundsatz „die URL bestimmt das Bild“ bleibt. (2) Die Grenzen 64 Items je URL, 12 Szenen je Kachel und „Mosaik-Kacheln erst ab z8“ entfallen; es gilt ein Budget je Kachel von 32 Dateien und 4 s, 4 Szenen je Portion bleiben, und höchstens zwei Kacheln werden gleichzeitig gelesen (Otto, 13.11.2026). (3) Wer auf einen der zwei Plätze wartet, wartet im Event-Loop, nicht in einem Thread des gemeinsamen Pools der synchronen Routen. (4) Unter dem `min_zoom` des Datensatzes liefert eine eigene Route ohne Items Pyramide oder Ersatz-Datensatz (`adr/0032` §5, §9).
+
 **Nachtrag M4-19c (2026-10-24, §3.4, Statistik mit Operator):** `/statistics` nimmt
 jetzt `op`, `op_version` und `params` wie die Kachel (`_OPERATOR_ROUTES` um `statistics`
 erweitert; an der Pfad-Abhängigkeit ändert sich sonst nichts: Lizenzstufe, R5, `applicable`,

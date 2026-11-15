@@ -13,7 +13,8 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
-from earthx.api.mosaic_selection import Selection
+from earthx.api.mosaic_selection import FootprintSelection, Selection
+from earthx.catalog.mosaic_selection import FOOTPRINTS
 
 
 class MemorySelections:
@@ -25,14 +26,18 @@ class MemorySelections:
 
     async def get(self, selection_id: str) -> Selection | None:
         row = self.rows.get(selection_id)
-        return None if row is None else Selection.from_document(selection_id, *row)
+        return None if row is None or row[1].get("kind") == FOOTPRINTS else Selection.from_document(selection_id, *row)
+
+    async def get_footprints(self, selection_id: str) -> FootprintSelection | None:
+        row = self.rows.get(selection_id)
+        return None if row is None or row[1].get("kind") != FOOTPRINTS else FootprintSelection.from_document(selection_id, *row)
 
     async def renew(self, selection_id: str) -> bool:
         if selection_id in self.rows:
             self.renewed.append(selection_id)
         return selection_id in self.rows
 
-    async def put(self, selection: Selection) -> None:
+    async def put(self, selection: Selection | FootprintSelection) -> None:
         self.rows[selection.selection_id] = (selection.dataset_id, json.loads(json.dumps(selection.document())))
 
     def expire(self, selection_id: str) -> None:

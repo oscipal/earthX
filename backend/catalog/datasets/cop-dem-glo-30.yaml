@@ -164,10 +164,10 @@ default_render:
 # group: an AOI crop over several tiles becomes one merged file (P19), the way a Sentinel-2 overpass does.
 # `results_group_by` is the same key: one dataset, one group, nothing a results list would head differently.
 #
-# `min_zoom` 0, not 8 (M3-12 plan step §3, F4): a DEM tile's own overview block costs the same to read at every level
-# from z0 to z8; the source has no per-scene mosaic to spread thinner as the map zooms out, so "below min_zoom one
-# tile shows several scenes" (`ViewerInfo`'s general reasoning) does not bound anything here; what does is how many of
-# the up to 300 items a search can return sit on screen at once, which does not change with `min_zoom`. z15 is three
+# `min_zoom` 7 (M5-30b part 9, adr/0032 §5.2, §9): from z7 a tile reads the original files, at most 32 of them (the budget
+# of a tile); below it the tiler serves the overview pyramid z0-z6 that the worker builds after `materialize`
+# (`overview: pyramid`, the base level is z6 = `min_zoom` - 1) from the platform's own object store. It was 0 until the
+# pyramid existed: a tile of the world touches hundreds of 1 degree files. z15 is three
 # levels past the native ~30 m/px resolution, for zooming into real detail without reaching MapLibre's own z22 ceiling
 # on a dataset with nothing finer to give past it.
 #
@@ -176,7 +176,7 @@ default_render:
 # (M3-09's mechanism), never a quicklook stage.
 viewer:
   group_by: [start_datetime]
-  min_zoom: 0
+  min_zoom: 7
   max_zoom: 15
   browse: full_resolution
   quicklook_nodata_max: null

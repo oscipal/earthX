@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Protocol
 
@@ -30,10 +31,15 @@ from rio_tiler.errors import TileOutsideBounds
 from rio_tiler.models import ImageData
 
 from earthx.catalog.registry import OverviewResampling
+from earthx.readers import retry_after, source_failure_kind
 from earthx.readers.access import counting_gdal_lines
 from earthx.readers.cog import AssetPath, CogReader, asset_host
 
 __all__ = [
+    "READ_ATTEMPTS",
+    "RETRY_BASE_S",
+    "RETRY_CAP_S",
+    "RETRY_FACTOR",
     "TILE_SIZE",
     "Pacer",
     "base_hash",
@@ -46,6 +52,21 @@ __all__ = [
     "parent_tile",
     "tile_image",
 ]
+
+#: A file that fails in a way a second read can help (the source did not answer in time, answered 429 or 5xx, or the
+#: connection broke) is read at most this often in all, the first read included.
+READ_ATTEMPTS = 4
+#: The wait before the second read; each later wait is :data:`RETRY_FACTOR` times the one before, at most
+#: :data:`RETRY_CAP_S`. So 5 s, 20 s and 60 s: about 85 s for a file before it is given up. A ``Retry-After`` the failure
+#: carries replaces the wait (at most `readers.failures.RETRY_AFTER_CAP_S`). Every read, a repeated one too, goes through
+#: the host pacer first, so no retry is faster than its spacing. GDAL itself already repeats each HTTP request twice
+#: (``GDAL_HTTP_MAX_RETRY``, 1 s) inside one read; this is the layer above it, and `gateway`'s retries belong to its own
+#: HTTP client, which this read does not use.
+RETRY_BASE_S = 5.0
+RETRY_FACTOR = 4.0
+RETRY_CAP_S = 60.0
+#: What :func:`earthx.readers.source_failure_kind` names that a second read can help.
+_TRANSIENT = frozenset({"source_timeout", "source_5xx", "source_429", "source_unreachable"})
 
 #: The side of a stored tile in pixels.
 TILE_SIZE = 512
@@ -136,10 +157,33 @@ def base_tile(
     return tile_image(np.ma.array(values, mask=holes), tile, nodata=nodata)
 
 
+def _sleep(seconds: float) -> None:
+    """The wait between two reads of a file; a seam of its own, so that tests need no clock."""
+    time.sleep(seconds)
+
+
 def _read(
     scene: AssetPath, tile: morecantile.Tile, method: str, pacer: Pacer, gdal_config: Mapping[str, str]
 ) -> ImageData | None:
-    """One file's tile, or ``None`` if the file does not touch it; a remote file is read between ``wait`` and ``account``."""
+    """One file's tile, or ``None`` if the file does not touch it; a remote file is read between ``wait`` and ``account``.
+
+    A failure a second read can help (:data:`_TRANSIENT`) is read again after a wait, up to :data:`READ_ATTEMPTS` times;
+    any other failure, and the last one, is raised as it is.
+    """
+    for attempt in range(1, READ_ATTEMPTS + 1):
+        try:
+            return _read_once(scene, tile, method, pacer, gdal_config)
+        except Exception as error:
+            if attempt == READ_ATTEMPTS or source_failure_kind(error) not in _TRANSIENT:
+                raise
+            asked = retry_after(error)
+            _sleep(asked if asked is not None else min(RETRY_CAP_S, RETRY_BASE_S * RETRY_FACTOR ** (attempt - 1)))
+    raise AssertionError("unreachable: the last attempt returns or raises")
+
+
+def _read_once(
+    scene: AssetPath, tile: morecantile.Tile, method: str, pacer: Pacer, gdal_config: Mapping[str, str]
+) -> ImageData | None:
     if not isinstance(scene, AssetPath):
         raise TypeError("a pyramid reads files the gateway cleared, not plain strings (KLAERUNGEN B8)")
     host = asset_host(scene)

@@ -462,7 +462,7 @@ def test_no_code_but_the_registry_the_collection_and_the_substitute_route_names_
     """The routes of statistics, histogram, area statistics, crop and download, and the jobs, cannot read the substitute by name.
 
     A scan of the code of ``earthx``: the places that may mention it are the registry that checks the pair, the collection
-    that publishes it, the search that finds its items and the one path dependency of its tile route.
+    that publishes it, the search that finds its items and the one path dependency of its tile route and the check that a dataset draws a pyramid or a substitute.
     """
     root = Path(earthx.__file__).parent
     found: dict[str, set[tuple[str, str]]] = {}
@@ -477,7 +477,7 @@ def test_no_code_but_the_registry_the_collection_and_the_substitute_route_names_
         "catalog/pgstac.py",
         "catalog/registry.py",
     }
-    assert {where for _, where in found["api/tiler.py"]} == {"overview_scenes"}
+    assert {where for _, where in found["api/tiler.py"]} == {"overview_scenes", "_overview_dataset"}
     assert {name for name, _ in found["api/tiler.py"]} == {"overview_substitute", "items_in_tile", "SUBSTITUTE"}
     assert {where for _, where in found["api/mosaic_tiles.py"]} == {"items_in_tile", "<module>"}
     assert {where for _, where in found["catalog/collection.py"]} == {"to_stac_collection"}

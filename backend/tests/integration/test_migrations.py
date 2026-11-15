@@ -60,6 +60,7 @@ class TestDiscovery:
             ("017", "mosaic_selection"),
             ("018", "overview"),
             ("019", "overview_upkeep"),
+            ("020", "overview_omitted"),
             ("021", "listed_entry"),
         ]
 

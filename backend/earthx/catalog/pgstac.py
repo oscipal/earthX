@@ -343,9 +343,10 @@ def confirm_overview(conn: psycopg.Connection, dataset_id: str, source_version: 
     return row is not None
 
 
-#: The failure kinds `jobs` retries and the attempts it makes (`jobs.queue.RETRYABLE`, `jobs.overviews.MAX_ATTEMPTS`);
+#: The failure kinds `jobs` retries for a pyramid and the attempts it makes (`jobs.overviews.RETRYABLE_BUILD`,
+#: `jobs.overviews.MAX_ATTEMPTS`);
 #: `catalog` may not import `jobs`, a test holds the copies together.
-_RETRYABLE = ("source_timeout", "source_5xx", "lease_lost")
+_RETRYABLE = ("source_timeout", "source_5xx", "lease_lost", "source_unreachable")
 _MAX_ATTEMPTS = 3
 
 
@@ -388,6 +389,66 @@ def remove_prototype_overviews(conn: psycopg.Connection, registered: Collection[
             (len(PROTOTYPE_PREFIX), PROTOTYPE_PREFIX, keep),
         ).rowcount
     return deleted
+
+
+@dataclass(frozen=True, slots=True)
+class OverviewState:
+    """What the tile route needs to know of the pyramid of one dataset (plan M5-30b §8.11).
+
+    ``ready`` has a ``version``: the newest pyramid whose term has not run out. ``building`` means a build is running;
+    ``failed`` a build that failed (``failure_kind`` names it; a retry that is waiting still reads ``failed``) or a pyramid
+    whose term ran out (``expired``); ``none`` that there is no row at all.
+    """
+
+    status: str
+    version: str | None = None
+    failure_kind: str | None = None
+
+
+async def overview_state_async(
+    conn: psycopg.AsyncConnection,
+    dataset_id: str,
+    *,
+    fresh_after: datetime,
+    confirmed_after: datetime | None = None,
+) -> OverviewState:
+    """The state of the pyramid of a dataset for the tile route: the newest ready version in its term, else the state of the rest.
+
+    A ready pyramid counts while ``checked_at`` is later than ``fresh_after`` (the caller subtracts the term of the dataset
+    from now). The source's confirmation (``confirmed_at`` after ``checked_at``) holds it back only while the worker can still
+    extend it, as the worker's own sweep reads it (adr/0032 §5.3): ``confirmed_after`` is the start of that window (now minus
+    ``EXTEND_WINDOW``), and a pyramid checked before it expires whatever the confirmation. ``None`` (a prototype source: it is
+    never extended, adr/0032 §8.4) means a confirmation counts for nothing. The hourly round of the worker closes the
+    expired rows, and the route does not wait for it. Without a ready pyramid a running build is ``building``, otherwise the
+    newest row decides: ``failed``, an expired ready row as ``failed`` with the kind ``expired``. Read-only on the caller's
+    connection, like :func:`fetch_item`.
+    """
+    if fresh_after.tzinfo is None or (confirmed_after is not None and confirmed_after.tzinfo is None):
+        raise ValueError("fresh_after and confirmed_after must be timezone-aware")
+    async with conn.cursor() as cur:
+        await cur.execute(
+            """
+            SELECT status, version, failure_kind, checked_at, confirmed_at
+            FROM public.earthx_overview WHERE dataset_id = %s ORDER BY created_at DESC LIMIT 50
+            """,
+            (dataset_id,),
+        )
+        rows = await cur.fetchall()
+    if not rows:
+        return OverviewState("none")
+    for status, version, _, checked_at, confirmed_at in rows:
+        extendable = (
+            confirmed_after is not None
+            and confirmed_at is not None
+            and confirmed_at > checked_at
+            and checked_at > confirmed_after
+        )
+        if status == "ready" and (checked_at > fresh_after or extendable):
+            return OverviewState("ready", version)
+    if any(status == "building" for status, *_ in rows):
+        return OverviewState("building")
+    status, _, kind, *_ = rows[0]
+    return OverviewState("failed", failure_kind="expired" if status == "ready" else kind)
 
 
 async def fetch_item(conn: psycopg.AsyncConnection, dataset_id: str, item_id: str) -> dict[str, object] | None:

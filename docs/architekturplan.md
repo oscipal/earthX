@@ -440,6 +440,8 @@ Rang 3 ist der architektonisch wichtigste Fund der Recherche: Er erlaubt Cloud-n
 
 **Nachtrag 2026-10-26 (NM4-26, `adr/0006` §8):** Im `tiler` liest GDAL die Blöcke einer Kachel nacheinander (`GDAL_HTTP_MULTIRANGE=SERIAL`) und hält sie in einem `/vsicurl/`-Cache von 256 MiB je Prozess; der parallele Weg ging am Cache vorbei. Zusammenfassen benachbarter Ranges und HTTP/2-Multiplexing wirken nur im parallelen Weg und bei HTTP/2-Quellen; S3 spricht HTTP/1.1. Worker und Runner bleiben beim bisherigen Profil.
 
+**Nachtrag 14.11.2026 (M5-30b, `adr/0032`, `plans/m5/m5-30-bild-bei-jedem-zoom.md`):** Der Absatz „Mosaike über mehrere Szenen“ oben gilt so nicht mehr. Die Szenen eines Überflugs stehen nicht mehr als Item-Liste in der URL, sondern in einer **Auswahl**: `POST /collections/{dataset}/mosaic` legt sie an (bis 2 000 Items), ihre ID ist der Hash des Inhalts (Datensatz, Assets, sortierte Items), abgelegt 7 Tage; Kachel und TileJSON liegen unter `/collections/{dataset}/mosaic/{id}/…`, eine abgelaufene ID antwortet `410` und die Karte legt dieselbe Liste neu an (dieselbe ID). Der Grundsatz „die URL bestimmt das Bild vollständig“ bleibt: die ID kann nie ein anderes Bild bedeuten. Statt „höchstens 64 Items, 12 Szenen je Kachel, ab z8“ gilt ein **Budget je Kachel** (32 Dateien, 4 s, 4 Threads) und höchstens **2 Kacheln gleichzeitig** je Prozess; wer auf einen Platz wartet, wartet im Event-Loop und nicht in einem Thread des gemeinsamen Pools. Unter dem `min_zoom` eines Datensatzes liefert die Route `/collections/{dataset}/overview/tiles/…` ein Bild: die **Übersichtspyramide** (GLO-30, WorldCover; aus dem Objektspeicher, `X-EarthX-Source: overview`) oder das Bild eines **Ersatz-Datensatzes** (swissALTI3D zeigt GLO-30, `X-EarthX-Source: substitute`). Statistik, Zuschnitt, Download und Jobs lesen nie daraus.
+
 ### 6.4 Download-Vermittlung
 
 - Rohdaten: Link oder Redirect direkt zur Quelle. Kein Byte läuft durch das eigene Backend.
@@ -775,6 +777,8 @@ Ausweichstufe, nur wenn die Messung es verlangt (`adr/0022` §8.4).
 Eingaben mit Fassung (ETag oder `updated`); lokal erzeugte Ergebnisse kommen nie
 hinein. Ablauffrist: 7 Tage als Startwert, auch für gespeicherte Rezepte,
 belegt durch einen Test des Ablaufs (`adr/0012` §9 Punkt 5).
+
+**Nachtrag 14.11.2026 (M5-30b, `adr/0032` §5.2, §5.3, §10.2):** Zwei Änderungen an der Tabelle. Die Zeile „Anwendung“ trägt statt „Such-IDs für Mosaike“ die **Auswahl-IDs** der Mosaike (Postgres, Inhalts-Hash, 7 Tage, `410` und neu anlegen). Neu die Zeile **Übersicht**: Kacheln der Übersichtspyramide von GLO-30 und WorldCover im Objektspeicher unter `overviews/{dataset}/{fassung}/{z}/{x}/{y}.tif`, die Fassung im Pfad, Ablauf 30 Tage ab `checked-at` und nur verlängert, wenn eine Prüfung die Fassung der Quelle bestätigt hat (Auslegung von Prinzip 1), Prototyp-Quellen 7 Tage ohne Verlängerung; als Sicherung eine Regel von 31 Tagen am Bucket. Anders als die Zeile „Ergebnis“ hat die Übersicht keinen Nutzer und kein Rezept: sie ist ein Zwischenprodukt für die Anzeige.
 
 ### 12.4 Beobachtbarkeit
 

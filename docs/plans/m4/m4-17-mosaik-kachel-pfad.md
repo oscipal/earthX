@@ -469,6 +469,8 @@ sich aus Szenenzahl × Bytes je Szene (§2.3), also aus den Grenzen oben. Ein
 eigener Byte-Zähler je Kachel wäre ein GDAL-Logging-Hook im Lesepfad; das
 schlage ich nicht vor.
 
+**Nachtrag 14.11.2026 (M5-30b, `adr/0032` §6.2, §10.2):** Drei der fünf Grenzen oben gelten nicht mehr. **Items je URL (64)** entfällt: Die Szenen stehen in einer Auswahl mit Inhalts-Hash als ID, bis 2 000 Items (Schutzgrenze). **Szenen je Kachel (12)** und **Mindestzoom (8)** sind ersetzt durch ein Budget je Kachel von 32 Dateien und 4 s und durch den `min_zoom` des Datensatzes; darunter liefert eine eigene Route Pyramide oder Ersatz. Es bleiben **4 Szenen parallel je Portion** und **4 gleichzeitige Item-Abrufe**; neu sind höchstens **2 gleichzeitig gelesene Kacheln** je Prozess (Otto, 13.11.2026), mit dem Warten im Event-Loop. Die Messwerte oben (§2.2, §2.3) bleiben die Herkunft der Zahlen von M4-17; die neuen stehen in `plans/m5/m5-30-bild-bei-jedem-zoom.md` §8.6.
+
 ---
 
 ## 6. Nicht in dieser Aufgabe

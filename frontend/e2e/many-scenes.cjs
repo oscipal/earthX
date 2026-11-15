@@ -1,11 +1,17 @@
 // A pass of many scenes after "Crop and merge to AOI" (Otto's browser check of swissALTI3D, 10.11.2026: the map stayed empty, even
 // at zoom 14, until it was zoomed in and out again), in a real browser with made-up tiles of 1 km and no backend. Since the
 // selection of a mosaic (M5-30b part 3, `adr/0032` §10.2) a pass is one mosaic up to what a selection takes (2000 scenes), so:
-//   1. Without a move of the map, the tiles are asked for and drawn: the map is not empty.
+//   1. Without a move of the map, the tiles are asked for and drawn: the map is not empty. This is judged twice: at the zoom the
+//      map stands at when the area is cropped to (12.5, where an area of a few kilometres is fitted, below the 13.5 from which a
+//      dataset released from z14 draws its own tiles; #319 F13, M5-30b part 4) and again after one zoom in (14.2).
 //   2. Up to 2000 scenes the pass is one selection: no tile of a single scene and no `?item=` in any URL, whatever the number
 //      of scenes. Over 2000 (SCENES=2100) or where the tiler refuses the mosaic (MOSAIC=refuse) the scenes are drawn one by
 //      one, the 40 that lie in the view first, and their order comes from `/scene-order`.
-// 70 scenes of a dataset released from z14 like swissALTI3D; light and dark theme, a wide and a narrow window.
+// 70 scenes of a dataset released from z14 like swissALTI3D, which draws the picture of another dataset below that (`overview:
+// substitute`, as the registry has it for swissALTI3D); light and dark theme, a wide and a narrow window.
+//
+// Part 4 of M5-30b (`adr/0032` §10.4, plan §8.11): the first judgement, at the fitted zoom, is red on the state before the selection
+// id (the commit before the merges of #335 and #345) and green from it on; the plan records both runs.
 //
 // In the cloud session of 10.11.2026 this did not reproduce Otto's empty map (DS-04 plan §14.6): it runs green there, with
 // made-up and with real metadata of swissALTI3D, at z12.5 and z14.2 and with slow answers. It stays as the check of the flow.
@@ -109,7 +115,7 @@ async function run(browser, theme, viewport, results) {
   page.on('pageerror', (error) => problems.push(`the page failed: ${error.message.slice(0, 200)}`));
   const consoleErrors = [];
   page.on('console', (message) => message.type() === 'error' && consoleErrors.push(message.text().slice(0, process.env.FULL ? 4000 : 200)));
-  const asked = { scene: 0, mosaic: 0, order: 0, tilejson: 0, item: 0 };
+  const asked = { scene: 0, mosaic: 0, order: 0, tilejson: 0, item: 0, overview: 0 };
   await page.route('**/*', async (route) => {
     const url = new URL(route.request().url());
     const json = (body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
@@ -123,6 +129,12 @@ async function run(browser, theme, viewport, results) {
       return json({ order: [...ids].sort() });
     }
     if (answersSelection(route, url)) return;
+    // What the dataset draws below its first level: the picture of its substitute, one route for the dataset (`overviewSubstitute.ts`).
+    if (/^\/collections\/terrain\/overview\/tiles\//.test(url.pathname)) {
+      asked.overview += 1;
+      await later(DELAY.tile);
+      return route.fulfill({ status: 200, contentType: 'image/png', body: PNG });
+    }
     if (url.pathname.includes('/mosaic/') && url.pathname.endsWith('/tilejson.json')) {
       asked.tilejson += 1;
       await later(DELAY.tilejson);
@@ -160,17 +172,27 @@ async function run(browser, theme, viewport, results) {
         assets: { dtm: { href: `https://assets.example.org/${i}.tif`, type: COG } },
       };
     });
+    const viewer = { group_by: ['earthx:state'], min_zoom: 14, max_zoom: 20, browse: 'full_resolution', quicklook_nodata_max: null, results_group_by: ['earthx:state'], overview: 'substitute', overview_resampling: null, overview_substitute: 'surface' };
     const collection = {
       id: 'terrain', title: 'Terrain model', 'earthx:format': 'cog',
       'earthx:capabilities': { roi: true, time_range: false, band_math: true, interpolation: true },
       'earthx:default_render': { title: 'Height', assets: ['dtm'], rescale: [[400, 900]], colormap_name: 'terrain', expression: null, resampling: 'nearest' },
-      'earthx:viewer': { group_by: ['earthx:state'], min_zoom: 14, max_zoom: 20, browse: 'full_resolution', quicklook_nodata_max: null, results_group_by: ['earthx:state'] },
+      'earthx:viewer': viewer,
       'earthx:license_flags': { tier: 'processing' },
       extent: { spatial: { bbox: [[5.9, 45.8, 10.5, 47.8]] }, temporal: { interval: [['2019-01-01T00:00:00Z', '2023-12-31T00:00:00Z']] } },
     };
+    // The dataset that stands in below the first level (Copernicus DEM GLO-30 for swissALTI3D), with the attribution its licence asks for.
+    const surface = {
+      id: 'surface', title: 'Surface model', 'earthx:format': 'cog',
+      'earthx:capabilities': { roi: true, time_range: false, band_math: true, interpolation: true },
+      'earthx:default_render': { title: 'Height', assets: ['data'], rescale: [[400, 900]], colormap_name: 'terrain', expression: null, resampling: 'nearest' },
+      'earthx:viewer': { ...viewer, min_zoom: 0, max_zoom: 15, overview: 'pyramid', overview_resampling: 'average', overview_substitute: null },
+      'earthx:license_flags': { tier: 'processing', attribution_required: true, attribution_modified: '© made up for the test', attribution_unmodified: '© made up for the test' },
+      extent: { spatial: { bbox: [[-180, -90, 180, 84]] } },
+    };
     const groups = [{ key: ['latest'], label: 'latest', items }];
     useAppStore.setState({
-      datasets: datasetsFrom([collection]), selectedDatasetIds: ['terrain'], datasetId: 'terrain', openSectionId: 'terrain',
+      datasets: datasetsFrom([collection, surface]), selectedDatasetIds: ['terrain'], datasetId: 'terrain', openSectionId: 'terrain',
       sections: [{ datasetId: 'terrain', items, groups, notes: [] }], items, groups, activeGroupIndex: 0, expandedGroupIndex: 0,
       selectedIds: items.map((it) => it.id), resultsOnMap: true, focusMode: false, downloaded: {}, layers: [], mosaics: {}, aoi,
       error: null, notice: null, dock: null, flyToView: { center: [7.465, 46.96], zoom: startZoom },
@@ -190,8 +212,6 @@ async function run(browser, theme, viewport, results) {
   }
   // What was asked for before the view settled belongs to the preview of the results, which the crop takes off the map.
   const settled = { ...asked };
-  await page.evaluate(async (zoom) => (await import('/src/store.ts')).useAppStore.setState({ flyToView: { center: [7.465, 46.96], zoom } }), THEN_ZOOM);
-  await page.waitForTimeout(3000);
   const map = await page.evaluateHandle(() => {
     const el = document.querySelector('.maplibregl-map');
     let fiber = el[Object.keys(el).find((k) => k.startsWith('__reactFiber$'))];
@@ -203,10 +223,21 @@ async function run(browser, theme, viewport, results) {
     }
     return null;
   });
+  // #319 F13 (M5-30b part 4): at the zoom the area was fitted at, below the 13.5 from which the dataset's own tiles are drawn, and with
+  // nothing moved since the crop, the map already shows the scenes. Judged before the map is zoomed in.
+  await page.waitForTimeout(1500);
+  const fitted = await page.evaluate((m) => m.getZoom(), map);
+  const atFit = await blueInAoi(page, map, AOI_BOX);
+  if (fitted >= 13.5) problems.push(`the map stands at zoom ${fitted.toFixed(1)}, not below 13.5: the check does not test what it is for`);
+  if (atFit.points === 0) problems.push(`the AOI is not on the screen at zoom ${fitted.toFixed(1)}`);
+  if (atFit.blue < atFit.points) problems.push(`#319 F13: at zoom ${fitted.toFixed(1)}, with nothing moved since the crop, the map shows the scenes at ${atFit.blue} of ${atFit.points} places in the AOI (${JSON.stringify(atFit.colours.slice(0, 3))} ...)`);
+  await page.screenshot({ path: path.join(OUT, `${name}-fitted.png`) });
+  await page.evaluate(async (zoom) => (await import('/src/store.ts')).useAppStore.setState({ flyToView: { center: [7.465, 46.96], zoom } }), THEN_ZOOM);
+  await page.waitForTimeout(3000);
   const drawn = await page.evaluate((m) => ({ layers: m.getStyle().layers.filter((layer) => /^[mn]-tiles-lyr-/.test(layer.id)).length, zoom: m.getZoom() }), map);
   const seen = await blueInAoi(page, map, AOI_BOX);
   if (seen.points === 0) problems.push('the AOI is not on the screen');
-  if (seen.blue < seen.points) problems.push(`the map shows the scenes at ${seen.blue} of ${seen.points} places in the AOI (${JSON.stringify(seen.colours)})`);
+  if (seen.blue < seen.points) problems.push(`after one zoom in, to ${drawn.zoom.toFixed(1)}, the map shows the scenes at ${seen.blue} of ${seen.points} places in the AOI (${JSON.stringify(seen.colours)})`);
   const tilesAsked = asked.scene - before.scene;
   const oneMosaic = SCENES <= 2000;
   if (!oneMosaic && asked.tilejson - before.tilejson > 0) problems.push('a mosaic was asked for over 2000 scenes');

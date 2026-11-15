@@ -97,6 +97,8 @@ class MaterializeResult:
     outcome: MaterializeOutcome
     items_written: int
     items_deleted: int
+    #: What the run did to the overview pyramid of the version it saw, for a dataset that has one; printed by ``main``.
+    pyramid: str | None = None
 
 
 async def run_materialize(
@@ -139,8 +141,10 @@ async def run_materialize(
         )
         if config.viewer is not None and config.viewer.overview is OverviewMode.PYRAMID:
             # The source still has the version the pyramid was built from: the worker may extend its term (adr/0032 §5.3).
-            confirm_overview(conn, config.dataset_id, outcome.source_version)
-            rearm_overview(conn, config.dataset_id, outcome.source_version)
+            confirmed = confirm_overview(conn, config.dataset_id, outcome.source_version)
+            rearmed = rearm_overview(conn, config.dataset_id, outcome.source_version)
+            pyramid = "rebuild requested" if rearmed else "confirmed" if confirmed else "left as it is"
+            return MaterializeResult(outcome=outcome, items_written=0, items_deleted=0, pyramid=pyramid)
         return MaterializeResult(outcome=outcome, items_written=0, items_deleted=0)
 
     written = upsert_items(conn, config, outcome.items)
@@ -162,8 +166,10 @@ async def run_materialize(
     )
     if config.viewer is not None and config.viewer.overview is OverviewMode.PYRAMID:
         # A new source version of a dataset with an overview pyramid: ask the worker for one (adr/0032 §5.2, F1).
-        rearm_overview(conn, config.dataset_id, outcome.source_version)
+        rearmed = rearm_overview(conn, config.dataset_id, outcome.source_version)
         request_overview(conn, config.dataset_id, outcome.source_version)
+        pyramid = "rebuild requested" if rearmed else "requested"
+        return MaterializeResult(outcome=outcome, items_written=written, items_deleted=deleted, pyramid=pyramid)
     return MaterializeResult(outcome=outcome, items_written=written, items_deleted=deleted)
 
 
@@ -236,6 +242,8 @@ def main(argv: list[str] | None = None) -> int:
             f"{outcome.listed} listed, {outcome.missing} missing, {outcome.withheld} withheld, "
             f"{outcome.unknown} unknown at the source"
         )
+    if result.pyramid is not None:
+        print(f"{config.dataset_id}: overview pyramid {result.pyramid}")
     return 0
 
 

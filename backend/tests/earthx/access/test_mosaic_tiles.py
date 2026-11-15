@@ -36,6 +36,7 @@ from earthx.access.mosaic_tiles import (
     MosaicScenes,
     MosaicTileReader,
 )
+from earthx.access.overview_tiles import EarthxOverviewTilerFactory, open_overview
 from earthx.readers.cog import AssetPath
 from earthx.readers.zarr_reader import zarr_asset
 from tests.earthx.readers import mini_zarr
@@ -500,5 +501,7 @@ class TestConcurrentTiles:
             for _ in free:
                 mosaic_tiles._TILE_SLOTS.release()
 
-    def test_the_tile_of_a_substitute_reads_with_the_same_reader_and_so_under_the_same_limit(self) -> None:
-        assert attrs.fields(mosaic_tiles.EarthxOverviewTilerFactory).reader.default is mosaic_tiles.open_mosaic
+    def test_the_tile_of_a_substitute_reads_with_the_same_reader_and_so_under_the_same_limit(self, tmp_path: Path) -> None:
+        assert attrs.fields(EarthxOverviewTilerFactory).reader.default is open_overview
+        scene = _scene(tmp_path / "a.tif", SEAM_X - 5000.0, 10000.0, 10)
+        assert isinstance(open_overview(MosaicScenes("synthetic", (scene,), _bounds([scene]))), MosaicTileReader)

@@ -571,12 +571,32 @@ class TestMalformedInput:
         with pytest.raises(ConfigError, match="no image below min_zoom"):
             full_viewer(overview=overview, min_zoom=1)
 
-    @pytest.mark.parametrize("min_zoom", [0, 5, 13])
+    @pytest.mark.parametrize("min_zoom", [1, 5, 13])
     def test_a_pyramid_serves_below_any_min_zoom(self, min_zoom) -> None:
         viewer = full_viewer(
             overview=OverviewMode.PYRAMID, overview_resampling=OverviewResampling.MODE, min_zoom=min_zoom
         )
         assert (viewer.overview, viewer.overview_resampling) == (OverviewMode.PYRAMID, OverviewResampling.MODE)
+
+    def test_a_pyramid_lies_below_a_min_zoom_of_one_or_more(self) -> None:
+        """M5-30b part 9: the levels z0 to min_zoom - 1 are built, so a pyramid with a min_zoom of 0 has none."""
+        with pytest.raises(ConfigError, match="needs a min_zoom of 1 or more"):
+            full_viewer(overview=OverviewMode.PYRAMID, overview_resampling=OverviewResampling.MODE, min_zoom=0)
+
+    def test_the_released_pyramids_start_at_the_levels_their_base_is_below(self) -> None:
+        """adr/0032 §9, plan M5-30b part 9: GLO-30 z0-z6 (min_zoom 7), WorldCover z0-z4 (min_zoom 5)."""
+        from earthx.catalog.datasets import registry
+
+        released = registry()
+        assert {
+            dataset_id: (released.get(dataset_id).viewer.min_zoom, released.get(dataset_id).viewer.overview)
+            for dataset_id in ("cop-dem-glo-30", "esa-worldcover-2020", "esa-worldcover-2021")
+        } == {
+            "cop-dem-glo-30": (7, OverviewMode.PYRAMID),
+            "esa-worldcover-2020": (5, OverviewMode.PYRAMID),
+            "esa-worldcover-2021": (5, OverviewMode.PYRAMID),
+        }
+        assert released.get("swissalti3d").viewer.min_zoom == 13
 
     def test_a_pyramid_needs_its_resampling(self) -> None:
         with pytest.raises(ConfigError, match="overview_resampling is required"):

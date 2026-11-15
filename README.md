@@ -253,7 +253,7 @@ liefert eine Suche danach `0` Treffer.
 1. Die Zieltopologie muss laufen (`docker compose up`).
 2. In einem **neuen Terminal**:
    ```bash
-   docker compose run --rm materialize cop-dem-glo-30
+   docker compose run --build --rm materialize cop-dem-glo-30
    ```
    Das läuft einmalig durch (rund 30 Anfragen an den Bucket, keine Bilddaten)
    und endet mit einer Zeile wie `cop-dem-glo-30: loaded (source version …);
@@ -276,7 +276,7 @@ je Kachel nur der jüngste Stand. Der Lauf liest nur Metadaten, rund 1 000 Seite
 mit 1 s Abstand, also etwa 17 Minuten. In PowerShell 5.1, bei laufender Topologie:
 
 ```powershell
-docker compose run --rm materialize swissalti3d
+docker compose run --build --rm materialize swissalti3d
 ```
 
 Der Bericht nennt ersetzte Stände unter `withheld`. Ein zweiter Lauf ohne Änderung der
@@ -513,7 +513,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\try-job.ps1 -Datas
 
 Der DEM hat keine Live-Suche: Ohne ein materialisiertes Item für die Fläche
 sagt das Skript, welche Kachel es braucht und was
-`docker compose run --rm materialize cop-dem-glo-30` lädt — immer den ganzen
+`docker compose run --build --rm materialize cop-dem-glo-30` lädt — immer den ganzen
 Datensatz (26 450 Items, keine Bilddaten), rund 30 Anfragen an den Bucket,
 rund 5 Minuten (Listing etwa 45 s, Schreiben der Items etwa 4 Minuten; beides
 gemessen, das Schreiben in der Postgres einer Sitzung).
@@ -684,7 +684,7 @@ lokale Änderungen, also nur auf sauberem Stand.
   diese ablaufen (`backend/catalog/retired.yaml`, `docs/adr/0017-ein-sentinel-2-datensatz.md` Regel III).
 - **Copernicus DEM GLO-30** (`cop-dem-glo-30`, direkt aus dem AWS-Open-Data-Bucket,
   Format COG; **M3-11b**, muss vor der ersten Anzeige erst über
-  `docker compose run --rm materialize cop-dem-glo-30` geladen werden, siehe
+  `docker compose run --build --rm materialize cop-dem-glo-30` geladen werden, siehe
   Abschnitt 2): „© DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH
   2014-2018 provided under COPERNICUS by the European Union and ESA; all
   rights reserved"; bei Weitergabe **veränderter** Daten zusätzlich „produced
@@ -695,7 +695,7 @@ lokale Änderungen, also nur auf sauberem Stand.
   [doi.org/10.5270/ESA-c5d3d65](https://doi.org/10.5270/ESA-c5d3d65).
 - **swissALTI3D** (`swissalti3d`, STAC-API der FSDI von swisstopo, Format COG;
   **M5-08**, muss vor der ersten Anzeige über
-  `docker compose run --rm materialize swissalti3d` geladen werden, siehe Abschnitt 2):
+  `docker compose run --build --rm materialize swissalti3d` geladen werden, siehe Abschnitt 2):
   „©swisstopo“, bei Weitergabe **veränderter** Daten „©swisstopo (modified)“. Nutzung
   unterliegt den
   [Terms of use for free geodata and geoservices (OGD) from swisstopo](https://www.swisstopo.admin.ch/en/terms-of-use-free-geodata-and-geoservices)

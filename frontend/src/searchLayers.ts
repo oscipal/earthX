@@ -7,7 +7,7 @@ import type { LayerOverlay } from './layers';
 import type { IndexPreset } from './indexPresets';
 import { buildTileUrl } from './mapLayers';
 import { inStackOrder, stackLikeView, viewOfPass } from './mosaic';
-import { substituteRasterOf } from './overviewSubstitute';
+import { overviewRasterOf } from './overviewSubstitute';
 import type { Mosaics, PlannedRaster, SceneEntry } from './mosaic';
 import { underlayOf } from './underlay';
 import { indexRastersOfPass } from './viewIndex';
@@ -24,10 +24,10 @@ const rasterOverlay = (raster: PlannedRaster, render: AppliedRender, clip: GeoJS
   ...(raster.attribution === undefined ? {} : { attribution: raster.attribution }),
 });
 
-// The pictures of the substitutes below the first level of the datasets these passes belong to, one for each dataset, in the
-// look of the layer (`overviewSubstitute.ts`). They lie at the bottom of the layer, under everything it draws of its own. An
-// index in the look is computed by the tile route with an operator, which a substitute's route does not take: none then.
-export function substituteOverlaysOf(
+// The pictures below the first level of the datasets these passes belong to (a substitute's, or a dataset's own pyramid), one for
+// each dataset, in the look of the layer (`overviewSubstitute.ts`). They lie at the bottom of the layer, under everything it draws of
+// its own. An index in the look is computed by the tile route with an operator, which the route of the overview does not take: none then.
+export function overviewOverlaysOf(
   datasetIds: readonly string[],
   datasets: readonly DatasetOption[],
   render: AppliedRender,
@@ -35,7 +35,7 @@ export function substituteOverlaysOf(
 ): LayerOverlay[] {
   if (render.index) return [];
   return [...new Set(datasetIds)].flatMap((id) => {
-    const raster = substituteRasterOf(
+    const raster = overviewRasterOf(
       datasets.find((d) => d.id === id),
       datasets,
     );
