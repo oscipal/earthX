@@ -83,6 +83,7 @@ def rig(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> Rig:
     def counted_tile(*args: Any, **kwargs: Any) -> Any:
         with made.lock:
             made.reading += 1
+            made.started += 1
             made.most_reading = max(made.most_reading, made.reading)
         try:
             return read_tile(*args, **kwargs)
@@ -134,6 +135,15 @@ async def _storm(rig: Rig, count: int, *, settle: float = 1.0) -> tuple[list[asy
     return tasks, client
 
 
+async def _all_at_the_gate(rig: Rig, gate: reading.TileGate, count: int) -> None:
+    """Until each of ``count`` tiles waits at ``gate`` or has been read, so that a loaded machine does not count threads
+    still on their way to it; at most 10 s, after which the threads are counted all the same (without a gate the tiles
+    never get there)."""
+    deadline = time.monotonic() + 10.0
+    while gate.waiting + rig.started < count and time.monotonic() < deadline:
+        await asyncio.sleep(0.02)
+
+
 async def _end(tasks: list[asyncio.Task[httpx.Response]], client: httpx.AsyncClient) -> None:
     """The clients give up: the tiles that wait leave, the ones being read end in a moment."""
     for task in tasks:
@@ -156,7 +166,8 @@ def test_a_cheap_synchronous_route_stays_responsive_while_fifty_tiles_wait(rig: 
         started = time.monotonic()
         assert (await client.get("/health")).status_code == 200
         idle = time.monotonic() - started  # the same route with nothing waiting: what this machine answers in just now
-        tasks, _ = await _storm(rig, WAITING)
+        tasks, _ = await _storm(rig, WAITING, settle=0.0)
+        await _all_at_the_gate(rig, reading.TILE_GATE, WAITING)
         borrowed = anyio.to_thread.current_default_thread_limiter().borrowed_tokens
         started = time.monotonic()
         health = await client.get("/health")
@@ -293,7 +304,8 @@ def test_a_cheap_route_stays_responsive_while_fifty_pyramid_tiles_wait_on_a_slow
         started = time.monotonic()
         assert (await client.get("/health")).status_code == 200
         idle = time.monotonic() - started
-        tasks, storm_client = await _pyramid_storm(slow_store, WAITING)
+        tasks, storm_client = await _pyramid_storm(slow_store, WAITING, settle=0.0)
+        await _all_at_the_gate(slow_store, PYRAMID_GATE, WAITING)
         borrowed = anyio.to_thread.current_default_thread_limiter().borrowed_tokens
         started = time.monotonic()
         assert (await client.get("/health")).status_code == 200

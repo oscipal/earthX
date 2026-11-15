@@ -134,11 +134,13 @@ class TileGate:
         self.places = places
         self._loop: asyncio.AbstractEventLoop | None = None
         self._free: asyncio.Semaphore | None = None
+        #: Tiles waiting for a place right now, in the loop the gate follows.
+        self.waiting = 0
 
     def _semaphore(self) -> asyncio.Semaphore:
         loop = asyncio.get_running_loop()
         if loop is not self._loop or self._free is None:
-            self._loop, self._free = loop, asyncio.Semaphore(self.places)
+            self._loop, self._free, self.waiting = loop, asyncio.Semaphore(self.places), 0
         return self._free
 
     def _give_back(self, loop: asyncio.AbstractEventLoop) -> None:
@@ -150,7 +152,11 @@ class TileGate:
         free = self._semaphore()
         loop = asyncio.get_running_loop()
         if free.locked():
-            await self._wait(free, gone)
+            self.waiting += 1
+            try:
+                await self._wait(free, gone)
+            finally:
+                self.waiting -= 1
         else:
             await free.acquire()
         place = TilePlace(self, loop)
