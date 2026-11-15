@@ -79,9 +79,13 @@ async def listed_page(conn: Any, where: ListedFilter, *, after: tuple[str, str] 
     if after is not None:
         condition = sql.SQL("{} AND (sort_title, dataset_id) > (%(after_title)s, %(after_id)s)").format(condition)
         params["after_title"], params["after_id"] = after
+    # The keys of the page first, through the indexes; the documents only for them. Built for every match before the
+    # sort, the documents of a city's 22 000 matches cost a third of a second (plan §8).
     statement = sql.SQL(
-        "SELECT sort_title, dataset_id, content || jsonb_build_object('earthx:regions', to_jsonb(regions)), "
-        "time_span IS NULL FROM public.earthx_listed_entry WHERE {} ORDER BY sort_title, dataset_id LIMIT %(limit)s"
+        "SELECT e.sort_title, e.dataset_id, e.content || jsonb_build_object('earthx:regions', to_jsonb(e.regions)), "
+        "e.time_span IS NULL FROM (SELECT dataset_id FROM public.earthx_listed_entry WHERE {} "
+        "ORDER BY sort_title, dataset_id LIMIT %(limit)s) AS page "
+        "JOIN public.earthx_listed_entry e USING (dataset_id) ORDER BY e.sort_title, e.dataset_id"
     ).format(condition)
     async with conn.cursor() as cur:
         await cur.execute(statement, {**params, "limit": limit})

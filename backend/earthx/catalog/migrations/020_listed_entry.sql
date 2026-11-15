@@ -74,7 +74,10 @@ CREATE TABLE public.earthx_listed_entry (
                                                 data_kind, account, delivery, publisher, link_host, license_ref) = 0),
     CHECK (state = 'tombstone' OR num_nulls(content, content_sha256, sort_title, footprint, regions, data_kind, account,
                                             delivery, link_host) = 0)
-);
+)
+-- The document goes out of the row as soon as the row is larger than 128 bytes, so that the columns the filters and the
+-- order read lie close together and a page of matches reads few blocks.
+WITH (toast_tuple_target = 128);
 
 -- The read path of `api`: a page in the order of the catalogue, and the filters of area, period and region.
 CREATE INDEX earthx_listed_entry_page_idx ON public.earthx_listed_entry (sort_title, dataset_id)

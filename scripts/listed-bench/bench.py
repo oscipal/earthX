@@ -9,7 +9,8 @@ fills ``earthx_listed_entry`` with ``--n`` synthetic rows (no real data, no netw
 
 The rows follow the procedure of plan §3, with a fixed seed: 85 % boxes in the area of DE, AT and CH, 10 % in Europe,
 5 % anywhere, edges log-uniform between 0.003° and 6°, 0.5 % global; 65 % with a period, a fifth of them open; data
-kind, account and delivery by fixed shares. Regions are derived by the same rule as ``catalog-load``.
+kind, account and delivery by fixed shares; a description of about 1.3 KB, so that the documents leave the row as real
+ones do. Regions are derived by the same rule as ``catalog-load``.
 
 Measured with the functions ``api`` calls (``catalog.listed_search``): a page of 50, the page after an entry near
 the end (keyset), and the count up to 10 001, for the filters of the plan. Five runs each, median and maximum in ms,
@@ -44,7 +45,7 @@ INSERT INTO public.earthx_listed_entry (
     data_kind, account, delivery, publisher, link_host, published_at)
 SELECT 'syn-' || lpad(g.i::text, 7, '0'), 'bench-' || (g.i %% 8), g.i::text, 'published',
        jsonb_build_object('type', 'Collection', 'id', 'syn-' || lpad(g.i::text, 7, '0'), 'title', g.title,
-                          'description', 'synthetic', 'links', '[]'::jsonb),
+                          'description', repeat('synthetic description ', 60), 'links', '[]'::jsonb),
        md5(g.i::text), g.title, ST_MakeEnvelope(g.west, g.south, g.east, g.north, 4326),
        CASE WHEN g.r_time < 0.35 THEN NULL
             WHEN g.r_time < 0.55 THEN tstzrange(g.t0, NULL, '[]')
