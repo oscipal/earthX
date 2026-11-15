@@ -110,7 +110,7 @@ Gelistete Einträge (alle Datentypen, auch ohne direkten Download) liegen in Pos
 | F2 | 1 | dieser PR Backend; PR 2 Frontend und „ohne Parameter nur erste Seite“ |
 | F3 | 1 | Seiten mit `token`, Titel-Reihenfolge, Parameter `entry` |
 | F4 | 1 | `numberMatched` exakt bis 10 000 |
-| F5 | **abweichend:** keine Sammelgruppe „Other“. Gelistete Einträge nach `data_kind` gruppiert (Raster, Vector, Tables, Documents, Services); innerhalb einer Gruppe Nachladen beim Scrollen im Fenster des Data catalogue; das Control Panel scrollt weiterhin nie | API-Parameter `data_kind` schon in PR 1; `data_kind` hat genau diese fünf Werte (A8) |
+| F5 | **abweichend, korrigiert am selben Tag:** Gruppen nach **Thema**, für volle und gelistete Einträge gemeinsam; Themenliste aus den heutigen `category`-Werten, Zuordnung aus den Metadaten der Quellen (DCAT-AP-Themen, INSPIRE-Themen, CKAN-Gruppen und Schlagworte); was sich nicht zuordnen lässt, kommt in „Other“. Das Thema ist ein Feld des Eintrags (in der Tabelle, filterbar). Nachladen beim Scrollen im Fenster des Data catalogue bleibt; das Control Panel scrollt weiterhin nie. Themenliste und Zuordnung als Frage vor dem Bau (§4b). Die Zwischenfassung „nach `data_kind`“ gilt nicht | §4b, Fragen G1–G6; das Thema wird erst nach den Antworten gebaut |
 | F6 | 1; das Schloss für Datensätze mit Key kommt später mit M5-32 | PR 2 |
 | F7 | 1 | `q` sucht bis M5-42 nur volle Einträge |
 | F8 | 1; Natural Earth ist gemeinfrei, **Einstufung durch Otto: Processing** (frei nutzbar, Quellenangabe freiwillig, wir nennen sie trotzdem) | `backend/catalog/regions.json`, Nennung in `backend/THIRD_PARTY_NOTICES.md` |
@@ -118,6 +118,98 @@ Gelistete Einträge (alle Datentypen, auch ohne direkten Download) liegen in Pos
 | F10 | 1 | Einträge ohne Zeitraum bleiben und stehen in `ignored_filters_by_collection` |
 
 Die Reihenfolge im M5-Plan (§6.3) pflegt der Planungs-Chat; die Nachträge zu M5-36 bis M5-42 im M5-Plan sind bestätigt.
+
+### 4b. Themen statt Gruppen nach `category` (Korrektur F5): Vorschlag und Fragen G1–G6
+
+**Auftrag (Otto, 15.11.2026):** Gruppen im Data catalogue nach Thema, für volle und gelistete Einträge gemeinsam; Themenliste ausgehend von den heutigen `category`-Werten; Zuordnung aus den Metadaten der Quellen (DCAT-AP-Themen, INSPIRE-Themen, CKAN-Gruppen und Schlagworte); was sich nicht zuordnen lässt, in „Other“; das Thema ist ein Feld des Eintrags, in der Tabelle und filterbar. Erst nach den Antworten gebaut.
+
+**Belege:** Die 34 INSPIRE-Themen (Richtlinie 2007/2/EG, Anhänge I–III; URIs `http://inspire.ec.europa.eu/theme/<kürzel>`) und die 13 EU Data Themes plus `OP_DATPRO` (Vokabular des Publications Office, `http://publications.europa.eu/resource/authority/data-theme/<CODE>`, in DCAT-AP und DCAT-AP.de für `dcat:theme`) sind hier **aus dem Gedächtnis [S]**; vor dem Bau werden Liste und URIs an den Registern geprüft. CKAN-Gruppen und Schlagworte sind je Katalog Freitext [A].
+
+**Vorschlag Themenliste** (Kennung, Titel im Katalog englisch wie heute; Reihenfolge = Reihenfolge der Gruppen):
+
+| # | Kennung | Titel | Herkunft |
+|---|---|---|---|
+| 1 | `optical` | Optical imagery | heute `optical` („Optical“), erweitert um Luftbilder und Orthofotos |
+| 2 | `radar` | Radar | heute `radar` |
+| 3 | `elevation` | Elevation | heute `elevation` |
+| 4 | `land_cover` | Land cover and land use | heute `land_cover`, erweitert um Landnutzung |
+| 5 | `weather_climate` | Weather and climate | heute `weather_climate` |
+| 6 | `water` | Water and sea | neu |
+| 7 | `nature` | Nature and environment | neu |
+| 8 | `geology_soil` | Geology and soil | neu |
+| 9 | `boundaries` | Boundaries, addresses and cadastre | neu |
+| 10 | `infrastructure` | Buildings, transport and utilities | neu |
+| 11 | `population` | Population and society | neu |
+| 12 | `agriculture` | Agriculture and forestry | neu |
+| — | `other` | Other | am Ende, für alles ohne Zuordnung |
+
+**Zuordnung INSPIRE → Thema** (Kürzel in Klammern):
+
+| Thema | INSPIRE-Themen |
+|---|---|
+| `optical` | Orthoimagery (oi) |
+| `elevation` | Elevation (el) |
+| `land_cover` | Land cover (lc), Land use (lu) |
+| `weather_climate` | Atmospheric conditions (ac), Meteorological geographical features (mf) |
+| `water` | Hydrography (hy), Oceanographic geographical features (of), Sea regions (sr) |
+| `nature` | Protected sites (ps), Bio-geographical regions (br), Habitats and biotopes (hb), Species distribution (sd), Environmental monitoring facilities (ef), Natural risk zones (nz), Area management/restriction/regulation zones and reporting units (am) |
+| `geology_soil` | Geology (ge), Soil (so), Mineral resources (mr) |
+| `boundaries` | Administrative units (au), Addresses (ad), Cadastral parcels (cp), Geographical names (gn) |
+| `infrastructure` | Transport networks (tn), Buildings (bu), Utility and governmental services (us), Production and industrial facilities (pf), Energy resources (er) |
+| `population` | Statistical units (su), Population distribution – demography (pd), Human health and safety (hh) |
+| `agriculture` | Agricultural and aquaculture facilities (af) |
+| `other` | Coordinate reference systems (rs), Geographical grid systems (gg) |
+
+`radar` hat kein INSPIRE-Thema; es kommt nur über Schlagworte.
+
+**Zuordnung EU Data Theme → Thema:**
+
+| Thema | EU Data Themes |
+|---|---|
+| `agriculture` | AGRI (Agriculture, fisheries, forestry and food) |
+| `nature` | ENVI (Environment) |
+| `infrastructure` | ENER (Energy), TRAN (Transport) |
+| `population` | SOCI (Population and society), HEAL (Health), EDUC (Education, culture and sport) |
+| `boundaries` | REGI (Regions and cities) |
+| `other` | ECON, GOVE, INTR, JUST, TECH, OP_DATPRO |
+
+**Schlagworte und CKAN-Gruppen:** eine Liste je Thema in einer Datei `backend/catalog/themes.yaml` (Begriffe deutsch und englisch, verglichen nach `normalize` wie die Suche: klein, ohne Akzente; nur ganze Wörter bzw. Wortfolgen), z. B. `radar`: „Radar“, „SAR“, „Sentinel-1“; `elevation`: „DGM“, „DOM“, „Höhenmodell“, „Geländemodell“, „LiDAR“, „Laserscanning“, „elevation“; `optical`: „Orthofoto“, „Luftbild“, „DOP“, „orthophoto“, „aerial imagery“. Die vollständige Liste kommt mit dem Bau in den PR zur Prüfung.
+
+**Regel (Vorschlag):**
+
+1. Ein Thema je Eintrag.
+2. Reihenfolge der Belege: INSPIRE-Thema vor EU Data Theme vor CKAN-Gruppe vor Schlagwort. Der erste Beleg, der ein Thema außer `other` ergibt, entscheidet. Ergeben mehrere Werte derselben Stufe verschiedene Themen, gewinnt das Thema, das in der Liste weiter oben steht.
+3. EU Data Themes sind grob (ENVI deckt Wasser, Klima und Natur zugleich): Ein EU Data Theme entscheidet nur, wenn Schlagworte und Gruppen kein genaueres Thema ergeben. Deshalb vor 2: Ergibt ein Schlagwort ein Thema und das EU Data Theme ist ENVI, AGRI oder SOCI, gilt das Schlagwort.
+4. Nichts trifft: `other`.
+5. Volle Einträge: Das Feld `category` wird `theme` mit den Werten der Liste; die sechs Einträge behalten ihre Gruppe. Handeinträge unter `listed/` nennen `theme` selbst. Für geerntete Einträge rechnet der Harvest das Thema (M5-19/M5-20); eine Änderung des Themas ist beschreibend und braucht keine Freigabe (`adr/0033` §11).
+
+**Fragen:**
+
+**G1 — Themenliste?**
+1. Die zwölf Themen oben plus „Other“ **(Empfehlung)**
+2. Nur die fünf heutigen plus „Other“ (fast alles Geerntete käme nach „Other“)
+3. Die 13 EU Data Themes als Liste, die fünf heutigen darunter verteilt
+
+**G2 — Wie viele Themen je Eintrag?**
+1. Genau eines; der Eintrag steht in einer Gruppe **(Empfehlung)**
+2. Mehrere; ein Eintrag steht in jeder seiner Gruppen
+
+**G3 — Regel der Zuordnung?**
+1. Wie oben: INSPIRE vor EU Data Theme vor CKAN-Gruppe vor Schlagwort, mit der Ausnahme für grobe EU Data Themes, sonst „Other“ **(Empfehlung)**
+2. Ohne Schlagworte, nur Themen-URIs und CKAN-Gruppen (weniger falsche Treffer, mehr „Other“)
+3. Schlagworte zuerst
+
+**G4 — Wo liegt die Zuordnung?**
+1. `backend/catalog/themes.yaml` in Git (Themenliste, Tabellen INSPIRE und EU Data Theme, Begriffe), von dir im Review freigegeben; Prüfung beim Laden: jede URI höchstens einmal, jedes Thema der Liste bekannt **(Empfehlung)**
+2. Im Code als Konstante
+
+**G5 — Feld der vollen Einträge?**
+1. `category` wird `theme` (Registry, YAML, `earthx:theme` in der Collection; `earthx:category` entfällt im selben PR wie das Frontend) **(Empfehlung)**
+2. `category` bleibt als Name und bekommt die neuen Werte
+
+**G6 — Was baut M5-40 davon?**
+1. Themenliste, `themes.yaml` mit Prüfung, eine reine Funktion „Metadaten → Thema“ mit Tests, Spalte `theme` mit Index, Filter `theme` in der API, Feld in `listed/` und bei vollen Einträgen; den Aufruf im Harvest macht M5-19 **(Empfehlung)**
+2. Nur Spalte, Filter und Feld; Zuordnung mit M5-19
 
 ## 5. Umsetzung (mit den Empfehlungen)
 
@@ -180,7 +272,7 @@ In derselben Transaktion wie heute, nach den vollen Einträgen:
 ### 5.7 Frontend (PR 2 nach F2)
 
 - `fetchCollections` lädt die vollen Einträge mit `entry=full` und folgt den `next`-Links bis zum Ende (≤ 10³); Store, Control Panel, Suche, Layer-Manager, Permalink und Downloads bleiben unverändert.
-- Data catalogue: Gruppen der vollen Einträge wie heute; die Gruppe „Other“ hängt Seiten mit `entry=listed` an, sobald ihr Ende sichtbar wird (F5). Seiten liegen im Zustand der Komponente, nicht im globalen Store.
+- Data catalogue: Gruppen nach Thema für volle und gelistete Einträge gemeinsam (F5, §4b); jede Gruppe lädt ihre Seiten mit `theme=<id>` nach, sobald ihr Ende im Fenster sichtbar wird. Seiten liegen im Zustand der Komponente, nicht im globalen Store.
 - Zeile eines gelisteten Eintrags: Titel, Link „Source“, keine Marke (F6); Details aus den vorhandenen Zeilen von `catalogueRows`, keine neuen Zeilen (A7).
 - Keine Filter-Bedienelemente (kommen mit M5-23).
 
@@ -201,7 +293,7 @@ In derselben Transaktion wie heute, nach den vollen Einträgen:
 - **A5** Ein Handeintrag, den Otto aus `listed/` löscht, wird Grabstein mit `source_removed` statt still zu verschwinden.
 - **A6** Gelistete Einträge haben keine Items; Items-Abfragen antworten leer und STAC-konform.
 - **A7** Neue Felder (`data_kind`, `delivery`, `regions`) stehen in der Collection, aber nicht als Zeilen im Data catalogue.
-- **A8** (nach F5) `data_kind` hat genau die fünf Werte der Gruppen: `raster`, `vector`, `table`, `document`, `service`. Den Wert `other` aus `adr/0033` §5 gibt es nicht, weil es keine Sammelgruppe gibt; ein Fund, der in keine passt, ist in M5-19/M5-20 ein Pflichtfeld-Mangel (`invalid`) und wird nicht gelistet.
+- **A8** `data_kind` behält die sechs Werte aus `adr/0033` §5 (`raster`, `vector`, `table`, `document`, `service`, `other`); es steuert keine Gruppe mehr (F5 korrigiert) und ist nur ein Feld des Eintrags.
 
 ## 7. Risiken
 
