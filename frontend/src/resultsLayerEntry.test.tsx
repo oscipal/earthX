@@ -43,7 +43,7 @@ function scene(id: string, day: string): StacItem {
 }
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-  if (url === '/stac/collections') return json({ collections: [COLLECTION] });
+  if (url === '/stac/collections?entry=full&limit=1000') return json({ collections: [COLLECTION] });
   if (url === '/stac/search' && init?.method === 'POST') return json({ features: [scene('a0', '2026-07-24'), scene('b0', '2026-07-25')], numberReturned: 2, links: [] });
   return json({ detail: 'not found' }, 404);
 });

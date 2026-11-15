@@ -102,7 +102,7 @@ const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
   const method = init?.method ?? 'GET';
   const body = init?.body ? (JSON.parse(init.body as string) as Record<string, unknown>) : null;
   seen.push({ method, url, body });
-  if (url === '/stac/collections') return json({ collections: [COLLECTION] });
+  if (url === '/stac/collections?entry=full&limit=1000') return json({ collections: [COLLECTION] });
   if (url === '/stac/search' && method === 'POST') return json(await answerSearch(body ?? {}));
   if (url === `/processing/processes/recipe?dataset=${DATASET}`) return json(s2);
   if (url === `/processing/permalinks/${ID}` && method === 'GET') return json({ order: ORDER, view: VIEW, expires_at: EXPIRES });
@@ -197,15 +197,15 @@ describe('opening the app', () => {
     expect(seen.filter((r) => r.url.startsWith('/coverage'))).toHaveLength(0);
     // StrictMode runs the effect of `App` twice in development, so the collections are asked twice. The list is
     // the same both times and the second answer only replaces it; it is no search and no page of one.
-    expect(gets('/stac/collections')).toHaveLength(2);
+    expect(gets('/stac/collections?entry=full&limit=1000')).toHaveLength(2);
     expect(useAppStore.getState().datasets.map((d) => d.id)).toEqual([DATASET]);
-    expect(seen.map((r) => `${r.method} ${r.url}`)).toEqual(['GET /stac/collections', 'GET /stac/collections']);
+    expect(seen.map((r) => `${r.method} ${r.url}`)).toEqual(['GET /stac/collections?entry=full&limit=1000', 'GET /stac/collections?entry=full&limit=1000']);
   });
 
   it('loads the collections once without StrictMode', async () => {
     act(() => root.render(<App />));
     await flush();
-    expect(gets('/stac/collections')).toHaveLength(1);
+    expect(gets('/stac/collections?entry=full&limit=1000')).toHaveLength(1);
     expect(searches()).toHaveLength(0);
   });
 

@@ -121,11 +121,57 @@ export async function jsonOrThrow<T>(res: Response): Promise<T> {
   return (await res.json()) as T;
 }
 
+interface CollectionPage {
+  collections: Collection[];
+  links?: { rel?: string; href?: string }[];
+  numberMatched?: number;
+}
+
+// The `token` of the page after this one, read off its `next` link; the link's own host is not used, every request goes
+// to `BASE` (M5-40: the API pages `/stac/collections` by a keyset token).
+function nextToken(page: CollectionPage): string | null {
+  const href = page.links?.find((l) => l.rel === 'next')?.href;
+  if (typeof href !== 'string' || !URL.canParse(href, 'http://local')) return null;
+  return new URL(href, 'http://local').searchParams.get('token');
+}
+
+async function collectionPage(params: Record<string, string>): Promise<CollectionPage> {
+  return jsonOrThrow<CollectionPage>(await fetch(`${BASE}/stac/collections?${new URLSearchParams(params)}`));
+}
+
+// The most pages `fetchCollections` follows: 10⁶ full entries at 1 000 a page would be a mistake to load at all.
+const MAX_FULL_PAGES = 20;
+
+// Every full entry (M5-40 plan §5.7): the ones "Search and area", the search, the layers and the downloads work with.
+// They are few (10³ at most); the listed entries come a page at a time with `fetchCataloguePage`.
 export async function fetchCollections(): Promise<Collection[]> {
-  const data = await jsonOrThrow<{ collections: Collection[] }>(
-    await fetch(`${BASE}/stac/collections`),
-  );
-  return data.collections;
+  const collections: Collection[] = [];
+  let token: string | null = null;
+  for (let page = 0; page < MAX_FULL_PAGES; page += 1) {
+    const data = await collectionPage({ entry: 'full', limit: '1000', ...(token ? { token } : {}) });
+    collections.push(...data.collections);
+    token = nextToken(data);
+    if (!token) return collections;
+  }
+  throw new Error(`more than ${MAX_FULL_PAGES} pages of full entries`);
+}
+
+export interface CataloguePage {
+  collections: Collection[];
+  // The token of the next page, or `null` at the end.
+  next: string | null;
+  // How many entries the group has, where the API counts them (up to 10 000, on the first page only).
+  matched: number | null;
+}
+
+// One page of a group of the Data catalogue (M5-40 plan §9): full and listed entries of one category, by title.
+export async function fetchCataloguePage(category: string, token: string | null, limit = 50): Promise<CataloguePage> {
+  const data = await collectionPage({ category, limit: String(limit), ...(token ? { token } : {}) });
+  return {
+    collections: data.collections,
+    next: nextToken(data),
+    matched: typeof data.numberMatched === 'number' ? data.numberMatched : null,
+  };
 }
 
 // M3-06b: `POST /aoi/upload` (M3-06a, `backend/earthx/api/aoi_upload_route.py`)
