@@ -355,3 +355,44 @@ In derselben Transaktion wie heute, nach den vollen Einträgen:
 
 **Noch nicht gebaut:** PR 2 (Frontend: Gruppen nach Kategorie mit Nachladen beim Scrollen, „ohne Parameter nur erste Seite“).
 
+
+## 9. PR 2 (Frontend): Umfang und Fragen H1–H5
+
+**Auftrag (Otto, 15.11.2026, nach dem Merge von #356):**
+- Der Data catalogue blättert und lädt beim Scrollen nach.
+- Die Gruppen folgen `category`, für volle und gelistete Einträge.
+- Filter nach AOI, Region, Zeit und `category`.
+- Schlagworte in den Details, der Link „Source“, keine Marken an gelisteten Einträgen.
+- `/stac/collections` ohne Parameter wie im Plan (F3).
+
+**Klar und in Arbeit:**
+- **Ohne Parameter** liefert `/stac/collections` die erste Seite. Das Frontend lädt die vollen Einträge mit `entry=full` über alle Seiten (≤ 10³); Store, Control Panel, Suche und Layer bleiben unverändert.
+- **Gruppen:** eine je Kategorie in der Reihenfolge von `categories.yaml`. Jede Gruppe lädt ihre Seiten mit `category=<id>` (volle und gelistete gemischt, nach Titel) und lädt nach, wenn ihr Ende im Fenster sichtbar wird. Eine Gruppe ohne Einträge erscheint nicht. Das Control Panel scrollt weiterhin nie.
+- **Zeile eines gelisteten Eintrags:** Titel und der Link „Source“, keine Marke (F6). Volle Einträge bleiben wie heute.
+- **Details:** neue Zeile „Keywords“ für jeden Eintrag. Bei gelisteten Einträgen fallen die Zeilen weg, die nur für volle gelten (Bänder, Processing, Quick processing, Mask).
+
+**Nicht entschieden: die Bedienelemente der Filter.** Festgelegt ist nur der AOI-Schalter (`adr/0026` §7, F6: Vorgabe aus, bleibt für die Sitzung an). Für Region, Zeit und Kategorie gibt es keine Vorgabe. Zudem kennt der Leitfaden §7 genau einen Schalter (`role="switch"`), und das Frontend hat bisher weder die Namen der Regionen noch die Liste der Kategorien.
+
+**H1 — Ort und Form der Filter?**
+1. Eine zweite Zeile im Kopf des Fensters (`catalogue-head`) mit AOI-Schalter, Auswahl „Region“, zwei Datumsfeldern „From“/„To“ wie in „Search and area“ und Auswahl „Category“. Sie wirken auf alle Gruppen, die Auswahl der Kategorie zeigt nur deren Gruppe. Kein Satz darunter, Erklärungen hinter (i) **(Empfehlung)**
+2. Dieselben Felder hinter einem Knopf „Filters“, der die Zeile auf- und zuklappt
+3. Jetzt nur der AOI-Schalter, Region, Zeit und Kategorie mit M5-23
+
+**H2 — Name des AOI-Schalters?** Er darf nicht mit „Filter within AOI only“ (Advanced search) verwechselbar sein. Der zweite `role="switch"` braucht einen Nachtrag im Leitfaden (§2, §7, §10).
+1. „Only datasets in AOI“, Nachtrag im Leitfaden in diesem PR **(Empfehlung)**
+2. Ein anderer Name (bitte nennen)
+
+**H3 — Namen der Regionen für die Auswahl?**
+1. Neue Route `GET /catalogue/regions`: Code, Name und Ebene aus `regions.json`, ohne Umrisse (rund 10 KB). Die Auswahl gruppiert Staaten und darunter die Unterteilungen von DE, AT, CH und LI **(Empfehlung)**
+2. Staatennamen aus dem Browser (`Intl.DisplayNames`), die 62 Unterteilungen als Liste im Frontend
+3. Nur die Codes, ohne Namen
+
+**H4 — Liste der Kategorien im Frontend?**
+1. Neue Route `GET /catalogue/categories` mit Kennung und Titel in der Reihenfolge von `categories.yaml`, damit die Datei der einzige Ort bleibt **(Empfehlung)**
+2. Kopie im Frontend; ein Backend-Test vergleicht sie mit der Datei
+
+**H5 — Zahl im Kopf einer Gruppe** (heute steht dort die Zahl der Einträge)?
+1. Die Zahl aus `numberMatched` bis 10 000; darüber steht keine Zahl **(Empfehlung)**
+2. Keine Zahl mehr
+
+Bis zu den Antworten baue ich die Gruppen mit einer vorläufigen Kopie der Liste (H4 Option 2). Die Filter-Bedienelemente baue ich erst nach den Antworten.
