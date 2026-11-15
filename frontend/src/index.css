@@ -2983,6 +2983,13 @@ button.pm-open:hover {
   flex: 1 1 160px;
   min-width: 140px;
   max-width: 260px;
+  min-height: var(--control-height);
+  padding: var(--space-1) var(--space-2);
+  background: var(--input-bg);
+  border: var(--line-width) solid var(--panel-border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: var(--text-sm);
 }
 .catalogue-dates {
   flex: 2 1 280px;
