@@ -1,6 +1,6 @@
 """Reading listed entries for ``api``: one page in the order of the catalogue, a count, one entry (M5-40 plan §5.5).
 
-Every function reads one page or one row through the partial indexes of ``earthx_listed_entry`` (migration ``020``);
+Every function reads one page or one row through the partial indexes of ``earthx_listed_entry`` (migration ``021``);
 nothing here loads the whole list, and nothing is kept between requests, so any instance of ``api`` answers any page.
 The order of the catalogue is :func:`~earthx.catalog.listed.sort_title`, then the id; a page goes on after the pair of
 its last entry (keyset), never by an offset.

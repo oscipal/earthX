@@ -2,7 +2,7 @@
 
 A listed entry is no :class:`~earthx.catalog.registry.DatasetConfig`: it has no format, no capabilities, no viewer,
 and it is never read into the registry of a process (M5-35 B5). It lives in ``earthx_listed_entry`` (migration
-``020``); ``catalog-load`` writes the hand entries of ``backend/catalog/listed/`` there, and from M5-20 the harvest
+``021``); ``catalog-load`` writes the hand entries of ``backend/catalog/listed/`` there, and from M5-20 the harvest
 writes the rest. This module holds what is read from files: the entry itself, the blocklist
 ``backend/catalog/blocked.yaml`` (adr/0033 §9) and the region outlines ``backend/catalog/regions.json``. All three are
 read as strictly as the registry (``catalog.entry_files``), and an error names the file and the field, never a value.

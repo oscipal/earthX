@@ -2,7 +2,7 @@
 
 The writers of ``earthx.catalog.listed_store`` are called directly on the rolled-back ``conn`` of the tests, with
 synthetic entries (invented ids, titles and hosts under ``example.org``); nothing is committed and nothing goes out.
-The tables and their ``CHECK`` constraints are the real ones of migration ``020``; inserting around the writers shows
+The tables and their ``CHECK`` constraints are the real ones of migration ``021``; inserting around the writers shows
 what the database itself refuses. ``ctid`` tells whether a row was rewritten: an update always makes a new row version.
 """
 

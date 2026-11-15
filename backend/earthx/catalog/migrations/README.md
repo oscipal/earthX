@@ -63,6 +63,12 @@ Objektschlüssel).
 `sweep`) mit Zug-Nummer, Worker, Frist und frühestem nächsten Zug. Ein Worker nimmt den Zug, bevor er verlängert oder aufräumt;
 die anderen lassen die Runde aus. Eine abgelaufene Frist wird übernommen. Geschrieben von `jobs` nur mit SQL.
 
+`021_listed_entry.sql` — die Tabellen gelisteter Einträge aus M5-40 (`adr/0033`, `docs/plans/m5/m5-40-gelistete-in-postgres.md`
+§5.1): `earthx_listed_entry` (eine Zeile je gelistetem Eintrag mit Zustand, Herkunft je Eintrag und Grabstein, partielle
+Indizes für Seiten nach Titel und die Filter Fläche, Zeit, Region und Kategorie, Schlüssel mit `COLLATE "C"`),
+`earthx_region` und `earthx_region_part` (Grenzen aus `backend/catalog/regions.json`, in Stücke geschnitten). Geschrieben
+von `catalog-load`, gelesen von `api` je Seite. Die Nummer 020 gehört zu M5-30b (#355).
+
 Die Buchführungstabelle `earthx_migrations` gehört nicht hierher, sondern dem Läufer
 (`earthx/catalog/schema.py`) und wird von ihm angelegt. Sonst müsste jedes
 Migrationsverzeichnis sie erneut mitbringen.

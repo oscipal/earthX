@@ -213,7 +213,7 @@ Die Reihenfolge im M5-Plan (§6.3) pflegt der Planungs-Chat; die Nachträge zu M
 
 ## 5. Umsetzung (mit den Empfehlungen)
 
-### 5.1 Tabelle (Migration `020_listed_entry.sql`)
+### 5.1 Tabelle (Migration `021_listed_entry.sql`)
 
 Eine Zeile je gelistetem Eintrag; der Grabstein ist dieselbe Zeile ohne Inhalt.
 
@@ -308,7 +308,7 @@ In derselben Transaktion wie heute, nach den vollen Einträgen:
 
 **Umgesetzt** (Draft-PR [#356](https://github.com/oscipal/earthX/pull/356)), wie §5 mit den Antworten aus §4a, ohne das Thema (§4b, wartet auf G1–G6):
 
-- **Migration 020:** `earthx_listed_entry` (Zustand, Herkunft, Grabstein, partielle Indizes auf `published`, `dataset_id` und `sort_title` mit `COLLATE "C"`, Inhalt außerhalb der Zeile ab 128 Bytes), `earthx_region` und `earthx_region_part` (Umrisse in Stücken zu höchstens 128 Punkten).
+- **Migration 021** (020 ist von #355 belegt): `earthx_listed_entry` (Zustand, Herkunft, Grabstein, partielle Indizes auf `published`, `dataset_id` und `sort_title` mit `COLLATE "C"`, Inhalt außerhalb der Zeile ab 128 Bytes), `earthx_region` und `earthx_region_part` (Umrisse in Stücken zu höchstens 128 Punkten).
 - **Dateien:** `catalog/listed.py` (`ListedEntry`, `DataKind`, `DeliveryKind`, `BlockRule`, Lader für `listed/`, `blocked.yaml`, `regions.json`); `AccountKind.PAID`, in `datasets/` ein Ladefehler; `backend/catalog/listed/README.md`, `backend/catalog/blocked.yaml` (leer, mit Erklärung), `backend/catalog/regions.json` mit `scripts/write-region-outlines.py`; alle drei im Image.
 - **`catalog-load`:** Regionen, `supersede`, Handeinträge (gesperrte ausgelassen, verschwundene als Grabstein `source_removed`), Sperrliste; mengenweise und idempotent.
 - **`api`:** `/stac/collections` mit `token`, `region`, `entry`, `limit` (100, höchstens 1 000), `numberMatched` bis 10 000 auf der ersten Seite (A9); ohne Parameter wie bisher (F2). `GET /stac/collections/{id}`: voll, gelistet, `410` mit allgemeinem Satz je Grund, `404`. Items einer gelisteten ID leer, Suche mit ihr `400` (A6). Volle Einträge tragen `earthx:entry: "full"`.
