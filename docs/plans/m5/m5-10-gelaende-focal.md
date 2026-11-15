@@ -1,6 +1,6 @@
 # M5-10 — Geländeoperator `terrain` und Operator-Art `focal`
 
-**Stand:** 14.11.2026, freigegeben von Otto (Antworten in §9a); PR A umgesetzt (§9b), PR B wartet auf M5-30b Teil 9.
+**Stand:** 14.11.2026, freigegeben von Otto (Antworten in §9a); PR A umgesetzt (§9b), Rückfragen beantwortet (§9c), PR B wartet auf M5-30b Teil 9.
 **Stufe B.** Erst Plan mit Fragen im Draft-PR, Umsetzung nach Ottos Antworten im selben PR (höchstens zwei PRs, F1).
 **Aufgabe:** M5-10 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2.
 **Grundlage:** `adr/0030` F3 (Operator-Art `focal`), §3 B4, §5.3, §5.4, §7, §8, §11; `adr/0023` F5 (Capability `terrain`, zwei Pflichtpunkte); `adr/0014` §5, §6, F10; `adr/0026` Q34/Q35; Plan M5-22 F5 (`capability_terms.yaml`); M5-Plan §2 Punkte 8 und 9.
@@ -238,6 +238,35 @@ Umgesetzt wie §4.1, §4.2, §4.4, §4.5 mit F1–F7 = 1. Auslegungen, gelten bi
 - **Frontend unverändert:** Der Typ `Capabilities` in `frontend/src/types.ts` bekommt `terrain` erst in PR B, wenn das Frontend das Flag liest.
 - **Skalierbarkeit (Vorgabe Otto vom 14.11.2026, M5-35):** `focal` hält keinen Zustand und liest je Block (1 024 px) einen Rand von einem Pixel mit, rund 0,4 % mehr; Kosten und Speicher wachsen linear mit den Pixeln wie bei `band_math`. Keine neue Tabelle, kein neuer Dienst, keine Grenze je Host.
 - **Untergrenze der Suche:** Mit Q34 und Q35 steigt Deutsch auf 9 von 12 (Recall@5 und MRR@10 0,750, vorher 0,727); die Untergrenze im Integrationstest folgt.
+
+## 9c. Rückfragen von Otto vor dem Merge (15.11.2026)
+
+Otto: Auslegungen 1–4 aus §9b in Ordnung. Zwei Rückfragen:
+
+**1. Ausgabetyp.** Ja, die Regel aus #333 gilt: `terrain` gibt neu gerechnete Werte aus (`passes_values` = nein, in der Prozessbeschreibung `x-earthx-passes-values: false`). Das Panel bietet deshalb nur `float32` an (bei einer Quelle in `float64` auch `float64`). Die Schummerung hat Werte von 1 bis 255 als `float32`, ohne Runden, nicht `uint8` wie bei `gdaldem`. Ein Test hält das im Job fest (Typ der Datei, Bereich, Werte mit Nachkommastellen). Wie bei jedem Operator nimmt die Job-Route einen ausdrücklich verlangten Ganzzahltyp weiter an (M5-28, #333: Rezept und Job-Route unverändert).
+
+**2. Eigene Winkelfunktionen: Abweichungen**, gemessen am 15.11.2026 und mit Toleranz in `test_terrain.py` festgehalten:
+
+| Vergleich | gemessen | Toleranz im Test |
+|---|---|---|
+| `arctan` gegen numpy (0 bis 50, dazu 1e-300 und 1e300) | 3,3·10⁻¹⁶ rad | 5·10⁻¹⁶ |
+| `arctan2` gegen numpy (20 000 Zufallspaare) | 4,4·10⁻¹⁶ rad | 5·10⁻¹⁶ |
+| `sin`, `cos` gegen numpy (−720° bis 720°) | 1,1·10⁻¹⁵ | 1,2·10⁻¹⁵ |
+| Operator mit eigenen Funktionen gegen denselben Operator mit numpy, alle 7 Varianten auf dem Referenzmodell | 0 (alle `float32`-Werte gleich) | 1 Schritt von `float32` |
+
+Gegen `gdaldem`: Ein echter DEM-Ausschnitt geht nicht ins Repo (Fixtures nur synthetisch oder eindeutig offen lizenziert; die Lizenz-Einstufung der DEMs liegt bei Otto), und aus der Sitzung gibt es keine Live-Abrufe. Deshalb ein synthetisches alpines Modell: fraktal, 80 × 80 Pixel zu 2 m (wie swissALTI3D), 1 800–1 960 m, Neigungen von 2° bis 83°, mit einer Lücke. `gdaldem` 3.8.4 (Ubuntu-Paket, nur in der Sitzung installiert) rechnete daraus die Referenz `backend/tests/fixtures/terrain/gdaldem_reference.npz` (130 KB). Das Skript dazu ist `scripts/m5-10/gdaldem_reference.py`. Die CI vergleicht ohne `gdaldem`.
+
+| Variante | gemessen (größte Abweichung) | Toleranz im Test | Ursache |
+|---|---|---|---|
+| Neigung, Horn, Grad | 0,0034° | 0,004° | `gdaldem` summiert das Fenster in `float32`, der Operator in `float64` (mit `float32`-Summen nachgerechnet: 100 % bitgleich) |
+| Neigung, Zevenbergen-Thorne, Prozent | 0 | 10⁻⁴ % | nur Differenzen zweier Höhen, in `float32` exakt |
+| Exposition, Horn | 0,016° | 0,02° | wie Neigung Horn |
+| Exposition, Zevenbergen-Thorne | 3,1·10⁻⁵° | 10⁻⁴° | Rundung |
+| Schummerung, Horn, 315°/45° | 0,5 | 0,5 | `gdaldem` schreibt 8 Bit, der Operator `float32` |
+| Schummerung, Zevenbergen-Thorne, 30°/60°, z 2,5 | 0,5 | 0,5 | wie oben |
+| Schummerung, vier Lichter | 0,501 | 0,51 | wie oben, dazu die `float32`-Summen |
+
+Leere Pixel (Rand, Lücke) sind in allen Varianten dieselben wie bei `gdaldem`.
 
 ## 10. Grenzen
 
