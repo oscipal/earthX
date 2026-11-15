@@ -238,7 +238,7 @@ Indizes, alle partiell auf `state = 'published'`: GiST auf `footprint`, GiST auf
 - **`ListedEntry`** (neu, `catalog/listed.py`): derselbe Kopf wie `DatasetConfig` (`adr/0025` §6.1a: ID, Titel, Beschreibung, Schlagworte, DOI/Zitat, `providers`, `maturity`, Ausdehnung, `license` mit `tier = catalog`, `legal_status: cleared`, `source` mit Link) plus `data_kind`, `access` (`account`, `delivery`), `regions` (abgeleitet, nie aus der Datei). Gleiche Kopfprüfungen, strenges Lesen wie M5-13; `tier` immer `catalog`; Link nur `https://`.
 - **`AccountKind.PAID`** neu; in `datasets/` ein Ladefehler (nur gelistet). **`DeliveryKind`** (`download`, `service`, `order`, `on_request`) und **`DataKind`** (`raster`, `vector`, `table`, `document`, `service`, `other`) neu. Volle Einträge bekommen kein `delivery` (A4).
 - **Collection-JSON** gelisteter Einträge: STAC-Kopf, `extent`, `links` (`via` zur Quelle, `license`), `earthx:entry: "listed"`, `earthx:data_kind`, `earthx:regions`, `earthx:access` (`account`, `delivery`), `earthx:legal_status`, `earthx:license_flags`, `earthx:listing` (Quelle, Lizenzregel, Datum der Freigabe, „zuletzt geerntet“, „zuletzt geprüft“). Kein `earthx:viewer`, keine Capabilities, kein `earthx:source.item_holding`; volle Einträge bekommen `earthx:entry: "full"`.
-- **Regionen:** `catalog-load` schreibt die Grenzen (F8) in eine Tabelle `earthx_region` und leitet `regions` beim Schreiben eines Eintrags per `ST_Intersects` ab.
+- **Regionen:** `catalog-load` schreibt die Grenzen (F8) in `earthx_region` und, in Stücke zu höchstens 128 Punkten geschnitten (`ST_Subdivide`), in `earthx_region_part`; `regions` eines Eintrags sind die Codes aller Stücke, die seine Ausdehnung mehr als am Rand berühren. Gegen die ganzen Umrisse dauerte die Ableitung für 10⁶ Einträge über 10 Minuten (abgebrochen), gegen die Stücke siehe §8. `regions` steht nur in der Spalte; `api` fügt `earthx:regions` beim Ausliefern an, damit eine neue Grenzdatei kein Dokument umschreibt.
 
 ### 5.3 `catalog-load`
 
@@ -261,7 +261,7 @@ In derselben Transaktion wie heute, nach den vollen Einträgen:
 
 - **`GET /stac/collections/{id}`:** voller Eintrag aus pgstac; sonst gelisteter mit `published`; sonst Grabstein → `410` mit einem allgemeinen englischen Satz je Grundcode (kein Name, keine Quelle der Anfrage); sonst `404`.
 - **`GET`/`POST /stac/collections`:** Seiten mit `limit` (Vorgabe 100, höchstens 1 000; mit `q` weiter 20) und `token` (Keyset aus Titel und ID, nicht signiert; eine kaputte Marke ist `400`). Filter `bbox`/`intersects`, `datetime`, neu `region` (Liste, ein Treffer genügt) und `entry`. Volle Einträge (≤ 10³) kommen wie heute aus `search_datasets`; gelistete aus der Tabelle; beide in einer SQL-Abfrage nach `(sort_title, dataset_id)` gemischt. `numberMatched` nach F4. `offset` bleibt für `q`.
-- **Items:** `/stac/collections/{id}/items` und `/stac/search` mit einer gelisteten ID antworten wie eine Collection ohne Items (leere Liste), nie mit einer Anfrage an die Quelle (A6).
+- **Items:** `/stac/collections/{id}/items` einer gelisteten ID antwortet mit einer leeren Liste; `/stac/search` mit einer gelisteten ID in `collections` mit `400` („a catalogue entry without items“). Nie eine Anfrage an die Quelle (A6).
 - **Mehrere Instanzen:** kein Zustand im Prozess; die Marke trägt alles, was die nächste Seite braucht. Die Allowlist von `gateway` bleibt aus vollen Einträgen (M5-35 B5).
 - Nichts loggt Fläche, Region oder Marke (wie M5-22 §3.7).
 
@@ -291,7 +291,7 @@ In derselben Transaktion wie heute, nach den vollen Einträgen:
 - **A3** Handeinträge sind durch Ottos Merge der Datei freigegeben wie volle Einträge; ihre Herkunft ist die Datei mit Hash und Datum, `source_id` ist `listed`. Commits stehen nicht im Image; statt des Commits speichert die Zeile den SHA-256 der Datei, der sich in der Git-Geschichte wiederfinden lässt (gilt in M5-20 ebenso für Regeldateien und Freigabedateien).
 - **A4** `access.delivery` nur für gelistete Einträge; volle Einträge sind lesbar und brauchen es nicht.
 - **A5** Ein Handeintrag, den Otto aus `listed/` löscht, wird Grabstein mit `source_removed` statt still zu verschwinden.
-- **A6** Gelistete Einträge haben keine Items; Items-Abfragen antworten leer und STAC-konform.
+- **A6** Gelistete Einträge haben keine Items: Der Items-Endpunkt antwortet leer und STAC-konform; eine Suche, die eine gelistete ID nennt, ist ein Fehler der Anfrage (`400`), weil die Suche über Quellen verteilt wird und eine gelistete ID keine hat. Eine Suche ohne `collections` sucht wie bisher nur volle Einträge.
 - **A7** Neue Felder (`data_kind`, `delivery`, `regions`) stehen in der Collection, aber nicht als Zeilen im Data catalogue.
 - **A8** `data_kind` behält die sechs Werte aus `adr/0033` §5 (`raster`, `vector`, `table`, `document`, `service`, `other`); es steuert keine Gruppe mehr (F5 korrigiert) und ist nur ein Feld des Eintrags.
 
