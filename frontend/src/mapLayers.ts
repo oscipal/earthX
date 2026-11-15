@@ -20,6 +20,8 @@ import { underlayOf } from './underlay';
 import type { ImageOverlay } from './underlay';
 import { chosenByView, inStackOrder, passesOf, stackLikeView, viewOfPass } from './mosaic';
 import type { Mosaics, PassView, PlannedRaster, SceneEntry } from './mosaic';
+import { buildMaskedOverviewTileTemplate } from './api';
+import { footprintSelectionFor, hitsOverviewsOf } from './overviewHits';
 import { overviewRasterOf } from './overviewSubstitute';
 import { tileSizeOf } from './tileSize';
 import type { AppliedRender, Bbox, DownloadedInfo, StacItem, TimeStepGroup } from './types';
@@ -1046,6 +1048,7 @@ export function setViewOpacity(map: MapLibreMap, opacity: number): void {
   for (const lyrId of viewPictures.keys()) {
     for (const id of [lyrId, cutId(lyrId)]) if (map.getLayer(id) && !arriving.has(id)) map.setPaintProperty(id, 'raster-opacity', viewOpacity);
   }
+  for (let n = 0; n < MAX_HITS_OVERVIEWS; n++) if (map.getLayer(hitsLyr(n))) map.setPaintProperty(hitsLyr(n), 'raster-opacity', viewOpacity);
 }
 
 function settleViewTwins(map: MapLibreMap): void {
@@ -1215,6 +1218,7 @@ export function syncFocusRaster(
   // A quicklook that arrives after this sync belongs to the one before it.
   const gen = ++syncGen;
   retireDynamicMosaic(map);
+  clearHitsOverview(map); // the view draws its own picture below the first level
   if (!s.showDownloaded) return dropRetired(map);
   const clip = s.cropToAoi ? (s.aoi ?? null) : null;
   if (clip) clipRetired(map, clip);
@@ -1324,12 +1328,69 @@ const resultsOrderOf = (s: PreviewState, items: readonly StacItem[]): ResultsOrd
   return { ticks: s.selectedIds ?? [], isOpen: (id) => open.get(id) ?? true };
 };
 
+// --- the picture below the first level, for the hits of a search (adr/0032 Nachtrag 15.11.2026) ---
+//
+// A scene of a dataset with a pyramid or a substitute is drawn by its own tiles from the first level of the dataset on; below it the
+// preview of a scene draws nothing. Below it the view draws the picture of the dataset, masked by the tiler to the footprints of the
+// hits that are shown (a footprint selection, `overviewHits.ts`): one raster for each such dataset, in its own range of ids under the
+// results (`res-tiles-*-1NN`, owned by "Results"), in the lowest tier so that the scenes' own tiles lie over it. Cleared by the next sync
+// of the view and by a sync of the full-resolution view, which draws its own picture below the first level.
+const HITS_OVERVIEW_FIRST = 100;
+const MAX_HITS_OVERVIEWS = 8;
+const hitsLyr = (n: number): string => `res-tiles-lyr-${HITS_OVERVIEW_FIRST + n}`;
+const hitsSrc = (n: number): string => `res-tiles-src-${HITS_OVERVIEW_FIRST + n}`;
+let hitsGen = 0;
+let hitsKey = '';
+
+function clearHitsOverview(map: MapLibreMap): void {
+  hitsGen++;
+  hitsKey = '';
+  for (let n = 0; n < MAX_HITS_OVERVIEWS; n++) {
+    resultsKeys.delete(hitsLyr(n));
+    if (map.getLayer(hitsLyr(n))) map.removeLayer(hitsLyr(n));
+    if (map.getSource(hitsSrc(n))) map.removeSource(hitsSrc(n));
+  }
+}
+
+function syncHitsOverview(map: MapLibreMap, items: readonly StacItem[], s: Pick<PreviewState, 'dataset' | 'datasets'>): void {
+  const overviews = hitsOverviewsOf(items, (item) => datasetOfItem(item, s), s.datasets).slice(0, MAX_HITS_OVERVIEWS);
+  const key = JSON.stringify(overviews.map((o) => [o.datasetId, o.itemIds, o.render, o.raster.bounds]));
+  // The same hits over the same picture: it stays, so that a tick or a click does not reload its tiles.
+  if (key === hitsKey && overviews.every((_, n) => map.getLayer(hitsLyr(n)))) return;
+  clearHitsOverview(map);
+  hitsKey = key;
+  const gen = hitsGen;
+  overviews.forEach((overview, n) => {
+    footprintSelectionFor(overview.datasetId, overview.itemIds).then(
+      (selection) => {
+        if (gen !== hitsGen) return; // a newer sync superseded this one
+        const { raster } = overview;
+        try {
+          placeRaster(map, hitsSrc(n), hitsLyr(n), buildTileUrl(buildMaskedOverviewTileTemplate(selection), overview.render), raster.bounds, viewOpacity, {
+            minZoom: raster.minZoom,
+            maxZoom: raster.maxZoom,
+            ...(raster.hideFrom === undefined ? {} : { hideFrom: raster.hideFrom }),
+            ...(raster.attribution === undefined ? {} : { attribution: raster.attribution }),
+          });
+          keyResults(hitsLyr(n), 'otherTicked', -1);
+          restackAll(map);
+        } catch {
+          /* map/style went away while the selection was made */
+        }
+      },
+      // The tiler refused or could not be asked: the hits draw what they draw from their first level on, as before.
+      () => undefined,
+    );
+  });
+}
+
 export function syncBrowseMosaic(map: MapLibreMap, s: PreviewState): void {
   const gen = ++syncGen;
   retireDynamicMosaic(map, s.hold !== undefined);
   holding = s.hold ?? null;
   const items = s.items.slice(0, MAX_MOSAIC_LAYERS);
   const { dataset } = s;
+  syncHitsOverview(map, dataset ? items : [], s);
   // Nothing to draw (no dataset, or the results are off the map, UI-01g): the picture before it has nothing to
   // wait for and goes at once.
   if (!dataset || items.length === 0) return s.hold ? finishWhenDue(map, gen) : dropRetired(map);
