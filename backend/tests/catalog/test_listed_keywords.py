@@ -6,10 +6,13 @@ those of a hand entry. Technical keywords are told by their form only (plan A11)
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from earthx.catalog.categories import load_categories
-from earthx.catalog.listed import MAX_KEYWORD_CHARS, listed_keywords
+from earthx.catalog.entry_files import EntryFileError
+from earthx.catalog.listed import MAX_KEYWORD_CHARS, listed_keywords, load_catalog_tags, read_catalog_tags
 from earthx.catalog.registry import ConfigError
 
 
@@ -82,3 +85,51 @@ def test_an_unknown_category_is_an_error_only_where_its_words_are_needed() -> No
 def test_a_string_is_not_read_as_a_list_of_letters() -> None:
     # One keyword given as a string is one keyword, never "w", "a", "l", "d".
     assert listed_keywords("Wald", "agriculture") == ("wald",)
+
+
+# --- catalogue tags (catalog_tags.yaml, Otto 15.11.2026) --------------------------------------------------------------
+
+
+def test_the_file_holds_the_three_tags_of_the_start() -> None:
+    assert load_catalog_tags() == {"opendata", "govdata", "inspire"}
+
+
+def test_a_catalogue_tag_is_dropped_as_a_whole_keyword_only() -> None:
+    assert listed_keywords(["OpenData", "GovData", "INSPIRE", "inspireidentifiziert", "Wald"], "agriculture") == (
+        "inspireidentifiziert",
+        "wald",
+    )
+
+
+def test_only_catalogue_tags_give_the_words_of_the_category() -> None:
+    assert listed_keywords(["opendata", "inspire"], "water") == ("water", "sea")
+
+
+def test_the_tags_compare_after_the_same_normalization() -> None:
+    assert listed_keywords(["Open  Data", "open data x"], "water", catalog_tags=frozenset({"open data"})) == (
+        "open data x",
+    )
+
+
+@pytest.mark.parametrize(
+    ("text", "message"),
+    [
+        ("opendata: yes\n", "are a list"),
+        ("- opendata\n- OpenData\n", "stands twice"),
+        ("- open  data\n- open data\n", "stands twice"),
+        ("- ''\n", "non-blank"),
+        ("- 3\n", "non-blank"),
+    ],
+)
+def test_a_broken_tag_file_names_the_problem(tmp_path: Path, text: str, message: str) -> None:
+    path = tmp_path / "catalog_tags.yaml"
+    path.write_text(text, encoding="utf-8")
+    with pytest.raises(EntryFileError, match=message):
+        read_catalog_tags(path)
+
+
+@pytest.mark.parametrize("text", ["", "[]\n", "# nothing yet\n"])
+def test_an_empty_tag_file_drops_nothing(tmp_path: Path, text: str) -> None:
+    path = tmp_path / "catalog_tags.yaml"
+    path.write_text(text, encoding="utf-8")
+    assert read_catalog_tags(path) == frozenset()

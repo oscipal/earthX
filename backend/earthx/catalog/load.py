@@ -22,7 +22,7 @@ import sys
 import psycopg
 
 from earthx.catalog.datasets import registry
-from earthx.catalog.listed import load_blocked, load_listed, load_regions
+from earthx.catalog.listed import load_blocked, load_catalog_tags, load_listed, load_regions
 from earthx.catalog.listed_store import apply_blocklist, supersede, write_hand_entries, write_regions
 from earthx.catalog.pgstac import PgstacError, load_registry, remove_prototype_overviews
 from earthx.catalog.registry import ConfigError
@@ -37,6 +37,7 @@ def main() -> int:
         hand_entries = load_listed()
         blocklist = load_blocked()
         regions = load_regions()
+        load_catalog_tags()
     except ConfigError as error:
         print(f"load failed: {error}", file=sys.stderr)
         return 1

@@ -17,6 +17,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import date
 from enum import Enum
+from functools import cache
 from pathlib import Path
 from typing import Any
 
@@ -67,6 +68,8 @@ __all__ = [
     "file_sha256",
     "link_host",
     "listed_keywords",
+    "load_catalog_tags",
+    "read_catalog_tags",
     "load_blocked",
     "load_listed",
     "load_regions",
@@ -77,6 +80,7 @@ __all__ = [
 LISTED_DIR = CATALOG_DIR / "listed"
 BLOCKED_FILE = CATALOG_DIR / "blocked.yaml"
 REGIONS_FILE = CATALOG_DIR / "regions.json"
+CATALOG_TAGS_FILE = CATALOG_DIR / "catalog_tags.yaml"
 #: The ``source_id`` of a hand entry: its key at the source is its id (plan A3).
 HAND_SOURCE = "listed"
 _README = "README.md"
@@ -364,20 +368,57 @@ def _is_technical(keyword: str) -> bool:
     )
 
 
-def listed_keywords(raw: Iterable[object], category: str, categories: Categories | None = None) -> tuple[str, ...]:
+def _normal_keyword(value: str) -> str:
+    return " ".join(value.lower().split())
+
+
+def read_catalog_tags(path: Path = CATALOG_TAGS_FILE) -> frozenset[str]:
+    """The keywords about the catalogue rather than the data (``catalog_tags.yaml``), normalized like keywords.
+
+    A list of non-blank texts, each once after normalization; an empty list is fine.
+    """
+    data = read_yaml(path)
+    if data is None:
+        return frozenset()
+    if not isinstance(data, list):
+        raise EntryFileError(f"{path.name}: the catalogue tags are a list")
+    tags: set[str] = set()
+    for index, value in enumerate(data):
+        tag = _normal_keyword(value) if isinstance(value, str) else ""
+        if not tag:
+            raise EntryFileError(f"{path.name}[{index}]: a tag is a non-blank text")
+        if tag in tags:
+            raise EntryFileError(f"{path.name}[{index}]: {tag} stands twice")
+        tags.add(tag)
+    return frozenset(tags)
+
+
+@cache
+def load_catalog_tags() -> frozenset[str]:
+    """The catalogue tags of the image, read once per process."""
+    return read_catalog_tags()
+
+
+def listed_keywords(
+    raw: Iterable[object],
+    category: str,
+    categories: Categories | None = None,
+    catalog_tags: frozenset[str] | None = None,
+) -> tuple[str, ...]:
     """The keywords of a listed entry from those of its source (CKAN tags, DCAT keywords, INSPIRE keywords).
 
     Lower case, every run of white space one space, each once in the order the source gives them; empty and technical
-    ones (:func:`_is_technical`) are dropped. Where none is left, the words of the title of the entry's category in
+    ones (:func:`_is_technical`) and the tags of ``catalog_tags.yaml`` are dropped. Where none is left, the words of the title of the entry's category in
     ``categories.yaml`` stand in, so that no entry is without keywords (Otto, 15.11.2026). Pure: the harvest calls it
     (M5-19), ``catalog-load`` for the hand entries.
     """
+    catalog_tags = load_catalog_tags() if catalog_tags is None else catalog_tags
     kept: dict[str, None] = {}
     for value in (raw,) if isinstance(raw, str) else raw:
         if not isinstance(value, str):
             continue
-        keyword = " ".join(value.lower().split())
-        if keyword and not _is_technical(keyword):
+        keyword = _normal_keyword(value)
+        if keyword and keyword not in catalog_tags and not _is_technical(keyword):
             kept.setdefault(keyword, None)
     if kept:
         return tuple(kept)
