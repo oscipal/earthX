@@ -4,8 +4,9 @@
     PGDATABASE=<scratch database> PYTHONPATH=backend python scripts/listed-bench/bench.py --n 1000000
 
 The connection comes from the libpq variables (``PGHOST``, ``PGUSER``, ``PGPASSWORD``, ``PGDATABASE``). The database
-must be a scratch database with PostGIS: the script applies the earthx migrations, writes the region outlines and
-fills ``earthx_listed_entry`` with ``--n`` synthetic rows (no real data, no network). Drop the database afterwards.
+must be a scratch database with PostGIS and ``bench`` in its name: the script applies the earthx migrations, writes the
+region outlines, empties ``earthx_listed_entry`` and fills it with ``--n`` synthetic rows (no real data, no network). It
+refuses any other database and a table with rows it did not write. Drop the database afterwards.
 
 The rows follow the procedure of plan §3, with a fixed seed: 85 % boxes in the area of DE, AT and CH, 10 % in Europe,
 5 % anywhere, edges log-uniform between 0.003° and 6°, 0.5 % global; 65 % with a period, a fifth of them open; data
@@ -78,9 +79,31 @@ FROM (
 ) g
 """
 
+
+class NotAScratchDatabase(SystemExit):
+    """The database is not one this script may fill and empty."""
+
+
+def _check_scratch(conn: psycopg.Connection) -> None:
+    """Refuse a database whose name does not say ``bench``, and one that holds listed rows not written here: the
+    script empties ``earthx_listed_entry``, and a deletion of real data needs Otto (CLAUDE.md)."""
+    name = conn.execute("SELECT current_database()").fetchone()[0]
+    if "bench" not in name:
+        raise NotAScratchDatabase(f"refused: the database {name!r} has no 'bench' in its name")
+    exists = conn.execute("SELECT to_regclass('public.earthx_listed_entry') IS NOT NULL").fetchone()[0]
+    if (
+        exists
+        and conn.execute(
+            "SELECT EXISTS (SELECT 1 FROM public.earthx_listed_entry WHERE dataset_id NOT LIKE 'syn-%')"
+        ).fetchone()[0]
+    ):
+        raise NotAScratchDatabase("refused: earthx_listed_entry holds rows this script did not write")
+
+
 def _fill(n: int) -> dict[str, float]:
     timings = {}
     with psycopg.connect() as conn:
+        _check_scratch(conn)
         apply_migrations(conn)
         write_regions(conn, load_regions())
         conn.execute("TRUNCATE public.earthx_listed_entry")
