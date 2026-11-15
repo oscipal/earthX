@@ -13,3 +13,16 @@ Hinweise zu Daten Dritter, die mit dem Backend ausgeliefert werden. Die Python-A
   deutsch, Kontinent und Umriss, vereinfacht auf 0,1° und gerundet.
 - **Lizenz:** Public Domain. Eine Nennung ist nicht verlangt; sie steht hier freiwillig.
   „Made with Natural Earth. Free vector and raster map data @ naturalearthdata.com.“
+
+## Natural Earth (Staaten 1:50m, Unterteilungen 1:10m)
+
+- **Wofür:** `catalog/regions.json`, die Regionen gelisteter Einträge (`earthx:regions`, `adr/0033` §5): alle Staaten mit
+  ISO-3166-1-Kennung und die Unterteilungen von Deutschland, Österreich, der Schweiz und Liechtenstein mit
+  ISO-3166-2-Kennung (`docs/plans/m5/m5-40-gelistete-in-postgres.md` F8).
+- **Quelle:** Natural Earth, „Admin 0 – Countries“ 1:50m und „Admin 1 – States, Provinces“ 1:10m, Release 5.1.2,
+  Dateien `geojson/ne_50m_admin_0_countries.geojson` und `geojson/ne_10m_admin_1_states_provinces.geojson` aus dem
+  Repository <https://github.com/nvkelso/natural-earth-vector> (SHA-256 in `catalog/regions.json`). Reduziert mit
+  `scripts/write-region-outlines.py`: nur Kennung, Name, Ebene und Umriss, vereinfacht auf 0,02° bzw. 0,002° und
+  gerundet.
+- **Lizenz:** Public Domain; Einstufung durch Otto am 15.11.2026: Processing. Eine Nennung ist nicht verlangt; sie
+  steht hier freiwillig. „Made with Natural Earth. Free vector and raster map data @ naturalearthdata.com.“

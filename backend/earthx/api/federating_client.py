@@ -40,7 +40,8 @@ import anyio
 from fastapi import HTTPException, Request
 from pydantic import ValidationError
 from stac_fastapi.pgstac.core import CoreCrudClient
-from stac_fastapi.pgstac.models.links import ItemCollectionLinks, ItemLinks, PagingLinks, SearchLinks
+from stac_fastapi.pgstac.models.links import CollectionLinks, ItemCollectionLinks, ItemLinks, PagingLinks, SearchLinks
+from stac_fastapi.types.errors import NotFoundError
 from stac_fastapi.types.rfc3339 import str_to_interval
 from stac_fastapi.types.stac import Item, ItemCollection
 
@@ -92,6 +93,7 @@ from earthx.api.search_filters import (
     aoi_filters_text,
     read_search_conditions,
 )
+from earthx.catalog.listed_search import Gone, listed_entry
 from earthx.catalog.registry import (
     DatasetConfig,
     DatasetRegistry,
@@ -622,6 +624,27 @@ async def _cache_for(request: Request):
         yield cast(SearchCache, PostgresSearchCache(conn))
 
 
+#: What ``GET /stac/collections/{id}`` says for a removed listed entry, by its reason (adr/0033 §9): general, never who
+#: asked or why in their words.
+GONE_TEXT = {
+    "provider_request": "This catalogue entry was removed at the request of its provider.",
+    "not_geodata": "This catalogue entry was removed: it holds no geodata.",
+    "quality": "This catalogue entry was removed because of its quality.",
+    "legal": "This catalogue entry was removed for legal reasons.",
+    "source_removed": "This catalogue entry was removed: the source no longer offers it.",
+    "other": "This catalogue entry was removed.",
+}
+
+
+async def _listed_of(request: Request, collection_id: str) -> dict[str, Any] | Gone | None:
+    """The listed entry or tombstone with this id; ``None`` where there is none or no pool to ask."""
+    pool = getattr(request.app.state, "earthx_cache_pool", None)
+    if pool is None:
+        return None
+    async with pool.connection() as conn:
+        return await listed_entry(conn, collection_id)
+
+
 def _registry_of(request: Request) -> DatasetRegistry:
     registry = getattr(request.app.state, "earthx_registry", None)
     if registry is None:
@@ -692,9 +715,14 @@ class FederatingCoreCrudClient(CoreCrudClient):
         datetime: str | None = None,
         limit: int | None = None,
         offset: int | None = None,
+        region: str | None = None,
+        entry: str | None = None,
+        token: str | None = None,
+        category: str | None = None,
         **kwargs: Any,
     ) -> Any:
-        """``GET /stac/collections``: without a parameter every collection, as before; else Collection Search (M5-22c).
+        """``GET /stac/collections``: without a parameter every full entry, as before; else Collection Search (M5-22c)
+        over full and listed entries (M5-40).
 
         An area by ``GET`` is a ``bbox`` only (adr/0026 §4.5): ``intersects`` belongs in the body of ``POST``.
         """
@@ -704,7 +732,10 @@ class FederatingCoreCrudClient(CoreCrudClient):
             raise HTTPException(status_code=400, detail="an area by GET is a bbox; send intersects by POST")
         if not names:
             return await super().all_collections(request, limit=MAX_PAGE, offset=0)
-        query = read_query(q=q, bbox=bbox, intersects=None, datetime=datetime, limit=limit, offset=offset)
+        query = read_query(
+            q=q, bbox=bbox, intersects=None, datetime=datetime, limit=limit, offset=offset, region=region,
+            entry=entry, token=token, category=category,
+        )
         return await search_collections(request, query)
 
     async def post_all_collections(
@@ -715,6 +746,22 @@ class FederatingCoreCrudClient(CoreCrudClient):
             return await super().all_collections(request, limit=MAX_PAGE, offset=0)
         query = read_query(**{name: getattr(search_request, name) for name in CollectionsPostRequest.model_fields})
         return await search_collections(request, query, body=search_request.model_dump(mode="json", exclude_unset=True))
+
+    async def get_collection(self, collection_id: str, request: Request, **kwargs: Any) -> Any:
+        """A full entry from pgstac; else a published listed entry; ``410`` for a removed one (adr/0033 §9); else
+        pgstac's own ``404``."""
+        try:
+            return await super().get_collection(collection_id, request, **kwargs)
+        except NotFoundError:
+            found = await _listed_of(request, collection_id)
+            if isinstance(found, Gone):
+                raise HTTPException(status_code=410, detail=GONE_TEXT.get(found.reason, GONE_TEXT["other"])) from None
+            if found is None:
+                raise
+            found["links"] = await CollectionLinks(collection_id=collection_id, request=request).get_links(
+                extra_links=found.get("links")
+            )
+            return found
 
     async def item_collection(
         self,
@@ -735,6 +782,9 @@ class FederatingCoreCrudClient(CoreCrudClient):
         # collection, because every collection in pgstac had a known adapter.
         _reject_disallowed_keys(request.query_params.keys())
         _reject_items_endpoint_keys(request.query_params.keys())
+        if collection_id not in _registry_of(request) and isinstance(await _listed_of(request, collection_id), dict):
+            # A listed entry is a catalogue entry with a link: a collection without items (M5-40 plan A6).
+            return cast(ItemCollection, {"type": "FeatureCollection", "features": [], "links": []})
         holding, time_range = await self._source_info_of(collection_id, request)
         effective_datetime, ignored_filters = _apply_time_axis(datetime, [time_range])
         if holding is not ItemHolding.FEDERATED:
@@ -892,7 +942,8 @@ class FederatingCoreCrudClient(CoreCrudClient):
         search filtered exactly as it always was, rather than turning a stale or
         foreign document into a new class of `500`.
         """
-        collection = await self.get_collection(collection_id, request=request)
+        # pgstac's own lookup, not ours: a listed entry has no items to route (M5-40 plan A6).
+        collection = await super().get_collection(collection_id, request=request)
         try:
             holding = item_holding_of(_registry_of(request), collection_id)
         except UnknownCollection:
@@ -913,7 +964,8 @@ class FederatingCoreCrudClient(CoreCrudClient):
         return holding
 
     async def _all_collection_ids(self, request: Request) -> list[str]:
-        collections = await self.all_collections(request=request)
+        """The full entries pgstac holds: a search without ``collections`` searches them, never the listed ones."""
+        collections = await super().all_collections(request, limit=MAX_PAGE, offset=0)
         return [c["id"] for c in collections.get("collections", [])]
 
     async def _dispatch_search(
@@ -945,6 +997,9 @@ class FederatingCoreCrudClient(CoreCrudClient):
         fan-out.
         """
         target_ids = collections or await self._all_collection_ids(request)
+        for cid in target_ids:
+            if cid not in _registry_of(request) and isinstance(await _listed_of(request, cid), dict):
+                raise HTTPException(status_code=400, detail=f"{cid} is a catalogue entry without items (M5-40)")
         infos = {cid: await self._source_info_of(cid, request) for cid in target_ids}
         registry = _registry_of(request)
         try:

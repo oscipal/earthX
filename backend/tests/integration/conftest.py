@@ -88,6 +88,9 @@ SHIPPED_TABLES = (
     "public.earthx_overview_upkeep",
     "public.earthx_overview_omitted",
     "public.earthx_overview_host",
+    "public.earthx_region_part",
+    "public.earthx_region",
+    "public.earthx_listed_entry",
 )
 
 

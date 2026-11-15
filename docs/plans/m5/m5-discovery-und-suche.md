@@ -109,6 +109,9 @@ Kernpunkte für die Umsetzung:
 | — | Ausgabetypen nur, wo sinnvoll (§2 Punkt 9) | #333 |
 | — | CI: Doku-PRs schnell; Pin `ubuntu-24.04`; Logger-Fix im Test; Backend in vier parallelen Teilen (6 statt 15 min) | #304, #322, #336, #338 |
 | — | Weitere Nachträge | #316, #328 |
+| M5-38 | `extend` und `sweep` der Pyramiden unter Sperre (M5-35 F2) | #353 |
+| M5-39 | `adr/0033`: Freigabe gelisteter Einträge in Postgres (Stufe C, angenommen 14.11.2026) | #352 |
+| M5-41 | Nachtrag `adr/0026` F3: pgvector mit HNSW auf `halfvec` (Stufe C) | #354 |
 
 ### 6.2 Offen
 
@@ -121,6 +124,7 @@ Stufe A: ohne Plan-Datei, direkt umsetzen. Stufe B: Plan unter `docs/plans/m5/` 
 | **M5-30b** | Teil 3a/3b (Frontend, mit #335 zusammen mergen), Teil 7 (Ersatz GLO-30, Plan §4.8), Teile 8 und 9 (Pyramide GLO-30 und WorldCover), Teil 10 (Nachträge) | läuft |
 | **M5-22 Teil c** | Collection Search mit `q`, Zahl am Namen (A18 nach Ottos Antwort), Negativfrage Q51 | #337 |
 | **F11** | Quicklook für Sentinel-1 über Kacheln statt PNG (`adr/0018` §4.2), Regel an `georeferencing: gcp_tps`, nur Frontend | läuft, Merge nach #339 |
+| **M5-40** | Gelistete Einträge (alle Datentypen) in Postgres statt YAML, Ziel 10⁶; Sperrliste und Grabstein; `/stac/collections` und Data catalogue blättern (`adr/0033` §13); erster Commit: Nachträge aus `adr/0033` §14 | Plan `m5-40-gelistete-in-postgres.md` im Draft-PR |
 | **M5-35** | Skalierbarkeit der Bausteine aus M4 und M5 mit mehreren Instanzen je Prozesstyp (Vorgabe Otto, 14.11.2026), Stufe C, Bericht `m5-35-skalierbarkeit.md` | Bericht im Draft-PR, Fragen F1–F7 beantwortet (14.11.2026), Folgeaufgaben M5-36 bis M5-42 |
 
 **Noch nicht gestartet:**
@@ -130,18 +134,21 @@ Stufe A: ohne Plan-Datei, direkt umsetzen. Stufe B: Plan unter `docs/plans/m5/` 
 | **F12** | Hinweis an den Originalen (Befund F12 aus #319), Text-Auftrag | A | Sonnet, mittel | — |
 | **M5-10** | Geländeoperator mit Capability `terrain` und Operator-Art `focal` (`adr/0030` F3) | B | Opus, hoch | — |
 | **M5-09** | BEV ALS-DGM 1 m über ATOM, EPSG:3035; Ersatz GLO-30 unter `min_zoom` wie swissALTI3D | B | Opus, mittel | M5-30b Teil 7 gemergt |
-| **M5-17** | Stufe „gelistet“ (`adr/0025` §6.1a, Schnitt 2) und erste Katalogeinträge mit Link: CORINE (`free_account`), Landsat (`requester_pays`) (`adr/0027` W0) | B | Opus, mittel | — |
-| **M5-19** | Harvest-Kern (`adr/0025` Schnitt 4): Tabellen, Fetch und Extract für STAC-API und CKAN, Lauf-Befehl | B | Opus, hoch | — |
+| **M5-17** | Stufe „gelistet“ (`adr/0025` §6.1a, Schnitt 2) und erste Katalogeinträge mit Link: CORINE (`free_account`), Landsat (`requester_pays`) (`adr/0027` W0). Nachtrag 15.11.2026 (`adr/0033` §14): Handeinträge als YAML unter `listed/`, nur von `catalog-load` in die Tabelle aus M5-40 geschrieben | B | Opus, mittel | M5-40 gemergt |
+| **M5-19** | Harvest-Kern (`adr/0025` Schnitt 4): Tabellen, Fetch und Extract für STAC-API und CKAN, Lauf-Befehl. Nachtrag 15.11.2026 (`adr/0033` §14): Extract für alle Datentypen, Filter „räumliche Angabe vorhanden“ statt Rasterfilter, Personenfelder verworfen | B | Opus, hoch | M5-37 |
 | **M5-14** | Preset-Felder `composite_presets` und `step_presets` (`adr/0030` F7), Anzeige in „Quick processing“ | B | Opus, mittel | — |
 | **M5-11** | Erste Meteorologie-Quelle MeteoSchweiz nach `adr/0029` (zwei PRs: Verweise und Lesen; Datensatz); Wiedervorlage `float64` (§2 Punkt 9) | B | Opus, hoch | — |
-| **M5-20** | Verify, Enrich, Dedupe, Kandidaten, `discovery propose`, Lizenzregeln, Skript und Anleitung für Ottos lokalen Lauf (`adr/0025` Schnitt 5, §6.7) | B | Opus, hoch | M5-19, M5-17 gemergt |
+| **M5-20** | Verify, Enrich, Dedupe, Kandidaten, `discovery propose`, Lizenzregeln, Skript und Anleitung für Ottos lokalen Lauf (`adr/0025` Schnitt 5, §6.7). Nachtrag 15.11.2026 (`adr/0033` §14): Lizenzkatalog und `grants/` statt `license_rules.yaml`, Warteliste, `discovery report` mit Stapel, Bericht und Stichprobe, Freigabedatei mit `decision` auf `harvest/<datum>-<quelle>`, `discovery publish`, Regeln für Aktualisierungen; Verify für gelistete Einträge nur in der Stichprobe | B | Opus, hoch | M5-19, M5-17 gemergt |
 | **V1–V9** | Vorarbeiten für das automatische Onboarding (`adr/0031`), danach richtet Claude im Planungs-Chat die geplante Aufgabe ein | B | laut `adr/0031` | laut `adr/0031` (in der Liste nach M5-20) |
 | **M5-16** | WorldCover: Klassenanteile in der AOI aus der Ergebnis-Statistik (`adr/0030` F9) | B | Opus, mittel | — |
 | **M5-23** | Suche Teil 2 (`adr/0026` §6 Schritte 3 und 4): Vektorarm, Modellwahl am Set, eigene Dockerfile-Stufe, RRF; Suchfeld und AOI-Schalter im Data catalogue; schließt die Lücke Deutsch (Recall@5/MRR@10 nach Teil c: 0,727) | B | Opus, hoch | M5-22 Teil c gemergt |
 | **DS-05a** | `sar_db` mit Wertetabelle, `sar_backscatter`, Schritt-Presets „VV dB“/„VH dB“ | B | Opus, hoch | M5-14 gemergt |
 | **DS-05c** | Komposit „Dual-pol RGB“ | A | Sonnet, mittel | DS-05a gemergt |
 | **M5-21** | Extraktoren GeoSphere, INSPIRE-ATOM, STAC Index als Register (`adr/0025` Schnitt 6) | B | Opus, mittel | M5-20 gemergt |
-| **M5-24** | Prozess `harvester` als Takt, Health-Checks, „Last checked“ (`adr/0025` Schnitt 7, §6.6) | B | Opus, mittel | M5-20 gemergt |
+| **M5-24** | Prozess `harvester` als Takt, Health-Checks, „Last checked“ (`adr/0025` Schnitt 7, §6.6). Nachtrag 15.11.2026 (`adr/0033` §14): gelistete Einträge nur rotierend, jeder einmal im Monat | B | Opus, mittel | M5-20 gemergt |
+| **M5-36** | Grenzen je Host in der Registry; Zarr teilt das Gateway; `ReadSlots` im `tiler`; Teilbudget je Instanz für Kacheln (M5-35 F1) | B | — | M5-30b Teil 9 |
+| **M5-37** | Zeiger und Unterbrecher je Host in Postgres für Harvester, `materialize`, Pyramide (M5-35 F1, W6, W7) | B | — | — |
+| **M5-42** | Lexikalische Suche indexfähig (M5-35 B7) | B | — | — |
 | **DS-05b** | Speckle-Filter Boxcar und Lee auf `focal` | B | Opus, hoch | M5-10, DS-05a gemergt |
 | **DS-05d** | σ⁰-Kalibrierung, danach RVI | B | Opus, hoch | DS-05a gemergt |
 | **M5-25** | JSON-LD und Sitemap für die Datensätze | B | Opus, mittel | M5-22 Teil c gemergt |

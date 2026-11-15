@@ -26,24 +26,17 @@ from functools import cache
 from pathlib import Path
 
 import earthx
+from earthx.catalog.categories import Categories, load_categories
 from earthx.catalog.entry_files import EntryFileError, read_yaml
 from earthx.catalog.glossary import normalize
 from earthx.catalog.places import Places, place_terms
-from earthx.catalog.registry import AccountKind, Capabilities, ConfigError, DataClass, DatasetCategory, DatasetConfig
+from earthx.catalog.registry import AccountKind, Capabilities, ConfigError, DataClass, DatasetConfig
 
 #: Raised whenever the way the text is built changes, so every row of the index is rewritten.
 SEARCH_TEXT_VERSION = 1
 
 CAPABILITY_TERMS_FILE = Path(earthx.__file__).resolve().parents[1] / "catalog" / "capability_terms.yaml"
 
-#: The names of the groups as the Data catalogue shows them (``frontend/src/catalogue.ts``).
-CATEGORY_NAMES = {
-    DatasetCategory.OPTICAL: "optical",
-    DatasetCategory.RADAR: "radar",
-    DatasetCategory.ELEVATION: "elevation",
-    DatasetCategory.LAND_COVER: "land cover",
-    DatasetCategory.WEATHER_CLIMATE: "weather and climate",
-}
 DATA_CLASS_WORDS = {DataClass.RASTER_TIME_SERIES: "raster time series", DataClass.RASTER_STATIC: "static raster"}
 #: Only what a user has to know before choosing: no words where the data is open.
 ACCESS_WORDS = {AccountKind.FREE_ACCOUNT: "free account required", AccountKind.REQUESTER_PAYS: "requester pays"}
@@ -124,10 +117,15 @@ def _lines(*parts: str) -> str:
 
 
 def search_text(
-    config: DatasetConfig, *, places: Places | None = None, terms: CapabilityTerms | None = None
+    config: DatasetConfig,
+    *,
+    places: Places | None = None,
+    terms: CapabilityTerms | None = None,
+    categories: Categories | None = None,
 ) -> SearchText:
-    """The search text of ``config``."""
+    """The search text of ``config``; the words of its category are the ``search_text`` of ``categories.yaml``."""
     terms = capability_terms() if terms is None else terms
+    categories = load_categories() if categories is None else categories
     bands = [
         key.replace("*", " ") if unit in (None, _DIMENSIONLESS) else f"{key.replace('*', ' ')} {unit}"
         for key, unit in config.band_units.items()
@@ -146,7 +144,7 @@ def search_text(
         b=_lines(
             *config.keywords,
             *place_terms(config.spatial_extent.bbox, places),
-            CATEGORY_NAMES[config.category],
+            categories.search_texts.get(config.category, ""),
         ),
         c=config.description,
         d=_lines(
