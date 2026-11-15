@@ -45,7 +45,9 @@ def test_the_released_entries_are_copied_to_where_the_loader_reads_them() -> Non
     assert ("catalog/retired.yaml", "./catalog/retired.yaml") in COPIES
 
 
-@pytest.mark.parametrize("source", ["catalog/listed", "catalog/blocked.yaml", "catalog/regions.json"])
+@pytest.mark.parametrize(
+    "source", ["catalog/listed", "catalog/blocked.yaml", "catalog/regions.json", "catalog/categories.yaml"]
+)
 def test_what_catalog_load_reads_for_listed_entries_is_copied(source: str) -> None:
     # M5-40: hand entries, blocklist and region outlines, each by name like the entries.
     assert (source, f"./{source}") in COPIES

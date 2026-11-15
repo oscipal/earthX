@@ -207,16 +207,6 @@ class Maturity(Enum):
     EXPERIMENTAL = "experimental"
 
 
-class DatasetCategory(Enum):
-    """The group of a dataset in the Data catalogue (UI-05 plan §5, F1), in the order the catalogue shows the groups."""
-
-    OPTICAL = "optical"
-    RADAR = "radar"
-    ELEVATION = "elevation"
-    LAND_COVER = "land_cover"
-    WEATHER_CLIMATE = "weather_climate"
-
-
 class LegalStatus(Enum):
     """Whether the legal footing of the source is settled (adr/0024 R1, R3). Only Otto sets it, like every licence tier.
 
@@ -251,6 +241,9 @@ class AccountPath(Enum):
     W3 = "W3"
     W4 = "W4"
 
+
+#: The form of a category id (``backend/catalog/categories.yaml``); which ids exist, the loader checks against the file.
+CATEGORY_ID = re.compile(r"[a-z][a-z_]{0,31}")
 
 #: The prefix of every prototype dataset id (adr/0024 R3): visible in each address, recipe, file name and cache key.
 PROTOTYPE_PREFIX = "proto-"
@@ -1448,8 +1441,9 @@ class DatasetConfig:
     # published as STAC `keywords`). No default (KLAERUNGEN B10): an entry names them
     # on purpose, at least one.
     keywords: tuple[str, ...]
-    # The group of the Data catalogue (UI-05 plan §5, F1; published as `earthx:category`). No default (KLAERUNGEN B10).
-    category: DatasetCategory
+    # The group of the Data catalogue (UI-05 plan §5, F1; published as `earthx:category`): an id of
+    # `backend/catalog/categories.yaml` (M5-40 G4, G5), which the loader checks. No default (KLAERUNGEN B10).
+    category: str
     # Who produces, licenses, processes and hosts the data, as the source names them (UI-05 plan §5, F2; published as
     # STAC `providers`), at least one. No default (KLAERUNGEN B10).
     providers: tuple[Provider, ...]
@@ -1875,8 +1869,8 @@ class DatasetConfig:
 
     def _check_catalogue_fields(self) -> None:
         """Group, providers and resolution of the Data catalogue (UI-05 plan §5): set, of the right kind, gsd ascending."""
-        if not isinstance(self.category, DatasetCategory):
-            raise ConfigError(f"{self.dataset_id}: category must be one of {[c.value for c in DatasetCategory]}")
+        if not isinstance(self.category, str) or not CATEGORY_ID.fullmatch(self.category):
+            raise ConfigError(f"{self.dataset_id}: category is the id of a category of categories.yaml")
         if not isinstance(self.providers, tuple) or not self.providers:
             raise ConfigError(f"{self.dataset_id}: providers names no provider")
         if not all(isinstance(provider, Provider) for provider in self.providers):

@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from earthx.catalog.registry import AccountKind, ConfigError, DataClass, DatasetCategory, LicenseTier
+from earthx.catalog.categories import load_categories
+from earthx.catalog.registry import AccountKind, ConfigError, DataClass, LicenseTier
 from earthx.catalog.search_text import (
-    CATEGORY_NAMES,
     DATA_CLASS_WORDS,
     CapabilityTerms,
     load_capability_terms,
@@ -98,8 +98,22 @@ def test_no_general_operator_in_any_text():
 
 
 def test_every_group_and_data_class_has_words():
-    assert set(CATEGORY_NAMES) == set(DatasetCategory)
+    categories = load_categories()
+    assert all(categories.search_texts[c] for c in categories.ids if c != "other")
     assert set(DATA_CLASS_WORDS) == set(DataClass)
+
+
+def test_the_five_categories_of_before_m5_40_keep_their_words():
+    # The search text of the full entries does not change with the new list of categories (M5-40 G5 = 2).
+    assert {
+        c: load_categories().search_texts[c] for c in ("optical", "radar", "elevation", "land_cover", "weather_climate")
+    } == {
+        "optical": "optical",
+        "radar": "radar",
+        "elevation": "elevation",
+        "land_cover": "land cover",
+        "weather_climate": "weather and climate",
+    }
 
 
 def test_the_hash_is_stable_and_follows_every_part():

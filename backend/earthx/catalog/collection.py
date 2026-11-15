@@ -241,7 +241,7 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
         "earthx:entry": "full",
         "earthx:data_class": config.data_class.value,
         # UI-05 plan §5 (F1): the group of the Data catalogue.
-        "earthx:category": config.category.value,
+        "earthx:category": config.category,
         # architekturplan.md 6.2's reader dispatch (`cog`, `zarr`, `legacy`) —
         # published so the frontend can tell a whole scene it may link straight
         # to the source (a COG) from one it may not (a Zarr store has no single

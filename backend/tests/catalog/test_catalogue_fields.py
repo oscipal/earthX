@@ -6,8 +6,9 @@ from dataclasses import replace
 
 import pytest
 
+from earthx.catalog.categories import load_categories
 from earthx.catalog.collection import to_stac_collection
-from earthx.catalog.registry import ConfigError, DatasetCategory, DatasetConfig, Provider, ProviderRole
+from earthx.catalog.registry import ConfigError, DatasetConfig, Provider, ProviderRole
 from tests.catalog.entries import (
     COP_DEM_GLO_30,
     ESA_WORLDCOVER_2020,
@@ -20,15 +21,15 @@ from tests.catalog.entries import (
 class TestTheEntries:
     @pytest.mark.parametrize("entry", list(REGISTRY), ids=lambda entry: entry.dataset_id)
     def test_every_entry_sets_all_three(self, entry: DatasetConfig) -> None:
-        assert isinstance(entry.category, DatasetCategory)
+        assert entry.category in load_categories().ids
         assert entry.providers
         assert entry.gsd
 
     def test_the_groups_of_the_entries(self) -> None:
-        assert SENTINEL_2_L2A.category is DatasetCategory.OPTICAL
-        assert COP_DEM_GLO_30.category is DatasetCategory.ELEVATION
-        assert ESA_WORLDCOVER_2020.category is DatasetCategory.LAND_COVER
-        assert ESA_WORLDCOVER_2021.category is DatasetCategory.LAND_COVER
+        assert SENTINEL_2_L2A.category == "optical"
+        assert COP_DEM_GLO_30.category == "elevation"
+        assert ESA_WORLDCOVER_2020.category == "land_cover"
+        assert ESA_WORLDCOVER_2021.category == "land_cover"
 
     def test_the_resolutions_of_the_entries(self) -> None:
         assert SENTINEL_2_L2A.gsd == (10.0, 20.0, 60.0)
@@ -68,7 +69,7 @@ class TestTheCollection:
 
 
 class TestTheCategoryCheck:
-    @pytest.mark.parametrize("category", ["optical", None, 1])
+    @pytest.mark.parametrize("category", ["Optical", "", "land cover", None, 1])
     def test_anything_but_a_category_is_refused(self, valid_config, category) -> None:
         with pytest.raises(ConfigError, match="category"):
             replace(valid_config, category=category)
