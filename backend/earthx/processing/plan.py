@@ -371,10 +371,11 @@ def live_steps(planned: Sequence[PlannedStep], output: Sequence[str]) -> list[Pl
 
 
 def split_tiers(steps: Sequence[Step], operators: OperatorRegistry) -> tuple[list[Step], list[Step]]:
-    """``(tile steps, job steps)`` by the rule of §6.1."""
+    """``(tile steps, job steps)`` by the rule of §6.1; a ``focal`` step only as the first (adr/0030 F3)."""
     cut = 0
     for planned in plan_steps(steps, operators):
-        if planned.operator.kind != "pixel" or Tier.T1 not in planned.operator.tiers:
+        kind = planned.operator.kind
+        if Tier.T1 not in planned.operator.tiers or not (kind == "pixel" or (kind == "focal" and cut == 0)):
             break
         cut += 1
     return list(steps[:cut]), list(steps[cut:])

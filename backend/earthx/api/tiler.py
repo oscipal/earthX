@@ -495,7 +495,7 @@ def _refuse_free_parameters(request: Request) -> None:
 
 
 def _operator_step(
-    support: Any, operators: Any, config: DatasetConfig, *, op: str, version: str, raw: str, where: str
+    support: Any, operators: Any, config: DatasetConfig, *, op: str, version: str, raw: str, where: str, first: bool
 ) -> tuple[Any, Any]:
     """One step of the chain: its operator and validated parameters, or the ``HTTPException`` its refusal maps to.
 
@@ -513,8 +513,11 @@ def _operator_step(
         operator = operators.operator(op, int(version))
     except support.unknown_operator as error:
         raise HTTPException(status_code=422, detail=f"{where}{error}") from None
-    if support.tier.T1 not in operator.tiers or operator.kind != "pixel":
+    if support.tier.T1 not in operator.tiers or operator.kind not in ("pixel", "focal"):
         raise HTTPException(status_code=422, detail=f"{where}{operator.op!r} does not run as a tile")
+    if operator.kind == "focal" and not first:
+        # Its halo would have to be read through every step before it (adr/0030 F3).
+        raise HTTPException(status_code=422, detail=f"{where}{operator.op!r} runs as a tile only as the first step")
     try:
         params = operator.params.model_validate_json(raw, strict=True)
     except ValidationError as error:
@@ -534,7 +537,7 @@ def _operator_request(request: Request, config: DatasetConfig) -> list[tuple[Any
 
     ``op``, ``op_version`` and ``params`` come in threes: each as often as the others, at most
     :data:`MAX_OPERATOR_STEPS` times, the first of each being the first step. Every step has to run as a tile
-    (``T1``, ``pixel``) and to apply to the dataset on its own; the bands each one leaves for the next are
+    (``T1``, ``pixel``, or ``focal`` as the first step) and to apply to the dataset on its own; the bands each one leaves for the next are
     judged by the reader, before the first pixel.
 
     ``400`` for a query that is malformed or whose parameters do not validate (R5 included); ``422`` for one
@@ -556,7 +559,14 @@ def _operator_request(request: Request, config: DatasetConfig) -> list[tuple[Any
     chained = len(columns[0]) > 1
     return [
         _operator_step(
-            support, operators, config, op=op, version=version, raw=raw, where=f"step {index}: " if chained else ""
+            support,
+            operators,
+            config,
+            op=op,
+            version=version,
+            raw=raw,
+            where=f"step {index}: " if chained else "",
+            first=index == 0,
         )
         for index, (op, version, raw) in enumerate(zip(*columns, strict=True))
     ]
