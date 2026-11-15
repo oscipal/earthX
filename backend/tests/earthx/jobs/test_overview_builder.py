@@ -1042,10 +1042,10 @@ class TestTheRetryTakesTurns:
     ) -> None:
         caplog.set_level(logging.DEBUG, logger="earthx")
         helper = TestTheHourlyRetry()
-        version = helper._pyramid(db, store, make, "patch_again")
+        version = helper._pyramid(db, store, make, "patch_again_slow")
         _age_omitted(db, "dem", version)
-        make("patch_again", **self.FAST_ROUND)
-        make("patch_again", **self.FAST_ROUND)
+        make("patch_again_slow", **self.FAST_ROUND)
+        make("patch_again_slow", **self.FAST_ROUND)
         wait_until(lambda: _omitted(db, "dem", version)["2/1"][3] == 2, 30)
         time.sleep(1.5)
         assert _omitted(db, "dem", version)["2/1"][3] == 2, "tried once, not once for each worker"

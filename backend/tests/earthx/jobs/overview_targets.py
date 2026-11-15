@@ -211,3 +211,10 @@ def patch_slow(workdir: str, conn: Any) -> None:
         (Path(workdir) / "started").write_text("")
         time.sleep(3.0)
     patch_ok(workdir, conn)
+
+
+def patch_again_slow(workdir: str, conn: Any) -> None:
+    """The retry fails again, but only after a while, so that two workers that both retry would overlap."""
+    if _job(workdir)["mode"] == "patch":
+        time.sleep(1.0)
+    patch_again(workdir, conn)
