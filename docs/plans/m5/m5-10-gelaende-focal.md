@@ -268,6 +268,115 @@ Gegen `gdaldem`: Ein echter DEM-Ausschnitt geht nicht ins Repo (Fixtures nur syn
 
 Leere Pixel (Rand, Lücke) sind in allen Varianten dieselben wie bei `gdaldem`.
 
+## 11. PR B: Kachel, Frontend, Bild unter `min_zoom` (Entwurf 15.11.2026)
+
+**Auftrag (Otto, 15.11.2026):** neuer Branch von `main` nach M5-30b (Pyramiden und Ersatz gemergt). Inhalt: die Kachel mit `focal` (`bilinear`, F4), das Frontend für `terrain`, und erweitert: **Vorschau mit Rechenschritten und Index-Darstellungen unter `min_zoom` in allen Ansichten** (Vorschau, Suchergebnisse, Szenenansicht, Crop and merge, angeheftete Ebene), sodass nie ein Bild verschwindet. Zuerst die Plan-Frage, wie unter `min_zoom` gerechnet wird und wie das ehrlich bleibt (G1–G6), dann die Umsetzung.
+
+### 11.1 Befund (Stand `main`, 45614d9)
+
+**Backend:**
+- **Route der Übersicht:** `GET /collections/{dataset}/overview/tiles/WebMercatorQuad/{z}/{x}/{y}` (Pyramide oder Ersatz) und die maskierte Fassung für Suchtreffer `…/overview/{selection}/tiles/…` (#355).
+  - Beide nehmen TiTilers Darstellung (`rescale`, `colormap_name`, `bidx`) und keine Schritte: `overview_post_process` ist leer (`api/tiler.py:1469`). `expression` und `algorithm` weist sie ab.
+  - `op`, `op_version` und `params` sind dort weder erklärt noch abgewiesen.
+- **Inhalt der Pyramide** (`processing/overview.py`):
+  - nur das **erste Band** des ersten Assets der Standardansicht, als **Rohwerte** im Typ der Quelle;
+  - 512 px, WebMercatorQuad, `average` bei GLO-30 (`data`, z0–z6) und `mode` bei WorldCover (`map`, z0–z4).
+  - Eine Kachel ist ein Objekt; über ihren Rand hinaus enthält sie nichts.
+- **Ersatz:** swissALTI3D unter z13 zeichnet GLO-30. Von z7 bis z12 liest es dessen Dateien (Budget 32 Dateien / 4 s), unter z7 dessen Pyramide, zugeschnitten auf die Ausdehnung.
+- **Schritte in Kacheln:** gibt es nur auf der Item- und der Mosaik-Route (`operator_post_process`). Index-Presets sind dort `band_math` v2.
+- **`focal` als Kachel:** Die Kachel weist `focal` ab (`kind != "pixel"`) und liest mit `nearest`.
+- **Importregeln:** `access` darf weder `processing` noch `objectstore` importieren, `processing` nie `objectstore`. `api` darf beides (lazy für `processing`). Die Kernel auf Übersichtspixeln kann also nur `api` aufrufen, als Nachbearbeitung der Kachel, wie heute bei den Operator-Kacheln.
+
+**Frontend:**
+
+| Ansicht | einfaches Bild unter `min_zoom` | gerechnetes Bild unter `min_zoom` |
+|---|---|---|
+| Vorschau (Panel) | Ansicht darunter bleibt | **nichts** (`minZoom = dataset.zoom.min`, `processingPreview.ts`) |
+| Suchergebnisse | Übersicht, maskiert auf die Treffer (#355) | gibt es dort nicht (keine Schritte, kein Index) |
+| Szenenansicht | Übersicht (`syncFocusRaster`) | Index: **nichts** (`!s.render.index`, `mapLayers.ts:1246`) |
+| Crop and merge | Übersicht, auf die AOI geschnitten | Index: **nichts** (gleicher Weg) |
+| angeheftete Ebene | Übersicht (`overviewOverlaysOf`) | angeheftete Vorschau und angehefteter Index: **nichts** (`searchLayers.ts:36`, `processingStore.ts` `pinPreview`) |
+
+**Datensätze:**
+- Unter `min_zoom` liegt heute nur etwas bei GLO-30 (unter z7), WorldCover (z5) und swissALTI3D (z13). Keiner der drei hat Index-Presets; Quick processing für Gelände kommt mit M5-14 (`step_presets`).
+- Sentinel-1 und -2 haben `min_zoom` 0 (`overview: scenes`). Bei ihnen gibt es kein „unter `min_zoom`“. Auf kleinen Stufen ist ihr Index aber eine Teilkachel (32 Dateien je Kachel, `adr/0032` §6.2, S1).
+- Der Weg für Indizes unter `min_zoom` wird also allgemein gebaut und mit einem synthetischen Eintrag getestet. Sichtbar wird er heute bei Vorschauen und angehefteten Vorschauen (jeder Operator auf GLO-30, WorldCover und swissALTI3D, auch `terrain`).
+
+### 11.2 Wie unter `min_zoom` gerechnet wird (G1)
+
+| | Weg | Werte | Kosten | Bewertung |
+|---|---|---|---|---|
+| **A** | Die Kette rechnet auf den Pixeln der Übersicht (Pyramide bzw. Ersatz), dieselben Kernel wie die Kachel und der Job | aus vergröberten Eingaben: bei linearen Schritten gleich dem Mittel der feinen Werte, bei nichtlinearen nicht (Neigung aus gemittelten Höhen ist flacher als die mittlere Neigung; Klassen nach `mode`) | ein Objekt je Kachel (bei `focal` bis zu vier, G4); kein Bau | **Empfehlung**: jede Kette, sofort, ohne Speicher; dieselbe Regel wie die Vorschau über Overviews heute (`adr/0014` §0 Punkt 7) |
+| B | Erst fein rechnen, dann vergröbern: eigene Pyramiden der Ergebnisse fester Darstellungen (Presets, später Hillshade/Slope), gebaut wie die Pyramide der Höhen | für diese Presets das Mittel der feinen Ergebnisse | je Preset und Datensatz ein Bau (GLO-30 rund 6–7 h) und Speicher; freie Ketten trotzdem wie A | später möglich, wenn A bei einem Preset irreführt; heute gibt es auf diesen Datensätzen kein Preset |
+| C | Unter `min_zoom` auf den Originalen rechnen | exakt | genau das, wovor `min_zoom` schützt (`adr/0032` §4: Hunderte bis Tausende Dateien je Kachel) | nicht machbar |
+| D | Unter `min_zoom` nur das einfache Bild, das gerechnete endet | — | — | widerspricht Ottos Vorgabe |
+
+### 11.3 Wie es ehrlich bleibt (G2)
+
+Vorschlag: wie die Übersicht heute, ohne neue Marke.
+- **Kopf:** `X-EarthX-Source: overview` bzw. `substitute` an jeder Kachel, wie heute.
+- **Tooltip:** ein Satz in dem Tooltip, den der Layer schon hat. Bei einer angehefteten Ebene ist das `note`, beim Panel die Marke „Preview“, die es für jede Vorschau schon gibt. Wortlaut: „Below zoom 7 this is computed from an overview of Copernicus DEM GLO-30, resampled from the original files; zoom in to 7 for values from the originals.“
+- **Quellenzeile:** nennt `attribution_modified`, wie bei der Übersicht heute.
+- **Farbskala:** dieselbe wie über `min_zoom`, also gemessen auf den Originalen bzw. die feste des Presets. So hat dieselbe Farbe bei jedem Zoom dieselbe Bedeutung. Eine flache Neigung bei kleinem Zoom ist dann dunkel, weil sie auf 1 km flach ist, nicht weil das Bild fehlt.
+- **Was nie aus der Übersicht kommt:** Statistik, Messung der Vorschau, Zuschnitt, Download, Jobs (wie `adr/0032` §5.2, F12).
+
+### 11.4 Weitere Punkte
+
+**Bänder beim Ersatz (G3):** Eine Kette auf swissALTI3D nennt `dtm` oder `dtm_2m`; der Ersatz GLO-30 hat `data`. Vorschlag: Jedes Band des Datensatzes mit der Einheit des Standardbands des Ersatzes (`m`) steht unter `min_zoom` für dessen Band. Ketten, die andere Bänder lesen, enden dort wie heute.
+
+**Bänder bei der Pyramide:** Sie hält nur das erste Band. Eine Kette, die ein anderes Band liest, hat dort kein Bild. Heute betrifft das keinen Datensatz (GLO-30 und WorldCover haben je ein Band). Die Route antwortet dann `404` ohne Bild, die Karte zeigt darunter die Übersicht.
+
+**Rohwerte:** Die Route wendet die Skalierung des Datensatzes an, bevor die Kette rechnet, wie `processing.source.Source` es für die Kachel tut (heute ohne Wirkung: GLO-30 und WorldCover sind unskaliert).
+
+**`focal` auf der Pyramide (G4):** Eine Kachel mit Neigung braucht einen Pixel über ihren Rand. Liegt der Rand außerhalb des Objekts, muss das Nachbarobjekt gelesen werden.
+- Kachel von 256 px: bis zu 3 Objekte zusätzlich;
+- Kachel von 512 px: bis zu 8.
+
+**Kachel mit `focal` (über `min_zoom`):** wie §4.3 mit F4 = 1 (`bilinear`, Rand über `buffer`, `focal` nur als erster Schritt, ein `buffer` in der Anfrage zusammen mit `focal` → `422`). Für Mosaik-Kacheln ebenso.
+
+**Frontend für `terrain`:**
+- Ein eigenes Formular wie bei `normalize` v4: erst `product`, dann nur dessen Felder. Bei der Schummerung sind Azimut 315°, Höhe 45° und z-Faktor 1 vorausgefüllt, die Werte von `gdaldem`.
+- `listed=True`, `Capabilities.terrain` in `types.ts`.
+- `tileStep` nimmt `focal` an erster Stelle.
+- Keine neuen Texte außer den Feldnamen; Erklärungen nur im Tooltip.
+
+**Wo das gerechnete Bild unter `min_zoom` entsteht** (alles über dieselbe Route mit der Kette):
+- Vorschau im Panel: eine zweite Rasterquelle von z0 bis `min_zoom` − 1, wie `overviewRasterOf` für das einfache Bild;
+- Index in Szenenansicht und Crop and merge (`syncFocusRaster`, heute `!s.render.index`);
+- angeheftete Vorschau und angehefteter Index (`pinPreview`, `overviewOverlaysOf`);
+- Suchergebnisse: dort gibt es weder Schritte noch Index; bleibt wie #355.
+
+**Sentinel-1 und -2 auf kleinen Stufen (G5):** Dort ist es kein „unter `min_zoom`“, sondern das Budget je Kachel. Nach `adr/0032` F7 (S1) bleibt die Teilkachel; eine Übersicht der Auswahl als Job wäre S2 dort.
+
+**Umfang:** M5-10 hat höchstens zwei PRs; das hier ist der zweite. Geschätzt 700–900 Zeilen mit Tests, also über dem Richtwert von 400 (G6).
+
+### 11.5 Fragen an Otto
+
+**G1 — Rechenweg unter `min_zoom` (§11.2)?**
+1. A: Die Kette rechnet auf den Pixeln der Übersicht (Pyramide bzw. Ersatz), für jede Kette, ohne Bau und Speicher **(Empfehlung)**
+2. A jetzt, dazu B für Presets, sobald es auf Datensätzen mit Pyramide welche gibt (nach M5-14)
+3. B für Presets, freie Ketten enden bei `min_zoom`
+
+**G2 — Ehrlichkeit (§11.3)?**
+1. Wie die Übersicht: Kopf, ein Satz im vorhandenen Tooltip, Quellenzeile „modified“, Farbskala aus den Originalen, keine Marke **(Empfehlung)**
+2. Wie 1, aber unter `min_zoom` eine eigene Farbskala aus der Übersicht (mehr Kontrast, die Farben springen am Übergang)
+
+**G3 — Bänder beim Ersatz (swissALTI3D `dtm`, `dtm_2m` → GLO-30 `data`)?**
+1. Jedes Band mit der Einheit des Ersatzbands steht für dieses **(Empfehlung)**
+2. Nur das Standardband (`dtm`); Ketten auf `dtm_2m` enden bei `min_zoom`
+
+**G4 — `focal` auf der Pyramide über Objektgrenzen?**
+1. Nachbarobjekte lesen, wo der Rand es verlangt (bis zu 3 bzw. 8 zusätzliche GETs); keine Nähte **(Empfehlung)**
+2. Ohne Nachbarn: An den Objektgrenzen bleibt ein Ring leer (sichtbare Linien alle 512 px)
+
+**G5 — Sentinel-1 und -2 auf kleinen Stufen (Teilkacheln bei Index und Vorschau)?**
+1. Bleibt nach `adr/0032` F7 (S1), nicht Teil von M5-10 **(Empfehlung)**
+2. Eigene Aufgabe: Übersicht der Auswahl als Job (`adr/0032` S2)
+
+**G6 — Schnitt?**
+1. Ein PR B, über dem Richtwert, in thematischen Commits **(Empfehlung, M5-10 hat höchstens zwei PRs)**
+2. Zwei PRs: B1 Kachel und Formular für `terrain`, B2 Bild unter `min_zoom` (dann drei PRs für M5-10)
+
 ## 10. Grenzen
 
 - Modulgrenzen laut `architekturplan.md` 3.1; `processing` liest keinen Objektspeicher (B9), Kernel bleiben reine Funktionen.
