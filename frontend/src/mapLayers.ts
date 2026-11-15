@@ -762,6 +762,8 @@ export function syncPreview(map: MapLibreMap, overlays: readonly LayerOverlay[])
         bounds: overlay.bounds,
         minzoom: overlay.minZoom,
         maxzoom: overlay.maxZoom,
+        // The overview below the first level names its source while it is drawn (M5-10 part B), as the view's does.
+        ...(overlay.attribution === undefined ? {} : { attribution: overlay.attribution }),
       });
       map.addLayer(
         {

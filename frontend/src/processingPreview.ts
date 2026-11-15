@@ -404,7 +404,31 @@ export interface PreviewSpec {
   clipAoi?: GeoJSON.Geometry;
   // Below the first level of a dataset with a pyramid or a substitute: the same steps on the picture of the overview (M5-10 part B,
   // G1), so that the preview does not disappear when the map zooms out; `note` says what it is (G2). `null` elsewhere.
-  overview: (PlannedRaster & { url: string; note: string | null }) | null;
+  overview: (PlannedRaster & { url: string; note: string | null; footprints: GeoJSON.Geometry }) | null;
+}
+
+// The footprints of the scenes of a preview as one geometry, the same object for the same scenes: the overview below the first level
+// is cut to them in the browser (`aoiClip.ts`, whose key is the object), so that the preview of a job over some scenes does not draw the
+// whole dataset there, and a new spec of the same scenes keeps the tiles the map has.
+const footprintsByScenes = new Map<string, GeoJSON.Geometry>();
+const MAX_FOOTPRINTS_KEPT = 32;
+
+function footprintsOf(items: readonly StacItem[]): GeoJSON.Geometry {
+  const key = items.map((item) => item.id).sort().join('\n');
+  const kept = footprintsByScenes.get(key);
+  if (kept) return kept;
+  const polygons = items.flatMap((item): GeoJSON.Position[][][] => {
+    const g = item.geometry;
+    if (g?.type === 'Polygon') return [g.coordinates];
+    if (g?.type === 'MultiPolygon') return g.coordinates;
+    if (!item.bbox) return [];
+    const [w, s, e, n] = item.bbox;
+    return [[[[w, s], [e, s], [e, n], [w, n], [w, s]]]];
+  });
+  const geometry: GeoJSON.Geometry = { type: 'MultiPolygon', coordinates: polygons };
+  if (footprintsByScenes.size >= MAX_FOOTPRINTS_KEPT) footprintsByScenes.clear();
+  footprintsByScenes.set(key, geometry);
+  return geometry;
 }
 
 const positive = (value: unknown): number | null =>
@@ -545,7 +569,9 @@ export function previewSpec(args: {
   const areaOrder = clipToAoi && order !== null && !plan.further ? { datasetId: dataset.id, order } : null;
   const sceneMeasure = buildOperatorStatisticsUrl(dataset.id, measured, assets, chain, asked);
   const below = overviewRasterOf(dataset, args.datasets, { steps: chain, band: asked });
-  const overview = below ? { ...below, url: buildTileUrl(below.tileUrl, render), note: computedNoteOf(dataset, args.datasets) } : null;
+  const overview = below
+    ? { ...below, url: buildTileUrl(below.tileUrl, render), note: computedNoteOf(dataset, args.datasets), footprints: footprintsOf(items) }
+    : null;
   return {
     key: canonicalJson({
       urls: scenes.map((s) => s.url),
@@ -697,7 +723,7 @@ export function previewOverlays(spec: PreviewSpec, aoi: GeoJSON.Geometry | null)
     ? [
         {
           kind: 'raster' as const,
-          tileUrl: clipTileUrl(spec.overview.url, clip),
+          tileUrl: clipTileUrl(spec.overview.url, clip ?? spec.overview.footprints),
           bounds: spec.overview.bounds,
           minZoom: spec.overview.minZoom,
           maxZoom: spec.overview.maxZoom,

@@ -4,11 +4,12 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { AOI_CLIP_PROTOCOL } from './aoiClip';
 import { datasetsFrom } from './datasets';
 import dem from './fixtures/processes/cop-dem-glo-30.json';
 import { sceneInfo } from './fixtures/viewScenes';
 import { zoomMap } from './fixtures/zoomMap';
-import { syncFocusRaster } from './mapLayers';
+import { syncFocusRaster, syncPreview } from './mapLayers';
 import { computedNoteOf, noteOfOverview, overviewNoteOf, overviewRasterOf } from './overviewSubstitute';
 import type { ProcessDescription } from './processing';
 import { processInfo, type DraftStep } from './processingOrder';
@@ -170,6 +171,21 @@ describe('the preview of the panel below the first level', () => {
     expect(last.minZoom).toBe(0);
     expect(last.maxZoom).toBe(6);
     expect(last.preview).toBe(true);
+  });
+
+  it('cuts the overview to the scenes, not to the whole dataset, and keeps the same cut for the same scenes', () => {
+    const [overview] = previewOverlays(spec, null).slice(-1);
+    expect(overview.kind === 'raster' && overview.tileUrl.startsWith(`${AOI_CLIP_PROTOCOL}://`)).toBe(true);
+    const again = previewSpec({ dataset: RELIEF, items: [item], assets: ['data'], info: DEM, plan, range: DEFAULT_RANGE, area: 'scene', datasets: LIST })!;
+    expect(again.overview?.footprints).toBe(spec.overview?.footprints);
+    expect(previewOverlays(again, null).at(-1)).toEqual(overview);
+  });
+
+  it('names its source in the attribution line while it is drawn', () => {
+    const live = zoomMap();
+    syncPreview(live.map as never, previewOverlays(spec, null));
+    const attributions = [...live.sources.values()].map((source) => source.attribution).filter(Boolean);
+    expect(attributions).toEqual(['© Made up (modified)']);
   });
 
   it('says so in the tooltip of "Preview"', () => {
