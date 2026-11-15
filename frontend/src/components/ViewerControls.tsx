@@ -21,6 +21,7 @@ import { histogramOf, type Histogram } from '../histogram';
 import { colourView, datasetSavable, enhanceOn, shownImageOf, useAppStore, viewMeasure } from '../store';
 import { datasetIdsOf, imagesOf, imagesOfDataset, satellitesOf, sectionsForView } from '../viewImages';
 import { indexBlockOf, indexNote, indexNoteTip, viewIndexOf } from '../viewIndex';
+import { computedNoteOf, overviewRasterOf } from '../overviewSubstitute';
 import { layerShownName } from '../layerName';
 import CopySceneNames from './CopySceneNames';
 import EyeButton from './EyeButton';
@@ -209,6 +210,7 @@ export default function ViewerControls() {
           mosaics,
           preset: index,
           mapZoom,
+          overview: overviewRasterOf(shownDataset, datasets) !== null,
         })
       : null;
   const note = index && indexBlock && (
@@ -302,7 +304,13 @@ export default function ViewerControls() {
                 value: bandValue,
                 options: bandOptions,
                 onChange: chooseView,
-                title: indexOnly ? INDEX_ONLY_TIP : !showBand ? ONE_BAND_TIP : chosen ? presetTip(chosen) : BAND_TIP,
+                title: indexOnly
+                  ? INDEX_ONLY_TIP
+                  : !showBand
+                    ? ONE_BAND_TIP
+                    : chosen
+                      ? [presetTip(chosen), computedNoteOf(shownDataset, datasets)].filter(Boolean).join('\n')
+                      : BAND_TIP,
                 disabled: !showBand,
               }}
               channels={colourChannels}
