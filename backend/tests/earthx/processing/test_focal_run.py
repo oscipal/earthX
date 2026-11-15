@@ -128,6 +128,16 @@ class TestFocalRun:
         numpy.testing.assert_array_equal(data.compressed(), expected.compressed())
         assert result.meta.bands[0].unit == ("deg" if params is SLOPE else None)
 
+    def test_the_hillshade_is_float32_from_1_to_255_and_not_rounded(self, tmp_path: Path) -> None:
+        # Otto, 15.11.2026: newly computed values are float32 (#333), not 8 bits as gdaldem writes them.
+        result = _run(_recipe([_step(HILLSHADE)], bands=["shade"]), tmp_path)
+        with rasterio.open(result.path) as dataset:
+            assert dataset.dtypes == ("float32",)
+            data = dataset.read(1, masked=True)
+        assert 1.0 <= float(data.min()) and float(data.max()) <= 255.0
+        assert numpy.any(data.compressed() != numpy.round(data.compressed()))
+        assert TERRAIN.passes_values.annotation() is False  # the panel offers float32 only
+
     def test_every_block_size_gives_the_same_bytes(self, tmp_path: Path, monkeypatch) -> None:
         results = []
         for size in (1024, 48, 16):  # the work files take multiples of 16 only
