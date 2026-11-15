@@ -14,8 +14,8 @@
 -- its hash and day. Hashes rather than commits, because the image carries no Git history (plan A3). `run_id` gets its
 -- foreign key when M5-19 creates `earthx_harvest_run`.
 --
--- `earthx_region` holds the outlines `regions` is derived from (`backend/catalog/regions.json`, Natural Earth), written
--- by `catalog-load`.
+-- `earthx_region` holds the outlines `regions` is derived from (`backend/catalog/regions.json`, Natural Earth), and
+-- `earthx_region_part` the same cut into small pieces; both written by `catalog-load`.
 CREATE EXTENSION IF NOT EXISTS postgis;
 
 CREATE TABLE public.earthx_region (
@@ -25,7 +25,16 @@ CREATE TABLE public.earthx_region (
     outline geometry(MultiPolygon, 4326)    NOT NULL
 );
 
-CREATE INDEX earthx_region_outline_idx ON public.earthx_region USING gist (outline);
+-- The outlines cut into pieces of at most 128 points (`ST_Subdivide`): deriving the regions of 10⁶ entries against whole
+-- outlines of thousands of points takes far longer than against small pieces (M5-40 plan §5.6). Rewritten by
+-- `catalog-load` whenever an outline changes.
+CREATE TABLE public.earthx_region_part (
+    code    text                        NOT NULL REFERENCES public.earthx_region (code) ON DELETE CASCADE,
+    part    geometry(Geometry, 4326)    NOT NULL
+);
+
+CREATE INDEX earthx_region_part_part_idx ON public.earthx_region_part USING gist (part);
+CREATE INDEX earthx_region_part_code_idx ON public.earthx_region_part (code);
 
 CREATE TABLE public.earthx_listed_entry (
     dataset_id        text        PRIMARY KEY

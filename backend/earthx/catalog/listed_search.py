@@ -112,8 +112,8 @@ async def full_entries(conn: Any, ids: Sequence[str], regions: Sequence[str]) ->
         if not regions
         else "SELECT s.dataset_id, s.title FROM public.earthx_dataset_search s, "
         "LATERAL (SELECT ST_MakeEnvelope(s.west, s.south, s.east, s.north, 4326) AS box) b "
-        "WHERE s.dataset_id = ANY(%(ids)s) AND EXISTS (SELECT 1 FROM public.earthx_region r "
-        "WHERE r.code = ANY(%(regions)s) AND ST_Intersects(r.outline, b.box) AND NOT ST_Touches(r.outline, b.box))"
+        "WHERE s.dataset_id = ANY(%(ids)s) AND EXISTS (SELECT 1 FROM public.earthx_region_part p "
+        "WHERE p.code = ANY(%(regions)s) AND ST_Intersects(p.part, b.box) AND NOT ST_Touches(p.part, b.box))"
     )
     async with conn.cursor() as cur:
         await cur.execute(statement, {"ids": list(ids), "regions": list(regions)})

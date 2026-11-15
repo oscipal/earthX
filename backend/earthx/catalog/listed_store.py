@@ -36,11 +36,14 @@ from earthx.catalog.registry import ConfigError
 
 __all__ = ["ListedOutcome", "apply_blocklist", "is_blocked", "supersede", "write_hand_entries", "write_regions"]
 
-#: The regions of a footprint: every outline it overlaps in more than a shared border.
+#: The regions of a footprint: every outline it overlaps in more than a shared border. Asked of the small pieces of the
+#: outlines; a footprint that only touches the cut between two pieces of one outline overlaps one of them inside.
 REGIONS_OF = """
-    COALESCE((SELECT array_agg(r.code ORDER BY r.code) FROM public.earthx_region r
-              WHERE ST_Intersects(r.outline, {footprint}) AND NOT ST_Touches(r.outline, {footprint})), '{{}}')
+    COALESCE((SELECT array_agg(DISTINCT p.code ORDER BY p.code) FROM public.earthx_region_part p
+              WHERE ST_Intersects(p.part, {footprint}) AND NOT ST_Touches(p.part, {footprint})), '{{}}')
 """
+#: Points per piece of an outline (``ST_Subdivide``).
+PART_POINTS = 128
 
 #: Everything a tombstone drops (adr/0033 §9); the table's checks hold it to exactly this.
 _TOMBSTONE = """
@@ -64,7 +67,8 @@ class ListedOutcome:
 def write_regions(conn: psycopg.Connection, regions: Sequence[Region]) -> int:
     """Bring ``earthx_region`` in line with ``regions``; returns how many rows changed, gone ones included.
 
-    Where any changed, the regions of every entry that keeps a footprint are derived anew, in one statement.
+    Where any changed, the outlines are cut into pieces anew and the regions of every entry that keeps a footprint are
+    derived anew, in one statement each.
     """
     changed = 0
     with conn.cursor() as cur:
@@ -84,7 +88,14 @@ def write_regions(conn: psycopg.Connection, regions: Sequence[Region]) -> int:
             "DELETE FROM public.earthx_region WHERE NOT (code = ANY(%s))", ([region.code for region in regions],)
         )
         changed += cur.rowcount
-        if changed:
+        cur.execute("SELECT NOT EXISTS (SELECT 1 FROM public.earthx_region_part)")
+        if changed or cur.fetchone()[0]:
+            cur.execute("DELETE FROM public.earthx_region_part")
+            cur.execute(
+                "INSERT INTO public.earthx_region_part (code, part) "
+                "SELECT code, ST_Subdivide(outline, %s) FROM public.earthx_region",
+                (PART_POINTS,),
+            )
             cur.execute(
                 sql.SQL("UPDATE public.earthx_listed_entry SET regions = {} WHERE footprint IS NOT NULL").format(
                     sql.SQL(REGIONS_OF.format(footprint="footprint"))
