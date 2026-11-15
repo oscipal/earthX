@@ -145,7 +145,9 @@ class TestStepsOnThePyramid:
         centre = tile_at(6)
         for dy in (-1, 0, 1):
             for dx in (-1, 0, 1):
-                _put(pyramids, RELIEF_ID, morecantile.Tile(centre.x + dx, centre.y + dy, 6), 900.0 if dx == 1 else 500.0)
+                _put(
+                    pyramids, RELIEF_ID, morecantile.Tile(centre.x + dx, centre.y + dy, 6), 900.0 if dx == 1 else 500.0
+                )
         tile = _array(api.get(path(RELIEF_ID, 6), params=_steps(("terrain", 1, SLOPE))))
         assert not tile.mask.any()
         assert (tile[0, 1:-1, -1] > 0).all()  # the step up into the eastern neighbour is seen at the edge
@@ -158,6 +160,20 @@ class TestStepsOnThePyramid:
         assert (
             tile.mask[0, 0].all() and tile.mask[0, -1].all() and tile.mask[0, :, 0].all() and tile.mask[0, :, -1].all()
         )
+        assert not tile.mask[0, 1:-1, 1:-1].any()
+
+    @pytest.mark.parametrize("z", [0, 1])
+    def test_a_slope_at_the_antimeridian_reads_no_neighbour_from_the_other_side(self, rows, pyramids, api, z) -> None:
+        rows.ready(RELIEF_ID)
+        side = 2**z
+        for x in range(side):
+            for y in range(side):
+                _put(pyramids, RELIEF_ID, morecantile.Tile(x, y, z), 500.0)
+        response = api.get(
+            f"/collections/{RELIEF_ID}/overview/tiles/WebMercatorQuad/{z}/0/0.npy", params=_steps(("terrain", 1, SLOPE))
+        )
+        tile = _array(response)
+        assert tile.mask[0, :, 0].all()  # the western edge of the world: no neighbour to read
         assert not tile.mask[0, 1:-1, 1:-1].any()
 
     def test_the_neighbours_are_kept_for_the_next_tile(self, rows, pyramids, api) -> None:
@@ -191,6 +207,20 @@ class TestStepsOnTheSubstitute:
         assert response.headers[mosaic_tiles.SOURCE_HEADER] == "substitute"
         values = tile.compressed()
         assert set(numpy.unique(values)) <= {200.0, 400.0} and values.size > 0
+
+    def test_a_slope_on_the_substitute_of_two_bands_of_heights_keeps_its_halo(self, rows, pyramids, api) -> None:
+        """G3 with a focal step: the planner puts a selection of the band before the slope; the tile still reads its halo."""
+        rows.ready(RELIEF_ID)
+        centre = tile_at(6)
+        for dy in (-1, 0, 1):
+            for dx in (-1, 0, 1):
+                _put(pyramids, RELIEF_ID, morecantile.Tile(centre.x + dx, centre.y + dy, 6), 500.0)
+        tile = _array(api.get(path(TERRAIN_ID, 6), params=_steps(("terrain", 1, SLOPE))))
+        assert tile.shape == (1, 256, 256)
+        inside = ~tile.mask[0]
+        assert inside.any()
+        numpy.testing.assert_array_equal(tile[0][inside], 0.0)
+        assert len(pyramids.reads) == 9  # the tile and its eight neighbours: the halo was read
 
     def test_the_names_are_those_with_the_unit_of_the_stand_in(self) -> None:
         names = _overview_names(TERRAIN_STEPS, RELIEF_STEPS)

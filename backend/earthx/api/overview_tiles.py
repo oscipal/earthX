@@ -182,17 +182,17 @@ class OverviewSources:
     ) -> tuple[tuple[int, int, bytes], ...]:
         """The stored tiles around a tile, as ``(dx, dy, bytes)``, for a step that reads the neighbours of each pixel (M5-10, G4).
 
-        A neighbour without data is not stored and is left out; across the antimeridian the grid wraps, past a pole there is
-        none. The objects of the last :data:`AROUND_KEPT` neighbours asked for are kept in this process: the tiles of a view
+        A neighbour without data is not stored and is left out, and so is one past the antimeridian or a pole: the tile there
+        lies on the other side of the world in the grid, and the edge of the tile is the edge of what is read. The objects of the last :data:`AROUND_KEPT` neighbours asked for are kept in this process: the tiles of a view
         share most of their neighbours, and an object of a version never changes.
         """
         tms, tile = grid
         side = 2**tile.z
         wanted = [
-            (dx, dy, morecantile.Tile((tile.x + dx) % side, tile.y + dy, tile.z))
+            (dx, dy, morecantile.Tile(tile.x + dx, tile.y + dy, tile.z))
             for dy in (-1, 0, 1)
             for dx in (-1, 0, 1)
-            if (dx or dy) and 0 <= tile.y + dy < side
+            if (dx or dy) and 0 <= tile.x + dx < side and 0 <= tile.y + dy < side
         ]
         found = await asyncio.gather(*(self._stored(dataset_id, version, near) for _, _, near in wanted))
         return tuple((dx, dy, data) for (dx, dy, _), data in zip(wanted, found, strict=True) if data is not None)
