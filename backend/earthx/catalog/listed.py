@@ -19,7 +19,6 @@ from datetime import date
 from enum import Enum
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
 
 from earthx.catalog.collection import (
     SCIENTIFIC_EXTENSION,
@@ -81,6 +80,9 @@ _README = "README.md"
 _ID = re.compile(r"[a-z0-9][a-z0-9._-]{0,127}")
 _HOST = re.compile(r"(?=.{1,253}\Z)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+")
 _HTTPS_URL = re.compile(r"https://[^\s/?#]+(?:[/?#]\S*)?")
+#: The host of an https address that ``_HTTPS_URL`` accepted: after ``https://``, before a port, path, query or
+#: fragment, without user info. ``catalog`` parses no URL with a client library (KLAERUNGEN B8, `.importlinter`).
+_URL_HOST = re.compile(r"https://(?:[^\s/?#@]*@)?(\[[^\]/]+\]|[^\s/?#:@]+)")
 
 
 class DataKind(Enum):
@@ -339,10 +341,10 @@ def sort_title(title: str) -> str:
 
 def link_host(url: str) -> str:
     """The host of the link to the source, in lower case: what a blocklist line of scope ``host`` matches."""
-    host = urlsplit(url).hostname
-    if not host:
+    match = _URL_HOST.match(url)
+    if match is None:
         raise ConfigError("the link to the source has no host")
-    return host.lower()
+    return match.group(1).lower()
 
 
 def to_listed_collection(entry: ListedEntry) -> dict[str, object]:
