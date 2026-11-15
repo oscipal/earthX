@@ -416,6 +416,11 @@ Umgesetzt wie §11.2–§11.4 mit G1–G6 = 1. Befunde und Auslegungen, gelten b
   - Die Vorschau endet vor der Auflösung der Daten (`previewMaxZoom`), bei swissALTI3D also vor z17/z18.
   - Behebbar wäre es mit einem Lesen über ein VRT aller Szenen einer Kachel; das ist eine eigene Aufgabe.
 
+- **Befunde des Reviews, behoben:**
+  - **Rand nach vorangestellter Bandauswahl:** Bei swissALTI3D unter z13 stehen `dtm` und `dtm_2m` für das eine Band von GLO-30. Der Planer stellt dann eine Auswahl der Bänder vor die Neigung, und der Rand wurde nicht gelesen (Kachel 2 px zu klein, Nähte). `halo_of` zählt jetzt jeden `focal`-Schritt der Kette.
+  - **Datumsgrenze:** Der umgebrochene Nachbar lag im Gitter auf der anderen Seite der Welt und wurde als falsch platziert abgewiesen. Das gab `502` für jede Neigungskachel bei z0 und für die Randkacheln bei z1. Jenseits der Datumsgrenze und der Pole wird jetzt kein Nachbar gelesen; der Rand der Welt ist dort der Rand.
+  - **Geladenes Rezept:** Ein Höhenband eines `terrain`-Schritts, das der Auswahl fehlt, wird wie bei `normalize` genannt.
+
 **Frontend**
 - **Formular `terrain`:** wie bei `normalize` v4. Erst das Produkt, dann nur dessen Felder; die Schummerung mit den Vorgaben von `gdaldem` (315°, 45°, z 1). Der Schritt fügt ein Band unter seinem Namen hinzu wie Band math (`addsBand`) und schlägt das erste Band der Daten in Metern vor. In der Vorschau zählt er nur als erster Schritt.
 - **Gerechnetes Bild unter `min_zoom`** über dieselbe Route mit der Kette, in jeder Ansicht:
