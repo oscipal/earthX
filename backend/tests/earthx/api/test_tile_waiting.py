@@ -339,7 +339,12 @@ def test_a_client_that_hangs_up_while_its_pyramid_tile_waits_reads_nothing(slow_
     slow_store.read_s = 2.0
 
     async def scenario() -> tuple[int, int]:
-        tasks, client = await _pyramid_storm(slow_store, PYRAMID_PLACES, settle=0.5)  # every place is taken, for 2 s
+        tasks, client = await _pyramid_storm(slow_store, PYRAMID_PLACES, settle=0.0)
+        # Every place is taken, for 2 s, before the client comes; on a loaded machine the storm needs longer to start.
+        deadline = time.monotonic() + 5.0
+        while slow_store.started < PYRAMID_PLACES and time.monotonic() < deadline:
+            await asyncio.sleep(0.02)
+        assert slow_store.started == PYRAMID_PLACES, "the storm took every place first"
         reads_before = slow_store.started
         status, _ = await _call(slow_store.app, pyramid_path(RELIEF_ID, 6), hang_up_after=0.1)
         await asyncio.gather(*tasks)
