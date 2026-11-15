@@ -11,7 +11,8 @@ M5-42 (M5-40 plan F7); a page holds at most :data:`MAX_TEXT_PAGE` collections an
 full and listed entries come in one order, title then id (M5-40 plan F3): the full ones of the filter from the same
 search, the listed ones a page at a time from ``earthx_listed_entry``; a page holds :data:`DEFAULT_PAGE` collections
 unless ``limit`` says otherwise, at most :data:`MAX_LISTING_PAGE`, and goes on by the keyset ``token`` of its last
-entry. ``numberMatched`` is exact up to :data:`MAX_COUNTED` and left out above (plan F4). The answer carries no score.
+entry. ``numberMatched`` is exact up to :data:`MAX_COUNTED` and left out above (plan F4), and given on the first page
+only where listed entries are in it (plan A9). The answer carries no score.
 
 ``q`` is no free-text query in the sense of the Free-text extension: commas are ordinary separators, and the ranked
 search also lists datasets without a word in common with the query. The landing page therefore claims Collection
@@ -405,12 +406,20 @@ async def _catalogue_page(
             [] if query.entry == "full" else await listed_page(conn, where, after=query.after, limit=query.limit + 1)
         )
         full_after = [key for key in full if query.after is None or key > query.after]
+        # A listed row whose id a full entry has is superseded at the next catalogue load; until then the full one wins.
+        registry = getattr(request.app.state, "earthx_registry", None)
+        listed = [row for row in listed if registry is None or row.dataset_id not in registry]
         merged = sorted(
-            [(key, None) for key in full_after] + [((row.sort_title, row.dataset_id), row) for row in listed]
+            [(key, None) for key in full_after] + [((row.sort_title, row.dataset_id), row) for row in listed],
+            key=lambda pair: pair[0],
         )
         page, more = merged[: query.limit], len(merged) > query.limit
         matched: int | None = len(full)
-        if query.entry != "full":
+        # Counted on the first page only: with several filters the count up to 10 001 costs up to a third of a second
+        # at 10⁶ entries (plan §8), and a client that walks on already has it.
+        if query.entry != "full" and query.after is not None:
+            matched = None
+        elif query.entry != "full":
             counted = (
                 await count_listed(conn, where, cap=MAX_COUNTED + 1 - len(full)) if len(full) <= MAX_COUNTED else 0
             )

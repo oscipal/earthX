@@ -37,7 +37,7 @@ CREATE INDEX earthx_region_part_part_idx ON public.earthx_region_part USING gist
 CREATE INDEX earthx_region_part_code_idx ON public.earthx_region_part (code);
 
 CREATE TABLE public.earthx_listed_entry (
-    dataset_id        text        PRIMARY KEY
+    dataset_id        text        COLLATE "C" PRIMARY KEY
                                   CHECK (dataset_id ~ '^[a-z0-9][a-z0-9._-]{0,127}$' AND dataset_id NOT LIKE 'proto-%'),
     source_id         text        NOT NULL,
     source_key        text        NOT NULL,
@@ -45,7 +45,7 @@ CREATE TABLE public.earthx_listed_entry (
                                   CHECK (state IN ('published', 'in_review', 'needs_rule', 'blocked', 'tombstone', 'superseded')),
     content           jsonb,
     content_sha256    text,
-    sort_title        text,
+    sort_title        text        COLLATE "C",
     footprint         geometry(Geometry, 4326),
     time_span         tstzrange,
     regions           text[],
@@ -79,7 +79,10 @@ CREATE TABLE public.earthx_listed_entry (
 -- order read lie close together and a page of matches reads few blocks.
 WITH (toast_tuple_target = 128);
 
--- The read path of `api`: a page in the order of the catalogue, and the filters of area, period and region.
+-- The read path of `api`: a page in the order of the catalogue, and the filters of area, period and region. The order is
+-- that of the bytes (`COLLATE "C"` on `dataset_id` and `sort_title`), the same as Python's order of code points: `api`
+-- lays full and listed entries into one page in Python and goes on after the key of its last entry, and under a
+-- collation like en_US, which skips spaces and punctuation, a key would sort differently there and in Postgres.
 CREATE INDEX earthx_listed_entry_page_idx ON public.earthx_listed_entry (sort_title, dataset_id)
     WHERE state = 'published';
 CREATE INDEX earthx_listed_entry_footprint_idx ON public.earthx_listed_entry USING gist (footprint)

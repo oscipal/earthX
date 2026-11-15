@@ -321,7 +321,9 @@ async def test_get_pages_walk_full_and_listed_entries_in_title_order_without_a_g
     seen, pages = await _walk_get(client, limit=limit)
     assert seen == ALL_IDS
     assert len(pages) == -(-len(ALL_IDS) // limit)
-    assert all(page.json()["numberMatched"] == len(ALL_IDS) for page in pages)
+    # Counted on the first page only (plan A9).
+    assert pages[0].json()["numberMatched"] == len(ALL_IDS)
+    assert all("numberMatched" not in page.json() for page in pages[1:])
     assert [page.json()["numberReturned"] for page in pages] == [len(_ids(page)) for page in pages]
 
 
@@ -719,3 +721,28 @@ async def test_neither_the_area_nor_the_region_nor_the_token_reaches_the_access_
         for secret in (_EXACT_LON, _EXACT_LAT, "DE-BY", token, "region", "token", "bbox", "?"):
             assert secret not in line
     assert json.dumps(access_log_lines).count(token) == 0
+
+
+# --- review of M5-40: keys that a collation like en_US orders differently, and a listed row with a full entry's id ---
+
+
+async def test_titles_and_ids_with_spaces_and_punctuation_page_without_a_gap(client):
+    # Under en_US "land use" sorts after "landsat 8" (spaces skipped), in Python before: one page each must reach both.
+    extra = (
+        listed_entry("x-2", title="Land use", spatial_extent=KENYA),
+        listed_entry("x1", title="Landsat 8", spatial_extent=KENYA),
+        listed_entry("x.3", title="Land-use", spatial_extent=KENYA),
+    )
+    _write(*LISTED.values(), *extra)
+    seen, _ = await _walk_get(client, entry="listed", limit=1)
+    expected = _by_title({**_titles_of_listed(*LISTED), **{entry.dataset_id: entry.title for entry in extra}})
+    assert seen == expected
+
+
+async def test_a_listed_row_with_the_id_and_title_of_a_full_entry_shows_the_full_one_once(client):
+    # Between a harvest and the next catalogue load a published row can carry a full entry's id (plan §5.3, step 4).
+    full_id = "cop-dem-glo-30"
+    _commit(lambda conn: insert_row(conn, full_id, source_key="dem", title=FULL[full_id]))
+    seen, _ = await _walk_get(client, limit=3)
+    assert seen.count(full_id) == 1
+    assert (await client.get(f"/stac/collections/{full_id}")).json()["earthx:entry"] == "full"
