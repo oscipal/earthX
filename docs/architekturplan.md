@@ -277,6 +277,8 @@ Eigenschaften, die die Pipeline effizient und robust machen:
 
 Für den Anfang ist die Review-Queue ein **Git-Workflow**: Kuratierte Datensätze liegen als YAML im Repo (Weiterentwicklung der `DatasetConfig`-Registry), der Harvester erzeugt Vorschläge als Dateien bzw. Pull Requests, Freigabe ist ein Merge. Beim Deploy werden die Definitionen nach pgstac geladen. Das liefert Versionierung, Diff-Ansicht und Vier-Augen-Prinzip ohne eigene Oberfläche. Eine Datenbank-gestützte Queue mit UI kommt erst, wenn das Volumen es verlangt; das Datenmodell (Abschnitt 10) sieht sie bereits vor.
 
+**Nachtrag 2026-11-15 (`adr/0033` §14, M5-40):** Für gelistete Einträge (Ziel 10⁶) verlangt das Volumen es jetzt für die Warteliste, nicht für die Entscheidung: Inhalte, Warteliste und Stapel eines Laufs liegen in der Datenbank, die Entscheidungen (Quelle, Lizenzkatalog, Freigaben je Herausgeber, Lauf-Freigabe mit Stichprobe, Sperrliste) weiter als Dateien in Git mit Merge durch Otto (`adr/0033` §4, §8). Eine Freigabe-Oberfläche mit Anmeldung kommt frühestens mit M6.
+
 ### 4.5 Health-Checks
 
 Getrennt vom Harvesting läuft ein leichter, häufiger Check pro veröffentlichtem Datensatz: Erreichbarkeit der API, Stichprobe eines Assets per Range-Request, Vergleich von ETag/Last-Modified. Ergebnis: Health-Status in der UI, `stale`/`broken`-Markierung, Alarm bei Lizenz- oder Strukturänderung. Für viele parallele Header-Abfragen eignet sich ein asynchroner Leser ohne GDAL (obstore/async-geotiff).
@@ -708,6 +710,8 @@ verbundener Runner folgen später (7f).
 Regeln: Migrationen versioniert (Alembic); jede Komponente hat eine eigene DB-Rolle mit minimalen Rechten; personenbezogene Daten (Konto, AOIs in Rezepten, Suchanfragen) sind markiert und haben Aufbewahrungsfristen; Logs enthalten keine exakten AOIs.
 
 **Nachtrag 2026-11-10 (`adr/0026` F3, M5-22):** `dataset_embedding` trägt das Embedding als gewöhnliche Spalte, nicht als `vector` (kein pgvector in M5); dieselbe Tabelle hält Suchtext, `tsvector` und Prüfwert je Datensatz für den Volltext. Name und Spalten legt der Plan von M5-22 fest (`plans/m5/m5-22-suche-lexikalisch.md` §3.4).
+
+**Nachtrag 2026-11-15 (`adr/0033` §14, M5-40):** `license_catalog` ist eine Datei in Git (`backend/catalog/licenses/`), in Postgres nur abgeleitet. Gelistete Einträge liegen in eigenen Tabellen neben pgstac mit Zustand, Herkunft (Regel, Lauf, Freigabedatei) und Grabstein; Name und Spalten legt der Plan von M5-40 fest (`plans/m5/m5-40-gelistete-in-postgres.md`). `review_item` wird zu Warteliste und Lauf-Stapel (M5-20).
 
 ---
 

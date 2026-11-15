@@ -238,11 +238,15 @@ forbidden_modules =
     earthx.api
     earthx.datasets
     earthx.objectstore
+    earthx.catalog.categories
     earthx.catalog.collection
     earthx.catalog.coverage
     earthx.catalog.entry_files
     earthx.catalog.geocode_cache
     earthx.catalog.glossary
+    earthx.catalog.listed
+    earthx.catalog.listed_search
+    earthx.catalog.listed_store
     earthx.catalog.load
     earthx.catalog.local_coverage
     earthx.catalog.mosaic_selection

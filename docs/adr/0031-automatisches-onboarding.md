@@ -5,6 +5,7 @@
   - Merge-Commit statt Squash für Onboarding-PRs, vermerkt im `CLAUDE.md`-Satz und in der PR-Vorlage (V7);
   - die Erlaubnis für `.github/` (V4, V5) und `CLAUDE.md` (V7) gibt Otto mit dem jeweiligen Auftrag, nicht mit diesem ADR;
   - die geplante Aufgabe richtet der Planungs-Chat nach V1–V7 ein.
+- **Nachtrag 2026-11-15 (`adr/0033`, angenommen 2026-11-14):** Gelistete Einträge liegen in Postgres und kommen nur über Lauf-Freigaben (Freigabedatei je Lauf und Quelle), nicht als Datei unter `listed/` im Tages-PR; F10 ist aufgehoben. Die Freigabedatei eines Laufs kommt, wo möglich, in den Tages-PR. Betroffen sind §4.1, §4.2, §5.1, §5.4, §6.6, §8, §9, §10.3 und §12; die Stellen tragen je einen Nachtrag. Wo ein Nachtrag und der Text davor sich widersprechen, gilt der Nachtrag.
 - **Datum:** 2026-11-10 (Entwurf, Draft-PR [#321](https://github.com/oscipal/earthX/pull/321)); 2026-11-10 angenommen.
 - **Aufgabe:** M5-29, Auftrag von Otto vom 10.11.2026. Die Nummer 0031 war beim Start frei (auf `main` endet die Reihe mit 0030; die offenen PRs #319 und #320 legen kein ADR an).
 - **Autonomiestufe:** C. Kein Produktivcode.
@@ -124,12 +125,15 @@ Belegstufen wie in `adr/0025` und `adr/0030`:
 
 **Empfehlung Q1 (F1).** Der Kandidaten-PR wird damit ein reiner Lizenz-PR: Mit Regeln sind die meisten Kandidaten vorbewertet (`adr/0025` §5.2), Otto bestätigt sie im Block.
 
+**Nachtrag 2026-11-15 (`adr/0033` §14, M5-40):** Q1 gilt für den vollen Weg unverändert. Für gelistete Einträge ist die Freigabe die Lauf-Freigabe (`adr/0033` §8): Freigabedatei mit `decision: approved` auf `main`, Fingerabdruck gleich dem Stapel in Postgres.
+
 ### 4.2 Wo liegt die Liste?
 
 Keine zweite gepflegte Liste (K2 von `adr/0025`, „eine Wahrheit“). Die Warteschlange wird **abgeleitet**:
 
 - **Eingang:** alle Kandidaten unter `backend/catalog/candidates/` auf `main`, die nach §4.1 freigegeben sind.
 - **Abzug:** Kandidaten, deren ID schon in `datasets/` oder `listed/` steht, die in `rejected.yaml` stehen oder die ein offener Onboarding-PR schon trägt (Branch-Präfix, §5.1).
+  - **Nachtrag 2026-11-15 (`adr/0033` §14, M5-40):** Eingang sind nur Kandidaten des vollen Wegs. Der Abzug „ID schon in `listed/`“ wird „ID schon in `datasets/`“, weil ein gelisteter Eintrag in den vollen Weg wechseln darf (`adr/0033` §11); `rejected.yaml` wird `blocked.yaml` (`adr/0033` §9).
 - **Steuerung durch Otto:** eine kleine Datei `backend/catalog/onboarding.yaml`, im Review wie Einträge, nie im Image:
   - `pin`: Kandidaten, die vor allen anderen kommen, in dieser Reihenfolge;
   - `hold`: Kandidaten, die warten, mit Grund (auch von der Automatik vorgeschlagen, §9);
@@ -188,6 +192,8 @@ flowchart LR
    - gezielte Tests der neuen ID; erst wenn sie grün sind, committet die Hauptsession;
    - nach zwei roten Versuchen: nichts committen, Arbeitsstand verwerfen, Notiz mit Grund, `hold`-Vorschlag.
 5. **Am Ende:** ganze Suite (in der Session 290–350 s, `plans/querschnitt/nm4-23-backend-tests-schneller.md` §2 [P]), `ruff`, `lint-imports`, Typprüfung des Frontends bei geänderten Prozess-Fixtures, `reviewer` über den ganzen Diff.
+**Nachtrag 2026-11-15 (`adr/0033` §14, M5-40):** Bevor der Lauf Neues anbindet, übernimmt er die Commits offener `harvest/<datum>-<quelle>`-Branches mit Lauf-Freigaben unverändert in `onboarding/<datum>` (Cherry-Pick, kein Umschreiben) und löscht sie nicht. Geht das nicht (kein Lauf an dem Tag, Rückstau-Regel aus Punkt 2, Konflikt), bleibt der Harvest-Branch für einen eigenen PR stehen, und der Bericht sagt es (`adr/0033` §8.4).
+
 6. **PR:** Draft gegen `main`, Titel `Onboarding <datum>: <n> datasets`, Bericht nach §5.4. `main` wird vor dem Öffnen geholt; liegt ein Konflikt in einer gemeinsamen Datei vor, ist das ein Fehler der Vorarbeit V3 und wird gemeldet, nicht gelöst.
 
 ### 5.2 Commits je Datensatz
@@ -228,6 +234,8 @@ Gliederung, alles auf Englisch außer den Fragen an Otto (Kommunikation Deutsch,
 6. **Prüfungen:** Suite, Lint, Importregeln, `reviewer`.
 
 Keine AOI, keine Item-IDs, keine `href` im Bericht (M5-Plan §10).
+
+**Nachtrag 2026-11-15 (`adr/0033` §14, M5-40):** Ein Abschnitt mit einzelnen gelisteten Einträgen entfällt. Neu ist der Abschnitt „Lauf-Freigaben gelisteter Einträge“ mit Zahlen, Warteliste und Stichprobe je übernommener Freigabedatei; die Häkchen der Stichprobe stehen in der Datei, nicht im PR-Text (`adr/0033` §8.4).
 
 ### 5.5 Wie viele schafft eine Session?
 
@@ -313,6 +321,7 @@ Heute nennt `live-smoke.yml` jede Testdatei einzeln, und jeder neue Datensatz be
 - **Rücksicht bei Menge:** ab 100 Einträgen je Tag nur ein Siebtel, rotierend nach ID; jeder Eintrag einmal je Woche [A].
 - **Checkliste Punkt 10, Fassung v1.1** („vom T-D-Smoke abgedeckt“, Marker in `tests_live`) [P] ist damit für jeden Eintrag erfüllt.
 - Bis M5-24 ist das die einzige Prüfung nach dem Merge, die ohne Otto läuft (§10.1).
+- **Nachtrag 2026-11-15 (`adr/0033` §14, M5-40):** Gelistete Einträge sind nicht im Smoke (sie haben keinen Leseweg); ihre Links prüft der rotierende Health-Check (`adr/0033` §13, M5-24).
 
 ## 7. Profile
 
@@ -379,6 +388,7 @@ Ein Profil entsteht erst, wenn es **mindestens einen** angebundenen Eintrag gibt
 - Otto übersteuert mit `way` in `onboarding.yaml`.
 - **Gelistet heißt nicht für immer:** Kommt ein Adapter oder Format dazu, rechnet `queue` den Weg neu, und der gelistete Eintrag wird voll. Die ID bleibt gleich; `listed/<id>.yaml` wird `datasets/<id>.yaml`.
 - **Gelistete im selben PR?** Empfehlung (F10): ja, als eigener Abschnitt, höchstens 20 je PR (`adr/0025` F4); sie sind klein (Kopf, Lizenz, Link, `access`) und brauchen keinen Prüflauf außer „erreichbar“.
+- **Nachtrag 2026-11-15 (`adr/0033` §14, M5-40):** „`listed/<id>.yaml` wird `datasets/<id>.yaml`“ heißt jetzt: Der volle Eintrag übernimmt die ID und löst die Zeile des gelisteten Eintrags in Postgres ab (`adr/0033` §11). **F10 ist aufgehoben:** Gelistete Einträge kommen nur über Lauf-Freigaben in den Katalog, nicht als Datei in den Tages-PR. Die Zeile „Lizenzstufe `catalog`“ der Tabelle bleibt für Kandidaten des vollen Wegs, die keine Anzeige erlauben.
 
 ## 9. Abbruchregeln
 
@@ -398,6 +408,8 @@ Die Automatik hält in diesen Fällen den Kandidaten an, schreibt eine Notiz in 
 | 10 | Tests nach zwei Versuchen rot | Arbeitsstand verwerfen, Notiz mit Kurzfassung |
 | 11 | Eine Änderung an einer gemeinsamen Datei wäre nötig (Test, Adapter, Lader, `gateway`, `.importlinter`) | Notiz; das ist eine Vorarbeit, keine Onboarding-Arbeit |
 | 12 | Neue Python- oder npm-Abhängigkeit | Notiz |
+
+**Nachtrag 2026-11-15 (`adr/0033` §14, M5-40):** Fall 5 gilt nur für den vollen Weg. Auf dem gelisteten Weg sind Konto, kostenpflichtig (`paid`), Bestellung und auf Anfrage nach Ottos Vorgabe der Normalfall (`adr/0033` §5).
 
 Und immer: keine Änderung an `.github/`, `.claude/`, `CLAUDE.md`, `CODEOWNERS`, Sicherheitsregeln oder Importgrenzen; kein Merge, kein Force-Push; Fable nie.
 
@@ -451,6 +463,8 @@ Alle allgemein über die Registry, je Eintrag parametrisiert (V3). Ein neuer Dat
 
 **Empfehlung X1 (F14).** Zusätzlich: Ein roter Smoke oder Health-Check ändert nie selbst die Registry; er erzeugt ein Issue (Triage-Routine) bzw. einen Status in der Datenbank (`adr/0025` §6.6).
 
+**Nachtrag 2026-11-15 (`adr/0033` §14, M5-40):** Für gelistete Einträge gilt statt Revert die Sperrliste `backend/catalog/blocked.yaml` mit Grabstein in Postgres (`410`), `adr/0033` §9.
+
 ## 11. Widersprüche zu bestehenden Regeln
 
 | Regel | Widerspruch | Vorschlag |
@@ -474,8 +488,8 @@ Je unter dem Richtwert. Reihenfolge nach Abhängigkeit; keine davon ist Teil die
 | **V3** | Allgemeine Prüfungen je Eintrag statt Änderungen an gemeinsamen Dateien; synthetische Raster aus Fixture-Beschreibungen; bestehende `mini_*`-Module darauf umstellen (§10.2) | B | V2 |
 | **V4** | Allgemeiner Live-Smoke (§6.6); **braucht Erlaubnis für `.github/`**, die Otto mit dem Auftrag gibt (Ergänzung 3) | B | V3 |
 | **V5** | Prüflauf `onboarding-check.yml` und Begrenzung von `materialize` (§6); **braucht Erlaubnis für `.github/`**, die Otto mit dem Auftrag gibt (Ergänzung 3) | B | V3 |
-| **V6** | `onboarding.yaml` und `python -m earthx.discovery.queue` (§4) | B | M5-20 |
-| **V7** | Lauf-Dokument unter `docs/` (Prompt der geplanten Aufgabe) mit der Vorlage des PR-Texts; Nachträge in `CLAUDE.md` (§11). In `CLAUDE.md` und in der PR-Vorlage steht: Onboarding-PRs werden mit Merge-Commit gemergt, nie Squash (Ergänzung 2). Eine `.github/pull_request_template.md` gibt es bisher nicht; liegt die Vorlage dort, gehört das zur Erlaubnis dieses Auftrags. **Braucht Erlaubnis für `CLAUDE.md`**, die Otto mit dem Auftrag gibt (Ergänzung 3). Danach richtet der Planungs-Chat die geplante Aufgabe ein (Ergänzung 4) | A | V1–V6 |
+| **V6** | `onboarding.yaml` und `python -m earthx.discovery.queue` (§4). **Nachtrag 2026-11-15 (`adr/0033` §14, M5-40):** `queue` kennt offene `harvest/`-Branches mit Lauf-Freigaben und gibt sie vor den Kandidaten aus (`adr/0033` §8.4) | B | M5-20 |
+| **V7** | Lauf-Dokument unter `docs/` (Prompt der geplanten Aufgabe) mit der Vorlage des PR-Texts; Nachträge in `CLAUDE.md` (§11). In `CLAUDE.md` und in der PR-Vorlage steht: Onboarding-PRs werden mit Merge-Commit gemergt, nie Squash (Ergänzung 2). Eine `.github/pull_request_template.md` gibt es bisher nicht; liegt die Vorlage dort, gehört das zur Erlaubnis dieses Auftrags. **Braucht Erlaubnis für `CLAUDE.md`**, die Otto mit dem Auftrag gibt (Ergänzung 3). Danach richtet der Planungs-Chat die geplante Aufgabe ein (Ergänzung 4). **Nachtrag 2026-11-15 (`adr/0033` §14, M5-40):** Das Lauf-Dokument beschreibt die Übernahme der `harvest/`-Branches und den Abschnitt „Lauf-Freigaben gelisteter Einträge“ (`adr/0033` §8.4) | A | V1–V6 |
 | **V8** | Weitere Profile (`optical-reflectance`, `orthophoto`, `meteo-grid`, `continuous-product`), je nach dem zweiten Vorbild | A je Profil | V2 |
 | **V9** | Allgemeiner STAC-Dialekt aus den Konformitätsklassen einer API (`adr/0011` F6), damit neue STAC-Quellen keinen eigenen Dialekt brauchen (§5.5) | C, dann B | — |
 
@@ -568,7 +582,7 @@ Je unter dem Richtwert. Reihenfolge nach Abhängigkeit; keine davon ist Teil die
 2. Eigener PR einmal je Woche
 3. `discovery propose` schreibt sie gleich als gelistete Einträge, ohne Onboarding-Lauf
 
-**Antwort F10 (Otto, 2026-11-10): 1.**
+**Antwort F10 (Otto, 2026-11-10): 1.** **Nachtrag 2026-11-15 (`adr/0033` §14, M5-40):** aufgehoben; gelistete Einträge kommen nur über Lauf-Freigaben (§8).
 
 **F11 — Abbruchregeln (§9)?**
 1. Wie §9; neue Hosts bestätigst du mit einer Zeile `hosts_confirmed` in `onboarding.yaml`, der nächste Lauf nimmt den Datensatz dann; Konto-Quellen nur mit `way: listed` von dir **(Empfehlung)**

@@ -361,6 +361,12 @@ Wie BIOMASS bis heute (`ENTSCHEIDUNGEN` §3): Otto nutzt ein eigenes Konto lokal
 - Discovery (M5-03) liest die Metadaten weiter anonym; findet sie eine Collection, deren Assets ohne Konto `401`/`403` antworten, setzt der Vorschlag `free_account` statt den Eintrag zu verwerfen.
 - Oberfläche: Hinweis am Datensatz „Free account at <Quelle> required to download“ mit Link; kein Kartenlayer, kein Processing.
 
+**Nachtrag 2026-11-15 (`adr/0033` §14, M5-40):** Für gelistete Einträge (`adr/0033` §5, F10 = 1):
+
+- `access.account` bekommt den Wert **`paid`**: die Daten gibt es bei der Quelle nur gegen Bezahlung. Wie `free_account` und `requester_pays` nur W0 (Katalogeintrag mit Link), `account_paths` leer, `token_free_checked_at` leer.
+- Neues Feld **`access.delivery`**: wie die Quelle die Daten herausgibt, `download` (Datei), `service` (z. B. WMS, WFS, API), `order` (Bestellformular, Versand) oder `on_request` (auf Anfrage). Unabhängig von `account`.
+- Prinzip 2 bleibt unberührt, weil ein Link kein Anbinden ist (F2 = 1). Auf dem gelisteten Weg sind Konto, `paid`, Bestellung und auf Anfrage der Normalfall; die Einschränkung auf den vollen Weg in `adr/0031` §9 Fall 5 gilt dort nicht.
+
 ### 6.2 Regeltext
 
 Wie bei `adr/0018` N2 gehen `ENTSCHEIDUNGEN` §1/§3 allen anderen vor. Wird ein Weg außer W0 freigegeben, braucht es einen Satz von Otto in `ENTSCHEIDUNGEN`, dazu Nachträge in B8, Prinzip 2 und Checkliste Punkt 6. Für W0 reicht ein Nachtrag zu Prinzip 2 („Katalogeintrag mit Link ist kein Anbinden“), weil sich am Lesen der Daten nichts ändert. Die Antworten liegen vor (§9); der Wortlaut entsteht mit der Umsetzung von W0 und geht an Otto.

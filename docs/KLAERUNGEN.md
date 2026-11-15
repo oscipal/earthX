@@ -109,6 +109,8 @@ Gestuft, mit gleichbleibender Schnittstelle:
 
 **Nachtrag 2026-11-07 (M5-13, `adr/0025` §7, F8):** Stufe 2 ist umgesetzt. Die Einträge liegen als je eine YAML-Datei unter `backend/catalog/datasets/`, ausgeschiedene in `backend/catalog/retired.yaml` (`backend/` statt Repo-Wurzel, weil der Build-Kontext `./backend` ist). `catalog.datasets.registry()` liest sie einmal je Prozess streng in dieselben `DatasetConfig`-Objekte; Prototyp-Einträge liegen in `backend/catalog/prototype/` und nie im Image (`adr/0024` R4, R5).
 
+**Nachtrag 2026-11-15 (`adr/0033` §4, §14, M5-40):** Punkt 3 heißt für gelistete Einträge: Jede Entscheidung (Quelle, Lizenzkatalog, Freigabe je Herausgeber, Lauf-Freigabe, Sperre) liegt nur in Git; der Inhalt gelisteter Einträge liegt nur in Postgres, weil Titel, Beschreibung, Ausdehnung und Links Metadaten der Quelle sind, keine Kuratierung. Postgres hält von den Entscheidungen nur eine abgeleitete Kopie, die `catalog-load` aus dem Image schreibt. Volle Einträge bleiben YAML im Image wie oben; gelistete lädt kein Prozess in die Registry.
+
 ### B14. Skills — *Vorerst nicht im Repo* (Stand 19.09.2026)
 
 Die drei Skills (`atomic-commits`, `code-cleanup`, `readme-updater`) liegen weiterhin nur in Ottos persönlicher Claude-Code-Umgebung. Sie werden **vorerst nicht** ins Repo kopiert.
