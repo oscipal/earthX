@@ -48,11 +48,12 @@ def _next(response: httpx.Response) -> dict | None:
 # --- without a parameter -----------------------------------------------------------------------------------------------
 
 
-async def test_without_a_parameter_every_collection_comes_as_before(client):
-    # Plan A5, A15: the list the frontend loads, every collection by id, no paging and no search field.
+async def test_without_a_parameter_comes_the_first_page_of_the_catalogue(client):
+    # M5-40 plan F3, F2: no request returns every collection at once; the six full entries fit on the first page.
     response = await client.get("/stac/collections")
     body = response.json()
-    assert _ids(response) == ALL_IDS
+    by_title = [c.dataset_id for c in sorted(REGISTRY, key=lambda c: (sort_title(c.title), c.dataset_id))]
+    assert _ids(response) == by_title
     assert set(body) == {"collections", "links", "numberMatched", "numberReturned"}
     assert (body["numberMatched"], body["numberReturned"]) == (len(ALL_IDS), len(ALL_IDS))
     assert [link["rel"] for link in body["links"]] == ["root", "self"]
