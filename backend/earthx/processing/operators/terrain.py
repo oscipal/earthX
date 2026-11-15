@@ -407,7 +407,4 @@ TERRAIN = Operator(
     method=_method,
     properties=_properties,
     bands_used=_bands_used,
-    # Accepted in recipes, not yet offered: the panel builds its form, whose fields depend on the product, with the
-    # tile in the second part of M5-10 (plan §9a).
-    listed=False,
 )

@@ -376,7 +376,7 @@ def test_the_operator_is_registered_as_a_focal_step_of_both_tiers() -> None:
     operator = REGISTRY.operator("terrain", 1)
     assert (operator.kind, operator.halo, sorted(t.value for t in operator.tiers)) == ("focal", 1, ["T1", "T2"])
     assert operator.passes_values(_params(SLOPE)) is False
-    assert operator.listed is False  # offered with the panel's form in the second part of M5-10
+    assert operator.listed is True  # offered with the panel's form since the second part of M5-10
     assert REGISTRY.params_schema("terrain", 1)["properties"]["product"]["enum"] == ["slope", "aspect", "hillshade"]
 
 

@@ -185,6 +185,7 @@ class TestOrderSchema:
             "#/$defs/step_normalize_v4",
             "#/$defs/step_reproject_v4",
             "#/$defs/step_scale_v1",
+            "#/$defs/step_terrain_v1",
         ]
         step = schema["$defs"]["step_scale_v1"]
         assert step["properties"]["op"] == {"const": "scale"}
@@ -234,6 +235,7 @@ class TestOrderSchema:
             "step_mask_values_v1",
             "step_normalize_v4",
             "step_reproject_v4",
+            "step_terrain_v1",
         ]
         assert schema["properties"]["steps"]["items"]["discriminator"] == {"propertyName": "op"}
 
@@ -307,6 +309,9 @@ class TestWhatThePanelReads:
         assert schema["$defs"]["step_band_math_v2"]["x-earthx-kind"] == "pixel"
         assert schema["$defs"]["step_reproject_v4"]["x-earthx-tiers"] == ["T2"]
         assert schema["$defs"]["step_reproject_v4"]["x-earthx-kind"] == "grid"
+        assert schema["$defs"]["step_terrain_v1"]["x-earthx-tiers"] == ["T1", "T2"]
+        assert schema["$defs"]["step_terrain_v1"]["x-earthx-kind"] == "focal"
+        assert schema["$defs"]["step_terrain_v1"]["x-earthx-passes-values"] is False
 
     def test_each_step_says_whether_it_writes_only_values_it_read(self) -> None:
         """Otto, 11.11.2026: the output types the panel offers follow from the registry, through the description (M5-28)."""
@@ -340,6 +345,7 @@ class TestWhatThePanelReads:
             "step_mask_values_v1",
             "step_normalize_v4",
             "step_reproject_v4",
+            "step_terrain_v1",
         ]
         for op in ("band_math", "mask"):
             assert REAL_OPERATORS.operator(op, 2).stock and REAL_OPERATORS.operator(op, 2).listed
