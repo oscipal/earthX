@@ -376,6 +376,34 @@ class TestRebuildAfterASuccessfulRun:
         await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
         assert _rows(conn, PYRAMID.dataset_id) == [("failed", "source_timeout")]
 
+    async def test_an_unchanged_run_after_an_unknown_failure_says_it_asked_for_a_rebuild(
+        self, conn: psycopg.Connection
+    ) -> None:
+        """Otto's run of 15.11.2026: a pyramid that failed with ``unknown`` and an unchanged source."""
+        load_collection(conn, PYRAMID)
+        first = await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+        assert first.pyramid == "requested"
+        _failed(conn, PYRAMID.dataset_id, '"v1"', "unknown")
+
+        result = await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+
+        assert (result.outcome.status, result.pyramid) == ("unchanged", "rebuild requested")
+        assert _rows(conn, PYRAMID.dataset_id) == []
+        assert [r[0] for r in _requests(conn, PYRAMID.dataset_id)] == ['"v1"']
+
+    async def test_the_run_says_what_it_did_to_the_pyramid_and_nothing_for_a_dataset_without_one(
+        self, conn: psycopg.Connection
+    ) -> None:
+        load_collection(conn, PYRAMID)
+        await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
+        assert (await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)).pyramid == "left as it is"
+        _ready(conn, PYRAMID.dataset_id, '"v1"')
+        assert (await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)).pyramid == "confirmed"
+
+        load_collection(conn, MATERIALIZED)
+        assert (await _run(conn, tile_names=[TILE_A], etag='"v1"')).pyramid is None
+        assert (await _run(conn, tile_names=[TILE_A], etag='"v1"')).pyramid is None
+
     async def test_a_run_that_cannot_reach_the_source_rebuilds_nothing(self, conn: psycopg.Connection) -> None:
         load_collection(conn, PYRAMID)
         await _run(conn, tile_names=[TILE_A], etag='"v1"', config=PYRAMID)
