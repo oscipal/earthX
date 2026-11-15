@@ -360,6 +360,8 @@ class Capabilities:
     normalization: bool
     ml_processing: bool
     quad_pol: bool
+    #: The terrain operator (slope, aspect, hillshade, M5-10): only a model of heights sets it (adr/0023 F5).
+    terrain: bool
     single_coverage_product: bool
 
 
