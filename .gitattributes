@@ -15,6 +15,7 @@
 *.gz binary
 *.ico binary
 *.woff2 binary
+*.npz binary
 
 # Decision log is append-only; concurrent additions from both sides are kept.
 docs/ENTSCHEIDUNGSLOG.md merge=union

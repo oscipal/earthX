@@ -5,7 +5,8 @@
 # capability an operator needs is either here with its terms or under `general`.
 #
 # `general`: the capabilities of the general operators (band math, reprojection, masks, normalization). They tell no
-# dataset from another and stand in no search text. `terms`: empty until the first dataset-specific operator; M5-10
-# adds `terrain` (slope, aspect, hillshade, Hangneigung, Exposition, Schummerung).
+# dataset from another and stand in no search text. `terms`: the capabilities of the dataset-specific operators.
 general: [band_math, masking, normalization, reprojection, value_masking]
-terms: {}
+terms:
+  # The terrain operator (M5-10): what it computes from a model of heights.
+  terrain: [slope, aspect, hillshade, terrain analysis, Hangneigung, Neigung, Exposition, Schummerung, Geländeanalyse]

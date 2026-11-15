@@ -676,6 +676,7 @@ def run(
                     segment,
                     sources if index == 0 else None,
                     finest.transform,
+                    (finest.width, finest.height),
                     previous,
                     window,
                     metas[index],
@@ -765,10 +766,49 @@ def run(
     )
 
 
-def _read_block(sources: list[Source], grid: Affine, window: Window, block: Window) -> ImageData:
-    """``block`` of the window ``window`` of the grid ``grid``, every source onto it, merged into one image."""
+def _read_block(
+    sources: list[Source], grid: Affine, window: Window, block: Window, halo: int = 0, extent: tuple[int, int] = (0, 0)
+) -> ImageData:
+    """``block`` of the window ``window`` of the grid ``grid``, every source onto it, merged into one image.
+
+    With a ``halo`` the block grows by that many pixels on every side (``focal`` steps, adr/0030 F3): what lies in the
+    grid's ``extent`` (width, height) is read, also past the window, the rest is masked."""
     absolute = Window(window.col_off + block.col_off, window.row_off + block.row_off, block.width, block.height)
-    return merge_images([source.read(absolute, grid) for source in sources])
+    return _with_halo(
+        lambda w: merge_images([source.read(w, grid) for source in sources]), absolute, halo, Window(0, 0, *extent)
+    )
+
+
+def _with_halo(read: Callable[[Window], ImageData], block: Window, halo: int, limits: Window) -> ImageData:
+    """``block`` grown by ``halo`` pixels on every side: the block and the part of the halo inside ``limits`` read, the
+    rest of the halo masked.
+
+    The bounds of the image are those of the grown block, so that a kernel finds where each of its pixels lies."""
+    if halo == 0:
+        return read(block)
+    col0, row0 = int(block.col_off) - halo, int(block.row_off) - halo
+    col1, row1 = int(block.col_off + block.width) + halo, int(block.row_off + block.height) + halo
+    left_col = max(col0, min(int(limits.col_off), int(block.col_off)))
+    top_row = max(row0, min(int(limits.row_off), int(block.row_off)))
+    right_col = min(col1, max(int(limits.col_off + limits.width), int(block.col_off + block.width)))
+    bottom_row = min(row1, max(int(limits.row_off + limits.height), int(block.row_off + block.height)))
+    image = read(Window(left_col, top_row, right_col - left_col, bottom_row - top_row))
+    pads = ((0, 0), (top_row - row0, row1 - bottom_row), (left_col - col0, col1 - right_col))
+    if not any(before or after for before, after in pads):
+        return image
+    left, bottom, right, top = image.bounds
+    x_size, y_size = (right - left) / image.width, (top - bottom) / image.height
+    data = numpy.ma.MaskedArray(
+        numpy.pad(numpy.ma.getdata(image.array), pads),
+        mask=numpy.pad(numpy.ma.getmaskarray(image.array), pads, constant_values=True),
+    )
+    bounds = (
+        left - pads[2][0] * x_size,
+        bottom - pads[1][1] * y_size,
+        right + pads[2][1] * x_size,
+        top + pads[1][0] * y_size,
+    )
+    return ImageData(data, bounds=bounds, crs=image.crs, band_names=list(image.band_names), nodata=image.nodata)
 
 
 def area_factor(width: int, height: int, max_pixels: int = MAX_AREA_PIXELS) -> int:
@@ -797,7 +837,8 @@ def area_statistics(
     order). A larger window is read on a grid :func:`area_factor` times coarser, laid on the job's from the
     window's corner; the reader picks an overview there, and the values are those of that read. A coarse pixel
     of a single scene whose centre lies just past the raster's edge reads the edge value rather than nothing,
-    so ``count`` and ``valid_percent`` there are a little higher than the job's. Only ``pixel`` steps: a
+    so ``count`` and ``valid_percent`` there are a little higher than the job's. A ``focal`` step reads its halo as in
+    the job, on the coarse grid where it is coarse. Only ``pixel`` and ``focal`` steps: a
     ``grid`` step changes the grid the job counts on, and a step that measures in the run (``Operator.measures``, NM4-71) has
     no place in the start of the chain this measures: the numbers of such a step are the result of this very count.
 
@@ -832,11 +873,21 @@ def area_statistics(
         geometry = _aoi_on(aoi, meta, finest.radar)
         area = [BandStatistics(output.dtype) for _ in meta.bands]
         inside_pixels = 0
+        halo = sum(step.operator.halo for step in steps)
+        # The whole coarse pixels of the raster, counted from the window's corner, for the halo of ``focal`` steps.
+        coarse_raster = Window(
+            -(int(window.col_off) // factor),
+            -(int(window.row_off) // factor),
+            (finest.width - int(window.col_off)) // factor + int(window.col_off) // factor,
+            (finest.height - int(window.row_off)) // factor + int(window.row_off) // factor,
+        )
         for block in _blocks(width, height):
             if factor == 1:
-                image = _read_block(sources, finest.transform, window, block)
+                image = _read_block(sources, finest.transform, window, block, halo, (finest.width, finest.height))
             else:
-                image = merge_images([source.read(block, coarse) for source in sources])
+                image = _with_halo(
+                    lambda w: merge_images([source.read(w, coarse) for source in sources]), block, halo, coarse_raster
+                )
             data = _cast(_pixel_kernels(image, steps).array, output.dtype)
             _avoid(data, nodata)
             values, _, written = _written(data, nodata)
@@ -860,6 +911,7 @@ def _run_pass(
     segment: Segment,
     sources: list[Source] | None,
     grid: Affine,
+    extent: tuple[int, int],
     previous: str | None,
     window: Window,
     source_meta: RasterMeta,
@@ -891,16 +943,19 @@ def _run_pass(
     if sources is not None:
 
         def block(w: Window) -> numpy.ma.MaskedArray:
-            return _pixel_kernels(_read_block(sources, grid, window, w), segment.steps).array
+            return _pixel_kernels(_read_block(sources, grid, window, w, segment.halo, extent), segment.steps).array
 
         state.write_pass(name, target_meta, dtype, nodata, block, last, measure)
         return name
     with open_workfile(state.workdir, previous) as src:
 
-        def local_block(w: Window) -> numpy.ma.MaskedArray:
+        def read(w: Window) -> ImageData:
             data = src.read(window=w, masked=True)
             bounds = window_bounds(w, src.transform)
-            image = ImageData(data, bounds=bounds, crs=src.crs, band_names=[band.name for band in source_meta.bands])
+            return ImageData(data, bounds=bounds, crs=src.crs, band_names=[band.name for band in source_meta.bands])
+
+        def local_block(w: Window) -> numpy.ma.MaskedArray:
+            image = _with_halo(read, w, segment.halo, Window(0, 0, src.width, src.height))
             return _pixel_kernels(image, segment.steps).array
 
         state.write_pass(name, target_meta, dtype, nodata, local_block, last, measure)

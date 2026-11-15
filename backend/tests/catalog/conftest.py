@@ -77,6 +77,7 @@ def valid_config() -> DatasetConfig:
             normalization=True,
             ml_processing=False,
             quad_pol=False,
+            terrain=False,
             single_coverage_product=False,
         ),
         license=LicenseInfo(

@@ -32,8 +32,9 @@ from tests.search_evaluation import (
 pytestmark = pytest.mark.anyio
 
 #: Measured on 11.11.2026 with the six entries of the registry (M5-22b): German 8 of 11 questions in the first five
-#: and on the first rank, English all of 10. Raise them when the search gets better; never lower them.
-RATCHET = {"de": (8 / 11, 8 / 11), "en": (1.0, 1.0)}
+#: and on the first rank, English all of 10; on 14.11.2026 with Q34 and Q35 active (M5-10) German 9 of 12, English
+#: all of 11. Raise them when the search gets better; never lower them.
+RATCHET = {"de": (9 / 12, 9 / 12), "en": (1.0, 1.0)}
 
 
 @pytest.fixture

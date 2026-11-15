@@ -150,7 +150,7 @@ def test_terms_load(tmp_path):
     [
         ("general: []\n", "exactly the keys"),
         ("general: [warp]\nterms: {}\n", "no capability"),
-        ("general: []\nterms:\n  terrain: [slope]\n", "no capability"),
+        ("general: []\nterms:\n  relief: [slope]\n", "no capability"),
         ("general: [band_math, band_math]\nterms: {}\n", "named once"),
         ("general: [quad_pol]\nterms:\n  quad_pol: [Pauli]\n", "named once"),
         ("general: []\nterms:\n  quad_pol: []\n", "different, non-empty"),

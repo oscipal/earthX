@@ -56,6 +56,7 @@ class TestCapabilitiesAreExplicit:
             "normalization",
             "ml_processing",
             "quad_pol",
+            "terrain",
             "single_coverage_product",
         ],
     )
@@ -71,6 +72,7 @@ class TestCapabilitiesAreExplicit:
             "normalization": True,
             "ml_processing": False,
             "quad_pol": False,
+            "terrain": False,
             "single_coverage_product": False,
         }
         del flags[omitted]
