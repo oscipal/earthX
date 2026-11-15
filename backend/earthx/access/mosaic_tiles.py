@@ -39,8 +39,10 @@ from rio_tiler.errors import EmptyMosaicError, RioTilerError, TileOutsideBounds
 from rio_tiler.models import ImageData
 from rio_tiler.mosaic import mosaic_reader
 from rio_tiler.mosaic.methods.defaults import FirstMethod
+from shapely.geometry.base import BaseGeometry
 from titiler.core.dependencies import DefaultDependency
 
+from earthx.access.footprint_mask import cut_to_footprints
 from earthx.access.tiles import EarthxTilerFactory, open_asset
 from earthx.readers.cog import AssetPath
 from earthx.readers.zarr_reader import ZarrAsset
@@ -267,6 +269,8 @@ class MosaicScenes:
     bounds: tuple[float, float, float, float]
     budget: ReadBudget | None = field(default=None, compare=False)
     place: TilePlace | None = field(default=None, compare=False)
+    #: Footprints (EPSG:4326) the tile is masked to, for the picture a substitute draws over the hits of a search; ``None`` otherwise.
+    mask: BaseGeometry | None = field(default=None, compare=False)
 
     def __post_init__(self) -> None:
         if not self.scenes:
@@ -372,7 +376,10 @@ class MosaicTileReader:
         """
         try:
             with _TILE_SLOTS:
-                return self._read_tile(tile_x, tile_y, tile_z, **kwargs)
+                image = self._read_tile(tile_x, tile_y, tile_z, **kwargs)
+            if self.source.mask is not None:
+                image = cut_to_footprints(image, self.source.mask, self.tms.rasterio_crs)
+            return image
         finally:
             if self.source.place is not None:
                 self.source.place.release()

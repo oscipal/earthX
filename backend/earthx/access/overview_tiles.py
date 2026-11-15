@@ -26,7 +26,9 @@ from rasterio.io import MemoryFile
 from rio_tiler.errors import RioTilerError, TileOutsideBounds
 from rio_tiler.io.rasterio import Reader
 from rio_tiler.models import ImageData
+from shapely.geometry.base import BaseGeometry
 
+from earthx.access.footprint_mask import cut_to_footprints
 from earthx.access.mosaic_tiles import EarthxMosaicTilerFactory, TileGate, TilePlace, open_mosaic
 
 __all__ = [
@@ -77,6 +79,9 @@ class PyramidTile:
     data: bytes
     extent: tuple[float, float, float, float] | None = None
     place: TilePlace | None = field(default=None, compare=False)
+    #: Footprints (EPSG:4326) the picture is masked to, or ``None``: the pyramid of a search is drawn over its hits only
+    #: (adr/0032 Nachtrag 15.11.2026). Pixels outside are transparent.
+    mask: BaseGeometry | None = field(default=None, compare=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.data, bytes) or not self.data:
@@ -129,6 +134,8 @@ class PyramidTileReader:
                 raise PyramidTileInvalid("the stored overview tile is not a readable raster") from None
             if self.source.extent is not None:
                 image = self._cut_to_extent(image, self.source.extent)
+            if self.source.mask is not None:
+                image = cut_to_footprints(image, self.source.mask, self.tms.rasterio_crs)
             return image
         finally:
             if self.source.place is not None:
