@@ -1,6 +1,6 @@
 """The thread that builds overview pyramids: claims a build, runs the child, uploads what it left (M5-30b part 8b-2, adr/0032 §5.2, §8.2).
 
-One thread of the supervisor, **not a recipe slot**: a build takes hours (GLO-30 about 3.6 h at the spacing of the
+One thread of the supervisor, **not a recipe slot**: a build takes hours (GLO-30 about 6 to 7 h at the spacing of the
 sources), and a slot held that long would stop the runs of the users. It never shows in the job API and has no user: its
 state is the row of `earthx_overview` (:mod:`earthx.jobs.overviews`).
 
