@@ -1,6 +1,6 @@
 # M5-40 — Gelistete Einträge in Postgres: Plan-Schritt
 
-**Status (15.11.2026):** Plan mit Fragen F1–F10 im Draft-PR; Umsetzung nach Ottos Antworten im selben PR, höchstens zwei PRs (F2).
+**Status (15.11.2026):** Plan angenommen (Otto, 15.11.2026; Antworten in §4a), PR 1 (Backend) umgesetzt im Draft-PR [#356](https://github.com/oscipal/earthX/pull/356) (§8); PR 2 (Frontend) folgt.
 **Aufgabe:** M5-40 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2 (Folgeaufgabe aus `plans/m5/m5-35-skalierbarkeit.md` §10). **Stufe B.** Hängt von M5-39 ab (`adr/0033`, gemergt mit #352). M5-17 wartet auf den Merge.
 **Grundlagen:** `adr/0033` (angenommen, F1–F11 = 1; F12: Nachträge als erster Commit dieses PR, erledigt), `plans/m5/m5-35-skalierbarkeit.md` §6.1 (B5), §8a (F3, F4), `adr/0025` §6.1a, §7, `adr/0031` §8, `adr/0027` §6.1, `adr/0017`, `adr/0024` R1, `KLAERUNGEN.md` B11, B13, `projektuebersicht.md` Prinzip 16, `plans/vp3/ui-05-data-catalogue.md`.
 
@@ -102,6 +102,23 @@ Gelistete Einträge (alle Datentypen, auch ohne direkten Download) liegen in Pos
 1. Wie bei vollen Einträgen heute: Sie fallen nicht heraus und stehen je Seite in `ignored_filters_by_collection` **(Empfehlung)**
 2. Sie fallen bei einem Zeitfilter heraus
 
+### 4a. Antworten Otto (15.11.2026)
+
+| Frage | Antwort | Folge |
+|---|---|---|
+| F1 | 1 | eigene Tabelle `earthx_listed_entry` |
+| F2 | 1 | dieser PR Backend; PR 2 Frontend und „ohne Parameter nur erste Seite“ |
+| F3 | 1 | Seiten mit `token`, Titel-Reihenfolge, Parameter `entry` |
+| F4 | 1 | `numberMatched` exakt bis 10 000 |
+| F5 | **abweichend:** keine Sammelgruppe „Other“. Gelistete Einträge nach `data_kind` gruppiert (Raster, Vector, Tables, Documents, Services); innerhalb einer Gruppe Nachladen beim Scrollen im Fenster des Data catalogue; das Control Panel scrollt weiterhin nie | API-Parameter `data_kind` schon in PR 1; `data_kind` hat genau diese fünf Werte (A8) |
+| F6 | 1; das Schloss für Datensätze mit Key kommt später mit M5-32 | PR 2 |
+| F7 | 1 | `q` sucht bis M5-42 nur volle Einträge |
+| F8 | 1; Natural Earth ist gemeinfrei, **Einstufung durch Otto: Processing** (frei nutzbar, Quellenangabe freiwillig, wir nennen sie trotzdem) | `backend/catalog/regions.json`, Nennung in `backend/THIRD_PARTY_NOTICES.md` |
+| F9 | 1 | Auslegung (a)–(c) gilt |
+| F10 | 1 | Einträge ohne Zeitraum bleiben und stehen in `ignored_filters_by_collection` |
+
+Die Reihenfolge im M5-Plan (§6.3) pflegt der Planungs-Chat; die Nachträge zu M5-36 bis M5-42 im M5-Plan sind bestätigt.
+
 ## 5. Umsetzung (mit den Empfehlungen)
 
 ### 5.1 Tabelle (Migration `020_listed_entry.sql`)
@@ -184,6 +201,7 @@ In derselben Transaktion wie heute, nach den vollen Einträgen:
 - **A5** Ein Handeintrag, den Otto aus `listed/` löscht, wird Grabstein mit `source_removed` statt still zu verschwinden.
 - **A6** Gelistete Einträge haben keine Items; Items-Abfragen antworten leer und STAC-konform.
 - **A7** Neue Felder (`data_kind`, `delivery`, `regions`) stehen in der Collection, aber nicht als Zeilen im Data catalogue.
+- **A8** (nach F5) `data_kind` hat genau die fünf Werte der Gruppen: `raster`, `vector`, `table`, `document`, `service`. Den Wert `other` aus `adr/0033` §5 gibt es nicht, weil es keine Sammelgruppe gibt; ein Fund, der in keine passt, ist in M5-19/M5-20 ein Pflichtfeld-Mangel (`invalid`) und wird nicht gelistet.
 
 ## 7. Risiken
 
