@@ -239,6 +239,8 @@ class AccountKind(Enum):
     FREE_ACCOUNT = "free_account"
     #: The assets need a cloud account of one's own, and the reader pays the transfer: W0 only.
     REQUESTER_PAYS = "requester_pays"
+    #: The source hands the data out only against payment (adr/0033 §5, F10): listed entries only, never a full one.
+    PAID = "paid"
 
 
 class AccountPath(Enum):
@@ -1923,6 +1925,8 @@ class DatasetConfig:
         access = self.access
         if not isinstance(access.account, AccountKind):
             raise ConfigError(f"{self.dataset_id}: access.account must be one of {[k.value for k in AccountKind]}")
+        if access.account is AccountKind.PAID:
+            raise ConfigError(f"{self.dataset_id}: access.account paid is for listed entries only (adr/0033 §5)")
         if not isinstance(access.account_paths, tuple) or not all(
             isinstance(path, AccountPath) for path in access.account_paths
         ):

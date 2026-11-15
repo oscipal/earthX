@@ -1,0 +1,13 @@
+# The blocklist of listed entries (adr/0033 §9, F6). Every entry a line names becomes a tombstone when `catalog-load`
+# runs: its content is deleted, its id, its key at the source, the reason and the day stay, and `api` answers 410.
+# Removing a line lets the entry come back with the next run that writes it (a hand entry: the next `catalog-load`).
+#
+# Fields: `scope` (entry, publisher, host, source), `reason` (provider_request, not_geodata, quality, legal, other),
+# `blocked_on` (the day, ISO 8601), and per scope:
+#   entry:     source_id, source_key   (a hand entry under listed/: source_id `listed`, source_key its id)
+#   publisher: source_id, publisher    (the publisher as the source names it, exactly)
+#   host:      host                    (the host of the link to the source, lower case, no scheme)
+#   source:    source_id
+# Optional: `license_hash` (M5-20). There is no field for free text: never a name, an address or the wording of a
+# request here; the repository is public (ENTSCHEIDUNGEN §4).
+[]
