@@ -36,6 +36,7 @@ from stac_fastapi.pgstac.models.extensions import Extensions
 from earthx.adapters import ADAPTER_SPECS, AdapterSpecs, check_adapter_specs
 from earthx.api.aoi_cloud_filter import settle
 from earthx.api.aoi_upload_route import router as aoi_upload_router
+from earthx.api.catalogue_route import router as catalogue_router
 from earthx.api.collection_search import collection_search_extension, keep_searches_out_of_errors
 from earthx.api.coverage_route import build_router as build_coverage_router
 from earthx.api.crs_info import switch_off_proj_network
@@ -242,6 +243,8 @@ def build_app(
     app.include_router(aoi_upload_router)
     # M3-07a: place search, also outside `/stac` and also not a dataset route.
     app.include_router(geocode_router)
+    # M5-40: what the filters of the Data catalogue offer, read from files of the image; not STAC either.
+    app.include_router(catalogue_router)
     # M4-08b: the job API under its own prefix, in the form of OGC API – Processes with no
     # conformance claimed (adr/0014 §15d).
     app.include_router(processing_router)
