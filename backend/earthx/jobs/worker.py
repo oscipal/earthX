@@ -243,7 +243,10 @@ class Supervisor:
             wake.set()
 
     def _maintain(self) -> None:
-        """Queue runs whose lease ran out; hourly ask for the pyramids that are missing, clean up what expired and sweep the pyramids."""
+        """Queue runs whose lease ran out; hourly ask for the pyramids that are missing, clean up what expired and sweep the pyramids.
+
+        The sweep runs on one worker per round (:func:`~earthx.jobs.overview_upkeep.sweep_in_turn`).
+        """
         conn: psycopg.Connection | None = None
         next_cleanup = time.monotonic() + self.config.cleanup_first_seconds
         while not self._stopping.is_set():
@@ -254,7 +257,8 @@ class Supervisor:
                 if handled:
                     LOGGER.warning("runs with a lost lease handled", extra={"runs": handled})
                 if time.monotonic() >= next_cleanup:
-                    next_cleanup = time.monotonic() + self.config.cleanup_seconds
+                    round_started = time.monotonic()
+                    next_cleanup = round_started + self.config.cleanup_seconds
                     # Database only, so before the clean-up, which can fail at the object store.
                     asked = overviews.request_missing(conn, self.pyramids)
                     if asked:
@@ -262,7 +266,9 @@ class Supervisor:
                     cleanup(conn, self.store)
                     # Its own step: the object store failing under the sweep leaves the clean-up above done.
                     try:
-                        overview_upkeep.sweep(conn, self.store)
+                        overview_upkeep.sweep_in_turn(
+                            conn, self.store, worker=self.name, config=self.config, round_started=round_started
+                        )
                     except ObjectStoreError as error:
                         LOGGER.warning("overview sweep failed at the object store", extra={"error": type(error).__name__})
             except psycopg.Error as error:

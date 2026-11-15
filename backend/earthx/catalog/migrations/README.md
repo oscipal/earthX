@@ -59,6 +59,10 @@ Zeile je Datensatz und Fassung: Status `building`/`ready`/`failed` mit Frist, Fe
 `confirmed_at`; geschrieben von `jobs` nur mit SQL). Dazu die Funktion `earthx_overview_version` (die 16 Hexziffern der Fassung im
 Objektschlüssel).
 
+`019_overview_upkeep.sql` — die Tabelle `earthx_overview_upkeep` aus M5-38: eine Zeile je Pflegeaufgabe der Pyramiden (`extend`,
+`sweep`) mit Zug-Nummer, Worker, Frist und frühestem nächsten Zug. Ein Worker nimmt den Zug, bevor er verlängert oder aufräumt;
+die anderen lassen die Runde aus. Eine abgelaufene Frist wird übernommen. Geschrieben von `jobs` nur mit SQL.
+
 Die Buchführungstabelle `earthx_migrations` gehört nicht hierher, sondern dem Läufer
 (`earthx/catalog/schema.py`) und wird von ihm angelegt. Sonst müsste jedes
 Migrationsverzeichnis sie erneut mitbringen.

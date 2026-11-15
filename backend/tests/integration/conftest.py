@@ -85,6 +85,7 @@ SHIPPED_TABLES = (
     "public.earthx_mosaic_selection",
     "public.earthx_overview_request",
     "public.earthx_overview",
+    "public.earthx_overview_upkeep",
 )
 
 
