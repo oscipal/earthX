@@ -6,29 +6,24 @@ import type { DatasetOption } from './datasets';
 import { maturityLabel, maturityNote } from './datasets';
 import { utcDay } from './dateBounds';
 import { indexPresetsOf } from './indexPresets';
-import { formatNumber } from './numberFormat';
+import { formatCount, formatNumber } from './numberFormat';
 import { catalogueUnit, trueColorOf } from './processingOrder';
 import type { Collection } from './types';
 
-// The groups in the order of `backend/catalog/categories.yaml` (M5-40 G1, G5), `other` last. A copy until the plan's
-// question H4 is answered; `backend/tests/test_frontend_categories.py` holds it equal to the file. A collection without
-// a category, or with one this viewer does not know, is in "Other".
-export const CATEGORIES = [
-  { id: 'optical', title: 'Optical imagery' },
-  { id: 'radar', title: 'Radar' },
-  { id: 'elevation', title: 'Elevation' },
-  { id: 'land_cover', title: 'Land cover and land use' },
-  { id: 'weather_climate', title: 'Weather and climate' },
-  { id: 'water', title: 'Water and sea' },
-  { id: 'nature', title: 'Nature and environment' },
-  { id: 'geology_soil', title: 'Geology and soil' },
-  { id: 'boundaries', title: 'Boundaries, addresses and cadastre' },
-  { id: 'infrastructure', title: 'Buildings, transport and utilities' },
-  { id: 'population', title: 'Population and society' },
-  { id: 'agriculture', title: 'Agriculture and forestry' },
-] as const;
-export const OTHER_CATEGORY = { id: 'other', title: 'Other' } as const;
-export const CATALOGUE_GROUPS = [...CATEGORIES, OTHER_CATEGORY];
+// A category of the Data catalogue as `GET /catalogue/categories` gives it, in the order of the groups (M5-40 H4): the
+// file `backend/catalog/categories.yaml` is the one place they are decided. A collection without a category, or with
+// one this list does not have, is in "Other".
+export interface CatalogueCategory {
+  id: string;
+  title: string;
+}
+export const OTHER_CATEGORY: CatalogueCategory = { id: 'other', title: 'Other' };
+
+// The categories with "Other" last, also where the list of the API lacks it.
+export const withOther = (categories: readonly CatalogueCategory[]): CatalogueCategory[] => [
+  ...categories.filter((c) => c.id !== OTHER_CATEGORY.id),
+  categories.find((c) => c.id === OTHER_CATEGORY.id) ?? OTHER_CATEGORY,
+];
 
 // A catalogue entry with a link (M5-40): no display, no "Add", no mark (plan F6).
 export const isListed = (collection: Collection): boolean => collection['earthx:entry'] === 'listed';
@@ -62,17 +57,18 @@ export interface CatalogueGroup {
   datasets: DatasetOption[];
 }
 
-export function categoryOf(collection: Collection): string {
+export function categoryOf(collection: Collection, categories: readonly CatalogueCategory[]): string {
   const category = collection['earthx:category'];
-  return CATEGORIES.some((c) => c.id === category) ? (category as string) : OTHER_CATEGORY.id;
+  return categories.some((c) => c.id === category) ? (category as string) : OTHER_CATEGORY.id;
 }
 
 const byTitle = (a: DatasetOption, b: DatasetOption): number => (a.title < b.title ? -1 : a.title > b.title ? 1 : 0);
 
-// The groups that hold a dataset, in the order of `CATEGORIES`, each sorted by title.
-export function catalogueGroups(datasets: readonly DatasetOption[]): CatalogueGroup[] {
-  return CATALOGUE_GROUPS.flatMap(({ id, title }) => {
-    const members = datasets.filter((d) => categoryOf(d.collection) === id).sort(byTitle);
+// The groups that hold a dataset, in the order of the categories, each sorted by title.
+export function catalogueGroups(datasets: readonly DatasetOption[], categories: readonly CatalogueCategory[]): CatalogueGroup[] {
+  const groups = withOther(categories);
+  return groups.flatMap(({ id, title }) => {
+    const members = datasets.filter((d) => categoryOf(d.collection, groups) === id).sort(byTitle);
     return members.length > 0 ? [{ id, title, datasets: members }] : [];
   });
 }
@@ -100,8 +96,8 @@ export function notAddableReason(dataset: DatasetOption): string | null {
 
 // The datasets of a first visit (UI-05 F3, Otto 06.11.2026): those that can be added, in the order of the catalogue, at
 // most six.
-export function firstVisitDatasets(datasets: readonly DatasetOption[]): string[] {
-  return catalogueGroups(datasets)
+export function firstVisitDatasets(datasets: readonly DatasetOption[], categories: readonly CatalogueCategory[]): string[] {
+  return catalogueGroups(datasets, categories)
     .flatMap((group) => group.datasets)
     .filter((d) => notAddableReason(d) === null)
     .slice(0, FIRST_VISIT_DATASETS)
@@ -281,3 +277,14 @@ export function catalogueRows(dataset: DatasetOption): CatalogueRow[] {
         ]),
   ];
 }
+
+// Where the API counted no further than 10 000 (M5-40 plan F4): "10,000+" (H5).
+export const ABOVE_COUNTED = `${formatCount(10_000)}+`;
+
+// The number in the head of a group of the Data catalogue: the count up to 10 000, "10,000+" where the API counted no
+// further (M5-40 H5), nothing before the first page.
+export function groupCount(state: { matched: number | null; entries: readonly unknown[]; loaded: boolean }): string | null {
+  if (state.matched !== null) return formatCount(state.matched);
+  return state.loaded && state.entries.length > 0 ? ABOVE_COUNTED : null;
+}
+

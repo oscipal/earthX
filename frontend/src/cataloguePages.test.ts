@@ -3,7 +3,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { fetchCataloguePage, fetchCollections } from './api';
+import { catalogueDatetime, fetchCatalogueCategories, fetchCatalogueRegions, fetchCataloguePage, fetchCollections } from './api';
 import { isListed, keywordsOf, listedSourceOf, sourceRow } from './catalogue';
 import type { Collection } from './types';
 
@@ -42,11 +42,26 @@ describe('fetchCollections', () => {
 });
 
 describe('fetchCataloguePage', () => {
-  it('asks for one category and passes the token on', async () => {
-    const fetchStub = vi.fn(async (_url: string) => page(['a'], 'T2', { numberMatched: 120 }));
+  it('asks by POST for one category with the filters, and passes the token on', async () => {
+    const answer = { collections: [{ id: 'a' }], links: [{ rel: 'next', method: 'POST', body: { token: 'T2' } }], numberMatched: 120 };
+    const fetchStub = vi.fn(async (_url: string, _init: RequestInit) => new Response(JSON.stringify(answer), { status: 200 }));
     vi.stubGlobal('fetch', fetchStub);
-    expect(await fetchCataloguePage('water', 'T1', 50)).toEqual({ collections: [{ id: 'a' }], next: 'T2', matched: 120 });
-    expect(fetchStub.mock.calls[0][0]).toBe('/stac/collections?category=water&limit=50&token=T1');
+    const area = { type: 'Point', coordinates: [7, 46] } as GeoJSON.Geometry;
+    const filter = { area, region: 'DE-BY', from: '2020-01-01', to: null };
+    expect(await fetchCataloguePage('water', 'T1', 50, filter)).toEqual({ collections: [{ id: 'a' }], next: 'T2', matched: 120 });
+    const [url, init] = fetchStub.mock.calls[0];
+    expect(url).toBe('/stac/collections');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toEqual({
+      category: 'water', limit: 50, token: 'T1', intersects: area, region: ['DE-BY'], datetime: '2020-01-01T00:00:00Z/..',
+    });
+  });
+
+  it('puts no area, region or period into the body that the filter does not have', async () => {
+    const fetchStub = vi.fn(async (_url: string, _init: RequestInit) => page([], null));
+    vi.stubGlobal('fetch', fetchStub);
+    await fetchCataloguePage('water', null);
+    expect(JSON.parse(String(fetchStub.mock.calls[0][1].body))).toEqual({ category: 'water', limit: 50 });
   });
 
   it('has no count where the API gives none, and no next page without a next link', async () => {
@@ -91,3 +106,25 @@ describe('a listed entry', () => {
     expect(keywordsOf({ id: 'x' } as Collection)).toEqual([]);
   });
 });
+
+describe('the period of the catalogue', () => {
+  it('runs from the first instant of the first day to the last of the last, open where a day is missing', () => {
+    expect(catalogueDatetime('2020-01-01', '2020-12-31')).toBe('2020-01-01T00:00:00Z/2020-12-31T23:59:59Z');
+    expect(catalogueDatetime(null, '2020-12-31')).toBe('../2020-12-31T23:59:59Z');
+    expect(catalogueDatetime('2020-01-01', null)).toBe('2020-01-01T00:00:00Z/..');
+    expect(catalogueDatetime(null, null)).toBeNull();
+  });
+});
+
+describe('the lists of /catalogue', () => {
+  it('read the categories and the regions', async () => {
+    const answers: Record<string, object> = {
+      '/catalogue/categories': { categories: [{ id: 'other', title: 'Other' }] },
+      '/catalogue/regions': { regions: [{ code: 'DE', name: 'Germany', level: 'state' }] },
+    };
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response(JSON.stringify(answers[url]), { status: 200 })));
+    expect(await fetchCatalogueCategories()).toEqual([{ id: 'other', title: 'Other' }]);
+    expect(await fetchCatalogueRegions()).toEqual([{ code: 'DE', name: 'Germany', level: 'state' }]);
+  });
+});
+

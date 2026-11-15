@@ -28,7 +28,7 @@ import {
   VIEWPORT_ROUND_LEVELS,
 } from './coverage';
 import type { DatasetOption } from './datasets';
-import { firstVisitDatasets, knownDatasets, notAddableReason } from './catalogue';
+import { firstVisitDatasets, knownDatasets, notAddableReason, type CatalogueCategory } from './catalogue';
 import { prefilledDays, todayUtc } from './dateBounds';
 import { acquisitionNote, datasetsFrom, defaultRenderOf, preferredGeoreferencedAsset, quicklookPlan, standardAssetsOf } from './datasets';
 import { fallbackNotice, findFallback, fullDayRange, NO_FALLBACK_MESSAGE } from './dateFallback';
@@ -132,6 +132,15 @@ export function selectionItemsFrom(s: Pick<AppState, 'groups' | 'activeGroupInde
 }
 
 // The scenes of the image the view shows, when a download is asked for it and not for the ticks of the list (`openDownloadForView`).
+// The filters of the Data catalogue as its fields hold them (M5-40 H1).
+export interface CatalogueFilterState {
+  aoiOnly: boolean;
+  region: string;
+  from: string;
+  to: string;
+  category: string;
+}
+
 export interface DownloadView {
   datasetId: string;
   items: StacItem[];
@@ -1667,6 +1676,14 @@ export interface AppState {
   revealedDataset: { id: string; seq: number } | null;
   // Whether the Data catalogue is open (UI-05 §4.1).
   catalogueOpen: boolean;
+  // The categories of the Data catalogue in the order of its groups (M5-40 H4), loaded with the datasets; empty where the
+  // backend did not give them.
+  catalogueCategories: CatalogueCategory[];
+  // The regions its filter offers (M5-40 H3), loaded when the catalogue first opens; `null` until then.
+  catalogueRegions: api.CatalogueRegion[] | null;
+  // The filters of the Data catalogue (M5-40 H1), kept for the session, never saved: "Only datasets in AOI" (off until
+  // switched on, adr/0026 F6), a region code, a period of whole days, a category ('' for all of each).
+  catalogueFilter: CatalogueFilterState;
   // The *active* dataset: the one the map, time slider, heatmap, full-resolution
   // view and download follow. It is the open results section's dataset, or the
   // one picked in the heatmap legend; one of `selectedDatasetIds`, unless "Remove" in the Data catalogue unticked it and
@@ -1743,6 +1760,8 @@ export interface AppState {
   toggleDatasetSelected: (id: string) => void;
   setMultiSelect: (on: boolean) => void;
   toggleCatalogue: () => void;
+  setCatalogueFilter: (change: Partial<CatalogueFilterState>) => void;
+  loadCatalogueRegions: () => Promise<void>;
   // "Add" in the Data catalogue (UI-05 A5): at the end of "Search and area", which turns to its page; not ticked.
   addDataset: (id: string) => void;
   // "Remove" in the Data catalogue (UI-05 A6): out of "Search and area", unticked if it was; results, view and layers stay.
@@ -1999,6 +2018,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   addedDatasetIds: [],
   revealedDataset: null,
   catalogueOpen: false,
+  catalogueCategories: [],
+  catalogueRegions: null,
+  catalogueFilter: { aoiOnly: false, region: '', from: '', to: '', category: '' },
   datasetId: null,
   sections: [],
   openSectionId: null,
@@ -2040,13 +2062,17 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   loadDatasets: async () => {
     try {
-      const collections = await api.fetchCollections();
+      const [collections, categories] = await Promise.all([
+        api.fetchCollections(),
+        // Without the categories the first visit takes the datasets by title; the catalogue says what failed.
+        api.fetchCatalogueCategories().catch(() => [] as CatalogueCategory[]),
+      ]);
       const datasets = datasetsFrom(collections);
       // The saved list as it is, or the first visit's (F3); the first visit is not saved, so that it follows the registry
       // until the user adds or removes a dataset.
       const saved = loadAddedDatasets();
-      const addedDatasetIds = saved === null ? firstVisitDatasets(datasets) : knownDatasets(saved, datasets);
-      set({ datasets, addedDatasetIds, selectedDatasetIds: [], lastPickedDatasetId: null, datasetId: null });
+      const addedDatasetIds = saved === null ? firstVisitDatasets(datasets, categories) : knownDatasets(saved, datasets);
+      set({ datasets, catalogueCategories: categories, addedDatasetIds, selectedDatasetIds: [], lastPickedDatasetId: null, datasetId: null });
     } catch (e) {
       set({ error: `Backend not reachable: ${(e as Error).message}` });
     }
@@ -2091,6 +2117,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     applyDatasetSelection(set, get, [keepId], keepId);
   },
   toggleCatalogue: () => set((s) => ({ catalogueOpen: !s.catalogueOpen })),
+  setCatalogueFilter: (change) => set((s) => ({ catalogueFilter: { ...s.catalogueFilter, ...change } })),
+  loadCatalogueRegions: async () => {
+    if (get().catalogueRegions !== null) return;
+    try {
+      set({ catalogueRegions: await api.fetchCatalogueRegions() });
+    } catch {
+      // The field keeps "All regions" only; the groups do not depend on it.
+      set({ catalogueRegions: [] });
+    }
+  },
   addDataset: (id) => {
     if (!addToPanel(id)) return;
     set((s) => ({ revealedDataset: { id, seq: (s.revealedDataset?.seq ?? 0) + 1 } }));

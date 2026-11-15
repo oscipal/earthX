@@ -7,16 +7,18 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-import { fetchCataloguePage } from '../api';
+import { fetchCataloguePage, type CatalogueFilter } from '../api';
+import { LOCK_NEEDS_AOI } from '../aoiFilter';
 import {
   accountOf,
-  CATALOGUE_GROUPS,
   catalogueRows,
+  groupCount,
   isListed,
   listedSourceOf,
   notAddableReason,
   prototypeNote,
   sourceRow,
+  withOther,
   type LinkText,
 } from '../catalogue';
 import { datasetsFrom, maturityLabel, type DatasetOption } from '../datasets';
@@ -24,6 +26,7 @@ import { CATALOGUE_ID } from '../dock';
 import { useAppStore } from '../store';
 import Badge from './Badge';
 import CloseButton from './CloseButton';
+import { DateField } from './ControlPanel';
 import { ArrowLeftIcon, ChevronDownIcon, ChevronRightIcon, PlusIcon, TrashIcon } from './icons';
 import Tip from './Tip';
 
@@ -152,29 +155,32 @@ function Details({ dataset, onBack }: { dataset: DatasetOption; onBack: () => vo
 
 // Entries per page of a group.
 const PAGE = 50;
-
 interface GroupState {
   entries: DatasetOption[];
   next: string | null;
   matched: number | null;
-  loading: boolean;
   loaded: boolean;
   error: string | null;
 }
 
-const EMPTY: GroupState = { entries: [], next: null, matched: null, loading: false, loaded: false, error: null };
+const EMPTY: GroupState = { entries: [], next: null, matched: null, loaded: false, error: null };
 
-// One category: its first page when the window opens, the next one when the end of the list shows (M5-40 plan §9).
+// One category within the filters: its first page when it mounts, the next one when the end of the list shows (M5-40
+// plan §9). A new filter mounts it anew.
 function Group({
   id,
   title,
+  filter,
   shownId,
   onShow,
+  onLoaded,
 }: {
   id: string;
   title: string;
+  filter: CatalogueFilter;
   shownId: string | null;
   onShow: (dataset: DatasetOption) => void;
+  onLoaded: (id: string, hasEntries: boolean) => void;
 }) {
   const [state, setState] = useState<GroupState>(EMPTY);
   const [isOpen, setOpen] = useState(true);
@@ -184,19 +190,19 @@ function Group({
   const load = async (token: string | null) => {
     if (busy.current) return;
     busy.current = true;
-    setState((s) => ({ ...s, loading: true, error: null }));
     try {
-      const page = await fetchCataloguePage(id, token, PAGE);
+      const page = await fetchCataloguePage(id, token, PAGE, filter);
       setState((s) => ({
         entries: [...(token ? s.entries : []), ...datasetsFrom(page.collections)],
         next: page.next,
         matched: token ? s.matched : page.matched,
-        loading: false,
         loaded: true,
         error: null,
       }));
+      if (!token) onLoaded(id, page.collections.length > 0);
     } catch (e) {
-      setState((s) => ({ ...s, loading: false, loaded: true, error: (e as Error).message }));
+      setState((s) => ({ ...s, loaded: true, error: (e as Error).message }));
+      if (!token) onLoaded(id, true);
     } finally {
       busy.current = false;
     }
@@ -204,9 +210,9 @@ function Group({
 
   useEffect(() => {
     void load(null);
-    // The first page once per opening of the window.
+    // The first page once per mount; a new filter mounts the group anew.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, []);
 
   useEffect(() => {
     const target = end.current;
@@ -220,12 +226,13 @@ function Group({
   }, [state.next, isOpen]);
 
   if (!state.loaded || (state.entries.length === 0 && !state.error)) return null;
+  const count = groupCount(state);
   return (
     <section className="catalogue-group" aria-label={title}>
       <button type="button" className="catalogue-group-head" aria-expanded={isOpen} onClick={() => setOpen(!isOpen)}>
         {isOpen ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}
         <span className="catalogue-group-name">{title}</span>
-        {state.matched !== null && <span className="catalogue-group-count">{state.matched}</span>}
+        {count !== null && <span className="catalogue-group-count">{count}</span>}
       </button>
       {isOpen && (
         <ul className="catalogue-entries">
@@ -246,12 +253,79 @@ function Group({
   );
 }
 
+// The second row of the head (M5-40 H1): "Only datasets in AOI" (H2, off until switched on, adr/0026 F6), the region,
+// the period and the category. Kept for the session in the store; they act on every group.
+function Filters() {
+  const filter = useAppStore((s) => s.catalogueFilter);
+  const set = useAppStore((s) => s.setCatalogueFilter);
+  const hasAoi = useAppStore((s) => s.aoi !== null);
+  const regions = useAppStore((s) => s.catalogueRegions);
+  const categories = useAppStore((s) => s.catalogueCategories);
+  const loadRegions = useAppStore((s) => s.loadCatalogueRegions);
+  useEffect(() => {
+    void loadRegions();
+  }, [loadRegions]);
+  const aoiLock = hasAoi ? null : LOCK_NEEDS_AOI;
+  return (
+    <div className="catalogue-filters">
+      <label className={`within-aoi catalogue-aoi${aoiLock ? ' locked' : ''}`} data-tip={aoiLock ?? undefined}>
+        <input
+          type="checkbox"
+          role="switch"
+          checked={filter.aoiOnly && !aoiLock}
+          aria-disabled={aoiLock ? true : undefined}
+          onChange={() => {
+            if (!aoiLock) set({ aoiOnly: !filter.aoiOnly });
+          }}
+        />
+        Only datasets in AOI
+      </label>
+      <select aria-label="Region" className="catalogue-region" value={filter.region} onChange={(e) => set({ region: e.target.value })}>
+        <option value="">All regions</option>
+        {(regions ?? []).map((r) => (
+          <option key={r.code} value={r.code}>
+            {r.level === 'subdivision' ? `\u00a0\u00a0\u00a0${r.name}` : r.name}
+          </option>
+        ))}
+      </select>
+      <div className="date-row catalogue-dates">
+        <DateField value={filter.from} onChange={(from) => set({ from })} label="From date" bounds={{ min: null, max: filter.to || null }} />
+        <span>→</span>
+        <DateField value={filter.to} onChange={(to) => set({ to })} label="To date" bounds={{ min: filter.from || null, max: null }} />
+      </div>
+      <select aria-label="Category" className="catalogue-category" value={filter.category} onChange={(e) => set({ category: e.target.value })}>
+        <option value="">All categories</option>
+        {withOther(categories).map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.title}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 export default function DataCatalogue() {
   const open = useAppStore((s) => s.catalogueOpen);
   const toggleCatalogue = useAppStore((s) => s.toggleCatalogue);
   const dockOpen = useAppStore((s) => s.dock !== null);
+  const categories = useAppStore((s) => s.catalogueCategories);
+  const fields = useAppStore((s) => s.catalogueFilter);
+  const aoi = useAppStore((s) => s.aoi);
   const [shown, setShown] = useState<DatasetOption | null>(null);
+  const [loaded, setLoaded] = useState<Record<string, boolean>>({});
   if (!open) return null;
+  const filter: CatalogueFilter = {
+    area: fields.aoiOnly && aoi ? aoi : null,
+    region: fields.region || null,
+    from: fields.from || null,
+    to: fields.to || null,
+  };
+  const groups = withOther(categories).filter((c) => !fields.category || c.id === fields.category);
+  // A new filter mounts every group anew: their pages belong to the filter they were asked with.
+  const filterKey = JSON.stringify([filter, fields.category]);
+  const done = groups.every((g) => loaded[`${filterKey}|${g.id}`] !== undefined);
+  const none = categories.length > 0 && done && groups.every((g) => !loaded[`${filterKey}|${g.id}`]);
   return (
     <div
       id={CATALOGUE_ID}
@@ -263,11 +337,23 @@ export default function DataCatalogue() {
         <h2>Data catalogue</h2>
         <CloseButton onClick={toggleCatalogue} />
       </div>
+      <Filters />
       <div className="catalogue-body">
         <div className="catalogue-list">
-          {CATALOGUE_GROUPS.map((group) => (
-            <Group key={group.id} id={group.id} title={group.title} shownId={shown?.id ?? null} onShow={setShown} />
-          ))}
+          {categories.length === 0 && <p className="hint">Could not load the categories</p>}
+          {none && <p className="hint">No datasets to show</p>}
+          {categories.length > 0 &&
+            groups.map((group) => (
+              <Group
+                key={`${filterKey}|${group.id}`}
+                id={group.id}
+                title={group.title}
+                filter={filter}
+                shownId={shown?.id ?? null}
+                onShow={setShown}
+                onLoaded={(id, hasEntries) => setLoaded((l) => ({ ...l, [`${filterKey}|${id}`]: hasEntries }))}
+              />
+            ))}
         </div>
         {shown ? (
           <Details dataset={shown} onBack={() => setShown(null)} />

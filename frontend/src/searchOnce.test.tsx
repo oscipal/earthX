@@ -199,7 +199,11 @@ describe('opening the app', () => {
     // the same both times and the second answer only replaces it; it is no search and no page of one.
     expect(gets('/stac/collections?entry=full&limit=1000')).toHaveLength(2);
     expect(useAppStore.getState().datasets.map((d) => d.id)).toEqual([DATASET]);
-    expect(seen.map((r) => `${r.method} ${r.url}`)).toEqual(['GET /stac/collections?entry=full&limit=1000', 'GET /stac/collections?entry=full&limit=1000']);
+    // Besides the collections, only the categories of the Data catalogue (M5-40 H4), once per run of the effect.
+    expect(seen.map((r) => `${r.method} ${r.url}`).sort()).toEqual([
+      'GET /catalogue/categories', 'GET /catalogue/categories',
+      'GET /stac/collections?entry=full&limit=1000', 'GET /stac/collections?entry=full&limit=1000',
+    ]);
   });
 
   it('loads the collections once without StrictMode', async () => {

@@ -6,6 +6,8 @@ import { describe, expect, it } from 'vitest';
 import {
   accountOf,
   catalogueGroups,
+  groupCount,
+  withOther,
   catalogueRows,
   firstVisitDatasets,
   knownDatasets,
@@ -29,10 +31,42 @@ function collection(id: string, category: string | null, extra: Partial<Collecti
 const rowsOf = (c: Collection) => Object.fromEntries(catalogueRows(datasetsFrom([c])[0]).map((row) => [row.label, row]));
 const textOf = (c: Collection, label: string) => rowsOf(c)[label].values.map((v) => v.text).join(' | ');
 
+// The categories as `GET /catalogue/categories` gives them, the first five of the list.
+const CATS = [
+  { id: 'optical', title: 'Optical imagery' },
+  { id: 'radar', title: 'Radar' },
+  { id: 'elevation', title: 'Elevation' },
+  { id: 'land_cover', title: 'Land cover and land use' },
+  { id: 'weather_climate', title: 'Weather and climate' },
+  { id: 'other', title: 'Other' },
+];
+
+describe('groupCount (M5-40 H5)', () => {
+  it('gives the count up to 10 000, "10,000+" where the API gave none, nothing before the first page', () => {
+    expect(groupCount({ matched: 2, entries: [1, 2], loaded: true })).toBe('2');
+    expect(groupCount({ matched: 10_000, entries: [1], loaded: true })).toBe('10,000');
+    expect(groupCount({ matched: 1234, entries: [1], loaded: true })).toBe('1,234');
+    expect(groupCount({ matched: null, entries: [1], loaded: true })).toBe('10,000+');
+    expect(groupCount({ matched: null, entries: [], loaded: false })).toBeNull();
+  });
+});
+
+describe('the categories of the API', () => {
+  it('put "Other" last, also where the list lacks it', () => {
+    expect(withOther([{ id: 'other', title: 'Other' }, { id: 'radar', title: 'Radar' }]).map((c) => c.id)).toEqual(['radar', 'other']);
+    expect(withOther([{ id: 'radar', title: 'Radar' }]).map((c) => c.id)).toEqual(['radar', 'other']);
+    expect(withOther([]).map((c) => c.id)).toEqual(['other']);
+  });
+
+  it('without a list put every dataset into "Other"', () => {
+    expect(catalogueGroups(datasetsFrom([collection('a', 'optical')]), []).map((g) => g.title)).toEqual(['Other']);
+  });
+});
+
 describe('catalogueGroups', () => {
   it('keeps the order of the field, sorts by title in a group and leaves out empty groups', () => {
     const datasets = datasetsFrom([collection('z-dem', 'elevation'), collection('b', 'optical'), collection('a', 'optical'), collection('wx', 'weather_climate')]);
-    expect(catalogueGroups(datasets).map((g) => [g.title, g.datasets.map((d) => d.id)])).toEqual([
+    expect(catalogueGroups(datasets, CATS).map((g) => [g.title, g.datasets.map((d) => d.id)])).toEqual([
       ['Optical imagery', ['a', 'b']],
       ['Elevation', ['z-dem']],
       ['Weather and climate', ['wx']],
@@ -41,23 +75,23 @@ describe('catalogueGroups', () => {
 
   it.each([null, undefined, '', 'Optical', 'satellite', 3])('puts a category of %j into "Other", last', (category) => {
     const datasets = datasetsFrom([collection('odd', category as never), collection('a', 'radar')]);
-    expect(catalogueGroups(datasets).map((g) => g.title)).toEqual(['Radar', 'Other']);
+    expect(catalogueGroups(datasets, CATS).map((g) => g.title)).toEqual(['Radar', 'Other']);
   });
 
   it('is empty without datasets', () => {
-    expect(catalogueGroups([])).toEqual([]);
+    expect(catalogueGroups([], CATS)).toEqual([]);
   });
 });
 
 describe('firstVisitDatasets (F3)', () => {
   it('takes every dataset that can be added while there are at most six', () => {
     const datasets = datasetsFrom([collection('dem', 'elevation'), collection('s2', 'optical')]);
-    expect(firstVisitDatasets(datasets)).toEqual(['s2', 'dem']);
+    expect(firstVisitDatasets(datasets, CATS)).toEqual(['s2', 'dem']);
   });
 
   it('takes the first six in the order of the groups where there are more', () => {
     const many = Array.from({ length: 9 }, (_, i) => collection(`e${i}`, i < 4 ? 'elevation' : 'optical'));
-    expect(firstVisitDatasets(datasetsFrom(many))).toEqual(['e4', 'e5', 'e6', 'e7', 'e8', 'e0']);
+    expect(firstVisitDatasets(datasetsFrom(many), CATS)).toEqual(['e4', 'e5', 'e6', 'e7', 'e8', 'e0']);
   });
 
   it('leaves out what cannot be shown and what needs an account', () => {
@@ -66,7 +100,7 @@ describe('firstVisitDatasets (F3)', () => {
       collection('closed', 'optical', { 'earthx:access': { cors: null, account: 'requester_pays' } }),
       collection('open', 'optical'),
     ]);
-    expect(firstVisitDatasets(datasets)).toEqual(['open']);
+    expect(firstVisitDatasets(datasets, CATS)).toEqual(['open']);
   });
 });
 

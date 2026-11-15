@@ -31,7 +31,7 @@ import { counted } from '../plural';
 //
 // UI-05 §3.3: the calendar offers only the days of the chosen datasets (`min`/`max`); a day typed outside them is moved
 // onto the nearest one when the field is left.
-function DateField({
+export function DateField({
   value,
   onChange,
   label,

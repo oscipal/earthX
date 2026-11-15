@@ -2969,6 +2969,28 @@ button.pm-open:hover {
 .catalogue.beside-dock {
   left: calc(var(--rail-width) + var(--dock-width) + var(--space-4));
 }
+/* The second row of the head (M5-40 H1): the switch, region, period and category, always there; on a narrow window they
+   wrap, each field keeping a width it can be read at. */
+.catalogue-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--panel-border);
+}
+.catalogue-filters select {
+  flex: 1 1 160px;
+  min-width: 140px;
+  max-width: 260px;
+}
+.catalogue-dates {
+  flex: 2 1 280px;
+  max-width: 360px;
+}
+.catalogue-error {
+  padding: var(--space-1);
+}
 .catalogue-body {
   flex: 1 1 auto;
   min-height: 0;

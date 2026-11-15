@@ -78,28 +78,65 @@ const LISTED = [
 const COLLECTIONS = [...FULL, ...LISTED];
 
 // What `/stac/collections` answers (M5-40): pages of one category or of the full entries, by title, with a token.
+const CATEGORIES = [
+  { id: 'optical', title: 'Optical imagery' },
+  { id: 'radar', title: 'Radar' },
+  { id: 'elevation', title: 'Elevation' },
+  { id: 'land_cover', title: 'Land cover and land use' },
+  { id: 'weather_climate', title: 'Weather and climate' },
+  { id: 'water', title: 'Water and sea' },
+  { id: 'nature', title: 'Nature and environment' },
+  { id: 'geology_soil', title: 'Geology and soil' },
+  { id: 'boundaries', title: 'Boundaries, addresses and cadastre' },
+  { id: 'infrastructure', title: 'Buildings, transport and utilities' },
+  { id: 'population', title: 'Population and society' },
+  { id: 'agriculture', title: 'Agriculture and forestry' },
+  { id: 'other', title: 'Other' },
+];
+const REGIONS = [
+  { code: 'AT', name: 'Austria', level: 'state' },
+  { code: 'DE', name: 'Germany', level: 'state' },
+  { code: 'DE-BY', name: 'Bayern', level: 'subdivision', state: 'DE' },
+];
+
+// What the backend answers (M5-40): pages of one category or of the full entries, by title, with a token, by GET or by
+// POST with filters; and the lists of `/catalogue`. The filters of a POST are recorded, not applied, except `region`.
 function backend(pool: Collection[]) {
   const requests: URLSearchParams[] = [];
-  const fetchStub = vi.fn(async (input: RequestInfo | URL) => {
+  const bodies: Record<string, unknown>[] = [];
+  const fetchStub = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input), 'http://test');
-    const params = url.searchParams;
+    if (url.pathname === '/catalogue/categories') return new Response(JSON.stringify({ categories: CATEGORIES }), { status: 200 });
+    if (url.pathname === '/catalogue/regions') return new Response(JSON.stringify({ regions: REGIONS }), { status: 200 });
+    const body = init?.method === 'POST' ? (JSON.parse(String(init.body)) as Record<string, unknown>) : null;
+    if (body) bodies.push(body);
+    const params = body
+      ? new URLSearchParams(Object.entries(body).filter(([, v]) => typeof v !== 'object').map(([k, v]) => [k, String(v)]))
+      : url.searchParams;
     requests.push(params);
     let hits = pool;
     if (params.get('entry') === 'full') hits = hits.filter((c) => c['earthx:entry'] !== 'listed');
     if (params.has('category')) hits = hits.filter((c) => c['earthx:category'] === params.get('category'));
+    const region = (body?.region as string[] | undefined)?.[0];
+    if (region) hits = hits.filter((c) => ((c as { 'earthx:regions'?: string[] })['earthx:regions'] ?? []).includes(region));
     hits = [...hits].sort((a, b) => (a.title!.toLowerCase() < b.title!.toLowerCase() ? -1 : 1));
     const start = Number(params.get('token') ?? '0');
     const limit = Number(params.get('limit') ?? '100');
     const page = hits.slice(start, start + limit);
-    const next = start + limit < hits.length ? new URLSearchParams({ ...Object.fromEntries(params), token: String(start + limit) }) : null;
-    const body = {
+    const nextToken = start + limit < hits.length ? String(start + limit) : null;
+    const next = nextToken
+      ? body
+        ? { rel: 'next', method: 'POST', href: 'http://api.example.org/stac/collections', body: { ...body, token: nextToken } }
+        : { rel: 'next', href: `http://api.example.org/stac/collections?${new URLSearchParams({ ...Object.fromEntries(params), token: nextToken })}` }
+      : null;
+    const answer = {
       collections: page,
-      links: next ? [{ rel: 'next', href: `http://api.example.org/stac/collections?${next}` }] : [],
-      ...(params.has('token') ? {} : { numberMatched: hits.length }),
+      links: next ? [next] : [],
+      ...(params.has('token') || hits.length > 10_000 ? {} : { numberMatched: hits.length }),
     };
-    return new Response(JSON.stringify(body), { status: 200 });
+    return new Response(JSON.stringify(answer), { status: 200 });
   });
-  return { fetchStub, requests };
+  return { fetchStub, requests, bodies };
 }
 
 // IntersectionObserver as the window would drive it: a test says when the end of a group shows.
@@ -150,6 +187,10 @@ beforeEach(async () => {
   act(() =>
     useAppStore.setState({
       datasets: datasetsFrom(FULL),
+      catalogueCategories: CATEGORIES,
+      catalogueRegions: null,
+      catalogueFilter: { aoiOnly: false, region: '', from: '', to: '', category: '' },
+      aoi: null,
       addedDatasetIds: ['relief'],
       selectedDatasetIds: [],
       datasetId: null,
@@ -463,3 +504,107 @@ describe('paging', () => {
   });
 });
 
+
+describe('the filters (M5-40 H1, H2)', () => {
+  const change = (el: HTMLInputElement | HTMLSelectElement, value: string) =>
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value')!.set!;
+      setter.call(el, value);
+      el.dispatchEvent(new Event(el instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true }));
+    });
+  const aoiSwitch = () => container.querySelector<HTMLInputElement>('.catalogue-filters input[role="switch"]')!;
+  const select = (label: string) => container.querySelector<HTMLSelectElement>(`.catalogue-filters select[aria-label="${label}"]`)!;
+  const day = (label: string) => container.querySelector<HTMLInputElement>(`.catalogue-filters input[aria-label="${label}"]`)!;
+  let stub: ReturnType<typeof backend>;
+
+  beforeEach(async () => {
+    stub = backend(COLLECTIONS);
+    vi.stubGlobal('fetch', stub.fetchStub);
+    click(symbol());
+    await act(async () => {});
+  });
+
+  it('stand in a second row of the head, always: the switch, region, period and category', () => {
+    const row = container.querySelector('.catalogue-head + .catalogue-filters')!;
+    expect(row).not.toBeNull();
+    expect(row.querySelector('label')?.textContent).toBe('Only datasets in AOI');
+    expect([...row.querySelectorAll('select')].map((s) => s.getAttribute('aria-label'))).toEqual(['Region', 'Category']);
+    expect([...row.querySelectorAll('input[type="date"]')].map((i) => i.getAttribute('aria-label'))).toEqual(['From date', 'To date']);
+  });
+
+  it('lock "Only datasets in AOI" without an AOI, with the reason, and leave it off', () => {
+    expect(aoiSwitch().getAttribute('aria-disabled')).toBe('true');
+    expect(aoiSwitch().closest('label')?.getAttribute('data-tip')).toBe('Draw an AOI to use this filter');
+    click(aoiSwitch());
+    expect(useAppStore.getState().catalogueFilter.aoiOnly).toBe(false);
+  });
+
+  it('ask every group again with the AOI once the switch is on, and keep it on when the window opens again', async () => {
+    const aoi = { type: 'Polygon', coordinates: [[[7, 46], [8, 46], [8, 47], [7, 47], [7, 46]]] } as GeoJSON.Geometry;
+    act(() => useAppStore.setState({ aoi }));
+    expect(aoiSwitch().checked).toBe(false);
+    stub.bodies.length = 0;
+    click(aoiSwitch());
+    await act(async () => {});
+    expect(aoiSwitch().checked).toBe(true);
+    expect(stub.bodies.length).toBeGreaterThan(0);
+    expect(stub.bodies.every((b) => JSON.stringify(b.intersects) === JSON.stringify(aoi))).toBe(true);
+    click(symbol());
+    click(symbol());
+    await act(async () => {});
+    expect(aoiSwitch().checked).toBe(true);
+  });
+
+  it('offer the regions, states with their subdivisions after them, and ask with the one chosen', async () => {
+    expect([...select('Region').options].map((o) => o.textContent)).toEqual(['All regions', 'Austria', 'Germany', '   Bayern']);
+    stub.bodies.length = 0;
+    change(select('Region'), 'DE-BY');
+    await act(async () => {});
+    expect(stub.bodies.every((b) => JSON.stringify(b.region) === '["DE-BY"]')).toBe(true);
+    expect(groupNames()).toEqual([]);
+    expect(container.querySelector('.catalogue-list .hint')?.textContent).toBe('No datasets to show');
+  });
+
+  it('ask with the period of the two days, either end open', async () => {
+    stub.bodies.length = 0;
+    change(day('From date'), '2020-01-01');
+    await act(async () => {});
+    expect(stub.bodies.at(-1)?.datetime).toBe('2020-01-01T00:00:00Z/..');
+    change(day('To date'), '2020-12-31');
+    await act(async () => {});
+    expect(stub.bodies.at(-1)?.datetime).toBe('2020-01-01T00:00:00Z/2020-12-31T23:59:59Z');
+    expect(day('From date').getAttribute('max')).toBe('2020-12-31');
+    expect(day('To date').getAttribute('min')).toBe('2020-01-01');
+  });
+
+  it('show only the group of the category chosen', async () => {
+    expect([...select('Category').options].map((o) => o.textContent)).toEqual(['All categories', ...CATEGORIES.map((c) => c.title)]);
+    change(select('Category'), 'water');
+    await act(async () => {});
+    expect(groupNames()).toEqual(['Water and sea']);
+    change(select('Category'), '');
+    await act(async () => {});
+    expect(groupNames()).toEqual(['Optical imagery', 'Radar', 'Elevation', 'Water and sea', 'Other']);
+  });
+});
+
+describe('the count in the head of a group (M5-40 H5)', () => {
+  it('says "10,000+" where the API counts no further', async () => {
+    const many = Array.from({ length: 10_001 }, (_, i) => listed(`e${i}`, `Entry ${String(i).padStart(5, '0')}`, 'population'));
+    vi.stubGlobal('fetch', backend([...COLLECTIONS, ...many]).fetchStub);
+    click(symbol());
+    await act(async () => {});
+    const head = [...container.querySelectorAll('.catalogue-group-head')].find((h) => h.textContent?.includes('Population and society'))!;
+    expect(head.querySelector('.catalogue-group-count')?.textContent).toBe('10,000+');
+  });
+});
+
+describe('without the categories of the backend', () => {
+  it('says so instead of showing groups', async () => {
+    act(() => useAppStore.setState({ catalogueCategories: [] }));
+    click(symbol());
+    await act(async () => {});
+    expect(groupNames()).toEqual([]);
+    expect(container.querySelector('.catalogue-list .hint')?.textContent).toBe('Could not load the categories');
+  });
+});
