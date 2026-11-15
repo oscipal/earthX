@@ -268,6 +268,13 @@ Gegen `gdaldem`: Ein echter DEM-Ausschnitt geht nicht ins Repo (Fixtures nur syn
 
 Leere Pixel (Rand, Lücke) sind in allen Varianten dieselben wie bei `gdaldem`.
 
+## 10. Grenzen
+
+- Modulgrenzen laut `architekturplan.md` 3.1; `processing` liest keinen Objektspeicher (B9), Kernel bleiben reine Funktionen.
+- Keine Live-Abrufe aus der Sitzung; Fixtures nur synthetisch.
+- Keine neuen Texte, Hinweise oder Marken im Frontend; Erklärungen höchstens im Tooltip.
+- `.github/`, `.claude/`, `CLAUDE.md`, `CODEOWNERS` unverändert.
+
 ## 11. PR B: Kachel, Frontend, Bild unter `min_zoom` (Entwurf 15.11.2026)
 
 **Auftrag (Otto, 15.11.2026):** neuer Branch von `main` nach M5-30b (Pyramiden und Ersatz gemergt). Inhalt: die Kachel mit `focal` (`bilinear`, F4), das Frontend für `terrain`, und erweitert: **Vorschau mit Rechenschritten und Index-Darstellungen unter `min_zoom` in allen Ansichten** (Vorschau, Suchergebnisse, Szenenansicht, Crop and merge, angeheftete Ebene), sodass nie ein Bild verschwindet. Zuerst die Plan-Frage, wie unter `min_zoom` gerechnet wird und wie das ehrlich bleibt (G1–G6), dann die Umsetzung.
@@ -376,10 +383,3 @@ Vorschlag: wie die Übersicht heute, ohne neue Marke.
 **G6 — Schnitt?**
 1. Ein PR B, über dem Richtwert, in thematischen Commits **(Empfehlung, M5-10 hat höchstens zwei PRs)**
 2. Zwei PRs: B1 Kachel und Formular für `terrain`, B2 Bild unter `min_zoom` (dann drei PRs für M5-10)
-
-## 10. Grenzen
-
-- Modulgrenzen laut `architekturplan.md` 3.1; `processing` liest keinen Objektspeicher (B9), Kernel bleiben reine Funktionen.
-- Keine Live-Abrufe aus der Sitzung; Fixtures nur synthetisch.
-- Keine neuen Texte, Hinweise oder Marken im Frontend; Erklärungen höchstens im Tooltip.
-- `.github/`, `.claude/`, `CLAUDE.md`, `CODEOWNERS` unverändert.
