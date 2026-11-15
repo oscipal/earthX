@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import contextlib
 import re
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -139,13 +139,16 @@ def read_tile(store: Store, dataset_id: str, version: str, z: int, x: int, y: in
     return StoredTile(data, checked_at if checked_at.tzinfo is not None else None)
 
 
-def extend_version(store: Store, dataset_id: str, version: str, checked_at: datetime) -> int:
+def extend_version(
+    store: Store, dataset_id: str, version: str, checked_at: datetime, beat: Callable[[], None] | None = None
+) -> int:
     """Give every object of a version a new ``checked-at`` by copying it onto itself; the number of objects rewritten.
 
     The content is not read or sent again; the bucket rule counts from the new write (adr/0032 §5.3). Only after the
     source confirmed the version (the caller's condition), and never for a prototype source (adr/0032 §8.4: a
     ``ValueError``). A version with no object returns 0; an object that vanishes meanwhile raises
-    :class:`~earthx.objectstore.errors.ResultNotFound`.
+    :class:`~earthx.objectstore.errors.ResultNotFound`. ``beat`` is called before each object; what it raises ends the
+    rewrite there.
     """
     if checked_at.tzinfo is None:
         raise ValueError("checked_at must be timezone-aware")
@@ -153,6 +156,8 @@ def extend_version(store: Store, dataset_id: str, version: str, checked_at: date
         raise ValueError("a prototype source's pyramid is never extended")
     count = 0
     for key in store.s3.list_keys(_version_prefix(dataset_id, version)):
+        if beat is not None:
+            beat()
         store.s3.rewrite_object(
             key, content_type=_CONTENT_TYPE, cache_control=None, metadata={CHECKED_AT: checked_at.isoformat()}
         )
@@ -181,11 +186,16 @@ def delete_keys(store: Store, keys: Iterable[str]) -> int:
     return count
 
 
-def delete_version(store: Store, dataset_id: str, version: str) -> None:
-    """Delete every object of one version and abort its open uploads."""
+def delete_version(store: Store, dataset_id: str, version: str, beat: Callable[[], None] | None = None) -> None:
+    """Delete every object of one version and abort its open uploads.
+
+    ``beat`` is called for each key listed; what it raises ends the deletion there.
+    """
     prefix = _version_prefix(dataset_id, version)
     batch: list[str] = []
     for key in store.s3.list_keys(prefix):
+        if beat is not None:
+            beat()
         batch.append(key)
         if len(batch) == 1000:
             store.s3.delete_objects(batch)

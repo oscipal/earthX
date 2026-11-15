@@ -19,6 +19,10 @@ thing in one transaction.
   most :data:`MAX_ATTEMPTS` times in all, and not before :data:`RETRY_AFTER` has passed, except after a lost lease. Any
   other failure stays ``failed`` until a new source version is requested.
 * A failure is a short name (:func:`finish_failed` refuses anything else): never an address, a path or a tile.
+* The upkeep of the pyramids (extend, sweep) runs on one worker at a time: a worker takes a turn of the task
+  (:func:`take_turn`, migration 019) or skips the round. A turn is a lease like a build's, renewed while the work goes on
+  and taken over when it ran out; like a build, every change after it names the turn and touches nothing if a newer one
+  exists.
 """
 
 from __future__ import annotations
@@ -47,10 +51,13 @@ __all__ = [
     "OVERVIEW_LOCK_KEY",
     "RETRY_AFTER",
     "REUSE_MARGIN",
+    "UPKEEP_TASKS",
     "Build",
     "Previous",
+    "Turn",
     "claim",
     "expired",
+    "end_turn",
     "finish_failed",
     "finish_ready",
     "heartbeat",
@@ -59,7 +66,9 @@ __all__ = [
     "previous_ready",
     "protected_versions",
     "release",
+    "renew_turn",
     "request_missing",
+    "take_turn",
     "to_extend",
     "write_progress",
 ]
@@ -78,6 +87,8 @@ MAX_ATTEMPTS = 3
 REUSE_MARGIN = timedelta(days=7)
 #: A failed build waits this long for its next attempt; a lost lease does not wait.
 RETRY_AFTER = timedelta(hours=1)
+#: The tasks of the upkeep that take turns (the rows of `earthx_overview_upkeep`).
+UPKEEP_TASKS = frozenset({"extend", "sweep"})
 
 _KIND = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
 _LEASE_LOST = "lease_lost"
@@ -318,6 +329,73 @@ def release(conn: psycopg.Connection, build: Build) -> bool:
                 """,
                 (_LEASE_LOST, build.dataset_id, build.version, build.attempt),
             ).fetchone()
+    return row is not None
+
+
+@dataclass(frozen=True, slots=True)
+class Turn:
+    """One worker's turn at a task of the upkeep."""
+
+    task: str
+    #: The number of the turn; a renewal or an end names it, so a worker that woke up late changes nothing.
+    number: int
+
+
+# The row of the task is made by the first turn. A turn is free when no lease holds it (or the lease ran out) and its
+# time has come; a second worker that inserts at the same moment waits for the first and then finds the turn taken.
+_TAKE_TURN_SQL = """
+INSERT INTO public.earthx_overview_upkeep AS u (task, worker, lease_until, next_at)
+VALUES (%(task)s, %(worker)s, clock_timestamp() + make_interval(secs => %(lease)s),
+        clock_timestamp() + make_interval(secs => %(gap)s))
+ON CONFLICT (task) DO UPDATE
+SET turn = u.turn + 1, worker = EXCLUDED.worker, lease_until = EXCLUDED.lease_until, next_at = EXCLUDED.next_at
+WHERE (u.lease_until IS NULL OR u.lease_until < clock_timestamp()) AND u.next_at <= clock_timestamp()
+RETURNING turn
+"""
+
+
+def take_turn(
+    conn: psycopg.Connection, task: str, *, worker: str, lease_seconds: float, gap_seconds: float
+) -> Turn | None:
+    """The turn at ``task`` for ``worker``; ``None`` while another worker holds it or its time has not come.
+
+    The turn holds a lease of ``lease_seconds`` (:func:`renew_turn` keeps it) and the next one cannot begin within
+    ``gap_seconds`` of this one, whoever takes it; ``0`` only keeps two turns from running at once. One statement, so it
+    needs no lock of its own.
+    """
+    if task not in UPKEEP_TASKS:
+        raise ValueError("an upkeep task is one of extend, sweep")
+    if not lease_seconds > 0 or not gap_seconds >= 0:
+        raise ValueError("a turn needs a positive lease and a gap that is not negative")
+    row = conn.execute(
+        _TAKE_TURN_SQL, {"task": task, "worker": worker, "lease": lease_seconds, "gap": gap_seconds}
+    ).fetchone()
+    return None if row is None else Turn(task, row[0])
+
+
+def renew_turn(conn: psycopg.Connection, turn: Turn, lease_seconds: float) -> bool:
+    """Renew the lease of the turn; ``False`` if it is over (ended, or taken over after its lease ran out)."""
+    row = conn.execute(
+        """
+        UPDATE public.earthx_overview_upkeep SET lease_until = clock_timestamp() + make_interval(secs => %s)
+        WHERE task = %s AND turn = %s AND lease_until IS NOT NULL
+        RETURNING 1
+        """,
+        (lease_seconds, turn.task, turn.number),
+    ).fetchone()
+    return row is not None
+
+
+def end_turn(conn: psycopg.Connection, turn: Turn) -> bool:
+    """End the turn, so the next worker need not wait for its lease; ``False`` if it was over already."""
+    row = conn.execute(
+        """
+        UPDATE public.earthx_overview_upkeep SET worker = NULL, lease_until = NULL
+        WHERE task = %s AND turn = %s AND lease_until IS NOT NULL
+        RETURNING 1
+        """,
+        (turn.task, turn.number),
+    ).fetchone()
     return row is not None
 
 
