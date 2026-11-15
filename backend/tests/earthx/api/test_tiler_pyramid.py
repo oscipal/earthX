@@ -29,6 +29,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import earthx
+from earthx.access.mosaic_tiles import TILE_GATE as mosaic_gate
 from earthx.api import mosaic_tiles, overview_tiles
 from earthx.api.tiler import build_app
 from earthx.catalog.pgstac import OverviewState
@@ -47,7 +48,7 @@ from earthx.objectstore.overviews import EXTEND_WINDOW, upload_tile
 from earthx.objectstore.results import Store
 from earthx.processing.overview import encode_tile, tile_image
 from tests.catalog.entries import SENTINEL_2_L2A
-from tests.earthx.access.test_mosaic_tiles import SEAM_X, TILE
+from tests.earthx.access.test_mosaic_tiles import SEAM_X, TILE, TO_4326
 from tests.earthx.api.test_tiler_mosaic import ZONE_32, Scenes, _serve
 from tests.earthx.processing import sources
 from tests.earthx.readers import mini_zarr
@@ -540,17 +541,6 @@ class TestTheSubstituteBelowTheLevelOfItsSubstitute:
         assert response.status_code == 404
         assert rows.asked == [] and pyramids.reads == []
 
-    @pytest.mark.parametrize(
-        ("state", "reason"), [(OverviewState("building"), "building"), (OverviewState("failed", failure_kind="x"), "failed")]
-    )
-    def test_without_the_pyramid_of_the_substitute_it_is_a_404_that_says_why(
-        self, rows, pyramids, client, state, reason
-    ) -> None:
-        rows.states[RELIEF_ID] = state
-        response = client().get(path(TERRAIN_ID, 6))
-        assert response.status_code == 404 and response.headers[overview_tiles.OVERVIEW_HEADER] == reason
-        assert [dataset for dataset, _ in rows.asked] == [RELIEF_ID]
-
     def test_the_pyramid_of_the_dataset_itself_is_never_asked_for_a_substitute(self, rows, pyramids, client) -> None:
         rows.ready(TERRAIN_ID, RELIEF_ID)
         pyramids.put(RELIEF_ID, 6)
@@ -601,6 +591,145 @@ class TestFromTheLevelOfTheSubstituteOnTheFilesAreRead:
         assert sorted(scenes.opened) == ["EAST", "WEST"]
         assert [dataset for dataset, *_ in catalogue.asked] == [RELIEF_ID]
         assert rows.asked == [] and pyramids.reads == []
+
+
+class FilesRig:
+    """The app over a materialized stand-in whose files are synthetic, for the tiles that read them (the catalogue is a double)."""
+
+    def __init__(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, store: Store) -> None:  # noqa: F811
+        self.scenes = Scenes(tmp_path)
+        self.catalogue = Catalogue(self.scenes)
+        monkeypatch.setattr(mosaic_tiles, "search_items_in_bbox_async", self.catalogue.search)
+        _serve(self.scenes, monkeypatch)
+        self.scenes.add("WEST", ZONE_32, SEAM_X - 4000.0, 4000.0, 100)
+        self.scenes.add("EAST", ZONE_32, SEAM_X, 4000.0, 200)
+        self.files = replace(
+            RELIEF,
+            source=replace(RELIEF.source, item_holding=ItemHolding.MATERIALIZED, source_collection_id=RELIEF_ID),
+            coverage=replace(RELIEF.coverage, provider=RELIEF.coverage.provider.LOCAL_SQL),
+            search_filters=(),
+            search_capabilities=SearchCapabilities(evaluate=False, aoi_coverage=False),
+        )
+        self.wide = replace(TERRAIN, spatial_extent=_PLAIN.spatial_extent)
+        self.store = store
+        self.stack = ExitStack()
+
+    def client(self, *, pool: Any = WITH_POOL, sources_: Any = "default") -> TestClient:
+        @asynccontextmanager
+        async def lifespan(app: FastAPI) -> Any:
+            app.state.earthx_cache_pool = pool
+            app.state.earthx_overviews = overview_tiles.OverviewSources(self.store) if sources_ == "default" else sources_
+            yield
+
+        app = build_app(DatasetRegistry((self.files, self.wide, _PLAIN)), lifespan=lifespan)
+        app.state.earthx_resolver = mini_zarr.from_memory
+        return self.stack.enter_context(TestClient(app))
+
+    @staticmethod
+    def path(z: int) -> str:
+        tile = TMS.tile(*TO_4326.transform(604_000.0, 5_698_500.0), z)
+        return f"/collections/{TERRAIN_ID}/overview/tiles/WebMercatorQuad/{z}/{tile.x}/{tile.y}.npy"
+
+
+@pytest.fixture
+def files_rig(tmp_path, monkeypatch, store) -> Iterator[FilesRig]:  # noqa: F811
+    rig = FilesRig(tmp_path, monkeypatch, store)
+    with rig.stack:
+        yield rig
+
+
+class TestWithoutAPyramidToReadTheSubstituteReadsItsFiles:
+    """swissALTI3D below z7 never shows an empty map, not even before the first build of the GLO-30 pyramid (Otto, 15.11.2026):
+    over its extent a tile touches about fifteen files, which fit the budget. The files are read as from z7 on."""
+
+    @pytest.mark.parametrize(
+        "state",
+        [OverviewState("none"), OverviewState("building"), OverviewState("failed", failure_kind="source_5xx"), OverviewState("failed", failure_kind="expired")],
+        ids=["no row", "building", "failed", "expired"],
+    )
+    def test_a_pyramid_that_is_not_ready_gives_a_tile_from_the_files(self, files_rig, rows, pyramids, state) -> None:
+        rows.states[RELIEF_ID] = state
+        response = files_rig.client().get(files_rig.path(6))
+        assert response.status_code == 200, response.text
+        assert response.headers[mosaic_tiles.SOURCE_HEADER] == mosaic_tiles.SUBSTITUTE_SOURCE
+        assert overview_tiles.OVERVIEW_HEADER not in response.headers
+        assert sorted(files_rig.scenes.opened) == ["EAST", "WEST"]
+        assert pyramids.reads == []
+        assert [dataset for dataset, *_ in files_rig.catalogue.asked] == [RELIEF_ID]
+
+    def test_the_catalogue_is_asked_over_the_extent_of_the_dataset_with_the_item_cap_as_from_z7_on(self, files_rig, rows) -> None:
+        files_rig.client().get(files_rig.path(6))
+        ((_, _, limit),) = files_rig.catalogue.asked
+        assert limit == mosaic_tiles.SUBSTITUTE_ITEM_CAP + 1
+
+    def test_a_store_that_cannot_be_reached_falls_back_to_the_files(self, files_rig, rows, pyramids) -> None:
+        rows.ready(RELIEF_ID)
+        pyramids.fail = StoreUnavailable("GetObject: could not connect")
+        response = files_rig.client().get(files_rig.path(6))
+        assert response.status_code == 200 and sorted(files_rig.scenes.opened) == ["EAST", "WEST"]
+        assert response.headers[mosaic_tiles.SOURCE_HEADER] == mosaic_tiles.SUBSTITUTE_SOURCE
+
+    def test_rows_that_cannot_be_asked_or_a_process_without_a_key_fall_back_to_the_files(self, files_rig, rows) -> None:
+        rows.fail = psycopg.OperationalError("connection to server at db.internal.invalid failed")
+        assert files_rig.client().get(files_rig.path(6)).status_code == 200
+        assert files_rig.client(sources_=None).get(files_rig.path(6)).status_code == 200
+
+    def test_a_ready_pyramid_that_lacks_the_object_is_no_data_and_no_reason_to_read_files(self, files_rig, rows, pyramids) -> None:
+        rows.ready(RELIEF_ID)  # ready, and nothing stored for this tile
+        response = files_rig.client().get(files_rig.path(6))
+        assert response.status_code == 404
+        assert files_rig.scenes.opened == [] and files_rig.catalogue.asked == []
+
+    def test_a_ready_pyramid_is_still_read_from_the_pyramid_and_no_file_is_opened(self, files_rig, rows, pyramids) -> None:
+        rows.ready(RELIEF_ID)
+        tile = TMS.tile(*TO_4326.transform(604_000.0, 5_698_500.0), 6)
+        path_ = pyramids.tmp_path / "t.tif"
+        path_.write_bytes(encode_tile(tile_image(numpy.ma.array(numpy.full((512, 512), 100, dtype="float32")), tile, nodata=NODATA)))
+        upload_tile(pyramids.store, RELIEF_ID, VERSION, 6, tile.x, tile.y, path_, checked_at=datetime(2026, 11, 14, tzinfo=UTC))
+        response = files_rig.client().get(files_rig.path(6))
+        assert response.status_code == 200 and response.headers[mosaic_tiles.SOURCE_HEADER] == mosaic_tiles.SUBSTITUTE_SOURCE
+        assert files_rig.scenes.opened == [] and files_rig.catalogue.asked == []
+
+    def test_the_budget_per_tile_and_the_partial_header_hold_below_z7(self, files_rig, rows, monkeypatch) -> None:
+        rows.states[RELIEF_ID] = OverviewState("building")
+        monkeypatch.setattr(mosaic_tiles, "TILE_FILE_BUDGET", 1)
+        response = files_rig.client().get(files_rig.path(6))
+        assert response.status_code == 200 and len(files_rig.scenes.opened) == 1
+        assert response.headers[mosaic_tiles.PARTIAL_HEADER] == "1"
+
+    def test_the_time_budget_holds_below_z7(self, files_rig, rows, monkeypatch) -> None:
+        rows.states[RELIEF_ID] = OverviewState("none")
+        monkeypatch.setattr(mosaic_tiles, "TILE_TIME_BUDGET_S", 1e-9)
+        response = files_rig.client().get(files_rig.path(6))
+        assert response.status_code == 503 and response.headers["cache-control"] == "no-store"
+        assert response.headers[mosaic_tiles.PARTIAL_HEADER] == "time"
+
+    def test_the_file_reads_wait_at_the_gate_of_the_mosaic_and_not_at_that_of_the_pyramids(self, files_rig, rows) -> None:
+        from earthx.access import overview_tiles as access_overview
+
+        rows.states[RELIEF_ID] = OverviewState("none")
+        seen = {"mosaic": 0, "pyramid": 0}
+        for name, gate in (("mosaic", mosaic_gate), ("pyramid", access_overview.PYRAMID_GATE)):
+            original = gate.enter
+
+            async def counting(gone, _name=name, _original=original):
+                seen[_name] += 1
+                return await _original(gone)
+
+            gate.enter = counting  # type: ignore[method-assign]
+        try:
+            assert files_rig.client().get(files_rig.path(6)).status_code == 200
+        finally:
+            for gate in (mosaic_gate, access_overview.PYRAMID_GATE):
+                del gate.enter
+        assert seen == {"mosaic": 1, "pyramid": 0}
+
+    def test_the_dataset_with_the_pyramid_itself_still_answers_404_without_it(self, files_rig, rows) -> None:
+        """Only the substitute falls back: GLO-30 below z7 has no files to show and says why."""
+        rows.states[RELIEF_ID] = OverviewState("building")
+        tile = tile_at(3)
+        response = files_rig.client().get(f"/collections/{RELIEF_ID}/overview/tiles/WebMercatorQuad/3/{tile.x}/{tile.y}.npy")
+        assert response.status_code == 404 and response.headers[overview_tiles.OVERVIEW_HEADER] == "building"
 
 
 def test_only_the_tile_route_of_the_overview_can_reach_a_pyramid() -> None:

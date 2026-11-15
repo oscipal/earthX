@@ -1132,7 +1132,8 @@ async def overview_scenes(
 
     **A pyramid** is read from the object store, one tile, with no read budget (:func:`_pyramid_tile`); a dataset
     without a ready pyramid answers ``404`` with ``X-EarthX-Overview``. **A substitute** reads below the first level of
-    the stand-in the stand-in's own pyramid, cut to the extent of the dataset; from there on the files: the items of the
+    the stand-in the stand-in's own pyramid, cut to the extent of the dataset (and, where that pyramid cannot be read, the
+    files, as below); from the stand-in's first level on the files: the items of the
     substitute that touch the tile where it lies over the extent of the dataset (a tile over nothing of it is ``404``),
     from our own pgstac, the largest overlap first and cut to the budget per tile, so that a tile of a low level reads
     the files over the dataset and not those of the rest of the tile. The scenes read lie in the order of the mosaic. The
@@ -1170,9 +1171,17 @@ async def overview_scenes(
         assert substitute.viewer is not None  # the registry gives a substitute a viewer
         extent = config.spatial_extent.bbox
         if substitute.viewer.overview is OverviewMode.PYRAMID and zoom < substitute.viewer.min_zoom:
-            # The stand-in has no files at this level either, only its pyramid; the tile over nothing of the dataset is 404.
+            # The tile over nothing of the dataset is 404. Otherwise the stand-in's pyramid; where there is none to read (no row,
+            # building, failed, expired, or the store or the rows cannot be reached) the files of the stand-in over the
+            # extent of the dataset, as from z7 on: never an empty map (Otto, 15.11.2026). A ready pyramid that merely lacks
+            # the object is a tile without data and no reason to read files.
             mosaic_tiles.substitute_region(grid, extent)
-            return await _pyramid_tile(request, substitute, grid, source=mosaic_tiles.SUBSTITUTE_SOURCE, extent=extent)
+            stored = await _pyramid_tile(
+                request, substitute, grid, source=mosaic_tiles.SUBSTITUTE_SOURCE, extent=extent, fallback=True
+            )
+            if stored is not None:
+                return stored
+            LOGGER.info("no pyramid to read for a substitute's tile; reading its files")
         if substitute.source.item_holding is not ItemHolding.MATERIALIZED:
             # No dataset names a federated substitute yet: its items would come from the source's own search, which
             # this route has no budget for. Refused until a case exists and decides it.
@@ -1217,13 +1226,18 @@ async def _pyramid_tile(
     *,
     source: str,
     extent: tuple[float, float, float, float] | None,
-) -> PyramidTile:
+    fallback: bool = False,
+) -> PyramidTile | None:
     """The stored tile of ``owner``'s pyramid, or the answer that says why there is none (plan M5-30b §8.11).
 
     ``source`` is the ``X-EarthX-Source`` of the answer: ``overview`` for the pyramid of the dataset in the path,
     ``substitute`` where it is the stand-in's. ``extent`` cuts the picture to the dataset a stand-in draws for. A prototype
-    source's every answer is sent ``private, no-store`` (adr/0024 R7). The read is one object and has no budget and no place at the gate
-    of the mosaic reads.
+    source's every answer is sent ``private, no-store`` (adr/0024 R7). The read is one object and has no budget; it waits at
+    the gate of the pyramid tiles, apart from the file reads.
+
+    With ``fallback`` (a substitute below the first level of its stand-in) ``None`` means "no pyramid to read, read the
+    files instead": the pyramid is not ready (none, building, failed, expired) or the rows or the store cannot be reached
+    (the files come through `gateway`, not through the store). A ready pyramid whose object is not there is still a ``404``.
     """
     # Before anything is read, so that every answer for a prototype source (a 404 for a tile without data, a 503) carries it.
     outcome = mosaic_tiles.TileOutcome.of(request.scope)
@@ -1232,15 +1246,27 @@ async def _pyramid_tile(
         outcome.no_store = overview_tiles.is_prototype(owner.dataset_id)
     sources: overview_tiles.OverviewSources | None = getattr(request.app.state, "earthx_overviews", None)
     if sources is None:
+        if fallback:
+            return None
         raise HTTPException(status_code=503, detail="overviews are not served by this process")
-    found = await sources.state(getattr(request.app.state, "earthx_cache_pool", None), owner.dataset_id)
-    if found.status != "ready" or found.version is None:
-        raise overview_tiles.refusal_of(found)
+    try:
+        found = await sources.state(getattr(request.app.state, "earthx_cache_pool", None), owner.dataset_id)
+        if found.status != "ready" or found.version is None:
+            raise overview_tiles.refusal_of(found)
+    except HTTPException:
+        if fallback:
+            return None
+        raise
     # The read of the object and the rendering hold threads of the shared pool: they wait in the event loop first, at a gate
     # of their own, apart from the file reads (plan M5-30b §8.11).
     place = await _wait_for_a_place(request, PYRAMID_GATE)
     try:
         data = await sources.tile(owner.dataset_id, found.version, grid)
+    except HTTPException as error:
+        place.release()
+        if fallback and error.status_code == 503:
+            return None
+        raise
     except BaseException:
         place.release()
         raise
