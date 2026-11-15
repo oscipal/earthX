@@ -396,3 +396,36 @@ In derselben Transaktion wie heute, nach den vollen Einträgen:
 2. Keine Zahl mehr
 
 Bis zu den Antworten baue ich die Gruppen mit einer vorläufigen Kopie der Liste (H4 Option 2). Die Filter-Bedienelemente baue ich erst nach den Antworten.
+
+### 9a. Antworten Otto zu H1–H5 (15.11.2026) und Umsetzung
+
+| Frage | Antwort |
+|---|---|
+| H1 | zweite Zeile im Kopf des Fensters (AOI-Schalter, Region, From/To, Kategorie), immer sichtbar |
+| H2 | „Only datasets in AOI“, Nachtrag im Leitfaden |
+| H3 | Route `GET /catalogue/regions` |
+| H4 | Route `GET /catalogue/categories`; die Kopie im Frontend entfällt |
+| H5 | Zahl bis 10 000, darüber „10,000+“ |
+
+**Umgesetzt** (Draft-PR [#358](https://github.com/oscipal/earthX/pull/358)):
+
+- **Backend:**
+  - `GET /catalogue/categories` liefert Kennung und Titel in der Reihenfolge von `categories.yaml`.
+  - `GET /catalogue/regions` liefert Code, Name und Ebene aus `regions.json`, ohne Umrisse; die Unterteilungen folgen ihrem Staat.
+  - Beide Routen lesen nur Dateien des Images; die Antworten dürfen eine Stunde zwischengespeichert werden. Der Entwicklungsserver leitet `/catalogue` weiter.
+  - `/stac/collections` ohne Parameter liefert die erste Seite.
+- **Frontend:**
+  - Die vollen Einträge lädt es mit `entry=full` über alle Seiten, die Kategorien mit den Datensätzen.
+  - Der Data catalogue hat eine Gruppe je Kategorie. Eine Gruppe lädt ihre Seiten zu 50 per POST mit den Filtern (die Fläche steht nie in einer URL) und lädt nach, wenn ihr Ende im Fenster sichtbar wird.
+  - Die zweite Zeile im Kopf enthält „Only datasets in AOI“ (ohne AOI gesperrt mit „Draw an AOI to use this filter“), „Region“, „From“/„To“ und „Category“. Die Filter bleiben für die Sitzung im Store und werden nicht gespeichert; die Kategorie zeigt nur ihre Gruppe.
+  - Der Gruppenkopf zeigt die Zahl mit Tausender-Komma, darüber „10,000+“. Nimmt ein Filter alles weg, steht „No datasets to show“.
+  - Gelistete Einträge zeigen „Source“, keine Marke und die Schlagworte in den Details.
+  - Ein Zeitraum ohne Anfang und Ende steht als „—“, nicht mehr als „— – today“.
+- **Leitfaden:** §2 nennt „Only datasets in AOI“, §7 kennt zwei Schalter und beschreibt die zweite Zeile im Kopf, §10 passt die Prüfung an.
+- **Browser-Check:** `frontend/e2e/data-catalogue.cjs` läuft mit erfundenen Antworten der neuen API, hell und dunkel, breit (1280 px) und schmal (360 px). Alle vier Durchläufe bestehen. Geprüft werden:
+  - Gruppen und ihre Reihenfolge;
+  - das Nachladen bis zur letzten Seite (130 Einträge in drei Seiten);
+  - „Source“ und die Schlagworte eines gelisteten Eintrags;
+  - die Filterzeile im Fenster und der gesperrte Schalter;
+  - Kategorie und Region;
+  - kein seitliches Scrollen.
