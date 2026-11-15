@@ -1,6 +1,6 @@
 # M5-40 — Gelistete Einträge in Postgres: Plan-Schritt
 
-**Status (15.11.2026):** Plan angenommen (Otto, 15.11.2026; Antworten in §4a), PR 1 (Backend) umgesetzt im Draft-PR [#356](https://github.com/oscipal/earthX/pull/356) (§8); PR 2 (Frontend) folgt.
+**Status (15.11.2026):** Plan angenommen (Otto, 15.11.2026; Antworten in §4a und §4c), PR 1 (Backend) mit den Kategorien umgesetzt im Draft-PR [#356](https://github.com/oscipal/earthX/pull/356) (§8); PR 2 (Frontend) folgt.
 **Aufgabe:** M5-40 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2 (Folgeaufgabe aus `plans/m5/m5-35-skalierbarkeit.md` §10). **Stufe B.** Hängt von M5-39 ab (`adr/0033`, gemergt mit #352). M5-17 wartet auf den Merge.
 **Grundlagen:** `adr/0033` (angenommen, F1–F11 = 1; F12: Nachträge als erster Commit dieses PR, erledigt), `plans/m5/m5-35-skalierbarkeit.md` §6.1 (B5), §8a (F3, F4), `adr/0025` §6.1a, §7, `adr/0031` §8, `adr/0027` §6.1, `adr/0017`, `adr/0024` R1, `KLAERUNGEN.md` B11, B13, `projektuebersicht.md` Prinzip 16, `plans/vp3/ui-05-data-catalogue.md`.
 
@@ -211,6 +211,12 @@ Die Reihenfolge im M5-Plan (§6.3) pflegt der Planungs-Chat; die Nachträge zu M
 1. Themenliste, `themes.yaml` mit Prüfung, eine reine Funktion „Metadaten → Thema“ mit Tests, Spalte `theme` mit Index, Filter `theme` in der API, Feld in `listed/` und bei vollen Einträgen; den Aufruf im Harvest macht M5-19 **(Empfehlung)**
 2. Nur Spalte, Filter und Feld; Zuordnung mit M5-19
 
+### 4c. Antworten Otto zu G1–G6 und zu PR 1 (15.11.2026)
+
+- **G1–G4, G6 = 1.** **G5 = 2 (Korrektur):** Das Feld heißt weiter `category` (Registry, YAML, `earthx:category`); nur die Werte werden die neue Liste. Kein Umbenennen in `theme`: Spalte `category`, Filter `category`, Datei `backend/catalog/categories.yaml`. Wo §4b „Thema“ schreibt, ist damit die Kategorie gemeint.
+- **Migration 021 statt 020:** 020 ist von #355 (M5-30b) belegt, das vor #356 gemergt wird.
+- **Bestätigt:** `400` für eine Suche mit gelisteter ID, `earthx:entry: "full"`, `data_kind` mit sechs Werten einschließlich `other`, Quell-ID `listed` reserviert, die strengere Regel in `.importlinter`.
+
 ## 5. Umsetzung (mit den Empfehlungen)
 
 ### 5.1 Tabelle (Migration `021_listed_entry.sql`)
@@ -306,7 +312,7 @@ In derselben Transaktion wie heute, nach den vollen Einträgen:
 
 ## 8. Umsetzung PR 1 (Backend) und Messung
 
-**Umgesetzt** (Draft-PR [#356](https://github.com/oscipal/earthX/pull/356)), wie §5 mit den Antworten aus §4a, ohne das Thema (§4b, wartet auf G1–G6):
+**Umgesetzt** (Draft-PR [#356](https://github.com/oscipal/earthX/pull/356)), wie §5 mit den Antworten aus §4a und §4c:
 
 - **Migration 021** (020 ist von #355 belegt): `earthx_listed_entry` (Zustand, Herkunft, Grabstein, partielle Indizes auf `published`, `dataset_id` und `sort_title` mit `COLLATE "C"`, Inhalt außerhalb der Zeile ab 128 Bytes), `earthx_region` und `earthx_region_part` (Umrisse in Stücken zu höchstens 128 Punkten).
 - **Dateien:** `catalog/listed.py` (`ListedEntry`, `DataKind`, `DeliveryKind`, `BlockRule`, Lader für `listed/`, `blocked.yaml`, `regions.json`); `AccountKind.PAID`, in `datasets/` ein Ladefehler; `backend/catalog/listed/README.md`, `backend/catalog/blocked.yaml` (leer, mit Erklärung), `backend/catalog/regions.json` mit `scripts/write-region-outlines.py`; alle drei im Image.
@@ -332,5 +338,13 @@ In derselben Transaktion wie heute, nach den vollen Einträgen:
 
 **Review** (`reviewer`, vor dem menschlichen Review): zwei Blocker behoben (Import von `urllib` in `catalog` gegen die Importregel B8; Reihenfolge abhängig von der Collation), dazu: `supersede` vor den Handeinträgen (sonst Grabstein statt abgelöst), gleiche Schlüssel ohne Fehler, gelistete Zeile mit der ID eines vollen Eintrags weicht ihm, Regionen nur für geänderte Zeilen neu geschrieben, geänderter Titel schreibt die Zeile neu, Messskript nur gegen eine Datenbank mit `bench` im Namen. Offen gelassen: Die Meldung `400` für eine Suche mit gelisteter ID nennt die ID (keine Eingabe aus Freitext oder Fläche).
 
-**Noch nicht gebaut:** das Thema (§4b), PR 2 (Frontend, „ohne Parameter nur erste Seite“).
+**Kategorien (§4b, §4c):**
+
+- `backend/catalog/categories.yaml`: oben die zwölf Kategorien plus `other` (Kennung, Titel im Katalog, Wörter für den Suchtext), dann die Tabellen INSPIRE-Thema → Kategorie und EU Data Theme → Kategorie, die groben EU Data Themes, die Begriffe für CKAN-Gruppen und Schlagworte, zuletzt die Regel als Kommentar. Im Image; jeder Prozess, der die Registry liest, prüft dagegen.
+- `catalog/categories.py`: strenges Lesen und Prüfen (jeder Code und jeder Begriff höchstens einmal, nur Kategorien der Liste, `other` zuletzt, INSPIRE- und EU-Codes aus den beiden Vokabularen, alle 34 bzw. 14 vergeben) und `category_of` nach der Regel G3; den Aufruf im Harvest macht M5-19 (G6).
+- `DatasetConfig.category` ist jetzt eine Kennung aus der Datei statt eines Enums; die sechs vollen Einträge behalten ihre Werte, ihr Suchtext bleibt gleich (die fünf alten Kategorien behalten ihre Wörter). Gelistete Einträge tragen `category` als Feld, Spalte mit Index `(category, sort_title, dataset_id)` und `earthx:category`; `/stac/collections` filtert mit `category` volle und gelistete Einträge gleich.
+- **Belege:** Die 34 INSPIRE-Kürzel und 14 EU-Codes stimmen mit dem Plan überein, geprüft an zwei Spiegeln auf GitHub (GeoServer-Doku `keyword-inspire-theme.csv`, `metadata101/dcat-ap` `datatheme.rdf`) [P, Spiegel]; die Register selbst (`inspire.ec.europa.eu`, `publications.europa.eu`) sperrt der Proxy der Sitzung.
+- Das Frontend liest `earthx:category` wie bisher; neue Werte stehen dort bis PR 2 in „Other“.
+
+**Noch nicht gebaut:** PR 2 (Frontend: Gruppen nach Kategorie mit Nachladen beim Scrollen, „ohne Parameter nur erste Seite“).
 
