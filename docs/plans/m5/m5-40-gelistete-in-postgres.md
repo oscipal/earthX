@@ -301,6 +301,7 @@ In derselben Transaktion wie heute, nach den vollen Einträgen:
 - **A7** Neue Felder (`data_kind`, `delivery`, `regions`) stehen in der Collection, aber nicht als Zeilen im Data catalogue.
 - **A9** `numberMatched` steht nur auf der ersten Seite, wenn gelistete Einträge darin sein können: Die Zählung bis 10 001 kostet mit mehreren Filtern bei 10⁶ Einträgen bis 0,3 s (§8), und wer weiterblättert, hat die Zahl schon. Für `entry=full` steht sie auf jeder Seite.
 - **A10** Die Quell-ID `listed` ist für Handeinträge reserviert; der Lader der Seed-Dateien (M5-19) muss sie ablehnen, sonst machte `catalog-load` geerntete Zeilen dieser Quelle zu Grabsteinen.
+- **A11** (Schlagworte, Otto 15.11.2026) „Technisch“ heißt nur nach Form: leer, ohne Buchstaben (z. B. reine Zahlen und Jahre), Adresse oder Kennung (`://`, `@`, `www.`, UUID, Hex-Folge ab 16 Zeichen) oder länger als 80 Zeichen. Eine Liste bestimmter Katalog-Tags (etwa „opendata“) gibt es nicht, weil keine entschieden ist; sie käme, wenn gewünscht, in eine Datei in Git. Normalisiert wird klein, mit einem Leerzeichen zwischen Wörtern, Akzente bleiben. Die Ersatzwörter einer Kategorie sind die Wörter ihres Titels in `categories.yaml` ohne „and“ (z. B. `water`, `sea`; `other`), weil „Other“ keinen Suchtext hat und kein Eintrag ohne Schlagworte bleiben darf.
 - **A8** `data_kind` behält die sechs Werte aus `adr/0033` §5 (`raster`, `vector`, `table`, `document`, `service`, `other`); es steuert keine Gruppe mehr (F5 korrigiert) und ist nur ein Feld des Eintrags.
 
 ## 7. Risiken
@@ -345,6 +346,12 @@ In derselben Transaktion wie heute, nach den vollen Einträgen:
 - `DatasetConfig.category` ist jetzt eine Kennung aus der Datei statt eines Enums; die sechs vollen Einträge behalten ihre Werte, ihr Suchtext bleibt gleich (die fünf alten Kategorien behalten ihre Wörter). Gelistete Einträge tragen `category` als Feld, Spalte mit Index `(category, sort_title, dataset_id)` und `earthx:category`; `/stac/collections` filtert mit `category` volle und gelistete Einträge gleich.
 - **Belege:** Die 34 INSPIRE-Kürzel und 14 EU-Codes stimmen mit dem Plan überein, geprüft an zwei Spiegeln auf GitHub (GeoServer-Doku `keyword-inspire-theme.csv`, `metadata101/dcat-ap` `datatheme.rdf`) [P, Spiegel]; die Register selbst (`inspire.ec.europa.eu`, `publications.europa.eu`) sperrt der Proxy der Sitzung.
 - Das Frontend liest `earthx:category` wie bisher; neue Werte stehen dort bis PR 2 in „Other“.
+
+**Schlagworte (Otto, 15.11.2026):**
+
+- Spalte `keywords text[]` in Migration 021 mit GIN-Index auf `published`; nie leer außer beim Grabstein (`CHECK`).
+- `catalog.listed.listed_keywords` (rein): Schlagworte der Quelle normalisiert (A11), ohne verwertbare die Wörter der Kategorie. Der Harvest ruft sie mit CKAN-Tags, DCAT-Keywords und INSPIRE-Schlagworten auf (M5-19); `catalog-load` mit den Schlagworten eines Handeintrags. Spalte und STAC-Feld `keywords` des Dokuments sind gleich.
+- Volle Einträge behalten ihre kuratierten Schlagworte (de/en, `adr/0026` F7) im selben STAC-Feld `keywords`; im Suchtext stehen sie schon (Teil B). Gelistete kommen mit M5-42 in die indexfähige Suche; die Anzeige in den Details des Data catalogue kommt mit PR 2.
 
 **Noch nicht gebaut:** PR 2 (Frontend: Gruppen nach Kategorie mit Nachladen beim Scrollen, „ohne Parameter nur erste Seite“).
 
