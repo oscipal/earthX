@@ -228,8 +228,11 @@ def plan_bands_on(
 
 
 def halo_of(steps: Sequence[tuple[Operator, BaseModel]]) -> int:
-    """The halo a tile reads around itself: that of a ``focal`` first step, else none (adr/0030 F3)."""
-    return steps[0][0].halo if steps and steps[0][0].kind == "focal" else 0
+    """The halo a tile reads around itself: that of its ``focal`` steps (adr/0030 F3).
+
+    `api` takes a ``focal`` step as the first of the request only; the planner may still put a selection of bands before it
+    (a pixel step, which runs on the grown tile as on any other), so the halo is not only that of the first step."""
+    return sum(operator.halo for operator, _ in steps if operator.kind == "focal")
 
 
 def _tile_options(

@@ -171,3 +171,14 @@ def test_a_dataset_without_the_capability_is_a_422(client: TestClient) -> None:
     response = client.get(_url(_inner_tile(), [("terrain", 1, SLOPE)], dataset=NO_TERRAIN.dataset_id))
     assert response.status_code == 422
     assert "does not allow terrain" in response.json()["detail"]
+
+
+def test_the_halo_is_that_of_the_focal_step_after_a_selection_the_planner_puts_first() -> None:
+    from earthx.processing.operators import REGISTRY as OPERATORS
+    from earthx.processing.tile import halo_of
+
+    select = OPERATORS.operator("band_math", 2)
+    params = TerrainParams.model_validate(SLOPE)
+    assert halo_of([(TERRAIN, params)]) == 1
+    assert halo_of([(select, None), (TERRAIN, params), (select, None)]) == 1
+    assert halo_of([(select, None)]) == 0
