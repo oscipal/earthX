@@ -60,6 +60,7 @@ def catalog(tmp_path: Path) -> Path:
     copy = tmp_path / "catalog"
     shutil.copytree(CATALOG_DIR / "datasets", copy / "datasets")
     shutil.copy(CATALOG_DIR / "retired.yaml", copy / "retired.yaml")
+    shutil.copy(CATALOG_DIR / "categories.yaml", copy / "categories.yaml")
     return copy
 
 
@@ -262,3 +263,24 @@ def test_the_prototype_entries_in_the_repo_are_well_formed() -> None:
     assert (directory / "README.md").is_file()
     for entry in datasets._entries(directory, LegalStatus.UNCLEAR):
         assert entry.dataset_id.startswith(PROTOTYPE_PREFIX)
+
+
+class TestTheCategories:
+    """M5-40 G4, G5: the category of an entry is an id of categories.yaml, checked when the registry is read."""
+
+    def test_a_category_the_file_does_not_list_is_an_error(self, catalog: Path) -> None:
+        path = catalog / "datasets" / "cop-dem-glo-30.yaml"
+        path.write_text(path.read_text(encoding="utf-8").replace("category: elevation", "category: volcanoes"))
+        with pytest.raises(EntryFileError, match="volcanoes is not one of categories.yaml"):
+            read_registry(catalog)
+
+    def test_a_new_category_of_the_file_is_one_an_entry_may_name(self, catalog: Path) -> None:
+        path = catalog / "datasets" / "cop-dem-glo-30.yaml"
+        path.write_text(path.read_text(encoding="utf-8").replace("category: elevation", "category: water"))
+        assert read_registry(catalog).get("cop-dem-glo-30").category == "water"
+
+    def test_without_the_file_the_registry_does_not_load(self, catalog: Path) -> None:
+        (catalog / "categories.yaml").unlink()
+        with pytest.raises(EntryFileError, match="categories.yaml"):
+            read_registry(catalog)
+

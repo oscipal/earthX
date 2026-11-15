@@ -1,0 +1,91 @@
+# The categories of the Data catalogue and how an entry gets one (M5-40 plan §4b; G1-G6, Otto 15.11.2026).
+#
+# Full and listed entries share them. The Data catalogue shows one group per category, in the order of the list below,
+# `other` last. A full entry names its category in its file under datasets/, a hand entry under listed/; for a
+# harvested entry the harvest derives it from the metadata of the source by the rule of the last section (M5-19).
+#
+# Each line of the tables is a decision in review like an entry: a code or a term stands at most once in the whole file,
+# and every category it names is one of the list.
+
+# --- 1. The categories, in the order of the groups ---------------------------------------------------------------------
+# id:          the value of `category` in an entry and in `earthx:category`
+# title:       the head of the group in the Data catalogue (English, like every text of the interface)
+# search_text: the words the search text of a dataset gets for its category (the first five as before M5-40)
+
+categories:
+  - {id: optical,         title: Optical imagery,                     search_text: optical}
+  - {id: radar,           title: Radar,                               search_text: radar}
+  - {id: elevation,       title: Elevation,                           search_text: elevation}
+  - {id: land_cover,      title: Land cover and land use,             search_text: land cover}
+  - {id: weather_climate, title: Weather and climate,                 search_text: weather and climate}
+  - {id: water,           title: Water and sea,                       search_text: water and sea}
+  - {id: nature,          title: Nature and environment,              search_text: nature and environment}
+  - {id: geology_soil,    title: Geology and soil,                    search_text: geology and soil}
+  - {id: boundaries,      title: "Boundaries, addresses and cadastre", search_text: boundaries addresses cadastre}
+  - {id: infrastructure,  title: "Buildings, transport and utilities", search_text: buildings transport utilities}
+  - {id: population,      title: Population and society,              search_text: population and society}
+  - {id: agriculture,     title: Agriculture and forestry,            search_text: agriculture and forestry}
+  - {id: other,           title: Other,                               search_text: ""}
+
+# --- 2. INSPIRE themes -> category ---------------------------------------------------------------------------------------
+# The code of the theme, as in http://inspire.ec.europa.eu/theme/<code> (directive 2007/2/EC, annexes I-III; all 34).
+# Radar has no INSPIRE theme; it comes from terms only.
+
+inspire:
+  optical:         [oi]                              # Orthoimagery
+  elevation:       [el]                              # Elevation
+  land_cover:      [lc, lu]                          # Land cover, Land use
+  weather_climate: [ac, mf]                          # Atmospheric conditions, Meteorological geographical features
+  water:           [hy, of, sr]                      # Hydrography, Oceanographic geographical features, Sea regions
+  nature:          [ps, br, hb, sd, ef, nz, am]      # Protected sites, Bio-geographical regions, Habitats and biotopes,
+                                                     # Species distribution, Environmental monitoring facilities,
+                                                     # Natural risk zones, Area management/restriction/regulation zones
+  geology_soil:    [ge, so, mr]                      # Geology, Soil, Mineral resources
+  boundaries:      [au, ad, cp, gn]                  # Administrative units, Addresses, Cadastral parcels,
+                                                     # Geographical names
+  infrastructure:  [tn, bu, us, pf, er]              # Transport networks, Buildings, Utility and governmental services,
+                                                     # Production and industrial facilities, Energy resources
+  population:      [su, pd, hh]                      # Statistical units, Population distribution, Human health and safety
+  agriculture:     [af]                              # Agricultural and aquaculture facilities
+  other:           [rs, gg]                          # Coordinate reference systems, Geographical grid systems
+
+# --- 3. EU data themes (DCAT-AP) -> category -----------------------------------------------------------------------------
+# The code of the theme, as in http://publications.europa.eu/resource/authority/data-theme/<CODE> (all 14).
+
+eu_data_themes:
+  agriculture:    [AGRI]                             # Agriculture, fisheries, forestry and food
+  nature:         [ENVI]                             # Environment
+  infrastructure: [ENER, TRAN]                       # Energy, Transport
+  population:     [SOCI, HEAL, EDUC]                 # Population and society, Health, Education, culture and sport
+  boundaries:     [REGI]                             # Regions and cities
+  other:          [ECON, GOVE, INTR, JUST, TECH, OP_DATPRO]
+
+# EU data themes too broad to decide against a term: with one of these, a term that gives a category wins (rule, 3).
+coarse_eu_data_themes: [ENVI, AGRI, SOCI]
+
+# --- 4. Terms: CKAN groups and keywords -> category ----------------------------------------------------------------------
+# Compared as the search compares (lower case, without accents, every run of other characters one space) and only as
+# whole words or word sequences: "SAR" matches the keyword "SAR data", not "Saarland".
+
+terms:
+  optical:         [Orthofoto, Orthophoto, Luftbild, Luftbilder, DOP, aerial imagery, orthoimagery, Sentinel-2, Landsat]
+  radar:           [Radar, SAR, Sentinel-1, InSAR]
+  elevation:       [DGM, DOM, Höhenmodell, Geländemodell, Oberflächenmodell, LiDAR, Laserscanning, elevation, DEM]
+  land_cover:      [Landbedeckung, Bodenbedeckung, Landnutzung, land cover, land use, CORINE]
+  weather_climate: [Wetter, Klima, Niederschlag, Temperatur, Wind, weather, climate, precipitation, meteorology]
+  water:           [Gewässer, Hochwasser, Grundwasser, Pegel, Meer, Küste, water, hydrography, flood, groundwater]
+  nature:          [Naturschutz, Schutzgebiet, Biotop, Natura 2000, Umwelt, Luftqualität, Lärm, nature, environment]
+  geology_soil:    [Geologie, Boden, Bodenkarte, Rohstoffe, geology, soil]
+  boundaries:      [Verwaltungsgrenzen, Kataster, Flurstück, Adressen, Grenzen, cadastre, administrative units]
+  infrastructure:  [Gebäude, Verkehr, Straßen, Energie, Leitungen, buildings, transport, roads, energy]
+  population:      [Bevölkerung, Statistik, Gesundheit, population, statistics, health]
+  agriculture:     [Landwirtschaft, Forst, Wald, agriculture, forestry, forest]
+
+# --- 5. The rule (G3 = 1) ------------------------------------------------------------------------------------------------
+# 1. One category per entry (G2 = 1).
+# 2. Evidence in this order: INSPIRE theme, EU data theme, CKAN group, keyword. The first kind of evidence that gives a
+#    category other than `other` decides; where values of the same kind give several categories, the one higher up in
+#    the list of section 1 wins.
+# 3. Exception: where the EU data theme is coarse (above) and a CKAN group or keyword gives a category, that category
+#    wins over the EU data theme.
+# 4. Nothing matches: `other`.

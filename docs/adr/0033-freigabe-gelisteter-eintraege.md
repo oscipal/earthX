@@ -355,6 +355,8 @@ Der Harvest erkennt Änderungen am Inhalts-Hash (`adr/0025` §5.1). Dann gilt je
 
 Nicht in diesem PR. Ausgeführt als **erster Commit von M5-40**, ohne eigene Doku-Aufgabe (F12, Otto 14.11.2026).
 
+**Nachtrag 2026-11-15:** ausgeführt im ersten Commit von M5-40 (Plan `plans/m5/m5-40-gelistete-in-postgres.md`): Nachträge in `adr/0025` (mit der neuen Tabelle §7.1), `adr/0031` (mit F10 aufgehoben), `adr/0027` §6.1, `KLAERUNGEN.md` B13, `architekturplan.md` 4.4 und 10, `projektuebersicht.md` Prinzip 13 und im M5-Plan §6.1, §6.2 (M5-36 bis M5-42 eingetragen; die Reihenfolge in §6.3 bleibt beim Planungs-Chat).
+
 **`adr/0025`:**
 
 - **Vorab fest, „Zunächst nur Raster“:** gilt für volle Einträge; gelistete Einträge umfassen alle Datentypen (Otto, 14.11.2026). Dazu `projektuebersicht.md` Prinzip 13 („Nische vor Breite: Raster“) mit demselben Nachtrag.

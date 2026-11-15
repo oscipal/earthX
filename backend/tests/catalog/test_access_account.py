@@ -75,7 +75,8 @@ class TestWhatIsRefused:
         with pytest.raises(ConfigError, match="allows licence tier catalog only"):
             _with(valid_config, AccountKind.ANONYMOUS_TOKEN, tier=tier, checked=CHECKED)
 
-    @pytest.mark.parametrize("account", list(AccountKind))
+    # `paid` is no account of a full entry at all (M5-40, test_listed_files.py): it fails before the paths are read.
+    @pytest.mark.parametrize("account", [kind for kind in AccountKind if kind is not AccountKind.PAID])
     @pytest.mark.parametrize("path", list(AccountPath))
     def test_any_account_path(self, valid_config: DatasetConfig, account: AccountKind, path: AccountPath) -> None:
         anonymous = account in (AccountKind.NONE, AccountKind.ANONYMOUS_TOKEN)

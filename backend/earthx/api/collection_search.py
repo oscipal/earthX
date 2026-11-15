@@ -1,14 +1,18 @@
 """STAC Collection Search with ``q`` on ``/stac/collections`` (adr/0026 §4.5, F6, F9; M5-22 plan §3.7).
 
-``GET`` takes ``q``, ``bbox``, ``datetime``, ``limit`` and ``offset``; ``POST`` takes the same in its body and an area
-as ``intersects`` as well (F6), so that this platform's own frontend never puts an area in a URL. Without any
-parameter the answer is the list of every collection as before (plan A5); that path stays in
-:class:`~earthx.api.federating_client.FederatingCoreCrudClient`.
+``GET`` takes ``q``, ``bbox``, ``datetime``, ``region``, ``entry``, ``limit`` and ``token`` (``offset`` with ``q``);
+``POST`` takes the same in its body and an area as ``intersects`` as well (F6), so that this platform's own frontend
+never puts an area in a URL. Without any parameter the answer is the list of every full entry as before (plan A5);
+that path stays in :class:`~earthx.api.federating_client.FederatingCoreCrudClient` until the frontend pages (M5-40
+plan F2).
 
-Everything else asks :func:`~earthx.catalog.search.search_datasets` for the ids, in rank order with text and by id
-without (plan A6), and fetches the collection documents of one page from pgstac. With ``q`` a page holds at most
-:data:`MAX_TEXT_PAGE` collections, whatever ``limit`` asks (plan A5); without, a page holds every match unless
-``limit`` says less. The answer carries no score.
+With ``q`` the ids come from :func:`~earthx.catalog.search.search_datasets` in rank order, full entries only until
+M5-42 (M5-40 plan F7); a page holds at most :data:`MAX_TEXT_PAGE` collections and goes on by ``offset``. Without ``q``
+full and listed entries come in one order, title then id (M5-40 plan F3): the full ones of the filter from the same
+search, the listed ones a page at a time from ``earthx_listed_entry``; a page holds :data:`DEFAULT_PAGE` collections
+unless ``limit`` says otherwise, at most :data:`MAX_LISTING_PAGE`, and goes on by the keyset ``token`` of its last
+entry. ``numberMatched`` is exact up to :data:`MAX_COUNTED` and left out above (plan F4), and given on the first page
+only where listed entries are in it (plan A9). The answer carries no score.
 
 ``q`` is no free-text query in the sense of the Free-text extension: commas are ordinary separators, and the ranked
 search also lists datasets without a word in common with the query. The landing page therefore claims Collection
@@ -17,7 +21,10 @@ Search but not Free-text (adr/0026 §4.5). Nothing here logs ``q`` or an area (p
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime as Instant
@@ -38,12 +45,25 @@ from stac_fastapi.types.rfc3339 import str_to_interval
 from stac_fastapi.types.search import APIRequest
 from stac_pydantic.api.search import Intersection
 
+from earthx.catalog.categories import load_categories
+from earthx.catalog.listed_search import ListedFilter, count_listed, full_entries, listed_page
 from earthx.catalog.search import MAX_QUERY_CHARS, SearchResult, box_area, search_datasets
 
 #: adr/0026 §4.4: at most 20 hits per page of a text search.
 MAX_TEXT_PAGE = 20
-#: The most collections one page lists, the cap of the library (``stac_fastapi.types.search.Limit``).
+#: The most collections one page lists, the cap of the library (``stac_fastapi.types.search.Limit``): the answer without
+#: any parameter until the frontend pages (M5-40 plan F2).
 MAX_PAGE = 10_000
+#: A page of the catalogue without text (M5-40 plan F3).
+DEFAULT_PAGE = 100
+MAX_LISTING_PAGE = 1_000
+#: Up to here ``numberMatched`` is exact; above it the field is left out (M5-40 plan F4).
+MAX_COUNTED = 10_000
+#: The two kinds of entries a page can be held to (M5-40 plan F3).
+ENTRY_KINDS = ("full", "listed")
+_REGION = re.compile(r"[A-Z]{2}(-[A-Z0-9]{1,3})?")
+_MAX_REGIONS = 50
+_MAX_TOKEN = 1_000
 
 Q_DESCRIPTION = (
     "Text to search the datasets for, German or English; typing errors and abbreviations are fine. Ranked by this "
@@ -55,6 +75,13 @@ _BBOX_DESCRIPTION = (
     "Only datasets whose extent meets this box: west, south, east, north in degrees (WGS 84); a west edge east of the "
     "east edge crosses the antimeridian."
 )
+_REGION_DESCRIPTION = (
+    "Only datasets in one of these regions: ISO 3166-1 codes of states, ISO 3166-2 codes of the subdivisions of DE, AT, "
+    "CH and LI, separated by commas."
+)
+_CATEGORY_DESCRIPTION = "Only datasets of this category of the Data catalogue (the ids of `categories.yaml`)."
+_ENTRY_DESCRIPTION = "Only full entries (with display) or only listed ones (a catalogue entry with a link)."
+_TOKEN_DESCRIPTION = "The page after another, as its `next` link names it; without `q` only."
 _DATETIME_DESCRIPTION = (
     "Only datasets whose time extent overlaps this instant or interval (RFC 3339, `..` for an open end). A dataset "
     "without a time axis stays and is named in `ignored_filters`."
@@ -68,8 +95,14 @@ class CollectionsGetRequest(APIRequest):
     q: Annotated[str | None, Query(description=Q_DESCRIPTION)] = attr.ib(default=None)
     bbox: Annotated[str | None, Query(description=_BBOX_DESCRIPTION)] = attr.ib(default=None)
     datetime: Annotated[str | None, Query(description=_DATETIME_DESCRIPTION)] = attr.ib(default=None)
+    region: Annotated[str | None, Query(description=_REGION_DESCRIPTION)] = attr.ib(default=None)
+    category: Annotated[str | None, Query(description=_CATEGORY_DESCRIPTION)] = attr.ib(default=None)
+    entry: Annotated[str | None, Query(description=_ENTRY_DESCRIPTION)] = attr.ib(default=None)
     limit: Annotated[int | None, Query(ge=1, description="Collections per page.")] = attr.ib(default=None)
-    offset: Annotated[int | None, Query(ge=0, description="Collections to skip.")] = attr.ib(default=None)
+    offset: Annotated[int | None, Query(ge=0, description="Collections to skip; with `q` only.")] = attr.ib(
+        default=None
+    )
+    token: Annotated[str | None, Query(description=_TOKEN_DESCRIPTION)] = attr.ib(default=None)
 
 
 class CollectionsPostRequest(BaseModel):
@@ -81,8 +114,12 @@ class CollectionsPostRequest(BaseModel):
     bbox: list[float] | None = Field(None, description=_BBOX_DESCRIPTION + " Mutually exclusive with `intersects`.")
     intersects: Intersection | None = Field(None, description="Only datasets whose coverage meets this geometry.")
     datetime: str | None = Field(None, description=_DATETIME_DESCRIPTION)
+    region: list[str] | None = Field(None, description=_REGION_DESCRIPTION.replace(", separated by commas", ""))
+    category: str | None = Field(None, description=_CATEGORY_DESCRIPTION)
+    entry: str | None = Field(None, description=_ENTRY_DESCRIPTION)
     limit: int | None = Field(None, ge=1, description="Collections per page.")
-    offset: int | None = Field(None, ge=0, description="Collections to skip.")
+    offset: int | None = Field(None, ge=0, description="Collections to skip; with `q` only.")
+    token: str | None = Field(None, description=_TOKEN_DESCRIPTION)
 
 
 def collection_search_extension(client: Any, settings: ApiSettings) -> CollectionSearchPostExtension:
@@ -122,13 +159,18 @@ async def _maybe_await(value: Any) -> Any:
 
 @dataclass(frozen=True, slots=True)
 class CollectionQuery:
-    """A checked search: text, area as GeoJSON, period with open ends as ``None``, and the page."""
+    """A checked search: text, area as GeoJSON, period with open ends as ``None``, regions, kind of entry, and the page:
+    ``offset`` with text, ``after`` (the key of the last entry of the page before) without."""
 
     text: str | None
     area: Mapping[str, Any] | None
     period: tuple[Instant | None, Instant | None] | None
     limit: int
     offset: int
+    regions: tuple[str, ...] = ()
+    entry: str | None = None
+    category: str | None = None
+    after: tuple[str, str] | None = None
 
 
 def _bad(detail: str) -> HTTPException:
@@ -193,6 +235,32 @@ def _period(value: str | None) -> tuple[Instant | None, Instant | None] | None:
     return parsed if isinstance(parsed, tuple) else (parsed, parsed)
 
 
+def _regions(value: Sequence[str] | str | None) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    codes = [code.strip() for code in value.split(",")] if isinstance(value, str) else list(value)
+    if not codes or len(codes) > _MAX_REGIONS or not all(isinstance(c, str) and _REGION.fullmatch(c) for c in codes):
+        raise _bad(f"region is a list of at most {_MAX_REGIONS} ISO 3166 codes")
+    return tuple(sorted(set(codes)))
+
+
+def encode_token(key: tuple[str, str]) -> str:
+    """The ``token`` of the page after the entry with this key: opaque to a client, nothing secret in it."""
+    return base64.urlsafe_b64encode(json.dumps(list(key), ensure_ascii=False).encode("utf-8")).decode("ascii")
+
+
+def _decode_token(token: str) -> tuple[str, str]:
+    if len(token) > _MAX_TOKEN:
+        raise _bad("token is not one this API gave out")
+    try:
+        key = json.loads(base64.urlsafe_b64decode(token.encode("ascii")).decode("utf-8"))
+    except (UnicodeError, binascii.Error, ValueError):
+        raise _bad("token is not one this API gave out") from None
+    if not (isinstance(key, list) and len(key) == 2 and all(isinstance(part, str) for part in key)):
+        raise _bad("token is not one this API gave out")
+    return key[0], key[1]
+
+
 def read_query(
     *,
     q: str | None,
@@ -201,6 +269,10 @@ def read_query(
     datetime: str | None,
     limit: int | None,
     offset: int | None,
+    region: Sequence[str] | str | None = None,
+    entry: str | None = None,
+    token: str | None = None,
+    category: str | None = None,
 ) -> CollectionQuery:
     """The checked search of one request; anything that is no valid search is a ``400``."""
     if q is not None and len(q) > MAX_QUERY_CHARS:
@@ -213,13 +285,35 @@ def read_query(
         area = _box(_bbox_param(bbox) if isinstance(bbox, str) else bbox)
     elif intersects is not None:
         area = _geometry(intersects)
-    most = MAX_TEXT_PAGE if text is not None else MAX_PAGE
+    if entry is not None and entry not in ENTRY_KINDS:
+        raise _bad(f"entry is one of {', '.join(ENTRY_KINDS)}")
+    if category is not None and category not in load_categories().ids:
+        raise _bad("category is the id of a category of the Data catalogue")
+    if text is not None:
+        if token is not None:
+            raise _bad("with q, pages go by offset, not by token")
+        return CollectionQuery(
+            text=text,
+            area=area,
+            period=_period(datetime),
+            limit=min(limit or MAX_TEXT_PAGE, MAX_TEXT_PAGE),
+            offset=offset or 0,
+            regions=_regions(region),
+            entry=entry,
+            category=category,
+        )
+    if offset is not None:
+        raise _bad("without q, pages go by the token of the next link, not by offset")
     return CollectionQuery(
-        text=text,
+        text=None,
         area=area,
         period=_period(datetime),
-        limit=min(limit or most, most),
-        offset=offset or 0,
+        limit=min(limit or DEFAULT_PAGE, MAX_LISTING_PAGE),
+        offset=0,
+        regions=_regions(region),
+        entry=entry,
+        category=category,
+        after=None if token is None else _decode_token(token),
     )
 
 
@@ -244,42 +338,123 @@ async def _collections(request: Request, ids: Sequence[str]) -> list[dict[str, A
     return collections
 
 
-def _next_link(request: Request, body: Mapping[str, Any] | None, offset: int) -> dict[str, Any]:
+def _next_link(request: Request, body: Mapping[str, Any] | None, name: str, value: int | str) -> dict[str, Any]:
+    """The link to the next page: the same search with ``name`` (``offset`` or ``token``) set to ``value``."""
     if body is None:
         return {
             "rel": "next",
             "type": "application/json",
             "method": "GET",
-            "href": merge_params(str(request.url), {"offset": [str(offset)]}),
+            "href": merge_params(str(request.url), {name: [str(value)]}),
         }
     return {
         "rel": "next",
         "type": "application/json",
         "method": "POST",
         "href": str(request.url),
-        "body": {**body, "offset": offset},
+        "body": {**body, name: value},
     }
+
+
+async def _with_links(request: Request, collection: dict[str, Any]) -> dict[str, Any]:
+    collection["links"] = await CollectionLinks(collection_id=collection["id"], request=request).get_links(
+        extra_links=collection.get("links")
+    )
+    return collection
 
 
 async def search_collections(
     request: Request, query: CollectionQuery, *, body: Mapping[str, Any] | None = None
 ) -> dict[str, Any]:
     """One page of collections for ``query``; ``body`` is the POST body a next page repeats (``None`` for ``GET``)."""
+    if query.text is None:
+        return await _catalogue_page(request, query, body=body)
     async with request.app.state.earthx_cache_pool.connection() as conn:
         result: SearchResult = await search_datasets(conn, query.text, area=query.area, period=query.period)
-    page = result.ids[query.offset : query.offset + query.limit]
+        ids = result.ids if query.entry != "listed" else ()
+        if query.category is not None:
+            registry = getattr(request.app.state, "earthx_registry", None)
+            ids = tuple(i for i in ids if registry is not None and i in registry and registry.get(i).category == query.category)
+        if query.regions and ids:
+            kept = {dataset_id for _, dataset_id in await full_entries(conn, ids, query.regions)}
+            ids = tuple(dataset_id for dataset_id in ids if dataset_id in kept)
+    page = ids[query.offset : query.offset + query.limit]
     collections = await _collections(request, page)
     links = await CollectionSearchPagingLinks(request=request).get_links()
-    if query.offset + query.limit < len(result.ids):
-        links.append(_next_link(request, body, query.offset + query.limit))
+    if query.offset + query.limit < len(ids):
+        links.append(_next_link(request, body, "offset", query.offset + query.limit))
     answer: dict[str, Any] = {
         "collections": collections,
         "links": links,
-        "numberMatched": len(result.ids),
+        "numberMatched": len(ids),
         "numberReturned": len(collections),
     }
-    ignored = {i: list(names) for i, names in result.ignored_filters_by_collection.items() if i in page}
+    _add_ignored(answer, {i: names for i, names in result.ignored_filters_by_collection.items() if i in page})
+    return answer
+
+
+def _add_ignored(answer: dict[str, Any], ignored: Mapping[str, Sequence[str]]) -> None:
     if ignored:
         answer["ignored_filters"] = sorted({name for names in ignored.values() for name in names})
-        answer["ignored_filters_by_collection"] = ignored
+        answer["ignored_filters_by_collection"] = {i: list(names) for i, names in ignored.items()}
+
+
+async def _catalogue_page(
+    request: Request, query: CollectionQuery, *, body: Mapping[str, Any] | None
+) -> dict[str, Any]:
+    """One page of full and listed entries in the order of the catalogue (M5-40 plan F3), without text.
+
+    The full entries of the filter (few) are all known before the page; the listed ones are read a page at a time,
+    one more than the page holds, so that the answer knows whether a next page exists without counting.
+    """
+    where = ListedFilter(category=query.category, area=query.area, period=query.period, regions=query.regions)
+    registry = getattr(request.app.state, "earthx_registry", None)
+    full: list[tuple[str, str]] = []
+    ignored: dict[str, tuple[str, ...]] = {}
+    async with request.app.state.earthx_cache_pool.connection() as conn:
+        if query.entry != "listed":
+            result: SearchResult = await search_datasets(conn, None, area=query.area, period=query.period)
+            ids = result.ids
+            if query.category is not None:
+                ids = tuple(i for i in ids if registry is not None and i in registry and registry.get(i).category == query.category)
+            full = await full_entries(conn, ids, query.regions)
+            ignored.update(result.ignored_filters_by_collection)
+        listed = (
+            [] if query.entry == "full" else await listed_page(conn, where, after=query.after, limit=query.limit + 1)
+        )
+        full_after = [key for key in full if query.after is None or key > query.after]
+        # A listed row whose id a full entry has is superseded at the next catalogue load; until then the full one wins.
+        listed = [row for row in listed if registry is None or row.dataset_id not in registry]
+        merged = sorted(
+            [(key, None) for key in full_after] + [((row.sort_title, row.dataset_id), row) for row in listed],
+            key=lambda pair: pair[0],
+        )
+        page, more = merged[: query.limit], len(merged) > query.limit
+        matched: int | None = len(full)
+        # Counted on the first page only: with several filters the count up to 10 001 costs up to a third of a second
+        # at 10⁶ entries (plan §8), and a client that walks on already has it.
+        if query.entry != "full" and query.after is not None:
+            matched = None
+        elif query.entry != "full":
+            counted = (
+                await count_listed(conn, where, cap=MAX_COUNTED + 1 - len(full)) if len(full) <= MAX_COUNTED else 0
+            )
+            matched = len(full) + counted if len(full) + counted <= MAX_COUNTED else None
+    documents = {c["id"]: c for c in await _collections(request, [key[1] for key, row in page if row is None])}
+    collections = []
+    for (_, dataset_id), row in page:
+        if row is None:
+            if dataset_id in documents:
+                collections.append(documents[dataset_id])
+            continue
+        collections.append(await _with_links(request, row.content))
+        if row.period_ignored:
+            ignored[dataset_id] = ("datetime",)
+    links = await CollectionSearchPagingLinks(request=request).get_links()
+    if more and page:
+        links.append(_next_link(request, body, "token", encode_token(page[-1][0])))
+    answer: dict[str, Any] = {"collections": collections, "links": links, "numberReturned": len(collections)}
+    if matched is not None:
+        answer["numberMatched"] = matched
+    _add_ignored(answer, {i: names for i, names in ignored.items() if i in {c["id"] for c in collections}})
     return answer

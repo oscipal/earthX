@@ -61,6 +61,14 @@ COPY catalog/retired.yaml ./catalog/retired.yaml
 COPY catalog/places.json ./catalog/places.json
 COPY catalog/glossary.yaml ./catalog/glossary.yaml
 COPY catalog/capability_terms.yaml ./catalog/capability_terms.yaml
+# The categories of the Data catalogue (M5-40 G4): read by every process with the registry, which checks them.
+COPY catalog/categories.yaml ./catalog/categories.yaml
+# Read by `catalog-load` only (M5-40, adr/0025 §7.1 as of adr/0033): the hand entries of the listed path, the blocklist
+# and the outlines the regions of a listed entry are derived from. No other process reads them.
+COPY catalog/listed ./catalog/listed
+COPY catalog/blocked.yaml ./catalog/blocked.yaml
+COPY catalog/regions.json ./catalog/regions.json
+COPY catalog/catalog_tags.yaml ./catalog/catalog_tags.yaml
 
 # The local runner (adr/0016 F1, F10): the same code and the same locked
 # dependencies as the services, run as an unprivileged user. EARTHX_COMMIT ends

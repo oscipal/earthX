@@ -65,6 +65,12 @@ die anderen lassen die Runde aus. Eine abgelaufene Frist wird übernommen. Gesch
 
 `020_overview_omitted.sql` — die Tabelle `earthx_overview_omitted` (M5-30b, `adr/0032` Nachtrag 15.11.2026): je ausgelassener Basiskachel einer Pyramide eine Zeile (`x/y`, Fehlerart, Klasse, kurzer Grund ohne Adresse, Versuche, Zeit des letzten Versuchs). Eine Datei, die nach den Wiederholungen unlesbar bleibt, lässt nur ihre Basiskachel aus, die Pyramide wird `ready`, die stündliche Runde liest die Kachel erneut. Dazu erlaubt die Prüfung von `earthx_overview_upkeep.task` die Aufgabe `retry` und die Migration legt deren Zeile an (frei, `next_at` = jetzt); die Wiederholung nimmt Züge wie Verlängern und Aufräumen (019), ein Worker zugleich. Dazu die Tabelle `earthx_overview_host` (eine Zeile je Host der Quellen: `worker`, `lease_until`, `turn`): Die Wiederholung leiht sich die Hosts, von denen sie liest, für die Dauer des Lesens; `claim` lässt einen Host mit lebender Leihe in Ruhe, und `take_hosts` einen Host, von dem ein Bau liest, beides unter derselben Advisory-Sperre. Eine abgelaufene Leihe wird übernommen. Geschrieben von `jobs` nur mit SQL.
 
+`021_listed_entry.sql` — die Tabellen gelisteter Einträge aus M5-40 (`adr/0033`, `docs/plans/m5/m5-40-gelistete-in-postgres.md`
+§5.1): `earthx_listed_entry` (eine Zeile je gelistetem Eintrag mit Zustand, Herkunft je Eintrag und Grabstein, partielle
+Indizes für Seiten nach Titel und die Filter Fläche, Zeit, Region und Kategorie, Schlüssel mit `COLLATE "C"`),
+`earthx_region` und `earthx_region_part` (Grenzen aus `backend/catalog/regions.json`, in Stücke geschnitten). Geschrieben
+von `catalog-load`, gelesen von `api` je Seite.
+
 Die Buchführungstabelle `earthx_migrations` gehört nicht hierher, sondern dem Läufer
 (`earthx/catalog/schema.py`) und wird von ihm angelegt. Sonst müsste jedes
 Migrationsverzeichnis sie erneut mitbringen.

@@ -20,6 +20,7 @@ from functools import cache
 from pathlib import Path
 
 import earthx
+from earthx.catalog.categories import CATEGORIES_FILE, read_categories
 from earthx.catalog.entry_files import EntryFileError, load_entry, load_retired
 from earthx.catalog.registry import ConfigError, DatasetConfig, DatasetRegistry, LegalStatus
 
@@ -107,6 +108,10 @@ def read_registry(catalog_dir: Path = CATALOG_DIR, prototype_dir: Path | None = 
     entries = _entries(catalog_dir / "datasets", LegalStatus.CLEARED)
     if prototype_dir is not None:
         entries += _entries(prototype_dir, LegalStatus.UNCLEAR)
+    known = read_categories(catalog_dir / CATEGORIES_FILE.name).ids
+    for entry in entries:
+        if entry.category not in known:
+            raise EntryFileError(f"{entry.dataset_id}: category {entry.category} is not one of categories.yaml")
     return DatasetRegistry(entries, retired=load_retired(catalog_dir / "retired.yaml"))
 
 

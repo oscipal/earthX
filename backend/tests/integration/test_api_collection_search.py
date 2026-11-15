@@ -13,6 +13,7 @@ import httpx
 import pytest
 
 from earthx.api.main import app
+from earthx.catalog.listed import sort_title
 from earthx.catalog.load import main as load_catalog
 from earthx.catalog.search import MAX_QUERY_CHARS
 from tests.catalog.entries import REGISTRY
@@ -133,9 +134,22 @@ async def test_the_last_page_links_no_next_one(client):
     assert _next(await client.get("/stac/collections", params={"q": "Sentinel-2", "limit": 20})) is None
 
 
-async def test_without_text_a_limit_pages_by_id(client):
+async def test_without_text_pages_go_by_title_and_the_token_of_the_next_link(client):
+    # M5-40 plan F3: full and listed entries in one order, title then id; a page goes on after its last entry.
+    by_title = [config.dataset_id for config in sorted(REGISTRY, key=lambda c: (sort_title(c.title), c.dataset_id))]
+    seen, params = [], {"limit": 2, "bbox": "-180,-90,180,90"}
+    while True:
+        response = await client.get("/stac/collections", params=params)
+        seen += _ids(response)
+        if (link := _next(response)) is None:
+            break
+        params = dict(httpx.URL(link["href"]).params)
+    assert seen == by_title
+
+
+async def test_without_text_an_offset_is_refused(client):
     response = await client.get("/stac/collections", params={"limit": 2, "offset": 2})
-    assert _ids(response) == ALL_IDS[2:4]
+    assert response.status_code == 400 and "token" in response.json()["detail"]
 
 
 # --- area and time -----------------------------------------------------------------------------------------------------

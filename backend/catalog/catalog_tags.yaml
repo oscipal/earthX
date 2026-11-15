@@ -1,0 +1,9 @@
+# Keywords that say something about the catalogue, not about the data (M5-40 plan A11, Otto 15.11.2026).
+#
+# `listed_keywords` drops a keyword of a source that is one of these, after the same normalization it applies to every
+# keyword (lower case, one space between words): "OpenData" and "open  data" are dropped by `opendata` resp.
+# `open data`, "inspireidentifiziert" is not dropped by `inspire`. Each term stands once. M5-19 and M5-20 fill the list
+# after the first runs; every line is a decision in review like an entry.
+- opendata
+- govdata
+- inspire
