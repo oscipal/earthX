@@ -294,3 +294,21 @@ def merge_images(images: list[ImageData]) -> ImageData:
         band_names=names,
         nodata=nodata.pop() if len(nodata) == 1 else None,
     )
+
+
+def pad_image(image: ImageData, top: int, bottom: int, left: int, right: int) -> ImageData:
+    """``image`` with masked pixels added on its sides, its bounds grown by as many of its pixels (``focal``, adr/0030 F3).
+
+    The size of a pixel is taken from the bounds with its sign, so that a grid whose lines run downward (radar geometry)
+    grows the right way too."""
+    if not (top or bottom or left or right):
+        return image
+    west, south, east, north = image.bounds
+    x_size, y_size = (east - west) / image.width, (north - south) / image.height
+    pads = ((0, 0), (top, bottom), (left, right))
+    data = numpy.ma.MaskedArray(
+        numpy.pad(numpy.ma.getdata(image.array), pads),
+        mask=numpy.pad(numpy.ma.getmaskarray(image.array), pads, constant_values=True),
+    )
+    bounds = (west - left * x_size, south - bottom * y_size, east + right * x_size, north + top * y_size)
+    return ImageData(data, bounds=bounds, crs=image.crs, band_names=list(image.band_names), nodata=image.nodata)
