@@ -32,6 +32,7 @@ from tests.earthx.readers import mini_zarr
 from ..objectstore.conftest import store, store_env  # noqa: F401 - fixtures
 from .test_tiler_overview import WITH_POOL, Catalogue
 from .test_tiler_pyramid import (  # noqa: F401 - fixtures
+    _PLAIN,
     NODATA,
     RELIEF,
     RELIEF_ID,
@@ -39,7 +40,6 @@ from .test_tiler_pyramid import (  # noqa: F401 - fixtures
     TERRAIN_ID,
     TMS,
     VERSION,
-    _PLAIN,
     Pyramids,
     clock,
     path,
