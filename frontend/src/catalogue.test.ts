@@ -33,7 +33,7 @@ describe('catalogueGroups', () => {
   it('keeps the order of the field, sorts by title in a group and leaves out empty groups', () => {
     const datasets = datasetsFrom([collection('z-dem', 'elevation'), collection('b', 'optical'), collection('a', 'optical'), collection('wx', 'weather_climate')]);
     expect(catalogueGroups(datasets).map((g) => [g.title, g.datasets.map((d) => d.id)])).toEqual([
-      ['Optical', ['a', 'b']],
+      ['Optical imagery', ['a', 'b']],
       ['Elevation', ['z-dem']],
       ['Weather and climate', ['wx']],
     ]);

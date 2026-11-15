@@ -10,16 +10,44 @@ import { formatNumber } from './numberFormat';
 import { catalogueUnit, trueColorOf } from './processingOrder';
 import type { Collection } from './types';
 
-// The groups in the order of the registry field `category` (UI-05 F1). A collection without one, or with one this viewer
-// does not know, is in "Other" at the end: listed, so that the gap shows.
+// The groups in the order of `backend/catalog/categories.yaml` (M5-40 G1, G5), `other` last. A copy until the plan's
+// question H4 is answered; `backend/tests/test_frontend_categories.py` holds it equal to the file. A collection without
+// a category, or with one this viewer does not know, is in "Other".
 export const CATEGORIES = [
-  { id: 'optical', title: 'Optical' },
+  { id: 'optical', title: 'Optical imagery' },
   { id: 'radar', title: 'Radar' },
   { id: 'elevation', title: 'Elevation' },
-  { id: 'land_cover', title: 'Land cover' },
+  { id: 'land_cover', title: 'Land cover and land use' },
   { id: 'weather_climate', title: 'Weather and climate' },
+  { id: 'water', title: 'Water and sea' },
+  { id: 'nature', title: 'Nature and environment' },
+  { id: 'geology_soil', title: 'Geology and soil' },
+  { id: 'boundaries', title: 'Boundaries, addresses and cadastre' },
+  { id: 'infrastructure', title: 'Buildings, transport and utilities' },
+  { id: 'population', title: 'Population and society' },
+  { id: 'agriculture', title: 'Agriculture and forestry' },
 ] as const;
 export const OTHER_CATEGORY = { id: 'other', title: 'Other' } as const;
+export const CATALOGUE_GROUPS = [...CATEGORIES, OTHER_CATEGORY];
+
+// A catalogue entry with a link (M5-40): no display, no "Add", no mark (plan F6).
+export const isListed = (collection: Collection): boolean => collection['earthx:entry'] === 'listed';
+
+// The page at the source a listed entry links to: `earthx:listing.source_url`, else its link `via`; https only.
+export function listedSourceOf(collection: Collection): string | null {
+  const listed = collection['earthx:listing']?.source_url;
+  if (isHttps(listed)) return listed;
+  const links = (collection as { links?: { rel?: string; href?: string }[] }).links;
+  const via = links?.find((l) => l.rel === 'via')?.href;
+  return isHttps(via) ? via : null;
+}
+
+// The keywords of an entry, as the API sends them (normalized for a listed one), each once.
+export function keywordsOf(collection: Collection): string[] {
+  const keywords = collection.keywords;
+  if (!Array.isArray(keywords)) return [];
+  return [...new Set(keywords.filter((k): k is string => typeof k === 'string' && k.trim() !== ''))];
+}
 
 // How many datasets a first visit adds (UI-05 F3, Otto 06.11.2026; it stays six after the pages lost their limit, 07.11.2026).
 export const FIRST_VISIT_DATASETS = 6;
@@ -34,7 +62,7 @@ export interface CatalogueGroup {
   datasets: DatasetOption[];
 }
 
-function categoryOf(collection: Collection): string {
+export function categoryOf(collection: Collection): string {
   const category = collection['earthx:category'];
   return CATEGORIES.some((c) => c.id === category) ? (category as string) : OTHER_CATEGORY.id;
 }
@@ -43,7 +71,7 @@ const byTitle = (a: DatasetOption, b: DatasetOption): number => (a.title < b.tit
 
 // The groups that hold a dataset, in the order of `CATEGORIES`, each sorted by title.
 export function catalogueGroups(datasets: readonly DatasetOption[]): CatalogueGroup[] {
-  return [...CATEGORIES, OTHER_CATEGORY].flatMap(({ id, title }) => {
+  return CATALOGUE_GROUPS.flatMap(({ id, title }) => {
     const members = datasets.filter((d) => categoryOf(d.collection) === id).sort(byTitle);
     return members.length > 0 ? [{ id, title, datasets: members }] : [];
   });
@@ -116,6 +144,10 @@ function providersRow(collection: Collection): LinkText[] {
 
 // The host of the source's endpoint, linked to the endpoint, and the collection there.
 export function sourceRow(collection: Collection): LinkText[] {
+  if (isListed(collection)) {
+    const page = listedSourceOf(collection);
+    return page ? [link(new URL(page).host, page)] : plain(NONE);
+  }
   const source = collection['earthx:source'];
   const endpoint = source?.endpoint;
   if (!isHttps(endpoint) || !URL.canParse(endpoint)) return plain(NONE);
@@ -219,16 +251,19 @@ export function catalogueRows(dataset: DatasetOption): CatalogueRow[] {
   const maturity = maturityLabel(c);
   // As "Quick processing" offers them: the indices, and "Enhance contrast" where the dataset has a true-colour picture.
   const quick = [...indexPresetsOf(c).map((p) => p.title), ...(trueColorOf(c) ? ['Enhance contrast'] : [])];
+  const keywords = keywordsOf(c);
+  const listed = isListed(c);
   return [
     { label: 'Description', values: plain(typeof c.description === 'string' && c.description !== '' ? c.description : NONE) },
     ...(limitationsOf(c).length > 0 ? [{ label: 'Limitations', values: limitationsOf(c).map((text) => ({ text, href: null })) }] : []),
+    { label: 'Keywords', values: keywords.length > 0 ? keywords.map((text) => ({ text, href: null })) : plain(NONE) },
     { label: 'Provider', values: providersRow(c) },
     { label: 'Source', values: sourceRow(c) },
     ...licenseRows(c),
     { label: 'Spatial extent', values: plain(spatialExtentText(c)) },
     { label: 'Temporal extent', values: plain(temporalExtentText(c)) },
     { label: 'Resolution', values: plain(resolutionText(c)) },
-    { label: 'Bands', values: plain(bandsText(c)) },
+    ...(listed ? [] : [{ label: 'Bands', values: plain(bandsText(c)) }]),
     ...(c['earthx:mask'] ? [{ label: 'Mask', values: plain(c['earthx:mask'].asset) }] : []),
     { label: 'Data region', values: plain(typeof region === 'string' && region !== '' ? region : NONE) },
     doiRow(c),
@@ -238,7 +273,11 @@ export function catalogueRows(dataset: DatasetOption): CatalogueRow[] {
       values: plain(maturity ?? (c['earthx:maturity'] === 'stable' ? 'stable' : NONE)),
       ...(maturityNote(c) ? { tip: maturityNote(c)! } : {}),
     },
-    { label: 'Processing', values: plain(processingText(c)) },
-    { label: 'Quick processing', values: plain(dataset.viewable && quick.length > 0 ? quick.join(', ') : NONE) },
+    ...(listed
+      ? []
+      : [
+          { label: 'Processing', values: plain(processingText(c)) },
+          { label: 'Quick processing', values: plain(dataset.viewable && quick.length > 0 ? quick.join(', ') : NONE) },
+        ]),
   ];
 }
