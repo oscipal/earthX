@@ -1010,3 +1010,41 @@ def test_bbox_and_intersects_together_are_a_400() -> None:
     with pytest.raises(HTTPException) as error:
         _query(bbox="7,46,8,47", intersects=object())
     assert error.value.status_code == 400
+
+
+# --- the category (M5-40 G1-G6, G5 = 2) ------------------------------------------------------------------------------
+
+
+def test_a_hand_entry_names_a_category_of_the_list(tmp_path: Path) -> None:
+    write_entry(tmp_path, listed_entry("example-atlas", category="boundaries"))
+    [(entry, _)] = load_listed(tmp_path)
+    assert entry.category == "boundaries"
+    assert to_listed_collection(entry)["earthx:category"] == "boundaries"
+
+
+def test_a_category_the_list_does_not_have_is_an_error(tmp_path: Path) -> None:
+    write_entry(tmp_path, listed_entry("example-atlas", category="volcanoes"))
+    with pytest.raises(EntryFileError, match="volcanoes is not one of categories.yaml"):
+        load_listed(tmp_path)
+
+
+@pytest.mark.parametrize("category", ["Water", "", "land cover", "water-and-sea"])
+def test_a_category_that_is_no_id_is_refused(category: str) -> None:
+    with pytest.raises(ConfigError, match="category"):
+        listed_entry("example-atlas", category=category)
+
+
+def test_a_category_filter_reaches_the_query() -> None:
+    assert (
+        read_query(
+            q=None, bbox=None, intersects=None, datetime=None, limit=None, offset=None, category="water"
+        ).category
+        == "water"
+    )
+
+
+@pytest.mark.parametrize("category", ["volcanoes", "Water", ""])
+def test_a_category_filter_that_is_no_category_is_a_400(category: str) -> None:
+    with pytest.raises(HTTPException) as caught:
+        read_query(q=None, bbox=None, intersects=None, datetime=None, limit=None, offset=None, category=category)
+    assert caught.value.status_code == 400

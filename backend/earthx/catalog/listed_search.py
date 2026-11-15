@@ -28,8 +28,10 @@ __all__ = ["Gone", "ListedFilter", "ListedRow", "count_listed", "full_entries", 
 
 @dataclass(frozen=True, slots=True)
 class ListedFilter:
-    """The filters of one search: an area as GeoJSON, a period with open ends as ``None``, region codes (any of)."""
+    """The filters of one search: a category, an area as GeoJSON, a period with open ends as ``None``, region codes
+    (any of)."""
 
+    category: str | None = None
     area: Mapping[str, Any] | None = None
     period: tuple[datetime | None, datetime | None] | None = None
     regions: tuple[str, ...] = field(default_factory=tuple)
@@ -55,6 +57,9 @@ class Gone:
 def _conditions(where: ListedFilter) -> tuple[sql.Composable, dict[str, Any]]:
     parts = [sql.SQL("state = 'published'")]
     params: dict[str, Any] = {}
+    if where.category is not None:
+        parts.append(sql.SQL("category = %(category)s"))
+        params["category"] = where.category
     if where.area is not None:
         parts.append(
             sql.SQL(

@@ -718,6 +718,7 @@ class FederatingCoreCrudClient(CoreCrudClient):
         region: str | None = None,
         entry: str | None = None,
         token: str | None = None,
+        category: str | None = None,
         **kwargs: Any,
     ) -> Any:
         """``GET /stac/collections``: without a parameter every full entry, as before; else Collection Search (M5-22c)
@@ -733,7 +734,7 @@ class FederatingCoreCrudClient(CoreCrudClient):
             return await super().all_collections(request, limit=MAX_PAGE, offset=0)
         query = read_query(
             q=q, bbox=bbox, intersects=None, datetime=datetime, limit=limit, offset=offset, region=region,
-            entry=entry, token=token,
+            entry=entry, token=token, category=category,
         )
         return await search_collections(request, query)
 

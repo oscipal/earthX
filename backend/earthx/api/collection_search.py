@@ -45,6 +45,7 @@ from stac_fastapi.types.rfc3339 import str_to_interval
 from stac_fastapi.types.search import APIRequest
 from stac_pydantic.api.search import Intersection
 
+from earthx.catalog.categories import load_categories
 from earthx.catalog.listed_search import ListedFilter, count_listed, full_entries, listed_page
 from earthx.catalog.search import MAX_QUERY_CHARS, SearchResult, box_area, search_datasets
 
@@ -78,6 +79,7 @@ _REGION_DESCRIPTION = (
     "Only datasets in one of these regions: ISO 3166-1 codes of states, ISO 3166-2 codes of the subdivisions of DE, AT, "
     "CH and LI, separated by commas."
 )
+_CATEGORY_DESCRIPTION = "Only datasets of this category of the Data catalogue (the ids of `categories.yaml`)."
 _ENTRY_DESCRIPTION = "Only full entries (with display) or only listed ones (a catalogue entry with a link)."
 _TOKEN_DESCRIPTION = "The page after another, as its `next` link names it; without `q` only."
 _DATETIME_DESCRIPTION = (
@@ -94,6 +96,7 @@ class CollectionsGetRequest(APIRequest):
     bbox: Annotated[str | None, Query(description=_BBOX_DESCRIPTION)] = attr.ib(default=None)
     datetime: Annotated[str | None, Query(description=_DATETIME_DESCRIPTION)] = attr.ib(default=None)
     region: Annotated[str | None, Query(description=_REGION_DESCRIPTION)] = attr.ib(default=None)
+    category: Annotated[str | None, Query(description=_CATEGORY_DESCRIPTION)] = attr.ib(default=None)
     entry: Annotated[str | None, Query(description=_ENTRY_DESCRIPTION)] = attr.ib(default=None)
     limit: Annotated[int | None, Query(ge=1, description="Collections per page.")] = attr.ib(default=None)
     offset: Annotated[int | None, Query(ge=0, description="Collections to skip; with `q` only.")] = attr.ib(
@@ -112,6 +115,7 @@ class CollectionsPostRequest(BaseModel):
     intersects: Intersection | None = Field(None, description="Only datasets whose coverage meets this geometry.")
     datetime: str | None = Field(None, description=_DATETIME_DESCRIPTION)
     region: list[str] | None = Field(None, description=_REGION_DESCRIPTION.replace(", separated by commas", ""))
+    category: str | None = Field(None, description=_CATEGORY_DESCRIPTION)
     entry: str | None = Field(None, description=_ENTRY_DESCRIPTION)
     limit: int | None = Field(None, ge=1, description="Collections per page.")
     offset: int | None = Field(None, ge=0, description="Collections to skip; with `q` only.")
@@ -165,6 +169,7 @@ class CollectionQuery:
     offset: int
     regions: tuple[str, ...] = ()
     entry: str | None = None
+    category: str | None = None
     after: tuple[str, str] | None = None
 
 
@@ -267,6 +272,7 @@ def read_query(
     region: Sequence[str] | str | None = None,
     entry: str | None = None,
     token: str | None = None,
+    category: str | None = None,
 ) -> CollectionQuery:
     """The checked search of one request; anything that is no valid search is a ``400``."""
     if q is not None and len(q) > MAX_QUERY_CHARS:
@@ -281,6 +287,8 @@ def read_query(
         area = _geometry(intersects)
     if entry is not None and entry not in ENTRY_KINDS:
         raise _bad(f"entry is one of {', '.join(ENTRY_KINDS)}")
+    if category is not None and category not in load_categories().ids:
+        raise _bad("category is the id of a category of the Data catalogue")
     if text is not None:
         if token is not None:
             raise _bad("with q, pages go by offset, not by token")
@@ -292,6 +300,7 @@ def read_query(
             offset=offset or 0,
             regions=_regions(region),
             entry=entry,
+            category=category,
         )
     if offset is not None:
         raise _bad("without q, pages go by the token of the next link, not by offset")
@@ -303,6 +312,7 @@ def read_query(
         offset=0,
         regions=_regions(region),
         entry=entry,
+        category=category,
         after=None if token is None else _decode_token(token),
     )
 
@@ -362,6 +372,9 @@ async def search_collections(
     async with request.app.state.earthx_cache_pool.connection() as conn:
         result: SearchResult = await search_datasets(conn, query.text, area=query.area, period=query.period)
         ids = result.ids if query.entry != "listed" else ()
+        if query.category is not None:
+            registry = getattr(request.app.state, "earthx_registry", None)
+            ids = tuple(i for i in ids if registry is not None and i in registry and registry.get(i).category == query.category)
         if query.regions and ids:
             kept = {dataset_id for _, dataset_id in await full_entries(conn, ids, query.regions)}
             ids = tuple(dataset_id for dataset_id in ids if dataset_id in kept)
@@ -394,20 +407,23 @@ async def _catalogue_page(
     The full entries of the filter (few) are all known before the page; the listed ones are read a page at a time,
     one more than the page holds, so that the answer knows whether a next page exists without counting.
     """
-    where = ListedFilter(area=query.area, period=query.period, regions=query.regions)
+    where = ListedFilter(category=query.category, area=query.area, period=query.period, regions=query.regions)
+    registry = getattr(request.app.state, "earthx_registry", None)
     full: list[tuple[str, str]] = []
     ignored: dict[str, tuple[str, ...]] = {}
     async with request.app.state.earthx_cache_pool.connection() as conn:
         if query.entry != "listed":
             result: SearchResult = await search_datasets(conn, None, area=query.area, period=query.period)
-            full = await full_entries(conn, result.ids, query.regions)
+            ids = result.ids
+            if query.category is not None:
+                ids = tuple(i for i in ids if registry is not None and i in registry and registry.get(i).category == query.category)
+            full = await full_entries(conn, ids, query.regions)
             ignored.update(result.ignored_filters_by_collection)
         listed = (
             [] if query.entry == "full" else await listed_page(conn, where, after=query.after, limit=query.limit + 1)
         )
         full_after = [key for key in full if query.after is None or key > query.after]
         # A listed row whose id a full entry has is superseded at the next catalogue load; until then the full one wins.
-        registry = getattr(request.app.state, "earthx_registry", None)
         listed = [row for row in listed if registry is None or row.dataset_id not in registry]
         merged = sorted(
             [(key, None) for key in full_after] + [((row.sort_title, row.dataset_id), row) for row in listed],

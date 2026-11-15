@@ -48,6 +48,7 @@ def listed_entry(dataset_id: str = "example-atlas", **changes: Any) -> ListedEnt
         doi=None,
         citation=None,
         data_kind=DataKind.RASTER,
+        category="water",
         spatial_extent=SpatialExtent(bbox=(11.2, 48.2, 11.6, 48.4)),
         temporal_extent=TemporalExtent(start=utc(2000), end=utc(2020, 12, 31)),
         license=LicenseInfo(

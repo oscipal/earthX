@@ -41,6 +41,7 @@ CONTENT_COLUMNS = (
     "time_span",
     "regions",
     "data_kind",
+    "category",
     "account",
     "delivery",
     "publisher",
@@ -608,9 +609,9 @@ def test_the_blocklist_and_the_removal_leave_a_superseded_row_alone(conn: psycop
 
 _PUBLISHED = """
     INSERT INTO public.earthx_listed_entry (dataset_id, source_id, source_key, state, content, content_sha256, sort_title,
-        footprint, regions, data_kind, account, delivery, link_host)
+        footprint, regions, data_kind, category, account, delivery, link_host)
     VALUES (%(id)s, 'src-1', %(key)s, 'published', '{}'::jsonb, 'x', 't', ST_MakeEnvelope(0, 0, 1, 1, 4326), '{}',
-            'vector', 'none', 'download', 'h.example.org')
+            'vector', 'other', 'none', 'download', 'h.example.org')
 """
 
 
@@ -647,6 +648,7 @@ def test_the_table_refuses_a_tombstone_that_holds_content(conn: psycopg.Connecti
         "time_span": "tstzrange(now(), now() + interval '1 day')",
         "regions": "'{}'",
         "data_kind": "'raster'",
+        "category": "'water'",
         "account": "'none'",
         "delivery": "'download'",
         "publisher": "'P'",
@@ -697,6 +699,7 @@ def test_the_table_refuses_a_reason_on_a_row_that_is_no_tombstone(conn: psycopg.
         "footprint",
         "regions",
         "data_kind",
+        "category",
         "account",
         "delivery",
         "link_host",
@@ -714,6 +717,7 @@ def test_the_table_refuses_a_published_row_without_a_field_it_is_found_by(
     [
         ("state", "visible"),
         ("data_kind", "image"),
+        ("category", "Water"),
         ("account", "gratis"),
         ("delivery", "post"),
     ],

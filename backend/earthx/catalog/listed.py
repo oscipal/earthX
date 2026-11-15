@@ -20,6 +20,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from earthx.catalog.categories import load_categories
 from earthx.catalog.collection import (
     SCIENTIFIC_EXTENSION,
     STAC_VERSION,
@@ -34,6 +35,7 @@ from earthx.catalog.datasets import CATALOG_DIR
 from earthx.catalog.entry_files import EntryFileError, _validate, read_yaml
 from earthx.catalog.glossary import normalize
 from earthx.catalog.registry import (
+    CATEGORY_ID,
     ENTRY_FILE_CONFIG,
     PROTOTYPE_PREFIX,
     AccountKind,
@@ -134,6 +136,7 @@ class ListedEntry:
     doi: str | None
     citation: str | None
     data_kind: DataKind
+    category: str
     spatial_extent: SpatialExtent
     temporal_extent: TemporalExtent
     license: LicenseInfo
@@ -151,6 +154,8 @@ class ListedEntry:
         for name in ("title", "description", "publisher"):
             if not isinstance(getattr(self, name), str) or not getattr(self, name).strip():
                 raise ConfigError(f"{self.dataset_id}: {name} is a non-blank text")
+        if not isinstance(self.category, str) or not CATEGORY_ID.fullmatch(self.category):
+            raise ConfigError(f"{self.dataset_id}: category is the id of a category of categories.yaml")
         if not self.keywords or not all(isinstance(word, str) and word.strip() for word in self.keywords):
             raise ConfigError(f"{self.dataset_id}: keywords names at least one keyword, each a non-blank text")
         if not self.providers:
@@ -279,6 +284,8 @@ def load_listed(directory: Path = LISTED_DIR) -> tuple[tuple[ListedEntry, str], 
         entry = _validate(ListedEntry, data, f"{directory.name}/{path.name}")
         if path.name != f"{entry.dataset_id}.yaml":
             raise EntryFileError(f"{directory.name}/{path.name}: the file of an entry is named <dataset_id>.yaml")
+        if entry.category not in load_categories().ids:
+            raise EntryFileError(f"{directory.name}/{path.name}: category {entry.category} is not one of categories.yaml")
         found.append((entry, file_sha256(path)))
     return tuple(found)
 
@@ -377,6 +384,7 @@ def to_listed_collection(entry: ListedEntry) -> dict[str, object]:
         ],
         "earthx:entry": "listed",
         "earthx:data_kind": entry.data_kind.value,
+        "earthx:category": entry.category,
         "earthx:license_flags": _earthx_license_flags(entry),  # type: ignore[arg-type]
         "earthx:legal_status": entry.legal_status.value,
         "earthx:legal_note": None,

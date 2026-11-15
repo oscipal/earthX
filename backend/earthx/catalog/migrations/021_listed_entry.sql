@@ -50,6 +50,8 @@ CREATE TABLE public.earthx_listed_entry (
     time_span         tstzrange,
     regions           text[],
     data_kind         text        CHECK (data_kind IN ('raster', 'vector', 'table', 'document', 'service', 'other')),
+    -- An id of `backend/catalog/categories.yaml` (M5-40 G4, G5); which ids exist, `catalog-load` and the harvest check.
+    category          text        CHECK (category ~ '^[a-z][a-z_]{0,31}$'),
     account           text        CHECK (account IN ('none', 'anonymous_token', 'free_account', 'requester_pays', 'paid')),
     delivery          text        CHECK (delivery IN ('download', 'service', 'order', 'on_request')),
     publisher         text,
@@ -71,19 +73,23 @@ CREATE TABLE public.earthx_listed_entry (
     -- A tombstone keeps nothing of the entry but its id, its key at the source, the reason and the day.
     CHECK ((state = 'tombstone') = (removed_reason IS NOT NULL AND removed_on IS NOT NULL)),
     CHECK (state <> 'tombstone' OR num_nonnulls(content, content_sha256, sort_title, footprint, time_span, regions,
-                                                data_kind, account, delivery, publisher, link_host, license_ref) = 0),
-    CHECK (state = 'tombstone' OR num_nulls(content, content_sha256, sort_title, footprint, regions, data_kind, account,
-                                            delivery, link_host) = 0)
+                                                data_kind, category, account, delivery, publisher, link_host,
+                                                license_ref) = 0),
+    CHECK (state = 'tombstone' OR num_nulls(content, content_sha256, sort_title, footprint, regions, data_kind, category,
+                                            account, delivery, link_host) = 0)
 )
 -- The document goes out of the row as soon as the row is larger than 128 bytes, so that the columns the filters and the
 -- order read lie close together and a page of matches reads few blocks.
 WITH (toast_tuple_target = 128);
 
--- The read path of `api`: a page in the order of the catalogue, and the filters of area, period and region. The order is
--- that of the bytes (`COLLATE "C"` on `dataset_id` and `sort_title`), the same as Python's order of code points: `api`
+-- The read path of `api`: a page in the order of the catalogue, and the filters of category, area, period and region.
+-- The order is that of the bytes (`COLLATE "C"` on `dataset_id` and `sort_title`), the same as Python's order of code points: `api`
 -- lays full and listed entries into one page in Python and goes on after the key of its last entry, and under a
 -- collation like en_US, which skips spaces and punctuation, a key would sort differently there and in Postgres.
 CREATE INDEX earthx_listed_entry_page_idx ON public.earthx_listed_entry (sort_title, dataset_id)
+    WHERE state = 'published';
+-- A group of the Data catalogue is a category, paged in the same order (M5-40 F5).
+CREATE INDEX earthx_listed_entry_category_page_idx ON public.earthx_listed_entry (category, sort_title, dataset_id)
     WHERE state = 'published';
 CREATE INDEX earthx_listed_entry_footprint_idx ON public.earthx_listed_entry USING gist (footprint)
     WHERE state = 'published';

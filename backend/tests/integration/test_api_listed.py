@@ -638,10 +638,10 @@ def _bulk(count: int, first: int = 1) -> None:
         conn.execute(
             """
             INSERT INTO public.earthx_listed_entry (dataset_id, source_id, source_key, state, content, content_sha256,
-                sort_title, footprint, regions, data_kind, account, delivery, publisher, link_host)
+                sort_title, footprint, regions, data_kind, category, account, delivery, publisher, link_host)
             SELECT 'bulk-' || n, 'bulk', 'bulk-' || n, 'published',
                    jsonb_build_object('type', 'Collection', 'id', 'bulk-' || n, 'title', 'zz bulk ' || n),
-                   'x', 'zz bulk ' || lpad(n::text, 8, '0'), ST_MakeEnvelope(0, 0, 1, 1, 4326), '{}', 'vector', 'none',
+                   'x', 'zz bulk ' || lpad(n::text, 8, '0'), ST_MakeEnvelope(0, 0, 1, 1, 4326), '{}', 'vector', 'other', 'none',
                    'download', 'P', 'bulk.example.org'
             FROM generate_series(%s::int, %s::int) AS n
             """,
@@ -746,3 +746,30 @@ async def test_a_listed_row_with_the_id_and_title_of_a_full_entry_shows_the_full
     seen, _ = await _walk_get(client, limit=3)
     assert seen.count(full_id) == 1
     assert (await client.get(f"/stac/collections/{full_id}")).json()["earthx:entry"] == "full"
+
+
+# --- the category filter (M5-40 G6; one group of the Data catalogue per category) ------------------------------------
+
+
+async def test_the_category_filter_keeps_full_and_listed_entries_of_that_category(client):
+    # Every listed entry of these tests is in `water`; the full entries keep their categories of before.
+    water, _ = await _walk_get(client, category="water", limit=3)
+    assert water == LISTED_IDS
+    elevation, _ = await _walk_get(client, category="elevation", limit=3)
+    assert elevation == _by_title({i: FULL[i] for i in FULL if REGISTRY.get(i).category == "elevation"})
+    body = {"category": "water", "entry": "full"}
+    assert _ids(await client.post("/stac/collections", json=body)) == []
+
+
+async def test_a_category_filter_with_text_keeps_only_full_entries_of_it(client):
+    response = await client.get("/stac/collections", params={"q": "elevation", "category": "elevation"})
+    assert set(_ids(response)) <= {i for i in FULL if REGISTRY.get(i).category == "elevation"}
+
+
+async def test_an_unknown_category_is_a_400(client):
+    assert (await client.get("/stac/collections", params={"category": "volcanoes"})).status_code == 400
+    assert (await client.post("/stac/collections", json={"category": "Water"})).status_code == 400
+
+
+async def test_a_listed_entry_carries_its_category(client):
+    assert (await client.get("/stac/collections/zurich-cadastral-map")).json()["earthx:category"] == "water"
