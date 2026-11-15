@@ -168,7 +168,7 @@ class TestConfirmationAndRearming:
 
     def test_the_copies_of_the_retry_rules_are_those_of_jobs(self) -> None:
         from earthx.catalog import pgstac
-        from earthx.jobs import overviews, queue
+        from earthx.jobs import overviews
 
-        assert set(pgstac._RETRYABLE) == set(queue.RETRYABLE)
+        assert set(pgstac._RETRYABLE) == set(overviews.RETRYABLE_BUILD)
         assert pgstac._MAX_ATTEMPTS == overviews.MAX_ATTEMPTS

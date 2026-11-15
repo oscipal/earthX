@@ -301,7 +301,7 @@ class TestRetry:
         _age(db, "dem", version, updated=updated)
         return version
 
-    @pytest.mark.parametrize("kind", ["source_timeout", "source_5xx"])
+    @pytest.mark.parametrize("kind", ["source_timeout", "source_5xx", "source_unreachable"])
     def test_a_failure_a_second_attempt_can_help_is_tried_again_after_an_hour(
         self, db: psycopg.Connection, kind: str
     ) -> None:
@@ -311,8 +311,9 @@ class TestRetry:
         row = _row(db, "dem", version)
         assert (row["status"], row["failure_kind"], row["progress"], row["base_hashes"]) == ("building", None, 0, {})
 
-    def test_not_before_the_hour_is_over(self, db: psycopg.Connection) -> None:
-        self._failed(db, "source_timeout", updated="10 minutes")
+    @pytest.mark.parametrize("kind", ["source_timeout", "source_unreachable"])
+    def test_not_before_the_hour_is_over(self, db: psycopg.Connection, kind: str) -> None:
+        self._failed(db, kind, updated="10 minutes")
         assert _claim(db) is None
 
     @pytest.mark.parametrize("kind", ["unknown", "child_crashed", "runtime_exceeded", "upload_failed", "bad_data"])
@@ -321,12 +322,13 @@ class TestRetry:
         assert _claim(db) is None
         assert _row(db, "dem", version)["status"] == "failed"
 
-    def test_a_dataset_gets_no_more_than_the_attempts_it_has(self, db: psycopg.Connection) -> None:
+    @pytest.mark.parametrize("kind", ["source_5xx", "source_unreachable"])
+    def test_a_dataset_gets_no_more_than_the_attempts_it_has(self, db: psycopg.Connection, kind: str) -> None:
         version = _request(db, "dem", "v1")
         for attempt in range(1, MAX_ATTEMPTS + 1):
             build = _claim(db)
             assert build is not None and build.attempt == attempt
-            _fail(db, build, "source_5xx")
+            _fail(db, build, kind)
             _age(db, "dem", version, updated="2 hours")
         assert _claim(db) is None
         assert _row(db, "dem", version)["attempts"] == MAX_ATTEMPTS

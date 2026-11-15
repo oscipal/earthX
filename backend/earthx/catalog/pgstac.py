@@ -343,9 +343,10 @@ def confirm_overview(conn: psycopg.Connection, dataset_id: str, source_version: 
     return row is not None
 
 
-#: The failure kinds `jobs` retries and the attempts it makes (`jobs.queue.RETRYABLE`, `jobs.overviews.MAX_ATTEMPTS`);
+#: The failure kinds `jobs` retries for a pyramid and the attempts it makes (`jobs.overviews.RETRYABLE_BUILD`,
+#: `jobs.overviews.MAX_ATTEMPTS`);
 #: `catalog` may not import `jobs`, a test holds the copies together.
-_RETRYABLE = ("source_timeout", "source_5xx", "lease_lost")
+_RETRYABLE = ("source_timeout", "source_5xx", "lease_lost", "source_unreachable")
 _MAX_ATTEMPTS = 3
 
 

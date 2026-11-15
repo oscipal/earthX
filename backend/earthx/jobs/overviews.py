@@ -15,7 +15,7 @@ thing in one transaction.
 * At most one build per host at a time (adr/0032 §8.2), counted from the rows under a lock taken in a statement of its
   own, like the cap of the queue (`queue.claim`). A build whose lease ran out is over: its row becomes ``failed`` with
   ``lease_lost`` before anything is picked.
-* A failed build is tried again by the next claim only for a reason a second attempt can help (`queue.RETRYABLE`), at
+* A failed build is tried again by the next claim only for a reason a second attempt can help (:data:`RETRYABLE_BUILD`), at
   most :data:`MAX_ATTEMPTS` times in all, and not before :data:`RETRY_AFTER` has passed, except after a lost lease. Any
   other failure stays ``failed`` until a new source version is requested.
 * A failure is a short name (:func:`finish_failed` refuses anything else): never an address, a path or a tile.
@@ -48,6 +48,7 @@ __all__ = [
     "EXPIRED",
     "EXTEND_WINDOW",
     "MAX_ATTEMPTS",
+    "RETRYABLE_BUILD",
     "OVERVIEW_LOCK_KEY",
     "RETRY_AFTER",
     "REUSE_MARGIN",
@@ -79,9 +80,14 @@ __all__ = [
 # A third fixed key for `pg_advisory_xact_lock`, next to those of `queue.py`: 'jobs' in ASCII, plus 3.
 OVERVIEW_LOCK_KEY = 0x6A6F6273_00000003
 
-#: The failure kind of a pyramid whose term ran out; it is not in `RETRYABLE`, so :func:`claim` does not retry it; a successful `materialize` run of the same version
+#: The failure kind of a pyramid whose term ran out; it is not in `RETRYABLE_BUILD`, so :func:`claim` does not retry it; a successful `materialize` run of the same version
 #: makes it buildable again (`catalog.pgstac.rearm_overview`, adr/0032 §5: the next successful run builds anew).
 EXPIRED = "expired"
+
+#: The failures after which a *pyramid build* is tried again: those of the recipe jobs (`queue.RETRYABLE`, which this module
+#: does not change) and a source that could not be reached at all (`source_unreachable`: a connection that broke or a
+#: host that did not answer), which the next hour may well fix. A recipe job does not retry it.
+RETRYABLE_BUILD = RETRYABLE | {"source_unreachable"}
 
 #: A build is tried this many times in all (the first included).
 MAX_ATTEMPTS = 3
@@ -192,7 +198,7 @@ def claim(
             _CANDIDATES_SQL,
             {
                 "datasets": sorted(hosts),
-                "retryable": sorted(RETRYABLE),
+                "retryable": sorted(RETRYABLE_BUILD),
                 "max_attempts": MAX_ATTEMPTS,
                 "lease_lost": _LEASE_LOST,
                 "retry_after": RETRY_AFTER,
@@ -626,6 +632,6 @@ def protected_versions(conn: psycopg.Connection) -> set[tuple[str, str]]:
             WHERE status IN ('building', 'ready')
                OR (status = 'failed' AND failure_kind = ANY(%s) AND attempts < %s)
             """,
-            (sorted(RETRYABLE), MAX_ATTEMPTS),
+            (sorted(RETRYABLE_BUILD), MAX_ATTEMPTS),
         )
     }

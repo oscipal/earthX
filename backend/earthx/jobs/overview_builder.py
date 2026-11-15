@@ -24,7 +24,7 @@ sweeps the leases of the runs, must not wait for. While another worker extends, 
 **How a build ends**, as for a run (`worker.py`): the lease was lost (the row is not ours, nothing is written, the child
 is killed); shutdown (the child is ended and the build given back without using up an attempt,
 :func:`~earthx.jobs.overviews.release`); the child said ``failed`` (its name goes to the row; :func:`claim
-<earthx.jobs.overviews.claim>` retries only what :data:`~earthx.jobs.queue.RETRYABLE` names, at most three times in
+<earthx.jobs.overviews.claim>` retries only what :data:`~earthx.jobs.overviews.RETRYABLE_BUILD` names, at most three times in
 all and not before an hour); the child ended without a word (``child_crashed``, not retried); it said nothing for
 :data:`STALL_SECONDS` (``stalled``, not retried).
 
