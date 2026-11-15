@@ -293,11 +293,44 @@ In derselben Transaktion wie heute, nach den vollen Einträgen:
 - **A5** Ein Handeintrag, den Otto aus `listed/` löscht, wird Grabstein mit `source_removed` statt still zu verschwinden.
 - **A6** Gelistete Einträge haben keine Items: Der Items-Endpunkt antwortet leer und STAC-konform; eine Suche, die eine gelistete ID nennt, ist ein Fehler der Anfrage (`400`), weil die Suche über Quellen verteilt wird und eine gelistete ID keine hat. Eine Suche ohne `collections` sucht wie bisher nur volle Einträge.
 - **A7** Neue Felder (`data_kind`, `delivery`, `regions`) stehen in der Collection, aber nicht als Zeilen im Data catalogue.
+- **A9** `numberMatched` steht nur auf der ersten Seite, wenn gelistete Einträge darin sein können: Die Zählung bis 10 001 kostet mit mehreren Filtern bei 10⁶ Einträgen bis 0,3 s (§8), und wer weiterblättert, hat die Zahl schon. Für `entry=full` steht sie auf jeder Seite.
+- **A10** Die Quell-ID `listed` ist für Handeinträge reserviert; der Lader der Seed-Dateien (M5-19) muss sie ablehnen, sonst machte `catalog-load` geerntete Zeilen dieser Quelle zu Grabsteinen.
 - **A8** `data_kind` behält die sechs Werte aus `adr/0033` §5 (`raster`, `vector`, `table`, `document`, `service`, `other`); es steuert keine Gruppe mehr (F5 korrigiert) und ist nur ein Feld des Eintrags.
 
 ## 7. Risiken
 
 - **Zwei Ablagen für Collections** (pgstac für volle, eigene Tabelle für gelistete): Der Lesepfad mischt beide; Tests prüfen die gemeinsame Reihenfolge. Ein gelisteter Eintrag wird nie nach pgstac geschrieben.
-- **Grenzdatei (F8):** Lizenz-Einstufung durch Otto nötig, bevor sie ins Repo kommt; bis dahin ist `regions` leer.
-- **Kalter Cache:** Die Stadt-Box liest rund 22 000 Zeilen vom Heap; bei viel kleineren AOIs weniger. Bei Bedarf später Inhalt und Filterfelder in zwei Tabellen trennen.
+- **Grenzdatei (F8):** von Otto eingestuft (Processing); eine neue Fassung von `regions.json` leitet beim nächsten `catalog-load` die Regionen aller Einträge neu ab, bei 10⁶ rund 6 Minuten in der Transaktion des Laufs (§8).
+- **Kalter Cache:** Die Stadt-Box liest rund 22 000 Zeilen vom Heap (§8: 131 ms); bei kleineren AOIs weniger. Bei Bedarf später Inhalt und Filterfelder in zwei Tabellen trennen.
 - **Größe:** PR 1 liegt mit Migration, Lader, Lesepfad und Tests voraussichtlich bei 600–800 Zeilen ohne Fixtures; der Richtwert von 400 ist ohne einen dritten PR nicht zu halten.
+
+## 8. Umsetzung PR 1 (Backend) und Messung
+
+**Umgesetzt** (Draft-PR [#356](https://github.com/oscipal/earthX/pull/356)), wie §5 mit den Antworten aus §4a, ohne das Thema (§4b, wartet auf G1–G6):
+
+- **Migration 020:** `earthx_listed_entry` (Zustand, Herkunft, Grabstein, partielle Indizes auf `published`, `dataset_id` und `sort_title` mit `COLLATE "C"`, Inhalt außerhalb der Zeile ab 128 Bytes), `earthx_region` und `earthx_region_part` (Umrisse in Stücken zu höchstens 128 Punkten).
+- **Dateien:** `catalog/listed.py` (`ListedEntry`, `DataKind`, `DeliveryKind`, `BlockRule`, Lader für `listed/`, `blocked.yaml`, `regions.json`); `AccountKind.PAID`, in `datasets/` ein Ladefehler; `backend/catalog/listed/README.md`, `backend/catalog/blocked.yaml` (leer, mit Erklärung), `backend/catalog/regions.json` mit `scripts/write-region-outlines.py`; alle drei im Image.
+- **`catalog-load`:** Regionen, `supersede`, Handeinträge (gesperrte ausgelassen, verschwundene als Grabstein `source_removed`), Sperrliste; mengenweise und idempotent.
+- **`api`:** `/stac/collections` mit `token`, `region`, `entry`, `limit` (100, höchstens 1 000), `numberMatched` bis 10 000 auf der ersten Seite (A9); ohne Parameter wie bisher (F2). `GET /stac/collections/{id}`: voll, gelistet, `410` mit allgemeinem Satz je Grund, `404`. Items einer gelisteten ID leer, Suche mit ihr `400` (A6). Volle Einträge tragen `earthx:entry: "full"`.
+- **Abweichungen vom Plan:** Volle und gelistete Einträge werden nicht in einer SQL-Abfrage gemischt, sondern in Python (die vollen sind ≤ 10³ und kommen aus der bestehenden Suche); damit beide Seiten gleich ordnen, vergleichen die Schlüssel nach Bytes (`COLLATE "C"` wie Pythons Code-Punkte; gefunden im Review, unter en_US wären Einträge beim Blättern übersprungen worden). Die Regionen stehen nur in der Spalte und werden beim Ausliefern angehängt. `/stac/search` mit einer gelisteten ID antwortet `400` statt leer (A6).
+
+**Messung mit dem fertigen Schema [M]** (`scripts/listed-bench/bench.py`, Verfahren wie §3, Beschreibungen rund 1,3 KB, eigene Datenbank, danach gelöscht; Funktionen des Lesepfads von `api`, Seite zu 50, Median aus 5 Läufen):
+
+| Filter | Seite | Seite nahe dem Ende | Zählung bis 10 001 |
+|---|---|---|---|
+| ohne Filter | 1,3 ms | 1,1 ms | 1,4 ms |
+| Box einer Stadt | 131 ms | 107 ms | 26 ms |
+| Box eines Landes | 7,9 ms | 8,4 ms | 19 ms |
+| ein Jahr | 1,8 ms | 1,4 ms | 5,2 ms |
+| Region DE-BY | 2,6 ms | 3,4 ms | 87 ms |
+| Stadt + 2015–2025 | 121 ms | 124 ms | 81 ms |
+| Land + DE-BY + ein Jahr | 31 ms | 32 ms | 316 ms |
+
+- Füllen 10⁶ Zeilen 47 s; Regionen ableiten 344 s (gegen die ganzen Umrisse nach über 9 Minuten abgebrochen).
+- Vor der Änderung „erst Schlüssel, dann Dokumente“ kostete die Stadt-Box 414 ms, weil Postgres das Dokument aller 22 000 Treffer vor dem Sortieren baute.
+- Nicht gemessen: der ganze Weg von `api` mit pgstac-Abruf der vollen Einträge je Seite; die Suche `search_datasets` über die vollen Einträge läuft wie bisher.
+
+**Review** (`reviewer`, vor dem menschlichen Review): zwei Blocker behoben (Import von `urllib` in `catalog` gegen die Importregel B8; Reihenfolge abhängig von der Collation), dazu: `supersede` vor den Handeinträgen (sonst Grabstein statt abgelöst), gleiche Schlüssel ohne Fehler, gelistete Zeile mit der ID eines vollen Eintrags weicht ihm, Regionen nur für geänderte Zeilen neu geschrieben, geänderter Titel schreibt die Zeile neu, Messskript nur gegen eine Datenbank mit `bench` im Namen. Offen gelassen: Die Meldung `400` für eine Suche mit gelisteter ID nennt die ID (keine Eingabe aus Freitext oder Fläche).
+
+**Noch nicht gebaut:** das Thema (§4b), PR 2 (Frontend, „ohne Parameter nur erste Seite“).
+
