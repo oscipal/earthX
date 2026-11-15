@@ -1678,7 +1678,9 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       app.pinDerivedLayer({
         name: `Preview · ${preview.title}`,
         derived: 'preview',
-        ...(preview.perScene ? { note: SCENE_PREVIEW_HINT } : {}),
+        ...(preview.perScene || preview.overview?.note
+          ? { note: [preview.perScene ? SCENE_PREVIEW_HINT : null, preview.overview?.note ?? null].filter(Boolean).join('\n') }
+          : {}),
         overlays: stackLikeView(previewOverlays(preview, clipAoiOf(get(), app.aoi))),
         itemIds: [...new Set([...preview.mosaics.flatMap((mosaic) => mosaic.order), ...preview.scenes.map((scene) => scene.id)])],
         cropToAoi: preview.clipToAoi,
@@ -2526,6 +2528,7 @@ function wantedPreview(limit?: number): PreviewSpec | null {
     band: read.band,
     bands: read.bands,
     named: read.choices.length > 1,
+    datasets: app.datasets,
   };
   const spec = previewSpec({ ...args, range: p.range, ...(view.inner && view.aoi ? { clipAoi: view.aoi } : {}) });
   if (spec === null) return null;

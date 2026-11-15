@@ -18,6 +18,7 @@ import {
   type ShownBands,
 } from './api';
 import type { DatasetOption } from './datasets';
+import { computedNoteOf, overviewRasterOf } from './overviewSubstitute';
 import { unionBbox } from './geoUtils';
 import type { LayerOverlay } from './layers';
 import { buildTileUrl } from './mapLayers';
@@ -27,6 +28,7 @@ import {
   MAX_SELECTION_ITEMS,
   MIN_MOSAIC_SCENES,
   mosaicRequestBytes,
+  type PlannedRaster,
 } from './mosaic';
 import { selectionKeyOf } from './mosaicSelection';
 import { MOSAIC_TILE_SIZE, TILE_SIZE, tileMetres } from './tileSize';
@@ -400,6 +402,9 @@ export interface PreviewSpec {
   clipToAoi: boolean;
   // The AOI they are cut to where it is not the map's: the part of it that lies in a result.
   clipAoi?: GeoJSON.Geometry;
+  // Below the first level of a dataset with a pyramid or a substitute: the same steps on the picture of the overview (M5-10 part B,
+  // G1), so that the preview does not disappear when the map zooms out; `note` says what it is (G2). `null` elsewhere.
+  overview: (PlannedRaster & { url: string; note: string | null }) | null;
 }
 
 const positive = (value: unknown): number | null =>
@@ -465,6 +470,8 @@ export function previewSpec(args: {
   named?: boolean;
   // The AOI the tiles are cut to where it is not the map's (the part of it in a result), for "AOI only".
   clipAoi?: GeoJSON.Geometry;
+  // The datasets of the list: the one that stands in below the first level is among them.
+  datasets?: readonly DatasetOption[];
 }): PreviewSpec | null {
   const { dataset, items, assets, info, plan, range, area, jobs = [], answers, selections, order = null, band = null, named = false } = args;
   const clipAoi = area === 'aoi' ? args.clipAoi : undefined;
@@ -537,9 +544,12 @@ export function previewSpec(args: {
   // The chain must be whole: the order runs all its steps, and a preview of a start of them would be measured on more.
   const areaOrder = clipToAoi && order !== null && !plan.further ? { datasetId: dataset.id, order } : null;
   const sceneMeasure = buildOperatorStatisticsUrl(dataset.id, measured, assets, chain, asked);
+  const below = overviewRasterOf(dataset, args.datasets, { steps: chain, band: asked });
+  const overview = below ? { ...below, url: buildTileUrl(below.tileUrl, render), note: computedNoteOf(dataset, args.datasets) } : null;
   return {
     key: canonicalJson({
       urls: scenes.map((s) => s.url),
+      ...(overview ? { overview: overview.url } : {}),
       ...(mosaics.length > 0 ? { mosaics: mosaics.map((m) => [m.url, m.order, m.maxZoom]) } : {}),
       minZoom: dataset.zoom.min,
       maxZoom,
@@ -564,6 +574,7 @@ export function previewSpec(args: {
     maxZoom,
     clipToAoi,
     ...(clipAoi ? { clipAoi } : {}),
+    overview,
   };
 }
 
@@ -647,7 +658,9 @@ export function measureHint(preview: PreviewSpec | null, measure: PreviewMeasure
 
 // The tooltip of "Preview", on the map and in the panel.
 export function previewTitle(preview: PreviewSpec | null, measure: PreviewMeasure | null): string | undefined {
-  const lines = [preview?.perScene ? SCENE_PREVIEW_HINT : null, measureHint(preview, measure)].filter((line) => line !== null);
+  const lines = [preview?.perScene ? SCENE_PREVIEW_HINT : null, measureHint(preview, measure), preview?.overview?.note ?? null].filter(
+    (line) => line !== null,
+  );
   return lines.length > 0 ? lines.join('\n') : undefined;
 }
 
@@ -660,7 +673,8 @@ export function measuredRange(measure: PreviewMeasure | null): PreviewRange | nu
 // What the panel says when the measure could not be had: the preview then keeps the start range.
 export const NO_MEASURE = 'The range could not be measured, so the preview uses its start range. Set it by hand or try Auto-scale.';
 
-// The overlays of a preview, as the map and a layer hold them, the first on top: the mosaics, then the scenes.
+// The overlays of a preview, as the map and a layer hold them, the first on top: the mosaics, then the scenes, then below the first
+// level the overview the steps are computed on.
 export function previewOverlays(spec: PreviewSpec, aoi: GeoJSON.Geometry | null): LayerOverlay[] {
   const clip = spec.clipToAoi ? (spec.clipAoi ?? aoi) : null;
   const mosaics = spec.mosaics.map((mosaic) => ({
@@ -679,7 +693,21 @@ export function previewOverlays(spec: PreviewSpec, aoi: GeoJSON.Geometry | null)
     maxZoom: spec.maxZoom,
     preview: true as const,
   }));
-  return [...mosaics, ...scenes];
+  const overview = spec.overview
+    ? [
+        {
+          kind: 'raster' as const,
+          tileUrl: clipTileUrl(spec.overview.url, clip),
+          bounds: spec.overview.bounds,
+          minZoom: spec.overview.minZoom,
+          maxZoom: spec.overview.maxZoom,
+          ...(spec.overview.hideFrom === undefined ? {} : { hideFrom: spec.overview.hideFrom }),
+          ...(spec.overview.attribution === undefined ? {} : { attribution: spec.overview.attribution }),
+          preview: true as const,
+        },
+      ]
+    : [];
+  return [...mosaics, ...scenes, ...overview];
 }
 
 // --- never as fine as the data (Otto, 19.10.2026) ---------------------------
