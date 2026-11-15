@@ -32,7 +32,7 @@ import { selectionKeyOf } from './mosaicSelection';
 import { MOSAIC_TILE_SIZE, TILE_SIZE, tileMetres } from './tileSize';
 import { canonicalJson, type Order } from './processing';
 import { indexPresetsOf, presetFor, presetRange } from './indexPresets';
-import { assetsCarrying, bandLabel, isBandMath, resultNameOf, resultsOf, RGB, startBand } from './processingBands';
+import { addsBand, assetsCarrying, bandLabel, isBandMath, resultNameOf, resultsOf, RGB, startBand } from './processingBands';
 import {
   bandsOf,
   namesInExpression,
@@ -46,7 +46,7 @@ import type { Percent } from './percentRange';
 import { INDEX_COLORMAP, INDEX_RANGE, scaleOf, statsFrom, type BandStats, type ResultStats } from './render';
 import { NORMALIZE_VERSION, TILE_VERSION, isStatistical, type Measured } from './normalizeMethods';
 import { fieldNumber } from './numberFormat';
-import { paramsFrom, type Field } from './schemaForm';
+import { namesIn, paramsFrom, type Field } from './schemaForm';
 import type { Bbox, StacItem } from './types';
 
 // As many scenes as the full-resolution view draws (`mapLayers.ts`).
@@ -124,12 +124,15 @@ export type PreviewPlan =
 
 // The operator of a step that can be a tile and the fields of its form, or the text why
 // there is no picture: the operator is not on the dataset's list, it does not run as a tile
-// (`T1`, `pixel`), or the panel has no form for it. `normalize` of version 4 runs only as a job; its tile is version 3.
-function tileStep(step: DraftStep, info: ProcessInfo): { operator: Operator; fields: Field[]; version: number } | { reason: string } {
+// (`T1`, `pixel`, or `focal` as the first step, M5-10), or the panel has no form for it. `normalize` of version 4 runs only as a
+// job; its tile is version 3.
+function tileStep(step: DraftStep, info: ProcessInfo, first: boolean): { operator: Operator; fields: Field[]; version: number } | { reason: string } {
   const operator = info.operators.find((o) => o.op === step.op && o.opVersion === step.opVersion);
   if (!operator) return { reason: NO_PREVIEW_UNLISTED };
   const asVersion3 = operator.op === 'normalize' && operator.opVersion === NORMALIZE_VERSION;
-  if (!asVersion3 && (!operator.tiers.includes('T1') || operator.kind !== 'pixel')) return { reason: NO_PREVIEW };
+  if (!asVersion3 && (!operator.tiers.includes('T1') || (operator.kind !== 'pixel' && !(operator.kind === 'focal' && first)))) {
+    return { reason: NO_PREVIEW };
+  }
   if (!operator.form.supported) return { reason: NO_PREVIEW_FORM };
   return { operator, fields: operator.form.fields, version: asVersion3 ? TILE_VERSION : operator.opVersion };
 }
@@ -152,8 +155,8 @@ export function planPreview(steps: readonly DraftStep[], info: ProcessInfo | nul
   const first = steps[0];
   if (!info || !first) return { state: 'off', reason: null };
   const planned: PlannedStep[] = [];
-  for (const step of steps.slice(0, MAX_PREVIEW_STEPS)) {
-    const found = tileStep(step, info);
+  for (const [index, step] of steps.slice(0, MAX_PREVIEW_STEPS).entries()) {
+    const found = tileStep(step, info, index === 0);
     if ('reason' in found) break;
     const { params, errors } = paramsFrom(found.fields, step.values, step.op);
     if (Object.keys(errors).length > 0) break;
@@ -166,7 +169,7 @@ export function planPreview(steps: readonly DraftStep[], info: ProcessInfo | nul
     planned.push({ step, operator: found.operator, params, version: found.version });
   }
   if (planned.length === 0) {
-    const found = tileStep(first, info);
+    const found = tileStep(first, info, true);
     if ('reason' in found) return { state: 'off', reason: found.reason };
     const { params, errors } = paramsFrom(found.fields, first.values, first.op);
     return { state: 'off', reason: Object.keys(errors).length === 0 && waitsForNumbers(first, params) ? NO_NUMBERS_YET : 'Complete the step to see the preview.' };
@@ -190,7 +193,11 @@ export function namesNeeded(steps: readonly DraftStep[], band: string): Set<stri
   for (const step of [...steps].reverse()) {
     // A mask by value always reads the band that decides (`BandUse(reads={band})`), whichever band is shown.
     if (step.op === 'mask_values' && typeof step.values.band === 'string' && step.values.band !== '') needed.add(step.values.band);
-    if (!isBandMath(step) || !needed.delete(resultNameOf(step))) continue;
+    if (!addsBand(step) || !needed.delete(resultNameOf(step))) continue;
+    if (step.op === 'terrain') {
+      for (const name of namesIn(typeof step.values.bands === 'string' ? step.values.bands : '')) needed.add(name);
+      continue;
+    }
     for (const name of namesInExpression(typeof step.values.expression === 'string' ? step.values.expression : '')) needed.add(name);
   }
   return needed;

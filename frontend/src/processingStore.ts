@@ -101,7 +101,7 @@ import {
   bandNamesOf,
   defaultName,
   dropFromNormalize,
-  isBandMath,
+  addsBand,
   nameProblem,
   outputBands,
   renameResult,
@@ -639,7 +639,7 @@ function nameBlockOf(
 ): string | null {
   for (const [index, step] of steps.entries()) {
     const reason =
-      problems[step.key] ?? (isBandMath(step) || step.op === 'mask_values'
+      problems[step.key] ?? (addsBand(step) || step.op === 'mask_values'
         ? readProblem(step, index, steps, data, index < locked ? [] : hidden)?.message
         : undefined);
     if (reason !== undefined) return `Step ${index + 1}: ${reason}`;
@@ -734,7 +734,9 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
   const named = [
     ...output,
     ...bandMathExpressions(p.steps).flatMap((expression) => [...namesInExpression(expression)]),
-    ...p.steps.flatMap((step) => (step.op === 'normalize' && typeof step.values.bands === 'string' ? namesIn(step.values.bands) : [])),
+    ...p.steps.flatMap((step) =>
+      (step.op === 'normalize' || step.op === 'terrain') && typeof step.values.bands === 'string' ? namesIn(step.values.bands) : [],
+    ),
     ...maskedBands(p.steps),
   ];
   const carried = new Set([...assetsCarrying(sources, named), ...(maskAsset ? [maskAsset] : [])]);
@@ -746,7 +748,7 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
   const inOrder = sources.filter((s) => bandNamesOf(s).some((name) => inOutput.has(name)));
   const choices = p.steps
     .filter((step) =>
-      isBandMath(step)
+      addsBand(step)
         ? inOutput.has(resultNameOf(step))
         : step.op !== 'normalize' || (typeof step.values.bands === 'string' && namesIn(step.values.bands).some((name) => inOutput.has(name))),
     )
@@ -1847,8 +1849,13 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       // (adr/0020 §6, §9). A normalize step proposes the last result.
       let added: string | null = null;
       if (op === 'band_math') {
-        added = defaultName([...view.dataNames, ...steps.filter(isBandMath).map(resultNameOf)]);
+        added = defaultName([...view.dataNames, ...steps.filter(addsBand).map(resultNameOf)]);
         values.name = added;
+      } else if (op === 'terrain') {
+        // A terrain step reads a band of heights: the first of the data in metres is proposed (M5-10).
+        added = defaultName([...view.dataNames, ...steps.filter(addsBand).map(resultNameOf)], 'slope');
+        values.name = added;
+        values.bands = view.dataBands.find((band) => band.unit === 'm' && !band.auxiliary && !band.layer)?.name ?? '';
       } else if (op === 'normalize' && 'bands' in values) {
         if ('method' in values) Object.assign(values, startValues());
         values.bands = view.results.filter((result) => !view.hidden.includes(result.name)).at(-1)?.name ?? '';
@@ -1881,10 +1888,10 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     renameResult: (key, name) =>
       set((s) => {
         const step = s.steps.find((candidate) => candidate.key === key);
-        if (!step || !isBandMath(step) || isLocked(s, key)) return {};
+        if (!step || !addsBand(step) || isLocked(s, key)) return {};
         const from = resultNameOf(step);
         const view = orderView(selectionState(useAppStore.getState()), s);
-        const others = s.steps.filter((candidate) => candidate.key !== key && isBandMath(candidate)).map(resultNameOf);
+        const others = s.steps.filter((candidate) => candidate.key !== key && addsBand(candidate)).map(resultNameOf);
         // A name that breaks a rule is never taken; one that is the name already changes nothing.
         if (name === from || nameProblem(name, others, view.dataNames) !== null) return {};
         const steps = renameResult(s.steps, key, from, name).map((candidate) =>
@@ -1919,7 +1926,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       set((s) => {
         if (isLocked(s, key)) return {};
         const step = s.steps.find((candidate) => candidate.key === key);
-        const gone = step && isBandMath(step) ? resultNameOf(step) : null;
+        const gone = step && addsBand(step) ? resultNameOf(step) : null;
         const left = s.steps.filter((candidate) => candidate.key !== key);
         const { [key]: _problem, ...problems } = s.nameProblems;
         return {

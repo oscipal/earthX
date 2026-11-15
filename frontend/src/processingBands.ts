@@ -1,5 +1,5 @@
 // The stock of bands the panel works with (adr/0020 §4, §6, §9): the bands of the data, the bands that
-// `band_math` steps add, and the choice of those that go into the result. Pure functions; the state lives in
+// `band_math` and `terrain` steps add, and the choice of those that go into the result. Pure functions; the state lives in
 // `processingStore.ts`, the order is built in `processingOrder.ts`.
 
 import type { BandSource, DraftStep, Operator } from './processingOrder';
@@ -65,33 +65,37 @@ export function nameProblem(name: string, others: readonly string[], data: reado
 }
 
 // The default name of the band a new `band_math` step adds: `result`, and `result_1`, `result_2` … where that is taken
-// (adr/0020 §6, Otto 30.10.2026), the first one that is free among the bands of the data and the other results.
-export function defaultName(taken: readonly string[]): string {
+// (adr/0020 §6, Otto 30.10.2026), the first one that is free among the bands of the data and the other results. A `terrain`
+// step starts from the name of its product (`slope`).
+export function defaultName(taken: readonly string[], base = 'result'): string {
   const folded = new Set(taken.map((name) => name.toLowerCase()));
-  if (!folded.has('result')) return 'result';
+  if (!folded.has(base)) return base;
   let n = 1;
-  while (folded.has(`result_${n}`)) n += 1;
-  return `result_${n}`;
+  while (folded.has(`${base}_${n}`)) n += 1;
+  return `${base}_${n}`;
 }
 
-// The name of a step in its title: a band math step is named after the band it adds, a step that adds none "Mask_1" and the
+// The name of a step in its title: a step that adds a band is named after it, a step that adds none "Mask_1" and the
 // like (adr/0020 §14).
 export function stepName(operator: Operator | undefined, values: Record<string, FieldValue>, index: number): string {
-  if (operator?.op === 'band_math') return typeof values.name === 'string' && values.name !== '' ? values.name : '…';
+  if (operator && addsBand(operator)) return typeof values.name === 'string' && values.name !== '' ? values.name : '…';
   const own = operator ? operator.op.charAt(0).toUpperCase() + operator.op.slice(1) : 'Unknown operator';
   return `${own}_${index + 1}`;
 }
 
 export const isBandMath = (step: Pick<DraftStep, 'op'>): boolean => step.op === 'band_math';
 
-// The name a `band_math` step adds, as typed.
+// Whether a step adds a band of its own name to the stock: `band_math`, and `terrain` with what it computes (M5-10).
+export const addsBand = (step: Pick<DraftStep, 'op'>): boolean => step.op === 'band_math' || step.op === 'terrain';
+
+// The name a step that adds a band gives it, as typed.
 export function resultNameOf(step: DraftStep): string {
   return typeof step.values.name === 'string' ? step.values.name : '';
 }
 
-// The results of the chain: the name of each `band_math` step, in step order, with the step's key.
+// The results of the chain: the name of each step that adds a band, in step order, with the step's key.
 export function resultsOf(steps: readonly DraftStep[]): Array<{ key: number; name: string }> {
-  return steps.filter(isBandMath).map((step) => ({ key: step.key, name: resultNameOf(step) }));
+  return steps.filter(addsBand).map((step) => ({ key: step.key, name: resultNameOf(step) }));
 }
 
 // The names an expression mentions that are not followed by `(`: the same reading the chips use.
@@ -115,7 +119,7 @@ export function renameResult(steps: readonly DraftStep[], key: number, from: str
     if (step.op === 'mask_values') {
       return step.values.band === from ? { ...step, values: { ...step.values, band: to } } : step;
     }
-    if (step.op === 'normalize' && typeof step.values.bands === 'string') {
+    if ((step.op === 'normalize' || step.op === 'terrain') && typeof step.values.bands === 'string') {
       const names = namesIn(step.values.bands);
       if (!names.includes(from)) return step;
       return { ...step, values: { ...step.values, bands: names.map((name) => (name === from ? to : name)).join(', ') } };
@@ -124,10 +128,10 @@ export function renameResult(steps: readonly DraftStep[], key: number, from: str
   });
 }
 
-// `normalize` steps without the band `name`, which a removed step added.
+// `normalize` and `terrain` steps without the band `name`, which a removed step added.
 export function dropFromNormalize(steps: readonly DraftStep[], name: string): DraftStep[] {
   return steps.map((step) => {
-    if (step.op !== 'normalize' || typeof step.values.bands !== 'string') return step;
+    if ((step.op !== 'normalize' && step.op !== 'terrain') || typeof step.values.bands !== 'string') return step;
     const names = namesIn(step.values.bands);
     return names.includes(name) ? { ...step, values: { ...step.values, bands: names.filter((n) => n !== name).join(', ') } } : step;
   });
