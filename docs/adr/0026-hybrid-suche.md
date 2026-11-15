@@ -2,7 +2,7 @@
 
 - **Status:** Angenommen (fest, Otto, 06.11.2026; Antworten in §11). F1 und F4–F9 jeweils Option 1, F2 Option 1 mit zwei Bedingungen, F3 Option 2 (kein pgvector in M5). Die Nummer 0026 ist im M5-Plan fest vergeben (`plans/m5/m5-discovery-und-suche.md` §5a).
 - **Datum:** 2026-11-06 (Entwurf, Draft-PR #301); angenommen 2026-11-06.
-- **Nachtrag M5-41 (Entwurf, 14.11.2026):** §14 öffnet F3 neu für 10⁶ Einträge (pgvector mit HNSW); offen bis zu Ottos Antwort.
+- **Nachtrag M5-41 (angenommen, Otto, 15.11.2026):** §14 ersetzt F3 = 2 für 10⁶ Einträge: pgvector ≥ 0.8.4, HNSW auf `halfvec`, gefilterte Anfragen exakt bis 5·10⁴ Zeilen.
 - **Aufgabe:** M5-04 laut `docs/plans/m5/m5-discovery-und-suche.md` §5a (Entscheidungsvorlage C, §4).
 - **Autonomiestufe:** C. Kein Produktivcode.
   - Geändert werden nur dieses ADR und eine Zeile im Entscheidungslog.
@@ -610,16 +610,25 @@ Abgerufen am 06.11.2026. Belegstufe in Klammern.
 
 ---
 
-## 14. Nachtrag M5-41: F3 neu — pgvector mit HNSW (Entwurf, 14.11.2026)
+## 14. Nachtrag M5-41: F3 neu — pgvector mit HNSW (angenommen, Otto, 15.11.2026)
 
-Anlass: Zielgröße 10⁶ gelistete Einträge (Otto, 14.11.2026, `plans/m5/m5-35-skalierbarkeit.md` F3 = 1); F3 wird vor M5-23 neu geöffnet (dort F5 = 1). Bericht mit Recherche aus Primärquellen, Messungen und Optionen: `plans/m5/m5-41-pgvector.md`. Messskript: `scripts/m5-41-vector-bench/bench.py`. **Noch nicht entschieden**; F3 = 2 gilt bis zur Antwort auf G1.
+Anlass: Zielgröße 10⁶ gelistete Einträge (Otto, 14.11.2026, `plans/m5/m5-35-skalierbarkeit.md` F3 = 1); F3 vor M5-23 neu geöffnet (dort F5 = 1). Bericht mit Recherche aus Primärquellen, Messungen und Optionen: `plans/m5/m5-41-pgvector.md`. Messskript: `scripts/m5-41-vector-bench/bench.py`.
 
-**Vorschlag (G1–G6 im Bericht §10, je Option 1):**
+**Antworten Otto (15.11.2026, Bericht §10):** G1 = 1, G2 = 1, G3 = 1, G4 = 1, G5 = 1 mit Auflage, G6 = 1 mit Änderung. **F3 neu ersetzt F3 = 2.**
 
-1. **Vektorarm in Postgres mit pgvector ≥ 0.8.4** (Image fest auf 0.8.7). Spalte `halfvec(D)` in `earthx_dataset_search`, HNSW mit `halfvec_cosine_ops` (`m` 16, `ef_construction` 64), `hnsw.ef_search` 200 je Anfrage. Gemessen bei 10⁶ synthetischen Vektoren: 2–3 ms, Recall@10 0,975–0,98 ohne Filter (Bericht §4.3).
-2. **Harte Filter bleiben exakt (§4.3, §4.4 dieses ADR):** Mit Filter wählt der Code, nicht der Planer. Bis 5·10⁴ passende Zeilen exakt über den Index der Filterspalten (gemessen 22–29 ms bei 10⁴ Zeilen, Recall 1,0), darüber HNSW mit `hnsw.iterative_scan = relaxed_order` in einer `MATERIALIZED`-CTE. Begründung: HNSW filtert nach dem Index-Scan; bei AOI-artigen Filtern lag der Recall auch mit iterativem Scan bei 0,51–0,89, und der Planer nahm bei 10⁶ immer den HNSW-Index (Bericht §4.5).
-3. **Mindestähnlichkeit** (§4.3) außerhalb der CTE; `ef_search` nie kleiner als die Tiefe der Liste für die RRF.
-4. **Image:** eigenes Dockerfile auf `postgis/postgis:16-3.7` mit pgvector für Compose und CI; das heutige `postgis/postgis:16-3.4` wird seit Oktober 2024 nicht mehr gebaut. Cloud-Sitzung: pgvector aus dem Quelltext im Setup (Ubuntu hat nur 0.6.0).
-5. **Unverändert:** Modell und Einbetten der Anfrage im Prozess `api` (F2), RRF mit k = 60, Schnittstelle (F9), Bewertungs-Set und Fixture (§8.4).
+**Entschieden:**
 
-**Folgen, wenn angenommen:** §0 Punkt 2 und 6, §4.3 („Vergleich im Prozess `api`, ohne pgvector“), §9 (Datenbank), §12 Punkt 1 und 10 sowie die Nachträge vom 10.11.2026 in `architekturplan.md` 5.3 und 10 werden ersetzt; `architekturplan.md` 0 Punkt 9 gilt wieder mit pgvector. Änderungen an `docker-compose.yml`, `.github/workflows/ci.yml` und dem Setup der Cloud-Umgebung nur mit Ottos Freigabe (G5).
+1. **Vektorarm in Postgres mit pgvector ≥ 0.8.4** (Image fest auf 0.8.7). Spalte `halfvec(D)` in der Suchtabelle (D aus dem gewählten Modell), HNSW mit `halfvec_cosine_ops` (`m` 16, `ef_construction` 64), `hnsw.ef_search` 200 je Anfrage, nie kleiner als die Tiefe der Liste für die RRF. Gemessen bei 10⁶ synthetischen Vektoren: 2–3 ms, Recall@10 0,975–0,98 ohne Filter (Bericht §4.3). Volle und gelistete Einträge stehen in einer Suchtabelle mit einer Spalte und einem Index (Ablage der gelisteten Einträge: M5-40, `adr/0033`).
+2. **Harte Filter bleiben exakt (§4.3, §4.4 dieses ADR):** Mit Filter wählt der Code, nicht der Planer. Bis T = 5·10⁴ passende Zeilen exakt über den Index der Filterspalten (gemessen 22–29 ms bei 10⁴ Zeilen, Recall 1,0), darüber HNSW mit `hnsw.iterative_scan = relaxed_order` in einer `MATERIALIZED`-CTE. T steht in der Konfiguration und wird nach M5-40 an echten Zahlen nachgestellt (Bericht §9 Punkt 5). Begründung: HNSW filtert nach dem Index-Scan; bei AOI-artigen Filtern lag der Recall auch mit iterativem Scan bei 0,51–0,89, und der Planer nahm bei 10⁶ immer den HNSW-Index (Bericht §4.5).
+3. **Mindestähnlichkeit** (§4.3) als Filter außerhalb der CTE.
+4. **Image:** eigenes Dockerfile auf `postgis/postgis:16-3.7` mit pgvector aus PGDG, Fassung fest, für Compose und CI; das heutige `postgis/postgis:16-3.4` wird seit Oktober 2024 nicht mehr gebaut. Postgres bleibt bei 16; Entwicklungsdaten mit `REINDEX` bzw. neuem Volume.
+5. **CI und Cloud-Sitzung (G5 = 1, Auflage):** Die CI baut das Dockerfile im Job und startet Postgres als Schritt, **mit Layer-Cache** (z. B. `cache-from`/`cache-to` vom Typ `gha`), damit die Backend-CI nicht spürbar langsamer wird; der Folge-PR misst die Bauzeit. Die Cloud-Umgebung baut pgvector 0.8.7 im Setup aus dem GitHub-Tag. Die Erlaubnis für `.github/workflows/ci.yml` und das Setup gibt Otto mit der Folgeaufgabe, nicht mit diesem Nachtrag.
+6. **Reihenfolge (G6 = 1, geändert):** Der Wechsel des Images ist eine eigene kleine Aufgabe (Stufe B) vor M5-23. M5-23 baut den Vektorarm nach Punkt 1–3. **Die Messung mit echten Embeddings gehört in M5-23** (dort entstehen Embeddings und Modellwahl am Set): `scripts/m5-41-vector-bench/bench.py` mit `--corpus`/`--queries` aus dem gewählten Modell, Ergebnis im PR von M5-23. Kein lokaler Messauftrag an Otto.
+7. **Unverändert:** Modell und Einbetten der Anfrage im Prozess `api` (F2), RRF mit k = 60, Schnittstelle (F9), Bewertungs-Set und Fixture (§8.4).
+
+**Folgen:**
+
+- In diesem ADR gelten §0 Punkt 2 und 6, §4.3 („Vergleich im Prozess `api`, ohne pgvector“), §4.6 („nicht als `vector`“), §9 (Datenbank) und §12 Punkt 1 und 10 nur noch, soweit sie §14 nicht widersprechen.
+- `architekturplan.md` 5.3 und 10: Die Nachträge vom 10.11.2026 („In M5 gibt es kein pgvector“, „nicht als `vector`“) werden durch einen Nachtrag zu M5-41 ersetzt; 0 Punkt 9 gilt wieder mit pgvector. Der Nachtrag kommt mit dem ersten PR der Umsetzung (Image-Wechsel oder M5-23), nicht in diesem PR (Stufe C), wie in §12 Punkt 10.
+- Anforderung an den Anbieter in M6: pgvector ≥ 0.8.4 mit `halfvec` und `hnsw.iterative_scan`, geprüft auf einer Testinstanz (Bericht §3.3).
+- Folgeaufgaben: Wechsel des Postgres-Images (Stufe B, vor M5-23; Nummer vergibt der Planungs-Chat), M5-23 nach Punkt 1–3 und 6.

@@ -1,6 +1,6 @@
 # M5-41 — Vektorsuche bei 10⁶ Einträgen: pgvector oder Vergleich im Prozess (Nachtrag zu `adr/0026` F3)
 
-**Status (14.11.2026):** Bericht, **Stufe C** (nur lesen, messen und berichten, kein Produktivcode). Fragen G1–G6 in §10 offen.
+**Status (15.11.2026):** Bericht, **Stufe C** (nur lesen, messen und berichten, kein Produktivcode). Fragen G1–G6 von Otto am 15.11.2026 beantwortet (§10a); Entscheidung in `adr/0026` §14 (angenommen).
 **Aufgabe:** M5-41 aus `plans/m5/m5-35-skalierbarkeit.md` §10. Otto hat am 14.11.2026 entschieden: Zielgröße **10⁶ gelistete Einträge** (M5-35 F3 = 1), und `adr/0026` F3 („ohne pgvector, Vergleich im Prozess `api`“) wird **vor M5-23** neu geöffnet, mit Recherche aus Primärquellen (M5-35 F5 = 1).
 **Grundlage:** `plans/m5/m5-35-skalierbarkeit.md` Befund B4 (§5), F3, F5; `adr/0026` §3.2, §4.3, §4.4, §9, F3; `architekturplan.md` 0 Punkt 9, 3.1, 3.2, 5.3, 10, 12.
 **Geändert in diesem PR:** dieser Bericht, ein Nachtrag-Entwurf in `adr/0026` §14, eine Zeile im Entscheidungslog und das Messskript `scripts/m5-41-vector-bench/bench.py`. Unverändert: `backend/`, `frontend/`, `docker-compose.yml`, `.github/`, `.claude/`, `CLAUDE.md`, Cloud-Umgebung.
@@ -26,7 +26,7 @@ Aus Primärquellen (§3): pgvector 0.8.7 ist aktuell; iterative Scans seit 0.8.0
 
 Modulgrenzen ändern sich nicht: der Vektorarm wird eine SQL-Teilabfrage in `catalog`, das Modell bleibt in `api` (§8). Mit mehreren Instanzen `api` ist V4 besser als V2: eine Wahrheit in Postgres, kein Katalog im RAM jeder Instanz.
 
-Offen bleibt der Recall auf echten e5-Embeddings (Messauftrag §9). Fragen G1–G6 in §10.
+Offen bleibt der Recall auf echten e5-Embeddings; gemessen wird er in M5-23 (§9). Otto hat G1–G6 am 15.11.2026 beantwortet (§10a): V4 ist entschieden.
 
 ---
 
@@ -102,7 +102,7 @@ multilingual-e5-small hat 384, -base 768 Dimensionen (`microsoft/unilm`, `e5/REA
 - **Filter:** `u` gleichverteilt und unabhängig vom Vektor (wie ein Zugangsfilter), `grp` = nächster von 256 Ankerpunkten (wie eine AOI: hält ganze Gegenden des Vektorraums). Je bei 1 % und 10 % der Zeilen.
 - **Recall@k:** Anteil der exakten float32-Top-k unter den Zeilen, die den Filter bestehen. k = 10 (erste Seite) und k = 50 (Tiefe einer Liste für die RRF).
 - **Latenz:** p50/p95 aus Sicht des Clients über 200 Anfragen (exakte Suche bei 10⁶ über 20), warmer Cache, ein Client. numpy auf **einem** Faden (`OPENBLAS_NUM_THREADS=1`), weil in `api` mehrere Anfragen gleichzeitig laufen.
-- **Grenzen:** Recall auf synthetischen Vektoren ist nicht der Recall auf e5 (§9). Die Tabelle hat nur Kennung, zwei Filterspalten und den Vektor; die echte Tabelle trägt Texte und `tsvector`, ein exakter Scan wird dort langsamer [A]. Keine gleichzeitigen Schreibzugriffe, kein `VACUUM` unter Last.
+- **Grenzen:** Recall auf synthetischen Vektoren ist nicht der Recall auf e5 (§9, Messung in M5-23). Die Tabelle hat nur Kennung, zwei Filterspalten und den Vektor; die echte Tabelle trägt Texte und `tsvector`, ein exakter Scan wird dort langsamer [A]. Keine gleichzeitigen Schreibzugriffe, kein `VACUUM` unter Last.
 
 ### 4.2 Speicher und Bau [M]
 
@@ -219,7 +219,7 @@ Im Einzelnen (Vorschlag für M5-23, Stufe B):
 
 Was gleich bleibt: Modell und Einbetten der Anfrage im Prozess `api` (`adr/0026` F2), RRF mit k = 60, harte Filter vor der Fusion, Schnittstelle (F9).
 
-**Bis zur Freigabe:** M5-23 kann mit V3 beginnen (gleiche Spalte `halfvec`, exakt, ohne Index) und den Index als letzten Schritt bekommen — sofern pgvector im Image ist. Ohne pgvector bleibt nur V2 als Brücke, mit Umbau danach.
+**Reihenfolge (G6, §10a):** erst der Wechsel des Postgres-Images als eigene Aufgabe (Stufe B), dann M5-23 mit V4 und der Messung mit echten Embeddings (§9).
 
 ---
 
@@ -270,15 +270,15 @@ Die Last der Katalogsuche ist klein gegen Kacheln: eine Anfrage je Tippen nach e
 
 ---
 
-## 9. Messauftrag für Otto
+## 9. Messung mit echten Embeddings (in M5-23)
 
-Die Sitzung kann kein Embedding-Modell laden (`huggingface.co` gesperrt, `adr/0026` [M]). Was die synthetischen Vektoren nicht zeigen, ist der Recall auf echten e5-Embeddings. Vorschlag, auf Ottos Rechner oder in einer Sitzung mit freigegebenem Host, Dauer etwa eine Stunde:
+Die Sitzung kann kein Embedding-Modell laden (`huggingface.co` gesperrt, `adr/0026` [M]). Was die synthetischen Vektoren nicht zeigen, ist der Recall auf echten e5-Embeddings. Ursprünglich als Messauftrag an Otto vorgeschlagen; nach G6 (§10a) gehört die Messung in **M5-23**, wo Embeddings und Modellwahl am Set entstehen. Kein lokaler Auftrag an Otto. Ablauf:
 
-1. **Korpus:** Titel und Beschreibungen aus Metadaten mit offener Lizenz, möglichst mehrsprachig, mindestens 10⁵ Texte (z. B. ein CKAN-Export eines DACH-Portals, dessen Metadaten unter CC0 oder CC-BY stehen; die Lizenz stuft Otto ein). 200 Anfragen aus dem Bewertungs-Set und frei formulierte in Deutsch und Englisch.
+1. **Korpus:** Titel und Beschreibungen aus Metadaten mit offener Lizenz, möglichst mehrsprachig, mindestens 10⁵ Texte (z. B. ein CKAN-Export eines DACH-Portals, dessen Metadaten unter CC0 oder CC-BY stehen; die Lizenz stuft Otto ein), mindestens aber die Suchtexte des Katalogs. 200 Anfragen aus dem Bewertungs-Set und frei formulierte in Deutsch und Englisch.
 2. **Einbetten** mit multilingual-e5-small und -base (Präfixe `passage: ` und `query: `), als `float32`-Arrays `corpus.npy` und `queries.npy`.
 3. **Messen** in einer leeren Datenbank mit pgvector ≥ 0.8.4:
    `PGDATABASE=<leere Datenbank> python scripts/m5-41-vector-bench/bench.py --corpus corpus.npy --queries queries.npy`
-4. **Zurück** kommen nur die JSON-Zeilen (keine Texte, keine Vektoren). Maßgeblich: Recall von `hnsw_halfvec` bei `ef_search` 200 ohne Filter, mit `grp1`/`grp10` und `relaxed_order`, und `hnsw_halfvec_filtered_exact`.
+4. **Im PR von M5-23** stehen nur die JSON-Zeilen bzw. eine Tabelle daraus (keine Texte, keine Vektoren). Maßgeblich: Recall von `hnsw_halfvec` bei `ef_search` 200 ohne Filter, mit `grp1`/`grp10` und `relaxed_order`, und `hnsw_halfvec_filtered_exact`.
 5. **Schwelle T (§6 Punkt 3)**, kann auch eine Sitzung übernehmen: nach M5-40, sobald gelistete Einträge in Postgres stehen: für einige typische AOIs (Land, Region, Stadt) zählen, wie viele Einträge den Raumfilter bestehen. Das legt T fest und zeigt, wie oft der HNSW-Weg mit Filter überhaupt vorkommt.
 
 Für M6 zusätzlich je Kandidat des Anbieters: `SELECT * FROM pg_available_extension_versions WHERE name = 'vector';` auf einer Testinstanz (§3.3).
@@ -317,8 +317,19 @@ Am Handy beantwortbar: je Frage eine Nummer.
 
 **G6 — Wie geht es weiter?**
 1. Nachtrag `adr/0026` §14 so annehmen; der Wechsel des Images als eigene kleine Aufgabe (Stufe B) vor M5-23; M5-23 baut V4 und nennt den Recall am Bewertungs-Set; Messauftrag §9 parallel **(Empfehlung)**
-2. Erst der Messauftrag §9 mit echten e5-Embeddings, dann entscheiden
+2. Erst die Messung §9 mit echten e5-Embeddings, dann entscheiden
 3. Image-Wechsel in M5-23 mit erledigen
+
+### 10a. Antworten Otto (15.11.2026)
+
+| Frage | Antwort | Folge |
+|---|---|---|
+| G1 | 1 | V4: pgvector ≥ 0.8.4 mit HNSW auf `halfvec`; F3 neu in `adr/0026` §14 |
+| G2 | 1 | gefilterte Anfragen bis T = 5·10⁴ passende Zeilen exakt, darüber HNSW mit iterativem Scan; T in der Konfiguration, nach M5-40 nachgestellt |
+| G3 | 1 | Spalte `halfvec(D)`, HNSW darauf |
+| G4 | 1 | eigenes Dockerfile auf `postgis/postgis:16-3.7` mit pgvector aus PGDG, Fassung fest |
+| G5 | 1 **mit Auflage:** Der CI-Job nutzt Layer-Cache (z. B. `cache-from`/`cache-to` vom Typ `gha`), damit die Backend-CI nicht spürbar langsamer wird; der Folge-PR misst die Bauzeit. Die Erlaubnis für `.github/workflows/ci.yml` und das Setup der Cloud-Umgebung gibt Otto in der Folgeaufgabe. | Folgeaufgabe Image-Wechsel |
+| G6 | 1 **mit Änderung:** Die Messung mit echten Embeddings geht in M5-23 (dort entstehen Embeddings und Modellwahl am Set), kein lokaler Auftrag an Otto; das Messskript bleibt im Repo. | Image-Wechsel als eigene Aufgabe (Stufe B) vor M5-23; M5-23 baut V4 und misst nach §9 |
 
 ---
 
