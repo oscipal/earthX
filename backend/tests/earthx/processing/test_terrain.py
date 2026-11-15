@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import dataclasses
 import math
+from pathlib import Path
 
 import numpy
 import pytest
@@ -424,13 +425,92 @@ def test_a_geographic_grid_gives_the_same_bits_in_blocks_of_any_size(product: di
 
 
 def test_the_angles_are_those_of_numpy_to_the_last_digits() -> None:
+    # Measured on 15.11.2026: arctan 3.3e-16, arctan2 4.4e-16, sine and cosine 1.1e-15 (radians; at ±720° most of that is
+    # numpy's own reduction of the angle). A float32 result has a step of 6e-8 at 1.
     generator = numpy.random.default_rng(3)
     x = numpy.concatenate([numpy.linspace(0, 50, 20001), [0.0, 1.0, 1e-300, 1e300]])
-    numpy.testing.assert_allclose(terrain._atan(x), numpy.arctan(x), rtol=0, atol=1e-15)
+    numpy.testing.assert_allclose(terrain._atan(x), numpy.arctan(x), rtol=0, atol=5e-16)
     y, z = generator.normal(size=20000), generator.normal(size=20000)
-    numpy.testing.assert_allclose(terrain._atan2(y, z), numpy.arctan2(y, z), rtol=0, atol=2e-15)
+    numpy.testing.assert_allclose(terrain._atan2(y, z), numpy.arctan2(y, z), rtol=0, atol=5e-16)
     assert terrain._atan2(numpy.array([0.0]), numpy.array([0.0]))[0] == 0
     degrees = numpy.linspace(-720, 720, 14401)
     sine, cosine = terrain._sin_cos(degrees)
-    numpy.testing.assert_allclose(sine, numpy.sin(numpy.radians(degrees)), rtol=0, atol=2e-15)
-    numpy.testing.assert_allclose(cosine, numpy.cos(numpy.radians(degrees)), rtol=0, atol=2e-15)
+    numpy.testing.assert_allclose(sine, numpy.sin(numpy.radians(degrees)), rtol=0, atol=1.2e-15)
+    numpy.testing.assert_allclose(cosine, numpy.cos(numpy.radians(degrees)), rtol=0, atol=1.2e-15)
+
+
+# --- against gdaldem on a synthetic alpine model (scripts/m5-10/gdaldem_reference.py) ---------------------------------
+
+REFERENCE = Path(__file__).resolve().parents[2] / "fixtures" / "terrain" / "gdaldem_reference.npz"
+
+#: name in the reference → parameters, and the largest difference allowed (measured on 15.11.2026 against GDAL 3.8.4):
+#: Horn: gdaldem sums the window in float32 (bit-identical when the sums are float32, checked), the operator in float64,
+#: so slope differs by up to 0.0034° and aspect by up to 0.016°; Zevenbergen-Thorne takes differences of two heights
+#: only, which float32 holds exactly: slope 0, aspect 3.1e-5°. Hillshade is 8 bits in gdaldem: up to 0.5, and 0.501
+#: for four lights.
+AGAINST_GDALDEM = {
+    "slope_horn_degrees": ({"product": "slope", "slope_unit": "degrees"}, 0.004),
+    "slope_zt_percent": ({"product": "slope", "slope_unit": "percent", "method": "zevenbergen_thorne"}, 1e-4),
+    "aspect_horn": ({"product": "aspect"}, 0.02),
+    "aspect_zt": ({"product": "aspect", "method": "zevenbergen_thorne"}, 1e-4),
+    "hillshade_horn": (
+        {"product": "hillshade", "azimuth": 315, "altitude": 45, "z_factor": 1, "multidirectional": False},
+        0.5,
+    ),
+    "hillshade_zt": (
+        {
+            "product": "hillshade",
+            "method": "zevenbergen_thorne",
+            "azimuth": 30,
+            "altitude": 60,
+            "z_factor": 2.5,
+            "multidirectional": False,
+        },
+        0.5,
+    ),
+    "hillshade_multidirectional": (
+        {"product": "hillshade", "altitude": 45, "z_factor": 1, "multidirectional": True},
+        0.51,
+    ),
+}
+
+
+def _reference_image() -> tuple[ImageData, dict]:
+    reference = dict(numpy.load(REFERENCE))
+    heights = reference["heights"]
+    size = float(reference["pixel"])
+    gaps = numpy.pad(heights == -9999, 1, constant_values=True)
+    padded = numpy.pad(heights, 1, constant_values=-9999)
+    rows, cols = padded.shape
+    bounds = (2600000 - size, 1200000 + size - rows * size, 2600000 - size + cols * size, 1200000 + size)
+    data = numpy.ma.MaskedArray(padded[None], mask=gaps[None])
+    return ImageData(data, bounds=bounds, crs=CRS.from_epsg(2056), band_names=["dem"]), reference
+
+
+@pytest.mark.parametrize("name", sorted(AGAINST_GDALDEM))
+def test_the_operator_agrees_with_gdaldem_within_the_measured_difference(name: str) -> None:
+    image, reference = _reference_image()
+    changes, tolerance = AGAINST_GDALDEM[name]
+    result = TERRAIN.run(image, TerrainParams.model_validate({"bands": ["dem"], "name": "t", **changes})).array[1]
+    ours, theirs = result.filled(numpy.nan).astype("float64"), reference[name].astype("float64")
+    numpy.testing.assert_array_equal(numpy.isnan(ours), numpy.isnan(theirs))  # the same pixels empty
+    difference = numpy.abs(ours - theirs)[~numpy.isnan(theirs)]
+    if name.startswith("aspect"):
+        difference = numpy.minimum(difference, 360 - difference)
+    assert difference.max() <= tolerance
+
+
+@pytest.mark.parametrize("name", sorted(AGAINST_GDALDEM))
+def test_the_own_angles_give_the_values_numpy_would(name: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Measured on 15.11.2026: every float32 value the same on the reference model; at most one step of float32 allowed.
+    image, _ = _reference_image()
+    params = TerrainParams.model_validate({"bands": ["dem"], "name": "t", **AGAINST_GDALDEM[name][0]})
+    ours = TERRAIN.run(image, params).array[1]
+    monkeypatch.setattr(terrain, "_atan", numpy.arctan)
+    monkeypatch.setattr(terrain, "_atan2", numpy.arctan2)
+    monkeypatch.setattr(
+        terrain, "_sin_cos", lambda degrees: (numpy.sin(numpy.radians(degrees)), numpy.cos(numpy.radians(degrees)))
+    )
+    with_numpy = TERRAIN.run(image, params).array[1]
+    numpy.testing.assert_array_equal(numpy.ma.getmaskarray(ours), numpy.ma.getmaskarray(with_numpy))
+    numpy.testing.assert_array_max_ulp(ours.compressed(), with_numpy.compressed(), maxulp=1)
