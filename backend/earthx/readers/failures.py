@@ -24,7 +24,7 @@ from rasterio.errors import RasterioIOError
 from earthx.gateway import GatewayError, UpstreamError, UpstreamTimeout, UpstreamUnreachable
 from earthx.readers.errors import GeoreferenceMismatch
 
-__all__ = ["SOURCE_KINDS", "source_failure_kind"]
+__all__ = ["RETRY_AFTER_CAP_S", "SOURCE_KINDS", "retry_after", "source_failure_kind"]
 
 #: Everything :func:`source_failure_kind` can return.
 SOURCE_KINDS = frozenset(
@@ -41,6 +41,9 @@ SOURCE_KINDS = frozenset(
 
 _GDAL_STATUS = re.compile(r"HTTP response code: (\d{3})\b")
 _GDAL_TIMEOUT = "CURL error: Operation timed out"
+#: Any other transport failure GDAL reports through libcurl (a reset connection, a failed TLS handshake, an empty reply, a
+#: name that does not resolve) or a response code of 0: the source did not answer; a second read can help (M5-30b, plan §8.11).
+_GDAL_TRANSPORT = re.compile(r"CURL error:|HTTP response code(?: on [^\n]*?)?: 0\b")
 _MAX_DEPTH = 8
 
 
@@ -88,4 +91,23 @@ def source_failure_kind(error: BaseException) -> str | None:
             match = _GDAL_STATUS.search(text)
             if match is not None:
                 return _by_status(int(match[1]))
+            if _GDAL_TRANSPORT.search(text):
+                return "source_unreachable"
+    return None
+
+
+#: The most a ``Retry-After`` may ask for before a read goes on (seconds); a source that asks for more is waited for this long.
+RETRY_AFTER_CAP_S = 120.0
+
+
+def retry_after(error: BaseException) -> float | None:
+    """The seconds a source asked to wait (``Retry-After``) if the failure carries them, else ``None``, at most :data:`RETRY_AFTER_CAP_S`.
+
+    The errors of `gateway` may carry ``retry_after``; a read by GDAL names no header, so for it this is ``None`` and the
+    caller waits its own backoff.
+    """
+    for current in _chain(error):
+        value = getattr(current, "retry_after", None)
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0:
+            return min(float(value), RETRY_AFTER_CAP_S)
     return None
