@@ -36,6 +36,7 @@ class TestRegistry:
             ("reproject", 2),
             ("reproject", 3),
             ("reproject", 4),
+            ("terrain", 1),
         }
 
     def test_adding_operators_leaves_the_original_alone(self) -> None:
@@ -52,6 +53,7 @@ class TestRegistry:
             ("reproject", 2),
             ("reproject", 3),
             ("reproject", 4),
+            ("terrain", 1),
             ("scale", 1),
             ("coarsen", 1),
         }

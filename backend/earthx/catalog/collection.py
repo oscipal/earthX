@@ -61,6 +61,7 @@ def _earthx_capabilities(config: DatasetConfig) -> dict[str, bool]:
         "normalization": caps.normalization,
         "ml_processing": caps.ml_processing,
         "quad_pol": caps.quad_pol,
+        "terrain": caps.terrain,
         "single_coverage_product": caps.single_coverage_product,
     }
 

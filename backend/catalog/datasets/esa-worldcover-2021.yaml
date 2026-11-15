@@ -72,6 +72,8 @@ capabilities:
   # Open until M5-12 (`adr/0030`) has gone through the operators per dataset.
   ml_processing: false
   quad_pol: false
+  # No heights: the terrain operator stays out (adr/0023 F5).
+  terrain: false
   # One map per state: extent, not density (adr/0004 §5).
   single_coverage_product: true
 license:

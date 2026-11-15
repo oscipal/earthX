@@ -192,10 +192,15 @@ class PlannedStep:
 
 @dataclass(frozen=True, slots=True)
 class Segment:
-    """One pass over the raster: a run of ``pixel`` steps, or exactly one ``grid`` step."""
+    """One pass over the raster: a run of ``pixel`` and ``focal`` steps, or exactly one ``grid`` step."""
 
     kind: Literal["pixel", "grid"]
     steps: tuple[PlannedStep, ...]
+
+    @property
+    def halo(self) -> int:
+        """How many pixels around a block this pass reads: the halos of its ``focal`` steps together."""
+        return sum(step.operator.halo for step in self.steps)
 
     @property
     def measuring(self) -> PlannedStep | None:
@@ -391,11 +396,14 @@ def segments(planned: Sequence[PlannedStep]) -> list[Segment]:
     pass that reads the inputs; one that follows a ``grid`` step needs no pass of its own, the pass of the grid step
     counts. Two measuring steps are two cuts. A measuring step before a ``grid`` step is fine: the pass before it counts on
     the grid of the stock, with the AOI on that grid.
+
+    A ``focal`` step stays in the run of ``pixel`` steps: the pass reads its blocks grown by the halo of its steps
+    (:attr:`Segment.halo`), and each ``focal`` step gives its own back (adr/0030 F3).
     """
     result: list[Segment] = []
     run: list[PlannedStep] = []
     for step in planned:
-        if step.operator.kind == "pixel":
+        if step.operator.kind != "grid":
             if _measures(step) and (run or not result):
                 result.append(Segment("pixel", tuple(run)))
                 run = []
