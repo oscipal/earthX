@@ -763,3 +763,35 @@ def test_the_region_table_refuses_an_outline_that_is_no_area(conn: psycopg.Conne
         {},
         psycopg.Error,
     )
+
+
+# --- review of M5-40: order of catalog-load and the collation of the keys --------------------------------------------
+
+
+def test_a_hand_entry_that_went_full_is_superseded_not_a_tombstone(conn: psycopg.Connection, tmp_path: Path) -> None:
+    # In the order of `load.main`: the file leaves listed/ in the same commit as the full entry arrives.
+    _put(conn, tmp_path, listed_entry("example-atlas"))
+    supersede(conn, ["example-atlas"])
+    _put(conn, tmp_path, full_ids=["example-atlas"])
+    row = _row(conn, "example-atlas")
+    assert row["state"] == "superseded" and row["content"] is not None and row["removed_reason"] is None
+
+
+def test_catalog_load_supersedes_before_it_writes_the_hand_entries() -> None:
+    import inspect
+
+    from earthx.catalog import load
+
+    source = inspect.getsource(load.main)
+    assert source.index("supersede(") < source.index("write_hand_entries(")
+
+
+@pytest.mark.parametrize("column", ["dataset_id", "sort_title"])
+def test_the_keys_of_the_order_compare_by_bytes(conn: psycopg.Connection, column: str) -> None:
+    # Python orders by code point; a collation like en_US skips spaces and punctuation and would page differently.
+    collation = conn.execute(
+        "SELECT collation_name FROM information_schema.columns "
+        "WHERE table_schema = 'public' AND table_name = 'earthx_listed_entry' AND column_name = %s",
+        (column,),
+    ).fetchone()[0]
+    assert collation == "C"

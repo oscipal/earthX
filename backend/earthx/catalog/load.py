@@ -50,8 +50,10 @@ def main() -> int:
             index = write_search_index(conn, datasets)
             full_ids = [config.dataset_id for config in datasets] + [gone.dataset_id for gone in datasets.retired]
             regions_changed = write_regions(conn, regions)
-            listed, blocked_hand = write_hand_entries(conn, hand_entries, blocklist, full_ids=full_ids)
+            # First the rows a full entry took over: a hand entry that went full leaves listed/ in the same commit,
+            # and its row is then superseded, not a tombstone (adr/0033 §11).
             superseded = supersede(conn, full_ids)
+            listed, blocked_hand = write_hand_entries(conn, hand_entries, blocklist, full_ids=full_ids)
             tombstones = apply_blocklist(conn, blocklist)
             conn.commit()
     except (ConfigError, PgstacError, psycopg.Error) as error:

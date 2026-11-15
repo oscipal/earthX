@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import json
 from collections.abc import Collection, Sequence
-from dataclasses import dataclass
 
 import psycopg
 from psycopg import sql
@@ -34,7 +33,7 @@ from earthx.catalog.listed import (
 )
 from earthx.catalog.registry import ConfigError
 
-__all__ = ["ListedOutcome", "apply_blocklist", "is_blocked", "supersede", "write_hand_entries", "write_regions"]
+__all__ = ["apply_blocklist", "is_blocked", "supersede", "write_hand_entries", "write_regions"]
 
 #: The regions of a footprint: every outline it overlaps in more than a shared border. Asked of the small pieces of the
 #: outlines; a footprint that only touches the cut between two pieces of one outline overlaps one of them inside.
@@ -51,17 +50,6 @@ _TOMBSTONE = """
     time_span = NULL, regions = NULL, data_kind = NULL, account = NULL, delivery = NULL, publisher = NULL,
     link_host = NULL, license_ref = NULL
 """
-
-
-@dataclass(frozen=True, slots=True)
-class ListedOutcome:
-    """What one run did to the listed entries."""
-
-    regions_changed: int
-    written: tuple[str, ...]
-    blocked_hand_entries: tuple[str, ...]
-    tombstones: int
-    superseded: tuple[str, ...]
 
 
 def write_regions(conn: psycopg.Connection, regions: Sequence[Region]) -> int:
@@ -89,17 +77,20 @@ def write_regions(conn: psycopg.Connection, regions: Sequence[Region]) -> int:
         )
         changed += cur.rowcount
         cur.execute("SELECT NOT EXISTS (SELECT 1 FROM public.earthx_region_part)")
-        if changed or cur.fetchone()[0]:
+        if changed or (regions and cur.fetchone()[0]):
             cur.execute("DELETE FROM public.earthx_region_part")
             cur.execute(
                 "INSERT INTO public.earthx_region_part (code, part) "
                 "SELECT code, ST_Subdivide(outline, %s) FROM public.earthx_region",
                 (PART_POINTS,),
             )
+            # Only the rows whose regions differ are written.
             cur.execute(
-                sql.SQL("UPDATE public.earthx_listed_entry SET regions = {} WHERE footprint IS NOT NULL").format(
-                    sql.SQL(REGIONS_OF.format(footprint="footprint"))
-                )
+                sql.SQL(
+                    "UPDATE public.earthx_listed_entry e SET regions = d.regions FROM (SELECT dataset_id, {} AS regions "
+                    "FROM public.earthx_listed_entry WHERE footprint IS NOT NULL) d "
+                    "WHERE e.dataset_id = d.dataset_id AND e.regions IS DISTINCT FROM d.regions"
+                ).format(sql.SQL(REGIONS_OF.format(footprint="footprint")))
             )
     return changed
 
@@ -135,7 +126,8 @@ _UPSERT = sql.SQL(
         approved_on = EXCLUDED.approved_on, published_at = EXCLUDED.published_at,
         removed_reason = NULL, removed_on = NULL
     WHERE stored.state IS DISTINCT FROM 'published'
-       OR (stored.content_sha256, stored.approval_sha256) IS DISTINCT FROM (EXCLUDED.content_sha256, EXCLUDED.approval_sha256)
+       OR (stored.content_sha256, stored.approval_sha256, stored.sort_title)
+          IS DISTINCT FROM (EXCLUDED.content_sha256, EXCLUDED.approval_sha256, EXCLUDED.sort_title)
     RETURNING dataset_id
     """
 ).format(regions=sql.SQL(REGIONS_OF.format(footprint="f.geom")))

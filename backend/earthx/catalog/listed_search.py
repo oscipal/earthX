@@ -47,7 +47,7 @@ class ListedRow:
 
 @dataclass(frozen=True, slots=True)
 class Gone:
-    """A tombstone (adr/0033 §9): the entry was removed, for this reason, on this day."""
+    """A tombstone (adr/0033 §9): the entry was removed, for this reason."""
 
     reason: str
 

@@ -996,9 +996,8 @@ class FederatingCoreCrudClient(CoreCrudClient):
         fan-out.
         """
         target_ids = collections or await self._all_collection_ids(request)
-        registry_of_request = _registry_of(request)
         for cid in target_ids:
-            if cid not in registry_of_request and isinstance(await _listed_of(request, cid), dict):
+            if cid not in _registry_of(request) and isinstance(await _listed_of(request, cid), dict):
                 raise HTTPException(status_code=400, detail=f"{cid} is a catalogue entry without items (M5-40)")
         infos = {cid: await self._source_info_of(cid, request) for cid in target_ids}
         registry = _registry_of(request)
