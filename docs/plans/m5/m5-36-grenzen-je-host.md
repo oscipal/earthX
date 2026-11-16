@@ -1,6 +1,6 @@
 # M5-36 — Grenzen je Host in der Registry, Teilbudget je Instanz: Plan-Schritt
 
-**Status (16.11.2026):** Plan angenommen (Otto, 16.11.2026: G1–G6 je 1, §8a), **Stufe B**. PR 1 (#360) gemergt; PR 2 umgesetzt und gemessen (§9.3, §9.4).
+**Status (16.11.2026):** Plan angenommen (Otto, 16.11.2026: G1–G6 je 1, §8a), **Stufe B**. PR 1 (#360) gemergt; PR 2 (#365) umgesetzt und gemessen (§9.3, §9.4), H1 beantwortet (§9.5a).
 **Aufgabe:** M5-36 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2, Auftrag von Otto vom 16.11.2026.
 **Grundlagen:** `plans/m5/m5-35-skalierbarkeit.md` B1 (§2), B3 (§4.2), F1 = 1 (§8a); `adr/0032` §8.2 und Nachtrag 14.11.2026 (`TileGate`); `adr/0023` §3.1 (Fair Use der FSDI); `adr/0005` §6 (6 Verbindungen je Host); `architekturplan.md` 3.1, 6.5; KLAERUNGEN B8, B9.
 
@@ -258,9 +258,15 @@ Synthetische Quelle wie §9.2 (RTT 170 ms, Verbindungsaufbau 350 ms), echter `ti
 - **Zwei Instanzen** (nicht Teil von G5): Bei Grenze 32 kaum ein Unterschied; der Anstieg der kalten Mosaik-Kachel um 8 % kommt von den Item-Abrufen bei Earth Search (Grenze 6, Anteil 3 für 4 Items). Bei Grenze 6 (Anteil 3) wird es spürbar langsamer: der Preis dafür, dass zwei Instanzen zusammen bei 6 bleiben.
 - Die erste Messung (vor 7ca80c0) zeigte bei Grenze 3 vier gleichzeitige Anfragen der Mosaik-Kachel mit Schritten; behoben, siehe §9.3.
 
-### 9.5 Frage an Otto
+### 9.5 Frage an Otto (beantwortet, §9.5a)
 
 **H1 — Viele gleichzeitige Kacheln auf einem Host mit kleiner Grenze werden langsamer (Ansicht über 40 Verbindungen, Grenze 6: +30 %). Was gilt?**
 1. Hinnehmen: Das ist die Wirkung der Grenze selbst; betroffen sind nur Hosts mit Grenze 6 (heute FSDI für swissALTI3D und Earth Search für Items), und nur, wenn mehr als 6 Lesezugriffe zugleich an einen Host gehen; bei 6 Browser-Verbindungen kein Unterschied **(Empfehlung)**
 2. Grenze der FSDI anheben (z. B. 12): schneller, aber doppelte Last auf eine Quelle mit Fair-Use-Regel
 3. Das Teilbudget nur für S3-Hosts anwenden, Behördenserver bleiben bis M6 ohne Grenze je Instanz
+
+### 9.5a Antwort Otto (16.11.2026)
+
+| Frage | Antwort | Folge |
+|---|---|---|
+| H1 | 1: hinnehmen | Viele gleichzeitige Kacheln auf einem Host mit kleiner Grenze dürfen langsamer werden (gemessen: 40 Verbindungen, Grenze 6, +30 %); das ist die gewollte Wirkung der Grenze. G5 gilt damit für alle anderen Fälle; die Grenzen in `hosts.yaml` bleiben, das Teilbudget gilt für alle Hosts |
