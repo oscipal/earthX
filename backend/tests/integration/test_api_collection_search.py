@@ -10,6 +10,7 @@ import json
 from collections.abc import AsyncIterator
 
 import httpx
+import psycopg
 import pytest
 
 from earthx.api.main import app
@@ -30,7 +31,11 @@ _TEXT = "Bodenreflexion"
 
 @pytest.fixture
 async def client(require_postgres_env: None) -> AsyncIterator[httpx.AsyncClient]:
+    """The full entries only: ``catalog-load`` also writes the hand entries of ``listed/`` (M5-17), which these tests of
+    the full catalogue leave out; ``test_api_listed.py`` covers listed rows."""
     assert load_catalog() == 0
+    with psycopg.connect() as conn:
+        conn.execute("DELETE FROM public.earthx_listed_entry")
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
             yield http
