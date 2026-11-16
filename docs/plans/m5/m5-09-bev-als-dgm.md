@@ -1,6 +1,6 @@
 # M5-09 — BEV ALS-DGM 1 m über ATOM
 
-**Stand:** 16.11.2026, Plan mit Fragen (§8). Umsetzung nach Ottos Antworten im selben Draft-PR.
+**Stand:** 16.11.2026, Plan angenommen (Otto, 16.11.2026: F1–F7 jeweils Option 1, §8a). Umsetzung nach Ottos Messlauf (§6 Schritt 1) im selben Draft-PR.
 **Stufe B.** Höchstens zwei PRs (F7).
 **Aufgabe:** M5-09 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2 (Opus, mittel). Abhängigkeit M5-30b Teil 7 ist gemergt; M5-10 (PR A #350, PR B #357) ebenso.
 **Grundlagen:** `adr/0023` §4.2, §7.2, §7.3, §8.3, §9.1, F1, F2, F5, F7; `adr/0032` §9 und Nachträge vom 14. und 15.11.2026 (Ersatz, Pyramide, Suchtreffer); `adr/0011` F6; `adr/0026` F7; `adr/0027` §6.1; `adr/0024`; `KLAERUNGEN.md` B8, B10–B13; Pläne M5-07 (WorldCover), M5-08 (swissALTI3D), M5-10, M5-30.
@@ -168,45 +168,37 @@ Vorschlag: **ein PR** (dieser), in Commits getrennt: Messskript und Plan, Adapte
 
 ## 6. Was Otto lokal ausführt
 
-Alle Befehle aus der Repo-Wurzel mit dem Backend-venv (PowerShell: `$env:PYTHONPATH = 'backend'`).
+Otto hat lokal kein Python; alles läuft über `docker compose` aus der Repo-Wurzel, in PowerShell wie in bash mit derselben Zeile. `--build` baut das Image des Backends neu, damit es den Stand des Branches hat.
 
-**Schritt 1 — vor den Antworten oder mit ihnen (Feed und Dateien messen):**
+**Schritt 1 — jetzt (Feed und Dateien messen):** Dienst `bev-probe` (Profil `measure`). Er nimmt das Image des Backends und bindet `scripts/m5-09-bev/` nur lesend ein; das Skript kommt nicht ins Image, braucht keine Datenbank und liest nur über `gateway`.
 
-```bash
-PYTHONPATH=backend python scripts/m5-09-bev/probe.py --all --headers
+```powershell
+docker compose run --build --rm bev-probe --all --headers
 ```
 
-Die Ausgabe nennt keine Adresse, keinen Kachelnamen und keinen DOI und kann so in den PR. Sie entscheidet A1 und die Form der Fixtures.
+Rund zwei bis drei Minuten. Die Ausgabe nennt keine Adresse, keinen Kachelnamen und keinen DOI und kann so in den PR. Sie entscheidet A1 und die Form der Fixtures.
 
-**Schritt 2 — nach der Umsetzung (Collection anlegen, Items laden):**
+**Schritt 2 — nach der Umsetzung (Collection anlegen, Items laden):** `materialize` startet `catalog-load` selbst vorher.
 
-```bash
-docker compose run --rm catalog-load
-```
-
-```bash
-docker compose run --rm materialize bev-als-dgm
+```powershell
+docker compose run --build --rm materialize bev-als-dgm
 ```
 
 **Schritt 3 — zweiter Lauf ohne Änderung (erwartet `unchanged`):**
 
-```bash
+```powershell
 docker compose run --rm materialize bev-als-dgm
 ```
 
 **Schritt 4 — `min_zoom` messen (Mitte Österreichs, ohne Ort im Repo):**
 
-```bash
-docker compose run --rm measure-tiles bev-als-dgm --bbox 13.5,47.2,14.5,47.8 --zooms 5-10 --threads 4
+```powershell
+docker compose run --build --rm measure-tiles bev-als-dgm --bbox 13.5,47.2,14.5,47.8 --zooms 5-10 --threads 4
 ```
 
-**Schritt 5 — Live-Smoke:**
+**Schritt 5 — Live-Smoke:** läuft in GitHub Actions, nicht lokal (`.github/workflows/live-smoke.yml`, täglich und von Hand). Die Datei muss dort in die Zeile der Datensätze von Hand eingetragen werden (F8). Danach: GitHub → Actions → „Live smoke“ → „Run workflow“, Branch dieses PR.
 
-```bash
-pytest backend/tests_live/test_bev_als_dgm_smoke.py
-```
-
-**Schritt 6 — im Browser:** BEV wählen, von z3 bis z17 zoomen in Crop and merge, angehefteter Ebene, Suchtreffern und einer Szene; Hillshade unter und über `min_zoom`; „Download full scene(s)“ für eine Kachel.
+**Schritt 6 — im Browser:** Stack wie gewohnt starten (`docker compose up -d --build`), BEV wählen, von z3 bis z17 zoomen in Crop and merge, angehefteter Ebene, Suchtreffern und einer Szene; Hillshade unter und über `min_zoom`; „Download full scene(s)“ für eine Kachel.
 
 ---
 
@@ -256,3 +248,14 @@ pytest backend/tests_live/test_bev_als_dgm_smoke.py
 - **A2** Neuer Stichtag nach `temporal_extent.end` → Lauf bricht ab, Eintrag wird nachgeführt.
 - **A3** Zwei `limitations` (Stichtag, Genauigkeit), als Sätze ohne Marke.
 - **A4** Nur DTM; das DSM im selben Feed bleibt draußen.
+
+## 8a. Antworten von Otto (16.11.2026)
+
+- **F1–F7: jeweils Option 1.**
+- **F2, Einstufung durch Otto:** `CC-BY-4.0`, Stufe Processing. Beleg: BEV-Metadaten „Für dieses Produkt gilt die Standardlizenz CC-BY-4.0“; Einstufung als High-Value Dataset (Höhe). Quellenangabe „© BEV, 2025“ bzw. „© BEV, 2025 (modified)“.
+- **F3:** M5-36 steht inzwischen vor M5-09 in der Reihenfolge (M5-Plan §6.3), ist aber nicht gemergt; der Host bleibt bis dahin bei `endpoint` und `asset_hosts`.
+- **Messskript:** Otto hat lokal kein Python und nutzt PowerShell. Das Skript läuft deshalb als Compose-Dienst `bev-probe` (§6 Schritt 1); alle Befehle in §6 sind für Docker und PowerShell gefasst.
+
+**F8 — neu, Live-Smoke in `.github/` (Erlaubnis nötig):** Der Live-Smoke läuft nur, wenn seine Datei in `.github/workflows/live-smoke.yml` steht (Liste der Dateien im Job der materialisierten Datensätze). `.github/` ändere ich nur mit Erlaubnis.
+1. Ich trage `backend/tests_live/test_bev_als_dgm_smoke.py` in diesem PR in die bestehende Zeile ein (eine Zeile, sonst nichts) **(Empfehlung)**
+2. Otto trägt die Datei selbst ein
