@@ -1,7 +1,8 @@
 // A map layer that loads for a long time (plan M5-30 §8.7, finding of Otto, 13.11.2026: 124 swissALTI3D tiles, "Crop and merge to AOI",
 // and the map stayed empty for a very long time), in a real browser with a made-up tiler that is slow the way the real one is: the tiles of the
 // mosaic come one after the other, about a second each (CPU-bound, plan §8.6), the tiles of the substitute at once. It fails when
-//   1. the loading mark (a symbol, `role="status"`, no text) is in the row of the layer manager before 0.6 s of waiting, or not there after;
+//   1. "Loading data" (the busy toast of the status bar; the row of the layer manager has no mark, UI-09) is there before 0.6 s of waiting, or
+//      not there after, or the row shows a spinner;
 //   2. the map is empty (only the background) before the first tile of the mosaic has come: the substitute has to be drawn over level 13;
 //   3. the mark is still there when the last tile has come, or the substitute still lies over the mosaic's picture then;
 // It prints the times from the click to each step: the selection, the TileJSON, the first and the last tile, the mark.
@@ -86,7 +87,8 @@ async function middleColour(page) {
   return point ? pixelAt(page, Math.round(point[0]), Math.round(point[1])) : null;
 }
 
-const marks = (page) => page.locator('.layer-row [role="status"][aria-label="Loading the image"]').count();
+const marks = (page) => page.locator('.status-stack .toast.busy', { hasText: 'Loading data' }).count();
+const rowSpinners = (page) => page.locator('.layer-row .spinner, .layer-row [role="status"]').count();
 
 (async () => {
   fs.mkdirSync(OUT, { recursive: true });
@@ -170,7 +172,7 @@ const marks = (page) => page.locator('.layer-row [role="status"][aria-label="Loa
   const seen = [];
   while (Date.now() - t0 < 4000 + TILE_MS * 6) {
     const [mark, colour] = [await marks(page), await middleColour(page)];
-    seen.push({ t: Date.now() - t0, mark, colour });
+    seen.push({ t: Date.now() - t0, mark, colour, rowSpinner: await rowSpinners(page) });
     if (mosaicTiles > 0 && mosaicDone === mosaicTiles && Date.now() - t0 > 1500 && seen.length > 5 && Date.now() - (at['last mosaic tile'] ?? 0) - t0 > 600 && at['last mosaic tile']) break;
     await later(100);
   }
@@ -182,7 +184,8 @@ const marks = (page) => page.locator('.layer-row [role="status"][aria-label="Loa
   const last = seen.at(-1);
   const markWhileWaiting = seen.filter((s) => s.t < 600 && s.mark > 0);
   if (markWhileWaiting.length) problems.push(`the mark was there at ${markWhileWaiting[0].t} ms, before 600 ms`);
-  if (firstMark === undefined) problems.push('no mark in the layer manager while the mosaic loaded');
+  if (seen.some((s) => s.rowSpinner > 0)) problems.push('the row of the layer manager showed a spinner');
+  if (firstMark === undefined) problems.push('no "Loading data" while the mosaic loaded');
   else if (firstMark > 1500) problems.push(`the mark came late, after ${firstMark} ms`);
   if (markGone === undefined) problems.push('the mark did not go');
   const substituteShown = seen.find((s) => s.colour && near(s.colour, GREEN));

@@ -21,6 +21,13 @@ type MarkMap = Pick<MapLibreMap, 'getLayersOrder' | 'getLayer' | 'getLayoutPrope
   on: (type: string, listener: () => void) => unknown;
 };
 
+// The tile URLs of a source of the map. Only a tiled source (`raster`, `vector`) holds them in `tiles`; an image source (a quicklook,
+// `type: 'image'`) keeps its loaded tiles there, keyed by tile id, and has no URL of the overview route (UI-10).
+function tileUrlsOf(source: unknown): readonly string[] {
+  const tiles = (source as { tiles?: unknown } | null | undefined)?.tiles;
+  return Array.isArray(tiles) ? tiles.filter((url): url is string => typeof url === 'string') : [];
+}
+
 // Whether a layer of the map that is shown at its zoom draws tiles of the overview route.
 export function showsOverview(map: MarkMap): boolean {
   const zoom = map.getZoom();
@@ -29,8 +36,7 @@ export function showsOverview(map: MarkMap): boolean {
     if (!layer || layer.type !== 'raster' || map.getLayoutProperty(id, 'visibility') === 'none') continue;
     if (zoom < layer.minzoom || zoom >= layer.maxzoom) continue;
     if (map.getPaintProperty(id, 'raster-opacity') === 0) continue;
-    const tiles = (map.getSource(layer.source) as { tiles?: readonly string[] } | undefined)?.tiles;
-    if (tiles?.some(isOverviewTileUrl)) return true;
+    if (tileUrlsOf(map.getSource(layer.source)).some(isOverviewTileUrl)) return true;
   }
   return false;
 }

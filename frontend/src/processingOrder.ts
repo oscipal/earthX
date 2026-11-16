@@ -30,6 +30,7 @@ import {
   type Measured,
   type Method,
 } from './normalizeMethods';
+import { looksOfOperator, type OperatorLooks } from './displayLook';
 import { initialValues, paramsForm, paramsFrom, type FieldValue, type ParamsForm } from './schemaForm';
 import type { Collection, EarthxMask, StacAsset, StacBand, StacItem, TimeStepGroup } from './types';
 
@@ -47,6 +48,8 @@ export interface Operator {
   // `x-earthx-passes-values` (M5-28, Otto 11.11.2026): whether the step writes only values it read, which decides the output types
   // the panel offers (`processingDefaults.ts`). `false` where the description does not say.
   passesValues: PassesRule;
+  // `x-earthx-looks` (M5-10, Otto, 16.11.2026): how the band the step makes is drawn, by a parameter of the step; `null` where none.
+  looks: OperatorLooks | null;
   form: ParamsForm;
 }
 
@@ -101,6 +104,7 @@ export function processInfo(description: ProcessDescription): ProcessInfo {
       tiers: Array.isArray(def['x-earthx-tiers']) ? def['x-earthx-tiers'].filter((t) => typeof t === 'string') : [],
       kind: typeof def['x-earthx-kind'] === 'string' ? def['x-earthx-kind'] : null,
       passesValues: passesRuleOf(def['x-earthx-passes-values']),
+      looks: looksOfOperator(def['x-earthx-looks']),
       form:
         op === 'normalize' && opVersion === NORMALIZE_VERSION
           ? normalizeForm(stepProps?.params)

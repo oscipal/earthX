@@ -14,6 +14,7 @@ import { jobEntry, jobId, NOW } from '../fixtures/jobEntries';
 import { lockedWithoutReason } from '../fixtures/lockedControls';
 import { resetJobs, useProcessingStore } from '../processingStore';
 import LayerManager, { EXPIRED_LAYER_TEXT, HIDE_LAYER_TIP, SHOW_LAYER_TIP } from './LayerManager';
+import { confirmRemoval } from '../fixtures/confirmRemoval';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -121,6 +122,7 @@ describe('LayerManager', () => {
       click(rows()[1].querySelector('[data-col="eye"]')); // "four", now second
       expect(flags()).toEqual(['one:1', 'four:0', 'two:1', 'three:1', 'five:1']);
       click(rows()[4].querySelector('button[data-tip="Remove layer"]')); // "five"
+      confirmRemoval();
       click(rows()[3].querySelector('[data-col="eye"]')); // "three"
       expect(flags()).toEqual(['one:1', 'four:0', 'two:1', 'three:0']);
     });
@@ -196,7 +198,7 @@ describe('LayerManager', () => {
     it('have the eleven places in the same order, whatever the kind of layer', () => {
       expect(rows()).toHaveLength(kinds.length);
       for (const row of rows()) {
-        expect(places(row)).toEqual(['grip', 'eye', 'name', 'rename', 'opacity', 'up', 'down', 'process', 'download', 'note', 'remove']);
+        expect(places(row)).toEqual(['grip', 'eye', 'name', 'rename', 'opacity', 'up', 'down', 'process', 'zoom', 'download', 'remove']);
       }
     });
 
@@ -212,6 +214,11 @@ describe('LayerManager', () => {
       }
       expect(at('scene', 'download').tagName).toBe('BUTTON');
       expect(at('result', 'download').tagName).toBe('A');
+      // These layers draw nothing yet, so they have no extent: the place of "Zoom to layer" is empty, as the one of the download (UI-09).
+      for (const k of kinds) {
+        const zoom = at(k.id, 'zoom');
+        expect([zoom.tagName, zoom.getAttribute('aria-hidden'), zoom.className]).toEqual(['SPAN', 'true', 'lm-slot']);
+      }
       // The other buttons are the ones of every row, in the same class.
       for (const col of ['eye', 'up', 'down', 'remove']) {
         for (const row of rows()) expect(row.querySelector(`[data-col="${col}"]`)?.tagName).toBe('BUTTON');
@@ -223,11 +230,16 @@ describe('LayerManager', () => {
         expect(gear.tagName).toBe(k.result ? 'SPAN' : 'BUTTON');
         expect(gear.getAttribute('aria-hidden') === 'true').toBe(Boolean(k.result));
       }
-      expect(at('scene', 'note').className).toBe('lm-slot');
+      // Nothing lies between the download and the bin (UI-09): a layer has no place of its own for a note.
+      for (const row of rows()) {
+        expect(row.querySelector('[data-col="note"]')).toBeNull();
+        expect(row.querySelector('[data-col="remove"]')?.previousElementSibling?.getAttribute('data-col')).toBe('download');
+      }
     });
 
-    it('say their notes in a symbol with a tooltip, in the place of the note', () => {
-      const note = rows()[kinds.findIndex((k) => k.id === 'old')].querySelector('[data-col="note"]')!;
+    it('say their notes in a symbol with a tooltip, in the place of the download they do not have', () => {
+      const note = rows()[kinds.findIndex((k) => k.id === 'old')].querySelector('.lm-note')!;
+      expect(note.getAttribute('data-col')).toBe('download');
       expect(note.className).toBe('lm-note');
       expect(note.querySelector('.tip')?.getAttribute('data-tip')).toBe(EXPIRED_LAYER_TEXT);
       // No text of a note lies in the row, which keeps its height.
@@ -331,7 +343,7 @@ describe('the result layer of a deleted job', () => {
     expect(locked.querySelector('[data-col="opacity"]')?.hasAttribute('disabled')).toBe(true);
     const download = locked.querySelector<HTMLButtonElement>('[data-col="download"]')!;
     expect([download.tagName, download.disabled, download.getAttribute('data-tip')]).toEqual(['BUTTON', true, LOCKED_LAYER_TIP]);
-    expect(locked.querySelector('[data-col="note"]')?.className).toBe('lm-slot');
+    expect(locked.querySelector('[data-col="note"]')).toBeNull();
     expect(locked.textContent).not.toMatch(/delet|restore|job/iu);
     expect(useAppStore.getState().layers[0].result?.deleted).toBe(true);
     expect(useAppStore.getState().layers[1].result?.deleted).toBeFalsy();
@@ -354,7 +366,7 @@ describe('the result layer of a deleted job', () => {
 
   it('keeps its eleven places', () => {
     deleteJobAt(1, NOW + DAY);
-    expect([...rows()[0].children].map((c) => c.getAttribute('data-col'))).toEqual(['grip', 'eye', 'name', 'rename', 'opacity', 'up', 'down', 'process', 'download', 'note', 'remove']);
+    expect([...rows()[0].children].map((c) => c.getAttribute('data-col'))).toEqual(['grip', 'eye', 'name', 'rename', 'opacity', 'up', 'down', 'process', 'zoom', 'download', 'remove']);
   });
 
   it('cannot be switched on with the eye while it is locked, and can still be removed', () => {
@@ -362,6 +374,7 @@ describe('the result layer of a deleted job', () => {
     act(() => rows()[0].querySelector<HTMLElement>('[data-col="eye"]')!.dispatchEvent(new MouseEvent('click', { bubbles: true })));
     expect(useAppStore.getState().layers[0].visible).toBe(true);
     act(() => rows()[0].querySelector<HTMLElement>('[data-col="remove"]')!.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    confirmRemoval();
     expect(useAppStore.getState().layers.map((l) => l.id)).toEqual(['b']);
   });
 
@@ -440,6 +453,7 @@ describe('the bin and the pencil of a row', () => {
     expect(bin.querySelector('svg')).not.toBeNull();
     expect(bin.textContent).not.toContain('✕');
     act(() => bin.click());
+    confirmRemoval();
     expect(useAppStore.getState().layers).toEqual([]);
   });
 
