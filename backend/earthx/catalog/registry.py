@@ -2258,7 +2258,10 @@ class DatasetRegistry:
         """Every host an entry names has its limits in hosts.yaml, and every limit belongs to such a host (M5-36 G1)."""
         named = {host for entry in self._by_id.values() for host in source_hosts(entry)}
         if missing := sorted(named - self._hosts.keys()):
-            raise ConfigError(f"hosts.yaml has no limits for {', '.join(missing)}")
+            raise ConfigError(
+                f"hosts.yaml has no limits for {', '.join(missing)} (a prototype entry's host goes into the hosts.yaml"
+                " of the prototype directory)"
+            )
         if unused := sorted(self._hosts.keys() - named):
             raise ConfigError(f"hosts.yaml names hosts no entry reads from: {', '.join(unused)}")
 
