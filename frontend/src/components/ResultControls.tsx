@@ -254,7 +254,8 @@ function Controls({ layer }: { layer: MapLayer }) {
       const channels = channelsAutoScaled(channelValues, fallback);
       setDraft((d) => ({ ...d, vmin: channels[0].vmin, vmax: channels[0].vmax, channels, percent: undefined }));
     } else if (unit === 'percent') setTyped(DEFAULT_PERCENT);
-    else setDraft(fallback ?? { vmin: '', vmax: '', colormap: '' });
+    // Only the range: the colormap chosen stays (Otto, 16.11.2026).
+    else setDraft((d) => ({ vmin: fallback?.vmin ?? '', vmax: fallback?.vmax ?? '', colormap: d.colormap }));
     setProblem(null);
   };
 

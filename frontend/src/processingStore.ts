@@ -383,6 +383,9 @@ interface ProcessingState {
   rangeNote: string | null;
   // The user applied the range in `range` (also when it is the start range): it holds against a measure.
   rangeByHand: boolean;
+  // The colormap "Auto-scale" leaves as it is (Otto, 16.11.2026): it resets the range only, so the colormap chosen stays over the measure and
+  // the preset that would bring their own. Empty until "Auto-scale" is pressed; gone with a new band shown.
+  colormapHeld: string | null;
   // The range fields hold what the user typed and did not apply; a measure does not write over them.
   rangeEdited: boolean;
   // "Review" was asked for this draft: empty required fields show their hint.
@@ -1115,6 +1118,7 @@ const EMPTY_DRAFT = {
   measure: null as PreviewMeasure | null,
   rangeNote: null as string | null,
   rangeByHand: false,
+  colormapHeld: null as string | null,
   rangeEdited: false,
   reviewAsked: false,
   estimate: null,
@@ -1669,7 +1673,9 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       // The measure over the AOI is asked again where it fell back to the scene.
       for (const [key, measure] of measures) if (measure.source === 'fallback') measures.delete(key);
       settledKey = null;
-      set({ range: DEFAULT_RANGE, rangeByHand: false, rangeEdited: false });
+      const colormap = get().rangeDraft.colormap;
+      const held = colormap === '' ? null : colormap;
+      set({ range: held ? { ...DEFAULT_RANGE, colormap: held } : DEFAULT_RANGE, rangeByHand: false, rangeEdited: false, colormapHeld: held });
       refreshPreview();
     },
     // The preview on screen becomes a layer of its own.
@@ -1956,7 +1962,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     setDtype: (dtype) => set({ dtype: dtype || null, reviewError: null, startError: null, ...dropReview() }),
     setShown: (name) => {
       if (get().shown === name) return;
-      set({ shown: name, range: DEFAULT_RANGE, rangeByHand: false, rangeEdited: false });
+      set({ shown: name, range: DEFAULT_RANGE, rangeByHand: false, rangeEdited: false, colormapHeld: null });
     },
 
     // "Load recipe…": the steps and the data type of a `recipe.json` become the draft, on the
@@ -2547,10 +2553,16 @@ export function handRangeOf(p: Pick<ProcessingState, 'range' | 'rangeByHand'>): 
 
 // The range the preview is drawn with (M4-19c): the one the user applied; else the one the measure of this very
 // preview calls for (the rule of a result's, `scaleOf`); else the start range. Between the two: the preset of an index (NM4-14, D2).
-function drawnRange(p: Pick<ProcessingState, 'range' | 'rangeByHand' | 'measure'>, spec: Pick<PreviewSpec, 'measure' | 'preset'>): PreviewRange {
+function drawnRange(p: Pick<ProcessingState, 'range' | 'rangeByHand' | 'measure' | 'colormapHeld'>, spec: Pick<PreviewSpec, 'measure' | 'preset'>): PreviewRange {
   if (handRangeOf(p)) return p.range;
-  if (spec.preset) return spec.preset;
-  return (p.measure?.key === spec.measure ? measuredRange(p.measure) : null) ?? p.range;
+  if (spec.preset) return holdingColormap(p, spec.preset);
+  return holdingColormap(p, (p.measure?.key === spec.measure ? measuredRange(p.measure) : null) ?? p.range);
+}
+
+// "Auto-scale" resets the range, not the colormap: where it was pressed, the colormap it found stays over whatever range the measure or a preset calls for.
+// The range comes back as it was given where nothing is held or it has the colormap already.
+function holdingColormap(p: Pick<ProcessingState, 'colormapHeld'>, range: PreviewRange): PreviewRange {
+  return p.colormapHeld && range.colormap !== p.colormapHeld ? { ...range, colormap: p.colormapHeld } : range;
 }
 
 // One measure per state of the preview, which is the steps over the first scene (over the AOI, for "AOI only" with
@@ -2667,7 +2679,7 @@ function adoptMeasure(measure: PreviewMeasure | null, preset: PreviewRange | nul
   useProcessingStore.setState({
     measure,
     rangeNote: hand || measure !== null || preset !== null ? null : NO_MEASURE,
-    ...(!hand && !p.rangeEdited ? { rangeDraft: preset ?? measuredRange(measure) ?? p.range } : {}),
+    ...(!hand && !p.rangeEdited ? { rangeDraft: holdingColormap(p, preset ?? measuredRange(measure) ?? p.range) } : {}),
   });
 }
 
