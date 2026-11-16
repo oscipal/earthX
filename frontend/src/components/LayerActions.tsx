@@ -5,10 +5,10 @@
 import { LOCKED_LAYER_TIP, type MapLayer } from '../layers';
 import { EXPIRED_PROCESS_TEXT, layerProcessBlock, NO_COPY_TEXT, PROCESS_LAYER_TEXT, useProcessingStore } from '../processingStore';
 import { useAppStore } from '../store';
-import { CogIcon, PlusIcon, TrashIcon } from './icons';
+import { CogIcon, PlusIcon } from './icons';
 import LayerDownload from './LayerDownload';
+import RemoveLayerButton from './RemoveLayerButton';
 
-export const REMOVE_TIP = 'Remove layer';
 export const COPY_LABEL = 'Add current view to layers';
 const COPY_TIP = 'Add a copy of this layer, drawn as it is now, as a new layer; this layer stays as it was saved';
 
@@ -21,7 +21,6 @@ interface Props {
 
 export default function LayerActions({ layer, beforeCopy }: Props) {
   const datasets = useAppStore((s) => s.datasets);
-  const remove = useAppStore((s) => s.removeLayer);
   const copy = useAppStore((s) => s.copyLayerAsShown);
   const jobs = useProcessingStore((s) => s.jobs);
   const processLayer = useProcessingStore((s) => s.processLayer);
@@ -50,9 +49,7 @@ export default function LayerActions({ layer, beforeCopy }: Props) {
       >
         <PlusIcon lead />{COPY_LABEL}
       </button>
-      <button type="button" className="btn danger vc-remove" data-tip-level="advanced" data-tip={REMOVE_TIP} aria-label={REMOVE_TIP} onClick={() => remove(layer.id)}>
-        <TrashIcon />
-      </button>
+      <RemoveLayerButton layer={layer} className="btn danger vc-remove" />
     </div>
   );
 }

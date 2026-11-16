@@ -19,6 +19,7 @@ import { resetJobs, useProcessingStore } from './processingStore';
 import { useAppStore } from './store';
 import type { Collection, StacItem } from './types';
 import { tipOf } from './fixtures/tips';
+import { confirmRemoval } from './fixtures/confirmRemoval';
 
 vi.mock('./components/MapView', () => ({ default: () => null }));
 
@@ -151,8 +152,10 @@ describe('the entry "Results" in the layer manager', () => {
     click(resultsButton('down'));
     expect(rowNames()).toEqual(['Job three', 'Job two', 'Search results', 'Job one']);
     click(rowOf('Job one').querySelector('[data-col="remove"]')!);
+    confirmRemoval();
     expect(rowNames()).toEqual(['Job three', 'Job two', 'Search results']);
     click(rowOf('Job three').querySelector('[data-col="remove"]')!);
+    confirmRemoval();
     expect(rowNames()).toEqual(['Job two', 'Search results']);
     expect(state().resultsAt).toBe(1);
   });
