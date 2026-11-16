@@ -367,7 +367,7 @@ def test_the_kernel_refuses_a_band_it_is_not_given() -> None:
 
 def test_only_models_of_heights_offer_the_terrain_operator() -> None:
     offered = {config.dataset_id for config in registry(prototype=False) if not applicable(TERRAIN, config)}
-    assert offered == {"cop-dem-glo-30", "swissalti3d"}
+    assert offered == {"bev-als-dgm", "cop-dem-glo-30", "swissalti3d"}
     reasons = applicable(TERRAIN, registry().get("sentinel-2-c1-l2a"), _params(SLOPE))
     assert reasons == ["sentinel-2-c1-l2a does not allow terrain"]
 

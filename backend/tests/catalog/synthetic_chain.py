@@ -35,6 +35,7 @@ import pytest
 from rasterio.warp import transform_bounds
 from rio_tiler.constants import WEB_MERCATOR_TMS, WGS84_CRS
 
+from earthx.adapters import bev_atom
 from earthx.adapters.stac_api import STATE_PROPERTY, TILE_PROPERTY, dialect_of, normalize_for
 from earthx.catalog.registry import (
     AdapterKind,
@@ -51,6 +52,7 @@ from tests.earthx.readers import (
     mini_cog,
     mini_dem,
     mini_gcp,
+    mini_laea,
     mini_lv95,
     mini_worldcover,
     mini_zarr,
@@ -554,6 +556,85 @@ def _build_fsdi(config: DatasetConfig, render_asset: str, tmp_path: Path, monkey
     )
 
 
+#: The paths of the ATOM service of the BEV the synthetic source answers (M5-09).
+ATOM_SERVICE_PATH = "/geonetwork/srv/atom/describe/service"
+ATOM_DATASET_PATH = "/geonetwork/srv/atom/describe/dataset"
+
+
+def gateway_answering_atom_materialize(config: DatasetConfig) -> tuple[Gateway, list[httpx.Request]]:
+    """A gateway that answers the service feed with the one tile of :mod:`mini_laea` and its dataset feed with its file,
+    enough for `adapters.materialize_items` over the ATOM service (M5-09) to build the item for real."""
+    seen: list[httpx.Request] = []
+    namespaces = (
+        'xmlns="http://www.w3.org/2005/Atom" xmlns:inspire_dls="http://inspire.ec.europa.eu/schemas/inspire_dls/1.0"'
+    )
+    day = mini_laea.DAY
+    title = f"ALS DTM {mini_laea.TILE} Höhenraster 1m Stichtag {day.strftime('%d.%m.%Y')}"
+    service = (
+        f"<feed {namespaces}><entry><title>{title}</title><updated>2025-10-01T00:00:00Z</updated>"
+        "<inspire_dls:spatial_dataset_identifier_code>"
+        f"https://doi.org/{mini_laea.DOI}</inspire_dls:spatial_dataset_identifier_code>"
+        f'<link rel="alternate" type="application/atom+xml" href="https://{HOST}{ATOM_DATASET_PATH}"/></entry></feed>'
+    )
+    dataset = f'<feed {namespaces}><entry><link rel="alternate" type="image/tiff" href="{mini_laea.ASSET_URL}"/></entry></feed>'
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if request.url.path == ATOM_SERVICE_PATH:
+            return httpx.Response(200, content=service.encode())
+        if request.url.path == ATOM_DATASET_PATH:
+            return httpx.Response(200, content=dataset.encode())
+        if request.method == "HEAD" and request.url.path == httpx.URL(mini_laea.ASSET_URL).path:
+            # The version of an input without `file:checksum` is the ETag of the file (plan §2.4).
+            return httpx.Response(200, headers={"etag": '"synthetic-laea"'})
+        raise AssertionError(f"the synthetic ATOM service has no answer for {request.method} {request.url}")
+
+    async def sleep(seconds: float) -> None:
+        return None
+
+    policy = Policy(allowed_hosts=frozenset({HOST, host_of(config.source.endpoint)}))
+    return (
+        Gateway(policy, transport=httpx.MockTransport(handler), resolve=mini_zarr.from_memory, sleep=sleep),
+        seen,
+    )
+
+
+def _build_bev(config: DatasetConfig, render_asset: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Chain:
+    """BEV ALS-DGM (M5-09): the item as the materialization over the ATOM service writes it, the tile a COG in LAEA.
+
+    Link 1 of the end-to-end test runs the real materialization against the same gateway and compares its item with
+    this one, so the two cannot drift apart.
+    """
+    path = mini_laea.build_mini_laea(tmp_path / "mini_laea.tif")
+    read_addresses = mini_cog.serve_cog(path, monkeypatch)
+    synthetic = replace(
+        config,
+        source=replace(
+            config.source,
+            endpoint=f"https://{HOST}{ATOM_SERVICE_PATH}?uuid=synthetic",
+            asset_hosts=(HOST,),
+            asset_href_rewrites=(),
+        ),
+    )
+    gateway, searched = gateway_answering_atom_materialize(synthetic)
+    resolve_from_memory(monkeypatch)
+    item = bev_atom.tile_item(
+        synthetic, tile=mini_laea.TILE, day=mini_laea.DAY, href=mini_laea.ASSET_URL, doi=mini_laea.DOI
+    )
+    return Chain(
+        config=synthetic,
+        registry=registry_of(synthetic),
+        item=item,
+        render_asset=render_asset,
+        # Five kilometres in the middle of the cell: the whole cell at 1 m would be a download of 24 GB.
+        aoi=aoi_wgs84(mini_laea.AOI_BOUNDS),
+        tile=_covering_tile_wgs84(mini_laea.AOI_BOUNDS, config.viewer),
+        gateway=gateway,
+        searched=searched,
+        read_addresses=lambda: list(read_addresses),
+    )
+
+
 def _build_materialized(
     config: DatasetConfig, render_asset: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> Chain:
@@ -563,6 +644,8 @@ def _build_materialized(
         return _build_worldcover(config, render_asset, tmp_path, monkeypatch)
     if config.source.adapter is AdapterKind.FSDI_STAC_V1:
         return _build_fsdi(config, render_asset, tmp_path, monkeypatch)
+    if config.source.adapter is AdapterKind.BEV_ATOM:
+        return _build_bev(config, render_asset, tmp_path, monkeypatch)
     path = mini_dem.build_mini_dem(tmp_path / "mini_dem.tif")
     read_addresses = mini_dem.serve_dem(path, monkeypatch)
     # Only the host has to match what the real adapter builds an href from

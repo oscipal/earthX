@@ -1,0 +1,189 @@
+# BEV ALS-DGM 1 m from the INSPIRE ATOM service "ALS EL Höhendaten" of the BEV (M5-09, `adr/0023` §4.2, §8.3).
+# Measured by Otto on 16.11.2026 with `scripts/m5-09-bev/probe.py` (M5-09 plan §2.4): the service feed, the 55 dataset
+# feeds of the newest date, a HEAD and range read of every file, and the COG header of every file.
+#
+# One file is one entry of the registry (docs/plans/m5/m5-13-yaml-lader.md, KLAERUNGEN B13 stage 2). The fields are
+# those of `DatasetConfig` in `backend/earthx/catalog/registry.py`, every one set on purpose, none with a default
+# (KLAERUNGEN B10); `catalog.entry_files` reads the file strictly. Every value carries the place it comes from.
+
+# The id of the evaluation set of `adr/0026`, fixed here (M5-09 plan §1).
+dataset_id: bev-als-dgm
+title: BEV ALS-DGM 1 m
+description: >-
+  BEV ALS-DGM: digital terrain model (DTM) of Austria without vegetation and buildings, derived from airborne laser
+  scanning, at 1 m, as cloud-optimized GeoTIFF in tiles of 50 km in ETRS89-LAEA (EPSG:3035), heights in metres above
+  the Adriatic (Austrian orthometric heights). The data are the state on the reference date of 15 September 2025;
+  a tile can combine surveys of different years. Heights are accurate to about ±0.5 m, less in high mountains.
+# German and English (adr/0026 F7, M5-09 plan §4.3).
+keywords:
+- BEV
+- ALS
+- airborne laser scanning
+- lidar
+- digital terrain model
+- DTM
+- elevation
+- elevation model
+- terrain
+- Austria
+- Höhenraster
+- Geländemodell
+- Höhenmodell
+- Höhe
+- DGM
+- Laserscanning
+- Österreich
+category: elevation
+# The office produces, licenses and serves the data from its own server (M5-09 plan §2.1).
+providers:
+- name: BEV – Bundesamt für Eich- und Vermessungswesen
+  roles: [producer, licensor, host]
+  url: https://www.bev.gv.at/Services/Produkte/Digitales-Gelaendehoehenmodell/ALS-Hoehenraster.html
+gsd: [1.0]
+# Every tile has a DOI of its own, the series none (M5-09 F6): the DOI is `sci:doi` on each item, and the citation
+# names publisher, product, reference date and the product page (onboarding checklist point 3).
+doi: null
+citation: >-
+  BEV – Bundesamt für Eich- und Vermessungswesen: ALS DTM Höhenraster 1 m, reference date 15.09.2025,
+  https://www.bev.gv.at/Services/Produkte/Digitales-Gelaendehoehenmodell/ALS-Hoehenraster.html
+# One terrain model of the newest reference date (M5-09 F1).
+data_class: raster-static
+format: cog
+# The files carry a CRS (EPSG:3035) and a geotransform [M, all 55 headers].
+georeferencing: geotransform
+line_times: null
+# The union of the 55 loaded tiles (`st_extent` over the items after Otto's first load, 16.11.2026; M5-09 plan A9).
+spatial_extent:
+  bbox: [9.051669, 45.9508597, 17.7770115, 49.1478285]
+# The reference date of the loaded state (M5-09 F1). A newer date stops the load until this period is followed up
+# (plan A2); the live smoke reports it first.
+temporal_extent:
+  start: 2025-09-15T00:00:00+00:00
+  end: 2025-09-15T23:59:59+00:00
+capabilities:
+  roi: true
+  # Only the newest reference date is loaded (M5-09 F1): no time line to choose from.
+  time_range: false
+  band_math: true
+  interpolation: true
+  reprojection: true
+  # A height model has no classification layer.
+  masking: false
+  # A mask by height makes sense, as for swissALTI3D and the DEM.
+  value_masking: true
+  normalization: true
+  ml_processing: true
+  # No complex quad-pol data: decomp.py stays out (ENTSCHEIDUNGEN §3).
+  quad_pol: false
+  # A model of heights in metres: slope, aspect and hillshade (adr/0023 F5, M5-10).
+  terrain: true
+  # One model, one mosaic over all tiles: extent, not density (adr/0004 §5).
+  single_coverage_product: true
+# Classified by Otto on 16.11.2026 (M5-09 F2, KLAERUNGEN B11): CC BY 4.0, tier processing. The licence stands in the
+# metadata record of each tile in the GeoNetwork of the BEV ("Für dieses Produkt gilt die Standardlizenz CC-BY-4.0"),
+# not in the `rights` of the feed, which only says the access is unrestricted; the dataset is a High-Value Dataset
+# (elevation).
+license:
+  spdx_id: CC-BY-4.0
+  name: Creative Commons Attribution 4.0 International
+  url: https://creativecommons.org/licenses/by/4.0/
+  commercial_use: true
+  distribution: true
+  derivatives: true
+  share_alike: false
+  attribution_required: true
+  tier: processing
+  # "© BEV, JJJJ" from the terms of use of the BEV (2022, point 2.3.3), the year of the reference date; "(modified)"
+  # in the form of `adr/0023` §7.2. Confirmed by Otto (M5-09 F2). A new reference date changes the year.
+  attribution_modified: © BEV, 2025 (modified)
+  attribution_unmodified: © BEV, 2025
+  terms: null
+# The licence is checked and the tier set by Otto (adr/0024 R1, R3): no prototype source.
+legal_status: cleared
+legal_note: null
+access:
+  token_free_checked_at: 2026-11-16
+  # As measured in M5-09 plan §2.4.
+  method: anonymous HTTPS to the ATOM feeds of the BEV GeoNetwork and the files on the same host, no authentication header
+  # `Access-Control-Allow-Origin: *` on a file requested with an Origin (measured 16.11.2026; on 06.11.2026 there was
+  # none).
+  cors: true
+  # Feeds and files anonymous (adr/0027 §6.1): no account, no account path.
+  account: none
+  account_provider: null
+  account_paths: []
+source:
+  adapter: bev-atom
+  # The service feed the metadata records of the tiles name (M5-09 plan §2.1).
+  endpoint: https://data.bev.gv.at/geonetwork/srv/atom/describe/service?uuid=208cff7a-c8aa-42fe-bf4f-2b8156e37528
+  # The model as the titles of the feed name it; the DSM of the same feed stays out (plan A4).
+  source_collection_id: ALS DTM
+  asset_hosts: [data.bev.gv.at]
+  # 55 tiles, read once a run from 56 feeds (plan §4.1).
+  item_holding: materialized
+  # Who runs the storage and where is not shown (adr/0023 F7).
+  data_region: unknown
+  asset_keys: []
+  item_states: null
+  asset_href_rewrites: []
+  # The files carry ETag and Last-Modified (plan §2.4): the version of an input is the ETag.
+  asset_checksum: null
+coverage:
+  provider: local-sql
+  # A tile of 50 km; `max_geotile_level_for(50.0) == 9`.
+  typical_footprint_km: 50.0
+  max_geotile_level: 9
+# Shown like swissALTI3D; Austria's highest summit is 3 798 m.
+default_render:
+  title: Elevation
+  assets: [dtm]
+  rescale:
+  - [0.0, 4000.0]
+  colormap_name: terrain
+  expression: null
+  resampling: nearest
+  asset_selection: all
+# One mosaic over all tiles of the reference date (M5-09 F1): every item carries the same `datetime`.
+#
+# `min_zoom` 9 (M5-09 F10): the first level whose cold tile stays inside the budget of 4 s (Otto's measurement of
+# 16.11.2026, plan §2.6: z7 9.4 s, z8 6.3 s, z9 2.8 s). Below z9 the picture is GLO-30: its files at z7 and z8, its
+# pyramid below.
+# `max_zoom` 19: two levels past z17, the level of 1 m.
+#
+# `browse: full_resolution` as for swissALTI3D: no quicklook, the AOI crop in full resolution.
+viewer:
+  group_by: [datetime]
+  min_zoom: 9
+  max_zoom: 19
+  browse: full_resolution
+  quicklook_nodata_max: null
+  results_group_by: [datetime]
+  # What is shown below min_zoom (adr/0032 §9): the picture of Copernicus DEM GLO-30, inside the rectangle of the
+  # extent (M5-09 F4); statistics, crop, download and jobs read the tiles of the BEV. The unit of both is `m`.
+  overview: substitute
+  overview_resampling: null
+  overview_substitute: cop-dem-glo-30
+health:
+  status: ok
+# A standard product of the BEV, updated every year on 15 September.
+maturity: stable
+zarr: null
+mask: null
+# Heights in metres above the Adriatic (plan §2.1).
+band_units:
+  dtm: m
+auxiliary_assets: []
+# The feeds offer no search: no filters.
+search_filters: []
+# As for swissALTI3D: the share of the AOI the tiles reach is meaningful; one state per tile.
+search_capabilities:
+  evaluate: false
+  aoi_coverage: true
+# Terrain comes with its own operator (M5-10, `adr/0023` F5).
+index_presets: []
+true_color: []
+notices: []
+# The row "Limitations" of the Data catalogue (adr/0018 F2), as sentences (M5-09 plan A3).
+limitations:
+- The reference date is the state of the data on that day; a tile can combine surveys of different years.
+- Heights are accurate to about ±0.5 m, less in high mountains.
