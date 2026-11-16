@@ -658,10 +658,13 @@ describe('the panels of the rail have no x (UI-04 part 4, Otto, 4.11.2026): they
 describe('a segment button is the form of a choice (UI-04 part 4, Otto, 4.11.2026)', () => {
   // A switch (`role="switch"`) is for something that is on or off and nothing else; a choice of one of several, the steps of the tooltips
   // included, is a row of segment buttons, and a thing that is on beside others is a button that is pressed. Today the one switch is the
-  // checkbox "Filter within AOI only" (Otto, 4.11.2026: it stays).
+  // checkbox "Filter within AOI only" (Otto, 4.11.2026: it stays), and "Only datasets in AOI" in the Data catalogue (M5-40 H2).
   const holders = (text: string) => /role="switch"/u.test(withoutComments(text));
-  it('has `role="switch"` only in the filter within the AOI, and no component `Switch`', () => {
-    expect(sources.filter(([, text]) => holders(text)).map(([path]) => path)).toEqual(['components/AdvancedSearch.tsx']);
+  it('has `role="switch"` only in the two filters of the AOI, and no component `Switch`', () => {
+    expect(sources.filter(([, text]) => holders(text)).map(([path]) => path)).toEqual([
+      'components/AdvancedSearch.tsx',
+      'components/DataCatalogue.tsx',
+    ]);
     expect(SOURCES['./components/Switch.tsx']).toBeUndefined();
     expect(holders('<button role="switch" />')).toBe(true);
     expect(holders('<button aria-pressed />')).toBe(false);

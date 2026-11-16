@@ -355,3 +355,120 @@ In derselben Transaktion wie heute, nach den vollen Einträgen:
 
 **Noch nicht gebaut:** PR 2 (Frontend: Gruppen nach Kategorie mit Nachladen beim Scrollen, „ohne Parameter nur erste Seite“).
 
+
+## 9. PR 2 (Frontend): Umfang und Fragen H1–H5
+
+**Auftrag (Otto, 15.11.2026, nach dem Merge von #356):**
+- Der Data catalogue blättert und lädt beim Scrollen nach.
+- Die Gruppen folgen `category`, für volle und gelistete Einträge.
+- Filter nach AOI, Region, Zeit und `category`.
+- Schlagworte in den Details, der Link „Source“, keine Marken an gelisteten Einträgen.
+- `/stac/collections` ohne Parameter wie im Plan (F3).
+
+**Klar und in Arbeit:**
+- **Ohne Parameter** liefert `/stac/collections` die erste Seite. Das Frontend lädt die vollen Einträge mit `entry=full` über alle Seiten (≤ 10³); Store, Control Panel, Suche und Layer bleiben unverändert.
+- **Gruppen:** eine je Kategorie in der Reihenfolge von `categories.yaml`. Jede Gruppe lädt ihre Seiten mit `category=<id>` (volle und gelistete gemischt, nach Titel) und lädt nach, wenn ihr Ende im Fenster sichtbar wird. Eine Gruppe ohne Einträge erscheint nicht. Das Control Panel scrollt weiterhin nie.
+- **Zeile eines gelisteten Eintrags:** Titel und der Link „Source“, keine Marke (F6). Volle Einträge bleiben wie heute.
+- **Details:** neue Zeile „Keywords“ für jeden Eintrag. Bei gelisteten Einträgen fallen die Zeilen weg, die nur für volle gelten (Bänder, Processing, Quick processing, Mask).
+
+**Nicht entschieden: die Bedienelemente der Filter.** Festgelegt ist nur der AOI-Schalter (`adr/0026` §7, F6: Vorgabe aus, bleibt für die Sitzung an). Für Region, Zeit und Kategorie gibt es keine Vorgabe. Zudem kennt der Leitfaden §7 genau einen Schalter (`role="switch"`), und das Frontend hat bisher weder die Namen der Regionen noch die Liste der Kategorien.
+
+**H1 — Ort und Form der Filter?**
+1. Eine zweite Zeile im Kopf des Fensters (`catalogue-head`) mit AOI-Schalter, Auswahl „Region“, zwei Datumsfeldern „From“/„To“ wie in „Search and area“ und Auswahl „Category“. Sie wirken auf alle Gruppen, die Auswahl der Kategorie zeigt nur deren Gruppe. Kein Satz darunter, Erklärungen hinter (i) **(Empfehlung)**
+2. Dieselben Felder hinter einem Knopf „Filters“, der die Zeile auf- und zuklappt
+3. Jetzt nur der AOI-Schalter, Region, Zeit und Kategorie mit M5-23
+
+**H2 — Name des AOI-Schalters?** Er darf nicht mit „Filter within AOI only“ (Advanced search) verwechselbar sein. Der zweite `role="switch"` braucht einen Nachtrag im Leitfaden (§2, §7, §10).
+1. „Only datasets in AOI“, Nachtrag im Leitfaden in diesem PR **(Empfehlung)**
+2. Ein anderer Name (bitte nennen)
+
+**H3 — Namen der Regionen für die Auswahl?**
+1. Neue Route `GET /catalogue/regions`: Code, Name und Ebene aus `regions.json`, ohne Umrisse (rund 10 KB). Die Auswahl gruppiert Staaten und darunter die Unterteilungen von DE, AT, CH und LI **(Empfehlung)**
+2. Staatennamen aus dem Browser (`Intl.DisplayNames`), die 62 Unterteilungen als Liste im Frontend
+3. Nur die Codes, ohne Namen
+
+**H4 — Liste der Kategorien im Frontend?**
+1. Neue Route `GET /catalogue/categories` mit Kennung und Titel in der Reihenfolge von `categories.yaml`, damit die Datei der einzige Ort bleibt **(Empfehlung)**
+2. Kopie im Frontend; ein Backend-Test vergleicht sie mit der Datei
+
+**H5 — Zahl im Kopf einer Gruppe** (heute steht dort die Zahl der Einträge)?
+1. Die Zahl aus `numberMatched` bis 10 000; darüber steht keine Zahl **(Empfehlung)**
+2. Keine Zahl mehr
+
+Bis zu den Antworten baue ich die Gruppen mit einer vorläufigen Kopie der Liste (H4 Option 2). Die Filter-Bedienelemente baue ich erst nach den Antworten.
+
+### 9a. Antworten Otto zu H1–H5 (15.11.2026) und Umsetzung
+
+| Frage | Antwort |
+|---|---|
+| H1 | zweite Zeile im Kopf des Fensters (AOI-Schalter, Region, From/To, Kategorie), immer sichtbar |
+| H2 | „Only datasets in AOI“, Nachtrag im Leitfaden |
+| H3 | Route `GET /catalogue/regions` |
+| H4 | Route `GET /catalogue/categories`; die Kopie im Frontend entfällt |
+| H5 | Zahl bis 10 000, darüber „10,000+“ |
+
+**Umgesetzt** (Draft-PR [#358](https://github.com/oscipal/earthX/pull/358)):
+
+- **Backend:**
+  - `GET /catalogue/categories` liefert Kennung und Titel in der Reihenfolge von `categories.yaml`.
+  - `GET /catalogue/regions` liefert Code, Name und Ebene aus `regions.json`, ohne Umrisse; die Unterteilungen folgen ihrem Staat.
+  - Beide Routen lesen nur Dateien des Images; die Antworten dürfen eine Stunde zwischengespeichert werden. Der Entwicklungsserver leitet `/catalogue` weiter.
+  - `/stac/collections` ohne Parameter liefert die erste Seite.
+- **Frontend:**
+  - Die vollen Einträge lädt es mit `entry=full` über alle Seiten, die Kategorien mit den Datensätzen.
+  - Der Data catalogue hat eine Gruppe je Kategorie. Eine Gruppe lädt ihre Seiten zu 50 per POST mit den Filtern (die Fläche steht nie in einer URL) und lädt nach, wenn ihr Ende im Fenster sichtbar wird.
+  - Die zweite Zeile im Kopf enthält „Only datasets in AOI“ (ohne AOI gesperrt mit „Draw an AOI to use this filter“), „Region“, „From“/„To“ und „Category“. Die Filter bleiben für die Sitzung im Store und werden nicht gespeichert; die Kategorie zeigt nur ihre Gruppe.
+  - Der Gruppenkopf zeigt die Zahl mit Tausender-Komma, darüber „10,000+“. Nimmt ein Filter alles weg, steht „No datasets to show“.
+  - Gelistete Einträge zeigen „Source“, keine Marke und die Schlagworte in den Details.
+  - Ein Zeitraum ohne Anfang und Ende steht als „—“, nicht mehr als „— – today“.
+- **Leitfaden:** §2 nennt „Only datasets in AOI“, §7 kennt zwei Schalter und beschreibt die zweite Zeile im Kopf, §10 passt die Prüfung an.
+- **Browser-Check:** `frontend/e2e/data-catalogue.cjs` läuft mit erfundenen Antworten der neuen API, hell und dunkel, breit (1280 px) und schmal (360 px). Alle vier Durchläufe bestehen. Geprüft werden:
+  - Gruppen und ihre Reihenfolge;
+  - das Nachladen bis zur letzten Seite (130 Einträge in drei Seiten);
+  - „Source“ und die Schlagworte eines gelisteten Eintrags;
+  - die Filterzeile im Fenster und der gesperrte Schalter;
+  - Kategorie und Region;
+  - kein seitliches Scrollen.
+
+### 9b. Änderungen Otto am Data catalogue (16.11.2026, ersetzt H1 und H2) und Umsetzung
+
+**Vorgaben:**
+1. Statt der festen Filterzeile ein Knopf „Filters“ im Kopf des Fensters, der ein Popup öffnet; jedes Feld im Popup hat ein „×“ zum Leeren.
+2. Der Schalter heißt „Filter by search panel“:
+   - Ist er an, gelten AOI und Zeitraum aus dem Search panel; die Felder Region und From/To sind dann ausgeblendet.
+   - Ohne AOI im Search panel bleibt er gesperrt mit Grund.
+   - Die Kategorie bleibt immer wählbar.
+3. Im Search panel ein Eintrag „Add dataset“, gestaltet wie ein Datensatz, der den Data catalogue öffnet. Er zählt beim Seitenumbruch wie ein Datensatz; das Panel scrollt weiterhin nie.
+4. **Nachtrag:** im Kopf neben „Filters“ ein Suchfeld mit Lupe und „×“.
+   - Es nutzt die Collection Search mit `q` (M5-22c) und findet nach Name, Schlagworten und Kategorie (die Wörter aus `categories.yaml` stehen im Suchtext).
+   - Mit Text erscheinen die Treffer in Rangfolge statt nach Gruppen; die Filter gelten weiter.
+   - Gelistete Einträge kommen mit M5-42 in die Suche, der Vektor-Arm mit M5-23; die Oberfläche bleibt dabei gleich.
+
+**Umgesetzt** (Draft-PR [#358](https://github.com/oscipal/earthX/pull/358)):
+
+- **Kopf:** Titel, Suchfeld „Search datasets“, Knopf „Filters“, rotes x.
+  - Das Suchfeld hat Lupe, „×“ und ein (i) mit dem, was die Suche kann; es nimmt höchstens 200 Zeichen und fragt erst 300 ms nach der letzten Taste.
+  - Der Knopf „Filters“ zeigt die Zahl der gesetzten Filter wie „Advanced search“ („Filters · 2“).
+  - Unter 900 px stehen Suchfeld und „Filters“ in einer eigenen Reihe unter dem Titel.
+- **Popup „Filters“:**
+  - Gebaut mit `Popover` als Formular wie „Advanced search“: Es schließt mit einem Klick daneben, nicht mit Esc, und ist so breit wie Suchfeld und Knopf zusammen.
+  - Inhalt: „Filter by search panel“, „Region“, „From“/„To“, „Category“, jedes Feld mit „×“, solange es einen Wert hat. Der Schalter hat kein „×“: Er ist an oder aus.
+  - Ist „Filter by search panel“ an und hat das Search panel eine AOI, gehen dessen AOI und Zeitraum mit jeder Anfrage. Region und From/To sind dann ausgeblendet und wirken nicht.
+  - Ohne AOI ist der Schalter gesperrt mit „Draw an AOI to use this filter“ und wirkt nicht. Verschwindet die AOI, gelten Region und From/To wieder.
+- **Suche:** Mit Text stehen statt der Gruppen die Treffer in der Reihenfolge der API, 20 je Seite, beim Scrollen weitere.
+  - Kategorie und die übrigen Filter gehen mit.
+  - Findet die Suche nichts, steht „No datasets to show“; das „×“ des Suchfelds bringt die Gruppen zurück.
+  - Text und Filter bleiben für die Sitzung.
+  - Bis M5-42 findet die Suche nur volle Einträge (F7).
+- **Search panel:** Die Kachel „Add dataset“ steht nach den Datensätzen und zählt beim Seitenumbruch mit. Ohne Datensätze ist sie die einzige Kachel und ersetzt den Satz „No datasets yet — add some from the Data catalogue“; die Seitenanzeige „‹ 1 / n ›“ steht jetzt immer da.
+- **Leitfaden:**
+  - §2 nennt „Filter by search panel“ (statt „Only datasets in AOI“), „Filters“, „Search datasets“ und „Add dataset“.
+  - §7 beschreibt die zwei Schalter und den Kopf des Fensters; die Regeln zum Search panel nennen „Add dataset“.
+  - §10 nennt die Tests.
+- **Browser-Check** `frontend/e2e/data-catalogue.cjs`: hell/dunkel × breit/schmal, alle bestanden. Geprüft werden:
+  - Suchfeld und „Filters“ im Kopf, das Popup im Fenster;
+  - der gesperrte Schalter mit Grund, Kategorie und Region, die „×“, der Klick daneben;
+  - Treffer statt Gruppen und das „×“ der Suche;
+  - „Add dataset“.
+
+  „Filter by search panel“ eingeschaltet prüfen nur die Unit-Tests, weil das Skript keine AOI zeichnet.

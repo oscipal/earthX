@@ -2,9 +2,8 @@
 
 ``GET`` takes ``q``, ``bbox``, ``datetime``, ``region``, ``entry``, ``limit`` and ``token`` (``offset`` with ``q``);
 ``POST`` takes the same in its body and an area as ``intersects`` as well (F6), so that this platform's own frontend
-never puts an area in a URL. Without any parameter the answer is the list of every full entry as before (plan A5);
-that path stays in :class:`~earthx.api.federating_client.FederatingCoreCrudClient` until the frontend pages (M5-40
-plan F2).
+never puts an area in a URL. Without any parameter the answer is the first page of the catalogue (M5-40 plan F3, F2):
+no request returns every collection at once.
 
 With ``q`` the ids come from :func:`~earthx.catalog.search.search_datasets` in rank order, full entries only until
 M5-42 (M5-40 plan F7); a page holds at most :data:`MAX_TEXT_PAGE` collections and goes on by ``offset``. Without ``q``
@@ -51,8 +50,8 @@ from earthx.catalog.search import MAX_QUERY_CHARS, SearchResult, box_area, searc
 
 #: adr/0026 §4.4: at most 20 hits per page of a text search.
 MAX_TEXT_PAGE = 20
-#: The most collections one page lists, the cap of the library (``stac_fastapi.types.search.Limit``): the answer without
-#: any parameter until the frontend pages (M5-40 plan F2).
+#: The cap of the library (``stac_fastapi.types.search.Limit``): what a search over the full entries of pgstac asks for
+#: its collections (``FederatingCoreCrudClient._all_collection_ids``); never an answer of ``/stac/collections``.
 MAX_PAGE = 10_000
 #: A page of the catalogue without text (M5-40 plan F3).
 DEFAULT_PAGE = 100

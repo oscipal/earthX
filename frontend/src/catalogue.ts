@@ -6,20 +6,44 @@ import type { DatasetOption } from './datasets';
 import { maturityLabel, maturityNote } from './datasets';
 import { utcDay } from './dateBounds';
 import { indexPresetsOf } from './indexPresets';
-import { formatNumber } from './numberFormat';
+import { formatCount, formatNumber } from './numberFormat';
 import { catalogueUnit, trueColorOf } from './processingOrder';
+import type { CatalogueFilterState } from './store';
 import type { Collection } from './types';
 
-// The groups in the order of the registry field `category` (UI-05 F1). A collection without one, or with one this viewer
-// does not know, is in "Other" at the end: listed, so that the gap shows.
-export const CATEGORIES = [
-  { id: 'optical', title: 'Optical' },
-  { id: 'radar', title: 'Radar' },
-  { id: 'elevation', title: 'Elevation' },
-  { id: 'land_cover', title: 'Land cover' },
-  { id: 'weather_climate', title: 'Weather and climate' },
-] as const;
-export const OTHER_CATEGORY = { id: 'other', title: 'Other' } as const;
+// A category of the Data catalogue as `GET /catalogue/categories` gives it, in the order of the groups (M5-40 H4): the
+// file `backend/catalog/categories.yaml` is the one place they are decided. A collection without a category, or with
+// one this list does not have, is in "Other".
+export interface CatalogueCategory {
+  id: string;
+  title: string;
+}
+export const OTHER_CATEGORY: CatalogueCategory = { id: 'other', title: 'Other' };
+
+// The categories with "Other" last, also where the list of the API lacks it.
+export const withOther = (categories: readonly CatalogueCategory[]): CatalogueCategory[] => [
+  ...categories.filter((c) => c.id !== OTHER_CATEGORY.id),
+  categories.find((c) => c.id === OTHER_CATEGORY.id) ?? OTHER_CATEGORY,
+];
+
+// A catalogue entry with a link (M5-40): no display, no "Add", no mark (plan F6).
+export const isListed = (collection: Collection): boolean => collection['earthx:entry'] === 'listed';
+
+// The page at the source a listed entry links to: `earthx:listing.source_url`, else its link `via`; https only.
+export function listedSourceOf(collection: Collection): string | null {
+  const listed = collection['earthx:listing']?.source_url;
+  if (isHttps(listed)) return listed;
+  const links = (collection as { links?: { rel?: string; href?: string }[] }).links;
+  const via = links?.find((l) => l.rel === 'via')?.href;
+  return isHttps(via) ? via : null;
+}
+
+// The keywords of an entry, as the API sends them (normalized for a listed one), each once.
+export function keywordsOf(collection: Collection): string[] {
+  const keywords = collection.keywords;
+  if (!Array.isArray(keywords)) return [];
+  return [...new Set(keywords.filter((k): k is string => typeof k === 'string' && k.trim() !== ''))];
+}
 
 // How many datasets a first visit adds (UI-05 F3, Otto 06.11.2026; it stays six after the pages lost their limit, 07.11.2026).
 export const FIRST_VISIT_DATASETS = 6;
@@ -34,17 +58,18 @@ export interface CatalogueGroup {
   datasets: DatasetOption[];
 }
 
-function categoryOf(collection: Collection): string {
+export function categoryOf(collection: Collection, categories: readonly CatalogueCategory[]): string {
   const category = collection['earthx:category'];
-  return CATEGORIES.some((c) => c.id === category) ? (category as string) : OTHER_CATEGORY.id;
+  return categories.some((c) => c.id === category) ? (category as string) : OTHER_CATEGORY.id;
 }
 
 const byTitle = (a: DatasetOption, b: DatasetOption): number => (a.title < b.title ? -1 : a.title > b.title ? 1 : 0);
 
-// The groups that hold a dataset, in the order of `CATEGORIES`, each sorted by title.
-export function catalogueGroups(datasets: readonly DatasetOption[]): CatalogueGroup[] {
-  return [...CATEGORIES, OTHER_CATEGORY].flatMap(({ id, title }) => {
-    const members = datasets.filter((d) => categoryOf(d.collection) === id).sort(byTitle);
+// The groups that hold a dataset, in the order of the categories, each sorted by title.
+export function catalogueGroups(datasets: readonly DatasetOption[], categories: readonly CatalogueCategory[]): CatalogueGroup[] {
+  const groups = withOther(categories);
+  return groups.flatMap(({ id, title }) => {
+    const members = datasets.filter((d) => categoryOf(d.collection, groups) === id).sort(byTitle);
     return members.length > 0 ? [{ id, title, datasets: members }] : [];
   });
 }
@@ -72,8 +97,8 @@ export function notAddableReason(dataset: DatasetOption): string | null {
 
 // The datasets of a first visit (UI-05 F3, Otto 06.11.2026): those that can be added, in the order of the catalogue, at
 // most six.
-export function firstVisitDatasets(datasets: readonly DatasetOption[]): string[] {
-  return catalogueGroups(datasets)
+export function firstVisitDatasets(datasets: readonly DatasetOption[], categories: readonly CatalogueCategory[]): string[] {
+  return catalogueGroups(datasets, categories)
     .flatMap((group) => group.datasets)
     .filter((d) => notAddableReason(d) === null)
     .slice(0, FIRST_VISIT_DATASETS)
@@ -116,6 +141,10 @@ function providersRow(collection: Collection): LinkText[] {
 
 // The host of the source's endpoint, linked to the endpoint, and the collection there.
 export function sourceRow(collection: Collection): LinkText[] {
+  if (isListed(collection)) {
+    const page = listedSourceOf(collection);
+    return page ? [link(new URL(page).host, page)] : plain(NONE);
+  }
   const source = collection['earthx:source'];
   const endpoint = source?.endpoint;
   if (!isHttps(endpoint) || !URL.canParse(endpoint)) return plain(NONE);
@@ -154,6 +183,8 @@ export function spatialExtentText(collection: Collection): string {
 export function temporalExtentText(collection: Collection): string {
   const interval = collection.extent?.temporal?.interval?.[0];
   const [start, end] = Array.isArray(interval) ? interval : [undefined, undefined];
+  // Both ends open is no period at all (a listed entry without one, M5-40), not one that runs until today.
+  if (start === null && end === null) return NONE;
   const from = typeof start === 'string' ? utcDay(start) : null;
   const to = end === null ? 'today' : typeof end === 'string' ? utcDay(end) : null;
   if (!from && !to) return NONE;
@@ -219,16 +250,19 @@ export function catalogueRows(dataset: DatasetOption): CatalogueRow[] {
   const maturity = maturityLabel(c);
   // As "Quick processing" offers them: the indices, and "Enhance contrast" where the dataset has a true-colour picture.
   const quick = [...indexPresetsOf(c).map((p) => p.title), ...(trueColorOf(c) ? ['Enhance contrast'] : [])];
+  const keywords = keywordsOf(c);
+  const listed = isListed(c);
   return [
     { label: 'Description', values: plain(typeof c.description === 'string' && c.description !== '' ? c.description : NONE) },
     ...(limitationsOf(c).length > 0 ? [{ label: 'Limitations', values: limitationsOf(c).map((text) => ({ text, href: null })) }] : []),
+    { label: 'Keywords', values: keywords.length > 0 ? keywords.map((text) => ({ text, href: null })) : plain(NONE) },
     { label: 'Provider', values: providersRow(c) },
     { label: 'Source', values: sourceRow(c) },
     ...licenseRows(c),
     { label: 'Spatial extent', values: plain(spatialExtentText(c)) },
     { label: 'Temporal extent', values: plain(temporalExtentText(c)) },
     { label: 'Resolution', values: plain(resolutionText(c)) },
-    { label: 'Bands', values: plain(bandsText(c)) },
+    ...(listed ? [] : [{ label: 'Bands', values: plain(bandsText(c)) }]),
     ...(c['earthx:mask'] ? [{ label: 'Mask', values: plain(c['earthx:mask'].asset) }] : []),
     { label: 'Data region', values: plain(typeof region === 'string' && region !== '' ? region : NONE) },
     doiRow(c),
@@ -238,7 +272,27 @@ export function catalogueRows(dataset: DatasetOption): CatalogueRow[] {
       values: plain(maturity ?? (c['earthx:maturity'] === 'stable' ? 'stable' : NONE)),
       ...(maturityNote(c) ? { tip: maturityNote(c)! } : {}),
     },
-    { label: 'Processing', values: plain(processingText(c)) },
-    { label: 'Quick processing', values: plain(dataset.viewable && quick.length > 0 ? quick.join(', ') : NONE) },
+    ...(listed
+      ? []
+      : [
+          { label: 'Processing', values: plain(processingText(c)) },
+          { label: 'Quick processing', values: plain(dataset.viewable && quick.length > 0 ? quick.join(', ') : NONE) },
+        ]),
   ];
+}
+
+// Where the API counted no further than 10 000 (M5-40 plan F4): "10,000+" (H5).
+export const ABOVE_COUNTED = `${formatCount(10_000)}+`;
+
+// The number in the head of a group of the Data catalogue: the count up to 10 000, "10,000+" where the API counted no
+// further (M5-40 H5), nothing before the first page.
+export function groupCount(state: { matched: number | null; entries: readonly unknown[]; loaded: boolean }): string | null {
+  if (state.matched !== null) return formatCount(state.matched);
+  return state.loaded && state.entries.length > 0 ? ABOVE_COUNTED : null;
+}
+
+// How many filters are set, for the label of the button (like "Advanced search · 2").
+export function activeFilters(fields: CatalogueFilterState, searchPanel: boolean): number {
+  if (searchPanel) return 1 + (fields.category ? 1 : 0);
+  return [fields.region, fields.from, fields.to, fields.category].filter((v) => v !== '').length;
 }

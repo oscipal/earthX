@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { fieldNumber, formatBytes, formatDay, formatLatitude, formatMegapixels, formatMoment, formatNumber, formatPercent, formatPlain, roundTo } from './numberFormat';
+import { fieldNumber, formatBytes, formatCount, formatDay, formatLatitude, formatMegapixels, formatMoment, formatNumber, formatPercent, formatPlain, roundTo } from './numberFormat';
 
 describe('formatNumber', () => {
   it.each([
@@ -152,5 +152,22 @@ describe('formatDay', () => {
 
   it('shows what is no date as it is', () => {
     expect(formatDay('never')).toBe('never');
+  });
+});
+
+describe('formatCount (M5-40 H5)', () => {
+  it.each([
+    [0, '0'],
+    [7, '7'],
+    [999, '999'],
+    [1000, '1,000'],
+    [10_000, '10,000'],
+    [1_234_567, '1,234,567'],
+  ])('writes %d as %s', (value, text) => {
+    expect(formatCount(value)).toBe(text);
+  });
+
+  it.each([-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, 2 ** 60])('writes %d, which is no count, as "—"', (value) => {
+    expect(formatCount(value)).toBe('—');
   });
 });

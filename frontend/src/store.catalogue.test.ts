@@ -13,8 +13,24 @@ const CAPABILITIES = { roi: true, time_range: true, band_math: true, interpolati
 const collection = (id: string, category: string, extra: Partial<Collection> = {}): Collection =>
   ({ id, title: id, 'earthx:category': category, 'earthx:viewer': VIEWER, 'earthx:capabilities': CAPABILITIES, ...extra }) as Collection;
 
+// The categories in the order of `categories.yaml` (M5-40 H4), the ones these tests use.
+const CATEGORIES = [
+  { id: 'optical', title: 'Optical imagery' },
+  { id: 'radar', title: 'Radar' },
+  { id: 'elevation', title: 'Elevation' },
+  { id: 'land_cover', title: 'Land cover and land use' },
+  { id: 'other', title: 'Other' },
+];
+
 function serve(collections: Collection[]) {
-  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ collections }), { status: 200 })));
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string) =>
+      url === '/catalogue/categories'
+        ? new Response(JSON.stringify({ categories: CATEGORIES }), { status: 200 })
+        : new Response(JSON.stringify({ collections }), { status: 200 }),
+    ),
+  );
 }
 
 const added = () => useAppStore.getState().addedDatasetIds;
@@ -41,6 +57,26 @@ describe('loadDatasets', () => {
     serve(Array.from({ length: 8 }, (_, i) => collection(`d${i}`, i % 2 === 0 ? 'radar' : 'optical')));
     await useAppStore.getState().loadDatasets();
     expect(added()).toEqual(['d1', 'd3', 'd5', 'd7', 'd0', 'd2']);
+  });
+
+  it('keeps the categories of the backend for the Data catalogue', async () => {
+    serve([collection('dem', 'elevation')]);
+    await useAppStore.getState().loadDatasets();
+    expect(useAppStore.getState().catalogueCategories).toEqual(CATEGORIES);
+  });
+
+  it('loads the datasets also where the categories cannot be had, then by title', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) =>
+        url === '/catalogue/categories'
+          ? new Response('{"detail":"down"}', { status: 503 })
+          : new Response(JSON.stringify({ collections: [collection('s2', 'optical'), collection('dem', 'elevation')] }), { status: 200 }),
+      ),
+    );
+    await useAppStore.getState().loadDatasets();
+    expect(useAppStore.getState().catalogueCategories).toEqual([]);
+    expect(added()).toEqual(['dem', 's2']);
   });
 
   it('takes the saved list, without unknown and retired ids, in its order', async () => {

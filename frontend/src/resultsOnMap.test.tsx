@@ -64,7 +64,7 @@ let container: HTMLDivElement;
 let root: Root;
 
 const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-  if (url === '/stac/collections') return json({ collections: [COLLECTION] });
+  if (url === '/stac/collections?entry=full&limit=1000') return json({ collections: [COLLECTION] });
   if (url === '/stac/search' && init?.method === 'POST') return json(PAGES[(JSON.parse(init.body as string).token as string | undefined) ?? '']);
   return json({ detail: 'not found' }, 404);
 });
