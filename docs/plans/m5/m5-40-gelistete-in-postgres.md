@@ -429,3 +429,46 @@ Bis zu den Antworten baue ich die Gruppen mit einer vorläufigen Kopie der Liste
   - die Filterzeile im Fenster und der gesperrte Schalter;
   - Kategorie und Region;
   - kein seitliches Scrollen.
+
+### 9b. Änderungen Otto am Data catalogue (16.11.2026, ersetzt H1 und H2) und Umsetzung
+
+**Vorgaben:**
+1. Statt der festen Filterzeile ein Knopf „Filters“ im Kopf des Fensters, der ein Popup öffnet; jedes Feld im Popup hat ein „×“ zum Leeren.
+2. Der Schalter heißt „Filter by search panel“:
+   - Ist er an, gelten AOI und Zeitraum aus dem Search panel; die Felder Region und From/To sind dann ausgeblendet.
+   - Ohne AOI im Search panel bleibt er gesperrt mit Grund.
+   - Die Kategorie bleibt immer wählbar.
+3. Im Search panel ein Eintrag „Add dataset“, gestaltet wie ein Datensatz, der den Data catalogue öffnet. Er zählt beim Seitenumbruch wie ein Datensatz; das Panel scrollt weiterhin nie.
+4. **Nachtrag:** im Kopf neben „Filters“ ein Suchfeld mit Lupe und „×“.
+   - Es nutzt die Collection Search mit `q` (M5-22c) und findet nach Name, Schlagworten und Kategorie (die Wörter aus `categories.yaml` stehen im Suchtext).
+   - Mit Text erscheinen die Treffer in Rangfolge statt nach Gruppen; die Filter gelten weiter.
+   - Gelistete Einträge kommen mit M5-42 in die Suche, der Vektor-Arm mit M5-23; die Oberfläche bleibt dabei gleich.
+
+**Umgesetzt** (Draft-PR [#358](https://github.com/oscipal/earthX/pull/358)):
+
+- **Kopf:** Titel, Suchfeld „Search datasets“, Knopf „Filters“, rotes x.
+  - Das Suchfeld hat Lupe, „×“ und ein (i) mit dem, was die Suche kann; es nimmt höchstens 200 Zeichen und fragt erst 300 ms nach der letzten Taste.
+  - Der Knopf „Filters“ zeigt die Zahl der gesetzten Filter wie „Advanced search“ („Filters · 2“).
+  - Unter 900 px stehen Suchfeld und „Filters“ in einer eigenen Reihe unter dem Titel.
+- **Popup „Filters“:**
+  - Gebaut mit `Popover` als Formular wie „Advanced search“: Es schließt mit einem Klick daneben, nicht mit Esc, und ist so breit wie Suchfeld und Knopf zusammen.
+  - Inhalt: „Filter by search panel“, „Region“, „From“/„To“, „Category“, jedes Feld mit „×“, solange es einen Wert hat. Der Schalter hat kein „×“: Er ist an oder aus.
+  - Ist „Filter by search panel“ an und hat das Search panel eine AOI, gehen dessen AOI und Zeitraum mit jeder Anfrage. Region und From/To sind dann ausgeblendet und wirken nicht.
+  - Ohne AOI ist der Schalter gesperrt mit „Draw an AOI to use this filter“ und wirkt nicht. Verschwindet die AOI, gelten Region und From/To wieder.
+- **Suche:** Mit Text stehen statt der Gruppen die Treffer in der Reihenfolge der API, 20 je Seite, beim Scrollen weitere.
+  - Kategorie und die übrigen Filter gehen mit.
+  - Findet die Suche nichts, steht „No datasets to show“; das „×“ des Suchfelds bringt die Gruppen zurück.
+  - Text und Filter bleiben für die Sitzung.
+  - Bis M5-42 findet die Suche nur volle Einträge (F7).
+- **Search panel:** Die Kachel „Add dataset“ steht nach den Datensätzen und zählt beim Seitenumbruch mit. Ohne Datensätze ist sie die einzige Kachel und ersetzt den Satz „No datasets yet — add some from the Data catalogue“; die Seitenanzeige „‹ 1 / n ›“ steht jetzt immer da.
+- **Leitfaden:**
+  - §2 nennt „Filter by search panel“ (statt „Only datasets in AOI“), „Filters“, „Search datasets“ und „Add dataset“.
+  - §7 beschreibt die zwei Schalter und den Kopf des Fensters; die Regeln zum Search panel nennen „Add dataset“.
+  - §10 nennt die Tests.
+- **Browser-Check** `frontend/e2e/data-catalogue.cjs`: hell/dunkel × breit/schmal, alle bestanden. Geprüft werden:
+  - Suchfeld und „Filters“ im Kopf, das Popup im Fenster;
+  - der gesperrte Schalter mit Grund, Kategorie und Region, die „×“, der Klick daneben;
+  - Treffer statt Gruppen und das „×“ der Suche;
+  - „Add dataset“.
+
+  „Filter by search panel“ eingeschaltet prüfen nur die Unit-Tests, weil das Skript keine AOI zeichnet.
