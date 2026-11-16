@@ -1824,6 +1824,7 @@ textarea:autofill {
 }
 .filter-check {
   display: flex;
+  width: fit-content;
   align-items: center;
   gap: var(--space-1-5);
   font-size: var(--text-sm);
@@ -1915,6 +1916,7 @@ textarea:autofill {
 }
 .multi-select-toggle {
   display: inline-flex;
+  width: fit-content;
   align-items: center;
   gap: var(--space-1);
   text-transform: none;
@@ -1950,6 +1952,7 @@ textarea:autofill {
 }
 .select-all-box {
   display: inline-flex;
+  width: fit-content;
   align-items: center;
   gap: var(--space-1-5);
   font-size: var(--text-sm);
@@ -3277,11 +3280,19 @@ button.pm-open:hover {
 }
 .dialog-band {
   display: grid;
-  grid-template-columns: auto minmax(0, auto) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-2);
   min-height: var(--control-height);
   padding: 0 var(--space-2);
+}
+/* The box and the name of the band switch it, not the rest of the row (UI-08, Leitfaden §7). */
+.dialog-band-check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: fit-content;
+  min-width: 0;
   cursor: pointer;
 }
 .dialog-band input {
@@ -3713,6 +3724,8 @@ button.pm-open:hover {
 .pp-check {
   display: flex;
   flex-wrap: wrap;
+  width: fit-content;
+  max-width: 100%;
   align-items: center;
   gap: var(--space-2);
   min-height: var(--control-height);

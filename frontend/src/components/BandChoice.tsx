@@ -59,13 +59,13 @@ export default function BandChoice({ table, disabled }: { table: DownloadBand[];
       </div>
       <ul className="dialog-bands" aria-labelledby={`${id}-bands`}>
         {table.map((band) => (
-          <li key={band.asset}>
-            <label className="dialog-band" data-tip-level="advanced" data-tip={band.asset}>
+          <li key={band.asset} className="dialog-band" data-tip-level="advanced" data-tip={band.asset}>
+            <label className="dialog-band-check">
               <input type="checkbox" checked={keys.includes(band.asset)} disabled={disabled} onChange={(e) => toggle(band.asset, e.target.checked)} />
               <span className="dialog-band-name">{band.name}</span>
-              <span className="dialog-band-detail">{detail(band)}</span>
-              <span className="dialog-band-res">{band.resolution === null ? '' : metresText(band.resolution)}</span>
             </label>
+            <span className="dialog-band-detail">{detail(band)}</span>
+            <span className="dialog-band-res">{band.resolution === null ? '' : metresText(band.resolution)}</span>
           </li>
         ))}
       </ul>
