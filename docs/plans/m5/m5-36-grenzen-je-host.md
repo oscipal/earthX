@@ -1,6 +1,6 @@
 # M5-36 — Grenzen je Host in der Registry, Teilbudget je Instanz: Plan-Schritt
 
-**Status (16.11.2026):** Plan angenommen (Otto, 16.11.2026: G1–G6 je 1, §8a), **Stufe B**. PR 1 nach §7 in Arbeit (§9), PR 2 folgt.
+**Status (16.11.2026):** Plan angenommen (Otto, 16.11.2026: G1–G6 je 1, §8a), **Stufe B**. PR 1 nach §7 umgesetzt und gemessen (§9), PR 2 folgt.
 **Aufgabe:** M5-36 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2, Auftrag von Otto vom 16.11.2026.
 **Grundlagen:** `plans/m5/m5-35-skalierbarkeit.md` B1 (§2), B3 (§4.2), F1 = 1 (§8a); `adr/0032` §8.2 und Nachtrag 14.11.2026 (`TileGate`); `adr/0023` §3.1 (Fair Use der FSDI); `adr/0005` §6 (6 Verbindungen je Host); `architekturplan.md` 3.1, 6.5; KLAERUNGEN B8, B9.
 
@@ -201,4 +201,26 @@ PR 2 baut auf PR 1 auf. Tests je PR, mit Fehlerfällen: fehlender und überzähl
 
 ## 9. Umsetzung und Messung
 
-*(folgt nach den Antworten)*
+### 9.1 PR 1 ([#360](https://github.com/oscipal/earthX/pull/360)), Stand 16.11.2026
+
+- **`backend/catalog/hosts.yaml`** mit den Werten aus G2; Lader `catalog/hosts.py`; `DatasetRegistry(…, hosts=…)` prüft beide Richtungen (`source_hosts`). Eine Registry ohne Datei (Tests) hat keine Grenzen, die `Policy` dann die Vorgabe 6. Das Image kopiert die Datei. Prototyp-Hosts in einer eigenen `hosts.yaml` im Prototyp-Verzeichnis (README dort nachgeführt); **Otto braucht sie lokal**, sobald ein Prototyp-Eintrag einen Host liest, der nicht in der freigegebenen Datei steht.
+- **`Policy.host_connections`** und `connections_for(host)`; Werte 1–256, auch `max_connections_per_host`.
+- **Abweichung vom Plan:** Der Zähler heißt weiter **`ReadSlots`** (kein `HostSlots`), weil 46 Stellen ihn so nennen; er hat jetzt `slot()` für Fäden und `aslot()` für Event-Loops. Wer aufhört zu warten (Abbruch, Unterbrechung), verlässt die Warteschlange oder gibt einen schon übergebenen Platz weiter. `Gateway(policy, slots=…)` nutzt ihn statt eines Semaphors je Objekt. Noch übergibt kein Prozess seinen Zähler; das verdrahtet PR 2 zusammen mit dem Teilbudget.
+- **`policy_from_registry`** setzt `host_connections`, keinen Abstand (G3). **`materialize`** nimmt Verbindungen und Abstand seiner Hosts aus der Registry; die feste Tabelle `ENDPOINT_INTERVALS_S` entfällt, die FSDI bleibt bei 1 s.
+- **Zarr:** ein `Gateway` je (Event-Loop, Policy, Naht `open_gateway`) für den Prozess; der Resolver gehört nicht zum Schlüssel, weil `read_access_for` je Lauf einen neuen baut (sonst bliebe je Flächen-Statistik ein Client liegen, Befund der Prüfung). `close()` eines Stores lässt es offen; der `tiler` schließt es am Ende seines Lifespans in einem Faden, sonst `atexit`.
+- **Importregeln:** `catalog.hosts` steht im Vertrag `runner` unter den verbotenen Modulen (Verschärfung, wie jedes andere Modul von `catalog`); sonst unverändert, `lint-imports` 16 von 16.
+- **Messstand:** `scripts/tile-bench/run_tiler.py` beantwortet jetzt die gebündelte Item-Suche (`POST /search` mit `ids`), die Mosaik-Auswahlen seit M5-30b stellen; vorher endeten die Mosaik-Messungen auch auf `main` mit `500`. `job_bench.py` ist ebenfalls veraltet (importiert `REGISTRY`, seit M5-13 entfallen); Jobs gehören nicht zum Kachelpfad und wurden nicht gemessen.
+
+### 9.2 Messung vorher/nachher (G5)
+
+Synthetische Quelle (`slow_source.py`, RTT 170 ms, Verbindungsaufbau 350 ms, COGs aus `make_cogs.py`), echter `tiler`, `main` 5099e32 gegen den Branch eddee1d, 5 Wiederholungen je Stand im Wechsel, jeder Lauf mit frischen Prozessen und leeren Caches. Keine echte Quelle.
+
+| Fall | n | main Median | Branch Median | Δ Median | main p95 | Branch p95 | Δ p95 |
+|---|---|---|---|---|---|---|---|
+| Mosaik-Kachel kalt, 4 Szenen, NDVI, z10 (s) | 5/5 | 3,71 | 3,71 | +0,1 % | 3,75 | 3,76 | +0,4 % |
+| Mosaik-Kachel warm (s) | 5/5 | 0,35 | 0,33 | −6,2 % | 0,37 | 0,35 | −5,1 % |
+| Zuschnitt 0,05° (s) | 5/5 | 2,51 | 2,49 | −0,8 % | 2,53 | 2,56 | +1,2 % |
+| Ansicht 13 Szenen × 25 Kacheln, Wandzeit (s) | 5/5 | 26,2 | 26,0 | −0,8 % | 27,8 | 26,3 | −5,4 % |
+| Ansicht, je Kachel beim Client (s) | 1625/1625 | 15,66 | 15,53 | −0,9 % | 24,80 | 24,57 | −0,9 % |
+
+Alle 1625 Kacheln je Stand mit `200`; die Prüfsummen der Raster des Zuschnitts sind in allen Läufen beider Stände gleich. **Ergebnis:** kein Fall über +5 % (G5). Die Rückgänge liegen im Rauschen. Grenze 6 wirkt in PR 1 nur auf die Item-Abrufe (Earth Search, jetzt über den gemeinsamen Zähler); GDAL-Lesen ist in PR 1 noch nicht begrenzt. Die Fälle mit Grenze 6 und 32 für GDAL und mit `EARTHX_SOURCE_INSTANCES=2` (§6) misst PR 2.
