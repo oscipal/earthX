@@ -21,6 +21,7 @@ import type { Collection, DownloadedInfo, StacItem } from '../types';
 import Inspector from './Inspector';
 import LayerManager from './LayerManager';
 import { tipOf } from '../fixtures/tips';
+import { confirmRemoval } from '../fixtures/confirmRemoval';
 
 vi.mock('./MapView', () => ({ default: () => null }));
 
@@ -748,6 +749,7 @@ describe('the actions of a layer', () => {
     act(() => root.render(<Inspector />));
     openPinnedView();
     click(actionButton('Remove layer'));
+    confirmRemoval();
     expect(state().layers).toEqual([]);
     expect(aside()!.querySelector('.vc-head .badge')).not.toBeNull();
   });
@@ -756,6 +758,7 @@ describe('the actions of a layer', () => {
     act(() => root.render(<Inspector />));
     openResult();
     click(actionButton('Remove layer'));
+    confirmRemoval();
     expect(state().layers.map((l) => l.id)).toEqual(['R2']);
     expect(state().resultViewLayerId).toBeNull();
     expect(aside()).toBeNull();

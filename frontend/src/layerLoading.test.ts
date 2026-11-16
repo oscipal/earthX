@@ -3,7 +3,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { DOWNLOADED, GROUPS, ITEMS, LIST, MOSAICS } from './fixtures/swissalti';
-import { isMapLoading, isOwnerLoading, viewWaitsForMosaic, watchLayerLoading } from './layerLoading';
+import { isMapLoading, viewWaitsForMosaic, watchLayerLoading } from './layerLoading';
 import { ownerOfSource, RESULTS_OWNER } from './mapLayers';
 import { useAppStore } from './store';
 
@@ -206,17 +206,10 @@ describe('the rows that are loading now', () => {
       mosaics,
     });
 
-  it('names the rows the map says are loading', () => {
-    useAppStore.setState({ mapLoading: ['L1'] });
-    expect(isOwnerLoading(useAppStore.getState(), 'L1')).toBe(true);
-    expect(isOwnerLoading(useAppStore.getState(), 'L2')).toBe(false);
-    expect(isOwnerLoading(useAppStore.getState(), RESULTS_OWNER)).toBe(false);
-  });
-
   it('has the view wait for a mosaic until the selection of its scenes is made, then not any more', () => {
     viewOpen({});
     expect(viewWaitsForMosaic(useAppStore.getState())).toBe(true);
-    expect(isOwnerLoading(useAppStore.getState(), RESULTS_OWNER)).toBe(true);
+    expect(isMapLoading(useAppStore.getState())).toBe(true);
     viewOpen(MOSAICS);
     expect(viewWaitsForMosaic(useAppStore.getState())).toBe(false);
   });

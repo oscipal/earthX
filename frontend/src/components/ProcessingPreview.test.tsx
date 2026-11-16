@@ -745,6 +745,30 @@ describe('the preview section', () => {
       expect(button('Auto-scale').disabled).toBe(false);
     });
 
+    // Otto, 16.11.2026: "Auto-scale" resets the range only; the colormap chosen stays, over the measure and over the preset of an index.
+    it('keeps the colormap the user chose when "Auto-scale" gives the measure back', async () => {
+      statistics = () => measured({ b1: DEM_VALUES });
+      await withNdvi();
+      act(() => useProcessingStore.setState({ range: { vmin: '0', vmax: '5', colormap: 'magma' }, rangeDraft: { vmin: '0', vmax: '5', colormap: 'magma' }, rangeByHand: true }));
+      await afterDebounce();
+      click(button('Auto-scale'));
+      await afterDebounce();
+      expect([rescale(), colormap()]).toEqual(['120,2400', 'magma']);
+      expect(inputs().map((i) => i.value)).toEqual(['120', '2400']);
+      expect(section().querySelector<HTMLSelectElement>('select:not(.vc-unit)')!.value).toBe('magma');
+      expect(store().rangeByHand).toBe(false);
+    });
+
+    it('lets the colormap of the measure come back with a new band shown, not before', async () => {
+      statistics = () => measured({ b1: DEM_VALUES });
+      await withNdvi();
+      act(() => useProcessingStore.setState({ rangeDraft: { vmin: '0', vmax: '5', colormap: 'magma' }, rangeEdited: true }));
+      click(button('Auto-scale'));
+      expect(store().colormapHeld).toBe('magma');
+      act(() => store().setShown('other'));
+      expect(store().colormapHeld).toBeNull();
+    });
+
     // Otto, 11.11.2026: from the first preview on, through "Start job", while the job runs and after it ended, "Auto-scale" was locked (with
     // no reason) because the measured range was drawn already. It is always to be pressed, as in the layer and the view, and measures again.
     it('can be pressed from the first preview on, while a job runs and after it ended, and puts the measured range back', async () => {

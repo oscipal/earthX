@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 
 import { useProcessingStore } from '../processingStore';
 
-// The wait after which anything on the page says it is loading: the badge of the preview and the mark of a layer (`LoadingMark`).
+// The wait after which anything on the page says it is loading: the badge of the preview and the busy toast of the map.
 export const LOADING_AFTER_MS = 600;
 export const LOADING_TITLE = 'Reading the scenes. The first tile of a mosaic can take several seconds.';
 

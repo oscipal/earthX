@@ -23,6 +23,7 @@ import {
   Ellipsis,
   Eye,
   EyeOff,
+  Focus,
   GripHorizontal,
   GripVertical,
   History,
@@ -104,6 +105,7 @@ export const DownloadIcon = icon('DownloadIcon', Download);
 export const EllipsisIcon = icon('EllipsisIcon', Ellipsis);
 export const EyeIcon = icon('EyeIcon', Eye);
 export const EyeOffIcon = icon('EyeOffIcon', EyeOff);
+export const FocusIcon = icon('FocusIcon', Focus);
 export const GripHorizontalIcon = icon('GripHorizontalIcon', GripHorizontal);
 export const GripVerticalIcon = icon('GripVerticalIcon', GripVertical);
 export const HistoryIcon = icon('HistoryIcon', History);

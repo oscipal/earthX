@@ -33,6 +33,7 @@ import {
 import { selectionKeyOf } from './mosaicSelection';
 import { MOSAIC_TILE_SIZE, TILE_SIZE, tileMetres } from './tileSize';
 import { canonicalJson, type Order } from './processing';
+import { lookOfStep, lookRange, type DisplayLook } from './displayLook';
 import { indexPresetsOf, presetFor, presetRange } from './indexPresets';
 import { addsBand, assetsCarrying, bandLabel, isBandMath, resultNameOf, resultsOf, RGB, startBand } from './processingBands';
 import {
@@ -387,6 +388,9 @@ export interface PreviewSpec {
   // The range and colormap of the preset (NM4-14) whose expression the band shown has, in the presets of the dataset; `null`
   // for any other band. It goes before the measure: an index is drawn alike wherever it is made.
   preset: PreviewRange | null;
+  // How the registry of the operator says the band shown is drawn, where a step with a look made it (a terrain product, M5-10): the colormap
+  // from the start, the range from the measure of this preview (`measuredRange`); a fixed range is in `preset` already.
+  look: DisplayLook | null;
   // The passes drawn as a mosaic, and the scenes of a pass that is drawn scene by scene.
   mosaics: PreviewMosaic[];
   scenes: PreviewScene[];
@@ -591,7 +595,8 @@ export function previewSpec(args: {
     sceneMeasure,
     areaOrder,
     expression: plan.steps.some(({ step }) => isBandMath(step) && (band === null || resultNameOf(step) === band)),
-    preset: presetOfBand(dataset, plan, band),
+    preset: presetOfBand(dataset, plan, band) ?? fixedLookOf(lookOfBand(plan, band)),
+    look: lookOfBand(plan, band),
     mosaics,
     scenes,
     needs,
@@ -611,6 +616,16 @@ function presetOfBand(dataset: DatasetOption, plan: Extract<PreviewPlan, { state
   const preset = presetFor(indexPresetsOf(dataset.collection), made?.params.expression as string | undefined);
   return preset ? presetRange(preset) : null;
 }
+
+// The look of the band `band` where a step of the chain that has one made it; with no band chosen, of the last such step.
+function lookOfBand(plan: Extract<PreviewPlan, { state: 'ready' }>, band: string | null): DisplayLook | null {
+  if (band === RGB) return null;
+  const made = plan.steps.filter(({ operator, params }) => lookOfStep(operator.looks, params) !== null && (band === null || params.name === band));
+  const last = made.at(-1);
+  return last ? lookOfStep(last.operator.looks, last.params) : null;
+}
+
+const fixedLookOf = (look: DisplayLook | null): PreviewRange | null => (look?.scale === 'fixed' ? lookRange(look, null) : null);
 
 // --- the measure of a preview (M4-19c) ---------------------------------------
 
@@ -691,7 +706,11 @@ export function previewTitle(preview: PreviewSpec | null, measure: PreviewMeasur
 }
 
 // The range the measure calls for as the panel holds it (the same rule as a result's, `scaleOf`), or `null`.
-export function measuredRange(measure: PreviewMeasure | null): PreviewRange | null {
+export function measuredRange(measure: PreviewMeasure | null, look: DisplayLook | null = null): PreviewRange | null {
+  if (look) {
+    const drawn = lookRange(look, measure?.stats ?? null);
+    return drawn ? { ...drawn, vmin: fieldNumber(Number(drawn.vmin)), vmax: fieldNumber(Number(drawn.vmax)) } : null;
+  }
   const scale = scaleOf(measure?.stats ?? null);
   return scale ? { vmin: fieldNumber(scale.low), vmax: fieldNumber(scale.high), colormap: scale.colormap } : null;
 }
