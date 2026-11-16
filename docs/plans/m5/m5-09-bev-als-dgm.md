@@ -1,6 +1,6 @@
 # M5-09 — BEV ALS-DGM 1 m über ATOM
 
-**Stand:** 16.11.2026, Plan angenommen (Otto, 16.11.2026: F1–F7 jeweils Option 1, §8a). Umsetzung nach Ottos Messlauf (§6 Schritt 1) im selben Draft-PR.
+**Stand:** 16.11.2026, Plan angenommen (Otto, 16.11.2026: F1–F8 jeweils Option 1, §8a), umgesetzt im selben Draft-PR (§9); offen sind Ottos lokale Schritte 2–6 (§6).
 **Stufe B.** Höchstens zwei PRs (F7).
 **Aufgabe:** M5-09 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2 (Opus, mittel). Abhängigkeit M5-30b Teil 7 ist gemergt; M5-10 (PR A #350, PR B #357) ebenso.
 **Grundlagen:** `adr/0023` §4.2, §7.2, §7.3, §8.3, §9.1, F1, F2, F5, F7; `adr/0032` §9 und Nachträge vom 14. und 15.11.2026 (Ersatz, Pyramide, Suchtreffer); `adr/0011` F6; `adr/0026` F7; `adr/0027` §6.1; `adr/0024`; `KLAERUNGEN.md` B8, B10–B13; Pläne M5-07 (WorldCover), M5-08 (swissALTI3D), M5-10, M5-30.
@@ -77,7 +77,19 @@ Folgen:
 - **CORS:** `access.cors: true`; „Download full scene(s)“ nimmt damit den Weg der Plattform für Quellen mit CORS (ZIP bzw. Dateien) statt `navigate`.
 - **Kleinste Overview** 1:128 bei 5 Kacheln: Bei z7 (rund 830 m je Pixel) liest eine solche Datei rund das Doppelte; ändert an F5 nichts, die Messung in §6 Schritt 4 zeigt es.
 
-**Lauf 2 (`bev-probe --shape`, offen):** Form des Dateipfads und Host, die 12 anderen Titel, `rights` je Kachel (Lizenz an allen 330 DTM-Einträgen, offen seit §2.2), Kennung gegen Metadaten-Link (für `sci:doi`, F6), Lage von `georss:polygon` zur Zelle des Kachelnamens (Ecke unten oder oben links), ob der Feed bei zwei Abrufen gleich bleibt (für den Hash). Kein Dateizugriff.
+### 2.5 Ottos Messlauf 2 (16.11.2026, `bev-probe --shape`) [M]
+
+| Was | Ergebnis |
+|---|---|
+| Dienst-Feed zweimal | bytegleich, `<updated>` gleich (Form `…T##:##:##.######ZZ`) |
+| 12 andere Titel | je sechs „Serie ALS DTM/DSM Höhenraster 1m Stichtag TT.MM.JJJJ“ |
+| `rights` | Feed und alle 660 Kacheln: „Der öffentliche Zugang zu diesem Produkt unterliegt keinen Einschränkungen.“ — nur der Zugang, keine Lizenz |
+| Kennung | `inspire_dls:spatial_dataset_identifier_code` ist der DOI der Kachel (`https://doi.org/10.48677/<uuid>`), alle 660; kein Namensraum |
+| Polygon | Ecke des Kachelnamens unten links (0,068° gegen 0,49° bei oben links); das Polygon weicht aber bis 0,07° von der Zelle ab |
+| `updated` | 55 verschiedene Werte für die 55 Kacheln des jüngsten Stichtags |
+| Datei | derselbe Host, Pfad `/download/ALS/DTM/<JJJJMMTT>/ALS_DTM_<Kachel>.tif`, ohne Query, alle 55 |
+
+Folgen (Otto, 16.11.2026): Lizenz im Eintrag aus den Kachel-Metadaten belegen, nicht aus `rights`; Footprint ist die 50-km-Zelle aus dem Kachelnamen; der Host steht in `hosts.yaml` (#360 gemergt).
 
 ---
 
@@ -204,6 +216,12 @@ Rund zwei bis drei Minuten. Die Ausgabe nennt keine Adresse, keinen Kachelnamen 
 docker compose run --build --rm materialize bev-als-dgm
 ```
 
+Danach die genaue Ausdehnung der 55 Kacheln (für `spatial_extent.bbox`, §9 A9), auch in PowerShell:
+
+```powershell
+"select st_extent(geometry) from pgstac.items where collection = 'bev-als-dgm';" | docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At'
+```
+
 **Schritt 3 — zweiter Lauf ohne Änderung (erwartet `unchanged`):**
 
 ```powershell
@@ -281,3 +299,23 @@ docker compose run --build --rm measure-tiles bev-als-dgm --bbox 13.5,47.2,14.5,
 2. Otto trägt die Datei selbst ein
 
 **Antwort F8 (Otto, 16.11.2026): 1.** Erlaubnis für genau diese Änderung: `backend/tests_live/test_bev_als_dgm_smoke.py` in die bestehende Zeile von `.github/workflows/live-smoke.yml`, sonst nichts. Sie kommt im selben Commit wie die Datei des Smokes.
+
+## 9. Umsetzung (16.11.2026)
+
+Gebaut nach §4 mit den Antworten aus §8a und den Messläufen §2.4, §2.5. Wo die Umsetzung von §4 abweicht, gilt dieser Abschnitt.
+
+- **Adapter** `adapters/bev_atom.py`, `AdapterKind.BEV_ATOM` (`bev-atom`), `AdapterSpec` nur mit `materialize`. Öffentlich für den Live-Smoke: `tiles_by_date`, `dataset_feed_of`, `doi_of`, `file_of`, `tile_item`, `cell_footprint`. Keine eigene Rücksicht im Adapter: Verbindungen und Abstand kommen aus `hosts.yaml` über `materialize` (M5-36).
+- **`hosts.yaml`:** `data.bev.gv.at` mit 6 Verbindungen und 1 s Abstand wie die FSDI; Kacheln und Suche ohne Abstand (G3 von M5-36).
+- **Eintrag** `backend/catalog/datasets/bev-als-dgm.yaml` nach §4.3; `cors: true` (§2.4).
+- **Glossar:** zwei neue Gruppen „Laserscanning / ALS / airborne laser scanning / lidar“ und „Höhenraster / elevation raster“, getrennt vom Höhenmodell, damit Q06 BEV vor swissALTI3D findet.
+- **Bewertungs-Set:** `provisional` an BEV entfällt; die Fragen mit BEV werten jetzt.
+- **Tests:** Adapter (33, nachgebaute Feeds in der gemessenen Form), Kette Suche → Anzeige → Zuschnitt → Operator mit einer synthetischen COG in EPSG:3035 (`tests/earthx/readers/mini_laea.py`), Live-Smoke mit Doppel und drei Fehlerfällen, Messskript über seine Kommandozeile.
+- **Live-Smoke** `tests_live/test_bev_als_dgm_smoke.py` in der Zeile der materialisierten Datensätze von `live-smoke.yml` (F8); er läuft nach dem Merge auf `main`.
+
+**Auslegungen (gelten bis Widerspruch):**
+- **A5 Item-ID** `ALS_DTM_<JJJJMMTT>_<Kachel>`: Modell, Stichtag und Kachel wie im Dateinamen, der den Stichtag nur im Pfad trägt.
+- **A6 Footprint:** die Zelle aus dem Kachelnamen, 16 Punkte je Kante nach WGS 84 umgerechnet; das Polygon des Feeds wird nicht verwendet.
+- **A7 Fassung des Laufs:** SHA-256 über Kachel, Stichtag, `updated`, Link des Dataset-Feeds und DOI der Einträge des gewählten Stichtags. Gleiche Fassung → `unchanged` nach einer Anfrage. Änderungen an älteren Stichtagen oder am DSM ändern sie nicht.
+- **A8 Nicht ladbar:** eine Kachel ohne DOI der bekannten Form, ohne genau einen Dataset-Feed, ein Dataset-Feed ohne genau eine Datei auf dem Host unter dem Pfad ihres Modells, Stichtags und ihrer Kachel, oder eine Zelle, deren Mitte außerhalb der Ausdehnung liegt. `404`/`410` eines Dataset-Feeds zählt als fehlend; jeder andere Fehler bricht den Lauf ab. Über 1 % nicht ladbar (bei 55 Kacheln: schon eine) bricht ab.
+- **A9 Ausdehnung:** vorläufig das Rechteck aller Zellen, die Österreich (Natural Earth) samt 2 km Rand berührt (`[9.05, 45.95, 17.85, 49.17]`); nach Ottos erstem Laden wird es die Vereinigung der 55 geladenen Kacheln (§6 Schritt 2).
+- **A10 Neuer Stichtag:** ändert `temporal_extent` und das Jahr der Quellenangabe; der Live-Smoke meldet ihn, der Lauf hält bis dahin an (A2).
