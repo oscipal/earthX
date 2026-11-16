@@ -17,6 +17,7 @@ import { bufferPointToPolygon, pointInFootprint, polygonBbox } from '../geoUtils
 import { openIdsOf, resultsOnMapOf } from '../mapResults';
 import { mosaicsOfView, sameMosaics } from '../mosaic';
 import { setMapLoading, watchLayerLoading } from '../layerLoading';
+import { guardMapEvents } from '../mapGuard';
 import { setMapOverview, watchOverviewMark } from '../overviewMark';
 import { watchTileRetry } from '../tileRetry';
 import { watchGoneSelections } from '../mosaicSelection';
@@ -206,6 +207,7 @@ export default function MapView() {
       touchPitch: false,
       maxPitch: 0,
     });
+    guardMapEvents(map);
     mapRef.current = map;
     watchPreviewLoading(map, (loading) => {
       if (useProcessingStore.getState().previewTilesLoading !== loading) useProcessingStore.setState({ previewTilesLoading: loading });

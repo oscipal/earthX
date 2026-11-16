@@ -3,9 +3,12 @@ import { createRoot } from 'react-dom/client'
 import './tokens.css'
 import './index.css'
 import App from './App.tsx'
+import ErrorBoundary from './components/ErrorBoundary.tsx'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <ErrorBoundary what="The page" themed>
+      <App />
+    </ErrorBoundary>
   </StrictMode>,
 )
