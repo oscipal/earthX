@@ -58,7 +58,7 @@ Daraus:
    - **Auch ohne direkten Download (Otto, 14.11.2026):** Daten, die die Plattform nicht selbst anbieten kann (Bestellung, Anmeldung, Konto, kostenpflichtig, nur auf Anfrage, Portal ohne Datei-Link), werden ebenfalls gelistet, mit Link auf die Seite des Anbieters, über die man sie bekommt, und der Art des Zugangs (`access.account` bzw. neue Angabe). Das ändert `adr/0031` §8 und §9 Fall 5 (Konto-Quellen: bisher Stopp mit Notiz, gelistet nur mit `way: listed`) zu „gelistet als Vorgabe“. Lizenz-Einstufung und Freigabe im PR bleiben bei Otto.
    - **Filter im Data catalogue:** nach Region und Zeit, auch über die AOI aus „Search and area“; gilt für alle Einträge, auch gelistete. Dafür muss der Harvest Ausdehnung und Zeitraum je Eintrag erfassen; offen, wie Einträge ohne bekannte Ausdehnung im Filter behandelt werden (Frage in M5-20).
    - **Später (eigene Vorlage, M6 oder danach):** Vorschau von Tabellen auf der Seite; Tabellen mit Koordinaten (z. B. Messstationen) als Punkte auf der Karte; Vektordaten (GeoJSON, Shapefile, WFS) auf der Karte.
-   - Log-Zeile dazu fehlt noch im Repo; nimmt die nächste Session mit, die den Crawler oder den Data catalogue anfasst (M5-17 oder M5-20).
+   - Log-Zeile nachgetragen mit M5-17 (16.11.2026).
 
 ## 3. Was mit M5 zusätzlich ansteht
 

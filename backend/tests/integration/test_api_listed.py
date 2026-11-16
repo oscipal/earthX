@@ -28,6 +28,7 @@ from earthx.catalog.listed import (
     DeliveryKind,
     ListedAccess,
     ListedEntry,
+    load_listed,
     sort_title,
 )
 from earthx.catalog.listed_store import apply_blocklist, supersede, write_hand_entries
@@ -518,6 +519,18 @@ async def test_a_bbox_keeps_what_meets_it(client):
     assert ids == _by_title(_titles_of_listed("bavaria-rainfall-gauges", "global-lightning-climatology"))
     kenya = _ids(await client.get("/stac/collections", params={"bbox": "36,-1,37,0", "entry": "listed"}))
     assert kenya == _by_title(_titles_of_listed(*LISTED_IDS_IN_KENYA))
+
+
+async def test_corine_is_found_in_its_countries_and_not_in_morocco_inside_its_box(client):
+    """M5-17 F4: the footprint of CORINE is the union of its 39 states, not its box, which reaches into North Africa."""
+    corine = next(entry for entry, _ in load_listed() if entry.dataset_id == "corine-land-cover")
+    _write(*LISTED.values(), corine)
+    marrakesh = _ids(await client.get("/stac/collections", params={"bbox": "-8.5,31.0,-7.5,32.0", "entry": "listed"}))
+    vienna = _ids(await client.get("/stac/collections", params={"bbox": "16.2,48.1,16.5,48.3", "entry": "listed"}))
+    assert "corine-land-cover" not in marrakesh
+    assert "corine-land-cover" in vienna
+    assert "corine-land-cover" not in _ids(await client.get("/stac/collections", params={"region": "MA"}))
+    assert "corine-land-cover" in _ids(await client.get("/stac/collections", params={"region": "AT-9"}))
 
 
 async def test_a_bbox_filter_applies_to_full_entries_in_the_same_order(client):
