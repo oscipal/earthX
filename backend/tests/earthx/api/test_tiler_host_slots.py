@@ -1,4 +1,4 @@
-"""The tiler's reads with one slot per host (M5-36 §5): every tile still comes, none waits for itself.
+"""The tiler's reads with one slot per host (M5-36 §5): every tile still comes, none waits for itself or another.
 
 ``EARTHX_SOURCE_INSTANCES=6`` shares the default cap of 6 so that this instance holds 1 per host, the hardest case
 for a deadlock. The scenes are the synthetic ones of the mosaic tile with steps; their paths are local files, so
@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Callable, Iterator
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 
+import anyio
 import pytest
 from fastapi.testclient import TestClient
 
@@ -21,6 +23,9 @@ from earthx.gateway import ReadSlots
 from tests.earthx.api.test_tiler_mosaic_operator import (
     CLOUDS_THEN_NDVI,
     DATASET,
+    HEIGHT,
+    X0,
+    Y0,
     Source,
     _app,
     _tiles,
@@ -46,7 +51,6 @@ def spy(monkeypatch: pytest.MonkeyPatch) -> Iterator[Spy]:
     monkeypatch.setenv("EARTHX_SOURCE_INSTANCES", "6")
     host = lambda path: sources.HOST  # noqa: E731  — the host of every synthetic scene
     monkeypatch.setattr("earthx.readers.cog.asset_host", host)
-    monkeypatch.setattr("earthx.api.tiler.asset_host", host)
     seen = Spy()
     take, slot, aslot = ReadSlots._take_or_queue, ReadSlots.slot, ReadSlots.aslot
 
@@ -103,20 +107,40 @@ def test_a_mosaic_tile_with_steps_holds_one_slot_for_all_its_scenes(api: TestCli
     for tile in _tiles():
         response = _within_deadline(lambda tile=tile: api.get(_url(api, tile, CLOUDS_THEN_NDVI)))
         assert response.status_code in (200, 204), response.text
-    assert spy.most == 1 and set(spy.sides) == {"loop"} and _held(api) == 0
+    # The route's thread holds the slot of the first scene; the scenes' threads read under it and take none.
+    assert spy.most == 1 and spy.sides == ["thread"] * len(_tiles()) and _held(api) == 0
 
 
 @pytest.mark.parametrize(
     "query",
     ["asset=red", "asset=red&asset=nir&op=band_math&op_version=1&params=%7B%22expression%22%3A%22nir-red%22%7D"],
 )
-def test_an_item_tile_takes_its_slot_in_the_event_loop_not_in_a_thread(api: TestClient, spy: Spy, query: str) -> None:
+def test_an_item_tile_takes_one_slot_in_the_thread_that_reads(api: TestClient, spy: Spy, query: str) -> None:
     z, x, y = _tiles()[0]
     response = _within_deadline(
         lambda: api.get(f"/collections/{DATASET}/items/A/tiles/WebMercatorQuad/{z}/{x}/{y}.tif?{query}")
     )
     assert response.status_code == 200, response.text
-    assert spy.sides == ["loop"] and spy.most == 1 and _held(api) == 0
+    assert spy.sides == ["thread"] and spy.most == 1 and _held(api) == 0
+
+
+def test_tiles_and_downloads_at_once_with_one_slot_and_few_threads_all_finish(api: TestClient, spy: Spy) -> None:
+    # Review of M5-36 PR 2: a slot taken in the event loop before a thread, and a thread that waits for that slot,
+    # could hold each other for good. With every slot taken in the thread that reads, three threads and one slot
+    # still serve them all.
+    api.portal.call(lambda: setattr(anyio.to_thread.current_default_thread_limiter(), "total_tokens", 3))
+    z, x, y = _tiles()[0]
+    aoi = sources.aoi_around(X0 + 100, Y0 - HEIGHT * 10 + 100, X0 + 3500, Y0 - 100)
+    calls = [lambda: api.get(f"/collections/{DATASET}/items/A/tiles/WebMercatorQuad/{z}/{x}/{y}.tif?asset=red")] * 6
+    calls += [
+        lambda: api.post(
+            f"/collections/{DATASET}/download", json={"groups": [["A", "B"]], "assets": ["red"], "aoi": aoi}
+        )
+    ] * 4
+    with ThreadPoolExecutor(max_workers=len(calls)) as pool:
+        responses = [future.result(timeout=DEADLINE_S) for future in [pool.submit(call) for call in calls]]
+    assert [response.status_code for response in responses] == [200] * len(calls), [r.text[:200] for r in responses]
+    assert "loop" not in spy.sides and spy.most == 1 and _held(api) == 0
 
 
 def test_a_bad_number_of_instances_stops_the_start(monkeypatch: pytest.MonkeyPatch, source: Source) -> None:  # noqa: F811

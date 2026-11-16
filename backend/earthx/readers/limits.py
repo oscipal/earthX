@@ -6,22 +6,26 @@ file is opened. The tiler sets its counter here once at start (:func:`limit_read
 stores share a gateway on the same counter. A process that sets nothing (worker, runner, ``materialize``, ``api``,
 whose searches take their slots themselves) reads as before.
 
-**One holder per host and context.** A context that holds a host's slot does not take a second one for it: a route that
-took its slots in the event loop before the thread pool (:func:`hold_hosts`), or a reader that opens a second file of
-the same host in the same thread, would otherwise wait for itself. A thread pool of its own does not inherit the
-context; :func:`carry_held` hands it over where the threads read for one holder.
+**Taken in the thread that reads, never in the event loop.** A route runs in a thread of the shared pool; had it taken
+its slot in the event loop first, a request holding a slot and waiting for a thread, and a thread waiting for that slot,
+could wait for each other (review of M5-36 PR 2). In threads every holder of a slot is reading.
+
+**One holder per host and context.** A context that holds a host's slot does not take a second one for it: a reader
+that opens a second file of the same host in the same thread (a download, a step over several assets) would otherwise
+wait for itself. A thread pool of its own does not inherit the context; :func:`carry_held` hands it over where the
+threads read for one holder (the scenes of a mosaic tile with steps, whose first scene the route's thread holds).
 """
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable, Iterable, Iterator
-from contextlib import AsyncExitStack, asynccontextmanager, contextmanager
+from collections.abc import Callable, Iterable, Iterator
+from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any, TypeVar
 
 from earthx.gateway import ReadSlots
 
-__all__ = ["carry_held", "hold_hosts", "limit_reads", "process_slots", "read_slot"]
+__all__ = ["carry_held", "limit_reads", "process_slots", "read_slot"]
 
 _SLOTS: ReadSlots | None = None
 # The hosts this context holds a slot of, one entry per hold (a reader may close after a later one opened).
@@ -74,22 +78,6 @@ def read_slot(host: str | None) -> Iterator[None]:
             yield
         finally:
             _remove([host])
-
-
-@asynccontextmanager
-async def hold_hosts(hosts: Iterable[str | None]) -> AsyncIterator[None]:
-    """Hold a slot of each of ``hosts`` on the event loop for the block, in the order of their names (no deadlock
-    between two requests that need the same hosts), so that the threads of the request never wait for one."""
-    async with AsyncExitStack() as stack:
-        taken = sorted({host for host in hosts if _counted(host)})
-        for host in taken:
-            assert _SLOTS is not None
-            await stack.enter_async_context(_SLOTS.aslot(host))
-        _add(taken)
-        try:
-            yield
-        finally:
-            _remove(taken)
 
 
 def carry_held(function: Callable[..., _T]) -> Callable[..., _T]:

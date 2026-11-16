@@ -512,7 +512,7 @@ class MosaicOperatorTileReader:
         try:
             image, _ = mosaic_reader(
                 list(range(len(self._input.scenes))),
-                # The route holds the slots of the hosts for the whole tile (M5-36 §5.2); the threads read under them.
+                # This thread holds the slots of the first scene's hosts (M5-36 §5.2); the scenes' threads read under them.
                 carry_held(lambda index, *tile, **_: self._scene(index, *tile, options)),
                 x,
                 y,

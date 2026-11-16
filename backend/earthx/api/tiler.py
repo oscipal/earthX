@@ -155,7 +155,6 @@ from earthx.gateway import (
     Gateway,
     GatewayError,
     ReadSlots,
-    host_of,
     source_instances_from_env,
     user_agent_from_env,
 )
@@ -164,8 +163,8 @@ from earthx.logging import RequestIdMiddleware, configure_logging, get_request_i
 from earthx.objectstore.errors import StoreConfigError
 from earthx.objectstore.results import Store
 from earthx.readers import AssetRejected, GeoreferenceMismatch
-from earthx.readers.cog import AssetPath, asset_host
-from earthx.readers.limits import hold_hosts, limit_reads
+from earthx.readers.cog import AssetPath
+from earthx.readers.limits import limit_reads
 from earthx.readers.zarr_reader import ZarrAsset, ZarrAssetError, close_shared_gateways
 
 LOGGER = logging.getLogger("earthx.api.tiler")
@@ -749,35 +748,6 @@ async def dataset_asset_path(
         bands=bands,
         target_gsd=target_gsd,
     )
-
-
-def _source_hosts(src_path: Any) -> set[str]:
-    """The hosts GDAL reads for ``src_path``, without those a Zarr asset of it asks over the gateway (M5-36 §4.1).
-
-    A Zarr asset takes its slot per request on zarr's own loop; a slot held here for its host would make it wait for
-    the request that waits for it.
-    """
-    if isinstance(src_path, MosaicOperatorInput):
-        targets = [target for scene in src_path.scenes for _, target in scene]
-    elif isinstance(src_path, OperatorInput):
-        targets = [target for _, target in src_path.inputs]
-    else:
-        targets = [src_path]
-    cogs = {asset_host(target) for target in targets if isinstance(target, AssetPath)}
-    zarrs = {host_of(target.store_url) for target in targets if isinstance(target, ZarrAsset)}
-    return {host for host in cogs if host is not None} - zarrs
-
-
-async def held_asset_path(
-    src_path: Annotated[AssetPath | ZarrAsset | OperatorInput, Depends(dataset_asset_path)],
-) -> AsyncIterator[AssetPath | ZarrAsset | OperatorInput]:
-    """:func:`dataset_asset_path`, with a slot of each host it reads taken in the event loop (M5-36 §5.2).
-
-    The route reads in a thread of the shared pool; waiting there for a slot would hold that thread (M5-35 §4.2). The
-    readers of the request see the slots as theirs and take no second one.
-    """
-    async with hold_hosts(_source_hosts(src_path)):
-        yield src_path
 
 
 _OpQuery = Annotated[
@@ -1588,14 +1558,9 @@ async def placed_mosaic_scenes(
     """:func:`mosaic_scenes`, and for the scenes a tile reads itself the place at the gate of the tile reads.
 
     A TileJSON (:class:`MosaicLayout`) and a tile with steps (read by the worker core, :class:`MosaicOperatorInput`) take no
-    place: the first reads no file and the second has its own limits; the tile with steps holds the slots of its hosts.
+    place: the first reads no file and the second has its own limits.
     """
     scenes = await mosaic_scenes(request, dataset, selection)
-    if isinstance(scenes, MosaicOperatorInput):
-        # Its scenes are read under the slots the tile holds (M5-36 §5.2); without steps each scene takes its own.
-        async with hold_hosts(_source_hosts(scenes)):
-            yield scenes
-        return
     if not isinstance(scenes, MosaicScenes):
         yield scenes
         return
@@ -2433,7 +2398,8 @@ def build_app(
     # never closes over something a test cannot replace.
     app.state.earthx_policy = policy
     # One counter per host for the process (M5-36 §4.1, §5.2): every GDAL reader of a source, the Zarr stores and the
-    # item fetches of the gateway share it.
+    # item fetches of the gateway share it. A reader takes its slot in the thread that opens it, never in the event
+    # loop: a slot taken before the thread pool and a thread that waits for a slot would wait for each other.
     app.state.earthx_read_slots = ReadSlots(policy)
     limit_reads(app.state.earthx_read_slots)
     # Two profiles, because GDAL reads the size of its `/vsicurl/` cache once per
@@ -2458,7 +2424,7 @@ def build_app(
     app.state.earthx_adapters = adapters
 
     factory = EarthxTilerFactory(
-        path_dependency=held_asset_path,
+        path_dependency=dataset_asset_path,
         layer_dependency=BidxParams,
         process_dependency=operator_post_process,
         reader=_open_reader,

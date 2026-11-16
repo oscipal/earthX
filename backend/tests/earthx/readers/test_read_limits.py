@@ -6,7 +6,6 @@ reader's open is replaced where a test only asks whether a slot is held and give
 
 from __future__ import annotations
 
-import asyncio
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
@@ -16,11 +15,10 @@ import rasterio
 from earthx.gateway import Policy, ReadSlots
 from earthx.readers import limits
 from earthx.readers.cog import AssetPath, CogReader
-from earthx.readers.limits import carry_held, hold_hosts, limit_reads, read_slot
+from earthx.readers.limits import carry_held, limit_reads, read_slot
 
 HOST = "bucket.example.org"
 OTHER = "other.example.org"
-pytestmark = pytest.mark.anyio
 
 
 @pytest.fixture
@@ -82,28 +80,31 @@ def test_threads_never_hold_more_than_the_cap(slots: ReadSlots) -> None:
     assert most[0] == 1 and held(slots) == 0
 
 
-async def test_slots_held_in_the_event_loop_cover_the_readers_of_the_request(slots: ReadSlots) -> None:
-    async with hold_hosts([OTHER, HOST, None, HOST]):
-        assert (held(slots), held(slots, OTHER)) == (1, 1)
-        # The thread pool of a route copies the context: its readers take no second slot and do not wait.
-        await asyncio.wait_for(asyncio.to_thread(lambda: read_slot(HOST).__enter__()), timeout=2)
-        assert held(slots) == 1
-    assert (held(slots), held(slots, OTHER)) == (0, 0)
-
-
-async def test_threads_of_their_own_read_under_the_held_slots_only_when_carried(slots: ReadSlots) -> None:
+def test_threads_of_their_own_read_under_the_held_slots_only_when_carried(slots: ReadSlots) -> None:
     def read() -> int:
         with read_slot(HOST):
             return held(slots)
 
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        async with hold_hosts([HOST]):
-            assert pool.submit(carry_held(read)).result(timeout=2) == 1
-            # Without carrying, a thread of its own waits for the slot the request holds.
-            waiting = pool.submit(read)
-            await asyncio.sleep(0.05)
-            assert not waiting.done()
-        assert waiting.result(timeout=2) == 1
+    with ThreadPoolExecutor(max_workers=2) as pool, read_slot(HOST):
+        # The route's thread holds the host (the first scene of a mosaic tile with steps); carried, a scene's thread
+        # reads under that slot, uncarried it would wait for the thread that waits for it.
+        assert pool.submit(carry_held(read)).result(timeout=2) == 1
+        waiting = pool.submit(read)
+        assert not threading.Event().wait(0.05) and not waiting.done()
+    assert waiting.result(timeout=2) == 1
+
+
+def test_a_thread_that_carried_the_held_hosts_gives_them_back(slots: ReadSlots) -> None:
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        with read_slot(HOST):
+            pool.submit(carry_held(lambda: None)).result(timeout=2)
+
+        def read() -> int:
+            with read_slot(HOST):
+                return held(slots)
+
+        # The same thread of the pool, a later task: it carries nothing any more and takes the slot itself.
+        assert pool.submit(read).result(timeout=2) == 1
 
 
 def test_a_reader_holds_its_slot_from_open_to_close_and_gives_it_back_when_the_open_fails(
