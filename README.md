@@ -340,6 +340,13 @@ einer URL steht. Ein Komma in `q` trennt nur Wörter (keine Free-text-Syntax), d
 Collection Search, aber nicht Free-text. Die Zahl eines nummerierten Namens bleibt Bedingung: `q=Sentinel-3` liefert
 eine leere Liste, solange kein Sentinel-3 im Katalog steht; eine Zahl mit Einheit (`q=ESA 10 m`) oder ein Jahr nicht.
 
+**Grenzen je Host (M5-36):** `backend/catalog/hosts.yaml` nennt für jeden Host, den ein Eintrag liest,
+die gleichzeitigen Verbindungen und, wo die Quelle eine Regel hat, den Mindestabstand — für alle Instanzen
+zusammen. `api` und `tiler` teilen die Verbindungen durch `EARTHX_SOURCE_INSTANCES` (Zahl der Prozesse beider
+zusammen, leer = 1; abgerundet, mindestens 1 je Host): Wer mehr Instanzen startet, setzt die Zahl mit. Ein Lesen
+wartet auf einen freien Platz, es wird nie abgewiesen. Kacheln und Suche halten keinen Abstand; den nutzt
+`materialize`.
+
 `backend/catalog/prototype/` hält Einträge von Quellen mit unklarer Rechtslage
 (`docs/adr/0024-prototyp-quellen.md`). Das Verzeichnis kommt nie ins Image; geladen wird es
 nur mit `EARTHX_PROTOTYPE_SOURCES` (Pfad), `EARTHX_PROFILE=local` und ohne `CI`. Jede andere
