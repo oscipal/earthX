@@ -48,7 +48,16 @@ from earthx.readers.errors import AssetRejected, GeoreferenceMismatch
 from earthx.readers.limits import read_slot
 from earthx.readers.radar_slices import slice_document, slices_of
 
-__all__ = ["AS_WRITTEN", "AssetPath", "CogReader", "Georeferencing", "asset_host", "asset_path", "warp_options"]
+__all__ = [
+    "AS_WRITTEN",
+    "AssetPath",
+    "CogReader",
+    "Georeferencing",
+    "asset_host",
+    "asset_path",
+    "source_host",
+    "warp_options",
+]
 
 #: How a file is placed; the values of ``earthx.catalog.registry.Georeferencing``, which this module may not import.
 Georeferencing = Literal["geotransform", "gcp_tps"]
@@ -102,7 +111,7 @@ def asset_host(path: AssetPath) -> str | None:
     return host_of(path[len(prefix) :]) if path.startswith(prefix) else None
 
 
-def _source_host(path: AssetPath) -> str | None:
+def source_host(path: AssetPath) -> str | None:
     """The host a read counts against, ``None`` where it is no source: a file on disk, or the object store's own
     endpoint behind a result (adr/0015 §14c), whose name need not be one the gateway would accept."""
     try:
@@ -187,7 +196,7 @@ class CogReader(Reader):
     def _open(self) -> None:
         if not self.dataset:
             # A slot of the host from open to close, where the process counts them (M5-36 §5.2).
-            self._ctx_stack.enter_context(read_slot(_source_host(self.input)))
+            self._ctx_stack.enter_context(read_slot(source_host(self.input)))
             self.dataset = self._ctx_stack.enter_context(rasterio.open(self.input))
         self.raw = self.dataset
         gcps, gcp_crs = self.dataset.gcps

@@ -107,8 +107,8 @@ def test_a_mosaic_tile_with_steps_holds_one_slot_for_all_its_scenes(api: TestCli
     for tile in _tiles():
         response = _within_deadline(lambda tile=tile: api.get(_url(api, tile, CLOUDS_THEN_NDVI)))
         assert response.status_code in (200, 204), response.text
-    # The route's thread holds the slot of the first scene; the scenes' threads read under it and take none.
-    assert spy.most == 1 and spy.sides == ["thread"] * len(_tiles()) and _held(api) == 0
+    # The first scene is opened without a slot; every scene, the first too, is read under one in its own thread.
+    assert spy.most == 1 and set(spy.sides) == {"thread"} and len(spy.sides) > len(_tiles()) and _held(api) == 0
 
 
 @pytest.mark.parametrize(

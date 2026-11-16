@@ -12,25 +12,24 @@ could wait for each other (review of M5-36 PR 2). In threads every holder of a s
 
 **One holder per host and context.** A context that holds a host's slot does not take a second one for it: a reader
 that opens a second file of the same host in the same thread (a download, a step over several assets) would otherwise
-wait for itself. A thread pool of its own does not inherit the context; :func:`carry_held` hands it over where the
-threads read for one holder (the scenes of a mosaic tile with steps, whose first scene the route's thread holds).
+wait for itself. A reader that opens files in one thread and reads them in others (the first scene of a mosaic tile
+with steps) opens them :func:`uncounted` and reads them under :func:`read_slots` in the thread that reads, so the
+cap holds for the reads and no thread holds a slot while it waits for another.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Iterator
-from contextlib import contextmanager
+from collections.abc import Iterable, Iterator
+from contextlib import ExitStack, contextmanager
 from contextvars import ContextVar
-from typing import Any, TypeVar
 
 from earthx.gateway import ReadSlots
 
-__all__ = ["carry_held", "limit_reads", "process_slots", "read_slot"]
+__all__ = ["limit_reads", "process_slots", "read_slot", "read_slots", "uncounted"]
 
 _SLOTS: ReadSlots | None = None
 # The hosts this context holds a slot of, one entry per hold (a reader may close after a later one opened).
 _HELD: ContextVar[tuple[str, ...]] = ContextVar("earthx_held_hosts", default=())
-_T = TypeVar("_T")
 
 
 def limit_reads(slots: ReadSlots | None) -> None:
@@ -80,15 +79,22 @@ def read_slot(host: str | None) -> Iterator[None]:
             _remove([host])
 
 
-def carry_held(function: Callable[..., _T]) -> Callable[..., _T]:
-    """``function`` running with the hosts this context holds, in whichever thread calls it."""
-    held = _HELD.get()
+@contextmanager
+def uncounted(hosts: Iterable[str | None]) -> Iterator[None]:
+    """Open files of ``hosts`` in the block without taking a slot, for a reader that reads them later under
+    :func:`read_slots` in another thread: a slot held across the reads of other threads would make them wait for it."""
+    names = [host for host in hosts if host is not None]
+    _add(names)
+    try:
+        yield
+    finally:
+        _remove(names)
 
-    def run(*args: Any, **kwargs: Any) -> _T:
-        token = _HELD.set(held)
-        try:
-            return function(*args, **kwargs)
-        finally:
-            _HELD.reset(token)
 
-    return run
+@contextmanager
+def read_slots(hosts: Iterable[str | None]) -> Iterator[None]:
+    """Hold a slot of each of ``hosts`` for the block (:func:`read_slot`), in the order of their names."""
+    with ExitStack() as stack:
+        for host in sorted({host for host in hosts if host is not None}):
+            stack.enter_context(read_slot(host))
+        yield

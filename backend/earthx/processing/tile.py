@@ -48,8 +48,8 @@ from earthx.processing.operators.base import BandMeta, Operator, RasterMeta
 from earthx.processing.plan import PlannedStep, needed_source_bands, stock_steps
 from earthx.processing.recipe import ResolvedInput, Step
 from earthx.processing.source import Source, common_grid, expected_band_names, merge_images, pad_image, units_of
-from earthx.readers.cog import AssetPath
-from earthx.readers.limits import carry_held
+from earthx.readers.cog import AssetPath, source_host
+from earthx.readers.limits import read_slots, uncounted
 from earthx.readers.zarr_reader import ZarrAsset
 
 __all__ = [
@@ -438,7 +438,10 @@ class MosaicOperatorTileReader:
 
     def __enter__(self) -> MosaicOperatorTileReader:
         try:
-            self._first = [Source.open(entry, target, self._stack) for entry, target in self._input.scenes[0]]
+            # Opened here for its bands, read in a thread of the tile under its own slots (M5-36 §5.2): a slot held
+            # here would make the scenes' threads wait for this one, which waits for them.
+            with uncounted(self._first_hosts):
+                self._first = [Source.open(entry, target, self._stack) for entry, target in self._input.scenes[0]]
             _, meta = _meta_of(self._first, self._input.steps)
             self._units = tuple(band.unit for band in meta.bands)
         except BaseException as error:
@@ -448,6 +451,10 @@ class MosaicOperatorTileReader:
 
     def __exit__(self, *exc_info: Any) -> None:
         self._stack.close()
+
+    @property
+    def _first_hosts(self) -> list[str | None]:
+        return [source_host(target) for _, target in self._input.scenes[0] if isinstance(target, AssetPath)]
 
     @property
     def minzoom(self) -> int:
@@ -488,7 +495,8 @@ class MosaicOperatorTileReader:
         halo = halo_of(self._input.steps)
         with rasterio.Env(**self.gdal_config):
             if index == 0:
-                return merge_images([_read_own(source, x, y, z, options, halo) for source in self._first])
+                with read_slots(self._first_hosts):
+                    return merge_images([_read_own(source, x, y, z, options, halo) for source in self._first])
             with ExitStack() as stack:
                 sources = [Source.open(entry, target, stack) for entry, target in self._input.scenes[index]]
                 for first, source in zip(self._first, sources, strict=True):
@@ -512,8 +520,7 @@ class MosaicOperatorTileReader:
         try:
             image, _ = mosaic_reader(
                 list(range(len(self._input.scenes))),
-                # This thread holds the slots of the first scene's hosts (M5-36 §5.2); the scenes' threads read under them.
-                carry_held(lambda index, *tile, **_: self._scene(index, *tile, options)),
+                lambda index, *tile, **_: self._scene(index, *tile, options),
                 x,
                 y,
                 z,

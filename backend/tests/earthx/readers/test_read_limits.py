@@ -15,7 +15,7 @@ import rasterio
 from earthx.gateway import Policy, ReadSlots
 from earthx.readers import limits
 from earthx.readers.cog import AssetPath, CogReader
-from earthx.readers.limits import carry_held, limit_reads, read_slot
+from earthx.readers.limits import limit_reads, read_slot, read_slots, uncounted
 
 HOST = "bucket.example.org"
 OTHER = "other.example.org"
@@ -80,31 +80,18 @@ def test_threads_never_hold_more_than_the_cap(slots: ReadSlots) -> None:
     assert most[0] == 1 and held(slots) == 0
 
 
-def test_threads_of_their_own_read_under_the_held_slots_only_when_carried(slots: ReadSlots) -> None:
-    def read() -> int:
-        with read_slot(HOST):
-            return held(slots)
-
-    with ThreadPoolExecutor(max_workers=2) as pool, read_slot(HOST):
-        # The route's thread holds the host (the first scene of a mosaic tile with steps); carried, a scene's thread
-        # reads under that slot, uncarried it would wait for the thread that waits for it.
-        assert pool.submit(carry_held(read)).result(timeout=2) == 1
-        waiting = pool.submit(read)
-        assert not threading.Event().wait(0.05) and not waiting.done()
-    assert waiting.result(timeout=2) == 1
-
-
-def test_a_thread_that_carried_the_held_hosts_gives_them_back(slots: ReadSlots) -> None:
-    with ThreadPoolExecutor(max_workers=1) as pool:
-        with read_slot(HOST):
-            pool.submit(carry_held(lambda: None)).result(timeout=2)
+def test_files_opened_uncounted_take_their_slot_where_they_are_read(slots: ReadSlots) -> None:
+    # The first scene of a mosaic tile with steps: opened in the route's thread, read in a thread of the tile.
+    with uncounted([HOST, None]), read_slot(HOST):
+        assert held(slots) == 0
+    with ThreadPoolExecutor(max_workers=2) as pool:
 
         def read() -> int:
-            with read_slot(HOST):
-                return held(slots)
+            with read_slots([OTHER, HOST, None, HOST]):
+                return held(slots) + held(slots, OTHER)
 
-        # The same thread of the pool, a later task: it carries nothing any more and takes the slot itself.
-        assert pool.submit(read).result(timeout=2) == 1
+        assert [future.result(timeout=2) for future in [pool.submit(read), pool.submit(read)]] == [2, 2]
+    assert (held(slots), held(slots, OTHER)) == (0, 0)
 
 
 def test_a_reader_holds_its_slot_from_open_to_close_and_gives_it_back_when_the_open_fails(
