@@ -242,7 +242,9 @@ def stac_item(asset_key: str, href: str, bounds: tuple[float, ...], gsd: float) 
     }
 
 
-def gateway_answering_search(config: DatasetConfig, item: dict[str, Any]) -> tuple[Gateway, list[httpx.Request]]:
+def gateway_answering_search(
+    config: DatasetConfig, item: dict[str, Any]
+) -> tuple[Gateway, list[httpx.Request]]:
     """A gateway that answers any search with one page holding ``item``."""
     seen: list[httpx.Request] = []
 
@@ -406,10 +408,7 @@ def gateway_answering_worldcover(config: DatasetConfig, tile: str) -> tuple[Gate
     key = f"{version}/{year}/map/ESA_WorldCover_10m_{year}_{version}_{tile}_Map.tif"
     west, south, east, north = mini_worldcover.BOUNDS
     ring = [[west, south], [east, south], [east, north], [west, north], [west, south]]
-    grid = {
-        "type": "FeatureCollection",
-        "features": [{"properties": {"ll_tile": tile}, "geometry": {"type": "Polygon", "coordinates": [ring]}}],
-    }
+    grid = {"type": "FeatureCollection", "features": [{"properties": {"ll_tile": tile}, "geometry": {"type": "Polygon", "coordinates": [ring]}}]}
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(request)
@@ -432,16 +431,12 @@ def gateway_answering_worldcover(config: DatasetConfig, tile: str) -> tuple[Gate
     )
 
 
-def _build_worldcover(
-    config: DatasetConfig, render_asset: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> Chain:
+def _build_worldcover(config: DatasetConfig, render_asset: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Chain:
     from earthx.adapters.esa_worldcover_bucket import _item as worldcover_item
 
     path = mini_worldcover.build_mini_worldcover(tmp_path / "mini_worldcover.tif")
     read_addresses = mini_worldcover.serve_worldcover(path, monkeypatch)
-    synthetic = replace(
-        config, source=replace(config.source, endpoint=f"https://{HOST}", asset_hosts=(HOST,), asset_href_rewrites=())
-    )
+    synthetic = replace(config, source=replace(config.source, endpoint=f"https://{HOST}", asset_hosts=(HOST,), asset_href_rewrites=()))
     version, year = config.source.source_collection_id.split("/")
     tile = mini_worldcover.TILE
     item = worldcover_item(
@@ -656,9 +651,7 @@ def _build_materialized(
     # Only the host has to match what the real adapter builds an href from
     # (`config.source.endpoint`/`.tif`): `vsicurl_path` is monkeypatched above to
     # serve the local file regardless of the path it is asked for.
-    synthetic = replace(
-        config, source=replace(config.source, endpoint=f"https://{HOST}", asset_hosts=(HOST,), asset_href_rewrites=())
-    )
+    synthetic = replace(config, source=replace(config.source, endpoint=f"https://{HOST}", asset_hosts=(HOST,), asset_href_rewrites=()))
     item = dem_item(mini_dem.TILE_NAME, mini_dem.BOUNDS, config=synthetic, gsd=30.0)
     gateway, searched = gateway_answering_materialize(synthetic, item)
     resolve_from_memory(monkeypatch)

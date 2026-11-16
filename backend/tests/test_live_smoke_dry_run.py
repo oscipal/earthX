@@ -89,9 +89,7 @@ def _worldcover_double(request: httpx.Request) -> httpx.Response:
         prefix = request.url.params["prefix"]
         version, year = prefix.split("/")[:2]
         key = f"{prefix}ESA_WorldCover_10m_{year}_{version}_N45E009_Map.tif"
-        return httpx.Response(
-            200, content=f"<ListBucketResult><Contents><Key>{key}</Key></Contents></ListBucketResult>".encode()
-        )
+        return httpx.Response(200, content=f"<ListBucketResult><Contents><Key>{key}</Key></Contents></ListBucketResult>".encode())
     raise AssertionError(f"the double has no answer for {request.method} {request.url}")
 
 
@@ -136,22 +134,16 @@ def _filtering_double(request: httpx.Request) -> httpx.Response:
     if request.method == "POST" and request.url.path.endswith("/search"):
         body = json.loads(request.content)
         kept = [item for item in _filtered_items(body["collections"][0]) if _keeps(item, body.get("query", {}))]
-        return _json(
-            {"type": "FeatureCollection", "numberMatched": len(kept), "features": kept[: body["limit"]], "links": []}
-        )
+        return _json({"type": "FeatureCollection", "numberMatched": len(kept), "features": kept[: body["limit"]], "links": []})
     if request.method == "GET" and request.url.path.endswith("/aggregate"):
         items = _filtered_items(request.url.params["collections"])
         kept = [item for item in items if _keeps(item, json.loads(request.url.params.get("query", "{}")))]
         cells = [{"key": "4/8/5", "frequency": len(kept)}] if kept else []
-        return _json(
-            {
-                "aggregations": [
-                    {"name": "total_count", "value": len(kept)},
-                    {"name": "grid_geotile_frequency", "buckets": cells},
-                    {"name": "datetime_frequency", "buckets": []},
-                ]
-            }
-        )
+        return _json({"aggregations": [
+            {"name": "total_count", "value": len(kept)},
+            {"name": "grid_geotile_frequency", "buckets": cells},
+            {"name": "datetime_frequency", "buckets": []},
+        ]})
     if request.method == "GET" and request.url.path.endswith("/queryables"):
         return _json({"type": "object", "properties": {"eo:cloud_cover": {"$ref": "https://example.invalid/eo"}}})
     raise AssertionError(f"the double has no answer for {request.method} {request.url}")
@@ -160,10 +152,7 @@ def _filtering_double(request: httpx.Request) -> httpx.Response:
 def _scl_scenes() -> list[dict[str, Any]]:
     """Six synthetic scenes with a classification asset on an allowed asset host and a footprint, 50 % clouds and 20 % no data each."""
     host = SENTINEL_2_L2A.source.asset_hosts[0]
-    footprint = {
-        "type": "Polygon",
-        "coordinates": [[[10.0, 47.0], [11.0, 47.0], [11.0, 48.0], [10.0, 48.0], [10.0, 47.0]]],
-    }
+    footprint = {"type": "Polygon", "coordinates": [[[10.0, 47.0], [11.0, 47.0], [11.0, 48.0], [10.0, 48.0], [10.0, 47.0]]]}
     return [
         {
             **_fixture("earth_search", "item"),
@@ -193,9 +182,7 @@ def _sentinel_1_double(request: httpx.Request) -> httpx.Response:
     # The gateway connects to the address it resolved; the name stays in the Host header.
     if request.headers["host"].endswith("amazonaws.com"):
         if request.url.query == b"requestPayment":
-            return httpx.Response(
-                200, content=b"<RequestPaymentConfiguration><Payer>BucketOwner</Payer></RequestPaymentConfiguration>"
-            )
+            return httpx.Response(200, content=b"<RequestPaymentConfiguration><Payer>BucketOwner</Payer></RequestPaymentConfiguration>")
         if request.method == "HEAD":
             # Measured 10.11.2026: only objects written since early 2025 carry the checksum, and only when asked.
             headers = {"etag": '"00112233445566778899aabbccddeeff"'}
@@ -336,7 +323,6 @@ def _replay_rasters(module: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None
     # Four valid pixels, two of them in a cloud class (8 and 9): the share of the scenes above, 50 %.
     monkeypatch.setattr(module, "RESOLVER", lambda host, port: ("93.184.216.34",))
     monkeypatch.setattr(module, "read_whole_file", lambda scene: (numpy.array([8, 9, 4, 5, 0], dtype="uint8"), 0))
-
     def together(paths: Any, aoi: Any, classes: Any) -> AoiClouds:
         # The scenes of a pass share one footprint, so the pass is a scene: half of its valid pixels are clouds, half vegetation.
         return AoiClouds(cloud_pixels=50, data_pixels=100, aoi_pixels=100, resolution=80.0, class_pixels={8: 50, 4: 50})

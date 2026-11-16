@@ -170,16 +170,9 @@ def build(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 
 
 def _federated(
-    config: DatasetConfig,
-    item: dict[str, Any],
-    assets: list[str],
-    aoi: dict[str, Any],
-    step: dict[str, Any],
-    **rest: Any,
+    config: DatasetConfig, item: dict[str, Any], assets: list[str], aoi: dict[str, Any], step: dict[str, Any], **rest: Any
 ) -> Scenario:
-    synthetic = replace(
-        config, source=replace(config.source, asset_hosts=(synthetic_chain.HOST,), asset_href_rewrites=())
-    )
+    synthetic = replace(config, source=replace(config.source, asset_hosts=(synthetic_chain.HOST,), asset_href_rewrites=()))
     gateway, _ = synthetic_chain.gateway_answering_search(synthetic, item)
     return Scenario(
         config=synthetic,
@@ -217,14 +210,8 @@ def _cog_pair(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.MonkeyP
         for name in files
     }
     return _federated(
-        config,
-        item,
-        ["red", "nir"],
-        _whole(bounds),
-        _ndvi("red", "nir"),
-        scaling="item",
-        result_bands=["band_math"],
-        tile=_central_tile(bounds, sources.CRS),
+        config, item, ["red", "nir"], _whole(bounds), _ndvi("red", "nir"),
+        scaling="item", result_bands=["band_math"], tile=_central_tile(bounds, sources.CRS),
     )
 
 
@@ -240,14 +227,8 @@ def _zarr_pair(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.Monkey
     # the asset of a band is found from these names (adr/0020 §5).
     item["assets"]["SR_10m"]["bands"] = [{"name": "b04"}, {"name": "b08"}]
     return _federated(
-        config,
-        item,
-        [ZARR_ASSET],
-        _whole(bounds),
-        _ndvi("b04", "b08"),
-        scaling="store-cf",
-        result_bands=["band_math"],
-        tile=_central_tile(bounds, mini_zarr_cf.ITEM_CRS),
+        config, item, [ZARR_ASSET], _whole(bounds), _ndvi("b04", "b08"),
+        scaling="store-cf", result_bands=["band_math"], tile=_central_tile(bounds, mini_zarr_cf.ITEM_CRS),
     )
 
 
@@ -256,13 +237,9 @@ def _dem(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     mini_dem.serve_dem(mini_dem.build_mini_dem(tmp_path / "mini_dem.tif"), monkeypatch)
     synthetic_chain.resolve_from_memory(monkeypatch)
     synthetic = replace(
-        config,
-        source=replace(
-            config.source,
-            endpoint=f"https://{synthetic_chain.HOST}",
-            asset_hosts=(synthetic_chain.HOST,),
-            asset_href_rewrites=(),
-        ),
+        config, source=replace(
+            config.source, endpoint=f"https://{synthetic_chain.HOST}", asset_hosts=(synthetic_chain.HOST,), asset_href_rewrites=()
+        )
     )
     item = synthetic_chain.dem_item(mini_dem.TILE_NAME, mini_dem.BOUNDS, config=synthetic, gsd=30.0)
     gateway, _ = synthetic_chain.gateway_answering_materialize(synthetic, item)
@@ -440,9 +417,7 @@ def test_every_assigned_operator_exists_and_applies_to_its_entry() -> None:
     for config in ENTRIES:
         op = OPERATOR_FOR[config.dataset_id]
         operator = OPERATORS.operator(op, 2 if op in ("reproject", "mask") else 1)
-        params = operator.params.model_validate(
-            {"reproject": REPROJECT, "mask": MASK, "normalize": NORMALIZE}.get(op, {"expression": "a + b"})
-        )
+        params = operator.params.model_validate({"reproject": REPROJECT, "mask": MASK, "normalize": NORMALIZE}.get(op, {"expression": "a + b"}))
         assert applicable(operator, config, params) == [], config.dataset_id
 
 
@@ -459,9 +434,7 @@ def _entries_of(test: Any) -> list[DatasetConfig]:
 
 def test_the_zarr_case_of_the_native_level_comes_from_the_test_entry() -> None:
     """The registry has no Zarr dataset; the Zarr comparison (adr/0014 §15d) runs on the test entry alone."""
-    assert _zarr_case_missing(REGISTRY) is not None, (
-        "the registry has a Zarr entry: this case no longer needs the test entry"
-    )
+    assert _zarr_case_missing(REGISTRY) is not None, "the registry has a Zarr entry: this case no longer needs the test entry"
     assert _zarr_case_missing(ENTRIES) is None, _zarr_case_missing(ENTRIES)
     parametrized = _entries_of(test_the_tile_equals_the_job_on_the_native_level)
     assert SYNTHETIC_ZARR in parametrized, _zarr_case_missing(parametrized)

@@ -127,11 +127,14 @@ async def test_a_found_item_carries_the_key_the_viewer_groups_by(chain: Chain) -
             assert part
 
 
-def test_display_renders_a_tile_from_the_registrys_own_visualisation(client: TestClient, chain: Chain) -> None:
+def test_display_renders_a_tile_from_the_registrys_own_visualisation(
+    client: TestClient, chain: Chain
+) -> None:
     """Link 2. The asset key is checklist point 8's value, not one invented here."""
     zoom, x, y = chain.tile
     response = client.get(
-        f"/collections/{chain.dataset_id}/items/{chain.item['id']}/tiles/WebMercatorQuad/{zoom}/{x}/{y}.png",
+        f"/collections/{chain.dataset_id}/items/{chain.item['id']}"
+        f"/tiles/WebMercatorQuad/{zoom}/{x}/{y}.png",
         params={"asset": chain.render_asset},
     )
 
@@ -158,7 +161,9 @@ def test_the_clipped_download_is_a_zip_of_raster_and_notice(client: TestClient, 
     assert any(name.endswith(".tif") for name in names), names
 
 
-def test_the_notice_carries_attribution_and_terms_of_this_entry(client: TestClient, chain: Chain) -> None:
+def test_the_notice_carries_attribution_and_terms_of_this_entry(
+    client: TestClient, chain: Chain
+) -> None:
     """Point 4 and point 9 meet here: the licence text travels with the pixels."""
     response = client.post(
         f"/collections/{chain.dataset_id}/download",
@@ -207,14 +212,17 @@ async def test_the_whole_chain_runs_for_this_entry(chain: Chain, client: TestCli
 # --------------------------------------------------------------------------------
 
 
-def test_an_asset_on_a_host_the_entry_does_not_name_is_refused(client: TestClient, chain: Chain) -> None:
+def test_an_asset_on_a_host_the_entry_does_not_name_is_refused(
+    client: TestClient, chain: Chain
+) -> None:
     """The allowlist is part of the chain, not a layer the fixtures step around."""
     chain.item["assets"][synthetic_chain.item_asset_key(chain.config, chain.render_asset)] = {
         "href": "https://elsewhere.example.invalid/products/mini.tif"
     }
     zoom, x, y = chain.tile
     response = client.get(
-        f"/collections/{chain.dataset_id}/items/{chain.item['id']}/tiles/WebMercatorQuad/{zoom}/{x}/{y}.png",
+        f"/collections/{chain.dataset_id}/items/{chain.item['id']}"
+        f"/tiles/WebMercatorQuad/{zoom}/{x}/{y}.png",
         params={"asset": chain.render_asset},
     )
     assert response.status_code == 502, response.text
