@@ -17,6 +17,7 @@ import pytest
 
 from earthx.gateway import Policy, ReadSlots
 from earthx.gateway.client import Gateway
+from earthx.gateway.slots import _Waiter
 
 HOST = "bucket.example.org"
 OTHER = "other.example.org"
@@ -75,6 +76,27 @@ class TestTheCapPerHost:
                 future.result()
         assert peaks[HOST].most == 1
         assert 1 < peaks[OTHER].most <= 3
+
+
+class TestAThreadThatStopsWaiting:
+    def test_an_interrupted_thread_leaves_the_queue_and_the_slot_reaches_the_next(self, monkeypatch) -> None:
+        slots = ReadSlots(policy(max_connections_per_host=1))
+        held = slots.slot(HOST)
+        held.__enter__()
+        real_wait = threading.Event.wait
+
+        def interrupted(event: threading.Event, timeout: float | None = None) -> bool:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(threading.Event, "wait", interrupted)
+        with pytest.raises(KeyboardInterrupt), slots.slot(HOST):
+            pytest.fail("the block must not run")
+        monkeypatch.setattr(threading.Event, "wait", real_wait)
+        assert not slots._hosts[HOST].waiters
+        held.__exit__(None, None, None)
+        with slots.slot(HOST):
+            assert slots._hosts[HOST].held == 1
+        assert slots._hosts[HOST].held == 0
 
 
 class TestOnTheEventLoop:
@@ -167,6 +189,29 @@ class TestOnTheEventLoop:
         async with asyncio.timeout(1):
             await later
         assert inside.is_set() and slots._hosts[HOST].held == 0
+
+    async def test_a_waiter_whose_loop_has_closed_is_passed_over(self) -> None:
+        slots = ReadSlots(policy(max_connections_per_host=1))
+        gone = asyncio.new_event_loop()
+        held = slots.slot(HOST)
+        held.__enter__()
+        with slots._lock:
+            stale = _Waiter(gone)
+            slots._hosts[HOST].waiters.append(stale)
+        gone.close()
+        took = []
+
+        def read() -> None:
+            with slots.slot(HOST):
+                took.append(True)
+
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            thread = pool.submit(read)
+            while len(slots._hosts[HOST].waiters) < 2:
+                time.sleep(0.001)
+            held.__exit__(None, None, None)
+            thread.result(timeout=1)
+        assert took == [True] and not stale.granted and slots._hosts[HOST].held == 0
 
     async def test_an_error_in_the_block_gives_the_slot_back(self) -> None:
         slots = ReadSlots(policy(max_connections_per_host=1))

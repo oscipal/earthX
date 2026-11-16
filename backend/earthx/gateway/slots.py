@@ -88,7 +88,11 @@ class ReadSlots:
         waiter = self._take_or_queue(name, None)
         if waiter is not None:
             assert waiter.event is not None
-            waiter.event.wait()
+            try:
+                waiter.event.wait()
+            except BaseException:
+                self._give_up(name, waiter)
+                raise
         try:
             yield
         finally:
@@ -103,7 +107,7 @@ class ReadSlots:
             assert waiter.future is not None
             try:
                 await waiter.future
-            except asyncio.CancelledError:
+            except BaseException:
                 self._give_up(name, waiter)
                 raise
         try:
@@ -130,7 +134,7 @@ class ReadSlots:
             return waiter
 
     def _give_up(self, name: str, waiter: _Waiter) -> None:
-        """A cancelled waiter leaves the queue, or passes on the slot it was handed just before."""
+        """A waiter that stops waiting (cancelled, interrupted) leaves the queue, or passes on the slot it was handed."""
         with self._lock:
             if not waiter.granted:
                 self._hosts[name].waiters.remove(waiter)
