@@ -91,6 +91,24 @@ Folgen:
 
 Folgen (Otto, 16.11.2026): Lizenz im Eintrag aus den Kachel-Metadaten belegen, nicht aus `rights`; Footprint ist die 50-km-Zelle aus dem Kachelnamen; der Host steht in `hosts.yaml` (#360 gemergt).
 
+
+### 2.6 Ottos Laden und Messung (16.11.2026) [M]
+
+- **Ausdehnung** der geladenen Items (`st_extent`): `[9.051669, 45.9508597, 17.7770115, 49.1478285]`. Das ist die Vereinigung der Zellen, die der Umriss Österreichs (Natural Earth) berührt; sie steht jetzt im Eintrag (A9).
+- **Kacheln** (`measure-tiles`, Mitte Österreichs, 512 px, 4 Threads; Budget je Kachel 4 s, `adr/0032` §6.2):
+
+| z | Dateien | kalt s | warm s | kalt MB |
+|---|---|---|---|---|
+| 5 | 47 | 25,8 | 37,5 | 8,0 |
+| 6 | 46 | 22,3 | 18,5 | 7,9 |
+| 7 | 17 | 9,4 | 6,6 | 2,7 |
+| 8 | 9 | 6,3 | 4,1 | 4,8 |
+| 9 | 4 | 2,8 | 1,8 | 7,4 |
+| 10 | 2 | 1,8 | 0,7 | 5,4 |
+
+- **Folge nach F5 = 1** („7, wenn eine kalte Kachel z7 unter 4 s bleibt, sonst 8“): `min_zoom` **8**. Darunter zeichnet GLO-30, bei z7 aus seinen Dateien, unter z7 aus seiner Pyramide.
+- **Befund:** Auch z8 liegt kalt über dem Budget (6,3 s); erst z9 bleibt darunter. Eine kalte Kachel bei z8 wird deshalb eine Teilkachel (`X-EarthX-Partial`). Rund 0,7 s je Datei kalt auf einem Server ohne CDN; das Lesen ist hier Netz, nicht Rechnen (anders als swissALTI3D, `adr/0032` §6.2). Frage F10.
+
 ---
 
 ## 3. Ausgangslage im Code [P]
@@ -317,7 +335,7 @@ Gebaut nach §4 mit den Antworten aus §8a und den Messläufen §2.4, §2.5. Wo 
 - **A6 Footprint:** die Zelle aus dem Kachelnamen, 16 Punkte je Kante nach WGS 84 umgerechnet; das Polygon des Feeds wird nicht verwendet.
 - **A7 Fassung des Laufs:** SHA-256 über Kachel, Stichtag, `updated`, Link des Dataset-Feeds und DOI der Einträge des gewählten Stichtags. Gleiche Fassung → `unchanged` nach einer Anfrage. Änderungen an älteren Stichtagen oder am DSM ändern sie nicht.
 - **A8 Nicht ladbar:** eine Kachel ohne DOI der bekannten Form, ohne genau einen Dataset-Feed, ein Dataset-Feed ohne genau eine Datei auf dem Host unter dem Pfad ihres Modells, Stichtags und ihrer Kachel, oder eine Zelle, deren Mitte außerhalb der Ausdehnung liegt. `404`/`410` eines Dataset-Feeds zählt als fehlend; jeder andere Fehler bricht den Lauf ab. Über 1 % nicht ladbar (bei 55 Kacheln: schon eine) bricht ab.
-- **A9 Ausdehnung:** vorläufig das Rechteck aller Zellen, die Österreich (Natural Earth) samt 2 km Rand berührt (`[9.05, 45.95, 17.85, 49.17]`); nach Ottos erstem Laden wird es die Vereinigung der 55 geladenen Kacheln (§6 Schritt 2).
+- **A9 Ausdehnung:** die Vereinigung der 55 geladenen Kacheln aus Ottos erstem Laden (§2.6); vorher vorläufig `[9.05, 45.95, 17.85, 49.17]`.
 - **A10 Neuer Stichtag:** ändert `temporal_extent`, den Stichtag in `description` und `citation` und das Jahr der Quellenangabe; der Live-Smoke meldet ihn, der Lauf hält bis dahin an (A2).
 - **A11 Kein `earthx:tile`:** Anders als §4.2 trägt das Item die Kachel nur in ID und Footprint. `earthx:tile` braucht nur die Regel `item_states` des STAC-Adapters, die BEV nicht nutzt.
 - **A12 `withheld`:** zählt die Kacheln älterer Stichtage (heute 5 × 55 = 275), wie bei swissALTI3D die ersetzten Stände; `unknown` zählt Titel unbekannter Form und nicht ladbare Kacheln zusammen.
@@ -325,3 +343,7 @@ Gebaut nach §4 mit den Antworten aus §8a und den Messläufen §2.4, §2.5. Wo 
 **Antwort F9 (Otto, 16.11.2026): 1.** Ein PR, obwohl er mit rund 545 Zeilen Code und Eintrag und rund 1 330 Zeilen Tests und Skripten über dem Richtwert von §5 liegt; kein zweiter Branch.
 
 **Abweichungen von §4.7:** Die Feeds der Tests sind im Testcode gebaut statt unter `tests/fixtures/bev_atom/`. Statt eines BEV-eigenen Tests je Ansicht unter `min_zoom` prüft ein Test der Pyramiden-Route den Fall, der nur BEV betrifft: Das erste Level des Datensatzes ist das des Ersatzes (7), darunter kommt das Bild nur aus der Pyramide von GLO-30, ab 7 nicht mehr aus der Route der Übersicht. Die Ansichten selbst (Crop and merge, angeheftete Ebene, Suchtreffer, eine Szene, `terrain`) nutzen dieselbe Route und sind mit swissALTI3D und den synthetischen Einträgen von M5-30b und M5-10 getestet.
+
+**F10 — `min_zoom` 8 oder 9?** Nach F5 = 1 steht `min_zoom` jetzt auf 8. Kalt braucht aber auch eine Kachel bei z8 6,3 s, über dem Budget von 4 s; erst z9 (2,8 s) bleibt darunter (§2.6).
+1. 9: Die eigenen Kacheln kommen erst, wenn sie im Budget bleiben; z7 und z8 zeichnet GLO-30 aus seinen Dateien **(Empfehlung)**
+2. 8 wie jetzt; bei z8 kann eine kalte Kachel eine Teilkachel sein, warm (4,1 s) knapp darüber
