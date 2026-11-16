@@ -40,6 +40,8 @@ category: optical
 # Worldwide; the outline of the acquisitions is not measured.
 spatial_extent:
   bbox: [-180.0, -90.0, 180.0, 90.0]
+# Worldwide: the box is the footprint (M5-17 F4).
+coverage_states: null
 # The first TM scenes of Landsat 4; the series goes on, so the end is open.
 temporal_extent:
   start: 1982-08-22T00:00:00+00:00

@@ -42,6 +42,11 @@ category: land_cover
 # rounded outward; not measured.
 spatial_extent:
   bbox: [-31.5, 27.5, 45.0, 71.5]
+# The EEA-39 of CLC 2018: the 27 EU members, the five other EEA members (IS, LI, NO, CH, TR), the six cooperating
+# countries of the Western Balkans (AL, BA, ME, MK, RS, XK) and the UK. The box alone takes in some 30 states more, from
+# North Africa to Russia; footprint and regions come from these outlines, cut to the box (M5-17 F4, Otto 16.11.2026).
+coverage_states: [AT, BE, BG, HR, CY, CZ, DK, EE, FI, FR, DE, GR, HU, IE, IT, LV, LT, LU, MT, NL, PL, PT, RO, SK, SI,
+  ES, SE, IS, LI, 'NO', CH, TR, AL, BA, ME, MK, RS, XK, GB]
 # The reference years of CLC 1990 start in 1986 for some countries; those of CLC 2018 end in 2018.
 temporal_extent:
   start: 1986-01-01T00:00:00+00:00

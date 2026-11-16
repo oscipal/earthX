@@ -1,6 +1,6 @@
 # M5-17 — Stufe „gelistet“ für alle Datentypen und erste Handeinträge
 
-**Status (16.11.2026):** F1–F3 = 1, Lizenz-Einstufung und Attribution bestätigt (Otto, 16.11.2026, §4a); umgesetzt im Draft-PR [#367](https://github.com/oscipal/earthX/pull/367). Offen: F4 (Regionen aus dem Rechteck, §4b).
+**Status (16.11.2026):** F1–F4 = 1, Lizenz-Einstufung und Attribution bestätigt (Otto, 16.11.2026, §4a, §4c); umgesetzt im Draft-PR [#367](https://github.com/oscipal/earthX/pull/367).
 **Aufgabe:** M5-17 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2. **Stufe B.** Hängt von M5-40 ab (gemergt mit #356, #358).
 **Grundlagen:** `adr/0033` (§5, §13: „erste Handeinträge als YAML unter `listed/`, nur von `catalog-load` gelesen“), `adr/0027` §4.1 (W0), §6.1 (`access.account`, Nachtrag `paid`, `access.delivery`), `adr/0025` §6.1a, `adr/0026` §8.2 (Kürzel CLC, LS), M5-40-Plan §5.2, §6 (A7, A11), §9a; M5-Plan §2 Punkt 9 (keine Marken) und Punkt 12.
 
@@ -77,7 +77,15 @@ Belegstufen: **P** am Quelltext gelesen (Stand `main` eb7079c), **S** Vorwissen 
 2. Feld `footprint` mit eigenem Umriss (GeoJSON) im Handeintrag, wie es der Harvest aus der Quelle liest; genauer an Küsten, aber große Datei und von Hand kaum prüfbar
 3. So lassen: Rechteck reicht für die Stufe „gelistet“; die genaue Geometrie kommt mit dem Harvest (M5-19, M5-20)
 
-Bis zur Antwort bleibt CORINE beim Rechteck; F4 = 1 oder 2 wäre ein eigener kleiner Schritt (in diesem PR oder als Folgeaufgabe, je nach Größe).
+## 4c. Antwort Otto zu F4 (16.11.2026) und Umsetzung
+
+**F4 = 1:** Feld `coverage_states` im Handeintrag; Ausdehnung und Regionen aus den Umrissen dieser Länder in `regions.json`; ohne `coverage_states` bleibt es beim Rechteck. Für CORINE die 39 EEA-Länder.
+
+- **`ListedEntry.coverage_states`:** Pflichtfeld wie alle (B10), `null` oder ISO-3166-1-Kürzel, jedes einmal. Der Lader prüft, dass jedes Kürzel ein Staat in `regions.json` ist. Das Feld steht auch in der Collection (`earthx:coverage_states`). Ein ungequotetes `NO` liest der Lader als Norwegen (YAML 1.2).
+- **Umriss:** Vereinigung der Umrisse der Staaten, beschnitten auf das Rechteck (das Rechteck bleibt die Hülle; Überseegebiete von FR, PT, NO fallen weg). Ein Staat, den `earthx_region` nicht kennt oder der ganz außerhalb des Rechtecks liegt, bricht `catalog-load` ab. Ohne Migration: `footprint` ist schon eine beliebige Geometrie.
+- **Regionen:** genau die genannten Staaten und ihre Unterteilungen, die der Umriss mehr als am Rand berührt. Gemessen [M]: Aus der Geometrie allein kämen nach der Vereinfachung der Grenzen zwölf Staaten dazu (Nachbarn wie RU, UA, BY, IR, SY und die Enklaven AD, VA). Auch eine neue `regions.json` leitet die Regionen so ab (Kürzel aus dem gespeicherten Dokument).
+- **AOI-Filter:** folgt dem Umriss; eine AOI um Marrakesch findet CORINE nicht mehr, eine um Wien schon (Test).
+- **Neu geschrieben** wird ein Handeintrag auch, wenn sich nur sein Umriss ändert (neue Grenzdatei), nicht nur bei neuem Inhalt.
 
 ## 5. Zur Bestätigung im PR (Lizenz-Einstufung und Attribution, nie durch die Session)
 
