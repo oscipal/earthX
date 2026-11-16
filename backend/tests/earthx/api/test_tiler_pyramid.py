@@ -553,6 +553,21 @@ class TestTheSubstituteBelowTheLevelOfItsSubstitute:
         rows.ready(RELIEF_ID)
         assert client().get(path(TERRAIN_ID, 13, x=0, y=0)).status_code == 400
 
+    def test_a_dataset_that_starts_where_its_substitute_starts_shows_only_the_pyramid_below_it(
+        self, rows, pyramids, client
+    ) -> None:
+        """BEV ALS-DGM (M5-09): its first level is that of GLO-30, so below it the picture is the pyramid alone."""
+        lowland = replace(
+            TERRAIN, dataset_id="synthetic-lowland", viewer=replace(TERRAIN.viewer, min_zoom=RELIEF.viewer.min_zoom)
+        )
+        rows.ready(RELIEF_ID)
+        pyramids.put(RELIEF_ID, 6)
+        api = client(registry=DatasetRegistry((RELIEF, TERRAIN, _PLAIN, PROTOTYPE, lowland)))
+        below = api.get(path(lowland.dataset_id, RELIEF.viewer.min_zoom - 1))
+        assert below.headers[mosaic_tiles.SOURCE_HEADER] == mosaic_tiles.SUBSTITUTE_SOURCE
+        assert array(below).size and pyramids.reads[0].startswith(f"overviews/{RELIEF_ID}/")
+        assert api.get(path(lowland.dataset_id, RELIEF.viewer.min_zoom)).status_code == 400
+
 
 class TestFromTheLevelOfTheSubstituteOnTheFilesAreRead:
     """z7 to z12 of a dataset that stands in for another is read from the files of the stand-in, as before: its budget
