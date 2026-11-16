@@ -1,6 +1,6 @@
 # M5-37 — Zeiger und Unterbrecher je Host in Postgres: Plan-Schritt
 
-**Status (16.11.2026):** Plan mit Fragen J1–J6, **Stufe B**. Umsetzung erst nach Ottos Antworten, im selben Draft-PR (PR 1) und höchstens einem zweiten (§8).
+**Status (16.11.2026):** Plan angenommen (Otto, 16.11.2026: J1–J6 je 1, dazu zwei Vorgaben, §9a), **Stufe B**. PR 1 in [#368](https://github.com/oscipal/earthX/pull/368) (Mechanismus und `materialize`), PR 2 folgt (Pyramidenbau).
 **Aufgabe:** M5-37 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2, Auftrag von Otto vom 16.11.2026.
 **Grundlagen:** `plans/m5/m5-35-skalierbarkeit.md` B1 (§2.3 G2, §2.4 Punkte 2 und 4), F1 = 1, W6, W7; `plans/m5/m5-36-grenzen-je-host.md` (`hosts.yaml`, `ReadSlots`, `EARTHX_SOURCE_INSTANCES`, §9); Muster des Zeigers der Ortssuche (`catalog/geocode_cache.py`, `earthx_rate_slots`, Migration 005); `adr/0025` §6.2; `adr/0032` §8.2 und Nachträge 14. und 15.11.2026 (0,25 s je Host im Pyramidenbau); `architekturplan.md` 3.1, 6.5; KLAERUNGEN B8, B9.
 
@@ -57,12 +57,14 @@ CREATE TABLE public.earthx_source_host (
     updated_at    timestamptz NOT NULL DEFAULT now()
 );
 
--- Ein Platz je laufender Anfrage (J1): wer hält ihn, bis wann. Eine abgelaufene Zeile zählt nicht mehr.
+-- Ein Platz je laufender Anfrage (J1): Nummer 1 bis Grenze, wer hält ihn, bis wann. Eine abgelaufene Zeile zählt
+-- nicht mehr und wird vom nächsten übernommen; der Inhaber verlängert sie mit einem Herzschlag (§9a, Punkt 1).
 CREATE TABLE public.earthx_source_lease (
     host    text        NOT NULL,
+    slot    integer     NOT NULL CHECK (slot >= 1),
     holder  uuid        NOT NULL,
     until   timestamptz NOT NULL,
-    PRIMARY KEY (host, holder)
+    PRIMARY KEY (host, slot)
 );
 ```
 
@@ -72,7 +74,8 @@ CREATE TABLE public.earthx_source_lease (
 
 - **`reserve(host, interval)`**, eine Anweisung wie `_RESERVE_SLOT`: `start = greatest(next_start, clock_timestamp())`, `next_start = start + interval`; zurück kommen `start − clock_timestamp()` (die Wartezeit) und `paused_until`. Jeder Aufrufer schiebt um **seinen** Abstand vor (`hosts.yaml`, beim Pyramidenbau sonst 0,25 s, §5.4); ein Aufrufer ohne Abstand (Buckets in `materialize`) wartet hinter dem Zeiger, schiebt ihn aber nicht.
 - **`account(host, interval, requests)`** (nur Pyramidenbau): `next_start += (requests − 1) · interval`, wie `HostPacer.account`; bei 0 Anfragen (warmer Cache) geht der Platz zurück, nie vor `clock_timestamp()`.
-- **`acquire(host, cap)`** (J1 = 1): unter `pg_advisory_xact_lock` auf den Host, in einer Transaktion: abgelaufene Plätze des Hosts löschen, lebende zählen, unter `cap` eine Zeile mit Frist 10 min anlegen. Kein Platz frei: der Aufrufer fragt nach 0,25–1 s (Zufall) erneut; keine Verbindung wartet in der Datenbank. **`release(host, holder)`** löscht die Zeile. Die Frist deckt nur einen Absturz ab; eine Anfrage mit allen Versuchen dauert höchstens rund 65 s (3 × 20 s Zeitlimit plus Backoff) [A].
+- **`acquire(host, cap)`** (J1 = 1), eine Anweisung: die kleinste Nummer 1…`cap` ohne lebende Zeile; `INSERT … ON CONFLICT (host, slot) DO UPDATE … WHERE until <= clock_timestamp()` legt sie an oder übernimmt eine abgelaufene. Zwei Aufrufer auf derselben Nummer: einer gewinnt, der andere bekommt keine Zeile zurück und fragt sofort wieder. Mehr als `cap` lebende Plätze kann es nicht geben, weil die Nummer Teil des Schlüssels ist; keine Advisory-Sperre, keine Transaktion. Kein Platz frei: der Aufrufer fragt nach 0,25–1 s (Zufall) erneut; keine Verbindung wartet in der Datenbank.
+- **Frist und Herzschlag (§9a, Punkt 1):** Ein Platz gilt 30 s. Solange der Inhaber ihn hält, verlängert ein Herzschlag ihn alle 10 s (`UPDATE … WHERE host, slot, holder`). Stirbt die Instanz, endet der Herzschlag, und der Platz ist spätestens nach 30 s frei. Findet der Herzschlag seine Zeile nicht mehr (übernommen, weil die Instanz zu lange stand), schreibt er eine Warnung; die laufende Anfrage endet regulär. **`release(host, slot, holder)`** löscht die Zeile, auch nach Fehler und Abbruch.
 - **`report(host, outcome, retry_after)`**: Erfolg setzt `failures` und `pauses` auf 0. Fehler (§4.1) erhöht `failures`; erreicht es die Schwelle, schiebt dieselbe Anweisung `next_start` auf `greatest(next_start, now() + pause)`, setzt `paused_until` und erhöht `pauses` (J3). Ein `Retry-After` schiebt `next_start` ohne Schwelle um seinen Wert vor, höchstens 10 min.
 
 Alle Anweisungen laufen auf einer **eigenen Verbindung im Autocommit**, nie in der Transaktion des Aufrufers (§2, `materialize`). Ein Fehler der Datenbank ist ein Fehler des Laufs, nie „ohne Grenze weiter“: wer nicht reservieren kann, sendet nicht (wie die Ortssuche, `geocode_cache.py` Kopf).
@@ -117,7 +120,8 @@ Nach der Pause ist die erste Anfrage die Probe: Erfolg schließt den Unterbreche
 ### 5.2 Postgres-Fassung, zweimal
 
 - **`catalog/source_hosts.py`** (asynchron, wie `geocode_cache.py`): `PostgresHostCoordinator` für `discovery` (`materialize`, Harvester). `catalog` darf `gateway` importieren, das Protokoll passt strukturell.
-- **`jobs/source_hosts.py`** (synchron): dieselben Anweisungen für den Aufseher des Pyramidenbaus, weil `jobs` weder `catalog` noch `gateway` importieren darf. Ein Test hält die SQL-Texte beider Module gleich (wie die Dateinamen in `overview_builder.py`).
+- **`jobs/source_hosts.py`** (synchron, PR 2): dieselben Anweisungen für den Aufseher des Pyramidenbaus, weil `jobs` weder `catalog` noch `gateway` importieren darf. Ein Test hält die SQL-Texte beider Module gleich (wie die Dateinamen in `overview_builder.py`).
+- **Geprüft (§9a, Punkt 2): Es gibt kein Modul, das beide heute importieren dürfen.** Nach `architekturplan.md` 3.1 und `.importlinter` darf `catalog` nur `gateway`, `jobs` nur `processing` und `objectstore`; die Schnittmenge der zwölf Module ist leer. `gateway` scheidet aus (für `jobs` verboten, und es soll keine Datenbank kennen), `processing` ebenso (für `catalog` verboten, und `processing` darf `psycopg` nicht einmal über Ketten erreichen). Bleibt nur ein Modul im Paketstamm: `earthx.logging` ist fachfremd, und ein neues Stamm-Modul stünde unter keinem Vertrag aus 3.1, wäre also ein Umweg um die Regeln statt einer erlaubten Stelle. Ebenso wenig ein Lesen der SQL-Datei aus dem Paket `catalog` durch `jobs`. Deshalb wie geplant zwei Fassungen mit Test auf Gleichheit.
 - `catalog.source_hosts` kommt in die Verbotsliste des Vertrags `runner` (wie jedes Modul von `catalog`, `test_module_boundaries.py`). Sonst keine Änderung an den Importregeln.
 
 ### 5.3 `materialize` und Harvester
@@ -167,7 +171,7 @@ Ergebnis als Tabelle in §9 und im PR.
 
 | PR | Inhalt | Umfang (ohne Tests, geschätzt) |
 |---|---|---|
-| **PR 1** (dieser Draft-PR) | Plan; Migration 022; `HostCoordinator` in `gateway` mit Fassung im Speicher; `catalog/source_hosts.py`; `discovery/source_gateway.py`; `materialize` darüber; Messung M1–M3; Nachträge `adr/0025` §6.2, `architekturplan.md` 6.5, README | ~330 Zeilen |
+| **PR 1** ([#368](https://github.com/oscipal/earthX/pull/368)) | Plan; Migration 022; `HostCoordinator` in `gateway` mit Fassung im Speicher; `catalog/source_hosts.py`; `discovery/source_gateway.py`; `materialize` darüber; Messung M1–M3; Nachträge `adr/0025` §6.2, `architekturplan.md` 6.5, README | ~330 Zeilen |
 | **PR 2** | `jobs/source_hosts.py`; `PipePacer`, Antworten im Aufseher, `Pacer.account` mit Fehlerart, Abstand aus `hosts.yaml`; Messung M4; Nachtrag `adr/0032` §8.2 | ~250 Zeilen |
 
 Tests je PR, mit Fehlerfällen: zwei Koordinatoren auf derselben Zeile (Abstand hält, auch gleichzeitig), Abstand 0 schiebt nicht, `account` mit 0 Anfragen gibt zurück und nie vor jetzt; Platz: Grenze voll, abgelaufener Platz zählt nicht, Freigabe nach Fehler und Abbruch (`CancelledError`); Unterbrecher: Schwelle, Erfolg setzt zurück, Probe nach der Pause, Verdopplung bis zur Obergrenze, `Retry-After` (Zahl, fehlt, zu groß, kein Zahlwert), `404` zählt als Erfolg, Ablehnung vor dem Senden zählt nicht; Pause über 60 s wird `HostResting`; Datenbank nicht erreichbar heißt kein Senden; die Zeile liegt nicht in der Transaktion von `materialize` (zweite Verbindung sieht sie vor dem Commit); falsche Werte (Abstand negativ, `NaN`, Grenze 0, Host als IP); Pyramide: `pace` ohne Antwort hält den Bau nicht als Stillstand an, Kind stirbt mit offenem Platz (Frist), unbekannte Nachricht wird verworfen, die SQL-Texte beider Module sind gleich.
@@ -202,3 +206,20 @@ Tests je PR, mit Fehlerfällen: zwei Koordinatoren auf derselben Zeile (Abstand 
 **J6 — Schnitt?**
 1. Zwei PRs wie §8: dieser mit `materialize` und dem Mechanismus, der zweite mit dem Pyramidenbau **(Empfehlung)**
 2. Ein PR mit allem (rund 580 Zeilen ohne Tests)
+
+### 9a. Antworten Otto (16.11.2026)
+
+| Frage | Antwort | Folge |
+|---|---|---|
+| J1 | 1 | ein Platz je laufender Anfrage in Postgres (`earthx_source_lease`) |
+| J2 | 1 | `materialize`, Harvester und Pyramidenbau zusammen halten die volle Grenze aus `hosts.yaml`, getrennt von `api` und `tiler` |
+| J3 | 1 | nach 3 Fehlern in Folge 5 min, verdoppelnd bis 60 min, ein Erfolg setzt zurück |
+| J4 | 1 | Pyramidenbau wartet; `materialize` und Harvester warten bis 60 s, sonst ruht der Host für den Lauf |
+| J5 | 1 | Median und p95 höchstens +5 % bei einem einzelnen Lauf |
+| J6 | 1 | zwei PRs wie §8 |
+
+Dazu zwei Vorgaben:
+
+1. **Plätze mit Frist und Herzschlag**, damit eine abgestürzte Instanz keinen Platz dauerhaft belegt; mit Test. Umgesetzt wie §3.2: Frist 30 s, Herzschlag alle 10 s, eine abgelaufene Zeile übernimmt der nächste.
+2. **Eine Fassung des SQL, wenn es ein Modul gibt, das `catalog` und `jobs` beide schon heute importieren dürfen**, sonst zwei mit Test auf Gleichheit. Ergebnis der Prüfung: keines (§5.2); also zwei Fassungen, die zweite mit PR 2.
+
