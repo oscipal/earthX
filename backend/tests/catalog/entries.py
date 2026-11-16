@@ -19,6 +19,7 @@ ESA_WORLDCOVER_2020 = REGISTRY.get("esa-worldcover-2020")
 ESA_WORLDCOVER_2021 = REGISTRY.get("esa-worldcover-2021")
 SENTINEL_1_GRD = REGISTRY.get("sentinel-1-grd")
 SWISSALTI3D = REGISTRY.get("swissalti3d")
+BEV_ALS_DGM = REGISTRY.get("bev-als-dgm")
 
 # The acquisition period of the DEM, the same for every tile (M3-11b F1).
 DEM_ACQUISITION_START = COP_DEM_GLO_30.temporal_extent.start

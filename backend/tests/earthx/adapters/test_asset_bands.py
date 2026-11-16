@@ -10,17 +10,20 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import replace
+from datetime import date
 from typing import Any
 
 import httpx
 import pytest
 
+from earthx.adapters.bev_atom import tile_item as bev_item
 from earthx.adapters.cop_dem_bucket import _item as dem_item
 from earthx.adapters.esa_worldcover_bucket import _item as worldcover_item
 from earthx.adapters.federated_search import with_core_bands
 from earthx.adapters.stac_api import get_item as earth_search_item
 from earthx.gateway import Policy
 from tests.catalog.entries import (
+    BEV_ALS_DGM,
     COP_DEM_GLO_30,
     ESA_WORLDCOVER_2020,
     ESA_WORLDCOVER_2021,
@@ -93,6 +96,18 @@ def dem_fixture() -> dict[str, Any]:
     return dem_item("Copernicus_DSM_10_N47_00_E009_00_DEM", (9.0, 47.0, 10.0, 48.0), config=config)
 
 
+def bev_fixture() -> dict[str, Any]:
+    """A tile of the ATOM service of the BEV as the materialization writes it (M5-09): one asset, no band names."""
+    href = "https://data.bev.gv.at/download/ALS/DTM/20250915/ALS_DTM_CRS3035RES50000mN2650000E4800000.tif"
+    return bev_item(
+        BEV_ALS_DGM,
+        tile="CRS3035RES50000mN2650000E4800000",
+        day=date(2025, 9, 15),
+        href=href,
+        doi="10.48677/00000000-0000-4000-8000-000000000000",
+    )
+
+
 def worldcover_fixture(entry) -> dict[str, Any]:
     config = replace(entry, source=replace(entry.source, endpoint="https://worldcover.example"))
     return worldcover_item("ESA_WorldCover_10m_N45E009", "map/N45E009_Map.tif", (9.0, 45.0, 12.0, 48.0), config=config)
@@ -105,6 +120,7 @@ async def items_by_dataset() -> dict[str, dict[str, Any]]:
         SYNTHETIC_ZARR.dataset_id: await zarr_fixture(),
         COP_DEM_GLO_30.dataset_id: dem_fixture(),
         SWISSALTI3D.dataset_id: await swissalti3d_fixture(),
+        BEV_ALS_DGM.dataset_id: bev_fixture(),
         **{entry.dataset_id: worldcover_fixture(entry) for entry in (ESA_WORLDCOVER_2020, ESA_WORLDCOVER_2021)},
     }
 
@@ -117,6 +133,7 @@ def test_every_registry_entry_is_covered() -> None:
         ESA_WORLDCOVER_2020.dataset_id,
         ESA_WORLDCOVER_2021.dataset_id,
         SWISSALTI3D.dataset_id,
+        BEV_ALS_DGM.dataset_id,
     }
     assert {entry.dataset_id for entry in REGISTRY} == covered
 

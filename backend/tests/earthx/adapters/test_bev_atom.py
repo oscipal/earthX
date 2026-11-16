@@ -27,11 +27,10 @@ from earthx.catalog.registry import ItemHolding, SpatialExtent
 from earthx.gateway import Policy
 from earthx.gateway.client import Gateway
 from earthx.gateway.errors import UpstreamError
-from tests.catalog.entries import REGISTRY
+from tests.catalog.entries import BEV_ALS_DGM as BEV
 
 pytestmark = pytest.mark.anyio
 
-BEV = REGISTRY.get("bev-als-dgm")
 HOST = "data.bev.gv.at"
 POLICY = Policy(allowed_hosts=frozenset({HOST}))
 SERVICE_PATH = "/geonetwork/srv/atom/describe/service"

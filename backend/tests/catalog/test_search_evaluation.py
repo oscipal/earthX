@@ -74,15 +74,15 @@ def test_a_provisional_id_is_not_in_the_registry_yet():
 
 def test_zero_point_without_a_search():
     # The numbers of plan §3.1 and §10 for the six entries of the registry, with Q51 (§12) one more negative question
-    # and Q52 one more over both languages, and Q34, Q35 active since M5-10 (the capability terrain); a new entry changes
-    # them on purpose.
+    # and Q52 one more over both languages, Q34, Q35 active since M5-10 (the capability terrain), and four German
+    # questions that only BEV answers (Q06, Q23, Q26, Q41) since M5-09; a new entry changes them on purpose.
     evaluation = evaluate(load_evaluation_set(), Catalogue.of(REGISTRY), lambda query: [])
     print("\n" + report(evaluation))
-    assert (len(evaluation.active), len(evaluation.resting)) == (40, 12)
-    assert [evaluation.measures(language).questions for language in ("de", "en", "all")] == [12, 11, 33]
+    assert (len(evaluation.active), len(evaluation.resting)) == (44, 8)
+    assert [evaluation.measures(language).questions for language in ("de", "en", "all")] == [16, 11, 37]
     overall = evaluation.measures()
     assert (overall.recall_at_5, overall.mrr_at_10, overall.ndcg_at_10) == (0.0, 0.0, 0.0)
-    assert sorted(o.question.id for o in evaluation.filters) == ["Q27", "Q28", "Q29", "Q32"]
+    assert sorted(o.question.id for o in evaluation.filters) == ["Q26", "Q27", "Q28", "Q29", "Q32"]
     assert all(not o.never_hits for o in evaluation.filters)
     assert len(evaluation.negatives) == 5 and all(not o.hits for o in evaluation.negatives)
     assert shortfalls(evaluation, ADR_0026_F5) == [
