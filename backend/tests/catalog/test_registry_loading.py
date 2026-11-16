@@ -47,6 +47,9 @@ def _prototype() -> DatasetConfig:
     )
 
 
+PROTOTYPE_HOSTS = f"hosts:\n  {support.HOST}:\n    connections: 2\n    reason: synthetic\n"
+
+
 def _write(directory: Path, entry: DatasetConfig) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"{entry.dataset_id}.yaml"
@@ -60,6 +63,7 @@ def catalog(tmp_path: Path) -> Path:
     copy = tmp_path / "catalog"
     shutil.copytree(CATALOG_DIR / "datasets", copy / "datasets")
     shutil.copy(CATALOG_DIR / "retired.yaml", copy / "retired.yaml")
+    shutil.copy(CATALOG_DIR / "hosts.yaml", copy / "hosts.yaml")
     shutil.copy(CATALOG_DIR / "categories.yaml", copy / "categories.yaml")
     return copy
 
@@ -68,6 +72,7 @@ def catalog(tmp_path: Path) -> Path:
 def prototypes(tmp_path: Path) -> Path:
     directory = tmp_path / "prototype"
     _write(directory, _prototype())
+    (directory / "hosts.yaml").write_text(PROTOTYPE_HOSTS, encoding="utf-8")
     return directory
 
 
