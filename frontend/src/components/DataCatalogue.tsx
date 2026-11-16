@@ -5,7 +5,7 @@
 // window. The details of the chosen entry stand at the right, and below 900 px on a stage of their own with "Back". The
 // head is its own area: the search of `adr/0026` comes in as a second row later (F6).
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 
 import { fetchCataloguePage, fetchCatalogueSearch, type CatalogueFilter } from '../api';
 import { LOCK_NEEDS_AOI } from '../aoiFilter';
@@ -322,7 +322,7 @@ function Clearable({ value, label, onClear, children }: { value: string; label: 
 // The button "Filters" in the head and its pop-up (Otto, 16.11.2026; replaces the row of H1): "Filter by search panel"
 // takes AOI and period of the search panel and hides region and from/to; without an AOI there it is locked with the
 // reason. The category is always there. A click beside the pop-up closes it, Esc does not (leitfaden §5).
-function Filters({ searchPanel }: { searchPanel: boolean }) {
+function Filters({ searchPanel, anchor }: { searchPanel: boolean; anchor: RefObject<HTMLDivElement | null> }) {
   const filter = useAppStore((s) => s.catalogueFilter);
   const set = useAppStore((s) => s.setCatalogueFilter);
   const hasAoi = useAppStore((s) => s.aoi !== null);
@@ -350,7 +350,7 @@ function Filters({ searchPanel }: { searchPanel: boolean }) {
       >
         Filters{count > 0 && ` · ${count}`}
       </button>
-      <Popover anchorRef={button} open={open} onClose={() => setOpen(false)} className="catalogue-filters-popup" role="dialog" ariaLabel="Filters" focusOnOpen form>
+      <Popover anchorRef={anchor} open={open} onClose={() => setOpen(false)} className="catalogue-filters-popup" role="dialog" ariaLabel="Filters" focusOnOpen form>
         <div className="catalogue-filters">
           <label className={`within-aoi catalogue-search-panel${lock ? ' locked' : ''}`} data-tip={lock ?? undefined}>
             <input
@@ -439,6 +439,7 @@ export default function DataCatalogue() {
   const panelTo = useAppStore((s) => s.dateTo);
   const [shown, setShown] = useState<DatasetOption | null>(null);
   const [loaded, setLoaded] = useState<Record<string, boolean>>({});
+  const tools = useRef<HTMLDivElement>(null);
   if (!open) return null;
   // "Filter by search panel" holds only while the search panel has an AOI; locked, region and from/to apply again.
   const searchPanel = fields.bySearchPanel && aoi !== null;
@@ -459,9 +460,10 @@ export default function DataCatalogue() {
     >
       <div className="results-head catalogue-head">
         <h2>Data catalogue</h2>
-        <div className="catalogue-tools">
+        {/* The pop-up "Filters" hangs under the whole row, as wide as search field and button together. */}
+        <div ref={tools} className="catalogue-tools">
           <SearchField />
-          <Filters searchPanel={searchPanel} />
+          <Filters searchPanel={searchPanel} anchor={tools} />
         </div>
         <CloseButton onClick={toggleCatalogue} />
       </div>

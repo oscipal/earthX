@@ -1519,6 +1519,12 @@ textarea:autofill {
   padding: 0 var(--space-2);
   text-align: left;
 }
+/* "Add dataset" (Otto, 16.11.2026): a dataset tile with the plus before its text. */
+.dataset-toggle.add-dataset {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-1);
+}
 /* Half the panel width: a long title wraps onto a second line (two at most); next
    to the maturity chip it keeps one, so the button stays one row high. */
 .dataset-toggle-title {
@@ -3021,7 +3027,6 @@ button.pm-open:hover {
 /* The pop-up "Filters": the switch, region, from, to and category one under the other, each field with its "×". */
 .popover.catalogue-filters-popup {
   padding: var(--space-3);
-  width: min(340px, calc(100vw - 2 * var(--space-4)));
 }
 .catalogue-filters {
   display: flex;
