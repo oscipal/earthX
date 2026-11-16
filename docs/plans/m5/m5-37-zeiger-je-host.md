@@ -241,3 +241,17 @@ Dazu zwei Vorgaben:
 - **Prüfung** (Subagent `reviewer`): kein Blocker; S1–S4, S6, H1, H2 und H4 behoben, S5 mit Tests geschlossen (Datenbank weg → nichts gesendet, Abbruch mit echtem Postgres, gleichzeitige Meldungen → genau eine Pause, falsche Werte, Host als Adresse).
 - **Messstand:** `slow_source.py --fail-file` (solange die Datei existiert, `503`), `source_turns.py` (Läufe wie `materialize` über das `Gateway`, mit `--shared` über Postgres), `source_turns_summary.py`.
 
+### 10.2 Messung PR 1 (J5)
+
+Synthetische Quelle `slow_source.py` (RTT 170 ms, Verbindungsaufbau 350 ms, eine Datei von 2 KB), lokales Postgres mit Migration 022, `main` eb7079c gegen den Branch f618720 (Stand des Codes; danach nur Doku), 5 Wiederholungen, je Wiederholung erst `main`, dann der Branch. `main` läuft mit seinem eigenen `backend` (ohne Koordinator), der Branch mit `--shared` (Postgres). Prozesse wie `materialize`: je Prozess ein `Gateway`, Anfragen nacheinander. Keine echte Quelle, keine AOI.
+
+| Fall | Aufbau | `main` | Branch | Ergebnis |
+|---|---|---|---|---|
+| M1 Abstand über Instanzen | 2 Prozesse × 30 Anfragen, Abstand 1 s | Abstand der Anfänge an der Quelle im Median 0,010 s (je zwei Anfragen fast gleichzeitig), Wandzeit 28,6 s | Median 1,000 s, kleinster 0,997 s zwischen Anfragen auf bestehenden Verbindungen; Wandzeit 58,6 s | die Grenze von 1 s hält für beide Prozesse zusammen |
+| M2 Kosten je Anfrage | 1 Prozess × 200 Anfragen, ohne Abstand | Median 216,0 ms, p95 216,5 ms; Wandzeit Median 43,53 s, p95 43,55 s | Median 216,3 ms (+0,1 %), p95 220,3 ms (+1,8 %); Wandzeit Median 43,83 s (+0,7 %), p95 43,92 s (+0,8 %) | innerhalb +5 % (J5) |
+| M3 Unterbrecher | 3 Prozesse, 30 s lang Anfragen; die Quelle antwortet von s 2 bis s 22 mit `503` | 89 `503` an der Quelle je Lauf (88–91), jeder Prozess wiederholt für sich | **3** `503` je Lauf in allen 5 Läufen; danach ruht der Host, alle drei Prozesse enden mit „rests for this run“ | nach 3 Fehlern in Folge fragt keine Instanz mehr |
+
+- **M1, Messartefakt:** Der kleinste Abstand an der Quelle liegt je Lauf einmal bei 0,62–0,63 s. Es ist jedes Mal die Lücke nach der ersten Anfrage des zweiten Prozesses: Die Quelle zeichnet `t0` nach dem simulierten Verbindungsaufbau (350 ms) auf, die erste Anfrage einer neuen Verbindung erscheint also um 0,35 s verspätet. Zwischen Anfragen auf bestehenden Verbindungen ist der kleinste Abstand 0,997 s.
+- **M3:** Weil eine Pause 5 min dauert und ein Zug über 60 s nicht genommen wird, ruht der Host für jeden der drei Läufe; nach dem Ende der Störung bei s 22 gibt es im Fenster der Messung keine Probe mehr. Die Probe nach der Pause decken die Tests ab (`test_a_failed_probe_after_the_pause_pauses_twice_as_long`, `test_a_successful_probe_closes_the_breaker`).
+- **Pyramidenbau (M4)** folgt mit PR 2.
+
