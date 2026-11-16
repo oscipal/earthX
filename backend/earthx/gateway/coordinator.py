@@ -13,15 +13,20 @@ from typing import Protocol
 
 __all__ = ["MAX_SHARED_WAIT_S", "HostCoordinator"]
 
-#: A turn further off than this is a paused host, not a queue: the host rests for this run instead (M5-37 J4).
+#: A caller waits at most this long for a turn; a host whose turn is further off rests for the run instead (M5-37 J4).
 MAX_SHARED_WAIT_S = 60.0
 
 
 class HostCoordinator(Protocol):
     """What the gateway asks before and after each attempt at a host, shared by every instance that asks the same."""
 
-    async def reserve(self, host: str, interval_s: float) -> float:
-        """Take the host's next turn and move it on by ``interval_s``; the seconds until that turn, at least 0."""
+    async def reserve(self, host: str, interval_s: float, max_wait_s: float) -> float:
+        """Seconds until the host's next turn, at least 0; taken and moved on by ``interval_s`` unless further than
+        ``max_wait_s`` off, so that a caller who will not wait does not lengthen the queue or a pause."""
+        ...
+
+    async def pause_left(self, host: str) -> float:
+        """Seconds the host is still paused by the breaker, 0 if it is not."""
         ...
 
     def place(self, host: str, cap: int) -> AbstractAsyncContextManager[object]:

@@ -33,14 +33,23 @@ def public(host: str, port: int) -> tuple[str, ...]:
 class Recorder:
     """A coordinator that writes down what it is asked, in order, and answers each turn with ``delay``."""
 
-    def __init__(self, delay: float = 0.0) -> None:
+    def __init__(self, delay: float = 0.0, paused: float = 0.0, broken: bool = False) -> None:
         self.delay = delay
+        self.paused = paused
+        self.broken = broken
         self.calls: list[tuple] = []
         self.held = 0
 
-    async def reserve(self, host: str, interval_s: float) -> float:
+    async def reserve(self, host: str, interval_s: float, max_wait_s: float) -> float:
         self.calls.append(("reserve", host, interval_s))
+        assert max_wait_s == MAX_SHARED_WAIT_S
+        if self.broken:
+            raise ConnectionError("the database is gone")
         return self.delay
+
+    async def pause_left(self, host: str) -> float:
+        self.calls.append(("pause_left", host))
+        return self.paused
 
     @asynccontextmanager
     async def place(self, host: str, cap: int) -> AsyncIterator[int]:
@@ -73,7 +82,7 @@ def build(coordinator: Recorder, handler, policy: Policy | None = None, slept: l
     )
 
 
-def answering(*statuses: int, headers: dict[str, str] | None = None):
+def answering(*statuses: int, headers: dict[str, str | bytes] | None = None):
     queue = list(statuses)
 
     def handle(request: httpx.Request) -> httpx.Response:
@@ -163,8 +172,8 @@ async def test_every_failed_attempt_counts_and_carries_a_retry_after_in_seconds(
     assert coordinator.reports() == [(True, 7.0)] * 3
 
 
-@pytest.mark.parametrize("value", ["", "soon", "Wed, 21 Oct 2026 07:28:00 GMT", "-5", "1.5"])
-async def test_a_retry_after_that_is_not_whole_seconds_goes_without_one(value: str) -> None:
+@pytest.mark.parametrize("value", ["", "soon", "Wed, 21 Oct 2026 07:28:00 GMT", "-5", "1.5", b"\xb2"])
+async def test_a_retry_after_that_is_not_whole_seconds_goes_without_one(value: str | bytes) -> None:
     coordinator = Recorder()
     async with build(coordinator, answering(503, 200, headers={"retry-after": value})) as gateway:
         await gateway.get(URL)
@@ -229,3 +238,56 @@ async def test_without_a_coordinator_nothing_changes_for_a_host_without_an_inter
     async with gateway:
         await gateway.get(URL)
     assert slept == []
+
+
+async def test_a_host_paused_while_the_turn_was_waited_for_is_not_asked() -> None:
+    """Review S3: turns handed out before the breaker opened must not send into the pause."""
+    sent: list[httpx.Request] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        sent.append(request)
+        return httpx.Response(200, json={})
+
+    coordinator = Recorder(delay=2.0, paused=300.0)
+    async with build(coordinator, handle) as gateway:
+        with pytest.raises(HostResting):
+            await gateway.get(URL)
+    assert sent == []
+    assert coordinator.held == 0
+
+
+async def test_a_short_pause_found_after_the_turn_is_waited_out_before_sending() -> None:
+    slept: list[float] = []
+    async with build(Recorder(delay=2.0, paused=5.0), answering(200), slept=slept) as gateway:
+        await gateway.get(URL)
+    assert slept == [2.0, 5.0]
+
+
+async def test_a_turn_without_a_wait_does_not_ask_for_a_pause() -> None:
+    coordinator = Recorder()
+    async with build(coordinator, answering(200)) as gateway:
+        await gateway.get(URL)
+    assert not [call for call in coordinator.calls if call[0] == "pause_left"]
+
+
+async def test_without_the_database_nothing_is_sent() -> None:
+    sent: list[httpx.Request] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        sent.append(request)
+        return httpx.Response(200, json={})
+
+    coordinator = Recorder(broken=True)
+    async with build(coordinator, handle) as gateway:
+        with pytest.raises(ConnectionError):
+            await gateway.get(URL)
+    assert sent == []
+    assert coordinator.held == 0
+
+
+async def test_an_odd_retry_after_on_a_success_does_not_break_the_request() -> None:
+    """Review S4: the header is read on every answer now, so a digit outside ASCII must not raise."""
+    coordinator = Recorder()
+    async with build(coordinator, answering(200, headers={"retry-after": b"\xb2"})) as gateway:
+        await gateway.get(URL)
+    assert coordinator.reports() == [(False, None)]

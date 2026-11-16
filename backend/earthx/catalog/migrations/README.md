@@ -75,7 +75,8 @@ von `catalog-load`, gelesen von `api` je Seite.
 §3): `earthx_source_host` (eine Zeile je Host: frühester Beginn der nächsten Anfrage, Fehler in Folge, Pausen) und
 `earthx_source_lease` (ein Platz je laufender Anfrage, nummeriert bis zur Grenze, mit Frist und Herzschlag). Für
 `materialize`, den Harvester und den Pyramidenbau über alle Instanzen; geschrieben je Anfrage auf einer eigenen
-Verbindung im Autocommit.
+Verbindung im Autocommit. Die Regeln liegen als Funktionen `earthx_source_*` in derselben Datei (`CREATE OR REPLACE`),
+damit `catalog` und `jobs`, die kein gemeinsames Modul importieren dürfen, dieselben aufrufen.
 
 Die Buchführungstabelle `earthx_migrations` gehört nicht hierher, sondern dem Läufer
 (`earthx/catalog/schema.py`) und wird von ihm angelegt. Sonst müsste jedes

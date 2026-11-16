@@ -19,9 +19,12 @@ import pytest
 from earthx.catalog import source_hosts
 from earthx.catalog.source_hosts import MAX_PAUSE_S, PAUSE_S, PostgresHostCoordinator
 from earthx.discovery.source_gateway import open_source_gateway
-from earthx.gateway import HostResting, Policy
+from earthx.gateway import HostResting, Policy, UrlRejected
 
 pytestmark = pytest.mark.anyio
+
+#: Long enough that every turn of these tests is taken, a pause's included.
+WAIT = MAX_PAUSE_S
 
 
 @pytest.fixture
@@ -104,30 +107,54 @@ class TestTheSetUp:
 class TestTheSharedTurn:
     async def test_two_instances_take_turns_an_interval_apart(self, conns, host: str) -> None:
         first, second = (PostgresHostCoordinator(conn) for conn in conns)
-        assert await first.reserve(host, 1.0) < 0.1
-        assert 0.9 < await second.reserve(host, 1.0) <= 1.0
-        assert 1.9 < await first.reserve(host, 1.0) <= 2.0
+        assert await first.reserve(host, 1.0, WAIT) < 0.1
+        assert 0.9 < await second.reserve(host, 1.0, WAIT) <= 1.0
+        assert 1.9 < await first.reserve(host, 1.0, WAIT) <= 2.0
 
     async def test_turns_taken_at_once_from_two_connections_are_all_different(self, conns, host: str) -> None:
         first, second = (PostgresHostCoordinator(conn) for conn in conns)
-        waits = await asyncio.gather(*(c.reserve(host, 0.5) for c in (first, second) * 5))
+        waits = await asyncio.gather(*(c.reserve(host, 0.5, WAIT) for c in (first, second) * 5))
         ordered = sorted(waits)
         assert all(later - earlier > 0.45 for earlier, later in zip(ordered, ordered[1:], strict=False))
 
     async def test_a_caller_without_an_interval_waits_for_the_turn_but_does_not_move_it(self, conns, host: str) -> None:
         coordinator = PostgresHostCoordinator(conns[0])
-        await coordinator.reserve(host, 2.0)
-        assert 1.9 < await coordinator.reserve(host, 0.0) <= 2.0
-        assert 1.9 < await coordinator.reserve(host, 0.0) <= 2.0
+        await coordinator.reserve(host, 2.0, WAIT)
+        assert 1.9 < await coordinator.reserve(host, 0.0, WAIT) <= 2.0
+        assert 1.9 < await coordinator.reserve(host, 0.0, WAIT) <= 2.0
 
     async def test_a_turn_long_past_costs_no_wait(self, conns, host: str) -> None:
         coordinator = PostgresHostCoordinator(conns[0])
-        await coordinator.reserve(host, 1.0)
+        await coordinator.reserve(host, 1.0, WAIT)
         await conns[1].execute(
             "UPDATE public.earthx_source_host SET next_start = clock_timestamp() - interval '1 hour' WHERE host = %s",
             (host,),
         )
-        assert await coordinator.reserve(host, 1.0) == 0.0
+        assert await coordinator.reserve(host, 1.0, WAIT) == 0.0
+
+    async def test_a_turn_further_off_than_the_caller_waits_is_not_taken(self, conns, host: str) -> None:
+        """Review S1: a caller that rests instead of waiting must not lengthen the queue or a pause."""
+        coordinator = PostgresHostCoordinator(conns[0])
+        await coordinator.reserve(host, 100.0, WAIT)
+        before = (await _row(conns[0], host))[3]
+        assert 90 < await coordinator.reserve(host, 1.0, 60.0) <= 100
+        assert abs((await _row(conns[0], host))[3] - before) < 1
+
+    @pytest.mark.parametrize(
+        ("interval", "max_wait"), [(float("nan"), 60.0), (-1.0, 60.0), (301.0, 60.0), (1.0, -1.0), (1.0, float("nan"))]
+    )
+    async def test_wrong_seconds_are_refused_before_the_database(
+        self, conns, host: str, interval: float, max_wait: float
+    ) -> None:
+        with pytest.raises(ValueError, match="seconds"):
+            await PostgresHostCoordinator(conns[0]).reserve(host, interval, max_wait)
+
+    async def test_a_host_is_compared_in_the_gateways_spelling_and_never_an_address(self, conns, host: str) -> None:
+        coordinator = PostgresHostCoordinator(conns[0])
+        await coordinator.reserve(host.upper() + ".", 1.0, WAIT)
+        assert 0.9 < await coordinator.reserve(host, 1.0, WAIT) <= 1.0
+        with pytest.raises(UrlRejected):
+            await coordinator.reserve("127.0.0.1", 1.0, WAIT)
 
 
 class TestTheBreaker:
@@ -135,13 +162,13 @@ class TestTheBreaker:
         self, conns, host: str, caplog: pytest.LogCaptureFixture
     ) -> None:
         first, second = (PostgresHostCoordinator(conn) for conn in conns)
-        await first.reserve(host, 0.0)
+        await first.reserve(host, 0.0, WAIT)
         caplog.set_level(logging.WARNING, logger="earthx.catalog")
         await first.report(host, failed=True)
         await second.report(host, failed=True)
-        assert await second.reserve(host, 0.0) < 0.1
+        assert await second.reserve(host, 0.0, WAIT) < 0.1
         await first.report(host, failed=True)
-        assert PAUSE_S - 2 < await second.reserve(host, 0.0) <= PAUSE_S
+        assert PAUSE_S - 2 < await second.reserve(host, 0.0, WAIT) <= PAUSE_S
         paused = [record for record in caplog.records if record.getMessage() == "source host paused"]
         assert len(paused) == 1
         assert paused[0].host == host
@@ -150,7 +177,7 @@ class TestTheBreaker:
         coordinator = PostgresHostCoordinator(conns[0])
         for failed in (True, True, False, True, True):
             await coordinator.report(host, failed=failed)
-        assert await coordinator.reserve(host, 0.0) < 0.1
+        assert await coordinator.reserve(host, 0.0, WAIT) < 0.1
         assert (await _row(conns[0], host))[:2] == (2, 0)
 
     async def test_attempts_that_fail_during_a_pause_do_not_lengthen_it(self, conns, host: str) -> None:
@@ -169,9 +196,9 @@ class TestTheBreaker:
         for _ in range(3):
             await coordinator.report(host, failed=True)
         await _end_pause(conns[1], host)
-        assert await coordinator.reserve(host, 0.0) < 0.1
+        assert await coordinator.reserve(host, 0.0, WAIT) < 0.1
         await coordinator.report(host, failed=True)
-        assert 2 * PAUSE_S - 2 < await coordinator.reserve(host, 0.0) <= 2 * PAUSE_S
+        assert 2 * PAUSE_S - 2 < await coordinator.reserve(host, 0.0, WAIT) <= 2 * PAUSE_S
 
     async def test_a_successful_probe_closes_the_breaker(self, conns, host: str) -> None:
         coordinator = PostgresHostCoordinator(conns[0])
@@ -194,7 +221,7 @@ class TestTheBreaker:
     async def test_a_retry_after_moves_the_turn_without_waiting_for_the_threshold(self, conns, host: str) -> None:
         coordinator = PostgresHostCoordinator(conns[0])
         await coordinator.report(host, failed=True, retry_after_s=40)
-        assert 38 < await coordinator.reserve(host, 0.0) <= 40
+        assert 38 < await coordinator.reserve(host, 0.0, WAIT) <= 40
         assert (await _row(conns[0], host))[1] == 0
 
     @pytest.mark.parametrize(("asked", "moved"), [(10_000.0, source_hosts.MAX_RETRY_AFTER_S), (-5.0, 0.0), (None, 0.0)])
@@ -203,7 +230,51 @@ class TestTheBreaker:
     ) -> None:
         coordinator = PostgresHostCoordinator(conns[0])
         await coordinator.report(host, failed=True, retry_after_s=asked)
-        assert moved - 2 <= await coordinator.reserve(host, 0.0) <= moved
+        assert moved - 2 <= await coordinator.reserve(host, 0.0, WAIT) <= moved
+
+    async def test_a_failure_long_after_the_last_pause_starts_the_count_anew(self, conns, host: str) -> None:
+        """Review S2: "right after" is within the length of the last pause; a lone timeout the next day pauses nothing."""
+        coordinator = PostgresHostCoordinator(conns[0])
+        for _ in range(3):
+            await coordinator.report(host, failed=True)
+        await conns[1].execute(
+            "UPDATE public.earthx_source_host SET paused_until = clock_timestamp() - make_interval(secs => %s),"
+            " next_start = clock_timestamp() WHERE host = %s",
+            (PAUSE_S + 1, host),
+        )
+        await coordinator.report(host, failed=True)
+        assert (await _row(conns[0], host))[:2] == (1, 0)
+        assert await coordinator.reserve(host, 0.0, WAIT) < 0.1
+
+    async def test_failures_reported_at_once_from_two_instances_open_one_pause(
+        self, conns, host: str, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        caplog.set_level(logging.WARNING, logger="earthx.catalog")
+        first, second = (PostgresHostCoordinator(conn) for conn in conns)
+        await asyncio.gather(*(c.report(host, failed=True) for c in (first, second) * 4))
+        failures, pauses, left, _ = await _row(conns[0], host)
+        assert (failures, pauses) == (8, 1)
+        assert PAUSE_S - 2 < left <= PAUSE_S
+        assert [r.getMessage() for r in caplog.records].count("source host paused") == 1
+
+    async def test_the_pause_left_is_told_and_a_host_never_asked_has_none(self, conns, host: str) -> None:
+        coordinator = PostgresHostCoordinator(conns[0])
+        assert await coordinator.pause_left(host) == 0.0
+        for _ in range(3):
+            await coordinator.report(host, failed=True)
+        assert PAUSE_S - 2 < await coordinator.pause_left(host) <= PAUSE_S
+
+    async def test_a_host_that_answers_again_after_a_pause_says_so_once(
+        self, conns, host: str, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        caplog.set_level(logging.INFO, logger="earthx.catalog")
+        coordinator = PostgresHostCoordinator(conns[0])
+        for _ in range(3):
+            await coordinator.report(host, failed=True)
+        await _end_pause(conns[1], host)
+        await coordinator.report(host, failed=False)
+        await coordinator.report(host, failed=False)
+        assert [r.getMessage() for r in caplog.records].count("source host answers again") == 1
 
     async def test_a_success_on_a_host_never_asked_writes_nothing(self, conns, host: str) -> None:
         await PostgresHostCoordinator(conns[0]).report(host, failed=False)
@@ -251,6 +322,37 @@ class TestThePlaces:
 
         await asyncio.gather(*(hold(c) for c in coordinators * 6))
         assert most == 3
+
+    async def test_callers_that_lose_a_number_to_another_take_the_next_at_once(self, conns, host: str) -> None:
+        """Review S6: only a caller that finds every place held waits; here the draw would cost a second each time."""
+        coordinators = [PostgresHostCoordinator(conn, draw=lambda a, b: 1.0) for conn in conns]
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+
+        async def hold(coordinator: PostgresHostCoordinator) -> None:
+            async with coordinator.place(host, 6):
+                await asyncio.sleep(0.05)
+
+        await asyncio.gather(*(hold(c) for c in coordinators * 3))
+        assert loop.time() - started < 0.9
+
+    async def test_a_request_cancelled_while_it_holds_a_place_gives_it_back(self, conns, host: str) -> None:
+        coordinator = PostgresHostCoordinator(conns[0], lease_term_s=0.6, heartbeat_s=0.1)
+        inside = asyncio.Event()
+
+        async def hold() -> None:
+            async with coordinator.place(host, 1):
+                inside.set()
+                await asyncio.sleep(3600)
+
+        task = asyncio.create_task(hold())
+        await inside.wait()
+        await asyncio.sleep(0.35)  # a few heartbeats on the shared connection
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert await self._live(conns[1], host) == []
+        assert await coordinator.reserve(host, 0.0, WAIT) == 0.0  # the shared connection is still usable
 
     async def test_a_place_of_an_instance_that_died_is_free_once_its_term_ran_out(self, conns, host: str) -> None:
         """Otto, 16.11.2026: a crashed instance must not hold a place for good. Its row stays; its term ends."""

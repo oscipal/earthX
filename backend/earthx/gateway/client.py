@@ -77,6 +77,13 @@ class GatewayResponse:
         return json.loads(self.content)
 
 
+def _retry_after_seconds(value: str | None) -> float | None:
+    """A ``Retry-After`` in whole seconds, else ``None``: an HTTP date is not read, and only ASCII digits count
+    (``"²".isdigit()`` is true, and a source may send any byte that httpx decodes as Latin-1)."""
+    text = (value or "").strip()
+    return float(text) if text.isascii() and text.isdigit() else None
+
+
 def _dumps(payload: Any) -> bytes:
     """Serialize a JSON body here, where the ``json`` module is not shadowed."""
     return json.dumps(payload, separators=(",", ":")).encode("utf-8")
@@ -309,11 +316,17 @@ class Gateway:
         """
         interval = max(self._policy.interval_for(host), self._crawl_delays.get(host, 0.0))
         if self._coordinator is not None:
-            delay = await self._coordinator.reserve(host, interval)
+            delay = await self._coordinator.reserve(host, interval, MAX_SHARED_WAIT_S)
             if delay > MAX_SHARED_WAIT_S:
-                raise HostResting("the host is paused after repeated failures", host=host)
+                raise HostResting("the host's next turn is more than a minute away (paused or crowded)", host=host)
             if delay > 0:
                 await self._sleep(delay)
+                # The breaker may have paused the host while this turn was waiting; a paused host is asked by no one.
+                left = await self._coordinator.pause_left(host)
+                if left > MAX_SHARED_WAIT_S:
+                    raise HostResting("the host was paused after repeated failures", host=host)
+                if left > 0:
+                    await self._sleep(left)
             return
         if interval <= 0:
             return
@@ -400,10 +413,8 @@ class Gateway:
 
     async def _report(self, host: str, *, failed: bool, retry_after: str | None = None) -> None:
         """Tell the coordinator how the attempt ended; a ``Retry-After`` in whole seconds goes with it."""
-        if self._coordinator is None:
-            return
-        seconds = float(retry_after.strip()) if retry_after and retry_after.strip().isdigit() else None
-        await self._coordinator.report(host, failed=failed, retry_after_s=seconds)
+        if self._coordinator is not None:
+            await self._coordinator.report(host, failed=failed, retry_after_s=_retry_after_seconds(retry_after))
 
     async def _once(
         self,
@@ -453,8 +464,9 @@ class Gateway:
 
     async def _wait(self, attempt: int, retry_after: str | None) -> None:
         delay = BACKOFF_S[min(attempt, len(BACKOFF_S)) - 1] * random.uniform(0.8, 1.2)
-        if retry_after and retry_after.strip().isdigit():
-            delay = min(float(retry_after.strip()), MAX_RETRY_AFTER_S)
+        asked = _retry_after_seconds(retry_after)
+        if asked is not None:
+            delay = min(asked, MAX_RETRY_AFTER_S)
         await self._sleep(delay)
 
     def _log(
