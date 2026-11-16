@@ -1,0 +1,204 @@
+# M5-37 — Zeiger und Unterbrecher je Host in Postgres: Plan-Schritt
+
+**Status (16.11.2026):** Plan mit Fragen J1–J6, **Stufe B**. Umsetzung erst nach Ottos Antworten, im selben Draft-PR (PR 1) und höchstens einem zweiten (§8).
+**Aufgabe:** M5-37 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2, Auftrag von Otto vom 16.11.2026.
+**Grundlagen:** `plans/m5/m5-35-skalierbarkeit.md` B1 (§2.3 G2, §2.4 Punkte 2 und 4), F1 = 1, W6, W7; `plans/m5/m5-36-grenzen-je-host.md` (`hosts.yaml`, `ReadSlots`, `EARTHX_SOURCE_INSTANCES`, §9); Muster des Zeigers der Ortssuche (`catalog/geocode_cache.py`, `earthx_rate_slots`, Migration 005); `adr/0025` §6.2; `adr/0032` §8.2 und Nachträge 14. und 15.11.2026 (0,25 s je Host im Pyramidenbau); `architekturplan.md` 3.1, 6.5; KLAERUNGEN B8, B9.
+
+Belegstufen wie in `adr/0025`: **P** am Quelltext gelesen (Stand `main` eb7079c), **S** Sekundärquelle, **A** eigene Ableitung. Gemessen wird erst in der Umsetzung, nur gegen die synthetische Quelle (§7); keine echte Quelle aus der Sitzung.
+
+---
+
+## 1. Ziel
+
+Nach M5-36 hält jede Instanz von `api` und `tiler` ihren Anteil an der Grenze eines Hosts. Für die **seltenen, langen Zugriffe** gilt das noch nicht (M5-35 §2.4 Punkt 2): `materialize`, später der Harvester, und der Pyramidenbau halten Verbindungen und Abstand je Lauf bzw. je Bau im Speicher. Zwei Läufe gegen die FSDI fragen zusammen jede halbe Sekunde, nicht jede Sekunde (M5-35 §2.2), und antwortet ein Host mit `503`, wiederholt jede Instanz für sich (W6).
+
+M5-37 soll:
+
+1. **Abstand je Host über alle Instanzen:** ein Zeiger je Host in Postgres, wie die Ortssuche ihn für Nominatim hält (`earthx_rate_slots`, eine Anweisung `INSERT … ON CONFLICT … RETURNING` je Anfrage, keine gehaltene Verbindung, Warten im Aufrufer).
+2. **Verbindungen je Host über alle Instanzen** für dieselben drei Aufrufer (J1, J2).
+3. **Unterbrecher je Host:** nach wiederholten Fehlern ruht der Host für alle drei Aufrufer und alle Instanzen eine Zeit lang; er schiebt dafür denselben Zeiger vor (M5-35 §2.4 Punkt 4, wie `push_back` der Ortssuche).
+4. Beides in Postgres, ohne neuen Dienst; der Kern bleibt ohne Datenbank (B9), `gateway` ohne Datenbank und ohne Datensätze.
+
+**Nicht Teil von M5-37:**
+- **Kacheln und Suche** (`api`, `tiler`) bleiben wie in M5-36: Teilbudget je Instanz, kein Abstand, kein Datenbank-Umlauf je Anfrage, kein Unterbrecher (Auftrag). Exakt über alle Instanzen erst mit dem Egress-Proxy in M6.
+- **Rezept-Läufe im Worker** (GDAL im Kind eines Laufs): weiter über `host_cap` = 2 Läufe je Host (M6, F6).
+- **Bündeln gleicher Anfragen über Instanzen** (zweite Hälfte von W6): im Auftrag nicht genannt; für die drei Aufrufer ohne Nutzen, weil kein zweiter Lauf dieselbe Seite zur selben Zeit braucht [A]. Bleibt offen für M6.
+- **Der Harvester selbst** (W7): Er ist noch leer (`discovery/main.py`). M5-37 liefert die Fabrik, über die er sein `Gateway` bekommt (§5.3); die Sperre je Quelle (Lauf-Zeile mit Frist) kommt mit M5-19/M5-24.
+
+---
+
+## 2. Ausgangslage im Code [P]
+
+| Aufrufer | Wie er liest | Grenze heute | Abstand heute | Wiederholen heute |
+|---|---|---|---|---|
+| `materialize` (`discovery/materialize.py`) | ein `Gateway` je Lauf (`_main_async`), `httpx`; Seiten nacheinander, kein `gather` in den Adaptern | `hosts.yaml` je Lauf (`_policy_for`) | `hosts.yaml` je Lauf: FSDI und BEV 1 s, Buckets keiner; `Gateway._space` im Speicher | `MAX_ATTEMPTS` 3 je Anfrage mit Backoff, `Retry-After` bis 10 s |
+| Harvester (`discovery/main.py`) | noch nichts | — | — | — |
+| Pyramidenbau (`processing/overview.py`, `overview_build.py`) | GDAL im Kind (`jobs/overview_child.py`), **ein Faden**, Datei nach Datei | keine eigene; höchstens ein Bau je Host im Cluster (`earthx_overview`, `earthx_overview_host`) | `HostPacer` im Kind: 0,25 s je Anfrage (`EARTHX_OVERVIEW_HOST_INTERVAL_S`); `wait` vor, `account(host, requests)` nach jeder Datei | bis 4 Lesungen je Datei (5 s, 20 s, 60 s, `Retry-After` bis 120 s); Bau nach `source_*` bis 3-mal nach 1 h |
+
+- **Das Muster der Ortssuche** (`catalog/geocode_cache.py:41–56`, `:81–106`): Zeile je Upstream mit `next_slot`; `reserve` schiebt ihn um 1 s vor und gibt die Wartezeit zurück, gemessen an `clock_timestamp()` derselben Anweisung; `push_back` schiebt ihn nach einem `429` weiter. Kein Halten einer Verbindung, keine Sperre über die Anweisung hinaus.
+- **Importregeln** (`.importlinter`): `gateway` darf nichts Fachliches, `catalog` nur `gateway`, `discovery` `adapters`, `catalog`, `gateway`; **`jobs` weder `gateway` noch `catalog`**; `processing` kein `psycopg` (auch nicht über Ketten). Daraus folgt der Schnitt in §5.
+- **Das Kind des Pyramidenbaus kennt keine Datenbank** (`jobs/overview_child.py`, Kopf): Es spricht über eine Pipe mit dem Aufseher (`jobs/overview_builder.py:_step`, `:_watch`), die schon heute **in beide Richtungen** offen ist (`Pipe(duplex=True)`), bisher aber nur vom Kind zum Aufseher genutzt wird.
+- **`materialize` hält eine Transaktion über den ganzen Lauf** (`_main_async`, `psycopg.connect(autocommit=False)`). Eine Zeile, die andere Instanzen sehen sollen, darf nicht in dieser Transaktion liegen: sie würde erst beim Commit sichtbar und hielte bis dahin die Zeilensperre.
+
+---
+
+## 3. Zustand in Postgres
+
+### 3.1 Tabellen (Migration 022)
+
+```sql
+-- Eine Zeile je Host: Zeiger und Unterbrecher (M5-37). Kein Name eines Datensatzes, keine Adresse, nur der Host.
+CREATE TABLE public.earthx_source_host (
+    host          text PRIMARY KEY,
+    next_start    timestamptz NOT NULL,           -- frühester Beginn der nächsten Anfrage
+    failures      integer     NOT NULL DEFAULT 0, -- Fehler in Folge, über alle Aufrufer
+    pauses        integer     NOT NULL DEFAULT 0, -- Pausen in Folge, für die Verdopplung (J3)
+    paused_until  timestamptz,                    -- nur zur Auskunft und fürs Log; maßgeblich ist next_start
+    updated_at    timestamptz NOT NULL DEFAULT now()
+);
+
+-- Ein Platz je laufender Anfrage (J1): wer hält ihn, bis wann. Eine abgelaufene Zeile zählt nicht mehr.
+CREATE TABLE public.earthx_source_lease (
+    host    text        NOT NULL,
+    holder  uuid        NOT NULL,
+    until   timestamptz NOT NULL,
+    PRIMARY KEY (host, holder)
+);
+```
+
+`host` in der Schreibweise von `normalize_host`. Eine eigene Tabelle statt neuer Spalten in `earthx_rate_slots`: die Zeile der Ortssuche hat eine andere Regel (1 s fest, kein Unterbrecher), und ein Host ist kein Upstream-Name.
+
+### 3.2 Anweisungen
+
+- **`reserve(host, interval)`**, eine Anweisung wie `_RESERVE_SLOT`: `start = greatest(next_start, clock_timestamp())`, `next_start = start + interval`; zurück kommen `start − clock_timestamp()` (die Wartezeit) und `paused_until`. Jeder Aufrufer schiebt um **seinen** Abstand vor (`hosts.yaml`, beim Pyramidenbau sonst 0,25 s, §5.4); ein Aufrufer ohne Abstand (Buckets in `materialize`) wartet hinter dem Zeiger, schiebt ihn aber nicht.
+- **`account(host, interval, requests)`** (nur Pyramidenbau): `next_start += (requests − 1) · interval`, wie `HostPacer.account`; bei 0 Anfragen (warmer Cache) geht der Platz zurück, nie vor `clock_timestamp()`.
+- **`acquire(host, cap)`** (J1 = 1): unter `pg_advisory_xact_lock` auf den Host, in einer Transaktion: abgelaufene Plätze des Hosts löschen, lebende zählen, unter `cap` eine Zeile mit Frist 10 min anlegen. Kein Platz frei: der Aufrufer fragt nach 0,25–1 s (Zufall) erneut; keine Verbindung wartet in der Datenbank. **`release(host, holder)`** löscht die Zeile. Die Frist deckt nur einen Absturz ab; eine Anfrage mit allen Versuchen dauert höchstens rund 65 s (3 × 20 s Zeitlimit plus Backoff) [A].
+- **`report(host, outcome, retry_after)`**: Erfolg setzt `failures` und `pauses` auf 0. Fehler (§4.1) erhöht `failures`; erreicht es die Schwelle, schiebt dieselbe Anweisung `next_start` auf `greatest(next_start, now() + pause)`, setzt `paused_until` und erhöht `pauses` (J3). Ein `Retry-After` schiebt `next_start` ohne Schwelle um seinen Wert vor, höchstens 10 min.
+
+Alle Anweisungen laufen auf einer **eigenen Verbindung im Autocommit**, nie in der Transaktion des Aufrufers (§2, `materialize`). Ein Fehler der Datenbank ist ein Fehler des Laufs, nie „ohne Grenze weiter“: wer nicht reservieren kann, sendet nicht (wie die Ortssuche, `geocode_cache.py` Kopf).
+
+### 3.3 Kosten [A]
+
+Je Anfrage ein Umlauf für den Zeiger, mit J1 = 1 zwei weitere für den Platz (der zweite zusammen mit `report`). Lokal rund 1 ms je Umlauf, gegen 170 ms Umlaufzeit der synthetischen Quelle und 1 s Abstand der FSDI. Eine heiße Zeile entsteht nicht: Bei 1 s bzw. 0,25 s Abstand sind es höchstens 1–4 Anweisungen je Sekunde und Host. Für die Buckets ohne Abstand in `materialize` (Auflisten in Seiten zu 1000, rund 30 Anfragen je Lauf) ebenso wenig.
+
+---
+
+## 4. Unterbrecher je Host
+
+### 4.1 Was zählt
+
+| Ergebnis eines Versuchs | zählt als |
+|---|---|
+| Antwort unter 500 außer `429` (auch `404`, `304`) | Erfolg: der Host antwortet |
+| `429`, `500`, `502`, `503`, `504` | Fehler |
+| Zeitüberschreitung, Verbindung nicht möglich (`UpstreamTimeout`, `UpstreamUnreachable`) | Fehler |
+| Pyramidenbau: `source_timeout`, `source_5xx`, `source_429`, `source_unreachable` (`readers.source_failure_kind`) | Fehler |
+| alles, was `gateway` vor dem Senden ablehnt (Allowlist, Adresse, Länge, `robots.txt`) | nichts: der Host wurde nicht gefragt |
+
+Gezählt wird **jeder Versuch**, nicht jede Anfrage: drei Versuche einer Anfrage, die alle `503` bekommen, sind drei Fehler in Folge. Das ist die Regel „3 Fehler in Folge“ aus `adr/0025` §6.2 und `adr/0032` §8.2, jetzt für alle Instanzen zusammen statt je Lauf.
+
+### 4.2 Was ein Aufrufer während einer Pause tut (J4)
+
+Die Pause ist ein vorgeschobener Zeiger: `reserve` gibt eine lange Wartezeit und `paused_until` zurück. Vorschlag J4 = 1:
+
+- **Pyramidenbau:** wartet. Der Aufseher hält die Frist des Baus (Herzschlag) und zählt die Pause nicht als Stillstand (`STALL_SECONDS`). Ein Bau von 6–7 h soll nicht wegen 5 min Pause von vorn beginnen.
+- **`materialize`, Harvester:** warten bis 60 s; ist die Pause länger, ruht der Host für diesen Lauf (`HostResting`, „host paused after repeated failures“). Der Harvester legt die Funde nach `stale` (`adr/0025` §6.2); `materialize` endet mit Fehler, die Transaktion wird zurückgerollt, nichts ist geschrieben.
+
+Nach der Pause ist die erste Anfrage die Probe: Erfolg schließt den Unterbrecher, ein Fehler öffnet ihn sofort wieder mit doppelter Pause (`failures` steht noch auf der Schwelle).
+
+---
+
+## 5. Schnitt im Code
+
+### 5.1 `gateway`: Protokoll statt Datenbank
+
+`gateway` bekommt ein Protokoll **`HostCoordinator`** (`gateway/coordinator.py`) mit `reserve`, `acquire`/`release` und `report` (asynchron) und eine Fassung im Speicher, die genau das heutige Verhalten hat (`_space`, `ReadSlots`). `Gateway(policy, coordinator=…)`: ohne Angabe die Fassung im Speicher, also unverändert für `api`, `tiler`, Tests, Runner und Worker. `_attempt` fragt vor jedem Versuch `reserve` (statt `_space`) und meldet danach `report`; `_send` nimmt den Platz über `acquire` statt `ReadSlots`, wenn ein Koordinator gesetzt ist. Die Wartezeit über 60 s wird zu `HostResting` (J4). `gateway` importiert dafür nichts Neues.
+
+### 5.2 Postgres-Fassung, zweimal
+
+- **`catalog/source_hosts.py`** (asynchron, wie `geocode_cache.py`): `PostgresHostCoordinator` für `discovery` (`materialize`, Harvester). `catalog` darf `gateway` importieren, das Protokoll passt strukturell.
+- **`jobs/source_hosts.py`** (synchron): dieselben Anweisungen für den Aufseher des Pyramidenbaus, weil `jobs` weder `catalog` noch `gateway` importieren darf. Ein Test hält die SQL-Texte beider Module gleich (wie die Dateinamen in `overview_builder.py`).
+- `catalog.source_hosts` kommt in die Verbotsliste des Vertrags `runner` (wie jedes Modul von `catalog`, `test_module_boundaries.py`). Sonst keine Änderung an den Importregeln.
+
+### 5.3 `materialize` und Harvester
+
+Eine Fabrik `discovery/source_gateway.py`: `open_source_gateway(policy)` öffnet eine eigene `psycopg.AsyncConnection` im Autocommit und gibt ein `Gateway` mit `PostgresHostCoordinator` zurück; beim Schließen beides zu. `materialize` nutzt sie statt `Gateway(_policy_for(…))`; der Harvester (M5-19) nutzt dieselbe. Grenze und Abstand kommen weiter aus `hosts.yaml` (`_policy_for`).
+
+### 5.4 Pyramidenbau: der Aufseher reserviert, das Kind wartet
+
+Das Kind bleibt ohne Datenbank. Es bekommt statt des `HostPacer` einen **`PipePacer`** (in `jobs/overview_child.py`), der das Protokoll `Pacer` des Kerns erfüllt:
+
+- `wait(host)` schickt `("pace", host)` und wartet auf `("go",)`.
+- `account(host, requests, failure)` schickt `("account", host, requests, failure)`; keine Antwort. `failure` ist die Fehlerart des Versuchs oder `None`. Dafür bekommt `Pacer.account` einen dritten Parameter, und `_read_once` übergibt die Art aus `source_failure_kind`. `HostPacer` nimmt ihn an und ignoriert ihn (Fassung ohne Datenbank, z. B. für Tests).
+- `build_pyramid` und `patch_pyramid` nehmen den Pacer als Argument, statt ihn selbst über `readers.access.host_pacer()` zu bauen.
+
+Der Aufseher (`_watch`) antwortet: Auf `pace` reserviert er den Zeiger, merkt sich die fällige Zeit, holt bei Fälligkeit einen Platz (J1) und schickt `go`. Er blockiert dabei nie; seine Schleife fragt ohnehin alle ≤ 0,5 s und schlägt weiter die Frist. Während ein `pace` offen ist, zählt keine Zeit zum Stillstand. Auf `account` verrechnet er die Anfragen, meldet Erfolg oder Fehler und gibt den Platz frei. Den Abstand je Host gibt der Worker beim Start mit (wie `pyramid_hosts()`): Eintrag in `hosts.yaml`, sonst `EARTHX_OVERVIEW_HOST_INTERVAL_S` (0,25 s, `adr/0032` F4). Die Sperre „ein Bau je Host“ bleibt, wie sie ist.
+
+Die Wiederholungsstaffel der Datei (5 s, 20 s, 60 s) bleibt; jeder Versuch geht wie heute durch den Pacer, also auch durch eine Pause.
+
+---
+
+## 6. Was sich ändert
+
+- Zwei Läufe von `materialize` gegen die FSDI fragen zusammen höchstens einmal je Sekunde; ein Pyramidenbau und ein Lauf auf demselben Bucket halten zusammen 0,25 s.
+- Ein Host, der drei Versuchen in Folge nicht antwortet, wird von keinem der drei Aufrufer gefragt, bis die Pause vorbei ist.
+- `api` und `tiler` ändern sich nicht: kein neuer Umlauf, kein neues Warten.
+- Neue Fehlermeldung von `materialize`: „host … rests for this run“ bei einer Pause über 60 s (J4). Der Host steht in der Meldung (ein Name aus der Registry), keine Adresse, keine AOI.
+- Log: eine Zeile, wenn ein Host pausiert wird (Host, Pause, Fehler in Folge), und eine, wenn er wieder antwortet.
+
+---
+
+## 7. Messung vorher/nachher (synthetisch)
+
+Mit `scripts/tile-bench/slow_source.py` (RTT 170 ms, Verbindungsaufbau 350 ms) und einem neuen Schalter `--fail` (antwortet in einem Zeitfenster mit `503`), lokalem Postgres, `main` gegen den Branch, 5 Wiederholungen im Wechsel. Ein kleines Skript stellt je Prozess Anfragen über `Gateway` nacheinander, wie `materialize` es tut; `materialize` selbst braucht einen echten Adapter und wird nicht gegen die Quelle gefahren. Keine echte Quelle, keine AOI im Log.
+
+| Fall | Aufbau | gemessen | Erwartung |
+|---|---|---|---|
+| M1 Abstand über Instanzen | 2 Prozesse × 60 Anfragen, Abstand 1 s | kleinster und mittlerer Abstand der Anfänge an der Quelle, Wandzeit | vorher ≈ 0,5 s, nachher ≥ 1 s |
+| M2 Kosten je Anfrage | 1 Prozess, 200 Anfragen, ohne Abstand (wie ein Bucket) | Median und p95 je Anfrage, Wandzeit | nachher ≤ +5 % (J5) |
+| M3 Unterbrecher | 3 Prozesse, Quelle 60 s lang `503` | Anfragen an der Quelle im Fenster; Zeit bis zur ersten Antwort danach | vorher je Prozess bis 3 Versuche je Anfrage; nachher 3 Fehler, dann Pause |
+| M4 Pyramidenbau (PR 2) | Bau aus `make_cogs.py`, allein und mit einem Prozess wie M1 auf demselben Host | Wandzeit des Baus, Abstand der Anfänge an der Quelle | allein ≤ +5 % (J5); zusammen ≥ 0,25 s |
+
+Ergebnis als Tabelle in §9 und im PR.
+
+---
+
+## 8. Schnitt (Vorschlag J6 = 1)
+
+| PR | Inhalt | Umfang (ohne Tests, geschätzt) |
+|---|---|---|
+| **PR 1** (dieser Draft-PR) | Plan; Migration 022; `HostCoordinator` in `gateway` mit Fassung im Speicher; `catalog/source_hosts.py`; `discovery/source_gateway.py`; `materialize` darüber; Messung M1–M3; Nachträge `adr/0025` §6.2, `architekturplan.md` 6.5, README | ~330 Zeilen |
+| **PR 2** | `jobs/source_hosts.py`; `PipePacer`, Antworten im Aufseher, `Pacer.account` mit Fehlerart, Abstand aus `hosts.yaml`; Messung M4; Nachtrag `adr/0032` §8.2 | ~250 Zeilen |
+
+Tests je PR, mit Fehlerfällen: zwei Koordinatoren auf derselben Zeile (Abstand hält, auch gleichzeitig), Abstand 0 schiebt nicht, `account` mit 0 Anfragen gibt zurück und nie vor jetzt; Platz: Grenze voll, abgelaufener Platz zählt nicht, Freigabe nach Fehler und Abbruch (`CancelledError`); Unterbrecher: Schwelle, Erfolg setzt zurück, Probe nach der Pause, Verdopplung bis zur Obergrenze, `Retry-After` (Zahl, fehlt, zu groß, kein Zahlwert), `404` zählt als Erfolg, Ablehnung vor dem Senden zählt nicht; Pause über 60 s wird `HostResting`; Datenbank nicht erreichbar heißt kein Senden; die Zeile liegt nicht in der Transaktion von `materialize` (zweite Verbindung sieht sie vor dem Commit); falsche Werte (Abstand negativ, `NaN`, Grenze 0, Host als IP); Pyramide: `pace` ohne Antwort hält den Bau nicht als Stillstand an, Kind stirbt mit offenem Platz (Frist), unbekannte Nachricht wird verworfen, die SQL-Texte beider Module sind gleich.
+
+---
+
+## 9. Fragen an Otto
+
+**J1 — Gleichzeitige Verbindungen über alle Instanzen?**
+1. Ja: ein Platz je laufender Anfrage in Postgres (`earthx_source_lease`, Frist 10 min, Warten im Aufrufer), Grenze aus `hosts.yaml` **(Empfehlung: nur so gilt „Grenzen und Abstand“ aus dem Auftrag für alle Instanzen; kostet zwei Umläufe je Anfrage, §3.3)**
+2. Nein: nur Zeiger und Unterbrecher in Postgres; die Verbindungen bleiben je Lauf. Heute lesen alle drei Aufrufer nacheinander, die Grenze wirkt erst bei vielen gleichzeitigen Läufen
+
+**J2 — Wie teilen sich die drei Aufrufer die Verbindungen eines Hosts mit `api` und `tiler`?** (nur bei J1 = 1)
+1. Getrennt: die drei zusammen halten die volle Grenze aus `hosts.yaml`, `api` und `tiler` ihre Anteile wie in M5-36; die Summe kann bis M6 bis zum Doppelten reichen **(Empfehlung: die Rücksicht der drei liegt im Abstand, der sie bei FSDI und BEV ohnehin auf rund eine Anfrage zugleich hält; Kacheln werden nicht langsamer)**
+2. Die drei zählen zusammen als eine weitere Instanz: `EARTHX_SOURCE_INSTANCES` umfasst sie, jeder bekommt `Grenze // N`. Die Summe hält, aber die Kacheln verlieren einen Anteil (FSDI bei einer Instanz von 6 auf 3, gemessen +30 % bei vielen Kacheln, M5-36 §9.4)
+3. Die drei zusammen höchstens 1 Verbindung je Host
+
+**J3 — Wann ruht ein Host, und wie lange?**
+1. Nach 3 Fehlern in Folge (über alle Aufrufer und Instanzen, §4.1) 5 min; jede weitere Pause direkt danach doppelt so lang, höchstens 60 min; ein Erfolg setzt zurück **(Empfehlung: 3 wie `adr/0025` §6.2 und `adr/0032` §8.2)**
+2. Nach 3 Fehlern in Folge fest 15 min
+3. Andere Werte: bitte Schwelle und Dauer nennen
+
+**J4 — Was tut ein Aufrufer, während ein Host ruht?**
+1. Der Pyramidenbau wartet (hält seine Frist); `materialize` und Harvester warten bis 60 s, sonst ruht der Host für diesen Lauf (`materialize` endet ohne zu schreiben, der Harvester legt Funde nach `stale`) **(Empfehlung, §4.2)**
+2. Alle warten, bis die Pause vorbei ist
+3. Alle hören auf; der Pyramidenbau endet mit einer neuen Fehlerart `source_paused` und wird nach einer Stunde wiederholt
+
+**J5 — Was heißt „nicht spürbar langsamer“ bei einem einzelnen Lauf (M2, M4)?**
+1. Median und p95 höchstens +5 % über `main`, wie G5 in M5-36 **(Empfehlung)**
+2. Nur berichten, nicht fordern
+
+**J6 — Schnitt?**
+1. Zwei PRs wie §8: dieser mit `materialize` und dem Mechanismus, der zweite mit dem Pyramidenbau **(Empfehlung)**
+2. Ein PR mit allem (rund 580 Zeilen ohne Tests)
