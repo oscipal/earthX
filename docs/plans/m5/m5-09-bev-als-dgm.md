@@ -196,7 +196,7 @@ docker compose run --rm materialize bev-als-dgm
 docker compose run --build --rm measure-tiles bev-als-dgm --bbox 13.5,47.2,14.5,47.8 --zooms 5-10 --threads 4
 ```
 
-**Schritt 5 — Live-Smoke:** läuft in GitHub Actions, nicht lokal (`.github/workflows/live-smoke.yml`, täglich und von Hand). Die Datei muss dort in die Zeile der Datensätze von Hand eingetragen werden (F8). Danach: GitHub → Actions → „Live smoke“ → „Run workflow“, Branch dieses PR.
+**Schritt 5 — Live-Smoke:** läuft in GitHub Actions, nicht lokal (`.github/workflows/live-smoke.yml`, täglich und von Hand). Die Datei steht nach F8 in der Zeile der materialisierten Datensätze. Otto lässt ihn **nach dem Merge auf `main`** laufen (GitHub → Actions → „Live smoke“ → „Run workflow“), weil sich der Branch bei „Run workflow“ bei ihm nicht wählen lässt.
 
 **Schritt 6 — im Browser:** Stack wie gewohnt starten (`docker compose up -d --build`), BEV wählen, von z3 bis z17 zoomen in Crop and merge, angehefteter Ebene, Suchtreffern und einer Szene; Hillshade unter und über `min_zoom`; „Download full scene(s)“ für eine Kachel.
 
@@ -259,3 +259,5 @@ docker compose run --build --rm measure-tiles bev-als-dgm --bbox 13.5,47.2,14.5,
 **F8 — neu, Live-Smoke in `.github/` (Erlaubnis nötig):** Der Live-Smoke läuft nur, wenn seine Datei in `.github/workflows/live-smoke.yml` steht (Liste der Dateien im Job der materialisierten Datensätze). `.github/` ändere ich nur mit Erlaubnis.
 1. Ich trage `backend/tests_live/test_bev_als_dgm_smoke.py` in diesem PR in die bestehende Zeile ein (eine Zeile, sonst nichts) **(Empfehlung)**
 2. Otto trägt die Datei selbst ein
+
+**Antwort F8 (Otto, 16.11.2026): 1.** Erlaubnis für genau diese Änderung: `backend/tests_live/test_bev_als_dgm_smoke.py` in die bestehende Zeile von `.github/workflows/live-smoke.yml`, sonst nichts. Sie kommt im selben Commit wie die Datei des Smokes.
