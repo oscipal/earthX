@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import maplibreTypes from 'maplibre-gl/dist/maplibre-gl.d.ts?raw';
 
-import { isPassingFailure, RETRY_DELAYS_MS, watchTileRetry, type RetryMap, type TileManagerLike } from './tileRetry';
+import { isPassingFailure, RECOVERY_GAP_MS, RETRY_DELAYS_MS, watchTileRetry, type RetryMap, type TileManagerLike } from './tileRetry';
 
 type Handler = (event: object) => void;
 
@@ -49,6 +49,11 @@ function fakeMap(sources = ['layer-src-L1-0', 'res-tiles-src-0', 'basemap']) {
       place(sourceId, at, 'errored');
       handlers.get('error')!({ sourceId, tile: tile(...at), error: status === undefined ? new Error('broken') : { status } });
     },
+    failWithout: (sourceId: string | undefined, error: object) => {
+      // The tile is in view and failed, but the event does not name it.
+      place('layer-src-L1-0', [14, 8668, 5456], 'errored');
+      handlers.get('error')!({ sourceId, error });
+    },
     load: (sourceId: string, at: [number, number, number] = [14, 8668, 5456]) => {
       place(sourceId, at, 'loaded');
       handlers.get('sourcedata')!({ sourceId, tile: tile(...at, 'loaded') });
@@ -60,7 +65,7 @@ beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
 describe('a tile that failed while a service restarted', () => {
-  it.each([502, 503, 504, 500, 0, 429, 408])('is asked again after a %i', (status) => {
+  it.each([502, 503, 504, 0, 429, 408])('is asked again after a %i', (status) => {
     const map = fakeMap();
     map.fail('layer-src-L1-0', status);
     expect(map.refreshed).toEqual([]);
@@ -92,17 +97,63 @@ describe('a tile that failed while a service restarted', () => {
     expect(map.refreshed).toEqual(['layer-src-L1-0/14/8668/5456']);
   });
 
-  it('gives up after about four minutes of failures', () => {
+  it('gives up after about two minutes of failures', () => {
     const map = fakeMap();
     for (const delay of RETRY_DELAYS_MS) {
       map.fail('layer-src-L1-0', 502);
       vi.advanceTimersByTime(delay);
     }
     expect(map.refreshed).toHaveLength(RETRY_DELAYS_MS.length);
-    expect(RETRY_DELAYS_MS.reduce((a, b) => a + b, 0)).toBeGreaterThanOrEqual(240_000);
+    expect(RETRY_DELAYS_MS.reduce((a, b) => a + b, 0)).toBeGreaterThanOrEqual(120_000);
     map.fail('layer-src-L1-0', 502);
     vi.advanceTimersByTime(60_000);
     expect(map.refreshed).toHaveLength(RETRY_DELAYS_MS.length);
+  });
+
+  it('is asked again at once when another tile of its source loads (the service is back), also after it gave up', () => {
+    const map = fakeMap();
+    for (const delay of RETRY_DELAYS_MS) {
+      map.fail('layer-src-L1-0', 502);
+      vi.advanceTimersByTime(delay);
+    }
+    const before = map.refreshed.length;
+    map.load('layer-src-L1-0', [14, 9, 9]);
+    expect(map.refreshed.slice(before)).toEqual(['layer-src-L1-0/14/8668/5456']);
+    // Its count starts afresh: a failure now waits 1 s.
+    map.fail('layer-src-L1-0', 502);
+    vi.advanceTimersByTime(1_000);
+    expect(map.refreshed).toHaveLength(before + 2);
+  });
+
+  it('asks a source again at once at most every 10 s, so a tile refused for good is not asked over and over', () => {
+    const map = fakeMap();
+    for (const delay of RETRY_DELAYS_MS) {
+      map.fail('layer-src-L1-0', 502);
+      vi.advanceTimersByTime(delay);
+    }
+    map.fail('layer-src-L1-0', 502);
+    const before = map.refreshed.length;
+    map.load('layer-src-L1-0', [14, 9, 9]);
+    map.load('layer-src-L1-0', [14, 9, 10]);
+    vi.advanceTimersByTime(RECOVERY_GAP_MS - 1);
+    map.load('layer-src-L1-0', [14, 9, 11]);
+    expect(map.refreshed.length - before).toBe(1);
+    vi.advanceTimersByTime(1);
+    map.fail('layer-src-L1-0', 502);
+    map.load('layer-src-L1-0', [14, 9, 12]);
+    expect(map.refreshed.length - before).toBe(2);
+  });
+
+  it('does not take the load of a tile of another source or of the basemap for the service being back', () => {
+    const map = fakeMap();
+    for (const delay of RETRY_DELAYS_MS) {
+      map.fail('layer-src-L1-0', 502);
+      vi.advanceTimersByTime(delay);
+    }
+    const before = map.refreshed.length;
+    map.load('res-tiles-src-0', [14, 9, 9]);
+    map.load('basemap', [14, 9, 9]);
+    expect(map.refreshed).toHaveLength(before);
   });
 
   it('keeps the tiles apart', () => {
@@ -115,7 +166,7 @@ describe('a tile that failed while a service restarted', () => {
 });
 
 describe('what is not asked again', () => {
-  it.each([400, 404, 410, 422, 403])('a refusal (%i)', (status) => {
+  it.each([400, 404, 410, 422, 403, 500])('a refusal or a fault of the tiler (%i)', (status) => {
     const map = fakeMap();
     map.fail('layer-src-L1-0', status);
     vi.advanceTimersByTime(60_000);
@@ -157,10 +208,8 @@ describe('what is not asked again', () => {
 
   it('an event that names no tile (a failed style or source)', () => {
     const map = fakeMap();
-    const handlers = new Map<string, Handler>();
-    watchTileRetry({ on: (t: string, h: Handler) => handlers.set(t, h), getSource: () => ({}) } as unknown as RetryMap);
-    handlers.get('error')!({ sourceId: 'layer-src-L1-0', error: { status: 502 } });
-    handlers.get('error')!({ error: { status: 502 } });
+    map.failWithout('layer-src-L1-0', { status: 502 });
+    map.failWithout(undefined, { status: 502 });
     vi.advanceTimersByTime(60_000);
     expect(map.refreshed).toEqual([]);
   });
@@ -184,8 +233,8 @@ describe('how a tile is loaded again', () => {
 });
 
 describe('isPassingFailure', () => {
-  it('takes no answer, a timeout, too many requests and a server error as passing', () => {
-    for (const status of [0, 408, 429, 500, 502, 503, 504, 599]) expect(isPassingFailure(status)).toBe(true);
-    for (const status of [undefined, 200, 204, 301, 400, 401, 403, 404, 410, 422, 600]) expect(isPassingFailure(status)).toBe(false);
+  it('takes no answer, a timeout, too many requests and a gateway or a service away as passing, not a fault of the tiler', () => {
+    for (const status of [0, 408, 429, 502, 503, 504]) expect(isPassingFailure(status)).toBe(true);
+    for (const status of [undefined, 200, 204, 301, 400, 401, 403, 404, 410, 422, 500, 501, 599, 600]) expect(isPassingFailure(status)).toBe(false);
   });
 });

@@ -131,8 +131,7 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
   );
   // A layer that shows nothing at this zoom says why, in either step of the tooltips: nothing over the map does (Otto, 10.11.2026).
   const zoomReason = shown ? zoomReasonOf(l.overlays, mapZoom) : null;
-  const viewport = useAppStore((s) => s.viewportBbox);
-  const overview = isResultLayerOverview(l, mapZoom, viewport) ? OVERVIEW_TIP : null;
+  const overview = useAppStore((s) => isResultLayerOverview(l, s.mapZoom, s.viewportBbox)) ? OVERVIEW_TIP : null;
   const loading = useLayerLoading(l.id) && shown;
   return (
     <li className={`layer-row${locked ? ' locked' : ''}${flipped ? ' flip' : ''}${dnd.className}`} aria-current={flipped || undefined}>

@@ -134,6 +134,15 @@ describe('the list of bands', () => {
     expect(red.getAttribute('data-tip')).toBe('a_red');
   });
 
+  it('switches a band at its box and its name only, and the box is described by the details and the resolution beside it (UI-08)', async () => {
+    await open('crop');
+    const red = container.querySelectorAll('.dialog-band')[1];
+    const box = red.querySelector('input[type="checkbox"]')!;
+    expect(box.closest('label')?.textContent).toBe('B04');
+    const described = (box.getAttribute('aria-describedby') ?? '').split(' ').map((id) => document.getElementById(id)?.textContent);
+    expect(described).toEqual(['red · 0.665 µm', '10 m']);
+  });
+
   it('has the spectral bands and the layer of the mask ticked, and a band with no wavelength not', async () => {
     await open('crop');
     expect(boxes().map((b) => b.checked)).toEqual([true, true, true, true, true, false]);
