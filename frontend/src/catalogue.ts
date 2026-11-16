@@ -8,6 +8,7 @@ import { utcDay } from './dateBounds';
 import { indexPresetsOf } from './indexPresets';
 import { formatCount, formatNumber } from './numberFormat';
 import { catalogueUnit, trueColorOf } from './processingOrder';
+import type { CatalogueFilterState } from './store';
 import type { Collection } from './types';
 
 // A category of the Data catalogue as `GET /catalogue/categories` gives it, in the order of the groups (M5-40 H4): the
@@ -290,3 +291,8 @@ export function groupCount(state: { matched: number | null; entries: readonly un
   return state.loaded && state.entries.length > 0 ? ABOVE_COUNTED : null;
 }
 
+// How many filters are set, for the label of the button (like "Advanced search · 2").
+export function activeFilters(fields: CatalogueFilterState, searchPanel: boolean): number {
+  if (searchPanel) return 1 + (fields.category ? 1 : 0);
+  return [fields.region, fields.from, fields.to, fields.category].filter((v) => v !== '').length;
+}

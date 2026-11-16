@@ -3,8 +3,8 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { catalogueDatetime, fetchCatalogueCategories, fetchCatalogueRegions, fetchCataloguePage, fetchCollections } from './api';
-import { isListed, keywordsOf, listedSourceOf, sourceRow } from './catalogue';
+import { catalogueDatetime, fetchCatalogueCategories, fetchCatalogueRegions, fetchCataloguePage, fetchCatalogueSearch, fetchCollections } from './api';
+import { activeFilters, isListed, keywordsOf, listedSourceOf, sourceRow } from './catalogue';
 import type { Collection } from './types';
 
 const page = (ids: string[], next: string | null, extra: object = {}) =>
@@ -128,3 +128,32 @@ describe('the lists of /catalogue', () => {
   });
 });
 
+
+describe('fetchCatalogueSearch (Otto, 16.11.2026)', () => {
+  it('asks by POST with q, the offset, the category and the filters, and reads the offset of the next page', async () => {
+    const answer = { collections: [{ id: 'a' }], links: [{ rel: 'next', method: 'POST', body: { q: 'dem', offset: 40 } }] };
+    const fetchStub = vi.fn(async (_url: string, _init: RequestInit) => new Response(JSON.stringify(answer), { status: 200 }));
+    vi.stubGlobal('fetch', fetchStub);
+    const filter = { area: null, region: 'CH', from: null, to: '2020-12-31' };
+    expect(await fetchCatalogueSearch('dem', 20, filter, 'elevation')).toEqual({ collections: [{ id: 'a' }], next: 40 });
+    expect(JSON.parse(String(fetchStub.mock.calls[0][1].body))).toEqual({
+      q: 'dem', offset: 20, category: 'elevation', region: ['CH'], datetime: '../2020-12-31T23:59:59Z',
+    });
+  });
+
+  it('sends no offset on the first page, and has no next page without a next link', async () => {
+    const fetchStub = vi.fn(async (_url: string, _init: RequestInit) => new Response(JSON.stringify({ collections: [], links: [] }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchStub);
+    expect(await fetchCatalogueSearch('dem', 0)).toEqual({ collections: [], next: null });
+    expect(JSON.parse(String(fetchStub.mock.calls[0][1].body))).toEqual({ q: 'dem' });
+  });
+});
+
+describe('activeFilters', () => {
+  const none = { bySearchPanel: false, region: '', from: '', to: '', category: '' };
+  it('counts the fields that are set, the search panel as one with the category beside it', () => {
+    expect(activeFilters(none, false)).toBe(0);
+    expect(activeFilters({ ...none, region: 'DE', from: '2020-01-01', category: 'water' }, false)).toBe(3);
+    expect(activeFilters({ ...none, bySearchPanel: true, region: 'DE', category: 'water' }, true)).toBe(2);
+  });
+});

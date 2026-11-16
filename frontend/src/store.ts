@@ -134,7 +134,8 @@ export function selectionItemsFrom(s: Pick<AppState, 'groups' | 'activeGroupInde
 // The scenes of the image the view shows, when a download is asked for it and not for the ticks of the list (`openDownloadForView`).
 // The filters of the Data catalogue as its fields hold them (M5-40 H1).
 export interface CatalogueFilterState {
-  aoiOnly: boolean;
+  // "Filter by search panel" (Otto, 16.11.2026): AOI and period of the search panel instead of region and from/to.
+  bySearchPanel: boolean;
   region: string;
   from: string;
   to: string;
@@ -1681,9 +1682,11 @@ export interface AppState {
   catalogueCategories: CatalogueCategory[];
   // The regions its filter offers (M5-40 H3), loaded when the catalogue first opens; `null` until then.
   catalogueRegions: api.CatalogueRegion[] | null;
-  // The filters of the Data catalogue (M5-40 H1), kept for the session, never saved: "Only datasets in AOI" (off until
-  // switched on, adr/0026 F6), a region code, a period of whole days, a category ('' for all of each).
+  // The filters of the Data catalogue (M5-40, Otto 16.11.2026), kept for the session, never saved: "Filter by search
+  // panel" (off until switched on, adr/0026 F6), a region code, a period of whole days, a category ('' for all of each).
   catalogueFilter: CatalogueFilterState;
+  // The text of the search field of the Data catalogue ('' for none), kept for the session like the filters.
+  catalogueSearch: string;
   // The *active* dataset: the one the map, time slider, heatmap, full-resolution
   // view and download follow. It is the open results section's dataset, or the
   // one picked in the heatmap legend; one of `selectedDatasetIds`, unless "Remove" in the Data catalogue unticked it and
@@ -1761,6 +1764,8 @@ export interface AppState {
   setMultiSelect: (on: boolean) => void;
   toggleCatalogue: () => void;
   setCatalogueFilter: (change: Partial<CatalogueFilterState>) => void;
+  setCatalogueSearch: (text: string) => void;
+  openCatalogue: () => void;
   loadCatalogueRegions: () => Promise<void>;
   // "Add" in the Data catalogue (UI-05 A5): at the end of "Search and area", which turns to its page; not ticked.
   addDataset: (id: string) => void;
@@ -2020,7 +2025,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   catalogueOpen: false,
   catalogueCategories: [],
   catalogueRegions: null,
-  catalogueFilter: { aoiOnly: false, region: '', from: '', to: '', category: '' },
+  catalogueFilter: { bySearchPanel: false, region: '', from: '', to: '', category: '' },
+  catalogueSearch: '',
   datasetId: null,
   sections: [],
   openSectionId: null,
@@ -2118,6 +2124,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   toggleCatalogue: () => set((s) => ({ catalogueOpen: !s.catalogueOpen })),
   setCatalogueFilter: (change) => set((s) => ({ catalogueFilter: { ...s.catalogueFilter, ...change } })),
+  setCatalogueSearch: (text) => set({ catalogueSearch: text }),
+  openCatalogue: () => set({ catalogueOpen: true }),
   loadCatalogueRegions: async () => {
     if (get().catalogueRegions !== null) return;
     try {

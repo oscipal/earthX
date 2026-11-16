@@ -120,6 +120,21 @@ function backend(pool: Collection[]) {
     const region = (body?.region as string[] | undefined)?.[0];
     if (region) hits = hits.filter((c) => ((c as { 'earthx:regions'?: string[] })['earthx:regions'] ?? []).includes(region));
     hits = [...hits].sort((a, b) => (a.title!.toLowerCase() < b.title!.toLowerCase() ? -1 : 1));
+    if (body && typeof body.q === 'string') {
+      // The search with text (M5-22c): full entries only (M5-40 F7), 20 a page by offset; here the title holds the text.
+      const q = body.q.toLowerCase();
+      const found = hits.filter((c) => c['earthx:entry'] !== 'listed' && c.title!.toLowerCase().includes(q));
+      const offset = Number(body.offset ?? 0);
+      const more = offset + 20 < found.length;
+      return new Response(
+        JSON.stringify({
+          collections: found.slice(offset, offset + 20),
+          links: more ? [{ rel: 'next', method: 'POST', href: '/stac/collections', body: { ...body, offset: offset + 20 } }] : [],
+          numberMatched: found.length,
+        }),
+        { status: 200 },
+      );
+    }
     const start = Number(params.get('token') ?? '0');
     const limit = Number(params.get('limit') ?? '100');
     const page = hits.slice(start, start + limit);
@@ -189,7 +204,10 @@ beforeEach(async () => {
       datasets: datasetsFrom(FULL),
       catalogueCategories: CATEGORIES,
       catalogueRegions: null,
-      catalogueFilter: { aoiOnly: false, region: '', from: '', to: '', category: '' },
+      catalogueFilter: { bySearchPanel: false, region: '', from: '', to: '', category: '' },
+      catalogueSearch: '',
+      dateFrom: '',
+      dateTo: '',
       aoi: null,
       addedDatasetIds: ['relief'],
       selectedDatasetIds: [],
@@ -505,16 +523,20 @@ describe('paging', () => {
 });
 
 
-describe('the filters (M5-40 H1, H2)', () => {
+describe('the filters (Otto, 16.11.2026)', () => {
   const change = (el: HTMLInputElement | HTMLSelectElement, value: string) =>
     act(() => {
       const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value')!.set!;
       setter.call(el, value);
       el.dispatchEvent(new Event(el instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true }));
     });
-  const aoiSwitch = () => container.querySelector<HTMLInputElement>('.catalogue-filters input[role="switch"]')!;
-  const select = (label: string) => container.querySelector<HTMLSelectElement>(`.catalogue-filters select[aria-label="${label}"]`)!;
-  const day = (label: string) => container.querySelector<HTMLInputElement>(`.catalogue-filters input[aria-label="${label}"]`)!;
+  const filtersButton = () => container.querySelector<HTMLButtonElement>('.catalogue-head .catalogue-filters-btn')!;
+  const popup = () => document.querySelector<HTMLElement>('.catalogue-filters-popup');
+  const panelSwitch = () => popup()!.querySelector<HTMLInputElement>('input[role="switch"]')!;
+  const select = (label: string) => popup()?.querySelector<HTMLSelectElement>(`select[aria-label="${label}"]`) ?? null;
+  const day = (label: string) => popup()?.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`) ?? null;
+  const clear = (label: string) => popup()?.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`) ?? null;
+  const aoi = { type: 'Polygon', coordinates: [[[7, 46], [8, 46], [8, 47], [7, 47], [7, 46]]] } as GeoJSON.Geometry;
   let stub: ReturnType<typeof backend>;
 
   beforeEach(async () => {
@@ -524,41 +546,94 @@ describe('the filters (M5-40 H1, H2)', () => {
     await act(async () => {});
   });
 
-  it('stand in a second row of the head, always: the switch, region, period and category', () => {
-    const row = container.querySelector('.catalogue-head + .catalogue-filters')!;
-    expect(row).not.toBeNull();
-    expect(row.querySelector('label')?.textContent).toBe('Only datasets in AOI');
-    expect([...row.querySelectorAll('select')].map((s) => s.getAttribute('aria-label'))).toEqual(['Region', 'Category']);
-    expect([...row.querySelectorAll('input[type="date"]')].map((i) => i.getAttribute('aria-label'))).toEqual(['From date', 'To date']);
+  const openFilters = async () => {
+    click(filtersButton());
+    await act(async () => {});
+  };
+
+  it('are a button "Filters" in the head that opens a pop-up, not a row of their own', async () => {
+    expect(container.querySelector('.catalogue-head + .catalogue-filters')).toBeNull();
+    expect(filtersButton().textContent).toBe('Filters');
+    expect(filtersButton().getAttribute('aria-expanded')).toBe('false');
+    await openFilters();
+    expect(filtersButton().getAttribute('aria-expanded')).toBe('true');
+    expect(popup()!.querySelector('label')?.textContent).toBe('Filter by search panel');
+    expect([...popup()!.querySelectorAll('select')].map((s) => s.getAttribute('aria-label'))).toEqual(['Region', 'Category']);
+    expect([...popup()!.querySelectorAll('input[type="date"]')].map((i) => i.getAttribute('aria-label'))).toEqual(['From date', 'To date']);
   });
 
-  it('lock "Only datasets in AOI" without an AOI, with the reason, and leave it off', () => {
-    expect(aoiSwitch().getAttribute('aria-disabled')).toBe('true');
-    expect(aoiSwitch().closest('label')?.getAttribute('data-tip')).toBe('Draw an AOI to use this filter');
-    click(aoiSwitch());
-    expect(useAppStore.getState().catalogueFilter.aoiOnly).toBe(false);
+  it('give every field an "×" to empty it while it has a value', async () => {
+    await openFilters();
+    expect(clear('Clear region')).toBeNull();
+    change(select('Region')!, 'DE-BY');
+    change(day('From date')!, '2020-01-01');
+    change(day('To date')!, '2020-12-31');
+    change(select('Category')!, 'water');
+    for (const label of ['Clear region', 'Clear from date', 'Clear to date', 'Clear category']) {
+      click(clear(label)!);
+    }
+    await act(async () => {});
+    expect(useAppStore.getState().catalogueFilter).toEqual({ bySearchPanel: false, region: '', from: '', to: '', category: '' });
   });
 
-  it('ask every group again with the AOI once the switch is on, and keep it on when the window opens again', async () => {
-    const aoi = { type: 'Polygon', coordinates: [[[7, 46], [8, 46], [8, 47], [7, 47], [7, 46]]] } as GeoJSON.Geometry;
-    act(() => useAppStore.setState({ aoi }));
-    expect(aoiSwitch().checked).toBe(false);
+  it('count what is set on the button, like "Advanced search"', async () => {
+    await openFilters();
+    change(select('Region')!, 'DE-BY');
+    change(select('Category')!, 'water');
+    expect(filtersButton().textContent).toBe('Filters · 2');
+  });
+
+  it('lock "Filter by search panel" without an AOI in the search panel, with the reason, and leave it off', async () => {
+    await openFilters();
+    expect(panelSwitch().getAttribute('aria-disabled')).toBe('true');
+    expect(panelSwitch().closest('label')?.getAttribute('data-tip')).toBe('Draw an AOI to use this filter');
+    click(panelSwitch());
+    expect(useAppStore.getState().catalogueFilter.bySearchPanel).toBe(false);
+  });
+
+  it('take AOI and period of the search panel once the switch is on, and hide region and from/to', async () => {
+    act(() => useAppStore.setState({ aoi, dateFrom: '2019-01-01', dateTo: '2019-06-30' }));
+    await openFilters();
+    change(select('Region')!, 'DE-BY');
+    await act(async () => {});
     stub.bodies.length = 0;
-    click(aoiSwitch());
+    click(panelSwitch());
     await act(async () => {});
-    expect(aoiSwitch().checked).toBe(true);
+    expect(panelSwitch().checked).toBe(true);
+    expect(select('Region')).toBeNull();
+    expect(day('From date')).toBeNull();
+    expect(day('To date')).toBeNull();
+    expect(select('Category')).not.toBeNull();
     expect(stub.bodies.length).toBeGreaterThan(0);
-    expect(stub.bodies.every((b) => JSON.stringify(b.intersects) === JSON.stringify(aoi))).toBe(true);
+    for (const body of stub.bodies) {
+      expect(body.intersects).toEqual(aoi);
+      expect(body.datetime).toBe('2019-01-01T00:00:00Z/2019-06-30T23:59:59Z');
+      expect(body.region).toBeUndefined();
+    }
+    expect(filtersButton().textContent).toBe('Filters · 1');
+  });
+
+  it('keep the switch on for the session, and fall back to region and from/to when the AOI goes', async () => {
+    act(() => useAppStore.setState({ aoi }));
+    await openFilters();
+    click(panelSwitch());
     click(symbol());
     click(symbol());
     await act(async () => {});
-    expect(aoiSwitch().checked).toBe(true);
+    await openFilters();
+    expect(panelSwitch().checked).toBe(true);
+    act(() => useAppStore.setState({ aoi: null }));
+    await act(async () => {});
+    expect(panelSwitch().checked).toBe(false);
+    expect(panelSwitch().getAttribute('aria-disabled')).toBe('true');
+    expect(select('Region')).not.toBeNull();
   });
 
   it('offer the regions, states with their subdivisions after them, and ask with the one chosen', async () => {
-    expect([...select('Region').options].map((o) => o.textContent)).toEqual(['All regions', 'Austria', 'Germany', '   Bayern']);
+    await openFilters();
+    expect([...select('Region')!.options].map((o) => o.textContent)).toEqual(['All regions', 'Austria', 'Germany', '   Bayern']);
     stub.bodies.length = 0;
-    change(select('Region'), 'DE-BY');
+    change(select('Region')!, 'DE-BY');
     await act(async () => {});
     expect(stub.bodies.every((b) => JSON.stringify(b.region) === '["DE-BY"]')).toBe(true);
     expect(groupNames()).toEqual([]);
@@ -566,25 +641,116 @@ describe('the filters (M5-40 H1, H2)', () => {
   });
 
   it('ask with the period of the two days, either end open', async () => {
-    stub.bodies.length = 0;
-    change(day('From date'), '2020-01-01');
+    await openFilters();
+    change(day('From date')!, '2020-01-01');
     await act(async () => {});
     expect(stub.bodies.at(-1)?.datetime).toBe('2020-01-01T00:00:00Z/..');
-    change(day('To date'), '2020-12-31');
+    change(day('To date')!, '2020-12-31');
     await act(async () => {});
     expect(stub.bodies.at(-1)?.datetime).toBe('2020-01-01T00:00:00Z/2020-12-31T23:59:59Z');
-    expect(day('From date').getAttribute('max')).toBe('2020-12-31');
-    expect(day('To date').getAttribute('min')).toBe('2020-01-01');
+    expect(day('From date')!.getAttribute('max')).toBe('2020-12-31');
+    expect(day('To date')!.getAttribute('min')).toBe('2020-01-01');
   });
 
   it('show only the group of the category chosen', async () => {
-    expect([...select('Category').options].map((o) => o.textContent)).toEqual(['All categories', ...CATEGORIES.map((c) => c.title)]);
-    change(select('Category'), 'water');
+    await openFilters();
+    expect([...select('Category')!.options].map((o) => o.textContent)).toEqual(['All categories', ...CATEGORIES.map((c) => c.title)]);
+    change(select('Category')!, 'water');
     await act(async () => {});
     expect(groupNames()).toEqual(['Water and sea']);
-    change(select('Category'), '');
+    change(select('Category')!, '');
     await act(async () => {});
     expect(groupNames()).toEqual(['Optical imagery', 'Radar', 'Elevation', 'Water and sea', 'Other']);
+  });
+});
+
+describe('the search field (Otto, 16.11.2026)', () => {
+  const field = () => container.querySelector<HTMLInputElement>('.catalogue-head .catalogue-search input')!;
+  const type = async (text: string) => {
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+      setter.call(field(), text);
+      field().dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    });
+    await act(async () => {});
+  };
+  let stub: ReturnType<typeof backend>;
+
+  beforeEach(async () => {
+    stub = backend(COLLECTIONS);
+    vi.stubGlobal('fetch', stub.fetchStub);
+    click(symbol());
+    await act(async () => {});
+  });
+
+  it('stands in the head beside "Filters", with a magnifier, a placeholder and no "×" while empty', () => {
+    const tools = container.querySelector('.catalogue-head .catalogue-tools')!;
+    expect(tools.querySelector('.catalogue-search svg')).not.toBeNull();
+    expect(field().getAttribute('placeholder')).toBe('Search datasets');
+    expect(field().getAttribute('maxlength')).toBe('200');
+    expect(tools.querySelector('.catalogue-search .clear-btn')).toBeNull();
+    expect(tools.lastElementChild?.classList.contains('catalogue-filters-btn')).toBe(true);
+  });
+
+  it('shows the hits in the order of the search instead of the groups, and asks with q', async () => {
+    await type('optical');
+    expect(groupNames()).toEqual([]);
+    expect([...container.querySelectorAll('.catalogue-hits .catalogue-entry-title')].map((e) => e.textContent)).toEqual(['Alpha optical', 'Beta optical']);
+    expect(stub.bodies.at(-1)).toMatchObject({ q: 'optical' });
+  });
+
+  it('asks only once the typing stops', async () => {
+    stub.bodies.length = 0;
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+      for (const text of ['o', 'op', 'opt']) {
+        setter.call(field(), text);
+        field().dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    });
+    expect(stub.bodies.filter((b) => 'q' in b).map((b) => b.q)).toEqual(['opt']);
+  });
+
+  it('keeps the filters: the category and the period go with the text', async () => {
+    act(() => useAppStore.setState({ catalogueFilter: { bySearchPanel: false, region: '', from: '2020-01-01', to: '', category: 'optical' } }));
+    await type('optical');
+    expect(stub.bodies.at(-1)).toMatchObject({ q: 'optical', category: 'optical', datetime: '2020-01-01T00:00:00Z/..' });
+  });
+
+  it('says so where nothing matches, and brings the groups back with its "×"', async () => {
+    await type('nothing like this');
+    expect(container.querySelector('.catalogue-list .hint')?.textContent).toBe('No datasets to show');
+    click(container.querySelector('.catalogue-search .clear-btn')!);
+    await act(async () => {});
+    expect(field().value).toBe('');
+    expect(groupNames()).toEqual(['Optical imagery', 'Radar', 'Elevation', 'Water and sea', 'Other']);
+  });
+
+  it('keeps the text for the session when the window closes and opens again', async () => {
+    await type('relief');
+    click(symbol());
+    click(symbol());
+    await act(async () => {});
+    expect(field().value).toBe('relief');
+    expect([...container.querySelectorAll('.catalogue-hits .catalogue-entry-title')].map((e) => e.textContent)).toEqual(['Relief model']);
+  });
+
+  it('loads more hits when their end shows', async () => {
+    const many = Array.from({ length: 45 }, (_, i) => collection(`m${i}`, `Match ${String(i).padStart(2, '0')}`, 'optical'));
+    vi.stubGlobal('fetch', backend([...COLLECTIONS, ...many]).fetchStub);
+    await type('match');
+    const hits = () => container.querySelectorAll('.catalogue-hits .catalogue-entry').length;
+    expect(hits()).toBe(20);
+    await scrollToEnds();
+    expect(hits()).toBe(40);
+    await scrollToEnds();
+    expect(hits()).toBe(45);
   });
 });
 

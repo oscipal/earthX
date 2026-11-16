@@ -206,6 +206,37 @@ export function catalogueDatetime(from: string | null, to: string | null): strin
   return `${from ? `${from}T00:00:00Z` : '..'}/${to ? `${to}T23:59:59Z` : '..'}`;
 }
 
+function filterBody(filter: CatalogueFilter): Record<string, unknown> {
+  const datetime = catalogueDatetime(filter.from, filter.to);
+  return {
+    ...(filter.area ? { intersects: filter.area } : {}),
+    ...(filter.region ? { region: [filter.region] } : {}),
+    ...(datetime ? { datetime } : {}),
+  };
+}
+
+export interface CatalogueHits {
+  collections: Collection[];
+  // The offset of the next page of hits, or `null` at the end.
+  next: number | null;
+}
+
+// One page of the hits of the search field of the Data catalogue (Otto, 16.11.2026): the Collection Search with `q`
+// (M5-22c) in rank order, within the filters and the category, by POST like the groups; pages go by offset.
+export async function fetchCatalogueSearch(
+  q: string,
+  offset: number,
+  filter: CatalogueFilter = NO_FILTER,
+  category: string | null = null,
+): Promise<CatalogueHits> {
+  const body = { q, ...(offset > 0 ? { offset } : {}), ...(category ? { category } : {}), ...filterBody(filter) };
+  const data = await jsonOrThrow<CollectionPage>(
+    await fetch(`${BASE}/stac/collections`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+  );
+  const next = data.links?.find((l) => l.rel === 'next') as { body?: { offset?: unknown } } | undefined;
+  return { collections: data.collections, next: typeof next?.body?.offset === 'number' ? next.body.offset : null };
+}
+
 // One page of a group of the Data catalogue (M5-40 plan §9): full and listed entries of one category, by title, within
 // the filters. Asked by POST, so that an area never stands in a URL (adr/0026 F6).
 export async function fetchCataloguePage(
@@ -214,15 +245,7 @@ export async function fetchCataloguePage(
   limit = 50,
   filter: CatalogueFilter = NO_FILTER,
 ): Promise<CataloguePage> {
-  const datetime = catalogueDatetime(filter.from, filter.to);
-  const body = {
-    category,
-    limit,
-    ...(token ? { token } : {}),
-    ...(filter.area ? { intersects: filter.area } : {}),
-    ...(filter.region ? { region: [filter.region] } : {}),
-    ...(datetime ? { datetime } : {}),
-  };
+  const body = { category, limit, ...(token ? { token } : {}), ...filterBody(filter) };
   const data = await jsonOrThrow<CollectionPage>(
     await fetch(`${BASE}/stac/collections`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
   );

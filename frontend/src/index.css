@@ -2969,20 +2969,74 @@ button.pm-open:hover {
 .catalogue.beside-dock {
   left: calc(var(--rail-width) + var(--dock-width) + var(--space-4));
 }
-/* The second row of the head (M5-40 H1): the switch, region, period and category, always there; on a narrow window they
-   wrap, each field keeping a width it can be read at. */
+/* The head (Otto, 16.11.2026): title, the search field with its magnifier and "×", the button "Filters", the red x. On a
+   narrow window search and "Filters" take a row of their own under the title. */
+.catalogue-head {
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+}
+.catalogue-tools {
+  flex: 1 1 280px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.catalogue-search {
+  position: relative;
+  flex: 1 1 200px;
+  max-width: 360px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.catalogue-search > svg {
+  position: absolute;
+  left: var(--space-2);
+  color: var(--muted);
+  pointer-events: none;
+  z-index: 1;
+}
+.catalogue-search .clearable input[type='text'] {
+  padding-left: calc(var(--space-1) + var(--control-height-sm));
+}
+.catalogue-filters-btn {
+  flex: none;
+}
+@media (max-width: 899px) {
+  .catalogue-head h2 {
+    flex: 1 1 auto;
+  }
+  .catalogue-tools {
+    order: 3;
+    flex-basis: 100%;
+    justify-content: stretch;
+  }
+  .catalogue-search {
+    max-width: none;
+  }
+}
+/* The pop-up "Filters": the switch, region, from, to and category one under the other, each field with its "×". */
+.popover.catalogue-filters-popup {
+  padding: var(--space-3);
+  width: min(340px, calc(100vw - 2 * var(--space-4)));
+}
 .catalogue-filters {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2) var(--space-3);
-  padding: var(--space-2) var(--space-4);
-  border-bottom: 1px solid var(--panel-border);
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.catalogue-filter-field {
+  position: relative;
+  padding-right: calc(var(--control-height-sm) + var(--space-1));
+}
+.catalogue-filter-field > .clear-btn {
+  right: 0;
 }
 .catalogue-filters select {
-  flex: 1 1 160px;
-  min-width: 140px;
-  max-width: 260px;
+  width: 100%;
   min-height: var(--control-height);
   padding: var(--space-1) var(--space-2);
   background: var(--input-bg);
@@ -2990,10 +3044,6 @@ button.pm-open:hover {
   border-radius: var(--radius-sm);
   color: var(--text);
   font-size: var(--text-sm);
-}
-.catalogue-dates {
-  flex: 2 1 280px;
-  max-width: 360px;
 }
 .catalogue-error {
   padding: var(--space-1);
