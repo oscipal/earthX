@@ -313,6 +313,34 @@ def test_no_provider_is_refused() -> None:
         listed_entry(providers=())
 
 
+@pytest.mark.parametrize("states", [(), ("de",), ("DEU",), ("DE-BY",), ("AT", "AT"), ("AT", 7)])
+def test_coverage_states_are_iso_3166_1_codes_each_once(states: tuple) -> None:
+    with pytest.raises(ConfigError, match="coverage_states"):
+        listed_entry(coverage_states=states)
+
+
+def test_coverage_states_read_from_a_file(tmp_path: Path) -> None:
+    write_entry(tmp_path, listed_entry(coverage_states=("AT", "CH", "DE", "LI")))
+    [(entry, _)] = load_listed(tmp_path)
+    assert entry.coverage_states == ("AT", "CH", "DE", "LI")
+    assert to_listed_collection(entry)["earthx:coverage_states"] == ["AT", "CH", "DE", "LI"]
+
+
+def test_a_state_that_regions_json_lacks_is_a_load_error_that_names_it(tmp_path: Path) -> None:
+    write_entry(tmp_path, listed_entry(coverage_states=("AT", "ZZ")))
+    with pytest.raises(EntryFileError, match="regions.json lacks: ZZ"):
+        load_listed(tmp_path)
+
+
+def test_an_unquoted_no_in_coverage_states_is_norway_and_no_boolean(tmp_path: Path) -> None:
+    """The reader follows YAML 1.2, where NO is text: Norway, not the YAML 1.1 boolean false."""
+    text = yaml.safe_dump(plain_entry(), sort_keys=False).replace("coverage_states: null", "coverage_states: [AT, NO]")
+    assert "[AT, NO]" in text
+    _write_text(tmp_path, text, "example-atlas.yaml")
+    [(entry, _)] = load_listed(tmp_path)
+    assert entry.coverage_states == ("AT", "NO")
+
+
 @pytest.mark.parametrize("doi", ["not a doi", "10.", "10.5555", "https://example.org/10.5555/x"])
 def test_a_bad_doi_is_refused(doi: str) -> None:
     with pytest.raises(ConfigError, match="is no DOI name"):

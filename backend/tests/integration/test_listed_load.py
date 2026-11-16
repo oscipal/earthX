@@ -847,9 +847,72 @@ def test_the_hand_entries_of_the_repo_are_written_with_their_access_and_regions(
     corine, landsat = _row(conn, "corine-land-cover"), _row(conn, "landsat-c2-l2")
     assert (corine["account"], corine["delivery"], corine["data_kind"]) == ("free_account", "download", "vector")
     assert (landsat["account"], landsat["delivery"], landsat["data_kind"]) == ("requester_pays", "download", "raster")
-    # Every member and cooperating country of the EEA (EEA-39) is a region of CORINE, with the DACH subdivisions.
-    # The box also takes in states CORINE does not cover, such as MA or RU: plan §4a, F4.
-    assert EEA_39 | {"DE-BY", "AT-9"} <= set(corine["regions"])
-    assert not {"US", "AU", "BR"} & set(corine["regions"])
+    # Exactly the EEA-39 and their subdivisions: no neighbour of the simplified outlines, no enclave (plan §4b, F4).
+    assert {code for code in corine["regions"] if "-" not in code} == EEA_39
+    assert {"DE-BY", "AT-9", "CH-ZH", "LI-11"} <= set(corine["regions"])
+    assert {code.split("-")[0] for code in corine["regions"]} == EEA_39
     assert {"DE", "US", "AU", "BR", "AQ"} <= set(landsat["regions"])
     assert (corine["state"], landsat["state"]) == ("published", "published")
+
+
+# --- coverage_states (M5-17 F4) --------------------------------------------------------------------------------------
+
+
+def _covering(states: tuple[str, ...], bbox=(5.0, 45.0, 17.5, 55.5)) -> ListedEntry:
+    return listed_entry("example-dach", spatial_extent=_box(*bbox), coverage_states=states)
+
+
+def test_the_footprint_of_named_states_is_their_outline_and_not_the_box(
+    conn: psycopg.Connection, tmp_path: Path
+) -> None:
+    write_regions(conn, load_regions())
+    _put(conn, tmp_path, _covering(("AT", "CH", "DE", "LI")))
+    row = _row(conn, "example-dach")
+    assert {code for code in row["regions"] if "-" not in code} == {"AT", "CH", "DE", "LI"}
+    # Prague lies in the box, not in the outline of the four states.
+    inside = conn.execute(
+        "SELECT ST_Intersects(footprint, ST_MakeEnvelope(14.3, 50.0, 14.6, 50.2, 4326)) FROM public.earthx_listed_entry "
+        "WHERE dataset_id = 'example-dach'"
+    ).fetchone()[0]
+    assert inside is False
+
+
+def test_named_states_are_cut_to_the_box(conn: psycopg.Connection, tmp_path: Path) -> None:
+    write_regions(conn, load_regions())
+    _put(conn, tmp_path, _covering(("FR",), bbox=(-5.5, 41.0, 10.0, 51.5)))
+    west, south, east, north = conn.execute(
+        "SELECT ST_XMin(footprint), ST_YMin(footprint), ST_XMax(footprint), ST_YMax(footprint) "
+        "FROM public.earthx_listed_entry WHERE dataset_id = 'example-dach'"
+    ).fetchone()
+    assert west >= -5.5 and south >= 41.0 and east <= 10.0 and north <= 51.5
+    assert _regions_of(conn, "example-dach") == ["FR"]
+
+
+def test_a_state_the_table_lacks_is_an_error(conn: psycopg.Connection, tmp_path: Path) -> None:
+    write_regions(conn, [region for region in load_regions() if region.code != "LI"])
+    with pytest.raises(ConfigError, match="earthx_region lacks"):
+        _put(conn, tmp_path, _covering(("AT", "LI")))
+
+
+def test_a_state_outside_the_box_is_an_error(conn: psycopg.Connection, tmp_path: Path) -> None:
+    write_regions(conn, load_regions())
+    with pytest.raises(ConfigError, match="outside spatial_extent"):
+        _put(conn, tmp_path, _covering(("AT", "PT")))
+
+
+def test_a_new_outline_file_keeps_the_regions_to_the_named_states(conn: psycopg.Connection) -> None:
+    regions = load_regions()
+    conn.execute("DELETE FROM public.earthx_listed_entry")
+    write_regions(conn, regions)
+    write_hand_entries(conn, load_listed(), [], full_ids=[])
+    # A changed outline file derives the regions of every entry anew, from the stored footprint.
+    write_regions(conn, [region for region in regions if region.code != "AT-9"])
+    states = {code for code in _row(conn, "corine-land-cover")["regions"] if "-" not in code}
+    assert states == EEA_39
+    assert "AT-9" not in _row(conn, "corine-land-cover")["regions"]
+
+
+def test_the_box_stays_the_footprint_without_named_states(conn: psycopg.Connection, tmp_path: Path) -> None:
+    write_regions(conn, load_regions())
+    _put(conn, tmp_path, listed_entry("example-box", spatial_extent=_box(5.0, 45.0, 17.5, 55.5)))
+    assert {"CZ", "PL"} <= set(_regions_of(conn, "example-box"))
