@@ -79,9 +79,11 @@ describe('showsOverview', () => {
 });
 
 // A quicklook as the map holds it (UI-10): MapLibre's own image source, whose `tiles` are its loaded tiles keyed by id, not URLs.
+class Parent extends Evented {}
+
 function quicklookSource(): ImageSource {
   const dispatcher = { getActor: () => ({ sendAsync: async () => ({}) }) };
-  return new ImageSource('ql', { type: 'image', url: 'data:,', coordinates: [[0, 1], [1, 1], [1, 0], [0, 0]] }, dispatcher as never, new Evented());
+  return new ImageSource('ql', { type: 'image', url: 'data:,', coordinates: [[0, 1], [1, 1], [1, 0], [0, 0]] }, dispatcher as never, new Parent());
 }
 
 describe('showsOverview with the sources MapLibre really holds (UI-10)', () => {

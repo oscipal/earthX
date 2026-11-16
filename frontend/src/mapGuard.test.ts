@@ -1,12 +1,15 @@
 // UI-10: a listener of a map event that throws is logged; the event, the other listeners and the page go on.
 
 import { Evented } from 'maplibre-gl';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { guardMapEvents } from './mapGuard';
 
+// The base of MapLibre's map: `Map` fires its events through it.
+class MapEvents extends Evented {}
+
 function guardedMap() {
-  const map = new Evented();
+  const map = new MapEvents();
   const logged: [string, unknown][] = [];
   guardMapEvents(map, (message, error) => logged.push([message, error]));
   return { map, logged };
@@ -18,7 +21,7 @@ const boom = () => {
 
 describe('guardMapEvents', () => {
   it('without it, an error of a listener rises out of the code that made the map fire', () => {
-    const map = new Evented();
+    const map = new MapEvents();
     map.on('styledata', boom);
     expect(() => map.fire('styledata')).toThrow(TypeError);
   });
@@ -48,14 +51,13 @@ describe('guardMapEvents', () => {
     expect(logged).toHaveLength(1);
   });
 
-  it('keeps what a listener returns and its `this`', () => {
+  it('calls a listener with the map as `this` and the event', () => {
     const { map } = guardedMap();
-    let self: unknown = null;
-    map.on('zoomend', function (this: unknown) {
-      self = this;
-    });
+    const listener = vi.fn();
+    map.on('zoomend', listener);
     map.fire('zoomend');
-    expect(self).toBe(map);
+    expect(listener.mock.contexts[0]).toBe(map);
+    expect(listener.mock.calls[0][0]).toMatchObject({ type: 'zoomend' });
   });
 
   it('logs a throw that is no Error', () => {
