@@ -6,9 +6,10 @@
 // `processingPreview.ts::previewMaxZoom`), or, where the data names no pixel size,
 // marked at every zoom: the badge never depends on the zoom.
 //
-// "Overview": the layer of a job's result is real data, drawn from the result's
-// own file; at a zoom where the tile is coarser than the result's pixel size, the
-// tiler reads its overviews, and the badge says so (`resultLayer.ts::isOverview`).
+// "Overview" (Otto, 16.11.2026, UI-08): one mark wherever the map shows a coarser picture instead of the originals, with one tooltip:
+// the layer of a job's result at a zoom where the tile is coarser than the result's pixel size (the tiler reads the result's own
+// overviews, `resultLayer.ts::isOverview`), and below the first level of a dataset the pyramid, the picture that stands in for it and
+// what is computed from either (`overviewMark.ts`).
 //
 // "Loading…": the panel asks the tiler about the preview, or the map waits for its tiles (`usePreviewLoading`). The
 // panel's heading says it too: a narrow window hides the map behind the panel.
@@ -27,7 +28,7 @@ import { zoomReasonOf } from '../zoomHint';
 import Badge from './Badge';
 import usePreviewLoading, { LOADING_TITLE } from './usePreviewLoading';
 
-export const OVERVIEW_TITLE = 'Drawn coarser than the result: zoom in for its full resolution.';
+export const OVERVIEW_TITLE = 'Drawn coarser than the original data: zoom in for full resolution.';
 
 export default function PreviewBadge() {
   const draft = useProcessingStore((s) => s.preview);
@@ -41,7 +42,8 @@ export default function PreviewBadge() {
   const mapZoom = useAppStore((s) => s.mapZoom);
   const viewport = useAppStore((s) => s.viewportBbox);
   const pinned = layers.some((l) => l.visible && l.overlays.some((o) => o.kind === 'raster' && o.preview));
-  const overview = layers.some(
+  const mapOverview = useAppStore((s) => s.mapOverview);
+  const resultOverview = layers.some(
     (l) =>
       l.visible &&
       l.result &&
@@ -51,6 +53,7 @@ export default function PreviewBadge() {
         (o) => o.kind === 'raster' && isOverview({ gsd: l.result?.gsd ?? null, mapZoom, viewport, maxZoom: o.maxZoom, tileSize: tileSizeOf(o.tileUrl) }),
       ),
   );
+  const overview = mapOverview || resultOverview;
   // The preview of the panel that starts at a level above this zoom says so in the tooltip of "Preview".
   const draftReason = draft ? zoomReasonOf(draftOverlays, mapZoom, 'the preview') : null;
   if (!draft && !pinned && !overview && !loading) return null;

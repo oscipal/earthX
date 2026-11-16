@@ -901,3 +901,40 @@ describe('the output types of an order (Otto, 11.11.2026): only those that make 
     expect(MARKED.test('<option disabled={option.disabledReason !== null}>')).toBe(true);
   });
 });
+
+describe('a checkbox switches only at its box and its text (UI-08, Otto, 16.11.2026)', () => {
+  // The first class of every `<label>` that holds a checkbox: the label is what a click switches, so it is as wide as the box and its text.
+  function checkLabels(text: string): string[] {
+    const code = withoutComments(text);
+    const found: string[] = [];
+    for (const start of code.matchAll(/<label(?=[\s>])/gu)) {
+      const end = code.indexOf('</label>', start.index);
+      const body = code.slice(start.index, end < 0 ? undefined : end);
+      if (!/type="checkbox"/u.test(body)) continue;
+      const tag = openingTags(body)[0]?.attributes ?? '';
+      found.push(/className=(?:"|\{`)([\w-]+)/u.exec(tag)?.[1] ?? '(no class)');
+    }
+    return found;
+  }
+  // Whether a rule for the class alone (`.name { … }`, also in a list of selectors) keeps it to its content.
+  const keptToContent = (css: string, name: string) =>
+    [...withoutCssComments(css).matchAll(/([^{}]+)\{([^}]*)\}/gu)].some(
+      ([, selectors, body]) => selectors.split(',').some((s) => s.trim() === `.${name}`) && /width:\s*fit-content|display:\s*contents/u.test(body),
+    );
+
+  it('keeps every label of a checkbox as wide as the box and its text, not the row', () => {
+    const labels = sources.flatMap(([path, text]) => checkLabels(text).map((name) => [path, name] as const));
+    expect(labels.length).toBeGreaterThan(5);
+    expect(labels.filter(([, name]) => !keptToContent(CSS, name)).map(([path, name]) => `${path}: .${name}`)).toEqual([]);
+  });
+
+  it('finds the fault in a made-up line', () => {
+    expect(checkLabels('<label className="pp-check">\n  <input type="checkbox" />\n  Four lights\n</label>')).toEqual(['pp-check']);
+    expect(checkLabels('<label className={`within-aoi${x}`}><input type="checkbox" role="switch" /></label>')).toEqual(['within-aoi']);
+    expect(checkLabels('<label className="pp-field"><input type="number" /></label>')).toEqual([]);
+    expect(checkLabels('<label>\n<input type="checkbox" /></label>')).toEqual(['(no class)']);
+    expect(keptToContent('.row-check {\n  display: flex;\n}', 'row-check')).toBe(false);
+    expect(keptToContent('.row-check {\n  display: flex;\n  width: fit-content;\n}', 'row-check')).toBe(true);
+    expect(keptToContent('.a .row-check { width: fit-content; }', 'row-check')).toBe(false);
+  });
+});

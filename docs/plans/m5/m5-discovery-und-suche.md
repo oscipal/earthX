@@ -40,7 +40,7 @@ Daraus:
    - **Nie verschwindet ein Bild beim Herauszoomen** (`adr/0032`): unter `min_zoom` eine Übersicht oder ein Ersatz-Datensatz, nie eine leere Karte.
    - **Kompass immer sichtbar** wie bei Google Maps, 3D-Knopf unter den Zoom-Knöpfen (UI-06).
    - **Ausgabetypen nur, wo sie Sinn machen** (#333): Werte unverändert → Typ der Quelle plus `float32`; neu gerechnet → nur `float32`, bei Quelle `float64` dann `float64` (Vorgabe) und `float32`; Angabe `x-earthx-passes-values` aus der Operator-Registry. Wiedervorlage `float64` bei M5-11.
-   - **Keine Marke „Overview“** an Pyramiden-Layern (Korrektur zu `adr/0032` F12, 11.11.2026), höchstens Tooltip.
+   - ~~**Keine Marke „Overview“** an Pyramiden-Layern (Korrektur zu `adr/0032` F12, 11.11.2026), höchstens Tooltip.~~ Ersetzt (Otto, 16.11.2026, UI-08): eine Marke „Overview“ überall, wo die Karte eine vergröberte Ansicht zeigt (Job-Ergebnisse, Pyramiden, Ersatz), gleicher Platz und Tooltip.
    - **Ladesymbol** (13.11.2026): Dauert das Laden einer Kartenebene länger, erscheint ein Ladesymbol (Leitfaden, kein Text); allgemein, umgesetzt mit M5-30b in #345.
    - **Nie verschwindet ein Bild, auch nicht zwischen zwei Teilen einer Aufgabe** (13.11.2026, Browserprüfung #345).
    - **Ladeanzeige auf der Karte** (14.11.2026): wie beim Laden der Suchergebnisse, dasselbe Bauteil, Text „Loading data“ (ersetzt „kein Text“); Symbol in der Zeile der Ebene bleibt.
@@ -151,6 +151,8 @@ Stufe A: ohne Plan-Datei, direkt umsetzen. Stufe B: Plan unter `docs/plans/m5/` 
 |---|---|---|
 | **M5-30b** | Umsetzung `adr/0032` – abgeschlossen mit #355 (15.11.); GLO-30-Pyramide lokal im Bau | erledigt |
 | **M5-36** | Grenzen je Host für alle Instanzen: `backend/catalog/hosts.yaml` (Pflicht je Host), ein Zähler je Host und Prozess für GDAL, HTTP und Zarr, Teilung durch `EARTHX_SOURCE_INSTANCES` für `api` und `tiler` zusammen, nur Warten statt Verweigern | Plan in #360, G1–G6 = 1 (Otto 16.11.: FSDI 6 Verbindungen und 1 s Abstand für `materialize`, Earth Search 6, S3-Buckets je 32; Kacheln und Suche ohne Abstand; ≤ 5 % langsamer; zwei PRs); PR 1 in #360 umgesetzt und gemessen (keine Kachel über +5 %), PR 2 folgt |
+| **UI-08** (ohne schmale Fenster) | Kästchen schalten nur an Kästchen und Text; Layer erholt sich nach einem Neustart der Dienste selbst (gescheiterte Kacheln erneut laden); Statusbox über den Panels unter 240 px frei; Marke „Overview“ einheitlich für Job-Ergebnisse, Pyramiden und Ersatz (Otto, 16.11.) | Draft-PR #363 |
+| **M5-36** | Grenzen je Host für alle Instanzen: `backend/catalog/hosts.yaml` (Pflicht je Host), ein Zähler je Host und Prozess für GDAL, HTTP und Zarr, Teilung durch `EARTHX_SOURCE_INSTANCES` für `api` und `tiler` zusammen, nur Warten statt Verweigern | Plan in #360, G1–G6 = 1 (Otto 16.11.: FSDI 6 Verbindungen und 1 s Abstand für `materialize`, Earth Search 6, S3-Buckets je 32; Kacheln und Suche ohne Abstand; ≤ 5 % langsamer; zwei PRs); PR 1 läuft |
 
 **M5-30b im Einzelnen** (Merge jeweils mit Merge-Commit):
 
@@ -181,7 +183,7 @@ Antworten zu 8b-2 (an die Session geschickt 13.11., Umsetzung nach #345/#335): a
 | **M5-31** | ADR: Radar-Verarbeitung (§2 Punkt 10) mit Stand der Technik: GRD-Kette selbst rechnen (sarsen, pyroSAR/SNAP, ISCE3) vs. fertige RTC-Produkte (Planetary Computer `sentinel-1-rtc`, ASF/OPERA); vollständige GRD über Copernicus mit Key; Inhalt des Reiters „Radar“; kein InSAR | C | Opus, hoch | — |
 | **M5-26** | ADR: mehrere Eingaben, vorgezogen und erweitert: zwei Bilder verarbeiten und vergleichen (zwei Zeitpunkte, zwei Datensätze; Differenz, Verhältnis, Veränderung; Angleichen der Raster; Anzeige nebeneinander/Swipe; Zeitschritte M5-11) | C | Opus, hoch | — |
 | **UI-07** | Reiter im Processing-Panel (`docs/plans/vp3/ui-07-processing-reiter.md`) | B | Opus, hoch | M5-31, M5-26, M5-32 entschieden |
-| **UI-08** | Kleine UI-Aufgabe nach M5-30b (Otto, 14.11.): Statusbox im knappen Fenster (unter 240 px frei) über den Panels statt teilweise verdeckt (Option 2); Marke „Overview“ bei Job-Ergebnissen (seit M4-13c) entfernen, höchstens Tooltip; schmale Fenster gesammelt (Statusbox überdeckt bei 360 px den Kompass) | B | Opus, mittel | M5-30b abgeschlossen |
+| **UI-08** | Rest (Otto, 16.11.): schmale Fenster gesammelt (Statusbox überdeckt bei 360 px den Kompass); der übrige Teil ist in #363 | B | Opus, mittel | M5-30b abgeschlossen |
 | **M5-37** | Zeiger und Unterbrecher je Host in Postgres (Muster der Ortssuche) für Harvester, `materialize` und Pyramidenbau (M5-35 F1) | B | Opus, hoch | M5-36; vor M5-19 und M5-24 |
 | **M5-43** | Postgres-Image `postgis/postgis:16-3.7` plus pgvector ≥ 0.8.4 (eigenes Dockerfile) für Compose, CI und Cloud-Umgebung; ersetzt das nicht mehr gebaute `16-3.4`; CI baut das Dockerfile im Job mit Layer-Cache, Bauzeit messen; Cloud-Setup baut pgvector (gilt erst für neue Sessions). **Erlaubnis Otto für `.github/` und Setup der Cloud-Umgebung nötig** | B | Opus, mittel | M5-41 gemergt; vor M5-23 |
 | **M5-42** | Lexikalische Suche indexfähig (M5-35 Befund B7) | B | Opus, mittel | M5-41 |

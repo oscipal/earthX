@@ -127,14 +127,16 @@ export default function App() {
         </div>
       )}
 
+      {/* After the side bar and the processing sheet (same layer): where the free area of the map is narrower than the box, it lies over
+          them (Otto, 14.11.2026, UI-08); the Data catalogue, after it in the same layer, may cover it. */}
+      <div className="overlay status">
+        <StatusBar />
+      </div>
+
       {/* After the side bar and the processing sheet (same layer): the window opened last lies above them, red x included. */}
       <DataCatalogue />
 
       <PreviewBadge />
-
-      <div className="overlay status">
-        <StatusBar />
-      </div>
 
       <DownloadDialog />
     </div>

@@ -17,6 +17,8 @@ import { bufferPointToPolygon, pointInFootprint, polygonBbox } from '../geoUtils
 import { openIdsOf, resultsOnMapOf } from '../mapResults';
 import { mosaicsOfView, sameMosaics } from '../mosaic';
 import { setMapLoading, watchLayerLoading } from '../layerLoading';
+import { setMapOverview, watchOverviewMark } from '../overviewMark';
+import { watchTileRetry } from '../tileRetry';
 import { watchGoneSelections } from '../mosaicSelection';
 import { assetsOfExpression, viewIndexOf } from '../viewIndex';
 import type { CoverageDisplay } from '../mapLayers';
@@ -209,6 +211,8 @@ export default function MapView() {
       if (useProcessingStore.getState().previewTilesLoading !== loading) useProcessingStore.setState({ previewTilesLoading: loading });
     });
     watchLayerLoading(map, setMapLoading);
+    watchTileRetry(map);
+    watchOverviewMark(map, setMapOverview);
     watchSubstituteHold(map);
     const first = useAppStore.getState().basemap;
     basemapRef.current = createBasemapSwitcher(map, isInFirstStyle(first) ? first : null, (reason, keep, overlays) => {
