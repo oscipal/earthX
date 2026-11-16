@@ -8,9 +8,11 @@ One-time network step on Otto's machine (adr/0002), never in a cloud session or 
     docker compose run --build --rm bev-probe                     # feeds, one dataset feed, one file
     docker compose run --build --rm bev-probe --all               # all dataset feeds of the newest DTM date
     docker compose run --build --rm bev-probe --all --headers     # and the COG header of every file
+    docker compose run --build --rm bev-probe --shape             # forms of titles, paths, identifiers, polygons
 
 ``--all`` reads 55 dataset feeds and sends 55 HEAD requests (about two minutes); ``--headers`` opens the 55 files
-through GDAL and reads only their headers.
+through GDAL and reads only their headers. ``--shape`` reads the service feed twice and the 55 dataset feeds, opens no
+file, and prints forms with every digit written as ``#``, never a value.
 
 The output names element names, counts, dates and whether a header is there. It never prints a URL, a tile name, an
 identifier or a header value that identifies a file (ETag, DOI), so it can be pasted into the pull request as it is.
@@ -159,9 +161,115 @@ def cog_header(url: str, policy: Policy) -> tuple:
         )
 
 
-async def main(read_all: bool, read_headers: bool) -> int:
+def masked(text: str) -> str:
+    """A form without its values: every digit as ``#``, whitespace collapsed."""
+    return re.sub(r"\s+", " ", re.sub(r"\d", "#", text)).strip()
+
+
+def cell_corners(tile: str, lower_left: bool) -> list[tuple[float, float]]:
+    """The four corners of a 50 km cell in WGS 84 (lat, lon), with the name's corner taken as lower or upper left."""
+    from rasterio.warp import transform
+
+    match = re.fullmatch(r"CRS3035RES50000mN(?P<n>\d+)E(?P<e>\d+)", tile)
+    north, east = int(match["n"]), int(match["e"])
+    south = north if lower_left else north - 50_000
+    xs = [east, east + 50_000, east + 50_000, east]
+    ys = [south, south, south + 50_000, south + 50_000]
+    lons, lats = transform("EPSG:3035", "EPSG:4326", xs, ys)
+    return list(zip(lats, lons, strict=True))
+
+
+def polygon_points(entry) -> list[tuple[float, float]]:
+    values = [float(v) for v in (entry.findtext("georss:polygon", "", NS) or "").split()]
+    return list(zip(values[0::2], values[1::2], strict=True))
+
+
+def deviation(points: list[tuple[float, float]], corners: list[tuple[float, float]]) -> float:
+    """The largest distance in degrees from a vertex of the polygon to the nearest corner of the cell."""
+    return max(min(max(abs(a - c), abs(b - d)) for c, d in corners) for a, b in points)
+
+
+async def shape(gateway: Gateway) -> int:
+    """Forms only: titles, rights, identifiers, polygons, paths of the files, stability of the feed."""
+    first = await gateway.get(SERVICE_FEED)
+    second = await gateway.get(SERVICE_FEED)
+    root, again = DefusedET.fromstring(first.content), DefusedET.fromstring(second.content)
+    say("service feed body identical twice", "yes" if first.content == second.content else "no")
+    say(
+        "service feed <updated> identical twice",
+        "yes" if root.findtext("atom:updated", "", NS) == again.findtext("atom:updated", "", NS) else "no",
+    )
+    say("service feed <updated> form", masked(root.findtext("atom:updated", "-", NS)))
+    say("service feed <rights>", masked(root.findtext("atom:rights", "-", NS))[:200])
+
+    entries = root.findall("atom:entry", NS)
+    others: Counter[str] = Counter()
+    rights: Counter[str] = Counter()
+    namespaces: Counter[str] = Counter()
+    code_is_uuid_of_metadata: Counter[str] = Counter()
+    code_forms: Counter[str] = Counter()
+    days = []
+    for entry in entries:
+        title = (entry.findtext("atom:title", "", NS) or "").strip()
+        match = TITLE.match(title)
+        if match is None:
+            others[masked(title)] += 1
+            continue
+        rights[masked(entry.findtext("atom:rights", "-", NS))[:200]] += 1
+        namespaces[entry.findtext("inspire_dls:spatial_dataset_identifier_namespace", "-", NS)] += 1
+        code = entry.findtext("inspire_dls:spatial_dataset_identifier_code", "", NS) or ""
+        code_forms[re.sub(r"[0-9a-f]", "x", code)] += 1
+        described = next(
+            (link.get("href", "") for link in entry.findall("atom:link", NS) if link.get("rel") == "describedby"), ""
+        )
+        code_is_uuid_of_metadata["yes" if code and code in described else "no"] += 1
+        if match["model"] == "DTM":
+            day = date(int(match["year"]), int(match["month"]), int(match["day"]))
+            days.append((day, match["tile"], entry))
+    for form, count in sorted(others.items()):
+        say(f"  other title ({count})", form)
+    for form, count in sorted(rights.items()):
+        say(f"  tile <rights> ({count})", form)
+    for value, count in sorted(namespaces.items()):
+        say(f"  identifier namespace ({count})", value)
+    for form, count in sorted(code_forms.items()):
+        say(f"  identifier code form ({count})", form)
+    for value, count in sorted(code_is_uuid_of_metadata.items()):
+        say(f"  code in describedby link ({count})", value)
+
+    newest_day = max(day for day, _, _ in days)
+    tiles = [(tile, entry) for day, tile, entry in days if day == newest_day]
+    updated = sorted({entry.findtext("atom:updated", "", NS) for _, entry in tiles})
+    say("newest DTM date, tiles", f"{newest_day.isoformat()}, {len(tiles)}")
+    say("  distinct <updated> of its entries", len(updated))
+    lower = max(deviation(polygon_points(entry), cell_corners(tile, True)) for tile, entry in tiles)
+    upper = max(deviation(polygon_points(entry), cell_corners(tile, False)) for tile, entry in tiles)
+    say("  polygon vs cell, name = lower left [deg]", f"{lower:.6f}")
+    say("  polygon vs cell, name = upper left [deg]", f"{upper:.6f}")
+    say("  polygon vertices", sorted({len(polygon_points(entry)) for _, entry in tiles}))
+
+    files: Counter[str] = Counter()
+    for tile, entry in tiles:
+        feed = await gateway.get(alternate(entry, "application/atom+xml"))
+        feed_entry = DefusedET.fromstring(feed.content).find("atom:entry", NS)
+        href = alternate(feed_entry, "image/tiff") or ""
+        parts = urlsplit(href)
+        host = "same host" if parts.hostname == HOST else f"other host {parts.hostname}"
+        files[f"{host}, path {masked(parts.path)}, query {'yes' if parts.query else 'no'}"] += 1
+        files[f"path holds the tile name: {'yes' if tile in parts.path else 'no'}"] += 1
+        files[f"path holds the date: {'yes' if newest_day.strftime('%Y%m%d') in parts.path else 'no'}"] += 1
+        same = polygon_points(feed_entry) == polygon_points(entry)
+        files[f"dataset feed polygon equals service entry: {'yes' if same else 'no'}"] += 1
+    for form, count in sorted(files.items()):
+        say(f"  file ({count})", form)
+    return 0
+
+
+async def main(read_all: bool, read_headers: bool, read_shape: bool) -> int:
     policy = Policy(allowed_hosts=frozenset({HOST}), host_intervals={HOST: INTERVAL_S})
     async with Gateway(policy) as gateway:
+        if read_shape:
+            return await shape(gateway)
         try:
             service = await gateway.get(SERVICE_FEED)
         except (UpstreamError, GatewayError) as error:
@@ -271,5 +379,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument("--all", action="store_true", help="read every dataset feed of the newest DTM date")
     parser.add_argument("--headers", action="store_true", help="with --all: read the COG header of every file")
+    parser.add_argument("--shape", action="store_true", help="forms of titles, paths, identifiers and polygons only")
     arguments = parser.parse_args()
-    sys.exit(asyncio.run(main(arguments.all, arguments.headers)))
+    sys.exit(asyncio.run(main(arguments.all, arguments.headers, arguments.shape)))
