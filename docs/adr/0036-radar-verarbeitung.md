@@ -108,7 +108,7 @@ Sentinel-1 GRD liegt heute als unkalibrierte DN in Radargeometrie vor (`adr/0018
 
 | # | Schritt | Was er tut | Stand der Technik | Wo im System [A] |
 |---|---|---|---|---|
-| 1 | Orbit | Bahn für die Geokodierung | POEORB nach rund 20 Tagen, cm-genau; RESORB nach rund 3 h [S]. Sentinel Hub nutzt die Zustandsvektoren der Annotation: „We find these more than sufficient for GRD use.“ [P] Absolute Lagegenauigkeit IW: Spezifikation 7 m (3σ) [S] | Annotation reicht für 10–20 m; POEORB später optional |
+| 1 | Orbit | Bahn für die Geokodierung | POEORB nach 20 Tagen, gefordert 5 cm (3D RMS), typisch unter 1 cm; RESORB nach 180 min, 10 cm (2D RMS), im Bucket nur 90 Tage [P, Q12]. Sentinel Hub nutzt die Zustandsvektoren der Annotation: „We find these more than sufficient for GRD use.“ [P] Absolute Lagegenauigkeit IW: Spezifikation 7 m (3σ) [S] | Annotation reicht für 10–20 m; POEORB später optional |
 | 2 | Thermisches Rauschen | η aus Range- und Azimut-LUT abziehen | ESA-Technote MPC-0392; Azimut-Vektoren ab IPF 2.90; (DN² − η)/A², negative Werte auf 0 [S]; die IPF zieht es nicht selbst ab [S] | Pixelrechnung mit Hilfsbändern (B5), in Radargeometrie, mit Schritt 4 |
 | 3 | Randrauschen | Ränder ohne gültige Werte | Seit IPF 2.90 (13.03.2018) setzt ESA sie in GRD selbst auf 0 [S]; ältere Produkte brauchen eine Maske; „The areas of border noise are not displayed by Sentinel Hub“ [P] | Registry-Grenze: Szenen vor IPF 2.90 ohne RTC oder mit Randmaske (F6) |
 | 4 | Kalibrierung | β⁰/σ⁰/γ aus DN über LUT | β⁰ = DN²/A_β², σ⁰ = DN²/A_σ², LUTs bilinear [S]; GDAL kalibriert SAFE seit 3.4 (SIGMA0, BETA0, GAMMA), ohne Rauschabzug [P] | DS-05d; Pixelrechnung |
