@@ -34,6 +34,11 @@ from tests.catalog.listed_entries import PUBLISHER, listed_entry, utc, with_hash
 from tests.integration.listed_rows import insert_row
 
 BLOCKED_ON = date(2026, 11, 1)
+#: The 27 EU members, the five other members and the six cooperating countries of the EEA, and the UK (CLC 2018).
+EEA_39 = frozenset(
+    "AT BE BG HR CY CZ DK EE FI FR DE GR HU IE IT LV LT LU MT NL PL PT RO SK SI ES SE "
+    "IS LI NO CH TR AL BA ME MK RS XK GB".split()
+)
 CONTENT_COLUMNS = (
     "content",
     "content_sha256",
@@ -840,7 +845,9 @@ def test_the_hand_entries_of_the_repo_are_written_with_their_access_and_regions(
     corine, landsat = _row(conn, "corine-land-cover"), _row(conn, "landsat-c2-l2")
     assert (corine["account"], corine["delivery"], corine["data_kind"]) == ("free_account", "download", "vector")
     assert (landsat["account"], landsat["delivery"], landsat["data_kind"]) == ("requester_pays", "download", "raster")
-    assert {"DE", "AT", "CH", "LI", "DE-BY", "AT-9"} <= set(corine["regions"])
+    # Every member and cooperating country of the EEA (EEA-39) is a region of CORINE, with the DACH subdivisions.
+    # The box also takes in states CORINE does not cover, such as MA or RU: plan §4a, F4.
+    assert EEA_39 | {"DE-BY", "AT-9"} <= set(corine["regions"])
     assert not {"US", "AU", "BR"} & set(corine["regions"])
     assert {"DE", "US", "AU", "BR", "AQ"} <= set(landsat["regions"])
     assert (corine["state"], landsat["state"]) == ("published", "published")

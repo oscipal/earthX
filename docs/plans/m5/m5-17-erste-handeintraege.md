@@ -1,6 +1,6 @@
 # M5-17 — Stufe „gelistet“ für alle Datentypen und erste Handeinträge
 
-**Status (16.11.2026):** Plan mit Fragen F1–F3 und Umsetzung nach den Empfehlungen im Draft-PR [#367](https://github.com/oscipal/earthX/pull/367); Antworten auf F1–F3 ändern nur die beiden YAML-Dateien. Lizenz-Einstufung und Attribution bestätigt Otto im PR (§5).
+**Status (16.11.2026):** F1–F3 = 1, Lizenz-Einstufung und Attribution bestätigt (Otto, 16.11.2026, §4a); umgesetzt im Draft-PR [#367](https://github.com/oscipal/earthX/pull/367). Offen: F4 (Regionen aus dem Rechteck, §4b).
 **Aufgabe:** M5-17 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2. **Stufe B.** Hängt von M5-40 ab (gemergt mit #356, #358).
 **Grundlagen:** `adr/0033` (§5, §13: „erste Handeinträge als YAML unter `listed/`, nur von `catalog-load` gelesen“), `adr/0027` §4.1 (W0), §6.1 (`access.account`, Nachtrag `paid`, `access.delivery`), `adr/0025` §6.1a, `adr/0026` §8.2 (Kürzel CLC, LS), M5-40-Plan §5.2, §6 (A7, A11), §9a; M5-Plan §2 Punkt 9 (keine Marken) und Punkt 12.
 
@@ -59,6 +59,25 @@ Belegstufen: **P** am Quelltext gelesen (Stand `main` eb7079c), **S** Vorwissen 
 1. USGS-Seite „Landsat Commercial Cloud Data Access“, die den Zugang mit Requester Pays beschreibt **(Empfehlung)**
 2. Seite des Datensatzes in der AWS Open Data Registry (`registry.opendata.aws/usgs-landsat`)
 3. USGS-Seite der Level-2-Produkte (dort auch EarthExplorer mit kostenlosem Konto, also eher `free_account`)
+
+## 4a. Antworten Otto (16.11.2026)
+
+- **F1 = 1, F2 = 1, F3 = 1:** wie in den Dateien umgesetzt, keine Änderung nötig.
+- **Lizenz-Einstufung und Attribution bestätigt** wie §5: CORINE Copernicus-Datenpolitik mit Nennung wie vorgeschlagen; Landsat gemeinfrei, Nennung erbeten; beide `tier: catalog`.
+- **Prüfauftrag:** CORINE soll alle abgedeckten Länder als Regionen tragen, wenn `regions.json` alle Staaten kennt.
+
+## 4b. Befund zu den Regionen und Frage F4
+
+**Befund [M], lokal ohne Netz:** `regions.json` kennt alle Staaten (Natural Earth 1:50m) und die Unterteilungen von DE, AT, CH und LI. Mit dem Rechteck `[-31.5, 27.5, 45.0, 71.5]` bekommt CORINE 70 Staaten und 62 Unterteilungen. **Alle 39 EEA-Länder sind dabei** (der Satz „nur DE, AT, CH, LI“ im ersten Bericht war ungenau: der Test prüfte nur diese vier als Mindestmenge; jetzt prüft er alle 39). Zu viel sind rund 30 Staaten, die CORINE nicht abdeckt, z. B. MA, DZ, TN, LY, EG, EH, IL, JO, LB, SY, IQ, IR, SA, RU, UA, BY, MD, GE, AM, AZ, GL, FO.
+
+**Ursache [P]:** Ein gelisteter Eintrag hat als räumliche Ausdehnung nur ein Rechteck (`SpatialExtent.bbox`); `catalog-load` leitet die Regionen aus allen Grenzstücken ab, die das Rechteck mehr als am Rand berühren (M5-40-Plan §5.2). Die Regionen kommen nach M5-40 §5.2 nie aus der Datei. Dasselbe Rechteck gilt im Filter mit der AOI: eine AOI in Marokko findet CORINE. Ein Rechteck um Europa erfasst Nordafrika und den Nahen Osten zwangsläufig.
+
+**F4 — Wie bekommt ein Handeintrag die genaue Abdeckung?**
+1. Neues Feld `coverage_states` im Handeintrag (Staaten nach ISO 3166-1); `catalog-load` bildet die Ausdehnung aus deren Umrissen in `regions.json`, Regionen und AOI-Filter folgen daraus, das Rechteck bleibt die Hülle. Für CORINE die 39 EEA-Länder. Kleine Änderung an `ListedEntry` und `listed_store`, ohne Migration (`footprint` ist schon eine beliebige Geometrie) **(Empfehlung)**
+2. Feld `footprint` mit eigenem Umriss (GeoJSON) im Handeintrag, wie es der Harvest aus der Quelle liest; genauer an Küsten, aber große Datei und von Hand kaum prüfbar
+3. So lassen: Rechteck reicht für die Stufe „gelistet“; die genaue Geometrie kommt mit dem Harvest (M5-19, M5-20)
+
+Bis zur Antwort bleibt CORINE beim Rechteck; F4 = 1 oder 2 wäre ein eigener kleiner Schritt (in diesem PR oder als Folgeaufgabe, je nach Größe).
 
 ## 5. Zur Bestätigung im PR (Lizenz-Einstufung und Attribution, nie durch die Session)
 
