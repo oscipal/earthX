@@ -150,6 +150,8 @@ async def _client(source: Source) -> AsyncIterator[httpx.AsyncClient]:
     async def sleep(seconds: float) -> None:
         return None
 
+    # The app's own counter goes back after the test: the next start builds its gateway on it (M5-36).
+    own_slots = app.state.earthx_read_slots
     async with app.router.lifespan_context(app):
         app.state.earthx_gateway = Gateway(
             POLICY, transport=httpx.MockTransport(source.handler), resolve=_public, sleep=sleep
@@ -161,6 +163,7 @@ async def _client(source: Source) -> AsyncIterator[httpx.AsyncClient]:
                 yield client
         finally:
             await aoi_cloud_filter.settle()
+            app.state.earthx_read_slots = own_slots
 
 
 def request(query: dict[str, Any], **changes: Any) -> dict[str, Any]:
