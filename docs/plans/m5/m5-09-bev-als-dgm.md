@@ -1,6 +1,6 @@
 # M5-09 — BEV ALS-DGM 1 m über ATOM
 
-**Stand:** 16.11.2026, Plan angenommen (Otto, 16.11.2026: F1–F8 jeweils Option 1, §8a), umgesetzt im selben Draft-PR (§9); offen sind Ottos lokale Schritte 2–6 (§6).
+**Stand:** 16.11.2026, Plan angenommen (Otto, 16.11.2026: F1–F10 jeweils Option 1, §8a, §9), umgesetzt im selben Draft-PR (§9); Laden, zweiter Lauf und Messung bei Otto erledigt (§2.6), offen sind die Prüfung im Browser und der Live-Smoke nach dem Merge.
 **Stufe B.** Höchstens zwei PRs (F7).
 **Aufgabe:** M5-09 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2 (Opus, mittel). Abhängigkeit M5-30b Teil 7 ist gemergt; M5-10 (PR A #350, PR B #357) ebenso.
 **Grundlagen:** `adr/0023` §4.2, §7.2, §7.3, §8.3, §9.1, F1, F2, F5, F7; `adr/0032` §9 und Nachträge vom 14. und 15.11.2026 (Ersatz, Pyramide, Suchtreffer); `adr/0011` F6; `adr/0026` F7; `adr/0027` §6.1; `adr/0024`; `KLAERUNGEN.md` B8, B10–B13; Pläne M5-07 (WorldCover), M5-08 (swissALTI3D), M5-10, M5-30.
@@ -347,3 +347,7 @@ Gebaut nach §4 mit den Antworten aus §8a und den Messläufen §2.4, §2.5. Wo 
 **F10 — `min_zoom` 8 oder 9?** Nach F5 = 1 steht `min_zoom` jetzt auf 8. Kalt braucht aber auch eine Kachel bei z8 6,3 s, über dem Budget von 4 s; erst z9 (2,8 s) bleibt darunter (§2.6).
 1. 9: Die eigenen Kacheln kommen erst, wenn sie im Budget bleiben; z7 und z8 zeichnet GLO-30 aus seinen Dateien **(Empfehlung)**
 2. 8 wie jetzt; bei z8 kann eine kalte Kachel eine Teilkachel sein, warm (4,1 s) knapp darüber
+
+**Antwort F10 (Otto, 16.11.2026): 1.** `min_zoom` 9. Darunter zeichnet GLO-30, bei z7 und z8 aus seinen Dateien, unter z7 aus seiner Pyramide.
+
+**Zweiter Lauf von `materialize` (Otto, 16.11.2026) [M]:** `unchanged` nach einer einzigen Anfrage an den Dienst-Feed (`200`, rund 1,97 MB, 12,6 s); die Fassung aus dem Hash (A7) trägt. Kein Dataset-Feed und keine Datei wurden gelesen.
