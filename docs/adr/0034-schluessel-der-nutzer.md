@@ -112,7 +112,54 @@ Stand `main` 10f55cb.
 
 ## 4. Stand der Technik
 
-<<STAND>>
+Gelesen über einen Hilfsagenten (Quellen §15). Die Doku von CDSE lag als Quelltext auf GitHub (`eu-cdse/documentation`, Branch `publish`, Stand 16.11.2026); die Seiten des Forums und einige Standardseiten (RFC-Editor, OWASP-Website, MDN) waren nicht erreichbar, OWASP und MDN dafür als Quelltext.
+
+### 4.1 Secrets im Browser
+
+- **OWASP HTML5 Security Cheat Sheet:** keine sensiblen Daten in `localStorage`; „A single Cross Site Scripting can be used to steal all the data“ [P\*].
+- **IETF `draft-ietf-oauth-browser-based-apps`:** Ein rein browserbasierter Client ist für sensible Anwendungen nicht empfohlen; empfohlen ist ein **Backend for Frontend** (BFF, vertraulicher Client, Token nur auf dem Server, Browser nur mit Cookie). Ein „Token-Mediating Backend“, das Token an den Browser gibt, ist „less secure than a BFF“. Speicher des Browsers schützt nicht gegen bösartiges JavaScript und ist nicht sicher verschlüsselt abgelegt [P\*].
+- **Web Crypto:** `extractable: false` verhindert den Export eines Schlüssels, nicht seine Benutzung durch ein eingeschleustes Skript [P\*][A].
+- **Folge [A]:** A1 und A2 (§5) liegen auf der Seite, die der Entwurf als schwächer einstuft; A3 ist ein BFF für fremde Nachweise.
+
+### 4.2 Secrets auf dem Server
+
+- **OWASP Cryptographic Storage:** Envelope Encryption, Datenschlüssel (DEK) unter einem Schlüsselschlüssel (KEK); „KEK must be stored separately from the DEK“, nicht neben den Daten; AES-GCM als erste Wahl; Rotation mit Schlüssel-ID je Datensatz oder Neuverschlüsseln [P\*].
+- **OWASP Secrets Management:** Secrets mit Ablauf anlegen, vor Gebrauch prüfen, ob sie noch gelten („verify that the secret is still active before trusting it“), widerrufen, wenn nicht mehr gebraucht, nie loggen [P\*].
+- **`cryptography`:** Fernet (AES-128-CBC + HMAC) mit optionaler `ttl` beim Entschlüsseln; Zeitstempel im Klartext [P\*]. AES-GCM über `AESGCM` derselben Bibliothek ist die Wahl nach OWASP [A].
+- **Vault Transit, KMS:** DEK unter einem Schlüssel im Dienst, `rewrap` nach Rotation ohne Klartext [S].
+
+### 4.3 Wie andere Systeme fremde Nachweise halten
+
+| System | Ablage | Schutz | Beleg |
+|---|---|---|---|
+| Grafana | Datenbank, `secureJsonData` je Datenquelle | Envelope Encryption, KEK aus `secret_key` oder KMS (AWS, Azure, GCP, Vault), Rotation mit Neuverschlüsselung | P\* |
+| n8n | Datenbank | Instanzschlüssel `N8N_ENCRYPTION_KEY` über rotierbarem Datenschlüssel | S |
+| QGIS | lokale Datenbank | Master-Passwort des Nutzers; ohne es „no way to retrieve“ | P\* |
+| PrivateBin | Server hält nur Chiffrat | Schlüssel im URL-Fragment, erreicht den Server nie | P\* |
+| Planetary Computer | kurzlebiges SAS-Token, anonym abrufbar | Ablauf im Token | S |
+| openEO (CDSE) | Nachweis bleibt beim OIDC-Anbieter; auch Client Credentials (experimentell) | — | P\*, S |
+
+- **Schlüsselteil beim Client:** Eine feste Bezeichnung für „Server kann ohne das Cookie nicht entschlüsseln“ fand die Recherche nicht [S]. Am nächsten liegen PrivateBin (Schlüssel nie beim Server) und QGIS (Schlüssel beim Nutzer). A3 ist schwächer als PrivateBin: Der Server sieht das Cookie bei jeder Anfrage und kann im laufenden Betrieb entschlüsseln. A3 schützt deshalb gegen den **Abfluss** von Datenbank oder Backup, nicht gegen einen übernommenen Server (§9 T1, T2) [A].
+- **Verlust des Cookies** heißt: Key neu eingeben. Das ist gewollt [A].
+
+### 4.4 Secrets aus Logs, Fehlern und URLs
+
+- **Pydantic `SecretStr`:** `repr`/`str` maskiert, JSON maskiert, Klartext nur über `get_secret_value()` [P\*]. Ein Muster für `Credential` (§5.4).
+- **Python-Logging:** Filter dürfen Records ändern; ein Filter am Handler greift für alle Logger, die dort ankommen [P\*].
+- **GDAL** [P\* am Quelltext `port/cpl_http.cpp` und an der Doku]:
+  - `CPL_CURL_VERBOSE` (mit `CPL_DEBUG`) gibt die Ausgabe von libcurl **ungefiltert** aus, Kopfzeilen wie `Authorization` eingeschlossen; Passwörter in URLs maskiert GDAL, Kopfzeilen nicht.
+  - `VSISetPathSpecificOption` (ab 3.6) setzt Optionen je Pfadpräfix, prozessweit; wie das mit mehreren Fäden wirkt, ist offen. Zwei Nutzer mit Keys für denselben Bucket lesen denselben Präfix: Der Weg passt nicht [A].
+  - `CPL_VSIL_CURL_AUTHORIZATION_HEADER_ALLOWED_IF_REDIRECT` (ab 3.10, Vorgabe `IF_SAME_HOST`) regelt, ob GDAL eine `Authorization`-Kopfzeile bei Weiterleitung mitgibt.
+  - `AWS_S3_ENDPOINT` darf ab 3.11 das Schema enthalten; `AWS_SESSION_TOKEN` für temporäre S3-Schlüssel.
+- **curl:** Es gab 2025/2026 CVEs zu Bearer-Token bei Weiterleitungen in libcurl [S]. GDAL hängt daran; die Version im Image gehört in die Prüfung von M5-46 [A].
+- **Sentry** (falls je genutzt): der Standard-Scrubber filtert nur Schlüssel in Dictionaries, keine URLs und keinen Freitext; nötig ist `before_send` [P\*].
+
+### 4.5 HTTP-Cache und Lizenz der Daten
+
+- **RFC 9111 §3.5:** Ein gemeinsamer Cache darf Antworten auf Anfragen mit `Authorization` nur speichern, wenn die Antwort es ausdrücklich erlaubt (`public`, `s-maxage`, `must-revalidate`) [S, Wortlaut nicht gelesen]. Ein Cookie fällt nicht unter diese Regel; deshalb braucht jede Antwort mit Key-Daten selbst `Cache-Control: private` [A].
+- Der eigene Cache der Anwendung (GDAL, Objektspeicher, Postgres) fällt nicht unter RFC 9111; dort entscheidet die Plattform [A].
+- **Lizenz der Sentinel-Daten:** Das „Legal Notice on the use of Copernicus Sentinel Data“ (gestützt auf VO (EU) 377/2014 und Delegierte VO (EU) 1159/2013) erlaubt Vervielfältigung, Verbreitung, öffentliche Wiedergabe und Bearbeitung mit Quellenangabe [S, Volltext nicht gelesen]. Die Bedingungen von CDSE verweisen darauf (§3) [P\*].
+- **Zugang ≠ Lizenz [A]:** Die Lizenz erlaubt Weitergabe der Daten; die Bedingungen des Zugangs regeln Konten und Kontingente. Ob ein gemeinsamer Cache unter Nutzern mit eigenem Konto die Kontingentlogik von CDSE „umgeht“, sagen die gelesenen Bedingungen nicht. §9 der Bedingungen verbietet ausdrücklich nur Mehrfachkonten „in tens, hundreds or thousands“ [P\*].
 
 ---
 
@@ -130,7 +177,7 @@ Stand `main` 10f55cb.
 **Empfehlung A3.** Gründe [A]:
 
 - **Jobs:** Otto will Radar-Verarbeitung auf CDSE-Daten (M5-31). Nur A3 und A4 erlauben einen Cloud-Job mit Key, ohne den Key in die Auftragskopie zu legen.
-- **Zwei Hälften:** Bei A3 braucht ein Angreifer Datenbank **und** Schlüssel der Instanz **und** das Cookie des Nutzers. Das ist das Muster „Schlüssel beim Client, Chiffrat beim Server“ aus §4.
+- **Zwei Hälften:** Bei A3 braucht ein Angreifer Datenbank **und** Schlüssel der Instanz **und** das Cookie des Nutzers. Das liegt nahe an PrivateBin und QGIS (Schlüssel beim Nutzer, §4.3), ist aber schwächer: Es schützt gegen den Abfluss der Datenbank, nicht gegen einen übernommenen Server.
 - **Kein Key im JavaScript:** Nach der Eingabe kennt die Seite den Key nicht mehr; eine XSS-Lücke kann ihn benutzen, solange die Seite offen ist, aber nicht mitnehmen. Bei A1 und A2 liegt er für jedes Skript lesbar da (§4).
 - **Frontend unverändert:** Kachel-URLs bleiben, wie sie sind; das Cookie geht mit, weil alles am selben Ursprung hängt (§3).
 - **Weg zu M6:** Mit dem Login wird aus der anonymen Sitzung ein Konto; die Zeile bekommt den Eigentümer, das Chiffrat bleibt (§10, M6).
@@ -210,7 +257,23 @@ Browser ── Cookie ──▶ api / tiler ──▶ identity: Zeile lesen, ent
 
 ### 6.1 CDSE
 
-<<CDSE>>
+Aus der Doku von CDSE (Quelltext auf GitHub, §15) [P\*], ergänzt um Forum-Treffer [S]:
+
+| Art | Erzeugung | Ablauf | Wofür | Bewertung [A] |
+|---|---|---|---|---|
+| **Benutzer/Passwort → Token** (Passwort-Grant, öffentlicher Client `cdse-public`) | Konto | Access-Token 10 min, Erneuerung innerhalb 60 min; 100 aktive Sitzungen je Konto | OData-Suche und -Download (auch `$zip`) als `Authorization: Bearer` | **scheidet aus:** die Plattform müsste das Passwort halten, um nach 60 min neu anzufangen (`adr/0027` §4.4: nie ein Passwort) |
+| **OAuth-Client** (Sentinel Hub, Client Credentials) | Dashboard, Ablauf wählbar oder „Never expire“, Secret nur einmal sichtbar; SPA-Variante mit Origin | Token rund 1 h (`exp` im JWT) [S]; Token-Anfragen mit `429` begrenzt | Sentinel-Hub-APIs (Kontingent 10 000 Anfragen und 10 000 Processing Units im Monat), openEO (experimentell) | geeignet als widerrufbarer Nachweis; **ob das Token OData-Download und `zipper` öffnet, ist offen** (Foren widersprechen sich [S]). Sentinel Hub liefert gerechnete Bilder, keine Originaldateien: für die eigene Kette der Plattform nicht der Leseweg |
+| **S3-Schlüssel** (`eodata`) | S3-Keys-Manager, Ablaufdatum selbst gewählt, Secret nur einmal sichtbar; temporäre Schlüssel über eine API | bis zum gewählten Tag; Höchstzahl je Konto nicht dokumentiert | Bereichslesen in den Produkten unter `eodata.dataspace.copernicus.eu` | **Empfehlung:** widerrufbar, befristet, schmal (nur Lesen von `eodata`), und der einzige Weg zu Bereichslesen in GRD, SLC und Annotation ohne ganze ZIP-Dateien |
+
+**Kontingente je Konto** (gelten für S3, OData und STAC zusammen) [P\*]: 4 parallele Verbindungen, 20 MB/s je Verbindung, 12 TB in 30 Tagen, S3 zusätzlich 2000 Anfragen je Minute. Nach Überschreiten des Volumens stuft CDSE stündlich herab: 1 MB/s und **eine** Verbindung, keine Sperre.
+
+**Prüfweg `s3_head` [A, Messpunkt M1]:** eine signierte `HEAD`-Anfrage auf ein festes, kleines Objekt in `eodata`, das jeder Nutzer lesen darf. Ein ungültiger oder abgelaufener Schlüssel antwortet `403` mit `InvalidAccessKeyId` [S]. Kostet eine von 2000 Anfragen je Minute und keine Datenmenge. Welches Objekt, legt Otto mit M1 fest; seine Adresse steht dann in `providers.yaml` (keine AOI, öffentlich bekannter Pfad). Einen Endpunkt zur Prüfung ohne Datenzugriff (Introspection, `userinfo`) dokumentiert CDSE nicht [P\*].
+
+**Ablaufdatum:** Die Plattform kann den Ablauf eines S3-Schlüssels nicht abfragen. Das Formular fragt deshalb das Datum ab, das der Nutzer beim Erzeugen gewählt hat (`expires_on`, freiwillig). Fehlt es, gilt die Frist von 30 Tagen und die Prüfung bei Gebrauch.
+
+**R-Z und S3 [A]:** R-Z erlaubt einen Nachweis nur am Anmelde-Host. Bei S3 gibt es keinen Anmelde-Host: Jede Anfrage trägt eine Signatur (AWS Signature V4) an den Datenhost. Das Secret selbst verlässt den Prozess nie; die Signatur gilt für genau diesen Host, Pfad und rund 15 min, und die Access-Key-ID geht als Kennung mit. Vorschlag für F4: R-Z gilt für S3 mit dem Key-Host aus `providers.yaml` als „Anmelde-Host“, ohne Weiterleitung, nie mit vorsignierter URL. GDAL folgt Weiterleitungen bei `/vsis3/` selbst; ob es dabei neu signiert oder eine `Authorization` weitergibt, prüft M5-46 am Fixture-Server (`CPL_VSIL_CURL_AUTHORIZATION_HEADER_ALLOWED_IF_REDIRECT` bleibt `IF_SAME_HOST`, §4.4).
+
+**Endpunkt [P\*]:** `eodata.dataspace.copernicus.eu` wird per DNS auf zwei Betreiber verteilt (CloudFerro, Open Telekom Cloud). Für `gateway` ist das ein Host der Allowlist; die Prüfung privater Adressen bleibt (B8).
 
 ### 6.2 Weitere Anbieter (Ausblick)
 
@@ -250,7 +313,45 @@ Jeder weitere Anbieter kommt mit eigener kleiner Vorlage (Art, Prüfweg, Bedingu
 
 ## 7. Punkt 3: Cache und Ergebnisse
 
-<<CACHE>>
+### 7.1 Optionen
+
+| | Wer bekommt Daten aus dem Cache | Kontingent | Bedingungen | Aufwand |
+|---|---|---|---|---|
+| **C1** je Nutzer | nur die Sitzung, die gelesen hat | jede Sitzung liest selbst; kalte Kacheln für jeden | sicher | Cache-Schlüssel mit Sitzungsbezug; das widerspricht §5.5 („nichts aus dem Key im Schlüssel“) nur, wenn der Bezug aus dem Key käme, nicht bei einer zufälligen Kennung |
+| **C2** gemeinsam unter gültigen Keys desselben Anbieters (**Empfehlung**) | jede Sitzung mit gültigem Key dieses Anbieters | jede Datei wird einmal gelesen, mit dem Key dessen, der zuerst fragt | Lizenz erlaubt Weitergabe (§4.5); der Empfänger hat selbst ein Konto und darf dieselben Daten laden | Prüfung vor dem Cache, sonst wie heute |
+| C3 gemeinsam für alle | auch ohne Key | wie C2 | macht das Schloss zur Attrappe und wäre ein Betreiberkonto durch die Hintertür (W1, `adr/0027` F5) | keiner |
+
+**Empfehlung C2.** Gründe [A]:
+
+- Der Key ist eine Eintrittskarte zum Anbieter; wer eine hat, darf die Daten ohnehin laden. Die Lizenz der Daten erlaubt Weitergabe (§4.5).
+- Es schont alle Kontingente: Eine Datei wird nicht für jeden Nutzer neu gelesen.
+- Die Prozesscaches von GDAL lassen sich nicht nach Nutzern trennen: Der `/vsicurl/`-Bereichscache ist prozessweit und nach Dateinamen geschlüsselt (§3). C1 hieße, sie für Key-Daten abzuschalten.
+- Offen bleibt, ob CDSE das so sieht (§4.5). C1 bleibt der Rückweg, falls die Rechtsfrage (F9) anders ausgeht.
+
+### 7.2 Je Ebene (`architekturplan.md` 12.3)
+
+| Ebene | Regel für Key-Daten |
+|---|---|
+| HTTP/CDN | jede Antwort mit Daten (Kachel, Quicklook, Statistik, Zuschnitt) `Cache-Control: private` wie `adr/0024` R7; der Browser darf cachen, CDN und Proxys nicht. Ohne gültigen Key `403` ohne Daten |
+| Prozess (GDAL, Region-Cache, Item-Köpfe) | gemeinsam (C2), aber nur nach der Prüfung; ein Lesevorgang ohne `Credential` kommt an Key-Hosts nie bis zum Cache, weil `gateway` ihn vorher ablehnt |
+| Anwendung: Item-Suchen, Auswahl-IDs | unverändert: Metadaten liest die Plattform anonym; die **Auswahl-ID** (`adr/0032` §10.2) ist ein Hash der Item-Liste mit Datensatz und Darstellung und enthält nichts vom Key. Eine Kachel unter einer Auswahl-ID eines Key-Datensatzes prüft den Key wie jede andere |
+| Ergebnis (Rezept-Hash) | gemeinsam unter gültigen Keys (C2): Ein Treffer im Ergebnis-Cache liefert nur, wenn der Auftraggeber selbst einen gültigen Key hat |
+| Übersicht (Pyramide) | **keine** (§7.4) |
+
+**Fertige Ergebnisse** im Objektspeicher sind bearbeitete Daten mit eigener Ablauffrist. Sie zu zeigen, liest nichts mehr beim Anbieter. Vorschlag: Ein Ergebnis-Link wirkt wie heute auch ohne Key; `ATTRIBUTION.txt` nennt „Contains modified Copernicus Sentinel data [Jahr]“ (§4.5) [A]. Teil von F6.
+
+### 7.3 Kontingente des Anbieters
+
+- **4 Verbindungen je Konto** (§6.1) sind die enge Stelle: Eine Kartenansicht fordert 10–30 Kacheln gleichzeitig an [A]. Ohne Grenze je Key antwortet CDSE mit Drosselung oder Fehlern, und die Karte zeigt Lücken.
+- Deshalb `connections_per_key` in `providers.yaml` (Vorgabe 4), durchgesetzt wie die Grenze je Host aus M5-36: ein Zähler je Key und Prozess, geteilt durch `EARTHX_SOURCE_INSTANCES`; Anfragen warten statt abgelehnt zu werden (M5-36 G5). Cluster-weit exakt erst mit dem Egress-Proxy (M6). Jobs zählen mit: Ein Lauf mit Key nimmt höchstens die Verbindungen seines Keys.
+- **Bandbreite und Volumen:** 20 MB/s je Verbindung, 12 TB in 30 Tagen; danach 1 MB/s und eine Verbindung. Für Kacheln reicht das bei Weitem [A]; ein SLC-Job über viele Szenen kann einen Nutzer in die Drosselung bringen. Die Kostenschätzung vor dem Job nennt deshalb die Menge, die er bei CDSE liest (`adr/0032` §10.3, „Kostenschätzung statt Grenze“).
+- **Der Kontingentverbrauch gehört dem Nutzer:** Ein Treffer im gemeinsamen Cache (C2) verbraucht nichts; eine Lücke liest mit dem Key des Fragenden, nie mit dem eines anderen (T7).
+
+### 7.4 Pyramiden und Ersatz (`adr/0032`)
+
+- Eine Pyramide entsteht nach der Materialisierung, ohne Nutzer (`adr/0032` F1 = 2). Für Key-Daten gibt es dann keinen Key, mit dem sie gebaut werden könnte, außer dem eines zufälligen Nutzers (dessen Kontingent für alle verbraucht würde) oder einem Betreiberkonto (ausgeschlossen). **Keine Pyramide aus Nutzer-Keys** [A].
+- Szenen-Datensätze (Sentinel-1) brauchen nach `adr/0032` ohnehin keine Pyramide; unter `min_zoom` gelten das Budget je Kachel und die Übersichten der Dateien. Ob die Messdateien in den SAFE-Produkten von CDSE innere Übersichten haben, ist offen (Messpunkt M3); ohne sie wird jede grobe Kachel teuer.
+- **„Nie verschwindet ein Bild“** (M5-Plan §2 Punkt 9): Unter `min_zoom` zeigt ein anonymer **Ersatz-Datensatz**, wo es einen gibt (Muster `adr/0032` F7: GLO-30 für swissALTI3D). Für vollständiges GRD von CDSE wäre das Sentinel-1 GRD aus Earth Search (DS-04), mit der Marke „Overview“ (UI-08) und der Quellenzeile des Ersatzes. Ohne Ersatz: Coverage, als ausdrückliche Ausnahme (F7).
 
 ---
 
@@ -412,7 +513,7 @@ Ottos Vorgabe vom 11.11.2026 ändert Regeln mit höherem Rang. Dieses ADR schlä
 3. Nur bei Eingabe und bei Ablehnung
 
 **F6 — Cache mit Key-Daten?**
-1. Gemeinsam für alle mit gültigem Key desselben Anbieters, Prüfung vor jedem Cache, nach außen `private` **(Empfehlung)**
+1. Gemeinsam für alle mit gültigem Key desselben Anbieters, Prüfung vor jedem Cache, nach außen `private`; fertige Ergebnisse auch ohne Key sichtbar **(Empfehlung)**
 2. Je Nutzer getrennt
 3. Gemeinsam für alle, auch ohne Key
 
@@ -441,7 +542,11 @@ Ottos Vorgabe vom 11.11.2026 ändert Regeln mit höherem Rang. Dieses ADR schlä
 
 **Messpunkte für Otto** (mit eigenem CDSE-Konto, lokal, nie in CI oder Cloud-Sitzungen; keine Adresse, keine Item-ID und kein Key ins Repo). Vor M5-46:
 
-<<MESS>>
+- **M1 Prüfweg:** Ein kleines, für jedes Konto lesbares Objekt in `eodata` wählen; mit eigenem S3-Schlüssel `HEAD` darauf: `200`? Mit abgelaufenem bzw. gelöschtem Schlüssel: `403` mit welchem Code? Steht die Access-Key-ID im Fehlertext?
+- **M2 Bereichslesen:** In einem GRD- und einem SLC-Produkt: liegen Annotation (`annotation/*.xml`, `calibration/`, `noise`) und Messdateien entpackt im Bucket, und antworten sie auf Bereichsanfragen (`206`)?
+- **M3 Übersichten:** Haben die Messdateien (`measurement/*.tiff`) Kacheln und innere Übersichten (`gdalinfo`), oder sind es Streifen ohne Übersicht? Davon hängen `min_zoom` und Kosten grober Kacheln ab.
+- **M4 Weiterleitungen und Grenzen:** Leitet `eodata` je nach Betreiber weiter (DNS oder `307`)? Was antwortet es bei mehr als 4 gleichzeitigen Verbindungen (warten, `429`, `503`)?
+- **M5 OAuth-Client (nur bei F4 = 2 oder 3):** Öffnet ein Token eines Sentinel-Hub-Clients den OData-Download (`$value`) oder `zipper`?
 
 **Technik:**
 
@@ -453,4 +558,56 @@ Ottos Vorgabe vom 11.11.2026 ändert Regeln mit höherem Rang. Dieses ADR schlä
 
 ## 15. Quellen
 
-<<QUELLEN>>
+Gelesen von einem Hilfsagenten am 16.11.2026. Nicht erreichbar waren `documentation.dataspace.copernicus.eu`, `forum.dataspace.copernicus.eu`, `rfc-editor.org`, `datatracker.ietf.org`, `cheatsheetseries.owasp.org` und `developer.mozilla.org`; dafür die Quelltexte auf GitHub. Gesperrt (Auftrag, keine Anfrage an Quellen): alle API- und Datenhosts von CDSE und Earthdata.
+
+**P\* (über das Abrufwerkzeug gelesen):**
+
+- CDSE-Doku (Branch `publish`):
+  - https://raw.githubusercontent.com/eu-cdse/documentation/publish/APIs/Token.qmd
+  - https://raw.githubusercontent.com/eu-cdse/documentation/publish/APIs/S3.qmd
+  - https://raw.githubusercontent.com/eu-cdse/documentation/publish/APIs/OData.qmd
+  - https://raw.githubusercontent.com/eu-cdse/documentation/publish/Quotas.qmd
+  - https://raw.githubusercontent.com/eu-cdse/documentation/publish/APIs/SentinelHub/Overview/Authentication.qmd
+  - https://raw.githubusercontent.com/eu-cdse/documentation/publish/APIs/SentinelHub/Overview/RateLimiting.qmd
+  - https://raw.githubusercontent.com/eu-cdse/documentation/publish/APIs/openEO/authentication/client_credentials.qmd
+- CDSE-Bedingungen: https://dataspace.copernicus.eu/node/10; Änderung §9: https://dataspace.copernicus.eu/node/1031
+- OWASP:
+  - https://raw.githubusercontent.com/OWASP/CheatSheetSeries/master/cheatsheets/HTML5_Security_Cheat_Sheet.md
+  - https://raw.githubusercontent.com/OWASP/CheatSheetSeries/master/cheatsheets/Cryptographic_Storage_Cheat_Sheet.md
+  - https://raw.githubusercontent.com/OWASP/CheatSheetSeries/master/cheatsheets/Secrets_Management_Cheat_Sheet.md
+- IETF OAuth 2.0 for Browser-Based Applications (Entwurf, Arbeitsstand): https://raw.githubusercontent.com/oauth-wg/oauth-browser-based-apps/main/draft-ietf-oauth-browser-based-apps.md
+- MDN `SubtleCrypto.generateKey`: https://raw.githubusercontent.com/mdn/content/main/files/en-us/web/api/subtlecrypto/generatekey/index.md
+- PrivateBin: https://raw.githubusercontent.com/PrivateBin/PrivateBin/master/README.md
+- `cryptography` Fernet: https://raw.githubusercontent.com/pyca/cryptography/main/docs/fernet.rst
+- Python Logging Cookbook: https://raw.githubusercontent.com/python/cpython/main/Doc/howto/logging-cookbook.rst
+- Pydantic `SecretStr`: https://raw.githubusercontent.com/pydantic/pydantic/main/pydantic/types.py
+- Sentry Scrubber: https://raw.githubusercontent.com/getsentry/sentry-python/master/sentry_sdk/scrubber.py
+- GDAL:
+  - https://raw.githubusercontent.com/OSGeo/gdal/master/port/cpl_http.cpp (bis Zeichen 100 000)
+  - https://raw.githubusercontent.com/OSGeo/gdal/master/doc/source/user/configoptions.rst
+  - https://raw.githubusercontent.com/OSGeo/gdal/master/doc/source/user/virtual_file_systems.rst
+- Grafana:
+  - https://raw.githubusercontent.com/grafana/grafana/main/docs/sources/setup-grafana/configure-security/configure-database-encryption/_index.md
+  - https://raw.githubusercontent.com/grafana/grafana/main/pkg/services/datasources/models.go
+- QGIS Authentifizierung: https://raw.githubusercontent.com/qgis/QGIS-Documentation/master/docs/user_manual/auth_system/auth_overview.rst
+
+**S (Suchtreffer, Wortlaut nicht geprüft):**
+
+- CDSE-Forum:
+  - https://forum.dataspace.copernicus.eu/t/download-products-in-odata-with-clientid-and-client-secret/1284
+  - https://forum.dataspace.copernicus.eu/t/unauthorized-oauth-token-401-when-downloading-s1-orbits-from-catalogue-dataspace-copernicus-eu-download/257
+  - https://forum.dataspace.copernicus.eu/t/is-the-access-token-lifetime-10-minutes/1017
+  - https://forum.dataspace.copernicus.eu/t/invalidaccesskeyid-on-non-expired-key-and-other-queries/4344
+  - https://forum.dataspace.copernicus.eu/t/s3cmd-403-error-when-listing-eodata/992
+- sentinelhub-py, Token-Laufzeit: https://sentinelhub-py.readthedocs.io/en/latest/examples/session_sharing.html
+- openEO-Föderation bei CDSE: https://documentation.dataspace.copernicus.eu/APIs/openEO/federation/backends/api.html
+- RFC 9111: https://datatracker.ietf.org/doc/rfc9111/
+- Sentinel Data Legal Notice: https://sentinel.esa.int/documents/247904/690755/Sentinel_Data_Legal_Notice
+- Vault Transit: https://developer.hashicorp.com/vault/api-docs/v1.21.x/secret/transit
+- n8n Encryption Key: https://docs.n8n.io/hosting/configuration/configuration-examples/encryption-key
+- Planetary Computer SAS: https://planetarycomputer.microsoft.com/docs/concepts/sas
+- curl CVE zu Bearer-Token bei Weiterleitung: https://curl.se/docs/CVE-2025-14524.html
+
+**S (Vorwissen, nicht nachgelesen):** S3 nennt die Access-Key-ID im Fehlertext von `SignatureDoesNotMatch`; Wirkung von `Cache-Control: private`; Signatur V4 gilt rund 15 min.
+
+**Im Repo (P):** `ENTSCHEIDUNGEN_2026-09-18.md` §1, §3, §4; `KLAERUNGEN.md` B8, B9, B13; `projektuebersicht.md` §2, §4, §6; `architekturplan.md` 3.1, 3.2, 6.4, 6.5, 7.3, 7.7, 9–12; `projektplan.md` 1.1, M6; `plans/m5/m5-discovery-und-suche.md` §2, §6; `plans/m5/m5-35-skalierbarkeit.md` §2; `adr/0024` R6–R8; `adr/0027` §3.1, §4, §6, §9; `adr/0032` §5.2, §8.4, §10.2; `.importlinter`; `backend/earthx/catalog/registry.py`; `backend/catalog/hosts.yaml`; `backend/earthx/gateway/client.py`, `errors.py`, `gdal.py`; `backend/earthx/jobs/worker.py`, `child.py`; `frontend/src/catalogue.ts`, `components/DataCatalogue.tsx`, `preferences.ts`; `frontend/vite.config.ts`.
