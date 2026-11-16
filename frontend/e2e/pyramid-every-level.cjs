@@ -7,7 +7,8 @@
 //   3. the attribution line does not name the dataset's own text for modified data below 6.5, or names it above;
 //   4. the loading display fails while the overview tiles come slowly: no busy toast with "Loading data" 0.6 s after a zoom out, no
 //      mark in the row "Search results" of the layer manager (MANAGER=open), or the toast stays when the tiles are in;
-//   5. a mark shows the overview: any element of the page that is not a tooltip and says "overview", or has a class with "badge".
+//   5. the mark "Overview" over the map (Otto, 16.11.2026, UI-08) is missing below 6.5 or there from 6.5 on, has another tooltip than the
+//      one of a job's result, or another element that is not a tooltip says "overview".
 //
 //   cd frontend && npm run dev &            # a FRESH dev server; no backend is needed, the tiles are made up here
 //   node e2e/pyramid-every-level.cjs        # BASE=http://localhost:5173 TILE_MS=900 MANAGER=open OUT=<directory for the screenshots>
@@ -18,7 +19,8 @@
 // own tiles. It fails when
 //   6. a tile is asked for at another route than that of its level, or the overview tile names another selection than the one the
 //      tiler made for the four hits (sorted, made once), or the route without a selection is asked;
-//   7. a step draws nothing where the hits lie, or the attribution line is not the pyramid's below 6.5 and none above.
+//   7. a step draws nothing where the hits lie, or the attribution line is not the pyramid's below 6.5 and none above, or the mark
+//      "Overview" is not there below 6.5 and only there.
 //
 // Playwright and Chromium are not a dependency of the project (CI does not run this); the cloud session has both.
 
@@ -38,6 +40,8 @@ const AOI = { type: 'Polygon', coordinates: [[[6, 44], [11, 44], [11, 48], [6, 4
 const CENTRE = [8.5, 46];
 const ZOOMS = [10, 8, 7, 6.5, 6, 5, 4, 3, 2, 1, 0];
 const MOSAIC_FROM = 6.5;
+// The one tooltip of the mark "Overview" (`components/PreviewBadge.tsx::OVERVIEW_TITLE`).
+const OVERVIEW_TIP = 'Drawn coarser than the original data: zoom in for full resolution.';
 const SCENES_FROM = 5.5;
 const later = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -181,6 +185,18 @@ async function run(browser, theme, results) {
     for (const [x, y] of points) colours.push(await pixelAt(page, Math.round(x), Math.round(y)));
     return { points: points.length, drawn: colours.filter(([r, g, b]) => (b > 150 && r < 80 && g < 80) || (g > 150 && r < 80 && b < 80)).length };
   };
+  // The mark "Overview" over the map: its tooltip, or null where there is none.
+  const overviewMark = () => page.evaluate(() => {
+    const badge = [...document.querySelectorAll('.preview-badge-dock .badge')].find((el) => el.textContent.trim() === 'Overview');
+    return badge ? badge.getAttribute('data-tip') : null;
+  });
+  const markProblem = async (label, zoom) => {
+    const tip = await overviewMark();
+    if (zoom < MOSAIC_FROM && tip === null) return `${label}: no mark "Overview" below ${MOSAIC_FROM}`;
+    if (zoom < MOSAIC_FROM && tip !== OVERVIEW_TIP) return `${label}: the mark "Overview" says ${JSON.stringify(tip)}`;
+    if (zoom >= MOSAIC_FROM && tip !== null) return `${label}: the mark "Overview" is there from ${MOSAIC_FROM} on`;
+    return null;
+  };
   const attribution = () => page.$$eval('.maplibregl-ctrl-attrib-inner', (els) => els.map((el) => el.textContent).join(' '));
 
   for (const zoom of ZOOMS) {
@@ -198,6 +214,8 @@ async function run(browser, theme, results) {
       if (seen.points === 0) problems.push(`z${zoom}: the area is not on the screen`);
       else if (seen.drawn < seen.points) problems.push(`z${zoom}: the map draws the area at ${seen.drawn} of ${seen.points} places`);
     }
+    const mark = await markProblem(`z${zoom}`, zoom);
+    if (mark) problems.push(mark);
     const credit = await attribution();
     if (zoom < MOSAIC_FROM && !credit.includes(TEXT)) problems.push(`z${zoom}: the attribution line does not name the dataset: ${JSON.stringify(credit.slice(0, 80))}`);
     if (zoom >= MOSAIC_FROM && credit.includes(TEXT)) problems.push(`z${zoom}: the attribution line names the pyramid above its levels`);
@@ -254,6 +272,8 @@ async function run(browser, theme, results) {
       if (seen.points === 0) problems.push(`${label}: the hits are not on the screen`);
       else if (seen.drawn < seen.points) problems.push(`${label}: the map draws the hits at ${seen.drawn} of ${seen.points} places`);
     }
+    const mark = await markProblem(label, zoom);
+    if (mark) problems.push(mark);
     const credit = await attribution();
     if (zoom < MOSAIC_FROM && !credit.includes(TEXT)) problems.push(`${label}: the attribution line does not name the dataset`);
     if (zoom >= MOSAIC_FROM && credit.includes(TEXT)) problems.push(`${label}: the attribution line names the pyramid above its levels`);
@@ -263,16 +283,15 @@ async function run(browser, theme, results) {
   if (posts.length > 1) problems.push(`search results: the footprint selection was made ${posts.length} times for the same hits`);
   console.log(`${theme}${MANAGER_OPEN ? ' (manager open)' : ''}: search results, ${posts.length} footprint selection(s) for ${hitIds.length} hits`);
 
-  // No mark: nothing that is not a tooltip says "overview", and no badge is in the page for it.
-  const marks = await page.evaluate(() => {
-    const texts = [...document.querySelectorAll('body *')].filter((el) => el.children.length === 0 && /overview/i.test(el.textContent ?? '') && !el.closest('[data-tip]')).map((el) => el.textContent.trim().slice(0, 60));
-    const badges = [...document.querySelectorAll('[class*="badge"]')].map((el) => el.textContent.trim().slice(0, 40));
-    return { texts, badges };
-  });
-  if (marks.texts.length) problems.push(`the page says overview: ${JSON.stringify(marks.texts)}`);
-  if (marks.badges.some((text) => /overview/i.test(text))) problems.push(`a badge says overview: ${JSON.stringify(marks.badges)}`);
+  // One mark only: nothing else that is not a tooltip says "overview".
   await page.evaluate(([m, lon, lat]) => m.jumpTo({ center: [lon, lat], zoom: 3 }), [map, ...CENTRE]);
   await page.waitForTimeout(600);
+  const texts = await page.evaluate(() =>
+    [...document.querySelectorAll('body *')]
+      .filter((el) => el.children.length === 0 && /overview/i.test(el.textContent ?? '') && !el.closest('[data-tip]') && !el.closest('.preview-badge-dock'))
+      .map((el) => el.textContent.trim().slice(0, 60)),
+  );
+  if (texts.length) problems.push(`the page says overview elsewhere: ${JSON.stringify(texts)}`);
   await page.screenshot({ path: path.join(OUT, `${theme}-z3.png`) });
   results.push({ name: theme, problems });
   await context.close();

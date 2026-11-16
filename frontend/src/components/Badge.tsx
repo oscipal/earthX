@@ -1,4 +1,4 @@
-// The small mark beside a title or over the map: "Preview", "Temporary", "Loading…" (UI-04 part 3b). One shape for all
+// The small mark beside a title or over the map: "Preview", "Temporary", "Overview", "Zoom in", "Loading…" (UI-04 part 3b). One shape for all
 // of them (`.badge`); the text and what it means (the tooltip) are the caller's.
 
 import type { ReactNode } from 'react';

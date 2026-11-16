@@ -8,7 +8,8 @@
 //      (a tile that an earlier level loaded is not asked for again);
 //   3. the preview of the panel or its layer is computed outside its scenes (it is cut to their footprints);
 //   4. below the first level the attribution line does not name the source of the overview (for modified data);
-//   5. a mark says it: an element of the page that is not a tooltip and says "overview" or "computed from".
+//   5. the mark "Overview" over the map (Otto, 16.11.2026, UI-08) is missing below the first level, there from it on, or has another
+//      tooltip than the one of a job's result; or another element that is not a tooltip says "overview" or "computed from".
 //
 //   cd frontend && npm run dev &            # a FRESH dev server; no backend is needed, the tiles are made up here
 //   node e2e/computed-every-level.cjs       # BASE=http://localhost:5173 OUT=<directory for the screenshots>
@@ -29,6 +30,8 @@ const AOI_BOX = [6, 44, 11, 48];
 const AOI = { type: 'Polygon', coordinates: [[[6, 44], [11, 44], [11, 48], [6, 48], [6, 44]]] };
 const CENTRE = [8.5, 46];
 const ZOOMS = [10, 9, 8, 7, 6.5, 6, 5, 4, 3, 2, 1, 0];
+// The one tooltip of the mark "Overview" (`components/PreviewBadge.tsx::OVERVIEW_TITLE`).
+const OVERVIEW_TIP = 'Drawn coarser than the original data: zoom in for full resolution.';
 const FIRST = 6.5;
 const MODIFIED = '© made up (modified)';
 const VIEWS = ['preview', 'pinned preview', 'scene view', 'crop and merge', 'pinned index'];
@@ -177,6 +180,12 @@ async function run(browser, theme, results) {
       if (zoom < FIRST && Number.isInteger(zoom) && zoom >= 2 && !asked.some((r) => r.route === 'overview' && r.steps)) {
         problems.push(`z${zoom}: no tile of the overview with the steps was asked for`);
       }
+      const markTip = await page.evaluate(() => {
+        const badge = [...document.querySelectorAll('.preview-badge-dock .badge')].find((el) => el.textContent.trim() === 'Overview');
+        return badge ? badge.getAttribute('data-tip') : null;
+      });
+      if (zoom < FIRST && markTip !== OVERVIEW_TIP) problems.push(`z${zoom}: the mark "Overview" is ${markTip === null ? 'missing' : `there with ${JSON.stringify(markTip)}`}`);
+      if (zoom >= FIRST && markTip !== null) problems.push(`z${zoom}: the mark "Overview" is there from the first level on`);
       if (zoom < FIRST) {
         const credit = await page.$$eval('.maplibregl-ctrl-attrib-inner', (els) => els.map((el) => el.textContent).join(' '));
         if (!credit.includes(MODIFIED)) problems.push(`z${zoom}: the attribution line does not name the source of the overview`);
@@ -199,7 +208,7 @@ async function run(browser, theme, results) {
     }
     const marks = await page.evaluate(() =>
       [...document.querySelectorAll('body *')]
-        .filter((el) => el.children.length === 0 && /overview|computed from/i.test(el.textContent ?? '') && !el.closest('[data-tip]'))
+        .filter((el) => el.children.length === 0 && /overview|computed from/i.test(el.textContent ?? '') && !el.closest('[data-tip]') && !el.closest('.preview-badge-dock'))
         .map((el) => el.textContent.trim().slice(0, 60)),
     );
     if (marks.length) problems.push(`the page says it: ${JSON.stringify(marks)}`);

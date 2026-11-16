@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 //
-// Plan M5-30b part 9, Otto 11.11.2026 (`adr/0032` §14 F12): the overview of a dataset with a pyramid has no mark at all, only a
-// tooltip at its layer. A job's result drawn coarser than its pixels has none either since UI-08 (`ProcessingResultLayer.test.tsx`).
+// Plan M5-30b part 9, Otto 11.11.2026 (`adr/0032` §14 F12): the overview of a dataset with a pyramid has a tooltip at its layer. Since
+// 16.11.2026 (UI-08) the map also shows the one mark "Overview" for it (`overviewMark.test.ts`).
 
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';

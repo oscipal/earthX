@@ -7,7 +7,7 @@ import { RESULTS_OWNER } from '../mapLayers';
 import { EXPIRED_LAYER_TIP, LOCKED_LAYER_TIP, type MapLayer } from '../layers';
 import { RGB, RGB_LABEL } from '../processingBands';
 import { EXPIRED_PROCESS_TEXT, layerProcessBlock, NO_COPY_TEXT, PROCESS_LAYER_TEXT, useProcessingStore } from '../processingStore';
-import { isResultLayerOverview, MIN_REMAINING_MS, OVERVIEW_TIP } from '../resultLayer';
+import { MIN_REMAINING_MS } from '../resultLayer';
 import { hasResultsPanel } from '../sections';
 import { clampResultsAt } from '../resultsEntry';
 import { useAppStore } from '../store';
@@ -131,7 +131,6 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
   );
   // A layer that shows nothing at this zoom says why, in either step of the tooltips: nothing over the map does (Otto, 10.11.2026).
   const zoomReason = shown ? zoomReasonOf(l.overlays, mapZoom) : null;
-  const overview = useAppStore((s) => isResultLayerOverview(l, s.mapZoom, s.viewportBbox)) ? OVERVIEW_TIP : null;
   const loading = useLayerLoading(l.id) && shown;
   return (
     <li className={`layer-row${locked ? ' locked' : ''}${flipped ? ' flip' : ''}${dnd.className}`} aria-current={flipped || undefined}>
@@ -156,7 +155,7 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
           className="lm-name"
           data-col="name"
           data-tip-level={zoomReason ? undefined : 'advanced'}
-          data-tip={[zoomReason, l.note, overview].filter(Boolean).join(' ') || undefined}
+          data-tip={[zoomReason, l.note].filter(Boolean).join(' ') || undefined}
           onClick={() => (flipping ? flipTo(l.id) : select(l.id))}
         >
           {layerShownName(l)}

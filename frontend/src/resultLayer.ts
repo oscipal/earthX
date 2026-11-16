@@ -13,7 +13,7 @@ import { isIntegerType } from './processingDefaults';
 import { maskLayerOf } from './processingOrder';
 import { rescaleOf, type PreviewRange } from './processingPreview';
 import { scaleOf, statsFrom, type ResultStats } from './render';
-import { levelAskedAt, TILE_SIZE, tileMetres, tileSizeOf } from './tileSize';
+import { levelAskedAt, TILE_SIZE, tileMetres } from './tileSize';
 import type { AppliedRender, Bbox, Collection } from './types';
 
 // The path of the output `tiles` (`api/processing_docs.py::TILES_HREF`), in the shape the
@@ -274,8 +274,8 @@ export function resultGsd(stated: number | null, width: number | null, bounds: B
 // "Overview": the tile the map asks for at this zoom is coarser than the result
 // (plan §3.3, F4 (1)). The level is the one MapLibre requests for tiles of `tileSize` px (a result's are 256),
 // held at the result's own finest level; the latitude is the one nearest the equator
-// in view, where the tile is coarsest — so the tooltip says it as long as any part of the
-// view is drawn coarser than the result. No mark over the map (Otto, 14.11.2026, UI-08): only the tooltip of the layer's name.
+// in view, where the tile is coarsest — so the badge stays as long as any part of the
+// view is drawn coarser than the result.
 export function isOverview(args: {
   gsd: number | null;
   mapZoom: number;
@@ -292,17 +292,6 @@ export function isOverview(args: {
     latitude = south <= 0 && north >= 0 ? 0 : Math.min(Math.abs(south), Math.abs(north));
   }
   return tileMetres(Math.min(latitude, 89), zoom, tileSize) > gsd;
-}
-
-export const OVERVIEW_TIP = 'Drawn coarser than the result: zoom in for its full resolution.';
-
-// Whether the layer of a job's result is drawn coarser than the result at this zoom: one that is shown, not expired and not deleted.
-export function isResultLayerOverview(layer: MapLayer, mapZoom: number, viewport: Bbox | null): boolean {
-  const result = layer.result;
-  if (!layer.visible || !result || result.expired || result.deleted) return false;
-  return layer.overlays.some(
-    (o) => o.kind === 'raster' && isOverview({ gsd: result.gsd, mapZoom, viewport, maxZoom: o.maxZoom, tileSize: tileSizeOf(o.tileUrl) }),
-  );
 }
 
 // --- life -------------------------------------------------------------------

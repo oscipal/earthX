@@ -1569,6 +1569,8 @@ export interface AppState {
   focusLoading: boolean; // fetching statistics while entering focus / "auto"
   // The rows of the layer manager whose tiles are in flight on the map (`layerLoading.ts`); only the map writes it.
   mapLoading: string[];
+  // The map draws an overview instead of the originals somewhere in view (`overviewMark.ts`); only the map writes it.
+  mapOverview: boolean;
   // Whether the current focus view is cropped to `aoi` ("Crop to AOI") or
   // shows the whole selection uncropped ("View full selection", M3-09) —
   // meaningless while `focusMode` is false. Drives the map's AOI clipping
@@ -1981,6 +1983,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   savedLooks: {},
   focusLoading: false,
   mapLoading: [],
+  mapOverview: false,
   cropToAoi: false,
   viewAoi: null,
 
