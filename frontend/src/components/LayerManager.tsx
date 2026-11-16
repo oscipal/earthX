@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, 
 import { zoomFloorHint } from '../datasets';
 import { flipIdOf } from '../layerFlip';
 import { layerShownName } from '../layerName';
-import { RESULTS_OWNER } from '../mapLayers';
+import { layerBox } from '../layerExtent';
 import { EXPIRED_LAYER_TIP, LOCKED_LAYER_TIP, type MapLayer } from '../layers';
 import { RGB, RGB_LABEL } from '../processingBands';
 import { EXPIRED_PROCESS_TEXT, layerProcessBlock, NO_COPY_TEXT, PROCESS_LAYER_TEXT, useProcessingStore } from '../processingStore';
@@ -15,15 +15,13 @@ import { overviewNoteOf } from '../overviewSubstitute';
 import { zoomReasonOf } from '../zoomHint';
 import BandSelect from './BandSelect';
 import EyeButton from './EyeButton';
-import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon, CogIcon, GripVerticalIcon, PencilIcon, PlusIcon, TrashIcon } from './icons';
+import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon, CogIcon, FocusIcon, GripVerticalIcon, PencilIcon, PlusIcon, TrashIcon } from './icons';
 import InlineRename from './InlineRename';
 import { RENAME_TIP } from './InspectorParts';
 import { REMOVE_TIP } from './LayerActions';
 import LayerDownload from './LayerDownload';
-import LoadingMark from './LoadingMark';
 import ResultsEye from './ResultsEye';
 import Tip from './Tip';
-import useLayerLoading from './useLayerLoading';
 import { useRowDrag, type RowDrag } from './useRowDrag';
 
 export const EXPIRED_LAYER_TEXT = 'Expired: results are kept for 7 days. Start the job again.';
@@ -31,6 +29,7 @@ export const TOP_TIP = 'Already at the top';
 export const BOTTOM_TIP = 'Already at the bottom';
 const moveTip = (direction: 'up' | 'down', blocked: boolean) => (blocked ? (direction === 'up' ? TOP_TIP : BOTTOM_TIP) : direction === 'up' ? 'Move up' : 'Move down');
 export const HIDE_LAYER_TIP = 'Hide layer';
+export const ZOOM_LAYER_TIP = 'Zoom to layer';
 export const SHOW_LAYER_TIP = 'Show layer';
 export const ADD_BAND_TIP = 'Add this band as a layer of its own';
 export const FLIP_TIP = 'Flip through layers (Up and Down or the mouse wheel over the list, Esc to stop)';
@@ -101,8 +100,8 @@ function Grip({ dnd }: { dnd: RowDnd }) {
   );
 }
 
-// One row, eleven places in a fixed order: grip, name and its pencil, then eye, opacity, up, down, process, download, note, remove. The
-// note's place holds the mark of a layer that is loading (`LoadingMark`) while the layer has no note.
+// One row, twelve places in a fixed order: grip, name and its pencil, then eye, opacity, up, down, process, zoom to layer, download, note,
+// remove (UI-09: zoom to layer is new, download moved one place to the right).
 function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: MapLayer; index: number; last: boolean; dnd: RowDnd; flipped: boolean; flipping: boolean }) {
   const remove = useAppStore((s) => s.removeLayer);
   const rename = useAppStore((s) => s.renameLayer);
@@ -110,6 +109,7 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
   const toggleVis = useAppStore((s) => s.toggleLayerVisible);
   const setOpacity = useAppStore((s) => s.setLayerOpacity);
   const move = useAppStore((s) => s.moveLayer);
+  const zoomToLayer = useAppStore((s) => s.zoomToLayer);
   const select = useAppStore((s) => s.selectLayer);
   const flipTo = useAppStore((s) => s.flipTo);
   const datasets = useAppStore((s) => s.datasets);
@@ -131,7 +131,7 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
   );
   // A layer that shows nothing at this zoom says why, in either step of the tooltips: nothing over the map does (Otto, 10.11.2026).
   const zoomReason = shown ? zoomReasonOf(l.overlays, mapZoom) : null;
-  const loading = useLayerLoading(l.id) && shown;
+  const zoomBox = layerBox(l);
   return (
     <li className={`layer-row${locked ? ' locked' : ''}${flipped ? ' flip' : ''}${dnd.className}`} aria-current={flipped || undefined}>
       <Grip dnd={dnd} />
@@ -201,13 +201,27 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
           <CogIcon size={14} />
         </button>
       )}
+      {zoomBox && !(l.result?.expired && !locked) ? (
+        <button
+          type="button"
+          className="icon-btn sm"
+          data-col="zoom"
+          disabled={locked}
+          data-tip-level="advanced"
+          data-tip={locked ? LOCKED_LAYER_TIP : ZOOM_LAYER_TIP}
+          aria-label={ZOOM_LAYER_TIP}
+          onClick={() => zoomToLayer(l.id)}
+        >
+          <FocusIcon size={14} />
+        </button>
+      ) : (
+        <Slot col="zoom" />
+      )}
       <LayerDownload layer={l} col="download" empty={<Slot col="download" />} />
       {notes.length > 0 ? (
         <span className="lm-note" data-col="note">
           <Tip text={notes.join(' ')} tone="warn" />
         </span>
-      ) : loading ? (
-        <LoadingMark col="note" />
       ) : (
         <Slot col="note" />
       )}
@@ -256,7 +270,6 @@ function ResultsRow({ first, last, dnd }: { first: boolean; last: boolean; dnd: 
   );
   // What the view of a dataset with a pyramid draws below its first level, in the tooltip and nowhere else.
   const overviewNote = useAppStore((s) => (s.resultsOnMap ? overviewNoteOf(s.datasets.find((d) => d.id === s.datasetId)) : null));
-  const loading = useLayerLoading(RESULTS_OWNER);
   return (
     <li className={`layer-row results-row${dnd.className}`}>
       <Grip dnd={dnd} />
@@ -273,8 +286,9 @@ function ResultsRow({ first, last, dnd }: { first: boolean; last: boolean; dnd: 
         <ArrowDownIcon size={14} />
       </button>
       <Slot col="process" />
+      <Slot col="zoom" />
       <Slot col="download" />
-      {loading ? <LoadingMark col="note" /> : <Slot col="note" />}
+      <Slot col="note" />
       <Slot col="remove" />
     </li>
   );

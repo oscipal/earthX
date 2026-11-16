@@ -193,10 +193,10 @@ describe('LayerManager', () => {
       act(() => root.render(<LayerManager />));
     });
 
-    it('have the eleven places in the same order, whatever the kind of layer', () => {
+    it('have the twelve places in the same order, whatever the kind of layer', () => {
       expect(rows()).toHaveLength(kinds.length);
       for (const row of rows()) {
-        expect(places(row)).toEqual(['grip', 'eye', 'name', 'rename', 'opacity', 'up', 'down', 'process', 'download', 'note', 'remove']);
+        expect(places(row)).toEqual(['grip', 'eye', 'name', 'rename', 'opacity', 'up', 'down', 'process', 'zoom', 'download', 'note', 'remove']);
       }
     });
 
@@ -212,6 +212,11 @@ describe('LayerManager', () => {
       }
       expect(at('scene', 'download').tagName).toBe('BUTTON');
       expect(at('result', 'download').tagName).toBe('A');
+      // These layers draw nothing yet, so they have no extent: the place of "Zoom to layer" is empty, as the one of the download (UI-09).
+      for (const k of kinds) {
+        const zoom = at(k.id, 'zoom');
+        expect([zoom.tagName, zoom.getAttribute('aria-hidden'), zoom.className]).toEqual(['SPAN', 'true', 'lm-slot']);
+      }
       // The other buttons are the ones of every row, in the same class.
       for (const col of ['eye', 'up', 'down', 'remove']) {
         for (const row of rows()) expect(row.querySelector(`[data-col="${col}"]`)?.tagName).toBe('BUTTON');
@@ -352,9 +357,9 @@ describe('the result layer of a deleted job', () => {
     expect(lockedWithoutReason(probe)).toEqual(['Find', 'Find', 'Find']);
   });
 
-  it('keeps its eleven places', () => {
+  it('keeps its twelve places', () => {
     deleteJobAt(1, NOW + DAY);
-    expect([...rows()[0].children].map((c) => c.getAttribute('data-col'))).toEqual(['grip', 'eye', 'name', 'rename', 'opacity', 'up', 'down', 'process', 'download', 'note', 'remove']);
+    expect([...rows()[0].children].map((c) => c.getAttribute('data-col'))).toEqual(['grip', 'eye', 'name', 'rename', 'opacity', 'up', 'down', 'process', 'zoom', 'download', 'note', 'remove']);
   });
 
   it('cannot be switched on with the eye while it is locked, and can still be removed', () => {

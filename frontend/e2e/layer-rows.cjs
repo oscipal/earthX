@@ -15,7 +15,7 @@ const BASE = process.env.BASE ?? 'http://localhost:5173';
 const OUT = process.env.OUT ?? path.join(require('node:os').tmpdir(), 'earthx-layer-rows');
 const THEMES = { light: 'normal', dark: 'tech' };
 const VIEWPORTS = { wide: { width: 1280, height: 800 }, middle: { width: 1000, height: 760 }, narrow: { width: 360, height: 740 } };
-const COLUMNS = ['grip', 'eye', 'name', 'rename', 'opacity', 'up', 'down', 'process', 'download', 'note', 'remove'];
+const COLUMNS = ['grip', 'eye', 'name', 'rename', 'opacity', 'up', 'down', 'process', 'zoom', 'download', 'note', 'remove'];
 
 const overlap = (a, b) => a.x < b.x + b.width - 0.5 && b.x < a.x + a.width - 0.5 && a.y < b.y + b.height - 0.5 && b.y < a.y + a.height - 0.5;
 
@@ -71,6 +71,20 @@ async function check(browser, { theme, viewport }) {
     });
   });
   await page.screenshot({ path: path.join(OUT, `rows ${name}.png`) });
+
+  // "Zoom to layer" (UI-09) fits the map to the box of the layer: the view then holds it and is not much larger than it.
+  const hasZoom = await page.$$eval('.layer-row', (nodes) => nodes.map((row) => row.querySelector('[data-col="zoom"]')?.tagName));
+  if (hasZoom.some((tag) => tag !== 'BUTTON' && tag !== 'SPAN')) problems.push(`zoom places: ${hasZoom}`);
+  await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.setState({ dock: 'layers' }));
+  // The made-up backend answers 404 and the toast of that error may lie over the row: click through the DOM.
+  await page.$eval('.layer-row:first-child [data-col="zoom"]', (button) => button.click());
+  await page.waitForFunction(async () => {
+    const { viewportBbox } = (await import('/src/store.ts')).useAppStore.getState();
+    return viewportBbox && viewportBbox[0] > 5 && viewportBbox[2] < 16;
+  }, null, { timeout: 5000 }).catch(() => problems.push('"Zoom to layer" did not fit the map to the layer'));
+  const seen = await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.getState().viewportBbox);
+  if (seen && !(seen[0] <= 10 && seen[1] <= 50 && seen[2] >= 11 && seen[3] >= 51)) problems.push(`"Zoom to layer": the view ${seen} does not hold the layer`);
+  await page.screenshot({ path: path.join(OUT, `zoomed ${name}.png`) });
 
   // The settings of a result in the bar at the right edge.
   await page.evaluate(async () => {
