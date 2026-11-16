@@ -742,7 +742,7 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
   }
 
   function buttons(): HTMLButtonElement[] {
-    return [...container.querySelectorAll('.dataset-list .dataset-toggle')] as HTMLButtonElement[];
+    return [...container.querySelectorAll('.dataset-list .dataset-toggle:not(.add-dataset)')] as HTMLButtonElement[];
   }
   function multiButton(): HTMLInputElement {
     return container.querySelector('.multi-select-toggle input') as HTMLInputElement;
@@ -849,6 +849,31 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
 
   // UI-05 (Otto, 06.11.2026 and 07.11.2026): as many rows as fit, no upper limit; jsdom has no layout, so the panel keeps the
   // three rows it starts with unless a test lays it out.
+  describe('"Add dataset" (Otto, 16.11.2026)', () => {
+    const tiles = () => [...container.querySelectorAll('.dataset-list .dataset-toggle')].map((b) => b.querySelector('.dataset-toggle-title')?.textContent);
+    const addTile = () => container.querySelector<HTMLButtonElement>('.dataset-list .add-dataset')!;
+
+    it('stands after the datasets, drawn like one, and opens the Data catalogue', () => {
+      setUp([]);
+      expect(tiles()).toEqual(['Optical imagery', 'Elevation model', 'Broken data', 'Add dataset']);
+      expect(addTile().classList.contains('btn')).toBe(true);
+      expect(addTile().hasAttribute('aria-pressed')).toBe(false);
+      act(() => useAppStore.setState({ catalogueOpen: false }));
+      act(() => addTile().click());
+      expect(useAppStore.getState().catalogueOpen).toBe(true);
+      act(() => addTile().click());
+      expect(useAppStore.getState().catalogueOpen).toBe(true);
+    });
+
+    it('is the one tile where no dataset is added yet, with the pages "1 / 1"', () => {
+      useAppStore.setState({ datasets: datasetsFrom([OPTICAL]), addedDatasetIds: [], selectedDatasetIds: [] });
+      act(() => root.render(<ControlPanel />));
+      expect(tiles()).toEqual(['Add dataset']);
+      expect(container.querySelector('.dataset-page-count')?.textContent).toBe('1 / 1');
+      expect(container.textContent).not.toContain('No datasets yet');
+    });
+  });
+
   describe('pages of datasets', () => {
     const many = Array.from({ length: 7 }, (_, i) => collection(`extra-${i}`, `Extra ${i}`));
     const previous = () => container.querySelector('.dataset-pages [aria-label="Previous page"]') as HTMLButtonElement;
