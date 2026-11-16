@@ -4107,3 +4107,17 @@ button.pm-open:hover {
   padding-inline: var(--space-1);
   white-space: nowrap;
 }
+
+/* --- a part that failed (UI-10): a short note with "Reload" instead of a white page --- */
+.error-note {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  background: var(--map-bg);
+  color: var(--text);
+  font-size: var(--text-md);
+}
