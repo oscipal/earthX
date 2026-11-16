@@ -1,5 +1,6 @@
 // UI-08, Otto 16.11.2026: one mark "Overview" wherever the map shows an overview instead of the originals; here the part that asks the map.
 
+import { Evented, ImageSource } from 'maplibre-gl';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { buildOverviewTileTemplate } from './api';
@@ -74,6 +75,33 @@ describe('showsOverview', () => {
     expect(showsOverview(fakeMap([{ id: 'o', source: 's', tiles: [PYRAMID], opacity: 0 }]))).toBe(false);
     expect(showsOverview(fakeMap([{ id: 'o', source: 's', tiles: [PYRAMID], type: 'line' }]))).toBe(false);
     expect(showsOverview(fakeMap([]))).toBe(false);
+  });
+});
+
+// A quicklook as the map holds it (UI-10): MapLibre's own image source, whose `tiles` are its loaded tiles keyed by id, not URLs.
+function quicklookSource(): ImageSource {
+  const dispatcher = { getActor: () => ({ sendAsync: async () => ({}) }) };
+  return new ImageSource('ql', { type: 'image', url: 'data:,', coordinates: [[0, 1], [1, 1], [1, 0], [0, 0]] }, dispatcher as never, new Evented());
+}
+
+describe('showsOverview with the sources MapLibre really holds (UI-10)', () => {
+  function mapWith(sources: Record<string, unknown>) {
+    const map = fakeMap(Object.keys(sources).map((id) => ({ id, source: id, tiles: [] })));
+    (map as unknown as { getSource: (id: string) => unknown }).getSource = (id) => sources[id];
+    return map;
+  }
+
+  it('skips a quicklook of a scene, an image source with its tiles as an object, without throwing', () => {
+    const source = quicklookSource();
+    expect(Array.isArray(source.tiles)).toBe(false);
+    expect(showsOverview(mapWith({ ql: source }))).toBe(false);
+    expect(showsOverview(mapWith({ ql: source, o: { type: 'raster', tiles: [PYRAMID] } }))).toBe(true);
+  });
+
+  it('skips a source that has not loaded its tiles yet, a source that is gone and tiles that are no URLs', () => {
+    for (const source of [{ type: 'raster' }, undefined, null, { tiles: null }, { tiles: 'x' }, { tiles: [7, null] }]) {
+      expect(showsOverview(mapWith({ s: source }))).toBe(false);
+    }
   });
 });
 
