@@ -85,12 +85,13 @@ async def test_search_reaches_the_source_through_its_own_adapter(chain: Chain) -
         )
         assert [item["id"] for item in outcome.items] == [chain.item["id"]]
         assert outcome.items[0]["bbox"] == chain.item["bbox"]
-        if chain.config.source.adapter is AdapterKind.FSDI_STAC_V1:
+        if chain.config.source.adapter in (AdapterKind.FSDI_STAC_V1, AdapterKind.BEV_ATOM):
             # The chain builds this item by hand for the tile and download routes; it is what the run writes.
             assert outcome.items == (chain.item,)
         paths = {request.url.path for request in chain.searched}
         stac = {f"/api/stac/v1/collections/{chain.config.source.source_collection_id}", "/api/stac/v1/search"}
-        assert paths in ({"/tileList.txt", "/blacklist.txt", "/"}, {"/esa_worldcover_grid.geojson", "/"}, stac)
+        atom = {synthetic_chain.ATOM_SERVICE_PATH, synthetic_chain.ATOM_DATASET_PATH}
+        assert paths in ({"/tileList.txt", "/blacklist.txt", "/"}, {"/esa_worldcover_grid.geojson", "/"}, stac, atom)
         return
 
     page = await search_items(chain.config, SearchParams(limit=10), adapters=ADAPTER_SPECS, gateway=chain.gateway)
@@ -126,14 +127,11 @@ async def test_a_found_item_carries_the_key_the_viewer_groups_by(chain: Chain) -
             assert part
 
 
-def test_display_renders_a_tile_from_the_registrys_own_visualisation(
-    client: TestClient, chain: Chain
-) -> None:
+def test_display_renders_a_tile_from_the_registrys_own_visualisation(client: TestClient, chain: Chain) -> None:
     """Link 2. The asset key is checklist point 8's value, not one invented here."""
     zoom, x, y = chain.tile
     response = client.get(
-        f"/collections/{chain.dataset_id}/items/{chain.item['id']}"
-        f"/tiles/WebMercatorQuad/{zoom}/{x}/{y}.png",
+        f"/collections/{chain.dataset_id}/items/{chain.item['id']}/tiles/WebMercatorQuad/{zoom}/{x}/{y}.png",
         params={"asset": chain.render_asset},
     )
 
@@ -160,9 +158,7 @@ def test_the_clipped_download_is_a_zip_of_raster_and_notice(client: TestClient, 
     assert any(name.endswith(".tif") for name in names), names
 
 
-def test_the_notice_carries_attribution_and_terms_of_this_entry(
-    client: TestClient, chain: Chain
-) -> None:
+def test_the_notice_carries_attribution_and_terms_of_this_entry(client: TestClient, chain: Chain) -> None:
     """Point 4 and point 9 meet here: the licence text travels with the pixels."""
     response = client.post(
         f"/collections/{chain.dataset_id}/download",
@@ -211,17 +207,14 @@ async def test_the_whole_chain_runs_for_this_entry(chain: Chain, client: TestCli
 # --------------------------------------------------------------------------------
 
 
-def test_an_asset_on_a_host_the_entry_does_not_name_is_refused(
-    client: TestClient, chain: Chain
-) -> None:
+def test_an_asset_on_a_host_the_entry_does_not_name_is_refused(client: TestClient, chain: Chain) -> None:
     """The allowlist is part of the chain, not a layer the fixtures step around."""
     chain.item["assets"][synthetic_chain.item_asset_key(chain.config, chain.render_asset)] = {
         "href": "https://elsewhere.example.invalid/products/mini.tif"
     }
     zoom, x, y = chain.tile
     response = client.get(
-        f"/collections/{chain.dataset_id}/items/{chain.item['id']}"
-        f"/tiles/WebMercatorQuad/{zoom}/{x}/{y}.png",
+        f"/collections/{chain.dataset_id}/items/{chain.item['id']}/tiles/WebMercatorQuad/{zoom}/{x}/{y}.png",
         params={"asset": chain.render_asset},
     )
     assert response.status_code == 502, response.text

@@ -64,7 +64,8 @@ from tests.earthx.readers import mini_dem, mini_zarr, mini_zarr_cf
 
 #: Q14: band math for the Sentinel-2 entry and the Zarr test entry, reprojection for the DEM; the mask over its own
 #: classes for ESA WorldCover (M5-07 plan §4.4, no band math there); reprojection of the TPS raster for Sentinel-1 GRD
-#: (DS-04 plan §4.7, Checkliste Punkt 9); reprojection out of LV95 for swissALTI3D (M5-08 plan §4.6 point 9).
+#: (DS-04 plan §4.7, Checkliste Punkt 9); reprojection out of LV95 for swissALTI3D (M5-08 plan §4.6 point 9) and out
+#: of LAEA for BEV ALS-DGM (M5-09 plan §4.7).
 OPERATOR_FOR = {
     "sentinel-2-c1-l2a": "band_math",
     # Never reprojected (DS-04d F6): stretched in its own grid.
@@ -74,6 +75,7 @@ OPERATOR_FOR = {
     "esa-worldcover-2020": "mask",
     "esa-worldcover-2021": "mask",
     "swissalti3d": "reproject",
+    "bev-als-dgm": "reproject",
 }
 
 ENTRIES = list(TEST_ENTRIES)
@@ -154,8 +156,8 @@ def build(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     """A scenario for one entry, or :class:`UnsupportedFormat` — never a quiet pass."""
     if config.format is DataFormat.COG and config.source.adapter is AdapterKind.ESA_WORLDCOVER_BUCKET:
         return _worldcover(config, tmp_path, monkeypatch)
-    if config.format is DataFormat.COG and config.source.adapter is AdapterKind.FSDI_STAC_V1:
-        return _lv95(config, tmp_path, monkeypatch)
+    if config.format is DataFormat.COG and config.source.adapter in (AdapterKind.FSDI_STAC_V1, AdapterKind.BEV_ATOM):
+        return _projected(config, tmp_path, monkeypatch)
     if config.format is DataFormat.COG and config.source.item_holding is ItemHolding.MATERIALIZED:
         return _dem(config, tmp_path, monkeypatch)
     if config.georeferencing is Georeferencing.GCP_TPS:
@@ -168,9 +170,16 @@ def build(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 
 
 def _federated(
-    config: DatasetConfig, item: dict[str, Any], assets: list[str], aoi: dict[str, Any], step: dict[str, Any], **rest: Any
+    config: DatasetConfig,
+    item: dict[str, Any],
+    assets: list[str],
+    aoi: dict[str, Any],
+    step: dict[str, Any],
+    **rest: Any,
 ) -> Scenario:
-    synthetic = replace(config, source=replace(config.source, asset_hosts=(synthetic_chain.HOST,), asset_href_rewrites=()))
+    synthetic = replace(
+        config, source=replace(config.source, asset_hosts=(synthetic_chain.HOST,), asset_href_rewrites=())
+    )
     gateway, _ = synthetic_chain.gateway_answering_search(synthetic, item)
     return Scenario(
         config=synthetic,
@@ -208,8 +217,14 @@ def _cog_pair(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.MonkeyP
         for name in files
     }
     return _federated(
-        config, item, ["red", "nir"], _whole(bounds), _ndvi("red", "nir"),
-        scaling="item", result_bands=["band_math"], tile=_central_tile(bounds, sources.CRS),
+        config,
+        item,
+        ["red", "nir"],
+        _whole(bounds),
+        _ndvi("red", "nir"),
+        scaling="item",
+        result_bands=["band_math"],
+        tile=_central_tile(bounds, sources.CRS),
     )
 
 
@@ -225,8 +240,14 @@ def _zarr_pair(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.Monkey
     # the asset of a band is found from these names (adr/0020 §5).
     item["assets"]["SR_10m"]["bands"] = [{"name": "b04"}, {"name": "b08"}]
     return _federated(
-        config, item, [ZARR_ASSET], _whole(bounds), _ndvi("b04", "b08"),
-        scaling="store-cf", result_bands=["band_math"], tile=_central_tile(bounds, mini_zarr_cf.ITEM_CRS),
+        config,
+        item,
+        [ZARR_ASSET],
+        _whole(bounds),
+        _ndvi("b04", "b08"),
+        scaling="store-cf",
+        result_bands=["band_math"],
+        tile=_central_tile(bounds, mini_zarr_cf.ITEM_CRS),
     )
 
 
@@ -235,9 +256,13 @@ def _dem(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     mini_dem.serve_dem(mini_dem.build_mini_dem(tmp_path / "mini_dem.tif"), monkeypatch)
     synthetic_chain.resolve_from_memory(monkeypatch)
     synthetic = replace(
-        config, source=replace(
-            config.source, endpoint=f"https://{synthetic_chain.HOST}", asset_hosts=(synthetic_chain.HOST,), asset_href_rewrites=()
-        )
+        config,
+        source=replace(
+            config.source,
+            endpoint=f"https://{synthetic_chain.HOST}",
+            asset_hosts=(synthetic_chain.HOST,),
+            asset_href_rewrites=(),
+        ),
     )
     item = synthetic_chain.dem_item(mini_dem.TILE_NAME, mini_dem.BOUNDS, config=synthetic, gsd=30.0)
     gateway, _ = synthetic_chain.gateway_answering_materialize(synthetic, item)
@@ -274,8 +299,8 @@ def _worldcover(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.Monke
     )
 
 
-def _lv95(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Scenario:
-    """A tile in LV95 from the materialization over the STAC API, reprojected to UTM (M5-08 plan §4.6 point 9)."""
+def _projected(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Scenario:
+    """A tile in LV95 or LAEA from its materialization, reprojected to UTM (M5-08 plan §4.6 point 9, M5-09 §4.7)."""
     sources.serve({}, monkeypatch)  # the resolver; the COG itself is served by the chain
     chain = synthetic_chain.build(config, tmp_path, monkeypatch)
     asset = chain.render_asset
@@ -415,7 +440,9 @@ def test_every_assigned_operator_exists_and_applies_to_its_entry() -> None:
     for config in ENTRIES:
         op = OPERATOR_FOR[config.dataset_id]
         operator = OPERATORS.operator(op, 2 if op in ("reproject", "mask") else 1)
-        params = operator.params.model_validate({"reproject": REPROJECT, "mask": MASK, "normalize": NORMALIZE}.get(op, {"expression": "a + b"}))
+        params = operator.params.model_validate(
+            {"reproject": REPROJECT, "mask": MASK, "normalize": NORMALIZE}.get(op, {"expression": "a + b"})
+        )
         assert applicable(operator, config, params) == [], config.dataset_id
 
 
@@ -432,7 +459,9 @@ def _entries_of(test: Any) -> list[DatasetConfig]:
 
 def test_the_zarr_case_of_the_native_level_comes_from_the_test_entry() -> None:
     """The registry has no Zarr dataset; the Zarr comparison (adr/0014 §15d) runs on the test entry alone."""
-    assert _zarr_case_missing(REGISTRY) is not None, "the registry has a Zarr entry: this case no longer needs the test entry"
+    assert _zarr_case_missing(REGISTRY) is not None, (
+        "the registry has a Zarr entry: this case no longer needs the test entry"
+    )
     assert _zarr_case_missing(ENTRIES) is None, _zarr_case_missing(ENTRIES)
     parametrized = _entries_of(test_the_tile_equals_the_job_on_the_native_level)
     assert SYNTHETIC_ZARR in parametrized, _zarr_case_missing(parametrized)
