@@ -85,7 +85,7 @@ from earthx.processing.operators import REGISTRY, BandMeta, OperatorRegistry, Ra
 from earthx.processing.operators.normalize import MEASURED_PROPERTY
 from earthx.processing.plan import PlannedStep, Segment, crop_window, live_steps, plan_steps, segments, stock_steps
 from earthx.processing.recipe import AppliedScaling, CropOutput, RasterOutput, Recipe, engine_versions
-from earthx.processing.source import Source, common_grid, merge_images
+from earthx.processing.source import Source, common_grid, merge_images, pad_image
 from earthx.processing.statistics import BandStatistics, PercentileRefinement, gdal_tags, summarize
 from earthx.processing.workfile import open_workfile, workfile_path
 from earthx.readers import process_gdal_options, read_access_for
@@ -793,22 +793,7 @@ def _with_halo(read: Callable[[Window], ImageData], block: Window, halo: int, li
     right_col = min(col1, max(int(limits.col_off + limits.width), int(block.col_off + block.width)))
     bottom_row = min(row1, max(int(limits.row_off + limits.height), int(block.row_off + block.height)))
     image = read(Window(left_col, top_row, right_col - left_col, bottom_row - top_row))
-    pads = ((0, 0), (top_row - row0, row1 - bottom_row), (left_col - col0, col1 - right_col))
-    if not any(before or after for before, after in pads):
-        return image
-    left, bottom, right, top = image.bounds
-    x_size, y_size = (right - left) / image.width, (top - bottom) / image.height
-    data = numpy.ma.MaskedArray(
-        numpy.pad(numpy.ma.getdata(image.array), pads),
-        mask=numpy.pad(numpy.ma.getmaskarray(image.array), pads, constant_values=True),
-    )
-    bounds = (
-        left - pads[2][0] * x_size,
-        bottom - pads[1][1] * y_size,
-        right + pads[2][1] * x_size,
-        top + pads[1][0] * y_size,
-    )
-    return ImageData(data, bounds=bounds, crs=image.crs, band_names=list(image.band_names), nodata=image.nodata)
+    return pad_image(image, top_row - row0, row1 - bottom_row, left_col - col0, col1 - right_col)
 
 
 def area_factor(width: int, height: int, max_pixels: int = MAX_AREA_PIXELS) -> int:

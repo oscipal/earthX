@@ -113,8 +113,11 @@ describe('the overlays of a layer of a dataset with a pyramid', () => {
     expect(url).not.toContain('asset=');
   });
 
-  it('are none where the look is an index, which the route of the overview does not compute', () => {
-    expect(overviewOverlaysOf(['relief'], LIST, { rescale: '0,3000', index: 'ndvi' }, null)).toEqual([]);
+  it('are the plain picture where the look names an index the dataset does not have, as the rest of the layer is', () => {
+    // An index the dataset has is computed on the overview (`overviewComputed.test.ts`, M5-10 part B).
+    const overlays = overviewOverlaysOf(['relief'], LIST, { rescale: '0,3000', index: 'ndvi' }, null);
+    expect(overlays).toHaveLength(1);
+    expect(overlays[0].kind === 'raster' && overlays[0].tileUrl).not.toContain('op=');
   });
 });
 
@@ -144,8 +147,8 @@ describe('the view of a dataset with a pyramid', () => {
     expect(live.attributionAt(6.5)).toEqual([]);
   });
 
-  it('draws no pyramid where a pinned layer draws the view, nor where the view is off, nor with an index', () => {
-    for (const over of [{ tilesInLayer: true }, { showDownloaded: false }, { render: { index: 'ndvi' } }]) {
+  it('draws no pyramid where a pinned layer draws the view, nor where the view is off', () => {
+    for (const over of [{ tilesInLayer: true }, { showDownloaded: false }]) {
       const live = zoomMap();
       syncFocusRaster(live.map as never, view(over));
       expect(sourcesOf(live).filter(([, s]) => (s.tiles as string[])[0].includes('/overview/'))).toEqual([]);

@@ -47,6 +47,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Annotated, Any, Literal, TypeVar
 
+import numpy
 import psycopg
 from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request
 from fastapi.dependencies.utils import solve_dependencies
@@ -444,6 +445,8 @@ def _operator_support() -> Any:
     A start of the tiler stays light (``test_tiler_start_is_light``): `processing` brings numexpr
     and the COG writer, which a tiler that never sees ``op`` has no use for.
     """
+    from rasterio.transform import Affine
+
     from earthx.api.intake import describe_bands
     from earthx.processing import operators, tile
     from earthx.processing.errors import RecipeInvalid, UnknownOperator
@@ -463,6 +466,12 @@ def _operator_support() -> Any:
         option_refused=tile.TileOptionRefused,
         recipe_invalid=RecipeInvalid,
         describe_bands=describe_bands,
+        judge_steps=tile.judge_steps,
+        plan_bands_on=tile.plan_bands_on,
+        halo_of=tile.halo_of,
+        raster_meta=operators.RasterMeta,
+        band_meta=operators.BandMeta,
+        identity=Affine.identity,
     )
 
 
@@ -495,7 +504,7 @@ def _refuse_free_parameters(request: Request) -> None:
 
 
 def _operator_step(
-    support: Any, operators: Any, config: DatasetConfig, *, op: str, version: str, raw: str, where: str
+    support: Any, operators: Any, config: DatasetConfig, *, op: str, version: str, raw: str, where: str, first: bool
 ) -> tuple[Any, Any]:
     """One step of the chain: its operator and validated parameters, or the ``HTTPException`` its refusal maps to.
 
@@ -513,8 +522,11 @@ def _operator_step(
         operator = operators.operator(op, int(version))
     except support.unknown_operator as error:
         raise HTTPException(status_code=422, detail=f"{where}{error}") from None
-    if support.tier.T1 not in operator.tiers or operator.kind != "pixel":
+    if support.tier.T1 not in operator.tiers or operator.kind not in ("pixel", "focal"):
         raise HTTPException(status_code=422, detail=f"{where}{operator.op!r} does not run as a tile")
+    if operator.kind == "focal" and not first:
+        # Its halo would have to be read through every step before it (adr/0030 F3).
+        raise HTTPException(status_code=422, detail=f"{where}{operator.op!r} runs as a tile only as the first step")
     try:
         params = operator.params.model_validate_json(raw, strict=True)
     except ValidationError as error:
@@ -534,7 +546,7 @@ def _operator_request(request: Request, config: DatasetConfig) -> list[tuple[Any
 
     ``op``, ``op_version`` and ``params`` come in threes: each as often as the others, at most
     :data:`MAX_OPERATOR_STEPS` times, the first of each being the first step. Every step has to run as a tile
-    (``T1``, ``pixel``) and to apply to the dataset on its own; the bands each one leaves for the next are
+    (``T1``, ``pixel``, or ``focal`` as the first step) and to apply to the dataset on its own; the bands each one leaves for the next are
     judged by the reader, before the first pixel.
 
     ``400`` for a query that is malformed or whose parameters do not validate (R5 included); ``422`` for one
@@ -556,7 +568,14 @@ def _operator_request(request: Request, config: DatasetConfig) -> list[tuple[Any
     chained = len(columns[0]) > 1
     return [
         _operator_step(
-            support, operators, config, op=op, version=version, raw=raw, where=f"step {index}: " if chained else ""
+            support,
+            operators,
+            config,
+            op=op,
+            version=version,
+            raw=raw,
+            where=f"step {index}: " if chained else "",
+            first=index == 0,
         )
         for index, (op, version, raw) in enumerate(zip(*columns, strict=True))
     ]
@@ -808,12 +827,19 @@ async def _validate_before_fetching(request: Request) -> None:
     query parameters last, so the path dependency below would fetch up to 64 items for a request that is
     refused afterwards for its format, its tile matrix set or a ``tilesize``. This runs the same solving
     on the matched route without that dependency and the steps that hang on it (``op`` is judged by the path
-    dependency itself, before the fetch): the other dependencies (``bidx``, ``rescale``, the
+    dependency itself, before the fetch; on the overview the steps are its post-process): the other dependencies (``bidx``, ``rescale``, the
     zoom limits of a TileJSON …) and the route's own parameters are checked here, and a refusal is the
     ``422`` FastAPI would have answered, with nothing asked of the source.
     """
     route = request.scope["route"]
-    skipped = (placed_mosaic_scenes, mosaic_post_process, placed_overview_scenes, placed_masked_overview_scenes)
+    skipped = (
+        placed_mosaic_scenes,
+        mosaic_post_process,
+        placed_overview_scenes,
+        placed_masked_overview_scenes,
+        overview_post_process,
+        masked_overview_post_process,
+    )
     dependant = dataclasses.replace(
         route.dependant, dependencies=[sub for sub in route.dependant.dependencies if sub.call not in skipped]
     )
@@ -1140,6 +1166,86 @@ def _overview_dataset(state: Any, dataset: str) -> tuple[DatasetConfig, ViewerIn
     return config, viewer
 
 
+@dataclass(frozen=True, slots=True)
+class OverviewChain:
+    """The steps a tile below the first level runs on the picture of the overview (M5-10 part B, plan §11, G1).
+
+    ``names`` are the bands of the dataset the one band of the overview stands for: the first band of its standard view for
+    its own pyramid, and for a substitute every band with the unit of the stand-in's (G3: swissALTI3D's ``dtm`` and
+    ``dtm_2m`` are both GLO-30's ``data``). ``steps`` are the planner's, ending in the selection of the band shown.
+    """
+
+    names: tuple[str, ...]
+    steps: tuple[tuple[Any, Any], ...]
+    halo: int
+
+
+#: Where the chain of an overview tile waits for the post-process of the same request.
+_OVERVIEW_CHAIN = "earthx_overview_chain"
+
+
+def _overview_names(config: DatasetConfig, substitute: DatasetConfig | None) -> tuple[tuple[str, str | None], ...]:
+    """The bands of ``config`` the overview's one band stands for, with their unit."""
+    assert config.default_render is not None  # a dataset that draws an overview has a standard view
+    if substitute is None:
+        first = config.default_render.assets[0]
+        return ((first, config.band_units.get(first)),)
+    assert substitute.default_render is not None
+    unit = substitute.band_units.get(substitute.default_render.assets[0])
+    same = tuple((name, unit) for name, own in config.band_units.items() if unit is not None and own == unit)
+    return same or ((config.default_render.assets[0], unit),)
+
+
+def _overview_chain(request: Request, config: DatasetConfig, substitute: DatasetConfig | None) -> OverviewChain | None:
+    """The steps of the query on the overview, judged before anything is read; ``None`` for a tile without ``op``.
+
+    The steps have to apply to the dataset in the path, as on its own tiles; ``400`` and ``422`` as there.
+    """
+    requested = _operator_request(request, config)
+    if requested is None:
+        if "band" in request.query_params:
+            raise HTTPException(status_code=400, detail="band is for tiles with op")
+        return None
+    support = _operator_support()
+    names = _overview_names(config, substitute)
+    meta = support.raster_meta(
+        "EPSG:3857",
+        support.identity(),
+        1,
+        1,
+        tuple(support.band_meta(name, "float32", None, unit) for name, unit in names),
+    )
+    bands = _bands_request(request)
+    try:
+        support.judge_steps(meta, requested)
+        if any(not operator.stock for operator, _ in requested):
+            if bands is not None:
+                raise HTTPException(status_code=400, detail="band is for steps of version 2; a step of version 1 replaces or removes bands")
+            steps = tuple(requested)
+        else:
+            _, steps, _ = support.plan_bands_on(meta, requested, bands)
+    except support.recipe_invalid as error:
+        raise HTTPException(status_code=422, detail=str(error)) from None
+    return OverviewChain(tuple(name for name, _ in names), steps, support.halo_of(steps))
+
+
+def _overview_kernels(chain: OverviewChain) -> Callable[[ImageData], ImageData]:
+    """The kernels of the chain on the picture of the overview: its one band under each name it stands for, then the steps."""
+    kernels = _kernels(chain.steps)
+
+    def run(image: ImageData) -> ImageData:
+        one = image.array[:1]
+        named = ImageData(
+            numpy.ma.concatenate([one] * len(chain.names)).astype("float32"),
+            bounds=image.bounds,
+            crs=image.crs,
+            band_names=list(chain.names),
+        )
+        return kernels(named)
+
+    return run
+
+
 def _footprint_answer(dataset: str, selection: str, status_code: int) -> JSONResponse:
     """The answer of the creation of a footprint selection: the id and where its tiles are, relative to this app."""
     base = f"/collections/{dataset}/overview/{selection}"
@@ -1227,6 +1333,8 @@ async def masked_overview_scenes(
     if outcome is not None:
         outcome.no_store = overview_tiles.is_prototype(dataset)
     _overview_dataset(request.app.state, dataset)
+    if any(name in request.query_params for name in ("op", "op_version", "params", "band")):
+        raise HTTPException(status_code=400, detail="the hits of a search are drawn without steps")
     try:
         chosen = await _load_footprints(request.app.state, dataset, selection)
     except OrderRefused as error:
@@ -1268,6 +1376,9 @@ async def overview_scenes(
         _check_display_allowed(substitute)
         assert substitute.default_render is not None  # the registry compares the unit of its default band
     _refuse_free_parameters(request)
+    chain = _overview_chain(request, config, substitute)
+    setattr(request.state, _OVERVIEW_CHAIN, chain)
+    halo = 0 if chain is None else chain.halo
     try:
         try:
             zoom = int(request.path_params["z"])
@@ -1286,7 +1397,7 @@ async def overview_scenes(
             mosaic_tiles.masked_region(grid, footprints)  # 404 for a tile over none of the hits, before anything is read
         if substitute is None:
             return await _pyramid_tile(
-                request, config, grid, source=overview_tiles.OVERVIEW_SOURCE, extent=None, mask=footprints
+                request, config, grid, source=overview_tiles.OVERVIEW_SOURCE, extent=None, mask=footprints, chain=chain
             )
         assert substitute.viewer is not None  # the registry gives a substitute a viewer
         extent = config.spatial_extent.bbox
@@ -1299,7 +1410,14 @@ async def overview_scenes(
             # the object is a tile without data and no reason to read files.
             mosaic_tiles.substitute_region(grid, extent)
             stored = await _pyramid_tile(
-                request, substitute, grid, source=mosaic_tiles.SUBSTITUTE_SOURCE, extent=extent, fallback=True, mask=footprints
+                request,
+                substitute,
+                grid,
+                source=mosaic_tiles.SUBSTITUTE_SOURCE,
+                extent=extent,
+                fallback=True,
+                mask=footprints,
+                chain=chain,
             )
             if stored is not None:
                 return stored
@@ -1338,7 +1456,15 @@ async def overview_scenes(
     scenes = tuple(
         _open_ref(state, refs[item_id], target_gsd=target_gsd_for(request, items[item_id])) for item_id in touching.read
     )
-    return MosaicScenes(substitute.dataset_id, scenes, mosaic_tiles.union_bounds(outlines), budget, mask=footprints)
+    return MosaicScenes(
+        substitute.dataset_id,
+        scenes,
+        mosaic_tiles.union_bounds(outlines),
+        budget,
+        mask=footprints,
+        physical=chain is not None,
+        halo=halo,
+    )
 
 
 async def _pyramid_tile(
@@ -1350,6 +1476,7 @@ async def _pyramid_tile(
     extent: tuple[float, float, float, float] | None,
     fallback: bool = False,
     mask: BaseGeometry | None = None,
+    chain: OverviewChain | None = None,
 ) -> PyramidTile | None:
     """The stored tile of ``owner``'s pyramid, or the answer that says why there is none (plan M5-30b §8.11).
 
@@ -1384,8 +1511,11 @@ async def _pyramid_tile(
     # The read of the object and the rendering hold threads of the shared pool: they wait in the event loop first, at a gate
     # of their own, apart from the file reads (plan M5-30b §8.11).
     place = await _wait_for_a_place(request, PYRAMID_GATE)
+    halo = 0 if chain is None else chain.halo
     try:
         data = await sources.tile(owner.dataset_id, found.version, grid)
+        # A step that reads the neighbours of each pixel reads the stored tiles around this one too (G4: no seams).
+        around = await sources.around(owner.dataset_id, found.version, grid) if halo else ()
     except HTTPException as error:
         place.release()
         if fallback and error.status_code == 503:
@@ -1394,7 +1524,9 @@ async def _pyramid_tile(
     except BaseException:
         place.release()
         raise
-    return PyramidTile(owner.dataset_id, data, extent, place, mask)
+    return PyramidTile(
+        owner.dataset_id, data, extent, place, mask, physical=chain is not None, halo=halo, neighbours=around
+    )
 
 
 async def _wait_for_a_place(request: Request, gate: TileGate) -> TilePlace:
@@ -1466,8 +1598,30 @@ async def placed_masked_overview_scenes(
             scenes.place.release()
 
 
-def overview_post_process() -> None:
-    """The ``process_dependency`` of the substitute's tile: none. No ``algorithm``, no steps; a picture only."""
+def _overview_steps(request: Request) -> Callable[[ImageData], ImageData] | None:
+    chain: OverviewChain | None = getattr(request.state, _OVERVIEW_CHAIN, None)
+    return None if chain is None else _overview_kernels(chain)
+
+
+def overview_post_process(
+    request: Request,
+    src_path: Annotated[Any, Depends(placed_overview_scenes)],
+    op: _OpQuery = None,
+    op_version: _OpVersionQuery = None,
+    params: _ParamsQuery = None,
+    band: _BandQuery = None,
+) -> Callable[[ImageData], ImageData] | None:
+    """The ``process_dependency`` of the overview's tile: the steps of the query, if any (M5-10 part B, plan §11, G1).
+
+    The path dependency has judged them (:func:`_overview_chain`); they run on the picture of the overview with the
+    kernels of a job. No ``algorithm``.
+    """
+    return _overview_steps(request)
+
+
+def masked_overview_post_process() -> None:
+    """The ``process_dependency`` of the overview masked to the hits of a search: none. The hits are drawn in their standard
+    view; steps are refused before anything is read (:func:`masked_overview_scenes`)."""
     return None
 
 
@@ -2304,7 +2458,7 @@ def build_app(
     masked_factory = EarthxOverviewTilerFactory(
         path_dependency=placed_masked_overview_scenes,
         layer_dependency=BidxParams,
-        process_dependency=overview_post_process,
+        process_dependency=masked_overview_post_process,
         environment_dependency=gdal_environment,
         router_prefix=OVERVIEW_MASKED_ROUTER_PREFIX,
         name="overview-masked-tiles",

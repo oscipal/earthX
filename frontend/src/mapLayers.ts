@@ -15,7 +15,7 @@ import { asFeatureCollection, footprintOf, quicklookAoiPixelRings, quicklookCoor
 import type { Coords4 } from './geoUtils';
 import { groupOutlineFeatures } from './groupOutline';
 import type { LayerOverlay, MapLayer } from './layers';
-import { indexRasterOf, viewIndexOf } from './viewIndex';
+import { indexChainOf, indexRasterOf, viewIndexOf } from './viewIndex';
 import { underlayOf } from './underlay';
 import type { ImageOverlay } from './underlay';
 import { chosenByView, inStackOrder, passesOf, stackLikeView, viewOfPass } from './mosaic';
@@ -762,6 +762,8 @@ export function syncPreview(map: MapLibreMap, overlays: readonly LayerOverlay[])
         bounds: overlay.bounds,
         minzoom: overlay.minZoom,
         maxzoom: overlay.maxZoom,
+        // The overview below the first level names its source while it is drawn (M5-10 part B), as the view's does.
+        ...(overlay.attribution === undefined ? {} : { attribution: overlay.attribution }),
       });
       map.addLayer(
         {
@@ -1242,8 +1244,9 @@ export function syncFocusRaster(
     if (typeof drawing !== 'string') addTiles(map, drawing, tiles++, s.render, clip);
   };
   // Below the first level of a dataset with a substitute or a pyramid the view draws that picture, under everything it draws
-  // of its own (`overviewSubstitute.ts`); a layer pinned from the view draws it with its own rasters.
-  const substitute = !s.tilesInLayer && !s.render.index && drawn.length > 0 ? overviewRasterOf(dataset, s.datasets) : null;
+  // of its own (`overviewSubstitute.ts`); a layer pinned from the view draws it with its own rasters. An index is computed on it
+  // there too (M5-10 part B), so that it does not disappear when the map zooms out.
+  const substitute = !s.tilesInLayer && drawn.length > 0 ? overviewRasterOf(dataset, s.datasets, index ? indexChainOf(index) : null) : null;
   let held: SubstituteHold | null = null;
   if (substitute) {
     // Over the level where the dataset's own picture takes over, the substitute stays until that picture has arrived: a mosaic of

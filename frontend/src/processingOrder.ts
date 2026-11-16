@@ -11,7 +11,8 @@ import { groupIndexOfItem } from './grouping';
 import { canonicalJson, type AoiProvenance, type ExportLayout, type JsonSchema, type Order, type OrderStep, type ProcessDescription } from './processing';
 import type { AreaStatistics } from './api';
 import type { PassesRule } from './processingDefaults';
-import { bandNamesOf, isBandMath, isExpression, nameProblem, ownersOf, resultNameOf } from './processingBands';
+import { addsBand, bandNamesOf, isExpression, nameProblem, ownersOf, resultNameOf } from './processingBands';
+import { terrainForm } from './terrainFields';
 import {
   AFTER_REPROJECT,
   ANEW,
@@ -100,7 +101,12 @@ export function processInfo(description: ProcessDescription): ProcessInfo {
       tiers: Array.isArray(def['x-earthx-tiers']) ? def['x-earthx-tiers'].filter((t) => typeof t === 'string') : [],
       kind: typeof def['x-earthx-kind'] === 'string' ? def['x-earthx-kind'] : null,
       passesValues: passesRuleOf(def['x-earthx-passes-values']),
-      form: op === 'normalize' && opVersion === NORMALIZE_VERSION ? normalizeForm(stepProps?.params) : paramsForm(stepProps?.params, defs),
+      form:
+        op === 'normalize' && opVersion === NORMALIZE_VERSION
+          ? normalizeForm(stepProps?.params)
+          : op === 'terrain'
+            ? terrainForm(stepProps?.params)
+            : paramsForm(stepProps?.params, defs),
     });
   }
   const inputDef = defOf(defs, '#/$defs/InputRequest');
@@ -612,19 +618,19 @@ export function readProblem(
   const names =
     step.op === 'band_math' && typeof step.values.expression === 'string'
       ? namesInExpression(step.values.expression)
-      : step.op === 'normalize' && typeof step.values.bands === 'string'
+      : (step.op === 'normalize' || step.op === 'terrain') && typeof step.values.bands === 'string'
         ? new Set(step.values.bands.split(/[\s,;]+/u).filter((n) => n !== ''))
         : step.op === 'mask_values' && typeof step.values.band === 'string' && step.values.band !== ''
           ? new Set([step.values.band])
           : new Set<string>();
   const blocked = [...names].find((name) => hidden.includes(name));
   if (blocked !== undefined) return { field, message: `'${blocked}' is not a band name` };
-  const results = steps.flatMap((s, i) => (isBandMath(s) ? [{ index: i, name: resultNameOf(s) }] : []));
+  const results = steps.flatMap((s, i) => (addsBand(s) ? [{ index: i, name: resultNameOf(s) }] : []));
   for (const result of results) {
     if (result.index < index || !names.has(result.name) || data.includes(result.name)) continue;
     return { field, message: result.index === index ? `'${result.name}' is the band this step adds` : `'${result.name}' is added by a later step` };
   }
-  if ((step.op !== 'band_math' && step.op !== 'mask_values') || data.length === 0) return null;
+  if ((step.op !== 'band_math' && step.op !== 'mask_values' && step.op !== 'terrain') || data.length === 0) return null;
   const known = new Set([...data, ...results.filter((r) => r.index < index).map((r) => r.name)]);
   const unknown = [...names].find((name) => !known.has(name));
   return unknown === undefined ? null : { field, message: `'${unknown}' is not a band name` };
@@ -640,8 +646,8 @@ function bandProblems(
   hidden: readonly string[],
 ): Record<string, string> {
   const errors: Record<string, string> = {};
-  if (isBandMath(step)) {
-    const others = steps.flatMap((s, i) => (i !== index && isBandMath(s) ? [resultNameOf(s)] : []));
+  if (addsBand(step)) {
+    const others = steps.flatMap((s, i) => (i !== index && addsBand(s) ? [resultNameOf(s)] : []));
     const problem = nameProblem(resultNameOf(step), others, data);
     if (problem) errors.name = problem;
   }

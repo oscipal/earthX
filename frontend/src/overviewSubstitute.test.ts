@@ -146,8 +146,11 @@ describe('the overlays of a layer', () => {
     expect(overviewOverlaysOf([], list, look, null)).toEqual([]);
   });
 
-  it('have none where the look is an index, which only a route with steps computes', () => {
-    expect(overviewOverlaysOf(['terrain'], LIST, { ...look, index: 'ndvi' }, null)).toEqual([]);
+  it('are the plain picture where the look names an index the dataset does not have, as the rest of the layer is', () => {
+    // An index the dataset has is computed on the overview (`overviewComputed.test.ts`, M5-10 part B).
+    const overlays = overviewOverlaysOf(['terrain'], LIST, { ...look, index: 'ndvi' }, null);
+    expect(overlays).toHaveLength(1);
+    expect(overlays[0].kind === 'raster' && overlays[0].tileUrl).not.toContain('op=');
   });
 });
 
@@ -192,8 +195,8 @@ describe('the view of a dataset with a substitute', () => {
     expect(sourcesOf(live)[0][1]).not.toHaveProperty('attribution');
   });
 
-  it('draws no substitute where a pinned layer draws the view, nor where the view is off, nor with an index', () => {
-    for (const over of [{ tilesInLayer: true }, { showDownloaded: false }, { render: { index: 'ndvi' } }]) {
+  it('draws no substitute where a pinned layer draws the view, nor where the view is off', () => {
+    for (const over of [{ tilesInLayer: true }, { showDownloaded: false }]) {
       const live = zoomMap();
       syncFocusRaster(live.map as never, view(TERRAIN, over));
       expect(sourcesOf(live).filter(([, s]) => (s.tiles as string[])[0].includes('/overview/'))).toEqual([]);

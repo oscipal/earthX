@@ -592,6 +592,156 @@
             "x-earthx-tiers": [
               "T2"
             ]
+          },
+          "step_terrain_v1": {
+            "additionalProperties": false,
+            "description": "Compute slope, aspect or hillshade from a band of heights and add it to the bands.",
+            "properties": {
+              "op": {
+                "const": "terrain"
+              },
+              "op_version": {
+                "const": 1
+              },
+              "params": {
+                "additionalProperties": false,
+                "description": "The panel's form (K8): what to compute from which band of heights; the fields of the other products stay out.",
+                "properties": {
+                  "altitude": {
+                    "anyOf": [
+                      {
+                        "maximum": 90,
+                        "minimum": 0,
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "hillshade: height of the light above the horizon.",
+                    "title": "Altitude"
+                  },
+                  "azimuth": {
+                    "anyOf": [
+                      {
+                        "exclusiveMaximum": 360,
+                        "minimum": 0,
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "hillshade: direction of the light, 0 = north.",
+                    "title": "Azimuth"
+                  },
+                  "bands": {
+                    "description": "The band of heights, in metres.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "maxItems": 1,
+                    "minItems": 1,
+                    "title": "Bands",
+                    "type": "array"
+                  },
+                  "method": {
+                    "default": "horn",
+                    "description": "Gradient after Horn (eight neighbours) or Zevenbergen and Thorne (four).",
+                    "enum": [
+                      "horn",
+                      "zevenbergen_thorne"
+                    ],
+                    "title": "Method",
+                    "type": "string"
+                  },
+                  "multidirectional": {
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "hillshade: light from four directions, without azimuth.",
+                    "title": "Multidirectional"
+                  },
+                  "name": {
+                    "description": "Name of the new band: a letter, then letters, digits or _; free in the data and the other results.",
+                    "maxLength": 32,
+                    "minLength": 1,
+                    "title": "Name",
+                    "type": "string"
+                  },
+                  "product": {
+                    "description": "What to compute from the heights.",
+                    "enum": [
+                      "slope",
+                      "aspect",
+                      "hillshade"
+                    ],
+                    "title": "Product",
+                    "type": "string"
+                  },
+                  "slope_unit": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "degrees",
+                          "percent"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "slope: degrees or percent.",
+                    "title": "Slope Unit"
+                  },
+                  "z_factor": {
+                    "anyOf": [
+                      {
+                        "exclusiveMinimum": 0,
+                        "maximum": 1000000.0,
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "hillshade: factor on the heights.",
+                    "title": "Z Factor"
+                  }
+                },
+                "required": [
+                  "product",
+                  "bands",
+                  "name"
+                ],
+                "title": "TerrainParams",
+                "type": "object"
+              }
+            },
+            "required": [
+              "op",
+              "op_version",
+              "params"
+            ],
+            "title": "Terrain",
+            "type": "object",
+            "x-earthx-kind": "focal",
+            "x-earthx-passes-values": false,
+            "x-earthx-tiers": [
+              "T1",
+              "T2"
+            ]
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -658,6 +808,9 @@
                 },
                 {
                   "$ref": "#/$defs/step_reproject_v4"
+                },
+                {
+                  "$ref": "#/$defs/step_terrain_v1"
                 }
               ]
             },

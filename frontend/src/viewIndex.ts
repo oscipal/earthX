@@ -20,6 +20,7 @@ import {
   type PlannedRaster,
   type SceneEntry,
 } from './mosaic';
+import type { OverviewChain } from './overviewSubstitute';
 import { canonicalJson } from './processing';
 import { firstZoomOf } from './tileSize';
 import type { AppliedRender, Collection, TimeStepGroup } from './types';
@@ -35,6 +36,11 @@ export function assetsOfExpression(expression: string): string[] {
 // The steps of the tile: one Band math, which names the band it adds like the index.
 function stepsOf(preset: IndexPreset): TileStep[] {
   return [{ op: 'band_math', opVersion: 2, paramsJson: canonicalJson({ expression: preset.expression, name: preset.name }) }];
+}
+
+// The index as the overview below the first level computes it (M5-10 part B): the same step, the band it adds shown.
+export function indexChainOf(preset: IndexPreset): OverviewChain {
+  return { steps: stepsOf(preset), band: preset.name };
 }
 
 // The preset a look names, among the presets of the dataset; `null` for a look without an index (or one the dataset lacks).
@@ -117,8 +123,10 @@ export function indexBlockOf(args: {
   mosaics: Mosaics | undefined;
   preset: IndexPreset;
   mapZoom: number;
+  // The index is drawn below the first level from the overview (M5-10 part B): zooming in is no condition then.
+  overview?: boolean;
 }): IndexBlock | null {
-  const { datasetId, entries, groups, mosaics, preset, mapZoom } = args;
+  const { datasetId, entries, groups, mosaics, preset, mapZoom, overview = false } = args;
   let lowest = Infinity;
   for (const pass of passesOf(entries, groups)) {
     const view = viewOfPass(datasetId, pass, mosaics);
@@ -128,7 +136,7 @@ export function indexBlockOf(args: {
     if (planned.block) return planned.block;
     for (const raster of planned.waiting ? rasters : planned.rasters) lowest = Math.min(lowest, firstZoomOf(raster.minZoom, raster.tileUrl));
   }
-  return lowest !== Infinity && mapZoom < lowest ? 'zoom' : null;
+  return lowest !== Infinity && mapZoom < lowest && !overview ? 'zoom' : null;
 }
 
 // The statistics of the index over one scene, for "auto-scale": the same tile route with the same step.

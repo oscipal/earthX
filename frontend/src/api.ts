@@ -526,9 +526,11 @@ export function buildMosaicTileTemplate(selection: MosaicSelection): string {
 
 // The tile route of the substitute a dataset shows below its first level (registry `viewer.overview: substitute`, plan
 // M5-30b §4.8): no items and no asset, the tiler chooses both, so the template is the same for every user. 512 px like a
-// mosaic tile; the display parameters are added by `buildTileUrl`.
-export function buildOverviewTileTemplate(datasetId: string): string {
-  return `${BASE}/collections/${encodeURIComponent(datasetId)}/overview/tiles/${TILE_MATRIX_SET}/{z}/{x}/{y}?tilesize=${MOSAIC_TILE_SIZE}`;
+// mosaic tile; the display parameters are added by `buildTileUrl`. With `steps` the tiler runs them on the picture of the
+// overview (M5-10 part B, G1), as the tile of a scene takes them, and `band` is the band shown.
+export function buildOverviewTileTemplate(datasetId: string, steps: readonly TileStep[] = [], band: ShownBands = null): string {
+  const base = `${BASE}/collections/${encodeURIComponent(datasetId)}/overview/tiles/${TILE_MATRIX_SET}/{z}/{x}/{y}`;
+  return steps.length > 0 ? `${base}?${operatorQuery([], steps, band)}&tilesize=${MOSAIC_TILE_SIZE}` : `${base}?tilesize=${MOSAIC_TILE_SIZE}`;
 }
 
 // The footprint selection of the hits of a search (adr/0032 Nachtrag 15.11.2026): the item ids go in the body, the id is the hash of

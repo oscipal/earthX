@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections import OrderedDict
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
@@ -40,6 +41,7 @@ from earthx.objectstore.results import Store
 LOGGER = logging.getLogger("earthx.api.overview_tiles")
 
 __all__ = [
+    "AROUND_KEPT",
     "OVERVIEW_HEADER",
     "OVERVIEW_SOURCE",
     "READY_KEPT",
@@ -59,6 +61,9 @@ READY_KEPT = 30.0
 #: How long the other answers are believed: short, so that a map that asks again finds the pyramid soon after the build ends.
 UNREADY_KEPT = 5.0
 _CACHE_SIZE = 64
+#: Stored tiles kept for the neighbours a step with a halo reads (M5-10, G4): about one view of tiles and the ring around
+#: it, at some hundred kilobytes each.
+AROUND_KEPT = 64
 
 
 def is_prototype(dataset_id: str) -> bool:
@@ -97,6 +102,7 @@ class OverviewSources:
         self._now = now
         self._states: dict[str, tuple[float, OverviewState]] = {}
         self._flights: dict[str, tuple[asyncio.AbstractEventLoop, asyncio.Task[OverviewState]]] = {}
+        self._around: OrderedDict[tuple[str, str, int, int, int], bytes | None] = OrderedDict()
 
     async def state(self, pool: Any, dataset_id: str) -> OverviewState:
         """The state of the pyramid of ``dataset_id``; ``503`` where the database is not there or fails.
@@ -170,3 +176,39 @@ class OverviewSources:
             self.forget(dataset_id, version)
             raise HTTPException(status_code=404, detail="the tile has no data")
         return stored.data
+
+    async def around(
+        self, dataset_id: str, version: str, grid: tuple[morecantile.TileMatrixSet, morecantile.Tile]
+    ) -> tuple[tuple[int, int, bytes], ...]:
+        """The stored tiles around a tile, as ``(dx, dy, bytes)``, for a step that reads the neighbours of each pixel (M5-10, G4).
+
+        A neighbour without data is not stored and is left out, and so is one past the antimeridian or a pole: the tile there
+        lies on the other side of the world in the grid, and the edge of the tile is the edge of what is read. The objects of the last :data:`AROUND_KEPT` neighbours asked for are kept in this process: the tiles of a view
+        share most of their neighbours, and an object of a version never changes.
+        """
+        tms, tile = grid
+        side = 2**tile.z
+        wanted = [
+            (dx, dy, morecantile.Tile(tile.x + dx, tile.y + dy, tile.z))
+            for dy in (-1, 0, 1)
+            for dx in (-1, 0, 1)
+            if (dx or dy) and 0 <= tile.x + dx < side and 0 <= tile.y + dy < side
+        ]
+        found = await asyncio.gather(*(self._stored(dataset_id, version, near) for _, _, near in wanted))
+        return tuple((dx, dy, data) for (dx, dy, _), data in zip(wanted, found, strict=True) if data is not None)
+
+    async def _stored(self, dataset_id: str, version: str, tile: morecantile.Tile) -> bytes | None:
+        key = (dataset_id, version, tile.z, tile.x, tile.y)
+        if key in self._around:
+            self._around.move_to_end(key)
+            return self._around[key]
+        try:
+            stored = await run_in_threadpool(read_tile, self._store, dataset_id, version, tile.z, tile.x, tile.y)
+        except ObjectStoreError as error:
+            LOGGER.warning("the overview store could not be read: %s", type(error).__name__)
+            raise HTTPException(status_code=503, detail="the overview store is not available; try again") from None
+        data = None if stored is None else stored.data
+        self._around[key] = data
+        while len(self._around) > AROUND_KEPT:
+            self._around.popitem(last=False)
+        return data

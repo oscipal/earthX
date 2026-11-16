@@ -40,13 +40,14 @@ from rio_tiler.models import ImageData
 from rio_tiler.mosaic import mosaic_reader
 from rio_tiler.mosaic.methods.defaults import FirstMethod
 
+from earthx.access.footprint_mask import cut_to_raster
 from earthx.access.mosaic_tiles import MOSAIC_THREADS
 from earthx.processing.errors import GridMismatch, RecipeInvalid, ScalingMismatch, UnsupportedRecipe
 from earthx.processing.mosaic import check_alike
 from earthx.processing.operators.base import BandMeta, Operator, RasterMeta
 from earthx.processing.plan import PlannedStep, needed_source_bands, stock_steps
 from earthx.processing.recipe import ResolvedInput, Step
-from earthx.processing.source import Source, common_grid, expected_band_names, merge_images, units_of
+from earthx.processing.source import Source, common_grid, expected_band_names, merge_images, pad_image, units_of
 from earthx.readers.cog import AssetPath
 from earthx.readers.zarr_reader import ZarrAsset
 
@@ -60,8 +61,10 @@ __all__ = [
     "TileOptionRefused",
     "TileRefused",
     "judge_described_bands",
+    "halo_of",
     "judge_steps",
     "plan_band",
+    "plan_bands_on",
 ]
 
 #: The longest side, in pixels, of the read a measurement of an operator takes (the size of the statistics of one asset).
@@ -192,6 +195,21 @@ def plan_band(
             for name, unit in zip(names, units_of(entry, len(names)), strict=True)
         ),
     )
+    shown, run, needed = plan_bands_on(meta, steps, bands)
+    return BandPlan(
+        bands=shown,
+        assets=tuple(entry.asset.asset for entry, names in zip(entries, names_of, strict=True) if needed & set(names)),
+        steps=run,
+    )
+
+
+def plan_bands_on(
+    meta: RasterMeta, steps: Sequence[tuple[Operator, BaseModel]], bands: Sequence[str] | None
+) -> tuple[tuple[str, ...], tuple[tuple[Operator, BaseModel], ...], frozenset[str]]:
+    """:func:`plan_band` on bands already named: the bands shown, the steps to run, and the bands of ``meta`` they read.
+
+    For steps of version 2 only. Raises :class:`~earthx.processing.errors.RecipeInvalid` for a band the steps do not leave.
+    """
     planned = [
         PlannedStep(
             Step(op=operator.op, op_version=operator.op_version, params=params.model_dump(mode="json")), operator, params
@@ -206,12 +224,15 @@ def plan_band(
         if name not in held:
             raise RecipeInvalid(f"band {name!r} is not among the bands the steps leave: {', '.join(held)}")
     run = stock_steps(meta, planned, shown)
-    needed = needed_source_bands(planned, shown)
-    return BandPlan(
-        bands=tuple(shown),
-        assets=tuple(entry.asset.asset for entry, names in zip(entries, names_of, strict=True) if needed & set(names)),
-        steps=tuple((step.operator, step.params) for step in run),
-    )
+    return tuple(shown), tuple((step.operator, step.params) for step in run), needed_source_bands(planned, shown)
+
+
+def halo_of(steps: Sequence[tuple[Operator, BaseModel]]) -> int:
+    """The halo a tile reads around itself: that of its ``focal`` steps (adr/0030 F3).
+
+    `api` takes a ``focal`` step as the first of the request only; the planner may still put a selection of bands before it
+    (a pixel step, which runs on the grown tile as on any other), so the halo is not only that of the first step."""
+    return sum(operator.halo for operator, _ in steps if operator.kind == "focal")
 
 
 def _tile_options(
@@ -220,19 +241,42 @@ def _tile_options(
     buffer: float | None,
     padding: int | None,
     refused: dict[str, Any],
+    halo: int = 0,
 ) -> dict[str, Any]:
-    """The reader options of an operator tile; options that would change the values are refused."""
+    """The reader options of an operator tile; options that would change the values are refused.
+
+    With a ``focal`` first step (``halo``) the tile is read ``bilinear`` and grown by the halo, which the kernel gives back
+    (plan M5-10 F4): ``nearest`` would draw some lines of the source twice and give a hillshade stripes. The tile is a
+    preview either way (adr/0030 F3).
+    """
     if refused:
         raise TileOptionRefused(
             f"{', '.join(sorted(refused))} cannot be used with op: the tile is computed in physical values"
         )
-    if resampling_method not in (None, "nearest"):
-        raise TileOptionRefused("an operator tile is read with nearest resampling")
-    options: dict[str, Any] = {"resampling_method": "nearest"}
+    method = "bilinear" if halo else "nearest"
+    if resampling_method not in (None, method):
+        raise TileOptionRefused(f"this operator tile is read with {method} resampling")
+    if halo and buffer is not None:
+        raise TileOptionRefused("buffer cannot be used with a step that reads the neighbours of each pixel")
+    options: dict[str, Any] = {"resampling_method": method}
+    if halo:
+        options["reproject_method"] = method
+        options["buffer"] = halo
     for name, value in (("tilesize", tilesize), ("buffer", buffer), ("padding", padding)):
         if value is not None:
             options[name] = value
     return options
+
+
+def _read_own(source: Source, x: int, y: int, z: int, options: dict[str, Any], halo: int) -> ImageData:
+    """The tile of ``source``; with a halo only the pixels that lie in its raster: read ``bilinear``, the edge of a scene
+    would otherwise give its value to the pixels past it, a neighbour the job does not have (M5-10, adr/0030 F3)."""
+    image = source.read_tile(x, y, z, **options)
+    if not halo or source.crs is None:  # radar geometry is placed by its spline, not by bounds
+        return image
+    left, top = source.transform @ (0, 0)
+    right, bottom = source.transform @ (source.width, source.height)
+    return cut_to_raster(image, source.crs, (min(left, right), min(top, bottom), max(left, right), max(top, bottom)))
 
 
 def _meta_of(sources: list[Source], steps: Sequence[tuple[Operator, BaseModel]]) -> tuple[Source, RasterMeta]:
@@ -322,8 +366,9 @@ class OperatorTileReader:
         **refused: Any,
     ) -> ImageData:
         """The merged tile, in physical values; options that would change the values are refused."""
-        options = _tile_options(tilesize, resampling_method, buffer, padding, refused)
-        return merge_images([source.read_tile(x, y, z, **options) for source in self._sources])
+        halo = halo_of(self._input.steps)
+        options = _tile_options(tilesize, resampling_method, buffer, padding, refused, halo)
+        return merge_images([_read_own(source, x, y, z, options, halo) for source in self._sources])
 
     def preview(
         self,
@@ -335,7 +380,8 @@ class OperatorTileReader:
         """The whole extent in physical values, at most ``max_size`` pixels on its long side (default and limit 1024).
 
         Every source is read over the same bounds onto the same size, so the bands of two assets of
-        different resolution stay one grid. The steps of the chain are not applied: that is the caller's.
+        different resolution stay one grid. The steps of the chain are not applied: that is the caller's. For a ``focal``
+        first step the extent gets a masked ring of its halo, which the step gives back: its edge has no neighbours.
         """
         if refused:
             raise TileOptionRefused(
@@ -351,7 +397,9 @@ class OperatorTileReader:
         left, top = grid.transform @ (0, 0)
         right, bottom = grid.transform @ (grid.width, grid.height)
         width, height = max(1, round(grid.width * scale)), max(1, round(grid.height * scale))
-        return merge_images([source.read_preview((left, bottom, right, top), width, height) for source in self._sources])
+        image = merge_images([source.read_preview((left, bottom, right, top), width, height) for source in self._sources])
+        halo = halo_of(self._input.steps)
+        return pad_image(image, halo, halo, halo, halo)
 
 
 class MosaicOperatorTileReader:
@@ -436,14 +484,15 @@ class MosaicOperatorTileReader:
 
     def _scene(self, index: int, x: int, y: int, z: int, options: dict[str, Any]) -> ImageData:
         """One scene's assets as one image in physical values; the first scene from what ``__enter__`` opened."""
+        halo = halo_of(self._input.steps)
         with rasterio.Env(**self.gdal_config):
             if index == 0:
-                return merge_images([source.read_tile(x, y, z, **options) for source in self._first])
+                return merge_images([_read_own(source, x, y, z, options, halo) for source in self._first])
             with ExitStack() as stack:
                 sources = [Source.open(entry, target, stack) for entry, target in self._input.scenes[index]]
                 for first, source in zip(self._first, sources, strict=True):
                     check_alike(first.entry.asset.asset, [first, source])
-                return merge_images([source.read_tile(x, y, z, **options) for source in sources])
+                return merge_images([_read_own(source, x, y, z, options, halo) for source in sources])
 
     def tile(
         self,
@@ -458,7 +507,7 @@ class MosaicOperatorTileReader:
         **refused: Any,
     ) -> ImageData:
         """The mosaic of the scenes in physical values, before the steps. Only ``TileOutsideBounds`` skips a scene."""
-        options = _tile_options(tilesize, resampling_method, buffer, padding, refused)
+        options = _tile_options(tilesize, resampling_method, buffer, padding, refused, halo_of(self._input.steps))
         try:
             image, _ = mosaic_reader(
                 list(range(len(self._input.scenes))),

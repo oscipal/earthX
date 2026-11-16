@@ -27,7 +27,7 @@ from earthx.catalog.mosaic_selection import footprint_selection_id, selection_id
 from earthx.catalog.pgstac import OverviewState
 from earthx.catalog.registry import DatasetRegistry, ItemHolding, SearchCapabilities
 from earthx.objectstore.results import Store
-from tests.earthx.access.test_mosaic_tiles import TO_4326
+from tests.earthx.access.test_mosaic_tiles import SEAM_X, TO_4326
 from tests.earthx.api.mosaic_selections import MemorySelections, batch_source_of
 from tests.earthx.api.test_tiler_overview import WITH_POOL
 from tests.earthx.readers import mini_zarr
@@ -477,6 +477,27 @@ class TestTheFilesOfTheSubstituteOverTheHits:
             "the catalogue is asked over the hits, not over the whole tile"
         )
         assert (masked != 0).any() and (masked != 0).sum() <= (whole != 0).sum()
+
+    def test_the_files_east_of_a_seam_are_drawn_and_those_west_of_it_are_not_when_the_hits_lie_east_of_it(
+        self, files_rig, rows, pyramids  # noqa: F811
+    ) -> None:
+        rows.states[RELIEF_ID] = OverviewState("none")
+        seam_lon, seam_lat = TO_4326.transform(SEAM_X, 5_698_500.0)
+        items = {"t": hit("t", seam_lon, seam_lat - 0.1, seam_lon + 0.1, seam_lat + 0.1)}
+        api = self._client(files_rig, MemorySelections(), items)
+        selection = api.post(f"/collections/{TERRAIN_ID}/overview/footprints", json={"items": ["t"]}).json()["id"]
+        tile = TMS.tile(seam_lon, seam_lat, 12)
+        left, _, right, _ = TMS.xy_bounds(tile)
+        seam_x, _ = TMS.xy(seam_lon, seam_lat)
+        seam_column = int((seam_x - left) / (right - left) * 512)
+        params = {"tilesize": "512", "rescale": "0,255"}
+        base = f"/collections/{TERRAIN_ID}/overview"
+        tail = f"tiles/WebMercatorQuad/12/{tile.x}/{tile.y}.png"
+        whole = alpha(api.get(f"{base}/{tail}", params=params)) != 0
+        masked = alpha(api.get(f"{base}/{selection}/{tail}", params=params)) != 0
+        assert whole[:, : seam_column - 5].any() and whole[:, seam_column + 5 :].any(), "the files lie on both sides of the seam"
+        assert not masked[:, : seam_column - 5].any(), "west of the hits: transparent"
+        assert masked[:, seam_column + 5 :].any(), "over the hits: the picture"
 
     def test_hits_elsewhere_in_the_tile_leave_the_files_picture_transparent(self, files_rig, rows, pyramids) -> None:  # noqa: F811
         rows.states[RELIEF_ID] = OverviewState("none")

@@ -8,6 +8,7 @@ import { BAND_TIP } from '../normalizeMethods';
 import { stepName } from '../processingBands';
 import type { MeasureStatus, Operator } from '../processingOrder';
 import { integersIn, namesIn, type Field, type FieldValue } from '../schemaForm';
+import { fieldsOfProduct } from '../terrainFields';
 import type { EarthxMask } from '../types';
 import { CellSize, CellSizeError, CrsRefusal } from './CellSize';
 import { ArrowDownIcon, ArrowUpIcon, PencilIcon, TrashIcon } from './icons';
@@ -345,6 +346,9 @@ export default function StepForm({
   useCrsLookup(reprojects ? values.crs : undefined);
   const cellTip = useCellSizeTip(values.crs, values.resolution, latitude);
   const bandMath = operator?.op === 'band_math';
+  // `terrain` (M5-10) shows the fields of its product only, and names the band it adds like band math.
+  const terrain = operator?.op === 'terrain' && operator.form.supported;
+  const named = bandMath || terrain;
   const maskValues = operator?.op === 'mask_values' && operator.form.supported;
   // `normalize` of version 4 lays its fields out by method (`NormalizeFields`); the bands are the chips every version has.
   const normalizes = operator?.op === 'normalize' && operator.form.supported && fields.some((f) => f.name === 'method');
@@ -367,7 +371,7 @@ export default function StepForm({
           {operator && <span className="pp-step-op"> {operator.title.toLowerCase()}</span>}
         </span>
         <span className="pp-step-actions">
-          {bandMath && (
+          {named && (
             <button type="button" className="icon-btn" aria-label="Rename" data-tip-level="advanced" data-tip="Rename the band this step adds" onClick={rename}>
               <PencilIcon />
             </button>
@@ -417,7 +421,7 @@ export default function StepForm({
           }
         />
       )}
-      {(maskValues || normalizes ? [] : fields).map((field) => {
+      {(maskValues || normalizes ? [] : terrain ? fieldsOfProduct(fields, values) : fields).map((field) => {
         const value = values[field.name];
         const touched = typeof value === 'string' && value !== '';
         if (masks && field.name === 'classes') {
@@ -444,7 +448,7 @@ export default function StepForm({
             />
           );
         }
-        if (bandMath && field.name === 'name') {
+        if (named && field.name === 'name') {
           return (
             <NameInput
               key={field.name}
