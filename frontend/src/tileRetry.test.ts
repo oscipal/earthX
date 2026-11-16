@@ -2,28 +2,57 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { isPassingFailure, RETRY_DELAYS_MS, watchTileRetry } from './tileRetry';
+import maplibreTypes from 'maplibre-gl/dist/maplibre-gl.d.ts?raw';
+
+import { isPassingFailure, RETRY_DELAYS_MS, watchTileRetry, type RetryMap, type TileManagerLike } from './tileRetry';
 
 type Handler = (event: object) => void;
 
-// A fake map: the handlers it was given, the sources it has and the tiles it was asked to load again.
+// A fake map: the handlers it was given, the sources it has with their tiles in view, and the tiles it loaded again and in which state.
 function fakeMap(sources = ['layer-src-L1-0', 'res-tiles-src-0', 'basemap']) {
   const handlers = new Map<string, Handler>();
   const known = new Set(sources);
   const refreshed: string[] = [];
+  const states: string[] = [];
+  const tiles = new Map<string, Map<string, { state: string; tileID: { canonical: { x: number; y: number; z: number } } }>>();
+  const managerOf = (sourceId: string): TileManagerLike => {
+    const own = tiles.get(sourceId) ?? new Map();
+    tiles.set(sourceId, own);
+    return {
+      getIds: () => [...own.keys()],
+      getTileByID: (id: string) => own.get(id),
+      _reloadTile: (id: string, state: string) => {
+        const { x, y, z } = own.get(id)!.tileID.canonical;
+        refreshed.push(`${sourceId}/${z}/${x}/${y}`);
+        states.push(state);
+      },
+    };
+  };
   const map = {
     on: (type: string, handler: Handler) => handlers.set(type, handler),
     getSource: (id: string) => (known.has(id) ? {} : undefined),
-    refreshTiles: (id: string, tiles: { x: number; y: number; z: number }[]) => refreshed.push(...tiles.map((t) => `${id}/${t.z}/${t.x}/${t.y}`)),
+    style: { tileManagers: Object.fromEntries(sources.map((id) => [id, managerOf(id)])) },
   };
-  watchTileRetry(map as unknown as Parameters<typeof watchTileRetry>[0]);
+  watchTileRetry(map as unknown as RetryMap);
   const tile = (z: number, x: number, y: number, state = 'errored') => ({ tileID: { canonical: { x, y, z } }, state });
+  const place = (sourceId: string, [z, x, y]: [number, number, number], state: string) => {
+    const own = tiles.get(sourceId) ?? new Map();
+    tiles.set(sourceId, own);
+    own.set(`${z}/${x}/${y}`, tile(z, x, y, state));
+  };
   return {
     refreshed,
+    states,
     remove: (id: string) => known.delete(id),
-    fail: (sourceId: string, status: number | undefined, at: [number, number, number] = [14, 8668, 5456]) =>
-      handlers.get('error')!({ sourceId, tile: tile(...at), error: status === undefined ? new Error('broken') : { status } }),
-    load: (sourceId: string, at: [number, number, number] = [14, 8668, 5456]) => handlers.get('sourcedata')!({ sourceId, tile: tile(...at, 'loaded') }),
+    leave: (sourceId: string) => tiles.get(sourceId)?.clear(),
+    fail: (sourceId: string, status: number | undefined, at: [number, number, number] = [14, 8668, 5456]) => {
+      place(sourceId, at, 'errored');
+      handlers.get('error')!({ sourceId, tile: tile(...at), error: status === undefined ? new Error('broken') : { status } });
+    },
+    load: (sourceId: string, at: [number, number, number] = [14, 8668, 5456]) => {
+      place(sourceId, at, 'loaded');
+      handlers.get('sourcedata')!({ sourceId, tile: tile(...at, 'loaded') });
+    },
   };
 }
 
@@ -108,6 +137,16 @@ describe('what is not asked again', () => {
     expect(map.refreshed).toEqual([]);
   });
 
+  it('a tile that left the view meanwhile, or loaded by itself', () => {
+    const map = fakeMap();
+    map.fail('layer-src-L1-0', 502);
+    map.leave('layer-src-L1-0');
+    map.fail('res-tiles-src-0', 502);
+    map.load('res-tiles-src-0');
+    vi.advanceTimersByTime(60_000);
+    expect(map.refreshed).toEqual([]);
+  });
+
   it('a source that was removed meanwhile (its layer is gone)', () => {
     const map = fakeMap();
     map.fail('layer-src-L1-0', 502);
@@ -117,13 +156,30 @@ describe('what is not asked again', () => {
   });
 
   it('an event that names no tile (a failed style or source)', () => {
+    const map = fakeMap();
     const handlers = new Map<string, Handler>();
-    const refreshTiles = vi.fn();
-    watchTileRetry({ on: (t: string, h: Handler) => handlers.set(t, h), getSource: () => ({}), refreshTiles } as unknown as Parameters<typeof watchTileRetry>[0]);
+    watchTileRetry({ on: (t: string, h: Handler) => handlers.set(t, h), getSource: () => ({}) } as unknown as RetryMap);
     handlers.get('error')!({ sourceId: 'layer-src-L1-0', error: { status: 502 } });
     handlers.get('error')!({ error: { status: 502 } });
     vi.advanceTimersByTime(60_000);
-    expect(refreshTiles).not.toHaveBeenCalled();
+    expect(map.refreshed).toEqual([]);
+  });
+});
+
+describe('how a tile is loaded again', () => {
+  it('in the state "loading", which draws nothing until the picture is there (not "expired", which draws a tile without one)', () => {
+    const map = fakeMap();
+    map.fail('layer-src-L1-0', 503);
+    vi.advanceTimersByTime(1_000);
+    expect(map.states).toEqual(['loading']);
+  });
+
+  it('with the parts of MapLibre that are there: the tile managers of the style, their tiles by id and `_reloadTile`', () => {
+    // `MapView.tsx` hands the map itself to `watchTileRetry`, so `tsc` checks the shapes as well.
+    expect(maplibreTypes).toMatch(/\btileManagers: \{\s*\[_: string\]: TileManager;/u);
+    expect(maplibreTypes).toMatch(/\bgetIds\(\): string\[\];/u);
+    expect(maplibreTypes).toMatch(/\bgetTileByID\(id: string\): Tile \| undefined;/u);
+    expect(maplibreTypes).toMatch(/\b_reloadTile\(id: string, state: TileState\): Promise<void>;/u);
   });
 });
 

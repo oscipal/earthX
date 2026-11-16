@@ -3,7 +3,12 @@
 // the restart until the page was reloaded. Here a tile of a layer's source that failed for a passing reason (no answer at all, `408`,
 // `429`, a `5xx` of the proxy or the tiler while it starts) is asked again after 1 s, then after twice as long, up to 30 s between two tries
 // and about four minutes in all. A refusal (`400`, `404`, `410`, `422`) is an answer and is not asked again. A tile that loads starts its
-// count afresh; a tile that left the view is not asked (`refreshTiles` reloads only the tiles in view).
+// count afresh; a tile that left the view is not asked.
+//
+// The tile is loaded again as MapLibre does it for a failed tile when its source changes (`TileManager.reload`): in the state "loading",
+// which draws nothing until the picture is there. `map.refreshTiles` is no way: it puts a failed tile into "expired", which counts as
+// having data, and the next frame draws a tile without a picture (`texture.bind` of undefined, seen in the browser with MapLibre 6.16).
+// `tileRetry.test.ts` holds the parts of MapLibre this needs, so that an upgrade that renames them fails there.
 
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import { ownerOfSource } from './mapLayers';
@@ -27,7 +32,29 @@ interface TileEvent {
   error?: { status?: number };
 }
 
-type RetryMap = Pick<MapLibreMap, 'getSource' | 'refreshTiles'> & { on: (type: 'error' | 'sourcedata', listener: (event: TileEvent) => void) => unknown };
+// What of MapLibre's tile manager of a source is used: the tiles in view by id, and loading one of them again.
+export interface TileManagerLike {
+  getIds: () => string[];
+  getTileByID: (id: string) => { state: string; tileID: { canonical: TileId } } | undefined;
+  _reloadTile: (id: string, state: 'loading') => Promise<void> | void;
+}
+
+export type RetryMap = Pick<MapLibreMap, 'getSource'> & {
+  on: (type: 'error' | 'sourcedata', listener: (event: TileEvent) => void) => unknown;
+  style?: { tileManagers?: Record<string, TileManagerLike | undefined> };
+};
+
+// Loads the failed tiles of `sourceId` at `at` again; nothing where the source or the tile is gone or the tile is no longer failed.
+export function reloadFailedTile(map: RetryMap, sourceId: string, at: TileId): void {
+  if (!map.getSource(sourceId)) return;
+  const manager = map.style?.tileManagers?.[sourceId];
+  if (!manager) return;
+  for (const id of manager.getIds()) {
+    const tile = manager.getTileByID(id);
+    const { x, y, z } = tile?.tileID.canonical ?? {};
+    if (tile?.state === 'errored' && x === at.x && y === at.y && z === at.z) void manager._reloadTile(id, 'loading');
+  }
+}
 
 export function watchTileRetry(map: RetryMap, delays: readonly number[] = RETRY_DELAYS_MS): void {
   const tries = new Map<string, number>();
@@ -44,7 +71,7 @@ export function watchTileRetry(map: RetryMap, delays: readonly number[] = RETRY_
     const { x, y, z } = canonical;
     setTimeout(() => {
       waiting.delete(key);
-      if (map.getSource(sourceId)) map.refreshTiles(sourceId, [{ x, y, z }]);
+      reloadFailedTile(map, sourceId, { x, y, z });
     }, delays[done]);
   });
   map.on('sourcedata', ({ sourceId, tile }) => {
