@@ -110,6 +110,8 @@ class AdapterKind(Enum):
     ESA_WORLDCOVER_BUCKET = "esa-worldcover-bucket"
     # M5-08: the STAC API of swisstopo's FSDI (`data.geo.admin.ch`), a second dialect of `adapters.stac_api`.
     FSDI_STAC_V1 = "fsdi-stac-v1"
+    # M5-09: the INSPIRE ATOM service of the BEV, a materializer like the bucket adapters (adr/0023 §4.2).
+    BEV_ATOM = "bev-atom"
 
 
 class ItemHolding(Enum):
