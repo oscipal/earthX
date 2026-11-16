@@ -1,0 +1,71 @@
+# Landsat Collection 2 Level-2 as a listed hand entry (M5-17, adr/0033 §13, adr/0027 W0, adr/0026 §8.2 "LS"): a
+# catalogue entry with the link to the source, no reading by the platform. The fields are those of `ListedEntry` in
+# `backend/earthx/catalog/listed.py`; only `catalog-load` reads this file. No value was fetched from the source in the
+# session (M5-17 plan §3, [S]): Otto checks the link, the licence and the extent by hand before the merge.
+
+# The id of Earth Search and Planetary Computer (adr/0023); a full entry later takes the row over (adr/0033 §11).
+dataset_id: landsat-c2-l2
+title: Landsat Collection 2 Level-2
+description: >-
+  Landsat Collection 2 Level-2 science products of the U.S. Geological Survey: surface reflectance and surface
+  temperature from Landsat 4–5 TM, Landsat 7 ETM+ and Landsat 8–9 OLI/TIRS, worldwide from 1982 on, at 30 m, as
+  cloud-optimized GeoTIFF. In the cloud bucket of the USGS the reader pays the transfer with an own cloud account.
+# German and English (adr/0026 F7); `catalog-load` writes them in lower case (M5-40 plan A11).
+keywords:
+- landsat
+- landsat 8
+- landsat 9
+- surface reflectance
+- surface temperature
+- multispectral
+- optical imagery
+- usgs
+- Oberflächenreflexion
+- Oberflächentemperatur
+- multispektral
+- Satellitenbilder
+providers:
+- name: U.S. Geological Survey
+  roles: [licensor, producer, processor]
+  url: https://www.usgs.gov
+- name: Amazon Web Services
+  roles: [host]
+  url: https://aws.amazon.com
+publisher: U.S. Geological Survey
+# DOIs exist per sensor; none is entered without reading it at the source (plan §3).
+doi: null
+citation: null
+data_kind: raster
+category: optical
+# Worldwide; the outline of the acquisitions is not measured.
+spatial_extent:
+  bbox: [-180.0, -90.0, 180.0, 90.0]
+# The first TM scenes of Landsat 4; the series goes on, so the end is open.
+temporal_extent:
+  start: 1982-08-22T00:00:00+00:00
+  end: null
+# Proposal for Otto (plan §5): data of the USGS are in the U.S. public domain; a credit is asked for, not required.
+license:
+  spdx_id: null
+  name: U.S. Public Domain (USGS)
+  url: https://www.usgs.gov/information-policies-and-instructions/crediting-usgs
+  commercial_use: true
+  distribution: true
+  derivatives: true
+  share_alike: false
+  attribution_required: false
+  # Every listed entry stays in the catalogue tier (adr/0025 §6.1a).
+  tier: catalog
+  attribution_modified: Landsat image courtesy of the U.S. Geological Survey (modified)
+  attribution_unmodified: Landsat image courtesy of the U.S. Geological Survey
+  terms: null
+legal_status: cleared
+# The bucket `usgs-landsat` in us-west-2 is Requester Pays (adr/0023 §6.2, adr/0027 §3.4, §6.1).
+access:
+  account: requester_pays
+  account_provider: Amazon Web Services
+  delivery: download
+source_url: https://www.usgs.gov/landsat-missions/landsat-commercial-cloud-data-access
+maturity: stable
+# The day of this file; Otto sets the day of the merge if it differs (M5-40 plan A3).
+approved_on: 2026-11-16

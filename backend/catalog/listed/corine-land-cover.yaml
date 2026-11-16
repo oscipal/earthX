@@ -1,0 +1,75 @@
+# CORINE Land Cover as a listed hand entry (M5-17, adr/0033 §13, adr/0027 W0): a catalogue entry with the link to the
+# source, no reading by the platform. The fields are those of `ListedEntry` in `backend/earthx/catalog/listed.py`;
+# only `catalog-load` reads this file. No value was fetched from the source in the session (M5-17 plan §3, [S]):
+# Otto checks the link, the licence and the extent by hand before the merge.
+
+dataset_id: corine-land-cover
+title: CORINE Land Cover
+description: >-
+  CORINE Land Cover (CLC): pan-European inventory of land cover and land use in 44 classes for the reference years
+  1990, 2000, 2006, 2012 and 2018, with change layers between them, from the Copernicus Land Monitoring Service.
+  Mapped as polygons with a minimum mapping unit of 25 ha, also offered as a 100 m raster. Downloaded at the source
+  with a free account.
+# German and English (adr/0026 F7); `catalog-load` writes them in lower case (M5-40 plan A11).
+keywords:
+- land cover
+- land use
+- corine
+- clc
+- land cover change
+- copernicus
+- europe
+- Landbedeckung
+- Bodenbedeckung
+- Landnutzung
+- Landbedeckungsänderung
+- Europa
+providers:
+- name: European Environment Agency (EEA)
+  roles: [producer, host]
+  url: https://www.eea.europa.eu
+- name: Copernicus Land Monitoring Service
+  roles: [licensor]
+  url: https://land.copernicus.eu
+publisher: European Environment Agency (EEA)
+# A DOI exists per reference year; none is entered without reading it at the source (plan §3).
+doi: null
+citation: null
+# The product is mapped as polygons; the 100 m raster is derived from them (plan F2).
+data_kind: vector
+category: land_cover
+# EEA-39 without the overseas areas, from the Azores to eastern Turkey and from the Canary Islands to the North Cape,
+# rounded outward; not measured.
+spatial_extent:
+  bbox: [-31.5, 27.5, 45.0, 71.5]
+# The reference years of CLC 1990 start in 1986 for some countries; those of CLC 2018 end in 2018.
+temporal_extent:
+  start: 1986-01-01T00:00:00+00:00
+  end: 2018-12-31T23:59:59+00:00
+# Proposal for Otto (plan §5): the Copernicus data policy, Delegated Regulation (EU) No 1159/2013.
+license:
+  spdx_id: null
+  name: Copernicus data and information policy
+  url: https://land.copernicus.eu/en/data-policy
+  commercial_use: true
+  distribution: true
+  derivatives: true
+  share_alike: false
+  attribution_required: true
+  # Every listed entry stays in the catalogue tier (adr/0025 §6.1a).
+  tier: catalog
+  attribution_modified: >-
+    © European Union, Copernicus Land Monitoring Service 1990–2018, European Environment Agency (EEA) (modified)
+  attribution_unmodified: >-
+    © European Union, Copernicus Land Monitoring Service 1990–2018, European Environment Agency (EEA)
+  terms: null
+legal_status: cleared
+# The download portal of the CLMS asks for an EU Login (adr/0023 §6.3, adr/0027 §6.1).
+access:
+  account: free_account
+  account_provider: EU Login
+  delivery: download
+source_url: https://land.copernicus.eu/en/products/corine-land-cover
+maturity: stable
+# The day of this file; Otto sets the day of the merge if it differs (M5-40 plan A3).
+approved_on: 2026-11-16
