@@ -313,10 +313,10 @@ def test_the_synthetic_catalogue_interleaves_full_and_listed_entries_and_has_a_t
     kinds = ["full" if i in FULL else "listed" for i in ALL_IDS]
     assert kinds[0] == "listed" and kinds[-1] == "listed" and "full" in kinds[1:-1]
     assert ALL_IDS.index("shared-title-a") + 1 == ALL_IDS.index("shared-title-b")
-    assert len(ALL_IDS) == 13
+    assert len(ALL_IDS) == 14
 
 
-@pytest.mark.parametrize("limit", [1, 2, 3, 5, 12, 13, 14])
+@pytest.mark.parametrize("limit", [1, 2, 3, 5, 13, 14, 15])
 async def test_get_pages_walk_full_and_listed_entries_in_title_order_without_a_gap_or_a_duplicate(client, limit):
     seen, pages = await _walk_get(client, limit=limit)
     assert seen == ALL_IDS
@@ -327,7 +327,7 @@ async def test_get_pages_walk_full_and_listed_entries_in_title_order_without_a_g
     assert [page.json()["numberReturned"] for page in pages] == [len(_ids(page)) for page in pages]
 
 
-@pytest.mark.parametrize("limit", [1, 2, 5, 13])
+@pytest.mark.parametrize("limit", [1, 2, 5, 14])
 async def test_post_pages_walk_the_same_order(client, limit):
     seen, pages = await _walk_post(client, {"limit": limit})
     assert seen == ALL_IDS
@@ -377,8 +377,8 @@ async def test_a_token_works_on_an_app_started_afterwards(catalogue):
 
 
 async def test_pages_go_on_when_an_entry_leaves_and_another_comes_between_two_requests(client):
-    first = await client.get("/stac/collections", params={"limit": 3})
-    assert _ids(first) == ALL_IDS[:3] and ALL_IDS[2] == "danube-flood-zones"
+    first = await client.get("/stac/collections", params={"limit": 4})
+    assert _ids(first) == ALL_IDS[:4] and ALL_IDS[3] == "danube-flood-zones"
     _tombstone("danube-flood-zones", BlockReason.NOT_GEODATA)  # the entry the token stands on leaves ...
     _commit(
         lambda conn: insert_row(conn, "eager-new-entry", title="Eager new entry")
@@ -387,7 +387,7 @@ async def test_pages_go_on_when_an_entry_leaves_and_another_comes_between_two_re
         lambda conn: insert_row(conn, "aardvark-atlas", title="Aardvark atlas")
     )  # ... one in front of the page seen
     rest, _ = await _walk_get(client, **dict(httpx.URL(_next(first)["href"]).params))
-    assert rest == ["eager-new-entry", *ALL_IDS[3:]]
+    assert rest == ["eager-new-entry", *ALL_IDS[4:]]
 
 
 # --- misuse of the token, the limit and the parameters ---------------------------------------------------------------
