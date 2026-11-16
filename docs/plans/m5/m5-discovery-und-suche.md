@@ -126,6 +126,7 @@ Stufe A: ohne Plan-Datei, direkt umsetzen. Stufe B: Plan unter `docs/plans/m5/` 
 | **F11** | Quicklook für Sentinel-1 über Kacheln statt PNG (`adr/0018` §4.2), Regel an `georeferencing: gcp_tps`, nur Frontend | läuft, Merge nach #339 |
 | **M5-40** | Gelistete Einträge (alle Datentypen) in Postgres statt YAML, Ziel 10⁶; Sperrliste und Grabstein; `/stac/collections` und Data catalogue blättern (`adr/0033` §13); erster Commit: Nachträge aus `adr/0033` §14 | Plan `m5-40-gelistete-in-postgres.md` im Draft-PR |
 | **M5-35** | Skalierbarkeit der Bausteine aus M4 und M5 mit mehreren Instanzen je Prozesstyp (Vorgabe Otto, 14.11.2026), Stufe C, Bericht `m5-35-skalierbarkeit.md` | Bericht im Draft-PR, Fragen F1–F7 beantwortet (14.11.2026), Folgeaufgaben M5-36 bis M5-42 |
+| **M5-36** | Grenzen je Host in `backend/catalog/hosts.yaml`, `HostSlots` je Prozess (GDAL, `httpx`, Zarr), Zarr teilt ein `Gateway`, Teilbudget je Instanz für `api` und `tiler` (M5-35 F1), Plan `m5-36-grenzen-je-host.md` | Plan mit Fragen G1–G6 im Draft-PR |
 
 **Noch nicht gestartet:**
 
