@@ -39,7 +39,7 @@ import {
   previewTitle,
   rescaleOf,
 } from '../processingPreview';
-import { bandLabel, isBandMath, nameProblem, resultNameOf, RGB } from '../processingBands';
+import { addsBand, bandLabel, nameProblem, resultNameOf, RGB } from '../processingBands';
 import { AFTER_REPROJECT } from '../normalizeMethods';
 import { measuredNumbers, type MeasureNeed } from '../processingOrder';
 import {
@@ -768,7 +768,7 @@ export default function ProcessingPanel() {
                         const problem = built?.stepProblems[index];
                         // The results of the steps before this one: the bands this step may name besides those of the data.
                         const earlier = view.results
-                          .slice(0, p.steps.slice(0, index).filter(isBandMath).length)
+                          .slice(0, p.steps.slice(0, index).filter(addsBand).length)
                           .map((r) => r.name)
                           .filter((name) => !view.hidden.includes(name));
                         return (
@@ -794,7 +794,7 @@ export default function ProcessingPanel() {
                             checkName={(name) =>
                               nameProblem(
                                 name,
-                                p.steps.filter((other) => other.key !== step.key && isBandMath(other)).map(resultNameOf),
+                                p.steps.filter((other) => other.key !== step.key && addsBand(other)).map(resultNameOf),
                                 view.dataNames,
                               )
                             }

@@ -42,7 +42,7 @@ from rio_tiler.mosaic.methods.defaults import FirstMethod
 from shapely.geometry.base import BaseGeometry
 from titiler.core.dependencies import DefaultDependency
 
-from earthx.access.footprint_mask import cut_to_footprints
+from earthx.access.footprint_mask import cut_to_footprints, cut_to_raster
 from earthx.access.tiles import EarthxTilerFactory, open_asset
 from earthx.readers.cog import AssetPath
 from earthx.readers.zarr_reader import ZarrAsset
@@ -61,9 +61,11 @@ __all__ = [
     "MosaicReaderParams",
     "MosaicScenes",
     "MosaicTileReader",
+    "OverviewOptionRefused",
     "ReadBudget",
     "TileGate",
     "TilePlace",
+    "grown_options",
     "open_mosaic",
 ]
 
@@ -254,6 +256,29 @@ class _NotRead(Exception):
     """A scene the budget left out; skipped like a scene outside the tile."""
 
 
+class OverviewOptionRefused(RioTilerError):
+    """A tile option that would change the neighbours a step with a halo reads (M5-10): a ``400``."""
+
+    status_code = 400
+
+
+def grown_options(halo: int, physical: bool, kwargs: dict[str, Any]) -> dict[str, Any]:
+    """The reader options of an overview tile under steps (M5-10 part B, plan §11): values, and a halo if a step needs one.
+
+    ``physical`` reads the values with the scale and offset of the file, as the steps compute (adr/0014 §5.4). A ``halo``
+    grows the tile by that many of its pixels, read ``bilinear`` as an operator tile with a ``focal`` first step is (plan
+    M5-10 F4); a ``buffer`` or another resampling of the request is refused there, because the step gives the halo back.
+    """
+    options = dict(kwargs)
+    if physical:
+        options["unscale"] = True
+    if halo:
+        if options.get("buffer") or options.get("resampling_method", "bilinear") not in (None, "bilinear"):
+            raise OverviewOptionRefused("buffer and resampling cannot be used with a step that reads the neighbours of each pixel")
+        options.update(buffer=halo, resampling_method="bilinear", reproject_method="bilinear")
+    return options
+
+
 @dataclass(frozen=True, slots=True)
 class MosaicScenes:
     """The scenes of one mosaic tile in the order they are read, and where the whole mosaic lies.
@@ -271,6 +296,10 @@ class MosaicScenes:
     place: TilePlace | None = field(default=None, compare=False)
     #: Footprints (EPSG:4326) the tile is masked to, for the picture a substitute draws over the hits of a search; ``None`` otherwise.
     mask: BaseGeometry | None = field(default=None, compare=False)
+    #: Steps run on the tile of a substitute (M5-10 part B): its values are read with the file's scale and offset.
+    physical: bool = False
+    #: The pixels a ``focal`` first step of those steps needs around the tile, read with each scene.
+    halo: int = 0
 
     def __post_init__(self) -> None:
         if not self.scenes:
@@ -375,6 +404,8 @@ class MosaicTileReader:
         gate (the measurement of the tile path).
         """
         try:
+            if self.source.physical or self.source.halo:
+                kwargs = grown_options(self.source.halo, self.source.physical, kwargs)
             with _TILE_SLOTS:
                 image = self._read_tile(tile_x, tile_y, tile_z, **kwargs)
             if self.source.mask is not None:
@@ -396,6 +427,8 @@ class MosaicTileReader:
                 raise _NotRead
             with rasterio.Env(**self.gdal_config), open_asset(scene, tms=self.tms, **self.options) as reader:
                 image = reader.tile(x, y, z, **options)
+                if self.source.halo:
+                    image = cut_to_raster(image, reader.crs, reader.bounds)
             with lock:
                 band_counts.add(image.count)
                 if len(band_counts) > 1:

@@ -963,7 +963,10 @@ function pinViewImages(set: SetState, get: GetState, which: 'shown' | 'all'): vo
       opacity: s.viewOpacity,
       overlays: overlays ?? [],
       ...dateOf(datesOfIds(itemIds, known)),
-      ...noteOfOverview(s.datasets.find((d) => d.id === image.datasetId)),
+      ...noteOfOverview(
+        s.datasets.find((d) => d.id === image.datasetId),
+        viewIndexOf(look, s.datasets.find((d) => d.id === image.datasetId)?.collection) ? { datasets: s.datasets } : null,
+      ),
       restore: {
         focusMode: true,
         downloaded: Object.fromEntries(entries),

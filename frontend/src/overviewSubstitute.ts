@@ -5,7 +5,7 @@
 // Only the attribution line of the map names its source while it is drawn, which MapLibre does by itself for the `attribution` of a
 // source whose layer is not hidden at the zoom; and the tooltip of a pyramid dataset's layer says what the picture is (`overviewNoteOf`).
 
-import { buildOverviewTileTemplate } from './api';
+import { buildOverviewTileTemplate, type ShownBands, type TileStep } from './api';
 import type { DatasetOption } from './datasets';
 import { attributionText } from './download';
 import type { PlannedRaster } from './mosaic';
@@ -30,7 +30,19 @@ function extentOf(collection: Collection): Bbox | null {
 // platform builds from the original files (plan M5-30b part 9), under its own attribution for modified data. Where the licence
 // requires an attribution that cannot be written the picture is not drawn at all: the licence asks for the text, not for the
 // picture.
-export function overviewRasterOf(dataset: DatasetOption | null | undefined, datasets: readonly DatasetOption[] | undefined): PlannedRaster | null {
+//
+// With `chain` the picture is computed: the tiler runs the steps of a preview or an index on the picture of the overview (M5-10
+// part B, G1), so that nothing computed disappears below the first level either; `computedNoteOf` says what it is.
+export interface OverviewChain {
+  steps: readonly TileStep[];
+  band: ShownBands;
+}
+
+export function overviewRasterOf(
+  dataset: DatasetOption | null | undefined,
+  datasets: readonly DatasetOption[] | undefined,
+  chain: OverviewChain | null = null,
+): PlannedRaster | null {
   if (!dataset?.viewable) return null;
   const viewer = dataset.collection['earthx:viewer'];
   if (viewer?.overview !== 'substitute' && viewer?.overview !== 'pyramid') return null;
@@ -41,7 +53,7 @@ export function overviewRasterOf(dataset: DatasetOption | null | undefined, data
   const flags = drawn.collection['earthx:license_flags'];
   const attribution = attributionText(flags, null);
   if (flags?.attribution_required && !attribution) return null;
-  const tileUrl = buildOverviewTileTemplate(dataset.id);
+  const tileUrl = chain ? buildOverviewTileTemplate(dataset.id, chain.steps, chain.band) : buildOverviewTileTemplate(dataset.id);
   return {
     tileUrl,
     bounds,
@@ -63,8 +75,23 @@ export function overviewNoteOf(dataset: DatasetOption | null | undefined): strin
   return `Below zoom ${from} the map shows an overview of ${dataset.title}, resampled from the original files; zoom in to ${from} for the originals.`;
 }
 
-// `overviewNoteOf` as the field of a layer the tooltip of its name reads (`MapLayer.note`), for the places that make a layer.
-export function noteOfOverview(dataset: DatasetOption | null | undefined): { note?: string } {
-  const note = overviewNoteOf(dataset);
+// `overviewNoteOf` as the field of a layer the tooltip of its name reads (`MapLayer.note`), for the places that make a layer; for a
+// computed picture (an index, a preview) `computedNoteOf`.
+export function noteOfOverview(
+  dataset: DatasetOption | null | undefined,
+  computed: { datasets: readonly DatasetOption[] } | null = null,
+): { note?: string } {
+  const note = computed ? computedNoteOf(dataset, computed.datasets) : overviewNoteOf(dataset);
   return note ? { note } : {};
+}
+
+// The sentence of the tooltip of a computed picture below the first level (a preview, an index; M5-10 part B, G2): it is computed
+// from an overview, the pyramid of the dataset or the picture that stands in for it, and only the originals give its values. For a
+// substitute as well: the values are those of another dataset. `null` where nothing is drawn below the first level.
+export function computedNoteOf(dataset: DatasetOption | null | undefined, datasets: readonly DatasetOption[] | undefined): string | null {
+  if (!dataset?.viewable || !overviewRasterOf(dataset, datasets)) return null;
+  const viewer = dataset.collection['earthx:viewer'];
+  const drawn = viewer?.overview === 'pyramid' ? dataset : datasets?.find((d) => d.id === viewer?.overview_substitute);
+  const from = Math.ceil(firstZoomOf(dataset.zoom.min, buildOverviewTileTemplate(dataset.id)));
+  return `Below zoom ${from} this is computed from an overview of ${drawn?.title ?? dataset.title}, resampled from the original files; zoom in to ${from} for values from the originals.`;
 }

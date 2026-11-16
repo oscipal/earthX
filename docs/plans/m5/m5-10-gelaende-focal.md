@@ -274,3 +274,197 @@ Leere Pixel (Rand, Lücke) sind in allen Varianten dieselben wie bei `gdaldem`.
 - Keine Live-Abrufe aus der Sitzung; Fixtures nur synthetisch.
 - Keine neuen Texte, Hinweise oder Marken im Frontend; Erklärungen höchstens im Tooltip.
 - `.github/`, `.claude/`, `CLAUDE.md`, `CODEOWNERS` unverändert.
+
+## 11. PR B: Kachel, Frontend, Bild unter `min_zoom` (15.11.2026, umgesetzt nach §11.5a)
+
+**Auftrag (Otto, 15.11.2026):** neuer Branch von `main` nach M5-30b (Pyramiden und Ersatz gemergt). Inhalt: die Kachel mit `focal` (`bilinear`, F4), das Frontend für `terrain`, und erweitert: **Vorschau mit Rechenschritten und Index-Darstellungen unter `min_zoom` in allen Ansichten** (Vorschau, Suchergebnisse, Szenenansicht, Crop and merge, angeheftete Ebene), sodass nie ein Bild verschwindet. Zuerst die Plan-Frage, wie unter `min_zoom` gerechnet wird und wie das ehrlich bleibt (G1–G6), dann die Umsetzung.
+
+### 11.1 Befund (Stand `main`, 45614d9)
+
+**Backend:**
+- **Route der Übersicht:** `GET /collections/{dataset}/overview/tiles/WebMercatorQuad/{z}/{x}/{y}` (Pyramide oder Ersatz) und die maskierte Fassung für Suchtreffer `…/overview/{selection}/tiles/…` (#355).
+  - Beide nehmen TiTilers Darstellung (`rescale`, `colormap_name`, `bidx`) und keine Schritte: `overview_post_process` ist leer (`api/tiler.py:1469`). `expression` und `algorithm` weist sie ab.
+  - `op`, `op_version` und `params` sind dort weder erklärt noch abgewiesen.
+- **Inhalt der Pyramide** (`processing/overview.py`):
+  - nur das **erste Band** des ersten Assets der Standardansicht, als **Rohwerte** im Typ der Quelle;
+  - 512 px, WebMercatorQuad, `average` bei GLO-30 (`data`, z0–z6) und `mode` bei WorldCover (`map`, z0–z4).
+  - Eine Kachel ist ein Objekt; über ihren Rand hinaus enthält sie nichts.
+- **Ersatz:** swissALTI3D unter z13 zeichnet GLO-30. Von z7 bis z12 liest es dessen Dateien (Budget 32 Dateien / 4 s), unter z7 dessen Pyramide, zugeschnitten auf die Ausdehnung.
+- **Schritte in Kacheln:** gibt es nur auf der Item- und der Mosaik-Route (`operator_post_process`). Index-Presets sind dort `band_math` v2.
+- **`focal` als Kachel:** Die Kachel weist `focal` ab (`kind != "pixel"`) und liest mit `nearest`.
+- **Importregeln:** `access` darf weder `processing` noch `objectstore` importieren, `processing` nie `objectstore`. `api` darf beides (lazy für `processing`). Die Kernel auf Übersichtspixeln kann also nur `api` aufrufen, als Nachbearbeitung der Kachel, wie heute bei den Operator-Kacheln.
+
+**Frontend:**
+
+| Ansicht | einfaches Bild unter `min_zoom` | gerechnetes Bild unter `min_zoom` |
+|---|---|---|
+| Vorschau (Panel) | Ansicht darunter bleibt | **nichts** (`minZoom = dataset.zoom.min`, `processingPreview.ts`) |
+| Suchergebnisse | Übersicht, maskiert auf die Treffer (#355) | gibt es dort nicht (keine Schritte, kein Index) |
+| Szenenansicht | Übersicht (`syncFocusRaster`) | Index: **nichts** (`!s.render.index`, `mapLayers.ts:1246`) |
+| Crop and merge | Übersicht, auf die AOI geschnitten | Index: **nichts** (gleicher Weg) |
+| angeheftete Ebene | Übersicht (`overviewOverlaysOf`) | angeheftete Vorschau und angehefteter Index: **nichts** (`searchLayers.ts:36`, `processingStore.ts` `pinPreview`) |
+
+**Datensätze:**
+- Unter `min_zoom` liegt heute nur etwas bei GLO-30 (unter z7), WorldCover (z5) und swissALTI3D (z13). Keiner der drei hat Index-Presets; Quick processing für Gelände kommt mit M5-14 (`step_presets`).
+- Sentinel-1 und -2 haben `min_zoom` 0 (`overview: scenes`). Bei ihnen gibt es kein „unter `min_zoom`“. Auf kleinen Stufen ist ihr Index aber eine Teilkachel (32 Dateien je Kachel, `adr/0032` §6.2, S1).
+- Der Weg für Indizes unter `min_zoom` wird also allgemein gebaut und mit einem synthetischen Eintrag getestet. Sichtbar wird er heute bei Vorschauen und angehefteten Vorschauen (jeder Operator auf GLO-30, WorldCover und swissALTI3D, auch `terrain`).
+
+### 11.2 Wie unter `min_zoom` gerechnet wird (G1)
+
+| | Weg | Werte | Kosten | Bewertung |
+|---|---|---|---|---|
+| **A** | Die Kette rechnet auf den Pixeln der Übersicht (Pyramide bzw. Ersatz), dieselben Kernel wie die Kachel und der Job | aus vergröberten Eingaben: bei linearen Schritten gleich dem Mittel der feinen Werte, bei nichtlinearen nicht (Neigung aus gemittelten Höhen ist flacher als die mittlere Neigung; Klassen nach `mode`) | ein Objekt je Kachel (bei `focal` bis zu vier, G4); kein Bau | **Empfehlung**: jede Kette, sofort, ohne Speicher; dieselbe Regel wie die Vorschau über Overviews heute (`adr/0014` §0 Punkt 7) |
+| B | Erst fein rechnen, dann vergröbern: eigene Pyramiden der Ergebnisse fester Darstellungen (Presets, später Hillshade/Slope), gebaut wie die Pyramide der Höhen | für diese Presets das Mittel der feinen Ergebnisse | je Preset und Datensatz ein Bau (GLO-30 rund 6–7 h) und Speicher; freie Ketten trotzdem wie A | später möglich, wenn A bei einem Preset irreführt; heute gibt es auf diesen Datensätzen kein Preset |
+| C | Unter `min_zoom` auf den Originalen rechnen | exakt | genau das, wovor `min_zoom` schützt (`adr/0032` §4: Hunderte bis Tausende Dateien je Kachel) | nicht machbar |
+| D | Unter `min_zoom` nur das einfache Bild, das gerechnete endet | — | — | widerspricht Ottos Vorgabe |
+
+### 11.3 Wie es ehrlich bleibt (G2)
+
+Vorschlag: wie die Übersicht heute, ohne neue Marke.
+- **Kopf:** `X-EarthX-Source: overview` bzw. `substitute` an jeder Kachel, wie heute.
+- **Tooltip:** ein Satz in dem Tooltip, den der Layer schon hat. Bei einer angehefteten Ebene ist das `note`, beim Panel die Marke „Preview“, die es für jede Vorschau schon gibt. Wortlaut: „Below zoom 7 this is computed from an overview of Copernicus DEM GLO-30, resampled from the original files; zoom in to 7 for values from the originals.“
+- **Quellenzeile:** nennt `attribution_modified`, wie bei der Übersicht heute.
+- **Farbskala:** dieselbe wie über `min_zoom`, also gemessen auf den Originalen bzw. die feste des Presets. So hat dieselbe Farbe bei jedem Zoom dieselbe Bedeutung. Eine flache Neigung bei kleinem Zoom ist dann dunkel, weil sie auf 1 km flach ist, nicht weil das Bild fehlt.
+- **Was nie aus der Übersicht kommt:** Statistik, Messung der Vorschau, Zuschnitt, Download, Jobs (wie `adr/0032` §5.2, F12).
+
+### 11.4 Weitere Punkte
+
+**Bänder beim Ersatz (G3):** Eine Kette auf swissALTI3D nennt `dtm` oder `dtm_2m`; der Ersatz GLO-30 hat `data`. Vorschlag: Jedes Band des Datensatzes mit der Einheit des Standardbands des Ersatzes (`m`) steht unter `min_zoom` für dessen Band. Ketten, die andere Bänder lesen, enden dort wie heute.
+
+**Bänder bei der Pyramide:** Sie hält nur das erste Band. Eine Kette, die ein anderes Band liest, hat dort kein Bild. Heute betrifft das keinen Datensatz (GLO-30 und WorldCover haben je ein Band). Die Route antwortet dann `404` ohne Bild, die Karte zeigt darunter die Übersicht.
+
+**Rohwerte:** Die Route wendet die Skalierung des Datensatzes an, bevor die Kette rechnet, wie `processing.source.Source` es für die Kachel tut (heute ohne Wirkung: GLO-30 und WorldCover sind unskaliert).
+
+**`focal` auf der Pyramide (G4):** Eine Kachel mit Neigung braucht einen Pixel über ihren Rand. Liegt der Rand außerhalb des Objekts, muss das Nachbarobjekt gelesen werden.
+- Kachel von 256 px: bis zu 3 Objekte zusätzlich;
+- Kachel von 512 px: bis zu 8.
+
+**Kachel mit `focal` (über `min_zoom`):** wie §4.3 mit F4 = 1 (`bilinear`, Rand über `buffer`, `focal` nur als erster Schritt, ein `buffer` in der Anfrage zusammen mit `focal` → `422`). Für Mosaik-Kacheln ebenso.
+
+**Frontend für `terrain`:**
+- Ein eigenes Formular wie bei `normalize` v4: erst `product`, dann nur dessen Felder. Bei der Schummerung sind Azimut 315°, Höhe 45° und z-Faktor 1 vorausgefüllt, die Werte von `gdaldem`.
+- `listed=True`, `Capabilities.terrain` in `types.ts`.
+- `tileStep` nimmt `focal` an erster Stelle.
+- Keine neuen Texte außer den Feldnamen; Erklärungen nur im Tooltip.
+
+**Wo das gerechnete Bild unter `min_zoom` entsteht** (alles über dieselbe Route mit der Kette):
+- Vorschau im Panel: eine zweite Rasterquelle von z0 bis `min_zoom` − 1, wie `overviewRasterOf` für das einfache Bild;
+- Index in Szenenansicht und Crop and merge (`syncFocusRaster`, heute `!s.render.index`);
+- angeheftete Vorschau und angehefteter Index (`pinPreview`, `overviewOverlaysOf`);
+- Suchergebnisse: dort gibt es weder Schritte noch Index; bleibt wie #355.
+
+**Sentinel-1 und -2 auf kleinen Stufen (G5):** Dort ist es kein „unter `min_zoom`“, sondern das Budget je Kachel. Nach `adr/0032` F7 (S1) bleibt die Teilkachel; eine Übersicht der Auswahl als Job wäre S2 dort.
+
+**Umfang:** M5-10 hat höchstens zwei PRs; das hier ist der zweite. Geschätzt 700–900 Zeilen mit Tests, also über dem Richtwert von 400 (G6).
+
+### 11.5 Fragen an Otto
+
+**G1 — Rechenweg unter `min_zoom` (§11.2)?**
+1. A: Die Kette rechnet auf den Pixeln der Übersicht (Pyramide bzw. Ersatz), für jede Kette, ohne Bau und Speicher **(Empfehlung)**
+2. A jetzt, dazu B für Presets, sobald es auf Datensätzen mit Pyramide welche gibt (nach M5-14)
+3. B für Presets, freie Ketten enden bei `min_zoom`
+
+**G2 — Ehrlichkeit (§11.3)?**
+1. Wie die Übersicht: Kopf, ein Satz im vorhandenen Tooltip, Quellenzeile „modified“, Farbskala aus den Originalen, keine Marke **(Empfehlung)**
+2. Wie 1, aber unter `min_zoom` eine eigene Farbskala aus der Übersicht (mehr Kontrast, die Farben springen am Übergang)
+
+**G3 — Bänder beim Ersatz (swissALTI3D `dtm`, `dtm_2m` → GLO-30 `data`)?**
+1. Jedes Band mit der Einheit des Ersatzbands steht für dieses **(Empfehlung)**
+2. Nur das Standardband (`dtm`); Ketten auf `dtm_2m` enden bei `min_zoom`
+
+**G4 — `focal` auf der Pyramide über Objektgrenzen?**
+1. Nachbarobjekte lesen, wo der Rand es verlangt (bis zu 3 bzw. 8 zusätzliche GETs); keine Nähte **(Empfehlung)**
+2. Ohne Nachbarn: An den Objektgrenzen bleibt ein Ring leer (sichtbare Linien alle 512 px)
+
+**G5 — Sentinel-1 und -2 auf kleinen Stufen (Teilkacheln bei Index und Vorschau)?**
+1. Bleibt nach `adr/0032` F7 (S1), nicht Teil von M5-10 **(Empfehlung)**
+2. Eigene Aufgabe: Übersicht der Auswahl als Job (`adr/0032` S2)
+
+**G6 — Schnitt?**
+1. Ein PR B, über dem Richtwert, in thematischen Commits **(Empfehlung, M5-10 hat höchstens zwei PRs)**
+2. Zwei PRs: B1 Kachel und Formular für `terrain`, B2 Bild unter `min_zoom` (dann drei PRs für M5-10)
+
+### 11.5a Antworten von Otto (15.11.2026)
+
+G1–G6 jeweils Option 1. Kein Force-Push. Dazu: Browser-Check, der in jeder Ansicht (Vorschau, angeheftete Vorschau, Szenenansicht, Crop and merge, angehefteter Index) von z10 bis z0 ein gerechnetes Bild zeigt, hell und dunkel; vor dem Fertigmelden `main` holen; Prüfanleitung am Ende.
+
+### 11.6 Umsetzung PR B (15.11.2026)
+
+Umgesetzt wie §11.2–§11.4 mit G1–G6 = 1. Befunde und Auslegungen, gelten bis Widerspruch:
+
+**Backend**
+- **Kachel mit `focal`:** erster Schritt; liest `bilinear` mit `buffer` = Rand, der Kernel gibt den Rand zurück. `focal` an späterer Stelle → `422`; ein `buffer` oder ein anderes Resampling der Anfrage → `400`. Die Messung der ganzen Ausdehnung (`statistics`) bekommt einen maskierten Ring. Der Planer der Kachel (`split_tiers`) nimmt `focal` nur als ersten Schritt.
+- **Rechenschritte auf der Übersicht:** Die Route `…/overview/tiles/…` nimmt `op`, `op_version`, `params` und `band` wie die Kachel eines Items. Sie prüft die Kette vor jedem Lesen gegen den Datensatz im Pfad und rechnet sie in `api` auf dem Bild der Übersicht, mit den Kerneln des Jobs. Die Werte werden mit Skala und Offset der Datei gelesen (`unscale`; GLO-30 und WorldCover sind unskaliert). **Auslegung:** Eine künftige Pyramide skalierter Daten muss Skala und Offset als Tags der Kachel schreiben. Bänder nach G3: jedes Band des Datensatzes mit der Einheit des Ersatzbands.
+- **Treffer einer Suche:** Die maskierte Route weist Schritte ab (`400`); Suchergebnisse haben weder Schritte noch Index (§11.4).
+- **Nachbarn bei `focal` auf der Pyramide (G4), Korrektur zu §11.4:**
+  - Eine Kachel der Karte deckt genau ein Objekt derselben Stufe (bei 256 und bei 512 px). Der Rand liegt also immer in den acht Nachbarn; „bis zu 3“ war falsch.
+  - Abhilfe: Die letzten 64 Nachbarobjekte hält der Prozess. Die Kacheln einer Ansicht teilen ihre Nachbarn, ein Objekt einer Fassung ändert sich nie. Im Test liest die zweite Kachel nur noch ihr eigenes Objekt.
+- **Rand beim `bilinear`-Lesen (Befund):** GDAL füllt Pixel jenseits des Rands einer Datei mit dem Randwert.
+  - **Pyramide:** Jedes Objekt liefert nur die Pixel, die in ihm liegen; sonst hätte der Randwert des eigenen Objekts den echten Wert des Nachbarn verdeckt.
+  - **Kacheln von Items und Mosaiken mit `focal`:** Jede Szene liefert nur die Pixel innerhalb ihres Rasters. Damit erfindet die Kachel am Datenrand keine Nachbarn, wie der Job.
+- **Grenze an Szenen-Nähten (Befund, gemessen):** Liest die Kachel Szene für Szene, interpoliert jede Szene an der Naht ohne die Pixel der anderen. Gemessen an zwei Nachbardateien eines DEM mit 2-m-Pixeln, gegen eine Datei:
+
+  | Stufe | Schummerung `bilinear`, Abweichung an der Naht (von 255) | Neigung `bilinear` | `nearest`: Pixel mit Fehler > 20 in der Schummerung, überall |
+  |---|---|---|---|
+  | z14 | 2 | 0,7° | 0 % |
+  | z16 | 15 | 3,2° | 27 % |
+  | z17 | 74 | 17,6° | 27 % |
+  | z18 | 193 | 56° | 75 % |
+
+  - `bilinear` (F4) bleibt richtig: `nearest` zeigt bei Vergrößerung überall Treppen, `bilinear` nur an Nähten eine Linie.
+  - An den Objektgrenzen der Pyramide ist der Effekt vernachlässigbar (Schummerung 0,12 von 255): Die Grenzen liegen auf Pixelgrenzen der Kachel.
+  - Die Vorschau endet vor der Auflösung der Daten (`previewMaxZoom`), bei swissALTI3D also vor z17/z18.
+  - Behebbar wäre es mit einem Lesen über ein VRT aller Szenen einer Kachel; das ist eine eigene Aufgabe.
+
+- **Befunde des Reviews, behoben:**
+  - **Rand nach vorangestellter Bandauswahl:** Bei swissALTI3D unter z13 stehen `dtm` und `dtm_2m` für das eine Band von GLO-30. Der Planer stellt dann eine Auswahl der Bänder vor die Neigung, und der Rand wurde nicht gelesen (Kachel 2 px zu klein, Nähte). `halo_of` zählt jetzt jeden `focal`-Schritt der Kette.
+  - **Datumsgrenze:** Der umgebrochene Nachbar lag im Gitter auf der anderen Seite der Welt und wurde als falsch platziert abgewiesen. Das gab `502` für jede Neigungskachel bei z0 und für die Randkacheln bei z1. Jenseits der Datumsgrenze und der Pole wird jetzt kein Nachbar gelesen; der Rand der Welt ist dort der Rand.
+  - **Geladenes Rezept:** Ein Höhenband eines `terrain`-Schritts, das der Auswahl fehlt, wird wie bei `normalize` genannt.
+
+**Frontend**
+- **Formular `terrain`:** wie bei `normalize` v4. Erst das Produkt, dann nur dessen Felder; die Schummerung mit den Vorgaben von `gdaldem` (315°, 45°, z 1). Der Schritt fügt ein Band unter seinem Namen hinzu wie Band math (`addsBand`) und schlägt das erste Band der Daten in Metern vor. In der Vorschau zählt er nur als erster Schritt.
+- **Gerechnetes Bild unter `min_zoom`** über dieselbe Route mit der Kette, in jeder Ansicht:
+  - Vorschau im Panel und angeheftete Vorschau;
+  - Index in Szenenansicht und Crop and merge;
+  - angehefteter Index.
+
+  Der Hinweis „Zoom in to compute …“ entfällt, wo die Übersicht den Index zeichnet.
+- **Vorschau auf die Szenen zugeschnitten (Befund):** Die Übersicht der Vorschau zeichnete unter `min_zoom` den ganzen Datensatz (bei GLO-30 die Welt). Jetzt wird sie im Browser auf die Umrisse der Szenen zugeschnitten (`aoiClip`), für dieselben Szenen mit demselben Zuschnitt, damit die Karte keine Kacheln neu lädt. Die Ansicht mit Index behält die Regel der einfachen Übersicht (Ausdehnung des Datensatzes, bei Crop and merge die AOI).
+- **Quellenzeile:** Die Vorschau nennt jetzt unter `min_zoom` die Quelle der Übersicht (`attribution_modified`); vorher fehlte sie bei Vorschauen.
+- **Ehrlichkeit (G2):** ein Satz im vorhandenen Tooltip:
+  - beim Panel die Marke „Preview“;
+  - bei angehefteten Ebenen das Feld `note`;
+  - beim Index in der Ansicht das Feld „Band“.
+
+  Wortlaut: „Below zoom 7 this is computed from an overview of …, resampled from the original files; zoom in to 7 for values from the originals.“ Beim Ersatz wird der Ersatz genannt. Keine Marke.
+- **Index, den der Datensatz nicht kennt:** Unter `min_zoom` steht das einfache Bild, wie im Rest der Ebene (vorher: nichts).
+- **Typ `Capabilities`:** in `types.ts` unverändert; das Frontend liest das Flag nicht.
+
+**Prüfung**
+- **Backend:**
+  - neue Tests `test_tiler_focal.py`, `test_tiler_overview_steps.py`, `test_cut_to_raster.py`;
+  - vorhandene Suiten der Übersicht, Pyramide und Kacheln grün;
+  - generierte Prozessbeschreibungen neu geschrieben (`terrain` angeboten).
+- **Frontend:** `terrainFields.test.ts` und `overviewComputed.test.ts` neu; zwei alte Tests („mit Index keine Übersicht“) an die neue Regel angepasst.
+- **Browser** (`frontend/e2e/computed-every-level.cjs`, Mock-Tiler, frischer Dev-Server):
+  - fünf Ansichten × hell/dunkel × z10 bis z0, alle grün, in drei Läufen;
+  - geprüft: gerechnete Kachel überall über dem Gebiet, Übersicht mit Schritten unter `min_zoom`, Quellenzeile, Vorschau nur über ihren Szenen, keine Marke;
+  - Gegenprobe: Mit der alten Regel („mit Index keine Übersicht“) schlagen genau Szenenansicht und Crop and merge fehl.
+
+### 11.7 Prüfanleitung für Otto
+
+Voraussetzung: lokaler Stack mit fertiger Pyramide von GLO-30 (M5-30b) und materialisiertem swissALTI3D.
+
+1. **Automatische Tests** aus der Repo-Wurzel: `pytest` (Backend). In `frontend/`: `npm run lint`, `npx tsc -b --pretty false` und `npx vitest run`.
+2. **Browser-Check mit Mock-Tiler:** in `frontend/` einen frischen Dev-Server starten (`npm run dev`), dann `node e2e/computed-every-level.cjs`. Erwartet: zehnmal `ok`.
+3. **Vorschau auf GLO-30:**
+   - Alpen suchen, Szenen wählen, Processing öffnen, „Terrain“ hinzufügen. Vorgeschlagen ist `slope` aus dem Band `data`.
+   - Karte von z10 bis z0 herauszoomen: Die Neigung bleibt sichtbar, unter z7 aus der Übersicht und nur über den gewählten Szenen.
+   - Tooltip von „Preview“: Er nennt „computed from an overview of Copernicus DEM GLO-30“. In der Quellenzeile steht die Angabe für bearbeitete Daten.
+   - Bei z3–z5 wirkt die Neigung flach (1 km je Pixel); das ist die Neigung dieser Auflösung, nicht ein Fehler.
+4. **Schummerung:** Produkt `hillshade`, einmal mit Azimut 315°, einmal mit „Four lights“. Herauszoomen wie oben. Hereinzoomen bis zur letzten Stufe der Vorschau: keine Streifen.
+5. **Angeheftete Vorschau:** „Add to layers“ an der Vorschau, Panel schließen, herauszoomen. Die Ebene bleibt bei jedem Zoom; der Tooltip ihres Namens nennt die Übersicht.
+6. **swissALTI3D:** wie 3. Unter z13 kommt die Neigung aus GLO-30, der Tooltip nennt GLO-30. Ab z13 wieder aus swissALTI3D.
+7. **Nähte (bekannte Grenze, §11.6):** auf swissALTI3D die Schummerung bei der höchsten Stufe der Vorschau entlang einer 1-km-Kachelgrenze ansehen. Eine feine Linie ist möglich; der Job hat sie nicht.
+8. **Index:** Kein Datensatz mit `min_zoom` > 0 hat heute ein Index-Preset. Die Ansichten mit Index prüft der Browser-Check mit einem synthetischen Eintrag. Auf Sentinel-2 (NDVI) bei kleinem Zoom ist die Teilkachel unverändert (G5).
+9. **Job:** einen Job „Terrain“ über eine kleine AOI starten. Das Ergebnis ist `float32`, die Schummerung hat Werte von 1 bis 255.

@@ -9,6 +9,7 @@
 
 import { refineMaskValues } from './maskValues';
 import { fieldsOfMethod, refineNormalize } from './normalizeMethods';
+import { fieldsOfProduct } from './terrainFields';
 import type { JsonSchema } from './processing';
 
 export type FieldKind = 'string' | 'number' | 'integer' | 'integers' | 'numbers' | 'names' | 'boolean' | 'enum' | 'const';
@@ -341,13 +342,15 @@ export interface ParamsResult {
   errors: Record<string, string>;
 }
 
-// `op` lets a step's own rules between its fields in: the numbers a `mask_values` step needs depend on its condition, the fields of a `normalize` step on its method.
+// `op` lets a step's own rules between its fields in: the numbers a `mask_values` step needs depend on its condition, the fields of a `normalize` step on its method, those of a `terrain` step on its product.
 export function paramsFrom(fields: readonly Field[], values: Readonly<Record<string, FieldValue>>, op?: string): ParamsResult {
   const params: Record<string, unknown> = {};
   const errors: Record<string, string> = {};
-  // A `normalize` step of version 4 takes the fields of its method and no others.
+  // A `normalize` step of version 4 takes the fields of its method and no others, a `terrain` step those of its product.
   const methods = op === 'normalize' && fields.some((field) => field.name === 'method');
-  for (const field of methods ? fieldsOfMethod(fields, values.method) : fields) {
+  const products = op === 'terrain' && fields.some((field) => field.name === 'product');
+  const taken = methods ? fieldsOfMethod(fields, values.method) : products ? fieldsOfProduct(fields, values) : fields;
+  for (const field of taken) {
     const { value, error } = valueOf(field, values[field.name]);
     if (error) errors[field.name] = error;
     else if (value !== undefined) params[field.name] = value;

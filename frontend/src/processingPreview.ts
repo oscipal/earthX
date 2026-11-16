@@ -18,6 +18,7 @@ import {
   type ShownBands,
 } from './api';
 import type { DatasetOption } from './datasets';
+import { computedNoteOf, overviewRasterOf } from './overviewSubstitute';
 import { unionBbox } from './geoUtils';
 import type { LayerOverlay } from './layers';
 import { buildTileUrl } from './mapLayers';
@@ -27,12 +28,13 @@ import {
   MAX_SELECTION_ITEMS,
   MIN_MOSAIC_SCENES,
   mosaicRequestBytes,
+  type PlannedRaster,
 } from './mosaic';
 import { selectionKeyOf } from './mosaicSelection';
 import { MOSAIC_TILE_SIZE, TILE_SIZE, tileMetres } from './tileSize';
 import { canonicalJson, type Order } from './processing';
 import { indexPresetsOf, presetFor, presetRange } from './indexPresets';
-import { assetsCarrying, bandLabel, isBandMath, resultNameOf, resultsOf, RGB, startBand } from './processingBands';
+import { addsBand, assetsCarrying, bandLabel, isBandMath, resultNameOf, resultsOf, RGB, startBand } from './processingBands';
 import {
   bandsOf,
   namesInExpression,
@@ -46,7 +48,7 @@ import type { Percent } from './percentRange';
 import { INDEX_COLORMAP, INDEX_RANGE, scaleOf, statsFrom, type BandStats, type ResultStats } from './render';
 import { NORMALIZE_VERSION, TILE_VERSION, isStatistical, type Measured } from './normalizeMethods';
 import { fieldNumber } from './numberFormat';
-import { paramsFrom, type Field } from './schemaForm';
+import { namesIn, paramsFrom, type Field } from './schemaForm';
 import type { Bbox, StacItem } from './types';
 
 // As many scenes as the full-resolution view draws (`mapLayers.ts`).
@@ -124,12 +126,15 @@ export type PreviewPlan =
 
 // The operator of a step that can be a tile and the fields of its form, or the text why
 // there is no picture: the operator is not on the dataset's list, it does not run as a tile
-// (`T1`, `pixel`), or the panel has no form for it. `normalize` of version 4 runs only as a job; its tile is version 3.
-function tileStep(step: DraftStep, info: ProcessInfo): { operator: Operator; fields: Field[]; version: number } | { reason: string } {
+// (`T1`, `pixel`, or `focal` as the first step, M5-10), or the panel has no form for it. `normalize` of version 4 runs only as a
+// job; its tile is version 3.
+function tileStep(step: DraftStep, info: ProcessInfo, first: boolean): { operator: Operator; fields: Field[]; version: number } | { reason: string } {
   const operator = info.operators.find((o) => o.op === step.op && o.opVersion === step.opVersion);
   if (!operator) return { reason: NO_PREVIEW_UNLISTED };
   const asVersion3 = operator.op === 'normalize' && operator.opVersion === NORMALIZE_VERSION;
-  if (!asVersion3 && (!operator.tiers.includes('T1') || operator.kind !== 'pixel')) return { reason: NO_PREVIEW };
+  if (!asVersion3 && (!operator.tiers.includes('T1') || (operator.kind !== 'pixel' && !(operator.kind === 'focal' && first)))) {
+    return { reason: NO_PREVIEW };
+  }
   if (!operator.form.supported) return { reason: NO_PREVIEW_FORM };
   return { operator, fields: operator.form.fields, version: asVersion3 ? TILE_VERSION : operator.opVersion };
 }
@@ -152,8 +157,8 @@ export function planPreview(steps: readonly DraftStep[], info: ProcessInfo | nul
   const first = steps[0];
   if (!info || !first) return { state: 'off', reason: null };
   const planned: PlannedStep[] = [];
-  for (const step of steps.slice(0, MAX_PREVIEW_STEPS)) {
-    const found = tileStep(step, info);
+  for (const [index, step] of steps.slice(0, MAX_PREVIEW_STEPS).entries()) {
+    const found = tileStep(step, info, index === 0);
     if ('reason' in found) break;
     const { params, errors } = paramsFrom(found.fields, step.values, step.op);
     if (Object.keys(errors).length > 0) break;
@@ -166,7 +171,7 @@ export function planPreview(steps: readonly DraftStep[], info: ProcessInfo | nul
     planned.push({ step, operator: found.operator, params, version: found.version });
   }
   if (planned.length === 0) {
-    const found = tileStep(first, info);
+    const found = tileStep(first, info, true);
     if ('reason' in found) return { state: 'off', reason: found.reason };
     const { params, errors } = paramsFrom(found.fields, first.values, first.op);
     return { state: 'off', reason: Object.keys(errors).length === 0 && waitsForNumbers(first, params) ? NO_NUMBERS_YET : 'Complete the step to see the preview.' };
@@ -190,7 +195,11 @@ export function namesNeeded(steps: readonly DraftStep[], band: string): Set<stri
   for (const step of [...steps].reverse()) {
     // A mask by value always reads the band that decides (`BandUse(reads={band})`), whichever band is shown.
     if (step.op === 'mask_values' && typeof step.values.band === 'string' && step.values.band !== '') needed.add(step.values.band);
-    if (!isBandMath(step) || !needed.delete(resultNameOf(step))) continue;
+    if (!addsBand(step) || !needed.delete(resultNameOf(step))) continue;
+    if (step.op === 'terrain') {
+      for (const name of namesIn(typeof step.values.bands === 'string' ? step.values.bands : '')) needed.add(name);
+      continue;
+    }
     for (const name of namesInExpression(typeof step.values.expression === 'string' ? step.values.expression : '')) needed.add(name);
   }
   return needed;
@@ -393,6 +402,33 @@ export interface PreviewSpec {
   clipToAoi: boolean;
   // The AOI they are cut to where it is not the map's: the part of it that lies in a result.
   clipAoi?: GeoJSON.Geometry;
+  // Below the first level of a dataset with a pyramid or a substitute: the same steps on the picture of the overview (M5-10 part B,
+  // G1), so that the preview does not disappear when the map zooms out; `note` says what it is (G2). `null` elsewhere.
+  overview: (PlannedRaster & { url: string; note: string | null; footprints: GeoJSON.Geometry }) | null;
+}
+
+// The footprints of the scenes of a preview as one geometry, the same object for the same scenes: the overview below the first level
+// is cut to them in the browser (`aoiClip.ts`, whose key is the object), so that the preview of a job over some scenes does not draw the
+// whole dataset there, and a new spec of the same scenes keeps the tiles the map has.
+const footprintsByScenes = new Map<string, GeoJSON.Geometry>();
+const MAX_FOOTPRINTS_KEPT = 32;
+
+function footprintsOf(items: readonly StacItem[]): GeoJSON.Geometry {
+  const key = items.map((item) => item.id).sort().join('\n');
+  const kept = footprintsByScenes.get(key);
+  if (kept) return kept;
+  const polygons = items.flatMap((item): GeoJSON.Position[][][] => {
+    const g = item.geometry;
+    if (g?.type === 'Polygon') return [g.coordinates];
+    if (g?.type === 'MultiPolygon') return g.coordinates;
+    if (!item.bbox) return [];
+    const [w, s, e, n] = item.bbox;
+    return [[[[w, s], [e, s], [e, n], [w, n], [w, s]]]];
+  });
+  const geometry: GeoJSON.Geometry = { type: 'MultiPolygon', coordinates: polygons };
+  if (footprintsByScenes.size >= MAX_FOOTPRINTS_KEPT) footprintsByScenes.clear();
+  footprintsByScenes.set(key, geometry);
+  return geometry;
 }
 
 const positive = (value: unknown): number | null =>
@@ -458,6 +494,8 @@ export function previewSpec(args: {
   named?: boolean;
   // The AOI the tiles are cut to where it is not the map's (the part of it in a result), for "AOI only".
   clipAoi?: GeoJSON.Geometry;
+  // The datasets of the list: the one that stands in below the first level is among them.
+  datasets?: readonly DatasetOption[];
 }): PreviewSpec | null {
   const { dataset, items, assets, info, plan, range, area, jobs = [], answers, selections, order = null, band = null, named = false } = args;
   const clipAoi = area === 'aoi' ? args.clipAoi : undefined;
@@ -530,9 +568,14 @@ export function previewSpec(args: {
   // The chain must be whole: the order runs all its steps, and a preview of a start of them would be measured on more.
   const areaOrder = clipToAoi && order !== null && !plan.further ? { datasetId: dataset.id, order } : null;
   const sceneMeasure = buildOperatorStatisticsUrl(dataset.id, measured, assets, chain, asked);
+  const below = overviewRasterOf(dataset, args.datasets, { steps: chain, band: asked });
+  const overview = below
+    ? { ...below, url: buildTileUrl(below.tileUrl, render), note: computedNoteOf(dataset, args.datasets), footprints: footprintsOf(items) }
+    : null;
   return {
     key: canonicalJson({
       urls: scenes.map((s) => s.url),
+      ...(overview ? { overview: overview.url } : {}),
       ...(mosaics.length > 0 ? { mosaics: mosaics.map((m) => [m.url, m.order, m.maxZoom]) } : {}),
       minZoom: dataset.zoom.min,
       maxZoom,
@@ -557,6 +600,7 @@ export function previewSpec(args: {
     maxZoom,
     clipToAoi,
     ...(clipAoi ? { clipAoi } : {}),
+    overview,
   };
 }
 
@@ -640,7 +684,9 @@ export function measureHint(preview: PreviewSpec | null, measure: PreviewMeasure
 
 // The tooltip of "Preview", on the map and in the panel.
 export function previewTitle(preview: PreviewSpec | null, measure: PreviewMeasure | null): string | undefined {
-  const lines = [preview?.perScene ? SCENE_PREVIEW_HINT : null, measureHint(preview, measure)].filter((line) => line !== null);
+  const lines = [preview?.perScene ? SCENE_PREVIEW_HINT : null, measureHint(preview, measure), preview?.overview?.note ?? null].filter(
+    (line) => line !== null,
+  );
   return lines.length > 0 ? lines.join('\n') : undefined;
 }
 
@@ -653,7 +699,8 @@ export function measuredRange(measure: PreviewMeasure | null): PreviewRange | nu
 // What the panel says when the measure could not be had: the preview then keeps the start range.
 export const NO_MEASURE = 'The range could not be measured, so the preview uses its start range. Set it by hand or try Auto-scale.';
 
-// The overlays of a preview, as the map and a layer hold them, the first on top: the mosaics, then the scenes.
+// The overlays of a preview, as the map and a layer hold them, the first on top: the mosaics, then the scenes, then below the first
+// level the overview the steps are computed on.
 export function previewOverlays(spec: PreviewSpec, aoi: GeoJSON.Geometry | null): LayerOverlay[] {
   const clip = spec.clipToAoi ? (spec.clipAoi ?? aoi) : null;
   const mosaics = spec.mosaics.map((mosaic) => ({
@@ -672,7 +719,21 @@ export function previewOverlays(spec: PreviewSpec, aoi: GeoJSON.Geometry | null)
     maxZoom: spec.maxZoom,
     preview: true as const,
   }));
-  return [...mosaics, ...scenes];
+  const overview = spec.overview
+    ? [
+        {
+          kind: 'raster' as const,
+          tileUrl: clipTileUrl(spec.overview.url, clip ?? spec.overview.footprints),
+          bounds: spec.overview.bounds,
+          minZoom: spec.overview.minZoom,
+          maxZoom: spec.overview.maxZoom,
+          ...(spec.overview.hideFrom === undefined ? {} : { hideFrom: spec.overview.hideFrom }),
+          ...(spec.overview.attribution === undefined ? {} : { attribution: spec.overview.attribution }),
+          preview: true as const,
+        },
+      ]
+    : [];
+  return [...mosaics, ...scenes, ...overview];
 }
 
 // --- never as fine as the data (Otto, 19.10.2026) ---------------------------
