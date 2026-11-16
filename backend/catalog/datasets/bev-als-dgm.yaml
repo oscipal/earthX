@@ -145,14 +145,15 @@ default_render:
   asset_selection: all
 # One mosaic over all tiles of the reference date (M5-09 F1): every item carries the same `datetime`.
 #
-# `min_zoom` 8 by the rule of M5-09 F5: a cold tile of z7 took 9.4 s, over the budget of 4 s (Otto's measurement of
-# 16.11.2026, plan §2.6; z8 6.3 s, z9 2.8 s). Below z8 the picture is GLO-30: its files at z7, its pyramid below.
+# `min_zoom` 9 (M5-09 F10): the first level whose cold tile stays inside the budget of 4 s (Otto's measurement of
+# 16.11.2026, plan §2.6: z7 9.4 s, z8 6.3 s, z9 2.8 s). Below z9 the picture is GLO-30: its files at z7 and z8, its
+# pyramid below.
 # `max_zoom` 19: two levels past z17, the level of 1 m.
 #
 # `browse: full_resolution` as for swissALTI3D: no quicklook, the AOI crop in full resolution.
 viewer:
   group_by: [datetime]
-  min_zoom: 8
+  min_zoom: 9
   max_zoom: 19
   browse: full_resolution
   quicklook_nodata_max: null
