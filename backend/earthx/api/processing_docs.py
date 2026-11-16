@@ -283,6 +283,10 @@ def _step_schemas(
                 "params": _prefixed(params, prefix),
             },
         }
+        if operator.looks is not None:
+            # How the band the step makes is drawn, by a parameter of the step (M5-10, Otto, 16.11.2026): the panel draws every
+            # preview and result with it and has no list of products of its own.
+            defs[name]["x-earthx-looks"] = operator.looks.annotation()
         names.append(name)
     return defs, names
 
