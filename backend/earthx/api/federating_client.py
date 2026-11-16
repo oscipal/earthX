@@ -685,9 +685,10 @@ def _state_of(request: Request, name: str) -> Any:
 def _read_limiter(request: Request) -> anyio.CapacityLimiter:
     """The one limit on the threads that read rasters for the cloud share, for the whole process.
 
-    Made on first use because a limiter belongs to the event loop that runs; as large as the readers one host may
-    have (``Policy.max_connections_per_host``), so a search waits for a reader here, in the loop, and not in a
-    thread of the pool every other route shares.
+    Made on first use because a limiter belongs to the event loop that runs; as large as the default cap per host
+    (``Policy.max_connections_per_host``, this instance's share), so a search waits for a reader here, in the loop, and
+    not in a thread of the pool every other route shares. The cap of each host is ``ReadSlots``; for a host with a
+    larger cap (hosts.yaml) this keeps the threads of the cloud share at the default (M5-36).
     """
     state = request.app.state
     limiter = getattr(state, "earthx_read_limiter", None)

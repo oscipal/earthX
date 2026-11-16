@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from psycopg_pool import AsyncConnectionPool
 
 from earthx.catalog.registry import DatasetRegistry
-from earthx.gateway import Gateway, GatewayError, Policy, host_of, inspect_url
+from earthx.gateway import Gateway, GatewayError, Policy, ReadSlots, host_of, inspect_url, instance_share
 
 LOGGER = logging.getLogger("earthx.api.dependencies")
 
@@ -140,7 +140,7 @@ def build_geocoder(environ: Mapping[str, str] | None = None) -> tuple[Gateway, G
     return Gateway(policy), config
 
 
-def policy_from_registry(registry: DatasetRegistry) -> Policy:
+def policy_from_registry(registry: DatasetRegistry, *, instances: int = 1) -> Policy:
     """The gateway's allowlist, from the sources the registry actually names.
 
     KLAERUNGEN B13 / the ``Policy`` docstring: from M1-04 on, the registry decides the
@@ -153,14 +153,25 @@ def policy_from_registry(registry: DatasetRegistry) -> Policy:
     # has no default: a dataset that names no asset host opens nothing, which is the
     # safe end of the range.
     hosts |= {host for config in registry for host in config.source.asset_hosts}
-    # The caps per host of hosts.yaml (M5-36). No interval: tiles and search keep none (G3).
-    connections = {host: limit.connections for host, limit in registry.host_limits.items()}
-    return Policy(allowed_hosts=frozenset(hosts), host_connections=connections)
+    # The caps per host of hosts.yaml (M5-36), this instance's share of them: ``instances`` processes `api` and `tiler`
+    # share each cap until the egress proxy of M6 (G4). No interval: tiles and search keep none (G3).
+    connections = {host: instance_share(limit.connections, instances) for host, limit in registry.host_limits.items()}
+    if over := sorted(host for host, limit in registry.host_limits.items() if limit.connections < instances):
+        LOGGER.warning(
+            "%d instances share a cap smaller than their number on %s: each reads with one, together more than the cap",
+            instances,
+            ", ".join(over),
+        )
+    return Policy(
+        allowed_hosts=frozenset(hosts),
+        host_connections=connections,
+        max_connections_per_host=instance_share(Policy.max_connections_per_host, instances),
+    )
 
 
-def build_gateway(registry: DatasetRegistry) -> Gateway:
-    """One gateway for the process, built once at startup like the DB pools are."""
-    return Gateway(policy_from_registry(registry))
+def build_gateway(policy: Policy, slots: ReadSlots) -> Gateway:
+    """One gateway for the process, built once at startup like the DB pools are, on the process's counter per host."""
+    return Gateway(policy, slots=slots)
 
 
 @asynccontextmanager

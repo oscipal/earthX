@@ -150,13 +150,22 @@ from earthx.catalog.registry import (
     ViewerInfo,
 )
 from earthx.catalog.stats_cache import PooledStatsCache, PostgresStatsCache
-from earthx.gateway import CachingResolver, Gateway, GatewayError, user_agent_from_env
+from earthx.gateway import (
+    CachingResolver,
+    Gateway,
+    GatewayError,
+    ReadSlots,
+    host_of,
+    source_instances_from_env,
+    user_agent_from_env,
+)
 from earthx.gateway.gdal import crop_gdal_options, tile_gdal_options
 from earthx.logging import RequestIdMiddleware, configure_logging, get_request_id
 from earthx.objectstore.errors import StoreConfigError
 from earthx.objectstore.results import Store
 from earthx.readers import AssetRejected, GeoreferenceMismatch
-from earthx.readers.cog import AssetPath
+from earthx.readers.cog import AssetPath, asset_host
+from earthx.readers.limits import hold_hosts, limit_reads
 from earthx.readers.zarr_reader import ZarrAsset, ZarrAssetError, close_shared_gateways
 
 LOGGER = logging.getLogger("earthx.api.tiler")
@@ -740,6 +749,35 @@ async def dataset_asset_path(
         bands=bands,
         target_gsd=target_gsd,
     )
+
+
+def _source_hosts(src_path: Any) -> set[str]:
+    """The hosts GDAL reads for ``src_path``, without those a Zarr asset of it asks over the gateway (M5-36 §4.1).
+
+    A Zarr asset takes its slot per request on zarr's own loop; a slot held here for its host would make it wait for
+    the request that waits for it.
+    """
+    if isinstance(src_path, MosaicOperatorInput):
+        targets = [target for scene in src_path.scenes for _, target in scene]
+    elif isinstance(src_path, OperatorInput):
+        targets = [target for _, target in src_path.inputs]
+    else:
+        targets = [src_path]
+    cogs = {asset_host(target) for target in targets if isinstance(target, AssetPath)}
+    zarrs = {host_of(target.store_url) for target in targets if isinstance(target, ZarrAsset)}
+    return {host for host in cogs if host is not None} - zarrs
+
+
+async def held_asset_path(
+    src_path: Annotated[AssetPath | ZarrAsset | OperatorInput, Depends(dataset_asset_path)],
+) -> AsyncIterator[AssetPath | ZarrAsset | OperatorInput]:
+    """:func:`dataset_asset_path`, with a slot of each host it reads taken in the event loop (M5-36 §5.2).
+
+    The route reads in a thread of the shared pool; waiting there for a slot would hold that thread (M5-35 §4.2). The
+    readers of the request see the slots as theirs and take no second one.
+    """
+    async with hold_hosts(_source_hosts(src_path)):
+        yield src_path
 
 
 _OpQuery = Annotated[
@@ -1550,9 +1588,14 @@ async def placed_mosaic_scenes(
     """:func:`mosaic_scenes`, and for the scenes a tile reads itself the place at the gate of the tile reads.
 
     A TileJSON (:class:`MosaicLayout`) and a tile with steps (read by the worker core, :class:`MosaicOperatorInput`) take no
-    place: the first reads no file and the second has its own limits.
+    place: the first reads no file and the second has its own limits; the tile with steps holds the slots of its hosts.
     """
     scenes = await mosaic_scenes(request, dataset, selection)
+    if isinstance(scenes, MosaicOperatorInput):
+        # Its scenes are read under the slots the tile holds (M5-36 §5.2); without steps each scene takes its own.
+        async with hold_hosts(_source_hosts(scenes)):
+            yield scenes
+        return
     if not isinstance(scenes, MosaicScenes):
         yield scenes
         return
@@ -2308,7 +2351,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     user_agent_from_env()  # M5-18 §3.1: a bad EARTHX_USER_AGENT stops the start
     async with (
         cache_pool() as pool,
-        Gateway(app.state.earthx_policy, resolve=app.state.earthx_resolver) as gateway,
+        Gateway(app.state.earthx_policy, resolve=app.state.earthx_resolver, slots=app.state.earthx_read_slots) as gateway,
     ):
         app.state.earthx_cache_pool = pool
         # Only with a pool: without a database this process still starts and serves
@@ -2380,7 +2423,8 @@ def build_app(
     # (K-01/K-02) — the compose command starts it with `--no-access-log`, so
     # `RequestIdMiddleware` below is this process's only access log.
     configure_logging()
-    policy = policy_from_registry(registry)
+    # The share of each source's cap per host this instance holds (M5-36 §5.1); a bad value stops the start.
+    policy = policy_from_registry(registry, instances=source_instances_from_env())
     app = FastAPI(title="earthx-tiler", lifespan=lifespan)
     app.add_middleware(RequestIdMiddleware)
     # The headers of a mosaic tile that shows a part of its scenes (adr/0032 §6.2): known only once it is read.
@@ -2388,6 +2432,10 @@ def build_app(
     # Read at request time through the two small dependencies above, so a route
     # never closes over something a test cannot replace.
     app.state.earthx_policy = policy
+    # One counter per host for the process (M5-36 §4.1, §5.2): every GDAL reader of a source, the Zarr stores and the
+    # item fetches of the gateway share it.
+    app.state.earthx_read_slots = ReadSlots(policy)
+    limit_reads(app.state.earthx_read_slots)
     # Two profiles, because GDAL reads the size of its `/vsicurl/` cache once per
     # process but `MULTIRANGE` at every call, in the calling thread (NM4-26 §13, §18):
     # the tile routes, statistics, TileJSON, mosaic and result tiles read under the
@@ -2410,7 +2458,7 @@ def build_app(
     app.state.earthx_adapters = adapters
 
     factory = EarthxTilerFactory(
-        path_dependency=dataset_asset_path,
+        path_dependency=held_asset_path,
         layer_dependency=BidxParams,
         process_dependency=operator_post_process,
         reader=_open_reader,
