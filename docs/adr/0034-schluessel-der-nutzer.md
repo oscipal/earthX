@@ -48,10 +48,10 @@ Belegstufen wie in `adr/0027` und `adr/0032`:
 ## 0. Kurzfassung
 
 1. **Ablage (§5):** serverseitig, verschlüsselt, an eine **anonyme Sitzung des Browsers** gebunden. Der Browser hält nach der Eingabe nur ein `HttpOnly`-Cookie mit zufälliger Kennung und einem zufälligen Schlüsselteil; die Datenbank hält nur Chiffrat. Entschlüsseln kann nur, wer **beides** hat: das Cookie (Nutzer) und den Schlüssel der Instanz (Konfiguration, nie Datenbank, nie Repo). Frist 30 Tage ohne Nutzung, höchstens bis zum Ablauf des Keys, jederzeit löschbar. „Nur im Browser“ scheitert an Jobs, die laufen, wenn der Browser zu ist, und an R-Z (kein Nachweis in der Auftragskopie).
-2. **Weg (§5.4):** `api`/`tiler` lösen aus dem Cookie einen Nachweis im Speicher auf und reichen ihn als undurchsichtiges Objekt an `access`, `readers` und `gateway`; `gateway` setzt ihn nur für Hosts, die `hosts.yaml` als Key-Hosts dieses Anbieters führt. Für Jobs legt `api` je Lauf eine eigene, befristete Freigabe ab (nicht im Auftrag); die Hülle `jobs` reicht den Nachweis über die Pipe an das Kind. Der Kern bekommt ihn als Argument und hält nichts (B9). Dafür braucht es **eine neue Importkante `jobs → identity`** (nur Otto).
+2. **Weg (§5.4):** `api`/`tiler` lösen aus dem Cookie einen Nachweis im Speicher auf und reichen ihn als undurchsichtiges Objekt (Typ in `readers`, wie `HostSlot` aus M5-36) über `access` an `readers`; `gateway` bekommt nur die Werte und setzt sie nur für Hosts, die `hosts.yaml` als Key-Hosts dieses Anbieters führt. Für Jobs legt `api` je Lauf eine eigene, befristete Freigabe ab (nicht im Auftrag); die Hülle `jobs` reicht den Nachweis über die Pipe an das Kind. Der Kern bekommt ihn als Argument und hält nichts (B9). Dafür braucht es **eine neue Importkante `jobs → identity`** (nur Otto).
 3. **Art des Keys bei CDSE (§6):** zuerst der **S3-Schlüssel** des Nutzers (selbst erzeugt, mit eigenem Ablauf, widerrufbar, nie das Passwort). Er erlaubt Bereichslesen in den entpackten Produkten samt Annotation, also Kacheln und Jobs. Das verlangt `/vsis3/` in `gateway` und eine Auslegung von R-Z für die S3-Signatur.
 4. **Prüfung (§6.3):** bei der Eingabe, beim Öffnen der Seite (höchstens alle 6 h je Key), vor jedem Job und sofort bei `401`/`403` der Quelle. Kein Prüflauf ohne den Nutzer. Läuft der Key während eines Jobs ab, endet der Lauf mit eigener Fehlerart, ohne zweiten Versuch.
-5. **Cache (§7):** Vor jedem Cache steht die Prüfung „gültiger Key dieses Anbieters“. Dahinter gemeinsam für alle mit gültigem Key; nach außen jede Antwort `private`. **Keine Pyramide** aus Nutzer-Keys; unter `min_zoom` ein anonymer Ersatz, wo es einen gibt.
+5. **Cache (§7):** Vor jedem Cache steht die Prüfung „gültiger Key dieses Anbieters“. Alles Dauerhafte (Ergebnis-Cache, Browser) je Nutzer, wie Otto zu `adr/0027` F6 bis zur Rechtsklärung festgelegt hat; nur der flüchtige Lese-Cache im Prozess ist gemeinsam. Nach außen jede Antwort `private, no-store`. **Keine Pyramide** aus Nutzer-Keys; unter `min_zoom` ein anonymer Ersatz, wo es einen gibt.
 6. **Registry (§8):** Weg `W3` wird freigegeben (`account_paths: [W3]`), neue Datei `backend/catalog/providers.yaml` (ein Eintrag je Anbieter, ein Key je Anbieter), Feld `credential` in `hosts.yaml`. Ohne Key: Datensatz gelistet, Suche und Coverage wie heute, Rasterebene und Processing mit Schloss gesperrt.
 7. **Bedrohungen (§9):** Vor M6 nötig sind Verschlüsselung mit geteiltem Schlüssel, `HttpOnly`-Cookie, Key-Hosts nur aus der Registry, Prüforakel gedrosselt, kein Nachweis in Logs, Fehlern, URLs, Hashes, Rezepten oder Provenienz (mit Testschlüssel als Fangwert), CSP. M6 bringt Login, Quotas je Nutzer, Egress-Proxy, Audit und Datenschutz-Folgenabschätzung.
 8. **Schnitt (§10):** fünf Aufgaben (M5-44 bis M5-48), je höchstens zwei PRs; Jobs mit Key (M5-48) sind die Voraussetzung für die Radar-Kette auf CDSE-Daten aus M5-31.
@@ -69,7 +69,7 @@ Belegstufen wie in `adr/0027` und `adr/0032`:
 - welche CDSE-Datensätze zuerst kommen und ihre Lizenz-Einstufung: immer Otto;
 - die Radar-Kette: M5-31;
 - Login und Identity-Provider: M6;
-- Download der Originale mit Key im Browser (W2b): bleibt nach `adr/0027` bei Quellen mit PKCE und CORS (§8.5).
+- Download der Originale mit Key im Browser (W2b): bleibt nach `adr/0027` bei Quellen mit PKCE und CORS (§8.4).
 
 ---
 
@@ -95,18 +95,20 @@ Belegstufen wie in `adr/0027` und `adr/0032`:
 Stand `main` 10f55cb.
 
 - **Registry** (`backend/earthx/catalog/registry.py`): `AccountKind` (`none`, `anonymous_token`, `free_account`, `requester_pays`, `paid`) und `AccountPath` (`W2a`, `W2b`, `W3`, `W4`) gibt es schon. `_check_access` verbietet jeden Wert in `account_paths` und hält jede Konto-Quelle auf der B11-Stufe „Katalogeintrag“. Alle sechs vollen Einträge haben `account: none`.
-- **Hosts** (`backend/catalog/hosts.yaml`): eine Zeile je Host mit `connections`, optional `interval_s`, `reason`; Grenzen für alle Instanzen zusammen (M5-36).
+- **Hosts** (`backend/catalog/hosts.yaml`): eine Zeile je Host mit `connections`, `reason` (Pflicht, `catalog/hosts.py`) und optional `interval_s`; Grenzen für alle Instanzen zusammen (M5-36).
 - **Frontend:** `frontend/src/catalogue.ts` (`accountOf`) und `components/DataCatalogue.tsx` zeigen bei Konto-Quellen die Marke „Account“ und statt „Add“ den Link zur Quelle. `preferences.ts` speichert nur Einstellungen in `localStorage` und schickt nichts ans Backend. Eine Content Security Policy setzt das Repo nirgends (Suche über `frontend/` und `backend/earthx/`).
-- **Same Origin:** Frontend, `api` und `tiler` liegen hinter demselben Ursprung (`frontend/vite.config.ts`, Proxy für `/stac`, `/catalogue`, `/processing`, `/collections`, `/results`). Ein Cookie der Seite erreicht also auch die Kachel-Anfragen von MapLibre, ohne dass das Frontend die Kachel-URL ändert.
+- **Same Origin, nur in der Entwicklung:** Der Proxy des Vite-Servers legt `api` und `tiler` unter den Ursprung des Frontends (`frontend/vite.config.ts`: `/stac`, `/catalogue`, `/processing`, `/collections`, `/results`). Ein Cookie der Seite erreicht dort auch die Kachel-Anfragen von MapLibre, ohne dass das Frontend die Kachel-URL ändert. Einen Reverse-Proxy für den Betrieb gibt es im Repo nicht (`compose/`, `docker-compose.yml`); der Vite-Server läuft über `http`.
 - **`gateway`:**
   - nur `https` (`architekturplan.md` 6.5, Nachtrag M4 Q5), keine Nachweise (`gateway/gdal.py`, Docstring: „No token“);
   - `Gateway._send` folgt Weiterleitungen selbst und gibt **dieselben `headers` an jedes Ziel** weiter, auch an einen anderen Host der Allowlist (`gateway/client.py`, Schleife in `_send`). Für eine Kopfzeile mit Nachweis wäre das ein Bruch von R-Z Punkt 2;
-  - `UpstreamError` hängt bis zu `EXCERPT_CHARS` Zeichen der Fehlerantwort an den Text (`gateway/errors.py`). S3 gibt bei `SignatureDoesNotMatch` die Access-Key-ID im Fehlertext zurück [S, Vorwissen];
-  - das Log nennt Host, Pfad und einen Hash der Query mit Prozess-Schlüssel, nie die Query (`_log`).
+  - `UpstreamError` (`gateway/errors.py`) bekommt bis zu `EXCERPT_CHARS` = 500 Zeichen der Fehlerantwort in den Text (`gateway/client.py`). S3 gibt bei `SignatureDoesNotMatch` die Access-Key-ID im Fehlertext zurück [S, Vorwissen];
+  - das Log nennt Host, Pfad und einen Hash der Query mit Prozess-Schlüssel, nie die Query (`_log`);
+  - **GDAL folgt Weiterleitungen selbst**; Prüfung und Schleife von `gateway` erreichen es nicht. Erst der Egress-Proxy in M6 schließt das (`gateway/gdal.py`, Docstring; B8 Stufe 2).
 - **GDAL:** Optionen kommen als `dict` und werden über `rasterio.Env` je Faden gesetzt (`gateway/gdal.py`). Der `/vsicurl/`-Bereichscache des `tiler` ist prozessweit (256 MB, `TILER_CURL_CACHE_BYTES`) und nach Dateiname geschlüsselt [P, Kommentar dort].
 - **Jobs:** Die Hülle schreibt `recipe.json` in ein Arbeitsverzeichnis und startet je Lauf ein Kind per `spawn` mit Pipe (`jobs/worker.py`, `jobs/child.py`). Das Kind konfiguriert sein Logging selbst, weil GDAL Adressen in Meldungen nennt. **Ein Kind je Lauf** heißt: Ein Nachweis im Kind ist von anderen Läufen getrennt.
 - **Module:** `identity` ist leer; `.importlinter` verbietet `identity` jeden Import und `jobs` den Import von `identity` (Verträge `identity`, `jobs`).
-- **Prototyp-Muster:** `adr/0024` R7 schickt jede Antwort mit Daten eines Prototyp-Datensatzes `private, no-store`; im `tiler` umgesetzt (`api/tiler.py`). Dasselbe Muster passt für Daten mit Key.
+- **Prototyp-Muster:** `adr/0024` R7 schickt jede Antwort mit Daten eines Prototyp-Datensatzes `private, no-store` (`PROTOTYPE_CACHE_CONTROL` in `api/mosaic_tiles.py`, beschrieben in `api/tiler.py`). Dasselbe Muster passt für Daten mit Key.
+- **Importregeln für den Weg eines Nachweises:** `access`, `processing`, `jobs` und `identity` dürfen `gateway` nicht direkt importieren; `jobs` auch `readers` nicht (`.importlinter`). M5-36 löst dasselbe für die Plätze je Host mit einem Protokoll `HostSlot` in `access`, hereingereicht von `api` (`plans/m5/m5-36-grenzen-je-host.md` §5.2).
 
 ---
 
@@ -187,6 +189,7 @@ Gelesen über einen Hilfsagenten (Quellen §15). Die Doku von CDSE lag als Quell
 **Sitzung.**
 
 - Cookie `__Host-earthx-keys`: `Secure`, `HttpOnly`, `SameSite=Strict`, `Path=/`, ohne `Domain`. Inhalt: zufällige Sitzungskennung (128 Bit) und zufälliger Schlüsselteil (256 Bit), base64url.
+- `__Host-` und `Secure` verlangen HTTPS; Browser behandeln `http://localhost` als sicheren Kontext, die Entwicklung mit Vite geht also [S]. Im Betrieb müssen Frontend, `api` und `tiler` unter **einem** Ursprung liegen (Reverse-Proxy, M6), sonst erreicht das Cookie die Kacheln nicht (§3).
 - Gesetzt erst beim ersten Speichern eines Keys, nicht beim Besuch. Ohne Key gibt es kein Cookie und keine Sitzung (Datenminimierung).
 - Lebensdauer wie die Frist unten; jede Nutzung verlängert.
 
@@ -225,13 +228,15 @@ Browser ── Cookie ──▶ api / tiler ──▶ identity: Zeile lesen, ent
                        access ──▶ readers ──▶ gateway ──▶ nur Key-Hosts des Anbieters
 ```
 
-- **Typ `Credential` in `gateway`** (nichts Fachliches): Anbieter, Art, Werte. `__repr__` und `__str__` zeigen nur „Credential(<provider>)“; nicht picklebar außer über eine ausdrückliche Funktion für die Pipe des Jobs; kein JSON. `access` und `readers` geben ihn nur durch. Damit entsteht **keine neue Importkante** außer `api → identity` (erlaubt, `api` darf alles).
-- **`gateway` entscheidet, wohin:** Ein Nachweis geht nur an Hosts, die `hosts.yaml` mit `credential: <provider>` führt (§8.2). Für andere Hosts wird er still weggelassen. Bei jeder Weiterleitung fällt er weg, auch innerhalb der Allowlist (heute gehen die Kopfzeilen mit, §3).
+- **Typ `Credential` in `readers`** (Anbieter, Art, Werte), von `processing` weitergereicht, damit auch das Kind eines Jobs ihn bauen kann (`jobs` darf `processing` importieren, `readers` nicht). `__repr__` und `__str__` zeigen nur „Credential(<provider>)“; nicht picklebar, kein JSON (Muster `SecretStr`, §4.4). `access` gibt ihn nur durch, wie `HostSlot` (§3). `readers` übergibt `gateway` nur die nackten Werte und den Host; `gateway` kennt keinen Typ von oben.
+  - `identity` gibt nur Bytes bzw. ein `dict` zurück; `api` und das Kind bauen daraus das `Credential`.
+  - Neue Importkanten: **nur `jobs → identity`** (Jobs, unten). `api → identity` ist erlaubt (`api` darf alles).
+- **`gateway` entscheidet, wohin:** Ein Nachweis geht nur an Hosts, die `hosts.yaml` mit `credential: <provider>` führt (§8.2). Für andere Hosts wird er still weggelassen. Bei Weiterleitungen über `httpx` fällt er weg, auch innerhalb der Allowlist (heute gehen die Kopfzeilen mit, §3). **GDAL folgt Weiterleitungen selbst** (§3): Vor M6 hängt R-Z Punkt 2 dort an GDAL (`CPL_VSIL_CURL_AUTHORIZATION_HEADER_ALLOWED_IF_REDIRECT=IF_SAME_HOST`, Signatur V4 je Endpunkt) und an einem Test mit Fixture-Server; erzwungen wird es erst vom Egress-Proxy.
 - **GDAL:** Optionen je Lesevorgang über `rasterio.Env` (Faden), nie global, nie `VSISetPathSpecificOption` (prozessweit). Für S3: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_S3_ENDPOINT`, `AWS_VIRTUAL_HOSTING=FALSE`, `AWS_HTTPS=YES`, `GDAL_HTTP_UNSAFESSL=NO`; `CPL_CURL_VERBOSE` und `CPL_DEBUG` aus. Ob GDAL Nachweise zwischen Fäden in Handles oder Caches mitnimmt, ist ein Messpunkt (§14, T7).
 - **Jobs (R-Z, B9):**
   1. `api` prüft bei der Annahme den Key (§6.3) und legt eine **Freigabe je Lauf** an: eigene Tabelle in `identity`, Chiffrat nur unter dem Instanzschlüssel (das Cookie ist im Worker nicht da), gebunden an Lauf-ID und Anbieter, Frist = Ablauf des Laufs (`max_seconds` plus Warteschlange, höchstens 24 h).
-  2. Die Hülle `jobs` liest die Freigabe beim Start des Kinds, entschlüsselt sie und gibt das `Credential` über die Pipe ans Kind; nichts davon im Arbeitsverzeichnis, in `recipe.json` oder im Log.
-  3. Das Kind gibt es dem Kern als Argument; der Kern hält nichts zwischen Aufrufen (B9).
+  2. Die Hülle `jobs` liest die Freigabe beim Start des Kinds, entschlüsselt sie und gibt die Werte über die Pipe ans Kind; nichts davon im Arbeitsverzeichnis, in `recipe.json` oder im Log.
+  3. Das Kind baut daraus das `Credential` und gibt es dem Kern als Argument; der Kern hält nichts zwischen Aufrufen (B9).
   4. Am Ende des Laufs (jeder Ausgang) löscht die Hülle die Freigabe; die Aufräumrunde löscht abgelaufene.
   - **Warum das R-Z einhält** [A]: Die Freigabe liegt nicht in der Auftragskopie (Tabelle der Queue, `recipe.json`), sondern getrennt, verschlüsselt und kürzer befristet als der Auftrag. Ob Otto das so auslegt, ist F3.
   - **Was es kostet:** `jobs` muss `identity` importieren (nur das Lesen und Löschen der Freigabe). Das ist eine Lockerung der Importregeln (F3). Alternative ohne Lockerung: ein eigenes kleines Modul `keystore` mit eigener Zeile in 3.1, das `api`, `tiler` und `jobs` importieren dürfen; dasselbe Problem unter anderem Namen.
@@ -317,41 +322,41 @@ Jeder weitere Anbieter kommt mit eigener kleiner Vorlage (Art, Prüfweg, Bedingu
 
 | | Wer bekommt Daten aus dem Cache | Kontingent | Bedingungen | Aufwand |
 |---|---|---|---|---|
-| **C1** je Nutzer | nur die Sitzung, die gelesen hat | jede Sitzung liest selbst; kalte Kacheln für jeden | sicher | Cache-Schlüssel mit Sitzungsbezug; das widerspricht §5.5 („nichts aus dem Key im Schlüssel“) nur, wenn der Bezug aus dem Key käme, nicht bei einer zufälligen Kennung |
-| **C2** gemeinsam unter gültigen Keys desselben Anbieters (**Empfehlung**) | jede Sitzung mit gültigem Key dieses Anbieters | jede Datei wird einmal gelesen, mit dem Key dessen, der zuerst fragt | Lizenz erlaubt Weitergabe (§4.5); der Empfänger hat selbst ein Konto und darf dieselben Daten laden | Prüfung vor dem Cache, sonst wie heute |
+| **C1** je Nutzer, auch im Prozess | nur die Sitzung, die gelesen hat | jede Sitzung liest selbst; kalte Kacheln für jeden | sicher | Cache-Schlüssel mit Sitzungsbezug; das widerspricht §5.5 („nichts aus dem Key im Schlüssel“) nur, wenn der Bezug aus dem Key käme, nicht bei einer zufälligen Kennung |
+| **C1a** je Nutzer für alles Dauerhafte, gemeinsam nur im flüchtigen Prozesscache (**Empfehlung**) | Ergebnis-Cache und Browser je Sitzung; GDAL-Lesecache und Item-Köpfe im Prozess (Sekunden bis Minuten) für jede Sitzung mit gültigem Key | Dateien im Prozesscache einmal gelesen, alles Gespeicherte je Nutzer | hält Ottos Antwort zu `adr/0027` F6 („Cache je Nutzer bis zur Rechtsklärung“); der Prozesscache speichert nichts über die Anfrage hinaus | Sitzung im Schlüssel des Ergebnis-Caches |
+| **C2** gemeinsam unter gültigen Keys desselben Anbieters | jede Sitzung mit gültigem Key dieses Anbieters | jede Datei wird einmal gelesen, mit dem Key dessen, der zuerst fragt | Lizenz erlaubt Weitergabe (§4.5); der Empfänger hat selbst ein Konto und darf dieselben Daten laden | Prüfung vor dem Cache, sonst wie heute |
 | C3 gemeinsam für alle | auch ohne Key | wie C2 | macht das Schloss zur Attrappe und wäre ein Betreiberkonto durch die Hintertür (W1, `adr/0027` F5) | keiner |
 
-**Empfehlung C2.** Gründe [A]:
+**Empfehlung C1a.** Gründe [A]:
 
-- Der Key ist eine Eintrittskarte zum Anbieter; wer eine hat, darf die Daten ohnehin laden. Die Lizenz der Daten erlaubt Weitergabe (§4.5).
-- Es schont alle Kontingente: Eine Datei wird nicht für jeden Nutzer neu gelesen.
-- Die Prozesscaches von GDAL lassen sich nicht nach Nutzern trennen: Der `/vsicurl/`-Bereichscache ist prozessweit und nach Dateinamen geschlüsselt (§3). C1 hieße, sie für Key-Daten abzuschalten.
-- Offen bleibt, ob CDSE das so sieht (§4.5). C1 bleibt der Rückweg, falls die Rechtsfrage (F9) anders ausgeht.
+- Otto hat zu `adr/0027` F6 „Cache je Nutzer bis zur Rechtsklärung“ festgelegt. C1a hält das für alles, was die Plattform speichert.
+- Die Prozesscaches von GDAL lassen sich nicht nach Nutzern trennen: Der `/vsicurl/`-Bereichscache ist prozessweit und nach Dateinamen geschlüsselt (§3). C1 hieße, sie für Key-Daten abzuschalten, und jede Kachel läse dieselben Köpfe neu, mit dem Kontingent von 4 Verbindungen (§7.3). C1a behandelt sie als flüchtigen Lesepuffer, nicht als Cache im Sinne der Antwort; das ist eine Auslegung (F6).
+- Der Key ist eine Eintrittskarte zum Anbieter; wer eine hat, darf dieselben Daten ohnehin laden, und die Lizenz erlaubt Weitergabe (§4.5). Nach dem Rechtsrat (F9) ist C2 der nächste Schritt: Ergebnis-Cache gemeinsam unter gültigen Keys.
 
 ### 7.2 Je Ebene (`architekturplan.md` 12.3)
 
 | Ebene | Regel für Key-Daten |
 |---|---|
-| HTTP/CDN | jede Antwort mit Daten (Kachel, Quicklook, Statistik, Zuschnitt) `Cache-Control: private` wie `adr/0024` R7; der Browser darf cachen, CDN und Proxys nicht. Ohne gültigen Key `403` ohne Daten |
-| Prozess (GDAL, Region-Cache, Item-Köpfe) | gemeinsam (C2), aber nur nach der Prüfung; ein Lesevorgang ohne `Credential` kommt an Key-Hosts nie bis zum Cache, weil `gateway` ihn vorher ablehnt |
+| HTTP/CDN | jede Antwort mit Daten (Kachel, Quicklook, Statistik, Zuschnitt) `Cache-Control: private, no-store` wie `adr/0024` R7. Ohne gültigen Key `403` ohne Daten. Ob der Browser später doch cachen darf (`private` ohne `no-store`, schnellere Karte), gehört zu C2 |
+| Prozess (GDAL, Region-Cache, Item-Köpfe) | gemeinsam als flüchtiger Lesepuffer (C1a), aber nur nach der Prüfung; ein Lesevorgang ohne `Credential` kommt an Key-Hosts nie bis zum Cache, weil `gateway` ihn vorher ablehnt |
 | Anwendung: Item-Suchen, Auswahl-IDs | unverändert: Metadaten liest die Plattform anonym; die **Auswahl-ID** (`adr/0032` §10.2) ist ein Hash der Item-Liste mit Datensatz und Darstellung und enthält nichts vom Key. Eine Kachel unter einer Auswahl-ID eines Key-Datensatzes prüft den Key wie jede andere |
-| Ergebnis (Rezept-Hash) | gemeinsam unter gültigen Keys (C2): Ein Treffer im Ergebnis-Cache liefert nur, wenn der Auftraggeber selbst einen gültigen Key hat |
+| Ergebnis (Rezept-Hash) | je Sitzung (C1a): Rezept-Hash plus Sitzungskennung als Schlüssel; nie ein Treffer aus der Sitzung eines anderen. Mit C2 gemeinsam unter gültigen Keys |
 | Übersicht (Pyramide) | **keine** (§7.4) |
 
-**Fertige Ergebnisse** im Objektspeicher sind bearbeitete Daten mit eigener Ablauffrist. Sie zu zeigen, liest nichts mehr beim Anbieter. Vorschlag: Ein Ergebnis-Link wirkt wie heute auch ohne Key; `ATTRIBUTION.txt` nennt „Contains modified Copernicus Sentinel data [Jahr]“ (§4.5) [A]. Teil von F6.
+**Fertige Ergebnisse** im Objektspeicher sind bearbeitete Daten mit eigener Ablauffrist. Sie zu zeigen, liest nichts mehr beim Anbieter. Vorschlag: Ein Ergebnis-Link, den der Nutzer selbst weitergibt, wirkt wie heute auch ohne Key (Weitergabe durch den Nutzer, kein Cache der Plattform; Auslegung); `ATTRIBUTION.txt` nennt „Contains modified Copernicus Sentinel data [Jahr]“ (§4.5) [A]. Teil von F6.
 
 ### 7.3 Kontingente des Anbieters
 
 - **4 Verbindungen je Konto** (§6.1) sind die enge Stelle: Eine Kartenansicht fordert 10–30 Kacheln gleichzeitig an [A]. Ohne Grenze je Key antwortet CDSE mit Drosselung oder Fehlern, und die Karte zeigt Lücken.
-- Deshalb `connections_per_key` in `providers.yaml` (Vorgabe 4), durchgesetzt wie die Grenze je Host aus M5-36: ein Zähler je Key und Prozess, geteilt durch `EARTHX_SOURCE_INSTANCES`; Anfragen warten statt abgelehnt zu werden (M5-36 G5). Cluster-weit exakt erst mit dem Egress-Proxy (M6). Jobs zählen mit: Ein Lauf mit Key nimmt höchstens die Verbindungen seines Keys.
+- Deshalb `connections_per_key` in `providers.yaml` (Vorgabe 4), durchgesetzt wie die Grenze je Host aus M5-36: ein Zähler je Key und Prozess, geteilt durch `EARTHX_SOURCE_INSTANCES`; Anfragen warten statt abgelehnt zu werden (M5-36 §5.3). Ein Zähler je Prozess sieht den Worker nicht: Ohne Teilung kämen 4 im `tiler` und 4 im Job zusammen. Vorschlag: feste Teilung je Prozesstyp (Kacheln 2, Job 2), bis ein Zähler je Key in Postgres (Muster Ortssuche, M5-35) oder der Egress-Proxy (M6) cluster-weit zählt.
 - **Bandbreite und Volumen:** 20 MB/s je Verbindung, 12 TB in 30 Tagen; danach 1 MB/s und eine Verbindung. Für Kacheln reicht das bei Weitem [A]; ein SLC-Job über viele Szenen kann einen Nutzer in die Drosselung bringen. Die Kostenschätzung vor dem Job nennt deshalb die Menge, die er bei CDSE liest (`adr/0032` §10.3, „Kostenschätzung statt Grenze“).
-- **Der Kontingentverbrauch gehört dem Nutzer:** Ein Treffer im gemeinsamen Cache (C2) verbraucht nichts; eine Lücke liest mit dem Key des Fragenden, nie mit dem eines anderen (T7).
+- **Der Kontingentverbrauch gehört dem Nutzer:** Ein Treffer im Lesepuffer des Prozesses (C1a) verbraucht nichts; eine Lücke liest mit dem Key des Fragenden, nie mit dem eines anderen (T7).
 
 ### 7.4 Pyramiden und Ersatz (`adr/0032`)
 
 - Eine Pyramide entsteht nach der Materialisierung, ohne Nutzer (`adr/0032` F1 = 2). Für Key-Daten gibt es dann keinen Key, mit dem sie gebaut werden könnte, außer dem eines zufälligen Nutzers (dessen Kontingent für alle verbraucht würde) oder einem Betreiberkonto (ausgeschlossen). **Keine Pyramide aus Nutzer-Keys** [A].
 - Szenen-Datensätze (Sentinel-1) brauchen nach `adr/0032` ohnehin keine Pyramide; unter `min_zoom` gelten das Budget je Kachel und die Übersichten der Dateien. Ob die Messdateien in den SAFE-Produkten von CDSE innere Übersichten haben, ist offen (Messpunkt M3); ohne sie wird jede grobe Kachel teuer.
-- **„Nie verschwindet ein Bild“** (M5-Plan §2 Punkt 9): Unter `min_zoom` zeigt ein anonymer **Ersatz-Datensatz**, wo es einen gibt (Muster `adr/0032` F7: GLO-30 für swissALTI3D). Für vollständiges GRD von CDSE wäre das Sentinel-1 GRD aus Earth Search (DS-04), mit der Marke „Overview“ (UI-08) und der Quellenzeile des Ersatzes. Ohne Ersatz: Coverage, als ausdrückliche Ausnahme (F7).
+- **„Nie verschwindet ein Bild“** (M5-Plan §2 Punkt 9): Unter `min_zoom` zeigt ein anonymer **Ersatz-Datensatz**, wo es einen gibt (Muster des Ersatzes aus `adr/0032`, F7 im Plan M5-30: GLO-30 für swissALTI3D). Für vollständiges GRD von CDSE wäre das Sentinel-1 GRD aus Earth Search (DS-04), mit der Marke „Overview“ (UI-08) und der Quellenzeile des Ersatzes. Ohne Ersatz: Coverage, als ausdrückliche Ausnahme (F7).
 
 ---
 
@@ -416,20 +421,20 @@ Das Repo ist öffentlich: Jeder kennt Code, Tabellen, Cookie-Name und Prüfwege.
 
 | # | Bedrohung | Weg | vor M6 nötig | was M6 dazubringt |
 |---|---|---|---|---|
-| T1 | **Abfluss der Datenbank** (Dump, Backup, SQL-Lücke) | Tabelle in `identity` | geteilter Schlüssel: Chiffrat ohne Cookie und Instanzschlüssel nutzlos; Sitzungskennung nur als Hash | verwaltetes Postgres mit Verschlüsselung, Audit |
+| T1 | **Abfluss der Datenbank** (Dump, Backup, SQL-Lücke) | Tabelle in `identity` | geteilter Schlüssel: Chiffrat ohne Cookie und Instanzschlüssel nutzlos; Sitzungskennung nur als Hash. **Ausnahme:** Die Freigaben laufender Jobs liegen nur unter dem Instanzschlüssel (§5.4); Datenbank plus Instanzschlüssel öffnen sie. Deshalb kurz befristet (≤ 24 h) und am Ende des Laufs gelöscht | verwaltetes Postgres mit Verschlüsselung, Audit |
 | T2 | **Einbruch in einen Prozess** (präparierte Rasterdatei, RCE im `tiler`) | Keys der laufenden Anfragen im Speicher | Ein Prozess hält nur die Keys der Anfragen, die er gerade bedient (Cache ≤ 60 s); Jobs in eigenem Kind je Lauf. `architekturplan.md` 11 („Reader in Prozessen ohne Secrets“) gilt für Key-Daten **nicht mehr**: F3 | getrennte Pools für Key-Daten, Egress-Proxy |
 | T3 | **XSS** im Frontend | Skript in der Seite | Key nach der Eingabe nie mehr im JavaScript; `HttpOnly`; **CSP** (heute keine, §3) vor dem ersten Key | — |
 | T4 | **Leck über Logs, Fehler, URLs, Dateien** | GDAL-Meldungen, `UpstreamError`, Provenienz | §5.5 mit Fangwert-Test; `CPL_CURL_VERBOSE` aus; Fehlerauszug weg | zentrale Log-Pipeline mit Filter |
 | T5 | **Sitzungsklau, CSRF** | Cookie | `__Host-`, `Secure`, `SameSite=Strict`, JSON-Pflicht | Bindung an Login, kurze Sitzungen |
 | T6 | **Prüforakel** für gestohlene Keys | `PUT /keys` | Grenzen je Sitzung und IP (§6.3), gleiche Antwort für jeden Fehler | Rate Limits je Nutzer |
 | T7 | **Kontingent anderer verbrauchen** | falscher Key an der Anfrage: Faden-Wiederverwendung, globale GDAL-Optionen, geteilte Caches, falsche Freigabe am Job | Key je Lesevorgang über `rasterio.Env`, nie global; Freigabe an Lauf-ID; Cache nur hinter der Prüfung (§7); Test mit zwei Fangwerten, die sich nie mischen | Quotas je Nutzer |
-| T8 | **Weiterleitung** an einen fremden Host | Quelle oder DNS leitet um | Nachweis fällt bei jeder Weiterleitung weg; S3-Signatur gilt nur für den Host (§6.1) | Egress-Proxy erzwingt die Hosts (B8 Stufe 2) |
+| T8 | **Weiterleitung** an einen fremden Host | Quelle oder DNS leitet um | Nachweis fällt bei Weiterleitungen über `httpx` weg; bei GDAL nur über dessen Einstellung und Test (§5.4); S3-Signatur gilt nur für den Host (§6.1) | Egress-Proxy erzwingt die Hosts (B8 Stufe 2) |
 | T9 | **Böser Betreiber** eines Forks (AGPL) sammelt Keys | eigene Instanz | nicht zu verhindern; deshalb nur begrenzte, widerrufbare Keys mit Ablauf, nie das Passwort; Tooltip am Formular „Use a key with an expiry date“ (Wortlaut Vorschlag) | — |
 | T10 | **Sperre durch den Anbieter** (viele Konten von einer IP, Kontingent) | Plattform-IP | Grenze je Key (`connections_per_key`) und je Host (`hosts.yaml`), `User-Agent` der Instanz | Egress-Proxy mit Grenzen je Ziel |
 | T11 | **Missbrauch als Proxy** (eigener Key, große Mengen über die Plattform) | Kacheln, Zuschnitt, Jobs | bestehende Grenzen (Budget je Kachel, Größendeckel, Job-Grenzen); Kontingent trägt der Nutzer selbst | Processing Units, Quotas |
 | T12 | **Secret der Instanz im Repo** | Vorgabewert, Fixture, Compose | kein Vorgabewert; Start ohne Schlüssel scheitert; lokal erzeugt wie Objektspeicher-Schlüssel; Secret-Scan der CI deckt die Datei mit ab | KMS |
 
-**Datenschutz [A]:** Fremde Zugangsdaten bei der Plattform sind ein eigenes Schutzgut (`adr/0027` §6.3). Vor M6 ohne Login ist die Sitzung kein Konto, aber der Key ist ein personenbezogenes Datum des Nutzers bei der Quelle. Nötig vor dem ersten öffentlichen Betrieb: Abschnitt in der Datenschutzerklärung, Löschfrist (30 Tage, §5.2), Löschen auf Knopfdruck. Die Datenschutz-Folgenabschätzung, die `adr/0027` F7 vor W3 verlangt, gehört vor den **öffentlichen** Betrieb, nicht vor die lokale Umsetzung (F9).
+**Datenschutz [A]:** Fremde Zugangsdaten bei der Plattform sind ein eigenes Schutzgut (`adr/0027` §6.3). Vor M6 ohne Login ist die Sitzung kein Konto, aber der Key ist ein personenbezogenes Datum des Nutzers bei der Quelle. Nötig vor dem ersten öffentlichen Betrieb: Abschnitt in der Datenschutzerklärung, Löschfrist (30 Tage, §5.2), Löschen auf Knopfdruck. Otto hat zu `adr/0027` F7 festgelegt: Rechtsrat und Datenschutz-Folgenabschätzung **vor W3**. Dieses ADR schlägt vor, das auf „vor dem öffentlichen Betrieb“ zu verschieben, weil die lokale Umsetzung bei Otto nur seinen eigenen Key berührt. Das ändert eine Antwort Ottos (§12, F9).
 
 **Rechtsfrage (`adr/0027` F7):** Ob die Plattform „im Namen“ des Nutzers bei CDSE lesen darf, ist nach den gelesenen Bedingungen nicht geregelt (`adr/0027` §3.1). Für die lokale Umsetzung bei Otto ist das unkritisch; vor dem öffentlichen Betrieb Rechtsrat (F9).
 
@@ -441,7 +446,7 @@ Je Aufgabe höchstens zwei PRs (M5-Plan §2 Punkt 11). Nummern ab M5-44 (auf `ma
 
 | Aufgabe | Inhalt | Stufe | Modell | PRs | hängt ab von |
 |---|---|---|---|---|---|
-| **M5-44** | Registry: `providers.yaml`, `credential` in `hosts.yaml`, Startcheck für `W3`, Feld `earthx:access` in der Collection (Anbieter, Weg); Frontend: Schloss statt „Account“, Formular ohne Speichern (gesperrt, Tooltip) | B | Opus, mittel | 1 | Entscheidung zu diesem ADR |
+| **M5-44** | Registry: Lader und Startcheck für `providers.yaml`, `credential` in `hosts.yaml` und `W3` (geprüft an Fixtures; echte Zeilen erst mit dem ersten Datensatz in M5-47, weil eine Host-Zeile ohne vollen Eintrag ein Ladefehler ist, M5-36 G1), Feld `earthx:access` in der Collection (Anbieter, Weg); Frontend: Schloss statt „Account“, Formular ohne Speichern (gesperrt, Tooltip) | B | Opus, mittel | 1 | Entscheidung zu diesem ADR |
 | **M5-45** | Ablage: Schema in `identity`, AES-GCM mit geteiltem Schlüssel, Cookie, Routen `/keys`, Frist und Aufräumen, Grenzen gegen Prüforakel, CSP; Frontend-Formular mit Speichern und Status | B | **Opus, hoch** (Sicherheit, Projektplan M6-Zeile) | 2 (Backend, Frontend) | M5-44 |
 | **M5-46** | `gateway`: Typ `Credential`, Key-Hosts aus der Registry, Weglassen bei Weiterleitung, `/vsis3/` nur für Key-Hosts, GDAL je Lesevorgang, kein Fehlerauszug, Prüfweg `s3_head` gegen einen Fixture-Server, Fangwert-Tests | B | **Opus, hoch** | 1–2 | Antworten F4; Messpunkte M1–M3 |
 | **M5-47** | Kacheln mit Key: Prüfung vor jedem Cache, `private`, Grenze je Key, `403` mit `X-EarthX-Locked`; erster CDSE-Datensatz (Auswahl und Lizenz durch Otto), Ersatz unter `min_zoom` | B | Opus, hoch | 2 | M5-45, M5-46; Datensatz-Onboarding |
@@ -472,11 +477,17 @@ Ottos Vorgabe vom 11.11.2026 ändert Regeln mit höherem Rang. Dieses ADR schlä
 | Regel | heute | Vorschlag |
 |---|---|---|
 | `ENTSCHEIDUNGEN` §1 | „Die fertige Plattform enthält nichts, was einen Token braucht.“ | Nachtrag: „Ausnahme (Otto, 11.11.2026): Datensätze, die der Nutzer mit seinem eigenen Key freischaltet (`adr/0034`). Die Plattform hat keinen eigenen Key.“ |
-| `ENTSCHEIDUNGEN` §3 | Token pro Connector „fernes Zukunftsthema“; MAAP-Logik nicht übernehmen | Nachtrag: Token pro Connector nach `adr/0034`; die MAAP-Logik bleibt ausgeschlossen |
+| `ENTSCHEIDUNGEN` §2 | Asset-Proxy „ohne Token-Injektion“ | gilt weiter für den Asset-Proxy; der Nachweis des Nutzers geht nur über `gateway` an Key-Hosts (`adr/0034`) |
+| `ENTSCHEIDUNGEN` §3 | Token pro Connector „fernes Zukunftsthema“; Token-Logik (`auth.py`, MAAP-OIDC, Token in der GDAL-Umgebung) nicht übernehmen | Nachtrag: Token pro Connector nach `adr/0034`, Nachweis des Nutzers je Lesevorgang an GDAL (nie prozessweit); `auth.py` und MAAP-OIDC bleiben ausgeschlossen |
 | Prinzip 2 | „Nur token-freie Datenquellen“ | „Token-freie Quellen zuerst; Quellen mit Key nur mit dem Key des Nutzers (`adr/0034`)“ |
-| `projektuebersicht.md` §6 | Token-Verwaltung „fernes Zukunftsthema“ | vorgezogen nach `adr/0034`, vor dem Login an die Sitzung gebunden |
+| `projektuebersicht.md` §6 | Token-Verwaltung „fernes Zukunftsthema“; Login kommt früher als die Token-Verwaltung | vorgezogen nach `adr/0034`, vor dem Login an die Sitzung gebunden |
+| `architekturplan.md` 1.2, 6.1, 13 | nichts, was einen Token braucht; „Auth … in der Zielarchitektur zunächst nicht vorhanden“; `auth.py` nicht übernehmen | Nachträge wie `ENTSCHEIDUNGEN` §1/§3 |
+| M5-Plan §2 Punkt 3 und 6 | nur frei und ohne Schlüssel; kostenlose Konten nur als Katalogeintrag | durch Punkt 10 (Otto, 11.11.2026) geändert; Nachtrag mit M5-44 |
+| M5-Plan §2 Punkt 9 | nie eine leere Karte | Ausnahme Coverage unter `min_zoom` ohne Ersatz (F7) |
 | `KLAERUNGEN` B8 | „Token-Logik ist nicht Teil des Gateways“ | `gateway` setzt den Nachweis des Nutzers nur für Key-Hosts aus der Registry; es holt und speichert keinen |
-| `adr/0027` F6 | W3 eigener ADR nach M6 | durch dieses ADR erledigt |
+| `adr/0027` F6, §4.4 | W3 eigener ADR nach M6; Login als Voraussetzung; Audit-Log; **Cache je Nutzer bis zur Rechtsklärung** | W3 vor dem Login an die Sitzung gebunden; Audit mit M6; Cache nach C1a (§7.1): dauerhaft je Nutzer, Lesepuffer im Prozess gemeinsam (Auslegung, F6) |
+| `adr/0027` F7 | Rechtsrat und Datenschutz-Folgenabschätzung vor W3 | vor dem öffentlichen Betrieb (F9) |
+| `adr/0027` §6.1 | `free_account`: kein Kartenlayer, kein Processing; Startcheck „höchstens Katalogeintrag“ | mit `W3` Kartenlayer und Processing für Sitzungen mit gültigem Key |
 | `adr/0027` R-Z | Nachweis nur an den Anmelde-Host | Auslegung für S3 (F4): Signatur an den Key-Host, Secret verlässt den Prozess nie |
 | `architekturplan.md` 6.5 | nur `https` | `/vsis3/` für Key-Hosts aus der Registry, weiter über `https` |
 | `architekturplan.md` 11 | „Reader in Prozessen ohne … Secrets“ | gilt für Key-Daten nicht; Ausgleich nach §9 T2 |
@@ -512,10 +523,10 @@ Ottos Vorgabe vom 11.11.2026 ändert Regeln mit höherem Rang. Dieses ADR schlä
 2. Dazu täglich für alle hinterlegten Keys auf dem Server
 3. Nur bei Eingabe und bei Ablehnung
 
-**F6 — Cache mit Key-Daten?**
-1. Gemeinsam für alle mit gültigem Key desselben Anbieters, Prüfung vor jedem Cache, nach außen `private`; fertige Ergebnisse auch ohne Key sichtbar **(Empfehlung)**
-2. Je Nutzer getrennt
-3. Gemeinsam für alle, auch ohne Key
+**F6 — Cache mit Key-Daten (`adr/0027` F6: je Nutzer bis zur Rechtsklärung)?**
+1. Alles Gespeicherte je Nutzer, nur der flüchtige Lesepuffer im Prozess gemeinsam hinter der Prüfung (C1a); ein Ergebnis-Link, den der Nutzer weitergibt, wirkt auch ohne Key **(Empfehlung)**
+2. Streng je Nutzer, auch im Prozess (C1; Lesepuffer für Key-Daten aus)
+3. Gemeinsam unter gültigen Keys desselben Anbieters schon jetzt (C2)
 
 **F7 — Unter `min_zoom` (`adr/0032`)?**
 1. Keine Pyramide aus Nutzer-Keys; anonymer Ersatz-Datensatz, wo es einen gibt (z. B. Sentinel-1 GRD aus AWS), sonst Coverage als Ausnahme von „nie verschwindet ein Bild“ **(Empfehlung)**
@@ -528,9 +539,9 @@ Ottos Vorgabe vom 11.11.2026 ändert Regeln mit höherem Rang. Dieses ADR schlä
 3. Formular zentral (Einstellungen) statt beim Datensatz
 
 **F9 — Schnitt und Bedingungen?**
-1. M5-44 bis M5-48 wie §10; Rechtsrat und Datenschutz-Folgenabschätzung vor dem öffentlichen Betrieb, nicht vor der lokalen Umsetzung **(Empfehlung)**
+1. M5-44 bis M5-48 wie §10; Rechtsrat und Datenschutz-Folgenabschätzung vor dem öffentlichen Betrieb statt vor W3 (ändert `adr/0027` F7) **(Empfehlung)**
 2. Jobs mit Key (M5-48) vor den Kacheln, wegen M5-31
-3. Rechtsrat vor jeder Umsetzung
+3. Wie `adr/0027` F7: Rechtsrat und Folgenabschätzung vor jeder Umsetzung
 
 **F10 — Regeltexte?**
 1. Otto übernimmt die Vorschläge aus §12 in `ENTSCHEIDUNGEN`; die übrigen Nachträge macht M5-44 als ersten Commit **(Empfehlung)**
