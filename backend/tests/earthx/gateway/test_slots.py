@@ -159,5 +159,5 @@ class TestMisuse:
 
     @pytest.mark.parametrize("limit", [0, -1])
     def test_a_limit_below_one_is_refused(self, limit: int) -> None:
-        with pytest.raises(ValueError, match="at least 1"):
+        with pytest.raises(ValueError, match="from 1 to"):
             slots(limit)

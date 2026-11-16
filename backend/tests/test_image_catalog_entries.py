@@ -43,6 +43,7 @@ IGNORED = {
 def test_the_released_entries_are_copied_to_where_the_loader_reads_them() -> None:
     assert ("catalog/datasets", "./catalog/datasets") in COPIES
     assert ("catalog/retired.yaml", "./catalog/retired.yaml") in COPIES
+    assert ("catalog/hosts.yaml", "./catalog/hosts.yaml") in COPIES
 
 
 @pytest.mark.parametrize(

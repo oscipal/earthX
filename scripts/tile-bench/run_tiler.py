@@ -102,9 +102,14 @@ def instrumented_app():
         return ("93.184.216.34",)
 
 
-    # Seam 2: the item, after a delay, through the real gateway client, adapter and item cache.
+    # Seam 2: the item, after a delay, through the real gateway client, adapter and item cache. A mosaic selection
+    # fetches its scenes in batches by `POST /search` with `ids` (M5-30b), a single tile by `GET .../items/{id}`.
     async def answer_item(request: httpx.Request) -> httpx.Response:
         await asyncio.sleep(args.item_ms / 1000)
+        if request.method == "POST" and request.url.path.endswith("/search"):
+            ids = json.loads(request.content).get("ids") or []
+            LOG.write(json.dumps({"source_item_search": len(ids), "pid": os.getpid()}) + "\n")
+            return httpx.Response(200, json={"type": "FeatureCollection", "features": [synthetic_item(i) for i in ids]})
         item_id = request.url.path.rsplit("/", 1)[1]
         LOG.write(json.dumps({"source_item_fetch": item_id, "pid": os.getpid()}) + "\n")
         return httpx.Response(200, json=synthetic_item(item_id))

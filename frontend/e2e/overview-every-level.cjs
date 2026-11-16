@@ -4,7 +4,9 @@
 //   1. a whole level has no tile of the layer asked for and answered (the substitute below z12.5, the mosaic from there on);
 //   2. a step, whole or half level, draws nothing where the area cropped to lies (only the background colour, magenta, there);
 //   3. a request is not for the route of its level: the substitute below z12.5, the mosaic from there on (the first step, where the mosaic
-//      is not there yet, may ask for both).
+//      is not there yet, may ask for both);
+//   4. the map is not said to show an overview below z12.5 or is said to from there on (`overviewMark.ts::showsOverview`, what sets the
+//      mark "Overview" of the page; Otto, 16.11.2026, UI-08).
 // Once for an area around a city (requests at every step; the picture is checked from z5, where the area is more than a pixel) and
 // once for a region as large as the dataset (the picture at every step, z0 included).
 //
@@ -83,6 +85,9 @@ async function run(browser, name, { aoi, centre, pictureFrom }, results) {
     // At the first step the mosaic is not there yet and the substitute lies over its level until it is (`mapLayers.ts::substituteHold`).
     const wrong = asked.filter((request) => request.route !== wanted && !(zoom === ZOOMS[0] && request.route === 'substitute'));
     if (wrong.length) problems.push(`${label}: tiles of the ${wrong[0].route} were asked for where the ${wanted} draws`);
+    const overview = await page.evaluate(async () => (await import('/src/overviewMark.ts')).showsOverview(window.h.map));
+    if (zoom < MOSAIC_FROM && !overview) problems.push(`${label}: the map is not said to show an overview (no mark "Overview")`);
+    if (zoom >= MOSAIC_FROM && zoom !== ZOOMS[0] && overview) problems.push(`${label}: the map is said to show an overview where the mosaic draws`);
     if (zoom >= pictureFrom) {
       const block = await page.evaluate(([lon, lat]) => window.h.blockAt(lon, lat), centre);
       if (block.every((pixel) => pixel.every((v, i) => v === EMPTY[i]))) problems.push(`${label}: nothing is drawn where the area lies`);

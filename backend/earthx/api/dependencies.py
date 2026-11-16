@@ -153,7 +153,9 @@ def policy_from_registry(registry: DatasetRegistry) -> Policy:
     # has no default: a dataset that names no asset host opens nothing, which is the
     # safe end of the range.
     hosts |= {host for config in registry for host in config.source.asset_hosts}
-    return Policy(allowed_hosts=frozenset(hosts))
+    # The caps per host of hosts.yaml (M5-36). No interval: tiles and search keep none (G3).
+    connections = {host: limit.connections for host, limit in registry.host_limits.items()}
+    return Policy(allowed_hosts=frozenset(hosts), host_connections=connections)
 
 
 def build_gateway(registry: DatasetRegistry) -> Gateway:

@@ -477,6 +477,8 @@ Seite mit 100 Items sein (§3.2: rund 1,8 MB) und eng genug, um eine
 Obergrenze paralleler Verbindungen je Host darf für Earth Search bei 30 liegen,
 ohne dass die Quelle drosselt (§3.6) — konservativ vorgeschlagen sind **6**.
 
+**Nachtrag 2026-11-16 (M5-36, G1 = 1, G2 = 1):** Die 6 sind jetzt die Vorgabe für einen Host ohne eigene Grenze. Die Grenze je Host für alle Instanzen zusammen steht in `backend/catalog/hosts.yaml` (Earth Search 6, FSDI 6, S3-Buckets 32); `api` und `tiler` teilen sie mit PR 2 von M5-36 durch die Zahl ihrer Instanzen. In einem Prozess zählen GDAL-Leser und Anfragen von `gateway` an einem Zähler (`ReadSlots`).
+
 **Nicht geändert:** `architekturplan.md` 5.2 bleibt gültig; dieses ADR füllt nur
 den „alt"-Zweig seines Ablaufdiagramms mit Messwerten aus.
 
