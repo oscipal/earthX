@@ -8,8 +8,11 @@
 //   - the groups are not those of `/catalogue/categories` in their order, or a group without entries shows;
 //   - a group does not load its next page when its end is scrolled into view, or loads past its last;
 //   - a listed entry has a mark or no link "Source", or its details lack the keywords;
-//   - the row of filters is not there, runs out of the window, or "Only datasets in AOI" is not locked without an AOI;
+//   - search field and "Filters" are not in the head of the window, or the pop-up "Filters" leaves the browser window;
+//   - "Filter by search panel" is not locked without an AOI, or a field of the pop-up has no "×" that empties it;
 //   - choosing a category shows other groups, or a region is not sent with the next request;
+//   - a text in the search field does not show the hits in place of the groups, or its "×" does not bring them back;
+//   - the search panel has no tile "Add dataset" after its datasets, or the tile does not open the window;
 //   - "Add" does not put the dataset into "Search and area" and turn the pages to it, or "Remove" does not take it out;
 //   - in a narrow window the details are not a stage of their own with "Back";
 //   - a value of the details runs out of its column;
@@ -79,6 +82,16 @@ const REGIONS = [
 
 // One page of `/stac/collections` as the API gives it: by title, a token in the body of the next link, a count.
 function pageOf(body) {
+  if (typeof body.q === 'string') {
+    // The search with text: full entries only (M5-40 F7), 20 a page by offset; here the title holds the text.
+    const found = MADE_UP.filter((c) => c.title.toLowerCase().includes(body.q.toLowerCase()) && (!body.category || c['earthx:category'] === body.category));
+    const offset = body.offset ?? 0;
+    return {
+      collections: found.slice(offset, offset + 20),
+      links: offset + 20 < found.length ? [{ rel: 'next', method: 'POST', href: '/stac/collections', body: { ...body, offset: offset + 20 } }] : [],
+      numberMatched: found.length,
+    };
+  }
   let hits = COLLECTIONS.filter((c) => c['earthx:category'] === body.category);
   if (body.region) hits = hits.filter((c) => (c['earthx:regions'] ?? []).some((r) => body.region.includes(r)));
   hits.sort((a, b) => (a.title.toLowerCase() < b.title.toLowerCase() ? -1 : 1));
@@ -149,12 +162,12 @@ async function check(browser, { theme, viewport }) {
   const expected = CATEGORIES.filter((c) => COLLECTIONS.some((x) => x['earthx:category'] === c.id)).map((c) => c.title);
   expect('the groups follow the categories of the API', JSON.stringify(groups) === JSON.stringify(expected), `${groups.join(', ')} ≠ ${expected.join(', ')}`);
 
-  // The row of filters: always there, inside the window, the switch locked without an AOI.
-  const filters = await box('.catalogue-filters');
-  expect('the row of filters is there and inside the window', filters && w && filters.x >= w.x - 0.5 && filters.x + filters.width <= w.x + w.width + 0.5, JSON.stringify({ filters, w }));
-  const aoiSwitch = win.locator('.catalogue-filters input[role="switch"]');
-  expect('"Only datasets in AOI" is locked without an AOI', (await aoiSwitch.getAttribute('aria-disabled')) === 'true');
-  await shot('1b-filters');
+  // The head: search field and "Filters" inside the window.
+  const inside = (b) => b && w && b.x >= w.x - 0.5 && b.x + b.width <= w.x + w.width + 0.5 && b.y >= w.y - 0.5;
+  expect('the search field is in the head of the window', inside(await box('.catalogue-head .catalogue-search')), JSON.stringify(await box('.catalogue-head .catalogue-search')));
+  expect('"Filters" is in the head of the window', inside(await box('.catalogue-head .catalogue-filters-btn')), JSON.stringify(await box('.catalogue-head .catalogue-filters-btn')));
+  expect('there is no fixed row of filters', (await win.locator('.catalogue-head + .catalogue-filters').count()) === 0);
+  await shot('1b-head');
 
   // Paging: the water group has 130 entries, 50 a page; scrolling its end into view loads the next page, up to the last.
   const water = win.locator('.catalogue-group[aria-label="Water and sea"]');
@@ -180,22 +193,59 @@ async function check(browser, { theme, viewport }) {
   await shot('1d-listed-details');
   if (viewport === 'narrow') await win.locator('.catalogue-back').click();
 
-  // Category and region.
-  await win.locator('.catalogue-filters select[aria-label="Category"]').selectOption('water');
+  // The pop-up "Filters": inside the browser window, the switch locked without an AOI, each field with its "×".
+  const popup = page.locator('.catalogue-filters-popup');
+  const openFilters = async () => {
+    await win.locator('.catalogue-filters-btn').click();
+    await popup.waitFor();
+    await page.waitForTimeout(200);
+  };
+  await openFilters();
+  const p = await box('.catalogue-filters-popup');
+  expect('the pop-up stays in the browser window', p && p.x >= 0 && p.y >= 0 && p.x + p.width <= size.width + 0.5 && p.y + p.height <= size.height + 0.5, JSON.stringify(p));
+  const panelSwitch = popup.locator('input[role="switch"]');
+  expect('"Filter by search panel" is locked without an AOI', (await panelSwitch.getAttribute('aria-disabled')) === 'true');
+  expect('the switch says why', (await popup.locator('label.locked').getAttribute('data-tip')) === 'Draw an AOI to use this filter');
+  await shot('1e-filters');
+
+  // Category, then its "×".
+  await popup.locator('select[aria-label="Category"]').selectOption('water');
   await page.waitForTimeout(300);
   const onlyWater = await page.locator('.catalogue-group').evaluateAll((els) => els.map((el) => el.getAttribute('aria-label')));
   expect('a category shows only its group', JSON.stringify(onlyWater) === '["Water and sea"]', onlyWater.join(', '));
-  await shot('1e-category');
-  await win.locator('.catalogue-filters select[aria-label="Category"]').selectOption('');
+  expect('the button counts the filter', (await win.locator('.catalogue-filters-btn').textContent()) === 'Filters · 1');
+  await shot('1f-category');
+  await popup.locator('button[aria-label="Clear category"]').click();
   // The groups ask again without a category; their requests have to be in before the next step is recorded.
   await page.waitForTimeout(500);
   asked.length = 0;
-  await win.locator('.catalogue-filters select[aria-label="Region"]').selectOption('DE-BY');
+  await popup.locator('select[aria-label="Region"]').selectOption('DE-BY');
   await page.waitForTimeout(300);
   expect('the region goes with every request', asked.length > 0 && asked.every((b) => JSON.stringify(b.region) === '["DE-BY"]'), JSON.stringify(asked.slice(0, 2)));
-  await shot('1f-region');
-  await win.locator('.catalogue-filters select[aria-label="Region"]').selectOption('');
+  await popup.locator('input[aria-label="From date"]').fill('2020-01-01');
   await page.waitForTimeout(300);
+  await shot('1g-region');
+  for (const label of ['Clear region', 'Clear from date']) await popup.locator(`button[aria-label="${label}"]`).click();
+  await page.waitForTimeout(300);
+  expect('the "×" empty every field', (await win.locator('.catalogue-filters-btn').textContent()) === 'Filters');
+  // A click beside the pop-up closes it.
+  await win.locator('.catalogue-head h2').click();
+  await page.waitForTimeout(200);
+  expect('a click beside the pop-up closes it', !(await popup.isVisible()));
+
+  // The search field: hits in rank order instead of the groups; its "×" brings the groups back.
+  const search = win.locator('.catalogue-search input');
+  await search.fill('optical');
+  await page.waitForTimeout(700);
+  const hits = await win.locator('.catalogue-hits .catalogue-entry-title').allTextContents();
+  // In the order the API ranks them (here: the order of the made-up list), not by title.
+  const ranked = MADE_UP.filter((c) => c.title.toLowerCase().includes('optical')).map((c) => c.title);
+  expect('the hits stand in place of the groups, in the order of the API', hits.join('|') === ranked.join('|') && (await win.locator('.catalogue-group').count()) === 0, hits.join(', '));
+  expect('the text goes to the search', asked.some((b) => b.q === 'optical'));
+  await shot('1h-search');
+  await win.locator('.catalogue-search .clear-btn').click();
+  await page.waitForTimeout(500);
+  expect('the "×" of the search brings the groups back', (await win.locator('.catalogue-group').count()) > 0);
   const sidewaysAfter = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
   expect('the page does not scroll sideways with the filters', !sidewaysAfter);
 
@@ -223,6 +273,16 @@ async function check(browser, { theme, viewport }) {
   if (!(await page.locator('.control-panel').first().isVisible())) await page.locator('#rail-controls').click();
   expect('"Add" puts it back and turns the pages to it', (await panelTitles()).includes(firstTitle), (await panelTitles()).join(', '));
   await shot('3-panel');
+  // "Add dataset" after the datasets of the search panel, drawn like one; it opens the window.
+  const tiles = await page.locator('.dataset-list .dataset-toggle').evaluateAll((els) => els.map((el) => el.textContent.trim()));
+  expect('"Add dataset" stands after the datasets', tiles.at(-1) === 'Add dataset' || (await page.locator('.dataset-pages [aria-label="Next page"]').getAttribute('aria-disabled')) !== 'true', tiles.join(', '));
+  const addTile = page.locator('.dataset-list .add-dataset');
+  if (await addTile.count()) {
+    await addTile.click();
+    expect('"Add dataset" opens the Data catalogue', await win.isVisible());
+    await shot('3b-add-dataset');
+    await symbol.click();
+  }
 
   // The details.
   await symbol.click();
