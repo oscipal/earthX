@@ -86,6 +86,7 @@ HAND_SOURCE = "listed"
 _README = "README.md"
 _ID = re.compile(r"[a-z0-9][a-z0-9._-]{0,127}")
 _HOST = re.compile(r"(?=.{1,253}\Z)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+")
+_STATE_CODE = re.compile(r"[A-Z]{2}")
 _HTTPS_URL = re.compile(r"https://[^\s/?#]+(?:[/?#]\S*)?")
 #: The host of an https address that ``_HTTPS_URL`` accepted: after ``https://``, before a port, path, query or
 #: fragment, without user info. ``catalog`` parses no URL with a client library (KLAERUNGEN B8, `.importlinter`).
@@ -126,10 +127,13 @@ class ListedAccess:
 class ListedEntry:
     """One listed entry: the head of a full entry (adr/0025 §6.1a) plus data kind, delivery and the link to the source.
 
-    ``source_url`` is the landing page at the source, the one link the catalogue offers. ``publisher`` is the
-    organisation that publishes the data, as the source names it: what a blocklist line of scope ``publisher`` matches.
-    ``approved_on`` is the day Otto released the entry: for a hand entry the day of its file (plan A3). The regions are
-    derived from the extent when the entry is written, never read from a file. No field has a default (KLAERUNGEN B10).
+        ``source_url`` is the landing page at the source, the one link the catalogue offers. ``publisher`` is the
+        organisation that publishes the data, as the source names it: what a blocklist line of scope ``publisher`` matches.
+        ``approved_on`` is the day Otto released the entry: for a hand entry the day of its file (plan A3). The regions are
+        derived from the extent when the entry is written, never read from a file. ``coverage_states`` names the states
+    (ISO 3166-1) an entry covers where its box takes in more (M5-17 F4): then its footprint is the union of their outlines
+    cut to the box, and its regions are those states and their subdivisions; ``None`` keeps the box. No field has a default
+    (KLAERUNGEN B10).
     """
 
     dataset_id: str
@@ -143,6 +147,7 @@ class ListedEntry:
     data_kind: DataKind
     category: str
     spatial_extent: SpatialExtent
+    coverage_states: tuple[str, ...] | None
     temporal_extent: TemporalExtent
     license: LicenseInfo
     legal_status: LegalStatus
@@ -165,6 +170,13 @@ class ListedEntry:
             raise ConfigError(f"{self.dataset_id}: keywords names at least one keyword, each a non-blank text")
         if not self.providers:
             raise ConfigError(f"{self.dataset_id}: providers names no provider")
+        states = self.coverage_states
+        if states is not None and (
+            not states
+            or not all(isinstance(code, str) and _STATE_CODE.fullmatch(code) for code in states)
+            or len(set(states)) != len(states)
+        ):
+            raise ConfigError(f"{self.dataset_id}: coverage_states is null or ISO 3166-1 codes, each once")
         try:
             doi_name(self.doi)
         except ConfigError as error:
@@ -290,9 +302,21 @@ def load_listed(directory: Path = LISTED_DIR) -> tuple[tuple[ListedEntry, str], 
         if path.name != f"{entry.dataset_id}.yaml":
             raise EntryFileError(f"{directory.name}/{path.name}: the file of an entry is named <dataset_id>.yaml")
         if entry.category not in load_categories().ids:
-            raise EntryFileError(f"{directory.name}/{path.name}: category {entry.category} is not one of categories.yaml")
+            raise EntryFileError(
+                f"{directory.name}/{path.name}: category {entry.category} is not one of categories.yaml"
+            )
+        if entry.coverage_states is not None and (unknown := sorted(set(entry.coverage_states) - _state_codes())):
+            raise EntryFileError(
+                f"{directory.name}/{path.name}: coverage_states names states regions.json lacks: {', '.join(unknown)}"
+            )
         found.append((entry, file_sha256(path)))
     return tuple(found)
+
+
+@cache
+def _state_codes() -> frozenset[str]:
+    """The states of ``regions.json``, read once per process: what ``coverage_states`` may name."""
+    return frozenset(region.code for region in load_regions() if region.level == "state")
 
 
 def load_blocked(path: Path = BLOCKED_FILE) -> tuple[BlockRule, ...]:
@@ -473,6 +497,7 @@ def to_listed_collection(entry: ListedEntry) -> dict[str, object]:
         ],
         "earthx:entry": "listed",
         "earthx:data_kind": entry.data_kind.value,
+        "earthx:coverage_states": None if entry.coverage_states is None else list(entry.coverage_states),
         "earthx:category": entry.category,
         "earthx:license_flags": _earthx_license_flags(entry),  # type: ignore[arg-type]
         "earthx:legal_status": entry.legal_status.value,

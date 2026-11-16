@@ -25,6 +25,7 @@ from earthx.catalog.listed import (
     ListedAccess,
     ListedEntry,
     Region,
+    load_listed,
     load_regions,
 )
 from earthx.catalog.listed_store import apply_blocklist, supersede, write_hand_entries, write_regions
@@ -33,6 +34,11 @@ from tests.catalog.listed_entries import PUBLISHER, listed_entry, utc, with_hash
 from tests.integration.listed_rows import insert_row
 
 BLOCKED_ON = date(2026, 11, 1)
+#: The 27 EU members, the five other members and the six cooperating countries of the EEA, and the UK (CLC 2018).
+EEA_39 = frozenset(
+    "AT BE BG HR CY CZ DK EE FI FR DE GR HU IE IT LV LT LU MT NL PL PT RO SK SI ES SE "
+    "IS LI NO CH TR AL BA ME MK RS XK GB".split()
+)
 CONTENT_COLUMNS = (
     "content",
     "content_sha256",
@@ -827,3 +833,86 @@ def test_a_hand_entry_with_only_technical_keywords_gets_the_words_of_its_categor
 def test_the_table_refuses_a_published_row_without_keywords(conn: psycopg.Connection, keywords: str) -> None:
     conn.execute(_PUBLISHED, {"id": "example-x", "key": "k"})
     _refused(conn, f"UPDATE public.earthx_listed_entry SET keywords = {keywords}", {}, psycopg.errors.CheckViolation)
+
+
+# --- the hand entries of the repo (M5-17) ----------------------------------------------------------------------------
+
+
+def test_the_hand_entries_of_the_repo_are_written_with_their_access_and_regions(conn: psycopg.Connection) -> None:
+    # A `catalog-load` of another test on this worker's database may have committed them already.
+    conn.execute("DELETE FROM public.earthx_listed_entry")
+    write_regions(conn, load_regions())
+    listed, blocked = write_hand_entries(conn, load_listed(), [], full_ids=[])
+    assert (sorted(listed), blocked) == (["corine-land-cover", "landsat-c2-l2"], ())
+    corine, landsat = _row(conn, "corine-land-cover"), _row(conn, "landsat-c2-l2")
+    assert (corine["account"], corine["delivery"], corine["data_kind"]) == ("free_account", "download", "vector")
+    assert (landsat["account"], landsat["delivery"], landsat["data_kind"]) == ("requester_pays", "download", "raster")
+    # Exactly the EEA-39 and their subdivisions: no neighbour of the simplified outlines, no enclave (plan §4b, F4).
+    assert {code for code in corine["regions"] if "-" not in code} == EEA_39
+    assert {"DE-BY", "AT-9", "CH-ZH", "LI-11"} <= set(corine["regions"])
+    assert {code.split("-")[0] for code in corine["regions"]} == EEA_39
+    assert {"DE", "US", "AU", "BR", "AQ"} <= set(landsat["regions"])
+    assert (corine["state"], landsat["state"]) == ("published", "published")
+
+
+# --- coverage_states (M5-17 F4) --------------------------------------------------------------------------------------
+
+
+def _covering(states: tuple[str, ...], bbox=(5.0, 45.0, 17.5, 55.5)) -> ListedEntry:
+    return listed_entry("example-dach", spatial_extent=_box(*bbox), coverage_states=states)
+
+
+def test_the_footprint_of_named_states_is_their_outline_and_not_the_box(
+    conn: psycopg.Connection, tmp_path: Path
+) -> None:
+    write_regions(conn, load_regions())
+    _put(conn, tmp_path, _covering(("AT", "CH", "DE", "LI")))
+    row = _row(conn, "example-dach")
+    assert {code for code in row["regions"] if "-" not in code} == {"AT", "CH", "DE", "LI"}
+    # Prague lies in the box, not in the outline of the four states.
+    inside = conn.execute(
+        "SELECT ST_Intersects(footprint, ST_MakeEnvelope(14.3, 50.0, 14.6, 50.2, 4326)) FROM public.earthx_listed_entry "
+        "WHERE dataset_id = 'example-dach'"
+    ).fetchone()[0]
+    assert inside is False
+
+
+def test_named_states_are_cut_to_the_box(conn: psycopg.Connection, tmp_path: Path) -> None:
+    write_regions(conn, load_regions())
+    _put(conn, tmp_path, _covering(("FR",), bbox=(-5.5, 41.0, 10.0, 51.5)))
+    west, south, east, north = conn.execute(
+        "SELECT ST_XMin(footprint), ST_YMin(footprint), ST_XMax(footprint), ST_YMax(footprint) "
+        "FROM public.earthx_listed_entry WHERE dataset_id = 'example-dach'"
+    ).fetchone()
+    assert west >= -5.5 and south >= 41.0 and east <= 10.0 and north <= 51.5
+    assert _regions_of(conn, "example-dach") == ["FR"]
+
+
+def test_a_state_the_table_lacks_is_an_error(conn: psycopg.Connection, tmp_path: Path) -> None:
+    write_regions(conn, [region for region in load_regions() if region.code != "LI"])
+    with pytest.raises(ConfigError, match="earthx_region lacks"):
+        _put(conn, tmp_path, _covering(("AT", "LI")))
+
+
+def test_a_state_outside_the_box_is_an_error(conn: psycopg.Connection, tmp_path: Path) -> None:
+    write_regions(conn, load_regions())
+    with pytest.raises(ConfigError, match="outside spatial_extent"):
+        _put(conn, tmp_path, _covering(("AT", "PT")))
+
+
+def test_a_new_outline_file_keeps_the_regions_to_the_named_states(conn: psycopg.Connection) -> None:
+    regions = load_regions()
+    conn.execute("DELETE FROM public.earthx_listed_entry")
+    write_regions(conn, regions)
+    write_hand_entries(conn, load_listed(), [], full_ids=[])
+    # A changed outline file derives the regions of every entry anew, from the stored footprint.
+    write_regions(conn, [region for region in regions if region.code != "AT-9"])
+    states = {code for code in _row(conn, "corine-land-cover")["regions"] if "-" not in code}
+    assert states == EEA_39
+    assert "AT-9" not in _row(conn, "corine-land-cover")["regions"]
+
+
+def test_the_box_stays_the_footprint_without_named_states(conn: psycopg.Connection, tmp_path: Path) -> None:
+    write_regions(conn, load_regions())
+    _put(conn, tmp_path, listed_entry("example-box", spatial_extent=_box(5.0, 45.0, 17.5, 55.5)))
+    assert {"CZ", "PL"} <= set(_regions_of(conn, "example-box"))

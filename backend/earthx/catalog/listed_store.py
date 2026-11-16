@@ -42,6 +42,19 @@ REGIONS_OF = """
     COALESCE((SELECT array_agg(DISTINCT p.code ORDER BY p.code) FROM public.earthx_region_part p
               WHERE ST_Intersects(p.part, {footprint}) AND NOT ST_Touches(p.part, {footprint})), '{{}}')
 """
+#: The same, kept to the states an entry names in ``coverage_states`` and their subdivisions (M5-17 F4): the outlines of
+#: neighbours overlap a little after simplification, and an enclave such as AD lies inside the union, so the geometry
+#: alone would add states the entry does not cover. ``{states}`` is a ``text[]``, NULL for an entry without them.
+REGIONS_IN_STATES = """
+    COALESCE((SELECT array_agg(DISTINCT p.code ORDER BY p.code) FROM public.earthx_region_part p
+              WHERE ST_Intersects(p.part, {footprint}) AND NOT ST_Touches(p.part, {footprint})
+                AND ({states} IS NULL OR split_part(p.code, '-', 1) = ANY({states}))), '{{}}')
+"""
+#: The states of a stored entry's ``earthx:coverage_states``, NULL where it names none.
+_STORED_STATES = """
+    (CASE WHEN jsonb_typeof(content -> 'earthx:coverage_states') = 'array'
+          THEN ARRAY(SELECT jsonb_array_elements_text(content -> 'earthx:coverage_states')) END)
+"""
 #: Points per piece of an outline (``ST_Subdivide``).
 PART_POINTS = 128
 
@@ -91,7 +104,7 @@ def write_regions(conn: psycopg.Connection, regions: Sequence[Region]) -> int:
                     "UPDATE public.earthx_listed_entry e SET regions = d.regions FROM (SELECT dataset_id, {} AS regions "
                     "FROM public.earthx_listed_entry WHERE footprint IS NOT NULL) d "
                     "WHERE e.dataset_id = d.dataset_id AND e.regions IS DISTINCT FROM d.regions"
-                ).format(sql.SQL(REGIONS_OF.format(footprint="footprint")))
+                ).format(sql.SQL(REGIONS_IN_STATES.format(footprint="footprint", states=_STORED_STATES)))
             )
     return changed
 
@@ -119,7 +132,8 @@ _UPSERT = sql.SQL(
     SELECT %(id)s, %(source)s, %(id)s, 'published', %(content)s::jsonb, %(content_sha256)s, %(sort_title)s, f.geom,
            %(time_span)s::tstzrange, {regions}, %(keywords)s, %(data_kind)s, %(category)s, %(account)s, %(delivery)s, %(publisher)s,
            %(host)s, %(approval_file)s, %(approval_sha256)s, %(approved_on)s, now(), NULL, NULL
-    FROM (SELECT ST_MakeEnvelope(%(west)s, %(south)s, %(east)s, %(north)s, 4326) AS geom) f
+    FROM (SELECT COALESCE(ST_GeomFromEWKB(%(footprint)s),
+                          ST_MakeEnvelope(%(west)s, %(south)s, %(east)s, %(north)s, 4326)) AS geom) f
     ON CONFLICT (dataset_id) DO UPDATE SET
         state = EXCLUDED.state, content = EXCLUDED.content, content_sha256 = EXCLUDED.content_sha256,
         sort_title = EXCLUDED.sort_title, footprint = EXCLUDED.footprint, time_span = EXCLUDED.time_span,
@@ -132,9 +146,36 @@ _UPSERT = sql.SQL(
     WHERE stored.state IS DISTINCT FROM 'published'
        OR (stored.content_sha256, stored.approval_sha256, stored.sort_title)
           IS DISTINCT FROM (EXCLUDED.content_sha256, EXCLUDED.approval_sha256, EXCLUDED.sort_title)
+       OR ST_AsBinary(stored.footprint) IS DISTINCT FROM ST_AsBinary(EXCLUDED.footprint)
     RETURNING dataset_id
     """
-).format(regions=sql.SQL(REGIONS_OF.format(footprint="f.geom")))
+).format(regions=sql.SQL(REGIONS_IN_STATES.format(footprint="f.geom", states="%(states)s::text[]")))
+
+#: The outline of an entry that names ``coverage_states``: the union of their outlines, cut to the box of the entry, and
+#: how many of the states ``earthx_region`` holds and how many reach into the box. Cut, because a state's outline can reach far beyond what the entry
+#: covers (overseas parts of FR, PT, NO); the box stays the hull of the entry (M5-17 F4).
+_COVERAGE = """
+    SELECT count(*),
+           count(*) FILTER (WHERE ST_Intersects(r.outline, b.box) AND NOT ST_Touches(r.outline, b.box)),
+           ST_AsEWKB(ST_Multi(ST_CollectionExtract(ST_Intersection(ST_Union(ST_MakeValid(r.outline)), b.box), 3)))
+    FROM public.earthx_region r, (SELECT ST_MakeEnvelope(%s, %s, %s, %s, 4326) AS box) b
+    WHERE r.level = 'state' AND r.code = ANY(%s)
+    GROUP BY b.box
+"""
+
+
+def _coverage_footprint(cur: psycopg.Cursor, entry: ListedEntry) -> bytes | None:
+    """The footprint from ``coverage_states``, or None for an entry without them (its box is the footprint)."""
+    states = entry.coverage_states
+    if states is None:
+        return None
+    cur.execute(_COVERAGE, (*entry.spatial_extent.bbox, list(states)))
+    found, inside, footprint = cur.fetchone() or (0, 0, None)
+    if found != len(states):
+        raise ConfigError(f"listed/{entry.dataset_id}.yaml: coverage_states names a state that earthx_region lacks")
+    if inside != found:
+        raise ConfigError(f"listed/{entry.dataset_id}.yaml: a state of coverage_states lies outside spatial_extent")
+    return footprint
 
 
 def _time_span(entry: ListedEntry) -> str | None:
@@ -178,6 +219,7 @@ def write_hand_entries(
                 continue
             collection = to_listed_collection(entry)
             west, south, east, north = entry.spatial_extent.bbox
+            footprint = _coverage_footprint(cur, entry)
             cur.execute(
                 _UPSERT,
                 {
@@ -190,6 +232,8 @@ def write_hand_entries(
                     "south": south,
                     "east": east,
                     "north": north,
+                    "footprint": footprint,
+                    "states": None if entry.coverage_states is None else list(entry.coverage_states),
                     "time_span": _time_span(entry),
                     "data_kind": entry.data_kind.value,
                     "category": entry.category,
