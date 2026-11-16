@@ -282,8 +282,12 @@ def _bev_entry(row: int, year: int) -> str:
     )
 
 
-def _bev_double(*, newest_year: int = 2025, tiles: int = 55, etag: str | None = '"synthetic"'):
-    """The ATOM service of the BEV: the service feed at two dates, one dataset feed per tile, the file on the host."""
+def _bev_double(*, newest_year: int | None = None, tiles: int = 55, etag: str | None = '"synthetic"'):
+    """The ATOM service of the BEV: the service feed at two dates, one dataset feed per tile, the file on the host.
+
+    The newest date is the entry's own unless a test names another, so following the entry up keeps the replay green.
+    """
+    newest_year = newest_year or BEV.temporal_extent.start.year
     entries = "".join(_bev_entry(row, year) for year in (newest_year - 1, newest_year) for row in range(tiles))
     service = f"<feed {BEV_ATOM}>{entries}</feed>".encode()
 
@@ -504,6 +508,16 @@ async def test_the_bev_smoke_fails_on_a_reference_date_after_the_entrys() -> Non
 async def test_the_bev_smoke_fails_on_another_count_of_tiles() -> None:
     with pytest.raises(AssertionError, match="has 54 tiles"):
         await _replay_bev("test_the_newest_reference_date_is_the_entrys_and_has_its_tiles", _bev_double(tiles=54))
+
+
+async def test_the_bev_smoke_fails_on_a_dataset_feed_without_the_file_of_its_tile() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/atom/describe/dataset"):
+            return httpx.Response(200, content=f"<feed {BEV_ATOM}><entry/></feed>".encode())
+        return _bev_double()(request)
+
+    with pytest.raises(AssertionError, match="no longer holds exactly one file"):
+        await _replay_bev("test_one_dataset_feed_holds_its_one_file_read_anonymously", handler)
 
 
 async def test_the_bev_smoke_fails_on_a_file_without_etag() -> None:

@@ -57,7 +57,8 @@ async def test_the_newest_reference_date_is_the_entrys_and_has_its_tiles(gateway
     """A newer date stops the run until ``temporal_extent`` is followed up (plan A2); this reports it first."""
     newest, tiles = await _newest(gateway)
     assert newest == BEV.temporal_extent.start.astimezone(timezone.utc).date(), (
-        f"the newest reference date is {newest}; follow temporal_extent and the attribution year of the entry up"
+        f"the newest reference date is {newest}; follow temporal_extent, description, citation and the attribution "
+        "year of the entry up"
     )
     assert len(tiles) == TILES, f"the newest date has {len(tiles)} tiles, not {TILES}"
     assert all(bev_atom.doi_of(entry) for entry in tiles.values()), "a tile's identifier is no longer its DOI"
@@ -68,7 +69,9 @@ async def test_one_dataset_feed_holds_its_one_file_read_anonymously(gateway: Gat
     """The first tile's dataset feed names one file on the asset host; ``206`` on a range, a TIFF, an ETag."""
     newest, tiles = await _newest(gateway)
     tile, entry = min(tiles.items())
-    feed = await gateway.get(bev_atom.dataset_feed_of(entry))
+    link = bev_atom.dataset_feed_of(entry)
+    assert link, "the first tile no longer links one dataset feed"
+    feed = await gateway.get(link)
     href = bev_atom.file_of(feed.content, model=MODEL, tile=tile, day=newest, asset_hosts=BEV.source.asset_hosts)
     assert href, "the dataset feed no longer holds exactly one file of the known path"
     head = await gateway.head(href)
