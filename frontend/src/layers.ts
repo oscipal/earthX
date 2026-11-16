@@ -120,7 +120,7 @@ export interface ResultLayerInfo {
   jobID: string;
   // When the job's results are dropped; the layer is "Expired" from a minute before.
   expires: string;
-  // Metres per pixel of the result, for "Overview"; `null` if it is not known.
+  // Metres per pixel of the result, for the tooltip that says it is drawn coarser (`resultLayer.ts::isResultLayerOverview`); `null` if it is not known.
   gsd: number | null;
   // `earthx:resampled` (Prinzip 2.9); `null` if the results said nothing.
   resampled: boolean | null;

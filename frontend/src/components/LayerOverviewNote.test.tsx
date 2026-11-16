@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 //
 // Plan M5-30b part 9, Otto 11.11.2026 (`adr/0032` §14 F12): the overview of a dataset with a pyramid has no mark at all, only a
-// tooltip at its layer. The "Overview" badge of a job's result (`PreviewBadge`) is another thing and stays as it is.
+// tooltip at its layer. A job's result drawn coarser than its pixels has none either since UI-08 (`ProcessingResultLayer.test.tsx`).
 
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';

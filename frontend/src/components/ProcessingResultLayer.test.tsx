@@ -13,11 +13,11 @@ import type { DatasetOption } from '../datasets';
 import type { MapLayer } from '../layers';
 import type { Order } from '../processing';
 import { layerProcessBlock, NO_COPY_TEXT, setTrackerOptions, useProcessingStore, type JobEntry } from '../processingStore';
-import { MIN_REMAINING_MS, resultStats } from '../resultLayer';
+import { isResultLayerOverview, MIN_REMAINING_MS, OVERVIEW_TIP, resultStats } from '../resultLayer';
 import { useAppStore } from '../store';
 import JobDetails from './JobDetails';
 import LayerManager, { EXPIRED_LAYER_TEXT } from './LayerManager';
-import PreviewBadge, { OVERVIEW_TITLE } from './PreviewBadge';
+import PreviewBadge from './PreviewBadge';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -598,7 +598,7 @@ describe('a result layer that expires', () => {
   });
 });
 
-describe('"Overview" over the map', () => {
+describe('a result drawn coarser than its pixels (no "Overview" over the map, Otto 14.11.2026, UI-08)', () => {
   function result(over: Partial<NonNullable<MapLayer['result']>> = {}, layer: Partial<MapLayer> = {}) {
     useAppStore.setState({
       layers: [
@@ -627,17 +627,24 @@ describe('"Overview" over the map', () => {
       ],
     });
   }
-  const badge = () => container.querySelector('.preview-badge-dock')?.textContent ?? '';
+  const nameTip = () => container.querySelector('.layer-row .lm-name')?.getAttribute('data-tip') ?? '';
 
-  it('is on the map while the tile is coarser than the result, and goes when it is not', () => {
+  it('puts no mark over the map', () => {
     result();
     act(() => root.render(<PreviewBadge />));
-    expect(badge()).toBe('Overview');
-    expect(container.querySelector('.preview-badge-dock .badge')?.getAttribute('data-tip')).toBe(OVERVIEW_TITLE);
-    act(() => useAppStore.setState({ mapZoom: 15 }));
     expect(container.querySelector('.preview-badge-dock')).toBeNull();
+    expect(container.textContent).not.toContain('Overview');
+  });
+
+  it('says it in the tooltip of the name of its row while the tile is coarser than the result, and not when it is not', () => {
+    result();
+    act(() => root.render(<LayerManager />));
+    expect(nameTip()).toContain(OVERVIEW_TIP);
+    expect(container.querySelector('.layer-row')?.textContent).not.toContain('Overview');
+    act(() => useAppStore.setState({ mapZoom: 15 }));
+    expect(nameTip()).not.toContain(OVERVIEW_TIP);
     act(() => useAppStore.setState({ mapZoom: 3 }));
-    expect(badge()).toBe('Overview');
+    expect(nameTip()).toContain(OVERVIEW_TIP);
   });
 
   describe('no "Zoom in" over the map (Otto, 10.11.2026; the row of the layer says it)', () => {
@@ -668,17 +675,24 @@ describe('"Overview" over the map', () => {
     ['switched off', {}, { visible: false }],
     ['expired', { expired: true }, {}],
     ['of an unknown pixel size', { gsd: null }, {}],
-  ])('is not on the map for a layer that is %s', (_, over, layer) => {
+  ])('is not said for a layer that is %s', (_, over, layer) => {
     result(over, layer);
-    act(() => root.render(<PreviewBadge />));
-    expect(container.querySelector('.preview-badge-dock')).toBeNull();
+    act(() => root.render(<LayerManager />));
+    expect(nameTip()).not.toContain(OVERVIEW_TIP);
   });
 
-  it('stands beside "Preview" when both are on the map', () => {
+  it('is not said for the layer of a deleted job', () => {
+    result({ deleted: true });
+    const [layer] = useAppStore.getState().layers;
+    expect(isResultLayerOverview(layer, 5, null)).toBe(false);
+    expect(isResultLayerOverview({ ...layer, result: { ...layer.result!, deleted: false } }, 5, null)).toBe(true);
+  });
+
+  it('leaves "Preview" alone over the map', () => {
     result();
     useProcessingStore.setState({ preview: { key: 'k', title: 'Band math', stepCount: 1, band: null, bands: null, probe: '', measure: '', sceneMeasure: '', areaOrder: null, expression: false, preset: null, mosaics: [], scenes: [], needs: [], perScene: false, minZoom: 8, maxZoom: 14, clipToAoi: false, overview: null } });
     act(() => root.render(<PreviewBadge />));
-    expect(badge()).toBe('PreviewOverview');
+    expect(container.querySelector('.preview-badge-dock')?.textContent).toBe('Preview');
   });
 
   it('is not the "Preview" of a preview layer', () => {
