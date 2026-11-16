@@ -59,6 +59,26 @@ Belegstufen wie in `adr/0023`: **M** gemessen (06.11.2026, M5-01b), **P** am Pri
 - Aufbau aller 55 Dateien des jüngsten Stichtags über ihre Kopfzeilen (offen seit `adr/0023` §9.1): CRS, Größe, Typ, nodata, Blöcke, Overviews, `AREA_OR_POINT`; Größe der Dateien.
 - Betreiber und Ort des Speichers bleiben unbelegt: `data_region: unknown` (`adr/0023` F7).
 
+### 2.4 Ottos Messlauf 1 (16.11.2026, `bev-probe --all --headers`) [M]
+
+| Was | Ergebnis |
+|---|---|
+| Dienst-Feed | `200`, `application/atom+xml`, rund 1,97 MB (unter der Grenze von 8 MiB je Antwort in `gateway`); **kein ETag, kein Last-Modified, kein `Cache-Control`** |
+| Einträge | 672: 660 im bekannten Titelmuster (DTM und DSM, je sechs Stichtage 2019, 2021–2025 zu 55 Kacheln), 12 anderer Form |
+| Kinder je Eintrag | `author`, `category` (EPSG:3035), `id`, `link` (`alternate` Dataset-Feed, `describedby` Metadaten), `rights`, `summary`, `title`, `updated`, `georss:polygon`, `inspire_dls:spatial_dataset_identifier_code`/`_namespace` |
+| Dataset-Feed | `200`, ohne ETag; genau ein Eintrag mit genau einem Link `image/tiff` (alle 55), dazu `georss:polygon` und die Kennung |
+| Dateipfad | weicht vom Suchtreffer ab (alle 55); Form misst Lauf 2 |
+| Datei | `HEAD` `200`, Range `206`, ETag und Last-Modified, `no-cache,must-revalidate`; **`Access-Control-Allow-Origin: *`** (am 06.11. ohne CORS gemessen) |
+| Größen | 0,09 bis 8,15 GB, zusammen 263,8 GB |
+| Kopf aller 55 | EPSG:3035, 50 001², 1 Band, Float32, nodata −9999, 1 m, Blöcke 512², COG, LZW, `Area`; Overviews 2–256 (50 Dateien) bzw. 2–128 (5 Dateien) |
+
+Folgen:
+- **A1:** Die Fassung eines Laufs ist der Hash über den Inhalt (Kachel, Stichtag, Adresse, `updated`); eine bedingte Anfrage gibt es am Feed nicht.
+- **CORS:** `access.cors: true`; „Download full scene(s)“ nimmt damit den Weg der Plattform für Quellen mit CORS (ZIP bzw. Dateien) statt `navigate`.
+- **Kleinste Overview** 1:128 bei 5 Kacheln: Bei z7 (rund 830 m je Pixel) liest eine solche Datei rund das Doppelte; ändert an F5 nichts, die Messung in §6 Schritt 4 zeigt es.
+
+**Lauf 2 (`bev-probe --shape`, offen):** Form des Dateipfads und Host, die 12 anderen Titel, `rights` je Kachel (Lizenz an allen 330 DTM-Einträgen, offen seit §2.2), Kennung gegen Metadaten-Link (für `sci:doi`, F6), Lage von `georss:polygon` zur Zelle des Kachelnamens (Ecke unten oder oben links), ob der Feed bei zwei Abrufen gleich bleibt (für den Hash). Kein Dateizugriff.
+
 ---
 
 ## 3. Ausgangslage im Code [P]
