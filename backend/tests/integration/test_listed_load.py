@@ -25,6 +25,7 @@ from earthx.catalog.listed import (
     ListedAccess,
     ListedEntry,
     Region,
+    load_listed,
     load_regions,
 )
 from earthx.catalog.listed_store import apply_blocklist, supersede, write_hand_entries, write_regions
@@ -827,3 +828,19 @@ def test_a_hand_entry_with_only_technical_keywords_gets_the_words_of_its_categor
 def test_the_table_refuses_a_published_row_without_keywords(conn: psycopg.Connection, keywords: str) -> None:
     conn.execute(_PUBLISHED, {"id": "example-x", "key": "k"})
     _refused(conn, f"UPDATE public.earthx_listed_entry SET keywords = {keywords}", {}, psycopg.errors.CheckViolation)
+
+
+# --- the hand entries of the repo (M5-17) ----------------------------------------------------------------------------
+
+
+def test_the_hand_entries_of_the_repo_are_written_with_their_access_and_regions(conn: psycopg.Connection) -> None:
+    write_regions(conn, load_regions())
+    listed, blocked = write_hand_entries(conn, load_listed(), [], full_ids=[])
+    assert (sorted(listed), blocked) == (["corine-land-cover", "landsat-c2-l2"], ())
+    corine, landsat = _row(conn, "corine-land-cover"), _row(conn, "landsat-c2-l2")
+    assert (corine["account"], corine["delivery"], corine["data_kind"]) == ("free_account", "download", "vector")
+    assert (landsat["account"], landsat["delivery"], landsat["data_kind"]) == ("requester_pays", "download", "raster")
+    assert {"DE", "AT", "CH", "LI", "DE-BY", "AT-9"} <= set(corine["regions"])
+    assert not {"US", "AU", "BR"} & set(corine["regions"])
+    assert {"DE", "US", "AU", "BR", "AQ"} <= set(landsat["regions"])
+    assert (corine["state"], landsat["state"]) == ("published", "published")
