@@ -1,6 +1,6 @@
 # M5-17 — Stufe „gelistet“ für alle Datentypen und erste Handeinträge
 
-**Status (16.11.2026):** Plan mit Fragen F1–F3 und Umsetzung nach den Empfehlungen im selben Draft-PR; Lizenz-Einstufung und Attribution bestätigt Otto im PR (§5).
+**Status (16.11.2026):** Plan mit Fragen F1–F3 und Umsetzung nach den Empfehlungen im Draft-PR [#367](https://github.com/oscipal/earthX/pull/367); Antworten auf F1–F3 ändern nur die beiden YAML-Dateien. Lizenz-Einstufung und Attribution bestätigt Otto im PR (§5).
 **Aufgabe:** M5-17 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2. **Stufe B.** Hängt von M5-40 ab (gemergt mit #356, #358).
 **Grundlagen:** `adr/0033` (§5, §13: „erste Handeinträge als YAML unter `listed/`, nur von `catalog-load` gelesen“), `adr/0027` §4.1 (W0), §6.1 (`access.account`, Nachtrag `paid`, `access.delivery`), `adr/0025` §6.1a, `adr/0026` §8.2 (Kürzel CLC, LS), M5-40-Plan §5.2, §6 (A7, A11), §9a; M5-Plan §2 Punkt 9 (keine Marken) und Punkt 12.
 
@@ -86,7 +86,8 @@ Belegstufen: **P** am Quelltext gelesen (Stand `main` eb7079c), **S** Vorwissen 
 1. Log-Zeilen (§2 Punkt 12; M5-17 mit Auslegungen) und dieser Plan.
 2. `backend/catalog/listed/corine-land-cover.yaml`, `backend/catalog/listed/landsat-c2-l2.yaml`; jeder Wert mit seiner Herkunft im Kommentar wie bei `datasets/`.
 3. Tests: Einträge des Repos lesen und gehen ohne Verlust durch `to_plain`; Kategorie aus `categories.yaml`; Schlagworte überleben die Normalisierung ohne Ersatzwörter und enthalten deutsche und englische; keine Kennung zugleich in `datasets/` oder `retired.yaml`; `registry()` kennt sie nicht; Zugang wie bestellt. Integration: `write_hand_entries` mit den echten Einträgen und `regions.json` gibt CORINE die DACH-Staaten und Landsat alle Regionen; `api` liefert beide mit `earthx:access` und Link „Source“.
-4. `ruff`, `pytest`, `lint-imports`.
+4. `test_api_collection_search.py` leert nach `catalog-load` die Tabelle gelisteter Einträge: Seit M5-17 schreibt `catalog-load` die zwei Handeinträge, und diese Tests prüfen die erste Seite der vollen Einträge.
+5. `ruff`, `pytest`, `lint-imports`.
 
 Lokal bei Otto nach dem Merge (die Session ruft nichts ab):
 
