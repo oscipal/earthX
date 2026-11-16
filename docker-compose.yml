@@ -119,6 +119,21 @@ services:
       catalog-load:
         condition: service_completed_successfully
 
+  # One-off, run by hand (M5-09 plan §6): the shape of the BEV ATOM service and the headers of its files. The script
+  # stays out of the image and is mounted read-only; it needs only `earthx.gateway`, no database. Run it with:
+  #   docker compose run --build --rm bev-probe [--all] [--headers]
+  bev-probe:
+    profiles: ["measure"]
+    build:
+      context: ./backend
+      target: app
+    entrypoint: ["python", "/probe/probe.py"]
+    volumes:
+      - ./scripts/m5-09-bev:/probe:ro
+    environment:
+      PYTHONPATH: /app
+      EARTHX_USER_AGENT: ${EARTHX_USER_AGENT:-}
+
   # M3-23 (adr/0012): Garage replaces MinIO. Three parts, because Garage's
   # image has no shell (see below) and its `--default-bucket` flag reads the
   # S3 key only from an env var, not from a file — so secrets are generated

@@ -266,6 +266,49 @@ def _fsdi_double(
     return handler
 
 
+BEV = REGISTRY.get("bev-als-dgm")
+BEV_ATOM = 'xmlns="http://www.w3.org/2005/Atom" xmlns:inspire_dls="http://inspire.ec.europa.eu/schemas/inspire_dls/1.0"'
+
+
+def _bev_entry(row: int, year: int) -> str:
+    """One tile of the BEV service feed in the shape M5-09 measured (plan §2.4); the cells and DOIs are made up."""
+    tile = f"CRS3035RES50000mN{2_550_000 + 50_000 * (row // 11)}E{4_300_000 + 50_000 * (row % 11)}"
+    feed = f"https://data.bev.gv.at/geonetwork/srv/atom/describe/dataset?tile={tile}&amp;day={year}0915"
+    return (
+        f"<entry><title>ALS DTM {tile} Höhenraster 1m Stichtag 15.09.{year}</title>"
+        "<inspire_dls:spatial_dataset_identifier_code>"
+        f"https://doi.org/10.48677/{row:08x}-0000-4000-8000-{year:012x}</inspire_dls:spatial_dataset_identifier_code>"
+        f'<link rel="alternate" type="application/atom+xml" href="{feed}"/></entry>'
+    )
+
+
+def _bev_double(*, newest_year: int | None = None, tiles: int = 55, etag: str | None = '"synthetic"'):
+    """The ATOM service of the BEV: the service feed at two dates, one dataset feed per tile, the file on the host.
+
+    The newest date is the entry's own unless a test names another, so following the entry up keeps the replay green.
+    """
+    newest_year = newest_year or BEV.temporal_extent.start.year
+    entries = "".join(_bev_entry(row, year) for year in (newest_year - 1, newest_year) for row in range(tiles))
+    service = f"<feed {BEV_ATOM}>{entries}</feed>".encode()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.endswith("/atom/describe/service"):
+            return httpx.Response(200, content=service)
+        if path.endswith("/atom/describe/dataset"):
+            tile, day = request.url.params["tile"], request.url.params["day"]
+            href = f"https://data.bev.gv.at/download/ALS/DTM/{day}/ALS_DTM_{tile}.tif"
+            body = f'<feed {BEV_ATOM}><entry><link rel="alternate" type="image/tiff" href="{href}"/></entry></feed>'
+            return httpx.Response(200, content=body.encode())
+        if path.startswith("/download/") and request.method == "HEAD":
+            return httpx.Response(200, headers={"etag": etag} if etag else {})
+        if path.startswith("/download/") and request.method == "GET":
+            return httpx.Response(206, content=TIFF_HEADER[:16])
+        raise AssertionError(f"the double has no answer for {request.method} {request.url}")
+
+    return handler
+
+
 def _replay_rasters(module: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None:
     """The reading of a raster does not go through the gateway: stand a synthetic classification in its place."""
     from earthx.access.aoi_clouds import AoiClouds
@@ -308,6 +351,7 @@ DOUBLES: dict[str, Callable[[httpx.Request], httpx.Response]] = {
     "test_aoi_cloud_filter_live": _scl_double,
     "test_sentinel_1_grd_smoke": _sentinel_1_double,
     "test_swissalti3d_smoke": _fsdi_double(),
+    "test_bev_als_dgm_smoke": _bev_double(),
 }
 
 
@@ -442,3 +486,41 @@ async def test_the_swissalti3d_smoke_fails_on_a_collection_without_etag() -> Non
         await _replay_swissalti3d(
             "test_the_collection_carries_what_the_version_of_a_run_is_made_of", _fsdi_double(etag=None)
         )
+
+
+async def _replay_bev(test: str, handler: Callable[[httpx.Request], httpx.Response]) -> None:
+    path = next(path for path in SMOKE_FILES if path.stem == "test_bev_als_dgm_smoke")
+    module = _load(path)
+    _replaying(module, handler)
+    async with module.open_gateway() as gateway:
+        await getattr(module, test)(gateway=gateway)
+
+
+async def test_the_bev_smoke_fails_on_a_reference_date_after_the_entrys() -> None:
+    """A new reference date at the source is what asks for a new `temporal_extent` and attribution year (M5-09 A2)."""
+    year = BEV.temporal_extent.end.year + 1
+    with pytest.raises(AssertionError, match=f"the newest reference date is {year}-09-15"):
+        await _replay_bev(
+            "test_the_newest_reference_date_is_the_entrys_and_has_its_tiles", _bev_double(newest_year=year)
+        )
+
+
+async def test_the_bev_smoke_fails_on_another_count_of_tiles() -> None:
+    with pytest.raises(AssertionError, match="has 54 tiles"):
+        await _replay_bev("test_the_newest_reference_date_is_the_entrys_and_has_its_tiles", _bev_double(tiles=54))
+
+
+async def test_the_bev_smoke_fails_on_a_dataset_feed_without_the_file_of_its_tile() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/atom/describe/dataset"):
+            return httpx.Response(200, content=f"<feed {BEV_ATOM}><entry/></feed>".encode())
+        return _bev_double()(request)
+
+    with pytest.raises(AssertionError, match="no longer holds exactly one file"):
+        await _replay_bev("test_one_dataset_feed_holds_its_one_file_read_anonymously", handler)
+
+
+async def test_the_bev_smoke_fails_on_a_file_without_etag() -> None:
+    """Without an ETag the version of an input would be empty and no result cached."""
+    with pytest.raises(AssertionError, match="carries no ETag"):
+        await _replay_bev("test_one_dataset_feed_holds_its_one_file_read_anonymously", _bev_double(etag=None))
