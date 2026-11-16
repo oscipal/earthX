@@ -189,7 +189,7 @@ def deviation(points: list[tuple[float, float]], corners: list[tuple[float, floa
     return max(min(max(abs(a - c), abs(b - d)) for c, d in corners) for a, b in points)
 
 
-async def shape(gateway: Gateway) -> int:
+async def report_forms(gateway: Gateway) -> int:
     """Forms only: titles, rights, identifiers, polygons, paths of the files, stability of the feed."""
     first = await gateway.get(SERVICE_FEED)
     second = await gateway.get(SERVICE_FEED)
@@ -216,7 +216,8 @@ async def shape(gateway: Gateway) -> int:
             others[masked(title)] += 1
             continue
         rights[masked(entry.findtext("atom:rights", "-", NS))[:200]] += 1
-        namespaces[entry.findtext("inspire_dls:spatial_dataset_identifier_namespace", "-", NS)] += 1
+        namespace = entry.findtext("inspire_dls:spatial_dataset_identifier_namespace", "-", NS) or "-"
+        namespaces[urlsplit(namespace).hostname or masked(namespace)] += 1
         code = entry.findtext("inspire_dls:spatial_dataset_identifier_code", "", NS) or ""
         code_forms[re.sub(r"[0-9a-f]", "x", code)] += 1
         described = next(
@@ -269,7 +270,7 @@ async def main(read_all: bool, read_headers: bool, read_shape: bool) -> int:
     policy = Policy(allowed_hosts=frozenset({HOST}), host_intervals={HOST: INTERVAL_S})
     async with Gateway(policy) as gateway:
         if read_shape:
-            return await shape(gateway)
+            return await report_forms(gateway)
         try:
             service = await gateway.get(SERVICE_FEED)
         except (UpstreamError, GatewayError) as error:
@@ -336,8 +337,8 @@ async def main(read_all: bool, read_headers: bool, read_shape: bool) -> int:
                 fits = parts.hostname == HOST and FILE_PATH.match(parts.path) is not None
                 feed_shapes[f"file path of the known form: {'yes' if fits else 'no'}"] += 1
                 files.append(href)
-        for shape, count in sorted(feed_shapes.items()):
-            say(f"  dataset feeds: {shape}", count)
+        for form, count in sorted(feed_shapes.items()):
+            say(f"  dataset feeds: {form}", count)
 
         if not files:
             return 1
@@ -370,15 +371,20 @@ async def main(read_all: bool, read_headers: bool, read_shape: bool) -> int:
             await asyncio.sleep(INTERVAL_S)
         names = "crs, width, height, bands, dtype, nodata, res, block, overviews, layout, compression, area_or_point"
         say("COG headers", names)
-        for shape, count in shapes.most_common():
-            say(f"  {count} file(s)", shape)
+        for header, count in shapes.most_common():
+            say(f"  {count} file(s)", header)
     return 0
 
 
-if __name__ == "__main__":
+def run(argv: list[str]) -> int:
+    """The command line: parse, then run :func:`main` once."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument("--all", action="store_true", help="read every dataset feed of the newest DTM date")
     parser.add_argument("--headers", action="store_true", help="with --all: read the COG header of every file")
     parser.add_argument("--shape", action="store_true", help="forms of titles, paths, identifiers and polygons only")
-    arguments = parser.parse_args()
-    sys.exit(asyncio.run(main(arguments.all, arguments.headers, arguments.shape)))
+    arguments = parser.parse_args(argv)
+    return asyncio.run(main(arguments.all, arguments.headers, arguments.shape))
+
+
+if __name__ == "__main__":
+    sys.exit(run(sys.argv[1:]))
