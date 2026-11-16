@@ -1,6 +1,6 @@
 # ADR 0035 — Darstellung der Ergebnisse eines Operators (Looks)
 
-- **Status:** Entwurf (Claude, 2026-11-16), umgesetzt mit dem Nachtrag Ottos vom selben Tag; Bestätigung durch Otto offen. Die Nummer 0035 war beim Start frei; beim Merge prüfen, ob ein anderer PR sie inzwischen hat.
+- **Status:** **Angenommen** (Otto, 2026-11-16), umgesetzt mit seinem Nachtrag vom selben Tag. Bestätigt sind auch die Auslegungen: fester Bereich bei Aspect (Auto-scale in Perzentilen schaltet auf Werte 0/360), 0/100 bei Hillshade, 2/98 bei Slope, und Bänder von Aufträgen ohne geladene Beschreibung bekommen keinen Look (§4 Punkt 1). Die Nummer 0035 war beim Start frei; beim Merge prüfen, ob ein anderer PR sie inzwischen hat.
 - **Aufgabe:** Nachtrag zu M5-10 (Geländeoperator `terrain`), im PR UI-09 ([#366](https://github.com/oscipal/earthX/pull/366)). Stufe A, weil Otto die Vorgaben selbst gemacht hat; der Ort der Vorgabe ist die einzige Entscheidung von Claude.
 - **Grundlage:** `ENTSCHEIDUNGEN_2026-09-18.md` §2 (Funktionen auf Datensätze übertragen), `projektuebersicht.md` (Registry statt Sonderfälle im Code), `adr/0030` (Operator-Art `focal`), `adr/0023` F5.
 
