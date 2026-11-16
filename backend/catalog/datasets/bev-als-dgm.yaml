@@ -126,8 +126,8 @@ source:
   data_region: unknown
   asset_keys: []
   item_states: null
-  # The files carry ETag and Last-Modified (plan §2.4): the version of an input is the ETag.
   asset_href_rewrites: []
+  # The files carry ETag and Last-Modified (plan §2.4): the version of an input is the ETag.
   asset_checksum: null
 coverage:
   provider: local-sql
