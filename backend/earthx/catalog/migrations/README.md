@@ -71,6 +71,12 @@ Indizes für Seiten nach Titel und die Filter Fläche, Zeit, Region und Kategori
 `earthx_region` und `earthx_region_part` (Grenzen aus `backend/catalog/regions.json`, in Stücke geschnitten). Geschrieben
 von `catalog-load`, gelesen von `api` je Seite.
 
+`022_source_host.sql` — Zeiger, Unterbrecher und Plätze je Host aus M5-37 (`docs/plans/m5/m5-37-zeiger-je-host.md`
+§3): `earthx_source_host` (eine Zeile je Host: frühester Beginn der nächsten Anfrage, Fehler in Folge, Pausen) und
+`earthx_source_lease` (ein Platz je laufender Anfrage, nummeriert bis zur Grenze, mit Frist und Herzschlag). Für
+`materialize`, den Harvester und den Pyramidenbau über alle Instanzen; geschrieben je Anfrage auf einer eigenen
+Verbindung im Autocommit.
+
 Die Buchführungstabelle `earthx_migrations` gehört nicht hierher, sondern dem Läufer
 (`earthx/catalog/schema.py`) und wird von ihm angelegt. Sonst müsste jedes
 Migrationsverzeichnis sie erneut mitbringen.
