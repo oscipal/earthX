@@ -873,7 +873,10 @@ svg.lucide.icon-lead {
   .app.has-sheet {
     --map-right: var(--sheet-wide-width);
   }
+  /* A free area narrower than the box's minimum: the box lies over the panels at its sides (12, after them), never under them, and the
+     Data catalogue (12, after the box) still covers it (Otto, 14.11.2026, UI-08). */
   .overlay.status {
+    z-index: 12;
     left: calc((100% + var(--map-left) - var(--map-right)) / 2);
     width: max(var(--status-min-width), min(560px, calc(100% - var(--map-left) - var(--map-right) - 2 * var(--space-4))));
   }

@@ -6,6 +6,8 @@
 //     2. lies inside the window,
 //     3. is centred in the free area (from the rail or the panel beside it to the panel at the right) within 2 px, and is at least as wide as
 //        its minimum and no wider than 560 px, with its text not cut off and its red x inside it;
+//   tight window (1000 x 760, Otto 14.11.2026, UI-08): with a panel of the rail and the processing sheet less than 240 px stay free; the box
+//     keeps its minimum width, centred in the free area, and lies over both panels: neither covers any part of it (left and right end);
 //   the Data catalogue may cover it: with it open the box stays where it was (no shift), and it is not asked to be uncovered;
 //   a panel that closes gives the centre back (the box is where it was with none open).
 //   narrow window (360 x 740): the rule of the wide window does not apply (Otto, 14.11.2026: narrow windows are dealt with later). The check
@@ -163,6 +165,34 @@ async function run(browser, { theme, size }) {
     }
   }
   console.log(`${label}: ${records.join(' | ')}`);
+
+  // The tight window: less free area than the box's minimum; the box lies over the panels, not under them.
+  if (wide) {
+    await page.setViewportSize({ width: 1000, height: 760 });
+    for (const [name, setup] of [['tight, dock and processing sheet', { left: 'controls', right: 'sheet' }], ['tight, dock and settings bar', { left: 'layers', right: 'bar' }]]) {
+      await arrange(page, setup);
+      await showMessages(page);
+      const seen = await page.evaluate(READ);
+      const where = `${label}, ${name}`;
+      const leftEdge = Math.max(RAIL, ...seen.panels.filter((p) => p.side === 'left').map((p) => p.x + p.width));
+      const rightEdge = Math.min(seen.win.width, ...seen.panels.filter((p) => p.side === 'right').map((p) => p.x));
+      const ends = await page.evaluate(() => [...document.querySelectorAll('.status-stack > .toast')].map((el) => {
+        const r = el.getBoundingClientRect();
+        return [r.x + 4, r.x + r.width - 4].every((x) => el.contains(document.elementFromPoint(x, r.y + r.height / 2)));
+      }));
+      records.push(`${name}: free ${rightEdge - leftEdge} px, x ${seen.status.x.toFixed(1)} w ${seen.status.width.toFixed(1)}`);
+      for (const [i, t] of seen.toasts.entries()) {
+        const what = `${where}, toast ${i} "${t.text}"`;
+        if (!ends[i]) problems.push(`${what}: a panel covers an end of it`);
+        if (t.cut) problems.push(`${what}: the text is cut off`);
+        if (rightEdge - leftEdge < MIN_WIDTH && Math.abs(t.width - MIN_WIDTH) > 0.5) problems.push(`${what}: ${t.width.toFixed(1)} px wide, wanted its minimum ${MIN_WIDTH}`);
+        if (Math.abs(t.x + t.width / 2 - (leftEdge + rightEdge) / 2) > 2) problems.push(`${what}: not centred in the free area ${leftEdge}..${rightEdge}`);
+      }
+      if (name.includes('sheet')) await page.screenshot({ path: path.join(OUT, `status-box-${theme}-tight.png`) });
+    }
+    console.log(`${label}: ${records.slice(-2).join(' | ')}`);
+    await page.setViewportSize(VIEWPORTS[size]);
+  }
 
   // A panel that closes gives the centre back: none again is where none was.
   await arrange(page, { left: 'layers', right: 'sheet' });
