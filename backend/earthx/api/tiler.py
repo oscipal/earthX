@@ -150,13 +150,21 @@ from earthx.catalog.registry import (
     ViewerInfo,
 )
 from earthx.catalog.stats_cache import PooledStatsCache, PostgresStatsCache
-from earthx.gateway import CachingResolver, Gateway, GatewayError, user_agent_from_env
+from earthx.gateway import (
+    CachingResolver,
+    Gateway,
+    GatewayError,
+    ReadSlots,
+    source_instances_from_env,
+    user_agent_from_env,
+)
 from earthx.gateway.gdal import crop_gdal_options, tile_gdal_options
 from earthx.logging import RequestIdMiddleware, configure_logging, get_request_id
 from earthx.objectstore.errors import StoreConfigError
 from earthx.objectstore.results import Store
 from earthx.readers import AssetRejected, GeoreferenceMismatch
 from earthx.readers.cog import AssetPath
+from earthx.readers.limits import limit_reads
 from earthx.readers.zarr_reader import ZarrAsset, ZarrAssetError, close_shared_gateways
 
 LOGGER = logging.getLogger("earthx.api.tiler")
@@ -2308,7 +2316,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     user_agent_from_env()  # M5-18 §3.1: a bad EARTHX_USER_AGENT stops the start
     async with (
         cache_pool() as pool,
-        Gateway(app.state.earthx_policy, resolve=app.state.earthx_resolver) as gateway,
+        Gateway(app.state.earthx_policy, resolve=app.state.earthx_resolver, slots=app.state.earthx_read_slots) as gateway,
     ):
         app.state.earthx_cache_pool = pool
         # Only with a pool: without a database this process still starts and serves
@@ -2380,7 +2388,8 @@ def build_app(
     # (K-01/K-02) — the compose command starts it with `--no-access-log`, so
     # `RequestIdMiddleware` below is this process's only access log.
     configure_logging()
-    policy = policy_from_registry(registry)
+    # The share of each source's cap per host this instance holds (M5-36 §5.1); a bad value stops the start.
+    policy = policy_from_registry(registry, instances=source_instances_from_env())
     app = FastAPI(title="earthx-tiler", lifespan=lifespan)
     app.add_middleware(RequestIdMiddleware)
     # The headers of a mosaic tile that shows a part of its scenes (adr/0032 §6.2): known only once it is read.
@@ -2388,6 +2397,11 @@ def build_app(
     # Read at request time through the two small dependencies above, so a route
     # never closes over something a test cannot replace.
     app.state.earthx_policy = policy
+    # One counter per host for the process (M5-36 §4.1, §5.2): every GDAL reader of a source, the Zarr stores and the
+    # item fetches of the gateway share it. A reader takes its slot in the thread that opens it, never in the event
+    # loop: a slot taken before the thread pool and a thread that waits for a slot would wait for each other.
+    app.state.earthx_read_slots = ReadSlots(policy)
+    limit_reads(app.state.earthx_read_slots)
     # Two profiles, because GDAL reads the size of its `/vsicurl/` cache once per
     # process but `MULTIRANGE` at every call, in the calling thread (NM4-26 §13, §18):
     # the tile routes, statistics, TileJSON, mosaic and result tiles read under the

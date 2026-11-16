@@ -58,6 +58,7 @@ def main() -> None:
             pass
 
         def answer(self, body: bool) -> None:
+            began = time.monotonic()
             path = os.path.join(args.root, os.path.basename(self.path.split("?")[0]))
             if not os.path.isfile(path):
                 self.send_response(404)
@@ -89,8 +90,9 @@ def main() -> None:
                         take_link(len(data))
                         self.wfile.write(data)
                         sent += len(data)
+            # `t0`/`t1`: when the answer began and ended, for the requests in flight at once (M5-36).
             record = {"conn": self.connection_id, "method": self.command, "url": self.path, "start": start,
-                      "bytes": sent}
+                      "bytes": sent, "t0": began, "t1": time.monotonic()}
             log.write(json.dumps(record) + "\n")
 
         def do_GET(self) -> None:

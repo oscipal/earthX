@@ -28,6 +28,18 @@ def union_bytes(ranges: list[tuple[int, int]]) -> int:
     return total + (current[1] - current[0] if current else 0)
 
 
+def _in_flight(source: list[dict]) -> int | None:
+    """The most requests the source answered at the same time (M5-36), from the times each answer began and ended."""
+    if not source or "t0" not in source[0]:
+        return None
+    events = sorted([(row["t0"], 1) for row in source] + [(row["t1"], -1) for row in source])
+    now = most = 0
+    for _, step in events:
+        now += step
+        most = max(most, now)
+    return most
+
+
 def main() -> None:
     rows = [json.loads(line) for line in open(sys.argv[1])]
     fetches = [row for row in rows if "source_item_fetch" in row]
@@ -44,6 +56,7 @@ def main() -> None:
             by_url[row["url"]].append((row["start"], row["start"] + row["bytes"]))
     out.update(source_requests=len(source), source_heads=sum(row["method"] == "HEAD" for row in source),
                source_connections=len({row["conn"] for row in source}),
+               source_in_flight_max=_in_flight(source),
                source_MB=round(sum(row["bytes"] for row in source) / 1e6, 1),
                needed_MB=round(sum(union_bytes(ranges) for ranges in by_url.values()) / 1e6, 1))
     print(json.dumps(out))

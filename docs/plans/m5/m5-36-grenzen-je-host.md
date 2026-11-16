@@ -1,6 +1,6 @@
 # M5-36 — Grenzen je Host in der Registry, Teilbudget je Instanz: Plan-Schritt
 
-**Status (16.11.2026):** Plan angenommen (Otto, 16.11.2026: G1–G6 je 1, §8a), **Stufe B**. PR 1 nach §7 umgesetzt und gemessen (§9), PR 2 folgt.
+**Status (16.11.2026):** Plan angenommen (Otto, 16.11.2026: G1–G6 je 1, §8a), **Stufe B**. PR 1 (#360) gemergt; PR 2 (#365) umgesetzt und gemessen (§9.3, §9.4), H1 beantwortet (§9.5a).
 **Aufgabe:** M5-36 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2, Auftrag von Otto vom 16.11.2026.
 **Grundlagen:** `plans/m5/m5-35-skalierbarkeit.md` B1 (§2), B3 (§4.2), F1 = 1 (§8a); `adr/0032` §8.2 und Nachtrag 14.11.2026 (`TileGate`); `adr/0023` §3.1 (Fair Use der FSDI); `adr/0005` §6 (6 Verbindungen je Host); `architekturplan.md` 3.1, 6.5; KLAERUNGEN B8, B9.
 
@@ -224,3 +224,49 @@ Synthetische Quelle (`slow_source.py`, RTT 170 ms, Verbindungsaufbau 350 ms, COG
 | Ansicht, je Kachel beim Client (s) | 1625/1625 | 15,66 | 15,53 | −0,9 % | 24,80 | 24,57 | −0,9 % |
 
 Alle 1625 Kacheln je Stand mit `200`; die Prüfsummen der Raster des Zuschnitts sind in allen Läufen beider Stände gleich. **Ergebnis:** kein Fall über +5 % (G5). Die Rückgänge liegen im Rauschen. Grenze 6 wirkt in PR 1 nur auf die Item-Abrufe (Earth Search, jetzt über den gemeinsamen Zähler); GDAL-Lesen ist in PR 1 noch nicht begrenzt. Die Fälle mit Grenze 6 und 32 für GDAL und mit `EARTHX_SOURCE_INSTANCES=2` (§6) misst PR 2.
+
+### 9.3 PR 2, Stand 16.11.2026
+
+- **`EARTHX_SOURCE_INSTANCES`** (`gateway.source_instances_from_env`): Zahl der Prozesse `api` und `tiler` zusammen, leer = 1, nur ASCII-Ziffern 1–256; ein anderer Wert hält den Start an, die Meldung nennt die Variable, nicht den Wert. `policy_from_registry(registry, instances=…)` gibt jeder Instanz `max(1, Grenze // N)` je Host (`instance_share`), auch für die Vorgabe 6; ist eine Grenze kleiner als N, schreibt der Start eine Warnung mit den Hosts. In Compose für `api` und `tiler`, in `.env.example` und README.
+- **`api`:** eine `ReadSlots` je Prozess, auch für das Gateway der Suche (`build_gateway(policy, slots)`). Die Wolken- und Überflugfilter nehmen ihre Plätze wie bisher selbst; der Faden-Limiter dort bleibt bei der Vorgabe-Grenze (Docstring nachgeführt).
+- **`tiler`:** `ReadSlots(policy)` in `build_app`, gesetzt als Zähler des Prozesses (`readers.limits.limit_reads`). Jeder `CogReader` hält einen Platz seines Hosts vom Öffnen bis zum Schließen; ein Kontext, der den Host schon hält, nimmt keinen zweiten (sonst wartet ein Download oder ein Schritt über mehrere Assets eines Hosts auf sich selbst). Die erste Szene einer Mosaik-Kachel mit Schritten öffnet der Faden der Route ohne Platz (nur für ihre Bänder); gelesen wird jede Szene, auch die erste, unter einem eigenen Platz in ihrem Faden (`uncounted`, `read_slots`). So gilt die Grenze für die Lesezugriffe der vier Fäden, und kein Faden hält einen Platz, während er auf einen anderen wartet (eine erste Fassung hielt den Platz der ersten Szene für die ganze Kachel; die Messung zeigte 4 gleichzeitige Anfragen bei Grenze 3). Der gemeinsame Zarr-Client und die Item-Abrufe des Gateways fragen denselben Zähler. Ergebnisse aus dem eigenen Objektspeicher nehmen keinen Platz.
+- **Abweichung von §5.2, Warten im Faden statt vor dem Thread-Pool:** Ein Platz im Event-Loop vor dem Faden und ein Faden, der auf einen Platz wartet (Download, Flächen-Statistik, Szenen einer Mosaik-Kachel), können sich gegenseitig für immer festhalten (Befund der Prüfung von PR 2: alle Plätze bei Anfragen, die auf einen Faden warten, alle Fäden bei Anfragen, die auf einen Platz warten). Deshalb nimmt jeder Leser seinen Platz in dem Faden, der liest; jeder Inhaber eines Platzes liest gerade. Folge: Bei einer kleinen Grenze und vielen gleichzeitigen Kacheln eines Hosts warten Fäden des gemeinsamen Pools (M5-35 §4.2); das kostet Zeit, hält aber nichts an (Messung §9.4, Fall „40 Verbindungen“). Ein langsamer Client hält keinen Platz, weil er beim Schließen des Lesers zurückgeht.
+- **Abweichung von §5.2, Zähler im Modul `readers` statt Protokoll für `access`:** Der Platz wird in `CogReader` genommen, der einzigen Stelle, an der GDAL eine Quelle öffnet; so deckt er alle Lesestellen ab (Einzel- und Rechenkachel, TileJSON, Statistik, Mosaik, Ersatz, Download, Flächen-Statistik), ohne jede Route anzufassen. `readers` darf `gateway` importieren; `access` importiert weiter nichts aus `gateway`.
+- **Bekannte Grenzen (bis M6):** (1) Liest eine Anfrage COG und Zarr vom selben Host, kann sie bei einer Grenze unter der Zahl ihrer Leser auf sich selbst warten; heute hat kein Eintrag Zarr. (2) Ein Datensatz mit Assets auf zwei Hosts könnte bei ausgeschöpften Grenzen zwei Anfragen gegeneinander sperren (Reihenfolge des Öffnens); heute hat jeder Eintrag einen Asset-Host. (3) Worker, `materialize` und Pyramidenbau lesen wie bisher (M5-37). (4) Das Teilbudget setzt eine feste, bekannte Zahl der Instanzen voraus; bei Autoskalierung gilt es nur ungefähr (M5-35 §2.3 G1), exakt erst mit dem Egress-Proxy in M6.
+- **Tests:** Zahl der Instanzen und Anteil (Grenzfälle, falsche Werte, Nicht-ASCII-Ziffern), Mechanismus in `readers.limits` (ohne Zähler, Host außerhalb der Allowlist, zweiter Leser im selben Faden, Schließen in anderer Reihenfolge, Fäden über der Grenze, `uncounted` und `read_slots`, fehlgeschlagenes Öffnen, Ergebnis des Objektspeichers), Routen mit Grenze 1: alle Mosaik-Kacheln mit und ohne Schritte, Einzel- und Rechenkachel, Kacheln und Downloads gleichzeitig mit drei Fäden.
+- **Messstand:** `run_tiler.py` bekommt eine vierte Naht (der Host eines Lesens ist der Asset-Host der synthetischen Items, nicht die lokale Adresse); `slow_source.py` schreibt Beginn und Ende jeder Antwort, `summary.py` nennt die höchste Zahl gleichzeitiger Anfragen an der Quelle.
+- `docs/cloud-umgebung.md` (in §7 erwähnt) beschreibt die Cloud-Sitzung, nicht den Betrieb; dort gehört kein Satz zur Zahl der Instanzen hin.
+
+### 9.4 Messung PR 2
+
+Synthetische Quelle wie §9.2 (RTT 170 ms, Verbindungsaufbau 350 ms), echter `tiler` mit Postgres, `main` 10f55cb gegen den Branch 7ca80c0, 5 Wiederholungen, die fünf Stände je Wiederholung im Wechsel. Die Grenze gilt dem Asset-Host der synthetischen Items (ein S3-Bucket, Grenze 32 aus `hosts.yaml`); für „Grenze 6“ ist sie in einer Kopie des Branches auf 6 gesetzt. „2 Instanzen“ ist eine Instanz mit `EARTHX_SOURCE_INSTANCES=2`, also ihrem Anteil (16 bzw. 3); zwei Instanzen zusammen stellten das Doppelte. Fälle: Mosaik-Kachel mit NDVI aus 4 Szenen (kalt, warm), Zuschnitt 0,05°, Ansicht 13 Szenen × 25 Kacheln über 6 Verbindungen wie ein Browser mit HTTP/1.1 und dieselbe Ansicht über 40 Verbindungen (§6: viele Einzelkacheln auf einem Host). Keine echte Quelle.
+
+| Fall | main | Grenze 32 | Grenze 6 | 2 Inst., 16 | 2 Inst., 3 |
+|---|---|---|---|---|---|
+| Mosaik-Kachel kalt, Median (s) | 3,61 | +0,3 % | −0,2 % | +8,2 % | +38,0 % |
+| Mosaik-Kachel warm, Median (s) | 0,28 | +1,1 % | −6,5 % | −7,2 % | +13,7 % |
+| Zuschnitt, Median (s) | 2,45 | −1,6 % | −0,4 % | −0,4 % | −0,8 % |
+| Ansicht 6 Verb., Wandzeit Median (s) | 22,2 | +0,5 % | −1,4 % | −0,5 % | +31,1 % |
+| Ansicht 6 Verb., je Kachel p95 (s) | 21,07 | +0,9 % | −1,3 % | −0,7 % | +30,6 % |
+| Ansicht 40 Verb., Wandzeit Median (s) | 19,8 | +1,0 % | **+30,3 %** | +1,0 % | +96,0 % |
+| Ansicht 40 Verb., je Kachel p95 (s) | 18,92 | −0,2 % | **+30,7 %** | +1,4 % | +98,6 % |
+| höchstens gleichzeitig an der Quelle | 31 | 27 | **6** | **16** | **3** |
+
+- **Die Grenze hält:** In keinem der 25 Läufe eines Standes stellte die Instanz mehr gleichzeitige Anfragen, als ihr Anteil erlaubt. `main` stellte bis zu 31.
+- **Kein Bild fehlt:** alle 3250 Kacheln je Stand mit `200`, die Raster des Zuschnitts in allen Läufen gleich.
+- **G5 bei einer Instanz:** Grenze 32 in allen Fällen innerhalb +5 % (Median und p95). Grenze 6 innerhalb +5 % in allen Fällen außer der Ansicht über 40 Verbindungen: **+30 %**. Dort stellte `main` bis zu 31 Anfragen gleichzeitig an einen Host, genau die Last, die die Grenze verbietet; mit 6 Verbindungen je Host (Browser über HTTP/1.1) gibt es keinen Unterschied. Entscheidung: H1 (§9.5).
+- **Zwei Instanzen** (nicht Teil von G5): Bei Grenze 32 kaum ein Unterschied; der Anstieg der kalten Mosaik-Kachel um 8 % kommt von den Item-Abrufen bei Earth Search (Grenze 6, Anteil 3 für 4 Items). Bei Grenze 6 (Anteil 3) wird es spürbar langsamer: der Preis dafür, dass zwei Instanzen zusammen bei 6 bleiben.
+- Die erste Messung (vor 7ca80c0) zeigte bei Grenze 3 vier gleichzeitige Anfragen der Mosaik-Kachel mit Schritten; behoben, siehe §9.3.
+
+### 9.5 Frage an Otto (beantwortet, §9.5a)
+
+**H1 — Viele gleichzeitige Kacheln auf einem Host mit kleiner Grenze werden langsamer (Ansicht über 40 Verbindungen, Grenze 6: +30 %). Was gilt?**
+1. Hinnehmen: Das ist die Wirkung der Grenze selbst; betroffen sind nur Hosts mit Grenze 6 (heute FSDI für swissALTI3D und Earth Search für Items), und nur, wenn mehr als 6 Lesezugriffe zugleich an einen Host gehen; bei 6 Browser-Verbindungen kein Unterschied **(Empfehlung)**
+2. Grenze der FSDI anheben (z. B. 12): schneller, aber doppelte Last auf eine Quelle mit Fair-Use-Regel
+3. Das Teilbudget nur für S3-Hosts anwenden, Behördenserver bleiben bis M6 ohne Grenze je Instanz
+
+### 9.5a Antwort Otto (16.11.2026)
+
+| Frage | Antwort | Folge |
+|---|---|---|
+| H1 | 1: hinnehmen | Viele gleichzeitige Kacheln auf einem Host mit kleiner Grenze dürfen langsamer werden (gemessen: 40 Verbindungen, Grenze 6, +30 %); das ist die gewollte Wirkung der Grenze. G5 gilt damit für alle anderen Fälle; die Grenzen in `hosts.yaml` bleiben, das Teilbudget gilt für alle Hosts |

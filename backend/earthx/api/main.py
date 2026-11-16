@@ -57,7 +57,7 @@ from earthx.api.processing_route import router as processing_router
 from earthx.catalog.datasets import registry as dataset_registry
 from earthx.catalog.registry import DatasetRegistry
 from earthx.catalog.search_index import check_search_index
-from earthx.gateway import CachingResolver, ReadSlots, user_agent_from_env
+from earthx.gateway import CachingResolver, ReadSlots, source_instances_from_env, user_agent_from_env
 from earthx.gateway.gdal import gdal_options
 from earthx.logging import RequestIdMiddleware, configure_logging
 from earthx.objectstore.results import Store
@@ -122,7 +122,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 # M5-22 plan §3.4, A3: a new search text never runs on an old index.
                 await check_search_index(app.state.earthx_registry, conn)
             app.state.earthx_cache_pool = pool
-            app.state.earthx_gateway = build_gateway(app.state.earthx_registry)
+            app.state.earthx_gateway = build_gateway(app.state.earthx_policy, app.state.earthx_read_slots)
             # `timeout`: a request that waits for one of the four connections waits 5 s, not 30,
             # so a flood of job requests cannot hold every worker thread of the process for long
             # (the health check shares them).
@@ -224,8 +224,9 @@ def build_app(
     app.state.earthx_job_api = None
     # DS-03: the search measures the cloud share of a scene itself (`api.aoi_cloud_filter`), so this process reads
     # rasters like the tiler: the registry's allowlist, the gateway's GDAL options, and one limit on the readers
-    # per host that every search of the process shares (plan §6.9 F2d).
-    policy = policy_from_registry(registry)
+    # per host that every search and the gateway of the process share (plan §6.9 F2d, M5-36 §4.1). The caps are this
+    # instance's share of each source's cap (M5-36 §5.1); a bad EARTHX_SOURCE_INSTANCES stops the start.
+    policy = policy_from_registry(registry, instances=source_instances_from_env())
     app.state.earthx_policy = policy
     app.state.earthx_resolver = CachingResolver()
     app.state.earthx_gdal_options = gdal_options(policy)
