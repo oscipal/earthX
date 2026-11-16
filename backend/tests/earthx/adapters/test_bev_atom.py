@@ -12,7 +12,6 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
-from pyproj import Transformer
 
 from earthx.adapters import (
     ADAPTER_SPECS,
@@ -89,6 +88,9 @@ def entry(
         "<georss:polygon>47 13 47 14 48 14 48 13 47 13</georss:polygon></entry>"
     )
 
+
+#: The entries of the newest date but the first tile's.
+NEWEST_OTHERS = [entry(c, NEWEST) for c in CELLS[1:]]
 
 SERIES = "".join(
     f"<entry><title>Serie ALS {model} Höhenraster 1m Stichtag 15.09.{year}</title></entry>"
@@ -180,12 +182,11 @@ class TestNormalRun:
     async def test_the_footprint_is_the_cell_of_the_name_not_the_polygon_of_the_feed(self) -> None:
         gateway, _ = source(standard())
         item = next(i for i in (await _run(gateway)).items if i["id"].endswith(tile(CELLS[0])))
-        to_wgs84 = Transformer.from_crs("EPSG:3035", "EPSG:4326", always_xy=True)
-        north, east = CELLS[0]
-        for x, y in ((east, north), (east + 50000, north), (east + 50000, north + 50000), (east, north + 50000)):
-            lon, lat = to_wgs84.transform(x, y)
-            assert [round(lon, 7), round(lat, 7)] in item["geometry"]["coordinates"][0]
         ring = item["geometry"]["coordinates"][0]
+        # The lower left corner the name gives and the corner 50 km to the north east, in WGS 84 (EPSG:3035 inverse,
+        # computed once with PROJ 9 and written down here).
+        assert [16.2750779, 46.7810219] in ring
+        assert [16.9863711, 47.188906] in ring
         assert ring[0] == ring[-1]
         assert len(ring) == 4 * bev_atom.EDGE_POINTS + 1
         xs, ys = [p[0] for p in ring], [p[1] for p in ring]
@@ -200,17 +201,20 @@ class TestNormalRun:
         assert len(seen) == 1
 
     @pytest.mark.parametrize(
-        "changed",
+        "body",
         [
-            entry(CELLS[0], NEWEST, updated="2026-01-01T00:00:00.000000ZZ"),
-            entry(CELLS[0], NEWEST, doi=code(CELLS[1], OLDER)),
+            service(entry(CELLS[0], NEWEST, updated="2026-01-01T00:00:00.000000ZZ"), *NEWEST_OTHERS),
+            service(entry(CELLS[0], NEWEST, doi=code(CELLS[1], OLDER)), *NEWEST_OTHERS),
+            service(entry(CELLS[0], NEWEST).replace("&amp;day=20250915", "&amp;day=20250915&amp;v=2"), *NEWEST_OTHERS),
+            service(*(entry(c, NEWEST) for c in [*CELLS, (2600000, 4700000)])),
+            service(*NEWEST_OTHERS),
         ],
+        ids=["updated", "doi", "feed link", "tile added", "tile gone"],
     )
-    async def test_a_changed_entry_of_the_newest_date_changes_the_version(self, changed: str) -> None:
+    async def test_a_change_of_the_newest_date_changes_the_version(self, body: bytes) -> None:
         first, _ = source(standard())
         version = (await _run(first)).source_version
-        others = [entry(c, NEWEST) for c in CELLS[1:]]
-        gateway, _ = source(service(changed, *others))
+        gateway, _ = source(body)
         outcome = await _run(gateway, known_version=version)
         assert outcome.status == "loaded"
         assert outcome.source_version != version
@@ -233,6 +237,22 @@ class TestWhatIsNotLoaded:
         gateway, _ = source(standard().replace(b"</feed>", odd + b"</feed>"))
         outcome = await _run(gateway)
         assert (outcome.unknown, len(outcome.items)) == (1, 3)
+
+    async def test_a_title_with_a_date_that_is_no_day_is_unknown(self) -> None:
+        odd = entry(CELLS[0], NEWEST, title=f"ALS DTM {tile(CELLS[0])} Höhenraster 1m Stichtag 31.02.2025")
+        gateway, _ = source(standard().replace(b"</feed>", odd.encode() + b"</feed>"))
+        outcome = await _run(gateway)
+        assert (outcome.unknown, len(outcome.items)) == (1, 3)
+
+    @pytest.mark.parametrize("links", [0, 2], ids=["no dataset feed", "two dataset feeds"])
+    async def test_an_entry_without_one_dataset_feed_is_not_loadable(self, links: int) -> None:
+        first = entry(CELLS[0], NEWEST)
+        link = first[first.index('<link rel="alternate"') : first.index("/>", first.index('<link rel="alternate"')) + 2]
+        gateway, seen = source(service(first.replace(link, link * links), *NEWEST_OTHERS))
+        with pytest.raises(UpstreamShapeError, match="1 of 3 tiles"):
+            await _run(gateway)
+        # The two other tiles' feeds only: the entry without one feed is never followed.
+        assert len(seen) == 1 + 2
 
     async def test_a_newest_date_after_the_entry_stops_the_run(self) -> None:
         gateway, _ = source(service(*(entry(c, d) for d in (NEWEST, (15, 9, 2026)) for c in CELLS)))
@@ -267,6 +287,7 @@ class TestWhatIsNotLoaded:
             dataset_feed(file_url(CELLS[0], OLDER)),
             dataset_feed(file_url(CELLS[0], NEWEST, "DSM")),
             404,
+            410,
         ],
         ids=[
             "no file",
@@ -279,6 +300,7 @@ class TestWhatIsNotLoaded:
             "other date",
             "dsm",
             "404",
+            "410",
         ],
     )
     async def test_one_tile_without_its_one_file_aborts_a_small_run(self, answer: bytes | int) -> None:
@@ -293,7 +315,7 @@ class TestWhatIsNotLoaded:
         outcome = await _run(gateway, wide)
         assert (outcome.listed, outcome.in_bucket, outcome.missing) == (121, 120, 1)
 
-    async def test_a_tile_outside_the_extent_is_unknown(self) -> None:
+    async def test_a_tile_outside_the_extent_is_not_loadable(self) -> None:
         outside = (2_000_000, 3_000_000)
         cells = [*CELLS, outside]
         gateway, _ = source(service(*(entry(c, NEWEST) for c in cells)))
@@ -328,8 +350,13 @@ class TestBrokenFeeds:
         with pytest.raises(UpstreamShapeError, match="service feed is not valid XML"):
             await _run(gateway)
 
-    async def test_a_dataset_feed_that_is_no_xml_fails_the_run(self) -> None:
-        gateway, _ = source(standard(), {feed_url(CELLS[0], NEWEST): b"<feed"})
+    @pytest.mark.parametrize(
+        "body",
+        [b"<feed", b'<?xml version="1.0"?><!DOCTYPE f [<!ENTITY e "x">]><feed>&e;</feed>'],
+        ids=["not xml", "entity"],
+    )
+    async def test_a_dataset_feed_that_is_no_safe_xml_fails_the_run(self, body: bytes) -> None:
+        gateway, _ = source(standard(), {feed_url(CELLS[0], NEWEST): body})
         with pytest.raises(UpstreamShapeError, match="dataset feed is not valid XML"):
             await _run(gateway)
 
@@ -343,10 +370,19 @@ class TestRegistryErrors:
             await bev_atom.materialize_items(config, gateway=gateway, known_version=None)
         assert seen == []
 
-    async def test_an_unknown_model_is_refused(self) -> None:
+    async def test_an_unknown_model_is_refused_before_any_request(self) -> None:
         other = replace(BEV, source=replace(BEV.source, source_collection_id="ALS DOP"))
+        gateway, seen = source(standard())
         with pytest.raises(UnsupportedSource, match="ALS DTM"):
-            await _run(source(standard())[0], other)
+            await _run(gateway, other)
+        assert seen == []
+
+    async def test_an_entry_without_an_end_of_its_period_is_refused_before_any_request(self) -> None:
+        open_ended = replace(BEV, temporal_extent=replace(BEV.temporal_extent, end=None))
+        gateway, seen = source(standard())
+        with pytest.raises(UnsupportedSource, match="no end"):
+            await _run(gateway, open_ended)
+        assert seen == []
 
     async def test_the_dsm_reads_its_own_tiles(self) -> None:
         dsm = replace(BEV, source=replace(BEV.source, source_collection_id="ALS DSM"))
