@@ -41,7 +41,7 @@ from tests.integration.listed_rows import insert_row
 pytestmark = pytest.mark.anyio
 
 FULL = {config.dataset_id: config.title for config in REGISTRY}
-GLOBAL_FULL = sorted(set(FULL) - {"swissalti3d"})
+GLOBAL_FULL = sorted(set(FULL) - {"swissalti3d", "bev-als-dgm"})
 _EXACT_LON, _EXACT_LAT = "7.123457", "46.654321"
 KENYA = SpatialExtent(bbox=(36.0, -1.0, 37.0, 0.0))
 

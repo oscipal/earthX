@@ -95,7 +95,7 @@ def test_zero_point_without_a_search():
 
 # --- measures on a synthetic catalogue ---------------------------------------------------------------------------------
 
-# Z has an id but is not loaded, like BEV today; N has no id yet, like MeteoSchweiz.
+# Z has an id but is not loaded, like BEV before M5-09; N has no id yet, like MeteoSchweiz.
 CATALOGUE = Catalogue({"a": frozenset(), "b": frozenset(), "c": frozenset({"terrain"}), "x": frozenset()})
 
 

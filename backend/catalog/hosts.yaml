@@ -9,6 +9,10 @@ hosts:
     connections: 6
     interval_s: 1.0
     reason: FSDI, fair use; swisstopo may throttle excessive use (adr/0023 §3.1, M5-08 plan §4.2)
+  data.bev.gv.at:
+    connections: 6
+    interval_s: 1.0
+    reason: BEV, one Apache server without a CDN for feeds and files; as the FSDI (M5-09 F3, plan §2.4)
   earth-search.aws.element84.com:
     connections: 6
     reason: STAC API of Element 84, no published limit; the platform's default of adr/0005 §6

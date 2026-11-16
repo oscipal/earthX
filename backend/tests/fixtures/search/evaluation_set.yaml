@@ -16,7 +16,7 @@ datasets:
   WC20: {id: esa-worldcover-2020}
   WC21: {id: esa-worldcover-2021}
   ALTI: {id: swissalti3d}
-  BEV: {id: bev-als-dgm, provisional: true}
+  BEV: {id: bev-als-dgm}
   MCH: {id: null}
   HYR: {id: null}
   CLC: {id: null}
