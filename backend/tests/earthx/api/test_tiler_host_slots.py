@@ -18,7 +18,6 @@ from fastapi.testclient import TestClient
 from earthx.api.dependencies import policy_from_registry
 from earthx.catalog.datasets import read_registry
 from earthx.gateway import ReadSlots
-from earthx.readers.limits import limit_reads
 from tests.earthx.api.test_tiler_mosaic_operator import (
     CLOUDS_THEN_NDVI,
     DATASET,
@@ -68,7 +67,6 @@ def spy(monkeypatch: pytest.MonkeyPatch) -> Iterator[Spy]:
     monkeypatch.setattr(ReadSlots, "slot", in_thread)
     monkeypatch.setattr(ReadSlots, "aslot", in_loop)
     yield seen
-    limit_reads(None)
 
 
 @pytest.fixture

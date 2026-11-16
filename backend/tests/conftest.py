@@ -17,6 +17,7 @@ import pytest
 import rasterio.session
 
 from earthx.logging import JsonFormatter
+from earthx.readers.limits import limit_reads
 from tests.worker_database import drop_worker_database, load_session_env, use_worker_database
 
 # rasterio in the test process as in the image: without an AWS session (NM4-23).
@@ -133,6 +134,17 @@ def no_network(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.setattr(socket.socket, "connect", guarded_connect)
     monkeypatch.setattr(socket, "getaddrinfo", guarded_getaddrinfo)
     yield
+
+
+@pytest.fixture(autouse=True)
+def no_read_limit_left_over() -> Iterator[None]:
+    """Take the counter per host a tiler app set for its process away after each test (M5-36 §5.2).
+
+    `build_app` sets it for the whole process, as the tiler does once at start; a later test in the same worker would
+    otherwise read its files under the caps of an app it never built.
+    """
+    yield
+    limit_reads(None)
 
 
 class _JsonLineCapture(logging.Handler):
