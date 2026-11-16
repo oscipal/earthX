@@ -36,7 +36,9 @@ products of §12.3) it is used as it stands.
 from __future__ import annotations
 
 import asyncio
+import atexit
 import logging
+import threading
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
@@ -101,8 +103,8 @@ STORE_SUFFIX = ".zarr"
 # (M2-09b-2's bug fix: a tile URL naming one variable can only ever be grayscale).
 VARIABLE_LIST_SEPARATOR = ","
 
-# How long `close` waits for the gateway of a store to shut down on the loop it was
-# built on. Generous: it only has to outlast connections that are already idle.
+# How long closing waits for a shared gateway to shut down on the loop it was built on.
+# Generous: it only has to outlast connections that are already idle.
 CLOSE_TIMEOUT_S = 5.0
 
 
@@ -153,6 +155,43 @@ def open_gateway(policy: Policy, resolve: Resolver) -> Gateway:
     return Gateway(policy, resolve=resolve)
 
 
+_SHARED_LOCK = threading.Lock()
+_SHARED: dict[tuple[Any, ...], Gateway] = {}
+
+
+def shared_gateway(policy: Policy, resolve: Resolver) -> Gateway:
+    """The one gateway of this process for ``policy`` on the running event loop (M5-36 §4.2).
+
+    zarr drives every store call on one event loop of its own, in a thread of its own (``zarr.core.sync``), and an
+    ``httpx`` client belongs to the loop it first ran on. So every store of the process asks here at its first read,
+    and all stores share one client and one cap per host — four Zarr scenes of a mosaic tile no longer put four times
+    the cap on one host (M5-35 §2.1). The seam :func:`open_gateway` is part of the key, so a test that replaces it
+    gets a gateway of its own. Entries of loops that have closed are dropped on the way.
+    """
+    loop = asyncio.get_running_loop()
+    key = (loop, policy, resolve, open_gateway)
+    with _SHARED_LOCK:
+        for stale in [other for other in _SHARED if other[0].is_closed()]:
+            del _SHARED[stale]
+        gateway = _SHARED.get(key)
+        if gateway is None:
+            gateway = _SHARED[key] = open_gateway(policy, resolve)
+        return gateway
+
+
+def close_shared_gateways() -> None:
+    """Shut every shared gateway down on its own loop; the next read builds a new one. At exit, and for the tiler's end."""
+    with _SHARED_LOCK:
+        shared = list(_SHARED.items())
+        _SHARED.clear()
+    for (loop, *_), gateway in shared:
+        if not loop.is_closed():
+            _close_gateway_on(loop, gateway)
+
+
+atexit.register(close_shared_gateways)
+
+
 class GatewayStore(Store):
     """A read-only Zarr store in which one key is one gateway request.
 
@@ -167,8 +206,6 @@ class GatewayStore(Store):
         self._base_url = base_url.rstrip("/")
         self._policy = policy
         self._resolve = resolve
-        self._gateway: Gateway | None = None
-        self._loop: asyncio.AbstractEventLoop | None = None
         #: Every request this store has made. Read by the tests that show that the
         #: bytes arrive through `gateway` and by nothing else.
         self.request_count = 0
@@ -208,7 +245,7 @@ class GatewayStore(Store):
         runs ``check_url`` on every call, so a redirect or a key that escapes the
         prefix is refused where it is fetched, not where it was planned.
         """
-        gateway = await self._gateway_for_this_loop()
+        gateway = shared_gateway(self._policy, self._resolve)
         self.request_count += 1
         try:
             response = await gateway.get(f"{self._base_url}/{key}", headers=_range_header(byte_range))
@@ -252,32 +289,6 @@ class GatewayStore(Store):
 
     def list_dir(self, prefix: str) -> Any:
         raise NotImplementedError(_NO_LISTING)
-
-    def close(self) -> None:
-        """Shut the HTTP client down, on whichever loop it was built on."""
-        gateway, loop = self._gateway, self._loop
-        self._gateway, self._loop = None, None
-        if gateway is not None and loop is not None and not loop.is_closed():
-            _close_gateway_on(loop, gateway)
-        super().close()
-
-    async def _gateway_for_this_loop(self) -> Gateway:
-        """One client for the life of the store, built where it will be used.
-
-        zarr drives every store call on an event loop of its own, in a thread of its
-        own (``zarr.core.sync``), and an ``httpx`` client belongs to the loop it first
-        ran on. So it is built here, at the first read, rather than by the caller —
-        and rebuilt in the unlikely case that a second loop ever uses this store.
-        """
-        loop = asyncio.get_running_loop()
-        if self._gateway is not None and self._loop is loop:
-            return self._gateway
-        if self._gateway is not None and self._loop is not None:
-            _close_gateway_on(self._loop, self._gateway)
-        self._gateway = open_gateway(self._policy, self._resolve)
-        self._loop = loop
-        return self._gateway
-
 
 _NO_LISTING = (
     "this store does not list: the names come from the catalogue and the store answers "
