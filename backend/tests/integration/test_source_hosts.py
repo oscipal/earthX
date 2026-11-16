@@ -1,4 +1,4 @@
-"""T-C: the shared turn, places and breaker per host of M5-37 against a real Postgres (plan §3, §4, §9a).
+"""T-C: the shared turn, places and breaker per host of M5-37 against a real Postgres (plan §3, §4, §5.3, §9a).
 
 What a mocked connection cannot show: that two connections really share one turn and one breaker, that a place past
 its term is taken over and a heartbeat keeps it, that the numbered places never exceed the cap, and that the rows do
@@ -12,11 +12,14 @@ import logging
 import uuid
 from collections.abc import AsyncIterator
 
+import httpx
 import psycopg
 import pytest
 
 from earthx.catalog import source_hosts
 from earthx.catalog.source_hosts import MAX_PAUSE_S, PAUSE_S, PostgresHostCoordinator
+from earthx.discovery.source_gateway import open_source_gateway
+from earthx.gateway import HostResting, Policy
 
 pytestmark = pytest.mark.anyio
 
@@ -304,3 +307,40 @@ class TestThePlaces:
                 await conns[0].close()
                 raise RuntimeError("the request failed")
         assert any(record.getMessage() == "source place not given back" for record in caplog.records)
+
+
+def _public(host: str, port: int) -> tuple[str, ...]:
+    return ("93.184.216.34",)
+
+
+class TestTheGatewayOfMaterialize:
+    async def test_its_turns_are_seen_by_others_before_the_runs_transaction_commits(self, conns, host: str) -> None:
+        def answer(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={})
+
+        policy = Policy(allowed_hosts=frozenset({host}), host_intervals={host: 1.0})
+        run = await psycopg.AsyncConnection.connect(autocommit=False)
+        try:
+            await run.execute("SELECT 1")  # the run's transaction is open
+            async with open_source_gateway(policy, transport=httpx.MockTransport(answer), resolve=_public) as gateway:
+                await gateway.get(f"https://{host}/x")
+                assert run.info.transaction_status is psycopg.pq.TransactionStatus.INTRANS
+                assert 0.5 < (await _row(conns[1], host))[3] <= 1.0
+        finally:
+            await run.rollback()
+            await run.close()
+
+    async def test_a_paused_host_rests_for_the_run_without_a_request(self, conns, host: str) -> None:
+        sent: list[httpx.Request] = []
+
+        def answer(request: httpx.Request) -> httpx.Response:
+            sent.append(request)
+            return httpx.Response(200, json={})
+
+        for _ in range(3):
+            await PostgresHostCoordinator(conns[0]).report(host, failed=True)
+        policy = Policy(allowed_hosts=frozenset({host}))
+        async with open_source_gateway(policy, transport=httpx.MockTransport(answer), resolve=_public) as gateway:
+            with pytest.raises(HostResting):
+                await gateway.get(f"https://{host}/x")
+        assert sent == []
