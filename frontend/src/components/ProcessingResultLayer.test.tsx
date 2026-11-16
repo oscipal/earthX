@@ -455,7 +455,7 @@ describe('the layer a result becomes', () => {
     const empty = container.querySelector('.layer-row [data-col="process"]');
     expect(empty?.tagName).toBe('SPAN');
     expect(empty?.getAttribute('aria-hidden')).toBe('true');
-    expect(container.querySelector('.layer-row')?.children).toHaveLength(12);
+    expect(container.querySelector('.layer-row')?.children).toHaveLength(11);
     expect(button('Download')).toBeUndefined();
   });
 

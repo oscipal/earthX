@@ -15,10 +15,10 @@ import { overviewNoteOf } from '../overviewSubstitute';
 import { zoomReasonOf } from '../zoomHint';
 import BandSelect from './BandSelect';
 import EyeButton from './EyeButton';
-import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon, CogIcon, FocusIcon, GripVerticalIcon, PencilIcon, PlusIcon, TrashIcon } from './icons';
+import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon, CogIcon, FocusIcon, GripVerticalIcon, PencilIcon, PlusIcon } from './icons';
 import InlineRename from './InlineRename';
 import { RENAME_TIP } from './InspectorParts';
-import { REMOVE_TIP } from './LayerActions';
+import RemoveLayerButton from './RemoveLayerButton';
 import LayerDownload from './LayerDownload';
 import ResultsEye from './ResultsEye';
 import Tip from './Tip';
@@ -100,10 +100,9 @@ function Grip({ dnd }: { dnd: RowDnd }) {
   );
 }
 
-// One row, twelve places in a fixed order: grip, name and its pencil, then eye, opacity, up, down, process, zoom to layer, download, note,
-// remove (UI-09: zoom to layer is new, download moved one place to the right).
+// One row, eleven places in a fixed order: grip, name and its pencil, then eye, opacity, up, down, process, zoom to layer, download, remove (UI-09:
+// zoom to layer is new, download moved one place to the right, no place for a note: an expired result shows its note where the download would be).
 function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: MapLayer; index: number; last: boolean; dnd: RowDnd; flipped: boolean; flipping: boolean }) {
-  const remove = useAppStore((s) => s.removeLayer);
   const rename = useAppStore((s) => s.renameLayer);
   const [renaming, setRenaming] = useState(false);
   const toggleVis = useAppStore((s) => s.toggleLayerVisible);
@@ -217,17 +216,21 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
       ) : (
         <Slot col="zoom" />
       )}
-      <LayerDownload layer={l} col="download" empty={<Slot col="download" />} />
-      {notes.length > 0 ? (
-        <span className="lm-note" data-col="note">
-          <Tip text={notes.join(' ')} tone="warn" />
-        </span>
-      ) : (
-        <Slot col="note" />
-      )}
-      <button type="button" className="icon-btn sm danger" data-col="remove" data-tip-level="advanced" data-tip={REMOVE_TIP} aria-label={REMOVE_TIP} onClick={() => remove(l.id)}>
-        <TrashIcon size={14} />
-      </button>
+      {/* The note (an expired result) takes the place of the download, which such a result does not have: no place of its own. */}
+      <LayerDownload
+        layer={l}
+        col="download"
+        empty={
+          notes.length > 0 ? (
+            <span className="lm-note" data-col="download">
+              <Tip text={notes.join(' ')} tone="warn" />
+            </span>
+          ) : (
+            <Slot col="download" />
+          )
+        }
+      />
+      <RemoveLayerButton layer={l} className="icon-btn sm danger" col="remove" iconSize={14} />
       {bands && bands.length > 1 && (
         <BandSelect
           label="Band"
@@ -288,7 +291,6 @@ function ResultsRow({ first, last, dnd }: { first: boolean; last: boolean; dnd: 
       <Slot col="process" />
       <Slot col="zoom" />
       <Slot col="download" />
-      <Slot col="note" />
       <Slot col="remove" />
     </li>
   );

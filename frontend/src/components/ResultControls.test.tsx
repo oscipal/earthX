@@ -21,6 +21,7 @@ import JobDetails from './JobDetails';
 import LayerManager from './LayerManager';
 import ResultControls, { CLASSES_TIP, NO_TYPE_TIP } from './ResultControls';
 import { tipOf } from '../fixtures/tips';
+import { confirmRemoval } from '../fixtures/confirmRemoval';
 
 vi.mock('./MapView', () => ({ default: () => null }));
 
@@ -126,17 +127,17 @@ describe('"Download (ZIP)" in the row of a result layer', () => {
   });
 
   // Otto, 26.10.2026: what cannot be done at all is not shown; the reason is the ⚠ of the row.
-  it('is not shown once the results are gone: the place stays empty and the ⚠ says why', async () => {
+  it('is not shown once the results are gone: its place holds the ⚠, which says why', async () => {
     await showOnMap();
     act(() => useAppStore.getState().expireResultLayers(Date.parse(layers()[0].result!.expires) + 1));
     act(() => root.render(<LayerManager />));
     const row = container.querySelector('.layer-row')!;
-    const empty = row.querySelector<HTMLElement>('[data-col="download"]')!;
-    expect(empty.tagName).toBe('SPAN');
-    expect(empty.getAttribute('aria-hidden')).toBe('true');
+    // The ⚠ stands in the place of the download, which such a result does not have (UI-09: no place of its own for a note).
+    const place = row.querySelector<HTMLElement>('[data-col="download"]')!;
+    expect([place.tagName, place.className]).toEqual(['SPAN', 'lm-note']);
     expect(row.querySelector('a')).toBeNull();
     expect(row.querySelector('.lm-note .tip')?.getAttribute('data-tip')).toContain('Expired: results are kept for 7 days.');
-    expect([...row.children].map((c) => c.getAttribute('data-col'))).toHaveLength(12);
+    expect([...row.children].map((c) => c.getAttribute('data-col'))).toHaveLength(11);
   });
 
   it('is not made of a job id that is none', () => {
@@ -196,6 +197,7 @@ describe('a click on a result layer', () => {
     click(container.querySelector('.layer-row .lm-name'));
     expect(useAppStore.getState().resultViewLayerId).toBe(layers()[0].id);
     click(container.querySelector('button[data-tip="Remove layer"]'));
+    confirmRemoval();
     expect(useAppStore.getState().resultViewLayerId).toBeNull();
 
     await showOnMap();
@@ -272,6 +274,7 @@ describe('the range of a result layer', () => {
     click(button('Apply'));
     click(button('Save'));
     click(container.querySelector('button[data-tip="Remove layer"]'));
+    confirmRemoval();
     expect(layers()).toEqual([]);
     await showOnMap();
     expect(urlOf()).toContain('colormap_name=viridis&rescale=50%2C1900');
@@ -282,6 +285,7 @@ describe('the range of a result layer', () => {
     type(field('vmin'), '50');
     click(button('Apply'));
     click(container.querySelector('button[data-tip="Remove layer"]'));
+    confirmRemoval();
     await showOnMap();
     expect(urlOf()).toContain('rescale=180%2C1900');
   });
@@ -297,6 +301,21 @@ describe('the range of a result layer', () => {
     expect(field('vmax').value).toBe('1900');
     expect(urlOf()).toContain('rescale=50%2C60');
     expect(keptRange()).toEqual({ vmin: '50', vmax: '60', colormap: 'viridis' });
+  });
+
+  // Otto, 16.11.2026: it resets the range only, the colormap chosen stays.
+  it('"auto-scale" leaves the colormap as chosen, typed or applied', async () => {
+    await openView();
+    type(field('Colormap'), 'terrain');
+    type(field('vmin'), '50');
+    click(button('Auto-scale'));
+    expect([field('vmin').value, field('vmax').value, field('Colormap').value]).toEqual(['180', '1900', 'terrain']);
+    click(button('Apply'));
+    expect(urlOf()).toContain('colormap_name=terrain&rescale=180%2C1900');
+    type(field('vmin'), '0');
+    click(button('Apply'));
+    click(button('Auto-scale'));
+    expect([field('vmin').value, field('Colormap').value]).toEqual(['180', 'terrain']);
   });
 
   it('"auto-scale", applied and saved, goes back to the default and forgets the range of the job', async () => {

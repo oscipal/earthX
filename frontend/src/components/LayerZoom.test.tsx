@@ -120,6 +120,6 @@ describe('the row while its tiles load', () => {
     act(() => setMapLoading(['a', RESULTS_OWNER]));
     act(() => void vi.advanceTimersByTime(LOADING_AFTER_MS * 3));
     expect(container.querySelectorAll('.spinner, [role="status"]')).toHaveLength(0);
-    expect(rows()[0].querySelector('[data-col="note"]')?.className).toBe('lm-slot');
+    expect(rows()[0].querySelector('[data-col="note"]')).toBeNull();
   });
 });
