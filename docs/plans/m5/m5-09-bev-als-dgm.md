@@ -322,4 +322,6 @@ Gebaut nach §4 mit den Antworten aus §8a und den Messläufen §2.4, §2.5. Wo 
 - **A11 Kein `earthx:tile`:** Anders als §4.2 trägt das Item die Kachel nur in ID und Footprint. `earthx:tile` braucht nur die Regel `item_states` des STAC-Adapters, die BEV nicht nutzt.
 - **A12 `withheld`:** zählt die Kacheln älterer Stichtage (heute 5 × 55 = 275), wie bei swissALTI3D die ersetzten Stände; `unknown` zählt Titel unbekannter Form und nicht ladbare Kacheln zusammen.
 
+**Antwort F9 (Otto, 16.11.2026): 1.** Ein PR, obwohl er mit rund 545 Zeilen Code und Eintrag und rund 1 330 Zeilen Tests und Skripten über dem Richtwert von §5 liegt; kein zweiter Branch.
+
 **Abweichungen von §4.7:** Die Feeds der Tests sind im Testcode gebaut statt unter `tests/fixtures/bev_atom/`. Statt eines BEV-eigenen Tests je Ansicht unter `min_zoom` prüft ein Test der Pyramiden-Route den Fall, der nur BEV betrifft: Das erste Level des Datensatzes ist das des Ersatzes (7), darunter kommt das Bild nur aus der Pyramide von GLO-30, ab 7 nicht mehr aus der Route der Übersicht. Die Ansichten selbst (Crop and merge, angeheftete Ebene, Suchtreffer, eine Szene, `terrain`) nutzen dieselbe Route und sind mit swissALTI3D und den synthetischen Einträgen von M5-30b und M5-10 getestet.
