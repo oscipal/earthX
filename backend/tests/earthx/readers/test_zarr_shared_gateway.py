@@ -13,7 +13,7 @@ import httpx
 import pytest
 from zarr.core.buffer import default_buffer_prototype
 
-from earthx.gateway import Policy
+from earthx.gateway import CachingResolver, Policy
 from earthx.gateway.client import Gateway
 from earthx.readers import zarr_reader
 from earthx.readers.zarr_reader import GatewayStore, close_shared_gateways, shared_gateway
@@ -79,19 +79,26 @@ async def test_closing_a_store_leaves_the_shared_gateway_open(
     assert len(built) == 1
 
 
-async def test_another_policy_or_resolver_gets_a_gateway_of_its_own(
+async def test_another_policy_gets_a_gateway_of_its_own_an_equal_one_does_not(
     monkeypatch: pytest.MonkeyPatch, store_root: Path
 ) -> None:
     built = slow_source(monkeypatch, store_root, Peak())
     wider = Policy(allowed_hosts=frozenset({HOST, "other.example.invalid"}))
-    for policy, resolve in [
-        (POLICY, from_memory),
-        (POLICY, from_memory),
-        (wider, from_memory),
-        (POLICY, lambda *_: ("93.184.216.34",)),
-    ]:
-        await GatewayStore(BASE_URL, policy, resolve=resolve).get(KEY, default_buffer_prototype())
-    assert len(built) == 3
+    for policy in [POLICY, Policy(allowed_hosts=frozenset({HOST})), wider]:
+        await GatewayStore(BASE_URL, policy, resolve=from_memory).get(KEY, default_buffer_prototype())
+    assert len(built) == 2
+
+
+async def test_a_resolver_built_per_run_leaves_no_gateway_per_run_behind(
+    monkeypatch: pytest.MonkeyPatch, store_root: Path
+) -> None:
+    # `readers.access.read_access_for` builds a CachingResolver for every run; keyed by it, each area statistic of a
+    # Zarr dataset in the tiler would leave a client behind (review of M5-36 PR 1).
+    built = slow_source(monkeypatch, store_root, Peak())
+    for _ in range(5):
+        fresh = CachingResolver(resolve=from_memory)
+        await GatewayStore(BASE_URL, POLICY, resolve=fresh).get(KEY, default_buffer_prototype())
+    assert len(built) == 1
 
 
 async def test_after_closing_the_next_read_builds_a_new_gateway(

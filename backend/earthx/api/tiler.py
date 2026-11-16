@@ -2332,7 +2332,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             yield
         finally:
             # The Zarr stores of this process share one gateway (M5-36 §4.2); it ends with the app, not with a store.
-            close_shared_gateways()
+            # Closing waits for zarr's own loop, so in a thread, not on this one.
+            await run_in_threadpool(close_shared_gateways)
 
 
 def _result_sources() -> ResultSources | None:

@@ -165,11 +165,14 @@ def shared_gateway(policy: Policy, resolve: Resolver) -> Gateway:
     zarr drives every store call on one event loop of its own, in a thread of its own (``zarr.core.sync``), and an
     ``httpx`` client belongs to the loop it first ran on. So every store of the process asks here at its first read,
     and all stores share one client and one cap per host — four Zarr scenes of a mosaic tile no longer put four times
-    the cap on one host (M5-35 §2.1). The seam :func:`open_gateway` is part of the key, so a test that replaces it
-    gets a gateway of its own. Entries of loops that have closed are dropped on the way.
+    the cap on one host (M5-35 §2.1). The policy is compared by value; ``resolve`` is not part of the key, because a run
+    builds a resolver of its own each time (``readers.access.read_access_for``) and would otherwise leave one client per
+    request behind: the first store's resolver serves all, and every address is still checked on every request. The
+    seam :func:`open_gateway` is part of the key, so a test that replaces it gets a gateway of its own. Entries of
+    loops that have closed are dropped on the way.
     """
     loop = asyncio.get_running_loop()
-    key = (loop, policy, resolve, open_gateway)
+    key = (loop, policy, open_gateway)
     with _SHARED_LOCK:
         for stale in [other for other in _SHARED if other[0].is_closed()]:
             del _SHARED[stale]
