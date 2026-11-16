@@ -26,6 +26,8 @@ import pytest
 
 from earthx.adapters import NotMaterialized, UpstreamShapeError
 from earthx.api.main import app
+from earthx.catalog.datasets import registry
+from earthx.catalog.hosts import HostLimit
 from earthx.catalog.pgstac import (
     MaterializeRunRecord,
     delete_items_except,
@@ -524,14 +526,24 @@ class TestAStacApiSource:
         assert last_source_version(conn, FSDI_ENTRY.dataset_id) is None
 
 
-class TestCommandSpacing:
-    """M5-08 plan §4.2: about a thousand pages for swissALTI3D, one second apart."""
+class TestCommandLimits:
+    """M5-08 plan §4.2 and M5-36: the caps and spacing per host come from the registry's hosts.yaml."""
 
-    def test_the_fsdi_endpoint_gets_one_second_between_requests(self) -> None:
-        assert _policy_for(FSDI_ENTRY).interval_for(FSDI_HOST) == 1.0
+    def test_the_fsdi_gets_one_second_and_six_connections_from_the_registry(self) -> None:
+        policy = _policy_for(registry().get("swissalti3d"), registry().host_limits)
+        assert policy.interval_for("data.geo.admin.ch") == 1.0
+        assert policy.connections_for("data.geo.admin.ch") == 6
 
     def test_a_bucket_keeps_no_spacing(self) -> None:
-        assert _policy_for(COP_DEM_GLO_30).interval_for("copernicus-dem-30m.s3.amazonaws.com") == 0.0
+        policy = _policy_for(COP_DEM_GLO_30, registry().host_limits)
+        assert policy.interval_for("copernicus-dem-30m.s3.amazonaws.com") == 0.0
+        assert policy.connections_for("copernicus-dem-30m.s3.amazonaws.com") == 32
+
+    def test_only_the_hosts_of_the_run_are_taken(self) -> None:
+        limits = {FSDI_HOST: HostLimit(2, 3.0, "synthetic"), "other.example.invalid": HostLimit(1, 9.0, "synthetic")}
+        policy = _policy_for(FSDI_ENTRY, limits)
+        assert (policy.interval_for(FSDI_HOST), policy.connections_for(FSDI_HOST)) == (3.0, 2)
+        assert "other.example.invalid" not in policy.host_intervals
 
 
 class TestRefusesAFederatedDataset:

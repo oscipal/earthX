@@ -9,8 +9,12 @@ Hier liegen Registry-Einträge von Quellen mit **unklarer Rechtslage**, nur für
   `CI` nicht gesetzt ist. Jede andere Einstellung mit gesetztem Pfad bricht den Start ab (R5). Der Runner liest es nie.
 - **Jeder Eintrag** heißt `proto-<name>.yaml`, hat eine ID mit Präfix `proto-`, `legal_status: unclear` und einen Satz
   `legal_note`, was unklar ist (keine Rechtsmeinung, R3). `legal_status` setzt nur Otto (R1).
+- **Grenzen je Host (M5-36):** Ein Host, den ein Prototyp-Eintrag liest und der nicht schon in
+  `backend/catalog/hosts.yaml` steht, braucht eine Zeile in einer eigenen `hosts.yaml` in diesem Verzeichnis (gleiche
+  Form: `connections`, optional `interval_s`, `reason`). Ohne sie startet die Registry nicht; ein Host in beiden
+  Dateien ist ebenfalls ein Fehler.
 - **Nur Quellen ohne Konto, Schlüssel oder Umgehen einer Sperre**; ausdrücklich untersagte Nutzung bleibt draußen (R2).
 - **CI und Cloud-Sitzungen** prüfen die Einträge ohne Netz (`backend/tests/catalog/test_registry_loading.py`); die
   Quellen ruft nur Otto lokal ab (R10).
 
-Außer `*.yaml` und dieser Datei darf hier nichts liegen; der Lader bricht sonst ab.
+Außer den Einträgen, `hosts.yaml` und dieser Datei darf hier nichts liegen; der Lader bricht sonst ab.

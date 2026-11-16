@@ -45,6 +45,7 @@ from earthx.gateway.errors import (
 from earthx.gateway.policy import Policy, inspect_url, product_token
 from earthx.gateway.resolver import resolve_host
 from earthx.gateway.robots import ROBOTS_PATH, RobotsRules
+from earthx.gateway.slots import ReadSlots
 
 LOGGER = logging.getLogger("earthx.gateway")
 
@@ -105,14 +106,17 @@ class Gateway:
         resolve: Callable[[str, int], tuple[str, ...]] = resolve_host,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         clock: Callable[[], float] = time.monotonic,
+        slots: ReadSlots | None = None,
     ) -> None:
+        if slots is not None and not slots.policy.allowed_hosts >= policy.allowed_hosts:
+            raise ValueError("the slots must cover every host the policy allows")
         self._policy = policy
         self._resolve = resolve
         self._sleep = sleep
         self._clock = clock
-        # The per-host cap is the semaphore below, not httpx's global pool limit:
-        # six connections per host is a rule about the source (adr/0005 §6).
-        self._semaphores: dict[str, asyncio.Semaphore] = {}
+        # The per-host cap, not httpx's global pool limit: it is a rule about the source (adr/0005 §6). A process
+        # hands in its one counter, shared with its GDAL readers (M5-36 §4.1); without it the cap is this object's.
+        self._slots = ReadSlots(policy) if slots is None else slots
         # The spacing per host (adr/0025 §6.2): the earliest start of the next request.
         self._spacing_locks: dict[str, asyncio.Lock] = {}
         self._next_start: dict[str, float] = {}
@@ -216,7 +220,7 @@ class Gateway:
             checked = check_url(target, self._policy, resolve=self._resolve)
             if robots and self._policy.obey_robots:
                 await self._check_robots(checked)
-            async with self._semaphore(checked.host):
+            async with self._slots.aslot(checked.host):
                 response = await self._attempt(
                     method, checked, headers=headers, content=content, retry=retry, redirects=redirects
                 )
@@ -409,11 +413,6 @@ class Gateway:
                 raise ResponseTooLarge(size, limit)
             chunks.append(chunk)
         return b"".join(chunks)
-
-    def _semaphore(self, host: str) -> asyncio.Semaphore:
-        if host not in self._semaphores:
-            self._semaphores[host] = asyncio.Semaphore(self._policy.max_connections_per_host)
-        return self._semaphores[host]
 
     async def _wait(self, attempt: int, retry_after: str | None) -> None:
         delay = BACKOFF_S[min(attempt, len(BACKOFF_S)) - 1] * random.uniform(0.8, 1.2)

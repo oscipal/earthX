@@ -44,7 +44,6 @@ import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from types import MappingProxyType
 
 import psycopg
 
@@ -56,6 +55,7 @@ from earthx.adapters import (
     materialize_items,
 )
 from earthx.catalog.datasets import registry
+from earthx.catalog.hosts import HostLimit
 from earthx.catalog.pgstac import (
     MaterializeRunRecord,
     PgstacError,
@@ -71,7 +71,6 @@ from earthx.catalog.pgstac import (
     use_pgstac_search_path,
 )
 from earthx.catalog.registry import (
-    AdapterKind,
     ConfigError,
     DatasetConfig,
     ItemHolding,
@@ -80,11 +79,6 @@ from earthx.catalog.registry import (
 )
 from earthx.gateway import Gateway, GatewayError, Policy, host_of, user_agent_from_env
 from earthx.logging import configure_logging
-
-# The least time between two requests to the endpoint of a run, by adapter (M5-08 plan §4.2, M5-18). The FSDI pages
-# about a thousand searches for swissALTI3D, and swisstopo reserves the right to throttle excessive use (adr/0023
-# §4.1): about 17 minutes for a full run. The buckets answer a handful of requests; they keep no spacing.
-ENDPOINT_INTERVALS_S: Mapping[AdapterKind, float] = MappingProxyType({AdapterKind.FSDI_STAC_V1: 1.0})
 
 
 @dataclass(frozen=True, slots=True)
@@ -184,22 +178,27 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _policy_for(config: DatasetConfig) -> Policy:
+def _policy_for(config: DatasetConfig, hosts: Mapping[str, HostLimit]) -> Policy:
     """The endpoint's host plus the asset hosts — nothing wider (M3-11b plan §3.4),
     the same allowlist shape :func:`earthx.api.dependencies.policy_from_registry`
     builds for a whole registry, narrowed here to the one dataset this run touches.
+
+    Caps and spacing per host come from the registry's hosts.yaml (M5-36): the FSDI pages about a thousand searches
+    for swissALTI3D one second apart, about 17 minutes a run (M5-08 plan §4.2); the buckets keep no spacing. One run
+    takes a host's whole cap; sharing it between runs is M5-37.
     """
-    endpoint_host = host_of(config.source.endpoint)
-    interval = ENDPOINT_INTERVALS_S.get(config.source.adapter)
+    allowed = frozenset({host_of(config.source.endpoint), *config.source.asset_hosts})
+    limits = {host: limit for host, limit in hosts.items() if host in allowed}
     return Policy(
-        allowed_hosts=frozenset({endpoint_host, *config.source.asset_hosts}),
-        host_intervals={} if interval is None else {endpoint_host: interval},
+        allowed_hosts=allowed,
+        host_connections={host: limit.connections for host, limit in limits.items()},
+        host_intervals={host: limit.interval_s for host, limit in limits.items() if limit.interval_s is not None},
     )
 
 
-async def _main_async(config: DatasetConfig, *, force: bool) -> MaterializeResult:
+async def _main_async(config: DatasetConfig, hosts: Mapping[str, HostLimit], *, force: bool) -> MaterializeResult:
     with psycopg.connect(autocommit=False) as conn:
-        async with Gateway(_policy_for(config)) as gateway:
+        async with Gateway(_policy_for(config, hosts)) as gateway:
             result = await run_materialize(conn, config, gateway=gateway, force=force)
         conn.commit()
     return result
@@ -215,7 +214,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     try:
-        config = registry().get(args.dataset_id)
+        datasets = registry()
+        config = datasets.get(args.dataset_id)
     except ConfigError as error:
         print(f"materialize failed: {error}", file=sys.stderr)
         return 1
@@ -227,7 +227,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     try:
-        result = asyncio.run(_main_async(config, force=args.force))
+        result = asyncio.run(_main_async(config, datasets.host_limits, force=args.force))
     except (PgstacError, psycopg.Error, GatewayError, UpstreamShapeError, UnsupportedSource) as error:
         print(f"materialize failed: {error}", file=sys.stderr)
         return 1

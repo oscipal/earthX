@@ -56,6 +56,8 @@ COPY earthx ./earthx
 # runner's included. `.dockerignore` keeps both out of the build context as a second guard.
 COPY catalog/datasets ./catalog/datasets
 COPY catalog/retired.yaml ./catalog/retired.yaml
+# The limits per host for the whole platform (M5-36): read with the registry, which checks them against its hosts.
+COPY catalog/hosts.yaml ./catalog/hosts.yaml
 # What the search text needs besides the entries (M5-22b): country outlines from Natural Earth, the glossary of the
 # lexical arm and the terms per capability.
 COPY catalog/places.json ./catalog/places.json

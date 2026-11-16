@@ -157,7 +157,7 @@ from earthx.objectstore.errors import StoreConfigError
 from earthx.objectstore.results import Store
 from earthx.readers import AssetRejected, GeoreferenceMismatch
 from earthx.readers.cog import AssetPath
-from earthx.readers.zarr_reader import ZarrAsset, ZarrAssetError
+from earthx.readers.zarr_reader import ZarrAsset, ZarrAssetError, close_shared_gateways
 
 LOGGER = logging.getLogger("earthx.api.tiler")
 
@@ -2328,7 +2328,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.earthx_mosaic_selections = None if pool is None else SelectionStore(pool)
         app.state.earthx_results = _result_sources()
         app.state.earthx_overviews = _overview_sources()
-        yield
+        try:
+            yield
+        finally:
+            # The Zarr stores of this process share one gateway (M5-36 §4.2); it ends with the app, not with a store.
+            # Closing waits for zarr's own loop, so in a thread, not on this one.
+            await run_in_threadpool(close_shared_gateways)
 
 
 def _result_sources() -> ResultSources | None:

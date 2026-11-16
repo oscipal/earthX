@@ -244,6 +244,7 @@ forbidden_modules =
     earthx.catalog.entry_files
     earthx.catalog.geocode_cache
     earthx.catalog.glossary
+    earthx.catalog.hosts
     earthx.catalog.listed
     earthx.catalog.listed_search
     earthx.catalog.listed_store

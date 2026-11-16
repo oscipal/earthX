@@ -22,6 +22,7 @@ from pathlib import Path
 import earthx
 from earthx.catalog.categories import CATEGORIES_FILE, read_categories
 from earthx.catalog.entry_files import EntryFileError, load_entry, load_retired
+from earthx.catalog.hosts import HOSTS_FILE, HostLimit, load_host_limits
 from earthx.catalog.registry import ConfigError, DatasetConfig, DatasetRegistry, LegalStatus
 
 __all__ = [
@@ -42,15 +43,15 @@ CATALOG_DIR = Path(earthx.__file__).resolve().parents[1] / "catalog"
 _README = "README.md"
 
 
-def _entry_files(directory: Path) -> list[Path]:
-    """The ``*.yaml`` files of ``directory``; anything else but a README is an error, so a stray file is noticed."""
+def _entry_files(directory: Path, beside: frozenset[str] = frozenset()) -> list[Path]:
+    """The ``*.yaml`` files of ``directory``; anything else but a README and ``beside`` is an error, so a stray file is noticed."""
     try:
         listing = sorted(directory.iterdir())
     except OSError as error:
         raise EntryFileError(f"{directory.name}: the directory cannot be read ({type(error).__name__})") from None
     files = []
     for path in listing:
-        if path.name == _README:
+        if path.name == _README or path.name in beside:
             continue
         if not path.is_file() or path.suffix != ".yaml":
             raise EntryFileError(f"{directory.name}/{path.name}: only <dataset_id>.yaml files and a README belong here")
@@ -91,9 +92,9 @@ def prototype_dir_from_env(environ: Mapping[str, str] = os.environ) -> Path | No
     return directory
 
 
-def _entries(directory: Path, status: LegalStatus) -> tuple[DatasetConfig, ...]:
+def _entries(directory: Path, status: LegalStatus, beside: frozenset[str] = frozenset()) -> tuple[DatasetConfig, ...]:
     """The entries of ``directory``, each with ``status``: released ones are cleared, prototypes unclear (R3)."""
-    entries = tuple(load_entry(path) for path in _entry_files(directory))
+    entries = tuple(load_entry(path) for path in _entry_files(directory, beside))
     for entry in entries:
         if entry.legal_status is not status:
             raise EntryFileError(
@@ -107,12 +108,26 @@ def read_registry(catalog_dir: Path = CATALOG_DIR, prototype_dir: Path | None = 
     ``prototype_dir`` where one is given."""
     entries = _entries(catalog_dir / "datasets", LegalStatus.CLEARED)
     if prototype_dir is not None:
-        entries += _entries(prototype_dir, LegalStatus.UNCLEAR)
+        # The prototype directory may keep the limits of its own hosts next to its entries (M5-36 §3.1).
+        entries += _entries(prototype_dir, LegalStatus.UNCLEAR, beside=frozenset({HOSTS_FILE}))
     known = read_categories(catalog_dir / CATEGORIES_FILE.name).ids
     for entry in entries:
         if entry.category not in known:
             raise EntryFileError(f"{entry.dataset_id}: category {entry.category} is not one of categories.yaml")
-    return DatasetRegistry(entries, retired=load_retired(catalog_dir / "retired.yaml"))
+    hosts = dict(load_host_limits(catalog_dir / HOSTS_FILE))
+    if prototype_dir is not None:
+        hosts = _with_prototype_hosts(hosts, prototype_dir / HOSTS_FILE)
+    return DatasetRegistry(entries, retired=load_retired(catalog_dir / "retired.yaml"), hosts=hosts)
+
+
+def _with_prototype_hosts(hosts: dict[str, HostLimit], path: Path) -> dict[str, HostLimit]:
+    """The released limits and those of the prototype directory's own hosts.yaml, if it has one; a host in both is an error."""
+    if not path.is_file():
+        return hosts
+    own = load_host_limits(path)
+    if twice := sorted(hosts.keys() & own.keys()):
+        raise EntryFileError(f"prototype {HOSTS_FILE}: a host has limits in the released file already: {', '.join(twice)}")
+    return {**hosts, **own}
 
 
 def registry(*, prototype: bool = True) -> DatasetRegistry:

@@ -21,7 +21,12 @@ from datetime import date, datetime, timezone
 from enum import Enum
 from fnmatch import fnmatchcase
 from types import MappingProxyType
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
+
+from earthx.gateway import host_of, normalize_host
+
+if TYPE_CHECKING:
+    from earthx.catalog.hosts import HostLimit
 
 # Circumference at the equator, in kilometres. Geotile level z splits it into
 # 2**z columns, so a cell is EARTH_CIRCUMFERENCE_KM / 2**z wide (adr/0004 §5).
@@ -2218,10 +2223,20 @@ def _default_band_unit(config: DatasetConfig) -> str | None:
     return config.band_unit(config.default_render.assets[0])
 
 
+def source_hosts(entry: DatasetConfig) -> frozenset[str]:
+    """The hosts ``entry`` reads from, the endpoint's and the assets', in the gateway's spelling."""
+    return frozenset({host_of(entry.source.endpoint), *(normalize_host(host) for host in entry.source.asset_hosts)})
+
+
 class DatasetRegistry:
     """The entries, looked up by dataset id, and the datasets that left (adr/0017)."""
 
-    def __init__(self, entries: tuple[DatasetConfig, ...], retired: tuple[RetiredDataset, ...] = ()) -> None:
+    def __init__(
+        self,
+        entries: tuple[DatasetConfig, ...],
+        retired: tuple[RetiredDataset, ...] = (),
+        hosts: Mapping[str, HostLimit] | None = None,
+    ) -> None:
         self._by_id = {entry.dataset_id: entry for entry in entries}
         if len(self._by_id) != len(entries):
             raise ConfigError("duplicate dataset_id in the registry")
@@ -2235,6 +2250,25 @@ class DatasetRegistry:
                 raise ConfigError(f"the successor of {gone.dataset_id!r} is not in the registry")
         for entry in self._by_id.values():
             self._check_substitute(entry)
+        self._hosts: Mapping[str, HostLimit] = MappingProxyType(dict(hosts or {}))
+        if hosts is not None:
+            self._check_hosts()
+
+    def _check_hosts(self) -> None:
+        """Every host an entry names has its limits in hosts.yaml, and every limit belongs to such a host (M5-36 G1)."""
+        named = {host for entry in self._by_id.values() for host in source_hosts(entry)}
+        if missing := sorted(named - self._hosts.keys()):
+            raise ConfigError(
+                f"hosts.yaml has no limits for {', '.join(missing)} (a prototype entry's host goes into the hosts.yaml"
+                " of the prototype directory)"
+            )
+        if unused := sorted(self._hosts.keys() - named):
+            raise ConfigError(f"hosts.yaml names hosts no entry reads from: {', '.join(unused)}")
+
+    @property
+    def host_limits(self) -> Mapping[str, HostLimit]:
+        """The limits per host of hosts.yaml (M5-36), empty for a registry built without them (tests)."""
+        return self._hosts
 
     def _check_substitute(self, entry: DatasetConfig) -> None:
         """Where the entries meet: what a dataset with ``overview: substitute`` draws below its ``min_zoom`` must be fit to draw.

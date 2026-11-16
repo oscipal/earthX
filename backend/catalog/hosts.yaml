@@ -1,0 +1,26 @@
+# The limits per host, for all instances of the platform together (docs/plans/m5/m5-36-grenzen-je-host.md, G1, G2).
+# Every host a full entry names (`source.endpoint`, `source.asset_hosts`) has one entry here, and every entry here
+# belongs to such a host. `connections`: requests or GDAL readers at once; `interval_s`: the least time between the
+# starts of two requests, left out where the source sets no rule. `api` and `tiler` share `connections` among their
+# instances (EARTHX_SOURCE_INSTANCES); tiles and search keep no interval (G3).
+
+hosts:
+  data.geo.admin.ch:
+    connections: 6
+    interval_s: 1.0
+    reason: FSDI, fair use; swisstopo may throttle excessive use (adr/0023 §3.1, M5-08 plan §4.2)
+  earth-search.aws.element84.com:
+    connections: 6
+    reason: STAC API of Element 84, no published limit; the platform's default of adr/0005 §6
+  copernicus-dem-30m.s3.amazonaws.com:
+    connections: 32
+    reason: S3 bucket on AWS; S3 bears thousands of requests per second and prefix (M5-35 §2.2)
+  esa-worldcover.s3.eu-central-1.amazonaws.com:
+    connections: 32
+    reason: S3 bucket on AWS; S3 bears thousands of requests per second and prefix (M5-35 §2.2)
+  sentinel-s1-l1c.s3.eu-central-1.amazonaws.com:
+    connections: 32
+    reason: S3 bucket on AWS; S3 bears thousands of requests per second and prefix (M5-35 §2.2)
+  e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com:
+    connections: 32
+    reason: S3 bucket on AWS; S3 bears thousands of requests per second and prefix (M5-35 §2.2)

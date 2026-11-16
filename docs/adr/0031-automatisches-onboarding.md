@@ -411,6 +411,8 @@ Die Automatik hält in diesen Fällen den Kandidaten an, schreibt eine Notiz in 
 
 **Nachtrag 2026-11-15 (`adr/0033` §14, M5-40):** Fall 5 gilt nur für den vollen Weg. Auf dem gelisteten Weg sind Konto, kostenpflichtig (`paid`), Bestellung und auf Anfrage nach Ottos Vorgabe der Normalfall (`adr/0033` §5).
 
+**Nachtrag 2026-11-16 (M5-36, G1 = 1):** Ein neuer Host eines vollen Eintrags braucht eine Zeile in `backend/catalog/hosts.yaml` (Verbindungen, wo die Quelle eine Regel hat auch Abstand, und Grund); ohne sie lädt die Registry nicht. Die Werte sind eine Angabe zur Quelle, keine Lizenzfrage; bis Otto sie bestätigt, gilt Fall 7.
+
 Und immer: keine Änderung an `.github/`, `.claude/`, `CLAUDE.md`, `CODEOWNERS`, Sicherheitsregeln oder Importgrenzen; kein Merge, kein Force-Push; Fable nie.
 
 ## 10. Qualität und Rücknahme
