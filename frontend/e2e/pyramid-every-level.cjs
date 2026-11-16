@@ -12,10 +12,18 @@
 //   cd frontend && npm run dev &            # a FRESH dev server; no backend is needed, the tiles are made up here
 //   node e2e/pyramid-every-level.cjs        # BASE=http://localhost:5173 TILE_MS=900 MANAGER=open OUT=<directory for the screenshots>
 //
+// A second view, the search results (no "Crop and merge", adr/0032 Nachtrag 15.11.2026: a picture never disappears, in any view):
+// four hits of the dataset on the map, the same zoom out from z10 to z0. Below 6.5 the picture is the overview of a footprint selection
+// (`POST /collections/relief/overview/footprints`, then `/overview/{id}/tiles/…`, never the route without an id), from 6.5 on the hits'
+// own tiles. It fails when
+//   6. a tile is asked for at another route than that of its level, or the overview tile names another selection than the one the
+//      tiler made for the four hits (sorted, made once), or the route without a selection is asked;
+//   7. a step draws nothing where the hits lie, or the attribution line is not the pyramid's below 6.5 and none above.
+//
 // Playwright and Chromium are not a dependency of the project (CI does not run this); the cloud session has both.
 
 const { chromium } = require('playwright');
-const { answersSelection, isSelectionTile } = require('./selectionMock.cjs');
+const { answersFootprints, answersSelection, hitsOfFootprints, isFootprintTile, isSelectionTile } = require('./selectionMock.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
 const zlib = require('node:zlib');
@@ -30,6 +38,7 @@ const AOI = { type: 'Polygon', coordinates: [[[6, 44], [11, 44], [11, 48], [6, 4
 const CENTRE = [8.5, 46];
 const ZOOMS = [10, 8, 7, 6.5, 6, 5, 4, 3, 2, 1, 0];
 const MOSAIC_FROM = 6.5;
+const SCENES_FROM = 5.5;
 const later = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function solid(rgba, size = 256) {
@@ -73,6 +82,7 @@ async function run(browser, theme, results) {
   page.setDefaultTimeout(8000);
   page.on('pageerror', (error) => problems.push(`the page failed: ${error.message.slice(0, 200)}`));
   let asked = [];
+  const posts = [];
   let slow = false;
   const green = solid([0, 200, 0, 255]);
   const blue = solid([0, 0, 255, 255]);
@@ -82,6 +92,19 @@ async function run(browser, theme, results) {
     if (url.origin !== BASE || /^\/(src|@|node_modules|assets)/.test(url.pathname) || url.pathname === '/' || url.pathname.endsWith('.svg')) return route.continue();
     if (url.pathname === '/colormaps') return json({ groups: [] });
     if (answersSelection(route, url)) return;
+    if (answersFootprints(route, url)) {
+      posts.push(JSON.parse(route.request().postData() ?? '{}').items);
+      return;
+    }
+    if (isFootprintTile(url.href)) {
+      asked.push({ route: 'masked', z: Number(/\/tiles\/WebMercatorQuad\/(\d+)\//.exec(url.pathname)?.[1]), hits: hitsOfFootprints(url), selection: /\/overview\/([0-9a-f]{32})\//.exec(url.pathname)?.[1] });
+      if (slow) await later(TILE_MS);
+      return route.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: green });
+    }
+    if (/\/items\/[^/]+\/tiles\//.test(url.pathname)) {
+      asked.push({ route: 'scene', z: Number(/\/tiles\/WebMercatorQuad\/(\d+)\//.exec(url.pathname)?.[1]) });
+      return route.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: blue });
+    }
     if (url.pathname.includes('/mosaic/') && url.pathname.endsWith('/tilejson.json')) return json({ tilejson: '3.0.0', bounds: [...AOI_BOX], minzoom: 7, maxzoom: 15, 'earthx:order': [] });
     const z = Number(/\/tiles\/WebMercatorQuad\/(\d+)\//.exec(url.pathname)?.[1]);
     if (url.pathname.includes('/overview/tiles/')) {
@@ -169,6 +192,7 @@ async function run(browser, theme, results) {
     if (Number.isInteger(zoom) && zoom !== ZOOMS[0] && zoom >= 2 && asked.every((request) => request.route !== wanted)) problems.push(`z${zoom}: no tile of the ${wanted} was asked for`);
     const wrong = asked.filter((request) => request.route !== wanted && !(zoom === ZOOMS[0] && request.route === 'overview'));
     if (wrong.length) problems.push(`z${zoom}: tiles of the ${wrong[0].route} (z${wrong[0].z}) were asked for where the ${wanted} draws`);
+    if (asked.some((request) => request.route === 'masked')) problems.push(`z${zoom}: the crop view asked for a masked overview, it draws the one without a selection`);
     if (zoom >= 3) {
       const seen = await blueOrGreen();
       if (seen.points === 0) problems.push(`z${zoom}: the area is not on the screen`);
@@ -202,6 +226,42 @@ async function run(browser, theme, results) {
   if ((await shown()) > 0) problems.push('the "Loading data" toast stays when the overview tiles are in');
   slow = false;
   console.log(`${theme}${MANAGER_OPEN ? ' (manager open)' : ''}: toast after ${toast ?? '-'} ms, row mark ${MANAGER_OPEN ? (row > 0 ? 'yes' : 'no') : 'not looked at'}`);
+
+  // The search results: leave the full-resolution view, the four hits are on the map as the results of a search.
+  await page.evaluate(async () => {
+    const { useAppStore } = await import('/src/store.ts');
+    useAppStore.getState().exitFocus();
+    useAppStore.setState({ resultsOnMap: true, downloaded: {}, mosaics: {} });
+  });
+  await page.waitForTimeout(1500);
+  const hitIds = Array.from({ length: 4 }, (_, i) => `CELL_${i}`).sort();
+  for (const zoom of ZOOMS) {
+    asked = [];
+    await page.evaluate(([m, lon, lat, z]) => m.jumpTo({ center: [lon, lat], zoom: z }), [map, ...CENTRE, zoom]);
+    await page.waitForTimeout(600);
+    const label = `search results z${zoom}`;
+    const wanted = zoom < MOSAIC_FROM ? 'masked' : 'scene';
+    if (Number.isInteger(zoom) && zoom !== ZOOMS[0] && zoom >= 2 && asked.every((request) => request.route !== wanted)) problems.push(`${label}: no tile of the ${wanted} was asked for`);
+    // The hits' own previews are 256-px tiles of level 7: asked for from map zoom 5.5, under the overview until it steps aside at 6.5.
+    const allowed = (request) => (request.route === 'masked' ? zoom < MOSAIC_FROM || zoom === ZOOMS[0] : zoom >= SCENES_FROM);
+    const wrong = asked.filter((request) => !allowed(request));
+    if (wrong.length) problems.push(`${label}: tiles of the ${wrong[0].route} (z${wrong[0].z}) were asked for where the ${wanted} draws`);
+    for (const request of asked.filter((r) => r.route === 'masked')) {
+      if (JSON.stringify(request.hits) !== JSON.stringify(hitIds)) problems.push(`${label}: the overview tile names a selection of ${JSON.stringify(request.hits)}, not of the four hits`);
+    }
+    if (zoom >= 3) {
+      const seen = await blueOrGreen();
+      if (seen.points === 0) problems.push(`${label}: the hits are not on the screen`);
+      else if (seen.drawn < seen.points) problems.push(`${label}: the map draws the hits at ${seen.drawn} of ${seen.points} places`);
+    }
+    const credit = await attribution();
+    if (zoom < MOSAIC_FROM && !credit.includes(TEXT)) problems.push(`${label}: the attribution line does not name the dataset`);
+    if (zoom >= MOSAIC_FROM && credit.includes(TEXT)) problems.push(`${label}: the attribution line names the pyramid above its levels`);
+  }
+  if (posts.length === 0) problems.push('search results: no footprint selection was made for the hits');
+  if (posts.some((items) => JSON.stringify(items) !== JSON.stringify(hitIds))) problems.push(`search results: a footprint selection was made for ${JSON.stringify(posts)}, not for the four hits sorted`);
+  if (posts.length > 1) problems.push(`search results: the footprint selection was made ${posts.length} times for the same hits`);
+  console.log(`${theme}${MANAGER_OPEN ? ' (manager open)' : ''}: search results, ${posts.length} footprint selection(s) for ${hitIds.length} hits`);
 
   // No mark: nothing that is not a tooltip says "overview", and no badge is in the page for it.
   const marks = await page.evaluate(() => {
