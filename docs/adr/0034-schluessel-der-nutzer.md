@@ -1,7 +1,11 @@
 # ADR 0034 — Schlüssel der Nutzer
 
-- **Status:** **Entwurf**, Stufe C. Fragen an Otto in §13.
-- **Datum:** 2026-11-16
+- **Status:** **Angenommen** von Otto am 2026-11-16 (§13): F1–F5, F8, F9 und F10 jeweils Option 1 (Empfehlung), mit diesen Abweichungen bzw. Ergänzungen:
+  - **F6 = 1 mit Bedingung:** Ein weitergegebener Ergebnis-Link wirkt ohne Key nur, wenn die Lizenz des Anbieters die Weitergabe erlaubt (Copernicus: ja, der Key regelt nur den Zugang); sonst verlangt der Link den Key. Angabe je Anbieter in `providers.yaml` (§7.2, §8.2).
+  - **F7 abweichend:** Szenen-Datensätze mit Key zeigen bei jedem Zoom die Übersichten der Szene selbst, gelesen mit dem Key des Nutzers. Voraussetzung sind innere Übersichten der Dateien (Messpunkt M3). Nur wenn es sie nicht gibt: anonymer Ersatz, sonst Coverage als dokumentierte Ausnahme. Keine Pyramide aus Nutzer-Keys (§7.4).
+  - **F10 = 1:** M5-44 trägt die Sätze für `ENTSCHEIDUNGEN` §1/§3 im ersten Commit im Wortlaut aus §12 als „Nachtrag Otto“ ein; Otto gibt sie mit dem Merge frei.
+  - Die Messpunkte M1–M4 (§14) macht Otto mit eigenem CDSE-Konto vor der Umsetzung.
+- **Datum:** 2026-11-16 (Entwurf, Draft-PR [#364](https://github.com/oscipal/earthX/pull/364)); 2026-11-16 angenommen.
 - **Aufgabe:** M5-32 laut `docs/plans/m5/m5-discovery-und-suche.md` §6.2 und §2 Punkt 10. Die Nummer 0034 war beim Start frei: Auf `main` endet die Reihe mit 0033, der einzige offene PR (#362, M5-09) legt kein ADR an.
 - **Autonomiestufe:** C. Kein Produktivcode.
   - Geändert sind nur dieses ADR und zwei Zeilen im Entscheidungslog (Ottos Vorgabe vom 11.11.2026, die dort noch fehlte, und dieser Entwurf).
@@ -51,7 +55,7 @@ Belegstufen wie in `adr/0027` und `adr/0032`:
 2. **Weg (§5.4):** `api`/`tiler` lösen aus dem Cookie einen Nachweis im Speicher auf und reichen ihn als undurchsichtiges Objekt (Typ in `readers`, wie `HostSlot` aus M5-36) über `access` an `readers`; `gateway` bekommt nur die Werte und setzt sie nur für Hosts, die `hosts.yaml` als Key-Hosts dieses Anbieters führt. Für Jobs legt `api` je Lauf eine eigene, befristete Freigabe ab (nicht im Auftrag); die Hülle `jobs` reicht den Nachweis über die Pipe an das Kind. Der Kern bekommt ihn als Argument und hält nichts (B9). Dafür braucht es **eine neue Importkante `jobs → identity`** (nur Otto).
 3. **Art des Keys bei CDSE (§6):** zuerst der **S3-Schlüssel** des Nutzers (selbst erzeugt, mit eigenem Ablauf, widerrufbar, nie das Passwort). Er erlaubt Bereichslesen in den entpackten Produkten samt Annotation, also Kacheln und Jobs. Das verlangt `/vsis3/` in `gateway` und eine Auslegung von R-Z für die S3-Signatur.
 4. **Prüfung (§6.3):** bei der Eingabe, beim Öffnen der Seite (höchstens alle 6 h je Key), vor jedem Job und sofort bei `401`/`403` der Quelle. Kein Prüflauf ohne den Nutzer. Läuft der Key während eines Jobs ab, endet der Lauf mit eigener Fehlerart, ohne zweiten Versuch.
-5. **Cache (§7):** Vor jedem Cache steht die Prüfung „gültiger Key dieses Anbieters“. Alles Dauerhafte (Ergebnis-Cache, Browser) je Nutzer, wie Otto zu `adr/0027` F6 bis zur Rechtsklärung festgelegt hat; nur der flüchtige Lese-Cache im Prozess ist gemeinsam. Nach außen jede Antwort `private, no-store`. **Keine Pyramide** aus Nutzer-Keys; unter `min_zoom` ein anonymer Ersatz, wo es einen gibt.
+5. **Cache (§7):** Vor jedem Cache steht die Prüfung „gültiger Key dieses Anbieters“. Alles Dauerhafte (Ergebnis-Cache, Browser) je Nutzer, wie Otto zu `adr/0027` F6 bis zur Rechtsklärung festgelegt hat; nur der flüchtige Lese-Cache im Prozess ist gemeinsam. Nach außen jede Antwort `private, no-store`. Ein weitergegebener Ergebnis-Link wirkt ohne Key nur, wo die Lizenz des Anbieters Weitergabe erlaubt (F6). **Keine Pyramide** aus Nutzer-Keys; Szenen zeigen bei jedem Zoom ihre eigenen Übersichten, gelesen mit dem Key des Nutzers (F7).
 6. **Registry (§8):** Weg `W3` wird freigegeben (`account_paths: [W3]`), neue Datei `backend/catalog/providers.yaml` (ein Eintrag je Anbieter, ein Key je Anbieter), Feld `credential` in `hosts.yaml`. Ohne Key: Datensatz gelistet, Suche und Coverage wie heute, Rasterebene und Processing mit Schloss gesperrt.
 7. **Bedrohungen (§9):** Vor M6 nötig sind Verschlüsselung mit geteiltem Schlüssel, `HttpOnly`-Cookie, Key-Hosts nur aus der Registry, Prüforakel gedrosselt, kein Nachweis in Logs, Fehlern, URLs, Hashes, Rezepten oder Provenienz (mit Testschlüssel als Fangwert), CSP. M6 bringt Login, Quotas je Nutzer, Egress-Proxy, Audit und Datenschutz-Folgenabschätzung.
 8. **Schnitt (§10):** fünf Aufgaben (M5-44 bis M5-48), je höchstens zwei PRs; Jobs mit Key (M5-48) sind die Voraussetzung für die Radar-Kette auf CDSE-Daten aus M5-31.
@@ -343,7 +347,7 @@ Jeder weitere Anbieter kommt mit eigener kleiner Vorlage (Art, Prüfweg, Bedingu
 | Ergebnis (Rezept-Hash) | je Sitzung (C1a): Rezept-Hash plus Sitzungskennung als Schlüssel; nie ein Treffer aus der Sitzung eines anderen. Mit C2 gemeinsam unter gültigen Keys |
 | Übersicht (Pyramide) | **keine** (§7.4) |
 
-**Fertige Ergebnisse** im Objektspeicher sind bearbeitete Daten mit eigener Ablauffrist. Sie zu zeigen, liest nichts mehr beim Anbieter. Vorschlag: Ein Ergebnis-Link, den der Nutzer selbst weitergibt, wirkt wie heute auch ohne Key (Weitergabe durch den Nutzer, kein Cache der Plattform; Auslegung); `ATTRIBUTION.txt` nennt „Contains modified Copernicus Sentinel data [Jahr]“ (§4.5) [A]. Teil von F6.
+**Fertige Ergebnisse** im Objektspeicher sind bearbeitete Daten mit eigener Ablauffrist. Sie zu zeigen, liest nichts mehr beim Anbieter. **Festgelegt (Otto, F6 = 1 mit Bedingung):** Ein Ergebnis-Link, den der Nutzer weitergibt, wirkt ohne Key **nur, wenn die Lizenz des Anbieters die Weitergabe erlaubt**; sonst verlangt der Link einen gültigen Key desselben Anbieters (`403` mit `X-EarthX-Locked`, Schloss am Ergebnis). Die Angabe steht je Anbieter in `providers.yaml` (`results_shareable`, §8.2). Copernicus: ja, der Key regelt nur den Zugang, die Lizenz erlaubt Weitergabe (§4.5); `ATTRIBUTION.txt` nennt „Contains modified Copernicus Sentinel data [Jahr]“. Die Angabe setzt Otto je Anbieter wie jede Lizenz-Einstufung.
 
 ### 7.3 Kontingente des Anbieters
 
@@ -355,8 +359,9 @@ Jeder weitere Anbieter kommt mit eigener kleiner Vorlage (Art, Prüfweg, Bedingu
 ### 7.4 Pyramiden und Ersatz (`adr/0032`)
 
 - Eine Pyramide entsteht nach der Materialisierung, ohne Nutzer (`adr/0032` F1 = 2). Für Key-Daten gibt es dann keinen Key, mit dem sie gebaut werden könnte, außer dem eines zufälligen Nutzers (dessen Kontingent für alle verbraucht würde) oder einem Betreiberkonto (ausgeschlossen). **Keine Pyramide aus Nutzer-Keys** [A].
-- Szenen-Datensätze (Sentinel-1) brauchen nach `adr/0032` ohnehin keine Pyramide; unter `min_zoom` gelten das Budget je Kachel und die Übersichten der Dateien. Ob die Messdateien in den SAFE-Produkten von CDSE innere Übersichten haben, ist offen (Messpunkt M3); ohne sie wird jede grobe Kachel teuer.
-- **„Nie verschwindet ein Bild“** (M5-Plan §2 Punkt 9): Unter `min_zoom` zeigt ein anonymer **Ersatz-Datensatz**, wo es einen gibt (Muster des Ersatzes aus `adr/0032`, F7 im Plan M5-30: GLO-30 für swissALTI3D). Für vollständiges GRD von CDSE wäre das Sentinel-1 GRD aus Earth Search (DS-04), mit der Marke „Overview“ (UI-08) und der Quellenzeile des Ersatzes. Ohne Ersatz: Coverage, als ausdrückliche Ausnahme (F7).
+- **Festgelegt (Otto, F7 abweichend):** Szenen-Datensätze mit Key zeigen **bei jedem Zoom die Übersichten der Szene selbst**, gelesen mit dem Key des Nutzers, wie Sentinel-1 aus AWS: Budget je Kachel (`adr/0032` §6.2), Lesepuffer im Prozess nach F6 (C1a), Grenze je Key (§7.3).
+- **Voraussetzung:** Die Dateien haben innere Übersichten. Das klärt Messpunkt M3 (§14; in Ottos Antwort als „M5“ bezeichnet, gemeint sind die inneren Übersichten) vor der Umsetzung in M5-47.
+- **Nur wenn nicht:** ein anonymer **Ersatz-Datensatz**, wo es einen gibt (Muster des Ersatzes aus `adr/0032`, F7 im Plan M5-30: GLO-30 für swissALTI3D); für vollständiges GRD von CDSE wäre das Sentinel-1 GRD aus Earth Search (DS-04), mit der Marke „Overview“ (UI-08) und der Quellenzeile des Ersatzes. Gibt es keinen, zeigt die Karte unter `min_zoom` die Coverage, als dokumentierte Ausnahme von „nie verschwindet ein Bild“ (M5-Plan §2 Punkt 9).
 
 ---
 
@@ -388,8 +393,10 @@ providers:
     connections_per_key: 4            # Kontingent je Konto (§7)
     create_key_url: <öffentliche Doku-Seite des Anbieters>
     terms_url: <Bedingungen des Anbieters>
+    results_shareable: true           # Lizenz erlaubt Weitergabe (F6); setzt Otto je Anbieter
 ```
 
+- `results_shareable` (Pflicht, ohne Vorgabe, B10): `true`, wenn die Lizenz der Daten des Anbieters Weitergabe erlaubt und der Key nur den Zugang regelt; dann wirkt ein weitergegebener Ergebnis-Link ohne Key (§7.2, F6). `false`: Der Link verlangt einen gültigen Key desselben Anbieters.
 - Keine Adresse eines Token-Endpunkts im Datensatz (`adr/0027` §6.1); sie gehört, wenn je nötig, zum Prüfweg in `providers.yaml`.
 - `hosts.yaml` bekommt je Key-Host `credential: cdse`. Weiter genau eine Zeile je Host (M5-36 G1); die Grenzen gelten für alle Instanzen zusammen. Neu ist die Grenze **je Key** (`connections_per_key`), weil CDSE Verbindungen je Konto zählt (§7.3).
 - Startcheck: Jeder `key_hosts`-Eintrag hat eine Zeile in `hosts.yaml` mit passendem `credential`, und umgekehrt.
@@ -446,16 +453,16 @@ Je Aufgabe höchstens zwei PRs (M5-Plan §2 Punkt 11). Nummern ab M5-44 (auf `ma
 
 | Aufgabe | Inhalt | Stufe | Modell | PRs | hängt ab von |
 |---|---|---|---|---|---|
-| **M5-44** | Registry: Lader und Startcheck für `providers.yaml`, `credential` in `hosts.yaml` und `W3` (geprüft an Fixtures; echte Zeilen erst mit dem ersten Datensatz in M5-47, weil eine Host-Zeile ohne vollen Eintrag ein Ladefehler ist, M5-36 G1), Feld `earthx:access` in der Collection (Anbieter, Weg); Frontend: Schloss statt „Account“, Formular ohne Speichern (gesperrt, Tooltip) | B | Opus, mittel | 1 | Entscheidung zu diesem ADR |
+| **M5-44** | Registry: Lader und Startcheck für `providers.yaml`, `credential` in `hosts.yaml` und `W3` (geprüft an Fixtures; echte Zeilen erst mit dem ersten Datensatz in M5-47, weil eine Host-Zeile ohne vollen Eintrag ein Ladefehler ist, M5-36 G1), Feld `earthx:access` in der Collection (Anbieter, Weg); Frontend: Schloss statt „Account“, Formular ohne Speichern (gesperrt, Tooltip). **Erster Commit:** Sätze für `ENTSCHEIDUNGEN` §1/§3 im Wortlaut aus §12 als „Nachtrag Otto“ (F10), dazu die Doku-Nachträge unten | B | Opus, mittel | 1 | Entscheidung zu diesem ADR |
 | **M5-45** | Ablage: Schema in `identity`, AES-GCM mit geteiltem Schlüssel, Cookie, Routen `/keys`, Frist und Aufräumen, Grenzen gegen Prüforakel, CSP; Frontend-Formular mit Speichern und Status | B | **Opus, hoch** (Sicherheit, Projektplan M6-Zeile) | 2 (Backend, Frontend) | M5-44 |
 | **M5-46** | `gateway`: Typ `Credential`, Key-Hosts aus der Registry, Weglassen bei Weiterleitung, `/vsis3/` nur für Key-Hosts, GDAL je Lesevorgang, kein Fehlerauszug, Prüfweg `s3_head` gegen einen Fixture-Server, Fangwert-Tests | B | **Opus, hoch** | 1–2 | Antworten F4; Messpunkte M1–M3 |
-| **M5-47** | Kacheln mit Key: Prüfung vor jedem Cache, `private`, Grenze je Key, `403` mit `X-EarthX-Locked`; erster CDSE-Datensatz (Auswahl und Lizenz durch Otto), Ersatz unter `min_zoom` | B | Opus, hoch | 2 | M5-45, M5-46; Datensatz-Onboarding |
+| **M5-47** | Kacheln mit Key: Prüfung vor jedem Cache, `private`, Grenze je Key, `403` mit `X-EarthX-Locked`; erster CDSE-Datensatz (Auswahl und Lizenz durch Otto); Übersichten der Szene bei jedem Zoom, Ersatz bzw. Coverage nur ohne innere Übersichten (F7); Ergebnis-Links nach `results_shareable` (F6) | B | Opus, hoch | 2 | M5-45, M5-46; Datensatz-Onboarding; Messpunkt M3 |
 | **M5-48** | Jobs mit Key: Freigabe je Lauf, Import `jobs → identity` (nach F3), Weg über die Pipe, Fehlerarten `credential_rejected` und `quota_exhausted`, Provenienz `access: user_key` | B | Opus, hoch | 1–2 | M5-47; F3 |
 
 - **Bezug zu M5-31 (Radar):** M5-31 entscheidet die Kette und die Eingaben. Braucht sie vollständige GRD oder SLC von CDSE, setzen die Radar-Operatoren auf diesen Daten M5-48 voraus. M5-31 kann parallel entschieden werden; Operatoren, die mit dem anonymen GRD aus AWS auskommen (DS-05a bis DS-05d), hängen nicht daran.
 - **UI-07** (Reiter im Processing-Panel) wartet laut M5-Plan auf die Entscheidung zu diesem ADR, nicht auf die Umsetzung: Der Reiter „Radar“ zeigt Operatoren auf Key-Daten mit Schloss, bis M5-48 da ist.
 - **M6:** Login bindet die Sitzung an ein Konto (beim ersten Login übernimmt das Konto die Zeilen der Sitzung, auf Bestätigung); Quotas und Rate Limits je Nutzer; Egress-Proxy mit Key-Hosts; Instanzschlüssel aus einem KMS; Audit-Log der Key-Nutzung (Zeitpunkt, Anbieter, nie Inhalt); Datenschutz-Folgenabschätzung; Lasttest mit Key-Daten.
-- **Doku-Nachträge** (mit M5-44, erster Commit): `adr/0027` (F6, §4 W3, §6.1, R-Z nach F4), `projektuebersicht.md` Prinzip 2 und §6, `KLAERUNGEN` B8, `architekturplan.md` 3.1 (Zeile `identity`, ggf. `jobs`), 6.5, 11, 12.3; der Satz in `ENTSCHEIDUNGEN` nur durch Otto (§12).
+- **Doku-Nachträge** (mit M5-44, erster Commit): `adr/0027` (F6, §4 W3, §6.1, R-Z nach F4), `projektuebersicht.md` Prinzip 2 und §6, `KLAERUNGEN` B8, `architekturplan.md` 3.1 (Zeile `identity`, ggf. `jobs`), 6.5, 11, 12.3; M5-Plan §2 Punkte 3, 6, 9 und §6.2 (Aufgaben M5-44 bis M5-48); die Sätze in `ENTSCHEIDUNGEN` §1/§3 im Wortlaut aus §12 als „Nachtrag Otto“, freigegeben mit dem Merge (F10).
 
 ---
 
@@ -483,7 +490,7 @@ Ottos Vorgabe vom 11.11.2026 ändert Regeln mit höherem Rang. Dieses ADR schlä
 | `projektuebersicht.md` §6 | Token-Verwaltung „fernes Zukunftsthema“; Login kommt früher als die Token-Verwaltung | vorgezogen nach `adr/0034`, vor dem Login an die Sitzung gebunden |
 | `architekturplan.md` 1.2, 6.1, 13 | nichts, was einen Token braucht; „Auth … in der Zielarchitektur zunächst nicht vorhanden“; `auth.py` nicht übernehmen | Nachträge wie `ENTSCHEIDUNGEN` §1/§3 |
 | M5-Plan §2 Punkt 3 und 6 | nur frei und ohne Schlüssel; kostenlose Konten nur als Katalogeintrag | durch Punkt 10 (Otto, 11.11.2026) geändert; Nachtrag mit M5-44 |
-| M5-Plan §2 Punkt 9 | nie eine leere Karte | Ausnahme Coverage unter `min_zoom` ohne Ersatz (F7) |
+| M5-Plan §2 Punkt 9 | nie eine leere Karte | Szenen mit Key zeigen ihre eigenen Übersichten; Coverage nur ohne innere Übersichten und ohne Ersatz, als dokumentierte Ausnahme (F7) |
 | `KLAERUNGEN` B8 | „Token-Logik ist nicht Teil des Gateways“ | `gateway` setzt den Nachweis des Nutzers nur für Key-Hosts aus der Registry; es holt und speichert keinen |
 | `adr/0027` F6, §4.4 | W3 eigener ADR nach M6; Login als Voraussetzung; Audit-Log; **Cache je Nutzer bis zur Rechtsklärung** | W3 vor dem Login an die Sitzung gebunden; Audit mit M6; Cache nach C1a (§7.1): dauerhaft je Nutzer, Lesepuffer im Prozess gemeinsam (Auslegung, F6) |
 | `adr/0027` F7 | Rechtsrat und Datenschutz-Folgenabschätzung vor W3 | vor dem öffentlichen Betrieb (F9) |
@@ -495,7 +502,17 @@ Ottos Vorgabe vom 11.11.2026 ändert Regeln mit höherem Rang. Dieses ADR schlä
 
 ---
 
-## 13. Fragen an Otto
+## 13. Fragen an Otto — beantwortet am 2026-11-16
+
+**Antworten (Otto, 16.11.2026):** F1 = 1, F2 = 1, F3 = 1, F4 = 1, F5 = 1, F8 = 1, F9 = 1, F10 = 1.
+
+- **F6 = 1 mit Bedingung:** Ein weitergegebener Ergebnis-Link wirkt ohne Key nur, wenn die Lizenz des Anbieters die Weitergabe erlaubt (Copernicus: ja, der Key regelt nur den Zugang); sonst verlangt der Link den Key. Festgehalten in §7.2 und als `results_shareable` je Anbieter in `providers.yaml` (§8.2).
+- **F7 abweichend:** Szenen-Datensätze mit Key zeigen bei jedem Zoom die Übersichten der Szene selbst, gelesen mit dem Key des Nutzers (wie Sentinel-1 aus AWS, Budget je Kachel, Lesepuffer nach F6). Voraussetzung: innere Übersichten der Dateien, geklärt vor der Umsetzung (Messpunkt M3, §14). Nur wenn nicht: anonymer Ersatz, wo es einen gibt, sonst Coverage als dokumentierte Ausnahme. Keine Pyramide aus Nutzer-Keys. Festgehalten in §7.4.
+- **F10 = 1:** M5-44 trägt die Sätze für `ENTSCHEIDUNGEN` §1/§3 im ersten Commit im Wortlaut aus §12 als „Nachtrag Otto“ ein; Otto gibt sie mit dem Merge frei.
+- **Messpunkte:** Otto macht sie mit eigenem CDSE-Konto vor der Umsetzung. Mit F4 = 1 entfällt M5 (OAuth-Client).
+
+Damit gelten auch die Auslegungen, die die Fragen offenlegten: R-Z für die Freigabe je Lauf (F3) und für die S3-Signatur (F4); der Lesepuffer im Prozess als gemeinsam (F6); Rechtsrat und Datenschutz-Folgenabschätzung vor dem öffentlichen Betrieb statt vor W3 (F9).
+
 
 **F1 — Wo liegt der Key vor dem Login?**
 1. Auf dem Server, verschlüsselt, an eine Sitzung des Browsers gebunden; entschlüsseln nur mit Cookie und Schlüssel der Instanz (A3) **(Empfehlung)**
@@ -551,13 +568,13 @@ Ottos Vorgabe vom 11.11.2026 ändert Regeln mit höherem Rang. Dieses ADR schlä
 
 ## 14. Was offen bleibt
 
-**Messpunkte für Otto** (mit eigenem CDSE-Konto, lokal, nie in CI oder Cloud-Sitzungen; keine Adresse, keine Item-ID und kein Key ins Repo). Vor M5-46:
+**Messpunkte für Otto** (mit eigenem CDSE-Konto, lokal, nie in CI oder Cloud-Sitzungen; keine Adresse, keine Item-ID und kein Key ins Repo). Vor M5-46, M3 spätestens vor M5-47 (F7):
 
 - **M1 Prüfweg:** Ein kleines, für jedes Konto lesbares Objekt in `eodata` wählen; mit eigenem S3-Schlüssel `HEAD` darauf: `200`? Mit abgelaufenem bzw. gelöschtem Schlüssel: `403` mit welchem Code? Steht die Access-Key-ID im Fehlertext?
 - **M2 Bereichslesen:** In einem GRD- und einem SLC-Produkt: liegen Annotation (`annotation/*.xml`, `calibration/`, `noise`) und Messdateien entpackt im Bucket, und antworten sie auf Bereichsanfragen (`206`)?
 - **M3 Übersichten:** Haben die Messdateien (`measurement/*.tiff`) Kacheln und innere Übersichten (`gdalinfo`), oder sind es Streifen ohne Übersicht? Davon hängen `min_zoom` und Kosten grober Kacheln ab.
 - **M4 Weiterleitungen und Grenzen:** Leitet `eodata` je nach Betreiber weiter (DNS oder `307`)? Was antwortet es bei mehr als 4 gleichzeitigen Verbindungen (warten, `429`, `503`)?
-- **M5 OAuth-Client (nur bei F4 = 2 oder 3):** Öffnet ein Token eines Sentinel-Hub-Clients den OData-Download (`$value`) oder `zipper`?
+- **M5 OAuth-Client (entfällt mit F4 = 1; nur bei einem späteren Wechsel auf F4 = 2 oder 3):** Öffnet ein Token eines Sentinel-Hub-Clients den OData-Download (`$value`) oder `zipper`?
 
 **Technik:**
 
