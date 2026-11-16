@@ -290,6 +290,16 @@ class TestThePlaces:
             await asyncio.sleep(0.5)
         assert any(record.getMessage() == "source place lost" for record in caplog.records)
 
+    async def test_a_place_goes_back_quietly_and_its_row_is_gone(
+        self, conns, host: str, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        caplog.set_level(logging.WARNING, logger="earthx.catalog")
+        async with PostgresHostCoordinator(conns[0]).place(host, 2):
+            pass
+        cur = await conns[1].execute("SELECT count(*) FROM public.earthx_source_lease WHERE host = %s", (host,))
+        assert (await cur.fetchone())[0] == 0
+        assert [record.getMessage() for record in caplog.records] == []
+
     async def test_the_place_goes_back_after_an_error_in_the_block(self, conns, host: str) -> None:
         coordinator = PostgresHostCoordinator(conns[0])
         with pytest.raises(RuntimeError):

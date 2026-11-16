@@ -219,7 +219,7 @@ class PostgresHostCoordinator:
     async def _one(self, sql: str, params: dict[str, object], *, optional: bool = False) -> tuple | None:
         async with self._conn.cursor() as cur:
             await cur.execute(sql, params)
-            row = await cur.fetchone()
+            row = await cur.fetchone() if cur.description is not None else None
         if row is None and not optional:
             raise psycopg.DataError("the statement returned no row")
         return row
