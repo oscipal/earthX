@@ -57,6 +57,7 @@ import { useAppStore } from '../store';
 import type { StacItem } from '../types';
 import { ChevronDownIcon, ChevronUpIcon, PlusIcon, UploadIcon } from './icons';
 import RenderFields, { NO_COLORMAP } from './RenderFields';
+import { percentOfLook } from '../displayLook';
 import AutoScaleButton from './AutoScaleButton';
 import ResamplingDialog from './ResamplingDialog';
 import JobDetails from './JobDetails';
@@ -444,6 +445,8 @@ function PreviewSection({ view }: { view: OrderView }) {
   // The colour picture has a range and a unit for each channel (UI-04 part 5), the pair "Apply" has to measure being each one's own.
   const colour = read?.band === RGB;
   const singlePercent = percentMode && !colour;
+  // How the registry of the operator says the band shown is drawn (M5-10): what "Auto-scale" in percentiles takes.
+  const look = useProcessingStore((s) => s.preview?.look ?? null);
   const channelValues = channelsOfRange(rangeDraft);
   const colourPercent = colour && channelValues.some((channel) => channel.percent);
   // A channel that cannot be drawn locks "Apply" with its reason, and its fields are marked.
@@ -526,8 +529,12 @@ function PreviewSection({ view }: { view: OrderView }) {
                 title={colourPercent || singlePercent ? 'Put the usual stretch in the fields: the 2nd to the 98th percentile' : 'Use the measured range (the 2nd to 98th percentile, or −1 to 1 for an index); with AOI only, measured over the AOI'}
                 onClick={() => {
                   if (colourPercent) editChannels(channelsAutoScaled(channelValues, measuredRange(measure)));
-                  else if (singlePercent) setTyped(DEFAULT_PERCENT);
-                  else autoStretch();
+                  else if (singlePercent && look?.scale !== 'fixed') setTyped(percentOfLook(look));
+                  else {
+                    // A fixed range (an aspect) is values, not percentiles.
+                    setRangeUnit('value');
+                    autoStretch();
+                  }
                 }}
               />
               <button

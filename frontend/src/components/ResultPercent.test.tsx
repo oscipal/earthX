@@ -229,6 +229,46 @@ describe('"Apply" with percentiles', () => {
   });
 });
 
+// Otto, 16.11.2026 (M5-10): a terrain product has the look of the registry; "Auto-scale" takes it.
+describe('"Auto-scale" of a terrain product', () => {
+  const HILLSHADE = { colormap: 'greys_r', scale: 'percentiles' as const, low: 0, high: 100 };
+  const SLOPE = { colormap: 'rdylgn_r', scale: 'measured' as const };
+  const ASPECT = { colormap: 'hsv', scale: 'fixed' as const, low: 0, high: 360 };
+  const ASPECT_PRESET = { vmin: '0', vmax: '360', colormap: 'hsv' };
+
+  it('puts 0 and 100 in the fields of a hillshade typed in percentiles', () => {
+    open(layer(undefined, { look: HILLSHADE }));
+    typedPercent('10', '90');
+    click(button('Auto-scale'));
+    expect(inputs().map((i) => i.value)).toEqual(['0', '100']);
+    expect(unitText()).not.toBe('absolute');
+    expect(reads()).toEqual([]);
+  });
+
+  it('puts the usual 2 and 98 in the fields of a slope typed in percentiles', () => {
+    open(layer(undefined, { look: SLOPE }));
+    typedPercent('10', '90');
+    click(button('Auto-scale'));
+    expect(inputs().map((i) => i.value)).toEqual(['2', '98']);
+  });
+
+  it('goes back to the values 0 and 360 for an aspect, which is no percentiles, and keeps its colormap', () => {
+    open(layer(undefined, { look: ASPECT, preset: ASPECT_PRESET }));
+    typedPercent('10', '90');
+    click(button('Auto-scale'));
+    expect(unitText()).toBe('absolute');
+    expect(inputs().map((i) => i.value)).toEqual(['0', '360']);
+  });
+
+  it('puts 0 and 360 in the values of an aspect, over what was typed', () => {
+    open(layer(undefined, { look: ASPECT, preset: ASPECT_PRESET }));
+    type(inputs()[0], '45');
+    type(inputs()[1], '90');
+    click(button('Auto-scale'));
+    expect(inputs().map((i) => i.value)).toEqual(['0', '360']);
+  });
+});
+
 describe('"Save" with percentiles', () => {
   const job = () => useProcessingStore.getState().jobs[0];
   beforeEach(() => {

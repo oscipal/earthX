@@ -1,10 +1,10 @@
 // Which map layers are loading (plan M5-30 §8.7, Otto, 13.11.2026): a layer whose tiles are on their way, or whose mosaic the page is still
-// waiting for, shows a mark in its row of the layer manager once that has lasted a moment (`components/LoadingMark.tsx`), and the busy
-// toast of the status bar whenever any of them is loading (`components/StatusBar.tsx`). The map says which of its raster sources have tiles in
+// waiting for, makes the busy toast of the status bar say "Loading data" once that has lasted a moment (UI-09: the row of the layer manager shows
+// no mark any more) (`components/StatusBar.tsx`). The map says which of its raster sources have tiles in
 // flight; `ownerOfSource` says which row each belongs to.
 
 import type { Map as MapLibreMap } from 'maplibre-gl';
-import { ownerOfSource, RESULTS_OWNER } from './mapLayers';
+import { ownerOfSource } from './mapLayers';
 import { passesOf, viewOfPass } from './mosaic';
 import { shownViewOf, useAppStore, type AppState } from './store';
 
@@ -67,12 +67,8 @@ export function viewWaitsForMosaic(s: Pick<AppState, 'focusMode' | 'showDownload
   return passesOf(Object.entries(view.downloaded), view.groups).some((pass) => viewOfPass(view.dataset?.id ?? null, pass, s.mosaics).kind === 'pending');
 }
 
-// Whether the row `owner` of the layer manager is loading now, before any delay (`useLayerLoading`).
-export const isOwnerLoading = (s: AppState, owner: string): boolean =>
-  s.mapLoading.includes(owner) || (owner === RESULTS_OWNER && viewWaitsForMosaic(s));
-
-// Whether anything the map draws is loading now, before any delay: a row of the layer manager, or the view waiting for its mosaic. The busy
-// toast (`components/StatusBar.tsx`) shows it whether the layer manager is open or not, and whatever rows it has.
+// Whether anything the map draws is loading now, before any delay: a layer, or the view waiting for its mosaic. The busy toast
+// (`components/StatusBar.tsx`) shows it whether the layer manager is open or not.
 export const isMapLoading = (s: AppState): boolean => s.mapLoading.length > 0 || viewWaitsForMosaic(s);
 
 export function setMapLoading(owners: readonly string[]): void {

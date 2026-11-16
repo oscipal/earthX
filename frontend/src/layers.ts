@@ -2,6 +2,7 @@
 // screen (a quicklook, a full-res crop, a stitch, a decomposition …) plus the
 // state needed to re-select it and keep working.
 
+import type { DisplayLook } from './displayLook';
 import type { Coords4 } from './geoUtils';
 import type { RGB } from './processingBands';
 import type { Percent } from './percentRange';
@@ -143,6 +144,9 @@ export interface ResultLayerInfo {
   // The range and colormap of the index preset the band the layer draws is (its expression is the preset's, NM4-14);
   // `null` for any other band. Left out in a layer made before this was written.
   preset?: PreviewRange | null;
+  // How the registry of the operator says the band the layer draws is drawn, where a step with a look made it (a terrain product, M5-10):
+  // what "Auto-scale" in percentiles takes. `null` for any other band.
+  look?: DisplayLook | null;
   // The bands of a result of more than one, in the order of the file, and the place of the one the layer draws
   // (`bidx` is the place + 1); left out for a result of one band (NM4-43e PR 2).
   bands?: ResultBand[];

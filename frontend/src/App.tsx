@@ -4,6 +4,7 @@ import AppRail from './components/AppRail';
 import ControlPanel from './components/ControlPanel';
 import DataCatalogue from './components/DataCatalogue';
 import DownloadDialog from './components/DownloadDialog';
+import ErrorBoundary from './components/ErrorBoundary';
 import ColormapPicker from './components/ColormapPicker';
 import { ZoomToSelectionIcon } from './components/icons';
 import Inspector from './components/Inspector';
@@ -74,7 +75,9 @@ export default function App() {
 
   return (
     <div className={`app${mapEdgeClasses({ dock: dock !== null, inspector: inspectorOpen, processing: processingOpen })}`} data-theme={theme}>
-      <MapView />
+      <ErrorBoundary what="The map">
+        <MapView />
+      </ErrorBoundary>
 
       <AppRail />
       <TipLayer />

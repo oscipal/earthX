@@ -8,6 +8,7 @@ import { channelsOfRescale, percentsOfChannels, withoutChannels } from './channe
 import type { Percent } from './percentRange';
 import { buildTileUrl } from './mapLayers';
 import { RGB, RGB_LABEL, startBand } from './processingBands';
+import { lookRange, type DisplayLook } from './displayLook';
 import { presetFor, presetRange, type IndexPreset } from './indexPresets';
 import { isIntegerType } from './processingDefaults';
 import { maskLayerOf } from './processingOrder';
@@ -72,18 +73,29 @@ export interface ResultBand {
   // The expression of the Band math step that made the band, where the order or the results say it (NM4-14): what the
   // presets of the dataset are matched by. `null` for a band of the data.
   expression?: string | null;
+  // How the registry of the operator says the band is drawn, where a step with looks made it (M5-10): a terrain product. `null` otherwise.
+  look?: DisplayLook | null;
 }
 
 // The bands of `properties.bands` in the order of the file, so that the place of a band + 1 is its `bidx`. A band is judged
 // as an index (`render.ts::scaleOf`) if a Band math step of the order made it; without the order, as the job is judged: if
 // any step did.
-export function resultBands(properties: Record<string, unknown> | undefined, order: { steps: { op: string; params: Record<string, unknown> }[] } | null): ResultBand[] {
+export function resultBands(
+  properties: Record<string, unknown> | undefined,
+  order: { steps: { op: string; params: Record<string, unknown> }[] } | null,
+  looks: (step: { op: string; params: Record<string, unknown> }) => DisplayLook | null = () => null,
+): ResultBand[] {
   const listed = properties?.bands;
   if (!Array.isArray(listed)) return [];
   const steps = order?.steps.flatMap((step) =>
     step.op === 'band_math' && typeof step.params.name === 'string' ? [[step.params.name, step.params.expression] as const] : [],
   );
   const made = new Set(steps?.map(([name]) => name));
+  // The bands a step with a look made, by name (M5-10).
+  const looked = new Map(order?.steps.flatMap((step) => {
+    const look = typeof step.params.name === 'string' ? looks(step) : null;
+    return look ? [[step.params.name as string, look] as const] : [];
+  }));
   const any = properties?.['processing:expression'] != null;
   // The results name the expression of the last Band math step and the band it made; the order says it for every one.
   const last = properties?.['processing:expression'] as { name?: unknown; expression?: unknown } | undefined;
@@ -93,7 +105,7 @@ export function resultBands(properties: Record<string, unknown> | undefined, ord
   );
   return listed.map((band): ResultBand => {
     const name = typeof (band as { name?: unknown } | null)?.name === 'string' ? (band as { name: string }).name : '';
-    return { name, stats: statsFrom([band], order === null ? any : made.has(name)), expression: expressions.get(name) ?? null };
+    return { name, stats: statsFrom([band], order === null ? any : made.has(name)), expression: expressions.get(name) ?? null, look: looked.get(name) ?? null };
   });
 }
 
@@ -101,7 +113,9 @@ export function resultBands(properties: Record<string, unknown> | undefined, ord
 // band of the data are none.
 export function presetOfResultBand(band: ResultBand | undefined, presets: readonly IndexPreset[]): PreviewRange | null {
   const preset = presetFor(presets, band?.expression);
-  return preset ? presetRange(preset) : null;
+  if (preset) return presetRange(preset);
+  // A band a step with a look made (a terrain product) is drawn as the registry of the operator says, from what the job measured (M5-10).
+  return band?.look ? lookRange(band.look, band.stats) : null;
 }
 
 // The places in the file of the three bands of the colour picture (`earthx:true_color`: red, green, blue), or `null` where the

@@ -16,6 +16,7 @@
 // order (K4): any change to the order makes it disappear, and "Start job"
 // waits for a new one.
 
+import { lookOfStep, type DisplayLook } from './displayLook';
 import { create } from 'zustand';
 
 import { fetchItem, fetchStatisticsAt, HttpError, postAreaStatistics, withPercentiles, type AreaStatistics } from './api';
@@ -383,6 +384,9 @@ interface ProcessingState {
   rangeNote: string | null;
   // The user applied the range in `range` (also when it is the start range): it holds against a measure.
   rangeByHand: boolean;
+  // The colormap "Auto-scale" leaves as it is (Otto, 16.11.2026): it resets the range only, so the colormap chosen stays over the measure and
+  // the preset that would bring their own. Empty until "Auto-scale" is pressed; gone with a new band shown.
+  colormapHeld: string | null;
   // The range fields hold what the user typed and did not apply; a measure does not write over them.
   rangeEdited: boolean;
   // "Review" was asked for this draft: empty required fields show their hint.
@@ -1115,6 +1119,7 @@ const EMPTY_DRAFT = {
   measure: null as PreviewMeasure | null,
   rangeNote: null as string | null,
   rangeByHand: false,
+  colormapHeld: null as string | null,
   rangeEdited: false,
   reviewAsked: false,
   estimate: null,
@@ -1279,6 +1284,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     try {
       const doc = await fetchResults(jobID);
       const properties = doc.result?.properties;
+      const order = get().jobs.find((j) => j.jobID === jobID)?.order ?? null;
       const href = tilesHref(doc);
       updateJob(jobID, {
         archive: archiveOf(doc),
@@ -1288,7 +1294,13 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
           ? { href, width: typeof doc.result?.width === 'number' ? doc.result.width : null, gsd: positive(properties?.gsd) }
           : null,
         statistics: resultStats(properties),
-        bands: resultBands(properties, get().jobs.find((j) => j.jobID === jobID)?.order ?? null),
+        bands: resultBands(properties, order, (step) => {
+          // How the registry of the operator says the band of the step is drawn (M5-10); the description of the dataset is there once the job was
+          // started from the panel.
+          const description = get().descriptions[order?.inputs[0]?.dataset ?? ''];
+          const operators = description?.state === 'ready' ? description.info.operators : [];
+          return lookOfStep(operators.find((o) => o.op === step.op)?.looks, step.params);
+        }),
         normalize: normalizeRuns(properties?.['earthx:normalize']),
       });
     } catch (error) {
@@ -1669,7 +1681,9 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       // The measure over the AOI is asked again where it fell back to the scene.
       for (const [key, measure] of measures) if (measure.source === 'fallback') measures.delete(key);
       settledKey = null;
-      set({ range: DEFAULT_RANGE, rangeByHand: false, rangeEdited: false });
+      const colormap = get().rangeDraft.colormap;
+      const held = colormap === '' ? null : colormap;
+      set({ range: held ? { ...DEFAULT_RANGE, colormap: held } : DEFAULT_RANGE, rangeByHand: false, rangeEdited: false, colormapHeld: held });
       refreshPreview();
     },
     // The preview on screen becomes a layer of its own.
@@ -1748,6 +1762,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
           ...(classes ? { classes: true as const } : {}),
           stats,
           preset,
+          look: place === RGB ? null : (job.bands[several ? place : 0]?.look ?? null),
           ...(several ? { bands: job.bands, band: place, ...(colour ? { colour } : {}) } : {}),
           ...typedOf(ownRangeOf(job, job.bands, place)),
         },
@@ -1956,7 +1971,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     setDtype: (dtype) => set({ dtype: dtype || null, reviewError: null, startError: null, ...dropReview() }),
     setShown: (name) => {
       if (get().shown === name) return;
-      set({ shown: name, range: DEFAULT_RANGE, rangeByHand: false, rangeEdited: false });
+      set({ shown: name, range: DEFAULT_RANGE, rangeByHand: false, rangeEdited: false, colormapHeld: null });
     },
 
     // "Load recipe…": the steps and the data type of a `recipe.json` become the draft, on the
@@ -2243,7 +2258,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
             first = false;
             return { ...o, tileUrl: colour ? colourTileUrl(o.tileUrl, colour, render) : bandTileUrl(o.tileUrl, place as number, render) };
           });
-          return { ...l, overlays, result: { ...kept, band: place, ...(classes ? { classes: true as const } : {}), stats, preset, ...typedOf(ownRangeOf(job, info.bands!, place)) } };
+          return { ...l, overlays, result: { ...kept, band: place, ...(classes ? { classes: true as const } : {}), stats, preset, look: colour ? null : (band?.look ?? null), ...typedOf(ownRangeOf(job, info.bands!, place)) } };
         }),
       });
     },
@@ -2547,10 +2562,18 @@ export function handRangeOf(p: Pick<ProcessingState, 'range' | 'rangeByHand'>): 
 
 // The range the preview is drawn with (M4-19c): the one the user applied; else the one the measure of this very
 // preview calls for (the rule of a result's, `scaleOf`); else the start range. Between the two: the preset of an index (NM4-14, D2).
-function drawnRange(p: Pick<ProcessingState, 'range' | 'rangeByHand' | 'measure'>, spec: Pick<PreviewSpec, 'measure' | 'preset'>): PreviewRange {
+export function drawnRange(p: Pick<ProcessingState, 'range' | 'rangeByHand' | 'measure' | 'colormapHeld'>, spec: Pick<PreviewSpec, 'measure' | 'preset' | 'look'>): PreviewRange {
   if (handRangeOf(p)) return p.range;
-  if (spec.preset) return spec.preset;
-  return (p.measure?.key === spec.measure ? measuredRange(p.measure) : null) ?? p.range;
+  if (spec.preset) return holdingColormap(p, spec.preset);
+  const measured = p.measure?.key === spec.measure ? measuredRange(p.measure, spec.look) : null;
+  // A band with a look has its colormap before the measure is there (M5-10).
+  return holdingColormap(p, measured ?? (spec.look ? { ...p.range, colormap: spec.look.colormap } : p.range));
+}
+
+// "Auto-scale" resets the range, not the colormap: where it was pressed, the colormap it found stays over whatever range the measure or a preset calls for.
+// The range comes back as it was given where nothing is held or it has the colormap already.
+function holdingColormap(p: Pick<ProcessingState, 'colormapHeld'>, range: PreviewRange): PreviewRange {
+  return p.colormapHeld && range.colormap !== p.colormapHeld ? { ...range, colormap: p.colormapHeld } : range;
 }
 
 // One measure per state of the preview, which is the steps over the first scene (over the AOI, for "AOI only" with
@@ -2661,13 +2684,13 @@ function fieldsShow(spec: PreviewSpec | null): Partial<Pick<ProcessingState, 'ra
 
 // Takes a measure into the state: with it the unit, and — where no range of the user's holds — the range it calls
 // for in the fields, unless the user is typing in them. Without one the panel says so.
-function adoptMeasure(measure: PreviewMeasure | null, preset: PreviewRange | null): void {
+function adoptMeasure(measure: PreviewMeasure | null, preset: PreviewRange | null, look: DisplayLook | null = null): void {
   const p = useProcessingStore.getState();
   const hand = p.rangeByHand;
   useProcessingStore.setState({
     measure,
     rangeNote: hand || measure !== null || preset !== null ? null : NO_MEASURE,
-    ...(!hand && !p.rangeEdited ? { rangeDraft: preset ?? measuredRange(measure) ?? p.range } : {}),
+    ...(!hand && !p.rangeEdited ? { rangeDraft: holdingColormap(p, preset ?? measuredRange(measure, look) ?? (look ? { ...p.range, colormap: look.colormap } : p.range)) } : {}),
   });
 }
 
@@ -2811,7 +2834,7 @@ async function settleAs(run: number, first: PreviewSpec): Promise<void> {
     if (measure === TOO_LATE) {
       late = request;
     } else {
-      adoptMeasure(measure, spec.preset);
+      adoptMeasure(measure, spec.preset, spec.look);
       spec = wantedPreview(limit);
     }
   }
@@ -2821,7 +2844,7 @@ async function settleAs(run: number, first: PreviewSpec): Promise<void> {
   if (late) {
     const measure = await late;
     if (!stillWanted(run, spec, limit)) return;
-    adoptMeasure(measure, spec?.preset ?? null);
+    adoptMeasure(measure, spec?.preset ?? null, spec?.look ?? null);
     const again = wantedPreview(limit);
     if (again && again.key !== spec?.key) {
       const now = wantedPreview();
@@ -2832,7 +2855,7 @@ async function settleAs(run: number, first: PreviewSpec): Promise<void> {
   // With one, the measure is for the unit alone, and the picture does not wait for it.
   if (spec && hand) {
     const measure = await measureFor(spec);
-    if (stillWanted(run, spec, limit)) adoptMeasure(measure, spec.preset);
+    if (stillWanted(run, spec, limit)) adoptMeasure(measure, spec.preset, spec.look);
   }
 }
 

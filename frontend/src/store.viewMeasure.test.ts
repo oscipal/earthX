@@ -135,6 +135,32 @@ describe('"auto-scale" over the area', () => {
     expect(state().notice).toBeNull();
   });
 
+  // Otto, 16.11.2026: "Auto-scale" resets the range (vmin/vmax) only; the colormap chosen stays.
+  it('leaves the colormap alone: only the range is reset', async () => {
+    openView(true);
+    useAppStore.setState({ pendingColormapName: 'magma', pendingVmin: '1', pendingVmax: '2' });
+    answer(() => json({ exact: true, factor: 1, bands: [band('visual_1', 3, 250, 10, 200), band('visual_2', 4, 240, 20, 190), band('visual_3', 5, 230, 30, 180)] }));
+    await state().autoStretch();
+    expect([state().pendingVmin, state().pendingVmax]).toEqual(['10', '200']);
+    expect(state().pendingColormapName).toBe('magma');
+  });
+
+  it('leaves the colormap alone where the range is in percentiles', async () => {
+    openView(true);
+    useAppStore.setState({ pendingBand: 'red', pendingColormapName: 'magma', pendingUnit: 'percent', pendingPercentLow: '5', pendingPercentHigh: '90' });
+    await state().autoStretch();
+    expect(state().pendingColormapName).toBe('magma');
+    expect([state().pendingPercentLow, state().pendingPercentHigh]).toEqual(['2', '98']);
+  });
+
+  it('keeps the colormap when the measure fails, too', async () => {
+    openView(true);
+    useAppStore.setState({ pendingColormapName: 'magma' });
+    answer(() => json({ detail: 'broken' }, 500), () => json({ detail: 'broken' }, 500));
+    await state().autoStretch();
+    expect(state().pendingColormapName).toBe('magma');
+  });
+
   it('turns the range of a band back into the raw numbers the tile draws', async () => {
     openView(true);
     useAppStore.setState({ pendingBand: 'red' });
