@@ -121,7 +121,7 @@ Nach der Pause ist die erste Anfrage die Probe: Erfolg schließt den Unterbreche
 
 - **`catalog/source_hosts.py`** (asynchron, wie `geocode_cache.py`): `PostgresHostCoordinator` für `discovery` (`materialize`, Harvester). `catalog` darf `gateway` importieren, das Protokoll passt strukturell.
 - **`jobs/source_hosts.py`** (synchron, PR 2): dieselben Anweisungen für den Aufseher des Pyramidenbaus, weil `jobs` weder `catalog` noch `gateway` importieren darf. Ein Test hält die SQL-Texte beider Module gleich (wie die Dateinamen in `overview_builder.py`).
-- **Geprüft (§9a, Punkt 2): Es gibt kein Modul, das beide heute importieren dürfen.** Nach `architekturplan.md` 3.1 und `.importlinter` darf `catalog` nur `gateway`, `jobs` nur `processing` und `objectstore`; die Schnittmenge der zwölf Module ist leer. `gateway` scheidet aus (für `jobs` verboten, und es soll keine Datenbank kennen), `processing` ebenso (für `catalog` verboten, und `processing` darf `psycopg` nicht einmal über Ketten erreichen). Bleibt nur ein Modul im Paketstamm: `earthx.logging` ist fachfremd, und ein neues Stamm-Modul stünde unter keinem Vertrag aus 3.1, wäre also ein Umweg um die Regeln statt einer erlaubten Stelle. Ebenso wenig ein Lesen der SQL-Datei aus dem Paket `catalog` durch `jobs`. Deshalb wie geplant zwei Fassungen mit Test auf Gleichheit.
+- **Geprüft (§9a, Punkt 2): Es gibt kein Modul, das beide heute importieren dürfen.** Nach `architekturplan.md` 3.1 und `.importlinter` darf `catalog` nur `gateway`, `jobs` nur `processing` und `objectstore`; die Schnittmenge der zwölf Module ist leer. `gateway` scheidet aus (für `jobs` verboten, und es soll keine Datenbank kennen), `processing` ebenso (für `catalog` verboten, und `processing` darf `psycopg` nicht einmal über Ketten erreichen). Bleibt nur ein Modul im Paketstamm: `earthx.logging` ist fachfremd, und ein neues Stamm-Modul stünde unter keinem Vertrag aus 3.1, wäre also ein Umweg um die Regeln statt einer erlaubten Stelle. Ebenso wenig ein Lesen der SQL-Datei aus dem Paket `catalog` durch `jobs`. **Umgesetzt (Auslegung, gilt bis Widerspruch, §9.1):** Die Regeln liegen als Funktionen `earthx_source_*` in Migration 022; `catalog` ruft sie auf, `jobs` ruft in PR 2 dieselben auf. Doppelt bleiben nur die einzeiligen Aufrufe, kein SQL der Regeln; der Test auf Gleichheit prüft in PR 2 nur noch die Namen und Argumente der Aufrufe.
 - `catalog.source_hosts` kommt in die Verbotsliste des Vertrags `runner` (wie jedes Modul von `catalog`, `test_module_boundaries.py`). Sonst keine Änderung an den Importregeln.
 
 ### 5.3 `materialize` und Harvester
@@ -163,7 +163,7 @@ Mit `scripts/tile-bench/slow_source.py` (RTT 170 ms, Verbindungsaufbau 350 ms) u
 | M3 Unterbrecher | 3 Prozesse, Quelle 60 s lang `503` | Anfragen an der Quelle im Fenster; Zeit bis zur ersten Antwort danach | vorher je Prozess bis 3 Versuche je Anfrage; nachher 3 Fehler, dann Pause |
 | M4 Pyramidenbau (PR 2) | Bau aus `make_cogs.py`, allein und mit einem Prozess wie M1 auf demselben Host | Wandzeit des Baus, Abstand der Anfänge an der Quelle | allein ≤ +5 % (J5); zusammen ≥ 0,25 s |
 
-Ergebnis als Tabelle in §9 und im PR.
+Ergebnis als Tabelle in §10.2 und im PR.
 
 ---
 
@@ -222,4 +222,22 @@ Dazu zwei Vorgaben:
 
 1. **Plätze mit Frist und Herzschlag**, damit eine abgestürzte Instanz keinen Platz dauerhaft belegt; mit Test. Umgesetzt wie §3.2: Frist 30 s, Herzschlag alle 10 s, eine abgelaufene Zeile übernimmt der nächste.
 2. **Eine Fassung des SQL, wenn es ein Modul gibt, das `catalog` und `jobs` beide schon heute importieren dürfen**, sonst zwei mit Test auf Gleichheit. Ergebnis der Prüfung: keines (§5.2); also zwei Fassungen, die zweite mit PR 2.
+
+---
+
+## 10. Umsetzung
+
+### 10.1 PR 1 ([#368](https://github.com/oscipal/earthX/pull/368)), Stand 16.11.2026
+
+- **Migration 022** (`earthx_source_host`, `earthx_source_lease`) mit den Regeln als **Funktionen** (`earthx_source_reserve`, `_pause_left`, `_report`, `_acquire`, `_renew`, `_release`, `CREATE OR REPLACE`). **Auslegung zu §9a Punkt 2:** Ein gemeinsames Python-Modul für `catalog` und `jobs` gibt es nicht (§5.2); eine Fassung der Regeln geht trotzdem, und zwar in der Datenbank. Jede Funktion sperrt die Zeile (`FOR UPDATE`), liest die Uhr danach einmal und läuft als eine Anweisung. Das schloss zugleich einen Befund der Prüfung (mehrfaches `clock_timestamp()` in einer Anweisung, H1).
+- **`gateway`:** Protokoll `HostCoordinator` (`reserve` mit Höchstwartezeit, `pause_left`, `place`, `report`); `Gateway(…, coordinator=…)`. Ohne Koordinator unverändert. Mit Koordinator: ein Platz je Anfrage (über alle Versuche), ein Zug vor jedem Versuch, eine Meldung nach jedem Versuch (§4.1). Ein Zug über 60 s wird nicht genommen und der Host ruht für den Lauf (`HostResting`, J4). Wer auf seinen Zug gewartet hat, fragt vor dem Senden, ob inzwischen eine Pause begann (Prüfung S3).
+- **`catalog/source_hosts.py`:** `PostgresHostCoordinator` auf einer Verbindung im Autocommit (sonst `ValueError`); Plätze mit Frist 30 s und Herzschlag alle 10 s (§9a Punkt 1), Freigabe auf jedem Ausgang, auch bei Abbruch; der Herzschlag wird per Signal beendet, nicht abgebrochen, damit eine laufende Verlängerung auf der gemeinsamen Verbindung zu Ende läuft. Log: „source host paused“ (Host, Pause), „source host answers again“, „source place lost“; nur der Host, keine Adresse.
+- **`discovery/source_gateway.py`:** `open_source_gateway(policy)` öffnet eine eigene Verbindung und gibt das `Gateway` mit Koordinator; `materialize` nutzt es, der Harvester (M5-19) ebenso.
+- **Auslegungen** (gelten bis Widerspruch):
+  - „Jede weitere Pause **direkt danach** doppelt so lang“ (J3): Ein Fehler zählt als gescheiterte Probe, solange seit dem Ende der letzten Pause nicht mehr als deren Länge vergangen ist; danach beginnen Zählung und Verdopplung neu (Prüfung S2).
+  - Ein Zug, auf den der Aufrufer nicht wartet, schiebt den Zeiger nicht vor (Prüfung S1).
+  - Ein Erfolg während einer laufenden Pause (eine Anfrage, die schon unterwegs war) setzt den Unterbrecher zurück, die Pause selbst läuft zu Ende.
+- **Bekannte Grenzen:** Ein Platz wird auch während des Wartens auf den Zug und des Backoffs gehalten (wie bisher der Zähler je Prozess); auf einen Platz wird ohne Obergrenze gewartet, solange lebende Inhaber alle halten. Ein abgebrochener Aufrufer kann einen Platz bis zu seiner Frist (30 s) belegen, wenn der Abbruch zwischen Anlegen und Lesen der Zeile fällt. Für den Harvester (M5-19): Ein erfolgreicher Abruf von `robots.txt` zählt als Erfolg des Hosts. `materialize` braucht jetzt zwei Verbindungen je Lauf.
+- **Prüfung** (Subagent `reviewer`): kein Blocker; S1–S4, S6, H1, H2 und H4 behoben, S5 mit Tests geschlossen (Datenbank weg → nichts gesendet, Abbruch mit echtem Postgres, gleichzeitige Meldungen → genau eine Pause, falsche Werte, Host als Adresse).
+- **Messstand:** `slow_source.py --fail-file` (solange die Datei existiert, `503`), `source_turns.py` (Läufe wie `materialize` über das `Gateway`, mit `--shared` über Postgres), `source_turns_summary.py`.
 
