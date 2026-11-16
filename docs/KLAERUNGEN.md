@@ -111,6 +111,8 @@ Gestuft, mit gleichbleibender Schnittstelle:
 
 **Nachtrag 2026-11-15 (`adr/0033` §4, §14, M5-40):** Punkt 3 heißt für gelistete Einträge: Jede Entscheidung (Quelle, Lizenzkatalog, Freigabe je Herausgeber, Lauf-Freigabe, Sperre) liegt nur in Git; der Inhalt gelisteter Einträge liegt nur in Postgres, weil Titel, Beschreibung, Ausdehnung und Links Metadaten der Quelle sind, keine Kuratierung. Postgres hält von den Entscheidungen nur eine abgeleitete Kopie, die `catalog-load` aus dem Image schreibt. Volle Einträge bleiben YAML im Image wie oben; gelistete lädt kein Prozess in die Registry.
 
+**Nachtrag 2026-11-16 (M5-36, G1 = 1):** Zur Registry gehört `backend/catalog/hosts.yaml` mit den Grenzen je Host (eine Zeile je Host, für alle Instanzen zusammen). Jeder Host eines vollen Eintrags hat genau eine Zeile, jede Zeile einen solchen Host; die Prototyp-Instanz hält die Hosts ihrer Einträge in einer eigenen `hosts.yaml` neben ihnen.
+
 ### B14. Skills — *Vorerst nicht im Repo* (Stand 19.09.2026)
 
 Die drei Skills (`atomic-commits`, `code-cleanup`, `readme-updater`) liegen weiterhin nur in Ottos persönlicher Claude-Code-Umgebung. Sie werden **vorerst nicht** ins Repo kopiert.

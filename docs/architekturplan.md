@@ -503,6 +503,15 @@ Host (Vorgabe 0) und den Schalter `obey_robots` für `robots.txt` nach RFC 9309
 (Vorgabe aus; `429`, `5xx` oder nicht erreichbar lässt den Host im Lauf ruhen).
 Beides setzt der Harvester.
 
+**Nachtrag 2026-11-16 (M5-36, `plans/m5/m5-36-grenzen-je-host.md`):** Die Grenzen je Host
+stehen in der Registry (`backend/catalog/hosts.yaml`, je Host Verbindungen und optional
+Abstand, für alle Instanzen zusammen), nicht im Code; `materialize` nimmt beides von dort.
+`Policy.host_connections` trägt die Verbindungen je Host. Ein Prozess hat einen Zähler je
+Host (`ReadSlots`), den GDAL-Leser in Fäden und Anfragen des Gateways im Event-Loop
+teilen; die Zarr-Stores eines Prozesses teilen ein Gateway. Kacheln und Suche halten
+keinen Abstand (G3). Das Teilbudget je Instanz für `api` und `tiler` folgt mit PR 2;
+cluster-weit exakt wird es erst mit dem Egress-Proxy in M6.
+
 ---
 
 ## 7. Processing-Ebene
