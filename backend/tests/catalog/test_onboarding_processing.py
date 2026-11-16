@@ -64,7 +64,8 @@ from tests.earthx.readers import mini_dem, mini_zarr, mini_zarr_cf
 
 #: Q14: band math for the Sentinel-2 entry and the Zarr test entry, reprojection for the DEM; the mask over its own
 #: classes for ESA WorldCover (M5-07 plan §4.4, no band math there); reprojection of the TPS raster for Sentinel-1 GRD
-#: (DS-04 plan §4.7, Checkliste Punkt 9); reprojection out of LV95 for swissALTI3D (M5-08 plan §4.6 point 9).
+#: (DS-04 plan §4.7, Checkliste Punkt 9); reprojection out of LV95 for swissALTI3D (M5-08 plan §4.6 point 9) and out
+#: of LAEA for BEV ALS-DGM (M5-09 plan §4.7).
 OPERATOR_FOR = {
     "sentinel-2-c1-l2a": "band_math",
     # Never reprojected (DS-04d F6): stretched in its own grid.
@@ -74,6 +75,7 @@ OPERATOR_FOR = {
     "esa-worldcover-2020": "mask",
     "esa-worldcover-2021": "mask",
     "swissalti3d": "reproject",
+    "bev-als-dgm": "reproject",
 }
 
 ENTRIES = list(TEST_ENTRIES)
@@ -154,8 +156,8 @@ def build(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     """A scenario for one entry, or :class:`UnsupportedFormat` — never a quiet pass."""
     if config.format is DataFormat.COG and config.source.adapter is AdapterKind.ESA_WORLDCOVER_BUCKET:
         return _worldcover(config, tmp_path, monkeypatch)
-    if config.format is DataFormat.COG and config.source.adapter is AdapterKind.FSDI_STAC_V1:
-        return _lv95(config, tmp_path, monkeypatch)
+    if config.format is DataFormat.COG and config.source.adapter in (AdapterKind.FSDI_STAC_V1, AdapterKind.BEV_ATOM):
+        return _projected(config, tmp_path, monkeypatch)
     if config.format is DataFormat.COG and config.source.item_holding is ItemHolding.MATERIALIZED:
         return _dem(config, tmp_path, monkeypatch)
     if config.georeferencing is Georeferencing.GCP_TPS:
@@ -274,8 +276,8 @@ def _worldcover(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.Monke
     )
 
 
-def _lv95(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Scenario:
-    """A tile in LV95 from the materialization over the STAC API, reprojected to UTM (M5-08 plan §4.6 point 9)."""
+def _projected(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Scenario:
+    """A tile in LV95 or LAEA from its materialization, reprojected to UTM (M5-08 plan §4.6 point 9, M5-09 §4.7)."""
     sources.serve({}, monkeypatch)  # the resolver; the COG itself is served by the chain
     chain = synthetic_chain.build(config, tmp_path, monkeypatch)
     asset = chain.render_asset

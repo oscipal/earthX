@@ -785,6 +785,16 @@ Außerdem ohne eigene Aufgabe: Ottos Nachtrag aus `probe.py` (F4) wird in dieses
 
 ---
 
+## 11a. Nachtrag 16.11.2026 (M5-09, BEV ALS-DGM 1 m)
+
+Umgesetzt mit `plans/m5/m5-09-bev-als-dgm.md` (Draft-PR [#362](https://github.com/oscipal/earthX/pull/362)). Die Entscheidungen oben bleiben; wo sie abweichen, gilt dieser Nachtrag.
+
+- **§4.2 Lizenz:** Der dort unter „Suchtreffer“ verlinkte INSPIRE-Datensatz ist eine Orthofoto-Kachel (DOP), kein ALS-DGM. Die Lizenz CC-BY-4.0 steht im Metadatensatz jeder DTM-Kachel im GeoNetwork des BEV [P]; einen Metadatensatz der Serie gibt es dort nicht sichtbar. `rights` im ATOM-Feed nennt nur den freien Zugang. Einstufung durch Otto (16.11.2026): `CC-BY-4.0`, Stufe Processing, Quellenangabe „© BEV, 2025“ bzw. „© BEV, 2025 (modified)“.
+- **§4.2 CORS:** Die Dateien senden seit der Messung vom 16.11.2026 `Access-Control-Allow-Origin: *` (am 06.11. ohne CORS) [M]; `access.cors: true`.
+- **§8.3 Stände:** Nur der jüngste Stichtag (15.09.2025) wird geladen (M5-09 F1); ein neuer Stichtag führt den Eintrag nach.
+- **§9.1 offen → erledigt:** Alle 55 Dateien des jüngsten Stichtags sind gleich aufgebaut (EPSG:3035, 50 001², Float32, nodata −9999, COG, LZW; Overviews bis 1:256, bei fünf bis 1:128) [M]. Betreiber und Ort des Speichers bleiben unbelegt (`data_region: unknown`).
+- **Zugang:** Dienst-Feed und Dataset-Feeds ohne ETag und Last-Modified; die Fassung eines Laufs ist ein Hash über den Inhalt (M5-09 Plan §9 A7).
+
 ## 12. Quellen
 
 Abgerufen bzw. gesucht am 31.10.2026, die Messung von M5-01b am 06.11.2026. Die Belegstufe steht in Klammern.

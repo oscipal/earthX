@@ -29,9 +29,11 @@ from earthx.adapters import ADAPTER_SPECS, get_item, materialize_items, search_i
 from earthx.adapters.spec import AdapterSpec, AdapterSpecs
 from earthx.catalog.registry import AdapterKind, DatasetConfig
 from earthx.gateway import Policy, host_of
-from tests.catalog.entries import COP_DEM_GLO_30, ESA_WORLDCOVER_2021, SENTINEL_2_L2A
+from tests.catalog.entries import BEV_ALS_DGM, COP_DEM_GLO_30, ESA_WORLDCOVER_2021, SENTINEL_2_L2A
 from tests.earthx.adapters.conftest import FIXTURES as EARTH_SEARCH_FIXTURES
 from tests.earthx.adapters.conftest import answering, load
+from tests.earthx.adapters.test_bev_atom import source as bev_source
+from tests.earthx.adapters.test_bev_atom import standard as bev_feeds
 from tests.earthx.adapters.test_cop_dem_bucket import HOST as DEM_HOST
 from tests.earthx.adapters.test_cop_dem_bucket import TILE_NE, TILE_SW, bucket
 from tests.earthx.adapters.test_esa_worldcover_bucket import HOST as WORLDCOVER_HOST
@@ -130,6 +132,13 @@ async def _materialized_worldcover() -> list[dict[str, Any]]:
     return list(outcome.items)
 
 
+async def _materialized_bev() -> list[dict[str, Any]]:
+    gateway, _ = bev_source(bev_feeds())
+    async with gateway:
+        outcome = await materialize_items(BEV_ALS_DGM, adapters=ADAPTER_SPECS, gateway=gateway, known_version=None)
+    return list(outcome.items)
+
+
 async def _fsdi(capability: str) -> list[dict[str, Any]]:
     source = FsdiSource([[fsdi_item(2019), fsdi_item(2025)], [fsdi_item(2019, "2601-1200")]])
     async with source.gateway() as gateway:
@@ -156,6 +165,7 @@ PRODUCERS: Mapping[Capability, Producer] = {
     (AdapterKind.FSDI_STAC_V1, "search"): lambda: _fsdi("search"),
     (AdapterKind.FSDI_STAC_V1, "fetch"): lambda: _fsdi("fetch"),
     (AdapterKind.FSDI_STAC_V1, "materialize"): lambda: _fsdi("materialize"),
+    (AdapterKind.BEV_ATOM, "materialize"): _materialized_bev,
 }
 
 

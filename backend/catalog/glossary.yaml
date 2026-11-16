@@ -20,6 +20,8 @@ groups:
 - [Oberflächenmodell, digitales Oberflächenmodell, DOM, DSM, surface model, digital surface model]
 - [Befliegung, aerial survey]
 - [Landesvermessung, national survey]
+- [Laserscanning, Airborne Laserscanning, ALS, airborne laser scanning, lidar]
+- [Höhenraster, elevation raster, height raster]
 
 # Land cover (M5-07 §10).
 - [Landbedeckung, Bodenbedeckung, land cover, landcover]

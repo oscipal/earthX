@@ -85,12 +85,13 @@ async def test_search_reaches_the_source_through_its_own_adapter(chain: Chain) -
         )
         assert [item["id"] for item in outcome.items] == [chain.item["id"]]
         assert outcome.items[0]["bbox"] == chain.item["bbox"]
-        if chain.config.source.adapter is AdapterKind.FSDI_STAC_V1:
+        if chain.config.source.adapter in (AdapterKind.FSDI_STAC_V1, AdapterKind.BEV_ATOM):
             # The chain builds this item by hand for the tile and download routes; it is what the run writes.
             assert outcome.items == (chain.item,)
         paths = {request.url.path for request in chain.searched}
         stac = {f"/api/stac/v1/collections/{chain.config.source.source_collection_id}", "/api/stac/v1/search"}
-        assert paths in ({"/tileList.txt", "/blacklist.txt", "/"}, {"/esa_worldcover_grid.geojson", "/"}, stac)
+        atom = {synthetic_chain.ATOM_SERVICE_PATH, synthetic_chain.ATOM_DATASET_PATH}
+        assert paths in ({"/tileList.txt", "/blacklist.txt", "/"}, {"/esa_worldcover_grid.geojson", "/"}, stac, atom)
         return
 
     page = await search_items(chain.config, SearchParams(limit=10), adapters=ADAPTER_SPECS, gateway=chain.gateway)
