@@ -89,7 +89,9 @@ def _worldcover_double(request: httpx.Request) -> httpx.Response:
         prefix = request.url.params["prefix"]
         version, year = prefix.split("/")[:2]
         key = f"{prefix}ESA_WorldCover_10m_{year}_{version}_N45E009_Map.tif"
-        return httpx.Response(200, content=f"<ListBucketResult><Contents><Key>{key}</Key></Contents></ListBucketResult>".encode())
+        return httpx.Response(
+            200, content=f"<ListBucketResult><Contents><Key>{key}</Key></Contents></ListBucketResult>".encode()
+        )
     raise AssertionError(f"the double has no answer for {request.method} {request.url}")
 
 
@@ -134,16 +136,22 @@ def _filtering_double(request: httpx.Request) -> httpx.Response:
     if request.method == "POST" and request.url.path.endswith("/search"):
         body = json.loads(request.content)
         kept = [item for item in _filtered_items(body["collections"][0]) if _keeps(item, body.get("query", {}))]
-        return _json({"type": "FeatureCollection", "numberMatched": len(kept), "features": kept[: body["limit"]], "links": []})
+        return _json(
+            {"type": "FeatureCollection", "numberMatched": len(kept), "features": kept[: body["limit"]], "links": []}
+        )
     if request.method == "GET" and request.url.path.endswith("/aggregate"):
         items = _filtered_items(request.url.params["collections"])
         kept = [item for item in items if _keeps(item, json.loads(request.url.params.get("query", "{}")))]
         cells = [{"key": "4/8/5", "frequency": len(kept)}] if kept else []
-        return _json({"aggregations": [
-            {"name": "total_count", "value": len(kept)},
-            {"name": "grid_geotile_frequency", "buckets": cells},
-            {"name": "datetime_frequency", "buckets": []},
-        ]})
+        return _json(
+            {
+                "aggregations": [
+                    {"name": "total_count", "value": len(kept)},
+                    {"name": "grid_geotile_frequency", "buckets": cells},
+                    {"name": "datetime_frequency", "buckets": []},
+                ]
+            }
+        )
     if request.method == "GET" and request.url.path.endswith("/queryables"):
         return _json({"type": "object", "properties": {"eo:cloud_cover": {"$ref": "https://example.invalid/eo"}}})
     raise AssertionError(f"the double has no answer for {request.method} {request.url}")
@@ -152,7 +160,10 @@ def _filtering_double(request: httpx.Request) -> httpx.Response:
 def _scl_scenes() -> list[dict[str, Any]]:
     """Six synthetic scenes with a classification asset on an allowed asset host and a footprint, 50 % clouds and 20 % no data each."""
     host = SENTINEL_2_L2A.source.asset_hosts[0]
-    footprint = {"type": "Polygon", "coordinates": [[[10.0, 47.0], [11.0, 47.0], [11.0, 48.0], [10.0, 48.0], [10.0, 47.0]]]}
+    footprint = {
+        "type": "Polygon",
+        "coordinates": [[[10.0, 47.0], [11.0, 47.0], [11.0, 48.0], [10.0, 48.0], [10.0, 47.0]]],
+    }
     return [
         {
             **_fixture("earth_search", "item"),
@@ -182,7 +193,9 @@ def _sentinel_1_double(request: httpx.Request) -> httpx.Response:
     # The gateway connects to the address it resolved; the name stays in the Host header.
     if request.headers["host"].endswith("amazonaws.com"):
         if request.url.query == b"requestPayment":
-            return httpx.Response(200, content=b"<RequestPaymentConfiguration><Payer>BucketOwner</Payer></RequestPaymentConfiguration>")
+            return httpx.Response(
+                200, content=b"<RequestPaymentConfiguration><Payer>BucketOwner</Payer></RequestPaymentConfiguration>"
+            )
         if request.method == "HEAD":
             # Measured 10.11.2026: only objects written since early 2025 carry the checksum, and only when asked.
             headers = {"etag": '"00112233445566778899aabbccddeeff"'}
@@ -266,6 +279,45 @@ def _fsdi_double(
     return handler
 
 
+BEV = REGISTRY.get("bev-als-dgm")
+BEV_ATOM = 'xmlns="http://www.w3.org/2005/Atom" xmlns:inspire_dls="http://inspire.ec.europa.eu/schemas/inspire_dls/1.0"'
+
+
+def _bev_entry(row: int, year: int) -> str:
+    """One tile of the BEV service feed in the shape M5-09 measured (plan §2.4); the cells and DOIs are made up."""
+    tile = f"CRS3035RES50000mN{2_550_000 + 50_000 * (row // 11)}E{4_300_000 + 50_000 * (row % 11)}"
+    feed = f"https://data.bev.gv.at/geonetwork/srv/atom/describe/dataset?tile={tile}&amp;day={year}0915"
+    return (
+        f"<entry><title>ALS DTM {tile} Höhenraster 1m Stichtag 15.09.{year}</title>"
+        "<inspire_dls:spatial_dataset_identifier_code>"
+        f"https://doi.org/10.48677/{row:08x}-0000-4000-8000-{year:012x}</inspire_dls:spatial_dataset_identifier_code>"
+        f'<link rel="alternate" type="application/atom+xml" href="{feed}"/></entry>'
+    )
+
+
+def _bev_double(*, newest_year: int = 2025, tiles: int = 55, etag: str | None = '"synthetic"'):
+    """The ATOM service of the BEV: the service feed at two dates, one dataset feed per tile, the file on the host."""
+    entries = "".join(_bev_entry(row, year) for year in (newest_year - 1, newest_year) for row in range(tiles))
+    service = f"<feed {BEV_ATOM}>{entries}</feed>".encode()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.endswith("/atom/describe/service"):
+            return httpx.Response(200, content=service)
+        if path.endswith("/atom/describe/dataset"):
+            tile, day = request.url.params["tile"], request.url.params["day"]
+            href = f"https://data.bev.gv.at/download/ALS/DTM/{day}/ALS_DTM_{tile}.tif"
+            body = f'<feed {BEV_ATOM}><entry><link rel="alternate" type="image/tiff" href="{href}"/></entry></feed>'
+            return httpx.Response(200, content=body.encode())
+        if path.startswith("/download/") and request.method == "HEAD":
+            return httpx.Response(200, headers={"etag": etag} if etag else {})
+        if path.startswith("/download/") and request.method == "GET":
+            return httpx.Response(206, content=TIFF_HEADER[:16])
+        raise AssertionError(f"the double has no answer for {request.method} {request.url}")
+
+    return handler
+
+
 def _replay_rasters(module: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None:
     """The reading of a raster does not go through the gateway: stand a synthetic classification in its place."""
     from earthx.access.aoi_clouds import AoiClouds
@@ -284,6 +336,7 @@ def _replay_rasters(module: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None
     # Four valid pixels, two of them in a cloud class (8 and 9): the share of the scenes above, 50 %.
     monkeypatch.setattr(module, "RESOLVER", lambda host, port: ("93.184.216.34",))
     monkeypatch.setattr(module, "read_whole_file", lambda scene: (numpy.array([8, 9, 4, 5, 0], dtype="uint8"), 0))
+
     def together(paths: Any, aoi: Any, classes: Any) -> AoiClouds:
         # The scenes of a pass share one footprint, so the pass is a scene: half of its valid pixels are clouds, half vegetation.
         return AoiClouds(cloud_pixels=50, data_pixels=100, aoi_pixels=100, resolution=80.0, class_pixels={8: 50, 4: 50})
@@ -308,6 +361,7 @@ DOUBLES: dict[str, Callable[[httpx.Request], httpx.Response]] = {
     "test_aoi_cloud_filter_live": _scl_double,
     "test_sentinel_1_grd_smoke": _sentinel_1_double,
     "test_swissalti3d_smoke": _fsdi_double(),
+    "test_bev_als_dgm_smoke": _bev_double(),
 }
 
 
@@ -442,3 +496,31 @@ async def test_the_swissalti3d_smoke_fails_on_a_collection_without_etag() -> Non
         await _replay_swissalti3d(
             "test_the_collection_carries_what_the_version_of_a_run_is_made_of", _fsdi_double(etag=None)
         )
+
+
+async def _replay_bev(test: str, handler: Callable[[httpx.Request], httpx.Response]) -> None:
+    path = next(path for path in SMOKE_FILES if path.stem == "test_bev_als_dgm_smoke")
+    module = _load(path)
+    _replaying(module, handler)
+    async with module.open_gateway() as gateway:
+        await getattr(module, test)(gateway=gateway)
+
+
+async def test_the_bev_smoke_fails_on_a_reference_date_after_the_entrys() -> None:
+    """A new reference date at the source is what asks for a new `temporal_extent` and attribution year (M5-09 A2)."""
+    year = BEV.temporal_extent.end.year + 1
+    with pytest.raises(AssertionError, match=f"the newest reference date is {year}-09-15"):
+        await _replay_bev(
+            "test_the_newest_reference_date_is_the_entrys_and_has_its_tiles", _bev_double(newest_year=year)
+        )
+
+
+async def test_the_bev_smoke_fails_on_another_count_of_tiles() -> None:
+    with pytest.raises(AssertionError, match="has 54 tiles"):
+        await _replay_bev("test_the_newest_reference_date_is_the_entrys_and_has_its_tiles", _bev_double(tiles=54))
+
+
+async def test_the_bev_smoke_fails_on_a_file_without_etag() -> None:
+    """Without an ETag the version of an input would be empty and no result cached."""
+    with pytest.raises(AssertionError, match="carries no ETag"):
+        await _replay_bev("test_one_dataset_feed_holds_its_one_file_read_anonymously", _bev_double(etag=None))
