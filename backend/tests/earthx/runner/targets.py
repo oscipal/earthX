@@ -35,9 +35,9 @@ def _seams() -> None:
     root = os.environ.get("RUNNER_ZARR")
     if root:
 
-        def open_gateway(policy: Any, resolve: Any) -> Gateway:
+        def open_gateway(policy: Any, resolve: Any, slots: Any = None) -> Gateway:
             handler = httpx.MockTransport(lambda request: mini_zarr._respond(Path(root), request))
-            return Gateway(policy, transport=handler, resolve=resolve)
+            return Gateway(policy, transport=handler, resolve=resolve, slots=slots)
 
         zarr_reader.open_gateway = open_gateway
 

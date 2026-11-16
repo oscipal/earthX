@@ -5,10 +5,12 @@
         [--port 8101] [--workers 1] [--log tiler.jsonl]
 
 The app is ``earthx.api.tiler.build_app`` with its real lifespan (Postgres from the ``PG*`` variables, for the item
-cache), single process as in ``docker-compose.yml`` unless ``--workers`` says otherwise. Three seams are replaced, the
+cache), single process as in ``docker-compose.yml`` unless ``--workers`` says otherwise. Four seams are replaced, the
 ones the tests replace too, and nothing between them: the name resolver answers from memory; the gateway's transport
-answers every item from a hand-written synthetic one after ``--item-ms`` (the item fetch at the source); and GDAL's
-``/vsicurl/`` path, built from the cleared address as always, is pointed at ``--source`` (``slow_source.py``).
+answers every item from a hand-written synthetic one after ``--item-ms`` (the item fetch at the source); GDAL's
+``/vsicurl/`` path, built from the cleared address as always, is pointed at ``--source`` (``slow_source.py``); and
+the host a read counts against per host (M5-36) is the synthetic items' asset host, not the local source's address.
+``EARTHX_SOURCE_INSTANCES`` from the environment sets the tiler's share of each cap as in production.
 
 ``boto3`` is set aside as in the image: it is only in the dev lock (through ``moto``), and with it rasterio builds an
 AWS session for every ``rasterio.Env``, which costs about 100 ms of CPU per tile that production does not spend.
@@ -43,10 +45,12 @@ import httpx  # noqa: E402
 import rasterio.session  # noqa: E402
 import titiler.core.utils  # noqa: E402
 from starlette.concurrency import run_in_threadpool  # noqa: E402
-from synthetic_item import synthetic_item  # noqa: E402
+from synthetic_item import ASSET_HOST, synthetic_item  # noqa: E402
 
 import earthx.api.tiler as tiler  # noqa: E402
 import earthx.readers.cog as cog  # noqa: E402
+
+SOURCE_HOST = ASSET_HOST.removeprefix("https://")
 
 rasterio.session.boto3 = None
 
@@ -131,6 +135,14 @@ def instrumented_app():
 
 
     cog.vsicurl_path = local_vsicurl_path
+
+    # Seam 4 (M5-36): the host a read counts against is the one of the cleared address, not the local source's.
+    def source_host(path) -> str | None:
+        return SOURCE_HOST if str(path).startswith("/vsicurl/") else None
+
+    for module in (cog, tiler):
+        if hasattr(module, "asset_host"):
+            module.asset_host = source_host
 
     # Extra GDAL options for an experiment, on top of both profiles of the tiler (tile and crop).
     def with_extra(profile):

@@ -63,12 +63,14 @@ from earthx.gateway import (
     Gateway,
     GatewayError,
     Policy,
+    ReadSlots,
     Resolver,
     UpstreamError,
     check_url,
     resolve_host,
 )
 from earthx.readers.errors import AssetRejected
+from earthx.readers.limits import process_slots
 
 LOGGER = logging.getLogger("earthx.readers.zarr")
 
@@ -144,15 +146,15 @@ class MalformedMultiscales(ZarrAssetError):
     """
 
 
-def open_gateway(policy: Policy, resolve: Resolver) -> Gateway:
+def open_gateway(policy: Policy, resolve: Resolver, slots: ReadSlots | None = None) -> Gateway:
     """The gateway a store fetches through. The seam tests take the network out at.
 
     A function rather than a constructor argument of the store, because the store is
     built deep inside :class:`ZarrReader` from a :class:`ZarrAsset` and nothing in
     between would carry a transport through — the same reason `cog.py` leaves
-    ``check_url`` patchable.
+    ``check_url`` patchable. ``slots`` is the counter of the process, where it set one (`readers.limits`).
     """
-    return Gateway(policy, resolve=resolve)
+    return Gateway(policy, resolve=resolve, slots=slots)
 
 
 _SHARED_LOCK = threading.Lock()
@@ -169,16 +171,21 @@ def shared_gateway(policy: Policy, resolve: Resolver) -> Gateway:
     builds a resolver of its own each time (``readers.access.read_access_for``) and would otherwise leave one client per
     request behind: the first store's resolver serves all, and every address is still checked on every request. The
     seam :func:`open_gateway` is part of the key, so a test that replaces it gets a gateway of its own. Entries of
-    loops that have closed are dropped on the way.
+    loops that have closed are dropped on the way. Where the process counts its readers per host (the tiler,
+    :func:`~earthx.readers.limits.limit_reads`) and the counter covers the policy, the gateway asks that counter, so Zarr
+    requests and GDAL readers share one cap per host (M5-36 §4.1).
     """
     loop = asyncio.get_running_loop()
-    key = (loop, policy, open_gateway)
+    slots = process_slots()
+    if slots is not None and not slots.policy.allowed_hosts >= policy.allowed_hosts:
+        slots = None
+    key = (loop, policy, slots, open_gateway)
     with _SHARED_LOCK:
         for stale in [other for other in _SHARED if other[0].is_closed()]:
             del _SHARED[stale]
         gateway = _SHARED.get(key)
         if gateway is None:
-            gateway = _SHARED[key] = open_gateway(policy, resolve)
+            gateway = _SHARED[key] = open_gateway(policy, resolve, slots)
         return gateway
 
 

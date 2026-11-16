@@ -249,6 +249,8 @@ services:
       EARTHX_GEOCODER_URL: ${EARTHX_GEOCODER_URL:-}
       # M5-18: the one User-Agent of this instance, on every outgoing request; empty = the built-in one.
       EARTHX_USER_AGENT: ${EARTHX_USER_AGENT:-}
+      # M5-36: how many processes api and tiler run together; each reads a source with its share of the cap.
+      EARTHX_SOURCE_INSTANCES: ${EARTHX_SOURCE_INSTANCES:-}
       # M5-13: the profile of this instance (local, ci, cloud; empty = none); only `local` lets prototype entries load
       # (adr/0024 R5), and their path comes with an override file of its own, not here.
       EARTHX_PROFILE: ${EARTHX_PROFILE:-}
@@ -297,6 +299,8 @@ services:
     environment:
       # M5-18: the one User-Agent of this instance, on every outgoing request; empty = the built-in one.
       EARTHX_USER_AGENT: ${EARTHX_USER_AGENT:-}
+      # M5-36: how many processes api and tiler run together; each reads a source with its share of the cap.
+      EARTHX_SOURCE_INSTANCES: ${EARTHX_SOURCE_INSTANCES:-}
       # M5-13: the profile of this instance (local, ci, cloud; empty = none); only `local` lets prototype entries load
       # (adr/0024 R5), and their path comes with an override file of its own, not here.
       EARTHX_PROFILE: ${EARTHX_PROFILE:-}

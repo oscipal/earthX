@@ -144,8 +144,8 @@ def serve_store(root: Path, monkeypatch: pytest.MonkeyPatch) -> list[httpx.Reque
         seen.append(request)
         return _respond(root, request)
 
-    def open_gateway(policy: Policy, resolve: Callable[[str, int], tuple[str, ...]]) -> Gateway:
-        return Gateway(policy, transport=httpx.MockTransport(handler), resolve=resolve)
+    def open_gateway(policy: Policy, resolve: Callable[[str, int], tuple[str, ...]], slots=None) -> Gateway:
+        return Gateway(policy, transport=httpx.MockTransport(handler), resolve=resolve, slots=slots)
 
     monkeypatch.setattr("earthx.readers.zarr_reader.open_gateway", open_gateway)
     return seen

@@ -26,13 +26,16 @@ from earthx.gateway.pacer import OVERVIEW_HOST_INTERVAL_ENV, HostPacer, overview
 from earthx.gateway.policy import (
     ALLOWED_HOSTS_ENV,
     DEFAULT_USER_AGENT,
+    SOURCE_INSTANCES_ENV,
     USER_AGENT_ENV,
     Policy,
     UrlParts,
     host_of,
     inspect_url,
+    instance_share,
     normalize_host,
     policy_from_env,
+    source_instances_from_env,
     user_agent_from_env,
 )
 from earthx.gateway.resolver import CachingResolver, Resolver, resolve_host
@@ -43,6 +46,7 @@ __all__ = [
     "ALLOWED_HOSTS_ENV",
     "DEFAULT_USER_AGENT",
     "OVERVIEW_HOST_INTERVAL_ENV",
+    "SOURCE_INSTANCES_ENV",
     "USER_AGENT_ENV",
     "AddressRejected",
     "CachingResolver",
@@ -68,9 +72,11 @@ __all__ = [
     "check_url",
     "host_of",
     "inspect_url",
+    "instance_share",
     "normalize_host",
     "overview_interval_from_env",
     "policy_from_env",
     "resolve_host",
+    "source_instances_from_env",
     "user_agent_from_env",
 ]
