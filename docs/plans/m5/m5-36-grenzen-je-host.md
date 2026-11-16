@@ -1,6 +1,6 @@
 # M5-36 — Grenzen je Host in der Registry, Teilbudget je Instanz: Plan-Schritt
 
-**Status (16.11.2026):** Plan mit Fragen G1–G6 (§8), **Stufe B**. Umsetzung erst nach Ottos Antworten, in höchstens zwei PRs (§7).
+**Status (16.11.2026):** Plan angenommen (Otto, 16.11.2026: G1–G6 je 1, §8a), **Stufe B**. PR 1 nach §7 in Arbeit (§9), PR 2 folgt.
 **Aufgabe:** M5-36 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2, Auftrag von Otto vom 16.11.2026.
 **Grundlagen:** `plans/m5/m5-35-skalierbarkeit.md` B1 (§2), B3 (§4.2), F1 = 1 (§8a); `adr/0032` §8.2 und Nachtrag 14.11.2026 (`TileGate`); `adr/0023` §3.1 (Fair Use der FSDI); `adr/0005` §6 (6 Verbindungen je Host); `architekturplan.md` 3.1, 6.5; KLAERUNGEN B8, B9.
 
@@ -186,9 +186,16 @@ PR 2 baut auf PR 1 auf. Tests je PR, mit Fehlerfällen: fehlender und überzähl
 1. Zwei PRs wie §7 **(Empfehlung)**
 2. Ein PR mit allem (über 600 Zeilen)
 
-### 8a. Antworten Otto
+### 8a. Antworten Otto (16.11.2026)
 
-*(offen)*
+| Frage | Antwort | Folge |
+|---|---|---|
+| G1 | 1 | `backend/catalog/hosts.yaml`, Pflicht für jeden Host eines vollen Eintrags (§3.1) |
+| G2 | 1 | FSDI 6 und 1 s; Earth Search 6; vier S3-Buckets je 32 |
+| G3 | 1 | kein Abstand für Kacheln und Suche |
+| G4 | 1 | `EARTHX_SOURCE_INSTANCES` für `api` und `tiler` zusammen (PR 2) |
+| G5 | 1 | Median und p95 je Fall höchstens +5 % über `main`, bei Grenze 32 und 6 |
+| G6 | 1 | zwei PRs nach §7 |
 
 ---
 
