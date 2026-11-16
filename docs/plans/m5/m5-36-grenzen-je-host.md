@@ -239,4 +239,28 @@ Alle 1625 Kacheln je Stand mit `200`; die Prüfsummen der Raster des Zuschnitts 
 
 ### 9.4 Messung PR 2
 
-*(folgt)*
+Synthetische Quelle wie §9.2 (RTT 170 ms, Verbindungsaufbau 350 ms), echter `tiler` mit Postgres, `main` 10f55cb gegen den Branch 7ca80c0, 5 Wiederholungen, die fünf Stände je Wiederholung im Wechsel. Die Grenze gilt dem Asset-Host der synthetischen Items (ein S3-Bucket, Grenze 32 aus `hosts.yaml`); für „Grenze 6“ ist sie in einer Kopie des Branches auf 6 gesetzt. „2 Instanzen“ ist eine Instanz mit `EARTHX_SOURCE_INSTANCES=2`, also ihrem Anteil (16 bzw. 3); zwei Instanzen zusammen stellten das Doppelte. Fälle: Mosaik-Kachel mit NDVI aus 4 Szenen (kalt, warm), Zuschnitt 0,05°, Ansicht 13 Szenen × 25 Kacheln über 6 Verbindungen wie ein Browser mit HTTP/1.1 und dieselbe Ansicht über 40 Verbindungen (§6: viele Einzelkacheln auf einem Host). Keine echte Quelle.
+
+| Fall | main | Grenze 32 | Grenze 6 | 2 Inst., 16 | 2 Inst., 3 |
+|---|---|---|---|---|---|
+| Mosaik-Kachel kalt, Median (s) | 3,61 | +0,3 % | −0,2 % | +8,2 % | +38,0 % |
+| Mosaik-Kachel warm, Median (s) | 0,28 | +1,1 % | −6,5 % | −7,2 % | +13,7 % |
+| Zuschnitt, Median (s) | 2,45 | −1,6 % | −0,4 % | −0,4 % | −0,8 % |
+| Ansicht 6 Verb., Wandzeit Median (s) | 22,2 | +0,5 % | −1,4 % | −0,5 % | +31,1 % |
+| Ansicht 6 Verb., je Kachel p95 (s) | 21,07 | +0,9 % | −1,3 % | −0,7 % | +30,6 % |
+| Ansicht 40 Verb., Wandzeit Median (s) | 19,8 | +1,0 % | **+30,3 %** | +1,0 % | +96,0 % |
+| Ansicht 40 Verb., je Kachel p95 (s) | 18,92 | −0,2 % | **+30,7 %** | +1,4 % | +98,6 % |
+| höchstens gleichzeitig an der Quelle | 31 | 27 | **6** | **16** | **3** |
+
+- **Die Grenze hält:** In keinem der 25 Läufe eines Standes stellte die Instanz mehr gleichzeitige Anfragen, als ihr Anteil erlaubt. `main` stellte bis zu 31.
+- **Kein Bild fehlt:** alle 3250 Kacheln je Stand mit `200`, die Raster des Zuschnitts in allen Läufen gleich.
+- **G5 bei einer Instanz:** Grenze 32 in allen Fällen innerhalb +5 % (Median und p95). Grenze 6 innerhalb +5 % in allen Fällen außer der Ansicht über 40 Verbindungen: **+30 %**. Dort stellte `main` bis zu 31 Anfragen gleichzeitig an einen Host, genau die Last, die die Grenze verbietet; mit 6 Verbindungen je Host (Browser über HTTP/1.1) gibt es keinen Unterschied. Entscheidung: H1 (§9.5).
+- **Zwei Instanzen** (nicht Teil von G5): Bei Grenze 32 kaum ein Unterschied; der Anstieg der kalten Mosaik-Kachel um 8 % kommt von den Item-Abrufen bei Earth Search (Grenze 6, Anteil 3 für 4 Items). Bei Grenze 6 (Anteil 3) wird es spürbar langsamer: der Preis dafür, dass zwei Instanzen zusammen bei 6 bleiben.
+- Die erste Messung (vor 7ca80c0) zeigte bei Grenze 3 vier gleichzeitige Anfragen der Mosaik-Kachel mit Schritten; behoben, siehe §9.3.
+
+### 9.5 Frage an Otto
+
+**H1 — Viele gleichzeitige Kacheln auf einem Host mit kleiner Grenze werden langsamer (Ansicht über 40 Verbindungen, Grenze 6: +30 %). Was gilt?**
+1. Hinnehmen: Das ist die Wirkung der Grenze selbst; betroffen sind nur Hosts mit Grenze 6 (heute FSDI für swissALTI3D und Earth Search für Items), und nur, wenn mehr als 6 Lesezugriffe zugleich an einen Host gehen; bei 6 Browser-Verbindungen kein Unterschied **(Empfehlung)**
+2. Grenze der FSDI anheben (z. B. 12): schneller, aber doppelte Last auf eine Quelle mit Fair-Use-Regel
+3. Das Teilbudget nur für S3-Hosts anwenden, Behördenserver bleiben bis M6 ohne Grenze je Instanz
