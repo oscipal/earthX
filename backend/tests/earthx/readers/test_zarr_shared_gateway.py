@@ -47,8 +47,8 @@ def slow_source(monkeypatch: pytest.MonkeyPatch, root: Path, peak: Peak) -> list
         peak.now -= 1
         return _respond(root, request)
 
-    def open_gateway(policy: Policy, resolve) -> Gateway:
-        gateway = Gateway(policy, transport=httpx.MockTransport(handler), resolve=resolve)
+    def open_gateway(policy: Policy, resolve, slots=None) -> Gateway:
+        gateway = Gateway(policy, transport=httpx.MockTransport(handler), resolve=resolve, slots=slots)
         built.append(gateway)
         return gateway
 

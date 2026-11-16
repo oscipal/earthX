@@ -150,9 +150,8 @@ Stufe A: ohne Plan-Datei, direkt umsetzen. Stufe B: Plan unter `docs/plans/m5/` 
 | Aufgabe | Inhalt | Stand |
 |---|---|---|
 | **M5-30b** | Umsetzung `adr/0032` – abgeschlossen mit #355 (15.11.); GLO-30-Pyramide lokal im Bau | erledigt |
-| **M5-36** | Grenzen je Host für alle Instanzen: `backend/catalog/hosts.yaml` (Pflicht je Host), ein Zähler je Host und Prozess für GDAL, HTTP und Zarr, Teilung durch `EARTHX_SOURCE_INSTANCES` für `api` und `tiler` zusammen, nur Warten statt Verweigern | Plan in #360, G1–G6 = 1 (Otto 16.11.: FSDI 6 Verbindungen und 1 s Abstand für `materialize`, Earth Search 6, S3-Buckets je 32; Kacheln und Suche ohne Abstand; ≤ 5 % langsamer; zwei PRs); PR 1 in #360 umgesetzt und gemessen (keine Kachel über +5 %), PR 2 folgt |
+| **M5-36** | Grenzen je Host für alle Instanzen: `backend/catalog/hosts.yaml` (Pflicht je Host), ein Zähler je Host und Prozess für GDAL, HTTP und Zarr, Teilung durch `EARTHX_SOURCE_INSTANCES` für `api` und `tiler` zusammen, nur Warten statt Verweigern | Plan in #360, G1–G6 = 1 (Otto 16.11.: FSDI 6 Verbindungen und 1 s Abstand für `materialize`, Earth Search 6, S3-Buckets je 32; Kacheln und Suche ohne Abstand; ≤ 5 % langsamer; zwei PRs); PR 1 #360 gemergt; PR 2 in #365 (Teilbudget, alle Lesestellen des `tiler`, Messung; H1 = 1, hinnehmen) |
 | **UI-08** (ohne schmale Fenster) | Kästchen schalten nur an Kästchen und Text; Layer erholt sich nach einem Neustart der Dienste selbst (gescheiterte Kacheln erneut laden); Statusbox über den Panels unter 240 px frei; Marke „Overview“ einheitlich für Job-Ergebnisse, Pyramiden und Ersatz (Otto, 16.11.) | Draft-PR #363 |
-| **M5-36** | Grenzen je Host für alle Instanzen: `backend/catalog/hosts.yaml` (Pflicht je Host), ein Zähler je Host und Prozess für GDAL, HTTP und Zarr, Teilung durch `EARTHX_SOURCE_INSTANCES` für `api` und `tiler` zusammen, nur Warten statt Verweigern | Plan in #360, G1–G6 = 1 (Otto 16.11.: FSDI 6 Verbindungen und 1 s Abstand für `materialize`, Earth Search 6, S3-Buckets je 32; Kacheln und Suche ohne Abstand; ≤ 5 % langsamer; zwei PRs); PR 1 läuft |
 
 **M5-30b im Einzelnen** (Merge jeweils mit Merge-Commit):
 
