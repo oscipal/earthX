@@ -42,7 +42,7 @@ from rio_tiler.io.rasterio import Reader
 from rio_tiler.models import ImageData
 from rio_tiler.utils import has_alpha_band
 
-from earthx.gateway import GatewayError, Policy, Resolver, check_url, host_of, resolve_host
+from earthx.gateway import GatewayError, Policy, Resolver, UrlRejected, check_url, host_of, resolve_host
 from earthx.gateway.gdal import vsicurl_path
 from earthx.readers.errors import AssetRejected, GeoreferenceMismatch
 from earthx.readers.limits import read_slot
@@ -100,6 +100,15 @@ def asset_host(path: AssetPath) -> str | None:
         raise TypeError("the host of a path is read from an AssetPath, not from a plain string")
     prefix = "/vsicurl/"
     return host_of(path[len(prefix) :]) if path.startswith(prefix) else None
+
+
+def _source_host(path: AssetPath) -> str | None:
+    """The host a read counts against, ``None`` where it is no source: a file on disk, or the object store's own
+    endpoint behind a result (adr/0015 §14c), whose name need not be one the gateway would accept."""
+    try:
+        return asset_host(path)
+    except UrlRejected:
+        return None
 
 
 def asset_path(
@@ -178,7 +187,7 @@ class CogReader(Reader):
     def _open(self) -> None:
         if not self.dataset:
             # A slot of the host from open to close, where the process counts them (M5-36 §5.2).
-            self._ctx_stack.enter_context(read_slot(asset_host(self.input)))
+            self._ctx_stack.enter_context(read_slot(_source_host(self.input)))
             self.dataset = self._ctx_stack.enter_context(rasterio.open(self.input))
         self.raw = self.dataset
         gcps, gcp_crs = self.dataset.gcps

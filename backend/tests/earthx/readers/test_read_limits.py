@@ -120,3 +120,21 @@ def test_a_reader_holds_its_slot_from_open_to_close_and_gives_it_back_when_the_o
     with pytest.raises(rasterio.errors.RasterioIOError):
         CogReader(path)
     assert seen == [1] and held(slots) == 0
+
+
+@pytest.mark.parametrize("endpoint", ["http://objectstore:9000", "http://127.0.0.1:9000"])
+def test_a_result_of_the_object_store_is_read_without_a_slot(
+    slots: ReadSlots, monkeypatch: pytest.MonkeyPatch, endpoint: str
+) -> None:
+    # The store's endpoint need not be a name the gateway accepts (adr/0015 §14c); it is no source either.
+    path = AssetPath(f"/vsicurl/{endpoint}/results/r/out.tif", dataset_id="", item_id="", asset="out.tif")
+    seen = []
+
+    def refuse(*_args, **_kwargs):
+        seen.append(dict(slots._hosts))
+        raise rasterio.errors.RasterioIOError("synthetic")
+
+    monkeypatch.setattr("earthx.readers.cog.rasterio.open", refuse)
+    with pytest.raises(rasterio.errors.RasterioIOError):
+        CogReader(path)
+    assert seen == [{}]
