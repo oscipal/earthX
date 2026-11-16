@@ -26,6 +26,8 @@ DEFAULT_USER_AGENT = "EarthX/0.1 (+https://github.com/oscipal/earthX)"
 MAX_USER_AGENT_CHARS = 256
 # A spacing above this is a typo, not courtesy: one request every five minutes stalls a run.
 MAX_INTERVAL_S = 300.0
+# A cap above this is no cap: no source asks for more, and every waiter would still hold a thread or a socket.
+MAX_CONNECTIONS_PER_HOST = 256
 
 _LABEL = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
 _DIGITS = re.compile(r"^[0-9]+$")
@@ -109,6 +111,12 @@ def _check_interval(seconds: float) -> float:
     return float(seconds)
 
 
+def _check_connections(count: int) -> int:
+    if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= MAX_CONNECTIONS_PER_HOST:
+        raise ValueError(f"a cap of connections per host is a whole number from 1 to {MAX_CONNECTIONS_PER_HOST}")
+    return count
+
+
 @dataclass(frozen=True)
 class Policy:
     """Allowlist and limits. A value, handed in by the caller.
@@ -133,6 +141,8 @@ class Policy:
     host_intervals: Mapping[str, float] = field(default_factory=dict, hash=False)
     # Ask robots.txt before a host is fetched (RFC 9309). Only the harvester's catalogue fetch sets it.
     obey_robots: bool = False
+    # Per host, overriding ``max_connections_per_host``, matched like ``host_intervals`` (M5-36, the registry's hosts.yaml).
+    host_connections: Mapping[str, int] = field(default_factory=dict, hash=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "allowed_hosts", frozenset(normalize_host(h) for h in self.allowed_hosts))
@@ -140,6 +150,9 @@ class Policy:
         object.__setattr__(self, "min_interval_s", _check_interval(self.min_interval_s))
         intervals = {normalize_host(host): _check_interval(value) for host, value in self.host_intervals.items()}
         object.__setattr__(self, "host_intervals", MappingProxyType(intervals))
+        _check_connections(self.max_connections_per_host)
+        connections = {normalize_host(host): _check_connections(value) for host, value in self.host_connections.items()}
+        object.__setattr__(self, "host_connections", MappingProxyType(connections))
 
     def host_interval(self, host: str) -> float | None:
         """The entry of ``host`` in ``host_intervals`` or of its nearest parent, ``None`` if there is none."""
@@ -154,6 +167,15 @@ class Policy:
         """The spacing for ``host``: its own entry, the nearest parent's, else ``min_interval_s``."""
         value = self.host_interval(host)
         return self.min_interval_s if value is None else value
+
+    def connections_for(self, host: str) -> int:
+        """The cap for ``host``: its own entry in ``host_connections``, the nearest parent's, else ``max_connections_per_host``."""
+        labels = host.split(".")
+        for start in range(len(labels) - 1):
+            value = self.host_connections.get(".".join(labels[start:]))
+            if value is not None:
+                return value
+        return self.max_connections_per_host
 
     def allows_host(self, host: str) -> bool:
         """True for the host itself and for its real subdomains, nothing else."""
