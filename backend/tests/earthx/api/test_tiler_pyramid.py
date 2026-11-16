@@ -556,7 +556,8 @@ class TestTheSubstituteBelowTheLevelOfItsSubstitute:
     def test_a_dataset_that_starts_where_its_substitute_starts_shows_only_the_pyramid_below_it(
         self, rows, pyramids, client
     ) -> None:
-        """BEV ALS-DGM (M5-09): its first level is that of GLO-30, so below it the picture is the pyramid alone."""
+        """A first level equal to that of the substitute (BEV ALS-DGM before its measurement, M5-09): below it the
+        picture is the pyramid alone, from it on the route is not the dataset's."""
         lowland = replace(
             TERRAIN, dataset_id="synthetic-lowland", viewer=replace(TERRAIN.viewer, min_zoom=RELIEF.viewer.min_zoom)
         )

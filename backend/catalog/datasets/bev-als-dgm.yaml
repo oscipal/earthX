@@ -52,10 +52,9 @@ format: cog
 # The files carry a CRS (EPSG:3035) and a geotransform [M, all 55 headers].
 georeferencing: geotransform
 line_times: null
-# Every 50 km cell of the grid that may hold a tile of Austria (the 54 cells the outline of Austria touches and the
-# three a border of 2 km adds, M5-09 plan §4.3); narrowed to the union of the loaded tiles after Otto's first load.
+# The union of the 55 loaded tiles (`st_extent` over the items after Otto's first load, 16.11.2026; M5-09 plan A9).
 spatial_extent:
-  bbox: [9.05, 45.95, 17.85, 49.17]
+  bbox: [9.051669, 45.9508597, 17.7770115, 49.1478285]
 # The reference date of the loaded state (M5-09 F1). A newer date stops the load until this period is followed up
 # (plan A2); the live smoke reports it first.
 temporal_extent:
@@ -146,14 +145,14 @@ default_render:
   asset_selection: all
 # One mosaic over all tiles of the reference date (M5-09 F1): every item carries the same `datetime`.
 #
-# `min_zoom` 7 for now (M5-09 F5): a tile of z7 meets at most 5 × 5 tiles of 50 km, inside the budget of 32 files, and
-# the smallest overview (1:256, five files 1:128) lies near its pixel; below z7 the picture comes from the pyramid of
-# GLO-30. Otto's measurement (plan §6 step 4) fixes the value. `max_zoom` 19: two levels past z17, the level of 1 m.
+# `min_zoom` 8 by the rule of M5-09 F5: a cold tile of z7 took 9.4 s, over the budget of 4 s (Otto's measurement of
+# 16.11.2026, plan §2.6; z8 6.3 s, z9 2.8 s). Below z8 the picture is GLO-30: its files at z7, its pyramid below.
+# `max_zoom` 19: two levels past z17, the level of 1 m.
 #
 # `browse: full_resolution` as for swissALTI3D: no quicklook, the AOI crop in full resolution.
 viewer:
   group_by: [datetime]
-  min_zoom: 7
+  min_zoom: 8
   max_zoom: 19
   browse: full_resolution
   quicklook_nodata_max: null
