@@ -40,7 +40,7 @@ Daraus:
    - **Nie verschwindet ein Bild beim Herauszoomen** (`adr/0032`): unter `min_zoom` eine Übersicht oder ein Ersatz-Datensatz, nie eine leere Karte.
    - **Kompass immer sichtbar** wie bei Google Maps, 3D-Knopf unter den Zoom-Knöpfen (UI-06).
    - **Ausgabetypen nur, wo sie Sinn machen** (#333): Werte unverändert → Typ der Quelle plus `float32`; neu gerechnet → nur `float32`, bei Quelle `float64` dann `float64` (Vorgabe) und `float32`; Angabe `x-earthx-passes-values` aus der Operator-Registry. Wiedervorlage `float64` bei M5-11.
-   - **Keine Marke „Overview“** an Pyramiden-Layern (Korrektur zu `adr/0032` F12, 11.11.2026), höchstens Tooltip.
+   - ~~**Keine Marke „Overview“** an Pyramiden-Layern (Korrektur zu `adr/0032` F12, 11.11.2026), höchstens Tooltip.~~ Ersetzt (Otto, 16.11.2026, UI-08): eine Marke „Overview“ überall, wo die Karte eine vergröberte Ansicht zeigt (Job-Ergebnisse, Pyramiden, Ersatz), gleicher Platz und Tooltip.
    - **Ladesymbol** (13.11.2026): Dauert das Laden einer Kartenebene länger, erscheint ein Ladesymbol (Leitfaden, kein Text); allgemein, umgesetzt mit M5-30b in #345.
    - **Nie verschwindet ein Bild, auch nicht zwischen zwei Teilen einer Aufgabe** (13.11.2026, Browserprüfung #345).
    - **Ladeanzeige auf der Karte** (14.11.2026): wie beim Laden der Suchergebnisse, dasselbe Bauteil, Text „Loading data“ (ersetzt „kein Text“); Symbol in der Zeile der Ebene bleibt.
@@ -150,7 +150,7 @@ Stufe A: ohne Plan-Datei, direkt umsetzen. Stufe B: Plan unter `docs/plans/m5/` 
 | Aufgabe | Inhalt | Stand |
 |---|---|---|
 | **M5-30b** | Umsetzung `adr/0032` – abgeschlossen mit #355 (15.11.); GLO-30-Pyramide lokal im Bau | erledigt |
-| **UI-08** (ohne schmale Fenster) | Kästchen schalten nur an Kästchen und Text; Layer erholt sich nach einem Neustart der Dienste selbst (gescheiterte Kacheln erneut laden); Statusbox über den Panels unter 240 px frei; keine Marke „Overview“ | Draft-PR #363 |
+| **UI-08** (ohne schmale Fenster) | Kästchen schalten nur an Kästchen und Text; Layer erholt sich nach einem Neustart der Dienste selbst (gescheiterte Kacheln erneut laden); Statusbox über den Panels unter 240 px frei; Marke „Overview“ einheitlich für Job-Ergebnisse, Pyramiden und Ersatz (Otto, 16.11.) | Draft-PR #363 |
 | **M5-36** | Grenzen je Host für alle Instanzen: `backend/catalog/hosts.yaml` (Pflicht je Host), ein Zähler je Host und Prozess für GDAL, HTTP und Zarr, Teilung durch `EARTHX_SOURCE_INSTANCES` für `api` und `tiler` zusammen, nur Warten statt Verweigern | Plan in #360, G1–G6 = 1 (Otto 16.11.: FSDI 6 Verbindungen und 1 s Abstand für `materialize`, Earth Search 6, S3-Buckets je 32; Kacheln und Suche ohne Abstand; ≤ 5 % langsamer; zwei PRs); PR 1 läuft |
 
 **M5-30b im Einzelnen** (Merge jeweils mit Merge-Commit):
