@@ -2,14 +2,15 @@
 """Shape of the BEV ATOM service "ALS EL Höhendaten" and its files (M5-09 plan §2, §6).
 
 One-time network step on Otto's machine (adr/0002), never in a cloud session or CI: every request goes through
-`earthx.gateway`, one second apart per host. From the repository root, with the backend venv:
+`earthx.gateway`, one second apart per host. From the repository root, in the image of the backend (service
+`bev-probe` of `docker-compose.yml`, which mounts this directory; the same line in PowerShell and bash):
 
-    PYTHONPATH=backend python scripts/m5-09-bev/probe.py              # feeds, one dataset feed, one file
-    PYTHONPATH=backend python scripts/m5-09-bev/probe.py --all        # all dataset feeds of the newest DTM date
-    PYTHONPATH=backend python scripts/m5-09-bev/probe.py --all --headers   # and the COG header of every file
+    docker compose run --build --rm bev-probe                     # feeds, one dataset feed, one file
+    docker compose run --build --rm bev-probe --all               # all dataset feeds of the newest DTM date
+    docker compose run --build --rm bev-probe --all --headers     # and the COG header of every file
 
-PowerShell: ``$env:PYTHONPATH = 'backend'`` first. ``--all`` reads 55 dataset feeds and sends 55 HEAD requests
-(about two minutes); ``--headers`` opens the 55 files through GDAL and reads only their headers.
+``--all`` reads 55 dataset feeds and sends 55 HEAD requests (about two minutes); ``--headers`` opens the 55 files
+through GDAL and reads only their headers.
 
 The output names element names, counts, dates and whether a header is there. It never prints a URL, a tile name, an
 identifier or a header value that identifies a file (ETag, DOI), so it can be pasted into the pull request as it is.
