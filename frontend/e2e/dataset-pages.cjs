@@ -16,6 +16,7 @@
 //     typed does not stay until the next choice, or the fields offer days outside the extent, or are not locked with the
 //     acquisition period in their tooltip for
 //     the dataset without a time axis; "No time axis" or "Scenes counted …" stand as text in the panel;
+//   - the tile "Add dataset" (Otto, 16.11.2026) does not stand after the datasets on the last page, drawn like one;
 //   - something leaves the panel, or the page scrolls sideways;
 // and writes a screenshot per step.
 //
@@ -87,7 +88,9 @@ async function check(browser, { theme, viewport }) {
   }, [fn.toString(), arg]);
   const scroll = page.locator('.control-scroll');
   const grid = page.locator('.dataset-list');
-  const toggles = page.locator('.dataset-list .dataset-toggle');
+  // Every tile of a page, "Add dataset" included (it counts like a dataset on the pages), and the datasets alone.
+  const tiles = page.locator('.dataset-list .dataset-toggle');
+  const toggles = page.locator('.dataset-list .dataset-toggle:not(.add-dataset)');
   const previous = page.locator('.dataset-pages [aria-label="Previous page"]');
   const next = page.locator('.dataset-pages [aria-label="Next page"]');
   const counter = page.locator('.dataset-page-count');
@@ -103,7 +106,7 @@ async function check(browser, { theme, viewport }) {
     return (await tip.count()) ? (await tip.textContent())?.trim() : null;
   };
   const rows = async () => {
-    const boxes = await toggles.evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().top)));
+    const boxes = await tiles.evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().top)));
     return new Set(boxes).size;
   };
   const scrolls = () => scroll.evaluate((el) => el.scrollHeight > el.clientHeight + 1);
@@ -114,15 +117,15 @@ async function check(browser, { theme, viewport }) {
 
   // 1. A page: as many rows as fit, no upper limit; the panel does not scroll unless it is down to one row.
   const shownRows = await rows();
-  const size = await toggles.count();
+  const size = await tiles.count();
   if (viewport === 'tall') expect('no more than six on a page in a tall window (Otto, 07.11.2026)', size > 6, `${size}`);
-  expect('a page is not two buttons a row', size === Math.min(TITLES.length, shownRows * 2), `${size} in ${shownRows} rows`);
+  expect('a page is not two buttons a row', size === Math.min(TITLES.length + 1, shownRows * 2), `${size} in ${shownRows} rows`);
   if (shownRows > 1) expect('the panel scrolls with more than one row', !(await scrolls()));
   const slack = await scroll.evaluate((el) => {
     const last = el.lastElementChild.getBoundingClientRect().bottom - el.getBoundingClientRect().top + el.scrollTop;
     return el.clientHeight - last - parseFloat(getComputedStyle(el).paddingBottom);
   });
-  const pages = Math.ceil(TITLES.length / size);
+  const pages = Math.ceil((TITLES.length + 1) / size);
   if (pages > 1) expect('a row more would have fitted', slack < 46, `${Math.round(slack)} px free`);
   expect('the counter', (await counter.textContent())?.replace(/\s+/g, ' ').trim() === `1 / ${pages}`, await counter.textContent());
   expect('the first arrow is not locked', (await previous.getAttribute('aria-disabled')) === 'true');
@@ -151,6 +154,8 @@ async function check(browser, { theme, viewport }) {
   }
   expect('the pages miss or repeat a dataset', JSON.stringify(seen) === JSON.stringify(TITLES), seen.join(', '));
   expect('the last page is lower than a full one', Math.abs((await rect(grid)).height - fullHeight) < 1);
+  const lastTile = await tiles.last().evaluate((el) => [el.classList.contains('add-dataset'), el.classList.contains('btn'), el.textContent.trim()]);
+  expect('"Add dataset" stands last, drawn like a dataset', lastTile[0] && lastTile[1] && lastTile[2] === 'Add dataset', JSON.stringify(lastTile));
   expect('the last arrow is not locked', (await next.getAttribute('aria-disabled')) === 'true');
   expect('the reason of the last arrow', (await tipOnHover(next)) === 'Already on the last page');
   await next.click({ force: true });

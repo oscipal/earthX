@@ -721,8 +721,8 @@ class FederatingCoreCrudClient(CoreCrudClient):
         category: str | None = None,
         **kwargs: Any,
     ) -> Any:
-        """``GET /stac/collections``: without a parameter every full entry, as before; else Collection Search (M5-22c)
-        over full and listed entries (M5-40).
+        """``GET /stac/collections``: Collection Search (M5-22c) over full and listed entries (M5-40); without a parameter
+        the first page of the catalogue (M5-40 plan F3), no longer every collection at once.
 
         An area by ``GET`` is a ``bbox`` only (adr/0026 §4.5): ``intersects`` belongs in the body of ``POST``.
         """
@@ -730,8 +730,6 @@ class FederatingCoreCrudClient(CoreCrudClient):
         _reject_keys(names, _DISALLOWED_QUERY_KEYS, "is not available for collections (M5-22 plan §3.7)")
         if "intersects" in names:
             raise HTTPException(status_code=400, detail="an area by GET is a bbox; send intersects by POST")
-        if not names:
-            return await super().all_collections(request, limit=MAX_PAGE, offset=0)
         query = read_query(
             q=q, bbox=bbox, intersects=None, datetime=datetime, limit=limit, offset=offset, region=region,
             entry=entry, token=token, category=category,
@@ -742,8 +740,6 @@ class FederatingCoreCrudClient(CoreCrudClient):
         self, search_request: CollectionsPostRequest, request: Request, **kwargs: Any
     ) -> Any:
         """``POST /stac/collections``: the search of ``GET`` with an area as ``bbox`` or ``intersects`` (F6)."""
-        if not search_request.model_fields_set:
-            return await super().all_collections(request, limit=MAX_PAGE, offset=0)
         query = read_query(**{name: getattr(search_request, name) for name in CollectionsPostRequest.model_fields})
         return await search_collections(request, query, body=search_request.model_dump(mode="json", exclude_unset=True))
 

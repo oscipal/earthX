@@ -33,6 +33,13 @@ export function formatNumber(value: number): string {
   return sign + String(Number(fixed));
 }
 
+// A count of things (a whole number of entries), with a comma between thousands as the interface's English writes it:
+// "10,000" (M5-40 H5). Anything that is no whole number of zero or more is "—".
+export function formatCount(value: number): string {
+  if (!Number.isSafeInteger(value) || value < 0) return '—';
+  return String(value).replace(/\B(?=(\d{3})+$)/gu, ',');
+}
+
 // A value rounded to `digits` decimals, still a number: where a track of a slider is coarser than the three decimals of the display.
 export const roundTo = (value: number, digits: number): number => Number(value.toFixed(digits));
 

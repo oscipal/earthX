@@ -6,7 +6,8 @@ import { completenessNote } from '../coverage';
 import { barInRange, histogramBars } from '../coverageHistogram';
 import { DATASETS_PER_ROW, pageCount, pageOf, pageSlice, rowsThatFit, START_DATASET_ROWS } from '../datasetPages';
 import { clampDay, dateBounds, todayUtc, type DayBounds } from '../dateBounds';
-import { acquisitionNote, maturityLabel, maturityNote } from '../datasets';
+import { acquisitionNote, maturityLabel, maturityNote, type DatasetOption } from '../datasets';
+import { CATALOGUE_ID } from '../dock';
 import { bufferPointToPolygon, polygonBbox } from '../geoUtils';
 import { PLACE_SEARCH_PROVENANCE, placeAoi, searchPlaces } from '../placeSearch';
 import { focusFirstItem } from '../popover';
@@ -14,7 +15,7 @@ import { totalItems } from '../sections';
 import { searchFiltersInvalid, useAppStore } from '../store';
 import AdvancedSearch from './AdvancedSearch';
 import ClearableInput from './ClearableInput';
-import { ChevronLeftIcon, ChevronRightIcon, CoverageIcon, HistoryIcon, UploadIcon } from './icons';
+import { ChevronLeftIcon, ChevronRightIcon, CoverageIcon, HistoryIcon, PlusIcon, UploadIcon } from './icons';
 import Popover from './Popover';
 import Tip from './Tip';
 import Toolbar from './Toolbar';
@@ -31,7 +32,7 @@ import { counted } from '../plural';
 //
 // UI-05 §3.3: the calendar offers only the days of the chosen datasets (`min`/`max`); a day typed outside them is moved
 // onto the nearest one when the field is left.
-function DateField({
+export function DateField({
   value,
   onChange,
   label,
@@ -390,6 +391,24 @@ function MultiSelectToggle() {
 // part 1), also with one page. The grid keeps the height of a full page, so that the last page does not let the panel
 // jump. When the size of a page changes, the page of the dataset picked last is shown; "Add" in the catalogue turns to
 // the page of the dataset added (A5). The heading row is drawn here, because the pages are.
+// The tile that opens the Data catalogue to add a dataset (Otto, 16.11.2026), drawn like a dataset.
+const ADD_DATASET = Symbol('add dataset');
+
+function AddDatasetTile() {
+  const openCatalogue = useAppStore((s) => s.openCatalogue);
+  return (
+    <button
+      type="button"
+      className="btn dataset-toggle add-dataset"
+      aria-controls={CATALOGUE_ID}
+      onClick={openCatalogue}
+    >
+      <PlusIcon lead size={14} />
+      <span className="dataset-toggle-title">Add dataset</span>
+    </button>
+  );
+}
+
 function DatasetPicker() {
   const allDatasets = useAppStore((s) => s.datasets);
   const addedDatasetIds = useAppStore((s) => s.addedDatasetIds);
@@ -419,9 +438,11 @@ function DatasetPicker() {
     const index = datasets.findIndex((d) => d.id === revealed.id);
     if (index >= 0) setPage(pageOf(index, pageSize));
   }
-  const pages = pageCount(datasets.length, pageSize);
+  // "Add dataset" (Otto, 16.11.2026) stands after the datasets and counts like one of them on the pages.
+  const tiles: (DatasetOption | typeof ADD_DATASET)[] = [...datasets, ADD_DATASET];
+  const pages = pageCount(tiles.length, pageSize);
   const shownPage = Math.min(page, pages - 1);
-  const drawnRows = Math.min(rows, Math.ceil(datasets.length / DATASETS_PER_ROW));
+  const drawnRows = Math.min(rows, Math.ceil(tiles.length / DATASETS_PER_ROW));
 
   useLayoutEffect(() => {
     const list = listRef.current;
@@ -455,73 +476,67 @@ function DatasetPicker() {
         <span>
           Datasets
           <MaturityTip />
-          {datasets.length > 0 && (
-            <span className="dataset-pages" role="group" aria-label="Pages of datasets">
-              <button
-                type="button"
-                className="icon-btn sm"
-                aria-label="Previous page"
-                aria-disabled={first || undefined}
-                data-tip-level="advanced"
-                data-tip={first ? 'Already on the first page' : 'Previous page'}
-                onClick={() => {
-                  if (!first) setPage(shownPage - 1);
-                }}
-              >
-                <ChevronLeftIcon size={14} />
-              </button>
-              <span className="dataset-page-count">
-                {shownPage + 1} / {pages}
-              </span>
-              <button
-                type="button"
-                className="icon-btn sm"
-                aria-label="Next page"
-                aria-disabled={last || undefined}
-                data-tip-level="advanced"
-                data-tip={last ? 'Already on the last page' : 'Next page'}
-                onClick={() => {
-                  if (!last) setPage(shownPage + 1);
-                }}
-              >
-                <ChevronRightIcon size={14} />
-              </button>
+          <span className="dataset-pages" role="group" aria-label="Pages of datasets">
+            <button
+              type="button"
+              className="icon-btn sm"
+              aria-label="Previous page"
+              aria-disabled={first || undefined}
+              data-tip-level="advanced"
+              data-tip={first ? 'Already on the first page' : 'Previous page'}
+              onClick={() => {
+                if (!first) setPage(shownPage - 1);
+              }}
+            >
+              <ChevronLeftIcon size={14} />
+            </button>
+            <span className="dataset-page-count">
+              {shownPage + 1} / {pages}
             </span>
-          )}
+            <button
+              type="button"
+              className="icon-btn sm"
+              aria-label="Next page"
+              aria-disabled={last || undefined}
+              data-tip-level="advanced"
+              data-tip={last ? 'Already on the last page' : 'Next page'}
+              onClick={() => {
+                if (!last) setPage(shownPage + 1);
+              }}
+            >
+              <ChevronRightIcon size={14} />
+            </button>
+          </span>
         </span>
         <MultiSelectToggle />
       </div>
-      {datasets.length === 0 && allDatasets.length > 0 && (
-        <p className="hint">No datasets yet — add some from the Data catalogue</p>
-      )}
-      {datasets.length > 0 && (
-        <div
-          ref={listRef}
-          className="dataset-list"
-          role="group"
-          aria-label="Datasets"
-          style={{ '--dataset-rows': drawnRows } as CSSProperties}
-        >
-          {pageSlice(datasets, shownPage, pageSize).map((d) => {
-            const picked = selectedDatasetIds.includes(d.id);
-            const label = d.viewable ? maturityLabel(d.collection) : null;
-            return (
-              <button
-                key={d.id}
-                type="button"
-                className="btn dataset-toggle"
-                data-tip={d.viewable ? undefined : `${d.title} — not viewable: ${d.reason}`}
-                aria-pressed={picked}
-                disabled={!d.viewable || busy}
-                onClick={() => toggle(d.id)}
-              >
-                <span className="dataset-toggle-title">{d.title}</span>
-                {label && <span className="maturity-chip">{label}</span>}
-              </button>
-            );
-          })}
-        </div>
-      )}
+      <div
+        ref={listRef}
+        className="dataset-list"
+        role="group"
+        aria-label="Datasets"
+        style={{ '--dataset-rows': drawnRows } as CSSProperties}
+      >
+        {pageSlice(tiles, shownPage, pageSize).map((d) => {
+          if (d === ADD_DATASET) return <AddDatasetTile key="add-dataset" />;
+          const picked = selectedDatasetIds.includes(d.id);
+          const label = d.viewable ? maturityLabel(d.collection) : null;
+          return (
+            <button
+              key={d.id}
+              type="button"
+              className="btn dataset-toggle"
+              data-tip={d.viewable ? undefined : `${d.title} — not viewable: ${d.reason}`}
+              aria-pressed={picked}
+              disabled={!d.viewable || busy}
+              onClick={() => toggle(d.id)}
+            >
+              <span className="dataset-toggle-title">{d.title}</span>
+              {label && <span className="maturity-chip">{label}</span>}
+            </button>
+          );
+        })}
+      </div>
     </>
   );
 }

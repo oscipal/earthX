@@ -64,6 +64,9 @@ export interface CollectionAccess {
   // What reading the assets needs (`adr/0027` §6.1): `none` is anonymous; any other value makes the dataset a catalogue
   // entry with a link (W0). Every collection carries it since M5-13; a collection without it reads as `none`.
   account?: string | null;
+  // How the source hands the data out, on a listed entry (M5-40, `adr/0027` §6.1 addendum): download, service, order,
+  // on_request.
+  delivery?: string | null;
 }
 
 // The reader dispatch format (`DataFormat`, architekturplan.md 6.2), read only
@@ -241,8 +244,12 @@ export interface Collection {
   // STAC core (UI-05 F2): the providers, and the resolution in metres under `summaries.gsd`.
   providers?: StacProvider[] | null;
   summaries?: { gsd?: number[] | null } | null;
-  // The group of the Data catalogue (UI-05 F1).
+  // The group of the Data catalogue (UI-05 F1): an id of `backend/catalog/categories.yaml` (M5-40).
   'earthx:category'?: string | null;
+  // `full` for an entry with display, `listed` for a catalogue entry with a link (M5-40, adr/0033).
+  'earthx:entry'?: 'full' | 'listed' | string | null;
+  // Where a listed entry comes from (adr/0033 §10): the page at the source above all.
+  'earthx:listing'?: { source_url?: string | null; publisher?: string | null; approved_on?: string | null } | null;
   // `adr/0024` R3: `unclear` marks a prototype source, with `legal_note` saying what is unclear (`null` when cleared).
   // Every collection carries them since M5-13; a collection without them reads as cleared.
   'earthx:legal_status'?: string | null;

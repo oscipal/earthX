@@ -121,11 +121,139 @@ export async function jsonOrThrow<T>(res: Response): Promise<T> {
   return (await res.json()) as T;
 }
 
+interface CollectionPage {
+  collections: Collection[];
+  links?: { rel?: string; href?: string; body?: { token?: unknown } }[];
+  numberMatched?: number;
+}
+
+// The `token` of the page after this one, read off its `next` link; the link's own host is not used, every request goes
+// to `BASE` (M5-40: the API pages `/stac/collections` by a keyset token).
+function nextToken(page: CollectionPage): string | null {
+  const next = page.links?.find((l) => l.rel === 'next');
+  // A page asked by POST names the next one in the body of its link.
+  if (typeof next?.body?.token === 'string') return next.body.token;
+  const href = next?.href;
+  if (typeof href !== 'string' || !URL.canParse(href, 'http://local')) return null;
+  return new URL(href, 'http://local').searchParams.get('token');
+}
+
+async function collectionPage(params: Record<string, string>): Promise<CollectionPage> {
+  return jsonOrThrow<CollectionPage>(await fetch(`${BASE}/stac/collections?${new URLSearchParams(params)}`));
+}
+
+// The most pages `fetchCollections` follows: 10⁶ full entries at 1 000 a page would be a mistake to load at all.
+const MAX_FULL_PAGES = 20;
+
+// Every full entry (M5-40 plan §5.7): the ones "Search and area", the search, the layers and the downloads work with.
+// They are few (10³ at most); the listed entries come a page at a time with `fetchCataloguePage`.
 export async function fetchCollections(): Promise<Collection[]> {
-  const data = await jsonOrThrow<{ collections: Collection[] }>(
-    await fetch(`${BASE}/stac/collections`),
+  const collections: Collection[] = [];
+  let token: string | null = null;
+  for (let page = 0; page < MAX_FULL_PAGES; page += 1) {
+    const data = await collectionPage({ entry: 'full', limit: '1000', ...(token ? { token } : {}) });
+    collections.push(...data.collections);
+    token = nextToken(data);
+    if (!token) return collections;
+  }
+  throw new Error(`more than ${MAX_FULL_PAGES} pages of full entries`);
+}
+
+export interface CatalogueRegion {
+  code: string;
+  name: string;
+  level: 'state' | 'subdivision';
+  // The state of a subdivision.
+  state?: string;
+}
+
+// What the filters of the Data catalogue offer (M5-40 H3, H4), from files of the backend's image.
+export async function fetchCatalogueCategories(): Promise<{ id: string; title: string }[]> {
+  const data = await jsonOrThrow<{ categories?: unknown }>(await fetch(`${BASE}/catalogue/categories`));
+  if (!Array.isArray(data.categories)) throw new Error('the categories are no list');
+  return data.categories.filter(
+    (c): c is { id: string; title: string } => typeof c?.id === 'string' && typeof c?.title === 'string',
   );
-  return data.collections;
+}
+
+export async function fetchCatalogueRegions(): Promise<CatalogueRegion[]> {
+  const data = await jsonOrThrow<{ regions?: unknown }>(await fetch(`${BASE}/catalogue/regions`));
+  if (!Array.isArray(data.regions)) throw new Error('the regions are no list');
+  return data.regions.filter((r): r is CatalogueRegion => typeof r?.code === 'string' && typeof r?.name === 'string');
+}
+
+export interface CataloguePage {
+  collections: Collection[];
+  // The token of the next page, or `null` at the end.
+  next: string | null;
+  // How many entries the group has, where the API counts them (up to 10 000, on the first page only).
+  matched: number | null;
+}
+
+// The filters of the Data catalogue (M5-40 H1): an area, a region code, a period of whole days, either end open.
+export interface CatalogueFilter {
+  area: GeoJSON.Geometry | null;
+  region: string | null;
+  from: string | null;
+  to: string | null;
+}
+
+export const NO_FILTER: CatalogueFilter = { area: null, region: null, from: null, to: null };
+
+// The period as `datetime` of the API: the first instant of `from` to the last of `to`, `..` for an open end.
+export function catalogueDatetime(from: string | null, to: string | null): string | null {
+  if (!from && !to) return null;
+  return `${from ? `${from}T00:00:00Z` : '..'}/${to ? `${to}T23:59:59Z` : '..'}`;
+}
+
+function filterBody(filter: CatalogueFilter): Record<string, unknown> {
+  const datetime = catalogueDatetime(filter.from, filter.to);
+  return {
+    ...(filter.area ? { intersects: filter.area } : {}),
+    ...(filter.region ? { region: [filter.region] } : {}),
+    ...(datetime ? { datetime } : {}),
+  };
+}
+
+export interface CatalogueHits {
+  collections: Collection[];
+  // The offset of the next page of hits, or `null` at the end.
+  next: number | null;
+}
+
+// One page of the hits of the search field of the Data catalogue (Otto, 16.11.2026): the Collection Search with `q`
+// (M5-22c) in rank order, within the filters and the category, by POST like the groups; pages go by offset.
+export async function fetchCatalogueSearch(
+  q: string,
+  offset: number,
+  filter: CatalogueFilter = NO_FILTER,
+  category: string | null = null,
+): Promise<CatalogueHits> {
+  const body = { q, ...(offset > 0 ? { offset } : {}), ...(category ? { category } : {}), ...filterBody(filter) };
+  const data = await jsonOrThrow<CollectionPage>(
+    await fetch(`${BASE}/stac/collections`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+  );
+  const next = data.links?.find((l) => l.rel === 'next') as { body?: { offset?: unknown } } | undefined;
+  return { collections: data.collections, next: typeof next?.body?.offset === 'number' ? next.body.offset : null };
+}
+
+// One page of a group of the Data catalogue (M5-40 plan §9): full and listed entries of one category, by title, within
+// the filters. Asked by POST, so that an area never stands in a URL (adr/0026 F6).
+export async function fetchCataloguePage(
+  category: string,
+  token: string | null,
+  limit = 50,
+  filter: CatalogueFilter = NO_FILTER,
+): Promise<CataloguePage> {
+  const body = { category, limit, ...(token ? { token } : {}), ...filterBody(filter) };
+  const data = await jsonOrThrow<CollectionPage>(
+    await fetch(`${BASE}/stac/collections`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+  );
+  return {
+    collections: data.collections,
+    next: nextToken(data),
+    matched: typeof data.numberMatched === 'number' ? data.numberMatched : null,
+  };
 }
 
 // M3-06b: `POST /aoi/upload` (M3-06a, `backend/earthx/api/aoi_upload_route.py`)

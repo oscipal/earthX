@@ -22,6 +22,8 @@ export default defineConfig({
       '/coverage': { target: apiTarget, changeOrigin: true },
       '/aoi': { target: apiTarget, changeOrigin: true },
       '/geocode': { target: apiTarget, changeOrigin: true },
+      // M5-40: the categories and regions the filters of the Data catalogue offer.
+      '/catalogue': { target: apiTarget, changeOrigin: true },
       '/processing': { target: apiTarget, changeOrigin: true },
       '/collections': { target: tilerTarget, changeOrigin: true },
       // The tiles of a finished job (M4-13c-5): read by the tiler from the object store.
