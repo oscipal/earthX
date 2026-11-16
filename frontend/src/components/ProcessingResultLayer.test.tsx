@@ -99,7 +99,7 @@ beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock);
   useProcessingStore.getState().resetDraft();
   useProcessingStore.setState({ open: true, detailJobID: JOB, jobs: [entry()], preview: null });
-  useAppStore.setState({ layers: [], dock: 'layers', mapZoom: 5, viewportBbox: null, notice: null, datasets: [] });
+  useAppStore.setState({ layers: [], dock: 'layers', mapZoom: 5, viewportBbox: null, notice: null, datasets: [], mapOverview: false });
   container = document.createElement('div');
   document.body.append(container);
   root = createRoot(container);
@@ -671,6 +671,18 @@ describe('"Overview" over the map', () => {
   ])('is not on the map for a layer that is %s', (_, over, layer) => {
     result(over, layer);
     act(() => root.render(<PreviewBadge />));
+    expect(container.querySelector('.preview-badge-dock')).toBeNull();
+  });
+
+  it('is the same mark with the same tooltip where the map draws an overview of a dataset (Otto, 16.11.2026, UI-08), and is there once', () => {
+    act(() => useAppStore.setState({ mapOverview: true }));
+    act(() => root.render(<PreviewBadge />));
+    expect(badge()).toBe('Overview');
+    expect(container.querySelector('.preview-badge-dock .badge')?.getAttribute('data-tip')).toBe(OVERVIEW_TITLE);
+    result();
+    act(() => root.render(<PreviewBadge />));
+    expect(badge()).toBe('Overview');
+    act(() => useAppStore.setState({ mapOverview: false, layers: [] }));
     expect(container.querySelector('.preview-badge-dock')).toBeNull();
   });
 

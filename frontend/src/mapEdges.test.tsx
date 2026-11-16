@@ -9,6 +9,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import App from './App';
+import appSource from './App.tsx?raw';
 import index from './index.css?raw';
 import { mapEdgeClasses } from './mapEdges';
 import { resetJobs, useProcessingStore } from './processingStore';
@@ -86,6 +87,18 @@ describe('the sheet', () => {
     expect(css.slice(css.indexOf('.status {')).split('@media')[0]).toContain('width: min(560px, calc(100vw - var(--rail-width) - 16px))');
     expect(ruleOf(css, '.overlay.status', '@media (max-width: 899px)')).toContain('z-index: 13');
     expect(ruleOf(css, '.app.has-dock', '@media (max-width: 899px)')).toBe('');
+  });
+
+  it('lies over the panels at its sides where the free area is narrower than the box (Otto, 14.11.2026, UI-08), under the Data catalogue', () => {
+    const z = (rule: string) => Number(/z-index:\s*(\d+)/u.exec(rule)?.[1]);
+    const box = z(ruleOf(css, '.overlay.status', wide));
+    for (const panel of ['.dock', '.inspector.panel', '.processing-sheet']) expect(z(ruleOf(css, panel))).toBeLessThanOrEqual(box);
+    expect(z(ruleOf(css, '.catalogue'))).toBe(box);
+    // In the same layer the later one lies above: the box after the settings bar and the sheet, the Data catalogue after the box.
+    const at = (text: string) => appSource.indexOf(text);
+    expect(at('<Inspector />')).toBeLessThan(at('className="overlay status"'));
+    expect(at('className="overlay processing-sheet"')).toBeLessThan(at('className="overlay status"'));
+    expect(at('className="overlay status"')).toBeLessThan(at('<DataCatalogue />'));
   });
 
   it('does not read the Data catalogue: it covers the box and the box does not move for it', () => {
