@@ -839,6 +839,8 @@ def test_the_table_refuses_a_published_row_without_keywords(conn: psycopg.Connec
 
 
 def test_the_hand_entries_of_the_repo_are_written_with_their_access_and_regions(conn: psycopg.Connection) -> None:
+    # A `catalog-load` of another test on this worker's database may have committed them already.
+    conn.execute("DELETE FROM public.earthx_listed_entry")
     write_regions(conn, load_regions())
     listed, blocked = write_hand_entries(conn, load_listed(), [], full_ids=[])
     assert (sorted(listed), blocked) == (["corine-land-cover", "landsat-c2-l2"], ())
