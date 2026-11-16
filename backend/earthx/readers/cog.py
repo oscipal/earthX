@@ -45,6 +45,7 @@ from rio_tiler.utils import has_alpha_band
 from earthx.gateway import GatewayError, Policy, Resolver, check_url, host_of, resolve_host
 from earthx.gateway.gdal import vsicurl_path
 from earthx.readers.errors import AssetRejected, GeoreferenceMismatch
+from earthx.readers.limits import read_slot
 from earthx.readers.radar_slices import slice_document, slices_of
 
 __all__ = ["AS_WRITTEN", "AssetPath", "CogReader", "Georeferencing", "asset_host", "asset_path", "warp_options"]
@@ -167,7 +168,17 @@ class CogReader(Reader):
                 "a COG is opened from an AssetPath built by earthx.readers.cog.asset_path, "
                 "not from a plain string (KLAERUNGEN B8)"
             )
+        try:
+            self._open()
+        except BaseException:
+            # The slot and the file go back with the reader that never came to be.
+            self._ctx_stack.close()
+            raise
+
+    def _open(self) -> None:
         if not self.dataset:
+            # A slot of the host from open to close, where the process counts them (M5-36 §5.2).
+            self._ctx_stack.enter_context(read_slot(asset_host(self.input)))
             self.dataset = self._ctx_stack.enter_context(rasterio.open(self.input))
         self.raw = self.dataset
         gcps, gcp_crs = self.dataset.gcps

@@ -49,6 +49,7 @@ from earthx.processing.plan import PlannedStep, needed_source_bands, stock_steps
 from earthx.processing.recipe import ResolvedInput, Step
 from earthx.processing.source import Source, common_grid, expected_band_names, merge_images, pad_image, units_of
 from earthx.readers.cog import AssetPath
+from earthx.readers.limits import carry_held
 from earthx.readers.zarr_reader import ZarrAsset
 
 __all__ = [
@@ -511,7 +512,8 @@ class MosaicOperatorTileReader:
         try:
             image, _ = mosaic_reader(
                 list(range(len(self._input.scenes))),
-                lambda index, *tile, **_: self._scene(index, *tile, options),
+                # The route holds the slots of the hosts for the whole tile (M5-36 §5.2); the threads read under them.
+                carry_held(lambda index, *tile, **_: self._scene(index, *tile, options)),
                 x,
                 y,
                 z,
