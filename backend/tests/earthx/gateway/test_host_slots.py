@@ -15,7 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 import httpx
 import pytest
 
-from earthx.gateway import Policy, ReadSlots
+from earthx.gateway import Policy, ReadSlots, instance_share, source_instances_from_env
 from earthx.gateway.client import Gateway
 from earthx.gateway.slots import _Waiter
 
@@ -245,3 +245,20 @@ class TestGatewaysOfOneProcess:
         narrow = ReadSlots(Policy(allowed_hosts=frozenset({HOST})))
         with pytest.raises(ValueError, match="cover every host"):
             Gateway(policy(), slots=narrow)
+
+
+class TestTheNumberOfInstances:
+    @pytest.mark.parametrize(("raw", "count"), [("", 1), ("  ", 1), ("1", 1), ("2", 2), (" 3 ", 3), ("256", 256)])
+    def test_a_whole_number_from_1_to_256_or_nothing(self, raw: str, count: int) -> None:
+        assert source_instances_from_env({"EARTHX_SOURCE_INSTANCES": raw}) == count
+        assert source_instances_from_env({}) == 1
+
+    @pytest.mark.parametrize("raw", ["0", "-1", "257", "2.5", "two", "1e2", "٣"])
+    def test_anything_else_stops_the_start_and_names_the_variable_not_the_value(self, raw: str) -> None:
+        with pytest.raises(ValueError, match="EARTHX_SOURCE_INSTANCES") as raised:
+            source_instances_from_env({"EARTHX_SOURCE_INSTANCES": raw})
+        assert raw not in str(raised.value)
+
+    @pytest.mark.parametrize(("cap", "instances", "share"), [(32, 1, 32), (32, 2, 16), (6, 4, 1), (6, 7, 1), (1, 3, 1)])
+    def test_the_share_is_rounded_down_and_never_below_one(self, cap: int, instances: int, share: int) -> None:
+        assert instance_share(cap, instances) == share

@@ -21,6 +21,7 @@ from earthx.gateway.errors import UrlRejected, UrlTooLong
 
 ALLOWED_HOSTS_ENV = "EARTHX_ALLOWED_HOSTS"
 USER_AGENT_ENV = "EARTHX_USER_AGENT"
+SOURCE_INSTANCES_ENV = "EARTHX_SOURCE_INSTANCES"
 # Project name and repository, no person's mail address (adr/0025 F9).
 DEFAULT_USER_AGENT = "EarthX/0.1 (+https://github.com/oscipal/earthX)"
 MAX_USER_AGENT_CHARS = 256
@@ -98,6 +99,30 @@ def user_agent_from_env(environ: Mapping[str, str] | None = None) -> str:
         return check_user_agent(raw)
     except ValueError as error:
         raise ValueError(f"{USER_AGENT_ENV}: {error}") from None
+
+
+def source_instances_from_env(environ: Mapping[str, str] | None = None) -> int:
+    """``EARTHX_SOURCE_INSTANCES``: how many processes ``api`` and ``tiler`` may run at once, together; 1 if unset or empty.
+
+    They share each source's cap per host by this number until the egress proxy of M6 keeps it centrally (M5-36 §5.1,
+    G4). Every such process calls this at start, so a bad value stops it there; the error names the variable, never
+    the value.
+    """
+    raw = (environ if environ is not None else os.environ).get(SOURCE_INSTANCES_ENV, "").strip()
+    if not raw:
+        return 1
+    if not _DIGITS.match(raw) or not 1 <= int(raw) <= MAX_CONNECTIONS_PER_HOST:
+        raise ValueError(f"{SOURCE_INSTANCES_ENV}: a whole number from 1 to {MAX_CONNECTIONS_PER_HOST}")
+    return int(raw)
+
+
+def instance_share(connections: int, instances: int) -> int:
+    """One instance's part of a cap that ``instances`` processes share: rounded down, never below 1 (M5-36 §5.1).
+
+    Below 1 a process could not read the host at all and an image would vanish; with a cap smaller than the number
+    of instances the processes together then hold more than the cap, which the caller reports at start.
+    """
+    return max(1, connections // instances)
 
 
 def product_token(user_agent: str) -> str:
