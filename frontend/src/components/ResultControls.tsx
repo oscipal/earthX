@@ -23,6 +23,7 @@ import { bandPlacesOfTileUrl, defaultRange, rangeOfTileUrl, renderOfRange, resul
 import { useAppStore } from '../store';
 import { sceneNamesOfOrder } from '../sceneNames';
 import { ONE_BAND_TIP } from '../viewBand';
+import { percentOfLook } from '../displayLook';
 import AutoScaleButton from './AutoScaleButton';
 import RenderFields, { NO_COLORMAP } from './RenderFields';
 import ScaleHistograms from './ScaleHistograms';
@@ -253,8 +254,13 @@ function Controls({ layer }: { layer: MapLayer }) {
     if (colour) {
       const channels = channelsAutoScaled(channelValues, fallback);
       setDraft((d) => ({ ...d, vmin: channels[0].vmin, vmax: channels[0].vmax, channels, percent: undefined }));
-    } else if (unit === 'percent') setTyped(DEFAULT_PERCENT);
-    else setDraft(fallback ?? { vmin: '', vmax: '', colormap: '' });
+    } else if (unit === 'percent' && info.look?.scale !== 'fixed') setTyped(percentOfLook(info.look ?? null));
+    // Only the range: the colormap chosen stays (Otto, 16.11.2026).
+    else {
+      // A fixed range (an aspect) is values, not percentiles.
+      setUnit('value');
+      setDraft((d) => ({ vmin: fallback?.vmin ?? '', vmax: fallback?.vmax ?? '', colormap: d.colormap }));
+    }
     setProblem(null);
   };
 

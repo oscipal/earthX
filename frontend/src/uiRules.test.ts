@@ -94,9 +94,9 @@ describe('icons (§7.5 no. 3): one source, no character of the text for an icon'
 });
 
 describe('Esc (§7.5 no. 2): closes nothing', () => {
-  // The exceptions (Otto, 02.11.2026, and UI-04 §7.0 no. 2): Cancel in a question, the end of "Flip through layers"; and two that close
+  // The exceptions (Otto, 02.11.2026, and UI-04 §7.0 no. 2): Cancel in a question (the values are resampled, remove a layer), the end of "Flip through layers"; and two that close
   // nothing either: Esc drops a rename and a row that is being dragged.
-  const ALLOWED = ['components/AppRail.tsx', 'components/InlineRename.tsx', 'components/LayerManager.tsx', 'components/ResamplingDialog.tsx', 'components/useRowDrag.ts'];
+  const ALLOWED = ['components/AppRail.tsx', 'components/InlineRename.tsx', 'components/LayerManager.tsx', 'components/RemoveLayerButton.tsx', 'components/ResamplingDialog.tsx', 'components/useRowDrag.ts'];
   it('is read only by the exceptions', () => {
     expect(where((code) => /['"]Escape['"]|['"]Esc['"]/u.test(code))).toEqual(ALLOWED);
     expect(/['"]Escape['"]/u.test("if (event.key === 'Escape') close();")).toBe(true);

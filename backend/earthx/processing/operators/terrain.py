@@ -32,7 +32,7 @@ from rio_tiler.models import ImageData
 from earthx.catalog.registry import LicenseTier
 from earthx.processing.errors import RecipeInvalid, UnsupportedRecipe
 from earthx.processing.operators.band_math import MAX_NAME_CHARS, check_name
-from earthx.processing.operators.base import BandMeta, BandUse, Operator, RasterMeta, Requirement, Tier
+from earthx.processing.operators.base import BandMeta, BandUse, Look, Looks, Operator, RasterMeta, Requirement, Tier
 
 __all__ = ["HEIGHT_UNIT", "TERRAIN", "TerrainParams"]
 
@@ -381,6 +381,17 @@ def _properties(params: BaseModel) -> dict[str, Any]:
     return {"earthx:terrain": step.model_dump(mode="json", exclude_none=True)}
 
 
+# How the three products are drawn, wherever they are drawn (Otto, 16.11.2026): flat is green and steep red; a lit slope is light; and
+# an aspect has one colour per direction on every scene, a cycle of colours because north is both 0 and 360.
+_LOOKS = Looks(
+    param="product",
+    by_value={
+        "slope": Look(colormap="rdylgn_r"),
+        "hillshade": Look(colormap="greys_r", scale="percentiles", low=0, high=100),
+        "aspect": Look(colormap="hsv", scale="fixed", low=0, high=360),
+    },
+)
+
 TERRAIN = Operator(
     op="terrain",
     op_version=1,
@@ -407,4 +418,5 @@ TERRAIN = Operator(
     method=_method,
     properties=_properties,
     bands_used=_bands_used,
+    looks=_LOOKS,
 )

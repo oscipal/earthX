@@ -737,6 +737,27 @@
             "title": "Terrain",
             "type": "object",
             "x-earthx-kind": "focal",
+            "x-earthx-looks": {
+              "by": {
+                "aspect": {
+                  "colormap": "hsv",
+                  "high": 360,
+                  "low": 0,
+                  "scale": "fixed"
+                },
+                "hillshade": {
+                  "colormap": "greys_r",
+                  "high": 100,
+                  "low": 0,
+                  "scale": "percentiles"
+                },
+                "slope": {
+                  "colormap": "rdylgn_r",
+                  "scale": "measured"
+                }
+              },
+              "param": "product"
+            },
             "x-earthx-passes-values": false,
             "x-earthx-tiers": [
               "T1",

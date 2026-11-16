@@ -135,7 +135,7 @@ describe('the busy toast for tiles that load', () => {
     expect(texts()).toEqual(['Loading data']);
   });
 
-  it('is shown with the layer manager open as well, besides the mark in its row', () => {
+  it('is shown with the layer manager open as well, and the row of the layer has no mark of its own', () => {
     const manager = document.createElement('div');
     document.body.append(manager);
     const open = createRoot(manager);
@@ -144,7 +144,7 @@ describe('the busy toast for tiles that load', () => {
     act(() => setMapLoading([RESULTS_OWNER]));
     wait(LOADING_AFTER_MS);
     expect(texts()).toEqual(['Loading data']);
-    expect(manager.querySelectorAll('.layer-row [role="status"]')).toHaveLength(1);
+    expect(manager.querySelectorAll('.layer-row [role="status"], .layer-row .spinner')).toHaveLength(0);
     act(() => open.unmount());
     manager.remove();
   });

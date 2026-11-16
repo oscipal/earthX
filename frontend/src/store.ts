@@ -64,6 +64,7 @@ import type { OverlayId, Overlays } from './overlays';
 import type { Appearance, Projection, Theme } from './preferences';
 import { loadAddedDatasets, loadAppearance, loadBasemap, loadOverlays, loadProjection, loadResultsOnMap, loadTerrain, loadTipLevel, migrateReliefBasemap, saveAddedDatasets, saveAppearance, saveBasemap, saveOverlays, saveProjection, saveResultsOnMap, saveTerrain, saveTipLevel, themeOf } from './preferences';
 import { setTipLevel, type TipLevel } from './tipLevel';
+import { layerBox } from './layerExtent';
 import { zoomTarget } from './zoomSelection';
 import type { Percent } from './percentRange';
 import { checkPercent, DEFAULT_PERCENT, NO_RANGE_AT_PERCENT, rescaleAtPercent, samePercent, type RangeUnit } from './percentRange';
@@ -1895,6 +1896,7 @@ export interface AppState {
   saveViewLook: () => void | Promise<void>;
   autoStretch: () => Promise<void>;
   zoomToView: () => void;
+  zoomToLayer: (id: string) => void;
   setActiveGroupIndex: (i: number) => void;
   toggleResultsGroup: (i: number) => void;
   closeSelectionBlock: () => void;
@@ -3332,6 +3334,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   // them the button is locked (App.tsx) and this is never called.
   zoomToView: () => {
     const bb = zoomTarget(get());
+    if (bb) set({ flyToBbox: bb });
+  },
+  // "Zoom to layer" (UI-09): fits the map to one layer of the manager, shown or not (`layerExtent.ts`).
+  zoomToLayer: (id) => {
+    const layer = get().layers.find((l) => l.id === id);
+    const bb = layer && layerBox(layer);
     if (bb) set({ flyToBbox: bb });
   },
   // Also expands the matching group in the results list — everything that
