@@ -1,7 +1,11 @@
 # ADR 0036 — Radar-Verarbeitung für Sentinel-1 GRD (Reiter „Radar“)
 
-- **Status:** **Entwurf** (Stufe C), Fragen an Otto in §13.
-- **Datum:** 2026-11-16
+- **Status:** **Angenommen** von Otto am 2026-11-17 (§13): F1, F3, F5, F7, F8 und F9 jeweils Option 1, mit diesen Abweichungen bzw. Auflagen:
+  - **F2 = 1 mit Auflage:** Vor der Umsetzung (DS-05e) sind die Lizenzen aller 19 neuen Pakete auf Verträglichkeit mit AGPL-3.0-or-later zu prüfen und der Zuwachs am Image zu nennen.
+  - **F4 = 1 präzisiert:** Georeferenzierter Download nach GTC und nach RTC; Vergleich und Mosaik über verschiedene Bahnen erst nach RTC, weil nach GTC die Abhängigkeit vom Einfallswinkel bleibt.
+  - **F6 = 3:** DS-05d wird wie vorgeschlagen erweitert; Szenen vor IPF 2.90 bekommen eine Randmaske statt einer Sperre.
+  - Die Messpunkte MP1 und MP4 macht Otto später mit eigenem Konto.
+- **Datum:** 2026-11-16 (Entwurf, Draft-PR [#372](https://github.com/oscipal/earthX/pull/372)); 2026-11-17 angenommen.
 - **Aufgabe:** M5-31 laut `docs/plans/m5/m5-discovery-und-suche.md` §6.2 und §2 Punkt 10. Die Nummer 0036 war beim Start frei: Auf `main` (af1ca04) endet die Reihe mit 0035, kein offener Branch legt ein ADR 0036 an. Beim Merge erneut prüfen.
 - **Autonomiestufe:** C. Kein Produktivcode.
   - Geändert sind nur dieses ADR und eine Zeile im Entscheidungslog.
@@ -43,12 +47,14 @@ Belegstufen wie in `adr/0016` und `adr/0018`:
 
 ## 0. Kurzfassung
 
+**Entscheidung (Otto, 17.11.2026):** Quelle bleibt Earth Search GRD (F1); GTC/RTC in M6 mit sarsen, nach Lizenzprüfung der 19 Pakete und Angabe des Image-Zuwachses (F2); fertige Produkte als Ergänzung über Keys nach M6 (F3); georeferenziert nach GTC und RTC, über Bahnen erst nach RTC (F4); Reiter wie §8.1 (F5); DS-05d erweitert, alte Szenen mit Randmaske (F6); Bahn aus der Annotation (F7); Geoid im Image (F8); Zielraster UTM 20 m, 10 m wählbar (F9). Die Punkte unten sind der Stand der Vorlage.
+
 1. **Die Annotation fehlt im AWS-Bucket nicht** [M′][P]. Die Produkt-Annotation liegt je Szene im anonymen Bucket von Earth Search; DS-04d hat sie dort gelesen. Falsch ist der Verweis der STAC-Assets `schema-product-*` (zeigt auf die RFI-Annotation, #343). Die Kalibrierung ist ein Asset mit geprüftem Pfad; für das Rauschen gibt es den Asset-Schlüssel, sein Ziel ist nicht geprüft (MP6). **Bestätigen MP1 und MP6 das, geht die ganze GRD-Kette token-frei aus derselben Quelle wie heute**; ein CDSE-Key (M5-48) ist dafür keine Voraussetzung (§3).
 2. **Kette (§4):** Rauschabzug und Kalibrierung sind eine Pixelrechnung mit zwei LUTs und laufen blockweise im Worker-Kern: synthetisch 0,02 s je Megapixel und rund 100 MB bei Blöcken von 1024² [M]. Orbit aus den Zustandsvektoren der Annotation genügt für GRD (so macht es Sentinel Hub) [P]. Randrauschen setzt ESA seit IPF 2.90 (März 2018) selbst auf 0 [S]. Speckle in Radargeometrie (DS-05b). Geländekorrektur (GTC) und Terrain Flattening (RTC) brauchen Bahn, DEM und Geoid; das ist ein Job.
 3. **Werkzeuge (§4.3):** sarsen (Apache-2.0, pip, Beta, 19 neue Pakete) passt als Bibliothek in den Kern, wenn die Plattform selbst liest und sarsen ein eigenes Produktobjekt gibt (kein I/O in sarsen, B8) [M][P]. SNAP/pyroSAR (GPL-3, Java) nur als Container (T3), ISCE3/OPERA nur für SLC-Bursts (conda) [P]. GDAL kalibriert SAFE seit 3.4 [P], ohne Rauschabzug [P\*].
 4. **Speicher (§5):** sarsen wächst mit der Fläche: synthetisch RTC 1,0 GB bei 4,2 Mpx und 2,6 GB bei 16,8 Mpx (Dask synchron) [M]; an echten Daten 11,8 GB bei 6,7 Mpx (`adr/0018` §6.2) [M′]. Gibt man sarsen je Zielkachel (1024² mit Rand) nur das passende Radar-Fenster, bleibt die Spitze fast flach: 548 MB bei 1 Mpx, 916 MB bei 67 Mpx [M]. Damit passt RTC unter die Grenze von 1,5 GB je Kindprozess; die Fläche bestimmt nur die Zeit (synthetisch rund 4 s je Mpx).
 5. **Fertige RTC-Produkte (§6):** keines ist anonym. OPERA RTC-S1 ist nahezu global (30 m, GLO-30, CC BY 4.0), aber nur mit Earthdata-Konto [P]; Planetary Computer verlangt laut Collection-Beschreibung ein Konto [P], Maintainer sagten 2024 das Gegenteil (`adr/0018` §5.2), Ottos Messung F5 steht aus; die Monatsmosaike von CDSE (20 m, RTC) nur mit CDSE-Konto über Sentinel Hub [P]. Als **Ergänzung** über Keys (`adr/0034`) sinnvoll, als **Ersatz** der eigenen Kette nicht.
-6. **Nach richtiger Bearbeitung (§7):** Ein Ergebnis aus GTC oder RTC hat ein Kartenraster mit CRS. Damit gehen georeferenzierter Download, Reprojektion, Mosaik über Durchgänge und Bahnen, Vergleich mit anderen Datensätzen, Schwellen und später Zeitreihen. Radargeometrie bleibt für alles davor.
+6. **Nach richtiger Bearbeitung (§7):** Ein Ergebnis aus GTC oder RTC hat ein Kartenraster mit CRS. Damit gehen georeferenzierter Download, Reprojektion, Mosaik über Durchgänge und (nur nach RTC, F4) über Bahnen, Vergleich mit anderen Datensätzen, Schwellen und später Zeitreihen. Radargeometrie bleibt für alles davor.
 7. **Reiter „Radar“ (§8):** M5 wie geplant DS-05a–d (dB, Speckle, Komposit, σ⁰ mit wählbarem Rauschabzug nach `adr/0030` F5), DS-05d erweitert um Azimut-Rauschen, Wahl σ⁰/β⁰/γ-Ellipsoid, den Ort der Annotation und die Grenze IPF 2.90; RVI und Schwellen auf σ⁰ mit DS-05d (`adr/0030` F5); **M6** GTC/RTC als Job mit georeferenziertem Ergebnis, danach dB auf Gleitkomma, Masken und RVI auf γ⁰; **später** multitemporale Verfahren (eigener ADR, `adr/0030` F10) und fertige Produkte mit Key.
 
 ---
@@ -110,7 +116,7 @@ Sentinel-1 GRD liegt heute als unkalibrierte DN in Radargeometrie vor (`adr/0018
 |---|---|---|---|---|
 | 1 | Orbit | Bahn für die Geokodierung | POEORB nach 20 Tagen, gefordert 5 cm (3D RMS), typisch unter 1 cm; RESORB nach 180 min, 10 cm (2D RMS), im Bucket nur 90 Tage [P, Q12]. Sentinel Hub nutzt die Zustandsvektoren der Annotation: „We find these more than sufficient for GRD use.“ [P] Absolute Lagegenauigkeit IW: Spezifikation 7 m (3σ) [S] | Annotation reicht für 10–20 m; POEORB später optional |
 | 2 | Thermisches Rauschen | η aus Range- und Azimut-LUT abziehen | ESA-Technote MPC-0392; Azimut-Vektoren ab IPF 2.90; (DN² − η)/A², negative Werte auf 0 [S]; die IPF zieht es nicht selbst ab [S] | Pixelrechnung mit Hilfsbändern (B5), in Radargeometrie, mit Schritt 4 |
-| 3 | Randrauschen | Ränder ohne gültige Werte | Seit IPF 2.90 (13.03.2018) setzt ESA sie in GRD selbst auf 0 [S]; ältere Produkte brauchen eine Maske; „The areas of border noise are not displayed by Sentinel Hub“ [P] | Registry-Angabe `sar_ipf_min`: Szenen vor IPF 2.90 ohne Geländekorrektur oder mit Randmaske (F6) |
+| 3 | Randrauschen | Ränder ohne gültige Werte | Seit IPF 2.90 (13.03.2018) setzt ESA sie in GRD selbst auf 0 [S]; ältere Produkte brauchen eine Maske; „The areas of border noise are not displayed by Sentinel Hub“ [P] | Registry-Angabe `sar_ipf_min`: Szenen vor IPF 2.90 mit Randmaske (F6 = 3) |
 | 4 | Kalibrierung | β⁰/σ⁰/γ aus DN über LUT | β⁰ = DN²/A_β², σ⁰ = DN²/A_σ², LUTs bilinear [S]; GDAL kalibriert SAFE seit 3.4 (SIGMA0, BETA0, GAMMA) [P], ohne Rauschabzug [P\*] | DS-05d; Pixelrechnung |
 | 5 | Speckle | Glätten | Sentinel Hub filtert „right after calibration and noise removal … on source data“, Lee 1–7 [P]; `adr/0018` §4.4: Radargeometrie ist der beste Ort | DS-05b auf `focal` in Radargeometrie |
 | 6 | Terrain Flattening | β⁰ → γ⁰ über die beleuchtete Fläche | Small 2011 (Flächenintegration) in SNAP, sarsen, Sentinel Hub, Catalyst [P]; winkelbasierte Näherung in GEE (Vollrath 2020, Mullissa 2021) [S] | Job (§4.2) |
@@ -227,8 +233,8 @@ DS-04d: „ohne richtige Bearbeitung (σ⁰ und Geländekorrektur) nie georefere
 |---|---|
 | Download nur als Pixel-Fenster ohne CRS mit GCPs | COG mit CRS, Geotransform und Übersichten; GIS liest es direkt |
 | `reprojection: false` | Reprojektion des Ergebnisses (auf Raster anderer Datensätze) |
-| Mosaik nur je Durchgang in Radargeometrie | Mosaik über Durchgänge, Bahnen und Satelliten im Kartenraster |
-| kein Vergleich über Bahnen | Vergleich auf- und absteigend (γ⁰ RTC macht sie vergleichbar, Restunterschiede bleiben) |
+| Mosaik nur je Durchgang in Radargeometrie | nach GTC und RTC: Mosaik über die Durchgänge derselben Bahn im Kartenraster; über verschiedene Bahnen und Satelliten **nur nach RTC** (F4) |
+| kein Vergleich über Bahnen | **nur nach RTC:** Vergleich auf- und absteigend (γ⁰ RTC macht sie vergleichbar, Restunterschiede bleiben); nach GTC bleibt σ⁰ vom Einfallswinkel abhängig und damit je Bahn verschieden (Otto, F4) |
 | keine festen Schwellen auf DN | Schwellen auf σ⁰/γ⁰ in dB (Wasser), wie `adr/0030` F5 nach σ⁰ |
 | kein Vergleich mit anderen Datensätzen | zwei Bilder vergleichen (M5-26), Stapel mit Sentinel-2 oder dem DEM |
 | keine Zeitreihe | Grundlage für Operatoren über mehrere Zeitschritte (eigener ADR, `adr/0030` F10) |
@@ -259,7 +265,7 @@ DS-04d: „ohne richtige Bearbeitung (σ⁰ und Geländekorrektur) nie georefere
 | **Geländekorrektur GTC (σ⁰) / RTC (γ⁰)**, Ausgabe mit CRS, Masken, lokaler Einfallswinkel | neuer Job-Operator `sar_terrain` | T2, T2L | σ⁰/β⁰ + Annotation + DEM | `sar_terrain_correction` (neu) | DS-05e (neu) | **M6** |
 | dB auf Gleitkomma | `sar_db` mit Toleranzregel | T1, T2 | σ⁰/γ⁰ | `sar_backscatter` | `adr/0030` F2 (später) | M6 |
 | Wassermaske mit Schwelle des Nutzers | `mask_values` | T1, T2 | σ⁰ in Radargeometrie, später γ⁰ in dB | `value_masking` (nach σ⁰ freigeben, `adr/0030` F5) | DS-06 | mit DS-05d; auf γ⁰ in M6 |
-| Reproject, Mosaik über Bahnen | vorhanden | T2 | Ergebnis mit CRS | `reprojection` am Ergebnis | DS-05f (neu, Planer) | M6 |
+| Reproject; Mosaik über Bahnen (nur nach RTC, F4) | vorhanden | T2 | Ergebnis mit CRS | `reprojection` am Ergebnis; Mosaik über Bahnen nur bei γ⁰ RTC | DS-05f (neu, Planer) | M6 |
 | Präzise Bahn (POEORB) | Option am Operator | T2 | `s1-orbits` | — | DS-05e oder später | später |
 | Multitemporaler Speckle (Quegan), Log-Ratio, Zeitmittel | Mehrere Eingaben (B6) | T2 | γ⁰ einer Bahn | — | ADR nach M5-11 (`adr/0030` F10) | später |
 | OPERA RTC-S1, CDSE-Mosaike | eigene Datensätze mit Key | — | — | — | Onboarding nach `adr/0034` | nach M6 |
@@ -278,7 +284,7 @@ Die Reihenfolge im Reiter folgt der Kette (§4.1). Was eine Capability des Daten
 | `sar_annotation` | Ort von Produkt-Annotation, Kalibrierung, Rauschen je Polarisation: Asset-Schlüssel oder Pfadregel (heute: Kalibrierung und Rauschen als Asset, Produkt über die Regel `annotation/rfi/rfi-` → `annotation/`) | neu; Befund #343 |
 | `sar_orbit` | `annotation` (später `poeorb` mit Quelle) | neu |
 | `sar_terrain_dem` | `cop-dem-glo-30` (Datensatz-ID der Registry), Geoid `egm2008` | neu; das DEM ist ein zweiter Eingang des Rezepts, aufgelöst beim Planen (B9) |
-| `sar_ipf_min` | Szenen vor IPF 2.90 ohne `sar_terrain_correction` (F6 = 1) bzw. mit Randmaske (F6 = 3); eingeführt mit DS-05d, wirksam mit DS-05e | neu (F6) |
+| `sar_ipf_min` | ab welcher IPF-Version ESA das Randrauschen selbst auf 0 setzt (2.90); ältere Szenen bekommen eine Randmaske, keine Sperre (F6 = 3); mit DS-05d | neu (F6) |
 
 Für Ergebnisse: Der Operator `sar_terrain` meldet `output_georeferencing: crs`; der Planer schaltet `reprojection` für die folgenden Schritte frei. Keine Angabe je Datensatz nötig.
 
@@ -327,7 +333,7 @@ Grund für RTC erst in M6 [A]: M5 ist Discovery und Suche; die Abnahme von M5 ve
 1. **Quelle bleibt Earth Search GRD** (anonym): Annotation über eine Registry-Regel, Kalibrierung und Rauschen als Assets (F1).
 2. **DS-05d erweitern:** zum entschiedenen σ⁰ mit wählbarem Rauschabzug (`adr/0030` F5) dazu Azimut-Rauschen, Wahl β⁰/σ⁰/γ-Ellipsoid, Ort der Annotation, Grenze für Szenen vor IPF 2.90 (F6).
 3. **GTC/RTC in M6 als Job-Operator `sar_terrain`** mit sarsen als Bibliothek, eigenem Produktobjekt, je Zielkachel mit ihrem Radar-Fenster und synchron; DEM GLO-30 als zweiter Eingang; Geoid EGM2008 im Image; Bahn aus der Annotation (F2, F7, F8).
-4. **Nach GTC oder RTC** ist das Ergebnis georeferenziert (F4) mit Masken, Einfallswinkel und Provenienz.
+4. **Nach GTC oder RTC** ist das Ergebnis georeferenziert (F4) mit Masken, Einfallswinkel und Provenienz; Vergleich und Mosaik über verschiedene Bahnen nur nach RTC (Otto, F4).
 5. **Fertige Produkte** als Ergänzung über Keys nach M6 prüfen (OPERA zuerst, dann CDSE-Mosaike); Planetary Computer nach Ottos Messung (F3).
 6. **Reiter „Radar“** nach §8.1; Reiter als Eigenschaft des Operators (F5); Zielraster UTM 20 m, 10 m wählbar (F9).
 
@@ -337,16 +343,23 @@ Grund für RTC erst in M6 [A]: M5 ist Discovery und Suche; die Abnahme von M5 ve
 
 | Aufgabe | Inhalt | Stufe | wann | hängt ab von |
 |---|---|---|---|---|
-| DS-05d (erweitert) | σ⁰/β⁰/γ-Ellipsoid mit Rauschabzug (Range und Azimut), `sar_annotation`, `sar_ipf_min`; MP6 zuerst; Tests synthetisch gegen unabhängige Rechnung | B | M5 oder danach | DS-05a; F1, F6 |
-| DS-05e | Operator `sar_terrain` (GTC/RTC) je Zielkachel mit Radar-Fenster, sarsen und Geoid ins Image, Messung an zwei echten Szenen (Hügel- und Bergland) mit Speicher und Zeit, Vergleich GTC ↔ TPS-Lage | B | M6 | DS-05d; F2, F7, F8, F9; MP1–MP3, MP5 |
-| DS-05f | Planer: Ausgabe-Georeferenz am Operator, Reprojektion und Mosaik nach `sar_terrain`; Download mit CRS; Namensnennung DEM | B | M6 | DS-05e; F4 |
+| DS-05d (erweitert) | σ⁰/β⁰/γ-Ellipsoid mit Rauschabzug (Range und Azimut), `sar_annotation`, `sar_ipf_min` mit Randmaske für Szenen vor IPF 2.90 (F6 = 3); MP6 zuerst; Tests synthetisch gegen unabhängige Rechnung | B | M5 oder danach | DS-05a; F1, F6 |
+| DS-05e | **Vorab (Auflage F2):** Lizenzen der 19 neuen Pakete gegen AGPL-3.0-or-later prüfen und den Zuwachs am Image (Dienste und Runner) nennen, Otto bestätigt. Dann Operator `sar_terrain` (GTC/RTC) je Zielkachel mit Radar-Fenster, sarsen und Geoid ins Image, Messung an zwei echten Szenen (Hügel- und Bergland) mit Speicher und Zeit, Vergleich GTC ↔ TPS-Lage | B | M6 | DS-05d; F2, F7, F8, F9; MP1–MP3, MP5 |
+| DS-05f | Planer: Ausgabe-Georeferenz am Operator, Reprojektion nach `sar_terrain`, Mosaik über Bahnen nur nach RTC (F4); Download mit CRS; Namensnennung DEM | B | M6 | DS-05e; F4 |
 | UI-07 | Reiter im Processing-Panel, Radar nach §8.1 | B | wie geplant | dieses ADR, M5-26, `adr/0034` |
 | Doku-Nachtrag | M5-Plan §2 Punkt 10: „im AWS-Bucket fehlt die Annotation“ durch den Befund aus §3 ersetzen; `plans/ds/ds-05-sar-operatoren.md` nach den Antworten anpassen | A | mit der nächsten Doku-Aufgabe | Antworten auf dieses ADR |
 | Prüfung OPERA RTC-S1 | Datensatz-Vorlage mit Earthdata-Key; Vergleich mit eigener RTC (MP4) | C | nach M6 | `adr/0034` |
 
 ---
 
-## 13. Fragen an Otto
+## 13. Fragen an Otto — beantwortet am 2026-11-17
+
+**Antworten (Otto, 17.11.2026):** F1 = 1, F3 = 1, F5 = 1, F7 = 1, F8 = 1, F9 = 1.
+
+- **F2 = 1 mit Auflage:** Lizenzen aller 19 neuen Pakete prüfen (verträglich mit AGPL-3.0-or-later) und den Zuwachs am Image nennen, vor der Umsetzung. Eingetragen als erster Schritt von DS-05e (§12).
+- **F4 = 1 mit Präzisierung:** Georeferenzierter Download nach GTC und nach RTC; Vergleich bzw. Mosaik über verschiedene Bahnen erst nach RTC, weil nach GTC die Abhängigkeit vom Einfallswinkel bleibt. Eingetragen in §7.1, §8.1, §11 und §12.
+- **F6 = 3:** DS-05d wird erweitert wie vorgeschlagen; Szenen vor IPF 2.90 bekommen eine Randmaske statt einer Sperre (§8.2, §12).
+- **Messpunkte:** MP1 und MP4 macht Otto später mit eigenem Konto.
 
 **F1 — Quelle der Radar-Kette?**
 1. Earth Search GRD (anonym, wie heute); Produkt-Annotation über eine Registry-Regel, weil der STAC-Verweis auf die RFI-Datei zeigt **(Empfehlung)**
@@ -398,10 +411,10 @@ Grund für RTC erst in M6 [A]: M5 ist Discovery und Suche; die Abnahme von M5 ve
 
 **Messpunkte** (keine Anfrage aus dieser Sitzung):
 
-- **MP1** DN der Bucket-COG gleich den DN der ESA-TIFF? Ein Block einer Szene im AWS-Bucket gegen dieselbe Szene bei CDSE (Otto mit eigenem Konto, oder DS-05e über `gateway`).
+- **MP1** DN der Bucket-COG gleich den DN der ESA-TIFF? Ein Block einer Szene im AWS-Bucket gegen dieselbe Szene bei CDSE. Macht Otto später mit eigenem Konto (17.11.2026).
 - **MP2** sarsen an echten Szenen nur auf dem AOI-Fenster mit Rand: Zeit, Speicher, Unterschied zur ganzen Szene; Lage gegen die TPS (DS-05e).
-- **MP3** Größe des EGM2008-Gitters im Image; Lizenz des Gitters (PROJ-data).
-- **MP4** Vergleich eigene RTC ↔ OPERA RTC-S1 an zwei DACH-Stellen (Otto mit Earthdata-Konto; keine Stelle ins Repo).
+- **MP3** Größe des EGM2008-Gitters im Image; Lizenz des Gitters (PROJ-data). Gehört zur Auflage F2 (Zuwachs am Image).
+- **MP4** Vergleich eigene RTC ↔ OPERA RTC-S1 an zwei DACH-Stellen. Macht Otto später mit eigenem Konto (17.11.2026); keine Stelle ins Repo.
 - **MP5** Ob sarsen beim Import `fsspec`/`requests` lädt (Test über `sys.modules`; `lint-imports` sieht das nicht).
 - **MP6** Ziel der Assets `schema-noise-<pol>` und Inhalt von Kalibrier- und Rausch-XML an einer Szene (Range- und Azimut-Vektoren, IPF-Version), über `gateway` in DS-05d.
 
