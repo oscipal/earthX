@@ -35,8 +35,8 @@ from earthx.catalog.harvest_store import (
     HarvestBusy,
     Previous,
     RunCounts,
+    SourceSummary,
     canonical,
-    count_finds,
     finish_run,
     list_validators,
     mark_gone,
@@ -45,6 +45,7 @@ from earthx.catalog.harvest_store import (
     renew_run,
     save_list_validators,
     seen,
+    source_summary,
     start_run,
     write_find,
 )
@@ -53,7 +54,7 @@ from earthx.catalog.registry import ConfigError
 from earthx.catalog.sources import SourceConfig, SourceProtocol, read_sources
 from earthx.discovery.extract import Invalid, ShapeError, extracted_sha256
 from earthx.discovery.source_gateway import open_source_gateway
-from earthx.discovery.stac import StacListing, extract_collection, stac_pages
+from earthx.discovery.stac import StacListing, extract_collection, extractor_version, stac_pages
 from earthx.gateway import (
     Gateway,
     GatewayError,
@@ -88,6 +89,20 @@ class HarvestResult:
     status: str
     stop_reason: str | None
     counts: RunCounts
+    #: The state of the source's finds after the run (Otto, 17.11.2026: the report says the state, not only this run).
+    summary: SourceSummary
+    #: Collections without a usable id: counted, never stored, since they have no key.
+    without_key: int = 0
+
+
+@dataclass(slots=True)
+class _Run:
+    conn: psycopg.Connection
+    source: SourceConfig
+    run_id: int
+    counts: RunCounts
+    version: str
+    without_key: int = 0
 
 
 class _Fetcher:
@@ -109,9 +124,7 @@ class _Fetcher:
 
 def _record(
     cur: psycopg.Cursor,
-    source: SourceConfig,
-    run_id: int,
-    counts: RunCounts,
+    run: _Run,
     key: str,
     document: Any,
     before: Previous | None,
@@ -119,7 +132,7 @@ def _record(
     raw: bytes | None,
     raw_sha256: str,
 ) -> None:
-    """Extract one new or changed find and write it."""
+    """Extract one find that is new, changed or outdated (another extractor version) and write it."""
     state, reason, extracted, digest, extent = "extracted", None, None, None, None
     try:
         if raw is not None and len(raw) > MAX_RAW_BYTES:
@@ -127,25 +140,24 @@ def _record(
         if not isinstance(document, dict):
             raise Invalid("shape")
         try:
-            found = extract_collection(key, document, source)
+            found = extract_collection(key, document, run.source)
         except (TypeError, ValueError, AttributeError, KeyError, IndexError):
             # One find of a foreign shape must not end the run for every other one (review of PR 1).
             raise Invalid("shape") from None
         extracted, digest, extent = found.to_document(), extracted_sha256(found), found.extent_known
     except Invalid as invalid:
         state, reason = "invalid", invalid.reason
+    counts = run.counts
     if before is None or before.state == "gone":
         counts.found_new += 1
     elif (before.state, before.reason, before.extracted_sha256) == (state, reason, digest):
         counts.found_unchanged += 1
     else:
         counts.found_changed += 1
-    if state == "invalid":
-        counts.invalid += 1
     write_find(
         cur,
-        run_id=run_id,
-        source_id=source.source_id,
+        run_id=run.run_id,
+        source_id=run.source.source_id,
         key=key,
         raw=raw,
         raw_sha256=raw_sha256,
@@ -154,13 +166,13 @@ def _record(
         extracted=extracted,
         extracted_sha256=digest,
         extent_known=extent,
+        extractor_version=run.version,
         before=None if before is None else (before.state, before.reason),
     )
 
 
-async def _fetch_and_extract(
-    conn: psycopg.Connection, source: SourceConfig, run_id: int, fetch: _Fetcher, counts: RunCounts
-) -> None:
+async def _fetch_and_extract(run: _Run, fetch: _Fetcher) -> None:
+    conn, source = run.conn, run.source
     listing = StacListing()
     # A collection that moves between pages while the listing is read comes twice; only its first answer counts.
     taken: set[str] = set()
@@ -168,52 +180,64 @@ async def _fetch_and_extract(
         finds = []
         for key, document in page:
             if key is None:
-                counts.invalid += 1
+                run.without_key += 1
             elif key not in taken:
                 taken.add(key)
                 finds.append((key, document))
         known = previous(conn, source.source_id, [key for key, _ in finds])
-        _renew(conn, run_id)
+        _renew(conn, run.run_id)
         with conn.transaction(), conn.cursor() as cur:
             for key, document in finds:
                 raw = canonical(document)
                 digest = hashlib.sha256(raw).hexdigest()
                 before = known.get(key)
-                if before is not None and before.raw_sha256 == digest and before.state != "gone":
-                    seen(cur, run_id=run_id, source_id=source.source_id, key=key)
-                    counts.found_unchanged += 1
+                if (
+                    before is not None
+                    and before.raw_sha256 == digest
+                    and before.state != "gone"
+                    and before.extractor_version == run.version
+                ):
+                    seen(cur, run_id=run.run_id, source_id=source.source_id, key=key)
+                    run.counts.found_unchanged += 1
                 else:
-                    _record(cur, source, run_id, counts, key, document, before, raw=raw, raw_sha256=digest)
-    _renew(conn, run_id)
+                    _record(cur, run, key, document, before, raw=raw, raw_sha256=digest)
+    _renew(conn, run.run_id)
     if listing.not_modified:
-        counts.found_unchanged = count_finds(conn, source.source_id)[0]
+        # The listing is unchanged as a whole, but finds an older extractor judged are judged again from their kept
+        # raw answers (Otto, 17.11.2026); the others stay as they are.
+        evaluated = _reextract(run, outdated_only=True)
+        summary = source_summary(conn, source.source_id)
+        run.counts.found_unchanged += summary.extracted + sum(summary.invalid.values()) - evaluated
         return
     if listing.complete:
-        counts.gone = mark_gone(conn, run_id=run_id, source_id=source.source_id)
+        run.counts.gone = mark_gone(conn, run_id=run.run_id, source_id=source.source_id)
         if listing.validators is not None:
             save_list_validators(conn, source.source_id, listing.validators)
 
 
-def _reextract(conn: psycopg.Connection, source: SourceConfig, run_id: int, counts: RunCounts) -> None:
+def _reextract(run: _Run, *, outdated_only: bool) -> int:
+    """Extract again from the kept raw answers, without a request; returns how many finds it evaluated."""
+    conn, source = run.conn, run.source
     batch: list[tuple[str, bytes]] = []
+    evaluated = 0
 
     def flush() -> None:
         known = previous(conn, source.source_id, [key for key, _ in batch])
-        _renew(conn, run_id)
+        _renew(conn, run.run_id)
         with conn.transaction(), conn.cursor() as cur:
             for key, raw in batch:
                 before = known[key]
-                _record(
-                    cur, source, run_id, counts, key, json.loads(raw), before, raw=None, raw_sha256=before.raw_sha256
-                )
+                _record(cur, run, key, json.loads(raw), before, raw=None, raw_sha256=before.raw_sha256)
         batch.clear()
 
-    for key, raw, _ in raw_records(conn, source.source_id):
+    for key, raw, _ in raw_records(conn, source.source_id, outdated_for=run.version if outdated_only else None):
         batch.append((key, raw))
+        evaluated += 1
         if len(batch) >= 500:
             flush()
     if batch:
         flush()
+    return evaluated
 
 
 async def run_harvest(
@@ -222,17 +246,20 @@ async def run_harvest(
     """One run of ``source``; ``conn`` in autocommit. :class:`HarvestBusy` while another run holds the source."""
     if source.protocol is not SourceProtocol.STAC_API:
         raise ConfigError(f"{source.source_id}: the protocol {source.protocol.value} comes with M5-19 PR 2")
-    run_id = start_run(conn, source.source_id, "reextract" if reextract else "full")
-    counts = RunCounts()
+    run = _Run(
+        conn,
+        source,
+        start_run(conn, source.source_id, "reextract" if reextract else "full"),
+        RunCounts(),
+        extractor_version(source),
+    )
     status, stop_reason = "done", None
     try:
         if reextract:
-            _reextract(conn, source, run_id, counts)
+            _reextract(run, outdated_only=False)
         else:
             assert gateway is not None
-            await _fetch_and_extract(
-                conn, source, run_id, _Fetcher(gateway, counts, source.max_requests_per_run), counts
-            )
+            await _fetch_and_extract(run, _Fetcher(gateway, run.counts, source.max_requests_per_run))
     except HostResting:
         status, stop_reason = "interrupted", "host_resting"
     except RobotsDisallowed:
@@ -250,11 +277,13 @@ async def run_harvest(
     except GatewayError:
         status, stop_reason = "failed", "upstream"
     except BaseException:
-        finish_run(conn, run_id, status="failed", stop_reason="error", counts=counts)
+        finish_run(conn, run.run_id, status="failed", stop_reason="error", counts=run.counts)
         raise
-    counts.extent_unknown = count_finds(conn, source.source_id)[1]
-    finish_run(conn, run_id, status=status, stop_reason=stop_reason, counts=counts)
-    return HarvestResult(run_id, status, stop_reason, counts)
+    summary = source_summary(conn, source.source_id)
+    run.counts.invalid = sum(summary.invalid.values())
+    run.counts.extent_unknown = summary.extent_unknown
+    finish_run(conn, run.run_id, status=status, stop_reason=stop_reason, counts=run.counts)
+    return HarvestResult(run.run_id, status, stop_reason, run.counts, summary, run.without_key)
 
 
 def _policy_for(source: SourceConfig, hosts: Mapping[str, HostLimit]) -> Policy:
@@ -278,16 +307,32 @@ _STOP_TEXT = {
 }
 
 
+_REASON_TEXT = {
+    "no_link": "ohne gültigen Link",
+    "no_title": "ohne Titel",
+    "shape": "fremde Form",
+    "too_large": "Rohantwort über 1 MB",
+}
+
+
 def report(source_id: str, result: HarvestResult) -> str:
-    """The run report on the console: German, numbers only, no address, no key of a find (plan A6)."""
-    c = result.counts
+    """The run report on the console: German, numbers only, no address, no key of a find (plan A6).
+
+    Two parts, so that neither is read for the other (Otto, 17.11.2026): what this run did, and the state of the
+    source's finds afterwards, which also holds the finds a ``304`` or an unchanged hash left as they were.
+    """
+    c, s = result.counts, result.summary
+    invalid = sum(s.invalid.values())
+    reasons = ", ".join(f"{_REASON_TEXT.get(reason, reason)} {count}" for reason, count in s.invalid.items())
+    skipped = f", ohne Kennung übersprungen {result.without_key}" if result.without_key else ""
     lines = [
         f"{source_id}: Lauf {result.run_id} {result.status}"
         + (f" ({_STOP_TEXT[result.stop_reason]})" if result.stop_reason else ""),
         f"  Anfragen {c.requests}, davon 304: {c.not_modified}; {c.bytes / 1e6:.1f} MB",
-        f"  Funde neu {c.found_new}, geändert {c.found_changed}, unverändert {c.found_unchanged},"
-        f" ungültig {c.invalid}, weg {c.gone}",
-        f"  Ausdehnung unbekannt (alle Funde der Quelle): {c.extent_unknown}",
+        f"  Dieser Lauf: neu {c.found_new}, geändert {c.found_changed}, unverändert {c.found_unchanged},"
+        f" weg {c.gone}{skipped}",
+        f"  Stand der Quelle: gültig {s.extracted} (davon Ausdehnung unbekannt {s.extent_unknown}),"
+        f" ungültig {invalid}" + (f" ({reasons})" if reasons else ""),
     ]
     return "\n".join(lines)
 

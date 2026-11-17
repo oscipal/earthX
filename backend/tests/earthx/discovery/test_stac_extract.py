@@ -11,7 +11,7 @@ from earthx.catalog.registry import Maturity
 from earthx.catalog.sources import SourceConfig, SourceProtocol, StacFilter
 from earthx.discovery.extract import Invalid, extracted_sha256
 from earthx.discovery.links import LinkRank
-from earthx.discovery.stac import collection_key, extract_collection
+from earthx.discovery.stac import collection_key, extract_collection, extractor_version
 
 SOURCE = SourceConfig(
     source_id="example-stac",
@@ -227,3 +227,10 @@ def test_the_hash_follows_the_content() -> None:
 )
 def test_the_key_of_a_collection(value: object, key: str | None) -> None:
     assert collection_key(value) == key
+
+
+def test_the_extractor_version_follows_the_link_setting_of_the_source() -> None:
+    # A new catalogue page changes the link "Source" of every find: they are judged again (Otto, 17.11.2026).
+    other = SourceConfig(**{**{f: getattr(SOURCE, f) for f in SOURCE.__slots__}, "catalog_page": None})
+    assert extractor_version(SOURCE) == extractor_version(SOURCE)
+    assert extractor_version(SOURCE) != extractor_version(other)

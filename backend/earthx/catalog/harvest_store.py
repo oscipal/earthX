@@ -23,8 +23,8 @@ __all__ = [
     "ListValidators",
     "Previous",
     "RunCounts",
+    "SourceSummary",
     "canonical",
-    "count_finds",
     "finish_run",
     "list_validators",
     "mark_gone",
@@ -33,6 +33,7 @@ __all__ = [
     "renew_run",
     "save_list_validators",
     "seen",
+    "source_summary",
     "start_run",
     "write_find",
 ]
@@ -49,6 +50,9 @@ class HarvestBusy(RuntimeError):
 
 @dataclass(slots=True)
 class RunCounts:
+    """The numbers of a run's row. ``found_*`` and ``gone`` say what this run did; ``invalid`` and ``extent_unknown`` are
+    the state of the source's finds after the run, whether this run evaluated them or found them unchanged."""
+
     requests: int = 0
     not_modified: int = 0
     bytes: int = 0
@@ -74,6 +78,17 @@ class Previous:
     state: str
     reason: str | None
     extracted_sha256: str | None
+    extractor_version: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class SourceSummary:
+    """The state of a source's finds: valid (``extracted``), invalid by reason, gone, and extracted without extent."""
+
+    extracted: int
+    invalid: Mapping[str, int]
+    gone: int
+    extent_unknown: int
 
 
 def start_run(conn: psycopg.Connection, source_id: str, kind: str) -> int:
@@ -139,12 +154,12 @@ def save_list_validators(conn: psycopg.Connection, source_id: str, validators: L
 def previous(conn: psycopg.Connection, source_id: str, keys: list[str]) -> dict[str, Previous]:
     """What the last runs kept of ``keys``, by key; a key never seen is missing."""
     rows = conn.execute(
-        "SELECT r.source_key, r.raw_sha256, s.state, s.reason, s.extracted_sha256"
+        "SELECT r.source_key, r.raw_sha256, s.state, s.reason, s.extracted_sha256, s.extractor_version"
         " FROM public.earthx_raw_record r JOIN public.earthx_record_state s USING (source_id, source_key)"
         " WHERE r.source_id = %s AND r.source_key = ANY(%s)",
         (source_id, keys),
     ).fetchall()
-    return {key: Previous(raw, state, reason, extracted) for key, raw, state, reason, extracted in rows}
+    return {row[0]: Previous(*row[1:]) for row in rows}
 
 
 def _transition(
@@ -170,6 +185,7 @@ def write_find(
     extracted: Mapping[str, Any] | None,
     extracted_sha256: str | None,
     extent_known: bool | None,
+    extractor_version: str,
     before: tuple[str, str | None] | None,
 ) -> None:
     """The raw answer and the state of one find; a change of state or reason goes into the transitions.
@@ -189,11 +205,12 @@ def write_find(
     )
     cur.execute(
         "INSERT INTO public.earthx_record_state"
-        " (source_id, source_key, state, reason, extracted, extracted_sha256, extent_known, last_seen_run)"
-        " VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"
+        " (source_id, source_key, state, reason, extracted, extracted_sha256, extent_known, extractor_version,"
+        " last_seen_run) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)"
         " ON CONFLICT (source_id, source_key) DO UPDATE SET state = EXCLUDED.state, reason = EXCLUDED.reason,"
         " extracted = EXCLUDED.extracted, extracted_sha256 = EXCLUDED.extracted_sha256,"
-        " extent_known = EXCLUDED.extent_known, last_seen_run = EXCLUDED.last_seen_run, updated_at = clock_timestamp()",
+        " extent_known = EXCLUDED.extent_known, extractor_version = EXCLUDED.extractor_version,"
+        " last_seen_run = EXCLUDED.last_seen_run, updated_at = clock_timestamp()",
         (
             source_id,
             key,
@@ -202,6 +219,7 @@ def write_find(
             None if extracted is None else Jsonb(extracted),
             extracted_sha256,
             extent_known,
+            extractor_version,
             run_id,
         ),
     )
@@ -235,26 +253,37 @@ def mark_gone(conn: psycopg.Connection, *, run_id: int, source_id: str) -> int:
     return len(gone)
 
 
-def count_finds(conn: psycopg.Connection, source_id: str) -> tuple[int, int]:
-    """``(live, extent_unknown)``: finds of the source that are not ``gone``, and the extracted ones without extent."""
-    row = conn.execute(
-        "SELECT count(*) FILTER (WHERE state <> 'gone'),"
-        " count(*) FILTER (WHERE state = 'extracted' AND NOT extent_known)"
-        " FROM public.earthx_record_state WHERE source_id = %s",
+def source_summary(conn: psycopg.Connection, source_id: str) -> SourceSummary:
+    rows = conn.execute(
+        "SELECT state, reason, count(*), count(*) FILTER (WHERE state = 'extracted' AND NOT extent_known)"
+        " FROM public.earthx_record_state WHERE source_id = %s GROUP BY state, reason",
         (source_id,),
-    ).fetchone()
-    return row[0], row[1]
+    ).fetchall()
+    by_state = {state: 0 for state in ("extracted", "gone")}
+    invalid: dict[str, int] = {}
+    unknown = 0
+    for state, reason, count, without_extent in rows:
+        if state == "invalid":
+            invalid[reason] = count
+        else:
+            by_state[state] += count
+        unknown += without_extent
+    return SourceSummary(by_state["extracted"], dict(sorted(invalid.items())), by_state["gone"], unknown)
 
 
-def raw_records(conn: psycopg.Connection, source_id: str) -> Iterator[tuple[str, bytes, str]]:
-    """``(key, raw, state)`` of every kept raw answer of the source, for a re-extract without fetching (A4)."""
+def raw_records(
+    conn: psycopg.Connection, source_id: str, *, outdated_for: str | None = None
+) -> Iterator[tuple[str, bytes, str]]:
+    """``(key, raw, state)`` of every kept raw answer of the source, for a re-extract without fetching (A4); with
+    ``outdated_for`` only those whose state another extractor version derived."""
     # Held over the writes of the re-extract, which commit page by page on the same connection.
     with conn.cursor(name="earthx_raw_records", withhold=True) as cur:
         cur.execute(
             "SELECT r.source_key, r.raw_gzip, s.state FROM public.earthx_raw_record r"
             " JOIN public.earthx_record_state s USING (source_id, source_key)"
-            " WHERE r.source_id = %s AND r.raw_gzip IS NOT NULL AND s.state <> 'gone' ORDER BY r.source_key",
-            (source_id,),
+            " WHERE r.source_id = %s AND r.raw_gzip IS NOT NULL AND s.state <> 'gone'"
+            " AND (%s::text IS NULL OR s.extractor_version IS DISTINCT FROM %s::text) ORDER BY r.source_key",
+            (source_id, outdated_for, outdated_for),
         )
         for key, packed, state in cur:
             yield key, gzip.decompress(packed), state

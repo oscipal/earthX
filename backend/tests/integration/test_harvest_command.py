@@ -19,7 +19,9 @@ import pytest
 from earthx.catalog.harvest_store import HarvestBusy, start_run
 from earthx.catalog.registry import ConfigError, Maturity
 from earthx.catalog.sources import CkanFilter, SourceConfig, SourceProtocol, StacFilter
+from earthx.discovery import harvest as harvest_module
 from earthx.discovery.harvest import report, run_harvest
+from earthx.discovery.stac import extract_collection as _extract
 from earthx.gateway import Gateway, HostResting, Policy
 
 pytestmark = pytest.mark.anyio
@@ -382,8 +384,58 @@ async def test_a_ckan_source_waits_for_pr_2(db: psycopg.Connection, source: Sour
 async def test_the_report_names_numbers_never_an_address(db: psycopg.Connection, source: SourceConfig) -> None:
     result = await run_harvest(db, source, gateway=_gateway(Catalogue(THREE)))
     text = report(source.source_id, result)
-    assert "Funde neu 3" in text and "Ausdehnung unbekannt" in text
+    assert "Dieser Lauf: neu 3, geändert 0, unverändert 0, weg 0" in text
+    assert "Stand der Quelle: gültig 2 (davon Ausdehnung unbekannt 1), ungültig 1 (ohne Titel 1)" in text
     assert "https://" not in text and HOST not in text
+
+
+async def test_after_a_304_the_report_still_says_how_many_finds_are_invalid(
+    db: psycopg.Connection, source: SourceConfig
+) -> None:
+    # Otto, 17.11.2026: "unverändert 9, ungültig 0" read as if the nine were valid. The run's row and the report
+    # carry the state of the source, also when a 304 left every find as it was.
+    catalogue = Catalogue(THREE, size=10, etag='W/"v1"')
+    await run_harvest(db, source, gateway=_gateway(catalogue))
+    result = await run_harvest(db, source, gateway=_gateway(catalogue))
+    assert (result.counts.not_modified, result.counts.found_unchanged, result.counts.invalid) == (1, 3, 1)
+    assert "ungültig 1 (ohne Titel 1)" in report(source.source_id, result)
+
+
+async def test_a_new_extractor_version_judges_unchanged_finds_again(
+    db: psycopg.Connection, source: SourceConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Otto, 17.11.2026: else a find once invalid would stay invalid for good.
+    await run_harvest(db, source, gateway=_gateway(Catalogue(THREE)))
+    monkeypatch.setattr(harvest_module, "extractor_version", lambda source: "next-version")
+
+    def lenient(key: str, document: dict[str, Any], source: SourceConfig) -> Any:
+        # The new extractor accepts a collection without a title.
+        return _extract(key, {**document, "title": document.get("title") or "Untitled"}, source)
+
+    monkeypatch.setattr(harvest_module, "extract_collection", lenient)
+    result = await run_harvest(db, source, gateway=_gateway(Catalogue(THREE)))
+    assert (result.counts.found_changed, result.counts.found_unchanged) == (1, 2)
+    assert _states(db, source)["c"] == ("extracted", None, True)
+    again = await run_harvest(db, source, gateway=_gateway(Catalogue(THREE)))
+    assert (again.counts.found_changed, again.counts.found_unchanged) == (0, 3)
+
+
+async def test_behind_a_304_outdated_finds_are_judged_again_from_their_raw_answers(
+    db: psycopg.Connection, source: SourceConfig
+) -> None:
+    # The case of Earth Search: a one-page listing with an ETag, every collection without a page of its own. Without
+    # a catalogue page all are invalid (no link); once the source has one, the next run answers 304 and still turns
+    # them valid, because the source's link setting is part of the extractor version.
+    catalogue = Catalogue([_collection("a"), _collection("b")], size=10, etag='W/"v1"')
+    no_page = replace(source, catalog_page=None)
+    first = await run_harvest(db, no_page, gateway=_gateway(catalogue))
+    assert first.summary.invalid == {"no_link": 2} and first.summary.extracted == 0
+    second = await run_harvest(db, source, gateway=_gateway(catalogue))
+    assert (second.counts.requests, second.counts.not_modified) == (1, 1)
+    assert (second.counts.found_changed, second.counts.found_unchanged) == (2, 0)
+    assert second.summary.extracted == 2 and second.summary.invalid == {}
+    third = await run_harvest(db, source, gateway=_gateway(catalogue))
+    assert (third.counts.found_changed, third.counts.found_unchanged) == (0, 2)
 
 
 def test_listed_entries_point_to_their_run(require_postgres_env: None) -> None:
