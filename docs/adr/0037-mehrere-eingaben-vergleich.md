@@ -1,14 +1,15 @@
-# ADR 0036 — Mehrere Eingaben: zwei Bilder verarbeiten und vergleichen
+# ADR 0037 — Mehrere Eingaben: zwei Bilder verarbeiten und vergleichen
 
-- **Status:** **Entwurf** (Stufe C), Fragen an Otto in §14. Die Nummer 0036 war beim Start frei: Auf `main` endet die Reihe mit 0035, der einzige offene PR (#368, M5-37) legt kein ADR an. Beim Merge prüfen, ob M5-31 sie inzwischen belegt.
-- **Datum:** 2026-11-16
+- **Status:** **Angenommen** von Otto am 2026-11-17 (§14): F1–F12 und F7a jeweils Option 1 (Empfehlung); F5 präzisiert: ein rechnender Vergleich für Sentinel-1 erst nach RTC aus der Radar-Kette (`adr/0036`, M5-31, dort F4), bis dahin nur Swipe.
+- **Nummer:** Der Entwurf hieß 0036; diese Nummer hat `adr/0036` (Radar-Verarbeitung, M5-31, [#372](https://github.com/oscipal/earthX/pull/372)), das zuerst gemergt wird. Daher 0037 (Otto, 2026-11-17).
+- **Datum:** 2026-11-16 (Entwurf, Draft-PR [#371](https://github.com/oscipal/earthX/pull/371)); 2026-11-17 angenommen.
 - **Aufgabe:** M5-26 laut `docs/plans/m5/m5-discovery-und-suche.md` §6.2, **vorgezogen und erweitert** (Otto, 11.11.2026, M5-Plan §2 Punkt 10): `adr/0030` F10 hatte diesen ADR für die Zeit nach M5-11 vorgesehen. Er entsteht jetzt, bevor die Zeitachse der Meteorologie steht; was davon abhängt, ist in §9 als Wiedervorlage markiert.
 - **Autonomiestufe:** C. Kein Produktivcode.
   - Geändert sind nur dieses ADR und eine Zeile im Entscheidungslog.
   - Unverändert bleiben `backend/`, `frontend/`, Registry, Fixtures, M5-Plan, `.importlinter`, `.github/`, `.claude/`, `CODEOWNERS` und `CLAUDE.md`.
 - **Vorab fest:**
   - Otto (11.11.2026): **zwei Bilder gleichzeitig verarbeiten und vergleichen**, ausdrücklich gleicher Datensatz zu zwei Zeitpunkten und zwei verschiedene Datensätze.
-  - Sentinel-1 nur in Radargeometrie, solange es keine richtige Bearbeitung gibt (DS-04d, `adr/0018` §9.5).
+  - Sentinel-1 nur in Radargeometrie, solange es keine richtige Bearbeitung gibt (DS-04d, `adr/0018` §9.5); die Radar-Kette regelt `adr/0036` (M5-31).
   - Ein Ergebnis ist keine Eingabe; Weiterrechnen auf einem Ergebnis rechnet den ganzen Auftrag neu (`adr/0019` Option 2).
   - Darstellung als Vorgabe am Operator, nicht im Frontend je Datensatz (`adr/0035`).
   - Modulgrenzen (`architekturplan.md` 3.1), `gateway` für jeden Abruf (B8), Worker-Kern zustandslos (B9), jede Fähigkeit je Eintrag ausdrücklich (B10), Lizenzstufen (B11).
@@ -41,7 +42,7 @@ Belegstufen wie in `adr/0030` und `adr/0034`:
 2. **Ein Zielgitter, immer ausdrücklich im Rezept (F2).** Das Gitter einer der beiden Eingaben ist das Ziel (`like`); das Panel schlägt das gröbere vor. Sind beide Gitter gleich (gleicher Datensatz, gleiche Kachel), wird nichts resampelt; die Pixelpaare sind dann bitgleich die der Quelle. Ausschnitt ist die AOI; Pixel, die eine Eingabe nicht deckt, sind nodata nach M5-28.
 3. **Vergleichsoperatoren (F3).** Ein Operator `compare` mit den Methoden Differenz, Verhältnis, Log-Ratio (dB), normierte Differenz und freiem Ausdruck über beide Eingaben; dazu immer die **Paarstatistik** (Mittel beider, Differenz, RMSE, Korrelation, gültige Pixel). Veränderungsklassen entstehen über einen allgemeinen Schritt `classify` mit **ausdrücklichen** Schwellen. `mask_by` (Klassen der einen Eingabe maskieren die andere) und `transition` (Klasse vorher → nachher) kommen im zweiten Schnitt.
 4. **Was je Datensatz zulässig ist, steht in der Registry (F4).** Neue Capability `comparison` und ein Block `comparison` mit den Item-Eigenschaften, die gleich sein müssen, den zulässigen Partnern und den zulässigen Methoden. Ohne Eintrag kein Vergleich.
-5. **Sentinel-1 rechnet vorerst keinen Vergleich (F5).** `adr/0018` §4.4 schließt den Vergleich über Bahnen **und Zeiten** aus, und in Radargeometrie liegen zwei Szenen nicht pixelgleich (DS-04d). Mit σ⁰ und Geländekorrektur (M5-31, DS-05d) oder einem RTC-Produkt: Log-Ratio, nur gleiche relative Bahn und Polarisation. Der Swipe (Anzeige) bleibt erlaubt.
+5. **Sentinel-1 rechnet vorerst keinen Vergleich (F5, präzisiert von Otto).** `adr/0018` §4.4 schließt den Vergleich über Bahnen **und Zeiten** aus, und in Radargeometrie liegen zwei Szenen nicht pixelgleich (DS-04d). Ein rechnender Vergleich kommt erst nach RTC aus der Radar-Kette (`adr/0036`, M5-31): dann `ratio`/`log_ratio`, der Vergleich über Bahnen nach `adr/0036` F4. Bis dahin nur der Swipe (Anzeige).
 6. **Kosten:** Rechnen ist fast gratis, Lesen kostet. Gemessen braucht die Differenz 0,02 s für 16,8 Mpx, das Angleichen 0,11–0,47 s [M]. Ein Vergleich liest zwei Quellen; Schätzung, Speicher und Grenzen zählen beide Zweige (§10).
 7. **Anzeige (F7):** Zuerst der **Swipe** aus VP1 als reine Frontend-Aufgabe, für zwei beliebige Ebenen, ohne Rezept. Das Ergebnis eines Vergleichs ist ein Layer mit Look am Operator (`adr/0035`): divergierend und symmetrisch um 0 für Differenzen, Klassenfarben für `classify`.
 8. **Vorschau (F6):** Die Kachel kann denselben Vergleich rechnen, wenn beide Zweige nur T1-Schritte haben. Beide Eingaben landen in der Kachel ohnehin auf demselben Gitter. Sie ist „Preview“ und teilt das Budget je Kachel.
@@ -307,7 +308,7 @@ Der Worker-Kern bleibt zustandslos (B9); die Arbeitsdateien sind lokal und versc
 
 | Feld | Inhalt | Beispiel |
 |---|---|---|
-| `match` | Item-Eigenschaften, die bei einem Vergleich **mit sich selbst** gleich sein müssen; `api` prüft sie bei der Annahme | Sentinel-1 (später): `sat:relative_orbit`, Polarisationen, `sar:instrument_mode` |
+| `match` | Item-Eigenschaften, die bei einem Vergleich **mit sich selbst** gleich sein müssen; `api` prüft sie bei der Annahme | Sentinel-1 nach RTC: Polarisationen, `sar:instrument_mode`; ob `sat:relative_orbit` dazugehört, folgt aus `adr/0036` F4 |
 | `methods` | zulässige Methoden von `compare` mit sich selbst | Sentinel-2: alle; SAR: nur `ratio`, `log_ratio` |
 | `partners` | andere Einträge, mit denen verglichen werden darf, je mit `methods` | Sentinel-2 → WorldCover mit `mask_by` |
 | `quantity` | was ein Band misst, wo es für Paarungen über Datensätze zählt (Höhe mit Höhenbezug, Reflexion, Temperatur) | DEM: `height`, `vertical_datum: LN02` |
@@ -320,7 +321,7 @@ Der Worker-Kern bleibt zustandslos (B9); die Arbeitsdateien sind lokal und versc
 | Datensatz | `comparison` | mit sich selbst | Partner | Begründung |
 |---|---|---|---|---|
 | `sentinel-2-c1-l2a` | ja | alle Methoden; `match` leer | WorldCover (`mask_by`, zweiter Schnitt) | georeferenziert, physikalische Werte; verschiedene Kacheln und Zonen gehen über den Warp |
-| `sentinel-1-grd` | **nein** (F5) | — | — | `adr/0018` §4.4: kein Vergleich über Bahnen und Zeiten; DN unkalibriert; Radargeometrie nicht pixelgleich (DS-04d) |
+| `sentinel-1-grd` | **nein** (F5); erst nach RTC aus der Radar-Kette (`adr/0036`) | — | — | `adr/0018` §4.4: kein Vergleich über Bahnen und Zeiten; DN unkalibriert; Radargeometrie nicht pixelgleich (DS-04d); bis RTC nur Swipe |
 | `cop-dem-glo-30` | nein | — (ein Stand, `single_coverage_product`) | — vorerst (F9) | Höhenbezug fehlt im Eintrag |
 | `swissalti3d` | ja, **sobald ältere Stände geladen sind** | `difference`; `match` leer | — vorerst (F9) | gleicher Höhenbezug, gleiches Gitter; heute nur der jüngste Stand je Kachel (§3.1) |
 | `bev-als-dgm` | nein | — (ein Stand) | — vorerst (F9) | wie GLO-30 |
@@ -433,7 +434,7 @@ Jeder Vergleich schreibt in die Eigenschaften des Ergebnisses: gültige Pixel be
 
 - Swipe für zwei beliebige Ebenen des Layer-Managers (Eingaben, Suchergebnisse, Job-Ergebnisse), ohne Rezept und ohne Backend.
 - Split (zwei Hälften) als zweite Art derselben Funktion.
-- Eigener kleiner Code nach dem Muster von `maplibre-gl-compare` oder das Paket selbst; das Paket wäre eine neue Abhängigkeit (Lizenz vor Aufnahme prüfen, Otto).
+- Eigener kleiner Code nach dem Muster von `maplibre-gl-compare`, keine neue Abhängigkeit (F7a = 1).
 - Leitfaden: keine Zusatztexte, Bedienung über ein Symbol, Erklärungen nur im Tooltip (M5-Plan §2 Punkt 9).
 
 ### 12.2 Ergebnis eines Vergleichs
@@ -458,13 +459,16 @@ Jeder Vergleich schreibt in die Eigenschaften des Ergebnisses: gültige Pixel be
 | `adr/0019` | „Compare with…“ an einem Ergebnis: Auftrag mit zwei Zweigen aus den Aufträgen beider Jobs, neu gerechnet | Option 2: kein Ergebnis per Referenz |
 | `adr/0035` | Looks für `compare` und `classify`; neue Skala „symmetrisch um 0“ | Ort der Vorgabe am Operator |
 | `adr/0018` | keiner; §4.4 gilt; die Sperre aus §4.4 („Datacube- oder Zeitreihen-Operator braucht für GRD eine eigene Sperre“) wird `comparison: false` | Radargeometrie, kein Vergleich auf DN |
+| `adr/0036` (Radar, M5-31) | erst RTC aus der Radar-Kette gibt Sentinel-1 für `compare` frei; Vergleich über Bahnen nach dort F4 | Swipe bis dahin |
 | `adr/0029` | keiner; Zeitschritt = Item macht V3 zum einfachsten Fall | Aggregation eigener ADR |
 | `adr/0030` | F10 wird hiermit für Paarungen beantwortet; Aggregation bleibt offen | Rangfolge, Capabilities |
 | `adr/0034` | Freigabe je Lauf gilt je Zweig | sonst nichts |
 
 ---
 
-## 14. Fragen an Otto
+## 14. Fragen an Otto — beantwortet am 2026-11-17
+
+**Antworten (Otto, 2026-11-17):** F1–F12 jeweils **1**, F7a **1** (eigener Code, kein neues Paket). **F5 präzisiert:** Ein rechnender Vergleich für Sentinel-1 kommt erst nach RTC aus der Radar-Kette (`adr/0036`, M5-31, F4: Vergleich über Bahnen erst nach RTC); bis dahin nur Swipe. Die Fragen bleiben unten im Wortlaut der Vorlage stehen.
 
 **F1 — Rezeptmodell?**
 1. Zwei Zweige mit eigener Kette, ein Vergleichsschritt, dann gemeinsame Kette (R-B, §5) **(Empfehlung)**
@@ -538,7 +542,6 @@ Jeder Vergleich schreibt in die Eigenschaften des Ergebnisses: gültige Pixel be
 - **Sentinel-2-Offset über die Baseline:** an je einer Szene vor und nach 25.01.2022 prüfen, dass `raster:bands` den passenden Offset trägt (§4.3).
 - **Primärquellen aus §4** an der Quelle lesen (openEO-Prozesse, GEE, Sentinel Hub, rioxarray); die Hosts waren aus der Sitzung nicht erreichbar.
 - **dNBR-Schwellen** (USGS) und UN-SPIDER-Schwelle der Log-Ratio an der Quelle lesen, bevor ein Schritt-Preset sie übernimmt.
-- **Lizenz** von `@maplibre/maplibre-gl-compare`, falls F7a = 2.
 - **Höhenbezug** von GLO-30 (laut Produktbeschreibung EGM2008 [S]) in den Eintrag; Umrechnung LN02/LHN95 und österreichische Gebrauchshöhen gegen ellipsoidische Höhen klären (F9).
 - **Mehrere Instanzen:** zwei Hosts in einem Job gegen die Grenzen je Host (M5-36, M5-37) messen.
 - **Messung im Job:** Faktor von `compare` und Zeit der Paarstatistik blockweise mit Datei-I/O nachmessen (§3.3 ist ohne).
