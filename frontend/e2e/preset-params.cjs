@@ -2,7 +2,7 @@
 // altitude and the switch of the unit of the slope, on the real components and styles (`preset-params-harness.html`), dark and light. It fails
 // when
 //   1. a control is missing, or the box of the settings bar (320 px) has to scroll sideways or down for them;
-//   2. dragging the dial round its circle does not give north 0°, east 90°, south 180° and west 270°, or its value beside it is not in degrees;
+//   2. dragging the dial round its circle does not give north 0°, east 90°, south 180° and west 270° in the number beside it;
 //   3. the arrows do not step 1°, with Shift 15°, round the circle;
 //   4. the hand, the ring or the north tick is not drawn in the colours of the theme (`--accent`, `--line`, `--muted`) of that theme;
 //   5. the slider leaves 0 to 90, or the unit of the slope does not switch.
@@ -34,7 +34,8 @@ const check = (ok, text) => {
   for (const theme of ['tech', 'normal']) {
     const panel = `#panel-${theme}`;
     const dial = page.locator(`${panel} .angle-dial-face`);
-    const value = page.locator(`${panel} .angle-dial-value`);
+    const number = page.locator(`${panel} .vc-param-number input`).first();
+    const value = { textContent: async () => `${await number.inputValue()}°` };
     // 1. the controls, and no scrolling in the width of the settings bar
     check((await page.locator(`${panel} .vc-param`).count()) === 3, `${theme}: three controls (azimuth, altitude, unit)`);
     const overflow = await page.$eval(panel, (box) => ({ x: box.scrollWidth - box.clientWidth, y: box.scrollHeight - box.clientHeight }));
@@ -90,7 +91,7 @@ const check = (ok, text) => {
     check((await slider.getAttribute('min')) === '0' && (await slider.getAttribute('max')) === '90', `${theme}: the altitude is not 0 to 90`);
     await slider.focus();
     await page.keyboard.press('End');
-    check((await page.locator(`${panel} .vc-param-value`).textContent()) === '90°', `${theme}: the altitude stops at 90°`);
+    check((await page.locator(`${panel} .vc-param-number input`).nth(1).inputValue()) === '90', `${theme}: the altitude stops at 90°`);
     const percent = page.locator(`${panel} .vc-param-choices button`, { hasText: 'Percent' });
     await percent.click();
     check((await percent.getAttribute('aria-pressed')) === 'true', `${theme}: the slope did not switch to percent`);
