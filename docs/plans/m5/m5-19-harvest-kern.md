@@ -1,6 +1,6 @@
 # M5-19 — Harvest-Kern: Tabellen, Fetch und Extract für STAC-API und CKAN, Lauf-Befehl
 
-**Status (17.11.2026):** Plan, **Stufe B**. Fragen in §9; Umsetzung nach Ottos Antworten im selben Draft-PR, höchstens zwei PRs (M5-Plan §2 Punkt 11).
+**Status (17.11.2026):** Plan angenommen (Otto, 17.11.2026: F1, F2, F5–F8 je 1, A1–A6 gelten, Zusatz „Ausdehnung unbekannt“, §9a); F3 und F4 offen. **Stufe B**. PR 1 in [#375](https://github.com/oscipal/earthX/pull/375), PR 2 folgt (CKAN).
 **Aufgabe:** M5-19 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2, Auftrag von Otto vom 17.11.2026, mit Zusatz zum Link „Source“ (§6).
 **Grundlagen:** `adr/0025` (Schnitt 4, §5.1–§5.4, §6.2 mit Nachtrag M5-37), `adr/0033` (§5, §7, §11, §13 Zeile M5-19), M5-Plan §2 Punkt 12 (alle Datentypen gelistet); `plans/m5/m5-37-zeiger-je-host.md` (Zeiger, Plätze, Unterbrecher je Host, `open_source_gateway`); `plans/m5/m5-40-gelistete-in-postgres.md` (A10, G6, A11: Aufrufe im Harvest); `plans/m5/m5-18-gateway-ruecksicht.md` (`User-Agent`, `obey_robots`, `HostResting`); `plans/m5/m5-36-grenzen-je-host.md` (`hosts.yaml`); `architekturplan.md` 3.1, 4.3; KLAERUNGEN B8, B9.
 
@@ -15,7 +15,7 @@ Der erste Teil der Pipeline aus `adr/0025` §5.1, für die beiden Protokolle mit
 1. **Tabellen** für Läufe, Rohantworten, Zustand und Übergänge (`adr/0025` §5.3).
 2. **Seed:** Quellen als YAML unter `backend/catalog/sources/`, streng gelesen (`adr/0025` §5.2 mit Nachtrag `adr/0033`).
 3. **Fetch** über `gateway` mit Zeiger, Plätzen und Unterbrecher je Host aus M5-37, bedingt wo die Quelle es kann, `robots.txt` beachtet, Inhalts-Hash je Fund.
-4. **Extract** je Protokoll (STAC-API, CKAN) in eine Zwischenform für **alle Datentypen** (M5-Plan §2 Punkt 12, `adr/0033` §13): Filter „räumliche Angabe vorhanden“ statt Rasterfilter, Personenfelder verworfen, Link „Source“ nach der Regel aus §6.
+4. **Extract** je Protokoll (STAC-API, CKAN) in eine Zwischenform für **alle Datentypen** (M5-Plan §2 Punkt 12, `adr/0033` §13): kein Rasterfilter und kein Filter nach räumlicher Angabe (Funde ohne sie tragen „Ausdehnung unbekannt“, Zusatz Otto 17.11., §5.3), Personenfelder verworfen, Link „Source“ nach der Regel aus §6.
 5. **Lauf-Befehl** `python -m earthx.discovery.harvest <source_id>` mit Lauf-Bericht, im Compose-Profil `harvest` wie `materialize`.
 6. **Zusatz Otto (17.11.2026):** Link „Source“ so direkt wie möglich zu den Daten (§6), Handeinträge CORINE und Landsat nachgezogen (§7), Zeile im Entscheidungslog.
 
@@ -46,9 +46,9 @@ Neue Tabellen in `public`, Namen wie in `adr/0025` §5.3. Keine AOI, keine Adres
 
 | Tabelle | Inhalt |
 |---|---|
-| `earthx_harvest_run` | je Lauf und Quelle: `run_id`, `source_id`, Art (`incremental`, `full`), Beginn, Ende, Status (`running`, `done`, `interrupted`, `failed`), Frist und Herzschlag (`lease_until`), Anfragen gesamt, davon `304`, Bytes, Funde neu / geändert / unverändert / gefiltert / ungültig / weg, Grund eines Abbruchs (`host_resting`, `robots`, `request_budget`, `upstream`, `shape`) ohne Adresse |
+| `earthx_harvest_run` | je Lauf und Quelle: `run_id`, `source_id`, Art (`incremental`, `full`), Beginn, Ende, Status (`running`, `done`, `interrupted`, `failed`), Frist und Herzschlag (`lease_until`), Anfragen gesamt, davon `304`, Bytes, Funde neu / geändert / unverändert / ungültig / weg / mit unbekannter Ausdehnung, Grund eines Abbruchs (`host_resting`, `robots`, `request_budget`, `upstream`, `shape`) ohne Adresse |
 | `earthx_raw_record` | je Fund (`source_id`, `source_key`): letzte Rohantwort gzip (höchstens 1 MB), SHA-256, `ETag`, `Last-Modified` (wo die Quelle sie je Fund liefert), geholt am, Lauf |
-| `earthx_record_state` | je Fund: Zustand (`discovered`, `extracted`, `filtered`, `invalid`, `gone`; die übrigen aus `adr/0025` §5.4 und `adr/0033` §7 kommen mit M5-20), Zwischenform als `jsonb`, ihr SHA-256, Grund bei `filtered`/`invalid`, zuletzt gesehen in Lauf |
+| `earthx_record_state` | je Fund: Zustand (`extracted`, `invalid`, `gone`; die übrigen aus `adr/0025` §5.4 und `adr/0033` §7 kommen mit M5-20), Zwischenform als `jsonb`, ihr SHA-256, Kennzeichen „Ausdehnung unbekannt“, Grund bei `invalid`, zuletzt gesehen in Lauf |
 | `earthx_state_transition` | von, nach, wann, Lauf, Grundcode |
 | `earthx_harvest_page` | je Quelle und Listenadresse ohne Zähler der Seite: `ETag`, `Last-Modified`, SHA-256 der letzten Antwort (für Listen, die als Ganzes `304` können, §4.2) |
 
@@ -68,7 +68,7 @@ Neue Tabellen in `public`, Namen wie in `adr/0025` §5.3. Keine AOI, keine Adres
 | `protocol` | `stac-api` oder `ckan` (M5-21 ergänzt) |
 | `endpoint` | `https`-Adresse des Katalogs (STAC: Wurzel; CKAN: `…/api/3/action/`) |
 | `catalog_page` | Vorlage der Seite eines Datensatzes im Katalog, z. B. `https://opendata.swiss/de/dataset/{name}`, oder `null` (letzter Rang der Link-Regel, §6) |
-| `filter` | STAC: Liste von Collection-Präfixen oder leer (alle); CKAN: `fq` wörtlich, wo die Quelle die räumliche Angabe als Feld kennt, sonst leer (dann filtert Extract, §5.3) |
+| `filter` | STAC: Liste von Collection-Präfixen oder leer (alle); CKAN: `fq` wörtlich oder leer. Ein Filter nach räumlicher Angabe gehört nicht hierher (§5.3) |
 | `max_requests_per_run` | Obergrenze, danach endet der Lauf `interrupted` mit `request_budget` |
 | `full_every_days` | Abstand voller Läufe (CKAN, `adr/0025` §6.2: wöchentlich) |
 | `maturity` | wie in der Registry |
@@ -91,7 +91,7 @@ Alle Anfragen über **ein** `Gateway` je Lauf aus `open_source_gateway(policy)` 
 
 ### 4.3 Grenzen des Fetch [A]
 
-- **Seitengröße CKAN:** 10 Pakete von GovData sind 181 KB [M] (`adr/0025` §3), 100 also rund 1,8 MB, unter der Grenze von 8 MB in `gateway`. Mit 1 s Abstand braucht ein voller Lauf über die 68 017 Geodatensätze von GovData [M] (`adr/0033` §2.2) rund 680 Anfragen, gut 11 min.
+- **Seitengröße CKAN:** 10 Pakete von GovData sind 181 KB [M] (`adr/0025` §3), 100 also rund 1,8 MB, unter der Grenze von 8 MB in `gateway`. Ohne Filter nach räumlicher Angabe (§5.3) braucht ein voller Lauf über die 165 427 Datensätze von GovData [M] (`adr/0033` §2.2) mit 1 s Abstand rund 1 650 Anfragen, knapp 28 min; `max_requests_per_run` der Seed-Datei liegt darüber.
 - **`rel=next`** muss auf denselben Host zeigen; eine Adresse zum zweiten Mal im selben Lauf beendet ihn mit `shape` (Schleife).
 - **`HostResting`** (Unterbrecher oder nächster Platz über 60 s, M5-37): Lauf endet `interrupted` mit `host_resting`; ungesehene Funde ändern ihren Zustand nicht (A2).
 - **`RobotsDisallowed`:** Lauf endet `interrupted` mit `robots`; der Bericht nennt den Host, nie die Adresse.
@@ -109,7 +109,7 @@ Eine Dataclass `Extracted` in `discovery`, als `jsonb` mit Hash in `earthx_recor
 
 - `source_key` (STAC: Collection-ID; CKAN: Paket-`id`), `title`, `description`, `publisher` (CKAN: `publisher_name` bzw. `organization.title`, je Quelle in der Seed-Datei benannt; STAC: `providers` mit Rolle `licensor`/`producer`), `doi`;
 - `licence_statements`: jede Lizenzangabe **wörtlich** (STAC `license` und Link `rel=license`; CKAN `license_id`, `license_url`, je Ressource `license`), für die Regel in M5-20;
-- `spatial`: Geometrie oder Rechteck, wo die Quelle eine gibt (STAC `extent.spatial`, GovData `extras.spatial` als GeoJSON); sonst `spatial_text` (z. B. Ortsname bei opendata.swiss [S]), Auflösung in M5-20 (Enrich);
+- `spatial`: Rechteck, wo die Quelle eine Geometrie gibt (STAC `extent.spatial`, GovData `extras.spatial` als GeoJSON), die Geometrie selbst bis 64 KB; sonst `spatial_text` (z. B. Ortsname bei opendata.swiss [S]), Auflösung in M5-20 (Enrich); fehlt beides, `extent_known: false` (§5.3);
 - `temporal`: Intervall, offen erlaubt;
 - `data_kind`, `delivery`, `account` nach §5.2; `category` aus `category_of`, `keywords` aus `listed_keywords` (M5-40 G6, A11);
 - `source_url` nach §6 und daneben `landing_url` (die Seite des Datensatzes, für die Stichprobe in M5-20);
@@ -123,7 +123,8 @@ Eine Dataclass `Extracted` in `discovery`, als `jsonb` mit Hash in `earthx_recor
 
 ### 5.3 Filter und Personendaten
 
-- **Geodaten:** Ohne `spatial` und ohne `spatial_text` wird ein Fund `filtered` mit Grund `no_spatial` (`adr/0033` §5, §13). Wo die Quelle das Feld serverseitig filtern kann, steht es in `fq` der Seed-Datei (GovData `extras_spatial:[* TO *]`, gemessen [M] in `adr/0033`); sonst filtert Extract.
+- **Ohne räumliche Angabe (Zusatz Otto, 17.11.2026):** Ein Fund ohne `spatial` und ohne `spatial_text` wird **nicht** verworfen. Er bleibt `extracted` mit `extent_known: false` und wird im Lauf-Bericht gezählt; ob und wie er gelistet und gefiltert wird, entscheidet M5-20 (M5-Plan §2 Punkt 12). Das ersetzt für M5-19 den Filter „räumliche Angabe vorhanden“ aus `adr/0033` §5 und §13; die Seed-Datei von GovData filtert deshalb nicht serverseitig nach `extras_spatial`.
+- **„Keine Geodaten“:** Eine Regel dafür gibt es nicht, und M5-19 schlägt keine automatische vor [A]: Formate allein trennen nicht (eine CSV mit Messstationen ist Geodaten, M5-Plan §2 Punkt 12), und ohne räumliche Angabe ist ein Fund nur „Ausdehnung unbekannt“. Verworfen wird nur, was Otto sperrt: `blocked.yaml` mit Grund `not_geodata` (`adr/0033` §9), angewandt ab M5-20. Eine Formatregel wäre eine Frage an M5-20, wenn der erste Lauf zeigt, dass sie sich lohnt.
 - **Pflichtfelder:** ohne Titel oder ohne einen Link nach §6 → `invalid` mit Grund.
 - **Personen:** `author`, `maintainer`, ihre Mail-Felder, DCAT-Kontaktpunkte und Personen-`providers` kommen nicht in die Zwischenform (`adr/0033` §5). Die Rohantwort behält sie bis zum nächsten Lauf (`adr/0025` §5.3); sie wird nie geloggt.
 
@@ -148,12 +149,12 @@ Eine Dataclass `Extracted` in `discovery`, als `jsonb` mit Hash in `earthx_recor
 
 ## 7. Handeinträge CORINE und Landsat (Vorgabe Otto, 17.11.2026)
 
-Heute zeigen beide auf eine Übersichtsseite (`backend/catalog/listed/`, M5-17, [#367](https://github.com/oscipal/earthX/pull/367)). Nach derselben Regel, **ungeprüft aus der Sitzung [S]**; Otto prüft den Link vor dem Merge im Browser wie bei M5-17:
+Heute zeigen beide auf eine Übersichtsseite (`backend/catalog/listed/`, M5-17, [#367](https://github.com/oscipal/earthX/pull/367)). Nach derselben Regel, **ungeprüft aus der Sitzung [S]**. **F3 und F4 sind offen (Otto, 17.11.2026):** Otto sieht sich die Links im Browser an; bis zu seiner Entscheidung bleiben Links und Zugang beider Einträge unverändert.
 
-| Eintrag | heute | Vorschlag | Folge |
+| Eintrag | heute | Vorschlag | Was man dort bekommt [S] |
 |---|---|---|---|
-| CORINE | Produktseite `land.copernicus.eu/en/products/corine-land-cover` (alle Bezugsjahre) | Seite des Datensatzes CLC 2018 mit Download im Portal des CLMS (`…/corine-land-cover/clc2018`) (F3) | Zugang bleibt `free_account` (EU Login) |
-| Landsat | Informationsseite der USGS zum Zugang über die Cloud | Viewer mit Download der USGS, LandsatLook (`landsatlook.usgs.gov`) (F4) | Laden dort braucht nach Vorwissen ein kostenloses Konto der USGS [S]; `access` folgt dann dem gewählten Weg (`free_account`, Anbieter „USGS EROS Registration System“), Freigabe durch den Merge |
+| CORINE | https://land.copernicus.eu/en/products/corine-land-cover | https://land.copernicus.eu/en/products/corine-land-cover/clc2018 | Seite des Datensatzes CLC 2018 mit Reiter „Download“ (Vektor und Raster 100 m); Laden nach Anmeldung mit EU Login, Zugang bleibt `free_account` |
+| Landsat | https://www.usgs.gov/landsat-missions/landsat-commercial-cloud-data-access | https://landsatlook.usgs.gov/ | Kartenviewer der USGS mit Suche und Vorschau der Szenen; Laden der Dateien nach Anmeldung mit einem kostenlosen Konto der USGS (EROS Registration System), dann `free_account` statt `requester_pays` |
 
 ## 8. Befehle für Ottos lokalen Lauf (PowerShell, nach der Umsetzung)
 
@@ -219,6 +220,14 @@ docker compose run --rm harvest fsdi-stac
 1. **PR 1 (dieser):** Plan, Log-Zeile, Handeinträge (§7), Migration 024, Seed-Lader und -Dateien, `hosts.yaml`, Fetch mit Lauf-Sperre, Lauf-Befehl und Compose-Profil, STAC-Extraktor, Link-Regel. **PR 2:** CKAN-Extraktor mit inkrementellem und vollem Lauf, Datentyp- und Formattabellen, Anleitung in der README **(Empfehlung)**
 2. PR 1 nur Tabellen, Seed, Fetch und Lauf-Befehl; PR 2 beide Extraktoren, Link-Regel und Handeinträge
 
+## 9a. Antworten Otto (17.11.2026)
+
+- **F1 = 1:** nur Seiten, keine einzelne Datei, kein Dienst, nie die Startseite.
+- **F2 = 1:** volle Einträge als eigene kleine Aufgabe danach, **M5-55**.
+- **F3, F4 offen:** Otto prüft die Links aus §7 im Browser; bis dahin Links und Zugang von CORINE und Landsat unverändert. Die Handeinträge kommen nach seiner Entscheidung.
+- **F5 = 1, F6 = 1, F7 = 1, F8 = 1.** A1–A6 gelten.
+- **Zusatz:** Funde ohne räumliche Angabe nicht verwerfen, sondern mit „Ausdehnung unbekannt“ in der Zwischenform halten; Listen und Filtern entscheidet M5-20. Verworfen wird nur, was nach einer Regel keine Geodaten ist (eine solche Regel gibt es nicht, §5.3). Personenfelder weiter verwerfen.
+
 ## 10. Auslegungen (gelten, wenn Otto nicht widerspricht)
 
 - **A1** Lauf-Sperre je Quelle als Lauf-Zeile mit Frist und Herzschlag (§3), nicht als Advisory-Lock (`adr/0025` §8 nannte ihn; M5-37 „Lauf-Zeile mit Frist“).
@@ -234,11 +243,13 @@ Ohne Netz, mit `tests/fixtures` und einer Transport-Attrappe am `Gateway` wie be
 
 - **Seed:** unbekanntes/fehlendes Feld, `listed`, `proto-`, `http`-Endpunkt, Host ohne Eintrag in `hosts.yaml`, Dateiname ≠ `source_id`, `enabled: false`.
 - **Fetch:** `304` auf gespeichertes `ETag`; zweiter Lauf ohne Änderung ohne Folgearbeit (Abnahme §7 Punkt 3); `rel=next` auf fremden Host; Schleife; `max_requests_per_run`; `HostResting`; `RobotsDisallowed`; `5xx` nach den Versuchen; kaputtes JSON; Antwort über der Grenze; Lauf-Sperre: zweiter Lauf derselben Quelle bricht ab, abgelaufene Frist wird übernommen.
-- **Extract:** jeder Datentyp; gemischte Formate; Personenfelder nicht in der Zwischenform und nicht im Log; ohne räumliche Angabe `filtered`; ohne Titel `invalid`; mehrere Lizenzangaben wörtlich; Schreibvarianten der Formate.
+- **Extract:** jeder Datentyp; gemischte Formate; Personenfelder nicht in der Zwischenform und nicht im Log; ohne räumliche Angabe `extracted` mit `extent_known: false`; ohne Titel `invalid`; mehrere Lizenzangaben wörtlich; Schreibvarianten der Formate.
 - **Link-Regel:** jeder Rang; Startseite (leer, `/`, `/de/`) verworfen; `http`, IP, Benutzerteil, `javascript:`, Überlänge, Steuerzeichen verworfen; Dienst und Datei nie gewählt (F1 = 1); kein Kandidat → `invalid`.
 - **Integration (Postgres):** Migration 024 auf 023; Übergänge protokolliert; Fremdschlüssel `run_id`.
 - **Handeinträge:** bestehende Tests von `listed/` grün mit den neuen Links.
 
 ## 12. Umsetzung
 
-Folgt nach Ottos Antworten.
+### 12.1 PR 1 ([#375](https://github.com/oscipal/earthX/pull/375)), Stand 17.11.2026
+
+In Arbeit: Migration 024, Seed-Lader und fünf Seed-Dateien, `hosts.yaml`, Fetch mit Lauf-Sperre, Lauf-Befehl und Compose-Profil, STAC-Extraktor, Link-Regel. Ohne die Handeinträge (F3, F4 offen).
