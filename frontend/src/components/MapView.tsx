@@ -21,7 +21,7 @@ import { guardMapEvents } from '../mapGuard';
 import { setMapOverview, watchOverviewMark } from '../overviewMark';
 import { watchTileRetry } from '../tileRetry';
 import { watchGoneSelections } from '../mosaicSelection';
-import { assetsOfExpression, viewIndexOf } from '../viewIndex';
+import { viewIndexOf } from '../viewIndex';
 import type { CoverageDisplay } from '../mapLayers';
 import {
   ensureBaseLayers,
@@ -426,7 +426,7 @@ export default function MapView() {
   // The assets the index of the look reads: the tiler makes the tile of an index from a selection of them.
   const indexAssets = useMemo(() => {
     const preset = viewIndexOf(appliedRender, view?.dataset?.collection);
-    return preset ? assetsOfExpression(preset.expression) : null;
+    return preset ? preset.assets : null;
   }, [appliedRender, view]);
   const picked = useMemo(
     () => (view ? mosaicsOfView(allMosaics, view.dataset?.id ?? null, Object.entries(view.downloaded), view.groups, indexAssets) : {}),

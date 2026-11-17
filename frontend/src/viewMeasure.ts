@@ -11,7 +11,7 @@
 // first whole scene is measured as before, and the caller says so.
 
 import { fetchStatisticsAt, HttpError, postAreaStatistics, withHistogram, withPercentiles, type AreaStatistics, type BandStatistics } from './api';
-import type { IndexPreset } from './indexPresets';
+import type { QuickPreset } from './quickPresets';
 import { canonicalJson, type Order } from './processing';
 import { bandsOf, bandSources, isArea, orderAoi } from './processingOrder';
 import type { Collection, StacItem } from './types';
@@ -69,14 +69,14 @@ const sameScalings = (a: BandScaling[], b: BandScaling[]) => a.length === b.leng
 // The area question for what the view draws: `null` where the view is not cropped (nothing to say), `{ reason }` where it is and none can be
 // asked: scenes the page does not know, an asset of no known bands, a source that is no COG, a scale that cannot be turned back, or scenes
 // of the image whose bands are scaled differently (one range in raw values would then be right for none of them).
-//  - an index: one `band_math` step as the job of a download runs it (`indexOrdersOfScenes`), that band as the output;
+//  - a preset: its steps as a job runs them (an index: the one `band_math` step of `indexOrdersOfScenes`), its band or bands as the output;
 //  - a band or the colour picture: no step, the bands of the asset as the output (`float32`, so that nothing is cut off).
 export function areaQuestionOf(args: {
   datasetId: string;
   collection: Collection | undefined;
   items: readonly StacItem[];
   aoi: GeoJSON.Geometry | null;
-  index: IndexPreset | null;
+  index: QuickPreset | null;
   asset: string;
 }): AreaQuestion | { reason: string } | null {
   const { datasetId, collection, items, aoi, index, asset } = args;
@@ -86,8 +86,8 @@ export function areaQuestionOf(args: {
   const input = { name: INPUT_NAME, dataset: datasetId, groups: [items.map((item) => item.id).sort()] };
   const output = (bands: string[]) => ({ kind: 'raster' as const, format: 'cog' as const, dtype: 'float32', bands });
   if (index) {
-    const step = { op: 'band_math', op_version: 2, params: { expression: index.expression, name: index.name } };
-    return { datasetId, order: { recipe_version: 2, inputs: [input], aoi: orderAoi(aoi), steps: [step], output: output([index.name]) }, scalings: [{ scale: 1, offset: 0 }] };
+    const steps = index.steps.map((step) => ({ op: step.op, op_version: step.opVersion, params: step.params }));
+    return { datasetId, order: { recipe_version: 2, inputs: [input], aoi: orderAoi(aoi), steps, output: output(index.bands) }, scalings: index.bands.map(() => ({ scale: 1, offset: 0 })) };
   }
   let names: string[] = [];
   let scalings: BandScaling[] | null = null;

@@ -11,7 +11,7 @@ import {
   termsNoticeText,
 } from '../download';
 import { groupItemIdsFor } from '../grouping';
-import { indexOfferedFor } from '../indexDownload';
+import { downloadsIndexOnly, indexOfferedFor } from '../indexDownload';
 import { useAppStore } from '../store';
 import BandChoice from './BandChoice';
 import CloseButton from './CloseButton';
@@ -253,7 +253,7 @@ export default function DownloadDialog() {
               )}
             </p>
 
-            {offered && !layer?.restore.indexOnly && (
+            {offered && layer && !downloadsIndexOnly(layer, datasets) && (
               <div role="radiogroup" aria-label="What to download">
                 {(['raw', 'index'] as const).map((what) => (
                   <label key={what} style={{ marginRight: '1em' }} data-tip-level="advanced" data-tip={what === 'raw' ? 'The bands of the scenes, cut to the AOI' : `The ${offered.name}, computed as a Processing job would give it`}>

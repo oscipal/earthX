@@ -279,6 +279,14 @@ describe('the rows', () => {
     expect(textOf(collection('y', 'elevation', { 'earthx:capabilities': { ...CAPABILITIES, band_math: false } }), 'Quick processing')).toBe('—');
   });
 
+  it('name the composites and steps of "Quick processing" by their titles (M5-14)', () => {
+    const composite = { name: 'fc', title: 'False colour (IR)', expressions: ['nir', 'red', 'green'], rescale: [[0, 0.5], [0, 0.3], [0, 0.3]], reference: 'https://x' };
+    const step = { name: 'hillshade', title: 'Hillshade', op: 'terrain', op_version: 1, params: { product: 'hillshade', bands: ['data'], name: 'hillshade' } };
+    const optical = collection('x', 'optical', { 'earthx:true_color': ['red', 'green', 'blue'], 'earthx:composite_presets': [composite] as never });
+    expect(textOf(optical, 'Quick processing')).toBe('False colour (IR), Enhance contrast');
+    expect(textOf(collection('y', 'elevation', { 'earthx:step_presets': [step] as never }), 'Quick processing')).toBe('Hillshade');
+  });
+
   it('put the note of a maturity other than stable behind the (i)', () => {
     expect(rowsOf(collection('x', 'optical', { 'earthx:maturity': 'staging' })).Maturity).toEqual({
       label: 'Maturity',

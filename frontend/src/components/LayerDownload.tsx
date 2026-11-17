@@ -4,7 +4,7 @@
 import type { ReactNode } from 'react';
 
 import { canDownloadLayer, decideDownloadOutcomeForLayer, layerDownloadKind } from '../download';
-import { indexDownloadBlock, indexOfferedFor } from '../indexDownload';
+import { downloadsIndexOnly, indexDownloadBlock, indexOfferedFor } from '../indexDownload';
 import { LOCKED_LAYER_TIP, type MapLayer } from '../layers';
 import { isJobId, resultUrl } from '../processing';
 import { ZIP_LABEL } from '../processingStore';
@@ -48,7 +48,8 @@ export default function LayerDownload({ layer, className = 'icon-btn sm', label,
   const outcome = decideDownloadOutcomeForLayer(layer, datasets);
   const index = indexOfferedFor(layer, datasets);
   // A layer of an index alone downloads the index and nothing else (UI-03d): where it cannot, the button says why.
-  const indexBlock = layer.restore.indexOnly ? indexDownloadBlock(layer, datasets) : null;
+  const alone = downloadsIndexOnly(layer, datasets);
+  const indexBlock = alone ? indexDownloadBlock(layer, datasets) : null;
   return (
     <button
       type="button"
@@ -60,7 +61,7 @@ export default function LayerDownload({ layer, className = 'icon-btn sm', label,
           ? 'Draw an AOI to download this layer'
           : indexBlock
             ? indexBlock
-            : index && layer.restore.indexOnly
+            : index && alone
               ? `Download the ${index.name} of the AOI crop, computed as a Processing job would`
               : index
                 ? `Download the AOI crop, one file per group; the ${index.name} too, computed as a Processing job would`

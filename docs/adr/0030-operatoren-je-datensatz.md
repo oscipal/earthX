@@ -475,6 +475,20 @@ Für Interferometrie, Kohärenz oder Dual-Pol-Zerlegungen gibt es **kein** neues
 
 **Leere Felder** bleiben Pflicht und leer, wo nichts gilt (B10). Beispiele: `index_presets = ()` bei WorldCover, `composite_presets = ()` beim DEM. Dann fehlt der Abschnitt „Quick processing“ (Leitfaden §1 Punkt 5).
 
+**Nachtrag M5-14 (Otto, 17.11.2026), zu §5.1:** Das Komposit „SWIR“ ist die übliche Kombination B12, B8A, B04 (`swir22`, `nir08`, `red`), nicht `nir` (B08).
+
+**Nachtrag M5-14 (Otto, 17.11.2026), einstellbare Parameter:** Ein `step_preset` nennt in `adjustable` die Parameter, die man direkt unter „Quick processing“ ändern kann; die übrigen bleiben fest. Der Wert in `params` ist der Ausgangswert.
+- Bei den Höhenmodellen sind das „Hillshade“ mit Azimut (315°) und Höhe der Lichtquelle (45°) und „Slope“ mit der Einheit (Grad oder Prozent).
+- Grenzen, Auswahl und Einheit kommen aus dem Parameterschema des Operators. `terrain` kennzeichnet seine Winkel mit `x-earthx-unit: deg`.
+- Daraus folgt das Bedienelement ohne Wissen über den Operator:
+  - eine Auswahl als Segment-Knöpfe;
+  - ein Winkel von 0 bis unter 360° als Drehknopf (Leitfaden §3, dritte Ausnahme);
+  - eine andere Zahl mit zwei Grenzen als Schieber.
+- Eine Änderung zeichnet die Ansicht sofort neu; ein gemessener Bereich wird danach neu gemessen.
+- Prüfung: `catalog` prüft, dass jeder Name in `params` steht und kein Band ist; `api` beim Start, dass der Operator den Parameter kennt.
+
+**Nachtrag M5-14 (Otto, 17.11.2026, F1 = 1):** `step_presets` tragen keine Darstellung (`rescale`, `colormap_name`). Es gilt der Look des Operators (`adr/0035`); ein Schritt-Preset auf einem Operator ohne Look wird beim Start von `api` abgewiesen.
+
 ---
 
 ## 9. Abgleich mit DS-05 (Folgen)

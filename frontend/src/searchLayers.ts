@@ -4,7 +4,7 @@
 import { clipTileUrl } from './aoiClip';
 import type { DatasetOption } from './datasets';
 import type { LayerOverlay } from './layers';
-import type { IndexPreset } from './indexPresets';
+import type { QuickPreset } from './quickPresets';
 import { buildTileUrl } from './mapLayers';
 import { inStackOrder, stackLikeView, viewOfPass } from './mosaic';
 import { overviewRasterOf } from './overviewSubstitute';
@@ -52,7 +52,7 @@ export function overlaysOfPass(
   // The quicklooks under the tiles (`underlaysOf`), which the layer draws where its tiles do not start yet.
   underlays: readonly ImageOverlay[] = [],
   // The index the look names (NM4-14b): the rasters are the tiles that compute it, and no quicklook lies under them.
-  index: IndexPreset | null = null,
+  index: QuickPreset | null = null,
 ): LayerOverlay[] | null {
   const view = viewOfPass(datasetId, entries, mosaics);
   if (view.kind === 'pending') return null;

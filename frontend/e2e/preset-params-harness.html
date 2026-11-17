@@ -1,0 +1,62 @@
+<!doctype html>
+<!-- The parameters of a step of "Quick processing" (M5-14, Otto, 17.11.2026) for the browser check in `preset-params.cjs`: the real
+     `PresetParamControls` and `AngleDial` with the real styles, in a box of the width of the settings bar, once in the dark theme and once in
+     the light one. The description of the dataset comes from its fixture, not from a backend. Served by the dev server (`npm run dev`) at
+     /e2e/preset-params-harness.html; no part of the app. -->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>preset parameters</title>
+  </head>
+  <body style="margin: 0">
+    <div id="root"></div>
+    <script type="module">
+      import '/src/tokens.css';
+      import '/src/index.css';
+      import { createElement, useState } from 'react';
+      import { createRoot } from 'react-dom/client';
+      import description from '/src/fixtures/processes/cop-dem-glo-30.json';
+      import PresetParamControls from '/src/components/PresetParamControls.tsx';
+      import { quickPresetsOf, withParams } from '/src/quickPresets.ts';
+
+      const realFetch = window.fetch.bind(window);
+      window.fetch = async (url, init) =>
+        String(url).includes('/processing/processes/recipe?dataset=cop-dem-glo-30')
+          ? new Response(JSON.stringify(description), { status: 200, headers: { 'Content-Type': 'application/json' } })
+          : realFetch(url, init);
+
+      const step = (name, title, params, adjustable) => ({ name, title, op: 'terrain', op_version: 1, params: { ...params, bands: ['data'], method: 'horn', name }, adjustable });
+      const collection = {
+        id: 'cop-dem-glo-30',
+        'earthx:step_presets': [
+          step('hillshade', 'Hillshade', { product: 'hillshade', azimuth: 315, altitude: 45, z_factor: 1, multidirectional: false }, ['azimuth', 'altitude']),
+          step('slope', 'Slope', { product: 'slope', slope_unit: 'degrees' }, ['slope_unit']),
+        ],
+      };
+      const [hillshade, slope] = quickPresetsOf(collection);
+      window.changes = [];
+
+      function Panel({ theme }) {
+        const [values, setValues] = useState({});
+        const change = (name, value) => {
+          window.changes.push([theme, name, value]);
+          setValues((now) => ({ ...now, [name]: value }));
+        };
+        return createElement(
+          'div',
+          { className: 'app', 'data-theme': theme, style: { position: 'static', width: 'var(--inspector-width)', padding: '12px', background: 'var(--panel-bg)', color: 'var(--text)' } },
+          createElement(
+            'div',
+            { className: 'inspector', id: `panel-${theme}`, style: { position: 'static', overflow: 'auto' } },
+            createElement(PresetParamControls, { datasetId: 'cop-dem-glo-30', preset: withParams(hillshade, values), onChange: change }),
+            createElement(PresetParamControls, { datasetId: 'cop-dem-glo-30', preset: withParams(slope, values), onChange: change }),
+          ),
+        );
+      }
+
+      createRoot(document.getElementById('root')).render(
+        createElement('div', { style: { display: 'flex', gap: '24px' } }, createElement(Panel, { theme: 'tech' }), createElement(Panel, { theme: 'normal' })),
+      );
+    </script>
+  </body>
+</html>

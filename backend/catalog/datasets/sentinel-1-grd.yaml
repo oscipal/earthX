@@ -273,6 +273,9 @@ search_capabilities:
 # adr/0018 F3: no index buttons on DN; the quick processings in dB come with DS-05a and DS-05c.
 index_presets: []
 true_color: []
+# "Dual-pol RGB" comes with DS-05c, "VV dB" and "VH dB" with DS-05a (adr/0030 §9); none until then.
+composite_presets: []
+step_presets: []
 # adr/0018 F2, DS-04 plan §4.4; the tooltips confirmed by Otto on 08.11.2026 (F10).
 notices:
 - code: approximate_geolocation

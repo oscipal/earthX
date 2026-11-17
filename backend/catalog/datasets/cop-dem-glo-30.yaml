@@ -206,6 +206,31 @@ search_capabilities:
 index_presets: []
 # One band of heights: no picture in colours of light.
 true_color: []
+# One band: no picture of three (adr/0030 F7).
+composite_presets: []
+# M5-14 (Otto 17.11.2026, F2 = 2, F3 = 1): hillshade, slope and aspect of the heights as one click each, with the
+# parameters `gdaldem` takes by default (Horn; light from 315° at 45°, z-factor 1; slope in degrees). The look of each
+# band is the operator's (adr/0035), not part of the entry. `adjustable` (Otto, 17.11.2026): the light of the hillshade (azimuth,
+# altitude) and the unit of the slope can be changed right under "Quick processing"; the rest stays.
+step_presets:
+- name: hillshade
+  title: Hillshade
+  op: terrain
+  op_version: 1
+  params: {product: hillshade, bands: [data], method: horn, azimuth: 315.0, altitude: 45.0, z_factor: 1.0, multidirectional: false}
+  adjustable: [azimuth, altitude]
+- name: slope
+  title: Slope
+  op: terrain
+  op_version: 1
+  params: {product: slope, bands: [data], method: horn, slope_unit: degrees}
+  adjustable: [slope_unit]
+- name: aspect
+  title: Aspect
+  op: terrain
+  op_version: 1
+  params: {product: aspect, bands: [data], method: horn}
+  adjustable: []
 # DS-04 plan §4.4: nothing a user has to know before reading the data beyond its description.
 notices: []
 # The sentences of the row "Limitations" of the Data catalogue (adr/0018 F2, Nachtrag DS-04c); none for this entry.

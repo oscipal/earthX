@@ -284,6 +284,10 @@ export interface Collection {
   // The indices the panel offers as one click each (NM4-14), in the words of the registry; read, and checked entry by
   // entry, by `indexPresets.ts`. Absent on a backend before NM4-14a.
   'earthx:index_presets'?: unknown[] | null;
+  // The pictures of three expressions and the steps of an operator "Quick processing" offers (adr/0030 F7, M5-14); read, and checked
+  // entry by entry, by `quickPresets.ts`. Absent on a backend before M5-14.
+  'earthx:composite_presets'?: unknown[] | null;
+  'earthx:step_presets'?: unknown[] | null;
 }
 
 // A time step: the items that share one grouping key (registry.ViewerInfo).
@@ -301,6 +305,9 @@ export interface AppliedRender {
   // The name of the index preset of the dataset the view draws instead of a band (NM4-14b, `viewIndex.ts`); the range and
   // colormap below are the ones the index is drawn with.
   index?: string;
+  // The values a person chose for the adjustable parameters of that preset (Otto, 17.11.2026, M5-14): drawn into its step; none for the
+  // values of the registry.
+  presetParams?: Record<string, string | number | boolean>;
   // The single band of the data the view draws instead of its standard picture (NM4-45, `viewBand.ts`): the key of its asset.
   // None is the standard picture ("RGB" where the dataset has a true-colour one).
   band?: string;
