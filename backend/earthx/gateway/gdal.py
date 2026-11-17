@@ -122,6 +122,14 @@ def vsicurl_path(checked: CheckedUrl) -> str:
 # The range of one request in GDAL's debug line; the address that follows it is never read.
 _DOWNLOADING = re.compile(r"Downloading ((?:\d+-\d+(?:,\s*)?)+)")
 _RANGE = re.compile(r"(\d+)-(\d+)")
+# The size of a file, asked once when it is opened (a ``HEAD``, or with ``CPL_VSIL_CURL_USE_HEAD=NO`` a ``GET`` that GDAL
+# breaks off); one line however many attempts it took (M5-37).
+_SIZE_PROBE = re.compile(r"VSICURL: GetFileSize\(")
+# One more attempt of the request before it. A range read logs each attempt with a ``Downloading`` line of its own; the
+# attempts of a size probe log only this line, before the one ``GetFileSize`` line (GDAL 3.12, measured in M5-37).
+_RETRYING = re.compile(r"Retrying again in")
+_GOT = re.compile(r"Got response_code=(\d+)")
+_COMPLETED = re.compile(r"VSICURL: Download completed")
 _GDAL_LOGGER = "rasterio"
 _counting_lock = threading.Lock()
 # The logger is shared by the process: how many counters are in, and what it was before the first one.
@@ -129,42 +137,75 @@ _users = 0
 _saved: tuple[int, bool] = (logging.NOTSET, True)
 
 
-def count_downloads(messages: Sequence[str]) -> tuple[int, int]:
-    """Requests and bytes in GDAL's ``VSICURL: Downloading a-b[, c-d]`` lines; a line is one request."""
-    requests = 0
-    total = 0
-    for message in messages:
+class _Lines:
+    """The requests and bytes of one thread's GDAL lines, in the order GDAL logged them.
+
+    Every request GDAL makes to the source counts (M5-37, Otto 17.11.2026): each ``Downloading a-b[, c-d]`` line (a range
+    read, each attempt its own line), each ``GetFileSize(`` line (the size probe when a file is opened), and each
+    ``Retrying again`` line that does not follow a range read still under way (an attempt of a size probe, which has no
+    line of its own). A range read is under way from its ``Downloading`` line until a ``Got response_code=2xx`` or, for
+    several ranges at once, ``Download completed``.
+    """
+
+    def __init__(self) -> None:
+        self.requests = 0
+        self.bytes = 0
+        self._reading = False
+
+    def feed(self, message: str) -> None:
         found = _DOWNLOADING.search(message)
-        if found is None:
-            continue
-        requests += 1
-        total += sum(int(end) - int(start) + 1 for start, end in _RANGE.findall(found.group(1)))
-    return requests, total
+        if found is not None:
+            self.requests += 1
+            self.bytes += sum(int(end) - int(start) + 1 for start, end in _RANGE.findall(found.group(1)))
+            self._reading = True
+        elif _SIZE_PROBE.search(message):
+            self.requests += 1
+            self._reading = False
+        elif _RETRYING.search(message):
+            if not self._reading:
+                self.requests += 1
+        elif _COMPLETED.search(message) or ((got := _GOT.search(message)) is not None and 200 <= int(got.group(1)) < 300):
+            self._reading = False
+
+
+def count_downloads(messages: Sequence[str]) -> tuple[int, int]:
+    """Requests and bytes in GDAL's lines of one thread, in their order (:class:`_Lines` says what counts)."""
+    lines = _Lines()
+    for message in messages:
+        lines.feed(message)
+    return lines.requests, lines.bytes
 
 
 class DownloadCounter(logging.Handler):
-    """Counts GDAL's download lines; keeps the numbers, never the text.
+    """Counts the requests GDAL makes and the bytes it downloads, from its debug lines; keeps the numbers, never the text.
 
     With ``thread`` set it counts only the lines logged by that thread (GDAL logs in the thread that reads), so
-    readers in several threads of one process each see their own requests.
+    readers in several threads of one process each see their own requests. Without it the lines of each thread are
+    still read in their own order.
     """
 
     def __init__(self, thread: int | None = None) -> None:
         super().__init__(logging.DEBUG)
         self.thread = thread
-        self.requests = 0
-        self.bytes = 0
+        self._threads: dict[int | None, _Lines] = {}
+
+    @property
+    def requests(self) -> int:
+        return sum(lines.requests for lines in self._threads.values())
+
+    @property
+    def bytes(self) -> int:
+        return sum(lines.bytes for lines in self._threads.values())
 
     def emit(self, record: logging.LogRecord) -> None:
         if self.thread is not None and record.thread != self.thread:
             return
-        requests, total = count_downloads([record.getMessage()])
-        self.requests += requests
-        self.bytes += total
+        self._threads.setdefault(record.thread, _Lines()).feed(record.getMessage())
 
     def take(self) -> tuple[int, int]:
         taken = self.requests, self.bytes
-        self.requests = self.bytes = 0
+        for lines in self._threads.values():
+            lines.requests = lines.bytes = 0
         return taken
 
 

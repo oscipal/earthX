@@ -8,7 +8,8 @@ Each process opens one gateway and asks ``/page.json`` one request after another
 ``--shared`` gives the gateway the Postgres coordinator of M5-37 (`open_source_gateway`); without it the gateway keeps
 spacing in its own object, as on `main`, so the same command measures both. With ``--seconds`` a process asks until the
 time is up and goes on after a failed request, as instances that each retry for themselves; a host that rests ends the
-process, as it ends a run. Before the processes start, ``--shared`` deletes the rows of the synthetic host.
+process, as it ends a run. Before the processes start, ``--shared`` deletes the rows of the host (``--host``, the
+synthetic one unless given) unless ``--keep`` says another process shares them.
 
 Two seams, the ones the tests replace too: the resolver answers with a public address, and the transport sends the
 gateway's request to the source on 127.0.0.1 over plain HTTP. One JSON line per request goes to ``--out``: process,
@@ -26,7 +27,6 @@ import time
 import httpx
 
 HOST = "bench-source.example.org"
-URL = f"https://{HOST}/page.json"
 
 
 class ToLocal(httpx.AsyncBaseTransport):
@@ -52,7 +52,9 @@ def public(host: str, port: int) -> tuple[str, ...]:
 async def run(number: int, args: argparse.Namespace) -> list[dict]:
     from earthx.gateway import Gateway, GatewayError, HostResting, Policy
 
-    policy = Policy(allowed_hosts=frozenset({HOST}), host_intervals={HOST: args.interval}, user_agent="EarthX-bench/0")
+    policy = Policy(
+        allowed_hosts=frozenset({args.host}), host_intervals={args.host: args.interval}, user_agent="EarthX-bench/0"
+    )
     options = {"transport": ToLocal(args.port), "resolve": public}
     if args.shared:
         from earthx.discovery.source_gateway import open_source_gateway
@@ -67,7 +69,7 @@ async def run(number: int, args: argparse.Namespace) -> list[dict]:
             start = time.monotonic()
             outcome = "ok"
             try:
-                await gateway.get(URL)
+                await gateway.get(f"https://{args.host}/page.json")
             except HostResting:
                 outcome = "rest"
             except GatewayError as error:
@@ -82,12 +84,12 @@ def child(number: int, args: argparse.Namespace, queue: multiprocessing.Queue) -
     queue.put(asyncio.run(run(number, args)))
 
 
-def reset() -> None:
+def reset(host: str) -> None:
     import psycopg
 
     with psycopg.connect(autocommit=True) as conn:
-        conn.execute("DELETE FROM public.earthx_source_lease WHERE host = %s", (HOST,))
-        conn.execute("DELETE FROM public.earthx_source_host WHERE host = %s", (HOST,))
+        conn.execute("DELETE FROM public.earthx_source_lease WHERE host = %s", (host,))
+        conn.execute("DELETE FROM public.earthx_source_host WHERE host = %s", (host,))
 
 
 def main() -> None:
@@ -98,10 +100,12 @@ def main() -> None:
     parser.add_argument("--interval", type=float, default=0.0)
     parser.add_argument("--seconds", type=float, default=0.0)
     parser.add_argument("--shared", action="store_true")
+    parser.add_argument("--host", default=HOST, help="the host the requests count against (M4: the pyramid's)")
+    parser.add_argument("--keep", action="store_true", help="keep the host's rows, another process shares them")
     parser.add_argument("--out", required=True)
     args = parser.parse_args()
-    if args.shared:
-        reset()
+    if args.shared and not args.keep:
+        reset(args.host)
     context = multiprocessing.get_context("spawn")
     queue = context.Queue()
     processes = [context.Process(target=child, args=(n, args, queue)) for n in range(args.processes)]
