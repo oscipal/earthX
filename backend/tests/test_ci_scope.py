@@ -119,10 +119,6 @@ def test_unknown_base_branch_falls_back_to_the_full_run(repo: Path) -> None:
     assert scope(repo, base="nope") == "docs_only=false"
 
 
-# Draft pull requests do not run CI (Otto, 2026-11-17): every job carries this condition.
-NOT_DRAFT = "github.event_name != 'pull_request' || github.event.pull_request.draft == false"
-
-
 def workflow() -> dict:
     return yaml.safe_load(CI.read_text())
 
@@ -131,14 +127,15 @@ def jobs() -> dict[str, dict]:
     return workflow()["jobs"]
 
 
-def test_every_job_skips_on_a_draft_pull_request() -> None:
+def test_no_job_skips_on_a_draft_pull_request() -> None:
+    # CI runs on every pull request, drafts included (Otto, 2026-11-17, undoing #374).
     for name, job in jobs().items():
-        assert NOT_DRAFT in str(job.get("if", "")), f"{name} runs on a draft pull request"
+        assert "draft" not in str(job.get("if", "")), f"{name} skips on a draft pull request"
 
 
-def test_pull_requests_trigger_only_on_the_four_types() -> None:
+def test_pull_requests_trigger_on_the_default_types() -> None:
     triggers = workflow()[True]  # YAML 1.1 reads the key `on` as True
-    assert triggers["pull_request"] == {"types": ["opened", "reopened", "synchronize", "ready_for_review"]}
+    assert triggers["pull_request"] is None, "no `types`: the defaults, so drafts run too"
     assert triggers["push"] == {"branches": ["main"]}
 
 
@@ -152,7 +149,7 @@ def test_only_pull_request_runs_are_cancelled() -> None:
 @pytest.mark.parametrize("job", ["frontend", "import-boundaries", "compose-topology"])
 def test_every_required_job_decides_first_and_skips_the_rest(job: str) -> None:
     steps = jobs()[job]["steps"]
-    assert jobs()[job]["if"] == NOT_DRAFT, "the job runs on every pull request that is not a draft"
+    assert "if" not in jobs()[job], "the job itself must always run"
     assert steps[0]["uses"].startswith("actions/checkout@")
     assert steps[0]["with"]["fetch-depth"] == 0
     assert steps[1]["id"] == "scope" and steps[1]["run"] == "scripts/ci-scope.sh"
@@ -183,7 +180,7 @@ def test_the_required_check_keeps_its_name_and_no_other_job_takes_it() -> None:
 def test_the_scope_job_always_runs_and_hands_its_answer_on() -> None:
     job = jobs()["backend-scope"]
     steps = job["steps"]
-    assert job["if"] == NOT_DRAFT, "the scope is decided on every pull request that is not a draft"
+    assert "if" not in job, "the scope must always be decided"
     assert steps[0]["uses"].startswith("actions/checkout@") and steps[0]["with"]["fetch-depth"] == 0
     assert steps[1]["id"] == "scope" and steps[1]["run"] == "scripts/ci-scope.sh"
     assert job["outputs"] == {"docs_only": "${{ steps.scope.outputs.docs_only }}"}
@@ -192,7 +189,7 @@ def test_the_scope_job_always_runs_and_hands_its_answer_on() -> None:
 def test_the_test_parts_wait_for_the_scope_and_skip_on_docs_only() -> None:
     job = jobs()["backend-tests"]
     assert job["needs"] == "backend-scope"
-    assert job["if"] == f"({NOT_DRAFT}) && needs.backend-scope.outputs.docs_only != 'true'"
+    assert job["if"] == "needs.backend-scope.outputs.docs_only != 'true'"
     assert job["runs-on"] == "ubuntu-24.04", "the pin of #322"
     assert not [s for s in job["steps"] if "docs_only" in str(s.get("if", ""))], "the job's own skip covers it"
 
@@ -214,7 +211,7 @@ def test_lint_runs_in_one_part_only() -> None:
 def test_the_collecting_job_waits_for_both_and_always_ends() -> None:
     job = jobs()["backend"]
     assert job["needs"] == ["backend-scope", "backend-tests"]
-    assert job["if"] == f"always() && ({NOT_DRAFT})", "a skipped required check can count as passed"
+    assert job["if"] == "always()", "a skipped required check can count as passed"
     assert job["runs-on"] == "ubuntu-24.04"
     first = job["steps"][0]
     assert first["name"] == "Every part is green" and "if" not in first
