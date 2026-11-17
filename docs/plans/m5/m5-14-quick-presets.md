@@ -141,3 +141,47 @@ F1 = 1, F2 = 2, F3 = 1, F4 = 1, F5 = 1.
 
 - **F2 = 2:** Die Höhenmodelle bekommen „Hillshade“, „Slope“ und „Aspect“. Die Darstellung von „Aspect“ folgt `adr/0035`: `hsv`, fest 0–360°.
 - **Reihenfolge:** PR A (dieser PR, [#370](https://github.com/oscipal/earthX/pull/370)) umsetzen, `main` holen, fertig melden; PR B danach.
+
+## 9. Umsetzung PR A (17.11.2026)
+
+Umgesetzt nach §3 und §4 mit F1–F5 aus §8a. Befunde und Auslegungen, gelten bis Widerspruch:
+
+**Backend**
+- `CompositePreset` und `StepPreset` in `catalog/registry.py`, Felder `composite_presets` und `step_presets` ohne Vorgabe; alle sieben YAML-Einträge nennen beide.
+- **Abweichung von §3.1:** Jeder Kanal eines Komposits wird ein `band_math`-Schritt (`<name>_r`, `_g`, `_b`), auch ein reiner Bandname. Grund: Die Kachel nimmt `band` nur hinter Schritten an (`api/tiler.py`, „band is for tiles with op“). Ein Komposit braucht deshalb immer `band_math`.
+- Ein Name gilt einmal über Index-, Komposit- und Schritt-Presets (Groß- und Kleinschreibung gleich) und darf kein Band der Daten sein. Knopftitel höchstens 24 Zeichen.
+- `processing/quick_presets.py` prüft beim Start von `api`: Operator und Version gelistet; T1, Art `pixel` oder `focal`; Parameter durch das Modell; `applicable()`; das hinzugefügte Band heißt wie das Preset; gelesene Bänder gehören zu den Daten; der Operator hat einen Look, dessen Colormap der Tiler kennt.
+- Quellen der Komposite: Sentinel Hub Custom Scripts („False color infrared“, „SWIR“). Die Seiten waren aus der Cloud-Session nicht erreichbar; **bitte die Links prüfen.** Das SWIR-Skript dort nimmt B8A, der Eintrag nach `adr/0030` §5.1 `nir` (B08).
+
+**Frontend**
+- `quickPresets.ts`: ein Preset = Schritte, gelesene Assets, gezeigte Bänder (eines oder drei), Darstellung. Die Index-Wege (`viewIndex.ts`, Mosaik-Auswahl, Übersicht unter `min_zoom`, Statistik, Anheften, Messung der AOI) nehmen es unverändert; `AppliedRender.index` nennt das Preset jeder Art.
+- Komposit: drei Kanäle mit den festen Bereichen, Farbbild ohne Colormap; „Enhance contrast“ wirkt darauf.
+- Schritt: Der Look kommt aus der Prozessbeschreibung des Datensatzes (`presetLooks.ts`, einmal je Datensatz). Fest (Aspect): sofort. Sonst wird das Band so gemessen, wie es gezeichnet wird (Statistik-Route mit demselben Schritt). „Auto-scale“ nimmt den Bereich des Looks (Hillshade 0/100 %), die Colormap bleibt.
+- Kommt die Beschreibung nicht, erscheint eine Meldung, und es wird kein Bereich erfunden.
+- Bis PR B: Eine Ebene eines Komposits oder Schritts bietet keinen Download „als Index“; „Process“ öffnet sie mit den Bändern der Daten wie eine gewöhnliche Ebene.
+
+**Nachtrag Otto (17.11.2026), Fehler seit UI-09:** Beim Wechsel des Produkts im Schritt „Terrain“ folgten Name und Darstellung nicht. Zwei Ursachen:
+- Der Name blieb stehen.
+- „Auto-scale“ hielt die Colormap des Looks fest, als hätte der Nutzer sie gewählt.
+
+Jetzt gilt:
+- Der Name folgt dem Produkt, außer der Nutzer hat ihn selbst vergeben. Das gezeigte Band folgt mit.
+- „Auto-scale“ hält nur eine Colormap, die nicht die des Looks ist.
+
+Damit gelten Vorgabename und Look in Vorschau, angehefteter Ebene und Ergebnis-Layer (der Auftrag trägt den neuen Namen und das neue Produkt). Tests in `ProcessingTerrainProduct.test.tsx`; zwei davon sind ohne die Korrektur rot.
+
+**Nicht geprüft:** Browser-Check gegen echte Daten. Die Cloud-Session hat keinen Zugang zu den Quellen.
+
+### 9.1 Prüfanleitung für Otto
+
+1. `main` mit diesem Branch lokal, `docker compose up`, Datensätze neu laden (`load`), damit die Collections die neuen Felder tragen.
+2. GLO-30 öffnen, Szene ansehen: unter „Quick processing“ stehen „Hillshade“, „Slope“, „Aspect“. Jeweils klicken, „Apply“:
+   - Hillshade in Grau (beleuchtete Hänge hell);
+   - Slope grün bis rot;
+   - Aspect in Regenbogenfarben 0–360°.
+
+   Von z10 bis z0 herauszoomen: Das Bild bleibt, mit der Marke „Overview“ unter `min_zoom`.
+3. swissALTI3D und BEV ebenso.
+4. Sentinel-2: „False colour (IR)“ und „SWIR“ nach den Indizes. Vegetation erscheint rot bzw. grün; „Enhance contrast“ streckt die drei Kanäle.
+5. Anheften („Add to layers“): Die Ebene zeigt das Preset allein.
+6. Processing-Panel, Schritt „Terrain“: Slope → Hillshade → Aspect. Name und Farbskala folgen jedes Mal, auch nach „Auto-scale“. Ein selbst vergebener Name bleibt.
