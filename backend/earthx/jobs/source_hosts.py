@@ -130,8 +130,9 @@ class TurnKeeper:
 
     The supervisor's loop calls :meth:`ask` on ``("pace", host)``, :meth:`step` whenever :meth:`due_in` says (it is
     ``True`` once the child may start: the supervisor sends ``("go",)``), and :meth:`account` on ``("account", …)``.
-    While a turn is asked for or held the child is waiting on the supervisor, not stalled (:attr:`busy`). :meth:`close`
-    gives back a place still held when the child ends. ``clock`` and ``draw`` are seams for tests.
+    While a turn is asked for and not yet given the child waits on the supervisor and is not stalled (:attr:`waiting`);
+    once it reads, it is. :meth:`close` gives back a place still held when the child ends. A message out of order is a
+    ``ValueError``. ``clock`` and ``draw`` are seams for tests.
     """
 
     def __init__(
@@ -147,51 +148,66 @@ class TurnKeeper:
         self._clock = clock
         self._draw = draw
         self._host: str | None = None
+        self._limit: HostTurns | None = None
         self._due = 0.0
+        self._taken = False
         self._slot: int | None = None
         self._holder = uuid.uuid4()
         self._renewed = 0.0
+        self._lost = False
 
     @property
-    def busy(self) -> bool:
-        return self._host is not None
+    def waiting(self) -> bool:
+        """A turn is asked for and not yet given: the child waits on the supervisor."""
+        return self._host is not None and self._slot is None
+
+    def limit_for(self, host: str) -> HostTurns | None:
+        """The limits of ``host`` or of its nearest parent, as the gateway's allowlist matches a subdomain."""
+        labels = host.split(".")
+        for start in range(len(labels) - 1):
+            limit = self._limits.get(".".join(labels[start:]))
+            if limit is not None:
+                return limit
+        return None
 
     def ask(self, host: str) -> None:
-        """Take the host's next turn; ``ValueError`` for a host the build may not read."""
-        if host not in self._limits:
+        """Take the host's next turn; ``ValueError`` for a host the build may not read or a turn already under way."""
+        if self._host is not None:
+            raise ValueError("the child asked for a turn while another is under way")
+        limit = self.limit_for(host)
+        if limit is None:
             raise ValueError("the child asked for a turn on a host the build does not read")
-        self.close()
-        limit = self._limits[host]
-        self._host = host
-        self._holder = uuid.uuid4()
-        self._due = self._clock() + self._hosts.reserve(host, limit.interval_s, BUILD_MAX_WAIT_S)
+        self._host, self._limit, self._holder, self._lost = host, limit, uuid.uuid4(), False
+        self._reserve(self._clock())
 
     def due_in(self) -> float | None:
         """Seconds until :meth:`step` has something to do, ``None`` with no turn asked for or held."""
         if self._host is None:
             return None
         if self._slot is not None:
-            return max(0.0, self._renewed + HEARTBEAT_S - self._clock())
+            return None if self._lost else max(0.0, self._renewed + HEARTBEAT_S - self._clock())
         return max(0.0, self._due - self._clock())
 
     def step(self) -> bool:
         """Renew a held place, or, once the turn is due and no pause runs, take a place: ``True`` when the child may go."""
-        if self._host is None:
+        if self._host is None or self._limit is None:
             return False
         now = self._clock()
         if self._slot is not None:
-            if now - self._renewed >= HEARTBEAT_S:
+            if not self._lost and now - self._renewed >= HEARTBEAT_S:
                 self._renewed = now
                 if not self._hosts.renew(self._host, self._slot, self._holder):
+                    self._lost = True
                     LOGGER.warning("source place lost", extra={"host": self._host})
             return False
         if now < self._due:
             return False
-        left = self._hosts.pause_left(self._host)
-        if left > 0:
-            self._due = now + left
+        if not self._taken or self._hosts.pause_left(self._host) > 0:
+            # A pause began, or the turn was further off than a build waits: a turn of its own after it, not the old one,
+            # so that the first request after a pause is one probe and not every turn handed out before it.
+            self._reserve(now)
             return False
-        slot = self._hosts.acquire(self._host, self._limits[self._host].connections, self._holder)
+        slot = self._hosts.acquire(self._host, self._limit.connections, self._holder)
         if slot is None:
             self._due = now + self._draw(*PLACE_POLL_S)
             return False
@@ -199,19 +215,34 @@ class TurnKeeper:
         return True
 
     def account(self, host: str, requests: int, failed: bool, retry_after: float | None) -> None:
-        """Charge the file's requests, tell the breaker how the read ended, give the place back."""
-        if host != self._host or self._slot is None:
+        """Charge the file's requests, tell the breaker how the read ended, give the place back.
+
+        A read that sent nothing (GDAL answered from its cache) and did not fail tells the breaker nothing: the host was
+        not asked, and a success would end a pause another instance opened.
+        """
+        if host != self._host or self._slot is None or self._limit is None:
             raise ValueError("the child accounted for a turn it was not given")
-        self._hosts.account(host, self._limits[host].interval_s, requests)
-        opened, recovered, pause_s = self._hosts.report(host, failed=failed, retry_after_s=retry_after)
-        if opened:
-            LOGGER.warning("source host paused", extra={"host": host, "pause_s": round(pause_s)})
-        elif recovered:
-            LOGGER.info("source host answers again", extra={"host": host})
+        self._hosts.account(host, self._limit.interval_s, requests)
+        if requests > 0 or failed:
+            opened, recovered, pause_s = self._hosts.report(host, failed=failed, retry_after_s=retry_after)
+            if opened:
+                LOGGER.warning("source host paused", extra={"host": host, "pause_s": round(pause_s)})
+            elif recovered:
+                LOGGER.info("source host answers again", extra={"host": host})
         self.close()
 
     def close(self) -> None:
-        """Give back a place still held; forget the turn."""
-        if self._host is not None and self._slot is not None:
-            self._hosts.release(self._host, self._slot, self._holder)
-        self._host, self._slot = None, None
+        """Give back a place still held and forget the turn; a database that fails here is logged, the place runs out."""
+        host, slot = self._host, self._slot
+        self._host, self._slot, self._limit = None, None, None
+        if host is not None and slot is not None:
+            try:
+                self._hosts.release(host, slot, self._holder)
+            except psycopg.Error as error:
+                LOGGER.warning("source place not given back", extra={"host": host, "error": type(error).__name__})
+
+    def _reserve(self, now: float) -> None:
+        assert self._host is not None and self._limit is not None
+        wait = self._hosts.reserve(self._host, self._limit.interval_s, BUILD_MAX_WAIT_S)
+        self._taken = wait <= BUILD_MAX_WAIT_S
+        self._due = now + min(wait, BUILD_MAX_WAIT_S)

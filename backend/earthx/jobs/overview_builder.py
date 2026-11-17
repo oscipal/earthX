@@ -83,6 +83,13 @@ _DETAIL = ("step", "error", "reason", "tile")
 _DETAIL_LENGTH = 200
 #: The omitted tiles of a build the log names one by one; more are counted.
 _OMITTED_LOGGED = 20
+#: More requests than this for one file is no count a child can mean.
+MAX_REQUESTS = 100_000
+
+
+def _seconds(value: object) -> bool:
+    """A ``Retry-After`` a child may pass on: a finite number of seconds, 0 or more, not a bool."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and 0 <= value < float("inf")
 
 _ITEMS_SQL = """
 SELECT i.id, pgstac.get_item(i.id, i.collection)
@@ -153,6 +160,8 @@ class OverviewBuilder:
         self._config = config
         #: Places and spacing per host of the files a child reads (M5-37); a host without an entry is not read.
         self._limits = dict(source_limits or {})
+        if source_limits is not None and (missing := {h for hosts in pyramids.values() for h in hosts} - set(self._limits)):
+            raise ValueError(f"no places and spacing for the hosts of a pyramid: {', '.join(sorted(missing))}")
         self._store = store
         self._name = name
         self._pyramids = {dataset_id: tuple(hosts) for dataset_id, hosts in pyramids.items()}
@@ -388,18 +397,14 @@ class OverviewBuilder:
                             elif message[0] == "failed" and len(message) in (2, 3) and isinstance(message[1], str):
                                 final = ("failed", message[1])
                                 said = message[2] if len(message) == 3 and isinstance(message[2], dict) else {}
-                            elif message[0] == "pace" and len(message) == 2 and isinstance(message[1], str):
-                                self._ask(turns, message[1], process)
-                            elif message[0] == "account" and len(message) == 5:
-                                _, host, requests, failed, retry_after = message
-                                asked = float(retry_after) if isinstance(retry_after, (int, float)) else None
-                                turns.account(str(host), int(requests), bool(failed), asked)
+                            elif message[0] in ("pace", "account"):
+                                self._turn(turns, message, process)
                     if turns.step():
                         pipe.send(("go",))
                 except (EOFError, OSError):
                     pipe_open = False
-                if turns.busy:
-                    # The child waits for its turn, on this thread: that is no stall.
+                if turns.waiting:
+                    # The child waits for its turn, on this thread: that is no stall. Once it reads, it can stall again.
                     last_word = time.monotonic()
             else:
                 time.sleep(0.05)
@@ -428,10 +433,27 @@ class OverviewBuilder:
         return final[1]
 
     @staticmethod
-    def _ask(turns: TurnKeeper, host: str, process: multiprocessing.process.BaseProcess) -> None:
-        """Take the turn the child asked for; a host the build does not read ends it as ``rejected``."""
+    def _turn(turns: TurnKeeper, message: tuple, process: multiprocessing.process.BaseProcess) -> None:
+        """Answer ``("pace", host)`` and ``("account", host, requests, failed, retry_after)``.
+
+        A message of another shape, a host the build does not read, or a turn out of order ends the build as ``rejected``:
+        the numbers go to the database, and a child that asks for what it was not given must not hold a place.
+        """
         try:
-            turns.ask(host)
+            if message[0] == "pace" and len(message) == 2 and isinstance(message[1], str):
+                turns.ask(message[1])
+                return
+            if message[0] == "account" and len(message) == 5:
+                _, host, requests, failed, retry_after = message
+                if (
+                    isinstance(host, str)
+                    and isinstance(requests, int) and not isinstance(requests, bool) and 0 <= requests <= MAX_REQUESTS
+                    and isinstance(failed, bool)
+                    and (retry_after is None or _seconds(retry_after))
+                ):  # fmt: skip
+                    turns.account(host, requests, failed, None if retry_after is None else float(retry_after))
+                    return
+            raise ValueError("a message about a turn of the wrong shape")
         except ValueError:
             process.kill()
             raise _Failed("rejected") from None

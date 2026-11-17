@@ -29,6 +29,7 @@ class FakeHosts:
         self.free = True
         self.renewed = True
         self.reported: tuple[bool, bool, float] = (False, False, 0.0)
+        self.broken = False
         self.calls: list[tuple] = []
 
     def reserve(self, host: str, interval_s: float, max_wait_s: float) -> float:
@@ -49,6 +50,8 @@ class FakeHosts:
 
     def release(self, host: str, slot: int, holder: uuid.UUID) -> None:
         self.calls.append(("release", host, slot))
+        if self.broken:
+            raise psycopg.OperationalError("the database is gone")
 
     def account(self, host: str, interval_s: float, requests: int) -> None:
         self.calls.append(("account", host, interval_s, requests))
@@ -96,19 +99,49 @@ class TestTheKeeper:
         clock.now += 2.0
         assert turns.step() is True
         assert hosts.names() == ["reserve", "pause_left", "acquire"]
-        assert turns.busy
+        assert not turns.waiting, "reading now: a hang is a stall again (review of PR 2, finding 1)"
 
-    def test_a_pause_found_when_the_turn_is_due_is_waited_out_first(self) -> None:
+    def test_a_pause_found_when_the_turn_is_due_takes_a_turn_after_it(self) -> None:
+        """Review finding 7: a turn from before the pause does not go along with the probe; a new one is taken."""
         hosts, clock = FakeHosts(), Clock()
         hosts.paused = 30.0
         turns = keeper(hosts, clock)
         turns.ask(HOST)
+        assert turns.waiting
+        hosts.wait = 30.0  # the pause moved the turn
         assert turns.step() is False
         assert turns.due_in() == 30.0
-        assert "acquire" not in hosts.names()
+        assert hosts.names() == ["reserve", "pause_left", "reserve"]
         hosts.paused = 0.0
         clock.now += 30.0
         assert turns.step() is True
+
+    def test_a_turn_further_off_than_a_build_waits_is_asked_for_again(self) -> None:
+        hosts, clock = FakeHosts(), Clock()
+        hosts.wait = jobs_hosts.BUILD_MAX_WAIT_S + 60
+        turns = keeper(hosts, clock)
+        turns.ask(HOST)
+        assert turns.due_in() == jobs_hosts.BUILD_MAX_WAIT_S
+        hosts.wait = 0.0
+        clock.now += jobs_hosts.BUILD_MAX_WAIT_S
+        assert turns.step() is False, "not taken: a turn of its own first"
+        assert hosts.names() == ["reserve", "reserve"]
+        assert turns.step() is True
+
+    def test_a_subdomain_of_a_host_takes_the_limits_of_its_parent(self) -> None:
+        hosts = FakeHosts()
+        keeper(hosts, Clock()).ask(f"eu.{HOST}")
+        assert hosts.calls == [("reserve", f"eu.{HOST}", 0.25, jobs_hosts.BUILD_MAX_WAIT_S)]
+
+    def test_a_second_turn_while_one_is_under_way_is_refused(self) -> None:
+        hosts = FakeHosts()
+        turns = keeper(hosts, Clock())
+        turns.ask(HOST)
+        with pytest.raises(ValueError):
+            turns.ask(HOST)
+        turns.step()
+        with pytest.raises(ValueError):
+            turns.ask(HOST)
 
     def test_while_every_place_is_held_it_asks_again_after_a_while(self) -> None:
         hosts, clock = FakeHosts(), Clock()
@@ -132,6 +165,10 @@ class TestTheKeeper:
         caplog.set_level(logging.WARNING, logger="earthx.jobs")
         assert turns.step() is False
         assert hosts.names()[-1] == "renew"
+        assert turns.due_in() is None, "a lost place is not renewed again"
+        clock.now += HEARTBEAT_S
+        turns.step()
+        assert hosts.names().count("renew") == 1
         assert [record.getMessage() for record in caplog.records] == ["source place lost"]
 
     def test_an_account_charges_the_requests_reports_and_gives_the_place_back(self) -> None:
@@ -141,7 +178,28 @@ class TestTheKeeper:
         turns.step()
         turns.account(HOST, 5, True, 7.0)
         assert hosts.calls[-3:] == [("account", HOST, 0.25, 5), ("report", HOST, True, 7.0), ("release", HOST, 1)]
-        assert not turns.busy
+        assert not turns.waiting
+        assert turns.due_in() is None
+
+    def test_a_read_from_the_cache_tells_the_breaker_nothing(self) -> None:
+        """Review finding 2: the host was not asked; a success would end a pause another instance opened."""
+        hosts = FakeHosts()
+        turns = keeper(hosts, Clock())
+        turns.ask(HOST)
+        turns.step()
+        turns.account(HOST, 0, False, None)
+        assert "report" not in hosts.names()
+        assert hosts.names()[-2:] == ["account", "release"]
+
+    def test_a_place_the_database_cannot_take_back_is_logged_and_runs_out(self, caplog: pytest.LogCaptureFixture) -> None:
+        hosts = FakeHosts()
+        turns = keeper(hosts, Clock())
+        turns.ask(HOST)
+        turns.step()
+        hosts.broken = True
+        caplog.set_level(logging.WARNING, logger="earthx.jobs")
+        turns.close()
+        assert [record.getMessage() for record in caplog.records] == ["source place not given back"]
         assert turns.due_in() is None
 
     @pytest.mark.parametrize("held", [False, True])

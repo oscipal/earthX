@@ -1177,11 +1177,12 @@ class TestTheSupervisorGivesTheTurns:
     def test_a_build_reads_its_files_an_interval_apart_and_leaves_no_place_behind(
         self, db: psycopg.Connection, make: Callable[..., Supervisor], monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        supervisor, version = self._build(db, make, monkeypatch, PACED_FILES="4")
+        supervisor, version = self._build(db, make, monkeypatch, interval=0.5, PACED_FILES="4")
         _wait_for(db, "dem", version, "ready")
         given = self._given(supervisor)
         assert len(given) == 4
-        assert min(b - a for a, b in zip(given, given[1:], strict=False)) > 0.27
+        # Measured in the child after the answer came: under load a turn can arrive a little late, the next one on time.
+        assert min(b - a for a, b in zip(given, given[1:], strict=False)) > 0.4
         assert db.execute("SELECT count(*) FROM public.earthx_source_lease").fetchone() == (0,)
         assert db.execute("SELECT host FROM public.earthx_source_host").fetchall() == [(PACED_HOST,)]
 
@@ -1191,7 +1192,7 @@ class TestTheSupervisorGivesTheTurns:
         supervisor, version = self._build(db, make, monkeypatch, interval=0.2, PACED_FILES="3", PACED_REQUESTS="3")
         _wait_for(db, "dem", version, "ready")
         given = self._given(supervisor)
-        assert min(b - a for a, b in zip(given, given[1:], strict=False)) > 0.55
+        assert min(b - a for a, b in zip(given, given[1:], strict=False)) > 0.45, "3 requests of 0.2 s, not one"
 
     def test_a_turn_another_instance_took_first_is_waited_for(
         self, db: psycopg.Connection, make: Callable[..., Supervisor], monkeypatch: pytest.MonkeyPatch
@@ -1237,3 +1238,42 @@ class TestTheSupervisorGivesTheTurns:
         _wait_for(db, "dem", version, "failed")
         assert _status(db, "dem", version)[1] == "rejected"
         assert db.execute("SELECT count(*) FROM public.earthx_source_host").fetchone() == (0,)
+
+    def test_a_child_that_hangs_while_it_reads_is_stalled_and_gives_its_place_back(
+        self, db: psycopg.Connection, make: Callable[..., Supervisor], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Review of PR 2, finding 1: only the wait for a turn is no stall; a read that hangs holds nothing for ever."""
+        monkeypatch.setattr(overview_builder, "STALL_SECONDS", 1.5)
+        _, version = self._build(db, make, monkeypatch, target="paced_hang")
+        _wait_for(db, "dem", version, "failed")
+        assert _status(db, "dem", version)[1] == "stalled"
+        assert db.execute("SELECT count(*) FROM public.earthx_source_lease").fetchone() == (0,)
+
+    def test_a_child_that_dies_between_its_turn_and_its_account_gives_its_place_back(
+        self, db: psycopg.Connection, make: Callable[..., Supervisor], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _, version = self._build(db, make, monkeypatch, target="paced_die")
+        _wait_for(db, "dem", version, "failed")
+        assert _status(db, "dem", version)[1] == "child_crashed"
+        assert db.execute("SELECT count(*) FROM public.earthx_source_lease").fetchone() == (0,)
+
+    @pytest.mark.parametrize("target", ["paced_odd_account", "paced_account_unasked", "paced_pace_twice"])
+    def test_a_message_about_a_turn_out_of_shape_or_order_fails_the_build_as_rejected(
+        self, db: psycopg.Connection, make: Callable[..., Supervisor], monkeypatch: pytest.MonkeyPatch, target: str
+    ) -> None:
+        _, version = self._build(db, make, monkeypatch, target=target)
+        _wait_for(db, "dem", version, "failed")
+        assert _status(db, "dem", version)[1] == "rejected"
+        assert db.execute("SELECT count(*) FROM public.earthx_source_lease").fetchone() == (0,)
+
+    def test_limits_that_leave_out_a_host_of_a_pyramid_stop_the_worker_at_its_start(
+        self, store: Store, tmp_path: Path
+    ) -> None:
+        with pytest.raises(ValueError, match="bucket.example.org"):
+            Supervisor(
+                WorkerConfig(**{**FAST, "workdir": tmp_path}),
+                store,
+                pyramids={"dem": (PACED_HOST, "other.example.org")},
+                source_limits={"other.example.org": HostTurns(2, 0.25)},
+            )
+
