@@ -76,6 +76,8 @@ def main() -> None:
                 self.send_response(404)
                 self.send_header("Content-Length", "0")
                 self.end_headers()
+                log.write(json.dumps({"conn": self.connection_id, "method": self.command, "url": self.path,
+                                      "status": 404, "t0": began, "t1": time.monotonic()}) + "\n")
                 return
             size = os.path.getsize(path)
             start, end, status = 0, size - 1, 200
