@@ -1699,7 +1699,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       // next product of a terrain step brings its own (Otto, 17.11.2026; adr/0035: hand before look).
       const colormap = get().rangeDraft.colormap;
       const spec = wantedPreview() ?? get().preview;
-      const own = spec ? drawnRange({ ...get(), rangeByHand: false, colormapHeld: null }, spec).colormap : null;
+      const own = spec ? drawnRange({ ...get(), range: DEFAULT_RANGE, rangeByHand: false, colormapHeld: null }, spec).colormap : null;
       const held = colormap === '' || colormap === own ? null : colormap;
       set({ range: held ? { ...DEFAULT_RANGE, colormap: held } : DEFAULT_RANGE, rangeByHand: false, rangeEdited: false, colormapHeld: held });
       refreshPreview();

@@ -102,7 +102,7 @@ import {
 import { imagesOf, satellitesOf, sectionsForView, type ViewImage } from './viewImages';
 import { viewDates } from './viewKind';
 import { layerOfView, sameRender } from './viewLayer';
-import { downloadIndexCrop, estimateIndexDownload, indexOfferedFor, type IndexNote } from './indexDownload';
+import { downloadIndexCrop, downloadsIndexOnly, estimateIndexDownload, indexOfferedFor, type IndexNote } from './indexDownload';
 import { indexBlockOf, indexNote, indexStatisticsUrl, viewIndexOf } from './viewIndex';
 import { canonicalJson } from './processing';
 import { areaQuestionOf, measureView, type ViewMeasure } from './viewMeasure';
@@ -851,7 +851,7 @@ function layerDraw(
   const index = viewIndexOf(render, collection);
   const groups = sectionsForView(s).flatMap((section) => section.groups);
   const block = index && layer.restore.datasetId ? indexBlockOf({ datasetId: layer.restore.datasetId, entries, groups, mosaics: s.mosaics, preset: index, mapZoom: Infinity }) : null;
-  if (index && block) return { problem: `${indexNote(block, index.name)}. Start a job in Processing for the whole scenes.` };
+  if (index && block) return { problem: `${indexNote(block, index.label)}. Start a job in Processing for the whole scenes.` };
   const fresh = overlaysOfEntries({ ...s, appliedRender: render }, entries, clip);
   if (fresh === null) return { need: passesOf(entries, groups).map((pass) => ({ datasetId: pass[0][1].datasetId, entries: pass, index })) };
   const current = s.layers.find((l) => l.id === layer.id) ?? layer;
@@ -948,7 +948,7 @@ function pinViewImages(set: SetState, get: GetState, which: 'shown' | 'all'): vo
     const preset = viewIndexOf(look, s.datasets.find((d) => d.id === image.datasetId)?.collection);
     const block = preset && indexBlockOf({ datasetId: image.datasetId, entries, groups: groupsOfView, mosaics: s.mosaics, preset, mapZoom: Infinity });
     if (preset && block) {
-      set({ error: `${indexNote(block, preset.name)}. Start a job in Processing for the whole scenes.` });
+      set({ error: `${indexNote(block, preset.label)}. Start a job in Processing for the whole scenes.` });
       return;
     }
   }
@@ -2638,7 +2638,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (layer.restore.indexOnly && indexOfferedFor(layer, s.datasets)) void get().setDownloadAs('index');
     // The bands to choose from are those of the layer's scenes (NM4-75); the layer of an index alone has none to choose.
     const bandsOf = layer.restore.datasetId;
-    if ((outcome === 'crop' || outcome === 'originals') && !layer.restore.indexOnly && bandsOf && layer.restore.itemIds.length > 0) {
+    if ((outcome === 'crop' || outcome === 'originals') && !downloadsIndexOnly(layer, s.datasets) && bandsOf && layer.restore.itemIds.length > 0) {
       set({ downloadBandsLoading: true });
       void loadDownloadBands(bandsOf, layer.restore.itemIds);
     }
@@ -3213,26 +3213,31 @@ export const useAppStore = create<AppState>((set, get) => ({
     const shown = shownImageOf(viewImagesOf(get()), get().shownImage);
     const preset = shown ? viewIndexOf({ index: get().pendingIndex }, get().datasets.find((d) => d.id === shown.datasetId)?.collection) : null;
     if (!shown || preset?.kind !== 'step' || get().pendingIndex !== name) return;
-    const look = await lookOfStepPreset(shown.datasetId, preset);
-    if (get().pendingIndex !== name) return;
-    if (!look) {
-      set({ notice: `${preset.label} cannot be drawn now: the description of the dataset did not come.` });
-      return;
-    }
-    let stats = null;
-    const measure = look.scale === 'fixed' ? null : viewMeasure(get());
-    if (measure) {
-      set({ focusLoading: true });
-      try {
-        stats = statsOfTiler((await measureView(measure)).statistics);
-      } catch (e) {
-        set({ notice: `Could not measure ${preset.label}: ${(e as Error).message}` });
-      } finally {
-        set({ focusLoading: false });
+    // Still the same preset on the same image: a click elsewhere meanwhile has its own say.
+    const still = () => get().pendingIndex === name && get().shownImage === s.shownImage && shownImageOf(viewImagesOf(get()), get().shownImage)?.key === shown.key;
+    // "Apply" waits (`focusLoading`) until the look and its range are in: a step is never drawn with a range made up.
+    set({ focusLoading: true });
+    try {
+      const look = await lookOfStepPreset(shown.datasetId, preset);
+      if (!still()) return;
+      if (!look) {
+        set({ notice: `${preset.label} cannot be drawn now: the description of the dataset did not come.` });
+        return;
       }
+      const measure = look.scale === 'fixed' ? null : viewMeasure(get());
+      let stats = null;
+      if (measure) {
+        try {
+          stats = statsOfTiler((await measureView(measure)).statistics);
+        } catch (e) {
+          set({ notice: `Could not measure ${preset.label}: ${(e as Error).message}` });
+        }
+      }
+      if (!still()) return;
+      set(pendingFieldsOf(lookOfPreset(preset, look, stats) ?? { index: preset.name, colormapName: look.colormap }));
+    } finally {
+      set({ focusLoading: false });
     }
-    if (get().pendingIndex !== name) return;
-    set(pendingFieldsOf(lookOfPreset(preset, look, stats) ?? { index: preset.name, colormapName: look.colormap }));
   },
   // Into the fields, drawn with "Apply" like an index (Otto, 3.11.2026, zu #282): every channel of a colour picture at the usual pair, each in
   // percentiles on its own (UI-03e); one band as the shared pair. A second click puts the fields back as they were, also without "Apply".
@@ -3356,7 +3361,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       // on its fixed range); the colormap in the fields stays.
       const { info } = firstSceneOfView(s);
       const preset = info ? viewIndexOf({ index: s.pendingIndex }, s.datasets.find((d) => d.id === info.datasetId)?.collection) : null;
-      const look = info && preset ? knownLookOf(info.datasetId, preset) : null;
+      const look = info && preset ? await lookOfStepPreset(info.datasetId, preset) : null;
       const drawn = look ? lookRange(look, statsOfTiler(stats)) : null;
       const range: [number, number] | null = drawn ? [Number(drawn.vmin), Number(drawn.vmax)] : autoRescale(stats);
       if (range && channels?.some((channel) => channel.percent)) {

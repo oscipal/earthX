@@ -12,6 +12,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { datasetsFrom } from '../datasets';
 import dem from '../fixtures/processes/cop-dem-glo-30.json';
 import { SENTINEL_2_PRESETS } from '../fixtures/indexPresets';
+import { downloadsIndexOnly } from '../indexDownload';
+import type { MapLayer } from '../layers';
 import { forgetPresetLooks } from '../presetLooks';
 import { colourView, useAppStore } from '../store';
 import type { Collection, DownloadedInfo, StacItem } from '../types';
@@ -195,6 +197,40 @@ describe('steps under "Quick processing"', () => {
     await press('Hillshade');
     expect(fields()).toMatchObject({ index: 'hillshade', colormap: '', vmin: '', vmax: '' });
     expect(useAppStore.getState().notice).toContain('Hillshade cannot be drawn now');
+    // "Apply" waits for a range: a step is never drawn with one made up.
+    const apply = container.querySelector<HTMLButtonElement>('.vc-apply')!;
+    expect(apply.getAttribute('aria-disabled')).toBe('true');
+    expect(apply.dataset.tip).toBe('The range of this step is being measured');
+  });
+
+  it('take the range of the look on "Auto-scale" also before a click fetched the description (an aspect stays 0 to 360)', async () => {
+    mount(heights, 'data');
+    act(() => useAppStore.setState({ pendingIndex: 'aspect', pendingColormapName: 'magma', pendingVmin: '5', pendingVmax: '9' }));
+    await act(async () => {
+      await useAppStore.getState().autoStretch();
+    });
+    expect(fields()).toMatchObject({ index: 'aspect', colormap: 'magma', vmin: '0', vmax: '360' });
+  });
+
+  it('keep the range of the image they were measured on: a measure that comes after a change of the preset is dropped', async () => {
+    mount(heights, 'data');
+    await act(async () => {
+      const pressing = useAppStore.getState().quickIndex('hillshade');
+      useAppStore.getState().chooseViewIndex('aspect');
+      await pressing;
+    });
+    expect(fields()).toMatchObject({ index: 'aspect' });
+  });
+});
+
+describe('the download of a pinned layer of a preset (until M5-14 PR B)', () => {
+  const layer = (index: string, datasetId: string) => ({ restore: { indexOnly: true, datasetId, appliedRender: { index } } }) as unknown as MapLayer;
+
+  it('is the index alone for an index, the bands of the scenes for a step or a composite', () => {
+    const datasets = datasetsFrom([optical, heights]);
+    expect(downloadsIndexOnly(layer('NDVI', 'optical'), datasets)).toBe(true);
+    expect(downloadsIndexOnly(layer('false_colour_ir', 'optical'), datasets)).toBe(false);
+    expect(downloadsIndexOnly(layer('hillshade', 'cop-dem-glo-30'), datasets)).toBe(false);
   });
 });
 

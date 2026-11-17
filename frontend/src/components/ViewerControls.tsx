@@ -43,6 +43,7 @@ import { useHistograms } from './useHistograms';
 const INDEX_ONLY_TIP = 'This layer holds the index only';
 const CLASS_COLOURS = 'Classes';
 const CLASS_COLOURS_TIP = 'Each class in the colour of the source; a class map has no range and no other colormap';
+const STEP_UNREADY = 'The range of this step is being measured';
 const ENHANCE_RGB_TIP = 'Put the 2nd to the 98th percentile of red, green and blue in the fields, each channel on its own; Apply draws them. Only the look: Add to layers pins the whole view.';
 
 // The histograms of the bands the statistics name, in their order; none where one band has none.
@@ -218,6 +219,8 @@ export default function ViewerControls() {
       {indexNote(indexBlock, index.label)}
     </p>
   );
+  // A step of "Quick processing" is drawn once its look and range are in (adr/0035), never with a range made up.
+  const stepUnready = chosen?.kind === 'step' && (pendingVmin.trim() === '' || pendingVmax.trim() === '' || pendingColormapName === '');
   // An index or a step is drawn with a colormap whatever the dataset's own picture is; a composite is a colour picture.
   const colormap = chosen ? !isComposite(chosen) : pendingBand || !shownDataset ? true : showsColormap(shownDataset.collection);
   // A layer of classes keeps the colours of its source: no range, no other colormap (M5-07 plan F4).
@@ -353,10 +356,10 @@ export default function ViewerControls() {
               <button
                 type="button"
                 className="btn vc-apply"
-                aria-disabled={!changed || undefined}
-                data-tip-level="advanced" data-tip={changed ? 'Draw the view with these values' : NOTHING_TO_APPLY}
+                aria-disabled={!changed || stepUnready || undefined}
+                data-tip-level="advanced" data-tip={stepUnready ? STEP_UNREADY : changed ? 'Draw the view with these values' : NOTHING_TO_APPLY}
                 onClick={() => {
-                  if (changed) applyRender();
+                  if (changed && !stepUnready) applyRender();
                 }}
               >
                 Apply
