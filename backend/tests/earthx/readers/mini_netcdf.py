@@ -12,6 +12,7 @@ or to cut an answer short.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -158,10 +159,18 @@ class Source:
     def gateway(self) -> Gateway:
         return Gateway(POLICY, transport=httpx.MockTransport(self.handler), resolve=from_memory)
 
-    def serve_readers(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Put this source behind the readers' gateway seam, as `mini_zarr.serve_store` does for a store."""
+    def serve_readers(self, monkeypatch: pytest.MonkeyPatch, *, delay_s: float = 0.0) -> None:
+        """Put this source behind the readers' gateway seam, as `mini_zarr.serve_store` does for a store.
+
+        ``delay_s`` lets every answer wait on the loop, so that requests sent together are in flight together.
+        """
+
+        async def answer(request: httpx.Request) -> httpx.Response:
+            if delay_s:
+                await asyncio.sleep(delay_s)
+            return self.handler(request)
 
         def open_gateway(policy: Policy, resolve: Callable[[str, int], tuple[str, ...]], slots=None) -> Gateway:
-            return Gateway(policy, transport=httpx.MockTransport(self.handler), resolve=resolve, slots=slots)
+            return Gateway(policy, transport=httpx.MockTransport(answer), resolve=resolve, slots=slots)
 
         monkeypatch.setattr("earthx.readers.zarr_reader.open_gateway", open_gateway)

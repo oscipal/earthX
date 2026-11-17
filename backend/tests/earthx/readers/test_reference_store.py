@@ -157,6 +157,44 @@ class TestRequests:
                 reader.input.values  # noqa: B018
         assert len(source.seen) == 1
 
+    def test_tiles_that_miss_together_wait_for_one_request(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Tiles of one view run on zarr's one loop and may miss the cache at once (MeteoSwiss: no repeated downloads)."""
+        from zarr.core.buffer import default_buffer_prototype
+
+        from earthx.readers.reference_store import ReferenceStore
+
+        _, source, refs = made(tmp_path)
+        source.serve_readers(monkeypatch, delay_s=0.05)
+        configure_chunk_cache(1024 * 1024)
+        store = ReferenceStore(parse_references(step_references(refs, 1), URL), POLICY, resolve=from_memory)
+
+        async def four() -> list[Any]:
+            return await asyncio.gather(*(store.get("TabsD/c/0/0/0", default_buffer_prototype()) for _ in range(4)))
+
+        buffers = asyncio.run(four())
+        assert len(source.seen) == 1
+        assert len({buffer.to_bytes() for buffer in buffers}) == 1
+
+    def test_a_failure_reaches_every_tile_that_waited(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        from zarr.core.buffer import default_buffer_prototype
+
+        from earthx.readers.reference_store import ReferenceStore
+
+        _, source, refs = made(tmp_path)
+        source.serve_readers(monkeypatch, delay_s=0.05)
+        configure_chunk_cache(1024 * 1024)
+        source.replace(b"replaced")
+        store = ReferenceStore(parse_references(step_references(refs, 1), URL), POLICY, resolve=from_memory)
+
+        async def two() -> list[Any]:
+            return await asyncio.gather(
+                *(store.get("TabsD/c/0/0/0", default_buffer_prototype()) for _ in range(2)), return_exceptions=True
+            )
+
+        results = asyncio.run(two())
+        assert all(isinstance(result, SourceChanged) for result in results)
+        assert len(source.seen) == 1
+
     def test_without_the_cache_every_reader_fetches(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Workers and the runner keep nothing between calls (KLAERUNGEN B9)."""
         _, source, refs = made(tmp_path)
@@ -248,6 +286,12 @@ class TestParse:
             ({"filters": ["zlib", "shuffle"]}, "order"),
             ({"fill_value": float("nan")}, "fill_value"),
             ({"fill_value": "x"}, "fill_value"),
+            ({"fill_value": 1e40}, "fill_value"),
+            ({"dtype": "<i2", "fill_value": -99999}, "fill_value"),
+            ({"dtype": "<i2", "fill_value": 1.5}, "fill_value"),
+            ({"variable": "x"}, "axes"),
+            ({"variable": "time"}, "axes"),
+            ({"fill_value": None, "chunks": [1, 12, 37]}, "leave chunks out"),
             ({"transform": [1000.0, 1.0, 0.0, 0.0, 1000.0, 0.0]}, "north-up"),
             ({"transform": [1000.0, 0.0, 0.0, 0.0, 1000.0]}, "transform"),
             ({"chunk_refs": [[[0, 2, 0], 0, 10]]}, "outside the grid"),
@@ -262,6 +306,12 @@ class TestParse:
     def test_a_broken_field(self, change: dict[str, Any], field: str) -> None:
         with pytest.raises(ReferencesInvalid, match=field):
             parse_references({**good(), **change}, URL)
+
+    def test_without_a_fill_value_every_chunk_of_the_row_is_named(self) -> None:
+        assert parse_references({**good(), "fill_value": None}, URL).fill_value is None
+
+    def test_an_integer_fill_value_at_the_edge_of_its_type(self) -> None:
+        assert parse_references({**good(), "dtype": "<i2", "fill_value": -32768}, URL).fill_value == -32768
 
     def test_not_an_object(self) -> None:
         with pytest.raises(ReferencesInvalid):

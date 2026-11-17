@@ -80,6 +80,8 @@ _MAX_CHUNK_REFS = 4096
 _MAX_GRID_SIDE = 100_000
 # One chunk must fit into one gateway answer (`Policy.max_response_bytes`).
 _MAX_CHUNK_BYTES = 8 * 1024 * 1024
+#: The names the store gives its axes; an array of the file may not take one of them.
+_AXES = frozenset({"time", "y", "x"})
 _DTYPE = re.compile(r"[<>](?:f[48]|[iu][248])|\|[iu]1")
 _ETAG = re.compile(r'"[^"\s]{1,254}"')
 # zarr says it once per codec it builds; the numcodecs codecs are exactly what an HDF5 chunk needs.
@@ -152,8 +154,8 @@ def parse_references(raw: Any, href: str) -> References:
     if not isinstance(etag, str) or not _ETAG.fullmatch(etag):
         raise ReferencesInvalid(f"{REFS_KEY}.etag is not a strong ETag")
     variable = raw["variable"]
-    if not isinstance(variable, str) or not variable or "/" in variable or len(variable) > 128:
-        raise ReferencesInvalid(f"{REFS_KEY}.variable is not the name of an array")
+    if not isinstance(variable, str) or not variable or "/" in variable or len(variable) > 128 or variable in _AXES:
+        raise ReferencesInvalid(f"{REFS_KEY}.variable is not the name of an array beside the axes {sorted(_AXES)}")
     dtype = raw["dtype"]
     if not isinstance(dtype, str) or not _DTYPE.fullmatch(dtype):
         raise ReferencesInvalid(f"{REFS_KEY}.dtype is not a numeric type with its byte order")
@@ -168,9 +170,13 @@ def parse_references(raw: Any, href: str) -> References:
     if filters and filters != [name for name in FILTERS if name in filters]:
         raise ReferencesInvalid(f"{REFS_KEY}.filters are not in the order HDF5 applies them")
     fill_value = raw["fill_value"]
-    if fill_value is not None and (not _is_number(fill_value) or not math.isfinite(fill_value)):
-        raise ReferencesInvalid(f"{REFS_KEY}.fill_value is not a finite number")
+    if fill_value is not None and not _fits(fill_value, numpy.dtype(dtype)):
+        raise ReferencesInvalid(f"{REFS_KEY}.fill_value is not a finite number its type holds")
     transform = _transform(raw["transform"])
+    chunk_refs = _chunk_refs(raw["chunk_refs"], shape, chunks)
+    if fill_value is None and len(chunk_refs) != _chunks_in_row(shape, chunks):
+        # A chunk HDF5 never wrote reads as the file's own fill value, which a reader without one would show as 0.
+        raise ReferencesInvalid(f"{REFS_KEY}.chunk_refs leave chunks out, and no fill_value says what they hold")
     return References(
         href=href,
         etag=etag,
@@ -182,7 +188,7 @@ def parse_references(raw: Any, href: str) -> References:
         filters=tuple(filters),
         fill_value=fill_value,
         transform=transform,
-        chunk_refs=_chunk_refs(raw["chunk_refs"], shape, chunks),
+        chunk_refs=chunk_refs,
     )
 
 
@@ -192,6 +198,20 @@ def _is_int(value: Any) -> bool:
 
 def _is_number(value: Any) -> bool:
     return isinstance(value, int | float) and not isinstance(value, bool)
+
+
+def _fits(value: Any, dtype: numpy.dtype) -> bool:
+    """``value`` is a finite number that ``dtype`` holds exactly as a whole number, or without overflow as a float."""
+    if not _is_number(value) or not math.isfinite(value):
+        return False
+    if dtype.kind == "f":
+        return bool(numpy.isfinite(dtype.type(value)))
+    limits = numpy.iinfo(dtype)
+    return float(value).is_integer() and limits.min <= value <= limits.max
+
+
+def _chunks_in_row(shape: tuple[int, int], chunks: tuple[int, int, int]) -> int:
+    return -(-shape[0] // chunks[1]) * -(-shape[1] // chunks[2])
 
 
 def _ints(value: Any, length: int, name: str, *, upper: int) -> Any:
@@ -228,7 +248,7 @@ def _chunk_refs(value: Any, shape: tuple[int, int], chunks: tuple[int, int, int]
             raise ReferencesInvalid(f"{REFS_KEY}.chunk_refs names one chunk twice")
         seen.add(key)
         refs.append(ChunkRef(index=key, offset=offset, length=length))
-    # Empty is allowed: a time step HDF5 never wrote a chunk of reads as its fill value, as it would from the file.
+    # Fewer than all chunks is allowed: a chunk HDF5 never wrote reads as the fill value (checked by the caller).
     return tuple(refs)
 
 
@@ -267,6 +287,10 @@ class _ChunkCache:
 
 
 _CACHE = _ChunkCache()
+# Requests on their way, by event loop and cache key: tiles of one view that miss the cache together wait for one
+# request instead of sending one each (only where the cache is on).
+_IN_FLIGHT_LOCK = threading.Lock()
+_IN_FLIGHT: dict[tuple[asyncio.AbstractEventLoop, tuple[str, str, int, int]], asyncio.Future[bytes]] = {}
 
 
 def configure_chunk_cache(max_bytes: int) -> None:
@@ -335,10 +359,44 @@ class ReferenceStore(Store):
         return prototype.buffer.from_bytes(await self._fetch(ref))
 
     async def _fetch(self, ref: ChunkRef) -> bytes:
+        """The chunk from the cache, from a request already on its way, or from the source.
+
+        A cached chunk is the bytes the item names: it is keyed by the ETag of the references, so it can only be what
+        a read with ``If-Match`` would have returned when it was fetched.
+        """
         cache_key = (self._refs.href, self._refs.etag, ref.offset, ref.length)
         cached = _CACHE.get(cache_key)
         if cached is not None:
             return cached
+        if _CACHE.max_bytes == 0:
+            return await self._request(ref)
+        flight = (asyncio.get_running_loop(), cache_key)
+        with _IN_FLIGHT_LOCK:
+            pending = _IN_FLIGHT.get(flight)
+            if pending is None:
+                future: asyncio.Future[bytes] = flight[0].create_future()
+                # Marked as seen, so that a failure nobody else waited for is not reported as never retrieved.
+                future.add_done_callback(lambda done: done.cancelled() or done.exception())
+                _IN_FLIGHT[flight] = future
+        if pending is not None:
+            return await asyncio.shield(pending)
+        try:
+            content = await self._request(ref)
+        except asyncio.CancelledError:
+            future.cancel()
+            raise
+        except BaseException as error:
+            future.set_exception(error)
+            raise
+        else:
+            _CACHE.put(cache_key, content)
+            future.set_result(content)
+            return content
+        finally:
+            with _IN_FLIGHT_LOCK:
+                _IN_FLIGHT.pop(flight, None)
+
+    async def _request(self, ref: ChunkRef) -> bytes:
         # Imported here: `zarr_reader` imports this module for the store, and the shared client lives there.
         from earthx.readers.zarr_reader import shared_gateway
 
@@ -357,7 +415,6 @@ class ReferenceStore(Store):
                 f"the source answered a chunk with status {response.status_code} and {len(content)} bytes, "
                 f"not 206 and {ref.length}"
             )
-        _CACHE.put(cache_key, content)
         return content
 
     async def get_partial_values(
