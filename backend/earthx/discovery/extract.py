@@ -220,9 +220,15 @@ def bbox_of(value: object) -> tuple[float, float, float, float] | None:
     """West, south, east, north in degrees if ``value`` is such a box (east below west crosses the antimeridian)."""
     if not isinstance(value, (list, tuple)) or len(value) != 4:
         return None
-    if not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in value):
+    if not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in value):
         return None
-    west, south, east, north = (float(v) for v in value)
+    try:
+        west, south, east, north = (float(v) for v in value)
+    except OverflowError:
+        # An integer of a foreign answer too large for a float.
+        return None
+    if not all(math.isfinite(v) for v in (west, south, east, north)):
+        return None
     if not (-180 <= west <= 180 and -180 <= east <= 180 and -90 <= south <= north <= 90):
         return None
     return west, south, east, north
@@ -301,7 +307,7 @@ def _clean_geometry(value: object, points: list[tuple[float, float]], depth: int
     """Only the type and the checked coordinates of a geometry (or of a feature's), nothing else the source wrote."""
     if isinstance(value, dict) and value.get("type") == "Feature" and not depth:
         value = value.get("geometry")
-    if not isinstance(value, dict) or value.get("type") not in _GEOMETRY_TYPES:
+    if not isinstance(value, dict) or not isinstance(value.get("type"), str) or value["type"] not in _GEOMETRY_TYPES:
         raise ValueError("no geometry")
     if value["type"] == "GeometryCollection":
         members = value.get("geometries")

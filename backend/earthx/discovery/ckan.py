@@ -1,10 +1,12 @@
 """Fetch and extract for CKAN (M5-19 plan §4.2, §5): the packages of ``package_search``, one find per package.
 
-The listing is read in pages of :data:`PAGE_ROWS` packages sorted by id, with ``start`` as the offset. CKAN answers
-without ``ETag`` (adr/0025 §3), so nothing is asked conditionally: the hash of each package decides. An incremental
-run asks only for packages whose ``metadata_modified`` lies after the start of the last done run less an hour, as
-ckanext-harvest does (adr/0025 §3a); a full one asks for all. Only a full listing that held still while it was read
-can mark a find ``gone`` (A3): an offset paging over a listing that grows or shrinks meanwhile can skip a package.
+The listing is read in pages of :data:`PAGE_ROWS` packages sorted by id, with ``start`` as the offset; each page starts
+with the last package of the one before. CKAN answers without ``ETag`` (adr/0025 §3), so nothing is asked
+conditionally: the hash of each package decides. An incremental run asks only for packages whose
+``metadata_modified`` lies after the start of the last done run less an hour, as ckanext-harvest does (adr/0025
+§3a); a full one asks for all. Packages that come or go while the listing is read shift the offsets, and one can be
+skipped: a page that does not hold the last package of the one before, or a count that changes, marks the listing as
+moved (A8). Only a full listing that held still and named at least one package can mark finds ``gone`` (A3).
 
 Which field names the publisher is a setting of the source (``publisher_field``, adr/0025 §5.2). Texts given per
 language (opendata.swiss [S]) are read in the order of :func:`~earthx.discovery.extract.localized` (plan A7).
@@ -71,8 +73,10 @@ class CkanListing:
     complete: bool = False
     #: CKAN has no validators of its listing (adr/0025 §3).
     validators: None = None
-    #: The count of matching packages changed while the listing was read: a package may have been skipped.
+    #: The listing shifted while it was read (count changed, or a page lost its overlap): a package may be skipped.
     moved: bool = False
+    #: The listing named no package at all; a full one of them is no evidence that every find is gone.
+    empty: bool = False
 
 
 def package_key(package: object) -> str | None:
@@ -99,8 +103,12 @@ async def ckan_pages(
     fetch: Fetch, source: SourceConfig, since: datetime | None, listing: CkanListing
 ) -> AsyncIterator[list[tuple[str | None, Any]]]:
     """The packages of each page as ``(key, package)``; a key ``None`` marks one that cannot be a find. ``since`` is the
-    lower bound of ``metadata_modified`` of an incremental listing (aware, asked in UTC), ``None`` for a full one."""
-    start, total, returned = 0, None, 0
+    lower bound of ``metadata_modified`` of an incremental listing (aware, asked in UTC), ``None`` for a full one.
+
+    :class:`ShapeError` where the source answers no listing, or a page of several packages names none that is new: it
+    does not page (``start`` ignored) and would run until the budget is spent."""
+    start, total, last_key, read = 0, None, None, 0
+    keys: set[str] = set()
     while True:
         response = await fetch(f"{source.endpoint}/package_search", params=_search_params(source, start, since))
         if response.status_code != 200:
@@ -118,14 +126,25 @@ async def ckan_pages(
             total = count
         elif count != total:
             listing.moved = True
-        returned += len(packages)
-        yield [(package_key(package), package) for package in packages]
-        start += len(packages)
-        if not packages or start >= count:
+        page = [(package_key(package), package) for package in packages]
+        if last_key is not None and (not page or page[0][0] != last_key):
+            listing.moved = True
+        read += len(page) - (1 if last_key is not None and page and page[0][0] == last_key else 0)
+        new = {key for key, _ in page if key is not None} - keys
+        if len(page) > 1 and not new:
+            raise ShapeError("a page of the listing names no new package")
+        keys |= new
+        yield page
+        end = start + len(page)
+        if not page or end >= count:
             break
-    if returned != total:
+        # The next page starts with the last package of this one, so that a shift of the listing shows.
+        last_key = page[-1][0] if len(page) > 1 else None
+        start = end - 1 if last_key is not None else end
+    if read != total:
         listing.moved = True
-    listing.complete = listing.full and not listing.moved
+    listing.empty = total == 0
+    listing.complete = listing.full and not listing.moved and not listing.empty
 
 
 def _extras(package: Mapping[str, Any]) -> dict[str, Any]:
@@ -255,7 +274,9 @@ def _resource(resource: Mapping[str, Any]) -> _Resource:
     format_ = text_of(resource.get("format"))
     media = text_of(resource.get("mimetype")) or text_of(resource.get("media_type"))
     download = text_of(resource.get("download_url"))
-    access = text_of(resource.get("access_url")) or text_of(resource.get("url"))
+    addresses = [a for a in (text_of(resource.get("access_url")), text_of(resource.get("url"))) if a is not None]
+    # The first address that may be a link: an `http` access_url must not hide an `https` url.
+    access = next((a for a in addresses if checked_link(a) is not None), addresses[0] if addresses else None)
     title = localized(resource.get("name")) or localized(resource.get("title"))
     kind_label = text_of(resource.get("resource_type"))
     href = checked_link(download) or checked_link(access)
@@ -285,6 +306,15 @@ def _viewer_pages(resources: Iterable[_Resource]) -> list[str | None]:
     ]
 
 
+def _page_or_none(url: object) -> object:
+    """``url`` unless it is a capabilities address or names a file by its ending (plan §6: never a service or a file)."""
+    if not isinstance(url, str) or _SERVICE_QUERY.search(url):
+        return None
+    name = url.split("#")[0].split("?")[0].rstrip("/").rsplit("/", 1)[-1]
+    ending = name.rsplit(".", 1)[-1] if "." in name else ""
+    return None if resource_kind(ending, None) in FILE_KINDS | {"service"} else url
+
+
 def extract_package(key: str, package: Mapping[str, Any], source: SourceConfig) -> Extracted:
     """The intermediate form of one package, or :class:`Invalid` with its reason."""
     assert isinstance(source.filter, CkanFilter)
@@ -303,7 +333,7 @@ def extract_package(key: str, package: Mapping[str, Any], source: SourceConfig) 
     )
     candidates = [
         *((LinkRank.VIEWER_OR_DOWNLOAD_PAGE, url) for url in _viewer_pages(resources)),
-        (LinkRank.DATASET_PAGE, package.get("url")),
+        (LinkRank.DATASET_PAGE, _page_or_none(package.get("url"))),
         (LinkRank.CATALOGUE_PAGE, catalog_page),
     ]
     chosen = choose_link(candidates)

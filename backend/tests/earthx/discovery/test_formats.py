@@ -11,6 +11,7 @@ import pytest
 
 from earthx.discovery.extract import (
     MAX_GEOMETRY_BYTES,
+    bbox_of,
     data_kind_of,
     geometry_of,
     kind_of,
@@ -169,6 +170,8 @@ def test_a_large_geometry_keeps_only_its_box() -> None:
         {"type": "Point", "coordinates": [7.0, 95.0]},
         {"type": "Point", "coordinates": [float("nan"), 47.0]},
         {"type": "Point", "coordinates": [True, 47.0]},
+        {"type": "Point", "coordinates": [10**400, 47.0]},
+        {"type": ["Point"], "coordinates": [7.0, 47.0]},
         {"type": "Point", "coordinates": ["7", "47"]},
         {"type": "Point", "coordinates": [7.0]},
         {"type": "Polygon", "coordinates": [[[[[[6.0, 47.0]]]]]]},
@@ -181,3 +184,12 @@ def test_a_large_geometry_keeps_only_its_box() -> None:
 )
 def test_no_geometry(value: object) -> None:
     assert geometry_of(value) is None
+
+
+@pytest.mark.parametrize(
+    "box",
+    [[10**400, 0, 1, 1], [0, 0, float("inf"), 1], [0, 1, 1, 0], [0, 0, 1], [0, 0, 1, True], "0,0,1,1"],
+)
+def test_no_box(box: object) -> None:
+    # A STAC extent and every position of a geometry go through here; a huge integer must not end the run.
+    assert bbox_of(box) is None

@@ -78,6 +78,10 @@ class _BudgetSpent(Exception):
     pass
 
 
+class _ListingMoved(Exception):
+    """An incremental listing shifted while it was read: the run must not count as the last one."""
+
+
 class _LeaseLost(Exception):
     """Another run closed this one after its term ran out; it writes nothing more."""
 
@@ -105,8 +109,9 @@ class HarvestResult:
     summary: SourceSummary
     #: Finds without a usable id: counted, never stored, since they have no key.
     without_key: int = 0
-    #: Why a run that ended ``done`` did not look for finds that are gone: ``incremental``, or ``listing_moved``
-    #: where a CKAN listing changed its count while it was read (a package may have been skipped).
+    #: Why a run that ended ``done`` did not look for finds that are gone: ``incremental``; ``listing_moved`` where a
+    #: full CKAN listing shifted while it was read (a package may have been skipped); ``listing_empty`` where it named
+    #: no package at all (a rebuilt index, a filter that no longer matches), which is no evidence that all are gone.
     gone_unchecked: str | None = None
 
 
@@ -162,7 +167,7 @@ def _record(
             raise Invalid("shape")
         try:
             found = _EXTRACTORS[run.source.protocol](key, document, run.source)
-        except (TypeError, ValueError, AttributeError, KeyError, IndexError):
+        except (TypeError, ValueError, AttributeError, KeyError, IndexError, ArithmeticError, RecursionError):
             # One find of a foreign shape must not end the run for every other one (review of PR 1).
             raise Invalid("shape") from None
         extracted, digest, extent = found.to_document(), extracted_sha256(found), found.extent_known
@@ -245,8 +250,19 @@ async def _fetch_and_extract(run: _Run, fetch: _Fetcher) -> None:
         run.counts.gone = mark_gone(conn, run_id=run.run_id, source_id=source.source_id)
         if listing.validators is not None:
             save_list_validators(conn, source.source_id, listing.validators)
-    elif isinstance(listing, CkanListing):
-        run.gone_unchecked = "listing_moved" if listing.full else "incremental"
+        return
+    if not isinstance(listing, CkanListing):
+        return
+    if not listing.full:
+        if listing.moved:
+            # A package may be skipped; the next run must ask from the run before this one (A8).
+            raise _ListingMoved
+        # Finds the listing did not name are judged again if an older extractor judged them, from their kept raw
+        # answers; a full run sees them all anyway.
+        _reextract(run, outdated_only=True)
+        run.gone_unchecked = "incremental"
+    else:
+        run.gone_unchecked = "listing_moved" if listing.moved else "listing_empty"
 
 
 def _reextract(run: _Run, *, outdated_only: bool) -> int:
@@ -321,6 +337,8 @@ async def run_harvest(
         status, stop_reason = "failed", "shape"
     except _BudgetSpent:
         status, stop_reason = "interrupted", "request_budget"
+    except _ListingMoved:
+        status, stop_reason = "interrupted", "listing_moved"
     except _LeaseLost:
         # The row is closed already, as `interrupted` with `lease_expired`; finish_run leaves it so.
         status, stop_reason = "interrupted", "lease_expired"
@@ -365,6 +383,7 @@ _STOP_TEXT = {
     "shape": "Antwort der Quelle nicht lesbar",
     "upstream": "Quelle antwortet mit Fehler oder nicht",
     "lease_expired": "Frist abgelaufen, ein anderer Lauf hat die Quelle übernommen",
+    "listing_moved": "Liste hat sich während des Laufs geändert; der nächste Lauf fragt ab dem Lauf davor",
 }
 
 
@@ -373,6 +392,7 @@ _KIND_TEXT = {"full": "voll", "incremental": "inkrementell", "reextract": "neu a
 _GONE_TEXT = {
     "incremental": "weg nicht geprüft (inkrementell)",
     "listing_moved": "weg nicht geprüft (Liste hat sich während des Laufs geändert)",
+    "listing_empty": "weg nicht geprüft (Liste leer)",
 }
 
 

@@ -184,7 +184,16 @@ def test_without_a_spatial_statement_the_find_stays_with_extent_unknown() -> Non
 
 @pytest.mark.parametrize(
     "spatial",
-    ['{"type": "Polygon", "coordinates": [[[500, 0]]]}', "{broken", '{"type": "Point"}', "   ", ""],
+    [
+        '{"type": "Polygon", "coordinates": [[[500, 0]]]}',
+        '{"type": "Point", "coordinates": [1' + "0" * 400 + ', 1]}',
+        '{"type": ["Point"], "coordinates": [7, 47]}',
+        '{"type": {"a": 1}, "coordinates": [7, 47]}',
+        "{broken",
+        '{"type": "Point"}',
+        "   ",
+        "",
+    ],
 )
 def test_a_broken_geometry_is_no_extent(spatial: str) -> None:
     package = _with(PACKAGE, extras=[{"key": "spatial", "value": spatial}])
@@ -259,6 +268,24 @@ SERVICE = {"url": "https://geodaten.example.org/wms", "format": "WMS", "name": "
         (
             _resources(url="javascript:alert(1)"),
             ("https://portal.example.org/dataset/example-dgm1", LinkRank.CATALOGUE_PAGE),
+        ),
+        # The page field of the package is no page when it names a file or a service.
+        (
+            _resources(url="https://geodaten.example.org/daten/dgm1.zip"),
+            ("https://portal.example.org/dataset/example-dgm1", LinkRank.CATALOGUE_PAGE),
+        ),
+        (
+            _resources(url="https://geodaten.example.org/wms?SERVICE=WMS&REQUEST=GetCapabilities"),
+            ("https://portal.example.org/dataset/example-dgm1", LinkRank.CATALOGUE_PAGE),
+        ),
+        (
+            _resources(url="https://geodaten.example.org/daten/dgm1.html"),
+            ("https://geodaten.example.org/daten/dgm1.html", LinkRank.DATASET_PAGE),
+        ),
+        # An `http` access_url does not hide an `https` url of the same resource.
+        (
+            _resources({**VIEWER, "access_url": "http://geodaten.example.org/viewer/dgm1"}),
+            ("https://geodaten.example.org/viewer/dgm1", LinkRank.VIEWER_OR_DOWNLOAD_PAGE),
         ),
     ],
 )

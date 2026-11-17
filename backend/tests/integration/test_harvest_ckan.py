@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import re
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -61,6 +61,9 @@ class Catalogue:
         self.asked: list[httpx.QueryParams] = []
         self.count_shift = 0
         self.answer: Any = None
+        #: Called after each page is served, to change the catalogue while it is read.
+        self.after_page: Callable[[int], None] | None = None
+        self.ignore_start = False
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         if request.url.path == "/robots.txt":
@@ -73,10 +76,12 @@ class Catalogue:
         matching = sorted(
             self.changed if incremental else self.packages, key=lambda p: str(p.get("id") if isinstance(p, dict) else p)
         )
-        start = int(request.url.params["start"])
+        start = 0 if self.ignore_start else int(request.url.params["start"])
         rows = min(int(request.url.params["rows"]), self.size)
         count = len(matching) + (self.count_shift if start else 0)
         body = {"success": True, "result": {"count": count, "results": matching[start : start + rows]}}
+        if self.after_page is not None:
+            self.after_page(len(self.asked))
         return httpx.Response(200, content=json.dumps(body))
 
 
@@ -143,9 +148,10 @@ async def test_a_first_run_reads_the_whole_listing_page_by_page(db: psycopg.Conn
     catalogue = Catalogue(THREE)
     result = await run_harvest(db, source, gateway=_gateway(catalogue))
     assert (result.kind, result.status, result.gone_unchecked) == ("full", "done", None)
+    # Each page starts with the last package of the one before, so that a shift of the listing shows (A8).
     assert [(p["start"], p["rows"], p["sort"], p.get("fq")) for p in catalogue.asked] == [
         ("0", "100", "id asc", None),
-        ("2", "100", "id asc", None),
+        ("1", "100", "id asc", None),
     ]
     c = result.counts
     assert (c.requests, c.found_new, c.invalid, c.extent_unknown) == (2, 3, 1, 1)
@@ -279,15 +285,75 @@ async def test_a_package_of_foreign_shape_does_not_end_the_run(db: psycopg.Conne
     assert _states(db, source) == {"1": ("extracted", None, False), "2": ("invalid", "no_title", None)}
 
 
+def _since(catalogue: Catalogue) -> datetime:
+    match = _SINCE.fullmatch(catalogue.asked[0]["fq"])
+    assert match is not None
+    return datetime.strptime(match[1], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+
+
+def _started(db: psycopg.Connection, run_id: int) -> datetime:
+    started = db.execute("SELECT started_at FROM public.earthx_harvest_run WHERE run_id = %s", (run_id,)).fetchone()[0]
+    return (started - timedelta(hours=1)).astimezone(UTC).replace(microsecond=0)
+
+
 async def test_a_reextract_asks_nothing_and_finds_no_change(db: psycopg.Connection, source: SourceConfig) -> None:
-    await run_harvest(db, source, gateway=_gateway(Catalogue(THREE)))
+    first = await run_harvest(db, source, gateway=_gateway(Catalogue(THREE)))
     result = await run_harvest(db, source, gateway=None, reextract=True)
     c = result.counts
     assert (result.kind, c.requests, c.found_changed, c.found_unchanged) == ("reextract", 0, 0, 3)
     # A re-extract asks the source nothing, so it is no last run for the next incremental one.
     catalogue = Catalogue(THREE)
     nxt = await run_harvest(db, source, gateway=_gateway(catalogue))
-    assert nxt.kind == "incremental"
+    assert nxt.kind == "incremental" and _since(catalogue) == _started(db, first.run_id)
+
+
+async def test_an_incremental_listing_that_moves_does_not_count_as_the_last_run(
+    db: psycopg.Connection, source: SourceConfig
+) -> None:
+    first = await run_harvest(db, source, gateway=_gateway(Catalogue(THREE)))
+    moving = Catalogue([], size=1)
+    moving.changed = THREE[:2]
+    moving.count_shift = 1
+    result = await run_harvest(db, source, gateway=_gateway(moving))
+    assert (result.kind, result.status, result.stop_reason) == ("incremental", "interrupted", "listing_moved")
+    assert "der nächste Lauf fragt ab dem Lauf davor" in report(source.source_id, result)
+    catalogue = Catalogue([])
+    await run_harvest(db, source, gateway=_gateway(catalogue))
+    assert _since(catalogue) == _started(db, first.run_id)
+
+
+async def test_a_package_skipped_by_a_shift_under_the_same_count_is_noticed(
+    db: psycopg.Connection, source: SourceConfig
+) -> None:
+    # While the first page is read, a package before the offset goes and one after it comes: the count stays, but the
+    # second page no longer starts with the last package of the first, so nothing is marked gone.
+    four = [_package(str(i)) for i in range(1, 5)]
+    await run_harvest(db, source, gateway=_gateway(Catalogue(four)))
+    catalogue = Catalogue(four)
+
+    def shift(pages: int) -> None:
+        if pages == 1:
+            catalogue.packages = [four[1], four[2], four[3], _package("9")]
+
+    catalogue.after_page = shift
+    result = await run_harvest(db, source, full=True, gateway=_gateway(catalogue))
+    assert (result.status, result.counts.gone, result.gone_unchecked) == ("done", 0, "listing_moved")
+
+
+async def test_an_empty_full_listing_marks_nothing_gone(db: psycopg.Connection, source: SourceConfig) -> None:
+    # A rebuilt index or a filter that no longer matches is no evidence that every find is gone.
+    await run_harvest(db, source, gateway=_gateway(Catalogue(THREE)))
+    result = await run_harvest(db, source, full=True, gateway=_gateway(Catalogue([])))
+    assert (result.status, result.counts.gone, result.gone_unchecked) == ("done", 0, "listing_empty")
+    assert "weg nicht geprüft (Liste leer)" in report(source.source_id, result)
+    assert _states(db, source)["1"] == ("extracted", None, False)
+
+
+async def test_a_catalogue_that_ignores_the_offset_fails_the_run(db: psycopg.Connection, source: SourceConfig) -> None:
+    catalogue = Catalogue([_package(str(i)) for i in range(1, 8)], size=3)
+    catalogue.ignore_start = True
+    result = await run_harvest(db, source, gateway=_gateway(catalogue))
+    assert (result.status, result.stop_reason, result.counts.requests) == ("failed", "shape", 2)
 
 
 async def test_the_publisher_field_of_the_source_is_part_of_the_version(
@@ -295,8 +361,10 @@ async def test_the_publisher_field_of_the_source_is_part_of_the_version(
 ) -> None:
     await run_harvest(db, source, gateway=_gateway(Catalogue(THREE)))
     by_organization = replace(source, filter=CkanFilter(None, "organization"))
-    catalogue = Catalogue([])
-    catalogue.changed = THREE
-    result = await run_harvest(db, by_organization, gateway=_gateway(catalogue))
-    # Same raw answers, other publisher field: all are judged again; only the one with a publisher changes.
-    assert (result.counts.found_changed, result.counts.found_unchanged) == (1, 2)
+    # An incremental run that names no package still judges the kept finds again from their raw answers: only the one
+    # with a publisher changes.
+    result = await run_harvest(db, by_organization, gateway=_gateway(Catalogue([])))
+    assert result.kind == "incremental"
+    assert (result.counts.requests, result.counts.found_changed, result.counts.found_unchanged) == (1, 1, 2)
+    again = await run_harvest(db, by_organization, gateway=_gateway(Catalogue([])))
+    assert (again.counts.found_changed, again.counts.found_unchanged) == (0, 0)
