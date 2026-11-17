@@ -91,6 +91,8 @@ SHIPPED_TABLES = (
     "public.earthx_region_part",
     "public.earthx_region",
     "public.earthx_listed_entry",
+    "public.earthx_source_host",
+    "public.earthx_source_lease",
 )
 
 

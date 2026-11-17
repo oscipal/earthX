@@ -77,6 +77,7 @@ from earthx.catalog.registry import (
     OverviewMode,
     UnknownDatasetError,
 )
+from earthx.discovery.source_gateway import open_source_gateway
 from earthx.gateway import Gateway, GatewayError, Policy, host_of, user_agent_from_env
 from earthx.logging import configure_logging
 
@@ -184,8 +185,8 @@ def _policy_for(config: DatasetConfig, hosts: Mapping[str, HostLimit]) -> Policy
     builds for a whole registry, narrowed here to the one dataset this run touches.
 
     Caps and spacing per host come from the registry's hosts.yaml (M5-36): the FSDI pages about a thousand searches
-    for swissALTI3D one second apart, about 17 minutes a run (M5-08 plan §4.2); the buckets keep no spacing. One run
-    takes a host's whole cap; sharing it between runs is M5-37.
+    for swissALTI3D one second apart, about 17 minutes a run (M5-08 plan §4.2); the buckets keep no spacing. All runs
+    of all instances share them through Postgres (M5-37, :mod:`earthx.discovery.source_gateway`).
     """
     allowed = frozenset({host_of(config.source.endpoint), *config.source.asset_hosts})
     limits = {host: limit for host, limit in hosts.items() if host in allowed}
@@ -198,7 +199,7 @@ def _policy_for(config: DatasetConfig, hosts: Mapping[str, HostLimit]) -> Policy
 
 async def _main_async(config: DatasetConfig, hosts: Mapping[str, HostLimit], *, force: bool) -> MaterializeResult:
     with psycopg.connect(autocommit=False) as conn:
-        async with Gateway(_policy_for(config, hosts)) as gateway:
+        async with open_source_gateway(_policy_for(config, hosts)) as gateway:
             result = await run_materialize(conn, config, gateway=gateway, force=force)
         conn.commit()
     return result
