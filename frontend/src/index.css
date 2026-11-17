@@ -851,15 +851,32 @@ svg.lucide.icon-lead {
   min-width: 0;
   accent-color: var(--accent);
 }
-.inspector .vc-param-value {
-  min-width: 3.5em;
-  text-align: right;
+/* The number beside a dial or a slider, typed with the keys (Otto, 17.11.2026): narrow, of one width in every row, so nothing moves. */
+.inspector .vc-param-number {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-0);
+  width: 4.5em;
   font-variant-numeric: tabular-nums;
+}
+.inspector .vc-param-number input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  height: var(--control-height-sm);
+  padding: 0 var(--space-1);
+  border: var(--line-width) solid var(--line);
+  border-radius: var(--radius-xs);
+  background: var(--input-bg);
+  color: var(--text);
+  font: inherit;
+  text-align: right;
 }
 /* The dial of an angle from north: its face, a tick at north, the hand to the angle; all in the colours of the theme. */
 .angle-dial {
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--space-2);
   grid-column: 2 / 4;
 }

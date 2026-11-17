@@ -30,3 +30,14 @@ export function angleAfterKey(angle: number, key: string, shift: boolean): numbe
   return by === null ? null : (((Math.round(angle) + by) % 360) + 360) % 360;
 }
 
+
+// A number typed for a parameter, as the parameter takes it (Otto, 17.11.2026): whole degrees within its bounds, a value outside them at the
+// nearer bound; an angle of a full circle (the dial) takes 360 as 0. `null` for a text that is no number.
+export function paramNumberOf(field: Field, text: string): number | null {
+  const typed = Number(text.trim().replace(',', '.'));
+  if (text.trim() === '' || !Number.isFinite(typed)) return null;
+  const low = field.minimum ?? field.exclusiveMinimum ?? -Infinity;
+  const high = field.maximum ?? field.exclusiveMaximum ?? Infinity;
+  const kept = Math.round(Math.min(high, Math.max(low, typed)));
+  return controlOf(field) === 'dial' ? ((kept % 360) + 360) % 360 : kept;
+}

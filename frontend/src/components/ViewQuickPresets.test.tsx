@@ -229,6 +229,12 @@ describe('the parameters of a step under "Quick processing" (Otto, 17.11.2026)',
   const dial = () => container.querySelector<SVGElement>('.angle-dial-face');
   const slider = () => container.querySelector<HTMLInputElement>('.vc-param input[type="range"]');
   const segments = () => [...container.querySelectorAll<HTMLButtonElement>('.vc-param-choices button')];
+  const numbers = () => [...container.querySelectorAll<HTMLInputElement>('.vc-param-number input')];
+  const type = (input: HTMLInputElement, text: string) =>
+    act(() => {
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!.call(input, text);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
   const key = (element: Element, name: string, shiftKey = false) =>
     act(() => {
       element.dispatchEvent(new KeyboardEvent('keydown', { key: name, shiftKey, bubbles: true }));
@@ -242,39 +248,79 @@ describe('the parameters of a step under "Quick processing" (Otto, 17.11.2026)',
 
   afterEach(() => vi.useRealTimers());
 
-  it('offer the light of the hillshade: a dial for the azimuth with its value in degrees, a slider for the altitude', async () => {
+  it('offer the light of the hillshade: a dial for the azimuth and a slider for the altitude, each with its number in degrees beside it', async () => {
     mount(heights, 'data');
     await press('Hillshade');
     expect(dial()?.getAttribute('role')).toBe('slider');
     expect(dial()?.getAttribute('aria-valuenow')).toBe('315');
-    expect(container.querySelector('.angle-dial-value')?.textContent).toBe('315°');
     expect(slider()).toMatchObject({ min: '0', max: '90', value: '45' });
-    expect(container.querySelector('.vc-param-value')?.textContent).toBe('45°');
+    expect(numbers().map((input) => [input.getAttribute('aria-label'), input.value])).toEqual([['Azimuth', '315'], ['Altitude', '45']]);
+    expect([...container.querySelectorAll('.vc-param-number')].map((n) => n.textContent)).toEqual(['°', '°']);
+    expect(numbers().every((input) => input.getAttribute('autocomplete') === 'off')).toBe(true);
   });
 
-  it('draw a turn of the dial at once and measure the range of the new light once it rests', async () => {
+  it('draw a turn of the dial once it rests, not at each degree, and measure the range of the new light', async () => {
     mount(heights, 'data');
     await press('Hillshade');
     vi.useFakeTimers();
-    key(dial()!, 'ArrowRight', true);
+    for (let i = 0; i < 15; i++) key(dial()!, 'ArrowRight');
     const state = useAppStore.getState();
+    // The controls follow at once; the picture waits for the pause.
     expect(state.pendingPresetParams).toEqual({ azimuth: 330 });
-    // Drawn without waiting for "Apply": the look of the view carries the value into the step of its tiles.
-    expect(state.appliedRender).toMatchObject({ index: 'hillshade', presetParams: { azimuth: 330 }, colormapName: 'greys_r' });
+    expect(numbers()[0].value).toBe('330');
+    expect(state.appliedRender.presetParams).toBeUndefined();
+    expect(statisticsAsked().filter((url) => url.includes('330'))).toEqual([]);
     await rest();
+    expect(useAppStore.getState().appliedRender).toMatchObject({ index: 'hillshade', presetParams: { azimuth: 330 }, colormapName: 'greys_r' });
+    expect(statisticsAsked().filter((url) => /azimuth%22%3A3(1[6-9]|2\d)\b/u.test(url))).toEqual([]);
     expect(lastParams()).toMatchObject({ product: 'hillshade', azimuth: 330, altitude: 45 });
     expect(fields()).toMatchObject({ colormap: 'greys_r', vmin: '3', vmax: '251' });
   });
 
-  it('keep the altitude within 0 to 90', async () => {
+  it('move the altitude with the slider, and its number with it', async () => {
     mount(heights, 'data');
     await press('Hillshade');
-    act(() => {
-      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!.call(slider()!, '60');
-      slider()!.dispatchEvent(new Event('input', { bubbles: true }));
-    });
+    vi.useFakeTimers();
+    type(slider()!, '60');
     expect(useAppStore.getState().pendingPresetParams).toEqual({ altitude: 60 });
+    expect(numbers()[1].value).toBe('60');
+    await rest();
     expect(useAppStore.getState().appliedRender.presetParams).toEqual({ altitude: 60 });
+  });
+
+  it('take a number typed with Enter or on leaving the field, within the bounds, and move dial and slider with it', async () => {
+    mount(heights, 'data');
+    await press('Hillshade');
+    type(numbers()[0], '90');
+    expect(useAppStore.getState().pendingPresetParams).toEqual({});
+    act(() => {
+      numbers()[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    expect(useAppStore.getState().pendingPresetParams).toEqual({ azimuth: 90 });
+    expect(dial()?.getAttribute('aria-valuenow')).toBe('90');
+    type(numbers()[1], '120');
+    act(() => numbers()[1].dispatchEvent(new FocusEvent('focusout', { bubbles: true })));
+    expect(useAppStore.getState().pendingPresetParams).toEqual({ azimuth: 90, altitude: 90 });
+    expect(slider()!.value).toBe('90');
+    expect(numbers()[1].value).toBe('90');
+  });
+
+  it('bound a number outside: an azimuth of 400 is north, an altitude below 0 is 0, a text that is no number changes nothing', async () => {
+    mount(heights, 'data');
+    await press('Hillshade');
+    const enter = (input: HTMLInputElement, text: string) => {
+      type(input, text);
+      act(() => {
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      });
+    };
+    enter(numbers()[0], '400');
+    expect(useAppStore.getState().pendingPresetParams.azimuth).toBe(0);
+    enter(numbers()[1], '-5');
+    expect(useAppStore.getState().pendingPresetParams.altitude).toBe(0);
+    enter(numbers()[1], 'abc');
+    expect(useAppStore.getState().pendingPresetParams.altitude).toBe(0);
+    expect(numbers()[1].value).toBe('0');
   });
 
   it('switch the slope between degrees and percent, and the range follows the unit', async () => {
@@ -285,8 +331,9 @@ describe('the parameters of a step under "Quick processing" (Otto, 17.11.2026)',
     await act(async () => {
       segments()[1].click();
     });
-    expect(useAppStore.getState().appliedRender.presetParams).toEqual({ slope_unit: 'percent' });
+    expect(useAppStore.getState().pendingPresetParams).toEqual({ slope_unit: 'percent' });
     await rest();
+    expect(useAppStore.getState().appliedRender.presetParams).toEqual({ slope_unit: 'percent' });
     expect(lastParams()).toMatchObject({ product: 'slope', slope_unit: 'percent' });
     expect(segments()[1].getAttribute('aria-pressed')).toBe('true');
   });

@@ -16,11 +16,14 @@ export default function AngleDial({
   label,
   tip,
   onChange,
+  beside,
 }: {
   value: number;
   label: string;
   tip?: string;
   onChange: (angle: number) => void;
+  // What stands beside the dial instead of its value in degrees (a field to type it, `PresetParamControls`).
+  beside?: React.ReactNode;
 }) {
   const ref = useRef<SVGSVGElement>(null);
   const dragging = useRef(false);
@@ -76,7 +79,7 @@ export default function AngleDial({
         <line className="angle-dial-hand" x1={CENTRE} y1={CENTRE} x2={tipX} y2={tipY} />
         <circle className="angle-dial-knob" cx={tipX} cy={tipY} r={3} />
       </svg>
-      <span className="angle-dial-value">{Math.round(angle)}°</span>
+      {beside ?? <span className="angle-dial-value">{Math.round(angle)}°</span>}
     </span>
   );
 }

@@ -6,9 +6,38 @@ import { useEffect, useState } from 'react';
 
 import { describeDataset, knownFieldsOf } from '../presetLooks';
 import { paramsOfPreset, type PresetParam, type QuickPreset } from '../quickPresets';
-import { controlOf } from '../paramControls';
+import { controlOf, paramNumberOf } from '../paramControls';
 import type { Field } from '../schemaForm';
 import AngleDial from './AngleDial';
+
+// A number typed for a parameter: taken with Enter or on leaving the field, kept within the bounds of the parameter; what the dial or the
+// slider sets stands in it at once.
+function ParamNumber({ field, value, onChange }: { field: Field; value: number; onChange: (value: number) => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const commit = () => {
+    if (draft === null) return;
+    const next = paramNumberOf(field, draft);
+    setDraft(null);
+    if (next !== null && next !== value) onChange(next);
+  };
+  return (
+    <span className="vc-param-number">
+      <input
+        type="text"
+        inputMode="decimal"
+        autoComplete="off"
+        aria-label={field.title}
+        value={draft ?? String(value)}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') commit();
+        }}
+      />
+      {unitText(field)}
+    </span>
+  );
+}
 
 const capitalised = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
 const unitText = (field: Field): string => (field.unit === 'deg' ? '°' : '');
@@ -73,12 +102,18 @@ export default function PresetParamControls({
           return (
             <div key={field.name} className="vc-param">
               <span className="vc-param-label">{field.title}</span>
-              <AngleDial value={number} label={field.title} tip={field.description} onChange={(angle) => onChange(field.name, angle)} />
+              <AngleDial
+                value={number}
+                label={field.title}
+                tip={field.description}
+                onChange={(angle) => onChange(field.name, angle)}
+                beside={<ParamNumber field={field} value={number} onChange={(typed) => onChange(field.name, typed)} />}
+              />
             </div>
           );
         }
         return (
-          <label key={field.name} className="vc-param" data-tip-level="advanced" data-tip={field.description}>
+          <div key={field.name} className="vc-param" data-tip-level="advanced" data-tip={field.description}>
             <span className="vc-param-label">{field.title}</span>
             <input
               type="range"
@@ -86,14 +121,12 @@ export default function PresetParamControls({
               max={field.maximum}
               step={1}
               value={number}
+              aria-label={field.title}
               aria-valuetext={`${number}${unitText(field)}`}
               onChange={(event) => onChange(field.name, Number(event.target.value))}
             />
-            <span className="vc-param-value">
-              {number}
-              {unitText(field)}
-            </span>
-          </label>
+            <ParamNumber field={field} value={number} onChange={(typed) => onChange(field.name, typed)} />
+          </div>
         );
       })}
     </div>
