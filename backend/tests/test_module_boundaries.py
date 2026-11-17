@@ -148,6 +148,13 @@ def test_http_clients_are_confined_to_gateway(config: configparser.ConfigParser)
         assert client in forbidden
 
 
+def test_h5py_is_confined_to_discovery(config: configparser.ConfigParser) -> None:
+    """adr/0029 F1, §8a.4: only `discovery` opens an HDF5 file; the readers fetch chunks through `gateway`."""
+    section = "importlinter:contract:h5py-only-in-discovery"
+    assert _modules(config, section, "source_modules") == (ALL_MODULES - {"discovery"}) | _root_modules()
+    assert _modules(config, section, "forbidden_modules") == {"h5py"}
+
+
 def test_the_one_exception_to_the_client_contract_is_one_import(config: configparser.ConfigParser) -> None:
     """adr/0015 F2: the object store's client, and nothing else, may import `botocore`.
 
