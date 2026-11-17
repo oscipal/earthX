@@ -1,6 +1,6 @@
 # M5-19 — Harvest-Kern: Tabellen, Fetch und Extract für STAC-API und CKAN, Lauf-Befehl
 
-**Status (17.11.2026):** Plan angenommen (Otto, 17.11.2026: F1, F2, F5–F8 je 1, A1–A6 gelten, Zusatz „Ausdehnung unbekannt“, §9a); F3 und F4 offen. **Stufe B**. PR 1 in [#375](https://github.com/oscipal/earthX/pull/375), PR 2 folgt (CKAN).
+**Status (17.11.2026):** Plan angenommen (Otto, 17.11.2026: F1, F2, F5–F8 je 1, A1–A6 gelten, Zusatz „Ausdehnung unbekannt“, §9a); F3 und F4: CORINE und Landsat bleiben unverändert. **Stufe B**. PR 1 in [#375](https://github.com/oscipal/earthX/pull/375) komplett; PR 2 (CKAN, README) in einer neuen Session nach dem Merge von PR 1.
 **Aufgabe:** M5-19 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2, Auftrag von Otto vom 17.11.2026, mit Zusatz zum Link „Source“ (§6).
 **Grundlagen:** `adr/0025` (Schnitt 4, §5.1–§5.4, §6.2 mit Nachtrag M5-37), `adr/0033` (§5, §7, §11, §13 Zeile M5-19), M5-Plan §2 Punkt 12 (alle Datentypen gelistet); `plans/m5/m5-37-zeiger-je-host.md` (Zeiger, Plätze, Unterbrecher je Host, `open_source_gateway`); `plans/m5/m5-40-gelistete-in-postgres.md` (A10, G6, A11: Aufrufe im Harvest); `plans/m5/m5-18-gateway-ruecksicht.md` (`User-Agent`, `obey_robots`, `HostResting`); `plans/m5/m5-36-grenzen-je-host.md` (`hosts.yaml`); `architekturplan.md` 3.1, 4.3; KLAERUNGEN B8, B9.
 
@@ -231,6 +231,7 @@ docker compose run --rm harvest earth-search
 - **F1 = 1:** nur Seiten, keine einzelne Datei, kein Dienst, nie die Startseite.
 - **F2 = 1:** volle Einträge als eigene kleine Aufgabe danach, **M5-55**.
 - **F3, F4 offen:** Otto prüft die Links aus §7 im Browser; bis dahin Links und Zugang von CORINE und Landsat unverändert. Die Handeinträge kommen nach seiner Entscheidung.
+- **F3, F4 (Otto, 17.11.2026, nach Prüfung):** CORINE und Landsat bleiben unverändert, Links und Zugang; nichts nachziehen. Damit ist PR 1 komplett; PR 2 (CKAN, README) macht eine neue Session nach dem Merge von PR 1.
 - **F5 = 1, F6 = 1, F7 = 1, F8 = 1.** A1–A6 gelten.
 - **Zusatz:** Funde ohne räumliche Angabe nicht verwerfen, sondern mit „Ausdehnung unbekannt“ in der Zwischenform halten; Listen und Filtern entscheidet M5-20. Verworfen wird nur, was nach einer Regel keine Geodaten ist (eine solche Regel gibt es nicht, §5.3). Personenfelder weiter verwerfen.
 
@@ -264,6 +265,6 @@ Ohne Netz, mit `tests/fixtures` und einer Transport-Attrappe am `Gateway` wie be
 - **Lauf:** `discovery/harvest.py` (`run_harvest`, Bericht, CLI mit `--reextract`; `--full` erst mit CKAN wirksam), alle Anfragen über `open_source_gateway` mit `obey_robots`, Obergrenze je Lauf; Compose-Dienst `harvest` im Profil `harvest`.
 - **STAC:** `discovery/stac.py` (Seiten über `rel=next`, bedingt nur bei einseitiger Liste, Schleifenschutz; Collection → Zwischenform), `discovery/extract.py` (Zwischenform, Datentyp nach Medientyp), `discovery/links.py` (Link-Regel F1 = 1).
 - **Nachtrag** in `adr/0033` §5 und §13 (Link „Source“, „Ausdehnung unbekannt“) und im Docstring von `ListedEntry.source_url`.
-- **Nicht in PR 1:** CKAN (PR 2), Handeinträge CORINE und Landsat (F3, F4 offen), README-Abschnitt (PR 2).
+- **Nicht in PR 1:** CKAN und README-Abschnitt (PR 2, neue Session); CORINE und Landsat bleiben unverändert (F3, F4).
 - **Auslegung bei der Umsetzung:** Ein Fund, der eine Seite der Liste ohne gültige ID erreicht, wird gezählt (`ungültig`), aber nicht gespeichert, weil er keinen Schlüssel hat.
 - **Nach dem Review (Subagent, 17.11.2026):** Ein Fund mit fremder Form (NUL, einzelne Surrogate, falsche Typen) macht nur sich selbst `invalid` mit Grund `shape`, nicht den ganzen Lauf; Texte werden davon bereinigt. Ein Lauf, dessen Sperre ein anderer nach abgelaufener Frist geschlossen hat, schreibt nichts mehr (`interrupted`, `lease_expired`). Eine Rohantwort über 1 MB wird nicht gespeichert und bleibt auch nach `--reextract` `too_large`. Herausgeber nur aus Providern mit Rolle `licensor` oder `producer`. Die Startseiten-Regel erkennt auch Index-Dateien und eine Abfrage, die nur die Sprache wählt. Ein Datenbankfehler zeigt auf der Konsole nur seine Art, nie seinen Text. Eine Collection, die beim Blättern doppelt kommt, zählt einmal; ein neuer Grund bei `invalid` gilt als Änderung mit Übergang.
