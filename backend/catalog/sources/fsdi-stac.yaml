@@ -1,0 +1,13 @@
+# The STAC API of the FSDI (swisstopo and other federal offices), adr/0023 §3.1; the same host as swissALTI3D. Its
+# collection list has no ETag (6 pages, adr/0025 §3); the harvest decides by the hash per collection.
+source_id: fsdi-stac
+protocol: stac-api
+endpoint: https://data.geo.admin.ch/api/stac/v1
+# The STAC browser of the FSDI shows a collection with its items and their files [S, not checked from a session].
+catalog_page: https://data.geo.admin.ch/browser/index.html#/collections/{id}
+filter:
+  collection_prefixes: []
+max_requests_per_run: 50
+full_every_days: 1
+maturity: stable
+enabled: true

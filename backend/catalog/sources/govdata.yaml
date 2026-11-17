@@ -1,0 +1,14 @@
+# GovData, the open data portal of Germany (CKAN, DCAT-AP.de), adr/0023 §4. No filter on the spatial field: finds
+# without an extent are kept as "extent unknown" (Otto, 17.11.2026, plan §5.3); a full run is some 1 650 pages.
+source_id: govdata
+protocol: ckan
+endpoint: https://www.govdata.de/ckan/api/3/action
+# [S, not checked from a session]: the page of a dataset on the portal.
+catalog_page: https://www.govdata.de/suche/daten/{name}
+filter:
+  fq: null
+  publisher_field: publisher_name
+max_requests_per_run: 2500
+full_every_days: 7
+maturity: stable
+enabled: true

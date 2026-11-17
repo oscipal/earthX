@@ -1,0 +1,12 @@
+# Earth Search v1 of Element 84, adr/0023; one page of collections with a weak ETag that answers 304 (adr/0025 §3).
+source_id: earth-search
+protocol: stac-api
+endpoint: https://earth-search.aws.element84.com/v1
+# No page per collection of its own.
+catalog_page: null
+filter:
+  collection_prefixes: []
+max_requests_per_run: 20
+full_every_days: 1
+maturity: stable
+enabled: true

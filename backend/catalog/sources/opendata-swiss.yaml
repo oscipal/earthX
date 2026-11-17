@@ -1,0 +1,13 @@
+# opendata.swiss (CKAN, DCAT-AP CH), adr/0023 §3; it refuses the User-Agent of curl, not that of the gateway
+# (adr/0025 §3).
+source_id: opendata-swiss
+protocol: ckan
+endpoint: https://ckan.opendata.swiss/api/3/action
+catalog_page: https://opendata.swiss/de/dataset/{name}
+filter:
+  fq: null
+  publisher_field: organization
+max_requests_per_run: 400
+full_every_days: 7
+maturity: stable
+enabled: true
