@@ -11,7 +11,7 @@ the one factory that turns the addresses of a recipe into what the readers need:
 * :func:`counting_gdal_lines` — `gateway`'s counter of the requests GDAL makes, passed on because the core may not
   import `gateway` (M5-30b part 8).
 * :func:`host_pacer` — the spacing per host of a pyramid build (M5-30b part 8b), made here because the core may not
-  import `gateway`.
+  import `gateway`; :func:`overview_host_interval` its interval, for the turns the supervisor shares (M5-37).
 * :func:`read_access_for` — one job's :class:`ReadAccess`: an allowlist of exactly
   the hosts its addresses name (KLAERUNGEN B9, word for word), the same GDAL
   options, and one :class:`~earthx.gateway.CachingResolver` for the whole run.
@@ -35,6 +35,7 @@ from earthx.gateway import (
     UrlTooLong,
     host_of,
     inspect_url,
+    overview_interval_from_env,
     resolve_host,
 )
 from earthx.gateway.gdal import counting_gdal_lines, gdal_options
@@ -45,6 +46,7 @@ __all__ = [
     "ReadAccess",
     "counting_gdal_lines",
     "host_pacer",
+    "overview_host_interval",
     "process_gdal_options",
     "read_access_for",
 ]
@@ -70,6 +72,11 @@ class ReadAccess:
 def host_pacer() -> HostPacer:
     """A spacing per host for one build, at ``EARTHX_OVERVIEW_HOST_INTERVAL_S`` (0.25 s unless set); a bad value is a ``ValueError`` naming the variable."""
     return HostPacer.from_env()
+
+
+def overview_host_interval() -> float:
+    """The spacing of a pyramid build on a host ``hosts.yaml`` sets none for: ``EARTHX_OVERVIEW_HOST_INTERVAL_S``, 0.25 s."""
+    return overview_interval_from_env()
 
 
 def process_gdal_options() -> Mapping[str, str | int]:

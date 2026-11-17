@@ -34,6 +34,7 @@ from earthx.processing.overview_build import (
     patch_pyramid,
     plan_pyramid,
     pyramid_hosts,
+    pyramid_source_limits,
     tile_hash,
     tile_path,
 )
@@ -111,6 +112,28 @@ class TestLevels:
         assert all(value for value in hosts.values())
         for dataset_id in hosts:
             assert registry().get(dataset_id).viewer.overview is OverviewMode.PYRAMID
+
+    def test_every_host_of_a_pyramid_has_its_cap_and_the_builds_spacing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """M5-37: the caps of hosts.yaml; the buckets name no spacing, so a build keeps its own 0.25 s (adr/0032 F4)."""
+        monkeypatch.delenv("EARTHX_OVERVIEW_HOST_INTERVAL_S", raising=False)
+        limits = pyramid_source_limits()
+        assert set(limits) == {host for hosts in pyramid_hosts().values() for host in hosts}
+        assert set(limits.values()) == {(32, 0.25)}
+        monkeypatch.setenv("EARTHX_OVERVIEW_HOST_INTERVAL_S", "0.5")
+        assert set(pyramid_source_limits().values()) == {(32, 0.5)}
+        monkeypatch.setenv("EARTHX_OVERVIEW_HOST_INTERVAL_S", "soon")
+        with pytest.raises(ValueError, match="EARTHX_OVERVIEW_HOST_INTERVAL_S"):
+            pyramid_source_limits()
+
+    def test_a_spacing_in_hosts_yaml_comes_before_the_builds_own(self) -> None:
+        from earthx.catalog.hosts import HostLimit
+        from earthx.catalog.registry import DatasetRegistry
+
+        released = registry()
+        host = "copernicus-dem-30m.s3.amazonaws.com"
+        limits = {**released.host_limits, host: HostLimit(connections=6, interval_s=1.0, reason="test")}
+        odd = DatasetRegistry(tuple(released), hosts=limits)
+        assert pyramid_source_limits(odd)[host] == (6, 1.0)
 
     def test_an_entry_with_no_level_to_build_from_stops_the_listing(self) -> None:
         cfg = registry().get("cop-dem-glo-30")
@@ -385,7 +408,7 @@ class TestOneFileMustNotFailTheBuild:
             def wait(self, host: str) -> None:
                 waited.append(host)
 
-            def account(self, host: str, requests: int) -> None:
+            def account(self, host: str, requests: int, **outcome: object) -> None:
                 pass
 
         monkeypatch.setattr(overview_build, "host_pacer", lambda: Pacer())

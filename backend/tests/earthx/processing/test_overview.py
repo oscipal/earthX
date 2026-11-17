@@ -9,6 +9,7 @@ import morecantile
 import numpy as np
 import pytest
 import rasterio
+from rasterio.errors import RasterioIOError
 from rasterio.io import MemoryFile
 from rasterio.transform import from_bounds
 
@@ -41,12 +42,15 @@ class Pacing:
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, str, int | None]] = []
+        #: How each read ended, as ``account`` was told: ``(failed, retry_after)`` (M5-37).
+        self.outcomes: list[tuple[bool, float | None]] = []
 
     def wait(self, host: str) -> None:
         self.calls.append(("wait", host, None))
 
-    def account(self, host: str, requests: int) -> None:
+    def account(self, host: str, requests: int, *, failed: bool = False, retry_after: float | None = None) -> None:
         self.calls.append(("account", host, requests))
+        self.outcomes.append((failed, retry_after))
 
 
 def cog(
@@ -184,6 +188,7 @@ class CountingReader(overview.CogReader):  # type: ignore[misc]
 
     lines = 3
     fail = False
+    error: Exception = RuntimeError("source failed")
 
     def tile(self, *args: object, **kwargs: object):  # type: ignore[no-untyped-def]
         for index in range(self.lines):
@@ -191,7 +196,7 @@ class CountingReader(overview.CogReader):  # type: ignore[misc]
                 "VSICURL: Downloading %d-%d (https://secret.example.org/x.tif)", index, 9
             )
         if self.fail:
-            raise RuntimeError("source failed")
+            raise self.error
         return super().tile(*args, **kwargs)
 
 
@@ -201,6 +206,7 @@ def remote(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(overview, "asset_host", lambda path: HOST)
     monkeypatch.setattr(overview, "CogReader", CountingReader)
     monkeypatch.setattr(CountingReader, "fail", False)
+    monkeypatch.setattr(CountingReader, "error", RuntimeError("source failed"))
 
 
 def test_each_remote_file_is_read_between_wait_and_account_with_its_counted_requests(
@@ -219,6 +225,36 @@ def test_the_requests_of_a_file_that_failed_are_accounted_too(tmp_path: Path, re
     with pytest.raises(RuntimeError):
         read([cog(tmp_path / "1.tif", np.ones((512, 512), "uint8"))], pacer=pacer)
     assert pacer.calls == [("wait", HOST, None), ("account", HOST, 3)]
+
+
+def test_a_read_that_worked_is_accounted_as_no_failure(tmp_path: Path, remote: None) -> None:
+    pacer = Pacing()
+    read([cog(tmp_path / "1.tif", np.ones((512, 512), "uint8"))], pacer=pacer)
+    assert pacer.outcomes == [(False, None)]
+
+
+def test_only_a_failure_of_the_source_counts_for_its_breaker(tmp_path: Path, remote: None, monkeypatch) -> None:
+    """M5-37 §4.1: a 5xx counts; an error of our own or of the file (here a plain RuntimeError) is no failure of the host."""
+    monkeypatch.setattr(CountingReader, "fail", True)
+    pacer = Pacing()
+    with pytest.raises(RuntimeError):
+        read([cog(tmp_path / "1.tif", np.ones((512, 512), "uint8"))], pacer=pacer)
+    monkeypatch.setattr(CountingReader, "error", RasterioIOError("HTTP response code: 404"))
+    with pytest.raises(RasterioIOError):
+        read([cog(tmp_path / "2.tif", np.ones((512, 512), "uint8"))], pacer=pacer)
+    assert pacer.outcomes == [(False, None), (False, None)]
+
+
+def test_a_5xx_counts_as_a_failure_with_the_retry_after_it_carries(tmp_path: Path, remote: None, monkeypatch) -> None:
+    error = RasterioIOError("HTTP response code: 503")
+    error.retry_after = 7.0  # type: ignore[attr-defined]
+    monkeypatch.setattr(CountingReader, "fail", True)
+    monkeypatch.setattr(CountingReader, "error", error)
+    monkeypatch.setattr(overview, "_sleep", lambda seconds: None)
+    pacer = Pacing()
+    with pytest.raises(RasterioIOError):
+        read([cog(tmp_path / "1.tif", np.ones((512, 512), "uint8"))], pacer=pacer)
+    assert pacer.outcomes == [(True, 7.0)] * overview.READ_ATTEMPTS
 
 
 def test_a_file_on_disk_is_not_paced(tmp_path: Path) -> None:

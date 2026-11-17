@@ -39,7 +39,7 @@ from earthx.catalog.datasets import registry as default_registry
 from earthx.catalog.registry import DatasetConfig, DatasetRegistry, OverviewMode
 from earthx.processing import overview
 from earthx.readers import source_failure_kind
-from earthx.readers.access import check_hrefs, host_pacer, read_access_for
+from earthx.readers.access import check_hrefs, host_pacer, overview_host_interval, read_access_for
 from earthx.readers.cog import AssetPath
 
 __all__ = [
@@ -85,6 +85,25 @@ def pyramid_hosts(registry: DatasetRegistry | None = None) -> dict[str, tuple[st
             except ValueError:
                 raise ValueError(f"{config.dataset_id}: a pyramid needs a viewer.min_zoom of 1 or more") from None
             found[config.dataset_id] = tuple(config.source.asset_hosts)
+    return found
+
+
+def pyramid_source_limits(registry: DatasetRegistry | None = None) -> dict[str, tuple[int, float]]:
+    """Each host a pyramid reads, with its cap and the spacing of a build: plain data for the supervisor (M5-37).
+
+    Cap and spacing come from ``hosts.yaml``; a host without a spacing there gets the build's own,
+    ``EARTHX_OVERVIEW_HOST_INTERVAL_S`` (0.25 s, adr/0032 F4). A bad value of that variable raises ``ValueError`` naming it.
+    """
+    datasets = registry if registry is not None else default_registry()
+    default = overview_host_interval()
+    limits = datasets.host_limits
+    found: dict[str, tuple[int, float]] = {}
+    for hosts in pyramid_hosts(datasets).values():
+        for host in hosts:
+            limit = limits.get(host)
+            if limit is None:
+                raise ValueError(f"{host}: a host a pyramid reads needs an entry in hosts.yaml")
+            found[host] = (limit.connections, default if limit.interval_s is None else limit.interval_s)
     return found
 
 
@@ -303,7 +322,12 @@ def _climb(
 
 
 def build_pyramid(
-    workdir: Path, progress: Progress, *, registry: DatasetRegistry | None = None, gdal_config: Mapping[str, str] | None = None
+    workdir: Path,
+    progress: Progress,
+    *,
+    registry: DatasetRegistry | None = None,
+    gdal_config: Mapping[str, str] | None = None,
+    pacer: overview.Pacer | None = None,
 ) -> dict[str, Any]:
     """Read the base tiles, make the levels above, write the tiles and ``manifest.json``; the manifest's content.
 
@@ -314,6 +338,9 @@ def build_pyramid(
     gap is better than none, the levels above are made from what exists, and `jobs` tries the tile again later. More than
     :data:`MAX_OMITTED_FRACTION` of the base tiles (and more than :data:`MAX_OMITTED`) is an outage, not a gap: the failure
     of the last one is raised then.
+
+    ``pacer`` spaces the reads per host. The child of `jobs` hands in one that takes the host's turns shared by all
+    instances (M5-37); without one the build spaces its own reads (:func:`~earthx.readers.access.host_pacer`).
     """
     job = _job(workdir)
     config, base = _config(job["dataset_id"], registry)
@@ -323,7 +350,7 @@ def build_pyramid(
     planned = base_tiles(items, base)
     reuse = {key for key in job.get("reuse", [])}
     scenes = _scenes(config, job.get("hosts") or [], items)
-    pacer = host_pacer()
+    pacer = pacer if pacer is not None else host_pacer()
     total = len(planned) + _count_levels(list(planned), base)
     done = 0
     written: list[str] = []
@@ -370,7 +397,12 @@ def build_pyramid(
 
 
 def patch_pyramid(
-    workdir: Path, progress: Progress, *, registry: DatasetRegistry | None = None, gdal_config: Mapping[str, str] | None = None
+    workdir: Path,
+    progress: Progress,
+    *,
+    registry: DatasetRegistry | None = None,
+    gdal_config: Mapping[str, str] | None = None,
+    pacer: overview.Pacer | None = None,
 ) -> dict[str, Any]:
     """Read again the base tiles named in ``job.json`` (``only``, ``x/y``) and make the tiles above them; the manifest's content.
 
@@ -387,7 +419,7 @@ def patch_pyramid(
     only = {str(key) for key in job.get("only", [])}
     planned = {tile: members for tile, members in base_tiles(items, base).items() if f"{tile.x}/{tile.y}" in only}
     scenes = _scenes(config, job.get("hosts") or [], items)
-    pacer = host_pacer()
+    pacer = pacer if pacer is not None else host_pacer()
     written: list[str] = []
     recovered: list[str] = []
     hashes: dict[str, str] = {}

@@ -94,8 +94,12 @@ class HostPacer:
         pending = self._pending()
         pending[name] = pending.get(name, 0) + 1
 
-    def account(self, host: str, requests: int) -> None:
-        """Charge the ``requests`` GDAL made for the file that :meth:`wait` let start; the next start moves back."""
+    def account(self, host: str, requests: int, *, failed: bool = False, retry_after: float | None = None) -> None:
+        """Charge the ``requests`` GDAL made for the file that :meth:`wait` let start; the next start moves back.
+
+        ``failed`` and ``retry_after`` (how the read ended) are taken and left aside: this pacer keeps no breaker, the
+        one across instances lives with the pyramid build's supervisor (M5-37).
+        """
         if isinstance(requests, bool) or not isinstance(requests, int) or requests < 0:
             raise ValueError("requests is a whole number, 0 or more")
         name = normalize_host(host)

@@ -326,7 +326,7 @@ Für das Budget zählt bei Gittern statt der Zahl der Dateien die Zahl der Chunk
 
 ### 8.2 Rücksicht auf die Quellen (`adr/0025` §6.2, F4)
 
-*Nachtrag 14.11.2026 (M5-30b): Der Unterbrecher gilt nicht für das Lesen durch GDAL; siehe „Nachtrag 14.11.2026“ vor §15.*
+*Nachtrag 14.11.2026 (M5-30b): Der Unterbrecher gilt nicht für das Lesen durch GDAL; siehe „Nachtrag 14.11.2026“ vor §15. Ersetzt durch den Nachtrag 17.11.2026 (M5-37): Abstand und Unterbrecher je Host gelten über alle Instanzen, auch für GDAL im Bau.*
 
 - Der Bau läuft über `gateway`: 6 Verbindungen je Host, `User-Agent` der Plattform, Unterbrecher nach 3 Fehlern in Folge (der Job pausiert und versucht es später; Fehlerart wie `source_timeout`).
 - **Mindestabstand (F4, Otto 11.11.2026):** **0,25 s je Host**, also höchstens 4 Anfragen je Sekunde, einstellbar über `host_intervals` (M5-18) auch für den Bau. Grund sind die Fair-Use-Regeln der FSDI: swisstopo kann den Zugang bei übermäßiger Nutzung einschränken (`adr/0023` §3.1, Quelle dort: geo.admin.ch „change limits, fair use“). Das CDN vor den Dateien nimmt einen Teil der Last [A].
@@ -635,6 +635,11 @@ Otto (15.11.2026, Browser-Prüfung auf `602a0dde`): In „Crop and merge to AOI�
 - **Prototyp-Quellen:** jede Antwort `private, no-store`, auch `404` und `410` (adr/0024 R7). **Tore** wie zuvor: Pyramidenkacheln am Tor der Pyramiden, die Dateilesungen des Ersatzes am Tor der Mosaik-Kacheln; keine Lesebudget-Änderung. Importregeln, Gateway und Objektspeicher unverändert.
 - **Frontend:** `overviewHits.ts` und `mapLayers.ts::syncHitsOverview`. Unter dem ersten Level eines Datensatzes mit Pyramide oder Ersatz legt die Ansicht der Suchtreffer **ein Raster je Datensatz** unter die Szenen (niedrigste Stufe von „Results“), maskiert auf die **ersten 40 gezeigten Treffer**, im Aussehen der Vorschau der Treffer, auf Höhe 0 bis eins unter dem ersten Level, ausgeblendet ab dem Level der eigenen Kacheln. Kein Zeichen, kein Hinweis, die Quellenzeile nennt die Quelle wie bisher. Die Auswahl wird je Treffer-Menge einmal angelegt und nach einer Stunde erneut angefragt (verlängert sie); eine Ablehnung des Tilers lässt die Treffer, wie sie waren.
 - **Bekannte Lücke (Otto, 15.11.2026, Antworten 2.1 und 3.1):** Die **Vorschau von Operatoren** (Hillshade, Slope, Index) und **Index-Darstellungen** unter `min_zoom` bleiben eine bekannte Lücke bis **M5-10 PR B**; hier ist nichts geändert. Die Regel „ein Bild verschwindet nie“ gilt dort noch nicht.
+
+## Nachtrag 17.11.2026 (M5-37 PR 2, `plans/m5/m5-37-zeiger-je-host.md` §5.4, §10.3)
+
+- **§8.2 Mindestabstand und „höchstens ein Bau je Host“:** Der Abstand von 0,25 s je Host gilt nicht mehr nur im Kind eines Baus, sondern über alle Instanzen zusammen mit `materialize` und dem Harvester, über den Zeiger je Host in Postgres (`earthx_source_host`, Migrationen 022 und 023). Das Kind fragt den Aufseher vor jeder Datei nach dem Zug (über die Pipe, B9 bleibt); der Aufseher nimmt ihn aus Postgres, hält dazu einen Platz (`earthx_source_lease`, Grenze aus `hosts.yaml`) und verrechnet danach die Anfragen von GDAL (bei null Anfragen ohne Rückgabe). Verrechnet wird **jede** Anfrage an die Quelle, auch das `HEAD`, mit dem GDAL die Größe einer Datei erfragt, und die eigenen Wiederholungen von GDAL (Otto, 17.11.2026); vorher sah der Zähler nur die Bereichsabrufe. Der Abstand je Host ist der aus `hosts.yaml`, sonst `EARTHX_OVERVIEW_HOST_INTERVAL_S` (0,25 s). „Höchstens ein Bau je Host“ bleibt unverändert.
+- **§8.2 Unterbrecher (Nachtrag 14.11.2026, „gilt nicht für GDAL“):** Ersetzt. Das Lesen durch GDAL zählt jetzt für den Unterbrecher je Host: Ein Lesen, das an der Quelle scheitert (Zeitüberschreitung, keine Verbindung, `429`, `5xx`), ist ein Fehler, jedes andere Ende ein Erfolg. Nach 3 Fehlern in Folge über alle Aufrufer ruht der Host 5 min, verdoppelnd bis 60 min (M5-37 J3). Der Bau **wartet** die Pause ab, hält dabei seine Frist und gilt nicht als stillstehend (J4). Die Staffel der Wiederholung einer Datei (5 s, 20 s, 60 s) und das Wiederholen eines Baus nach `source_*` bleiben.
 
 ---
 
