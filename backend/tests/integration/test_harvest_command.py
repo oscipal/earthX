@@ -205,6 +205,79 @@ async def test_a_longer_listing_is_never_asked_conditionally(db: psycopg.Connect
     assert not any("if-none-match" in request.headers for request in catalogue.asked)
 
 
+async def test_a_find_of_foreign_shape_does_not_end_the_run(db: psycopg.Connection, source: SourceConfig) -> None:
+    # Review of PR 1: NUL, a lone surrogate and wrong types in one collection; the others and the end of the listing
+    # are still reached.
+    odd = [
+        _collection("a", title="A\x00", keywords=["x\ud800"]),
+        _collection("b", keywords=3, links=4, providers=[{"name": "P", "roles": 5}]),
+        _collection("c", extent={"spatial": {"bbox": "x"}}),
+    ]
+    await run_harvest(db, source, gateway=_gateway(Catalogue(THREE)))
+    result = await run_harvest(db, source, gateway=_gateway(Catalogue(odd)))
+    assert result.status == "done"
+    assert {key: state for key, (state, _, _) in _states(db, source).items()} == {
+        "a": "extracted",
+        "b": "extracted",
+        "c": "extracted",
+    }
+
+
+async def test_a_collection_listed_twice_counts_once(db: psycopg.Connection, source: SourceConfig) -> None:
+    result = await run_harvest(db, source, gateway=_gateway(Catalogue([THREE[0], THREE[1], THREE[0]])))
+    assert (result.counts.found_new, result.counts.found_unchanged) == (2, 0)
+
+
+async def test_a_raw_answer_over_one_megabyte_is_not_kept_and_stays_invalid(
+    db: psycopg.Connection, source: SourceConfig
+) -> None:
+    big = _collection("big", description="x" * (1024 * 1024 + 1))
+    await run_harvest(db, source, gateway=_gateway(Catalogue([big, THREE[0]])))
+    kept = db.execute(
+        "SELECT raw_gzip IS NULL FROM public.earthx_raw_record WHERE source_id = %s AND source_key = 'big'",
+        (source.source_id,),
+    ).fetchone()
+    assert kept == (True,)
+    await run_harvest(db, source, gateway=None, reextract=True)
+    assert _states(db, source)["big"] == ("invalid", "too_large", None)
+
+
+async def test_a_new_reason_of_an_invalid_find_is_a_change(db: psycopg.Connection, source: SourceConfig) -> None:
+    no_link = replace(source, catalog_page=None)
+    await run_harvest(db, no_link, gateway=_gateway(Catalogue([_collection("x", title=None)])))
+    before = _transitions(db, source)
+    result = await run_harvest(db, no_link, gateway=_gateway(Catalogue([_collection("x", title="T")])))
+    assert result.counts.found_changed == 1
+    assert _states(db, source)["x"] == ("invalid", "no_link", None)
+    assert _transitions(db, source) == before + 1
+
+
+async def test_a_run_that_lost_its_hold_stops_and_keeps_the_closed_row(
+    db: psycopg.Connection, source: SourceConfig
+) -> None:
+    catalogue = Catalogue(THREE)
+    gateway = _gateway(catalogue)
+    real_get = gateway.get
+
+    async def slow_get(url: str, **kwargs: Any) -> Any:
+        # Another run closes this one while it waits, as after a term that ran out.
+        db.execute(
+            "UPDATE public.earthx_harvest_run SET status = 'interrupted', stop_reason = 'lease_expired',"
+            " finished_at = now() WHERE source_id = %s AND status = 'running'",
+            (source.source_id,),
+        )
+        return await real_get(url, **kwargs)
+
+    gateway.get = slow_get  # type: ignore[method-assign]
+    result = await run_harvest(db, source, gateway=gateway)
+    assert (result.status, result.stop_reason) == ("interrupted", "lease_expired")
+    assert _states(db, source) == {}
+    row = db.execute(
+        "SELECT status, stop_reason FROM public.earthx_harvest_run WHERE run_id = %s", (result.run_id,)
+    ).fetchone()
+    assert row == ("interrupted", "lease_expired")
+
+
 async def test_robots_txt_stops_the_run(db: psycopg.Connection, source: SourceConfig) -> None:
     catalogue = Catalogue(THREE)
     catalogue.robots = "User-agent: *\nDisallow: /api/\n"

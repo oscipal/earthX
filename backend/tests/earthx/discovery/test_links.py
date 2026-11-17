@@ -34,6 +34,12 @@ def test_a_page_passes(url: str) -> None:
         "https://data.example.org/fr/",
         "https://data.example.org/en-gb/",
         "https://data.example.org/#/",
+        "https://data.example.org//",
+        "https://data.example.org/?",
+        "https://data.example.org?lang=de",
+        "https://data.example.org/index.html",
+        "https://data.example.org/de/index.html",
+        "https://data.example.org/fr/home.php?locale=fr",
     ],
 )
 def test_the_start_page_never_passes(url: str) -> None:
@@ -54,6 +60,7 @@ def test_the_start_page_never_passes(url: str) -> None:
         "https://data.example.org/a b",
         "https://data.example.org/dem\n",
         "https://data.example.org/dem\x00",
+        "https://data.example.org/dem\ud800",
         "https://data.example.org/" + "a" * MAX_LINK_CHARS,
         "",
         None,

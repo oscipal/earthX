@@ -73,6 +73,15 @@ class _BudgetSpent(Exception):
     pass
 
 
+class _LeaseLost(Exception):
+    """Another run closed this one after its term ran out; it writes nothing more."""
+
+
+def _renew(conn: psycopg.Connection, run_id: int) -> None:
+    if not renew_run(conn, run_id):
+        raise _LeaseLost
+
+
 @dataclass(frozen=True, slots=True)
 class HarvestResult:
     run_id: int
@@ -117,13 +126,17 @@ def _record(
             raise Invalid("too_large")
         if not isinstance(document, dict):
             raise Invalid("shape")
-        found = extract_collection(key, document, source)
+        try:
+            found = extract_collection(key, document, source)
+        except (TypeError, ValueError, AttributeError, KeyError, IndexError):
+            # One find of a foreign shape must not end the run for every other one (review of PR 1).
+            raise Invalid("shape") from None
         extracted, digest, extent = found.to_document(), extracted_sha256(found), found.extent_known
     except Invalid as invalid:
         state, reason = "invalid", invalid.reason
     if before is None or before.state == "gone":
         counts.found_new += 1
-    elif before.state == state and before.extracted_sha256 == digest:
+    elif (before.state, before.reason, before.extracted_sha256) == (state, reason, digest):
         counts.found_unchanged += 1
     else:
         counts.found_changed += 1
@@ -141,7 +154,7 @@ def _record(
         extracted=extracted,
         extracted_sha256=digest,
         extent_known=extent,
-        before=None if before is None else before.state,
+        before=None if before is None else (before.state, before.reason),
     )
 
 
@@ -149,16 +162,20 @@ async def _fetch_and_extract(
     conn: psycopg.Connection, source: SourceConfig, run_id: int, fetch: _Fetcher, counts: RunCounts
 ) -> None:
     listing = StacListing()
+    # A collection that moves between pages while the listing is read comes twice; only its first answer counts.
+    taken: set[str] = set()
     async for page in stac_pages(fetch, source, list_validators(conn, source.source_id), listing):
-        keys = [key for key, _ in page if key is not None]
-        counts.invalid += len(page) - len(keys)
-        if len(set(keys)) != len(keys):
-            raise ShapeError("a page names a collection twice")
-        known = previous(conn, source.source_id, keys)
+        finds = []
+        for key, document in page:
+            if key is None:
+                counts.invalid += 1
+            elif key not in taken:
+                taken.add(key)
+                finds.append((key, document))
+        known = previous(conn, source.source_id, [key for key, _ in finds])
+        _renew(conn, run_id)
         with conn.transaction(), conn.cursor() as cur:
-            for key, document in page:
-                if key is None:
-                    continue
+            for key, document in finds:
                 raw = canonical(document)
                 digest = hashlib.sha256(raw).hexdigest()
                 before = known.get(key)
@@ -167,7 +184,7 @@ async def _fetch_and_extract(
                     counts.found_unchanged += 1
                 else:
                     _record(cur, source, run_id, counts, key, document, before, raw=raw, raw_sha256=digest)
-        renew_run(conn, run_id)
+    _renew(conn, run_id)
     if listing.not_modified:
         counts.found_unchanged = count_finds(conn, source.source_id)[0]
         return
@@ -182,13 +199,13 @@ def _reextract(conn: psycopg.Connection, source: SourceConfig, run_id: int, coun
 
     def flush() -> None:
         known = previous(conn, source.source_id, [key for key, _ in batch])
+        _renew(conn, run_id)
         with conn.transaction(), conn.cursor() as cur:
             for key, raw in batch:
                 before = known[key]
                 _record(
                     cur, source, run_id, counts, key, json.loads(raw), before, raw=None, raw_sha256=before.raw_sha256
                 )
-        renew_run(conn, run_id)
         batch.clear()
 
     for key, raw, _ in raw_records(conn, source.source_id):
@@ -225,6 +242,9 @@ async def run_harvest(
         status, stop_reason = "failed", "shape"
     except _BudgetSpent:
         status, stop_reason = "interrupted", "request_budget"
+    except _LeaseLost:
+        # The row is closed already, as `interrupted` with `lease_expired`; finish_run leaves it so.
+        status, stop_reason = "interrupted", "lease_expired"
     except ShapeError:
         status, stop_reason = "failed", "shape"
     except GatewayError:
@@ -254,6 +274,7 @@ _STOP_TEXT = {
     "request_budget": "Obergrenze der Anfragen je Lauf erreicht",
     "shape": "Antwort der Quelle nicht lesbar",
     "upstream": "Quelle antwortet mit Fehler oder nicht",
+    "lease_expired": "Frist abgelaufen, ein anderer Lauf hat die Quelle übernommen",
 }
 
 
@@ -306,8 +327,14 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     try:
         result = asyncio.run(_main_async(source, hosts, reextract=args.reextract))
-    except (HarvestBusy, ConfigError, psycopg.Error) as error:
+    except (HarvestBusy, ConfigError) as error:
         print(f"harvest failed: {error}", file=sys.stderr)
+        return 1
+    except psycopg.Error as error:
+        # Only the kind: the text of a database error can quote a row of foreign content or the database host (A6).
+        print(
+            f"harvest failed: database error {type(error).__name__} ({error.sqlstate or 'no state'})", file=sys.stderr
+        )
         return 1
     print(report(source.source_id, result))
     return 0 if result.status == "done" else 1

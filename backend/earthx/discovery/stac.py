@@ -34,7 +34,8 @@ __all__ = ["PAGE_LIMIT", "StacListing", "collection_key", "extract_collection", 
 PAGE_LIMIT = 100
 MAX_DISTRIBUTIONS = 50
 _KEY = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,255}")
-_PROVIDER_ROLES = ("licensor", "producer", "host")
+# Only these name the publisher (plan §5.1): a processor or a provider without a role may be a person.
+_PROVIDER_ROLES = ("licensor", "producer")
 
 Fetch = Callable[..., Awaitable[GatewayResponse]]
 
@@ -57,7 +58,8 @@ def collection_key(collection: object) -> str | None:
 
 
 def _next(body: Mapping[str, Any]) -> str | None:
-    for link in body.get("links") or ():
+    links = body.get("links")
+    for link in links if isinstance(links, list) else ():
         if isinstance(link, dict) and link.get("rel") == "next":
             if link.get("method", "GET") != "GET" or not isinstance(link.get("href"), str):
                 raise ShapeError("a next link that is no GET with an address")
@@ -117,9 +119,10 @@ def _publisher(providers: object) -> str | None:
     )
     for role in _PROVIDER_ROLES:
         for provider in named:
-            if role in (provider.get("roles") or ()):
+            roles = provider.get("roles")
+            if isinstance(roles, list) and role in roles:
                 return text_of(provider["name"])
-    return text_of(named[0]["name"]) if named else None
+    return None
 
 
 def _links(collection: Mapping[str, Any]) -> list[dict[str, Any]]:
@@ -165,7 +168,7 @@ def _temporal(collection: Mapping[str, Any]) -> tuple[str | None, str | None] | 
         return None
     if not isinstance(interval, list) or len(interval) != 2:
         return None
-    start, end = (value if isinstance(value, str) and len(value) <= 40 else None for value in interval)
+    start, end = (text if (text := text_of(value)) is not None and len(text) <= 40 else None for value in interval)
     return None if start is None and end is None else (start, end)
 
 
@@ -198,7 +201,8 @@ def extract_collection(key: str, collection: Mapping[str, Any], source: SourceCo
     title = text_of(collection.get("title"))
     if title is None:
         raise Invalid("no_title")
-    raw_keywords = [k for k in collection.get("keywords") or () if isinstance(k, str)]
+    keywords = collection.get("keywords")
+    raw_keywords = [text for k in keywords if (text := text_of(k))] if isinstance(keywords, list) else []
     category = category_of(Evidence(keywords=tuple(raw_keywords)))
     links = _links(collection)
     catalog_page = source.catalog_page.replace("{id}", key) if source.catalog_page else None
@@ -223,7 +227,8 @@ def extract_collection(key: str, collection: Mapping[str, Any], source: SourceCo
         description=text_of(collection.get("description")) or "",
         publisher=_publisher(collection.get("providers")),
         doi=text_of(collection.get("sci:doi")),
-        licence_statements=tuple(dict.fromkeys(s.strip() for s in statements if text_of(s))),
+        # Wording, never a link: an href of `rel=license` is kept as text for the rule of M5-20, unchecked.
+        licence_statements=tuple(dict.fromkeys(text for s in statements if (text := text_of(s)))),
         bbox=bbox,
         spatial_text=None,
         extent_known=bbox is not None,

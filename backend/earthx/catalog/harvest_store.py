@@ -72,6 +72,7 @@ class Previous:
 
     raw_sha256: str
     state: str
+    reason: str | None
     extracted_sha256: str | None
 
 
@@ -96,12 +97,14 @@ def start_run(conn: psycopg.Connection, source_id: str, kind: str) -> int:
         raise HarvestBusy(f"another run of {source_id} is running") from None
 
 
-def renew_run(conn: psycopg.Connection, run_id: int) -> None:
-    conn.execute(
+def renew_run(conn: psycopg.Connection, run_id: int) -> bool:
+    """The heartbeat of a run; ``False`` once its hold is gone (another run closed it after its term ran out)."""
+    cur = conn.execute(
         "UPDATE public.earthx_harvest_run SET lease_until = clock_timestamp() + make_interval(secs => %s)"
-        " WHERE run_id = %s AND status = 'running'",
+        " WHERE run_id = %s AND status = 'running' AND lease_until > clock_timestamp()",
         (LEASE_S, run_id),
     )
+    return cur.rowcount == 1
 
 
 def finish_run(
@@ -111,7 +114,7 @@ def finish_run(
     assignments = ", ".join(f"{name} = %({name})s" for name in names)
     conn.execute(
         f"UPDATE public.earthx_harvest_run SET status = %(status)s, stop_reason = %(stop_reason)s,"
-        f" finished_at = clock_timestamp(), {assignments} WHERE run_id = %(run_id)s",
+        f" finished_at = clock_timestamp(), {assignments} WHERE run_id = %(run_id)s AND status = 'running'",
         {"status": status, "stop_reason": stop_reason, "run_id": run_id, **{n: getattr(counts, n) for n in names}},
     )
 
@@ -136,12 +139,12 @@ def save_list_validators(conn: psycopg.Connection, source_id: str, validators: L
 def previous(conn: psycopg.Connection, source_id: str, keys: list[str]) -> dict[str, Previous]:
     """What the last runs kept of ``keys``, by key; a key never seen is missing."""
     rows = conn.execute(
-        "SELECT r.source_key, r.raw_sha256, s.state, s.extracted_sha256"
+        "SELECT r.source_key, r.raw_sha256, s.state, s.reason, s.extracted_sha256"
         " FROM public.earthx_raw_record r JOIN public.earthx_record_state s USING (source_id, source_key)"
         " WHERE r.source_id = %s AND r.source_key = ANY(%s)",
         (source_id, keys),
     ).fetchall()
-    return {key: Previous(raw, state, extracted) for key, raw, state, extracted in rows}
+    return {key: Previous(raw, state, reason, extracted) for key, raw, state, reason, extracted in rows}
 
 
 def _transition(
@@ -167,15 +170,14 @@ def write_find(
     extracted: Mapping[str, Any] | None,
     extracted_sha256: str | None,
     extent_known: bool | None,
-    before: str | None,
+    before: tuple[str, str | None] | None,
 ) -> None:
-    """The raw answer and the state of one find; a change of state goes into the transitions.
+    """The raw answer and the state of one find; a change of state or reason goes into the transitions.
 
-    ``raw`` ``None`` keeps the stored raw answer (a re-extract, or one too large to keep, whose hash alone is noted).
+    ``raw`` ``None`` keeps the stored raw answer (a re-extract). A raw answer over :data:`MAX_RAW_BYTES` is not kept,
+    only its hash (plan §3).
     """
-    packed = None if raw is None else gzip.compress(raw, mtime=0)
-    if packed is not None and len(packed) > MAX_RAW_BYTES:
-        packed = None
+    packed = None if raw is None or len(raw) > MAX_RAW_BYTES else gzip.compress(raw, mtime=0)
     cur.execute(
         "INSERT INTO public.earthx_raw_record (source_id, source_key, raw_gzip, raw_sha256, run_id)"
         " VALUES (%s, %s, %s, %s, %s)"
@@ -203,8 +205,8 @@ def write_find(
             run_id,
         ),
     )
-    if before != state:
-        _transition(cur, source_id, key, before, state, reason, run_id)
+    if before != (state, reason):
+        _transition(cur, source_id, key, None if before is None else before[0], state, reason, run_id)
 
 
 def seen(cur: psycopg.Cursor, *, run_id: int, source_id: str, key: str) -> None:
@@ -259,5 +261,6 @@ def raw_records(conn: psycopg.Connection, source_id: str) -> Iterator[tuple[str,
 
 
 def canonical(document: Any) -> bytes:
-    """The bytes a hash is taken over: JSON with sorted keys, no spaces, UTF-8."""
-    return json.dumps(document, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    """The bytes a hash is taken over: JSON with sorted keys, no spaces; ASCII, so a lone surrogate escape of a foreign
+    answer is kept as written instead of failing the encoding."""
+    return json.dumps(document, sort_keys=True, separators=(",", ":")).encode("ascii")

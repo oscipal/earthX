@@ -108,10 +108,12 @@ def extracted_sha256(extracted: Extracted) -> str:
 
 
 def text_of(value: object) -> str | None:
-    """A non-blank text, cut to a sane length; anything else is ``None``."""
-    if not isinstance(value, str) or not value.strip():
+    """A non-blank text, cut to a sane length, without NUL and lone surrogates (Postgres takes neither in ``jsonb``);
+    anything else is ``None``."""
+    if not isinstance(value, str):
         return None
-    return value.strip()[:MAX_TEXT_CHARS]
+    text = "".join(c for c in value[: MAX_TEXT_CHARS * 2] if c != "\x00" and not "\ud800" <= c <= "\udfff").strip()
+    return text[:MAX_TEXT_CHARS] or None
 
 
 def bbox_of(value: object) -> tuple[float, float, float, float] | None:

@@ -23,8 +23,11 @@ _URL = re.compile(
     r"(?P<path>/[^?#\s]*)?(?P<query>\?[^#\s]*)?(?P<fragment>#\S*)?"
 )
 _CONTROL = re.compile(r"[\x00-\x20\x7f-\x9f]")
-# A language prefix alone is still the start page: /de, /fr/, /en-gb/.
-_START_PATH = re.compile(r"/?|/[a-z]{2}(?:[-_][a-z]{2})?/?", re.IGNORECASE)
+# Still the start page: a language prefix, an index file, a query that only picks the language (/de, /fr/index.html,
+# ?lang=de).
+_LANGUAGE = re.compile(r"[a-z]{2}(?:[-_][a-z]{2})?", re.IGNORECASE)
+_INDEX = re.compile(r"(?:index|default|home)\.(?:html?|php|aspx?|jsp)", re.IGNORECASE)
+_LANGUAGE_KEYS = frozenset({"lang", "language", "locale", "l", "hl"})
 
 
 class LinkRank(IntEnum):
@@ -46,9 +49,23 @@ def checked_link(url: object) -> str | None:
         normalize_host(match["host"])
     except UrlRejected:
         return None
-    if _START_PATH.fullmatch(match["path"] or "") and not match["query"] and len(match["fragment"] or "") <= 2:
+    try:
+        url.encode("utf-8")
+    except UnicodeEncodeError:
+        return None
+    if _is_start_page(match["path"] or "", match["query"] or "", match["fragment"] or ""):
         return None
     return url
+
+
+def _is_start_page(path: str, query: str, fragment: str) -> bool:
+    segments = [segment for segment in path.split("/") if segment]
+    if segments and _LANGUAGE.fullmatch(segments[0]):
+        segments = segments[1:]
+    if segments and _INDEX.fullmatch(segments[-1]):
+        segments = segments[:-1]
+    keys = {pair.split("=", 1)[0].lower() for pair in query.lstrip("?").split("&") if pair}
+    return not segments and keys <= _LANGUAGE_KEYS and len(fragment) <= 2
 
 
 def choose_link(candidates: Iterable[tuple[LinkRank, object]]) -> tuple[str, LinkRank] | None:

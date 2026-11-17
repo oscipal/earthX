@@ -72,6 +72,29 @@ def test_the_fields_of_the_intermediate_form() -> None:
     assert [d.href for d in found.distributions] == ["https://stac.example.org/legend.pdf"]
 
 
+@pytest.mark.parametrize(
+    "providers",
+    [
+        [{"name": "Jane Doe", "roles": ["processor"]}],
+        [{"name": "Jane Doe"}],
+        [{"name": "Jane Doe", "roles": "licensor"}],
+        [{"name": "Example host", "roles": ["host"]}],
+    ],
+)
+def test_only_a_licensor_or_producer_is_the_publisher(providers: list[dict[str, Any]]) -> None:
+    # Plan §5.1, §5.3: another provider may be a person.
+    assert extract_collection("k", _with(providers=providers), SOURCE).publisher is None
+
+
+def test_nul_and_lone_surrogates_are_dropped_from_texts() -> None:
+    # Postgres refuses both in jsonb; one such find would fail every run of the source (review of PR 1).
+    found = extract_collection(
+        "k", _with(title="Ti\x00tle\ud800", description="\x00", keywords=["a\x00b", "\ud800"]), SOURCE
+    )
+    assert (found.title, found.description) == ("Title", "")
+    assert "\x00" not in repr(found.to_document()) and "\ud800" not in found.to_document()["keywords"]
+
+
 def test_no_person_reaches_the_intermediate_form() -> None:
     document = extract_collection("ch.example.dem", COLLECTION, SOURCE).to_document()
     assert "Jane Doe" not in repr(document) and "jane@example.org" not in repr(document)
@@ -175,7 +198,18 @@ def test_requester_pays_is_read_from_the_storage_extension(changes: dict[str, An
 
 @pytest.mark.parametrize(
     "changes",
-    [{"providers": "x"}, {"links": "x"}, {"item_assets": [1]}, {"summaries": [1]}, {"keywords": "x"}, {"assets": None}],
+    [
+        {"providers": "x"},
+        {"providers": [{"name": "A", "roles": 3}]},
+        {"links": "x"},
+        {"links": 3},
+        {"item_assets": [1]},
+        {"summaries": [1]},
+        {"keywords": "x"},
+        {"keywords": 3},
+        {"assets": None},
+        {"extent": {"temporal": {"interval": [[3, {"a": 1}]]}}},
+    ],
 )
 def test_odd_shapes_do_not_break_the_extract(changes: dict[str, Any]) -> None:
     extract_collection("k", _with(**changes), SOURCE)
