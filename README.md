@@ -290,6 +290,37 @@ einer Python-Umgebung mit `backend/requirements-dev.lock`:
 python -m pytest backend/tests_live/test_swissalti3d_smoke.py
 ```
 
+### Quellen ernten (M5-19)
+
+Der Harvest liest die Kataloge der Quellen unter `backend/catalog/sources/` (je Quelle eine YAML-Datei,
+Felder in `backend/catalog/sources/README.md`) und hält je Fund die Rohantwort, ihren Hash und eine
+Zwischenform in Postgres (`earthx_record_state`, Migration `024`). Sichtbar wird davon nichts: Lizenz,
+Freigabe und Eintrag im „Data catalogue“ kommen mit M5-20. Der Lauf geht über `gateway` an echte Quellen
+und läuft deshalb wie `materialize` nur unter einem Profil, bei laufender Topologie, nie aus der CI. In
+PowerShell 5.1:
+
+```powershell
+docker compose run --build --rm harvest fsdi-stac
+docker compose run --rm harvest opendata-swiss
+```
+
+- **STAC-API** (`fsdi-stac`, `earth-search`): jeder Lauf liest die ganze Collection-Liste; eine Liste auf
+  einer Seite wird mit ihrem `ETag` gefragt (`304`: nichts zu tun).
+- **CKAN** (`govdata`, `opendata-swiss`): der erste Lauf und danach einer alle `full_every_days` (7) liest
+  alle Pakete, je 100 je Anfrage mit 1 s Abstand (GovData rund 1 650 Anfragen, knapp eine halbe Stunde).
+  Dazwischen fragt ein Lauf nur nach Paketen, die seit dem Beginn des letzten erfolgreichen Laufs (eine
+  Stunde Überlappung) geändert wurden. `--full` hinter der ID erzwingt einen vollen Lauf. Nur ein voller Lauf
+  setzt verschwundene Pakete auf `gone`, und nur, wenn sich die Zahl der Pakete während des Laufs nicht
+  geändert hat.
+- `data-gv-at` steht auf `enabled: false`, bis ein erster Lauf den Endpunkt bestätigt; der Befehl lehnt die
+  Quelle bis dahin ab.
+- `--reextract` leitet die Zwischenform aus den gespeicherten Rohantworten neu ab, ohne Anfrage; nach einer
+  Änderung am Extraktor macht das auch der nächste gewöhnliche Lauf für jeden betroffenen Fund.
+- Der Bericht nennt Art und Ausgang des Laufs, Anfragen, Funde neu/geändert/unverändert/weg und den Stand der
+  Quelle (gültig, davon „Ausdehnung unbekannt“, ungültig mit Grund), nie Adressen. Rückgabe 0 nur bei `done`.
+- Hält ein Host still (Unterbrecher, `robots.txt`) oder ist die Obergrenze an Anfragen erreicht, endet der
+  Lauf `interrupted` und ändert nichts an Funden, die er nicht gesehen hat; später erneut starten.
+
 ### Kachelzeiten messen (M5-30b)
 
 Für die Budgets der Mosaik-Kachel (`docs/adr/0032-bild-bei-jedem-zoom.md` §8.5) misst ein
