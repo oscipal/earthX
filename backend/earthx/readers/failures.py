@@ -33,6 +33,7 @@ SOURCE_KINDS = frozenset(
         "source_5xx",
         "source_429",
         "source_4xx",
+        "source_changed",
         "source_unreachable",
         "source_georeference",
         "rejected",
@@ -65,6 +66,10 @@ def _by_status(status: int) -> str | None:
         return "source_5xx"
     if status == 429:
         return "source_429"
+    if status == 412:
+        # Only a read with `If-Match` gets this: the source has replaced the file its chunk references were made from
+        # (adr/0029 F7). Nothing is refused; the next discovery run writes new references.
+        return "source_changed"
     if 400 <= status < 500:
         return "source_4xx"
     return None
