@@ -310,8 +310,10 @@ docker compose run --rm harvest opendata-swiss
   alle Pakete, je 100 je Anfrage mit 1 s Abstand (GovData rund 1 650 Anfragen, knapp eine halbe Stunde).
   Dazwischen fragt ein Lauf nur nach Paketen, die seit dem Beginn des letzten erfolgreichen Laufs (eine
   Stunde Überlappung) geändert wurden. `--full` hinter der ID erzwingt einen vollen Lauf. Nur ein voller Lauf
-  setzt verschwundene Pakete auf `gone`, und nur, wenn sich die Zahl der Pakete während des Laufs nicht
-  geändert hat.
+  setzt verschwundene Pakete auf `gone`, und nur, wenn sich die Liste beim Lesen nicht verschoben hat und nicht
+  leer war. Verschiebt sich die Liste eines inkrementellen Laufs, endet er `interrupted` (`listing_moved`), und
+  der nächste fragt ab dem Lauf davor. Endet ein voller Lauf nicht mit `done` (etwa an der Obergrenze der
+  Anfragen), ist auch der nächste wieder voll.
 - `data-gv-at` steht auf `enabled: false`, bis ein erster Lauf den Endpunkt bestätigt; der Befehl lehnt die
   Quelle bis dahin ab.
 - `--reextract` leitet die Zwischenform aus den gespeicherten Rohantworten neu ab, ohne Anfrage; nach einer
