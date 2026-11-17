@@ -1,6 +1,6 @@
 # M5-19 — Harvest-Kern: Tabellen, Fetch und Extract für STAC-API und CKAN, Lauf-Befehl
 
-**Status (17.11.2026):** Plan angenommen (Otto, 17.11.2026: F1, F2, F5–F8 je 1, A1–A6 gelten, Zusatz „Ausdehnung unbekannt“, §9a); F3 und F4: CORINE und Landsat bleiben unverändert. **Stufe B**. PR 1 in [#375](https://github.com/oscipal/earthX/pull/375) komplett; PR 2 (CKAN, README) in einer neuen Session nach dem Merge von PR 1.
+**Status (17.11.2026):** Plan angenommen (Otto, 17.11.2026: F1, F2, F5–F8 je 1, A1–A6 gelten, Zusatz „Ausdehnung unbekannt“, §9a); F3 und F4: CORINE und Landsat bleiben unverändert. **Stufe B**. PR 1 in [#375](https://github.com/oscipal/earthX/pull/375) gemergt; PR 2 (CKAN, README) im Draft-PR, Stand §12.3.
 **Aufgabe:** M5-19 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2, Auftrag von Otto vom 17.11.2026, mit Zusatz zum Link „Source“ (§6).
 **Grundlagen:** `adr/0025` (Schnitt 4, §5.1–§5.4, §6.2 mit Nachtrag M5-37), `adr/0033` (§5, §7, §11, §13 Zeile M5-19), M5-Plan §2 Punkt 12 (alle Datentypen gelistet); `plans/m5/m5-37-zeiger-je-host.md` (Zeiger, Plätze, Unterbrecher je Host, `open_source_gateway`); `plans/m5/m5-40-gelistete-in-postgres.md` (A10, G6, A11: Aufrufe im Harvest); `plans/m5/m5-18-gateway-ruecksicht.md` (`User-Agent`, `obey_robots`, `HostResting`); `plans/m5/m5-36-grenzen-je-host.md` (`hosts.yaml`); `architekturplan.md` 3.1, 4.3; KLAERUNGEN B8, B9.
 
@@ -243,6 +243,9 @@ docker compose run --rm harvest earth-search
 - **A4** Die Zwischenform ist die Grundlage des Hashes für „geändert“; ändert nur der Code die Ableitung, leitet `--reextract` aus der gespeicherten Rohantwort neu ab, ohne neu zu holen (`adr/0025` §5.1).
 - **A5** Fixtures sind synthetisch (eigene kleine Antworten in der Form von STAC und CKAN), keine Kopien echter Katalogantworten: Die Lizenz der Metadaten der Kataloge ist offen (`adr/0033` §15); geklärt wird sie mit der Freigabe der Quelle in M5-20.
 - **A6** `--reextract` und `--full` sind Schalter des Lauf-Befehls; der Bericht ist Text auf der Konsole (Deutsch, Zahlen je Zustand und Grund, ohne Adressen). Der Bericht mit Stichprobe und Freigabedatei ist M5-20.
+- **A7** (PR 2) Ein Text, den die Quelle je Sprache gibt (opendata.swiss: Titel, Beschreibung, Schlagworte, Organisation [S]), wird in der Reihenfolge Deutsch, Englisch, Französisch, Italienisch gelesen, dann weitere Sprachen alphabetisch; der erste nicht leere gewinnt. Grund: Die Suche kennt Deutsch und Englisch (`adr/0026`), Englisch ergänzt das Review (`adr/0025` §8). Die übrigen Sprachen bleiben in der Rohantwort.
+- **A8** (PR 2) CKAN blättert mit `start` über eine nach `id` sortierte Liste (§4.2). Ändert sich die Zahl der Pakete während eines vollen Laufs, kann ein Paket übersprungen worden sein: Der Lauf endet `done`, setzt aber nichts auf `gone`, und der Bericht sagt es („weg nicht geprüft“). Das hält A3 auch bei einer Liste, die sich beim Lesen bewegt.
+- **A9** (PR 2) Die Zwischenform bekommt die Felder `geometry` (§5.1, bis 64 KB, nur Typ und geprüfte Koordinaten) und je Distribution `format`. Bei STAC sind beide leer; weil sich die Form ändert, zählt der erste Lauf nach dem Merge die gültigen STAC-Funde einmal als „geändert“, ohne Übergang.
 
 ## 11. Tests (Plan)
 
@@ -285,3 +288,15 @@ Ohne Netz, mit `tests/fixtures` und einer Transport-Attrappe am `Gateway` wie be
 3. Links ohne `type` als Seite zulassen (`about`, `via`), wenn sie nicht auf Datei, JSON oder Dienst zeigen – ob Earth Search solche hat, ist nicht belegt; gilt dann für alle STAC-Quellen
 
 **Antwort Otto zu F9 (17.11.2026): 1.** Der STAC Browser von Radiant Earth ist die Katalogseite von `earth-search.yaml`, als Einstellung dieser Quelle, nicht als allgemeine Ausnahme. Weil die Katalogseite Teil der Extraktor-Version ist, wertet der nächste Lauf die 9 Funde aus den gespeicherten Rohantworten neu aus, auch hinter `304`.
+
+### 12.3 PR 2 (CKAN, README), Stand 17.11.2026
+
+- **CKAN:** `discovery/ckan.py`: `package_search` mit `rows=100`, `sort=id asc`, `start` als Versatz, `fq` der Seed-Datei; die Abfrage setzt `gateway` zusammen. Ein Fund = ein Paket samt Ressourcen, Schlüssel ist die Paket-`id`, Hash je Paket (kein `ETag`, §4.2).
+- **Inkrementell und voll:** Voll ist der erste Lauf, jeder mit `--full` und jeder, dessen letzter voller Lauf `full_every_days` oder länger zurückliegt; sonst fragt der Lauf zusätzlich `metadata_modified:[<Beginn des letzten erfolgreichen Laufs − 1 h> TO *]` (UTC). Ein abgebrochener Lauf zählt nicht als letzter, ein `--reextract` auch nicht (er fragt die Quelle nicht). Nur ein voller Lauf setzt `gone` (A3, A8). Die Art steht in `earthx_harvest_run.kind` und im Bericht.
+- **Extract:** Titel, Beschreibung (`notes` bzw. `description`), Herausgeber nach `publisher_field` (Paket oder `extras`), DOI (nur in DOI-Form), Lizenzangaben wörtlich (`license_id`, `license_url`, je Ressource `license` und `rights` [S]), räumliche Angabe aus `spatial` (in `extras` oder am Paket: GeoJSON → Rechteck und Geometrie, sonst Text als `spatial_text`), Zeit aus `temporal_start`/`temporal_end` bzw. `temporals`, Kategorie aus INSPIRE-Themen (`theme` und Schlagworte als URI), EU-Themen (`theme` und Gruppen mit dem Namen eines EU-Themas [S]), Gruppen und Schlagworten. Personenfelder (`author`, `maintainer`, Mail, Kontaktpunkte) kommen nicht in die Zwischenform.
+- **Datentyp, Lieferweg, Zugang** nach §5.2 aus einer Formattabelle in `discovery/extract.py` (Freitext und EU-URIs, ein Test je Schreibweise). Eine Ressource ist eine Datei, wenn ihr Format eine ist oder sie eine `download_url` ohne Dienst- oder Seitenformat hat.
+- **Link „Source“** (§6, F1 = 1): Rang 1 eine Ressource mit Format HTML bzw. `text/html` ohne `download_url`, keine Doku (Ressourcentyp oder Titel mit Dokumentation, Metadaten, Beschreibung, auch auf Englisch, Französisch, Italienisch) und keine Capabilities-Adresse; Rang 2 das Paketfeld `url`; Rang 3 `catalog_page` mit dem Paketnamen.
+- **Extraktor-Version** je Protokoll (`extract.extractor_version`): Code des Extraktors, gemeinsamer Code, Tabellen, `catalog_page` und bei CKAN `publisher_field`.
+- **README:** Abschnitt „Quellen ernten (M5-19)“; Felder der Seed-Dateien in `backend/catalog/sources/README.md`.
+- **Nicht in PR 2:** data.gv.at bleibt `enabled: false`, bis Ottos erster Lauf den Endpunkt bestätigt (F7). Kein Abruf echter Kataloge aus der Sitzung; Fixtures synthetisch (A5).
+- **Zu prüfen bei Ottos Lauf:** ob die Felder [S] bei GovData und opendata.swiss so heißen (`publisher_name`, `spatial`, `temporals`, `keywords` je Sprache, `rights`); ob tiefe Versätze bei GovData (bis `start` ≈ 165 000) ohne Zeitüberschreitung antworten; Größe der Tabellen nach einem vollen Lauf von GovData.
