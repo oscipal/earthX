@@ -258,7 +258,7 @@ Umgesetzt nach §5 mit F5 = 1: Komposit- und Schritt-Presets können jetzt alles
 - Ein Schritt nimmt die Werte mit, die in der Ebene gewählt sind (z. B. Azimut 90°).
 - Kennt der Datensatz das Preset nicht mehr, öffnet die Ebene wie bisher auf den Bändern der Szenen.
 
-**Komposit als Farbbild (Auslegung, gilt bis Widerspruch)**
+**Komposit als Farbbild (Auslegung, bestätigt von Otto am 17.11.2026: Vorrang = 1, alle Auslegungen von §10 gelten)**
 - **Erkennen:** Ein Komposit wird an den Ausdrücken der `band_math`-Schritte erkannt, wie ein Index (`presetFor`), nicht am Namen. Es gilt das erste Komposit der Registry, dessen drei Ausdrücke unter den Bändern stehen.
 - **Vorrang:** Es gibt weiter genau einen Eintrag „RGB“. Die echte Farbe (`earthx:true_color`) geht vor, sobald ihre drei Bänder in der Ausgabe bzw. Datei stehen; so bleibt sie immer erreichbar. Das Komposit ist „RGB“ nur dort, wo die echte Farbe fehlt – so bei „Process“ an einer Komposit-Ebene, deren Bestand nur die drei Kanäle sind.
 - **Vorschau im Panel:** Ist „RGB“ das Komposit, wird es mit dem festen Bereich je Kanal aus der Registry und ohne Colormap gezeichnet. Die Vorschau beginnt mit „RGB“, solange die drei Kanäle die einzigen Ergebnisse sind; ein einzelner Kanal ist kein Bild des Komposits. Ein danach angelegter Schritt wird wie jedes neue Ergebnis gezeigt (Regel „zuletzt hinzugefügt“).
