@@ -28,7 +28,7 @@ from typing import Any
 
 from earthx.discovery.netcdf_refs import FileReferences, UnsupportedLayout, reference_file
 from earthx.gateway import Gateway, Policy
-from earthx.gateway.errors import GatewayError
+from earthx.gateway.errors import GatewayError, UpstreamError
 
 COLLECTION = "https://data.geo.admin.ch/api/stac/v1/collections/ch.meteoschweiz.ogd-surface-derived-grid"
 HOST = "data.geo.admin.ch"
@@ -104,6 +104,15 @@ def report_assets(features: list[dict[str, Any]]) -> list[tuple[dict[str, str], 
     return matched
 
 
+def reason(error: Exception) -> str:
+    """Why a file was not read, without what the source wrote: an answer can quote a path or a key."""
+    if isinstance(error, UpstreamError):
+        return f"{type(error).__name__} {error.status_code}"
+    if isinstance(error, GatewayError):
+        return type(error).__name__
+    return f"{type(error).__name__}: {form(str(error))}"
+
+
 def signature(refs: FileReferences) -> tuple[Any, ...]:
     layout = refs.layout
     a, _, c, _, e, f = layout.transform
@@ -133,7 +142,7 @@ async def report_layout(gateway: Gateway, matched: list[tuple[dict[str, str], di
         try:
             refs = await reference_file(gateway, asset["href"], None)
         except (UnsupportedLayout, GatewayError) as error:
-            refused[f"{name['quantity']} {name['grid']}: {type(error).__name__}: {form(str(error))}"] += 1
+            refused[f"{name['quantity']} {name['grid']}: {reason(error)}"] += 1
             continue
         layouts[(name["grid"], *signature(refs))] += 1
         days = (refs.times[-1] - refs.times[0]).days + 1

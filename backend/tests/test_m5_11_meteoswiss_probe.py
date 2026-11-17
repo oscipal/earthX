@@ -73,6 +73,7 @@ def probe(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> ModuleType:
 
     monkeypatch.setattr(module, "Gateway", gateway)
     module.SEEN = source.seen
+    module.SOURCE = source
     module.ETAG = source.etag
     return module
 
@@ -100,6 +101,19 @@ def test_the_layout_of_every_completed_daily_file(probe: ModuleType, capsys: pyt
     assert "layout × 2" in out and "layout × 1" in out  # one layout per grid
     assert "EPSG:2056" in out and "<f4" in out and "degC" in out
     assert "from 06:00:00 to 06:00:00 (24 h)" in out
+
+
+def test_a_refused_file_is_named_by_its_status_only(probe: ModuleType, capsys: pytest.CaptureFixture[str]) -> None:
+    """An answer of the source may quote a key or a path; the output names only the status."""
+
+    def gone(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, text="<Error><Key>secret/path/file.nc</Key></Error>")
+
+    probe.SOURCE.handler = gone
+    assert probe.run(["--layout", "--grids", "ch01h"]) == 0
+    out = capsys.readouterr().out
+    assert "UpstreamError 404 × 1" in out
+    assert "secret" not in out
 
 
 def test_limit(probe: ModuleType, capsys: pytest.CaptureFixture[str]) -> None:
