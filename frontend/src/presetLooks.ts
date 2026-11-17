@@ -8,6 +8,7 @@ import { fetchProcess } from './processing';
 import { processInfo, type ProcessInfo } from './processingOrder';
 import type { QuickPreset } from './quickPresets';
 import type { ResultStats } from './render';
+import type { Field } from './schemaForm';
 
 const asked = new Map<string, Promise<ProcessInfo | null>>();
 const known = new Map<string, ProcessInfo>();
@@ -46,6 +47,19 @@ export async function lookOfStepPreset(datasetId: string, preset: QuickPreset): 
 
 // The same, without asking: `null` where the description has not come yet.
 export const knownLookOf = (datasetId: string, preset: QuickPreset): DisplayLook | null => lookIn(known.get(datasetId), preset);
+
+// The fields of the parameters a person may change at the step preset (Otto, 17.11.2026), as the form of its operator describes them
+// (bounds, choices, unit), in the order of the registry; none before the description is in or where the operator has no form.
+export function knownFieldsOf(datasetId: string, preset: QuickPreset): Field[] {
+  const [step] = preset.steps;
+  const operator = known.get(datasetId)?.operators.find((o) => o.op === step?.op && o.opVersion === step?.opVersion);
+  if (preset.kind !== 'step' || !operator?.form.supported) return [];
+  const fields = operator.form.fields;
+  return preset.adjustable.flatMap((name) => fields.filter((field) => field.name === name));
+}
+
+// The description of the dataset, asked for once; resolves when it is in (or failed).
+export const describeDataset = (datasetId: string): Promise<unknown> => infoOf(datasetId);
 
 // Forget what was read (tests).
 export function forgetPresetLooks(): void {

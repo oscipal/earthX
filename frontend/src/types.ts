@@ -305,6 +305,9 @@ export interface AppliedRender {
   // The name of the index preset of the dataset the view draws instead of a band (NM4-14b, `viewIndex.ts`); the range and
   // colormap below are the ones the index is drawn with.
   index?: string;
+  // The values a person chose for the adjustable parameters of that preset (Otto, 17.11.2026, M5-14): drawn into its step; none for the
+  // values of the registry.
+  presetParams?: Record<string, string | number | boolean>;
   // The single band of the data the view draws instead of its standard picture (NM4-45, `viewBand.ts`): the key of its asset.
   // None is the standard picture ("RGB" where the dataset has a true-colour one).
   band?: string;

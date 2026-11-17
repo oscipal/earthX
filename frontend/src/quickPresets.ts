@@ -41,7 +41,14 @@ export interface QuickPreset {
   index: IndexPreset | null;
   // The range of each channel of a composite, red, green, blue; `null` for the others.
   channels: [number, number][] | null;
+  // The parameters of a step a person may change under "Quick processing" (Otto, 17.11.2026), in the order of the registry; the step
+  // holds their values (those of the registry, or those of the look, `withParams`).
+  adjustable: string[];
 }
+
+// A value a parameter of a preset may take: what a field of the panel gives.
+export type PresetParam = string | number | boolean;
+export type PresetParams = Record<string, PresetParam>;
 
 // The names an expression reads, in the order it first names them (a preset names no function). The registry checks that each is a band
 // of the dataset, and the assets are called like their bands.
@@ -74,6 +81,7 @@ export function presetOfIndex(index: IndexPreset): QuickPreset {
     bands: [index.name],
     index,
     channels: null,
+    adjustable: [],
   };
 }
 
@@ -94,6 +102,7 @@ function ofComposite(entry: unknown): QuickPreset | null {
     bands,
     index: null,
     channels: rescale.map((pair) => [pair[0], pair[1]] as [number, number]),
+    adjustable: [],
   };
 }
 
@@ -105,9 +114,11 @@ function assetsOfParams(params: Record<string, unknown>): string[] {
 
 function ofStep(entry: unknown): QuickPreset | null {
   if (!isObject(entry)) return null;
-  const { name, title, op, op_version: opVersion, params } = entry;
+  const { name, title, op, op_version: opVersion, params, adjustable = [] } = entry;
   if (!isText(name) || !isText(title) || !isText(op) || typeof opVersion !== 'number' || !Number.isInteger(opVersion) || !isObject(params)) return null;
   if (params.name !== name) return null;
+  // Each adjustable parameter is set in the step, and is no band and not the name; a backend before the field sends none.
+  if (!Array.isArray(adjustable) || !adjustable.every((key): key is string => isText(key) && key in params && key !== 'name' && key !== 'bands')) return null;
   const assets = assetsOfParams(params);
   if (assets.length === 0) return null;
   return {
@@ -120,6 +131,7 @@ function ofStep(entry: unknown): QuickPreset | null {
     bands: [name],
     index: null,
     channels: null,
+    adjustable: [...new Set(adjustable)],
   };
 }
 
@@ -151,10 +163,36 @@ export function quickPresetsOf(collection: Collection | undefined): QuickPreset[
   return found;
 }
 
-// The preset a look names, among the presets of the dataset; `null` for a look without one (or one the dataset lacks).
-export function presetOfLook(look: Pick<AppliedRender, 'index'>, collection: Collection | undefined): QuickPreset | null {
+// The preset with the values a person chose for its adjustable parameters (Otto, 17.11.2026). A value of a parameter that is not adjustable,
+// or of another type than the registry's, is left out: the step keeps the registry's. The same preset object for the same values.
+const withValues = new WeakMap<QuickPreset, Map<string, QuickPreset>>();
+export function withParams(preset: QuickPreset, values: PresetParams | undefined): QuickPreset {
+  const [step] = preset.steps;
+  const taken = Object.entries(values ?? {}).filter(
+    ([key, value]) => preset.adjustable.includes(key) && step && typeof value === typeof step.params[key] && step.params[key] !== value,
+  );
+  if (!step || taken.length === 0) return preset;
+  const key = canonicalJson(Object.fromEntries(taken));
+  const known = withValues.get(preset) ?? new Map<string, QuickPreset>();
+  withValues.set(preset, known);
+  const made = known.get(key) ?? { ...preset, steps: [{ ...step, params: { ...step.params, ...Object.fromEntries(taken) } }] };
+  known.set(key, made);
+  return made;
+}
+
+// The values of the adjustable parameters of a preset as its step holds them.
+export const paramsOfPreset = (preset: QuickPreset): PresetParams =>
+  Object.fromEntries(preset.adjustable.flatMap((key) => {
+    const value = preset.steps[0]?.params[key];
+    return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' ? [[key, value]] : [];
+  }));
+
+// The preset a look names, among the presets of the dataset, with the values the look chose for its parameters; `null` for a look without
+// one (or one the dataset lacks).
+export function presetOfLook(look: Pick<AppliedRender, 'index' | 'presetParams'>, collection: Collection | undefined): QuickPreset | null {
   if (!look.index) return null;
-  return quickPresetsOf(collection).find((preset) => preset.name === look.index) ?? null;
+  const preset = quickPresetsOf(collection).find((one) => one.name === look.index);
+  return preset ? withParams(preset, look.presetParams) : null;
 }
 
 // The look the fields take when the preset is chosen. An index and a composite bring their ranges; a step brings the look of its

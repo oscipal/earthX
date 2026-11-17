@@ -5,7 +5,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { buildOperatorTileTemplate } from './api';
 import { SENTINEL_2_PRESETS } from './fixtures/indexPresets';
-import { lookOfPreset, presetOfLook, quickPresetsOf, shownBandsOf, tileStepsOf } from './quickPresets';
+import { lookOfPreset, paramsOfPreset, presetOfLook, quickPresetsOf, shownBandsOf, tileStepsOf, withParams } from './quickPresets';
+import { lookChanged, lookOfPendingFields, pendingFieldsOf } from './render';
 import type { Collection } from './types';
 import { indexChainOf, indexStatisticsUrl } from './viewIndex';
 
@@ -22,8 +23,9 @@ const HILLSHADE = {
   op: 'terrain',
   op_version: 1,
   params: { product: 'hillshade', bands: ['data'], method: 'horn', azimuth: 315, altitude: 45, z_factor: 1, multidirectional: false, name: 'hillshade' },
+  adjustable: ['azimuth', 'altitude'],
 };
-const ASPECT = { ...HILLSHADE, name: 'aspect', title: 'Aspect', params: { product: 'aspect', bands: ['data'], method: 'horn', name: 'aspect' } };
+const ASPECT = { ...HILLSHADE, name: 'aspect', title: 'Aspect', params: { product: 'aspect', bands: ['data'], method: 'horn', name: 'aspect' }, adjustable: [] };
 
 const collection = (fields: Record<string, unknown>) => ({ id: 'x', ...fields }) as unknown as Collection;
 const S2 = collection({ 'earthx:index_presets': SENTINEL_2_PRESETS, 'earthx:composite_presets': [FALSE_COLOUR], 'earthx:step_presets': [] });
@@ -63,6 +65,8 @@ describe('the presets of a dataset', () => {
     ['a step whose band is not the name of the preset', { ...HILLSHADE, params: { ...HILLSHADE.params, name: 'shade' } }],
     ['a step that reads no band', { ...HILLSHADE, params: { product: 'hillshade', name: 'hillshade' } }],
     ['a step without a version', { ...HILLSHADE, op_version: '1' }],
+    ['a step that makes a parameter adjustable it does not set', { ...HILLSHADE, adjustable: ['slope_unit'] }],
+    ['a step that makes its bands adjustable', { ...HILLSHADE, adjustable: ['bands'] }],
     ['a step named like an index of the same dataset', { ...HILLSHADE, name: 'ndvi', params: { ...HILLSHADE.params, name: 'ndvi' } }],
   ])('leave out %s', (_what, entry) => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
@@ -134,5 +138,50 @@ describe('a step', () => {
     expect(presetOfLook({ index: 'aspect' }, DEM)).toBe(aspect);
     expect(presetOfLook({ index: 'slope' }, DEM)).toBeNull();
     expect(presetOfLook({}, DEM)).toBeNull();
+  });
+
+  it('names the parameters a person may change, with the values of the registry', () => {
+    expect(hillshade.adjustable).toEqual(['azimuth', 'altitude']);
+    expect(paramsOfPreset(hillshade)).toEqual({ azimuth: 315, altitude: 45 });
+    expect(aspect.adjustable).toEqual([]);
+  });
+});
+
+describe('the values a person chose for the parameters of a step (Otto, 17.11.2026)', () => {
+  const [hillshade] = quickPresetsOf(DEM);
+
+  it('go into the step of the tile, and the rest stays as the registry has it', () => {
+    const turned = withParams(hillshade, { azimuth: 90, altitude: 30 });
+    const url = new URL(buildOperatorTileTemplate('x', 'T1', turned.assets, tileStepsOf(turned), shownBandsOf(turned)), 'http://localhost');
+    expect(JSON.parse(url.searchParams.get('params')!)).toEqual({ ...HILLSHADE.params, azimuth: 90, altitude: 30 });
+    expect(paramsOfPreset(turned)).toEqual({ azimuth: 90, altitude: 30 });
+  });
+
+  it('come with the look: the same preset for the same values, that of the registry for none', () => {
+    expect(presetOfLook({ index: 'hillshade', presetParams: { azimuth: 90 } }, DEM)).toBe(presetOfLook({ index: 'hillshade', presetParams: { azimuth: 90 } }, DEM));
+    expect(presetOfLook({ index: 'hillshade' }, DEM)).toBe(hillshade);
+    expect(presetOfLook({ index: 'hillshade', presetParams: { azimuth: 315 } }, DEM)).toBe(hillshade);
+  });
+
+  it('leave out a parameter that is not adjustable or a value of another type', () => {
+    expect(withParams(hillshade, { z_factor: 5, method: 'zevenbergen_thorne' })).toBe(hillshade);
+    expect(withParams(hillshade, { azimuth: '90' })).toBe(hillshade);
+    expect(withParams(hillshade, { bands: 'red' } as never)).toBe(hillshade);
+  });
+});
+
+describe('a change of a parameter is a change of the look', () => {
+  const fields = (presetParams: Record<string, string | number | boolean>) => ({ pendingColormapName: 'greys_r', pendingVmin: '3', pendingVmax: '251', pendingIndex: 'hillshade', pendingPresetParams: presetParams });
+
+  it('is what "Apply" would draw, and the look carries it', () => {
+    const applied = { index: 'hillshade', colormapName: 'greys_r', rescale: '3,251' };
+    expect(lookChanged(applied, fields({}))).toBe(false);
+    expect(lookChanged(applied, fields({ azimuth: 90 }))).toBe(true);
+    expect(lookOfPendingFields(fields({ azimuth: 90 }))).toMatchObject({ index: 'hillshade', presetParams: { azimuth: 90 } });
+    expect(pendingFieldsOf({ ...applied, presetParams: { azimuth: 90 } }).pendingPresetParams).toEqual({ azimuth: 90 });
+  });
+
+  it('is nothing without a preset', () => {
+    expect(lookOfPendingFields({ ...fields({ azimuth: 90 }), pendingIndex: '' }).presetParams).toBeUndefined();
   });
 });

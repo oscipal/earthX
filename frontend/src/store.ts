@@ -58,7 +58,7 @@ import { assetOfLook, bandAssetsOf, withAsset } from './viewBand';
 import { indexKeyOf, mosaicKeyOf, MAX_MOSAIC_OPERATOR_ASSETS, orderedPass, orderKeyOf, passesOf, stackLikeView } from './mosaic';
 import type { Mosaics, SceneEntry } from './mosaic';
 import { ensureSelection, withSelection } from './mosaicSelection';
-import { isComposite, lookOfPreset, type QuickPreset } from './quickPresets';
+import { isComposite, lookOfPreset, type PresetParam, type PresetParams, type QuickPreset } from './quickPresets';
 import { knownLookOf, lookOfStepPreset, statsOfTiler } from './presetLooks';
 import { lookRange } from './displayLook';
 import type { BasemapId } from './basemaps';
@@ -472,6 +472,7 @@ const LEAVE_FOCUS = {
   pendingVmax: '',
   pendingChannels: [] as ChannelRange[],
   pendingIndex: '',
+  pendingPresetParams: {} as PresetParams,
   pendingBand: '',
   pendingUnit: 'value' as RangeUnit,
   pendingPercentLow: DEFAULT_PERCENT.low,
@@ -777,12 +778,58 @@ export function datasetSavable(s: AppState): boolean {
 
 // The first scene of the image the view shows (of the view where nothing is shown yet): the one its range is measured on.
 // Whether the fields stand for the colour picture of the dataset ("RGB"): no band, no index, and a dataset with a true-colour one.
+// How long a parameter of a preset rests before its range is measured again (a dial turns through many values).
+const PRESET_PARAM_REST_MS = 400;
+let presetParamTimer: ReturnType<typeof setTimeout> | undefined;
+
+// Whether the fields hold what a step of "Quick processing" is drawn with: a colormap and both ends of the range.
+const stepReady = (s: AppState): boolean => s.pendingColormapName !== '' && s.pendingVmin.trim() !== '' && s.pendingVmax.trim() !== '';
+
+// The look of the step preset in the fields and, where it is not a fixed range, the range from a measure of the band as it is drawn, with
+// the values chosen for its parameters (adr/0035, M5-14). `focusLoading` holds "Apply" meanwhile: a step is never drawn with a range made up.
+// `true` where the fields were filled; nothing changes where the fields asked for something else meanwhile.
+async function fillStepRange(set: SetState, get: GetState): Promise<boolean> {
+  const s = get();
+  const shown = shownImageOf(viewImagesOf(s), s.shownImage);
+  const preset = shown ? viewIndexOf(pendingPresetLook(s), s.datasets.find((d) => d.id === shown.datasetId)?.collection) : null;
+  if (!shown || preset?.kind !== 'step') return false;
+  const asked = canonicalJson(pendingPresetLook(s));
+  const still = () => canonicalJson(pendingPresetLook(get())) === asked && get().shownImage === s.shownImage;
+  set({ focusLoading: true });
+  try {
+    const look = await lookOfStepPreset(shown.datasetId, preset);
+    if (!still()) return false;
+    if (!look) {
+      set({ notice: `${preset.label} cannot be drawn now: the description of the dataset did not come.` });
+      return false;
+    }
+    const measure = look.scale === 'fixed' ? null : viewMeasure(get());
+    let stats = null;
+    if (measure) {
+      try {
+        stats = statsOfTiler((await measureView(measure)).statistics);
+      } catch (e) {
+        set({ notice: `Could not measure ${preset.label}: ${(e as Error).message}` });
+      }
+    }
+    if (!still()) return false;
+    const fields = lookOfPreset(preset, look, stats) ?? { index: preset.name, colormapName: look.colormap };
+    set(pendingFieldsOf({ ...fields, presetParams: get().pendingPresetParams }));
+    return true;
+  } finally {
+    set({ focusLoading: false });
+  }
+}
+
+// The preset the fields stand for, with the values chosen for its parameters.
+export const pendingPresetLook = (s: Pick<AppState, 'pendingIndex' | 'pendingPresetParams'>): AppliedRender => ({ index: s.pendingIndex, presetParams: s.pendingPresetParams });
+
 export function colourView(s: AppState): boolean {
   if (s.pendingBand) return false;
   const { info } = firstSceneOfView(s);
   const collection = s.datasets.find((d) => d.id === info?.datasetId)?.collection;
   // A composite of "Quick processing" is a colour picture of its own (M5-14); an index or a step is one band.
-  if (s.pendingIndex) return isComposite(viewIndexOf({ index: s.pendingIndex }, collection));
+  if (s.pendingIndex) return isComposite(viewIndexOf(pendingPresetLook(s), collection));
   return trueColorOf(collection) !== null;
 }
 
@@ -803,7 +850,7 @@ export function enhanceOn(s: AppState): boolean {
 let measureKept: { inputs: unknown[]; value: ViewMeasure | null } | null = null;
 
 export function viewMeasure(s: AppState): ViewMeasure | null {
-  const inputs = [s.shownImage, s.downloaded, s.sections, s.openSectionId, s.datasetId, s.items, s.groups, s.datasets, s.pendingBand, s.pendingIndex, s.cropToAoi, s.viewAoi];
+  const inputs = [s.shownImage, s.downloaded, s.sections, s.openSectionId, s.datasetId, s.items, s.groups, s.datasets, s.pendingBand, s.pendingIndex, s.pendingPresetParams, s.cropToAoi, s.viewAoi];
   if (measureKept && measureKept.inputs.every((input, i) => Object.is(input, inputs[i]))) return measureKept.value;
   const value = measureOfView(s);
   measureKept = { inputs, value };
@@ -814,7 +861,7 @@ function measureOfView(s: AppState): ViewMeasure | null {
   const { itemId, info } = firstSceneOfView(s);
   if (!info || itemId === undefined) return null;
   const collection = s.datasets.find((d) => d.id === info.datasetId)?.collection;
-  const index = viewIndexOf({ index: s.pendingIndex }, collection);
+  const index = viewIndexOf(pendingPresetLook(s), collection);
   const asset = assetOfLook(info, { band: s.pendingBand || undefined });
   const sceneUrl = index ? indexStatisticsUrl(info.datasetId, itemId, index) : api.buildStatisticsUrl(info.datasetId, itemId, asset);
   const shown = shownImageOf(viewImagesOf(s), s.shownImage);
@@ -1661,6 +1708,10 @@ export interface AppState {
   pendingChannels: ChannelRange[];
   // The index the fields stand for, drawn once "Apply" is pressed (NM4-14b); '' = none.
   pendingIndex: string;
+  // The values chosen for the adjustable parameters of that preset (Otto, 17.11.2026, M5-14); empty for the registry's.
+  pendingPresetParams: PresetParams;
+  // Changes one of them; it is drawn at once, and a range that comes from a measure follows.
+  setPresetParam: (name: string, value: PresetParam) => void;
   // The single band the fields stand for, drawn once "Apply" is pressed (NM4-45); '' = the standard picture.
   pendingBand: string;
   // "vmin"/"vmax" as values or as percentiles (NM4-65 part 4); with "percent" the fields show the two percentiles, and
@@ -2022,6 +2073,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   pendingVmax: '',
   pendingChannels: [],
   pendingIndex: '',
+  pendingPresetParams: {},
   pendingBand: '',
   pendingUnit: 'value',
   pendingPercentLow: DEFAULT_PERCENT.low,
@@ -3177,7 +3229,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     const item = sectionsForView(s).flatMap((x) => x.items).find((it) => it.id === shown.ids[0]);
     if (!bandAssetsOf(item, collection).includes(band)) return;
-    set({ pendingBand: band, pendingIndex: '', pendingColormapName: '', pendingVmin: '', pendingVmax: '', pendingChannels: [] });
+    set({ pendingBand: band, pendingIndex: '', pendingPresetParams: {}, pendingColormapName: '', pendingVmin: '', pendingVmax: '', pendingChannels: [] });
     void get().autoStretch();
   },
   toggleDownloaded: () => set((s) => ({ showDownloaded: !s.showDownloaded })),
@@ -3210,34 +3262,23 @@ export const useAppStore = create<AppState>((set, get) => ({
     const s = get();
     s.chooseViewIndex(s.pendingIndex === name ? null : name);
     set({ enhance: null });
-    const shown = shownImageOf(viewImagesOf(get()), get().shownImage);
-    const preset = shown ? viewIndexOf({ index: get().pendingIndex }, get().datasets.find((d) => d.id === shown.datasetId)?.collection) : null;
-    if (!shown || preset?.kind !== 'step' || get().pendingIndex !== name) return;
-    // Still the same preset on the same image: a click elsewhere meanwhile has its own say.
-    const still = () => get().pendingIndex === name && get().shownImage === s.shownImage && shownImageOf(viewImagesOf(get()), get().shownImage)?.key === shown.key;
-    // "Apply" waits (`focusLoading`) until the look and its range are in: a step is never drawn with a range made up.
-    set({ focusLoading: true });
-    try {
-      const look = await lookOfStepPreset(shown.datasetId, preset);
-      if (!still()) return;
-      if (!look) {
-        set({ notice: `${preset.label} cannot be drawn now: the description of the dataset did not come.` });
-        return;
-      }
-      const measure = look.scale === 'fixed' ? null : viewMeasure(get());
-      let stats = null;
-      if (measure) {
-        try {
-          stats = statsOfTiler((await measureView(measure)).statistics);
-        } catch (e) {
-          set({ notice: `Could not measure ${preset.label}: ${(e as Error).message}` });
-        }
-      }
-      if (!still()) return;
-      set(pendingFieldsOf(lookOfPreset(preset, look, stats) ?? { index: preset.name, colormapName: look.colormap }));
-    } finally {
-      set({ focusLoading: false });
-    }
+    if (get().pendingIndex === name) await fillStepRange(set, get);
+  },
+  // A parameter of the preset changes the picture at once (Otto, 17.11.2026): the view is drawn with the value as soon as the look of the step
+  // is in; a range that comes from a measure is measured again once the value rests (a dial turns through many).
+  setPresetParam: (param, value) => {
+    const s = get();
+    const shown = shownImageOf(viewImagesOf(s), s.shownImage);
+    const preset = shown ? viewIndexOf({ index: s.pendingIndex }, s.datasets.find((d) => d.id === shown.datasetId)?.collection) : null;
+    if (!preset?.adjustable.includes(param)) return;
+    set({ pendingPresetParams: { ...s.pendingPresetParams, [param]: value } });
+    if (stepReady(get())) void get().applyRender();
+    clearTimeout(presetParamTimer);
+    presetParamTimer = setTimeout(() => {
+      void fillStepRange(set, get).then((filled) => {
+        if (filled && stepReady(get())) void get().applyRender();
+      });
+    }, PRESET_PARAM_REST_MS);
   },
   // Into the fields, drawn with "Apply" like an index (Otto, 3.11.2026, zu #282): every channel of a colour picture at the usual pair, each in
   // percentiles on its own (UI-03e); one band as the shared pair. A second click puts the fields back as they were, also without "Apply".
@@ -3360,7 +3401,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       // A step of "Quick processing" takes the range its look calls for (adr/0035: hillshade from the minimum to the maximum, an aspect
       // on its fixed range); the colormap in the fields stays.
       const { info } = firstSceneOfView(s);
-      const preset = info ? viewIndexOf({ index: s.pendingIndex }, s.datasets.find((d) => d.id === info.datasetId)?.collection) : null;
+      const preset = info ? viewIndexOf(pendingPresetLook(s), s.datasets.find((d) => d.id === info.datasetId)?.collection) : null;
       const look = info && preset ? await lookOfStepPreset(info.datasetId, preset) : null;
       const drawn = look ? lookRange(look, statsOfTiler(stats)) : null;
       const range: [number, number] | null = drawn ? [Number(drawn.vmin), Number(drawn.vmax)] : autoRescale(stats);

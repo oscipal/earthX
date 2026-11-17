@@ -8,6 +8,8 @@ import type { BandStatistics } from './api';
 import { badChannelPercent, CHANNEL_COUNT, channelsOf, channelsOfRescale, percentsOfChannels, rescaleOfChannels, samePercents, type ChannelRange } from './channels';
 import { DEFAULT_PERCENT, percentOf, samePercent, type RangeUnit } from './percentRange';
 import type { AppliedRender, EarthxDefaultRender } from './types';
+import type { PresetParams } from './quickPresets';
+import { canonicalJson } from './processing';
 
 export function autoRescale(stats: Record<string, BandStatistics>): [number, number] | null {
   const bands = Object.values(stats);
@@ -47,6 +49,7 @@ export function pendingFieldsOf(render: AppliedRender): {
   pendingVmax: string;
   pendingChannels: ChannelRange[];
   pendingIndex: string;
+  pendingPresetParams: PresetParams;
   pendingBand: string;
   pendingUnit: RangeUnit;
   pendingPercentLow: string;
@@ -64,6 +67,7 @@ export function pendingFieldsOf(render: AppliedRender): {
     pendingVmax: vmax,
     pendingChannels: typed ?? channels ?? [],
     pendingIndex: render.index ?? '',
+    pendingPresetParams: render.index ? { ...(render.presetParams ?? {}) } : {},
     pendingBand: render.band ?? '',
     // A look typed in percentiles shows "%" again (NM4-65 part 4).
     pendingUnit: render.percent ? 'percent' : 'value',
@@ -87,6 +91,8 @@ type PendingFields = {
   // The three ranges of a colour picture set channel by channel; empty while one range holds for all (UI-03d).
   pendingChannels?: readonly ChannelRange[];
   pendingIndex?: string;
+  // The values chosen for the adjustable parameters of the preset in `pendingIndex` (M5-14); empty for those of the registry.
+  pendingPresetParams?: PresetParams;
   pendingBand?: string;
   pendingUnit?: RangeUnit;
   pendingPercentLow?: string;
@@ -121,6 +127,7 @@ export function lookOfPendingFields(p: PendingFields): AppliedRender {
     colormapName: p.pendingColormapName || undefined,
     rescale: channels ? rescaleOfChannels(channels) : vmin !== '' && vmax !== '' ? `${vmin},${vmax}` : undefined,
     index: p.pendingIndex || undefined,
+    presetParams: p.pendingIndex && p.pendingPresetParams && Object.keys(p.pendingPresetParams).length > 0 ? { ...p.pendingPresetParams } : undefined,
     band: p.pendingBand || undefined,
     percent: (channels?.some((channel) => channel.percent) ? undefined : pendingPercentOf(p)) ?? undefined,
     percentChannels,
@@ -135,6 +142,7 @@ export function lookChanged(applied: AppliedRender, p: PendingFields): boolean {
     (applied.colormapName || undefined) !== asked.colormapName ||
     (applied.rescale || undefined) !== asked.rescale ||
     (applied.index || undefined) !== asked.index ||
+    canonicalJson(applied.presetParams ?? {}) !== canonicalJson(asked.presetParams ?? {}) ||
     (applied.band || undefined) !== asked.band ||
     // Typed in percentiles and not applied yet: the values still hold the ones of the percentiles before.
     !samePercent(applied.percent, asked.percent) ||
