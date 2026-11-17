@@ -347,6 +347,12 @@ zusammen, leer = 1; abgerundet, mindestens 1 je Host): Wer mehr Instanzen starte
 wartet auf einen freien Platz, es wird nie abgewiesen. Kacheln und Suche halten keinen Abstand; den nutzt
 `materialize`.
 
+**Zeiger und Unterbrecher je Host (M5-37):** `materialize` (später auch der Harvester) hält Abstand und
+Verbindungen eines Hosts zusammen mit allen anderen Läufen und Instanzen, über die Tabellen `earthx_source_host`
+und `earthx_source_lease` (Migration 022) auf einer eigenen Verbindung. Nach 3 Fehlern in Folge ruht ein Host
+5 min, jede weitere Pause direkt danach doppelt so lang bis 60 min. Ist sein nächster Platz mehr als 60 s
+entfernt, endet `materialize` mit „rests for this run“ und schreibt nichts; später erneut starten.
+
 `backend/catalog/prototype/` hält Einträge von Quellen mit unklarer Rechtslage
 (`docs/adr/0024-prototyp-quellen.md`). Das Verzeichnis kommt nie ins Image; geladen wird es
 nur mit `EARTHX_PROTOTYPE_SOURCES` (Pfad), `EARTHX_PROFILE=local` und ohne `CI`. Jede andere

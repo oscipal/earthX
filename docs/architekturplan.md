@@ -512,6 +512,17 @@ teilen; die Zarr-Stores eines Prozesses teilen ein Gateway. Kacheln und Suche ha
 keinen Abstand (G3). Das Teilbudget je Instanz für `api` und `tiler` folgt mit PR 2;
 cluster-weit exakt wird es erst mit dem Egress-Proxy in M6.
 
+**Nachtrag 2026-11-16 (M5-37, `plans/m5/m5-37-zeiger-je-host.md`):** Für `materialize`,
+den Harvester und den Pyramidenbau gelten Abstand und Verbindungen je Host über alle
+Instanzen: ein Zeiger je Host und ein Platz je laufender Anfrage in Postgres
+(`earthx_source_host`, `earthx_source_lease`, Migration 022; Plätze mit Frist 30 s und
+Herzschlag). Der Circuit Breaker oben ist dort ein Unterbrecher je Host in derselben Zeile:
+nach 3 Fehlern in Folge 5 min Pause, jede weitere direkt danach doppelt so lang bis 60 min;
+er schiebt den Zeiger vor, alle Instanzen warten mit. `gateway` bekommt dafür nur ein
+Protokoll (`HostCoordinator`), die Fassung in Postgres liegt bei den Hüllen. Kacheln und
+Suche bleiben beim Teilbudget je Instanz; Token-Bucket und Bündelung über Instanzen
+bleiben offen bis M6.
+
 ---
 
 ## 7. Processing-Ebene

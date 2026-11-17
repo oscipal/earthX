@@ -9,6 +9,7 @@ The GDAL configuration follows in M1-03c.
 
 from earthx.gateway.checks import CheckedUrl, check_url
 from earthx.gateway.client import Gateway, GatewayResponse
+from earthx.gateway.coordinator import MAX_SHARED_WAIT_S, HostCoordinator
 from earthx.gateway.errors import (
     AddressRejected,
     GatewayError,
@@ -45,6 +46,7 @@ from earthx.gateway.slots import ReadSlots
 __all__ = [
     "ALLOWED_HOSTS_ENV",
     "DEFAULT_USER_AGENT",
+    "MAX_SHARED_WAIT_S",
     "OVERVIEW_HOST_INTERVAL_ENV",
     "SOURCE_INSTANCES_ENV",
     "USER_AGENT_ENV",
@@ -54,6 +56,7 @@ __all__ = [
     "Gateway",
     "GatewayError",
     "GatewayResponse",
+    "HostCoordinator",
     "HostPacer",
     "HostResting",
     "Policy",

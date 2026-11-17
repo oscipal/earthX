@@ -23,6 +23,7 @@ import random
 import secrets
 import time
 from collections.abc import Awaitable, Callable, Mapping
+from contextlib import AbstractAsyncContextManager, nullcontext
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlencode
@@ -30,6 +31,7 @@ from urllib.parse import urlencode
 import httpx
 
 from earthx.gateway.checks import CheckedUrl, check_url
+from earthx.gateway.coordinator import MAX_SHARED_WAIT_S, HostCoordinator
 from earthx.gateway.errors import (
     AddressRejected,
     HostResting,
@@ -50,6 +52,8 @@ from earthx.gateway.slots import ReadSlots
 LOGGER = logging.getLogger("earthx.gateway")
 
 RETRY_STATUS = frozenset({429, 502, 503, 504})
+# What a shared breaker counts as a failure of the host besides no answer at all (M5-37 §4.1): every other answer is one.
+FAILURE_STATUS = frozenset({429, 500, 502, 503, 504})
 REDIRECT_STATUS = frozenset({301, 302, 303, 307, 308})
 MAX_ATTEMPTS = 3
 BACKOFF_S = (0.5, 1.0, 2.0)
@@ -71,6 +75,13 @@ class GatewayResponse:
 
     def json(self) -> Any:
         return json.loads(self.content)
+
+
+def _retry_after_seconds(value: str | None) -> float | None:
+    """A ``Retry-After`` in whole seconds, else ``None``: an HTTP date is not read, and only ASCII digits count
+    (``"²".isdigit()`` is true, and a source may send any byte that httpx decodes as Latin-1)."""
+    text = (value or "").strip()
+    return float(text) if text.isascii() and text.isdigit() else None
 
 
 def _dumps(payload: Any) -> bytes:
@@ -107,6 +118,7 @@ class Gateway:
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         clock: Callable[[], float] = time.monotonic,
         slots: ReadSlots | None = None,
+        coordinator: HostCoordinator | None = None,
     ) -> None:
         if slots is not None and not slots.policy.allowed_hosts >= policy.allowed_hosts:
             raise ValueError("the slots must cover every host the policy allows")
@@ -117,6 +129,9 @@ class Gateway:
         # The per-host cap, not httpx's global pool limit: it is a rule about the source (adr/0005 §6). A process
         # hands in its one counter, shared with its GDAL readers (M5-36 §4.1); without it the cap is this object's.
         self._slots = ReadSlots(policy) if slots is None else slots
+        # Spacing, places and breaker shared with every other instance that hands in the same kind (M5-37); without it,
+        # spacing is this object's and the cap the counter's above.
+        self._coordinator = coordinator
         # The spacing per host (adr/0025 §6.2): the earliest start of the next request.
         self._spacing_locks: dict[str, asyncio.Lock] = {}
         self._next_start: dict[str, float] = {}
@@ -220,7 +235,7 @@ class Gateway:
             checked = check_url(target, self._policy, resolve=self._resolve)
             if robots and self._policy.obey_robots:
                 await self._check_robots(checked)
-            async with self._slots.aslot(checked.host):
+            async with self._slots.aslot(checked.host), self._place(checked.host):
                 response = await self._attempt(
                     method, checked, headers=headers, content=content, retry=retry, redirects=redirects
                 )
@@ -285,13 +300,34 @@ class Gateway:
             return HostResting("robots.txt asks for a longer crawl delay than we wait", host=host)
         return rules
 
+    def _place(self, host: str) -> AbstractAsyncContextManager[object]:
+        """One of the host's places across all instances when a coordinator is handed in, else nothing more to hold."""
+        if self._coordinator is None:
+            return nullcontext()
+        return self._coordinator.place(host, self._policy.connections_for(host))
+
     async def _space(self, host: str) -> None:
         """Wait until this host's spacing allows the next start (adr/0025 §6.2).
 
         The start is reserved under the lock and waited for outside it, so six
-        concurrent requests still start one interval apart.
+        concurrent requests still start one interval apart. With a coordinator the
+        turn is the shared one (M5-37), taken even without an interval, because a
+        paused host moves it; a turn more than a minute off lets the host rest.
         """
         interval = max(self._policy.interval_for(host), self._crawl_delays.get(host, 0.0))
+        if self._coordinator is not None:
+            delay = await self._coordinator.reserve(host, interval, MAX_SHARED_WAIT_S)
+            if delay > MAX_SHARED_WAIT_S:
+                raise HostResting("the host's next turn is more than a minute away (paused or crowded)", host=host)
+            if delay > 0:
+                await self._sleep(delay)
+                # The breaker may have paused the host while this turn was waiting; a paused host is asked by no one.
+                left = await self._coordinator.pause_left(host)
+                if left > MAX_SHARED_WAIT_S:
+                    raise HostResting("the host was paused after repeated failures", host=host)
+                if left > 0:
+                    await self._sleep(left)
+            return
         if interval <= 0:
             return
         lock = self._spacing_locks.setdefault(host, asyncio.Lock())
@@ -353,20 +389,32 @@ class Gateway:
                 response = await self._once(method, checked, headers=headers, content=content)
             except httpx.TimeoutException as exc:
                 self._log(method, checked, started, attempt, redirects, error="timeout")
+                await self._report(checked.host, failed=True)
                 if last or not may_retry:
                     raise UpstreamTimeout(f"{checked.host} did not answer in time") from exc
             except httpx.TransportError as exc:
                 self._log(method, checked, started, attempt, redirects, error="transport")
+                await self._report(checked.host, failed=True)
                 if last or not may_retry:
                     raise UpstreamUnreachable(f"{checked.host} could not be reached") from exc
             else:
                 self._log(method, checked, started, attempt, redirects, response=response)
+                await self._report(
+                    checked.host,
+                    failed=response.status_code in FAILURE_STATUS,
+                    retry_after=response.headers.get("retry-after"),
+                )
                 if not (response.status_code in RETRY_STATUS and may_retry and not last):
                     return response
                 await self._wait(attempt, response.headers.get("retry-after"))
                 continue
             await self._wait(attempt, None)
         raise AssertionError("unreachable: the last attempt either returns or raises")
+
+    async def _report(self, host: str, *, failed: bool, retry_after: str | None = None) -> None:
+        """Tell the coordinator how the attempt ended; a ``Retry-After`` in whole seconds goes with it."""
+        if self._coordinator is not None:
+            await self._coordinator.report(host, failed=failed, retry_after_s=_retry_after_seconds(retry_after))
 
     async def _once(
         self,
@@ -416,8 +464,9 @@ class Gateway:
 
     async def _wait(self, attempt: int, retry_after: str | None) -> None:
         delay = BACKOFF_S[min(attempt, len(BACKOFF_S)) - 1] * random.uniform(0.8, 1.2)
-        if retry_after and retry_after.strip().isdigit():
-            delay = min(float(retry_after.strip()), MAX_RETRY_AFTER_S)
+        asked = _retry_after_seconds(retry_after)
+        if asked is not None:
+            delay = min(asked, MAX_RETRY_AFTER_S)
         await self._sleep(delay)
 
     def _log(
