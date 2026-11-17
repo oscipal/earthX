@@ -34,6 +34,7 @@ import { InspectorHead, InspectorSection, LayerStepper, Stepper } from './Inspec
 import { ArrowLeftIcon, CogIcon, DownloadIcon, PlusIcon } from './icons';
 import LayerActions from './LayerActions';
 import OpacityRow from './OpacityRow';
+import PresetParamControls from './PresetParamControls';
 import type { BandOption } from './BandSelect';
 import { viewKind } from '../viewKind';
 import RenderFields, { NO_COLORMAP } from './RenderFields';
@@ -117,6 +118,8 @@ export default function ViewerControls() {
   const appliedRender = useAppStore((s) => s.appliedRender);
   const viewOfLayer = useAppStore((s) => s.viewOfLayer);
   const pendingIndex = useAppStore((s) => s.pendingIndex);
+  const pendingPresetParams = useAppStore((s) => s.pendingPresetParams);
+  const setPresetParam = useAppStore((s) => s.setPresetParam);
   const pendingChannels = useAppStore((s) => s.pendingChannels);
   const renameLayer = useAppStore((s) => s.renameLayer);
   const setPendingChannel = useAppStore((s) => s.setPendingChannel);
@@ -167,7 +170,7 @@ export default function ViewerControls() {
   // What "Quick processing" offers for the dataset the image shows (NM4-14b, M5-14): its indices, composites and steps.
   const presets = quickPresetsOf(shownDataset?.collection);
   // What the fields hold (chosen, drawn after "Apply") and what the map draws now.
-  const chosen = viewIndexOf({ index: pendingIndex }, shownDataset?.collection);
+  const chosen = viewIndexOf({ index: pendingIndex, presetParams: pendingPresetParams }, shownDataset?.collection);
   const index = viewIndexOf(appliedRender, shownDataset?.collection);
   // Opened from the layer manager: the box of every layer, not the view with its row of buttons (NM4-65, Otto, 1.11.2026). A view that
   // is still open from the search keeps all of it, also once its image is pinned.
@@ -201,7 +204,9 @@ export default function ViewerControls() {
   };
   // "Quick processing" offers the presets of a dataset that has any, not at a layer of one, and "Enhance contrast" for RGB.
   const quickIndices = presets.length > 0 && !indexOnly;
-  const quick = quickIndices || colour;
+  // The parameters of the step chosen that a person may change (Otto, 17.11.2026), also at a layer of it.
+  const params = chosen?.kind === 'step' && chosen.adjustable.length > 0 && shownDataset ? chosen : null;
+  const quick = quickIndices || colour || params !== null;
   const indexBlock =
     index && shown
       ? indexBlockOf({
@@ -400,12 +405,12 @@ export default function ViewerControls() {
           {!quick && note}
         </InspectorSection>
 
-        {/* Only what applies (Otto, 3.11.2026): the indices of a dataset that has presets, and "Enhance contrast" for RGB; a layer of an
-            index has none of it. Three in a row (Otto, 2.11.2026), each says whether it is on; a second click, or a band picked, puts it
-            away. */}
+        {/* Only what applies (Otto, 3.11.2026): the presets of the dataset, and "Enhance contrast" for RGB; a layer of a preset has none of
+            it but the parameters of its step. Three in a row (Otto, 2.11.2026), each says whether it is on; a second click, or a band picked,
+            puts it away. */}
         {quick ? (
           <InspectorSection title="Quick processing">
-            <div className="vc-quick">
+            {(quickIndices || colour) && <div className="vc-quick">
               {quickIndices &&
                 presets.map((preset) => {
                   const on = chosen?.name === preset.name;
@@ -435,7 +440,8 @@ export default function ViewerControls() {
                   Enhance contrast
                 </button>
               )}
-            </div>
+            </div>}
+            {params && shownDataset && <PresetParamControls datasetId={shownDataset.id} preset={params} onChange={setPresetParam} />}
             {note}
           </InspectorSection>
         ) : null}

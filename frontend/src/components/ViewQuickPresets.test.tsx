@@ -26,11 +26,11 @@ declare global {
 
 const VIEWER = { group_by: ['datetime'], min_zoom: 8, max_zoom: 14, browse: 'quicklook', quicklook_nodata_max: null, results_group_by: ['datetime'], overview: 'pyramid', overview_resampling: 'average', overview_substitute: null };
 const FALSE_COLOUR = { name: 'false_colour_ir', title: 'False colour (IR)', expressions: ['nir', 'red', 'green'], rescale: [[0, 0.5], [0, 0.3], [0, 0.3]], reference: 'https://example.org/fc' };
-const step = (name: string, title: string, params: Record<string, unknown>) => ({ name, title, op: 'terrain', op_version: 1, params: { ...params, bands: ['data'], method: 'horn', name } });
+const step = (name: string, title: string, params: Record<string, unknown>, adjustable: string[]) => ({ name, title, op: 'terrain', op_version: 1, params: { ...params, bands: ['data'], method: 'horn', name }, adjustable });
 const STEPS = [
-  step('hillshade', 'Hillshade', { product: 'hillshade', azimuth: 315, altitude: 45, z_factor: 1, multidirectional: false }),
-  step('slope', 'Slope', { product: 'slope', slope_unit: 'degrees' }),
-  step('aspect', 'Aspect', { product: 'aspect' }),
+  step('hillshade', 'Hillshade', { product: 'hillshade', azimuth: 315, altitude: 45, z_factor: 1, multidirectional: false }, ['azimuth', 'altitude']),
+  step('slope', 'Slope', { product: 'slope', slope_unit: 'degrees' }, ['slope_unit']),
+  step('aspect', 'Aspect', { product: 'aspect' }, []),
 ];
 
 const optical = {
@@ -220,6 +220,94 @@ describe('steps under "Quick processing"', () => {
       await pressing;
     });
     expect(fields()).toMatchObject({ index: 'aspect' });
+  });
+});
+
+describe('the parameters of a step under "Quick processing" (Otto, 17.11.2026)', () => {
+  const statisticsAsked = () => fetchMock.mock.calls.map(([url]) => String(url)).filter((url) => url.includes('/statistics?'));
+  const lastParams = () => JSON.parse(new URL(statisticsAsked().at(-1)!, 'http://localhost').searchParams.get('params')!);
+  const dial = () => container.querySelector<SVGElement>('.angle-dial-face');
+  const slider = () => container.querySelector<HTMLInputElement>('.vc-param input[type="range"]');
+  const segments = () => [...container.querySelectorAll<HTMLButtonElement>('.vc-param-choices button')];
+  const key = (element: Element, name: string, shiftKey = false) =>
+    act(() => {
+      element.dispatchEvent(new KeyboardEvent('keydown', { key: name, shiftKey, bubbles: true }));
+    });
+  const rest = async () => {
+    await act(async () => {
+      vi.advanceTimersByTime(400);
+      for (let i = 0; i < 20; i++) await Promise.resolve();
+    });
+  };
+
+  afterEach(() => vi.useRealTimers());
+
+  it('offer the light of the hillshade: a dial for the azimuth with its value in degrees, a slider for the altitude', async () => {
+    mount(heights, 'data');
+    await press('Hillshade');
+    expect(dial()?.getAttribute('role')).toBe('slider');
+    expect(dial()?.getAttribute('aria-valuenow')).toBe('315');
+    expect(container.querySelector('.angle-dial-value')?.textContent).toBe('315°');
+    expect(slider()).toMatchObject({ min: '0', max: '90', value: '45' });
+    expect(container.querySelector('.vc-param-value')?.textContent).toBe('45°');
+  });
+
+  it('draw a turn of the dial at once and measure the range of the new light once it rests', async () => {
+    mount(heights, 'data');
+    await press('Hillshade');
+    vi.useFakeTimers();
+    key(dial()!, 'ArrowRight', true);
+    const state = useAppStore.getState();
+    expect(state.pendingPresetParams).toEqual({ azimuth: 330 });
+    // Drawn without waiting for "Apply": the look of the view carries the value into the step of its tiles.
+    expect(state.appliedRender).toMatchObject({ index: 'hillshade', presetParams: { azimuth: 330 }, colormapName: 'greys_r' });
+    await rest();
+    expect(lastParams()).toMatchObject({ product: 'hillshade', azimuth: 330, altitude: 45 });
+    expect(fields()).toMatchObject({ colormap: 'greys_r', vmin: '3', vmax: '251' });
+  });
+
+  it('keep the altitude within 0 to 90', async () => {
+    mount(heights, 'data');
+    await press('Hillshade');
+    act(() => {
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!.call(slider()!, '60');
+      slider()!.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(useAppStore.getState().pendingPresetParams).toEqual({ altitude: 60 });
+    expect(useAppStore.getState().appliedRender.presetParams).toEqual({ altitude: 60 });
+  });
+
+  it('switch the slope between degrees and percent, and the range follows the unit', async () => {
+    mount(heights, 'data');
+    await press('Slope');
+    expect(segments().map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Degrees', 'true'], ['Percent', 'false']]);
+    vi.useFakeTimers();
+    await act(async () => {
+      segments()[1].click();
+    });
+    expect(useAppStore.getState().appliedRender.presetParams).toEqual({ slope_unit: 'percent' });
+    await rest();
+    expect(lastParams()).toMatchObject({ product: 'slope', slope_unit: 'percent' });
+    expect(segments()[1].getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('are none for an aspect, which has none to change, and none for an index or a composite', async () => {
+    mount(heights, 'data');
+    await press('Aspect');
+    expect(container.querySelector('.vc-params')).toBeNull();
+    mount(optical, 'visual');
+    await press('False colour (IR)');
+    expect(container.querySelector('.vc-params')).toBeNull();
+  });
+
+  it('go back to the values of the registry when the preset is chosen again', async () => {
+    mount(heights, 'data');
+    await press('Hillshade');
+    key(dial()!, 'ArrowLeft');
+    await press('Hillshade');
+    await press('Hillshade');
+    expect(useAppStore.getState().pendingPresetParams).toEqual({});
+    expect(dial()?.getAttribute('aria-valuenow')).toBe('315');
   });
 });
 
