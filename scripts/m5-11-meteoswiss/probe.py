@@ -35,12 +35,14 @@ COLLECTION = "https://data.geo.admin.ch/api/stac/v1/collections/ch.meteoschweiz.
 HOST = "data.geo.admin.ch"
 INTERVAL_S = 1.0
 PAGES = 10
-# The asset names `adr/0029` §3.1 measured: `…<quantity>_<grid>.swiss.lv95_<start>_<end>.nc`. How many digits the two
-# stamps carry was not written down there (`YYYYMMDD`, `YYYYMMDDhhmm`, …), so any from a year to a minute is taken; the
-# 17.11.2026 run with 6–8 digits matched no name at all. The last letter of the quantity is its cadence (MeteoSwiss
-# product codes: `TabsD` daily, `TabsM` monthly, `…Y` yearly).
+# The names of the annual archive, as Otto's second run showed them (17.11.2026):
+# `ogd-surface-derived-grid-archive.<quantity>_<grid>.swiss.lv95_<start>_<end>.nc`, grid `ch01r` or `ch01h`, each stamp
+# 14 digits (`YYYYMMDDhhmmss`). Only the archive: the files of `-last` and the preliminary daily files change after
+# publication, the archive holds the consolidated years (adr/0029 F5, Otto 17.11.2026). The last letter of the quantity
+# is its cadence (MeteoSwiss product codes: `TabsD` daily, `TabsM` monthly, `…Y` yearly).
 ASSET = re.compile(
-    r"(?:^|_)(?P<quantity>[a-z0-9]+)_(?P<grid>ch\d\d[a-z])(?:\.[a-z0-9]+)*_(?P<start>\d{4,14})_(?P<end>\d{4,14})\.nc$"
+    r"^ogd-surface-derived-grid-archive\.(?P<quantity>[a-z0-9]+)_(?P<grid>ch01[rh])\.swiss\.lv95_"
+    r"(?P<start>\d{14})_(?P<end>\d{14})\.nc$"
 )
 CADENCE = {"d": "daily values", "m": "monthly values", "y": "yearly values"}
 # The first year in a name: the first stamp of four digits or more before the extension.
@@ -71,6 +73,9 @@ async def items(gateway: Gateway) -> list[dict[str, Any]]:
 def span(name: dict[str, str]) -> str:
     """What one file covers, from its two stamps: a year, a month, a day or something else."""
     start, end = name["start"], name["end"]
+    first_instant = start[4:8] == "0101" and set(start[8:]) <= {"0"}
+    if first_instant and end == f"{int(start[:4]) + 1}0101".ljust(len(end), "0"):
+        return "one year"  # the end stamp is the first instant of the next year
     if start[:4] != end[:4]:
         return "several years"
     if len(start) == 4 or (start[4:8] == "0101" and end[4:8] == "1231") or (start[4:6] == "01" and end[4:6] == "12"):
