@@ -278,4 +278,36 @@ Synthetische COGs aus `make_cogs.py` (`B04`, 10980² px, UTM), `slow_source.py` 
 
 - Ein „Zug“ an der Quelle ist ein `GET` des Laufs oder die erste Anfrage für eine Datei des Baus (`HEAD`), siehe §10.3, letzter Punkt.
 - Ein erster Lauf vor den Behebungen der Prüfung ergab fast dieselben Zahlen (allein +2,4 % / +0,3 %, zusammen 4,02 Züge/s); gezählt wird der Lauf auf dem Endstand.
+- **Einschränkung, bemerkt am 17.11.2026:** Die Kachel dieser Messung lag außerhalb der synthetischen Szene. Jede Datei wurde geöffnet, aber nicht gelesen (`HEAD` und Dateikopf, zwei Anfragen). Die Zahlen zeigen das Teilen der Züge, aber nicht die Kosten eines echten Lesens. Maßgeblich ist §10.5.
+
+### 10.5 Jede Anfrage verrechnet (Otto, 17.11.2026)
+
+**Auftrag:** Jede Anfrage an die Quelle wird verrechnet. Bevorzugt war GDAL ohne `HEAD` (`CPL_VSIL_CURL_USE_HEAD=NO`), falls das Lesen damit korrekt bleibt, sonst das `HEAD` mitzählen. Das gilt für den Pyramidenbau und, falls dort genauso, für Kacheln.
+
+**Befund** (gegen eine Quelle auf Loopback, die jede Anfrage protokolliert, auch eine abgebrochene):
+- Ohne `HEAD` fragt GDAL die Größe mit einem `GET` ohne `Range` und bricht es nach den Kopfzeilen ab; übertragen waren dabei 256 KB. Die Quelle sieht also gleich viele Anfragen, dazu mehr Bytes. Das Bild ist in beiden Fällen gleich. **Deshalb bleibt das `HEAD`, und es wird mitgezählt.**
+- Was GDAL 3.12 dazu ins Debug-Log schreibt:
+  - Jeder Bereichsabruf schreibt eine Zeile `Downloading`, auch jede Wiederholung (`GDAL_HTTP_MAX_RETRY` = 2).
+  - Die Größenabfrage schreibt eine einzige Zeile `GetFileSize(…)`, gleich nach wie vielen Versuchen.
+  - Jede Wiederholung der Größenabfrage schreibt nur `HTTP error code: … Retrying again in …`.
+  - Ungezählt waren bisher das `HEAD` jeder Datei und die Wiederholungen des `HEAD`.
+- **Regel im Zähler (`gateway.gdal`):** gezählt werden
+  - jede `Downloading`-Zeile,
+  - jede `GetFileSize`-Zeile,
+  - jede `Retrying`-Zeile, die nicht zu einem laufenden Bereichsabruf gehört. Ein Bereichsabruf läuft von seiner `Downloading`-Zeile bis `Got response_code=2xx` oder `Download completed`.
+
+  Ein Test vergleicht die Zählung mit den Anfragen, die eine Quelle auf Loopback erhielt: Lesen ohne Fehler, `503` beim Öffnen, `503` beim Lesen, ohne `HEAD`. Mit der alten Regel sind 9 der 12 Tests rot.
+- **Kacheln (M5-36):** nicht betroffen. Dort wird nichts je Anfrage verrechnet. Ein Platz gilt je Leser vom Öffnen bis zum Schließen und deckt damit alle Anfragen der Datei ab, das `HEAD` eingeschlossen. Der Zähler wird außerdem vom Messwerkzeug `api/measure_tiles.py` benutzt; dessen Zahlen sind jetzt vollständig.
+
+**Messung** (wie §10.4, jetzt mit einer Kachel innerhalb der Szene, also echtem Lesen; `main` f0a2c8c gegen den Branch, 3 Wiederholungen; keine echte Quelle):
+
+| Fall | `main` | Branch |
+|---|---|---|
+| Bau allein: Anfragen an der Quelle / verrechnet | 120 / 90 | 120 / **120** |
+| Bau allein, Wandzeit (Median) | 24,24 s, das sind 4,95 Anfragen/s | 31,20 s (+28,7 %), 3,85 Anfragen/s |
+| Bau und Lauf zusammen, Anfragen/s an der Quelle | 9,30 | **4,06** |
+| Wandzeit des Baus zusammen | 24,2 s | 38,7 s |
+
+- **J5 (+5 %) wird beim Bau allein überschritten.** Grund ist die Regel selbst: `main` stellte 4,95 Anfragen/s an einen Host mit der Regel „höchstens 4 je Sekunde“ (`adr/0032` F4), weil es je Datei eine von vier Anfragen nicht verrechnete. Der Branch hält 4/s ein, und 120 Anfragen mit 0,25 s Abstand dauern mindestens 30 s. Wie viel länger ein echter Bau wird, hängt davon ab, wie oft der Abstand bindet. Er bindet, wenn eine Datei schneller gelesen ist, als ihre Anfragen Abstand brauchen. Höchstens wird er um das Verhältnis der bisher ungezählten zu den gezählten Anfragen länger, hier 30 zu 90, also ein Drittel.
+- Der erste Durchgang dieser Messung ist verworfen: Dem Lauf fehlte seine Datei an der Quelle (`404`, damals nicht protokolliert, jetzt protokolliert).
 
