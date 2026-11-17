@@ -1,0 +1,13 @@
+# data.gv.at (CKAN, DCAT-AP), adr/0023 §4.3. Not reachable from a session; path and publisher field are [S]. Held
+# until Otto's first local run confirms the endpoint (plan F7).
+source_id: data-gv-at
+protocol: ckan
+endpoint: https://www.data.gv.at/katalog/api/3/action
+catalog_page: https://www.data.gv.at/katalog/dataset/{name}
+filter:
+  fq: null
+  publisher_field: organization
+max_requests_per_run: 1000
+full_every_days: 7
+maturity: stable
+enabled: false

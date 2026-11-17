@@ -93,6 +93,11 @@ SHIPPED_TABLES = (
     "public.earthx_listed_entry",
     "public.earthx_source_host",
     "public.earthx_source_lease",
+    "public.earthx_state_transition",
+    "public.earthx_record_state",
+    "public.earthx_raw_record",
+    "public.earthx_harvest_source",
+    "public.earthx_harvest_run",
 )
 
 

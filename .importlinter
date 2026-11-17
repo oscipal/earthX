@@ -244,6 +244,7 @@ forbidden_modules =
     earthx.catalog.entry_files
     earthx.catalog.geocode_cache
     earthx.catalog.glossary
+    earthx.catalog.harvest_store
     earthx.catalog.hosts
     earthx.catalog.listed
     earthx.catalog.listed_search
@@ -260,6 +261,7 @@ forbidden_modules =
     earthx.catalog.search_index
     earthx.catalog.search_text
     earthx.catalog.source_hosts
+    earthx.catalog.sources
     earthx.catalog.stats_cache
 
 [importlinter:contract:datasets-isolated]

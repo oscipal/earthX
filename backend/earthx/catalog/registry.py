@@ -2404,6 +2404,7 @@ class DatasetRegistry:
         entries: tuple[DatasetConfig, ...],
         retired: tuple[RetiredDataset, ...] = (),
         hosts: Mapping[str, HostLimit] | None = None,
+        seed_hosts: frozenset[str] = frozenset(),
     ) -> None:
         self._by_id = {entry.dataset_id: entry for entry in entries}
         if len(self._by_id) != len(entries):
@@ -2420,18 +2421,19 @@ class DatasetRegistry:
             self._check_substitute(entry)
         self._hosts: Mapping[str, HostLimit] = MappingProxyType(dict(hosts or {}))
         if hosts is not None:
-            self._check_hosts()
+            self._check_hosts(seed_hosts)
 
-    def _check_hosts(self) -> None:
-        """Every host an entry names has its limits in hosts.yaml, and every limit belongs to such a host (M5-36 G1)."""
-        named = {host for entry in self._by_id.values() for host in source_hosts(entry)}
+    def _check_hosts(self, seed_hosts: frozenset[str]) -> None:
+        """Every host an entry or a source of the harvest seed reads from has its limits in hosts.yaml, and every limit
+        belongs to such a host (M5-36 G1, M5-19 F6)."""
+        named = {host for entry in self._by_id.values() for host in source_hosts(entry)} | seed_hosts
         if missing := sorted(named - self._hosts.keys()):
             raise ConfigError(
                 f"hosts.yaml has no limits for {', '.join(missing)} (a prototype entry's host goes into the hosts.yaml"
                 " of the prototype directory)"
             )
         if unused := sorted(self._hosts.keys() - named):
-            raise ConfigError(f"hosts.yaml names hosts no entry reads from: {', '.join(unused)}")
+            raise ConfigError(f"hosts.yaml names hosts no entry or source reads from: {', '.join(unused)}")
 
     @property
     def host_limits(self) -> Mapping[str, HostLimit]:
