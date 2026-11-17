@@ -134,6 +134,22 @@ services:
       PYTHONPATH: /app
       EARTHX_USER_AGENT: ${EARTHX_USER_AGENT:-}
 
+  # One-off, run by hand (M5-11 plan §2.2, §7): the archive of the MeteoSwiss climate grids and the layout of its
+  # files. The script stays out of the image and is mounted read-only; it needs only `earthx.gateway` and
+  # `earthx.discovery`, no database. Run it with:
+  #   docker compose run --build --rm meteoswiss-probe [--layout] [--grids ch01r,ch01h] [--limit N]
+  meteoswiss-probe:
+    profiles: ["measure"]
+    build:
+      context: ./backend
+      target: app
+    entrypoint: ["python", "/probe/probe.py"]
+    volumes:
+      - ./scripts/m5-11-meteoswiss:/probe:ro
+    environment:
+      PYTHONPATH: /app
+      EARTHX_USER_AGENT: ${EARTHX_USER_AGENT:-}
+
   # M3-23 (adr/0012): Garage replaces MinIO. Three parts, because Garage's
   # image has no shell (see below) and its `--default-bucket` flag reads the
   # S3 key only from an env var, not from a file — so secrets are generated
