@@ -4,14 +4,14 @@
 import { describe, expect, it } from 'vitest';
 
 import { SENTINEL_2_PRESETS } from './fixtures/indexPresets';
-import { indexPresetsOf } from './indexPresets';
+import { indexPresetsOf, type IndexPreset } from './indexPresets';
+import { lookOfPreset, presetOfIndex, quickPresetsOf } from './quickPresets';
 import type { MosaicSelection } from './api';
 import { indexKeyOf, MAX_MOSAIC_REQUEST_BYTES, mosaicKeyOf, mosaicRequestBytes, type Mosaics, type MosaicInfo, type SceneEntry } from './mosaic';
 import type { Collection, DownloadedInfo, TimeStepGroup } from './types';
 import {
   assetsOfExpression,
   indexBlockOf,
-  indexLookOf,
   indexNote,
   indexNoteTip,
   indexRasterOf,
@@ -21,7 +21,10 @@ import {
 } from './viewIndex';
 
 const collection = { id: 's2', 'earthx:index_presets': SENTINEL_2_PRESETS } as unknown as Collection;
-const [NDVI, NDWI, , , EVI] = indexPresetsOf(collection);
+const RAW = indexPresetsOf(collection);
+const [NDVI, NDWI, , , EVI] = quickPresetsOf(collection);
+// An index with another expression, as the view takes it.
+const withExpression = (expression: string) => presetOfIndex({ ...(RAW[0] as IndexPreset), expression });
 
 const info = (id: string, minZoom = 8): DownloadedInfo => ({
   datasetId: 's2',
@@ -37,7 +40,7 @@ const entries = (n: number, minZoom = 8): SceneEntry[] =>
     return [id, info(id, minZoom)];
   });
 // An expression of four assets long enough that the request is above 7168 bytes: the scenes are in the selection, not in the URL.
-const LONG = { ...NDVI, expression: Array.from({ length: 1000 }, () => 'nir').join(' + ') };
+const LONG = withExpression(Array.from({ length: 1000 }, () => 'nir').join(' + '));
 const SELECTION: MosaicSelection = {
   id: '0123456789abcdef0123456789abcdef',
   datasetId: 's2',
@@ -45,8 +48,8 @@ const SELECTION: MosaicSelection = {
   tilejson: '/collections/s2/mosaic/0123456789abcdef0123456789abcdef/WebMercatorQuad/tilejson.json',
 };
 // What the page knows once the selections of the assets of these indexes are created for the pass.
-const selectionsFor = (list: SceneEntry[], ...presets: { expression: string }[]): Mosaics =>
-  Object.fromEntries(presets.map((preset) => [indexKeyOf('s2', assetsOfExpression(preset.expression), list), { selection: SELECTION }]));
+const selectionsFor = (list: SceneEntry[], ...presets: { assets: string[] }[]): Mosaics =>
+  Object.fromEntries(presets.map((preset) => [indexKeyOf('s2', preset.assets, list), { selection: SELECTION }]));
 const group = (list: SceneEntry[]): TimeStepGroup[] => [{ label: 'a', key: ['a'], items: list.map(([id]) => ({ id, bbox: [10, 47, 11, 48], properties: {}, assets: {} })) } as unknown as TimeStepGroup];
 const mosaicsOf = (list: SceneEntry[]): Record<string, MosaicInfo> => ({
   [mosaicKeyOf('s2', list)!]: { tileUrl: '/collections/s2/mosaic/0123456789abcdef0123456789abcdef/tiles/WebMercatorQuad/{z}/{x}/{y}?tilesize=512', bounds: [10, 47, 11, 48], minZoom: 8, maxZoom: 14, order: list.map(([id]) => id) },
@@ -54,7 +57,7 @@ const mosaicsOf = (list: SceneEntry[]): Record<string, MosaicInfo> => ({
 
 describe('the look of an index', () => {
   it('is the name, the range and the colormap of the preset, and no band', () => {
-    expect(indexLookOf(NDWI)).toEqual({ index: 'NDWI', colormapName: 'rdbu', rescale: '-1,1' });
+    expect(lookOfPreset(NDWI)).toEqual({ index: 'NDWI', colormapName: 'rdbu', rescale: '-1,1' });
   });
 
   it('is read back from a look by the presets of the dataset', () => {
@@ -77,8 +80,8 @@ describe('the look of an index', () => {
 
 describe('the assets an index reads', () => {
   it('are the names of its expression in the order they first stand there, each once', () => {
-    expect(assetsOfExpression(NDVI.expression)).toEqual(['nir', 'red']);
-    expect(assetsOfExpression(EVI.expression)).toEqual(['nir', 'red', 'blue']);
+    expect(NDVI.assets).toEqual(['nir', 'red']);
+    expect(EVI.assets).toEqual(['nir', 'red', 'blue']);
     expect(assetsOfExpression('(red - red) / (red + 1)')).toEqual(['red']);
   });
 });
@@ -121,7 +124,7 @@ describe('the tile of a mosaic', () => {
   });
 
   it('is asked for from a selection of its own for the assets of each index', () => {
-    expect(indexKeyOf('s2', assetsOfExpression(NDWI.expression), list)).not.toBe(indexKeyOf('s2', assetsOfExpression(NDVI.expression), list));
+    expect(indexKeyOf('s2', NDWI.assets, list)).not.toBe(indexKeyOf('s2', NDVI.assets, list));
   });
 
   it('waits where the selection for these assets is not created yet, and draws nothing meanwhile', () => {
@@ -140,7 +143,7 @@ describe('the tile of a mosaic', () => {
   });
 
   it('is refused where the index reads more assets than a mosaic tile takes', () => {
-    const wide = { ...NDVI, expression: 'a + b + c + d + e' };
+    const wide = withExpression('a + b + c + d + e');
     expect(indexRasterOf(mosaic, list, 's2', wide, made)).toBe('assets');
     // One scene is no mosaic: the same index is a tile of the scene.
     const [scene] = list;
@@ -200,7 +203,7 @@ describe('why an index is not drawn (indexBlockOf)', () => {
 
   it('is the request first, which zooming does not mend', () => {
     expect(indexBlockOf({ ...args, mosaics: { ...mosaicsOf(list), ...selectionsFor(list, LONG) }, preset: LONG, mapZoom: 3 })).toBe('length');
-    const wide = { ...NDVI, expression: 'a + b + c + d + e' };
+    const wide = withExpression('a + b + c + d + e');
     expect(indexBlockOf({ ...args, preset: wide, mapZoom: 3 })).toBe('assets');
   });
 
@@ -218,7 +221,7 @@ describe('why an index is not drawn (indexBlockOf)', () => {
   });
 
   it('is the refusal of the tiler for a selection it did not take', () => {
-    const refused = { ...mosaicsOf(list), [indexKeyOf('s2', assetsOfExpression(NDVI.expression), list)]: null };
+    const refused = { ...mosaicsOf(list), [indexKeyOf('s2', NDVI.assets, list)]: null };
     expect(indexBlockOf({ ...args, mosaics: refused })).toBe('assets');
   });
 });

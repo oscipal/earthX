@@ -36,9 +36,12 @@ export function terrainForm(schema: unknown): ParamsForm {
   }
   const missing = [...COMMON, ...Object.values(OF_PRODUCT).flat()].find((name) => !(name in properties));
   if (missing) return { supported: false, reason: `not supported by this panel: ${missing} of terrain` };
-  const text = (name: string): { description?: string } => {
-    const d = isObject(properties[name]) ? properties[name].description : undefined;
-    return typeof d === 'string' ? { description: d } : {};
+  const text = (name: string): { description?: string; unit?: string } => {
+    const own = isObject(properties[name]) ? properties[name] : {};
+    return {
+      ...(typeof own.description === 'string' ? { description: own.description } : {}),
+      ...(typeof own['x-earthx-unit'] === 'string' ? { unit: own['x-earthx-unit'] } : {}),
+    };
   };
   const field = (name: string, title: string, kind: Field['kind'], extra: Partial<Field> = {}): Field => ({
     name,

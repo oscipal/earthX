@@ -566,6 +566,27 @@ index_presets:
   reference: https://doi.org/10.1016/0034-4257(88)90106-X
 # NM4-64 (Otto 31.10.2026): the picture the eye sees, B04, B03, B02 at 10 m.
 true_color: [red, green, blue]
+# M5-14 (Otto 17.11.2026, F2, F4; adr/0030 §5.1): two common band combinations, each channel with a fixed range of
+# reflectance (nir and nir08 0-0.5, red and green 0-0.3, swir22 0-0.4); "Enhance contrast" stretches them on request. False
+# colour infrared shows vegetation red; SWIR shows burnt areas and bare soil. SWIR is the usual B12, B8A, B04 (Otto, 17.11.2026,
+# Nachtrag to adr/0030 §5.1), so its green is `nir08`, not `nir`.
+composite_presets:
+- name: false_colour_ir
+  title: False colour (IR)
+  red: nir
+  green: red
+  blue: green
+  rescale: [[0.0, 0.5], [0.0, 0.3], [0.0, 0.3]]
+  reference: https://custom-scripts.sentinel-hub.com/custom-scripts/sentinel-2/false_color_infrared/
+- name: swir
+  title: SWIR
+  red: swir22
+  green: nir08
+  blue: red
+  rescale: [[0.0, 0.4], [0.0, 0.5], [0.0, 0.3]]
+  reference: https://custom-scripts.sentinel-hub.com/custom-scripts/sentinel-2/swir-rgb/
+# The steps of operators: none of them applies to reflectance as a fixed click.
+step_presets: []
 # DS-04 plan §4.4: nothing a user has to know before reading the data beyond its description.
 notices: []
 # The sentences of the row "Limitations" of the Data catalogue (adr/0018 F2, Nachtrag DS-04c); none for this entry.

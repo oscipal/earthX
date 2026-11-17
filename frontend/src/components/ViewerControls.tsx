@@ -13,7 +13,7 @@ import { originalsTitle, scenesOf, summaryOf, summaryText } from '../originals';
 import { processBlockReason } from '../processingOrder';
 import { useProcessingStore } from '../processingStore';
 import { defaultRenderOf, drawsClasses, showsColormap } from '../datasets';
-import { indexPresetsOf, presetTip } from '../indexPresets';
+import { isComposite, quickPresetsOf } from '../quickPresets';
 import { trueColorOf } from '../processingOrder';
 import { BAND_TIP, bandAssetsOf, ONE_BAND_TIP } from '../viewBand';
 import { appliedRenderFrom, colourChannelsOf, lookChanged, NOTHING_TO_APPLY, NOTHING_TO_APPLY_TO_ALL_LAYER, NOTHING_TO_SAVE, NOTHING_TO_SAVE_IMAGES, NOTHING_TO_SAVE_ONE_IMAGE } from '../render';
@@ -34,6 +34,7 @@ import { InspectorHead, InspectorSection, LayerStepper, Stepper } from './Inspec
 import { ArrowLeftIcon, CogIcon, DownloadIcon, PlusIcon } from './icons';
 import LayerActions from './LayerActions';
 import OpacityRow from './OpacityRow';
+import PresetParamControls from './PresetParamControls';
 import type { BandOption } from './BandSelect';
 import { viewKind } from '../viewKind';
 import RenderFields, { NO_COLORMAP } from './RenderFields';
@@ -43,6 +44,7 @@ import { useHistograms } from './useHistograms';
 const INDEX_ONLY_TIP = 'This layer holds the index only';
 const CLASS_COLOURS = 'Classes';
 const CLASS_COLOURS_TIP = 'Each class in the colour of the source; a class map has no range and no other colormap';
+const STEP_UNREADY = 'The range of this step is being measured';
 const ENHANCE_RGB_TIP = 'Put the 2nd to the 98th percentile of red, green and blue in the fields, each channel on its own; Apply draws them. Only the look: Add to layers pins the whole view.';
 
 // The histograms of the bands the statistics name, in their order; none where one band has none.
@@ -116,6 +118,8 @@ export default function ViewerControls() {
   const appliedRender = useAppStore((s) => s.appliedRender);
   const viewOfLayer = useAppStore((s) => s.viewOfLayer);
   const pendingIndex = useAppStore((s) => s.pendingIndex);
+  const pendingPresetParams = useAppStore((s) => s.pendingPresetParams);
+  const setPresetParam = useAppStore((s) => s.setPresetParam);
   const pendingChannels = useAppStore((s) => s.pendingChannels);
   const renameLayer = useAppStore((s) => s.renameLayer);
   const setPendingChannel = useAppStore((s) => s.setPendingChannel);
@@ -136,9 +140,6 @@ export default function ViewerControls() {
       }
     : undefined;
   const measure = useAppStore(viewMeasure);
-  const histograms = useHistograms(measure && measure.key, () => loadHistograms(measure!));
-  // Read after the histograms: their measure is the first of a picture, and a refusal of the tiler is known once it is in.
-  const measuredOnScene = measure ? fallbackReasonOf(measure) : null;
   const mosaics = useAppStore((s) => s.mosaics);
   const mapZoom = useAppStore((s) => s.mapZoom);
   const images = useMemo(
@@ -163,11 +164,17 @@ export default function ViewerControls() {
   }, [shown, datasets, sections, openSectionId, datasetId, items, groups]);
   const shownDataset = shown ? datasets.find((d) => d.id === shown.datasetId) : undefined;
   const originalsAllowed = isCogFormat(shownDataset);
-  // The index of the dataset the image shows in place of a band (NM4-14b): a dataset without presets has no dropdown.
-  const presets = indexPresetsOf(shownDataset?.collection);
+  // What "Quick processing" offers for the dataset the image shows (NM4-14b, M5-14): its indices, composites and steps.
+  const presets = quickPresetsOf(shownDataset?.collection);
   // What the fields hold (chosen, drawn after "Apply") and what the map draws now.
-  const chosen = viewIndexOf({ index: pendingIndex }, shownDataset?.collection);
+  const chosen = viewIndexOf({ index: pendingIndex, presetParams: pendingPresetParams }, shownDataset?.collection);
   const index = viewIndexOf(appliedRender, shownDataset?.collection);
+  // The same step with other values of its parameters is one picture: its histograms stay until the new ones come, and are asked once the
+  // values rest (M5-14, Otto, 17.11.2026), so the panel does not jump while a dial turns.
+  const family = chosen && chosen.adjustable.length > 0 && shown ? `${shown.key}|${chosen.name}|${cropToAoi}` : null;
+  const histograms = useHistograms(measure && measure.key, () => loadHistograms(measure!), family);
+  // Read after the histograms: their measure is the first of a picture, and a refusal of the tiler is known once it is in.
+  const measuredOnScene = measure ? fallbackReasonOf(measure) : null;
   // Opened from the layer manager: the box of every layer, not the view with its row of buttons (NM4-65, Otto, 1.11.2026). A view that
   // is still open from the search keeps all of it, also once its image is pinned.
   const compact = viewOfLayer && layer !== null;
@@ -181,7 +188,7 @@ export default function ViewerControls() {
   const standardAsset = shownDataset ? (defaultRenderOf(shownDataset.collection, shownItem)?.assets[0] ?? null) : null;
   const bandAssets = shownDataset && shown ? bandAssetsOf(shownItem, shownDataset.collection) : [];
   const trueColour = shownDataset ? trueColorOf(shownDataset.collection) !== null : false;
-  const chosenOption: BandOption[] = chosen ? [{ value: `index:${chosen.name}`, label: chosen.name, title: presetTip(chosen), disabled: true }] : [];
+  const chosenOption: BandOption[] = chosen ? [{ value: `index:${chosen.name}`, label: chosen.label, title: chosen.tip, disabled: true }] : [];
   const bandOptions: BandOption[] = indexOnly
     ? chosenOption
     : [
@@ -198,9 +205,11 @@ export default function ViewerControls() {
     else if (value.startsWith('band:')) chooseViewBand(value.slice('band:'.length));
     else chooseViewIndex(null);
   };
-  // "Quick processing" offers the indices of a dataset that has presets, not at a layer of an index, and "Enhance contrast" for RGB.
+  // "Quick processing" offers the presets of a dataset that has any, not at a layer of one, and "Enhance contrast" for RGB.
   const quickIndices = presets.length > 0 && !indexOnly;
-  const quick = quickIndices || colour;
+  // The parameters of the step chosen that a person may change (Otto, 17.11.2026), also at a layer of it.
+  const params = chosen?.kind === 'step' && chosen.adjustable.length > 0 && shownDataset ? chosen : null;
+  const quick = quickIndices || colour || params !== null;
   const indexBlock =
     index && shown
       ? indexBlockOf({
@@ -215,11 +224,13 @@ export default function ViewerControls() {
       : null;
   const note = index && indexBlock && (
     <p className="hint warn" role="status" data-tip-level="advanced" data-tip={indexNoteTip(indexBlock)}>
-      {indexNote(indexBlock, index.name)}
+      {indexNote(indexBlock, index.label)}
     </p>
   );
-  // An index is drawn with a colormap whatever the dataset's own picture is.
-  const colormap = chosen || pendingBand || !shownDataset ? true : showsColormap(shownDataset.collection);
+  // A step of "Quick processing" is drawn once its look and range are in (adr/0035), never with a range made up.
+  const stepUnready = chosen?.kind === 'step' && (pendingVmin.trim() === '' || pendingVmax.trim() === '' || pendingColormapName === '');
+  // An index or a step is drawn with a colormap whatever the dataset's own picture is; a composite is a colour picture.
+  const colormap = chosen ? !isComposite(chosen) : pendingBand || !shownDataset ? true : showsColormap(shownDataset.collection);
   // A layer of classes keeps the colours of its source: no range, no other colormap (M5-07 plan F4).
   const classes = !chosen && shownDataset ? drawsClasses(shownDataset.collection) : false;
   const at = shown ? here.indexOf(shown) : -1;
@@ -309,7 +320,7 @@ export default function ViewerControls() {
                   : !showBand
                     ? ONE_BAND_TIP
                     : chosen
-                      ? [presetTip(chosen), computedNoteOf(shownDataset, datasets)].filter(Boolean).join('\n')
+                      ? [chosen.tip, computedNoteOf(shownDataset, datasets)].filter(Boolean).join('\n')
                       : BAND_TIP,
                 disabled: !showBand,
               }}
@@ -353,10 +364,10 @@ export default function ViewerControls() {
               <button
                 type="button"
                 className="btn vc-apply"
-                aria-disabled={!changed || undefined}
-                data-tip-level="advanced" data-tip={changed ? 'Draw the view with these values' : NOTHING_TO_APPLY}
+                aria-disabled={!changed || stepUnready || undefined}
+                data-tip-level="advanced" data-tip={stepUnready ? STEP_UNREADY : changed ? 'Draw the view with these values' : NOTHING_TO_APPLY}
                 onClick={() => {
-                  if (changed) applyRender();
+                  if (changed && !stepUnready) applyRender();
                 }}
               >
                 Apply
@@ -397,12 +408,12 @@ export default function ViewerControls() {
           {!quick && note}
         </InspectorSection>
 
-        {/* Only what applies (Otto, 3.11.2026): the indices of a dataset that has presets, and "Enhance contrast" for RGB; a layer of an
-            index has none of it. Three in a row (Otto, 2.11.2026), each says whether it is on; a second click, or a band picked, puts it
-            away. */}
+        {/* Only what applies (Otto, 3.11.2026): the presets of the dataset, and "Enhance contrast" for RGB; a layer of a preset has none of
+            it but the parameters of its step. Three in a row (Otto, 2.11.2026), each says whether it is on; a second click, or a band picked,
+            puts it away. */}
         {quick ? (
           <InspectorSection title="Quick processing">
-            <div className="vc-quick">
+            {(quickIndices || colour) && <div className="vc-quick">
               {quickIndices &&
                 presets.map((preset) => {
                   const on = chosen?.name === preset.name;
@@ -413,10 +424,10 @@ export default function ViewerControls() {
                       className={`btn${on ? ' on' : ''}`}
                       aria-pressed={on}
                       disabled={pinLoading}
-                      data-tip-level="advanced" data-tip={`${presetTip(preset)} ${on ? 'Click again for the standard image of the dataset, then Apply.' : 'Apply draws it, no job.'}`}
+                      data-tip-level="advanced" data-tip={`${preset.tip} ${on ? 'Click again for the standard image of the dataset, then Apply.' : 'Apply draws it, no job.'}`}
                       onClick={() => void quickIndex(preset.name)}
                     >
-                      {preset.name}
+                      {preset.label}
                     </button>
                   );
                 })}
@@ -432,7 +443,8 @@ export default function ViewerControls() {
                   Enhance contrast
                 </button>
               )}
-            </div>
+            </div>}
+            {params && shownDataset && <PresetParamControls datasetId={shownDataset.id} preset={params} onChange={setPresetParam} />}
             {note}
           </InspectorSection>
         ) : null}

@@ -1000,6 +1000,20 @@ function isLocked(s: Pick<ProcessingState, 'steps' | 'fixed'>, key: number): boo
   return at >= 0 && at < (s.fixed?.result?.locked ?? 0);
 }
 
+// The new name of the band of a terrain step whose product changes, or `null` where it keeps its name: where the person named it (the name
+// is not the one the old product would get) or the product stays.
+function productRename(s: ProcessingState, step: DraftStep, product: FieldValue): { from: string; to: string } | null {
+  if (step.op !== 'terrain' || typeof product !== 'string' || product === '' || product === step.values.product) return null;
+  const from = resultNameOf(step);
+  const old = step.values.product;
+  if (typeof old !== 'string' || old === '') return null;
+  const view = orderView(selectionState(useAppStore.getState()), s);
+  const taken = [...view.dataNames, ...s.steps.filter((other) => other.key !== step.key && addsBand(other)).map(resultNameOf)];
+  if (from !== defaultName(taken, old)) return null;
+  const to = defaultName(taken, product);
+  return to === from ? null : { from, to };
+}
+
 const RETIRED_TEXT = 'Dataset retired';
 
 // Only the order routes (estimate, placing a job) end here. A `410` of a result
@@ -1681,8 +1695,12 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       // The measure over the AOI is asked again where it fell back to the scene.
       for (const [key, measure] of measures) if (measure.source === 'fallback') measures.delete(key);
       settledKey = null;
+      // Only a colormap the person chose is held: the one the look or preset of the band shown draws anyway is not, so that the
+      // next product of a terrain step brings its own (Otto, 17.11.2026; adr/0035: hand before look).
       const colormap = get().rangeDraft.colormap;
-      const held = colormap === '' ? null : colormap;
+      const spec = wantedPreview() ?? get().preview;
+      const own = spec ? drawnRange({ ...get(), range: DEFAULT_RANGE, rangeByHand: false, colormapHeld: null }, spec).colormap : null;
+      const held = colormap === '' || colormap === own ? null : colormap;
       set({ range: held ? { ...DEFAULT_RANGE, colormap: held } : DEFAULT_RANGE, rangeByHand: false, rangeEdited: false, colormapHeld: held });
       refreshPreview();
     },
@@ -1894,16 +1912,25 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       }));
     },
     updateStep: (key, name, value) =>
-      set((s) =>
-        isLocked(s, key)
-          ? {}
-          : {
-              steps: s.steps.map((step) => (step.key === key ? { ...step, values: { ...step.values, [name]: value } } : step)),
-              reviewError: null,
-              startError: null,
-              ...dropReview(),
-            },
-      ),
+      set((s) => {
+        if (isLocked(s, key)) return {};
+        const changed = s.steps.map((step) => (step.key === key ? { ...step, values: { ...step.values, [name]: value } } : step));
+        const step = s.steps.find((candidate) => candidate.key === key);
+        // A terrain step whose band still has the name of its product takes the name of the new one (Otto, 17.11.2026); a name the
+        // person gave stays.
+        const renamed = step && name === 'product' ? productRename(s, step, value) : null;
+        return {
+          steps: renamed ? renameResult(changed, key, renamed.from, renamed.to).map((candidate) =>
+            candidate.key === key ? { ...candidate, values: { ...candidate.values, name: renamed.to } } : candidate,
+          ) : changed,
+          ...(renamed
+            ? { output: s.output.map((band) => (band === renamed.from ? renamed.to : band)), ...(s.shown === renamed.from ? { shown: renamed.to } : {}) }
+            : {}),
+          reviewError: null,
+          startError: null,
+          ...dropReview(),
+        };
+      }),
     renameResult: (key, name) =>
       set((s) => {
         const step = s.steps.find((candidate) => candidate.key === key);

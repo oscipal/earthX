@@ -202,6 +202,9 @@ search_capabilities:
   aoi_coverage: true
 index_presets: []
 true_color: []
+# One band of classes: the classes are the picture (adr/0030 §5.5), no composite and no step.
+composite_presets: []
+step_presets: []
 # DS-04 plan §4.4: nothing a user has to know before reading the data beyond its description.
 notices: []
 # The sentences of the row "Limitations" of the Data catalogue (adr/0018 F2, Nachtrag DS-04c); none for this entry.

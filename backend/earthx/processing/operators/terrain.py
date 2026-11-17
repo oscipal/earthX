@@ -67,11 +67,22 @@ class TerrainParams(BaseModel):
         default="horn", description="Gradient after Horn (eight neighbours) or Zevenbergen and Thorne (four)."
     )
     slope_unit: Literal["degrees", "percent"] | None = Field(default=None, description="slope: degrees or percent.")
+    # The unit (`x-earthx-unit`) lets "Quick processing" offer an angle as a dial or a slider in degrees (M5-14).
     azimuth: float | None = Field(
-        default=None, ge=0, lt=360, allow_inf_nan=False, description="hillshade: direction of the light, 0 = north."
+        default=None,
+        ge=0,
+        lt=360,
+        allow_inf_nan=False,
+        description="hillshade: direction of the light, 0 = north.",
+        json_schema_extra={"x-earthx-unit": "deg"},
     )
     altitude: float | None = Field(
-        default=None, ge=0, le=90, allow_inf_nan=False, description="hillshade: height of the light above the horizon."
+        default=None,
+        ge=0,
+        le=90,
+        allow_inf_nan=False,
+        description="hillshade: height of the light above the horizon.",
+        json_schema_extra={"x-earthx-unit": "deg"},
     )
     z_factor: float | None = Field(
         default=None, gt=0, le=1e6, allow_inf_nan=False, description="hillshade: factor on the heights."

@@ -1,0 +1,94 @@
+<!doctype html>
+<!-- The settings bar of the view with a step of "Quick processing" for the browser check in `view-params.cjs` (M5-14, Otto, 17.11.2026): the real
+     `ViewerControls` on the real store and styles, a made-up elevation model whose description comes from its fixture and whose statistics
+     (with a histogram) come from here after a short delay, as a tiler's would. `?theme=normal` for the light theme. Served by the dev server
+     (`npm run dev`) at /e2e/view-params-harness.html; no part of the app. -->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>view parameters</title>
+  </head>
+  <body style="margin: 0">
+    <div id="root"></div>
+    <script type="module">
+      import '/src/tokens.css';
+      import '/src/index.css';
+      import { createElement } from 'react';
+      import { createRoot } from 'react-dom/client';
+      import description from '/src/fixtures/processes/cop-dem-glo-30.json';
+      import ViewerControls from '/src/components/ViewerControls.tsx';
+      import { datasetsFrom } from '/src/datasets.ts';
+      import { useAppStore } from '/src/store.ts';
+
+      const theme = new URLSearchParams(location.search).get('theme') ?? 'tech';
+      window.statisticsAsked = [];
+      const json = (body) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      const histogram = [Array.from({ length: 20 }, (_, i) => 10 + ((i * 37) % 23)), Array.from({ length: 21 }, (_, i) => 1 + i * 12.7)];
+      window.fetch = async (url) => {
+        const text = String(url);
+        if (text.includes('/processing/processes/recipe?dataset=cop-dem-glo-30')) return json(description);
+        if (text.includes('/statistics')) {
+          window.statisticsAsked.push(text);
+          await new Promise((done) => setTimeout(done, 250));
+          const band = new URL(text, location.href).searchParams.get('band') ?? 'data';
+          return json({ [band]: { min: 1, max: 255, percentile_2: 20, percentile_98: 230, histogram } });
+        }
+        return new Response('{}', { status: 404 });
+      };
+
+      const step = (name, title, params, adjustable) => ({ name, title, op: 'terrain', op_version: 1, params: { ...params, bands: ['data'], method: 'horn', name }, adjustable });
+      const VIEWER = { group_by: ['datetime'], min_zoom: 8, max_zoom: 14, browse: 'quicklook', quicklook_nodata_max: null, results_group_by: ['datetime'], overview: 'pyramid', overview_resampling: 'average', overview_substitute: null };
+      const collection = {
+        id: 'cop-dem-glo-30',
+        title: 'Copernicus DEM GLO-30',
+        'earthx:format': 'cog',
+        'earthx:capabilities': { roi: true, band_math: true, interpolation: true, terrain: true },
+        'earthx:default_render': { title: 'Elevation', assets: ['data'], rescale: [[0, 3000]], colormap_name: 'terrain', expression: null, resampling: 'nearest' },
+        'earthx:viewer': VIEWER,
+        'earthx:true_color': [],
+        'earthx:index_presets': [],
+        'earthx:composite_presets': [],
+        'earthx:step_presets': [
+          step('hillshade', 'Hillshade', { product: 'hillshade', azimuth: 315, altitude: 45, z_factor: 1, multidirectional: false }, ['azimuth', 'altitude']),
+          step('slope', 'Slope', { product: 'slope', slope_unit: 'degrees' }, ['slope_unit']),
+          step('aspect', 'Aspect', { product: 'aspect' }, []),
+        ],
+      };
+      const items = [{ id: 's0', collection: 'cop-dem-glo-30', bbox: [0, 0, 1, 1], properties: { datetime: '2026-07-01T10:00:00Z' }, assets: {} }];
+      useAppStore.setState({
+        datasets: datasetsFrom([collection]),
+        datasetId: 'cop-dem-glo-30',
+        items,
+        groups: [{ key: ['a'], label: '2026-07-01', items }],
+        selectedIds: [],
+        downloaded: { s0: { datasetId: 'cop-dem-glo-30', tileUrl: '/collections/cop-dem-glo-30/items/s0/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=data', bounds: [0, 0, 1, 1], asset: 'data', minZoom: 8, maxZoom: 14 } },
+        focusMode: true,
+        cropToAoi: false,
+        showDownloaded: true,
+        shownImage: null,
+        viewLooks: {},
+        savedLooks: {},
+        appliedRender: { rescale: '0,3000', colormapName: 'terrain' },
+        pendingColormapName: 'terrain',
+        pendingVmin: '0',
+        pendingVmax: '3000',
+        pendingIndex: '',
+        pendingBand: '',
+        pendingChannels: [],
+        pendingUnit: 'value',
+        enhance: null,
+        mosaics: {},
+        mapZoom: 12,
+        layers: [],
+        focusLoading: false,
+        pinLoading: false,
+        dock: null,
+      });
+      window.app = useAppStore;
+
+      createRoot(document.getElementById('root')).render(
+        createElement('div', { className: 'app', 'data-theme': theme }, createElement('aside', { className: 'inspector panel', 'aria-label': 'Image settings' }, createElement(ViewerControls))),
+      );
+    </script>
+  </body>
+</html>

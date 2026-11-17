@@ -131,7 +131,10 @@ def search_text(
         for key, unit in config.band_units.items()
         if key not in config.auxiliary_assets
     ]
-    presets = [f"{preset.name} {preset.title}" for preset in config.index_presets]
+    presets = [
+        f"{preset.name} {preset.title}"
+        for preset in (*config.index_presets, *config.composite_presets, *config.step_presets)
+    ]
     offered = [
         word
         for capability, words in terms.terms.items()

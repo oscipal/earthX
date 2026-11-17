@@ -154,4 +154,4 @@ class TestTheCheck:
         capabilities = replace(SENTINEL_2_L2A.capabilities, band_math=False)
         with pytest.raises(ConfigError, match="band_math is off"):
             replace(SENTINEL_2_L2A, capabilities=capabilities)
-        assert not replace(SENTINEL_2_L2A, capabilities=capabilities, index_presets=()).capabilities.band_math
+        assert not replace(SENTINEL_2_L2A, capabilities=capabilities, index_presets=(), composite_presets=()).capabilities.band_math

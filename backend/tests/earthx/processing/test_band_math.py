@@ -202,7 +202,7 @@ class TestApplicability:
 
     def test_a_dataset_without_the_capability_is_refused_by_name(self) -> None:
         config = replace(
-            SENTINEL_2_L2A, capabilities=replace(SENTINEL_2_L2A.capabilities, band_math=False), index_presets=()
+            SENTINEL_2_L2A, capabilities=replace(SENTINEL_2_L2A.capabilities, band_math=False), index_presets=(), composite_presets=()
         )
         reasons = applicable(BAND_MATH, config, _params("a + b"))
         assert reasons == [f"{config.dataset_id} does not allow band_math"]

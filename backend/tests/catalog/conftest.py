@@ -157,6 +157,8 @@ def valid_config() -> DatasetConfig:
         search_capabilities=SearchCapabilities(evaluate=False, aoi_coverage=False),
         index_presets=(),
         true_color=(),
+        composite_presets=(),
+        step_presets=(),
         notices=(),
         limitations=(),
     )

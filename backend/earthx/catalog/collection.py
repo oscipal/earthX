@@ -114,6 +114,35 @@ def _earthx_index_presets(config: DatasetConfig) -> list[dict[str, object]]:
     ]
 
 
+def _earthx_composite_presets(config: DatasetConfig) -> list[dict[str, object]]:
+    """The pictures of three expressions "Quick processing" offers (adr/0030 F7), red, green, blue in this order."""
+    return [
+        {
+            "name": preset.name,
+            "title": preset.title,
+            "expressions": list(preset.channels),
+            "rescale": [list(pair) for pair in preset.rescale],
+            "reference": preset.reference,
+        }
+        for preset in config.composite_presets
+    ]
+
+
+def _earthx_step_presets(config: DatasetConfig) -> list[dict[str, object]]:
+    """The steps "Quick processing" offers (adr/0030 F7), each with the parameters of the step as a recipe names them."""
+    return [
+        {
+            "name": preset.name,
+            "title": preset.title,
+            "op": preset.op,
+            "op_version": preset.op_version,
+            "params": {**preset.params, "name": preset.name},
+            "adjustable": list(preset.adjustable),
+        }
+        for preset in config.step_presets
+    ]
+
+
 def _earthx_true_color(config: DatasetConfig) -> list[str]:
     """The three bands of a true-colour picture (red, green, blue), or an empty list where the data has none (NM4-64)."""
     return list(config.true_color)
@@ -257,6 +286,8 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
         "earthx:search_capabilities": _earthx_search_capabilities(config),
         "earthx:index_presets": _earthx_index_presets(config),
         "earthx:true_color": _earthx_true_color(config),
+        "earthx:composite_presets": _earthx_composite_presets(config),
+        "earthx:step_presets": _earthx_step_presets(config),
         "earthx:license_flags": _earthx_license_flags(config),
         # adr/0024 R3: `unclear` marks a prototype source, `legal_note` says what is unclear (null when cleared, A4).
         "earthx:legal_status": config.legal_status.value,

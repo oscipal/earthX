@@ -30,6 +30,8 @@ export interface Field {
   pattern?: string;
   minimum?: number;
   maximum?: number;
+  // The unit of a number, where the schema says it (`x-earthx-unit`, M5-14): `deg` for an angle.
+  unit?: string;
   exclusiveMinimum?: number;
   exclusiveMaximum?: number;
   // `integers`, `numbers` and `names`: a list of whole numbers, of numbers or of texts, with the bounds of the list (and of each number).
@@ -47,6 +49,8 @@ export type FieldValue = string | boolean;
 
 const OBJECT_KEYWORDS = new Set(['type', 'title', 'description', 'properties', 'required', 'additionalProperties']);
 const FIELD_KEYWORDS = new Set([
+  // The unit of a number (M5-14): an angle in degrees is offered as a dial or a slider under "Quick processing".
+  'x-earthx-unit',
   'type',
   'title',
   'description',
@@ -99,6 +103,7 @@ function fieldOf(name: string, schema: JsonSchema, required: boolean): Field | s
     name,
     title: fieldTitle(typeof schema.title === 'string' ? schema.title : name),
     ...(typeof schema.description === 'string' ? { description: schema.description } : {}),
+    ...(typeof schema['x-earthx-unit'] === 'string' ? { unit: schema['x-earthx-unit'] } : {}),
     required,
     ...('default' in schema ? { default: schema.default } : {}),
   };

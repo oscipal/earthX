@@ -822,6 +822,93 @@ svg.lucide.icon-lead {
   background: var(--accent);
   color: var(--panel-bg);
 }
+/* The parameters of a step of "Quick processing" (M5-14, Otto, 17.11.2026): one row each, the name, then its control; compact, so the panel
+   does not grow beyond what the buttons leave. */
+.inspector .vc-params {
+  display: grid;
+  gap: var(--space-1-5);
+  margin-top: var(--space-2);
+}
+.inspector .vc-param {
+  display: grid;
+  grid-template-columns: var(--form-label-width) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  font-size: var(--text-xs);
+  color: var(--text);
+}
+.inspector .vc-param-label {
+  color: var(--muted);
+}
+.inspector .vc-param-choices {
+  display: flex;
+  gap: var(--space-1);
+  grid-column: 2 / 4;
+}
+.inspector .vc-param input[type='range'] {
+  width: 100%;
+  min-width: 0;
+  accent-color: var(--accent);
+}
+/* The number beside a dial or a slider, typed with the keys (Otto, 17.11.2026): narrow, of one width in every row, so nothing moves. */
+.inspector .vc-param-number {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-0);
+  width: 4.5em;
+  font-variant-numeric: tabular-nums;
+}
+.inspector .vc-param-number input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  height: var(--control-height-sm);
+  padding: 0 var(--space-1);
+  border: var(--line-width) solid var(--line);
+  border-radius: var(--radius-xs);
+  background: var(--input-bg);
+  color: var(--text);
+  font: inherit;
+  text-align: right;
+}
+/* The dial of an angle from north: its face, a tick at north, the hand to the angle; all in the colours of the theme. */
+.angle-dial {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  grid-column: 2 / 4;
+}
+.angle-dial-face {
+  flex: none;
+  cursor: grab;
+  touch-action: none;
+  border-radius: var(--radius-full);
+}
+.angle-dial-face:active {
+  cursor: grabbing;
+}
+.angle-dial-ring {
+  fill: var(--input-bg);
+  stroke: var(--line);
+  stroke-width: var(--line-width);
+}
+.angle-dial-north {
+  stroke: var(--muted);
+  stroke-width: 1.5;
+}
+.angle-dial-hand {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+.angle-dial-knob {
+  fill: var(--accent);
+}
+.angle-dial-value {
+  min-width: 3.5em;
+  font-variant-numeric: tabular-nums;
+}
 .inspector .vc-opacity .lm-opacity {
   width: 100%;
 }

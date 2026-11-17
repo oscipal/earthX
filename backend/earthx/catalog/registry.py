@@ -1374,6 +1374,128 @@ def _preset_problem(preset: IndexPreset, bands: set[str], not_bands: set[str]) -
     return None
 
 
+#: The longest text of a button of a composite or step preset: it stands in a row of three (adr/0030 F7, M5-14).
+MAX_PRESET_TITLE_CHARS = 24
+#: The ends of the bands a composite's channels add for the tile, so ``<name>_r`` stays a name a band_math step can add.
+COMPOSITE_CHANNEL_SUFFIXES = ("_r", "_g", "_b")
+
+
+@dataclass(frozen=True, slots=True)
+class CompositePreset:
+    """Three expressions drawn as red, green and blue, one click under "Quick processing" (adr/0030 F7, B2).
+
+    Each channel fills an ordinary ``band_math`` step, which adds the band ``<name>_r`` (``_g``, ``_b``); the tile shows
+    those three (it names bands only behind steps), so a channel may be a band as it is or a calculation. ``rescale`` is one range per channel in the order red, green, blue, the
+    way the tile takes them. ``reference`` is where the combination is described. No defaults (B10).
+    """
+
+    name: str
+    title: str
+    red: str
+    green: str
+    blue: str
+    rescale: tuple[tuple[float, float], tuple[float, float], tuple[float, float]]
+    reference: str
+
+    @property
+    def channels(self) -> tuple[str, str, str]:
+        return (self.red, self.green, self.blue)
+
+
+@dataclass(frozen=True, slots=True)
+class StepPreset:
+    """One step of an operator with fixed parameters, one click under "Quick processing" (adr/0030 F7, B3).
+
+    The step adds the band ``name``; ``params`` are the step's other parameters, bands named as in the data. ``adjustable``
+    names those of ``params`` a person may change right under "Quick processing" (Otto, 17.11.2026; the value in
+    ``params`` is where they start), the others stay as they are. How the band is drawn is the operator's look (adr/0035;
+    Nachtrag M5-14 to adr/0030 §8), not part of the preset. ``catalog`` checks
+    the form; whether the operator takes the parameters and may run as a tile on the dataset is checked when ``api`` is
+    built (``processing.quick_presets``). No defaults (B10).
+    """
+
+    name: str
+    title: str
+    op: str
+    op_version: int
+    params: Mapping[str, object]
+    adjustable: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if isinstance(self.params, Mapping):
+            object.__setattr__(self, "params", MappingProxyType(dict(self.params)))
+
+
+def _bands_read(expression: str) -> set[str]:
+    """The names an expression reads as bands: no call, no keyword."""
+    return {name for name in _EXPRESSION_BAND.findall(expression) if not keyword.iskeyword(name)}
+
+
+def _short_title_problem(title: object) -> str | None:
+    if not isinstance(title, str) or not title.strip() or title != title.strip():
+        return "has a non-blank title"
+    if len(title) > MAX_PRESET_TITLE_CHARS:
+        return f"has a title of at most {MAX_PRESET_TITLE_CHARS} characters"
+    return None
+
+
+def _composite_problem(preset: CompositePreset, bands: set[str], not_bands: set[str]) -> str | None:
+    """The rule a composite preset breaks, as the end of a sentence about it, or None."""
+    if problem := _short_title_problem(preset.title):
+        return problem
+    channels = preset.channels
+    for channel in channels:
+        if not isinstance(channel, str) or not channel.strip() or channel != channel.strip():
+            return "has a non-blank expression for each of red, green and blue"
+        used = _bands_read(channel)
+        if used & not_bands:
+            return f"reads {', '.join(sorted(used & not_bands))}, which is no band of the data"
+        if unknown := used - bands:
+            return f"reads {', '.join(sorted(unknown))}, which the entry does not know (band_units)"
+        if not used:
+            return "has a channel that reads no band"
+    if len(set(channels)) == 1:
+        return "draws the same in red, green and blue"
+    rescale = preset.rescale
+    if not isinstance(rescale, tuple) or len(rescale) != 3:
+        return "has a rescale for each of red, green and blue"
+    for pair in rescale:
+        if (
+            not isinstance(pair, tuple)
+            or len(pair) != 2
+            or not all(_is_finite_number(bound) for bound in pair)
+            or not pair[0] < pair[1]
+        ):
+            return "has a rescale of two finite numbers per channel, the lower first"
+    if not isinstance(preset.reference, str) or not preset.reference.startswith("https://"):
+        return "names the source of the combination with an https:// address"
+    return None
+
+
+def _step_preset_problem(preset: StepPreset) -> str | None:
+    """The rule a step preset breaks in its form, as the end of a sentence about it, or None."""
+    if problem := _short_title_problem(preset.title):
+        return problem
+    if not isinstance(preset.op, str) or not preset.op:
+        return "names its operator"
+    if isinstance(preset.op_version, bool) or not isinstance(preset.op_version, int) or preset.op_version < 1:
+        return "names a version of its operator from 1"
+    if not isinstance(preset.params, Mapping) or not all(isinstance(key, str) for key in preset.params):
+        return "has its parameters as a mapping by name"
+    if "name" in preset.params:
+        return "takes the name of its band from the preset, not from params"
+    adjustable = preset.adjustable
+    if not isinstance(adjustable, tuple) or not all(isinstance(name, str) for name in adjustable):
+        return "names its adjustable parameters as a tuple of names"
+    if len(set(adjustable)) != len(adjustable):
+        return "names an adjustable parameter twice"
+    if unknown := [name for name in adjustable if name not in preset.params]:
+        return f"makes {', '.join(unknown)} adjustable, which its params do not set"
+    if "bands" in adjustable:
+        return "keeps the bands it reads fixed"
+    return None
+
+
 def _is_finite_number(value: object) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
 
@@ -1528,6 +1650,12 @@ class DatasetConfig:
     # data has no such picture (the DEM). Names of bands of the data, not of a picture made from them (``visual``). No
     # default (KLAERUNGEN B10): an entry says so.
     true_color: tuple[str, ...]
+    # The pictures of three expressions as red, green and blue that "Quick processing" offers (adr/0030 F7, B2), in the
+    # order of the buttons. No default (KLAERUNGEN B10): an entry says so, with an empty tuple where it offers none.
+    composite_presets: tuple[CompositePreset, ...]
+    # The steps of an operator with fixed parameters that "Quick processing" offers (adr/0030 F7, B3), in the order of the
+    # buttons. No default (KLAERUNGEN B10): an entry says so, with an empty tuple where it offers none.
+    step_presets: tuple[StepPreset, ...]
     # What a user should know about the data before reading it (DS-04 plan §4.4), published as `earthx:notices`. No
     # default (KLAERUNGEN B10): an entry says so, with an empty tuple where there is nothing to say.
     notices: tuple[Notice, ...]
@@ -1560,6 +1688,7 @@ class DatasetConfig:
         self._check_search_filters()
         self._check_index_presets()
         self._check_true_color()
+        self._check_quick_presets()
         if problem := check_notices(self.notices):
             raise ConfigError(f"{self.dataset_id}: {problem}")
         self._check_limitations()
@@ -1790,6 +1919,43 @@ class DatasetConfig:
                 raise ConfigError(f"{self.dataset_id}: the index preset {name} has the name of a band of the data")
             if problem := _preset_problem(preset, bands, not_bands):
                 raise ConfigError(f"{self.dataset_id}: the index preset {name} {problem}")
+
+    def _check_quick_presets(self) -> None:
+        """Composite and step presets well formed, each name once over all presets, none named like a band (adr/0030 F7).
+
+        Whether ``band_math`` takes the expressions and the operator the parameters, and whether the step runs as a tile
+        on this dataset, is ``processing.quick_presets.check_quick_presets``' question.
+        """
+        composites, steps = self.composite_presets, self.step_presets
+        if not isinstance(composites, tuple) or not all(isinstance(p, CompositePreset) for p in composites):
+            raise ConfigError(f"{self.dataset_id}: composite_presets is a tuple of CompositePreset")
+        if not isinstance(steps, tuple) or not all(isinstance(p, StepPreset) for p in steps):
+            raise ConfigError(f"{self.dataset_id}: step_presets is a tuple of StepPreset")
+        if composites and not self.capabilities.band_math:
+            raise ConfigError(f"{self.dataset_id}: composite presets fill band_math steps, but band_math is off")
+        bands = {key for key in self.band_units if "*" not in key}
+        not_bands = set(self.auxiliary_assets) | ({self.mask.asset} if self.mask is not None else set())
+        taken = {key.casefold() for key in self.band_units}
+        seen = {preset.name.casefold() for preset in self.index_presets}
+        for preset in (*composites, *steps):
+            kind = "composite preset" if isinstance(preset, CompositePreset) else "step preset"
+            name = preset.name
+            if not isinstance(name, str) or not INDEX_PRESET_NAME.match(name):
+                raise ConfigError(f"{self.dataset_id}: {name!r} is not a name a step can add")
+            given = [name] if isinstance(preset, StepPreset) else [name + end for end in COMPOSITE_CHANNEL_SUFFIXES]
+            if not all(INDEX_PRESET_NAME.match(band) for band in given):
+                raise ConfigError(f"{self.dataset_id}: the {kind} {name} has a name too long for the bands it adds")
+            if name.casefold() in seen:
+                raise ConfigError(f"{self.dataset_id}: the preset {name} is named twice (case ignored)")
+            seen.add(name.casefold())
+            if any(band.casefold() in taken for band in given):
+                raise ConfigError(f"{self.dataset_id}: the {kind} {name} adds a band named like a band of the data")
+            if isinstance(preset, CompositePreset):
+                problem = _composite_problem(preset, bands, not_bands)
+            else:
+                problem = _step_preset_problem(preset)
+            if problem:
+                raise ConfigError(f"{self.dataset_id}: the {kind} {name} {problem}")
 
     def _check_true_color(self) -> None:
         """Empty, or three different bands of the data: red, green, blue (NM4-64)."""
@@ -2357,6 +2523,8 @@ for _entry_part in (
     SearchFilter,
     SearchCapabilities,
     IndexPreset,
+    CompositePreset,
+    StepPreset,
     Notice,
     LineTimes,
     DatasetConfig,
