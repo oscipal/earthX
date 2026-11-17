@@ -319,7 +319,7 @@ describe('the estimate and the limits (Otto, 1.11.2026)', () => {
   });
 
   it('is blocked before the server is asked for a whole scene, a layer without an index and a licence below processing', async () => {
-    expect(await ask(layerOf({ cropToAoi: false }))).toMatchObject({ state: 'blocked', text: 'A preset of whole scenes is computed by a job' });
+    expect(await ask(layerOf({ cropToAoi: false }))).toMatchObject({ state: 'blocked', text: 'NDVI of whole scenes is computed by a job' });
     expect(await ask(layerOf({ appliedRender: {} }))).toMatchObject({ state: 'blocked' });
     expect(await ask(layerOf(), datasets(SENTINEL_2_PRESETS, 'display'))).toMatchObject({ state: 'blocked' });
     expect(calls.filter((c) => c.url.endsWith('/estimate'))).toEqual([]);
@@ -329,5 +329,31 @@ describe('the estimate and the limits (Otto, 1.11.2026)', () => {
     refuse = 'at most 4 jobs may run at a time';
     const { done } = run();
     expect(await done).toEqual({ text: 'at most 4 jobs may run at a time', tip: 'at most 4 jobs may run at a time' });
+  });
+});
+
+// A layer of a composite of "Quick processing" (M5-14 PR B): its download is the job of its three channels, like that of an index.
+describe('the download of a layer of a composite', () => {
+  const FALSE_COLOUR = { name: 'false_colour_ir', title: 'False colour (IR)', expressions: ['nir', 'red', 'green'], rescale: [[0, 0.5], [0, 0.3], [0, 0.3]], reference: 'https://example.org/fc' };
+  const withComposite = (tier = 'processing') => datasetsFrom([{ ...collection([], tier), 'earthx:composite_presets': [FALSE_COLOUR] } as Collection]);
+  const composite = (over: Partial<MapLayer['restore']> = {}) => layerOf({ appliedRender: { index: 'false_colour_ir', rescale: '0,0.5;0,0.3;0,0.3' }, indexOnly: true, ...over });
+
+  it('is offered, alone, and computed as the three channels of the composite', async () => {
+    expect(indexOfferedFor(composite(), withComposite())?.label).toBe('False colour (IR)');
+    const { done, saved, text } = run(composite(), withComposite());
+    expect(await done).toBeNull();
+    const placed = calls.find((c) => c.method === 'POST' && c.url.endsWith('/execution'))?.body as { inputs: { recipe: { steps: unknown[]; output: { bands: string[] } } } };
+    expect(placed.inputs.recipe.steps).toHaveLength(3);
+    expect(placed.inputs.recipe.output.bands).toEqual(['false_colour_ir_r', 'false_colour_ir_g', 'false_colour_ir_b']);
+    expect(text[0]).toBe('Computing False colour (IR)…');
+    expect(saved).toEqual([`/processing/jobs/${JOB_A}/results/result.zip`]);
+  });
+
+  it('is blocked, before the server is asked, for whole scenes and a licence below processing', async () => {
+    const ask = (layer: MapLayer, list = withComposite()) => estimateIndexDownload({ layer, datasets: list, signal: new AbortController().signal });
+    expect(await ask(composite({ cropToAoi: false }))).toMatchObject({ state: 'blocked', text: 'False colour (IR) of whole scenes is computed by a job' });
+    expect(await ask(composite(), withComposite('display'))).toMatchObject({ state: 'blocked' });
+    expect(indexOfferedFor(composite(), withComposite('display'))).toBeNull();
+    expect(calls).toEqual([]);
   });
 });

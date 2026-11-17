@@ -225,9 +225,13 @@ export interface MadeBand {
 // the range of each channel; `null` where no composite of the dataset is among them. The first composite of the registry wins.
 export function compositeAmong(collection: Collection | undefined, made: readonly MadeBand[]): { preset: QuickPreset; bands: [string, string, string]; channels: ChannelRange[] } | null {
   const keyOf = (expression: unknown) => (typeof expression === 'string' ? (expressionTokens(expression)?.join(' ') ?? null) : null);
+  const keys = made.map((band) => ({ name: band.name, key: keyOf(band.expression) }));
   for (const preset of quickPresetsOf(collection)) {
     if (!preset.channels) continue;
-    const bands = preset.steps.map((step) => made.find((band) => keyOf(band.expression) !== null && keyOf(band.expression) === keyOf(step.params.expression))?.name);
+    const bands = preset.steps.map((step) => {
+      const wanted = keyOf(step.params.expression);
+      return keys.find((band) => band.key !== null && band.key === wanted)?.name;
+    });
     if (!bands.every((band): band is string => band !== undefined)) continue;
     const channels = preset.channels.map(([low, high]) => ({ vmin: String(low), vmax: String(high) }));
     return { preset, bands: [bands[0], bands[1], bands[2]], channels };

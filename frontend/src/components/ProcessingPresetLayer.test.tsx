@@ -16,7 +16,7 @@ import { bboxToPolygon } from '../geoUtils';
 import type { MapLayer } from '../layers';
 import type { Order } from '../processing';
 import { RGB } from '../processingBands';
-import { resetJobs, useProcessingStore } from '../processingStore';
+import { orderView, resetJobs, useProcessingStore } from '../processingStore';
 import { useAppStore } from '../store';
 import type { Collection, StacItem } from '../types';
 import LayerManager from './LayerManager';
@@ -225,6 +225,21 @@ describe('"Process" at a layer of a composite', () => {
     expect(tiles.get('colormap_name')).toBeNull();
   });
 
+  it('shows a step added behind the composite, as any new result, with RGB still on offer', async () => {
+    await processLayer();
+    act(() => store().addStep('band_math', 2));
+    const added = store().steps[3];
+    act(() => store().updateStep(added.key, 'expression', 'false_colour_ir_r * 2'));
+    act(() => store().renameResult(added.key, 'twice'));
+    act(() => store().setOutput(['false_colour_ir_r', 'false_colour_ir_g', 'false_colour_ir_b', 'twice']));
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+    await flush();
+    expect(show()?.value).toBe('twice');
+    expect([...show()!.options].map((o) => o.value)).toContain(RGB);
+  });
+
   it('runs as one ordinary order of the three steps', async () => {
     await processLayer();
     act(() => store().setOutput(['false_colour_ir_r', 'false_colour_ir_g', 'false_colour_ir_b']));
@@ -259,5 +274,38 @@ describe('"Process" at a layer of a step', () => {
     await processLayer();
     expect(store().fixed?.result ?? null).toBeNull();
     expect(infoChips().some((chip) => chip?.startsWith('data'))).toBe(true);
+  });
+});
+
+
+describe('the colour picture of an order on a dataset with a composite', () => {
+  async function open(output: (names: string[]) => string[]) {
+    setApp(OPTICAL, { rescale: '0,3000' });
+    useAppStore.setState({ selectedIds: ['A'] });
+    act(() => root.render(<ProcessingPanel />));
+    act(() => store().openProcessing());
+    await flush();
+    const names = ['nir', 'red', 'green'].map((expression, at) => {
+      act(() => store().addStep('band_math', 2));
+      const added = store().steps[at];
+      act(() => store().updateStep(added.key, 'expression', expression));
+      act(() => store().renameResult(added.key, `c${at}`));
+      return `c${at}`;
+    });
+    act(() => store().setOutput(output(names)));
+    await flush();
+    return orderView(useAppStore.getState(), store()).trueColor;
+  }
+
+  it('is the true colour while its three bands are in the output, even beside the channels of the composite', async () => {
+    expect(await open((names) => [...names, 'red', 'green', 'blue'])).toEqual(['red', 'green', 'blue']);
+  });
+
+  it('is the composite where only its channels are, by the expressions of ordinary Band math steps too', async () => {
+    expect(await open((names) => names)).toEqual(['c0', 'c1', 'c2']);
+  });
+
+  it('is the true colour again where a channel of the composite is left out', async () => {
+    expect(await open((names) => names.slice(0, 2))).toEqual(['red', 'green', 'blue']);
   });
 });

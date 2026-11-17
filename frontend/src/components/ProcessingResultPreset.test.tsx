@@ -212,11 +212,18 @@ describe('the layer of a result of a composite', () => {
     expect(query().get('colormap_name')).toBeNull();
   });
 
-  it('finds the channels wherever the file holds them, before the true colour of the dataset', async () => {
+  it('finds the channels wherever the file holds them, in the order red, green, blue', async () => {
+    const made = order([CHANNELS[2], 'red', CHANNELS[0], CHANNELS[1]]);
+    await show({ order: made, bands: bandsOf(made), shownBand: RGB });
+    expect(layers()[0].result!.colour).toEqual([2, 3, 0]);
+    expect(query().getAll('rescale')).toEqual(['0,0.5', '0,0.3', '0,0.3']);
+  });
+
+  it('leaves "RGB" the true colour of the dataset where the file holds its three bands too', async () => {
     const made = order(['red', CHANNELS[2], 'green', CHANNELS[0], 'blue', CHANNELS[1]]);
     await show({ order: made, bands: bandsOf(made), shownBand: RGB });
-    expect(layers()[0].result!.colour).toEqual([3, 5, 1]);
-    expect(query().getAll('rescale')).toEqual(['0,0.5', '0,0.3', '0,0.3']);
+    expect(layers()[0].result!.colour).toEqual([0, 2, 4]);
+    expect(layers()[0].result!.preset).toBeNull();
   });
 
   it('starts with the band the preview showed, and draws the composite again when "RGB" is chosen', async () => {

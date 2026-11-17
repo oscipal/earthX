@@ -85,13 +85,13 @@ describe('the order of a step', () => {
   it('cannot be built where the dataset lacks the operator, and says why', () => {
     // The description of Sentinel-2 has no `terrain`: the registry would never offer it there, an old layer could still name it.
     const made = ordersOf(heights, quickPresetsOf(heights.collection)[0], s2);
-    expect(made).toEqual({ problem: 'Step 1 (terrain): this operator is not available for this dataset.' });
+    expect(made).toEqual({ problem: 'Hillshade cannot be computed for this dataset: Step 1 (terrain): this operator is not available for this dataset.' });
   });
 
   it('cannot be built where a parameter is of no use to the operator', () => {
     const [preset] = quickPresetsOf(heights.collection);
     const odd = { ...preset, steps: [{ ...preset.steps[0], params: { ...preset.steps[0].params, shadow: true } }] };
-    expect(ordersOf(heights, odd)).toEqual({ problem: 'Step 1 (terrain): unknown parameter shadow.' });
+    expect(ordersOf(heights, odd)).toEqual({ problem: 'Hillshade cannot be computed for this dataset: Step 1 (terrain): unknown parameter shadow.' });
   });
 
   it('cannot be built without scenes', () => {

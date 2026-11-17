@@ -1,8 +1,9 @@
-// "Download crop" of a layer that shows an index (NM4-14b, Otto 1.11.2026): the file is the result a Processing job would give for
-// the same scenes, area and index, and the person sees neither the Processing panel nor a job in the list of jobs.
+// "Download crop" of a layer that shows a preset of "Quick processing" (NM4-14b, Otto 1.11.2026; M5-14 PR B): an index, a composite or
+// the step of an operator. The file is the result a Processing job would give for the same scenes, area and preset, and the person
+// sees neither the Processing panel nor a job in the list of jobs.
 //
-// The order is built by the panel's own `buildOrder` from the same pieces (one `band_math` step of Version 2 with the expression
-// and the name of the preset, that band as the output, the data type the panel proposes), so the recipe, its hash and the
+// The order is built by the panel's own `buildOrder` from the same pieces (the steps of the preset as the form of the panel takes
+// them, the band or the three bands they add as the output, the data type the panel proposes), so the recipe, its hash and the
 // result are those of a job started by hand. The job is placed, waited for and downloaded here and never enters the store of the
 // panel (`processingStore.jobs`, the shelf in the browser). Several groups are several jobs and one bundle.
 
@@ -53,13 +54,13 @@ export function presetDetail(preset: QuickPreset): string | null {
   return preset.kind === 'composite' ? preset.steps.map((step) => String(step.params.expression)).join(', ') : null;
 }
 
-// Why the index of a layer cannot be downloaded, or `null`: only an AOI crop can (a whole scene is a job of its own to start in
+// Why the preset of a layer cannot be downloaded, or `null`: only an AOI crop can (a whole scene is a job of its own to start in
 // Processing), and only where the licence allows processing.
 export function indexDownloadBlock(layer: MapLayer, datasets: readonly DatasetOption[]): string | null {
   const { restore } = layer;
   const dataset = datasets.find((d) => d.id === restore.datasetId);
   if (!restore.focusMode || !restore.cropToAoi || !isArea(restore.aoi)) {
-    return 'A preset of whole scenes is computed by a job: start one in Processing.';
+    return `${presetOfLayer(layer, datasets)?.label ?? 'A preset'} of whole scenes is computed by a job: start one in Processing.`;
   }
   return processBlockReason(dataset, restore.itemIds.length);
 }
@@ -86,7 +87,8 @@ export function indexOrdersOfScenes(args: {
   };
   let key = 0;
   const { draft, problems } = draftFromOrder(skeleton, info, () => key++);
-  if (problems.length > 0) return { problem: problems.join(' ') || cannot };
+  // The short line of the dialog is the text before the first colon: it names the preset, the reasons follow.
+  if (problems.length > 0) return { problem: `${preset.label} cannot be computed for this dataset: ${problems.join(' ')}` };
   const steps = draft.steps;
   const dtype = chooseDtype({ steps: steps.map((step) => ({ op: step.op, values: step.values })), bands: [], allowed: info.dtypes, operators: info.operators }).value;
   const data = Object.keys(dataset.collection['earthx:band_units'] ?? {});

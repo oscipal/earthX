@@ -214,7 +214,7 @@ export interface PreviewRead {
   choices: string[];
   // The band the tile shows: the one the person picked while it is among the choices, else the result added last (the
   // step created last, not the last of the chain), else the first choice (RGB, where it is offered); RGB before all where it is a
-  // composite the steps make (M5-14 PR B); `null` for an empty output, where the tiler shows what it shows by itself.
+  // composite the steps make and the only results (M5-14 PR B); `null` for an empty output, where the tiler shows what it shows by itself.
   band: string | null;
   // The bands the tile is asked for (`band=`): that one, the three of the colour picture for "RGB", none without a band.
   bands: string[];
@@ -242,8 +242,9 @@ export function previewRead(args: {
   // The three bands of the colour picture: of the data, or the channels of a composite the steps make (M5-14 PR B).
   const colour = trueColor !== null && trueColor.length === 3 && trueColor.every((name) => kept.has(name) && (dataNames.includes(name) || results.some((result) => result.name === name)));
   const choices = [...(colour ? [RGB] : []), ...results.map((result) => result.name), ...output.filter((name) => dataNames.includes(name))];
-  // A composite the steps make is what the preview starts with: its channels alone are no picture of it (M5-14 PR B).
-  const composite = colour && trueColor.some((name) => !dataNames.includes(name));
+  // A composite the steps make is what the preview starts with while its channels are the only results: one channel alone is no
+  // picture of it (M5-14 PR B). A step added behind it is shown as any new result is.
+  const composite = colour && trueColor.some((name) => !dataNames.includes(name)) && results.every((result) => trueColor.includes(result.name));
   const band = pick !== null && choices.includes(pick) ? pick : composite ? RGB : startBand(choices, results.map((r) => ({ name: r.name, created: r.key })));
   if (band === null) return { choices, band, bands: [], assets: [...all] };
   const bands = band === RGB ? [...trueColor!] : [band];
@@ -617,7 +618,7 @@ export function previewSpec(args: {
 // ranges of the composite whose channels `bands` are (M5-14 PR B).
 function presetOfBand(dataset: DatasetOption, plan: Extract<PreviewPlan, { state: 'ready' }>, band: string | null, bands: readonly string[]): PreviewRange | null {
   if (band === RGB) {
-    const made = plan.steps.flatMap(({ step, params }) => (isBandMath(step) ? [{ name: String(params.name), expression: params.expression as string }] : []));
+    const made = plan.steps.flatMap(({ step, params }) => (isBandMath(step) && bands.includes(String(params.name)) ? [{ name: String(params.name), expression: params.expression as string }] : []));
     const composite = compositeAmong(dataset.collection, made);
     if (!composite || composite.bands.some((name, at) => name !== bands[at])) return null;
     const [first] = composite.channels;

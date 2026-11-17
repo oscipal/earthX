@@ -127,17 +127,18 @@ export function colourPlacesOf(bands: readonly ResultBand[], trueColor: readonly
   return places.every((place) => place >= 0) ? [places[0], places[1], places[2]] : null;
 }
 
-// The colour picture of a result: the channels of a composite of the dataset the job made (matched by expression, M5-14 PR B) with the
-// range of each, else the three bands of `earthx:true_color` with no range of their own; `null` where the file has neither.
+// The colour picture of a result: the three bands of `earthx:true_color` with no range of their own (NM4-64), else the channels of a
+// composite of the dataset the job made (matched by expression, M5-14 PR B) with the range of each; `null` where the file has neither.
 export function colourOfResult(bands: readonly ResultBand[], collection: Collection | undefined): { places: [number, number, number]; preset: PreviewRange | null } | null {
+  const places = colourPlacesOf(bands, trueColorOf(collection));
+  if (places) return { places, preset: null };
   const composite = compositeAmong(collection, bands);
   if (composite) {
     const [red, green, blue] = composite.bands.map((name) => bands.findIndex((band) => band.name === name));
     const [first] = composite.channels;
     return { places: [red, green, blue], preset: { vmin: first.vmin, vmax: first.vmax, colormap: '', channels: composite.channels } };
   }
-  const places = colourPlacesOf(bands, trueColorOf(collection));
-  return places ? { places, preset: null } : null;
+  return null;
 }
 
 // What the job measured of the three bands of the colour picture, as one measure: the scale is chosen from all three
