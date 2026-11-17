@@ -34,7 +34,7 @@ export const POLL_MS = 2000;
 export function indexOfLayer(layer: MapLayer, datasets: readonly DatasetOption[]): IndexPreset | null {
   const dataset = datasets.find((d) => d.id === layer.restore.datasetId);
   // A layer made before looks were kept has none.
-  return layer.restore.appliedRender ? viewIndexOf(layer.restore.appliedRender, dataset?.collection) : null;
+  return layer.restore.appliedRender ? (viewIndexOf(layer.restore.appliedRender, dataset?.collection)?.index ?? null) : null;
 }
 
 // The index a layer's download offers besides its raw bands (Otto, 1.11.2026): the one it shows, where it can be computed.

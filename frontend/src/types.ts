@@ -284,6 +284,10 @@ export interface Collection {
   // The indices the panel offers as one click each (NM4-14), in the words of the registry; read, and checked entry by
   // entry, by `indexPresets.ts`. Absent on a backend before NM4-14a.
   'earthx:index_presets'?: unknown[] | null;
+  // The pictures of three expressions and the steps of an operator "Quick processing" offers (adr/0030 F7, M5-14); read, and checked
+  // entry by entry, by `quickPresets.ts`. Absent on a backend before M5-14.
+  'earthx:composite_presets'?: unknown[] | null;
+  'earthx:step_presets'?: unknown[] | null;
 }
 
 // A time step: the items that share one grouping key (registry.ViewerInfo).

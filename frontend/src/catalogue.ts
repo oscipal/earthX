@@ -5,7 +5,7 @@
 import type { DatasetOption } from './datasets';
 import { maturityLabel, maturityNote } from './datasets';
 import { utcDay } from './dateBounds';
-import { indexPresetsOf } from './indexPresets';
+import { quickPresetsOf } from './quickPresets';
 import { formatCount, formatNumber } from './numberFormat';
 import { catalogueUnit, trueColorOf } from './processingOrder';
 import type { CatalogueFilterState } from './store';
@@ -248,8 +248,10 @@ export function catalogueRows(dataset: DatasetOption): CatalogueRow[] {
   const c = dataset.collection;
   const region = c['earthx:source']?.data_region;
   const maturity = maturityLabel(c);
-  // As "Quick processing" offers them: the indices, and "Enhance contrast" where the dataset has a true-colour picture.
-  const quick = [...indexPresetsOf(c).map((p) => p.title), ...(trueColorOf(c) ? ['Enhance contrast'] : [])];
+  // As "Quick processing" offers them: the indices, composites and steps, and "Enhance contrast" where the dataset has a colour picture.
+  const presets = quickPresetsOf(c);
+  const colour = trueColorOf(c) !== null || presets.some((p) => p.kind === 'composite');
+  const quick = [...presets.map((p) => p.index?.title ?? p.label), ...(colour ? ['Enhance contrast'] : [])];
   const keywords = keywordsOf(c);
   const listed = isListed(c);
   return [

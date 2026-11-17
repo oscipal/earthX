@@ -1,14 +1,14 @@
-// The quick calculation of an index in the view (NM4-14b, review of Otto 31.10.2026): the dropdown "Index" of the view
-// draws an index of the scenes at once through the tile route with an operator (`band_math` Version 2: the tile of a scene,
-// or the mosaic of a pass, NM4-04), with no job. The choice is part of the look of the image (`AppliedRender.index`), so
-// "Apply to all", "Add to layers" and the step from one image to the next carry it like they carry the colormap.
+// The quick processing in the view (NM4-14b, review of Otto 31.10.2026; M5-14): a preset of the dataset — an index, a composite of three
+// expressions, a step of an operator — is drawn from the scenes at once through the tile route with its steps (the tile of a scene, or
+// the mosaic of a pass, NM4-04), with no job. The choice is part of the look of the image (`AppliedRender.index`), so "Apply to all",
+// "Add to layers" and the step from one image to the next carry it like they carry the colormap.
 //
-// Nothing here knows an index: the registry names it (`indexPresets.ts`). Where the tile route cannot take the index (too
-// many bands for a mosaic, a request longer than the tiler passes) nothing is drawn and `indexBlockOf` says why: the view
-// never falls back to a raw band behind the person's back.
+// Nothing here knows a preset: the registry names it (`quickPresets.ts`). Where the tile route cannot take it (too many bands for a
+// mosaic, a request longer than the tiler passes) nothing is drawn and `indexBlockOf` says why: the view never falls back to a raw band
+// behind the person's back.
 
-import { buildMosaicOperatorTileTemplate, buildOperatorStatisticsUrl, buildOperatorTileTemplate, type MosaicSelection, type TileStep } from './api';
-import { indexPresetsOf, presetRange, type IndexPreset } from './indexPresets';
+import { buildMosaicOperatorTileTemplate, buildOperatorStatisticsUrl, buildOperatorTileTemplate, type MosaicSelection } from './api';
+import { presetOfLook, shownBandsOf, tileStepsOf, type QuickPreset } from './quickPresets';
 import {
   indexKeyOf,
   MAX_MOSAIC_OPERATOR_ASSETS,
@@ -21,38 +21,19 @@ import {
   type SceneEntry,
 } from './mosaic';
 import type { OverviewChain } from './overviewSubstitute';
-import { canonicalJson } from './processing';
 import { firstZoomOf } from './tileSize';
 import type { AppliedRender, Collection, TimeStepGroup } from './types';
 
-// The names an expression reads, in the order it first names them (a preset names no function). The registry checks that
-// each is a band of the dataset, and the assets of Sentinel-2 are called like their bands.
-const IDENTIFIER = /(?<![A-Za-z0-9_])[A-Za-z_][A-Za-z0-9_]*/gu;
+export { assetsOfExpression } from './quickPresets';
 
-export function assetsOfExpression(expression: string): string[] {
-  return [...new Set(expression.match(IDENTIFIER) ?? [])];
+// The preset as the overview below the first level computes it (M5-10 part B): the same steps, the band or bands they add shown.
+export function indexChainOf(preset: QuickPreset): OverviewChain {
+  return { steps: tileStepsOf(preset), band: shownBandsOf(preset) };
 }
 
-// The steps of the tile: one Band math, which names the band it adds like the index.
-function stepsOf(preset: IndexPreset): TileStep[] {
-  return [{ op: 'band_math', opVersion: 2, paramsJson: canonicalJson({ expression: preset.expression, name: preset.name }) }];
-}
-
-// The index as the overview below the first level computes it (M5-10 part B): the same step, the band it adds shown.
-export function indexChainOf(preset: IndexPreset): OverviewChain {
-  return { steps: stepsOf(preset), band: preset.name };
-}
-
-// The preset a look names, among the presets of the dataset; `null` for a look without an index (or one the dataset lacks).
-export function viewIndexOf(look: AppliedRender, collection: Collection | undefined): IndexPreset | null {
-  if (!look.index) return null;
-  return indexPresetsOf(collection).find((preset) => preset.name === look.index) ?? null;
-}
-
-// The look of an image that shows the index: its range and colormap, no band.
-export function indexLookOf(preset: IndexPreset): AppliedRender {
-  const { vmin, vmax, colormap } = presetRange(preset);
-  return { index: preset.name, colormapName: colormap, rescale: `${vmin},${vmax}` };
+// The preset a look names, among the presets of the dataset; `null` for a look without one (or one the dataset lacks).
+export function viewIndexOf(look: AppliedRender, collection: Collection | undefined): QuickPreset | null {
+  return presetOfLook(look, collection);
 }
 
 // The text of the tooltip of the dropdown for an index: its title and formula (the same as the tooltip of the preset).
@@ -83,20 +64,21 @@ export function indexRasterOf(
   raster: PlannedRaster,
   entries: SceneEntry[],
   datasetId: string,
-  preset: IndexPreset,
+  preset: QuickPreset,
   mosaics?: Mosaics,
 ): PlannedRaster | IndexBlock | 'waiting' {
-  const assets = assetsOfExpression(preset.expression);
+  const { assets } = preset;
+  const steps = tileStepsOf(preset);
+  const band = shownBandsOf(preset);
   const scene = entries.find(([, info]) => info.tileUrl === raster.tileUrl);
-  if (scene) return { ...raster, tileUrl: buildOperatorTileTemplate(datasetId, scene[0], assets, stepsOf(preset), preset.name) };
+  if (scene) return { ...raster, tileUrl: buildOperatorTileTemplate(datasetId, scene[0], assets, steps, band) };
   if (assets.length > MAX_MOSAIC_OPERATOR_ASSETS) return 'assets';
-  const steps = stepsOf(preset);
-  if (mosaicRequestBytes(buildMosaicOperatorTileTemplate(SOME_SELECTION, steps, preset.name), raster.maxZoom) > MAX_MOSAIC_REQUEST_BYTES) return 'length';
+  if (mosaicRequestBytes(buildMosaicOperatorTileTemplate(SOME_SELECTION, steps, band), raster.maxZoom) > MAX_MOSAIC_REQUEST_BYTES) return 'length';
   const made = mosaics?.[indexKeyOf(datasetId, assets, entries)];
   if (made === undefined) return 'waiting';
   // The tiler did not take the selection of these assets: the index cannot be computed over this mosaic.
   if (made === null || !('selection' in made)) return 'assets';
-  return { ...raster, tileUrl: buildMosaicOperatorTileTemplate(made.selection, steps, preset.name) };
+  return { ...raster, tileUrl: buildMosaicOperatorTileTemplate(made.selection, steps, band) };
 }
 
 // What the map draws for a pass under the index: its rasters bottom to top, or `blocked`; `waiting` where a selection is not
@@ -105,7 +87,7 @@ export function indexRastersOfPass(
   rasters: readonly PlannedRaster[],
   entries: SceneEntry[],
   datasetId: string,
-  preset: IndexPreset,
+  preset: QuickPreset,
   mosaics?: Mosaics,
 ): { rasters: PlannedRaster[]; block: IndexBlock | null; waiting: boolean } {
   const made = rasters.map((raster) => indexRasterOf(raster, entries, datasetId, preset, mosaics));
@@ -121,7 +103,7 @@ export function indexBlockOf(args: {
   entries: SceneEntry[];
   groups: readonly TimeStepGroup[] | undefined;
   mosaics: Mosaics | undefined;
-  preset: IndexPreset;
+  preset: QuickPreset;
   mapZoom: number;
   // The index is drawn below the first level from the overview (M5-10 part B): zooming in is no condition then.
   overview?: boolean;
@@ -140,6 +122,6 @@ export function indexBlockOf(args: {
 }
 
 // The statistics of the index over one scene, for "auto-scale": the same tile route with the same step.
-export function indexStatisticsUrl(datasetId: string, itemId: string, preset: IndexPreset): string {
-  return buildOperatorStatisticsUrl(datasetId, itemId, assetsOfExpression(preset.expression), stepsOf(preset), preset.name);
+export function indexStatisticsUrl(datasetId: string, itemId: string, preset: QuickPreset): string {
+  return buildOperatorStatisticsUrl(datasetId, itemId, preset.assets, tileStepsOf(preset), shownBandsOf(preset));
 }

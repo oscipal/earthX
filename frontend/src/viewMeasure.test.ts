@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AreaStatistics } from './api';
 import type { IndexPreset } from './indexPresets';
+import { presetOfIndex } from './quickPresets';
 import type { Collection, StacItem } from './types';
 import { areaQuestionOf, fallbackReasonOf, forgetAreaAnswers, inRawValues, measureView, statisticsOfArea, type ViewMeasure } from './viewMeasure';
 
@@ -52,7 +53,7 @@ describe('the order for what the view draws', () => {
   });
 
   it('is one band_math step of version 2 for an index, and that band as the output', () => {
-    const question = ask({ index: NDVI });
+    const question = ask({ index: presetOfIndex(NDVI) });
     expect(question?.order.steps).toEqual([{ op: 'band_math', op_version: 2, params: { expression: NDVI.expression, name: 'NDVI' } }]);
     expect(question?.order.output).toMatchObject({ dtype: 'float32', bands: ['NDVI'] });
     // An index is physical on both sides: nothing is turned back.
