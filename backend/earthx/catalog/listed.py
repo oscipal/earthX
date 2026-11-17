@@ -127,8 +127,10 @@ class ListedAccess:
 class ListedEntry:
     """One listed entry: the head of a full entry (adr/0025 §6.1a) plus data kind, delivery and the link to the source.
 
-        ``source_url`` is the landing page at the source, the one link the catalogue offers. ``publisher`` is the
-        organisation that publishes the data, as the source names it: what a blocklist line of scope ``publisher`` matches.
+        ``source_url`` is the one link the catalogue offers: as directly as possible to the data, a viewer or download
+        page at the provider before the page of the dataset, never a single file or only the provider's start page
+        (Otto, 17.11.2026; M5-19 plan §6). ``publisher`` is the organisation that publishes the data, as the source
+        names it: what a blocklist line of scope ``publisher`` matches.
         ``approved_on`` is the day Otto released the entry: for a hand entry the day of its file (plan A3). The regions are
         derived from the extent when the entry is written, never read from a file. ``coverage_states`` names the states
     (ISO 3166-1) an entry covers where its box takes in more (M5-17 F4): then its footprint is the union of their outlines

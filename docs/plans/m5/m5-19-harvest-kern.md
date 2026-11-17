@@ -50,9 +50,9 @@ Neue Tabellen in `public`, Namen wie in `adr/0025` §5.3. Keine AOI, keine Adres
 | `earthx_raw_record` | je Fund (`source_id`, `source_key`): letzte Rohantwort gzip (höchstens 1 MB), SHA-256, `ETag`, `Last-Modified` (wo die Quelle sie je Fund liefert), geholt am, Lauf |
 | `earthx_record_state` | je Fund: Zustand (`extracted`, `invalid`, `gone`; die übrigen aus `adr/0025` §5.4 und `adr/0033` §7 kommen mit M5-20), Zwischenform als `jsonb`, ihr SHA-256, Kennzeichen „Ausdehnung unbekannt“, Grund bei `invalid`, zuletzt gesehen in Lauf |
 | `earthx_state_transition` | von, nach, wann, Lauf, Grundcode |
-| `earthx_harvest_page` | je Quelle und Listenadresse ohne Zähler der Seite: `ETag`, `Last-Modified`, SHA-256 der letzten Antwort (für Listen, die als Ganzes `304` können, §4.2) |
+| `earthx_harvest_source` | je Quelle `ETag` und `Last-Modified` ihrer Liste, nur wenn die Liste auf eine Seite passt: dann heißt `304` „Liste als Ganzes unverändert“ (§4.2) |
 
-- **Lauf-Sperre je Quelle (A1):** Ein Lauf legt seine Zeile mit `lease_until` = jetzt + 60 s an und erneuert sie mit einem Herzschlag; ein zweiter Lauf derselben Quelle bricht ab, solange eine Zeile mit `running` und lebender Frist besteht. Gleiche Form wie die Plätze aus M5-37 (Otto 16.11.: Frist und Herzschlag), kein Advisory-Lock: Der überlebt keinen Verbindungsabbruch sichtbar und lässt sich nicht abfragen.
+- **Lauf-Sperre je Quelle (A1):** Ein Lauf legt seine Zeile mit `lease_until` = jetzt + 5 min an und erneuert sie nach jeder Seite (5 min, weil das Warten auf einen Platz bis 60 s und die Versuche einer Anfrage zusammen länger dauern können als 60 s); ein zweiter Lauf derselben Quelle bricht ab, solange eine Zeile mit `running` und lebender Frist besteht. Gleiche Form wie die Plätze aus M5-37 (Otto 16.11.: Frist und Herzschlag), kein Advisory-Lock: Der überlebt keinen Verbindungsabbruch sichtbar und lässt sich nicht abfragen.
 - **Fremdschlüssel** `earthx_listed_entry.run_id → earthx_harvest_run` (Migration 021, Kommentar dort).
 - **Grenzen:** Die Rohantwort eines Fundes über 1 MB wird nicht gespeichert; der Fund wird `invalid` mit Grund `too_large`, sein Hash bleibt (Vergleich im nächsten Lauf).
 
@@ -84,7 +84,7 @@ Alle Anfragen über **ein** `Gateway` je Lauf aus `open_source_gateway(policy)` 
 | | STAC-API (FSDI, Earth Search) | CKAN (GovData, opendata.swiss, data.gv.at) |
 |---|---|---|
 | Liste | `GET /collections`, Seiten über `rel=next`; ein Fund = eine Collection aus der Liste, kein Abruf je Collection | `package_search` mit `fq`, `rows=100`, `sort=id asc`, `start` als Versatz; ein Fund = ein Paket samt `resources` |
-| bedingt | `If-None-Match`/`If-Modified-Since` auf jede Seite mit gespeichertem Wert (`earthx_harvest_page`); `304` auf der ersten Seite einer einseitigen Liste heißt: Lauf ohne Folgearbeit (Earth Search `304` [M], `adr/0025` §3) | keine (`ETag` fehlt [M], `adr/0025` §3) |
+| bedingt | `If-None-Match`/`If-Modified-Since` nur auf die erste Seite und nur, wenn die Liste beim letzten Lauf auf eine Seite passte (`earthx_harvest_source`); `304` heißt dann: Lauf ohne Folgearbeit (Earth Search `304` [M], `adr/0025` §3) | keine (`ETag` fehlt [M], `adr/0025` §3) |
 | ohne `ETag` | Hash je Seite und je Fund; gleicher Hash, keine Folgearbeit (FSDI: 6 Seiten [M]) | Hash je Fund |
 | inkrementell | — (Listen sind klein) | `fq` zusätzlich `metadata_modified:[<letzter Lauf − 1 h> TO *]`; voll, wenn `--full` oder der letzte volle Lauf älter als `full_every_days` ist |
 | weg | Fund fehlt in einem vollständigen Lauf → `gone` | nur nach einem vollen Lauf → `gone` (A3) |
@@ -158,7 +158,7 @@ Heute zeigen beide auf eine Übersichtsseite (`backend/catalog/listed/`, M5-17, 
 
 ## 8. Befehle für Ottos lokalen Lauf (PowerShell, nach der Umsetzung)
 
-Geplant wie `materialize`: ein Compose-Dienst `harvest` im Profil `harvest`, nie bei einem einfachen `docker compose up`. Die genauen Befehle stehen nach der Umsetzung in diesem Abschnitt und in der README.
+Ein Compose-Dienst `harvest` im Profil `harvest` wie `materialize`, nie bei einem einfachen `docker compose up`. Mit PR 1 laufen die beiden STAC-Quellen; GovData und opendata.swiss kommen mit PR 2 (CKAN). Befehle für PowerShell, aus dem Checkout:
 
 ```powershell
 git fetch origin
@@ -168,12 +168,18 @@ docker compose build
 docker compose up -d
 docker compose run --build --rm harvest fsdi-stac
 docker compose run --rm harvest earth-search
-docker compose run --rm harvest govdata --full
-docker compose run --rm harvest opendata-swiss --full
 docker compose run --rm harvest fsdi-stac
-"SELECT source_id, kind, status, requests, not_modified, found_new, found_changed, found_unchanged, filtered, invalid, gone, stop_reason FROM earthx_harvest_run ORDER BY run_id;" | docker compose exec -T postgres sh -c 'psql -U $POSTGRES_USER -d $POSTGRES_DB'
-"SELECT source_id, state, reason, count(*) FROM earthx_record_state GROUP BY 1, 2, 3 ORDER BY 1, 2, 3;" | docker compose exec -T postgres sh -c 'psql -U $POSTGRES_USER -d $POSTGRES_DB'
+docker compose run --rm harvest earth-search
+"SELECT run_id, source_id, status, stop_reason, requests, not_modified, found_new, found_changed, found_unchanged, invalid, gone, extent_unknown FROM earthx_harvest_run ORDER BY run_id;" | docker compose exec -T postgres sh -c 'psql -U $POSTGRES_USER -d $POSTGRES_DB'
+"SELECT source_id, state, reason, extent_known, count(*) FROM earthx_record_state GROUP BY 1, 2, 3, 4 ORDER BY 1, 2, 3, 4;" | docker compose exec -T postgres sh -c 'psql -U $POSTGRES_USER -d $POSTGRES_DB'
+"SELECT source_id, extracted->>'title' AS title, extracted->>'source_rank' AS rank, extracted->>'source_url' AS source FROM earthx_record_state WHERE state = 'extracted' ORDER BY random() LIMIT 10;" | docker compose exec -T postgres sh -c 'psql -U $POSTGRES_USER -d $POSTGRES_DB'
 ```
+
+- Jeder Lauf druckt einen kurzen Bericht (Anfragen, davon `304`, Funde neu/geändert/unverändert/ungültig/weg, Ausdehnung unbekannt); Rückgabe 0 nur bei `done`.
+- **Zweiter Lauf** je Quelle: FSDI ohne `ETag` mit `found_unchanged` = alle und ohne neue Übergänge; Earth Search mit einer Anfrage und `not_modified` 1. Das ist die Abnahme M5-Plan §7 Punkt 3 für diese beiden Quellen.
+- **Links:** Die dritte Abfrage zeigt zehn zufällige Funde mit dem Link „Source“ und seinem Rang (1 Viewer/Download-Seite, 2 Seite beim Anbieter, 3 Seite im Katalog). Bitte einige im Browser öffnen; die Adressen bleiben in deiner Datenbank, nicht im Repo.
+- **Neu ableiten ohne Abruf** nach einer Codeänderung: `docker compose run --build --rm harvest fsdi-stac --reextract`.
+- Zu prüfen bei deinem ersten Lauf: ob der STAC-Browser der FSDI (Rang 3) die Collection zeigt; Zahl der Collections je Quelle.
 
 `--build` beim ersten Lauf ist nötig, weil `docker compose build` Dienste in einem Profil nicht mitbaut (Befund 15.11.2026, M5-30-Plan §8.10).
 
@@ -252,4 +258,11 @@ Ohne Netz, mit `tests/fixtures` und einer Transport-Attrappe am `Gateway` wie be
 
 ### 12.1 PR 1 ([#375](https://github.com/oscipal/earthX/pull/375)), Stand 17.11.2026
 
-In Arbeit: Migration 024, Seed-Lader und fünf Seed-Dateien, `hosts.yaml`, Fetch mit Lauf-Sperre, Lauf-Befehl und Compose-Profil, STAC-Extraktor, Link-Regel. Ohne die Handeinträge (F3, F4 offen).
+- **Migration 024** (`catalog/migrations/024_harvest.sql`): `earthx_harvest_run` mit Lauf-Sperre (eindeutiger Teilindex auf `running`, Frist 5 min), `earthx_harvest_source`, `earthx_raw_record`, `earthx_record_state`, `earthx_state_transition`; Fremdschlüssel `earthx_listed_entry.run_id`. SQL in `catalog/harvest_store.py`.
+- **Seed:** `catalog/sources.py` (streng, `listed` und `proto-` vergeben), fünf Dateien unter `backend/catalog/sources/` (data.gv.at `enabled: false`), im Image. Kein CKAN-Filter nach räumlicher Angabe (Zusatz Otto).
+- **`hosts.yaml`:** drei Katalog-Hosts mit 2 Verbindungen und 1 s; die Prüfung der Registry kennt die Hosts der Seed-Dateien (F6). `.importlinter`: die zwei neuen `catalog`-Module stehen in der Verbotsliste des `runner` (verschärft, nicht gelockert).
+- **Lauf:** `discovery/harvest.py` (`run_harvest`, Bericht, CLI mit `--reextract`; `--full` erst mit CKAN wirksam), alle Anfragen über `open_source_gateway` mit `obey_robots`, Obergrenze je Lauf; Compose-Dienst `harvest` im Profil `harvest`.
+- **STAC:** `discovery/stac.py` (Seiten über `rel=next`, bedingt nur bei einseitiger Liste, Schleifenschutz; Collection → Zwischenform), `discovery/extract.py` (Zwischenform, Datentyp nach Medientyp), `discovery/links.py` (Link-Regel F1 = 1).
+- **Nachtrag** in `adr/0033` §5 und §13 (Link „Source“, „Ausdehnung unbekannt“) und im Docstring von `ListedEntry.source_url`.
+- **Nicht in PR 1:** CKAN (PR 2), Handeinträge CORINE und Landsat (F3, F4 offen), README-Abschnitt (PR 2).
+- **Auslegung bei der Umsetzung:** Ein Fund, der eine Seite der Liste ohne gültige ID erreicht, wird gezählt (`ungültig`), aber nicht gespeichert, weil er keinen Schlüssel hat.

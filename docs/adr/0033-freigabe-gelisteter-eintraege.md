@@ -173,6 +173,9 @@ Vorschlag für M5-40 und M5-20, nach Ottos Vorgabe. Die rechte Spalte sagt, welc
 - **Nie im Eintrag:** Name, Mail-Adresse oder Telefon einer Person (`author`, `maintainer` und ihre Mail-Felder bei CKAN, Kontaktpunkte bei DCAT); nur Organisationen. Extract verwirft diese Felder, die Rohantwort behält sie nur bis zum nächsten Lauf (`adr/0025` §5.3) [A].
 - **Mehrere Lizenzen** (1,5 % in der Stichprobe): Jede Lizenzangabe des Datensatzes braucht eine Regel; der Eintrag nennt die Lizenz je Distribution, die Zusammenfassung die engste [A].
 - **Geodaten:** Ein Fund ohne räumliche Angabe wird nicht gelistet (Filter der Quelle, §14 zu `adr/0025` §5.2).
+- **Nachtrag 2026-11-17 (M5-19, Vorgaben Otto, `plans/m5/m5-19-harvest-kern.md` §6, §9a):**
+  - **Link zur Quelle:** so direkt wie möglich zu den Daten: zuerst Viewer oder Download-Seite beim Anbieter, wo man die Daten laden kann; sonst die Seite des Datensatzes beim Anbieter; sonst die Seite im Katalog. Nie eine einzelne Datei, nie ein Dienst, nie nur die Startseite des Anbieters. Gilt für gelistete Einträge, auch die Handeinträge; volle Einträge folgen mit M5-55.
+  - **Ohne räumliche Angabe:** Ein Fund wird nicht verworfen, sondern mit „Ausdehnung unbekannt“ gehalten; ob und wie er gelistet und gefiltert wird, entscheidet M5-20. Der Punkt „Geodaten“ darüber gilt damit nicht mehr als Filter der Quelle.
 - **Neue Werte für `access`** ändern `adr/0027` §6.1; Prinzip 2 bleibt unberührt, weil ein Link kein Anbinden ist (`adr/0027` F2 = 1). Frage F10.
 
 ## 6. Lizenzregeln in Git
@@ -345,7 +348,7 @@ Der Harvest erkennt Änderungen am Inhalts-Hash (`adr/0025` §5.1). Dann gilt je
 |---|---|
 | **M5-40** (B, vor M5-17) | Tabelle(n) gelisteter Einträge in Postgres mit Zustand, Herkunftsfeldern (§10) und Grabstein; Felder aus §5; Prozesse laden gelistete Einträge nie in die Registry; Lesepfad: Seiten statt Gesamtliste, Filter nach AOI, Region und Zeit über Indizes; Wahl pgstac-Collections oder eigene Tabelle mit Messung bei 10⁶ synthetischen Einträgen (§2.3); Frontend blättert; `blocked.yaml` mit Prüfung beim Laden, `410` für Grabsteine; Handeinträge aus `backend/catalog/listed/` (M5-17: CORINE, Landsat) schreibt `catalog-load` in dieselbe Tabelle (F11); **erster Commit: die Nachträge aus §14** (F12) |
 | **M5-17** | erste Handeinträge wie geplant, als YAML unter `listed/`, nur von `catalog-load` gelesen |
-| **M5-19** | Extract für alle Datentypen; Filter „räumliche Angabe vorhanden“ statt Rasterfilter; Personenfelder verworfen (§5) |
+| **M5-19** | Extract für alle Datentypen; Filter „räumliche Angabe vorhanden“ statt Rasterfilter; Personenfelder verworfen (§5). **Nachtrag 2026-11-17:** kein Filter nach räumlicher Angabe, Funde ohne sie mit „Ausdehnung unbekannt“ (Otto, §5) |
 | **M5-20** (erweitert) | Lizenzkatalog und `grants/` (L2) statt `license_rules.yaml`; Warteliste (H2); `discovery report` mit Stapel, Bericht und Stichprobe (N2); Freigabedatei mit Feld `decision` auf einem Branch `harvest/<datum>-<quelle>` und `discovery publish` (A1, §8.4); Regeln für Aktualisierungen (U1); Verify für gelistete Einträge nur in der Stichprobe (§14); Anleitung für Ottos lokalen Lauf um Bericht und Freigabe ergänzt |
 | **`adr/0031` V6, V7** | der Onboarding-Lauf übernimmt offene `harvest/`-Branches in den Tages-PR und berichtet die Lauf-Freigaben (§8.4) |
 | **M5-24** | Health-Check gelisteter Einträge nur rotierend: der Link einer Teilmenge je Tag, jeder Eintrag einmal im Monat, mit dem Zeiger je Host aus M5-37 [A] |
