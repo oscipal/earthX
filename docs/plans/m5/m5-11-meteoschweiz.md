@@ -1,6 +1,6 @@
 # M5-11 — MeteoSchweiz-Klimagitter über virtuelle Verweise
 
-**Stand:** 17.11.2026, Plan mit Fragen (§9), **noch nicht angenommen**. Umsetzung erst nach Ottos Antworten.
+**Stand:** 17.11.2026, Plan **angenommen** (Otto, 17.11.2026: F1–F7 = 1, F8 mit Vorgabe, F9 = nein; §9.2). PR 1 umgesetzt in diesem Draft-PR (§10). PR 2 folgt nach dem Merge von PR 1 in einer neuen Session.
 **Stufe B.** Zwei PRs (Vorgabe Otto, M5-Plan §2 Punkt 11): **PR 1** Verweise und Lesen, **PR 2** Datensatz MeteoSchweiz.
 **Aufgabe:** M5-11 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2 (Opus, hoch).
 **Grundlagen:** `adr/0029` (Leseweg NetCDF, F1–F7 = 1, §8a, §10 Punkt 1–4), `adr/0030` §5.6 und F10, `adr/0032` §7 und Backlog 29 (Prüfpunkt Mosaik-Zoom), `adr/0023` §3.1 (Lizenz MeteoSchweiz), `adr/0026` (Bewertungs-Set, Kürzel MCH), `adr/0002` (keine Live-Abrufe aus der Session), `KLAERUNGEN.md` B8, B9, B10–B13, Entscheidungslog 11.11.2026 (Ausgabetyp, Wiedervorlage `float64`).
@@ -272,7 +272,7 @@ Das Set kennt ein Kürzel `MCH` mit `id: null` (`backend/tests/fixtures/search/e
 
 PR 1 liegt knapp über dem Richtwert von 400 Zeilen; das Messskript (rund 80 Zeilen) ließe sich in PR 2 verschieben, braucht aber `h5py` und soll vor PR 2 laufen. Ich lasse es in PR 1.
 
-**Branches:** PR 1 auf `claude/epic-euler-hgc05c` (dieser Draft-PR, Plan und Umsetzung). PR 2 gestapelt auf einem zweiten Branch, z. B. `claude/m5-11-meteoswiss-dataset` (§9 F9).
+**Branches:** PR 1 auf `claude/epic-euler-hgc05c` (dieser Draft-PR, Plan und Umsetzung). PR 2 nicht gestapelt: eine neue Session nach dem Merge von PR 1, Branch von `main` (Otto, F9).
 
 ---
 
@@ -280,7 +280,7 @@ PR 1 liegt knapp über dem Richtwert von 400 Zeilen; das Messskript (rund 80 Zei
 
 Wie bei M5-09: alles über `docker compose` aus der Repo-Wurzel, in PowerShell wie in bash dieselbe Zeile. `--build` baut das Image des Backends mit dem Stand des Branches.
 
-**Schritt 0 — Branch holen** (nach der Umsetzung von PR 1):
+**Schritt 0 — Branch holen** (PR 1 ist umgesetzt, §10):
 
 ```powershell
 git fetch origin claude/epic-euler-hgc05c
@@ -304,7 +304,7 @@ docker compose run --rm meteoswiss-probe --layout
 
 Alle rund 295 Jahresdateien der beiden Gitter, je 5–8 Abrufe; mit 1 s Abstand je Host rund 40 min. Ergebnis: Typ, Chunkform, Filter, Füllwert, Layout, Zeitachse, Einheiten, CRS je Gruppe gleicher Dateien. Entscheidet §5.7 und `start_datetime`/`end_datetime`.
 
-**Schritt 2 — Items laden** (nach der Umsetzung von PR 2, auf dessen Branch; `materialize` startet `catalog-load` selbst):
+**Schritt 2 — Items laden** (erst mit PR 2, auf dessen Branch; die Session von PR 2 nennt die Befehle neu, hier der Stand dieses Plans; `materialize` startet `catalog-load` selbst):
 
 ```powershell
 docker compose run --build --rm materialize meteoswiss-daily-1km
@@ -404,3 +404,91 @@ Antwort am Handy reicht als „F1 1, F2 1, …“.
 - **A5:** Kennungen und Titel: `meteoswiss-daily-1km` „MeteoSwiss daily climate grids 1 km“, `meteoswiss-daily-precip-1km` „MeteoSwiss daily precipitation 1 km“; `category: weather_climate`.
 - **A6:** Darstellung `nearest` (die 1-km-Zellen bleiben sichtbar), Temperatur mit einer divergierenden Farbskala, Niederschlag mit einer sequenziellen; genaue Skala im PR zur Ansicht.
 - **A7:** Das Messskript liegt unter `scripts/m5-11-meteoswiss/` und kommt nicht ins Image (wie `bev-probe`).
+
+### 9.2 Antworten von Otto (17.11.2026)
+
+| Frage | Antwort |
+|---|---|
+| F1 | 1: zwei Datensätze, `ch01r` und `ch01h` |
+| F2 | 1: alles je Asset im Item (`earthx:refs`) |
+| F3 | 1: `v=<updated>`; ein Zeitstempel, kein Hash, also ok nach M5-Plan §10 |
+| F4 | 1: Coverage „festes Gitter“ in PR 2 |
+| F5 | 1: die Jahresdateien der Quelle als Originale |
+| F6 | 1: LRU nur im `tiler`, 64 MiB |
+| F7 | 1: `MCH` und `MCHP` |
+| F8 | Stufe Processing, Attribution „Source: MeteoSwiss“. Lizenzangabe **nicht** „CC BY 4.0“, sondern die Nutzungsbedingungen von MeteoSchweiz (opendata.swiss „BY“: offene Nutzung, Quellenangabe Pflicht; https://opendatadocs.meteoswiss.ch/general/terms-of-use), sofern der Lizenzkatalog das abbildet, sonst Vorschlag im Plan (§9.3) |
+| F9 | Nein: PR 2 kommt nach dem Merge von PR 1 in einer neuen Session; diese Session setzt nur PR 1 um |
+| A1–A7 | gelten |
+| Zusatz | Nur abgeschlossene, korrigierte Daten (Archiv- bzw. Jahresdateien) nach `adr/0029` F5, keine laufend aktualisierten Tagesdateien des aktuellen Jahres |
+
+### 9.3 Lizenzangabe (F8): wie sie sich abbilden lässt
+
+- **Lizenzkatalog:** `backend/catalog/licenses/terms.yaml` (`adr/0033` §6.2) gibt es noch nicht; er kommt mit M5-20 und gilt für gelistete Einträge. Er bildet die Angabe heute also nicht ab.
+- **Voller Eintrag:** Das Feld `license` eines vollen Eintrags bildet sie schon ab, so wie bei swissALTI3D (Nutzungsbedingungen ohne SPDX-Kennung). Vorschlag für PR 2:
+
+```yaml
+license:
+  spdx_id: null
+  name: Terms of use of MeteoSwiss open data
+  url: https://opendatadocs.meteoswiss.ch/general/terms-of-use
+  commercial_use: true
+  distribution: true
+  derivatives: true
+  share_alike: false
+  attribution_required: true
+  tier: processing
+  attribution_unmodified: "Source: MeteoSwiss"
+  attribution_modified: "Source: MeteoSwiss"        # siehe unten
+  terms:
+    url: https://opendatadocs.meteoswiss.ch/general/terms-of-use
+    notice: …                                        # Wortlaut aus den Bedingungen, in PR 2 von Otto bestätigt
+legal_status: cleared
+```
+
+- **Offen für PR 2:** Bei swissALTI3D und WorldCover heißt die Attribution bearbeiteter Daten „… (modified)“ (Form aus `adr/0023` §7.2). Deine Vorgabe nennt nur „Source: MeteoSwiss“. Darum setzt der Vorschlag beide gleich; ob „Source: MeteoSwiss (modified)“ gelten soll, bestätigst du in PR 2. Die Bedingungen verlangen, dass die Quellenangabe nicht wie eine Unterstützung durch MeteoSchweiz aussieht (`adr/0023` §3.1).
+- Kommt der Lizenzkatalog mit M5-20, erhält er einen Eintrag „opendata.swiss BY / Nutzungsbedingungen MeteoSchweiz“ mit der URL der Bedingungen in `matches`. Das wird dort entschieden.
+
+---
+
+## 10. Umsetzung PR 1 (17.11.2026)
+
+### 10.1 Was gebaut ist
+
+| Stelle | Inhalt |
+|---|---|
+| `discovery/netcdf_refs.py` | `GatewayFile` (Seiten zu 64 KiB über `gateway`; ab der zweiten Seite `If-Match`); `reference_file` (`h5py` im Thread, Anfragen auf der Schleife des Aufrufers; ohne Variablennamen genau das eine Feld über `time`, y, x); `step_references` schreibt `earthx:refs` je Zeitschritt; abgelehnt mit `UnsupportedLayout`: Filter außer shuffle/zlib, übersprungener Filter an einem Chunk, `scale_factor`/`add_offset`, ungleichmäßige Achsen, CRS ohne exakt passenden EPSG-Code, Kalender außer Standard, Zeit nicht in Tagen/Stunden/Minuten/Sekunden, Chunk über 8 MiB, schwaches oder fehlendes ETag, Quelle ohne `206` |
+| `readers/reference_store.py` | `parse_references` (jedes Feld geprüft), `ReferenceStore` (Metadaten von `zarr` selbst im Speicher gebaut, je Chunk ein `Range` mit `If-Match`), `SourceChanged` bei `412`, `ReferenceMismatch` bei fehlendem `206` oder falscher Länge, Chunk-Cache je Prozess (Größe 0 außer im `tiler`) |
+| `readers/zarr_reader.py` | `reference_asset`; `ZarrAsset.refs`; der Leser wählt den Store, nimmt `time_offset` und dreht die Zeilen um, wo sie von Süd nach Nord liegen; `InvalidReferences` |
+| `readers/failures.py`, `api/processing_route.py`, `frontend/src/jobState.ts` | `source_changed` (502, Titel aus `adr/0029`); nicht in `RETRYABLE`, nicht in `FAILS_AGAIN` |
+| `api/tiler.py` | Chunk-Cache 64 MiB; `SourceChanged` und `ReferenceMismatch` als `502` ohne Adresse |
+| `catalog/registry.py` | `DataFormat.NETCDF_REFS = "netcdf-refs"`; verlangt `item_holding: materialized` |
+| `access/resolve.py` | Leser-Art `zarr` für `netcdf-refs`; `ResolvedAsset.refs` aus `earthx:refs` des Assets; ohne Verweise `MalformedItem` |
+| `processing/recipe.py`, `processing/source.py`, `api/intake.py` | `refs` reisen im Rezept mit (Teil des Hashes, bei allen übrigen Assets weggelassen: alte Hashes bleiben); Band heißt wie das Asset; Fassung der Eingabe = ETag der Verweise, ohne `HEAD` |
+| `frontend/src/processingOrder.ts`, `types.ts` | Format `netcdf-refs`: ein Band je Asset mit `earthx:refs`, Typ aus `raster:bands` |
+| Lock-Datei, `.importlinter` | `h5py` 3.16.0; Vertrag `h5py-only-in-discovery` |
+| `scripts/m5-11-meteoswiss/probe.py`, `docker-compose.yml` | Dienst `meteoswiss-probe` (Profil `measure`), `--assets`, `--layout`, `--grids`, `--limit` |
+
+### 10.2 Abweichungen vom Plan (Auslegungen, gelten, wenn du nicht widersprichst)
+
+- **A9:** Die Form von `earthx:refs` ist gegenüber §4.1 vereinfacht. `shape` ist das Gitter (Zeilen, Spalten), `chunks` die Form eines Chunks (Zeit, Zeilen, Spalten). `y_ascending` entfällt, weil die Richtung im Vorzeichen von `transform[4]` steht; zwei Angaben könnten sich widersprechen. Die Filter heißen nur `shuffle` und `zlib`, ohne Stufe, weil das Entpacken sie nicht braucht.
+- **A10:** Der Leser bleibt die Art `zarr` (derselbe `ZarrReader`, `adr/0029` §8a.1); es gibt keine eigene Leser-Art. Was ihn umschaltet, sind die Verweise am Asset.
+- **A11:** Die Zeitachse liest nur „Tage/Stunden/Minuten/Sekunden seit“ im Standardkalender, also genau den Takt dieser Aufgabe. Monatswerte („months since“) kommen erst mit einer eigenen Aufgabe.
+- **A12:** `ReferenceMismatch` (Quelle überhört `Range` oder schneidet ab) bekommt keine eigene Fehlerart. Ein Job endet dann wie bei einem unbekannten Fehler; die Kachel ist `502`.
+- **A13:** Der Download der Originale (F5) und alles Datensatzbezogene kommen mit PR 2. In PR 1 gilt `netcdf-refs` im Frontend wie Zarr als „keine einzelne Datei“ (`download.ts`), also nur der Zuschnitt.
+
+### 10.3 Lizenzen der neuen Abhängigkeit (Bedingung aus `adr/0029` F1)
+
+| Teil | Lizenz | Beleg |
+|---|---|---|
+| `h5py` 3.16.0 | BSD-3-Clause | `License-Expression` in den Paketmetadaten; Text `LICENSE` im Wheel |
+| HDF5 2.0.0 (`libhdf5`, `libhdf5_hl`, im Wheel) | HDF5-Lizenz, BSD-artig (Weitergabe mit Hinweis, keine Werbung mit den Namen) | `licenses/hdf5.txt` im Wheel |
+| `libaec` 1.x mit `libsz` (im Wheel) | BSD-2-Clause | Projekt `libaec` [S]; **der Text liegt dem Wheel nicht bei** |
+| übrige Texte im Wheel (LZF-Filter, PyTables-Teile, `stdint`, Python) | BSD- bzw. PSF-artig | `licenses/` im Wheel |
+
+- Alle sind mit AGPL-3.0-or-later vereinbar [A].
+- **Befund:** Bei Binärweitergabe verlangt BSD-2-Clause den Lizenztext. Das Image gibt `libaec` weiter, ohne dass sein Text im Paket liegt. Vorschlag: den Text von `libaec` in einer Folgeaufgabe in die Hinweise des Images aufnehmen. Wo die Hinweise zu Python-Paketen stehen sollen, ist nicht festgelegt; `backend/THIRD_PARTY_NOTICES.md` gilt bisher nur für Daten. Ich habe dort nichts eingetragen.
+- `kerchunk`, `virtualizarr`, `fsspec`-HTTP und `obstore` sind nicht dazugekommen. Die Lock-Datei bekommt nur `h5py` (NumPy ist schon da).
+
+### 10.4 Was Otto jetzt lokal ausführen kann
+
+§7 Schritte 0 und 1: Branch holen, dann `meteoswiss-probe --assets` und `--layout`. Die Ausgabe kommt in diesen PR, sie entscheidet §5.7 (`float64`) und die Zeitgrenzen der Items für PR 2.
