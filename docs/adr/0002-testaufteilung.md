@@ -202,12 +202,10 @@ auf prozessweiten Zustand verlassen, den ein früherer Test im selben Worker hin
 
 **Nachtrag 2026-11-11 (Auftrag Otto, [#338](https://github.com/oscipal/earthX/pull/338)).** In CI läuft `pytest` nicht mehr als ein Befehl, sondern in vier parallelen Teilen (`scripts/ci-backend-shard.sh 1` bis `4`, Matrix in `ci.yml`), weil der Backend-Job auf rund 15 Minuten gewachsen war. Der Pflicht-Check „Backend — lint and tests“ ist der Sammel-Job darüber. Die Regel „derselbe Befehl in Sitzung und CI“ gilt für den Inhalt weiter: Teil 4 ist `backend/tests` abzüglich der Teile 1 bis 3, zusammen laufen alle Testdateien genau einmal (`backend/tests/test_ci_backend_shards.py`). In der Sitzung bleibt `pytest` der eine Befehl.
 
-**Nachtrag 2026-11-17 (Auftrag Otto): keine CI auf Draft-PRs.** `ci.yml` läuft bei
-Pull Requests nur noch auf `opened`, `reopened`, `synchronize` und `ready_for_review`,
-und jeder Job überspringt sich, solange der PR ein Draft ist; auf `main` und bei
-manuellem Lauf läuft alles wie bisher. Sitzungen pushen auf Drafts, die CI startet erst
-mit „Ready for review“. Für Nacharbeit nach „Ready“ den PR zurück auf Draft setzen; die
-CI läuft dann beim nächsten „Ready for review“ wieder. Je PR läuft höchstens ein Lauf,
-ein neuer Push bricht den älteren ab (`concurrency`), Läufe auf `main` nie. Die vier
-Pflicht-Checks behalten ihre Namen. Bei einem Draft melden sie „skipped“, was als
-bestanden zählt; ein Draft ist ohnehin nicht mergebar.
+**Nachtrag 2026-11-17 (Auftrag Otto): Abbruch nur bei PRs; Draft-Regel zurückgenommen.**
+`ci.yml` läuft bei Pull Requests wieder auf jedem PR, auch auf Drafts, mit den
+Standard-Auslösern von `pull_request`; die kurz zuvor eingeführte Regel „keine CI auf
+Draft-PRs“ ([#374](https://github.com/oscipal/earthX/pull/374)) ist gestrichen. Je PR
+läuft höchstens ein Lauf, ein neuer Push bricht den älteren ab (`concurrency`); Läufe auf
+`main` und manuelle Läufe werden nie abgebrochen. Die vier Pflicht-Checks behalten ihre
+Namen, der schnelle Pfad für reine Doku-PRs (#338) bleibt.
