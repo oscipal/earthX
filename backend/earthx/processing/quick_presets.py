@@ -55,6 +55,8 @@ def _step_problem(config: DatasetConfig, preset: StepPreset, operators: Operator
         return f"{preset.op} does not run as a tile"
     if "name" not in operator.params.model_fields:
         return f"{preset.op} adds no named band"
+    if foreign := [name for name in preset.adjustable if name not in operator.params.model_fields]:
+        return f"makes {', '.join(foreign)} adjustable, which {preset.op} does not take"
     try:
         params = operator.params.model_validate_json(json.dumps({**preset.params, "name": preset.name}))
     except (TypeError, ValueError) as error:

@@ -620,7 +620,8 @@
                     ],
                     "default": null,
                     "description": "hillshade: height of the light above the horizon.",
-                    "title": "Altitude"
+                    "title": "Altitude",
+                    "x-earthx-unit": "deg"
                   },
                   "azimuth": {
                     "anyOf": [
@@ -635,7 +636,8 @@
                     ],
                     "default": null,
                     "description": "hillshade: direction of the light, 0 = north.",
-                    "title": "Azimuth"
+                    "title": "Azimuth",
+                    "x-earthx-unit": "deg"
                   },
                   "bands": {
                     "description": "The band of heights, in metres.",

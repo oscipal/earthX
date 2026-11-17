@@ -1406,8 +1406,10 @@ class CompositePreset:
 class StepPreset:
     """One step of an operator with fixed parameters, one click under "Quick processing" (adr/0030 F7, B3).
 
-    The step adds the band ``name``; ``params`` are the step's other parameters, bands named as in the data. How the band
-    is drawn is the operator's look (adr/0035; Nachtrag M5-14 to adr/0030 §8), not part of the preset. ``catalog`` checks
+    The step adds the band ``name``; ``params`` are the step's other parameters, bands named as in the data. ``adjustable``
+    names those of ``params`` a person may change right under "Quick processing" (Otto, 17.11.2026; the value in
+    ``params`` is where they start), the others stay as they are. How the band is drawn is the operator's look (adr/0035;
+    Nachtrag M5-14 to adr/0030 §8), not part of the preset. ``catalog`` checks
     the form; whether the operator takes the parameters and may run as a tile on the dataset is checked when ``api`` is
     built (``processing.quick_presets``). No defaults (B10).
     """
@@ -1417,6 +1419,7 @@ class StepPreset:
     op: str
     op_version: int
     params: Mapping[str, object]
+    adjustable: tuple[str, ...]
 
     def __post_init__(self) -> None:
         if isinstance(self.params, Mapping):
@@ -1481,6 +1484,15 @@ def _step_preset_problem(preset: StepPreset) -> str | None:
         return "has its parameters as a mapping by name"
     if "name" in preset.params:
         return "takes the name of its band from the preset, not from params"
+    adjustable = preset.adjustable
+    if not isinstance(adjustable, tuple) or not all(isinstance(name, str) for name in adjustable):
+        return "names its adjustable parameters as a tuple of names"
+    if len(set(adjustable)) != len(adjustable):
+        return "names an adjustable parameter twice"
+    if unknown := [name for name in adjustable if name not in preset.params]:
+        return f"makes {', '.join(unknown)} adjustable, which its params do not set"
+    if "bands" in adjustable:
+        return "keeps the bands it reads fixed"
     return None
 
 

@@ -38,8 +38,9 @@ class TestAStepPreset:
             ({"op": "normalize", "op_version": 2}, "names normalize version 2, which the panel does not offer|adds no named band"),
             ({"params": {**HILLSHADE.params, "azimuth": 400.0}}, "has parameters terrain refuses: azimuth"),
             ({"params": {**HILLSHADE.params, "colour": "red"}}, "has parameters terrain refuses: colour"),
-            ({"params": {"product": "slope", "bands": ["data"]}}, "slope needs slope_unit"),
+            ({"params": {"product": "slope", "bands": ["data"]}, "adjustable": ()}, "slope needs slope_unit"),
             ({"params": {**HILLSHADE.params, "bands": ["elevation"]}}, "reads elevation, which is no band of the data"),
+            ({"params": {**HILLSHADE.params, "colour": "red"}, "adjustable": ("colour",)}, "makes colour adjustable, which terrain does not take"),
         ],
     )
     def test_a_preset_the_operator_refuses_stops_the_start(self, changes: dict, reason: str) -> None:
@@ -92,3 +93,11 @@ def test_every_problem_is_named_not_only_the_first() -> None:
     with pytest.raises(QuickPresetMismatch) as raised:
         check_quick_presets(DatasetRegistry((entry,)))
     assert "hillshade" in str(raised.value) and "shade names nothing" in str(raised.value)
+
+
+def test_the_angles_of_the_light_say_their_unit_in_the_description() -> None:
+    """"Quick processing" offers an angle as a dial or a slider in degrees from the schema alone (M5-14, Otto, 17.11.2026)."""
+    schema = TERRAIN.params.model_json_schema()["properties"]
+    assert schema["azimuth"]["x-earthx-unit"] == "deg"
+    assert schema["altitude"]["x-earthx-unit"] == "deg"
+    assert "x-earthx-unit" not in schema["z_factor"]

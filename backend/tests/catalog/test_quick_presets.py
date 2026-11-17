@@ -56,6 +56,8 @@ class TestTheEntries:
         assert slope == {"product": "slope", "bands": [band], "method": "horn", "slope_unit": "degrees"}
         assert aspect == {"product": "aspect", "bands": [band], "method": "horn"}
         assert all((p.op, p.op_version) == ("terrain", 1) for p in entry.step_presets)
+        # Otto, 17.11.2026: the light of the hillshade and the unit of the slope can be changed under "Quick processing".
+        assert [p.adjustable for p in entry.step_presets] == [("azimuth", "altitude"), ("slope_unit",), ()]
         assert entry.composite_presets == ()
 
     def test_sentinel_2_offers_false_colour_and_swir_with_a_fixed_range_per_channel(self) -> None:
@@ -107,6 +109,7 @@ class TestTheCollection:
             "op": "terrain",
             "op_version": 1,
             "params": {"product": "slope", "bands": ["data"], "method": "horn", "slope_unit": "degrees", "name": "slope"},
+            "adjustable": ["slope_unit"],
         }
         assert to_stac_collection(COP_DEM_GLO_30)["earthx:composite_presets"] == []
 
@@ -169,6 +172,10 @@ class TestTheFormOfAStepPreset:
             ({"params": ["product"]}, "parameters as a mapping by name"),
             ({"params": {**HILLSHADE.params, "name": "x"}}, "takes the name of its band from the preset"),
             ({"title": "Hillshade from the north west"}, "title of at most 24 characters"),
+            ({"adjustable": ["azimuth"]}, "adjustable parameters as a tuple of names"),
+            ({"adjustable": ("azimuth", "azimuth")}, "names an adjustable parameter twice"),
+            ({"adjustable": ("slope_unit",)}, "makes slope_unit adjustable, which its params do not set"),
+            ({"adjustable": ("bands",)}, "keeps the bands it reads fixed"),
         ],
     )
     def test_a_broken_step_preset_is_refused(self, changes: dict, reason: str) -> None:
@@ -180,7 +187,7 @@ class TestTheFormOfAStepPreset:
             _step(name="DATA")
 
     def test_one_name_once_over_index_composite_and_step_presets(self) -> None:
-        ndvi = replace(StepPreset(name="NDVI", title="x", op="terrain", op_version=1, params={}))
+        ndvi = StepPreset(name="NDVI", title="x", op="terrain", op_version=1, params={}, adjustable=())
         with pytest.raises(ConfigError, match="the preset ndvi is named twice"):
             replace(SENTINEL_2_L2A, step_presets=(replace(ndvi, name="ndvi"),))
         with pytest.raises(ConfigError, match="the preset Slope is named twice"):

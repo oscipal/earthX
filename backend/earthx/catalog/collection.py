@@ -137,6 +137,7 @@ def _earthx_step_presets(config: DatasetConfig) -> list[dict[str, object]]:
             "op": preset.op,
             "op_version": preset.op_version,
             "params": {**preset.params, "name": preset.name},
+            "adjustable": list(preset.adjustable),
         }
         for preset in config.step_presets
     ]
