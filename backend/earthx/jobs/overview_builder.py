@@ -28,6 +28,12 @@ is killed); shutdown (the child is ended and the build given back without using 
 all and not before an hour); the child ended without a word (``child_crashed``, not retried); it said nothing for
 :data:`STALL_SECONDS` (``stalled``, not retried).
 
+**Turns per host (M5-37):** the child asks this thread for the turn of each file it reads (``("pace", host)``). The
+thread takes it from Postgres (:class:`~earthx.jobs.source_hosts.TurnKeeper`), shared with every instance of the
+platform, waits for it in its own loop without blocking, and answers ``("go",)`` once the turn is due, no pause runs and
+a place is free. A child waiting for a turn is not stalled. A turn on a host the build does not read fails it as
+``rejected``.
+
 The thread logs the dataset id and the name of a failure, never an address, an item or a tile.
 """
 
@@ -50,6 +56,7 @@ import psycopg
 from earthx.jobs import overview_upkeep, overviews
 from earthx.jobs.config import WorkerConfig
 from earthx.jobs.entry import ChildTarget
+from earthx.jobs.source_hosts import HostTurns, SourceHosts, TurnKeeper
 from earthx.objectstore.errors import ObjectStoreError
 from earthx.objectstore.overviews import delete_version, read_tile, term_of, upload_tile
 from earthx.objectstore.results import Store
@@ -141,8 +148,11 @@ class OverviewBuilder:
         connect: Callable[[], psycopg.Connection],
         database_ok: Callable[[], None],
         target: Callable[[str, Any], None] | None = None,
+        source_limits: Mapping[str, HostTurns] | None = None,
     ) -> None:
         self._config = config
+        #: Places and spacing per host of the files a child reads (M5-37); a host without an entry is not read.
+        self._limits = dict(source_limits or {})
         self._store = store
         self._name = name
         self._pyramids = {dataset_id: tuple(hosts) for dataset_id, hosts in pyramids.items()}
@@ -333,13 +343,15 @@ class OverviewBuilder:
         process = self._context.Process(target=self._target, args=(str(workdir), child), name="earthx-overview", daemon=True)
         process.start()
         child.close()
+        turns = TurnKeeper(SourceHosts(conn), self._limits)
         try:
-            return self._watch(conn, build, process, parent, beat, write_progress)
+            return self._watch(conn, build, process, parent, beat, write_progress, turns)
         finally:
             if process.is_alive():
                 process.kill()
             process.join(10)
             parent.close()
+            turns.close()
 
     def _watch(
         self,
@@ -348,7 +360,8 @@ class OverviewBuilder:
         process: multiprocessing.process.BaseProcess,
         pipe: Any,
         beat: Callable[[], None],
-        write_progress: bool = True,
+        write_progress: bool,
+        turns: TurnKeeper,
     ) -> dict[str, Any]:
         config = self._config
         final: tuple[str, Any] | None = None
@@ -358,8 +371,9 @@ class OverviewBuilder:
         last_percent = -1
         while final is None:
             if pipe_open:
+                due = turns.due_in()
                 try:
-                    if pipe.poll(min(0.5, config.heartbeat_seconds / 2)):
+                    if pipe.poll(min(0.5, config.heartbeat_seconds / 2, due if due is not None else 0.5)):
                         message = pipe.recv()
                         last_word = time.monotonic()
                         if isinstance(message, tuple) and message:
@@ -374,8 +388,19 @@ class OverviewBuilder:
                             elif message[0] == "failed" and len(message) in (2, 3) and isinstance(message[1], str):
                                 final = ("failed", message[1])
                                 said = message[2] if len(message) == 3 and isinstance(message[2], dict) else {}
+                            elif message[0] == "pace" and len(message) == 2 and isinstance(message[1], str):
+                                self._ask(turns, message[1], process)
+                            elif message[0] == "account" and len(message) == 5:
+                                _, host, requests, failed, retry_after = message
+                                asked = float(retry_after) if isinstance(retry_after, (int, float)) else None
+                                turns.account(str(host), int(requests), bool(failed), asked)
+                    if turns.step():
+                        pipe.send(("go",))
                 except (EOFError, OSError):
                     pipe_open = False
+                if turns.busy:
+                    # The child waits for its turn, on this thread: that is no stall.
+                    last_word = time.monotonic()
             else:
                 time.sleep(0.05)
             if final is None and not process.is_alive() and not (pipe_open and pipe.poll()):
@@ -401,6 +426,15 @@ class OverviewBuilder:
             )
             raise _Failed(final[1])
         return final[1]
+
+    @staticmethod
+    def _ask(turns: TurnKeeper, host: str, process: multiprocessing.process.BaseProcess) -> None:
+        """Take the turn the child asked for; a host the build does not read ends it as ``rejected``."""
+        try:
+            turns.ask(host)
+        except ValueError:
+            process.kill()
+            raise _Failed("rejected") from None
 
     def _log_omitted(self, dataset_id: str, base: int, omitted: Mapping[str, Mapping[str, str]]) -> None:
         """One warning for each tile the pyramid was built without (the first :data:`_OMITTED_LOGGED`), then the count."""

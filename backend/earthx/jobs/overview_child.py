@@ -6,6 +6,11 @@ per tile, then ``("done", info)`` or ``("failed", kind)``. It knows no database 
 ``manifest.json`` there (:mod:`earthx.processing.overview_build`). ``job.json`` says which step this child is: ``"plan"``
 and ``"build"`` for a pyramid, ``"patch_plan"`` and ``"patch"`` for the retry of its omitted base tiles. A failed step sends its
 kind and, as a third part, where and why (:func:`failure_detail`), which the supervisor logs.
+
+**Turns per host (M5-37):** a step that reads takes each file's turn from the supervisor, over the same pipe
+(:class:`PipePacer`): ``("pace", host)`` before the file is opened, then it waits for ``("go",)``; afterwards
+``("account", host, requests, failed, retry_after)``. The supervisor keeps the turns, places and breaker of every host
+in Postgres, shared with every other instance; the child still knows no database.
 """
 
 from __future__ import annotations
@@ -18,7 +23,25 @@ from earthx.jobs.child import guard, high_water_mb
 from earthx.logging import configure_logging
 from earthx.processing import overview_build, worker_environment
 
-__all__ = ["failure_detail", "run_child"]
+__all__ = ["PipePacer", "failure_detail", "run_child"]
+
+
+class PipePacer:
+    """The core's :class:`~earthx.processing.overview.Pacer` for a child: the supervisor decides when a file may start."""
+
+    def __init__(self, conn: Any) -> None:
+        self._conn = conn
+
+    def wait(self, host: str) -> None:
+        """Ask for the host's turn and block until the supervisor gives it."""
+        self._conn.send(("pace", host))
+        answer = self._conn.recv()
+        if answer != ("go",):
+            raise RuntimeError("the supervisor answered a turn with something else")
+
+    def account(self, host: str, requests: int, *, failed: bool = False, retry_after: float | None = None) -> None:
+        """Tell the supervisor how many requests the file took and how its read ended."""
+        self._conn.send(("account", host, int(requests), bool(failed), retry_after))
 
 
 def failure_detail(error: BaseException, step: str) -> dict[str, str]:
@@ -46,9 +69,9 @@ def _run(workdir: Path, conn: Any, step: list[str]) -> None:
         elif mode == "patch_plan":
             info = {"tiles": len(overview_build.plan_patch(workdir)["fetch"])}
         elif mode == "patch":
-            info = {"tiles": len(overview_build.patch_pyramid(workdir, progress)["tiles"])}
+            info = {"tiles": len(overview_build.patch_pyramid(workdir, progress, pacer=PipePacer(conn))["tiles"])}
         else:
-            manifest = overview_build.build_pyramid(workdir, progress)
+            manifest = overview_build.build_pyramid(workdir, progress, pacer=PipePacer(conn))
             info = {"tiles": len(manifest["tiles"])}
     conn.send(("done", {**info, "peak_mb": round(high_water_mb(), 1)}))
     conn.close()

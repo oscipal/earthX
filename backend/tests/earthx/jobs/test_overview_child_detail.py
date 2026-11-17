@@ -75,7 +75,7 @@ def test_the_child_sends_kind_and_detail_for_a_failure_in_the_build_step(
 ) -> None:
     (tmp_path / overview_build.JOB_NAME).write_text(json.dumps({"dataset_id": "x", "mode": "build"}))
 
-    def broken(workdir: Path, progress: Any) -> None:
+    def broken(workdir: Path, progress: Any, **_: Any) -> None:
         error = RasterioIOError("Cannot open /vsicurl/https://bucket.example.invalid/a.tif: unsupported layout")
         setattr(error, overview_build.TILE_ATTRIBUTE, "4/8/5")
         raise error
@@ -94,3 +94,36 @@ def test_a_child_that_cannot_read_its_job_says_the_step_it_never_got_to() -> Non
     overview_child.run_child("/nonexistent-work-directory", pipe)
     ((tag, _, detail),) = pipe.sent
     assert tag == "failed" and detail["step"] == "start" and "nonexistent" not in detail["reason"]
+
+
+class TestThePipePacer:
+    """M5-37: the child asks the supervisor for each turn; it knows no database."""
+
+    class Answering(Pipe):
+        def __init__(self, answer: Any) -> None:
+            super().__init__()
+            self.answer = answer
+
+        def recv(self) -> Any:
+            return self.answer
+
+    def test_a_turn_is_asked_for_and_waited_for(self) -> None:
+        pipe = self.Answering(("go",))
+        overview_child.PipePacer(pipe).wait("bucket.example.org")
+        assert pipe.sent == [("pace", "bucket.example.org")]
+
+    @pytest.mark.parametrize("answer", [("stop",), "go", ("go", 1), None])
+    def test_any_other_answer_stops_the_read(self, answer: Any) -> None:
+        with pytest.raises(RuntimeError):
+            overview_child.PipePacer(self.Answering(answer)).wait("bucket.example.org")
+
+    def test_an_account_says_requests_and_how_the_read_ended(self) -> None:
+        pipe = Pipe()
+        pacer = overview_child.PipePacer(pipe)
+        pacer.account("bucket.example.org", 4)
+        pacer.account("bucket.example.org", 2, failed=True, retry_after=7.0)
+        assert pipe.sent == [
+            ("account", "bucket.example.org", 4, False, None),
+            ("account", "bucket.example.org", 2, True, 7.0),
+        ]
+

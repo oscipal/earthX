@@ -30,6 +30,7 @@ from earthx.jobs import overview_builder
 from earthx.jobs.config import WorkerConfig
 from earthx.jobs.entry import ChildTarget
 from earthx.jobs.overviews import MAX_ATTEMPTS
+from earthx.jobs.source_hosts import HostTurns, SourceHosts
 from earthx.jobs.worker import Supervisor
 from earthx.objectstore.errors import StoreUnavailable
 from earthx.objectstore.overviews import CHECKED_AT, upload_tile
@@ -90,6 +91,7 @@ def make(
         start: bool = True,
         pyramids: dict[str, tuple[str, ...]] | None = None,
         module: str = "overview_targets",
+        source_limits: dict[str, HostTurns] | None = None,
         **overrides: Any,
     ) -> Supervisor:
         config = WorkerConfig(**{**FAST, "workdir": tmp_path / f"work{len(made)}", **overrides})
@@ -100,6 +102,7 @@ def make(
             overview_target=ChildTarget(f"tests.earthx.jobs.{module}", target),
             pyramids=pyramids or HOSTS,
             name=f"test-{len(made)}",
+            source_limits=source_limits,
         )
         made.append(supervisor)
         if start:
@@ -1142,3 +1145,95 @@ class TestARetryHoldsItsHost:
             "the lease the other worker took over is not ended by the one that lost it"
         )
         assert not _children()
+
+
+PACED_HOST = "bucket.example.org"
+
+
+class TestTheSupervisorGivesTheTurns:
+    """The child asks over its pipe; the supervisor answers from Postgres, shared with every other instance."""
+
+    @staticmethod
+    def _given(supervisor: Supervisor) -> list[float]:
+        return json.loads((Path(supervisor.config.workdir) / "turns.json").read_text())
+
+    def _build(
+        self,
+        db: psycopg.Connection,
+        make: Callable[..., Supervisor],
+        monkeypatch: pytest.MonkeyPatch,
+        *,
+        target: str = "paced",
+        interval: float = 0.3,
+        **environment: str,
+    ) -> tuple[Supervisor, str]:
+        monkeypatch.setenv("PACED_HOST", PACED_HOST)
+        for name, value in environment.items():
+            monkeypatch.setenv(name, value)
+        version = _request(db, "dem", "v1")
+        supervisor = make(target, pyramids={"dem": (PACED_HOST,)}, source_limits={PACED_HOST: HostTurns(2, interval)})
+        return supervisor, version
+
+    def test_a_build_reads_its_files_an_interval_apart_and_leaves_no_place_behind(
+        self, db: psycopg.Connection, make: Callable[..., Supervisor], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        supervisor, version = self._build(db, make, monkeypatch, PACED_FILES="4")
+        _wait_for(db, "dem", version, "ready")
+        given = self._given(supervisor)
+        assert len(given) == 4
+        assert min(b - a for a, b in zip(given, given[1:], strict=False)) > 0.27
+        assert db.execute("SELECT count(*) FROM public.earthx_source_lease").fetchone() == (0,)
+        assert db.execute("SELECT host FROM public.earthx_source_host").fetchall() == [(PACED_HOST,)]
+
+    def test_the_requests_of_each_file_count_towards_the_spacing(
+        self, db: psycopg.Connection, make: Callable[..., Supervisor], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        supervisor, version = self._build(db, make, monkeypatch, interval=0.2, PACED_FILES="3", PACED_REQUESTS="3")
+        _wait_for(db, "dem", version, "ready")
+        given = self._given(supervisor)
+        assert min(b - a for a, b in zip(given, given[1:], strict=False)) > 0.55
+
+    def test_a_turn_another_instance_took_first_is_waited_for(
+        self, db: psycopg.Connection, make: Callable[..., Supervisor], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        SourceHosts(db).reserve(PACED_HOST, 2.0, 60.0)  # another instance, a moment ago
+        started = time.time()
+        supervisor, version = self._build(db, make, monkeypatch, PACED_FILES="1")
+        _wait_for(db, "dem", version, "ready")
+        assert self._given(supervisor)[0] - started > 1.5
+
+    def test_a_paused_host_is_waited_out_and_that_is_no_stall(
+        self, db: psycopg.Connection, make: Callable[..., Supervisor], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """J4: a pyramid build waits out a pause, keeps its lease, and is not killed as stalled meanwhile."""
+        monkeypatch.setattr(overview_builder, "STALL_SECONDS", 1.0)
+        db.execute(
+            "INSERT INTO public.earthx_source_host (host, next_start, failures, pauses, paused_until)"
+            " VALUES (%s, clock_timestamp() + interval '3 seconds', 3, 1, clock_timestamp() + interval '3 seconds')",
+            (PACED_HOST,),
+        )
+        started = time.time()
+        supervisor, version = self._build(db, make, monkeypatch, PACED_FILES="1")
+        _wait_for(db, "dem", version, "ready")
+        assert self._given(supervisor)[0] - started > 2.5
+
+    def test_failed_reads_count_towards_the_breaker_of_every_instance(
+        self, db: psycopg.Connection, make: Callable[..., Supervisor], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        supervisor, version = self._build(db, make, monkeypatch, interval=0.0, PACED_FILES="3", PACED_FAIL="3")
+        _wait_for(db, "dem", version, "ready")
+        failures, pauses, left = db.execute(
+            "SELECT failures, pauses, extract(epoch FROM paused_until - clock_timestamp())::float8"
+            " FROM public.earthx_source_host WHERE host = %s",
+            (PACED_HOST,),
+        ).fetchone()
+        assert (failures, pauses) == (3, 1)
+        assert 290 < left <= 300
+
+    def test_a_turn_on_a_host_the_build_does_not_read_fails_it_as_rejected(
+        self, db: psycopg.Connection, make: Callable[..., Supervisor], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _, version = self._build(db, make, monkeypatch, target="paced_elsewhere")
+        _wait_for(db, "dem", version, "failed")
+        assert _status(db, "dem", version)[1] == "rejected"
+        assert db.execute("SELECT count(*) FROM public.earthx_source_host").fetchone() == (0,)

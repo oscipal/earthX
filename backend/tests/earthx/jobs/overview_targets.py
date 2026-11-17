@@ -218,3 +218,34 @@ def patch_again_slow(workdir: str, conn: Any) -> None:
     if _job(workdir)["mode"] == "patch":
         time.sleep(1.0)
     patch_again(workdir, conn)
+
+
+def _paced(workdir: str, conn: Any, host: str) -> None:
+    """Read ``PACED_FILES`` files on ``host`` the way the real child does (M5-37): ask for each turn, wait, account.
+
+    When each turn was given goes to ``turns.json`` next to the work directory (it is removed with it otherwise);
+    ``PACED_FAIL`` files in a row are accounted as a failure of the source.
+    """
+    if _job(workdir)["mode"] == "plan":
+        _plan(workdir, conn)
+        return
+    given: list[float] = []
+    failing = int(os.environ.get("PACED_FAIL", "0"))
+    for index in range(int(os.environ.get("PACED_FILES", "3"))):
+        conn.send(("pace", host))
+        if conn.recv() != ("go",):
+            raise RuntimeError("no turn")
+        given.append(time.time())
+        conn.send(("account", host, int(os.environ.get("PACED_REQUESTS", "1")), index < failing, None))
+    (Path(workdir).parent / "turns.json").write_text(json.dumps(given))
+    _build(workdir, conn)
+
+
+def paced(workdir: str, conn: Any) -> None:
+    """Reads its files on ``PACED_HOST``."""
+    _paced(workdir, conn, os.environ["PACED_HOST"])
+
+
+def paced_elsewhere(workdir: str, conn: Any) -> None:
+    """Asks for a turn on a host the build does not read."""
+    _paced(workdir, conn, "elsewhere.example.invalid")
