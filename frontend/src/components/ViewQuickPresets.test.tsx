@@ -358,14 +358,15 @@ describe('the parameters of a step under "Quick processing" (Otto, 17.11.2026)',
   });
 });
 
-describe('the download of a pinned layer of a preset (until M5-14 PR B)', () => {
+describe('the download of a pinned layer of a preset (M5-14 PR B)', () => {
   const layer = (index: string, datasetId: string) => ({ restore: { indexOnly: true, datasetId, appliedRender: { index } } }) as unknown as MapLayer;
 
-  it('is the index alone for an index, the bands of the scenes for a step or a composite', () => {
+  it('is the preset alone, whatever its kind; a preset the dataset lacks is not', () => {
     const datasets = datasetsFrom([optical, heights]);
     expect(downloadsIndexOnly(layer('NDVI', 'optical'), datasets)).toBe(true);
-    expect(downloadsIndexOnly(layer('false_colour_ir', 'optical'), datasets)).toBe(false);
-    expect(downloadsIndexOnly(layer('hillshade', 'cop-dem-glo-30'), datasets)).toBe(false);
+    expect(downloadsIndexOnly(layer('false_colour_ir', 'optical'), datasets)).toBe(true);
+    expect(downloadsIndexOnly(layer('hillshade', 'cop-dem-glo-30'), datasets)).toBe(true);
+    expect(downloadsIndexOnly(layer('hillshade', 'optical'), datasets)).toBe(false);
   });
 });
 

@@ -11,7 +11,7 @@ import {
   termsNoticeText,
 } from '../download';
 import { groupItemIdsFor } from '../grouping';
-import { downloadsIndexOnly, indexOfferedFor } from '../indexDownload';
+import { downloadsIndexOnly, indexOfferedFor, presetDetail } from '../indexDownload';
 import { useAppStore } from '../store';
 import BandChoice from './BandChoice';
 import CloseButton from './CloseButton';
@@ -227,6 +227,7 @@ export default function DownloadDialog() {
   // with no job to see. The raw bands are what the dialog starts with, as for any layer.
   const offered = !selectionMode && layer ? indexOfferedFor(layer, datasets) : null;
   const index = offered && downloadAs === 'index' ? offered : null;
+  const detail = index ? presetDetail(index) : null;
 
   return (
     <>
@@ -245,7 +246,7 @@ export default function DownloadDialog() {
                   {sceneCount} scene{sceneCount === 1 ? '' : 's'}
                   {req.groups.length > 1 ? ` in ${req.groups.length} groups` : ''}
                   {index
-                    ? `, ${index.name} (${index.formula})`
+                    ? `, ${index.label}${detail ? ` (${detail})` : ''}`
                     : table.length === 0
                       ? `, asset${req.assets.length === 1 ? '' : 's'} ${req.assets.join(', ')}`
                       : ''}
@@ -256,9 +257,9 @@ export default function DownloadDialog() {
             {offered && layer && !downloadsIndexOnly(layer, datasets) && (
               <div role="radiogroup" aria-label="What to download">
                 {(['raw', 'index'] as const).map((what) => (
-                  <label key={what} style={{ marginRight: '1em' }} data-tip-level="advanced" data-tip={what === 'raw' ? 'The bands of the scenes, cut to the AOI' : `The ${offered.name}, computed as a Processing job would give it`}>
+                  <label key={what} style={{ marginRight: '1em' }} data-tip-level="advanced" data-tip={what === 'raw' ? 'The bands of the scenes, cut to the AOI' : `The ${offered.label}, computed as a Processing job would give it`}>
                     <input type="radio" name="download-as" checked={downloadAs === what} onChange={() => setDownloadAs(what)} disabled={downloading} />{' '}
-                    {what === 'raw' ? 'Raw bands' : offered.name}
+                    {what === 'raw' ? 'Raw bands' : offered.label}
                   </label>
                 ))}
               </div>

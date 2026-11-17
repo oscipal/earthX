@@ -182,8 +182,8 @@ import { initialValues, namesIn, type FieldValue } from './schemaForm';
 import { datesOfIds, knownItems } from './layerDate';
 import { resamplingParts } from './resamplingWarning';
 import type { MapLayer } from './layers';
-import { indexOfLayer, indexOrdersOfScenes } from './indexDownload';
-import type { IndexPreset } from './indexPresets';
+import { indexOrdersOfScenes, presetOfLayer } from './indexDownload';
+import type { QuickPreset } from './quickPresets';
 import { selectionItemsFrom, shownImageOf, ticksOfOpen, useAppStore, viewImagesOf, type AppState } from './store';
 import { buildGroups } from './grouping';
 import { stackLikeView } from './mosaic';
@@ -1229,7 +1229,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
   // order of a result, its one step locked, its one band the whole stock.
   const openIndexPanel = async (args: {
     dataset: DatasetOption;
-    preset: IndexPreset;
+    preset: QuickPreset;
     groups: readonly (readonly string[])[];
     aoi: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
     title: string;
@@ -1624,7 +1624,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     processLayer: async (layerId) => {
       const layer = useAppStore.getState().layers.find((l) => l.id === layerId);
       if (layer?.derived === 'result') return get().extendResult(layerId);
-      if (layer && !layer.derived && indexOfLayer(layer, useAppStore.getState().datasets)) return get().extendIndexLayer(layerId);
+      if (layer && !layer.derived && presetOfLayer(layer, useAppStore.getState().datasets)) return get().extendIndexLayer(layerId);
       if (!layer || layerProcessBlock(layer, useAppStore.getState().datasets) !== null) return;
       // The preview lies with the entry "Results": above the layer it is made from, so that it can be seen.
       useAppStore.getState().resultsToTop();
@@ -2091,7 +2091,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     extendIndexLayer: async (layerId) => {
       const app = useAppStore.getState();
       const layer = app.layers.find((l) => l.id === layerId);
-      const preset = layer && indexOfLayer(layer, app.datasets);
+      const preset = layer && presetOfLayer(layer, app.datasets);
       const dataset = app.datasets.find((d) => d.id === layer?.restore.datasetId);
       if (!layer || !preset || !dataset) return;
       const { restore } = layer;

@@ -9,7 +9,7 @@ import { datasetsFrom } from './datasets';
 import { SENTINEL_2_PRESETS } from './fixtures/indexPresets';
 import s2 from './fixtures/processes/sentinel-2-c1-l2a.json';
 import { canDownloadLayer, decideDownloadOutcomeForLayer } from './download';
-import { downloadIndexCrop, estimateIndexDownload, indexDownloadBlock, indexOfferedFor, indexOfLayer, indexOrdersOf, TOO_LARGE_TIP } from './indexDownload';
+import { downloadIndexCrop, estimateIndexDownload, indexDownloadBlock, indexOfferedFor, presetOfLayer, indexOrdersOf, TOO_LARGE_TIP } from './indexDownload';
 import type { MapLayer } from './layers';
 import { canonicalJson } from './processing';
 import { processInfo as infoOf } from './processingOrder';
@@ -123,11 +123,11 @@ const run = (layer = layerOf(), list = datasets()) => {
 
 describe('which layers are downloaded as an index', () => {
   it('are those whose look names an index the dataset offers', () => {
-    expect(indexOfLayer(layerOf(), datasets())?.name).toBe('NDVI');
-    expect(indexOfLayer(layerOf({ appliedRender: { rescale: '0,3000' } }), datasets())).toBeNull();
-    expect(indexOfLayer(layerOf({ appliedRender: { index: 'SAVI' } }), datasets())).toBeNull();
-    expect(indexOfLayer(layerOf(), datasets([]))).toBeNull();
-    expect(indexOfLayer(layerOf({ appliedRender: undefined as never }), datasets())).toBeNull();
+    expect(presetOfLayer(layerOf(), datasets())?.name).toBe('NDVI');
+    expect(presetOfLayer(layerOf({ appliedRender: { rescale: '0,3000' } }), datasets())).toBeNull();
+    expect(presetOfLayer(layerOf({ appliedRender: { index: 'SAVI' } }), datasets())).toBeNull();
+    expect(presetOfLayer(layerOf(), datasets([]))).toBeNull();
+    expect(presetOfLayer(layerOf({ appliedRender: undefined as never }), datasets())).toBeNull();
   });
 
   it('are offered beside the raw bands of an AOI crop; the button of the layer manager is the one of the crop and is open', () => {
@@ -185,27 +185,27 @@ describe('the order', () => {
     const byHand = orderView(useAppStore.getState(), useProcessingStore.getState()).parts[0].order;
     expect(byHand).not.toBeNull();
 
-    const made = indexOrdersOf({ layer: layerOf(), preset: indexOfLayer(layerOf(), list)!, dataset, info: infoOf(s2 as never) });
+    const made = indexOrdersOf({ layer: layerOf(), preset: presetOfLayer(layerOf(), list)!, dataset, info: infoOf(s2 as never) });
     expect('orders' in made && made.orders).toHaveLength(1);
     expect(canonicalJson((made as { orders: unknown[] }).orders[0])).toBe(canonicalJson(byHand));
   });
 
   it('has one order for each group of the layer', () => {
     const layer = layerOf({ itemIds: ['S1', 'S2', 'S3'], groupItemIds: [['S1', 'S2'], ['S3']], downloaded: { S1: info('S1'), S2: info('S2'), S3: info('S3') } });
-    const made = indexOrdersOf({ layer, preset: indexOfLayer(layer, list)!, dataset, info: infoOf(s2 as never) });
+    const made = indexOrdersOf({ layer, preset: presetOfLayer(layer, list)!, dataset, info: infoOf(s2 as never) });
     expect('orders' in made && made.orders.map((o) => o.inputs[0].groups)).toEqual([[['S1', 'S2']], [['S3']]]);
   });
 
   it('is an order for whole scenes, with no AOI, for a layer that is not a crop (the panel, not the download, takes it)', () => {
     const whole = layerOf({ cropToAoi: false, aoi: null });
-    const made = indexOrdersOf({ layer: whole, preset: indexOfLayer(layerOf(), list)!, dataset, info: infoOf(s2 as never) });
+    const made = indexOrdersOf({ layer: whole, preset: presetOfLayer(layerOf(), list)!, dataset, info: infoOf(s2 as never) });
     expect('orders' in made && made.orders[0].aoi).toBeUndefined();
     expect('orders' in made && made.orders[0].output).toMatchObject({ bands: ['NDVI'] });
   });
 
   it('says why it cannot be built, where it cannot', () => {
     const none = layerOf({ itemIds: [], groupItemIds: [] });
-    expect(indexOrdersOf({ layer: none, preset: indexOfLayer(layerOf(), list)!, dataset, info: infoOf(s2 as never) })).toEqual({ problem: 'The layer has no scenes left.' });
+    expect(indexOrdersOf({ layer: none, preset: presetOfLayer(layerOf(), list)!, dataset, info: infoOf(s2 as never) })).toEqual({ problem: 'The layer has no scenes left.' });
   });
 });
 
@@ -273,7 +273,7 @@ describe('the download', () => {
   });
 
   it('refuses a layer that shows no index, a whole scene, or a licence below processing, before it asks the server anything', async () => {
-    expect(await run(layerOf({ appliedRender: {} })).done).toMatchObject({ tip: 'This layer shows no index.' });
+    expect(await run(layerOf({ appliedRender: {} })).done).toMatchObject({ tip: 'This layer shows no preset of "Quick processing".' });
     expect((await run(layerOf({ cropToAoi: false })).done)?.tip).toContain('start one in Processing');
     expect((await run(layerOf(), datasets(SENTINEL_2_PRESETS, 'display')).done)?.tip).toContain('does not allow processing');
     expect(calls).toEqual([]);
@@ -319,7 +319,7 @@ describe('the estimate and the limits (Otto, 1.11.2026)', () => {
   });
 
   it('is blocked before the server is asked for a whole scene, a layer without an index and a licence below processing', async () => {
-    expect(await ask(layerOf({ cropToAoi: false }))).toMatchObject({ state: 'blocked', text: 'The index of whole scenes is computed by a job' });
+    expect(await ask(layerOf({ cropToAoi: false }))).toMatchObject({ state: 'blocked', text: 'A preset of whole scenes is computed by a job' });
     expect(await ask(layerOf({ appliedRender: {} }))).toMatchObject({ state: 'blocked' });
     expect(await ask(layerOf(), datasets(SENTINEL_2_PRESETS, 'display'))).toMatchObject({ state: 'blocked' });
     expect(calls.filter((c) => c.url.endsWith('/estimate'))).toEqual([]);
