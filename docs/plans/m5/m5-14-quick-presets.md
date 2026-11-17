@@ -1,6 +1,6 @@
 # M5-14 — Komposit- und Schritt-Presets unter „Quick processing“
 
-**Stand:** 16.11.2026, Plan mit Fragen (§8), wartet auf Ottos Antworten.
+**Stand:** 17.11.2026, freigegeben von Otto (Antworten in §8a); PR A in Arbeit, PR B danach.
 **Stufe B.** Erst Plan mit Fragen im Draft-PR, Umsetzung nach Ottos Antworten im selben PR; höchstens zwei PRs (M5-Plan §2 Punkt 11).
 **Aufgabe:** M5-14 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2.
 **Grundlage:** `adr/0030` F7 (Felder `composite_presets` und `step_presets`), §3 B2/B3, §5.1, §5.3, §8, §12; `adr/0035` (Darstellung am Operator); M5-10 (`terrain`, F5: „Hillshade“ als Knopf mit M5-14; G1: Ketten unter `min_zoom` auf der Übersicht); NM4-14 (Index-Presets), NM4-64 (`true_color`), UI-03d (Quick processing, Ebene eines Index).
@@ -68,7 +68,7 @@ Prüfung in `catalog`: Form, Name, `op` als Text; die gelesenen Bänder (aus `pa
 
 ### 3.3 Einträge (Inhalt nach F2, F3)
 
-- `cop-dem-glo-30`, `swissalti3d`, `bev-als-dgm`: `step_presets` „Hillshade“ und „Slope“ auf dem Höhenband (`data`, `dtm`, je Eintrag); `composite_presets: []`.
+- `cop-dem-glo-30`, `swissalti3d`, `bev-als-dgm`: `step_presets` „Hillshade“, „Slope“ und „Aspect“ (F2 = 2) auf dem Höhenband (`data`, `dtm`, je Eintrag); `composite_presets: []`.
 - `sentinel-2-c1-l2a`: `composite_presets` „False colour (IR)“ (`nir`, `red`, `green`) und „SWIR“ (`swir22`, `nir`, `red`) nach `adr/0030` §5.1; `step_presets: []`.
 - Sentinel-1 GRD, WorldCover 2020/2021: beide leer.
 - Kommentare in den YAML-Dateien nennen Quelle und Entscheidung wie bei den Index-Presets.
@@ -134,3 +134,10 @@ Geschätzt Backend 250–300 Zeilen mit Tests, Frontend 600–800 mit Tests (die
 **F5 — Umfang und Schnitt?**
 1. Presets können alles, was ein Index kann (Ansicht, Übersicht, Anheften, „Process“, Download, Ergebnis-Layer); zwei PRs nach §5 **(Empfehlung)**
 2. Nur Ansicht, Übersicht und Anheften in einem PR; „Process“ und Download als eigene Aufgabe später
+
+## 8a. Antworten von Otto (17.11.2026)
+
+F1 = 1, F2 = 2, F3 = 1, F4 = 1, F5 = 1.
+
+- **F2 = 2:** Die Höhenmodelle bekommen „Hillshade“, „Slope“ und „Aspect“. Die Darstellung von „Aspect“ folgt `adr/0035`: `hsv`, fest 0–360°.
+- **Reihenfolge:** PR A (dieser PR, [#370](https://github.com/oscipal/earthX/pull/370)) umsetzen, `main` holen, fertig melden; PR B danach.

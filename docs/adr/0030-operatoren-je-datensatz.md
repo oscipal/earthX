@@ -475,6 +475,8 @@ Für Interferometrie, Kohärenz oder Dual-Pol-Zerlegungen gibt es **kein** neues
 
 **Leere Felder** bleiben Pflicht und leer, wo nichts gilt (B10). Beispiele: `index_presets = ()` bei WorldCover, `composite_presets = ()` beim DEM. Dann fehlt der Abschnitt „Quick processing“ (Leitfaden §1 Punkt 5).
 
+**Nachtrag M5-14 (Otto, 17.11.2026, F1 = 1):** `step_presets` tragen keine Darstellung (`rescale`, `colormap_name`). Es gilt der Look des Operators (`adr/0035`); ein Schritt-Preset auf einem Operator ohne Look wird beim Start von `api` abgewiesen.
+
 ---
 
 ## 9. Abgleich mit DS-05 (Folgen)
