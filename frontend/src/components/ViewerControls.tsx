@@ -140,9 +140,6 @@ export default function ViewerControls() {
       }
     : undefined;
   const measure = useAppStore(viewMeasure);
-  const histograms = useHistograms(measure && measure.key, () => loadHistograms(measure!));
-  // Read after the histograms: their measure is the first of a picture, and a refusal of the tiler is known once it is in.
-  const measuredOnScene = measure ? fallbackReasonOf(measure) : null;
   const mosaics = useAppStore((s) => s.mosaics);
   const mapZoom = useAppStore((s) => s.mapZoom);
   const images = useMemo(
@@ -172,6 +169,12 @@ export default function ViewerControls() {
   // What the fields hold (chosen, drawn after "Apply") and what the map draws now.
   const chosen = viewIndexOf({ index: pendingIndex, presetParams: pendingPresetParams }, shownDataset?.collection);
   const index = viewIndexOf(appliedRender, shownDataset?.collection);
+  // The same step with other values of its parameters is one picture: its histograms stay until the new ones come, and are asked once the
+  // values rest (M5-14, Otto, 17.11.2026), so the panel does not jump while a dial turns.
+  const family = chosen && chosen.adjustable.length > 0 && shown ? `${shown.key}|${chosen.name}|${cropToAoi}` : null;
+  const histograms = useHistograms(measure && measure.key, () => loadHistograms(measure!), family);
+  // Read after the histograms: their measure is the first of a picture, and a refusal of the tiler is known once it is in.
+  const measuredOnScene = measure ? fallbackReasonOf(measure) : null;
   // Opened from the layer manager: the box of every layer, not the view with its row of buttons (NM4-65, Otto, 1.11.2026). A view that
   // is still open from the search keeps all of it, also once its image is pinned.
   const compact = viewOfLayer && layer !== null;

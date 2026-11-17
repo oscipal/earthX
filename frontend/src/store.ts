@@ -778,8 +778,8 @@ export function datasetSavable(s: AppState): boolean {
 
 // The first scene of the image the view shows (of the view where nothing is shown yet): the one its range is measured on.
 // Whether the fields stand for the colour picture of the dataset ("RGB"): no band, no index, and a dataset with a true-colour one.
-// How long a parameter of a preset rests before its range is measured again (a dial turns through many values).
-const PRESET_PARAM_REST_MS = 400;
+// How long a parameter of a preset rests before the picture is drawn and its range measured again (a dial turns through many values).
+export const PRESET_PARAM_REST_MS = 300;
 let presetParamTimer: ReturnType<typeof setTimeout> | undefined;
 
 // Whether the fields hold what a step of "Quick processing" is drawn with: a colormap and both ends of the range.
@@ -3264,17 +3264,17 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ enhance: null });
     if (get().pendingIndex === name) await fillStepRange(set, get);
   },
-  // A parameter of the preset changes the picture at once (Otto, 17.11.2026): the view is drawn with the value as soon as the look of the step
-  // is in; a range that comes from a measure is measured again once the value rests (a dial turns through many).
+  // A parameter of the preset changes the controls at once and the picture once the value rests (Otto, 17.11.2026): a dial turned through
+  // many degrees draws and measures once, not at each degree. Then the range that comes from a measure follows.
   setPresetParam: (param, value) => {
     const s = get();
     const shown = shownImageOf(viewImagesOf(s), s.shownImage);
     const preset = shown ? viewIndexOf({ index: s.pendingIndex }, s.datasets.find((d) => d.id === shown.datasetId)?.collection) : null;
     if (!preset?.adjustable.includes(param)) return;
     set({ pendingPresetParams: { ...s.pendingPresetParams, [param]: value } });
-    if (stepReady(get())) void get().applyRender();
     clearTimeout(presetParamTimer);
     presetParamTimer = setTimeout(() => {
+      if (stepReady(get())) void get().applyRender();
       void fillStepRange(set, get).then((filled) => {
         if (filled && stepReady(get())) void get().applyRender();
       });
