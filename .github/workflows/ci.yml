@@ -5,9 +5,7 @@
 name: CI
 
 on:
-  # Draft pull requests do not run CI; it starts with "Ready for review" (docs/adr/0002-testaufteilung.md §6).
   pull_request:
-    types: [opened, reopened, synchronize, ready_for_review]
   push:
     branches: [main]
   workflow_dispatch:
@@ -36,7 +34,6 @@ jobs:
     # First job of the backend check (docs-only PRs, Otto 2026-11-06): it always runs, so
     # the required check never stays pending; a PR whose own changes lie only under docs/
     # skips the four test jobs. Rules: scripts/ci-scope.sh.
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     outputs:
       docs_only: ${{ steps.scope.outputs.docs_only }}
@@ -57,7 +54,7 @@ jobs:
   backend-tests:
     name: Backend tests (part ${{ matrix.shard }})
     needs: backend-scope
-    if: (github.event_name != 'pull_request' || github.event.pull_request.draft == false) && needs.backend-scope.outputs.docs_only != 'true'
+    if: needs.backend-scope.outputs.docs_only != 'true'
     # Pinned, not ubuntu-latest: the tests run on the runner's own glibc, and bit-exact
     # tests with recorded hashes depend on its libm. ubuntu-latest moved to 26.04 on
     # 10.11.2026, whose amd64v3 glibc build gives other last bits (hypot, cbrt) and
@@ -186,9 +183,8 @@ jobs:
     # pull request, the four parts were skipped and the two docs checks passed.
     needs: [backend-scope, backend-tests]
     # Runs after a red or skipped part too: the check must end red or green, never
-    # "skipped" (which a required check may count as passed). Only a draft pull request
-    # skips it, like every other job.
-    if: always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    # "skipped" (which a required check may count as passed).
+    if: always()
     runs-on: ubuntu-24.04
     env:
       SCOPE_RESULT: ${{ needs.backend-scope.result }}
@@ -230,7 +226,6 @@ jobs:
 
   frontend:
     name: Frontend — lint, types and tests
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -275,7 +270,6 @@ jobs:
 
   import-boundaries:
     name: Module boundaries (import-linter)
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     # Gates every PR (M1-02): the target package backend/earthx/ exists now,
     # so a violation of architekturplan.md 3.1 has something to be caught in.
     runs-on: ubuntu-latest
@@ -311,7 +305,6 @@ jobs:
 
   compose-topology:
     name: Compose topology
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     # M1-08 (docs/plans/m1-08-compose-topologie.md): one image, four start
     # commands (architekturplan.md 3.2, 12.1). Docker never runs in the cloud
     # session (adr/0002 §1, cloud-umgebung.md §4) — this job is the only place
