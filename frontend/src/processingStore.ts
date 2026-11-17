@@ -78,7 +78,7 @@ import {
 } from './processing';
 import {
   bandTileUrl,
-  colourPlacesOf,
+  colourOfResult,
   colourStats,
   colourTileUrl,
   isResultExpired,
@@ -1765,10 +1765,12 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       // A result of several bands starts with the band the preview showed; the layer says which bands it has.
       const several = job.bands.length > 1;
       const dataset = useAppStore.getState().datasets.find((d) => d.id === job.order?.inputs[0]?.dataset);
-      const colour = several ? colourPlacesOf(job.bands, trueColorOf(dataset?.collection)) : null;
-      const place = startPlaceOf(job.bands, job.order, job.shownBand, colour);
+      const picture = several ? colourOfResult(job.bands, dataset?.collection) : null;
+      const colour = picture?.places ?? null;
+      // The job of a composite starts as its colour picture where the band the preview showed is not known (M5-14 PR B).
+      const place = startPlaceOf(job.bands, job.order, job.shownBand ?? (picture?.preset ? RGB : null), colour);
       const stats = place === RGB ? colourStats(job.bands, colour!) : several ? job.bands[place].stats : job.statistics;
-      const preset = place === RGB ? null : presetOfResultBand(job.bands[several ? place : 0], indexPresetsOf(dataset?.collection));
+      const preset = place === RGB ? (picture?.preset ?? null) : presetOfResultBand(job.bands[several ? place : 0], indexPresetsOf(dataset?.collection));
       const classes = place !== RGB && isClassBand(job.bands[several ? place : 0], tileJson.dataType, dataset?.collection);
       const render = resultRender(tileJson.dataType, get().range, stats, ownRangeOf(job, job.bands, place), place === RGB, preset, classes);
       const template = resultTileTemplate(href);
@@ -2276,7 +2278,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       if (place === RGB ? !colour : !band) return;
       const stats = colour ? colourStats(info.bands, colour) : band!.stats;
       const dataset = app.datasets.find((d) => d.id === job.order?.inputs[0]?.dataset);
-      const preset = colour ? null : presetOfResultBand(band ?? undefined, indexPresetsOf(dataset?.collection));
+      const preset = colour ? (colourOfResult(info.bands, dataset?.collection)?.preset ?? null) : presetOfResultBand(band ?? undefined, indexPresetsOf(dataset?.collection));
       const classes = !colour && isClassBand(band ?? undefined, info.dataType, dataset?.collection);
       const render = resultRender(info.dataType, get().range, stats, ownRangeOf(job, info.bands, place), colour !== undefined, preset, classes);
       useAppStore.setState({
