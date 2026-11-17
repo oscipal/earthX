@@ -1,13 +1,13 @@
-// "Download crop" of a layer that shows an index (NM4-14b, Otto 1.11.2026): the file is the result a Processing job would give for
-// the same scenes, area and index, and the person sees neither the Processing panel nor a job in the list of jobs.
+// "Download crop" of a layer that shows a preset of "Quick processing" (NM4-14b, Otto 1.11.2026; M5-14 PR B): an index, a composite or
+// the step of an operator. The file is the result a Processing job would give for the same scenes, area and preset, and the person
+// sees neither the Processing panel nor a job in the list of jobs.
 //
-// The order is built by the panel's own `buildOrder` from the same pieces (one `band_math` step of Version 2 with the expression
-// and the name of the preset, that band as the output, the data type the panel proposes), so the recipe, its hash and the
+// The order is built by the panel's own `buildOrder` from the same pieces (the steps of the preset as the form of the panel takes
+// them, the band or the three bands they add as the output, the data type the panel proposes), so the recipe, its hash and the
 // result are those of a job started by hand. The job is placed, waited for and downloaded here and never enters the store of the
 // panel (`processingStore.jobs`, the shelf in the browser). Several groups are several jobs and one bundle.
 
 import type { DatasetOption } from './datasets';
-import type { IndexPreset } from './indexPresets';
 import type { MapLayer } from './layers';
 import { HttpError } from './api';
 import {
@@ -24,59 +24,78 @@ import {
 } from './processing';
 import { chooseDtype } from './processingDefaults';
 import { formatBytes, formatPercent } from './numberFormat';
-import { aoiProvenanceFor, buildOrder, formatDuration, isArea, processBlockReason, processInfo, type DraftStep } from './processingOrder';
+import { aoiProvenanceFor, buildOrder, draftFromOrder, formatDuration, isArea, processBlockReason, processInfo } from './processingOrder';
+import type { QuickPreset } from './quickPresets';
 import { RESULT_ZIP } from './resultLayer';
 import { viewIndexOf } from './viewIndex';
 
 export const POLL_MS = 2000;
 
-// The index a pinned layer shows, if its dataset offers it.
-export function indexOfLayer(layer: MapLayer, datasets: readonly DatasetOption[]): IndexPreset | null {
+// The preset a pinned layer shows, with the values chosen for its parameters, if its dataset offers it.
+export function presetOfLayer(layer: MapLayer, datasets: readonly DatasetOption[]): QuickPreset | null {
   const dataset = datasets.find((d) => d.id === layer.restore.datasetId);
   // A layer made before looks were kept has none.
-  return layer.restore.appliedRender ? (viewIndexOf(layer.restore.appliedRender, dataset?.collection)?.index ?? null) : null;
+  return layer.restore.appliedRender ? viewIndexOf(layer.restore.appliedRender, dataset?.collection) : null;
 }
 
-// Whether a layer is an index alone (UI-03d), downloaded as that index and nothing else. A layer of a composite or a step of "Quick
-// processing" is downloaded like any other until its own download comes (M5-14 PR B).
+// Whether a layer is a preset alone (UI-03d), downloaded as that preset and nothing else.
 export function downloadsIndexOnly(layer: MapLayer, datasets: readonly DatasetOption[]): boolean {
-  return layer.restore.indexOnly === true && indexOfLayer(layer, datasets) !== null;
+  return layer.restore.indexOnly === true && presetOfLayer(layer, datasets) !== null;
 }
 
-// The index a layer's download offers besides its raw bands (Otto, 1.11.2026): the one it shows, where it can be computed.
-export function indexOfferedFor(layer: MapLayer, datasets: readonly DatasetOption[]): IndexPreset | null {
-  return indexDownloadBlock(layer, datasets) === null ? indexOfLayer(layer, datasets) : null;
+// The preset a layer's download offers besides its raw bands (Otto, 1.11.2026): the one it shows, where it can be computed.
+export function indexOfferedFor(layer: MapLayer, datasets: readonly DatasetOption[]): QuickPreset | null {
+  return indexDownloadBlock(layer, datasets) === null ? presetOfLayer(layer, datasets) : null;
 }
 
-// Why the index of a layer cannot be downloaded, or `null`: only an AOI crop can (a whole scene is a job of its own to start in
+// What the dialog says the preset is, after its name: the formula of an index, the three channels of a composite; nothing for a step.
+export function presetDetail(preset: QuickPreset): string | null {
+  if (preset.index) return preset.index.formula;
+  return preset.kind === 'composite' ? preset.steps.map((step) => String(step.params.expression)).join(', ') : null;
+}
+
+// Why the preset of a layer cannot be downloaded, or `null`: only an AOI crop can (a whole scene is a job of its own to start in
 // Processing), and only where the licence allows processing.
 export function indexDownloadBlock(layer: MapLayer, datasets: readonly DatasetOption[]): string | null {
   const { restore } = layer;
   const dataset = datasets.find((d) => d.id === restore.datasetId);
   if (!restore.focusMode || !restore.cropToAoi || !isArea(restore.aoi)) {
-    return 'The index of whole scenes is computed by a job: start one in Processing.';
+    return `${presetOfLayer(layer, datasets)?.label ?? 'A preset'} of whole scenes is computed by a job: start one in Processing.`;
   }
   return processBlockReason(dataset, restore.itemIds.length);
 }
 
-// One order for each group, as the panel builds it for one pass: a `band_math` step of Version 2 with the expression and the name of the
-// preset, that band as the output. With an `aoi` it is the crop, without one the whole scenes. `{ problem }` where one cannot be built.
+// One order for each group, as the panel builds it for one pass: the steps of the preset in the form of the panel (an index: one
+// `band_math` step of Version 2 with its expression and name), the band or bands they add as the output. With an `aoi` it is the
+// crop, without one the whole scenes. `{ problem }` where one cannot be built.
 export function indexOrdersOfScenes(args: {
   datasetId: string;
   groups: readonly (readonly string[])[];
   aoi: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
-  preset: IndexPreset;
+  preset: QuickPreset;
   dataset: DatasetOption;
   info: ReturnType<typeof processInfo>;
 }): { orders: Order[] } | { problem: string } {
   const { datasetId, groups, aoi, preset, dataset, info } = args;
-  const step: DraftStep = { key: 0, op: 'band_math', opVersion: 2, values: { expression: preset.expression, name: preset.name } };
-  const dtype = chooseDtype({ steps: [{ op: 'band_math' }], bands: [], allowed: info.dtypes, operators: info.operators }).value;
+  const cannot = `${preset.label} cannot be computed for this layer.`;
+  // The steps as the panel's form holds them, read as the panel reads the order of a result: the same values, the same parameters.
+  const skeleton: Order = {
+    recipe_version: 2,
+    inputs: [{ name: 'input', dataset: datasetId, groups: [] }],
+    steps: preset.steps.map((step) => ({ op: step.op, op_version: step.opVersion, params: step.params })),
+    output: { kind: 'raster', format: 'cog', dtype: 'float32', bands: [...preset.bands] },
+  };
+  let key = 0;
+  const { draft, problems } = draftFromOrder(skeleton, info, () => key++);
+  // The short line of the dialog is the text before the first colon: it names the preset, the reasons follow.
+  if (problems.length > 0) return { problem: `${preset.label} cannot be computed for this dataset: ${problems.join(' ')}` };
+  const steps = draft.steps;
+  const dtype = chooseDtype({ steps: steps.map((step) => ({ op: step.op, values: step.values })), bands: [], allowed: info.dtypes, operators: info.operators }).value;
   const data = Object.keys(dataset.collection['earthx:band_units'] ?? {});
   const orders: Order[] = [];
   for (const itemIds of groups.filter((group) => group.length > 0)) {
-    const built = buildOrder({ datasetId, itemIds, area: aoi ? 'aoi' : 'scene', aoi, steps: [step], bands: [preset.name], data, dtype, info });
-    if (!built.order) return { problem: [...built.problems, ...built.stepProblems.flatMap((p) => [p.unsupported, ...Object.values(p.errors)])].filter(Boolean).join(' ') || 'The index cannot be computed for this layer.' };
+    const built = buildOrder({ datasetId, itemIds, area: aoi ? 'aoi' : 'scene', aoi, steps, bands: preset.bands, data, dtype, info });
+    if (!built.order) return { problem: [...built.problems, ...built.stepProblems.flatMap((p) => [p.unsupported, ...Object.values(p.errors)])].filter(Boolean).join(' ') || cannot };
     orders.push(built.order);
   }
   return orders.length > 0 ? { orders } : { problem: 'The layer has no scenes left.' };
@@ -85,7 +104,7 @@ export function indexOrdersOfScenes(args: {
 // The same for a layer: the groups it was pinned with, and its AOI where it is a crop.
 export function indexOrdersOf(args: {
   layer: MapLayer;
-  preset: IndexPreset;
+  preset: QuickPreset;
   dataset: DatasetOption;
   info: ReturnType<typeof processInfo>;
 }): { orders: Order[] } | { problem: string } {
@@ -126,9 +145,9 @@ export function explain(error: unknown): { text: string; tip: string } {
 // What the jobs of the download are expected to cost, asked of the server as "Review" asks it, or the cap that stops them.
 export async function estimateIndexDownload(args: { layer: MapLayer; datasets: readonly DatasetOption[]; signal: AbortSignal }): Promise<IndexNote> {
   const { layer, datasets, signal } = args;
-  const preset = indexOfLayer(layer, datasets);
+  const preset = presetOfLayer(layer, datasets);
   const dataset = datasets.find((d) => d.id === layer.restore.datasetId);
-  if (!preset || !dataset) return { state: 'blocked', text: 'This layer shows no index', tip: 'This layer shows no index.' };
+  if (!preset || !dataset) return { state: 'blocked', text: 'This layer shows no preset', tip: 'This layer shows no preset of "Quick processing".' };
   const block = indexDownloadBlock(layer, datasets);
   if (block) return { state: 'blocked', text: block.split(': ')[0].split('. ')[0], tip: block };
   try {
@@ -214,23 +233,23 @@ export async function downloadIndexCrop(args: {
   pollMs?: number;
 }): Promise<{ text: string; tip: string } | null> {
   const { layer, datasets, signal, onStatus = () => undefined, save = saveFrom, pollMs = POLL_MS } = args;
-  const preset = indexOfLayer(layer, datasets);
+  const preset = presetOfLayer(layer, datasets);
   const dataset = datasets.find((d) => d.id === layer.restore.datasetId);
   const say = (reason: string) => ({ text: reason.split(': ')[0].split('. ')[0], tip: reason });
-  if (!preset || !dataset) return say('This layer shows no index.');
+  if (!preset || !dataset) return say('This layer shows no preset of "Quick processing".');
   const block = indexDownloadBlock(layer, datasets);
   if (block) return say(block);
   const running = new Set<string>();
   try {
-    onStatus(`Computing ${preset.name}…`);
+    onStatus(`Computing ${preset.label}…`);
     const info = processInfo(await fetchProcess(dataset.id, signal));
     const made = indexOrdersOf({ layer, preset, dataset, info });
     if ('problem' in made) return say(made.problem);
     return await placeAndFollow({
       orders: made.orders,
       aoi: layer.restore.aoi,
-      working: `Computing ${preset.name}`,
-      failed: `${preset.name} could not be computed.`,
+      working: `Computing ${preset.label}`,
+      failed: `${preset.label} could not be computed.`,
       signal,
       running,
       onStatus,

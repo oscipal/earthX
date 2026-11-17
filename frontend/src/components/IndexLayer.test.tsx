@@ -250,7 +250,7 @@ describe('the ⇩ of a layer that shows an index', () => {
     setState({ layers: [layer(NDVI, { indexOnly: true, cropToAoi: false })] });
     act(() => root.render(<LayerManager />));
     expect(button().disabled).toBe(true);
-    expect(tipOf(button())).toBe('The index of whole scenes is computed by a job: start one in Processing.');
+    expect(tipOf(button())).toBe('NDVI of whole scenes is computed by a job: start one in Processing.');
   });
 
   it('opens the dialog on the index, with no raw bands to choose', async () => {

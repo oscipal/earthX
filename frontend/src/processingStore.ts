@@ -78,7 +78,7 @@ import {
 } from './processing';
 import {
   bandTileUrl,
-  colourPlacesOf,
+  colourOfResult,
   colourStats,
   colourTileUrl,
   isResultExpired,
@@ -182,13 +182,13 @@ import { initialValues, namesIn, type FieldValue } from './schemaForm';
 import { datesOfIds, knownItems } from './layerDate';
 import { resamplingParts } from './resamplingWarning';
 import type { MapLayer } from './layers';
-import { indexOfLayer, indexOrdersOfScenes } from './indexDownload';
-import type { IndexPreset } from './indexPresets';
+import { indexOrdersOfScenes, presetOfLayer } from './indexDownload';
+import { compositeAmong, type MadeBand, type QuickPreset } from './quickPresets';
 import { selectionItemsFrom, shownImageOf, ticksOfOpen, useAppStore, viewImagesOf, type AppState } from './store';
 import { buildGroups } from './grouping';
 import { stackLikeView } from './mosaic';
 import { fieldNumber } from './numberFormat';
-import type { EarthxMask, StacItem, TimeStepGroup } from './types';
+import type { Collection, EarthxMask, StacItem, TimeStepGroup } from './types';
 
 // Where a panel opens from: the "Area" it starts with, and the scenes the
 // results on screen lack.
@@ -524,7 +524,8 @@ export interface OrderView {
   aoi: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
   inner: boolean;
   outside: boolean;
-  // `earthx:true_color` of the dataset: red, green, blue; `null` where it has no colour picture (NM4-64).
+  // The three bands of the colour picture "RGB", red, green, blue: `earthx:true_color` where its bands are in the output, else those of a
+  // composite of the dataset whose channels Band math steps make into the output (M5-14 PR B); `null` where there is no colour picture.
   trueColor: [string, string, string] | null;
   info: ProcessInfo | null;
   // The scenes the order can be for — all selected ones, or those the AOI meets
@@ -681,6 +682,15 @@ const keptOf = (p: Pick<ProcessingState, 'fixed'>): ReadonlyMap<number, Measured
 
 const anewOf = (p: Pick<ProcessingState, 'fixed'>): ReadonlySet<number> | undefined => (p.fixed?.result ? new Set(p.fixed.result.anew) : undefined);
 
+// The colour picture of a draft: the true colour of the dataset while its three bands are in the output (NM4-64), else a composite the
+// Band math steps make into the output (M5-14 PR B), else the true colour (which the panel offers once its bands are added).
+function colourBandsOf(collection: Collection | undefined, steps: readonly DraftStep[], inOutput: ReadonlySet<string>): [string, string, string] | null {
+  const trueColor = trueColorOf(collection);
+  if (trueColor?.every((name) => inOutput.has(name))) return trueColor;
+  const made: MadeBand[] = steps.flatMap((step) => (step.op === 'band_math' && inOutput.has(resultNameOf(step)) ? [{ name: resultNameOf(step), expression: String(step.values.expression ?? '') }] : []));
+  return compositeAmong(collection, made)?.bands ?? trueColor;
+}
+
 export function orderView(selection: SelectionState, p: ProcessingState): OrderView {
   const scenes = withExtraScenes(selection, p.extraScenes);
   // What an entry fixed is the order's area, whatever the map holds; but in the panel of a result "AOI only" is the map's AOI, inside
@@ -794,7 +804,7 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
     info,
     candidates,
     passes,
-    trueColor: trueColorOf(dataset?.collection),
+    trueColor: colourBandsOf(dataset?.collection, p.steps, inOutput),
     pass,
     runChoices: runOptions,
     runAs,
@@ -1225,11 +1235,11 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     return { ok: true, notes, draft };
   };
 
-  // The panel on an index as an entity of its own (`extendIndexLayer`): the order the index would be a job with, taken up like the
-  // order of a result, its one step locked, its one band the whole stock.
+  // The panel on a preset as an entity of its own (`extendIndexLayer`): the order the preset would be a job with, taken up like the
+  // order of a result, its steps locked, the band or bands they add the whole stock.
   const openIndexPanel = async (args: {
     dataset: DatasetOption;
-    preset: IndexPreset;
+    preset: QuickPreset;
     groups: readonly (readonly string[])[];
     aoi: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
     title: string;
@@ -1624,7 +1634,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     processLayer: async (layerId) => {
       const layer = useAppStore.getState().layers.find((l) => l.id === layerId);
       if (layer?.derived === 'result') return get().extendResult(layerId);
-      if (layer && !layer.derived && indexOfLayer(layer, useAppStore.getState().datasets)) return get().extendIndexLayer(layerId);
+      if (layer && !layer.derived && presetOfLayer(layer, useAppStore.getState().datasets)) return get().extendIndexLayer(layerId);
       if (!layer || layerProcessBlock(layer, useAppStore.getState().datasets) !== null) return;
       // The preview lies with the entry "Results": above the layer it is made from, so that it can be seen.
       useAppStore.getState().resultsToTop();
@@ -1760,10 +1770,12 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       // A result of several bands starts with the band the preview showed; the layer says which bands it has.
       const several = job.bands.length > 1;
       const dataset = useAppStore.getState().datasets.find((d) => d.id === job.order?.inputs[0]?.dataset);
-      const colour = several ? colourPlacesOf(job.bands, trueColorOf(dataset?.collection)) : null;
-      const place = startPlaceOf(job.bands, job.order, job.shownBand, colour);
+      const picture = several ? colourOfResult(job.bands, dataset?.collection) : null;
+      const colour = picture?.places ?? null;
+      // The job of a composite starts as its colour picture where the band the preview showed is not known (M5-14 PR B).
+      const place = startPlaceOf(job.bands, job.order, job.shownBand ?? (picture?.preset ? RGB : null), colour);
       const stats = place === RGB ? colourStats(job.bands, colour!) : several ? job.bands[place].stats : job.statistics;
-      const preset = place === RGB ? null : presetOfResultBand(job.bands[several ? place : 0], indexPresetsOf(dataset?.collection));
+      const preset = place === RGB ? (picture?.preset ?? null) : presetOfResultBand(job.bands[several ? place : 0], indexPresetsOf(dataset?.collection));
       const classes = place !== RGB && isClassBand(job.bands[several ? place : 0], tileJson.dataType, dataset?.collection);
       const render = resultRender(tileJson.dataType, get().range, stats, ownRangeOf(job, job.bands, place), place === RGB, preset, classes);
       const template = resultTileTemplate(href);
@@ -2085,13 +2097,13 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       else useAppStore.getState().resultsToTop();
     },
 
-    // A layer that shows an index is processed as the index alone: the panel opens on the order that makes it (one Band math step,
-    // locked) with that band as the whole stock of bands, as it opens on the result of a job (`extendResult`), so that the raw bands of
+    // A layer that shows a preset (an index, a composite, a step; M5-14 PR B) is processed as the preset alone: the panel opens on the
+    // order that makes it (its steps, locked) with the band or bands they add as the whole stock of bands, as it opens on the result of a job (`extendResult`), so that the raw bands of
     // the scenes are not offered besides it (Otto, 1.11.2026). The first pass of the layer is the pass of the order.
     extendIndexLayer: async (layerId) => {
       const app = useAppStore.getState();
       const layer = app.layers.find((l) => l.id === layerId);
-      const preset = layer && indexOfLayer(layer, app.datasets);
+      const preset = layer && presetOfLayer(layer, app.datasets);
       const dataset = app.datasets.find((d) => d.id === layer?.restore.datasetId);
       if (!layer || !preset || !dataset) return;
       const { restore } = layer;
@@ -2271,7 +2283,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       if (place === RGB ? !colour : !band) return;
       const stats = colour ? colourStats(info.bands, colour) : band!.stats;
       const dataset = app.datasets.find((d) => d.id === job.order?.inputs[0]?.dataset);
-      const preset = colour ? null : presetOfResultBand(band ?? undefined, indexPresetsOf(dataset?.collection));
+      const preset = colour ? (colourOfResult(info.bands, dataset?.collection)?.preset ?? null) : presetOfResultBand(band ?? undefined, indexPresetsOf(dataset?.collection));
       const classes = !colour && isClassBand(band ?? undefined, info.dataType, dataset?.collection);
       const render = resultRender(info.dataType, get().range, stats, ownRangeOf(job, info.bands, place), colour !== undefined, preset, classes);
       useAppStore.setState({

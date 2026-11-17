@@ -7,11 +7,11 @@
 // operator says (adr/0035, `displayLook.ts`), so its look comes from the process description, not from here.
 
 import type { TileStep } from './api';
-import { CHANNEL_COUNT, rescaleOfChannels } from './channels';
+import { CHANNEL_COUNT, rescaleOfChannels, type ChannelRange } from './channels';
 import { lookRange, type DisplayLook } from './displayLook';
 import { indexPresetsOf, presetRange, presetTip, type IndexPreset } from './indexPresets';
 import { canonicalJson } from './processing';
-import { isExpression } from './processingBands';
+import { expressionTokens, isExpression } from './processingBands';
 import type { ResultStats } from './render';
 import type { AppliedRender, Collection } from './types';
 
@@ -213,3 +213,28 @@ export function lookOfPreset(preset: QuickPreset, look: DisplayLook | null = nul
 
 // Whether the preset is drawn as a colour picture.
 export const isComposite = (preset: QuickPreset | null): boolean => preset?.kind === 'composite';
+
+// A band a Band math step made, with its expression: what a composite is recognised by in an order or a result.
+export interface MadeBand {
+  name: string;
+  expression?: string | null;
+}
+
+// A composite of the dataset whose three channels are among the bands made (M5-14 PR B): matched by expression, as an index is
+// (`presetFor`), so that a job of a composite is drawn as the composite wherever it is shown. Its bands as red, green and blue, and
+// the range of each channel; `null` where no composite of the dataset is among them. The first composite of the registry wins.
+export function compositeAmong(collection: Collection | undefined, made: readonly MadeBand[]): { preset: QuickPreset; bands: [string, string, string]; channels: ChannelRange[] } | null {
+  const keyOf = (expression: unknown) => (typeof expression === 'string' ? (expressionTokens(expression)?.join(' ') ?? null) : null);
+  const keys = made.map((band) => ({ name: band.name, key: keyOf(band.expression) }));
+  for (const preset of quickPresetsOf(collection)) {
+    if (!preset.channels) continue;
+    const bands = preset.steps.map((step) => {
+      const wanted = keyOf(step.params.expression);
+      return keys.find((band) => band.key !== null && band.key === wanted)?.name;
+    });
+    if (!bands.every((band): band is string => band !== undefined)) continue;
+    const channels = preset.channels.map(([low, high]) => ({ vmin: String(low), vmax: String(high) }));
+    return { preset, bands: [bands[0], bands[1], bands[2]], channels };
+  }
+  return null;
+}
