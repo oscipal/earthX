@@ -51,7 +51,7 @@ def child(workdir: str, conn) -> None:
     overview.asset_host = lambda path: HOST if str(path).startswith("/vsicurl/") else None
     job = json.loads((Path(workdir) / "job.json").read_text())
     tms = morecantile.tms.get("WebMercatorQuad")
-    tile = tms.tile(9.6, 47.3, 9)
+    tile = tms.tile(11.0, 47.35, 9)  # inside the synthetic scene (UTM 32N, about 10.3 to 11.8 E, 46.9 to 47.9 N)
     options = {key: value for key, value in process_gdal_options().items() if key != "GDAL_CACHEMAX"}
     requests = 0
     original = pacer.account

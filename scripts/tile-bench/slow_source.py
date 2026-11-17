@@ -7,7 +7,8 @@
 ``--rtt-ms`` is added before the first byte of every answer, ``--connect-ms`` once per new connection (TCP and TLS
 to a distant host), ``--mbit`` is one link shared by all connections (0: unlimited). Any path is answered from the
 file of the same name in ``<cog-dir>``, so ``/<scene>/B04.tif`` is a URL of its own for GDAL but the same bytes.
-One JSON line per request goes to ``--log``: connection, method, path, first byte and length of the range, status.
+One JSON line per request goes to ``--log``: connection, method, path, first byte and length of the range, status, and
+whether the client broke it off.
 While the file ``--fail-file`` exists, every answer is ``503`` after the round trip, as a source in trouble (M5-37).
 """
 
@@ -92,19 +93,27 @@ def main() -> None:
             if status == 206:
                 self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
             self.end_headers()
-            sent = 0
-            if body:
-                with open(path, "rb") as source:
-                    source.seek(start)
-                    while sent < length:
-                        data = source.read(min(CHUNK, length - sent))
-                        take_link(len(data))
-                        self.wfile.write(data)
-                        sent += len(data)
-            # `t0`/`t1`: when the answer began and ended, for the requests in flight at once (M5-36).
-            record = {"conn": self.connection_id, "method": self.command, "url": self.path, "start": start,
-                      "bytes": sent, "status": status, "t0": began, "t1": time.monotonic()}
-            log.write(json.dumps(record) + "\n")
+            sent, aborted = 0, False
+            try:
+                if body:
+                    with open(path, "rb") as source:
+                        source.seek(start)
+                        while sent < length:
+                            data = source.read(min(CHUNK, length - sent))
+                            take_link(len(data))
+                            self.wfile.write(data)
+                            sent += len(data)
+            except (BrokenPipeError, ConnectionResetError):
+                aborted = True  # the client closed the connection before the body was through (M5-37)
+            finally:
+                # `t0`/`t1`: when the answer began and ended, for the requests in flight at once (M5-36). A request the
+                # client broke off is a request at the source too, and is written with `aborted` (M5-37).
+                record = {"conn": self.connection_id, "method": self.command, "url": self.path, "start": start,
+                          "range": bool(match), "bytes": sent, "status": status, "aborted": aborted, "t0": began,
+                          "t1": time.monotonic()}
+                log.write(json.dumps(record) + "\n")
+            if aborted:
+                self.close_connection = True
 
         def do_GET(self) -> None:
             self.answer(True)

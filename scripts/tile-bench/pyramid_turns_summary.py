@@ -6,9 +6,9 @@
 Reads ``marks.jsonl``, ``source.jsonl`` of the synthetic source, ``m4-alone-<side>-<rep>.jsonl`` and
 ``m4-both-<side>-<rep>.jsonl`` of `pyramid_turns.py` and ``m4-runs-<side>-<rep>.jsonl`` of `source_turns.py`.
 
-*Turns* at the source are the starts that take a turn: a ``GET`` of ``page.json`` (the run) and the first request for a
-file of the build (its ``HEAD``; GDAL's ``GET`` of the same file follows within the turn and is not counted by the core).
-With an interval of 0.25 s per host, the turns of build and run together stay at about 4 per second when they share.
+Since the count of a build's requests takes every request GDAL makes (the ``HEAD`` of a file and the retries too,
+M5-37), every request at the source is charged to the host's turn: with 0.25 s per host the requests of build and run
+together stay at about 4 per second when they share, on average.
 """
 
 import json
@@ -31,23 +31,26 @@ def main() -> None:
     source = lines(bench / "source.jsonl")
     reps = sorted({path.stem.rsplit("-", 1)[1] for path in bench.glob("m4-alone-main-*.jsonl")})
     for side in ("main", "branch"):
-        walls = [r["end"] - r["start"] for rep in reps for r in lines(bench / f"m4-alone-{side}-{rep}.jsonl")]
-        print(f"alone {side:6} n={len(walls)} build wall median {statistics.median(walls):.2f} s, p95 {p95(walls):.2f} s")
+        runs = [r for rep in reps for r in lines(bench / f"m4-alone-{side}-{rep}.jsonl")]
+        walls = [r["end"] - r["start"] for r in runs]
+        seen = [len([s for s in source if r["start"] <= s["t0"] <= r["end"]]) for r in runs]
+        counted = [r["requests"] for r in runs]
+        print(
+            f"alone {side:6} n={len(walls)} build wall median {statistics.median(walls):.2f} s, p95 {p95(walls):.2f} s; "
+            f"requests at the source {statistics.median(seen)}, charged {statistics.median(counted)}"
+        )
     for side in ("main", "branch"):
-        requests, turns, builds = [], [], []
+        requests, builds = [], []
         for rep in reps:
             run = lines(bench / f"m4-runs-{side}-{rep}.jsonl")
             build = lines(bench / f"m4-both-{side}-{rep}.jsonl")[0]
             low, high = max(min(r["start"] for r in run), build["start"]), min(max(r["end"] for r in run), build["end"])
             seen = [r for r in source if low <= r["t0"] <= high]
-            took = [r for r in seen if r["url"].endswith("page.json") or (r["method"] == "HEAD" and r["url"].endswith(".tif"))]
             requests.append(len(seen) / (high - low))
-            turns.append(len(took) / (high - low))
             builds.append(build["end"] - build["start"])
         print(
-            f"both  {side:6} n={len(turns)} while both ran: requests/s median {statistics.median(requests):.2f}, "
-            f"turns/s median {statistics.median(turns):.2f} (max {max(turns):.2f}); build wall median "
-            f"{statistics.median(builds):.1f} s"
+            f"both  {side:6} n={len(requests)} while both ran: requests/s at the source median "
+            f"{statistics.median(requests):.2f} (max {max(requests):.2f}); build wall median {statistics.median(builds):.1f} s"
         )
 
 
