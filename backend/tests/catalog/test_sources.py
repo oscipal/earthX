@@ -10,6 +10,7 @@ import pytest
 from earthx.catalog.datasets import CATALOG_DIR
 from earthx.catalog.entry_files import EntryFileError
 from earthx.catalog.sources import CkanFilter, SourceProtocol, StacFilter, read_source, read_sources
+from earthx.discovery.links import checked_link
 
 STAC = """\
 source_id: example-stac
@@ -51,6 +52,12 @@ class TestTheReleasedSeed:
         for source in read_sources().values():
             if isinstance(source.filter, CkanFilter):
                 assert source.filter.fq is None or "spatial" not in source.filter.fq
+
+    def test_earth_search_links_to_the_stac_browser(self) -> None:
+        # F9 = 1: its collections carry no page for people, so the source names one; a valid link "Source".
+        page = read_sources()["earth-search"].catalog_page
+        assert page is not None and page.startswith("https://radiantearth.github.io/stac-browser/#/external/")
+        assert checked_link(page.replace("{id}", "sentinel-2-l2a")) is not None
 
     def test_a_full_govdata_run_fits_its_budget(self) -> None:
         # 165 427 datasets at 100 per page (plan §4.3).

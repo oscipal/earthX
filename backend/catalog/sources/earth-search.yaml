@@ -2,8 +2,9 @@
 source_id: earth-search
 protocol: stac-api
 endpoint: https://earth-search.aws.element84.com/v1
-# No page per collection of its own.
-catalog_page: null
+# Element 84 has no page per collection of its own; the STAC Browser of Radiant Earth shows a collection of this API
+# with its items and their files (M5-19 F9 = 1, Otto 17.11.2026). A setting of this source, not a rule for others.
+catalog_page: https://radiantearth.github.io/stac-browser/#/external/earth-search.aws.element84.com/v1/collections/{id}
 filter:
   collection_prefixes: []
 max_requests_per_run: 20

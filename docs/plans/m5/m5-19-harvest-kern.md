@@ -283,3 +283,5 @@ Ohne Netz, mit `tests/fixtures` und einer Transport-Attrappe am `Gateway` wie be
 1. STAC Browser von Radiant Earth als Katalogseite: `https://radiantearth.github.io/stac-browser/#/external/earth-search.aws.element84.com/v1/collections/{id}` – zeigt Collection, Items und Dateien zum Laden, für jede Collection; Host ist nicht der Anbieter **(Empfehlung)**
 2. Dokuseite von Element 84 auf GitHub, `https://github.com/Element84/earth-search/blob/main/docs/collections/{id}.md` – Seite des Anbieters, aber nicht für jede Collection vorhanden (z. B. `sentinel-2-c1-l2a` fehlt [P\*])
 3. Links ohne `type` als Seite zulassen (`about`, `via`), wenn sie nicht auf Datei, JSON oder Dienst zeigen – ob Earth Search solche hat, ist nicht belegt; gilt dann für alle STAC-Quellen
+
+**Antwort Otto zu F9 (17.11.2026): 1.** Der STAC Browser von Radiant Earth ist die Katalogseite von `earth-search.yaml`, als Einstellung dieser Quelle, nicht als allgemeine Ausnahme. Weil die Katalogseite Teil der Extraktor-Version ist, wertet der nächste Lauf die 9 Funde aus den gespeicherten Rohantworten neu aus, auch hinter `304`.
