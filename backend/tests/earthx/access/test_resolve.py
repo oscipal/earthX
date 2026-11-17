@@ -27,7 +27,7 @@ from earthx.catalog.registry import DataFormat, Georeferencing, ZarrInfo
 from earthx.gateway import Policy, UrlRejected
 from earthx.readers import AssetRejected
 from earthx.readers.cog import AssetPath
-from earthx.readers.zarr_reader import ZarrAsset
+from earthx.readers.zarr_reader import InvalidReferences, ZarrAsset
 from tests.catalog.entries import COP_DEM_GLO_30, SENTINEL_2_L2A
 from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR, without_cloud_share
 
@@ -39,6 +39,25 @@ COG = replace(SENTINEL_2_L2A, source=replace(SENTINEL_2_L2A.source, asset_hosts=
 ZARR_GROUPS = replace(SYNTHETIC_ZARR, source=replace(SYNTHETIC_ZARR.source, asset_hosts=(HOST,)))
 ZARR_PLAIN = replace(ZARR_GROUPS, zarr=ZarrInfo(variable_separator=None, multiscales_convention="test"))
 DEM = replace(COP_DEM_GLO_30, source=replace(COP_DEM_GLO_30.source, asset_hosts=(HOST,)))
+# A materialized entry stored as NetCDF with chunk references (adr/0029 A2); the rest of the entry does not matter here.
+NETCDF = replace(DEM, format=DataFormat.NETCDF_REFS)
+NETCDF_REFS: dict[str, Any] = {
+    "etag": '"abc-1"',
+    "variable": "TabsD",
+    "dtype": "<f4",
+    "shape": [24, 37],
+    "chunks": [1, 24, 37],
+    "time_offset": 0,
+    "filters": [],
+    "fill_value": -999.99,
+    "transform": [1000.0, 0.0, 2600000.0, 0.0, 1000.0, 1150000.0],
+    "chunk_refs": [[[0, 0, 0], 4096, 3552]],
+}
+NETCDF_ITEM: dict[str, Any] = {
+    "id": "meteo-20240101",
+    "properties": {"proj:code": "EPSG:2056"},
+    "assets": {"TabsD": {"href": f"https://{HOST}/tabsd_2024.nc", "earthx:refs": NETCDF_REFS}},
+}
 
 COG_ITEM: dict[str, Any] = {
     "id": "S2B_32TMT_20260101_0_L2A",
@@ -150,10 +169,48 @@ class TestResolveAsset:
         resolve_asset(ZARR_ITEM, ZARR_GROUPS, "SR_10m:b04")
 
 
+class TestNetcdfReferences:
+    def test_the_references_travel_with_the_asset(self) -> None:
+        ref = resolve_asset(NETCDF_ITEM, NETCDF, "TabsD")
+        assert (ref.reader, ref.variable, ref.href, ref.crs) == ("zarr", None, f"https://{HOST}/tabsd_2024.nc", "EPSG:2056")
+        assert ref.refs == NETCDF_REFS
+
+    def test_an_asset_without_references_is_the_sources_mistake(self) -> None:
+        item = {**NETCDF_ITEM, "assets": {"TabsD": {"href": f"https://{HOST}/tabsd_2024.nc"}}}
+        with pytest.raises(MalformedItem, match="chunk references"):
+            resolve_asset(item, NETCDF, "TabsD")
+
+    def test_other_formats_carry_none(self) -> None:
+        assert resolve_asset(COG_ITEM, COG, "visual").refs is None
+        assert "refs" not in resolve_asset(COG_ITEM, COG, "visual").to_json()
+
+    def test_it_opens_over_the_references(self) -> None:
+        target = open_asset_ref(resolve_asset(NETCDF_ITEM, NETCDF, "TabsD"), POLICY, public)
+        assert isinstance(target, ZarrAsset)
+        assert target.refs is not None and target.refs.etag == '"abc-1"'
+        assert (target.variable, target.crs, target.group) == ("TabsD", "EPSG:2056", "")
+
+    def test_broken_references_are_refused_when_opened(self) -> None:
+        item = {**NETCDF_ITEM, "assets": {"TabsD": {"href": f"https://{HOST}/x.nc", "earthx:refs": {"etag": '"a"'}}}}
+        with pytest.raises(InvalidReferences):
+            open_asset_ref(resolve_asset(item, NETCDF, "TabsD"), POLICY, public)
+
+    def test_references_go_only_with_a_zarr_read_of_no_variable(self) -> None:
+        data = resolve_asset(NETCDF_ITEM, NETCDF, "TabsD").to_json()
+        for change in ({"reader": "cog"}, {"variable": "TabsD"}, {"refs": ["x"]}):
+            with pytest.raises(ValueError, match="refs"):
+                ResolvedAsset.from_json({**data, **change})
+
+
 class TestJsonRoundTrip:
     @pytest.mark.parametrize(
         ("item", "config", "key"),
-        [(COG_ITEM, COG, "visual"), (ZARR_ITEM, ZARR_GROUPS, "SR_10m:b04"), (DEM_ITEM, DEM, "data")],
+        [
+            (COG_ITEM, COG, "visual"),
+            (ZARR_ITEM, ZARR_GROUPS, "SR_10m:b04"),
+            (DEM_ITEM, DEM, "data"),
+            (NETCDF_ITEM, NETCDF, "TabsD"),
+        ],
     )
     def test_there_and_back(self, item: dict[str, Any], config: Any, key: str) -> None:
         ref = resolve_asset(item, config, key)

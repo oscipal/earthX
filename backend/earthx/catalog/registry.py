@@ -56,6 +56,9 @@ class DataFormat(Enum):
 
     ZARR = "zarr"
     COG = "cog"
+    # A NetCDF-4/HDF5 file read through the chunk references its items carry (adr/0029 A2, F3; M5-11): rank 3 of
+    # architekturplan.md 6.2, "a virtualised legacy format", without Icechunk and without a foreign I/O layer.
+    NETCDF_REFS = "netcdf-refs"
     LEGACY = "legacy"
 
 
@@ -1678,6 +1681,7 @@ class DatasetConfig:
         self._check_source()
         self._check_item_holding()
         self._check_zarr()
+        self._check_netcdf_refs()
         self._check_georeferencing()
         self._check_browse_cors()
         self._check_mask()
@@ -2261,6 +2265,12 @@ class DatasetConfig:
             raise ConfigError(
                 f"{self.dataset_id}: zarr info is set but format is {self.format.value}, not zarr"
             )
+
+    def _check_netcdf_refs(self) -> None:
+        """The references are written into the items by `discovery` (adr/0029 F3): a dataset whose items come live from
+        the source has none to read."""
+        if self.format is DataFormat.NETCDF_REFS and self.source.item_holding is not ItemHolding.MATERIALIZED:
+            raise ConfigError(f"{self.dataset_id}: format netcdf-refs needs materialized items, which carry the references")
 
     def _check_georeferencing(self) -> None:
         """Ground control points are read from a COG only (a Zarr store is placed by its own coordinates), never

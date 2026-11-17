@@ -110,6 +110,11 @@ class TestExpectedBandNames:
         entry = _entry(asset="SR_10m:b04,b08", reader="zarr", variable="b04,b08")
         assert expected_band_names(entry) == ["b04", "b08"]
 
+    def test_a_netcdf_asset_read_through_references_is_named_like_the_asset(self) -> None:
+        data = resolved("ITEM_A", "TabsD", reader="zarr", scale=None, offset=None)
+        data["asset"]["refs"] = {"etag": '"a-1"'}
+        assert expected_band_names(ResolvedInput.model_validate(data)) == ["TabsD"]
+
     def test_a_zarr_asset_without_a_variable_is_unknown(self) -> None:
         entry = _entry(asset="SR_10m", reader="zarr")
         assert expected_band_names(entry) is None

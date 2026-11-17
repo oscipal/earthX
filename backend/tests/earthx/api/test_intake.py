@@ -35,7 +35,7 @@ from earthx.api.intake import (
     job_side_files,
 )
 from earthx.api.item_source import MaterializedCatalogUnavailable, MaterializedItemNotFound, Stage, fetch_item_or_refuse
-from earthx.catalog.registry import AcquisitionYears, DatasetConfig, DatasetRegistry, LicenseTier
+from earthx.catalog.registry import AcquisitionYears, DataFormat, DatasetConfig, DatasetRegistry, LicenseTier
 from earthx.gateway import Gateway, Policy, UpstreamError
 from earthx.processing.export import AttachmentsInvalid
 from earthx.processing.operators import OperatorRegistry, Tier
@@ -472,6 +472,30 @@ class TestCopernicusDem:
 
 
 # --- the host check (adr/0014 §8) ------------------------------------------------
+
+
+class TestNetcdfReferences:
+    """M5-11 (adr/0029 §8a.3, §8a.5): the version of a NetCDF input is the ETag its references were made from."""
+
+    CONFIG = replace(DEM, dataset_id="synthetic-netcdf", format=DataFormat.NETCDF_REFS)
+    REFS = {"etag": '"file-etag-1"', "variable": "TabsD", "chunk_refs": [[[0, 0, 0], 4096, 3552]]}
+
+    def item(self) -> dict[str, Any]:
+        item = dem_item("NC_20240101")
+        item["assets"] = {"TabsD": {"href": f"https://{DEM_HOST}/tabsd_2024.nc", "earthx:refs": self.REFS}}
+        return item
+
+    async def test_the_etag_of_the_references_without_a_request(self) -> None:
+        heads = Heads()
+        registry = DatasetRegistry((*INTAKE_REGISTRY, self.CONFIG), retired=tuple(INTAKE_REGISTRY.retired))
+        document = order("synthetic-netcdf", (("NC_20240101",),), ("TabsD",))
+        accepted = await accept(document, Source((self.CONFIG, self.item())), heads, registry=registry)
+        (resolved,) = accepted.recipe.inputs[0].resolved
+        assert resolved.version is not None
+        assert (resolved.version.kind, resolved.version.value) == ("etag", '"file-etag-1"')
+        assert resolved.asset.refs == self.REFS
+        assert resolved.scaling == "store-cf"
+        assert heads.requests == []
 
 
 class TestUnits:

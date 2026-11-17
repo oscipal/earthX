@@ -1391,6 +1391,10 @@ async def _version_of(target: _Target, gateway: Gateway) -> InputVersion | None:
     """
     key = target.item_asset
     own = _version(target.item, key)
+    if (own is None or own.kind != "file:checksum") and target.ref.refs is not None:
+        # The ETag the chunk references were made from, which every read sends as `If-Match` (adr/0029 §8a.3, §8a.5).
+        etag = target.ref.refs.get("etag")
+        return _version(target.item, key, etag=_usable_etag(etag if isinstance(etag, str) else None))
     if (own is not None and own.kind == "file:checksum") or target.ref.reader != "cog":
         return own
     checksum = target.config.source.asset_checksum is AssetChecksum.CRC64NVME

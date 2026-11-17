@@ -221,7 +221,8 @@ function isGeoTiff(asset: StacAsset): boolean {
 }
 
 // What the item offers for an order. A COG asset: one band named like the asset,
-// or `<asset>_1` … per band. A Zarr asset: one order asset per variable named
+// or `<asset>_1` … per band. A NetCDF asset read through its chunk references
+// (`earthx:refs`, adr/0029): one band named like the asset. A Zarr asset: one order asset per variable named
 // in the STAC core field `bands`, as `<asset><separator><variable>` — none
 // without a separator (F9) and none for an asset that names no variables
 // (nothing guessed; Otto 10.10.2026).
@@ -241,6 +242,11 @@ export function bandSources(
       const described = bandsOf(asset);
       const units = names.map((_, i) => itemUnit(described?.[i]) ?? registry);
       sources.push({ asset: key, names, units, unit: registry, dataType: firstDataType(asset), ...bandFacts(asset) });
+    } else if (format === 'netcdf-refs') {
+      if (!asset['earthx:refs']) continue;
+      const registry = registryUnit(collection, key);
+      const unit = itemUnit(bandsOf(asset)?.[0]) ?? registry;
+      sources.push({ asset: key, names: [key], units: [unit], unit: registry, dataType: firstDataType(asset), ...bandFacts(asset) });
     } else if (format === 'zarr') {
       const bands = asset.bands;
       if (!separator || !Array.isArray(bands)) continue;

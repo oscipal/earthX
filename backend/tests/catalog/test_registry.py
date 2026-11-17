@@ -20,6 +20,7 @@ from earthx.catalog.registry import (
     Capabilities,
     ConfigError,
     CoverageProvider,
+    DataFormat,
     DatasetConfig,
     DatasetRegistry,
     DefaultRender,
@@ -112,6 +113,18 @@ class TestRadarGeometry:
     def test_blank_line_times_are_rejected(self, vary, valid_config, first: str, last: str) -> None:
         with pytest.raises(ConfigError, match="two item properties"):
             self.gcp(vary, valid_config, line_times=LineTimes(first=first, last=last))
+
+
+class TestNetcdfRefs:
+    """M5-11 (adr/0029 F3): the chunk references lie in the items `discovery` writes, so only materialized items."""
+
+    def test_a_materialized_entry_may_be_stored_as_netcdf_refs(self) -> None:
+        dem = REGISTRY.get("cop-dem-glo-30")
+        assert replace(dem, format=DataFormat.NETCDF_REFS).format is DataFormat.NETCDF_REFS
+
+    def test_a_federated_entry_is_rejected(self, vary) -> None:
+        with pytest.raises(ConfigError, match="netcdf-refs needs materialized items"):
+            vary(format=DataFormat.NETCDF_REFS)
 
 
 class TestKeywords:
