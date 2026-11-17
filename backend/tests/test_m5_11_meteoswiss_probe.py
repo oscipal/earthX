@@ -22,13 +22,19 @@ from tests.earthx.readers import mini_netcdf
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "m5-11-meteoswiss" / "probe.py"
 BASE = "https://data.geo.admin.ch/assets/ch.meteoschweiz.ogd-surface-derived-grid/archive-ch"
+# Stamps of 8 and of 12 digits: how many the source writes was not recorded with adr/0029, and the run of 17.11.2026
+# with only 6–8 matched nothing. Records and anomalies (`trecabsm`, `ranomm`) as Otto's run listed them.
 NAMES = [
-    "ogd-surface-derived-grid_tabsd_ch01r.swiss.lv95_19610101_19611231.nc",
+    "ogd-surface-derived-grid_tabsd_ch01r.swiss.lv95_196101010000_196112312359.nc",
     "ogd-surface-derived-grid_tabsd_ch01r.swiss.lv95_20240101_20241231.nc",
     "ogd-surface-derived-grid_rhiresd_ch01h.swiss.lv95_20240101_20241231.nc",
     "ogd-surface-derived-grid_tabsm_ch01r.swiss.lv95_202401_202412.nc",
     "ogd-surface-derived-grid_tabsd_ch01r.swiss.lv95_20990101_20991231.nc",
     "ogd-surface-derived-grid_tabsd_ch02r.swiss.lv95_20240101_20241231.nc",
+    "ogd-surface-derived-grid_trecabsm_ch01r.swiss.lv95_202401_202401.nc",
+    "ogd-surface-derived-grid_trecabsm_ch01r.swiss.lv95_202402_202402.nc",
+    "ogd-surface-derived-grid_ranomm_ch01h.swiss.lv95_202402_202402.nc",
+    "ogd-surface-derived-grid_tabsd_ch01r.swiss.lv95_20241001_20241001.nc",
     "readme_climate_grids.pdf",
 ]
 
@@ -48,7 +54,13 @@ def probe(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> ModuleType:
     source = mini_netcdf.Source(body)
     items = {
         "features": [
-            {"id": "daily-item", "assets": {"a.nc": {"href": f"{BASE}/a.nc"}}},
+            {
+                "id": "daily-item",
+                "assets": {
+                    "ogd-surface-derived-grid_rprelimd_ch01h.swiss.lv95_20261101_20261101.nc": {"href": f"{BASE}/a.nc"},
+                    "ogd-surface-derived-grid_trecabsm_ch01r.swiss.lv95_202401_202401.nc": {"href": f"{BASE}/b.nc"},
+                },
+            },
             {
                 "id": "archive-item",
                 "assets": {
@@ -87,10 +99,23 @@ def _with_host(request: httpx.Request) -> httpx.Request:
 def test_the_assets_by_kind(probe: ModuleType, capsys: pytest.CaptureFixture[str]) -> None:
     assert probe.run(["--assets"]) == 0
     out = capsys.readouterr().out
-    assert re.search(r"tabsd ch01r daily, one year\s+3 files, 1961–2099", out)
-    assert "tabsm ch01r monthly, one year" in out
-    assert "readme_climate_grids.pdf" in out  # an unknown name, as a form
+    assert re.search(r"tabsd ch01r daily values, file of one year\s+3 files, 1961–2099", out)
+    assert re.search(r"tabsd ch01r daily values, file of one day\s+1 files, 2024–2024", out)
+    assert "tabsm ch01r monthly values, file of one year" in out
+    assert "trecabsm ch01r monthly values, file of one month" in out
     assert probe.SEEN == []
+
+
+def test_every_name_pattern_of_every_item(probe: ModuleType, capsys: pytest.CaptureFixture[str]) -> None:
+    """Not the ten most frequent of the largest item: all of them, over all items, with counts and years."""
+    assert probe.run(["--assets"]) == 0
+    out = capsys.readouterr().out
+    trecabsm = "ogd-surface-derived-grid_trecabsm_ch##r.swiss.lv##_######_######.nc"
+    assert re.search(re.escape(trecabsm) + r"\s+× 3 in 2 items, years 2024–2024", out)
+    assert re.search(re.escape("ogd-surface-derived-grid_rprelimd_ch##h.swiss.lv##_########_########.nc") + r"\s+× 1 in 1 items", out)
+    assert re.search(r"readme_climate_grids\.pdf\s+× 1 in 1 items$", out, flags=re.MULTILINE)
+    # Eight: the grid's digits are masked too, so ch01r and ch02r share a pattern, as do every year of one product.
+    assert re.search(r"name patterns\s+8$", out, flags=re.MULTILINE), out
 
 
 def test_the_layout_of_every_completed_daily_file(probe: ModuleType, capsys: pytest.CaptureFixture[str]) -> None:
