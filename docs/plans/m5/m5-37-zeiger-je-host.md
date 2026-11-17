@@ -255,3 +255,27 @@ Synthetische Quelle `slow_source.py` (RTT 170 ms, Verbindungsaufbau 350 ms, eine
 - **M3:** Weil eine Pause 5 min dauert und ein Zug über 60 s nicht genommen wird, ruht der Host für jeden der drei Läufe; nach dem Ende der Störung bei s 22 gibt es im Fenster der Messung keine Probe mehr. Die Probe nach der Pause decken die Tests ab (`test_a_failed_probe_after_the_pause_pauses_twice_as_long`, `test_a_successful_probe_closes_the_breaker`).
 - **Pyramidenbau (M4)** folgt mit PR 2.
 
+### 10.3 PR 2 ([#373](https://github.com/oscipal/earthX/pull/373)), Stand 17.11.2026
+
+- **Migration 023:** `earthx_source_account(host, interval, requests)` verrechnet die Anfragen, die GDAL für eine Datei stellte: Der Zug des Hosts rückt um `(requests − 1) · interval` vor, wie `HostPacer.account`. **Abweichung:** Bei null Anfragen (GDAL-Cache) gibt es nichts zurück, weil ein inzwischen an eine andere Instanz vergebener Zug sonst vorrücken könnte. Die Regeln aus 022 bleiben unverändert (Änderungen nur per neuer Migration).
+- **Kern:** `Pacer.account` erfährt zusätzlich, ob das Lesen an der Quelle scheiterte (`_TRANSIENT`: Zeitüberschreitung, keine Verbindung, `429`, `5xx`), und den `Retry-After`. `build_pyramid` und `patch_pyramid` nehmen den Pacer als Argument. `pyramid_source_limits()` liefert je Host Plätze und Abstand (`hosts.yaml`, sonst `EARTHX_OVERVIEW_HOST_INTERVAL_S`, 0,25 s).
+- **Kind:** `PipePacer` schickt `("pace", host)`, wartet auf `("go",)` und meldet danach `("account", host, requests, failed, retry_after)`. Das Kind bleibt ohne Datenbank (B9).
+- **Aufseher:** `jobs/source_hosts.py` mit `SourceHosts` (dieselben Aufrufe und Zahlen wie `catalog.source_hosts`, ein Test hält beide gleich) und `TurnKeeper`. Ein Zug wird genommen und ohne Blockieren abgewartet. Liegt eine Pause dazwischen, wird danach ein eigener Zug genommen (J4: der Bau wartet). Ein Platz wird mit Frist und Herzschlag gehalten; danach wird verrechnet, gemeldet und freigegeben. Nur das Warten auf einen Zug zählt nicht als Stillstand; ein Lesen, das hängt, ist nach `STALL_SECONDS` stillstehend und gibt seinen Platz zurück. Eine Nachricht falscher Form oder Reihenfolge und ein Host, den der Bau nicht liest, beenden den Bau als `rejected`. Fehlen beim Start die Grenzen für einen Host einer Pyramide, startet der Worker nicht.
+- **Unterbrecher:** Jedes Lesen, das an der Quelle scheitert, ist ein Fehler. Ein Lesen ohne Anfrage (Cache) meldet nichts, damit es keine Pause beendet, die eine andere Instanz begann. Jedes andere Lesen ist ein Erfolg.
+- **Prüfung** (Subagent `reviewer`): ein Blocker. Die Ausnahme vom Stillstand galt während des ganzen Lesens, ein hängendes Lesen hätte Bau und Platz für immer gehalten. Behoben und mit einem Test belegt, der ohne die Behebung rot ist. Ebenso behoben: ein Cache-Treffer als Erfolg, eine ungeschützte Freigabe im `finally`, zu lockere Prüfung der Nachrichten des Kindes, Züge von vor einer Pause, ein Platz, der nach dem Verlust weiter verlängert wurde, Subdomains, fehlende Grenzen erst beim Lesen. Dazu Tests für die Fehlerpfade: Hängen, Absturz zwischen `go` und `account`, falsche Nachrichten, Datenbankfehler bei der Freigabe.
+- **Bekannt, unverändert seit M5-30b:** Der Zähler des Kerns zählt die `GET`-Zeilen von GDAL, nicht das `HEAD` am Anfang einer Datei. Die Quelle sieht je Datei zwei Anfragen, verrechnet wird eine. Das gilt auf `main` und Branch gleich.
+
+### 10.4 Messung PR 2 (M4, J5)
+
+Synthetische COGs aus `make_cogs.py` (`B04`, 10980² px, UTM), `slow_source.py` (RTT 170 ms, Verbindungsaufbau 350 ms), lokales Postgres mit 022 und 023. Gemessen wurde mit `pyramid_turns.py`: der echte Aufseher (`OverviewBuilder._step`) mit einem Kind, das 30 Dateien je einmal über den Kern liest (`base_tile`, z9). Auf dem Branch nimmt das Kind seine Züge über `PipePacer`, auf `main` hält es den Abstand selbst (`HostPacer`). Für „zusammen“ läuft daneben ein Lauf wie `materialize` auf demselben Host mit 0,25 s Abstand (`source_turns.py`, auf dem Branch über Postgres). `main` fba73e2 gegen den Branch 44101a2, 5 Wiederholungen im Wechsel. Keine echte Quelle.
+
+| Fall | `main` | Branch | Ergebnis |
+|---|---|---|---|
+| Bau allein, Wandzeit | Median 13,41 s, p95 13,61 s | Median 13,79 s (+2,8 %), p95 13,91 s (+2,2 %) | innerhalb +5 % (J5) |
+| Bau und Lauf zusammen, Züge je Sekunde an der Quelle | 6,38 (jeder hält 0,25 s für sich) | **3,99** (höchstens 4,00) | 0,25 s je Host gilt für beide zusammen |
+| dasselbe, alle Anfragen je Sekunde | 8,88 | 5,94 | |
+| Wandzeit des Baus zusammen | 13,4 s | 16,8 s | der Bau teilt sich die Züge mit dem Lauf |
+
+- Ein „Zug“ an der Quelle ist ein `GET` des Laufs oder die erste Anfrage für eine Datei des Baus (`HEAD`), siehe §10.3, letzter Punkt.
+- Ein erster Lauf vor den Behebungen der Prüfung ergab fast dieselben Zahlen (allein +2,4 % / +0,3 %, zusammen 4,02 Züge/s); gezählt wird der Lauf auf dem Endstand.
+
