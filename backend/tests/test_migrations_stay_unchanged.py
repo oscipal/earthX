@@ -37,6 +37,7 @@ PINNED = {
     "020_overview_omitted": "c0deb0b7ff9f82b4da52f1e8314658012abb6c1a693bec21098fb6d50d1d572d",
     "022_source_host": "2baf8e09afcba973dad591908b66aa92b3865f3270d9815393c4982aad38371e",
     "023_source_account": "ff9043ed6c39551eb0b158ad8b7ec3f36c5720644b6ff60dfe49e380d953cf4d",
+    "024_harvest": "7621716d99a3c08f2354f15bcc0fcc55cede14bb81d4ca5512c36a77c7bad930",
 }
 
 
