@@ -255,3 +255,59 @@ Synthetische Quelle `slow_source.py` (RTT 170 ms, Verbindungsaufbau 350 ms, eine
 - **M3:** Weil eine Pause 5 min dauert und ein Zug über 60 s nicht genommen wird, ruht der Host für jeden der drei Läufe; nach dem Ende der Störung bei s 22 gibt es im Fenster der Messung keine Probe mehr. Die Probe nach der Pause decken die Tests ab (`test_a_failed_probe_after_the_pause_pauses_twice_as_long`, `test_a_successful_probe_closes_the_breaker`).
 - **Pyramidenbau (M4)** folgt mit PR 2.
 
+### 10.3 PR 2 ([#373](https://github.com/oscipal/earthX/pull/373)), Stand 17.11.2026
+
+- **Migration 023:** `earthx_source_account(host, interval, requests)` verrechnet die Anfragen, die GDAL für eine Datei stellte: Der Zug des Hosts rückt um `(requests − 1) · interval` vor, wie `HostPacer.account`. **Abweichung:** Bei null Anfragen (GDAL-Cache) gibt es nichts zurück, weil ein inzwischen an eine andere Instanz vergebener Zug sonst vorrücken könnte. Die Regeln aus 022 bleiben unverändert (Änderungen nur per neuer Migration).
+- **Kern:** `Pacer.account` erfährt zusätzlich, ob das Lesen an der Quelle scheiterte (`_TRANSIENT`: Zeitüberschreitung, keine Verbindung, `429`, `5xx`), und den `Retry-After`. `build_pyramid` und `patch_pyramid` nehmen den Pacer als Argument. `pyramid_source_limits()` liefert je Host Plätze und Abstand (`hosts.yaml`, sonst `EARTHX_OVERVIEW_HOST_INTERVAL_S`, 0,25 s).
+- **Kind:** `PipePacer` schickt `("pace", host)`, wartet auf `("go",)` und meldet danach `("account", host, requests, failed, retry_after)`. Das Kind bleibt ohne Datenbank (B9).
+- **Aufseher:** `jobs/source_hosts.py` mit `SourceHosts` (dieselben Aufrufe und Zahlen wie `catalog.source_hosts`, ein Test hält beide gleich) und `TurnKeeper`. Ein Zug wird genommen und ohne Blockieren abgewartet. Liegt eine Pause dazwischen, wird danach ein eigener Zug genommen (J4: der Bau wartet). Ein Platz wird mit Frist und Herzschlag gehalten; danach wird verrechnet, gemeldet und freigegeben. Nur das Warten auf einen Zug zählt nicht als Stillstand; ein Lesen, das hängt, ist nach `STALL_SECONDS` stillstehend und gibt seinen Platz zurück. Eine Nachricht falscher Form oder Reihenfolge und ein Host, den der Bau nicht liest, beenden den Bau als `rejected`. Fehlen beim Start die Grenzen für einen Host einer Pyramide, startet der Worker nicht.
+- **Unterbrecher:** Jedes Lesen, das an der Quelle scheitert, ist ein Fehler. Ein Lesen ohne Anfrage (Cache) meldet nichts, damit es keine Pause beendet, die eine andere Instanz begann. Jedes andere Lesen ist ein Erfolg.
+- **Prüfung** (Subagent `reviewer`): ein Blocker. Die Ausnahme vom Stillstand galt während des ganzen Lesens, ein hängendes Lesen hätte Bau und Platz für immer gehalten. Behoben und mit einem Test belegt, der ohne die Behebung rot ist. Ebenso behoben: ein Cache-Treffer als Erfolg, eine ungeschützte Freigabe im `finally`, zu lockere Prüfung der Nachrichten des Kindes, Züge von vor einer Pause, ein Platz, der nach dem Verlust weiter verlängert wurde, Subdomains, fehlende Grenzen erst beim Lesen. Dazu Tests für die Fehlerpfade: Hängen, Absturz zwischen `go` und `account`, falsche Nachrichten, Datenbankfehler bei der Freigabe.
+- **Seit M5-30b, behoben in diesem PR (§10.5):** Der Zähler des Kerns zählte nur die `Downloading`-Zeilen von GDAL, nicht das `HEAD` am Anfang einer Datei und nicht dessen Wiederholungen.
+
+### 10.4 Messung PR 2 (M4, J5)
+
+Synthetische COGs aus `make_cogs.py` (`B04`, 10980² px, UTM), `slow_source.py` (RTT 170 ms, Verbindungsaufbau 350 ms), lokales Postgres mit 022 und 023. Gemessen wurde mit `pyramid_turns.py`: der echte Aufseher (`OverviewBuilder._step`) mit einem Kind, das 30 Dateien je einmal über den Kern liest (`base_tile`, z9). Auf dem Branch nimmt das Kind seine Züge über `PipePacer`, auf `main` hält es den Abstand selbst (`HostPacer`). Für „zusammen“ läuft daneben ein Lauf wie `materialize` auf demselben Host mit 0,25 s Abstand (`source_turns.py`, auf dem Branch über Postgres). `main` fba73e2 gegen den Branch 44101a2, 5 Wiederholungen im Wechsel. Keine echte Quelle.
+
+| Fall | `main` | Branch | Ergebnis |
+|---|---|---|---|
+| Bau allein, Wandzeit | Median 13,41 s, p95 13,61 s | Median 13,79 s (+2,8 %), p95 13,91 s (+2,2 %) | innerhalb +5 % (J5) |
+| Bau und Lauf zusammen, Züge je Sekunde an der Quelle | 6,38 (jeder hält 0,25 s für sich) | **3,99** (höchstens 4,00) | 0,25 s je Host gilt für beide zusammen |
+| dasselbe, alle Anfragen je Sekunde | 8,88 | 5,94 | |
+| Wandzeit des Baus zusammen | 13,4 s | 16,8 s | der Bau teilt sich die Züge mit dem Lauf |
+
+- Ein „Zug“ an der Quelle ist ein `GET` des Laufs oder die erste Anfrage für eine Datei des Baus (`HEAD`), siehe §10.3, letzter Punkt.
+- Ein erster Lauf vor den Behebungen der Prüfung ergab fast dieselben Zahlen (allein +2,4 % / +0,3 %, zusammen 4,02 Züge/s); gezählt wird der Lauf auf dem Endstand.
+- **Einschränkung, bemerkt am 17.11.2026:** Die Kachel dieser Messung lag außerhalb der synthetischen Szene. Jede Datei wurde geöffnet, aber nicht gelesen (`HEAD` und Dateikopf, zwei Anfragen). Die Zahlen zeigen das Teilen der Züge, aber nicht die Kosten eines echten Lesens. Maßgeblich ist §10.5.
+
+### 10.5 Jede Anfrage verrechnet (Otto, 17.11.2026)
+
+**Auftrag:** Jede Anfrage an die Quelle wird verrechnet. Bevorzugt war GDAL ohne `HEAD` (`CPL_VSIL_CURL_USE_HEAD=NO`), falls das Lesen damit korrekt bleibt, sonst das `HEAD` mitzählen. Das gilt für den Pyramidenbau und, falls dort genauso, für Kacheln.
+
+**Befund** (gegen eine Quelle auf Loopback, die jede Anfrage protokolliert, auch eine abgebrochene):
+- Ohne `HEAD` fragt GDAL die Größe mit einem `GET` ohne `Range` und bricht es nach den Kopfzeilen ab; übertragen waren dabei 256 KB. Die Quelle sieht also gleich viele Anfragen, dazu mehr Bytes. Das Bild ist in beiden Fällen gleich. **Deshalb bleibt das `HEAD`, und es wird mitgezählt.**
+- Was GDAL 3.12 dazu ins Debug-Log schreibt:
+  - Jeder Bereichsabruf schreibt eine Zeile `Downloading`, auch jede Wiederholung (`GDAL_HTTP_MAX_RETRY` = 2).
+  - Die Größenabfrage schreibt eine einzige Zeile `GetFileSize(…)`, gleich nach wie vielen Versuchen.
+  - Jede Wiederholung der Größenabfrage schreibt nur `HTTP error code: … Retrying again in …`.
+  - Ungezählt waren bisher das `HEAD` jeder Datei und die Wiederholungen des `HEAD`.
+- **Regel im Zähler (`gateway.gdal`):** gezählt werden
+  - jede `Downloading`-Zeile,
+  - jede `GetFileSize`-Zeile,
+  - jede `Retrying`-Zeile, die nicht zu einem laufenden Bereichsabruf gehört. Ein Bereichsabruf läuft von seiner `Downloading`-Zeile bis `Got response_code=2xx` oder `Download completed`.
+
+  Ein Test vergleicht die Zählung mit den Anfragen, die eine Quelle auf Loopback erhielt: Lesen ohne Fehler, `503` beim Öffnen, `503` beim Lesen, ohne `HEAD`. Mit der alten Regel sind 9 der 12 Tests rot.
+- **Kacheln (M5-36):** nicht betroffen. Dort wird nichts je Anfrage verrechnet. Ein Platz gilt je Leser vom Öffnen bis zum Schließen und deckt damit alle Anfragen der Datei ab, das `HEAD` eingeschlossen. Der Zähler wird außerdem vom Messwerkzeug `api/measure_tiles.py` benutzt; dessen Zahlen sind jetzt vollständig.
+
+**Messung** (wie §10.4, jetzt mit einer Kachel innerhalb der Szene, also echtem Lesen; `main` f0a2c8c gegen den Branch, 3 Wiederholungen; keine echte Quelle):
+
+| Fall | `main` | Branch |
+|---|---|---|
+| Bau allein: Anfragen an der Quelle / verrechnet | 120 / 90 | 120 / **120** |
+| Bau allein, Wandzeit (Median) | 24,24 s, das sind 4,95 Anfragen/s | 31,20 s (+28,7 %), 3,85 Anfragen/s |
+| Bau und Lauf zusammen, Anfragen/s an der Quelle | 9,30 | **4,06** |
+| Wandzeit des Baus zusammen | 24,2 s | 38,7 s |
+
+- **J5 (+5 %) wird beim Bau allein überschritten.** Grund ist die Regel selbst: `main` stellte 4,95 Anfragen/s an einen Host mit der Regel „höchstens 4 je Sekunde“ (`adr/0032` F4), weil es je Datei eine von vier Anfragen nicht verrechnete. Der Branch hält 4/s ein, und 120 Anfragen mit 0,25 s Abstand dauern mindestens 30 s. Wie viel länger ein echter Bau wird, hängt davon ab, wie oft der Abstand bindet. Er bindet, wenn eine Datei schneller gelesen ist, als ihre Anfragen Abstand brauchen. Höchstens wird er um das Verhältnis der bisher ungezählten zu den gezählten Anfragen länger, hier 30 zu 90, also ein Drittel.
+- Der erste Durchgang dieser Messung ist verworfen: Dem Lauf fehlte seine Datei an der Quelle (`404`, damals nicht protokolliert, jetzt protokolliert).
+

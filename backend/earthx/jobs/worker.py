@@ -62,6 +62,7 @@ from earthx.jobs.config import WorkerConfig
 from earthx.jobs.entry import ChildTarget
 from earthx.jobs.overview_builder import WORKDIR as OVERVIEW_WORKDIR
 from earthx.jobs.overview_builder import OverviewBuilder
+from earthx.jobs.source_hosts import HostTurns
 from earthx.objectstore.errors import ObjectStoreError
 from earthx.objectstore.results import FILES_META, Store, delete_result, file_facts, new_result_id, upload_result
 
@@ -115,6 +116,7 @@ class Supervisor:
         name: str | None = None,
         pyramids: Mapping[str, Sequence[str]] | None = None,
         overview_target: Callable[[str, Any], None] | None = None,
+        source_limits: Mapping[str, HostTurns] | None = None,
     ) -> None:
         self.config = config
         self.store = store
@@ -136,6 +138,7 @@ class Supervisor:
                 connect=self._connect,
                 database_ok=self._database_ok,
                 target=overview_target,
+                source_limits=source_limits,
             )
             if self.pyramids
             else None

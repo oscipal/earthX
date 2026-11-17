@@ -218,3 +218,85 @@ def patch_again_slow(workdir: str, conn: Any) -> None:
     if _job(workdir)["mode"] == "patch":
         time.sleep(1.0)
     patch_again(workdir, conn)
+
+
+def _paced(workdir: str, conn: Any, host: str) -> None:
+    """Read ``PACED_FILES`` files on ``host`` the way the real child does (M5-37): ask for each turn, wait, account.
+
+    When each turn was given goes to ``turns.json`` next to the work directory (it is removed with it otherwise);
+    ``PACED_FAIL`` files in a row are accounted as a failure of the source.
+    """
+    if _job(workdir)["mode"] == "plan":
+        _plan(workdir, conn)
+        return
+    given: list[float] = []
+    failing = int(os.environ.get("PACED_FAIL", "0"))
+    for index in range(int(os.environ.get("PACED_FILES", "3"))):
+        conn.send(("pace", host))
+        if conn.recv() != ("go",):
+            raise RuntimeError("no turn")
+        given.append(time.time())
+        conn.send(("account", host, int(os.environ.get("PACED_REQUESTS", "1")), index < failing, None))
+    (Path(workdir).parent / "turns.json").write_text(json.dumps(given))
+    _build(workdir, conn)
+
+
+def paced(workdir: str, conn: Any) -> None:
+    """Reads its files on ``PACED_HOST``."""
+    _paced(workdir, conn, os.environ["PACED_HOST"])
+
+
+def paced_elsewhere(workdir: str, conn: Any) -> None:
+    """Asks for a turn on a host the build does not read."""
+    _paced(workdir, conn, "elsewhere.example.invalid")
+
+
+def _misbehave(workdir: str, conn: Any, then: str) -> None:
+    """Ask for a turn on ``PACED_HOST`` and then do ``then`` instead of reading and accounting as a child should."""
+    if _job(workdir)["mode"] == "plan":
+        _plan(workdir, conn)
+        return
+    host = os.environ["PACED_HOST"]
+    if then == "account_unasked":
+        conn.send(("account", host, 1, False, None))
+        time.sleep(30)
+        return
+    conn.send(("pace", host))
+    if then == "pace_twice":
+        conn.send(("pace", host))
+        time.sleep(30)
+        return
+    if conn.recv() != ("go",):
+        raise RuntimeError("no turn")
+    if then == "hang":
+        time.sleep(3600)
+    elif then == "die":
+        os._exit(0)
+    elif then == "odd_account":
+        conn.send(("account", host, "many", False, None))
+        time.sleep(30)
+
+
+def paced_hang(workdir: str, conn: Any) -> None:
+    """Gets its turn and hangs while it holds the place, as a read stuck in GDAL would."""
+    _misbehave(workdir, conn, "hang")
+
+
+def paced_die(workdir: str, conn: Any) -> None:
+    """Gets its turn and dies before it accounts."""
+    _misbehave(workdir, conn, "die")
+
+
+def paced_odd_account(workdir: str, conn: Any) -> None:
+    """Accounts with a count that is not one."""
+    _misbehave(workdir, conn, "odd_account")
+
+
+def paced_account_unasked(workdir: str, conn: Any) -> None:
+    """Accounts for a turn it never asked for."""
+    _misbehave(workdir, conn, "account_unasked")
+
+
+def paced_pace_twice(workdir: str, conn: Any) -> None:
+    """Asks for a second turn before the first is given."""
+    _misbehave(workdir, conn, "pace_twice")

@@ -74,11 +74,16 @@ _TMS = morecantile.tms.get("WebMercatorQuad")
 
 
 class Pacer(Protocol):
-    """What the reading needs of a spacing per host; `gateway`'s ``HostPacer`` fits it structurally."""
+    """What the reading needs of a spacing per host; `gateway`'s ``HostPacer`` fits it structurally.
+
+    ``account`` also says how the read ended, for a breaker per host that `jobs` keeps across instances (M5-37):
+    ``failed`` for a failure a second read can help (:data:`_TRANSIENT`: the host did not answer, or answered 429 or
+    5xx), with the ``Retry-After`` it carried, if any.
+    """
 
     def wait(self, host: str) -> None: ...
 
-    def account(self, host: str, requests: int) -> None: ...
+    def account(self, host: str, requests: int, *, failed: bool = False, retry_after: float | None = None) -> None: ...
 
 
 def base_zoom(min_zoom: int) -> int:
@@ -188,6 +193,7 @@ def _read_once(
         raise TypeError("a pyramid reads files the gateway cleared, not plain strings (KLAERUNGEN B8)")
     host = asset_host(scene)
     options = {**gdal_config, "CPL_DEBUG": "ON"} if host else dict(gdal_config)
+    failed, asked = False, None
     with counting_gdal_lines(own_thread_only=True) as counter:
         if host:
             pacer.wait(host)
@@ -204,9 +210,12 @@ def _read_once(
                 )
         except TileOutsideBounds:
             return None
+        except Exception as error:
+            failed, asked = source_failure_kind(error) in _TRANSIENT, retry_after(error)
+            raise
         finally:
             if host:
-                pacer.account(host, counter.take()[0])
+                pacer.account(host, counter.take()[0], failed=failed, retry_after=asked)
 
 
 def parent_tile(

@@ -20,13 +20,14 @@ from fastapi import FastAPI, Response
 from fastapi.concurrency import run_in_threadpool
 
 from earthx.jobs.config import WorkerConfig, WorkerConfigError
+from earthx.jobs.source_hosts import HostTurns
 from earthx.jobs.worker import Supervisor
 from earthx.logging import RequestIdMiddleware, configure_logging
 from earthx.objectstore.errors import LifecycleMissing, ObjectStoreError
 from earthx.objectstore.overviews import overviews_lifecycle_ok
 from earthx.objectstore.results import Store, lifecycle_ok
 from earthx.processing import check_instance_settings
-from earthx.processing.overview_build import pyramid_hosts
+from earthx.processing.overview_build import pyramid_hosts, pyramid_source_limits
 
 # M3-16: this process's own JSON logging, before anything can log a line
 # (K-01/K-02) — the compose command starts it with `--no-access-log`, so
@@ -79,8 +80,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         raise
     supervisor = None
     try:
-        # The datasets with an overview pyramid and their hosts, as plain data: the supervisor imports no registry.
-        supervisor = Supervisor(WorkerConfig.from_environ(), app.state.store, pyramids=pyramid_hosts())
+        # The datasets with an overview pyramid and their hosts, as plain data: the supervisor imports no registry. With
+        # them the places and spacing of each such host, which all instances share in Postgres (M5-37).
+        limits = {host: HostTurns(*pair) for host, pair in pyramid_source_limits().items()}
+        supervisor = Supervisor(
+            WorkerConfig.from_environ(), app.state.store, pyramids=pyramid_hosts(), source_limits=limits
+        )
         await run_in_threadpool(supervisor.start)
     except (WorkerConfigError, RuntimeError, ValueError) as exc:
         # Our own texts: they name a variable or a missing migration, never a value.

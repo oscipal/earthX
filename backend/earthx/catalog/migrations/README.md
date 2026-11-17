@@ -76,7 +76,12 @@ von `catalog-load`, gelesen von `api` je Seite.
 `earthx_source_lease` (ein Platz je laufender Anfrage, nummeriert bis zur Grenze, mit Frist und Herzschlag). Für
 `materialize`, den Harvester und den Pyramidenbau über alle Instanzen; geschrieben je Anfrage auf einer eigenen
 Verbindung im Autocommit. Die Regeln liegen als Funktionen `earthx_source_*` in derselben Datei (`CREATE OR REPLACE`),
-damit `catalog` und `jobs`, die kein gemeinsames Modul importieren dürfen, dieselben aufrufen.
+damit `catalog` und `jobs`, die kein gemeinsames Modul importieren dürfen, dieselben aufrufen. Änderungen an diesen
+Regeln kommen nur per neuer Migration (Otto, 16.11.2026).
+
+`023_source_account.sql` — die Funktion `earthx_source_account` aus M5-37 PR 2: Ein Pyramidenbau nimmt vor jeder Datei
+einen Zug; die Anfragen, die GDAL für die Datei stellte, verrechnet sie danach mit dem Zug des Hosts (wie
+`gateway.HostPacer.account`), ohne bei null Anfragen etwas zurückzugeben.
 
 Die Buchführungstabelle `earthx_migrations` gehört nicht hierher, sondern dem Läufer
 (`earthx/catalog/schema.py`) und wird von ihm angelegt. Sonst müsste jedes
