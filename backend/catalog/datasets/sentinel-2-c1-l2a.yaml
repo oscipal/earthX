@@ -567,8 +567,9 @@ index_presets:
 # NM4-64 (Otto 31.10.2026): the picture the eye sees, B04, B03, B02 at 10 m.
 true_color: [red, green, blue]
 # M5-14 (Otto 17.11.2026, F2, F4; adr/0030 §5.1): two common band combinations, each channel with a fixed range of
-# reflectance (nir 0-0.5, red and green 0-0.3, swir22 0-0.4); "Enhance contrast" stretches them on request. False colour
-# infrared shows vegetation red; SWIR shows burnt areas and bare soil.
+# reflectance (nir and nir08 0-0.5, red and green 0-0.3, swir22 0-0.4); "Enhance contrast" stretches them on request. False
+# colour infrared shows vegetation red; SWIR shows burnt areas and bare soil. SWIR is the usual B12, B8A, B04 (Otto, 17.11.2026,
+# Nachtrag to adr/0030 §5.1), so its green is `nir08`, not `nir`.
 composite_presets:
 - name: false_colour_ir
   title: False colour (IR)
@@ -580,7 +581,7 @@ composite_presets:
 - name: swir
   title: SWIR
   red: swir22
-  green: nir
+  green: nir08
   blue: red
   rescale: [[0.0, 0.4], [0.0, 0.5], [0.0, 0.3]]
   reference: https://custom-scripts.sentinel-hub.com/custom-scripts/sentinel-2/swir-rgb/

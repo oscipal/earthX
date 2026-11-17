@@ -69,7 +69,7 @@ Prüfung in `catalog`: Form, Name, `op` als Text; die gelesenen Bänder (aus `pa
 ### 3.3 Einträge (Inhalt nach F2, F3)
 
 - `cop-dem-glo-30`, `swissalti3d`, `bev-als-dgm`: `step_presets` „Hillshade“, „Slope“ und „Aspect“ (F2 = 2) auf dem Höhenband (`data`, `dtm`, je Eintrag); `composite_presets: []`.
-- `sentinel-2-c1-l2a`: `composite_presets` „False colour (IR)“ (`nir`, `red`, `green`) und „SWIR“ (`swir22`, `nir`, `red`) nach `adr/0030` §5.1; `step_presets: []`.
+- `sentinel-2-c1-l2a`: `composite_presets` „False colour (IR)“ (`nir`, `red`, `green`) und „SWIR“ (`swir22`, `nir08`, `red`, Antwort Otto 17.11.2026) nach `adr/0030` §5.1; `step_presets: []`.
 - Sentinel-1 GRD, WorldCover 2020/2021: beide leer.
 - Kommentare in den YAML-Dateien nennen Quelle und Entscheidung wie bei den Index-Presets.
 
@@ -151,7 +151,7 @@ Umgesetzt nach §3 und §4 mit F1–F5 aus §8a. Befunde und Auslegungen, gelten
 - **Abweichung von §3.1:** Jeder Kanal eines Komposits wird ein `band_math`-Schritt (`<name>_r`, `_g`, `_b`), auch ein reiner Bandname. Grund: Die Kachel nimmt `band` nur hinter Schritten an (`api/tiler.py`, „band is for tiles with op“). Ein Komposit braucht deshalb immer `band_math`.
 - Ein Name gilt einmal über Index-, Komposit- und Schritt-Presets (Groß- und Kleinschreibung gleich) und darf kein Band der Daten sein. Knopftitel höchstens 24 Zeichen.
 - `processing/quick_presets.py` prüft beim Start von `api`: Operator und Version gelistet; T1, Art `pixel` oder `focal`; Parameter durch das Modell; `applicable()`; das hinzugefügte Band heißt wie das Preset; gelesene Bänder gehören zu den Daten; der Operator hat einen Look, dessen Colormap der Tiler kennt.
-- Quellen der Komposite: Sentinel Hub Custom Scripts („False color infrared“, „SWIR“). Die Seiten waren aus der Cloud-Session nicht erreichbar; **bitte die Links prüfen.** Das SWIR-Skript dort nimmt B8A, der Eintrag nach `adr/0030` §5.1 `nir` (B08).
+- Quellen der Komposite: Sentinel Hub Custom Scripts („False color infrared“, „SWIR“). Die Seiten waren aus der Cloud-Session nicht erreichbar. „SWIR“ nimmt wie dort B12, B8A, B04 (`swir22`, `nir08`, `red`; Otto, 17.11.2026, Nachtrag zu `adr/0030` §5.1).
 
 **Frontend**
 - `quickPresets.ts`: ein Preset = Schritte, gelesene Assets, gezeigte Bänder (eines oder drei), Darstellung. Die Index-Wege (`viewIndex.ts`, Mosaik-Auswahl, Übersicht unter `min_zoom`, Statistik, Anheften, Messung der AOI) nehmen es unverändert; `AppliedRender.index` nennt das Preset jeder Art.

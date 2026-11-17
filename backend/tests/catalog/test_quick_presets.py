@@ -62,7 +62,7 @@ class TestTheEntries:
         """F4 = 1 and adr/0030 §5.1."""
         assert [(p.name, p.title, p.channels, p.rescale) for p in SENTINEL_2_L2A.composite_presets] == [
             ("false_colour_ir", "False colour (IR)", ("nir", "red", "green"), ((0.0, 0.5), (0.0, 0.3), (0.0, 0.3))),
-            ("swir", "SWIR", ("swir22", "nir", "red"), ((0.0, 0.4), (0.0, 0.5), (0.0, 0.3))),
+            ("swir", "SWIR", ("swir22", "nir08", "red"), ((0.0, 0.4), (0.0, 0.5), (0.0, 0.3))),
         ]
         assert SENTINEL_2_L2A.step_presets == ()
 
