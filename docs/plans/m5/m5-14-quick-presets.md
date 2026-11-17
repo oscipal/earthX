@@ -174,7 +174,7 @@ Damit gelten Vorgabename und Look in Vorschau, angehefteter Ebene und Ergebnis-L
 
 ### 9.1 Prüfanleitung für Otto
 
-1. `main` mit diesem Branch lokal, `docker compose up`, Datensätze neu laden (`load`), damit die Collections die neuen Felder tragen.
+1. Diesen Branch lokal, `docker compose build`, dann `docker compose up`. `catalog-load` läuft vor `api` und schreibt die Collections mit den neuen Feldern.
 2. GLO-30 öffnen, Szene ansehen: unter „Quick processing“ stehen „Hillshade“, „Slope“, „Aspect“. Jeweils klicken, „Apply“:
    - Hillshade in Grau (beleuchtete Hänge hell);
    - Slope grün bis rot;
