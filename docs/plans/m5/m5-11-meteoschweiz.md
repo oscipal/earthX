@@ -1,6 +1,6 @@
 # M5-11 — MeteoSchweiz-Klimagitter über virtuelle Verweise
 
-**Stand:** 17.11.2026, Plan **angenommen** (Otto, 17.11.2026: F1–F7 = 1, F8 mit Vorgabe, F9 = nein; §9.2). PR 1 umgesetzt in diesem Draft-PR (§10). PR 2 folgt nach dem Merge von PR 1 in einer neuen Session.
+**Stand:** 17.11.2026, Plan **angenommen** (Otto, 17.11.2026: F1–F7 = 1, F8 mit Vorgabe, F9 = nein; §9.2). PR 1 umgesetzt in diesem Draft-PR (§10), Antworten Otto dazu in §10.5. PR 2 folgt nach dem Merge von PR 1 in einer neuen Session.
 **Stufe B.** Zwei PRs (Vorgabe Otto, M5-Plan §2 Punkt 11): **PR 1** Verweise und Lesen, **PR 2** Datensatz MeteoSchweiz.
 **Aufgabe:** M5-11 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2 (Opus, hoch).
 **Grundlagen:** `adr/0029` (Leseweg NetCDF, F1–F7 = 1, §8a, §10 Punkt 1–4), `adr/0030` §5.6 und F10, `adr/0032` §7 und Backlog 29 (Prüfpunkt Mosaik-Zoom), `adr/0023` §3.1 (Lizenz MeteoSchweiz), `adr/0026` (Bewertungs-Set, Kürzel MCH), `adr/0002` (keine Live-Abrufe aus der Session), `KLAERUNGEN.md` B8, B9, B10–B13, Entscheidungslog 11.11.2026 (Ausgabetyp, Wiedervorlage `float64`).
@@ -438,14 +438,14 @@ license:
   attribution_required: true
   tier: processing
   attribution_unmodified: "Source: MeteoSwiss"
-  attribution_modified: "Source: MeteoSwiss"        # siehe unten
+  attribution_modified: "Source: MeteoSwiss (modified)"   # Otto, 17.11.2026, wie swissALTI3D
   terms:
     url: https://opendatadocs.meteoswiss.ch/general/terms-of-use
     notice: …                                        # Wortlaut aus den Bedingungen, in PR 2 von Otto bestätigt
 legal_status: cleared
 ```
 
-- **Offen für PR 2:** Bei swissALTI3D und WorldCover heißt die Attribution bearbeiteter Daten „… (modified)“ (Form aus `adr/0023` §7.2). Deine Vorgabe nennt nur „Source: MeteoSwiss“. Darum setzt der Vorschlag beide gleich; ob „Source: MeteoSwiss (modified)“ gelten soll, bestätigst du in PR 2. Die Bedingungen verlangen, dass die Quellenangabe nicht wie eine Unterstützung durch MeteoSchweiz aussieht (`adr/0023` §3.1).
+- **Entschieden für PR 2 (Otto, 17.11.2026):** Bearbeitete Daten tragen „Source: MeteoSwiss (modified)“, wie bei swissALTI3D (Form aus `adr/0023` §7.2); unbearbeitete „Source: MeteoSwiss“. Die Bedingungen verlangen, dass die Quellenangabe nicht wie eine Unterstützung durch MeteoSchweiz aussieht (`adr/0023` §3.1).
 - Kommt der Lizenzkatalog mit M5-20, erhält er einen Eintrag „opendata.swiss BY / Nutzungsbedingungen MeteoSchweiz“ mit der URL der Bedingungen in `matches`. Das wird dort entschieden.
 
 ---
@@ -486,9 +486,18 @@ legal_status: cleared
 | übrige Texte im Wheel (LZF-Filter, PyTables-Teile, `stdint`, Python) | BSD- bzw. PSF-artig | `licenses/` im Wheel |
 
 - Alle sind mit AGPL-3.0-or-later vereinbar [A].
-- **Befund:** Bei Binärweitergabe verlangt BSD-2-Clause den Lizenztext. Das Image gibt `libaec` weiter, ohne dass sein Text im Paket liegt. Vorschlag: den Text von `libaec` in einer Folgeaufgabe in die Hinweise des Images aufnehmen. Wo die Hinweise zu Python-Paketen stehen sollen, ist nicht festgelegt; `backend/THIRD_PARTY_NOTICES.md` gilt bisher nur für Daten. Ich habe dort nichts eingetragen.
+- **Befund und Lösung (Otto, 17.11.2026: in diesem PR, keine Folgeaufgabe):** BSD-2-Clause verlangt den Text bei jeder Weitergabe als Binärdatei; das Wheel von `h5py` bringt `libaec` 1.1.4 (`libaec-*.so.0.1.4`) ohne ihn mit. Das Wheel von `rasterio` tut dasselbe schon länger (`libaec-*.so.0.1.7`). Der Text von `LICENSE.txt` beim Tag `v1.1.4` des Projekts (DKRZ) liegt jetzt unverändert in `backend/licenses/libaec-LICENSE.txt`; das Image kopiert `backend/licenses/` nach `/app/licenses/` (auch das Runner-Image, `FROM app`), `backend/THIRD_PARTY_NOTICES.md` nennt die Datei, `backend/tests/test_bundled_licenses.py` hält Datei, Wheels und `COPY` zusammen. Den Bau des Images prüft Ottos `docker compose run --build`; die Session hat keinen Docker-Dienst.
 - `kerchunk`, `virtualizarr`, `fsspec`-HTTP und `obstore` sind nicht dazugekommen. Die Lock-Datei bekommt nur `h5py` (NumPy ist schon da).
 
 ### 10.4 Was Otto jetzt lokal ausführen kann
 
 §7 Schritte 0 und 1: Branch holen, dann `meteoswiss-probe --assets` und `--layout`. Die Ausgabe kommt in diesen PR, sie entscheidet §5.7 (`float64`) und die Zeitgrenzen der Items für PR 2.
+
+### 10.5 Antworten von Otto zu PR 1 (17.11.2026)
+
+1. Umfang (rund 1 300 Zeilen ohne Tests): hingenommen.
+2. `libaec`: Lizenztext in diesem PR ins Image bzw. zu den mitgelieferten Lizenzen, keine Folgeaufgabe → §10.3.
+3. Cache nach einem Austausch der Datei (gecachte Chunks im Stand des Items, übrige `502` bis zum Neuverweis): bestätigt.
+4. A9–A13 gelten.
+5. Attribution bearbeiteter Daten in PR 2: „Source: MeteoSwiss (modified)“ → §9.3.
+6. Otto lässt `meteoswiss-probe --assets` und `--layout` laufen und hängt die Ausgabe an den PR; ausgewertet wird sie in PR 2 (§5.7 `float64`, Zeitgrenzen der Items).
