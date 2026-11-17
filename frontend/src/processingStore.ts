@@ -183,7 +183,7 @@ import { datesOfIds, knownItems } from './layerDate';
 import { resamplingParts } from './resamplingWarning';
 import type { MapLayer } from './layers';
 import { indexOrdersOfScenes, presetOfLayer } from './indexDownload';
-import type { QuickPreset } from './quickPresets';
+import { compositeAmong, type MadeBand, type QuickPreset } from './quickPresets';
 import { selectionItemsFrom, shownImageOf, ticksOfOpen, useAppStore, viewImagesOf, type AppState } from './store';
 import { buildGroups } from './grouping';
 import { stackLikeView } from './mosaic';
@@ -524,7 +524,8 @@ export interface OrderView {
   aoi: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
   inner: boolean;
   outside: boolean;
-  // `earthx:true_color` of the dataset: red, green, blue; `null` where it has no colour picture (NM4-64).
+  // The three bands of the colour picture "RGB", red, green, blue: those of a composite of the dataset where Band math steps make its
+  // channels into the output (M5-14 PR B), else `earthx:true_color`; `null` where there is no colour picture (NM4-64).
   trueColor: [string, string, string] | null;
   info: ProcessInfo | null;
   // The scenes the order can be for — all selected ones, or those the AOI meets
@@ -681,6 +682,10 @@ const keptOf = (p: Pick<ProcessingState, 'fixed'>): ReadonlyMap<number, Measured
 
 const anewOf = (p: Pick<ProcessingState, 'fixed'>): ReadonlySet<number> | undefined => (p.fixed?.result ? new Set(p.fixed.result.anew) : undefined);
 
+// The bands the Band math steps of a draft make into the output, with their expressions.
+const madeBands = (steps: readonly DraftStep[], inOutput: ReadonlySet<string>): MadeBand[] =>
+  steps.flatMap((step) => (step.op === 'band_math' && inOutput.has(resultNameOf(step)) ? [{ name: resultNameOf(step), expression: String(step.values.expression ?? '') }] : []));
+
 export function orderView(selection: SelectionState, p: ProcessingState): OrderView {
   const scenes = withExtraScenes(selection, p.extraScenes);
   // What an entry fixed is the order's area, whatever the map holds; but in the panel of a result "AOI only" is the map's AOI, inside
@@ -794,7 +799,7 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
     info,
     candidates,
     passes,
-    trueColor: trueColorOf(dataset?.collection),
+    trueColor: compositeAmong(dataset?.collection, madeBands(p.steps, inOutput))?.bands ?? trueColorOf(dataset?.collection),
     pass,
     runChoices: runOptions,
     runAs,

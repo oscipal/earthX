@@ -35,6 +35,7 @@ import { MOSAIC_TILE_SIZE, TILE_SIZE, tileMetres } from './tileSize';
 import { canonicalJson, type Order } from './processing';
 import { lookOfStep, lookRange, type DisplayLook } from './displayLook';
 import { indexPresetsOf, presetFor, presetRange } from './indexPresets';
+import { compositeAmong } from './quickPresets';
 import { addsBand, assetsCarrying, bandLabel, isBandMath, resultNameOf, resultsOf, RGB, startBand } from './processingBands';
 import {
   bandsOf,
@@ -212,8 +213,8 @@ export interface PreviewRead {
   // on top where the dataset has a colour picture and its three bands are in the output (NM4-64).
   choices: string[];
   // The band the tile shows: the one the person picked while it is among the choices, else the result added last (the
-  // step created last, not the last of the chain), else the first choice (RGB, where it is offered); `null` for an empty
-  // output, where the tiler shows what it shows by itself.
+  // step created last, not the last of the chain), else the first choice (RGB, where it is offered); RGB before all where it is a
+  // composite the steps make (M5-14 PR B); `null` for an empty output, where the tiler shows what it shows by itself.
   band: string | null;
   // The bands the tile is asked for (`band=`): that one, the three of the colour picture for "RGB", none without a band.
   bands: string[];
@@ -232,15 +233,18 @@ export function previewRead(args: {
   // The steps the map draws, in order.
   steps: readonly DraftStep[];
   pick: string | null;
-  // `earthx:true_color` of the dataset (red, green, blue), `null` where it has none.
+  // The three bands of the colour picture (red, green, blue, `OrderView.trueColor`), `null` where there is none.
   trueColor: readonly string[] | null;
 }): PreviewRead {
   const { output, dataNames, sources, maskAsset, all, steps, pick, trueColor } = args;
   const kept = new Set(output);
   const results = resultsOf(steps).filter((result) => kept.has(result.name));
-  const colour = trueColor !== null && trueColor.length === 3 && trueColor.every((name) => kept.has(name) && dataNames.includes(name));
+  // The three bands of the colour picture: of the data, or the channels of a composite the steps make (M5-14 PR B).
+  const colour = trueColor !== null && trueColor.length === 3 && trueColor.every((name) => kept.has(name) && (dataNames.includes(name) || results.some((result) => result.name === name)));
   const choices = [...(colour ? [RGB] : []), ...results.map((result) => result.name), ...output.filter((name) => dataNames.includes(name))];
-  const band = pick !== null && choices.includes(pick) ? pick : startBand(choices, results.map((r) => ({ name: r.name, created: r.key })));
+  // A composite the steps make is what the preview starts with: its channels alone are no picture of it (M5-14 PR B).
+  const composite = colour && trueColor.some((name) => !dataNames.includes(name));
+  const band = pick !== null && choices.includes(pick) ? pick : composite ? RGB : startBand(choices, results.map((r) => ({ name: r.name, created: r.key })));
   if (band === null) return { choices, band, bands: [], assets: [...all] };
   const bands = band === RGB ? [...trueColor!] : [band];
   const carried = new Set(assetsCarrying(sources, bands.flatMap((name) => [...namesNeeded(steps, name)])));
@@ -595,7 +599,7 @@ export function previewSpec(args: {
     sceneMeasure,
     areaOrder,
     expression: plan.steps.some(({ step }) => isBandMath(step) && (band === null || resultNameOf(step) === band)),
-    preset: presetOfBand(dataset, plan, band) ?? fixedLookOf(lookOfBand(plan, band)),
+    preset: presetOfBand(dataset, plan, band, args.bands ?? []) ?? fixedLookOf(lookOfBand(plan, band)),
     look: lookOfBand(plan, band),
     mosaics,
     scenes,
@@ -609,9 +613,17 @@ export function previewSpec(args: {
   };
 }
 
-// The look of the preset whose expression the band `band` has, if it is a result of a Band math step of the chain.
-function presetOfBand(dataset: DatasetOption, plan: Extract<PreviewPlan, { state: 'ready' }>, band: string | null): PreviewRange | null {
-  if (band === null || band === RGB) return null;
+// The look of the preset whose expression the band `band` has, if it is a result of a Band math step of the chain; for "RGB", the
+// ranges of the composite whose channels `bands` are (M5-14 PR B).
+function presetOfBand(dataset: DatasetOption, plan: Extract<PreviewPlan, { state: 'ready' }>, band: string | null, bands: readonly string[]): PreviewRange | null {
+  if (band === RGB) {
+    const made = plan.steps.flatMap(({ step, params }) => (isBandMath(step) ? [{ name: String(params.name), expression: params.expression as string }] : []));
+    const composite = compositeAmong(dataset.collection, made);
+    if (!composite || composite.bands.some((name, at) => name !== bands[at])) return null;
+    const [first] = composite.channels;
+    return { vmin: first.vmin, vmax: first.vmax, colormap: '', channels: composite.channels };
+  }
+  if (band === null) return null;
   const made = plan.steps.find(({ step }) => isBandMath(step) && resultNameOf(step) === band);
   const preset = presetFor(indexPresetsOf(dataset.collection), made?.params.expression as string | undefined);
   return preset ? presetRange(preset) : null;
