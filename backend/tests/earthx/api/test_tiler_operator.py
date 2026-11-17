@@ -62,6 +62,7 @@ NO_BAND_MATH = replace(
     dataset_id="synthetic-no-band-math",
     capabilities=replace(COG_DATASET.capabilities, band_math=False),
     index_presets=(),
+    composite_presets=(),
 )
 REGISTRY = DatasetRegistry((COG_DATASET, ZARR_DATASET, DISPLAY_ONLY, NO_BAND_MATH))
 

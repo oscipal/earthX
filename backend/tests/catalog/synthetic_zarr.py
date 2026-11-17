@@ -98,6 +98,8 @@ SYNTHETIC_ZARR: DatasetConfig = replace(
     search_capabilities=SearchCapabilities(evaluate=False, aoi_coverage=False),
     index_presets=(),
     true_color=(),
+    composite_presets=(),
+    step_presets=(),
 )
 
 TEST_ENTRIES: tuple[DatasetConfig, ...] = (*REGISTRY, SYNTHETIC_ZARR)
