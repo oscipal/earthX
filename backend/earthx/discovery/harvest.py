@@ -12,8 +12,9 @@ host are shared with every other run and instance (M5-37), ``robots.txt`` is obe
 source through its row with a lease it renews after every page (plan A1). :func:`run_harvest` is the whole run against
 an open connection and an open gateway; :func:`main` builds them.
 
-``--reextract`` derives the intermediate form anew from the kept raw answers, without a request (plan A4). ``--full``
-asks for the whole listing where a source knows an incremental one (CKAN, PR 2); a STAC listing is always whole.
+``--reextract`` derives the intermediate form anew from the kept raw answers, without a request (plan A4). A CKAN source
+is read incrementally (packages changed since the last done run, less an hour) unless ``--full`` is given or its last
+full run lies ``full_every_days`` back; only a full run marks finds ``gone`` (A3). A STAC listing is always whole.
 """
 
 from __future__ import annotations
@@ -23,8 +24,9 @@ import asyncio
 import hashlib
 import json
 import sys
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Any
 
 import psycopg
@@ -38,6 +40,7 @@ from earthx.catalog.harvest_store import (
     SourceSummary,
     canonical,
     finish_run,
+    last_runs,
     list_validators,
     mark_gone,
     previous,
@@ -52,9 +55,10 @@ from earthx.catalog.harvest_store import (
 from earthx.catalog.hosts import HostLimit
 from earthx.catalog.registry import ConfigError
 from earthx.catalog.sources import SourceConfig, SourceProtocol, read_sources
-from earthx.discovery.extract import Invalid, ShapeError, extracted_sha256
+from earthx.discovery.ckan import INCREMENTAL_OVERLAP, CkanListing, ckan_pages, extract_package
+from earthx.discovery.extract import Extracted, Invalid, ShapeError, extracted_sha256, extractor_version
 from earthx.discovery.source_gateway import open_source_gateway
-from earthx.discovery.stac import StacListing, extract_collection, extractor_version, stac_pages
+from earthx.discovery.stac import StacListing, extract_collection, stac_pages
 from earthx.gateway import (
     Gateway,
     GatewayError,
@@ -83,16 +87,27 @@ def _renew(conn: psycopg.Connection, run_id: int) -> None:
         raise _LeaseLost
 
 
+_EXTRACTORS: Mapping[SourceProtocol, Callable[[str, Any, SourceConfig], Extracted]] = {
+    SourceProtocol.STAC_API: extract_collection,
+    SourceProtocol.CKAN: extract_package,
+}
+
+
 @dataclass(frozen=True, slots=True)
 class HarvestResult:
     run_id: int
+    #: ``full``, ``incremental`` or ``reextract``.
+    kind: str
     status: str
     stop_reason: str | None
     counts: RunCounts
     #: The state of the source's finds after the run (Otto, 17.11.2026: the report says the state, not only this run).
     summary: SourceSummary
-    #: Collections without a usable id: counted, never stored, since they have no key.
+    #: Finds without a usable id: counted, never stored, since they have no key.
     without_key: int = 0
+    #: Why a run that ended ``done`` did not look for finds that are gone: ``incremental``, or ``listing_moved``
+    #: where a CKAN listing changed its count while it was read (a package may have been skipped).
+    gone_unchecked: str | None = None
 
 
 @dataclass(slots=True)
@@ -100,9 +115,13 @@ class _Run:
     conn: psycopg.Connection
     source: SourceConfig
     run_id: int
+    kind: str
+    #: The lower bound of ``metadata_modified`` of an incremental CKAN run.
+    since: datetime | None
     counts: RunCounts
     version: str
     without_key: int = 0
+    gone_unchecked: str | None = None
 
 
 class _Fetcher:
@@ -111,11 +130,13 @@ class _Fetcher:
     def __init__(self, gateway: Gateway, counts: RunCounts, budget: int) -> None:
         self._gateway, self._counts, self._budget = gateway, counts, budget
 
-    async def __call__(self, url: str, *, headers: Mapping[str, str] | None = None) -> GatewayResponse:
+    async def __call__(
+        self, url: str, *, params: Mapping[str, str | int] | None = None, headers: Mapping[str, str] | None = None
+    ) -> GatewayResponse:
         if self._counts.requests >= self._budget:
             raise _BudgetSpent
         self._counts.requests += 1
-        response = await self._gateway.get(url, headers=headers)
+        response = await self._gateway.get(url, params=params, headers=headers)
         self._counts.bytes += len(response.content)
         if response.status_code == 304:
             self._counts.not_modified += 1
@@ -140,7 +161,7 @@ def _record(
         if not isinstance(document, dict):
             raise Invalid("shape")
         try:
-            found = extract_collection(key, document, run.source)
+            found = _EXTRACTORS[run.source.protocol](key, document, run.source)
         except (TypeError, ValueError, AttributeError, KeyError, IndexError):
             # One find of a foreign shape must not end the run for every other one (review of PR 1).
             raise Invalid("shape") from None
@@ -171,12 +192,23 @@ def _record(
     )
 
 
+def _listing(
+    run: _Run, fetch: _Fetcher
+) -> tuple[StacListing | CkanListing, AsyncIterator[list[tuple[str | None, Any]]]]:
+    conn, source = run.conn, run.source
+    if source.protocol is SourceProtocol.STAC_API:
+        stac = StacListing()
+        return stac, stac_pages(fetch, source, list_validators(conn, source.source_id), stac)
+    ckan = CkanListing(full=run.kind == "full")
+    return ckan, ckan_pages(fetch, source, run.since, ckan)
+
+
 async def _fetch_and_extract(run: _Run, fetch: _Fetcher) -> None:
     conn, source = run.conn, run.source
-    listing = StacListing()
-    # A collection that moves between pages while the listing is read comes twice; only its first answer counts.
+    listing, pages = _listing(run, fetch)
+    # A find that moves between pages while the listing is read comes twice; only its first answer counts.
     taken: set[str] = set()
-    async for page in stac_pages(fetch, source, list_validators(conn, source.source_id), listing):
+    async for page in pages:
         finds = []
         for key, document in page:
             if key is None:
@@ -213,6 +245,8 @@ async def _fetch_and_extract(run: _Run, fetch: _Fetcher) -> None:
         run.counts.gone = mark_gone(conn, run_id=run.run_id, source_id=source.source_id)
         if listing.validators is not None:
             save_list_validators(conn, source.source_id, listing.validators)
+    elif isinstance(listing, CkanListing):
+        run.gone_unchecked = "listing_moved" if listing.full else "incremental"
 
 
 def _reextract(run: _Run, *, outdated_only: bool) -> int:
@@ -240,18 +274,36 @@ def _reextract(run: _Run, *, outdated_only: bool) -> int:
     return evaluated
 
 
+def _kind(
+    conn: psycopg.Connection, source: SourceConfig, *, full: bool, reextract: bool
+) -> tuple[str, datetime | None]:
+    """The kind of the run and, for an incremental one, its lower bound of ``metadata_modified``: ``full`` for a STAC
+    source, for ``--full``, and for a CKAN source without a done full run or whose last one started
+    ``full_every_days`` ago or earlier; else ``incremental`` from the start of the last done run less an hour."""
+    if reextract:
+        return "reextract", None
+    if full or source.protocol is not SourceProtocol.CKAN:
+        return "full", None
+    last = last_runs(conn, source.source_id)
+    if last.last_started is None or last.last_full_started is None:
+        return "full", None
+    if last.now >= last.last_full_started + timedelta(days=source.full_every_days):
+        return "full", None
+    return "incremental", last.last_started - INCREMENTAL_OVERLAP
+
+
 async def run_harvest(
-    conn: psycopg.Connection, source: SourceConfig, *, gateway: Gateway | None, reextract: bool = False
+    conn: psycopg.Connection,
+    source: SourceConfig,
+    *,
+    gateway: Gateway | None,
+    reextract: bool = False,
+    full: bool = False,
 ) -> HarvestResult:
     """One run of ``source``; ``conn`` in autocommit. :class:`HarvestBusy` while another run holds the source."""
-    if source.protocol is not SourceProtocol.STAC_API:
-        raise ConfigError(f"{source.source_id}: the protocol {source.protocol.value} comes with M5-19 PR 2")
+    kind, since = _kind(conn, source, full=full, reextract=reextract)
     run = _Run(
-        conn,
-        source,
-        start_run(conn, source.source_id, "reextract" if reextract else "full"),
-        RunCounts(),
-        extractor_version(source),
+        conn, source, start_run(conn, source.source_id, kind), kind, since, RunCounts(), extractor_version(source)
     )
     status, stop_reason = "done", None
     try:
@@ -283,7 +335,16 @@ async def run_harvest(
     run.counts.invalid = sum(summary.invalid.values())
     run.counts.extent_unknown = summary.extent_unknown
     finish_run(conn, run.run_id, status=status, stop_reason=stop_reason, counts=run.counts)
-    return HarvestResult(run.run_id, status, stop_reason, run.counts, summary, run.without_key)
+    return HarvestResult(
+        run.run_id,
+        kind,
+        status,
+        stop_reason,
+        run.counts,
+        summary,
+        run.without_key,
+        run.gone_unchecked if status == "done" else None,
+    )
 
 
 def _policy_for(source: SourceConfig, hosts: Mapping[str, HostLimit]) -> Policy:
@@ -307,6 +368,14 @@ _STOP_TEXT = {
 }
 
 
+_KIND_TEXT = {"full": "voll", "incremental": "inkrementell", "reextract": "neu abgeleitet"}
+
+_GONE_TEXT = {
+    "incremental": "weg nicht geprüft (inkrementell)",
+    "listing_moved": "weg nicht geprüft (Liste hat sich während des Laufs geändert)",
+}
+
+
 _REASON_TEXT = {
     "no_link": "ohne gültigen Link",
     "no_title": "ohne Titel",
@@ -325,12 +394,13 @@ def report(source_id: str, result: HarvestResult) -> str:
     invalid = sum(s.invalid.values())
     reasons = ", ".join(f"{_REASON_TEXT.get(reason, reason)} {count}" for reason, count in s.invalid.items())
     skipped = f", ohne Kennung übersprungen {result.without_key}" if result.without_key else ""
+    gone = _GONE_TEXT[result.gone_unchecked] if result.gone_unchecked else f"weg {c.gone}"
     lines = [
-        f"{source_id}: Lauf {result.run_id} {result.status}"
+        f"{source_id}: Lauf {result.run_id} ({_KIND_TEXT[result.kind]}) {result.status}"
         + (f" ({_STOP_TEXT[result.stop_reason]})" if result.stop_reason else ""),
         f"  Anfragen {c.requests}, davon 304: {c.not_modified}; {c.bytes / 1e6:.1f} MB",
         f"  Dieser Lauf: neu {c.found_new}, geändert {c.found_changed}, unverändert {c.found_unchanged},"
-        f" weg {c.gone}{skipped}",
+        f" {gone}{skipped}",
         f"  Stand der Quelle: gültig {s.extracted} (davon Ausdehnung unbekannt {s.extent_unknown}),"
         f" ungültig {invalid}" + (f" ({reasons})" if reasons else ""),
     ]
@@ -340,17 +410,19 @@ def report(source_id: str, result: HarvestResult) -> str:
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Harvest one source of the seed (M5-19).")
     parser.add_argument("source_id", help="a source of backend/catalog/sources/, e.g. fsdi-stac")
-    parser.add_argument("--full", action="store_true", help="the whole listing where the source has an incremental one")
+    parser.add_argument("--full", action="store_true", help="the whole listing of a CKAN source, not only its changes")
     parser.add_argument("--reextract", action="store_true", help="extract again from the kept raw answers, no request")
     return parser.parse_args(argv)
 
 
-async def _main_async(source: SourceConfig, hosts: Mapping[str, HostLimit], *, reextract: bool) -> HarvestResult:
+async def _main_async(
+    source: SourceConfig, hosts: Mapping[str, HostLimit], *, reextract: bool, full: bool
+) -> HarvestResult:
     with psycopg.connect(autocommit=True) as conn:
         if reextract:
             return await run_harvest(conn, source, gateway=None, reextract=True)
         async with open_source_gateway(_policy_for(source, hosts)) as gateway:
-            return await run_harvest(conn, source, gateway=gateway)
+            return await run_harvest(conn, source, gateway=gateway, full=full)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -371,7 +443,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"harvest failed: the source {args.source_id!r} is held (enabled: false)", file=sys.stderr)
         return 1
     try:
-        result = asyncio.run(_main_async(source, hosts, reextract=args.reextract))
+        result = asyncio.run(_main_async(source, hosts, reextract=args.reextract, full=args.full))
     except (HarvestBusy, ConfigError) as error:
         print(f"harvest failed: {error}", file=sys.stderr)
         return 1

@@ -9,9 +9,9 @@ import pytest
 
 from earthx.catalog.registry import Maturity
 from earthx.catalog.sources import SourceConfig, SourceProtocol, StacFilter
-from earthx.discovery.extract import Invalid, extracted_sha256
+from earthx.discovery.extract import Invalid, extracted_sha256, extractor_version
 from earthx.discovery.links import LinkRank
-from earthx.discovery.stac import collection_key, extract_collection, extractor_version
+from earthx.discovery.stac import collection_key, extract_collection
 
 SOURCE = SourceConfig(
     source_id="example-stac",

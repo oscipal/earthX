@@ -11,6 +11,7 @@ import gzip
 import json
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, fields
+from datetime import datetime
 from typing import Any
 
 import psycopg
@@ -20,12 +21,14 @@ __all__ = [
     "LEASE_S",
     "MAX_RAW_BYTES",
     "HarvestBusy",
+    "LastRuns",
     "ListValidators",
     "Previous",
     "RunCounts",
     "SourceSummary",
     "canonical",
     "finish_run",
+    "last_runs",
     "list_validators",
     "mark_gone",
     "previous",
@@ -68,6 +71,15 @@ class RunCounts:
 class ListValidators:
     etag: str | None
     last_modified: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class LastRuns:
+    """When the last done runs of a source that asked it started, by the clock of the database, and that clock now."""
+
+    last_started: datetime | None
+    last_full_started: datetime | None
+    now: datetime
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,6 +144,18 @@ def finish_run(
         f" finished_at = clock_timestamp(), {assignments} WHERE run_id = %(run_id)s AND status = 'running'",
         {"status": status, "stop_reason": stop_reason, "run_id": run_id, **{n: getattr(counts, n) for n in names}},
     )
+
+
+def last_runs(conn: psycopg.Connection, source_id: str) -> LastRuns:
+    """The starts of the last done run and of the last done full run of ``source_id``; a re-extract asks nothing and
+    does not count."""
+    row = conn.execute(
+        "SELECT max(started_at) FILTER (WHERE kind IN ('full', 'incremental')),"
+        " max(started_at) FILTER (WHERE kind = 'full'), clock_timestamp()"
+        " FROM public.earthx_harvest_run WHERE source_id = %s AND status = 'done'",
+        (source_id,),
+    ).fetchone()
+    return LastRuns(*row)
 
 
 def list_validators(conn: psycopg.Connection, source_id: str) -> ListValidators | None:

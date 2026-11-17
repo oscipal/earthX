@@ -17,8 +17,8 @@ import psycopg
 import pytest
 
 from earthx.catalog.harvest_store import HarvestBusy, start_run
-from earthx.catalog.registry import ConfigError, Maturity
-from earthx.catalog.sources import CkanFilter, SourceConfig, SourceProtocol, StacFilter
+from earthx.catalog.registry import Maturity
+from earthx.catalog.sources import SourceConfig, SourceProtocol, StacFilter
 from earthx.discovery import harvest as harvest_module
 from earthx.discovery.harvest import report, run_harvest
 from earthx.discovery.stac import extract_collection as _extract
@@ -375,12 +375,6 @@ async def test_a_reextract_asks_nothing_and_finds_no_change(db: psycopg.Connecti
     assert (result.status, c.requests, c.found_unchanged, c.found_changed) == ("done", 0, 3, 0)
 
 
-async def test_a_ckan_source_waits_for_pr_2(db: psycopg.Connection, source: SourceConfig) -> None:
-    ckan = replace(source, protocol=SourceProtocol.CKAN, filter=CkanFilter(None, "organization"))
-    with pytest.raises(ConfigError, match="PR 2"):
-        await run_harvest(db, ckan, gateway=_gateway(Catalogue(THREE)))
-
-
 async def test_the_report_names_numbers_never_an_address(db: psycopg.Connection, source: SourceConfig) -> None:
     result = await run_harvest(db, source, gateway=_gateway(Catalogue(THREE)))
     text = report(source.source_id, result)
@@ -412,7 +406,7 @@ async def test_a_new_extractor_version_judges_unchanged_finds_again(
         # The new extractor accepts a collection without a title.
         return _extract(key, {**document, "title": document.get("title") or "Untitled"}, source)
 
-    monkeypatch.setattr(harvest_module, "extract_collection", lenient)
+    monkeypatch.setitem(harvest_module._EXTRACTORS, SourceProtocol.STAC_API, lenient)
     result = await run_harvest(db, source, gateway=_gateway(Catalogue(THREE)))
     assert (result.counts.found_changed, result.counts.found_unchanged) == (1, 2)
     assert _states(db, source)["c"] == ("extracted", None, True)
