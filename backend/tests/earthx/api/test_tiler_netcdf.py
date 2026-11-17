@@ -9,7 +9,8 @@ the fixed title, never an old or new picture.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,7 @@ from fastapi.testclient import TestClient
 from rasterio.warp import transform_bounds
 from rio_tiler.constants import WEB_MERCATOR_TMS, WGS84_CRS
 
+from earthx.api import tiler
 from earthx.api.tiler import build_app
 from earthx.catalog.registry import DataFormat, DatasetRegistry
 from earthx.discovery.netcdf_refs import reference_file, step_references
@@ -64,6 +66,7 @@ def served(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[TestClient,
         return item
 
     app = build_app(DatasetRegistry((CONFIG,)))
+    configure_chunk_cache(TILER_CHUNK_CACHE_BYTES)  # what the lifespan does when the tiler starts serving
     app.state.earthx_item_source = item_source
     app.state.earthx_cache_pool = None
     app.state.earthx_resolver = from_memory
@@ -78,8 +81,27 @@ def tile_path() -> str:
     return f"/collections/{DATASET}/items/{ITEM}/tiles/WebMercatorQuad/{tile.z}/{tile.x}/{tile.y}?asset=TabsD&rescale=-10,30"
 
 
-def test_the_tiler_keeps_chunks(served: tuple[TestClient, Source]) -> None:
-    assert _CACHE.max_bytes == TILER_CHUNK_CACHE_BYTES
+def test_building_the_app_keeps_no_chunks() -> None:
+    """Importing the tiler builds an app; a worker or a test in the same process must keep no chunks (KLAERUNGEN B9)."""
+    configure_chunk_cache(0)
+    build_app(DatasetRegistry((CONFIG,)))
+    assert _CACHE.max_bytes == 0
+
+
+def test_serving_keeps_chunks_and_stopping_lets_them_go(monkeypatch: pytest.MonkeyPatch) -> None:
+    @asynccontextmanager
+    async def no_database() -> AsyncIterator[None]:
+        yield None
+
+    monkeypatch.setattr(tiler, "cache_pool", no_database)
+    app = build_app(DatasetRegistry((CONFIG,)))
+
+    async def serve() -> int:
+        async with tiler._lifespan(app):
+            return _CACHE.max_bytes
+
+    assert asyncio.run(serve()) == TILER_CHUNK_CACHE_BYTES
+    assert _CACHE.max_bytes == 0
 
 
 def test_a_tile_from_one_chunk_request_then_from_the_cache(served: tuple[TestClient, Source]) -> None:

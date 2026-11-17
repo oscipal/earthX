@@ -2342,9 +2342,14 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.earthx_mosaic_selections = None if pool is None else SelectionStore(pool)
         app.state.earthx_results = _result_sources()
         app.state.earthx_overviews = _overview_sources()
+        # The chunks of NetCDF references (adr/0029 A2): a view of one time step asks for the same chunk once per
+        # tile, so the serving process keeps them, as GDAL keeps its `/vsicurl/` blocks (plan M5-11 F6). At the start
+        # of serving, not when the module is imported, so that no other process that imports it keeps any.
+        configure_chunk_cache(TILER_CHUNK_CACHE_BYTES)
         try:
             yield
         finally:
+            configure_chunk_cache(0)
             # The Zarr stores of this process share one gateway (M5-36 §4.2); it ends with the app, not with a store.
             # Closing waits for zarr's own loop, so in a thread, not on this one.
             await run_in_threadpool(close_shared_gateways)
@@ -2408,9 +2413,6 @@ def build_app(
     # loop: a slot taken before the thread pool and a thread that waits for a slot would wait for each other.
     app.state.earthx_read_slots = ReadSlots(policy)
     limit_reads(app.state.earthx_read_slots)
-    # The chunks of NetCDF references (adr/0029 A2): a view of one time step asks for the same chunk once per tile,
-    # so the process keeps them, as GDAL keeps its `/vsicurl/` blocks (plan M5-11 F6).
-    configure_chunk_cache(TILER_CHUNK_CACHE_BYTES)
     # Two profiles, because GDAL reads the size of its `/vsicurl/` cache once per
     # process but `MULTIRANGE` at every call, in the calling thread (NM4-26 §13, §18):
     # the tile routes, statistics, TileJSON, mosaic and result tiles read under the
