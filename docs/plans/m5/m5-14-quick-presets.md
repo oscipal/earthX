@@ -219,3 +219,24 @@ Damit gelten Vorgabename und Look in Vorschau, angehefteter Ebene und Ergebnis-L
 
 Grün am 17.11.2026; der Screenshot liegt nicht im Repo. Nicht geprüft: die ganze Seite gegen echte Daten (die Cloud-Session hat keinen Zugang); dafür §9.1 Punkt 2 mit Drehknopf, Schieber und Einheit.
 
+### 9.3 Browserprüfung Otto (17.11.2026): ruhiges Layout, Zahlen per Tastatur
+
+**Befund:** Beim Drehen des Azimuts verschwand das Histogramm bei jedem Grad und kam wieder. Grund: Jeder Grad war eine neue Frage an die Statistik, und bis zur Antwort gab `useHistograms` nichts zurück. Das Panel sprang um 32 px.
+
+**Behoben:**
+- **Histogramm:** `useHistograms` kennt eine Familie. Dasselbe Bild mit anderen Parameterwerten (Bild, Preset, Zuschnitt) behält die Histogramme der letzten Antwort, bis die neuen da sind. Gefragt wird erst nach 400 ms Ruhe. Ein anderes Bild beginnt wie bisher leer.
+- **Zeichnen:** Eine Parameteränderung setzt Drehknopf, Schieber und Feld sofort. Gezeichnet und gemessen wird nach 300 ms Ruhe, nicht bei jedem Grad.
+- **Zahlenfelder:** Neben Drehknopf und Schieber steht je ein Zahlenfeld mit „°“, schmal und in jeder Zeile gleich breit.
+  - Enter oder Verlassen des Felds übernimmt.
+  - Werte außerhalb werden begrenzt: Azimut 0–360°, 360 = Norden (0), also 400 → 0; Höhe 0–90°, also −5 → 0 und 120 → 90.
+  - Ein Text, der keine Zahl ist, ändert nichts. Ganze Grad.
+  - Drehknopf, Schieber und Feld bleiben synchron.
+  - Gilt für jeden Parameter mit Drehknopf oder Schieber unter „Quick processing“.
+
+**Tests:** `components/useHistograms.test.tsx`, `components/ViewQuickPresets.test.tsx` (unter anderem keine Messung bei Zwischenwerten).
+
+**Browser-Check:** `frontend/e2e/view-params.cjs` mit `view-params-harness.html`: echte Seitenleiste, Store und Stile, Statistik mit Histogramm nach 250 ms, hell und dunkel.
+- Geprüft wird beim langsamen Ziehen über einen halben Kreis, je 5°: Drehknopf, Histogramm, „Quick processing“ und Schieber bewegen sich um keinen Pixel; keine Statistik-Abfrage während des Ziehens; danach eine.
+- Dazu: Zahl neben dem Knopf, getippte Werte samt Begrenzung, kein Scrollen.
+- Grün am 17.11.2026. Gegenprobe mit dem alten `useHistograms` und `store.ts`: rot (Sprung 32 px, Histogramm weg, 27 Abfragen beim Ziehen).
+
