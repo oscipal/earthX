@@ -64,6 +64,7 @@ class TestDiscovery:
             ("021", "listed_entry"),
             ("022", "source_host"),
             ("023", "source_account"),
+            ("024", "harvest"),
         ]
 
     def test_a_missing_directory_is_an_error_not_an_empty_run(self, tmp_path) -> None:
