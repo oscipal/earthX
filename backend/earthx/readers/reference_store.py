@@ -29,6 +29,7 @@ small in-memory store, which is the one place the format is spelled; only chunk 
 from __future__ import annotations
 
 import asyncio
+import functools
 import math
 import re
 import threading
@@ -288,7 +289,9 @@ class ReferenceStore(Store):
         self._refs = refs
         self._policy = policy
         self._resolve = resolve
-        self._local = _metadata(refs)
+        self._local = _metadata(
+            refs.variable, refs.dtype, refs.shape, refs.chunks, refs.filters, refs.fill_value, refs.transform
+        )
         self._remote = {f"{refs.variable}/c/{i}/{j}/{k}": ref for ref in refs.chunk_refs for i, j, k in [ref.index]}
         #: Every request this store has made; read by the tests and by the closing log line of the reader.
         self.request_count = 0
@@ -386,34 +389,46 @@ class ReferenceStore(Store):
 _NO_LISTING = "this store does not list: its keys come from the item's references (adr/0029 F3)"
 
 
-def _metadata(refs: References) -> dict[str, bytes]:
-    """The consolidated Zarr v3 group of one row of chunks, with ``x`` and ``y``, as the bytes of each key."""
+@functools.lru_cache(maxsize=64)
+def _metadata(
+    variable: str,
+    dtype_name: str,
+    shape: tuple[int, int],
+    chunks: tuple[int, int, int],
+    filters: tuple[str, ...],
+    fill_value: float | int | None,
+    transform: tuple[float, float, float, float, float, float],
+) -> dict[str, bytes]:
+    """The consolidated Zarr v3 group of one row of chunks, with ``x`` and ``y``, as the bytes of each key.
+
+    The same for every time step of a grid, so built once per process and layout (about 7 ms each).
+    """
     memory: dict[str, Buffer] = {}
     store = MemoryStore(memory)
-    dtype = numpy.dtype(refs.dtype)
-    rows, columns = refs.shape
+    dtype = numpy.dtype(dtype_name)
+    rows, columns = shape
     attributes: dict[str, Any] = {}
-    if refs.fill_value is not None:
+    if fill_value is not None:
         # In the form xarray reads `_FillValue` of a v3 array; the Zarr `fill_value` alone does not mask (adr/0029 §8a.1).
-        attributes["_FillValue"] = FillValueCoder.encode(dtype.type(refs.fill_value), dtype)
+        attributes["_FillValue"] = FillValueCoder.encode(dtype.type(fill_value), dtype)
     compressors: list[Any] = []
-    if "shuffle" in refs.filters:
+    if "shuffle" in filters:
         compressors.append(zarr.codecs.numcodecs.Shuffle(elementsize=dtype.itemsize))
-    if "zlib" in refs.filters:
+    if "zlib" in filters:
         compressors.append(zarr.codecs.numcodecs.Zlib())
     group = zarr.open_group(store=store, mode="w", zarr_format=3)
     group.create_array(
-        refs.variable,
-        shape=(refs.chunks[0], rows, columns),
-        chunks=refs.chunks,
+        variable,
+        shape=(chunks[0], rows, columns),
+        chunks=chunks,
         dtype=dtype.newbyteorder("="),
-        fill_value=refs.fill_value if refs.fill_value is not None else 0,
+        fill_value=fill_value if fill_value is not None else 0,
         serializer=BytesCodec(endian="big" if dtype.byteorder == ">" else "little"),
         compressors=compressors,
         dimension_names=("time", "y", "x"),
         attributes=attributes,
     )
-    a, _, c, _, e, f = refs.transform
+    a, _, c, _, e, f = transform
     for name, length, origin, step in (("y", rows, f, e), ("x", columns, c, a)):
         axis = group.create_array(name, shape=(length,), dtype="float64", dimension_names=(name,), fill_value=0.0)
         axis[:] = origin + step * (numpy.arange(length, dtype="float64") + 0.5)
