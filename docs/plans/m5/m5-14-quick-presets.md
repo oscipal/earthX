@@ -184,4 +184,38 @@ Damit gelten Vorgabename und Look in Vorschau, angehefteter Ebene und Ergebnis-L
 3. swissALTI3D und BEV ebenso.
 4. Sentinel-2: „False colour (IR)“ und „SWIR“ nach den Indizes. Vegetation erscheint rot bzw. grün; „Enhance contrast“ streckt die drei Kanäle.
 5. Anheften („Add to layers“): Die Ebene zeigt das Preset allein.
-6. Processing-Panel, Schritt „Terrain“: Slope → Hillshade → Aspect. Name und Farbskala folgen jedes Mal, auch nach „Auto-scale“. Ein selbst vergebener Name bleibt.
+6. GLO-30, „Hillshade“: Drehknopf ziehen und mit den Pfeiltasten stellen, Höhe schieben; das Bild folgt sofort, das Licht kommt aus der gewählten Richtung. „Slope“: Degrees/Percent umschalten, der Bereich folgt.
+7. Processing-Panel, Schritt „Terrain“: Slope → Hillshade → Aspect. Name und Farbskala folgen jedes Mal, auch nach „Auto-scale“. Ein selbst vergebener Name bleibt.
+
+### 9.2 Nachtrag Otto (17.11.2026): einstellbare Parameter
+
+**Registry:** `StepPreset.adjustable` nennt die Parameter, die man unter „Quick processing“ ändern kann; der Rest bleibt fest.
+- „Hillshade“: `azimuth`, `altitude`.
+- „Slope“: `slope_unit`.
+- „Aspect“: keine.
+- Prüfung: `catalog` prüft, dass jeder Name in `params` gesetzt ist und keine Bänder nennt; der Start von `api` prüft, dass der Operator ihn kennt.
+- `terrain` kennzeichnet Azimut und Höhe mit `x-earthx-unit: deg`; die Fixtures der Prozessbeschreibungen sind neu geschrieben.
+
+**Frontend:**
+- **Bedienelement aus dem Schema:** Auswahl → Segment-Knöpfe („Degrees“, „Percent“); Winkel `deg` von 0 bis unter 360 → Drehknopf `AngleDial`; Zahl mit zwei Grenzen → Schieber mit Wert, bei `deg` mit „°“.
+- **Drehknopf:** Norden oben, im Uhrzeigersinn. Ziehen im Kreis, Pfeiltasten ±1°, mit Umschalt ±15°, ganze Grad 0–359, Wert daneben. Für Screenreader ist er ein `slider`.
+- **Zeichnen:** Die Werte stehen im Look (`AppliedRender.presetParams`). Damit nehmen Kachel, Mosaik, Übersicht unter `min_zoom`, Messung und angeheftete Ebene sie mit.
+  - Eine Änderung zeichnet sofort, sobald Look und Bereich da sind.
+  - Ist der Bereich gemessen (Hillshade, Slope), wird er 400 ms nach der letzten Änderung neu gemessen und gezeichnet.
+  - Ein erneuter Klick auf das Preset setzt die Werte der Registry zurück.
+- **Angeheftete Ebene:** Eine Ebene eines Schritts zeigt unter „Quick processing“ nur seine Parameter.
+
+**Leitfaden:** Der Drehknopf ist die dritte Ausnahme von „kein eigenes `<svg>`“ (§3, Tabelle §10, `uiRules.test.ts`).
+
+**Tests:** `paramControls.test.ts`, `components/AngleDial.test.tsx`, `components/ViewQuickPresets.test.tsx`, `quickPresets.test.ts`; Backend `test_quick_presets.py`.
+
+**Browser-Check:** `frontend/e2e/preset-params.cjs` mit `preset-params-harness.html`, die echten Bauteile und Stile in der Breite der Seitenleiste, hell und dunkel. Geprüft werden:
+- Ziehen nach N/O/S/W ergibt 0/90/180/270°;
+- Pfeiltasten und Umschalt, auch über Norden;
+- Farben gleich `--accent`, `--line`, `--muted` des jeweiligen Themas;
+- kein Scrollen in 320 px;
+- Schieber 0–90;
+- Umschalten der Einheit.
+
+Grün am 17.11.2026; der Screenshot liegt nicht im Repo. Nicht geprüft: die ganze Seite gegen echte Daten (die Cloud-Session hat keinen Zugang); dafür §9.1 Punkt 2 mit Drehknopf, Schieber und Einheit.
+
