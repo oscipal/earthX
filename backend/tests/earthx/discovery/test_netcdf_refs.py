@@ -24,7 +24,7 @@ from earthx.discovery.netcdf_refs import (
     reference_file,
     step_references,
 )
-from earthx.gateway import UrlRejected
+from earthx.gateway import UpstreamTimeout, UrlRejected
 from earthx.readers.reference_store import parse_references
 from tests.earthx.readers import mini_netcdf
 from tests.earthx.readers.mini_netcdf import URL, VARIABLE, Source
@@ -144,6 +144,7 @@ class TestRefused:
             ({"time_units": "months since 2024-01-01"}, "days, hours"),
             ({"grid_mapping": {**mini_netcdf.LV95, "false_easting": 600000.0}}, "EPSG"),
             ({"grid_mapping": {"grid_mapping_name": "no_such_projection"}}, "coordinate reference system|EPSG"),
+            ({"extra_attributes": {"_FillValue": 1e40}}, "_FillValue"),
         ],
     )
     def test_a_layout_the_readers_would_not_read_faithfully(
@@ -152,6 +153,60 @@ class TestRefused:
         _, source = built(tmp_path, **options)
         with pytest.raises(UnsupportedLayout, match=reason):
             references(source)
+
+    def test_unwritten_chunks_without_a_fill_value(self, tmp_path: Path) -> None:
+        path = mini_netcdf.build(tmp_path / "file.nc")
+        with h5py.File(path, "a") as hdf:
+            sparse = hdf.create_dataset(
+                "TmaxD", shape=(mini_netcdf.STEPS, mini_netcdf.ROWS, mini_netcdf.COLUMNS), dtype="<f4",
+                chunks=(1, mini_netcdf.ROWS, mini_netcdf.COLUMNS),
+            )
+            sparse[0] = mini_netcdf.values()[0]
+            sparse.attrs["grid_mapping"] = "swiss_lv95_coordinates"
+            for dimension, name in enumerate(("time", "N", "E")):
+                sparse.dims[dimension].attach_scale(hdf[name])
+        with pytest.raises(UnsupportedLayout, match="never written"):
+            references(Source(path.read_bytes()), variable="TmaxD")
+
+    def test_an_array_named_like_an_axis_of_the_readers(self, tmp_path: Path) -> None:
+        path = mini_netcdf.build(tmp_path / "file.nc")
+        with h5py.File(path, "a") as hdf:
+            hdf["x"] = hdf[VARIABLE]
+        with pytest.raises(UnsupportedLayout, match="like an axis"):
+            references(Source(path.read_bytes()), variable="x")
+
+    def test_an_etag_the_readers_would_refuse(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        _, source = built(tmp_path)
+        monkeypatch.setattr(Source, "etag", property(lambda self: '""'))
+        with pytest.raises(UnsupportedLayout, match="strong ETag"):
+            references(source)
+
+    def test_a_page_that_does_not_arrive_in_time(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        import time
+
+        from earthx.discovery import netcdf_refs
+
+        _, source = built(tmp_path)
+        monkeypatch.setattr(netcdf_refs, "_PAGE_TIMEOUT_S", 0.05)
+        handler = source.handler
+
+        def slow(request):  # type: ignore[no-untyped-def]
+            time.sleep(0.3)
+            return handler(request)
+
+        source.handler = slow  # type: ignore[method-assign]
+        with pytest.raises(UpstreamTimeout):
+            references(source)
+
+    def test_a_file_object_is_never_read_on_its_own_loop(self) -> None:
+        source = Source(bytes(1000))
+
+        async def run() -> None:
+            async with source.gateway() as gateway:
+                GatewayFile(gateway, URL, asyncio.get_running_loop())
+
+        with pytest.raises(RuntimeError, match="thread of its own"):
+            asyncio.run(run())
 
     def test_an_array_the_file_does_not_carry(self, tmp_path: Path) -> None:
         _, source = built(tmp_path)

@@ -16,6 +16,7 @@ date in the standard calendar.
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import io
 import math
 import re
@@ -30,7 +31,7 @@ import numpy
 from pyproj import CRS
 from pyproj.exceptions import CRSError
 
-from earthx.gateway import Gateway, GatewayError, UpstreamError
+from earthx.gateway import Gateway, GatewayError, UpstreamError, UpstreamTimeout
 
 __all__ = [
     "PAGE_BYTES",
@@ -52,6 +53,10 @@ _MAX_CHUNK_BYTES = 8 * 1024 * 1024
 # How long one page may take, waited for from the thread `h5py` runs in.
 _PAGE_TIMEOUT_S = 120.0
 
+# The strong ETag `readers.reference_store` accepts; an item whose ETag it refused could never be read.
+_ETAG = re.compile(r'"[^"\s]{1,254}"')
+# The names the readers give their axes (`readers.reference_store`).
+_AXES = frozenset({"time", "y", "x"})
 _FILTERS = {h5py.h5z.FILTER_SHUFFLE: "shuffle", h5py.h5z.FILTER_DEFLATE: "zlib"}
 _TIME_UNITS = re.compile(
     r"(?P<unit>days|hours|minutes|seconds)\s+since\s+"
@@ -171,10 +176,19 @@ class GatewayFile(io.RawIOBase):
         headers = {"Range": f"bytes={first}-{last}"}
         if self.etag is not None:
             headers["If-Match"] = self.etag
+        try:
+            running = asyncio.get_running_loop()
+        except RuntimeError:
+            running = None
+        if running is self._loop:
+            raise RuntimeError("a GatewayFile is read from a thread of its own, never from the loop it fetches on")
         future = asyncio.run_coroutine_threadsafe(self._gateway.get(self._url, headers=headers), self._loop)
         self.request_count += 1
         try:
             response = future.result(timeout=_PAGE_TIMEOUT_S)
+        except concurrent.futures.TimeoutError:
+            future.cancel()
+            raise UpstreamTimeout(f"a page of the file did not arrive within {_PAGE_TIMEOUT_S:g} s") from None
         except UpstreamError as error:
             if error.status_code == 412:
                 raise FileChanged("the source replaced the file while it was read") from error
@@ -197,7 +211,7 @@ def _first_answer(headers: Mapping[str, str]) -> tuple[int, str, str | None]:
     if not total.isdigit():
         raise UnsupportedLayout("the source names no size of the file (Content-Range)")
     etag = headers.get("etag")
-    if not etag or etag.startswith("W/") or not (etag.startswith('"') and etag.endswith('"')) or len(etag) > 256:
+    if etag is None or not _ETAG.fullmatch(etag):
         raise UnsupportedLayout("the source names no strong ETag for the file, so its references could not be checked")
     return int(total), etag, headers.get("last-modified")
 
@@ -254,28 +268,46 @@ def _layout(hdf: h5py.File, array: h5py.Dataset, variable: str) -> ArrayLayout:
     for name in ("scale_factor", "add_offset"):
         if name in attrs:
             raise UnsupportedLayout(f"{variable!r} carries {name}, which the readers would not apply")
+    if variable in _AXES:
+        raise UnsupportedLayout(f"the array is named {variable!r}, like an axis of the readers")
     fill = attrs.get("_FillValue")
-    if fill is not None and (not isinstance(fill, int | float) or not math.isfinite(fill)):
-        raise UnsupportedLayout(f"{variable!r} has a _FillValue that is not a finite number")
+    if fill is not None and not _fits(fill, array.dtype):
+        raise UnsupportedLayout(f"{variable!r} has a _FillValue that is not a finite number of its type")
     rows, columns = array.shape[1], array.shape[2]
     y = _axis(array, 1, rows)
     x = _axis(array, 2, columns)
-    dx, dy = float(x[1] - x[0]), float(y[1] - y[0])
+    # Over the whole axis, not from its first two values: a step read off two rounded values drifts across the grid.
+    dx, dy = float(x[-1] - x[0]) / (columns - 1), float(y[-1] - y[0]) / (rows - 1)
     if dx <= 0:
         raise UnsupportedLayout("the x axis does not run west to east")
     transform = (dx, 0.0, float(x[0]) - dx / 2, 0.0, dy, float(y[0]) - dy / 2)
+    chunks = tuple(array.chunks) if array.chunks is not None else (array.shape[0], rows, columns)
+    chunk_index = _chunk_index(array)
+    if fill is None and len(chunk_index) != math.prod(-(-n // c) for n, c in zip(array.shape, chunks, strict=True)):
+        # Unwritten chunks hold the file's own fill value; without `_FillValue` the readers could not mask them.
+        raise UnsupportedLayout(f"{variable!r} has chunks that were never written, and no _FillValue")
     return ArrayLayout(
         variable=variable,
         dtype=array.dtype.str,
         shape=(array.shape[0], rows, columns),
-        chunks=tuple(array.chunks) if array.chunks is not None else (array.shape[0], rows, columns),  # type: ignore[arg-type]
+        chunks=chunks,  # type: ignore[arg-type]
         filters=_filters(array),
         fill_value=fill,
         transform=transform,
         crs=_crs(hdf, attrs.get("grid_mapping"), variable),
         units=attrs["units"] if isinstance(attrs.get("units"), str) else None,
-        chunk_index=_chunk_index(array),
+        chunk_index=chunk_index,
     )
+
+
+def _fits(value: Any, dtype: numpy.dtype) -> bool:
+    """The rule of the readers: a finite number ``dtype`` holds, exactly as a whole number for an integer type."""
+    if isinstance(value, bool) or not isinstance(value, int | float) or not math.isfinite(value):
+        return False
+    if dtype.kind == "f":
+        return bool(numpy.isfinite(dtype.type(value)))
+    limits = numpy.iinfo(dtype)
+    return float(value).is_integer() and limits.min <= value <= limits.max
 
 
 def _attributes(attrs: Any) -> dict[str, Any]:
@@ -426,7 +458,10 @@ def _time_units(attrs: Mapping[str, Any]) -> tuple[datetime, str]:
 def _instant(origin: datetime, unit: str, value: float) -> datetime:
     if not math.isfinite(value):
         raise UnsupportedLayout("the time axis holds a value that is not a number")
-    return origin + timedelta(**{unit: float(value)})
+    try:
+        return origin + timedelta(**{unit: float(value)})
+    except OverflowError:
+        raise UnsupportedLayout("the time axis holds a value outside the calendar") from None
 
 
 def step_references(references: FileReferences, step: int) -> dict[str, Any]:
