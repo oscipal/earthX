@@ -1,0 +1,180 @@
+"""The seed of the harvest: one YAML file per source under ``backend/catalog/sources/`` (adr/0025 §5.2, M5-19 plan §4.1).
+
+A file is Otto's release of a source (adr/0033 §4, level "Quelle"). Read as strictly as the entries: every field is
+named, none has a default, an unknown one is an error (KLAERUNGEN B10). The limits per host do not live here but in
+``hosts.yaml`` (M5-36, plan F6): the registry checks that every host a source reads from has limits there.
+"""
+
+from __future__ import annotations
+
+import re
+from collections.abc import Mapping
+from dataclasses import dataclass
+from enum import Enum
+from pathlib import Path
+from types import MappingProxyType
+
+from earthx.catalog.entry_files import EntryFileError, read_yaml
+from earthx.catalog.registry import PROTOTYPE_PREFIX, Maturity
+from earthx.gateway import UrlRejected, host_of
+
+__all__ = ["SOURCES_DIR", "CkanFilter", "SourceConfig", "SourceProtocol", "StacFilter", "read_source", "read_sources"]
+
+SOURCES_DIR = Path(__file__).resolve().parents[2] / "catalog" / "sources"
+_README = "README.md"
+# Reserved for the hand entries of the listed path (M5-40 A10): `catalog-load` would tombstone harvested rows of it.
+_HAND_SOURCE = "listed"
+_ID = re.compile(r"[a-z][a-z0-9-]{1,62}")
+_HTTPS = re.compile(r"https://[^\s/?#@]+(?:/[^\s?#]*)?")
+_PREFIX = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
+_FIELDS = frozenset(
+    {
+        "source_id",
+        "protocol",
+        "endpoint",
+        "catalog_page",
+        "filter",
+        "max_requests_per_run",
+        "full_every_days",
+        "maturity",
+        "enabled",
+    }
+)
+MAX_REQUESTS_PER_RUN = 10_000
+
+
+class SourceProtocol(Enum):
+    STAC_API = "stac-api"
+    CKAN = "ckan"
+
+
+@dataclass(frozen=True, slots=True)
+class StacFilter:
+    """The collections of a STAC API to harvest: those whose id starts with one of the prefixes, all where none."""
+
+    collection_prefixes: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class CkanFilter:
+    """``fq`` of ``package_search`` as written, or none; ``publisher_field`` names where the source keeps the publisher
+    (GovData ``publisher_name``, opendata.swiss ``organization``, adr/0025 §5.2)."""
+
+    fq: str | None
+    publisher_field: str
+
+
+@dataclass(frozen=True, slots=True)
+class SourceConfig:
+    source_id: str
+    protocol: SourceProtocol
+    endpoint: str
+    #: The page of a dataset in the catalogue, with ``{id}`` (STAC) or ``{name}`` (CKAN); the last rank of the link
+    #: "Source" (plan §6). ``None`` where the catalogue has no page per dataset.
+    catalog_page: str | None
+    filter: StacFilter | CkanFilter
+    max_requests_per_run: int
+    full_every_days: int
+    maturity: Maturity
+    enabled: bool
+
+    @property
+    def host(self) -> str:
+        """The one host the harvest of this source asks."""
+        return host_of(self.endpoint)
+
+
+def _bad(name: str, problem: str) -> EntryFileError:
+    return EntryFileError(f"sources/{name}: {problem}")
+
+
+def _count(name: str, data: Mapping[str, object], field: str, high: int) -> int:
+    value = data[field]
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= high:
+        raise _bad(name, f"{field} is a whole number from 1 to {high}")
+    return value
+
+
+def _filter(name: str, protocol: SourceProtocol, value: object) -> StacFilter | CkanFilter:
+    if protocol is SourceProtocol.STAC_API:
+        if not isinstance(value, dict) or set(value) != {"collection_prefixes"}:
+            raise _bad(name, "filter of a stac-api source has collection_prefixes, nothing else")
+        prefixes = value["collection_prefixes"]
+        if not isinstance(prefixes, list) or not all(isinstance(p, str) and _PREFIX.fullmatch(p) for p in prefixes):
+            raise _bad(name, "collection_prefixes is a list of collection id prefixes")
+        return StacFilter(tuple(prefixes))
+    if not isinstance(value, dict) or set(value) != {"fq", "publisher_field"}:
+        raise _bad(name, "filter of a ckan source has fq and publisher_field, nothing else")
+    fq, field = value["fq"], value["publisher_field"]
+    if fq is not None and (not isinstance(fq, str) or not fq.strip() or len(fq) > 1000):
+        raise _bad(name, "fq is null or a non-blank text of at most 1000 characters")
+    if field not in ("publisher_name", "organization"):
+        raise _bad(name, "publisher_field is publisher_name or organization")
+    return CkanFilter(fq, field)
+
+
+def _catalog_page(name: str, protocol: SourceProtocol, value: object) -> str | None:
+    if value is None:
+        return None
+    placeholder = "{id}" if protocol is SourceProtocol.STAC_API else "{name}"
+    if not isinstance(value, str) or not _HTTPS.fullmatch(value.split("#")[0].replace(placeholder, "x")):
+        raise _bad(name, "catalog_page is null or an https address")
+    if value.count(placeholder) != 1 or value.replace(placeholder, "").count("{"):
+        raise _bad(name, f"catalog_page names {placeholder} once and no other placeholder")
+    return value
+
+
+def read_source(path: Path) -> SourceConfig:
+    """One seed file, checked; :class:`EntryFileError` names the file and the field, never a value."""
+    name = path.name
+    data = read_yaml(path)
+    if not isinstance(data, dict) or set(data) != _FIELDS:
+        raise _bad(name, f"needs exactly the fields {', '.join(sorted(_FIELDS))}")
+    source_id = data["source_id"]
+    if not isinstance(source_id, str) or not _ID.fullmatch(source_id) or f"{source_id}.yaml" != name:
+        raise _bad(name, "source_id is lower case, digits and '-', and the file is named after it")
+    if source_id == _HAND_SOURCE or source_id.startswith(PROTOTYPE_PREFIX):
+        raise _bad(name, f"the source id {_HAND_SOURCE!r} and the prefix {PROTOTYPE_PREFIX!r} are reserved")
+    try:
+        protocol = SourceProtocol(data["protocol"])
+    except ValueError:
+        raise _bad(name, f"protocol is one of {', '.join(p.value for p in SourceProtocol)}") from None
+    endpoint = data["endpoint"]
+    if not isinstance(endpoint, str) or not _HTTPS.fullmatch(endpoint) or endpoint.endswith("/"):
+        raise _bad(name, "endpoint is an https address without query and without a trailing '/'")
+    try:
+        host_of(endpoint)
+    except UrlRejected:
+        raise _bad(name, "the host of endpoint is not a host name") from None
+    try:
+        maturity = Maturity(data["maturity"])
+    except ValueError:
+        raise _bad(name, "maturity is a maturity of the registry") from None
+    if not isinstance(data["enabled"], bool):
+        raise _bad(name, "enabled is true or false")
+    return SourceConfig(
+        source_id=source_id,
+        protocol=protocol,
+        endpoint=endpoint,
+        catalog_page=_catalog_page(name, protocol, data["catalog_page"]),
+        filter=_filter(name, protocol, data["filter"]),
+        max_requests_per_run=_count(name, data, "max_requests_per_run", MAX_REQUESTS_PER_RUN),
+        full_every_days=_count(name, data, "full_every_days", 365),
+        maturity=maturity,
+        enabled=data["enabled"],
+    )
+
+
+def read_sources(directory: Path = SOURCES_DIR) -> Mapping[str, SourceConfig]:
+    """Every seed file of ``directory`` by source id; an empty mapping where the directory does not exist."""
+    if not directory.is_dir():
+        return MappingProxyType({})
+    sources: dict[str, SourceConfig] = {}
+    for path in sorted(directory.iterdir()):
+        if path.name == _README:
+            continue
+        if path.suffix != ".yaml" or not path.is_file():
+            raise _bad(path.name, "only <source_id>.yaml files and a README.md belong here")
+        source = read_source(path)
+        sources[source.source_id] = source
+    return MappingProxyType(sources)

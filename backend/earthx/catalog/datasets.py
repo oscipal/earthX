@@ -24,6 +24,7 @@ from earthx.catalog.categories import CATEGORIES_FILE, read_categories
 from earthx.catalog.entry_files import EntryFileError, load_entry, load_retired
 from earthx.catalog.hosts import HOSTS_FILE, HostLimit, load_host_limits
 from earthx.catalog.registry import ConfigError, DatasetConfig, DatasetRegistry, LegalStatus
+from earthx.catalog.sources import read_sources
 
 __all__ = [
     "CATALOG_DIR",
@@ -117,7 +118,12 @@ def read_registry(catalog_dir: Path = CATALOG_DIR, prototype_dir: Path | None = 
     hosts = dict(load_host_limits(catalog_dir / HOSTS_FILE))
     if prototype_dir is not None:
         hosts = _with_prototype_hosts(hosts, prototype_dir / HOSTS_FILE)
-    return DatasetRegistry(entries, retired=load_retired(catalog_dir / "retired.yaml"), hosts=hosts)
+    # The hosts of the harvest seed have their limits in the same file (M5-19 F6); only `discovery` reads the sources
+    # for more than their hosts.
+    seed_hosts = frozenset(source.host for source in read_sources(catalog_dir / "sources").values())
+    return DatasetRegistry(
+        entries, retired=load_retired(catalog_dir / "retired.yaml"), hosts=hosts, seed_hosts=seed_hosts
+    )
 
 
 def _with_prototype_hosts(hosts: dict[str, HostLimit], path: Path) -> dict[str, HostLimit]:

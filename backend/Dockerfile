@@ -76,6 +76,8 @@ COPY catalog/listed ./catalog/listed
 COPY catalog/blocked.yaml ./catalog/blocked.yaml
 COPY catalog/regions.json ./catalog/regions.json
 COPY catalog/catalog_tags.yaml ./catalog/catalog_tags.yaml
+# The seed of the harvest (M5-19, adr/0025 §5.2): read by `discovery`; the registry reads only its hosts.
+COPY catalog/sources ./catalog/sources
 
 # The local runner (adr/0016 F1, F10): the same code and the same locked
 # dependencies as the services, run as an unprivileged user. EARTHX_COMMIT ends

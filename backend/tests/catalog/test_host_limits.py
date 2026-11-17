@@ -15,6 +15,7 @@ from earthx.catalog.datasets import CATALOG_DIR, read_registry
 from earthx.catalog.entry_files import EntryFileError
 from earthx.catalog.hosts import HostLimit, load_host_limits
 from earthx.catalog.registry import ConfigError, DatasetRegistry, source_hosts
+from earthx.catalog.sources import read_sources
 from earthx.gateway.policy import MAX_INTERVAL_S
 from tests.catalog.entries import COP_DEM_GLO_30, SENTINEL_2_L2A
 from tests.catalog.test_registry_loading import PROTOTYPE_HOSTS, _prototype, _write
@@ -38,13 +39,33 @@ def catalog(tmp_path: Path) -> Path:
     shutil.copytree(CATALOG_DIR / "datasets", copy / "datasets")
     for name in ("retired.yaml", "categories.yaml", "hosts.yaml"):
         shutil.copy(CATALOG_DIR / name, copy / name)
+    shutil.copytree(CATALOG_DIR / "sources", copy / "sources")
     return copy
 
 
 class TestTheReleasedFile:
-    def test_every_host_of_the_registry_has_limits_and_no_more(self) -> None:
+    def test_every_host_of_the_registry_and_the_seed_has_limits_and_no_more(self) -> None:
         loaded = read_registry()
-        assert set(loaded.host_limits) == {host for entry in loaded for host in source_hosts(entry)}
+        seed = {source.host for source in read_sources(CATALOG_DIR / "sources").values()}
+        assert set(loaded.host_limits) == {host for entry in loaded for host in source_hosts(entry)} | seed
+
+    def test_a_source_whose_host_has_no_limits_is_an_error(self, catalog: Path) -> None:
+        # M5-19 F6: the hosts of the harvest seed have their limits in the same file.
+        text = (catalog / "hosts.yaml").read_text(encoding="utf-8")
+        (catalog / "hosts.yaml").write_text(text.split("  www.govdata.de:")[0], encoding="utf-8")
+        with pytest.raises(ConfigError, match="no limits for ckan.opendata.swiss, www.data.gv.at, www.govdata.de"):
+            read_registry(catalog)
+
+    def test_limits_of_a_catalogue_host_without_its_source_are_an_error(self, catalog: Path) -> None:
+        (catalog / "sources" / "govdata.yaml").unlink()
+        with pytest.raises(ConfigError, match="no entry or source reads from: www.govdata.de"):
+            read_registry(catalog)
+
+    def test_the_catalogue_hosts_otto_chose(self) -> None:
+        # M5-19 F6 = 1: two connections, one second apart.
+        limits = read_registry().host_limits
+        for host in ("www.govdata.de", "ckan.opendata.swiss", "www.data.gv.at"):
+            assert (limits[host].connections, limits[host].interval_s) == (2, 1.0)
 
     def test_the_values_otto_chose(self) -> None:
         limits = read_registry().host_limits
@@ -138,7 +159,7 @@ class TestWhereTheRegistryMeetsTheFile:
 
     def test_limits_for_a_host_no_entry_reads_from_are_refused(self) -> None:
         hosts = {BUCKET: HostLimit(1, None, "x"), "spare.example.org": HostLimit(1, None, "x")}
-        with pytest.raises(ConfigError, match="no entry reads from: spare.example.org"):
+        with pytest.raises(ConfigError, match="no entry or source reads from: spare.example.org"):
             DatasetRegistry((COP_DEM_GLO_30,), hosts=hosts)
 
     def test_a_registry_built_without_the_file_has_none(self) -> None:

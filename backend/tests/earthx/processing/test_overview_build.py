@@ -128,11 +128,14 @@ class TestLevels:
     def test_a_spacing_in_hosts_yaml_comes_before_the_builds_own(self) -> None:
         from earthx.catalog.hosts import HostLimit
         from earthx.catalog.registry import DatasetRegistry
+        from earthx.catalog.sources import read_sources
 
         released = registry()
         host = "copernicus-dem-30m.s3.amazonaws.com"
         limits = {**released.host_limits, host: HostLimit(connections=6, interval_s=1.0, reason="test")}
-        odd = DatasetRegistry(tuple(released), hosts=limits)
+        # The hosts of the harvest seed have limits in the same file (M5-19 F6).
+        seed = frozenset(source.host for source in read_sources().values())
+        odd = DatasetRegistry(tuple(released), hosts=limits, seed_hosts=seed)
         assert pyramid_source_limits(odd)[host] == (6, 1.0)
 
     def test_an_entry_with_no_level_to_build_from_stops_the_listing(self) -> None:

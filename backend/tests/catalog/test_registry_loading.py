@@ -65,6 +65,7 @@ def catalog(tmp_path: Path) -> Path:
     shutil.copy(CATALOG_DIR / "retired.yaml", copy / "retired.yaml")
     shutil.copy(CATALOG_DIR / "hosts.yaml", copy / "hosts.yaml")
     shutil.copy(CATALOG_DIR / "categories.yaml", copy / "categories.yaml")
+    shutil.copytree(CATALOG_DIR / "sources", copy / "sources")
     return copy
 
 

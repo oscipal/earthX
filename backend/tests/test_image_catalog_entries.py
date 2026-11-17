@@ -61,6 +61,11 @@ def test_what_catalog_load_reads_for_listed_entries_is_copied(source: str) -> No
     assert (source, f"./{source}") in COPIES
 
 
+def test_the_seed_of_the_harvest_is_copied() -> None:
+    # M5-19: read by `discovery`, and by the registry for the hosts of its sources.
+    assert ("catalog/sources", "./catalog/sources") in COPIES
+
+
 @pytest.mark.parametrize("name", ["places.json", "glossary.yaml", "capability_terms.yaml"])
 def test_the_files_of_the_search_text_are_copied_next_to_the_entries(name: str) -> None:
     assert (f"catalog/{name}", f"./catalog/{name}") in COPIES
