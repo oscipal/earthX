@@ -513,3 +513,11 @@ legal_status: cleared
   - Der Takt kommt aus dem letzten Buchstaben der Größe (`…D`, `…M`, `…Y`), die Dauer einer Datei aus den beiden Zeitstempeln (Jahr, Monat, Tag).
   - `--layout` liest die Größen mit `…d` und einer Datei je Jahr bis zum Vorjahr.
 - **Bevor PR 2 gebaut wird:** Zeigt auch der neue Lauf keine Jahresdateien mit Tageswerten im Archiv, ist das ein Befund für Otto (`adr/0029` F5 setzt sie voraus), keine Annahme.
+
+### 10.7 Zweiter Lauf der Probe (Otto, 17.11.2026) und Korrektur des Suchmusters
+
+- **Befund:** 78 Items, 50 Namensmuster. Die Jahresdateien mit Tageswerten liegen im Archiv, z. B. `ogd-surface-derived-grid-archive.tabsd_ch##r.swiss.lv##_##############_##############.nc` × 65 (1961–2025), `…rhiresd_ch##h…` × 65 (1961–2025), `tmaxd`, `tmind`, `sreld` je 55 (1971–2025). Das Suchmuster fand trotzdem nichts: Es verlangte `_` vor der Größe, die Quelle schreibt `-archive.`.
+- **Korrektur:** Gelesen werden nur Namen der Form `ogd-surface-derived-grid-archive.<größe>_<ch01r|ch01h>.swiss.lv95_<14 Ziffern>_<14 Ziffern>.nc`. Damit fallen weg: alles außerhalb des Archivs, also `-last` und die vorläufigen Tagesdateien (`rprelimd`, 2026), sowie andere Gitter. `--layout` liest daraus die Größen mit Tageswerten (`…d`), eine Datei je Jahr, bis zum Vorjahr (Otto, 17.11.2026; `adr/0029` F5).
+- **Endstempel:** Ob er auf den 31.12. oder auf den 1.1. des Folgejahres fällt, zeigt die maskierte Ausgabe nicht. Beide Formen gelten als „eine Datei je Jahr“.
+- **Test:** `test_m5_11_meteoswiss_probe.py` mit genau diesen Mustern, die maskierten Ziffern ausgefüllt. Er war rot gegen das alte Suchmuster und ist grün gegen das neue.
+- **Für PR 2:** Diese Namensform gilt auch für den Materialisierer (§5.1). Größen und Beginn bestätigt: `TabsD`, `RhiresD` ab 1961, `TmaxD`, `TminD`, `SrelD` ab 1971 (`adr/0029` §8a.2).
