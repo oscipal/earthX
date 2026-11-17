@@ -10,8 +10,9 @@ import { buildTileUrl } from './mapLayers';
 import { RGB, RGB_LABEL, startBand } from './processingBands';
 import { lookRange, type DisplayLook } from './displayLook';
 import { presetFor, presetRange, type IndexPreset } from './indexPresets';
+import { compositeAmong } from './quickPresets';
 import { isIntegerType } from './processingDefaults';
-import { maskLayerOf } from './processingOrder';
+import { maskLayerOf, trueColorOf } from './processingOrder';
 import { rescaleOf, type PreviewRange } from './processingPreview';
 import { scaleOf, statsFrom, type ResultStats } from './render';
 import { levelAskedAt, TILE_SIZE, tileMetres } from './tileSize';
@@ -124,6 +125,20 @@ export function colourPlacesOf(bands: readonly ResultBand[], trueColor: readonly
   if (trueColor === null || trueColor.length !== 3) return null;
   const places = trueColor.map((name) => bands.findIndex((band) => band.name === name));
   return places.every((place) => place >= 0) ? [places[0], places[1], places[2]] : null;
+}
+
+// The colour picture of a result: the three bands of `earthx:true_color` with no range of their own (NM4-64), else the channels of a
+// composite of the dataset the job made (matched by expression, M5-14 PR B) with the range of each; `null` where the file has neither.
+export function colourOfResult(bands: readonly ResultBand[], collection: Collection | undefined): { places: [number, number, number]; preset: PreviewRange | null } | null {
+  const places = colourPlacesOf(bands, trueColorOf(collection));
+  if (places) return { places, preset: null };
+  const composite = compositeAmong(collection, bands);
+  if (composite) {
+    const [red, green, blue] = composite.bands.map((name) => bands.findIndex((band) => band.name === name));
+    const [first] = composite.channels;
+    return { places: [red, green, blue], preset: { vmin: first.vmin, vmax: first.vmax, colormap: '', channels: composite.channels } };
+  }
+  return null;
 }
 
 // What the job measured of the three bands of the colour picture, as one measure: the scale is chosen from all three

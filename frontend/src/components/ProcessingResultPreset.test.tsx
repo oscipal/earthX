@@ -12,6 +12,7 @@ import type { DatasetOption } from '../datasets';
 import { jobEntry, NOW } from '../fixtures/jobEntries';
 import { SENTINEL_2_PRESETS } from '../fixtures/indexPresets';
 import type { Order } from '../processing';
+import { RGB } from '../processingBands';
 import { setTrackerOptions, useProcessingStore, type JobEntry } from '../processingStore';
 import { defaultRange, resultBands } from '../resultLayer';
 import { useAppStore } from '../store';
@@ -181,5 +182,71 @@ describe('the layer of a result with an index', () => {
     await useProcessingStore.getState().showResultOnMap(JOB);
     expect(layers()[0].result!.bands).toBeUndefined();
     expect(look()).toEqual(['-1,1', 'rdbu']);
+  });
+});
+
+// A job of a composite or a step of "Quick processing" (M5-14 PR B): recognised in its result layer as it is in the view.
+describe('the layer of a result of a composite', () => {
+  const FALSE_COLOUR = { name: 'false_colour_ir', title: 'False colour (IR)', expressions: ['nir', 'red', 'green'], rescale: [[0, 0.5], [0, 0.3], [0, 0.3]], reference: 'https://example.org/fc' };
+  const CHANNELS = ['false_colour_ir_r', 'false_colour_ir_g', 'false_colour_ir_b'];
+  const order = (bands: string[]) =>
+    ({
+      recipe_version: 2,
+      inputs: [{ name: 'in', dataset: 'sentinel-2-c1-l2a', groups: [['S2B_A']] }],
+      steps: [STEP(CHANNELS[0], 'nir'), STEP(CHANNELS[1], 'red'), STEP(CHANNELS[2], 'green')],
+      output: { kind: 'raster', format: 'cog', dtype: 'float32', bands },
+    }) as unknown as Order;
+  const bandsOf = (made: Order) => resultBands({ bands: (made.output as { bands: string[] }).bands.map((name) => ({ name, data_type: 'float32', statistics: IN_RANGE })) }, made);
+  const composite = (over: object = {}) =>
+    ({ ...dataset('sentinel-2-c1-l2a', []), collection: { id: 'sentinel-2-c1-l2a', 'earthx:index_presets': [], 'earthx:composite_presets': [FALSE_COLOUR], 'earthx:true_color': ['red', 'green', 'blue'], ...over } as unknown as Collection });
+
+  beforeEach(() => useAppStore.setState({ datasets: [composite()] }));
+
+  it('starts as the colour picture of its three channels, each with the range of the registry', async () => {
+    const made = order(CHANNELS);
+    await show({ order: made, bands: bandsOf(made), shownBand: null });
+    expect(layers()[0].result!.band).toBe(RGB);
+    expect(layers()[0].result!.colour).toEqual([0, 1, 2]);
+    expect(query().getAll('bidx')).toEqual(['1', '2', '3']);
+    expect(query().getAll('rescale')).toEqual(['0,0.5', '0,0.3', '0,0.3']);
+    expect(query().get('colormap_name')).toBeNull();
+  });
+
+  it('finds the channels wherever the file holds them, in the order red, green, blue', async () => {
+    const made = order([CHANNELS[2], 'red', CHANNELS[0], CHANNELS[1]]);
+    await show({ order: made, bands: bandsOf(made), shownBand: RGB });
+    expect(layers()[0].result!.colour).toEqual([2, 3, 0]);
+    expect(query().getAll('rescale')).toEqual(['0,0.5', '0,0.3', '0,0.3']);
+  });
+
+  it('leaves "RGB" the true colour of the dataset where the file holds its three bands too', async () => {
+    const made = order(['red', CHANNELS[2], 'green', CHANNELS[0], 'blue', CHANNELS[1]]);
+    await show({ order: made, bands: bandsOf(made), shownBand: RGB });
+    expect(layers()[0].result!.colour).toEqual([0, 2, 4]);
+    expect(layers()[0].result!.preset).toBeNull();
+  });
+
+  it('starts with the band the preview showed, and draws the composite again when "RGB" is chosen', async () => {
+    const made = order(CHANNELS);
+    await show({ order: made, bands: bandsOf(made), shownBand: CHANNELS[0] });
+    expect(layers()[0].result!.band).toBe(0);
+    act(() => useProcessingStore.getState().chooseResultBand(layers()[0].id, RGB));
+    expect(query().getAll('rescale')).toEqual(['0,0.5', '0,0.3', '0,0.3']);
+  });
+
+  it('is the true colour, stretched by what the job measured, where a channel is left out of the file', async () => {
+    const made = order(['red', 'green', 'blue', CHANNELS[0], CHANNELS[1]]);
+    await show({ order: made, bands: bandsOf(made), shownBand: RGB });
+    expect(layers()[0].result!.colour).toEqual([0, 1, 2]);
+    expect(layers()[0].result!.preset).toBeNull();
+    expect(query().getAll('rescale')).toEqual(['-0.05,0.8']);
+  });
+
+  it('is no composite for a dataset that has none', async () => {
+    useAppStore.setState({ datasets: [composite({ 'earthx:composite_presets': [], 'earthx:true_color': [] })] });
+    const made = order(CHANNELS);
+    await show({ order: made, bands: bandsOf(made), shownBand: null });
+    expect(layers()[0].result!.colour).toBeUndefined();
+    expect(layers()[0].result!.band).not.toBe(RGB);
   });
 });

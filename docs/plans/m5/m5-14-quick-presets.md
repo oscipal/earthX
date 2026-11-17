@@ -1,6 +1,6 @@
 # M5-14 — Komposit- und Schritt-Presets unter „Quick processing“
 
-**Stand:** 17.11.2026, freigegeben von Otto (Antworten in §8a); PR A in Arbeit, PR B danach.
+**Stand:** 17.11.2026, freigegeben von Otto (Antworten in §8a); PR A gemergt (#370), PR B in Arbeit (§10).
 **Stufe B.** Erst Plan mit Fragen im Draft-PR, Umsetzung nach Ottos Antworten im selben PR; höchstens zwei PRs (M5-Plan §2 Punkt 11).
 **Aufgabe:** M5-14 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2.
 **Grundlage:** `adr/0030` F7 (Felder `composite_presets` und `step_presets`), §3 B2/B3, §5.1, §5.3, §8, §12; `adr/0035` (Darstellung am Operator); M5-10 (`terrain`, F5: „Hillshade“ als Knopf mit M5-14; G1: Ketten unter `min_zoom` auf der Übersicht); NM4-14 (Index-Presets), NM4-64 (`true_color`), UI-03d (Quick processing, Ebene eines Index).
@@ -239,4 +239,52 @@ Grün am 17.11.2026; der Screenshot liegt nicht im Repo. Nicht geprüft: die gan
 - Geprüft wird beim langsamen Ziehen über einen halben Kreis, je 5°: Drehknopf, Histogramm, „Quick processing“ und Schieber bewegen sich um keinen Pixel; keine Statistik-Abfrage während des Ziehens; danach eine.
 - Dazu: Zahl neben dem Knopf, getippte Werte samt Begrenzung, kein Scrollen.
 - Grün am 17.11.2026. Gegenprobe mit dem alten `useHistograms` und `store.ts`: rot (Sprung 32 px, Histogramm weg, 27 Abfragen beim Ziehen).
+
+## 10. Umsetzung PR B (17.11.2026)
+
+Umgesetzt nach §5 mit F5 = 1: Komposit- und Schritt-Presets können jetzt alles, was ein Index kann. Nur Frontend; Registry, Backend und Kachel bleiben unverändert.
+
+**Download („Download crop“ einer angehefteten Ebene)**
+- Eine Ebene eines Komposits oder Schritts lädt wie eine Index-Ebene das gerechnete Ergebnis, nicht mehr die Bänder der Szenen.
+- Der Auftrag entsteht aus den Schritten des Presets über die Felder des Panels (`draftFromOrder`, dann `buildOrder`). Damit sind Rezept und Hash dieselben wie bei einem Job von Hand.
+  - Komposit: drei `band_math`-Schritte, Ausgabe die drei Kanäle `<name>_r`, `_g`, `_b`.
+  - Schritt: der Schritt der Registry mit den gewählten Werten der einstellbaren Parameter, Ausgabe das eine Band.
+- Der Dialog nennt das Preset mit seinem Knopftext. Dahinter steht beim Index die Formel, beim Komposit die drei Kanäle; beim Schritt nichts.
+- Der Hinweis für ganze Szenen nennt das Preset: „NDVI of whole scenes is computed by a job: start one in Processing.“
+- Kann der Auftrag nicht gebaut werden (Operator fehlt dem Datensatz, unbekannter Parameter), beginnt die Meldung mit „<Preset> cannot be computed for this dataset“, die Gründe stehen im Tooltip.
+
+**„Process“ an einer Preset-Ebene**
+- Das Panel öffnet wie bei einem Index auf dem Auftrag des Presets: seine Schritte vorn und gesperrt, die erzeugten Bänder als ganzer Bestand, keine Rohbänder.
+- Ein Schritt nimmt die Werte mit, die in der Ebene gewählt sind (z. B. Azimut 90°).
+- Kennt der Datensatz das Preset nicht mehr, öffnet die Ebene wie bisher auf den Bändern der Szenen.
+
+**Komposit als Farbbild (Auslegung, bestätigt von Otto am 17.11.2026: Vorrang = 1, alle Auslegungen von §10 gelten)**
+- **Erkennen:** Ein Komposit wird an den Ausdrücken der `band_math`-Schritte erkannt, wie ein Index (`presetFor`), nicht am Namen. Es gilt das erste Komposit der Registry, dessen drei Ausdrücke unter den Bändern stehen.
+- **Vorrang:** Es gibt weiter genau einen Eintrag „RGB“. Die echte Farbe (`earthx:true_color`) geht vor, sobald ihre drei Bänder in der Ausgabe bzw. Datei stehen; so bleibt sie immer erreichbar. Das Komposit ist „RGB“ nur dort, wo die echte Farbe fehlt – so bei „Process“ an einer Komposit-Ebene, deren Bestand nur die drei Kanäle sind.
+- **Vorschau im Panel:** Ist „RGB“ das Komposit, wird es mit dem festen Bereich je Kanal aus der Registry und ohne Colormap gezeichnet. Die Vorschau beginnt mit „RGB“, solange die drei Kanäle die einzigen Ergebnisse sind; ein einzelner Kanal ist kein Bild des Komposits. Ein danach angelegter Schritt wird wie jedes neue Ergebnis gezeigt (Regel „zuletzt hinzugefügt“).
+- **Ergebnis-Layer:** Ein Ergebnis mit den drei Kanälen (ohne die echte Farbe) bietet „RGB“ als dieses Farbbild, in der Reihenfolge Rot, Grün, Blau, wo immer die Kanäle in der Datei stehen. Es beginnt mit dem Band, das die Vorschau zeigte (Regel vom 31.10.2026); ist das nicht bekannt, mit „RGB“.
+- **Fehlt ein Kanal**, gilt wie bisher die echte Farbe des Datensatzes (gestreckt nach der Messung des Jobs) oder kein Farbbild.
+- **Bezeichnung:** Der Eintrag heißt weiter „RGB“, nicht nach dem Titel des Komposits; ein eigener Name bräuchte ein neues Feld in gespeicherten Ebenen.
+- **Ein gewöhnlicher Job** mit den Ausdrücken `nir`, `red`, `green` in drei `band_math`-Schritten wird ebenfalls als „False colour (IR)“ gezeigt. Das ist gewollt wie beim Index: dieselbe Rechnung sieht überall gleich aus.
+
+**Schritt-Presets im Ergebnis-Layer:** Ohne Änderung. Das Band trägt den Look des Operators seit M5-10 (`resultBands` mit `looks`), auch mit geänderten Parametern.
+
+**Tests:**
+- `presetOrders.test.ts`: Aufträge, auch Operator fehlt, unbekannter Parameter, keine Szenen.
+- `quickPresets.test.ts`: Erkennen eines Komposits (Reihenfolge, Leerzeichen, fehlender Kanal, einzelner Kopier-Schritt, zwei Komposite).
+- `indexDownload.test.ts`: Download einer Komposit-Ebene bis zur ZIP, Sperren für ganze Szenen und Lizenz unter „processing“.
+- `components/ProcessingPresetLayer.test.tsx`: „Process“, Vorschau als Farbbild, neuer Schritt dahinter, Vorrang der echten Farbe, gesendeter Auftrag.
+- `components/ProcessingResultPreset.test.tsx`: Ergebnis-Layer eines Komposits, Vorrang der echten Farbe.
+- Gegenprobe: Ohne die Änderungen an Vorschau und Ergebnis-Layer sind vier dieser Tests rot; die Tests zu Vorrang der echten Farbe und neuem Schritt hinter dem Komposit sind gegen den Stand vor dem Review rot.
+- Vor dem PR hat der Subagent `reviewer` den Diff geprüft: kein Blocker. Eingearbeitet: Vorrang der echten Farbe, Regel „zuletzt hinzugefügt“ hinter einem Komposit, Tests für Fehlerfälle, Texte und Kommentare.
+
+**Nicht geprüft:** Browser-Check gegen echte Daten; die Cloud-Session hat keinen Zugang zu den Quellen.
+
+### 10.1 Prüfanleitung für Otto
+
+1. Diesen Branch lokal, `docker compose build`, `docker compose up`.
+2. Sentinel-2, AOI zeichnen, „Crop and merge“, „False colour (IR)“ anwenden, „Add to layers“. In der Ebene „Download“: Der Dialog nennt „False colour (IR) (nir, red, green)“ und schätzt einen Job; die ZIP enthält die drei Kanäle.
+3. Dieselbe Ebene „Process“: Das Panel zeigt die drei Kanäle, keine Rohbänder, keine Schritte zum Ändern; die Vorschau ist das Falschfarbenbild, „Show“ steht auf „RGB“. Job starten, Ergebnis auf die Karte: wieder das Falschfarbenbild mit denselben Bereichen.
+4. GLO-30: „Hillshade“, Azimut auf 90° drehen, anheften. „Download“ rechnet die Schummerung mit 90°; „Process“ zeigt das Band `hillshade`, der Job trägt Azimut 90.
+5. Gegenprobe Index: NDVI-Ebene wie bisher (Download, „Process“, Ergebnis in `rdylgn`).
 

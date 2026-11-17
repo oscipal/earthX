@@ -47,7 +47,7 @@ export default function LayerDownload({ layer, className = 'icon-btn sm', label,
   if (kind !== 'dialog') return <>{empty}</>;
   const outcome = decideDownloadOutcomeForLayer(layer, datasets);
   const index = indexOfferedFor(layer, datasets);
-  // A layer of an index alone downloads the index and nothing else (UI-03d): where it cannot, the button says why.
+  // A layer of a preset alone downloads the preset and nothing else (UI-03d): where it cannot, the button says why.
   const alone = downloadsIndexOnly(layer, datasets);
   const indexBlock = alone ? indexDownloadBlock(layer, datasets) : null;
   return (
@@ -62,9 +62,9 @@ export default function LayerDownload({ layer, className = 'icon-btn sm', label,
           : indexBlock
             ? indexBlock
             : index && alone
-              ? `Download the ${index.name} of the AOI crop, computed as a Processing job would`
+              ? `Download the ${index.label} of the AOI crop, computed as a Processing job would`
               : index
-                ? `Download the AOI crop, one file per group; the ${index.name} too, computed as a Processing job would`
+                ? `Download the AOI crop, one file per group; the ${index.label} too, computed as a Processing job would`
                 : outcome === 'originals'
                   ? 'Download the original files, straight from the source'
                   : 'Download the AOI crop, one file per group'

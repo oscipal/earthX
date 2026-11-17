@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { buildOperatorTileTemplate } from './api';
 import { SENTINEL_2_PRESETS } from './fixtures/indexPresets';
-import { lookOfPreset, paramsOfPreset, presetOfLook, quickPresetsOf, shownBandsOf, tileStepsOf, withParams } from './quickPresets';
+import { compositeAmong, lookOfPreset, paramsOfPreset, presetOfLook, quickPresetsOf, shownBandsOf, tileStepsOf, withParams } from './quickPresets';
 import { lookChanged, lookOfPendingFields, pendingFieldsOf } from './render';
 import type { Collection } from './types';
 import { indexChainOf, indexStatisticsUrl } from './viewIndex';
@@ -183,5 +183,38 @@ describe('a change of a parameter is a change of the look', () => {
 
   it('is nothing without a preset', () => {
     expect(lookOfPendingFields({ ...fields({ azimuth: 90 }), pendingIndex: '' }).presetParams).toBeUndefined();
+  });
+});
+
+// A composite among the bands Band math steps made (M5-14 PR B): what the preview and a result layer of its job draw it by.
+describe('a composite among the bands made', () => {
+  const made = (...pairs: [string, string | null][]) => pairs.map(([name, expression]) => ({ name, expression }));
+  const SWIR = { ...FALSE_COLOUR, name: 'swir', title: 'SWIR', expressions: ['swir22', 'nir08', 'red'] };
+
+  it('is found by the expressions of its channels, whatever the bands are called and wherever they stand', () => {
+    const found = compositeAmong(S2, made(['c', ' green '], ['a', 'nir'], ['other', 'red * 2'], ['b', 'red']));
+    expect(found?.preset.name).toBe('false_colour_ir');
+    expect(found?.bands).toEqual(['a', 'b', 'c']);
+    expect(found?.channels).toEqual([{ vmin: '0', vmax: '0.5' }, { vmin: '0', vmax: '0.3' }, { vmin: '0', vmax: '0.3' }]);
+  });
+
+  it('is none where a channel is missing, a band is of the data, or one step copies a band alone', () => {
+    expect(compositeAmong(S2, made(['a', 'nir'], ['b', 'red']))).toBeNull();
+    expect(compositeAmong(S2, made(['a', 'nir'], ['b', 'red'], ['green', null]))).toBeNull();
+    expect(compositeAmong(S2, made(['a', 'nir']))).toBeNull();
+    expect(compositeAmong(S2, [])).toBeNull();
+  });
+
+  it('is none for a dataset without composites, or an expression that is no expression', () => {
+    expect(compositeAmong(DEM, made(['a', 'nir'], ['b', 'red'], ['c', 'green']))).toBeNull();
+    expect(compositeAmong(undefined, made(['a', 'nir'], ['b', 'red'], ['c', 'green']))).toBeNull();
+    expect(compositeAmong(S2, made(['a', 'nir $'], ['b', 'red'], ['c', 'green']))).toBeNull();
+  });
+
+  it('is the first of the registry whose three channels are all there', () => {
+    const both = collection({ 'earthx:index_presets': [], 'earthx:composite_presets': [SWIR, FALSE_COLOUR], 'earthx:step_presets': [] });
+    const all = made(['n', 'nir'], ['r', 'red'], ['g', 'green'], ['s', 'swir22'], ['n8', 'nir08']);
+    expect(compositeAmong(both, all)?.preset.name).toBe('swir');
+    expect(compositeAmong(both, all.slice(0, 3))?.preset.name).toBe('false_colour_ir');
   });
 });
