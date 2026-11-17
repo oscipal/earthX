@@ -501,3 +501,15 @@ legal_status: cleared
 4. A9–A13 gelten.
 5. Attribution bearbeiteter Daten in PR 2: „Source: MeteoSwiss (modified)“ → §9.3.
 6. Otto lässt `meteoswiss-probe --assets` und `--layout` laufen und hängt die Ausgabe an den PR; ausgewertet wird sie in PR 2 (§5.7 `float64`, Zeitgrenzen der Items).
+
+### 10.6 Erster Lauf der Probe (Otto, 17.11.2026) und Anpassung
+
+- **Befund:** 78 Items, das größte mit 3257 Assets. Kein Name passte auf das Suchmuster; gezeigt waren nur die zehn häufigsten Muster des größten Items (Rekorde und Anomalien wie `trecabsm`, `ranomm`). „daily annual files to read 0“.
+- **Prüfung, ob sich etwas geändert hat** (ohne Abruf der Quelle, `adr/0002`): Die Doku von MeteoSchweiz (`c3-ground-based-climate-data`, letzte Änderung 22.09.2026) sagt weiter, dass das Item „CH archive“ je Produkt Jahresdateien mit Tageswerten bündelt (bis 200 MB) und die vollständig konsolidierten Daten trägt [P\*]. Ein Hinweis auf geänderte Namen oder eine andere Ablage findet sich dort nicht; ein Namensmuster nennt die Doku nicht.
+- **Wahrscheinliche Ursache [A]:** `adr/0029` §3.1 hält die Zeitstempel nur als `<start>_<ende>` fest. Das Suchmuster nahm 6–8 Ziffern an; schreibt die Quelle mehr (z. B. `JJJJMMTThhmm`), passt kein Name. Belegt ist das erst mit dem nächsten Lauf.
+- **Anpassung der Probe:**
+  - `--assets` gibt jetzt alle Namensmuster über alle Items aus, mit Anzahl, Zahl der Items und Jahren, Ziffern als `#`.
+  - Das Suchmuster nimmt Zeitstempel von 4 bis 14 Ziffern und beliebige Namensteile zwischen Gitter und Zeitstempel.
+  - Der Takt kommt aus dem letzten Buchstaben der Größe (`…D`, `…M`, `…Y`), die Dauer einer Datei aus den beiden Zeitstempeln (Jahr, Monat, Tag).
+  - `--layout` liest die Größen mit `…d` und einer Datei je Jahr bis zum Vorjahr.
+- **Bevor PR 2 gebaut wird:** Zeigt auch der neue Lauf keine Jahresdateien mit Tageswerten im Archiv, ist das ein Befund für Otto (`adr/0029` F5 setzt sie voraus), keine Annahme.
