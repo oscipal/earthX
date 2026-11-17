@@ -165,6 +165,12 @@ from earthx.objectstore.results import Store
 from earthx.readers import AssetRejected, GeoreferenceMismatch
 from earthx.readers.cog import AssetPath
 from earthx.readers.limits import limit_reads
+from earthx.readers.reference_store import (
+    TILER_CHUNK_CACHE_BYTES,
+    ReferenceMismatch,
+    SourceChanged,
+    configure_chunk_cache,
+)
 from earthx.readers.zarr_reader import ZarrAsset, ZarrAssetError, close_shared_gateways
 
 LOGGER = logging.getLogger("earthx.api.tiler")
@@ -2402,6 +2408,9 @@ def build_app(
     # loop: a slot taken before the thread pool and a thread that waits for a slot would wait for each other.
     app.state.earthx_read_slots = ReadSlots(policy)
     limit_reads(app.state.earthx_read_slots)
+    # The chunks of NetCDF references (adr/0029 A2): a view of one time step asks for the same chunk once per tile,
+    # so the process keeps them, as GDAL keeps its `/vsicurl/` blocks (plan M5-11 F6).
+    configure_chunk_cache(TILER_CHUNK_CACHE_BYTES)
     # Two profiles, because GDAL reads the size of its `/vsicurl/` cache once per
     # process but `MULTIRANGE` at every call, in the calling thread (NM4-26 §13, §18):
     # the tile routes, statistics, TileJSON, mosaic and result tiles read under the
@@ -2563,6 +2572,17 @@ def build_app(
         # line, like every other 502 here. The message names dataset, item and asset,
         # never an address.
         return _problem(502, str(error))
+
+    @app.exception_handler(SourceChanged)
+    async def _source_changed(request: Request, error: SourceChanged):
+        # adr/0029 F7: the source replaced the file since its references were made. No old or new bytes are shown in
+        # its place; the next discovery run references the file anew.
+        return _problem(502, str(error))
+
+    @app.exception_handler(ReferenceMismatch)
+    async def _reference_mismatch(request: Request, error: ReferenceMismatch):
+        LOGGER.warning("a chunk did not arrive as its reference names")
+        return _problem(502, "the source did not answer a chunk as its reference names")
 
     @app.get("/health")
     def health() -> dict:
