@@ -64,6 +64,7 @@ from earthx.objectstore.results import Store
 from earthx.processing.index_presets import check_index_presets
 from earthx.processing.operators import REGISTRY as OPERATORS
 from earthx.processing.operators import OperatorRegistry
+from earthx.processing.quick_presets import check_quick_presets
 
 LOGGER = logging.getLogger("earthx.api.main")
 
@@ -190,11 +191,13 @@ def build_app(
 
     A registry entry that asks an adapter for something ``adapters`` lacks stops
     the build (:func:`~earthx.adapters.check_adapter_specs`, M4-01b F1), and so does an index preset
-    ``band_math`` would refuse (:func:`~earthx.processing.index_presets.check_index_presets`, NM4-14).
+    ``band_math`` would refuse (:func:`~earthx.processing.index_presets.check_index_presets`, NM4-14), and a composite or
+    step preset its steps would refuse (:func:`~earthx.processing.quick_presets.check_quick_presets`, M5-14).
     """
     registry = dataset_registry() if registry is None else registry
     check_adapter_specs(registry, adapters)
     check_index_presets(registry)
+    check_quick_presets(registry, operators)
     # M3-16: this process's own JSON logging, before anything can log a line
     # (K-01/K-02) — the compose command starts it with `--no-access-log`, so
     # `RequestIdMiddleware` below is this process's only access log.
