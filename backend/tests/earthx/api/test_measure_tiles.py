@@ -533,3 +533,23 @@ def test_one_day_with_references_is_gathered_and_two_are_refused(tmp_path: Path)
     with pytest.raises(CannotMeasure, match="single items with chunk references") as refused:
         gather(config, [_day("day-1", refs), _day("day-2", refs)], None, policy_from_registry(reg), _public)
     assert "day-" not in str(refused.value)
+
+
+def test_a_materialized_dataset_is_searched_with_the_period_of_the_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A series of days lies in one rectangle day after day (M5-11): without the period every day is an overpass."""
+    asked: list[Any] = []
+
+    class _Connection:
+        def __enter__(self) -> _Connection:
+            return self
+
+        def __exit__(self, *exc: object) -> None:
+            return None
+
+    monkeypatch.setattr(measure_tiles.psycopg, "connect", lambda *args, **kwargs: _Connection())
+    monkeypatch.setattr(measure_tiles, "search_items_in_bbox", lambda conn, dataset, bbox, limit, period: asked.append(period) or [])
+    config = registry().get("meteoswiss-daily-precip-1km")
+    args = parse_args(["meteoswiss-daily-precip-1km", "--bbox", "6,46,10.4,47.7", "--datetime", "2024-07-01T06:00:00Z/2024-07-02T05:59:59Z"])
+    measure_tiles.make_fetch(config, args, policy_from_registry(registry()), _public, {})((6.0, 46.0, 10.4, 47.7))
+    (start, end), = asked
+    assert (start.isoformat(), end.isoformat()) == ("2024-07-01T06:00:00+00:00", "2024-07-02T05:59:59+00:00")

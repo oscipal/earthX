@@ -467,9 +467,14 @@ async def fetch_item(conn: psycopg.AsyncConnection, dataset_id: str, item_id: st
 
 
 def search_items_in_bbox(
-    conn: psycopg.Connection, dataset_id: str, bbox: tuple[float, float, float, float], limit: int
+    conn: psycopg.Connection,
+    dataset_id: str,
+    bbox: tuple[float, float, float, float],
+    limit: int,
+    period: tuple[datetime | None, datetime | None] = (None, None),
 ) -> list[dict[str, object]]:
-    """Up to ``limit`` items of a materialized dataset whose footprint meets ``bbox`` (EPSG:4326).
+    """Up to ``limit`` items of a materialized dataset whose footprint meets ``bbox`` (EPSG:4326), and whose time meets
+    ``period`` where one end is given (open ends as ``None``; a series of days, M5-11).
 
     Through pgstac's own ``search``, so the items come back whole, as ``get_item`` gives them. Used by the
     measurement of the tile path (M5-30b, `api.measure_tiles`); like :func:`fetch_item` it commits nothing.
@@ -477,7 +482,9 @@ def search_items_in_bbox(
     if limit < 1:
         raise ValueError("limit is at least 1")
     use_pgstac_search_path(conn)
-    query = {"collections": [dataset_id], "bbox": list(bbox), "limit": limit}
+    query: dict[str, object] = {"collections": [dataset_id], "bbox": list(bbox), "limit": limit}
+    if period != (None, None):
+        query["datetime"] = "/".join(".." if end is None else end.isoformat() for end in period)
     with conn.cursor() as cur:
         cur.execute("SELECT pgstac.search(%s::jsonb)", (json.dumps(query),))
         row = cur.fetchone()

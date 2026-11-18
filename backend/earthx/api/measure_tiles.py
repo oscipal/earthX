@@ -617,10 +617,13 @@ async def _federated_items(
 
 
 def _materialized_items(
-    config: DatasetConfig, bbox: tuple[float, float, float, float], max_items: int
+    config: DatasetConfig,
+    bbox: tuple[float, float, float, float],
+    datetime_range: tuple[datetime | None, datetime | None],
+    max_items: int,
 ) -> list[dict[str, Any]]:
     with psycopg.connect("") as conn:
-        return search_items_in_bbox(conn, config.dataset_id, bbox, max_items)  # type: ignore[return-value]
+        return search_items_in_bbox(conn, config.dataset_id, bbox, max_items, datetime_range)  # type: ignore[return-value]
 
 
 def make_fetch(
@@ -628,7 +631,8 @@ def make_fetch(
 ) -> Fetch:
     """The search of the dataset's source, for any rectangle, with the run's ``--datetime`` and ``--max-items``."""
     if config.source.item_holding is ItemHolding.MATERIALIZED:
-        return lambda bbox: _materialized_items(config, bbox, args.max_items)
+        # The period too: a materialized series of days (M5-11) has one item per day in the same rectangle.
+        return lambda bbox: _materialized_items(config, bbox, args.datetime, args.max_items)
     return lambda bbox: asyncio.run(
         _federated_items(config, bbox, args.datetime, args.max_items, policy, resolve, adapters)
     )
