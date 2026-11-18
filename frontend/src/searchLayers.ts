@@ -27,8 +27,8 @@ const rasterOverlay = (raster: PlannedRaster, render: AppliedRender, clip: GeoJS
 // The pictures below the first level of the datasets these passes belong to (a substitute's, or a dataset's own pyramid), one for
 // each dataset, in the look of the layer (`overviewSubstitute.ts`). They lie at the bottom of the layer, under everything it draws of
 // its own. An index in the look is computed on the overview there as on the scenes above (M5-10 part B). With the scenes of the layer
-// the picture lies over them only, as the view draws it (`overviewOverScenes`, M5-56); over the whole area while their footprint
-// selection is still on its way.
+// the picture lies over them only, as the view draws it (`overviewOverScenes`, M5-56); the caller waits for their footprint selection
+// (`overviewsWaiting`).
 export function overviewOverlaysOf(
   datasetIds: readonly string[],
   datasets: readonly DatasetOption[],
@@ -43,6 +43,22 @@ export function overviewOverlaysOf(
     if (!below) return [];
     const raster = scenes ? (overviewOverScenes(below, id, scenes.entries, scenes.mosaics, index !== null) ?? below) : below;
     return [rasterOverlay(raster, render, clip)];
+  });
+}
+
+// Whether the picture below the first level of one of these datasets waits for the footprint selection of the scenes: a layer is
+// pinned or saved once it is there, and not over the whole area meanwhile (M5-56).
+export function overviewsWaiting(
+  datasetIds: readonly string[],
+  datasets: readonly DatasetOption[],
+  render: AppliedRender,
+  scenes: { entries: readonly SceneEntry[]; mosaics: Mosaics | undefined },
+): boolean {
+  return [...new Set(datasetIds)].some((id) => {
+    const dataset = datasets.find((d) => d.id === id);
+    const index = dataset ? viewIndexOf(render, dataset.collection) : null;
+    const below = overviewRasterOf(dataset, datasets, index ? indexChainOf(index) : null);
+    return below !== null && overviewOverScenes(below, id, scenes.entries, scenes.mosaics, index !== null) === undefined;
   });
 }
 

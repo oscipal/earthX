@@ -9,7 +9,7 @@ import { zoomMap } from './fixtures/zoomMap';
 import { syncFocusRaster } from './mapLayers';
 import { footprintsKeyOf, MAX_FOOTPRINT_ITEMS, mosaicsOfView, overviewOverScenes, type Mosaics } from './mosaic';
 import { overviewRasterOf } from './overviewSubstitute';
-import { overviewOverlaysOf } from './searchLayers';
+import { overviewOverlaysOf, overviewsWaiting } from './searchLayers';
 import type { DownloadedInfo } from './types';
 
 const BELOW = overviewRasterOf(TERRAIN, LIST)!;
@@ -114,10 +114,14 @@ describe('a layer pinned from the view', () => {
     expect(urlOf(overviewOverlaysOf(['terrain'], LIST, { rescale: '0,3000' }, null, { entries: ENTRIES, mosaics: MOSAICS }))).toContain(FOOTPRINTS_ID);
   });
 
-  it('takes the whole area while the selection is still on its way, and without scenes', () => {
-    const pending = overviewOverlaysOf(['terrain'], LIST, { rescale: '0,3000' }, null, { entries: ENTRIES, mosaics: withoutFootprints() });
-    expect(urlOf(pending)).toContain('/collections/terrain/overview/tiles/');
-    expect(urlOf(overviewOverlaysOf(['terrain'], LIST, { rescale: '0,3000' }, null))).toContain('/collections/terrain/overview/tiles/');
+  it('waits while the selection is on its way, and not once it is there, refused, or for a dataset that draws nothing below', () => {
+    const look = { rescale: '0,3000' };
+    const refused: Mosaics = { ...withoutFootprints(), [footprintsKeyOf('terrain', ENTRIES.map(([id]) => id))]: null };
+    expect(overviewsWaiting(['terrain'], LIST, look, { entries: ENTRIES, mosaics: withoutFootprints() })).toBe(true);
+    expect(overviewsWaiting(['terrain'], LIST, look, { entries: ENTRIES, mosaics: MOSAICS })).toBe(false);
+    expect(overviewsWaiting(['terrain'], LIST, look, { entries: ENTRIES, mosaics: refused })).toBe(false);
+    expect(overviewsWaiting([], LIST, look, { entries: [], mosaics: {} })).toBe(false);
+    expect(urlOf(overviewOverlaysOf(['terrain'], LIST, look, null))).toContain('/collections/terrain/overview/tiles/');
   });
 });
 
