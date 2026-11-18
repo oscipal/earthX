@@ -17,6 +17,7 @@ import pytest
 
 from earthx.discovery.netcdf_refs import (
     PAGE_BYTES,
+    CrsMismatch,
     FileChanged,
     FileReferences,
     GatewayFile,
@@ -153,6 +154,26 @@ class TestRefused:
         _, source = built(tmp_path, **options)
         with pytest.raises(UnsupportedLayout, match=reason):
             references(source)
+
+    def test_a_mismatching_grid_mapping_carries_its_attributes(self, tmp_path: Path) -> None:
+        _, source = built(tmp_path, grid_mapping={**mini_netcdf.LV95, "false_easting": 600000.0})
+        with pytest.raises(CrsMismatch) as caught:
+            references(source)
+        assert caught.value.attributes["false_easting"] == 600000.0
+        assert caught.value.attributes["grid_mapping_name"] == "oblique_mercator"
+
+    def test_a_measurement_may_read_past_a_mismatching_grid_mapping(self, tmp_path: Path) -> None:
+        """Only for the probe: the layout without a CRS, the attributes kept; the platform stays strict by default."""
+        _, source = built(tmp_path, grid_mapping={**mini_netcdf.LV95, "false_easting": 600000.0})
+
+        async def run() -> FileReferences:
+            async with source.gateway() as gateway:
+                return await reference_file(gateway, URL, VARIABLE, strict_crs=False)
+
+        layout = asyncio.run(run()).layout
+        assert layout.crs is None
+        assert layout.grid_mapping["false_easting"] == 600000.0
+        assert layout.dtype == "<f4"
 
     def test_unwritten_chunks_without_a_fill_value(self, tmp_path: Path) -> None:
         path = mini_netcdf.build(tmp_path / "file.nc")

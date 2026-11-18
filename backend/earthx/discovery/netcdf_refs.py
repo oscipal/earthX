@@ -36,6 +36,7 @@ from earthx.gateway import Gateway, GatewayError, UpstreamError, UpstreamTimeout
 __all__ = [
     "PAGE_BYTES",
     "ArrayLayout",
+    "CrsMismatch",
     "FileChanged",
     "FileReferences",
     "GatewayFile",
@@ -69,6 +70,19 @@ class UnsupportedLayout(ValueError):
     """The file is laid out in a way the readers would not read faithfully; the text names what, never the address."""
 
 
+class CrsMismatch(UnsupportedLayout):
+    """The ``grid_mapping`` names no EPSG code exactly; it carries the attributes, so that a caller can say why.
+
+    ``candidate`` is the code ``pyproj`` offered, or ``None``. The attributes are the file's own description of its
+    grid (projection parameters, perhaps a WKT); they name no address.
+    """
+
+    def __init__(self, message: str, attributes: Mapping[str, Any], candidate: int | None) -> None:
+        super().__init__(message)
+        self.attributes = dict(attributes)
+        self.candidate = candidate
+
+
 class FileChanged(Exception):
     """The source replaced the file while its references were being made (``412`` on ``If-Match``)."""
 
@@ -85,7 +99,10 @@ class ArrayLayout:
     fill_value: float | int | None
     #: (a, b, c, d, e, f) of the stored rows; e > 0 where they run south to north.
     transform: tuple[float, float, float, float, float, float]
-    crs: str
+    #: ``EPSG:<code>``; ``None`` only where the caller let an unmatched grid_mapping pass (``strict_crs=False``).
+    crs: str | None
+    #: The attributes of the grid_mapping as the file states them.
+    grid_mapping: Mapping[str, Any]
     #: The CF ``units`` of the values, where the file names them.
     units: str | None
     #: (time chunk, row chunk, column chunk) → (offset, length).
@@ -216,17 +233,25 @@ def _first_answer(headers: Mapping[str, str]) -> tuple[int, str, str | None]:
     return int(total), etag, headers.get("last-modified")
 
 
-async def reference_file(gateway: Gateway, url: str, variable: str | None = None) -> FileReferences:
+async def reference_file(
+    gateway: Gateway, url: str, variable: str | None = None, *, strict_crs: bool = True
+) -> FileReferences:
     """The references of ``variable`` in the file at ``url``; ``h5py`` runs in a thread, the requests on this loop.
 
     Without ``variable`` the file must carry exactly one array over (time, y, x), as each file of MeteoSwiss does, and
     that one is taken. ``url`` must have passed the gateway's policy, which checks it again on every page.
+
+    ``strict_crs=False`` is for a measurement only (the probe of M5-11): a grid_mapping that names no EPSG code exactly
+    leaves ``crs`` empty instead of raising :class:`CrsMismatch`, so the rest of the layout can still be read. No item
+    is written from such references.
     """
     loop = asyncio.get_running_loop()
-    return await asyncio.to_thread(_reference, gateway, url, variable, loop)
+    return await asyncio.to_thread(_reference, gateway, url, variable, loop, strict_crs)
 
 
-def _reference(gateway: Gateway, url: str, variable: str | None, loop: asyncio.AbstractEventLoop) -> FileReferences:
+def _reference(
+    gateway: Gateway, url: str, variable: str | None, loop: asyncio.AbstractEventLoop, strict_crs: bool
+) -> FileReferences:
     file = GatewayFile(gateway, url, loop)
     try:
         with h5py.File(file, "r") as hdf:
@@ -235,7 +260,7 @@ def _reference(gateway: Gateway, url: str, variable: str | None, loop: asyncio.A
                 raise UnsupportedLayout(f"the file carries no array {variable!r}")
             array = hdf[variable]
             times, bounds = _time_axis(array)
-            layout = _layout(hdf, array, variable)
+            layout = _layout(hdf, array, variable, strict_crs)
     except OSError as error:
         if isinstance(error.__context__, FileChanged | UnsupportedLayout | GatewayError):
             raise error.__context__ from None
@@ -259,7 +284,7 @@ def _the_one_array(hdf: h5py.File) -> str:
     return names[0]
 
 
-def _layout(hdf: h5py.File, array: h5py.Dataset, variable: str) -> ArrayLayout:
+def _layout(hdf: h5py.File, array: h5py.Dataset, variable: str, strict_crs: bool = True) -> ArrayLayout:
     if array.ndim != 3:
         raise UnsupportedLayout(f"{variable!r} has {array.ndim} dimensions, not (time, y, x)")
     if array.dtype.kind not in "fiu" or array.dtype.itemsize not in (1, 2, 4, 8) or array.dtype.kind == "f" and array.dtype.itemsize < 4:
@@ -283,6 +308,14 @@ def _layout(hdf: h5py.File, array: h5py.Dataset, variable: str) -> ArrayLayout:
     transform = (dx, 0.0, float(x[0]) - dx / 2, 0.0, dy, float(y[0]) - dy / 2)
     chunks = tuple(array.chunks) if array.chunks is not None else (array.shape[0], rows, columns)
     chunk_index = _chunk_index(array)
+    mapping_name = attrs.get("grid_mapping")
+    mapping = _attributes(hdf[mapping_name].attrs) if isinstance(mapping_name, str) and mapping_name in hdf else {}
+    try:
+        crs: str | None = _crs(hdf, mapping_name, variable)
+    except CrsMismatch:
+        if strict_crs:
+            raise
+        crs = None
     if fill is None and len(chunk_index) != math.prod(-(-n // c) for n, c in zip(array.shape, chunks, strict=True)):
         # Unwritten chunks hold the file's own fill value; without `_FillValue` the readers could not mask them.
         raise UnsupportedLayout(f"{variable!r} has chunks that were never written, and no _FillValue")
@@ -294,7 +327,8 @@ def _layout(hdf: h5py.File, array: h5py.Dataset, variable: str) -> ArrayLayout:
         filters=_filters(array),
         fill_value=fill,
         transform=transform,
-        crs=_crs(hdf, attrs.get("grid_mapping"), variable),
+        crs=crs,
+        grid_mapping=mapping,
         units=attrs["units"] if isinstance(attrs.get("units"), str) else None,
         chunk_index=chunk_index,
     )
@@ -394,9 +428,9 @@ def _crs(hdf: h5py.File, name: Any, variable: str) -> str:
         code = crs.to_epsg() or crs.to_epsg(min_confidence=20)
         candidate = CRS.from_epsg(code) if code is not None else None
     except CRSError:
-        raise UnsupportedLayout("the grid_mapping of the file is no coordinate reference system") from None
+        raise CrsMismatch("the grid_mapping of the file is no coordinate reference system", attrs, None) from None
     if candidate is None or not _same_projection(crs, candidate):
-        raise UnsupportedLayout("the grid_mapping of the file matches no EPSG code exactly")
+        raise CrsMismatch("the grid_mapping of the file matches no EPSG code exactly", attrs, code)
     return f"EPSG:{code}"
 
 
@@ -414,7 +448,7 @@ def _same_projection(crs: CRS, candidate: CRS) -> bool:
     theirs_params = {p.name: (p.value, p.unit_name) for p in b.params}
     for parameter in a.params:
         other = theirs_params.get(parameter.name)
-        if other is None or other[1] != parameter.unit_name or not _close(parameter.value, other[0]):
+        if other is None or other[1].lower() != parameter.unit_name.lower() or not _close(parameter.value, other[0]):
             return False
     return len(a.params) == len(b.params)
 
