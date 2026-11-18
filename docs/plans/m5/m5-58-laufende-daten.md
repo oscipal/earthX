@@ -12,7 +12,7 @@
 - Keine Live-Abrufe aus der Session (`adr/0002`); Otto lädt lokal, die Session nennt die Befehle (§7).
 
 **Grundlagen:** `adr/0009` §7.3 (Fassung je Lauf, „delsert“), `adr/0029` §3.1, §5, §6 und F5, `adr/0025` §6.6 und F7 (bedingte Anfragen, Inhalts-Hash, Prüfdatum nicht in YAML), `adr/0032` (Pyramide je Fassung), M5-11 Plan §5.5 (`v=<updated>`), §11 (PR 2, [#380](https://github.com/oscipal/earthX/pull/380)), `KLAERUNGEN.md` B9, B10, B13, M5-Plan §2 Punkte 8, 9 und §6.5.
-**Voraussetzung:** M5-11 PR 2 ([#380](https://github.com/oscipal/earthX/pull/380)) ist gemergt, bevor Code dieses Plans entsteht; der Plan liest den Stand dieses Branches (Materialisierer `meteoswiss-grid`, Commit 2cf5ea7).
+**Voraussetzung:** M5-11 PR 2 ([#380](https://github.com/oscipal/earthX/pull/380)) ist gemergt (18.11.2026); der Plan liest den Stand von `main` danach (Materialisierer `meteoswiss-grid`).
 
 Belegstufen wie in `adr/0029`: **M** gemessen (dort bzw. von Otto), **P** am Quelltext gelesen, **P\*** in der Dokumentation der Quelle gelesen (opendatadocs.meteoswiss.ch, 18.11.2026), **S** Suchtreffer oder Mitteilung, **A** eigene Ableitung. Adressen von Dateien, Item-IDs und Prüfsummen der Quelle stehen nicht in diesem Dokument.
 
@@ -260,7 +260,7 @@ Synthetisches Quell-Archiv mit drei Arten von Quell-Items über den lokalen Serv
 | 1 (dieser Draft-PR) | Plan, ADR-Entwurf (F7), Probe `--current` (zuerst, damit Otto messen kann), Registry-Feld `updates` in allen Einträgen, Migration (Zustand je Einheit, Zähler), Kern `detect: units` in `discovery.materialize`, `earthx:state`, Coverage mit offenem Ende, Test mit synthetischem Adapter | rund 400 Zeilen |
 | 2 (neue Session nach dem Merge) | MeteoSchweiz: `list_units`/`build` für Tages-, Monats- und Archivdateien, `RprelimD` → `RhiresD`, Übernahme des Bestands, Einträge, Tooltip im Frontend (F1), Provenienz mit Stand | rund 300 Zeilen |
 
-Branch dieses PRs: `claude/brave-maxwell-buo3bh` von `main`; nach dem Merge von #380 holt er `main`.
+Branch dieses PRs: `claude/brave-maxwell-buo3bh` von `main` nach dem Merge von #380.
 
 ---
 
