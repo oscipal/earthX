@@ -44,6 +44,7 @@ _FIELDS = frozenset(
         "catalog_page",
         "filter",
         "max_requests_per_run",
+        "max_pages_per_run",
         "full_every_days",
         "robots_exception",
         "maturity",
@@ -94,6 +95,9 @@ class SourceConfig:
     catalog_page: str | None
     filter: StacFilter | CkanFilter
     max_requests_per_run: int
+    #: The pages of a CKAN listing one run reads at most; ``None`` without a cap. A pass larger than it goes on in the
+    #: next run (Otto, 18.11.2026: a source that keeps a quota, opendata.swiss).
+    max_pages_per_run: int | None
     full_every_days: int
     #: ``None``: robots.txt is obeyed as written.
     robots_exception: RobotsException | None
@@ -114,6 +118,16 @@ def _count(name: str, data: Mapping[str, object], field: str, high: int) -> int:
     value = data[field]
     if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= high:
         raise _bad(name, f"{field} is a whole number from 1 to {high}")
+    return value
+
+
+def _pages(name: str, protocol: SourceProtocol, value: object) -> int | None:
+    if value is None:
+        return None
+    if protocol is not SourceProtocol.CKAN:
+        raise _bad(name, "max_pages_per_run is for a ckan source; a stac-api source has null")
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= MAX_REQUESTS_PER_RUN:
+        raise _bad(name, f"max_pages_per_run is null or a whole number from 1 to {MAX_REQUESTS_PER_RUN}")
     return value
 
 
@@ -199,6 +213,7 @@ def read_source(path: Path) -> SourceConfig:
         catalog_page=_catalog_page(name, protocol, data["catalog_page"]),
         filter=_filter(name, protocol, data["filter"]),
         max_requests_per_run=_count(name, data, "max_requests_per_run", MAX_REQUESTS_PER_RUN),
+        max_pages_per_run=_pages(name, protocol, data["max_pages_per_run"]),
         full_every_days=_count(name, data, "full_every_days", 365),
         robots_exception=_robots_exception(name, endpoint, data["robots_exception"]),
         maturity=maturity,

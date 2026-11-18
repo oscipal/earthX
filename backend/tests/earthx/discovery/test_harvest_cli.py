@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 
 from earthx.catalog.datasets import read_registry
@@ -58,3 +60,16 @@ def test_the_policy_waives_robots_txt_only_where_the_source_file_says_so() -> No
     assert not swiss.robots_waived("ckan.opendata.swiss", "/dataset/x")
     for source_id in ("govdata", "fsdi-stac", "earth-search"):
         assert _policy_for(sources[source_id], hosts).robots_exceptions == {}
+
+
+def test_a_resting_source_says_why_no_run_starts(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    async def resting(*_: object, **__: object) -> None:
+        raise harvest_module.SourceResting("opendata-swiss", datetime(2026, 11, 19, 0, 0, tzinfo=UTC))
+
+    monkeypatch.setattr(harvest_module, "_main_async", resting)
+    monkeypatch.setattr(harvest_module, "_measure", resting)
+    for argv in (["opendata-swiss"], ["opendata-swiss", "--measure"]):
+        assert main(argv) == 1
+        assert capsys.readouterr().out.strip() == (
+            "opendata-swiss: kein Lauf gestartet – die Quelle bat mit 429 um Pause und ruht bis 2026-11-19 00:00 UTC"
+        )

@@ -18,9 +18,9 @@ import httpx
 import psycopg
 import pytest
 
-from earthx.catalog.registry import Maturity
+from earthx.catalog.registry import ConfigError, Maturity
 from earthx.catalog.sources import CkanFilter, RobotsException, SourceConfig, SourceProtocol
-from earthx.discovery.harvest import report, run_harvest
+from earthx.discovery.harvest import SourceResting, measure, report, run_harvest
 from earthx.gateway import Gateway, Policy
 
 pytestmark = pytest.mark.anyio
@@ -68,6 +68,7 @@ class Catalogue:
         #: From this offset on, pages are answered with this status (429: slow down; 503: down) while it is set.
         self.refuse_from: int | None = None
         self.refuse_status = 429
+        self.retry_after: str | None = None
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         if request.url.path == "/robots.txt":
@@ -77,7 +78,8 @@ class Catalogue:
         if self.answer is not None:
             return httpx.Response(200, content=json.dumps(self.answer))
         if self.refuse_from is not None and int(request.url.params["start"]) >= self.refuse_from:
-            return httpx.Response(self.refuse_status, text="slow down")
+            headers = {} if self.retry_after is None else {"retry-after": self.retry_after}
+            return httpx.Response(self.refuse_status, text="slow down", headers=headers)
         incremental = "metadata_modified" in request.url.params.get("fq", "")
         matching = sorted(
             self.changed if incremental else self.packages, key=lambda p: str(p.get("id") if isinstance(p, dict) else p)
@@ -118,6 +120,7 @@ def source() -> SourceConfig:
         catalog_page="https://portal.example.org/dataset/{name}",
         filter=CkanFilter(None, "publisher_name"),
         max_requests_per_run=20,
+        max_pages_per_run=None,
         full_every_days=7,
         robots_exception=None,
         maturity=Maturity.STABLE,
@@ -321,19 +324,21 @@ async def test_a_reextract_asks_nothing_and_finds_no_change(db: psycopg.Connecti
     assert nxt.kind == "incremental" and _since(catalogue) == _started(db, first.run_id)
 
 
-async def test_an_incremental_listing_that_moves_does_not_count_as_the_last_run(
+async def test_an_incremental_listing_that_moves_goes_through_and_says_so(
     db: psycopg.Connection, source: SourceConfig
 ) -> None:
-    first = await run_harvest(db, source, gateway=_gateway(Catalogue(THREE)))
+    # Plan A10 (18.11.2026): an incremental pass that held back on every shift would grow past any budget of pages;
+    # what a shift skipped, the next full pass reads.
+    await run_harvest(db, source, gateway=_gateway(Catalogue(THREE)))
     moving = Catalogue([], size=1)
     moving.changed = THREE[:2]
     moving.count_shift = 1
-    result = await run_harvest(db, source, gateway=_gateway(moving))
-    assert (result.kind, result.status, result.stop_reason) == ("incremental", "interrupted", "listing_moved")
-    assert "der nächste Lauf fragt ab dem Lauf davor" in report(source, result)
+    second = await run_harvest(db, source, gateway=_gateway(moving))
+    assert (second.kind, second.status, second.moved) == ("incremental", "done", True)
+    assert "liest der nächste volle Durchgang" in report(source, second)
     catalogue = Catalogue([])
     await run_harvest(db, source, gateway=_gateway(catalogue))
-    assert _since(catalogue) == _started(db, first.run_id)
+    assert _since(catalogue) == _started(db, second.run_id)
 
 
 async def test_a_package_skipped_by_a_shift_under_the_same_count_is_noticed(
@@ -424,6 +429,11 @@ async def _no_wait(seconds: float) -> None:
     return None
 
 
+def _next_day(db: psycopg.Connection, source: SourceConfig) -> None:
+    """The rest after a run that ended rate_limited is over."""
+    db.execute("UPDATE public.earthx_harvest_source SET rest_until = NULL WHERE source_id = %s", (source.source_id,))
+
+
 FIVE = [_package(str(i)) for i in range(1, 6)]
 
 
@@ -441,6 +451,7 @@ async def test_a_full_pass_the_source_slows_down_keeps_its_place_and_goes_on(
     assert "Quelle bat um Pause" in text and "setzt den vollen Durchgang ab Paket 1 fort" in text
     catalogue.refuse_from = None
     catalogue.asked.clear()
+    _next_day(db, source)
     second = await run_harvest(db, source, gateway=_gateway(catalogue), sleep=_no_wait)
     assert (second.kind, second.status, second.resumed_at, second.resume_at) == ("full", "done", 1, None)
     assert catalogue.asked[0]["start"] == "1"
@@ -462,6 +473,7 @@ async def test_gone_after_a_pass_over_several_runs_is_what_none_of_them_saw(
     stopped = await run_harvest(db, source, gateway=_gateway(four), sleep=_no_wait)
     assert stopped.status == "interrupted" and stopped.counts.gone == 0
     four.refuse_from = None
+    _next_day(db, source)
     done = await run_harvest(db, source, gateway=_gateway(four), sleep=_no_wait)
     # 1 was seen only by the first run of the pass, 5 by none of its runs.
     assert done.counts.gone == 1
@@ -488,6 +500,7 @@ async def test_after_a_pass_over_several_runs_changes_are_asked_from_its_start(
     catalogue.refuse_from = 1
     first = await run_harvest(db, source, gateway=_gateway(catalogue), sleep=_no_wait)
     catalogue.refuse_from = None
+    _next_day(db, source)
     await run_harvest(db, source, gateway=_gateway(catalogue), sleep=_no_wait)
     nxt = Catalogue([])
     result = await run_harvest(db, source, gateway=_gateway(nxt))
@@ -500,5 +513,93 @@ async def test_full_goes_on_with_an_open_pass(db: psycopg.Connection, source: So
     catalogue.refuse_from = 1
     await run_harvest(db, source, gateway=_gateway(catalogue), sleep=_no_wait)
     catalogue.refuse_from = None
+    _next_day(db, source)
     result = await run_harvest(db, source, full=True, gateway=_gateway(catalogue), sleep=_no_wait)
     assert (result.kind, result.resumed_at) == ("full", 1)
+
+
+async def test_after_rate_limited_the_source_rests_until_the_next_day(
+    db: psycopg.Connection, source: SourceConfig
+) -> None:
+    # Otto, 18.11.2026: opendata.swiss refused for hours; the next run must not ask again before the next day.
+    catalogue = Catalogue(FIVE, size=2)
+    catalogue.refuse_from = 0
+    first = await run_harvest(db, source, gateway=_gateway(catalogue), sleep=_no_wait)
+    assert first.stop_reason == "rate_limited" and first.rest_until is not None
+    assert first.rest_until.astimezone(UTC).time() == datetime.min.time()
+    assert first.rest_until - datetime.now(UTC) <= timedelta(days=1)
+    assert "vorher startet kein Lauf" in report(source, first)
+    asked = len(catalogue.asked)
+    with pytest.raises(SourceResting) as raised:
+        await run_harvest(db, source, gateway=_gateway(catalogue), sleep=_no_wait)
+    assert raised.value.until == first.rest_until and len(catalogue.asked) == asked
+    # A re-extract asks the source nothing and may run.
+    assert (await run_harvest(db, source, gateway=None, reextract=True)).status == "done"
+
+
+async def test_a_retry_after_sets_the_rest(db: psycopg.Connection, source: SourceConfig) -> None:
+    catalogue = Catalogue(FIVE, size=2)
+    catalogue.refuse_from = 0
+    catalogue.retry_after = "7200"
+    result = await run_harvest(db, source, gateway=_gateway(catalogue), sleep=_no_wait)
+    assert result.stop_reason == "rate_limited"
+    left = result.rest_until - datetime.now(UTC)
+    assert timedelta(minutes=110) < left <= timedelta(hours=2)
+
+
+async def test_a_run_reads_at_most_its_pages_and_the_next_goes_on(db: psycopg.Connection, source: SourceConfig) -> None:
+    capped = replace(source, max_pages_per_run=2)
+    seven = [_package(str(i)) for i in range(1, 8)]
+    catalogue = Catalogue(seven, size=2)
+    first = await run_harvest(db, capped, gateway=_gateway(catalogue))
+    assert (first.status, first.stop_reason, first.counts.requests, first.resume_at) == (
+        "interrupted",
+        "page_budget",
+        2,
+        2,
+    )
+    assert "Seiten je Lauf erreicht" in report(capped, first)
+    second = await run_harvest(db, capped, gateway=_gateway(catalogue))
+    assert (second.status, second.resumed_at, second.resume_at) == ("interrupted", 2, 4)
+    third = await run_harvest(db, capped, gateway=_gateway(catalogue))
+    # Pages from offsets 4 and 6: the last one is the end of the listing, so the budget does not stop the pass.
+    assert (third.status, third.resume_at, third.gone_unchecked) == ("done", None, None)
+    assert len(_states(db, capped)) == 7
+
+
+async def test_an_incremental_pass_goes_on_over_runs_under_a_cap(db: psycopg.Connection, source: SourceConfig) -> None:
+    capped = replace(source, max_pages_per_run=1)
+    first = await run_harvest(db, capped, gateway=_gateway(Catalogue(THREE, size=10)))
+    assert first.status == "done"
+    changed = Catalogue([], size=2)
+    changed.changed = [_package("4"), _package("5"), _package("6")]
+    second = await run_harvest(db, capped, gateway=_gateway(changed))
+    assert (second.kind, second.status, second.stop_reason) == ("incremental", "interrupted", "page_budget")
+    since = _since(changed)
+    changed.asked.clear()
+    third = await run_harvest(db, capped, gateway=_gateway(changed))
+    # The same lower bound, from where the pass stood.
+    assert (third.kind, third.resumed_at, third.status) == ("incremental", 1, "done")
+    assert _since(changed) == since and changed.asked[0]["start"] == "1"
+    assert "Inkrementeller Durchgang fortgesetzt ab Paket 1" in report(capped, third)
+    # After the pass went through, the next one asks from the start of the pass.
+    nxt = Catalogue([])
+    await run_harvest(db, capped, gateway=_gateway(nxt))
+    assert _since(nxt) == _started(db, second.run_id)
+
+
+async def test_measure_keeps_the_rest_and_the_pages_of_a_run(db: psycopg.Connection, source: SourceConfig) -> None:
+    # Otto, 18.11.2026: --measure under the same budget and rest as a run.
+    catalogue = Catalogue(THREE, size=10)
+    assert "Messung einer Seite mit 3 Paketen" in await measure(db, source, _gateway(catalogue))
+    with pytest.raises(ConfigError, match="more than max_pages_per_run"):
+        await measure(db, replace(source, max_pages_per_run=1), _gateway(catalogue))
+    catalogue.refuse_from = 0
+    with pytest.raises(SourceResting) as raised:
+        await measure(db, source, _gateway(catalogue))
+    asked = len(catalogue.asked)
+    with pytest.raises(SourceResting) as again:
+        await measure(db, source, _gateway(catalogue))
+    assert again.value.until == raised.value.until and len(catalogue.asked) == asked
+    with pytest.raises(SourceResting):
+        await run_harvest(db, source, gateway=_gateway(catalogue), sleep=_no_wait)

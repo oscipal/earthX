@@ -26,6 +26,7 @@ SOURCE = SourceConfig(
     catalog_page="https://portal.example.org/dataset/{name}",
     filter=CkanFilter(None, "publisher_name"),
     max_requests_per_run=20,
+    max_pages_per_run=None,
     full_every_days=7,
     robots_exception=None,
     maturity=Maturity.STABLE,

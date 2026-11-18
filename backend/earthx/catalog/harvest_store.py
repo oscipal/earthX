@@ -30,9 +30,9 @@ __all__ = [
     "canonical",
     "finish_run",
     "begin_pass",
-    "changes_in",
     "end_pass",
     "harvest_state",
+    "rest",
     "save_pass",
     "list_validators",
     "mark_gone",
@@ -90,6 +90,12 @@ class Pass:
     total: int | None
     read: int
     moved: bool
+    #: The lower bound of ``metadata_modified`` of an incremental pass; ``None`` for a full pass.
+    since: datetime | None = None
+
+    @property
+    def full(self) -> bool:
+        return self.since is None
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,7 +105,13 @@ class SourceState:
     full_started_at: datetime | None
     changes_since: datetime | None
     open_pass: Pass | None
+    #: No run of the source starts before this (it refused the harvest with 429; migration 028).
+    rest_until: datetime | None
     now: datetime
+
+    @property
+    def resting(self) -> bool:
+        return self.rest_until is not None and self.now < self.rest_until
 
 
 @dataclass(frozen=True, slots=True)
@@ -169,13 +181,14 @@ def finish_run(
 def harvest_state(conn: psycopg.Connection, source_id: str) -> SourceState:
     row = conn.execute(
         "SELECT full_started_at, changes_since, pass_run_id, pass_started_at, pass_start, pass_last_key, pass_total,"
-        " pass_read, pass_moved, clock_timestamp() FROM public.earthx_harvest_source WHERE source_id = %s",
+        " pass_read, pass_moved, pass_since, rest_until, clock_timestamp()"
+        " FROM public.earthx_harvest_source WHERE source_id = %s",
         (source_id,),
     ).fetchone()
     if row is None:
-        return SourceState(None, None, None, conn.execute("SELECT clock_timestamp()").fetchone()[0])
-    full, since, run_id, *rest, now = row
-    return SourceState(full, since, None if run_id is None else Pass(run_id, *rest), now)
+        return SourceState(None, None, None, None, conn.execute("SELECT clock_timestamp()").fetchone()[0])
+    full, since, run_id, *fields, rest_until, now = row
+    return SourceState(full, since, None if run_id is None else Pass(run_id, *fields), rest_until, now)
 
 
 _UPSERT = (
@@ -184,18 +197,18 @@ _UPSERT = (
 )
 
 
-def begin_pass(conn: psycopg.Connection, source_id: str, run_id: int) -> Pass:
-    """A new full pass, begun by ``run_id`` at its start."""
+def begin_pass(conn: psycopg.Connection, source_id: str, run_id: int, since: datetime | None = None) -> Pass:
+    """A new pass, begun by ``run_id`` at its start: a full one, or an incremental one from ``since``."""
     with conn.transaction():
         conn.execute(_UPSERT, {"source_id": source_id})
         row = conn.execute(
             "UPDATE public.earthx_harvest_source h SET pass_run_id = r.run_id, pass_started_at = r.started_at,"
             " pass_start = 0, pass_last_key = NULL, pass_total = NULL, pass_read = 0, pass_moved = false,"
-            " updated_at = clock_timestamp() FROM public.earthx_harvest_run r"
+            " pass_since = %s, updated_at = clock_timestamp() FROM public.earthx_harvest_run r"
             " WHERE h.source_id = %s AND r.run_id = %s RETURNING r.started_at",
-            (source_id, run_id),
+            (since, source_id, run_id),
         ).fetchone()
-    return Pass(run_id, row[0], 0, None, None, 0, False)
+    return Pass(run_id, row[0], 0, None, None, 0, False, since)
 
 
 def save_pass(
@@ -210,25 +223,29 @@ def save_pass(
 
 
 def end_pass(conn: psycopg.Connection, source_id: str) -> None:
-    """The open pass went through: it is the last full pass, and every change up to its start is in."""
+    """The open pass went through: every change up to its start is in, and a full one is the last full pass."""
     conn.execute(
-        "UPDATE public.earthx_harvest_source SET full_started_at = pass_started_at, changes_since = pass_started_at,"
+        "UPDATE public.earthx_harvest_source SET changes_since = pass_started_at,"
+        " full_started_at = CASE WHEN pass_since IS NULL THEN pass_started_at ELSE full_started_at END,"
         " pass_run_id = NULL, pass_started_at = NULL, pass_start = NULL, pass_last_key = NULL, pass_total = NULL,"
-        " pass_read = NULL, pass_moved = NULL, updated_at = clock_timestamp()"
+        " pass_read = NULL, pass_moved = NULL, pass_since = NULL, updated_at = clock_timestamp()"
         " WHERE source_id = %s AND pass_run_id IS NOT NULL",
         (source_id,),
     )
 
 
-def changes_in(conn: psycopg.Connection, source_id: str, run_id: int) -> None:
-    """A done incremental run: every change up to its start is in."""
+def rest(conn: psycopg.Connection, source_id: str, seconds: float | None) -> datetime:
+    """Hold the source for ``seconds`` (its Retry-After), or without one until the next day begins (UTC): a source
+    that refuses for hours keeps a quota, not a pace (Otto, 18.11.2026). Returns the end of the rest."""
     with conn.transaction():
         conn.execute(_UPSERT, {"source_id": source_id})
-        conn.execute(
-            "UPDATE public.earthx_harvest_source h SET changes_since = r.started_at, updated_at = clock_timestamp()"
-            " FROM public.earthx_harvest_run r WHERE h.source_id = %s AND r.run_id = %s",
-            (source_id, run_id),
-        )
+        return conn.execute(
+            "UPDATE public.earthx_harvest_source SET rest_until = CASE WHEN %(seconds)s::float8 IS NULL"
+            " THEN date_trunc('day', clock_timestamp() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' + interval '1 day'"
+            " ELSE clock_timestamp() + make_interval(secs => %(seconds)s::float8) END, updated_at = clock_timestamp()"
+            " WHERE source_id = %(source_id)s RETURNING rest_until",
+            {"seconds": seconds, "source_id": source_id},
+        ).fetchone()[0]
 
 
 def list_validators(conn: psycopg.Connection, source_id: str) -> ListValidators | None:

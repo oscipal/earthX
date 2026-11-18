@@ -8,6 +8,7 @@ catalog_page: https://radiantearth.github.io/stac-browser/#/external/earth-searc
 filter:
   collection_prefixes: []
 max_requests_per_run: 20
+max_pages_per_run: null
 full_every_days: 1
 robots_exception: null
 maturity: stable

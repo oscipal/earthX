@@ -23,6 +23,7 @@ SOURCE = SourceConfig(
     catalog_page=None,
     filter=CkanFilter("res_format:GeoTIFF", "organization"),
     max_requests_per_run=20,
+    max_pages_per_run=None,
     full_every_days=7,
     robots_exception=None,
     maturity=Maturity.STABLE,

@@ -43,7 +43,6 @@ from earthx.catalog.harvest_store import (
     SourceSummary,
     begin_pass,
     canonical,
-    changes_in,
     end_pass,
     finish_run,
     harvest_state,
@@ -52,6 +51,7 @@ from earthx.catalog.harvest_store import (
     previous,
     raw_records,
     renew_run,
+    rest,
     save_list_validators,
     save_pass,
     seen,
@@ -80,7 +80,7 @@ from earthx.gateway import (
 )
 from earthx.logging import configure_logging
 
-__all__ = ["HarvestResult", "main", "run_harvest"]
+__all__ = ["HarvestResult", "SourceResting", "main", "run_harvest"]
 
 
 LOGGER = logging.getLogger(__name__)
@@ -94,6 +94,8 @@ BACKOFF_MAX_S = 1800.0
 BACKOFF_BUDGET_S = 3600.0
 #: The run's hold on its source is renewed at least this often while it waits (its term is 5 min, A1).
 HEARTBEAT_S = 60.0
+#: The pages ``--measure`` reads: the first page as a run asks it, and the same page with ``fl``.
+MEASURE_PAGES = 2
 
 
 class _BudgetSpent(Exception):
@@ -104,8 +106,16 @@ class _RateLimited(Exception):
     """The source asked the run to slow down for longer than its budget of waiting."""
 
 
-class _ListingMoved(Exception):
-    """An incremental listing shifted while it was read: the run must not count as the last one."""
+class _PageBudget(Exception):
+    """The run read the pages its source allows a run; the pass goes on in the next one."""
+
+
+class SourceResting(Exception):
+    """The source refused the harvest (429) and rests until ``until``: no run starts before (Otto, 18.11.2026)."""
+
+    def __init__(self, source_id: str, until: datetime) -> None:
+        super().__init__(f"{source_id} rests until {until:%Y-%m-%d %H:%M} UTC")
+        self.source_id, self.until = source_id, until
 
 
 class _LeaseLost(Exception):
@@ -148,6 +158,10 @@ class HarvestResult:
     #: next run goes on from where this one stopped before the pass was through.
     resumed_at: int | None = None
     resume_at: int | None = None
+    #: An incremental listing shifted while it was read: what it skipped, the next full pass reads (plan A10).
+    moved: bool = False
+    #: Until when the source rests after this run ended ``rate_limited``.
+    rest_until: datetime | None = None
 
 
 @dataclass(slots=True)
@@ -162,8 +176,10 @@ class _Run:
     version: str
     without_key: int = 0
     gone_unchecked: str | None = None
-    #: The open full pass of a CKAN source this run reads on.
+    #: The open pass of a CKAN source this run reads on.
     pass_: Pass | None = None
+    pages: int = 0
+    moved: bool = False
 
 
 def _retry_after_s(value: str | None, now: datetime) -> float | None:
@@ -201,6 +217,8 @@ class _Fetcher:
         self._renew, self._sleep, self._now = renew, sleep, now
         self.rate_limited = 0
         self.waited_s = 0.0
+        #: The last Retry-After of a 429 in seconds, ``None`` where the source named none.
+        self.retry_after_s: float | None = None
 
     async def __call__(
         self, url: str, *, params: Mapping[str, str | int] | None = None, headers: Mapping[str, str] | None = None
@@ -217,7 +235,7 @@ class _Fetcher:
                     raise
                 self.rate_limited += 1
                 limited = True
-                wait = _retry_after_s(error.retry_after, self._now())
+                wait = self.retry_after_s = _retry_after_s(error.retry_after, self._now())
                 wait = backoff if wait is None else wait
             except HostResting:
                 # Paused by the breaker after the 429s: wait on. A host resting for any other reason ends the run.
@@ -351,6 +369,10 @@ async def _fetch_and_extract(run: _Run, fetch: _Fetcher) -> None:
                 read=listing.read,
                 moved=listing.moved,
             )
+        run.pages += 1
+        budget = source.max_pages_per_run
+        if budget is not None and run.pages >= budget and isinstance(listing, CkanListing) and not listing.exhausted:
+            raise _PageBudget
     _renew(conn, run.run_id)
     if listing.not_modified:
         # The listing is unchanged as a whole, but finds an older extractor judged are judged again from their kept
@@ -365,18 +387,14 @@ async def _fetch_and_extract(run: _Run, fetch: _Fetcher) -> None:
             if listing.validators is not None:
                 save_list_validators(conn, source.source_id, listing.validators)
         return
-    if not listing.full:
-        if listing.moved:
-            # A package may be skipped; the next run must ask from the run before this one (A8).
-            raise _ListingMoved
-        # Finds the listing did not name are judged again if an older extractor judged them, from their kept raw
-        # answers; a full run sees them all anyway.
-        _reextract(run, outdated_only=True)
-        changes_in(conn, source.source_id, run.run_id)
-        run.gone_unchecked = "incremental"
-        return
     assert run.pass_ is not None
-    if listing.complete:
+    if not listing.full:
+        # Finds the listing did not name are judged again if an older extractor judged them, from their kept raw
+        # answers; a full run sees them all anyway. A package a shifting listing skipped is read by the next full pass
+        # (A10): holding the incremental pass back would let it grow past every budget.
+        _reextract(run, outdated_only=True)
+        run.gone_unchecked, run.moved = "incremental", listing.moved
+    elif listing.complete:
         # Gone is what no run of the pass saw, whichever of its runs read which page (A3).
         run.counts.gone = mark_gone(
             conn, run_id=run.run_id, source_id=source.source_id, seen_since_run=run.pass_.run_id
@@ -414,19 +432,20 @@ def _reextract(run: _Run, *, outdated_only: bool) -> int:
 def _kind(
     conn: psycopg.Connection, source: SourceConfig, *, full: bool, reextract: bool
 ) -> tuple[str, datetime | None, Pass | None]:
-    """The kind of the run; for an incremental one its lower bound of ``metadata_modified``; the open pass a full CKAN
-    run goes on with.
+    """The kind of the run; for an incremental one its lower bound of ``metadata_modified``; the open pass a CKAN run
+    goes on with.
 
-    ``full`` for a STAC source; for a CKAN source with an open pass (it goes on, also with ``--full``), for ``--full``,
-    without a full pass that went through, or when the last one began ``full_every_days`` ago or earlier. Else
-    ``incremental`` from the time every change is in (:func:`changes_in`, :func:`end_pass`) less an hour."""
+    ``full`` for a STAC source. A CKAN source with an open pass goes on with it, of its kind, also with ``--full``.
+    Else ``full`` for ``--full``, without a full pass that went through, or when the last one began ``full_every_days``
+    ago or earlier; else ``incremental`` from the time every change is in (:func:`end_pass`) less an hour."""
     if reextract:
         return "reextract", None, None
     if source.protocol is not SourceProtocol.CKAN:
         return "full", None, None
     state = harvest_state(conn, source.source_id)
     if state.open_pass is not None:
-        return "full", None, state.open_pass
+        opened = state.open_pass
+        return ("full" if opened.full else "incremental"), opened.since, opened
     if full or state.full_started_at is None or state.changes_since is None:
         return "full", None, None
     if state.now >= state.full_started_at + timedelta(days=source.full_every_days):
@@ -445,13 +464,18 @@ async def run_harvest(
 ) -> HarvestResult:
     """One run of ``source``; ``conn`` in autocommit. :class:`HarvestBusy` while another run holds the source.
     ``sleep`` is how the run waits on a source that asks it to slow down (a seam for tests)."""
+    if not reextract:
+        state = harvest_state(conn, source.source_id)
+        if state.resting:
+            assert state.rest_until is not None
+            raise SourceResting(source.source_id, state.rest_until)
     kind, since, open_pass = _kind(conn, source, full=full, reextract=reextract)
     run = _Run(
         conn, source, start_run(conn, source.source_id, kind), kind, since, RunCounts(), extractor_version(source)
     )
     resumed_at = None
-    if kind == "full" and source.protocol is SourceProtocol.CKAN:
-        run.pass_ = open_pass if open_pass is not None else begin_pass(conn, source.source_id, run.run_id)
+    if kind != "reextract" and source.protocol is SourceProtocol.CKAN:
+        run.pass_ = open_pass if open_pass is not None else begin_pass(conn, source.source_id, run.run_id, since)
         resumed_at = None if open_pass is None else open_pass.start
     fetch = None
     status, stop_reason = "done", None
@@ -478,8 +502,8 @@ async def run_harvest(
         status, stop_reason = "failed", "shape"
     except _BudgetSpent:
         status, stop_reason = "interrupted", "request_budget"
-    except _ListingMoved:
-        status, stop_reason = "interrupted", "listing_moved"
+    except _PageBudget:
+        status, stop_reason = "interrupted", "page_budget"
     except _RateLimited:
         status, stop_reason = "interrupted", "rate_limited"
     except _LeaseLost:
@@ -498,6 +522,10 @@ async def run_harvest(
     run.counts.extent_unknown = summary.extent_unknown
     finish_run(conn, run.run_id, status=status, stop_reason=stop_reason, counts=run.counts)
     still_open = None if run.pass_ is None else harvest_state(conn, source.source_id).open_pass
+    rest_until = None
+    if stop_reason == "rate_limited":
+        assert fetch is not None
+        rest_until = rest(conn, source.source_id, fetch.retry_after_s)
     return HarvestResult(
         run.run_id,
         kind,
@@ -512,6 +540,8 @@ async def run_harvest(
         0.0 if fetch is None else fetch.waited_s,
         resumed_at,
         None if still_open is None else still_open.start,
+        run.moved,
+        rest_until,
     )
 
 
@@ -538,9 +568,11 @@ _STOP_TEXT = {
     "upstream": "Quelle antwortet mit Fehler oder nicht",
     "lease_expired": "Frist abgelaufen, ein anderer Lauf hat die Quelle übernommen",
     "rate_limited": "die Quelle bittet länger um Pause, als ein Lauf wartet",
-    "listing_moved": "Liste hat sich während des Laufs geändert; der nächste Lauf fragt ab dem Lauf davor",
+    "page_budget": "Seiten je Lauf erreicht (max_pages_per_run); der nächste Lauf setzt fort",
 }
 
+
+_PASS_TEXT = {"full": ("Voller", "vollen"), "incremental": ("Inkrementeller", "inkrementellen")}
 
 _KIND_TEXT = {"full": "voll", "incremental": "inkrementell", "reextract": "neu abgeleitet"}
 
@@ -589,10 +621,17 @@ def report(source: SourceConfig, result: HarvestResult) -> str:
     ]
     if result.rate_limited:
         lines.append(f"  Quelle bat um Pause: {result.rate_limited}-mal 429, gewartet {result.waited_s / 60:.0f} min")
+    if result.moved:
+        lines.append("  Liste hat sich beim Lesen verschoben; was dabei übersprungen wurde, liest der nächste volle Durchgang")
+    if result.rest_until is not None:
+        lines.append(f"  Quelle ruht bis {result.rest_until.astimezone(UTC):%Y-%m-%d %H:%M} UTC; vorher startet kein Lauf")
     if result.resumed_at is not None:
-        lines.append(f"  Voller Durchgang fortgesetzt ab Paket {result.resumed_at}")
+        lines.append(f"  {_PASS_TEXT[result.kind][0]} Durchgang fortgesetzt ab Paket {result.resumed_at}")
     if result.resume_at is not None:
-        lines.append(f"  Stand gespeichert: der nächste Lauf setzt den vollen Durchgang ab Paket {result.resume_at} fort")
+        lines.append(
+            f"  Stand gespeichert: der nächste Lauf setzt den {_PASS_TEXT[result.kind][1]} Durchgang"
+            f" ab Paket {result.resume_at} fort"
+        )
     robots = _robots_line(source, result)
     return "\n".join(lines if robots is None else [*lines, robots])
 
@@ -608,9 +647,35 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-async def _measure(source: SourceConfig, hosts: Mapping[str, HostLimit]) -> str:
-    async with open_source_gateway(_policy_for(source, hosts)) as gateway:
+async def measure(conn: psycopg.Connection, source: SourceConfig, gateway: Gateway) -> str:
+    """``--measure`` under the rules of a run (Otto, 18.11.2026): not while the source rests, not beyond its pages per
+    run, and a 429 lets it rest as after a run."""
+    state = harvest_state(conn, source.source_id)
+    if state.resting:
+        assert state.rest_until is not None
+        raise SourceResting(source.source_id, state.rest_until)
+    if source.max_pages_per_run is not None and source.max_pages_per_run < MEASURE_PAGES:
+        raise ConfigError(f"{source.source_id}: --measure reads {MEASURE_PAGES} pages, more than max_pages_per_run")
+    try:
         return await measure_page(gateway.get, source)
+    except UpstreamError as error:
+        if error.status_code != 429:
+            raise
+        until = rest(conn, source.source_id, _retry_after_s(error.retry_after, datetime.now(UTC)))
+        raise SourceResting(source.source_id, until) from None
+
+
+async def _measure(source: SourceConfig, hosts: Mapping[str, HostLimit]) -> str:
+    with psycopg.connect(autocommit=True) as conn:
+        async with open_source_gateway(_policy_for(source, hosts)) as gateway:
+            return await measure(conn, source, gateway)
+
+
+def resting_text(error: SourceResting) -> str:
+    return (
+        f"{error.source_id}: kein Lauf gestartet – die Quelle bat mit 429 um Pause und ruht bis"
+        f" {error.until.astimezone(UTC):%Y-%m-%d %H:%M} UTC"
+    )
 
 
 async def _main_async(
@@ -646,6 +711,15 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         try:
             print(asyncio.run(_measure(source, hosts)))
+        except SourceResting as error:
+            print(resting_text(error))
+            return 1
+        except (HarvestBusy, ConfigError) as error:
+            print(f"harvest failed: {error}", file=sys.stderr)
+            return 1
+        except psycopg.Error as error:
+            print(f"harvest failed: database error {type(error).__name__}", file=sys.stderr)
+            return 1
         except (GatewayError, ShapeError) as error:
             # Only the kind: the text of an upstream error can quote the answer.
             print(f"harvest failed: measurement stopped ({type(error).__name__})", file=sys.stderr)
@@ -653,6 +727,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     try:
         result = asyncio.run(_main_async(source, hosts, reextract=args.reextract, full=args.full))
+    except SourceResting as error:
+        print(resting_text(error))
+        return 1
     except (HarvestBusy, ConfigError) as error:
         print(f"harvest failed: {error}", file=sys.stderr)
         return 1

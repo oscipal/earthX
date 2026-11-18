@@ -20,6 +20,7 @@ SOURCE = SourceConfig(
     catalog_page="https://stac.example.org/browser/#/collections/{id}",
     filter=StacFilter(()),
     max_requests_per_run=20,
+    max_pages_per_run=None,
     full_every_days=1,
     robots_exception=None,
     maturity=Maturity.STABLE,

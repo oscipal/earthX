@@ -8,6 +8,10 @@ filter:
   fq: null
   publisher_field: organization
 max_requests_per_run: 400
+# opendata.swiss answered 429 for hours after some 100 pages (146 MB) in 17 minutes on 18.11.2026, with no
+# Retry-After and no documented limit: likely a quota. 40 pages (about 4 000 packages, some 56 MB) a run, so a full
+# pass of some 165 pages takes five runs, one a day; each goes on where the last stopped (Otto, 18.11.2026).
+max_pages_per_run: 40
 full_every_days: 7
 # Its robots.txt is the default of CKAN (Disallow: /api/, Crawl-delay: 10). The provider documents the metadata API for
 # reuse (handbook "opendata.swiss API nutzen"; address [S], from a search, not opened from a session), so the harvest

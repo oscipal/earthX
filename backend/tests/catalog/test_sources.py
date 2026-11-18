@@ -27,6 +27,7 @@ catalog_page: https://stac.example.org/browser/#/collections/{id}
 filter:
   collection_prefixes: []
 max_requests_per_run: 20
+max_pages_per_run: null
 full_every_days: 1
 robots_exception: null
 maturity: stable
@@ -74,6 +75,12 @@ class TestTheReleasedSeed:
             "/api/3/action/", "https://handbook.opendata.swiss/de/content/nutzen/api-nutzen.html"
         )
         assert all(s.robots_exception is None for key, s in sources.items() if key != "opendata-swiss")
+
+    def test_opendata_swiss_reads_forty_pages_a_run_and_govdata_has_no_cap_yet(self) -> None:
+        # Otto, 18.11.2026: opendata.swiss refused for hours after some 100 pages; GovData's value comes after its run.
+        sources = read_sources()
+        assert sources["opendata-swiss"].max_pages_per_run == 40
+        assert all(s.max_pages_per_run is None for key, s in sources.items() if key != "opendata-swiss")
 
     def test_govdata_is_asked_on_its_api_host(self) -> None:
         # Otto, 18.11.2026: www.govdata.de disallows all but the large search engines; the API lives on its own host.
@@ -191,3 +198,25 @@ class TestRobotsException:
     def test_the_field_is_required(self, tmp_path: Path) -> None:
         with pytest.raises(EntryFileError, match="exactly the fields"):
             read_source(_write(tmp_path, STAC.replace("robots_exception: null\n", "")))
+
+
+CKAN = (
+    STAC.replace("protocol: stac-api", "protocol: ckan")
+    .replace("{id}", "{name}")
+    .replace("  collection_prefixes: []", "  fq: null\n  publisher_field: organization")
+)
+
+
+class TestPagesPerRun:
+    def test_a_ckan_source_may_cap_its_pages(self, tmp_path: Path) -> None:
+        text = CKAN.replace("max_pages_per_run: null", "max_pages_per_run: 40")
+        assert read_source(_write(tmp_path, text)).max_pages_per_run == 40
+
+    @pytest.mark.parametrize("value", ["0", "-1", "true", "'40'", "1.5", "10001"])
+    def test_a_wrong_cap(self, tmp_path: Path, value: str) -> None:
+        with pytest.raises(EntryFileError, match="max_pages_per_run is null or a whole number"):
+            read_source(_write(tmp_path, CKAN.replace("max_pages_per_run: null", f"max_pages_per_run: {value}")))
+
+    def test_a_stac_source_has_no_cap(self, tmp_path: Path) -> None:
+        with pytest.raises(EntryFileError, match="max_pages_per_run is for a ckan source"):
+            read_source(_write(tmp_path, STAC.replace("max_pages_per_run: null", "max_pages_per_run: 5")))

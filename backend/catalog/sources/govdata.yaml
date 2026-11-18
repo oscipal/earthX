@@ -12,6 +12,8 @@ filter:
   fq: null
   publisher_field: publisher_name
 max_requests_per_run: 2500
+# Pages per run: set after Otto's first run shows whether GovData keeps a quota (Otto, 18.11.2026).
+max_pages_per_run: null
 full_every_days: 7
 robots_exception: null
 maturity: stable

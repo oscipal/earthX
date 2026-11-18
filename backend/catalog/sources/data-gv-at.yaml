@@ -8,6 +8,7 @@ filter:
   fq: null
   publisher_field: organization
 max_requests_per_run: 1000
+max_pages_per_run: null
 full_every_days: 7
 robots_exception: null
 maturity: stable
