@@ -169,7 +169,14 @@ export function orderedPass(datasetId: string | null, entries: SceneEntry[], mos
 // The scenes of a pass drawn one by one, of which the map draws only so many: those whose outline meets the part of the world in
 // view first, in the order they have, then the others (`adr/0032` §10.4). Without a view the order alone counts.
 export function chosenByView<T extends SceneEntry>(entries: readonly T[], view: Bbox | null, limit: number): T[] {
-  const meets = ([, info]: SceneEntry) =>
-    view !== null && info.bounds[0] <= view[2] && info.bounds[2] >= view[0] && info.bounds[1] <= view[3] && info.bounds[3] >= view[1];
-  return [...entries.filter((entry) => meets(entry)), ...entries.filter((entry) => !meets(entry))].slice(0, Math.max(0, limit));
+  return inViewFirst(entries, ([, info]) => info.bounds, view, limit);
+}
+
+// The same choice for anything with a box: the view of the search draws scenes, the preview of the steps their items.
+export function inViewFirst<T>(list: readonly T[], boundsOf: (one: T) => Bbox, view: Bbox | null, limit: number): T[] {
+  const meets = (one: T) => {
+    const bounds = boundsOf(one);
+    return view !== null && bounds[0] <= view[2] && bounds[2] >= view[0] && bounds[1] <= view[3] && bounds[3] >= view[1];
+  };
+  return [...list.filter(meets), ...list.filter((one) => !meets(one))].slice(0, Math.max(0, limit));
 }

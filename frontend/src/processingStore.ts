@@ -2585,6 +2585,7 @@ function wantedPreview(limit?: number): PreviewSpec | null {
     bands: read.bands,
     named: read.choices.length > 1,
     datasets: app.datasets,
+    view: app.viewportBbox,
   };
   const spec = previewSpec({ ...args, range: p.range, ...(view.inner && view.aoi ? { clipAoi: view.aoi } : {}) });
   if (spec === null) return null;
@@ -2924,6 +2925,14 @@ function refreshPreview(): void {
     if (again) void settle(again);
   }, PREVIEW_DELAY_MS);
 }
+
+// The map moved: the scenes the preview draws one by one are those in view (`adr/0032` §10.4). It is drawn again only where
+// that choice changed, and nothing else is asked again.
+useAppStore.subscribe((s, prev) => {
+  if (s.viewportBbox === prev.viewportBbox || settledKey === null) return;
+  const wanted = wantedPreview();
+  if (wanted !== null && settledOf(wanted) !== settledKey) refreshPreview();
+});
 
 useProcessingStore.subscribe((s, prev) => {
   if (
