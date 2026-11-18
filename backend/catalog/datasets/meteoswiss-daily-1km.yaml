@@ -86,25 +86,27 @@ capabilities:
   terrain: false
   # A series of days: the coverage is the fixed grid (plan §5.4).
   single_coverage_product: false
-# Classified by Otto (plan F8, §9.3; 17.11.2026): the terms of use of MeteoSwiss open data, tier processing.
-# To confirm in the PR (plan §11.4): the terms page itself names CC BY 4.0.
+# Classified by Otto (plan G1 = 2, 18.11.2026, correcting F8): CC BY 4.0, which the terms of use of MeteoSwiss open
+# data name expressly; those terms stay as `terms`, with their duties beyond the licence. Tier processing.
 license:
-  spdx_id: null
-  name: Terms of use of MeteoSwiss open data
-  url: https://opendatadocs.meteoswiss.ch/general/terms-of-use
+  spdx_id: CC-BY-4.0
+  name: Creative Commons Attribution 4.0 International
+  url: https://creativecommons.org/licenses/by/4.0/
   commercial_use: true
   distribution: true
   derivatives: true
   share_alike: false
   attribution_required: true
   tier: processing
-  # "Source: MeteoSwiss" from the terms; "(modified)" in the form of `adr/0023` §7.2 (Otto, 17.11.2026).
+  # "Source: MeteoSwiss" from the terms; "(modified)" in the form of `adr/0023` §7.2 (Otto, 17.11.2026; confirmed G2,
+  # 18.11.2026).
   attribution_modified: 'Source: MeteoSwiss (modified)'
   attribution_unmodified: 'Source: MeteoSwiss'
   terms:
     url: https://opendatadocs.meteoswiss.ch/general/terms-of-use
     notice:
-      # The terms in their own words (read 18.11.2026), shortened only where they name themselves.
+      # The terms in their own words (read 18.11.2026), shortened only where they name themselves; kept as they are,
+      # with "does not appear as if MeteoSwiss supports you" (Otto, G1, 18.11.2026).
       en: >-
         Use is subject to the terms of use of MeteoSwiss open data: {terms_url}. By acknowledging the source, you must
         ensure that it does not appear as if MeteoSwiss supports you or your use in particular. Excessive use in terms
