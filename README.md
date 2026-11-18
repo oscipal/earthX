@@ -314,6 +314,10 @@ docker compose run --rm harvest opendata-swiss
   leer war. Verschiebt sich die Liste eines inkrementellen Laufs, endet er `interrupted` (`listing_moved`), und
   der nächste fragt ab dem Lauf davor. Endet ein voller Lauf nicht mit `done` (etwa an der Obergrenze der
   Anfragen), ist auch der nächste wieder voll.
+- `robots.txt` gilt streng. Nur wo die Seed-Datei `robots_exception` nennt (Pfad der Metadaten-API und Beleg in
+  der Doku des Anbieters), liest der Harvest diesen einen Pfad trotz `Disallow`; der Bericht nennt das.
+  `Crawl-delay` gilt immer: Bei opendata.swiss (10 s) dauert ein voller Lauf knapp eine halbe Stunde. GovData
+  wird über den API-Host `ckan.govdata.de` gefragt.
 - `data-gv-at` steht auf `enabled: false`, bis ein erster Lauf den Endpunkt bestätigt; der Befehl lehnt die
   Quelle bis dahin ab.
 - `--reextract` leitet die Zwischenform aus den gespeicherten Rohantworten neu ab, ohne Anfrage; nach einer
