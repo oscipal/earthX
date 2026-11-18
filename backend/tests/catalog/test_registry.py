@@ -876,10 +876,11 @@ class TestEveryEntry:
         assert entry.source.item_holding in (ItemHolding.FEDERATED, ItemHolding.MATERIALIZED)
 
     def test_item_holding_matches_the_coverage_provider(self, entry: DatasetConfig) -> None:
+        ours = (CoverageProvider.LOCAL_SQL, CoverageProvider.FIXED_GRID)
         if entry.source.item_holding is ItemHolding.MATERIALIZED:
-            assert entry.coverage.provider is CoverageProvider.LOCAL_SQL
+            assert entry.coverage.provider in ours
         else:
-            assert entry.coverage.provider is not CoverageProvider.LOCAL_SQL
+            assert entry.coverage.provider not in ours
 
     def test_a_catalog_tier_entry_names_no_viewer(self, entry: DatasetConfig) -> None:
         if entry.license.tier is LicenseTier.CATALOG:
