@@ -561,3 +561,40 @@ legal_status: cleared
    - Strenger gegen eine falsche Erkennung, dafür eine Angabe mehr je Datensatz.
 
 Bis zur Entscheidung bleibt die Plattform streng. Nur die Probe liest über die Abweichung hinweg.
+
+### 10.9 Vierter Lauf der Probe (Otto, 18.11.2026) und Abschluss von PR 1
+
+**Befund** (Ausgabe im PR):
+
+| Was | Ergebnis |
+|---|---|
+| CRS | alle 295 Dateien EPSG:2056, keine Ablehnung |
+| Datentyp | überall `<f4` (Float32) |
+| Gitter `ch01r` | 240 × 370 Zellen zu 1 km: `TabsD`, `TmaxD`, `TminD`, `SrelD` |
+| Gitter `ch01h` | 265 × 370 Zellen zu 1 km: `RhiresD` |
+| Chunk | ein Tag, ohne Filter |
+| Füllwert | −999.99 |
+| Zeit | Schritte um 00:00, keine `time_bnds` |
+| `units` der Temperaturen | „degree“ |
+| `SrelD` | ein Jahr mit Lücken |
+
+**Ursache der Ablehnung im dritten Lauf (F10), bestätigt:**
+- Zwischen drittem und viertem Lauf hat sich an der Prüfung der Plattform (`_crs`, `_same_projection`) nur eines geändert: Die Einheiten der Projektionsparameter werden ohne Groß- und Kleinschreibung verglichen (§10.8).
+- Der Mechanismus ist nachgestellt: Trägt das grid_mapping ein ESRI-WKT in `crs_wkt` oder `spatial_ref`, baut `pyproj.CRS.from_cf` das CRS daraus, mit der Einheit „Degree“; EPSG:2056 hat „degree“.
+- `test_lv95_written_as_esri_wkt_is_epsg_2056` ist mit dem alten Vergleich rot und mit dem neuen grün.
+- **F10 ist damit erledigt; die Plattform bleibt streng.** Methode, alle Parameter und das Ellipsoid müssen weiter übereinstimmen; `strict_crs=False` bleibt der Probe vorbehalten.
+
+**Wiedervorlage `float64` (M5-Plan §2 Punkt 9): geschlossen, kein Anlass.** Alle Dateien sind Float32. Das Panel bietet wie bei jeder Float32-Quelle Float32 an, sobald die Items in PR 2 `raster:bands[].data_type: float32` tragen (§5.7).
+
+**Für PR 2 festgehalten (Otto, 18.11.2026):**
+- **Einheit:** Die Temperaturen tragen in den Dateien `units: degree`; die Plattform führt sie als `°C` (`band_units` und `raster:bands[].unit`). `SrelD` in `%`, `RhiresD` in `mm` (§5.3).
+- **Lücken:** Ein Tag, den eine Datei nicht trägt, ist kein Zeitschritt und kein Item. Ein Tag, dessen Werte Füllwerte sind, liest sich als nodata. Beides ist kein Fehler (`test_missing_days_are_missing_time_steps_not_a_failure`).
+- **Zeitraum je Tag:** Die Dateien tragen nur Zeitpunkte um 00:00 und keine `time_bnds`. Das Item soll den Zeitraum des Tages tragen (`start_datetime`, `end_datetime`), belegt aus der Dokumentation von MeteoSchweiz (z. B. Niederschlag 06–06 UTC).
+
+**Offen, Zugang fehlt — die Tagesgrenzen sind noch nicht belegt:**
+- Die Übersicht `opendatadocs.meteoswiss.ch/c-climate-data/c3-ground-based-climate-data` nennt keine Tagesgrenzen. Sie verweist auf die Produktdokumentationen:
+  - `ProdDoc_RhiresD.pdf`: https://www.meteoswiss.admin.ch/dam/jcr:4f51f0f1-0fe3-48b5-9de0-15666327e63c/ProdDoc_RhiresD.pdf
+  - `ProdDoc_TabsD.pdf` (Mittel, Minimum, Maximum): https://www.meteoswiss.admin.ch/dam/jcr:818a4d17-cb0c-4e8b-92c6-1a1bdf5348b7/ProdDoc_TabsD.pdf
+  - `ProdDoc_SrelD.pdf`: https://www.meteoswiss.admin.ch/dam/jcr:981891db-30d1-47cc-a2e1-50c270bdaf22/ProdDoc_SrelD.pdf
+- Der Host `www.meteoswiss.admin.ch` ist aus der Cloud-Session nicht erreichbar (DNS-Auflösung scheitert, 18.11.2026). Die Grenzen sind deshalb **nicht** belegt und nicht angenommen. Die frühere Vermutung (§2.2, Niederschlag 06–06 UTC) bleibt eine Vermutung [S].
+- Das betrifft erst PR 2, weil die Items dort entstehen. Wege: Otto gibt den Host für die Umgebung frei, Otto legt die drei PDFs oder die betreffenden Sätze in den PR, oder die Session von PR 2 liest sie dort.
