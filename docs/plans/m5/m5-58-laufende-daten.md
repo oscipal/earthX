@@ -1,6 +1,6 @@
 # M5-58 — Laufende und vorläufige Daten
 
-**Stand:** 18.11.2026, Plan mit Fragen (§9), **noch nicht angenommen**. Umsetzung erst nach Ottos Antworten.
+**Stand:** 18.11.2026, Plan **angenommen** (Otto, 18.11.2026: F1–F9 = 1, F5 mit Beleg; §9.2). PR 1 (allgemeiner Mechanismus, Probe `--current` zuerst) in diesem Draft-PR (§10); PR 2 (MeteoSchweiz) in einer neuen Session nach dem Merge.
 **Stufe B.** Höchstens zwei PRs (M5-Plan §2 Punkt 11); Schnitt in §6, Frage F8.
 **Aufgabe (Otto, 18.11.2026, noch nicht im M5-Plan):**
 
@@ -57,7 +57,7 @@ Belegstufen wie in `adr/0029`: **M** gemessen (dort bzw. von Otto), **P** am Que
 | Ersetzen an Ort und Stelle | ja bei den Monatsdateien (10. → 26.); bei den Tages-Items nicht gesagt | P\*, A |
 | Vorläufig → endgültig beim Niederschlag | `RprelimD` → `RhiresD` nach 3–6 Wochen | S (Otto) |
 | Vorläufige Temperatur | ob `TabsD`, `TminD`, `TmaxD`, `SrelD` eine vorläufige Stufe haben, sagt die Doku nicht; die Tages-Items tragen 5 Assets | P\*, M |
-| Tagesgrenzen von `RprelimD` | in der Doku nicht genannt; `RhiresD` 06–06 UTC aus `ProdDoc_RhiresD` (M5-11 §11.1). Für Stationsdaten nennt die Doku 06:10–06:00 UTC | P\* (F5) |
+| Tagesgrenzen von `RprelimD` | „accumulated from 06:00 UTC of day D to 06:00 UTC of day D+1“, in mm, gleich wie `RhiresD` (`ProdDoc_RprelimD`, MeteoSchweiz, https://www.meteoswiss.admin.ch/dam/jcr:86ca15d3-2b56-4753-84fb-135e40d6a5a1/ProdDoc_RprelimD.pdf; Beleg von Otto, 18.11.2026) | P\* (F5) |
 | Validatoren | `file:checksum` und `updated` je Asset; ETag auf Items, `304` auf `If-None-Match`; ETag und Last-Modified auf Dateien | M (`adr/0029` §3.1, §4) |
 | Empfehlung der Quelle | „We highly recommend to use preconditioning via the `If-Match` or `If-None-Match` headers … This reduces unnecessary traffic.“ Assets werden 2 h gecacht. Rückversuche mit Backoff und Jitter | P\* |
 | Nutzung | „excessive use in terms of access frequency or data volume (in particular the high-frequency downloading of the same content) is prohibited“, sonst Sperre möglich | P\* |
@@ -202,9 +202,8 @@ Vorschlag: Das Asset heißt immer `RhiresD`, auch wenn es aus `RprelimD` stammt;
 
 ### 4.3 Tagesgrenzen der vorläufigen Produkte (F5)
 
-- `RprelimD`: nicht belegt (§2.2). Vermutung [A]: wie `RhiresD` 06–06 UTC, weil es dieselbe Größe vorläufig ist. Eine Vermutung wird nicht übernommen (CLAUDE.md).
-- Vorläufige Temperatur (falls die Probe sie zeigt): nicht belegt, ob `ProdDoc_TabsD` auch für die Echtzeitanalyse gilt.
-- Bis zum Beleg lädt PR 2 keine vorläufigen Tage der betroffenen Größe; Monats- und Archivdateien sind belegt (gleiche Produkte wie M5-11).
+- `RprelimD`: **belegt** (Otto, 18.11.2026, F5): „accumulated from 06:00 UTC of day D to 06:00 UTC of day D+1“, in mm, gleich wie `RhiresD`. Quelle: `ProdDoc_RprelimD` von MeteoSchweiz, https://www.meteoswiss.admin.ch/dam/jcr:86ca15d3-2b56-4753-84fb-135e40d6a5a1/ProdDoc_RprelimD.pdf. Ein vorläufiger Niederschlagstag deckt damit genau den Zeitraum des endgültigen Items desselben Tages; das Ersetzen unter derselben Item-ID (F2) verschiebt nichts.
+- Vorläufige Temperatur (falls die Probe sie zeigt): nicht belegt, ob `ProdDoc_TabsD` auch für die Echtzeitanalyse gilt. Bis zum Beleg lädt PR 2 keine vorläufigen Tage dieser Größen; Monats- und Archivdateien sind belegt (gleiche Produkte wie M5-11).
 
 ### 4.4 Übernahme des Bestands (F9)
 
@@ -372,3 +371,18 @@ Antwort am Handy reicht als „F1 1, F2 1, …“.
 - **A6:** `expires` der Quelle wird ins Item übernommen, steuert aber nichts.
 - **A7:** `detect: units` mit `overview: pyramid` ist bis auf Weiteres abgelehnt (§3.6).
 - **A8:** Die Probe `--current` liegt wie `--layout` in `scripts/m5-11-meteoswiss/probe.py` und kommt nicht ins Image.
+
+### 9.2 Antworten von Otto (18.11.2026)
+
+| Frage | Antwort |
+|---|---|
+| F1 | 1: Satz in `limitations` und Tooltip „Provisional values“ am Datum, keine Marke |
+| F2 | 1: gleiche Item-ID, Stand im Item, neues `v=` |
+| F3 | 1: zwei Stände, `provisional` und `final` |
+| F4 | 1: Band `RhiresD`, Produkt der Quelle als `earthx:source_product: RprelimD` |
+| F5 | belegt: `ProdDoc_RprelimD` (https://www.meteoswiss.admin.ch/dam/jcr:86ca15d3-2b56-4753-84fb-135e40d6a5a1/ProdDoc_RprelimD.pdf), Niederschlag „accumulated from 06:00 UTC of day D to 06:00 UTC of day D+1“, in mm, gleich wie `RhiresD` (§2.2, §4.3) |
+| F6 | 1: Takt von Hand bis M5-24 |
+| F7 | 1: Entwurf `adr/0038` in PR 1 |
+| F8 | 1: PR 1 allgemeiner Mechanismus mit Probe `--current` zuerst; PR 2 MeteoSchweiz in einer neuen Session nach dem Merge |
+| F9 | 1: Bestand über einen bedingten `HEAD` je Jahresdatei übernehmen |
+| A1–A8 | gelten |
