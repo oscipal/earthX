@@ -40,6 +40,8 @@ class TestGatewayClasses:
             (UpstreamError(500), "source_5xx"),
             (UpstreamError(503, "x"), "source_5xx"),
             (UpstreamError(429), "source_429"),
+            # Only a read with `If-Match` gets 412: the file was replaced (adr/0029 F7).
+            (UpstreamError(412), "source_changed"),
             (UpstreamError(404), "source_4xx"),
             (UpstreamError(403), "source_4xx"),
             (UpstreamError(400), "source_4xx"),
@@ -182,6 +184,7 @@ def test_the_names_are_the_declared_ones() -> None:
         "source_5xx",
         "source_429",
         "source_4xx",
+        "source_changed",
         "source_unreachable",
         "source_georeference",
         "rejected",

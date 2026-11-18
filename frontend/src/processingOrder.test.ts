@@ -113,6 +113,16 @@ describe('bandSources (K7)', () => {
     ]);
   });
 
+  it('names a NetCDF asset with chunk references like the asset, and skips one without (adr/0029)', () => {
+    const it1 = item('a', {
+      TabsD: { href: 'x', type: 'application/x-netcdf', 'earthx:refs': {}, 'raster:bands': [{ data_type: 'float32', unit: 'degC' }] },
+      other: { href: 'y', type: 'application/x-netcdf' },
+    });
+    expect(bandSources(it1, 'netcdf-refs', null)).toEqual([
+      { asset: 'TabsD', names: ['TabsD'], units: ['degC'], unit: null, dataType: 'float32', scaled: false, nodata: null },
+    ]);
+  });
+
   it('names the bands of a multi-band COG asset <asset>_1 … from raster:bands or bands', () => {
     const it1 = item('a', {
       visual: { href: 'x', type: COG, bands: [{}, {}, {}] },

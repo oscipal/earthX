@@ -199,6 +199,8 @@ _FAILURES: dict[str, tuple[int, str]] = {
     ),
     "aoi_outside_inputs": (422, "The area of interest lies outside the inputs"),
     "source_4xx": (502, "The source refused a read"),
+    # adr/0029 F7: the file was replaced since its references were made; "Run again" fetches the item anew.
+    "source_changed": (502, "The source has updated this file; it is being catalogued again"),
     "source_429": (502, "The source asked for fewer requests"),
     "source_5xx": (502, "The source failed"),
     "source_unreachable": (502, "The source could not be reached"),

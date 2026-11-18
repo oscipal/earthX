@@ -304,10 +304,14 @@ class ResolvedAssetModel(_Model):
     #: the pixels. ``geotransform`` is what a missing key means and is left out of the dump, so that every recipe and
     #: every hash from before the field stays what it was.
     georeferencing: Georeferencing = Field(default="geotransform", exclude_if=lambda value: value == "geotransform")
+    #: The chunk references of a NetCDF asset (adr/0029 F3): the worker and the runner read the bytes they name and
+    #: nothing else. Part of the hash, because they name the bytes; absent for every other asset, so that every recipe
+    #: and every hash from before the field stays what it was. Checked in `readers` when the asset is opened.
+    refs: dict[str, JsonValue] | None = Field(default=None, exclude_if=lambda value: value is None)
 
     def to_asset(self) -> ResolvedAsset:
         """The dataclass the readers take; its own checks run again here."""
-        return ResolvedAsset(**{**self.model_dump(), "georeferencing": self.georeferencing})
+        return ResolvedAsset(**{**self.model_dump(), "georeferencing": self.georeferencing, "refs": self.refs})
 
 
 class ResolvedInput(_Model):

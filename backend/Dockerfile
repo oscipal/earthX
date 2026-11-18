@@ -51,6 +51,11 @@ ENV AWS_EC2_METADATA_DISABLED=true
 
 COPY earthx ./earthx
 
+# License texts the wheels of the lock file do not carry themselves, though they bundle the library (M5-11, Otto
+# 17.11.2026): `libaec`, BSD-2-Clause, in `h5py.libs` and `rasterio.libs`; its clause 2 asks for the text with every
+# binary. In both images, the runner's included (`FROM app`). backend/THIRD_PARTY_NOTICES.md names each file.
+COPY licenses ./licenses
+
 # The curated registry entries (M5-13, adr/0025 §7.1), each released directory or file by name: never the whole
 # `catalog/`, so the candidates of the harvest and the prototype entries of adr/0024 R4 stay out of every image, the
 # runner's included. `.dockerignore` keeps both out of the build context as a second guard.

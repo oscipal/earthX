@@ -30,6 +30,9 @@ export interface StacAsset {
   // frontend reads no extension prefix of one source (M3-12).
   'raster:bands'?: StacBand[] | null;
   bands?: StacBand[] | null;
+  // The chunk references of a NetCDF asset (adr/0029 F3): read only to tell that the asset is one; the readers in
+  // the backend read what they say.
+  'earthx:refs'?: unknown;
 }
 
 export interface StacBand {
@@ -75,7 +78,7 @@ export interface CollectionAccess {
 // without a dataset-specific branch anywhere. A value this union does not
 // name is treated like `'zarr'` (download.ts): unknown is never assumed to be
 // a linkable single file.
-export type DatasetFormat = 'cog' | 'zarr' | 'legacy';
+export type DatasetFormat = 'cog' | 'zarr' | 'netcdf-refs' | 'legacy';
 
 // `earthx:source` (architekturplan.md 5.1). `asset_hosts` is what M3-17's
 // original-file download checks a `href` against before ever showing it as a

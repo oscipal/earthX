@@ -165,6 +165,12 @@ from earthx.objectstore.results import Store
 from earthx.readers import AssetRejected, GeoreferenceMismatch
 from earthx.readers.cog import AssetPath
 from earthx.readers.limits import limit_reads
+from earthx.readers.reference_store import (
+    TILER_CHUNK_CACHE_BYTES,
+    ReferenceMismatch,
+    SourceChanged,
+    configure_chunk_cache,
+)
 from earthx.readers.zarr_reader import ZarrAsset, ZarrAssetError, close_shared_gateways
 
 LOGGER = logging.getLogger("earthx.api.tiler")
@@ -2339,9 +2345,14 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.earthx_mosaic_selections = None if pool is None else SelectionStore(pool)
         app.state.earthx_results = _result_sources()
         app.state.earthx_overviews = _overview_sources()
+        # The chunks of NetCDF references (adr/0029 A2): a view of one time step asks for the same chunk once per
+        # tile, so the serving process keeps them, as GDAL keeps its `/vsicurl/` blocks (plan M5-11 F6). At the start
+        # of serving, not when the module is imported, so that no other process that imports it keeps any.
+        configure_chunk_cache(TILER_CHUNK_CACHE_BYTES)
         try:
             yield
         finally:
+            configure_chunk_cache(0)
             # The Zarr stores of this process share one gateway (M5-36 §4.2); it ends with the app, not with a store.
             # Closing waits for zarr's own loop, so in a thread, not on this one.
             await run_in_threadpool(close_shared_gateways)
@@ -2566,6 +2577,17 @@ def build_app(
         # line, like every other 502 here. The message names dataset, item and asset,
         # never an address.
         return _problem(502, str(error))
+
+    @app.exception_handler(SourceChanged)
+    async def _source_changed(request: Request, error: SourceChanged):
+        # adr/0029 F7: the source replaced the file since its references were made. No old or new bytes are shown in
+        # its place; the next discovery run references the file anew.
+        return _problem(502, str(error))
+
+    @app.exception_handler(ReferenceMismatch)
+    async def _reference_mismatch(request: Request, error: ReferenceMismatch):
+        LOGGER.warning("a chunk did not arrive as its reference names")
+        return _problem(502, "the source did not answer a chunk as its reference names")
 
     @app.get("/health")
     def health() -> dict:
