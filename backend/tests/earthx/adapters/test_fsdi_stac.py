@@ -82,6 +82,7 @@ ENTRY = replace(
     ),
     default_render=replace(COP_DEM_GLO_30.default_render, assets=("dtm",)),
     band_units={"dtm": "m", "dtm_2m": "m"},
+    band_descriptions={"dtm": "Terrain height (DTM)", "dtm_2m": "Terrain height (DTM)"},
     auxiliary_assets=("xyz", "xyz_2m"),
 )
 # The same source searched live: no states (those are the materialization's). Not an entry the start check would take
@@ -204,6 +205,7 @@ class TestDialect:
             source=replace(ENTRY.source, adapter=AdapterKind.COP_DEM_BUCKET, **{"asset_keys": (), "item_states": None, field: value}),
             default_render=replace(ENTRY.default_render, assets=("dtm",)),
             band_units={"dtm": "m"},
+            band_descriptions={"dtm": "Terrain height (DTM)"},
             auxiliary_assets=(),
         )
         with pytest.raises(AdapterSpecMismatch, match="applies no source.asset_keys"):
@@ -496,7 +498,7 @@ class TestMaterialize:
     @pytest.mark.parametrize("assets", [None, [], "x", {}], ids=["null", "list", "text", "empty"])
     async def test_an_item_without_assets_counts_as_unknown_even_without_rules(self, assets) -> None:
         """A later FSDI collection keeps the source keys (SWISSIMAGE); its items still need assets."""
-        config = replace(ENTRY, source=replace(ENTRY.source, asset_keys=()), default_render=None, band_units={}, auxiliary_assets=())
+        config = replace(ENTRY, source=replace(ENTRY.source, asset_keys=()), default_render=None, band_units={}, band_descriptions={}, auxiliary_assets=())
         good = [item(2019, f"{2600 + n}-1200") for n in range(200)]
         outcome = await materialize(Source([[*good, item(2025, "2900-1200", assets=assets)]]), config=config)
         assert outcome.unknown == 1
