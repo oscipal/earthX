@@ -736,3 +736,16 @@ Erwartet je Stufe 1 Datei, Status `ok`, kalt 1 Abruf von rund 0,36 MB (ein Chunk
 - **Keine Logzeilen beim Lauf `precip`, Stand der Klärung:** Der Code hat keinen Zwischenspeicher für Verweise. `discovery` hält nichts zwischen zwei Läufen, und der Chunk-Cache von `readers` ist dort aus und liest ohnehin keine Köpfe. Ein Lauf, der `loaded` meldet und Items mit `earthx:refs` schreibt, hat jede der 65 Dateien über `gateway` gelesen (je 5–8 Abrufe); jede Antwort schreibt eine Zeile „gateway request“, dazu je Datei „referenced N of 65 annual files“. Belegen lässt sich der Lauf an seiner Zeile in `earthx_materialize_runs` (Dauer, `listed`, `items_written`) und an den ETags in den Items. Ottos Prüfung folgt.
 - **A24:** `measure-tiles` sucht in einem materialisierten Datensatz mit dem Zeitraum des Laufs. Für den Niederschlag misst `--datetime 2024-07-01T06:00:00Z/2024-07-02T05:59:59Z` genau den Tag 1.7.; ein ganzer Kalendertag träfe zwei Niederschlagstage (06–06 UTC).
 
+### 11.8 Prüfpunkt Mosaik-Zoom geschlossen (Otto, 18.11.2026)
+
+`measure-tiles` am 1.7.2024 (Niederschlag 06–06 UTC), z0–z12:
+
+| Datensatz | Dateien je Stufe | kalt | warm |
+|---|---|---|---|
+| `meteoswiss-daily-1km` | 1 | 1 Anfrage, 0,355 MB, rund 0,2 s | 0 Anfragen, rund 0,03 s |
+| `meteoswiss-daily-precip-1km` | 1 | 1 Anfrage, 0,392 MB, rund 0,2 s | 0 Anfragen, rund 0,03 s |
+
+- Jede Kachel liest auf jeder Stufe genau den einen Chunk des Tages; die zweite Kachel kommt aus dem Chunk-Cache des `tiler`. Weit unter dem Budget für Gitter aus `adr/0032` §7 (32 Anfragen, 32 MB).
+- `min_zoom: 0` und `overview: own` sind bestätigt (§5.6). Der Prüfpunkt Mosaik-Zoom bei groben Rastern (`adr/0032` §7, Backlog 29) ist für M5-11 geschlossen; ein eigenes Budget für Gitter bleibt für DWD (25 Chunks je Tag) und globale Gitter vorgemerkt.
+- Logzeilen des Laufs `precip` (§11.7): geklärt. Der Lauf dauerte 8 min 41 s mit `listed` 65; die Anfragen liefen, nur Ottos Kopie der Ausgabe war unvollständig.
+
