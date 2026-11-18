@@ -8,7 +8,7 @@
 
 import { useMemo } from 'react';
 
-import { DRAW_AOI_TO_CROP, isCogFormat, noOriginalsReason } from '../download';
+import { DRAW_AOI_TO_CROP, hasOriginalFiles, noOriginalsReason } from '../download';
 import { originalsTitle, scenesOf, summaryOf, summaryText } from '../originals';
 import { processBlockReason } from '../processingOrder';
 import { useProcessingStore } from '../processingStore';
@@ -163,7 +163,7 @@ export default function ViewerControls() {
     return summaryText(summaryOf(dataset.collection, scenesOf(dataset.collection, [{ label: '', items: wanted }])));
   }, [shown, datasets, sections, openSectionId, datasetId, items, groups]);
   const shownDataset = shown ? datasets.find((d) => d.id === shown.datasetId) : undefined;
-  const originalsAllowed = isCogFormat(shownDataset);
+  const originalsAllowed = hasOriginalFiles(shownDataset);
   // What "Quick processing" offers for the dataset the image shows (NM4-14b, M5-14): its indices, composites and steps.
   const presets = quickPresetsOf(shownDataset?.collection);
   // What the fields hold (chosen, drawn after "Apply") and what the map draws now.

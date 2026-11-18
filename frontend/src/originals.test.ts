@@ -18,7 +18,7 @@ import {
   zipJobOf,
 } from './originals';
 import { collection, HOST, item, S2_BANDS } from './fixtures/originalsScene';
-import type { Collection } from './types';
+import type { Collection, StacItem } from './types';
 
 describe('which assets of a scene are its original files (Z1, Z3)', () => {
   it('Sentinel-2: the 12 bands, aot, wvp, cloud, snow, scl and the true-colour image, then the three metadata files', () => {
@@ -168,10 +168,14 @@ describe('what a click will load, told before the click (Otto, 31.10.2026)', () 
   });
 
   it('no size known at all says the size is unknown, and no scene or no file is no size either', () => {
-    const none = item('A', { red: { href: `https://${HOST}/A/red.tif` } }, ['red']);
-    for (const asset of Object.values(none.assets)) delete asset['file:size'];
+    const unsized = (id: string) => {
+      const scene = item(id, { red: { href: `https://${HOST}/${id}/red.tif` } }, ['red']);
+      for (const asset of Object.values(scene.assets)) delete asset['file:size'];
+      return scene;
+    };
+    const none = unsized('A');
     expect(summary(collection(), none)).toBe('1 scene · size unknown');
-    expect(summary(collection(), none, { ...none, id: 'B' })).toBe('2 scenes · size unknown');
+    expect(summary(collection(), none, unsized('B'))).toBe('2 scenes · size unknown');
     expect(summary(collection({ 'earthx:source': null }), item('A'))).toBe('1 scene · size unknown');
     expect(summary(collection())).toBe('0 scenes · size unknown');
   });
@@ -201,6 +205,18 @@ describe('scenes of a selection', () => {
       { label: 'Pass 2', items: [b, item('C')] },
     ]);
     expect(scenes.map((scene) => [scene.item.id, scene.groupLabel])).toEqual([['A', 'Pass 1'], ['B', 'Pass 1'], ['C', 'Pass 2']]);
+  });
+
+  it('fetch a file several scenes share once, with the first of them (the days of an annual file, M5-11)', () => {
+    const annual = (year: number) => ({ href: `https://${HOST}/archive/tabsd_${year}.nc`, roles: ['data'] });
+    const c = collection({ 'earthx:band_units': { TabsD: '°C' }, 'earthx:auxiliary_assets': [] });
+    const day = (id: string, year: number): StacItem => ({ id, properties: {}, assets: { TabsD: annual(year) } });
+    const scenes = scenesOf(c, [
+      { label: 'P', items: [day('D1', 2023), day('D2', 2023)] },
+      { label: 'Q', items: [day('D3', 2024), day('D4', 2023)] },
+    ]);
+    expect(scenes.map((scene) => scene.item.id)).toEqual(['D1', 'D3']);
+    expect(linksOf(scenes).map((link) => link.href)).toEqual([annual(2023).href, annual(2024).href]);
   });
 
   it('linksOf lists every file of every scene, with its pass', () => {

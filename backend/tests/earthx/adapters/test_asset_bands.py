@@ -8,9 +8,11 @@ registry entry fails ``test_every_registry_entry_is_covered`` until it is added 
 
 from __future__ import annotations
 
+import tempfile
 from collections.abc import Mapping
 from dataclasses import replace
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -21,12 +23,17 @@ from earthx.adapters.cop_dem_bucket import _item as dem_item
 from earthx.adapters.esa_worldcover_bucket import _item as worldcover_item
 from earthx.adapters.federated_search import with_core_bands
 from earthx.adapters.stac_api import get_item as earth_search_item
+from earthx.catalog.registry import DatasetConfig
+from earthx.discovery import meteoswiss_grid
+from earthx.discovery.meteoswiss_grid import PRODUCTS
 from earthx.gateway import Policy
 from tests.catalog.entries import (
     BEV_ALS_DGM,
     COP_DEM_GLO_30,
     ESA_WORLDCOVER_2020,
     ESA_WORLDCOVER_2021,
+    METEOSWISS_DAILY_1KM,
+    METEOSWISS_DAILY_PRECIP_1KM,
     REGISTRY,
     SENTINEL_1_GRD,
     SENTINEL_2_L2A,
@@ -34,6 +41,7 @@ from tests.catalog.entries import (
 )
 from tests.catalog.synthetic_chain import fsdi_feature
 from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR
+from tests.earthx.discovery import mini_archive
 from tests.earthx.readers import mini_zarr
 
 from .conftest import answering, load
@@ -113,6 +121,19 @@ def worldcover_fixture(entry) -> dict[str, Any]:
     return worldcover_item("ESA_WorldCover_10m_N45E009", "map/N45E009_Map.tif", (9.0, 45.0, 12.0, 48.0), config=config)
 
 
+async def meteoswiss_fixture(entry: DatasetConfig) -> dict[str, Any]:
+    """A day of the archive as `discovery` writes it (M5-11): `raster:bands` per quantity, no band names."""
+    quantity = next(iter(entry.band_units))
+    with tempfile.TemporaryDirectory() as directory:
+        body = mini_archive.annual_file(Path(directory), 2024, days=[0])
+    archive = mini_archive.Archive({mini_archive.name(quantity, PRODUCTS[quantity].grid, 2024): body})
+    async with archive.gateway() as gateway:
+        outcome = await meteoswiss_grid.materialize_items(
+            mini_archive.entry(entry), gateway=gateway, known_version=None, today=mini_archive.TODAY
+        )
+    return outcome.items[0]
+
+
 async def items_by_dataset() -> dict[str, dict[str, Any]]:
     return {
         SENTINEL_2_L2A.dataset_id: await earth_search_fixture(),
@@ -122,6 +143,7 @@ async def items_by_dataset() -> dict[str, dict[str, Any]]:
         SWISSALTI3D.dataset_id: await swissalti3d_fixture(),
         BEV_ALS_DGM.dataset_id: bev_fixture(),
         **{entry.dataset_id: worldcover_fixture(entry) for entry in (ESA_WORLDCOVER_2020, ESA_WORLDCOVER_2021)},
+        **{entry.dataset_id: await meteoswiss_fixture(entry) for entry in (METEOSWISS_DAILY_1KM, METEOSWISS_DAILY_PRECIP_1KM)},
     }
 
 
@@ -134,6 +156,8 @@ def test_every_registry_entry_is_covered() -> None:
         ESA_WORLDCOVER_2021.dataset_id,
         SWISSALTI3D.dataset_id,
         BEV_ALS_DGM.dataset_id,
+        METEOSWISS_DAILY_1KM.dataset_id,
+        METEOSWISS_DAILY_PRECIP_1KM.dataset_id,
     }
     assert {entry.dataset_id for entry in REGISTRY} == covered
 

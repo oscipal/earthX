@@ -66,7 +66,7 @@ from earthx.access.band_export import (
     ExportPlanError,
     band_count,
     band_meta_of_items,
-    band_table,
+    band_rows,
     plan_files,
     resampling_for,
 )
@@ -2283,13 +2283,13 @@ async def bands_of_items(
     items = await asyncio.gather(*(_fetch_item(state, dataset, item_id) for item_id in body.items))
     if config.zarr is not None:
         return {"bands": []}
-    table = band_table(
+    rows = band_rows(
         items,
         auxiliary=config.auxiliary_assets,
         mask_asset=config.mask.asset if config.mask is not None else None,
         unit_of=config.band_unit,
     )
-    return {"bands": [{**meta.to_json(), "preselected": ticked} for meta, ticked in table]}
+    return {"bands": rows}
 
 
 def gdal_environment(request: Request) -> dict[str, str]:

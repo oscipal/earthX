@@ -39,7 +39,7 @@ import {
   downloadRequestFor,
   downloadRequestForSelection,
   DRAW_AOI_TO_CROP,
-  isCogFormat,
+  hasOriginalFiles,
   mixedBandsNote,
   noOriginalsReason,
   originalFileLinks,
@@ -54,7 +54,7 @@ import { flipNext, flipStart } from './layerFlip';
 import type { LayerOverlay, LayerRestore, MapLayer, ResultLayerInfo } from './layers';
 import { bandLayerOf, isResultExpired, restyledTileUrl } from './resultLayer';
 import { buildTileUrl, footprintsFC } from './mapLayers';
-import { assetOfLook, bandAssetsOf, withAsset } from './viewBand';
+import { assetOfLook, bandAssetsOf, standardLookOfBand, withAsset } from './viewBand';
 import { indexKeyOf, mosaicKeyOf, MAX_MOSAIC_OPERATOR_ASSETS, orderedPass, orderKeyOf, passesOf, stackLikeView } from './mosaic';
 import type { Mosaics, SceneEntry } from './mosaic';
 import { ensureSelection, withSelection } from './mosaicSelection';
@@ -2734,7 +2734,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ error: DRAW_AOI_TO_CROP });
       return;
     }
-    if (kind === 'originals' && !isCogFormat(dataset)) {
+    if (kind === 'originals' && !hasOriginalFiles(dataset)) {
       set({ error: noOriginalsReason(dataset) });
       return;
     }
@@ -2798,7 +2798,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ error: DRAW_AOI_TO_CROP });
       return;
     }
-    if (kind === 'originals' && !isCogFormat(dataset)) {
+    if (kind === 'originals' && !hasOriginalFiles(dataset)) {
       set({ error: noOriginalsReason(dataset) });
       return;
     }
@@ -3229,8 +3229,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     const item = sectionsForView(s).flatMap((x) => x.items).find((it) => it.id === shown.ids[0]);
     if (!bandAssetsOf(item, collection).includes(band)) return;
-    set({ pendingBand: band, pendingIndex: '', pendingPresetParams: {}, pendingColormapName: '', pendingVmin: '', pendingVmax: '', pendingChannels: [] });
-    void get().autoStretch();
+    // A band in the unit of the standard picture starts with its colormap and range (M5-11, H1 = 1); any other is measured.
+    const standard = standardLookOfBand(collection, item, band);
+    set({
+      pendingBand: band,
+      pendingIndex: '',
+      pendingPresetParams: {},
+      pendingColormapName: standard?.colormapName ?? '',
+      pendingVmin: standard?.vmin ?? '',
+      pendingVmax: standard?.vmax ?? '',
+      pendingChannels: [],
+    });
+    if (!standard) void get().autoStretch();
   },
   toggleDownloaded: () => set((s) => ({ showDownloaded: !s.showDownloaded })),
   setViewOpacity: (opacity) => set({ viewOpacity: Number.isFinite(opacity) ? Math.max(0, Math.min(1, opacity)) : 1 }),
