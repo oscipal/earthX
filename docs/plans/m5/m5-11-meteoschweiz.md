@@ -749,3 +749,10 @@ Erwartet je Stufe 1 Datei, Status `ok`, kalt 1 Abruf von rund 0,36 MB (ein Chunk
 - `min_zoom: 0` und `overview: own` sind bestätigt (§5.6). Der Prüfpunkt Mosaik-Zoom bei groben Rastern (`adr/0032` §7, Backlog 29) ist für M5-11 geschlossen; ein eigenes Budget für Gitter bleibt für DWD (25 Chunks je Tag) und globale Gitter vorgemerkt.
 - Logzeilen des Laufs `precip` (§11.7): geklärt. Der Lauf dauerte 8 min 41 s mit `listed` 65; die Anfragen liefen, nur Ottos Kopie der Ausgabe war unvollständig.
 
+### 11.9 Browserprüfung (Otto, 18.11.2026): nur ein Band in der Ansicht
+
+- **Befund:** Der Data catalogue nennt vier Bänder (`TabsD`, `TmaxD`, `TminD`, `SrelD`), das Band-Menü der Ansicht bot nur `TabsD`.
+- **Ursache, keine Absicht:** `viewBand.ts::bandAssetsOf` gab für jedes Format außer `cog` eine leere Liste zurück; übrig blieb das Band der Standarddarstellung. Dieselbe Lücke im Download: `access/band_export.band_table` nahm nur GeoTIFF-Assets in die Bandtabelle des Dialogs, für NetCDF also keine. Processing war nicht betroffen (`processingOrder.ts` und seit A22 `intake` nehmen jedes Asset mit `earthx:refs` als Band).
+- **Behoben (A25):** Ansicht und Download nehmen bei `netcdf-refs` jedes Asset mit `earthx:refs` als ein Band, benannt wie das Asset. Wählbar ist nur, was der Tag hat: vor 1971 nur `TabsD`, dann ist das Menü gesperrt („This image has one band“). Die Einheit kommt wie bei jedem Band aus `band_units` (°C bzw. %). Tests: `viewBand.test.ts`, `ViewBand.test.tsx` (Menü mit vier bzw. einer Größe), `test_band_export.py` (Bandtabelle mit Einheit und Auflösung).
+- **Offen (H1):** die Darstellung eines gewählten Bands. Heute bekommt jedes gewählte Band aller Datensätze den gemessenen Bereich und keine Farbskala („— none —“, grau); die Person wählt sie. Eine eigene Darstellung je Größe gibt die Registry nicht her.
+
