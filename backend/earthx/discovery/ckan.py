@@ -66,15 +66,24 @@ _NOT_PUBLIC = frozenset({"RESTRICTED", "NON_PUBLIC", "NONPUBLIC", "NON-PUBLIC"})
 
 @dataclass(slots=True)
 class CkanListing:
-    """How the listing ended. ``complete`` only for a full listing read to its end whose count held still."""
+    """How the listing stands and ended. Before a page is handed out, ``start`` and ``last_key`` already point to the
+    next one, so a run that stops after it can keep them, and the next run goes on from there (Otto, 18.11.2026)."""
 
     full: bool
+    #: The offset of the next page, and the package it must start with (the overlap of A8).
+    start: int = 0
+    last_key: str | None = None
+    #: The count of the first page of the pass, and the packages read so far without the overlaps.
+    total: int | None = None
+    read: int = 0
+    #: The listing shifted while it was read (count changed, or a page lost its overlap): a package may be skipped.
+    moved: bool = False
     not_modified: bool = False
+    #: The last page was read.
+    exhausted: bool = False
     complete: bool = False
     #: CKAN has no validators of its listing (adr/0025 §3).
     validators: None = None
-    #: The listing shifted while it was read (count changed, or a page lost its overlap): a package may be skipped.
-    moved: bool = False
     #: The listing named no package at all; a full one of them is no evidence that every find is gone.
     empty: bool = False
 
@@ -102,14 +111,15 @@ def _search_params(source: SourceConfig, start: int, since: datetime | None) -> 
 async def ckan_pages(
     fetch: Fetch, source: SourceConfig, since: datetime | None, listing: CkanListing
 ) -> AsyncIterator[list[tuple[str | None, Any]]]:
-    """The packages of each page as ``(key, package)``; a key ``None`` marks one that cannot be a find. ``since`` is the
-    lower bound of ``metadata_modified`` of an incremental listing (aware, asked in UTC), ``None`` for a full one.
+    """The packages of each page as ``(key, package)`` from where ``listing`` stands; a key ``None`` marks one that
+    cannot be a find. ``since`` is the lower bound of ``metadata_modified`` of an incremental listing (aware, asked in
+    UTC), ``None`` for a full one.
 
     :class:`ShapeError` where the source answers no listing, or a page of several packages names none that is new: it
     does not page (``start`` ignored) and would run until the budget is spent."""
-    start, total, last_key, read = 0, None, None, 0
     keys: set[str] = set()
     while True:
+        start = listing.start
         response = await fetch(f"{source.endpoint}/package_search", params=_search_params(source, start, since))
         if response.status_code != 200:
             raise ShapeError(f"the listing answered {response.status_code}")
@@ -122,28 +132,31 @@ async def ckan_pages(
         packages = result.get("results") if isinstance(result, dict) else None
         if isinstance(count, bool) or not isinstance(count, int) or count < 0 or not isinstance(packages, list):
             raise ShapeError("a page of the listing has no count and no list of packages")
-        if total is None:
-            total = count
-        elif count != total:
+        if listing.total is None:
+            listing.total = count
+        elif count != listing.total:
             listing.moved = True
         page = [(package_key(package), package) for package in packages]
-        if last_key is not None and (not page or page[0][0] != last_key):
+        overlap = listing.last_key is not None and bool(page) and page[0][0] == listing.last_key
+        if listing.last_key is not None and not overlap:
             listing.moved = True
-        read += len(page) - (1 if last_key is not None and page and page[0][0] == last_key else 0)
+        listing.read += len(page) - (1 if overlap else 0)
         new = {key for key, _ in page if key is not None} - keys
         if len(page) > 1 and not new:
             raise ShapeError("a page of the listing names no new package")
         keys |= new
-        yield page
         end = start + len(page)
-        if not page or end >= count:
+        listing.exhausted = not page or end >= count
+        if not listing.exhausted:
+            # The next page starts with the last package of this one, so that a shift of the listing shows.
+            listing.last_key = page[-1][0] if len(page) > 1 else None
+            listing.start = end - 1 if listing.last_key is not None else end
+        yield page
+        if listing.exhausted:
             break
-        # The next page starts with the last package of this one, so that a shift of the listing shows.
-        last_key = page[-1][0] if len(page) > 1 else None
-        start = end - 1 if last_key is not None else end
-    if read != total:
+    if listing.read != listing.total:
         listing.moved = True
-    listing.empty = total == 0
+    listing.empty = listing.total == 0
     listing.complete = listing.full and not listing.moved and not listing.empty
 
 

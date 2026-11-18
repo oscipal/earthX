@@ -65,6 +65,9 @@ class Catalogue:
         self.after_page: Callable[[int], None] | None = None
         self.ignore_start = False
         self.robots = "User-agent: *\nAllow: /\n"
+        #: From this offset on, pages are answered with this status (429: slow down; 503: down) while it is set.
+        self.refuse_from: int | None = None
+        self.refuse_status = 429
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         if request.url.path == "/robots.txt":
@@ -73,6 +76,8 @@ class Catalogue:
         self.asked.append(request.url.params)
         if self.answer is not None:
             return httpx.Response(200, content=json.dumps(self.answer))
+        if self.refuse_from is not None and int(request.url.params["start"]) >= self.refuse_from:
+            return httpx.Response(self.refuse_status, text="slow down")
         incremental = "metadata_modified" in request.url.params.get("fq", "")
         matching = sorted(
             self.changed if incremental else self.packages, key=lambda p: str(p.get("id") if isinstance(p, dict) else p)
@@ -96,6 +101,7 @@ def _gateway(catalogue: Catalogue, source: SourceConfig | None = None) -> Gatewa
             allowed_hosts=frozenset({HOST}),
             obey_robots=True,
             robots_exceptions={} if exception is None else {HOST: (exception.path,)},
+            retry_rate_limited=False,
         ),
         transport=httpx.MockTransport(catalogue.handle),
         resolve=lambda host, port: ("93.184.216.34",),
@@ -236,7 +242,8 @@ async def test_a_full_run_marks_what_is_missing_gone(db: psycopg.Connection, sou
 async def test_a_full_run_is_due_after_full_every_days(db: psycopg.Connection, source: SourceConfig) -> None:
     await run_harvest(db, source, gateway=_gateway(Catalogue(THREE)))
     db.execute(
-        "UPDATE public.earthx_harvest_run SET started_at = started_at - interval '7 days' WHERE source_id = %s",
+        "UPDATE public.earthx_harvest_source SET full_started_at = full_started_at - interval '7 days'"
+        " WHERE source_id = %s",
         (source.source_id,),
     )
     result = await run_harvest(db, source, gateway=_gateway(Catalogue(THREE[:2])))
@@ -411,3 +418,87 @@ async def test_an_exception_robots_txt_does_not_need_is_reported_as_unused(
     result = await run_harvest(db, excepted, gateway=_gateway(Catalogue(THREE), excepted))
     assert result.status == "done" and not result.robots_waived
     assert "(nicht gebraucht;" in report(excepted, result)
+
+
+async def _no_wait(seconds: float) -> None:
+    return None
+
+
+FIVE = [_package(str(i)) for i in range(1, 6)]
+
+
+async def test_a_full_pass_the_source_slows_down_keeps_its_place_and_goes_on(
+    db: psycopg.Connection, source: SourceConfig
+) -> None:
+    # Otto, 18.11.2026: opendata.swiss answered 429 from page 103 on; the run waited, stopped and the next one goes on
+    # from that page instead of from the start.
+    catalogue = Catalogue(FIVE, size=2)
+    catalogue.refuse_from = 1
+    first = await run_harvest(db, source, gateway=_gateway(catalogue), sleep=_no_wait)
+    assert (first.kind, first.status, first.stop_reason) == ("full", "interrupted", "rate_limited")
+    assert first.rate_limited > 1 and first.resume_at == 1 and first.counts.found_new == 2
+    text = report(source, first)
+    assert "Quelle bat um Pause" in text and "setzt den vollen Durchgang ab Paket 1 fort" in text
+    catalogue.refuse_from = None
+    catalogue.asked.clear()
+    second = await run_harvest(db, source, gateway=_gateway(catalogue), sleep=_no_wait)
+    assert (second.kind, second.status, second.resumed_at, second.resume_at) == ("full", "done", 1, None)
+    assert catalogue.asked[0]["start"] == "1"
+    assert (second.counts.found_new, second.counts.gone, second.gone_unchecked) == (3, 0, None)
+    assert "Voller Durchgang fortgesetzt ab Paket 1" in report(source, second)
+
+
+async def test_gone_after_a_pass_over_several_runs_is_what_none_of_them_saw(
+    db: psycopg.Connection, source: SourceConfig
+) -> None:
+    await run_harvest(db, source, gateway=_gateway(Catalogue(FIVE, size=2)))
+    db.execute(
+        "UPDATE public.earthx_harvest_source SET full_started_at = full_started_at - interval '7 days'"
+        " WHERE source_id = %s",
+        (source.source_id,),
+    )
+    four = Catalogue(FIVE[:4], size=2)
+    four.refuse_from = 1
+    stopped = await run_harvest(db, source, gateway=_gateway(four), sleep=_no_wait)
+    assert stopped.status == "interrupted" and stopped.counts.gone == 0
+    four.refuse_from = None
+    done = await run_harvest(db, source, gateway=_gateway(four), sleep=_no_wait)
+    # 1 was seen only by the first run of the pass, 5 by none of its runs.
+    assert done.counts.gone == 1
+    states = _states(db, source)
+    assert states["5"][0] == "gone" and states["1"][0] == "extracted"
+
+
+async def test_a_source_failing_on_the_way_pauses_the_pass(db: psycopg.Connection, source: SourceConfig) -> None:
+    catalogue = Catalogue(FIVE, size=2)
+    catalogue.refuse_from, catalogue.refuse_status = 1, 503
+    result = await run_harvest(db, source, gateway=_gateway(catalogue), sleep=_no_wait)
+    assert (result.status, result.stop_reason, result.resume_at, result.rate_limited) == (
+        "interrupted",
+        "upstream",
+        1,
+        0,
+    )
+
+
+async def test_after_a_pass_over_several_runs_changes_are_asked_from_its_start(
+    db: psycopg.Connection, source: SourceConfig
+) -> None:
+    catalogue = Catalogue(FIVE, size=2)
+    catalogue.refuse_from = 1
+    first = await run_harvest(db, source, gateway=_gateway(catalogue), sleep=_no_wait)
+    catalogue.refuse_from = None
+    await run_harvest(db, source, gateway=_gateway(catalogue), sleep=_no_wait)
+    nxt = Catalogue([])
+    result = await run_harvest(db, source, gateway=_gateway(nxt))
+    # Pages the first run read may have changed while the pass stood still: the next run asks from the pass's start.
+    assert result.kind == "incremental" and _since(nxt) == _started(db, first.run_id)
+
+
+async def test_full_goes_on_with_an_open_pass(db: psycopg.Connection, source: SourceConfig) -> None:
+    catalogue = Catalogue(FIVE, size=2)
+    catalogue.refuse_from = 1
+    await run_harvest(db, source, gateway=_gateway(catalogue), sleep=_no_wait)
+    catalogue.refuse_from = None
+    result = await run_harvest(db, source, full=True, gateway=_gateway(catalogue), sleep=_no_wait)
+    assert (result.kind, result.resumed_at) == ("full", 1)

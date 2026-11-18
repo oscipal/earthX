@@ -23,10 +23,12 @@ import argparse
 import asyncio
 import hashlib
 import json
+import logging
 import sys
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 import psycopg
@@ -35,18 +37,23 @@ from earthx.catalog.datasets import registry
 from earthx.catalog.harvest_store import (
     MAX_RAW_BYTES,
     HarvestBusy,
+    Pass,
     Previous,
     RunCounts,
     SourceSummary,
+    begin_pass,
     canonical,
+    changes_in,
+    end_pass,
     finish_run,
-    last_runs,
+    harvest_state,
     list_validators,
     mark_gone,
     previous,
     raw_records,
     renew_run,
     save_list_validators,
+    save_pass,
     seen,
     source_summary,
     start_run,
@@ -56,6 +63,7 @@ from earthx.catalog.hosts import HostLimit
 from earthx.catalog.registry import ConfigError
 from earthx.catalog.sources import SourceConfig, SourceProtocol, read_sources
 from earthx.discovery.ckan import INCREMENTAL_OVERLAP, CkanListing, ckan_pages, extract_package
+from earthx.discovery.ckan_measure import measure_page
 from earthx.discovery.extract import Extracted, Invalid, ShapeError, extracted_sha256, extractor_version
 from earthx.discovery.source_gateway import open_source_gateway
 from earthx.discovery.stac import StacListing, extract_collection, stac_pages
@@ -66,6 +74,7 @@ from earthx.gateway import (
     HostResting,
     Policy,
     RobotsDisallowed,
+    UpstreamError,
     UrlRejected,
     user_agent_from_env,
 )
@@ -74,8 +83,25 @@ from earthx.logging import configure_logging
 __all__ = ["HarvestResult", "main", "run_harvest"]
 
 
+LOGGER = logging.getLogger(__name__)
+
+#: The first wait after a 429 that names no Retry-After; each next one in a row twice as long, at most
+#: :data:`BACKOFF_MAX_S` (Otto, 18.11.2026: minutes, doubling, not a few tries in the crawl-delay beat).
+BACKOFF_FIRST_S = 120.0
+BACKOFF_MAX_S = 1800.0
+#: The longest a run waits on a source that asks it to slow down, all waits together; then it stops and keeps its
+#: place, and the next run goes on from there.
+BACKOFF_BUDGET_S = 3600.0
+#: The run's hold on its source is renewed at least this often while it waits (its term is 5 min, A1).
+HEARTBEAT_S = 60.0
+
+
 class _BudgetSpent(Exception):
     pass
+
+
+class _RateLimited(Exception):
+    """The source asked the run to slow down for longer than its budget of waiting."""
 
 
 class _ListingMoved(Exception):
@@ -115,6 +141,13 @@ class HarvestResult:
     gone_unchecked: str | None = None
     #: Whether the run read a path robots.txt disallows, under the exception of the source's file (Otto, 18.11.2026).
     robots_waived: bool = False
+    #: How often the source answered 429, and how long the run waited for it in all.
+    rate_limited: int = 0
+    waited_s: float = 0.0
+    #: A full CKAN pass over several runs (Otto, 18.11.2026): the offset this run went on from, and the offset the
+    #: next run goes on from where this one stopped before the pass was through.
+    resumed_at: int | None = None
+    resume_at: int | None = None
 
 
 @dataclass(slots=True)
@@ -129,25 +162,89 @@ class _Run:
     version: str
     without_key: int = 0
     gone_unchecked: str | None = None
+    #: The open full pass of a CKAN source this run reads on.
+    pass_: Pass | None = None
+
+
+def _retry_after_s(value: str | None, now: datetime) -> float | None:
+    """A ``Retry-After`` as seconds from ``now``: whole seconds or an HTTP date; ``None`` where it is neither."""
+    text = (value or "").strip()
+    if text.isascii() and text.isdigit():
+        return float(text)
+    try:
+        when = parsedate_to_datetime(text)
+    except (TypeError, ValueError, IndexError):
+        return None
+    if when.tzinfo is None:
+        return None
+    return max((when - now).total_seconds(), 0.0)
 
 
 class _Fetcher:
-    """Every request of a run: counted, and refused once the source's budget per run is spent."""
+    """Every request of a run: counted, refused once the source's budget per run is spent, and waited for when the
+    source answers 429 (Otto, 18.11.2026): by its ``Retry-After``, else from :data:`BACKOFF_FIRST_S` on, doubling. A
+    host the breaker paused after those 429s is waited for the same way. More than :data:`BACKOFF_BUDGET_S` of waiting
+    in all ends the run, which keeps its place."""
 
-    def __init__(self, gateway: Gateway, counts: RunCounts, budget: int) -> None:
-        self._gateway, self._counts, self._budget = gateway, counts, budget
+    def __init__(
+        self,
+        gateway: Gateway,
+        host: str,
+        counts: RunCounts,
+        budget: int,
+        *,
+        renew: Callable[[], None],
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        now: Callable[[], datetime] = lambda: datetime.now(UTC),
+    ) -> None:
+        self._gateway, self._host, self._counts, self._budget = gateway, host, counts, budget
+        self._renew, self._sleep, self._now = renew, sleep, now
+        self.rate_limited = 0
+        self.waited_s = 0.0
 
     async def __call__(
         self, url: str, *, params: Mapping[str, str | int] | None = None, headers: Mapping[str, str] | None = None
     ) -> GatewayResponse:
-        if self._counts.requests >= self._budget:
-            raise _BudgetSpent
-        self._counts.requests += 1
-        response = await self._gateway.get(url, params=params, headers=headers)
-        self._counts.bytes += len(response.content)
-        if response.status_code == 304:
-            self._counts.not_modified += 1
-        return response
+        backoff, limited = BACKOFF_FIRST_S, False
+        while True:
+            if self._counts.requests >= self._budget:
+                raise _BudgetSpent
+            try:
+                response = await self._gateway.get(url, params=params, headers=headers)
+            except UpstreamError as error:
+                self._counts.requests += 1
+                if error.status_code != 429:
+                    raise
+                self.rate_limited += 1
+                limited = True
+                wait = _retry_after_s(error.retry_after, self._now())
+                wait = backoff if wait is None else wait
+            except HostResting:
+                # Paused by the breaker after the 429s: wait on. A host resting for any other reason ends the run.
+                if not limited:
+                    raise
+                wait = backoff
+            else:
+                self._counts.requests += 1
+                self._counts.bytes += len(response.content)
+                if response.status_code == 304:
+                    self._counts.not_modified += 1
+                return response
+            if self.waited_s + wait > BACKOFF_BUDGET_S:
+                raise _RateLimited
+            LOGGER.warning("source asks to slow down", extra={"host": self._host, "wait_s": round(wait)})
+            await self._wait(wait)
+            backoff = min(backoff * 2, BACKOFF_MAX_S)
+
+    async def _wait(self, seconds: float) -> None:
+        """Sleep, renewing the run's hold on its source at every heartbeat."""
+        left = seconds
+        while left > 0:
+            step = min(left, HEARTBEAT_S)
+            await self._sleep(step)
+            left -= step
+            self.waited_s += step
+            self._renew()
 
 
 def _record(
@@ -207,6 +304,10 @@ def _listing(
         stac = StacListing()
         return stac, stac_pages(fetch, source, list_validators(conn, source.source_id), stac)
     ckan = CkanListing(full=run.kind == "full")
+    if run.pass_ is not None:
+        # Where the open pass stands: a run that stopped before keeps its place (Otto, 18.11.2026).
+        p = run.pass_
+        ckan.start, ckan.last_key, ckan.total, ckan.read, ckan.moved = p.start, p.last_key, p.total, p.read, p.moved
     return ckan, ckan_pages(fetch, source, run.since, ckan)
 
 
@@ -240,6 +341,16 @@ async def _fetch_and_extract(run: _Run, fetch: _Fetcher) -> None:
                     run.counts.found_unchanged += 1
                 else:
                     _record(cur, run, key, document, before, raw=raw, raw_sha256=digest)
+        if run.pass_ is not None and isinstance(listing, CkanListing):
+            save_pass(
+                conn,
+                source.source_id,
+                start=listing.start,
+                last_key=listing.last_key,
+                total=listing.total,
+                read=listing.read,
+                moved=listing.moved,
+            )
     _renew(conn, run.run_id)
     if listing.not_modified:
         # The listing is unchanged as a whole, but finds an older extractor judged are judged again from their kept
@@ -248,12 +359,11 @@ async def _fetch_and_extract(run: _Run, fetch: _Fetcher) -> None:
         summary = source_summary(conn, source.source_id)
         run.counts.found_unchanged += summary.extracted + sum(summary.invalid.values()) - evaluated
         return
-    if listing.complete:
-        run.counts.gone = mark_gone(conn, run_id=run.run_id, source_id=source.source_id)
-        if listing.validators is not None:
-            save_list_validators(conn, source.source_id, listing.validators)
-        return
     if not isinstance(listing, CkanListing):
+        if listing.complete:
+            run.counts.gone = mark_gone(conn, run_id=run.run_id, source_id=source.source_id)
+            if listing.validators is not None:
+                save_list_validators(conn, source.source_id, listing.validators)
         return
     if not listing.full:
         if listing.moved:
@@ -262,9 +372,18 @@ async def _fetch_and_extract(run: _Run, fetch: _Fetcher) -> None:
         # Finds the listing did not name are judged again if an older extractor judged them, from their kept raw
         # answers; a full run sees them all anyway.
         _reextract(run, outdated_only=True)
+        changes_in(conn, source.source_id, run.run_id)
         run.gone_unchecked = "incremental"
+        return
+    assert run.pass_ is not None
+    if listing.complete:
+        # Gone is what no run of the pass saw, whichever of its runs read which page (A3).
+        run.counts.gone = mark_gone(
+            conn, run_id=run.run_id, source_id=source.source_id, seen_since_run=run.pass_.run_id
+        )
     else:
         run.gone_unchecked = "listing_moved" if listing.moved else "listing_empty"
+    end_pass(conn, source.source_id)
 
 
 def _reextract(run: _Run, *, outdated_only: bool) -> int:
@@ -294,20 +413,25 @@ def _reextract(run: _Run, *, outdated_only: bool) -> int:
 
 def _kind(
     conn: psycopg.Connection, source: SourceConfig, *, full: bool, reextract: bool
-) -> tuple[str, datetime | None]:
-    """The kind of the run and, for an incremental one, its lower bound of ``metadata_modified``: ``full`` for a STAC
-    source, for ``--full``, and for a CKAN source without a done full run or whose last one started
-    ``full_every_days`` ago or earlier; else ``incremental`` from the start of the last done run less an hour."""
+) -> tuple[str, datetime | None, Pass | None]:
+    """The kind of the run; for an incremental one its lower bound of ``metadata_modified``; the open pass a full CKAN
+    run goes on with.
+
+    ``full`` for a STAC source; for a CKAN source with an open pass (it goes on, also with ``--full``), for ``--full``,
+    without a full pass that went through, or when the last one began ``full_every_days`` ago or earlier. Else
+    ``incremental`` from the time every change is in (:func:`changes_in`, :func:`end_pass`) less an hour."""
     if reextract:
-        return "reextract", None
-    if full or source.protocol is not SourceProtocol.CKAN:
-        return "full", None
-    last = last_runs(conn, source.source_id)
-    if last.last_started is None or last.last_full_started is None:
-        return "full", None
-    if last.now >= last.last_full_started + timedelta(days=source.full_every_days):
-        return "full", None
-    return "incremental", last.last_started - INCREMENTAL_OVERLAP
+        return "reextract", None, None
+    if source.protocol is not SourceProtocol.CKAN:
+        return "full", None, None
+    state = harvest_state(conn, source.source_id)
+    if state.open_pass is not None:
+        return "full", None, state.open_pass
+    if full or state.full_started_at is None or state.changes_since is None:
+        return "full", None, None
+    if state.now >= state.full_started_at + timedelta(days=source.full_every_days):
+        return "full", None, None
+    return "incremental", state.changes_since - INCREMENTAL_OVERLAP, None
 
 
 async def run_harvest(
@@ -317,19 +441,34 @@ async def run_harvest(
     gateway: Gateway | None,
     reextract: bool = False,
     full: bool = False,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
 ) -> HarvestResult:
-    """One run of ``source``; ``conn`` in autocommit. :class:`HarvestBusy` while another run holds the source."""
-    kind, since = _kind(conn, source, full=full, reextract=reextract)
+    """One run of ``source``; ``conn`` in autocommit. :class:`HarvestBusy` while another run holds the source.
+    ``sleep`` is how the run waits on a source that asks it to slow down (a seam for tests)."""
+    kind, since, open_pass = _kind(conn, source, full=full, reextract=reextract)
     run = _Run(
         conn, source, start_run(conn, source.source_id, kind), kind, since, RunCounts(), extractor_version(source)
     )
+    resumed_at = None
+    if kind == "full" and source.protocol is SourceProtocol.CKAN:
+        run.pass_ = open_pass if open_pass is not None else begin_pass(conn, source.source_id, run.run_id)
+        resumed_at = None if open_pass is None else open_pass.start
+    fetch = None
     status, stop_reason = "done", None
     try:
         if reextract:
             _reextract(run, outdated_only=False)
         else:
             assert gateway is not None
-            await _fetch_and_extract(run, _Fetcher(gateway, run.counts, source.max_requests_per_run))
+            fetch = _Fetcher(
+                gateway,
+                source.host,
+                run.counts,
+                source.max_requests_per_run,
+                renew=lambda: _renew(conn, run.run_id),
+                sleep=sleep,
+            )
+            await _fetch_and_extract(run, fetch)
     except HostResting:
         status, stop_reason = "interrupted", "host_resting"
     except RobotsDisallowed:
@@ -341,13 +480,16 @@ async def run_harvest(
         status, stop_reason = "interrupted", "request_budget"
     except _ListingMoved:
         status, stop_reason = "interrupted", "listing_moved"
+    except _RateLimited:
+        status, stop_reason = "interrupted", "rate_limited"
     except _LeaseLost:
         # The row is closed already, as `interrupted` with `lease_expired`; finish_run leaves it so.
         status, stop_reason = "interrupted", "lease_expired"
     except ShapeError:
         status, stop_reason = "failed", "shape"
     except GatewayError:
-        status, stop_reason = "failed", "upstream"
+        # A full pass keeps its place, so a source that fails on the way is a pause of the pass, not its end.
+        status, stop_reason = ("interrupted" if run.pass_ is not None else "failed"), "upstream"
     except BaseException:
         finish_run(conn, run.run_id, status="failed", stop_reason="error", counts=run.counts)
         raise
@@ -355,6 +497,7 @@ async def run_harvest(
     run.counts.invalid = sum(summary.invalid.values())
     run.counts.extent_unknown = summary.extent_unknown
     finish_run(conn, run.run_id, status=status, stop_reason=stop_reason, counts=run.counts)
+    still_open = None if run.pass_ is None else harvest_state(conn, source.source_id).open_pass
     return HarvestResult(
         run.run_id,
         kind,
@@ -365,6 +508,10 @@ async def run_harvest(
         run.without_key,
         run.gone_unchecked if status == "done" else None,
         gateway is not None and source.host in gateway.robots_waived,
+        0 if fetch is None else fetch.rate_limited,
+        0.0 if fetch is None else fetch.waited_s,
+        resumed_at,
+        None if still_open is None else still_open.start,
     )
 
 
@@ -379,6 +526,7 @@ def _policy_for(source: SourceConfig, hosts: Mapping[str, HostLimit]) -> Policy:
         host_intervals={} if limit.interval_s is None else {source.host: limit.interval_s},
         obey_robots=True,
         robots_exceptions={} if exception is None else {source.host: (exception.path,)},
+        retry_rate_limited=False,
     )
 
 
@@ -389,6 +537,7 @@ _STOP_TEXT = {
     "shape": "Antwort der Quelle nicht lesbar",
     "upstream": "Quelle antwortet mit Fehler oder nicht",
     "lease_expired": "Frist abgelaufen, ein anderer Lauf hat die Quelle übernommen",
+    "rate_limited": "die Quelle bittet länger um Pause, als ein Lauf wartet",
     "listing_moved": "Liste hat sich während des Laufs geändert; der nächste Lauf fragt ab dem Lauf davor",
 }
 
@@ -438,6 +587,12 @@ def report(source: SourceConfig, result: HarvestResult) -> str:
         f"  Stand der Quelle: gültig {s.extracted} (davon Ausdehnung unbekannt {s.extent_unknown}),"
         f" ungültig {invalid}" + (f" ({reasons})" if reasons else ""),
     ]
+    if result.rate_limited:
+        lines.append(f"  Quelle bat um Pause: {result.rate_limited}-mal 429, gewartet {result.waited_s / 60:.0f} min")
+    if result.resumed_at is not None:
+        lines.append(f"  Voller Durchgang fortgesetzt ab Paket {result.resumed_at}")
+    if result.resume_at is not None:
+        lines.append(f"  Stand gespeichert: der nächste Lauf setzt den vollen Durchgang ab Paket {result.resume_at} fort")
     robots = _robots_line(source, result)
     return "\n".join(lines if robots is None else [*lines, robots])
 
@@ -447,7 +602,15 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("source_id", help="a source of backend/catalog/sources/, e.g. fsdi-stac")
     parser.add_argument("--full", action="store_true", help="the whole listing of a CKAN source, not only its changes")
     parser.add_argument("--reextract", action="store_true", help="extract again from the kept raw answers, no request")
+    parser.add_argument(
+        "--measure", action="store_true", help="a CKAN source: size of one page with and without fl, nothing written"
+    )
     return parser.parse_args(argv)
+
+
+async def _measure(source: SourceConfig, hosts: Mapping[str, HostLimit]) -> str:
+    async with open_source_gateway(_policy_for(source, hosts)) as gateway:
+        return await measure_page(gateway.get, source)
 
 
 async def _main_async(
@@ -477,6 +640,17 @@ def main(argv: list[str] | None = None) -> int:
     if not source.enabled:
         print(f"harvest failed: the source {args.source_id!r} is held (enabled: false)", file=sys.stderr)
         return 1
+    if args.measure:
+        if source.protocol is not SourceProtocol.CKAN:
+            print(f"harvest failed: --measure is for a ckan source, {args.source_id!r} is not one", file=sys.stderr)
+            return 1
+        try:
+            print(asyncio.run(_measure(source, hosts)))
+        except (GatewayError, ShapeError) as error:
+            # Only the kind: the text of an upstream error can quote the answer.
+            print(f"harvest failed: measurement stopped ({type(error).__name__})", file=sys.stderr)
+            return 1
+        return 0
     try:
         result = asyncio.run(_main_async(source, hosts, reextract=args.reextract, full=args.full))
     except (HarvestBusy, ConfigError) as error:

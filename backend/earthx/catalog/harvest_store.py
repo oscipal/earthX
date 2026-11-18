@@ -21,14 +21,19 @@ __all__ = [
     "LEASE_S",
     "MAX_RAW_BYTES",
     "HarvestBusy",
-    "LastRuns",
+    "Pass",
     "ListValidators",
     "Previous",
     "RunCounts",
+    "SourceState",
     "SourceSummary",
     "canonical",
     "finish_run",
-    "last_runs",
+    "begin_pass",
+    "changes_in",
+    "end_pass",
+    "harvest_state",
+    "save_pass",
     "list_validators",
     "mark_gone",
     "previous",
@@ -74,11 +79,26 @@ class ListValidators:
 
 
 @dataclass(frozen=True, slots=True)
-class LastRuns:
-    """When the last done runs of a source that asked it started, by the clock of the database, and that clock now."""
+class Pass:
+    """Where an open full pass of a CKAN source stands: the run that began it, when, the offset and first key of the
+    next page, and what the check that the listing held still has gathered so far (migration 027)."""
 
-    last_started: datetime | None
-    last_full_started: datetime | None
+    run_id: int
+    started_at: datetime
+    start: int
+    last_key: str | None
+    total: int | None
+    read: int
+    moved: bool
+
+
+@dataclass(frozen=True, slots=True)
+class SourceState:
+    """What the next run of a source builds on, with the clock of the database now."""
+
+    full_started_at: datetime | None
+    changes_since: datetime | None
+    open_pass: Pass | None
     now: datetime
 
 
@@ -146,16 +166,69 @@ def finish_run(
     )
 
 
-def last_runs(conn: psycopg.Connection, source_id: str) -> LastRuns:
-    """The starts of the last done run and of the last done full run of ``source_id``; a re-extract asks nothing and
-    does not count."""
+def harvest_state(conn: psycopg.Connection, source_id: str) -> SourceState:
     row = conn.execute(
-        "SELECT max(started_at) FILTER (WHERE kind IN ('full', 'incremental')),"
-        " max(started_at) FILTER (WHERE kind = 'full'), clock_timestamp()"
-        " FROM public.earthx_harvest_run WHERE source_id = %s AND status = 'done'",
+        "SELECT full_started_at, changes_since, pass_run_id, pass_started_at, pass_start, pass_last_key, pass_total,"
+        " pass_read, pass_moved, clock_timestamp() FROM public.earthx_harvest_source WHERE source_id = %s",
         (source_id,),
     ).fetchone()
-    return LastRuns(*row)
+    if row is None:
+        return SourceState(None, None, None, conn.execute("SELECT clock_timestamp()").fetchone()[0])
+    full, since, run_id, *rest, now = row
+    return SourceState(full, since, None if run_id is None else Pass(run_id, *rest), now)
+
+
+_UPSERT = (
+    "INSERT INTO public.earthx_harvest_source AS h (source_id) VALUES (%(source_id)s)"
+    " ON CONFLICT (source_id) DO UPDATE SET updated_at = clock_timestamp()"
+)
+
+
+def begin_pass(conn: psycopg.Connection, source_id: str, run_id: int) -> Pass:
+    """A new full pass, begun by ``run_id`` at its start."""
+    with conn.transaction():
+        conn.execute(_UPSERT, {"source_id": source_id})
+        row = conn.execute(
+            "UPDATE public.earthx_harvest_source h SET pass_run_id = r.run_id, pass_started_at = r.started_at,"
+            " pass_start = 0, pass_last_key = NULL, pass_total = NULL, pass_read = 0, pass_moved = false,"
+            " updated_at = clock_timestamp() FROM public.earthx_harvest_run r"
+            " WHERE h.source_id = %s AND r.run_id = %s RETURNING r.started_at",
+            (source_id, run_id),
+        ).fetchone()
+    return Pass(run_id, row[0], 0, None, None, 0, False)
+
+
+def save_pass(
+    conn: psycopg.Connection, source_id: str, *, start: int, last_key: str | None, total: int | None, read: int, moved: bool
+) -> None:
+    """Where the open pass stands after a page whose finds are written."""
+    conn.execute(
+        "UPDATE public.earthx_harvest_source SET pass_start = %s, pass_last_key = %s, pass_total = %s, pass_read = %s,"
+        " pass_moved = %s, updated_at = clock_timestamp() WHERE source_id = %s AND pass_run_id IS NOT NULL",
+        (start, last_key, total, read, moved, source_id),
+    )
+
+
+def end_pass(conn: psycopg.Connection, source_id: str) -> None:
+    """The open pass went through: it is the last full pass, and every change up to its start is in."""
+    conn.execute(
+        "UPDATE public.earthx_harvest_source SET full_started_at = pass_started_at, changes_since = pass_started_at,"
+        " pass_run_id = NULL, pass_started_at = NULL, pass_start = NULL, pass_last_key = NULL, pass_total = NULL,"
+        " pass_read = NULL, pass_moved = NULL, updated_at = clock_timestamp()"
+        " WHERE source_id = %s AND pass_run_id IS NOT NULL",
+        (source_id,),
+    )
+
+
+def changes_in(conn: psycopg.Connection, source_id: str, run_id: int) -> None:
+    """A done incremental run: every change up to its start is in."""
+    with conn.transaction():
+        conn.execute(_UPSERT, {"source_id": source_id})
+        conn.execute(
+            "UPDATE public.earthx_harvest_source h SET changes_since = r.started_at, updated_at = clock_timestamp()"
+            " FROM public.earthx_harvest_run r WHERE h.source_id = %s AND r.run_id = %s",
+            (source_id, run_id),
+        )
 
 
 def list_validators(conn: psycopg.Connection, source_id: str) -> ListValidators | None:
@@ -259,17 +332,18 @@ def seen(cur: psycopg.Cursor, *, run_id: int, source_id: str, key: str) -> None:
     )
 
 
-def mark_gone(conn: psycopg.Connection, *, run_id: int, source_id: str) -> int:
-    """Every find of the source that a complete listing of this run did not name is ``gone`` (plan A3)."""
+def mark_gone(conn: psycopg.Connection, *, run_id: int, source_id: str, seen_since_run: int | None = None) -> int:
+    """Every find of the source that a complete listing did not name is ``gone`` (plan A3): no run from
+    ``seen_since_run`` on (the run that began a full pass over several runs; this run where it is ``None``) saw it."""
     with conn.transaction(), conn.cursor() as cur:
         cur.execute(
             "UPDATE public.earthx_record_state s SET state = 'gone', reason = NULL, extracted = NULL,"
             " extracted_sha256 = NULL, extent_known = NULL, last_seen_run = %s, updated_at = clock_timestamp()"
             " FROM public.earthx_record_state old"
-            " WHERE s.source_id = %s AND s.state <> 'gone' AND s.last_seen_run <> %s"
+            " WHERE s.source_id = %s AND s.state <> 'gone' AND s.last_seen_run < %s"
             " AND old.source_id = s.source_id AND old.source_key = s.source_key"
             " RETURNING s.source_key, old.state",
-            (run_id, source_id, run_id),
+            (run_id, source_id, run_id if seen_since_run is None else seen_since_run),
         )
         gone = cur.fetchall()
         for key, before in gone:

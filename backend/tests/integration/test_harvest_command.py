@@ -285,7 +285,8 @@ async def test_robots_txt_stops_the_run(db: psycopg.Connection, source: SourceCo
     catalogue = Catalogue(THREE)
     catalogue.robots = "User-agent: *\nDisallow: /api/\n"
     result = await run_harvest(db, source, gateway=_gateway(catalogue))
-    assert (result.status, result.stop_reason, result.counts.requests) == ("interrupted", "robots", 1)
+    # The request robots.txt forbids is never sent, so it is no request of the run.
+    assert (result.status, result.stop_reason, result.counts.requests) == ("interrupted", "robots", 0)
     assert not catalogue.asked and _states(db, source) == {}
 
 
