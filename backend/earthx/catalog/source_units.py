@@ -77,7 +77,8 @@ class UnitListing:
 @dataclass(frozen=True, slots=True)
 class Contribution:
     """What one unit gives to one asset of one item. ``item`` is the item without ``assets``: id, collection,
-    geometry, bbox, properties, links. An asset may carry ``updated``; the item's ``updated`` is the latest of them."""
+    geometry, bbox, properties, links. An asset may carry ``updated`` and ``expires``; the item's ``updated`` is the
+    latest of them, its ``expires`` the earliest, and gone when no asset names one (M5-58 plan §11.3)."""
 
     item_id: str
     asset_key: str

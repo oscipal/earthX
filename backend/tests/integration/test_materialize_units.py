@@ -88,6 +88,8 @@ class Unit:
     validators: bool = True
     #: Whether the listing names its Last-Modified beside the checksum or the ETag.
     list_modified: bool = False
+    #: When the source deletes the item the unit comes from, as its `expires` (MeteoSwiss: the day items).
+    expires: str | None = None
 
     @property
     def etag(self) -> str:
@@ -156,6 +158,7 @@ class Source:
                         "updated": updated(unit),
                         # Like `earthx:refs` of MeteoSwiss: the asset names the state of its file.
                         "file:checksum": unit.checksum,
+                        **({"expires": unit.expires} if unit.expires else {}),
                     },
                     item=skeleton(config, day),
                 )
@@ -286,6 +289,18 @@ class TestProvisionalToFinal:
         assert item["assets"]["precip"]["href"].endswith("/month-11")
         assert item["properties"]["updated"] == "2026-11-26T08:00:00Z"
         assert state_of(items(db)["20261102"]) == "provisional"
+
+    async def test_expires_goes_with_the_provisional_file_and_leaves_with_it(self, db: psycopg.Connection) -> None:
+        """Plan §11.3: the earliest expires of the assets on the item, and none once the final file holds."""
+        fake = source()
+        fake.groups["day-1"]["prelim-1"].expires = "2026-12-12T00:11:00Z"
+        await run(db, fake)
+        assert items(db)["20261101"]["properties"]["expires"] == "2026-12-12T00:11:00Z"
+        assert "expires" not in items(db)["20261102"]["properties"]
+        fake.groups["month-11"] = {"month-11": Unit(F, ("20261101",), b"m11")}
+        await run(db, fake)
+        item = items(db)["20261101"]
+        assert state_of(item) == "final" and "expires" not in item["properties"]
 
     async def test_a_late_provisional_file_replaces_nothing_final(self, db: psycopg.Connection) -> None:
         fake = source()

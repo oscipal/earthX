@@ -184,6 +184,13 @@ def _assemble(
     updated = [str(asset["updated"]) for asset in item["assets"].values() if asset.get("updated")]
     if updated:
         properties["updated"] = max(updated)
+    # When the source deletes what an asset comes from (plan §11.3): the earliest of the assets, none once no asset
+    # names one, e.g. after the provisional files of a day were replaced by final ones. Nothing is decided by it.
+    expires = [str(asset["expires"]) for asset in item["assets"].values() if asset.get("expires")]
+    if expires:
+        properties["expires"] = min(expires)
+    else:
+        properties.pop("expires", None)
     return item
 
 
