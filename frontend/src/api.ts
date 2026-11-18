@@ -993,6 +993,7 @@ export function parseBands(value: unknown): DownloadBand[] {
         nodata: numberOf(r.nodata),
         unit: textOf(r.unit),
         preselected: r.preselected === true,
+        stackable: r.stackable !== false,
       },
     ];
   });

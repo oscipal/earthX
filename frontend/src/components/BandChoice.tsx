@@ -6,6 +6,7 @@ import {
   commonResolutionOf,
   conversionTip,
   effectiveForm,
+  stackable,
   layoutBlock,
   mixedResolutions,
   metresText,
@@ -36,7 +37,8 @@ export default function BandChoice({ table, disabled }: { table: DownloadBand[];
   const common = commonResolutionOf(bands, picked);
   const options = resolutionsOf(table);
   // The question of the form is there only for bands of different resolutions; one resolution is one file per resolution.
-  const mixed = mixedResolutions(bands);
+  // Bands that cannot share a file (chunk references, M5-11) are one file each: no question either.
+  const mixed = mixedResolutions(bands) && stackable(bands);
   const block = layoutBlock(effectiveForm(bands, form), bands, common);
 
   const toggle = (asset: string, on: boolean) => setBands(on ? [...keys, asset] : keys.filter((key) => key !== asset));
