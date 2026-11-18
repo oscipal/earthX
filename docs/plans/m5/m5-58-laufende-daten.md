@@ -441,3 +441,24 @@ updates:
 ### 10.5 Umfang
 
 Rund 850 Zeilen ohne Tests, YAML und Doku (Probe rund 110, Kern rund 310, Formen und Tabellen rund 240, Registry rund 80, Coverage rund 30), dazu rund 740 Zeilen Tests. Über dem Richtwert von 400; der Kern lässt sich ohne Formen, Tabellen und Registry nicht testen, und die Probe sollte zuerst laufen.
+
+### 10.6 Review vor dem Bericht und Antwort zu den Migrationen (18.11.2026)
+
+**Behoben** (je ein Test, vorher rot):
+
+- Eine unveränderte Datei, die nur jünger wird (gleiche Checksum, neues Last-Modified), kann Halterin eines Assets werden; ihre Assets werden jetzt neu entschieden. Vorher trug das Item weiter die alte Datei, und nach deren Wegfall verwies es auf eine gelöschte.
+- Ein Neubau der nächsten Einheit, der weniger Assets beiträgt als vorher, entscheidet auch diese neu (bis sich nichts mehr bewegt).
+- Gespeichert werden die Validatoren in der Form der Liste, gelesene nur ergänzend. Sonst verglich der nächste Lauf ein ETag ohne Anführungszeichen mit einem mit und baute die Datei jedes Mal neu.
+- Ein Server, der `If-None-Match` überhört und `200` mit demselben ETag schickt, gilt als unverändert.
+- Ein Last-Modified im ISO-Format (STAC `updated`) zählt für die Regel „jünger“.
+- Eine Gruppe, die nie gesehen wurde, kann nicht „unverändert“ sein (ihre Einheiten würden nie gebaut).
+- Die Probe nennt eine Ablehnung eines Items nur mit dem Status, nie mit dem Text der Quelle.
+- Ein Test committete auf die gemeinsame Test-Datenbank; er schreibt jetzt nur in seiner eigenen, zurückgerollten Transaktion.
+
+**Bleibt, für PR 2 bzw. später festgehalten:**
+
+- Fällt ein Asset weg, bleiben die Eigenschaften seines Beitrags am Item (z. B. `expires`). Bei MeteoSchweiz tragen alle Beiträge eines Tages dasselbe Gerüst; PR 2 prüft das.
+- Zwei gleichzeitige Läufe desselben Datensatzes sperrt nichts, wie schon bei `detect: whole`; das gehört zum Takt (M5-24).
+- `latest_item_end` nimmt das Ende des jüngsten Items. PR 2 schreibt Items je Tag, nie je Monat; sonst zählte die Coverage bis zum Monatsende.
+
+**Migrationen (Frage Otto, 18.11.2026):** Der Läufer (`catalog/schema.py::apply_migrations`) wendet jede Datei an, deren Nummer noch nicht gebucht ist, in Nummernfolge, unabhängig davon, ob eine höhere schon angewendet ist. Wird #383 vor #379 gemergt, hat eine Datenbank erst 029 und bekommt 026–028 beim nächsten Start dazu. Die Inhalte hängen nicht voneinander ab (029 ändert nur `earthx_materialize_runs` aus 004 und legt eigene Tabellen an). Neu belegt durch `test_a_lower_number_that_arrives_later_is_applied_too`; keine Änderung am Läufer nötig. Die Migrations-Tests kennen 029 jetzt (Liste der Dateien, Tabellen zum Löschen); #379 muss dort beim Zusammenführen seine drei Zeilen dazunehmen.
