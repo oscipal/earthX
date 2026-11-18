@@ -114,7 +114,7 @@ class TestSearchDispatchesByAdapter:
     async def test_a_kind_whose_spec_offers_no_search_is_refused(self) -> None:
         """adr/0011 §5.2: ``None`` means "explicitly not offered", refused by name."""
         no_search = AdapterSpec(
-            kind=AdapterKind.EARTH_SEARCH_V1, search=None, fetch=None, materialize=None, coverage={}, filters=None
+            kind=AdapterKind.EARTH_SEARCH_V1, search=None, fetch=None, materialize=None, units=None, coverage={}, filters=None
         )
         gateway, seen = gateway_for(httpx.Response(200, json=load(EARTH_SEARCH_FIXTURES, "search_empty")))
         async with gateway:

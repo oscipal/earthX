@@ -246,6 +246,12 @@ class MaterializeRunRecord:
     listed: int
     missing: int
     withheld: int
+    # Per unit of the source, for a run of `updates.detect: units` (M5-58, migration 029); 0 for `detect: whole`.
+    units_new: int = 0
+    units_changed: int = 0
+    units_unchanged: int = 0
+    units_gone: int = 0
+    items_replaced: int = 0
 
 
 def last_source_version(conn: psycopg.Connection, dataset_id: str) -> str | None:
@@ -288,8 +294,9 @@ def record_materialize_run(conn: psycopg.Connection, record: MaterializeRunRecor
             """
             INSERT INTO public.earthx_materialize_runs
                 (dataset_id, started_at, finished_at, status, source_version,
-                 items_written, items_deleted, listed, missing, withheld)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 items_written, items_deleted, listed, missing, withheld,
+                 units_new, units_changed, units_unchanged, units_gone, items_replaced)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 record.dataset_id,
@@ -302,6 +309,11 @@ def record_materialize_run(conn: psycopg.Connection, record: MaterializeRunRecor
                 record.listed,
                 record.missing,
                 record.withheld,
+                record.units_new,
+                record.units_changed,
+                record.units_unchanged,
+                record.units_gone,
+                record.items_replaced,
             ),
         )
 
@@ -449,6 +461,18 @@ async def overview_state_async(
         return OverviewState("building")
     status, _, kind, *_ = rows[0]
     return OverviewState("failed", failure_kind="expired" if status == "ready" else kind)
+
+
+async def latest_item_end(conn: psycopg.AsyncConnection, dataset_id: str) -> datetime | None:
+    """The end of the newest item of a materialized collection, or ``None`` before its first run.
+
+    The end of the time extent of a running source (adr/0038 §3.6): its YAML leaves it open, the items say how far the
+    data reach. ``conn`` is the caller's, as for :func:`fetch_item`.
+    """
+    async with conn.cursor() as cur:
+        await cur.execute("SELECT max(end_datetime) FROM pgstac.items WHERE collection = %s", (dataset_id,))
+        row = await cur.fetchone()
+    return None if row is None else row[0]
 
 
 async def fetch_item(conn: psycopg.AsyncConnection, dataset_id: str, item_id: str) -> dict[str, object] | None:

@@ -74,6 +74,7 @@ from earthx.catalog.pgstac import (
 )
 from earthx.catalog.registry import (
     AdapterKind,
+    ChangeDetection,
     ConfigError,
     DatasetConfig,
     ItemHolding,
@@ -81,6 +82,7 @@ from earthx.catalog.registry import (
     UnknownDatasetError,
 )
 from earthx.discovery import meteoswiss_grid
+from earthx.discovery.materialize_units import UnitsOutcome, run_units
 from earthx.discovery.source_gateway import open_source_gateway
 from earthx.gateway import Gateway, GatewayError, Policy, host_of, user_agent_from_env
 from earthx.logging import configure_logging
@@ -104,6 +106,47 @@ class MaterializeResult:
     items_deleted: int
     #: What the run did to the overview pyramid of the version it saw, for a dataset that has one; printed by ``main``.
     pyramid: str | None = None
+    #: What a run of ``updates.detect: units`` did per unit (M5-58); printed by ``main``.
+    units: UnitsOutcome | None = None
+
+
+async def _run_units(conn: psycopg.Connection, config: DatasetConfig, *, gateway: Gateway) -> MaterializeResult:
+    """A run per unit of the source (adr/0038 §3.3); ``--force`` does not apply, the state per unit decides."""
+    started_at = datetime.now(timezone.utc)
+    units = await run_units(conn, config, adapters=MATERIALIZE_SPECS, gateway=gateway)
+    record_materialize_run(
+        conn,
+        MaterializeRunRecord(
+            dataset_id=config.dataset_id,
+            started_at=started_at,
+            finished_at=datetime.now(timezone.utc),
+            status=units.status,
+            source_version=units.source_version,
+            items_written=units.items_written,
+            items_deleted=units.items_deleted,
+            listed=units.listed,
+            missing=0,
+            withheld=0,
+            units_new=units.units_new,
+            units_changed=units.units_changed,
+            units_unchanged=units.units_unchanged,
+            units_gone=units.units_gone,
+            items_replaced=units.items_replaced,
+        ),
+    )
+    outcome = MaterializeOutcome(
+        status=units.status,
+        source_version=units.source_version,
+        listed=units.listed,
+        in_bucket=units.listed,
+        missing=0,
+        withheld=0,
+        unknown=0,
+        items=(),
+    )
+    return MaterializeResult(
+        outcome=outcome, items_written=units.items_written, items_deleted=units.items_deleted, units=units
+    )
 
 
 async def run_materialize(
@@ -116,6 +159,8 @@ async def run_materialize(
     """
     check_pgstac_version(conn)
     use_pgstac_search_path(conn)
+    if config.updates.detect is ChangeDetection.UNITS:
+        return await _run_units(conn, config, gateway=gateway)
     known_version = None if force else last_source_version(conn, config.dataset_id)
 
     started_at = datetime.now(timezone.utc)
@@ -244,6 +289,14 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     outcome = result.outcome
+    if result.units is not None:
+        units = result.units
+        print(
+            f"{config.dataset_id}: {units.status}; {units.units_new} units new, {units.units_changed} changed, "
+            f"{units.units_unchanged} unchanged, {units.units_gone} gone; {units.items_written} items written, "
+            f"{units.items_replaced} replaced by a higher state, {units.items_deleted} deleted"
+        )
+        return 0
     if outcome.status == "unchanged":
         print(f"{config.dataset_id}: unchanged (source version {outcome.source_version})")
     else:

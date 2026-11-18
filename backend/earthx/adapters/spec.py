@@ -21,7 +21,7 @@ stops the build instead of failing on its first request.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Protocol
@@ -34,6 +34,7 @@ from earthx.adapters.errors import AdapterSpecMismatch
 from earthx.adapters.federated_search import FilterSupport, ItemPage, SearchParams
 from earthx.catalog.coverage import CoverageQuery, CoverageResult
 from earthx.catalog.registry import AdapterKind, CoverageProvider, DatasetConfig, DatasetRegistry, ItemHolding
+from earthx.catalog.source_units import BuiltUnit, SourceUnit, UnitListing
 from earthx.gateway import Gateway
 
 
@@ -55,6 +56,31 @@ class MaterializeItems(Protocol):
     ) -> MaterializeOutcome: ...
 
 
+class ListUnits(Protocol):
+    """The groups of the source, each asked conditionally with its validator in ``known_groups``, and the units of
+    every group that changed (adr/0038 §3.3)."""
+
+    async def __call__(
+        self, config: DatasetConfig, *, gateway: Gateway, known_groups: Mapping[str, str | None]
+    ) -> UnitListing: ...
+
+
+class BuildUnits(Protocol):
+    """The contributions of ``units``, one :class:`BuiltUnit` per unit and in their order."""
+
+    async def __call__(
+        self, config: DatasetConfig, *, gateway: Gateway, units: Sequence[SourceUnit]
+    ) -> tuple[BuiltUnit, ...]: ...
+
+
+@dataclass(frozen=True, slots=True)
+class UnitsMaterializer:
+    """What an adapter offers for ``updates.detect: units`` (M5-58): ``discovery.materialize_units`` does the rest."""
+
+    list_units: ListUnits
+    build: BuildUnits
+
+
 class AnswerCoverage(Protocol):
     async def __call__(
         self, query: CoverageQuery, config: DatasetConfig, *, gateway: Gateway, cache: SearchCache | None
@@ -69,6 +95,8 @@ class AdapterSpec:
     search: SearchItems | None
     fetch: FetchItem | None
     materialize: MaterializeItems | None
+    # Changes per unit of the source (M5-58, adr/0038 §3.3), for an entry with `updates.detect: units`.
+    units: UnitsMaterializer | None
     coverage: Mapping[CoverageProvider, AnswerCoverage]
     filters: FilterSupport | None
 
@@ -103,6 +131,7 @@ ADAPTER_SPECS: AdapterSpecs = spec_table(
         search=stac_api.search_items,
         fetch=stac_api.get_item,
         materialize=None,
+        units=None,
         coverage={CoverageProvider.UPSTREAM_AGGREGATION: aggregate_coverage},
         # Measured per source and kept with its dialect (M5-08), so the two cannot drift apart.
         filters=stac_api.EARTH_SEARCH.filters,
@@ -112,6 +141,7 @@ ADAPTER_SPECS: AdapterSpecs = spec_table(
         search=stac_api.search_items,
         fetch=stac_api.get_item,
         materialize=stac_api.materialize_items,
+        units=None,
         # No aggregation at the source: an entry of this kind is materialized and counted by `catalog` (local-sql).
         coverage={},
         filters=stac_api.FSDI.filters,
@@ -121,6 +151,7 @@ ADAPTER_SPECS: AdapterSpecs = spec_table(
         search=None,
         fetch=None,
         materialize=cop_dem_bucket.materialize_items,
+        units=None,
         coverage={},
         filters=None,
     ),
@@ -129,6 +160,7 @@ ADAPTER_SPECS: AdapterSpecs = spec_table(
         search=None,
         fetch=None,
         materialize=esa_worldcover_bucket.materialize_items,
+        units=None,
         coverage={},
         filters=None,
     ),
@@ -137,6 +169,7 @@ ADAPTER_SPECS: AdapterSpecs = spec_table(
         search=None,
         fetch=None,
         materialize=bev_atom.materialize_items,
+        units=None,
         coverage={},
         filters=None,
     ),
@@ -147,6 +180,7 @@ ADAPTER_SPECS: AdapterSpecs = spec_table(
         search=None,
         fetch=None,
         materialize=None,
+        units=None,
         coverage={},
         filters=None,
     ),

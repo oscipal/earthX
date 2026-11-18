@@ -59,6 +59,7 @@ def _spec(**fields: object) -> AdapterSpec:
         "search": _never,
         "fetch": _never,
         "materialize": None,
+        "units": None,
         "coverage": {},
         "filters": FilterSupport(intersects=True, ids=True, cql2=False, query=True),
     }
