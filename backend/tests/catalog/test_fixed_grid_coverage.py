@@ -18,7 +18,16 @@ from earthx.adapters import ADAPTER_SPECS
 from earthx.api.coverage_route import build_router
 from earthx.catalog.coverage import CoverageProviderMismatch, CoverageQuery, InvalidCoverageQuery
 from earthx.catalog.fixed_grid_coverage import fixed_grid_coverage
-from earthx.catalog.registry import ConfigError, CoverageProvider, DatasetRegistry, TemporalExtent
+from earthx.catalog.registry import (
+    ChangeDetection,
+    ConfigError,
+    CoverageProvider,
+    DatasetRegistry,
+    ItemState,
+    TemporalExtent,
+    UpdateCadence,
+    UpdatesInfo,
+)
 from earthx.catalog.search_filters import ValuesCondition
 from tests.catalog.entries import METEOSWISS_DAILY_1KM, METEOSWISS_DAILY_PRECIP_1KM, SWISSALTI3D
 from tests.earthx.adapters.conftest import answering
@@ -98,6 +107,39 @@ class TestArea:
         bowtie = {"type": "Polygon", "coordinates": [[[7, 46], [8, 47], [8, 46], [7, 47], [7, 46]]]}
         with pytest.raises(InvalidCoverageQuery):
             fixed_grid_coverage(ask(intersects=bowtie), TEMPERATURE)
+
+
+# A running source (M5-58, adr/0038 §3.6): the end of the extent is open, the newest item says where the days end.
+RUNNING = replace(
+    TEMPERATURE,
+    temporal_extent=TemporalExtent(start=at("1961-01-01"), end=None),
+    updates=UpdatesInfo(UpdateCadence.DAILY, (ItemState.PROVISIONAL, ItemState.FINAL), ChangeDetection.UNITS),
+    limitations=("Values of the last weeks are provisional.",),
+)
+
+
+class TestARunningSource:
+    def test_the_days_end_with_the_newest_item(self) -> None:
+        result = fixed_grid_coverage(ask(RUNNING, start=at("2026-11-01")), RUNNING, last_end=at("2026-11-17T23:59:59"))
+        assert result.total_count == 17
+        assert [(bucket.start.month, bucket.count) for bucket in result.histogram] == [(11, 17)]
+
+    def test_before_the_first_run_nothing_is_counted(self) -> None:
+        result = fixed_grid_coverage(ask(RUNNING), RUNNING, last_end=None)
+        assert result.total_count == 0 and result.histogram == ()
+
+    def test_a_closed_extent_goes_before_the_items(self) -> None:
+        result = fixed_grid_coverage(ask(start=at("2025-12-01")), TEMPERATURE, last_end=at("2026-11-17T23:59:59"))
+        assert result.total_count == 31
+
+    def test_the_route_asks_the_database_for_the_newest_item(self) -> None:
+        gateway, _ = answering(httpx.Response(500))
+        app = FastAPI()
+        app.include_router(build_router(DatasetRegistry((RUNNING,)), ADAPTER_SPECS))
+        app.state.earthx_gateway = gateway
+        app.state.earthx_cache_pool = None
+        response = TestClient(app).get(f"/coverage/{RUNNING.dataset_id}", params={"zoom": 5})
+        assert response.status_code == 503
 
 
 class TestRefused:

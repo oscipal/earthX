@@ -7,6 +7,9 @@ window and a histogram of them per month. All of it is reckoned from the entry: 
 The time steps are days (the cadence of M5-11, plan A11): the first starts at ``temporal_extent.start``, each lasts one
 day, the last ends at ``temporal_extent.end``. A step is counted when its day touches the window, the overlap rule of
 the item search. A day the source lacks is still counted here; the items show the gap (plan §10.9).
+
+A running source leaves that end open (M5-58, adr/0038 §3.6): then the last step ends where the newest item ends,
+``last_end``, which the caller reads from the items. Before the first run there is none, and nothing is counted.
 """
 
 from __future__ import annotations
@@ -34,8 +37,9 @@ STEP = timedelta(days=1)
 _LAST_SECOND = STEP - timedelta(seconds=1)
 
 
-def fixed_grid_coverage(query: CoverageQuery, config: DatasetConfig) -> CoverageResult:
-    """The extent cropped to ``query``'s area, and the days of ``query``'s window, counted per month."""
+def fixed_grid_coverage(query: CoverageQuery, config: DatasetConfig, *, last_end: datetime | None = None) -> CoverageResult:
+    """The extent cropped to ``query``'s area, and the days of ``query``'s window, counted per month; up to
+    ``last_end`` where the entry leaves the end of its time extent open."""
     if config.coverage.provider is not CoverageProvider.FIXED_GRID:
         raise CoverageProviderMismatch(
             f"{config.dataset_id} is answered by {config.coverage.provider.value}, not by fixed-grid"
@@ -43,8 +47,11 @@ def fixed_grid_coverage(query: CoverageQuery, config: DatasetConfig) -> Coverage
     if query.conditions is not None:
         raise InvalidCoverageQuery(f"{config.dataset_id}: the fixed-grid way has no search filters")
     first, last = config.temporal_extent.start, config.temporal_extent.end
-    if first is None or last is None:
+    if first is None or (last is None and not config.updates.running):
         raise CoverageProviderMismatch(f"{config.dataset_id}: fixed-grid needs a closed temporal_extent")
+    last = last or last_end
+    if last is None or last < first:
+        return _result(query, None, ())
 
     area = box(*config.spatial_extent.bbox)
     if query.bbox is not None:

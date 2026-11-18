@@ -65,6 +65,7 @@ from earthx.catalog.coverage import (
 )
 from earthx.catalog.fixed_grid_coverage import fixed_grid_coverage
 from earthx.catalog.local_coverage import area_coverage, check_intersects_is_valid
+from earthx.catalog.pgstac import latest_item_end
 from earthx.catalog.registry import CoverageProvider, DatasetRegistry, RetiredDatasetError, UnknownDatasetError
 from earthx.catalog.search_cache import PostgresSearchCache
 from earthx.catalog.search_filters import InvalidFilter
@@ -284,9 +285,15 @@ def build_router(registry: DatasetRegistry, adapters: AdapterSpecs) -> APIRouter
         gateway = request.app.state.earthx_gateway
         pool = getattr(request.app.state, "earthx_cache_pool", None)
         try:
-            if config.coverage.provider is CoverageProvider.FIXED_GRID:
+            if config.coverage.provider is CoverageProvider.FIXED_GRID and config.temporal_extent.end is not None:
                 # Reckoned from the entry alone (M5-11 plan §5.4): no source, no database.
                 result = fixed_grid_coverage(query, config)
+            elif config.coverage.provider is CoverageProvider.FIXED_GRID:
+                # A running source (adr/0038 §3.6): the newest item says where the steps end.
+                if pool is None:
+                    raise HTTPException(status_code=503, detail="the catalogue is not available")
+                async with pool.connection() as conn:
+                    result = fixed_grid_coverage(query, config, last_end=await latest_item_end(conn, config.dataset_id))
             elif area_path:
                 if pool is None:
                     raise HTTPException(status_code=503, detail="the catalogue is not available")
