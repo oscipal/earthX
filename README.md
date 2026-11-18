@@ -311,8 +311,8 @@ docker compose run --rm harvest opendata-swiss
   Dazwischen fragt ein Lauf nur nach Paketen, die seit dem Beginn des letzten erfolgreichen Laufs bzw.
   vollen Durchgangs (eine Stunde Überlappung) geändert wurden. `--full` hinter der ID erzwingt einen vollen Lauf. Nur ein voller Lauf
   setzt verschwundene Pakete auf `gone`, und nur, wenn sich die Liste beim Lesen nicht verschoben hat und nicht
-  leer war. Verschiebt sich die Liste eines inkrementellen Laufs, endet er `interrupted` (`listing_moved`), und
-  der nächste fragt ab dem Lauf davor.
+  leer war. Verschiebt sich die Liste eines inkrementellen Laufs, läuft er
+  durch; was dabei übersprungen wurde, liest der nächste volle Durchgang.
 - `robots.txt` gilt streng. Nur wo die Seed-Datei `robots_exception` nennt (Pfad der Metadaten-API und Beleg in
   der Doku des Anbieters), liest der Harvest diesen einen Pfad trotz `Disallow`; der Bericht nennt das.
   `Crawl-delay` gilt immer: Bei opendata.swiss (10 s) dauert ein voller Lauf knapp eine halbe Stunde. GovData
@@ -321,7 +321,13 @@ docker compose run --rm harvest opendata-swiss
   Quelle bis dahin ab.
 - Antwortet eine Quelle mit `429`, wartet der Lauf nach ihrem `Retry-After`, sonst 2 min und danach jeweils
   doppelt so lang (bis 30 min); nach 60 min Warten insgesamt endet er `interrupted` (`rate_limited`).
-- Ein voller CKAN-Lauf darf über mehrere Läufe gehen: Bricht er ab, hält die Datenbank die nächste Seite fest,
+- `max_pages_per_run` in der Quell-Datei begrenzt die Seiten eines Laufs (opendata.swiss: 40, weil die Quelle
+  nach rund 100 Seiten für Stunden sperrte). Ist die Grenze erreicht, endet der Lauf `interrupted`
+  (`page_budget`), und der nächste setzt fort; ein voller Durchgang verteilt sich so über mehrere Tage.
+- Endet ein Lauf `rate_limited`, ruht die Quelle bis zu ihrem `Retry-After`, sonst bis 00:00 UTC des nächsten
+  Tages. Davor startet kein Lauf und kein `--measure`; der Befehl nennt die Uhrzeit. Von Hand aufheben:
+  `UPDATE earthx_harvest_source SET rest_until = NULL WHERE source_id = '<id>';`
+- Ein CKAN-Lauf, voll oder inkrementell, darf über mehrere Läufe gehen: Bricht er ab, hält die Datenbank die nächste Seite fest,
   und der nächste Lauf (auch mit `--full`) setzt dort fort; der Bericht nennt die Stelle. `gone` gibt es erst,
   wenn der Durchgang ganz durchgelaufen ist.
 - `--measure` hinter einer CKAN-Quelle holt nur ihre erste Seite, einmal wie der Harvest und einmal mit `fl`
