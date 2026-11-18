@@ -139,6 +139,8 @@ class Gateway:
         self._robots_locks: dict[str, asyncio.Lock] = {}
         self._robots: dict[str, tuple[float, RobotsRules | HostResting]] = {}
         self._crawl_delays: dict[str, float] = {}
+        #: Hosts where a robots.txt Disallow was waived by the policy's exception (a harvest report names it).
+        self.robots_waived: set[str] = set()
         self._client = httpx.AsyncClient(
             transport=transport,
             follow_redirects=False,
@@ -265,8 +267,14 @@ class Gateway:
             return
         rules = await self._robots_for(checked.host)
         target = url.raw_path.decode("ascii", errors="replace")
-        if not rules.allows(target):
-            raise RobotsDisallowed(host=checked.host)
+        if rules.allows(target):
+            return
+        # A documented metadata API the source's file names (Otto, 18.11.2026): the Disallow is waived for its path
+        # only; robots.txt was read all the same, so its Crawl-delay still spaces the requests.
+        if self._policy.robots_waived(checked.host, url.path):
+            self.robots_waived.add(checked.host)
+            return
+        raise RobotsDisallowed(host=checked.host)
 
     async def _robots_for(self, host: str) -> RobotsRules:
         lock = self._robots_locks.setdefault(host, asyncio.Lock())

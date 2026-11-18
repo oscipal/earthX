@@ -168,6 +168,10 @@ class Policy:
     obey_robots: bool = False
     # Per host, overriding ``max_connections_per_host``, matched like ``host_intervals`` (M5-36, the registry's hosts.yaml).
     host_connections: Mapping[str, int] = field(default_factory=dict, hash=False)
+    # Per host (that host only, no subdomain), path prefixes whose Disallow in robots.txt is waived: the documented
+    # metadata API of a harvest source (Otto, 18.11.2026; adr/0025 §6.2). robots.txt is still read and its Crawl-delay
+    # still kept; every other path of the host stays as robots.txt says.
+    robots_exceptions: Mapping[str, tuple[str, ...]] = field(default_factory=dict, hash=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "allowed_hosts", frozenset(normalize_host(h) for h in self.allowed_hosts))
@@ -178,6 +182,11 @@ class Policy:
         _check_connections(self.max_connections_per_host)
         connections = {normalize_host(host): _check_connections(value) for host, value in self.host_connections.items()}
         object.__setattr__(self, "host_connections", MappingProxyType(connections))
+        exceptions = {
+            normalize_host(host): tuple(check_robots_exception_path(path) for path in paths)
+            for host, paths in self.robots_exceptions.items()
+        }
+        object.__setattr__(self, "robots_exceptions", MappingProxyType(exceptions))
 
     def host_interval(self, host: str) -> float | None:
         """The entry of ``host`` in ``host_intervals`` or of its nearest parent, ``None`` if there is none."""
@@ -202,9 +211,29 @@ class Policy:
                 return value
         return self.max_connections_per_host
 
+    def robots_waived(self, host: str, path: str) -> bool:
+        """Whether a Disallow of robots.txt is waived for ``path`` (decoded, without query) on ``host``: it starts with
+        one of the host's exception prefixes and has no ``.`` or ``..`` segment that could climb out of it."""
+        prefixes = self.robots_exceptions.get(host, ())
+        if not prefixes or any(segment in (".", "..") for segment in path.split("/")):
+            return False
+        return any(path.startswith(prefix) for prefix in prefixes)
+
     def allows_host(self, host: str) -> bool:
         """True for the host itself and for its real subdomains, nothing else."""
         return any(host == allowed or host.endswith("." + allowed) for allowed in self.allowed_hosts)
+
+
+_EXCEPTION_PATH = re.compile(r"(?:/[A-Za-z0-9_~-][A-Za-z0-9._~-]*)+/")
+
+
+def check_robots_exception_path(path: object) -> str:
+    """A path prefix a robots.txt exception may name: absolute, ending in ``/``, plain segments only, never ``/``."""
+    if not isinstance(path, str) or not _EXCEPTION_PATH.fullmatch(path) or any(
+        segment in (".", "..") for segment in path.split("/")
+    ):
+        raise ValueError("a robots.txt exception is a path of plain segments that starts and ends with '/'")
+    return path
 
 
 def host_of(url: str) -> str:
