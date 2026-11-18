@@ -41,6 +41,8 @@ MAX_TILE_ZOOM = 22
 
 # A unit is a symbol, not a sentence (UCUM: "m", "1", "mm/h"); the longest in use stays far below this.
 MAX_UNIT_CHARS = 32
+# A band description is a few words for the table of the Data catalogue ("Red edge 1"), not a sentence (M5-59).
+MAX_BAND_DESCRIPTION_CHARS = 60
 MAX_GROUP_CHARS = 24
 
 
@@ -1637,6 +1639,11 @@ class DatasetConfig:
     # names a unit itself goes first (adr/0014 §15n). The default render and the mask layer
     # each need a key.
     band_units: Mapping[str, str | None]
+    # What each band is, in a few words and English ("Red edge 1", "Daily mean air temperature, 2 m"), by the same
+    # keys as ``band_units`` (a key may carry ``*`` for a group); published as `earthx:band_descriptions`, the
+    # `description` of a STAC band, for the column "Description" of the Data catalogue (M5-59). No default (KLAERUNGEN
+    # B10): every key of ``band_units`` that is no auxiliary asset needs one.
+    band_descriptions: Mapping[str, str]
     # The assets that help to look at or read the data but are no band of it (a true-colour picture, a preview), by
     # asset key. The panel keeps them out of "Select all"; a user can still pick one. No default (KLAERUNGEN B10):
     # an entry says so, with an empty tuple where it has none. The mask layer is named by ``mask``, not here.
@@ -1669,6 +1676,7 @@ class DatasetConfig:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "band_units", MappingProxyType(dict(self.band_units)))
+        object.__setattr__(self, "band_descriptions", MappingProxyType(dict(self.band_descriptions)))
         self._check_keywords()
         self._check_catalogue_fields()
         self._check_doi()
@@ -1687,6 +1695,7 @@ class DatasetConfig:
         self._check_mask()
         self._check_band_units()
         self._check_auxiliary_assets()
+        self._check_band_descriptions()
         self._check_asset_keys()
         self._check_item_states()
         self._check_search_filters()
@@ -1839,6 +1848,21 @@ class DatasetConfig:
             for key in single_asset_keys(order_asset, separator):
                 if not any(key == pattern or ("*" in pattern and fnmatchcase(key, pattern)) for pattern in listed):
                     raise ConfigError(f"{self.dataset_id}: band_units has no entry for {key!r}, which the entry reads itself")
+
+    def _check_band_descriptions(self) -> None:
+        """Each description is a short, trimmed text of a key of ``band_units``, and every band has one (M5-59)."""
+        for key, text in self.band_descriptions.items():
+            if key not in self.band_units:
+                raise ConfigError(f"{self.dataset_id}: band_descriptions names {key!r}, which band_units does not")
+            if not isinstance(text, str) or not text.strip() or text != text.strip() or "\n" in text:
+                raise ConfigError(f"{self.dataset_id}: the description of {key!r} is a non-blank one-line text")
+            if len(text) > MAX_BAND_DESCRIPTION_CHARS:
+                raise ConfigError(
+                    f"{self.dataset_id}: the description of {key!r} is longer than {MAX_BAND_DESCRIPTION_CHARS} characters"
+                )
+        missing = [key for key in self.band_units if key not in self.band_descriptions and key not in self.auxiliary_assets]
+        if missing:
+            raise ConfigError(f"{self.dataset_id}: band_descriptions has no entry for {', '.join(map(repr, missing))}")
 
     def _check_auxiliary_assets(self) -> None:
         """The auxiliary assets are distinct, usable keys, and none is the mask layer."""

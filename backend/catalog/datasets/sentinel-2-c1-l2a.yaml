@@ -292,6 +292,25 @@ band_units:
   scl: null
   visual: null
   preview: null
+# What each band is, a few words (M5-59): the column "Description" of the Data catalogue.
+band_descriptions:
+  coastal: Coastal aerosol
+  blue: Blue
+  green: Green
+  red: Red
+  rededge1: Red edge 1
+  rededge2: Red edge 2
+  rededge3: Red edge 3
+  nir: Near infrared
+  nir08: Narrow near infrared
+  nir09: Water vapour absorption
+  swir16: Shortwave infrared 1
+  swir22: Shortwave infrared 2
+  aot: Aerosol optical thickness
+  wvp: Column water vapour
+  cloud: Cloud probability
+  snow: Snow probability
+  scl: Scene classification
 # Pictures made from the bands, not bands themselves. `scl` is the mask layer (`mask` above).
 auxiliary_assets: [visual, preview]
 # DS-02 plan §6.2, §6.2a and DS-02c (Otto 28.10.2026 and 30.10.2026): every filter below was measured against the

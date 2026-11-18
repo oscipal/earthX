@@ -194,6 +194,9 @@ mask: null
 # Elevation in metres, the unit the default render's range of 0 to 5000 already states (M3-11b plan §2.4).
 band_units:
   data: m
+# What each band is, a few words (M5-59): the column "Description" of the Data catalogue.
+band_descriptions:
+  data: Surface height (DSM)
 auxiliary_assets: []
 search_filters: []
 # DS-03c (Otto, 04.11.2026): the coverage of the AOI is meaningful, the share of the AOI the 1° tiles reach (oceans

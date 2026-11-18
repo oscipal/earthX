@@ -172,6 +172,9 @@ mask: null
 # Heights in metres above the Adriatic (plan §2.1).
 band_units:
   dtm: m
+# What each band is, a few words (M5-59): the column "Description" of the Data catalogue.
+band_descriptions:
+  dtm: Terrain height (DTM), 1 m grid
 auxiliary_assets: []
 # The feeds offer no search: no filters.
 search_filters: []

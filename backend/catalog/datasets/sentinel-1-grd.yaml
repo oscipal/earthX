@@ -179,6 +179,12 @@ band_units:
   vh: DN
   hh: DN
   hv: DN
+# What each band is, a few words (M5-59): the column "Description" of the Data catalogue.
+band_descriptions:
+  vv: VV polarisation amplitude
+  vh: VH polarisation amplitude
+  hh: HH polarisation amplitude
+  hv: HV polarisation amplitude
 # The source's quicklook and the SAFE annotation files, by the keys of the items [M]. The calibration tables are
 # what DS-05d will read.
 auxiliary_assets:
