@@ -13,6 +13,7 @@ expired selection answers ``410`` at most a few minutes late.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
@@ -186,6 +187,8 @@ class SelectionStore:
         self._max_entries = max_entries
         self._max_items = max_items
         self._loaded: OrderedDict[str, tuple[float, Selection | FootprintSelection]] = OrderedDict()
+        # The loads on their way, by id: the tiles of one view ask for the same selection together, and one load serves them all.
+        self._loading: dict[str, asyncio.Task[Selection | FootprintSelection | None]] = {}
 
     async def get(self, selection_id: str) -> Selection | None:
         """The mosaic selection, or ``None`` if there is none by this id (a footprint selection is none), or it has expired."""
@@ -204,6 +207,14 @@ class SelectionStore:
                 self._loaded.move_to_end(selection_id)
                 return kept[1]
             del self._loaded[selection_id]
+        loading = self._loading.get(selection_id)
+        if loading is None:
+            loading = asyncio.ensure_future(self._load(selection_id))
+            self._loading[selection_id] = loading
+            loading.add_done_callback(lambda _done: self._loading.pop(selection_id, None))
+        return await asyncio.shield(loading)
+
+    async def _load(self, selection_id: str) -> Selection | FootprintSelection | None:
         async with self._pool.connection() as conn:
             row = await stored.load(conn, selection_id)
         if row is None:
@@ -211,7 +222,8 @@ class SelectionStore:
         dataset_id, content = row
         selection: Selection | FootprintSelection
         if content.get("kind") == stored.FOOTPRINTS:
-            selection = FootprintSelection.from_document(selection_id, dataset_id, content)
+            # The union of up to 10 000 outlines (M5-56) is built off the event loop.
+            selection = await asyncio.to_thread(FootprintSelection.from_document, selection_id, dataset_id, content)
         else:
             selection = Selection.from_document(selection_id, dataset_id, content)
         self._remember(selection)

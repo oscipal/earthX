@@ -6,7 +6,8 @@
 //   3. a request is not for the route of its level: the substitute below z12.5, the mosaic from there on (the first step, where the mosaic
 //      is not there yet, may ask for both);
 //   4. the map is not said to show an overview below z12.5 or is said to from there on (`overviewMark.ts::showsOverview`, what sets the
-//      mark "Overview" of the page; Otto, 16.11.2026, UI-08).
+//      mark "Overview" of the page; Otto, 16.11.2026, UI-08);
+//   5. a picture is drawn in the area off the scenes of the view (M5-56, Otto 18.11.2026: below the first level only over the scenes).
 // Once for an area around a city (requests at every step; the picture is checked from z5, where the area is more than a pixel) and
 // once for a region as large as the dataset (the picture at every step, z0 included).
 //
@@ -24,9 +25,11 @@ const BASE = process.env.BASE ?? 'http://localhost:5173';
 const OUT = process.env.OUT ?? path.join(require('node:os').tmpdir(), 'earthx-overview-every-level');
 const CITY = { type: 'Polygon', coordinates: [[[8.3, 47.2], [8.8, 47.2], [8.8, 47.6], [8.3, 47.6], [8.3, 47.2]]] };
 const REGION = { type: 'Polygon', coordinates: [[[5.95, 45.75], [10.45, 45.75], [10.45, 47.75], [5.95, 47.75], [5.95, 45.75]]] };
+// The centre lies over the scenes of the view (8° to 9° E, 47° to 47.8° N): the view draws over its scenes only (M5-56). `outside` lies in
+// the area but off the scenes, where nothing is drawn at any level.
 const AREAS = {
   city: { aoi: CITY, centre: [8.55, 47.4], pictureFrom: 5 },
-  region: { aoi: REGION, centre: [8.2, 46.75], pictureFrom: 0 },
+  region: { aoi: REGION, centre: [8.4, 47.4], pictureFrom: 0, outside: [6.5, 46.2] },
 };
 const EMPTY = [255, 0, 255];
 // The levels the map is zoomed out through: whole and half levels from 14 to 0, as a person's wheel gives.
@@ -57,7 +60,7 @@ function solidPng(size = 512) {
   ]);
 }
 
-async function run(browser, name, { aoi, centre, pictureFrom }, results) {
+async function run(browser, name, { aoi, centre, pictureFrom, outside }, results) {
   const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
   const problems = [];
   page.on('pageerror', (error) => problems.push(`the page failed: ${error.message.slice(0, 200)}`));
@@ -65,9 +68,10 @@ async function run(browser, name, { aoi, centre, pictureFrom }, results) {
   let asked = [];
   await page.route('**/collections/terrain/**', (route) => {
     const url = new URL(route.request().url());
-    const match = /\/collections\/terrain\/(overview|mosaic\/[0-9a-f]{32})\/tiles\/WebMercatorQuad\/(\d+)\/\d+\/\d+/.exec(url.pathname);
+    // The view draws the substitute's picture over its scenes only, on the overview of their footprint selection (M5-56).
+    const match = /\/collections\/terrain\/(overview\/[0-9a-f]{32}|mosaic\/[0-9a-f]{32})\/tiles\/WebMercatorQuad\/(\d+)\/\d+\/\d+/.exec(url.pathname);
     if (!match) return route.fulfill({ status: 404, contentType: 'application/json', body: '{"detail":"not made up"}' });
-    asked.push({ route: match[1] === 'overview' ? 'substitute' : 'mosaic', z: Number(match[2]) });
+    asked.push({ route: match[1].startsWith('overview') ? 'substitute' : 'mosaic', z: Number(match[2]) });
     return route.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: tile });
   });
   await page.goto(`${BASE}/e2e/harness.html`);
@@ -93,6 +97,13 @@ async function run(browser, name, { aoi, centre, pictureFrom }, results) {
       if (block.every((pixel) => pixel.every((v, i) => v === EMPTY[i]))) problems.push(`${label}: nothing is drawn where the area lies`);
     }
     if ([0, 4, 8, 12, 14].includes(zoom)) await page.screenshot({ path: path.join(OUT, `${name}-z${zoom}.png`) });
+  }
+  // The made-up tiler masks nothing (the real one masks to the footprints): judged where the tile of the place does not reach the scenes.
+  for (const zoom of outside ? [9, 12] : []) {
+    await page.evaluate(([lon, lat, z]) => window.h.jump(lon, lat, z), [...outside, zoom]);
+    await page.waitForTimeout(300);
+    const block = await page.evaluate(([lon, lat]) => window.h.blockAt(lon, lat), outside);
+    if (!block.every((pixel) => pixel.every((v, i) => v === EMPTY[i]))) problems.push(`z${zoom}: a picture is drawn in the area off the scenes of the view`);
   }
   results.push({ name, problems });
   await page.close();

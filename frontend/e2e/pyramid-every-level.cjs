@@ -1,7 +1,8 @@
 // A dataset with an overview pyramid (GLO-30, WorldCover; registry `viewer.overview: pyramid`, M5-30b part 9) keeps its picture when
 // zoomed out, in a real browser, on the real `mapLayers.ts` and the real AOI clip, with a made-up tiler. A dataset released from z7
 // in "Crop and merge to AOI" shows its mosaic from z7 (a 512-px mosaic of level 7 is drawn from map zoom 6.5) and the picture of its
-// own pyramid below, on the route `/collections/{dataset}/overview/tiles/…`; the map zooms out from z10 to z0. It fails when
+// own pyramid below, over its scenes only: on the overview of their footprint selection, `/collections/{dataset}/overview/{id}/tiles/…`
+// (M5-56, Otto 18.11.2026), never on the route of the whole area; the map zooms out from z10 to z0. It fails when
 //   1. a tile is not asked for at the route of its level (the pyramid below 6.5, the mosaic from there on, the first step excepted);
 //   2. a step draws nothing where the area lies (the area is 5 degrees wide: more than a pixel from z3 on);
 //   3. the attribution line does not name the dataset's own text for modified data below 6.5, or names it above;
@@ -86,7 +87,9 @@ async function run(browser, theme, results) {
   page.setDefaultTimeout(8000);
   page.on('pageerror', (error) => problems.push(`the page failed: ${error.message.slice(0, 200)}`));
   let asked = [];
+  // The footprint selections made, by the part of the check that made them: the hits of the search, or the view ("Crop and merge").
   const posts = [];
+  let phase = 'hits';
   let slow = false;
   const green = solid([0, 200, 0, 255]);
   const blue = solid([0, 0, 255, 255]);
@@ -97,7 +100,7 @@ async function run(browser, theme, results) {
     if (url.pathname === '/colormaps') return json({ groups: [] });
     if (answersSelection(route, url)) return;
     if (answersFootprints(route, url)) {
-      posts.push(JSON.parse(route.request().postData() ?? '{}').items);
+      posts.push({ phase, items: JSON.parse(route.request().postData() ?? '{}').items });
       return;
     }
     if (isFootprintTile(url.href)) {
@@ -155,6 +158,7 @@ async function run(browser, theme, results) {
     });
   }, { aoi: AOI, open: MANAGER_OPEN, text: TEXT });
   await page.waitForTimeout(1500);
+  phase = 'view';
   await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.getState().enterFocus(true));
   await page.waitForTimeout(2500);
 
@@ -203,12 +207,13 @@ async function run(browser, theme, results) {
     asked = [];
     await page.evaluate(([m, lon, lat, z]) => m.jumpTo({ center: [lon, lat], zoom: z }), [map, ...CENTRE, zoom]);
     await page.waitForTimeout(500);
-    const wanted = zoom < MOSAIC_FROM ? 'overview' : 'mosaic';
+    // Below the first level the view draws the overview of the footprint selection of its scenes, not of the whole area (M5-56).
+    const wanted = zoom < MOSAIC_FROM ? 'masked' : 'mosaic';
     // A tile that an earlier step loaded is not asked for again: a request is certain only at a whole level the steps before did not draw.
     if (Number.isInteger(zoom) && zoom !== ZOOMS[0] && zoom >= 2 && asked.every((request) => request.route !== wanted)) problems.push(`z${zoom}: no tile of the ${wanted} was asked for`);
-    const wrong = asked.filter((request) => request.route !== wanted && !(zoom === ZOOMS[0] && request.route === 'overview'));
+    const wrong = asked.filter((request) => request.route !== wanted && !(zoom === ZOOMS[0] && request.route === 'masked'));
     if (wrong.length) problems.push(`z${zoom}: tiles of the ${wrong[0].route} (z${wrong[0].z}) were asked for where the ${wanted} draws`);
-    if (asked.some((request) => request.route === 'masked')) problems.push(`z${zoom}: the crop view asked for a masked overview, it draws the one without a selection`);
+    if (asked.some((request) => request.route === 'overview')) problems.push(`z${zoom}: the crop view asked for the overview of the whole area, not of its scenes`);
     if (zoom >= 3) {
       const seen = await blueOrGreen();
       if (seen.points === 0) problems.push(`z${zoom}: the area is not on the screen`);
@@ -228,9 +233,17 @@ async function run(browser, theme, results) {
   const shown = async () => (await page.$$eval('.status-stack .toast.busy', (els) => els.map((el) => el.textContent.trim()))).filter((t) => t === 'Loading data').length;
   const rows = () => page.locator('.layer-row [role="status"]:visible').count();
   for (const until = Date.now() + 8000; Date.now() < until && (await shown()) > 0; ) await later(100);
-  // Over another part of the world: tiles of this level that no step has loaded yet.
+  // Tiles no step has loaded yet: one scene leaves the view, whose picture below the first level is then the overview of another
+  // footprint selection (M5-56), and the map is zoomed out to a level of the overview.
+  await page.evaluate((m) => m.jumpTo({ center: [8.5, 46], zoom: 4.2 }), map);
+  await page.waitForTimeout(TILE_MS + 800);
   const begun = Date.now();
-  await page.evaluate((m) => m.jumpTo({ center: [-100, 20], zoom: 4.2 }), map);
+  await page.evaluate(async () => {
+    const { useAppStore } = await import('/src/store.ts');
+    const { CELL_3: _left, ...rest } = useAppStore.getState().downloaded;
+    useAppStore.setState({ downloaded: rest });
+    await useAppStore.getState().loadMosaics();
+  });
   let toast;
   let row = 0;
   for (const until = begun + TILE_MS + 3000; Date.now() < until; await later(50)) {
@@ -243,6 +256,8 @@ async function run(browser, theme, results) {
   await page.waitForTimeout(TILE_MS + 800);
   if ((await shown()) > 0) problems.push('the "Loading data" toast stays when the overview tiles are in');
   slow = false;
+  // Away from the area, so that no level of the search results below is loaded before it is looked at.
+  await page.evaluate((m) => m.jumpTo({ center: [-100, 20], zoom: 4.2 }), map);
   console.log(`${theme}${MANAGER_OPEN ? ' (manager open)' : ''}: toast after ${toast ?? '-'} ms, row mark ${MANAGER_OPEN ? (row > 0 ? 'yes' : 'no') : 'not looked at'}`);
 
   // The search results: leave the full-resolution view, the four hits are on the map as the results of a search.
@@ -251,6 +266,9 @@ async function run(browser, theme, results) {
     useAppStore.getState().exitFocus();
     useAppStore.setState({ resultsOnMap: true, downloaded: {}, mosaics: {} });
   });
+  phase = 'hits';
+  const ofView = posts.filter((post) => post.phase === 'view').map((post) => post.items);
+  if (!ofView.some((items) => JSON.stringify(items) === JSON.stringify(Array.from({ length: 4 }, (_, i) => `CELL_${i}`)))) problems.push(`the view made no footprint selection of its four scenes: ${JSON.stringify(ofView)}`);
   await page.waitForTimeout(1500);
   const hitIds = Array.from({ length: 4 }, (_, i) => `CELL_${i}`).sort();
   for (const zoom of ZOOMS) {
@@ -278,10 +296,11 @@ async function run(browser, theme, results) {
     if (zoom < MOSAIC_FROM && !credit.includes(TEXT)) problems.push(`${label}: the attribution line does not name the dataset`);
     if (zoom >= MOSAIC_FROM && credit.includes(TEXT)) problems.push(`${label}: the attribution line names the pyramid above its levels`);
   }
-  if (posts.length === 0) problems.push('search results: no footprint selection was made for the hits');
-  if (posts.some((items) => JSON.stringify(items) !== JSON.stringify(hitIds))) problems.push(`search results: a footprint selection was made for ${JSON.stringify(posts)}, not for the four hits sorted`);
-  if (posts.length > 1) problems.push(`search results: the footprint selection was made ${posts.length} times for the same hits`);
-  console.log(`${theme}${MANAGER_OPEN ? ' (manager open)' : ''}: search results, ${posts.length} footprint selection(s) for ${hitIds.length} hits`);
+  const ofHits = posts.filter((post) => post.phase === 'hits').map((post) => post.items);
+  if (ofHits.length === 0) problems.push('search results: no footprint selection was made for the hits');
+  if (ofHits.some((items) => JSON.stringify(items) !== JSON.stringify(hitIds))) problems.push(`search results: a footprint selection was made for ${JSON.stringify(ofHits)}, not for the four hits sorted`);
+  if (ofHits.length > 1) problems.push(`search results: the footprint selection was made ${ofHits.length} times for the same hits`);
+  console.log(`${theme}${MANAGER_OPEN ? ' (manager open)' : ''}: search results, ${ofHits.length} footprint selection(s) for ${hitIds.length} hits`);
 
   // One mark only: nothing else that is not a tooltip says "overview".
   await page.evaluate(([m, lon, lat]) => m.jumpTo({ center: [lon, lat], zoom: 3 }), [map, ...CENTRE]);
