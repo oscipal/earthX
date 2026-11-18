@@ -386,3 +386,30 @@ forbidden_modules =
 ; `botocore` through `urllib3` and the other S3 clients joined the list with it.
 ignore_imports =
     earthx.objectstore.client -> botocore
+
+[importlinter:contract:h5py-only-in-discovery]
+name = h5py lives only in discovery (adr/0029 F1, §8a.4)
+type = forbidden
+; M5-11: `discovery` opens a NetCDF-4/HDF5 file with `h5py` to write the chunk
+; references an item carries; every reader fetches the chunks through `gateway`
+; itself and needs no HDF5 library. A tightening, not a loosening: it keeps a
+; second HDF5 next to GDAL's out of the tiler, the worker and the runner.
+; Direct imports only, like the module-boundary contracts: a module that may
+; import `discovery` does not load `h5py` by that alone being allowed.
+allow_indirect_imports = True
+source_modules =
+    earthx.logging
+    earthx.gateway
+    earthx.catalog
+    earthx.adapters
+    earthx.readers
+    earthx.access
+    earthx.processing
+    earthx.jobs
+    earthx.identity
+    earthx.api
+    earthx.datasets
+    earthx.objectstore
+    earthx.runner
+forbidden_modules =
+    h5py
