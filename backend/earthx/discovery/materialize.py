@@ -34,6 +34,9 @@ successful run builds anew" (adr/0032 §5).
 Connection details come from the environment (``PGHOST`` and friends), like
 ``catalog.load``. ``--force`` skips the "unchanged" check and reloads
 regardless of the last recorded source version.
+
+An entry with ``updates.detect: units`` (M5-58, adr/0038) takes another way: :mod:`earthx.discovery.materialize_units`
+judges each unit of the source on its own and writes only the items whose assets change; ``--force`` does not apply.
 """
 
 from __future__ import annotations
