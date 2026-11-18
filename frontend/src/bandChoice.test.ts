@@ -47,7 +47,7 @@ describe('the table of bands is the answer of the platform', () => {
     expect(table().map((b) => b.asset)).toEqual(['a_blue', 'a_red', 'a_edge', 'a_coast', 'scl', 'aerosol']);
     expect(table().find((b) => b.asset === 'a_red')).toEqual({
       asset: 'a_red', name: 'B04', commonName: 'red', wavelength: 0.665, resolution: 10, categorical: false,
-      dataType: 'uint16', scale: 0.0001, offset: -0.1, nodata: 0, unit: '1', preselected: true,
+      dataType: 'uint16', scale: 0.0001, offset: -0.1, nodata: 0, unit: '1', preselected: true, stackable: true,
     });
   });
 
@@ -58,7 +58,7 @@ describe('the table of bands is the answer of the platform', () => {
   it('reads what is not there as unknown, a name that is not there as the asset key, and leaves out a row with no asset', () => {
     const found = parseBands({ bands: [{ asset: 'x' }, { name: 'no asset' }, 'text', null, { asset: 'y', name: 'Y', resolution_m: 'ten', scale: Number.NaN }] });
     expect(found.map((b) => b.asset)).toEqual(['x', 'y']);
-    expect(found[0]).toEqual({ asset: 'x', name: 'x', commonName: null, wavelength: null, resolution: null, categorical: false, dataType: null, scale: null, offset: null, nodata: null, unit: null, preselected: false });
+    expect(found[0]).toEqual({ asset: 'x', name: 'x', commonName: null, wavelength: null, resolution: null, categorical: false, dataType: null, scale: null, offset: null, nodata: null, unit: null, preselected: false, stackable: true });
     expect(found[1]).toMatchObject({ name: 'Y', resolution: null, scale: null });
   });
 
@@ -67,6 +67,11 @@ describe('the table of bands is the answer of the platform', () => {
     expect(() => parseBands({})).toThrow(/cannot read/);
     expect(() => parseBands(null)).toThrow(/cannot read/);
     expect(() => parseBands({ bands: 'x' })).toThrow(/cannot read/);
+  });
+
+  it('takes a band as stackable unless the platform says "false" (chunk references, M5-11)', () => {
+    const [refs, cog, older] = parseBands({ bands: [{ asset: 'TabsD', stackable: false }, { asset: 'B04', stackable: true }, { asset: 'B08' }] });
+    expect([refs.stackable, cog.stackable, older.stackable]).toEqual([false, true, true]);
   });
 
   it('takes "true" for a class layer or a preselected band and nothing else', () => {
@@ -174,6 +179,13 @@ describe('whether the form is asked', () => {
     expect(effectiveForm(at(10, 10), 'per_band')).toBe('per_resolution');
     expect(effectiveForm(at(10, 10), 'multi_band')).toBe('per_resolution');
     expect(effectiveForm(at(10), 'per_band')).toBe('per_resolution');
+  });
+
+  it('sends one file per band where a band cannot be stacked, whatever was chosen (chunk references, M5-11)', () => {
+    const refs = at(1000, 1000).map((row) => ({ ...row, stackable: false }));
+    expect(effectiveForm(refs, 'per_band')).toBe('per_band');
+    expect(effectiveForm(refs, 'multi_band')).toBe('per_band');
+    expect(effectiveForm([...at(10), ...refs.slice(0, 1)], 'per_resolution')).toBe('per_band');
   });
 });
 

@@ -42,13 +42,14 @@ from tests.integration.listed_rows import insert_row
 pytestmark = pytest.mark.anyio
 
 FULL = {config.dataset_id: config.title for config in REGISTRY}
-GLOBAL_FULL = sorted(set(FULL) - {"swissalti3d", "bev-als-dgm"})
+# The full entries that reach Kenya: all but those of the Alps (swissALTI3D, BEV, the MeteoSwiss grids, M5-11).
+GLOBAL_FULL = sorted(set(FULL) - {"swissalti3d", "bev-als-dgm", "meteoswiss-daily-1km", "meteoswiss-daily-precip-1km"})
 _EXACT_LON, _EXACT_LAT = "7.123457", "46.654321"
 KENYA = SpatialExtent(bbox=(36.0, -1.0, 37.0, 0.0))
 
 
 def _entries() -> tuple[ListedEntry, ...]:
-    """Seven listed entries whose titles fall between and after those of the six full ones, two with one title."""
+    """Seven listed entries whose titles fall between and after those of the full ones, two with one title."""
     return (
         listed_entry(
             "alpine-glacier-inventory",
@@ -314,10 +315,10 @@ def test_the_synthetic_catalogue_interleaves_full_and_listed_entries_and_has_a_t
     kinds = ["full" if i in FULL else "listed" for i in ALL_IDS]
     assert kinds[0] == "listed" and kinds[-1] == "listed" and "full" in kinds[1:-1]
     assert ALL_IDS.index("shared-title-a") + 1 == ALL_IDS.index("shared-title-b")
-    assert len(ALL_IDS) == 14
+    assert len(ALL_IDS) == 16
 
 
-@pytest.mark.parametrize("limit", [1, 2, 3, 5, 13, 14, 15])
+@pytest.mark.parametrize("limit", [1, 2, 3, 5, 15, 16, 17])
 async def test_get_pages_walk_full_and_listed_entries_in_title_order_without_a_gap_or_a_duplicate(client, limit):
     seen, pages = await _walk_get(client, limit=limit)
     assert seen == ALL_IDS
@@ -328,7 +329,7 @@ async def test_get_pages_walk_full_and_listed_entries_in_title_order_without_a_g
     assert [page.json()["numberReturned"] for page in pages] == [len(_ids(page)) for page in pages]
 
 
-@pytest.mark.parametrize("limit", [1, 2, 5, 14])
+@pytest.mark.parametrize("limit", [1, 2, 5, 16])
 async def test_post_pages_walk_the_same_order(client, limit):
     seen, pages = await _walk_post(client, {"limit": limit})
     assert seen == ALL_IDS
@@ -483,7 +484,7 @@ async def test_a_region_keeps_the_listed_entries_in_it(client):
 
 
 async def test_a_region_keeps_the_full_entries_whose_box_overlaps_it_too(client):
-    # Kenya: the global full entries, not swissALTI3D; listed ones by their box.
+    # Kenya: the global full entries, not those of the Alps (GLOBAL_FULL); listed ones by their box.
     ids = _ids(await client.get("/stac/collections", params={"region": "KE", "limit": 50}))
     assert ids == _by_title({**{i: FULL[i] for i in GLOBAL_FULL}, **_titles_of_listed(*LISTED_IDS_IN_KENYA)})
 

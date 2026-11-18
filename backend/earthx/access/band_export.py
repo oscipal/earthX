@@ -42,6 +42,7 @@ from shapely.geometry import mapping, shape
 from shapely.geometry.base import BaseGeometry
 
 from earthx.access.crop_rules import asset_gsd, merge_first_valid, rasterize_aoi
+from earthx.readers.reference_store import REFS_KEY
 
 __all__ = [
     "BANDS_FILENAME",
@@ -59,7 +60,9 @@ __all__ = [
     "apply_band_tags",
     "band_count",
     "band_meta_of_items",
+    "band_rows",
     "band_table",
+    "holds_one_array",
     "is_geotiff",
     "band_meta",
     "bands_text",
@@ -218,6 +221,11 @@ def is_geotiff(entry: Any) -> bool:
     return isinstance(kind, str) and kind.lower().startswith("image/tiff") and not (isinstance(roles, list) and "thumbnail" in roles)
 
 
+def holds_one_array(entry: Any) -> bool:
+    """Whether an asset entry carries chunk references (``earthx:refs``, M5-11): one array of a day, one band."""
+    return isinstance(entry, Mapping) and REFS_KEY in entry
+
+
 def band_table(
     items: Sequence[Mapping[str, Any]],
     *,
@@ -227,8 +235,8 @@ def band_table(
 ) -> list[tuple[BandMeta, bool]]:
     """The bands the download dialog offers for ``items``, in the first item's order, each with whether it starts ticked.
 
-    The GeoTIFF assets of the first item without the pictures the registry calls auxiliary; the layer of the mask is one of
-    them. Ticked from the start: the spectral bands (the item names a centre wavelength) and the mask layer; where a dataset has
+    The GeoTIFF assets of the first item, and its assets with chunk references (M5-11), without the pictures the registry
+    calls auxiliary; the layer of the mask is one of them. Ticked from the start: the spectral bands (the item names a centre wavelength) and the mask layer; where a dataset has
     neither (an elevation model) every band.
     """
     if not items:
@@ -238,12 +246,29 @@ def band_table(
     metas = [
         band_meta_of_items(items, key, unit=unit_of(key), categorical=key == mask_asset)
         for key, entry in assets.items()
-        if key not in skip and is_geotiff(entry)
+        if key not in skip and (is_geotiff(entry) or holds_one_array(entry))
     ]
     ticked = [meta.wavelength_um is not None or meta.categorical for meta in metas]
     if not any(ticked):
         ticked = [True] * len(metas)
     return list(zip(metas, ticked, strict=True))
+
+
+def band_rows(
+    items: Sequence[Mapping[str, Any]],
+    *,
+    auxiliary: Iterable[str],
+    mask_asset: str | None,
+    unit_of: Callable[[str], str | None],
+) -> list[dict[str, Any]]:
+    """The answer of ``POST /collections/{dataset}/bands``: :func:`band_table` with whether each band starts ticked and
+    whether it can be stacked with others into one file. A band read through chunk references (M5-11) cannot: the stacked
+    forms read GeoTIFFs, so it goes into a file of its own."""
+    first = (items[0].get("assets") or {}) if items else {}
+    return [
+        {**meta.to_json(), "preselected": ticked, "stackable": not holds_one_array(first.get(meta.asset))}
+        for meta, ticked in band_table(items, auxiliary=auxiliary, mask_asset=mask_asset, unit_of=unit_of)
+    ]
 
 
 def band_count(item: Mapping[str, Any], asset: str) -> int | None:

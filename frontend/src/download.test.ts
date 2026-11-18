@@ -11,7 +11,7 @@ import {
   decideDownloadOutcomeForLayer,
   downloadRequestFor,
   downloadRequestForSelection,
-  isCogFormat,
+  hasOriginalFiles,
   isDirectDownloadHref,
   layerDownloadKind,
   linkListText,
@@ -216,25 +216,25 @@ describe('canDownloadLayer', () => {
 
 describe('decideDownloadOutcome (M3-17 plan §4)', () => {
   it('a cropped view ("Crop and merge to AOI") always crops, whatever the format', () => {
-    expect(decideDownloadOutcome({ cropToAoi: true, hasAoi: true, isCog: true })).toBe('crop');
-    expect(decideDownloadOutcome({ cropToAoi: true, hasAoi: true, isCog: false })).toBe('crop');
+    expect(decideDownloadOutcome({ cropToAoi: true, hasAoi: true, hasOriginals: true })).toBe('crop');
+    expect(decideDownloadOutcome({ cropToAoi: true, hasAoi: true, hasOriginals: false })).toBe('crop');
   });
 
   it('"View full selection" of a COG is always the originals, AOI or not', () => {
-    expect(decideDownloadOutcome({ cropToAoi: false, hasAoi: true, isCog: true })).toBe('originals');
-    expect(decideDownloadOutcome({ cropToAoi: false, hasAoi: false, isCog: true })).toBe('originals');
+    expect(decideDownloadOutcome({ cropToAoi: false, hasAoi: true, hasOriginals: true })).toBe('originals');
+    expect(decideDownloadOutcome({ cropToAoi: false, hasAoi: false, hasOriginals: true })).toBe('originals');
   });
 
   it('"View full selection" of a non-COG source needs the AOI, else disabled', () => {
-    expect(decideDownloadOutcome({ cropToAoi: false, hasAoi: true, isCog: false })).toBe('crop');
-    expect(decideDownloadOutcome({ cropToAoi: false, hasAoi: false, isCog: false })).toBe('disabled');
+    expect(decideDownloadOutcome({ cropToAoi: false, hasAoi: true, hasOriginals: false })).toBe('crop');
+    expect(decideDownloadOutcome({ cropToAoi: false, hasAoi: false, hasOriginals: false })).toBe('disabled');
   });
 
   it('browsing (no full-resolution view, cropToAoi null) follows the AOI, else the format', () => {
-    expect(decideDownloadOutcome({ cropToAoi: null, hasAoi: true, isCog: true })).toBe('crop');
-    expect(decideDownloadOutcome({ cropToAoi: null, hasAoi: true, isCog: false })).toBe('crop');
-    expect(decideDownloadOutcome({ cropToAoi: null, hasAoi: false, isCog: true })).toBe('originals');
-    expect(decideDownloadOutcome({ cropToAoi: null, hasAoi: false, isCog: false })).toBe('disabled');
+    expect(decideDownloadOutcome({ cropToAoi: null, hasAoi: true, hasOriginals: true })).toBe('crop');
+    expect(decideDownloadOutcome({ cropToAoi: null, hasAoi: true, hasOriginals: false })).toBe('crop');
+    expect(decideDownloadOutcome({ cropToAoi: null, hasAoi: false, hasOriginals: true })).toBe('originals');
+    expect(decideDownloadOutcome({ cropToAoi: null, hasAoi: false, hasOriginals: false })).toBe('disabled');
   });
 });
 
@@ -256,17 +256,19 @@ describe('decideDownloadOutcomeForLayer', () => {
   });
 });
 
-describe('isCogFormat', () => {
-  it('is true only for the exact value "cog"', () => {
-    expect(isCogFormat(dataset({ collection: collection({ 'earthx:format': 'cog' }) }))).toBe(true);
-    expect(isCogFormat(dataset({ collection: collection({ 'earthx:format': 'zarr' }) }))).toBe(false);
-    expect(isCogFormat(dataset({ collection: collection({ 'earthx:format': 'legacy' }) }))).toBe(false);
+describe('hasOriginalFiles', () => {
+  it('is true only for the exact values "cog" and "netcdf-refs"', () => {
+    expect(hasOriginalFiles(dataset({ collection: collection({ 'earthx:format': 'cog' }) }))).toBe(true);
+    // M5-11 F5: a day of a NetCDF dataset links the annual file of the source it is read from.
+    expect(hasOriginalFiles(dataset({ collection: collection({ 'earthx:format': 'netcdf-refs' }) }))).toBe(true);
+    expect(hasOriginalFiles(dataset({ collection: collection({ 'earthx:format': 'zarr' }) }))).toBe(false);
+    expect(hasOriginalFiles(dataset({ collection: collection({ 'earthx:format': 'legacy' }) }))).toBe(false);
   });
 
-  it('a missing/unrecognised value is never assumed to be a COG', () => {
-    expect(isCogFormat(dataset({ collection: collection({ 'earthx:format': null }) }))).toBe(false);
-    expect(isCogFormat(dataset({ collection: collection({ 'earthx:format': 'geotiff' }) }))).toBe(false);
-    expect(isCogFormat(undefined)).toBe(false);
+  it('a missing/unrecognised value is never assumed to be a file', () => {
+    expect(hasOriginalFiles(dataset({ collection: collection({ 'earthx:format': null }) }))).toBe(false);
+    expect(hasOriginalFiles(dataset({ collection: collection({ 'earthx:format': 'geotiff' }) }))).toBe(false);
+    expect(hasOriginalFiles(undefined)).toBe(false);
   });
 });
 
@@ -344,6 +346,13 @@ describe('originalFileLinks', () => {
       HOSTS,
     );
     expect(links.map((l) => l.groupLabel)).toEqual(['Group 1', 'Group 2']);
+  });
+
+  it('lists a file shared by several items once (the days of one annual file, M5-11)', () => {
+    const href = 'https://good.example/tabsd_2024.nc';
+    const days = ['D1', 'D2', 'D3'].map((id) => item({ id, assets: { TabsD: { href } } }));
+    const links = originalFileLinks([{ label: 'Group 1', items: days.slice(0, 2) }, { label: 'Group 2', items: days.slice(2) }], ['TabsD'], HOSTS);
+    expect(links).toEqual([{ itemId: 'D1', groupLabel: 'Group 1', asset: 'TabsD', href }]);
   });
 });
 

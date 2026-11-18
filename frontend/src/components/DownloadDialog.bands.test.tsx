@@ -89,9 +89,9 @@ async function flush() {
   });
 }
 
-async function open(kind: 'crop' | 'originals', items: StacItem[] = [bandsItem('S1')]) {
+async function open(kind: 'crop' | 'originals', items: StacItem[] = [bandsItem('S1')], collection = bandsCollection()) {
   useAppStore.setState({
-    datasets: datasetsFrom([bandsCollection()]),
+    datasets: datasetsFrom([collection]),
     datasetId: 'made-up-bands',
     items,
     groups: [{ key: ['g'], label: 'Pass', items }],
@@ -530,3 +530,71 @@ describe('a layer of the layer manager', () => {
     expect(container.querySelector('.dialog-bands')).toBeNull();
   });
 });
+
+// M5-11, Otto's browser check: a MeteoSwiss day has four quantities, each read through its chunk references from the annual file of
+// its year. The dialog offers the four, sends one file per band (they cannot be stacked) and loads one annual file per quantity.
+describe('a day read through chunk references', () => {
+  const QUANTITIES = [
+    ['TabsD', '°C'],
+    ['TminD', '°C'],
+    ['TmaxD', '°C'],
+    ['SrelD', '%'],
+  ] as const;
+  const meteo = () =>
+    bandsCollection({
+      'earthx:format': 'netcdf-refs',
+      'earthx:band_units': Object.fromEntries(QUANTITIES),
+      'earthx:auxiliary_assets': [],
+      'earthx:mask': null,
+      'earthx:true_color': null,
+      'earthx:default_render': { title: 'Daily mean temperature', assets: ['TabsD'], rescale: [[-20, 30]], colormap_name: 'rdbu_r', expression: null, resampling: 'nearest' },
+    });
+  const day = (id: string): StacItem => ({
+    id,
+    collection: 'made-up-bands',
+    bbox: [10, 50, 11, 51],
+    properties: { datetime: '2024-07-01T00:00:00Z', gsd: 1000 },
+    assets: Object.fromEntries(
+      QUANTITIES.map(([q]) => [
+        q,
+        { href: `https://data.test/archive/${q.toLowerCase()}_2024.nc`, type: 'application/x-netcdf', roles: ['data'], 'earthx:refs': { etag: '"a"' }, 'raster:bands': [{ data_type: 'float32' }] },
+      ]),
+    ),
+  });
+  // The answer of `POST /bands` for these quantities (`band_export.band_rows`).
+  const answer = () =>
+    json({
+      bands: QUANTITIES.map(([q, unit]) => ({ asset: q, name: q, common_name: null, wavelength_um: null, resolution_m: 1000, data_type: 'float32', scale: null, offset: null, nodata: null, unit, categorical: false, preselected: true, stackable: false })),
+    });
+
+  it('offers the four quantities, asks no form, and sends one file per band with the four', async () => {
+    bands = answer;
+    await open('crop', [day('MS_1')], meteo());
+    expect(bandNames()).toEqual(['TabsD', 'TminD', 'TmaxD', 'SrelD']);
+    expect(ticked()).toBe(4);
+    expect(button('One file per resolution')).toBeUndefined();
+    await click(button('Download'));
+    const [sent] = downloadCalls();
+    expect(sent.body).toMatchObject({ assets: ['TabsD', 'TminD', 'TmaxD', 'SrelD'], form: 'per_band' });
+  });
+
+  it('sends only the quantities ticked', async () => {
+    bands = answer;
+    await open('crop', [day('MS_1')], meteo());
+    await click(button('None'));
+    await click(boxes()[1]);
+    await click(boxes()[3]);
+    await click(button('Download'));
+    expect(downloadCalls()[0].body).toMatchObject({ assets: ['TminD', 'SrelD'], form: 'per_band' });
+  });
+
+  it('loads the annual file of each quantity in the browser for the originals, with no job', async () => {
+    bands = answer;
+    await open('originals', [day('MS_1'), day('MS_2')], meteo());
+    await click(button('Download'));
+    expect(calls.filter((c) => c.url.endsWith('/estimate') || c.url.endsWith('/execution'))).toEqual([]);
+    expect(page.jobs).toHaveLength(1);
+    expect(page.jobs[0].files.map((f) => f.url)).toEqual(QUANTITIES.map(([q]) => `https://data.test/archive/${q.toLowerCase()}_2024.nc`));
+  });
+});
+

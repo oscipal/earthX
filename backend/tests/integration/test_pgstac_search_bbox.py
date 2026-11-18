@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import UTC, datetime
 from typing import Any
 
 import psycopg
@@ -33,7 +34,7 @@ MATERIALIZED = replace(
 )
 
 
-def _item(item_id: str, west: float) -> dict[str, Any]:
+def _item(item_id: str, west: float, day: str = "2026-01-01") -> dict[str, Any]:
     ring = [[west, 0.0], [west + 1.0, 0.0], [west + 1.0, 1.0], [west, 1.0], [west, 0.0]]
     return {
         "id": item_id,
@@ -42,7 +43,7 @@ def _item(item_id: str, west: float) -> dict[str, Any]:
         "collection": MATERIALIZED.dataset_id,
         "bbox": [west, 0.0, west + 1.0, 1.0],
         "geometry": {"type": "Polygon", "coordinates": [ring]},
-        "properties": {"datetime": "2026-01-01T00:00:00Z"},
+        "properties": {"datetime": f"{day}T00:00:00Z"},
         "assets": {"visual": {"href": f"https://assets.example.invalid/{item_id}.tif"}},
         "links": [],
     }
@@ -53,6 +54,8 @@ def loaded(require_postgres_env: None) -> None:
     with psycopg.connect(autocommit=True) as conn:
         load_collection(conn, MATERIALIZED)
         upsert_items(conn, MATERIALIZED, [_item(f"t{n}", float(n)) for n in range(5)])
+        # Three days over the same ground, as a series of a fixed grid has them (M5-11).
+        upsert_items(conn, MATERIALIZED, [_item(f"d{n}", 10.0, f"2024-07-0{n}") for n in (1, 2, 3)])
     yield
     with psycopg.connect(autocommit=True) as conn:
         use_pgstac_search_path(conn)
@@ -72,6 +75,19 @@ def test_the_limit_holds_and_a_rectangle_elsewhere_finds_nothing(loaded: None) -
         assert search_items_in_bbox(conn, MATERIALIZED.dataset_id, (40.0, 40.0, 41.0, 41.0), 10) == []
         with pytest.raises(ValueError):
             search_items_in_bbox(conn, MATERIALIZED.dataset_id, (0.0, 0.0, 1.0, 1.0), 0)
+
+
+def test_a_period_keeps_only_the_items_of_its_days(loaded: None) -> None:
+    ground = (10.2, 0.2, 10.8, 0.8)
+    with psycopg.connect() as conn:
+        everything = search_items_in_bbox(conn, MATERIALIZED.dataset_id, ground, 100)
+        one_day = search_items_in_bbox(
+            conn, MATERIALIZED.dataset_id, ground, 100, (datetime(2024, 7, 2, tzinfo=UTC), datetime(2024, 7, 2, 23, 59, 59, tzinfo=UTC))
+        )
+        from_then_on = search_items_in_bbox(conn, MATERIALIZED.dataset_id, ground, 100, (datetime(2024, 7, 2, tzinfo=UTC), None))
+    assert sorted(item["id"] for item in everything) == ["d1", "d2", "d3"]
+    assert [item["id"] for item in one_day] == ["d2"]
+    assert sorted(item["id"] for item in from_then_on) == ["d2", "d3"]
 
 
 @pytest.mark.anyio

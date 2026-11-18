@@ -240,6 +240,48 @@ describe('buildTileTemplate', () => {
   });
 });
 
+describe('the state of an item read through chunk references (M5-11 F3)', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const refs = { etag: '"a"' };
+  const day = (id: string, updated: string, withRefs = true) => ({
+    id,
+    collection: 'meteoswiss-daily-1km',
+    properties: { updated },
+    assets: { TabsD: withRefs ? { href: 'https://h.example/f.nc', 'earthx:refs': refs } : { href: 'https://h.example/f.nc' } },
+  });
+  const answering = (features: unknown[]) =>
+    vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ features, numberReturned: features.length }) } as Response);
+
+  it('carries `updated` as v on the tile, TileJSON and statistics URLs of a found item', async () => {
+    vi.stubGlobal('fetch', answering([day('MS_1', '2025-02-12T08:00:00Z')]));
+    await searchItems({ collections: ['meteoswiss-daily-1km'] });
+    const template = buildTileTemplate('meteoswiss-daily-1km', 'MS_1', 'TabsD');
+    expect(template).toContain('/tiles/WebMercatorQuad/{z}/{x}/{y}?');
+    const tile = new URL(template, 'http://localhost');
+    expect(tile.searchParams.get('v')).toBe('2025-02-12T08:00:00Z');
+    expect(tile.searchParams.get('asset')).toBe('TabsD');
+    expect(buildStatisticsUrl('meteoswiss-daily-1km', 'MS_1', 'TabsD', [2, 98])).toBe(
+      '/collections/meteoswiss-daily-1km/items/MS_1/statistics?asset=TabsD&v=2025-02-12T08%3A00%3A00Z&p=2&p=98',
+    );
+  });
+
+  it('changes the URL once the next run gave the item another state', async () => {
+    vi.stubGlobal('fetch', answering([day('MS_2', '2025-02-12T08:00:00Z')]));
+    await searchItems({ collections: ['meteoswiss-daily-1km'] });
+    const before = buildTileTemplate('meteoswiss-daily-1km', 'MS_2', 'TabsD');
+    vi.stubGlobal('fetch', answering([day('MS_2', '2026-03-01T00:00:00Z')]));
+    await searchItems({ collections: ['meteoswiss-daily-1km'] });
+    expect(buildTileTemplate('meteoswiss-daily-1km', 'MS_2', 'TabsD')).not.toBe(before);
+  });
+
+  it('leaves the URL of an item without references as it was', async () => {
+    vi.stubGlobal('fetch', answering([day('COG_1', '2025-02-12T08:00:00Z', false)]));
+    await searchItems({ collections: ['meteoswiss-daily-1km'] });
+    expect(buildTileTemplate('meteoswiss-daily-1km', 'COG_1', 'TabsD')).not.toContain('v=');
+  });
+});
+
 describe('buildStatisticsUrl', () => {
   it('names the asset it asks statistics for', () => {
     const url = buildStatisticsUrl('sentinel-2-c1-l2a', 'S2A_1', 'visual');
