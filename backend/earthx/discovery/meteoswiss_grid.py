@@ -17,9 +17,11 @@ A day a file does not carry is no asset; a day no file carries is no item (plan 
 like every reference time stamp of the open data. ``start_datetime`` is that start, ``end_datetime`` the last second
 before the next day starts, ``datetime`` the start.
 
-**The version of a run** is the ETag of the archive item and a hash over the name, the address, ``file:checksum`` and
-``updated`` of every chosen file. A ``304`` on ``If-None-Match`` is "unchanged" after one request; a ``200`` whose
-chosen files hash as before is "unchanged" too, without reading a file. Otherwise every chosen file is referenced
+**The version of a run** is the ETag of the archive item, the selection of the entry (quantities, first and last year)
+and a hash over the name, the address, ``file:checksum`` and ``updated`` of every chosen file. A ``304`` on
+``If-None-Match`` is "unchanged" after one request; the request is conditional only while the selection is the same, so
+a longer period or another quantity is loaded although the archive did not change. A ``200`` whose chosen files hash as
+before is "unchanged" too, without reading a file. Otherwise every chosen file is referenced
 anew (plan A4: only changed files come with M5-24).
 
 Lives in ``discovery`` and not in ``adapters``: only here may ``h5py`` open a file (``.importlinter``,
@@ -148,14 +150,13 @@ def _digest(chosen: dict[tuple[str, int], AnnualFile], assets: dict[str, Any]) -
     return _HASH_PREFIX + hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
 
 
-def _split(version: str | None) -> tuple[str | None, str | None]:
-    """(ETag, hash) of a version this module wrote; an older or foreign one is neither."""
-    if not version:
-        return None, None
-    etag, _, digest = version.rpartition("|")
-    if not digest.startswith(_HASH_PREFIX):
-        return None, None
-    return etag or None, digest
+def _split(version: str | None) -> tuple[str | None, str | None, str | None]:
+    """(ETag, selection, hash) of a version this module wrote; an older or foreign one is none of them."""
+    rest, _, digest = (version or "").rpartition("|")
+    etag, _, selection = rest.rpartition("|")
+    if not digest.startswith(_HASH_PREFIX) or not selection:
+        return None, None, None
+    return etag or None, selection, digest
 
 
 def _unchanged(version: str) -> MaterializeOutcome:
@@ -287,8 +288,11 @@ async def materialize_items(
         raise UnsupportedSource(f"{config.dataset_id}: temporal_extent is closed for the years to load")
     last_year = min(last_year_of(config), (today or datetime.now(UTC).date()).year - 1)
 
-    known_etag, known_digest = _split(known_version)
-    headers = {"if-none-match": known_etag} if known_etag else None
+    # What the entry asks for: a 304 says only that the archive is as it was, not that the entry still wants the same.
+    first_year = first.astimezone(UTC).year
+    selection = f"{','.join(sorted(quantities))}:{first_year}-{last_year}"
+    known_etag, known_selection, known_digest = _split(known_version)
+    headers = {"if-none-match": known_etag} if known_etag and known_selection == selection else None
     response = await gateway.get(config.source.endpoint, headers=headers)
     if response.status_code == 304 and known_version:
         return _unchanged(known_version)
@@ -298,12 +302,12 @@ async def materialize_items(
         assets = None
     if response.status_code != 200 or not isinstance(assets, dict):
         raise UpstreamShapeError("the archive item is no STAC item with assets")
-    chosen, withheld, unknown = choose_files(config, assets, first_year=first.astimezone(UTC).year, last_year=last_year)
+    chosen, withheld, unknown = choose_files(config, assets, first_year=first_year, last_year=last_year)
     if not chosen:
         raise UpstreamShapeError(f"the archive lists no annual file of {', '.join(quantities)}")
     digest = _digest(chosen, assets)
     etag = response.headers.get("etag")
-    version = f"{etag}|{digest}" if etag else f"|{digest}"
+    version = f"{etag or ''}|{selection}|{digest}"
     if digest == known_digest:
         return _unchanged(version)
 

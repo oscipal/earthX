@@ -133,7 +133,7 @@ class TestUnchanged:
 
     def test_a_new_etag_with_the_same_chosen_files_reads_no_file(self, archive: Archive, tmp_path: Path) -> None:
         first = run(archive, entry(METEOSWISS_DAILY_1KM))
-        known = "\"archive-0\"|" + first.source_version.rpartition("|")[2]
+        known = '"archive-0"' + first.source_version[len(ITEM_ETAG):]
         # Another file of the archive changed, none of the chosen ones.
         archive.files[name("TabsD", "ch01r", 2025)] = annual_file(tmp_path, 2025, days=[0])
         archive.seen.clear()
@@ -143,9 +143,18 @@ class TestUnchanged:
 
     def test_a_changed_chosen_file_loads_anew(self, archive: Archive, tmp_path: Path) -> None:
         first = run(archive, entry(METEOSWISS_DAILY_1KM))
-        known = "\"archive-0\"|" + first.source_version.rpartition("|")[2]
+        known = '"archive-0"' + first.source_version[len(ITEM_ETAG):]
         archive.files[name("TabsD", "ch01r", 2023)] = annual_file(tmp_path, 2023, days=[0, 1])
         assert run(archive, entry(METEOSWISS_DAILY_1KM), known_version=known).status == "loaded"
+
+    def test_a_longer_period_is_loaded_although_the_archive_answers_304(self, archive: Archive) -> None:
+        config = entry(METEOSWISS_DAILY_1KM)
+        earlier = replace(config, temporal_extent=replace(config.temporal_extent, end=config.temporal_extent.end.replace(year=2023)))
+        first = run(archive, earlier)
+        archive.seen.clear()
+        again = run(archive, config, known_version=first.source_version)
+        assert "if-none-match" not in archive.seen[0].headers
+        assert again.status == "loaded" and {item["id"][-8:-4] for item in again.items} == {"2023", "2024"}
 
     def test_a_version_of_another_form_is_not_trusted(self, archive: Archive) -> None:
         assert run(archive, entry(METEOSWISS_DAILY_1KM), known_version="sha256:abc").status == "loaded"
