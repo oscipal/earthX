@@ -9,6 +9,7 @@ transaction that is rolled back; the second is the real app with its real lifesp
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from dataclasses import replace
@@ -373,3 +374,40 @@ class TestThroughTheRealApp:
             conn.execute(f"UPDATE {stored.TABLE} SET dataset_id = 'another' WHERE selection_id = %s", (selection,))
         with TestClient(build_app(DatasetRegistry((MATERIALIZED,)))) as fresh:
             assert fresh.get(f"{BASE}/{selection}/WebMercatorQuad/tilejson.json").status_code == 404
+
+
+class CountingConnection(OneConnection):
+    """The one connection, counting how often the store takes it."""
+
+    def __init__(self, conn: psycopg.AsyncConnection) -> None:
+        super().__init__(conn)
+        self.taken = 0
+
+    @asynccontextmanager
+    async def connection(self) -> AsyncIterator[psycopg.AsyncConnection]:
+        self.taken += 1
+        async with super().connection() as conn:
+            yield conn
+
+
+@pytest.mark.anyio
+class TestTilesThatAskTogether:
+    """M5-56: the tiles of a view ask for its footprint selection together, and one of 10 000 outlines takes a while to unite."""
+
+    async def test_one_load_serves_every_tile_that_asks_while_it_is_on_its_way(self, aconn_migrated: psycopg.AsyncConnection) -> None:
+        many = tuple(f"t{n:05d}" for n in range(10_000))
+        await SelectionStore(OneConnection(aconn_migrated)).put(_footprints("a" * 32, items=many))
+        pool = CountingConnection(aconn_migrated)
+        store = SelectionStore(pool)
+        loaded = await asyncio.gather(*(store.get_footprints("a" * 32) for _ in range(15)))
+        assert pool.taken == 1
+        assert all(selection is loaded[0] for selection in loaded) and loaded[0] is not None
+        assert loaded[0].items == tuple(sorted(many))
+
+    async def test_a_load_that_finds_nothing_is_not_kept_and_the_next_ask_loads_again(self, aconn_migrated: psycopg.AsyncConnection) -> None:
+        pool = CountingConnection(aconn_migrated)
+        store = SelectionStore(pool)
+        assert await asyncio.gather(store.get_footprints("b" * 32), store.get_footprints("b" * 32)) == [None, None]
+        assert pool.taken == 1
+        await store.put(_footprints("b" * 32))
+        assert await SelectionStore(pool).get_footprints("b" * 32) is not None

@@ -608,6 +608,57 @@ describe('previewSpec: the mosaic of a job (NM4-04b)', () => {
       expect(spec.scenes.map((s) => s.id)).toEqual(lone.map((l) => l.id).slice(0, MAX_PREVIEW_SCENES - 1));
     });
 
+    // M5-56 (adr/0032 §10.4): a job of thousands of 1-degree tiles over a country drawn one by one shows the tiles where the map
+    // looks, not the first 40 of the list, which lay elsewhere and left the preview empty from the first level on.
+    describe(`over ${MAX_SELECTION_ITEMS} scenes, by where the map looks`, () => {
+      const tiles = Array.from({ length: MAX_SELECTION_ITEMS + 500 }, (_, i) => {
+        const [west, south] = [20 + (i % 100), 40 + Math.floor(i / 100)];
+        return { ...item(`T${String(i).padStart(4, '0')}`, { gsd: 10 }), bbox: [west, south, west + 1, south + 1] as [number, number, number, number] };
+      });
+      const over = (view?: [number, number, number, number] | null) => previewSpec({ ...base, items: tiles, jobs: [tiles], view })!;
+
+      it('draws the tiles in view first, in the order of the list', () => {
+        const spec = over([60.5, 55.5, 63.5, 57.5]);
+        scenesOnly(spec);
+        const inView = tiles.filter(({ bbox }) => bbox[0] <= 63.5 && bbox[2] >= 60.5 && bbox[1] <= 57.5 && bbox[3] >= 55.5).map((t) => t.id);
+        expect(inView).toHaveLength(12);
+        expect(spec.scenes.map((s) => s.id).slice(0, inView.length)).toEqual(inView);
+        expect(spec.scenes).toHaveLength(MAX_PREVIEW_SCENES);
+      });
+
+      it('takes the first of the list without a view, or with a view none of them meets', () => {
+        const first = tiles.slice(0, MAX_PREVIEW_SCENES).map((t) => t.id);
+        expect(over().scenes.map((s) => s.id)).toEqual(first);
+        expect(over([-60, -40, -50, -30]).scenes.map((s) => s.id)).toEqual(first);
+      });
+
+      it('keeps the probe and the scene measured where the map looks elsewhere, so the range does not move with it', () => {
+        const here = over([60.5, 55.5, 63.5, 57.5]);
+        const there = over([20.5, 40.5, 21.5, 41.5]);
+        expect(here.key).not.toBe(there.key);
+        expect(here.probe).toBe(there.probe);
+        expect(here.measure).toBe(there.measure);
+        expect(here.probe).toContain(tiles[0].id);
+      });
+
+      // A map over Chukotka gives its view past 180° (MapLibre's `getBounds`): the tiles west of the antimeridian are in it.
+      it('finds the tiles in a view that reaches past 180°', () => {
+        const across = Array.from({ length: MAX_SELECTION_ITEMS + 100 }, (_, i) => {
+          const west = ((150 + (i % 60) + 180) % 360) - 180;
+          return { ...item(`A${String(i).padStart(4, '0')}`, { gsd: 10 }), bbox: [west, 40 + Math.floor(i / 60), west + 1, 41 + Math.floor(i / 60)] as [number, number, number, number] };
+        });
+        const spec = previewSpec({ ...base, items: across, jobs: [across], view: [189.5, 70.5, 192.5, 71.5] })!;
+        const chosen = spec.scenes.slice(0, 8).map((s) => across.find((a) => a.id === s.id)!.bbox);
+        expect(chosen.every(([west, south]) => west >= -171 && west <= -168 && south >= 70 && south <= 71)).toBe(true);
+      });
+
+      it('leaves out a tile without a box, which it could not place', () => {
+        const boxless = [{ ...tiles[0], bbox: null }, ...tiles.slice(1)];
+        const spec = previewSpec({ ...base, items: boxless, jobs: [boxless], view: null })!;
+        expect(spec.scenes.map((s) => s.id)).toEqual(tiles.slice(1, MAX_PREVIEW_SCENES + 1).map((t) => t.id));
+      });
+    });
+
     it('with the hint a person can read', () => {
       expect(SCENE_PREVIEW_HINT).toBe('Preview per scene – may differ from the job where scenes overlap');
     });

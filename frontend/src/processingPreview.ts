@@ -27,6 +27,7 @@ import {
   MAX_MOSAIC_REQUEST_BYTES,
   MAX_SELECTION_ITEMS,
   MIN_MOSAIC_SCENES,
+  inViewFirst,
   mosaicRequestBytes,
   type PlannedRaster,
 } from './mosaic';
@@ -505,6 +506,8 @@ export function previewSpec(args: {
   clipAoi?: GeoJSON.Geometry;
   // The datasets of the list: the one that stands in below the first level is among them.
   datasets?: readonly DatasetOption[];
+  // The part of the world the map shows: the scenes drawn one by one are those in it first (`adr/0032` §10.4).
+  view?: Bbox | null;
 }): PreviewSpec | null {
   const { dataset, items, assets, info, plan, range, area, jobs = [], answers, selections, order = null, band = null, named = false } = args;
   const clipAoi = area === 'aoi' ? args.clipAoi : undefined;
@@ -561,17 +564,20 @@ export function previewSpec(args: {
   const mosaics = jobs.flatMap((unit) => mosaicOf(unit) ?? []);
   const mosaicked = new Set(mosaics.flatMap((mosaic) => mosaic.order));
 
-  // The scenes of a pass drawn one by one. The map draws so many rasters and no more.
+  // The scenes of a pass drawn one by one. The map draws so many rasters and no more: those in view first, chosen again
+  // when the map moves (`adr/0032` §10.4; M5-56, the first 40 of a selection of thousands lay elsewhere).
   const places = Math.max(0, MAX_PREVIEW_SCENES - mosaics.length);
-  const scenes: PreviewScene[] = [];
-  let probe = '';
-  for (const item of items.filter((one) => !mosaicked.has(one.id)).slice(0, places)) {
-    if (!item.bbox) continue;
-    scenes.push({ id: item.id, bbox: item.bbox, url: buildTileUrl(buildOperatorTileTemplate(dataset.id, item.id, assets, chain, asked), render) });
-    if (!probe) probe = buildOperatorTileJsonUrl(dataset.id, item.id, assets, chain, asked);
-  }
-  // The scene that wins where the scenes of the first mosaic overlap is the one measured.
-  const measured = mosaics[0]?.order[0] ?? scenes[0]?.id;
+  const loose = items.filter((one): one is StacItem & { bbox: Bbox } => !mosaicked.has(one.id) && one.bbox !== undefined && one.bbox !== null);
+  const scenes: PreviewScene[] = inViewFirst(loose, (item) => item.bbox, args.view ?? null, places).map((item) => ({
+    id: item.id,
+    bbox: item.bbox,
+    url: buildTileUrl(buildOperatorTileTemplate(dataset.id, item.id, assets, chain, asked), render),
+  }));
+  // The probe of the chain and the scene measured do not follow the view: the first loose scene of the list, so that the range
+  // of the picture does not change while the map moves. The scene that wins where the scenes of the first mosaic overlap is
+  // the one measured.
+  const probe = scenes.length > 0 ? buildOperatorTileJsonUrl(dataset.id, loose[0].id, assets, chain, asked) : '';
+  const measured = mosaics[0]?.order[0] ?? loose[0]?.id;
   if (measured === undefined) return null;
   const clipToAoi = area === 'aoi';
   // The chain must be whole: the order runs all its steps, and a preview of a start of them would be measured on more.

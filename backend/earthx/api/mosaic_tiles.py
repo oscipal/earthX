@@ -217,11 +217,12 @@ def check_selection(items: Sequence[str], assets: Sequence[str]) -> tuple[list[s
     return sorted(items), sorted(assets)
 
 
-#: Hits in one footprint selection: the map draws the first 40 of a search (`MAX_MOSAIC_LAYERS`); the rest is slack for a
-#: client that draws more. A protection for the table and the creation, not a limit of the picture.
-MAX_FOOTPRINT_ITEMS = 200
-#: The body of the creation: 200 ids of at most 255 characters are 52 kB, real ids are 20 to 60 (about 12 kB).
-MAX_FOOTPRINT_BODY_BYTES = 64 * 1024
+#: Items in one footprint selection: the hits of a search (the map sends 40) or the scenes of "Crop and merge to AOI", which
+#: are thousands for GLO-30 over a large country (M5-56, Otto 18.11.2026). A protection for the table and the creation against
+#: misuse, not a limit of the picture: over it the view draws the picture below `min_zoom` over its whole AOI.
+MAX_FOOTPRINT_ITEMS = 10_000
+#: The body of the creation: 10 000 ids of GLO-30 (41 characters) are about 450 kB; real ids are 20 to 60 characters.
+MAX_FOOTPRINT_BODY_BYTES = 640 * 1024
 
 
 class FootprintRequest(BaseModel):

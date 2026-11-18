@@ -267,7 +267,7 @@ describe('everything the list could do is in the panel', () => {
   it('lists the scenes in groups by pass, with their counts', () => {
     const heads = [...slot('results').querySelectorAll('.result-group-head')];
     expect(heads.map((h) => h.querySelector('.rg-count')?.textContent)).toEqual(['100', '100', '100']);
-    expect(slot('results').querySelector('.results-head h2')?.textContent).toBe('Search results (0/300)');
+    expect(slot('results').querySelector('.results-head h2')?.textContent).toBe('Search results (0/340)');
   });
 
   it('opens and closes a group', () => {
@@ -340,7 +340,7 @@ describe('with a view open (Otto, 26.10.2026: the results never disappear, they 
     act(() => useAppStore.setState({ focusMode: true, cropToAoi: true }));
     expect(slot('results').querySelector('.results-list')).not.toBeNull();
     expect(slot('results').querySelectorAll('.result-group-head')).toHaveLength(3);
-    expect(slot('results').querySelector('.results-head h2')?.textContent).toBe('Search results (1/300)');
+    expect(slot('results').querySelector('.results-head h2')?.textContent).toBe('Search results (1/340)');
     expect([...slot('results').querySelectorAll('.results-head button')].map((b) => tipOf((b as HTMLButtonElement)))).toEqual([RESULTS_ON_TOP_TIP, HIDE_RESULTS_TIP]);
     expect(useAppStore.getState().sections).toHaveLength(1);
     expect(symbol('results').getAttribute('aria-label')).toBe('Search results, 300');
@@ -410,7 +410,7 @@ describe('the results on the map (Otto, 26.10.2026)', () => {
     expect(useAppStore.getState().resultsOnMap).toBe(false);
     expect(tipOf(toggle())).toBe(SHOW_RESULTS_TIP);
     expect(slot('results').querySelectorAll('.result-group-head')).toHaveLength(3);
-    expect(slot('results').querySelector('.results-head h2')?.textContent).toBe('Search results (0/300)');
+    expect(slot('results').querySelector('.results-head h2')?.textContent).toBe('Search results (0/340)');
     click(toggle());
     expect(useAppStore.getState().resultsOnMap).toBe(true);
     expect(tipOf(toggle())).toBe(HIDE_RESULTS_TIP);
