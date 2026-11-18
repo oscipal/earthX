@@ -657,6 +657,13 @@ Alle Punkte sind belegt, wie bei den übrigen Einträgen durch die Tests über a
 
 **G2 — Wortlaut** der Attribution („Source: MeteoSwiss“, bearbeitet „Source: MeteoSwiss (modified)“) und der `notice` in beiden YAML-Dateien: bestätigst du im PR (Auftrag Otto). Die `notice` sind Sätze der Bedingungen im Wortlaut.
 
+### 11.5a Antworten von Otto (18.11.2026)
+
+| Frage | Antwort |
+|---|---|
+| G1 | 2: `spdx_id: CC-BY-4.0` (Name und URL von CC BY 4.0), die Nutzungsbedingungen von MeteoSchweiz als `terms` mit unveränderter `notice`, auch dem Satz, dass die Quellenangabe nicht wie eine Unterstützung durch MeteoSchweiz aussehen darf. Die Lizenzangabe aus F8 (§9.2, §9.3: Nutzungsbedingungen statt CC BY 4.0) war ein Irrtum und ist damit korrigiert |
+| G2 | Attribution „Source: MeteoSwiss“, bearbeitet „Source: MeteoSwiss (modified)“: bestätigt |
+
 ### 11.6 Was Otto lokal ausführt (PowerShell, aus der Repo-Wurzel)
 
 Wie bei M5-09: dieselbe Zeile in PowerShell und bash. `materialize` startet `catalog-load` selbst. Der Host `data.geo.admin.ch` hat 6 Verbindungen und 1 s Abstand für `materialize`.
