@@ -255,12 +255,16 @@ def kind_of(feature: dict[str, Any]) -> str:
 
 
 async def conditional(gateway: Gateway, url: str) -> str:
-    """How an item answers a second request with its own ETag: ``304``, ``200`` again, or no ETag to ask with."""
-    first = await gateway.get(url)
-    etag = first.headers.get("etag")
-    if not etag:
-        return "no ETag"
-    second = await gateway.get(url, headers={"if-none-match": etag})
+    """How an item answers a second request with its own ETag: ``304``, ``200`` again, or no ETag to ask with; a
+    refusal by its status only, never with what the source wrote."""
+    try:
+        first = await gateway.get(url)
+        etag = first.headers.get("etag")
+        if not etag:
+            return "no ETag"
+        second = await gateway.get(url, headers={"if-none-match": etag})
+    except GatewayError as error:
+        return f"refused: {reason(error)}"
     return f"{'weak' if etag.startswith('W/') else 'strong'} ETag, {second.status_code} on If-None-Match"
 
 
@@ -272,8 +276,12 @@ async def report_current(gateway: Gateway) -> None:
     for number, page in enumerate(pages, start=1):
         answer = "no ETag"
         if page["etag"]:
-            again = await gateway.get(str(page["url"]), headers={"if-none-match": str(page["etag"])})
-            answer = f"ETag, {again.status_code} on If-None-Match"
+            try:
+                again = await gateway.get(str(page["url"]), headers={"if-none-match": str(page["etag"])})
+            except GatewayError as error:
+                answer = f"ETag, refused on If-None-Match: {reason(error)}"
+            else:
+                answer = f"ETag, {again.status_code} on If-None-Match"
         say(f"  page {number}", f"{answer}; Last-Modified {'given' if page['last-modified'] else 'none'}")
     by_kind: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for feature in features:

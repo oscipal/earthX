@@ -255,6 +255,8 @@ def current(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> ModuleType:
         if path.endswith("/items"):
             return answer(listing, request)
         if "/items/" in path:
+            if module.REFUSE_ITEMS:
+                return httpx.Response(403, text="<Error><Key>secret/path/item.json</Key></Error>")
             return answer(by_id[path.rsplit("/", 1)[1]], request)
         return source.handler(_with_host(request))
 
@@ -267,7 +269,17 @@ def current(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> ModuleType:
     monkeypatch.setattr(module, "Gateway", gateway)
     module.SEEN = source.seen
     module.ETAG = source.etag
+    module.REFUSE_ITEMS = False
     return module
+
+
+def test_current_names_a_refused_item_by_its_status_only(current: ModuleType, capsys: pytest.CaptureFixture[str]) -> None:
+    """Review of PR 1: a refusal of the source may quote a path; the probe goes on and names the status only."""
+    current.REFUSE_ITEMS = True
+    assert current.run(["--current"]) == 0
+    out = capsys.readouterr().out
+    assert re.search(r"conditional request per item\s+\{'refused: UpstreamError 403': 1\}", out), out
+    assert "secret" not in out
 
 
 def test_current_reports_the_items_outside_the_archive_by_kind(current: ModuleType, capsys: pytest.CaptureFixture[str]) -> None:
