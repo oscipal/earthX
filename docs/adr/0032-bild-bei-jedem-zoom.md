@@ -641,6 +641,16 @@ Otto (15.11.2026, Browser-Prüfung auf `602a0dde`): In „Crop and merge to AOI�
 - **§8.2 Mindestabstand und „höchstens ein Bau je Host“:** Der Abstand von 0,25 s je Host gilt nicht mehr nur im Kind eines Baus, sondern über alle Instanzen zusammen mit `materialize` und dem Harvester, über den Zeiger je Host in Postgres (`earthx_source_host`, Migrationen 022 und 023). Das Kind fragt den Aufseher vor jeder Datei nach dem Zug (über die Pipe, B9 bleibt); der Aufseher nimmt ihn aus Postgres, hält dazu einen Platz (`earthx_source_lease`, Grenze aus `hosts.yaml`) und verrechnet danach die Anfragen von GDAL (bei null Anfragen ohne Rückgabe). Verrechnet wird **jede** Anfrage an die Quelle, auch das `HEAD`, mit dem GDAL die Größe einer Datei erfragt, und die eigenen Wiederholungen von GDAL (Otto, 17.11.2026); vorher sah der Zähler nur die Bereichsabrufe. Der Abstand je Host ist der aus `hosts.yaml`, sonst `EARTHX_OVERVIEW_HOST_INTERVAL_S` (0,25 s). „Höchstens ein Bau je Host“ bleibt unverändert.
 - **§8.2 Unterbrecher (Nachtrag 14.11.2026, „gilt nicht für GDAL“):** Ersetzt. Das Lesen durch GDAL zählt jetzt für den Unterbrecher je Host: Ein Lesen, das an der Quelle scheitert (Zeitüberschreitung, keine Verbindung, `429`, `5xx`), ist ein Fehler, jedes andere Ende ein Erfolg. Nach 3 Fehlern in Folge über alle Aufrufer ruht der Host 5 min, verdoppelnd bis 60 min (M5-37 J3). Der Bau **wartet** die Pause ab, hält dabei seine Frist und gilt nicht als stillstehend (J4). Die Staffel der Wiederholung einer Datei (5 s, 20 s, 60 s) und das Wiederholen eines Baus nach `source_*` bleiben.
 
+
+## Nachtrag 18.11.2026 (M5-56, Übersicht von „Crop and merge to AOI“ über den Szenen)
+
+Otto (18.11.2026, GLO-30 über Russland): Unter `min_zoom` zeigte „Crop and merge to AOI“ die Pyramide über der ganzen AOI, über `min_zoom` nur die ausgewählten Kacheln; wo keine lag, verschwand das Bild beim Hineinzoomen. Regel: unter und über `min_zoom` dieselbe Fläche.
+
+- **A5 (Nachtrag 15.11.2026, Zeile „Route ohne Auswahl-ID … gilt weiter für Crop and merge und die angeheftete Ebene“) ist ersetzt:** Auch die Ansicht „Crop and merge to AOI“ und eine daraus angeheftete Ebene zeichnen unter `min_zoom` die Übersicht einer **Footprint-Auswahl ihrer Szenen** (`/collections/{dataset}/overview/{selection}/tiles/…`), im Browser weiter auf die AOI zugeschnitten. Die Szenen sind die der Ansicht, abgewählte Kacheln gehören nicht dazu. Die Ausdehnung der Ebene ist die Box der Szenen.
+- **Grenzen der Footprint-Auswahl (Otto, 18.11.2026):** 1 bis **10 000** Item-IDs, Body höchstens **640 KiB** (vorher 200 und 64 KiB). Schutzgrenze, keine fachliche. Über der Grenze, wenn der Tiler ablehnt und bei einem Index im Look (die maskierte Route nimmt keine Schritte) zeichnet die Ansicht die Übersicht der ganzen AOI wie bisher. Während die Auswahl entsteht, zeichnet die Ansicht unter `min_zoom` nichts.
+- **Maske:** Die Vereinigung der Umrisse wird vor dem Projizieren auf die Kachel zugeschnitten (ein halbes Grad Rand): bei Tausenden von Kacheln rund 20 ms statt 60 ms je Kachel.
+- Ablauf und Neuanlage bei `410` wie bei der Mosaik-Auswahl.
+
 ---
 
 ## 15. Folgen
