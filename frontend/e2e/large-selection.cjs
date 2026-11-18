@@ -1,8 +1,11 @@
 // A selection of thousands of 1-degree tiles over the antimeridian (M5-56, Otto's browser check of 18.11.2026: GLO-30 over
 // Russia), in a real browser with made-up tiles and no backend. 2500 tiles, more than a selection of the tiler takes (2000), so
 // every view draws them one by one. It fails when
-//   1. after the search (pages of 100, "Load more" to the end) and "Select all" not every tile has its outline;
-//   2. "Crop and merge to AOI" keeps the outline of each tile instead of one ring over the antimeridian (one feature, merged);
+//   1. after the first part of the search (300) the head of the list does not name the true total (0/2,500) or "Load more" is not
+//      there; after the search (pages of 100, "Load more" to the end) and "Select all" not every tile has its outline;
+//   2. "Crop and merge to AOI" keeps the outline of each tile instead of one ring over the antimeridian (one feature, merged), or
+//      draws its picture below the first level over the whole AOI instead of over its ticked tiles (100 are unticked before the
+//      crop): every overview tile must name the footprint selection of exactly those tiles (Otto, 18.11.2026);
 //   3. the view draws nothing at zoom 8 where the map looks, far from where the list starts (the tiles in view are asked for);
 //   4. the preview of the processing panel (Band math, a dataset of the same tiles) asks for no tile in view at zoom 8, or for
 //      the first 40 of the list instead (adr/0032 §10.4).
@@ -71,6 +74,7 @@ async function run(browser, results) {
   page.setDefaultTimeout(10000);
   page.on('pageerror', (error) => problems.push(`the page failed: ${error.message.slice(0, 200)}`));
   const scenes = [];
+  const overview = { masked: 0, whole: 0, posted: [] };
   const description = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'fixtures', 'processes', 'cop-dem-glo-30.json'), 'utf8'));
   await page.route('**/*', async (route) => {
     const url = new URL(route.request().url());
@@ -87,10 +91,15 @@ async function run(browser, results) {
       return json({ type: 'FeatureCollection', features, numberMatched: ITEMS.length, numberReturned: features.length, links: next ? [{ rel: 'next', href: '/stac/search', method: 'POST', body: { token: next } }] : [] });
     }
     if (url.pathname.endsWith('/scene-order')) return json({ order: JSON.parse(route.request().postData() ?? '{}').items ?? [] });
+    if (route.request().method() === 'POST' && url.pathname.endsWith('/overview/footprints')) overview.posted.push(JSON.parse(route.request().postData() ?? '{}').items ?? []);
     if (answersSelection(route, url) || answersFootprints(route, url)) return;
     if (url.pathname.endsWith('/tilejson.json')) return json({ tilejson: '3.0.0' });
     if (url.pathname.endsWith('/statistics')) return json({ b1: { count: 9, min: 0, max: 4000, percentile_2: 0, percentile_98: 3000 } });
-    if (url.pathname.includes('/overview/')) return route.fulfill({ status: 200, contentType: 'image/png', body: GREEN });
+    if (url.pathname.includes('/overview/')) {
+      if (/\/overview\/[0-9a-f]{32}\/tiles\//.test(url.pathname)) overview.masked += 1;
+      else overview.whole += 1;
+      return route.fulfill({ status: 200, contentType: 'image/png', body: GREEN });
+    }
     const scene = /\/items\/([^/]+)\/tiles\/WebMercatorQuad\/(\d+)\//.exec(url.pathname);
     if (scene) {
       scenes.push({ id: decodeURIComponent(scene[1]), z: Number(scene[2]), operator: url.searchParams.has('op') });
@@ -131,14 +140,19 @@ async function run(browser, results) {
     flyToView: { center: [180, 60], zoom: 2.5 },
   })`, { aoi: AOI, datasets: await page.evaluate(async (c) => (await import('/src/datasets.ts')).datasetsFrom([c]), collection()) });
   await store('return s.getState().runSearch()');
+  fs.mkdirSync(OUT, { recursive: true });
+  await store("s.setState({ dock: 'results' })");
+  await page.waitForTimeout(500);
+  const head = (await page.locator('.results-panel .results-head h2').first().textContent().catch(() => null)) ?? '';
+  if (head !== `Search results (0/${TILES.toLocaleString('en')})`) problems.push(`after the first part of the search the head says ${JSON.stringify(head)}`);
+  if (!(await page.getByRole('button', { name: 'Load more' }).isVisible().catch(() => false))) problems.push('"Load more" is not there after the first part');
+  await page.screenshot({ path: path.join(OUT, '0-first-part.png') });
   for (let i = 0; i < 40 && (await store('return s.getState().searchContext?.nextToken ?? null')) !== null; i++) {
     await store('return s.getState().loadMore()');
     await page.waitForTimeout(300);
   }
   const loaded = await store('return s.getState().items.length');
   if (loaded !== TILES) problems.push(`the search loaded ${loaded} of ${TILES} tiles`);
-  fs.mkdirSync(OUT, { recursive: true });
-  await store("s.setState({ dock: 'results' })");
   await page.locator('.selection-row input[type="checkbox"]').check().catch(async (error) => {
     problems.push(`no "Select all": ${error.message.split('\n')[0]}`);
     await page.screenshot({ path: path.join(OUT, '1-no-select-all.png') });
@@ -148,11 +162,21 @@ async function run(browser, results) {
   if (ticked.count !== TILES) problems.push(`after "Select all" ${ticked.count} of ${TILES} tiles have their outline`);
   await page.screenshot({ path: path.join(OUT, '1-select-all.png') });
 
-  // 2. "Crop and merge to AOI": one ring over the antimeridian.
+  // 2. "Crop and merge to AOI" over all but the last 100 tiles: one ring over the antimeridian, and the picture below the first level
+  // over the ticked tiles only.
+  const kept = ITEMS.slice(0, TILES - 100).map((it) => it.id);
+  await store('s.setState({ selectedIds: a })', kept);
+  await page.waitForTimeout(500);
+  overview.masked = 0;
+  overview.whole = 0;
   await page.getByRole('button', { name: 'Crop and merge to AOI' }).click();
   await page.waitForTimeout(3000);
   const ring = await outlines();
   if (ring.count !== 1 || ring.merged !== 1) problems.push(`after the crop the outline is ${ring.count} features, ${ring.merged} merged, not one ring`);
+  const posted = overview.posted.at(-1) ?? [];
+  if (posted.length !== kept.length || posted.some((id) => !kept.includes(id))) problems.push(`the footprint selection of the view holds ${posted.length} tiles, not the ${kept.length} ticked`);
+  if (overview.masked === 0) problems.push('below the first level the view asked for no tile of its footprint selection');
+  if (overview.whole > 0) problems.push(`below the first level the view asked for ${overview.whole} tiles of the whole area`);
   await page.screenshot({ path: path.join(OUT, '2-crop.png') });
 
   // 3. Zoom 8 where the list does not start: the tiles in view are asked for.
