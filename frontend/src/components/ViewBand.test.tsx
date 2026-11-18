@@ -203,6 +203,21 @@ describe('the dropdown "Band" of a dataset read through chunk references (M5-11)
     expect(select().options[0].textContent).toBe('TabsD');
   });
 
+  it('starts a temperature with the colormap and range of the mean temperature, sunshine with the measured range (H1 = 1)', async () => {
+    mount({}, meteo, day(['TabsD', 'TminD', 'TmaxD', 'SrelD']));
+    fetchMock.mockClear();
+    choose('band:TminD');
+    await settle();
+    expect([store().pendingColormapName, store().pendingVmin, store().pendingVmax]).toEqual(['rdbu_r', '-20', '30']);
+    // The histogram of the sliders of "Scale" is asked for as for any band; the range is not measured.
+    const measured = () => fetchMock.mock.calls.some(([url]) => String(url).includes('/statistics') && !String(url).includes('histogram_bins'));
+    expect(measured()).toBe(false);
+    choose('band:SrelD');
+    await settle();
+    expect(store().pendingColormapName).toBe('');
+    expect(measured()).toBe(true);
+  });
+
   it('offers only what a day has: before 1971 the mean temperature alone, and the dropdown is locked', () => {
     mount({}, meteo, day(['TabsD']));
     expect(select().disabled).toBe(true);
