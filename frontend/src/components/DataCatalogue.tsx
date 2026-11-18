@@ -11,6 +11,7 @@ import { fetchCataloguePage, fetchCatalogueSearch, type CatalogueFilter } from '
 import { LOCK_NEEDS_AOI } from '../aoiFilter';
 import {
   accountOf,
+  type BandLine,
   activeFilters,
   catalogueRows,
   groupCount,
@@ -126,6 +127,30 @@ function RowAction({ dataset }: { dataset: DatasetOption }) {
   );
 }
 
+// The bands of a dataset: Band | Description | Unit (M5-59). The window scrolls, not the table.
+function BandTable({ bands }: { bands: BandLine[] }) {
+  return (
+    <table className="catalogue-bands">
+      <thead>
+        <tr>
+          <th scope="col">Band</th>
+          <th scope="col">Description</th>
+          <th scope="col">Unit</th>
+        </tr>
+      </thead>
+      <tbody>
+        {bands.map((line) => (
+          <tr key={line.band}>
+            <th scope="row">{line.band}</th>
+            <td>{line.description}</td>
+            <td>{line.unit}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 function Details({ dataset, onBack }: { dataset: DatasetOption; onBack: () => void }) {
   const legal = prototypeNote(dataset.collection);
   return (
@@ -146,9 +171,7 @@ function Details({ dataset, onBack }: { dataset: DatasetOption; onBack: () => vo
               {row.label}
               {row.tip && <Tip text={row.tip} />}
             </dt>
-            <dd>
-              <Links values={row.values} />
-            </dd>
+            <dd>{row.bands ? <BandTable bands={row.bands} /> : <Links values={row.values} />}</dd>
           </div>
         ))}
       </dl>

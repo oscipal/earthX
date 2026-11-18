@@ -124,6 +124,14 @@ export interface CatalogueRow {
   values: LinkText[];
   // An explanation behind an (i) beside the value.
   tip?: string;
+  // The bands of a dataset as the lines of a table Band | Description | Unit (M5-59), instead of `values`.
+  bands?: BandLine[];
+}
+
+export interface BandLine {
+  band: string;
+  description: string;
+  unit: string;
 }
 
 const plain = (text: string): LinkText[] => [{ text, href: null }];
@@ -198,18 +206,30 @@ export function resolutionText(collection: Collection): string {
   return metres.length > 0 ? `${metres.map(formatNumber).join(', ')} m` : NONE;
 }
 
-function bandsText(collection: Collection): string {
+// The bands of the data, one line each: the key, what it is in a few words (`earthx:band_descriptions`) and the unit or
+// the kind of values (`catalogueUnit`); "—" where the registry says none. The auxiliary assets and the mask are no band
+// here (the mask has a row of its own).
+export function bandLinesOf(collection: Collection): BandLine[] {
   const units = collection['earthx:band_units'];
-  if (!units || typeof units !== 'object') return NONE;
+  if (!units || typeof units !== 'object') return [];
+  const descriptions = collection['earthx:band_descriptions'] ?? {};
   const auxiliary = collection['earthx:auxiliary_assets'] ?? [];
   const mask = collection['earthx:mask']?.asset;
-  const bands = Object.entries(units)
+  return Object.entries(units)
     .filter(([key]) => !auxiliary.includes(key) && key !== mask)
     .map(([key, unit]) => {
-      const shown = catalogueUnit(unit);
-      return shown ? `${key} · ${shown}` : key;
+      const description = descriptions[key];
+      return {
+        band: key,
+        description: typeof description === 'string' && description !== '' ? description : NONE,
+        unit: catalogueUnit(unit) ?? NONE,
+      };
     });
-  return bands.length > 0 ? bands.join(', ') : NONE;
+}
+
+function bandsRow(collection: Collection): CatalogueRow {
+  const bands = bandLinesOf(collection);
+  return bands.length > 0 ? { label: 'Bands', values: [], bands } : { label: 'Bands', values: plain(NONE) };
 }
 
 const OPERATORS: [string, string][] = [
@@ -264,7 +284,7 @@ export function catalogueRows(dataset: DatasetOption): CatalogueRow[] {
     { label: 'Spatial extent', values: plain(spatialExtentText(c)) },
     { label: 'Temporal extent', values: plain(temporalExtentText(c)) },
     { label: 'Resolution', values: plain(resolutionText(c)) },
-    ...(listed ? [] : [{ label: 'Bands', values: plain(bandsText(c)) }]),
+    ...(listed ? [] : [bandsRow(c)]),
     ...(c['earthx:mask'] ? [{ label: 'Mask', values: plain(c['earthx:mask'].asset) }] : []),
     { label: 'Data region', values: plain(typeof region === 'string' && region !== '' ? region : NONE) },
     doiRow(c),
