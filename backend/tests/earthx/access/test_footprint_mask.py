@@ -7,7 +7,9 @@ import numpy
 import pytest
 from rio_tiler.models import ImageData
 from shapely.geometry import MultiPolygon, Polygon, box
+from shapely.ops import unary_union
 
+from earthx.access import footprint_mask
 from earthx.access.footprint_mask import cut_to_footprints
 
 TMS = morecantile.tms.get("WebMercatorQuad")
@@ -61,3 +63,43 @@ def test_two_footprints_leave_both_and_nothing_between() -> None:
 def test_it_works_at_any_tile_size(size: int) -> None:
     mask = numpy.ma.getmaskarray(cut_to_footprints(image(size=size), west_half(), TMS.rasterio_crs).array)[0]
     assert not mask[:, : size // 2 - 4].any() and mask[:, size // 2 + 4 :].all()
+
+
+
+def on_the_map(west: float, south: float, east: float, north: float) -> list[Polygon]:
+    """The box held within ±180° and the ±85° of the grid (a footprint at a pole has no place in Web Mercator), none off it."""
+    west, south, east, north = max(-180.0, west), max(-85.0, south), min(180.0, east), min(85.0, north)
+    return [box(west, south, east, north)] if west < east and south < north else []
+
+
+# M5-56: the union of thousands of footprints (GLO-30 over Russia) is cut to the tile before it is projected and drawn. The mask is
+# the one of the whole union, at every level, also where the union crosses the edge of the tile.
+@pytest.mark.parametrize("tile", [TILE, morecantile.Tile(x=0, y=0, z=0), morecantile.Tile(x=137, y=70, z=8)], ids=["z4", "z0", "z8"])
+def test_a_union_of_many_footprints_masks_as_the_whole_of_it_does(tile: morecantile.Tile, monkeypatch: pytest.MonkeyPatch) -> None:
+    west, south, east, north = TMS.bounds(tile)
+    dx, dy = (east - west) / 7, (north - south) / 7
+    near = [
+        part
+        for i in range(-3, 10)
+        for j in range(-3, 10)
+        if (i + j) % 2
+        for part in on_the_map(west + i * dx, south + j * dy, west + (i + 1) * dx, south + (j + 1) * dy)
+    ]
+    far = [box(lon, lat, lon + 1, lat + 1) for lon in range(-170, -120) for lat in range(-60, -40)]
+    many = unary_union(near + far)
+    left, bottom, right, top = TMS.xy_bounds(tile)
+
+    def frame() -> ImageData:
+        return ImageData(numpy.ma.MaskedArray(numpy.full((1, 64, 64), 7.0, dtype="float32")), bounds=(left, bottom, right, top), crs=TMS.rasterio_crs)
+
+    cut = numpy.ma.getmaskarray(cut_to_footprints(frame(), many, TMS.rasterio_crs).array)
+    monkeypatch.setattr(footprint_mask, "_near_tile", lambda footprints, _crs, _bounds: footprints)
+    whole = numpy.ma.getmaskarray(cut_to_footprints(frame(), many, TMS.rasterio_crs).array)
+    assert cut.any() and not cut.all()
+    assert (cut == whole).all()
+
+
+def test_only_the_part_of_the_union_around_the_tile_is_drawn() -> None:
+    many = unary_union([box(lon, lat, lon + 1, lat + 1) for lon in range(20, 180) for lat in range(41, 82) if (lon + lat) % 3])
+    part = footprint_mask._near_tile(many, str(TMS.rasterio_crs), TMS.xy_bounds(morecantile.Tile(x=90, y=40, z=7)))
+    assert 0 < part.area < many.area / 100
