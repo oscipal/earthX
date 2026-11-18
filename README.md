@@ -308,18 +308,24 @@ docker compose run --rm harvest opendata-swiss
   einer Seite wird mit ihrem `ETag` gefragt (`304`: nichts zu tun).
 - **CKAN** (`govdata`, `opendata-swiss`): der erste Lauf und danach einer alle `full_every_days` (7) liest
   alle Pakete, je 100 je Anfrage mit 1 s Abstand (GovData rund 1 650 Anfragen, knapp eine halbe Stunde).
-  Dazwischen fragt ein Lauf nur nach Paketen, die seit dem Beginn des letzten erfolgreichen Laufs (eine
-  Stunde Überlappung) geändert wurden. `--full` hinter der ID erzwingt einen vollen Lauf. Nur ein voller Lauf
+  Dazwischen fragt ein Lauf nur nach Paketen, die seit dem Beginn des letzten erfolgreichen Laufs bzw.
+  vollen Durchgangs (eine Stunde Überlappung) geändert wurden. `--full` hinter der ID erzwingt einen vollen Lauf. Nur ein voller Lauf
   setzt verschwundene Pakete auf `gone`, und nur, wenn sich die Liste beim Lesen nicht verschoben hat und nicht
   leer war. Verschiebt sich die Liste eines inkrementellen Laufs, endet er `interrupted` (`listing_moved`), und
-  der nächste fragt ab dem Lauf davor. Endet ein voller Lauf nicht mit `done` (etwa an der Obergrenze der
-  Anfragen), ist auch der nächste wieder voll.
+  der nächste fragt ab dem Lauf davor.
 - `robots.txt` gilt streng. Nur wo die Seed-Datei `robots_exception` nennt (Pfad der Metadaten-API und Beleg in
   der Doku des Anbieters), liest der Harvest diesen einen Pfad trotz `Disallow`; der Bericht nennt das.
   `Crawl-delay` gilt immer: Bei opendata.swiss (10 s) dauert ein voller Lauf knapp eine halbe Stunde. GovData
   wird über den API-Host `ckan.govdata.de` gefragt.
 - `data-gv-at` steht auf `enabled: false`, bis ein erster Lauf den Endpunkt bestätigt; der Befehl lehnt die
   Quelle bis dahin ab.
+- Antwortet eine Quelle mit `429`, wartet der Lauf nach ihrem `Retry-After`, sonst 2 min und danach jeweils
+  doppelt so lang (bis 30 min); nach 60 min Warten insgesamt endet er `interrupted` (`rate_limited`).
+- Ein voller CKAN-Lauf darf über mehrere Läufe gehen: Bricht er ab, hält die Datenbank die nächste Seite fest,
+  und der nächste Lauf (auch mit `--full`) setzt dort fort; der Bericht nennt die Stelle. `gone` gibt es erst,
+  wenn der Durchgang ganz durchgelaufen ist.
+- `--measure` hinter einer CKAN-Quelle holt nur ihre erste Seite, einmal wie der Harvest und einmal mit `fl`
+  (nur die Indexfelder des Extract), und zeigt Größen und die größten Felder; nichts wird gespeichert.
 - `--reextract` leitet die Zwischenform aus den gespeicherten Rohantworten neu ab, ohne Anfrage; nach einer
   Änderung am Extraktor macht das auch der nächste gewöhnliche Lauf für jeden betroffenen Fund.
 - Der Bericht nennt Art und Ausgang des Laufs, Anfragen, Funde neu/geändert/unverändert/weg und den Stand der
