@@ -137,15 +137,22 @@ export function sceneOriginals(collection: Collection, item: StacItem, groupLabe
   return { item, groupLabel, zipName: `${safeName(item.id)}.zip`, entries, missing };
 }
 
-// The scenes of a selection, in the order of its passes; a scene in two passes comes once.
+// The scenes of a selection, in the order of its passes; a scene in two passes comes once, and so does a file several
+// scenes share: the days of one year of a NetCDF dataset read the same annual file (M5-11), which is fetched once, with
+// the first of them. A scene whose files all came with earlier ones is left out.
 export function scenesOf(collection: Collection, passes: readonly DownloadPass[], pick?: BandPick): OriginalScene[] {
   const seen = new Set<string>();
+  const files = new Set<string>();
   const scenes: OriginalScene[] = [];
   for (const pass of passes) {
     for (const item of pass.items) {
       if (seen.has(item.id)) continue;
       seen.add(item.id);
-      scenes.push(sceneOriginals(collection, item, pass.label, pick));
+      const scene = sceneOriginals(collection, item, pass.label, pick);
+      const entries = scene.entries.filter((entry) => !files.has(entry.href));
+      if (entries.length === 0 && scene.entries.length > 0) continue;
+      for (const entry of entries) files.add(entry.href);
+      scenes.push({ ...scene, entries });
     }
   }
   return scenes;
