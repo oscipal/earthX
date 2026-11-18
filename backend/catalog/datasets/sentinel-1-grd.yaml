@@ -169,6 +169,11 @@ viewer:
   overview_substitute: null
 health:
   status: ok
+# M5-58 (adr/0038 §3.1, plan A2): federated, so `materialize` keeps nothing of it; its items are asked live.
+updates:
+  cadence: none
+  states: [final]
+  detect: whole
 # As Sentinel-2: the same source without an operating commitment (Auslegung A7).
 maturity: stable
 zarr: null

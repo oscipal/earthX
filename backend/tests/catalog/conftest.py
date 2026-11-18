@@ -18,6 +18,7 @@ from earthx.catalog.registry import (
     AssetSelection,
     BrowseMode,
     Capabilities,
+    ChangeDetection,
     CoverageInfo,
     CoverageProvider,
     DataClass,
@@ -28,6 +29,7 @@ from earthx.catalog.registry import (
     HealthInfo,
     HealthStatus,
     ItemHolding,
+    ItemState,
     LegalStatus,
     LicenseInfo,
     LicenseTier,
@@ -40,6 +42,8 @@ from earthx.catalog.registry import (
     SpatialExtent,
     TemporalExtent,
     TermsOfUse,
+    UpdateCadence,
+    UpdatesInfo,
     ViewerInfo,
 )
 
@@ -148,6 +152,7 @@ def valid_config() -> DatasetConfig:
             overview_substitute=None,
         ),
         health=HealthInfo(status=HealthStatus.OK),
+        updates=UpdatesInfo(cadence=UpdateCadence.NONE, states=(ItemState.FINAL,), detect=ChangeDetection.WHOLE),
         maturity=Maturity.STABLE,
         zarr=None,
         mask=None,

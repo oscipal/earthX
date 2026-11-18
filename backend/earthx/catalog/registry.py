@@ -1101,6 +1101,62 @@ class HealthInfo:
     status: HealthStatus
 
 
+class UpdateCadence(Enum):
+    """How often the source changes what a dataset holds (adr/0038 §3.1): the cadence the `harvester` runs at (M5-24)."""
+
+    NONE = "none"
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
+
+
+class ItemState(Enum):
+    """How settled the values of an item are (adr/0038 §3.2), in ascending rank: the order of the members is the rank."""
+
+    PROVISIONAL = "provisional"
+    FINAL = "final"
+
+    @property
+    def rank(self) -> int:
+        return list(ItemState).index(self)
+
+
+class ChangeDetection(Enum):
+    """How `materialize` sees a change (adr/0038 §3.3): one version per run, or per unit of the source."""
+
+    WHOLE = "whole"
+    UNITS = "units"
+
+
+@dataclass(frozen=True, slots=True)
+class UpdatesInfo:
+    """Whether and how the source keeps changing a dataset (M5-58, adr/0038 §3.1). No default (KLAERUNGEN B10).
+
+    ``states`` are the states the source delivers, in ascending rank and ending with ``final``: ``(final,)`` where it
+    has nothing provisional. What changes from day to day (the state per unit, the last check) is never here but in
+    Postgres (adr/0025 §6.6).
+    """
+
+    cadence: UpdateCadence
+    states: tuple[ItemState, ...]
+    detect: ChangeDetection
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.states, tuple) or not self.states or not all(isinstance(s, ItemState) for s in self.states):
+            raise ConfigError("updates.states names at least one state")
+        if len(set(self.states)) != len(self.states):
+            raise ConfigError("updates.states names a state twice")
+        if list(self.states) != sorted(self.states, key=lambda state: state.rank) or self.states[-1] is not ItemState.FINAL:
+            raise ConfigError("updates.states are in ascending rank and end with final")
+        if self.cadence is UpdateCadence.NONE and ItemState.PROVISIONAL in self.states:
+            raise ConfigError("updates: a source that never changes has nothing provisional to replace")
+
+    @property
+    def running(self) -> bool:
+        """Whether the source keeps changing the dataset, so that its time extent may stay open."""
+        return self.cadence is not UpdateCadence.NONE
+
+
 @dataclass(frozen=True, slots=True)
 class SpatialExtent:
     """Bounding box in WGS84, as STAC writes it: west, south, east, north."""
@@ -1625,6 +1681,9 @@ class DatasetConfig:
     # None where nobody has decided how the viewer groups the items of this dataset.
     viewer: ViewerInfo | None
     health: HealthInfo
+    # Whether and how the source keeps changing the dataset, and which states its items pass through (M5-58, adr/0038
+    # §3.1). No default (KLAERUNGEN B10): a static source says `cadence: none`, `states: [final]`, `detect: whole`.
+    updates: UpdatesInfo
     # How settled the source itself is (architekturplan.md 5.1, tenth field;
     # adr/0007 §12.11 point 14). No default (KLAERUNGEN B10): every entry says this
     # on purpose, it is part of the truth about the dataset like the licence.
@@ -1686,6 +1745,7 @@ class DatasetConfig:
         self._check_coverage()
         self._check_source()
         self._check_item_holding()
+        self._check_updates()
         self._check_zarr()
         self._check_netcdf_refs()
         self._check_georeferencing()
@@ -2330,8 +2390,24 @@ class DatasetConfig:
             # Every time step covers the whole grid (M5-11 plan §5.4): a series of them over a closed period.
             if self.capabilities.single_coverage_product or not self.capabilities.time_range:
                 raise ConfigError(f"{self.dataset_id}: coverage fixed-grid is for a series of time steps over one grid")
-            if self.temporal_extent.start is None or self.temporal_extent.end is None:
-                raise ConfigError(f"{self.dataset_id}: coverage fixed-grid counts time steps over a closed temporal_extent")
+            if self.temporal_extent.start is None:
+                raise ConfigError(f"{self.dataset_id}: coverage fixed-grid counts time steps from the start of temporal_extent")
+            if self.temporal_extent.end is None and not self.updates.running:
+                # An open end is the newest item of a running source (adr/0038 §3.6); a static one closes its period.
+                raise ConfigError(f"{self.dataset_id}: coverage fixed-grid needs a closed temporal_extent or a running source")
+
+    def _check_updates(self) -> None:
+        """adr/0038 §3.1: changes per unit only on our own items and never under a pyramid built per run version; a
+        provisional state is said in the limitations, the place the Data catalogue shows (M5-58 F1)."""
+        if not isinstance(self.updates, UpdatesInfo):
+            raise ConfigError(f"{self.dataset_id}: updates is an UpdatesInfo")
+        if self.updates.detect is ChangeDetection.UNITS:
+            if self.source.item_holding is not ItemHolding.MATERIALIZED:
+                raise ConfigError(f"{self.dataset_id}: updates.detect units needs materialized items")
+            if self.viewer is not None and self.viewer.overview is OverviewMode.PYRAMID:
+                raise ConfigError(f"{self.dataset_id}: updates.detect units cannot keep a pyramid built per run version")
+        if ItemState.PROVISIONAL in self.updates.states and not self.limitations:
+            raise ConfigError(f"{self.dataset_id}: provisional values are said in limitations")
 
 
 class Attributable(Protocol):
@@ -2538,6 +2614,7 @@ for _entry_part in (
     DefaultRender,
     ViewerInfo,
     HealthInfo,
+    UpdatesInfo,
     SpatialExtent,
     TemporalExtent,
     MaskClass,
