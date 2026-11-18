@@ -180,6 +180,18 @@ class TestTheTableOfTheDialog:
         assert self.table({"data": asset("data", 30)}) == [("data", True)]
         assert self.table({"a": asset("a", 30), "b": asset("b", 30)}) == [("a", True), ("b", True)]
 
+    def test_the_quantities_of_a_day_read_through_chunk_references_are_its_bands(self) -> None:
+        """M5-11: a NetCDF day has one array per asset; the quantities it has, ticked, with their units."""
+        def quantity(name: str) -> dict[str, Any]:
+            return {"type": "application/x-netcdf", "roles": ["data"], "earthx:refs": {"etag": '"a"'}, "raster:bands": [{"data_type": "float32"}]}
+
+        units = {"TabsD": "°C", "SrelD": "%"}
+        day = {"properties": {"gsd": 1000.0}, "assets": {"TabsD": quantity("TabsD"), "SrelD": quantity("SrelD"), "original": {"type": "application/x-netcdf"}}}
+        result = band_table([day], auxiliary=(), mask_asset=None, unit_of=units.get)
+        assert [(m.asset, m.unit, m.resolution_m, ticked) for m, ticked in result] == [("TabsD", "°C", 1000.0, True), ("SrelD", "%", 1000.0, True)]
+        before_1971 = {"properties": {"gsd": 1000.0}, "assets": {"TabsD": quantity("TabsD")}}
+        assert [m.asset for m, _ in band_table([before_1971], auxiliary=(), mask_asset=None, unit_of=units.get)] == ["TabsD"]
+
     def test_no_scene_no_table(self) -> None:
         assert band_table([], auxiliary=(), mask_asset=None, unit_of=lambda a: None) == []
 

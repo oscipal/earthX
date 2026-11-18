@@ -42,6 +42,7 @@ from shapely.geometry import mapping, shape
 from shapely.geometry.base import BaseGeometry
 
 from earthx.access.crop_rules import asset_gsd, merge_first_valid, rasterize_aoi
+from earthx.readers.reference_store import REFS_KEY
 
 __all__ = [
     "BANDS_FILENAME",
@@ -60,6 +61,7 @@ __all__ = [
     "band_count",
     "band_meta_of_items",
     "band_table",
+    "holds_one_array",
     "is_geotiff",
     "band_meta",
     "bands_text",
@@ -218,6 +220,11 @@ def is_geotiff(entry: Any) -> bool:
     return isinstance(kind, str) and kind.lower().startswith("image/tiff") and not (isinstance(roles, list) and "thumbnail" in roles)
 
 
+def holds_one_array(entry: Any) -> bool:
+    """Whether an asset entry carries chunk references (``earthx:refs``, M5-11): one array of a day, one band."""
+    return isinstance(entry, Mapping) and REFS_KEY in entry
+
+
 def band_table(
     items: Sequence[Mapping[str, Any]],
     *,
@@ -227,8 +234,8 @@ def band_table(
 ) -> list[tuple[BandMeta, bool]]:
     """The bands the download dialog offers for ``items``, in the first item's order, each with whether it starts ticked.
 
-    The GeoTIFF assets of the first item without the pictures the registry calls auxiliary; the layer of the mask is one of
-    them. Ticked from the start: the spectral bands (the item names a centre wavelength) and the mask layer; where a dataset has
+    The GeoTIFF assets of the first item, and its assets with chunk references (M5-11), without the pictures the registry
+    calls auxiliary; the layer of the mask is one of them. Ticked from the start: the spectral bands (the item names a centre wavelength) and the mask layer; where a dataset has
     neither (an elevation model) every band.
     """
     if not items:
@@ -238,7 +245,7 @@ def band_table(
     metas = [
         band_meta_of_items(items, key, unit=unit_of(key), categorical=key == mask_asset)
         for key, entry in assets.items()
-        if key not in skip and is_geotiff(entry)
+        if key not in skip and (is_geotiff(entry) or holds_one_array(entry))
     ]
     ticked = [meta.wavelength_um is not None or meta.categorical for meta in metas]
     if not any(ticked):
