@@ -207,7 +207,8 @@ export function resolutionText(collection: Collection): string {
 }
 
 // The bands of the data, one line each: the key, what it is in a few words (`earthx:bands`) and the unit or the kind of
-// values (`catalogueUnit`); "—" where the registry says none. In the order of `earthx:bands` (the entry's), then the
+// values (`catalogueUnit`); "—" where the registry says none, and "–" as the unit of a band that has none (Otto,
+// 18.11.2026: never "1" or a text in its place). In the order of `earthx:bands` (the entry's), then the
 // other keys of the units. The auxiliary assets are no band here, and the mask only where it is the one band of the data
 // (WorldCover's land cover map); otherwise it has a row of its own. Class values have no unit, so the line names their
 // kind: "class code".
@@ -226,13 +227,15 @@ export function bandLinesOf(collection: Collection): BandLine[] {
       return {
         band: key,
         description: typeof description === 'string' && description !== '' ? description : NONE,
-        unit: catalogueUnit(units[key]) ?? (key === mask ? CLASS_UNIT : NONE),
+        unit: catalogueUnit(units[key]) ?? (key === mask ? CLASS_UNIT : NO_UNIT),
       };
     });
 }
 
 // What the Data catalogue writes for the values of a class layer, which has no unit.
 const CLASS_UNIT = 'class code';
+// The unit of a band that has none: an en dash, nothing else.
+export const NO_UNIT = '–';
 
 function bandsRow(collection: Collection): CatalogueRow {
   const bands = bandLinesOf(collection);

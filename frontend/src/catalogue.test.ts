@@ -217,8 +217,8 @@ describe('the rows', () => {
     });
     expect(rowsOf(c).Bands.bands).toEqual([
       { band: 'vv', description: 'VV polarisation', unit: 'dB' },
-      { band: 'red', description: 'Red', unit: '1, dimensionless' },
-      { band: 'height', description: '—', unit: '—' },
+      { band: 'red', description: 'Red', unit: '–' },
+      { band: 'height', description: '—', unit: '–' },
     ]);
     expect(textOf(c, 'Mask')).toBe('scl');
   });
@@ -237,9 +237,17 @@ describe('the rows', () => {
     expect(rowsOf(c).Bands.bands?.map((line) => line.unit)).toEqual(['DN, uncalibrated digital numbers', 'DN, uncalibrated digital numbers', 'm']);
   });
 
+  it('write only "–" as the unit of a band without one, never "1", "dimensionless" or another text (Otto, 18.11.2026)', () => {
+    const c = collection('x', 'optical', {
+      'earthx:band_units': { a: '1', b: null, c: '', d: 'm', e: 'DN', f: 'dB' },
+    });
+    expect(rowsOf(c).Bands.bands?.map((line) => line.unit)).toEqual(['–', '–', '–', 'm', 'DN, uncalibrated digital numbers', 'dB']);
+    for (const line of rowsOf(c).Bands.bands ?? []) expect(line.unit).not.toMatch(/^1\b|dimensionless/);
+  });
+
   it('read a backend without descriptions, or with a description that is no text, as "—"', () => {
     const none = collection('x', 'optical', { 'earthx:band_units': { red: '1' } });
-    expect(rowsOf(none).Bands.bands).toEqual([{ band: 'red', description: '—', unit: '1, dimensionless' }]);
+    expect(rowsOf(none).Bands.bands).toEqual([{ band: 'red', description: '—', unit: '–' }]);
     const odd = collection('x', 'optical', { 'earthx:band_units': { red: '1', nir: 'm' }, 'earthx:bands': [{ name: 'red', description: 7 as never }, { name: 'nir', description: '' }] });
     expect(rowsOf(odd).Bands.bands?.map((line) => line.description)).toEqual(['—', '—']);
   });

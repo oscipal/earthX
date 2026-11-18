@@ -58,8 +58,8 @@ function listed(id: string, title: string, category: string, extra: Partial<Coll
 
 const FULL = [
   collection('relief', 'Relief model', 'elevation', {
-    'earthx:band_units': { data: 'm', raw: 'DN' },
-    'earthx:bands': [{ name: 'data', description: 'Surface height (DSM)' }, { name: 'raw', description: 'Raw counts' }],
+    'earthx:band_units': { data: 'm', raw: 'DN', ratio: '1' },
+    'earthx:bands': [{ name: 'data', description: 'Surface height (DSM)' }, { name: 'raw', description: 'Raw counts' }, { name: 'ratio', description: 'Share' }],
   }),
   collection('beta', 'Beta optical', 'optical'),
   collection('alpha', 'Alpha optical', 'optical'),
@@ -440,6 +440,7 @@ describe('the details', () => {
     expect([...table.querySelectorAll('tbody tr')].map((tr) => [...tr.children].map((cell) => cell.textContent))).toEqual([
       ['data', 'Surface height (DSM)', 'm'],
       ['raw', 'Raw counts', 'DN, uncalibrated digital numbers'],
+      ['ratio', 'Share', '–'],
     ]);
     expect(value('Bands')!.querySelectorAll('p, .hint')).toHaveLength(0);
   });
