@@ -641,6 +641,17 @@ describe('previewSpec: the mosaic of a job (NM4-04b)', () => {
         expect(here.probe).toContain(tiles[0].id);
       });
 
+      // A map over Chukotka gives its view past 180° (MapLibre's `getBounds`): the tiles west of the antimeridian are in it.
+      it('finds the tiles in a view that reaches past 180°', () => {
+        const across = Array.from({ length: MAX_SELECTION_ITEMS + 100 }, (_, i) => {
+          const west = ((150 + (i % 60) + 180) % 360) - 180;
+          return { ...item(`A${String(i).padStart(4, '0')}`, { gsd: 10 }), bbox: [west, 40 + Math.floor(i / 60), west + 1, 41 + Math.floor(i / 60)] as [number, number, number, number] };
+        });
+        const spec = previewSpec({ ...base, items: across, jobs: [across], view: [189.5, 70.5, 192.5, 71.5] })!;
+        const chosen = spec.scenes.slice(0, 8).map((s) => across.find((a) => a.id === s.id)!.bbox);
+        expect(chosen.every(([west, south]) => west >= -171 && west <= -168 && south >= 70 && south <= 71)).toBe(true);
+      });
+
       it('leaves out a tile without a box, which it could not place', () => {
         const boxless = [{ ...tiles[0], bbox: null }, ...tiles.slice(1)];
         const spec = previewSpec({ ...base, items: boxless, jobs: [boxless], view: null })!;

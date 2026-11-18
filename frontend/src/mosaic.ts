@@ -219,10 +219,13 @@ export function chosenByView<T extends SceneEntry>(entries: readonly T[], view: 
 }
 
 // The same choice for anything with a box: the view of the search draws scenes, the preview of the steps their items.
+// A map over the antimeridian gives its view past ±180° (`getBounds`: 150° to 210° over Chukotka): a box is looked for there too, a
+// full turn east and west (M5-56).
 export function inViewFirst<T>(list: readonly T[], boundsOf: (one: T) => Bbox, view: Bbox | null, limit: number): T[] {
   const meets = (one: T) => {
-    const bounds = boundsOf(one);
-    return view !== null && bounds[0] <= view[2] && bounds[2] >= view[0] && bounds[1] <= view[3] && bounds[3] >= view[1];
+    const [west, south, east, north] = boundsOf(one);
+    if (view === null || south > view[3] || north < view[1]) return false;
+    return [-360, 0, 360].some((turn) => west + turn <= view[2] && east + turn >= view[0]);
   };
   return [...list.filter(meets), ...list.filter((one) => !meets(one))].slice(0, Math.max(0, limit));
 }
