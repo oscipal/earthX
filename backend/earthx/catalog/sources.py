@@ -16,9 +16,18 @@ from types import MappingProxyType
 
 from earthx.catalog.entry_files import EntryFileError, read_yaml
 from earthx.catalog.registry import PROTOTYPE_PREFIX, Maturity
-from earthx.gateway import UrlRejected, host_of
+from earthx.gateway import UrlRejected, check_robots_exception_path, host_of
 
-__all__ = ["SOURCES_DIR", "CkanFilter", "SourceConfig", "SourceProtocol", "StacFilter", "read_source", "read_sources"]
+__all__ = [
+    "SOURCES_DIR",
+    "CkanFilter",
+    "RobotsException",
+    "SourceConfig",
+    "SourceProtocol",
+    "StacFilter",
+    "read_source",
+    "read_sources",
+]
 
 SOURCES_DIR = Path(__file__).resolve().parents[2] / "catalog" / "sources"
 _README = "README.md"
@@ -36,6 +45,7 @@ _FIELDS = frozenset(
         "filter",
         "max_requests_per_run",
         "full_every_days",
+        "robots_exception",
         "maturity",
         "enabled",
     }
@@ -65,6 +75,16 @@ class CkanFilter:
 
 
 @dataclass(frozen=True, slots=True)
+class RobotsException:
+    """The one path of a source's host whose Disallow in robots.txt the harvest waives, with the provider's documentation
+    of it (Otto, 18.11.2026; adr/0025 §6.2). The path is the endpoint's own: the metadata API, nothing else of the
+    host. robots.txt is still read and its Crawl-delay kept."""
+
+    path: str
+    evidence: str
+
+
+@dataclass(frozen=True, slots=True)
 class SourceConfig:
     source_id: str
     protocol: SourceProtocol
@@ -75,6 +95,8 @@ class SourceConfig:
     filter: StacFilter | CkanFilter
     max_requests_per_run: int
     full_every_days: int
+    #: ``None``: robots.txt is obeyed as written.
+    robots_exception: RobotsException | None
     maturity: Maturity
     enabled: bool
 
@@ -124,6 +146,24 @@ def _catalog_page(name: str, protocol: SourceProtocol, value: object) -> str | N
     return value
 
 
+def _robots_exception(name: str, endpoint: str, value: object) -> RobotsException | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict) or set(value) != {"path", "evidence"}:
+        raise _bad(name, "robots_exception is null or has path and evidence, nothing else")
+    try:
+        path = check_robots_exception_path(value["path"])
+    except ValueError as error:
+        raise _bad(name, f"robots_exception.path: {error}") from None
+    endpoint_path = "/" + endpoint.split("://", 1)[1].partition("/")[2]
+    if path != endpoint_path.rstrip("/") + "/":
+        raise _bad(name, "robots_exception.path is the path of endpoint with a trailing '/', the metadata API only")
+    evidence = value["evidence"]
+    if not isinstance(evidence, str) or not _HTTPS.fullmatch(evidence.split("#")[0]):
+        raise _bad(name, "robots_exception.evidence is the https address of the provider's documentation of its API")
+    return RobotsException(path, evidence)
+
+
 def read_source(path: Path) -> SourceConfig:
     """One seed file, checked; :class:`EntryFileError` names the file and the field, never a value."""
     name = path.name
@@ -160,6 +200,7 @@ def read_source(path: Path) -> SourceConfig:
         filter=_filter(name, protocol, data["filter"]),
         max_requests_per_run=_count(name, data, "max_requests_per_run", MAX_REQUESTS_PER_RUN),
         full_every_days=_count(name, data, "full_every_days", 365),
+        robots_exception=_robots_exception(name, endpoint, data["robots_exception"]),
         maturity=maturity,
         enabled=data["enabled"],
     )

@@ -105,6 +105,7 @@ def source() -> SourceConfig:
         filter=StacFilter(()),
         max_requests_per_run=20,
         full_every_days=1,
+        robots_exception=None,
         maturity=Maturity.STABLE,
         enabled=True,
     )
@@ -377,7 +378,7 @@ async def test_a_reextract_asks_nothing_and_finds_no_change(db: psycopg.Connecti
 
 async def test_the_report_names_numbers_never_an_address(db: psycopg.Connection, source: SourceConfig) -> None:
     result = await run_harvest(db, source, gateway=_gateway(Catalogue(THREE)))
-    text = report(source.source_id, result)
+    text = report(source, result)
     assert "Dieser Lauf: neu 3, geändert 0, unverändert 0, weg 0" in text
     assert "Stand der Quelle: gültig 2 (davon Ausdehnung unbekannt 1), ungültig 1 (ohne Titel 1)" in text
     assert "https://" not in text and HOST not in text
@@ -392,7 +393,7 @@ async def test_after_a_304_the_report_still_says_how_many_finds_are_invalid(
     await run_harvest(db, source, gateway=_gateway(catalogue))
     result = await run_harvest(db, source, gateway=_gateway(catalogue))
     assert (result.counts.not_modified, result.counts.found_unchanged, result.counts.invalid) == (1, 3, 1)
-    assert "ungültig 1 (ohne Titel 1)" in report(source.source_id, result)
+    assert "ungültig 1 (ohne Titel 1)" in report(source, result)
 
 
 async def test_a_new_extractor_version_judges_unchanged_finds_again(

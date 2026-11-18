@@ -2,7 +2,10 @@
 # without an extent are kept as "extent unknown" (Otto, 17.11.2026, plan §5.3); a full run is some 1 650 pages.
 source_id: govdata
 protocol: ckan
-endpoint: https://www.govdata.de/ckan/api/3/action
+# The API host of the catalogue as GovData documents it (Otto, 18.11.2026); www.govdata.de disallows every crawler but
+# the large search engines in its robots.txt. Whether ckan.govdata.de allows the API is checked on Otto's next run; an
+# exception comes only if it disallows it too.
+endpoint: https://ckan.govdata.de/api/3/action
 # [S, not checked from a session]: the page of a dataset on the portal.
 catalog_page: https://www.govdata.de/suche/daten/{name}
 filter:
@@ -10,5 +13,6 @@ filter:
   publisher_field: publisher_name
 max_requests_per_run: 2500
 full_every_days: 7
+robots_exception: null
 maturity: stable
 enabled: true

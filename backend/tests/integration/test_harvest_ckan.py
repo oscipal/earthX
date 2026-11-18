@@ -19,7 +19,7 @@ import psycopg
 import pytest
 
 from earthx.catalog.registry import Maturity
-from earthx.catalog.sources import CkanFilter, SourceConfig, SourceProtocol
+from earthx.catalog.sources import CkanFilter, RobotsException, SourceConfig, SourceProtocol
 from earthx.discovery.harvest import report, run_harvest
 from earthx.gateway import Gateway, Policy
 
@@ -64,10 +64,11 @@ class Catalogue:
         #: Called after each page is served, to change the catalogue while it is read.
         self.after_page: Callable[[int], None] | None = None
         self.ignore_start = False
+        self.robots = "User-agent: *\nAllow: /\n"
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         if request.url.path == "/robots.txt":
-            return httpx.Response(200, text="User-agent: *\nAllow: /\n")
+            return httpx.Response(200, text=self.robots)
         assert request.url.path == "/api/3/action/package_search"
         self.asked.append(request.url.params)
         if self.answer is not None:
@@ -85,12 +86,17 @@ class Catalogue:
         return httpx.Response(200, content=json.dumps(body))
 
 
-def _gateway(catalogue: Catalogue) -> Gateway:
+def _gateway(catalogue: Catalogue, source: SourceConfig | None = None) -> Gateway:
     async def sleep(seconds: float) -> None:
         return None
 
+    exception = None if source is None else source.robots_exception
     return Gateway(
-        Policy(allowed_hosts=frozenset({HOST}), obey_robots=True),
+        Policy(
+            allowed_hosts=frozenset({HOST}),
+            obey_robots=True,
+            robots_exceptions={} if exception is None else {HOST: (exception.path,)},
+        ),
         transport=httpx.MockTransport(catalogue.handle),
         resolve=lambda host, port: ("93.184.216.34",),
         sleep=sleep,
@@ -107,6 +113,7 @@ def source() -> SourceConfig:
         filter=CkanFilter(None, "publisher_name"),
         max_requests_per_run=20,
         full_every_days=7,
+        robots_exception=None,
         maturity=Maturity.STABLE,
         enabled=True,
     )
@@ -160,7 +167,7 @@ async def test_a_first_run_reads_the_whole_listing_page_by_page(db: psycopg.Conn
         "2": ("extracted", None, True),
         "3": ("invalid", "no_title", None),
     }
-    assert "Lauf" in report(source.source_id, result) and "(voll)" in report(source.source_id, result)
+    assert "Lauf" in report(source, result) and "(voll)" in report(source, result)
 
 
 async def test_no_person_is_kept_in_the_intermediate_form(db: psycopg.Connection, source: SourceConfig) -> None:
@@ -193,8 +200,8 @@ async def test_the_next_run_asks_only_for_what_changed_since_the_last_one(
     # Packages the incremental listing did not name are not gone (A3).
     assert _states(db, source)["2"] == ("extracted", None, True)
     assert result.gone_unchecked == "incremental"
-    assert "weg nicht geprüft (inkrementell)" in report(source.source_id, result)
-    assert "(inkrementell)" in report(source.source_id, result).splitlines()[0]
+    assert "weg nicht geprüft (inkrementell)" in report(source, result)
+    assert "(inkrementell)" in report(source, result).splitlines()[0]
 
 
 async def test_an_unchanged_package_does_no_work(db: psycopg.Connection, source: SourceConfig) -> None:
@@ -254,7 +261,7 @@ async def test_a_listing_that_moves_while_it_is_read_marks_nothing_gone(
     result = await run_harvest(db, source, full=True, gateway=_gateway(catalogue))
     assert (result.status, result.counts.gone, result.gone_unchecked) == ("done", 0, "listing_moved")
     assert _states(db, source)["3"] == ("invalid", "no_title", None)
-    assert "Liste hat sich während des Laufs geändert" in report(source.source_id, result)
+    assert "Liste hat sich während des Laufs geändert" in report(source, result)
 
 
 @pytest.mark.parametrize(
@@ -316,7 +323,7 @@ async def test_an_incremental_listing_that_moves_does_not_count_as_the_last_run(
     moving.count_shift = 1
     result = await run_harvest(db, source, gateway=_gateway(moving))
     assert (result.kind, result.status, result.stop_reason) == ("incremental", "interrupted", "listing_moved")
-    assert "der nächste Lauf fragt ab dem Lauf davor" in report(source.source_id, result)
+    assert "der nächste Lauf fragt ab dem Lauf davor" in report(source, result)
     catalogue = Catalogue([])
     await run_harvest(db, source, gateway=_gateway(catalogue))
     assert _since(catalogue) == _started(db, first.run_id)
@@ -345,7 +352,7 @@ async def test_an_empty_full_listing_marks_nothing_gone(db: psycopg.Connection, 
     await run_harvest(db, source, gateway=_gateway(Catalogue(THREE)))
     result = await run_harvest(db, source, full=True, gateway=_gateway(Catalogue([])))
     assert (result.status, result.counts.gone, result.gone_unchecked) == ("done", 0, "listing_empty")
-    assert "weg nicht geprüft (Liste leer)" in report(source.source_id, result)
+    assert "weg nicht geprüft (Liste leer)" in report(source, result)
     assert _states(db, source)["1"] == ("extracted", None, False)
 
 
@@ -368,3 +375,39 @@ async def test_the_publisher_field_of_the_source_is_part_of_the_version(
     assert (result.counts.requests, result.counts.found_changed, result.counts.found_unchanged) == (1, 1, 2)
     again = await run_harvest(db, by_organization, gateway=_gateway(Catalogue([])))
     assert (again.counts.found_changed, again.counts.found_unchanged) == (0, 0)
+
+
+CKAN_ROBOTS = "User-agent: *\nDisallow: /api/\nCrawl-delay: 10\n"
+
+
+async def test_robots_txt_stops_a_source_without_an_exception(db: psycopg.Connection, source: SourceConfig) -> None:
+    catalogue = Catalogue(THREE)
+    catalogue.robots = CKAN_ROBOTS
+    result = await run_harvest(db, source, gateway=_gateway(catalogue, source))
+    assert (result.status, result.stop_reason, result.robots_waived) == ("interrupted", "robots", False)
+    assert catalogue.asked == [] and _states(db, source) == {}
+    assert "robots_exception in der Quell-Datei" in report(source, result)
+
+
+async def test_the_exception_of_the_source_file_reads_its_api_and_the_report_says_so(
+    db: psycopg.Connection, source: SourceConfig
+) -> None:
+    # Otto, 18.11.2026: the documented metadata API despite Disallow: /api/, named in the run report.
+    excepted = replace(source, robots_exception=RobotsException("/api/3/action/", "https://docs.example.org/api"))
+    catalogue = Catalogue(THREE)
+    catalogue.robots = CKAN_ROBOTS
+    result = await run_harvest(db, excepted, gateway=_gateway(catalogue, excepted))
+    assert (result.status, result.counts.found_new, result.robots_waived) == ("done", 3, True)
+    assert (
+        "robots.txt: Ausnahme für ckan.example.org/api/3/action/ (angewandt; Beleg in der Quell-Datei, Crawl-delay gilt)"
+        in report(excepted, result)
+    )
+
+
+async def test_an_exception_robots_txt_does_not_need_is_reported_as_unused(
+    db: psycopg.Connection, source: SourceConfig
+) -> None:
+    excepted = replace(source, robots_exception=RobotsException("/api/3/action/", "https://docs.example.org/api"))
+    result = await run_harvest(db, excepted, gateway=_gateway(Catalogue(THREE), excepted))
+    assert result.status == "done" and not result.robots_waived
+    assert "(nicht gebraucht;" in report(excepted, result)

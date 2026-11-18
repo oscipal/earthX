@@ -27,6 +27,7 @@ SOURCE = SourceConfig(
     filter=CkanFilter(None, "publisher_name"),
     max_requests_per_run=20,
     full_every_days=7,
+    robots_exception=None,
     maturity=Maturity.STABLE,
     enabled=True,
 )

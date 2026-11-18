@@ -31,7 +31,7 @@ def test_the_policy_asks_only_the_source_host_with_its_limits_and_robots() -> No
 
 def test_a_ckan_source_asks_its_catalogue_host_with_two_connections_and_a_second_apart() -> None:
     hosts = read_registry().host_limits
-    for source_id, host in (("govdata", "www.govdata.de"), ("opendata-swiss", "ckan.opendata.swiss")):
+    for source_id, host in (("govdata", "ckan.govdata.de"), ("opendata-swiss", "ckan.opendata.swiss")):
         policy = _policy_for(read_sources()[source_id], hosts)
         assert policy.allowed_hosts == frozenset({host})
         assert (policy.connections_for(host), policy.interval_for(host)) == (2, 1.0)
@@ -48,3 +48,13 @@ def test_full_is_handed_to_the_run(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(harvest_module, "_main_async", fake)
     assert main(["govdata", "--full"]) == 1
     assert seen == {"reextract": False, "full": True}
+
+
+def test_the_policy_waives_robots_txt_only_where_the_source_file_says_so() -> None:
+    hosts, sources = read_registry().host_limits, read_sources()
+    swiss = _policy_for(sources["opendata-swiss"], hosts)
+    assert swiss.robots_exceptions == {"ckan.opendata.swiss": ("/api/3/action/",)}
+    assert swiss.robots_waived("ckan.opendata.swiss", "/api/3/action/package_search")
+    assert not swiss.robots_waived("ckan.opendata.swiss", "/dataset/x")
+    for source_id in ("govdata", "fsdi-stac", "earth-search"):
+        assert _policy_for(sources[source_id], hosts).robots_exceptions == {}

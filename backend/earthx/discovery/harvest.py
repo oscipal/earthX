@@ -113,6 +113,8 @@ class HarvestResult:
     #: full CKAN listing shifted while it was read (a package may have been skipped); ``listing_empty`` where it named
     #: no package at all (a rebuilt index, a filter that no longer matches), which is no evidence that all are gone.
     gone_unchecked: str | None = None
+    #: Whether the run read a path robots.txt disallows, under the exception of the source's file (Otto, 18.11.2026).
+    robots_waived: bool = False
 
 
 @dataclass(slots=True)
@@ -362,23 +364,27 @@ async def run_harvest(
         summary,
         run.without_key,
         run.gone_unchecked if status == "done" else None,
+        gateway is not None and source.host in gateway.robots_waived,
     )
 
 
 def _policy_for(source: SourceConfig, hosts: Mapping[str, HostLimit]) -> Policy:
-    """The source's host alone, with its limits from hosts.yaml (M5-36), and robots.txt obeyed (adr/0025 §6.2)."""
+    """The source's host alone, with its limits from hosts.yaml (M5-36), and robots.txt obeyed (adr/0025 §6.2) but for
+    the path of the source's robots exception, if its file names one (Otto, 18.11.2026)."""
     limit = hosts[source.host]
+    exception = source.robots_exception
     return Policy(
         allowed_hosts=frozenset({source.host}),
         host_connections={source.host: limit.connections},
         host_intervals={} if limit.interval_s is None else {source.host: limit.interval_s},
         obey_robots=True,
+        robots_exceptions={} if exception is None else {source.host: (exception.path,)},
     )
 
 
 _STOP_TEXT = {
     "host_resting": "der Host ruht (Unterbrecher oder Platz zu weit weg)",
-    "robots": "robots.txt verbietet den Abruf",
+    "robots": "robots.txt verbietet den Abruf; eine Ausnahme braucht robots_exception in der Quell-Datei",
     "request_budget": "Obergrenze der Anfragen je Lauf erreicht",
     "shape": "Antwort der Quelle nicht lesbar",
     "upstream": "Quelle antwortet mit Fehler oder nicht",
@@ -404,7 +410,15 @@ _REASON_TEXT = {
 }
 
 
-def report(source_id: str, result: HarvestResult) -> str:
+def _robots_line(source: SourceConfig, result: HarvestResult) -> str | None:
+    exception = source.robots_exception
+    if exception is None:
+        return None
+    state = "angewandt" if result.robots_waived else "nicht gebraucht"
+    return f"  robots.txt: Ausnahme für {source.host}{exception.path} ({state}; Beleg in der Quell-Datei, Crawl-delay gilt)"
+
+
+def report(source: SourceConfig, result: HarvestResult) -> str:
     """The run report on the console: German, numbers only, no address, no key of a find (plan A6).
 
     Two parts, so that neither is read for the other (Otto, 17.11.2026): what this run did, and the state of the
@@ -416,7 +430,7 @@ def report(source_id: str, result: HarvestResult) -> str:
     skipped = f", ohne Kennung übersprungen {result.without_key}" if result.without_key else ""
     gone = _GONE_TEXT[result.gone_unchecked] if result.gone_unchecked else f"weg {c.gone}"
     lines = [
-        f"{source_id}: Lauf {result.run_id} ({_KIND_TEXT[result.kind]}) {result.status}"
+        f"{source.source_id}: Lauf {result.run_id} ({_KIND_TEXT[result.kind]}) {result.status}"
         + (f" ({_STOP_TEXT[result.stop_reason]})" if result.stop_reason else ""),
         f"  Anfragen {c.requests}, davon 304: {c.not_modified}; {c.bytes / 1e6:.1f} MB",
         f"  Dieser Lauf: neu {c.found_new}, geändert {c.found_changed}, unverändert {c.found_unchanged},"
@@ -424,7 +438,8 @@ def report(source_id: str, result: HarvestResult) -> str:
         f"  Stand der Quelle: gültig {s.extracted} (davon Ausdehnung unbekannt {s.extent_unknown}),"
         f" ungültig {invalid}" + (f" ({reasons})" if reasons else ""),
     ]
-    return "\n".join(lines)
+    robots = _robots_line(source, result)
+    return "\n".join(lines if robots is None else [*lines, robots])
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
@@ -473,7 +488,7 @@ def main(argv: list[str] | None = None) -> int:
             f"harvest failed: database error {type(error).__name__} ({error.sqlstate or 'no state'})", file=sys.stderr
         )
         return 1
-    print(report(source.source_id, result))
+    print(report(source, result))
     return 0 if result.status == "done" else 1
 
 

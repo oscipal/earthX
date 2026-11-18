@@ -52,19 +52,19 @@ class TestTheReleasedFile:
     def test_a_source_whose_host_has_no_limits_is_an_error(self, catalog: Path) -> None:
         # M5-19 F6: the hosts of the harvest seed have their limits in the same file.
         text = (catalog / "hosts.yaml").read_text(encoding="utf-8")
-        (catalog / "hosts.yaml").write_text(text.split("  www.govdata.de:")[0], encoding="utf-8")
-        with pytest.raises(ConfigError, match="no limits for ckan.opendata.swiss, www.data.gv.at, www.govdata.de"):
+        (catalog / "hosts.yaml").write_text(text.split("  ckan.govdata.de:")[0], encoding="utf-8")
+        with pytest.raises(ConfigError, match="no limits for ckan.govdata.de, ckan.opendata.swiss, www.data.gv.at"):
             read_registry(catalog)
 
     def test_limits_of_a_catalogue_host_without_its_source_are_an_error(self, catalog: Path) -> None:
         (catalog / "sources" / "govdata.yaml").unlink()
-        with pytest.raises(ConfigError, match="no entry or source reads from: www.govdata.de"):
+        with pytest.raises(ConfigError, match="no entry or source reads from: ckan.govdata.de"):
             read_registry(catalog)
 
     def test_the_catalogue_hosts_otto_chose(self) -> None:
         # M5-19 F6 = 1: two connections, one second apart.
         limits = read_registry().host_limits
-        for host in ("www.govdata.de", "ckan.opendata.swiss", "www.data.gv.at"):
+        for host in ("ckan.govdata.de", "ckan.opendata.swiss", "www.data.gv.at"):
             assert (limits[host].connections, limits[host].interval_s) == (2, 1.0)
 
     def test_the_values_otto_chose(self) -> None:

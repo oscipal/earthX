@@ -21,6 +21,7 @@ SOURCE = SourceConfig(
     filter=StacFilter(()),
     max_requests_per_run=20,
     full_every_days=1,
+    robots_exception=None,
     maturity=Maturity.STABLE,
     enabled=True,
 )

@@ -9,7 +9,14 @@ import pytest
 
 from earthx.catalog.datasets import CATALOG_DIR
 from earthx.catalog.entry_files import EntryFileError
-from earthx.catalog.sources import CkanFilter, SourceProtocol, StacFilter, read_source, read_sources
+from earthx.catalog.sources import (
+    CkanFilter,
+    RobotsException,
+    SourceProtocol,
+    StacFilter,
+    read_source,
+    read_sources,
+)
 from earthx.discovery.links import checked_link
 
 STAC = """\
@@ -21,6 +28,7 @@ filter:
   collection_prefixes: []
 max_requests_per_run: 20
 full_every_days: 1
+robots_exception: null
 maturity: stable
 enabled: true
 """
@@ -58,6 +66,19 @@ class TestTheReleasedSeed:
         page = read_sources()["earth-search"].catalog_page
         assert page is not None and page.startswith("https://radiantearth.github.io/stac-browser/#/external/")
         assert checked_link(page.replace("{id}", "sentinel-2-l2a")) is not None
+
+    def test_robots_txt_is_strict_but_for_the_api_of_opendata_swiss(self) -> None:
+        # Otto, 18.11.2026: an exception only in the file of a source, for its metadata API, with the provider's docs.
+        sources = read_sources()
+        assert sources["opendata-swiss"].robots_exception == RobotsException(
+            "/api/3/action/", "https://handbook.opendata.swiss/de/content/nutzen/api-nutzen.html"
+        )
+        assert all(s.robots_exception is None for key, s in sources.items() if key != "opendata-swiss")
+
+    def test_govdata_is_asked_on_its_api_host(self) -> None:
+        # Otto, 18.11.2026: www.govdata.de disallows all but the large search engines; the API lives on its own host.
+        govdata = read_sources()["govdata"]
+        assert (govdata.host, govdata.endpoint) == ("ckan.govdata.de", "https://ckan.govdata.de/api/3/action")
 
     def test_a_full_govdata_run_fits_its_budget(self) -> None:
         # 165 427 datasets at 100 per page (plan §4.3).
@@ -137,3 +158,36 @@ class TestReading:
         )
         with pytest.raises(EntryFileError, match="fq is null|publisher_field is"):
             read_source(_write(tmp_path, text))
+
+
+EXCEPTION = "robots_exception:\n  path: /api/v1/\n  evidence: https://docs.example.org/api\n"
+
+
+class TestRobotsException:
+    def test_the_path_of_the_endpoint_with_its_documentation(self, tmp_path: Path) -> None:
+        source = read_source(_write(tmp_path, STAC.replace("robots_exception: null\n", EXCEPTION)))
+        assert source.robots_exception == RobotsException("/api/v1/", "https://docs.example.org/api")
+
+    @pytest.mark.parametrize(
+        ("exception", "message"),
+        [
+            ("robots_exception: true\n", "null or has path and evidence"),
+            ("robots_exception:\n  path: /api/v1/\n", "null or has path and evidence"),
+            (EXCEPTION + "  note: x\n", "null or has path and evidence"),
+            (EXCEPTION.replace("/api/v1/", "/"), "plain segments"),
+            (EXCEPTION.replace("/api/v1/", "/api/../v1/"), "plain segments"),
+            (EXCEPTION.replace("/api/v1/", "/api/v1"), "plain segments"),
+            # Only the metadata API the harvest reads, never more of the host.
+            (EXCEPTION.replace("/api/v1/", "/api/"), "path of endpoint"),
+            (EXCEPTION.replace("/api/v1/", "/api/v1/collections/"), "path of endpoint"),
+            (EXCEPTION.replace("https://docs", "http://docs"), "evidence is the https address"),
+            (EXCEPTION.replace("https://docs.example.org/api", "''"), "evidence is the https address"),
+        ],
+    )
+    def test_a_wrong_exception(self, tmp_path: Path, exception: str, message: str) -> None:
+        with pytest.raises(EntryFileError, match=message):
+            read_source(_write(tmp_path, STAC.replace("robots_exception: null\n", exception)))
+
+    def test_the_field_is_required(self, tmp_path: Path) -> None:
+        with pytest.raises(EntryFileError, match="exactly the fields"):
+            read_source(_write(tmp_path, STAC.replace("robots_exception: null\n", "")))

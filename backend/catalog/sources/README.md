@@ -12,4 +12,9 @@ Präfix `proto-` sind vergeben. `enabled: false` hält eine Quelle an, ohne die 
 - `max_requests_per_run`: Obergrenze, danach endet ein Lauf `interrupted`. `full_every_days`: Abstand der vollen Läufe
   einer CKAN-Quelle; dazwischen fragt ein Lauf nur nach geänderten Paketen.
 
+- `robots_exception`: `null` (`robots.txt` gilt streng) oder `path` (genau der Pfad von `endpoint` mit `/` am Ende,
+  also nur die Metadaten-API) und `evidence` (`https`-Adresse der Doku, in der der Anbieter diese API zur Nutzung
+  beschreibt). Hebt nur das `Disallow` für diesen Pfad auf; `Crawl-delay` gilt weiter (Otto, 18.11.2026,
+  `adr/0025` §6.2).
+
 Den Lauf beschreibt die README im Wurzelverzeichnis („Quellen ernten“).

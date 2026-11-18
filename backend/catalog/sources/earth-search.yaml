@@ -9,5 +9,6 @@ filter:
   collection_prefixes: []
 max_requests_per_run: 20
 full_every_days: 1
+robots_exception: null
 maturity: stable
 enabled: true
