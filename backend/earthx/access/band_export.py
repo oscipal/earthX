@@ -60,6 +60,7 @@ __all__ = [
     "apply_band_tags",
     "band_count",
     "band_meta_of_items",
+    "band_rows",
     "band_table",
     "holds_one_array",
     "is_geotiff",
@@ -251,6 +252,23 @@ def band_table(
     if not any(ticked):
         ticked = [True] * len(metas)
     return list(zip(metas, ticked, strict=True))
+
+
+def band_rows(
+    items: Sequence[Mapping[str, Any]],
+    *,
+    auxiliary: Iterable[str],
+    mask_asset: str | None,
+    unit_of: Callable[[str], str | None],
+) -> list[dict[str, Any]]:
+    """The answer of ``POST /collections/{dataset}/bands``: :func:`band_table` with whether each band starts ticked and
+    whether it can be stacked with others into one file. A band read through chunk references (M5-11) cannot: the stacked
+    forms read GeoTIFFs, so it goes into a file of its own."""
+    first = (items[0].get("assets") or {}) if items else {}
+    return [
+        {**meta.to_json(), "preselected": ticked, "stackable": not holds_one_array(first.get(meta.asset))}
+        for meta, ticked in band_table(items, auxiliary=auxiliary, mask_asset=mask_asset, unit_of=unit_of)
+    ]
 
 
 def band_count(item: Mapping[str, Any], asset: str) -> int | None:
