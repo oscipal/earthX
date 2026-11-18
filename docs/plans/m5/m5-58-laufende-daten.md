@@ -462,3 +462,49 @@ Rund 850 Zeilen ohne Tests, YAML und Doku (Probe rund 110, Kern rund 310, Formen
 - `latest_item_end` nimmt das Ende des jüngsten Items. PR 2 schreibt Items je Tag, nie je Monat; sonst zählte die Coverage bis zum Monatsende.
 
 **Migrationen (Frage Otto, 18.11.2026):** Der Läufer (`catalog/schema.py::apply_migrations`) wendet jede Datei an, deren Nummer noch nicht gebucht ist, in Nummernfolge, unabhängig davon, ob eine höhere schon angewendet ist. Wird #383 vor #379 gemergt, hat eine Datenbank erst 029 und bekommt 026–028 beim nächsten Start dazu. Die Inhalte hängen nicht voneinander ab (029 ändert nur `earthx_materialize_runs` aus 004 und legt eigene Tabellen an). Neu belegt durch `test_a_lower_number_that_arrives_later_is_applied_too`; keine Änderung am Läufer nötig. Die Migrations-Tests kennen 029 jetzt (Liste der Dateien, Tabellen zum Löschen); #379 muss dort beim Zusammenführen seine drei Zeilen dazunehmen.
+
+---
+
+## 11. Probe `--current` (Otto, 18.11.2026) und Festlegungen für PR 2
+
+### 11.1 Befund [M]
+
+| Was | Ergebnis |
+|---|---|
+| Item-Liste | 1 Seite, **kein ETag, kein Last-Modified**; sie trägt jedes Item ganz |
+| Items außerhalb des Archivs | 77: 59 Tages-Items, 11 Monats-Items, 7 Items ohne Tagesdateien (nur Monats- und Jahreswerte, Rekorde) |
+| Tages-Items | je 5 Dateien eines Tages: `rprelimd` (`ch01h`), `sreld`, `tabsd`, `tmaxd`, `tmind` (`ch01r`); Präfix `ogd-surface-derived-grid.`; `expires` 2026-11-19 bis 2027-01-16 |
+| Monats-Items | Präfix `ogd-surface-derived-grid-last.`; je eine Datei eines Monats mit Tageswerten für `rhiresd` (`ch01h`), `sreld`, `tabsd`, `tmaxd`, `tmind` (`ch01r`), dazu Monatswerte, Anomalien und Rekorde (nicht gelesen); `expires` 2027-02-01 bis 2027-12-01 |
+| Je Item | starkes ETag, `304` auf `If-None-Match`; `datetime`, `created`, `updated`, `expires` |
+| Je Datei | `file:checksum` und `updated` (alle 516 Dateien) |
+| Köpfe | wie das Archiv: Float32, Chunk ein Tag ohne Filter, Füllwert −999.99, EPSG:2056, Gitter 240 × 370 bzw. 265 × 370, Schritte um 00:00 ohne `time_bnds`; Variable der vorläufigen Niederschlagsdatei `RprelimD` (mm), sonst `SrelD`, `TabsD`, `TmaxD`, `TminD` wie im Archiv |
+
+Die Doku nennt 41 Tage für die vorläufigen Items; die Liste trug am Messtag 59. Maßgeblich ist für die Plattform nicht die Zahl, sondern ob ein Item gelistet ist (§11.4).
+
+### 11.2 Welche Datei welchen Stand hat (für alle Größen)
+
+| Quell-Item | Dateien | Stand | Beleg [P\*], `opendatadocs.meteoswiss.ch/c-climate-data/c3-ground-based-climate-data` |
+|---|---|---|---|
+| `CH at DD.MM.YYYY` (Tages-Item, Präfix `ogd-surface-derived-grid.`) | `RprelimD`, `SrelD`, `TabsD`, `TmaxD`, `TminD` eines Tages | **`provisional`**, alle fünf Größen | „The real-time daily analyses (preliminary) are available in items `CH at DD.MM.YYYY` with DD.MM.YYYY indicating the day for which the analysis is valid.“ – „analyses for the most recent past (e.g. yesterday's precipitation) are initially calculated before data collection and quality control have been completed. At this stage, these are preliminary analyses.“ |
+| `CH at MM.YYYY` (Monats-Item, Präfix `ogd-surface-derived-grid-last.`) | `RhiresD`, `SrelD`, `TabsD`, `TmaxD`, `TminD` eines Monats | **`final`**, alle fünf Größen | „Consolidated versions of the analyses are produced later in several post-processing steps using more complete and thoroughly checked station observations.“ – „Consolidated daily and monthly analyses of the past 14 months are available in items `CH at MM.YYYY`.“ – „The data will be published on the 10th and 26th of the following month, whereas the data from the 10th will be overwritten by the one from the 26th.“ |
+| `CH archive` | Jahresdateien | **`final`** | „A final re-processing of all the analyses of a year is undertaken in early February of the year following.“ – „`CH archive` is the key item to look for fully consolidated climate data …“ |
+
+- Die Doku unterscheidet „preliminary“ und „consolidated“ je **Item**, nicht je Größe: Die Temperaturen und `SrelD` eines Tages-Items sind ebenso vorläufig wie der Niederschlag. Nur der Niederschlag trägt dafür einen eigenen Produktnamen (`RprelimD`); die übrigen behalten ihren Namen (F4 betrifft nur `RprelimD` → Band `RhiresD`).
+- Eine konsolidierte Monatsdatei kann am 26. noch einmal überschrieben und im Februar durch die Jahresdatei ersetzt werden. Beides ist kein Standwechsel, sondern eine Änderung an Ort und Stelle (`file:checksum`) bzw. ein jüngerer Beitrag gleichen Stands (Regel „jünger“, `adr/0038` §3.4): F3 = zwei Stände bleibt.
+- **Tagesgrenzen der vorläufigen Temperaturen (A16):** Die Tagesdatei trägt die Variable `TabsD` (bzw. `TminD`, `TmaxD`, `SrelD`), also dasselbe Produkt, dessen Tag `ProdDoc_TabsD` bzw. `ProdDoc_SrelD` festlegt (00–24 UTC, M5-11 §11.1), mit demselben Stempel 00:00 UTC. PR 2 nimmt diese Grenzen; „vorläufig“ ändert die Rechnung, nicht den Tag. `RprelimD` 06–06 UTC (F5).
+
+### 11.3 Wie `expires` genutzt wird
+
+- `expires` sagt, wann die Quelle ein Item löscht, nicht wann Endgültiges kommt. **Es löst nichts aus:** Ersetzt wird, sobald die Monatsdatei den Tag trägt (Regel höherer Stand); gelöscht, sobald die Datei nicht mehr gelistet ist (§3.6 Schritt 4).
+- **Übernommen wird es am Asset:** PR 2 schreibt `expires` des Quell-Items an jedes Asset, das daraus stammt; der Kern setzt `properties.expires` eines Items auf das früheste `expires` seiner Assets und **entfernt es**, wenn kein Asset mehr eines trägt. Nach dem Ersetzen durch Endgültiges (Monats- oder Jahresdatei) trägt ein Tag also kein `expires` mehr. Monats-Items tragen ihr `expires` ebenfalls; ihre Tage verschwinden aber nicht, weil vorher die Jahresdatei im Archiv erscheint (Februar, vor dem Ablauf der 14 Monate) und gilt.
+- Die Lücke aus §8 (vorläufig gelöscht, Endgültiges noch nicht da) ist mit 59 Tagen Vorlauf gegen Veröffentlichung am 10. bzw. 26. des Folgemonats nicht zu erwarten; träte sie ein, fällt der Tag weg, bis Endgültiges kommt.
+- Die Zusammenfassung von `expires` gehört in den Kern (wie `updated`, A12); sie ist mit dieser Festlegung in PR 1 umgesetzt.
+
+### 11.4 Die Liste ohne ETag
+
+- Die Liste (`/items`) antwortet ohne ETag und Last-Modified, also ohne bedingte Anfrage (§3.4 Punkt 4). **Entschieden wird über den Inhalt:** SHA-256 des Körpers der Liste, gespeichert als Validator einer eigenen Gruppe „Liste“. Gleicher Hash → alle Gruppen unverändert, der Lauf endet nach **einem** Abruf.
+- Ändert sich der Hash, ist **jede Gruppe ein Quell-Item** mit dem SHA-256 seines JSON aus der Liste als Validator (die Liste trägt jedes Item ganz; kein Abruf je Item). Die ETags der Items (`304`) werden nicht gebraucht.
+- Die Dateien eines geänderten Items entscheidet `file:checksum` aus der Liste (§3.4 Punkt 1): kein `HEAD`, kein Abruf einer Datei, die sich nicht geändert hat.
+- Gewählt werden nur Dateien der Größen des Eintrags auf seinem Gitter mit den drei Präfixen aus §11.2; Items ohne solche Dateien sind keine Gruppe.
+- Kosten eines Tageslaufs: ein Abruf der Liste (rund 2 MB, das Archiv-Item eingeschlossen), dazu je neuer Tages- bzw. geänderter Monatsdatei 5–8 Abrufe für die Verweise. Derselbe Inhalt wird damit höchstens einmal am Tag geladen, und nur die Liste; die Nutzungsbedingung („high-frequency downloading of the same content“) ist eingehalten.
+- Das braucht im Kern nichts Neues: „Liste“ ist eine Gruppe ohne Einheiten, deren Validator der Adapter liefert und vergleicht.

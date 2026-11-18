@@ -44,14 +44,14 @@ Regeln beim Laden: `states` endet mit `final`, ohne Doppelte, aufsteigend; `cade
 ### 3.2 Item: Stand
 
 - `properties.earthx:state` (`provisional` | `final`) bei jedem Item eines Eintrags mit zwei Ständen: der niedrigste Stand seiner Assets. Jedes Asset trägt seinen eigenen `earthx:state`.
-- Ein Standard für „vorläufig“ gibt es in STAC nicht (`processing:level` meint die Verarbeitungsstufe). `expires` (Timestamps Extension) wird übernommen, wo die Quelle es nennt, steuert aber nichts.
+- Ein Standard für „vorläufig“ gibt es in STAC nicht (`processing:level` meint die Verarbeitungsstufe). `expires` (Timestamps Extension) steht am Asset, wo die Quelle es für dessen Herkunft nennt; das Item trägt das früheste und keines mehr, sobald kein Asset eines trägt (nach dem Ersetzen durch Endgültiges). Es steuert nichts: Ersetzt wird beim Eintreffen des höheren Stands, gelöscht beim Wegfall der Einheit (Plan §11.3).
 - Ersetzen unter **derselben Item-ID** (F2). `properties.updated` ändert sich und damit `v=` in den Kachel-URLs (M5-11 F3); der Chunk-Cache trennt über das ETag.
 
 ### 3.3 Änderungserkennung je Einheit (`detect: units`)
 
 Eine **Einheit** ist das Kleinste, an dem die Quelle eine Änderung zeigt (eine Datei, ein Listeneintrag); eine **Gruppe** das Listendokument, das sie nennt (ein Quell-Item, eine Seite). Der Adapter liefert zwei Funktionen:
 
-- `list_units`: die Gruppen der Quelle, bedingt gefragt (`If-None-Match` mit dem gespeicherten Validator); für jede geänderte Gruppe ihre Einheiten mit Stand und Validatoren. Eine Gruppe mit `304` behält ihre gespeicherten Einheiten.
+- `list_units`: die Gruppen der Quelle, bedingt gefragt (`If-None-Match` mit dem gespeicherten Validator) oder, wo die Quelle kein ETag nennt, über den SHA-256 ihres Inhalts entschieden (MeteoSchweiz: die Liste, Plan §11.4); für jede geänderte Gruppe ihre Einheiten mit Stand und Validatoren. Eine unveränderte Gruppe behält ihre gespeicherten Einheiten.
 - `build`: die **Beiträge** neuer und geänderter Einheiten, je Paar (Item-ID, Asset-Schlüssel) ein Asset und das Gerüst des Items.
 
 Der Kern in `discovery.materialize` entscheidet je Einheit, in dieser Reihenfolge, wobei die erste Angabe gilt, die auf beiden Seiten vorliegt:
