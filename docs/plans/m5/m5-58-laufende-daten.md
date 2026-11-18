@@ -386,3 +386,58 @@ Antwort am Handy reicht als „F1 1, F2 1, …“.
 | F8 | 1: PR 1 allgemeiner Mechanismus mit Probe `--current` zuerst; PR 2 MeteoSchweiz in einer neuen Session nach dem Merge |
 | F9 | 1: Bestand über einen bedingten `HEAD` je Jahresdatei übernehmen |
 | A1–A8 | gelten |
+
+---
+
+## 10. Umsetzung PR 1 (18.11.2026)
+
+### 10.1 Was gebaut ist
+
+| Stelle | Inhalt |
+|---|---|
+| `scripts/m5-11-meteoswiss/probe.py` | `--current` (zuerst, §2.3): Items außerhalb des Archivs nach Art (Tag, Monat), Eigenschaften (`expires`, `updated` …), Namensmuster und Größen je Präfix, Antwort auf `If-None-Match` je Item und je Seite der Liste, Kopf einer Datei je Art, Gitter und Größe; Ausgabe ohne Adressen, IDs und ETags |
+| `catalog/registry.py`, alle neun Einträge | `UpdatesInfo` (`cadence`, `states`, `detect`) als Pflichtfeld `updates`; Prüfungen aus §3.2; alle Einträge `none` / `[final]` / `whole` (A2); `fixed-grid` mit offenem Ende nur bei laufender Quelle |
+| `catalog/migrations/029_materialize_units.sql` | `earthx_materialize_group`, `earthx_materialize_unit`, Zähler in `earthx_materialize_runs` |
+| `catalog/source_units.py` | Formen (`SourceUnit`, `UnitListing`, `Contribution`, `BuiltUnit`, `StoredUnit`, `Validators`) und Zugriff auf die Tabellen und auf Items je ID |
+| `adapters/spec.py` | Feld `units` im `AdapterSpec` (`list_units`, `build`); heute bei allen Adaptern `None` |
+| `discovery/materialize_units.py` | der Lauf je Einheit (§3.6): Erkennung nach §3.4, Ersetzungsregel, Neubau der nächsten Einheit, nur betroffene Items |
+| `discovery/materialize.py` | `detect: units` nimmt diesen Weg; Ausgabe „N units new, M changed …; R replaced by a higher state“ |
+| `catalog/fixed_grid_coverage.py`, `api/coverage_route.py`, `catalog/pgstac.py` | Coverage mit offenem Ende bis zum jüngsten Item (`latest_item_end`) |
+| `docs/adr/0038-laufende-und-vorlaeufige-daten.md` | Entwurf (F7) |
+
+### 10.2 Auslegungen (gelten, wenn du nicht widersprichst)
+
+- **A9:** Zwei Tabellen statt einer (§3.5): Der Validator je Gruppe (Quell-Item, Seite) braucht eine eigene Zeile; sonst ließe sich eine Gruppe nicht bedingt fragen.
+- **A10:** `--force` gilt für `detect: units` nicht; es entscheidet der Zustand je Einheit. Alles neu verlangt, den Zustand des Eintrags zu löschen (Otto, mit SQL, nicht im Code).
+- **A11:** Ein Item wird nur geschrieben, wenn sich sein Inhalt ändert. Ein Adapter schreibt deshalb den Stand der Datei ins Asset (bei MeteoSchweiz das ETag in `earthx:refs`); sonst bliebe ein Neuverweis ohne Wirkung auf `updated` und `v=`.
+- **A12:** `updated` eines Items ist das jüngste `updated` seiner Assets; ein Adapter setzt es je Asset.
+- **A13:** Ob ein Adapter Einheiten liefert, prüft der Lauf (`UnsupportedSource`), nicht das Laden der Registry; so hält es `adapters.spec` schon für `materialize` („ob ein Eintrag materialisierbar ist, fragt `discovery`“).
+- **A14:** Ein Lauf ist `unchanged`, wenn keine Einheit neu, geändert oder weg ist; die Validatoren der Gruppen werden trotzdem gespeichert. Die `source_version` eines solchen Laufs ist ein Hash über diese Validatoren und dient nur dem Lauf-Log.
+- **A15:** Die Coverage mit offenem Ende fragt die Datenbank je Anfrage ohne eigenen Cache (`max(end_datetime)` einer Collection).
+
+### 10.3 Tests
+
+| Datei | Fälle |
+|---|---|
+| `tests/catalog/test_updates.py` | Pflichtfeld in jedem Eintrag; Reihenfolge und Ende der Stände; `none` ohne `provisional`; `units` nur materialisiert, nicht mit Pyramide; `provisional` verlangt `limitations`; offenes Ende nur laufend |
+| `tests/integration/test_materialize_units.py` (echtes pgstac) | erster Lauf mit Stand je Tag; zweiter Lauf nur bedingte Listenfragen, kein Abruf einer Datei; endgültig ersetzt vorläufig unter derselben ID (`replaced` 1); späte vorläufige Datei ersetzt nichts; vorläufige Datei weg ohne Endgültiges → Tag gelöscht; jüngere von zwei endgültigen gilt, nach ihrem Wegfall wird die ältere neu gebaut; Änderung über Checksum der Liste (nur die Tage dieser Datei), über `HEAD` mit ETag, `304` ohne Neubau, ohne Validator über den Hash; Abbruch schreibt nichts; Einheit außerhalb der Hosts, fremder Stand, Adapter ohne Einheiten, Eintrag `whole`; Lauf-Log mit Zählern; jüngstes Ende |
+| `tests/catalog/test_fixed_grid_coverage.py` | offenes Ende bis zum jüngsten Item; vor dem ersten Lauf nichts; geschlossenes Ende geht vor; Route ohne Datenbank → `503` |
+| `tests/earthx/api/test_intake.py` | „Run again“ löst das Item neu auf: nach dem Ersetzen die Verweise und das ETag der endgültigen Datei |
+| `tests/test_m5_11_meteoswiss_probe.py` | `--current` nach Art, Muster, `304`, Köpfe; keine Adresse, ID oder ETag in der Ausgabe |
+
+### 10.4 Was Otto jetzt ausführen kann
+
+§7 Schritt 1 (Probe `--current`); die Ausgabe gehört in diesen PR und legt die Namen der Tages- und Monatsdateien für PR 2 fest. `materialize` und `catalog-load` wenden Migration 029 beim nächsten Start selbst an.
+
+**Wichtig für lokale Prototyp-Einträge** (`backend/catalog/prototype/`, nicht im Repo): Auch sie brauchen jetzt den Block `updates`, sonst lädt die Registry nicht:
+
+```yaml
+updates:
+  cadence: none
+  states: [final]
+  detect: whole
+```
+
+### 10.5 Umfang
+
+Rund 850 Zeilen ohne Tests, YAML und Doku (Probe rund 110, Kern rund 310, Formen und Tabellen rund 240, Registry rund 80, Coverage rund 30), dazu rund 740 Zeilen Tests. Über dem Richtwert von 400; der Kern lässt sich ohne Formen, Tabellen und Registry nicht testen, und die Probe sollte zuerst laufen.
