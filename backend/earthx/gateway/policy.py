@@ -172,6 +172,9 @@ class Policy:
     # metadata API of a harvest source (Otto, 18.11.2026; adr/0025 §6.2). robots.txt is still read and its Crawl-delay
     # still kept; every other path of the host stays as robots.txt says.
     robots_exceptions: Mapping[str, tuple[str, ...]] = field(default_factory=dict, hash=False)
+    # Whether a 429 is tried again here, at most a few seconds later. A harvest says no: its source asks it to slow
+    # down, so it waits minutes on its own, by Retry-After or doubling (Otto, 18.11.2026; adr/0025 §6.2).
+    retry_rate_limited: bool = True
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "allowed_hosts", frozenset(normalize_host(h) for h in self.allowed_hosts))

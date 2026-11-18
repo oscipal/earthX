@@ -243,7 +243,11 @@ class Gateway:
                 )
             if response.status_code not in REDIRECT_STATUS:
                 if response.status_code >= 400:
-                    raise UpstreamError(response.status_code, response.content[:EXCERPT_CHARS].decode(errors="replace"))
+                    raise UpstreamError(
+                        response.status_code,
+                        response.content[:EXCERPT_CHARS].decode(errors="replace"),
+                        retry_after=response.headers.get("retry-after"),
+                    )
                 return response
             location = response.headers.get("location")
             if not location:
@@ -412,7 +416,8 @@ class Gateway:
                     failed=response.status_code in FAILURE_STATUS,
                     retry_after=response.headers.get("retry-after"),
                 )
-                if not (response.status_code in RETRY_STATUS and may_retry and not last):
+                rate_limited = response.status_code == 429 and not self._policy.retry_rate_limited
+                if not (response.status_code in RETRY_STATUS and may_retry and not last) or rate_limited:
                     return response
                 await self._wait(attempt, response.headers.get("retry-after"))
                 continue

@@ -134,6 +134,24 @@ async def test_retry_after_is_obeyed_but_capped() -> None:
     assert delays == [10.0]
 
 
+async def test_a_harvest_policy_hands_a_429_back_at_once_with_its_retry_after() -> None:
+    # Otto, 18.11.2026: the harvest waits minutes on its own instead of three tries in the crawl-delay beat.
+    handler, seen = replies(httpx.Response(429, headers={"retry-after": "600"}), httpx.Response(200, json={}))
+    gateway, delays = build(handler, Policy(allowed_hosts=frozenset({HOST}), retry_rate_limited=False))
+    async with gateway:
+        with pytest.raises(UpstreamError) as raised:
+            await gateway.get(URL)
+    assert (raised.value.status_code, raised.value.retry_after, len(seen), delays) == (429, "600", 1, [])
+
+
+async def test_a_harvest_policy_still_tries_a_503_again() -> None:
+    handler, seen = replies(httpx.Response(503), httpx.Response(200, json={}))
+    gateway, _ = build(handler, Policy(allowed_hosts=frozenset({HOST}), retry_rate_limited=False))
+    async with gateway:
+        assert (await gateway.get(URL)).status_code == 200
+    assert len(seen) == 2
+
+
 async def test_a_get_the_caller_marks_unsafe_to_repeat_is_not_retried() -> None:
     """M3-07a: a caller with its own request budget (the shared rate slot) can opt a
     GET out of the retry every other GET gets by default."""

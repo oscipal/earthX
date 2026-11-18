@@ -85,10 +85,12 @@ class UpstreamError(GatewayError):
     and ``429`` apart (adr/0005 §3.5, §3.8).
     """
 
-    def __init__(self, status_code: int, excerpt: str = "") -> None:
+    def __init__(self, status_code: int, excerpt: str = "", *, retry_after: str | None = None) -> None:
         super().__init__(f"upstream answered {status_code}" + (f": {excerpt}" if excerpt else ""))
         self.status_code = status_code
         self.excerpt = excerpt
+        #: The source's ``Retry-After`` as it sent it (seconds or an HTTP date), for a caller that waits on its own.
+        self.retry_after = retry_after
 
 
 class UpstreamUnreachable(GatewayError):
