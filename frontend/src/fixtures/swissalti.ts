@@ -1,5 +1,5 @@
 import { datasetsFrom } from '../datasets';
-import { mosaicKeyOf, type Mosaics, type SceneEntry } from '../mosaic';
+import { footprintsKeyOf, mosaicKeyOf, type Mosaics, type SceneEntry } from '../mosaic';
 import type { Collection, DownloadedInfo, StacItem, TimeStepGroup } from '../types';
 import { sceneInfo } from './viewScenes';
 
@@ -73,6 +73,14 @@ export const DOWNLOADED: Record<string, DownloadedInfo> = Object.fromEntries(
 export const ENTRIES = Object.entries(DOWNLOADED) as SceneEntry[];
 // The selection of the pass is created: its tiles are the dataset's own mosaic, from level 13.
 export const MOSAIC_URL = '/collections/terrain/mosaic/0123456789abcdef0123456789abcdef/tiles/WebMercatorQuad/{z}/{x}/{y}?tilesize=512';
+// The footprint selection the view masks its picture below the first level to (M5-56), made for these scenes.
+export const FOOTPRINTS_ID = 'f00d'.repeat(8);
+export const outlined = (downloaded: Record<string, DownloadedInfo> = DOWNLOADED): Mosaics => ({
+  [footprintsKeyOf('terrain', Object.keys(downloaded))]: {
+    footprints: { id: FOOTPRINTS_ID, tiles: `/collections/terrain/overview/${FOOTPRINTS_ID}/tiles/WebMercatorQuad/{z}/{x}/{y}` },
+  },
+});
 export const MOSAICS: Mosaics = {
   [mosaicKeyOf('terrain', ENTRIES) as string]: { tileUrl: MOSAIC_URL, bounds: TERRAIN_EXTENT, minZoom: 13, maxZoom: 20, order: ['A', 'B'] },
+  ...outlined(),
 };

@@ -13,7 +13,8 @@
 // A mosaic is a selection of the tiler (`mosaicSelection.ts`, adr/0032 §10.2). Its key here is logical — dataset, assets and
 // the sorted ids of its scenes — and the URL the map draws is the one of the selection created for that key.
 
-import type { MosaicSelection } from './api';
+import { buildMaskedOverviewTileTemplate } from './api';
+import type { FootprintSelection, MosaicSelection } from './api';
 import { selectionKeyOf } from './mosaicSelection';
 import type { Bbox, DownloadedInfo, TimeStepGroup } from './types';
 
@@ -24,6 +25,8 @@ export const MIN_MOSAIC_SCENES = 2;
 export const MAX_SELECTION_ITEMS = 2000;
 // A mosaic tile with steps reads at most this many assets of each scene.
 export const MAX_MOSAIC_OPERATOR_ASSETS = 4;
+// Mirror `earthx.api.mosaic_tiles.MAX_FOOTPRINT_ITEMS`: the scenes a footprint selection takes (M5-56).
+export const MAX_FOOTPRINT_ITEMS = 10_000;
 // Path and query of a mosaic request as they arrive at the tiler: the longest a proxy or a CDN in front of it passes.
 export const MAX_MOSAIC_REQUEST_BYTES = 7168;
 
@@ -57,9 +60,14 @@ export interface SelectionInfo {
   selection: MosaicSelection;
 }
 export interface MosaicInfo extends SceneOrder, Pick<DownloadedInfo, 'tileUrl' | 'bounds' | 'minZoom' | 'maxZoom'> {}
+// The footprint selection of the scenes of a view of one dataset, by `footprintsKeyOf`: what its picture below the first level is
+// masked to (`overviewOverScenes`).
+export interface FootprintsInfo {
+  footprints: FootprintSelection;
+}
 // The mosaics of the passes, by the template of each (`mosaicTemplateOf`), and next to them, by `orderKeyOf`, the order
 // the tiler gives the scenes of a pass it draws one by one (NM4-24).
-export type Mosaics = Record<string, MosaicInfo | SceneOrder | SelectionInfo | null>;
+export type Mosaics = Record<string, MosaicInfo | SceneOrder | SelectionInfo | FootprintsInfo | null>;
 
 export type PassView =
   | { kind: 'scenes'; order?: readonly string[] }
@@ -113,6 +121,42 @@ export function indexKeyOf(datasetId: string, assets: readonly string[], entries
   return `index|${selectionKeyOf(datasetId, assets, entries.map(([id]) => id))}`;
 }
 
+// The key of the footprint selection of these scenes of one dataset in `Mosaics`.
+export const footprintsKeyOf = (datasetId: string, ids: readonly string[]): string => `footprints|${selectionKeyOf(datasetId, [], ids)}`;
+
+// The scenes of one dataset among those of a view.
+const idsOf = (datasetId: string, entries: readonly SceneEntry[]): string[] =>
+  entries.filter(([, info]) => info.datasetId === datasetId).map(([id]) => id);
+
+// Below its first level a view draws its picture over its own scenes only, not over the whole area (M5-56, Otto 18.11.2026): on the
+// overview route of a footprint selection of the scenes, which the tiler masks to their outlines as it does for the hits of a search
+// (`overviewHits.ts`). The same area is then drawn below and above the first level, and nothing disappears when the map zooms, also
+// where some tiles of the search were not ticked. `undefined` while the selection is being made. The picture of the whole area where
+// the tiler did not take it (more than `MAX_FOOTPRINT_ITEMS` scenes, a failure), where the picture computes an index (the masked
+// route takes no steps), and where nobody asked (`mosaics` left out).
+export function overviewOverScenes(
+  raster: PlannedRaster,
+  datasetId: string,
+  entries: readonly SceneEntry[],
+  mosaics: Mosaics | undefined,
+  computed: boolean,
+): PlannedRaster | undefined {
+  const ids = idsOf(datasetId, entries);
+  if (computed || !mosaics || ids.length === 0 || ids.length > MAX_FOOTPRINT_ITEMS) return raster;
+  const known = mosaics[footprintsKeyOf(datasetId, ids)];
+  if (known === undefined) return undefined;
+  if (known === null || !('footprints' in known)) return raster;
+  const boxes = entries.filter(([, info]) => info.datasetId === datasetId).map(([, info]) => info.bounds);
+  const [west, south, east, north] = raster.bounds;
+  const bounds: Bbox = [
+    Math.max(west, Math.min(...boxes.map((b) => b[0]))),
+    Math.max(south, Math.min(...boxes.map((b) => b[1]))),
+    Math.min(east, Math.max(...boxes.map((b) => b[2]))),
+    Math.min(north, Math.max(...boxes.map((b) => b[3]))),
+  ];
+  return { ...raster, tileUrl: buildMaskedOverviewTileTemplate(known.footprints), bounds };
+}
+
 // Of all the mosaics known, those the passes of this view ask for: the view is drawn again when one of
 // those changes, not when the TileJSON of another view comes in.
 export function mosaicsOfView(
@@ -129,6 +173,8 @@ export function mosaicsOfView(
       if (key && key in mosaics) picked[key] = mosaics[key];
     }
   }
+  const outline = datasetId ? footprintsKeyOf(datasetId, idsOf(datasetId, entries)) : null;
+  if (outline && outline in mosaics) picked[outline] = mosaics[outline];
   return picked;
 }
 

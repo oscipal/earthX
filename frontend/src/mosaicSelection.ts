@@ -11,10 +11,12 @@
 // told from any other failure of a source, and a tile of an unrelated failure never creates anything.
 
 import type { Map as MapLibreMap, RasterTileSource } from 'maplibre-gl';
-import { createMosaicSelection, HttpError, type MosaicSelection } from './api';
+import { createFootprintSelection, createMosaicSelection, HttpError, type FootprintSelection, type MosaicSelection } from './api';
 
-// What a selection is made from, by its id: what creating it again needs.
+// What a selection is made from, by its id: what creating it again needs. A footprint selection (the area a view draws its picture
+// below the first level over, M5-56) has no assets.
 interface SelectionList {
+  kind: 'mosaic' | 'footprints';
   datasetId: string;
   ids: string[];
   assets: string[];
@@ -25,6 +27,8 @@ export const selectionKeyOf = (datasetId: string, assets: readonly string[], ids
 
 const made = new Map<string, MosaicSelection>();
 const making = new Map<string, Promise<MosaicSelection>>();
+const outlined = new Map<string, FootprintSelection>();
+const outlining = new Map<string, Promise<FootprintSelection>>();
 const lists = new Map<string, SelectionList>();
 const renewing = new Map<string, Promise<boolean>>();
 const renewals = new Map<string, { count: number; at: number }>();
@@ -33,6 +37,8 @@ const renewals = new Map<string, { count: number; at: number }>();
 export function resetSelections(): void {
   made.clear();
   making.clear();
+  outlined.clear();
+  outlining.clear();
   lists.clear();
   renewing.clear();
   renewals.clear();
@@ -55,11 +61,32 @@ export function ensureSelection(datasetId: string, ids: readonly string[], asset
   if (known) return Promise.resolve(known);
   let creation = making.get(key);
   if (!creation) {
-    const list = { datasetId, ids: [...new Set(ids)].sort(), assets: [...new Set(assets)].sort() };
+    const list: SelectionList = { kind: 'mosaic', datasetId, ids: [...new Set(ids)].sort(), assets: [...new Set(assets)].sort() };
     creation = createMosaicSelection(datasetId, list.ids, list.assets)
       .then((selection) => remember(key, list, selection))
       .finally(() => making.delete(key));
     making.set(key, creation);
+  }
+  return creation;
+}
+
+// The footprint selection of these scenes, as `ensureSelection` keeps a mosaic's: the view masks its picture below the first level
+// to it (M5-56, adr/0032 Nachtrag 15.11.2026).
+export function ensureFootprints(datasetId: string, ids: readonly string[]): Promise<FootprintSelection> {
+  const key = selectionKeyOf(datasetId, [], ids);
+  const known = outlined.get(key);
+  if (known) return Promise.resolve(known);
+  let creation = outlining.get(key);
+  if (!creation) {
+    const list: SelectionList = { kind: 'footprints', datasetId, ids: [...new Set(ids)].sort(), assets: [] };
+    creation = createFootprintSelection(datasetId, list.ids)
+      .then((selection) => {
+        outlined.set(key, selection);
+        lists.set(selection.id, list);
+        return selection;
+      })
+      .finally(() => outlining.delete(key));
+    outlining.set(key, creation);
   }
   return creation;
 }
@@ -71,11 +98,12 @@ export function renewSelection(id: string): Promise<boolean> {
   if (!list) return Promise.resolve(false);
   let renewal = renewing.get(id);
   if (!renewal) {
-    renewal = createMosaicSelection(list.datasetId, list.ids, list.assets)
-      .then((selection) => {
-        remember(selectionKeyOf(list.datasetId, list.assets, list.ids), list, selection);
-        return selection.id === id;
-      })
+    const again: Promise<{ id: string }> =
+      list.kind === 'footprints'
+        ? createFootprintSelection(list.datasetId, list.ids)
+        : createMosaicSelection(list.datasetId, list.ids, list.assets).then((selection) => remember(selectionKeyOf(list.datasetId, list.assets, list.ids), list, selection));
+    renewal = again
+      .then((selection) => selection.id === id)
       .catch(() => false)
       .finally(() => renewing.delete(id));
     renewing.set(id, renewal);
@@ -95,7 +123,8 @@ export async function withSelection<T>(selection: MosaicSelection, ask: (selecti
 
 // --- the tiles of the map ---------------------------------------------------
 
-export const selectionIdOfUrl = (url: string): string | null => /\/mosaic\/([0-9a-f]{32})\//.exec(url)?.[1] ?? null;
+// The id of a selection a tile URL names: of a mosaic, or of the footprints the overview of a view is masked to.
+export const selectionIdOfUrl = (url: string): string | null => /\/(?:mosaic|overview)\/([0-9a-f]{32})\//.exec(url)?.[1] ?? null;
 
 // A selection is renewed at most this often in a page, and not again while the tiles of the last renewal may still be answering.
 const RENEWALS_PER_ID = 3;

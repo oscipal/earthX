@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { AOI, DOWNLOADED, ENTRIES, GROUPS, ITEMS, LIST, MOSAICS, TERRAIN } from './fixtures/swissalti';
+import { AOI, DOWNLOADED, ENTRIES, GROUPS, ITEMS, LIST, MOSAICS, outlined, TERRAIN, FOOTPRINTS_ID } from './fixtures/swissalti';
 import { zoomMap } from './fixtures/zoomMap';
 import { syncFocusRaster, syncLayers } from './mapLayers';
 import { overlaysOfPass, overviewOverlaysOf } from './searchLayers';
@@ -38,7 +38,8 @@ describe('swissALTI3D in "Crop and merge to AOI"', () => {
     live.idle();
     expect(hole(live)).toEqual([]);
     expect(live.picturesAt(0)).toHaveLength(1);
-    expect(urlOf(live, live.picturesAt(0)[0])).toContain('/collections/terrain/overview/tiles/');
+    // Over the scenes of the view only: the overview of their footprint selection (M5-56).
+    expect(urlOf(live, live.picturesAt(0)[0])).toContain(`/collections/terrain/overview/${FOOTPRINTS_ID}/tiles/`);
     expect(urlOf(live, live.picturesAt(13.5)[0])).toContain('/mosaic/');
     expect(live.picturesAt(12.4)).toHaveLength(1);
     expect(live.picturesAt(12.5)).toHaveLength(1);
@@ -54,7 +55,7 @@ describe('swissALTI3D in "Crop and merge to AOI"', () => {
 
   it('has the substitute at every level below 13 while the selection of the mosaic is still on its way', () => {
     const live = zoomMap();
-    syncFocusRaster(live.map as never, view({ mosaics: {} }));
+    syncFocusRaster(live.map as never, view({ mosaics: outlined() }));
     expect(ZOOMS.filter((zoom) => zoom < 12.5 && live.picturesAt(zoom).length === 0)).toEqual([]);
   });
 
@@ -62,7 +63,7 @@ describe('swissALTI3D in "Crop and merge to AOI"', () => {
     for (const only of [['A'], ['A', 'B']]) {
       const live = zoomMap();
       const own = Object.fromEntries(only.map((id) => [id, { ...DOWNLOADED[id], tileUrl: '/collections/terrain/items/x/tiles/WebMercatorQuad/{z}/{x}/{y}?tilesize=512' }]));
-      syncFocusRaster(live.map as never, view({ downloaded: own, mosaics: {}, groups: [] }));
+      syncFocusRaster(live.map as never, view({ downloaded: own, mosaics: outlined(own), groups: [] }));
       expect(ZOOMS.filter((zoom) => zoom < 12.5 && live.picturesAt(zoom).length === 0), only.join()).toEqual([]);
     }
   });

@@ -55,9 +55,9 @@ import type { LayerOverlay, LayerRestore, MapLayer, ResultLayerInfo } from './la
 import { bandLayerOf, isResultExpired, restyledTileUrl } from './resultLayer';
 import { buildTileUrl, footprintsFC } from './mapLayers';
 import { assetOfLook, bandAssetsOf, withAsset } from './viewBand';
-import { indexKeyOf, mosaicKeyOf, MAX_MOSAIC_OPERATOR_ASSETS, orderedPass, orderKeyOf, passesOf, stackLikeView } from './mosaic';
+import { footprintsKeyOf, indexKeyOf, mosaicKeyOf, MAX_FOOTPRINT_ITEMS, MAX_MOSAIC_OPERATOR_ASSETS, orderedPass, orderKeyOf, passesOf, stackLikeView } from './mosaic';
 import type { Mosaics, SceneEntry } from './mosaic';
-import { ensureSelection, withSelection } from './mosaicSelection';
+import { ensureFootprints, ensureSelection, withSelection } from './mosaicSelection';
 import { isComposite, lookOfPreset, type PresetParam, type PresetParams, type QuickPreset } from './quickPresets';
 import { knownLookOf, lookOfStepPreset, statsOfTiler } from './presetLooks';
 import { lookRange } from './displayLook';
@@ -84,7 +84,7 @@ import {
   needsFallback,
   withSourceState,
 } from './sections';
-import { noteOfOverview } from './overviewSubstitute';
+import { noteOfOverview, overviewRasterOf } from './overviewSubstitute';
 import { overlaysOfPass, overviewOverlaysOf, underlaysOf } from './searchLayers';
 import { clampResultsAt, moveEntry, moveEntryTo, resultsAtAfterAdding, resultsAtAfterRemoving } from './resultsEntry';
 import {
@@ -638,7 +638,7 @@ function overlaysOfEntries(
   if (overlays.some((o) => o === null)) return null;
   // The picture below the first level of a dataset (its substitute's or its own pyramid) lies under everything the layer draws of its own.
   const datasetIds = passList.map((first) => first[0][1].datasetId);
-  const substitutes = overviewOverlaysOf(datasetIds, s.datasets, look, clip);
+  const substitutes = overviewOverlaysOf(datasetIds, s.datasets, look, clip, { entries, mosaics: s.mosaics });
   return [...substitutes, ...stackLikeView(overlays).flatMap((o) => o ?? [])];
 }
 
@@ -1088,6 +1088,40 @@ async function fetchMosaics(set: SetState, get: GetState, requests: MosaicReques
   else if (orderFailures.length > 0) {
     set({ notice: `Could not read the stacking order of the scenes (${orderFailures[0]}); they lie in the order of the selection.` });
   }
+}
+
+// The scenes whose footprints the picture of the view below the first level is masked to (`mosaic.ts::overviewOverScenes`, M5-56):
+// those of each image the view can show and those of each dataset in the view, of the datasets that draw a picture there.
+function footprintsOfView(s: AppState): { datasetId: string; ids: string[] }[] {
+  const drawsBelow = (datasetId: string) => overviewRasterOf(s.datasets.find((d) => d.id === datasetId), s.datasets) !== null;
+  const entries = Object.entries(s.downloaded);
+  const ofDatasets = [...new Set(entries.map(([, info]) => info.datasetId))].map((datasetId) => ({
+    datasetId,
+    ids: entries.filter(([, info]) => info.datasetId === datasetId).map(([id]) => id),
+  }));
+  const ofImages = viewImagesOf(s).map(({ datasetId, ids }) => ({ datasetId, ids }));
+  return [...ofImages, ...ofDatasets].filter(({ datasetId, ids }) => ids.length > 0 && ids.length <= MAX_FOOTPRINT_ITEMS && drawsBelow(datasetId));
+}
+
+// The footprint selection of these scenes, once, kept under `footprintsKeyOf`; `null` where the tiler did not take it: the picture
+// below the first level then covers the whole area, as before. Nothing is said: the picture is there either way.
+async function loadFootprints(set: SetState, get: GetState, datasetId: string, ids: string[]): Promise<void> {
+  const key = footprintsKeyOf(datasetId, ids);
+  if (get().mosaics[key] !== undefined) return;
+  let load = mosaicLoads.get(key);
+  if (!load) {
+    load = (async () => {
+      let info: Mosaics[string] = null;
+      try {
+        info = { footprints: await ensureFootprints(datasetId, ids) };
+      } catch {
+        info = null;
+      }
+      set({ mosaics: { ...get().mosaics, [key]: info } });
+    })().finally(() => mosaicLoads.delete(key));
+    mosaicLoads.set(key, load);
+  }
+  await load;
 }
 
 // The order of the scenes of one pass, once, kept under `orderKeyOf`; `null` where the tiler could not give it (the scenes then
@@ -3157,15 +3191,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     const s = get();
     if (!s.focusMode) return;
     const groups = sectionsForView(s).flatMap((section) => section.groups);
-    await fetchMosaics(
-      set,
-      get,
-      passesOf(Object.entries(s.downloaded), groups).map((entries) => ({
-        datasetId: entries[0][1].datasetId,
-        entries,
-        index: viewIndexOf(s.appliedRender, s.datasets.find((d) => d.id === entries[0][1].datasetId)?.collection),
-      })),
-    );
+    await Promise.all([
+      fetchMosaics(
+        set,
+        get,
+        passesOf(Object.entries(s.downloaded), groups).map((entries) => ({
+          datasetId: entries[0][1].datasetId,
+          entries,
+          index: viewIndexOf(s.appliedRender, s.datasets.find((d) => d.id === entries[0][1].datasetId)?.collection),
+        })),
+      ),
+      ...footprintsOfView(s).map(({ datasetId, ids }) => loadFootprints(set, get, datasetId, ids)),
+    ]);
   },
   // "Clear" in the view: takes the view off the map, nothing else. The choice of scenes, what was pinned and show or hide
   // of the results stay.

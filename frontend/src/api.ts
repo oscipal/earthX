@@ -536,7 +536,7 @@ export function buildOverviewTileTemplate(datasetId: string, steps: readonly Til
 // The footprint selection of the hits of a search (adr/0032 Nachtrag 15.11.2026): the item ids go in the body, the id is the hash of
 // the dataset and the ids, so the same hits are the same id and the same tile URL. `tiles` is the overview route of the id, which draws
 // the picture below the first level of the dataset over the footprints of the hits only (`overviewHits.ts`). The tiler refuses
-// a dataset without a pyramid or a substitute, a federated one, an unknown id and more than 200 hits with an `HttpError`.
+// a dataset without a pyramid or a substitute, a federated one, an unknown id and more than 10 000 ids with an `HttpError`.
 export interface FootprintSelection {
   id: string;
   tiles: string;

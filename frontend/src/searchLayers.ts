@@ -6,7 +6,7 @@ import type { DatasetOption } from './datasets';
 import type { LayerOverlay } from './layers';
 import type { QuickPreset } from './quickPresets';
 import { buildTileUrl } from './mapLayers';
-import { inStackOrder, stackLikeView, viewOfPass } from './mosaic';
+import { inStackOrder, overviewOverScenes, stackLikeView, viewOfPass } from './mosaic';
 import { overviewRasterOf } from './overviewSubstitute';
 import type { Mosaics, PlannedRaster, SceneEntry } from './mosaic';
 import { underlayOf } from './underlay';
@@ -26,18 +26,23 @@ const rasterOverlay = (raster: PlannedRaster, render: AppliedRender, clip: GeoJS
 
 // The pictures below the first level of the datasets these passes belong to (a substitute's, or a dataset's own pyramid), one for
 // each dataset, in the look of the layer (`overviewSubstitute.ts`). They lie at the bottom of the layer, under everything it draws of
-// its own. An index in the look is computed on the overview there as on the scenes above (M5-10 part B).
+// its own. An index in the look is computed on the overview there as on the scenes above (M5-10 part B). With the scenes of the layer
+// the picture lies over them only, as the view draws it (`overviewOverScenes`, M5-56); over the whole area while their footprint
+// selection is still on its way.
 export function overviewOverlaysOf(
   datasetIds: readonly string[],
   datasets: readonly DatasetOption[],
   render: AppliedRender,
   clip: GeoJSON.Geometry | null,
+  scenes?: { entries: readonly SceneEntry[]; mosaics: Mosaics | undefined },
 ): LayerOverlay[] {
   return [...new Set(datasetIds)].flatMap((id) => {
     const dataset = datasets.find((d) => d.id === id);
     const index = dataset ? viewIndexOf(render, dataset.collection) : null;
-    const raster = overviewRasterOf(dataset, datasets, index ? indexChainOf(index) : null);
-    return raster ? [rasterOverlay(raster, render, clip)] : [];
+    const below = overviewRasterOf(dataset, datasets, index ? indexChainOf(index) : null);
+    if (!below) return [];
+    const raster = scenes ? (overviewOverScenes(below, id, scenes.entries, scenes.mosaics, index !== null) ?? below) : below;
+    return [rasterOverlay(raster, render, clip)];
   });
 }
 
