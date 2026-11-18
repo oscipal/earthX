@@ -521,3 +521,43 @@ legal_status: cleared
 - **Endstempel:** Ob er auf den 31.12. oder auf den 1.1. des Folgejahres fällt, zeigt die maskierte Ausgabe nicht. Beide Formen gelten als „eine Datei je Jahr“.
 - **Test:** `test_m5_11_meteoswiss_probe.py` mit genau diesen Mustern, die maskierten Ziffern ausgefüllt. Er war rot gegen das alte Suchmuster und ist grün gegen das neue.
 - **Für PR 2:** Diese Namensform gilt auch für den Materialisierer (§5.1). Größen und Beginn bestätigt: `TabsD`, `RhiresD` ab 1961, `TmaxD`, `TminD`, `SrelD` ab 1971 (`adr/0029` §8a.2).
+
+### 10.8 Dritter Lauf der Probe (Otto, 18.11.2026): grid_mapping ohne exakten EPSG-Code
+
+**Befund:** Das Suchmuster passt, 295 Jahresdateien mit Tageswerten wurden gelesen. Alle 295 wurden mit „the grid_mapping of the file matches no EPSG code exactly“ abgelehnt (`rhiresd ch01h` × 65, `tabsd` × 65, `sreld`, `tmaxd`, `tmind` je × 55). Damit fehlen noch Datentyp (`float64`?) und Zeitgrenzen der Tage.
+
+**Was die Prüfung verlangt** (`discovery/netcdf_refs.py`, `_crs`):
+- `pyproj` bildet aus den CF-Attributen ein CRS und schlägt einen EPSG-Code vor.
+- Angenommen wird der Code nur, wenn Ellipsoid, Projektionsmethode und jeder Projektionsparameter des Vorschlags gleich denen der Datei sind.
+- Fehlt in den CF-Attributen das Ellipsoid (`semi_major_axis`, `inverse_flattening`), nimmt `pyproj` WGS 84 an. Dann scheitert die Prüfung am Ellipsoid, obwohl Methode und alle Parameter von LV95 stimmen. Im Test nachgestellt: Ein mitgeliefertes `esri_pe_string` erkennt `pyproj` als EPSG:2056 mit 100 %.
+- Ob das die Ursache in den echten Dateien ist, zeigt erst der vierte Lauf [A].
+
+**Erweiterung der Probe (für den vierten Lauf):**
+- **Jedes abweichende grid_mapping einmal**, mit der Zahl der Dateien je Größe:
+  - alle Attribute;
+  - die Übereinstimmungen, die `pyproj` meldet (Code und Prozent);
+  - Name, Methode, jeder Projektionsparameter (gleich oder abweichend, mit beiden Werten), Ellipsoid, Datum, `towgs84` und Achsen, je für die Datei und für EPSG:2056.
+- **Das gleiche für ein mitgeliefertes WKT** (`crs_wkt`, `spatial_ref`, `esri_pe_string`).
+- **Der Rest des Aufbaus wird trotzdem gelesen** (Typ, Chunks, Füllwert, Zeitachse und Zeitgrenzen). Dafür hat `reference_file` den Schalter `strict_crs=False`, nur für die Messung; die Plattform bleibt streng (Vorgabe `True`).
+- Ausgabe ohne Adressen, IDs und ETags.
+- Außerdem gilt eine Datei mit zwei gleichen Zeitstempeln jetzt als „one time step“, nicht mehr als „file of one day“ (Jahreswerte wie `tabsy`).
+- Einheiten von Parametern vergleicht die Prüfung jetzt ohne Groß- und Kleinschreibung („Degree“ = „degree“).
+
+**F10 — Wie wird ein grid_mapping ohne exakten EPSG-Code behandelt?** (Entscheidung Otto; die Empfehlung bestätige ich nach dem vierten Lauf an den echten Abweichungen)
+
+1. **EPSG:2056 annehmen, wenn nur Datum bzw. Ellipsoid fehlen oder abweichen** **(Empfehlung)**
+   - Annehmen, wenn Projektionsmethode und alle Projektionsparameter mit EPSG:2056 übereinstimmen und die Abweichung nur das Datum betrifft: fehlendes oder anderes Ellipsoid in den CF-Attributen, fehlendes oder anderes `towgs84`, anderer Name.
+   - Liefert die Datei ein WKT (`esri_pe_string`, `crs_wkt`), muss `pyproj` es als EPSG:2056 erkennen.
+   - Die Koordinaten sind dann LV95-Werte (Ost/Nord in Metern). Die Lage nach WGS 84 rechnet PROJ wie bei swissALTI3D mit der Transformation von EPSG:2056; die genauere Verortung über CHENyx06 kommt mit M5-33 für beide.
+   - Das Item trägt `proj:code: EPSG:2056`; in `readers` ändert sich nichts.
+   - In PR 2 prüft der Materialisierer zusätzlich gegen den Code, den der Registry-Eintrag nennt. Weicht eine Datei ab, scheitert der Lauf.
+   - Abgegrenzt: Weicht ein Projektionsparameter ab (Ursprung, Azimut, Maßstab, falscher Ost- oder Nordwert), bleibt die Datei abgelehnt.
+2. **Das CRS der Datei als WKT übernehmen**
+   - Das Item trägt dann `proj:wkt2` statt `proj:code`. `readers` liest heute nur `proj:code`/`proj:epsg`; dazu kommt Code in `access` und im Rezept.
+   - Fehlt in der Datei das Datum (nur CF-Parameter), kennt PROJ keine Verschiebung nach WGS 84. Die Lage wiche dann um die Datumsverschiebung von CH1903+ ab, je nach Ort in der Größenordnung von 100 m [A, nicht gemessen].
+   - Taugt nur, wenn die Datei ein vollständiges WKT mitliefert.
+3. **Den Code fest im Registry-Eintrag nennen und in `discovery` nur die Projektionsparameter prüfen**
+   - Wie 1, aber nicht automatisch erkannt: Der Eintrag sagt EPSG:2056, die Datei muss nur in Methode und Parametern dazu passen.
+   - Strenger gegen eine falsche Erkennung, dafür eine Angabe mehr je Datensatz.
+
+Bis zur Entscheidung bleibt die Plattform streng. Nur die Probe liest über die Abweichung hinweg.
