@@ -479,3 +479,57 @@ def test_gdal_lines_reach_only_the_counter_during_a_read_and_the_process_again_a
         assert seen == ["after the read"]
     finally:
         root.removeHandler(catch)
+
+
+# --- a day of a fixed grid, read through its chunk references (M5-11 plan §5.6)
+
+
+def _day(item_id: str, refs: Any, host: str = "data.geo.admin.ch") -> dict[str, Any]:
+    from earthx.discovery.netcdf_refs import step_references
+
+    return {
+        "type": "Feature",
+        "id": item_id,
+        "bbox": [7.4, 46.4, 7.9, 46.7],
+        "geometry": box(7.4, 46.4, 7.9, 46.7).__geo_interface__,
+        "properties": {"datetime": "2024-01-01T00:00:00Z", "proj:code": "EPSG:2056"},
+        "assets": {"TabsD": {"href": f"https://{host}/{SECRET_HOST_PART}/tabsd.nc", "earthx:refs": step_references(refs, 0)}},
+    }
+
+
+def test_one_day_is_read_through_its_references_and_the_warm_read_comes_from_the_tilers_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from earthx.readers.reference_store import configure_chunk_cache
+    from earthx.readers.zarr_reader import reference_asset
+    from tests.earthx.readers import mini_netcdf
+    from tests.earthx.readers.test_reference_store import made
+
+    _, source, refs = made(tmp_path)
+    source.serve_readers(monkeypatch)
+    scene = reference_asset(
+        mini_netcdf.URL, _day("d", refs)["assets"]["TabsD"]["earthx:refs"], mini_netcdf.POLICY, dataset_id="d",
+        item_id="d", asset="TabsD", crs="EPSG:2056", resolve=mini_netcdf.from_memory,
+    )
+    west, south = 7.43, 46.48
+    tile = tile_at_centre((west, south, west + 0.1, south + 0.1), 10)
+    try:
+        result = measure_tiles.read_references_twice(scene, (tile.x, tile.y, tile.z))
+    finally:
+        configure_chunk_cache(0)
+    assert result["status"] == "ok", result
+    assert (result["cold_requests"], result["warm_requests"]) == (1, 0)
+    assert result["cold_mb"] > 0 and result["filled"] > 0
+
+
+def test_one_day_with_references_is_gathered_and_two_are_refused(tmp_path: Path) -> None:
+    from tests.earthx.readers.test_reference_store import made
+
+    _, _, refs = made(tmp_path)
+    reg = registry()
+    config = reg.get("meteoswiss-daily-1km")
+    gathered = gather(config, [_day("day-1", refs)], None, policy_from_registry(reg), _public)
+    assert gathered.asset == "TabsD" and gathered.order == ("day-1",)
+    with pytest.raises(CannotMeasure, match="single items with chunk references") as refused:
+        gather(config, [_day("day-1", refs), _day("day-2", refs)], None, policy_from_registry(reg), _public)
+    assert "day-" not in str(refused.value)
