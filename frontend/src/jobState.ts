@@ -77,7 +77,8 @@ export const RETRY_PARTS_TIP = 'Retry failed parts';
 
 // The kinds of failure (`processing.failure_kind`, the end of the `type` of the result) that run again the way they ran
 // before would end the same: the recipe is wrong or does not fit, the source refuses it, or the job runs too long.
-// `source_429` (the source throttles) and `disk_space` (the worker is full for now) may pass and are not listed. For
+// `source_429` (the source throttles), `disk_space` (the worker is full for now) and `source_changed` (the source
+// replaced a file; the next discovery run references it anew, adr/0029 F7) may pass and are not listed. For
 // the listed ones "Open in panel" is the way, to change the order. Any other kind, and one the platform adds later, may
 // be gone on a second try (the source was down, the worker lost, memory short for a moment).
 const FAILS_AGAIN: ReadonlySet<string> = new Set([

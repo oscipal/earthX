@@ -71,11 +71,13 @@ from earthx.gateway import (
 )
 from earthx.readers.errors import AssetRejected
 from earthx.readers.limits import process_slots
+from earthx.readers.reference_store import References, ReferencesInvalid, ReferenceStore, parse_references
 
 LOGGER = logging.getLogger("earthx.readers.zarr")
 
 __all__ = [
     "GatewayStore",
+    "InvalidReferences",
     "MalformedMultiscales",
     "MissingCrs",
     "StoreNotReadable",
@@ -85,6 +87,7 @@ __all__ = [
     "ZarrAssetError",
     "ZarrReader",
     "open_gateway",
+    "reference_asset",
     "split_asset_href",
     "split_asset_key",
     "zarr_asset",
@@ -135,6 +138,10 @@ class StoreNotReadable(ZarrAssetError):
 
 class MissingCrs(ZarrAssetError):
     """Neither the item nor the store says which coordinate reference system this is."""
+
+
+class InvalidReferences(ZarrAssetError):
+    """The item's chunk references (``earthx:refs``, adr/0029 F3) cannot be read; the text names the field."""
 
 
 class MalformedMultiscales(ZarrAssetError):
@@ -367,6 +374,10 @@ class ZarrAsset:
     default. ``False`` reads the stored values as they are and leaves the attributes
     on the variable, for a caller that applies a scaling of its own (adr/0014 §5.4,
     F7a). A generic switch, never a decision per dataset.
+
+    ``refs`` are the chunk references of one time step of a NetCDF-4/HDF5 file (adr/0029 A2, F3). Where they are
+    set, ``store_url`` is the file itself, ``group`` is empty and ``variable`` is the array in the file; the reader
+    opens a :class:`~earthx.readers.reference_store.ReferenceStore` instead of a :class:`GatewayStore`.
     """
 
     store_url: str
@@ -380,6 +391,7 @@ class ZarrAsset:
     asset: str
     target_gsd: float | None = None
     decode_cf: bool = True
+    refs: References | None = None
 
 
 def split_asset_href(href: str, *, variable: str | None = None) -> tuple[str, str, str]:
@@ -500,6 +512,45 @@ def zarr_asset(
     )
 
 
+def reference_asset(
+    href: str,
+    refs: Any,
+    policy: Policy,
+    *,
+    dataset_id: str,
+    item_id: str,
+    asset: str,
+    crs: str | None = None,
+    resolve: Resolver = resolve_host,
+    decode_cf: bool = True,
+) -> ZarrAsset:
+    """One time step of a NetCDF-4/HDF5 file, read through its chunk references (adr/0029 A2), cleared like
+    :func:`zarr_asset`: :class:`InvalidReferences` for references that cannot be read,
+    :class:`~earthx.readers.errors.AssetRejected` for a file address ``check_url`` refuses — both before any request.
+    """
+    try:
+        parsed = parse_references(refs, href)
+    except ReferencesInvalid as error:
+        raise InvalidReferences(f"{dataset_id}/{item_id}: asset {asset!r}: {error}") from None
+    try:
+        check_url(href, policy, resolve=resolve)
+    except GatewayError as error:
+        raise AssetRejected(str(error)) from error
+    return ZarrAsset(
+        store_url=href,
+        group="",
+        variable=parsed.variable,
+        crs=crs,
+        policy=policy,
+        resolve=resolve,
+        dataset_id=dataset_id,
+        item_id=item_id,
+        asset=asset,
+        decode_cf=decode_cf,
+        refs=parsed,
+    )
+
+
 @attr.s
 class ZarrReader(XarrayReader):
     """rio-tiler's Xarray reader, over a Zarr asset it opens through the gateway.
@@ -537,7 +588,7 @@ class ZarrReader(XarrayReader):
     anywhere (KLAERUNGEN B8).
     """
 
-    _store: GatewayStore | None = attr.ib(init=False, default=None)
+    _store: GatewayStore | ReferenceStore | None = attr.ib(init=False, default=None)
     _dataset: xarray.Dataset | None = attr.ib(init=False, default=None)
     _extra_bands: tuple[XarrayReader, ...] = attr.ib(init=False, factory=tuple)
     #: Kept for the one log line at `close()` — never the address itself
@@ -562,9 +613,15 @@ class ZarrReader(XarrayReader):
             )
         self._log_context = {"dataset": asset.dataset_id, "item": asset.item_id, "asset": asset.asset}
         names = _variable_names(asset)
-        store = GatewayStore(asset.store_url, asset.policy, resolve=asset.resolve)
+        store: GatewayStore | ReferenceStore
+        if asset.refs is not None:
+            store = ReferenceStore(asset.refs, asset.policy, resolve=asset.resolve)
+        else:
+            store = GatewayStore(asset.store_url, asset.policy, resolve=asset.resolve)
         try:
             dataset = _open_group(store, asset)
+            if asset.refs is not None:
+                dataset = _time_step(dataset, asset.refs)
         except BaseException:
             store.close()
             raise
@@ -666,7 +723,16 @@ class ZarrReader(XarrayReader):
             self._store = None
 
 
-def _open_group(store: GatewayStore, asset: ZarrAsset) -> xarray.Dataset:
+def _time_step(dataset: xarray.Dataset, refs: References) -> xarray.Dataset:
+    """The one time step of a row of chunks, rows turned north up where the file stores them south to north.
+
+    Both lazily: the reverse slice and the step choose chunks, nothing is read here (adr/0029 §8a.1).
+    """
+    dataset = dataset.isel(time=refs.time_offset)
+    return dataset.isel(y=slice(None, None, -1)) if refs.y_ascending else dataset
+
+
+def _open_group(store: GatewayStore | ReferenceStore, asset: ZarrAsset) -> xarray.Dataset:
     """The group ``_resolved_group`` picks, or the defined reason it cannot be opened.
 
     ``chunks=None`` keeps xarray's own lazy indexing rather than bringing dask in:
@@ -696,7 +762,7 @@ def _open_group(store: GatewayStore, asset: ZarrAsset) -> xarray.Dataset:
         ) from None
 
 
-def _resolved_group(store: GatewayStore, asset: ZarrAsset) -> str:
+def _resolved_group(store: GatewayStore | ReferenceStore, asset: ZarrAsset) -> str:
     """The group to open: a level ``multiscales`` picks for ``asset.target_gsd``,
     or the group the item's asset names when there is nothing to pick from.
 
@@ -707,7 +773,7 @@ def _resolved_group(store: GatewayStore, asset: ZarrAsset) -> str:
     the group the asset already names is exactly what a v3 layout without a level
     to pick would read anyway (adr/0007 §12.11 point 2's fallback).
     """
-    if asset.target_gsd is None:
+    if asset.target_gsd is None or asset.refs is not None:
         return asset.group
     layout = _multiscales_layout(store, asset.group)
     if layout is None:
@@ -719,7 +785,7 @@ def _resolved_group(store: GatewayStore, asset: ZarrAsset) -> str:
     return f"{parent}/{level}" if parent else level
 
 
-def _multiscales_layout(store: GatewayStore, group: str) -> list[Any] | None:
+def _multiscales_layout(store: GatewayStore | ReferenceStore, group: str) -> list[Any] | None:
     """The ``layout`` of the parent's ``multiscales`` attribute, or ``None`` for none.
 
     A group that cannot even be opened is read the same as one without the

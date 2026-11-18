@@ -68,7 +68,8 @@ class Source:
             arrays = reader.arrays
             source = [array.attrs if entry.scaling == "item" else array.encoding for array in arrays]
             self.scaling = scaling_for_zarr(entry.scaling, entry.bands, source, what)
-            self.names = [str(array.name) for array in arrays]
+            # A NetCDF asset is one array, named in the order like the asset (adr/0029 F6), not like the file's variable.
+            self.names = [entry.asset.asset] if entry.asset.refs is not None else [str(array.name) for array in arrays]
             self.data_types = [str(array.dtype) for array in arrays]
             self.nodata = [array.rio.nodata for array in arrays]
         self.nodata = [None if value is None else float(value) for value in self.nodata]
@@ -227,6 +228,8 @@ def expected_band_names(entry: ResolvedInput) -> list[str] | None:
     where it describes its bands.
     """
     asset = entry.asset
+    if asset.refs is not None:
+        return [asset.asset]
     if asset.reader == "zarr":
         return asset.variable.split(VARIABLE_LIST_SEPARATOR) if asset.variable else None
     if not entry.bands:

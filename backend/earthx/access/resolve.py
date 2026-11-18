@@ -32,7 +32,8 @@ from rasterio.warp import transform_bounds
 from earthx.catalog.registry import DataFormat, DatasetConfig
 from earthx.readers import AssetRejected, Policy, Resolver
 from earthx.readers.cog import AssetPath, Georeferencing, asset_path
-from earthx.readers.zarr_reader import ZarrAsset, split_asset_key, zarr_asset
+from earthx.readers.reference_store import REFS_KEY
+from earthx.readers.zarr_reader import ZarrAsset, reference_asset, split_asset_key, zarr_asset
 
 if TYPE_CHECKING:
     from starlette.requests import Request
@@ -58,7 +59,12 @@ ReaderKind = Literal["cog", "zarr"]
 
 # The formats a reader exists for. `LEGACY` is the prototype's shape and has none
 # in the target path, so it is refused rather than read as a COG (adr/0007 §6 point 2).
-_READERS: dict[DataFormat, ReaderKind] = {DataFormat.COG: "cog", DataFormat.ZARR: "zarr"}
+# NetCDF-4/HDF5 through chunk references is read by the Zarr reader over a store of its own (adr/0029 §8a.1).
+_READERS: dict[DataFormat, ReaderKind] = {
+    DataFormat.COG: "cog",
+    DataFormat.ZARR: "zarr",
+    DataFormat.NETCDF_REFS: "zarr",
+}
 
 # Forced onto the coarsest `multiscales` level there is: adr/0007 §12.11 point 8
 # measured the difference against a fine level at ~5% in `p98`, and the read stays
@@ -101,6 +107,10 @@ class ResolvedAsset:
 
     ``georeferencing`` is how the registry places the dataset's files (adr/0018 F1, DS-04a); it travels with the
     recipe, so that a job and the local runner place them the same way as the tile.
+
+    ``refs`` are the item asset's chunk references (``earthx:refs``, adr/0029 F3) where the dataset is stored as
+    ``netcdf-refs``; ``href`` is then the file they point into. They travel with the recipe too, because the worker
+    and the runner may not look anything up (KLAERUNGEN B9). Checked when opened, in `readers`.
     """
 
     dataset_id: str
@@ -111,6 +121,7 @@ class ResolvedAsset:
     variable: str | None
     crs: str | None
     georeferencing: Georeferencing
+    refs: Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
         for name in ("dataset_id", "item_id", "asset", "href"):
@@ -129,17 +140,22 @@ class ResolvedAsset:
             raise ValueError(f"ResolvedAsset.georeferencing must be one of {get_args(Georeferencing)}")
         if self.reader == "zarr" and self.georeferencing != "geotransform":
             raise ValueError("ResolvedAsset.georeferencing gcp_tps is only for a COG")
+        if self.refs is not None and (self.reader != "zarr" or self.variable is not None or not isinstance(self.refs, Mapping)):
+            raise ValueError("ResolvedAsset.refs are an object, for a Zarr read without a variable of its own")
 
     def to_json(self) -> dict[str, Any]:
-        return asdict(self)
+        data = asdict(self)
+        if self.refs is None:
+            del data["refs"]
+        return data
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any]) -> ResolvedAsset:
-        """The asset back from :meth:`to_json`; every field is required, no other is allowed."""
+        """The asset back from :meth:`to_json`; every field is required but ``refs``, no other is allowed."""
         if not isinstance(data, Mapping):
             raise ValueError("a ResolvedAsset is a JSON object")
         expected = {field.name for field in fields(cls)}
-        if set(data) != expected:
+        if set(data) | {"refs"} != expected:
             missing = sorted(expected - set(data))
             unknown = sorted(str(key) for key in set(data) - expected)
             raise ValueError(f"a ResolvedAsset needs exactly its fields (missing {missing}, unknown {unknown})")
@@ -199,6 +215,7 @@ def resolve_asset(item: Mapping[str, Any], config: DatasetConfig, asset: str) ->
         variable=variable,
         crs=_proj_code(item),
         georeferencing=config.georeferencing.value,
+        refs=_asset_refs(item, item_asset, config) if config.format is DataFormat.NETCDF_REFS else None,
     )
 
 
@@ -216,6 +233,18 @@ def open_asset_ref(
     :class:`~earthx.readers.zarr_reader.ZarrAsset`); a COG picks its overview itself
     and is always read as stored.
     """
+    if ref.refs is not None:
+        return reference_asset(
+            ref.href,
+            ref.refs,
+            policy,
+            dataset_id=ref.dataset_id,
+            item_id=ref.item_id,
+            asset=ref.asset,
+            crs=ref.crs,
+            resolve=resolve,
+            decode_cf=decode_cf,
+        )
     if ref.reader == "zarr":
         return zarr_asset(
             ref.href,
@@ -290,6 +319,15 @@ def _asset_href(item: Mapping[str, Any], asset: str) -> str:
     if not isinstance(href, str) or not href:
         raise AssetNotOnItem(f"the item carries no asset {asset!r}")
     return href
+
+
+def _asset_refs(item: Mapping[str, Any], asset: str, config: DatasetConfig) -> Mapping[str, Any]:
+    """The chunk references of ``asset``: without them a ``netcdf-refs`` item cannot be read, the source's mistake."""
+    entry = item["assets"][asset]
+    refs = entry.get(REFS_KEY)
+    if not isinstance(refs, Mapping):
+        raise MalformedItem(f"an item of {config.dataset_id!r} carries no chunk references for asset {asset!r}")
+    return refs
 
 
 def _proj_code(stac_item: Mapping[str, Any]) -> str | None:

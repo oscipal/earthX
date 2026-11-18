@@ -476,6 +476,33 @@ def test_the_asset_model_matches_the_dataclass_field_for_field() -> None:
     )
 
 
+class TestChunkReferences:
+    """M5-11 (adr/0029 F3): a NetCDF input carries its chunk references in the recipe, for the worker and the runner."""
+
+    REFS = {"etag": '"abc-1"', "variable": "TabsD", "chunk_refs": [[[0, 0, 0], 4096, 3552]]}
+
+    def recipe(self, refs: dict | None) -> dict:
+        data = _zarr_recipe()
+        entry = data["inputs"][0]["resolved"][0]
+        entry["asset"] = {**entry["asset"], "variable": None, "refs": refs}
+        return data
+
+    def test_they_travel_to_the_readers(self) -> None:
+        recipe = recipe_from_data(self.recipe(self.REFS), OPERATORS)
+        assert recipe.inputs[0].resolved[0].asset.to_asset().refs == self.REFS
+
+    def test_they_are_part_of_the_hash(self) -> None:
+        other = {**self.REFS, "etag": '"def-1"'}
+        assert _hash(self.recipe(self.REFS)) != _hash(self.recipe(other))
+
+    def test_an_asset_without_them_hashes_as_before(self) -> None:
+        data = _zarr_recipe()
+        entry = data["inputs"][0]["resolved"][0]
+        with_none = copy.deepcopy(data)
+        with_none["inputs"][0]["resolved"][0]["asset"] = {**entry["asset"], "refs": None}
+        assert _hash(with_none) == _hash(data) == EXPECTED["zarr"]
+
+
 def test_the_package_version_is_semver_0_x() -> None:
     # adr/0016 §9, F10: plain MAJOR.MINOR.PATCH, so `runner_version` can append `+g<commit>`.
     assert re.fullmatch(r"0\.\d+\.\d+", earthx.__version__)
