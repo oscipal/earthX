@@ -277,3 +277,30 @@ Otto: F1 und F2 jeweils Option 1.
 - Lizenz-Einstufung und Freigabe jedes Datensatzes immer durch Otto.
 - Bilder der Browserprüfung nicht ins Repo; Nachträge heißen nach der Aufgabe.
 - `CLAUDE.md`, `.github/`, `.claude/` und `CODEOWNERS` nur mit ausdrücklicher Erlaubnis.
+
+## 11. Nachtrag 18.11.2026: Gesamtzahl der Suche über eigene Sammlungen (M5-56)
+
+Anlass: GLO-30 über Russland fand nur 300 Kacheln und zeigte „300/300“. Ursache: Die Suche über pgstac lieferte kein `numberMatched` (`pgstac.context` = `off`), die Liste hörte nach 300 Treffern auf. Vorgabe Otto: Der Kopf zeigt immer die echte Gesamtzahl, „Load more“ ist da, nie still abschneiden.
+
+**Messung** (Kratzverzeichnis der Sitzung, nicht im Repo): 10⁶ synthetische Kacheln zu 0,01° in einer Test-Sammlung der lokalen pgstac (0.9.12), Suche über eine Fläche, 100 Treffer je Seite, Median aus 3 Runden; danach gelöscht. „Schreiben“ ist die Zahl der Schreibzugriffe auf `search_wheres` je Aufruf.
+
+| Treffer | Modus | Seite 1 | Seiten 2–3 | gleiche Suche erneut | Zahl | Schreiben |
+|---|---|---|---|---|---|---|
+| ~3 500 (wie GLO-30 Russland) | off | 54 ms | 47 ms | 51 ms | keine | 0 |
+| | on, ttl 0 | 61 ms | 59–65 ms | 63 ms | genau | 1 |
+| | on, ttl 1 h | 61 ms | 51 ms | 53 ms | genau | 1 |
+| | auto, ttl 1 h | 64 ms | 47–52 ms | 60 ms | genau | 1 |
+| 10⁵ | off | 162 ms | 127 ms | 159 ms | keine | 0 |
+| | on, ttl 0 | 287 ms | 248–255 ms | 299 ms | genau | 1 |
+| | on, ttl 1 h | 315 ms | 128 ms | 210 ms | genau | 1 |
+| | auto, ttl 1 h | 194 ms | 135–143 ms | 210 ms | geschätzt (101 447) | 1 |
+| 10⁶ | off | 740 ms | 750–769 ms | 741 ms | keine | 0 |
+| | on, ttl 0 | 1 175 ms | 1 177 ms | 1 164 ms | genau | 1 |
+| | on, ttl 1 h | 1 138 ms | 744–774 ms | 677 ms | genau | 1 |
+| | auto, ttl 1 h | 725 ms | 732–763 ms | 768 ms | geschätzt (990 268) | 1 |
+
+- Mit ttl > 0 zählt nur die erste Seite; „Load more“ und dieselbe Suche innerhalb der ttl nutzen die gespeicherte Zahl. Geschrieben wird in jedem zählenden Modus einmal je Aufruf, auch bei einem Treffer im Speicher; nur `off` schreibt nicht.
+- `auto` mit den Standardschwellen (100 000 Treffer und 100 000 Kostenpunkte, beide müssen erreicht sein) zählt alle heutigen Suchen genau: GLO-30 hat etwa 26 000 Kacheln, swissALTI3D einige 10⁴. Sentinel-1 und -2 sind föderiert; ihre Gesamtzahl kommt von der Quelle, nicht von pgstac.
+- pgstac sagt nicht, ob es gezählt oder geschätzt hat. M5-35 plant 10⁶ gelistete Katalogeinträge (Sammlungen), keine Zahl für Items je Sammlung; 10⁶ Items ist hier die Obergrenze der Messung.
+
+**Entscheidung Otto (18.11.2026, Option 1):** `pgstac.context` = `auto` mit den Standardschwellen 100 000 / 100 000, `context_stats_ttl` = 1 h, als Einstellung der Verbindungen des pgstac-Pools im Prozess `api` (`api/main.py::PGSTAC_COUNT_SETTINGS`), nicht als Migration. Ab 100 000 Treffern kennzeichnet das Backend die Zahl als geschätzt (`earthx:matched_estimated`), der Kopf zeigt dann „≈“ vor der Gesamtzahl, ohne Zusatztext (z. B. „Search results (300/≈990,268)“). Eine nach `materialize` bis zu einer Stunde alte Zahl schneidet nichts ab: „Load more“ hängt am Seiten-Token, und der Kopf zeigt nie weniger als geladen.
