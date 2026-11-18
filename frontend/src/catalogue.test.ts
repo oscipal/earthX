@@ -223,6 +223,15 @@ describe('the rows', () => {
     expect(textOf(c, 'Mask')).toBe('scl');
   });
 
+  it('list the mask layer as a band where it is the only one, with its values named "class code"', () => {
+    const c = collection('x', 'land', {
+      'earthx:band_units': { map: null },
+      'earthx:bands': [{ name: 'map', description: 'Land cover class (ESA WorldCover)' }],
+      'earthx:mask': { asset: 'map', band: 'map', classes: [], suggested: [], reference: 'https://example.org', note: '' },
+    });
+    expect(rowsOf(c).Bands.bands).toEqual([{ band: 'map', description: 'Land cover class (ESA WorldCover)', unit: 'class code' }]);
+  });
+
   it('name the kind of values where the unit is no physical one, as the map does not (Otto, 14.11.2026)', () => {
     const c = collection('x', 'radar', { 'earthx:band_units': { vv: 'DN', vh: 'DN', dtm: 'm' } });
     expect(rowsOf(c).Bands.bands?.map((line) => line.unit)).toEqual(['DN, uncalibrated digital numbers', 'DN, uncalibrated digital numbers', 'm']);

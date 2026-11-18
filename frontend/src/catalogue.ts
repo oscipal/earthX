@@ -208,7 +208,9 @@ export function resolutionText(collection: Collection): string {
 
 // The bands of the data, one line each: the key, what it is in a few words (`earthx:bands`) and the unit or the kind of
 // values (`catalogueUnit`); "—" where the registry says none. In the order of `earthx:bands` (the entry's), then the
-// other keys of the units. The auxiliary assets and the mask are no band here (the mask has a row of its own).
+// other keys of the units. The auxiliary assets are no band here, and the mask only where it is the one band of the data
+// (WorldCover's land cover map); otherwise it has a row of its own. Class values have no unit, so the line names their
+// kind: "class code".
 export function bandLinesOf(collection: Collection): BandLine[] {
   const units = collection['earthx:band_units'];
   if (!units || typeof units !== 'object') return [];
@@ -217,17 +219,20 @@ export function bandLinesOf(collection: Collection): BandLine[] {
   const order = [...listed.map((band) => band?.name).filter((name): name is string => typeof name === 'string'), ...Object.keys(units)];
   const auxiliary = collection['earthx:auxiliary_assets'] ?? [];
   const mask = collection['earthx:mask']?.asset;
-  return [...new Set(order)]
-    .filter((key) => Object.hasOwn(units, key) && !auxiliary.includes(key) && key !== mask)
-    .map((key) => {
+  const bands = [...new Set(order)].filter((key) => Object.hasOwn(units, key) && !auxiliary.includes(key));
+  const shown = bands.filter((key) => key !== mask);
+  return (shown.length > 0 ? shown : bands).map((key) => {
       const description = descriptions.get(key);
       return {
         band: key,
         description: typeof description === 'string' && description !== '' ? description : NONE,
-        unit: catalogueUnit(units[key]) ?? NONE,
+        unit: catalogueUnit(units[key]) ?? (key === mask ? CLASS_UNIT : NONE),
       };
     });
 }
+
+// What the Data catalogue writes for the values of a class layer, which has no unit.
+const CLASS_UNIT = 'class code';
 
 function bandsRow(collection: Collection): CatalogueRow {
   const bands = bandLinesOf(collection);

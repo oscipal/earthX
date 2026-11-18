@@ -173,6 +173,9 @@ mask: null
 # The daily sum in millimetres (plan §5.3).
 band_units:
   RhiresD: mm
+# What each band is, a few words (M5-59): the column "Description" of the Data catalogue.
+band_descriptions:
+  RhiresD: Daily precipitation sum
 auxiliary_assets: []
 # The archive has nothing to filter by but time.
 search_filters: []

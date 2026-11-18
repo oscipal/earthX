@@ -178,6 +178,12 @@ band_units:
   TminD: °C
   TmaxD: °C
   SrelD: '%'
+# What each band is, a few words (M5-59): the column "Description" of the Data catalogue.
+band_descriptions:
+  TabsD: Daily mean air temperature, 2 m
+  TminD: Daily minimum air temperature, 2 m
+  TmaxD: Daily maximum air temperature, 2 m
+  SrelD: Daily relative sunshine duration
 auxiliary_assets: []
 # The archive has nothing to filter by but time.
 search_filters: []
