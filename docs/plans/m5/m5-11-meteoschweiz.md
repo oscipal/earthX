@@ -720,3 +720,19 @@ Erwartet je Stufe 1 Datei, Status `ok`, kalt 1 Abruf von rund 0,36 MB (ein Chunk
 
 **Schritt 6 — Live-Smoke** nach dem Merge auf `main` in GitHub Actions („Live smoke“ → „Run workflow“).
 
+### 11.7 Erster Lauf (Otto, 18.11.2026) und Anpassung
+
+| Was | Ergebnis |
+|---|---|
+| `materialize meteoswiss-daily-1km` | 23 741 Items aus 230 Dateien; 1 716 Range-Anfragen zu 64 KiB (rund 110 MB), alle `206`, 1 s Abstand, rund 30 min |
+| `materialize meteoswiss-daily-precip-1km` | 23 741 Items aus 65 Dateien; in Ottos Ausgabe keine Logzeile von `gateway` (siehe unten) |
+| Wiederholung `precip` | ein Abruf, `304`, `unchanged` |
+| Items `1km` | 23 741, `1961-01-01 00:00` bis `2025-12-31 23:59:59`, `BOX(5.754 45.684, 10.699 47.886)` |
+| Items `precip` | 23 741, `1961-01-01 06:00` bis `2026-01-01 05:59:59`, `BOX(5.749 45.639, 10.710 48.066)` |
+| `measure-tiles` mit `--datetime 2024-07-01` | 500 Items, 500 „Durchgänge“, jede Stufe `over items cap`; nichts gemessen |
+
+- **`spatial_extent`** (A19) ist jetzt die Ausdehnung der Items, jede Kante 0,001° weiter außen, weil die Werte auf drei Stellen gelesen sind und ein Lauf scheitert, wo das Gitter über die Box hinausreicht.
+- **`measure-tiles`, Ursache:** Der Zeitraum ging bei materialisierten Datensätzen nicht in die Suche in pgstac (`search_items_in_bbox` kannte nur die Box). Bisher hatten alle materialisierten Datensätze keine Zeitachse, also fiel es nicht auf. Jetzt trägt die Suche den Zeitraum (A24); Test gegen pgstac und in `measure-tiles`.
+- **Keine Logzeilen beim Lauf `precip`, Stand der Klärung:** Der Code hat keinen Zwischenspeicher für Verweise. `discovery` hält nichts zwischen zwei Läufen, und der Chunk-Cache von `readers` ist dort aus und liest ohnehin keine Köpfe. Ein Lauf, der `loaded` meldet und Items mit `earthx:refs` schreibt, hat jede der 65 Dateien über `gateway` gelesen (je 5–8 Abrufe); jede Antwort schreibt eine Zeile „gateway request“, dazu je Datei „referenced N of 65 annual files“. Belegen lässt sich der Lauf an seiner Zeile in `earthx_materialize_runs` (Dauer, `listed`, `items_written`) und an den ETags in den Items. Ottos Prüfung folgt.
+- **A24:** `measure-tiles` sucht in einem materialisierten Datensatz mit dem Zeitraum des Laufs. Für den Niederschlag misst `--datetime 2024-07-01T06:00:00Z/2024-07-02T05:59:59Z` genau den Tag 1.7.; ein ganzer Kalendertag träfe zwei Niederschlagstage (06–06 UTC).
+
