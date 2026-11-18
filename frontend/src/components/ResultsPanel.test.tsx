@@ -438,6 +438,26 @@ describe('"Select all" boxes (M4-29)', () => {
   const withMatched = (numberMatched: number | null) =>
     useAppStore.setState({ searchContext: { numberMatched, nextToken: null } as never });
 
+  // M5-56 (Otto, 18.11.2026): the head names the true total where the search gives one, never only what is loaded.
+  it('names the true total in the head and in the box while more are matched than loaded', () => {
+    load(TWO_STEPS);
+    onlyOptical();
+    act(() => withMatched(2814));
+    expect(container.querySelector('h2')?.textContent).toBe('Search results (0/2,814)');
+    expect(allBox().closest('label')?.textContent).toBe('Select all 3 loaded (of 2,814)');
+    act(() => allBox().click());
+    expect(container.querySelector('h2')?.textContent).toBe('Search results (3/2,814)');
+  });
+
+  it('names what is loaded where the search gives no total, or one below it', () => {
+    load(TWO_STEPS);
+    onlyOptical();
+    act(() => withMatched(null));
+    expect(container.querySelector('h2')?.textContent).toBe('Search results (0/3)');
+    act(() => withMatched(2));
+    expect(container.querySelector('h2')?.textContent).toBe('Search results (0/3)');
+  });
+
   it('ticking the box selects every loaded scene, unticking deselects them', () => {
     load(TWO_STEPS);
     expect(allBox().checked).toBe(false);

@@ -1,5 +1,6 @@
 import { aoiNotes, measuresAoi, SKIPPED_TIP } from '../aoiFilter';
 import { maturityLabel, quicklookAsset } from '../datasets';
+import { formatCount } from '../numberFormat';
 import type { ResultSection } from '../sections';
 import { hasResultsPanel, totalItems } from '../sections';
 import { useAppStore } from '../store';
@@ -272,10 +273,10 @@ function SelectionRow() {
   const clearSelection = useAppStore((s) => s.clearSelection);
   const more = matched !== null && matched > loadedAll;
   const label = !more
-    ? `Select all ${loaded}`
+    ? `Select all ${formatCount(loaded)}`
     : several
-      ? `Select all ${loaded} loaded (more matched in total)`
-      : `Select all ${loaded} loaded (of ${matched})`;
+      ? `Select all ${formatCount(loaded)} loaded (more matched in total)`
+      : `Select all ${formatCount(loaded)} loaded (of ${formatCount(matched)})`;
   const all = loaded > 0 && selectedCount === loaded;
   return (
     <div className="selection-row">
@@ -296,13 +297,16 @@ export default function ResultsPanel() {
     const ids = new Set(s.selectedIds);
     return s.sections.reduce((n, section) => n + section.items.filter((it) => ids.has(it.id)).length, 0);
   });
+  // The scenes found: the true total where the search names one (M5-56, Otto 18.11.2026: "300/2,814" while 300 are loaded, and "Load
+  // more" under the list), else those loaded. Never fewer than are loaded.
+  const found = useAppStore((s) => Math.max(totalItems(s.sections), s.searchContext?.numberMatched ?? 0));
 
   if (!hasResultsPanel(sections)) return null;
 
   return (
     <div className="panel dock-panel results-panel" role="region" aria-label="Results">
       <div className="results-head">
-        <h2 data-tip-level="advanced" data-tip="Selected scenes / scenes found">Search results ({selected}/{totalItems(sections)})</h2>
+        <h2 data-tip-level="advanced" data-tip="Selected scenes / scenes found">Search results ({formatCount(selected)}/{formatCount(found)})</h2>
         <div className="results-head-switches">
           <ResultsToTop />
           <ResultsEye />
