@@ -59,10 +59,11 @@ format: netcdf-refs
 # The files carry a grid_mapping of LV95 and evenly spaced coordinates (plan §10.9).
 georeferencing: geotransform
 line_times: null
-# PROVISIONAL until Otto's first load (plan §11 step 4): a box around every grid within 2 450 000–2 880 000 E and
-# 1 020 000–1 330 000 N of LV95. The run fails if the grid reaches beyond it; the extent of the loaded items replaces it.
+# The extent of the loaded items (`st_extent` after Otto's first load, 18.11.2026: BOX(5.754 45.684, 10.699 47.886)), each edge
+# 0.001° further out, because the values were read to three decimals and a run fails where the grid reaches beyond
+# this box (plan A19). It is the area of the coverage too.
 spatial_extent:
-  bbox: [5.4, 45.2, 11.2, 48.2]
+  bbox: [5.753, 45.683, 10.700, 47.887]
 # The first day of `TabsD` to the last of 2025, each day 00:00–24:00 UTC (ProdDoc_TabsD, ProdDoc_SrelD; Otto 18.11.2026).
 # Only completed years of the archive (adr/0029 F5): a later year is loaded once this end is followed up.
 temporal_extent:
