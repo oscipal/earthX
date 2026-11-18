@@ -256,10 +256,11 @@ describe('the state of an item read through chunk references (M5-11 F3)', () => 
   it('carries `updated` as v on the tile, TileJSON and statistics URLs of a found item', async () => {
     vi.stubGlobal('fetch', answering([day('MS_1', '2025-02-12T08:00:00Z')]));
     await searchItems({ collections: ['meteoswiss-daily-1km'] });
-    const tile = new URL(buildTileTemplate('meteoswiss-daily-1km', 'MS_1', 'TabsD'), 'http://localhost');
+    const template = buildTileTemplate('meteoswiss-daily-1km', 'MS_1', 'TabsD');
+    expect(template).toContain('/tiles/WebMercatorQuad/{z}/{x}/{y}?');
+    const tile = new URL(template, 'http://localhost');
     expect(tile.searchParams.get('v')).toBe('2025-02-12T08:00:00Z');
     expect(tile.searchParams.get('asset')).toBe('TabsD');
-    expect(tile.pathname).toContain('/tiles/WebMercatorQuad/{z}/{x}/{y}');
     expect(buildStatisticsUrl('meteoswiss-daily-1km', 'MS_1', 'TabsD', [2, 98])).toBe(
       '/collections/meteoswiss-daily-1km/items/MS_1/statistics?asset=TabsD&v=2025-02-12T08%3A00%3A00Z&p=2&p=98',
     );
