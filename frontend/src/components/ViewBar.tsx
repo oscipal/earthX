@@ -10,7 +10,7 @@
 
 import { useMemo } from 'react';
 
-import { DRAW_AOI_TO_CROP, isCogFormat, noOriginalsReason } from '../download';
+import { DRAW_AOI_TO_CROP, hasOriginalFiles, noOriginalsReason } from '../download';
 import { processBlockReason } from '../processingOrder';
 import { useProcessingStore } from '../processingStore';
 import { originalsTitle, scenesOf, summaryOf, summaryText } from '../originals';
@@ -66,7 +66,7 @@ export default function ViewBar() {
       : null;
   // Two buttons whatever the AOI (Zusatz 1a, Otto 14.10.2026): the crop to the
   // AOI, and the whole original files, which an AOI does not change.
-  const originalsAllowed = isCogFormat(dataset);
+  const originalsAllowed = hasOriginalFiles(dataset);
   // M4-13b K12: a job for the selection, next to the download buttons; the reason it
   // cannot start (licence tier) is the button's own title. No AOI needed (M4-13c K1).
   const processBlocked = processBlockReason(dataset, openCount);

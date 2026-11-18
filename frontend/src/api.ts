@@ -448,6 +448,7 @@ export async function searchItems(q: SearchQuery): Promise<ItemPage> {
       signal: q.signal,
     }),
   );
+  noteItemVersions(body.features);
   return {
     features: body.features,
     numberMatched: body.numberMatched ?? null,
@@ -470,7 +471,28 @@ export async function fetchItem(datasetId: string, itemId: string): Promise<Stac
   const url = `${BASE}/stac/collections/${encodeURIComponent(datasetId)}/items/${encodeURIComponent(itemId)}`;
   const res = await fetch(url);
   if (res.status === 404) return undefined;
-  return jsonOrThrow<StacItem>(res);
+  const item = await jsonOrThrow<StacItem>(res);
+  noteItemVersions([item]);
+  return item;
+}
+
+// The state of an item whose assets are read through chunk references (M5-11 F3, adr/0029 F7): `properties.updated`,
+// carried as `v` by every tile, TileJSON and statistics URL of the item. The tiler does not read it; it only keeps the
+// caches of the browser apart once the source replaced a file and the next run gave the item new references. Every item
+// reaches the page through `searchItems` or `fetchItem`, which note it here; an item without references has no `v`.
+const itemVersions = new Map<string, string>();
+
+function noteItemVersions(items: readonly StacItem[]): void {
+  for (const item of items) {
+    const updated = item.properties?.updated;
+    const referenced = Object.values(item.assets ?? {}).some((asset) => asset?.['earthx:refs'] !== undefined);
+    if (item.collection && referenced && typeof updated === 'string') itemVersions.set(`${item.collection}\u0000${item.id}`, updated);
+  }
+}
+
+function withItemVersion(url: string, datasetId: string, itemId: string): string {
+  const version = itemVersions.get(`${datasetId}\u0000${itemId}`);
+  return version === undefined ? url : `${url}${url.includes('?') ? '&' : '?'}${new URLSearchParams({ v: version }).toString()}`;
 }
 
 // The tiler process (adr/0006), a separate service from `/stac` — same-origin
@@ -487,7 +509,7 @@ function itemBase(datasetId: string, itemId: string): string {
 // they are known/applied.
 export function buildTileTemplate(datasetId: string, itemId: string, asset: string): string {
   const params = new URLSearchParams({ asset });
-  return `${itemBase(datasetId, itemId)}/tiles/${TILE_MATRIX_SET}/{z}/{x}/{y}?${params.toString()}`;
+  return withItemVersion(`${itemBase(datasetId, itemId)}/tiles/${TILE_MATRIX_SET}/{z}/{x}/{y}?${params.toString()}`, datasetId, itemId);
 }
 
 // A mosaic is a *selection* (M5-30b part 3, `adr/0032` §10.2): the scenes of a pass and the assets they are read from are
@@ -642,7 +664,7 @@ export function buildOperatorTileTemplate(
   steps: readonly TileStep[],
   band: ShownBands = null,
 ): string {
-  return `${itemBase(datasetId, itemId)}/tiles/${TILE_MATRIX_SET}/{z}/{x}/{y}?${operatorQuery(assets, steps, band)}`;
+  return withItemVersion(`${itemBase(datasetId, itemId)}/tiles/${TILE_MATRIX_SET}/{z}/{x}/{y}?${operatorQuery(assets, steps, band)}`, datasetId, itemId);
 }
 
 // The TileJSON of the same chain. The tiler opens the inputs and judges every step on
@@ -655,7 +677,7 @@ export function buildOperatorTileJsonUrl(
   steps: readonly TileStep[],
   band: ShownBands = null,
 ): string {
-  return `${itemBase(datasetId, itemId)}/${TILE_MATRIX_SET}/tilejson.json?${operatorQuery(assets, steps, band)}`;
+  return withItemVersion(`${itemBase(datasetId, itemId)}/${TILE_MATRIX_SET}/tilejson.json?${operatorQuery(assets, steps, band)}`, datasetId, itemId);
 }
 
 // The statistics of the same chain (M4-19c): one measure of what the steps make of the scene, for the colour
@@ -667,7 +689,7 @@ export function buildOperatorStatisticsUrl(
   steps: readonly TileStep[],
   band: ShownBands = null,
 ): string {
-  return `${itemBase(datasetId, itemId)}/statistics?${operatorQuery(assets, steps, band)}`;
+  return withItemVersion(`${itemBase(datasetId, itemId)}/statistics?${operatorQuery(assets, steps, band)}`, datasetId, itemId);
 }
 
 // The mosaic of a selection with the steps over it (NM4-04, `api/mosaic_tiles.py`): the assets are the selection's, the steps are
@@ -704,7 +726,7 @@ export const withHistogram = (url: string): string => `${url}${url.includes('?')
 
 export function buildStatisticsUrl(datasetId: string, itemId: string, asset: string, percentiles: readonly number[] = []): string {
   const params = new URLSearchParams({ asset });
-  return withPercentiles(`${itemBase(datasetId, itemId)}/statistics?${params.toString()}`, percentiles);
+  return withPercentiles(withItemVersion(`${itemBase(datasetId, itemId)}/statistics?${params.toString()}`, datasetId, itemId), percentiles);
 }
 
 // The statistics of a result over the pixels its mask marks (`GET /results/{id}/statistics`, NM4-65 part 4): the bands as the
@@ -971,6 +993,7 @@ export function parseBands(value: unknown): DownloadBand[] {
         nodata: numberOf(r.nodata),
         unit: textOf(r.unit),
         preselected: r.preselected === true,
+        stackable: r.stackable !== false,
       },
     ];
   });

@@ -39,6 +39,9 @@ export interface DownloadBand {
   // Ticked when the dialog opens: the platform's choice (the spectral bands and the layer of the mask, every band where the dataset
   // has neither).
   preselected: boolean;
+  // Whether the band can be stacked with others into one file; `false` for a band read through chunk references (M5-11), which goes
+  // into a file of its own. Left out by an older answer: a GeoTIFF, which can.
+  stackable?: boolean;
 }
 
 // What is ticked when the dialog opens.
@@ -84,7 +87,13 @@ export function mixedResolutions(bands: readonly DownloadBand[]): boolean {
 // The form that goes into the request: the one chosen where the bands have different resolutions, else one file per resolution (which
 // is one multi-band file of the one resolution there is, and is also what one single band gives).
 export function effectiveForm(bands: readonly DownloadBand[], chosen: DownloadForm): DownloadForm {
+  if (!stackable(bands)) return 'per_band';
   return mixedResolutions(bands) ? chosen : 'per_resolution';
+}
+
+// Whether the bands can share a file: a band that cannot is one file per band, whatever form was chosen (M5-11).
+export function stackable(bands: readonly DownloadBand[]): boolean {
+  return bands.every((band) => band.stackable !== false);
 }
 
 export function finestResolution(bands: readonly DownloadBand[]): number | null {

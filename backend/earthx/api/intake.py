@@ -104,6 +104,7 @@ from earthx.catalog.registry import (
     AcquisitionYears,
     AssetChecksum,
     Attributable,
+    DataFormat,
     DatasetConfig,
     DatasetRegistry,
     Georeferencing,
@@ -142,6 +143,7 @@ from earthx.processing.recipe import (
     recipe_from_data,
 )
 from earthx.processing.upgrade import NamesOf, is_version_1, key_names, upgrade_order
+from earthx.readers.reference_store import REFS_KEY
 from earthx.readers.zarr_reader import split_asset_key
 
 LOGGER = logging.getLogger("earthx.api.intake")
@@ -1135,13 +1137,18 @@ def band_sources(item: Mapping[str, Any], config: DatasetConfig) -> list[tuple[s
     The rule of the panel (``bandSources`` in ``processingOrder.ts``) and of the core
     (:func:`~earthx.processing.source.expected_band_names`): a COG asset is one band named like the asset or
     ``<asset>_1`` … per band; a Zarr group is addressed per variable as ``<asset><separator><variable>``, named by
-    the variable. An asset the item does not count the bands of is listed with its own name, and
+    the variable; an asset with chunk references (``netcdf-refs``) is one band named like the asset. An asset the item does not count the bands of is listed with its own name, and
     :func:`derive_assets` takes ``<asset>_<n>`` for it as well: only the file knows how many there are.
     """
     sources: list[tuple[str, list[str]]] = []
     assets = item.get("assets")
     for key, asset in (assets.items() if isinstance(assets, Mapping) else ()):
         if not isinstance(asset, Mapping):
+            continue
+        if config.format is DataFormat.NETCDF_REFS:
+            # One time step of one array per asset, named like the asset (M5-11, `processingOrder.ts`).
+            if REFS_KEY in asset:
+                sources.append((key, [key]))
             continue
         if config.zarr is None:
             if not _may_carry_bands(asset):

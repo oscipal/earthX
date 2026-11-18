@@ -28,6 +28,11 @@ If the fetch of a tile returns ``--max-items`` items, the list may be cut and th
 the row says ``over items cap`` instead of a count that is too small.
 
 ``--threads`` is the number of scenes the mosaic reader opens at the same time (1 to 16, default the tile route's).
+
+**Chunk references** (``netcdf-refs``, M5-11 plan §5.6): a day is one item over the whole grid, so a tile reads one scene
+with the Zarr reader of the item tile route, through the gateway rather than GDAL. Its requests and bytes are counted
+from the gateway's own log lines, as numbers only; the process keeps the tiler's chunk cache, so the warm read shows
+what a second tile of the same view costs. A Zarr store of its own is still not measured.
 """
 
 from __future__ import annotations
@@ -55,6 +60,7 @@ from shapely.geometry.base import BaseGeometry
 from earthx.access.crop_rules import mosaic_order
 from earthx.access.mosaic_tiles import MAX_MOSAIC_THREADS, MOSAIC_THREADS, MosaicScenes, MosaicTileReader
 from earthx.access.resolve import AssetResolutionError, ResolvedAsset, open_asset_ref, resolve_asset
+from earthx.access.tiles import open_asset
 from earthx.adapters import ADAPTER_SPECS, MAX_LIMIT, AdapterSpecs, SearchParams, search_items
 from earthx.api.dependencies import policy_from_registry
 from earthx.api.item_source import OrderRefused
@@ -78,6 +84,8 @@ from earthx.gateway.gdal import count_downloads, counting_gdal_lines, tile_gdal_
 from earthx.logging import configure_logging
 from earthx.readers.cog import AssetPath
 from earthx.readers.errors import AssetRejected
+from earthx.readers.reference_store import TILER_CHUNK_CACHE_BYTES, configure_chunk_cache
+from earthx.readers.zarr_reader import ZarrAsset
 
 __all__ = [
     "TILE_SIZE",
@@ -290,6 +298,59 @@ def _filled(image: Any) -> float:
     return float(np.count_nonzero(valid)) / valid.size
 
 
+class _GatewayCounter(logging.Handler):
+    """The requests and bytes of the gateway's log lines while a read runs; nothing of a line is kept."""
+
+    def __init__(self) -> None:
+        super().__init__(logging.INFO)
+        self.requests = 0
+        self.bytes = 0
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if record.getMessage() == "gateway request":
+            self.requests += 1
+            self.bytes += int(getattr(record, "gateway_bytes", 0) or 0)
+
+    def take(self) -> tuple[int, int]:
+        taken, self.requests, self.bytes = (self.requests, self.bytes), 0, 0
+        return taken
+
+
+def read_references_twice(
+    scene: ZarrAsset,
+    tile: tuple[int, int, int],
+    *,
+    clock: Callable[[], float] = time.perf_counter,
+) -> dict[str, Any]:
+    """Read ``tile`` of one item read through chunk references, cold and then warm, as the item tile route does."""
+    configure_chunk_cache(TILER_CHUNK_CACHE_BYTES)
+    logger = logging.getLogger("earthx.gateway")
+    counter = _GatewayCounter()
+    saved = logger.level
+    logger.setLevel(logging.INFO)
+    logger.addHandler(counter)
+    x, y, z = tile
+    result: dict[str, Any] = {}
+    try:
+        with open_asset(scene) as reader:
+            for kind in ("cold", "warm"):
+                started = clock()
+                image = reader.tile(x, y, z, tilesize=TILE_SIZE)
+                result[f"{kind}_s"] = round(clock() - started, 3)
+                requests, total = counter.take()
+                result[f"{kind}_requests"] = requests
+                result[f"{kind}_mb"] = round(total / 1e6, 3)
+        result["filled"] = round(_filled(image), 3)
+        result["tiff_kb"] = round(_tiff_bytes(image) / 1e3, 1)
+        result["status"] = "ok"
+    except Exception as error:  # noqa: BLE001 - a row names the kind of any failure; the text can hold an address
+        result["status"] = type(error).__name__
+    finally:
+        logger.removeHandler(counter)
+        logger.setLevel(saved)
+    return result
+
+
 def read_twice(
     scenes: Sequence[AssetPath],
     dataset_id: str,
@@ -343,7 +404,11 @@ def _zoom_process(
     except Exception as error:  # noqa: BLE001 - the kind only, as in `read_twice`
         answer.send({"status": type(error).__name__})
     else:
-        answer.send(read_twice(scenes, dataset_id, bounds, tile, gdal_config, threads=threads))  # type: ignore[arg-type]
+        if any(isinstance(scene, ZarrAsset) for scene in scenes):
+            # One item over the whole grid (`resolve_overpass` lets no other set of references through).
+            answer.send(read_references_twice(scenes[0], tile))  # type: ignore[arg-type]
+        else:
+            answer.send(read_twice(scenes, dataset_id, bounds, tile, gdal_config, threads=threads))  # type: ignore[arg-type]
     answer.close()
 
 
@@ -490,8 +555,10 @@ def resolve_overpass(
             kind = type(error).__name__
             skipped[kind] = skipped.get(kind, 0) + 1
             continue
-        if not isinstance(path, AssetPath):
-            raise CannotMeasure("the measurement reads COGs; this dataset is read as Zarr")
+        # One day of a fixed grid is one item read through its chunk references (M5-11); no mosaic of them is built.
+        one_day = isinstance(path, ZarrAsset) and path.refs is not None and len(largest) == 1
+        if not one_day and not isinstance(path, AssetPath):
+            raise CannotMeasure("the measurement reads COGs and single items with chunk references; this one is Zarr")
         refs[ref.item_id] = ref
         crs[ref.item_id] = ref.crs
         with_asset[ref.item_id] = item
@@ -550,10 +617,13 @@ async def _federated_items(
 
 
 def _materialized_items(
-    config: DatasetConfig, bbox: tuple[float, float, float, float], max_items: int
+    config: DatasetConfig,
+    bbox: tuple[float, float, float, float],
+    datetime_range: tuple[datetime | None, datetime | None],
+    max_items: int,
 ) -> list[dict[str, Any]]:
     with psycopg.connect("") as conn:
-        return search_items_in_bbox(conn, config.dataset_id, bbox, max_items)  # type: ignore[return-value]
+        return search_items_in_bbox(conn, config.dataset_id, bbox, max_items, datetime_range)  # type: ignore[return-value]
 
 
 def make_fetch(
@@ -561,7 +631,8 @@ def make_fetch(
 ) -> Fetch:
     """The search of the dataset's source, for any rectangle, with the run's ``--datetime`` and ``--max-items``."""
     if config.source.item_holding is ItemHolding.MATERIALIZED:
-        return lambda bbox: _materialized_items(config, bbox, args.max_items)
+        # The period too: a materialized series of days (M5-11) has one item per day in the same rectangle.
+        return lambda bbox: _materialized_items(config, bbox, args.datetime, args.max_items)
     return lambda bbox: asyncio.run(
         _federated_items(config, bbox, args.datetime, args.max_items, policy, resolve, adapters)
     )

@@ -17,7 +17,9 @@ datasets:
   WC21: {id: esa-worldcover-2021}
   ALTI: {id: swissalti3d}
   BEV: {id: bev-als-dgm}
-  MCH: {id: null}
+  # Two entries of MeteoSwiss (M5-11 F1, F7 = 1, Otto 17.11.2026): temperature and sunshine, and precipitation.
+  MCH: {id: meteoswiss-daily-1km}
+  MCHP: {id: meteoswiss-daily-precip-1km}
   HYR: {id: null}
   CLC: {id: null}
   LS: {id: null}
@@ -36,7 +38,7 @@ questions:
 - {id: Q05, language: en, text: ESA WorldCover, kind: N, grade_2: [WC20, WC21], name_only: true}
 - {id: Q06, language: de, text: BEV Höhenraster 1 m, kind: N, grade_2: [BEV], grade_1: [ALTI]}
 - {id: Q07, language: en, text: Sentinel-1 GRD, kind: N, grade_2: [S1], name_only: true}
-- {id: Q08, language: de, text: MeteoSchweiz Klimagitter, kind: N, grade_2: [MCH]}
+- {id: Q08, language: de, text: MeteoSchweiz Klimagitter, kind: N, grade_2: [MCH, MCHP]}
 - {id: Q09, language: de, text: Höhenmodell, kind: T, grade_2: [DEM, ALTI, BEV]}
 - {id: Q10, language: en, text: elevation model, kind: T, grade_2: [DEM, ALTI, BEV]}
 # Q11, Q12: a surface model (DSM) is not a terrain model (DTM); the Copernicus DEM is a DSM (adr/0023 §3.1, §4.2).
@@ -48,8 +50,8 @@ questions:
 - {id: Q16, language: de, text: Satellitenbilder in Echtfarben, kind: T, grade_2: [S2], grade_1: [LS]}
 - {id: Q17, language: en, text: radar backscatter, kind: T, grade_2: [S1]}
 - {id: Q18, language: de, text: Radarbilder bei Bewölkung, kind: T, grade_2: [S1]}
-- {id: Q19, language: de, text: Niederschlag, kind: T, grade_2: [MCH, HYR]}
-- {id: Q20, language: en, text: precipitation grid, kind: T, grade_2: [MCH, HYR]}
+- {id: Q19, language: de, text: Niederschlag, kind: T, grade_2: [MCHP, HYR]}
+- {id: Q20, language: en, text: precipitation grid, kind: T, grade_2: [MCHP, HYR]}
 - {id: Q21, language: en, text: daily air temperature, kind: T, grade_2: [MCH, HYR]}
 - {id: Q22, language: de, text: Sonnenscheindauer, kind: T, grade_2: [MCH]}
 # Q23-Q25: the region only in the text, no AOI; they rely on the place terms of the search text (adr/0026 F8).
@@ -80,7 +82,7 @@ questions:
   kind: R
   aoi: {name: Kenya, bbox: [36, -1, 37, 0]}
   grade_2: [WC20, WC21]
-  never: [ALTI, BEV, MCH, HYR, CLC]
+  never: [ALTI, BEV, MCH, MCHP, HYR, CLC]
 # MeteoSchweiz does not cover the middle of Austria. HYR joins `never` only once it is shown that the HYRAS grid ends
 # at the German border (adr/0026 §8.3).
 - id: Q29
@@ -88,7 +90,7 @@ questions:
   text: Niederschlag
   kind: R
   aoi: {name: Österreich Mitte, bbox: [14, 47, 15, 48]}
-  never: [MCH]
+  never: [MCH, MCHP]
 - {id: Q30, language: de, text: Landbedeckung 2021, kind: Z, grade_2: [WC21], grade_1: [WC20]}
 - {id: Q31, language: en, text: land cover 2020, kind: Z, grade_2: [WC20], grade_1: [WC21]}
 # Sentinel-1 starts in 2014. The Copernicus DEM has no time axis, so a period never filters it out.

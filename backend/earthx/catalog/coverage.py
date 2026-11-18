@@ -282,7 +282,8 @@ class CoverageResult:
         the replacement rule for M2-07c says footprints must not appear automatically
         where there is no checked total to compare against.
         """
-        return self.total_count is not None and self.total_count < FOOTPRINT_THRESHOLD
+        # An area answer (M3-11c, M5-11 fixed grid) is the coverage itself: nothing to replace by footprints.
+        return self.area is None and self.total_count is not None and self.total_count < FOOTPRINT_THRESHOLD
 
 
 class CoverageSource(Protocol):

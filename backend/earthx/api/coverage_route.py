@@ -63,6 +63,7 @@ from earthx.catalog.coverage import (
     UpstreamCoverageShapeError,
     level_for_viewport,
 )
+from earthx.catalog.fixed_grid_coverage import fixed_grid_coverage
 from earthx.catalog.local_coverage import area_coverage, check_intersects_is_valid
 from earthx.catalog.registry import CoverageProvider, DatasetRegistry, RetiredDatasetError, UnknownDatasetError
 from earthx.catalog.search_cache import PostgresSearchCache
@@ -78,10 +79,12 @@ LOGGER = logging.getLogger("earthx.api.coverage")
 # not through this set (it never goes through `IMPLEMENTED_PROVIDERS`, see
 # `_area_path`).
 #
+# `fixed-grid` (M5-11) is reckoned from the registry entry alone, so it is implemented without a database.
+#
 # Public because onboarding checklist point 2 reads it: "a coverage provider is
 # assigned" is only worth anything if something answers for that provider
 # (projektuebersicht.md §5, D4).
-IMPLEMENTED_PROVIDERS = frozenset({CoverageProvider.UPSTREAM_AGGREGATION})
+IMPLEMENTED_PROVIDERS = frozenset({CoverageProvider.UPSTREAM_AGGREGATION, CoverageProvider.FIXED_GRID})
 
 # NM4-57: a body larger than this is no coverage question. An AOI outline of a few thousand points fits
 # many times over; the cap only keeps a request from holding the process while it is read.
@@ -272,7 +275,7 @@ def build_router(registry: DatasetRegistry, adapters: AdapterSpecs) -> APIRouter
         # `400` whether or not the database happens to be reachable, and the two
         # must never trade places (an unlucky pool outage must not mask a
         # self-intersecting polygon as "the catalogue is not available").
-        if area_path and query.intersects is not None:
+        if (area_path or config.coverage.provider is CoverageProvider.FIXED_GRID) and query.intersects is not None:
             try:
                 check_intersects_is_valid(query.intersects)
             except InvalidCoverageQuery as error:
@@ -281,7 +284,10 @@ def build_router(registry: DatasetRegistry, adapters: AdapterSpecs) -> APIRouter
         gateway = request.app.state.earthx_gateway
         pool = getattr(request.app.state, "earthx_cache_pool", None)
         try:
-            if area_path:
+            if config.coverage.provider is CoverageProvider.FIXED_GRID:
+                # Reckoned from the entry alone (M5-11 plan §5.4): no source, no database.
+                result = fixed_grid_coverage(query, config)
+            elif area_path:
                 if pool is None:
                     raise HTTPException(status_code=503, detail="the catalogue is not available")
                 async with pool.connection() as conn:
@@ -332,7 +338,7 @@ def build_router(registry: DatasetRegistry, adapters: AdapterSpecs) -> APIRouter
                 "level": result.level,
                 "completeness": result.completeness.value,
                 "from_cache": result.from_cache,
-                "answer": "area" if area_path else "density",
+                "answer": "fixed-grid" if config.coverage.provider is CoverageProvider.FIXED_GRID else "area" if area_path else "density",
                 "filters": sorted(conditions or ()),
                 "ignored_filters": result.ignored_filters,
             },

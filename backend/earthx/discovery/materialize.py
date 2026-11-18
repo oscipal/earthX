@@ -42,18 +42,20 @@ import argparse
 import asyncio
 import sys
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 
 import psycopg
 
 from earthx.adapters import (
     ADAPTER_SPECS,
+    AdapterSpecs,
     MaterializeOutcome,
     UnsupportedSource,
     UpstreamShapeError,
     materialize_items,
 )
+from earthx.adapters.spec import spec_table
 from earthx.catalog.datasets import registry
 from earthx.catalog.hosts import HostLimit
 from earthx.catalog.pgstac import (
@@ -71,15 +73,23 @@ from earthx.catalog.pgstac import (
     use_pgstac_search_path,
 )
 from earthx.catalog.registry import (
+    AdapterKind,
     ConfigError,
     DatasetConfig,
     ItemHolding,
     OverviewMode,
     UnknownDatasetError,
 )
+from earthx.discovery import meteoswiss_grid
 from earthx.discovery.source_gateway import open_source_gateway
 from earthx.gateway import Gateway, GatewayError, Policy, host_of, user_agent_from_env
 from earthx.logging import configure_logging
+
+#: The adapter table with what only `discovery` can materialize: the MeteoSwiss grids, whose files `h5py` reads (M5-11).
+MATERIALIZE_SPECS: AdapterSpecs = spec_table(
+    *(spec for kind, spec in ADAPTER_SPECS.items() if kind is not AdapterKind.METEOSWISS_GRID),
+    replace(ADAPTER_SPECS[AdapterKind.METEOSWISS_GRID], materialize=meteoswiss_grid.materialize_items),
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,7 +121,7 @@ async def run_materialize(
     started_at = datetime.now(timezone.utc)
     outcome = await materialize_items(
         config,
-        adapters=ADAPTER_SPECS,
+        adapters=MATERIALIZE_SPECS,
         gateway=gateway,
         known_version=known_version,
         expected_items=last_loaded_count(conn, config.dataset_id),

@@ -79,10 +79,10 @@ class AdapterSpec:
             raise ValueError(f"{self.kind}: search and fetch come together or not at all")
         if (self.search is None) != (self.filters is None):
             raise ValueError(f"{self.kind}: filters are declared exactly when search is")
-        if CoverageProvider.LOCAL_SQL in self.coverage:
+        if CoverageProvider.LOCAL_SQL in self.coverage or CoverageProvider.FIXED_GRID in self.coverage:
             # adr/0011 B4: our own items are counted by `catalog` over a database
-            # connection, which no adapter has.
-            raise ValueError(f"{self.kind}: local-sql coverage is catalog's, not an adapter's")
+            # connection, which no adapter has; a fixed grid is reckoned from the entry alone (M5-11).
+            raise ValueError(f"{self.kind}: local-sql and fixed-grid coverage are catalog's, not an adapter's")
         object.__setattr__(self, "coverage", MappingProxyType(dict(self.coverage)))
 
 
@@ -140,6 +140,16 @@ ADAPTER_SPECS: AdapterSpecs = spec_table(
         coverage={},
         filters=None,
     ),
+    # M5-11: `discovery` materializes it (`discovery.materialize.MATERIALIZE_SPECS`), since only there may `h5py` read
+    # the annual files; to every other caller the source offers nothing.
+    AdapterSpec(
+        kind=AdapterKind.METEOSWISS_GRID,
+        search=None,
+        fetch=None,
+        materialize=None,
+        coverage={},
+        filters=None,
+    ),
 )
 
 
@@ -148,7 +158,7 @@ def check_adapter_specs(registry: DatasetRegistry, adapters: AdapterSpecs) -> No
 
     Every entry's ``AdapterKind`` must be in the table. Beyond that, only what an
     app itself asks an adapter for (M4-01b §3.3): search and item fetch for a
-    federated entry, and coverage unless ``catalog`` answers it (``local-sql``). Whether
+    federated entry, and coverage unless ``catalog`` answers it (``local-sql``, ``fixed-grid``). Whether
     a materialized entry can be materialized is ``discovery``'s question, refused
     by the dispatch there.
     """
@@ -169,7 +179,7 @@ def check_adapter_specs(registry: DatasetRegistry, adapters: AdapterSpecs) -> No
         if config.search_filters and (spec.filters is None or not spec.filters.query):
             problems.append(f"{config.dataset_id}: has search filters, but {kind} applies no query")
         provider = config.coverage.provider
-        if provider is not CoverageProvider.LOCAL_SQL and provider not in spec.coverage:
+        if provider not in (CoverageProvider.LOCAL_SQL, CoverageProvider.FIXED_GRID) and provider not in spec.coverage:
             problems.append(f"{config.dataset_id}: {kind} answers no {provider.value} coverage")
     if problems:
         raise AdapterSpecMismatch("; ".join(problems))

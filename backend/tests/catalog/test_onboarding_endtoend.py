@@ -31,9 +31,11 @@ from earthx.access.download import NOTICE_FILENAME
 from earthx.adapters import ADAPTER_SPECS, SearchParams, materialize_items, search_items
 from earthx.api.tiler import build_app
 from earthx.catalog.registry import AdapterKind, DatasetConfig, ItemHolding, group_key
+from earthx.discovery.materialize import MATERIALIZE_SPECS
 from tests.catalog import synthetic_chain
 from tests.catalog.synthetic_chain import Chain, UnsupportedFormat
 from tests.catalog.synthetic_zarr import TEST_ENTRIES
+from tests.earthx.discovery import mini_archive
 
 pytestmark = pytest.mark.anyio
 
@@ -81,17 +83,20 @@ async def test_search_reaches_the_source_through_its_own_adapter(chain: Chain) -
     there is no search request to build."""
     if chain.config.source.item_holding is ItemHolding.MATERIALIZED:
         outcome = await materialize_items(
-            chain.config, adapters=ADAPTER_SPECS, gateway=chain.gateway, known_version=None
+            chain.config, adapters=MATERIALIZE_SPECS, gateway=chain.gateway, known_version=None
         )
         assert [item["id"] for item in outcome.items] == [chain.item["id"]]
         assert outcome.items[0]["bbox"] == chain.item["bbox"]
-        if chain.config.source.adapter in (AdapterKind.FSDI_STAC_V1, AdapterKind.BEV_ATOM):
+        if chain.config.source.adapter in (AdapterKind.FSDI_STAC_V1, AdapterKind.BEV_ATOM, AdapterKind.METEOSWISS_GRID):
             # The chain builds this item by hand for the tile and download routes; it is what the run writes.
             assert outcome.items == (chain.item,)
         paths = {request.url.path for request in chain.searched}
         stac = {f"/api/stac/v1/collections/{chain.config.source.source_collection_id}", "/api/stac/v1/search"}
         atom = {synthetic_chain.ATOM_SERVICE_PATH, synthetic_chain.ATOM_DATASET_PATH}
-        assert paths in ({"/tileList.txt", "/blacklist.txt", "/"}, {"/esa_worldcover_grid.geojson", "/"}, stac, atom)
+        # The archive item and the one annual file whose header is read (M5-11).
+        archive = {mini_archive.ITEM_PATH, *(path for path in paths if path.startswith("/files/ogd-surface-derived-grid-archive."))}
+        assert paths in ({"/tileList.txt", "/blacklist.txt", "/"}, {"/esa_worldcover_grid.geojson", "/"}, stac, atom, archive)
+        assert len(paths) > 1
         return
 
     page = await search_items(chain.config, SearchParams(limit=10), adapters=ADAPTER_SPECS, gateway=chain.gateway)
@@ -185,7 +190,7 @@ async def test_the_whole_chain_runs_for_this_entry(chain: Chain, client: TestCli
     downloaded, in that order."""
     if chain.config.source.item_holding is ItemHolding.MATERIALIZED:
         outcome = await materialize_items(
-            chain.config, adapters=ADAPTER_SPECS, gateway=chain.gateway, known_version=None
+            chain.config, adapters=MATERIALIZE_SPECS, gateway=chain.gateway, known_version=None
         )
         (found,) = outcome.items
     else:

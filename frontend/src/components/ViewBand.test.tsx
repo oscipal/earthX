@@ -184,6 +184,46 @@ describe('the dropdown "Band" of the view', () => {
   });
 });
 
+describe('the dropdown "Band" of a dataset read through chunk references (M5-11)', () => {
+  const meteo = collection({
+    'earthx:format': 'netcdf-refs',
+    'earthx:true_color': null,
+    'earthx:mask': null,
+    'earthx:auxiliary_assets': [],
+    'earthx:index_presets': [],
+    'earthx:band_units': { TabsD: '°C', TminD: '°C', TmaxD: '°C', SrelD: '%' },
+    'earthx:default_render': { title: 'Daily mean temperature', assets: ['TabsD'], rescale: [[-20, 30]], colormap_name: 'rdbu_r', expression: null, resampling: 'nearest' },
+  });
+  const quantity = { href: 'https://data.test/tabsd_2024.nc', type: 'application/x-netcdf', roles: ['data'], 'earthx:refs': { etag: '"a"' }, 'raster:bands': [{ data_type: 'float32' }] } as unknown as StacAsset;
+  const day = (names: string[]) => Object.fromEntries(names.map((name) => [name, quantity]));
+
+  it('offers every quantity of the day, the standard one first', () => {
+    mount({}, meteo, day(['TabsD', 'TminD', 'TmaxD', 'SrelD']));
+    expect([...select().options].map((o) => o.value)).toEqual(['', 'band:TminD', 'band:TmaxD', 'band:SrelD']);
+    expect(select().options[0].textContent).toBe('TabsD');
+  });
+
+  it('starts a temperature with the colormap and range of the mean temperature, sunshine with the measured range (H1 = 1)', async () => {
+    mount({}, meteo, day(['TabsD', 'TminD', 'TmaxD', 'SrelD']));
+    fetchMock.mockClear();
+    choose('band:TminD');
+    await settle();
+    expect([store().pendingColormapName, store().pendingVmin, store().pendingVmax]).toEqual(['rdbu_r', '-20', '30']);
+    // The histogram of the sliders of "Scale" is asked for as for any band; the range is not measured.
+    const measured = () => fetchMock.mock.calls.some(([url]) => String(url).includes('/statistics') && !String(url).includes('histogram_bins'));
+    expect(measured()).toBe(false);
+    choose('band:SrelD');
+    await settle();
+    expect(store().pendingColormapName).toBe('');
+    expect(measured()).toBe(true);
+  });
+
+  it('offers only what a day has: before 1971 the mean temperature alone, and the dropdown is locked', () => {
+    mount({}, meteo, day(['TabsD']));
+    expect(select().disabled).toBe(true);
+  });
+});
+
 describe('choosing a band', () => {
   it('puts the colormap and the range of a band in the fields, measured from the scene, and draws nothing until "Apply"', async () => {
     mount();

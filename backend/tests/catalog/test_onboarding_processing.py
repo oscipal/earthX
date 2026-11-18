@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
+import httpx
 import numpy
 import pytest
 import rasterio
@@ -49,6 +50,8 @@ from earthx.api.citation import citation_bib
 from earthx.api.intake import AcceptedOrder, accept_order, job_recipe_json
 from earthx.api.tiler import build_app
 from earthx.catalog.registry import AdapterKind, DataFormat, DatasetConfig, DatasetRegistry, Georeferencing, ItemHolding
+from earthx.discovery.materialize import MATERIALIZE_SPECS
+from earthx.discovery.meteoswiss_grid import PRODUCTS
 from earthx.gateway import Gateway
 from earthx.processing import RunResult, run
 from earthx.processing.operators import REGISTRY as OPERATORS
@@ -59,8 +62,9 @@ from tests.catalog.entries import REGISTRY, registry_of
 from tests.catalog.synthetic_chain import UnsupportedFormat
 from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR, TEST_ENTRIES
 from tests.catalog.test_onboarding_checklist import CHECKED_ELSEWHERE, CHECKLIST
+from tests.earthx.discovery import mini_archive
 from tests.earthx.processing import sources
-from tests.earthx.readers import mini_dem, mini_zarr, mini_zarr_cf
+from tests.earthx.readers import mini_dem, mini_netcdf, mini_zarr, mini_zarr_cf
 
 #: Q14: band math for the Sentinel-2 entry and the Zarr test entry, reprojection for the DEM; the mask over its own
 #: classes for ESA WorldCover (M5-07 plan §4.4, no band math there); reprojection of the TPS raster for Sentinel-1 GRD
@@ -76,6 +80,9 @@ OPERATOR_FOR = {
     "esa-worldcover-2021": "mask",
     "swissalti3d": "reproject",
     "bev-als-dgm": "reproject",
+    # Out of LV95, as for swissALTI3D (M5-11 PR 2): one day of a quantity read through its chunk references.
+    "meteoswiss-daily-1km": "reproject",
+    "meteoswiss-daily-precip-1km": "reproject",
 }
 
 ENTRIES = list(TEST_ENTRIES)
@@ -166,6 +173,8 @@ def build(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
         return _cog_pair(config, tmp_path, monkeypatch)
     if config.format is DataFormat.ZARR:
         return _zarr_pair(config, tmp_path, monkeypatch)
+    if config.format is DataFormat.NETCDF_REFS:
+        return _netcdf_day(config, tmp_path, monkeypatch)
     raise UnsupportedFormat(f"no synthetic store for format {config.format.value!r}")
 
 
@@ -295,6 +304,31 @@ def _projected(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.Monkey
     )
 
 
+def _netcdf_day(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Scenario:
+    """One day of the entry's default quantity in an annual file of the archive, reprojected out of LV95 (M5-11 PR 2)."""
+    sources.serve({}, monkeypatch)  # the resolver; the file is served below
+    assert config.default_render is not None
+    quantity = config.default_render.assets[0]
+    body = mini_archive.annual_file(tmp_path, 2024, days=[0])
+    archive = mini_archive.Archive({mini_archive.name(quantity, PRODUCTS[quantity].grid, 2024): body})
+    mini_netcdf.Source(body).serve_readers(monkeypatch)
+    synthetic = mini_archive.entry(config)
+    west, south = mini_netcdf.WEST, mini_netcdf.SOUTH
+    east, north = west + mini_netcdf.COLUMNS * mini_netcdf.CELL, south + mini_netcdf.ROWS * mini_netcdf.CELL
+    return Scenario(
+        config=synthetic,
+        registry=registry_of(synthetic),
+        item={"id": f"{config.dataset_id}-20240101"},
+        assets=[quantity],
+        aoi=synthetic_chain.aoi_wgs84(transform_bounds("EPSG:2056", WGS84_CRS, west, south, east, north)),
+        step={"op": "reproject", "op_version": 2, "params": REPROJECT},
+        scaling="store-cf",
+        gateway=archive.gateway(),
+        result_bands=[quantity],
+        tile=None,
+    )
+
+
 def _gcp(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Scenario:
     """A file placed by its GCPs only, stretched in its own grid (DS-04 plan §4.7, DS-04d)."""
     sources.serve({}, monkeypatch)  # the resolver; the COG itself is served by the chain
@@ -331,7 +365,7 @@ class Walk:
 
 async def _found_and_accepted(s: Scenario) -> tuple[dict[str, Any], AcceptedOrder]:
     if s.config.source.item_holding is ItemHolding.MATERIALIZED:
-        outcome = await materialize_items(s.config, adapters=ADAPTER_SPECS, gateway=s.gateway, known_version=None)
+        outcome = await materialize_items(s.config, adapters=MATERIALIZE_SPECS, gateway=s.gateway, known_version=None)
         (found,) = outcome.items
     else:
         page = await search_items(s.config, SearchParams(limit=10), adapters=ADAPTER_SPECS, gateway=s.gateway)
@@ -465,11 +499,12 @@ def test_the_search_finds_the_item_through_the_entrys_own_adapter(scenario: Scen
 
 def test_the_asset_resolves_to_a_reader_and_a_host_the_entry_names(scenario: Scenario, walked: Walk) -> None:
     """Link 2."""
-    expected = "zarr" if scenario.config.format is DataFormat.ZARR else "cog"
+    # Chunk references are read by the Zarr reader (M5-11 A10); they name their array themselves, no variable.
+    expected = "zarr" if scenario.config.format in (DataFormat.ZARR, DataFormat.NETCDF_REFS) else "cog"
     assert walked.ref.reader == expected
     assert walked.ref.dataset_id == scenario.config.dataset_id
-    assert walked.ref.href.startswith(f"https://{synthetic_chain.HOST}/")
-    assert (walked.ref.variable is not None) == (expected == "zarr")
+    assert httpx.URL(walked.ref.href).host in scenario.config.source.asset_hosts
+    assert (walked.ref.variable is not None) == (scenario.config.format is DataFormat.ZARR)
 
 
 def test_the_order_becomes_a_validated_hashed_recipe_that_carries_the_scaling_source(
