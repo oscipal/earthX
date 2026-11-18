@@ -96,21 +96,29 @@ async def unchanged(gateway: Gateway, unit: SourceUnit, stored: StoredUnit) -> t
     if known.etag or known.last_modified:
         condition = {"if-none-match": known.etag} if known.etag else {"if-modified-since": str(known.last_modified)}
         response = await gateway.head(unit.href, headers=condition)
-        seen = Validators(
-            etag=response.headers.get("etag") or known.etag,
-            last_modified=response.headers.get("last-modified") or known.last_modified,
-            checksum=kept.checksum,
-            content_sha256=known.content_sha256,
+        etag, modified = response.headers.get("etag"), response.headers.get("last-modified")
+        # A server that overhears the condition and answers 200 still tells by the validator it names.
+        same = response.status_code == 304 or (
+            (etag == known.etag) if known.etag and etag else bool(known.last_modified and modified == known.last_modified)
         )
-        return response.status_code == 304, seen
+        return same, replace(kept, etag=kept.etag or etag, last_modified=kept.last_modified or modified)
     body = (await gateway.get(unit.href)).content
     digest = hashlib.sha256(body).hexdigest()
     return digest == known.content_sha256, replace(kept, content_sha256=digest)
 
 
-def _check_listing(config: DatasetConfig, groups: Mapping[str, str | None], unchanged_groups: frozenset[str], units: tuple[SourceUnit, ...]) -> None:
+def _check_listing(
+    config: DatasetConfig,
+    known_groups: Mapping[str, str | None],
+    groups: Mapping[str, str | None],
+    unchanged_groups: frozenset[str],
+    units: tuple[SourceUnit, ...],
+) -> None:
     if not unchanged_groups <= set(groups):
         raise UpstreamShapeError(f"{config.dataset_id}: a group answered unchanged that the source no longer lists")
+    if not unchanged_groups <= set(known_groups):
+        # Its units would never be built: "unchanged" needs a stored state to stay as it is.
+        raise UpstreamShapeError(f"{config.dataset_id}: a group answered unchanged that a run has never seen")
     keys = [unit.key for unit in units]
     if len(set(keys)) != len(keys):
         raise UpstreamShapeError(f"{config.dataset_id}: the source lists a unit twice")
@@ -191,9 +199,10 @@ async def run_units(
     now = datetime.now(UTC)
     before = read_units(conn, config.dataset_id)
 
-    listing = await spec.units.list_units(config, gateway=gateway, known_groups=read_groups(conn, config.dataset_id))
+    known_groups = read_groups(conn, config.dataset_id)
+    listing = await spec.units.list_units(config, gateway=gateway, known_groups=known_groups)
     groups, unchanged_groups = dict(listing.groups), frozenset(listing.unchanged_groups)
-    _check_listing(config, groups, unchanged_groups, listing.units)
+    _check_listing(config, known_groups, groups, unchanged_groups, listing.units)
 
     after: dict[str, StoredUnit] = {key: unit for key, unit in before.items() if unit.group in unchanged_groups}
     if any(unit.key in after for unit in listing.units):
@@ -224,9 +233,11 @@ async def run_units(
         _check_built(config, units, result)
         for unit, made in zip(units, result, strict=True):
             built[unit.key] = made
+            # The listing's own values first, so that the next run compares listing with listing (one form of ETag,
+            # one form of date); what reading showed fills only what the listing does not name.
             validators = Validators(
-                etag=made.validators.etag or unit.validators.etag,
-                last_modified=made.validators.last_modified or unit.validators.last_modified,
+                etag=unit.validators.etag or made.validators.etag,
+                last_modified=unit.validators.last_modified or made.validators.last_modified,
                 checksum=unit.validators.checksum or made.validators.checksum,
                 content_sha256=unit.validators.content_sha256 or made.validators.content_sha256,
             )
@@ -248,16 +259,26 @@ async def run_units(
             touched |= before[key].contributes
         if key in after:
             touched |= after[key].contributes
+    for key, unit in after.items():
+        # An unchanged unit whose file grew younger may now hold over another of its state (review of PR 1).
+        if key in before and key not in built and unit.validators.modified_at != before[key].validators.modified_at:
+            touched |= unit.contributes
 
     # A unit that holds an asset now but did not before, and was not built in this run, is built anew (§3.4 point 4).
-    fallback: dict[str, SourceUnit] = {}
-    for pair in touched:
-        now_holder, previous = holder(pair, after.values()), holder(pair, before.values())
-        if now_holder is None or now_holder.key in built:
-            continue
-        if previous is None or previous.key != now_holder.key:
-            fallback[now_holder.key] = now_holder.as_listed()
-    await build(list(fallback.values()))
+    # Built anew, it may contribute to fewer assets than before; those are touched too, and so on until nothing moves.
+    while True:
+        fallback: dict[str, SourceUnit] = {}
+        for pair in touched:
+            now_holder, previous = holder(pair, after.values()), holder(pair, before.values())
+            if now_holder is None or now_holder.key in built:
+                continue
+            if previous is None or previous.key != now_holder.key:
+                fallback[now_holder.key] = now_holder.as_listed()
+        if not fallback:
+            break
+        await build(list(fallback.values()))
+        for key in fallback:
+            touched |= before[key].contributes | after[key].contributes
 
     changes: dict[str, dict[str, tuple[Contribution, ItemState] | None]] = defaultdict(dict)
     for pair in sorted(touched):

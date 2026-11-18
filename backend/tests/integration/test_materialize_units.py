@@ -16,6 +16,7 @@ from typing import Any
 import httpx
 import psycopg
 import pytest
+from psycopg.types.json import Jsonb
 
 from earthx.adapters import UnsupportedSource, UpstreamShapeError
 from earthx.adapters.spec import ADAPTER_SPECS, UnitsMaterializer, spec_table
@@ -85,6 +86,8 @@ class Unit:
     listed: str = "checksum"
     #: Whether the unit answers with an ETag and a Last-Modified at all; without them only its hash tells.
     validators: bool = True
+    #: Whether the listing names its Last-Modified beside the checksum or the ETag.
+    list_modified: bool = False
 
     @property
     def etag(self) -> str:
@@ -101,6 +104,8 @@ class Source:
     requests: list[str] = field(default_factory=list)
     built: list[str] = field(default_factory=list)
     fail_build: bool = False
+    #: A server that overhears If-None-Match and answers 200 with the same ETag.
+    ignore_conditions: bool = False
 
     def href(self, key: str) -> str:
         return f"https://{HOST}/files/{key}"
@@ -110,7 +115,7 @@ class Source:
 
     def group_validator(self, name: str) -> str:
         units = self.groups[name]
-        text = "|".join(f"{key}:{units[key].state.value}:{units[key].etag}" for key in sorted(units))
+        text = "|".join(f"{k}:{units[k].state.value}:{units[k].etag}:{units[k].last_modified}" for k in sorted(units))
         return hashlib.sha256(text.encode()).hexdigest()
 
     async def list_units(
@@ -124,8 +129,8 @@ class Source:
                 continue
             for key, unit in sorted(group.items()):
                 listed = Validators(
-                    etag=unit.etag if unit.listed == "etag" else None,
-                    last_modified=None,
+                    etag=unit.etag if unit.listed == "etag" else unit.etag.strip('"') if unit.listed == "bare etag" else None,
+                    last_modified=unit.last_modified if unit.list_modified else None,
                     checksum=unit.checksum if unit.listed == "checksum" else None,
                     content_sha256=None,
                 )
@@ -165,7 +170,7 @@ class Source:
         self.requests.append(f"{request.method} {key}")
         unit = self.unit(key)
         headers = {"etag": unit.etag, "last-modified": unit.last_modified} if unit.validators else {}
-        if unit.validators and request.headers.get("if-none-match") == unit.etag:
+        if unit.validators and not self.ignore_conditions and request.headers.get("if-none-match") == unit.etag:
             return httpx.Response(304, headers=headers)
         return httpx.Response(200, content=unit.body if request.method == "GET" else b"", headers=headers)
 
@@ -327,6 +332,24 @@ class TestEqualStates:
         assert items(db)["20261001"]["assets"]["precip"]["href"].endswith("/year-2026")
         assert items(db)["20261002"]["assets"]["precip"]["href"].endswith("/month-10")
 
+    async def test_a_file_uploaded_again_with_the_same_content_but_younger_holds_from_then_on(
+        self, db: psycopg.Connection
+    ) -> None:
+        """Review of PR 1: an unchanged unit whose Last-Modified grows can become the holder; its days are written."""
+        fake = source()
+        fake.groups["month-10"]["month-10"] = Unit(F, ("20261001", "20261002"), b"m10", list_modified=True)
+        fake.groups["archive"] = {"year-2026": Unit(F, ("20261001",), b"y26", last_modified="Mon, 01 Feb 2027 08:00:00 GMT")}
+        await run(db, fake)
+        assert items(db)["20261001"]["assets"]["precip"]["href"].endswith("/year-2026")
+        fake.groups["month-10"]["month-10"].last_modified = "Tue, 02 Feb 2027 08:00:00 GMT"
+        fake.built.clear()
+        outcome = await run(db, fake)
+        assert outcome.units_changed == 0 and fake.built == ["month-10"]
+        assert items(db)["20261001"]["assets"]["precip"]["href"].endswith("/month-10")
+        del fake.groups["archive"]
+        await run(db, fake)
+        assert items(db)["20261001"]["assets"]["precip"]["href"].endswith("/month-10")
+
     async def test_when_the_holder_goes_the_next_one_is_built_anew(self, db: psycopg.Connection) -> None:
         fake = source()
         fake.groups["archive"] = {"year-2026": Unit(F, ("20261001",), b"y26", last_modified="Mon, 01 Feb 2027 08:00:00 GMT")}
@@ -376,6 +399,26 @@ class TestAFileChangedInPlace:
         assert fake.built == ["extra"]
         assert (outcome.units_new, outcome.units_changed) == (1, 0)
 
+    async def test_a_server_that_overhears_the_condition_but_names_the_same_etag(self, db: psycopg.Connection) -> None:
+        fake = source()
+        fake.groups["month-10"]["month-10"].listed = "none"
+        await run(db, fake)
+        fake.ignore_conditions = True
+        fake.groups["month-10"]["extra"] = Unit(F, ("20261003",), b"x")
+        fake.built.clear()
+        await run(db, fake)
+        assert fake.built == ["extra"]
+
+    async def test_an_etag_the_listing_writes_otherwise_than_the_file_is_no_change(self, db: psycopg.Connection) -> None:
+        """The listing names the ETag without quotes, the file with: the next run compares listing with listing."""
+        fake = source()
+        fake.groups["month-10"]["month-10"].listed = "bare etag"
+        await run(db, fake)
+        fake.groups["month-10"]["extra"] = Unit(F, ("20261003",), b"x")
+        fake.built.clear()
+        await run(db, fake)
+        assert fake.built == ["extra"]
+
     async def test_without_any_validator_its_hash_decides(self, db: psycopg.Connection) -> None:
         fake = Source(groups={"g": {"plain": Unit(F, ("20261001",), b"one", listed="none", validators=False)}})
         await run(db, fake)
@@ -392,6 +435,16 @@ class TestAFileChangedInPlace:
 
 
 class TestRefused:
+    async def test_a_group_never_seen_cannot_be_unchanged(self, db: psycopg.Connection) -> None:
+        fake = source()
+
+        async def claims_unchanged(config: DatasetConfig, *, gateway: Gateway, known_groups: Mapping[str, str | None]) -> UnitListing:
+            return UnitListing(groups={"new": "v"}, unchanged_groups=frozenset({"new"}), units=())
+
+        fake.list_units = claims_unchanged  # type: ignore[method-assign]
+        with pytest.raises(UpstreamShapeError, match="never seen"):
+            await run(db, fake)
+
     async def test_a_failed_build_writes_nothing(self, db: psycopg.Connection) -> None:
         fake = source()
         await run(db, fake)
@@ -429,22 +482,25 @@ class TestRefused:
 
 
 class TestTheEndOfTheData:
-    async def test_the_newest_item_ends_the_extent_of_a_running_source(
-        self, db: psycopg.Connection, aconn: psycopg.AsyncConnection
-    ) -> None:
-        await run(db, source())
-        db.commit()
-        try:
-            end = await latest_item_end(aconn, ENTRY.dataset_id)
-            await aconn.rollback()  # its lock on the items would keep the clean-up below waiting
-            assert end is not None and end.isoformat() == "2026-11-02T06:00:00+00:00"
-        finally:
-            with db.cursor() as cur:
-                cur.execute("DELETE FROM pgstac.items WHERE collection = %s", (ENTRY.dataset_id,))
-                cur.execute("DELETE FROM pgstac.collections WHERE id = %s", (ENTRY.dataset_id,))
-                cur.execute("DELETE FROM public.earthx_materialize_unit WHERE dataset_id = %s", (ENTRY.dataset_id,))
-                cur.execute("DELETE FROM public.earthx_materialize_group WHERE dataset_id = %s", (ENTRY.dataset_id,))
-            db.commit()
+    """adr/0038 §3.6: the newest item ends the extent of a running source. Written through the async connection
+    itself, inside its own transaction, which the fixture rolls back: nothing is committed to the shared database."""
+
+    async def test_the_newest_item_ends_the_extent_of_a_running_source(self, aconn: psycopg.AsyncConnection) -> None:
+        collection = {
+            "type": "Collection",
+            "stac_version": "1.0.0",
+            "id": ENTRY.dataset_id,
+            "description": "synthetic",
+            "license": "other",
+            "links": [],
+            "extent": {"spatial": {"bbox": [[6, 46, 10, 48]]}, "temporal": {"interval": [[None, None]]}},
+        }
+        await aconn.execute("SELECT pgstac.create_collection(%s)", (Jsonb(collection),))
+        for day in ("20261101", "20261102"):
+            item = {**skeleton(ENTRY, day), "assets": {}}
+            await aconn.execute("SELECT pgstac.create_item(%s)", (Jsonb(item),))
+        end = await latest_item_end(aconn, ENTRY.dataset_id)
+        assert end is not None and end.isoformat() == "2026-11-02T06:00:00+00:00"
 
     async def test_before_the_first_run_there_is_none(self, aconn: psycopg.AsyncConnection) -> None:
         assert await latest_item_end(aconn, "earthx-test-no-such-collection") is None

@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from typing import Any
 
@@ -40,7 +40,13 @@ class Validators:
         try:
             return parsedate_to_datetime(self.last_modified)
         except (TypeError, ValueError):
+            pass
+        # A listing may name the time as ISO 8601 (STAC `updated`) rather than as an HTTP date.
+        try:
+            moment = datetime.fromisoformat(self.last_modified.replace("Z", "+00:00"))
+        except ValueError:
             return None
+        return moment if moment.tzinfo is not None else moment.replace(tzinfo=UTC)
 
 
 NO_VALIDATORS = Validators(etag=None, last_modified=None, checksum=None, content_sha256=None)
