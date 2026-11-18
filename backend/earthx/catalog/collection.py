@@ -93,9 +93,13 @@ def _earthx_band_units(config: DatasetConfig) -> dict[str, str | None]:
     return dict(config.band_units)
 
 
-def _earthx_band_descriptions(config: DatasetConfig) -> dict[str, str]:
-    """What each band is, in a few words, by the keys of ``earthx:band_units`` (M5-59)."""
-    return dict(config.band_descriptions)
+def _earthx_bands(config: DatasetConfig) -> list[dict[str, str]]:
+    """The bands as STAC names them, ``name`` and ``description``, in the order of the entry (M5-59).
+
+    A list, because the collection travels through JSONB, which does not keep the order of the keys of an object, and
+    the Data catalogue shows the bands in the order the entry lists them.
+    """
+    return [{"name": key, "description": text} for key, text in config.band_descriptions.items()]
 
 
 def _earthx_auxiliary_assets(config: DatasetConfig) -> list[str]:
@@ -286,7 +290,7 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
         "earthx:capabilities": _earthx_capabilities(config),
         "earthx:mask": _earthx_mask(config),
         "earthx:band_units": _earthx_band_units(config),
-        "earthx:band_descriptions": _earthx_band_descriptions(config),
+        "earthx:bands": _earthx_bands(config),
         "earthx:auxiliary_assets": _earthx_auxiliary_assets(config),
         "earthx:search_filters": _earthx_search_filters(config),
         "earthx:search_capabilities": _earthx_search_capabilities(config),

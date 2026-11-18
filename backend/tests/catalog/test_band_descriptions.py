@@ -27,9 +27,10 @@ class TestTheEntries:
 
     @pytest.mark.parametrize("entry", REGISTRY, ids=lambda entry: entry.dataset_id)
     def test_the_collection_publishes_them_by_the_keys_of_the_units(self, entry) -> None:
-        published = to_stac_collection(entry)["earthx:band_descriptions"]
-        assert published == dict(entry.band_descriptions)
-        assert set(published) <= set(to_stac_collection(entry)["earthx:band_units"])
+        collection = to_stac_collection(entry)
+        published = collection["earthx:bands"]
+        assert [(band["name"], band["description"]) for band in published] == list(entry.band_descriptions.items())
+        assert {band["name"] for band in published} <= set(collection["earthx:band_units"])
 
     def test_the_red_edge_band_reads_like_the_example(self) -> None:
         sentinel = next(entry for entry in REGISTRY if entry.dataset_id == "sentinel-2-c1-l2a")

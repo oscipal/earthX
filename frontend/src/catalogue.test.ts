@@ -211,13 +211,13 @@ describe('the rows', () => {
   it('list the bands as lines of band, description and unit, without the auxiliary assets and the mask, which has a row of its own', () => {
     const c = collection('x', 'optical', {
       'earthx:band_units': { red: '1', vv: 'dB', visual: null, scl: null, height: null },
-      'earthx:band_descriptions': { red: 'Red', vv: 'VV polarisation', scl: 'Scene classification' },
+      'earthx:bands': [{ name: 'vv', description: 'VV polarisation' }, { name: 'red', description: 'Red' }, { name: 'scl', description: 'Scene classification' }],
       'earthx:auxiliary_assets': ['visual'],
       'earthx:mask': { asset: 'scl', band: 'scl', classes: [], suggested: [], reference: 'https://example.org', note: '' },
     });
     expect(rowsOf(c).Bands.bands).toEqual([
-      { band: 'red', description: 'Red', unit: '1, dimensionless' },
       { band: 'vv', description: 'VV polarisation', unit: 'dB' },
+      { band: 'red', description: 'Red', unit: '1, dimensionless' },
       { band: 'height', description: '—', unit: '—' },
     ]);
     expect(textOf(c, 'Mask')).toBe('scl');
@@ -231,7 +231,7 @@ describe('the rows', () => {
   it('read a backend without descriptions, or with a description that is no text, as "—"', () => {
     const none = collection('x', 'optical', { 'earthx:band_units': { red: '1' } });
     expect(rowsOf(none).Bands.bands).toEqual([{ band: 'red', description: '—', unit: '1, dimensionless' }]);
-    const odd = collection('x', 'optical', { 'earthx:band_units': { red: '1', nir: 'm' }, 'earthx:band_descriptions': { red: 7 as never, nir: '' } });
+    const odd = collection('x', 'optical', { 'earthx:band_units': { red: '1', nir: 'm' }, 'earthx:bands': [{ name: 'red', description: 7 as never }, { name: 'nir', description: '' }] });
     expect(rowsOf(odd).Bands.bands?.map((line) => line.description)).toEqual(['—', '—']);
   });
 

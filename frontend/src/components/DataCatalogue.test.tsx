@@ -59,7 +59,7 @@ function listed(id: string, title: string, category: string, extra: Partial<Coll
 const FULL = [
   collection('relief', 'Relief model', 'elevation', {
     'earthx:band_units': { data: 'm', raw: 'DN' },
-    'earthx:band_descriptions': { data: 'Surface height (DSM)', raw: 'Raw counts' },
+    'earthx:bands': [{ name: 'data', description: 'Surface height (DSM)' }, { name: 'raw', description: 'Raw counts' }],
   }),
   collection('beta', 'Beta optical', 'optical'),
   collection('alpha', 'Alpha optical', 'optical'),

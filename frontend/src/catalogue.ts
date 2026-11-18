@@ -206,23 +206,25 @@ export function resolutionText(collection: Collection): string {
   return metres.length > 0 ? `${metres.map(formatNumber).join(', ')} m` : NONE;
 }
 
-// The bands of the data, one line each: the key, what it is in a few words (`earthx:band_descriptions`) and the unit or
-// the kind of values (`catalogueUnit`); "—" where the registry says none. The auxiliary assets and the mask are no band
-// here (the mask has a row of its own).
+// The bands of the data, one line each: the key, what it is in a few words (`earthx:bands`) and the unit or the kind of
+// values (`catalogueUnit`); "—" where the registry says none. In the order of `earthx:bands` (the entry's), then the
+// other keys of the units. The auxiliary assets and the mask are no band here (the mask has a row of its own).
 export function bandLinesOf(collection: Collection): BandLine[] {
   const units = collection['earthx:band_units'];
   if (!units || typeof units !== 'object') return [];
-  const descriptions = collection['earthx:band_descriptions'] ?? {};
+  const listed = Array.isArray(collection['earthx:bands']) ? collection['earthx:bands'] : [];
+  const descriptions = new Map(listed.map((band) => [band?.name, band?.description]));
+  const order = [...listed.map((band) => band?.name).filter((name): name is string => typeof name === 'string'), ...Object.keys(units)];
   const auxiliary = collection['earthx:auxiliary_assets'] ?? [];
   const mask = collection['earthx:mask']?.asset;
-  return Object.entries(units)
-    .filter(([key]) => !auxiliary.includes(key) && key !== mask)
-    .map(([key, unit]) => {
-      const description = descriptions[key];
+  return [...new Set(order)]
+    .filter((key) => Object.hasOwn(units, key) && !auxiliary.includes(key) && key !== mask)
+    .map((key) => {
+      const description = descriptions.get(key);
       return {
         band: key,
         description: typeof description === 'string' && description !== '' ? description : NONE,
-        unit: catalogueUnit(unit) ?? NONE,
+        unit: catalogueUnit(units[key]) ?? NONE,
       };
     });
 }
