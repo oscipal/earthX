@@ -172,9 +172,39 @@ def test_the_output_names_no_address_no_id_and_no_etag(
         ("19610101000000", "19611231235959", "one year"),
         ("19610101000000", "19620101000000", "one year"),
         ("20251001000000", "20251031000000", "one month"),
-        ("20261101000000", "20261101000000", "one day"),
+        ("20261101000000", "20261101000000", "one time step"),
+        # Yearly values stamped with the first instant of their year: one time step, no file of one day (18.11.2026).
+        ("20250101000000", "20250101000000", "one time step"),
+        ("20251101000000", "20251101235959", "one day"),
         ("19610101000000", "19701231000000", "several years"),
     ],
 )
 def test_what_one_file_covers(start: str, end: str, expected: str) -> None:
     assert load().span({"start": start, "end": end}) == expected
+
+
+def test_yearly_values_are_one_time_step_not_one_day() -> None:
+    name = {"quantity": "tabsy", "grid": "ch01r", "start": "20250101000000", "end": "20250101000000"}
+    assert load().cadence(name) == "yearly values, file of one time step"
+
+
+def test_a_grid_mapping_that_names_no_epsg_code_is_compared_with_lv95(
+    probe: ModuleType, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    """Third run (18.11.2026): every file refused for its grid_mapping. The probe now says how it differs from 2056."""
+    from pyproj import CRS
+
+    esri = CRS.from_epsg(2056).to_wkt("WKT1_ESRI")
+    mapping = {**mini_netcdf.LV95, "false_easting": 2600000.5, "esri_pe_string": esri}
+    probe.SOURCE.replace(mini_netcdf.build(tmp_path / "shifted.nc", grid_mapping=mapping, bounds=True).read_bytes())
+    assert probe.run(["--layout", "--grids", "ch01h"]) == 0
+    out = capsys.readouterr().out
+    # The rest of the layout is still read: type, time bounds; the platform itself would refuse the file.
+    assert "layout × 1" in out and "<f4" in out and "from 06:00:00 to 06:00:00 (24 h)" in out
+    assert "no exact EPSG code (see grid_mapping below)" in out
+    assert re.search(r"grid_mapping 1 of 1 without an exact EPSG code\s+\{'rhiresd ch01h': 1\}", out), out
+    assert re.search(r"attribute false_easting\s+2600000\.5$", out, flags=re.MULTILINE)
+    assert re.search(r"from_cf: Easting at projection centre\s+DIFFERS: 2600000\.5 \| 2600000\.0", out), out
+    assert re.search(r"from_cf: Northing at projection centre\s+same", out)
+    assert re.search(r"esri_pe_string: pyproj matches\s+\[.*'EPSG:2056 \d+%'", out), out
+    assert "ellipsoid (here)" in out and "axes (EPSG)" in out

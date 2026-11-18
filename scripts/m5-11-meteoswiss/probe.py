@@ -21,11 +21,17 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
+import math
 import re
 import sys
+import warnings
 from collections import Counter, defaultdict
 from datetime import UTC, datetime
 from typing import Any
+
+from pyproj import CRS
+from pyproj.exceptions import CRSError
 
 from earthx.discovery.netcdf_refs import FileReferences, UnsupportedLayout, reference_file
 from earthx.gateway import Gateway, Policy
@@ -33,6 +39,10 @@ from earthx.gateway.errors import GatewayError, UpstreamError
 
 COLLECTION = "https://data.geo.admin.ch/api/stac/v1/collections/ch.meteoschweiz.ogd-surface-derived-grid"
 HOST = "data.geo.admin.ch"
+# What a grid_mapping that names no EPSG code exactly is compared with: LV95, the grid of both measured files.
+REFERENCE_EPSG = 2056
+# Attributes in which a file may carry its CRS as text beside the CF parameters.
+WKT_ATTRIBUTES = ("crs_wkt", "spatial_ref", "esri_pe_string")
 INTERVAL_S = 1.0
 PAGES = 10
 # The names of the annual archive, as Otto's second run showed them (17.11.2026):
@@ -71,8 +81,14 @@ async def items(gateway: Gateway) -> list[dict[str, Any]]:
 
 
 def span(name: dict[str, str]) -> str:
-    """What one file covers, from its two stamps: a year, a month, a day or something else."""
+    """What one file covers, from its two stamps: a year, a month, a day, one time step or something else.
+
+    Two equal stamps are one time step, whatever its length: a file of yearly values stamped with the first instant
+    of its year is no file of one day (third run, 18.11.2026).
+    """
     start, end = name["start"], name["end"]
+    if start == end:
+        return "one time step"
     first_instant = start[4:8] == "0101" and set(start[8:]) <= {"0"}
     if first_instant and end == f"{int(start[:4]) + 1}0101".ljust(len(end), "0"):
         return "one year"  # the end stamp is the first instant of the next year
@@ -150,7 +166,7 @@ def signature(refs: FileReferences) -> tuple[Any, ...]:
         bounds = f"from {start.time()} to {end.time()} ({(end - start).total_seconds() / 3600:g} h)"
     return (
         layout.variable, layout.dtype, layout.shape[1:], layout.chunks, layout.filters, layout.fill_value,
-        layout.crs, (a, e, c, f), layout.units, f"steps at {refs.times[0].time()}", bounds,
+        layout.crs or "no exact EPSG code (see grid_mapping below)", (a, e, c, f), layout.units, f"steps at {refs.times[0].time()}", bounds,
     )
 
 
@@ -168,13 +184,21 @@ async def report_layout(gateway: Gateway, matched: list[tuple[dict[str, str], di
     say("daily annual files to read", f"{len(files)} (grids {sorted(grids)}, up to {last_year})")
     layouts: Counter[tuple[Any, ...]] = Counter()
     refused: Counter[str] = Counter()
+    mappings: dict[str, dict[str, Any]] = {}
+    mapping_files: dict[str, Counter[str]] = defaultdict(Counter)
     steps: Counter[str] = Counter()
     for number, (name, asset) in enumerate(files[:limit] if limit else files, start=1):
         try:
-            refs = await reference_file(gateway, asset["href"], None)
+            # Not strict: a grid_mapping without an exact EPSG code is recorded and the rest of the layout still read
+            # (type, chunks, time), which the platform would refuse (third run, 18.11.2026).
+            refs = await reference_file(gateway, asset["href"], None, strict_crs=False)
         except (UnsupportedLayout, GatewayError) as error:
             refused[f"{name['quantity']} {name['grid']}: {reason(error)}"] += 1
             continue
+        if refs.layout.crs is None:
+            key = json.dumps(dict(refs.layout.grid_mapping), sort_keys=True, default=str)
+            mappings[key] = dict(refs.layout.grid_mapping)
+            mapping_files[key][f"{name['quantity']} {name['grid']}"] += 1
         layouts[(name["grid"], *signature(refs))] += 1
         days = (refs.times[-1] - refs.times[0]).days + 1
         steps[f"{name['quantity']} {name['grid']}: {'complete' if days == len(refs.times) else 'gaps'}"] += 1
@@ -194,6 +218,72 @@ async def report_layout(gateway: Gateway, matched: list[tuple[dict[str, str], di
         say("  days", f"{line} × {count}")
     for line, count in refused.most_common():
         say("refused", f"{line} × {count}")
+    for number, (key, attributes) in enumerate(sorted(mappings.items()), start=1):
+        print()
+        say(f"grid_mapping {number} of {len(mappings)} without an exact EPSG code", dict(mapping_files[key]))
+        report_mapping(attributes)
+
+
+def report_mapping(attributes: dict[str, Any]) -> None:
+    """A grid_mapping that names no EPSG code exactly: its attributes, and how it differs from EPSG:2056 (LV95)."""
+    for name in sorted(attributes):
+        say(f"  attribute {name}", attributes[name])
+    reference = CRS.from_epsg(REFERENCE_EPSG)
+    try:
+        ours = CRS.from_cf(attributes)
+    except CRSError as error:
+        say("  pyproj from_cf", f"no CRS: {form(str(error))}")
+    else:
+        compare("from_cf", ours, reference)
+    for name in WKT_ATTRIBUTES:
+        text = attributes.get(name)
+        if not isinstance(text, str) or not text.strip():
+            continue
+        try:
+            compare(name, CRS.from_user_input(text), reference)
+        except CRSError as error:
+            say(f"  pyproj {name}", f"no CRS: {form(str(error))}")
+
+
+def compare(label: str, ours: CRS, reference: CRS) -> None:
+    """Where ``ours`` differs from ``reference``: matches by confidence, method, every parameter, ellipsoid, datum, axes."""
+    matches = [f"{m.auth_name}:{m.code} {m.confidence}%" for m in ours.list_authority(min_confidence=1)[:5]]
+    say(f"  {label}: pyproj matches", matches or "none")
+    say(f"  {label}: name", f"{ours.name!r} | EPSG:{REFERENCE_EPSG} {reference.name!r}")
+    a, b = ours.coordinate_operation, reference.coordinate_operation
+    if a is None or b is None:
+        say(f"  {label}: projection", f"{'none' if a is None else a.method_name} | {b.method_name if b else 'none'}")
+    else:
+        same = "same" if a.method_name == b.method_name else "DIFFERS"
+        say(f"  {label}: method", f"{same}: {a.method_name!r} | {b.method_name!r}")
+        theirs = {p.name: p for p in b.params}
+        for parameter in a.params:
+            other = theirs.pop(parameter.name, None)
+            if other is None:
+                say(f"  {label}: parameter only here", f"{parameter.name} = {parameter.value} {parameter.unit_name}")
+                continue
+            equal = math.isclose(parameter.value, other.value, rel_tol=1e-9, abs_tol=1e-9)
+            same_unit = parameter.unit_name.lower() == other.unit_name.lower()
+            units = "" if same_unit else f" (units {parameter.unit_name} | {other.unit_name})"
+            say(
+                f"  {label}: {parameter.name}",
+                f"{'same' if equal and not units else 'DIFFERS'}: {parameter.value} | {other.value}{units}",
+            )
+        for parameter in theirs.values():
+            say(f"  {label}: parameter only in EPSG", f"{parameter.name} = {parameter.value} {parameter.unit_name}")
+    for side, crs in (("here", ours), ("EPSG", reference)):
+        ellipsoid = crs.ellipsoid
+        say(
+            f"  {label}: ellipsoid ({side})",
+            f"{ellipsoid.name if ellipsoid else None}: {ellipsoid.semi_major_metre if ellipsoid else None}, "
+            f"1/f {ellipsoid.inverse_flattening if ellipsoid else None}",
+        )
+        say(f"  {label}: datum ({side})", crs.datum.name if crs.datum else None)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")  # "you will likely lose important projection information": only towgs84 is read
+            towgs84 = crs.to_dict().get("towgs84") if crs.is_projected else None
+        say(f"  {label}: towgs84 ({side})", towgs84)
+        say(f"  {label}: axes ({side})", [f"{axis.abbrev} {axis.direction} {axis.unit_name}" for axis in crs.axis_info])
 
 
 async def main(layout: bool, grids: set[str], limit: int | None) -> int:
