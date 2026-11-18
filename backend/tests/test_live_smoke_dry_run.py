@@ -337,6 +337,40 @@ def _replay_rasters(module: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setattr(module, "open_asset_ref", lambda ref, policy, resolver, **kwargs: str(ref.href))
 
 
+def _meteoswiss_double() -> Callable[[httpx.Request], httpx.Response]:
+    """The archive item of the MeteoSwiss grids and its annual files (M5-11): one synthetic NetCDF-4 file from
+    `mini_netcdf` behind every name, answered by range with an ETag and Last-Modified, as the FSDI does."""
+    import tempfile
+
+    from earthx.discovery import meteoswiss_grid
+    from tests.earthx.readers import mini_netcdf
+
+    with tempfile.TemporaryDirectory() as directory:
+        body = mini_netcdf.build(Path(directory) / "annual.nc", time_units="days since 2025-01-01 00:00:00").read_bytes()
+    first_years = {"TabsD": 1961, "RhiresD": 1961, "TminD": 1971, "TmaxD": 1971, "SrelD": 1971}
+    assets = {}
+    for quantity, first in first_years.items():
+        grid = meteoswiss_grid.PRODUCTS[quantity].grid
+        for year in range(first, 2026):
+            name = f"ogd-surface-derived-grid-archive.{quantity.lower()}_{grid}.swiss.lv95_{year}0101000000_{year}1231235959.nc"
+            assets[name] = {"href": f"https://data.geo.admin.ch/files/{name}", "file:checksum": "1220" + "0" * 64}
+    archive_path = httpx.URL(REGISTRY.get("meteoswiss-daily-1km").source.endpoint).path
+    headers = {"etag": '"synthetic-annual"', "last-modified": "Wed, 12 Feb 2025 08:00:00 GMT"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == archive_path:
+            return _json({"type": "Feature", "id": "archive-ch", "assets": assets})
+        if request.url.path.startswith("/files/") and "range" in request.headers:
+            first, _, last = request.headers["range"].removeprefix("bytes=").partition("-")
+            start, end = int(first), min(int(last), len(body) - 1)
+            return httpx.Response(
+                206, content=body[start : end + 1], headers={**headers, "content-range": f"bytes {start}-{end}/{len(body)}"}
+            )
+        raise AssertionError(f"the double has no answer for {request.method} {request.url}")
+
+    return handler
+
+
 # Where a smoke test also reads a raster, the replay patches that step as well.
 RASTER_REPLAYS: dict[str, Callable[[ModuleType, pytest.MonkeyPatch], None]] = {
     "test_aoi_cloud_filter_live": _replay_rasters,
@@ -352,6 +386,7 @@ DOUBLES: dict[str, Callable[[httpx.Request], httpx.Response]] = {
     "test_sentinel_1_grd_smoke": _sentinel_1_double,
     "test_swissalti3d_smoke": _fsdi_double(),
     "test_bev_als_dgm_smoke": _bev_double(),
+    "test_meteoswiss_grid_smoke": _meteoswiss_double(),
 }
 
 
