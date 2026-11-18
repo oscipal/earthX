@@ -188,10 +188,23 @@ class TestCreatingTheFootprintSelection:
         assert rig.selections.rows == {}
 
     def test_a_body_larger_than_the_limit_is_413_before_it_is_read(self, rig: Rig) -> None:
-        big = json.dumps({"items": ["a" * 200] * 400})
+        big = json.dumps({"items": ["a" * 200] * 4000})
         assert len(big) > mosaic_tiles.MAX_FOOTPRINT_BODY_BYTES
         response = rig.client().post(f"/collections/{RELIEF_ID}/overview/footprints", content=big, headers={"content-type": "application/json"})
         assert response.status_code == 413
+
+    # M5-56 (Otto, 18.11.2026): "Crop and merge to AOI" masks its picture below the first level to its scenes, thousands of
+    # 1-degree tiles of GLO-30 over a large country; 10 000 ids of that shape fit in the body.
+    def test_the_scenes_of_a_view_of_thousands_of_tiles_are_one_selection(self, rig: Rig) -> None:
+        ids = [f"Copernicus_DSM_COG_10_N{60 + n // 100:02d}_00_E{n % 100:03d}_00_DEM" for n in range(mosaic_tiles.MAX_FOOTPRINT_ITEMS)]
+        assert mosaic_tiles.MAX_FOOTPRINT_ITEMS == 10_000
+        assert len(json.dumps({"items": ids})) < mosaic_tiles.MAX_FOOTPRINT_BODY_BYTES
+        for n, item_id in enumerate(ids):
+            rig.items[item_id] = hit(item_id, float(n % 100), 60.0 + n // 100 % 20, float(n % 100 + 1), 61.0 + n // 100 % 20)
+        api = rig.client()
+        response = api.post(f"/collections/{RELIEF_ID}/overview/footprints", json={"items": ids})
+        assert response.status_code == 201, response.text
+        assert response.json()["id"] == footprint_selection_id(RELIEF_ID, sorted(ids))
 
     def test_a_dataset_that_draws_nothing_below_its_first_level_has_no_footprints(self, rig: Rig) -> None:
         rig.items["a"] = hit("a", *left_half(6))

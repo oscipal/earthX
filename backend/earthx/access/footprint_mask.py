@@ -14,7 +14,9 @@ import numpy
 from pyproj import Transformer
 from rasterio.features import geometry_mask
 from rasterio.transform import from_bounds
+from rasterio.warp import transform_bounds
 from rio_tiler.models import ImageData
+from shapely import clip_by_rect
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import transform
 
@@ -30,7 +32,8 @@ def cut_to_footprints(image: ImageData, footprints: BaseGeometry, crs: Any) -> I
     """``image`` with every pixel whose centre lies outside ``footprints`` (lon/lat) masked; ``crs`` is that of the tile."""
     height, width = image.array.shape[-2:]
     left, bottom, right, top = image.bounds
-    projected = transform(_to_grid(str(image.crs or crs)).transform, footprints)
+    grid = str(image.crs or crs)
+    projected = transform(_to_grid(grid).transform, _near_tile(footprints, grid, image.bounds))
     if projected.is_empty:
         inside = numpy.zeros((height, width), dtype=bool)
     else:
@@ -40,6 +43,21 @@ def cut_to_footprints(image: ImageData, footprints: BaseGeometry, crs: Any) -> I
     mask = numpy.ma.getmaskarray(image.array) | ~inside[None]
     image.array = numpy.ma.MaskedArray(numpy.ma.getdata(image.array), mask=mask)
     return image
+
+
+#: Degrees kept around a tile when the footprints are cut to it: more than a pixel of any tile of the grid.
+_TILE_MARGIN_DEG = 0.5
+
+
+def _near_tile(footprints: BaseGeometry, crs: str, bounds: tuple[float, float, float, float]) -> BaseGeometry:
+    """The part of ``footprints`` around the tile of ``bounds`` (in ``crs``), so that a union of thousands (a selection of GLO-30
+    over Russia, M5-56) is projected and drawn only where the tile is. All of it for a tile whose box in lon/lat crosses the
+    antimeridian."""
+    west, south, east, north = transform_bounds(crs, "EPSG:4326", *bounds, densify_pts=21)
+    if west > east:
+        return footprints
+    margin = _TILE_MARGIN_DEG
+    return clip_by_rect(footprints, west - margin, south - margin, east + margin, north + margin)
 
 
 @lru_cache(maxsize=16)

@@ -495,6 +495,21 @@ def _open_collections_of(result: dict[str, Any], outcome: DispatchOutcome) -> tu
     return outcome.searched if has_next else ()
 
 
+#: pgstac counts the hits of a search over this platform's own collections exactly below this many, and estimates them from the
+#: plan from this many on (its `context` is `auto` with this threshold of hits and of cost; `api.main.PGSTAC_COUNT_SETTINGS`,
+#: Otto 18.11.2026, M5-56). pgstac does not say which it did, so a total from here on is marked as estimated.
+ESTIMATED_FROM = 100_000
+#: The mark on a search answer whose `numberMatched` may be estimated.
+MATCHED_ESTIMATED = "earthx:matched_estimated"
+
+
+def mark_estimate(result: dict[str, Any]) -> None:
+    """Marks the total of pgstac's answer as estimated where it reaches :data:`ESTIMATED_FROM`."""
+    matched = result.get("numberMatched")
+    if isinstance(matched, int) and matched >= ESTIMATED_FROM:
+        result[MATCHED_ESTIMATED] = True
+
+
 def _apply_outcome_extras(result: dict[str, Any], outcome: DispatchOutcome) -> None:
     # Which collections' source still has pages (Otto, 30.09.2026, M3-10b): the
     # viewer's ±90-day fallback waits for a dataset whose source may still bring
@@ -863,6 +878,7 @@ class FederatingCoreCrudClient(CoreCrudClient):
                 search_request = search_request.model_copy(update={"datetime": outcome.effective_datetime})
             result = await super().post_search(search_request, request, **kwargs)
             _apply_outcome_extras(result, outcome)
+            mark_estimate(result)
             return result
         _apply_outcome_extras(outcome.result, outcome)
         outcome.result["links"] = await SearchLinks(request=request).get_links(extra_links=outcome.result["links"])
@@ -908,6 +924,7 @@ class FederatingCoreCrudClient(CoreCrudClient):
                 **kwargs,
             )
             _apply_outcome_extras(result, outcome)
+            mark_estimate(result)
             return result
         _apply_outcome_extras(outcome.result, outcome)
         outcome.result["links"] = await SearchLinks(request=request).get_links(extra_links=outcome.result["links"])

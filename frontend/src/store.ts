@@ -55,9 +55,9 @@ import type { LayerOverlay, LayerRestore, MapLayer, ResultLayerInfo } from './la
 import { bandLayerOf, isResultExpired, restyledTileUrl } from './resultLayer';
 import { buildTileUrl, footprintsFC } from './mapLayers';
 import { assetOfLook, bandAssetsOf, standardLookOfBand, withAsset } from './viewBand';
-import { indexKeyOf, mosaicKeyOf, MAX_MOSAIC_OPERATOR_ASSETS, orderedPass, orderKeyOf, passesOf, stackLikeView } from './mosaic';
+import { footprintsKeyOf, indexKeyOf, mosaicKeyOf, MAX_FOOTPRINT_ITEMS, MAX_MOSAIC_OPERATOR_ASSETS, orderedPass, orderKeyOf, passesOf, stackLikeView } from './mosaic';
 import type { Mosaics, SceneEntry } from './mosaic';
-import { ensureSelection, withSelection } from './mosaicSelection';
+import { ensureFootprints, ensureSelection, withSelection } from './mosaicSelection';
 import { isComposite, lookOfPreset, type PresetParam, type PresetParams, type QuickPreset } from './quickPresets';
 import { knownLookOf, lookOfStepPreset, statsOfTiler } from './presetLooks';
 import { lookRange } from './displayLook';
@@ -84,8 +84,8 @@ import {
   needsFallback,
   withSourceState,
 } from './sections';
-import { noteOfOverview } from './overviewSubstitute';
-import { overlaysOfPass, overviewOverlaysOf, underlaysOf } from './searchLayers';
+import { noteOfOverview, overviewRasterOf } from './overviewSubstitute';
+import { overlaysOfPass, overviewOverlaysOf, overviewsWaiting, underlaysOf } from './searchLayers';
 import { clampResultsAt, moveEntry, moveEntryTo, resultsAtAfterAdding, resultsAtAfterRemoving } from './resultsEntry';
 import {
   filterQuery,
@@ -372,12 +372,14 @@ function foundNotice(
   groups: TimeStepGroup[],
   numberMatched: number | null,
   canLoadMore: boolean,
+  estimated = false,
 ): string {
   const base = `${counted(features.length, 'scene')} in ${counted(groups.length, 'time step')}.`;
   if (numberMatched !== null && numberMatched > features.length) {
+    const total = `${estimated ? '≈' : ''}${numberMatched}`;
     return canLoadMore
-      ? `${base} ${numberMatched} matched in total.`
-      : `${base} ${numberMatched} matched in total — narrow the area or date range to see the rest.`;
+      ? `${base} ${total} matched in total.`
+      : `${base} ${total} matched in total — narrow the area or date range to see the rest.`;
   }
   return base;
 }
@@ -589,6 +591,8 @@ interface SearchContext {
   features: StacItem[];
   answer: SectionSearchAnswer;
   numberMatched: number | null;
+  // Set where `numberMatched` may be estimated (`api.ts::ItemPage`): the list shows it with "≈".
+  matchedEstimated?: true;
   // The page token left over — the mixed one for the whole search, never one per
   // dataset (M3-10 F1). `null` once the search is complete or cannot go on.
   nextToken: string | null;
@@ -638,7 +642,8 @@ function overlaysOfEntries(
   if (overlays.some((o) => o === null)) return null;
   // The picture below the first level of a dataset (its substitute's or its own pyramid) lies under everything the layer draws of its own.
   const datasetIds = passList.map((first) => first[0][1].datasetId);
-  const substitutes = overviewOverlaysOf(datasetIds, s.datasets, look, clip);
+  if (overviewsWaiting(datasetIds, s.datasets, look, { entries, mosaics: s.mosaics })) return null;
+  const substitutes = overviewOverlaysOf(datasetIds, s.datasets, look, clip, { entries, mosaics: s.mosaics });
   return [...substitutes, ...stackLikeView(overlays).flatMap((o) => o ?? [])];
 }
 
@@ -719,7 +724,8 @@ function pinWhenLoaded(set: SetState, get: GetState, lists: { entries: SceneEntr
   const groups = sectionsForView(s).flatMap((section) => section.groups);
   const requests = lists.flatMap(({ entries, index }) => passesOf(entries, groups).map((pass) => ({ datasetId: pass[0][1].datasetId, entries: pass, index })));
   set({ pinLoading: true, error: null });
-  void fetchMosaics(set, get, requests).then(() => {
+  const outlines = lists.flatMap(({ entries }) => outlinesOf(s, entries));
+  void fetchMosaics(set, get, requests, outlines).then(() => {
     const now = get();
     set({ pinLoading: false });
     if (pinKey(now) !== key) return;
@@ -910,7 +916,7 @@ function layerDraw(
 async function layerDrawnWith(set: SetState, get: GetState, layer: MapLayer, render: AppliedRender): Promise<LayerDrawn | { problem: string }> {
   let drawn = layerDraw(get, layer, render);
   if ('need' in drawn) {
-    await fetchMosaics(set, get, drawn.need);
+    await fetchMosaics(set, get, drawn.need, outlinesOf(get(), Object.entries(layer.restore.downloaded)));
     drawn = layerDraw(get, layer, render);
   }
   if ('need' in drawn) return { problem: 'The layer cannot be saved yet: its scenes are still loading.' };
@@ -1069,11 +1075,13 @@ type MosaicRequest = { datasetId: string; entries: SceneEntry[]; index?: QuickPr
 // Creates the selection of each pass that a mosaic would draw, once, and loads its TileJSON. The map learns the surface and the
 // levels from it, and the tiler answers it from what it stored at the creation (`mosaic.ts`). A mosaic the tiler cannot give is
 // kept as `null` and its pass is drawn scene by scene; asking again after a `null` asks the tiler again.
-async function fetchMosaics(set: SetState, get: GetState, requests: MosaicRequest[]): Promise<void> {
+// `outlines`: the footprint selections the pictures below the first level of these scenes are masked to (M5-56), asked for with them.
+async function fetchMosaics(set: SetState, get: GetState, requests: MosaicRequest[], outlines: readonly Outline[] = []): Promise<void> {
   const failures: string[] = [];
   const orderFailures: string[] = [];
-  await Promise.all(
-    requests.map(async ({ datasetId, entries, index }) => {
+  await Promise.all([
+    ...outlines.map(({ datasetId, ids }) => loadFootprints(set, get, datasetId, ids)),
+    ...requests.map(async ({ datasetId, entries, index }) => {
       const key = mosaicKeyOf(datasetId, entries);
       if (key) {
         await loadMosaic(set, get, datasetId, entries, key, failures);
@@ -1083,11 +1091,53 @@ async function fetchMosaics(set: SetState, get: GetState, requests: MosaicReques
       // lies in the order of the mosaic, the crop and the export, which only the tiler knows (NM4-24).
       if (key === null || get().mosaics[key] === null) await loadOrder(set, get, datasetId, entries, orderFailures);
     }),
-  );
+  ]);
   if (failures.length > 0) set({ notice: `Could not load the mosaic (${failures[0]}); its scenes are drawn one by one.` });
   else if (orderFailures.length > 0) {
     set({ notice: `Could not read the stacking order of the scenes (${orderFailures[0]}); they lie in the order of the selection.` });
   }
+}
+
+type Outline = { datasetId: string; ids: string[] };
+
+// The scenes of each dataset among `entries` whose picture below the first level is masked to their footprints (`mosaic.ts::overviewOverScenes`,
+// M5-56): those of the datasets that draw one, up to what a footprint selection takes.
+function outlinesOf(s: Pick<AppState, 'datasets'>, entries: readonly SceneEntry[]): Outline[] {
+  return [...new Set(entries.map(([, info]) => info.datasetId))]
+    .map((datasetId) => ({ datasetId, ids: entries.filter(([, info]) => info.datasetId === datasetId).map(([id]) => id) }))
+    .filter(({ datasetId, ids }) => ids.length <= MAX_FOOTPRINT_ITEMS && overviewRasterOf(s.datasets.find((d) => d.id === datasetId), s.datasets) !== null);
+}
+
+// Those of the view: of each image it can show, as the map draws one image at a time; of the whole view where it has no image.
+function footprintsOfView(s: AppState): Outline[] {
+  const entries = Object.entries(s.downloaded);
+  const images = viewImagesOf(s);
+  const ofImages = images.flatMap(({ ids }) => {
+    const shown = new Set(ids);
+    return outlinesOf(s, entries.filter(([id]) => shown.has(id)));
+  });
+  return images.length > 0 ? ofImages : outlinesOf(s, entries);
+}
+
+// The footprint selection of these scenes, once, kept under `footprintsKeyOf`; `null` where the tiler did not take it: the picture
+// below the first level then covers the whole area, as before. Nothing is said: the picture is there either way.
+async function loadFootprints(set: SetState, get: GetState, datasetId: string, ids: string[]): Promise<void> {
+  const key = footprintsKeyOf(datasetId, ids);
+  if (get().mosaics[key] !== undefined) return;
+  let load = mosaicLoads.get(key);
+  if (!load) {
+    load = (async () => {
+      let info: Mosaics[string] = null;
+      try {
+        info = { footprints: await ensureFootprints(datasetId, ids) };
+      } catch {
+        info = null;
+      }
+      set({ mosaics: { ...get().mosaics, [key]: info } });
+    })().finally(() => mosaicLoads.delete(key));
+    mosaicLoads.set(key, load);
+  }
+  await load;
 }
 
 // The order of the scenes of one pass, once, kept under `orderKeyOf`; `null` where the tiler could not give it (the scenes then
@@ -1185,7 +1235,7 @@ function resultsNotice(ctx: SearchContext, datasets: ViewableDataset[], sections
     return ctx.query.queryByCollection ? `${base} Search filters are set.` : base;
   }
   if (datasets.length === 1) {
-    return foundNotice(sections[0].items, sections[0].groups, ctx.numberMatched, ctx.nextToken !== null);
+    return foundNotice(sections[0].items, sections[0].groups, ctx.numberMatched, ctx.nextToken !== null, ctx.matchedEstimated === true);
   }
   // What the search found in its date range: a fallback's scenes are not counted.
   const own = sections.filter((section) => section.origin === 'search');
@@ -1429,6 +1479,7 @@ async function walkAoiSearch(
       features: [...features.values()],
       answer: combineAnswers(base.answer, soFar),
       numberMatched: base.numberMatched ?? soFar.numberMatched,
+      ...((base.numberMatched !== null ? base.matchedEstimated : soFar.matchedEstimated) ? { matchedEstimated: true as const } : {}),
       nextToken: kept ? soFar.nextToken : null,
       openCollections: soFar.openCollections,
     };
@@ -3157,6 +3208,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     const s = get();
     if (!s.focusMode) return;
     const groups = sectionsForView(s).flatMap((section) => section.groups);
+    // The footprint selections are not waited for: the view draws while they come, and "Loading…" is about the mosaics alone.
+    for (const { datasetId, ids } of footprintsOfView(s)) void loadFootprints(set, get, datasetId, ids);
     await fetchMosaics(
       set,
       get,
@@ -3693,6 +3746,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             incompleteCollections: page.incompleteCollections,
           },
           numberMatched: page.numberMatched,
+          ...(page.matchedEstimated ? { matchedEstimated: true as const } : {}),
           nextToken: filtersKept ? page.nextToken : null,
           openCollections: page.openCollections,
         },

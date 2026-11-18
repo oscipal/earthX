@@ -29,7 +29,7 @@ from fastapi import FastAPI
 from psycopg_pool import ConnectionPool
 from stac_fastapi.extensions.collection_search import CollectionSearchPostExtension
 from stac_fastapi.pgstac.app import instantiate_api
-from stac_fastapi.pgstac.config import Settings
+from stac_fastapi.pgstac.config import PostgresSettings, ServerSettings, Settings
 from stac_fastapi.pgstac.db import close_db_connection, connect_to_db
 from stac_fastapi.pgstac.models.extensions import Extensions
 
@@ -48,7 +48,7 @@ from earthx.api.dependencies import (
     resolve_tiler_base,
     warn_retired_settings,
 )
-from earthx.api.federating_client import FederatingCoreCrudClient
+from earthx.api.federating_client import ESTIMATED_FROM, FederatingCoreCrudClient
 from earthx.api.geocode_route import router as geocode_router
 from earthx.api.item_source import build_item_source, check_item_holdings
 from earthx.api.job_events import JobEvents
@@ -100,6 +100,25 @@ _JOB_POOL_MAX_SIZE = 4
 _JOB_POOL_TIMEOUT_S = 5.0
 # DS-03a2: how long the end of the process waits for the cloud-share measures a response left running.
 _SETTLE_TIMEOUT_S = 10.0
+# M5-56 (Otto, 18.11.2026): a search over this platform's own collections names its total, `numberMatched`, so that the results
+# list says "300/2,814" and "Load more" instead of stopping at what it loaded. pgstac counts exactly where the plan expects fewer
+# hits and a lower cost than its thresholds (100 000 each), and takes the estimate of the plan from there on; the answer is then
+# marked (`federating_client.ESTIMATED_FROM`). A count is kept for an hour, so that "Load more" and the same search again do not
+# count again. Measured over 10^6 synthetic items: plan M5-56 in `docs/plans/m5/m5-discovery-und-suche.md`.
+PGSTAC_COUNT_SETTINGS = {
+    "pgstac.context": "auto",
+    "pgstac.context_estimated_count": str(ESTIMATED_FROM),
+    # The cost of the plan, in pgstac's own units; pgstac's default as well (Otto, 18.11.2026).
+    "pgstac.context_estimated_cost": "100000",
+    "pgstac.context_stats_ttl": "1 hour",
+}
+
+
+def postgres_settings() -> PostgresSettings:
+    """pgstac's settings from the environment, with :data:`PGSTAC_COUNT_SETTINGS` on every connection of its pool."""
+    settings = PostgresSettings()
+    server = ServerSettings(**{**settings.server_settings.model_dump(), **PGSTAC_COUNT_SETTINGS})
+    return settings.model_copy(update={"server_settings": server})
 
 
 @asynccontextmanager
@@ -113,7 +132,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     # The job API signs result links, so the process does not start without the object store's
     # configuration (M4-08b F7): a missing value names itself in the error, never its value.
     store = Store.from_environ()
-    await connect_to_db(app, add_write_connection_pool=False)
+    await connect_to_db(app, postgres_settings=postgres_settings(), add_write_connection_pool=False)
     try:
         async with cache_pool() as pool:
             # adr/0011 §7 D2: routing reads the registry, so pgstac must not say

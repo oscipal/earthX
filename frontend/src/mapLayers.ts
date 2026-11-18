@@ -18,7 +18,7 @@ import type { LayerOverlay, MapLayer } from './layers';
 import { indexChainOf, indexRasterOf, viewIndexOf } from './viewIndex';
 import { underlayOf } from './underlay';
 import type { ImageOverlay } from './underlay';
-import { chosenByView, inStackOrder, passesOf, stackLikeView, viewOfPass } from './mosaic';
+import { chosenByView, inStackOrder, overviewOverScenes, passesOf, stackLikeView, viewOfPass } from './mosaic';
 import type { Mosaics, PassView, PlannedRaster, SceneEntry } from './mosaic';
 import { buildMaskedOverviewTileTemplate } from './api';
 import { footprintSelectionFor, hitsOverviewsOf } from './overviewHits';
@@ -1246,7 +1246,9 @@ export function syncFocusRaster(
   // Below the first level of a dataset with a substitute or a pyramid the view draws that picture, under everything it draws
   // of its own (`overviewSubstitute.ts`); a layer pinned from the view draws it with its own rasters. An index is computed on it
   // there too (M5-10 part B), so that it does not disappear when the map zooms out.
-  const substitute = !s.tilesInLayer && drawn.length > 0 ? overviewRasterOf(dataset, s.datasets, index ? indexChainOf(index) : null) : null;
+  const below = !s.tilesInLayer && drawn.length > 0 ? overviewRasterOf(dataset, s.datasets, index ? indexChainOf(index) : null) : null;
+  // Over the scenes of the view only (M5-56); nothing while their footprint selection is being made.
+  const substitute = below && dataset ? (overviewOverScenes(below, dataset.id, Object.entries(s.downloaded), s.mosaics, index !== null) ?? null) : below;
   let held: SubstituteHold | null = null;
   if (substitute) {
     // Over the level where the dataset's own picture takes over, the substitute stays until that picture has arrived: a mosaic of

@@ -6,7 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { json, selectionServer } from './fixtures/selectionTiler';
 import { datasetsFrom } from './datasets';
 import { resetSelections } from './mosaicSelection';
-import { useAppStore } from './store';
+import { footprintsKeyOf, mosaicsOfView } from './mosaic';
+import { shownViewOf, useAppStore } from './store';
 import type { Collection, StacItem } from './types';
 
 const CAPABILITIES = { roi: true, time_range: false, band_math: true, interpolation: true, ml_processing: true, quad_pol: false, single_coverage_product: false };
@@ -142,5 +143,68 @@ describe('a layer pinned from the view of a dataset with a substitute', () => {
     await useAppStore.getState().enterFocus(false);
     useAppStore.getState().addCurrentToLayers();
     expect(rasters().some((o) => o.tileUrl.includes('/overview/'))).toBe(false);
+  });
+});
+
+// M5-56: below its first level the view draws the overview of a footprint selection of its scenes; the store makes it under the key the
+// map reads, and a layer pinned from the view draws the same, waiting for it rather than taking the whole area.
+describe('the footprint selection of the view', () => {
+  const ID = '0123456789abcdef0123456789abcdef';
+  let posted: string[][] = [];
+  beforeEach(() => {
+    posted = [];
+    const before = vi.mocked(fetch);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (url.endsWith('/overview/footprints')) {
+          posted.push(JSON.parse(String(init?.body)).items);
+          return json({ id: ID, tiles: `/collections/terrain/overview/${ID}/tiles/WebMercatorQuad/{z}/{x}/{y}` }, 201);
+        }
+        return before(url, init);
+      }),
+    );
+  });
+  const settled = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it('is made once for the scenes of the view, under the key the map reads', async () => {
+    open(['A', 'B', 'C'].map(scene));
+    useAppStore.setState({ selectedIds: ['A', 'C'] });
+    await useAppStore.getState().enterFocus(true);
+    await settled();
+    expect(posted).toEqual([['A', 'C']]);
+    const s = useAppStore.getState();
+    const view = shownViewOf(s);
+    const picked = mosaicsOfView(s.mosaics, view.dataset?.id ?? null, Object.entries(view.downloaded), view.groups);
+    expect(picked[footprintsKeyOf('terrain', ['A', 'C'])]).toEqual({ footprints: { id: ID, tiles: expect.stringContaining(`/overview/${ID}/tiles/`) } });
+  });
+
+  it('is what a layer pinned from the view draws below the first level', async () => {
+    open(['A', 'B'].map(scene));
+    useAppStore.setState({ selectedIds: ['A', 'B'] });
+    await useAppStore.getState().enterFocus(false);
+    useAppStore.getState().addCurrentToLayers();
+    for (let i = 0; i < 20 && useAppStore.getState().layers.length === 0; i++) await settled();
+    expect(rasters()[0].tileUrl).toContain(`/collections/terrain/overview/${ID}/tiles/`);
+  });
+
+  it('leaves the view drawing the whole area where the tiler refuses it, and is not asked again in the view', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (url.endsWith('/overview/footprints')) {
+          posted.push(JSON.parse(String(init?.body)).items);
+          return json({ detail: 'refused' }, 400);
+        }
+        return url.includes('/scene-order') ? json({ order: ['A', 'B'] }) : json({ detail: 'not made up' }, 404);
+      }),
+    );
+    open(['A', 'B'].map(scene));
+    useAppStore.setState({ selectedIds: ['A', 'B'] });
+    await useAppStore.getState().enterFocus(false);
+    await settled();
+    expect(useAppStore.getState().mosaics[footprintsKeyOf('terrain', ['A', 'B'])]).toBeNull();
+    await useAppStore.getState().loadMosaics();
+    expect(posted).toHaveLength(1);
   });
 });

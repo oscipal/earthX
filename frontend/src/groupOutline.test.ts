@@ -16,6 +16,23 @@ function poly(coords: number[][]): GeoJSON.Polygon {
   return { type: 'Polygon', coordinates: [coords] };
 }
 
+const box = (west: number, south: number, east: number, north: number): GeoJSON.Polygon =>
+  poly([
+    [west, south],
+    [east, south],
+    [east, north],
+    [west, north],
+    [west, south],
+  ]);
+
+const ACROSS_DATELINE = poly([
+  [179, 10],
+  [-179, 10],
+  [-179, 11],
+  [179, 11],
+  [179, 10],
+]);
+
 const BIG_AOI = poly([
   [-10, -10],
   [10, -10],
@@ -68,28 +85,57 @@ describe('groupOutlineFeatures', () => {
     expect(features.every((f) => f.properties.groupKey === 'a')).toBe(true);
   });
 
-  it('falls back to per-scene footprints for a group whose footprint spans the antimeridian', () => {
-    // A footprint stretching from lon 179 to -179 reads, in flat coordinates,
-    // as 358° wide instead of the 2° it actually covers — the "reicht über
-    // den Antimeridian" half of Otto's F4. No exception here (polyclip-ts
-    // happily computes a wrong answer), so this must be caught before ever
-    // calling union/intersection.
-    const acrossDateline: GeoJSON.Polygon = {
-      type: 'Polygon',
-      coordinates: [
-        [
-          [179, 10],
-          [-179, 10],
-          [-179, 11],
-          [179, 11],
-          [179, 10],
-        ],
-      ],
-    };
-    const g = group('a', [item('S1', [179, 10, -179, 11], acrossDateline)]);
+  it('falls back to per-scene footprints for a footprint over the antimeridian whose AOI lies around Greenwich', () => {
+    // A footprint stretching from lon 179 to -179 reads, in flat coordinates, as 358° wide instead of the 2° it actually
+    // covers. polyclip-ts happily computes a wrong answer, so this must be caught before ever calling union/intersection:
+    // with an AOI around Greenwich the two are wider than half the globe on either side of the line.
+    const g = group('a', [item('S1', [179, 10, -179, 11], ACROSS_DATELINE)]);
     const features = groupOutlineFeatures([g], new Set(['S1']), BIG_AOI);
     expect(features).toHaveLength(1);
     expect(features[0].properties.fallback).toBe(true);
+  });
+
+  // M5-56 (Otto, 18.11.2026, F1): a group over the antimeridian, such as the GLO-30 tiles of Russia with Chukotka, is one
+  // ring, east of Greenwich and past 180°, not the outline of every tile.
+  it('merges the tiles of a group on both sides of the antimeridian into one ring past 180°', () => {
+    const tiles = [175, 176, 177, 178, 179, -180, -179, -178].map((west) => item(`T${west}`, [west, 60, west + 1, 61]));
+    const aoi: GeoJSON.MultiPolygon = { type: 'MultiPolygon', coordinates: [box(170, 55, 180, 65).coordinates, box(-180, 55, -170, 65).coordinates] };
+    const features = groupOutlineFeatures([group('a', tiles)], new Set(tiles.map((t) => t.id)), aoi);
+    expect(features).toHaveLength(1);
+    expect(features[0].properties.fallback).toBe(false);
+    expect(features[0].geometry.type).toBe('Polygon');
+    const lons = (features[0].geometry as GeoJSON.Polygon).coordinates.flat().map(([lon]) => lon);
+    expect([Math.min(...lons), Math.max(...lons)]).toEqual([175, 183]);
+  });
+
+  it('merges a footprint that itself crosses the antimeridian with an AOI over it', () => {
+    const g = group('a', [item('S1', [179, 10, -179, 11], ACROSS_DATELINE)]);
+    const aoi: GeoJSON.MultiPolygon = { type: 'MultiPolygon', coordinates: [box(170, 0, 180, 20).coordinates, box(-180, 0, -170, 20).coordinates] };
+    const features = groupOutlineFeatures([g], new Set(['S1']), aoi);
+    expect(features).toHaveLength(1);
+    expect(features[0].properties.fallback).toBe(false);
+    const lons = (features[0].geometry as GeoJSON.Polygon).coordinates.flat().map(([lon]) => lon);
+    expect([Math.min(...lons), Math.max(...lons)]).toEqual([179, 181]);
+  });
+
+  it('falls back for a group wider than half the globe on either side of the antimeridian', () => {
+    const tiles = [-100, 0, 100].map((west) => item(`T${west}`, [west, 0, west + 1, 1]));
+    const features = groupOutlineFeatures([group('a', tiles)], new Set(tiles.map((t) => t.id)), box(-180, -10, 180, 10));
+    expect(features).toHaveLength(3);
+    expect(features.every((f) => f.properties.fallback)).toBe(true);
+  });
+
+  it('merges a few thousand tiles over the antimeridian into one ring', () => {
+    const tiles = Array.from({ length: 3000 }, (_, i) => {
+      const west = ((150 + (i % 60) + 180) % 360) - 180;
+      const south = 40 + Math.floor(i / 60);
+      return item(`T${i}`, [west, south, west + 1, south + 1]);
+    });
+    const aoi: GeoJSON.MultiPolygon = { type: 'MultiPolygon', coordinates: [box(150, 40, 180, 90).coordinates, box(-180, 40, -150, 90).coordinates] };
+    const features = groupOutlineFeatures([group('a', tiles)], new Set(tiles.map((t) => t.id)), aoi);
+    expect(features).toHaveLength(1);
+    expect(features[0].properties.fallback).toBe(false);
+    expect(features[0].geometry.type).toBe('Polygon');
   });
 
   it('falls every group back when the AOI itself is not a Polygon/MultiPolygon', () => {

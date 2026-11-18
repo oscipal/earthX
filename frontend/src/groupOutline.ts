@@ -13,7 +13,7 @@
 import { intersection, union } from 'polyclip-ts';
 import type { Geom } from 'polyclip-ts';
 
-import { footprintOf, polygonBbox } from './geoUtils';
+import { footprintOf } from './geoUtils';
 import type { StacItem, TimeStepGroup } from './types';
 
 // polyclip-ts's `Geom` is a plain-array ring/polygon/multi-polygon nest —
@@ -37,27 +37,31 @@ function fromResult(result: ReturnType<typeof union>): GeoJSON.Polygon | GeoJSON
 
 // None of these clipping libraries understand spherical geometry — they all
 // compute in lon/lat as if it were flat x/y. A footprint or an AOI that
-// really spans the antimeridian (rare MGRS zones near it) would silently
-// produce a wildly wrong shape (measured: a ring from lon 179 to -179 comes
-// back stretched the wrong way around, 358° wide instead of 2°) rather than
-// an error to catch. The cheap defence is the same kind of bbox check
-// `aoiClip.ts` already uses elsewhere in
-// this codebase: if the combined longitude span of a group's footprints and
-// the AOI exceeds half the globe, treat it as at risk and skip the merge for
-// *that* group, rather than trust geometry that could be silently wrong
+// really spans the antimeridian would silently produce a wildly wrong shape
+// (measured: a ring from lon 179 to -179 comes back stretched the wrong way
+// around, 358° wide instead of 2°) rather than an error to catch. A group and
+// AOI wider than half the globe are therefore moved to one side of the line
+// first (`onOneSide`): every longitude west of Greenwich a full turn east, so
+// that a group over the antimeridian (Russia with Chukotka, M5-56, Otto
+// 18.11.2026 F1) is one continuous shape from about 19° to 191°. MapLibre draws
+// a ring past 180° across the line, without a seam there. A group that is
+// wider than half the globe either way keeps the outline of each scene
 // (Prinzip 9 — never show something we can't vouch for).
-const ANTIMERIDIAN_RISK_SPAN_DEG = 180;
+const MAX_LON_SPAN_DEG = 180;
 
-function combinedLonSpan(geometries: readonly GeoJSON.Geometry[]): number {
-  let minLon = Infinity;
-  let maxLon = -Infinity;
-  for (const geometry of geometries) {
-    const bbox = polygonBbox(geometry);
-    if (!bbox) continue;
-    minLon = Math.min(minLon, bbox[0]);
-    maxLon = Math.max(maxLon, bbox[2]);
-  }
-  return Number.isFinite(minLon) ? maxLon - minLon : 0;
+const lonSpan = (geoms: readonly Geom[]): number => {
+  const boxes = geoms.map(boxOf);
+  return Math.max(...boxes.map((box) => box[2])) - Math.min(...boxes.map((box) => box[0]));
+};
+
+const eastOfGreenwich = (geom: Geom): Geom => mapRings(geom, (ring) => ring.map(([x, y]) => [x < 0 ? x + 360 : x, y]));
+
+// The geometries as they are when together they span at most half the globe, else moved east of Greenwich when they do so
+// there; `null` when they do neither.
+export function onOneSide(geoms: readonly Geom[]): Geom[] | null {
+  if (lonSpan(geoms) <= MAX_LON_SPAN_DEG) return [...geoms];
+  const moved = geoms.map(eastOfGreenwich);
+  return lonSpan(moved) <= MAX_LON_SPAN_DEG ? moved : null;
 }
 
 // The scenes of one pass do not share their edges exactly: two slices of a Sentinel-1 datatake meet with their footprints
@@ -230,21 +234,18 @@ export function groupOutlineFeatures(
       .filter((g): g is GeoJSON.Geometry => g !== null);
     if (footprints.length === 0) continue;
 
-    if (!aoiGeom || combinedLonSpan([...footprints, aoi]) > ANTIMERIDIAN_RISK_SPAN_DEG) {
-      features.push(...fallbackFeatures(visibleItems, groupKey));
-      continue;
-    }
-
     const footprintGeoms = footprints.map(toGeom).filter((g): g is Geom => g !== null);
-    if (footprintGeoms.length === 0) {
+    const placed = aoiGeom && footprintGeoms.length > 0 ? onOneSide([aoiGeom, ...footprintGeoms]) : null;
+    if (!placed) {
       features.push(...fallbackFeatures(visibleItems, groupKey));
       continue;
     }
 
     try {
-      const [first, ...rest] = snapFootprints(footprintGeoms);
+      const [area, ...placedFootprints] = placed;
+      const [first, ...rest] = snapFootprints(placedFootprints);
       const unioned = union(first, ...rest);
-      const clipped = intersection(unioned, aoiGeom);
+      const clipped = intersection(unioned, area);
       const geometry = fromResult(clipped);
       if (geometry) features.push({ type: 'Feature', properties: { groupKey, fallback: false }, geometry });
     } catch {

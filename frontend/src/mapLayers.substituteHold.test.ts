@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { DOWNLOADED, GROUPS, ITEMS, LIST, MOSAICS, TERRAIN } from './fixtures/swissalti';
+import { DOWNLOADED, GROUPS, ITEMS, LIST, MOSAICS, outlined, TERRAIN } from './fixtures/swissalti';
 import { zoomMap } from './fixtures/zoomMap';
 import { syncFocusRaster, watchSubstituteHold } from './mapLayers';
 
@@ -55,7 +55,7 @@ describe('the substitute while the mosaic of the view is on its way', () => {
 
   it('is drawn at every level while the selection of the mosaic is not made yet, and stays until the next sync brings the mosaic', () => {
     const { live, fire, route } = watched();
-    syncFocusRaster(live.map as never, view({ mosaics: {} }));
+    syncFocusRaster(live.map as never, view({ mosaics: outlined() }));
     expect(route(13.5)).toEqual(['substitute']);
     expect(route(14.5)).toEqual(['substitute']);
     fire('idle');
@@ -90,14 +90,14 @@ describe('the substitute while the mosaic of the view is on its way', () => {
 
   it('keeps the limit of the substitute in the signature of its picture and lays it below the level of the mosaic as before', () => {
     const { live, route } = watched();
-    syncFocusRaster(live.map as never, view({ mosaics: {} }));
+    syncFocusRaster(live.map as never, view({ mosaics: outlined() }));
     expect(live.layers.get('m-tiles-lyr-0')!.maxzoom).toBeUndefined();
     expect(route(0)).toEqual(['substitute']);
   });
 
   it('draws nothing of a dataset without a substitute over its first level before the mosaic: no hold, no layer', () => {
     const { live, route } = watched();
-    syncFocusRaster(live.map as never, view({ mosaics: {}, dataset: LIST[1], datasets: LIST }));
+    syncFocusRaster(live.map as never, view({ mosaics: outlined(), dataset: LIST[1], datasets: LIST }));
     expect(route(13.5)).toEqual([]);
   });
 });
