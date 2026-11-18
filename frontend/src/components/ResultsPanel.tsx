@@ -267,6 +267,7 @@ function SelectionRow() {
   const loaded = useAppStore((s) => s.items.length);
   const selectedCount = useAppStore((s) => s.items.filter((it) => s.selectedIds.includes(it.id)).length);
   const matched = useAppStore((s) => s.searchContext?.numberMatched ?? null);
+  const estimated = useAppStore((s) => s.searchContext?.matchedEstimated === true);
   const loadedAll = useAppStore((s) => totalItems(s.sections));
   const several = useAppStore((s) => s.sections.length > 1);
   const selectAllLoaded = useAppStore((s) => s.selectAllLoaded);
@@ -276,7 +277,7 @@ function SelectionRow() {
     ? `Select all ${formatCount(loaded)}`
     : several
       ? `Select all ${formatCount(loaded)} loaded (more matched in total)`
-      : `Select all ${formatCount(loaded)} loaded (of ${formatCount(matched)})`;
+      : `Select all ${formatCount(loaded)} loaded (of ${estimated ? '≈' : ''}${formatCount(matched)})`;
   const all = loaded > 0 && selectedCount === loaded;
   return (
     <div className="selection-row">
@@ -297,16 +298,21 @@ export default function ResultsPanel() {
     const ids = new Set(s.selectedIds);
     return s.sections.reduce((n, section) => n + section.items.filter((it) => ids.has(it.id)).length, 0);
   });
-  // The scenes found: the true total where the search names one (M5-56, Otto 18.11.2026: "300/2,814" while 300 are loaded, and "Load
-  // more" under the list), else those loaded. Never fewer than are loaded.
-  const found = useAppStore((s) => Math.max(totalItems(s.sections), s.searchContext?.numberMatched ?? 0));
+  // The scenes found: the total where the search names one (M5-56, Otto 18.11.2026: "300/2,814" while 300 are loaded, and "Load more"
+  // under the list), else those loaded; never fewer than are loaded. A total the search may have estimated (100 000 hits and more)
+  // carries "≈" and no text of its own.
+  const found = useAppStore((s) => {
+    const loaded = totalItems(s.sections);
+    const matched = s.searchContext?.numberMatched ?? 0;
+    return matched > loaded ? `${s.searchContext?.matchedEstimated ? '≈' : ''}${formatCount(matched)}` : formatCount(loaded);
+  });
 
   if (!hasResultsPanel(sections)) return null;
 
   return (
     <div className="panel dock-panel results-panel" role="region" aria-label="Results">
       <div className="results-head">
-        <h2 data-tip-level="advanced" data-tip="Selected scenes / scenes found">Search results ({formatCount(selected)}/{formatCount(found)})</h2>
+        <h2 data-tip-level="advanced" data-tip="Selected scenes / scenes found">Search results ({formatCount(selected)}/{found})</h2>
         <div className="results-head-switches">
           <ResultsToTop />
           <ResultsEye />

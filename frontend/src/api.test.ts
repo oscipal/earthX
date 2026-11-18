@@ -734,6 +734,18 @@ describe('ignored_filters_by_collection and incomplete_collections (M3-10)', () 
     expect((await searchItems({ collections: ['x'] })).openCollections).toEqual(expected);
   });
 
+  // M5-56: the first page's total stands for the walk, and with it whether it may be estimated.
+  it('keeps the mark of an estimated total of the first page, and reads none where the answer has no true', async () => {
+    const answer = (estimated: unknown, token: string | null) =>
+      jsonResponse({ features: [{ id: token ?? 'z' }], numberReturned: 1, numberMatched: 990268, 'earthx:matched_estimated': estimated, links: token ? [{ rel: 'next', href: '/stac/search', body: { token } }] : [] });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(answer(true, 't2')).mockResolvedValueOnce(answer(undefined, null)));
+    expect(await searchAllPages({ collections: ['x'] }, 300)).toMatchObject({ numberMatched: 990268, matchedEstimated: true });
+    for (const value of [undefined, false, 'true', 1]) {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(answer(value, null)));
+      expect((await searchItems({ collections: ['x'] })).matchedEstimated).toBeUndefined();
+    }
+  });
+
   it('hands back no token once the result is complete', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ features: [{ id: 'a' }], numberReturned: 1 })));
     expect((await searchAllPages({ collections: ['x'] }, 300)).nextToken).toBeNull();

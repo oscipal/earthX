@@ -357,6 +357,9 @@ export interface IncompleteCollection {
 export interface ItemPage {
   features: StacItem[];
   numberMatched: number | null;
+  // Set where the total may be estimated: pgstac counts our own collections exactly below 100 000 hits and estimates from there
+  // on (`earthx:matched_estimated`, M5-56). The list shows such a total with "≈".
+  matchedEstimated?: true;
   numberReturned: number;
   nextToken: string | null;
   // M3-12: filters the backend could not honour for at least one searched
@@ -434,6 +437,7 @@ export async function searchItems(q: SearchQuery): Promise<ItemPage> {
   const body = await jsonOrThrow<{
     features: StacItem[];
     numberMatched?: number;
+    'earthx:matched_estimated'?: unknown;
     numberReturned: number;
     links?: StacLink[];
     ignored_filters?: string[];
@@ -451,6 +455,7 @@ export async function searchItems(q: SearchQuery): Promise<ItemPage> {
   return {
     features: body.features,
     numberMatched: body.numberMatched ?? null,
+    ...(body['earthx:matched_estimated'] === true ? { matchedEstimated: true as const } : {}),
     numberReturned: body.numberReturned,
     nextToken: nextTokenFrom(body.links),
     ignoredFilters: body.ignored_filters ?? [],
@@ -785,6 +790,8 @@ export async function postAreaStatistics(datasetId: string, order: unknown): Pro
 export interface PagesSoFar {
   features: StacItem[];
   numberMatched: number | null;
+  // The first page's: whether its total may be estimated (`ItemPage`).
+  matchedEstimated?: true;
   ignoredFilters: string[];
   ignoredFiltersByCollection: Record<string, string[]>;
   incompleteCollections: IncompleteCollection[];
@@ -821,6 +828,7 @@ export async function searchAllPages(
   let openCollections: string[] | null = null;
   const features: StacItem[] = [];
   let numberMatched: number | null = null;
+  let matchedEstimated = false;
   // Every page of one search drops the same filter for the same reason, so
   // the first page's answer already speaks for the whole set.
   let ignoredFilters: string[] = [];
@@ -834,6 +842,7 @@ export async function searchAllPages(
   const soFar = (): PagesSoFar => ({
     features: [...features],
     numberMatched,
+    ...(matchedEstimated ? { matchedEstimated: true as const } : {}),
     ignoredFilters,
     ignoredFiltersByCollection: { ...ignoredFiltersByCollection },
     incompleteCollections: [...incompleteByCollection.values()],
@@ -845,7 +854,10 @@ export async function searchAllPages(
     const page: ItemPage = await searchItems({ ...q, limit: 100, token, signal: options.signal });
     if (options.signal?.aborted) throw new DOMException('The search was stopped.', 'AbortError');
     features.push(...page.features);
-    if (numberMatched === null) numberMatched = page.numberMatched;
+    if (numberMatched === null) {
+      numberMatched = page.numberMatched;
+      matchedEstimated = page.matchedEstimated === true;
+    }
     if (ignoredFilters.length === 0) ignoredFilters = page.ignoredFilters;
     // Kept per collection like the flat list: the first page that names a
     // collection speaks for the whole search.

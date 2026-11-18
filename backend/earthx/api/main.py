@@ -48,7 +48,7 @@ from earthx.api.dependencies import (
     resolve_tiler_base,
     warn_retired_settings,
 )
-from earthx.api.federating_client import FederatingCoreCrudClient
+from earthx.api.federating_client import ESTIMATED_FROM, FederatingCoreCrudClient
 from earthx.api.geocode_route import router as geocode_router
 from earthx.api.item_source import build_item_source, check_item_holdings
 from earthx.api.job_events import JobEvents
@@ -100,10 +100,18 @@ _JOB_POOL_MAX_SIZE = 4
 _JOB_POOL_TIMEOUT_S = 5.0
 # DS-03a2: how long the end of the process waits for the cloud-share measures a response left running.
 _SETTLE_TIMEOUT_S = 10.0
-# M5-56 (Otto, 18.11.2026): a search over this platform's own collections names its true total, `numberMatched`, so that the
-# results list says "300/2 814" and "Load more" instead of stopping at what it loaded. pgstac counts only with its `context`
-# on, and keeps a count for `context_stats_ttl`: none here, so that a count never outlives a run of `materialize`.
-PGSTAC_COUNT_SETTINGS = {"pgstac.context": "on", "pgstac.context_stats_ttl": "0 seconds"}
+# M5-56 (Otto, 18.11.2026): a search over this platform's own collections names its total, `numberMatched`, so that the results
+# list says "300/2,814" and "Load more" instead of stopping at what it loaded. pgstac counts exactly where the plan expects fewer
+# hits and a lower cost than its thresholds (100 000 each), and takes the estimate of the plan from there on; the answer is then
+# marked (`federating_client.ESTIMATED_FROM`). A count is kept for an hour, so that "Load more" and the same search again do not
+# count again. Measured over 10^6 synthetic items: plan M5-56 in `docs/plans/m5/m5-discovery-und-suche.md`.
+PGSTAC_COUNT_SETTINGS = {
+    "pgstac.context": "auto",
+    "pgstac.context_estimated_count": str(ESTIMATED_FROM),
+    # The cost of the plan, in pgstac's own units; pgstac's default as well (Otto, 18.11.2026).
+    "pgstac.context_estimated_cost": "100000",
+    "pgstac.context_stats_ttl": "1 hour",
+}
 
 
 def postgres_settings() -> PostgresSettings:

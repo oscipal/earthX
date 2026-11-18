@@ -372,12 +372,14 @@ function foundNotice(
   groups: TimeStepGroup[],
   numberMatched: number | null,
   canLoadMore: boolean,
+  estimated = false,
 ): string {
   const base = `${counted(features.length, 'scene')} in ${counted(groups.length, 'time step')}.`;
   if (numberMatched !== null && numberMatched > features.length) {
+    const total = `${estimated ? '≈' : ''}${numberMatched}`;
     return canLoadMore
-      ? `${base} ${numberMatched} matched in total.`
-      : `${base} ${numberMatched} matched in total — narrow the area or date range to see the rest.`;
+      ? `${base} ${total} matched in total.`
+      : `${base} ${total} matched in total — narrow the area or date range to see the rest.`;
   }
   return base;
 }
@@ -589,6 +591,8 @@ interface SearchContext {
   features: StacItem[];
   answer: SectionSearchAnswer;
   numberMatched: number | null;
+  // Set where `numberMatched` may be estimated (`api.ts::ItemPage`): the list shows it with "≈".
+  matchedEstimated?: true;
   // The page token left over — the mixed one for the whole search, never one per
   // dataset (M3-10 F1). `null` once the search is complete or cannot go on.
   nextToken: string | null;
@@ -1231,7 +1235,7 @@ function resultsNotice(ctx: SearchContext, datasets: ViewableDataset[], sections
     return ctx.query.queryByCollection ? `${base} Search filters are set.` : base;
   }
   if (datasets.length === 1) {
-    return foundNotice(sections[0].items, sections[0].groups, ctx.numberMatched, ctx.nextToken !== null);
+    return foundNotice(sections[0].items, sections[0].groups, ctx.numberMatched, ctx.nextToken !== null, ctx.matchedEstimated === true);
   }
   // What the search found in its date range: a fallback's scenes are not counted.
   const own = sections.filter((section) => section.origin === 'search');
@@ -1475,6 +1479,7 @@ async function walkAoiSearch(
       features: [...features.values()],
       answer: combineAnswers(base.answer, soFar),
       numberMatched: base.numberMatched ?? soFar.numberMatched,
+      ...((base.numberMatched !== null ? base.matchedEstimated : soFar.matchedEstimated) ? { matchedEstimated: true as const } : {}),
       nextToken: kept ? soFar.nextToken : null,
       openCollections: soFar.openCollections,
     };
@@ -3731,6 +3736,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             incompleteCollections: page.incompleteCollections,
           },
           numberMatched: page.numberMatched,
+          ...(page.matchedEstimated ? { matchedEstimated: true as const } : {}),
           nextToken: filtersKept ? page.nextToken : null,
           openCollections: page.openCollections,
         },

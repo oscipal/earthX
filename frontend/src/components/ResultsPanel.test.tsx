@@ -449,6 +449,15 @@ describe('"Select all" boxes (M4-29)', () => {
     expect(container.querySelector('h2')?.textContent).toBe('Search results (3/2,814)');
   });
 
+  // M5-56 (Otto, 18.11.2026): from 100 000 hits on pgstac may estimate; the total carries "≈" and no text.
+  it('marks a total the search may have estimated with "≈", in the head and in the box', () => {
+    load(TWO_STEPS);
+    onlyOptical();
+    act(() => useAppStore.setState({ searchContext: { numberMatched: 990268, matchedEstimated: true, nextToken: null } as never }));
+    expect(container.querySelector('h2')?.textContent).toBe('Search results (0/≈990,268)');
+    expect(allBox().closest('label')?.textContent).toBe('Select all 3 loaded (of ≈990,268)');
+  });
+
   it('names what is loaded where the search gives no total, or one below it', () => {
     load(TWO_STEPS);
     onlyOptical();
