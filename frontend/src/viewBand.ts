@@ -11,11 +11,13 @@ import { auxiliaryAssetsOf, bandSources, maskLayerOf, selectableAssets, trueColo
 import type { AppliedRender, Collection, DownloadedInfo, StacItem } from './types';
 
 // The keys of the assets of `item` that hold one band, in the order of the item: not the pictures made from the bands, not
-// the mask layer, and not the asset the standard picture is made from where that is a true-colour one. Only for COG assets,
-// whose asset is the band (a Zarr asset needs the variable separator of the dataset, which the view does not fetch).
+// the mask layer, and not the asset the standard picture is made from where that is a true-colour one. For COG assets, whose
+// asset is the band, and for chunk references, one array per asset (M5-11: the quantities of a day, only those the day has); a
+// Zarr asset needs the variable separator of the dataset, which the view does not fetch.
 export function bandAssetsOf(item: StacItem | undefined, collection: Collection | undefined): string[] {
-  if (!item || !collection || collection['earthx:format'] !== 'cog') return [];
-  const sources = bandSources(item, 'cog', null, collection).filter((source) => source.names.length <= 1);
+  const format = collection?.['earthx:format'];
+  if (!item || !collection || (format !== 'cog' && format !== 'netcdf-refs')) return [];
+  const sources = bandSources(item, format, null, collection).filter((source) => source.names.length <= 1);
   const wanted = selectableAssets(sources, auxiliaryAssetsOf(collection), maskLayerOf(collection)?.asset ?? null);
   const standard = collection['earthx:default_render']?.assets[0];
   return trueColorOf(collection) !== null ? wanted.filter((asset) => asset !== standard) : wanted;
