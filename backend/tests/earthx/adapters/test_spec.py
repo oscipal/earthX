@@ -38,6 +38,7 @@ from earthx.catalog.registry import (
     ItemHolding,
     SearchCapabilities,
 )
+from earthx.discovery.materialize import MATERIALIZE_SPECS
 from earthx.gateway import Policy, host_of
 from earthx.gateway.client import Gateway
 from tests.catalog.entries import COP_DEM_GLO_30, REGISTRY, SENTINEL_2_L2A
@@ -96,6 +97,10 @@ class TestTheShapeOfASpec:
         with pytest.raises(ValueError, match="local-sql"):
             _spec(coverage={CoverageProvider.LOCAL_SQL: _never})
 
+    def test_fixed_grid_coverage_is_never_an_adapters(self) -> None:
+        with pytest.raises(ValueError, match="fixed-grid"):
+            _spec(coverage={CoverageProvider.FIXED_GRID: _never})
+
     def test_no_field_has_a_default(self) -> None:
         with pytest.raises(TypeError):
             AdapterSpec(kind=AdapterKind.EARTH_SEARCH_V1)  # type: ignore[call-arg]
@@ -125,7 +130,7 @@ def _required(config: DatasetConfig) -> set[str]:
         needed = {"search", "fetch", "intersects", "ids"}
     else:
         needed = {"materialize"}
-    if config.coverage.provider is not CoverageProvider.LOCAL_SQL:
+    if config.coverage.provider not in (CoverageProvider.LOCAL_SQL, CoverageProvider.FIXED_GRID):
         needed.add("coverage")
     return needed
 
@@ -200,7 +205,15 @@ class TestEveryRegistryEntryAgainstTheTable:
 
     @pytest.mark.parametrize("config", ENTRIES)
     def test_what_its_holding_needs_is_offered(self, config: DatasetConfig) -> None:
-        assert _missing(config, ADAPTER_SPECS) == []
+        # `discovery` materializes with its own table, which adds what only it may do (M5-11: `h5py`).
+        assert _missing(config, MATERIALIZE_SPECS) == []
+
+    def test_only_discovery_materializes_the_meteoswiss_grids(self) -> None:
+        assert ADAPTER_SPECS[AdapterKind.METEOSWISS_GRID].materialize is None
+        assert MATERIALIZE_SPECS[AdapterKind.METEOSWISS_GRID].materialize is not None
+        assert {kind: spec for kind, spec in MATERIALIZE_SPECS.items() if kind is not AdapterKind.METEOSWISS_GRID} == {
+            kind: spec for kind, spec in ADAPTER_SPECS.items() if kind is not AdapterKind.METEOSWISS_GRID
+        }
 
     @pytest.mark.anyio
     @pytest.mark.parametrize(("config", "capability"), NOT_NEEDED)
