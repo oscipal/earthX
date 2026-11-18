@@ -12,7 +12,8 @@
    "nodata": 0.0,
    "unit": "1",
    "categorical": false,
-   "preselected": true
+   "preselected": true,
+   "stackable": true
   },
   {
    "asset": "red",
@@ -26,7 +27,8 @@
    "nodata": 0.0,
    "unit": "1",
    "categorical": false,
-   "preselected": true
+   "preselected": true,
+   "stackable": true
   },
   {
    "asset": "rededge1",
@@ -40,7 +42,8 @@
    "nodata": 0.0,
    "unit": "1",
    "categorical": false,
-   "preselected": true
+   "preselected": true,
+   "stackable": true
   },
   {
    "asset": "coastal",
@@ -54,7 +57,8 @@
    "nodata": 0.0,
    "unit": "1",
    "categorical": false,
-   "preselected": true
+   "preselected": true,
+   "stackable": true
   },
   {
    "asset": "aot",
@@ -68,7 +72,8 @@
    "nodata": 0.0,
    "unit": "1",
    "categorical": false,
-   "preselected": false
+   "preselected": false,
+   "stackable": true
   },
   {
    "asset": "scl",
@@ -82,7 +87,8 @@
    "nodata": 0.0,
    "unit": null,
    "categorical": true,
-   "preselected": true
+   "preselected": true,
+   "stackable": true
   }
  ]
 }

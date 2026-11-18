@@ -25,6 +25,8 @@ one AOI and one tile serve either format.
 
 from __future__ import annotations
 
+import asyncio
+import concurrent.futures
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -54,6 +56,7 @@ from tests.earthx.readers import (
     mini_gcp,
     mini_laea,
     mini_lv95,
+    mini_netcdf,
     mini_worldcover,
     mini_zarr,
     mini_zarr_composite,
@@ -635,9 +638,47 @@ def _build_bev(config: DatasetConfig, render_asset: str, tmp_path: Path, monkeyp
     )
 
 
+def _build_meteoswiss(config: DatasetConfig, render_asset: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Chain:
+    """A MeteoSwiss entry (M5-11 PR 2): one day of an annual file in a synthetic archive, read through its references.
+
+    The item is the one the real materialization writes from that archive, so the two cannot drift apart.
+    """
+    from earthx.discovery import meteoswiss_grid
+    from tests.earthx.discovery import mini_archive
+
+    body = mini_archive.annual_file(tmp_path, 2024, days=[0])
+    archive = mini_archive.Archive({mini_archive.name(render_asset, meteoswiss_grid.PRODUCTS[render_asset].grid, 2024): body})
+    source = mini_netcdf.Source(body)
+    source.serve_readers(monkeypatch)
+    synthetic = mini_archive.entry(config)
+
+    async def materialize() -> dict[str, Any]:
+        async with archive.gateway() as gateway:
+            outcome = await meteoswiss_grid.materialize_items(synthetic, gateway=gateway, known_version=None)
+        return outcome.items[0]
+
+    with concurrent.futures.ThreadPoolExecutor(1) as pool:
+        item = pool.submit(asyncio.run, materialize()).result()
+    archive.seen.clear()
+    west, south, east, north = item["bbox"]
+    return Chain(
+        config=synthetic,
+        registry=registry_of(synthetic),
+        item=item,
+        render_asset=render_asset,
+        aoi=aoi_wgs84((west, south, east, north)),
+        tile=_covering_tile_wgs84((west, south, east, north), config.viewer),
+        gateway=archive.gateway(),
+        searched=archive.seen,
+        read_addresses=lambda: [str(request.url) for request in source.seen],
+    )
+
+
 def _build_materialized(
     config: DatasetConfig, render_asset: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> Chain:
+    if config.format is DataFormat.NETCDF_REFS and config.source.adapter is AdapterKind.METEOSWISS_GRID:
+        return _build_meteoswiss(config, render_asset, tmp_path, monkeypatch)
     if config.format is not DataFormat.COG:
         raise UnsupportedFormat(f"no synthetic materialize chain for format {config.format.value!r}")
     if config.source.adapter is AdapterKind.ESA_WORLDCOVER_BUCKET:

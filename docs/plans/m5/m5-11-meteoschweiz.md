@@ -1,6 +1,6 @@
 # M5-11 — MeteoSchweiz-Klimagitter über virtuelle Verweise
 
-**Stand:** 17.11.2026, Plan **angenommen** (Otto, 17.11.2026: F1–F7 = 1, F8 mit Vorgabe, F9 = nein; §9.2). PR 1 umgesetzt in diesem Draft-PR (§10), Antworten Otto dazu in §10.5. PR 2 folgt nach dem Merge von PR 1 in einer neuen Session.
+**Stand:** 18.11.2026, Plan **angenommen** (Otto, 17.11.2026: F1–F7 = 1, F8 mit Vorgabe, F9 = nein; §9.2). PR 1 gemergt (#377, §10). PR 2 umgesetzt im eigenen Draft-PR (§11), Fragen dazu in §11.5.
 **Stufe B.** Zwei PRs (Vorgabe Otto, M5-Plan §2 Punkt 11): **PR 1** Verweise und Lesen, **PR 2** Datensatz MeteoSchweiz.
 **Aufgabe:** M5-11 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2 (Opus, hoch).
 **Grundlagen:** `adr/0029` (Leseweg NetCDF, F1–F7 = 1, §8a, §10 Punkt 1–4), `adr/0030` §5.6 und F10, `adr/0032` §7 und Backlog 29 (Prüfpunkt Mosaik-Zoom), `adr/0023` §3.1 (Lizenz MeteoSchweiz), `adr/0026` (Bewertungs-Set, Kürzel MCH), `adr/0002` (keine Live-Abrufe aus der Session), `KLAERUNGEN.md` B8, B9, B10–B13, Entscheidungslog 11.11.2026 (Ausgabetyp, Wiedervorlage `float64`).
@@ -598,3 +598,169 @@ Bis zur Entscheidung bleibt die Plattform streng. Nur die Probe liest über die 
   - `ProdDoc_SrelD.pdf`: https://www.meteoswiss.admin.ch/dam/jcr:981891db-30d1-47cc-a2e1-50c270bdaf22/ProdDoc_SrelD.pdf
 - Der Host `www.meteoswiss.admin.ch` ist aus der Cloud-Session nicht erreichbar (DNS-Auflösung scheitert, 18.11.2026). Die Grenzen sind deshalb **nicht** belegt und nicht angenommen. Die frühere Vermutung (§2.2, Niederschlag 06–06 UTC) bleibt eine Vermutung [S].
 - Das betrifft erst PR 2, weil die Items dort entstehen. Wege: Otto gibt den Host für die Umgebung frei, Otto legt die drei PDFs oder die betreffenden Sätze in den PR, oder die Session von PR 2 liest sie dort.
+
+---
+
+## 11. Umsetzung PR 2 (18.11.2026)
+
+### 11.1 Tagesgrenzen (belegt, Otto 18.11.2026)
+
+| Größe | Tag D | Quelle |
+|---|---|---|
+| `RhiresD` | 06:00 UTC Tag D bis 06:00 UTC Tag D+1 | `ProdDoc_RhiresD` |
+| `TabsD`, `TminD`, `TmaxD` | 00:00–24:00 UTC | `ProdDoc_TabsD` |
+| `SrelD` | Mitternacht bis Mitternacht, in UTC | `ProdDoc_SrelD`; opendatadocs: alle Referenzzeitstempel in UTC |
+
+Die Dateien stempeln jeden Tag um 00:00 UTC des Tages D (§10.9). Das Item des Tages D trägt danach `start_datetime` = Beginn des Tages (`RhiresD` 06:00 UTC, sonst 00:00 UTC), `end_datetime` = letzte Sekunde vor dem nächsten Tag (A17), `datetime` = `start_datetime`. Die Vermutung aus §2.2 ist damit belegt; §10.9 „Tagesgrenzen offen“ ist erledigt.
+
+### 11.2 Was gebaut ist
+
+| Stelle | Inhalt |
+|---|---|
+| `discovery/meteoswiss_grid.py` | Materialisierer: bedingter Abruf des Archiv-Items, Auswahl der Jahresdateien (nur `…-archive.<größe>_<ch01r\|ch01h>.swiss.lv95_<14 Ziffern>_<14 Ziffern>.nc`, ein Jahr je Datei, bis zum Ende von `temporal_extent` und höchstens bis zum Vorjahr des Laufs), Verweise je Datei mit `reference_file`, ein Item je Tag, ein Asset je Größe mit `earthx:refs` und `raster:bands` (`float32`, `nodata: nan`, Einheit aus `band_units`), `updated` = jüngstes Last-Modified, Geometrie = Rahmen des Gitters (verdichtet nach WGS 84) |
+| `discovery/materialize.py` | `MATERIALIZE_SPECS`: die Adaptertabelle mit dem Materialisierer von `discovery` (A15) |
+| `catalog/registry.py`, `adapters/spec.py` | `AdapterKind.METEOSWISS_GRID`, `CoverageProvider.FIXED_GRID`; ein materialisierter Eintrag darf `fixed-grid` wählen, wenn er eine Zeitreihe über einen geschlossenen Zeitraum ist |
+| `catalog/fixed_grid_coverage.py`, `api/coverage_route.py` | Coverage „festes Gitter“ (§5.4): Fläche = `spatial_extent` beschnitten auf Box bzw. Fläche, Zahl der Tage im Fenster, Histogramm je Monat; ohne Datenbank und ohne Abruf (A18) |
+| `api/intake.py` | Ein Asset mit `earthx:refs` ist ein Band, benannt wie das Asset (A22) |
+| `api/measure_tiles.py` | Ein Tag mit Verweisen wird gemessen: Zarr-Leser der Item-Kachel, Abrufe aus den Logzeilen von `gateway`, Chunk-Cache des `tiler` (A21) |
+| `catalog/datasets/meteoswiss-daily-1km.yaml`, `…-precip-1km.yaml` | die beiden Einträge (§5.3), Checkliste vollständig |
+| `catalog/glossary.yaml` | sechs Gruppen (A20) |
+| Frontend `api.ts` | `v=<updated>` an Kachel-, TileJSON- und Statistik-URLs von Items mit `earthx:refs` (F3) |
+| Frontend `download.ts` | Originale auch für `netcdf-refs`: die Jahresdatei, je Datei ein Link (F5, A23) |
+| `tests_live/test_meteoswiss_grid_smoke.py` | Live-Smoke beider Einträge (§5.10) |
+| Bewertungs-Set | `MCH` = `meteoswiss-daily-1km`, `MCHP` = `meteoswiss-daily-precip-1km` (F7) |
+
+### 11.3 Onboarding-Checkliste (`projektuebersicht.md` §5)
+
+Alle Punkte sind belegt, wie bei den übrigen Einträgen durch die Tests über alle Einträge der Registry: Coverage (Punkt 2: `fixed-grid` steht in `IMPLEMENTED_PROVIDERS`), Zitat (3), Lizenz und Attribution (4, Einstufung durch Otto, §11.5 G1), Zugang ohne Token (6), Darstellung (8: `TabsD` mit `rdbu_r` −20…30 °C, `RhiresD` mit `blues` 0…50 mm, `nearest`), Processing (9: Kette v2 mit `reproject` aus LV95 und Kette v1 Suche → Kachel → Zuschnitt, beide gegen ein synthetisches Archiv), „zuletzt geprüft“ (10: Live-Smoke), Schlagworte deutsch und englisch (11) mit Glossar.
+
+### 11.4 Auslegungen (gelten, wenn du nicht widersprichst)
+
+- **A14:** Die Größen eines Eintrags sind die Schlüssel von `band_units` (`TabsD` …), nicht `source.asset_keys`: Diese Regeln ordnen Assets nach Medientyp und gsd zu und gelten nur für den STAC-Adapter (`check_adapter_specs` lehnt sie sonst ab). Gitter und Tagesbeginn je Größe stehen im Code (`PRODUCTS`), weil sie Eigenschaften des Produkts von MeteoSchweiz sind; ein Eintrag mit Größen zweier Gitter scheitert.
+- **A15:** Der Materialisierer liegt in `discovery`, weil nur dort `h5py` laden darf. `ADAPTER_SPECS` führt `meteoswiss-grid` ohne `materialize`; `discovery.materialize` nimmt `MATERIALIZE_SPECS`, das sonst gleich ist (Test).
+- **A16:** Fassung eines Laufs = ETag des Archiv-Items, Auswahl des Eintrags (Größen, erstes und letztes Jahr) und Hash über Name, Adresse, `file:checksum` und `updated` der gewählten Dateien. `304` ist „unverändert“ nach einem Abruf; bedingt gefragt wird nur bei gleicher Auswahl, damit ein verlängerter Zeitraum oder eine neue Größe geladen wird, obwohl sich das Archiv nicht geändert hat. Ein `200` mit gleichem Hash (z. B. eine andere Datei des Archivs geändert) ist ebenfalls „unverändert“, ohne eine Datei zu lesen.
+- **A17:** `end_datetime` ist die letzte Sekunde vor dem nächsten Tag (wie BEV `23:59:59`), damit sich zwei Tage nicht in einem Zeitpunkt überlappen; `datetime` = `start_datetime`. Ein Kalendertag trifft damit genau einen Temperaturtag und zwei Niederschlagstage (06–06 UTC).
+- **A18:** Die Coverage „festes Gitter“ zählt die Tage des Fensters im Zeitraum des Eintrags. Ein Tag, den die Quelle in keiner Datei führt, wird mitgezählt; die Items zeigen die Lücke. Gemessen fehlen Tage nur bei `SrelD` in einem Jahr, und `TabsD` trägt jeden Tag des Eintrags `meteoswiss-daily-1km`. Eine Flächenantwort rät nie zu Footprints (`footprints_advised` falsch).
+- **A19:** `spatial_extent` ist bis zum ersten Lauf **vorläufig** (eine Box um jedes Gitter innerhalb 2 450 000–2 880 000 E, 1 020 000–1 330 000 N). Der Lauf scheitert, wenn das Gitter darüber hinausreicht. Nach Ottos Lauf ersetzt die Ausdehnung der Items (Schritt 4 in §11.6) den Wert in diesem PR; sie ist dann auch die Fläche der Coverage.
+- **A20:** Glossar: `MeteoSchweiz/MeteoSwiss/MétéoSuisse`, `Klimagitter/climate grid`, `Niederschlag/precipitation`, `Lufttemperatur/air temperature`, `Sonnenscheindauer/sunshine duration` und `Wettervorhersage/weather forecast`. Die letzte Gruppe hält die Negativfrage Q50 („hourly weather forecast“) leer: Ohne sie blieb unter `Joining.KNOWN` nur das bekannte Wort „weather“ (aus der Kategorie „Weather and climate“) und traf beide Einträge; die Negativfragen fielen auf 3 von 5. Die Schlagworte „weather“/„Wetter“ stehen deshalb nicht in den Einträgen. Messung mit Postgres (`tests/integration/test_search_evaluation.py`): de Recall@5 0,842, MRR@10 0,816; en 1,000/1,000; Filterfragen 5/5, Negativfragen 4/5 (Q48 trifft wie vorher das DEM).
+- **A21:** `measure-tiles` misst einen Tag mit Verweisen über den Leser der Item-Kachel (`ZarrReader`), zählt Abrufe und Bytes aus den Logzeilen von `gateway` (GDAL sieht diese Abrufe nicht) und hält den Chunk-Cache des `tiler`; „warm“ ist damit die zweite Kachel derselben Ansicht. Mehrere Items mit Verweisen in einer Kachel werden nicht gemessen; einen Zarr-Speicher misst es weiter nicht.
+- **A22:** Befund aus Checklistenpunkt 9: `api/intake.band_sources` ließ nur GeoTIFF-Assets als Bänder zu, ein Auftrag auf ein NetCDF-Asset scheiterte mit 422. Jetzt ist jedes Asset mit `earthx:refs` ein Band, benannt wie das Asset, wie im Frontend seit PR 1 (`processingOrder.ts`).
+- **A23:** „Download originals“ eines Tages verlinkt die Jahresdatei der Quelle (F5). Mehrere Tage eines Jahres teilen sie: Der Dialog lädt und nennt jede Datei einmal, beim ersten ihrer Tage; ein Tag, dessen Dateien alle schon dabei sind, entfällt (`scenesOf`, Linkliste, Zusammenfassung). Sonst lüde eine Woche dieselbe Datei von rund 130 MB siebenmal, was die Bedingungen („high-frequency downloading of the same content“) untersagen.
+- **Bekannte Grenze:** `v` kennt nur Items, die die Seite in dieser Sitzung über Suche oder Abruf geholt hat. Eine gespeicherte Ebene behält die Kachel-URL, mit der sie gespeichert wurde (mit `v`); neu gebaute URLs ohne vorherigen Abruf des Items tragen keines.
+
+### 11.5 Fragen an Otto
+
+**G1 — Lizenzangabe (F8).** Die Seite der Nutzungsbedingungen (`opendatadocs.meteoswiss.ch/general/terms-of-use`, gelesen 18.11.2026) sagt wörtlich: „The 'Open Data' of MeteoSwiss are published accordingly under the Creative Commons Licence CC BY 4.0.“ Der Name „opendata.swiss BY“ kommt dort nicht vor. Daneben stehen Pflichten, die über CC BY hinausgehen: Quellenangabe ohne Anschein einer Unterstützung, Verbot übermäßiger Nutzung, kein Gewähr.
+1. Wie F8: `spdx_id: null`, Name „Terms of use of MeteoSwiss open data“, Bedingungen als `terms.notice` (so im PR)
+2. `spdx_id: CC-BY-4.0` mit Name und URL von CC BY 4.0; die Nutzungsbedingungen bleiben als `terms` mit derselben `notice` **(Empfehlung: die Seite nennt die Lizenz selbst, und eine SPDX-Kennung macht sie maschinenlesbar; die Zusatzpflichten gehen dabei nicht verloren)**
+3. Erst nach eigener Prüfung
+
+**G2 — Wortlaut** der Attribution („Source: MeteoSwiss“, bearbeitet „Source: MeteoSwiss (modified)“) und der `notice` in beiden YAML-Dateien: bestätigst du im PR (Auftrag Otto). Die `notice` sind Sätze der Bedingungen im Wortlaut.
+
+### 11.5a Antworten von Otto (18.11.2026)
+
+| Frage | Antwort |
+|---|---|
+| G1 | 2: `spdx_id: CC-BY-4.0` (Name und URL von CC BY 4.0), die Nutzungsbedingungen von MeteoSchweiz als `terms` mit unveränderter `notice`, auch dem Satz, dass die Quellenangabe nicht wie eine Unterstützung durch MeteoSchweiz aussehen darf. Die Lizenzangabe aus F8 (§9.2, §9.3: Nutzungsbedingungen statt CC BY 4.0) war ein Irrtum und ist damit korrigiert |
+| G2 | Attribution „Source: MeteoSwiss“, bearbeitet „Source: MeteoSwiss (modified)“: bestätigt |
+
+### 11.6 Was Otto lokal ausführt (PowerShell, aus der Repo-Wurzel)
+
+Wie bei M5-09: dieselbe Zeile in PowerShell und bash. `materialize` startet `catalog-load` selbst. Der Host `data.geo.admin.ch` hat 6 Verbindungen und 1 s Abstand für `materialize`.
+
+**Schritt 0 — Branch holen:**
+
+```powershell
+git fetch origin claude/tender-ramanujan-in3i2r
+```
+
+```powershell
+git checkout claude/tender-ramanujan-in3i2r
+```
+
+**Schritt 1 — Items laden** (230 bzw. 65 Jahresdateien, je 5–8 Abrufe; mit 1 s Abstand rund 30 bzw. 10 min; rund 23 700 Items je Datensatz):
+
+```powershell
+docker compose run --build --rm materialize meteoswiss-daily-1km
+```
+
+```powershell
+docker compose run --rm materialize meteoswiss-daily-precip-1km
+```
+
+Erwartet je eine Zeile `loaded (source version …); N items written, 0 deleted; L listed, 0 missing, W withheld, 0 unknown at the source`. `withheld` zählt Jahresdateien außerhalb des Zeitraums (2026 gibt es im Archiv noch nicht).
+
+**Schritt 2 — zweiter Lauf ohne Änderung** (erwartet `unchanged`, ein bedingter Abruf):
+
+```powershell
+docker compose run --rm materialize meteoswiss-daily-1km
+```
+
+**Schritt 3 — Zahl, Zeitraum und Ausdehnung der Items** (die Ausdehnung ersetzt in diesem PR die vorläufige `spatial_extent`, A19):
+
+```powershell
+"select collection, count(*), min(datetime), max(end_datetime), st_extent(geometry) from pgstac.items where collection like 'meteoswiss-%' group by collection;" | docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At'
+```
+
+Erwartet: `meteoswiss-daily-1km` von `1961-01-01 00:00` bis `2025-12-31 23:59:59`, `meteoswiss-daily-precip-1km` von `1961-01-01 06:00` bis `2026-01-01 05:59:59` (UTC).
+
+**Schritt 4 — Prüfpunkt Mosaik-Zoom (§5.6, `adr/0032` Backlog 29)**, ein Sommertag je Datensatz, z0–z12:
+
+```powershell
+docker compose run --build --rm measure-tiles meteoswiss-daily-1km --bbox 6.0,46.0,10.4,47.7 --datetime 2024-07-01 --zooms 0-12
+```
+
+```powershell
+docker compose run --rm measure-tiles meteoswiss-daily-precip-1km --bbox 6.0,46.0,10.4,47.7 --datetime 2024-07-01 --zooms 0-12
+```
+
+Erwartet je Stufe 1 Datei, Status `ok`, kalt 1 Abruf von rund 0,36 MB (ein Chunk), warm 0 Abrufe (Chunk-Cache). Die Tabelle nennt weder Box noch Adresse noch Item; sie darf in den PR.
+
+**Schritt 5 — im Browser:** `docker compose up -d --build`, Datensatz wählen, Zeitleiste, von z3 bis z12 zoomen (Crop and merge, angeheftete Ebene, Suchtreffer); Band math `TmaxD - TminD`; ein Job mit Zuschnitt; Coverage mit Zeitfilter; „Download originals“ eines Tages (ein Link auf die Jahresdatei).
+
+**Schritt 6 — Live-Smoke** nach dem Merge auf `main` in GitHub Actions („Live smoke“ → „Run workflow“).
+
+### 11.7 Erster Lauf (Otto, 18.11.2026) und Anpassung
+
+| Was | Ergebnis |
+|---|---|
+| `materialize meteoswiss-daily-1km` | 23 741 Items aus 230 Dateien; 1 716 Range-Anfragen zu 64 KiB (rund 110 MB), alle `206`, 1 s Abstand, rund 30 min |
+| `materialize meteoswiss-daily-precip-1km` | 23 741 Items aus 65 Dateien; in Ottos Ausgabe keine Logzeile von `gateway` (siehe unten) |
+| Wiederholung `precip` | ein Abruf, `304`, `unchanged` |
+| Items `1km` | 23 741, `1961-01-01 00:00` bis `2025-12-31 23:59:59`, `BOX(5.754 45.684, 10.699 47.886)` |
+| Items `precip` | 23 741, `1961-01-01 06:00` bis `2026-01-01 05:59:59`, `BOX(5.749 45.639, 10.710 48.066)` |
+| `measure-tiles` mit `--datetime 2024-07-01` | 500 Items, 500 „Durchgänge“, jede Stufe `over items cap`; nichts gemessen |
+
+- **`spatial_extent`** (A19) ist jetzt die Ausdehnung der Items, jede Kante 0,001° weiter außen, weil die Werte auf drei Stellen gelesen sind und ein Lauf scheitert, wo das Gitter über die Box hinausreicht.
+- **`measure-tiles`, Ursache:** Der Zeitraum ging bei materialisierten Datensätzen nicht in die Suche in pgstac (`search_items_in_bbox` kannte nur die Box). Bisher hatten alle materialisierten Datensätze keine Zeitachse, also fiel es nicht auf. Jetzt trägt die Suche den Zeitraum (A24); Test gegen pgstac und in `measure-tiles`.
+- **Keine Logzeilen beim Lauf `precip`, Stand der Klärung:** Der Code hat keinen Zwischenspeicher für Verweise. `discovery` hält nichts zwischen zwei Läufen, und der Chunk-Cache von `readers` ist dort aus und liest ohnehin keine Köpfe. Ein Lauf, der `loaded` meldet und Items mit `earthx:refs` schreibt, hat jede der 65 Dateien über `gateway` gelesen (je 5–8 Abrufe); jede Antwort schreibt eine Zeile „gateway request“, dazu je Datei „referenced N of 65 annual files“. Belegen lässt sich der Lauf an seiner Zeile in `earthx_materialize_runs` (Dauer, `listed`, `items_written`) und an den ETags in den Items. Ottos Prüfung folgt.
+- **A24:** `measure-tiles` sucht in einem materialisierten Datensatz mit dem Zeitraum des Laufs. Für den Niederschlag misst `--datetime 2024-07-01T06:00:00Z/2024-07-02T05:59:59Z` genau den Tag 1.7.; ein ganzer Kalendertag träfe zwei Niederschlagstage (06–06 UTC).
+
+### 11.8 Prüfpunkt Mosaik-Zoom geschlossen (Otto, 18.11.2026)
+
+`measure-tiles` am 1.7.2024 (Niederschlag 06–06 UTC), z0–z12:
+
+| Datensatz | Dateien je Stufe | kalt | warm |
+|---|---|---|---|
+| `meteoswiss-daily-1km` | 1 | 1 Anfrage, 0,355 MB, rund 0,2 s | 0 Anfragen, rund 0,03 s |
+| `meteoswiss-daily-precip-1km` | 1 | 1 Anfrage, 0,392 MB, rund 0,2 s | 0 Anfragen, rund 0,03 s |
+
+- Jede Kachel liest auf jeder Stufe genau den einen Chunk des Tages; die zweite Kachel kommt aus dem Chunk-Cache des `tiler`. Weit unter dem Budget für Gitter aus `adr/0032` §7 (32 Anfragen, 32 MB).
+- `min_zoom: 0` und `overview: own` sind bestätigt (§5.6). Der Prüfpunkt Mosaik-Zoom bei groben Rastern (`adr/0032` §7, Backlog 29) ist für M5-11 geschlossen; ein eigenes Budget für Gitter bleibt für DWD (25 Chunks je Tag) und globale Gitter vorgemerkt.
+- Logzeilen des Laufs `precip` (§11.7): geklärt. Der Lauf dauerte 8 min 41 s mit `listed` 65; die Anfragen liefen, nur Ottos Kopie der Ausgabe war unvollständig.
+
+### 11.9 Browserprüfung (Otto, 18.11.2026): nur ein Band in der Ansicht
+
+- **Befund:** Der Data catalogue nennt vier Bänder (`TabsD`, `TmaxD`, `TminD`, `SrelD`), das Band-Menü der Ansicht bot nur `TabsD`.
+- **Ursache, keine Absicht:** `viewBand.ts::bandAssetsOf` gab für jedes Format außer `cog` eine leere Liste zurück; übrig blieb das Band der Standarddarstellung. Dieselbe Lücke im Download: `access/band_export.band_table` nahm nur GeoTIFF-Assets in die Bandtabelle des Dialogs, für NetCDF also keine. Processing war nicht betroffen (`processingOrder.ts` und seit A22 `intake` nehmen jedes Asset mit `earthx:refs` als Band).
+- **Behoben (A25):** Ansicht und Download nehmen bei `netcdf-refs` jedes Asset mit `earthx:refs` als ein Band, benannt wie das Asset. Wählbar ist nur, was der Tag hat: vor 1971 nur `TabsD`, dann ist das Menü gesperrt („This image has one band“). Die Einheit kommt wie bei jedem Band aus `band_units` (°C bzw. %). Tests: `viewBand.test.ts`, `ViewBand.test.tsx` (Menü mit vier bzw. einer Größe), `test_band_export.py` (Bandtabelle mit Einheit und Auflösung).
+- **H1 = 1 (Otto, 18.11.2026):** Ein gewähltes Band mit der Einheit des Standardbands übernimmt dessen Farbskala und Startbereich: `TminD` und `TmaxD` wie `TabsD` (`rdbu_r`, −20…30 °C), ohne Messung. Jedes andere Band startet wie bisher mit dem gemessenen Bereich und ohne Farbskala, bei MeteoSchweiz `SrelD`. Die Regel gilt für jeden Datensatz (`viewBand.ts::standardLookOfBand`), greift aber nur, wo die Standarddarstellung ein Band mit Einheit, Farbskala und Bereich hat. Tests: `viewBand.test.ts`, `ViewBand.test.tsx`.
+- **Folge M5-59 (Otto):** ein eigenes Registry-Feld für die Darstellung je Band (Farbskala, Startbereich), allgemein für alle Datensätze; dann bekommt auch `SrelD` eine eigene Darstellung. Bis dahin bleibt `SrelD` wie heute.
+
+### 11.10 Browserprüfung (Otto, 18.11.2026): Download nur mit `TabsD`
+
+- **Befund:** Der Download einer Ansicht von `meteoswiss-daily-1km` (Tag ab 1971) enthielt nur `TabsD`.
+- **Ursache:** Der Dialog wählt für Bänder einer Auflösung stets „eine Datei je Auflösung“ (gestapelt). Diese Form baut der Server nur aus GeoTIFFs; für Verweise endet der Zuschnitt mit 422 („the source has no raster to read“), und „Download originals“ startete statt der Jahresdateien einen Job. Ohne Bandtabelle (etwa wenn `/bands` nicht antwortet) fällt der Zuschnitt auf das Standardband allein zurück (`cropAssetsOf`), also `TabsD`; genau diesen Weg hat die Session nicht nachgestellt.
+- **Behoben (A26):** `POST /collections/{id}/bands` sagt je Band, ob es sich stapeln lässt (`stackable`, `band_export.band_rows`, für Route und Golden-Datei dieselbe Funktion); ein Band mit `earthx:refs` lässt sich nicht stapeln. Der Dialog nimmt dann immer „eine Datei je Band“ und fragt nicht nach der Form: der Zuschnitt schreibt jede gewählte Größe in eine eigene Datei, die Originale laden im Browser die Jahresdatei je Größe, ohne Job.
+- **Tests über den echten Weg:** `tests/earthx/api/test_meteoswiss_download.py` (synthetisches Archiv mit vier Größen, echte Materialisierung, `POST /bands` und `POST /download` der App: vier Größen angeboten, vier Dateien, nur die gewählten, gestapelte Formen mit 422 begründet); `DownloadDialog.bands.test.tsx` (vier Größen im Dialog, keine Formfrage, Anfrage mit `per_band` und den gewählten Größen, Originale als vier Jahresdateien im Browser); `bandChoice.test.ts`.
+

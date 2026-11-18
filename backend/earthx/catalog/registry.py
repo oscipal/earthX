@@ -115,6 +115,9 @@ class AdapterKind(Enum):
     FSDI_STAC_V1 = "fsdi-stac-v1"
     # M5-09: the INSPIRE ATOM service of the BEV, a materializer like the bucket adapters (adr/0023 §4.2).
     BEV_ATOM = "bev-atom"
+    # M5-11: the archive item of the MeteoSwiss climate grids, one item per day with the chunk references of its annual
+    # files (adr/0029 §8a.1). Its materializer is `discovery`'s, the only module that may open a file with `h5py`.
+    METEOSWISS_GRID = "meteoswiss-grid"
 
 
 class ItemHolding(Enum):
@@ -137,6 +140,9 @@ class CoverageProvider(Enum):
 
     UPSTREAM_AGGREGATION = "upstream-aggregation"
     LOCAL_SQL = "local-sql"
+    # M5-11 (adr/0029 §8a.2, F4 of the plan): every time step covers the whole grid, so the area is the extent and the
+    # count is the number of time steps in the window, both reckoned from the entry without a query per item.
+    FIXED_GRID = "fixed-grid"
 
 
 class HealthStatus(Enum):
@@ -2310,16 +2316,22 @@ class DatasetConfig:
         would count rows nobody ever wrote for it.
         """
         if self.source.item_holding is ItemHolding.MATERIALIZED:
-            if self.coverage.provider is not CoverageProvider.LOCAL_SQL:
+            if self.coverage.provider not in (CoverageProvider.LOCAL_SQL, CoverageProvider.FIXED_GRID):
                 raise ConfigError(
-                    f"{self.dataset_id}: materialized items need coverage.provider=local-sql "
+                    f"{self.dataset_id}: materialized items need coverage.provider=local-sql or fixed-grid "
                     "(adr/0009 §7 — no search API to aggregate at or sample)"
                 )
-        elif self.coverage.provider is CoverageProvider.LOCAL_SQL:
+        elif self.coverage.provider in (CoverageProvider.LOCAL_SQL, CoverageProvider.FIXED_GRID):
             raise ConfigError(
-                f"{self.dataset_id}: federated items cannot use coverage.provider=local-sql "
+                f"{self.dataset_id}: federated items cannot use coverage.provider={self.coverage.provider.value} "
                 "(no items of this dataset are held in our own pgstac)"
             )
+        if self.coverage.provider is CoverageProvider.FIXED_GRID:
+            # Every time step covers the whole grid (M5-11 plan §5.4): a series of them over a closed period.
+            if self.capabilities.single_coverage_product or not self.capabilities.time_range:
+                raise ConfigError(f"{self.dataset_id}: coverage fixed-grid is for a series of time steps over one grid")
+            if self.temporal_extent.start is None or self.temporal_extent.end is None:
+                raise ConfigError(f"{self.dataset_id}: coverage fixed-grid counts time steps over a closed temporal_extent")
 
 
 class Attributable(Protocol):

@@ -56,3 +56,12 @@ groups:
 - [Satellitenbild, Satellitenbilder, satellite image, satellite images, satellite imagery]
 - [Vegetationsindex, vegetation index]
 - [Schneebedeckung, snow cover]
+
+# Climate grids (M5-11). A forecast is no observed grid: "weather forecast" is a unit of its own, so a question for a
+# forecast does not fall back on the "weather" of the category weather and climate.
+- [MeteoSchweiz, MeteoSwiss, MétéoSuisse]
+- [Klimagitter, climate grid, gridded climate data]
+- [Niederschlag, precipitation]
+- [Lufttemperatur, air temperature]
+- [Sonnenscheindauer, sunshine duration]
+- [Wettervorhersage, weather forecast]
