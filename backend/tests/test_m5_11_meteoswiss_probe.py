@@ -208,3 +208,90 @@ def test_a_grid_mapping_that_names_no_epsg_code_is_compared_with_lv95(
     assert re.search(r"from_cf: Northing at projection centre\s+same", out)
     assert re.search(r"esri_pe_string: pyproj matches\s+\[.*'EPSG:2056 \d+%'", out), out
     assert "ellipsoid (here)" in out and "axes (EPSG)" in out
+
+
+# M5-58 plan §2.3: the items outside the archive, as `adr/0029` §3.1 measured them (an item per day with `expires`, an
+# item per month); the names of their files are what `--current` is to find out, so these are made up in the same form.
+DAY_ITEM = {
+    "id": "day-item",
+    "properties": {"datetime": "2026-11-17T06:00:00Z", "expires": "2026-12-28T00:00:00Z"},
+    "assets": {
+        name: {"href": f"{BASE}/{name}", "file:checksum": "1220ab", "updated": "x"}
+        for name in (
+            "ogd-surface-derived-grid.rprelimd_ch01h.swiss.lv95_20261116000000_20261116000000.nc",
+            "ogd-surface-derived-grid.tabsd_ch01r.swiss.lv95_20261116000000_20261116000000.nc",
+        )
+    },
+}
+MONTH_ITEM = {
+    "id": "month-item",
+    "properties": {"datetime": "2026-11-10T06:00:00Z"},
+    "assets": {
+        name: {"href": f"{BASE}/{name}", "file:checksum": "1220cd"}
+        for name in (
+            "ogd-surface-derived-grid-last.rhiresd_ch01h.swiss.lv95_20261001000000_20261031000000.nc",
+            "ogd-surface-derived-grid-last.tabsm_ch01r.swiss.lv95_20261001000000_20261031000000.nc",
+        )
+    },
+}
+
+
+@pytest.fixture
+def current(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> ModuleType:
+    module = load()
+    source = mini_netcdf.Source(mini_netcdf.build(tmp_path / "file.nc", bounds=True).read_bytes())
+    archive = {"id": "archive-item", "assets": {name: {"href": f"{BASE}/{name}"} for name in NAMES}}
+    listing = {"features": [archive, DAY_ITEM, MONTH_ITEM], "links": []}
+    by_id = {item["id"]: item for item in listing["features"]}
+
+    def answer(body: dict[str, object], request: httpx.Request) -> httpx.Response:
+        etag = f'"{len(json.dumps(body))}"'
+        if request.headers.get("if-none-match") == etag:
+            return httpx.Response(304, headers={"etag": etag})
+        return httpx.Response(200, json=body, headers={"etag": etag})
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.endswith("/items"):
+            return answer(listing, request)
+        if "/items/" in path:
+            return answer(by_id[path.rsplit("/", 1)[1]], request)
+        return source.handler(_with_host(request))
+
+    async def no_wait(seconds: float) -> None:
+        return None
+
+    def gateway(policy: Policy) -> Gateway:
+        return Gateway(policy, transport=httpx.MockTransport(handler), resolve=mini_netcdf.from_memory, sleep=no_wait)
+
+    monkeypatch.setattr(module, "Gateway", gateway)
+    module.SEEN = source.seen
+    module.ETAG = source.etag
+    return module
+
+
+def test_current_reports_the_items_outside_the_archive_by_kind(current: ModuleType, capsys: pytest.CaptureFixture[str]) -> None:
+    assert current.run(["--current"]) == 0
+    out = capsys.readouterr().out
+    assert re.search(r"items outside the archive\s+2$", out, flags=re.MULTILINE), out
+    assert re.search(r"^item of one day\s+1 items$", out, flags=re.MULTILINE), out
+    assert re.search(r"^item of one month\s+1 items$", out, flags=re.MULTILINE), out
+    assert re.search(r"ogd-surface-derived-grid rprelimd ch01h \(one time step\)\s+× 1", out), out
+    assert re.search(r"ogd-surface-derived-grid-last rhiresd ch01h \(one month\)\s+× 1", out), out
+    assert re.search(r"expires, earliest and latest\s+2026-12-28T00:00:00Z \| 2026-12-28T00:00:00Z", out), out
+    assert re.search(r"conditional request per item\s+\{'strong ETag, 304 on If-None-Match': 1\}", out), out
+    assert re.search(r"page 1\s+ETag, 304 on If-None-Match; Last-Modified none", out), out
+    # One header per kind, grid and daily quantity: rprelimd and tabsd of the day, rhiresd of the month; not tabsm.
+    assert re.search(r"file headers to read\s+3$", out, flags=re.MULTILINE), out
+    assert "item of one day rprelimd ch01h" in out and "item of one month rhiresd ch01h" in out
+    assert "from 06:00:00 to 06:00:00 (24 h)" in out
+    # Nothing of the archive is read.
+    assert "tabsd ch01r daily values, file of one year" not in out
+    assert len(current.SEEN) >= 3
+
+
+def test_current_names_no_address_no_id_and_no_etag(current: ModuleType, capsys: pytest.CaptureFixture[str]) -> None:
+    current.run(["--current"])
+    out = capsys.readouterr().out
+    for secret in ("https://", "data.geo.admin.ch", "day-item", "month-item", "archive-item", current.ETAG):
+        assert secret not in out
