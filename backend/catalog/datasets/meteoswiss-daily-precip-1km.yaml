@@ -1,0 +1,187 @@
+# MeteoSwiss daily precipitation at 1 km, grid `ch01h` (M5-11 PR 2, `adr/0029` §8a.1 package b, `adr/0030` §5.6).
+# Measured by Otto with `scripts/m5-11-meteoswiss/probe.py` (M5-11 plan §10.7, §10.9, 17./18.11.2026): the archive item
+# of the collection, the header of all 65 annual files of this grid (EPSG:2056, Float32, 265 × 370 cells of 1 km,
+# one chunk per day without filter, fill value −999.99, days stamped at 00:00 without `time_bnds`).
+#
+# One file is one entry of the registry (docs/plans/m5/m5-13-yaml-lader.md, KLAERUNGEN B13 stage 2). The fields are
+# those of `DatasetConfig` in `backend/earthx/catalog/registry.py`, every one set on purpose, none with a default
+# (KLAERUNGEN B10); `catalog.entry_files` reads the file strictly. Every value carries the place it comes from.
+
+# The id and title of plan A5; short name `MCHP` of the evaluation set (plan F7).
+dataset_id: meteoswiss-daily-precip-1km
+title: MeteoSwiss daily precipitation 1 km
+description: >-
+  Daily precipitation grid of MeteoSwiss over Switzerland at 1 km in the Swiss coordinate system LV95, derived from
+  the rain gauge network, in mm, from 1961. Only the consolidated annual files of completed years are loaded, up to
+  2025. The day of a date runs from 06:00 UTC of that date to 06:00 UTC of the next. A day the source does not carry
+  is missing, not filled.
+# German and English (adr/0026 F7, plan §5.3).
+keywords:
+- MeteoSwiss
+- MeteoSchweiz
+- climate
+- climate grid
+- precipitation
+- daily precipitation
+- precipitation grid
+- rainfall
+- rain
+- Switzerland
+- 1 km
+- Klima
+- Klimagitter
+- Niederschlag
+- Tagesniederschlag
+- Niederschlagssumme
+- Regen
+- Schweiz
+category: weather_climate
+providers:
+- name: Federal Office of Meteorology and Climatology MeteoSwiss
+  roles: [producer, licensor]
+  url: https://www.meteoswiss.admin.ch
+- name: Federal Office of Topography swisstopo (FSDI)
+  roles: [host]
+  url: https://www.geo.admin.ch
+# Cells of 1 km (plan §10.9).
+gsd: [1000.0]
+# No DOI found. The citation names publisher, product and the documentation of the open data (checklist point 3).
+doi: null
+citation: >-
+  MeteoSwiss: daily precipitation grid RhiresD (1 km, LV95), open data,
+  https://opendatadocs.meteoswiss.ch/c-climate-data/c3-ground-based-climate-data
+# One field per day (plan §5.3).
+data_class: raster-time-series
+format: netcdf-refs
+# The files carry a grid_mapping of LV95 and evenly spaced coordinates (plan §10.9).
+georeferencing: geotransform
+line_times: null
+# PROVISIONAL until Otto's first load (plan §11 step 4): a box around every grid within 2 450 000–2 880 000 E and
+# 1 020 000–1 330 000 N of LV95. The run fails if the grid reaches beyond it; the extent of the loaded items replaces it.
+spatial_extent:
+  bbox: [5.4, 45.2, 11.2, 48.2]
+# The first day of `RhiresD` to the last of 2025, each day 06:00 UTC to 06:00 UTC of the next (ProdDoc_RhiresD; Otto
+# 18.11.2026).
+# Only completed years of the archive (adr/0029 F5): a later year is loaded once this end is followed up.
+temporal_extent:
+  start: 1961-01-01T06:00:00+00:00
+  end: 2026-01-01T05:59:59+00:00
+# `adr/0030` §5.6 (B0, P1).
+capabilities:
+  roi: true
+  time_range: true
+  band_math: true
+  interpolation: true
+  reprojection: true
+  # No classification layer.
+  masking: false
+  # A mask by value ("above 20 mm") makes sense.
+  value_masking: true
+  normalization: true
+  ml_processing: true
+  quad_pol: false
+  # Precipitation is no height.
+  terrain: false
+  # A series of days: the coverage is the fixed grid (plan §5.4).
+  single_coverage_product: false
+# Classified by Otto (plan F8, §9.3; 17.11.2026): the terms of use of MeteoSwiss open data, tier processing.
+# To confirm in the PR (plan §11.4): the terms page itself names CC BY 4.0.
+license:
+  spdx_id: null
+  name: Terms of use of MeteoSwiss open data
+  url: https://opendatadocs.meteoswiss.ch/general/terms-of-use
+  commercial_use: true
+  distribution: true
+  derivatives: true
+  share_alike: false
+  attribution_required: true
+  tier: processing
+  # "Source: MeteoSwiss" from the terms; "(modified)" in the form of `adr/0023` §7.2 (Otto, 17.11.2026).
+  attribution_modified: 'Source: MeteoSwiss (modified)'
+  attribution_unmodified: 'Source: MeteoSwiss'
+  terms:
+    url: https://opendatadocs.meteoswiss.ch/general/terms-of-use
+    notice:
+      # The terms in their own words (read 18.11.2026), shortened only where they name themselves.
+      en: >-
+        Use is subject to the terms of use of MeteoSwiss open data: {terms_url}. By acknowledging the source, you must
+        ensure that it does not appear as if MeteoSwiss supports you or your use in particular. Excessive use in terms
+        of access frequency or data volume (in particular the high-frequency downloading of the same content) is
+        prohibited. MeteoSwiss provides no guarantee for the correctness of content, accuracy, up-to-dateness,
+        reliability or completeness.
+legal_status: cleared
+legal_note: null
+access:
+  token_free_checked_at: 2026-11-18
+  # As measured in `adr/0029` §4 and by the probe (plan §10).
+  method: anonymous HTTPS to the STAC API of the FSDI and the annual files on the same host, no authentication header
+  # `Access-Control-Allow-Origin: *` on the files (`adr/0029` §4).
+  cors: true
+  account: none
+  account_provider: null
+  account_paths: []
+source:
+  adapter: meteoswiss-grid
+  # The archive item of the collection (`adr/0029` §3.1): one file per quantity, grid and year.
+  endpoint: https://data.geo.admin.ch/api/stac/v1/collections/ch.meteoschweiz.ogd-surface-derived-grid/items/archive-ch
+  source_collection_id: ch.meteoschweiz.ogd-surface-derived-grid
+  asset_hosts: [data.geo.admin.ch]
+  # About 23 700 days, read from 65 annual files (plan §2.1).
+  item_holding: materialized
+  # The host of swissALTI3D (`adr/0023` §7.3).
+  data_region: aws:eu-central-1
+  # The quantities are the keys of `band_units` (plan A14).
+  asset_keys: []
+  item_states: null
+  asset_href_rewrites: []
+  # The version of an input is the ETag its references were made with.
+  asset_checksum: null
+coverage:
+  provider: fixed-grid
+  # The whole grid, about 370 km × 265 km.
+  typical_footprint_km: 300.0
+  max_geotile_level: 6
+# A sequential scale from dry to 50 mm a day (plan A6); `nearest` keeps the cells of 1 km visible.
+default_render:
+  title: Daily precipitation
+  assets: [RhiresD]
+  rescale:
+  - [0.0, 50.0]
+  colormap_name: blues
+  expression: null
+  resampling: nearest
+  asset_selection: all
+# One item per day over the whole grid; a tile reads one chunk of 355 KB per quantity at every level (plan §5.6).
+viewer:
+  group_by: [datetime]
+  min_zoom: 0
+  max_zoom: 12
+  browse: full_resolution
+  quicklook_nodata_max: null
+  results_group_by: [datetime]
+  overview: own
+  overview_resampling: null
+  overview_substitute: null
+health:
+  status: ok
+maturity: stable
+zarr: null
+mask: null
+# The daily sum in millimetres (plan §5.3).
+band_units:
+  RhiresD: mm
+auxiliary_assets: []
+# The archive has nothing to filter by but time.
+search_filters: []
+search_capabilities:
+  evaluate: false
+  aoi_coverage: true
+# No quick processing for now (`adr/0030` §5.6).
+index_presets: []
+true_color: []
+composite_presets: []
+step_presets: []
+notices: []
+limitations:
+- Only completed years are loaded; the current year is not available.
+- The day of a date runs from 06:00 UTC of that date to 06:00 UTC of the next.
