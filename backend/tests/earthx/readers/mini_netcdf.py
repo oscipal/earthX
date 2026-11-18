@@ -70,12 +70,15 @@ def build(
     bounds: bool = False,
     extra_attributes: dict[str, object] | None = None,
     even: bool = True,
+    time_values: numpy.ndarray | None = None,
 ) -> Path:
     """One file at ``path``; the switches make the layouts the readers take or refuse."""
     data = values() if data is None else data
     steps, rows, columns = data.shape
     with h5py.File(path, "w") as hdf:
-        time = hdf.create_dataset("time", data=numpy.arange(steps, dtype="f8"))
+        time = hdf.create_dataset(
+            "time", data=numpy.arange(steps, dtype="f8") if time_values is None else numpy.asarray(time_values, "f8")
+        )
         time.attrs["units"] = time_units
         time.attrs["calendar"] = calendar
         time.attrs["axis"] = "T"

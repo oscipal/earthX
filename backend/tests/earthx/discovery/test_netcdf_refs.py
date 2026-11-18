@@ -109,6 +109,15 @@ class TestReferences:
         expected = {(0, i[1], i[2]): v for i, v in chunks_on_disk(path).items() if i[0] == 1}
         assert {tuple(index): (offset, length) for index, offset, length in step["chunk_refs"]} == expected
 
+    def test_missing_days_are_missing_time_steps_not_a_failure(self, tmp_path: Path) -> None:
+        """Fourth run (18.11.2026): one year of SrelD has gaps. A day the file does not carry is no time step."""
+        days = [0.0, 1.0, 2.0, 5.0, 6.0, 9.0]
+        _, source = built(tmp_path, time_values=numpy.array(days))
+        refs = references(source)
+        assert [time.day for time in refs.times] == [1, 2, 3, 6, 7, 10]
+        assert len(refs.times) == refs.layout.shape[0]
+        assert all(step_references(refs, step)["chunk_refs"] for step in range(len(days)))
+
     def test_a_contiguous_array_is_one_chunk(self, tmp_path: Path) -> None:
         _, source = built(tmp_path, chunks=None)
         refs = references(source)
@@ -154,6 +163,16 @@ class TestRefused:
         _, source = built(tmp_path, **options)
         with pytest.raises(UnsupportedLayout, match=reason):
             references(source)
+
+    @pytest.mark.parametrize("attribute", ["crs_wkt", "spatial_ref"])
+    def test_lv95_written_as_esri_wkt_is_epsg_2056(self, tmp_path: Path, attribute: str) -> None:
+        """Fourth run (18.11.2026): the grid_mapping carries an ESRI WKT, from which pyproj names the unit "Degree"
+        where EPSG:2056 says "degree". Compared with their case, all 295 files were refused (third run)."""
+        from pyproj import CRS
+
+        mapping = {**mini_netcdf.LV95, attribute: CRS.from_epsg(2056).to_wkt("WKT1_ESRI")}
+        _, source = built(tmp_path, grid_mapping=mapping)
+        assert references(source).layout.crs == "EPSG:2056"
 
     def test_a_mismatching_grid_mapping_carries_its_attributes(self, tmp_path: Path) -> None:
         _, source = built(tmp_path, grid_mapping={**mini_netcdf.LV95, "false_easting": 600000.0})
