@@ -39,7 +39,7 @@ import {
   downloadRequestFor,
   downloadRequestForSelection,
   DRAW_AOI_TO_CROP,
-  isCogFormat,
+  hasOriginalFiles,
   mixedBandsNote,
   noOriginalsReason,
   originalFileLinks,
@@ -2734,7 +2734,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ error: DRAW_AOI_TO_CROP });
       return;
     }
-    if (kind === 'originals' && !isCogFormat(dataset)) {
+    if (kind === 'originals' && !hasOriginalFiles(dataset)) {
       set({ error: noOriginalsReason(dataset) });
       return;
     }
@@ -2798,7 +2798,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ error: DRAW_AOI_TO_CROP });
       return;
     }
-    if (kind === 'originals' && !isCogFormat(dataset)) {
+    if (kind === 'originals' && !hasOriginalFiles(dataset)) {
       set({ error: noOriginalsReason(dataset) });
       return;
     }

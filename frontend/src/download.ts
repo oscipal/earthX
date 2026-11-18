@@ -61,10 +61,9 @@ export function linkListText(links: readonly OriginalFileLink[]): string {
 
 // The single decision table of M3-17 plan §4, as one pure function: what a
 // download follows depends on which full-resolution view (if any) is active,
-// whether an AOI is drawn, and whether the dataset is a single file (COG) or
-// a store with no one file to link (`earthx:format`, anything but `'cog'`
-// counts as the latter — an unset or unrecognised value is never assumed
-// linkable).
+// whether an AOI is drawn, and whether the dataset has original files to link
+// (`hasOriginalFiles`) or is a store with no one file to link — an unset or
+// unrecognised format is never assumed linkable.
 //
 // `cropToAoi` is `null` outside full-resolution viewing (a layer pinned
 // straight from a quicklook, M2-07d's "quicklook-only layer") — there is no
@@ -75,34 +74,37 @@ export function linkListText(links: readonly OriginalFileLink[]): string {
 export function decideDownloadOutcome(params: {
   cropToAoi: boolean | null;
   hasAoi: boolean;
-  isCog: boolean;
+  hasOriginals: boolean;
 }): DownloadOutcomeKind {
-  const { cropToAoi, hasAoi, isCog } = params;
+  const { cropToAoi, hasAoi, hasOriginals } = params;
   if (cropToAoi === false) {
     // "View full selection": a whole COG scene is always its own original
     // file, regardless of whether an AOI happens to be drawn too (P19) — only
     // a source with no single file to link (Zarr) still needs the AOI crop.
-    if (isCog) return 'originals';
+    if (hasOriginals) return 'originals';
     return hasAoi ? 'crop' : 'disabled';
   }
   if (hasAoi) return 'crop';
-  return isCog ? 'originals' : 'disabled';
+  return hasOriginals ? 'originals' : 'disabled';
 }
 
-// `earthx:format` (architekturplan.md 5.1, M3-17): only `'cog'` counts as a
-// single file the browser may link straight to the source. `undefined`/`null`
-// (a dataset onboarded before M3-17) and any other value (`'zarr'`,
-// `'legacy'`, an unrecognised future one) are all treated the same as Zarr —
-// never assumed to be one linkable file without the registry saying so.
-export function isCogFormat(dataset: DatasetOption | undefined): boolean {
-  return dataset?.collection['earthx:format'] === 'cog';
+// `earthx:format` (architekturplan.md 5.1, M3-17): `'cog'` is a single file
+// per scene the browser may link straight to the source; `'netcdf-refs'` names
+// the annual file of the source a day is read from (M5-11 F5: the originals
+// of a day are the files of its year). `undefined`/`null` (a dataset onboarded
+// before M3-17) and any other value (`'zarr'`, `'legacy'`, an unrecognised
+// future one) are all treated the same as Zarr — never assumed to be one
+// linkable file without the registry saying so.
+export function hasOriginalFiles(dataset: DatasetOption | undefined): boolean {
+  const format = dataset?.collection['earthx:format'];
+  return format === 'cog' || format === 'netcdf-refs';
 }
 
 // `earthx:source.asset_hosts` (D12) — the hosts a `href` on this dataset's own
 // items may legitimately point at. Empty (not `undefined`/`null`, KLAERUNGEN
 // B10's "no default" already governs the registry field) when the collection
 // carries none, which then lets no link through — the same conservative
-// direction as `isCogFormat`.
+// direction as `hasOriginalFiles`.
 export function assetHostsOf(dataset: DatasetOption | undefined): string[] {
   return dataset?.collection['earthx:source']?.asset_hosts ?? [];
 }
@@ -167,7 +169,8 @@ export function originalFileLinks(
     for (const item of group.items) {
       for (const asset of assets) {
         const href = item.assets[asset]?.href;
-        if (href && isDirectDownloadHref(href, assetHosts)) {
+        // The days of one year share their annual file (M5-11): each file is listed once.
+        if (href && isDirectDownloadHref(href, assetHosts) && !links.some((link) => link.href === href)) {
           links.push({ itemId: item.id, groupLabel: group.label, asset, href });
         }
       }
@@ -230,7 +233,7 @@ export function decideDownloadOutcomeForLayer(layer: MapLayer, datasets: Dataset
   return decideDownloadOutcome({
     cropToAoi: restore.focusMode ? restore.cropToAoi : null,
     hasAoi: !!restore.aoi,
-    isCog: isCogFormat(dataset),
+    hasOriginals: hasOriginalFiles(dataset),
   });
 }
 
