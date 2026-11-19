@@ -42,7 +42,9 @@ PINNED = {
     "026_harvest_listing_moved": "28ef0ed44d42ba5cc53459745f0c1fe47eb53df2da792ff2f9cfd1d4c7383745",
     "027_harvest_pass": "913ea2bb523dcdd7edc4ef0eace763dd3dd66c2528658e1007fdf8590e9af4ba",
     "028_harvest_budget_rest": "d878b627b0e2556d04b38afbc2502be2d985d3d537f595c6baa0cef4a620fd47",
+    "029_materialize_units": "ca8566407f545693506bcd816c35d57752b02cad58ad6a0d328d3951f84d9c76",
     "030_harvest_keyset": "3a46084eede074453a7aa4c9e9741a9165638db7fae8f14553ae15d1b6a9eedc",
+    "031_materialize_unit_expires": "b44b5e52ac9eca076ba6fbd9579f2fea20a29edb85648a125ebc454a97071590",
 }
 
 
