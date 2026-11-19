@@ -237,3 +237,32 @@ Zusatz: Die fehlende Mosaik-Kachel bei z8 in `pyramid-every-level.cjs` (Variante
 7. **`pyramid-every-level.cjs`:** Bei offener Verwaltung prüft es jetzt, dass **keine** Zeile eine Ladeanzeige trägt (UI-09); den Toast prüft es wie bisher. **z8 ist kein Fehler im Produktivcode:** Bei vier Läufen mit Protokoll je Schritt kamen bis 0,5 s nach dem Sprung auf z8 zwischen 2 und 8 Mosaik-Anfragen. Die Kacheln werden also angefragt, auf der belasteten Seite aber teils erst nach 0,5 s. Das Skript wartet jetzt bis zu 3 s auf die erwartete Route, bevor es scheitert. Beide Varianten grün.
 
 **Geprüft:** `pytest backend/tests/integration backend/tests/earthx/jobs backend/tests/earthx/objectstore backend/tests/test_*.py`: 2 878 bestanden, 25 übersprungen (`pwsh`), 9:45 min; danach keine Test-Datenbank übrig. `ruff check backend` grün, `lint-imports` 17 Verträge eingehalten, `npx tsc -b` und `npm run lint` ohne Befund. Browser: `pyramid-every-level.cjs` mit und ohne `MANAGER=open` grün.
+
+## 8. Umsetzung PR 2 und Vergleich (19.11.2026)
+
+§3.2, je ein Commit:
+
+1. **Katalog einmal je Worker (L1):** `Catalogue` in `integration/conftest.py`. Der Fingerabdruck ist je Tabelle die Zeilenzahl und die neueste Transaktion (`xmin`) der Tabellen, die `catalog-load` schreibt: Migrationen, Collections, Regionen, gelistete Einträge, Übersichten. Die zehn Dateien nutzen `catalogue_loaded`. `test_api_collection_search.py` („nur volle Einträge“) und `test_api_listed.py` (eigene gelistete Zeilen) fordern einen eigenen Zustand an. Die Testzeilen von `test_api_listed.py` löscht der Teardown-Hook, bevor ein Test einer anderen Datei läuft (`nextitem`); das entspricht dem bisherigen Löschen nach jedem Test. **Abweichung:** Der Suchindex gehört nicht zum Fingerabdruck. Jede `api`, die ein Test startet, schreibt ihn für ihre eigene Registry (`_search_index_of_the_app`); mit ihm lud jeder Test neu, der eine eigene Registry mitbringt (gemessen: vier Dateien). Tests: `integration/test_catalogue_state.py`.
+2. **Ergänzung, nicht im Plan:** `_search_index_of_the_app` prüft zuerst und schreibt den Index nur, wenn die Prüfung scheitert; danach prüft es wie bisher. Jeder Durchgang baut die Suchtexte, etwa 1 s. Die Startprüfung selbst ist unverändert, der Produktivcode auch.
+3. **Speicher-Tests (L2):** Die Schätzung für vier Bänder prüft jetzt der Test, der denselben Kindprozess schon misst (`normalize-v4-percentile`, 4096², vier Bänder). Die Parameter des Schätz-Tests sind damit 1 und 2. Die geseedeten Szenen von `build_scene` kommen aus einer Session-Fixture (`processing/conftest.py::memory_scene`).
+
+Nicht gelöscht: K1 bleibt (F8 = 1).
+
+**Vergleich, je ein voller Lauf in der Session** (4 Kerne, 4 Worker, nichts anderes lief; vorher Stand `main` 5b45034, nachher PR 1 + PR 2):
+
+| | vorher | nachher |
+|---|---:|---:|
+| Wandzeit | 20:17 min | **14:33 min** |
+| Summe der Testzeiten | 4 678 s | 3 303 s |
+| CPU user | 53:02 min | 42:01 min |
+| `integration` | 1 935 s | 688 s |
+| `earthx/processing` | 1 027 s | 955 s |
+| `earthx/api` | 997 s | 958 s |
+| `earthx/jobs` | 376 s | 365 s |
+| Ergebnis | 14 124 bestanden, 25 übersprungen | 14 154 bestanden, 25 übersprungen |
+| Temp im Lauf (Spitze) / danach | ≥ 9,6 GB / 9,6 GB | 2,4 GB / 1 MB |
+| Test-Datenbanken danach | keine | keine |
+
+Was jetzt am meisten kostet: `earthx/api` (3 453 Tests, viele bauen je Test eine App) und die Speicher-Tests. Beides ist nicht Teil von M5-61.
+
+**Geprüft für PR 2:** `pytest backend/tests/integration` (1 044 bestanden, 13 übersprungen, 3:10 min), `pytest backend/tests/earthx/processing` (2 190 bestanden, 4:38 min), der volle Lauf oben, `ruff check backend`, `lint-imports` (17 Verträge eingehalten). Kein Frontend geändert.
