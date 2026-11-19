@@ -28,7 +28,7 @@ from dotenv import load_dotenv
 import earthx.api.main
 from earthx.catalog.load import main as load_catalog
 from earthx.catalog.registry import DatasetRegistry
-from earthx.catalog.search_index import write_search_index
+from earthx.catalog.search_index import SearchIndexMismatch, write_search_index
 
 # Written by scripts/setup-cloud-session.sh. Reading it here is what lets a session
 # run the same bare `pytest` that CI runs (adr/0002 §6); CI sets the variables on the
@@ -153,7 +153,8 @@ def _object_store_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture(autouse=True)
 def _search_index_of_the_app(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Write the search index for the registry of the `api` a test starts, then run the start check unchanged.
+    """Write the search index for the registry of the `api` a test starts where it is not that one, then run the start
+    check unchanged.
 
     `api` refuses to start on an index that is not the one of its registry (M5-22 plan §3.4, A3). These tests build
     `api` with registries of their own; a deployment runs `catalog-load` with the registry of the process first, and
@@ -171,6 +172,13 @@ def _search_index_of_the_app(monkeypatch: pytest.MonkeyPatch) -> None:
             connection.commit()
 
     async def write_then_check(registry: DatasetRegistry, conn: object) -> None:
+        # Mostly the index an earlier start of the same registry wrote: then there is nothing to write. Each pass builds
+        # the search texts, about a second (M5-61 §3.2).
+        try:
+            await check(registry, conn)
+            return
+        except SearchIndexMismatch:
+            pass
         await asyncio.to_thread(write, registry)
         await check(registry, conn)
 
