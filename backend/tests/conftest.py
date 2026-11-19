@@ -21,6 +21,7 @@ import rasterio.session
 
 from earthx.logging import JsonFormatter
 from earthx.readers.limits import limit_reads
+from tests.logging_guard import COLLECTING, LoggingGuard, summary
 from tests.worker_database import TestRun, drop_worker_database, load_session_env, start_run, use_run_database
 
 # rasterio in the test process as in the image: without an AWS session (NM4-23).
@@ -37,6 +38,7 @@ from tests.worker_database import TestRun, drop_worker_database, load_session_en
 rasterio.session.boto3 = None
 
 _RUN = pytest.StashKey[TestRun]()
+_LOGGING = pytest.StashKey[LoggingGuard]()
 _DATABASE = pytest.StashKey[tuple[str, str]]()
 
 
@@ -47,6 +49,7 @@ def pytest_configure(config: pytest.Config) -> None:
     migrates its template; each worker, and a serial run itself, then points `PGDATABASE` at a copy
     of it, so every fixture and every spawned child reads that one.
     """
+    config.stash[_LOGGING] = LoggingGuard()
     load_session_env()
     workerinput = getattr(config, "workerinput", None)
     if workerinput is None:
@@ -73,6 +76,38 @@ def pytest_configure_node(node: Any) -> None:
     if made is not None:
         node.workerinput["earthx_run"] = made.run
         node.workerinput["earthx_configured"] = made.configured
+
+
+@pytest.fixture(autouse=True)
+def logging_as_found(request: pytest.FixtureRequest) -> Iterator[None]:
+    """Puts `logging` back as the run found it after each test (tests/logging_guard.py)."""
+    guard = request.config.stash[_LOGGING]
+    guard.learn()
+    guard.restore(COLLECTING)
+    yield
+    guard.restore(request.node.nodeid, note=request.node.get_closest_marker("changes_logging") is None)
+
+
+def pytest_sessionfinish(session: pytest.Session) -> None:
+    workeroutput = getattr(session.config, "workeroutput", None)
+    if workeroutput is not None:
+        workeroutput["earthx_logging_changed"] = session.config.stash[_LOGGING].changed
+
+
+@pytest.hookimpl(optionalhook=True)
+def pytest_testnodedown(node: Any, error: object) -> None:
+    """Collects what each xdist worker's tests left changed in `logging` (`pytest-xdist` hook)."""
+    changed = getattr(node, "workeroutput", {}).get("earthx_logging_changed", [])
+    node.config.stash[_LOGGING].changed.extend((test, names) for test, names in changed)
+
+
+def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter, config: pytest.Config) -> None:
+    guard = config.stash.get(_LOGGING, None)
+    changed = guard.changed if guard is not None else []
+    if changed:
+        terminalreporter.section("logging changed by a test and put back (M5-61)")
+        for line in summary(changed):
+            terminalreporter.line(line)
 
 
 def pytest_unconfigure(config: pytest.Config) -> None:

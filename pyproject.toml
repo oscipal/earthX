@@ -38,5 +38,6 @@ tmp_path_retention_policy = "failed"
 tmp_path_retention_count = 1
 markers = [
   "local_only: needs resources that exist neither in CI nor in a cloud session",
+  "changes_logging: sets up logging on purpose; put back after the test without a note (tests/logging_guard.py)",
   "live_dataset(dataset_id): marks a backend/tests_live module as the T-D smoke covering that registry entry (onboarding checklist point 10, Fassung v1.1)",
 ]
