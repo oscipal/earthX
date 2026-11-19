@@ -318,3 +318,37 @@ describe('playing and the results on the map', () => {
     expect(useAppStore.getState().playing).toBe(false);
   });
 });
+
+describe('a provisional day on the time slider (M5-58 F1)', () => {
+  const day = (id: string, state?: string): StacItem => ({ ...item(id), properties: state ? { 'earthx:state': state } : {} });
+  const GROUPS = [
+    { key: ['2026-11-17'], label: '2026-11-17', items: [day('a', 'provisional')] },
+    { key: ['2026-11-16'], label: '2026-11-16', items: [day('b', 'final'), day('c', 'provisional')] },
+    { key: ['2026-11-15'], label: '2026-11-15', items: [day('d', 'final')] },
+    { key: ['2026-11-14'], label: '2026-11-14', items: [day('e')] },
+  ];
+  const cell = (selector: string) => container.querySelector(`.time-dates ${selector}`);
+
+  it('says "Provisional values" at the date of a provisional step, at every tip level, and nothing at a final one', () => {
+    act(() => useAppStore.setState({ groups: GROUPS, activeGroupIndex: 1 }));
+    expect(tipOf(cell('strong'))).toBe('Provisional values');
+    expect(cell('strong')?.getAttribute('data-tip-level')).toBeNull();
+    expect(tipOf(cell('.time-near.after'))).toBe('Provisional values');
+    expect(tipOf(cell('.time-near.before'))).toBe('');
+    act(() => useAppStore.setState({ activeGroupIndex: 2 }));
+    expect(tipOf(cell('strong'))).toBe('');
+  });
+
+  it('names it at the last step too, and keeps the plain tip of an end that is final', () => {
+    act(() => useAppStore.setState({ groups: GROUPS, activeGroupIndex: 2 }));
+    expect(tipOf(cell('.time-end.last'))).toBe('Last time step: provisional values');
+    expect(cell('.time-end.last')?.getAttribute('data-tip-level')).toBeNull();
+    expect(tipOf(cell('.time-end.first'))).toBe('First time step');
+    expect(cell('.time-end.first')?.getAttribute('data-tip-level')).toBe('advanced');
+  });
+
+  it('shows no mark, only the tooltip', () => {
+    act(() => useAppStore.setState({ groups: GROUPS, activeGroupIndex: 1 }));
+    expect(container.textContent).not.toMatch(/provisional/i);
+  });
+});

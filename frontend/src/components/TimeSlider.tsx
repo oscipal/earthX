@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { stepLabel, runPlayback, STEP_LATE_AFTER_MS } from '../playback';
+import { groupIsProvisional, PROVISIONAL_TIP } from '../provisional';
 import { stepWithArrowKeys } from '../stepKeys';
 import { useAppStore } from '../store';
 import { ChevronLeftIcon, ChevronRightIcon, PauseIcon, PlayIcon } from './icons';
@@ -54,6 +55,11 @@ export default function TimeSlider() {
   // A step is named by the date of its pass, never by the scene (Otto, 30.10.2026). Playing, the pass on the map names
   // the step, and the slider is ahead of it while the next one loads.
   const name = (index: number) => stepLabel(groups[index]);
+  // A provisional day says so at its date (M5-58 F1); the tooltip shows at every tip level.
+  const provisional = (index: number | null) => index !== null && groupIsProvisional(groups[index]);
+  const dateTip = (index: number | null) => (provisional(index) ? { 'data-tip': PROVISIONAL_TIP } : {});
+  const endTip = (index: number, label: string) =>
+    provisional(index) ? { 'data-tip': `${label}: ${PROVISIONAL_TIP.toLowerCase()}` } : { 'data-tip-level': 'advanced', 'data-tip': label };
   const loading = behind && late;
 
   // The row of dates (NM4-66, Otto, 31.10.2026): the first, the one before, the one shown, the one after, the last; the
@@ -70,7 +76,11 @@ export default function TimeSlider() {
     setActiveGroupIndex(index);
   };
   const near = (index: number | null, className: string) => (
-    <span className={`time-near ${className}${index === null ? ' gone' : ''}`} aria-hidden={index === null || undefined}>
+    <span
+      className={`time-near ${className}${index === null ? ' gone' : ''}`}
+      aria-hidden={index === null || undefined}
+      {...dateTip(index)}
+    >
       {index === null ? '' : name(index)}
     </span>
   );
@@ -87,15 +97,15 @@ export default function TimeSlider() {
   return (
     <div className="time-slider">
       <div className="time-dates">
-        <span className={`time-end first${showFirst ? '' : ' gone'}`} data-tip-level="advanced" data-tip="First time step" aria-hidden={!showFirst || undefined}>
+        <span className={`time-end first${showFirst ? '' : ' gone'}`} {...endTip(groups.length - 1, 'First time step')} aria-hidden={!showFirst || undefined}>
           {showFirst ? name(groups.length - 1) : ''}
         </span>
         {near(older, 'before')}
         {arrow(older, 'Previous time step', 'left')}
-        <strong>{name(shown)}</strong>
+        <strong {...dateTip(shown)}>{name(shown)}</strong>
         {arrow(newer, 'Next time step', 'right')}
         {near(newer, 'after')}
-        <span className={`time-end last${showLast ? '' : ' gone'}`} data-tip-level="advanced" data-tip="Last time step" aria-hidden={!showLast || undefined}>
+        <span className={`time-end last${showLast ? '' : ' gone'}`} {...endTip(0, 'Last time step')} aria-hidden={!showLast || undefined}>
           {showLast ? name(0) : ''}
         </span>
       </div>

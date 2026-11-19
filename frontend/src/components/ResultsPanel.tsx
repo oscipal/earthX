@@ -1,6 +1,7 @@
 import { aoiNotes, measuresAoi, SKIPPED_TIP } from '../aoiFilter';
 import { maturityLabel, quicklookAsset } from '../datasets';
 import { formatCount } from '../numberFormat';
+import { provisionalTip } from '../provisional';
 import type { ResultSection } from '../sections';
 import { hasResultsPanel, totalItems } from '../sections';
 import { useAppStore } from '../store';
@@ -56,7 +57,9 @@ function Row({ item }: { item: StacItem }) {
         />
       )}
       <div className="result-meta">
-        <span className="result-date">{timeOf(item.properties)}</span>
+        <span className="result-date" {...provisionalTip([item])}>
+          {timeOf(item.properties)}
+        </span>
         <span className="result-id-row">
           <span className="result-id" data-tip={item.id} data-tip-cut="">
             {item.id}
@@ -131,7 +134,7 @@ function GroupBlock({
         <GroupSelectBox group={group} index={index} />
         <button type="button" className="result-group-head" onClick={() => onToggle(index)}>
           <span className="rg-caret">{expanded ? <ChevronDownIcon /> : <ChevronRightIcon />}</span>
-          <span className="rg-label">
+          <span className="rg-label" {...provisionalTip(group.items)}>
             {group.label}
           </span>
           <span className="rg-count">{group.items.length}</span>
