@@ -14,7 +14,14 @@ import pytest
 
 from earthx.catalog.registry import Maturity
 from earthx.catalog.sources import CkanFilter, SourceConfig, SourceProtocol
-from earthx.discovery.ckan import CkanListing, ckan_pages, extract_package, package_key, search_params
+from earthx.discovery.ckan import (
+    CkanListing,
+    ckan_pages,
+    extract_package,
+    package_key,
+    search_params,
+    stable_package,
+)
 from earthx.discovery.extract import Invalid, ShapeError, extracted_sha256, extractor_version
 from earthx.discovery.links import LinkRank
 from earthx.gateway import GatewayResponse
@@ -501,3 +508,15 @@ async def test_a_listing_that_breaks_the_order_by_key_fails(keys: list[str | Non
 def test_a_page_asks_the_rows_of_its_source() -> None:
     assert search_params(replace(SOURCE, rows_per_page=50), None, None)["rows"] == 50
     assert search_params(SOURCE, None, None)["rows"] == 100
+
+
+def test_the_bookkeeping_of_ckan_is_left_out_of_the_stable_package() -> None:
+    package = {
+        "id": "a",
+        "metadata_modified": "2026-11-19T10:00:00",
+        "revision_id": "r1",
+        "title": "T",
+        "resources": [{"url": "u", "metadata_modified": "x", "cache_last_updated": "y", "last_modified": "z"}],
+    }
+    assert stable_package(package) == {"id": "a", "title": "T", "resources": [{"url": "u", "last_modified": "z"}]}
+    assert package["metadata_modified"] and stable_package("text") == "text"

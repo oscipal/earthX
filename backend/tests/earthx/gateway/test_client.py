@@ -450,3 +450,12 @@ def test_a_read_timeout_is_one_to_three_hundred_seconds(value: object) -> None:
 def test_a_subdomain_takes_its_parents_read_timeout() -> None:
     policy = Policy(allowed_hosts=frozenset({"example.org"}), host_read_timeouts={"example.org": 40})
     assert (policy.read_timeout_for("api.example.org"), policy.read_timeout_for("other.org")) == (40.0, 15.0)
+
+
+async def test_the_gateway_asks_for_a_compressed_answer() -> None:
+    # Otto, 19.11.2026: opendata.swiss answers uncompressed; the gateway does ask for gzip (httpx's default, kept).
+    handler, seen = replies(httpx.Response(200, json={}))
+    gateway, _ = build(handler)
+    async with gateway:
+        await gateway.get(URL)
+    assert "gzip" in seen[0].headers["accept-encoding"]

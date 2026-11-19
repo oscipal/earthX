@@ -590,3 +590,46 @@ async def test_measure_keeps_the_rest_and_the_pages_of_a_run(db: psycopg.Connect
     assert again.value.until == raised.value.until and len(catalogue.asked) == asked
     with pytest.raises(SourceResting):
         await run_harvest(db, source, gateway=_gateway(catalogue), sleep=_no_wait)
+
+
+async def test_full_takes_the_place_of_an_open_incremental_pass(db: psycopg.Connection, source: SourceConfig) -> None:
+    # Otto, 19.11.2026: --full went on with an open incremental pass instead of starting a full one.
+    capped = replace(source, max_pages_per_run=1)
+    await run_harvest(db, capped, gateway=_gateway(Catalogue(THREE, size=10)))
+    changed = Catalogue(THREE, size=1)
+    changed.changed = THREE
+    stopped = await run_harvest(db, capped, gateway=_gateway(changed))
+    assert (stopped.kind, stopped.stop_reason) == ("incremental", "page_budget")
+    full = await run_harvest(db, source, full=True, gateway=_gateway(Catalogue(THREE, size=10)))
+    assert (full.kind, full.resumed_at, full.status) == ("full", None, "done")
+    # The open incremental pass is gone with it.
+    nxt = Catalogue([])
+    assert (await run_harvest(db, source, gateway=_gateway(nxt))).resumed_at is None
+
+
+async def test_a_touched_package_does_no_work_and_a_reordered_one_is_no_change(
+    db: psycopg.Connection, source: SourceConfig
+) -> None:
+    # Acceptance §7.3 (Otto, 19.11.2026): a portal that re-harvests touches metadata_modified; a package whose tags
+    # come back in another order changes nothing that matters.
+    tagged = _package("1", tags=[{"name": "a"}, {"name": "b"}])
+    await run_harvest(db, source, gateway=_gateway(Catalogue([tagged, _package("2")])))
+    touched = _package("2", metadata_modified="2026-11-19T10:00:00")
+    reordered = _package("1", tags=[{"name": "b"}, {"name": "a"}])
+    result = await run_harvest(db, source, full=True, gateway=_gateway(Catalogue([reordered, touched])))
+    c = result.counts
+    assert (c.found_new, c.found_changed, c.found_unchanged) == (0, 0, 2)
+    assert result.raw_fields == (("tags (Reihenfolge)", 1),) and result.changed_fields == ()
+
+
+async def test_the_report_names_the_fields_that_changed(db: psycopg.Connection, source: SourceConfig) -> None:
+    await run_harvest(db, source, gateway=_gateway(Catalogue([_package("1"), _package("2")])))
+    moved = _package("1", resources=[{"url": "https://amt.example.org/daten/neu.tif", "format": "GeoTIFF"}])
+    retitled = _package("2", title="Anders")
+    result = await run_harvest(db, source, full=True, gateway=_gateway(Catalogue([moved, retitled])))
+    assert result.counts.found_changed == 2
+    assert dict(result.changed_fields) == {"distributions.href": 1, "title": 1}
+    assert dict(result.raw_fields) == {"resources.url": 1, "title": 1}
+    text = report(source, result)
+    assert "geändert in (Zwischenform): " in text and "Rohantwort geändert in: " in text
+    assert "amt.example.org" not in text and "Anders" not in text

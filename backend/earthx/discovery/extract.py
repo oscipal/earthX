@@ -36,6 +36,8 @@ __all__ = [
     "Invalid",
     "ShapeError",
     "bbox_of",
+    "changed_fields",
+    "comparable",
     "data_kind_of",
     "extracted_sha256",
     "extractor_version",
@@ -168,8 +170,63 @@ class Extracted:
         return asdict(self)
 
 
+#: Lists of the intermediate form whose order says nothing: compared and hashed sorted (Otto, 19.11.2026).
+_UNORDERED = ("keywords", "licence_statements", "distributions")
+#: How a field name of a source may appear in a report; any other is named as such, never quoted.
+_FIELD_NAME = re.compile(r"[A-Za-z0-9_:.-]{1,40}")
+
+
+def comparable(document: Any) -> Any:
+    """An intermediate form as JSON values (tuples become lists), with its unordered lists sorted: two forms that
+    differ only in the order of keywords, licence statements or distributions compare equal."""
+    if document is None:
+        return None
+    plain = json.loads(canonical(document))
+    if isinstance(plain, dict):
+        for field in _UNORDERED:
+            if isinstance(plain.get(field), list):
+                plain[field] = sorted(plain[field], key=lambda item: canonical(item))
+    return plain
+
+
 def extracted_sha256(extracted: Extracted) -> str:
-    return hashlib.sha256(canonical(extracted.to_document())).hexdigest()
+    return hashlib.sha256(canonical(comparable(extracted.to_document()))).hexdigest()
+
+
+def _name(field: object) -> str:
+    return field if isinstance(field, str) and _FIELD_NAME.fullmatch(field) else "(anderes Feld)"
+
+
+def changed_fields(old: Any, new: Any) -> list[str]:
+    """The names of the top-level fields in which two documents differ, for a report: a list that only changed its
+    order is ``<name> (Reihenfolge)``, one of another length ``<name> (Anzahl)``, a list of objects of the same length
+    names the fields of its items that differ (``resources.url``). Names only, never values."""
+    if not isinstance(old, dict) or not isinstance(new, dict):
+        return [] if old == new else ["(ganzes Dokument)"]
+    names: list[str] = []
+    for field in sorted(set(old) | set(new), key=str):
+        before, after = old.get(field), new.get(field)
+        if before == after:
+            continue
+        name = _name(field)
+        if isinstance(before, list) and isinstance(after, list):
+            if len(before) != len(after):
+                names.append(f"{name} (Anzahl)")
+                continue
+            if sorted(canonical(item) for item in before) == sorted(canonical(item) for item in after):
+                names.append(f"{name} (Reihenfolge)")
+                continue
+            if all(isinstance(item, dict) for item in (*before, *after)):
+                inner = {
+                    _name(key)
+                    for a, b in zip(before, after, strict=True)
+                    for key in set(a) | set(b)
+                    if a.get(key) != b.get(key)
+                }
+                names += [f"{name}.{key}" for key in sorted(inner)]
+                continue
+        names.append(name)
+    return names
 
 
 @cache

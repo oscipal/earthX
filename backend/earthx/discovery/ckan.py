@@ -49,6 +49,7 @@ __all__ = [
     "extract_package",
     "package_key",
     "search_params",
+    "stable_package",
 ]
 
 PAGE_ROWS = 100
@@ -91,6 +92,27 @@ class CkanListing:
     validators: None = None
     #: The pass read no package at all; a full one of them is no evidence that every find is gone.
     empty: bool = False
+
+
+#: Bookkeeping of CKAN that the extract never reads and that changes when nothing else does (a re-harvest by the
+#: portal touches ``metadata_modified``): left out of the hash of the raw answer, kept in the answer itself.
+VOLATILE_FIELDS = frozenset({"metadata_modified", "revision_id"})
+VOLATILE_RESOURCE_FIELDS = frozenset({"metadata_modified", "revision_id", "cache_last_updated"})
+
+
+def stable_package(package: Any) -> Any:
+    """``package`` without :data:`VOLATILE_FIELDS` and its resources without :data:`VOLATILE_RESOURCE_FIELDS`: what the
+    hash that decides whether a package is extracted again is taken over (Otto, 19.11.2026)."""
+    if not isinstance(package, dict):
+        return package
+    stable = {key: value for key, value in package.items() if key not in VOLATILE_FIELDS}
+    resources = stable.get("resources")
+    if isinstance(resources, list):
+        stable["resources"] = [
+            {k: v for k, v in r.items() if k not in VOLATILE_RESOURCE_FIELDS} if isinstance(r, dict) else r
+            for r in resources
+        ]
+    return stable
 
 
 def package_key(package: object) -> str | None:

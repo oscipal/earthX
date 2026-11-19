@@ -21,12 +21,14 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import gzip
 import hashlib
 import json
 import logging
 import sys
+from collections import Counter
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from typing import Any
@@ -62,9 +64,17 @@ from earthx.catalog.harvest_store import (
 from earthx.catalog.hosts import HostLimit
 from earthx.catalog.registry import ConfigError
 from earthx.catalog.sources import SourceConfig, SourceProtocol, read_sources
-from earthx.discovery.ckan import INCREMENTAL_OVERLAP, CkanListing, ckan_pages, extract_package
+from earthx.discovery.ckan import INCREMENTAL_OVERLAP, CkanListing, ckan_pages, extract_package, stable_package
 from earthx.discovery.ckan_measure import measure_page
-from earthx.discovery.extract import Extracted, Invalid, ShapeError, extracted_sha256, extractor_version
+from earthx.discovery.extract import (
+    Extracted,
+    Invalid,
+    ShapeError,
+    changed_fields,
+    comparable,
+    extracted_sha256,
+    extractor_version,
+)
 from earthx.discovery.source_gateway import open_source_gateway
 from earthx.discovery.stac import StacListing, extract_collection, stac_pages
 from earthx.gateway import (
@@ -128,6 +138,14 @@ def _renew(conn: psycopg.Connection, run_id: int) -> None:
         raise _LeaseLost
 
 
+#: What the hash of a raw answer is taken over: the answer without the bookkeeping the extract never reads (CKAN).
+_STABLE: Mapping[SourceProtocol, Callable[[Any], Any]] = {
+    SourceProtocol.STAC_API: lambda document: document,
+    SourceProtocol.CKAN: stable_package,
+}
+#: How many changed fields a report names.
+_REPORT_FIELDS = 8
+
 _EXTRACTORS: Mapping[SourceProtocol, Callable[[str, Any, SourceConfig], Extracted]] = {
     SourceProtocol.STAC_API: extract_collection,
     SourceProtocol.CKAN: extract_package,
@@ -161,6 +179,10 @@ class HarvestResult:
     resume_at: int | None = None
     #: Until when the source rests after this run ended ``rate_limited``.
     rest_until: datetime | None = None
+    #: In which fields the changed finds differ: their intermediate form, and their raw answer where it changed beyond
+    #: the bookkeeping left out of its hash (Otto, 19.11.2026). Names and counts only.
+    changed_fields: tuple[tuple[str, int], ...] = ()
+    raw_fields: tuple[tuple[str, int], ...] = ()
 
 
 @dataclass(slots=True)
@@ -178,6 +200,8 @@ class _Run:
     #: The open pass of a CKAN source this run reads on.
     pass_: Pass | None = None
     pages: int = 0
+    changed_fields: Counter[str] = field(default_factory=Counter)
+    raw_fields: Counter[str] = field(default_factory=Counter)
 
 
 def _retry_after_s(value: str | None, now: datetime) -> float | None:
@@ -289,12 +313,17 @@ def _record(
     except Invalid as invalid:
         state, reason = "invalid", invalid.reason
     counts = run.counts
+    new, old = comparable(extracted), None if before is None else comparable(before.extracted)
     if before is None or before.state == "gone":
         counts.found_new += 1
-    elif (before.state, before.reason, before.extracted_sha256) == (state, reason, digest):
+    elif (before.state, before.reason, old) == (state, reason, new):
+        # Equal after sorting the lists whose order says nothing: no change, whatever the hash of an older rule said.
         counts.found_unchanged += 1
     else:
         counts.found_changed += 1
+        run.changed_fields.update(
+            changed_fields(old, new) if (before.state, before.reason) == (state, reason) else ["(Zustand)"]
+        )
     write_find(
         cur,
         run_id=run.run_id,
@@ -345,7 +374,7 @@ async def _fetch_and_extract(run: _Run, fetch: _Fetcher) -> None:
         with conn.transaction(), conn.cursor() as cur:
             for key, document in finds:
                 raw = canonical(document)
-                digest = hashlib.sha256(raw).hexdigest()
+                digest = hashlib.sha256(canonical(_STABLE[source.protocol](document))).hexdigest()
                 before = known.get(key)
                 if (
                     before is not None
@@ -356,6 +385,8 @@ async def _fetch_and_extract(run: _Run, fetch: _Fetcher) -> None:
                     seen(cur, run_id=run.run_id, source_id=source.source_id, key=key)
                     run.counts.found_unchanged += 1
                 else:
+                    if before is not None and before.raw_sha256 != digest and before.raw_gzip is not None:
+                        run.raw_fields.update(changed_fields(json.loads(gzip.decompress(before.raw_gzip)), document))
                     _record(cur, run, key, document, before, raw=raw, raw_sha256=digest)
         if run.pass_ is not None and isinstance(listing, CkanListing):
             save_pass(conn, source.source_id, last_key=listing.last_key, read=listing.read)
@@ -424,21 +455,29 @@ def _kind(
     """The kind of the run; for an incremental one its lower bound of ``metadata_modified``; the open pass a CKAN run
     goes on with.
 
-    ``full`` for a STAC source. A CKAN source with an open pass goes on with it, of its kind, also with ``--full``.
-    Else ``full`` for ``--full``, without a full pass that went through, or when the last one began ``full_every_days``
-    ago or earlier; else ``incremental`` from the time every change is in (:func:`end_pass`) less an hour."""
+    ``full`` for a STAC source. For a CKAN source a full pass is due with ``--full``, without a full pass that went
+    through, or when the last one began ``full_every_days`` ago or earlier. An open full pass goes on (also with
+    ``--full``); an open incremental pass goes on unless a full pass is due, which takes its place and reads all it
+    would have (Otto, 19.11.2026). Else ``incremental`` from the time every change is in (:func:`end_pass`) less an
+    hour."""
     if reextract:
         return "reextract", None, None
     if source.protocol is not SourceProtocol.CKAN:
         return "full", None, None
     state = harvest_state(conn, source.source_id)
-    if state.open_pass is not None:
-        opened = state.open_pass
-        return ("full" if opened.full else "incremental"), opened.since, opened
-    if full or state.full_started_at is None or state.changes_since is None:
+    opened = state.open_pass
+    if opened is not None and opened.full:
+        return "full", None, opened
+    due = (
+        full
+        or state.full_started_at is None
+        or state.changes_since is None
+        or state.now >= state.full_started_at + timedelta(days=source.full_every_days)
+    )
+    if due:
         return "full", None, None
-    if state.now >= state.full_started_at + timedelta(days=source.full_every_days):
-        return "full", None, None
+    if opened is not None:
+        return "incremental", opened.since, opened
     return "incremental", state.changes_since - INCREMENTAL_OVERLAP, None
 
 
@@ -530,6 +569,8 @@ async def run_harvest(
         resumed_at,
         None if still_open is None else still_open.read,
         rest_until,
+        tuple(run.changed_fields.most_common(_REPORT_FIELDS)),
+        tuple(run.raw_fields.most_common(_REPORT_FIELDS)),
     )
 
 
@@ -607,6 +648,12 @@ def report(source: SourceConfig, result: HarvestResult) -> str:
         f"  Stand der Quelle: gültig {s.extracted} (davon Ausdehnung unbekannt {s.extent_unknown}),"
         f" ungültig {invalid}" + (f" ({reasons})" if reasons else ""),
     ]
+    if result.changed_fields:
+        named = ", ".join(f"{name} {count}" for name, count in result.changed_fields)
+        lines.append(f"  geändert in (Zwischenform): {named}")
+    if result.raw_fields:
+        named = ", ".join(f"{name} {count}" for name, count in result.raw_fields)
+        lines.append(f"  Rohantwort geändert in: {named}")
     if result.rate_limited:
         lines.append(f"  Quelle bat um Pause: {result.rate_limited}-mal 429, gewartet {result.waited_s / 60:.0f} min")
     if result.rest_until is not None:

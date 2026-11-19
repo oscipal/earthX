@@ -120,6 +120,9 @@ class Previous:
     reason: str | None
     extracted_sha256: str | None
     extractor_version: str | None
+    #: The kept intermediate form and raw answer (gzip), to name what changed (Otto, 19.11.2026).
+    extracted: Any = None
+    raw_gzip: bytes | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -263,8 +266,8 @@ def save_list_validators(conn: psycopg.Connection, source_id: str, validators: L
 def previous(conn: psycopg.Connection, source_id: str, keys: list[str]) -> dict[str, Previous]:
     """What the last runs kept of ``keys``, by key; a key never seen is missing."""
     rows = conn.execute(
-        "SELECT r.source_key, r.raw_sha256, s.state, s.reason, s.extracted_sha256, s.extractor_version"
-        " FROM public.earthx_raw_record r JOIN public.earthx_record_state s USING (source_id, source_key)"
+        "SELECT r.source_key, r.raw_sha256, s.state, s.reason, s.extracted_sha256, s.extractor_version, s.extracted,"
+        " r.raw_gzip FROM public.earthx_raw_record r JOIN public.earthx_record_state s USING (source_id, source_key)"
         " WHERE r.source_id = %s AND r.source_key = ANY(%s)",
         (source_id, keys),
     ).fetchall()

@@ -12,6 +12,8 @@ import pytest
 from earthx.discovery.extract import (
     MAX_GEOMETRY_BYTES,
     bbox_of,
+    changed_fields,
+    comparable,
     data_kind_of,
     geometry_of,
     kind_of,
@@ -193,3 +195,27 @@ def test_no_geometry(value: object) -> None:
 def test_no_box(box: object) -> None:
     # A STAC extent and every position of a geometry go through here; a huge integer must not end the run.
     assert bbox_of(box) is None
+
+
+def test_the_order_of_unordered_lists_does_not_count() -> None:
+    one = {"title": "T", "keywords": ["a", "b"], "distributions": [{"href": "x"}, {"href": "y"}], "bbox": [1, 2, 3, 4]}
+    two = {"title": "T", "keywords": ["b", "a"], "distributions": [{"href": "y"}, {"href": "x"}], "bbox": [1, 2, 3, 4]}
+    assert comparable(one) == comparable(two)
+    assert comparable({"bbox": (1, 2, 3, 4)}) == {"bbox": [1, 2, 3, 4]}
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "names"),
+    [
+        ({"a": 1, "b": 2}, {"a": 1, "b": 3}, ["b"]),
+        ({"a": [1, 2]}, {"a": [2, 1]}, ["a (Reihenfolge)"]),
+        ({"a": [1, 2]}, {"a": [1]}, ["a (Anzahl)"]),
+        ({"r": [{"url": "x", "n": 1}]}, {"r": [{"url": "y", "n": 1}]}, ["r.url"]),
+        ({"a": 1}, {"a": 1, "new": 2}, ["new"]),
+        ({"x" * 50: 1}, {"x" * 50: 2}, ["(anderes Feld)"]),
+        ({"a": 1}, {"a": 1}, []),
+        ("text", {"a": 1}, ["(ganzes Dokument)"]),
+    ],
+)
+def test_the_names_of_changed_fields(old: object, new: object, names: list[str]) -> None:
+    assert changed_fields(old, new) == names
