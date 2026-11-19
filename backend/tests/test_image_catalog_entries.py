@@ -62,7 +62,14 @@ def test_what_catalog_load_reads_for_listed_entries_is_copied(source: str) -> No
 
 
 @pytest.mark.parametrize(
-    "source", ["catalog/licenses", "catalog/approvals", "catalog/place_names.yaml", "catalog/geodata.yaml"]
+    "source",
+    [
+        "catalog/licenses",
+        "catalog/approvals",
+        "catalog/place_names.yaml",
+        "catalog/geodata.yaml",
+        "catalog/municipalities.json",
+    ],
 )
 def test_what_the_approval_of_harvested_entries_reads_is_copied(source: str) -> None:
     # M5-20: catalog-load publishes from the approval files of the image and checks the licence catalogue.

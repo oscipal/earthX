@@ -29,6 +29,17 @@ Bibliothek mitbringt, ihren Lizenztext aber nicht, liegt er unter `backend/licen
 - **Lizenz:** Public Domain; Einstufung durch Otto am 15.11.2026: Processing. Eine Nennung ist nicht verlangt; sie
   steht hier freiwillig. „Made with Natural Earth. Free vector and raster map data @ naturalearthdata.com.“
 
+## swisstopo swissBOUNDARIES3D (Gemeinden)
+
+- **Wofür:** `catalog/municipalities.json`, die Gemeinden der Schweiz mit Kanton und vereinfachtem Umriss, über die
+  der Bericht des Harvest Ortstexte wie „Stadt Bern“ einer Gemeinde zuordnet (`docs/plans/m5/m5-20-freigabe-geernteter-eintraege.md`
+  F9). Bis Otto das Skript auf eine lokale Kopie anwendet, enthält die Datei keine Gemeinde.
+- **Quelle:** swisstopo, swissBOUNDARIES3D, Ebene der Hoheitsgebiete (GeoPackage, LV95); Release, Dateiname und SHA-256
+  stehen in `catalog/municipalities.json`. Reduziert mit `scripts/write-municipality-outlines.py`: nur BFS-Nummer,
+  Name, Kanton und Umriss in WGS84, vereinfacht auf 0,001° und gerundet.
+- **Lizenz:** freie Nutzung mit Quellenangabe (opendata.swiss `terms_by`); Einstufung durch Otto am 19.11.2026.
+  Quellenangabe: „© swisstopo“.
+
 ## Bibliotheken ohne Lizenztext im Paket
 
 ### libaec (mit `libsz`)

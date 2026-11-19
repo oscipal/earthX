@@ -1,0 +1,1 @@
+{"source":"swisstopo, swissBOUNDARIES3D, municipalities (Hoheitsgebiet)","release":null,"file":null,"sha256":null,"script":"scripts/write-municipality-outlines.py","attribution":"© swisstopo","tolerance_deg":null,"municipalities":[]}

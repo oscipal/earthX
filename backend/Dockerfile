@@ -84,6 +84,7 @@ COPY catalog/licenses ./catalog/licenses
 COPY catalog/approvals ./catalog/approvals
 COPY catalog/place_names.yaml ./catalog/place_names.yaml
 COPY catalog/geodata.yaml ./catalog/geodata.yaml
+COPY catalog/municipalities.json ./catalog/municipalities.json
 
 # The local runner (adr/0016 F1, F10): the same code and the same locked
 # dependencies as the services, run as an unprivileged user. EARTHX_COMMIT ends

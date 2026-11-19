@@ -28,6 +28,7 @@ from earthx.catalog.licences import load_licences
 from earthx.catalog.listed import load_blocked, load_catalog_tags, load_listed, load_regions
 from earthx.catalog.listed_store import apply_blocklist, supersede, write_hand_entries, write_regions
 from earthx.catalog.listing_store import withdraw
+from earthx.catalog.municipalities import load_municipalities, write_municipalities
 from earthx.catalog.pgstac import PgstacError, load_registry, remove_prototype_overviews
 from earthx.catalog.registry import ConfigError
 from earthx.catalog.schema import apply_migrations
@@ -46,6 +47,7 @@ def main() -> int:
         # Checked like every file of the image, though only the report of the harvest reads them (adr/0033 §6.2).
         licences = load_licences(read_sources())
         approvals = load_approvals()
+        municipalities = load_municipalities()
     except ConfigError as error:
         print(f"load failed: {error}", file=sys.stderr)
         return 1
@@ -59,6 +61,8 @@ def main() -> int:
             index = write_search_index(conn, datasets)
             full_ids = [config.dataset_id for config in datasets] + [gone.dataset_id for gone in datasets.retired]
             regions_changed = write_regions(conn, regions)
+            # After the regions: a municipality refers to its canton.
+            municipalities_changed = write_municipalities(conn, municipalities)
             # First the rows a full entry took over: a hand entry that went full leaves listed/ in the same commit,
             # and its row is then superseded, not a tombstone (adr/0033 §11).
             superseded = supersede(conn, full_ids)
@@ -79,6 +83,7 @@ def main() -> int:
     print(f"search index written: {', '.join(index.written) if index.written else 'none'}")
     print(f"search index removed: {', '.join(index.removed) if index.removed else 'none'}")
     print(f"region rows changed: {regions_changed}")
+    print(f"municipality rows changed: {municipalities_changed}")
     print(f"listed hand entries written: {', '.join(listed) if listed else 'none'}")
     print(f"listed hand entries left out as blocked: {', '.join(blocked_hand) if blocked_hand else 'none'}")
     print(f"listed entries superseded by a full entry: {', '.join(superseded) if superseded else 'none'}")
