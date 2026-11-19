@@ -526,12 +526,12 @@ Branch `claude/loving-mccarthy-euyx17` von `main` nach dem Merge von #383. Grund
 | Stelle | Inhalt |
 |---|---|
 | `discovery/meteoswiss_grid.py` | `list_units`/`build_units` statt des Laufs „alles oder nichts“: liest die ganze Item-Liste (Seiten zu 100, `next` gefolgt), Gruppe „Liste“ mit SHA-256 der Seiten, je Quell-Item SHA-256 seines JSON, je Datei `file:checksum` und `updated` aus der Liste (§11.4); drei Präfixe mit Stand nach §11.2; `rprelimd` nur in Tages-Items und nur als Asset `RhiresD` mit `earthx:source_product: RprelimD` (F4); je Asset `updated` (Last-Modified der Datei) und `expires` des Quell-Items (§11.3); Prüfung der Spanne je Art (ein Tag, ein Monat, das Jahr des Namens) |
-| `discovery/materialize_units.py` | Übernahme des Bestands (F9): erster Lauf ohne Zustand nimmt das ETag aus `earthx:refs` der gespeicherten Assets, `HEAD` mit `If-None-Match`, `304` → kein Neuverweis; die Items werden einmal geschrieben, damit sie ihren Stand tragen. Halter je Paar in einem Durchgang statt je Paar über alle Einheiten (bei rund 47 500 Items sonst zu langsam) |
+| `discovery/materialize_units.py` | Übernahme des Bestands (F9): erster Lauf ohne Zustand nimmt das ETag aus `earthx:refs` der gespeicherten Assets, `HEAD` mit `If-None-Match`, `304` → kein Neuverweis; die Items werden einmal geschrieben, damit sie ihren Stand tragen; ein gespeichertes Asset, dessen Datei nicht mehr gelistet ist, fällt weg (A24). Nach einem Neubau gilt das ETag der neu gelesenen Datei, nicht das gespeicherte. Halter je Paar in einem Durchgang statt je Paar über alle Einheiten (bei rund 47 500 Items sonst zu langsam) |
 | `catalog/source_units.py`, Migration `030_materialize_unit_expires.sql` | `expires` je Einheit gespeichert (A17) und `stored_assets` für die Übernahme |
 | `discovery/materialize.py` | `MATERIALIZE_SPECS` mit `units` für `meteoswiss-grid`; der Weg `detect: whole` für MeteoSchweiz entfällt |
 | beide YAML-Einträge | `updates: {daily, [provisional, final], units}`, `temporal_extent.end: null`, Endpunkt = Item-Liste, `limitations` mit den beiden Sätzen aus §4.5 (Otto bestätigt), Beschreibung ohne „Only completed years“ |
 | `processing/recipe.py`, `api/intake.py` | Provenienz: `state` je aufgelöster Eingabe neben `version`, aus `earthx:state` des Assets; fehlt bei Datensätzen mit einem Stand (Rezepte und Hashes von vorher bleiben gleich, A21) |
-| Frontend `provisional.ts`, `ResultsPanel.tsx`, `TimeSlider.tsx` | Tooltip „Provisional values“ (F1, keine Marke) am Datum einer Gruppe in den Treffern, an der Uhrzeit des Treffers und in der Zeitleiste am gezeigten Datum, an den Nachbarn und an den Enden („Last time step: provisional values“); auf jeder Tipp-Stufe |
+| Frontend `provisional.ts`, `ResultsPanel.tsx`, `TimeSlider.tsx` | Tooltip „Provisional values“ (F1, keine Marke) an der Uhrzeit eines Treffers in der Trefferliste und in der Zeitleiste am gezeigten Datum, an den Nachbarn und an den Enden („Last time step: provisional values“); auf jeder Tipp-Stufe. Nicht am Kopf einer Gruppe: Dort verbietet UI-04 Teil 3a jeden Tooltip (`uiRules.test.ts`) |
 | `tests_live/test_meteoswiss_grid_smoke.py` | prüft die Item-Liste wie der Adapter: Jahresdateien lückenlos bis höchstens zwei Jahre zurück, Monats- und Tagesdateien je Größe, Aufbau der jüngsten Datei je Art über `build_units` |
 
 ### 12.2 Auslegungen (gelten, wenn du nicht widersprichst)
@@ -542,6 +542,9 @@ Branch `claude/loving-mccarthy-euyx17` von `main` nach dem Merge von #383. Grund
 - **A20:** Die Auswahl des Eintrags (Größen, erstes Jahr) gehört in jeden Validator. Eine andere Auswahl listet daher alles neu, wie `selection` in M5-11.
 - **A21:** Der Stand steht in der Provenienz als `state` je aufgelöster Eingabe (`ResolvedInput`), nicht in `InputVersion`: Die Version bleibt die des Inhalts, der Stand ist eine Aussage über ihn.
 - **A22:** Ein Fehler beim Bauen nennt Art, Größe und Datum der Datei, nie Namen oder Adresse.
+- **A24:** Beim Übernehmen fällt ein gespeichertes Asset weg, dessen Datei die Liste nicht mehr nennt (es sei denn, eine andere Einheit hält es jetzt). Sonst bliebe es ohne Einheit und zeigte auf eine gelöschte Datei.
+- **A25:** Ob ein Tag bzw. Monat zum Stempel im Dateinamen passt und ob die Datei die Variable ihres Namens trägt, wird nicht geprüft: Die Zeitachse der Datei entscheidet über den Tag, die Bedeutung der Stempel ist nicht gemessen, und M5-11 prüfte die Variable auch nicht. Geprüft wird die Spanne je Art (ein Tag, ein Monat, das Jahr des Namens).
+- **A26:** Ändert sich nur `expires` eines Quell-Items (Prüfsummen gleich), steht das neue `expires` im Zustand, das Asset behält das alte bis zum nächsten Neubau der Datei. `expires` steuert nichts (§11.3); ein Neubau nur dafür kostete 5–8 Abrufe je Datei.
 - **A23:** Der Lauf `detect: whole` für MeteoSchweiz ist entfernt, nicht nur abgeschaltet; die Tests von Download, Bändern und synthetischer Kette bauen ihre Items über `list_units`/`build_units` und die Zusammenführung des Kerns (`assemble_item`, dafür öffentlich).
 
 ### 12.3 Tests
@@ -549,9 +552,9 @@ Branch `claude/loving-mccarthy-euyx17` von `main` nach dem Merge von #383. Grund
 | Datei | Fälle |
 |---|---|
 | `tests/earthx/discovery/test_meteoswiss_grid.py` | Gruppen und Stände je Präfix; Validatoren und `expires` aus der Liste; eine Anfrage, keine Datei; `RprelimD` als `RhiresD` nur in Tages-Items; gleiche Liste → `unchanged` nach einer Anfrage; neuer Tag listet nur seine Dateien; andere Auswahl listet alles; Jahre vor dem Start; keine Jahresdatei bzw. fremder Host übergangen; Seiten gefolgt; Ablehnungen (zwei Dateien einer Größe, keine Datei, keine Item-Collection, Liste ohne Ende, fremde Größe, zwei Gitter); Items je Tag, Tagesgrenzen 00–24 und 06–06 auch vorläufig, Asset mit Verweisen, `updated`, `expires`, `earthx:source_product`; Ablehnungen beim Bauen (Mitternacht, anderes Jahr, zwei Monate, zwei Tage, anderes Gitter, Layout ohne Adresse, Gitter außerhalb, fremde Einheit) |
-| `tests/integration/test_materialize_meteoswiss.py` (echtes pgstac, ganzer Befehlsweg) | erster Lauf mit Stand je Tag; **Tageslauf ohne Änderung = eine Anfrage** (`GET` der Liste) und Lauf-Log `unchanged`; neuer Tag liest nur seine Datei; Monatsdatei ersetzt den vorläufigen Tag unter derselben ID (`replaced` 1, kein `expires`, kein `earthx:source_product`); Monatsdatei am 26. schreibt nur ihre Tage; Archiv aus dem Februar gilt vor dem Monat; vorläufiger Tag weg ohne Endgültiges → gelöscht; Übernahme: `HEAD` mit `If-None-Match`, `304`, Stand `final` geschrieben; geänderte Jahresdatei neu verwiesen |
+| `tests/integration/test_materialize_meteoswiss.py` (echtes pgstac, ganzer Befehlsweg) | gelistete Datei mit `404` → Lauf scheitert, nichts geschrieben (bis F10, §12.5); Asset einer nicht mehr gelisteten Datei fällt beim Übernehmen weg; neues ETag nach Neubau gespeichert; erster Lauf mit Stand je Tag; **Tageslauf ohne Änderung = eine Anfrage** (`GET` der Liste) und Lauf-Log `unchanged`; neuer Tag liest nur seine Datei; Monatsdatei ersetzt den vorläufigen Tag unter derselben ID (`replaced` 1, kein `expires`, kein `earthx:source_product`); Monatsdatei am 26. schreibt nur ihre Tage; Archiv aus dem Februar gilt vor dem Monat; vorläufiger Tag weg ohne Endgültiges → gelöscht; Übernahme: `HEAD` mit `If-None-Match`, `304`, Stand `final` geschrieben; geänderte Jahresdatei neu verwiesen |
 | `tests/earthx/api/test_intake.py` | `state` in der Provenienz bei vorläufigem Asset; ohne Stand kein Feld; unbekannter Stand bleibt weg |
-| `frontend/src/components/TimeSlider.test.tsx`, `ResultsPanel.test.tsx` | Tooltip am vorläufigen Datum (gezeigt, Nachbar, Ende), keiner am endgültigen, keine sichtbare Marke |
+| `frontend/src/components/TimeSlider.test.tsx`, `ResultsPanel.test.tsx` | Tooltip am vorläufigen Datum (gezeigt, Nachbar, Ende) und an der Uhrzeit des Treffers, keiner am endgültigen und keiner am Gruppenkopf, keine sichtbare Marke |
 | `tests/test_live_smoke_dry_run.py` | Double der Item-Liste mit Archiv-, Monats- und Tagesdateien |
 
 ### 12.4 Was Otto lokal ausführt
@@ -605,11 +608,17 @@ Erwartet je Eintrag zwei Zeilen, `final` und `provisional`, keine leere; `max(en
 **Schritt 6 — im Browser** (`docker compose up --build`, dann wie gewohnt öffnen):
 
 1. Data catalogue, beide Einträge: die beiden Sätze in den Limitations; Zeitraum ohne Ende.
-2. Suche `meteoswiss-daily-precip-1km` über einen Ort in der Schweiz, Zeitraum die letzten acht Wochen: In der Trefferliste zeigt das Datum eines der jüngsten Tage beim Überfahren „Provisional values“, ein Tag vor rund sechs Wochen nicht. In der Zeitleiste dasselbe am gezeigten Datum und am rechten Ende („Last time step: provisional values“). Keine sichtbare Marke.
+2. Suche `meteoswiss-daily-precip-1km` über einen Ort in der Schweiz, Zeitraum die letzten acht Wochen: In der Trefferliste zeigt die Uhrzeit (`06:00:00Z`) eines der jüngsten Tage beim Überfahren „Provisional values“, ein Tag vor rund sechs Wochen nicht; der Gruppenkopf mit dem Datum zeigt keinen Tooltip. In der Zeitleiste dasselbe am gezeigten Datum und am rechten Ende („Last time step: provisional values“). Keine sichtbare Marke.
 3. Ein vorläufiger Tag auf der Karte: Kacheln erscheinen; Band `RhiresD`, gleiche Farbskala wie ein endgültiger Tag.
 4. Band math `RhiresD > 20` über einen vorläufigen und einen endgültigen Tag: beide rechnen; im `recipe.json` des Jobs steht bei der vorläufigen Eingabe `"state": "provisional"`.
 5. Dasselbe kurz für `meteoswiss-daily-1km` (`TabsD`): Tooltip an den jüngsten Tagen.
 
-### 12.5 Umfang
+### 12.5 Frage an Otto
+
+**F10 — Eine gelistete Datei fehlt bei der Quelle (`404`/`410`)?** Heute bricht der ganze Lauf ab und schreibt nichts; der nächste Lauf versucht es wieder. M5-11 duldete bis 1 % fehlende Jahresdateien. Scheitert eine Tagesdatei dauerhaft (gelistet, aber nicht hochgeladen oder schon gelöscht), käme bis zur Korrektur der Quelle auch kein anderer neuer Tag herein.
+1. Die Datei übergehen und als Warnung zählen (wie A19), ohne Adresse; sie gilt als nicht gelistet und wird im nächsten Lauf wieder versucht; der Lauf schreibt alles andere **(Empfehlung)**
+2. So lassen: Der Lauf scheitert als Ganzes
+
+### 12.6 Umfang
 
 Rund 330 Zeilen ohne Tests, YAML und Doku (Adapter rund 230, Kern rund 60, Formen und Migration rund 40, Provenienz rund 15, Frontend rund 30), dazu rund 600 Zeilen Tests. Der Adapter ersetzt den Lauf aus M5-11 (rund 150 Zeilen entfernt).
