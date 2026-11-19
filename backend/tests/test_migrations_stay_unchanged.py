@@ -45,6 +45,7 @@ PINNED = {
     "029_materialize_units": "ca8566407f545693506bcd816c35d57752b02cad58ad6a0d328d3951f84d9c76",
     "030_harvest_keyset": "3a46084eede074453a7aa4c9e9741a9165638db7fae8f14553ae15d1b6a9eedc",
     "031_materialize_unit_expires": "b44b5e52ac9eca076ba6fbd9579f2fea20a29edb85648a125ebc454a97071590",
+    "032_listing_approval": "c9e826e275b370dd573935b5f7334ab0947a4cc43c75e75723049d83df5f5f07",
 }
 
 
