@@ -1,6 +1,6 @@
 # M5-61 — Tests aufräumen: Plan-Schritt
 
-**Status (19.11.2026):** Plan mit Messung, **Stufe B**; Fragen F1–F8 an Otto (§6). Umsetzung erst nach den Antworten.
+**Status (19.11.2026):** Plan angenommen (Otto, 19.11.2026: F1–F8 je Option 1, §6a), **Stufe B**. Umsetzung in PR 1 (§3.1) und PR 2 (§3.2).
 **Aufgabe:** M5-61 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2, Auftrag von Otto vom 19.11.2026.
 **Grundlagen:** `adr/0002` (Testaufteilung, T-C nie überspringen), NM4-23 (eine Datenbank je xdist-Worker), #336 (Logger-Fix im Test), #338 (CI in vier Teilen), Befunde aus #299, #341, #347, #365 (M5-36), #381.
 
@@ -124,9 +124,9 @@ Die sieben Skripte aus #299 sind seither nebenbei repariert worden; zu tun bleib
 2. **Datenbanken (D):** Jeder Lauf bekommt eine Lauf-Kennung (8 Hex-Zeichen), die der xdist-Controller an die Worker gibt (`pytest_configure_node`). Namen: `earthx_t<lauf>_tpl` (Vorlage), `earthx_t<lauf>_gw0` …, im seriellen Lauf `earthx_t<lauf>_main`; die Proben in `test_worker_database.py` ebenso mit Kennung. Die Vorlage wird **einmal je Lauf** migriert (PostGIS, pgstac, earthx), die Worker kopieren sie mit `CREATE DATABASE … TEMPLATE` (A: spart je Worker die Migration). Die konfigurierte Datenbank wird nur noch als Verwaltungsverbindung benutzt, nie beschrieben. Der Controller hält für die Dauer des Laufs eine Advisory-Sperre auf seine Kennung; beim Start löscht jeder Lauf nur Datenbanken `earthx_t*`, deren Sperre niemand hält (Reste abgebrochener Läufe), nie die eines laufenden. Prüfungen von `require_postgres_env` (nur lokal) bleiben vorne.
 3. **Logger (G):** Ein Wächter in `tests/conftest.py` hält den Zustand des Logging **vor dem Sammeln** fest (Root-Level und -Handler ohne die von pytest, Level/Propagation/`disabled` jedes Loggers, `logging.disable`) und stellt ihn **nach jedem Test** wieder her. Wer ihn verändert hat, steht am Ende des Laufs in einer Zeile je Test (F5). Die Tests, die `configure_logging` prüfen, rufen es weiter selbst auf.
 4. **Pyramidenbau (Z):** Der Test zeichnet im Supervisor (läuft im Testprozess) die **vergebenen** Zeitpunkte auf (Rückgabe von `SourceHosts.reserve`, umgerechnet auf `time.time()`) und prüft: (a) Abstand der vergebenen Zeitpunkte ≥ Intervall (bis auf Rundung), (b) das Kind liest nie **vor** seinem Zeitpunkt. Beides wackelt unter Last nicht, weil Verspätung keine der beiden Aussagen verletzt. Gleich für `…count_towards_the_spacing`.
-5. **Teardown `test_worker.py`:** nicht nachgestellt (§2.5). Ohne Fehlertext keine Änderung auf Verdacht (F3).
+5. **Teardown `test_worker.py`:** nicht nachgestellt (§2.5). Nach F3 = 1 kamen alle Fälle aus Cloud-Sessions; Ursache ist der Plattenplatz, behoben mit Punkt 1. `test_worker.py` bleibt unverändert.
 6. **`job_bench.py`:** `registry()` statt `REGISTRY`, einmal gegen `slow_source.py` laufen lassen; ein kleiner Test startet `job_bench.py --help`, damit ein veralteter Import künftig in der CI auffällt (F7).
-7. **Browser-Skript:** `pyramid-every-level.cjs` mit `MANAGER=open` an den heutigen Stand anpassen: Prüfung 4 erwartet keine Marke in der Zeile mehr, sondern den Toast „Loading data“ auch bei offener Verwaltung (entschieden: Plan M5 §2 Punkt 9, Otto 16.11., UI-09). Den Fehlschlag bei z8 erst klären: Liegt es an der offenen Verwaltung über der Karte, wird der Prüfausschnitt angepasst; ist es ein echter Fehler, kommt er als Befund in den PR und wird nicht im Skript verdeckt.
+7. **Browser-Skript (Zusatz Otto 19.11.: z8 untersuchen, Befund im Bericht; ein Fehler im Produktivcode wird nicht hier behoben, sondern als eigene Fehleraufgabe vorgeschlagen):** `pyramid-every-level.cjs` mit `MANAGER=open` an den heutigen Stand anpassen: Prüfung 4 erwartet keine Marke in der Zeile mehr, sondern den Toast „Loading data“ auch bei offener Verwaltung (entschieden: Plan M5 §2 Punkt 9, Otto 16.11., UI-09). Den Fehlschlag bei z8 erst klären: Liegt es an der offenen Verwaltung über der Karte, wird der Prüfausschnitt angepasst; ist es ein echter Fehler, kommt er als Befund in den PR und wird nicht im Skript verdeckt.
 
 ### 3.2 Laufzeit (PR 2)
 
@@ -208,3 +208,18 @@ Sonst keiner: Die übrigen langsamen Tests prüfen je eine eigene Aussage (Speic
 1. K1 nicht löschen; am Ende von PR 2 ein zweiter voller Lauf in der Session für vorher/nachher; `ci-backend-shard.sh` bleibt **(Empfehlung)**
 2. K1 löschen (mit Nachtrag in NM4-43), sonst wie 1
 3. Wie 1, dazu Vorschlag einer neuen Aufteilung der CI-Teile nach den CI-Zeiten von PR 2 (Änderung erst mit deiner Erlaubnis)
+
+## 6a. Antworten Otto (19.11.2026)
+
+F1 bis F8 jeweils Option 1:
+
+- F1: Katalog einmal je Worker, Fingerabdruck nach jedem Test, bei Abweichung neu laden.
+- F2: Lauf-Kennung, Vorlage je Lauf, nie die konfigurierte Datenbank, Reste über die Advisory-Sperre.
+- F3: Alle Abbrüche, Neustarts und Teardown-Fehler kamen aus Cloud-Sessions; lokal laufen keine Tests. Ursache Plattenplatz (§2.5), keine Änderung an `test_worker.py`.
+- F4: `tmp_path_retention_policy = "failed"`, `tmp_path_retention_count = 1`, Warnung unter 12 GB frei.
+- F5: Logger nach jedem Test wiederherstellen, Verursacher am Ende des Laufs nennen.
+- F6: vergebene Zeitpunkte prüfen, dazu „nie vor dem Zeitpunkt gelesen“.
+- F7: `job_bench.py` reparieren, einmal laufen lassen, Test mit `--help`.
+- F8: K1 bleibt; am Ende von PR 2 ein voller Lauf für vorher/nachher; `scripts/ci-backend-shard.sh` bleibt.
+
+Zusatz: Die fehlende Mosaik-Kachel bei z8 in `pyramid-every-level.cjs` (Variante „normal“, `MANAGER=open`) kurz untersuchen; ist es ein Fehler im Produktivcode, nicht in M5-61 beheben, sondern als eigene Fehleraufgabe vorschlagen.
