@@ -379,6 +379,13 @@ def test_a_group_named_after_an_eu_data_theme_counts_as_that_theme() -> None:
     assert extract_package(PACKAGE["id"], package, SOURCE).category == "infrastructure"
 
 
+@pytest.mark.parametrize("text", ["null", "NULL", " Null "])
+def test_a_place_text_null_is_no_place(text: str) -> None:
+    # Otto, 19.11.2026: the 24 place texts of GovData are the string "null".
+    found = extract_package(PACKAGE["id"], _with(PACKAGE, extras=[{"key": "spatial", "value": text}]), SOURCE)
+    assert (found.spatial_text, found.extent_known) == (None, False)
+
+
 def test_themes_are_kept_as_codes_for_the_geodata_rule() -> None:
     # M5-20 A12: INSPIRE and EU data themes, from theme URIs and from groups named after an EU theme.
     package = _with(PACKAGE, groups=[{"name": "gove", "title": "Regierung"}])

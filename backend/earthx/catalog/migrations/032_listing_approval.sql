@@ -7,6 +7,12 @@
 -- changed rule brings it back) and `duplicate` (another row is the main entry of the same dataset, `duplicate_of`,
 -- F4 = 1). Only `published` is visible, as before.
 --
+-- `verdict` is what the report derived for a harvested find before dedupe: `ok` (a licence rule matches),
+-- `needs_rule` (it waits, `waiting_reason`: no licence, an unknown one, one not granted, or no known way to get the
+-- data) or `not_geodata`. The state follows from it: a duplicate hides whatever its verdict; `ok` is `in_review` until
+-- an approval publishes it, and stays `published` while only describing fields change (adr/0033 §11, U1). Account and
+-- delivery are required only of what can be seen or approved; a find whose source names neither waits (M5-19 §5.2).
+--
 -- A footprint is no longer required (F1 = 1): an extent derived from a publisher or from the state of a catalogue
 -- carries regions only, so that an area finds it only where its footprint is known. `extent_basis` says where the
 -- extent comes from; NULL for a hand entry, whose extent is always its own box.
@@ -36,7 +42,9 @@ ALTER TABLE public.earthx_listed_entry
         'published', 'in_review', 'needs_rule', 'blocked', 'tombstone', 'superseded', 'not_geodata', 'duplicate')),
     ADD CONSTRAINT earthx_listed_entry_content_check CHECK (
         state = 'tombstone' OR num_nulls(content, content_sha256, sort_title, regions, keywords, data_kind, category,
-                                         account, delivery, link_host) = 0),
+                                         link_host) = 0),
+    ADD CONSTRAINT earthx_listed_entry_access_check CHECK (
+        state NOT IN ('published', 'in_review') OR num_nulls(account, delivery) = 0),
     ADD COLUMN extent_basis text CHECK (extent_basis IN ('source', 'place', 'publisher', 'catalog', 'none')),
     ADD CONSTRAINT earthx_listed_entry_footprint_check CHECK (
         CASE WHEN footprint IS NULL
@@ -44,11 +52,17 @@ ALTER TABLE public.earthx_listed_entry
              ELSE coalesce(extent_basis, 'source') IN ('source', 'place') END),
     ADD COLUMN duplicate_of text COLLATE "C",
     ADD CONSTRAINT earthx_listed_entry_duplicate_check CHECK ((state = 'duplicate') = (duplicate_of IS NOT NULL)),
-    ADD COLUMN waiting_reason text CHECK (waiting_reason IN ('no_licence', 'unknown_licence', 'not_granted')),
-    ADD CONSTRAINT earthx_listed_entry_waiting_check CHECK ((state = 'needs_rule') = (waiting_reason IS NOT NULL)),
-    -- The day a full pass of the source first did not name the find; the next pass without it makes it a tombstone
-    -- `source_removed` (adr/0033 §9, plan A4).
-    ADD COLUMN missing_since date,
+    ADD COLUMN verdict text CHECK (verdict IN ('ok', 'needs_rule', 'not_geodata')),
+    ADD COLUMN waiting_reason text CHECK (waiting_reason IN ('no_licence', 'unknown_licence', 'not_granted', 'no_access')),
+    ADD CONSTRAINT earthx_listed_entry_waiting_check CHECK ((verdict = 'needs_rule') = (waiting_reason IS NOT NULL)),
+    ADD CONSTRAINT earthx_listed_entry_verdict_state_check CHECK (
+        (state <> 'needs_rule' OR verdict = 'needs_rule') AND (state <> 'not_geodata' OR verdict = 'not_geodata')
+        AND (state <> 'in_review' OR verdict = 'ok')),
+    -- When a full pass of the source first did not name a published find; a later full pass without it makes it a
+    -- tombstone `source_removed` (adr/0033 §9, plan A4).
+    ADD COLUMN missing_since timestamptz,
+    -- The keys dedupe compares (DOI, identifier, collection id; plan §8, §13b), each with its kind as a prefix.
+    ADD COLUMN dedupe_keys text[],
     -- The hash of what the row was derived from: the intermediate form and the rule files (plan §5). Equal: the
     -- report leaves the row alone.
     ADD COLUMN derived_sha256 text CHECK (derived_sha256 ~ '^[0-9a-f]{64}$');

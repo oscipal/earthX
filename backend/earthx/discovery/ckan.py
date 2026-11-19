@@ -286,8 +286,10 @@ def _spatial(package: Mapping[str, Any], extras: Mapping[str, Any]) -> tuple[Any
         found = geometry_of(value)
         if found is not None:
             return found[0], found[1], None
+        # GovData writes the text "null" where it has none (Otto, 19.11.2026, M5-20 plan §13b).
         if text is None and isinstance(value, str) and not value.lstrip().startswith(("{", "[")):
             text = localized(value)
+            text = None if text is not None and text.lower() == "null" else text
     return None, None, None if text is None else text[:MAX_SPATIAL_TEXT_CHARS]
 
 
