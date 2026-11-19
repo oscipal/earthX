@@ -204,13 +204,14 @@ def _drop_approximate(normal: str, directory: PlaceDirectory) -> str:
     return normal
 
 
-def _part(text: str, directory: PlaceDirectory, country: str | None) -> str | None:
+def _part(text: str, directory: PlaceDirectory, country: str | None, *, abbreviation: bool) -> str | None:
     """What one part of a place text is: a code, ``""`` for a part that is passed over, ``*`` for the whole state of
-    the catalogue, ``None`` for no place."""
+    the catalogue, ``None`` for no place. A two-letter abbreviation counts only as the whole text or in parentheses
+    (plan A15): in a list ("DE, FR, IT") it is a state as often as a canton."""
     stripped = text.strip()
     if not stripped:
         return ""
-    code = directory.code_of(stripped, country)
+    code = directory.code_of(stripped, country) if abbreviation else None
     if code is not None:
         return code
     normal = normalize(stripped)
@@ -228,20 +229,21 @@ def place_codes(text: str, directory: PlaceDirectory, country: str | None) -> tu
     if ids:
         codes = [directory.geonames.get(i) for i in ids]
         return None if None in codes else tuple(sorted(set(codes)))  # type: ignore[arg-type]
-    whole = _part(text, directory, country)
+    whole = _part(text, directory, country, abbreviation=True)
     if whole is not None:
         # "République et canton de Genève" is one name, not a list at "et".
         return "*" if whole == "*" else (whole,) if whole else ""
     found: set[str] = set()
     inner = _PARENTHESES.findall(text)
-    parts = [*_PARTS.split(_PARENTHESES.sub(" ", text)), *inner]
+    outer = text
     # "X und angrenzende Gebiete": the words after the core go before the text is cut at "und".
     normal_whole = normalize(text)
     for word in directory.after:
         if normal_whole.endswith(" " + word):
-            parts = [*_PARTS.split(_PARENTHESES.sub(" ", text[: _cut(text, word)])), *inner]
-    for part in parts:
-        outcome = _part(part, directory, country)
+            outer = text[: _cut(text, word)]
+    parts = [(part, False) for part in _PARTS.split(_PARENTHESES.sub(" ", outer))] + [(part, True) for part in inner]
+    for part, in_parentheses in parts:
+        outcome = _part(part, directory, country, abbreviation=in_parentheses)
         if outcome is None:
             return None
         if outcome:
@@ -278,6 +280,10 @@ def publisher_code(publisher: str, directory: PlaceDirectory) -> str | None:
     return next(iter(kept)) if len(kept) == 1 else None
 
 
+def _in_country(code: str, country: str | None) -> bool:
+    return country is None or code == country or code.startswith(country + "-")
+
+
 def spatial_extent(
     found: Mapping[str, Any], *, country: str | None, directory: PlaceDirectory | None = None
 ) -> Extent:
@@ -292,12 +298,22 @@ def spatial_extent(
         codes = place_codes(text, directory, country)
         if codes == "*" and country is not None:
             return Extent("catalog", codes=(country,))
+        if isinstance(codes, tuple) and codes and not all(_in_country(code, country) for code in codes if "-" in code):
+            # "Vienne" at opendata.swiss is no Bundesland of Austria: a subdivision counts only in the state of the
+            # catalogue (review M5-20 PR 1).
+            codes = None
         if isinstance(codes, tuple) and codes:
+            if all("-" not in code for code in codes):
+                # Only whole states ("Schweiz"): regions without a footprint, or every area in the state would find
+                # the entry (plan A19, F11).
+                return Extent("catalog", codes=codes)
             return Extent("place", codes=_states(codes))
         if codes is None:
             unresolved = text
     publisher = found.get("publisher")
-    if isinstance(publisher, str) and (code := publisher_code(publisher, directory)) is not None:
+    code = publisher_code(publisher, directory) if isinstance(publisher, str) else None
+    if code is not None and _in_country(code, country):
+        # Only a place in the state of the catalogue: "Sächsische Schweiz" at GovData is no Switzerland.
         return Extent("publisher", codes=_states([code]), unresolved=unresolved)
     if country is not None:
         return Extent("catalog", codes=(country,), unresolved=unresolved)
@@ -305,6 +321,8 @@ def spatial_extent(
 
 
 _DATE = re.compile(r"(\d{4})(?:-(\d{2})(?:-(\d{2}))?)?")
+#: An end in this year or later is an open end.
+OPEN_END_YEAR = 9999
 
 
 def _instant(value: object, *, end: bool) -> datetime | None:
@@ -313,26 +331,28 @@ def _instant(value: object, *, end: bool) -> datetime | None:
     if not isinstance(value, str) or not (text := value.strip()):
         return None
     match = _DATE.fullmatch(text)
-    if match:
-        year, month, day = int(match[1]), match[2], match[3]
-        try:
-            first = datetime(year, int(month or 1), int(day or 1), tzinfo=UTC)
-        except ValueError:
-            return None
-        if not end:
-            return first
-        if day:
-            after = first + timedelta(days=1)
-        elif month:
-            after = first.replace(year=year + (first.month == 12), month=first.month % 12 + 1)
-        else:
-            after = first.replace(year=year + 1)
-        return after - timedelta(seconds=1)
     try:
+        if match:
+            year, month, day = int(match[1]), match[2], match[3]
+            if end and year >= OPEN_END_YEAR:
+                # "9999-12-31" is how DCAT and INSPIRE metadata write an open end.
+                return None
+            first = datetime(year, int(month or 1), int(day or 1), tzinfo=UTC)
+            if not end:
+                return first
+            if day:
+                after = first + timedelta(days=1)
+            elif month:
+                after = first.replace(year=year + (first.month == 12), month=first.month % 12 + 1)
+            else:
+                after = first.replace(year=year + 1)
+            return after - timedelta(seconds=1)
         instant = datetime.fromisoformat(text.replace("Z", "+00:00"))
-    except ValueError:
+        if end and instant.year >= OPEN_END_YEAR:
+            return None
+        return instant.replace(tzinfo=UTC) if instant.tzinfo is None else instant.astimezone(UTC)
+    except (ValueError, OverflowError):
         return None
-    return instant.replace(tzinfo=UTC) if instant.tzinfo is None else instant.astimezone(UTC)
 
 
 def time_span(temporal: object) -> tuple[datetime | None, datetime | None] | None:

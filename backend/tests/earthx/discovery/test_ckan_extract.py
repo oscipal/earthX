@@ -713,3 +713,17 @@ def test_an_html_resource_whose_download_address_is_a_file_is_no_viewer() -> Non
 
 def test_the_page_extras_are_part_of_the_extractor_version() -> None:
     assert extractor_version(SOURCE) != extractor_version(GOVDATA_LIKE)
+
+
+@pytest.mark.parametrize(
+    "geometry",
+    [
+        {"type": "Point", "coordinates": [[8.4, 47.1], [8.5, 47.2]]},
+        {"type": "Polygon", "coordinates": [[8.4, 47.1], [8.6, 47.2], [8.4, 47.2]]},
+        {"type": "MultiPolygon", "coordinates": [[[8.4, 47.1], [8.6, 47.2], [8.4, 47.1]]]},
+    ],
+)
+def test_a_geometry_whose_nesting_does_not_fit_its_type_is_no_extent(geometry: dict[str, Any]) -> None:
+    # Review M5-20 PR 1: PostGIS reads such a Point as POINT(0 0) and refuses such a Polygon.
+    package = _with(PACKAGE, extras=[{"key": "spatial", "value": json.dumps(geometry)}])
+    assert extract_package(PACKAGE["id"], package, SOURCE).extent_known is False

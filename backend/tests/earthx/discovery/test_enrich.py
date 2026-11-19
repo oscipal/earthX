@@ -59,6 +59,12 @@ def test_place_texts(text: str, codes: object) -> None:
     assert place_codes(text, DIRECTORY, "CH") == codes
 
 
+def test_an_abbreviation_in_a_list_is_no_place() -> None:
+    # Plan A15: only as the whole text or in parentheses; in "DE, FR, IT" FR is France as often as Fribourg.
+    assert place_codes("DE, FR, IT", DIRECTORY, "CH") is None
+    assert place_codes("Kanton Freiburg (FR)", DIRECTORY, "CH") == ("CH-FR",)
+
+
 def test_an_abbreviation_is_a_subdivision_of_the_catalogue_first() -> None:
     # Plan A15: FR at opendata.swiss is Fribourg; without a state of the catalogue it is France.
     assert place_codes("FR", DIRECTORY, "CH") == ("CH-FR",)
@@ -82,6 +88,26 @@ def test_an_abbreviation_is_a_subdivision_of_the_catalogue_first() -> None:
 )
 def test_publishers(publisher: str, code: str | None) -> None:
     assert publisher_code(publisher, DIRECTORY) == code
+
+
+@pytest.mark.parametrize(
+    ("found", "country", "basis", "codes"),
+    [
+        # Review M5-20 PR 1: a place counts only in the state of the catalogue.
+        ({"publisher": "Landratsamt Sächsische Schweiz-Osterzgebirge"}, "DE", "catalog", ("DE",)),
+        ({"publisher": "Gemeinde Schellenberg"}, "DE", "catalog", ("DE",)),
+        ({"spatial_text": "Vienne"}, "CH", "catalog", ("CH",)),
+        ({"spatial_text": "Vaduz"}, "LI", "place", ("LI", "LI-11")),
+        # Only whole states: regions without a footprint (plan A19).
+        ({"spatial_text": "Schweiz"}, "CH", "catalog", ("CH",)),
+        ({"spatial_text": "Schweiz, Liechtenstein"}, "CH", "catalog", ("CH", "LI")),
+    ],
+)
+def test_places_outside_the_catalogue_and_whole_states(
+    found: dict[str, str], country: str, basis: str, codes: tuple[str, ...]
+) -> None:
+    extent = spatial_extent(found, country=country)
+    assert (extent.basis, extent.codes, extent.has_footprint) == (basis, codes, False if basis == "catalog" else True)
 
 
 class TestSteps:
@@ -122,6 +148,12 @@ class TestSteps:
         (("2020-05-01T10:00:00Z", "2020-05-01T12:00:00+02:00"), (datetime(2020, 5, 1, 10, tzinfo=UTC),) * 2),
         (("2020-05-01T10:00:00", None), (datetime(2020, 5, 1, 10, tzinfo=UTC), None)),
         (("2021", "2019"), None),
+        # "9999-12-31" is an open end in DCAT and INSPIRE (review M5-20 PR 1).
+        (("2019", "9999-12-31"), (datetime(2019, 1, 1, tzinfo=UTC), None)),
+        (("2019", "9999"), (datetime(2019, 1, 1, tzinfo=UTC), None)),
+        (("2019", "9999-12"), (datetime(2019, 1, 1, tzinfo=UTC), None)),
+        (("2019", "9999-12-31T23:59:59Z"), (datetime(2019, 1, 1, tzinfo=UTC), None)),
+        (("0000", None), None),
         (("2021-02-30", None), None),
         (("seit 2010", "heute"), None),
         (None, None),

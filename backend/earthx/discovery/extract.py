@@ -387,7 +387,22 @@ def _clean_geometry(value: object, points: list[tuple[float, float]], depth: int
         if depth or not isinstance(members, list) or not members:
             raise ValueError("no geometry collection")
         return {"type": value["type"], "geometries": [_clean_geometry(m, points, depth + 1) for m in members]}
-    return {"type": value["type"], "coordinates": _coordinates(value.get("coordinates"), 0, points)}
+    coordinates = _coordinates(value.get("coordinates"), 0, points)
+    if _nesting(coordinates) != _NESTING[value["type"]]:
+        # A Point given as a list of positions would be read by PostGIS as POINT(0 0) (review M5-20 PR 1).
+        raise ValueError("coordinates do not fit the type")
+    return {"type": value["type"], "coordinates": coordinates}
+
+
+#: How deep the positions of each geometry type are nested: a Point is one position, a MultiPolygon lists of rings.
+_NESTING = {"Point": 0, "MultiPoint": 1, "LineString": 1, "MultiLineString": 2, "Polygon": 2, "MultiPolygon": 3}
+
+
+def _nesting(coordinates: list[Any]) -> int:
+    depth = 0
+    while coordinates and isinstance(coordinates[0], list):
+        coordinates, depth = coordinates[0], depth + 1
+    return depth
 
 
 def geometry_of(value: object) -> tuple[tuple[float, float, float, float], dict[str, Any] | None] | None:
