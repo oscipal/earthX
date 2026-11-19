@@ -89,6 +89,8 @@ export interface EarthxSource {
   // Where the catalogue of the source answers, and the collection there (shown as "Source" in the Data catalogue, UI-05).
   endpoint?: string | null;
   source_collection_id?: string | null;
+  // The link "Source": a viewer, download or dataset page of the provider, never the API (M5-55).
+  page_url?: string | null;
   // Where the storage of the assets lies, `<operator>:<place>` or `unknown` (M5-07).
   data_region?: string | null;
 }

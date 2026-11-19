@@ -34,7 +34,7 @@ function collection(id: string, title: string, category: string | null, extra: P
     'earthx:category': category,
     'earthx:viewer': VIEWER,
     'earthx:capabilities': CAPABILITIES,
-    'earthx:source': { asset_hosts: ['assets.example.org'], endpoint: 'https://stac.example.org/v1', source_collection_id: id },
+    'earthx:source': { asset_hosts: ['assets.example.org'], endpoint: 'https://stac.example.org/v1', page_url: 'https://viewer.example.org/collections/' + id, source_collection_id: id },
     extent: { spatial: { bbox: [[-180, -60, 180, 84]] }, temporal: { interval: [['2020-01-01T00:00:00Z', null]] } },
     ...extra,
   } as Collection;
@@ -381,7 +381,7 @@ describe('the list', () => {
   it('links a dataset that needs an account to its source instead of "Add", marked "Account"', () => {
     const link = action('Closed source');
     expect(link.tagName).toBe('A');
-    expect(link.getAttribute('href')).toBe('https://stac.example.org/v1');
+    expect(link.getAttribute('href')).toBe('https://viewer.example.org/collections/closed');
     expect(link.getAttribute('rel')).toBe('noopener noreferrer');
     expect(entry('Closed source').querySelector('.badge')?.textContent).toBe('Account');
     expect(useAppStore.getState().addDataset('closed')).toBeUndefined();

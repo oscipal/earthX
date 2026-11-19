@@ -128,6 +128,9 @@ source:
   # The bucket has no STAC collection of its own (`adr/0009` §5); its own name is the closest thing to a source-side
   # identifier.
   source_collection_id: copernicus-dem-30m
+  # The link "Source" (M5-55, Otto 17.11.2026): Dataset page of the host with the bucket and how to load the tiles;
+  # the bucket has no viewer, and the provider page (spacedata.copernicus.eu) is a description without a download.
+  page_url: https://registry.opendata.aws/copernicus-dem/
   # The global bucket name (`adr/0009` §10.2, M3-11b plan §2): never the bare `s3.amazonaws.com` or `amazonaws.com`,
   # which would open every bucket on AWS to `gateway`'s allowlist (`registry.py` `DatasetConfig._check_source`).
   asset_hosts: [copernicus-dem-30m.s3.amazonaws.com]

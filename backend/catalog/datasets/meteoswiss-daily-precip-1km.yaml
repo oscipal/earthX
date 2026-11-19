@@ -130,6 +130,9 @@ source:
   # items of one month (`-last`) and of one day (preliminary). One page, without ETag; its hash tells a change.
   endpoint: https://data.geo.admin.ch/api/stac/v1/collections/ch.meteoschweiz.ogd-surface-derived-grid/items
   source_collection_id: ch.meteoschweiz.ogd-surface-derived-grid
+  # The link "Source" (M5-55, Otto 17.11.2026): STAC browser of the Federal Spatial Data Infrastructure on the
+  # collection of the grids, with the files to load; the same collection as `meteoswiss-daily-1km`.
+  page_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.meteoschweiz.ogd-surface-derived-grid
   asset_hosts: [data.geo.admin.ch]
   # About 23 700 days from 65 annual files, the days of 14 months and the provisional days (M5-58 plan §11.1).
   item_holding: materialized
