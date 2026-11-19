@@ -58,7 +58,7 @@ from earthx.adapters import (
     UpstreamShapeError,
     materialize_items,
 )
-from earthx.adapters.spec import spec_table
+from earthx.adapters.spec import UnitsMaterializer, spec_table
 from earthx.catalog.datasets import registry
 from earthx.catalog.hosts import HostLimit
 from earthx.catalog.pgstac import (
@@ -90,10 +90,14 @@ from earthx.discovery.source_gateway import open_source_gateway
 from earthx.gateway import Gateway, GatewayError, Policy, host_of, user_agent_from_env
 from earthx.logging import configure_logging
 
-#: The adapter table with what only `discovery` can materialize: the MeteoSwiss grids, whose files `h5py` reads (M5-11).
+#: The adapter table with what only `discovery` can materialize: the MeteoSwiss grids, whose files `h5py` reads (M5-11),
+#: per unit of the source (M5-58 PR 2).
 MATERIALIZE_SPECS: AdapterSpecs = spec_table(
     *(spec for kind, spec in ADAPTER_SPECS.items() if kind is not AdapterKind.METEOSWISS_GRID),
-    replace(ADAPTER_SPECS[AdapterKind.METEOSWISS_GRID], materialize=meteoswiss_grid.materialize_items),
+    replace(
+        ADAPTER_SPECS[AdapterKind.METEOSWISS_GRID],
+        units=UnitsMaterializer(list_units=meteoswiss_grid.list_units, build=meteoswiss_grid.build_units),
+    ),
 )
 
 

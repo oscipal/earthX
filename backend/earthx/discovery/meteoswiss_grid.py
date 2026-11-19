@@ -1,28 +1,35 @@
-"""The daily climate grids of MeteoSwiss as items of one day each (M5-11 PR 2, adr/0029 §8a.1 package b).
+"""The daily climate grids of MeteoSwiss as items of one day each (M5-11 PR 2, M5-58 PR 2; adr/0029 §8a.1, adr/0038).
 
-The source is the archive item of the collection ``ch.meteoschweiz.ogd-surface-derived-grid`` on the STAC API of the
-FSDI (``source.endpoint``). It lists one NetCDF-4 file per quantity, grid and year. Only the consolidated annual files
-of the archive are read, up to the last completed year (adr/0029 F5, Otto 17.11.2026): names of the form
-``ogd-surface-derived-grid-archive.<quantity>_<grid>.swiss.lv95_<start>_<end>.nc`` (plan §10.7); neither ``-last``
-nor the preliminary daily files.
+The source is the item list of the collection ``ch.meteoschweiz.ogd-surface-derived-grid`` on the STAC API of the FSDI
+(``source.endpoint``). Three kinds of its NetCDF-4 files hold days, one file per quantity and grid each (M5-58 plan
+§11.2), all named ``ogd-surface-derived-grid<kind>.<quantity>_<grid>.swiss.lv95_<start>_<end>.nc``:
 
-The quantities of an entry are the keys of its ``band_units`` (``TabsD``, ``RhiresD`` …, as MeteoSwiss names them,
-plan A14). Each file is referenced with :func:`~earthx.discovery.netcdf_refs.reference_file` (5–8 ranged requests, no
-data), and every day of every file becomes one asset of the item of that day, with the ``earthx:refs`` of its chunk.
-A day a file does not carry is no asset; a day no file carries is no item (plan §10.9).
+- ``-archive`` in the item ``CH archive``: one year, consolidated, **final**; re-processed once in February;
+- ``-last`` in the items ``CH at MM.YYYY``: the days of one month, consolidated, **final**; overwritten on the 26th;
+- no kind in the items ``CH at DD.MM.YYYY``: one day, preliminary, **provisional**.
 
-**The day of an item** (Otto, 18.11.2026, from the product documentation of MeteoSwiss): the files stamp each day at
-00:00 UTC. ``RhiresD`` is the sum from 06:00 UTC of that day to 06:00 UTC of the next (ProdDoc_RhiresD); ``TabsD``,
-``TminD`` and ``TmaxD`` hold 00:00–24:00 UTC (ProdDoc_TabsD); ``SrelD`` midnight to midnight (ProdDoc_SrelD), in UTC
-like every reference time stamp of the open data. ``start_datetime`` is that start, ``end_datetime`` the last second
-before the next day starts, ``datetime`` the start.
+A file is a **unit**, a source item a **group** (adr/0038 §3.3); :mod:`earthx.discovery.materialize_units` decides
+what changed and which file an asset of a day carries (the higher state, then the younger file). The quantities of an
+entry are the keys of its ``band_units``; archive files count from the first year of ``temporal_extent``.
 
-**The version of a run** is the ETag of the archive item, the selection of the entry (quantities, first and last year)
-and a hash over the name, the address, ``file:checksum`` and ``updated`` of every chosen file. A ``304`` on
-``If-None-Match`` is "unchanged" after one request; the request is conditional only while the selection is the same, so
-a longer period or another quantity is loaded although the archive did not change. A ``200`` whose chosen files hash as
-before is "unchanged" too, without reading a file. Otherwise every chosen file is referenced
-anew (plan A4: only changed files come with M5-24).
+**One request when nothing changed** (plan §11.4): the list answers without ETag or Last-Modified, so the SHA-256 of
+its pages is the validator of the group "list"; the same hash ends the run there. Otherwise each source item is
+judged by the SHA-256 of its JSON, and a file of a changed item by ``file:checksum`` from the list: no request for a
+file that did not change. The selection of the entry (quantities, first year) is part of every validator, so another
+selection lists everything again.
+
+**Precipitation while provisional** is the product ``RprelimD`` at the source and the asset ``RhiresD`` here, with
+``earthx:source_product: RprelimD`` (M5-58 F4): band math, look and download stay the same over all days.
+
+Each file is referenced with :func:`~earthx.discovery.netcdf_refs.reference_file` (5–8 ranged requests, no data);
+every day of it gives one asset to the item of that day, with the ``earthx:refs`` of its chunk, the file's
+Last-Modified as ``updated`` and the ``expires`` of its source item.
+
+**The day of an item** (Otto, 18./19.11.2026, from the product documentation of MeteoSwiss): the files stamp each day
+at 00:00 UTC. ``RhiresD`` and ``RprelimD`` are the sum from 06:00 UTC of that day to 06:00 UTC of the next
+(ProdDoc_RhiresD, ProdDoc_RprelimD); ``TabsD``, ``TminD`` and ``TmaxD`` hold 00:00–24:00 UTC (ProdDoc_TabsD),
+``SrelD`` midnight to midnight (ProdDoc_SrelD), provisional or not (M5-58 A16). ``start_datetime`` is that start,
+``end_datetime`` the last second before the next day starts, ``datetime`` the start.
 
 Lives in ``discovery`` and not in ``adapters``: only here may ``h5py`` open a file (``.importlinter``,
 ``h5py-only-in-discovery``). ``discovery.materialize`` dispatches to it through its own table.
@@ -34,7 +41,7 @@ import hashlib
 import json
 import logging
 import re
-from collections import defaultdict
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from email.utils import parsedate_to_datetime
@@ -43,12 +50,11 @@ from typing import Any
 import numpy
 from pyproj import Transformer
 
-from earthx.adapters import MaterializeOutcome, NotMaterialized, UnsupportedSource, UpstreamShapeError
-from earthx.adapters.cop_dem_bucket import MAX_NOT_LOADABLE_FRACTION
-from earthx.catalog.registry import DatasetConfig, ItemHolding
+from earthx.adapters import UnsupportedSource, UpstreamShapeError
+from earthx.catalog.registry import DatasetConfig, ItemHolding, ItemState
+from earthx.catalog.source_units import BuiltUnit, Contribution, SourceUnit, UnitListing, Validators
 from earthx.discovery.netcdf_refs import FileReferences, UnsupportedLayout, reference_file, step_references
 from earthx.gateway import Gateway, host_of
-from earthx.gateway.errors import UpstreamError
 
 LOGGER = logging.getLogger("earthx.discovery.meteoswiss_grid")
 
@@ -73,23 +79,44 @@ PRODUCTS = {
     "RhiresD": Product("ch01h", 6),
 }
 
-ARCHIVE_NAME = re.compile(
-    r"^ogd-surface-derived-grid-archive\.(?P<quantity>[a-z0-9]+)_(?P<grid>ch01[rh])\.swiss\.lv95_"
+FILE_NAME = re.compile(
+    r"^ogd-surface-derived-grid(?P<kind>-archive|-last|)\.(?P<quantity>[a-z0-9]+)_(?P<grid>ch01[rh])\.swiss\.lv95_"
     r"(?P<start>\d{14})_(?P<end>\d{14})\.nc$"
 )
+#: The state of each kind of file (M5-58 plan §11.2): only the day items are preliminary.
+STATES = {"-archive": ItemState.FINAL, "-last": ItemState.FINAL, "": ItemState.PROVISIONAL}
+_SPANS = {"-archive": "annual", "-last": "monthly", "": "daily"}
+#: A product the source names otherwise while it is provisional, and the band it is here (M5-58 F4).
+PROVISIONAL_PRODUCTS = {"RprelimD": "RhiresD"}
+#: The group of the whole list, beside the source items; no item id has this form.
+LIST_GROUP = "(item list)"
+_PAGE_SIZE = 100
+_MAX_PAGES = 20
 DAY = timedelta(days=1)
 _LAST_SECOND = DAY - timedelta(seconds=1)
 _EDGE_POINTS = 16
 _TO_WGS84 = Transformer.from_crs(CRS, "EPSG:4326", always_xy=True)
-_HASH_PREFIX = "sha256:"
 
 
 @dataclass(frozen=True, slots=True)
-class AnnualFile:
-    quantity: str
-    year: int
-    name: str
-    href: str
+class SourceFile:
+    """What the name of one file says: the asset it gives, the product it holds, its kind and its two stamps."""
+
+    asset_key: str
+    product: str
+    kind: str
+    start: str
+    end: str
+
+    @property
+    def year(self) -> int | None:
+        """The year of an annual file of the archive, ``None`` for any other file or one that is not one year."""
+        return _one_year(self.start, self.end) if self.kind == "-archive" else None
+
+    @property
+    def what(self) -> str:
+        """The file in an error, without its name or address."""
+        return f"the {_SPANS[self.kind]} file of {self.product} from {self.start[:8]}"
 
 
 def _products(config: DatasetConfig) -> tuple[list[str], Product]:
@@ -114,55 +141,150 @@ def _one_year(start: str, end: str) -> int | None:
     return None
 
 
-def choose_files(
-    config: DatasetConfig, assets: dict[str, Any], *, first_year: int, last_year: int
-) -> tuple[dict[tuple[str, int], AnnualFile], int, int]:
-    """The annual files of the entry's quantities from ``first_year`` to ``last_year``; and the count of withheld
-    (other years) and unknown (of the entry's quantity and grid, but not one year on an asset host) files."""
+def parse_name(config: DatasetConfig, name: str) -> SourceFile | None:
+    """What the file ``name`` gives the entry, or ``None`` where it gives nothing (another quantity, grid or kind)."""
     quantities, product = _products(config)
-    by_name = {quantity.lower(): quantity for quantity in quantities}
-    chosen: dict[tuple[str, int], AnnualFile] = {}
-    withheld = unknown = 0
+    match = FILE_NAME.match(name.lower())
+    if match is None or match["grid"] != product.grid:
+        return None
+    names = {quantity.lower(): (quantity, quantity) for quantity in quantities}
+    if match["kind"] == "":
+        names |= {source.lower(): (band, source) for source, band in PROVISIONAL_PRODUCTS.items() if band in quantities}
+    if match["quantity"] not in names:
+        return None
+    asset_key, source_product = names[match["quantity"]]
+    return SourceFile(asset_key, source_product, match["kind"], match["start"], match["end"])
+
+
+def _validator(selection: str, digest: str) -> str:
+    return f"{selection}|sha256:{digest}"
+
+
+def _sha256(data: Any) -> str:
+    text = json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+async def _item_list(config: DatasetConfig, gateway: Gateway) -> tuple[list[Any], str]:
+    """Every item of the collection, page by page, and the SHA-256 over the bodies of all pages."""
+    features: list[Any] = []
+    digest = hashlib.sha256()
+    url: str | None = f"{config.source.endpoint}?limit={_PAGE_SIZE}"
+    for _ in range(_MAX_PAGES):
+        if url is None:
+            return features, digest.hexdigest()
+        response = await gateway.get(url)
+        try:
+            page = response.json()
+        except ValueError:
+            page = None
+        if response.status_code != 200 or not isinstance(page, dict) or not isinstance(page.get("features"), list):
+            raise UpstreamShapeError("the item list of the climate grids is no STAC item collection")
+        digest.update(response.content)
+        features.extend(page["features"])
+        links = page.get("links") if isinstance(page.get("links"), list) else []
+        url = next((link.get("href") for link in links if isinstance(link, dict) and link.get("rel") == "next"), None)
+    raise UpstreamShapeError(f"the item list of the climate grids runs over {_MAX_PAGES} pages")
+
+
+def _files_of(
+    config: DatasetConfig, feature: Mapping[str, Any], first_year: int
+) -> tuple[dict[str, tuple[SourceFile, Any]], int]:
+    """The files of the entry in one source item, by name, and the count of those passed over (not one year, not on an
+    asset host)."""
+    assets = feature.get("assets")
+    if not isinstance(assets, dict):
+        return {}, 0
+    chosen: dict[str, tuple[SourceFile, Any]] = {}
+    slots: set[tuple[str, int | None]] = set()
+    passed = 0
     for name, asset in assets.items():
-        match = ARCHIVE_NAME.match(name.lower())
-        if match is None or match["quantity"] not in by_name or match["grid"] != product.grid:
+        file = parse_name(config, name)
+        if file is None:
             continue
-        quantity = by_name[match["quantity"]]
-        year = _one_year(match["start"], match["end"])
+        year = file.year
+        if year is not None and year < first_year:
+            continue
         href = asset.get("href") if isinstance(asset, dict) else None
-        if year is None or not isinstance(href, str) or not href.startswith("https://") or host_of(href) not in config.source.asset_hosts:
-            unknown += 1
+        if (
+            (file.kind == "-archive" and year is None)
+            or not isinstance(href, str)
+            or not href.startswith("https://")
+            or host_of(href) not in config.source.asset_hosts
+        ):
+            passed += 1
             continue
-        if not first_year <= year <= last_year:
-            withheld += 1
+        if (file.asset_key, year) in slots:
+            raise UpstreamShapeError(
+                f"a source item lists two files of {file.asset_key}" + (f" for {year}" if year else "")
+            )
+        slots.add((file.asset_key, year))
+        chosen[name] = (file, asset)
+    return chosen, passed
+
+
+def _text(value: Any) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
+async def list_units(config: DatasetConfig, *, gateway: Gateway, known_groups: Mapping[str, str | None]) -> UnitListing:
+    """The source items with files of the entry, each judged by the hash of its JSON, and the files of the changed ones;
+    after one request "unchanged" where the whole list hashes as before (M5-58 plan §11.4)."""
+    if config.source.item_holding is not ItemHolding.MATERIALIZED:
+        raise UnsupportedSource(f"{config.dataset_id} is not materialized; its items are not built here")
+    quantities, _ = _products(config)
+    if config.temporal_extent.start is None:
+        raise UnsupportedSource(f"{config.dataset_id}: temporal_extent names the first day to load")
+    first_year = config.temporal_extent.start.astimezone(UTC).year
+    selection = f"{','.join(sorted(quantities))}:{first_year}"
+
+    features, digest = await _item_list(config, gateway)
+    whole = _validator(selection, digest)
+    if known_groups.get(LIST_GROUP) == whole:
+        return UnitListing(groups=dict(known_groups), unchanged_groups=frozenset(known_groups), units=())
+
+    groups: dict[str, str | None] = {LIST_GROUP: whole}
+    unchanged: set[str] = set()
+    units: list[SourceUnit] = []
+    passed = 0
+    for feature in features:
+        files, skipped = _files_of(config, feature, first_year) if isinstance(feature, dict) else ({}, 0)
+        passed += skipped
+        if not files:
             continue
-        if (quantity, year) in chosen:
-            raise UpstreamShapeError(f"the archive lists two files of {quantity} for {year}")
-        chosen[(quantity, year)] = AnnualFile(quantity, year, name, href)
-    return chosen, withheld, unknown
-
-
-def _digest(chosen: dict[tuple[str, int], AnnualFile], assets: dict[str, Any]) -> str:
-    lines = sorted(
-        "\t".join((file.name, file.href, str(assets[file.name].get("file:checksum", "")), str(assets[file.name].get("updated", ""))))
-        for file in chosen.values()
-    )
-    return _HASH_PREFIX + hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
-
-
-def _split(version: str | None) -> tuple[str | None, str | None, str | None]:
-    """(ETag, selection, hash) of a version this module wrote; an older or foreign one is none of them."""
-    rest, _, digest = (version or "").rpartition("|")
-    etag, _, selection = rest.rpartition("|")
-    if not digest.startswith(_HASH_PREFIX) or not selection:
-        return None, None, None
-    return etag or None, selection, digest
-
-
-def _unchanged(version: str) -> MaterializeOutcome:
-    return MaterializeOutcome(
-        status="unchanged", source_version=version, listed=0, in_bucket=0, missing=0, withheld=0, unknown=0, items=()
-    )
+        group = feature.get("id")
+        if not isinstance(group, str) or not group or group in groups:
+            raise UpstreamShapeError("a source item with files of the entry has no id of its own")
+        groups[group] = _validator(selection, _sha256(feature))
+        if known_groups.get(group) == groups[group]:
+            unchanged.add(group)
+            continue
+        properties = feature.get("properties") if isinstance(feature.get("properties"), dict) else {}
+        for name, (file, asset) in sorted(files.items()):
+            listed = Validators(
+                etag=None,
+                last_modified=_text(asset.get("updated")),
+                checksum=_text(asset.get("file:checksum")),
+                content_sha256=None,
+            )
+            units.append(
+                SourceUnit(
+                    key=name,
+                    group=group,
+                    href=asset["href"],
+                    state=STATES[file.kind],
+                    validators=listed,
+                    expires=_text(properties.get("expires")),
+                )
+            )
+    if len(groups) == 1:
+        raise UpstreamShapeError(f"the source lists no file of {', '.join(quantities)}")
+    if passed:
+        LOGGER.warning(
+            f"{passed} files of the entry's quantities are no single year or lie outside its asset hosts; passed over",
+            extra={"dataset_id": config.dataset_id},
+        )
+    return UnitListing(groups=groups, unchanged_groups=frozenset(unchanged), units=tuple(units))
 
 
 def grid_footprint(references: FileReferences) -> tuple[list[float], dict[str, Any]]:
@@ -185,10 +307,10 @@ def grid_footprint(references: FileReferences) -> tuple[list[float], dict[str, A
     return [min(xs), min(ys), max(xs), max(ys)], {"type": "Polygon", "coordinates": [ring]}
 
 
-def _check_file(file: AnnualFile, references: FileReferences, grid: FileReferences | None) -> list[date]:
+def _check_file(file: SourceFile, references: FileReferences, grid: FileReferences | None) -> list[date]:
     """The days of one file, after the checks that make its references safe to write into items."""
     layout = references.layout
-    what = f"the file of {file.quantity} for {file.year}"
+    what = file.what
     if layout.crs != CRS:
         raise UpstreamShapeError(f"{what} lies in {layout.crs}, not {CRS}")
     if grid is not None and (layout.shape[1:] != grid.layout.shape[1:] or layout.transform != grid.layout.transform):
@@ -197,11 +319,18 @@ def _check_file(file: AnnualFile, references: FileReferences, grid: FileReferenc
         raise UpstreamShapeError(f"{what} names no Last-Modified, which the items carry as updated")
     days: list[date] = []
     for instant in references.times:
-        if instant.timetz() != time(0, tzinfo=UTC) or instant.year != file.year:
-            raise UpstreamShapeError(f"{what} holds a time step that is not midnight UTC of a day of {file.year}")
+        if instant.timetz() != time(0, tzinfo=UTC):
+            raise UpstreamShapeError(f"{what} holds a time step that is not midnight UTC")
         days.append(instant.date())
-    if len(set(days)) != len(days):
-        raise UpstreamShapeError(f"{what} holds a day twice")
+    if not days or len(set(days)) != len(days):
+        raise UpstreamShapeError(f"{what} holds no day or a day twice")
+    # The span its kind promises (plan §11.2): a day, the days of one month, the days of the year its name says.
+    if file.kind == "" and len(days) != 1:
+        raise UpstreamShapeError(f"{what} holds more than one day")
+    if file.kind == "-last" and len({(day.year, day.month) for day in days}) != 1:
+        raise UpstreamShapeError(f"{what} holds days of more than one month")
+    if file.kind == "-archive" and any(day.year != int(file.start[:4]) for day in days):
+        raise UpstreamShapeError(f"{what} holds a day of another year")
     return days
 
 
@@ -209,37 +338,12 @@ def _instant(value: datetime) -> str:
     return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
-def day_item(
-    config: DatasetConfig,
-    day: date,
-    steps: dict[str, tuple[AnnualFile, FileReferences, int]],
-    *,
-    product: Product,
-    footprint: tuple[list[float], dict[str, Any]],
+def day_frame(
+    config: DatasetConfig, day: date, *, product: Product, footprint: tuple[list[float], dict[str, Any]], gsd: float
 ) -> dict[str, Any]:
-    """The item of one day: an asset per quantity the files carry that day."""
+    """The item of one day without its assets: what every file of that day gives alike."""
     start = datetime.combine(day, time(product.day_starts_at, tzinfo=UTC))
     bbox, geometry = footprint
-    assets: dict[str, Any] = {}
-    updated: list[datetime] = []
-    for quantity in sorted(steps):
-        file, references, step = steps[quantity]
-        assert references.last_modified is not None
-        updated.append(parsedate_to_datetime(references.last_modified))
-        assets[quantity] = {
-            "href": file.href,
-            "type": NETCDF_MEDIA_TYPE,
-            "roles": ["data"],
-            "earthx:refs": step_references(references, step),
-            "raster:bands": [
-                {
-                    "data_type": numpy.dtype(references.layout.dtype).name,
-                    "nodata": "nan",
-                    "unit": config.band_units[quantity],
-                }
-            ],
-        }
-    gsd = abs(next(iter(steps.values()))[1].layout.transform[0])
     return {
         "type": "Feature",
         "stac_version": "1.0.0",
@@ -251,19 +355,37 @@ def day_item(
             "datetime": _instant(start),
             "start_datetime": _instant(start),
             "end_datetime": _instant(start + _LAST_SECOND),
-            "updated": _instant(max(updated)),
             "gsd": gsd,
             "proj:code": CRS,
         },
-        "assets": assets,
         "links": [],
     }
 
 
-def last_year_of(config: DatasetConfig) -> int:
-    """The year the last day of ``temporal_extent`` starts in: the newest annual file the entry loads."""
-    assert config.temporal_extent.end is not None
-    return (config.temporal_extent.end - _LAST_SECOND).astimezone(UTC).year
+def day_asset(
+    config: DatasetConfig, unit: SourceUnit, file: SourceFile, references: FileReferences, step: int
+) -> dict[str, Any]:
+    """The asset one file gives to the item of its ``step``-th day."""
+    assert references.last_modified is not None
+    asset: dict[str, Any] = {
+        "href": unit.href,
+        "type": NETCDF_MEDIA_TYPE,
+        "roles": ["data"],
+        "earthx:refs": step_references(references, step),
+        "raster:bands": [
+            {
+                "data_type": numpy.dtype(references.layout.dtype).name,
+                "nodata": "nan",
+                "unit": config.band_units[file.asset_key],
+            }
+        ],
+        "updated": _instant(parsedate_to_datetime(references.last_modified)),
+    }
+    if file.product != file.asset_key:
+        asset["earthx:source_product"] = file.product
+    if unit.expires:
+        asset["expires"] = unit.expires
+    return asset
 
 
 def _inside(bbox: list[float], extent: tuple[float, float, float, float]) -> bool:
@@ -271,82 +393,42 @@ def _inside(bbox: list[float], extent: tuple[float, float, float, float]) -> boo
     return west <= bbox[0] and south <= bbox[1] and bbox[2] <= east and bbox[3] <= north
 
 
-async def materialize_items(
-    config: DatasetConfig,
-    *,
-    gateway: Gateway,
-    known_version: str | None,
-    expected_items: int | None = None,
-    today: date | None = None,
-) -> MaterializeOutcome:
-    """An item for every day of the chosen annual files, or "unchanged" against the archive item and the chosen files."""
-    if config.source.item_holding is not ItemHolding.MATERIALIZED:
-        raise NotMaterialized(f"{config.dataset_id} is not materialized; its items are not built here")
-    quantities, product = _products(config)
-    first, last = config.temporal_extent.start, config.temporal_extent.end
-    if first is None or last is None:
-        raise UnsupportedSource(f"{config.dataset_id}: temporal_extent is closed for the years to load")
-    last_year = min(last_year_of(config), (today or datetime.now(UTC).date()).year - 1)
-
-    # What the entry asks for: a 304 says only that the archive is as it was, not that the entry still wants the same.
-    first_year = first.astimezone(UTC).year
-    selection = f"{','.join(sorted(quantities))}:{first_year}-{last_year}"
-    known_etag, known_selection, known_digest = _split(known_version)
-    headers = {"if-none-match": known_etag} if known_etag and known_selection == selection else None
-    response = await gateway.get(config.source.endpoint, headers=headers)
-    if response.status_code == 304 and known_version:
-        return _unchanged(known_version)
-    try:
-        assets = response.json().get("assets")
-    except (ValueError, AttributeError):
-        assets = None
-    if response.status_code != 200 or not isinstance(assets, dict):
-        raise UpstreamShapeError("the archive item is no STAC item with assets")
-    chosen, withheld, unknown = choose_files(config, assets, first_year=first_year, last_year=last_year)
-    if not chosen:
-        raise UpstreamShapeError(f"the archive lists no annual file of {', '.join(quantities)}")
-    digest = _digest(chosen, assets)
-    etag = response.headers.get("etag")
-    version = f"{etag or ''}|{selection}|{digest}"
-    if digest == known_digest:
-        return _unchanged(version)
-
-    by_day: dict[date, dict[str, tuple[AnnualFile, FileReferences, int]]] = defaultdict(dict)
+async def build_units(config: DatasetConfig, *, gateway: Gateway, units: Sequence[SourceUnit]) -> tuple[BuiltUnit, ...]:
+    """The contributions of each file: an asset to the item of every day it holds."""
+    _, product = _products(config)
     grid: FileReferences | None = None
-    missing = 0
-    for count, key in enumerate(sorted(chosen, key=lambda k: (k[1], k[0])), start=1):
-        file = chosen[key]
+    footprint: tuple[list[float], dict[str, Any]] | None = None
+    made: list[BuiltUnit] = []
+    for count, unit in enumerate(units, start=1):
+        file = parse_name(config, unit.key)
+        if file is None:
+            raise UpstreamShapeError(f"{config.dataset_id}: a unit that is no file of the entry")
         try:
-            references = await reference_file(gateway, file.href)
-        except UpstreamError as error:
-            if error.status_code not in (404, 410):
-                raise
-            missing += 1
-            continue
+            references = await reference_file(gateway, unit.href)
         except UnsupportedLayout as error:
-            raise UpstreamShapeError(f"the file of {file.quantity} for {file.year}: {error}") from None
+            raise UpstreamShapeError(f"{file.what}: {error}") from None
         days = _check_file(file, references, grid)
-        grid = grid or references
-        for step, day in enumerate(days):
-            by_day[day][file.quantity] = (file, references, step)
-        LOGGER.info(f"referenced {count} of {len(chosen)} annual files", extra={"dataset_id": config.dataset_id})
-    if missing / len(chosen) > MAX_NOT_LOADABLE_FRACTION:
-        raise UpstreamShapeError(f"{missing} of {len(chosen)} annual files are gone — over the 1% abort threshold")
-    assert grid is not None
-
-    footprint = grid_footprint(grid)
-    if not _inside(footprint[0], config.spatial_extent.bbox):
-        raise UnsupportedSource(
-            f"{config.dataset_id}: the grid {json.dumps(footprint[0])} reaches beyond spatial_extent; follow the entry up"
+        if grid is None:
+            grid, footprint = references, grid_footprint(references)
+            if not _inside(footprint[0], config.spatial_extent.bbox):
+                raise UnsupportedSource(
+                    f"{config.dataset_id}: the grid {json.dumps(footprint[0])} reaches beyond spatial_extent; "
+                    "follow the entry up"
+                )
+        assert footprint is not None
+        gsd = abs(references.layout.transform[0])
+        contributions = tuple(
+            Contribution(
+                item_id=f"{config.dataset_id}-{day.strftime('%Y%m%d')}",
+                asset_key=file.asset_key,
+                asset=day_asset(config, unit, file, references, step),
+                item=day_frame(config, day, product=product, footprint=footprint, gsd=gsd),
+            )
+            for step, day in enumerate(days)
         )
-    items = tuple(day_item(config, day, by_day[day], product=product, footprint=footprint) for day in sorted(by_day))
-    return MaterializeOutcome(
-        status="loaded",
-        source_version=version,
-        listed=len(chosen),
-        in_bucket=len(chosen) - missing,
-        missing=missing,
-        withheld=withheld,
-        unknown=unknown,
-        items=items,
-    )
+        validators = Validators(
+            etag=references.etag, last_modified=references.last_modified, checksum=None, content_sha256=None
+        )
+        made.append(BuiltUnit(key=unit.key, contributions=contributions, validators=validators))
+        LOGGER.info(f"referenced {count} of {len(units)} files", extra={"dataset_id": config.dataset_id})
+    return tuple(made)
