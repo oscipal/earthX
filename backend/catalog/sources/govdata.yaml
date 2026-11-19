@@ -1,10 +1,9 @@
 # GovData, the open data portal of Germany (CKAN, DCAT-AP.de), adr/0023 §4. No filter on the spatial field: finds
-# without an extent are kept as "extent unknown" (Otto, 17.11.2026, plan §5.3); a full run is some 1 650 pages.
+# without an extent are kept as "extent unknown" (Otto, 17.11.2026, plan §5.3).
 source_id: govdata
 protocol: ckan
 # The API host of the catalogue as GovData documents it (Otto, 18.11.2026); www.govdata.de disallows every crawler but
-# the large search engines in its robots.txt. Whether ckan.govdata.de allows the API is checked on Otto's next run; an
-# exception comes only if it disallows it too.
+# the large search engines in its robots.txt, ckan.govdata.de disallows all (Otto, 19.11.2026), hence the exception.
 endpoint: https://ckan.govdata.de/api/3/action
 # [S, not checked from a session]: the page of a dataset on the portal.
 catalog_page: https://www.govdata.de/suche/daten/{name}
@@ -12,10 +11,16 @@ filter:
   fq: null
   publisher_field: publisher_name
 max_requests_per_run: 2500
-# Pages per run: set after Otto's first run shows whether GovData keeps a quota (Otto, 18.11.2026).
-max_pages_per_run: null
-rows_per_page: null
+# Pages of 50 and 400 a run, as for opendata.swiss (Otto, 19.11.2026): a full pass of some 3 300 pages takes some
+# nine runs, each going on by key where the last stopped.
+max_pages_per_run: 400
+rows_per_page: 50
 full_every_days: 7
-robots_exception: null
+# robots.txt of ckan.govdata.de is "User-agent: * / Disallow: /". GovData documents the metadata of its catalogue as
+# open for reuse without registration through the CKAN API (dataset "GovData Metadatenkatalog", checked by Otto in the
+# browser, 19.11.2026), so the harvest may read this path only; robots.txt is still read.
+robots_exception:
+  path: /api/3/action/
+  evidence: https://www.govdata.de/daten/-/details/govdata-metadatenkatalog
 maturity: stable
 enabled: true

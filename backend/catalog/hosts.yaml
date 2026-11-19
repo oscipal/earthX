@@ -31,6 +31,8 @@ hosts:
   ckan.govdata.de:
     connections: 2
     interval_s: 1.0
+    # Like ckan.opendata.swiss, whose keyset pages took up to 15 s and more (Otto, 19.11.2026).
+    timeout_s: 60
     reason: GovData, the API host of its CKAN catalogue, read by the harvest page by page; no published limit (M5-19 F6, Otto 18.11.2026)
   ckan.opendata.swiss:
     connections: 2

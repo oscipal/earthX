@@ -58,7 +58,9 @@ def test_the_policy_waives_robots_txt_only_where_the_source_file_says_so() -> No
     assert swiss.robots_exceptions == {"ckan.opendata.swiss": ("/api/3/action/",)}
     assert swiss.robots_waived("ckan.opendata.swiss", "/api/3/action/package_search")
     assert not swiss.robots_waived("ckan.opendata.swiss", "/dataset/x")
-    for source_id in ("govdata", "fsdi-stac", "earth-search"):
+    govdata = _policy_for(sources["govdata"], hosts)
+    assert govdata.robots_exceptions == {"ckan.govdata.de": ("/api/3/action/",)}
+    for source_id in ("fsdi-stac", "earth-search"):
         assert _policy_for(sources[source_id], hosts).robots_exceptions == {}
 
 
@@ -78,4 +80,5 @@ def test_a_resting_source_says_why_no_run_starts(monkeypatch: pytest.MonkeyPatch
 def test_the_policy_of_opendata_swiss_waits_a_minute_for_an_answer() -> None:
     hosts, sources = read_registry().host_limits, read_sources()
     assert _policy_for(sources["opendata-swiss"], hosts).read_timeout_for("ckan.opendata.swiss") == 60.0
-    assert _policy_for(sources["govdata"], hosts).read_timeout_for("ckan.govdata.de") == 15.0
+    assert _policy_for(sources["govdata"], hosts).read_timeout_for("ckan.govdata.de") == 60.0
+    assert _policy_for(sources["fsdi-stac"], hosts).read_timeout_for("data.geo.admin.ch") == 15.0

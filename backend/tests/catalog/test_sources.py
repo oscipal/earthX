@@ -69,19 +69,23 @@ class TestTheReleasedSeed:
         assert page is not None and page.startswith("https://radiantearth.github.io/stac-browser/#/external/")
         assert checked_link(page.replace("{id}", "sentinel-2-l2a")) is not None
 
-    def test_robots_txt_is_strict_but_for_the_api_of_opendata_swiss(self) -> None:
+    def test_robots_txt_is_strict_but_for_the_metadata_apis_of_the_ckan_sources(self) -> None:
         # Otto, 18.11.2026: an exception only in the file of a source, for its metadata API, with the provider's docs.
         sources = read_sources()
         assert sources["opendata-swiss"].robots_exception == RobotsException(
             "/api/3/action/", "https://handbook.opendata.swiss/de/content/nutzen/api-nutzen.html"
         )
-        assert all(s.robots_exception is None for key, s in sources.items() if key != "opendata-swiss")
+        assert sources["govdata"].robots_exception == RobotsException(
+            "/api/3/action/", "https://www.govdata.de/daten/-/details/govdata-metadatenkatalog"
+        )
+        assert all(s.robots_exception is None for key, s in sources.items() if key not in ("opendata-swiss", "govdata"))
 
-    def test_opendata_swiss_reads_forty_pages_a_run_and_govdata_has_no_cap_yet(self) -> None:
+    def test_the_pages_a_run_of_the_ckan_sources(self) -> None:
         # Otto, 18.11.2026: opendata.swiss refused for hours after some 100 pages; GovData's value comes after its run.
         sources = read_sources()
-        assert sources["opendata-swiss"].max_pages_per_run == 40
-        assert all(s.max_pages_per_run is None for key, s in sources.items() if key != "opendata-swiss")
+        # 19.11.2026: by key, a full pass of opendata.swiss fits one run; GovData reads 400 pages a run too.
+        assert sources["opendata-swiss"].max_pages_per_run == sources["govdata"].max_pages_per_run == 400
+        assert all(s.max_pages_per_run is None for key, s in sources.items() if key not in ("opendata-swiss", "govdata"))
 
     def test_govdata_is_asked_on_its_api_host(self) -> None:
         # Otto, 18.11.2026: www.govdata.de disallows all but the large search engines; the API lives on its own host.
@@ -90,7 +94,8 @@ class TestTheReleasedSeed:
 
     def test_a_full_govdata_run_fits_its_budget(self) -> None:
         # 165 427 datasets at 100 per page (plan §4.3).
-        assert read_sources()["govdata"].max_requests_per_run >= 1_700
+        govdata = read_sources()["govdata"]
+        assert govdata.max_requests_per_run >= govdata.max_pages_per_run
 
 
 class TestReading:
@@ -228,7 +233,8 @@ class TestRowsPerPage:
         # Otto, 19.11.2026: keyset pages of 100 took 4-14 s.
         sources = read_sources()
         assert sources["opendata-swiss"].rows_per_page == 50
-        assert all(s.rows_per_page is None for key, s in sources.items() if key != "opendata-swiss")
+        assert sources["govdata"].rows_per_page == 50
+        assert all(s.rows_per_page is None for key, s in sources.items() if key not in ("opendata-swiss", "govdata"))
 
     def test_a_ckan_source_may_set_its_rows(self, tmp_path: Path) -> None:
         assert read_source(_write(tmp_path, CKAN.replace("rows_per_page: null", "rows_per_page: 50"))).rows_per_page == 50

@@ -158,7 +158,8 @@ class TestTheReadTimeout:
     def test_opendata_swiss_waits_a_minute(self) -> None:
         limits = read_registry().host_limits
         assert limits["ckan.opendata.swiss"].timeout_s == 60.0
-        assert limits["ckan.govdata.de"].timeout_s is None
+        assert limits["ckan.govdata.de"].timeout_s == 60.0
+        assert limits["data.geo.admin.ch"].timeout_s is None
 
     def test_a_timeout_is_optional(self, tmp_path: Path) -> None:
         body = "    connections: 1\n    timeout_s: 45\n    reason: why\n"
