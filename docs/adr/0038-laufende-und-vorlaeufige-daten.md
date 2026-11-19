@@ -86,7 +86,7 @@ Ein laufender Eintrag hat `temporal_extent.end: null`. Die Collection nennt das 
 
 ### 3.7 Frontend
 
-Keine Marke (M5-Plan §2 Punkt 9, F1): ein Satz in `limitations` im Data catalogue und ein Tooltip „Provisional values“ am Datum eines vorläufigen Tages (PR 2).
+Keine Marke (M5-Plan §2 Punkt 9, F1): ein Satz in `limitations` im Data catalogue und ein Tooltip „Provisional values“ am Datum eines vorläufigen Tages (PR 2). **Geändert (Otto, 19.11.2026, beim Review von PR 2):** In der Trefferliste steht neben der Uhrzeit eines vorläufigen Tages ein Warndreieck (die Komponente `Tip` mit Ton `warn`, der Text am Dreieck) statt eines Tooltips an der Uhrzeit.
 
 ## 4. Verworfene Optionen
 
