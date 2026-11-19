@@ -1,6 +1,6 @@
 # M5-19 — Harvest-Kern: Tabellen, Fetch und Extract für STAC-API und CKAN, Lauf-Befehl
 
-**Status (17.11.2026):** Plan angenommen (Otto, 17.11.2026: F1, F2, F5–F8 je 1, A1–A6 gelten, Zusatz „Ausdehnung unbekannt“, §9a); F3 und F4: CORINE und Landsat bleiben unverändert. **Stufe B**. PR 1 in [#375](https://github.com/oscipal/earthX/pull/375) gemergt; PR 2 (CKAN, README) im Draft-PR, Stand §12.3.
+**Status (17.11.2026):** Plan angenommen (Otto, 17.11.2026: F1, F2, F5–F8 je 1, A1–A6 gelten, Zusatz „Ausdehnung unbekannt“, §9a); F3 und F4: CORINE und Landsat bleiben unverändert. **Stufe B**. PR 1 in [#375](https://github.com/oscipal/earthX/pull/375) gemergt; PR 2 (CKAN, README) in [#379](https://github.com/oscipal/earthX/pull/379) fertig (Otto, 19.11.2026), Stand §12.3–§12.12.
 **Aufgabe:** M5-19 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2, Auftrag von Otto vom 17.11.2026, mit Zusatz zum Link „Source“ (§6).
 **Grundlagen:** `adr/0025` (Schnitt 4, §5.1–§5.4, §6.2 mit Nachtrag M5-37), `adr/0033` (§5, §7, §11, §13 Zeile M5-19), M5-Plan §2 Punkt 12 (alle Datentypen gelistet); `plans/m5/m5-37-zeiger-je-host.md` (Zeiger, Plätze, Unterbrecher je Host, `open_source_gateway`); `plans/m5/m5-40-gelistete-in-postgres.md` (A10, G6, A11: Aufrufe im Harvest); `plans/m5/m5-18-gateway-ruecksicht.md` (`User-Agent`, `obey_robots`, `HostResting`); `plans/m5/m5-36-grenzen-je-host.md` (`hosts.yaml`); `architekturplan.md` 3.1, 4.3; KLAERUNGEN B8, B9.
 
@@ -431,4 +431,11 @@ Ein Fund zählt je Grund einmal und kann mehrere Gründe haben.
 3. **HTML-Ressource mit Download-Adresse:** gilt als Seite, wenn die Download-Adresse selbst keine Datei ist (keine Dateiendung, kein Dienst, kein Metadaten-Endpunkt); sie wird dann Viewer (Rang 1), mit Startseiten-Prüfung und ohne Adresse aus der Ressourcen-ID. Zeigt die Download-Adresse auf eine Datei, bleibt die Ressource Datei.
 4. `--explain-links` folgt denselben Regeln (Gründe `extras_page_<…>`, `url_metadata`, `html_metadata`, `html_file`).
 
-**Zahlen nach `--reextract` (Otto, ohne Anfrage):** folgen nach Ottos Lauf; erwartet ist bei GovData ein Großteil der bisherigen Rang-3-Funde auf Rang 2.
+**Zahlen nach `--reextract` (Otto, 19.11.2026, ohne Anfrage):**
+
+| Quelle | Rang 1 / 2 / 3 vorher | Rang 1 / 2 / 3 nachher | Lauf |
+|---|---|---|---|
+| GovData | 15 672 / 14 246 / 138 964 | 26 679 / 90 944 / 51 259 | 38: geändert 101 912 (`landing_url` 101 644, `source_url` 90 892, `source_rank` 87 842), 0 Anfragen |
+| opendata.swiss | 6 337 / 6 059 / 3 820 | 6 492 / 5 952 / 3 772 | 39: geändert 833 (`source_url` 831, `source_rank` 192) |
+
+Bei GovData sinkt der Anteil der Funde mit nur der Katalogseite von 82 % auf 30 %; bei opendata.swiss wandern vor allem Viewer mit seitenartiger Download-Adresse auf Rang 1. Damit ist PR 2 aus Ottos Sicht fertig (19.11.2026).
