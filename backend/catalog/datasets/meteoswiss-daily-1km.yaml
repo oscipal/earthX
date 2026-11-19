@@ -13,9 +13,9 @@ title: MeteoSwiss daily climate grids 1 km
 description: >-
   Daily grids of MeteoSwiss over Switzerland at 1 km in the Swiss coordinate system LV95, derived from the station
   network: mean, minimum and maximum air temperature 2 m above ground in °C (from 1961 for the mean, from 1971 for
-  minimum and maximum) and relative sunshine duration in % of the possible (from 1971). Only the consolidated annual
-  files of completed years are loaded, up to 2025. A day lasts from 00:00 to 24:00 UTC. A day the source does not
-  carry for a quantity is missing, not filled.
+  minimum and maximum) and relative sunshine duration in % of the possible (from 1971), up to the latest day
+  MeteoSwiss publishes. The values of the last weeks are provisional until MeteoSwiss publishes the consolidated ones.
+  A day lasts from 00:00 to 24:00 UTC. A day the source does not carry for a quantity is missing, not filled.
 # German and English (adr/0026 F7, plan §5.3).
 keywords:
 - MeteoSwiss
@@ -64,11 +64,11 @@ line_times: null
 # this box (plan A19). It is the area of the coverage too.
 spatial_extent:
   bbox: [5.753, 45.683, 10.700, 47.887]
-# The first day of `TabsD` to the last of 2025, each day 00:00–24:00 UTC (ProdDoc_TabsD, ProdDoc_SrelD; Otto 18.11.2026).
-# Only completed years of the archive (adr/0029 F5): a later year is loaded once this end is followed up.
+# From the first day of `TabsD`, each day 00:00–24:00 UTC, provisional days too (ProdDoc_TabsD, ProdDoc_SrelD; Otto
+# 18. and 19.11.2026). Open: the source adds a day every day (M5-58 plan §3.9, adr/0029 F5 replaced).
 temporal_extent:
   start: 1961-01-01T00:00:00+00:00
-  end: 2025-12-31T23:59:59+00:00
+  end: null
 # `adr/0030` §5.6 (B0, P1).
 capabilities:
   roi: true
@@ -127,14 +127,15 @@ access:
   account_paths: []
 source:
   adapter: meteoswiss-grid
-  # The archive item of the collection (`adr/0029` §3.1): one file per quantity, grid and year.
-  endpoint: https://data.geo.admin.ch/api/stac/v1/collections/ch.meteoschweiz.ogd-surface-derived-grid/items/archive-ch
+  # The item list of the collection (M5-58 plan §11.1, §11.4): the archive (one file per quantity, grid and year), the
+  # items of one month (`-last`) and of one day (preliminary). One page, without ETag; its hash tells a change.
+  endpoint: https://data.geo.admin.ch/api/stac/v1/collections/ch.meteoschweiz.ogd-surface-derived-grid/items
   source_collection_id: ch.meteoschweiz.ogd-surface-derived-grid
   # The link "Source" (M5-55, Otto 17.11.2026): STAC browser of the Federal Spatial Data Infrastructure on the
   # collection of the grids, with the files to load.
   page_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.meteoschweiz.ogd-surface-derived-grid
   asset_hosts: [data.geo.admin.ch]
-  # About 23 700 days, read from 230 annual files (plan §2.1).
+  # About 23 700 days from 230 annual files, the days of 14 months and the provisional days (M5-58 plan §11.1).
   item_holding: materialized
   # The host of swissALTI3D (`adr/0023` §7.3).
   data_region: aws:eu-central-1
@@ -172,11 +173,12 @@ viewer:
   overview_substitute: null
 health:
   status: ok
-# M5-58 (adr/0038 §3.1, plan A2): only the completed annual files so far; the current year and the provisional days follow with M5-58 PR 2.
+# M5-58 PR 2 (adr/0038 §3.1, plan §11.2): new days daily; the day items are provisional, the month items and the
+# archive final. Each file is judged on its own; `materialize` runs by hand until the `harvester` (M5-24, F6).
 updates:
-  cadence: none
-  states: [final]
-  detect: whole
+  cadence: daily
+  states: [provisional, final]
+  detect: units
 maturity: stable
 zarr: null
 mask: null
@@ -205,5 +207,6 @@ composite_presets: []
 step_presets: []
 notices: []
 limitations:
-- Only completed years are loaded; the current year is not available.
+- Values of the last weeks are provisional and are replaced by the final values as soon as MeteoSwiss publishes them.
+- Values of the past 14 months may still change; the final re-processing of a year follows in February of the next year.
 - A day lasts from 00:00 to 24:00 UTC, not local time.

@@ -117,8 +117,9 @@ class AdapterKind(Enum):
     FSDI_STAC_V1 = "fsdi-stac-v1"
     # M5-09: the INSPIRE ATOM service of the BEV, a materializer like the bucket adapters (adr/0023 §4.2).
     BEV_ATOM = "bev-atom"
-    # M5-11: the archive item of the MeteoSwiss climate grids, one item per day with the chunk references of its annual
-    # files (adr/0029 §8a.1). Its materializer is `discovery`'s, the only module that may open a file with `h5py`.
+    # M5-11, M5-58: the item list of the MeteoSwiss climate grids, one item per day with the chunk references of its
+    # annual, month and day files (adr/0029 §8a.1, adr/0038). Its materializer is `discovery`'s, the only module that
+    # may open a file with `h5py`.
     METEOSWISS_GRID = "meteoswiss-grid"
 
 

@@ -58,7 +58,7 @@ from earthx.adapters import (
     UpstreamShapeError,
     materialize_items,
 )
-from earthx.adapters.spec import spec_table
+from earthx.adapters.spec import UnitsMaterializer, spec_table
 from earthx.catalog.datasets import registry
 from earthx.catalog.hosts import HostLimit
 from earthx.catalog.pgstac import (
@@ -90,10 +90,14 @@ from earthx.discovery.source_gateway import open_source_gateway
 from earthx.gateway import Gateway, GatewayError, Policy, host_of, user_agent_from_env
 from earthx.logging import configure_logging
 
-#: The adapter table with what only `discovery` can materialize: the MeteoSwiss grids, whose files `h5py` reads (M5-11).
+#: The adapter table with what only `discovery` can materialize: the MeteoSwiss grids, whose files `h5py` reads (M5-11),
+#: per unit of the source (M5-58 PR 2).
 MATERIALIZE_SPECS: AdapterSpecs = spec_table(
     *(spec for kind, spec in ADAPTER_SPECS.items() if kind is not AdapterKind.METEOSWISS_GRID),
-    replace(ADAPTER_SPECS[AdapterKind.METEOSWISS_GRID], materialize=meteoswiss_grid.materialize_items),
+    replace(
+        ADAPTER_SPECS[AdapterKind.METEOSWISS_GRID],
+        units=UnitsMaterializer(list_units=meteoswiss_grid.list_units, build=meteoswiss_grid.build_units),
+    ),
 )
 
 
@@ -128,7 +132,7 @@ async def _run_units(conn: psycopg.Connection, config: DatasetConfig, *, gateway
             items_written=units.items_written,
             items_deleted=units.items_deleted,
             listed=units.listed,
-            missing=0,
+            missing=units.units_missing,
             withheld=0,
             units_new=units.units_new,
             units_changed=units.units_changed,
@@ -142,7 +146,7 @@ async def _run_units(conn: psycopg.Connection, config: DatasetConfig, *, gateway
         source_version=units.source_version,
         listed=units.listed,
         in_bucket=units.listed,
-        missing=0,
+        missing=units.units_missing,
         withheld=0,
         unknown=0,
         items=(),
@@ -297,7 +301,8 @@ def main(argv: list[str] | None = None) -> int:
         units = result.units
         print(
             f"{config.dataset_id}: {units.status}; {units.units_new} units new, {units.units_changed} changed, "
-            f"{units.units_unchanged} unchanged, {units.units_gone} gone; {units.items_written} items written, "
+            f"{units.units_unchanged} unchanged, {units.units_gone} gone, "
+            f"{units.units_missing} not served (asked again next run); {units.items_written} items written, "
             f"{units.items_replaced} replaced by a higher state, {units.items_deleted} deleted"
         )
         return 0

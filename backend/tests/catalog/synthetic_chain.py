@@ -652,13 +652,8 @@ def _build_meteoswiss(config: DatasetConfig, render_asset: str, tmp_path: Path, 
     source.serve_readers(monkeypatch)
     synthetic = mini_archive.entry(config)
 
-    async def materialize() -> dict[str, Any]:
-        async with archive.gateway() as gateway:
-            outcome = await meteoswiss_grid.materialize_items(synthetic, gateway=gateway, known_version=None)
-        return outcome.items[0]
-
     with concurrent.futures.ThreadPoolExecutor(1) as pool:
-        item = pool.submit(asyncio.run, materialize()).result()
+        item = pool.submit(asyncio.run, mini_archive.materialized_items(archive, synthetic)).result()[0]
     archive.seen.clear()
     west, south, east, north = item["bbox"]
     return Chain(
