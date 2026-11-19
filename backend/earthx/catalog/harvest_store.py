@@ -11,6 +11,7 @@ import gzip
 import json
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, fields
+from datetime import datetime
 from typing import Any
 
 import psycopg
@@ -20,15 +21,23 @@ __all__ = [
     "LEASE_S",
     "MAX_RAW_BYTES",
     "HarvestBusy",
+    "Pass",
     "ListValidators",
     "Previous",
     "RunCounts",
+    "SourceState",
     "SourceSummary",
     "canonical",
     "finish_run",
+    "begin_pass",
+    "end_pass",
+    "harvest_state",
+    "rest",
+    "save_pass",
     "list_validators",
     "mark_gone",
     "previous",
+    "raw_of_catalogue_links",
     "raw_records",
     "renew_run",
     "save_list_validators",
@@ -71,6 +80,39 @@ class ListValidators:
 
 
 @dataclass(frozen=True, slots=True)
+class Pass:
+    """Where an open pass of a CKAN source stands: the run that began it, when, the id of the last package read (the
+    next page asks for the ids after it, migration 030) and how many it has read over its runs."""
+
+    run_id: int
+    started_at: datetime
+    last_key: str | None
+    read: int
+    #: The lower bound of ``metadata_modified`` of an incremental pass; ``None`` for a full pass.
+    since: datetime | None = None
+
+    @property
+    def full(self) -> bool:
+        return self.since is None
+
+
+@dataclass(frozen=True, slots=True)
+class SourceState:
+    """What the next run of a source builds on, with the clock of the database now."""
+
+    full_started_at: datetime | None
+    changes_since: datetime | None
+    open_pass: Pass | None
+    #: No run of the source starts before this (it refused the harvest with 429; migration 028).
+    rest_until: datetime | None
+    now: datetime
+
+    @property
+    def resting(self) -> bool:
+        return self.rest_until is not None and self.now < self.rest_until
+
+
+@dataclass(frozen=True, slots=True)
 class Previous:
     """What the last run kept of one find."""
 
@@ -79,6 +121,9 @@ class Previous:
     reason: str | None
     extracted_sha256: str | None
     extractor_version: str | None
+    #: The kept intermediate form and raw answer (gzip), to name what changed (Otto, 19.11.2026).
+    extracted: Any = None
+    raw_gzip: bytes | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,6 +179,74 @@ def finish_run(
     )
 
 
+def harvest_state(conn: psycopg.Connection, source_id: str) -> SourceState:
+    row = conn.execute(
+        "SELECT full_started_at, changes_since, pass_run_id, pass_started_at, pass_last_key, pass_read, pass_since,"
+        " rest_until, clock_timestamp()"
+        " FROM public.earthx_harvest_source WHERE source_id = %s",
+        (source_id,),
+    ).fetchone()
+    if row is None:
+        return SourceState(None, None, None, None, conn.execute("SELECT clock_timestamp()").fetchone()[0])
+    full, since, run_id, *fields, rest_until, now = row
+    return SourceState(full, since, None if run_id is None else Pass(run_id, *fields), rest_until, now)
+
+
+_UPSERT = (
+    "INSERT INTO public.earthx_harvest_source AS h (source_id) VALUES (%(source_id)s)"
+    " ON CONFLICT (source_id) DO UPDATE SET updated_at = clock_timestamp()"
+)
+
+
+def begin_pass(conn: psycopg.Connection, source_id: str, run_id: int, since: datetime | None = None) -> Pass:
+    """A new pass, begun by ``run_id`` at its start: a full one, or an incremental one from ``since``."""
+    with conn.transaction():
+        conn.execute(_UPSERT, {"source_id": source_id})
+        row = conn.execute(
+            "UPDATE public.earthx_harvest_source h SET pass_run_id = r.run_id, pass_started_at = r.started_at,"
+            " pass_last_key = NULL, pass_read = 0, pass_since = %s, updated_at = clock_timestamp()"
+            " FROM public.earthx_harvest_run r"
+            " WHERE h.source_id = %s AND r.run_id = %s RETURNING r.started_at",
+            (since, source_id, run_id),
+        ).fetchone()
+    return Pass(run_id, row[0], None, 0, since)
+
+
+def save_pass(conn: psycopg.Connection, source_id: str, *, last_key: str | None, read: int) -> None:
+    """Where the open pass stands after a page whose finds are written."""
+    conn.execute(
+        "UPDATE public.earthx_harvest_source SET pass_last_key = %s, pass_read = %s, updated_at = clock_timestamp()"
+        " WHERE source_id = %s AND pass_run_id IS NOT NULL",
+        (last_key, read, source_id),
+    )
+
+
+def end_pass(conn: psycopg.Connection, source_id: str) -> None:
+    """The open pass went through: every change up to its start is in, and a full one is the last full pass."""
+    conn.execute(
+        "UPDATE public.earthx_harvest_source SET changes_since = pass_started_at,"
+        " full_started_at = CASE WHEN pass_since IS NULL THEN pass_started_at ELSE full_started_at END,"
+        " pass_run_id = NULL, pass_started_at = NULL, pass_last_key = NULL, pass_read = NULL, pass_since = NULL,"
+        " updated_at = clock_timestamp()"
+        " WHERE source_id = %s AND pass_run_id IS NOT NULL",
+        (source_id,),
+    )
+
+
+def rest(conn: psycopg.Connection, source_id: str, seconds: float | None) -> datetime:
+    """Hold the source for ``seconds`` (its Retry-After), or without one until the next day begins (UTC): a source
+    that refuses for hours keeps a quota, not a pace (Otto, 18.11.2026). Returns the end of the rest."""
+    with conn.transaction():
+        conn.execute(_UPSERT, {"source_id": source_id})
+        return conn.execute(
+            "UPDATE public.earthx_harvest_source SET rest_until = CASE WHEN %(seconds)s::float8 IS NULL"
+            " THEN date_trunc('day', clock_timestamp() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' + interval '1 day'"
+            " ELSE clock_timestamp() + make_interval(secs => %(seconds)s::float8) END, updated_at = clock_timestamp()"
+            " WHERE source_id = %(source_id)s RETURNING rest_until",
+            {"seconds": seconds, "source_id": source_id},
+        ).fetchone()[0]
+
+
 def list_validators(conn: psycopg.Connection, source_id: str) -> ListValidators | None:
     row = conn.execute(
         "SELECT list_etag, list_last_modified FROM public.earthx_harvest_source WHERE source_id = %s", (source_id,)
@@ -154,8 +267,8 @@ def save_list_validators(conn: psycopg.Connection, source_id: str, validators: L
 def previous(conn: psycopg.Connection, source_id: str, keys: list[str]) -> dict[str, Previous]:
     """What the last runs kept of ``keys``, by key; a key never seen is missing."""
     rows = conn.execute(
-        "SELECT r.source_key, r.raw_sha256, s.state, s.reason, s.extracted_sha256, s.extractor_version"
-        " FROM public.earthx_raw_record r JOIN public.earthx_record_state s USING (source_id, source_key)"
+        "SELECT r.source_key, r.raw_sha256, s.state, s.reason, s.extracted_sha256, s.extractor_version, s.extracted,"
+        " r.raw_gzip FROM public.earthx_raw_record r JOIN public.earthx_record_state s USING (source_id, source_key)"
         " WHERE r.source_id = %s AND r.source_key = ANY(%s)",
         (source_id, keys),
     ).fetchall()
@@ -235,17 +348,18 @@ def seen(cur: psycopg.Cursor, *, run_id: int, source_id: str, key: str) -> None:
     )
 
 
-def mark_gone(conn: psycopg.Connection, *, run_id: int, source_id: str) -> int:
-    """Every find of the source that a complete listing of this run did not name is ``gone`` (plan A3)."""
+def mark_gone(conn: psycopg.Connection, *, run_id: int, source_id: str, seen_since_run: int | None = None) -> int:
+    """Every find of the source that a complete listing did not name is ``gone`` (plan A3): no run from
+    ``seen_since_run`` on (the run that began a full pass over several runs; this run where it is ``None``) saw it."""
     with conn.transaction(), conn.cursor() as cur:
         cur.execute(
             "UPDATE public.earthx_record_state s SET state = 'gone', reason = NULL, extracted = NULL,"
             " extracted_sha256 = NULL, extent_known = NULL, last_seen_run = %s, updated_at = clock_timestamp()"
             " FROM public.earthx_record_state old"
-            " WHERE s.source_id = %s AND s.state <> 'gone' AND s.last_seen_run <> %s"
+            " WHERE s.source_id = %s AND s.state <> 'gone' AND s.last_seen_run < %s"
             " AND old.source_id = s.source_id AND old.source_key = s.source_key"
             " RETURNING s.source_key, old.state",
-            (run_id, source_id, run_id),
+            (run_id, source_id, run_id if seen_since_run is None else seen_since_run),
         )
         gone = cur.fetchall()
         for key, before in gone:
@@ -287,6 +401,22 @@ def raw_records(
         )
         for key, packed, state in cur:
             yield key, gzip.decompress(packed), state
+
+
+def raw_of_catalogue_links(conn: psycopg.Connection, source_id: str) -> Iterator[tuple[str, bytes]]:
+    """``(key, raw)`` of every kept raw answer of the source whose link "Source" is only the catalogue page (rank 3)
+    or that has none (``no_link``): what ``--explain-links`` looks at, without a request."""
+    # A named cursor needs a transaction on a connection in autocommit; it only reads.
+    with conn.transaction(), conn.cursor(name="earthx_catalogue_links") as cur:
+        cur.execute(
+            "SELECT r.source_key, r.raw_gzip FROM public.earthx_raw_record r"
+            " JOIN public.earthx_record_state s USING (source_id, source_key)"
+            " WHERE r.source_id = %s AND r.raw_gzip IS NOT NULL AND ((s.state = 'extracted'"
+            " AND s.extracted->>'source_rank' = '3') OR (s.state = 'invalid' AND s.reason = 'no_link'))",
+            (source_id,),
+        )
+        for key, packed in cur:
+            yield key, gzip.decompress(packed)
 
 
 def canonical(document: Any) -> bytes:

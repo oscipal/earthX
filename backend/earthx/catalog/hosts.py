@@ -16,12 +16,12 @@ from types import MappingProxyType
 
 from earthx.catalog.entry_files import EntryFileError, read_yaml
 from earthx.gateway import UrlRejected, normalize_host
-from earthx.gateway.policy import MAX_CONNECTIONS_PER_HOST, MAX_INTERVAL_S
+from earthx.gateway.policy import MAX_CONNECTIONS_PER_HOST, MAX_INTERVAL_S, MAX_READ_TIMEOUT_S
 
 __all__ = ["HOSTS_FILE", "HostLimit", "load_host_limits"]
 
 HOSTS_FILE = "hosts.yaml"
-_FIELDS = {"connections", "interval_s", "reason"}
+_FIELDS = {"connections", "interval_s", "timeout_s", "reason"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,6 +35,9 @@ class HostLimit:
     connections: int
     interval_s: float | None
     reason: str
+    #: The read timeout of a request to the host, ``None`` for the gateway's default (Otto, 19.11.2026: a catalogue that
+    #: answers slowly at times). Holds for the gateway's requests, not for GDAL's.
+    timeout_s: float | None = None
 
 
 def load_host_limits(path: Path) -> Mapping[str, HostLimit]:
@@ -54,7 +57,7 @@ def _limit(name: str, host: str, value: object) -> HostLimit:
     if spelled != host:
         raise EntryFileError(f"{where}: write the host as {spelled}")
     if not isinstance(value, dict) or not {"connections", "reason"} <= set(value) <= _FIELDS:
-        raise EntryFileError(f"{where}: needs connections and reason, may have interval_s, nothing else")
+        raise EntryFileError(f"{where}: needs connections and reason, may have interval_s and timeout_s, nothing else")
     connections, interval, reason = value["connections"], value.get("interval_s"), value["reason"]
     if (
         isinstance(connections, bool)
@@ -71,4 +74,14 @@ def _limit(name: str, host: str, value: object) -> HostLimit:
         raise EntryFileError(f"{where}: interval_s is a number of seconds from 0 to {MAX_INTERVAL_S:g}")
     if not isinstance(reason, str) or not reason.strip():
         raise EntryFileError(f"{where}: reason is text")
-    return HostLimit(connections, None if interval is None else float(interval), reason)
+    timeout = value.get("timeout_s")
+    if timeout is not None and (
+        isinstance(timeout, bool)
+        or not isinstance(timeout, (int, float))
+        or math.isnan(timeout)
+        or not 1 <= timeout <= MAX_READ_TIMEOUT_S
+    ):
+        raise EntryFileError(f"{where}: timeout_s is a number of seconds from 1 to {MAX_READ_TIMEOUT_S:g}")
+    return HostLimit(
+        connections, None if interval is None else float(interval), reason, None if timeout is None else float(timeout)
+    )

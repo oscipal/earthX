@@ -66,7 +66,11 @@ class TestDiscovery:
             ("023", "source_account"),
             ("024", "harvest"),
             ("025", "extractor_version"),
+            ("026", "harvest_listing_moved"),
+            ("027", "harvest_pass"),
+            ("028", "harvest_budget_rest"),
             ("029", "materialize_units"),
+            ("030", "harvest_keyset"),
             ("031", "materialize_unit_expires"),
         ]
 

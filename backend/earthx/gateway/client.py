@@ -72,6 +72,8 @@ class GatewayResponse:
     status_code: int
     headers: Mapping[str, str]
     content: bytes
+    #: Seconds from sending the request to the end of the body, without the waits for spacing and turns.
+    elapsed_s: float = 0.0
 
     def json(self) -> Any:
         return json.loads(self.content)
@@ -139,6 +141,8 @@ class Gateway:
         self._robots_locks: dict[str, asyncio.Lock] = {}
         self._robots: dict[str, tuple[float, RobotsRules | HostResting]] = {}
         self._crawl_delays: dict[str, float] = {}
+        #: Hosts where a robots.txt Disallow was waived by the policy's exception (a harvest report names it).
+        self.robots_waived: set[str] = set()
         self._client = httpx.AsyncClient(
             transport=transport,
             follow_redirects=False,
@@ -241,7 +245,11 @@ class Gateway:
                 )
             if response.status_code not in REDIRECT_STATUS:
                 if response.status_code >= 400:
-                    raise UpstreamError(response.status_code, response.content[:EXCERPT_CHARS].decode(errors="replace"))
+                    raise UpstreamError(
+                        response.status_code,
+                        response.content[:EXCERPT_CHARS].decode(errors="replace"),
+                        retry_after=response.headers.get("retry-after"),
+                    )
                 return response
             location = response.headers.get("location")
             if not location:
@@ -265,8 +273,14 @@ class Gateway:
             return
         rules = await self._robots_for(checked.host)
         target = url.raw_path.decode("ascii", errors="replace")
-        if not rules.allows(target):
-            raise RobotsDisallowed(host=checked.host)
+        if rules.allows(target):
+            return
+        # A documented metadata API the source's file names (Otto, 18.11.2026): the Disallow is waived for its path
+        # only; robots.txt was read all the same, so its Crawl-delay still spaces the requests.
+        if self._policy.robots_waived(checked.host, url.path):
+            self.robots_waived.add(checked.host)
+            return
+        raise RobotsDisallowed(host=checked.host)
 
     async def _robots_for(self, host: str) -> RobotsRules:
         lock = self._robots_locks.setdefault(host, asyncio.Lock())
@@ -404,7 +418,8 @@ class Gateway:
                     failed=response.status_code in FAILURE_STATUS,
                     retry_after=response.headers.get("retry-after"),
                 )
-                if not (response.status_code in RETRY_STATUS and may_retry and not last):
+                rate_limited = response.status_code == 429 and not self._policy.retry_rate_limited
+                if not (response.status_code in RETRY_STATUS and may_retry and not last) or rate_limited:
                     return response
                 await self._wait(attempt, response.headers.get("retry-after"))
                 continue
@@ -430,13 +445,21 @@ class Gateway:
         given = {
             name: value for name, value in (headers or {}).items() if name.lower() not in {"host", "user-agent"}
         }
+        read_timeout = self._policy.read_timeout_for(checked.host)
         request = self._client.build_request(
             method,
             httpx.URL(checked.url).copy_with(host=checked.address),
             content=content,
             headers={**given, "Host": checked.host, "User-Agent": self._policy.user_agent},
             extensions={"sni_hostname": checked.host},
+            timeout=httpx.Timeout(
+                connect=self._policy.connect_timeout_s,
+                read=read_timeout,
+                write=self._policy.connect_timeout_s,
+                pool=self._policy.connect_timeout_s,
+            ),
         )
+        started = time.monotonic()
         response = await self._client.send(request, stream=True)
         try:
             body = b"" if method == "HEAD" else await self._read(response)
@@ -446,6 +469,7 @@ class Gateway:
             status_code=response.status_code,
             headers={name.lower(): value for name, value in response.headers.items()},
             content=body,
+            elapsed_s=time.monotonic() - started,
         )
 
     async def _read(self, response: httpx.Response) -> bytes:

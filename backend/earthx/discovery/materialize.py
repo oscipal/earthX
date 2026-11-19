@@ -256,6 +256,7 @@ def _policy_for(config: DatasetConfig, hosts: Mapping[str, HostLimit]) -> Policy
         allowed_hosts=allowed,
         host_connections={host: limit.connections for host, limit in limits.items()},
         host_intervals={host: limit.interval_s for host, limit in limits.items() if limit.interval_s is not None},
+        host_read_timeouts={host: limit.timeout_s for host, limit in limits.items() if limit.timeout_s is not None},
     )
 
 

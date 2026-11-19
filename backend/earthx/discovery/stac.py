@@ -8,22 +8,15 @@ and is decided by the hash of each collection (FSDI).
 
 from __future__ import annotations
 
-import hashlib
 import re
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from dataclasses import dataclass
-from functools import cache
-from pathlib import Path
 from typing import Any
 
-from earthx.catalog import categories as _categories
-from earthx.catalog import listed as _listed
-from earthx.catalog.categories import CATEGORIES_FILE, Evidence, category_of
+from earthx.catalog.categories import Evidence, category_of
 from earthx.catalog.harvest_store import ListValidators
-from earthx.catalog.listed import CATALOG_TAGS_FILE, listed_keywords
+from earthx.catalog.listed import listed_keywords
 from earthx.catalog.sources import SourceConfig, StacFilter
-from earthx.discovery import extract as _extract
-from earthx.discovery import links as _links_module
 from earthx.discovery.extract import (
     Distribution,
     Extracted,
@@ -36,7 +29,7 @@ from earthx.discovery.extract import (
 from earthx.discovery.links import LinkRank, checked_link, choose_link
 from earthx.gateway import GatewayResponse
 
-__all__ = ["PAGE_LIMIT", "StacListing", "collection_key", "extract_collection", "extractor_version", "stac_pages"]
+__all__ = ["PAGE_LIMIT", "Fetch", "StacListing", "collection_key", "extract_collection", "stac_pages"]
 
 PAGE_LIMIT = 100
 MAX_DISTRIBUTIONS = 50
@@ -45,37 +38,6 @@ _KEY = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,255}")
 _PROVIDER_ROLES = ("licensor", "producer")
 
 Fetch = Callable[..., Awaitable[GatewayResponse]]
-
-
-@cache
-def _code_fingerprint() -> bytes:
-    """Everything the intermediate form of a collection depends on besides the collection and its source's settings:
-    the code of the extractor and the link rule, and the tables of categories and catalogue tags."""
-    paths = (
-        Path(__file__),
-        Path(_extract.__file__),
-        Path(_links_module.__file__),
-        Path(_categories.__file__),
-        Path(_listed.__file__),
-        CATEGORIES_FILE,
-        CATALOG_TAGS_FILE,
-    )
-    digest = hashlib.sha256()
-    for path in paths:
-        digest.update(path.name.encode())
-        digest.update(path.read_bytes().replace(b"\r\n", b"\n"))
-    return digest.digest()
-
-
-def extractor_version(source: SourceConfig) -> str:
-    """The version a find's state is derived with: a fingerprint of the extractor and of the source's link setting.
-
-    A find with a kept raw answer is judged again when it changes, also if the answer itself did not (Otto,
-    17.11.2026); a changed ``catalog_page`` changes the link "Source" of every find, so it counts too.
-    """
-    digest = hashlib.sha256(_code_fingerprint())
-    digest.update((source.catalog_page or "").encode())
-    return digest.hexdigest()[:16]
 
 
 @dataclass(slots=True)
@@ -226,6 +188,7 @@ def _distributions(collection: Mapping[str, Any]) -> tuple[Distribution, ...]:
             found.append(
                 Distribution(
                     href=href,
+                    format=None,
                     media_type=text_of(asset.get("type")),
                     title=text_of(asset.get("title")),
                     roles=tuple(r for r in roles if isinstance(r, str)) if isinstance(roles, list) else (),
@@ -268,6 +231,7 @@ def extract_collection(key: str, collection: Mapping[str, Any], source: SourceCo
         # Wording, never a link: an href of `rel=license` is kept as text for the rule of M5-20, unchecked.
         licence_statements=tuple(dict.fromkeys(text for s in statements if (text := text_of(s)))),
         bbox=bbox,
+        geometry=None,
         spatial_text=None,
         extent_known=bbox is not None,
         temporal=_temporal(collection),

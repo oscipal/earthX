@@ -134,6 +134,24 @@ async def test_retry_after_is_obeyed_but_capped() -> None:
     assert delays == [10.0]
 
 
+async def test_a_harvest_policy_hands_a_429_back_at_once_with_its_retry_after() -> None:
+    # Otto, 18.11.2026: the harvest waits minutes on its own instead of three tries in the crawl-delay beat.
+    handler, seen = replies(httpx.Response(429, headers={"retry-after": "600"}), httpx.Response(200, json={}))
+    gateway, delays = build(handler, Policy(allowed_hosts=frozenset({HOST}), retry_rate_limited=False))
+    async with gateway:
+        with pytest.raises(UpstreamError) as raised:
+            await gateway.get(URL)
+    assert (raised.value.status_code, raised.value.retry_after, len(seen), delays) == (429, "600", 1, [])
+
+
+async def test_a_harvest_policy_still_tries_a_503_again() -> None:
+    handler, seen = replies(httpx.Response(503), httpx.Response(200, json={}))
+    gateway, _ = build(handler, Policy(allowed_hosts=frozenset({HOST}), retry_rate_limited=False))
+    async with gateway:
+        assert (await gateway.get(URL)).status_code == 200
+    assert len(seen) == 2
+
+
 async def test_a_get_the_caller_marks_unsafe_to_repeat_is_not_retried() -> None:
     """M3-07a: a caller with its own request budget (the shared rate slot) can opt a
     GET out of the retry every other GET gets by default."""
@@ -404,3 +422,40 @@ class TestTheQueryStringStaysOurRefusal:
         assert seen == []
         # Pins the refusal to the assembly step: check_url would word it differently.
         assert "cannot be assembled" in str(raised.value)
+
+
+async def test_a_host_may_have_a_longer_read_timeout() -> None:
+    # Otto, 19.11.2026: hosts.yaml timeout_s; the other hosts keep the policy's default.
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={})
+
+    policy = Policy(allowed_hosts=frozenset({HOST, OTHER}), host_read_timeouts={HOST: 60})
+    gateway, _ = build(handler, policy)
+    async with gateway:
+        first = await gateway.get(URL)
+        await gateway.get(f"https://{OTHER}/x")
+    assert [request.extensions["timeout"]["read"] for request in seen] == [60.0, 15.0]
+    assert first.elapsed_s >= 0.0
+
+
+@pytest.mark.parametrize("value", [0, 0.5, 301, True, "60"])
+def test_a_read_timeout_is_one_to_three_hundred_seconds(value: object) -> None:
+    with pytest.raises(ValueError, match="read timeout"):
+        Policy(allowed_hosts=frozenset({HOST}), host_read_timeouts={HOST: value})  # type: ignore[dict-item]
+
+
+def test_a_subdomain_takes_its_parents_read_timeout() -> None:
+    policy = Policy(allowed_hosts=frozenset({"example.org"}), host_read_timeouts={"example.org": 40})
+    assert (policy.read_timeout_for("api.example.org"), policy.read_timeout_for("other.org")) == (40.0, 15.0)
+
+
+async def test_the_gateway_asks_for_a_compressed_answer() -> None:
+    # Otto, 19.11.2026: opendata.swiss answers uncompressed; the gateway does ask for gzip (httpx's default, kept).
+    handler, seen = replies(httpx.Response(200, json={}))
+    gateway, _ = build(handler)
+    async with gateway:
+        await gateway.get(URL)
+    assert "gzip" in seen[0].headers["accept-encoding"]

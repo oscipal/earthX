@@ -28,14 +28,18 @@ hosts:
   e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com:
     connections: 32
     reason: S3 bucket on AWS; S3 bears thousands of requests per second and prefix (M5-35 §2.2)
-  www.govdata.de:
+  ckan.govdata.de:
     connections: 2
     interval_s: 1.0
-    reason: GovData, CKAN catalogue read by the harvest page by page; no published limit (M5-19 F6, adr/0025 §6.2)
+    # Like ckan.opendata.swiss, whose keyset pages took up to 15 s and more (Otto, 19.11.2026).
+    timeout_s: 60
+    reason: GovData, the API host of its CKAN catalogue, read by the harvest page by page; no published limit (M5-19 F6, Otto 18.11.2026)
   ckan.opendata.swiss:
     connections: 2
     interval_s: 1.0
-    reason: opendata.swiss, CKAN catalogue read by the harvest page by page; no published limit (M5-19 F6, adr/0025 §6.2)
+    # Keyset pages took 4-14 s on 19.11.2026, some over the default of 15 s (Otto).
+    timeout_s: 60
+    reason: opendata.swiss, CKAN catalogue read by the harvest page by page; its robots.txt asks Crawl-delay 10, which the gateway keeps as the larger value (M5-19 F6, Otto 18.11.2026)
   www.data.gv.at:
     connections: 2
     interval_s: 1.0

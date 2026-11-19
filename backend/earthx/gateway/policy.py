@@ -168,6 +168,16 @@ class Policy:
     obey_robots: bool = False
     # Per host, overriding ``max_connections_per_host``, matched like ``host_intervals`` (M5-36, the registry's hosts.yaml).
     host_connections: Mapping[str, int] = field(default_factory=dict, hash=False)
+    # Per host (that host only, no subdomain), path prefixes whose Disallow in robots.txt is waived: the documented
+    # metadata API of a harvest source (Otto, 18.11.2026; adr/0025 §6.2). robots.txt is still read and its Crawl-delay
+    # still kept; every other path of the host stays as robots.txt says.
+    robots_exceptions: Mapping[str, tuple[str, ...]] = field(default_factory=dict, hash=False)
+    # Whether a 429 is tried again here, at most a few seconds later. A harvest says no: its source asks it to slow
+    # down, so it waits minutes on its own, by Retry-After or doubling (Otto, 18.11.2026; adr/0025 §6.2).
+    retry_rate_limited: bool = True
+    # Per host, overriding ``read_timeout_s`` for the requests of the gateway, matched like ``host_intervals``: a
+    # catalogue that answers slowly at times (opendata.swiss, Otto 19.11.2026; hosts.yaml ``timeout_s``).
+    host_read_timeouts: Mapping[str, float] = field(default_factory=dict, hash=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "allowed_hosts", frozenset(normalize_host(h) for h in self.allowed_hosts))
@@ -178,6 +188,13 @@ class Policy:
         _check_connections(self.max_connections_per_host)
         connections = {normalize_host(host): _check_connections(value) for host, value in self.host_connections.items()}
         object.__setattr__(self, "host_connections", MappingProxyType(connections))
+        timeouts = {normalize_host(host): _check_read_timeout(value) for host, value in self.host_read_timeouts.items()}
+        object.__setattr__(self, "host_read_timeouts", MappingProxyType(timeouts))
+        exceptions = {
+            normalize_host(host): tuple(check_robots_exception_path(path) for path in paths)
+            for host, paths in self.robots_exceptions.items()
+        }
+        object.__setattr__(self, "robots_exceptions", MappingProxyType(exceptions))
 
     def host_interval(self, host: str) -> float | None:
         """The entry of ``host`` in ``host_intervals`` or of its nearest parent, ``None`` if there is none."""
@@ -193,6 +210,15 @@ class Policy:
         value = self.host_interval(host)
         return self.min_interval_s if value is None else value
 
+    def read_timeout_for(self, host: str) -> float:
+        """The read timeout for ``host``: its own entry, the nearest parent's, else ``read_timeout_s``."""
+        labels = host.split(".")
+        for start in range(len(labels) - 1):
+            value = self.host_read_timeouts.get(".".join(labels[start:]))
+            if value is not None:
+                return value
+        return self.read_timeout_s
+
     def connections_for(self, host: str) -> int:
         """The cap for ``host``: its own entry in ``host_connections``, the nearest parent's, else ``max_connections_per_host``."""
         labels = host.split(".")
@@ -202,9 +228,39 @@ class Policy:
                 return value
         return self.max_connections_per_host
 
+    def robots_waived(self, host: str, path: str) -> bool:
+        """Whether a Disallow of robots.txt is waived for ``path`` (decoded, without query) on ``host``: it starts with
+        one of the host's exception prefixes and has no ``.`` or ``..`` segment that could climb out of it."""
+        prefixes = self.robots_exceptions.get(host, ())
+        if not prefixes or any(segment in (".", "..") for segment in path.split("/")):
+            return False
+        return any(path.startswith(prefix) for prefix in prefixes)
+
     def allows_host(self, host: str) -> bool:
         """True for the host itself and for its real subdomains, nothing else."""
         return any(host == allowed or host.endswith("." + allowed) for allowed in self.allowed_hosts)
+
+
+#: The longest read timeout a host may have: a source that answers later than that is down for a harvest.
+MAX_READ_TIMEOUT_S = 300.0
+
+
+def _check_read_timeout(value: object) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not 1 <= value <= MAX_READ_TIMEOUT_S:
+        raise ValueError(f"a read timeout is a number of seconds from 1 to {MAX_READ_TIMEOUT_S:g}")
+    return float(value)
+
+
+_EXCEPTION_PATH = re.compile(r"(?:/[A-Za-z0-9_~-][A-Za-z0-9._~-]*)+/")
+
+
+def check_robots_exception_path(path: object) -> str:
+    """A path prefix a robots.txt exception may name: absolute, ending in ``/``, plain segments only, never ``/``."""
+    if not isinstance(path, str) or not _EXCEPTION_PATH.fullmatch(path) or any(
+        segment in (".", "..") for segment in path.split("/")
+    ):
+        raise ValueError("a robots.txt exception is a path of plain segments that starts and ends with '/'")
+    return path
 
 
 def host_of(url: str) -> str:

@@ -39,6 +39,10 @@ PINNED = {
     "023_source_account": "ff9043ed6c39551eb0b158ad8b7ec3f36c5720644b6ff60dfe49e380d953cf4d",
     "024_harvest": "7621716d99a3c08f2354f15bcc0fcc55cede14bb81d4ca5512c36a77c7bad930",
     "025_extractor_version": "d3d0b29666aa03c8cf3dcf4d6d75763b58f5b59d1937f67a025b76c6caf2f1e5",
+    "026_harvest_listing_moved": "28ef0ed44d42ba5cc53459745f0c1fe47eb53df2da792ff2f9cfd1d4c7383745",
+    "027_harvest_pass": "913ea2bb523dcdd7edc4ef0eace763dd3dd66c2528658e1007fdf8590e9af4ba",
+    "028_harvest_budget_rest": "d878b627b0e2556d04b38afbc2502be2d985d3d537f595c6baa0cef4a620fd47",
+    "030_harvest_keyset": "3a46084eede074453a7aa4c9e9741a9165638db7fae8f14553ae15d1b6a9eedc",
 }
 
 
