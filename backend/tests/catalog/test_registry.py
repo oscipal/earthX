@@ -680,6 +680,53 @@ class TestMalformedInput:
                 data_region=valid_config.source.data_region,
             )
 
+    def test_page_url_is_not_optional(self, valid_config) -> None:
+        """M5-55: a required field for every entry, like the others of the source."""
+        fields = {name: getattr(valid_config.source, name) for name in SourceInfo.__dataclass_fields__ if name != "page_url"}
+        with pytest.raises(TypeError):
+            SourceInfo(**fields)
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "http://viewer.example.invalid/collections/x",
+            "ftp://viewer.example.invalid/x",
+            "viewer.example.invalid/x",
+            "https://viewer.example.invalid",
+            "https://viewer.example.invalid/",
+            "https://viewer.example.invalid/de/",
+            "https://viewer.example.invalid/en/index.html",
+            "https://viewer.example.invalid/#",
+            "https://viewer.example.invalid/api/v1/collections/x",
+            "https://viewer.example.invalid/data/tile.tif",
+            "https://viewer.example.invalid/data/tiles.zip",
+            "https://viewer.example.invalid/meta.json",
+            "https://user@viewer.example.invalid/x",
+            "https://viewer.example.invalid:8443/x",
+            "https://viewer.example.invalid/x y",
+            "https://example.invalid/v1",
+            "",
+            None,
+            42,
+        ],
+    )
+    def test_a_page_url_that_is_no_page_is_rejected(self, vary, valid_config, url) -> None:
+        """M5-19 F1 = 1: no start page, no service, no single file, https only."""
+        with pytest.raises(ConfigError, match="page_url"):
+            vary(source=replace(valid_config.source, page_url=url))
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://viewer.example.invalid/worldcover/",
+            "https://viewer.example.invalid/en/products/dem.html",
+            "https://viewer.example.invalid/browser/index.html#/collections/x",
+            "https://viewer.example.invalid/#/external/host/collections/x",
+        ],
+    )
+    def test_a_viewer_or_dataset_page_is_accepted(self, vary, valid_config, url) -> None:
+        assert vary(source=replace(valid_config.source, page_url=url)).source.page_url == url
+
     def test_data_region_is_not_optional(self, valid_config) -> None:
         """M5-07, adr/0023 F3: a required field for every entry, the existing ones included."""
         with pytest.raises(TypeError):

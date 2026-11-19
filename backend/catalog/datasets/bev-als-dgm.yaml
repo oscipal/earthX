@@ -118,6 +118,9 @@ source:
   endpoint: https://data.bev.gv.at/geonetwork/srv/atom/describe/service?uuid=208cff7a-c8aa-42fe-bf4f-2b8156e37528
   # The model as the titles of the feed name it; the DSM of the same feed stays out (plan A4).
   source_collection_id: ALS DTM
+  # The link "Source" (M5-55, Otto 17.11.2026): Product page of the BEV on the model; the download portal
+  # data.bev.gv.at has only a start page and the feed is an API.
+  page_url: https://www.bev.gv.at/Services/Produkte/Digitales-Gelaendehoehenmodell/ALS-Hoehenraster.html
   asset_hosts: [data.bev.gv.at]
   # 55 tiles, read once a run from 56 feeds (plan §4.1).
   item_holding: materialized

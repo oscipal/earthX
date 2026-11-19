@@ -42,7 +42,7 @@ const collection = (id, title, category, extra = {}) => ({
   summaries: { gsd: [10, 20, 60] },
   'earthx:category': category, 'earthx:format': 'cog', 'earthx:license_flags': { tier: 'processing', name: 'Made-up licence', url: 'https://example.org/licence' },
   'earthx:capabilities': CAPABILITIES, 'earthx:viewer': VIEWER, 'earthx:search_filters': [],
-  'earthx:source': { asset_hosts: ['assets.example.org'], endpoint: 'https://stac.example.org/v1', source_collection_id: id, data_region: 'unknown' },
+  'earthx:source': { asset_hosts: ['assets.example.org'], endpoint: 'https://stac.example.org/v1', page_url: 'https://viewer.example.org/collections/' + id, source_collection_id: id, data_region: 'unknown' },
   ...extra,
 });
 const MADE_UP = [
