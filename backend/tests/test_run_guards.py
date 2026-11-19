@@ -7,8 +7,9 @@ from collections.abc import Iterator
 
 import pytest
 
+from earthx.logging import configure_logging
 from tests.conftest import LOW_DISK_BYTES, low_disk_warning
-from tests.logging_guard import COLLECTING, LoggingGuard, summary
+from tests.logging_guard import COLLECTING, CONFIGURED, LoggingGuard, _own, summary
 
 NAME = "earthx.m561.guard"
 
@@ -75,6 +76,31 @@ def test_without_a_note_it_is_put_back_all_the_same(probe: logging.Logger) -> No
     assert guard.restore("t::five", note=False) == [NAME]
     assert probe.level == logging.NOTSET
     assert guard.changed == []
+
+
+def test_configure_logging_is_named_as_such_and_put_back() -> None:
+    guard = LoggingGuard()
+    root = logging.getLogger()
+    level, handlers = root.level, _own(root.handlers)
+    configure_logging()
+    assert CONFIGURED in guard.restore("t::six")
+    # `configure_logging` drops pytest's capture handlers too; pytest adds them again for the next phase.
+    assert root.level == level and _own(root.handlers) == handlers
+
+
+def test_tests_that_only_built_an_app_are_one_line_with_their_number() -> None:
+    changed = [
+        ("a.py::t1", [CONFIGURED]),
+        ("a.py::t2", [CONFIGURED]),
+        ("b.py::t1", [CONFIGURED]),
+        ("b.py::t2", [CONFIGURED, "httpx"]),
+        (COLLECTING, [CONFIGURED]),
+    ]
+    assert summary(changed) == [
+        f"b.py::t2: httpx, {CONFIGURED}",
+        f"{COLLECTING}: {CONFIGURED}",
+        "configure_logging of an app the test built: 3 tests in 2 files",
+    ]
 
 
 def test_the_summary_names_each_test_once_whichever_worker_saw_it() -> None:
