@@ -92,8 +92,11 @@ _UPSERT = sql.SQL(
            %(keywords)s, %(data_kind)s, %(category)s, %(account)s, %(delivery)s, %(publisher)s, %(host)s,
            %(license_ref)s, %(license_rule)s, %(basis)s, %(dedupe_keys)s, %(derived)s, now()
     FROM (SELECT COALESCE(ST_MakeValid(ST_SetSRID(ST_GeomFromGeoJSON(%(geojson)s), 4326)),
-                          (SELECT ST_Union(r.outline) FROM public.earthx_region r
-                           WHERE r.code = ANY(%(footprint_codes)s::text[]))) AS geom) f
+                          (SELECT ST_Union(p.outline) FROM (
+                               SELECT r.outline FROM public.earthx_region r WHERE r.code = ANY(%(footprint_codes)s::text[])
+                               UNION ALL
+                               SELECT m.outline FROM public.earthx_municipality m
+                               WHERE m.code = ANY(%(footprint_codes)s::text[])) p)) AS geom) f
     ON CONFLICT (dataset_id) DO UPDATE SET
         state = CASE WHEN {stays} THEN 'published' ELSE EXCLUDED.state END,
         content = CASE WHEN {stays}

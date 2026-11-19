@@ -25,8 +25,10 @@ from earthx.catalog.listed import BlockReason, BlockRule, BlockScope, load_regio
 from earthx.catalog.listed_search import listed_entry
 from earthx.catalog.listed_store import apply_blocklist, write_regions
 from earthx.catalog.listing_store import withdraw
+from earthx.catalog.municipalities import Municipality, write_municipalities
 from earthx.catalog.registry import Maturity
 from earthx.catalog.sources import CkanFilter, SourceConfig, SourceProtocol, StacFilter
+from earthx.discovery.enrich import PLACE_NAMES_FILE, read_place_directory
 from earthx.discovery.report import classify_text, run_report, write_files
 
 DAY = date(2026, 11, 19)
@@ -533,3 +535,32 @@ def test_a_wrong_approval_publishes_nothing(world: World) -> None:
         approval.write_text(yaml.safe_dump(changed, sort_keys=False), encoding="utf-8")
         assert world.publish().published == {}, field
     assert world.row("a")["state"] == "in_review"
+
+
+def test_a_municipality_in_a_place_text_gives_its_outline_and_the_regions_of_its_canton(world: World) -> None:
+    # F9 = 1: swissBOUNDARIES3D for towns and cities (Otto's examples "Stadt Bern", "Winterthur").
+    winterthur = Municipality(
+        "CH-ZH-0230",
+        "Winterthur",
+        "CH-ZH",
+        {"type": "Polygon", "coordinates": [[[8.65, 47.45], [8.8, 47.45], [8.8, 47.55], [8.65, 47.55], [8.65, 47.45]]]},
+    )
+    write_municipalities(world.conn, [winterthur])
+    try:
+        directory = read_place_directory(
+            PLACE_NAMES_FILE, {r.code: r.level for r in load_regions()}, [winterthur]
+        )
+        world.put(world.ckan, _find("w", spatial_text="Winterthur"))
+        world.report(directory=directory)
+        row = world.row("w")
+        assert (row["extent_basis"], row["footprint"], row["regions"]) == ("place", True, ["CH", "CH-ZH"])
+        assert row["content"]["extent"]["spatial"]["bbox"] == [[8.65, 47.45, 8.8, 47.55]]
+    finally:
+        write_municipalities(world.conn, [])
+
+
+def test_classify_counts_the_geonames_ids_it_cannot_place(world: World) -> None:
+    # F10 = 1: the ids are shown, the session proposes their places.
+    world.put(world.ckan, _find("g", spatial_text="https://sws.geonames.org/2658434/"))
+    text = classify_text(world.ckan, world.report(classify_only=True))
+    assert "1  https://sws.geonames.org/2658434/" in text

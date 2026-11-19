@@ -52,6 +52,7 @@ from earthx.catalog.listing_store import (
     settle_missing,
     write_harvested,
 )
+from earthx.catalog.municipalities import MUNICIPALITIES_FILE
 from earthx.catalog.registry import ConfigError, LicenseInfo, doi_name
 from earthx.catalog.sources import MAX_DEDUPE_RANK, SourceConfig, SourceProtocol, read_sources
 from earthx.discovery import dedupe, enrich, geodata
@@ -61,8 +62,8 @@ from earthx.discovery.enrich import (
     Extent,
     PlaceDirectory,
     box_of_codes,
+    geonames_ids,
     load_place_directory,
-    named_codes,
     spatial_extent,
     time_span,
 )
@@ -165,7 +166,7 @@ def _collection(
     except ConfigError:
         # "N/A" or "DOI: 10…" in a STAC sci:doi: no DOI rather than no entry.
         doi = None
-    if extent.basis == "source" and extent.bbox is not None:
+    if extent.basis in ("source", "place") and extent.bbox is not None:
         box: Sequence[float] = extent.bbox
     else:
         box = box_of_codes(extent.codes) or _WORLD
@@ -233,7 +234,7 @@ def _code_fingerprint() -> bytes:
     for module in (enrich, geodata, dedupe, licences_module, listed_module, collection_module):
         digest.update(Path(module.__file__).read_bytes())  # type: ignore[arg-type]
     digest.update(Path(__file__).read_bytes())
-    for path in (PLACE_NAMES_FILE, GEODATA_FILE, CATALOG_DIR / "regions.json"):
+    for path in (PLACE_NAMES_FILE, GEODATA_FILE, CATALOG_DIR / "regions.json", MUNICIPALITIES_FILE):
         digest.update(_file_sha(path))
     return digest.digest()
 
@@ -288,7 +289,7 @@ def derive(
         content_sha256=content_sha256(content),
         sort_title=sort_title(found["title"]),
         footprint=footprint,
-        footprint_codes=named_codes(extent.codes) if extent.basis == "place" else None,
+        footprint_codes=extent.places if extent.basis == "place" else None,
         regions=None if extent.basis == "source" else extent.codes,
         time_span=_span_literal(span),
         keywords=tuple(found.get("keywords") or ()) or ("other",),
@@ -380,6 +381,8 @@ class ReportResult:
     bases: Counter[str] = field(default_factory=Counter)
     signals: Counter[str] = field(default_factory=Counter)
     unresolved: Counter[str] = field(default_factory=Counter)
+    #: GeoNames ids of place texts the table of place_names.yaml does not hold yet (F10 = 1).
+    geonames: Counter[str] = field(default_factory=Counter)
     pairs: Counter[tuple[str, str]] = field(default_factory=Counter)
     hidden: list[tuple[str, str, str]] = field(default_factory=list)
     undecided: list[tuple[str, str, str]] = field(default_factory=list)
@@ -483,6 +486,8 @@ def _count(result: ReportResult, derived: Derived, found: Mapping[str, Any]) -> 
         result.waiting[row.waiting_reason] += 1
     if derived.extent.unresolved:
         result.unresolved[derived.extent.unresolved[:80]] += 1
+        for geonames_id in geonames_ids(derived.extent.unresolved):
+            result.geonames[geonames_id] += 1
     for signal in (*derived.classified.geo, *derived.classified.not_geo):
         # Signals are "kind:value" or a kind alone ("inspire").
         result.signals[signal[:60]] += 1
@@ -518,6 +523,8 @@ def classify_text(source: SourceConfig, result: ReportResult) -> str:
     lines += [f"  - {t}  <{u}>" for _, t, u in _sample(result.undecided, CLASSIFY_SAMPLE, seed)]
     lines.append("Ortstexte ohne Treffer (häufigste 30):")
     lines += [f"  {count:>7}  {text}" for text, count in result.unresolved.most_common(30)]
+    lines.append(f"GeoNames-IDs ohne Zuordnung ({len(result.geonames)} verschiedene, häufigste 50):")
+    lines += [f"  {count:>7}  https://sws.geonames.org/{gid}/" for gid, count in result.geonames.most_common(50)]
     lines.append("Warteliste nach Paar Herausgeber, Lizenzangabe (häufigste 20):")
     lines += [f"  {count:>7}  {pub} | {stmt}" for (pub, stmt), count in result.pairs.most_common(20)]
     return "\n".join(lines)

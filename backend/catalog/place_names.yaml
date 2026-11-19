@@ -3,9 +3,9 @@
 # compared as the search compares (lower case, without accents, every run of other characters one space), and only as
 # a whole text or a whole sequence of words: never part of a word, never fuzzy.
 #
-# Names here are from general knowledge [S]; Otto checks them in review. Municipalities of CH, DE and AT are not here:
-# their outlines need an official source whose licence Otto grades first (F9). Until then a municipality's name does
-# not match, and a find falls to its publisher or the state of its catalogue.
+# Names here are from general knowledge [S]; Otto checks them in review. The municipalities of Switzerland come from
+# municipalities.json (swissBOUNDARIES3D, F9 = 1, licence graded by Otto 19.11.2026), not from this file; those of
+# Germany and Austria not yet (VG250 only once GovData's place texts ask for it).
 
 # --- 1. Places: a code of regions.json -> its names -------------------------------------------------------------------
 # A name in `ambiguous` (below) matches only after a designation ("Kanton Bern", "Canton de Berne"), because it is also
@@ -89,6 +89,11 @@ ambiguous: [Bern, Berne, Berna, Freiburg, Fribourg, Friburgo, Genf, Genève, Gin
 designations: [Kanton, Kantons, Canton de, Canton du, Canton d, Canton of, Cantone di, Cantone del, Cantone dei,
                Cantone, Republik und Kanton, République et canton de, République et canton du, Repubblica e Cantone,
                Land, Landes, Bundesland, Freistaat, Free State of, State of]
+
+# Words before the name of a municipality (municipalities.json, F9): only after one of them does a municipality match
+# in the name of a publisher, or where a region or another municipality has the same name ("Stadt Bern").
+municipal_designations: [Stadt, Gemeinde, Einwohnergemeinde, Politische Gemeinde, Commune de, Commune d, Ville de,
+                         Città di, Comune di, City of, Municipality of]
 
 # --- 2. Texts that name the whole state of the catalogue by its parts (Otto, 19.11.2026) -----------------------------
 whole_country: [Kantone, Gemeinden, Politische Gemeinden, Bezirke, Grossregionen, Sonstige Raumgliederungen,

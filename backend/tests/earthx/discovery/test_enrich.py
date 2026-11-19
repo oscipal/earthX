@@ -8,8 +8,10 @@ from pathlib import Path
 import pytest
 
 from earthx.catalog.entry_files import EntryFileError
+from earthx.catalog.municipalities import Municipality
 from earthx.discovery.enrich import (
     PLACE_NAMES_FILE,
+    geonames_ids,
     load_place_directory,
     place_codes,
     publisher_code,
@@ -174,7 +176,8 @@ class TestTheDirectoryFile:
         return path
 
     BASE = (
-        "places: {CH: [Schweiz], CH-BE: [Bern]}\nambiguous: [Bern]\ndesignations: [Kanton]\nwhole_country: [Kantone]\n"
+        "places: {CH: [Schweiz], CH-BE: [Bern]}\nambiguous: [Bern]\ndesignations: [Kanton]\n"
+        "municipal_designations: [Stadt]\nwhole_country: [Kantone]\n"
         "approximate: {before: [Raum], after: [und Umgebung]}\nnot_places: [Spatial]\ngeonames: {}\n"
     )
 
@@ -208,3 +211,69 @@ class TestTheDirectoryFile:
     def test_a_missing_key(self, tmp_path: Path) -> None:
         with pytest.raises(EntryFileError, match="holds exactly"):
             read_place_directory(self._write(tmp_path, self.BASE.replace("geonames: {}\n", "")), self._regions())
+
+
+def _square(lon: float, lat: float) -> dict[str, object]:
+    return {"type": "Polygon", "coordinates": [[[lon, lat], [lon + 0.05, lat], [lon + 0.05, lat + 0.05], [lon, lat + 0.05], [lon, lat]]]}
+
+
+MUNICIPALITIES = (
+    Municipality("CH-BE-0351", "Bern", "CH-BE", _square(7.4, 46.9)),
+    Municipality("CH-BE-0371", "Biel/Bienne", "CH-BE", _square(7.2, 47.1)),
+    Municipality("CH-AG-4021", "Buchs (AG)", "CH-AG", _square(8.0, 47.4)),
+    Municipality("CH-SG-3271", "Buchs (SG)", "CH-SG", _square(9.4, 47.1)),
+    Municipality("CH-ZH-0261", "Zürich", "CH-ZH", _square(8.5, 47.3)),
+    Municipality("CH-ZH-0120", "Wald (ZH)", "CH-ZH", _square(8.9, 47.2)),
+    Municipality("CH-AR-3001", "Wald", "CH-AR", _square(9.5, 47.4)),
+    Municipality("CH-AG-4001", "Aargau", "CH-AG", _square(8.0, 47.3)),
+)
+
+
+class TestMunicipalities:
+    """F9 = 1 (Otto, 19.11.2026): municipalities of swissBOUNDARIES3D for place texts; never a region of their own."""
+
+    directory = read_place_directory(PLACE_NAMES_FILE, DIRECTORY.levels, MUNICIPALITIES)
+
+    @pytest.mark.parametrize(
+        ("text", "codes"),
+        [
+            # Otto's examples (M2): towns and cities; a bare name that is also a canton's is the municipality now.
+            ("Stadt Bern", ("CH-BE-0351",)),
+            ("Bern", ("CH-BE-0351",)),
+            ("Kanton Bern", ("CH-BE",)),
+            ("Biel/Bienne", ("CH-BE-0371",)),
+            ("Bienne", ("CH-BE-0371",)),
+            ("Buchs (AG)", ("CH-AG-4021",)),
+            # Two municipalities of one name without their canton: none.
+            ("Buchs", None),
+            ("Zürich", ("CH-ZH-0261",)),
+            ("Grossraum Zürich", ("CH-ZH-0261",)),
+            ("Wald", ("CH-AR-3001",)),
+            # A region's name stays the region's; the municipality only after its designation.
+            ("Aargau", ("CH-AG",)),
+            ("Gemeinde Aargau", ("CH-AG-4001",)),
+        ],
+    )
+    def test_place_texts(self, text: str, codes: object) -> None:
+        assert place_codes(text, self.directory, "CH") == codes
+
+    def test_a_municipality_gives_its_outline_and_the_regions_of_its_canton(self) -> None:
+        extent = spatial_extent({"spatial_text": "Stadt Bern"}, country="CH", directory=self.directory)
+        assert (extent.basis, extent.codes, extent.places) == ("place", ("CH", "CH-BE"), ("CH-BE-0351",))
+
+    @pytest.mark.parametrize(
+        ("publisher", "codes"),
+        [
+            ("Stadt Zürich", ("CH", "CH-ZH")),
+            # A municipality in a publisher's name only after its designation: "Wald" here is a forest.
+            ("Amt für Wald und Wild", ("CH",)),
+            ("Bern", ("CH",)),
+        ],
+    )
+    def test_publishers(self, publisher: str, codes: tuple[str, ...]) -> None:
+        extent = spatial_extent({"publisher": publisher}, country="CH", directory=self.directory)
+        assert extent.codes == codes
+
+
+def test_geonames_ids() -> None:
+    assert geonames_ids("https://sws.geonames.org/2658434/ und http://sws.geonames.org/7285161") == ["2658434", "7285161"]

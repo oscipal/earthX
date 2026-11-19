@@ -17,8 +17,8 @@ no place of the directory matches nothing, and a place in a title is never read.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from collections.abc import Collection, Iterable, Mapping, Sequence
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from functools import cache
 from pathlib import Path
@@ -28,9 +28,11 @@ from earthx.catalog.datasets import CATALOG_DIR
 from earthx.catalog.entry_files import EntryFileError, read_yaml
 from earthx.catalog.glossary import normalize
 from earthx.catalog.listed import load_regions
+from earthx.catalog.municipalities import MUNICIPALITY_CODE, Municipality, load_municipalities
 
 __all__ = [
     "PLACE_NAMES_FILE",
+    "geonames_ids",
     "Extent",
     "PlaceDirectory",
     "box_of_codes",
@@ -41,7 +43,18 @@ __all__ = [
 ]
 
 PLACE_NAMES_FILE = CATALOG_DIR / "place_names.yaml"
-_KEYS = frozenset({"places", "ambiguous", "designations", "whole_country", "approximate", "not_places", "geonames"})
+_KEYS = frozenset(
+    {
+        "places",
+        "ambiguous",
+        "designations",
+        "municipal_designations",
+        "whole_country",
+        "approximate",
+        "not_places",
+        "geonames",
+    }
+)
 _GEONAMES = re.compile(r"(?:https?://)?(?:sws\.|www\.)?geonames\.org/(\d{1,10})(?:/[^\s,;]*)?", re.IGNORECASE)
 _CODE = re.compile(r"[A-Z]{2}")
 _PARENTHESES = re.compile(r"\(([^()]*)\)")
@@ -56,6 +69,8 @@ class Extent:
 
     basis: str
     codes: tuple[str, ...] = ()
+    #: For ``place``: the places a text named (regions or municipalities), whose outlines are the footprint.
+    places: tuple[str, ...] = ()
     bbox: tuple[float, float, float, float] | None = None
     geometry: Mapping[str, Any] | None = None
     unresolved: str | None = None
@@ -79,6 +94,13 @@ class PlaceDirectory:
     geonames: Mapping[str, str]
     #: Every code of ``regions.json`` → its level, for the two-letter codes of a text.
     levels: Mapping[str, str]
+    #: Normal name of a municipality → its code (``municipalities.json``, F9); on its own only where no region and no
+    #: other municipality has the name, else only after one of ``municipal_designations``.
+    municipal: Mapping[str, str] = field(default_factory=dict)
+    municipal_designated: Mapping[str, str] = field(default_factory=dict)
+    municipal_designations: tuple[str, ...] = ()
+    #: The box of every municipality of the directory, for the extent of a find that names one.
+    municipal_boxes: Mapping[str, tuple[float, float, float, float]] = field(default_factory=dict)
 
     def code_of(self, text: str, country: str | None) -> str | None:
         """The code of a two-letter abbreviation: a subdivision of ``country`` first (``FR`` at opendata.swiss is the
@@ -89,13 +111,24 @@ class PlaceDirectory:
             return f"{country}-{text}"
         return text if self.levels.get(text) == "state" else None
 
-    def name_code(self, normal: str) -> str | None:
-        """The code of a normal name, plain or after one of the designations."""
+    def name_code(self, normal: str, *, municipal: bool = True) -> str | None:
+        """The code of a normal name: a region, plain or after a designation; then, with ``municipal``, a municipality
+        on its own name or after one of its designations ("Stadt Bern")."""
         if normal in self.plain:
             return self.plain[normal]
         for designation in self.designations:
             if normal.startswith(designation + " ") and (rest := normal[len(designation) + 1 :]) in self.designated:
                 return self.designated[rest]
+        if municipal and normal in self.municipal:
+            return self.municipal[normal]
+        return self.designated_municipality(normal)
+
+    def designated_municipality(self, normal: str) -> str | None:
+        """A municipality named after one of its designations ("Stadt Zürich", "Commune de Riehen")."""
+        for designation in self.municipal_designations:
+            prefix = designation + " "
+            if normal.startswith(prefix) and (rest := normal[len(prefix) :]) in self.municipal_designated:
+                return self.municipal_designated[rest]
         return None
 
 
@@ -106,7 +139,23 @@ def _names(data: Mapping[str, Any], key: str) -> list[str]:
     return value
 
 
-def read_place_directory(path: Path, regions: Mapping[str, str]) -> PlaceDirectory:
+def _municipal_names(municipalities: Sequence[Municipality], taken: Collection[str]) -> tuple[dict, dict]:
+    """Normal name → code of the municipalities: the official name, and each part of a double name ("Biel/Bienne").
+    A name two municipalities share counts for none; a name a region has counts only after a designation."""
+    seen: dict[str, set[str]] = {}
+    for item in municipalities:
+        names = {item.name, *item.name.split("/")} if "/" in item.name else {item.name}
+        for name in names:
+            if normal := normalize(name):
+                seen.setdefault(normal, set()).add(item.code)
+    designated = {name: next(iter(codes)) for name, codes in seen.items() if len(codes) == 1}
+    plain = {name: code for name, code in designated.items() if name not in taken}
+    return plain, designated
+
+
+def read_place_directory(
+    path: Path, regions: Mapping[str, str], municipalities: Sequence[Municipality] = ()
+) -> PlaceDirectory:
     """The directory of ``path`` against the codes of ``regions`` (code → level); a name stands under one code only."""
     data = read_yaml(path)
     if not isinstance(data, dict) or set(data) != _KEYS:
@@ -136,10 +185,19 @@ def read_place_directory(path: Path, regions: Mapping[str, str]) -> PlaceDirecto
             raise EntryFileError(f"{path.name}: geonames maps a numeric id (as text) to a code of regions.json")
     # The longest designation first, so that "Canton de" is tried before "Canton".
     designations = tuple(sorted({normalize(d) for d in _names(data, "designations")}, key=len, reverse=True))
+    # A name a region holds on its own stays the region's; an ambiguous one ("Bern") is the municipality's.
+    municipal, municipal_designated = _municipal_names(municipalities, set(plain))
+    municipal_designations = tuple(
+        sorted({normalize(d) for d in _names(data, "municipal_designations")}, key=len, reverse=True)
+    )
     return PlaceDirectory(
         plain=plain,
         designated=designated,
         designations=designations,
+        municipal=municipal,
+        municipal_designated=municipal_designated,
+        municipal_designations=municipal_designations,
+        municipal_boxes={item.code: _box_of(item.outline) for item in municipalities},
         whole_country=frozenset(normalize(text) for text in _names(data, "whole_country")),
         before=tuple(sorted({normalize(t) for t in _names(approximate, "before")}, key=len, reverse=True)),
         after=tuple(sorted({normalize(t) for t in _names(approximate, "after")}, key=len, reverse=True)),
@@ -152,7 +210,8 @@ def read_place_directory(path: Path, regions: Mapping[str, str]) -> PlaceDirecto
 @cache
 def load_place_directory() -> PlaceDirectory:
     """The directory of the image, read once per process."""
-    return read_place_directory(PLACE_NAMES_FILE, {region.code: region.level for region in load_regions()})
+    regions = {region.code: region.level for region in load_regions()}
+    return read_place_directory(PLACE_NAMES_FILE, regions, load_municipalities())
 
 
 def _box_of(outline: Mapping[str, Any]) -> tuple[float, float, float, float]:
@@ -181,6 +240,15 @@ def named_codes(codes: Iterable[str]) -> tuple[str, ...]:
     return tuple(sorted(c for c in codes if "-" in c or not any(o.startswith(c + "-") for o in codes)))
 
 
+def _union_box(
+    boxes: Mapping[str, tuple[float, float, float, float]], codes: Iterable[str]
+) -> tuple[float, float, float, float] | None:
+    found = [boxes[c] for c in codes if c in boxes]
+    if not found:
+        return None
+    return min(b[0] for b in found), min(b[1] for b in found), max(b[2] for b in found), max(b[3] for b in found)
+
+
 def box_of_codes(codes: Iterable[str]) -> tuple[float, float, float, float] | None:
     """The box around the regions a text named (plan A7); ``None`` where none is known."""
     boxes = [region_boxes()[c] for c in named_codes(codes) if c in region_boxes()]
@@ -190,8 +258,15 @@ def box_of_codes(codes: Iterable[str]) -> tuple[float, float, float, float] | No
 
 
 def _states(codes: Iterable[str]) -> tuple[str, ...]:
-    """The codes with the state of every subdivision, each once, sorted."""
-    return tuple(sorted({part for code in codes for part in (code, code.split("-")[0])}))
+    """The regions of places: a subdivision with its state, a municipality as its canton and state (a municipality is
+    no region of an entry, F9), each once, sorted."""
+    regions: set[str] = set()
+    for code in codes:
+        if MUNICIPALITY_CODE.fullmatch(code):
+            regions |= {code[:5], code[:2]}
+        else:
+            regions |= {code, code.split("-")[0]}
+    return tuple(sorted(regions))
 
 
 def _drop_approximate(normal: str, directory: PlaceDirectory) -> str:
@@ -220,6 +295,11 @@ def _part(text: str, directory: PlaceDirectory, country: str | None, *, abbrevia
     if normal in directory.whole_country:
         return "*"
     return directory.name_code(normal) or directory.name_code(_drop_approximate(normal, directory))
+
+
+def geonames_ids(text: str) -> list[str]:
+    """The GeoNames ids of the addresses ``sws.geonames.org/<id>`` in a place text (F10)."""
+    return _GEONAMES.findall(text)
 
 
 def place_codes(text: str, directory: PlaceDirectory, country: str | None) -> tuple[str, ...] | str | None:
@@ -273,7 +353,8 @@ def publisher_code(publisher: str, directory: PlaceDirectory) -> str | None:
     spans: list[tuple[int, int, str]] = []
     for start in range(len(words)):
         for end in range(start + 1, min(len(words), start + 8) + 1):
-            code = directory.name_code(" ".join(words[start:end]))
+            # A municipality only after its designation ("Stadt Zürich"): "Wald" in "Amt für Wald" is none.
+            code = directory.name_code(" ".join(words[start:end]), municipal=False)
             if code is not None:
                 spans.append((start, end, code))
     kept = {code for s, e, code in spans if not any(s2 <= s and e <= e2 and (s2, e2) != (s, e) for s2, e2, _ in spans)}
@@ -307,7 +388,8 @@ def spatial_extent(
                 # Only whole states ("Schweiz"): regions without a footprint, or every area in the state would find
                 # the entry (plan A19, F11).
                 return Extent("catalog", codes=codes)
-            return Extent("place", codes=_states(codes))
+            boxes = {**region_boxes(), **directory.municipal_boxes}
+            return Extent("place", codes=_states(codes), places=codes, bbox=_union_box(boxes, codes))
         if codes is None:
             unresolved = text
     publisher = found.get("publisher")

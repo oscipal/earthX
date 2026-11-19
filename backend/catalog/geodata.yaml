@@ -7,7 +7,10 @@
 # and only as whole words or word sequences. `*` at the start matches the end of a word ("*messstelle" matches
 # "Grundwassermessstelle"), at the end its start ("statisti*" matches "Statistisches").
 #
-# PROPOSAL from Otto's measurement of 19.11.2026 (M3-M5): to be sharpened with the samples of `--classify`.
+# PROPOSAL from Otto's measurement of 19.11.2026 (M3-M5): to be sharpened with the samples of `--classify`. The
+# statistics tables without an extent at GovData (32 848 of 33 594 table/population) come from four offices: the
+# Statistisches Amt für Hamburg und Schleswig-Holstein (22 107), the Bayerisches Landesamt für Statistik (12 022) and
+# Destatis (3 182) carry "statisti*" in their name, IT.NRW (2 375) does not and stands by name.
 
 # --- Geo signals: any one of them keeps a find ------------------------------------------------------------------------
 # Data kinds of the find or of one of its files and services (the format table of the extract).
@@ -27,8 +30,8 @@ geo_terms: ["*messstelle", "*messstellen", "*messnetz", "*zaehlstelle", "*zaehls
 # EU data themes (codes) of administration, economy, justice, education, international affairs, technology.
 not_geo_eu_themes: [GOVE, ECON, JUST, EDUC, INTR, TECH]
 # Words in the title, the keywords or the publisher's name.
-not_geo_terms: ["statisti*", wahl, wahlen, bundestagswahl, landtagswahl, kommunalwahl, europawahl, abstimmung,
-                abstimmungen, volksabstimmung, haushalt, haushaltsplan, haushaltsdaten, budget, jahresrechnung,
+not_geo_terms: ["statisti*", it nrw, information und technik nordrhein westfalen, wahl, wahlen, bundestagswahl,
+                landtagswahl, kommunalwahl, europawahl, abstimmung, abstimmungen, volksabstimmung, haushalt, haushaltsplan, haushaltsdaten, budget, jahresrechnung,
                 sitzung, sitzungen, protokoll, protokolle, ratsinformation, stellenplan, archivbestand,
                 pressemitteilung, pressemitteilungen, geschäftsbericht, élection, élections, votation, votations,
                 elezioni, votazione, votazioni, election, elections, statistics, statistique, statistiques,

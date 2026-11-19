@@ -57,6 +57,11 @@ class TestGeodataRule:
     def test_any_geo_signal_keeps_a_find(self, changes: dict[str, Any]) -> None:
         assert _verdict(_find("Statistik der Wahlen", **changes)) == "geodata"
 
+    def test_the_statistics_office_of_nrw_stands_by_name(self) -> None:
+        # Otto's measurement M4: IT.NRW (2 375 tables without an extent) has no "statisti*" in its name.
+        assert _verdict(_find("Köln: Einwohner", publisher="IT.NRW")) == "not_geodata"
+        assert _verdict(_find("Köln: Einwohner", publisher="Information und Technik Nordrhein-Westfalen")) == "not_geodata"
+
     def test_a_non_geo_eu_theme_hides_a_find_without_a_geo_signal(self) -> None:
         assert _verdict(_find("Liste", themes=["eu:GOVE"])) == "not_geodata"
 
