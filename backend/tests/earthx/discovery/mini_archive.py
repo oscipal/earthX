@@ -55,9 +55,9 @@ def day_name(quantity: str, grid: str, day: date) -> str:
     return f"ogd-surface-derived-grid.{quantity.lower()}_{grid}.swiss.lv95_{stamp}000000_{stamp}000000.nc"
 
 
-def netcdf_file(tmp_path: Path, first: date, days: list[int], **options: Any) -> bytes:
-    """A file of ``days`` (offsets from ``first``), each stamped at 00:00 UTC."""
-    data = mini_netcdf.values(steps=len(days), seed=first.toordinal() % 1000 + len(days))
+def netcdf_file(tmp_path: Path, first: date, days: list[int], *, seed: int = 0, **options: Any) -> bytes:
+    """A file of ``days`` (offsets from ``first``), each stamped at 00:00 UTC; another ``seed`` gives other values."""
+    data = mini_netcdf.values(steps=len(days), seed=first.toordinal() % 1000 + len(days) + seed)
     path = tmp_path / f"{first.isoformat()}-{len(list(tmp_path.iterdir()))}.nc"
     return mini_netcdf.build(
         path,
