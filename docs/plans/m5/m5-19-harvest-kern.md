@@ -420,3 +420,15 @@ Ein Fund zählt je Grund einmal und kann mehrere Gründe haben.
 **Für M6 (Betrieb, Speicher):** Nach den ersten vollen Durchgängen von opendata.swiss und GovData sind die Tabellen in Ottos Datenbank: `earthx_raw_record` **576 MB**, `earthx_record_state` **363 MB**, `earthx_state_transition` **46 MB** (rund 1 GB für rund 185 000 Funde; `pg_total_relation_size`, 19.11.2026). Die Rohantworten wachsen mit jeder neuen Quelle; Kandidaten für M6: Aufbewahrung der Rohantwort nur bis zum nächsten Lauf (`adr/0025` §5.3) prüfen, Kompression (gzip ist schon drin), Übergänge nach einer Frist zusammenfassen, Platzbedarf je Quelle im Betrieb überwachen.
 
 **Für M5-20:** Nach den vollen Durchgängen tragen **58 % der Funde von GovData und 45 % von opendata.swiss keine räumliche Angabe** („Ausdehnung unbekannt“, §5.3). Die Stichproben zeigen außerdem **viele Funde, die keine Geodaten sind** (Statistiken, Haushalt, Dokumente). M5-20 muss deshalb entscheiden, (a) ob und wie Funde ohne Ausdehnung gelistet werden (Enrich aus Ortsnamen, Zurückstellen, eigener Filter), und (b) wie Nicht-Geodaten erkannt werden: heute nur über `blocked.yaml` mit `not_geodata` von Hand (`adr/0033` §9); bei dieser Menge braucht es einen Vorschlag für eine Regel (z. B. aus Kategorie, Datentyp, Format und Ausdehnung) mit Stichprobe zur Freigabe durch Otto.
+
+### 12.12 `--explain-links` (Otto, 19.11.2026) und F12 = 1
+
+**Befund aus `--explain-links` (Otto):** Bei GovData haben 99 % der Funde, die nur die Katalogseite erreichen, in `extras` das Feld `uri` (sonst `guid`) mit der Seite des Datensatzes beim Anbieter (z. B. `opendata.schleswig-holstein.de/dataset/…`, `mobilithek.info/offers/…`). „HTML-Ressource mit Download-Adresse (gilt als Datei)“: GovData 16 642, opendata.swiss 65; darunter Viewer wie der STAC Browser der FSDI. „Nur `http`“ sind fast nur Startseiten (`statistik-nord.de`), deshalb kein Heben auf `https` (Option 2 verworfen).
+
+**Entscheidung F12 = 1 (Otto, 19.11.2026), umgesetzt:**
+1. **Weitere Felder für Rang 2:** Der CKAN-Filter einer Quelle nennt `page_extras`, Schlüssel von `extras`, die nach dem Feld `url` als Seite des Datensatzes gelesen werden, mit derselben Prüfung (nur `https`, keine Startseite, keine Datei, kein Dienst). GovData: `[uri, guid]`; opendata.swiss und data.gv.at: `[]`. Teil der Extraktor-Version.
+2. **Metadaten-Endpunkte** sind auf Rang 1 und 2 nie Kandidat: ISO 19139 (`xml_iso19139`), CSW (`service=CSW`, `GetRecordById`, `outputSchema`), Endungen `.xml`, `.rdf`, `.json`, `.jsonld`, `.ttl`, `.n3`.
+3. **HTML-Ressource mit Download-Adresse:** gilt als Seite, wenn die Download-Adresse selbst keine Datei ist (keine Dateiendung, kein Dienst, kein Metadaten-Endpunkt); sie wird dann Viewer (Rang 1), mit Startseiten-Prüfung und ohne Adresse aus der Ressourcen-ID. Zeigt die Download-Adresse auf eine Datei, bleibt die Ressource Datei.
+4. `--explain-links` folgt denselben Regeln (Gründe `extras_page_<…>`, `url_metadata`, `html_metadata`, `html_file`).
+
+**Zahlen nach `--reextract` (Otto, ohne Anfrage):** folgen nach Ottos Lauf; erwartet ist bei GovData ein Großteil der bisherigen Rang-3-Funde auf Rang 2.
