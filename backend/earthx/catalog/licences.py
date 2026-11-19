@@ -11,6 +11,7 @@ Read by ``discovery`` (the report) and ``catalog-load`` (which checks them like 
 
 from __future__ import annotations
 
+import hashlib
 import re
 from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass
@@ -91,6 +92,18 @@ class LicenceCatalogue:
     by_statement: Mapping[str, str]
     #: Source → publisher → granted licence refs.
     grants: Mapping[str, Mapping[str, frozenset[str]]]
+
+    @property
+    def fingerprint(self) -> str:
+        """A hash of every grade and grant: a report derives its rows anew when one changes."""
+        terms = sorted((ref, term.matches, repr(term.license)) for ref, term in self.terms.items())
+        grants = sorted((source, sorted((p, sorted(r)) for p, r in by.items())) for source, by in self.grants.items())
+        return hashlib.sha256(repr((terms, grants)).encode("utf-8")).hexdigest()
+
+    def granted(self, source_id: str, publisher: str | None, refs: tuple[str, ...]) -> bool:
+        """Whether every licence of ``refs`` is still in the catalogue and granted to this publisher of this source."""
+        allowed = self.grants.get(source_id, {}).get(publisher or "", frozenset())
+        return all(ref in self.terms and ref in allowed for ref in refs)
 
     def match(self, source_id: str, publisher: str | None, statements: Iterable[str]) -> LicenceMatch:
         """The licence of a find of ``source_id`` by ``publisher`` with these statements (adr/0033 §6, §7).

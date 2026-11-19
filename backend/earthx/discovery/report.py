@@ -33,11 +33,14 @@ from typing import Any
 import psycopg
 import yaml
 
+from earthx.catalog import collection as collection_module
+from earthx.catalog import licences as licences_module
+from earthx.catalog import listed as listed_module
 from earthx.catalog.collection import SCIENTIFIC_EXTENSION, STAC_VERSION
 from earthx.catalog.datasets import CATALOG_DIR, registry
 from earthx.catalog.entry_files import EntryFileError
-from earthx.catalog.licences import LICENSES_DIR, LicenceCatalogue, LicenceMatch, load_licences, normal_statement
-from earthx.catalog.listed import BlockRule, content_sha256, link_host, load_blocked, sort_title
+from earthx.catalog.licences import LicenceCatalogue, LicenceMatch, load_licences, normal_statement
+from earthx.catalog.listed import HAND_SOURCE, BlockRule, content_sha256, link_host, load_blocked, sort_title
 from earthx.catalog.listed_store import apply_blocklist, is_blocked
 from earthx.catalog.listing_store import (
     HarvestedRow,
@@ -50,7 +53,7 @@ from earthx.catalog.listing_store import (
     write_harvested,
 )
 from earthx.catalog.registry import ConfigError, LicenseInfo, doi_name
-from earthx.catalog.sources import SourceConfig, SourceProtocol, read_sources
+from earthx.catalog.sources import MAX_DEDUPE_RANK, SourceConfig, SourceProtocol, read_sources
 from earthx.discovery import dedupe, enrich, geodata
 from earthx.discovery.dedupe import Member, find_keys, main_entries, namespaced
 from earthx.discovery.enrich import (
@@ -157,7 +160,11 @@ def _collection(
 ) -> dict[str, Any]:
     """The STAC Collection of a harvested entry, in the form of a hand entry (``listed.to_listed_collection``)."""
     publisher = found.get("publisher")
-    doi = doi_name(found.get("doi")) if isinstance(found.get("doi"), str) else None
+    try:
+        doi = doi_name(found.get("doi")) if isinstance(found.get("doi"), str) else None
+    except ConfigError:
+        # "N/A" or "DOI: 10…" in a STAC sci:doi: no DOI rather than no entry.
+        doi = None
     if extent.basis == "source" and extent.bbox is not None:
         box: Sequence[float] = extent.bbox
     else:
@@ -223,17 +230,17 @@ def _file_sha(path: Path) -> bytes:
 def _code_fingerprint() -> bytes:
     """The code and the rule files a row is derived with: a change re-derives every find (plan §5)."""
     digest = hashlib.sha256()
-    for module in (enrich, geodata, dedupe):
+    for module in (enrich, geodata, dedupe, licences_module, listed_module, collection_module):
         digest.update(Path(module.__file__).read_bytes())  # type: ignore[arg-type]
     digest.update(Path(__file__).read_bytes())
-    for path in (PLACE_NAMES_FILE, GEODATA_FILE, LICENSES_DIR / "terms.yaml", CATALOG_DIR / "regions.json"):
+    for path in (PLACE_NAMES_FILE, GEODATA_FILE, CATALOG_DIR / "regions.json"):
         digest.update(_file_sha(path))
     return digest.digest()
 
 
-def derivation_version(source: SourceConfig, known: Mapping[str, str]) -> str:
+def derivation_version(source: SourceConfig, known: Mapping[str, str], licences: LicenceCatalogue | None) -> str:
     digest = hashlib.sha256(_code_fingerprint())
-    digest.update(_file_sha(LICENSES_DIR / "grants" / f"{source.source_id}.yaml"))
+    digest.update(b"" if licences is None else licences.fingerprint.encode())
     digest.update(json.dumps([source.country, source.maturity.value, sorted(known.items())]).encode())
     return digest.hexdigest()
 
@@ -350,9 +357,13 @@ def _dedupe(conn: psycopg.Connection, sources: Mapping[str, SourceConfig]) -> di
     members = _full_members()
     for row in dedupe_rows(conn):
         source = sources.get(row.source_id)
-        kind = 1 if source is None else 2
-        rank = 0 if source is None else source.dedupe_rank
-        members.append(Member(row.dataset_id, row.keys, (kind, rank, row.source_rank or 9, not row.footprint, row.source_id)))
+        if row.source_id == HAND_SOURCE:
+            rank: tuple[Any, ...] = (1,)
+        else:
+            # A source no longer in sources/ ranks last.
+            dedupe_rank = MAX_DEDUPE_RANK + 1 if source is None else source.dedupe_rank
+            rank = (2, dedupe_rank, row.source_rank or 9, not row.footprint, row.source_id)
+        members.append(Member(row.dataset_id, row.keys, rank))
     return main_entries(members)
 
 
@@ -378,6 +389,8 @@ class ReportResult:
     duplicates: tuple[int, int] = (0, 0)
     stack: Stack | None = None
     files: tuple[Path, ...] = ()
+    #: Finds that could not be derived or that Postgres refused: counted, never the reason of a stop.
+    failed: int = 0
 
 
 def _stream(conn: psycopg.Connection, source_id: str):  # type: ignore[no-untyped-def]
@@ -414,7 +427,7 @@ def run_report(
     directory = load_place_directory() if directory is None else directory
     rule = load_geodata_rule() if rule is None else rule
     known = known_collections(conn, sources)
-    version = derivation_version(source, known)
+    version = derivation_version(source, known, licences)
     stored = {} if classify_only else derivations(conn, source.source_id)
     result = ReportResult(source.source_id)
     blocked_keys: list[str] = []
@@ -422,7 +435,9 @@ def run_report(
 
     def flush() -> None:
         with conn.transaction(), conn.cursor() as cur:
-            result.written += write_harvested(cur, batch)
+            written, refused = write_harvested(cur, batch)
+        result.written += written
+        result.failed += len(refused)
         batch.clear()
 
     for key, found, extracted_sha in _stream(conn, source.source_id):
@@ -431,10 +446,15 @@ def run_report(
             result.blocked += 1
             blocked_keys.append(key)
             continue
-        derived = derive(
-            found, extracted_sha, source, directory=directory, rule=rule, licences=licences, known=known,
-            version=version,
-        )
+        try:
+            derived = derive(
+                found, extracted_sha, source, directory=directory, rule=rule, licences=licences, known=known,
+                version=version,
+            )
+        except (ConfigError, ValueError, TypeError, KeyError, AttributeError, ArithmeticError):
+            # One find of a foreign shape must not stop the report of every other one; its row stays as it was.
+            result.failed += 1
+            continue
         _count(result, derived, found)
         if not classify_only and stored.get(key) != derived.row.derived_sha256:
             batch.append(derived.row)
@@ -464,7 +484,8 @@ def _count(result: ReportResult, derived: Derived, found: Mapping[str, Any]) -> 
     if derived.extent.unresolved:
         result.unresolved[derived.extent.unresolved[:80]] += 1
     for signal in (*derived.classified.geo, *derived.classified.not_geo):
-        result.signals[signal.split(":", 1)[0] + ":" + signal.split(":", 1)[1][:40]] += 1
+        # Signals are "kind:value" or a kind alone ("inspire").
+        result.signals[signal[:60]] += 1
     if row.waiting_reason in ("unknown_licence", "not_granted"):
         for statement in derived.statements:
             result.pairs[(row.publisher or "–", normal_statement(statement)[:100])] += 1
@@ -484,7 +505,7 @@ def _sample(items: Sequence[Any], size: int, seed: str) -> list[Any]:
 
 def classify_text(source: SourceConfig, result: ReportResult) -> str:
     """The output of ``--classify``: counts and the two samples for the release of R-G (plan §7)."""
-    seed = f"{source.source_id}:{derivation_version(source, {})}"
+    seed = f"{source.source_id}:{derivation_version(source, {}, None)}"
     lines = [f"Einstufung {source.source_id} (nichts geschrieben): {result.finds} Funde, gesperrt {result.blocked}"]
     lines.append("Ergebnis: " + ", ".join(f"{k} {v}" for k, v in sorted(result.verdicts.items())))
     lines.append("Ausdehnung: " + ", ".join(f"{k} {v}" for k, v in sorted(result.bases.items())))
@@ -641,10 +662,17 @@ def report_markdown(
     return "\n".join(lines) + "\n"
 
 
-def write_files(conn: psycopg.Connection, source: SourceConfig, result: ReportResult, out: Path, day: date) -> tuple[Path, ...]:
-    """The approval file and its report for a new stack, under ``out``; nothing for a stack that was there already."""
+def _has_file(out: Path, fingerprint: str) -> bool:
+    return out.is_dir() and any(fingerprint in path.read_text(encoding="utf-8") for path in out.glob("*.yaml"))
+
+
+def write_files(
+    conn: psycopg.Connection, source: SourceConfig, result: ReportResult, out: Path, day: date
+) -> tuple[Path, ...]:
+    """The approval file and its report for a new stack under ``out``; for the open stack again where its file is not
+    there (a branch thrown away, a write that failed), else nothing."""
     stack = result.stack
-    if stack is None or not stack.created:
+    if stack is None or (not stack.created and _has_file(out, stack.fingerprint)):
         return ()
     sample = stack_sample(conn, stack)
     rows = _rows(conn, [item["dataset_id"] for item in sample])
@@ -664,14 +692,15 @@ def write_files(conn: psycopg.Connection, source: SourceConfig, result: ReportRe
 
 def summary(source: SourceConfig, result: ReportResult) -> str:
     lines = [
-        f"Bericht {source.source_id}: {result.finds} Funde, gesperrt {result.blocked}, geschrieben {result.written}",
+        f"Bericht {source.source_id}: {result.finds} Funde, gesperrt {result.blocked}, geschrieben {result.written},"
+        f" fehlerhaft {result.failed}",
         "Ergebnis: " + ", ".join(f"{k} {v}" for k, v in sorted(result.verdicts.items())),
         "Warten: " + (", ".join(f"{k} {v}" for k, v in sorted(result.waiting.items())) or "–"),
         f"Dubletten markiert {result.duplicates[0]}, wiederhergestellt {result.duplicates[1]}",
     ]
     if result.stack is None:
         lines.append("Kein Eintrag in Prüfung: kein Stapel, keine Freigabedatei.")
-    elif not result.stack.created:
+    elif not result.files:
         lines.append(f"Stapel {result.stack.batch_id} unverändert ({len(result.stack.entries)} Einträge): keine neue Datei.")
     else:
         lines.append(f"Neuer Stapel {result.stack.batch_id}, {len(result.stack.entries)} Einträge.")
@@ -714,6 +743,10 @@ def main(argv: list[str] | None = None) -> int:
             result.files = write_files(conn, source, result, args.out, date.today())
     except psycopg.Error as error:
         print(f"report failed: database error {type(error).__name__} ({error.sqlstate or 'no state'})", file=sys.stderr)
+        return 1
+    except OSError as error:
+        # The stack stays open in the database; the next report writes its file where this one could not.
+        print(f"report failed: the approval file cannot be written ({type(error).__name__})", file=sys.stderr)
         return 1
     print(summary(source, result))
     return 0

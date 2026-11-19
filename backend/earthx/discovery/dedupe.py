@@ -22,7 +22,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-__all__ = ["Member", "collection_tokens", "find_keys", "main_entries"]
+__all__ = ["MAX_SHARED", "Member", "collection_tokens", "find_keys", "main_entries", "namespaced"]
 
 #: How an address is cut into tokens: an id is whole between these.
 _DELIMITERS = re.compile(r"[/?&=#,;:\s|]+")
@@ -57,7 +57,7 @@ def find_keys(
     if isinstance(identifier, str) and identifier.strip():
         keys.add(f"id:{identifier.strip()}")
     if stac_host is not None:
-        keys.add(f"coll:{stac_host}/{found['source_key']}")
+        keys.add(f"coll:{stac_host}/{str(found['source_key']).lower()}")
     else:
         addresses = [found.get("source_url"), found.get("landing_url")]
         addresses += [d.get("href") for d in found.get("distributions") or () if isinstance(d, dict)]
@@ -76,9 +76,20 @@ class Member:
     rank: tuple[Any, ...]
 
 
+#: A DOI or identifier on more finds than this is a placeholder of a portal ("1", the portal's address), no key: a
+#: wrong group hides real datasets, which weighs more than a missed one (review M5-20 PR 1).
+MAX_SHARED = 5
+
+
 def main_entries(members: Iterable[Member]) -> dict[str, str]:
     """For every member that is not the main entry of its group, the id of that main entry."""
     members = list(members)
+    shared: dict[str, int] = {}
+    for member in members:
+        for key in member.keys:
+            shared[key] = shared.get(key, 0) + 1
+    usable = {k for k, n in shared.items() if n <= MAX_SHARED or k.startswith("coll:")}
+    members = [Member(m.dataset_id, tuple(k for k in m.keys if k in usable), m.rank) for m in members]
     parent: dict[str, str] = {}
 
     def root(item: str) -> str:

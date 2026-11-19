@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 
 from earthx.catalog.entry_files import EntryFileError
-from earthx.discovery.dedupe import Member, collection_tokens, find_keys, main_entries, namespaced
+from earthx.discovery.dedupe import MAX_SHARED, Member, collection_tokens, find_keys, main_entries, namespaced
 from earthx.discovery.enrich import Extent
 from earthx.discovery.geodata import GEODATA_FILE, classify, load_geodata_rule, read_geodata_rule
 
@@ -143,6 +143,12 @@ class TestGroups:
     def test_a_full_entry_wins(self) -> None:
         members = [Member("fsdi-stac.x", ("coll:h/x",), (2, 1)), Member("swissalti3d", ("coll:h/x",), (0,))]
         assert main_entries(members) == {"fsdi-stac.x": "swissalti3d"}
+
+    def test_an_identifier_on_many_finds_is_a_placeholder_and_joins_nothing(self) -> None:
+        # Review M5-20 PR 1: a portal that writes "1" or its own address into every package.
+        members = [Member(f"govdata.{i}", ("id:1",), (2, 3, i)) for i in range(MAX_SHARED + 1)]
+        assert main_entries(members) == {}
+        assert len(main_entries(members[:MAX_SHARED])) == MAX_SHARED - 1
 
     def test_no_keys_no_group(self) -> None:
         assert main_entries([Member("a", (), (2,)), Member("b", (), (2,))]) == {}

@@ -23,7 +23,8 @@ from earthx.catalog.approvals import load_approvals, publish
 from earthx.catalog.licences import LicenceCatalogue, load_licences
 from earthx.catalog.listed import BlockReason, BlockRule, BlockScope, load_regions
 from earthx.catalog.listed_search import listed_entry
-from earthx.catalog.listed_store import write_regions
+from earthx.catalog.listed_store import apply_blocklist, write_regions
+from earthx.catalog.listing_store import withdraw
 from earthx.catalog.registry import Maturity
 from earthx.catalog.sources import CkanFilter, SourceConfig, SourceProtocol, StacFilter
 from earthx.discovery.report import classify_text, run_report, write_files
@@ -413,3 +414,122 @@ def test_classify_writes_nothing_and_names_the_unresolved_places(world: World) -
     ).fetchone() == (0,)
     text = classify_text(world.ckan, result)
     assert "Winterthur" in text and "not_geodata 1" in text
+
+
+def test_one_foreign_find_never_stops_the_report(world: World) -> None:
+    # Review M5-20 PR 1: an INSPIRE theme, an open end in 9999, a DOI that is none, a geometry PostGIS refuses.
+    world.put(
+        world.ckan,
+        _find("inspire", themes=["inspire:so"]),
+        _find("open", temporal=["2019", "9999-12-31"]),
+        _find("doi", doi="N/A"),
+        # The extract keeps only geometries whose nesting fits their type; one that slipped through is refused here.
+        _find("geometry", spatial_text=None, bbox=[8.4, 47.1, 8.6, 47.2],
+              geometry={"type": "Polygon", "coordinates": [[8.4, 47.1], [8.6, 47.2], [8.4, 47.2]]}),
+    )
+    result = world.report()
+    assert world.row("inspire")["state"] == "in_review"
+    assert world.row("open")["content"]["extent"]["temporal"]["interval"] == [["2019-01-01T00:00:00Z", None]]
+    assert "sci:doi" not in world.row("doi")["content"]
+    assert result.failed == 1 and result.stack is not None
+
+
+def test_a_blocked_duplicate_becomes_a_tombstone(world: World) -> None:
+    # Review M5-20 PR 1: the tombstone drops duplicate_of with everything else.
+    world.put(world.stac, _find("ch.example.boden"))
+    world.put(world.ckan, _find("viewer", source_url="https://map.example.org/?layers=ch.example.boden"))
+    world.report(world.stac)
+    world.report()
+    assert world.row("viewer")["state"] == "duplicate"
+    rule = BlockRule(BlockScope.HOST, BlockReason.QUALITY, date(2026, 11, 19), host="map.example.org")
+    apply_blocklist(world.conn, (rule,))
+    assert (world.row("viewer")["state"], world.row("viewer")["duplicate_of"]) == ("tombstone", None)
+
+
+def test_a_row_a_full_entry_took_over_is_left_alone(world: World) -> None:
+    world.put(world.ckan, _find("a"))
+    world.report()
+    world.conn.execute(
+        "UPDATE public.earthx_listed_entry SET state = 'superseded' WHERE source_id = %s", (world.ckan.source_id,)
+    )
+    world.put(world.ckan, _find("a", description="Neu."))
+    world.report()
+    assert world.row("a")["state"] == "superseded"
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"account": "free_account"},
+        {"delivery": "service"},
+        {"source_url": "https://anderes.example.org/daten/a"},
+    ],
+)
+def test_a_published_entry_goes_back_into_review_on_each_deciding_field(world: World, changes: dict[str, Any]) -> None:
+    # adr/0033 §11, U1: account, delivery, host of the link (and publisher, licence, tested above and below).
+    world.put(world.ckan, _find("a"))
+    world.approve(world.report().files[0])
+    world.publish()
+    world.put(world.ckan, _find("a", **changes))
+    world.report()
+    assert world.row("a")["state"] == "in_review"
+
+
+def test_a_new_grade_of_the_licence_goes_back_into_review(world: World) -> None:
+    # Plan A18: never a licence statement Otto has not seen with the entry.
+    world.put(world.ckan, _find("a"))
+    world.approve(world.report().files[0])
+    world.publish()
+    terms = world.licence_dir / "terms.yaml"
+    terms.write_text(terms.read_text(encoding="utf-8").replace("commercial_use: true", "commercial_use: false"))
+    world.report()
+    assert world.row("a")["state"] == "in_review"
+
+
+def test_a_published_entry_that_loses_its_grant_or_turns_out_no_geodata_is_hidden(world: World) -> None:
+    world.put(world.ckan, _find("a"), _find("b"))
+    world.approve(world.report().files[0])
+    world.publish()
+    world.put(world.ckan, _find("b", data_kind="table", category="population", spatial_text=None,
+                                publisher="Statistisches Amt"))
+    world.grant(PUBLISHER, "Statistisches Amt")
+    world.report()
+    assert world.row("b")["state"] == "not_geodata"
+    # A grant taken back: catalog-load hides at once, before any report (adr/0033 §9).
+    world.grant()
+    assert withdraw(world.conn, world.licences.granted) == 1
+    assert (world.row("a")["state"], world.row("a")["waiting_reason"]) == ("needs_rule", "not_granted")
+
+
+def test_an_entry_changed_after_its_stack_is_not_published(world: World) -> None:
+    world.put(world.ckan, _find("a"), _find("b"))
+    approval = world.report().files[0]
+    world.conn.execute(
+        "UPDATE public.earthx_listed_entry SET content_sha256 = %s WHERE source_id = %s AND source_key = 'b'",
+        ("0" * 64, world.ckan.source_id),
+    )
+    world.approve(approval)
+    assert world.publish().published == {f"approvals/{approval.name}": 1}
+    assert world.row("b")["state"] == "in_review"
+
+
+def test_a_lost_approval_file_is_written_again_for_the_open_stack(world: World) -> None:
+    world.put(world.ckan, _find("a"))
+    first = world.report().files
+    for path in first:
+        path.unlink()
+    again = world.report()
+    assert again.stack is not None and not again.stack.created and len(again.files) == 2
+    assert world.report().files == ()
+
+
+def test_a_wrong_approval_publishes_nothing(world: World) -> None:
+    world.put(world.ckan, _find("a"))
+    approval = world.report().files[0]
+    world.approve(approval)
+    document = yaml.safe_load(approval.read_text(encoding="utf-8"))
+    for field, value in (("fingerprint", "b" * 64), ("batch_id", 999999), ("source_id", "other")):
+        changed = dict(document, **{field: value})
+        approval.write_text(yaml.safe_dump(changed, sort_keys=False), encoding="utf-8")
+        assert world.publish().published == {}, field
+    assert world.row("a")["state"] == "in_review"

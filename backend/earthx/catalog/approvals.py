@@ -15,7 +15,7 @@ import hashlib
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import psycopg
@@ -70,14 +70,15 @@ def _check(approval: Approval, name: str) -> None:
         raise EntryFileError(f"{name}: decision is pending, approved or rejected")
     if (approval.decision == "pending") != (approval.decided_on is None):
         raise EntryFileError(f"{name}: decided_on is the day of an approved or rejected decision, null while pending")
-    if approval.decision == "approved" and any(check.ok is None for check in approval.sample):
+    if approval.decision == "approved" and (not approval.sample or any(c.ok is None for c in approval.sample)):
         # Prinzip 12: never without the sample checked.
         raise EntryFileError(f"{name}: an approved file has every entry of its sample checked (ok true or false)")
     if approval.revoked_on is not None and approval.decision != "approved":
         raise EntryFileError(f"{name}: only an approved file can be revoked")
-    today = date.today()
+    # One day of slack: the container counts days in UTC, Otto in his own zone.
+    latest = date.today() + timedelta(days=1)
     for day in (approval.decided_on, approval.revoked_on):
-        if day is not None and day > today:
+        if day is not None and day > latest:
             raise EntryFileError(f"{name}: a day lies in the future")
 
 

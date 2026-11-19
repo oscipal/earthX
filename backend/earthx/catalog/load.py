@@ -27,6 +27,7 @@ from earthx.catalog.datasets import registry
 from earthx.catalog.licences import load_licences
 from earthx.catalog.listed import load_blocked, load_catalog_tags, load_listed, load_regions
 from earthx.catalog.listed_store import apply_blocklist, supersede, write_hand_entries, write_regions
+from earthx.catalog.listing_store import withdraw
 from earthx.catalog.pgstac import PgstacError, load_registry, remove_prototype_overviews
 from earthx.catalog.registry import ConfigError
 from earthx.catalog.schema import apply_migrations
@@ -43,7 +44,7 @@ def main() -> int:
         regions = load_regions()
         load_catalog_tags()
         # Checked like every file of the image, though only the report of the harvest reads them (adr/0033 §6.2).
-        load_licences(read_sources())
+        licences = load_licences(read_sources())
         approvals = load_approvals()
     except ConfigError as error:
         print(f"load failed: {error}", file=sys.stderr)
@@ -63,6 +64,8 @@ def main() -> int:
             superseded = supersede(conn, full_ids)
             listed, blocked_hand = write_hand_entries(conn, hand_entries, blocklist, full_ids=full_ids)
             tombstones = apply_blocklist(conn, blocklist)
+            # A licence rule Otto took back hides its entries at once (adr/0033 §9), before anything is published.
+            withdrawn = withdraw(conn, licences.granted)
             published = publish(conn, approvals)
             conn.commit()
     except (ConfigError, PgstacError, psycopg.Error) as error:
@@ -80,6 +83,7 @@ def main() -> int:
     print(f"listed hand entries left out as blocked: {', '.join(blocked_hand) if blocked_hand else 'none'}")
     print(f"listed entries superseded by a full entry: {', '.join(superseded) if superseded else 'none'}")
     print(f"listed entries turned into tombstones by the blocklist: {tombstones}")
+    print(f"listed entries back on the waiting list, their licence rule taken back: {withdrawn}")
     for name, count in sorted(published.published.items()):
         print(f"listed entries published by {name}: {count}")
     for name, count in sorted(published.revoked.items()):

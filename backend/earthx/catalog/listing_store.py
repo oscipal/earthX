@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -20,7 +20,7 @@ from psycopg import sql
 from psycopg.types.json import Jsonb
 
 from earthx.catalog.listed import HAND_SOURCE
-from earthx.catalog.listed_store import REGIONS_OF
+from earthx.catalog.listed_store import _TOMBSTONE, REGIONS_OF
 
 __all__ = [
     "DedupeRow",
@@ -31,6 +31,7 @@ __all__ = [
     "derivations",
     "form_stack",
     "settle_missing",
+    "withdraw",
     "write_harvested",
 ]
 
@@ -72,6 +73,8 @@ class HarvestedRow:
 _OWN_STATE = "CASE %(verdict)s WHEN 'ok' THEN 'in_review' ELSE %(verdict)s END"
 _STAYS = sql.SQL(
     "stored.state = 'published' AND EXCLUDED.verdict = 'ok' AND ({stored}) IS NOT DISTINCT FROM ({excluded})"
+    # A changed grade of the licence too: never a licence statement Otto has not seen with the entry (plan A18).
+    " AND stored.content -> 'earthx:license_flags' IS NOT DISTINCT FROM EXCLUDED.content -> 'earthx:license_flags'"
 ).format(
     stored=sql.SQL(", ").join(sql.SQL("stored.{}").format(sql.Identifier(c)) for c in _DECISION),
     excluded=sql.SQL(", ").join(sql.SQL("EXCLUDED.{}").format(sql.Identifier(c)) for c in _DECISION),
@@ -109,7 +112,7 @@ _UPSERT = sql.SQL(
         extent_basis = EXCLUDED.extent_basis, dedupe_keys = EXCLUDED.dedupe_keys,
         derived_sha256 = EXCLUDED.derived_sha256, harvested_at = EXCLUDED.harvested_at,
         duplicate_of = NULL, missing_since = NULL, removed_reason = NULL, removed_on = NULL
-    WHERE stored.source_id = EXCLUDED.source_id
+    WHERE stored.source_id = EXCLUDED.source_id AND stored.state <> 'superseded'
     """
 ).format(
     own=sql.SQL(_OWN_STATE),
@@ -129,11 +132,23 @@ def derivations(conn: psycopg.Connection, source_id: str) -> dict[str, str | Non
         return dict(cur.fetchall())
 
 
-def write_harvested(cur: psycopg.Cursor, rows: Iterable[HarvestedRow]) -> int:
-    """Write the derived rows; returns how many. A row of another source under the same id is left alone."""
+def write_harvested(cur: psycopg.Cursor, rows: Iterable[HarvestedRow]) -> tuple[int, list[str]]:
+    """Write the derived rows; returns how many and the keys of those Postgres refused (a geometry PostGIS cannot read).
+    A row of another source under the same id, or one a full entry took over, is left alone. Each row in a savepoint
+    of its own: one foreign value must not stop the rest."""
     count = 0
+    refused: list[str] = []
     for row in rows:
-        cur.execute(
+        try:
+            with cur.connection.transaction():
+                count += _write(cur, row)
+        except (psycopg.errors.DataException, psycopg.errors.InternalError_):
+            refused.append(row.source_key)
+    return count, refused
+
+
+def _write(cur: psycopg.Cursor, row: HarvestedRow) -> int:
+    cur.execute(
             _UPSERT,
             {
                 "id": row.dataset_id,
@@ -162,8 +177,7 @@ def write_harvested(cur: psycopg.Cursor, rows: Iterable[HarvestedRow]) -> int:
                 "derived": row.derived_sha256,
             },
         )
-        count += cur.rowcount
-    return count
+    return cur.rowcount
 
 
 @dataclass(frozen=True, slots=True)
@@ -205,20 +219,44 @@ def settle_missing(conn: psycopg.Connection, source_id: str, blocked_keys: Seque
         )
         marked = cur.rowcount
         cur.execute(
-            """
-            UPDATE public.earthx_listed_entry e SET state = 'tombstone', content = NULL, content_sha256 = NULL,
-                sort_title = NULL, footprint = NULL, time_span = NULL, regions = NULL, keywords = NULL,
-                data_kind = NULL, category = NULL, account = NULL, delivery = NULL, publisher = NULL,
-                link_host = NULL, license_ref = NULL, removed_reason = 'source_removed', removed_on = current_date
+            sql.SQL(
+                """
+            UPDATE public.earthx_listed_entry e SET {tombstone}, removed_reason = 'source_removed',
+                removed_on = current_date
             WHERE e.source_id = %(source)s AND e.state = 'published' AND e.missing_since IS NOT NULL
               AND EXISTS (SELECT 1 FROM public.earthx_record_state s WHERE s.source_id = e.source_id
                           AND s.source_key = e.source_key AND s.state = 'gone')
               AND EXISTS (SELECT 1 FROM public.earthx_harvest_run r WHERE r.source_id = e.source_id
                           AND r.kind = 'full' AND r.status = 'done' AND r.started_at > e.missing_since)
-            """,
+            """
+            ).format(tombstone=sql.SQL(_TOMBSTONE)),
             {"source": source_id},
         )
         return Missing(deleted, marked, cur.rowcount)
+
+
+def withdraw(conn: psycopg.Connection, granted: Callable[[str, str | None, tuple[str, ...]], bool]) -> int:
+    """Hide at once every harvested row whose licence rule Otto took back (adr/0033 §9): ``granted`` says whether the
+    licences of a publisher of a source still are; returns how many rows went back to the waiting list. The next
+    report derives them anew."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT DISTINCT source_id, publisher, license_ref FROM public.earthx_listed_entry"
+            " WHERE source_id <> %s AND state IN ('published', 'in_review') AND license_ref IS NOT NULL",
+            (HAND_SOURCE,),
+        )
+        gone = [row for row in cur.fetchall() if not granted(row[0], row[1], tuple(row[2].split("+")))]
+        count = 0
+        for source_id, publisher, refs in gone:
+            cur.execute(
+                "UPDATE public.earthx_listed_entry SET state = 'needs_rule', verdict = 'needs_rule',"
+                " waiting_reason = 'not_granted', approval_file = NULL, approval_sha256 = NULL, approved_on = NULL,"
+                " published_at = NULL, derived_sha256 = NULL WHERE source_id = %s AND publisher IS NOT DISTINCT FROM %s"
+                " AND license_ref = %s AND state IN ('published', 'in_review')",
+                (source_id, publisher, refs),
+            )
+            count += cur.rowcount
+        return count
 
 
 @dataclass(frozen=True, slots=True)

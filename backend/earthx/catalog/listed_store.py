@@ -62,7 +62,8 @@ PART_POINTS = 128
 _TOMBSTONE = """
     state = 'tombstone', content = NULL, content_sha256 = NULL, sort_title = NULL, footprint = NULL,
     time_span = NULL, regions = NULL, keywords = NULL, data_kind = NULL, category = NULL, account = NULL, delivery = NULL, publisher = NULL,
-    link_host = NULL, license_ref = NULL
+    link_host = NULL, license_ref = NULL, duplicate_of = NULL, verdict = NULL, waiting_reason = NULL,
+    extent_basis = NULL, dedupe_keys = NULL, derived_sha256 = NULL, missing_since = NULL
 """
 
 
@@ -102,7 +103,9 @@ def write_regions(conn: psycopg.Connection, regions: Sequence[Region]) -> int:
             cur.execute(
                 sql.SQL(
                     "UPDATE public.earthx_listed_entry e SET regions = d.regions FROM (SELECT dataset_id, {} AS regions "
-                    "FROM public.earthx_listed_entry WHERE footprint IS NOT NULL) d "
+                    "FROM public.earthx_listed_entry WHERE footprint IS NOT NULL"
+                    # A harvested row of a place text has the regions it named, not those its outline touches.
+                    " AND coalesce(extent_basis, 'source') = 'source') d "
                     "WHERE e.dataset_id = d.dataset_id AND e.regions IS DISTINCT FROM d.regions"
                 ).format(sql.SQL(REGIONS_IN_STATES.format(footprint="footprint", states=_STORED_STATES)))
             )
@@ -265,7 +268,7 @@ def supersede(conn: psycopg.Connection, full_ids: Collection[str]) -> tuple[str,
     """Mark the listed rows whose id a full entry now has (adr/0033 §11); returns their ids."""
     with conn.cursor() as cur:
         cur.execute(
-            "UPDATE public.earthx_listed_entry SET state = 'superseded' "
+            "UPDATE public.earthx_listed_entry SET state = 'superseded', duplicate_of = NULL "
             "WHERE dataset_id = ANY(%s) AND state NOT IN ('tombstone', 'superseded') RETURNING dataset_id",
             (list(full_ids),),
         )
