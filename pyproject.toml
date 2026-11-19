@@ -31,6 +31,11 @@ pythonpath = ["backend"]
 # tests do not end up queued on one worker. Each worker has a database of its own
 # (backend/tests/worker_database.py).
 addopts = "-ra --strict-markers --strict-config -n auto --dist worksteal"
+# A full run writes about 10 GB of `tmp_path` (M5-61 §2.5); kept for three runs it filled the disk of a cloud
+# session, and Postgres restarted mid-run. The directory of a passed test goes right after it, that of a failed
+# one stays, of the last run only.
+tmp_path_retention_policy = "failed"
+tmp_path_retention_count = 1
 markers = [
   "local_only: needs resources that exist neither in CI nor in a cloud session",
   "live_dataset(dataset_id): marks a backend/tests_live module as the T-D smoke covering that registry entry (onboarding checklist point 10, Fassung v1.1)",

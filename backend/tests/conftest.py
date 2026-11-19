@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
 import socket
+import tempfile
 from collections.abc import Iterator
 from typing import Any
 
@@ -80,6 +82,24 @@ def pytest_unconfigure(config: pytest.Config) -> None:
     made = config.stash.get(_RUN, None)
     if made is not None:
         made.end()
+
+
+#: A full run writes about 10 GB of `tmp_path` (M5-61 §2.5); below this a session disk can fill up during a run.
+LOW_DISK_BYTES = 12 * 1024**3
+
+
+def low_disk_warning(directory: str, free_bytes: int) -> str | None:
+    if free_bytes >= LOW_DISK_BYTES:
+        return None
+    return (
+        f"WARNING: only {free_bytes / 1024**3:.1f} GB free under {directory}; a full run needs about 10 GB "
+        "for its temporary files. Remove old /tmp/pytest-of-* directories first."
+    )
+
+
+def pytest_report_header(config: pytest.Config) -> str | None:
+    directory = tempfile.gettempdir()
+    return low_disk_warning(directory, shutil.disk_usage(directory).free)
 
 
 _ALLOWED_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", ""})
