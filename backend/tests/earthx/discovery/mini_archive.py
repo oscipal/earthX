@@ -21,7 +21,7 @@ import numpy
 
 from earthx.catalog.registry import DatasetConfig
 from earthx.catalog.source_units import Contribution
-from earthx.discovery import meteoswiss_grid
+from earthx.discovery.materialize import MATERIALIZE_SPECS
 from earthx.discovery.materialize_units import assemble_item
 from earthx.gateway import Gateway, Policy
 from tests.earthx.readers import mini_netcdf
@@ -142,11 +142,18 @@ class Archive:
 
 
 async def materialized_items(archive: Archive, config: DatasetConfig) -> list[dict[str, Any]]:
-    """The items a first run writes from ``archive``, without a database: every file listed, built and assembled by
-    the rule of the core (the higher state, then the younger file)."""
+    """The items a first run writes from ``archive``, without a database."""
     async with archive.gateway() as gateway:
-        listing = await meteoswiss_grid.list_units(config, gateway=gateway, known_groups={})
-        built = await meteoswiss_grid.build_units(config, gateway=gateway, units=listing.units)
+        return await units_items(config, gateway)
+
+
+async def units_items(config: DatasetConfig, gateway: Gateway) -> list[dict[str, Any]]:
+    """The items a first run of an entry with ``updates.detect: units`` writes, without a database: every unit listed,
+    built and assembled by the rule of the core (the higher state, then the younger file)."""
+    units = MATERIALIZE_SPECS[config.source.adapter].units
+    assert units is not None
+    listing = await units.list_units(config, gateway=gateway, known_groups={})
+    built = await units.build(config, gateway=gateway, units=listing.units)
     best: dict[tuple[str, str], tuple[tuple[int, str], Contribution, Any]] = {}
     for unit, made in zip(listing.units, built, strict=True):
         rank = (unit.state.rank, unit.validators.last_modified or "")

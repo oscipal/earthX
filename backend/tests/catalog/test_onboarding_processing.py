@@ -49,7 +49,15 @@ from earthx.adapters import ADAPTER_SPECS, SearchParams, materialize_items, sear
 from earthx.api.citation import citation_bib
 from earthx.api.intake import AcceptedOrder, accept_order, job_recipe_json
 from earthx.api.tiler import build_app
-from earthx.catalog.registry import AdapterKind, DataFormat, DatasetConfig, DatasetRegistry, Georeferencing, ItemHolding
+from earthx.catalog.registry import (
+    AdapterKind,
+    ChangeDetection,
+    DataFormat,
+    DatasetConfig,
+    DatasetRegistry,
+    Georeferencing,
+    ItemHolding,
+)
 from earthx.discovery.materialize import MATERIALIZE_SPECS
 from earthx.discovery.meteoswiss_grid import PRODUCTS
 from earthx.gateway import Gateway
@@ -365,8 +373,12 @@ class Walk:
 
 async def _found_and_accepted(s: Scenario) -> tuple[dict[str, Any], AcceptedOrder]:
     if s.config.source.item_holding is ItemHolding.MATERIALIZED:
-        outcome = await materialize_items(s.config, adapters=MATERIALIZE_SPECS, gateway=s.gateway, known_version=None)
-        (found,) = outcome.items
+        if s.config.updates.detect is ChangeDetection.UNITS:
+            # Per unit of the source (M5-58): listed and built through the dispatch of `discovery`.
+            (found,) = await mini_archive.units_items(s.config, s.gateway)
+        else:
+            outcome = await materialize_items(s.config, adapters=MATERIALIZE_SPECS, gateway=s.gateway, known_version=None)
+            (found,) = outcome.items
     else:
         page = await search_items(s.config, SearchParams(limit=10), adapters=ADAPTER_SPECS, gateway=s.gateway)
         (found,) = page.items

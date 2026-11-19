@@ -30,7 +30,7 @@ from fastapi.testclient import TestClient
 from earthx.access.download import NOTICE_FILENAME
 from earthx.adapters import ADAPTER_SPECS, SearchParams, materialize_items, search_items
 from earthx.api.tiler import build_app
-from earthx.catalog.registry import AdapterKind, DatasetConfig, ItemHolding, group_key
+from earthx.catalog.registry import AdapterKind, ChangeDetection, DatasetConfig, ItemHolding, group_key
 from earthx.discovery.materialize import MATERIALIZE_SPECS
 from tests.catalog import synthetic_chain
 from tests.catalog.synthetic_chain import Chain, UnsupportedFormat
@@ -76,25 +76,32 @@ def client(chain: Chain) -> TestClient:
 # --------------------------------------------------------------------------------
 
 
+async def materialized(chain: Chain) -> tuple[dict[str, Any], ...]:
+    """The items a run writes for a materialized entry, through the dispatch of `discovery`: per run, or per unit of
+    the source (M5-58)."""
+    if chain.config.updates.detect is ChangeDetection.UNITS:
+        return tuple(await mini_archive.units_items(chain.config, chain.gateway))
+    outcome = await materialize_items(chain.config, adapters=MATERIALIZE_SPECS, gateway=chain.gateway, known_version=None)
+    return outcome.items
+
+
 async def test_search_reaches_the_source_through_its_own_adapter(chain: Chain) -> None:
     """Link 1. For a federated entry: the request is the one the adapter really
     builds from the endpoint. For a materialized entry (M3-11b F9): item
     *creation* through the real adapter against the synthetic bucket, instead —
     there is no search request to build."""
     if chain.config.source.item_holding is ItemHolding.MATERIALIZED:
-        outcome = await materialize_items(
-            chain.config, adapters=MATERIALIZE_SPECS, gateway=chain.gateway, known_version=None
-        )
-        assert [item["id"] for item in outcome.items] == [chain.item["id"]]
-        assert outcome.items[0]["bbox"] == chain.item["bbox"]
+        items = await materialized(chain)
+        assert [item["id"] for item in items] == [chain.item["id"]]
+        assert items[0]["bbox"] == chain.item["bbox"]
         if chain.config.source.adapter in (AdapterKind.FSDI_STAC_V1, AdapterKind.BEV_ATOM, AdapterKind.METEOSWISS_GRID):
             # The chain builds this item by hand for the tile and download routes; it is what the run writes.
-            assert outcome.items == (chain.item,)
+            assert items == (chain.item,)
         paths = {request.url.path for request in chain.searched}
         stac = {f"/api/stac/v1/collections/{chain.config.source.source_collection_id}", "/api/stac/v1/search"}
         atom = {synthetic_chain.ATOM_SERVICE_PATH, synthetic_chain.ATOM_DATASET_PATH}
-        # The archive item and the one annual file whose header is read (M5-11).
-        archive = {mini_archive.ITEM_PATH, *(path for path in paths if path.startswith("/files/ogd-surface-derived-grid-archive."))}
+        # The item list and the one annual file whose header is read (M5-11, M5-58).
+        archive = {mini_archive.LIST_PATH, *(path for path in paths if path.startswith("/files/ogd-surface-derived-grid-archive."))}
         assert paths in ({"/tileList.txt", "/blacklist.txt", "/"}, {"/esa_worldcover_grid.geojson", "/"}, stac, atom, archive)
         assert len(paths) > 1
         return
@@ -189,10 +196,7 @@ async def test_the_whole_chain_runs_for_this_entry(chain: Chain, client: TestCli
     """Point 9 itself: one item, found (or, materialized, created), displayed and
     downloaded, in that order."""
     if chain.config.source.item_holding is ItemHolding.MATERIALIZED:
-        outcome = await materialize_items(
-            chain.config, adapters=MATERIALIZE_SPECS, gateway=chain.gateway, known_version=None
-        )
-        (found,) = outcome.items
+        (found,) = await materialized(chain)
     else:
         page = await search_items(chain.config, SearchParams(limit=10), adapters=ADAPTER_SPECS, gateway=chain.gateway)
         (found,) = page.items
