@@ -68,6 +68,8 @@ ALTER TABLE public.earthx_listed_entry
     ADD COLUMN derived_sha256 text CHECK (derived_sha256 ~ '^[0-9a-f]{64}$');
 
 CREATE INDEX earthx_listed_entry_source_state_idx ON public.earthx_listed_entry (source_id, state);
+-- The duplicates of an entry, read when it is served (`earthx:also_at`, plan §8).
+CREATE INDEX earthx_listed_entry_duplicate_idx ON public.earthx_listed_entry (duplicate_of) WHERE state = 'duplicate';
 
 CREATE TABLE public.earthx_listing_batch (
     batch_id          bigint      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

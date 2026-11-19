@@ -47,7 +47,7 @@ Erledigt mit M5-19 §12.7 (Migration 030): Keyset verschiebt keine Seite, `mark_
 
 ### 3.2 data.gv.at — erster Lauf
 
-**Nachtrag 19.11.2026 (Otto, F7 = 3):** data.gv.at läuft nicht mehr auf CKAN, sondern auf piveau (`/api/hub/search/`, 76 729 Datensätze laut `count` am 19.11.); `/katalog/api/3/action/` und `robots.txt` gibt es nicht. Nicht Teil von M5-20; eigene Aufgabe **M5-63** (Adapter piveau hub-search). `data-gv-at.yaml` bleibt unverändert mit `enabled: false`. Der Text darunter ist der Stand vor der Prüfung.
+**Nachtrag 19.11.2026 (Otto, F7 = 3):** data.gv.at läuft nicht mehr auf CKAN, sondern auf piveau (`/api/hub/search/`, 76 729 Datensätze laut `count` am 19.11.); `/katalog/api/3/action/` und `robots.txt` gibt es nicht. Nicht Teil von M5-20; eigene Aufgabe **M5-63** (Adapter piveau hub-search). `data-gv-at.yaml` bleibt mit `enabled: false`; sie trägt nur die neuen Pflichtfelder `country` und `dedupe_rank`. Der Text darunter ist der Stand vor der Prüfung.
 
 `data-gv-at.yaml` steht mit `enabled: false`, Endpunkt und Herausgeberfeld sind [S] (`adr/0025` §10, M5-19 F7). Ob `www.data.gv.at/katalog/api/3/action/` noch CKAN v3 ohne Schlüssel antwortet und was dort `robots.txt` sagt, ist aus der Sitzung nicht prüfbar. Zwei Blicke im Browser genügen für F7:
 
@@ -348,6 +348,8 @@ Die Ausgaben von M1–M8 stehen als Kommentar am PR. Die Vorgaben gehen §6–§
 - **A12** Zwischenform neu mit `themes` (INSPIRE- und EU-Themen als Codes) und `identifier`; neue Extraktor-Version, Ottos erster Lauf nach dem Merge wertet einmal ohne Anfrage neu aus und zählt die Funde einmal als „geändert“.
 - **A13** Git nur im Skript auf dem Rechner, nie im Image; das Skript pusht nie (`adr/0025` §8 Schritt 5).
 - **A14** Dedupe über gleiche Datei-Adressen entfällt in PR 1: gemessen ist nur die Seite (M6, kein Schlüssel); eine Datei-Regel käme erst mit einer Messung.
+- **A16** Die Distributionen der Duplikate schreibt der Bericht nicht in den Inhalt des Haupteintrags (der Stapel bliebe sonst nie gleich), sondern `api` hängt sie beim Ausliefern als `earthx:also_at` an (Quelle, Link „Source“, Dateien je Duplikat). Volle Einträge aus pgstac bekommen das nicht; der Data catalogue zeigt es in M5-20 nicht.
+- **A17** Ein veröffentlichter Eintrag, dessen Fund ungültig wird, bleibt mit dem alten Inhalt sichtbar; ein nie veröffentlichter verschwindet. Ein Eintrag, der Duplikat wird, ist verborgen; wird er wieder Haupteintrag, kommt er erneut in die Prüfung.
 - **A15** Kürzel aus zwei Buchstaben treffen nur als ganzer Ortstext oder in Klammern; das Kürzel einer Unterteilung nur im Staat des Katalogs (`GE` bei opendata.swiss ist CH-GE, nicht Georgien).
 
 ## 15. Tests (Plan)
@@ -364,17 +366,37 @@ Ohne Netz, synthetische Fixtures (M5-19 A5), Transport-Attrappe am `Gateway`:
 - **Integration (Postgres):** Migration 032 auf 031; Indizes; Prüfungen der Tabelle mit leerem Fußabdruck.
 - **Skript:** bricht ab bei schmutzigem Checkout und außerhalb von `main`; pusht nie (Test am Text des Skripts wie bei bestehenden Skripten [A]).
 
-## 16. Befehle für Ottos lokalen Lauf (nach der Umsetzung, Entwurf)
+## 16. Befehle für Ottos lokalen Lauf
 
 ```powershell
-git switch main
+git fetch origin
+git switch claude/confident-turing-lucii4
 git pull
 docker compose build
 docker compose up -d
-docker compose run --build --rm harvest govdata
-docker compose run --rm harvest-report govdata --classify
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harvest-report.ps1 -Source govdata
+docker compose run --build --rm harvest fsdi-stac --reextract
+docker compose run --rm harvest opendata-swiss --reextract
+docker compose run --rm harvest govdata --reextract
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harvest-report.ps1 -Source opendata-swiss -Classify
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harvest-report.ps1 -Source govdata -Classify
 ```
 
-- Das Skript legt `harvest/<datum>-govdata` an, ruft `report` im Container, committet Bericht und Freigabedatei und nennt den Befehl zum Pushen; PR mit deinem Zugang. Nach deinem Merge mit `decision: approved`: `git pull`, `docker compose build`, `docker compose up -d` – `catalog-load` veröffentlicht den Stapel.
-- Genaue Befehle, bash-Fassung und README-Abschnitt kommen mit PR 1; Verify und `propose` mit PR 2.
+- Vor dem Merge auf dem Branch dieses PR; das Skript ohne `-Classify` verlangt `main` und kommt deshalb erst nach dem Merge dran. Mit `docker compose run --rm harvest-report <quelle>` geht der Bericht auch ohne Skript, die Dateien landen dann in `backend/catalog/approvals/`.
+- `--reextract` setzt die neue Extraktor-Version um (Themen, Kennung, Ortstext `null`) ohne Anfrage.
+- `-Classify` schreibt nichts: Zahlen, Signale, je 30 Verborgene und Grenzfälle, Ortstexte ohne Treffer, Warteliste nach Paar. Bitte die Ausgaben an den PR hängen; danach werden `geodata.yaml` und `place_names.yaml` geschärft.
+- Ohne `-Classify` legt das Skript `harvest/<datum>-<quelle>` an, ruft `report` im Container, committet Bericht und Freigabedatei und nennt den Befehl zum Pushen; PR mit deinem Zugang. Solange `terms.yaml` leer ist, wartet jeder Fund und es entsteht keine Datei. Nach deinem Merge mit `decision: approved`: `git pull`, `docker compose build`, `docker compose up -d` – `catalog-load` veröffentlicht den Stapel.
+- Verify und `propose` kommen mit PR 2.
+
+## 17. Umsetzung PR 1 ([#388](https://github.com/oscipal/earthX/pull/388)), Stand 19.11.2026
+
+- **Fix §3.1:** `--reextract` ändert `last_seen_run` nicht mehr (`harvest_store.write_find`), Test im offenen Durchgang.
+- **Seed:** Pflichtfelder `country` (CH, DE, CH, AT, `null` für Earth Search) und `dedupe_rank` (FSDI und Earth Search 1, opendata.swiss und data.gv.at 2, GovData 3).
+- **Extract:** Ortstext `null` gilt als fehlend; die Zwischenform trägt `themes` (`inspire:<code>`, `eu:<CODE>`) und `identifier`. Neue Extraktor-Version: der nächste Lauf oder `--reextract` wertet einmal ohne Anfrage neu aus.
+- **Migration 032:** Zustände `not_geodata`, `duplicate`; `verdict`, `waiting_reason` (`no_licence`, `unknown_licence`, `not_granted`, `no_access`), `extent_basis`, Fußabdruck nur noch für `source`/`place`, `duplicate_of`, `missing_since`, `dedupe_keys`, `derived_sha256`; Tabellen `earthx_listing_batch` und `earthx_listing_batch_entry`.
+- **Lizenzen:** `catalog/licences.py` mit `terms.yaml` und `grants/` (beide leer, F5 = 1); Prüfung auch in `catalog-load`.
+- **Enrich:** `discovery/enrich.py` mit `place_names.yaml` (Staaten, Kantone, Länder, Bundesländer, Gemeinden Liechtensteins; mehrdeutige Namen nur mit Bezeichnung; Kürzel; Doppelnamen; Gliederungswörter; ungefähre Angaben; keine Orte; GeoNames-Tabelle leer).
+- **R-G:** `discovery/geodata.py` mit `geodata.yaml` (Vorschlag nach §13b, Freigabe über `--classify`).
+- **Dedupe:** `discovery/dedupe.py` (DOI, Kennung, Collection-ID als ganzes Token, nur IDs mit zwei Punkten in Adressen; nie die Seite); `earthx:also_at` in `catalog/listed_search.py` (A16).
+- **Bericht und Freigabe:** `discovery/report.py` (`report`, `--classify`), `catalog/listing_store.py` (Zeilen, Verschwundene, Dubletten, Stapel), `catalog/approvals.py` (Freigabedateien, `publish` in `catalog-load`, `excluded_rules`, `revoked_on`; Freigabe nur mit abgehakter Stichprobe).
+- **Lokaler Lauf:** Compose-Dienst `harvest-report` (Profil `harvest`, `backend/catalog/approvals` eingebunden), `scripts/harvest-report.ps1` und `.sh` (sauberer Checkout auf `main`, Branch, Commit, nie Push), README „Geerntete Einträge freigeben“.
+- **Nicht in PR 1** (F8 = 1, PR 2): Verify, Kandidaten und `discovery propose`, „—“ im Data catalogue, erste Lizenzen nach F5; Gemeinden (F9) und GeoNames-IDs (F10) nach deinen Antworten.

@@ -54,6 +54,23 @@ class Gone:
     reason: str
 
 
+#: The places a dataset is also listed at (M5-20 plan §8, F4 = 1): the link and the files of every duplicate of the
+#: entry, added when it is served, so that a change of a duplicate needs no rewrite of the main entry. Absent where
+#: there is none.
+_ALSO_AT = """
+    CASE WHEN EXISTS (SELECT 1 FROM public.earthx_listed_entry d WHERE d.duplicate_of = e.dataset_id
+                      AND d.state = 'duplicate')
+    THEN jsonb_build_object('earthx:also_at', (
+        SELECT jsonb_agg(jsonb_build_object(
+                   'source_id', d.source_id,
+                   'source_url', d.content -> 'earthx:listing' -> 'source_url',
+                   'distributions', coalesce(d.content -> 'earthx:distributions', '[]'::jsonb))
+               ORDER BY d.dataset_id)
+        FROM public.earthx_listed_entry d WHERE d.duplicate_of = e.dataset_id AND d.state = 'duplicate'))
+    ELSE jsonb_build_object() END
+"""
+
+
 def _conditions(where: ListedFilter) -> tuple[sql.Composable, dict[str, Any]]:
     parts = [sql.SQL("state = 'published'")]
     params: dict[str, Any] = {}
@@ -87,7 +104,9 @@ async def listed_page(conn: Any, where: ListedFilter, *, after: tuple[str, str] 
     # The keys of the page first, through the indexes; the documents only for them. Built for every match before the
     # sort, the documents of a city's 22 000 matches cost a third of a second (plan §8).
     statement = sql.SQL(
-        "SELECT e.sort_title, e.dataset_id, e.content || jsonb_build_object('earthx:regions', to_jsonb(e.regions)), "
+        "SELECT e.sort_title, e.dataset_id, e.content || jsonb_build_object('earthx:regions', to_jsonb(e.regions)) || "
+        + _ALSO_AT
+        + ", "
         "e.time_span IS NULL FROM (SELECT dataset_id FROM public.earthx_listed_entry WHERE {} "
         "ORDER BY sort_title, dataset_id LIMIT %(limit)s) AS page "
         "JOIN public.earthx_listed_entry e USING (dataset_id) ORDER BY e.sort_title, e.dataset_id"
@@ -134,8 +153,10 @@ async def listed_entry(conn: Any, dataset_id: str) -> dict[str, Any] | Gone | No
     """The document of a published listed entry, :class:`Gone` for a tombstone, ``None`` for anything else."""
     async with conn.cursor() as cur:
         await cur.execute(
-            "SELECT state, content || jsonb_build_object('earthx:regions', to_jsonb(regions)), removed_reason "
-            "FROM public.earthx_listed_entry WHERE dataset_id = %s AND state IN ('published', 'tombstone')",
+            "SELECT state, content || jsonb_build_object('earthx:regions', to_jsonb(regions)) || "
+            + _ALSO_AT
+            + ", removed_reason FROM public.earthx_listed_entry e WHERE dataset_id = %s"
+            " AND state IN ('published', 'tombstone')",
             (dataset_id,),
         )
         row = await cur.fetchone()

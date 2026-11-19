@@ -319,8 +319,8 @@ docker compose run --rm harvest opendata-swiss
   der Doku des Anbieters), liest der Harvest diesen einen Pfad trotz `Disallow`; der Bericht nennt das.
   `Crawl-delay` gilt immer: Bei opendata.swiss (10 s) dauert ein voller Durchgang rund eine Stunde. GovData
   wird über den API-Host `ckan.govdata.de` gefragt; beide haben eine Ausnahme für ihre Metadaten-API.
-- `data-gv-at` steht auf `enabled: false`, bis ein erster Lauf den Endpunkt bestätigt; der Befehl lehnt die
-  Quelle bis dahin ab.
+- `data-gv-at` steht auf `enabled: false`: data.gv.at läuft nicht mehr auf CKAN, sondern auf piveau (Otto,
+  19.11.2026); ein eigener Adapter kommt mit M5-63. Der Befehl lehnt die Quelle ab.
 - Antwortet eine Quelle nicht in der Zeit, gar nicht oder mit `5xx`, fragt der Lauf dieselbe Seite nach 1, 2, 4, 8 min
   erneut, solange in den letzten 30 min eine Seite kam, höchstens 60 min lang; danach endet er `interrupted` mit Stand.
 - Antwortet eine Quelle mit `429`, wartet der Lauf nach ihrem `Retry-After`, sonst 2 min und danach jeweils
@@ -350,6 +350,46 @@ docker compose run --rm harvest opendata-swiss
   Quelle (gültig, davon „Ausdehnung unbekannt“, ungültig mit Grund), nie Adressen. Rückgabe 0 nur bei `done`.
 - Hält ein Host still (Unterbrecher, `robots.txt`) oder ist die Obergrenze an Anfragen erreicht, endet der
   Lauf `interrupted` und ändert nichts an Funden, die er nicht gesehen hat; später erneut starten.
+
+### Geerntete Einträge freigeben (M5-20)
+
+Aus den Funden eines Harvest-Laufs werden gelistete Einträge im „Data catalogue“, aber erst nach deiner Freigabe
+(`docs/adr/0033-freigabe-gelisteter-eintraege.md`, Plan `docs/plans/m5/m5-20-freigabe-geernteter-eintraege.md`).
+Der Bericht fragt keine Quelle. In PowerShell 5.1, aus dem Checkout auf `main`, nach `docker compose up -d`:
+
+```powershell
+docker compose run --build --rm harvest govdata
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harvest-report.ps1 -Source govdata -Classify
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harvest-report.ps1 -Source govdata
+```
+
+- **`-Classify`** schreibt nichts. Es zeigt, was die Regel für Nicht-Geodaten (`backend/catalog/geodata.yaml`),
+  das Ortsverzeichnis (`backend/catalog/place_names.yaml`) und die Lizenzregeln aus der Quelle machen: Zahlen,
+  Signale, je 30 Funde, die verborgen würden, und 30 Grenzfälle, die Ortstexte ohne Treffer und die größten
+  Paare aus Herausgeber und Lizenzangabe ohne Regel. Danach Listen schärfen; der Merge von `geodata.yaml` gibt
+  die Regel frei.
+- **Ohne `-Classify`** legt das Skript den Branch `harvest/<Tag>-<Quelle>` an. Im Container leitet der Bericht
+  dann je Fund eine Zeile ab: Sperrliste, Ausdehnung in Stufen (Geometrie, Ortstext, Herausgeber, Staat des
+  Katalogs), Regel, Lizenzregel und Dubletten über alle Quellen.
+  - Einträge mit Lizenzregel kommen in einen Stapel. Ist der Stapel neu, schreibt der Bericht
+    `backend/catalog/approvals/<Tag>-<Quelle>.md` (Bericht) und `.yaml` (Freigabedatei, `decision: pending`),
+    und das Skript committet beide. Gepusht wird nie.
+  - Ohne neuen Stapel löscht das Skript den Branch wieder.
+- **Freigeben:** `git push -u origin harvest/<Tag>-<Quelle>`, Draft-PR öffnen und die Stichprobe in der `.yaml`
+  abhaken (`ok: true`/`false` je Eintrag). Dann `decision: approved` und `decided_on` setzen und mergen. Danach
+  `git pull`, `docker compose build` und `docker compose up -d`: `catalog-load` macht den Stapel sichtbar.
+  - `excluded_rules` lässt einzelne Lizenzregeln draußen.
+  - `revoked_on` nimmt die Freigabe zurück.
+  - Ein späterer Bericht derselben Quelle ersetzt einen nicht freigegebenen Stapel; dessen Datei gilt dann nicht mehr.
+- **Lizenzen:** Ohne Einträge in `backend/catalog/licenses/terms.yaml` und `grants/<Quelle>.yaml` wartet jeder
+  Fund (`needs_rule`), und es entsteht kein Stapel. Die Einstufung jeder Lizenz machst du.
+- **Bei der Quelle verschwunden:** Ein veröffentlichter Eintrag wird beim ersten vollen Durchgang ohne ihn
+  markiert. Fehlt er beim nächsten wieder, wird er Grabstein (`410`); dafür braucht es keine Freigabe.
+- **Prüfen in der Datenbank:**
+
+```powershell
+"SELECT source_id, state, waiting_reason, extent_basis, count(*) FROM earthx_listed_entry WHERE source_id <> 'listed' GROUP BY 1, 2, 3, 4 ORDER BY 1, 2, 3, 4;" | docker compose exec -T postgres sh -c 'psql -U $POSTGRES_USER -d $POSTGRES_DB'
+```
 
 ### Kachelzeiten messen (M5-30b)
 

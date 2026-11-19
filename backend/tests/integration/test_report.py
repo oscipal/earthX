@@ -6,6 +6,7 @@ A5). Each test uses sources of its own and deletes their rows after, since the r
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from collections.abc import Iterator
 from dataclasses import replace
@@ -21,6 +22,7 @@ from psycopg.types.json import Jsonb
 from earthx.catalog.approvals import load_approvals, publish
 from earthx.catalog.licences import LicenceCatalogue, load_licences
 from earthx.catalog.listed import BlockReason, BlockRule, BlockScope, load_regions
+from earthx.catalog.listed_search import listed_entry
 from earthx.catalog.listed_store import write_regions
 from earthx.catalog.registry import Maturity
 from earthx.catalog.sources import CkanFilter, SourceConfig, SourceProtocol, StacFilter
@@ -344,6 +346,21 @@ def test_opendata_finds_naming_a_collection_are_duplicates_of_it(world: World) -
     stac_id = f"{world.stac.source_id}.ch.example.boden"
     assert (world.row("viewer")["state"], world.row("viewer")["duplicate_of"]) == ("duplicate", stac_id)
     assert world.row("longer")["state"] == "needs_rule" or world.row("longer")["state"] == "in_review"
+    # The main entry is served with the link and files of its duplicate (F4 = 1).
+    world.conn.execute(
+        "UPDATE public.earthx_listed_entry SET state = 'published', verdict = 'ok', waiting_reason = NULL,"
+        " account = 'none', delivery = 'download' WHERE dataset_id = %s",
+        (stac_id,),
+    )
+
+    async def served() -> Any:
+        async with await psycopg.AsyncConnection.connect() as aconn:
+            return await listed_entry(aconn, stac_id)
+
+    also_at = asyncio.run(served())["earthx:also_at"]
+    assert also_at == [
+        {"source_id": world.ckan.source_id, "source_url": "https://map.example.org/?layers=ch.example.boden", "distributions": []}
+    ]
     # The main entry gone, the duplicate is its own entry again.
     world.conn.execute("DELETE FROM public.earthx_listed_entry WHERE dataset_id = %s", (stac_id,))
     world.conn.execute("DELETE FROM public.earthx_record_state WHERE source_id = %s", (world.stac.source_id,))
