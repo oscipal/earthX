@@ -1,6 +1,6 @@
 # M5-20 — Verify, Enrich, Dedupe, Lizenzregeln, Freigabe geernteter Einträge, Kandidaten
 
-**Status (19.11.2026):** Entwurf mit Fragen F1–F8 (§13) an Otto. **Stufe B.** Umsetzung erst nach den Antworten, im selben Draft-PR (PR 1) und einem zweiten (PR 2); höchstens zwei PRs (M5-Plan §2 Punkt 11).
+**Status (19.11.2026):** Plan angenommen (Otto, 19.11.2026: F1–F6 und F8 je 1, F7 folgt nach der Prüfung im Browser, §13a). **Stufe B.** PR 1 in [#388](https://github.com/oscipal/earthX/pull/388), PR 2 danach; höchstens zwei PRs (M5-Plan §2 Punkt 11).
 **Aufgabe:** M5-20 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2, Auftrag von Otto vom 19.11.2026.
 **Grundlagen:** `adr/0025` (Schnitt 5, §5.1, §5.4, §6.3, §6.4, §6.5, §6.7 mit Nachträgen), `adr/0033` (§4–§11, §13 Zeile M5-20), `plans/m5/m5-19-harvest-kern.md` §12 (Befunde der Läufe, §12.11 offene Punkte), `plans/m5/m5-40-gelistete-in-postgres.md` (Tabelle, Filter, F10), M5-Plan §2 Punkt 12 (alle Datentypen, Filter nach Region und Zeit), `projektuebersicht.md` Prinzipien 12, 15, 16, KLAERUNGEN B8, B9, B11.
 
@@ -274,6 +274,12 @@ Nach `adr/0033` §8 (F1, F4, F5 = 1) und §8.4:
 1. **PR 1 (dieser):** Plan; Migration 032; Fix `gone` (§3.1); Seed-Felder `country`, `dedupe_rank`; Zwischenform mit Themen und Kennung; Enrich; `place_names.yaml`; R-G mit `--classify`; Dedupe; Lizenzkatalog leer mit Lader; `report` mit Stapel, Bericht, Freigabedatei; `publish` und `catalog-load`; U1; Grabstein `source_removed`; Skript und README für den gelisteten Weg. **PR 2:** Verify (Stichprobe, Kandidaten), Kandidaten und `propose`, „—“ im Data catalogue, data.gv.at, erste Lizenzen nach F5 **(Empfehlung)**
 2. Wie 1, aber Dedupe in PR 2 statt PR 1
 3. M5-20 nur gelisteter Weg (PR 1 und 2); Verify, Kandidaten und `propose` als neue Aufgabe (eigene Nummer, neue Session)
+
+## 13a. Antworten Otto (19.11.2026)
+
+- **F1 = 1, F2 = 1, F3 = 1, F4 = 1, F5 = 1, F6 = 1, F8 = 1.** A1–A13 gelten.
+- **F7** folgt, sobald Otto die zwei Adressen aus §3.2 im Browser geprüft hat; bis dahin bleibt `data-gv-at.yaml` mit `enabled: false`.
+- **Messung §4:** Otto lässt M1–M8 laufen und hängt die Ausgaben an den PR. Damit werden die Begriffsliste und die Signale der Regel R-G (§7) und die Rangfolge `dedupe_rank` (§8) geschärft. Beide liegen deshalb als Daten in Git-Dateien (`geodata.yaml`, Seed-Dateien), nicht im Code: Schärfen heißt eine Zeile ändern, und `report` wertet ohne Anfrage neu aus.
 
 ## 14. Auslegungen (gelten, wenn Otto nicht widerspricht)
 
