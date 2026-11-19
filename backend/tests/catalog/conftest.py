@@ -152,6 +152,7 @@ def valid_config() -> DatasetConfig:
         zarr=None,
         mask=None,
         band_units={"red": "1", "green": "1", "blue": "1"},
+        band_descriptions={"red": "Red", "green": "Green", "blue": "Blue"},
         auxiliary_assets=(),
         search_filters=(),
         search_capabilities=SearchCapabilities(evaluate=False, aoi_coverage=False),

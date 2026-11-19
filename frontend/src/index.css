@@ -3257,6 +3257,28 @@ button.pm-open:hover {
   flex-direction: column;
   overflow-wrap: anywhere;
 }
+/* The bands of a dataset (M5-59): a table of the three columns, quiet lines like the rows around it. */
+.catalogue-bands {
+  width: 100%;
+  border-collapse: collapse;
+}
+.catalogue-bands th,
+.catalogue-bands td {
+  padding: var(--space-1) var(--space-2) var(--space-1) 0;
+  text-align: left;
+  vertical-align: top;
+  font-weight: var(--weight-regular);
+}
+.catalogue-bands thead th {
+  color: var(--muted);
+  border-bottom: 1px solid var(--line-soft);
+}
+.catalogue-bands tbody tr + tr > * {
+  border-top: 1px solid var(--line-soft);
+}
+.catalogue-bands tbody th {
+  white-space: nowrap;
+}
 .catalogue-value a {
   color: var(--accent);
 }

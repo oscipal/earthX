@@ -186,10 +186,11 @@ export function registryUnit(collection: Collection | undefined, key: string): s
   return null;
 }
 
-// The units that are no physical unit, with what their values are: "1" for a dimensionless quantity (Otto, 24.10.2026),
-// "DN" for the digital numbers of a sensor that are not calibrated (Otto, 14.11.2026, DS-04d). Exact, as the data write
-// them; a new one comes here, nowhere else.
-const NOT_PHYSICAL: Readonly<Record<string, string>> = { '1': 'dimensionless', DN: 'uncalibrated digital numbers' };
+// The units that are no physical unit, with what their values are where that is worth saying: "1" for a dimensionless
+// quantity (Otto, 24.10.2026), which is no unit at all and is never written, nowhere (Otto, 18.11.2026); "DN" for the
+// digital numbers of a sensor that are not calibrated (Otto, 14.11.2026, DS-04d). Exact, as the data write them; a new
+// one comes here, nowhere else.
+const NOT_PHYSICAL: Readonly<Record<string, string | null>> = { '1': null, DN: 'uncalibrated digital numbers' };
 
 // The unit to write beside a band on the map and in its menus: a physical one only (Otto, 14.11.2026). The data keep
 // "1" and "DN" (`bands[].unit`, `earthx:band_units`); this is the one place a frontend display turns a unit into
@@ -198,11 +199,14 @@ export function shownUnit(unit: string | null | undefined): string | null {
   return typeof unit === 'string' && unit !== '' && !Object.hasOwn(NOT_PHYSICAL, unit) ? unit : null;
 }
 
-// What the Data catalogue writes for the values of a band: always the unit, and what the values are where the unit is
-// no physical one ("DN, uncalibrated digital numbers"); `null` where the data name no unit (Otto, 14.11.2026).
+// What the Data catalogue writes for the values of a band: the unit, and what the values are where the unit is no
+// physical one ("DN, uncalibrated digital numbers", Otto, 14.11.2026); `null` where the band has no unit, the data name
+// none or "1" (Otto, 18.11.2026): the caller writes "–" and nothing else.
 export function catalogueUnit(unit: unknown): string | null {
   if (typeof unit !== 'string' || unit === '') return null;
-  return Object.hasOwn(NOT_PHYSICAL, unit) ? `${unit}, ${NOT_PHYSICAL[unit]}` : unit;
+  if (!Object.hasOwn(NOT_PHYSICAL, unit)) return unit;
+  const kind = NOT_PHYSICAL[unit];
+  return kind === null ? null : `${unit}, ${kind}`;
 }
 
 // The unit an item states for one of its bands, if it does.

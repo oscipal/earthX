@@ -26,7 +26,7 @@ export function bandAssetsOf(item: StacItem | undefined, collection: Collection 
 
 // The look a band starts with where the registry says it is measured like the standard picture (M5-11, Otto H1 = 1): the same
 // unit as the band of the standard picture gives its colormap and starting range (`TminD`, `TmaxD` like `TabsD`). `null` for any
-// other band, which starts as before with its measured range and no colormap. A look of its own per band comes with M5-59.
+// other band, which starts as before with its measured range and no colormap. A look of its own per band comes with M5-60.
 export function standardLookOfBand(
   collection: Collection | undefined,
   item: StacItem | undefined,

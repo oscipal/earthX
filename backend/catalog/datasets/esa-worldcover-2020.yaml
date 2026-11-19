@@ -194,6 +194,9 @@ mask:
 # Class codes have no unit.
 band_units:
   map: null
+# What each band is, a few words (M5-59): the column "Description" of the Data catalogue.
+band_descriptions:
+  map: Land cover class (ESA WorldCover)
 auxiliary_assets: []
 # Filters only for federated items for now (adr/0021 §2, point 1).
 search_filters: []

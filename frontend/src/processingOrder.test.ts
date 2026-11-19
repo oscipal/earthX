@@ -988,7 +988,11 @@ describe('catalogueUnit (Otto, 14.11.2026)', () => {
   it('writes a physical unit as it is and says what the values are where the unit is none', () => {
     expect(catalogueUnit('m')).toBe('m');
     expect(catalogueUnit('DN')).toBe('DN, uncalibrated digital numbers');
-    expect(catalogueUnit('1')).toBe('1, dimensionless');
+  });
+
+  it('writes nothing for "1", which is no unit, so the table says "–" and never "1" or "dimensionless" (Otto, 18.11.2026)', () => {
+    expect(catalogueUnit('1')).toBeNull();
+    expect(shownUnit('1')).toBeNull();
   });
 
   it('writes nothing where the data name no unit', () => {
