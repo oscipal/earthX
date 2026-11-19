@@ -61,6 +61,14 @@ def test_what_catalog_load_reads_for_listed_entries_is_copied(source: str) -> No
     assert (source, f"./{source}") in COPIES
 
 
+@pytest.mark.parametrize(
+    "source", ["catalog/licenses", "catalog/approvals", "catalog/place_names.yaml", "catalog/geodata.yaml"]
+)
+def test_what_the_approval_of_harvested_entries_reads_is_copied(source: str) -> None:
+    # M5-20: catalog-load publishes from the approval files of the image and checks the licence catalogue.
+    assert (source, f"./{source}") in COPIES
+
+
 def test_the_seed_of_the_harvest_is_copied() -> None:
     # M5-19: read by `discovery`, and by the registry for the hosts of its sources.
     assert ("catalog/sources", "./catalog/sources") in COPIES

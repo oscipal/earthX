@@ -78,6 +78,12 @@ COPY catalog/regions.json ./catalog/regions.json
 COPY catalog/catalog_tags.yaml ./catalog/catalog_tags.yaml
 # The seed of the harvest (M5-19, adr/0025 §5.2): read by `discovery`; the registry reads only its hosts.
 COPY catalog/sources ./catalog/sources
+# The approval of harvested listed entries (M5-20, adr/0033 §6, §8): the licence catalogue and the grants per source,
+# the approval files `catalog-load` publishes, and the rules of the report (places, geodata).
+COPY catalog/licenses ./catalog/licenses
+COPY catalog/approvals ./catalog/approvals
+COPY catalog/place_names.yaml ./catalog/place_names.yaml
+COPY catalog/geodata.yaml ./catalog/geodata.yaml
 
 # The local runner (adr/0016 F1, F10): the same code and the same locked
 # dependencies as the services, run as an unprivileged user. EARTHX_COMMIT ends

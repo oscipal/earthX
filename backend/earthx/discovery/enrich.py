@@ -29,7 +29,16 @@ from earthx.catalog.entry_files import EntryFileError, read_yaml
 from earthx.catalog.glossary import normalize
 from earthx.catalog.listed import load_regions
 
-__all__ = ["PLACE_NAMES_FILE", "Extent", "PlaceDirectory", "load_place_directory", "spatial_extent", "time_span"]
+__all__ = [
+    "PLACE_NAMES_FILE",
+    "Extent",
+    "PlaceDirectory",
+    "box_of_codes",
+    "load_place_directory",
+    "region_boxes",
+    "spatial_extent",
+    "time_span",
+]
 
 PLACE_NAMES_FILE = CATALOG_DIR / "place_names.yaml"
 _KEYS = frozenset({"places", "ambiguous", "designations", "whole_country", "approximate", "not_places", "geonames"})
@@ -144,6 +153,40 @@ def read_place_directory(path: Path, regions: Mapping[str, str]) -> PlaceDirecto
 def load_place_directory() -> PlaceDirectory:
     """The directory of the image, read once per process."""
     return read_place_directory(PLACE_NAMES_FILE, {region.code: region.level for region in load_regions()})
+
+
+def _box_of(outline: Mapping[str, Any]) -> tuple[float, float, float, float]:
+    points: list[tuple[float, float]] = []
+
+    def walk(value: Any) -> None:
+        if isinstance(value, list) and value and isinstance(value[0], (int, float)):
+            points.append((float(value[0]), float(value[1])))
+        elif isinstance(value, list):
+            for item in value:
+                walk(item)
+
+    walk(outline["coordinates"])
+    return min(p[0] for p in points), min(p[1] for p in points), max(p[0] for p in points), max(p[1] for p in points)
+
+
+@cache
+def region_boxes() -> Mapping[str, tuple[float, float, float, float]]:
+    """The box of every region of ``regions.json``."""
+    return {region.code: _box_of(region.outline) for region in load_regions()}
+
+
+def named_codes(codes: Iterable[str]) -> tuple[str, ...]:
+    """The codes a text named: a state is left out where one of its subdivisions stands beside it."""
+    codes = set(codes)
+    return tuple(sorted(c for c in codes if "-" in c or not any(o.startswith(c + "-") for o in codes)))
+
+
+def box_of_codes(codes: Iterable[str]) -> tuple[float, float, float, float] | None:
+    """The box around the regions a text named (plan A7); ``None`` where none is known."""
+    boxes = [region_boxes()[c] for c in named_codes(codes) if c in region_boxes()]
+    if not boxes:
+        return None
+    return min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes)
 
 
 def _states(codes: Iterable[str]) -> tuple[str, ...]:

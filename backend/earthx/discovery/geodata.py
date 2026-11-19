@@ -18,8 +18,7 @@ from earthx.catalog.categories import load_categories
 from earthx.catalog.datasets import CATALOG_DIR
 from earthx.catalog.entry_files import EntryFileError, read_yaml
 from earthx.catalog.glossary import normalize
-from earthx.catalog.listed import load_regions
-from earthx.discovery.enrich import Extent
+from earthx.discovery.enrich import Extent, region_boxes
 from earthx.discovery.extract import resource_kind
 
 __all__ = ["GEODATA_FILE", "Classified", "GeodataRule", "classify", "load_geodata_rule", "read_geodata_rule"]
@@ -109,26 +108,6 @@ def load_geodata_rule() -> GeodataRule:
     return read_geodata_rule(GEODATA_FILE)
 
 
-def _box_of(outline: Mapping[str, Any]) -> tuple[float, float, float, float]:
-    points: list[tuple[float, float]] = []
-
-    def walk(value: Any) -> None:
-        if isinstance(value, list) and value and isinstance(value[0], (int, float)):
-            points.append((float(value[0]), float(value[1])))
-        elif isinstance(value, list):
-            for item in value:
-                walk(item)
-
-    walk(outline["coordinates"])
-    return min(p[0] for p in points), min(p[1] for p in points), max(p[0] for p in points), max(p[1] for p in points)
-
-
-@cache
-def state_boxes() -> Mapping[str, tuple[float, float, float, float]]:
-    """The box of every state of ``regions.json``."""
-    return {region.code: _box_of(region.outline) for region in load_regions() if region.level == "state"}
-
-
 def _area(box: tuple[float, float, float, float]) -> float:
     west, south, east, north = box
     return ((east - west) % 360 or (360.0 if east != west else 0.0)) * (north - south)
@@ -166,7 +145,7 @@ def classify(found: Mapping[str, Any], extent: Extent, *, country: str | None, r
     if extent.basis == "place" and any("-" in code for code in extent.codes):
         geo.append("extent:place")
     if extent.basis == "source" and extent.bbox is not None:
-        state = None if country is None else state_boxes().get(country)
+        state = None if country is None else region_boxes().get(country)
         if state is None or _area(extent.bbox) < rule.extent_share_below * _area(state):
             geo.append("extent:source")
     title, keywords = found.get("title") or "", [k for k in found.get("keywords") or () if isinstance(k, str)]
