@@ -82,3 +82,8 @@ def test_the_policy_of_opendata_swiss_waits_a_minute_for_an_answer() -> None:
     assert _policy_for(sources["opendata-swiss"], hosts).read_timeout_for("ckan.opendata.swiss") == 60.0
     assert _policy_for(sources["govdata"], hosts).read_timeout_for("ckan.govdata.de") == 60.0
     assert _policy_for(sources["fsdi-stac"], hosts).read_timeout_for("data.geo.admin.ch") == 15.0
+
+
+def test_explain_links_is_for_a_ckan_source(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["fsdi-stac", "--explain-links"]) == 1
+    assert "--explain-links is for a ckan source" in capsys.readouterr().err

@@ -38,7 +38,7 @@ from earthx.discovery.extract import (
     resource_kind,
     text_of,
 )
-from earthx.discovery.links import LinkRank, checked_link, choose_link
+from earthx.discovery.links import LinkRank, checked_link, choose_link, link_problem
 from earthx.discovery.stac import Fetch
 
 __all__ = [
@@ -47,6 +47,7 @@ __all__ = [
     "CkanListing",
     "ckan_pages",
     "extract_package",
+    "link_reasons",
     "package_key",
     "search_params",
     "stable_package",
@@ -368,6 +369,65 @@ def _page_or_none(url: object) -> object:
     name = url.split("#")[0].split("?")[0].rstrip("/").rsplit("/", 1)[-1]
     ending = name.rsplit(".", 1)[-1] if "." in name else ""
     return None if resource_kind(ending, None) in FILE_KINDS | {"service"} else url
+
+
+# Fields of a package that name a person: never read for a report (adr/0033 §5).
+_PERSON_FIELD = re.compile(r"author|maintainer|contact|email|e-mail|person|name$", re.IGNORECASE)
+_ADDRESS = re.compile(r"https?://\S+", re.IGNORECASE)
+
+
+def link_reasons(package: Mapping[str, Any]) -> list[tuple[str, str | None]]:
+    """Why a package reaches neither rank 1 nor rank 2 of the link "Source" (plan §6): codes with the address each is
+    about, for ``--explain-links`` (Otto, 19.11.2026). Rank 2, the field ``url`` of the package: ``url_<problem>``
+    (``url_empty``, ``url_http``, ``url_file``, ``url_service``, ``url_start_page`` …). Rank 1, the resources:
+    ``no_resources``, ``no_html_resource``, ``html_<problem>`` per rejected page (``html_with_download``,
+    ``html_documentation``, ``html_by_id``, ``html_service``, ``html_http`` …), and ``resource_without_format`` where
+    a resource has an address but neither a format nor a media type. Other fields that hold an address, where the
+    extract does not look: ``field:<name>`` and ``extras:<key>``; person fields are never named."""
+    reasons: list[tuple[str, str | None]] = []
+    url = text_of(package.get("url"))
+    problem = link_problem(url)
+    if problem is None and url is not None:
+        if _SERVICE_QUERY.search(url):
+            problem = "service"
+        elif _page_or_none(url) is None:
+            problem = "file"
+    if problem is not None:
+        reasons.append((f"url_{problem}", url))
+    raw_resources = package.get("resources")
+    documents = [r for r in raw_resources if isinstance(r, dict)] if isinstance(raw_resources, list) else []
+    if not documents:
+        reasons.append(("no_resources", None))
+    resources = [_resource(r) for r in documents]
+    if documents and not any(r.kind == "page" for r in resources):
+        reasons.append(("no_html_resource", None))
+    for resource in resources:
+        if resource.kind is None and resource.download is None and resource.access is not None:
+            reasons.append(("resource_without_format", resource.access))
+        if resource.kind != "page":
+            continue
+        problem = link_problem(resource.access)
+        if resource.download is not None:
+            problem = "with_download"
+        elif resource.documentation:
+            problem = "documentation"
+        elif resource.by_id:
+            problem = "by_id"
+        elif _SERVICE_QUERY.search(resource.access or ""):
+            problem = "service"
+        if problem is not None:
+            reasons.append((f"html_{problem}", resource.access))
+    for name, value in package.items():
+        if name in ("url", "resources", "extras") or not isinstance(name, str) or _PERSON_FIELD.search(name):
+            continue
+        if isinstance(value, str) and _ADDRESS.fullmatch(value.strip()):
+            reasons.append((f"field:{name}", value.strip()))
+    for key, value in _extras(package).items():
+        if _PERSON_FIELD.search(key):
+            continue
+        if isinstance(value, str) and _ADDRESS.fullmatch(value.strip()):
+            reasons.append((f"extras:{key}", value.strip()))
+    return reasons
 
 
 def extract_package(key: str, package: Mapping[str, Any], source: SourceConfig) -> Extracted:

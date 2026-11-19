@@ -15,7 +15,7 @@ from enum import IntEnum
 
 from earthx.gateway import UrlRejected, normalize_host
 
-__all__ = ["MAX_LINK_CHARS", "LinkRank", "checked_link", "choose_link"]
+__all__ = ["MAX_LINK_CHARS", "LinkRank", "checked_link", "choose_link", "link_problem"]
 
 MAX_LINK_CHARS = 2048
 _URL = re.compile(
@@ -38,24 +38,40 @@ class LinkRank(IntEnum):
     CATALOGUE_PAGE = 3
 
 
-def checked_link(url: object) -> str | None:
-    """``url`` if it may be the link "Source", else ``None``."""
-    if not isinstance(url, str) or len(url) > MAX_LINK_CHARS or _CONTROL.search(url):
-        return None
+def link_problem(url: object) -> str | None:
+    """Why ``url`` may not be the link "Source", as a code (``empty``, ``http``, ``scheme``, ``long``, ``control``,
+    ``port``, ``host``, ``start_page``, ``invalid``); ``None`` where it may."""
+    if not isinstance(url, str) or not url.strip():
+        return "empty"
+    if len(url) > MAX_LINK_CHARS:
+        return "long"
+    if _CONTROL.search(url):
+        return "control"
+    if url[:7].lower() == "http://":
+        return "http"
+    if url[:8].lower() != "https://":
+        return "scheme"
     match = _URL.fullmatch(url)
-    if match is None or match["port"] not in (None, "443"):
-        return None
+    if match is None:
+        return "invalid"
+    if match["port"] not in (None, "443"):
+        return "port"
     try:
         normalize_host(match["host"])
     except UrlRejected:
-        return None
+        return "host"
     try:
         url.encode("utf-8")
     except UnicodeEncodeError:
-        return None
+        return "invalid"
     if _is_start_page(match["path"] or "", match["query"] or "", match["fragment"] or ""):
-        return None
-    return url
+        return "start_page"
+    return None
+
+
+def checked_link(url: object) -> str | None:
+    """``url`` if it may be the link "Source", else ``None``."""
+    return url if isinstance(url, str) and link_problem(url) is None else None
 
 
 def _is_start_page(path: str, query: str, fragment: str) -> bool:

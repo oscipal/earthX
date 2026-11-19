@@ -52,6 +52,7 @@ from earthx.catalog.harvest_store import (
     list_validators,
     mark_gone,
     previous,
+    raw_of_catalogue_links,
     raw_records,
     renew_run,
     rest,
@@ -65,7 +66,14 @@ from earthx.catalog.harvest_store import (
 from earthx.catalog.hosts import HostLimit
 from earthx.catalog.registry import ConfigError
 from earthx.catalog.sources import SourceConfig, SourceProtocol, read_sources
-from earthx.discovery.ckan import INCREMENTAL_OVERLAP, CkanListing, ckan_pages, extract_package, stable_package
+from earthx.discovery.ckan import (
+    INCREMENTAL_OVERLAP,
+    CkanListing,
+    ckan_pages,
+    extract_package,
+    link_reasons,
+    stable_package,
+)
 from earthx.discovery.ckan_measure import measure_page
 from earthx.discovery.extract import (
     Extracted,
@@ -736,6 +744,11 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--measure", action="store_true", help="a CKAN source: size of one page with and without fl, nothing written"
     )
+    parser.add_argument(
+        "--explain-links",
+        action="store_true",
+        help="a CKAN source: why finds reach only the catalogue page, from the kept raw answers, no request",
+    )
     return parser.parse_args(argv)
 
 
@@ -755,6 +768,78 @@ async def measure(conn: psycopg.Connection, source: SourceConfig, gateway: Gatew
             raise
         until = rest(conn, source.source_id, _retry_after_s(error.retry_after, datetime.now(UTC)))
         raise SourceResting(source.source_id, until) from None
+
+
+_LINK_GROUPS = (
+    ("url_", "Feld url des Pakets (Rang 2: Seite des Datensatzes beim Anbieter)"),
+    (("no_resources", "no_html_resource", "html_", "resource_without_format"), "Ressourcen (Rang 1: Viewer- oder Download-Seite)"),
+    (("field:", "extras:"), "Andere Felder mit einer Adresse (liest der Extract nicht)"),
+)
+_LINK_TEXT = {
+    "url_empty": "leer",
+    "url_http": "nur http",
+    "url_file": "zeigt auf eine Datei",
+    "url_service": "zeigt auf einen Dienst",
+    "url_start_page": "nur Startseite",
+    "url_host": "Host keine Adresse (IP o. ä.)",
+    "url_scheme": "anderes Schema",
+    "url_invalid": "nicht lesbar",
+    "url_long": "zu lang",
+    "url_control": "Steuerzeichen",
+    "url_port": "fremder Port",
+    "no_resources": "keine Ressourcen",
+    "no_html_resource": "keine Ressource mit Format HTML",
+    "resource_without_format": "Ressource mit Adresse, ohne Format",
+    "html_with_download": "HTML-Ressource mit Download-Adresse (gilt als Datei)",
+    "html_documentation": "HTML-Ressource ist Doku",
+    "html_by_id": "HTML-Ressource, Adresse aus der Ressourcen-ID",
+    "html_service": "HTML-Ressource ist ein Dienst",
+    "html_http": "HTML-Ressource nur http",
+    "html_start_page": "HTML-Ressource nur Startseite",
+    "html_empty": "HTML-Ressource ohne Adresse",
+}
+_EXAMPLES = 3
+_MAX_OTHER_FIELDS = 15
+
+
+def explain_links(conn: psycopg.Connection, source: SourceConfig) -> str:
+    """Why the finds of a CKAN source reach only the catalogue page or no link (Otto, 19.11.2026): per reason how many
+    finds and three examples (the package's name and the address concerned), from the kept raw answers, without a
+    request. A find counts once per reason; one find has several reasons. Person fields are never named."""
+    counts: Counter[str] = Counter()
+    examples: dict[str, list[str]] = {}
+    total = unreadable = 0
+    for key, raw in raw_of_catalogue_links(conn, source.source_id):
+        total += 1
+        try:
+            package = json.loads(raw)
+        except (ValueError, RecursionError):
+            unreadable += 1
+            continue
+        if not isinstance(package, dict):
+            unreadable += 1
+            continue
+        name = package.get("name") if isinstance(package.get("name"), str) else key
+        for code, value in dict(link_reasons(package)).items():
+            counts[code] += 1
+            listed = examples.setdefault(code, [])
+            if len(listed) < _EXAMPLES:
+                listed.append(f"{name[:60]}: {(value or '—')[:120]}")
+    lines = [
+        f"{source.source_id}: {total} Funde nur mit Katalogseite (Rang 3) oder ohne Link, ausgewertet ohne Anfrage"
+        + (f"; {unreadable} Rohantworten nicht lesbar" if unreadable else "")
+    ]
+    for prefixes, title in _LINK_GROUPS:
+        codes = [code for code in counts if code.startswith(prefixes)]
+        if not codes:
+            continue
+        lines.append(f"  {title}:")
+        codes.sort(key=lambda code: -counts[code])
+        for code in codes[: _MAX_OTHER_FIELDS if title.startswith("Andere") else None]:
+            share = 100 * counts[code] / max(total, 1)
+            lines.append(f"    {_LINK_TEXT.get(code, code)}: {counts[code]} ({share:.0f} %)")
+            lines += [f"      {example}" for example in examples[code]]
+    return "\n".join(lines)
 
 
 async def _measure(source: SourceConfig, hosts: Mapping[str, HostLimit]) -> str:
@@ -797,6 +882,17 @@ def main(argv: list[str] | None = None) -> int:
     if not source.enabled:
         print(f"harvest failed: the source {args.source_id!r} is held (enabled: false)", file=sys.stderr)
         return 1
+    if args.explain_links:
+        if source.protocol is not SourceProtocol.CKAN:
+            print(f"harvest failed: --explain-links is for a ckan source, {args.source_id!r} is not one", file=sys.stderr)
+            return 1
+        try:
+            with psycopg.connect(autocommit=True) as conn:
+                print(explain_links(conn, source))
+        except psycopg.Error as error:
+            print(f"harvest failed: database error {type(error).__name__}", file=sys.stderr)
+            return 1
+        return 0
     if args.measure:
         if source.protocol is not SourceProtocol.CKAN:
             print(f"harvest failed: --measure is for a ckan source, {args.source_id!r} is not one", file=sys.stderr)

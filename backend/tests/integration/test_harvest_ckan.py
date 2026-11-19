@@ -20,7 +20,7 @@ import pytest
 
 from earthx.catalog.registry import ConfigError, Maturity
 from earthx.catalog.sources import CkanFilter, RobotsException, SourceConfig, SourceProtocol
-from earthx.discovery.harvest import SourceResting, measure, report, run_harvest
+from earthx.discovery.harvest import SourceResting, explain_links, measure, report, run_harvest
 from earthx.gateway import Gateway, Policy
 
 pytestmark = pytest.mark.anyio
@@ -633,3 +633,17 @@ async def test_the_report_names_the_fields_that_changed(db: psycopg.Connection, 
     text = report(source, result)
     assert "geändert in (Zwischenform): " in text and "Rohantwort geändert in: " in text
     assert "amt.example.org" not in text and "Anders" not in text
+
+
+async def test_explain_links_names_why_finds_reach_only_the_catalogue_page(
+    db: psycopg.Connection, source: SourceConfig
+) -> None:
+    http_page = _package("1", url="http://amt.example.org/daten/1")
+    no_page = _package("2", url="", maintainer_email="max@example.org")
+    at_provider = _package("3")
+    await run_harvest(db, source, gateway=_gateway(Catalogue([http_page, no_page, at_provider], size=10)))
+    text = explain_links(db, source)
+    assert text.splitlines()[0].startswith(f"{source.source_id}: 2 Funde nur mit Katalogseite")
+    assert "nur http: 1 (50 %)" in text and "leer: 1 (50 %)" in text
+    assert "dataset-1: http://amt.example.org/daten/1" in text
+    assert "max@" not in text and "dataset-3" not in text

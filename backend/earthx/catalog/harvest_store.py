@@ -37,6 +37,7 @@ __all__ = [
     "list_validators",
     "mark_gone",
     "previous",
+    "raw_of_catalogue_links",
     "raw_records",
     "renew_run",
     "save_list_validators",
@@ -400,6 +401,22 @@ def raw_records(
         )
         for key, packed, state in cur:
             yield key, gzip.decompress(packed), state
+
+
+def raw_of_catalogue_links(conn: psycopg.Connection, source_id: str) -> Iterator[tuple[str, bytes]]:
+    """``(key, raw)`` of every kept raw answer of the source whose link "Source" is only the catalogue page (rank 3)
+    or that has none (``no_link``): what ``--explain-links`` looks at, without a request."""
+    # A named cursor needs a transaction on a connection in autocommit; it only reads.
+    with conn.transaction(), conn.cursor(name="earthx_catalogue_links") as cur:
+        cur.execute(
+            "SELECT r.source_key, r.raw_gzip FROM public.earthx_raw_record r"
+            " JOIN public.earthx_record_state s USING (source_id, source_key)"
+            " WHERE r.source_id = %s AND r.raw_gzip IS NOT NULL AND ((s.state = 'extracted'"
+            " AND s.extracted->>'source_rank' = '3') OR (s.state = 'invalid' AND s.reason = 'no_link'))",
+            (source_id,),
+        )
+        for key, packed in cur:
+            yield key, gzip.decompress(packed)
 
 
 def canonical(document: Any) -> bytes:

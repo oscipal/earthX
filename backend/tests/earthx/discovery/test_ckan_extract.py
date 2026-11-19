@@ -18,6 +18,7 @@ from earthx.discovery.ckan import (
     CkanListing,
     ckan_pages,
     extract_package,
+    link_reasons,
     package_key,
     search_params,
     stable_package,
@@ -558,3 +559,49 @@ def test_new_resource_ids_leave_the_link_as_it_is() -> None:
     before = _resources({**VIEWER, "id": "aaaaaaaa-0000-4000-8000-000000000001"}, {**FILE, "id": "x1"})
     after = _resources({**FILE, "id": "x2"}, {**VIEWER, "id": "bbbbbbbb-0000-4000-8000-000000000002"})
     assert extract_package("k", before, SOURCE).source_url == extract_package("k", after, SOURCE).source_url
+
+
+def test_why_a_package_reaches_only_the_catalogue_page() -> None:
+    # Otto, 19.11.2026: GovData reaches rank 3 for 82 % of its finds; --explain-links names the reasons.
+    package = {
+        "id": "k",
+        "name": "x",
+        "url": "http://amt.example.org/daten/x",
+        "landingPage": "https://amt.example.org/daten/x",
+        "maintainer_email": "max@example.org",
+        "contact_uri": "https://people.example.org/max",
+        "extras": [
+            {"key": "dcat_landing_page", "value": "https://amt.example.org/daten/x"},
+            {"key": "contact_url", "value": "https://people.example.org/max"},
+        ],
+        "resources": [
+            {"id": "r1", "url": "https://amt.example.org/viewer", "format": "HTML", "download_url": "https://amt.example.org/x.zip"},
+            {"id": "r2", "url": "https://amt.example.org/dl/x"},
+        ],
+    }
+    reasons = dict(link_reasons(package))
+    assert reasons["url_http"] == "http://amt.example.org/daten/x"
+    assert reasons["html_with_download"] == "https://amt.example.org/viewer"
+    assert reasons["resource_without_format"] == "https://amt.example.org/dl/x"
+    assert reasons["field:landingPage"] == reasons["extras:dcat_landing_page"] == "https://amt.example.org/daten/x"
+    # Person fields are never named, whatever they hold.
+    assert not any("people" in (value or "") or "contact" in code or "maintainer" in code for code, value in reasons.items())
+
+
+@pytest.mark.parametrize(
+    ("url", "code"),
+    [
+        (None, "url_empty"),
+        ("https://amt.example.org/", "url_start_page"),
+        ("https://amt.example.org/x.zip", "url_file"),
+        ("https://amt.example.org/wms?SERVICE=WMS&REQUEST=GetCapabilities", "url_service"),
+    ],
+)
+def test_the_reason_why_the_page_field_is_no_link(url: str | None, code: str) -> None:
+    assert code in dict(link_reasons({"id": "k", "url": url, "resources": []}))
+
+
+def test_a_package_without_resources_and_without_html() -> None:
+    assert "no_resources" in dict(link_reasons({"id": "k", "resources": []}))
+    only_files = {"id": "k", "resources": [{"url": "https://amt.example.org/x.csv", "format": "CSV"}]}
+    assert "no_html_resource" in dict(link_reasons(only_files))
