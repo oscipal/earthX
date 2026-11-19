@@ -491,7 +491,7 @@ Die Doku nennt 41 Tage für die vorläufigen Items; die Liste trug am Messtag 59
 
 - Die Doku unterscheidet „preliminary“ und „consolidated“ je **Item**, nicht je Größe: Die Temperaturen und `SrelD` eines Tages-Items sind ebenso vorläufig wie der Niederschlag. Nur der Niederschlag trägt dafür einen eigenen Produktnamen (`RprelimD`); die übrigen behalten ihren Namen (F4 betrifft nur `RprelimD` → Band `RhiresD`).
 - Eine konsolidierte Monatsdatei kann am 26. noch einmal überschrieben und im Februar durch die Jahresdatei ersetzt werden. Beides ist kein Standwechsel, sondern eine Änderung an Ort und Stelle (`file:checksum`) bzw. ein jüngerer Beitrag gleichen Stands (Regel „jünger“, `adr/0038` §3.4): F3 = zwei Stände bleibt.
-- **Tagesgrenzen der vorläufigen Temperaturen (A16):** Die Tagesdatei trägt die Variable `TabsD` (bzw. `TminD`, `TmaxD`, `SrelD`), also dasselbe Produkt, dessen Tag `ProdDoc_TabsD` bzw. `ProdDoc_SrelD` festlegt (00–24 UTC, M5-11 §11.1), mit demselben Stempel 00:00 UTC. PR 2 nimmt diese Grenzen; „vorläufig“ ändert die Rechnung, nicht den Tag. `RprelimD` 06–06 UTC (F5).
+- **Tagesgrenzen der vorläufigen Temperaturen (A16):** Die Tagesdatei trägt die Variable `TabsD` (bzw. `TminD`, `TmaxD`, `SrelD`), also dasselbe Produkt, dessen Tag `ProdDoc_TabsD` bzw. `ProdDoc_SrelD` festlegt (00–24 UTC, M5-11 §11.1), mit demselben Stempel 00:00 UTC. PR 2 nimmt diese Grenzen; „vorläufig“ ändert die Rechnung, nicht den Tag. `RprelimD` 06–06 UTC (F5). **Bestätigt von Otto (19.11.2026):** vorläufige `TabsD`, `TminD`, `TmaxD` und `SrelD` 00–24 UTC wie das Archiv.
 
 ### 11.3 Wie `expires` genutzt wird
 
@@ -508,3 +508,9 @@ Die Doku nennt 41 Tage für die vorläufigen Items; die Liste trug am Messtag 59
 - Gewählt werden nur Dateien der Größen des Eintrags auf seinem Gitter mit den drei Präfixen aus §11.2; Items ohne solche Dateien sind keine Gruppe.
 - Kosten eines Tageslaufs: ein Abruf der Liste (rund 2 MB, das Archiv-Item eingeschlossen), dazu je neuer Tages- bzw. geänderter Monatsdatei 5–8 Abrufe für die Verweise. Derselbe Inhalt wird damit höchstens einmal am Tag geladen, und nur die Liste; die Nutzungsbedingung („high-frequency downloading of the same content“) ist eingehalten.
 - Das braucht im Kern nichts Neues: „Liste“ ist eine Gruppe ohne Einheiten, deren Validator der Adapter liefert und vergleicht.
+
+### 11.5 Antworten von Otto (19.11.2026)
+
+- A16 bestätigt: vorläufige Temperaturen und `SrelD` 00–24 UTC wie das Archiv.
+- Der Prototyp-Ordner enthält nur die README; der Block `updates` ist dort nicht nachzutragen.
+- Otto prüft lokal, dass die bestehenden Datensätze unverändert laufen; Merge nach grüner CI. PR 2 (MeteoSchweiz) in einer neuen Session.
