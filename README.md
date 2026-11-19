@@ -342,6 +342,8 @@ docker compose run --rm harvest opendata-swiss
 - Der Bericht nennt bei geänderten Funden die Felder, in denen sie sich unterscheiden (Zwischenform und Rohantwort),
   nur mit Namen und Zahl. Buchhaltung wie `metadata_modified` zählt nicht als Änderung der Rohantwort, die Reihenfolge
   von Schlagworten, Lizenzangaben und Distributionen nicht als Änderung der Zwischenform.
+- `--explain-links` hinter einer CKAN-Quelle schlüsselt aus den gespeicherten Rohantworten auf, warum Funde nur die
+  Katalogseite als Link „Source“ haben (Zahl und drei Beispiele je Grund), ohne Anfrage an die Quelle.
 - `--reextract` leitet die Zwischenform aus den gespeicherten Rohantworten neu ab, ohne Anfrage; nach einer
   Änderung am Extraktor macht das auch der nächste gewöhnliche Lauf für jeden betroffenen Fund.
 - Der Bericht nennt Art und Ausgang des Laufs, Anfragen, Funde neu/geändert/unverändert/weg und den Stand der
