@@ -83,10 +83,17 @@ Regeln kommen nur per neuer Migration (Otto, 16.11.2026).
 einen Zug; die Anfragen, die GDAL für die Datei stellte, verrechnet sie danach mit dem Zug des Hosts (wie
 `gateway.HostPacer.account`), ohne bei null Anfragen etwas zurückzugeben.
 
+`024_harvest.sql` bis `028_harvest_budget_rest.sql`, `030_harvest_keyset.sql` — der Harvest aus M5-19
+(`docs/plans/m5/m5-19-harvest-kern.md`): Läufe mit Lauf-Sperre, Rohantwort und Zustand je Fund, Übergänge und
+der Zustand je Quelle (024); die Version des Extraktors je Fund (025); weitere Abbruchgründe (026, 028); der offene
+Durchgang über mehrere Läufe mit der Übernahme eines abgebrochenen Laufs (027); Seitenbudget, inkrementelle Durchgänge
+und Sperrfrist nach `429` (028); Lesen nach Schlüssel statt Versatz, der Durchgang hält nur noch die zuletzt gelesene
+id (030). Geschrieben von `discovery` über `earthx.catalog.harvest_store`.
+
 `029_materialize_units.sql` — der Zustand einer Quelle je Einheit aus M5-58 (`adr/0038` §3.5,
 `docs/plans/m5/m5-58-laufende-daten.md`): `earthx_materialize_group` (Validator je Listendokument) und
 `earthx_materialize_unit` (Stand, Validatoren und Beiträge je Datei), dazu die Zähler je Einheit in
-`earthx_materialize_runs`. Die Nummern 026–028 hält der offene M5-19 PR 2 (#379).
+`earthx_materialize_runs`. Die Nummern 026–028 kamen aus M5-19 PR 2 (#379) später dazu.
 
 Die Buchführungstabelle `earthx_migrations` gehört nicht hierher, sondern dem Läufer
 (`earthx/catalog/schema.py`) und wird von ihm angelegt. Sonst müsste jedes

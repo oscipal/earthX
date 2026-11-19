@@ -284,3 +284,82 @@ class TestGateway:
         async with source.gateway(obeying()) as gateway:
             with pytest.raises(RobotsDisallowed):
                 await gateway.head(f"https://{HOST}/a", within=narrower)
+
+
+CKAN_ROBOTS = "User-agent: *\nDisallow: /api/\nDisallow: /dataset/rate/\nCrawl-delay: 10\n"
+
+
+class TestException:
+    """A waived Disallow for the documented metadata API of a harvest source (Otto, 18.11.2026; adr/0025 §6.2)."""
+
+    async def test_the_exception_path_is_read_and_nothing_else_of_the_host(self) -> None:
+        source = Source({HOST: text(CKAN_ROBOTS)})
+        policy = obeying(robots_exceptions={HOST: ("/api/3/action/",)})
+        async with source.gateway(policy) as gateway:
+            await gateway.get(f"https://{HOST}/api/3/action/package_search", params={"rows": 100})
+            for path in ("/api/2/rest/dataset", "/api/3/action", "/dataset/rate/x"):
+                with pytest.raises(RobotsDisallowed):
+                    await gateway.get(f"https://{HOST}{path}")
+            assert gateway.robots_waived == {HOST}
+        assert source.seen == [f"{HOST}/robots.txt", f"{HOST}/api/3/action/package_search?rows=100"]
+
+    @pytest.mark.parametrize(
+        "path",
+        ["/api/3/action/../../admin", "/api/3/action/%2E%2E/%2E%2E/admin", "/api/3/action/./x/../../y"],
+    )
+    async def test_no_path_climbs_out_of_the_exception(self, path: str) -> None:
+        source = Source({HOST: text(CKAN_ROBOTS)})
+        async with source.gateway(obeying(robots_exceptions={HOST: ("/api/3/action/",)})) as gateway:
+            with pytest.raises((RobotsDisallowed, UrlRejected)):
+                await gateway.get(f"https://{HOST}{path}")
+            assert gateway.robots_waived == set()
+
+    async def test_the_exception_holds_for_its_host_only(self) -> None:
+        sub = f"api.{HOST}"
+        source = Source({HOST: text(CKAN_ROBOTS), sub: text(CKAN_ROBOTS)})
+        async with source.gateway(obeying(HOST, robots_exceptions={HOST: ("/api/3/action/",)})) as gateway:
+            with pytest.raises(RobotsDisallowed):
+                await gateway.get(f"https://{sub}/api/3/action/package_search")
+
+    async def test_without_an_exception_robots_txt_stays_strict(self) -> None:
+        source = Source({HOST: text(CKAN_ROBOTS)})
+        async with source.gateway(obeying()) as gateway:
+            with pytest.raises(RobotsDisallowed):
+                await gateway.get(f"https://{HOST}/api/3/action/package_search")
+            assert gateway.robots_waived == set()
+
+    async def test_an_allowed_path_is_no_waiver(self) -> None:
+        source = Source({HOST: text("User-agent: *\nAllow: /\n")})
+        async with source.gateway(obeying(robots_exceptions={HOST: ("/api/3/action/",)})) as gateway:
+            await gateway.get(f"https://{HOST}/api/3/action/package_search")
+            assert gateway.robots_waived == set()
+
+    async def test_the_crawl_delay_holds_under_the_exception(self) -> None:
+        # The larger of the source's interval (hosts.yaml) and the Crawl-delay spaces the requests.
+        source = Source({HOST: text(CKAN_ROBOTS)})
+        starts: list[float] = []
+        original = source.handle
+
+        def handle(request: httpx.Request) -> httpx.Response:
+            if request.url.path != "/robots.txt":
+                starts.append(source.now)
+            return original(request)
+
+        gateway = Gateway(
+            obeying(host_intervals={HOST: 1.0}, robots_exceptions={HOST: ("/api/3/action/",)}),
+            transport=httpx.MockTransport(handle),
+            resolve=public,
+            sleep=source.sleep,
+            clock=source.clock,
+        )
+        async with gateway:
+            await gateway.get(f"https://{HOST}/api/3/action/package_search", params={"start": 0})
+            await gateway.get(f"https://{HOST}/api/3/action/package_search", params={"start": 99})
+        assert starts[1] - starts[0] >= 10.0
+
+    @pytest.mark.parametrize(
+        "path", ["/", "", "api/3/", "/api/3", "/api/../x/", "/api/./x/", "/api//x/", "/api/3/?x=1/", "/api/%2e/", 5]
+    )
+    def test_an_exception_names_a_plain_path_prefix(self, path: object) -> None:
+        with pytest.raises(ValueError, match="robots.txt exception"):
+            obeying(robots_exceptions={HOST: (path,)})  # type: ignore[arg-type]

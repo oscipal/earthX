@@ -52,19 +52,19 @@ class TestTheReleasedFile:
     def test_a_source_whose_host_has_no_limits_is_an_error(self, catalog: Path) -> None:
         # M5-19 F6: the hosts of the harvest seed have their limits in the same file.
         text = (catalog / "hosts.yaml").read_text(encoding="utf-8")
-        (catalog / "hosts.yaml").write_text(text.split("  www.govdata.de:")[0], encoding="utf-8")
-        with pytest.raises(ConfigError, match="no limits for ckan.opendata.swiss, www.data.gv.at, www.govdata.de"):
+        (catalog / "hosts.yaml").write_text(text.split("  ckan.govdata.de:")[0], encoding="utf-8")
+        with pytest.raises(ConfigError, match="no limits for ckan.govdata.de, ckan.opendata.swiss, www.data.gv.at"):
             read_registry(catalog)
 
     def test_limits_of_a_catalogue_host_without_its_source_are_an_error(self, catalog: Path) -> None:
         (catalog / "sources" / "govdata.yaml").unlink()
-        with pytest.raises(ConfigError, match="no entry or source reads from: www.govdata.de"):
+        with pytest.raises(ConfigError, match="no entry or source reads from: ckan.govdata.de"):
             read_registry(catalog)
 
     def test_the_catalogue_hosts_otto_chose(self) -> None:
         # M5-19 F6 = 1: two connections, one second apart.
         limits = read_registry().host_limits
-        for host in ("www.govdata.de", "ckan.opendata.swiss", "www.data.gv.at"):
+        for host in ("ckan.govdata.de", "ckan.opendata.swiss", "www.data.gv.at"):
             assert (limits[host].connections, limits[host].interval_s) == (2, 1.0)
 
     def test_the_values_otto_chose(self) -> None:
@@ -150,6 +150,26 @@ class TestTheShapeOfTheFile:
         entry = f"  {BUCKET}:\n    connections: 1\n    reason: x\n"
         with pytest.raises(EntryFileError, match="duplicate key"):
             load_host_limits(_hosts(tmp_path, "hosts:\n" + entry + entry))
+
+
+class TestTheReadTimeout:
+    """``timeout_s`` (Otto, 19.11.2026): a catalogue that answers slowly at times gets a longer read timeout."""
+
+    def test_opendata_swiss_waits_a_minute(self) -> None:
+        limits = read_registry().host_limits
+        assert limits["ckan.opendata.swiss"].timeout_s == 60.0
+        assert limits["ckan.govdata.de"].timeout_s == 60.0
+        assert limits["data.geo.admin.ch"].timeout_s is None
+
+    def test_a_timeout_is_optional(self, tmp_path: Path) -> None:
+        body = "    connections: 1\n    timeout_s: 45\n    reason: why\n"
+        assert load_host_limits(_hosts(tmp_path, _one(body)))[BUCKET] == HostLimit(1, None, "why", 45.0)
+
+    @pytest.mark.parametrize("value", ["0", "0.5", "301", "true", "'60'", ".nan"])
+    def test_a_wrong_timeout(self, tmp_path: Path, value: str) -> None:
+        body = f"    connections: 1\n    timeout_s: {value}\n    reason: why\n"
+        with pytest.raises(EntryFileError, match="timeout_s is a number of seconds from 1 to 300"):
+            load_host_limits(_hosts(tmp_path, _one(body)))
 
 
 class TestWhereTheRegistryMeetsTheFile:

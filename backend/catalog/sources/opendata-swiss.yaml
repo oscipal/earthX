@@ -7,7 +7,19 @@ catalog_page: https://opendata.swiss/de/dataset/{name}
 filter:
   fq: null
   publisher_field: organization
-max_requests_per_run: 400
+  page_extras: []
+max_requests_per_run: 600
+# opendata.swiss answers 429 to offsets past ~10 100 (Otto, 19.11.2026), so the harvest reads it by key. 400 pages of
+# 50 hold a full pass of some 325 pages in one run, about an hour with the crawl delay of 10 s (Otto, 19.11.2026).
+max_pages_per_run: 400
+# Keyset pages of 100 took 4-14 s on 19.11.2026 (Otto): half the rows, less work per request.
+rows_per_page: 50
 full_every_days: 7
+# Its robots.txt is the default of CKAN (Disallow: /api/, Crawl-delay: 10). The provider documents the metadata API for
+# reuse (handbook "opendata.swiss API nutzen"; address [S], from a search, not opened from a session), so the harvest
+# may read this path only; the Crawl-delay is kept (Otto, 18.11.2026).
+robots_exception:
+  path: /api/3/action/
+  evidence: https://handbook.opendata.swiss/de/content/nutzen/api-nutzen.html
 maturity: stable
 enabled: true

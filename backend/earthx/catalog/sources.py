@@ -16,9 +16,18 @@ from types import MappingProxyType
 
 from earthx.catalog.entry_files import EntryFileError, read_yaml
 from earthx.catalog.registry import PROTOTYPE_PREFIX, Maturity
-from earthx.gateway import UrlRejected, host_of
+from earthx.gateway import UrlRejected, check_robots_exception_path, host_of
 
-__all__ = ["SOURCES_DIR", "CkanFilter", "SourceConfig", "SourceProtocol", "StacFilter", "read_source", "read_sources"]
+__all__ = [
+    "SOURCES_DIR",
+    "CkanFilter",
+    "RobotsException",
+    "SourceConfig",
+    "SourceProtocol",
+    "StacFilter",
+    "read_source",
+    "read_sources",
+]
 
 SOURCES_DIR = Path(__file__).resolve().parents[2] / "catalog" / "sources"
 _README = "README.md"
@@ -26,6 +35,7 @@ _README = "README.md"
 _HAND_SOURCE = "listed"
 _ID = re.compile(r"[a-z][a-z0-9-]{1,62}")
 _HTTPS = re.compile(r"https://[^\s/?#@]+(?:/[^\s?#]*)?")
+_EXTRA_KEY = re.compile(r"[A-Za-z][A-Za-z0-9_:.-]{0,63}")
 _PREFIX = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
 _FIELDS = frozenset(
     {
@@ -35,7 +45,10 @@ _FIELDS = frozenset(
         "catalog_page",
         "filter",
         "max_requests_per_run",
+        "max_pages_per_run",
+        "rows_per_page",
         "full_every_days",
+        "robots_exception",
         "maturity",
         "enabled",
     }
@@ -58,10 +71,23 @@ class StacFilter:
 @dataclass(frozen=True, slots=True)
 class CkanFilter:
     """``fq`` of ``package_search`` as written, or none; ``publisher_field`` names where the source keeps the publisher
-    (GovData ``publisher_name``, opendata.swiss ``organization``, adr/0025 §5.2)."""
+    (GovData ``publisher_name``, opendata.swiss ``organization``, adr/0025 §5.2); ``page_extras`` the keys of extras
+    that may hold the page of a dataset at the provider, read in order after the field ``url`` (rank 2 of the link
+    "Source"; GovData ``uri``, ``guid``, F12 = 1, Otto 19.11.2026)."""
 
     fq: str | None
     publisher_field: str
+    page_extras: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class RobotsException:
+    """The one path of a source's host whose Disallow in robots.txt the harvest waives, with the provider's documentation
+    of it (Otto, 18.11.2026; adr/0025 §6.2). The path is the endpoint's own: the metadata API, nothing else of the
+    host. robots.txt is still read and its Crawl-delay kept."""
+
+    path: str
+    evidence: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,7 +100,15 @@ class SourceConfig:
     catalog_page: str | None
     filter: StacFilter | CkanFilter
     max_requests_per_run: int
+    #: The pages of a CKAN listing one run reads at most; ``None`` without a cap. A pass larger than it goes on in the
+    #: next run (Otto, 18.11.2026: a source that keeps a quota, opendata.swiss).
+    max_pages_per_run: int | None
+    #: The packages a page of a CKAN listing asks for; ``None`` for the harvest's default (100). Fewer rows, less work
+    #: for a slow catalogue per request (Otto, 19.11.2026).
+    rows_per_page: int | None
     full_every_days: int
+    #: ``None``: robots.txt is obeyed as written.
+    robots_exception: RobotsException | None
     maturity: Maturity
     enabled: bool
 
@@ -95,6 +129,30 @@ def _count(name: str, data: Mapping[str, object], field: str, high: int) -> int:
     return value
 
 
+def _pages(name: str, protocol: SourceProtocol, value: object) -> int | None:
+    if value is None:
+        return None
+    if protocol is not SourceProtocol.CKAN:
+        raise _bad(name, "max_pages_per_run is for a ckan source; a stac-api source has null")
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= MAX_REQUESTS_PER_RUN:
+        raise _bad(name, f"max_pages_per_run is null or a whole number from 1 to {MAX_REQUESTS_PER_RUN}")
+    return value
+
+
+#: The most rows a CKAN page may ask for; ``package_search`` caps them at ``ckan.search.rows_max`` (1 000 by default).
+MAX_ROWS_PER_PAGE = 1000
+
+
+def _rows(name: str, protocol: SourceProtocol, value: object) -> int | None:
+    if value is None:
+        return None
+    if protocol is not SourceProtocol.CKAN:
+        raise _bad(name, "rows_per_page is for a ckan source; a stac-api source has null")
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= MAX_ROWS_PER_PAGE:
+        raise _bad(name, f"rows_per_page is null or a whole number from 1 to {MAX_ROWS_PER_PAGE}")
+    return value
+
+
 def _filter(name: str, protocol: SourceProtocol, value: object) -> StacFilter | CkanFilter:
     if protocol is SourceProtocol.STAC_API:
         if not isinstance(value, dict) or set(value) != {"collection_prefixes"}:
@@ -103,14 +161,18 @@ def _filter(name: str, protocol: SourceProtocol, value: object) -> StacFilter | 
         if not isinstance(prefixes, list) or not all(isinstance(p, str) and _PREFIX.fullmatch(p) for p in prefixes):
             raise _bad(name, "collection_prefixes is a list of collection id prefixes")
         return StacFilter(tuple(prefixes))
-    if not isinstance(value, dict) or set(value) != {"fq", "publisher_field"}:
-        raise _bad(name, "filter of a ckan source has fq and publisher_field, nothing else")
-    fq, field = value["fq"], value["publisher_field"]
+    if not isinstance(value, dict) or set(value) != {"fq", "publisher_field", "page_extras"}:
+        raise _bad(name, "filter of a ckan source has fq, publisher_field and page_extras, nothing else")
+    fq, field, extras = value["fq"], value["publisher_field"], value["page_extras"]
+    if not isinstance(extras, list) or not all(isinstance(k, str) and _EXTRA_KEY.fullmatch(k) for k in extras):
+        raise _bad(name, "page_extras is a list of keys of extras")
+    if len(set(extras)) != len(extras):
+        raise _bad(name, "page_extras names each key once")
     if fq is not None and (not isinstance(fq, str) or not fq.strip() or len(fq) > 1000):
         raise _bad(name, "fq is null or a non-blank text of at most 1000 characters")
     if field not in ("publisher_name", "organization"):
         raise _bad(name, "publisher_field is publisher_name or organization")
-    return CkanFilter(fq, field)
+    return CkanFilter(fq, field, tuple(extras))
 
 
 def _catalog_page(name: str, protocol: SourceProtocol, value: object) -> str | None:
@@ -122,6 +184,24 @@ def _catalog_page(name: str, protocol: SourceProtocol, value: object) -> str | N
     if value.count(placeholder) != 1 or value.replace(placeholder, "").count("{"):
         raise _bad(name, f"catalog_page names {placeholder} once and no other placeholder")
     return value
+
+
+def _robots_exception(name: str, endpoint: str, value: object) -> RobotsException | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict) or set(value) != {"path", "evidence"}:
+        raise _bad(name, "robots_exception is null or has path and evidence, nothing else")
+    try:
+        path = check_robots_exception_path(value["path"])
+    except ValueError as error:
+        raise _bad(name, f"robots_exception.path: {error}") from None
+    endpoint_path = "/" + endpoint.split("://", 1)[1].partition("/")[2]
+    if path != endpoint_path.rstrip("/") + "/":
+        raise _bad(name, "robots_exception.path is the path of endpoint with a trailing '/', the metadata API only")
+    evidence = value["evidence"]
+    if not isinstance(evidence, str) or not _HTTPS.fullmatch(evidence.split("#")[0]):
+        raise _bad(name, "robots_exception.evidence is the https address of the provider's documentation of its API")
+    return RobotsException(path, evidence)
 
 
 def read_source(path: Path) -> SourceConfig:
@@ -159,7 +239,10 @@ def read_source(path: Path) -> SourceConfig:
         catalog_page=_catalog_page(name, protocol, data["catalog_page"]),
         filter=_filter(name, protocol, data["filter"]),
         max_requests_per_run=_count(name, data, "max_requests_per_run", MAX_REQUESTS_PER_RUN),
+        max_pages_per_run=_pages(name, protocol, data["max_pages_per_run"]),
+        rows_per_page=_rows(name, protocol, data["rows_per_page"]),
         full_every_days=_count(name, data, "full_every_days", 365),
+        robots_exception=_robots_exception(name, endpoint, data["robots_exception"]),
         maturity=maturity,
         enabled=data["enabled"],
     )

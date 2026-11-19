@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from earthx.discovery.links import MAX_LINK_CHARS, LinkRank, checked_link, choose_link
+from earthx.discovery.links import MAX_LINK_CHARS, LinkRank, checked_link, choose_link, link_problem
 
 VIEWER = LinkRank.VIEWER_OR_DOWNLOAD_PAGE
 DATASET = LinkRank.DATASET_PAGE
@@ -102,3 +102,25 @@ def test_within_a_rank_the_first_valid_one_wins() -> None:
 def test_no_valid_link_is_none() -> None:
     assert choose_link([(VIEWER, "http://a.example.org/1"), (CATALOGUE, None)]) is None
     assert choose_link([]) is None
+
+
+@pytest.mark.parametrize(
+    ("url", "problem"),
+    [
+        ("https://example.org/data/1", None),
+        ("http://example.org/data/1", "http"),
+        ("ftp://example.org/data/1", "scheme"),
+        ("", "empty"),
+        (None, "empty"),
+        ("https://example.org/", "start_page"),
+        ("https://example.org/de/", "start_page"),
+        ("https://192.0.2.1/data", "host"),
+        ("https://example.org:8443/data", "port"),
+        ("https://example.org/da ta", "control"),
+        ("https://example.org/" + "x" * 3000, "long"),
+        ("https://user@example.org/data", "invalid"),
+    ],
+)
+def test_why_a_link_may_not_be_the_link_source(url: object, problem: str | None) -> None:
+    assert link_problem(url) == problem
+    assert (checked_link(url) is None) == (problem is not None)

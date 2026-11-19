@@ -290,6 +290,67 @@ einer Python-Umgebung mit `backend/requirements-dev.lock`:
 python -m pytest backend/tests_live/test_swissalti3d_smoke.py
 ```
 
+### Quellen ernten (M5-19)
+
+Der Harvest liest die Kataloge der Quellen unter `backend/catalog/sources/` (je Quelle eine YAML-Datei,
+Felder in `backend/catalog/sources/README.md`) und hält je Fund die Rohantwort, ihren Hash und eine
+Zwischenform in Postgres (`earthx_record_state`, Migration `024`). Sichtbar wird davon nichts: Lizenz,
+Freigabe und Eintrag im „Data catalogue“ kommen mit M5-20. Der Lauf geht über `gateway` an echte Quellen
+und läuft deshalb wie `materialize` nur unter einem Profil, bei laufender Topologie, nie aus der CI. In
+PowerShell 5.1:
+
+```powershell
+docker compose run --build --rm harvest fsdi-stac
+docker compose run --rm harvest opendata-swiss
+```
+
+- **STAC-API** (`fsdi-stac`, `earth-search`): jeder Lauf liest die ganze Collection-Liste; eine Liste auf
+  einer Seite wird mit ihrem `ETag` gefragt (`304`: nichts zu tun).
+- **CKAN** (`govdata`, `opendata-swiss`): gelesen nach Schlüssel (Keyset): sortiert nach `id`, jede Seite ab
+  `start=0` mit den ids nach der zuletzt gelesenen, nie mit einem Versatz (opendata.swiss antwortet auf tiefe Versätze
+  mit `429`). Der erste Lauf und danach einer alle `full_every_days` (7) liest
+  alle Pakete, je `rows_per_page` (sonst 100) je Anfrage mit 1 s Abstand (GovData rund 3 300 Seiten zu 50, auf
+  mehrere Läufe verteilt).
+  Dazwischen fragt ein Lauf nur nach Paketen, die seit dem Beginn des letzten erfolgreichen Laufs bzw.
+  vollen Durchgangs (eine Stunde Überlappung) geändert wurden. `--full` hinter der ID erzwingt einen vollen Lauf. Nur ein voller Lauf
+  setzt verschwundene Pakete auf `gone`, und nur, wenn er mindestens ein Paket gelesen hat; Pakete, die während
+  eines Durchgangs kommen oder gehen, verschieben dabei keine Seite.
+- `robots.txt` gilt streng. Nur wo die Seed-Datei `robots_exception` nennt (Pfad der Metadaten-API und Beleg in
+  der Doku des Anbieters), liest der Harvest diesen einen Pfad trotz `Disallow`; der Bericht nennt das.
+  `Crawl-delay` gilt immer: Bei opendata.swiss (10 s) dauert ein voller Durchgang rund eine Stunde. GovData
+  wird über den API-Host `ckan.govdata.de` gefragt; beide haben eine Ausnahme für ihre Metadaten-API.
+- `data-gv-at` steht auf `enabled: false`, bis ein erster Lauf den Endpunkt bestätigt; der Befehl lehnt die
+  Quelle bis dahin ab.
+- Antwortet eine Quelle nicht in der Zeit, gar nicht oder mit `5xx`, fragt der Lauf dieselbe Seite nach 1, 2, 4, 8 min
+  erneut, solange in den letzten 30 min eine Seite kam, höchstens 60 min lang; danach endet er `interrupted` mit Stand.
+- Antwortet eine Quelle mit `429`, wartet der Lauf nach ihrem `Retry-After`, sonst 2 min und danach jeweils
+  doppelt so lang (bis 30 min); nach 60 min Warten insgesamt endet er `interrupted` (`rate_limited`).
+- `max_pages_per_run` in der Quell-Datei begrenzt die Seiten eines Laufs (opendata.swiss und GovData: 400 Seiten zu
+  50 Paketen). Ist die Grenze erreicht, endet der Lauf `interrupted`
+  (`page_budget`), und der nächste setzt fort; ein voller Durchgang verteilt sich so über mehrere Tage.
+- Endet ein Lauf `rate_limited`, ruht die Quelle bis zu ihrem `Retry-After`, sonst bis 00:00 UTC des nächsten
+  Tages. Davor startet kein Lauf und kein `--measure`; der Befehl nennt die Uhrzeit. Von Hand aufheben:
+  `UPDATE earthx_harvest_source SET rest_until = NULL WHERE source_id = '<id>';`
+- Ein CKAN-Lauf, voll oder inkrementell, darf über mehrere Läufe gehen: Bricht er ab, hält die Datenbank die zuletzt gelesene id fest,
+  und der nächste Lauf (auch mit `--full`) setzt dort fort; der Bericht nennt die Stelle. `gone` gibt es erst,
+  wenn der Durchgang ganz durchgelaufen ist.
+- `--measure` hinter einer CKAN-Quelle stellt sechs Anfragen: die erste Seite wie der Harvest, die zweite Seite
+  abwechselnd zweimal per Versatz und zweimal per Keyset (mit Zeiten), die erste mit `fl` (nur die Indexfelder des
+  Extract); es zeigt Zeiten, Größen und die größten Felder, speichert nichts.
+- `rows_per_page` in der Quell-Datei setzt die Pakete je Seite (CKAN, `null` = 100; opendata.swiss 50), und
+  `timeout_s` in `hosts.yaml` den Lese-Timeout eines Hosts (ohne Feld 15 s; `ckan.opendata.swiss` und `ckan.govdata.de` 60 s).
+- Der Bericht nennt bei geänderten Funden die Felder, in denen sie sich unterscheiden (Zwischenform und Rohantwort),
+  nur mit Namen und Zahl. Buchhaltung wie `metadata_modified` zählt nicht als Änderung der Rohantwort, die Reihenfolge
+  von Schlagworten, Lizenzangaben und Distributionen nicht als Änderung der Zwischenform.
+- `--explain-links` hinter einer CKAN-Quelle schlüsselt aus den gespeicherten Rohantworten auf, warum Funde nur die
+  Katalogseite als Link „Source“ haben (Zahl und drei Beispiele je Grund), ohne Anfrage an die Quelle.
+- `--reextract` leitet die Zwischenform aus den gespeicherten Rohantworten neu ab, ohne Anfrage; nach einer
+  Änderung am Extraktor macht das auch der nächste gewöhnliche Lauf für jeden betroffenen Fund.
+- Der Bericht nennt Art und Ausgang des Laufs, Anfragen, Funde neu/geändert/unverändert/weg und den Stand der
+  Quelle (gültig, davon „Ausdehnung unbekannt“, ungültig mit Grund), nie Adressen. Rückgabe 0 nur bei `done`.
+- Hält ein Host still (Unterbrecher, `robots.txt`) oder ist die Obergrenze an Anfragen erreicht, endet der
+  Lauf `interrupted` und ändert nichts an Funden, die er nicht gesehen hat; später erneut starten.
+
 ### Kachelzeiten messen (M5-30b)
 
 Für die Budgets der Mosaik-Kachel (`docs/adr/0032-bild-bei-jedem-zoom.md` §8.5) misst ein

@@ -17,8 +17,8 @@ import psycopg
 import pytest
 
 from earthx.catalog.harvest_store import HarvestBusy, start_run
-from earthx.catalog.registry import ConfigError, Maturity
-from earthx.catalog.sources import CkanFilter, SourceConfig, SourceProtocol, StacFilter
+from earthx.catalog.registry import Maturity
+from earthx.catalog.sources import SourceConfig, SourceProtocol, StacFilter
 from earthx.discovery import harvest as harvest_module
 from earthx.discovery.harvest import report, run_harvest
 from earthx.discovery.stac import extract_collection as _extract
@@ -104,7 +104,10 @@ def source() -> SourceConfig:
         catalog_page="https://stac.example.org/browser/#/collections/{id}",
         filter=StacFilter(()),
         max_requests_per_run=20,
+        max_pages_per_run=None,
+        rows_per_page=None,
         full_every_days=1,
+        robots_exception=None,
         maturity=Maturity.STABLE,
         enabled=True,
     )
@@ -284,7 +287,8 @@ async def test_robots_txt_stops_the_run(db: psycopg.Connection, source: SourceCo
     catalogue = Catalogue(THREE)
     catalogue.robots = "User-agent: *\nDisallow: /api/\n"
     result = await run_harvest(db, source, gateway=_gateway(catalogue))
-    assert (result.status, result.stop_reason, result.counts.requests) == ("interrupted", "robots", 1)
+    # The request robots.txt forbids is never sent, so it is no request of the run.
+    assert (result.status, result.stop_reason, result.counts.requests) == ("interrupted", "robots", 0)
     assert not catalogue.asked and _states(db, source) == {}
 
 
@@ -332,8 +336,18 @@ async def test_a_listing_that_loops_or_leaves_the_host_fails(
 async def test_a_broken_source_fails_the_run(db: psycopg.Connection, source: SourceConfig) -> None:
     catalogue = Catalogue(THREE)
     catalogue.status = 503
-    result = await run_harvest(db, source, gateway=_gateway(catalogue))
-    assert (result.status, result.stop_reason) == ("failed", "upstream")
+
+    async def no_wait(seconds: float) -> None:
+        return None
+
+    # F11 = 1: asked again after 1, 2, 4, 8 min, then every 8 min, until an hour of waiting is spent.
+    result = await run_harvest(db, source, gateway=_gateway(catalogue), sleep=no_wait)
+    assert (result.status, result.stop_reason, result.failures, result.failure_waited_s) == (
+        "failed",
+        "upstream",
+        9,
+        3300.0,
+    )
 
 
 async def test_an_answer_that_is_no_listing_fails_the_run(db: psycopg.Connection, source: SourceConfig) -> None:
@@ -375,15 +389,9 @@ async def test_a_reextract_asks_nothing_and_finds_no_change(db: psycopg.Connecti
     assert (result.status, c.requests, c.found_unchanged, c.found_changed) == ("done", 0, 3, 0)
 
 
-async def test_a_ckan_source_waits_for_pr_2(db: psycopg.Connection, source: SourceConfig) -> None:
-    ckan = replace(source, protocol=SourceProtocol.CKAN, filter=CkanFilter(None, "organization"))
-    with pytest.raises(ConfigError, match="PR 2"):
-        await run_harvest(db, ckan, gateway=_gateway(Catalogue(THREE)))
-
-
 async def test_the_report_names_numbers_never_an_address(db: psycopg.Connection, source: SourceConfig) -> None:
     result = await run_harvest(db, source, gateway=_gateway(Catalogue(THREE)))
-    text = report(source.source_id, result)
+    text = report(source, result)
     assert "Dieser Lauf: neu 3, geändert 0, unverändert 0, weg 0" in text
     assert "Stand der Quelle: gültig 2 (davon Ausdehnung unbekannt 1), ungültig 1 (ohne Titel 1)" in text
     assert "https://" not in text and HOST not in text
@@ -398,7 +406,7 @@ async def test_after_a_304_the_report_still_says_how_many_finds_are_invalid(
     await run_harvest(db, source, gateway=_gateway(catalogue))
     result = await run_harvest(db, source, gateway=_gateway(catalogue))
     assert (result.counts.not_modified, result.counts.found_unchanged, result.counts.invalid) == (1, 3, 1)
-    assert "ungültig 1 (ohne Titel 1)" in report(source.source_id, result)
+    assert "ungültig 1 (ohne Titel 1)" in report(source, result)
 
 
 async def test_a_new_extractor_version_judges_unchanged_finds_again(
@@ -412,7 +420,7 @@ async def test_a_new_extractor_version_judges_unchanged_finds_again(
         # The new extractor accepts a collection without a title.
         return _extract(key, {**document, "title": document.get("title") or "Untitled"}, source)
 
-    monkeypatch.setattr(harvest_module, "extract_collection", lenient)
+    monkeypatch.setitem(harvest_module._EXTRACTORS, SourceProtocol.STAC_API, lenient)
     result = await run_harvest(db, source, gateway=_gateway(Catalogue(THREE)))
     assert (result.counts.found_changed, result.counts.found_unchanged) == (1, 2)
     assert _states(db, source)["c"] == ("extracted", None, True)
