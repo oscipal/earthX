@@ -497,6 +497,21 @@ class TestNetcdfReferences:
         assert resolved.scaling == "store-cf"
         assert heads.requests == []
 
+    async def test_the_same_order_again_takes_the_references_of_the_item_as_it_is_now(self) -> None:
+        """M5-58 (plan §3.7): "Run again" sends the order, not its recipe. After a provisional day was replaced by the
+        final one under the same item id, the order is resolved against the replaced item, not the old references."""
+        registry = DatasetRegistry((*INTAKE_REGISTRY, self.CONFIG), retired=tuple(INTAKE_REGISTRY.retired))
+        document = order("synthetic-netcdf", (("NC_20240101",),), ("TabsD",))
+        first = await accept(document, Source((self.CONFIG, self.item())), Heads(), registry=registry)
+        replaced = self.item()
+        final_refs = {**self.REFS, "etag": '"final-file-etag"'}
+        replaced["assets"]["TabsD"] = {"href": f"https://{DEM_HOST}/tabsd_final.nc", "earthx:refs": final_refs}
+        again = await accept(document, Source((self.CONFIG, replaced)), Heads(), registry=registry)
+        (before,), (after,) = first.recipe.inputs[0].resolved, again.recipe.inputs[0].resolved
+        assert before.version is not None and after.version is not None
+        assert (before.version.value, after.version.value) == ('"file-etag-1"', '"final-file-etag"')
+        assert after.asset.refs == final_refs
+
 
 class TestUnits:
     """The unit of a band: the item's own first, else the registry's, else none (M4-19b, adr/0014 §15n)."""

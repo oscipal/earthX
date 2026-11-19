@@ -201,6 +201,11 @@ viewer:
 # nothing beyond that. The reachability date itself lives on `access.token_free_checked_at` (point 6), not here.
 health:
   status: ok
+# M5-58 (adr/0038 §3.1, plan A2): federated, so `materialize` keeps nothing of it; its items are asked live.
+updates:
+  cadence: none
+  states: [final]
+  detect: whole
 # Element 84's Collection 1 is a released, versioned product line, not a pilot.
 maturity: stable
 zarr: null

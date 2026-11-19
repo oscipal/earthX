@@ -187,6 +187,11 @@ viewer:
   overview_substitute: null
 health:
   status: ok
+# M5-58 (adr/0038 §3.1, plan A2): the source does not change what this entry holds; one version per run as before.
+updates:
+  cadence: none
+  states: [final]
+  detect: whole
 # A released, versioned product (state of 9 May 2022), not a pilot.
 maturity: stable
 zarr: null
