@@ -16,7 +16,9 @@ import pytest
 
 from earthx.catalog.pgstac import load_collection, upsert_items, use_pgstac_search_path
 from earthx.catalog.schema import apply_migrations
+from earthx.catalog.source_units import read_units
 from earthx.discovery.materialize import MaterializeResult, run_materialize
+from earthx.gateway.errors import UpstreamError
 from tests.catalog.entries import METEOSWISS_DAILY_PRECIP_1KM
 from tests.earthx.discovery.mini_archive import (
     LIST_PATH,
@@ -29,6 +31,7 @@ from tests.earthx.discovery.mini_archive import (
     name,
     netcdf_file,
 )
+from tests.earthx.readers import mini_netcdf
 
 pytestmark = pytest.mark.anyio
 
@@ -194,3 +197,30 @@ class TestTakeOver:
         result = await run(db, archive)
         assert result.units is not None and result.units.units_changed == 1
         assert "20250103" not in stored(db)
+        (unit,) = [unit for unit in read_units(db, CONFIG.dataset_id).values() if unit.key == annual]
+        assert unit.validators.etag == mini_netcdf.Source(archive.files[annual]).etag
+
+    async def test_an_asset_whose_file_is_no_longer_listed_goes(
+        self, db: psycopg.Connection, archive: Archive, tmp_path: Path
+    ) -> None:
+        archive.files[name("RhiresD", GRID, 2024)] = annual_file(tmp_path, 2024)
+        await self.m5_11_items(db, archive)
+        del archive.files[name("RhiresD", GRID, 2024)]
+        result = await run(db, archive)
+        assert result.items_deleted == 3
+        assert not any(day.startswith("2024") for day in stored(db))
+
+
+class TestAFileGone:
+    async def test_a_listed_file_the_source_does_not_serve_fails_the_run_and_writes_nothing(
+        self, db: psycopg.Connection, archive: Archive
+    ) -> None:
+        """Until Otto decides otherwise (plan §12.5, F10): the run fails as a whole, the next one tries again."""
+        await run(db, archive)
+        before = stored(db)
+        archive.items["day-18"] = {day_name("RprelimD", GRID, date(2026, 11, 18)): b"x"}
+        archive.gone.add(day_name("RprelimD", GRID, date(2026, 11, 18)))
+        with pytest.raises(UpstreamError):
+            await run(db, archive)
+        # The run raised before it wrote; `main` rolls its transaction back all the same.
+        assert stored(db) == before

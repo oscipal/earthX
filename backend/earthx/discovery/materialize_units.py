@@ -91,9 +91,13 @@ def holders(pairs: set[Pair], units: Iterable[StoredUnit]) -> dict[Pair, StoredU
 
 def _adopt(
     conn: psycopg.Connection, config: DatasetConfig, units: Iterable[SourceUnit], now: datetime
-) -> dict[str, StoredUnit]:
-    """The stored state of the listed units whose address a stored item asset carries (M5-58 F9)."""
+) -> tuple[dict[str, StoredUnit], set[Pair]]:
+    """The stored state of the listed units whose address a stored item asset carries (M5-58 F9), and the assets whose
+    address the source no longer lists: they go, unless another unit holds them now."""
     stored = stored_assets(conn, config)
+    units = list(units)
+    listed = {unit.href for unit in units}
+    orphans = {pair for href, (_, pairs) in stored.items() if href not in listed for pair in pairs}
     adopted: dict[str, StoredUnit] = {}
     for unit in units:
         if unit.href not in stored:
@@ -109,7 +113,7 @@ def _adopt(
             changed_at=now,
             expires=unit.expires,
         )
-    return adopted
+    return adopted, orphans
 
 
 async def unchanged(gateway: Gateway, unit: SourceUnit, stored: StoredUnit) -> tuple[bool, Validators]:
@@ -245,8 +249,9 @@ async def run_units(
     groups, unchanged_groups = dict(listing.groups), frozenset(listing.unchanged_groups)
     _check_listing(config, known_groups, groups, unchanged_groups, listing.units)
     adopted: set[str] = set()
+    orphans: set[Pair] = set()
     if not before and not known_groups:
-        before = _adopt(conn, config, listing.units, now)
+        before, orphans = _adopt(conn, config, listing.units, now)
         adopted = set(before)
 
     after: dict[str, StoredUnit] = {key: unit for key, unit in before.items() if unit.group in unchanged_groups}
@@ -265,7 +270,10 @@ async def run_units(
             kept += 1
             after[unit.key] = replace(stored, group=unit.group, validators=validators, expires=unit.expires)
         else:
-            to_build.append(replace(unit, validators=validators))
+            # The listing's own validators, so that what reading shows now fills the rest (not what was stored before);
+            # a hash the core computed is kept.
+            listed = replace(unit.validators, content_sha256=validators.content_sha256)
+            to_build.append(replace(unit, validators=listed))
     changed = len(to_build) - new
     gone = set(before) - set(after) - {unit.key for unit in to_build}
 
@@ -311,6 +319,7 @@ async def run_units(
             touched |= unit.contributes
     for key in adopted & set(after):
         touched |= after[key].contributes
+    touched |= orphans
 
     # A unit that holds an asset now but did not before, and was not built in this run, is built anew (§3.4 point 4).
     # Built anew, it may contribute to fewer assets than before; those are touched too, and so on until nothing moves.
