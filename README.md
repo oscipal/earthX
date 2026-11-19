@@ -309,21 +309,22 @@ docker compose run --rm harvest opendata-swiss
 - **CKAN** (`govdata`, `opendata-swiss`): gelesen nach Schlüssel (Keyset): sortiert nach `id`, jede Seite ab
   `start=0` mit den ids nach der zuletzt gelesenen, nie mit einem Versatz (opendata.swiss antwortet auf tiefe Versätze
   mit `429`). Der erste Lauf und danach einer alle `full_every_days` (7) liest
-  alle Pakete, je 100 je Anfrage mit 1 s Abstand (GovData rund 1 650 Anfragen, knapp eine halbe Stunde).
+  alle Pakete, je `rows_per_page` (sonst 100) je Anfrage mit 1 s Abstand (GovData rund 3 300 Seiten zu 50, auf
+  mehrere Läufe verteilt).
   Dazwischen fragt ein Lauf nur nach Paketen, die seit dem Beginn des letzten erfolgreichen Laufs bzw.
   vollen Durchgangs (eine Stunde Überlappung) geändert wurden. `--full` hinter der ID erzwingt einen vollen Lauf. Nur ein voller Lauf
   setzt verschwundene Pakete auf `gone`, und nur, wenn er mindestens ein Paket gelesen hat; Pakete, die während
   eines Durchgangs kommen oder gehen, verschieben dabei keine Seite.
 - `robots.txt` gilt streng. Nur wo die Seed-Datei `robots_exception` nennt (Pfad der Metadaten-API und Beleg in
   der Doku des Anbieters), liest der Harvest diesen einen Pfad trotz `Disallow`; der Bericht nennt das.
-  `Crawl-delay` gilt immer: Bei opendata.swiss (10 s) dauert ein voller Lauf knapp eine halbe Stunde. GovData
-  wird über den API-Host `ckan.govdata.de` gefragt.
+  `Crawl-delay` gilt immer: Bei opendata.swiss (10 s) dauert ein voller Durchgang rund eine Stunde. GovData
+  wird über den API-Host `ckan.govdata.de` gefragt; beide haben eine Ausnahme für ihre Metadaten-API.
 - `data-gv-at` steht auf `enabled: false`, bis ein erster Lauf den Endpunkt bestätigt; der Befehl lehnt die
   Quelle bis dahin ab.
 - Antwortet eine Quelle mit `429`, wartet der Lauf nach ihrem `Retry-After`, sonst 2 min und danach jeweils
   doppelt so lang (bis 30 min); nach 60 min Warten insgesamt endet er `interrupted` (`rate_limited`).
-- `max_pages_per_run` in der Quell-Datei begrenzt die Seiten eines Laufs (opendata.swiss: 40; ob mehr geht, zeigt
-  der erste Lauf mit Keyset-Paging). Ist die Grenze erreicht, endet der Lauf `interrupted`
+- `max_pages_per_run` in der Quell-Datei begrenzt die Seiten eines Laufs (opendata.swiss und GovData: 400 Seiten zu
+  50 Paketen). Ist die Grenze erreicht, endet der Lauf `interrupted`
   (`page_budget`), und der nächste setzt fort; ein voller Durchgang verteilt sich so über mehrere Tage.
 - Endet ein Lauf `rate_limited`, ruht die Quelle bis zu ihrem `Retry-After`, sonst bis 00:00 UTC des nächsten
   Tages. Davor startet kein Lauf und kein `--measure`; der Befehl nennt die Uhrzeit. Von Hand aufheben:
@@ -335,7 +336,10 @@ docker compose run --rm harvest opendata-swiss
   abwechselnd zweimal per Versatz und zweimal per Keyset (mit Zeiten), die erste mit `fl` (nur die Indexfelder des
   Extract); es zeigt Zeiten, Größen und die größten Felder, speichert nichts.
 - `rows_per_page` in der Quell-Datei setzt die Pakete je Seite (CKAN, `null` = 100; opendata.swiss 50), und
-  `timeout_s` in `hosts.yaml` den Lese-Timeout eines Hosts (ohne Feld 15 s; `ckan.opendata.swiss` 60 s).
+  `timeout_s` in `hosts.yaml` den Lese-Timeout eines Hosts (ohne Feld 15 s; `ckan.opendata.swiss` und `ckan.govdata.de` 60 s).
+- Der Bericht nennt bei geänderten Funden die Felder, in denen sie sich unterscheiden (Zwischenform und Rohantwort),
+  nur mit Namen und Zahl. Buchhaltung wie `metadata_modified` zählt nicht als Änderung der Rohantwort, die Reihenfolge
+  von Schlagworten, Lizenzangaben und Distributionen nicht als Änderung der Zwischenform.
 - `--reextract` leitet die Zwischenform aus den gespeicherten Rohantworten neu ab, ohne Anfrage; nach einer
   Änderung am Extraktor macht das auch der nächste gewöhnliche Lauf für jeden betroffenen Fund.
 - Der Bericht nennt Art und Ausgang des Laufs, Anfragen, Funde neu/geändert/unverändert/weg und den Stand der

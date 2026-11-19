@@ -374,3 +374,21 @@ Ohne Netz, mit `tests/fixtures` und einer Transport-Attrappe am `Gateway` wie be
 3. Nichts weiter; erst sehen, ob 60 s und 50 Zeilen reichen.
 
 Empfehlung: zuerst den nächsten Lauf mit 60 s und 50 Zeilen und `--measure`; bleiben Zeitüberschreitungen, Option 1.
+
+### 12.9 Befund Otto (19.11.2026): erster voller Durchgang durch, Entscheidungen und Nachträge
+
+**Befund Otto:** Voller Durchgang opendata.swiss fertig (Lauf 23 `done`, 16 214 gültig, weg 0, **7 377 ohne Ausdehnung**). `--measure`: Versatz und Keyset gleich schnell (0,4–0,5 s), dieselben Pakete; `fl` 9 % der Größe, aber `notes`, `license_id`, `publisher_name`, `temporal`, `theme`, `access_rights` leer. Die Quelle sendet ohne Kompression.
+
+**Entscheidungen Otto (19.11.2026):** **F10 = 2** (kein `fl`: die Indexfelder tragen nicht, was der Extract braucht). **F11 = 3** (60 s Timeout und 50 Zeilen reichen, die Wiederholung klappt). **Budget opendata.swiss: 400 Seiten** je Lauf, ein voller Durchgang (rund 325 Seiten zu 50) in einem Lauf, `Crawl-delay` 10 s bleibt, also rund eine Stunde. Dazu `max_requests_per_run` 600, damit Wiederholungen und Wartezeiten nicht am Anfragen-Budget enden [A].
+
+**Behoben:**
+
+1. **`--full` bei offenem inkrementellem Durchgang:** Lauf 25 setzte den inkrementellen Durchgang fort. Jetzt gilt: Ein offener voller Durchgang geht weiter (auch mit `--full`); ein offener inkrementeller geht weiter, außer ein voller ist fällig (`--full`, kein voller bisher, oder `full_every_days` vorbei) – dann tritt der volle an seine Stelle und liest alles, was der inkrementelle gelesen hätte.
+2. **Inkrementell, „geändert“:** *Ab wann:* Ein inkrementeller Durchgang fragt ab `changes_since` minus 1 h; nach einem vollen Durchgang ist das dessen **Beginn**, hier der Lauf vom 18.11. (~13:00 MEZ), den Migration 027 übernommen hatte. Lauf 24 und 25 fragten also nach allem, was seit dem 18.11. mittags geändert wurde (opendata.swiss ändert rund 1 000 Pakete am Tag), deshalb je volle 40 Seiten. Das ist richtig, weil früh im Durchgang gelesene Seiten sich während des Durchgangs ändern konnten. *Was sich unterscheidet:* Gespeichert sind nur die jeweils letzte Rohantwort und Zwischenform; die Unterschiede von Lauf 24/25 lassen sich nicht nachträglich lesen. Deshalb:
+   - **Diagnose im Bericht:** „geändert in (Zwischenform): …“ und „Rohantwort geändert in: …“ mit Feldnamen und Zahl (z. B. `distributions.href 900`, `resources (Reihenfolge) 40`), nie Werte.
+   - **Hash der Rohantwort ohne Buchhaltung:** `metadata_modified` und `revision_id` des Pakets sowie `metadata_modified`, `revision_id`, `cache_last_updated` der Ressourcen gehen nicht in den Hash ein, der über erneutes Auswerten entscheidet; die Rohantwort bleibt vollständig. Ein Paket, das nur „angefasst“ wurde, macht keine Folgearbeit (Abnahme §7.3).
+   - **Vergleich der Zwischenform ohne Reihenfolge:** Schlagworte, Lizenzangaben und Distributionen werden vor Vergleich und Hash sortiert; „geändert“ zählt nur echte Unterschiede. Weil der Vergleich über die gespeicherte Form läuft, zählt der erste Lauf nach dem Merge wegen der neuen Hash-Regel nicht alles als geändert; er wertet die Pakete aber einmal neu aus (neue Extraktor-Version).
+   - Bleiben danach viele „geändert“, nennt der Bericht die Felder, und wir entscheiden, ob sie für uns Bedeutung haben.
+3. **`Accept-Encoding`:** `gateway` sendet `gzip, deflate, br` (Vorgabe von httpx, nicht überschrieben; ein Test hält es fest). opendata.swiss antwortet trotzdem unkomprimiert; hier ist nichts zu tun.
+4. **GovData (Otto, 19.11.2026):** `robots.txt` von `ckan.govdata.de` ist `User-agent: *` / `Disallow: /`. Ausnahme für `/api/3/action/` mit Beleg `https://www.govdata.de/daten/-/details/govdata-metadatenkatalog` (Datensatz „GovData Metadatenkatalog“: Metadaten ohne Registrierung über die CKAN-API abrufbar; von Otto im Browser geprüft). Keyset, `rows_per_page` 50, `max_pages_per_run` 400, `timeout_s` 60 in `hosts.yaml`. Ein voller Durchgang von rund 3 300 Seiten braucht so rund neun Läufe.
+5. **Für M5-20:** Nach dem ersten vollen Durchgang tragen bei opendata.swiss **7 377 von 16 214 Funden (45 %)** keine räumliche Angabe; das bestätigt §12.5.
