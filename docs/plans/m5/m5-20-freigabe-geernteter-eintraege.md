@@ -1,6 +1,6 @@
 # M5-20 — Verify, Enrich, Dedupe, Lizenzregeln, Freigabe geernteter Einträge, Kandidaten
 
-**Status (19.11.2026):** Plan angenommen (Otto, 19.11.2026: F1–F6 und F8 je 1, F7 folgt nach der Prüfung im Browser, §13a). **Stufe B.** PR 1 in [#388](https://github.com/oscipal/earthX/pull/388), PR 2 danach; höchstens zwei PRs (M5-Plan §2 Punkt 11).
+**Status (19.11.2026):** Plan angenommen (Otto, 19.11.2026: F1–F6 und F8 je 1, F7 = 3, §13a; Vorgaben aus der Messung §4 in §13b, sie gehen §6–§9 vor). **Stufe B.** PR 1 in [#388](https://github.com/oscipal/earthX/pull/388), PR 2 danach; höchstens zwei PRs (M5-Plan §2 Punkt 11).
 **Aufgabe:** M5-20 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2, Auftrag von Otto vom 19.11.2026.
 **Grundlagen:** `adr/0025` (Schnitt 5, §5.1, §5.4, §6.3, §6.4, §6.5, §6.7 mit Nachträgen), `adr/0033` (§4–§11, §13 Zeile M5-20), `plans/m5/m5-19-harvest-kern.md` §12 (Befunde der Läufe, §12.11 offene Punkte), `plans/m5/m5-40-gelistete-in-postgres.md` (Tabelle, Filter, F10), M5-Plan §2 Punkt 12 (alle Datentypen, Filter nach Region und Zeit), `projektuebersicht.md` Prinzipien 12, 15, 16, KLAERUNGEN B8, B9, B11.
 
@@ -46,6 +46,8 @@ Erledigt mit M5-19 §12.7 (Migration 030): Keyset verschiebt keine Seite, `mark_
 **Lücke:** `--reextract` und das Nachauswerten veralteter Funde in einem inkrementellen Lauf schreiben über `write_find` auch `last_seen_run` = ihr eigener Lauf (`harvest_store.py`, `INSERT … ON CONFLICT … last_seen_run = EXCLUDED.last_seen_run`). Ein Fund, der bei der Quelle verschwunden ist, gilt damit als „gesehen“, wenn während eines offenen Durchgangs neu ausgewertet wurde (z. B. Ottos Läufe 38/39 am 19.11. nach F12), und wird in diesem Durchgang nicht `gone`. Schaden: nur ein verspätetes `gone` (der nächste volle Durchgang holt es nach), nie ein falsches. **Behebung in PR 1 (A2):** Neu auswerten ohne Anfrage lässt `last_seen_run` unverändert; Test dazu.
 
 ### 3.2 data.gv.at — erster Lauf
+
+**Nachtrag 19.11.2026 (Otto, F7 = 3):** data.gv.at läuft nicht mehr auf CKAN, sondern auf piveau (`/api/hub/search/`, 76 729 Datensätze laut `count` am 19.11.); `/katalog/api/3/action/` und `robots.txt` gibt es nicht. Nicht Teil von M5-20; eigene Aufgabe **M5-63** (Adapter piveau hub-search). `data-gv-at.yaml` bleibt unverändert mit `enabled: false`. Der Text darunter ist der Stand vor der Prüfung.
 
 `data-gv-at.yaml` steht mit `enabled: false`, Endpunkt und Herausgeberfeld sind [S] (`adr/0025` §10, M5-19 F7). Ob `www.data.gv.at/katalog/api/3/action/` noch CKAN v3 ohne Schlüssel antwortet und was dort `robots.txt` sagt, ist aus der Sitzung nicht prüfbar. Zwei Blicke im Browser genügen für F7:
 
@@ -281,6 +283,55 @@ Nach `adr/0033` §8 (F1, F4, F5 = 1) und §8.4:
 - **F7** folgt, sobald Otto die zwei Adressen aus §3.2 im Browser geprüft hat; bis dahin bleibt `data-gv-at.yaml` mit `enabled: false`.
 - **Messung §4:** Otto lässt M1–M8 laufen und hängt die Ausgaben an den PR. Damit werden die Begriffsliste und die Signale der Regel R-G (§7) und die Rangfolge `dedupe_rank` (§8) geschärft. Beide liegen deshalb als Daten in Git-Dateien (`geodata.yaml`, Seed-Dateien), nicht im Code: Schärfen heißt eine Zeile ändern, und `report` wertet ohne Anfrage neu aus.
 
+## 13b. Messung (Otto, 19.11.2026) und Vorgaben daraus
+
+Die Ausgaben von M1–M8 stehen als Kommentar am PR. Die Vorgaben gehen §6–§9 vor, wo sie davon abweichen.
+
+**Ausdehnung (M1, M2; §6):**
+
+- opendata.swiss: kein Fund mit Geometrie, 8 839 nur Ortstext, 7 377 nichts. GovData: 70 559 Geometrie, 98 299 nichts; die 24 Ortstexte von GovData sind der Text `"null"`. **Umsetzung:** Der Extract behandelt einen Ortstext `null` (gleich welche Schreibung) wie fehlend; die Extraktor-Version ändert sich damit von selbst, ein `--reextract` ohne Anfrage setzt es um.
+- **Ortsverzeichnis** (F2 = 1, erweitert): Namen in Deutsch, Französisch, Englisch (Italienisch, wo üblich); Kürzel allein und in Klammern („GE“, „Kanton Schwyz (SZ)“, „Canton de Fribourg (FR)“), Kürzel der Unterteilungen nur im Staat des Katalogs; Doppelnamen mit „/“ („Kanton Bern / Canton de Berne“, „Biel/Bienne“): jeder Teil muss treffen, alle Treffer zusammen sind der Ort; Staaten („CH“, „Switzerland“); Liechtenstein mit seinen 11 Gemeinden (in `regions.json` enthalten [P]).
+- **Gliederungswörter ohne Ort** („Kantone“, „Gemeinden“, „Politische Gemeinden“, „Bezirke“, „Grossregionen“, „Sonstige Raumgliederungen“) gelten als Staat des Katalogs (Stufe `catalog`).
+- **Ungefähre Angaben** („Grossraum Basel“, „… und angrenzende Gebiete“, „Schweiz (mit grenznahem Ausland)“) werden auf den genannten Kern zurückgeführt; Zusätze wie „Grossraum“ und „und angrenzende Gebiete“ stehen als Liste in `place_names.yaml`.
+- **Keine Orte** („Spatial“, „Landeskarte 1:500'000“) werden übergangen wie ein fehlender Ortstext.
+- **GeoNames-Adressen** (`sws.geonames.org/<id>`) treffen über eine Tabelle `geonames` (ID → Code) in `place_names.yaml`. Die Tabelle ist leer, bis die IDs belegt sind (F10).
+- **Städte und Gemeinden** („Stadt Bern“, „Winterthur“, „Emmen“, „Riehen“): `earthx_region` hält heute nur Staaten (237) und Unterteilungen (CH 26, DE 16, AT 9, LI 11 Gemeinden) aus Natural Earth [P]; Gemeinden der Schweiz, Deutschlands und Österreichs fehlen. Grenzen nur aus einer amtlichen Quelle, deren Lizenz Otto einstuft; **keine Daten ins Repo vor der Einstufung** (F9). Bis dahin trifft ein Gemeindename nicht und der Fund fällt auf die nächste Stufe (Herausgeber, dann Staat des Katalogs). Ein Ortsname, der auch eine Gemeinde ist („Zürich“, „Bern“, „Basel“), bleibt bis dahin ohne Treffer, statt geraten zu werden.
+- **Ortstexte ohne Treffer** zählt `report --classify` je Quelle (die 30 häufigsten mit Zahl), damit Verzeichnis, Zusätze und GeoNames-Tabelle nachgeschärft werden können.
+
+**Nicht-Geodaten (M3–M5; §7):**
+
+- Die Masse ohne Ausdehnung bei GovData sind Statistiktabellen: `table`/`population` 33 594, davon 32 848 ohne Ausdehnung; Herausgeber Statistisches Amt für Hamburg und Schleswig-Holstein 22 107, Bayerisches Landesamt für Statistik 12 022, Destatis 3 182, IT.NRW 2 375; Titelmuster „Ort: Merkmal“.
+- **Ein Ort im Titel ist kein Geo-Signal.**
+- Stichprobe von 20: 2 Geodaten (POI Wintersport, Kindertagesstätten Thurgau), 5 Grenzfälle (3× Grundwassermessstelle, Raddauerzählstellen, Feldstudie Hengduan), 13 keine.
+- **Geo-Begriffe, die nie verborgen werden** (Geo-Signal, auch als Teil eines zusammengesetzten Wortes: „Grundwassermessstelle“, „Raddauerzählstellen“): u. a. Messstelle, Zählstelle, POI, Standorte. Liste in `geodata.yaml`, Wortende mit `*` (`"*messstelle"`).
+- **Nicht-Geo-Begriffe** wirken auch auf den Namen des Herausgebers (Statistikämter). Die Liste ist ein Vorschlag; freigegeben wird die Regel wie beschlossen über `--classify` mit Stichproben.
+
+**Dedupe (M6, M7; §8):**
+
+- Die Seite beim Anbieter ist **kein** Schlüssel: Gruppen gleicher Seite gibt es nur innerhalb einer Quelle und nur als Sammelseiten (fsdi-stac alle 515 eine Adresse, earth-search alle 9, GovData 170 Gruppen mit 4 899 Funden, opendata.swiss 527 mit 4 106), keine über Quellen hinweg. Innerhalb einer Quelle wird nie allein über eine Seite dedupliziert.
+- Hauptfall **opendata.swiss ↔ FSDI:** 689 Funde von opendata.swiss tragen die ID von 460 der 515 Collections. Verglichen wird die ID als **ganzes Token** einer Adresse, nie als Teilstring (`ch.swisstopo.x` ≠ `ch.swisstopo.x-y`).
+- Schlüssel damit: DOI, DCAT-Kennung, Collection-ID als ganzes Token. Gleiche Datei-Adresse wird nicht verwendet (nicht gemessen, A14). Haupteintrag nach Rang (F4 = 1).
+- Der Bericht zeigt **20 zufällige Paare** (Haupteintrag, Duplikat) zur Prüfung.
+
+**Lizenzen (M8; §9):**
+
+- Schreibweisen derselben Lizenz (http/https, `2.0`/`2_0`, `govdata.de/dl-de/by-2-0` = `dcat-ap.de/…/dl-by-de/2.0`, CC-BY-Freitexte) führt der Lizenzkatalog in `matches` einer `license_ref` zusammen.
+- **Keine Lizenz** sind Adressen von Feeds und Seiten (`…/api/feed/dcat-ap/3.0.0.json`, `…/nutzungsbedingungen…`), „Es gelten keine Zugriffsbeschränkungen“, „Weitere Informationen …“: Sie stehen in keinem `matches`, der Fund wartet (`needs_rule`, `unknown_licence`).
+- **Die Einstufung jeder Lizenz macht Otto.** Zu stufen sind mindestens: `other-closed`, `cc-by-nc-de/3.0`, `terms_by_ask`, `odbl`, `cc-by-sa`, `geonutz/20130319`, `officialWork`, `ccpdm/1.0`, `other-open`, `other-opensource` und `proprietary` von fsdi-stac, dazu die häufigen offenen Lizenzen (CC BY, CC0, DL-DE BY/Zero, die Nutzungsbedingungen von opendata.swiss). Die Zahlen je Angabe stehen in Ottos Ausgabe von M8 am PR; `report` nennt sie danach in der Warteliste selbst. `license-checker` legt je Lizenz einen Vorschlag mit Belegstelle vor (F5 = 1), als eigener Commit in PR 2 oder einem eigenen PR.
+- **Ohne Ottos Einstufung kommt nichts in `in_review`:** Bis `terms.yaml` und `grants/` Einträge haben, endet jeder Fund in der Warteliste; `report` schreibt dann keinen Stapel und keine Freigabedatei.
+
+**Neue Fragen:**
+
+**F9 — Gemeindegrenzen für Ortsnamen (Vorschlag, nichts ins Repo vor deiner Einstufung)?**
+1. Schweiz zuerst: swissBOUNDARIES3D von swisstopo (Gemeinden, amtlich) [S]; Lizenz nach deiner Einstufung, dann ein Skript wie `scripts/write-region-outlines.py`, das die Gemeinden mit Kanton und vereinfachtem Umriss in eine eigene Datei schreibt; Deutschland (VG250 des BKG [S]) erst, wenn GovData-Ortstexte es verlangen (heute 24, alle `null`) **(Empfehlung)**
+2. Schweiz und Deutschland zugleich
+3. Keine Gemeinden; Gemeindenamen fallen auf Herausgeber bzw. Staat des Katalogs
+
+**F10 — GeoNames-IDs aus Ortstexten (`sws.geonames.org/<id>`)?**
+1. `report --classify` zählt die IDs; die Session schlägt die Zuordnung ID → Code nach den Seiten von GeoNames vor (Lesen von Webseiten, keine Harvest-Quelle), du prüfst sie im PR **(Empfehlung)**
+2. Du lieferst die Zuordnung
+3. GeoNames-Adressen übergehen
+
 ## 14. Auslegungen (gelten, wenn Otto nicht widerspricht)
 
 - **A1** IDs geernteter Einträge wie §12; keine `proto-`-ID möglich (die Quelle `proto-*` ist im Seed verboten).
@@ -296,6 +347,8 @@ Nach `adr/0033` §8 (F1, F4, F5 = 1) und §8.4:
 - **A11** `blocked.yaml` wirkt in `report` vor Enrich (`adr/0033` §9) und weiter in `catalog-load`.
 - **A12** Zwischenform neu mit `themes` (INSPIRE- und EU-Themen als Codes) und `identifier`; neue Extraktor-Version, Ottos erster Lauf nach dem Merge wertet einmal ohne Anfrage neu aus und zählt die Funde einmal als „geändert“.
 - **A13** Git nur im Skript auf dem Rechner, nie im Image; das Skript pusht nie (`adr/0025` §8 Schritt 5).
+- **A14** Dedupe über gleiche Datei-Adressen entfällt in PR 1: gemessen ist nur die Seite (M6, kein Schlüssel); eine Datei-Regel käme erst mit einer Messung.
+- **A15** Kürzel aus zwei Buchstaben treffen nur als ganzer Ortstext oder in Klammern; das Kürzel einer Unterteilung nur im Staat des Katalogs (`GE` bei opendata.swiss ist CH-GE, nicht Georgien).
 
 ## 15. Tests (Plan)
 
