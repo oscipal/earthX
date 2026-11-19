@@ -32,12 +32,23 @@ from earthx.catalog.search_filters import ValuesCondition
 from tests.catalog.entries import METEOSWISS_DAILY_1KM, METEOSWISS_DAILY_PRECIP_1KM, SWISSALTI3D
 from tests.earthx.adapters.conftest import answering
 
-TEMPERATURE = METEOSWISS_DAILY_1KM
-PRECIPITATION = METEOSWISS_DAILY_PRECIP_1KM
-
 
 def at(text: str) -> datetime:
     return datetime.fromisoformat(text).replace(tzinfo=UTC)
+
+
+def closed(config, end: str):  # noqa: ANN001, ANN201 — a DatasetConfig in and out
+    """The entry with a closed time extent, as M5-11 loaded it: the days are reckoned from the entry alone. The running
+    entries of M5-58 count up to their newest item instead (`TestARunningSource`)."""
+    return replace(
+        config,
+        temporal_extent=replace(config.temporal_extent, end=at(end)),
+        updates=UpdatesInfo(UpdateCadence.NONE, (ItemState.FINAL,), ChangeDetection.WHOLE),
+    )
+
+
+TEMPERATURE = closed(METEOSWISS_DAILY_1KM, "2025-12-31T23:59:59")
+PRECIPITATION = closed(METEOSWISS_DAILY_PRECIP_1KM, "2026-01-01T05:59:59")
 
 
 def ask(config=TEMPERATURE, **fields) -> CoverageQuery:
@@ -109,13 +120,9 @@ class TestArea:
             fixed_grid_coverage(ask(intersects=bowtie), TEMPERATURE)
 
 
-# A running source (M5-58, adr/0038 §3.6): the end of the extent is open, the newest item says where the days end.
-RUNNING = replace(
-    TEMPERATURE,
-    temporal_extent=TemporalExtent(start=at("1961-01-01"), end=None),
-    updates=UpdatesInfo(UpdateCadence.DAILY, (ItemState.PROVISIONAL, ItemState.FINAL), ChangeDetection.UNITS),
-    limitations=("Values of the last weeks are provisional.",),
-)
+# A running source (M5-58, adr/0038 §3.6): the end of the extent is open, the newest item says where the days end. The
+# entry itself since M5-58 PR 2.
+RUNNING = METEOSWISS_DAILY_1KM
 
 
 class TestARunningSource:

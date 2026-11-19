@@ -32,6 +32,7 @@ from earthx.adapters.spec import AdapterSpec, AdapterSpecs, spec_table
 from earthx.catalog.coverage import CoverageProviderMismatch, CoverageQuery
 from earthx.catalog.registry import (
     AdapterKind,
+    ChangeDetection,
     CoverageProvider,
     DatasetConfig,
     DatasetRegistry,
@@ -130,7 +131,8 @@ def _required(config: DatasetConfig) -> set[str]:
         # collection (adr/0005 rule VI).
         needed = {"search", "fetch", "intersects", "ids"}
     else:
-        needed = {"materialize"}
+        # Per run, or per unit of the source (M5-58, adr/0038 §3.3).
+        needed = {"units" if config.updates.detect is ChangeDetection.UNITS else "materialize"}
     if config.coverage.provider not in (CoverageProvider.LOCAL_SQL, CoverageProvider.FIXED_GRID):
         needed.add("coverage")
     return needed
@@ -140,7 +142,7 @@ def _offered(config: DatasetConfig, adapters: AdapterSpecs) -> set[str]:
     spec = adapters.get(config.source.adapter)
     if spec is None:
         return set()
-    offered = {name for name in ("search", "fetch", "materialize") if getattr(spec, name) is not None}
+    offered = {name for name in ("search", "fetch", "materialize", "units") if getattr(spec, name) is not None}
     if config.coverage.provider in spec.coverage:
         offered.add("coverage")
     if spec.filters is not None:
@@ -210,8 +212,10 @@ class TestEveryRegistryEntryAgainstTheTable:
         assert _missing(config, MATERIALIZE_SPECS) == []
 
     def test_only_discovery_materializes_the_meteoswiss_grids(self) -> None:
-        assert ADAPTER_SPECS[AdapterKind.METEOSWISS_GRID].materialize is None
-        assert MATERIALIZE_SPECS[AdapterKind.METEOSWISS_GRID].materialize is not None
+        assert ADAPTER_SPECS[AdapterKind.METEOSWISS_GRID].units is None
+        assert MATERIALIZE_SPECS[AdapterKind.METEOSWISS_GRID].units is not None
+        # Per unit only, since M5-58 PR 2: there is no run "all or nothing" left for them.
+        assert MATERIALIZE_SPECS[AdapterKind.METEOSWISS_GRID].materialize is None
         assert {kind: spec for kind, spec in MATERIALIZE_SPECS.items() if kind is not AdapterKind.METEOSWISS_GRID} == {
             kind: spec for kind, spec in ADAPTER_SPECS.items() if kind is not AdapterKind.METEOSWISS_GRID
         }

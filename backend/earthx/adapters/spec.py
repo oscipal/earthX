@@ -173,8 +173,8 @@ ADAPTER_SPECS: AdapterSpecs = spec_table(
         coverage={},
         filters=None,
     ),
-    # M5-11: `discovery` materializes it (`discovery.materialize.MATERIALIZE_SPECS`), since only there may `h5py` read
-    # the annual files; to every other caller the source offers nothing.
+    # M5-11, M5-58: `discovery` materializes it per unit (`discovery.materialize.MATERIALIZE_SPECS`), since only there
+    # may `h5py` read its files; to every other caller the source offers nothing.
     AdapterSpec(
         kind=AdapterKind.METEOSWISS_GRID,
         search=None,

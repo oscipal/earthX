@@ -46,9 +46,16 @@ class TestTheField:
             assert isinstance(config.updates, UpdatesInfo), config.dataset_id
 
     def test_the_entries_of_today_behave_as_before(self) -> None:
-        """Plan A2: nothing changes until a task gives an entry its own values."""
+        """Plan A2: nothing changes until a task gives an entry its own values; M5-58 PR 2 gave them to MeteoSwiss."""
+        running = {"meteoswiss-daily-1km", "meteoswiss-daily-precip-1km"}
         for config in registry():
-            assert config.updates == UpdatesInfo(UpdateCadence.NONE, (ItemState.FINAL,), ChangeDetection.WHOLE)
+            if config.dataset_id in running:
+                assert config.updates == UpdatesInfo(
+                    UpdateCadence.DAILY, (ItemState.PROVISIONAL, ItemState.FINAL), ChangeDetection.UNITS
+                )
+                assert config.temporal_extent.end is None
+            else:
+                assert config.updates == UpdatesInfo(UpdateCadence.NONE, (ItemState.FINAL,), ChangeDetection.WHOLE)
 
     def test_the_rank_is_the_order_of_the_states(self) -> None:
         assert ItemState.PROVISIONAL.rank < ItemState.FINAL.rank
