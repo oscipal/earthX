@@ -357,3 +357,20 @@ Ohne Netz, mit `tests/fixtures` und einer Transport-Attrappe am `Gateway` wie be
 3. **`429` bei tiefem Versatz:** Mit Keyset fragt der Harvest nie mit `start` > 0; ein solcher `429` entsteht nicht mehr. Die Behandlung echter `429` (`Retry-After`, Warten, Sperrfrist) bleibt.
 4. **Migration 030:** Der offene Durchgang braucht nur noch den Schlüssel und die Zahl gelesener Pakete; `pass_start`, `pass_total` und `pass_moved` entfallen. Der gespeicherte Stand von opendata.swiss (Versatz 10 098) ist schon ein Keyset-Stand, denn `pass_last_key` ist das zuletzt gelesene Paket; die 10 099 Funde bleiben gültig. Ein Durchgang, dessen Liste sich unter Versätzen verschoben hatte, beginnt neu. Alle Sperrfristen werden aufgehoben, weil sie alle von dieser Grenze stammen. Der Test der Übernahme aus Migration 027 entfällt: Die Anweisung schreibt Spalten, die 030 entfernt; in Ottos Datenbank ist sie gelaufen.
 5. **Budget und Abstand** bleiben: 40 Seiten je Lauf, `Crawl-delay` 10 s. Ob das Budget höher sein darf, entscheidet Otto nach dem ersten Keyset-Lauf.
+
+### 12.8 Befund Otto (19./20.11.2026): langsame Seiten, Zeitüberschreitung
+
+**Befund Otto:** Keyset funktioniert (Lauf 19: +900, Lauf 20: +800, jetzt 11 799 gültig, Stand korrekt fortgesetzt). Viele Seiten brauchen aber 4–14 s, mehrere über 15 s: Zeitüberschreitung, nach 3 Versuchen pausiert der Unterbrecher den Host 300 s, der Lauf endet `interrupted` (Stand gespeichert). Nicht an einer festen Seite (die Seite aus Lauf 19 ging in Lauf 20 im zweiten Versuch durch). Am Vortag mit Versatz dauerten Seiten meist ~0,5 s.
+
+**Umgesetzt (Otto, 19.11.2026):**
+
+1. **Timeout je Host:** neues optionales Feld `timeout_s` in `hosts.yaml` (1–300 s); `gateway` setzt es als Lese-Timeout jeder Anfrage an den Host (über `Policy.host_read_timeouts`, gilt für Harvest und `materialize`, nicht für GDAL). `ckan.opendata.swiss`: **60 s**; ohne Feld bleibt die Vorgabe 15 s.
+2. **Seitengröße je Quelle:** neues Pflichtfeld `rows_per_page` (nur CKAN, `null` = 100). opendata.swiss: **50**. Das Seitenbudget zählt weiter Seiten: 40 Seiten zu 50 sind 2 000 Pakete je Lauf; ob das Budget steigen soll, entscheidet Otto nach dem nächsten Lauf.
+3. **`--measure`:** sechs Anfragen: die erste Seite wie der Harvest; die zweite Seite zweimal per Versatz (`start` = Seitengröße) und zweimal per Keyset (`fq` mit den ids nach der letzten der ersten Seite), abwechselnd; die erste Seite mit `fl`. Je Anfrage die Zeit, die `gateway` selbst misst (`GatewayResponse.elapsed_s`, ohne Warten auf Abstand und `Crawl-delay`), und ob beide Wege dieselben Pakete liefern. Damit zeigt sich, ob die Keyset-Abfrage selbst teurer ist. Budget und Sperrfrist gelten wie bisher (`max_pages_per_run` ≥ 6).
+
+**F11 — Zeitüberschreitung bei einer langsamen Quelle (Punkt 4, Vorschlag):** Heute wiederholt `gateway` eine Anfrage nach Zeitüberschreitung bis zu dreimal (0,5/1/2 s Abstand); jede zählt beim Unterbrecher als Fehlschlag, nach dem dritten ruht der Host 300 s, und der Lauf endet `interrupted` mit gespeichertem Stand (keine Sperrfrist).
+1. **Wie bei `429`, mit Bedingung (Empfehlung):** Endet eine Anfrage nach den Versuchen des `gateway` mit Zeitüberschreitung (oder ruht der Host danach), wartet der Harvest und fragt dieselbe Seite erneut: 1, 2, 4, 8 min, die Pause des Unterbrechers abwartend; aber nur, solange der Lauf in den letzten 30 min mindestens eine Seite bekommen hat („Antworten kommen grundsätzlich“). Höchstens 60 min Warten je Lauf, dann `interrupted` mit Stand, ohne Sperrfrist (die Quelle hat nicht abgelehnt). Zeitüberschreitungen zählen weiter für den Unterbrecher, der die Quelle schützt.
+2. Für Harvest-Hosts zählt eine Zeitüberschreitung nicht beim Unterbrecher, nur `5xx` und `429`; der Lauf wiederholt sofort.
+3. Nichts weiter; erst sehen, ob 60 s und 50 Zeilen reichen.
+
+Empfehlung: zuerst den nächsten Lauf mit 60 s und 50 Zeilen und `--measure`; bleiben Zeitüberschreitungen, Option 1.

@@ -331,8 +331,11 @@ docker compose run --rm harvest opendata-swiss
 - Ein CKAN-Lauf, voll oder inkrementell, darf über mehrere Läufe gehen: Bricht er ab, hält die Datenbank die zuletzt gelesene id fest,
   und der nächste Lauf (auch mit `--full`) setzt dort fort; der Bericht nennt die Stelle. `gone` gibt es erst,
   wenn der Durchgang ganz durchgelaufen ist.
-- `--measure` hinter einer CKAN-Quelle holt nur ihre erste Seite, einmal wie der Harvest und einmal mit `fl`
-  (nur die Indexfelder des Extract), und zeigt Größen und die größten Felder; nichts wird gespeichert.
+- `--measure` hinter einer CKAN-Quelle stellt sechs Anfragen: die erste Seite wie der Harvest, die zweite Seite
+  abwechselnd zweimal per Versatz und zweimal per Keyset (mit Zeiten), die erste mit `fl` (nur die Indexfelder des
+  Extract); es zeigt Zeiten, Größen und die größten Felder, speichert nichts.
+- `rows_per_page` in der Quell-Datei setzt die Pakete je Seite (CKAN, `null` = 100; opendata.swiss 50), und
+  `timeout_s` in `hosts.yaml` den Lese-Timeout eines Hosts (ohne Feld 15 s; `ckan.opendata.swiss` 60 s).
 - `--reextract` leitet die Zwischenform aus den gespeicherten Rohantworten neu ab, ohne Anfrage; nach einer
   Änderung am Extraktor macht das auch der nächste gewöhnliche Lauf für jeden betroffenen Fund.
 - Der Bericht nennt Art und Ausgang des Laufs, Anfragen, Funde neu/geändert/unverändert/weg und den Stand der
