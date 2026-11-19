@@ -468,6 +468,27 @@ async def test_gone_after_a_pass_over_several_runs_is_what_none_of_them_saw(
     assert states["5"][0] == "gone" and states["1"][0] == "extracted"
 
 
+async def test_a_re_extract_inside_an_open_pass_does_not_keep_a_find_from_gone(
+    db: psycopg.Connection, source: SourceConfig
+) -> None:
+    # M5-20 A2: a re-extract asks no source and so does not see a find; before, it moved `last_seen_run` on and kept a
+    # find gone at the source from the pass it ran in.
+    await run_harvest(db, source, gateway=_gateway(Catalogue(FIVE, size=2)))
+    db.execute(
+        "UPDATE public.earthx_harvest_source SET full_started_at = full_started_at - interval '7 days'"
+        " WHERE source_id = %s",
+        (source.source_id,),
+    )
+    four = Catalogue(FIVE[:4], size=2)
+    four.refuse_from = 1
+    await run_harvest(db, source, gateway=_gateway(four), sleep=_no_wait)
+    assert (await run_harvest(db, source, gateway=None, reextract=True)).status == "done"
+    four.refuse_from = None
+    _next_day(db, source)
+    done = await run_harvest(db, source, gateway=_gateway(four), sleep=_no_wait)
+    assert done.counts.gone == 1 and _states(db, source)["5"][0] == "gone"
+
+
 async def test_a_source_failing_on_the_way_pauses_the_pass(db: psycopg.Connection, source: SourceConfig) -> None:
     catalogue = Catalogue(FIVE, size=2)
     catalogue.refuse_from, catalogue.refuse_status = 1, 503
