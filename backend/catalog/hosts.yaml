@@ -35,6 +35,8 @@ hosts:
   ckan.opendata.swiss:
     connections: 2
     interval_s: 1.0
+    # Keyset pages took 4-14 s on 19.11.2026, some over the default of 15 s (Otto).
+    timeout_s: 60
     reason: opendata.swiss, CKAN catalogue read by the harvest page by page; its robots.txt asks Crawl-delay 10, which the gateway keeps as the larger value (M5-19 F6, Otto 18.11.2026)
   www.data.gv.at:
     connections: 2

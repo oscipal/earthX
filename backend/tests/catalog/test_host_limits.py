@@ -152,6 +152,25 @@ class TestTheShapeOfTheFile:
             load_host_limits(_hosts(tmp_path, "hosts:\n" + entry + entry))
 
 
+class TestTheReadTimeout:
+    """``timeout_s`` (Otto, 19.11.2026): a catalogue that answers slowly at times gets a longer read timeout."""
+
+    def test_opendata_swiss_waits_a_minute(self) -> None:
+        limits = read_registry().host_limits
+        assert limits["ckan.opendata.swiss"].timeout_s == 60.0
+        assert limits["ckan.govdata.de"].timeout_s is None
+
+    def test_a_timeout_is_optional(self, tmp_path: Path) -> None:
+        body = "    connections: 1\n    timeout_s: 45\n    reason: why\n"
+        assert load_host_limits(_hosts(tmp_path, _one(body)))[BUCKET] == HostLimit(1, None, "why", 45.0)
+
+    @pytest.mark.parametrize("value", ["0", "0.5", "301", "true", "'60'", ".nan"])
+    def test_a_wrong_timeout(self, tmp_path: Path, value: str) -> None:
+        body = f"    connections: 1\n    timeout_s: {value}\n    reason: why\n"
+        with pytest.raises(EntryFileError, match="timeout_s is a number of seconds from 1 to 300"):
+            load_host_limits(_hosts(tmp_path, _one(body)))
+
+
 class TestWhereTheRegistryMeetsTheFile:
     def test_a_host_without_limits_is_refused(self) -> None:
         with pytest.raises(ConfigError, match=f"no limits for {BUCKET}"):

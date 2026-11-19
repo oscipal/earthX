@@ -72,6 +72,8 @@ class GatewayResponse:
     status_code: int
     headers: Mapping[str, str]
     content: bytes
+    #: Seconds from sending the request to the end of the body, without the waits for spacing and turns.
+    elapsed_s: float = 0.0
 
     def json(self) -> Any:
         return json.loads(self.content)
@@ -443,13 +445,21 @@ class Gateway:
         given = {
             name: value for name, value in (headers or {}).items() if name.lower() not in {"host", "user-agent"}
         }
+        read_timeout = self._policy.read_timeout_for(checked.host)
         request = self._client.build_request(
             method,
             httpx.URL(checked.url).copy_with(host=checked.address),
             content=content,
             headers={**given, "Host": checked.host, "User-Agent": self._policy.user_agent},
             extensions={"sni_hostname": checked.host},
+            timeout=httpx.Timeout(
+                connect=self._policy.connect_timeout_s,
+                read=read_timeout,
+                write=self._policy.connect_timeout_s,
+                pool=self._policy.connect_timeout_s,
+            ),
         )
+        started = time.monotonic()
         response = await self._client.send(request, stream=True)
         try:
             body = b"" if method == "HEAD" else await self._read(response)
@@ -459,6 +469,7 @@ class Gateway:
             status_code=response.status_code,
             headers={name.lower(): value for name, value in response.headers.items()},
             content=body,
+            elapsed_s=time.monotonic() - started,
         )
 
     async def _read(self, response: httpx.Response) -> bytes:

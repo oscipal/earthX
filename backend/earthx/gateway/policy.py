@@ -175,6 +175,9 @@ class Policy:
     # Whether a 429 is tried again here, at most a few seconds later. A harvest says no: its source asks it to slow
     # down, so it waits minutes on its own, by Retry-After or doubling (Otto, 18.11.2026; adr/0025 §6.2).
     retry_rate_limited: bool = True
+    # Per host, overriding ``read_timeout_s`` for the requests of the gateway, matched like ``host_intervals``: a
+    # catalogue that answers slowly at times (opendata.swiss, Otto 19.11.2026; hosts.yaml ``timeout_s``).
+    host_read_timeouts: Mapping[str, float] = field(default_factory=dict, hash=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "allowed_hosts", frozenset(normalize_host(h) for h in self.allowed_hosts))
@@ -185,6 +188,8 @@ class Policy:
         _check_connections(self.max_connections_per_host)
         connections = {normalize_host(host): _check_connections(value) for host, value in self.host_connections.items()}
         object.__setattr__(self, "host_connections", MappingProxyType(connections))
+        timeouts = {normalize_host(host): _check_read_timeout(value) for host, value in self.host_read_timeouts.items()}
+        object.__setattr__(self, "host_read_timeouts", MappingProxyType(timeouts))
         exceptions = {
             normalize_host(host): tuple(check_robots_exception_path(path) for path in paths)
             for host, paths in self.robots_exceptions.items()
@@ -204,6 +209,15 @@ class Policy:
         """The spacing for ``host``: its own entry, the nearest parent's, else ``min_interval_s``."""
         value = self.host_interval(host)
         return self.min_interval_s if value is None else value
+
+    def read_timeout_for(self, host: str) -> float:
+        """The read timeout for ``host``: its own entry, the nearest parent's, else ``read_timeout_s``."""
+        labels = host.split(".")
+        for start in range(len(labels) - 1):
+            value = self.host_read_timeouts.get(".".join(labels[start:]))
+            if value is not None:
+                return value
+        return self.read_timeout_s
 
     def connections_for(self, host: str) -> int:
         """The cap for ``host``: its own entry in ``host_connections``, the nearest parent's, else ``max_connections_per_host``."""
@@ -225,6 +239,16 @@ class Policy:
     def allows_host(self, host: str) -> bool:
         """True for the host itself and for its real subdomains, nothing else."""
         return any(host == allowed or host.endswith("." + allowed) for allowed in self.allowed_hosts)
+
+
+#: The longest read timeout a host may have: a source that answers later than that is down for a harvest.
+MAX_READ_TIMEOUT_S = 300.0
+
+
+def _check_read_timeout(value: object) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not 1 <= value <= MAX_READ_TIMEOUT_S:
+        raise ValueError(f"a read timeout is a number of seconds from 1 to {MAX_READ_TIMEOUT_S:g}")
+    return float(value)
 
 
 _EXCEPTION_PATH = re.compile(r"(?:/[A-Za-z0-9_~-][A-Za-z0-9._~-]*)+/")
