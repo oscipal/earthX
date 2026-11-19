@@ -336,8 +336,18 @@ async def test_a_listing_that_loops_or_leaves_the_host_fails(
 async def test_a_broken_source_fails_the_run(db: psycopg.Connection, source: SourceConfig) -> None:
     catalogue = Catalogue(THREE)
     catalogue.status = 503
-    result = await run_harvest(db, source, gateway=_gateway(catalogue))
-    assert (result.status, result.stop_reason) == ("failed", "upstream")
+
+    async def no_wait(seconds: float) -> None:
+        return None
+
+    # F11 = 1: asked again after 1, 2, 4, 8 min, then every 8 min, until an hour of waiting is spent.
+    result = await run_harvest(db, source, gateway=_gateway(catalogue), sleep=no_wait)
+    assert (result.status, result.stop_reason, result.failures, result.failure_waited_s) == (
+        "failed",
+        "upstream",
+        9,
+        3300.0,
+    )
 
 
 async def test_an_answer_that_is_no_listing_fails_the_run(db: psycopg.Connection, source: SourceConfig) -> None:

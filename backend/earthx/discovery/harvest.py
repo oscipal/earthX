@@ -26,6 +26,7 @@ import hashlib
 import json
 import logging
 import sys
+import time
 from collections import Counter
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
@@ -85,6 +86,7 @@ from earthx.gateway import (
     Policy,
     RobotsDisallowed,
     UpstreamError,
+    UpstreamUnreachable,
     UrlRejected,
     user_agent_from_env,
 )
@@ -102,6 +104,12 @@ BACKOFF_MAX_S = 1800.0
 #: The longest a run waits on a source that asks it to slow down, all waits together; then it stops and keeps its
 #: place, and the next run goes on from there.
 BACKOFF_BUDGET_S = 3600.0
+#: The waits after a source that did not answer in time or failed (5xx), each request after the gateway's own tries;
+#: the last one repeats. Only while a page came in the last :data:`ALIVE_S`, and at most :data:`FAILURE_BUDGET_S` in all;
+#: then the run ends interrupted and keeps its place, without a rest (F11 = 1, Otto 19.11.2026).
+FAILURE_BACKOFF_S = (60.0, 120.0, 240.0, 480.0)
+ALIVE_S = 1800.0
+FAILURE_BUDGET_S = 3600.0
 #: The run's hold on its source is renewed at least this often while it waits (its term is 5 min, A1).
 HEARTBEAT_S = 60.0
 #: The pages ``--measure`` reads: the first page as a run asks it, the second twice by offset and twice by key, and the
@@ -173,6 +181,9 @@ class HarvestResult:
     #: How often the source answered 429, and how long the run waited for it in all.
     rate_limited: int = 0
     waited_s: float = 0.0
+    #: How often a request failed (timeout, unreachable, 5xx) and was asked again, and how long the run waited for it.
+    failures: int = 0
+    failure_waited_s: float = 0.0
     #: A CKAN pass over several runs (Otto, 18./19.11.2026): how many packages it had read when this run went on with
     #: it, and how many when this one stopped before the pass was through (the next run goes on after the last key).
     resumed_at: int | None = None
@@ -220,9 +231,14 @@ def _retry_after_s(value: str | None, now: datetime) -> float | None:
 
 class _Fetcher:
     """Every request of a run: counted, refused once the source's budget per run is spent, and waited for when the
-    source answers 429 (Otto, 18.11.2026): by its ``Retry-After``, else from :data:`BACKOFF_FIRST_S` on, doubling. A
-    host the breaker paused after those 429s is waited for the same way. More than :data:`BACKOFF_BUDGET_S` of waiting
-    in all ends the run, which keeps its place."""
+    source asks for it.
+
+    A 429 is waited for by its ``Retry-After``, else from :data:`BACKOFF_FIRST_S` on, doubling (Otto, 18.11.2026); more
+    than :data:`BACKOFF_BUDGET_S` of such waiting ends the run ``rate_limited``. A request that timed out, could not
+    reach the source or got a 5xx after the gateway's own tries is asked again after the waits of
+    :data:`FAILURE_BACKOFF_S`, as long as a page came in the last :data:`ALIVE_S` (the source answers at all) and at
+    most :data:`FAILURE_BUDGET_S` in all; then its error ends the run (F11 = 1, Otto 19.11.2026). A host the breaker
+    paused after either is waited for the same way. Every wait renews the run's hold on its source."""
 
     def __init__(
         self,
@@ -234,18 +250,24 @@ class _Fetcher:
         renew: Callable[[], None],
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._gateway, self._host, self._counts, self._budget = gateway, host, counts, budget
-        self._renew, self._sleep, self._now = renew, sleep, now
+        self._renew, self._sleep, self._now, self._clock = renew, sleep, now, clock
         self.rate_limited = 0
         self.waited_s = 0.0
         #: The last Retry-After of a 429 in seconds, ``None`` where the source named none.
         self.retry_after_s: float | None = None
+        #: Requests that failed (timeout, unreachable, 5xx) and were asked again, and the time waited for them.
+        self.failures = 0
+        self.failure_waited_s = 0.0
+        # The run's start counts as the last answer: a source down from the start is waited for as long.
+        self._last_answer = clock()
 
     async def __call__(
         self, url: str, *, params: Mapping[str, str | int] | None = None, headers: Mapping[str, str] | None = None
     ) -> GatewayResponse:
-        backoff, limited = BACKOFF_FIRST_S, False
+        backoff, limited, failing = BACKOFF_FIRST_S, False, 0
         while True:
             if self._counts.requests >= self._budget:
                 raise _BudgetSpent
@@ -253,28 +275,59 @@ class _Fetcher:
                 response = await self._gateway.get(url, params=params, headers=headers)
             except UpstreamError as error:
                 self._counts.requests += 1
-                if error.status_code != 429:
+                if error.status_code == 429:
+                    self.rate_limited += 1
+                    limited = True
+                    wait = self.retry_after_s = _retry_after_s(error.retry_after, self._now())
+                    await self._wait_limited(backoff if wait is None else wait)
+                    backoff = min(backoff * 2, BACKOFF_MAX_S)
+                    continue
+                if error.status_code < 500:
                     raise
-                self.rate_limited += 1
-                limited = True
-                wait = self.retry_after_s = _retry_after_s(error.retry_after, self._now())
-                wait = backoff if wait is None else wait
-            except HostResting:
-                # Paused by the breaker after the 429s: wait on. A host resting for any other reason ends the run.
-                if not limited:
-                    raise
-                wait = backoff
-            else:
+                await self._wait_failing(error, failing)
+                failing += 1
+                continue
+            except UpstreamUnreachable as error:
                 self._counts.requests += 1
-                self._counts.bytes += len(response.content)
-                if response.status_code == 304:
-                    self._counts.not_modified += 1
-                return response
-            if self.waited_s + wait > BACKOFF_BUDGET_S:
-                raise _RateLimited
-            LOGGER.warning("source asks to slow down", extra={"host": self._host, "wait_s": round(wait)})
-            await self._wait(wait)
-            backoff = min(backoff * 2, BACKOFF_MAX_S)
+                await self._wait_failing(error, failing)
+                failing += 1
+                continue
+            except HostResting as error:
+                # Paused by the breaker after the 429s or the failures: wait on. Resting for any other reason ends it.
+                if limited:
+                    await self._wait_limited(backoff)
+                    backoff = min(backoff * 2, BACKOFF_MAX_S)
+                    continue
+                if failing:
+                    await self._wait_failing(error, failing)
+                    failing += 1
+                    continue
+                raise
+            self._counts.requests += 1
+            self._counts.bytes += len(response.content)
+            if response.status_code == 304:
+                self._counts.not_modified += 1
+            self._last_answer = self._clock()
+            return response
+
+    async def _wait_limited(self, wait: float) -> None:
+        if self.waited_s + wait > BACKOFF_BUDGET_S:
+            raise _RateLimited
+        LOGGER.warning("source asks to slow down", extra={"host": self._host, "wait_s": round(wait)})
+        await self._wait(wait)
+        self.waited_s += wait
+
+    async def _wait_failing(self, error: Exception, failing: int) -> None:
+        """Wait before asking a failed request again, or re-raise ``error`` when the source seems gone."""
+        wait = FAILURE_BACKOFF_S[min(failing, len(FAILURE_BACKOFF_S) - 1)]
+        if self._clock() - self._last_answer > ALIVE_S or self.failure_waited_s + wait > FAILURE_BUDGET_S:
+            raise error
+        self.failures += 1
+        LOGGER.warning(
+            "source failed, asking again", extra={"host": self._host, "kind": type(error).__name__, "wait_s": wait}
+        )
+        await self._wait(wait)
+        self.failure_waited_s += wait
 
     async def _wait(self, seconds: float) -> None:
         """Sleep, renewing the run's hold on its source at every heartbeat."""
@@ -283,7 +336,6 @@ class _Fetcher:
             step = min(left, HEARTBEAT_S)
             await self._sleep(step)
             left -= step
-            self.waited_s += step
             self._renew()
 
 
@@ -555,22 +607,24 @@ async def run_harvest(
         assert fetch is not None
         rest_until = rest(conn, source.source_id, fetch.retry_after_s)
     return HarvestResult(
-        run.run_id,
-        kind,
-        status,
-        stop_reason,
-        run.counts,
-        summary,
-        run.without_key,
-        run.gone_unchecked if status == "done" else None,
-        gateway is not None and source.host in gateway.robots_waived,
-        0 if fetch is None else fetch.rate_limited,
-        0.0 if fetch is None else fetch.waited_s,
-        resumed_at,
-        None if still_open is None else still_open.read,
-        rest_until,
-        tuple(run.changed_fields.most_common(_REPORT_FIELDS)),
-        tuple(run.raw_fields.most_common(_REPORT_FIELDS)),
+        run_id=run.run_id,
+        kind=kind,
+        status=status,
+        stop_reason=stop_reason,
+        counts=run.counts,
+        summary=summary,
+        without_key=run.without_key,
+        gone_unchecked=run.gone_unchecked if status == "done" else None,
+        robots_waived=gateway is not None and source.host in gateway.robots_waived,
+        rate_limited=0 if fetch is None else fetch.rate_limited,
+        waited_s=0.0 if fetch is None else fetch.waited_s,
+        failures=0 if fetch is None else fetch.failures,
+        failure_waited_s=0.0 if fetch is None else fetch.failure_waited_s,
+        resumed_at=resumed_at,
+        resume_at=None if still_open is None else still_open.read,
+        rest_until=rest_until,
+        changed_fields=tuple(run.changed_fields.most_common(_REPORT_FIELDS)),
+        raw_fields=tuple(run.raw_fields.most_common(_REPORT_FIELDS)),
     )
 
 
@@ -654,6 +708,11 @@ def report(source: SourceConfig, result: HarvestResult) -> str:
     if result.raw_fields:
         named = ", ".join(f"{name} {count}" for name, count in result.raw_fields)
         lines.append(f"  Rohantwort geändert in: {named}")
+    if result.failures:
+        lines.append(
+            f"  Quelle antwortete nicht oder mit Fehler: {result.failures}-mal erneut gefragt,"
+            f" gewartet {result.failure_waited_s / 60:.0f} min"
+        )
     if result.rate_limited:
         lines.append(f"  Quelle bat um Pause: {result.rate_limited}-mal 429, gewartet {result.waited_s / 60:.0f} min")
     if result.rest_until is not None:
