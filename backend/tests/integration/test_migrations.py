@@ -67,7 +67,7 @@ class TestDiscovery:
             ("024", "harvest"),
             ("025", "extractor_version"),
             ("029", "materialize_units"),
-            ("030", "materialize_unit_expires"),
+            ("031", "materialize_unit_expires"),
         ]
 
     def test_a_missing_directory_is_an_error_not_an_empty_run(self, tmp_path) -> None:

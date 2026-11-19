@@ -527,7 +527,7 @@ Draft-PR [#385](https://github.com/oscipal/earthX/pull/385), Branch `claude/lovi
 |---|---|
 | `discovery/meteoswiss_grid.py` | `list_units`/`build_units` statt des Laufs „alles oder nichts“: liest die ganze Item-Liste (Seiten zu 100, `next` gefolgt), Gruppe „Liste“ mit SHA-256 der Seiten, je Quell-Item SHA-256 seines JSON, je Datei `file:checksum` und `updated` aus der Liste (§11.4); drei Präfixe mit Stand nach §11.2; `rprelimd` nur in Tages-Items und nur als Asset `RhiresD` mit `earthx:source_product: RprelimD` (F4); je Asset `updated` (Last-Modified der Datei) und `expires` des Quell-Items (§11.3); Prüfung der Spanne je Art (ein Tag, ein Monat, das Jahr des Namens) |
 | `discovery/materialize_units.py` | Übernahme des Bestands (F9): erster Lauf ohne Zustand nimmt das ETag aus `earthx:refs` der gespeicherten Assets, `HEAD` mit `If-None-Match`, `304` → kein Neuverweis; die Items werden einmal geschrieben, damit sie ihren Stand tragen; ein gespeichertes Asset, dessen Datei nicht mehr gelistet ist, fällt weg (A24). Nach einem Neubau gilt das ETag der neu gelesenen Datei, nicht das gespeicherte. Halter je Paar in einem Durchgang statt je Paar über alle Einheiten (bei rund 47 500 Items sonst zu langsam) |
-| `catalog/source_units.py`, Migration `030_materialize_unit_expires.sql` | `expires` je Einheit gespeichert (A17) und `stored_assets` für die Übernahme |
+| `catalog/source_units.py`, Migration `031_materialize_unit_expires.sql` | `expires` je Einheit gespeichert (A17) und `stored_assets` für die Übernahme |
 | `discovery/materialize.py` | `MATERIALIZE_SPECS` mit `units` für `meteoswiss-grid`; der Weg `detect: whole` für MeteoSchweiz entfällt |
 | beide YAML-Einträge | `updates: {daily, [provisional, final], units}`, `temporal_extent.end: null`, Endpunkt = Item-Liste, `limitations` mit den beiden Sätzen aus §4.5 (Otto bestätigt), Beschreibung ohne „Only completed years“ |
 | `processing/recipe.py`, `api/intake.py` | Provenienz: `state` je aufgelöster Eingabe neben `version`, aus `earthx:state` des Assets; fehlt bei Datensätzen mit einem Stand (Rezepte und Hashes von vorher bleiben gleich, A21) |
@@ -536,7 +536,7 @@ Draft-PR [#385](https://github.com/oscipal/earthX/pull/385), Branch `claude/lovi
 
 ### 12.2 Auslegungen (gelten, wenn du nicht widersprichst)
 
-- **A17:** `expires` wird je Einheit in Postgres gehalten (Migration 030). Ohne das schriebe ein Neubau aus dem gespeicherten Zustand (`adr/0038` §3.4 Punkt 4, z. B. ein vorläufiger Tag nach Wegfall einer Monatsdatei) kein `expires` ans Asset.
+- **A17:** `expires` wird je Einheit in Postgres gehalten (Migration 031; 030 ist der Keyset-Stand aus M5-19, #379). Ohne das schriebe ein Neubau aus dem gespeicherten Zustand (`adr/0038` §3.4 Punkt 4, z. B. ein vorläufiger Tag nach Wegfall einer Monatsdatei) kein `expires` ans Asset.
 - **A18:** Die Liste wird mit `limit=100` gefragt und `next` gefolgt, höchstens 20 Seiten; der Hash geht über alle Seiten. Heute ist es eine Seite (§11.1).
 - **A19:** Jahresdateien zählen ab dem ersten Jahr von `temporal_extent.start`, ohne Obergrenze (das Ende ist offen). Eine Archivdatei, die nicht genau ein Jahr ist, oder eine Datei außerhalb der `asset_hosts` wird übergangen und als Warnung gezählt (ohne Namen), wie `unknown` in M5-11.
 - **A20:** Die Auswahl des Eintrags (Größen, erstes Jahr) gehört in jeden Validator. Eine andere Auswahl listet daher alles neu, wie `selection` in M5-11.
@@ -559,7 +559,7 @@ Draft-PR [#385](https://github.com/oscipal/earthX/pull/385), Branch `claude/lovi
 
 ### 12.4 Was Otto lokal ausführt
 
-PowerShell, aus der Repo-Wurzel. `materialize` startet `catalog-load` vorher selbst (neue Beschreibung, offenes Ende, `limitations`) und wendet Migration 030 an.
+PowerShell, aus der Repo-Wurzel. `materialize` startet `catalog-load` vorher selbst (neue Beschreibung, offenes Ende, `limitations`) und wendet Migration 031 an.
 
 **Schritt 1 — Branch holen:**
 

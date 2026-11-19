@@ -88,7 +88,7 @@ einen Zug; die Anfragen, die GDAL für die Datei stellte, verrechnet sie danach 
 `earthx_materialize_unit` (Stand, Validatoren und Beiträge je Datei), dazu die Zähler je Einheit in
 `earthx_materialize_runs`. Die Nummern 026–028 hält der offene M5-19 PR 2 (#379).
 
-`030_materialize_unit_expires.sql` — die Spalte `earthx_materialize_unit.expires` aus M5-58 PR 2: das `expires`
+`031_materialize_unit_expires.sql` — die Spalte `earthx_materialize_unit.expires` aus M5-58 PR 2: das `expires`
 des Quell-Items einer Einheit, damit ein Neubau aus dem gespeicherten Zustand (`adr/0038` §3.4 Punkt 4) es ans Asset
 schreiben kann. Nur zur Information.
 
