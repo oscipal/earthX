@@ -583,9 +583,17 @@ describe('a provisional day in the results (M5-58 F1)', () => {
     expect(date?.textContent).toBe('00:00:00Z');
   });
 
-  it('draws nothing at a final day and nothing at the head of a group', () => {
+  it('draws the triangle beside the title of a provisional group too, never as a tooltip of the title', () => {
     load(DAYS);
-    expect([...container.querySelectorAll('.result-group .rg-label')].map((head) => tipOf(head))).toEqual(['', '']);
+    const heads = [...container.querySelectorAll('.result-group .rg-label')];
+    expect(heads.map((head) => [head.textContent, tipOf(head), tipOf(head.querySelector('.tip.warn'))])).toEqual([
+      ['2026-11-17', '', 'Provisional values'],
+      ['2026-11-16', '', ''],
+    ]);
+  });
+
+  it('draws nothing at a final day', () => {
+    load(DAYS);
     act(() => useAppStore.setState({ expandedGroupIndex: 1 }));
     expect(container.querySelector('.rg-items .result-date .tip')).toBeNull();
   });
