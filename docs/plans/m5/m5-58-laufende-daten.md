@@ -514,3 +514,102 @@ Die Doku nennt 41 Tage für die vorläufigen Items; die Liste trug am Messtag 59
 - A16 bestätigt: vorläufige Temperaturen und `SrelD` 00–24 UTC wie das Archiv.
 - Der Prototyp-Ordner enthält nur die README; der Block `updates` ist dort nicht nachzutragen.
 - Otto prüft lokal, dass die bestehenden Datensätze unverändert laufen; Merge nach grüner CI. PR 2 (MeteoSchweiz) in einer neuen Session.
+
+---
+
+## 12. Umsetzung PR 2: MeteoSchweiz (19.11.2026)
+
+Branch `claude/loving-mccarthy-euyx17` von `main` nach dem Merge von #383. Grundlage: F1–F9, A16 und die Festlegungen aus §11.
+
+### 12.1 Was gebaut ist
+
+| Stelle | Inhalt |
+|---|---|
+| `discovery/meteoswiss_grid.py` | `list_units`/`build_units` statt des Laufs „alles oder nichts“: liest die ganze Item-Liste (Seiten zu 100, `next` gefolgt), Gruppe „Liste“ mit SHA-256 der Seiten, je Quell-Item SHA-256 seines JSON, je Datei `file:checksum` und `updated` aus der Liste (§11.4); drei Präfixe mit Stand nach §11.2; `rprelimd` nur in Tages-Items und nur als Asset `RhiresD` mit `earthx:source_product: RprelimD` (F4); je Asset `updated` (Last-Modified der Datei) und `expires` des Quell-Items (§11.3); Prüfung der Spanne je Art (ein Tag, ein Monat, das Jahr des Namens) |
+| `discovery/materialize_units.py` | Übernahme des Bestands (F9): erster Lauf ohne Zustand nimmt das ETag aus `earthx:refs` der gespeicherten Assets, `HEAD` mit `If-None-Match`, `304` → kein Neuverweis; die Items werden einmal geschrieben, damit sie ihren Stand tragen. Halter je Paar in einem Durchgang statt je Paar über alle Einheiten (bei rund 47 500 Items sonst zu langsam) |
+| `catalog/source_units.py`, Migration `030_materialize_unit_expires.sql` | `expires` je Einheit gespeichert (A17) und `stored_assets` für die Übernahme |
+| `discovery/materialize.py` | `MATERIALIZE_SPECS` mit `units` für `meteoswiss-grid`; der Weg `detect: whole` für MeteoSchweiz entfällt |
+| beide YAML-Einträge | `updates: {daily, [provisional, final], units}`, `temporal_extent.end: null`, Endpunkt = Item-Liste, `limitations` mit den beiden Sätzen aus §4.5 (Otto bestätigt), Beschreibung ohne „Only completed years“ |
+| `processing/recipe.py`, `api/intake.py` | Provenienz: `state` je aufgelöster Eingabe neben `version`, aus `earthx:state` des Assets; fehlt bei Datensätzen mit einem Stand (Rezepte und Hashes von vorher bleiben gleich, A21) |
+| Frontend `provisional.ts`, `ResultsPanel.tsx`, `TimeSlider.tsx` | Tooltip „Provisional values“ (F1, keine Marke) am Datum einer Gruppe in den Treffern, an der Uhrzeit des Treffers und in der Zeitleiste am gezeigten Datum, an den Nachbarn und an den Enden („Last time step: provisional values“); auf jeder Tipp-Stufe |
+| `tests_live/test_meteoswiss_grid_smoke.py` | prüft die Item-Liste wie der Adapter: Jahresdateien lückenlos bis höchstens zwei Jahre zurück, Monats- und Tagesdateien je Größe, Aufbau der jüngsten Datei je Art über `build_units` |
+
+### 12.2 Auslegungen (gelten, wenn du nicht widersprichst)
+
+- **A17:** `expires` wird je Einheit in Postgres gehalten (Migration 030). Ohne das schriebe ein Neubau aus dem gespeicherten Zustand (`adr/0038` §3.4 Punkt 4, z. B. ein vorläufiger Tag nach Wegfall einer Monatsdatei) kein `expires` ans Asset.
+- **A18:** Die Liste wird mit `limit=100` gefragt und `next` gefolgt, höchstens 20 Seiten; der Hash geht über alle Seiten. Heute ist es eine Seite (§11.1).
+- **A19:** Jahresdateien zählen ab dem ersten Jahr von `temporal_extent.start`, ohne Obergrenze (das Ende ist offen). Eine Archivdatei, die nicht genau ein Jahr ist, oder eine Datei außerhalb der `asset_hosts` wird übergangen und als Warnung gezählt (ohne Namen), wie `unknown` in M5-11.
+- **A20:** Die Auswahl des Eintrags (Größen, erstes Jahr) gehört in jeden Validator. Eine andere Auswahl listet daher alles neu, wie `selection` in M5-11.
+- **A21:** Der Stand steht in der Provenienz als `state` je aufgelöster Eingabe (`ResolvedInput`), nicht in `InputVersion`: Die Version bleibt die des Inhalts, der Stand ist eine Aussage über ihn.
+- **A22:** Ein Fehler beim Bauen nennt Art, Größe und Datum der Datei, nie Namen oder Adresse.
+- **A23:** Der Lauf `detect: whole` für MeteoSchweiz ist entfernt, nicht nur abgeschaltet; die Tests von Download, Bändern und synthetischer Kette bauen ihre Items über `list_units`/`build_units` und die Zusammenführung des Kerns (`assemble_item`, dafür öffentlich).
+
+### 12.3 Tests
+
+| Datei | Fälle |
+|---|---|
+| `tests/earthx/discovery/test_meteoswiss_grid.py` | Gruppen und Stände je Präfix; Validatoren und `expires` aus der Liste; eine Anfrage, keine Datei; `RprelimD` als `RhiresD` nur in Tages-Items; gleiche Liste → `unchanged` nach einer Anfrage; neuer Tag listet nur seine Dateien; andere Auswahl listet alles; Jahre vor dem Start; keine Jahresdatei bzw. fremder Host übergangen; Seiten gefolgt; Ablehnungen (zwei Dateien einer Größe, keine Datei, keine Item-Collection, Liste ohne Ende, fremde Größe, zwei Gitter); Items je Tag, Tagesgrenzen 00–24 und 06–06 auch vorläufig, Asset mit Verweisen, `updated`, `expires`, `earthx:source_product`; Ablehnungen beim Bauen (Mitternacht, anderes Jahr, zwei Monate, zwei Tage, anderes Gitter, Layout ohne Adresse, Gitter außerhalb, fremde Einheit) |
+| `tests/integration/test_materialize_meteoswiss.py` (echtes pgstac, ganzer Befehlsweg) | erster Lauf mit Stand je Tag; **Tageslauf ohne Änderung = eine Anfrage** (`GET` der Liste) und Lauf-Log `unchanged`; neuer Tag liest nur seine Datei; Monatsdatei ersetzt den vorläufigen Tag unter derselben ID (`replaced` 1, kein `expires`, kein `earthx:source_product`); Monatsdatei am 26. schreibt nur ihre Tage; Archiv aus dem Februar gilt vor dem Monat; vorläufiger Tag weg ohne Endgültiges → gelöscht; Übernahme: `HEAD` mit `If-None-Match`, `304`, Stand `final` geschrieben; geänderte Jahresdatei neu verwiesen |
+| `tests/earthx/api/test_intake.py` | `state` in der Provenienz bei vorläufigem Asset; ohne Stand kein Feld; unbekannter Stand bleibt weg |
+| `frontend/src/components/TimeSlider.test.tsx`, `ResultsPanel.test.tsx` | Tooltip am vorläufigen Datum (gezeigt, Nachbar, Ende), keiner am endgültigen, keine sichtbare Marke |
+| `tests/test_live_smoke_dry_run.py` | Double der Item-Liste mit Archiv-, Monats- und Tagesdateien |
+
+### 12.4 Was Otto lokal ausführt
+
+PowerShell, aus der Repo-Wurzel. `materialize` startet `catalog-load` vorher selbst (neue Beschreibung, offenes Ende, `limitations`) und wendet Migration 030 an.
+
+**Schritt 1 — Branch holen:**
+
+```powershell
+git fetch origin claude/loving-mccarthy-euyx17
+```
+
+```powershell
+git checkout claude/loving-mccarthy-euyx17
+```
+
+**Schritt 2 — erster Lauf je Eintrag** (übernimmt den Bestand: je Jahresdatei ein `HEAD`, dazu Monats- und Tagesdateien neu; bei 1 s Abstand rund 30 min für die Temperaturen, rund 8 min für den Niederschlag):
+
+```powershell
+docker compose run --build --rm materialize meteoswiss-daily-1km
+```
+
+```powershell
+docker compose run --rm materialize meteoswiss-daily-precip-1km
+```
+
+Erwartet je eine Zeile `loaded; N units new, 0 changed, M unchanged, 0 gone; K items written, 0 replaced by a higher state, 0 deleted` mit `M` = Zahl der Jahresdateien (230 bzw. 65) und `K` rund 23 700 plus die Tage der Monats- und Tagesdateien.
+
+**Schritt 3 — ein Tageslauf ohne Änderung = eine Anfrage:** derselbe Lauf noch einmal, die Ausgabe in einer Variablen; dann die Zeilen `gateway request` zählen (eine je Anfrage, `gateway/client.py`):
+
+```powershell
+docker compose run --rm materialize meteoswiss-daily-1km | Tee-Object -Variable lauf
+```
+
+```powershell
+($lauf | Select-String 'gateway request').Count
+```
+
+Erwartet: `unchanged; 0 units new, 0 changed, … unchanged, 0 gone; 0 items written …` und die Zahl **1**. Ist dazwischen ein neuer Tag erschienen, ist es `loaded` mit wenigen neuen Einheiten; dann den Lauf gleich noch einmal, er ist danach `unchanged` mit 1.
+
+**Schritt 4 — Stände und Zeitraum:**
+
+```powershell
+"select collection, content->'properties'->>'earthx:state' as state, count(*), min(datetime), max(end_datetime) from pgstac.items where collection like 'meteoswiss-%' group by 1, 2 order by 1, 2;" | docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At'
+```
+
+Erwartet je Eintrag zwei Zeilen, `final` und `provisional`, keine leere; `max(end_datetime)` der vorläufigen Zeile in den letzten Tagen.
+
+**Schritt 5 — einige Tage später** (nach dem 10. oder 26. des Monats) Schritt 2 erneut: Die Ausgabe nennt `replaced by a higher state` > 0; Schritt 4 zeigt weniger vorläufige Tage.
+
+**Schritt 6 — im Browser** (`docker compose up --build`, dann wie gewohnt öffnen):
+
+1. Data catalogue, beide Einträge: die beiden Sätze in den Limitations; Zeitraum ohne Ende.
+2. Suche `meteoswiss-daily-precip-1km` über einen Ort in der Schweiz, Zeitraum die letzten acht Wochen: In der Trefferliste zeigt das Datum eines der jüngsten Tage beim Überfahren „Provisional values“, ein Tag vor rund sechs Wochen nicht. In der Zeitleiste dasselbe am gezeigten Datum und am rechten Ende („Last time step: provisional values“). Keine sichtbare Marke.
+3. Ein vorläufiger Tag auf der Karte: Kacheln erscheinen; Band `RhiresD`, gleiche Farbskala wie ein endgültiger Tag.
+4. Band math `RhiresD > 20` über einen vorläufigen und einen endgültigen Tag: beide rechnen; im `recipe.json` des Jobs steht bei der vorläufigen Eingabe `"state": "provisional"`.
+5. Dasselbe kurz für `meteoswiss-daily-1km` (`TabsD`): Tooltip an den jüngsten Tagen.
+
+### 12.5 Umfang
+
+Rund 330 Zeilen ohne Tests, YAML und Doku (Adapter rund 230, Kern rund 60, Formen und Migration rund 40, Provenienz rund 15, Frontend rund 30), dazu rund 600 Zeilen Tests. Der Adapter ersetzt den Lauf aus M5-11 (rund 150 Zeilen entfernt).
