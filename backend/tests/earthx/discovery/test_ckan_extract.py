@@ -520,3 +520,41 @@ def test_the_bookkeeping_of_ckan_is_left_out_of_the_stable_package() -> None:
     }
     assert stable_package(package) == {"id": "a", "title": "T", "resources": [{"url": "u", "last_modified": "z"}]}
     assert package["metadata_modified"] and stable_package("text") == "text"
+
+
+RESOURCE_ID = "6f1c2e4a-1b2c-4d3e-8f90-0123456789ab"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        f"https://opendata.example.org/de/dataset/example-dgm1/resource/{RESOURCE_ID}",
+        f"https://ckan.example.org/dataset/x/resource/{RESOURCE_ID.upper()}?lang=de",
+        f"https://geodaten.example.org/viewer?id={RESOURCE_ID}",
+    ],
+)
+def test_a_page_made_of_the_resource_id_is_no_stable_link(url: str) -> None:
+    # Otto, 19.11.2026: a portal that re-creates its resources changes their ids, and with them such a page.
+    package = _resources({**VIEWER, "id": RESOURCE_ID, "url": url})
+    found = extract_package(package["id"], package, SOURCE)
+    assert (found.source_url, found.source_rank) == ("https://geodaten.example.org/datensaetze/dgm1", 2)
+
+
+def test_a_resource_page_of_another_resource_counts_as_made_of_an_id() -> None:
+    url = "https://opendata.example.org/dataset/x/resource/0b8c6c1e-0000-4000-8000-000000000001"
+    found = extract_package(PACKAGE["id"], _resources({**VIEWER, "url": url}), SOURCE)
+    assert found.source_rank == 2
+
+
+def test_several_viewers_give_the_same_link_in_any_order() -> None:
+    first = {**VIEWER, "url": "https://geodaten.example.org/viewer/a"}
+    second = {**VIEWER, "url": "https://geodaten.example.org/viewer/b"}
+    one = extract_package(PACKAGE["id"], _resources(second, first), SOURCE)
+    two = extract_package(PACKAGE["id"], _resources(first, second), SOURCE)
+    assert one.source_url == two.source_url == "https://geodaten.example.org/viewer/a"
+
+
+def test_new_resource_ids_leave_the_link_as_it_is() -> None:
+    before = _resources({**VIEWER, "id": "aaaaaaaa-0000-4000-8000-000000000001"}, {**FILE, "id": "x1"})
+    after = _resources({**FILE, "id": "x2"}, {**VIEWER, "id": "bbbbbbbb-0000-4000-8000-000000000002"})
+    assert extract_package("k", before, SOURCE).source_url == extract_package("k", after, SOURCE).source_url

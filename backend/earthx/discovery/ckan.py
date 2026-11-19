@@ -70,6 +70,9 @@ _DOCUMENTATION = re.compile(
 )
 # A capabilities address is no page for people, whatever format the catalogue gives it (plan §6).
 _SERVICE_QUERY = re.compile(r"[?&](?:service=(?:wms|wmts|wfs|wcs)|request=getcapabilities)(?:&|$)", re.IGNORECASE)
+# The page of a resource in CKAN itself: it is named after the resource's id, which a portal that re-creates its
+# resources on every harvest changes (Otto, 19.11.2026), so it is no stable link "Source".
+_RESOURCE_PAGE = re.compile(r"/resource/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:[/?#]|$)", re.I)
 _PUBLIC = "PUBLIC"
 _NOT_PUBLIC = frozenset({"RESTRICTED", "NON_PUBLIC", "NONPUBLIC", "NON-PUBLIC"})
 
@@ -300,6 +303,8 @@ class _Resource:
     access: str | None
     distribution: Distribution | None
     documentation: bool
+    #: The page address depends on the resource's id: a CKAN resource page, or the id in its path or query.
+    by_id: bool = False
 
     @property
     def is_file(self) -> bool:
@@ -317,6 +322,11 @@ def _resource(resource: Mapping[str, Any]) -> _Resource:
     title = localized(resource.get("name")) or localized(resource.get("title"))
     kind_label = text_of(resource.get("resource_type"))
     href = checked_link(download) or checked_link(access)
+    resource_id = text_of(resource.get("id"))
+    by_id = bool(access) and (
+        bool(_RESOURCE_PAGE.search(access or ""))
+        or (resource_id is not None and len(resource_id) >= 8 and resource_id.lower() in (access or "").lower())
+    )
     return _Resource(
         kind=resource_kind(format_, media),
         download=download,
@@ -331,16 +341,24 @@ def _resource(resource: Mapping[str, Any]) -> _Resource:
             roles=() if kind_label is None else (kind_label,),
         ),
         documentation=(kind_label or "").lower() == "documentation" or bool(title and _DOCUMENTATION.search(title)),
+        by_id=by_id,
     )
 
 
-def _viewer_pages(resources: Iterable[_Resource]) -> list[str | None]:
-    """Rank 1: a page for people at the provider (accessURL without downloadURL), not its documentation, no service."""
-    return [
+def _viewer_pages(resources: Iterable[_Resource]) -> list[str]:
+    """Rank 1: a page for people at the provider (accessURL without downloadURL), not its documentation, no service,
+    not an address made of the resource's id. Sorted by address, so that several such pages give the same link
+    whichever order the source lists its resources in (Otto, 19.11.2026)."""
+    return sorted(
         r.access
         for r in resources
-        if r.kind == "page" and r.download is None and not r.documentation and not _SERVICE_QUERY.search(r.access or "")
-    ]
+        if r.access is not None
+        and r.kind == "page"
+        and r.download is None
+        and not r.documentation
+        and not r.by_id
+        and not _SERVICE_QUERY.search(r.access)
+    )
 
 
 def _page_or_none(url: object) -> object:
