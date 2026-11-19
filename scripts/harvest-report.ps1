@@ -34,13 +34,18 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# On Linux (PowerShell 7) the report writes as the user who owns the checkout, never as root, so the approval file
+# stays editable; Docker Desktop on Windows maps the files to the user anyway ($IsLinux is unset in PowerShell 5.1).
+$asOwner = @()
+if ($IsLinux) { $asOwner = @('--user', "$(id -u):$(id -g)") }
+
 function Fail([string]$Message) {
     Write-Host "FEHLER: $Message"
     exit 1
 }
 
 if ($Classify) {
-    docker compose run --build --rm harvest-report $Source --classify
+    docker compose run --build --rm @asOwner harvest-report $Source --classify
     exit $LASTEXITCODE
 }
 
@@ -53,7 +58,7 @@ $target = "harvest/$day-$Source"
 git switch -c $target
 if ($LASTEXITCODE -ne 0) { Fail "Der Branch $target laesst sich nicht anlegen." }
 
-docker compose run --build --rm harvest-report $Source
+docker compose run --build --rm @asOwner harvest-report $Source
 if ($LASTEXITCODE -ne 0) {
     git switch main
     git branch -D $target

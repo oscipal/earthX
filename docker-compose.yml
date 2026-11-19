@@ -132,6 +132,8 @@ services:
     volumes:
       - ./backend/catalog/approvals:/out
     environment:
+      # The scripts run it as the owner of the checkout (`--user`), who has no home in the image.
+      HOME: /tmp
       PGHOST: postgres
       PGPORT: "5432"
       PGUSER: ${POSTGRES_USER}

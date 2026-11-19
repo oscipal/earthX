@@ -8,6 +8,10 @@
 # It never pushes: push the branch and open the draft PR with your own access (adr/0025 §6.5, P1).
 set -euo pipefail
 
+# The report writes into backend/catalog/approvals of this checkout as the user who owns it, never as root: the
+# approval file must stay editable without sudo (Otto, 19.11.2026; the service's image runs as root otherwise).
+as_owner=(--user "$(id -u):$(id -g)")
+
 fail() {
     echo "FEHLER: $1"
     exit 1
@@ -17,7 +21,7 @@ source_id="${1:-}"
 [[ "$source_id" =~ ^[a-z][a-z0-9-]{1,62}$ ]] || fail "Aufruf: scripts/harvest-report.sh <source_id> [--classify]"
 
 if [[ "${2:-}" == "--classify" ]]; then
-    exec docker compose run --build --rm harvest-report "$source_id" --classify
+    exec docker compose run --build --rm "${as_owner[@]}" harvest-report "$source_id" --classify
 fi
 
 [[ -z "$(git status --porcelain)" ]] || fail "Der Checkout ist nicht sauber; erst committen oder aufräumen."
@@ -28,7 +32,7 @@ day="$(date +%F)"
 target="harvest/$day-$source_id"
 git switch -c "$target" || fail "Der Branch $target lässt sich nicht anlegen."
 
-if ! docker compose run --build --rm harvest-report "$source_id"; then
+if ! docker compose run --build --rm "${as_owner[@]}" harvest-report "$source_id"; then
     git switch main
     git branch -D "$target"
     fail "Der Bericht ist gescheitert; der Branch ist gelöscht."
