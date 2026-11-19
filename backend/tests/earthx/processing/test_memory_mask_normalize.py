@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy
@@ -63,12 +64,9 @@ def build_layer(path: Path, size: int) -> Path:
 
 
 @pytest.fixture(scope="module")
-def scenes(tmp_path_factory: pytest.TempPathFactory) -> dict[int, tuple[Path, Path]]:
-    root = tmp_path_factory.mktemp("mask-scenes")
-    return {
-        size: (build_scene(root / f"scene-{size}.tif", size), build_layer(root / f"layer-{size}.tif", size))
-        for size in (SMALL, LARGE)
-    }
+def scenes(tmp_path_factory: pytest.TempPathFactory, memory_scene: Callable[..., Path]) -> dict[int, tuple[Path, Path]]:
+    root = tmp_path_factory.mktemp("mask-layers")
+    return {size: (memory_scene(size), build_layer(root / f"layer-{size}.tif", size)) for size in (SMALL, LARGE)}
 
 
 def measure(scene: Path, layer: Path | None, workdir: Path, size: int, step: str) -> dict:
@@ -119,11 +117,13 @@ def build_wide_scene(path: Path, size: int, bands: int) -> Path:
 
 
 @pytest.fixture(scope="module")
-def wide_scenes(tmp_path_factory: pytest.TempPathFactory) -> dict[tuple[int, int], Path]:
+def wide_scenes(tmp_path_factory: pytest.TempPathFactory, memory_scene: Callable[..., Path]) -> dict[tuple[int, int], Path]:
     root = tmp_path_factory.mktemp("wide-scenes")
     return {
-        (size, bands): build_wide_scene(root / f"scene-{size}-{bands}.tif", size, bands)
-        for size, bands in ((SMALL, 4), (LARGE, 4), (LARGE, 1), (LARGE, 2))
+        (SMALL, 4): memory_scene(SMALL, 4),
+        (LARGE, 4): memory_scene(LARGE, 4),
+        (LARGE, 1): build_wide_scene(root / f"scene-{LARGE}-1.tif", LARGE, 1),
+        (LARGE, 2): memory_scene(LARGE, 2),
     }
 
 
@@ -153,21 +153,25 @@ def test_normalize_version_4_over_four_bands_stays_below_the_limit_and_does_not_
             assert (result.width, result.height, result.count) == (size, size, 4)
     assert measured[LARGE]["peak_mb"] < FOUR_BANDS_PEAK_LIMIT_MB
     assert growth <= GROWTH_LIMIT_MB
+    if step == "normalize-v4-percentile":
+        # The run of four bands at 4096² is the one the estimate below is checked against for four bands (M5-61 §3.2).
+        _assert_the_estimate_holds(measured[LARGE]["peak_mb"], 4, capsys)
 
 
-@pytest.mark.parametrize("bands", [1, 2, 4])
+def _assert_the_estimate_holds(peak_mb: float, bands: int, capsys: pytest.CaptureFixture[str]) -> None:
+    estimated = memory_needed(bands, 1, bands) / 1_000_000
+    with capsys.disabled():
+        print(f"\nT2 memory normalize-v4-percentile {LARGE}² ({bands} bands): measured {peak_mb} MB, estimated {estimated:.0f} MB")
+    assert peak_mb <= estimated
+    assert memory_needed(bands) / 1_000_000 < peak_mb, "without the share the estimate was below, which is why it is there"
+
+
+@pytest.mark.parametrize("bands", [1, 2])
 def test_the_estimate_of_the_memory_of_a_step_that_measures_is_not_below_the_measured_peak(
     wide_scenes: dict[tuple[int, int], Path], tmp_path: Path, capsys: pytest.CaptureFixture[str], bands: int
 ) -> None:
     """``plan.memory_needed`` is what the job is refused or admitted by: with the share per measured band (NM4-71) it
-    holds the highest peak of a percentile stretch over every band of the scene."""
+    holds the highest peak of a percentile stretch over every band of the scene. Four bands: the test above, which
+    runs the same step over the same scene already."""
     measured = measure(wide_scenes[(LARGE, bands)], None, tmp_path, LARGE, "normalize-v4-percentile")
-    estimated = memory_needed(bands, 1, bands) / 1_000_000
-    with capsys.disabled():
-        print(
-            f"\nT2 memory normalize-v4-percentile {LARGE}² ({bands} bands): measured {measured['peak_mb']} MB, estimated {estimated:.0f} MB"
-        )
-    assert measured["peak_mb"] <= estimated
-    assert memory_needed(bands) / 1_000_000 < measured["peak_mb"], (
-        "without the share the estimate was below, which is why it is there"
-    )
+    _assert_the_estimate_holds(measured["peak_mb"], bands, capsys)
