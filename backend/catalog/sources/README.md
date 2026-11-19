@@ -8,7 +8,8 @@ Präfix `proto-` sind vergeben. `enabled: false` hält eine Quelle an, ohne die 
 - `catalog_page`: Seite eines Datensatzes im Katalog mit `{id}` (STAC) bzw. `{name}` (CKAN), letzter Rang des Links
   „Source“ (Plan §6), oder `null`.
 - `filter`: STAC `collection_prefixes` (leer = alle); CKAN `fq` wörtlich oder `null` und `publisher_field`
-  (`publisher_name` bei DCAT-AP.de, `organization` sonst).
+  (`publisher_name` bei DCAT-AP.de, `organization` sonst); `page_extras`: Schlüssel von `extras`, die nach `url` als
+  Seite des Datensatzes gelesen werden (GovData `[uri, guid]`, F12 = 1).
 - `max_requests_per_run`: Obergrenze, danach endet ein Lauf `interrupted`. `max_pages_per_run`: nur CKAN, `null` oder die
   Seiten eines Laufs; danach endet er `interrupted` (`page_budget`), und der nächste setzt fort (Otto, 18.11.2026).
   `rows_per_page`: nur CKAN, `null` (100) oder die Pakete je Seite (Otto, 19.11.2026). `full_every_days`: Abstand

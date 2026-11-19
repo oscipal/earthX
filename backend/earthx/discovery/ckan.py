@@ -74,6 +74,11 @@ _SERVICE_QUERY = re.compile(r"[?&](?:service=(?:wms|wmts|wfs|wcs)|request=getcap
 # The page of a resource in CKAN itself: it is named after the resource's id, which a portal that re-creates its
 # resources on every harvest changes (Otto, 19.11.2026), so it is no stable link "Source".
 _RESOURCE_PAGE = re.compile(r"/resource/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:[/?#]|$)", re.I)
+# A metadata record, no page for people: ISO 19139 XML, a CSW record, RDF, JSON or XML by ending (F12 = 1).
+_METADATA = re.compile(
+    r"xml_iso19139|getrecordbyid|[?&]service=csw(?:&|$)|[?&]outputschema=|\.(?:xml|rdf|json|jsonld|ttl|n3)(?:[?#]|$)",
+    re.IGNORECASE,
+)
 _PUBLIC = "PUBLIC"
 _NOT_PUBLIC = frozenset({"RESTRICTED", "NON_PUBLIC", "NONPUBLIC", "NON-PUBLIC"})
 
@@ -304,8 +309,8 @@ class _Resource:
     access: str | None
     distribution: Distribution | None
     documentation: bool
-    #: The page address depends on the resource's id: a CKAN resource page, or the id in its path or query.
-    by_id: bool = False
+    #: The id of the resource at the source, to tell an address made of it (a CKAN resource page).
+    resource_id: str | None = None
 
     @property
     def is_file(self) -> bool:
@@ -323,11 +328,6 @@ def _resource(resource: Mapping[str, Any]) -> _Resource:
     title = localized(resource.get("name")) or localized(resource.get("title"))
     kind_label = text_of(resource.get("resource_type"))
     href = checked_link(download) or checked_link(access)
-    resource_id = text_of(resource.get("id"))
-    by_id = bool(access) and (
-        bool(_RESOURCE_PAGE.search(access or ""))
-        or (resource_id is not None and len(resource_id) >= 8 and resource_id.lower() in (access or "").lower())
-    )
     return _Resource(
         kind=resource_kind(format_, media),
         download=download,
@@ -342,33 +342,73 @@ def _resource(resource: Mapping[str, Any]) -> _Resource:
             roles=() if kind_label is None else (kind_label,),
         ),
         documentation=(kind_label or "").lower() == "documentation" or bool(title and _DOCUMENTATION.search(title)),
-        by_id=by_id,
+        resource_id=text_of(resource.get("id")),
     )
+
+
+def _made_of_id(address: str, resource_id: str | None) -> bool:
+    """A CKAN resource page, or an address with the resource's id in it: it changes when the portal re-creates the
+    resource (Otto, 19.11.2026)."""
+    if _RESOURCE_PAGE.search(address):
+        return True
+    return resource_id is not None and len(resource_id) >= 8 and resource_id.lower() in address.lower()
+
+
+def _viewer_problem(resource: _Resource) -> tuple[str | None, str | None]:
+    """The address of a resource that may be a viewer (rank 1), or why not: ``(address, None)`` or ``(address or
+    None, problem)``. A page for people at the provider: format HTML, not its documentation, no service, no metadata,
+    not made of the resource's id. A download address does not make it a file where that address is a page itself, no
+    file by its ending (F12 = 1, Otto 19.11.2026: the STAC Browser of the FSDI is a viewer)."""
+    if resource.kind != "page":
+        return None, "not_html"
+    if resource.documentation:
+        return resource.access, "documentation"
+    address = resource.access
+    if resource.download is not None:
+        if _page_or_none(resource.download) is None:
+            return resource.download, "with_download"
+        if address is None or _page_or_none(address) is None:
+            address = resource.download
+    if address is None:
+        return None, "empty"
+    if _SERVICE_QUERY.search(address):
+        return address, "service"
+    if _METADATA.search(address):
+        return address, "metadata"
+    if _made_of_id(address, resource.resource_id):
+        return address, "by_id"
+    if _page_or_none(address) is None:
+        return address, "file"
+    problem = link_problem(address)
+    return address, problem
 
 
 def _viewer_pages(resources: Iterable[_Resource]) -> list[str]:
-    """Rank 1: a page for people at the provider (accessURL without downloadURL), not its documentation, no service,
-    not an address made of the resource's id. Sorted by address, so that several such pages give the same link
-    whichever order the source lists its resources in (Otto, 19.11.2026)."""
-    return sorted(
-        r.access
-        for r in resources
-        if r.access is not None
-        and r.kind == "page"
-        and r.download is None
-        and not r.documentation
-        and not r.by_id
-        and not _SERVICE_QUERY.search(r.access)
-    )
+    """Rank 1: the viewer addresses of the resources (:func:`_viewer_problem`), sorted, so that several give the same
+    link whichever order the source lists its resources in (Otto, 19.11.2026)."""
+    found = []
+    for resource in resources:
+        address, problem = _viewer_problem(resource)
+        if problem is None and address is not None:
+            found.append(address)
+    return sorted(found)
 
 
 def _page_or_none(url: object) -> object:
-    """``url`` unless it is a capabilities address or names a file by its ending (plan §6: never a service or a file)."""
-    if not isinstance(url, str) or _SERVICE_QUERY.search(url):
+    """``url`` unless it is a capabilities address, a metadata record or names a file by its ending (plan §6: never a
+    service or a file; F12 = 1: never a metadata record such as ISO 19139 XML or a CSW ``GetRecordById``)."""
+    if not isinstance(url, str) or _SERVICE_QUERY.search(url) or _METADATA.search(url):
         return None
     name = url.split("#")[0].split("?")[0].rstrip("/").rsplit("/", 1)[-1]
     ending = name.rsplit(".", 1)[-1] if "." in name else ""
     return None if resource_kind(ending, None) in FILE_KINDS | {"service"} else url
+
+
+def _page_candidates(package: Mapping[str, Any], extras: Mapping[str, Any], source: SourceConfig) -> list[object]:
+    """Rank 2 in order: the field ``url``, then the extras the source names (``page_extras``), each a page only."""
+    assert isinstance(source.filter, CkanFilter)
+    values = [package.get("url"), *(extras.get(key) for key in source.filter.page_extras)]
+    return [_page_or_none(text_of(value)) for value in values]
 
 
 # Fields of a package that name a person: never read for a report (adr/0033 §5).
@@ -376,24 +416,41 @@ _PERSON_FIELD = re.compile(r"author|maintainer|contact|email|e-mail|person|name$
 _ADDRESS = re.compile(r"https?://\S+", re.IGNORECASE)
 
 
-def link_reasons(package: Mapping[str, Any]) -> list[tuple[str, str | None]]:
+def _page_problem(value: object) -> str | None:
+    """Why a value may not be the page of a dataset (rank 2), as a code; ``None`` where it may."""
+    text = text_of(value)
+    problem = link_problem(text)
+    if problem is None and text is not None:
+        if _SERVICE_QUERY.search(text):
+            return "service"
+        if _METADATA.search(text):
+            return "metadata"
+        if _page_or_none(text) is None:
+            return "file"
+    return problem
+
+
+def link_reasons(package: Mapping[str, Any], source: SourceConfig) -> list[tuple[str, str | None]]:
     """Why a package reaches neither rank 1 nor rank 2 of the link "Source" (plan §6): codes with the address each is
     about, for ``--explain-links`` (Otto, 19.11.2026). Rank 2, the field ``url`` of the package: ``url_<problem>``
-    (``url_empty``, ``url_http``, ``url_file``, ``url_service``, ``url_start_page`` …). Rank 1, the resources:
-    ``no_resources``, ``no_html_resource``, ``html_<problem>`` per rejected page (``html_with_download``,
-    ``html_documentation``, ``html_by_id``, ``html_service``, ``html_http`` …), and ``resource_without_format`` where
-    a resource has an address but neither a format nor a media type. Other fields that hold an address, where the
+    (``url_empty``, ``url_http``, ``url_file``, ``url_service``, ``url_metadata``, ``url_start_page`` …), then each
+    extra the source names (``page_extras``): ``extras_page_<problem>``. Rank 1, the resources: ``no_resources``,
+    ``no_html_resource``, ``html_<problem>`` per rejected page (``html_with_download``, ``html_documentation``,
+    ``html_by_id``, ``html_service``, ``html_metadata``, ``html_http`` …), and ``resource_without_format`` where a
+    resource has an address but neither a format nor a media type. Other fields that hold an address, where the
     extract does not look: ``field:<name>`` and ``extras:<key>``; person fields are never named."""
+    assert isinstance(source.filter, CkanFilter)
     reasons: list[tuple[str, str | None]] = []
     url = text_of(package.get("url"))
-    problem = link_problem(url)
-    if problem is None and url is not None:
-        if _SERVICE_QUERY.search(url):
-            problem = "service"
-        elif _page_or_none(url) is None:
-            problem = "file"
+    problem = _page_problem(url)
     if problem is not None:
         reasons.append((f"url_{problem}", url))
+    extras = _extras(package)
+    for key in source.filter.page_extras:
+        value = text_of(extras.get(key))
+        problem = _page_problem(value)
+        if problem is not None:
+            reasons.append((f"extras_page_{problem}", value))
     raw_resources = package.get("resources")
     documents = [r for r in raw_resources if isinstance(r, dict)] if isinstance(raw_resources, list) else []
     if not documents:
@@ -404,26 +461,16 @@ def link_reasons(package: Mapping[str, Any]) -> list[tuple[str, str | None]]:
     for resource in resources:
         if resource.kind is None and resource.download is None and resource.access is not None:
             reasons.append(("resource_without_format", resource.access))
-        if resource.kind != "page":
-            continue
-        problem = link_problem(resource.access)
-        if resource.download is not None:
-            problem = "with_download"
-        elif resource.documentation:
-            problem = "documentation"
-        elif resource.by_id:
-            problem = "by_id"
-        elif _SERVICE_QUERY.search(resource.access or ""):
-            problem = "service"
-        if problem is not None:
-            reasons.append((f"html_{problem}", resource.access))
+        address, problem = _viewer_problem(resource)
+        if problem is not None and problem != "not_html":
+            reasons.append((f"html_{problem}", address))
     for name, value in package.items():
         if name in ("url", "resources", "extras") or not isinstance(name, str) or _PERSON_FIELD.search(name):
             continue
         if isinstance(value, str) and _ADDRESS.fullmatch(value.strip()):
             reasons.append((f"field:{name}", value.strip()))
-    for key, value in _extras(package).items():
-        if _PERSON_FIELD.search(key):
+    for key, value in extras.items():
+        if key in source.filter.page_extras or _PERSON_FIELD.search(key):
             continue
         if isinstance(value, str) and _ADDRESS.fullmatch(value.strip()):
             reasons.append((f"extras:{key}", value.strip()))
@@ -448,7 +495,7 @@ def extract_package(key: str, package: Mapping[str, Any], source: SourceConfig) 
     )
     candidates = [
         *((LinkRank.VIEWER_OR_DOWNLOAD_PAGE, url) for url in _viewer_pages(resources)),
-        (LinkRank.DATASET_PAGE, _page_or_none(package.get("url"))),
+        *((LinkRank.DATASET_PAGE, page) for page in _page_candidates(package, extras, source)),
         (LinkRank.CATALOGUE_PAGE, catalog_page),
     ]
     chosen = choose_link(candidates)

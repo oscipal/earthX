@@ -579,9 +579,9 @@ def test_why_a_package_reaches_only_the_catalogue_page() -> None:
             {"id": "r2", "url": "https://amt.example.org/dl/x"},
         ],
     }
-    reasons = dict(link_reasons(package))
+    reasons = dict(link_reasons(package, SOURCE))
     assert reasons["url_http"] == "http://amt.example.org/daten/x"
-    assert reasons["html_with_download"] == "https://amt.example.org/viewer"
+    assert reasons["html_with_download"] == "https://amt.example.org/x.zip"
     assert reasons["resource_without_format"] == "https://amt.example.org/dl/x"
     assert reasons["field:landingPage"] == reasons["extras:dcat_landing_page"] == "https://amt.example.org/daten/x"
     # Person fields are never named, whatever they hold.
@@ -598,10 +598,83 @@ def test_why_a_package_reaches_only_the_catalogue_page() -> None:
     ],
 )
 def test_the_reason_why_the_page_field_is_no_link(url: str | None, code: str) -> None:
-    assert code in dict(link_reasons({"id": "k", "url": url, "resources": []}))
+    assert code in dict(link_reasons({"id": "k", "url": url, "resources": []}, SOURCE))
 
 
 def test_a_package_without_resources_and_without_html() -> None:
-    assert "no_resources" in dict(link_reasons({"id": "k", "resources": []}))
+    assert "no_resources" in dict(link_reasons({"id": "k", "resources": []}, SOURCE))
     only_files = {"id": "k", "resources": [{"url": "https://amt.example.org/x.csv", "format": "CSV"}]}
-    assert "no_html_resource" in dict(link_reasons(only_files))
+    assert "no_html_resource" in dict(link_reasons(only_files, SOURCE))
+
+
+GOVDATA_LIKE = replace(SOURCE, filter=CkanFilter(None, "publisher_name", ("uri", "guid")))
+
+
+@pytest.mark.parametrize(
+    ("extras", "expected"),
+    [
+        ([{"key": "uri", "value": "https://opendata.example.org/dataset/x"}], "https://opendata.example.org/dataset/x"),
+        ([{"key": "guid", "value": "https://mobil.example.org/offers/1"}], "https://mobil.example.org/offers/1"),
+        (
+            [
+                {"key": "uri", "value": "https://metadaten.example.org/csw?REQUEST=GetRecordById&id=1"},
+                {"key": "guid", "value": "https://mobil.example.org/offers/1"},
+            ],
+            "https://mobil.example.org/offers/1",
+        ),
+    ],
+)
+def test_the_page_extras_of_the_source_are_rank_two_after_url(extras: list[dict[str, str]], expected: str) -> None:
+    # F12 = 1 (Otto, 19.11.2026): GovData keeps the page of the dataset in extras uri, else guid.
+    package = _resources(FILE, url=None, extras=extras)
+    found = extract_package(package["id"], package, GOVDATA_LIKE)
+    assert (found.source_url, found.source_rank) == (expected, 2)
+
+
+def test_the_field_url_comes_before_the_page_extras() -> None:
+    package = _resources(FILE, extras=[{"key": "uri", "value": "https://opendata.example.org/dataset/x"}])
+    assert extract_package(package["id"], package, GOVDATA_LIKE).source_url == PACKAGE["url"]
+
+
+def test_page_extras_are_read_only_where_the_source_names_them() -> None:
+    package = _resources(FILE, url=None, extras=[{"key": "uri", "value": "https://opendata.example.org/dataset/x"}])
+    assert extract_package(package["id"], package, SOURCE).source_rank == 3
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://metadaten.example.org/geonetwork/srv/api/records/1/formatters/xml_iso19139",
+        "https://metadaten.example.org/csw?service=CSW&request=GetRecordById&id=1",
+        "https://metadaten.example.org/csw?request=GetRecordById&outputSchema=http://www.isotc211.org/2005/gmd",
+        "https://metadaten.example.org/record/1.xml",
+        "https://metadaten.example.org/record/1.rdf",
+        "https://metadaten.example.org/record/1.json?lang=de",
+        "http://opendata.example.org/dataset/x",
+        "https://opendata.example.org/",
+    ],
+)
+def test_a_metadata_record_or_a_start_page_is_no_page_of_the_dataset(url: str) -> None:
+    package = _resources(FILE, url=None, extras=[{"key": "uri", "value": url}])
+    assert extract_package(package["id"], package, GOVDATA_LIKE).source_rank == 3
+    assert any(code.startswith("extras_page_") for code, _ in link_reasons(package, GOVDATA_LIKE))
+
+
+def test_an_html_resource_whose_download_address_is_a_page_is_a_viewer() -> None:
+    # F12 = 1: the STAC Browser of the FSDI comes as HTML with the same address as download.
+    browser = "https://data.example.org/browser/index.html#/collections/ch.example.dem"
+    viewer = {**VIEWER, "url": browser, "download_url": browser}
+    found = extract_package(PACKAGE["id"], _resources(viewer), SOURCE)
+    assert (found.source_url, found.source_rank) == (browser, 1)
+    page = {**VIEWER, "url": "https://data.example.org/karte/x", "download_url": "https://data.example.org/karte/x"}
+    assert extract_package(PACKAGE["id"], _resources(page), SOURCE).source_rank == 1
+
+
+def test_an_html_resource_whose_download_address_is_a_file_is_no_viewer() -> None:
+    viewer = {**VIEWER, "download_url": "https://data.example.org/x.zip"}
+    found = extract_package(PACKAGE["id"], _resources(viewer), SOURCE)
+    assert found.source_rank == 2 and "html_with_download" in dict(link_reasons(_resources(viewer), SOURCE))
+
+
+def test_the_page_extras_are_part_of_the_extractor_version() -> None:
+    assert extractor_version(SOURCE) != extractor_version(GOVDATA_LIKE)

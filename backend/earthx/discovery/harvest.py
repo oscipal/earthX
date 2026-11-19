@@ -771,7 +771,7 @@ async def measure(conn: psycopg.Connection, source: SourceConfig, gateway: Gatew
 
 
 _LINK_GROUPS = (
-    ("url_", "Feld url des Pakets (Rang 2: Seite des Datensatzes beim Anbieter)"),
+    (("url_", "extras_page_"), "Feld url und page_extras des Pakets (Rang 2: Seite des Datensatzes beim Anbieter)"),
     (("no_resources", "no_html_resource", "html_", "resource_without_format"), "Ressourcen (Rang 1: Viewer- oder Download-Seite)"),
     (("field:", "extras:"), "Andere Felder mit einer Adresse (liest der Extract nicht)"),
 )
@@ -784,13 +784,22 @@ _LINK_TEXT = {
     "url_host": "Host keine Adresse (IP o. ä.)",
     "url_scheme": "anderes Schema",
     "url_invalid": "nicht lesbar",
+    "url_metadata": "Metadaten-Endpunkt",
+    "extras_page_empty": "Feld aus page_extras leer",
+    "extras_page_http": "Feld aus page_extras nur http",
+    "extras_page_file": "Feld aus page_extras zeigt auf eine Datei",
+    "extras_page_service": "Feld aus page_extras zeigt auf einen Dienst",
+    "extras_page_metadata": "Feld aus page_extras ist ein Metadaten-Endpunkt",
+    "extras_page_start_page": "Feld aus page_extras nur Startseite",
     "url_long": "zu lang",
     "url_control": "Steuerzeichen",
     "url_port": "fremder Port",
     "no_resources": "keine Ressourcen",
     "no_html_resource": "keine Ressource mit Format HTML",
     "resource_without_format": "Ressource mit Adresse, ohne Format",
-    "html_with_download": "HTML-Ressource mit Download-Adresse (gilt als Datei)",
+    "html_with_download": "HTML-Ressource, Download-Adresse ist eine Datei",
+    "html_metadata": "HTML-Ressource ist ein Metadaten-Endpunkt",
+    "html_file": "HTML-Ressource zeigt auf eine Datei",
     "html_documentation": "HTML-Ressource ist Doku",
     "html_by_id": "HTML-Ressource, Adresse aus der Ressourcen-ID",
     "html_service": "HTML-Ressource ist ein Dienst",
@@ -820,7 +829,7 @@ def explain_links(conn: psycopg.Connection, source: SourceConfig) -> str:
             unreadable += 1
             continue
         name = package.get("name") if isinstance(package.get("name"), str) else key
-        for code, value in dict(link_reasons(package)).items():
+        for code, value in dict(link_reasons(package, source)).items():
             counts[code] += 1
             listed = examples.setdefault(code, [])
             if len(listed) < _EXAMPLES:

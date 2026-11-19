@@ -87,6 +87,12 @@ class TestTheReleasedSeed:
         assert sources["opendata-swiss"].max_pages_per_run == sources["govdata"].max_pages_per_run == 400
         assert all(s.max_pages_per_run is None for key, s in sources.items() if key not in ("opendata-swiss", "govdata"))
 
+    def test_govdata_reads_its_page_from_uri_else_guid(self) -> None:
+        # F12 = 1 (Otto, 19.11.2026).
+        sources = read_sources()
+        assert sources["govdata"].filter == CkanFilter(None, "publisher_name", ("uri", "guid"))
+        assert sources["opendata-swiss"].filter == CkanFilter(None, "organization", ())
+
     def test_govdata_is_asked_on_its_api_host(self) -> None:
         # Otto, 18.11.2026: www.govdata.de disallows all but the large search engines; the API lives on its own host.
         govdata = read_sources()["govdata"]
@@ -156,12 +162,20 @@ class TestReading:
         text = (
             STAC.replace("protocol: stac-api", "protocol: ckan")
             .replace("{id}", "{name}")
-            .replace("  collection_prefixes: []", "  fq: 'res_format:CSV'\n  publisher_field: organization")
+            .replace("  collection_prefixes: []", "  fq: 'res_format:CSV'\n  publisher_field: organization\n  page_extras: []")
         )
         assert read_source(_write(tmp_path, text)).filter == CkanFilter("res_format:CSV", "organization")
 
     @pytest.mark.parametrize(
-        "body", ["  fq: ''\n  publisher_field: organization", "  fq: null\n  publisher_field: author"]
+        "body",
+        [
+            "  fq: ''\n  publisher_field: organization\n  page_extras: []",
+            "  fq: null\n  publisher_field: author\n  page_extras: []",
+            "  fq: null\n  publisher_field: organization\n  page_extras: uri",
+            "  fq: null\n  publisher_field: organization\n  page_extras: [uri, uri]",
+            "  fq: null\n  publisher_field: organization\n  page_extras: ['a b']",
+            "  fq: null\n  publisher_field: organization",
+        ],
     )
     def test_a_wrong_ckan_filter(self, tmp_path: Path, body: str) -> None:
         text = (
@@ -169,7 +183,7 @@ class TestReading:
             .replace("{id}", "{name}")
             .replace("  collection_prefixes: []", body)
         )
-        with pytest.raises(EntryFileError, match="fq is null|publisher_field is"):
+        with pytest.raises(EntryFileError, match="fq is null|publisher_field is|page_extras|nothing else"):
             read_source(_write(tmp_path, text))
 
 
@@ -209,7 +223,7 @@ class TestRobotsException:
 CKAN = (
     STAC.replace("protocol: stac-api", "protocol: ckan")
     .replace("{id}", "{name}")
-    .replace("  collection_prefixes: []", "  fq: null\n  publisher_field: organization")
+    .replace("  collection_prefixes: []", "  fq: null\n  publisher_field: organization\n  page_extras: []")
 )
 
 

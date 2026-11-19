@@ -7,6 +7,7 @@ catalog_page: https://opendata.swiss/de/dataset/{name}
 filter:
   fq: null
   publisher_field: organization
+  page_extras: []
 max_requests_per_run: 600
 # opendata.swiss answers 429 to offsets past ~10 100 (Otto, 19.11.2026), so the harvest reads it by key. 400 pages of
 # 50 hold a full pass of some 325 pages in one run, about an hour with the crawl delay of 10 s (Otto, 19.11.2026).

@@ -35,6 +35,7 @@ _README = "README.md"
 _HAND_SOURCE = "listed"
 _ID = re.compile(r"[a-z][a-z0-9-]{1,62}")
 _HTTPS = re.compile(r"https://[^\s/?#@]+(?:/[^\s?#]*)?")
+_EXTRA_KEY = re.compile(r"[A-Za-z][A-Za-z0-9_:.-]{0,63}")
 _PREFIX = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
 _FIELDS = frozenset(
     {
@@ -70,10 +71,13 @@ class StacFilter:
 @dataclass(frozen=True, slots=True)
 class CkanFilter:
     """``fq`` of ``package_search`` as written, or none; ``publisher_field`` names where the source keeps the publisher
-    (GovData ``publisher_name``, opendata.swiss ``organization``, adr/0025 §5.2)."""
+    (GovData ``publisher_name``, opendata.swiss ``organization``, adr/0025 §5.2); ``page_extras`` the keys of extras
+    that may hold the page of a dataset at the provider, read in order after the field ``url`` (rank 2 of the link
+    "Source"; GovData ``uri``, ``guid``, F12 = 1, Otto 19.11.2026)."""
 
     fq: str | None
     publisher_field: str
+    page_extras: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -157,14 +161,18 @@ def _filter(name: str, protocol: SourceProtocol, value: object) -> StacFilter | 
         if not isinstance(prefixes, list) or not all(isinstance(p, str) and _PREFIX.fullmatch(p) for p in prefixes):
             raise _bad(name, "collection_prefixes is a list of collection id prefixes")
         return StacFilter(tuple(prefixes))
-    if not isinstance(value, dict) or set(value) != {"fq", "publisher_field"}:
-        raise _bad(name, "filter of a ckan source has fq and publisher_field, nothing else")
-    fq, field = value["fq"], value["publisher_field"]
+    if not isinstance(value, dict) or set(value) != {"fq", "publisher_field", "page_extras"}:
+        raise _bad(name, "filter of a ckan source has fq, publisher_field and page_extras, nothing else")
+    fq, field, extras = value["fq"], value["publisher_field"], value["page_extras"]
+    if not isinstance(extras, list) or not all(isinstance(k, str) and _EXTRA_KEY.fullmatch(k) for k in extras):
+        raise _bad(name, "page_extras is a list of keys of extras")
+    if len(set(extras)) != len(extras):
+        raise _bad(name, "page_extras names each key once")
     if fq is not None and (not isinstance(fq, str) or not fq.strip() or len(fq) > 1000):
         raise _bad(name, "fq is null or a non-blank text of at most 1000 characters")
     if field not in ("publisher_name", "organization"):
         raise _bad(name, "publisher_field is publisher_name or organization")
-    return CkanFilter(fq, field)
+    return CkanFilter(fq, field, tuple(extras))
 
 
 def _catalog_page(name: str, protocol: SourceProtocol, value: object) -> str | None:

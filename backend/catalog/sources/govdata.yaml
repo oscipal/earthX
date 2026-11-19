@@ -10,6 +10,9 @@ catalog_page: https://www.govdata.de/suche/daten/{name}
 filter:
   fq: null
   publisher_field: publisher_name
+  # The page of the dataset at the provider, where the field url is empty or no page (F12 = 1, Otto 19.11.2026:
+  # 99 % of the finds that reached only the catalogue page have it).
+  page_extras: [uri, guid]
 max_requests_per_run: 2500
 # Pages of 50 and 400 a run, as for opendata.swiss (Otto, 19.11.2026): a full pass of some 3 300 pages takes some
 # nine runs, each going on by key where the last stopped.
