@@ -10,6 +10,7 @@ the transaction is the run's, like :func:`earthx.catalog.pgstac.upsert_items`.
 from __future__ import annotations
 
 import json
+from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -62,6 +63,8 @@ class SourceUnit:
     href: str
     state: ItemState
     validators: Validators
+    #: When the source deletes what the unit comes from (STAC ``expires`` of its source item), where it names that.
+    expires: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,9 +113,17 @@ class StoredUnit:
     validators: Validators
     contributes: frozenset[Pair]
     changed_at: datetime
+    expires: str | None = None
 
     def as_listed(self) -> SourceUnit:
-        return SourceUnit(key=self.key, group=self.group, href=self.href, state=self.state, validators=self.validators)
+        return SourceUnit(
+            key=self.key,
+            group=self.group,
+            href=self.href,
+            state=self.state,
+            validators=self.validators,
+            expires=self.expires,
+        )
 
 
 def read_groups(conn: psycopg.Connection, dataset_id: str) -> dict[str, str | None]:
@@ -125,7 +136,8 @@ def read_units(conn: psycopg.Connection, dataset_id: str) -> dict[str, StoredUni
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT unit_key, group_key, href, state, etag, last_modified, checksum, content_sha256, contributes, changed_at
+            SELECT unit_key, group_key, href, state, etag, last_modified, checksum, content_sha256, contributes, changed_at,
+                   expires
             FROM public.earthx_materialize_unit WHERE dataset_id = %s
             """,
             (dataset_id,),
@@ -140,8 +152,9 @@ def read_units(conn: psycopg.Connection, dataset_id: str) -> dict[str, StoredUni
             validators=Validators(etag=etag, last_modified=modified, checksum=checksum, content_sha256=sha),
             contributes=frozenset((str(item_id), str(asset_key)) for item_id, asset_key in contributes),
             changed_at=changed_at,
+            expires=expires,
         )
-        for key, group, href, state, etag, modified, checksum, sha, contributes, changed_at in rows
+        for key, group, href, state, etag, modified, checksum, sha, contributes, changed_at, expires in rows
     }
 
 
@@ -176,13 +189,13 @@ def write_state(
             """
             INSERT INTO public.earthx_materialize_unit
                 (dataset_id, unit_key, group_key, href, state, etag, last_modified, checksum, content_sha256,
-                 contributes, seen_at, changed_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s)
+                 contributes, seen_at, changed_at, expires)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s)
             ON CONFLICT (dataset_id, unit_key) DO UPDATE SET
                 group_key = EXCLUDED.group_key, href = EXCLUDED.href, state = EXCLUDED.state, etag = EXCLUDED.etag,
                 last_modified = EXCLUDED.last_modified, checksum = EXCLUDED.checksum,
                 content_sha256 = EXCLUDED.content_sha256, contributes = EXCLUDED.contributes,
-                seen_at = EXCLUDED.seen_at, changed_at = EXCLUDED.changed_at
+                seen_at = EXCLUDED.seen_at, changed_at = EXCLUDED.changed_at, expires = EXCLUDED.expires
             """,
             [
                 (
@@ -198,6 +211,7 @@ def write_state(
                     json.dumps(sorted(unit.contributes)),
                     seen_at,
                     unit.changed_at,
+                    unit.expires,
                 )
                 for unit in units
             ],
@@ -215,6 +229,28 @@ def read_items(conn: psycopg.Connection, config: DatasetConfig, item_ids: Iterab
             (config.dataset_id, sorted(set(item_ids))),
         )
         return {item_id: dict(item) for item_id, item in cur.fetchall()}
+
+
+def stored_assets(conn: psycopg.Connection, config: DatasetConfig) -> dict[str, tuple[str, frozenset[Pair]]]:
+    """Per address, the ETag of ``earthx:refs`` and the (item id, asset key) pairs of every stored asset of ``config``
+    that names exactly one such ETag: what a run of ``detect: whole`` left, for the first run per unit (M5-58 F9)."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT a.value->>'href', a.value->'earthx:refs'->>'etag', jsonb_agg(jsonb_build_array(i.id, a.key))
+            FROM pgstac.items i, jsonb_each(i.content->'assets') a
+            WHERE i.collection = %s AND a.value->'earthx:refs'->>'etag' IS NOT NULL
+            GROUP BY 1, 2
+            """,
+            (config.dataset_id,),
+        )
+        rows = cur.fetchall()
+    per_href = Counter(href for href, _, _ in rows)
+    return {
+        href: (etag, frozenset((str(item_id), str(asset_key)) for item_id, asset_key in pairs))
+        for href, etag, pairs in rows
+        if href and per_href[href] == 1
+    }
 
 
 def delete_items(conn: psycopg.Connection, config: DatasetConfig, item_ids: Iterable[str]) -> int:
@@ -239,5 +275,6 @@ __all__ = [
     "read_groups",
     "read_items",
     "read_units",
+    "stored_assets",
     "write_state",
 ]

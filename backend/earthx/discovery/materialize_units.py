@@ -14,6 +14,11 @@ the stored ETag, else with ``If-Modified-Since``, else the SHA-256 of the unit i
 equal states the younger Last-Modified; a lower state never replaces a higher one. When the unit that holds goes, the
 next one left holds and is built anew; when none is left the asset goes, and an item without assets is deleted.
 
+**The first run per unit of an entry a run of ``detect: whole`` loaded** (M5-58 F9) takes over what is stored: a
+listed unit whose address an item asset carries starts from the ETag of that asset's ``earthx:refs``, so a ``HEAD`` with
+``If-None-Match`` decides it, and a ``304`` keeps the items without reading the file again. They are written once all
+the same, to carry their state.
+
 Nothing commits here: the run is one transaction, the caller's (``discovery.materialize``).
 """
 
@@ -44,6 +49,7 @@ from earthx.catalog.source_units import (
     read_groups,
     read_items,
     read_units,
+    stored_assets,
     write_state,
 )
 from earthx.gateway import Gateway, host_of
@@ -74,8 +80,40 @@ def _rank(unit: StoredUnit) -> tuple[int, datetime, str]:
 
 def holder(pair: Pair, units: Iterable[StoredUnit]) -> StoredUnit | None:
     """The unit whose contribution the asset ``pair`` carries, or ``None`` where no unit contributes to it."""
-    candidates = [unit for unit in units if pair in unit.contributes]
-    return max(candidates, key=_rank, default=None)
+    return holders({pair}, units).get(pair)
+
+
+def holders(pairs: set[Pair], units: Iterable[StoredUnit]) -> dict[Pair, StoredUnit]:
+    """:func:`holder` of each of ``pairs`` in one pass over ``units``; a pair no unit contributes to is left out."""
+    found: dict[Pair, StoredUnit] = {}
+    for unit in units:
+        for pair in unit.contributes & pairs:
+            if pair not in found or _rank(unit) > _rank(found[pair]):
+                found[pair] = unit
+    return found
+
+
+def _adopt(
+    conn: psycopg.Connection, config: DatasetConfig, units: Iterable[SourceUnit], now: datetime
+) -> dict[str, StoredUnit]:
+    """The stored state of the listed units whose address a stored item asset carries (M5-58 F9)."""
+    stored = stored_assets(conn, config)
+    adopted: dict[str, StoredUnit] = {}
+    for unit in units:
+        if unit.href not in stored:
+            continue
+        etag, pairs = stored[unit.href]
+        adopted[unit.key] = StoredUnit(
+            key=unit.key,
+            group=unit.group,
+            href=unit.href,
+            state=unit.state,
+            validators=Validators(etag=etag, last_modified=None, checksum=None, content_sha256=None),
+            contributes=pairs,
+            changed_at=now,
+            expires=unit.expires,
+        )
+    return adopted
 
 
 async def unchanged(gateway: Gateway, unit: SourceUnit, stored: StoredUnit) -> tuple[bool, Validators]:
@@ -210,6 +248,10 @@ async def run_units(
     listing = await spec.units.list_units(config, gateway=gateway, known_groups=known_groups)
     groups, unchanged_groups = dict(listing.groups), frozenset(listing.unchanged_groups)
     _check_listing(config, known_groups, groups, unchanged_groups, listing.units)
+    adopted: set[str] = set()
+    if not before and not known_groups:
+        before = _adopt(conn, config, listing.units, now)
+        adopted = set(before)
 
     after: dict[str, StoredUnit] = {key: unit for key, unit in before.items() if unit.group in unchanged_groups}
     if any(unit.key in after for unit in listing.units):
@@ -225,7 +267,7 @@ async def run_units(
         same, validators = await unchanged(gateway, unit, stored)
         if same:
             kept += 1
-            after[unit.key] = replace(stored, group=unit.group, validators=validators)
+            after[unit.key] = replace(stored, group=unit.group, validators=validators, expires=unit.expires)
         else:
             to_build.append(replace(unit, validators=validators))
     changed = len(to_build) - new
@@ -256,6 +298,7 @@ async def run_units(
                 validators=validators,
                 contributes=frozenset(contribution.pair for contribution in made.contributions),
                 changed_at=now,
+                expires=unit.expires,
             )
 
     await build(to_build)
@@ -270,15 +313,18 @@ async def run_units(
         # An unchanged unit whose file grew younger may now hold over another of its state (review of PR 1).
         if key in before and key not in built and unit.validators.modified_at != before[key].validators.modified_at:
             touched |= unit.contributes
+    for key in adopted & set(after):
+        touched |= after[key].contributes
 
     # A unit that holds an asset now but did not before, and was not built in this run, is built anew (§3.4 point 4).
     # Built anew, it may contribute to fewer assets than before; those are touched too, and so on until nothing moves.
     while True:
         fallback: dict[str, SourceUnit] = {}
-        for pair in touched:
-            now_holder, previous = holder(pair, after.values()), holder(pair, before.values())
-            if now_holder is None or now_holder.key in built:
+        now_holders, previous_holders = holders(touched, after.values()), holders(touched, before.values())
+        for pair, now_holder in now_holders.items():
+            if now_holder.key in built or now_holder.key in adopted:
                 continue
+            previous = previous_holders.get(pair)
             if previous is None or previous.key != now_holder.key:
                 fallback[now_holder.key] = now_holder.as_listed()
         if not fallback:
@@ -288,16 +334,28 @@ async def run_units(
             touched |= before[key].contributes | after[key].contributes
 
     changes: dict[str, dict[str, tuple[Contribution, ItemState] | None]] = defaultdict(dict)
+    kept_adopted: dict[Pair, ItemState] = {}
+    now_holders = holders(touched, after.values())
     for pair in sorted(touched):
         item_id, asset_key = pair
-        now_holder = holder(pair, after.values())
+        now_holder = now_holders.get(pair)
         if now_holder is None:
             changes[item_id][asset_key] = None
         elif now_holder.key in built:
             contribution = next(c for c in built[now_holder.key].contributions if c.pair == pair)
             changes[item_id][asset_key] = (contribution, now_holder.state)
+        elif now_holder.key in adopted:
+            kept_adopted[pair] = now_holder.state
+            changes.setdefault(item_id, {})
 
     stored_items = read_items(conn, config, changes)
+    for (item_id, asset_key), state in kept_adopted.items():
+        # The asset as a run of `detect: whole` wrote it, now with its state (M5-58 F9).
+        old = stored_items.get(item_id)
+        if old is None or asset_key not in old.get("assets", {}):
+            continue
+        frame = {key: value for key, value in old.items() if key != "assets"}
+        changes[item_id][asset_key] = (Contribution(item_id, asset_key, old["assets"][asset_key], frame), state)
     written: list[dict[str, Any]] = []
     emptied: list[str] = []
     replaced = 0
