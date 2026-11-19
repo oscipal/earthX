@@ -14,7 +14,7 @@ import pytest
 
 from earthx.catalog.registry import Maturity
 from earthx.catalog.sources import CkanFilter, SourceConfig, SourceProtocol
-from earthx.discovery.ckan import CkanListing, ckan_pages, extract_package, package_key
+from earthx.discovery.ckan import CkanListing, ckan_pages, extract_package, package_key, search_params
 from earthx.discovery.extract import Invalid, ShapeError, extracted_sha256, extractor_version
 from earthx.discovery.links import LinkRank
 from earthx.gateway import GatewayResponse
@@ -27,6 +27,7 @@ SOURCE = SourceConfig(
     filter=CkanFilter(None, "publisher_name"),
     max_requests_per_run=20,
     max_pages_per_run=None,
+    rows_per_page=None,
     full_every_days=7,
     robots_exception=None,
     maturity=Maturity.STABLE,
@@ -495,3 +496,8 @@ async def test_a_listing_that_breaks_the_order_by_key_fails(keys: list[str | Non
 
     with pytest.raises(ShapeError):
         [page async for page in ckan_pages(fetch, SOURCE, None, CkanListing(full=True, last_key=last_key))]
+
+
+def test_a_page_asks_the_rows_of_its_source() -> None:
+    assert search_params(replace(SOURCE, rows_per_page=50), None, None)["rows"] == 50
+    assert search_params(SOURCE, None, None)["rows"] == 100

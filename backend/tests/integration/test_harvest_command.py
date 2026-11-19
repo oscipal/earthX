@@ -105,6 +105,7 @@ def source() -> SourceConfig:
         filter=StacFilter(()),
         max_requests_per_run=20,
         max_pages_per_run=None,
+        rows_per_page=None,
         full_every_days=1,
         robots_exception=None,
         maturity=Maturity.STABLE,

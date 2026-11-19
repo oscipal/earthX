@@ -94,8 +94,9 @@ BACKOFF_MAX_S = 1800.0
 BACKOFF_BUDGET_S = 3600.0
 #: The run's hold on its source is renewed at least this often while it waits (its term is 5 min, A1).
 HEARTBEAT_S = 60.0
-#: The pages ``--measure`` reads: the first page as a run asks it, and the same page with ``fl``.
-MEASURE_PAGES = 2
+#: The pages ``--measure`` reads: the first page as a run asks it, the second twice by offset and twice by key, and the
+#: first with ``fl``.
+MEASURE_PAGES = 6
 
 
 class _BudgetSpent(Exception):
@@ -541,6 +542,7 @@ def _policy_for(source: SourceConfig, hosts: Mapping[str, HostLimit]) -> Policy:
         allowed_hosts=frozenset({source.host}),
         host_connections={source.host: limit.connections},
         host_intervals={} if limit.interval_s is None else {source.host: limit.interval_s},
+        host_read_timeouts={} if limit.timeout_s is None else {source.host: limit.timeout_s},
         obey_robots=True,
         robots_exceptions={} if exception is None else {source.host: (exception.path,)},
         retry_rate_limited=False,

@@ -45,6 +45,7 @@ _FIELDS = frozenset(
         "filter",
         "max_requests_per_run",
         "max_pages_per_run",
+        "rows_per_page",
         "full_every_days",
         "robots_exception",
         "maturity",
@@ -98,6 +99,9 @@ class SourceConfig:
     #: The pages of a CKAN listing one run reads at most; ``None`` without a cap. A pass larger than it goes on in the
     #: next run (Otto, 18.11.2026: a source that keeps a quota, opendata.swiss).
     max_pages_per_run: int | None
+    #: The packages a page of a CKAN listing asks for; ``None`` for the harvest's default (100). Fewer rows, less work
+    #: for a slow catalogue per request (Otto, 19.11.2026).
+    rows_per_page: int | None
     full_every_days: int
     #: ``None``: robots.txt is obeyed as written.
     robots_exception: RobotsException | None
@@ -128,6 +132,20 @@ def _pages(name: str, protocol: SourceProtocol, value: object) -> int | None:
         raise _bad(name, "max_pages_per_run is for a ckan source; a stac-api source has null")
     if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= MAX_REQUESTS_PER_RUN:
         raise _bad(name, f"max_pages_per_run is null or a whole number from 1 to {MAX_REQUESTS_PER_RUN}")
+    return value
+
+
+#: The most rows a CKAN page may ask for; ``package_search`` caps them at ``ckan.search.rows_max`` (1 000 by default).
+MAX_ROWS_PER_PAGE = 1000
+
+
+def _rows(name: str, protocol: SourceProtocol, value: object) -> int | None:
+    if value is None:
+        return None
+    if protocol is not SourceProtocol.CKAN:
+        raise _bad(name, "rows_per_page is for a ckan source; a stac-api source has null")
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= MAX_ROWS_PER_PAGE:
+        raise _bad(name, f"rows_per_page is null or a whole number from 1 to {MAX_ROWS_PER_PAGE}")
     return value
 
 
@@ -214,6 +232,7 @@ def read_source(path: Path) -> SourceConfig:
         filter=_filter(name, protocol, data["filter"]),
         max_requests_per_run=_count(name, data, "max_requests_per_run", MAX_REQUESTS_PER_RUN),
         max_pages_per_run=_pages(name, protocol, data["max_pages_per_run"]),
+        rows_per_page=_rows(name, protocol, data["rows_per_page"]),
         full_every_days=_count(name, data, "full_every_days", 365),
         robots_exception=_robots_exception(name, endpoint, data["robots_exception"]),
         maturity=maturity,

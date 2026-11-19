@@ -28,6 +28,7 @@ filter:
   collection_prefixes: []
 max_requests_per_run: 20
 max_pages_per_run: null
+rows_per_page: null
 full_every_days: 1
 robots_exception: null
 maturity: stable
@@ -220,3 +221,23 @@ class TestPagesPerRun:
     def test_a_stac_source_has_no_cap(self, tmp_path: Path) -> None:
         with pytest.raises(EntryFileError, match="max_pages_per_run is for a ckan source"):
             read_source(_write(tmp_path, STAC.replace("max_pages_per_run: null", "max_pages_per_run: 5")))
+
+
+class TestRowsPerPage:
+    def test_opendata_swiss_asks_fifty_rows_a_page(self) -> None:
+        # Otto, 19.11.2026: keyset pages of 100 took 4-14 s.
+        sources = read_sources()
+        assert sources["opendata-swiss"].rows_per_page == 50
+        assert all(s.rows_per_page is None for key, s in sources.items() if key != "opendata-swiss")
+
+    def test_a_ckan_source_may_set_its_rows(self, tmp_path: Path) -> None:
+        assert read_source(_write(tmp_path, CKAN.replace("rows_per_page: null", "rows_per_page: 50"))).rows_per_page == 50
+
+    @pytest.mark.parametrize("value", ["0", "1001", "true", "'50'", "2.5"])
+    def test_wrong_rows(self, tmp_path: Path, value: str) -> None:
+        with pytest.raises(EntryFileError, match="rows_per_page is null or a whole number"):
+            read_source(_write(tmp_path, CKAN.replace("rows_per_page: null", f"rows_per_page: {value}")))
+
+    def test_a_stac_source_has_no_rows(self, tmp_path: Path) -> None:
+        with pytest.raises(EntryFileError, match="rows_per_page is for a ckan source"):
+            read_source(_write(tmp_path, STAC.replace("rows_per_page: null", "rows_per_page: 50")))

@@ -72,12 +72,15 @@ class Catalogue:
         self.refuse_status = 429
         self.retry_after: str | None = None
         self.pages_served = 0
+        #: Only --measure asks by offset, to compare it with the key.
+        self.allow_offset = False
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         if request.url.path == "/robots.txt":
             return httpx.Response(200, text=self.robots)
         assert request.url.path == "/api/3/action/package_search"
-        assert request.url.params["start"] == "0"
+        start = int(request.url.params["start"])
+        assert start == 0 or self.allow_offset
         self.asked.append(request.url.params)
         if self.answer is not None:
             return httpx.Response(200, content=json.dumps(self.answer))
@@ -93,7 +96,7 @@ class Catalogue:
         if after is not None and not self.ignore_key:
             matching = [p for p in matching if str(p.get("id") if isinstance(p, dict) else p) > after[1]]
         rows = min(int(request.url.params["rows"]), self.size)
-        body = {"success": True, "result": {"count": len(matching), "results": matching[:rows]}}
+        body = {"success": True, "result": {"count": len(matching), "results": matching[start : start + rows]}}
         self.pages_served += 1
         if self.after_page is not None:
             self.after_page(self.pages_served)
@@ -128,6 +131,7 @@ def source() -> SourceConfig:
         filter=CkanFilter(None, "publisher_name"),
         max_requests_per_run=20,
         max_pages_per_run=None,
+        rows_per_page=None,
         full_every_days=7,
         robots_exception=None,
         maturity=Maturity.STABLE,
@@ -571,8 +575,10 @@ async def test_an_incremental_pass_goes_on_over_runs_under_a_cap(db: psycopg.Con
 
 async def test_measure_keeps_the_rest_and_the_pages_of_a_run(db: psycopg.Connection, source: SourceConfig) -> None:
     # Otto, 18.11.2026: --measure under the same budget and rest as a run.
-    catalogue = Catalogue(THREE, size=10)
-    assert "Messung einer Seite mit 3 Paketen" in await measure(db, source, _gateway(catalogue))
+    catalogue = Catalogue(FIVE, size=2)
+    catalogue.allow_offset = True
+    text = await measure(db, replace(source, rows_per_page=2), _gateway(catalogue))
+    assert "Seiten mit 2 Paketen" in text and "dieselben Pakete: ja" in text
     with pytest.raises(ConfigError, match="more than max_pages_per_run"):
         await measure(db, replace(source, max_pages_per_run=1), _gateway(catalogue))
     catalogue.refuse_from = 0

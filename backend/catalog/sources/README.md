@@ -10,8 +10,9 @@ Präfix `proto-` sind vergeben. `enabled: false` hält eine Quelle an, ohne die 
 - `filter`: STAC `collection_prefixes` (leer = alle); CKAN `fq` wörtlich oder `null` und `publisher_field`
   (`publisher_name` bei DCAT-AP.de, `organization` sonst).
 - `max_requests_per_run`: Obergrenze, danach endet ein Lauf `interrupted`. `max_pages_per_run`: nur CKAN, `null` oder die
-  Seiten eines Laufs; danach endet er `interrupted` (`page_budget`), und der nächste setzt fort (Otto, 18.11.2026). `full_every_days`: Abstand der vollen Läufe
-  einer CKAN-Quelle; dazwischen fragt ein Lauf nur nach geänderten Paketen.
+  Seiten eines Laufs; danach endet er `interrupted` (`page_budget`), und der nächste setzt fort (Otto, 18.11.2026).
+  `rows_per_page`: nur CKAN, `null` (100) oder die Pakete je Seite (Otto, 19.11.2026). `full_every_days`: Abstand
+  der vollen Läufe einer CKAN-Quelle; dazwischen fragt ein Lauf nur nach geänderten Paketen.
 
 - `robots_exception`: `null` (`robots.txt` gilt streng) oder `path` (genau der Pfad von `endpoint` mit `/` am Ende,
   also nur die Metadaten-API) und `evidence` (`https`-Adresse der Doku, in der der Anbieter diese API zur Nutzung

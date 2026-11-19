@@ -41,7 +41,15 @@ from earthx.discovery.extract import (
 from earthx.discovery.links import LinkRank, checked_link, choose_link
 from earthx.discovery.stac import Fetch
 
-__all__ = ["INCREMENTAL_OVERLAP", "PAGE_ROWS", "CkanListing", "ckan_pages", "extract_package", "package_key"]
+__all__ = [
+    "INCREMENTAL_OVERLAP",
+    "PAGE_ROWS",
+    "CkanListing",
+    "ckan_pages",
+    "extract_package",
+    "package_key",
+    "search_params",
+]
 
 PAGE_ROWS = 100
 MAX_DISTRIBUTIONS = 50
@@ -98,7 +106,7 @@ def _quoted(key: str) -> str:
     return '"' + key.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
-def _search_params(source: SourceConfig, after: str | None, since: datetime | None) -> dict[str, str | int]:
+def search_params(source: SourceConfig, after: str | None, since: datetime | None) -> dict[str, str | int]:
     """The query of one page; the gateway assembles it into the address. ``start`` is always 0 (keyset paging)."""
     assert isinstance(source.filter, CkanFilter)
     clauses = [] if source.filter.fq is None else [f"({source.filter.fq})"]
@@ -107,7 +115,7 @@ def _search_params(source: SourceConfig, after: str | None, since: datetime | No
     if after is not None:
         # Exclusive lower bound on the sort key: the ids after the last one read.
         clauses.append(f"id:{{{_quoted(after)} TO *]")
-    params: dict[str, str | int] = {"rows": PAGE_ROWS, "start": 0, "sort": "id asc"}
+    params: dict[str, str | int] = {"rows": source.rows_per_page or PAGE_ROWS, "start": 0, "sort": "id asc"}
     if clauses:
         params["fq"] = " AND ".join(clauses)
     return params
@@ -124,7 +132,7 @@ async def ckan_pages(
     that names an id at or before the last one read, or a page without a key to go on from."""
     while True:
         response = await fetch(
-            f"{source.endpoint}/package_search", params=_search_params(source, listing.last_key, since)
+            f"{source.endpoint}/package_search", params=search_params(source, listing.last_key, since)
         )
         if response.status_code != 200:
             raise ShapeError(f"the listing answered {response.status_code}")

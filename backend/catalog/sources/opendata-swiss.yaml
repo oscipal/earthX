@@ -11,6 +11,8 @@ max_requests_per_run: 400
 # opendata.swiss answers 429 to offsets past ~10 100 (Otto, 19.11.2026), so the harvest reads it by key; 40 pages a
 # run stay until the first keyset run shows whether more is fine.
 max_pages_per_run: 40
+# Keyset pages of 100 took 4-14 s on 19.11.2026 (Otto): half the rows, less work per request.
+rows_per_page: 50
 full_every_days: 7
 # Its robots.txt is the default of CKAN (Disallow: /api/, Crawl-delay: 10). The provider documents the metadata API for
 # reuse (handbook "opendata.swiss API nutzen"; address [S], from a search, not opened from a session), so the harvest

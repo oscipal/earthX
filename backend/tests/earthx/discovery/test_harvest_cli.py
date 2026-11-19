@@ -73,3 +73,9 @@ def test_a_resting_source_says_why_no_run_starts(monkeypatch: pytest.MonkeyPatch
         assert capsys.readouterr().out.strip() == (
             "opendata-swiss: kein Lauf gestartet – die Quelle bat mit 429 um Pause und ruht bis 2026-11-19 00:00 UTC"
         )
+
+
+def test_the_policy_of_opendata_swiss_waits_a_minute_for_an_answer() -> None:
+    hosts, sources = read_registry().host_limits, read_sources()
+    assert _policy_for(sources["opendata-swiss"], hosts).read_timeout_for("ckan.opendata.swiss") == 60.0
+    assert _policy_for(sources["govdata"], hosts).read_timeout_for("ckan.govdata.de") == 15.0
