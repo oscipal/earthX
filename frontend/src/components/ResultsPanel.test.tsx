@@ -572,20 +572,21 @@ describe('a provisional day in the results (M5-58 F1)', () => {
     scene('f1', 'optical', { datetime: '2026-11-16T00:00:00Z', 'earthx:state': 'final' }),
   ];
 
-  it('says "Provisional values" at the time of a provisional scene, not at the head of its group, with no mark', () => {
+  it('draws a warning triangle beside the time of a provisional scene, its text on the triangle, not as a tooltip of the time', () => {
     load(DAYS);
-    const heads = [...container.querySelectorAll('.result-group .rg-label')];
-    expect(heads.map((head) => [head.textContent, tipOf(head)])).toEqual([
-      ['2026-11-17', ''],
-      ['2026-11-16', ''],
-    ]);
-    expect(tipOf(container.querySelector('.rg-items .result-date'))).toBe('Provisional values');
-    expect(container.textContent).not.toMatch(/provisional/i);
+    const date = container.querySelector('.rg-items .result-date');
+    const warning = date?.querySelector('.tip.warn');
+    expect(warning).not.toBeNull();
+    expect(tipOf(warning)).toBe('Provisional values');
+    expect(warning?.getAttribute('aria-label')).toBe('Provisional values');
+    expect(tipOf(date)).toBe('');
+    expect(date?.textContent).toBe('00:00:00Z');
   });
 
-  it('says nothing at a final day', () => {
+  it('draws nothing at a final day and nothing at the head of a group', () => {
     load(DAYS);
+    expect([...container.querySelectorAll('.result-group .rg-label')].map((head) => tipOf(head))).toEqual(['', '']);
     act(() => useAppStore.setState({ expandedGroupIndex: 1 }));
-    expect(tipOf(container.querySelector('.rg-items .result-date'))).toBe('');
+    expect(container.querySelector('.rg-items .result-date .tip')).toBeNull();
   });
 });

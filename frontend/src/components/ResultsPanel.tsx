@@ -57,8 +57,10 @@ function Row({ item }: { item: StacItem }) {
         />
       )}
       <div className="result-meta">
-        <span className="result-date" data-tip={isProvisional(item) ? PROVISIONAL_TIP : undefined}>
+        <span className="result-date">
           {timeOf(item.properties)}
+          {/* A warning beside the time of a provisional day (M5-58, Otto, 19.11.2026), its text on the triangle. */}
+          {isProvisional(item) && <Tip tone="warn" text={PROVISIONAL_TIP} />}
         </span>
         <span className="result-id-row">
           <span className="result-id" data-tip={item.id} data-tip-cut="">
