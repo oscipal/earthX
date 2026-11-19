@@ -78,13 +78,9 @@ def _rank(unit: StoredUnit) -> tuple[int, datetime, str]:
     return (unit.state.rank, unit.validators.modified_at or _EARLIEST, unit.key)
 
 
-def holder(pair: Pair, units: Iterable[StoredUnit]) -> StoredUnit | None:
-    """The unit whose contribution the asset ``pair`` carries, or ``None`` where no unit contributes to it."""
-    return holders({pair}, units).get(pair)
-
-
 def holders(pairs: set[Pair], units: Iterable[StoredUnit]) -> dict[Pair, StoredUnit]:
-    """:func:`holder` of each of ``pairs`` in one pass over ``units``; a pair no unit contributes to is left out."""
+    """The unit whose contribution each asset of ``pairs`` carries, in one pass over ``units``; a pair no unit
+    contributes to is left out."""
     found: dict[Pair, StoredUnit] = {}
     for unit in units:
         for pair in unit.contributes & pairs:
@@ -336,14 +332,14 @@ async def run_units(
     changes: dict[str, dict[str, tuple[Contribution, ItemState] | None]] = defaultdict(dict)
     kept_adopted: dict[Pair, ItemState] = {}
     now_holders = holders(touched, after.values())
+    contributions = {key: {c.pair: c for c in made.contributions} for key, made in built.items()}
     for pair in sorted(touched):
         item_id, asset_key = pair
         now_holder = now_holders.get(pair)
         if now_holder is None:
             changes[item_id][asset_key] = None
         elif now_holder.key in built:
-            contribution = next(c for c in built[now_holder.key].contributions if c.pair == pair)
-            changes[item_id][asset_key] = (contribution, now_holder.state)
+            changes[item_id][asset_key] = (contributions[now_holder.key][pair], now_holder.state)
         elif now_holder.key in adopted:
             kept_adopted[pair] = now_holder.state
             changes.setdefault(item_id, {})
@@ -392,4 +388,4 @@ async def run_units(
     )
 
 
-__all__ = ["UnitsOutcome", "assemble_item", "holder", "holders", "run_units", "unchanged"]
+__all__ = ["UnitsOutcome", "assemble_item", "holders", "run_units", "unchanged"]
