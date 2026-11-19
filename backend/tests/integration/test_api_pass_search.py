@@ -22,7 +22,6 @@ import pytest
 from earthx.access.aoi_clouds import AoiClouds
 from earthx.api import aoi_cloud_filter, pass_filter
 from earthx.api.main import build_app
-from earthx.catalog.load import main as load_catalog
 from earthx.catalog.pgstac import load_collection, upsert_items, use_pgstac_search_path
 from earthx.catalog.registry import CoverageProvider, DatasetRegistry, ItemHolding, SearchCapabilities
 from earthx.gateway import Gateway, Policy, ReadSlots
@@ -110,8 +109,7 @@ def source() -> Source:
 
 
 @pytest.fixture
-def catalog(require_postgres_env: None) -> Iterator[None]:
-    assert load_catalog() == 0
+def catalog(catalogue_loaded: None) -> Iterator[None]:
     with psycopg.connect(autocommit=True) as conn:
         load_collection(conn, TILES)
         upsert_items(conn, TILES, [_tile(f"t{n}", west=float(n), east=float(n + 1)) for n in range(9, 13)])

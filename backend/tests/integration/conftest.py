@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import AsyncIterator, Iterator, Mapping
+from collections.abc import AsyncIterator, Callable, Iterator, Mapping
 from pathlib import Path
 
 import psycopg
@@ -26,6 +26,7 @@ import pytest
 from dotenv import load_dotenv
 
 import earthx.api.main
+from earthx.catalog.load import main as load_catalog
 from earthx.catalog.registry import DatasetRegistry
 from earthx.catalog.search_index import write_search_index
 
@@ -159,9 +160,8 @@ def _search_index_of_the_app(monkeypatch: pytest.MonkeyPatch) -> None:
     this does the same for the test's registry, committed, right before the check. `test_search_index.py` puts the
     bare check back to test the refusal itself.
 
-    Committed, unlike the rest of these tests: the check reads over a connection of the app's own pool. In a parallel
-    run each worker has a database of its own; after a serial run against a database you keep, run `catalog-load`
-    before starting `api` on it again, as after the tests that call it themselves.
+    Committed, unlike the rest of these tests: the check reads over a connection of the app's own pool. Every run has
+    databases of its own (tests/worker_database.py), so nothing of this outlives it.
     """
     check = earthx.api.main.check_search_index
 
@@ -220,3 +220,100 @@ def conn(require_postgres_env: None) -> Iterator[psycopg.Connection]:
     finally:
         connection.rollback()
         connection.close()
+
+
+#: What `catalog-load` writes (`earthx/catalog/load.py`), plus the rows the overview of a prototype source leaves.
+#: Not the index of the dataset search: every `api` a test starts writes it for its own registry first
+#: (`_search_index_of_the_app`), so it changes with each test that brings a registry of its own, and no test reads
+#: what `catalog-load` left in it.
+CATALOGUE_TABLES = (
+    "public.earthx_migrations",
+    "pgstac.collections",
+    "public.earthx_region",
+    "public.earthx_region_part",
+    "public.earthx_listed_entry",
+    "public.earthx_overview",
+    "public.earthx_overview_request",
+)
+
+
+def catalogue_fingerprint() -> tuple[object, ...]:
+    """Rows and the newest committed transaction of each catalogue table: whatever is written, deleted or rewritten
+    changes one of the two. A table that is not there (pgstac dropped) gives ``None`` for it."""
+    seen: list[object] = []
+    with psycopg.connect(autocommit=True) as conn:
+        for table in CATALOGUE_TABLES:
+            try:
+                seen.append(conn.execute(f"SELECT count(*), max(xmin::text::bigint) FROM {table}").fetchone())
+            except psycopg.errors.UndefinedTable:
+                seen.append(None)
+    return tuple(seen)
+
+
+class Catalogue:
+    """The catalogue of the worker's database, loaded once and again only when a test changed it (M5-61 F1).
+
+    The T-C tests of the API ran ``catalog-load`` before every test, 2.6 s and more each (M5-61 §2.3). Before a test
+    :meth:`ensure` compares :func:`catalogue_fingerprint` with what it was right after the last load: the same, nothing
+    happens; not the same, or another ``state`` was asked for, it undoes the last state (``undo``), loads, and sets up
+    the one asked for (``setup``). A test that leaves the catalogue changed costs the next one a load, as before.
+    """
+
+    def __init__(self) -> None:
+        self.state: str | None = None
+        self.fingerprint: tuple[object, ...] | None = None
+        self.undo: Callable[[], None] | None = None
+        self.owner: str | None = None
+        self.loads = 0
+
+    def ensure(
+        self,
+        state: str = "registry",
+        *,
+        setup: Callable[[], None] | None = None,
+        undo: Callable[[], None] | None = None,
+        owner: str | None = None,
+    ) -> None:
+        """``owner``, the fixture that asks for a state with an ``undo``: :meth:`leave` keeps the state while the next
+        test asks for that fixture too."""
+        if state == self.state and catalogue_fingerprint() == self.fingerprint:
+            return
+        self.forget()
+        assert load_catalog() == 0
+        self.loads += 1
+        if setup is not None:
+            setup()
+        self.state, self.undo, self.owner, self.fingerprint = state, undo, owner, catalogue_fingerprint()
+
+    def forget(self) -> None:
+        """Undo the state set up last, if it has an ``undo``; the next :meth:`ensure` loads."""
+        undo = self.undo
+        self.state, self.undo, self.owner, self.fingerprint = None, None, None, None
+        if undo is not None:
+            undo()
+
+    def leave(self, next_fixtures: list[str] | None) -> None:
+        """After a test: a state with an ``undo`` stays only for a next test that asks for its owner."""
+        if self.undo is not None and (next_fixtures is None or self.owner not in next_fixtures):
+            self.forget()
+
+
+_CATALOGUE = pytest.StashKey[Catalogue]()
+
+
+@pytest.fixture(scope="session")
+def catalogue_state(require_postgres_env: None, pytestconfig: pytest.Config) -> Catalogue:
+    return pytestconfig.stash.setdefault(_CATALOGUE, Catalogue())
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_runtest_teardown(item: pytest.Item, nextitem: pytest.Item | None) -> None:
+    catalogue = item.config.stash.get(_CATALOGUE, None)
+    if catalogue is not None:
+        catalogue.leave(None if nextitem is None else list(nextitem.fixturenames))
+
+
+@pytest.fixture
+def catalogue_loaded(catalogue_state: Catalogue) -> None:
+    """The registry in pgstac and everything else `catalog-load` writes, as right after it ran."""
+    catalogue_state.ensure()

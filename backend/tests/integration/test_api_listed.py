@@ -1,15 +1,15 @@
 """T-C: listed entries on the API (M5-40 plan §5.5, §5.8; adr/0033 §9).
 
 The running `api` app over the registry in pgstac and a handful of synthetic listed entries in ``earthx_listed_entry``.
-``catalog-load`` commits, and so does the fixture that writes the listed rows; it deletes them again when the test ends,
-because the next ``catalog-load`` would turn a left-over hand entry into a tombstone and the other tests count the
-catalogue. Nothing goes out: neither the listed documents nor their links are fetched from anywhere.
+``catalog-load`` commits, and so does the fixture that writes the listed rows; it deletes them again before a test of
+another file runs, because the next ``catalog-load`` would turn a left-over hand entry into a tombstone and the other
+tests count the catalogue. Nothing goes out: neither the listed documents nor their links are fetched from anywhere.
 """
 
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import date
 
@@ -32,11 +32,11 @@ from earthx.catalog.listed import (
     sort_title,
 )
 from earthx.catalog.listed_store import apply_blocklist, supersede, write_hand_entries
-from earthx.catalog.load import main as load_catalog
 from earthx.catalog.registry import AccountKind, SpatialExtent, TemporalExtent
 from tests.catalog.entries import REGISTRY
 from tests.catalog.listed_entries import listed_entry, utc
 from tests.conftest import log_line_without_timestamp
+from tests.integration.conftest import Catalogue
 from tests.integration.listed_rows import insert_row
 
 pytestmark = pytest.mark.anyio
@@ -133,14 +133,18 @@ def _tombstone(dataset_id: str, reason: BlockReason) -> None:
 
 
 @pytest.fixture
-def catalogue(require_postgres_env: None) -> Iterator[None]:
-    """The registry loaded, then the listed rows of the test, committed; deleted again at the end, also after a failure."""
-    assert load_catalog() == 0
-    _write(*LISTED.values())
-    try:
-        yield
-    finally:
-        _commit(lambda conn: conn.execute("DELETE FROM public.earthx_listed_entry"))
+def catalogue(catalogue_state: Catalogue) -> None:
+    """The registry loaded, then the listed rows of these tests, committed.
+
+    They stay while the next test asks for this fixture too, unless a test changed them, and are deleted before any
+    other test runs (`Catalogue.leave`), also after a failure.
+    """
+    catalogue_state.ensure(
+        "listed entries of test_api_listed.py",
+        setup=lambda: _write(*LISTED.values()),
+        undo=lambda: _commit(lambda conn: conn.execute("DELETE FROM public.earthx_listed_entry")),
+        owner="catalogue",
+    )
 
 
 @asynccontextmanager
