@@ -197,13 +197,21 @@ class TestRefused:
             run(archive, config)
 
     def test_a_quantity_meteoswiss_has_no_daily_grid_of(self, archive: Archive) -> None:
-        config = replace(entry(METEOSWISS_DAILY_1KM), band_units={"TabsD": "°C", "TabsM": "°C"})
+        config = replace(
+            entry(METEOSWISS_DAILY_1KM),
+            band_units={"TabsD": "°C", "TabsM": "°C"},
+            band_descriptions={"TabsD": "Daily mean air temperature, 2 m", "TabsM": "Monthly mean air temperature, 2 m"},
+        )
         with pytest.raises(UnsupportedSource, match="TabsM"):
             run(archive, config)
         assert archive.seen == []
 
     def test_quantities_of_two_grids_in_one_entry(self, archive: Archive) -> None:
-        config = replace(entry(METEOSWISS_DAILY_1KM), band_units={"TabsD": "°C", "RhiresD": "mm"})
+        config = replace(
+            entry(METEOSWISS_DAILY_1KM),
+            band_units={"TabsD": "°C", "RhiresD": "mm"},
+            band_descriptions={"TabsD": "Daily mean air temperature, 2 m", "RhiresD": "Daily precipitation sum"},
+        )
         with pytest.raises(UnsupportedSource, match="different grids"):
             run(archive, config)
 

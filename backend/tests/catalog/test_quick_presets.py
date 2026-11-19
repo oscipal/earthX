@@ -146,7 +146,11 @@ class TestTheFormOfACompositePreset:
             _composite(name=name)
 
     def test_a_name_whose_channel_bands_meet_a_band_of_the_data_is_refused(self) -> None:
-        entry = replace(SENTINEL_2_L2A, band_units={**SENTINEL_2_L2A.band_units, "fc_r": None})
+        entry = replace(
+            SENTINEL_2_L2A,
+            band_units={**SENTINEL_2_L2A.band_units, "fc_r": None},
+            band_descriptions={**SENTINEL_2_L2A.band_descriptions, "fc_r": "False colour red"},
+        )
         with pytest.raises(ConfigError, match="adds a band named like a band of the data"):
             replace(entry, composite_presets=(replace(FALSE_COLOUR, name="fc"),))
 

@@ -55,12 +55,18 @@ class TestTheEntries:
 
 class TestLookup:
     def test_the_exact_key_goes_before_a_pattern(self, valid_config) -> None:
-        entry = replace(valid_config, band_units={"red": None, "r*": "1", "green": "1", "blue": "1"})
+        entry = replace(
+            valid_config, band_units={"red": None, "r*": "1", "green": "1", "blue": "1"}, band_descriptions={"red": "Red", "r*": "Reflectance", "green": "Green", "blue": "Blue"}
+        )
         assert entry.band_unit("red") is None
         assert entry.band_unit("rededge1") == "1"
 
     def test_patterns_that_do_not_overlap_may_stand_together(self, valid_config) -> None:
-        entry = replace(valid_config, band_units={"r*": "1", "g*": "2", "blue": "1"})
+        entry = replace(
+            valid_config,
+            band_units={"r*": "1", "g*": "2", "blue": "1"},
+            band_descriptions={"r*": "Reflectance", "g*": "Other", "blue": "Blue"},
+        )
         assert (entry.band_unit("red"), entry.band_unit("green")) == ("1", "2")
 
     def test_the_mapping_cannot_be_changed_through_the_entry(self, valid_config) -> None:

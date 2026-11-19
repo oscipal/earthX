@@ -83,6 +83,11 @@ Regeln kommen nur per neuer Migration (Otto, 16.11.2026).
 einen Zug; die Anfragen, die GDAL für die Datei stellte, verrechnet sie danach mit dem Zug des Hosts (wie
 `gateway.HostPacer.account`), ohne bei null Anfragen etwas zurückzugeben.
 
+`029_materialize_units.sql` — der Zustand einer Quelle je Einheit aus M5-58 (`adr/0038` §3.5,
+`docs/plans/m5/m5-58-laufende-daten.md`): `earthx_materialize_group` (Validator je Listendokument) und
+`earthx_materialize_unit` (Stand, Validatoren und Beiträge je Datei), dazu die Zähler je Einheit in
+`earthx_materialize_runs`. Die Nummern 026–028 hält der offene M5-19 PR 2 (#379).
+
 Die Buchführungstabelle `earthx_migrations` gehört nicht hierher, sondern dem Läufer
 (`earthx/catalog/schema.py`) und wird von ihm angelegt. Sonst müsste jedes
 Migrationsverzeichnis sie erneut mitbringen.

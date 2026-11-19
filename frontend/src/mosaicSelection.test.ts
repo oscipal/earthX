@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HttpError } from './api';
 import { json, selectionIdOf, selectionServer, type SelectionServerOptions } from './fixtures/selectionTiler';
 import {
+  ensureFootprints,
   ensureSelection,
   knownSelections,
   renewSelection,
@@ -279,5 +280,46 @@ describe('watchGoneSelections', () => {
     }
     expect(live.server.created.length).toBe(1 + 3);
     expect(live.reloaded).toHaveLength(3);
+  });
+});
+
+// M5-56: the footprint selection the view masks its picture below the first level to, kept like a mosaic's and made again on `410`.
+describe('ensureFootprints', () => {
+  const ID = 'abcdef0123456789abcdef0123456789';
+  function stubFootprints(status = 201) {
+    const fetchMock = vi.fn(async (url: string, _init?: RequestInit) =>
+      /\/overview\/footprints$/.test(url)
+        ? json({ id: ID, tiles: `/collections/${DATASET}/overview/${ID}/tiles/WebMercatorQuad/{z}/{x}/{y}` }, status)
+        : json({ detail: 'not found' }, 404),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  }
+
+  it('creates the selection once for the same scenes in any order, and asks no more after that', async () => {
+    const fetchMock = stubFootprints();
+    const [a, b] = await Promise.all([ensureFootprints(DATASET, ['S2', 'S1']), ensureFootprints(DATASET, ['S1', 'S2', 'S1'])]);
+    expect(a).toBe(b);
+    expect(await ensureFootprints(DATASET, ['S1', 'S2'])).toBe(a);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ items: ['S1', 'S2'] });
+    expect(a.id).toBe(ID);
+  });
+
+  it('keeps no failure: the next ask creates again', async () => {
+    stubFootprints(400);
+    await expect(ensureFootprints(DATASET, ['S1'])).rejects.toBeInstanceOf(HttpError);
+    const fetchMock = stubFootprints();
+    expect((await ensureFootprints(DATASET, ['S1'])).id).toBe(ID);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('is made again from its scenes where a tile of it says 410, as a footprint selection and not as a mosaic', async () => {
+    const fetchMock = stubFootprints();
+    await ensureFootprints(DATASET, ['S1', 'S2']);
+    expect(await renewSelection(ID)).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1][0]).toMatch(/\/overview\/footprints$/);
+    expect(selectionIdOfUrl(`/collections/${DATASET}/overview/${ID}/tiles/WebMercatorQuad/3/4/5?tilesize=512`)).toBe(ID);
   });
 });

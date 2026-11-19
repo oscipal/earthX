@@ -124,6 +124,14 @@ export interface CatalogueRow {
   values: LinkText[];
   // An explanation behind an (i) beside the value.
   tip?: string;
+  // The bands of a dataset as the lines of a table Band | Description | Unit (M5-59), instead of `values`.
+  bands?: BandLine[];
+}
+
+export interface BandLine {
+  band: string;
+  description: string;
+  unit: string;
 }
 
 const plain = (text: string): LinkText[] => [{ text, href: null }];
@@ -198,18 +206,40 @@ export function resolutionText(collection: Collection): string {
   return metres.length > 0 ? `${metres.map(formatNumber).join(', ')} m` : NONE;
 }
 
-function bandsText(collection: Collection): string {
+// The bands of the data, one line each: the key, what it is in a few words (`earthx:bands`) and the unit or the kind of
+// values (`catalogueUnit`); "—" where the registry says none, and "–" as the unit of a band that has none (Otto,
+// 18.11.2026: never "1" or a text in its place). In the order of `earthx:bands` (the entry's), then the
+// other keys of the units. The auxiliary assets are no band here, and the mask only where it is the one band of the data
+// (WorldCover's land cover map); otherwise it has a row of its own. Class values have no unit, so the line names their
+// kind: "class code".
+export function bandLinesOf(collection: Collection): BandLine[] {
   const units = collection['earthx:band_units'];
-  if (!units || typeof units !== 'object') return NONE;
+  if (!units || typeof units !== 'object') return [];
+  const listed = Array.isArray(collection['earthx:bands']) ? collection['earthx:bands'] : [];
+  const descriptions = new Map(listed.map((band) => [band?.name, band?.description]));
+  const order = [...listed.map((band) => band?.name).filter((name): name is string => typeof name === 'string'), ...Object.keys(units)];
   const auxiliary = collection['earthx:auxiliary_assets'] ?? [];
   const mask = collection['earthx:mask']?.asset;
-  const bands = Object.entries(units)
-    .filter(([key]) => !auxiliary.includes(key) && key !== mask)
-    .map(([key, unit]) => {
-      const shown = catalogueUnit(unit);
-      return shown ? `${key} · ${shown}` : key;
+  const bands = [...new Set(order)].filter((key) => Object.hasOwn(units, key) && !auxiliary.includes(key));
+  const shown = bands.filter((key) => key !== mask);
+  return (shown.length > 0 ? shown : bands).map((key) => {
+      const description = descriptions.get(key);
+      return {
+        band: key,
+        description: typeof description === 'string' && description !== '' ? description : NONE,
+        unit: catalogueUnit(units[key]) ?? (key === mask ? CLASS_UNIT : NO_UNIT),
+      };
     });
-  return bands.length > 0 ? bands.join(', ') : NONE;
+}
+
+// What the Data catalogue writes for the values of a class layer, which has no unit.
+const CLASS_UNIT = 'class code';
+// The unit of a band that has none: an en dash, nothing else.
+export const NO_UNIT = '–';
+
+function bandsRow(collection: Collection): CatalogueRow {
+  const bands = bandLinesOf(collection);
+  return bands.length > 0 ? { label: 'Bands', values: [], bands } : { label: 'Bands', values: plain(NONE) };
 }
 
 const OPERATORS: [string, string][] = [
@@ -264,7 +294,7 @@ export function catalogueRows(dataset: DatasetOption): CatalogueRow[] {
     { label: 'Spatial extent', values: plain(spatialExtentText(c)) },
     { label: 'Temporal extent', values: plain(temporalExtentText(c)) },
     { label: 'Resolution', values: plain(resolutionText(c)) },
-    ...(listed ? [] : [{ label: 'Bands', values: plain(bandsText(c)) }]),
+    ...(listed ? [] : [bandsRow(c)]),
     ...(c['earthx:mask'] ? [{ label: 'Mask', values: plain(c['earthx:mask'].asset) }] : []),
     { label: 'Data region', values: plain(typeof region === 'string' && region !== '' ? region : NONE) },
     doiRow(c),

@@ -40,7 +40,7 @@ class TestDiscovery:
         """pgstac holds the collections; our own tables are the application caches
         (the search cache of M1-06/E4, the statistics cache of M2-04, adr/0006 §5),
         the materialize run log of M3-11b (plan §3.5), the place-search cache and
-        rate slot of M3-07a, the job queue of M4-08a (adr/0013 §5.1) the side files of an export and a run's disk need (M4-11a), the day of acquisition of a job's scenes (M4-11b-1), whether its area is the scenes' union and where a place-search area came from (M4-30), the permalink of an order (M4-19e), the years a job's scenes were acquired in (NM4-01), the jobs behind a bundle download (UI-01e), the deletion term of a job (NM4-27), the index of the dataset search (M5-22b), the requests for and the state of the overview pyramids (M5-30b part 8b), the turns of their upkeep (M5-38), the listed entries and the region outlines (M5-40), the shared turns, places and breaker per host and the charge of a file read to the turn (M5-37)."""
+        rate slot of M3-07a, the job queue of M4-08a (adr/0013 §5.1) the side files of an export and a run's disk need (M4-11a), the day of acquisition of a job's scenes (M4-11b-1), whether its area is the scenes' union and where a place-search area came from (M4-30), the permalink of an order (M4-19e), the years a job's scenes were acquired in (NM4-01), the jobs behind a bundle download (UI-01e), the deletion term of a job (NM4-27), the index of the dataset search (M5-22b), the requests for and the state of the overview pyramids (M5-30b part 8b), the turns of their upkeep (M5-38), the listed entries and the region outlines (M5-40), the shared turns, places and breaker per host and the charge of a file read to the turn (M5-37), the state of a source per unit (M5-58; 026–028 are M5-19 PR 2's)."""
         assert [(m.version, m.name) for m in discover_migrations()] == [
             ("002", "search_cache"),
             ("003", "stats_cache"),
@@ -69,6 +69,7 @@ class TestDiscovery:
             ("026", "harvest_listing_moved"),
             ("027", "harvest_pass"),
             ("028", "harvest_budget_rest"),
+            ("029", "materialize_units"),
         ]
 
     def test_a_missing_directory_is_an_error_not_an_empty_run(self, tmp_path) -> None:
@@ -164,6 +165,18 @@ class TestApplying:
 
         (tmp_path / "002_second.sql").write_text("CREATE TEMP TABLE second_step (id int);")
         assert apply_migrations(conn, tmp_path) == ("002",)
+
+    def test_a_lower_number_that_arrives_later_is_applied_too(self, conn, tmp_path) -> None:
+        """Two branches number their migrations side by side (M5-58: 029 here, 026–028 in M5-19 PR 2): whichever is
+        merged first, a database that already has the higher number takes the lower ones on the next start."""
+        _forget_migrations(conn)
+        (tmp_path / "001_first.sql").write_text("CREATE TEMP TABLE first_step (id int);")
+        (tmp_path / "003_third.sql").write_text("CREATE TEMP TABLE third_step (id int);")
+        assert apply_migrations(conn, tmp_path) == ("001", "003")
+
+        (tmp_path / "002_second.sql").write_text("CREATE TEMP TABLE second_step (id int);")
+        assert apply_migrations(conn, tmp_path) == ("002",)
+        assert set(applied_migrations(conn)) >= {"001", "002", "003"}
 
 
 def test_the_migrations_directory_says_what_lies_in_it_and_why() -> None:

@@ -167,12 +167,20 @@ viewer:
   overview_substitute: null
 health:
   status: ok
+# M5-58 (adr/0038 §3.1, plan A2): only the completed annual files so far; the current year and the provisional days follow with M5-58 PR 2.
+updates:
+  cadence: none
+  states: [final]
+  detect: whole
 maturity: stable
 zarr: null
 mask: null
 # The daily sum in millimetres (plan §5.3).
 band_units:
   RhiresD: mm
+# What each band is, a few words (M5-59): the column "Description" of the Data catalogue.
+band_descriptions:
+  RhiresD: Daily precipitation sum
 auxiliary_assets: []
 # The archive has nothing to filter by but time.
 search_filters: []

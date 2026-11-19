@@ -100,13 +100,21 @@ class TestAssetKeys:
 
     def test_band_units_name_only_fixed_keys(self, vary, valid_config) -> None:
         units = {**valid_config.band_units, "nir": "1"}
+        described = {**valid_config.band_descriptions, "nir": "Near infrared"}
         with pytest.raises(ConfigError, match="band_units names 'nir'"):
-            _with_keys(vary, valid_config, RULES, band_units=units)
+            _with_keys(vary, valid_config, RULES, band_units=units, band_descriptions=described)
 
     def test_a_pattern_of_band_units_has_to_match_a_fixed_key(self, vary, valid_config) -> None:
-        assert _with_keys(vary, valid_config, RULES, band_units={"red": "1", "gr*": "1", "blue": "1"})
+        described = {"red": "Red", "gr*": "Green", "blue": "Blue"}
+        assert _with_keys(vary, valid_config, RULES, band_units={"red": "1", "gr*": "1", "blue": "1"}, band_descriptions=described)
         with pytest.raises(ConfigError, match="band_units names 'nir\\*'"):
-            _with_keys(vary, valid_config, RULES, band_units={**valid_config.band_units, "nir*": "1"})
+            _with_keys(
+                vary,
+                valid_config,
+                RULES,
+                band_units={**valid_config.band_units, "nir*": "1"},
+                band_descriptions={**valid_config.band_descriptions, "nir*": "Near infrared"},
+            )
 
     def test_the_collection_publishes_the_rules(self, vary, valid_config) -> None:
         source = to_stac_collection(_with_keys(vary, valid_config, RULES))["earthx:source"]
@@ -181,6 +189,7 @@ class TestFromYaml:
         data["source"].update(changes)
         data["default_render"]["assets"] = ["dtm"]
         data["band_units"] = {"dtm": "m"}
+        data["band_descriptions"] = {"dtm": "Terrain height (DTM)"}
         path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
         return load_entry(path)
 

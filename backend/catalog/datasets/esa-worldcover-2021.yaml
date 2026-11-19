@@ -155,6 +155,11 @@ viewer:
   overview_substitute: null
 health:
   status: ok
+# M5-58 (adr/0038 §3.1, plan A2): the source does not change what this entry holds; one version per run as before.
+updates:
+  cadence: none
+  states: [final]
+  detect: whole
 maturity: stable
 zarr: null
 # The map is its own class layer: `mask` keeps or hides the classes a recipe names (`adr/0023` §8.3).
@@ -194,6 +199,9 @@ mask:
 # Class codes have no unit.
 band_units:
   map: null
+# What each band is, a few words (M5-59): the column "Description" of the Data catalogue.
+band_descriptions:
+  map: Land cover class (ESA WorldCover)
 auxiliary_assets: []
 # Filters only for federated items for now (adr/0021 §2, point 1).
 search_filters: []

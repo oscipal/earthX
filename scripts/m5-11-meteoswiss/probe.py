@@ -7,11 +7,16 @@ One-time network step on Otto's machine (adr/0002), never in a cloud session or 
 
     docker compose run --build --rm meteoswiss-probe --assets      # the items, the archive's assets by kind
     docker compose run --rm meteoswiss-probe --layout              # and the layout of every daily annual file
+    docker compose run --rm meteoswiss-probe --current             # the items outside the archive (M5-58 plan §2.3)
 
 ``--assets`` reads the item list of the collection (one or two requests) and prints every pattern of the asset names
 over all items, with digits as ``#``, how often and in how many items it occurs, and its years. ``--layout`` also reads the header of every
 daily annual file of the grids in ``--grids`` up to the last completed year, 5–8 requests each (about 40 minutes for
 both grids); ``--limit N`` stops after N files. No byte of data is read.
+
+``--current`` (M5-58 plan §2.3) reads only the items outside the archive: by kind (an item of one day, of one month),
+their properties and the patterns of their asset names, whether an item answers ``If-None-Match`` with ``304`` (two
+requests per item), and the header of one file per kind, grid and quantity, 5–8 requests each (about 3 minutes).
 
 The output names kinds, counts, years, types and layouts. It never prints a URL, an item id or an ETag, so it can be
 pasted into the pull request as it is.
@@ -68,13 +73,25 @@ def form(text: str) -> str:
     return re.sub(r"\d", "#", text)
 
 
-async def items(gateway: Gateway) -> list[dict[str, Any]]:
+# Any daily or monthly file of the collection, in or outside the archive: the prefix tells which (M5-58 plan §2.3).
+ANY_FILE = re.compile(
+    r"^(?P<prefix>ogd-surface-derived-grid[a-z-]*)\.(?P<quantity>[a-z0-9]+)_(?P<grid>ch\d\d[a-z])\.swiss\.lv\d\d_"
+    r"(?P<start>\d{4,14})_(?P<end>\d{4,14})\.nc$"
+)
+ITEM_PROPERTIES = ("datetime", "start_datetime", "end_datetime", "created", "updated", "expires")
+
+
+async def items(gateway: Gateway, pages: list[dict[str, str | None]] | None = None) -> list[dict[str, Any]]:
+    """Every item of the collection; ``pages`` collects, per page, the validators the page answered with."""
     found: list[dict[str, Any]] = []
     url: str | None = f"{COLLECTION}/items?limit=100"
     for _ in range(PAGES):
         if url is None:
             break
-        page = (await gateway.get(url)).json()
+        response = await gateway.get(url)
+        if pages is not None:
+            pages.append({"etag": response.headers.get("etag"), "last-modified": response.headers.get("last-modified"), "url": url})
+        page = response.json()
         found.extend(page.get("features", []))
         url = next((link["href"] for link in page.get("links", []) if link.get("rel") == "next"), None)
     return found
@@ -224,6 +241,101 @@ async def report_layout(gateway: Gateway, matched: list[tuple[dict[str, str], di
         report_mapping(attributes)
 
 
+def kind_of(feature: dict[str, Any]) -> str:
+    """What an item holds, from the names of its files: the archive, one day, one month, or something else."""
+    names = [ANY_FILE.match(key.lower()) for key in feature.get("assets", {})]
+    names = [name for name in names if name is not None]
+    if any(name["prefix"].endswith("-archive") for name in names):
+        return "archive"
+    spans = Counter(span(name.groupdict()) for name in names if name["quantity"].endswith("d"))
+    if not spans:
+        return "without daily files"
+    kind = spans.most_common(1)[0][0]
+    return {"one time step": "item of one day", "one day": "item of one day", "one month": "item of one month"}.get(kind, f"item of {kind}")
+
+
+async def conditional(gateway: Gateway, url: str) -> str:
+    """How an item answers a second request with its own ETag: ``304``, ``200`` again, or no ETag to ask with; a
+    refusal by its status only, never with what the source wrote."""
+    try:
+        first = await gateway.get(url)
+        etag = first.headers.get("etag")
+        if not etag:
+            return "no ETag"
+        second = await gateway.get(url, headers={"if-none-match": etag})
+    except GatewayError as error:
+        return f"refused: {reason(error)}"
+    return f"{'weak' if etag.startswith('W/') else 'strong'} ETag, {second.status_code} on If-None-Match"
+
+
+async def report_current(gateway: Gateway) -> None:
+    """The items outside the archive by kind, how they answer a conditional request, and one file header per quantity."""
+    pages: list[dict[str, str | None]] = []
+    features = [feature for feature in await items(gateway, pages) if kind_of(feature) != "archive"]
+    say("pages of the item list", len(pages))
+    for number, page in enumerate(pages, start=1):
+        answer = "no ETag"
+        if page["etag"]:
+            try:
+                again = await gateway.get(str(page["url"]), headers={"if-none-match": str(page["etag"])})
+            except GatewayError as error:
+                answer = f"ETag, refused on If-None-Match: {reason(error)}"
+            else:
+                answer = f"ETag, {again.status_code} on If-None-Match"
+        say(f"  page {number}", f"{answer}; Last-Modified {'given' if page['last-modified'] else 'none'}")
+    by_kind: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for feature in features:
+        by_kind[kind_of(feature)].append(feature)
+    say("items outside the archive", len(features))
+    files: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for kind, members in sorted(by_kind.items()):
+        print()
+        say(kind, f"{len(members)} items")
+        properties: Counter[str] = Counter()
+        forms: Counter[str] = Counter()
+        fields: Counter[str] = Counter()
+        quantities: Counter[str] = Counter()
+        answers: Counter[str] = Counter()
+        for feature in members:
+            properties.update(key for key in ITEM_PROPERTIES if feature.get("properties", {}).get(key) is not None)
+            for key, asset in feature.get("assets", {}).items():
+                forms[form(key)] += 1
+                fields.update(field for field in ("file:checksum", "updated", "file:size", "expires") if field in asset)
+                name = ANY_FILE.match(key.lower())
+                if name is not None:
+                    quantities[f"{name['prefix']} {name['quantity']} {name['grid']} ({span(name.groupdict())})"] += 1
+                    if name["quantity"].endswith("d") and name["grid"] in ("ch01r", "ch01h"):
+                        files.setdefault((kind, name["grid"], name["quantity"]), asset)
+            answers[await conditional(gateway, f"{COLLECTION}/items/{feature['id']}")] += 1
+        say("  item properties (of items)", dict(properties))
+        expiries = sorted(str(f["properties"]["expires"]) for f in members if f.get("properties", {}).get("expires"))
+        say("  expires, earliest and latest", f"{expiries[0]} | {expiries[-1]}" if expiries else "none")
+        say("  asset fields (of assets)", dict(fields))
+        say("  conditional request per item", dict(answers))
+        for line, count in sorted(quantities.items()):
+            say(f"  {line}", f"× {count}")
+        for shape, count in sorted(forms.items()):
+            say(f"  pattern {shape}", f"× {count}")
+    print()
+    say("file headers to read", len(files))
+    for (kind, grid, quantity), asset in sorted(files.items()):
+        try:
+            refs = await reference_file(gateway, asset["href"], None, strict_crs=False)
+        except (UnsupportedLayout, GatewayError) as error:
+            say(f"{kind} {quantity} {grid}", f"refused: {reason(error)}")
+            continue
+        say(f"{kind} {quantity} {grid}", "")
+        for label, value in zip(
+            ("variable", "dtype", "grid shape", "chunks", "filters", "fill value", "crs", "a, e, c, f", "units",
+             "time of the steps", "time bounds"),
+            signature(refs),
+            strict=True,
+        ):
+            say(f"  {label}", value)
+        say("  time steps", f"{len(refs.times)}, {refs.times[0].date()} to {refs.times[-1].date()}")
+        say("  Last-Modified given", refs.last_modified is not None)
+
+
 def report_mapping(attributes: dict[str, Any]) -> None:
     """A grid_mapping that names no EPSG code exactly: its attributes, and how it differs from EPSG:2056 (LV95)."""
     for name in sorted(attributes):
@@ -286,9 +398,12 @@ def compare(label: str, ours: CRS, reference: CRS) -> None:
         say(f"  {label}: axes ({side})", [f"{axis.abbrev} {axis.direction} {axis.unit_name}" for axis in crs.axis_info])
 
 
-async def main(layout: bool, grids: set[str], limit: int | None) -> int:
+async def main(layout: bool, grids: set[str], limit: int | None, current: bool = False) -> int:
     policy = Policy(allowed_hosts=frozenset({HOST}), host_intervals={HOST: INTERVAL_S})
     async with Gateway(policy) as gateway:
+        if current:
+            await report_current(gateway)
+            return 0
         matched = report_assets(await items(gateway))
         if layout:
             await report_layout(gateway, matched, grids, limit)
@@ -301,8 +416,10 @@ def run(argv: list[str] | None = None) -> int:
     parser.add_argument("--layout", action="store_true", help="also the layout of every daily annual file")
     parser.add_argument("--grids", default="ch01r,ch01h", help="the grids whose files --layout reads")
     parser.add_argument("--limit", type=int, default=None, help="with --layout: stop after this many files")
+    parser.add_argument("--current", action="store_true", help="only the items outside the archive (M5-58)")
     args = parser.parse_args(argv)
-    return asyncio.run(main(args.layout, {grid.strip() for grid in args.grids.split(",") if grid.strip()}, args.limit))
+    grids = {grid.strip() for grid in args.grids.split(",") if grid.strip()}
+    return asyncio.run(main(args.layout, grids, args.limit, args.current))
 
 
 if __name__ == "__main__":

@@ -41,6 +41,8 @@ MAX_TILE_ZOOM = 22
 
 # A unit is a symbol, not a sentence (UCUM: "m", "1", "mm/h"); the longest in use stays far below this.
 MAX_UNIT_CHARS = 32
+# A band description is a few words for the table of the Data catalogue ("Red edge 1"), not a sentence (M5-59).
+MAX_BAND_DESCRIPTION_CHARS = 60
 MAX_GROUP_CHARS = 24
 
 
@@ -1101,6 +1103,62 @@ class HealthInfo:
     status: HealthStatus
 
 
+class UpdateCadence(Enum):
+    """How often the source changes what a dataset holds (adr/0038 §3.1): the cadence the `harvester` runs at (M5-24)."""
+
+    NONE = "none"
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
+
+
+class ItemState(Enum):
+    """How settled the values of an item are (adr/0038 §3.2), in ascending rank: the order of the members is the rank."""
+
+    PROVISIONAL = "provisional"
+    FINAL = "final"
+
+    @property
+    def rank(self) -> int:
+        return list(ItemState).index(self)
+
+
+class ChangeDetection(Enum):
+    """How `materialize` sees a change (adr/0038 §3.3): one version per run, or per unit of the source."""
+
+    WHOLE = "whole"
+    UNITS = "units"
+
+
+@dataclass(frozen=True, slots=True)
+class UpdatesInfo:
+    """Whether and how the source keeps changing a dataset (M5-58, adr/0038 §3.1). No default (KLAERUNGEN B10).
+
+    ``states`` are the states the source delivers, in ascending rank and ending with ``final``: ``(final,)`` where it
+    has nothing provisional. What changes from day to day (the state per unit, the last check) is never here but in
+    Postgres (adr/0025 §6.6).
+    """
+
+    cadence: UpdateCadence
+    states: tuple[ItemState, ...]
+    detect: ChangeDetection
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.states, tuple) or not self.states or not all(isinstance(s, ItemState) for s in self.states):
+            raise ConfigError("updates.states names at least one state")
+        if len(set(self.states)) != len(self.states):
+            raise ConfigError("updates.states names a state twice")
+        if list(self.states) != sorted(self.states, key=lambda state: state.rank) or self.states[-1] is not ItemState.FINAL:
+            raise ConfigError("updates.states are in ascending rank and end with final")
+        if self.cadence is UpdateCadence.NONE and ItemState.PROVISIONAL in self.states:
+            raise ConfigError("updates: a source that never changes has nothing provisional to replace")
+
+    @property
+    def running(self) -> bool:
+        """Whether the source keeps changing the dataset, so that its time extent may stay open."""
+        return self.cadence is not UpdateCadence.NONE
+
+
 @dataclass(frozen=True, slots=True)
 class SpatialExtent:
     """Bounding box in WGS84, as STAC writes it: west, south, east, north."""
@@ -1625,6 +1683,9 @@ class DatasetConfig:
     # None where nobody has decided how the viewer groups the items of this dataset.
     viewer: ViewerInfo | None
     health: HealthInfo
+    # Whether and how the source keeps changing the dataset, and which states its items pass through (M5-58, adr/0038
+    # §3.1). No default (KLAERUNGEN B10): a static source says `cadence: none`, `states: [final]`, `detect: whole`.
+    updates: UpdatesInfo
     # How settled the source itself is (architekturplan.md 5.1, tenth field;
     # adr/0007 §12.11 point 14). No default (KLAERUNGEN B10): every entry says this
     # on purpose, it is part of the truth about the dataset like the licence.
@@ -1643,6 +1704,11 @@ class DatasetConfig:
     # names a unit itself goes first (adr/0014 §15n). The default render and the mask layer
     # each need a key.
     band_units: Mapping[str, str | None]
+    # What each band is, in a few words and English ("Red edge 1", "Daily mean air temperature, 2 m"), by the same
+    # keys as ``band_units`` (a key may carry ``*`` for a group); published as `earthx:band_descriptions`, the
+    # `description` of a STAC band, for the column "Description" of the Data catalogue (M5-59). No default (KLAERUNGEN
+    # B10): every key of ``band_units`` that is no auxiliary asset needs one.
+    band_descriptions: Mapping[str, str]
     # The assets that help to look at or read the data but are no band of it (a true-colour picture, a preview), by
     # asset key. The panel keeps them out of "Select all"; a user can still pick one. No default (KLAERUNGEN B10):
     # an entry says so, with an empty tuple where it has none. The mask layer is named by ``mask``, not here.
@@ -1675,6 +1741,7 @@ class DatasetConfig:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "band_units", MappingProxyType(dict(self.band_units)))
+        object.__setattr__(self, "band_descriptions", MappingProxyType(dict(self.band_descriptions)))
         self._check_keywords()
         self._check_catalogue_fields()
         self._check_doi()
@@ -1686,6 +1753,7 @@ class DatasetConfig:
         self._check_coverage()
         self._check_source()
         self._check_item_holding()
+        self._check_updates()
         self._check_zarr()
         self._check_netcdf_refs()
         self._check_georeferencing()
@@ -1693,6 +1761,7 @@ class DatasetConfig:
         self._check_mask()
         self._check_band_units()
         self._check_auxiliary_assets()
+        self._check_band_descriptions()
         self._check_asset_keys()
         self._check_item_states()
         self._check_search_filters()
@@ -1845,6 +1914,21 @@ class DatasetConfig:
             for key in single_asset_keys(order_asset, separator):
                 if not any(key == pattern or ("*" in pattern and fnmatchcase(key, pattern)) for pattern in listed):
                     raise ConfigError(f"{self.dataset_id}: band_units has no entry for {key!r}, which the entry reads itself")
+
+    def _check_band_descriptions(self) -> None:
+        """Each description is a short, trimmed text of a key of ``band_units``, and every band has one (M5-59)."""
+        for key, text in self.band_descriptions.items():
+            if key not in self.band_units:
+                raise ConfigError(f"{self.dataset_id}: band_descriptions names {key!r}, which band_units does not")
+            if not isinstance(text, str) or not text.strip() or text != text.strip() or "\n" in text:
+                raise ConfigError(f"{self.dataset_id}: the description of {key!r} is a non-blank one-line text")
+            if len(text) > MAX_BAND_DESCRIPTION_CHARS:
+                raise ConfigError(
+                    f"{self.dataset_id}: the description of {key!r} is longer than {MAX_BAND_DESCRIPTION_CHARS} characters"
+                )
+        missing = [key for key in self.band_units if key not in self.band_descriptions and key not in self.auxiliary_assets]
+        if missing:
+            raise ConfigError(f"{self.dataset_id}: band_descriptions has no entry for {', '.join(map(repr, missing))}")
 
     def _check_auxiliary_assets(self) -> None:
         """The auxiliary assets are distinct, usable keys, and none is the mask layer."""
@@ -2330,8 +2414,24 @@ class DatasetConfig:
             # Every time step covers the whole grid (M5-11 plan §5.4): a series of them over a closed period.
             if self.capabilities.single_coverage_product or not self.capabilities.time_range:
                 raise ConfigError(f"{self.dataset_id}: coverage fixed-grid is for a series of time steps over one grid")
-            if self.temporal_extent.start is None or self.temporal_extent.end is None:
-                raise ConfigError(f"{self.dataset_id}: coverage fixed-grid counts time steps over a closed temporal_extent")
+            if self.temporal_extent.start is None:
+                raise ConfigError(f"{self.dataset_id}: coverage fixed-grid counts time steps from the start of temporal_extent")
+            if self.temporal_extent.end is None and not self.updates.running:
+                # An open end is the newest item of a running source (adr/0038 §3.6); a static one closes its period.
+                raise ConfigError(f"{self.dataset_id}: coverage fixed-grid needs a closed temporal_extent or a running source")
+
+    def _check_updates(self) -> None:
+        """adr/0038 §3.1: changes per unit only on our own items and never under a pyramid built per run version; a
+        provisional state is said in the limitations, the place the Data catalogue shows (M5-58 F1)."""
+        if not isinstance(self.updates, UpdatesInfo):
+            raise ConfigError(f"{self.dataset_id}: updates is an UpdatesInfo")
+        if self.updates.detect is ChangeDetection.UNITS:
+            if self.source.item_holding is not ItemHolding.MATERIALIZED:
+                raise ConfigError(f"{self.dataset_id}: updates.detect units needs materialized items")
+            if self.viewer is not None and self.viewer.overview is OverviewMode.PYRAMID:
+                raise ConfigError(f"{self.dataset_id}: updates.detect units cannot keep a pyramid built per run version")
+        if ItemState.PROVISIONAL in self.updates.states and not self.limitations:
+            raise ConfigError(f"{self.dataset_id}: provisional values are said in limitations")
 
 
 class Attributable(Protocol):
@@ -2538,6 +2638,7 @@ for _entry_part in (
     DefaultRender,
     ViewerInfo,
     HealthInfo,
+    UpdatesInfo,
     SpatialExtent,
     TemporalExtent,
     MaskClass,

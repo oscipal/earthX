@@ -57,7 +57,10 @@ function listed(id: string, title: string, category: string, extra: Partial<Coll
 }
 
 const FULL = [
-  collection('relief', 'Relief model', 'elevation'),
+  collection('relief', 'Relief model', 'elevation', {
+    'earthx:band_units': { data: 'm', raw: 'DN', ratio: '1' },
+    'earthx:bands': [{ name: 'data', description: 'Surface height (DSM)' }, { name: 'raw', description: 'Raw counts' }, { name: 'ratio', description: 'Share' }],
+  }),
   collection('beta', 'Beta optical', 'optical'),
   collection('alpha', 'Alpha optical', 'optical'),
   // The backend publishes `earthx:notices` (DS-04b); the viewer shows none of them (Otto, 10.11.2026).
@@ -428,6 +431,24 @@ describe('the details', () => {
     expect(value('Spatial extent')?.textContent).toBe('180° W – 180° E · 60° S – 84° N');
     expect(value('Temporal extent')?.textContent).toBe('2020-01-01 – today');
     expect(value('Last checked')?.textContent).toBe('—');
+  });
+
+  it('show the bands as a table Band | Description | Unit, without a text around it (M5-59)', () => {
+    click(entry('Relief model').querySelector('.catalogue-entry-name')!);
+    const table = value('Bands')!.querySelector('table.catalogue-bands')!;
+    expect([...table.querySelectorAll('thead th')].map((th) => th.textContent)).toEqual(['Band', 'Description', 'Unit']);
+    expect([...table.querySelectorAll('tbody tr')].map((tr) => [...tr.children].map((cell) => cell.textContent))).toEqual([
+      ['data', 'Surface height (DSM)', 'm'],
+      ['raw', 'Raw counts', 'DN, uncalibrated digital numbers'],
+      ['ratio', 'Share', '–'],
+    ]);
+    expect(value('Bands')!.querySelectorAll('p, .hint')).toHaveLength(0);
+  });
+
+  it('keep "—" and no table where a dataset has no bands', () => {
+    click(entry('Alpha optical').querySelector('.catalogue-entry-name')!);
+    expect(value('Bands')!.querySelector('table')).toBeNull();
+    expect(value('Bands')!.textContent).toBe('—');
   });
 
   it('say "Not checked yet" behind the (i) of "Last checked"', () => {

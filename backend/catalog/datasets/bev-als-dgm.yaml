@@ -165,6 +165,11 @@ viewer:
   overview_substitute: cop-dem-glo-30
 health:
   status: ok
+# M5-58 (adr/0038 §3.1, plan A2): the source does not change what this entry holds; one version per run as before.
+updates:
+  cadence: none
+  states: [final]
+  detect: whole
 # A standard product of the BEV, updated every year on 15 September.
 maturity: stable
 zarr: null
@@ -172,6 +177,9 @@ mask: null
 # Heights in metres above the Adriatic (plan §2.1).
 band_units:
   dtm: m
+# What each band is, a few words (M5-59): the column "Description" of the Data catalogue.
+band_descriptions:
+  dtm: Terrain height (DTM), 1 m grid
 auxiliary_assets: []
 # The feeds offer no search: no filters.
 search_filters: []

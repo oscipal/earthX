@@ -208,19 +208,54 @@ describe('the rows', () => {
     expect(resolutionText(collection('x', 'optical'))).toBe('—');
   });
 
-  it('list the bands with their unit, without the auxiliary assets and the mask, which has a row of its own', () => {
+  it('list the bands as lines of band, description and unit, without the auxiliary assets and the mask, which has a row of its own', () => {
     const c = collection('x', 'optical', {
       'earthx:band_units': { red: '1', vv: 'dB', visual: null, scl: null, height: null },
+      'earthx:bands': [{ name: 'vv', description: 'VV polarisation' }, { name: 'red', description: 'Red' }, { name: 'scl', description: 'Scene classification' }],
       'earthx:auxiliary_assets': ['visual'],
       'earthx:mask': { asset: 'scl', band: 'scl', classes: [], suggested: [], reference: 'https://example.org', note: '' },
     });
-    expect(textOf(c, 'Bands')).toBe('red · 1, dimensionless, vv · dB, height');
+    expect(rowsOf(c).Bands.bands).toEqual([
+      { band: 'vv', description: 'VV polarisation', unit: 'dB' },
+      { band: 'red', description: 'Red', unit: '–' },
+      { band: 'height', description: '—', unit: '–' },
+    ]);
     expect(textOf(c, 'Mask')).toBe('scl');
+  });
+
+  it('list the mask layer as a band where it is the only one, with its values named "class code"', () => {
+    const c = collection('x', 'land', {
+      'earthx:band_units': { map: null },
+      'earthx:bands': [{ name: 'map', description: 'Land cover class (ESA WorldCover)' }],
+      'earthx:mask': { asset: 'map', band: 'map', classes: [], suggested: [], reference: 'https://example.org', note: '' },
+    });
+    expect(rowsOf(c).Bands.bands).toEqual([{ band: 'map', description: 'Land cover class (ESA WorldCover)', unit: 'class code' }]);
   });
 
   it('name the kind of values where the unit is no physical one, as the map does not (Otto, 14.11.2026)', () => {
     const c = collection('x', 'radar', { 'earthx:band_units': { vv: 'DN', vh: 'DN', dtm: 'm' } });
-    expect(textOf(c, 'Bands')).toBe('vv · DN, uncalibrated digital numbers, vh · DN, uncalibrated digital numbers, dtm · m');
+    expect(rowsOf(c).Bands.bands?.map((line) => line.unit)).toEqual(['DN, uncalibrated digital numbers', 'DN, uncalibrated digital numbers', 'm']);
+  });
+
+  it('write only "–" as the unit of a band without one, never "1", "dimensionless" or another text (Otto, 18.11.2026)', () => {
+    const c = collection('x', 'optical', {
+      'earthx:band_units': { a: '1', b: null, c: '', d: 'm', e: 'DN', f: 'dB' },
+    });
+    expect(rowsOf(c).Bands.bands?.map((line) => line.unit)).toEqual(['–', '–', '–', 'm', 'DN, uncalibrated digital numbers', 'dB']);
+    for (const line of rowsOf(c).Bands.bands ?? []) expect(line.unit).not.toMatch(/^1\b|dimensionless/);
+  });
+
+  it('read a backend without descriptions, or with a description that is no text, as "—"', () => {
+    const none = collection('x', 'optical', { 'earthx:band_units': { red: '1' } });
+    expect(rowsOf(none).Bands.bands).toEqual([{ band: 'red', description: '—', unit: '–' }]);
+    const odd = collection('x', 'optical', { 'earthx:band_units': { red: '1', nir: 'm' }, 'earthx:bands': [{ name: 'red', description: 7 as never }, { name: 'nir', description: '' }] });
+    expect(rowsOf(odd).Bands.bands?.map((line) => line.description)).toEqual(['—', '—']);
+  });
+
+  it('show "—" for a dataset with no band units at all, and no table', () => {
+    const c = collection('x', 'optical', {});
+    expect(textOf(c, 'Bands')).toBe('—');
+    expect(rowsOf(c).Bands.bands).toBeUndefined();
   });
 
   it('write the attribution with "[year]" for the placeholder, and the tier of the licence', () => {

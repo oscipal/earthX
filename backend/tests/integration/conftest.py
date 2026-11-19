@@ -98,6 +98,8 @@ SHIPPED_TABLES = (
     "public.earthx_raw_record",
     "public.earthx_harvest_source",
     "public.earthx_harvest_run",
+    "public.earthx_materialize_group",
+    "public.earthx_materialize_unit",
 )
 
 

@@ -1297,7 +1297,10 @@ async def create_footprint_selection(
         if batches is None:
             raise OrderRefused(503, _SELECTION_DATABASE_DETAIL, "items")
         items = await mosaic_tiles.fetch_selection_items(batches, dataset, ids)
-        chosen = FootprintSelection.build(selection, dataset, {item_id: outline_source(items[item_id]) for item_id in ids})
+        # The union of up to 10 000 outlines (M5-56) is built off the event loop.
+        chosen = await asyncio.to_thread(
+            FootprintSelection.build, selection, dataset, {item_id: outline_source(items[item_id]) for item_id in ids}
+        )
         try:
             await store.put(chosen)
         except psycopg.Error as error:
