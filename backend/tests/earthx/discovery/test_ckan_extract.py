@@ -427,7 +427,7 @@ async def test_an_incremental_query_is_asked_in_utc() -> None:
     listing = CkanListing(full=False)
     assert [page async for page in ckan_pages(fetch, SOURCE, since, listing)] == [[]]
     assert asked == [{"rows": 100, "start": 0, "sort": "id asc", "fq": "metadata_modified:[2026-11-17T09:30:00Z TO *]"}]
-    assert not listing.complete and not listing.moved
+    assert not listing.complete and listing.empty
 
 
 @pytest.mark.anyio
@@ -438,3 +438,60 @@ async def test_a_listing_without_a_page_fails(status: int) -> None:
 
     with pytest.raises(ShapeError):
         [page async for page in ckan_pages(fetch, SOURCE, None, CkanListing(full=True))]
+
+
+def _listing_page(keys: list[str | None], count: int) -> GatewayResponse:
+    results = [{"id": key, "title": "x"} if key is not None else {"title": "no id"} for key in keys]
+    return GatewayResponse(200, {}, json.dumps({"success": True, "result": {"count": count, "results": results}}).encode())
+
+
+@pytest.mark.anyio
+async def test_each_page_is_asked_from_the_start_after_the_last_key() -> None:
+    # Keyset paging (Otto, 19.11.2026): opendata.swiss answers 429 to deep offsets, so no offset grows.
+    answers = [_listing_page(["a-1", "b-2"], 3), _listing_page(["c-3"], 1)]
+    asked: list[Mapping[str, Any]] = []
+
+    async def fetch(url: str, *, params: Mapping[str, Any], headers: None = None) -> GatewayResponse:
+        asked.append(params)
+        return answers.pop(0)
+
+    listing = CkanListing(full=True)
+    pages = [page async for page in ckan_pages(fetch, SOURCE, None, listing)]
+    assert [len(page) for page in pages] == [2, 1]
+    assert [(p["start"], p.get("fq")) for p in asked] == [(0, None), (0, 'id:{"b-2" TO *]')]
+    assert (listing.last_key, listing.read, listing.complete, listing.empty) == ("c-3", 3, True, False)
+
+
+@pytest.mark.anyio
+async def test_a_resumed_listing_asks_after_its_key_with_the_filters_of_the_source() -> None:
+    asked: list[Mapping[str, Any]] = []
+
+    async def fetch(url: str, *, params: Mapping[str, Any], headers: None = None) -> GatewayResponse:
+        asked.append(params)
+        return _listing_page([], 0)
+
+    filtered = replace(SOURCE, filter=CkanFilter("res_format:CSV", "publisher_name"))
+    since = datetime(2026, 11, 18, 12, 0, tzinfo=timezone.utc)
+    listing = CkanListing(full=False, last_key="b-2", read=7)
+    [page async for page in ckan_pages(fetch, filtered, since, listing)]
+    assert asked[0]["fq"] == '(res_format:CSV) AND metadata_modified:[2026-11-18T12:00:00Z TO *] AND id:{"b-2" TO *]'
+    # Nothing new after the key: the pass is through, with what it read before.
+    assert (listing.read, listing.empty, listing.last_key) == (7, False, "b-2")
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("keys", "count", "last_key"),
+    [
+        (["b-2", "a-1"], 5, None),  # not sorted by id
+        (["a-1", "c-3"], 5, "b-2"),  # an id at or before the last key: the filter is ignored
+        (["b-2"], 5, "b-2"),
+        ([None, None], 5, None),  # nothing to go on from
+    ],
+)
+async def test_a_listing_that_breaks_the_order_by_key_fails(keys: list[str | None], count: int, last_key: str | None) -> None:
+    async def fetch(url: str, *, params: Mapping[str, Any], headers: None = None) -> GatewayResponse:
+        return _listing_page(keys, count)
+
+    with pytest.raises(ShapeError):
+        [page async for page in ckan_pages(fetch, SOURCE, None, CkanListing(full=True, last_key=last_key))]

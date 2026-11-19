@@ -70,6 +70,7 @@ class TestDiscovery:
             ("027", "harvest_pass"),
             ("028", "harvest_budget_rest"),
             ("029", "materialize_units"),
+            ("030", "harvest_keyset"),
         ]
 
     def test_a_missing_directory_is_an_error_not_an_empty_run(self, tmp_path) -> None:

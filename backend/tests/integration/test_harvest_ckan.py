@@ -28,6 +28,7 @@ pytestmark = pytest.mark.anyio
 HOST = "ckan.example.org"
 ENDPOINT = f"https://{HOST}/api/3/action"
 _SINCE = re.compile(r"metadata_modified:\[(\S+) TO \*\]")
+_AFTER = re.compile(r'id:\{"([^"]+)" TO \*\]')
 
 
 def _package(key: str, **changes: Any) -> dict[str, Any]:
@@ -49,47 +50,53 @@ def _package(key: str, **changes: Any) -> dict[str, Any]:
 
 
 class Catalogue:
-    """``package_search`` over ``packages``, at most ``size`` rows a page whatever is asked (like ``rows_max``).
+    """``package_search`` by key over ``packages``: sorted by id, the ids after the one in ``fq``
+    (``id:{"<key>" TO *]``), at most ``size`` rows a page whatever is asked (like ``rows_max``). Every page must be asked
+    with ``start=0`` (keyset paging, plan §12.7).
 
-    An incremental query gets the packages of ``changed`` instead of all. ``count_shift`` adds to the count from the
-    second page on, as a catalogue does that grows while it is read.
+    An incremental query gets the packages of ``changed`` instead of all.
     """
 
     def __init__(self, packages: list[dict[str, Any]], *, size: int = 2) -> None:
         self.packages, self.size = packages, size
         self.changed: list[dict[str, Any]] = []
         self.asked: list[httpx.QueryParams] = []
-        self.count_shift = 0
         self.answer: Any = None
         #: Called after each page is served, to change the catalogue while it is read.
         self.after_page: Callable[[int], None] | None = None
-        self.ignore_start = False
+        #: A catalogue that ignores the filter by key and answers the first page again.
+        self.ignore_key = False
         self.robots = "User-agent: *\nAllow: /\n"
-        #: From this offset on, pages are answered with this status (429: slow down; 503: down) while it is set.
+        #: From this page on (0 the first one), pages are answered with this status (429: slow down; 503: down).
         self.refuse_from: int | None = None
         self.refuse_status = 429
         self.retry_after: str | None = None
+        self.pages_served = 0
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         if request.url.path == "/robots.txt":
             return httpx.Response(200, text=self.robots)
         assert request.url.path == "/api/3/action/package_search"
+        assert request.url.params["start"] == "0"
         self.asked.append(request.url.params)
         if self.answer is not None:
             return httpx.Response(200, content=json.dumps(self.answer))
-        if self.refuse_from is not None and int(request.url.params["start"]) >= self.refuse_from:
+        if self.refuse_from is not None and self.pages_served >= self.refuse_from:
             headers = {} if self.retry_after is None else {"retry-after": self.retry_after}
             return httpx.Response(self.refuse_status, text="slow down", headers=headers)
-        incremental = "metadata_modified" in request.url.params.get("fq", "")
+        fq = request.url.params.get("fq", "")
+        incremental = "metadata_modified" in fq
+        after = _AFTER.search(fq)
         matching = sorted(
             self.changed if incremental else self.packages, key=lambda p: str(p.get("id") if isinstance(p, dict) else p)
         )
-        start = 0 if self.ignore_start else int(request.url.params["start"])
+        if after is not None and not self.ignore_key:
+            matching = [p for p in matching if str(p.get("id") if isinstance(p, dict) else p) > after[1]]
         rows = min(int(request.url.params["rows"]), self.size)
-        count = len(matching) + (self.count_shift if start else 0)
-        body = {"success": True, "result": {"count": count, "results": matching[start : start + rows]}}
+        body = {"success": True, "result": {"count": len(matching), "results": matching[:rows]}}
+        self.pages_served += 1
         if self.after_page is not None:
-            self.after_page(len(self.asked))
+            self.after_page(self.pages_served)
         return httpx.Response(200, content=json.dumps(body))
 
 
@@ -164,10 +171,10 @@ async def test_a_first_run_reads_the_whole_listing_page_by_page(db: psycopg.Conn
     catalogue = Catalogue(THREE)
     result = await run_harvest(db, source, gateway=_gateway(catalogue))
     assert (result.kind, result.status, result.gone_unchecked) == ("full", "done", None)
-    # Each page starts with the last package of the one before, so that a shift of the listing shows (A8).
+    # Keyset paging (plan §12.7): always from the start, the next page after the last key read.
     assert [(p["start"], p["rows"], p["sort"], p.get("fq")) for p in catalogue.asked] == [
         ("0", "100", "id asc", None),
-        ("1", "100", "id asc", None),
+        ("0", "100", "id asc", 'id:{"00000000-0000-4000-8000-000000000002" TO *]'),
     ]
     c = result.counts
     assert (c.requests, c.found_new, c.invalid, c.extent_unknown) == (2, 3, 1, 1)
@@ -262,18 +269,6 @@ async def test_an_interrupted_run_does_not_count_as_the_last_one(db: psycopg.Con
     assert again.kind == "full"
 
 
-async def test_a_listing_that_moves_while_it_is_read_marks_nothing_gone(
-    db: psycopg.Connection, source: SourceConfig
-) -> None:
-    await run_harvest(db, source, gateway=_gateway(Catalogue(THREE)))
-    catalogue = Catalogue(THREE[:2], size=1)
-    catalogue.count_shift = 1
-    result = await run_harvest(db, source, full=True, gateway=_gateway(catalogue))
-    assert (result.status, result.counts.gone, result.gone_unchecked) == ("done", 0, "listing_moved")
-    assert _states(db, source)["3"] == ("invalid", "no_title", None)
-    assert "Liste hat sich während des Laufs geändert" in report(source, result)
-
-
 @pytest.mark.parametrize(
     "answer",
     [
@@ -303,7 +298,7 @@ async def test_a_package_of_foreign_shape_does_not_end_the_run(db: psycopg.Conne
 
 
 def _since(catalogue: Catalogue) -> datetime:
-    match = _SINCE.fullmatch(catalogue.asked[0]["fq"])
+    match = _SINCE.search(catalogue.asked[0]["fq"])
     assert match is not None
     return datetime.strptime(match[1], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
 
@@ -324,28 +319,11 @@ async def test_a_reextract_asks_nothing_and_finds_no_change(db: psycopg.Connecti
     assert nxt.kind == "incremental" and _since(catalogue) == _started(db, first.run_id)
 
 
-async def test_an_incremental_listing_that_moves_goes_through_and_says_so(
+async def test_packages_that_come_or_go_while_a_pass_reads_move_no_page(
     db: psycopg.Connection, source: SourceConfig
 ) -> None:
-    # Plan A10 (18.11.2026): an incremental pass that held back on every shift would grow past any budget of pages;
-    # what a shift skipped, the next full pass reads.
-    await run_harvest(db, source, gateway=_gateway(Catalogue(THREE)))
-    moving = Catalogue([], size=1)
-    moving.changed = THREE[:2]
-    moving.count_shift = 1
-    second = await run_harvest(db, source, gateway=_gateway(moving))
-    assert (second.kind, second.status, second.moved) == ("incremental", "done", True)
-    assert "liest der nächste volle Durchgang" in report(source, second)
-    catalogue = Catalogue([])
-    await run_harvest(db, source, gateway=_gateway(catalogue))
-    assert _since(catalogue) == _started(db, second.run_id)
-
-
-async def test_a_package_skipped_by_a_shift_under_the_same_count_is_noticed(
-    db: psycopg.Connection, source: SourceConfig
-) -> None:
-    # While the first page is read, a package before the offset goes and one after it comes: the count stays, but the
-    # second page no longer starts with the last package of the first, so nothing is marked gone.
+    # Under offsets a package before the offset that goes shifted the rest by one and one was skipped (A8). By key, the
+    # next page asks for the ids after the last one read, whatever came or went before it.
     four = [_package(str(i)) for i in range(1, 5)]
     await run_harvest(db, source, gateway=_gateway(Catalogue(four)))
     catalogue = Catalogue(four)
@@ -356,7 +334,12 @@ async def test_a_package_skipped_by_a_shift_under_the_same_count_is_noticed(
 
     catalogue.after_page = shift
     result = await run_harvest(db, source, full=True, gateway=_gateway(catalogue))
-    assert (result.status, result.counts.gone, result.gone_unchecked) == ("done", 0, "listing_moved")
+    assert (result.status, result.gone_unchecked, result.counts.found_new) == ("done", None, 1)
+    states = _states(db, source)
+    assert all(states[k][0] == "extracted" for k in "12349")
+    # The package that went is gone after the next full pass.
+    again = await run_harvest(db, source, full=True, gateway=_gateway(catalogue))
+    assert again.counts.gone == 1 and _states(db, source)["1"][0] == "gone"
 
 
 async def test_an_empty_full_listing_marks_nothing_gone(db: psycopg.Connection, source: SourceConfig) -> None:
@@ -368,9 +351,9 @@ async def test_an_empty_full_listing_marks_nothing_gone(db: psycopg.Connection, 
     assert _states(db, source)["1"] == ("extracted", None, False)
 
 
-async def test_a_catalogue_that_ignores_the_offset_fails_the_run(db: psycopg.Connection, source: SourceConfig) -> None:
+async def test_a_catalogue_that_ignores_the_key_fails_the_run(db: psycopg.Connection, source: SourceConfig) -> None:
     catalogue = Catalogue([_package(str(i)) for i in range(1, 8)], size=3)
-    catalogue.ignore_start = True
+    catalogue.ignore_key = True
     result = await run_harvest(db, source, gateway=_gateway(catalogue))
     assert (result.status, result.stop_reason, result.counts.requests) == ("failed", "shape", 2)
 
@@ -446,17 +429,17 @@ async def test_a_full_pass_the_source_slows_down_keeps_its_place_and_goes_on(
     catalogue.refuse_from = 1
     first = await run_harvest(db, source, gateway=_gateway(catalogue), sleep=_no_wait)
     assert (first.kind, first.status, first.stop_reason) == ("full", "interrupted", "rate_limited")
-    assert first.rate_limited > 1 and first.resume_at == 1 and first.counts.found_new == 2
+    assert first.rate_limited > 1 and first.resume_at == 2 and first.counts.found_new == 2
     text = report(source, first)
-    assert "Quelle bat um Pause" in text and "setzt den vollen Durchgang ab Paket 1 fort" in text
+    assert "Quelle bat um Pause" in text and "setzt den vollen Durchgang nach 2 Paketen fort" in text
     catalogue.refuse_from = None
     catalogue.asked.clear()
     _next_day(db, source)
     second = await run_harvest(db, source, gateway=_gateway(catalogue), sleep=_no_wait)
-    assert (second.kind, second.status, second.resumed_at, second.resume_at) == ("full", "done", 1, None)
-    assert catalogue.asked[0]["start"] == "1"
+    assert (second.kind, second.status, second.resumed_at, second.resume_at) == ("full", "done", 2, None)
+    assert catalogue.asked[0]["fq"] == 'id:{"00000000-0000-4000-8000-000000000002" TO *]'
     assert (second.counts.found_new, second.counts.gone, second.gone_unchecked) == (3, 0, None)
-    assert "Voller Durchgang fortgesetzt ab Paket 1" in report(source, second)
+    assert "Voller Durchgang fortgesetzt nach 2 Paketen" in report(source, second)
 
 
 async def test_gone_after_a_pass_over_several_runs_is_what_none_of_them_saw(
@@ -488,7 +471,7 @@ async def test_a_source_failing_on_the_way_pauses_the_pass(db: psycopg.Connectio
     assert (result.status, result.stop_reason, result.resume_at, result.rate_limited) == (
         "interrupted",
         "upstream",
-        1,
+        2,
         0,
     )
 
@@ -515,7 +498,7 @@ async def test_full_goes_on_with_an_open_pass(db: psycopg.Connection, source: So
     catalogue.refuse_from = None
     _next_day(db, source)
     result = await run_harvest(db, source, full=True, gateway=_gateway(catalogue), sleep=_no_wait)
-    assert (result.kind, result.resumed_at) == ("full", 1)
+    assert (result.kind, result.resumed_at) == ("full", 2)
 
 
 async def test_after_rate_limited_the_source_rests_until_the_next_day(
@@ -556,14 +539,12 @@ async def test_a_run_reads_at_most_its_pages_and_the_next_goes_on(db: psycopg.Co
         "interrupted",
         "page_budget",
         2,
-        2,
+        4,
     )
     assert "Seiten je Lauf erreicht" in report(capped, first)
     second = await run_harvest(db, capped, gateway=_gateway(catalogue))
-    assert (second.status, second.resumed_at, second.resume_at) == ("interrupted", 2, 4)
-    third = await run_harvest(db, capped, gateway=_gateway(catalogue))
-    # Pages from offsets 4 and 6: the last one is the end of the listing, so the budget does not stop the pass.
-    assert (third.status, third.resume_at, third.gone_unchecked) == ("done", None, None)
+    # 5 and 6, then 7: the last page ends the listing, so the budget does not stop the pass.
+    assert (second.status, second.resumed_at, second.resume_at, second.gone_unchecked) == ("done", 4, None, None)
     assert len(_states(db, capped)) == 7
 
 
@@ -578,10 +559,10 @@ async def test_an_incremental_pass_goes_on_over_runs_under_a_cap(db: psycopg.Con
     since = _since(changed)
     changed.asked.clear()
     third = await run_harvest(db, capped, gateway=_gateway(changed))
-    # The same lower bound, from where the pass stood.
-    assert (third.kind, third.resumed_at, third.status) == ("incremental", 1, "done")
-    assert _since(changed) == since and changed.asked[0]["start"] == "1"
-    assert "Inkrementeller Durchgang fortgesetzt ab Paket 1" in report(capped, third)
+    # The same lower bound, after the last key the pass read.
+    assert (third.kind, third.resumed_at, third.status) == ("incremental", 2, "done")
+    assert _since(changed) == since and _AFTER.search(changed.asked[0]["fq"])[1] == "00000000-0000-4000-8000-000000000005"
+    assert "Inkrementeller Durchgang fortgesetzt nach 2 Paketen" in report(capped, third)
     # After the pass went through, the next one asks from the start of the pass.
     nxt = Catalogue([])
     await run_harvest(db, capped, gateway=_gateway(nxt))

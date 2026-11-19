@@ -1,12 +1,13 @@
 """Fetch and extract for CKAN (M5-19 plan §4.2, §5): the packages of ``package_search``, one find per package.
 
-The listing is read in pages of :data:`PAGE_ROWS` packages sorted by id, with ``start`` as the offset; each page starts
-with the last package of the one before. CKAN answers without ``ETag`` (adr/0025 §3), so nothing is asked
-conditionally: the hash of each package decides. An incremental run asks only for packages whose
-``metadata_modified`` lies after the start of the last done run less an hour, as ckanext-harvest does (adr/0025
-§3a); a full one asks for all. Packages that come or go while the listing is read shift the offsets, and one can be
-skipped: a page that does not hold the last package of the one before, or a count that changes, marks the listing as
-moved (A8). Only a full listing that held still and named at least one package can mark finds ``gone`` (A3).
+The listing is read by key (keyset paging, plan §12.7): packages sorted by ``id``, each page asked with ``start=0``
+and a filter for the ids after the last one read (``id:{"<last>" TO *]``). No offset grows, so no limit on deep
+offsets is reached (opendata.swiss answers 429 from offset ~10 100 on, Otto 19.11.2026), and packages that come or
+go while the listing is read move no page: every package that exists from before the pass reached its id until after
+is read once. CKAN answers without ``ETag`` (adr/0025 §3), so the hash of each package decides. An incremental run
+asks only for packages whose ``metadata_modified`` lies after the start of the last pass less an hour, as
+ckanext-harvest does (adr/0025 §3a); a full one asks for all. Only a full listing that named at least one package can
+mark finds ``gone`` (A3).
 
 Which field names the publisher is a setting of the source (``publisher_field``, adr/0025 §5.2). Texts given per
 language (opendata.swiss [S]) are read in the order of :func:`~earthx.discovery.extract.localized` (plan A7).
@@ -66,25 +67,21 @@ _NOT_PUBLIC = frozenset({"RESTRICTED", "NON_PUBLIC", "NONPUBLIC", "NON-PUBLIC"})
 
 @dataclass(slots=True)
 class CkanListing:
-    """How the listing stands and ended. Before a page is handed out, ``start`` and ``last_key`` already point to the
-    next one, so a run that stops after it can keep them, and the next run goes on from there (Otto, 18.11.2026)."""
+    """How the listing stands and ended. Before a page is handed out, ``last_key`` already is its last package, so a
+    run that stops after it keeps it, and the next run goes on after it (Otto, 18./19.11.2026)."""
 
     full: bool
-    #: The offset of the next page, and the package it must start with (the overlap of A8).
-    start: int = 0
+    #: The id of the last package read: the next page asks for the ids after it. ``None`` at the start of a pass.
     last_key: str | None = None
-    #: The count of the first page of the pass, and the packages read so far without the overlaps.
-    total: int | None = None
+    #: The packages the pass has read so far, over all its runs.
     read: int = 0
-    #: The listing shifted while it was read (count changed, or a page lost its overlap): a package may be skipped.
-    moved: bool = False
     not_modified: bool = False
     #: The last page was read.
     exhausted: bool = False
     complete: bool = False
     #: CKAN has no validators of its listing (adr/0025 §3).
     validators: None = None
-    #: The listing named no package at all; a full one of them is no evidence that every find is gone.
+    #: The pass read no package at all; a full one of them is no evidence that every find is gone.
     empty: bool = False
 
 
@@ -96,13 +93,21 @@ def package_key(package: object) -> str | None:
     return key if isinstance(key, str) and _KEY.fullmatch(key) else None
 
 
-def _search_params(source: SourceConfig, start: int, since: datetime | None) -> dict[str, str | int]:
-    """The query of one page; the gateway assembles it into the address."""
+def _quoted(key: str) -> str:
+    """A key as a quoted term of the Solr query syntax; :func:`package_key` admits no quote or backslash anyway."""
+    return '"' + key.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _search_params(source: SourceConfig, after: str | None, since: datetime | None) -> dict[str, str | int]:
+    """The query of one page; the gateway assembles it into the address. ``start`` is always 0 (keyset paging)."""
     assert isinstance(source.filter, CkanFilter)
     clauses = [] if source.filter.fq is None else [f"({source.filter.fq})"]
     if since is not None:
         clauses.append(f"metadata_modified:[{since.astimezone(UTC):%Y-%m-%dT%H:%M:%SZ} TO *]")
-    params: dict[str, str | int] = {"rows": PAGE_ROWS, "start": start, "sort": "id asc"}
+    if after is not None:
+        # Exclusive lower bound on the sort key: the ids after the last one read.
+        clauses.append(f"id:{{{_quoted(after)} TO *]")
+    params: dict[str, str | int] = {"rows": PAGE_ROWS, "start": 0, "sort": "id asc"}
     if clauses:
         params["fq"] = " AND ".join(clauses)
     return params
@@ -111,16 +116,16 @@ def _search_params(source: SourceConfig, start: int, since: datetime | None) -> 
 async def ckan_pages(
     fetch: Fetch, source: SourceConfig, since: datetime | None, listing: CkanListing
 ) -> AsyncIterator[list[tuple[str | None, Any]]]:
-    """The packages of each page as ``(key, package)`` from where ``listing`` stands; a key ``None`` marks one that
+    """The packages of each page as ``(key, package)`` after where ``listing`` stands; a key ``None`` marks one that
     cannot be a find. ``since`` is the lower bound of ``metadata_modified`` of an incremental listing (aware, asked in
     UTC), ``None`` for a full one.
 
-    :class:`ShapeError` where the source answers no listing, or a page of several packages names none that is new: it
-    does not page (``start`` ignored) and would run until the budget is spent."""
-    keys: set[str] = set()
+    :class:`ShapeError` where the source answers no listing, or does not honour the order and the filter by key: a page
+    that names an id at or before the last one read, or a page without a key to go on from."""
     while True:
-        start = listing.start
-        response = await fetch(f"{source.endpoint}/package_search", params=_search_params(source, start, since))
+        response = await fetch(
+            f"{source.endpoint}/package_search", params=_search_params(source, listing.last_key, since)
+        )
         if response.status_code != 200:
             raise ShapeError(f"the listing answered {response.status_code}")
         try:
@@ -132,32 +137,21 @@ async def ckan_pages(
         packages = result.get("results") if isinstance(result, dict) else None
         if isinstance(count, bool) or not isinstance(count, int) or count < 0 or not isinstance(packages, list):
             raise ShapeError("a page of the listing has no count and no list of packages")
-        if listing.total is None:
-            listing.total = count
-        elif count != listing.total:
-            listing.moved = True
         page = [(package_key(package), package) for package in packages]
-        overlap = listing.last_key is not None and bool(page) and page[0][0] == listing.last_key
-        if listing.last_key is not None and not overlap:
-            listing.moved = True
-        listing.read += len(page) - (1 if overlap else 0)
-        new = {key for key, _ in page if key is not None} - keys
-        if len(page) > 1 and not new:
-            raise ShapeError("a page of the listing names no new package")
-        keys |= new
-        end = start + len(page)
-        listing.exhausted = not page or end >= count
-        if not listing.exhausted:
-            # The next page starts with the last package of this one, so that a shift of the listing shows.
-            listing.last_key = page[-1][0] if len(page) > 1 else None
-            listing.start = end - 1 if listing.last_key is not None else end
+        keys = [key for key, _ in page if key is not None]
+        if keys != sorted(keys) or (listing.last_key is not None and keys and keys[0] <= listing.last_key):
+            raise ShapeError("the listing does not keep the order by id after the last key")
+        listing.read += len(page)
+        listing.exhausted = not page or len(page) >= count
+        if keys:
+            listing.last_key = keys[-1]
+        elif not listing.exhausted:
+            raise ShapeError("a page of the listing names no key to go on from")
         yield page
         if listing.exhausted:
             break
-    if listing.read != listing.total:
-        listing.moved = True
-    listing.empty = listing.total == 0
-    listing.complete = listing.full and not listing.moved and not listing.empty
+    listing.empty = listing.read == 0
+    listing.complete = listing.full and not listing.empty
 
 
 def _extras(package: Mapping[str, Any]) -> dict[str, Any]:

@@ -80,16 +80,13 @@ class ListValidators:
 
 @dataclass(frozen=True, slots=True)
 class Pass:
-    """Where an open full pass of a CKAN source stands: the run that began it, when, the offset and first key of the
-    next page, and what the check that the listing held still has gathered so far (migration 027)."""
+    """Where an open pass of a CKAN source stands: the run that began it, when, the id of the last package read (the
+    next page asks for the ids after it, migration 030) and how many it has read over its runs."""
 
     run_id: int
     started_at: datetime
-    start: int
     last_key: str | None
-    total: int | None
     read: int
-    moved: bool
     #: The lower bound of ``metadata_modified`` of an incremental pass; ``None`` for a full pass.
     since: datetime | None = None
 
@@ -180,8 +177,8 @@ def finish_run(
 
 def harvest_state(conn: psycopg.Connection, source_id: str) -> SourceState:
     row = conn.execute(
-        "SELECT full_started_at, changes_since, pass_run_id, pass_started_at, pass_start, pass_last_key, pass_total,"
-        " pass_read, pass_moved, pass_since, rest_until, clock_timestamp()"
+        "SELECT full_started_at, changes_since, pass_run_id, pass_started_at, pass_last_key, pass_read, pass_since,"
+        " rest_until, clock_timestamp()"
         " FROM public.earthx_harvest_source WHERE source_id = %s",
         (source_id,),
     ).fetchone()
@@ -203,22 +200,20 @@ def begin_pass(conn: psycopg.Connection, source_id: str, run_id: int, since: dat
         conn.execute(_UPSERT, {"source_id": source_id})
         row = conn.execute(
             "UPDATE public.earthx_harvest_source h SET pass_run_id = r.run_id, pass_started_at = r.started_at,"
-            " pass_start = 0, pass_last_key = NULL, pass_total = NULL, pass_read = 0, pass_moved = false,"
-            " pass_since = %s, updated_at = clock_timestamp() FROM public.earthx_harvest_run r"
+            " pass_last_key = NULL, pass_read = 0, pass_since = %s, updated_at = clock_timestamp()"
+            " FROM public.earthx_harvest_run r"
             " WHERE h.source_id = %s AND r.run_id = %s RETURNING r.started_at",
             (since, source_id, run_id),
         ).fetchone()
-    return Pass(run_id, row[0], 0, None, None, 0, False, since)
+    return Pass(run_id, row[0], None, 0, since)
 
 
-def save_pass(
-    conn: psycopg.Connection, source_id: str, *, start: int, last_key: str | None, total: int | None, read: int, moved: bool
-) -> None:
+def save_pass(conn: psycopg.Connection, source_id: str, *, last_key: str | None, read: int) -> None:
     """Where the open pass stands after a page whose finds are written."""
     conn.execute(
-        "UPDATE public.earthx_harvest_source SET pass_start = %s, pass_last_key = %s, pass_total = %s, pass_read = %s,"
-        " pass_moved = %s, updated_at = clock_timestamp() WHERE source_id = %s AND pass_run_id IS NOT NULL",
-        (start, last_key, total, read, moved, source_id),
+        "UPDATE public.earthx_harvest_source SET pass_last_key = %s, pass_read = %s, updated_at = clock_timestamp()"
+        " WHERE source_id = %s AND pass_run_id IS NOT NULL",
+        (last_key, read, source_id),
     )
 
 
@@ -227,8 +222,8 @@ def end_pass(conn: psycopg.Connection, source_id: str) -> None:
     conn.execute(
         "UPDATE public.earthx_harvest_source SET changes_since = pass_started_at,"
         " full_started_at = CASE WHEN pass_since IS NULL THEN pass_started_at ELSE full_started_at END,"
-        " pass_run_id = NULL, pass_started_at = NULL, pass_start = NULL, pass_last_key = NULL, pass_total = NULL,"
-        " pass_read = NULL, pass_moved = NULL, pass_since = NULL, updated_at = clock_timestamp()"
+        " pass_run_id = NULL, pass_started_at = NULL, pass_last_key = NULL, pass_read = NULL, pass_since = NULL,"
+        " updated_at = clock_timestamp()"
         " WHERE source_id = %s AND pass_run_id IS NOT NULL",
         (source_id,),
     )

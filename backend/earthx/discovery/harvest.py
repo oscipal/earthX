@@ -145,21 +145,19 @@ class HarvestResult:
     summary: SourceSummary
     #: Finds without a usable id: counted, never stored, since they have no key.
     without_key: int = 0
-    #: Why a run that ended ``done`` did not look for finds that are gone: ``incremental``; ``listing_moved`` where a
-    #: full CKAN listing shifted while it was read (a package may have been skipped); ``listing_empty`` where it named
-    #: no package at all (a rebuilt index, a filter that no longer matches), which is no evidence that all are gone.
+    #: Why a run that ended ``done`` did not look for finds that are gone: ``incremental``, or ``listing_empty`` where a
+    #: full CKAN pass named no package at all (a rebuilt index, a filter that no longer matches), which is no evidence
+    #: that all are gone.
     gone_unchecked: str | None = None
     #: Whether the run read a path robots.txt disallows, under the exception of the source's file (Otto, 18.11.2026).
     robots_waived: bool = False
     #: How often the source answered 429, and how long the run waited for it in all.
     rate_limited: int = 0
     waited_s: float = 0.0
-    #: A full CKAN pass over several runs (Otto, 18.11.2026): the offset this run went on from, and the offset the
-    #: next run goes on from where this one stopped before the pass was through.
+    #: A CKAN pass over several runs (Otto, 18./19.11.2026): how many packages it had read when this run went on with
+    #: it, and how many when this one stopped before the pass was through (the next run goes on after the last key).
     resumed_at: int | None = None
     resume_at: int | None = None
-    #: An incremental listing shifted while it was read: what it skipped, the next full pass reads (plan A10).
-    moved: bool = False
     #: Until when the source rests after this run ended ``rate_limited``.
     rest_until: datetime | None = None
 
@@ -179,7 +177,6 @@ class _Run:
     #: The open pass of a CKAN source this run reads on.
     pass_: Pass | None = None
     pages: int = 0
-    moved: bool = False
 
 
 def _retry_after_s(value: str | None, now: datetime) -> float | None:
@@ -325,7 +322,7 @@ def _listing(
     if run.pass_ is not None:
         # Where the open pass stands: a run that stopped before keeps its place (Otto, 18.11.2026).
         p = run.pass_
-        ckan.start, ckan.last_key, ckan.total, ckan.read, ckan.moved = p.start, p.last_key, p.total, p.read, p.moved
+        ckan.last_key, ckan.read = p.last_key, p.read
     return ckan, ckan_pages(fetch, source, run.since, ckan)
 
 
@@ -360,15 +357,7 @@ async def _fetch_and_extract(run: _Run, fetch: _Fetcher) -> None:
                 else:
                     _record(cur, run, key, document, before, raw=raw, raw_sha256=digest)
         if run.pass_ is not None and isinstance(listing, CkanListing):
-            save_pass(
-                conn,
-                source.source_id,
-                start=listing.start,
-                last_key=listing.last_key,
-                total=listing.total,
-                read=listing.read,
-                moved=listing.moved,
-            )
+            save_pass(conn, source.source_id, last_key=listing.last_key, read=listing.read)
         run.pages += 1
         budget = source.max_pages_per_run
         if budget is not None and run.pages >= budget and isinstance(listing, CkanListing) and not listing.exhausted:
@@ -390,17 +379,16 @@ async def _fetch_and_extract(run: _Run, fetch: _Fetcher) -> None:
     assert run.pass_ is not None
     if not listing.full:
         # Finds the listing did not name are judged again if an older extractor judged them, from their kept raw
-        # answers; a full run sees them all anyway. A package a shifting listing skipped is read by the next full pass
-        # (A10): holding the incremental pass back would let it grow past every budget.
+        # answers; a full run sees them all anyway.
         _reextract(run, outdated_only=True)
-        run.gone_unchecked, run.moved = "incremental", listing.moved
+        run.gone_unchecked = "incremental"
     elif listing.complete:
         # Gone is what no run of the pass saw, whichever of its runs read which page (A3).
         run.counts.gone = mark_gone(
             conn, run_id=run.run_id, source_id=source.source_id, seen_since_run=run.pass_.run_id
         )
     else:
-        run.gone_unchecked = "listing_moved" if listing.moved else "listing_empty"
+        run.gone_unchecked = "listing_empty"
     end_pass(conn, source.source_id)
 
 
@@ -476,7 +464,7 @@ async def run_harvest(
     resumed_at = None
     if kind != "reextract" and source.protocol is SourceProtocol.CKAN:
         run.pass_ = open_pass if open_pass is not None else begin_pass(conn, source.source_id, run.run_id, since)
-        resumed_at = None if open_pass is None else open_pass.start
+        resumed_at = None if open_pass is None else open_pass.read
     fetch = None
     status, stop_reason = "done", None
     try:
@@ -539,8 +527,7 @@ async def run_harvest(
         0 if fetch is None else fetch.rate_limited,
         0.0 if fetch is None else fetch.waited_s,
         resumed_at,
-        None if still_open is None else still_open.start,
-        run.moved,
+        None if still_open is None else still_open.read,
         rest_until,
     )
 
@@ -578,7 +565,6 @@ _KIND_TEXT = {"full": "voll", "incremental": "inkrementell", "reextract": "neu a
 
 _GONE_TEXT = {
     "incremental": "weg nicht geprüft (inkrementell)",
-    "listing_moved": "weg nicht geprüft (Liste hat sich während des Laufs geändert)",
     "listing_empty": "weg nicht geprüft (Liste leer)",
 }
 
@@ -621,16 +607,14 @@ def report(source: SourceConfig, result: HarvestResult) -> str:
     ]
     if result.rate_limited:
         lines.append(f"  Quelle bat um Pause: {result.rate_limited}-mal 429, gewartet {result.waited_s / 60:.0f} min")
-    if result.moved:
-        lines.append("  Liste hat sich beim Lesen verschoben; was dabei übersprungen wurde, liest der nächste volle Durchgang")
     if result.rest_until is not None:
         lines.append(f"  Quelle ruht bis {result.rest_until.astimezone(UTC):%Y-%m-%d %H:%M} UTC; vorher startet kein Lauf")
     if result.resumed_at is not None:
-        lines.append(f"  {_PASS_TEXT[result.kind][0]} Durchgang fortgesetzt ab Paket {result.resumed_at}")
+        lines.append(f"  {_PASS_TEXT[result.kind][0]} Durchgang fortgesetzt nach {result.resumed_at} Paketen")
     if result.resume_at is not None:
         lines.append(
             f"  Stand gespeichert: der nächste Lauf setzt den {_PASS_TEXT[result.kind][1]} Durchgang"
-            f" ab Paket {result.resume_at} fort"
+            f" nach {result.resume_at} Paketen fort"
         )
     robots = _robots_line(source, result)
     return "\n".join(lines if robots is None else [*lines, robots])
