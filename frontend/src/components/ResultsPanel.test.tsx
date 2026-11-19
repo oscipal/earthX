@@ -572,11 +572,11 @@ describe('a provisional day in the results (M5-58 F1)', () => {
     scene('f1', 'optical', { datetime: '2026-11-16T00:00:00Z', 'earthx:state': 'final' }),
   ];
 
-  it('says "Provisional values" at the date of a provisional day and of its scene, with no mark', () => {
+  it('says "Provisional values" at the time of a provisional scene, not at the head of its group, with no mark', () => {
     load(DAYS);
     const heads = [...container.querySelectorAll('.result-group .rg-label')];
     expect(heads.map((head) => [head.textContent, tipOf(head)])).toEqual([
-      ['2026-11-17', 'Provisional values'],
+      ['2026-11-17', ''],
       ['2026-11-16', ''],
     ]);
     expect(tipOf(container.querySelector('.rg-items .result-date'))).toBe('Provisional values');
