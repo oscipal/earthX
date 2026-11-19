@@ -327,6 +327,10 @@ Die Ausgaben von M1–M8 stehen als Kommentar am PR. Die Vorgaben gehen §6–§
 2. Schweiz und Deutschland zugleich
 3. Keine Gemeinden; Gemeindenamen fallen auf Herausgeber bzw. Staat des Katalogs
 
+**F11 — Ortstext, der nur ganze Staaten nennt („Schweiz“; Fund aus der Review, umgesetzt nach Empfehlung, A19)?**
+1. Regionen ohne Fußabdruck wie die Stufe `catalog`: Der Regionsfilter „Schweiz“ findet sie, eine AOI nicht **(Empfehlung)**
+2. Fußabdruck ganzes Land: jede AOI im Land findet sie
+
 **F10 — GeoNames-IDs aus Ortstexten (`sws.geonames.org/<id>`)?**
 1. `report --classify` zählt die IDs; die Session schlägt die Zuordnung ID → Code nach den Seiten von GeoNames vor (Lesen von Webseiten, keine Harvest-Quelle), du prüfst sie im PR **(Empfehlung)**
 2. Du lieferst die Zuordnung
@@ -350,7 +354,14 @@ Die Ausgaben von M1–M8 stehen als Kommentar am PR. Die Vorgaben gehen §6–§
 - **A14** Dedupe über gleiche Datei-Adressen entfällt in PR 1: gemessen ist nur die Seite (M6, kein Schlüssel); eine Datei-Regel käme erst mit einer Messung.
 - **A16** Die Distributionen der Duplikate schreibt der Bericht nicht in den Inhalt des Haupteintrags (der Stapel bliebe sonst nie gleich), sondern `api` hängt sie beim Ausliefern als `earthx:also_at` an (Quelle, Link „Source“, Dateien je Duplikat). Volle Einträge aus pgstac bekommen das nicht; der Data catalogue zeigt es in M5-20 nicht.
 - **A17** Ein veröffentlichter Eintrag, dessen Fund ungültig wird, bleibt mit dem alten Inhalt sichtbar; ein nie veröffentlichter verschwindet. Ein Eintrag, der Duplikat wird, ist verborgen; wird er wieder Haupteintrag, kommt er erneut in die Prüfung.
-- **A15** Kürzel aus zwei Buchstaben treffen nur als ganzer Ortstext oder in Klammern; das Kürzel einer Unterteilung nur im Staat des Katalogs (`GE` bei opendata.swiss ist CH-GE, nicht Georgien).
+- **A15** Kürzel aus zwei Buchstaben treffen nur als ganzer Ortstext oder in Klammern, nie als Teil einer Liste („DE, FR, IT“); das Kürzel einer Unterteilung des Staats des Katalogs geht einem gleichnamigen Staat vor (`GE` bei opendata.swiss ist CH-GE, nicht Georgien).
+- **A18** Ändert Otto die Einstufung einer Lizenz (`terms.yaml`), gehen die veröffentlichten Einträge dieser Lizenz zurück in die Prüfung (unsichtbar bis zur nächsten Freigabe). Das ist strenger als `adr/0033` §11 letzte Zeile („alte Fassung sichtbar, im nächsten Stapel“), weil eine Zeile nur eine Fassung hält; nie eine Lizenz-Aussage, die Otto nicht mit dem Eintrag gesehen hat.
+- **A19** Ein Ortstext, der nur ganze Staaten nennt („Schweiz“, „Switzerland“), gibt Regionen ohne Fußabdruck wie die Stufe `catalog`; sonst fände jede AOI im Staat alle diese Einträge (Begründung §6.1). Frage F11.
+- **A20** Ein Ort aus Ortstext oder Herausgeber gilt nur im Staat des Katalogs („Sächsische Schweiz“ bei GovData ist nicht CH, „Vienne“ bei opendata.swiss nicht Wien); ein ganzer Staat aus dem Ortstext gilt überall.
+- **A21** DOI und Kennung, die mehr als 5 Funde tragen, sind Platzhalter eines Portals und kein Dedupe-Schlüssel; Collection-IDs zählen ohne diese Grenze.
+- **A22** Ein einzelner Fund, der sich nicht ableiten lässt oder den Postgres ablehnt, hält den Bericht nicht an: er wird als „fehlerhaft“ gezählt, seine Zeile bleibt, wie sie war. Ein Enddatum im Jahr 9999 ist ein offenes Ende. Eine Geometrie, deren Verschachtelung nicht zu ihrem Typ passt, gilt im Extract als keine.
+- **A23** Nimmt Otto eine Freigabe in `grants/` oder eine Lizenz in `terms.yaml` zurück, macht `catalog-load` die betroffenen Einträge sofort unsichtbar (`needs_rule`, `adr/0033` §9), nicht erst der nächste Bericht.
+- **A24** Fehlt die Freigabedatei des offenen Stapels im Ausgabeverzeichnis (Branch verworfen, Schreiben gescheitert), schreibt der nächste Bericht sie neu.
 
 ## 15. Tests (Plan)
 
@@ -399,4 +410,5 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harvest-report.ps1
 - **Dedupe:** `discovery/dedupe.py` (DOI, Kennung, Collection-ID als ganzes Token, nur IDs mit zwei Punkten in Adressen; nie die Seite); `earthx:also_at` in `catalog/listed_search.py` (A16).
 - **Bericht und Freigabe:** `discovery/report.py` (`report`, `--classify`), `catalog/listing_store.py` (Zeilen, Verschwundene, Dubletten, Stapel), `catalog/approvals.py` (Freigabedateien, `publish` in `catalog-load`, `excluded_rules`, `revoked_on`; Freigabe nur mit abgehakter Stichprobe).
 - **Lokaler Lauf:** Compose-Dienst `harvest-report` (Profil `harvest`, `backend/catalog/approvals` eingebunden), `scripts/harvest-report.ps1` und `.sh` (sauberer Checkout auf `main`, Branch, Commit, nie Push), README „Geerntete Einträge freigeben“.
+- **Nach der Review (Subagent, 19.11.2026):** INSPIRE-Signal und Enddatum 9999 brachen den Bericht ab; ein Grabstein auf einem Duplikat und ein Upsert auf eine `superseded`-Zeile verletzten die CHECKs von 032; behoben mit Tests. Dazu A15, A18–A24 und F11.
 - **Nicht in PR 1** (F8 = 1, PR 2): Verify, Kandidaten und `discovery propose`, „—“ im Data catalogue, erste Lizenzen nach F5; Gemeinden (F9) und GeoNames-IDs (F10) nach deinen Antworten.
