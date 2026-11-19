@@ -534,7 +534,7 @@ Draft-PR [#385](https://github.com/oscipal/earthX/pull/385), Branch `claude/lovi
 | Frontend `provisional.ts`, `ResultsPanel.tsx`, `TimeSlider.tsx` | Tooltip „Provisional values“ (F1, keine Marke) an der Uhrzeit eines Treffers in der Trefferliste und in der Zeitleiste am gezeigten Datum, an den Nachbarn und an den Enden („Last time step: provisional values“); auf jeder Tipp-Stufe. Nicht am Kopf einer Gruppe: Dort verbietet UI-04 Teil 3a jeden Tooltip (`uiRules.test.ts`) |
 | `tests_live/test_meteoswiss_grid_smoke.py` | prüft die Item-Liste wie der Adapter: Jahresdateien lückenlos bis höchstens zwei Jahre zurück, Monats- und Tagesdateien je Größe, Aufbau der jüngsten Datei je Art über `build_units` |
 
-### 12.2 Auslegungen (gelten, wenn du nicht widersprichst)
+### 12.2 Auslegungen (bestätigt von Otto, 19.11.2026)
 
 - **A17:** `expires` wird je Einheit in Postgres gehalten (Migration 031; 030 ist der Keyset-Stand aus M5-19, #379). Ohne das schriebe ein Neubau aus dem gespeicherten Zustand (`adr/0038` §3.4 Punkt 4, z. B. ein vorläufiger Tag nach Wegfall einer Monatsdatei) kein `expires` ans Asset.
 - **A18:** Die Liste wird mit `limit=100` gefragt und `next` gefolgt, höchstens 20 Seiten; der Hash geht über alle Seiten. Heute ist es eine Seite (§11.1).
@@ -552,7 +552,7 @@ Draft-PR [#385](https://github.com/oscipal/earthX/pull/385), Branch `claude/lovi
 | Datei | Fälle |
 |---|---|
 | `tests/earthx/discovery/test_meteoswiss_grid.py` | Gruppen und Stände je Präfix; Validatoren und `expires` aus der Liste; eine Anfrage, keine Datei; `RprelimD` als `RhiresD` nur in Tages-Items; gleiche Liste → `unchanged` nach einer Anfrage; neuer Tag listet nur seine Dateien; andere Auswahl listet alles; Jahre vor dem Start; keine Jahresdatei bzw. fremder Host übergangen; Seiten gefolgt; Ablehnungen (zwei Dateien einer Größe, keine Datei, keine Item-Collection, Liste ohne Ende, fremde Größe, zwei Gitter); Items je Tag, Tagesgrenzen 00–24 und 06–06 auch vorläufig, Asset mit Verweisen, `updated`, `expires`, `earthx:source_product`; Ablehnungen beim Bauen (Mitternacht, anderes Jahr, zwei Monate, zwei Tage, anderes Gitter, Layout ohne Adresse, Gitter außerhalb, fremde Einheit) |
-| `tests/integration/test_materialize_meteoswiss.py` (echtes pgstac, ganzer Befehlsweg) | gelistete Datei mit `404` → Lauf scheitert, nichts geschrieben (bis F10, §12.5); Asset einer nicht mehr gelisteten Datei fällt beim Übernehmen weg; neues ETag nach Neubau gespeichert; erster Lauf mit Stand je Tag; **Tageslauf ohne Änderung = eine Anfrage** (`GET` der Liste) und Lauf-Log `unchanged`; neuer Tag liest nur seine Datei; Monatsdatei ersetzt den vorläufigen Tag unter derselben ID (`replaced` 1, kein `expires`, kein `earthx:source_product`); Monatsdatei am 26. schreibt nur ihre Tage; Archiv aus dem Februar gilt vor dem Monat; vorläufiger Tag weg ohne Endgültiges → gelöscht; Übernahme: `HEAD` mit `If-None-Match`, `304`, Stand `final` geschrieben; geänderte Jahresdatei neu verwiesen |
+| `tests/integration/test_materialize_meteoswiss.py` (echtes pgstac, ganzer Befehlsweg) | gelistete Datei mit `404` → übergangen, Rest geschrieben, `missing` 1, im nächsten Lauf nur diese Datei erneut gefragt, nach Auslieferung gebaut, danach wieder eine Anfrage (F10 = 1); Monatsdatei nicht ausgeliefert → ihre Tage vorerst weg; Jahresdatei mit `404` beim Übernehmen; Asset einer nicht mehr gelisteten Datei fällt beim Übernehmen weg; neues ETag nach Neubau gespeichert; erster Lauf mit Stand je Tag; **Tageslauf ohne Änderung = eine Anfrage** (`GET` der Liste) und Lauf-Log `unchanged`; neuer Tag liest nur seine Datei; Monatsdatei ersetzt den vorläufigen Tag unter derselben ID (`replaced` 1, kein `expires`, kein `earthx:source_product`); Monatsdatei am 26. schreibt nur ihre Tage; Archiv aus dem Februar gilt vor dem Monat; vorläufiger Tag weg ohne Endgültiges → gelöscht; Übernahme: `HEAD` mit `If-None-Match`, `304`, Stand `final` geschrieben; geänderte Jahresdatei neu verwiesen |
 | `tests/earthx/api/test_intake.py` | `state` in der Provenienz bei vorläufigem Asset; ohne Stand kein Feld; unbekannter Stand bleibt weg |
 | `frontend/src/components/TimeSlider.test.tsx`, `ResultsPanel.test.tsx` | Tooltip am vorläufigen Datum (gezeigt, Nachbar, Ende) und an der Uhrzeit des Treffers, keiner am endgültigen und keiner am Gruppenkopf, keine sichtbare Marke |
 | `tests/test_live_smoke_dry_run.py` | Double der Item-Liste mit Archiv-, Monats- und Tagesdateien |
@@ -581,7 +581,7 @@ docker compose run --build --rm materialize meteoswiss-daily-1km
 docker compose run --rm materialize meteoswiss-daily-precip-1km
 ```
 
-Erwartet je eine Zeile `loaded; N units new, 0 changed, M unchanged, 0 gone; K items written, 0 replaced by a higher state, 0 deleted` mit `M` = Zahl der Jahresdateien (230 bzw. 65) und `K` rund 23 700 plus die Tage der Monats- und Tagesdateien.
+Erwartet je eine Zeile `loaded; N units new, 0 changed, M unchanged, 0 gone, 0 not served (asked again next run); K items written, 0 replaced by a higher state, 0 deleted` mit `M` = Zahl der Jahresdateien (230 bzw. 65) und `K` rund 23 700 plus die Tage der Monats- und Tagesdateien.
 
 **Schritt 3 — ein Tageslauf ohne Änderung = eine Anfrage:** derselbe Lauf noch einmal, die Ausgabe in einer Variablen; dann die Zeilen `gateway request` zählen (eine je Anfrage, `gateway/client.py`):
 
@@ -593,7 +593,7 @@ docker compose run --rm materialize meteoswiss-daily-1km | Tee-Object -Variable 
 ($lauf | Select-String 'gateway request').Count
 ```
 
-Erwartet: `unchanged; 0 units new, 0 changed, … unchanged, 0 gone; 0 items written …` und die Zahl **1**. Ist dazwischen ein neuer Tag erschienen, ist es `loaded` mit wenigen neuen Einheiten; dann den Lauf gleich noch einmal, er ist danach `unchanged` mit 1.
+Erwartet: `unchanged; 0 units new, 0 changed, … unchanged, 0 gone, 0 not served …; 0 items written …` und die Zahl **1**. Nennt ein Lauf „not served“ > 0, fragt der nächste Lauf diese Dateien erneut; dann ist die Zahl 1 plus je Datei die Anfragen für sie. Ist dazwischen ein neuer Tag erschienen, ist es `loaded` mit wenigen neuen Einheiten; dann den Lauf gleich noch einmal, er ist danach `unchanged` mit 1.
 
 **Schritt 4 — Stände und Zeitraum:**
 
@@ -618,6 +618,10 @@ Erwartet je Eintrag zwei Zeilen, `final` und `provisional`, keine leere; `max(en
 **F10 — Eine gelistete Datei fehlt bei der Quelle (`404`/`410`)?** Heute bricht der ganze Lauf ab und schreibt nichts; der nächste Lauf versucht es wieder. M5-11 duldete bis 1 % fehlende Jahresdateien. Scheitert eine Tagesdatei dauerhaft (gelistet, aber nicht hochgeladen oder schon gelöscht), käme bis zur Korrektur der Quelle auch kein anderer neuer Tag herein.
 1. Die Datei übergehen und als Warnung zählen (wie A19), ohne Adresse; sie gilt als nicht gelistet und wird im nächsten Lauf wieder versucht; der Lauf schreibt alles andere **(Empfehlung)**
 2. So lassen: Der Lauf scheitert als Ganzes
+
+**Antwort Otto (19.11.2026): F10 = 1; A17–A26 gelten; der Umfang über dem Richtwert ist hingenommen.** Umgesetzt im Kern, für jeden Adapter gleich: Antwortet eine gelistete Einheit beim `HEAD` oder beim Bauen mit `404` oder `410`, gilt sie in diesem Lauf als nicht gelistet (was sie hielt, fällt vorerst weg), und ihre Gruppe behält keinen Validator. Der nächste Lauf liest die Liste deshalb wieder aus und fragt nur diese Datei erneut; die übrigen Dateien der Gruppe entscheidet ihre Prüfsumme ohne Abruf. Die Ausgabe nennt „N not served (asked again next run)“, das Lauf-Log zählt sie in `missing`.
+
+**Migration:** M5-19 PR 2 (#379) bringt eine eigene `030` und wird vorher gemergt; die Migration dieses PRs heißt deshalb `031_materialize_unit_expires.sql` (Otto, 19.11.2026).
 
 ### 12.6 Umfang
 
