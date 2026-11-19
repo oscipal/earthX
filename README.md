@@ -321,6 +321,8 @@ docker compose run --rm harvest opendata-swiss
   wird über den API-Host `ckan.govdata.de` gefragt; beide haben eine Ausnahme für ihre Metadaten-API.
 - `data-gv-at` steht auf `enabled: false`, bis ein erster Lauf den Endpunkt bestätigt; der Befehl lehnt die
   Quelle bis dahin ab.
+- Antwortet eine Quelle nicht in der Zeit, gar nicht oder mit `5xx`, fragt der Lauf dieselbe Seite nach 1, 2, 4, 8 min
+  erneut, solange in den letzten 30 min eine Seite kam, höchstens 60 min lang; danach endet er `interrupted` mit Stand.
 - Antwortet eine Quelle mit `429`, wartet der Lauf nach ihrem `Retry-After`, sonst 2 min und danach jeweils
   doppelt so lang (bis 30 min); nach 60 min Warten insgesamt endet er `interrupted` (`rate_limited`).
 - `max_pages_per_run` in der Quell-Datei begrenzt die Seiten eines Laufs (opendata.swiss und GovData: 400 Seiten zu
