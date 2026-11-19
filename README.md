@@ -385,6 +385,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harvest-report.ps1
   Fund (`needs_rule`), und es entsteht kein Stapel. Die Einstufung jeder Lizenz machst du.
 - **Bei der Quelle verschwunden:** Ein veröffentlichter Eintrag wird beim ersten vollen Durchgang ohne ihn
   markiert. Fehlt er beim nächsten wieder, wird er Grabstein (`410`); dafür braucht es keine Freigabe.
+- **Gemeinden der Schweiz:** `scripts/write-municipality-outlines.py` reduziert eine lokale GeoPackage-Datei von
+  swissBOUNDARIES3D (© swisstopo) auf `backend/catalog/municipalities.json`; Aufruf im Image in Plan §16. Ohne die Datei
+  treffen Gemeindenamen in Ortstexten nicht.
+- **Linux:** Die Skripte starten den Bericht als Besitzer des Checkouts (`--user`), damit die Freigabedatei ohne
+  `sudo` bearbeitbar bleibt.
 - **Prüfen in der Datenbank:**
 
 ```powershell

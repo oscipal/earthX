@@ -1,6 +1,6 @@
 # M5-20 — Verify, Enrich, Dedupe, Lizenzregeln, Freigabe geernteter Einträge, Kandidaten
 
-**Status (19.11.2026):** Plan angenommen (Otto, 19.11.2026: F1–F6 und F8 je 1, F7 = 3, §13a; Vorgaben aus der Messung §4 in §13b, sie gehen §6–§9 vor). **Stufe B.** PR 1 in [#388](https://github.com/oscipal/earthX/pull/388), PR 2 danach; höchstens zwei PRs (M5-Plan §2 Punkt 11).
+**Status (19.11.2026):** Plan angenommen (Otto, 19.11.2026: F1–F6 und F8 je 1, F7 = 3, §13a; Vorgaben aus der Messung §4 in §13b, sie gehen §6–§9 vor; F9–F11 je 1 und A18 angenommen, §13c). **Stufe B.** PR 1 in [#388](https://github.com/oscipal/earthX/pull/388), PR 2 danach; höchstens zwei PRs (M5-Plan §2 Punkt 11).
 **Aufgabe:** M5-20 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2, Auftrag von Otto vom 19.11.2026.
 **Grundlagen:** `adr/0025` (Schnitt 5, §5.1, §5.4, §6.3, §6.4, §6.5, §6.7 mit Nachträgen), `adr/0033` (§4–§11, §13 Zeile M5-20), `plans/m5/m5-19-harvest-kern.md` §12 (Befunde der Läufe, §12.11 offene Punkte), `plans/m5/m5-40-gelistete-in-postgres.md` (Tabelle, Filter, F10), M5-Plan §2 Punkt 12 (alle Datentypen, Filter nach Region und Zeit), `projektuebersicht.md` Prinzipien 12, 15, 16, KLAERUNGEN B8, B9, B11.
 
@@ -317,7 +317,7 @@ Die Ausgaben von M1–M8 stehen als Kommentar am PR. Die Vorgaben gehen §6–§
 
 - Schreibweisen derselben Lizenz (http/https, `2.0`/`2_0`, `govdata.de/dl-de/by-2-0` = `dcat-ap.de/…/dl-by-de/2.0`, CC-BY-Freitexte) führt der Lizenzkatalog in `matches` einer `license_ref` zusammen.
 - **Keine Lizenz** sind Adressen von Feeds und Seiten (`…/api/feed/dcat-ap/3.0.0.json`, `…/nutzungsbedingungen…`), „Es gelten keine Zugriffsbeschränkungen“, „Weitere Informationen …“: Sie stehen in keinem `matches`, der Fund wartet (`needs_rule`, `unknown_licence`).
-- **Die Einstufung jeder Lizenz macht Otto.** Zu stufen sind mindestens: `other-closed`, `cc-by-nc-de/3.0`, `terms_by_ask`, `odbl`, `cc-by-sa`, `geonutz/20130319`, `officialWork`, `ccpdm/1.0`, `other-open`, `other-opensource` und `proprietary` von fsdi-stac, dazu die häufigen offenen Lizenzen (CC BY, CC0, DL-DE BY/Zero, die Nutzungsbedingungen von opendata.swiss). Die Zahlen je Angabe stehen in Ottos Ausgabe von M8 am PR; `report` nennt sie danach in der Warteliste selbst. `license-checker` legt je Lizenz einen Vorschlag mit Belegstelle vor (F5 = 1), als eigener Commit in PR 2 oder einem eigenen PR.
+- **Die Einstufung jeder Lizenz macht Otto.** Zu stufen sind mindestens: `other-closed`, `cc-by-nc-de/3.0`, `terms_by_ask`, `odbl`, `cc-by-sa`, `geonutz/20130319`, `officialWork`, `ccpdm/1.0`, `other-open`, `other-opensource` und `proprietary` von fsdi-stac, dazu die häufigen offenen Lizenzen (CC BY, CC0, DL-DE BY/Zero, die Nutzungsbedingungen von opendata.swiss). Zahlen je Angabe lagen der Sitzung nicht vor: Ottos Zusammenfassung von M8 nennt die Angaben ohne Zahl, und der PR-Kommentar mit der vollen Ausgabe war am PR nicht zu finden. Die Zahlen liefert `-Classify` in der Warteliste („häufigste 20 Paare“, §16); die Liste unten steht deshalb ohne Zahl. `license-checker` legt je Lizenz einen Vorschlag mit Belegstelle vor (F5 = 1), als eigener Commit in PR 2 oder einem eigenen PR.
 - **Ohne Ottos Einstufung kommt nichts in `in_review`:** Bis `terms.yaml` und `grants/` Einträge haben, endet jeder Fund in der Warteliste; `report` schreibt dann keinen Stapel und keine Freigabedatei.
 
 **Neue Fragen:**
@@ -335,6 +335,25 @@ Die Ausgaben von M1–M8 stehen als Kommentar am PR. Die Vorgaben gehen §6–§
 1. `report --classify` zählt die IDs; die Session schlägt die Zuordnung ID → Code nach den Seiten von GeoNames vor (Lesen von Webseiten, keine Harvest-Quelle), du prüfst sie im PR **(Empfehlung)**
 2. Du lieferst die Zuordnung
 3. GeoNames-Adressen übergehen
+
+## 13c. Antworten Otto (19.11.2026, zweite Runde)
+
+- **F9 = 1:** Gemeinden der Schweiz aus swissBOUNDARIES3D. **Lizenz (Einstufung Otto):** freie Nutzung mit Quellenangabe (opendata.swiss `terms_by`), Quelle „© swisstopo“. Gemeinden mit Kanton und vereinfachtem Umriss über ein Skript; Deutschland (VG250) erst, wenn GovData-Ortstexte es verlangen.
+- **F10 = 1:** `--classify` zählt die GeoNames-IDs; die Session schlägt die Zuordnung ID → Code vor, Otto prüft im PR.
+- **F11 = 1:** Ortstext mit nur ganzen Staaten gibt Regionen ohne Fußabdruck (A19, so umgesetzt).
+- **A18 angenommen**, als **Abweichung von `adr/0033` §11** (letzte Zeile der Tabelle): Eine geänderte Einstufung einer Lizenz macht die veröffentlichten Einträge unsichtbar bis zur nächsten Freigabe, statt die alte Fassung sichtbar zu lassen. Den Nachtrag im ADR bringt Otto mit der nächsten Doku-Runde.
+- **Schreibrechte unter Linux:** Die Freigabe darf nicht an Ordnerrechten hängen (der spätere Server läuft unter Linux). Umgesetzt: Die Skripte starten den Bericht als Besitzer des Checkouts (`--user`); Test mit einer Attrappe von `docker` (§17).
+- **Lizenzliste:** Die Einstufung jeder Lizenz macht Otto; zu stufen sind die Angaben aus §13b. Die Zahlen je Angabe liefert `-Classify` (§16), weil die Sitzung nur die Namen kennt.
+
+**Gemeinden (F9), umgesetzt:**
+
+- `scripts/write-municipality-outlines.py` liest eine lokale GeoPackage-Datei von swissBOUNDARIES3D (LV95), Ebene der Hoheitsgebiete, nur `objektart` = Gemeindegebiet [S, Namen aus der Doku von swisstopo, an keiner Datei geprüft; das Skript nennt sonst, was die Datei hält]. Teile einer Gemeinde werden vereint, nach WGS84 gerechnet, auf 0,001° vereinfacht. Ergebnis `backend/catalog/municipalities.json` mit Release, Dateiname, SHA-256 und „© swisstopo“; Code `CH-<Kanton>-<BFS-Nummer>`.
+- Die Datei im Repo enthält keine Gemeinde, bis Otto das Skript laufen lässt (keine Abrufe aus der Sitzung). `catalog-load` schreibt sie in `earthx_municipality` (Migration 033).
+- Ein Ortstext trifft eine Gemeinde mit ihrem amtlichen Namen („Winterthur“, „Buchs (AG)“), jedem Teil eines Doppelnamens („Biel/Bienne“, „Bienne“) oder nach einer Bezeichnung („Stadt Bern“, „Commune de …“). Ein Name, den zwei Gemeinden tragen, trifft keine; ein Name, den eine Region allein trägt („Aargau“), bleibt der Region; ein mehrdeutiger Kantonsname („Bern“, „Zürich“) ist jetzt die Gemeinde, der Kanton braucht seine Bezeichnung („Kanton Bern“).
+- Eine Gemeinde ist keine Region: Der Eintrag bekommt ihren Umriss als Fußabdruck und die Regionen ihres Kantons und Staats.
+- Im Namen eines Herausgebers zählt eine Gemeinde nur nach ihrer Bezeichnung („Stadt Zürich“): „Amt für Wald“ nennt keine Gemeinde Wald.
+- „Grossraum Basel“ trifft damit die Gemeinde Basel (Kern nach §13b).
+- Quellenangabe in `backend/THIRD_PARTY_NOTICES.md`.
 
 ## 14. Auslegungen (gelten, wenn Otto nicht widerspricht)
 
@@ -379,24 +398,44 @@ Ohne Netz, synthetische Fixtures (M5-19 A5), Transport-Attrappe am `Gateway`:
 
 ## 16. Befehle für Ottos lokalen Lauf
 
+**PR 1 zuerst mergen? Nein, erst `-Classify` auf dem Branch, dann mergen.** Begründung: `-Classify` schreibt nichts und verlangt `main` nicht; das Skript ohne `-Classify` (Freigabedatei auf eigenem Branch) braucht `main` und hat erst etwas zu tun, wenn `terms.yaml` und `grants/` Einträge haben – die kommen nach deiner Einstufung. Die Ausgaben von `-Classify` schärfen `geodata.yaml` und `place_names.yaml` noch in diesem PR. Hinweis: Mit dem Branch wendet `catalog-load` die Migrationen 032 und 033 auf deine Datenbank an; beide sind gepinnt und ändern sich danach nicht mehr, nur neue Migrationen kämen dazu.
+
+In dieser Reihenfolge, PowerShell im Checkout:
+
 ```powershell
 git fetch origin
 git switch claude/confident-turing-lucii4
 git pull
+```
+
+Gemeinden (F9), einmal: die GeoPackage-Datei von swissBOUNDARIES3D bei swisstopo laden (aktuelles Release) und in einen Ordner legen, z. B. `C:\daten\swissboundaries`. Das Skript läuft im Image (dort sind `shapely`, `pyproj`, `numpy`); `<datei>` und `<release>` wie bei swisstopo benannt:
+
+```powershell
+docker compose build
+docker compose run --rm --no-deps --entrypoint python -v "${PWD}\scripts:/work/scripts" -v "${PWD}\backend\catalog:/work/catalog" -v "C:\daten\swissboundaries:/data" harvest /work/scripts/write-municipality-outlines.py /data/<datei>.gpkg --release <release> --output /work/catalog/municipalities.json
+```
+
+- Meldet es eine fehlende Ebene oder ein fehlendes Feld, nennt es, was die Datei hält; dann mit `--layer` bzw. `--kind` aufrufen oder mir die Meldung schicken.
+- Danach `git add backend/catalog/municipalities.json`, `git commit -m "Add the municipalities of swissBOUNDARIES3D <release>"`, `git push` auf diesen Branch.
+
+Dann:
+
+```powershell
 docker compose build
 docker compose up -d
-docker compose run --build --rm harvest fsdi-stac --reextract
+docker compose run --rm harvest fsdi-stac --reextract
+docker compose run --rm harvest earth-search --reextract
 docker compose run --rm harvest opendata-swiss --reextract
 docker compose run --rm harvest govdata --reextract
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harvest-report.ps1 -Source opendata-swiss -Classify
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harvest-report.ps1 -Source govdata -Classify
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harvest-report.ps1 -Source fsdi-stac -Classify
 ```
 
-- Vor dem Merge auf dem Branch dieses PR; das Skript ohne `-Classify` verlangt `main` und kommt deshalb erst nach dem Merge dran. Mit `docker compose run --rm harvest-report <quelle>` geht der Bericht auch ohne Skript, die Dateien landen dann in `backend/catalog/approvals/`.
-- `--reextract` setzt die neue Extraktor-Version um (Themen, Kennung, Ortstext `null`) ohne Anfrage.
-- `-Classify` schreibt nichts: Zahlen, Signale, je 30 Verborgene und Grenzfälle, Ortstexte ohne Treffer, Warteliste nach Paar. Bitte die Ausgaben an den PR hängen; danach werden `geodata.yaml` und `place_names.yaml` geschärft.
-- Ohne `-Classify` legt das Skript `harvest/<datum>-<quelle>` an, ruft `report` im Container, committet Bericht und Freigabedatei und nennt den Befehl zum Pushen; PR mit deinem Zugang. Solange `terms.yaml` leer ist, wartet jeder Fund und es entsteht keine Datei. Nach deinem Merge mit `decision: approved`: `git pull`, `docker compose build`, `docker compose up -d` – `catalog-load` veröffentlicht den Stapel.
-- Verify und `propose` kommen mit PR 2.
+- `--reextract` setzt die neue Extraktor-Version um (Themen, Kennung, Ortstext `null`, Verschachtelung der Geometrie) ohne Anfrage.
+- `-Classify` schreibt nichts: Ergebnis, Ausdehnung, Signale, je 30 Verborgene und Grenzfälle, Ortstexte ohne Treffer, GeoNames-IDs, Warteliste nach Paar Herausgeber/Lizenzangabe mit Zahlen. Bitte alle drei Ausgaben an den PR hängen; daraus folgen die Schärfung von `geodata.yaml` und `place_names.yaml`, die Zuordnung der GeoNames-IDs (F10) und die Lizenzliste mit Zahlen für deine Einstufung.
+- **Danach** Merge von PR 1 nach grüner CI. Erst wenn `terms.yaml`/`grants/` Einträge haben (Vorschläge von `license-checker`, deine Einstufung), entsteht mit dem Skript ohne `-Classify` auf `main` eine Freigabedatei: `harvest-report.ps1 -Source <quelle>` legt `harvest/<datum>-<quelle>` an und committet; Push und Draft-PR mit deinem Zugang; nach dem Merge mit `decision: approved` `git pull`, `docker compose build`, `docker compose up -d` – `catalog-load` veröffentlicht.
+- Unter Linux startet das Skript den Bericht als Besitzer des Checkouts; die Freigabedatei bleibt ohne `sudo` bearbeitbar.
 
 ## 17. Umsetzung PR 1 ([#388](https://github.com/oscipal/earthX/pull/388)), Stand 19.11.2026
 
@@ -411,4 +450,5 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harvest-report.ps1
 - **Bericht und Freigabe:** `discovery/report.py` (`report`, `--classify`), `catalog/listing_store.py` (Zeilen, Verschwundene, Dubletten, Stapel), `catalog/approvals.py` (Freigabedateien, `publish` in `catalog-load`, `excluded_rules`, `revoked_on`; Freigabe nur mit abgehakter Stichprobe).
 - **Lokaler Lauf:** Compose-Dienst `harvest-report` (Profil `harvest`, `backend/catalog/approvals` eingebunden), `scripts/harvest-report.ps1` und `.sh` (sauberer Checkout auf `main`, Branch, Commit, nie Push), README „Geerntete Einträge freigeben“.
 - **Nach der Review (Subagent, 19.11.2026):** INSPIRE-Signal und Enddatum 9999 brachen den Bericht ab; ein Grabstein auf einem Duplikat und ein Upsert auf eine `superseded`-Zeile verletzten die CHECKs von 032; behoben mit Tests. Dazu A15, A18–A24 und F11.
-- **Nicht in PR 1** (F8 = 1, PR 2): Verify, Kandidaten und `discovery propose`, „—“ im Data catalogue, erste Lizenzen nach F5; Gemeinden (F9) und GeoNames-IDs (F10) nach deinen Antworten.
+- **Zweite Runde (Otto, 19.11.2026):** Gemeinden aus swissBOUNDARIES3D (Skript, `municipalities.json` leer bis zum Lauf, Migration 033, Namen im Verzeichnis, Fußabdruck aus dem Umriss); `--classify` zählt GeoNames-IDs; `geodata.yaml` nennt IT.NRW (2 375 Tabellen ohne „statisti*“ im Namen); die Skripte starten den Bericht unter Linux als Besitzer des Checkouts, mit `HOME=/tmp` im Dienst; Test mit `docker`-Attrappe in einem Wegwerf-Repository.
+- **Nicht in PR 1** (F8 = 1, PR 2): Verify, Kandidaten und `discovery propose`, „—“ im Data catalogue, erste Lizenzen nach F5 (Vorschläge von `license-checker` nach den Zahlen aus `-Classify`), Zuordnung der GeoNames-IDs (F10) nach deiner Ausgabe.
