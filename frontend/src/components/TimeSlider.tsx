@@ -5,6 +5,7 @@ import { groupIsProvisional, PROVISIONAL_TIP } from '../provisional';
 import { stepWithArrowKeys } from '../stepKeys';
 import { useAppStore } from '../store';
 import { ChevronLeftIcon, ChevronRightIcon, PauseIcon, PlayIcon } from './icons';
+import Tip from './Tip';
 
 export default function TimeSlider() {
   const groups = useAppStore((s) => s.groups);
@@ -55,10 +56,9 @@ export default function TimeSlider() {
   // A step is named by the date of its pass, never by the scene (Otto, 30.10.2026). Playing, the pass on the map names
   // the step, and the slider is ahead of it while the next one loads.
   const name = (index: number) => stepLabel(groups[index]);
-  // A provisional day says so at its date (M5-58 F1); the tooltip shows at every tip level.
-  const provisional = (index: number | null) => index !== null && groupIsProvisional(groups[index]);
-  const dateTip = (index: number | null) => (provisional(index) ? PROVISIONAL_TIP : undefined);
-  const endTip = (index: number, label: string) => (provisional(index) ? `${label}: ${PROVISIONAL_TIP.toLowerCase()}` : label);
+  // A provisional day has a warning triangle beside its date (M5-58, Otto 19.11.2026). Where some step is provisional,
+  // every step keeps the room of the triangle, so the arrows stay where they are while stepping.
+  const anyProvisional = groups.some(groupIsProvisional);
   const loading = behind && late;
 
   // The row of dates (NM4-66, Otto, 31.10.2026): the first, the one before, the one shown, the one after, the last; the
@@ -75,11 +75,7 @@ export default function TimeSlider() {
     setActiveGroupIndex(index);
   };
   const near = (index: number | null, className: string) => (
-    <span
-      className={`time-near ${className}${index === null ? ' gone' : ''}`}
-      aria-hidden={index === null || undefined}
-      data-tip={dateTip(index)}
-    >
+    <span className={`time-near ${className}${index === null ? ' gone' : ''}`} aria-hidden={index === null || undefined}>
       {index === null ? '' : name(index)}
     </span>
   );
@@ -96,15 +92,23 @@ export default function TimeSlider() {
   return (
     <div className="time-slider">
       <div className="time-dates">
-        <span className={`time-end first${showFirst ? '' : ' gone'}`} data-tip-level={provisional(groups.length - 1) ? undefined : 'advanced'} data-tip={endTip(groups.length - 1, 'First time step')} aria-hidden={!showFirst || undefined}>
+        <span className={`time-end first${showFirst ? '' : ' gone'}`} data-tip-level="advanced" data-tip="First time step" aria-hidden={!showFirst || undefined}>
           {showFirst ? name(groups.length - 1) : ''}
         </span>
         {near(older, 'before')}
         {arrow(older, 'Previous time step', 'left')}
-        <strong data-tip={dateTip(shown)}>{name(shown)}</strong>
+        <strong>
+          {name(shown)}
+          {anyProvisional &&
+            (groupIsProvisional(groups[shown]) ? (
+              <Tip tone="warn" text={PROVISIONAL_TIP} />
+            ) : (
+              <span className="time-mark-room" aria-hidden="true" />
+            ))}
+        </strong>
         {arrow(newer, 'Next time step', 'right')}
         {near(newer, 'after')}
-        <span className={`time-end last${showLast ? '' : ' gone'}`} data-tip-level={provisional(0) ? undefined : 'advanced'} data-tip={endTip(0, 'Last time step')} aria-hidden={!showLast || undefined}>
+        <span className={`time-end last${showLast ? '' : ' gone'}`} data-tip-level="advanced" data-tip="Last time step" aria-hidden={!showLast || undefined}>
           {showLast ? name(0) : ''}
         </span>
       </div>

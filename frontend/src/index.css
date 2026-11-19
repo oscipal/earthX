@@ -2171,6 +2171,11 @@ textarea:autofill {
   min-width: 10ch;
   text-align: center;
 }
+/* The room of the warning beside a provisional date (M5-58), kept at a final step of the same results. */
+.time-mark-room {
+  display: inline-block;
+  min-width: 18px;
+}
 .time-end,
 .time-near {
   min-width: 0;

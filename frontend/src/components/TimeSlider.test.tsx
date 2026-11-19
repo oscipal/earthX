@@ -319,7 +319,7 @@ describe('playing and the results on the map', () => {
   });
 });
 
-describe('a provisional day on the time slider (M5-58 F1)', () => {
+describe('a provisional day on the time slider (M5-58, Otto 19.11.2026)', () => {
   const day = (id: string, state?: string): StacItem => ({ ...item(id), properties: state ? { 'earthx:state': state } : {} });
   const GROUPS = [
     { key: ['2026-11-17'], label: '2026-11-17', items: [day('a', 'provisional')] },
@@ -327,28 +327,28 @@ describe('a provisional day on the time slider (M5-58 F1)', () => {
     { key: ['2026-11-15'], label: '2026-11-15', items: [day('d', 'final')] },
     { key: ['2026-11-14'], label: '2026-11-14', items: [day('e')] },
   ];
-  const cell = (selector: string) => container.querySelector(`.time-dates ${selector}`);
+  const shown = () => container.querySelector('.time-dates strong');
 
-  it('says "Provisional values" at the date of a provisional step, at every tip level, and nothing at a final one', () => {
+  it('draws a warning triangle beside the shown date of a provisional step, its text on the triangle', () => {
     act(() => useAppStore.setState({ groups: GROUPS, activeGroupIndex: 1 }));
-    expect(tipOf(cell('strong'))).toBe('Provisional values');
-    expect(cell('strong')?.getAttribute('data-tip-level')).toBeNull();
-    expect(tipOf(cell('.time-near.after'))).toBe('Provisional values');
-    expect(tipOf(cell('.time-near.before'))).toBe('');
-    act(() => useAppStore.setState({ activeGroupIndex: 2 }));
-    expect(tipOf(cell('strong'))).toBe('');
+    const warning = shown()?.querySelector('.tip.warn');
+    expect(warning).not.toBeNull();
+    expect(tipOf(warning)).toBe('Provisional values');
+    expect(shown()?.textContent).toBe('2026-11-16');
+    expect(tipOf(shown())).toBe('');
   });
 
-  it('names it at the last step too, and keeps the plain tip of an end that is final', () => {
+  it('keeps the room of the triangle at a final step of the same results, so the arrows do not move', () => {
     act(() => useAppStore.setState({ groups: GROUPS, activeGroupIndex: 2 }));
-    expect(tipOf(cell('.time-end.last'))).toBe('Last time step: provisional values');
-    expect(cell('.time-end.last')?.getAttribute('data-tip-level')).toBeNull();
-    expect(tipOf(cell('.time-end.first'))).toBe('First time step');
-    expect(cell('.time-end.first')?.getAttribute('data-tip-level')).toBe('advanced');
+    expect(shown()?.querySelector('.tip')).toBeNull();
+    expect(shown()?.querySelector('.time-mark-room')).not.toBeNull();
   });
 
-  it('shows no mark, only the tooltip', () => {
-    act(() => useAppStore.setState({ groups: GROUPS, activeGroupIndex: 1 }));
-    expect(container.textContent).not.toMatch(/provisional/i);
+  it('has neither triangle nor room where no step is provisional, and no tooltip at the neighbours or the ends', () => {
+    act(() => useAppStore.setState({ groups: GROUPS.slice(2), activeGroupIndex: 0 }));
+    expect(shown()?.querySelector('.tip, .time-mark-room')).toBeNull();
+    act(() => useAppStore.setState({ groups: GROUPS, activeGroupIndex: 2 }));
+    expect([...container.querySelectorAll('.time-near')].map((near) => tipOf(near))).toEqual(['', '']);
+    expect(tipOf(container.querySelector('.time-end.last'))).toBe('Last time step');
   });
 });
