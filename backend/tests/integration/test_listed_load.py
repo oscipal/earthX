@@ -741,7 +741,9 @@ def test_the_table_refuses_a_value_outside_its_fixed_ones(conn: psycopg.Connecti
     )
 
 
-@pytest.mark.parametrize("state", ["published", "in_review", "needs_rule", "blocked", "superseded"])
+@pytest.mark.parametrize(
+    "state", ["published", "in_review", "needs_rule", "blocked", "superseded", "not_geodata", "duplicate"]
+)
 def test_the_table_takes_every_state_of_the_approval_of_m5_20(conn: psycopg.Connection, state: str) -> None:
     insert_row(conn, "example-x", state=state)
     assert _state(conn, "example-x") == state

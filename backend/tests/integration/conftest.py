@@ -90,6 +90,8 @@ SHIPPED_TABLES = (
     "public.earthx_overview_host",
     "public.earthx_region_part",
     "public.earthx_region",
+    "public.earthx_listing_batch_entry",
+    "public.earthx_listing_batch",
     "public.earthx_listed_entry",
     "public.earthx_source_host",
     "public.earthx_source_lease",

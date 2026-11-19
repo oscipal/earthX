@@ -1,0 +1,10 @@
+# The licence catalogue of harvested listed entries (adr/0033 §6.2, L2; M5-20 plan §9). Every licence is graded once;
+# `matches` lists the statements of sources that mean it, each verbatim (only blanks at the edges and a trailing '/'
+# are ignored). The grade is Otto's: `license-checker` proposes an entry with its evidence, Otto writes and merges it.
+#
+# Fields per entry: `license_ref` (lower case, digits, '.', '-'), `matches`, `license` (as in a dataset file:
+# spdx_id, name, url, the five flags, tier, attribution_modified, attribution_unmodified with `{publisher}`, terms),
+# `approved_on` (the day, ISO 8601). A listed entry is always in tier catalog; the tier here is for full entries.
+#
+# Empty until Otto grades the first licences (M5-20 F5 = 1).
+[]

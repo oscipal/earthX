@@ -40,7 +40,7 @@ class TestDiscovery:
         """pgstac holds the collections; our own tables are the application caches
         (the search cache of M1-06/E4, the statistics cache of M2-04, adr/0006 §5),
         the materialize run log of M3-11b (plan §3.5), the place-search cache and
-        rate slot of M3-07a, the job queue of M4-08a (adr/0013 §5.1) the side files of an export and a run's disk need (M4-11a), the day of acquisition of a job's scenes (M4-11b-1), whether its area is the scenes' union and where a place-search area came from (M4-30), the permalink of an order (M4-19e), the years a job's scenes were acquired in (NM4-01), the jobs behind a bundle download (UI-01e), the deletion term of a job (NM4-27), the index of the dataset search (M5-22b), the requests for and the state of the overview pyramids (M5-30b part 8b), the turns of their upkeep (M5-38), the listed entries and the region outlines (M5-40), the shared turns, places and breaker per host and the charge of a file read to the turn (M5-37), the state of a source per unit (M5-58; 026–028 are M5-19 PR 2's)."""
+        rate slot of M3-07a, the job queue of M4-08a (adr/0013 §5.1) the side files of an export and a run's disk need (M4-11a), the day of acquisition of a job's scenes (M4-11b-1), whether its area is the scenes' union and where a place-search area came from (M4-30), the permalink of an order (M4-19e), the years a job's scenes were acquired in (NM4-01), the jobs behind a bundle download (UI-01e), the deletion term of a job (NM4-27), the index of the dataset search (M5-22b), the requests for and the state of the overview pyramids (M5-30b part 8b), the turns of their upkeep (M5-38), the listed entries and the region outlines (M5-40), the shared turns, places and breaker per host and the charge of a file read to the turn (M5-37), the state of a source per unit (M5-58; 026–028 are M5-19 PR 2's), the stacks of harvested listed entries and their approval (M5-20)."""
         assert [(m.version, m.name) for m in discover_migrations()] == [
             ("002", "search_cache"),
             ("003", "stats_cache"),
@@ -72,6 +72,7 @@ class TestDiscovery:
             ("029", "materialize_units"),
             ("030", "harvest_keyset"),
             ("031", "materialize_unit_expires"),
+            ("032", "listing_approval"),
         ]
 
     def test_a_missing_directory_is_an_error_not_an_empty_run(self, tmp_path) -> None:
