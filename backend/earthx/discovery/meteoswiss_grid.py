@@ -52,9 +52,10 @@ from pyproj import Transformer
 
 from earthx.adapters import UnsupportedSource, UpstreamShapeError
 from earthx.catalog.registry import DatasetConfig, ItemHolding, ItemState
-from earthx.catalog.source_units import BuiltUnit, Contribution, SourceUnit, UnitListing, Validators
+from earthx.catalog.source_units import NO_VALIDATORS, BuiltUnit, Contribution, SourceUnit, UnitListing, Validators
 from earthx.discovery.netcdf_refs import FileReferences, UnsupportedLayout, reference_file, step_references
 from earthx.gateway import Gateway, host_of
+from earthx.gateway.errors import UpstreamError
 
 LOGGER = logging.getLogger("earthx.discovery.meteoswiss_grid")
 
@@ -240,7 +241,8 @@ async def list_units(config: DatasetConfig, *, gateway: Gateway, known_groups: M
 
     features, digest = await _item_list(config, gateway)
     whole = _validator(selection, digest)
-    if known_groups.get(LIST_GROUP) == whole:
+    # A group without a validator kept a file the source did not serve (F10): the list is read again for it.
+    if known_groups.get(LIST_GROUP) == whole and None not in known_groups.values():
         return UnitListing(groups=dict(known_groups), unchanged_groups=frozenset(known_groups), units=())
 
     groups: dict[str, str | None] = {LIST_GROUP: whole}
@@ -405,6 +407,15 @@ async def build_units(config: DatasetConfig, *, gateway: Gateway, units: Sequenc
             raise UpstreamShapeError(f"{config.dataset_id}: a unit that is no file of the entry")
         try:
             references = await reference_file(gateway, unit.href)
+        except UpstreamError as error:
+            if error.status_code not in (404, 410):
+                raise
+            # Listed but not served (M5-58 F10): passed over in this run, asked for again in the next.
+            LOGGER.warning(
+                f"{file.what} is listed but not served; asked again next run", extra={"dataset_id": config.dataset_id}
+            )
+            made.append(BuiltUnit(key=unit.key, contributions=(), validators=NO_VALIDATORS, missing=True))
+            continue
         except UnsupportedLayout as error:
             raise UpstreamShapeError(f"{file.what}: {error}") from None
         days = _check_file(file, references, grid)

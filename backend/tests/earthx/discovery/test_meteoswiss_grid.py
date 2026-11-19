@@ -145,6 +145,13 @@ class TestListing:
         assert again.unchanged_groups == {ARCHIVE, "month", "day"}
         assert [unit.key for unit in again.units] == [day_name("TabsD", "ch01r", later)]
 
+    def test_a_group_without_validator_is_listed_again_although_the_list_is_the_same(self, archive: Archive) -> None:
+        """M5-58 F10: the group of a file the source did not serve keeps no validator, so the next run asks for it."""
+        first = listing(archive, TEMPERATURE)
+        again = listing(archive, TEMPERATURE, known={**first.groups, "day": None})
+        assert again.unchanged_groups == {ARCHIVE, "month"}
+        assert [unit.key for unit in again.units] == [day_name("TabsD", "ch01r", DAY)]
+
     def test_another_selection_lists_every_file_again(self, archive: Archive) -> None:
         first = listing(archive, TEMPERATURE)
         fewer = replace(TEMPERATURE, band_units={"TabsD": "°C"}, band_descriptions={"TabsD": "Daily mean"})
@@ -279,6 +286,15 @@ class TestBuilt:
         assert properties["proj:code"] == "EPSG:2056" and properties["gsd"] == mini_netcdf.CELL
         west, south, east, north = by_day["20230101"]["bbox"]
         assert 7.4 < west < east < 8.0 and 46.3 < south < north < 46.8
+
+    def test_a_listed_file_that_is_not_served_is_built_as_missing(self, archive: Archive) -> None:
+        """M5-58 F10 = 1: no failure of the run; the core takes it as not listed and asks again next run."""
+        units = listing(archive, TEMPERATURE).units
+        archive.gone.add(day_name("TabsD", "ch01r", DAY))
+        built = {made.key: made for made in build(archive, TEMPERATURE, units)}
+        lost = built[day_name("TabsD", "ch01r", DAY)]
+        assert lost.missing and lost.contributions == ()
+        assert not any(made.missing for key, made in built.items() if key != lost.key)
 
     def test_the_dispatch_of_discovery_reaches_it(self) -> None:
         units = MATERIALIZE_SPECS[TEMPERATURE.source.adapter].units

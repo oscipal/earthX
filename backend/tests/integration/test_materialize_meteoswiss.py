@@ -18,7 +18,6 @@ from earthx.catalog.pgstac import load_collection, upsert_items, use_pgstac_sear
 from earthx.catalog.schema import apply_migrations
 from earthx.catalog.source_units import read_units
 from earthx.discovery.materialize import MaterializeResult, run_materialize
-from earthx.gateway.errors import UpstreamError
 from tests.catalog.entries import METEOSWISS_DAILY_PRECIP_1KM
 from tests.earthx.discovery.mini_archive import (
     LIST_PATH,
@@ -210,17 +209,59 @@ class TestTakeOver:
         assert result.items_deleted == 3
         assert not any(day.startswith("2024") for day in stored(db))
 
-
-class TestAFileGone:
-    async def test_a_listed_file_the_source_does_not_serve_fails_the_run_and_writes_nothing(
+    async def test_an_annual_file_not_served_at_take_over_is_taken_as_not_listed(
         self, db: psycopg.Connection, archive: Archive
     ) -> None:
-        """Until Otto decides otherwise (plan §12.5, F10): the run fails as a whole, the next one tries again."""
+        await self.m5_11_items(db, archive)
+        archive.gone.add(name("RhiresD", GRID, 2025))
+        result = await run(db, archive)
+        assert result.units is not None and result.units.units_missing == 1
+        assert not any(day.startswith("2025") for day in stored(db))
+
+
+class TestAFileNotServed:
+    """M5-58 F10 = 1: a listed file the source does not serve (404, 410) is taken as not listed in this run; the rest is
+    written, and the next run asks for it again."""
+
+    async def test_the_run_goes_on_without_it_and_asks_again_next_time(
+        self, db: psycopg.Connection, archive: Archive, tmp_path: Path
+    ) -> None:
         await run(db, archive)
-        before = stored(db)
-        archive.items["day-18"] = {day_name("RprelimD", GRID, date(2026, 11, 18)): b"x"}
-        archive.gone.add(day_name("RprelimD", GRID, date(2026, 11, 18)))
-        with pytest.raises(UpstreamError):
-            await run(db, archive)
-        # The run raised before it wrote; `main` rolls its transaction back all the same.
-        assert stored(db) == before
+        late, other = day_name("RprelimD", GRID, date(2026, 11, 18)), day_name("RprelimD", GRID, date(2026, 11, 19))
+        archive.items["day-18"] = {late: netcdf_file(tmp_path, date(2026, 11, 18), [0])}
+        archive.items["day-19"] = {other: netcdf_file(tmp_path, date(2026, 11, 19), [0])}
+        archive.gone.add(late)
+        result = await run(db, archive)
+        assert result.units is not None and (result.units.units_new, result.units.units_missing) == (1, 1)
+        assert "20261119" in stored(db) and "20261118" not in stored(db)
+        with db.cursor() as cur:
+            cur.execute(
+                "SELECT missing FROM earthx_materialize_runs WHERE dataset_id = %s ORDER BY started_at DESC LIMIT 1",
+                (CONFIG.dataset_id,),
+            )
+            assert cur.fetchone() == (1,)
+        # Still not served: the list is read again (no validator kept for its item) and only that file is asked for.
+        again = await run(db, archive)
+        assert again.units is not None and again.units.units_missing == 1
+        assert archive.files_read() == {late}
+        # Served at last: built, and then a run without change is one request again.
+        archive.gone.discard(late)
+        served = await run(db, archive)
+        assert served.units is not None and (served.units.units_new, served.units.units_missing) == (1, 0)
+        assert stored(db)["20261118"]["properties"]["earthx:state"] == "provisional"
+        quiet = await run(db, archive)
+        assert quiet.outcome.status == "unchanged" and requests(archive) == ["GET list"]
+
+    async def test_a_file_that_stops_being_served_takes_its_days_with_it_for_now(
+        self, db: psycopg.Connection, archive: Archive
+    ) -> None:
+        await run(db, archive)
+        key = month_name("RhiresD", GRID, 2026, 10)
+        # Overwritten on the 26th (a new checksum in the list), but the new file is not served yet.
+        archive.items["month-10"][key] = b"not served"
+        archive.gone.add(key)
+        result = await run(db, archive)
+        assert result.units is not None and result.units.units_missing == 1
+        assert not any(day.startswith("202610") for day in stored(db))
+
+

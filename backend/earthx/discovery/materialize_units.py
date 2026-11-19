@@ -19,6 +19,10 @@ listed unit whose address an item asset carries starts from the ETag of that ass
 ``If-None-Match`` decides it, and a ``304`` keeps the items without reading the file again. They are written once all
 the same, to carry their state.
 
+**A unit the source lists but does not serve** (``404``, ``410`` on the ``HEAD`` or while it is built) is taken as not
+listed in this run, and the rest is written (M5-58 F10): what it held goes as if it were gone, and its group keeps no
+validator, so the next run asks for it again.
+
 Nothing commits here: the run is one transaction, the caller's (``discovery.materialize``).
 """
 
@@ -53,8 +57,10 @@ from earthx.catalog.source_units import (
     write_state,
 )
 from earthx.gateway import Gateway, host_of
+from earthx.gateway.errors import UpstreamError
 
 _EARLIEST = datetime.min.replace(tzinfo=UTC)
+_GONE = (404, 410)
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,6 +74,8 @@ class UnitsOutcome:
     units_changed: int
     units_unchanged: int
     units_gone: int
+    #: Listed but not served (404, 410): taken as not listed in this run, asked for again in the next (M5-58 F10).
+    units_missing: int
     items_written: int
     items_deleted: int
     items_replaced: int
@@ -258,14 +266,27 @@ async def run_units(
     if any(unit.key in after for unit in listing.units):
         raise UpstreamShapeError(f"{config.dataset_id}: a unit is listed in a changed group and an unchanged one")
     to_build: list[SourceUnit] = []
-    kept, new = len(after), 0
+    kept = len(after)
+    missing: set[str] = set()
+
+    def not_served(unit: SourceUnit) -> None:
+        # Taken as not listed (F10): what it held goes for now; its group keeps no validator, so it is asked again.
+        missing.add(unit.key)
+        after.pop(unit.key, None)
+        groups[unit.group] = None
+
     for unit in listing.units:
         stored = before.get(unit.key)
         if stored is None:
-            new += 1
             to_build.append(unit)
             continue
-        same, validators = await unchanged(gateway, unit, stored)
+        try:
+            same, validators = await unchanged(gateway, unit, stored)
+        except UpstreamError as error:
+            if error.status_code not in _GONE:
+                raise
+            not_served(unit)
+            continue
         if same:
             kept += 1
             after[unit.key] = replace(stored, group=unit.group, validators=validators, expires=unit.expires)
@@ -274,8 +295,7 @@ async def run_units(
             # a hash the core computed is kept.
             listed = replace(unit.validators, content_sha256=validators.content_sha256)
             to_build.append(replace(unit, validators=listed))
-    changed = len(to_build) - new
-    gone = set(before) - set(after) - {unit.key for unit in to_build}
+    gone = set(before) - set(after) - {unit.key for unit in to_build} - missing
 
     built: dict[str, BuiltUnit] = {}
 
@@ -285,6 +305,9 @@ async def run_units(
         result = await spec.units.build(config, gateway=gateway, units=units)
         _check_built(config, units, result)
         for unit, made in zip(units, result, strict=True):
+            if made.missing:
+                not_served(unit)
+                continue
             built[unit.key] = made
             # The listing's own values first, so that the next run compares listing with listing (one form of ETag,
             # one form of date); what reading showed fills only what the listing does not name.
@@ -307,8 +330,10 @@ async def run_units(
 
     await build(to_build)
 
+    new = sum(1 for unit in to_build if unit.key not in before and unit.key not in missing)
+    changed = sum(1 for unit in to_build if unit.key in before and unit.key not in missing)
     touched: set[Pair] = set()
-    for key in gone | set(built):
+    for key in gone | set(built) | missing:
         if key in before:
             touched |= before[key].contributes
         if key in after:
@@ -336,7 +361,7 @@ async def run_units(
             break
         await build(list(fallback.values()))
         for key in fallback:
-            touched |= before[key].contributes | after[key].contributes
+            touched |= before[key].contributes | (after[key].contributes if key in after else frozenset())
 
     changes: dict[str, dict[str, tuple[Contribution, ItemState] | None]] = defaultdict(dict)
     kept_adopted: dict[Pair, ItemState] = {}
@@ -391,6 +416,7 @@ async def run_units(
         units_changed=changed,
         units_unchanged=kept,
         units_gone=len(gone),
+        units_missing=len(missing),
         items_written=items_written,
         items_deleted=items_deleted,
         items_replaced=replaced,

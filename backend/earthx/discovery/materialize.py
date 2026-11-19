@@ -132,7 +132,7 @@ async def _run_units(conn: psycopg.Connection, config: DatasetConfig, *, gateway
             items_written=units.items_written,
             items_deleted=units.items_deleted,
             listed=units.listed,
-            missing=0,
+            missing=units.units_missing,
             withheld=0,
             units_new=units.units_new,
             units_changed=units.units_changed,
@@ -146,7 +146,7 @@ async def _run_units(conn: psycopg.Connection, config: DatasetConfig, *, gateway
         source_version=units.source_version,
         listed=units.listed,
         in_bucket=units.listed,
-        missing=0,
+        missing=units.units_missing,
         withheld=0,
         unknown=0,
         items=(),
@@ -300,7 +300,8 @@ def main(argv: list[str] | None = None) -> int:
         units = result.units
         print(
             f"{config.dataset_id}: {units.status}; {units.units_new} units new, {units.units_changed} changed, "
-            f"{units.units_unchanged} unchanged, {units.units_gone} gone; {units.items_written} items written, "
+            f"{units.units_unchanged} unchanged, {units.units_gone} gone, "
+            f"{units.units_missing} not served (asked again next run); {units.items_written} items written, "
             f"{units.items_replaced} replaced by a higher state, {units.items_deleted} deleted"
         )
         return 0

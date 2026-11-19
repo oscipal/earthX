@@ -95,11 +95,15 @@ class Contribution:
 
 @dataclass(frozen=True, slots=True)
 class BuiltUnit:
-    """The contributions of one unit, and what reading it showed of its validators (an ETag, a Last-Modified)."""
+    """The contributions of one unit, and what reading it showed of its validators (an ETag, a Last-Modified).
+
+    ``missing``: the source lists the unit but does not serve it (``404``, ``410``). The run takes it as not listed and
+    goes on; its group keeps no validator, so the next run asks for it again (M5-58 F10)."""
 
     key: str
     contributions: tuple[Contribution, ...]
     validators: Validators
+    missing: bool = False
 
 
 @dataclass(frozen=True, slots=True)
