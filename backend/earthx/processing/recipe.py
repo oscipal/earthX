@@ -332,6 +332,10 @@ class ResolvedInput(_Model):
     #: Unit of every band of this asset where the item describes none (``bands`` is empty): the registry's (M4-19b).
     #: Where there are bands, each carries its own.
     unit: Text | None = None
+    #: How settled the values were at acceptance, the ``earthx:state`` of the asset (M5-58, adr/0038 §3.2): a result from
+    #: provisional values says so. Absent where the dataset knows one state only, so that every recipe and hash from
+    #: before the field stays what it was.
+    state: Literal["provisional", "final"] | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
     def _scaling_matches(self) -> ResolvedInput:
