@@ -51,8 +51,13 @@ _FIELDS = frozenset(
         "robots_exception",
         "maturity",
         "enabled",
+        "country",
+        "dedupe_rank",
     }
 )
+#: The lowest precedence a source may have among duplicates (M5-20 plan §8): 1 wins over 2.
+MAX_DEDUPE_RANK = 9
+_COUNTRY = re.compile(r"[A-Z]{2}")
 MAX_REQUESTS_PER_RUN = 10_000
 
 
@@ -111,6 +116,12 @@ class SourceConfig:
     robots_exception: RobotsException | None
     maturity: Maturity
     enabled: bool
+    #: The state (ISO 3166-1) a catalogue's datasets lie in, the last step of the spatial extent (M5-20 plan §6.1,
+    #: F1 = 1): a find with nothing better is in this state, without a footprint. ``None`` for a catalogue of the world.
+    country: str | None
+    #: Precedence among duplicates of the same dataset (M5-20 plan §8, F4 = 1): the provider's own catalogue before a
+    #: portal that harvests it. 1 wins over 2.
+    dedupe_rank: int
 
     @property
     def host(self) -> str:
@@ -232,6 +243,9 @@ def read_source(path: Path) -> SourceConfig:
         raise _bad(name, "maturity is a maturity of the registry") from None
     if not isinstance(data["enabled"], bool):
         raise _bad(name, "enabled is true or false")
+    country = data["country"]
+    if country is not None and (not isinstance(country, str) or not _COUNTRY.fullmatch(country)):
+        raise _bad(name, "country is null or an ISO 3166-1 code of two capital letters")
     return SourceConfig(
         source_id=source_id,
         protocol=protocol,
@@ -245,6 +259,8 @@ def read_source(path: Path) -> SourceConfig:
         robots_exception=_robots_exception(name, endpoint, data["robots_exception"]),
         maturity=maturity,
         enabled=data["enabled"],
+        country=country,
+        dedupe_rank=_count(name, data, "dedupe_rank", MAX_DEDUPE_RANK),
     )
 
 

@@ -23,7 +23,7 @@ from earthx.discovery.ckan import (
     search_params,
     stable_package,
 )
-from earthx.discovery.extract import Invalid, ShapeError, extracted_sha256, extractor_version
+from earthx.discovery.extract import Invalid, ShapeError, extracted_sha256, extractor_version, theme_codes
 from earthx.discovery.links import LinkRank
 from earthx.gateway import GatewayResponse
 
@@ -40,6 +40,8 @@ SOURCE = SourceConfig(
     robots_exception=None,
     maturity=Maturity.STABLE,
     enabled=True,
+    country=None,
+    dedupe_rank=1,
 )
 BY_ORGANIZATION = replace(SOURCE, filter=CkanFilter(None, "organization"))
 
@@ -375,6 +377,32 @@ def test_a_doi(doi: str, expected: str | None) -> None:
 def test_a_group_named_after_an_eu_data_theme_counts_as_that_theme() -> None:
     package = _with(PACKAGE, extras=[], tags=[], groups=[{"name": "tran", "title": "Verkehr"}])
     assert extract_package(PACKAGE["id"], package, SOURCE).category == "infrastructure"
+
+
+def test_themes_are_kept_as_codes_for_the_geodata_rule() -> None:
+    # M5-20 A12: INSPIRE and EU data themes, from theme URIs and from groups named after an EU theme.
+    package = _with(PACKAGE, groups=[{"name": "gove", "title": "Regierung"}])
+    assert extract_package(PACKAGE["id"], package, SOURCE).themes == ("eu:GOVE", "inspire:el")
+    econ = "http://publications.europa.eu/resource/authority/data-theme/ECON"
+    package = _with(PACKAGE, groups=[], extras=[{"key": "theme", "value": econ}])
+    assert extract_package(PACKAGE["id"], package, SOURCE).themes == ("eu:ECON",)
+
+
+def test_theme_codes_drop_what_is_no_code() -> None:
+    assert theme_codes(["EL", "x1"], ["http://x/data-theme/ENVI/", "Umwelt und Natur", "TRAN"]) == (
+        "eu:ENVI",
+        "eu:TRAN",
+        "inspire:el",
+    )
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [("https://registry.example.org/ds/42", "https://registry.example.org/ds/42"), ("   ", None), ("x" * 301, None)],
+)
+def test_the_identifier(value: str, expected: str | None) -> None:
+    package = _with(PACKAGE, identifier=value)
+    assert extract_package(PACKAGE["id"], package, SOURCE).identifier == expected
 
 
 def test_licence_statements_are_kept_verbatim_and_once() -> None:

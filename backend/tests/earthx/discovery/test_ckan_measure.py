@@ -30,6 +30,8 @@ SOURCE = SourceConfig(
     robots_exception=None,
     maturity=Maturity.STABLE,
     enabled=True,
+    country=None,
+    dedupe_rank=1,
 )
 
 PACKAGE = {

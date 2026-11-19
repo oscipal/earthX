@@ -37,6 +37,7 @@ from earthx.discovery.extract import (
     localized,
     resource_kind,
     text_of,
+    theme_codes,
 )
 from earthx.discovery.links import LinkRank, checked_link, choose_link, link_problem
 from earthx.discovery.stac import Fetch
@@ -56,6 +57,8 @@ __all__ = [
 PAGE_ROWS = 100
 MAX_DISTRIBUTIONS = 50
 MAX_SPATIAL_TEXT_CHARS = 500
+#: The longest identifier kept; a longer one is no identifier but a text.
+MAX_IDENTIFIER_CHARS = 300
 #: The overlap of an incremental run with the last one (ckanext-harvest, adr/0025 §3a).
 INCREMENTAL_OVERLAP = timedelta(hours=1)
 _KEY = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,255}")
@@ -214,6 +217,12 @@ def _publisher(package: Mapping[str, Any], extras: Mapping[str, Any], field: str
         return localized(_field(package, extras, "publisher_name"))
     organization = package.get("organization")
     return localized(organization.get("title")) if isinstance(organization, dict) else None
+
+
+def _identifier(package: Mapping[str, Any], extras: Mapping[str, Any]) -> str | None:
+    """The DCAT identifier of the dataset (DCAT-AP ``identifier``), a short text; none where it is missing or long."""
+    value = text_of(_field(package, extras, "identifier"))
+    return value if value is not None and len(value) <= MAX_IDENTIFIER_CHARS else None
 
 
 def _doi(package: Mapping[str, Any], extras: Mapping[str, Any]) -> str | None:
@@ -503,7 +512,8 @@ def extract_package(key: str, package: Mapping[str, Any], source: SourceConfig) 
         raise Invalid("no_link")
     landing = choose_link(c for c in candidates if c[0] is not LinkRank.VIEWER_OR_DOWNLOAD_PAGE)
     keywords = _keywords(package)
-    category = category_of(_evidence(package, extras, keywords))
+    evidence = _evidence(package, extras, keywords)
+    category = category_of(evidence)
     kinds = [r.kind for r in resources]
     if any(r.is_file for r in resources):
         delivery: str | None = "download"
@@ -535,6 +545,8 @@ def extract_package(key: str, package: Mapping[str, Any], source: SourceConfig) 
         account=_account(package, extras, delivery is not None),
         category=category,
         keywords=listed_keywords(keywords, category),
+        themes=theme_codes(evidence.inspire_themes, evidence.eu_data_themes),
+        identifier=_identifier(package, extras),
         source_url=chosen[0],
         source_rank=int(chosen[1]),
         landing_url=None if landing is None else landing[0],

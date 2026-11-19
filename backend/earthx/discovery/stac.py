@@ -240,6 +240,9 @@ def extract_collection(key: str, collection: Mapping[str, Any], source: SourceCo
         account="requester_pays" if _requester_pays(collection) else "none",
         category=category,
         keywords=listed_keywords(raw_keywords, category),
+        # A collection is known by its id at its host (M5-20 plan §8); STAC names no themes.
+        themes=(),
+        identifier=None,
         source_url=chosen[0],
         source_rank=int(chosen[1]),
         landing_url=None if landing is None else landing[0],
