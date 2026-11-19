@@ -519,7 +519,7 @@ Die Doku nennt 41 Tage für die vorläufigen Items; die Liste trug am Messtag 59
 
 ## 12. Umsetzung PR 2: MeteoSchweiz (19.11.2026)
 
-Branch `claude/loving-mccarthy-euyx17` von `main` nach dem Merge von #383. Grundlage: F1–F9, A16 und die Festlegungen aus §11.
+Draft-PR [#385](https://github.com/oscipal/earthX/pull/385), Branch `claude/loving-mccarthy-euyx17` von `main` nach dem Merge von #383. Grundlage: F1–F9, A16 und die Festlegungen aus §11.
 
 ### 12.1 Was gebaut ist
 
