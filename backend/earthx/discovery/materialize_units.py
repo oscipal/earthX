@@ -189,7 +189,7 @@ def _item_state(item: Mapping[str, Any]) -> ItemState | None:
     return ItemState(value) if value in {state.value for state in ItemState} else None
 
 
-def _assemble(
+def assemble_item(
     config: DatasetConfig,
     stored: dict[str, Any] | None,
     changes: Mapping[str, tuple[Contribution, ItemState] | None],
@@ -361,7 +361,7 @@ async def run_units(
     replaced = 0
     for item_id, item_changes in sorted(changes.items()):
         old = stored_items.get(item_id)
-        item = _assemble(config, old, item_changes)
+        item = assemble_item(config, old, item_changes)
         if item is None:
             if old is not None:
                 emptied.append(item_id)
@@ -392,4 +392,4 @@ async def run_units(
     )
 
 
-__all__ = ["UnitsOutcome", "holder", "run_units", "unchanged"]
+__all__ = ["UnitsOutcome", "assemble_item", "holder", "holders", "run_units", "unchanged"]

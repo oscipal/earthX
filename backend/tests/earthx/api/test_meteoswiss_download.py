@@ -18,7 +18,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from earthx.api.tiler import build_app
-from earthx.discovery import meteoswiss_grid
 from tests.catalog.entries import METEOSWISS_DAILY_1KM, registry_of
 from tests.catalog.synthetic_chain import aoi_wgs84
 from tests.earthx.discovery import mini_archive
@@ -36,14 +35,7 @@ def day(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[TestC
     mini_netcdf.Source(body).serve_readers(monkeypatch)
     config = mini_archive.entry(METEOSWISS_DAILY_1KM)
 
-    async def materialize() -> dict[str, Any]:
-        async with archive.gateway() as gateway:
-            outcome = await meteoswiss_grid.materialize_items(
-                config, gateway=gateway, known_version=None, today=mini_archive.TODAY
-            )
-        return outcome.items[0]
-
-    item = asyncio.run(materialize())
+    item = asyncio.run(mini_archive.materialized_items(archive, config))[0]
 
     async def item_source(dataset_id: str, item_id: str) -> dict[str, Any]:
         return item
