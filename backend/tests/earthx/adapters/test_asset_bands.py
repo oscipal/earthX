@@ -24,7 +24,6 @@ from earthx.adapters.esa_worldcover_bucket import _item as worldcover_item
 from earthx.adapters.federated_search import with_core_bands
 from earthx.adapters.stac_api import get_item as earth_search_item
 from earthx.catalog.registry import DatasetConfig
-from earthx.discovery import meteoswiss_grid
 from earthx.discovery.meteoswiss_grid import PRODUCTS
 from earthx.gateway import Policy
 from tests.catalog.entries import (
@@ -127,11 +126,7 @@ async def meteoswiss_fixture(entry: DatasetConfig) -> dict[str, Any]:
     with tempfile.TemporaryDirectory() as directory:
         body = mini_archive.annual_file(Path(directory), 2024, days=[0])
     archive = mini_archive.Archive({mini_archive.name(quantity, PRODUCTS[quantity].grid, 2024): body})
-    async with archive.gateway() as gateway:
-        outcome = await meteoswiss_grid.materialize_items(
-            mini_archive.entry(entry), gateway=gateway, known_version=None, today=mini_archive.TODAY
-        )
-    return outcome.items[0]
+    return (await mini_archive.materialized_items(archive, mini_archive.entry(entry)))[0]
 
 
 async def items_by_dataset() -> dict[str, dict[str, Any]]:

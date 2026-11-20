@@ -1,6 +1,7 @@
 import { aoiNotes, measuresAoi, SKIPPED_TIP } from '../aoiFilter';
 import { maturityLabel, quicklookAsset } from '../datasets';
 import { formatCount } from '../numberFormat';
+import { groupIsProvisional, isProvisional, PROVISIONAL_TIP } from '../provisional';
 import type { ResultSection } from '../sections';
 import { hasResultsPanel, totalItems } from '../sections';
 import { useAppStore } from '../store';
@@ -56,7 +57,11 @@ function Row({ item }: { item: StacItem }) {
         />
       )}
       <div className="result-meta">
-        <span className="result-date">{timeOf(item.properties)}</span>
+        <span className="result-date">
+          {timeOf(item.properties)}
+          {/* A warning beside the time of a provisional day (M5-58, Otto, 19.11.2026), its text on the triangle. */}
+          {isProvisional(item) && <Tip tone="warn" text={PROVISIONAL_TIP} />}
+        </span>
         <span className="result-id-row">
           <span className="result-id" data-tip={item.id} data-tip-cut="">
             {item.id}
@@ -133,6 +138,8 @@ function GroupBlock({
           <span className="rg-caret">{expanded ? <ChevronDownIcon /> : <ChevronRightIcon />}</span>
           <span className="rg-label">
             {group.label}
+            {/* The warning of a provisional day beside the title of its group too (Otto, 19.11.2026). */}
+            {groupIsProvisional(group) && <Tip tone="warn" text={PROVISIONAL_TIP} />}
           </span>
           <span className="rg-count">{group.items.length}</span>
         </button>

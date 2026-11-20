@@ -132,6 +132,10 @@ source:
   endpoint: https://earth-search.aws.element84.com/v1
   # Collection 1 (adr/0003 §6): COGs only, from baseline 5.0 on.
   source_collection_id: sentinel-2-c1-l2a
+  # The link "Source" (M5-55, Otto 17.11.2026): STAC Browser of Radiant Earth on the Earth Search collection:
+  # collection, items and files to load (as `catalog_page` of `sources/earth-search.yaml`, M5-19 F9). Not the
+  # provider's host.
+  page_url: https://radiantearth.github.io/stac-browser/#/external/earth-search.aws.element84.com/v1/collections/sentinel-2-c1-l2a
   # Measured at real items in adr/0006 §3.7: all 22 assets of this collection lie on this one host. `sentinel-
   # cogs…amazonaws.com` belongs to the older collection and deliberately stays out of the allowlist.
   asset_hosts: [e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com]

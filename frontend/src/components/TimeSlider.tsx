@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 
 import { stepLabel, runPlayback, STEP_LATE_AFTER_MS } from '../playback';
+import { groupIsProvisional, PROVISIONAL_TIP } from '../provisional';
 import { stepWithArrowKeys } from '../stepKeys';
 import { useAppStore } from '../store';
 import { ChevronLeftIcon, ChevronRightIcon, PauseIcon, PlayIcon } from './icons';
+import Tip from './Tip';
 
 export default function TimeSlider() {
   const groups = useAppStore((s) => s.groups);
@@ -54,6 +56,9 @@ export default function TimeSlider() {
   // A step is named by the date of its pass, never by the scene (Otto, 30.10.2026). Playing, the pass on the map names
   // the step, and the slider is ahead of it while the next one loads.
   const name = (index: number) => stepLabel(groups[index]);
+  // A provisional day has a warning triangle beside its date (M5-58, Otto 19.11.2026). Where some step is provisional,
+  // every step keeps the room of the triangle, so the arrows stay where they are while stepping.
+  const anyProvisional = groups.some(groupIsProvisional);
   const loading = behind && late;
 
   // The row of dates (NM4-66, Otto, 31.10.2026): the first, the one before, the one shown, the one after, the last; the
@@ -92,7 +97,15 @@ export default function TimeSlider() {
         </span>
         {near(older, 'before')}
         {arrow(older, 'Previous time step', 'left')}
-        <strong>{name(shown)}</strong>
+        <strong>
+          {name(shown)}
+          {anyProvisional &&
+            (groupIsProvisional(groups[shown]) ? (
+              <Tip tone="warn" text={PROVISIONAL_TIP} />
+            ) : (
+              <span className="time-mark-room" aria-hidden="true" />
+            ))}
+        </strong>
         {arrow(newer, 'Next time step', 'right')}
         {near(newer, 'after')}
         <span className={`time-end last${showLast ? '' : ' gone'}`} data-tip-level="advanced" data-tip="Last time step" aria-hidden={!showLast || undefined}>

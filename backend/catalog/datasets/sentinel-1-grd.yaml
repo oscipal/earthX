@@ -113,6 +113,10 @@ source:
   adapter: earth-search-v1
   endpoint: https://earth-search.aws.element84.com/v1
   source_collection_id: sentinel-1-grd
+  # The link "Source" (M5-55, Otto 17.11.2026): STAC Browser of Radiant Earth on the Earth Search collection:
+  # collection, items and files to load (as `catalog_page` of `sources/earth-search.yaml`, M5-19 F9). Not the
+  # provider's host.
+  page_url: https://radiantearth.github.io/stac-browser/#/external/earth-search.aws.element84.com/v1/collections/sentinel-1-grd
   # The host the rewrite below leads to (adr/0018 §4.3); the items name no other.
   asset_hosts: [sentinel-s1-l1c.s3.eu-central-1.amazonaws.com]
   item_holding: federated

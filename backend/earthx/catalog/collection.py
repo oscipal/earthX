@@ -375,6 +375,8 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
             "adapter": config.source.adapter.value,
             "endpoint": config.source.endpoint,
             "source_collection_id": config.source.source_collection_id,
+            # M5-55: the link "Source" of the Data catalogue, a page for people (the endpoint is the API).
+            "page_url": config.source.page_url,
             "asset_hosts": list(config.source.asset_hosts),
             # M3-11a (K-05): federated or materialized — what `FederatingCoreCrudClient`
             # branches search and item-fetch on, read back off this very document

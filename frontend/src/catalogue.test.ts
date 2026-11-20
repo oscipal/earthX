@@ -173,13 +173,20 @@ describe('the rows', () => {
     expect(textOf(collection('x', 'optical', { providers: [{ name: '' }, null as never] }), 'Provider')).toBe('—');
   });
 
-  it('name the source by host and collection, linked to the endpoint, never a link that is not https', () => {
-    const source = { asset_hosts: [], endpoint: 'https://stac.example.org/v1', source_collection_id: 'col' };
-    expect(sourceRow(collection('x', 'optical', { 'earthx:source': source }))).toEqual([{ text: 'stac.example.org · col', href: 'https://stac.example.org/v1' }]);
-    expect(sourceRow(collection('x', 'optical', { 'earthx:source': { ...source, endpoint: 'http://stac.example.org' } }))).toEqual([{ text: '—', href: null }]);
+  it('name the source by host and collection, linked to the page and never to the API, never a link that is not https', () => {
+    const source = {
+      asset_hosts: [],
+      endpoint: 'https://stac.example.org/v1',
+      page_url: 'https://viewer.example.org/browser/#/collections/col',
+      source_collection_id: 'col',
+    };
+    expect(sourceRow(collection('x', 'optical', { 'earthx:source': source }))).toEqual([{ text: 'viewer.example.org · col', href: source.page_url }]);
+    // Without a page there is no link: the endpoint is the API and is never the fallback (M5-55).
+    expect(sourceRow(collection('x', 'optical', { 'earthx:source': { ...source, page_url: null } }))).toEqual([{ text: '—', href: null }]);
+    expect(sourceRow(collection('x', 'optical', { 'earthx:source': { ...source, page_url: 'http://viewer.example.org/x' } }))).toEqual([{ text: '—', href: null }]);
     expect(sourceRow(collection('x', 'optical'))).toEqual([{ text: '—', href: null }]);
-    for (const endpoint of ['https://ex ample.org', 'https://host:99999']) {
-      expect(sourceRow(collection('x', 'optical', { 'earthx:source': { ...source, endpoint } }))).toEqual([{ text: '—', href: null }]);
+    for (const page_url of ['https://ex ample.org', 'https://host:99999']) {
+      expect(sourceRow(collection('x', 'optical', { 'earthx:source': { ...source, page_url } }))).toEqual([{ text: '—', href: null }]);
     }
   });
 

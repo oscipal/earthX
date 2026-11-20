@@ -1445,7 +1445,16 @@ def _resolved_json(target: _Target, version: InputVersion | None) -> dict[str, A
         "scaling": _scaling_of(target, bands),
         "unit": _asset_unit(target, bands),
         "gsd": asset_gsd(target.item, target.item_asset),
+        **({"state": state} if (state := _state_of(target)) is not None else {}),
     }
+
+
+def _state_of(target: _Target) -> str | None:
+    """The ``earthx:state`` of the asset where its dataset names one (M5-58): the provenance says what was provisional."""
+    assets = target.item.get("assets")
+    asset = assets.get(target.item_asset) if isinstance(assets, Mapping) else None
+    state = asset.get("earthx:state") if isinstance(asset, Mapping) else None
+    return state if state in ("provisional", "final") else None
 
 
 # --- recipe.json of the synchronous crop (adr/0014 §10.1) --------------------
