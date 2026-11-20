@@ -242,6 +242,7 @@ CATALOGUE_TABLES = (
     "pgstac.collections",
     "public.earthx_region",
     "public.earthx_region_part",
+    "public.earthx_municipality",
     "public.earthx_listed_entry",
     "public.earthx_overview",
     "public.earthx_overview_request",

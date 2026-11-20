@@ -57,6 +57,14 @@ CONTENT_COLUMNS = (
 )
 
 
+@pytest.fixture(autouse=True)
+def _no_municipalities(conn: psycopg.Connection) -> None:
+    """The tests rewrite and drop cantons; a municipality committed by an earlier module of the same database
+    (``catalog-load``, ``test_report``) holds its canton by a foreign key (migration 033). Gone in the rolled-back
+    transaction of the test only."""
+    conn.execute("DELETE FROM public.earthx_municipality")
+
+
 def _row(conn: psycopg.Connection, dataset_id: str) -> dict | None:
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute("SELECT *, ctid::text AS tid FROM public.earthx_listed_entry WHERE dataset_id = %s", (dataset_id,))
