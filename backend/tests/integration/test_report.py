@@ -547,11 +547,10 @@ def test_a_municipality_in_a_place_text_gives_its_outline_and_the_regions_of_its
         "CH-ZH",
         {"type": "Polygon", "coordinates": [[[8.65, 47.45], [8.8, 47.45], [8.8, 47.55], [8.65, 47.55], [8.65, 47.45]]]},
     )
-    write_municipalities(world.conn, [winterthur])
+    others = [m for m in load_municipalities() if m.code != winterthur.code]
+    write_municipalities(world.conn, [*others, winterthur])
     try:
-        directory = read_place_directory(
-            PLACE_NAMES_FILE, {r.code: r.level for r in load_regions()}, [winterthur]
-        )
+        directory = read_place_directory(PLACE_NAMES_FILE, {r.code: r.level for r in load_regions()}, [*others, winterthur])
         world.put(world.ckan, _find("w", spatial_text="Winterthur"))
         world.report(directory=directory)
         row = world.row("w")
@@ -570,11 +569,14 @@ def test_classify_counts_the_geonames_ids_it_cannot_place(world: World) -> None:
 
 
 def test_the_report_refuses_to_run_before_catalog_load_wrote_the_municipalities(world: World) -> None:
-    winterthur = Municipality(
-        "CH-ZH-0230", "Winterthur", "CH-ZH", {"type": "Polygon", "coordinates": [[[8.7, 47.5], [8.8, 47.5], [8.8, 47.6], [8.7, 47.5]]]}
+    # A municipality the image knows and the table lacks: here one made up beside the real ones.
+    newtown = Municipality(
+        "CH-ZH-9999", "Neustadt am Test", "CH-ZH",
+        {"type": "Polygon", "coordinates": [[[8.7, 47.5], [8.8, 47.5], [8.8, 47.6], [8.7, 47.5]]]},
     )
-    directory = read_place_directory(PLACE_NAMES_FILE, {r.code: r.level for r in load_regions()}, [winterthur])
-    world.conn.execute("DELETE FROM public.earthx_municipality WHERE code = %s", (winterthur.code,))
+    directory = read_place_directory(
+        PLACE_NAMES_FILE, {r.code: r.level for r in load_regions()}, [*load_municipalities(), newtown]
+    )
     try:
         with pytest.raises(ConfigError, match="run catalog-load first"):
             world.report(directory=directory)
