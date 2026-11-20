@@ -7,6 +7,11 @@ asset as the item describes them (:class:`BandMeta`), the files of the three for
 the block reader that lays every band of a file on one grid (:class:`StackReader`), and
 ``exports/BANDS.txt`` (:func:`bands_text`).
 
+**Classes** (M5-62): a band whose values are classes carries them from the registry (:attr:`BandMeta.classes`). A file of
+one such band of ``uint8`` or ``uint16`` holds their colour table; GDAL keeps the names and the attribute table of a
+GeoTIFF only beside it, in ``<file>.aux.xml`` (:func:`class_files`), which GDAL and QGIS read with the file; and
+``BANDS.txt`` lists them. Crop and export only pass the source's values on, so a band keeps its classes here.
+
 **Three forms.** ``per_band``: one file per band in its own resolution, nothing converted.
 ``per_resolution``: one file per resolution that occurs, its bands stacked, nothing converted.
 ``multi_band``: one file at a common resolution; a band of another resolution is converted by
@@ -29,6 +34,7 @@ import re
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import ExitStack
 from dataclasses import dataclass, replace
+from html import escape
 from typing import Any
 
 import numpy
@@ -42,6 +48,7 @@ from shapely.geometry import mapping, shape
 from shapely.geometry.base import BaseGeometry
 
 from earthx.access.crop_rules import asset_gsd, merge_first_valid, rasterize_aoi
+from earthx.catalog.registry import ClassRow
 from earthx.readers.reference_store import REFS_KEY
 
 __all__ = [
@@ -56,6 +63,7 @@ __all__ = [
     "ExportPlanError",
     "FilePlan",
     "StackReader",
+    "AUX_SUFFIX",
     "aoi_on_grid",
     "apply_band_tags",
     "band_count",
@@ -66,6 +74,7 @@ __all__ = [
     "is_geotiff",
     "band_meta",
     "bands_text",
+    "class_files",
     "file_profile",
     "format_resolution",
     "plan_files",
@@ -81,6 +90,10 @@ FORMS = (FORM_PER_BAND, FORM_PER_RESOLUTION, FORM_MULTI_BAND)
 #: The folder of the data files in a ZIP, and the description of its bands beside them.
 EXPORTS_DIR = "exports/"
 BANDS_FILENAME = "BANDS.txt"
+#: What GDAL appends to the name of a file for the one beside it that keeps what the file itself cannot (PAM).
+AUX_SUFFIX = ".aux.xml"
+#: The data types a GeoTIFF holds a colour table for.
+_PALETTE_TYPES = ("uint8", "uint16")
 
 _FORM_TEXT = {
     FORM_PER_BAND: "one file per band",
@@ -133,8 +146,10 @@ class BandMeta:
     offset: float | None
     nodata: float | None
     unit: str | None
-    #: A classification layer (the registry's mask layer): converted by ``mode``, never averaged.
+    #: A classification layer (the registry's mask layer or a band of classes): converted by ``mode``, never averaged.
     categorical: bool
+    #: The classes of a band whose values are classes (M5-62), ``None`` for any other.
+    classes: tuple[ClassRow, ...] | None = None
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -142,12 +157,19 @@ class BandMeta:
             "wavelength_um": self.wavelength_um, "resolution_m": self.resolution_m, "data_type": self.data_type,
             "scale": self.scale, "offset": self.offset, "nodata": self.nodata, "unit": self.unit,
             "categorical": self.categorical,
+            "classes": None if self.classes is None else [
+                {"value": row.value, "name": row.name, "colour": row.colour} for row in self.classes
+            ],
         }  # fmt: skip
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any]) -> BandMeta:
-        """The band from the JSON of :meth:`to_json`; a field of the wrong type is a :class:`ValueError`, not a crash later."""
-        meta = cls(**{name: data[name] for name in cls.__slots__})
+        """The band from the JSON of :meth:`to_json`; a field of the wrong type is a :class:`ValueError`, not a crash later.
+
+        JSON written before M5-62 has no ``classes``: the band then has none.
+        """
+        fields = {name: data[name] for name in cls.__slots__ if name != "classes"}
+        meta = cls(**fields, classes=_classes_from_json(data.get("classes")))
         for name in ("asset", "name"):
             if not isinstance(getattr(meta, name), str):
                 raise ValueError(f"{name} is text")
@@ -163,6 +185,24 @@ class BandMeta:
         return meta
 
 
+def _classes_from_json(data: Any) -> tuple[ClassRow, ...] | None:
+    if data is None:
+        return None
+    if not isinstance(data, list) or not data:
+        raise ValueError("classes is a list of classes or null")
+    rows = []
+    for entry in data:
+        if not isinstance(entry, Mapping) or set(entry) != {"value", "name", "colour"}:
+            raise ValueError("a class has a value, a name and a colour")
+        value, name, colour = entry["value"], entry["name"], entry["colour"]
+        if isinstance(value, bool) or not isinstance(value, int) or not isinstance(name, str):
+            raise ValueError("a class has a whole number as value and a text as name")
+        if not isinstance(colour, str) or not re.fullmatch(r"#[0-9a-f]{6}", colour):
+            raise ValueError("a colour is written #rrggbb")
+        rows.append(ClassRow(value, name, colour))
+    return tuple(rows)
+
+
 def _number(value: Any) -> float | None:
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
         return None
@@ -173,8 +213,16 @@ def _text(value: Any) -> str | None:
     return value.strip() if isinstance(value, str) and value.strip() else None
 
 
-def band_meta(item: Mapping[str, Any], asset: str, *, unit: str | None = None, categorical: bool = False) -> BandMeta:
-    """:class:`BandMeta` of ``asset`` from the item's own asset entry; ``unit`` is the registry's, used where the item names none."""
+def band_meta(
+    item: Mapping[str, Any],
+    asset: str,
+    *,
+    unit: str | None = None,
+    categorical: bool = False,
+    classes: tuple[ClassRow, ...] | None = None,
+) -> BandMeta:
+    """:class:`BandMeta` of ``asset`` from the item's own asset entry; ``unit`` and ``classes`` are the registry's, the
+    unit used where the item names none. A band of classes is categorical."""
     assets = item.get("assets")
     entry = assets.get(asset) if isinstance(assets, Mapping) else None
     entry = entry if isinstance(entry, Mapping) else {}
@@ -193,12 +241,18 @@ def band_meta(item: Mapping[str, Any], asset: str, *, unit: str | None = None, c
         offset=_number(first.get("offset")),
         nodata=_number(first.get("nodata")),
         unit=_text(first.get("unit")) or unit,
-        categorical=categorical,
+        categorical=categorical or classes is not None,
+        classes=classes,
     )
 
 
 def band_meta_of_items(
-    items: Sequence[Mapping[str, Any]], asset: str, *, unit: str | None = None, categorical: bool = False
+    items: Sequence[Mapping[str, Any]],
+    asset: str,
+    *,
+    unit: str | None = None,
+    categorical: bool = False,
+    classes: tuple[ClassRow, ...] | None = None,
 ) -> BandMeta:
     """:class:`BandMeta` of ``asset`` over the items of an export: the first item's description, the finest pixel size of them all.
 
@@ -206,8 +260,8 @@ def band_meta_of_items(
     """
     holding = [item for item in items if asset in (item.get("assets") or {})]
     if not holding:
-        return band_meta({}, asset, unit=unit, categorical=categorical)
-    meta = band_meta(holding[0], asset, unit=unit, categorical=categorical)
+        return band_meta({}, asset, unit=unit, categorical=categorical, classes=classes)
+    meta = band_meta(holding[0], asset, unit=unit, categorical=categorical, classes=classes)
     sizes = [size for item in holding if (size := asset_gsd(item, asset)) is not None]
     return replace(meta, resolution_m=min(sizes) if sizes else None)
 
@@ -232,6 +286,7 @@ def band_table(
     auxiliary: Iterable[str],
     mask_asset: str | None,
     unit_of: Callable[[str], str | None],
+    classes_of: Callable[[str], tuple[ClassRow, ...] | None],
 ) -> list[tuple[BandMeta, bool]]:
     """The bands the download dialog offers for ``items``, in the first item's order, each with whether it starts ticked.
 
@@ -244,7 +299,7 @@ def band_table(
     skip = set(auxiliary)
     assets = items[0].get("assets") or {}
     metas = [
-        band_meta_of_items(items, key, unit=unit_of(key), categorical=key == mask_asset)
+        band_meta_of_items(items, key, unit=unit_of(key), categorical=key == mask_asset, classes=classes_of(key))
         for key, entry in assets.items()
         if key not in skip and (is_geotiff(entry) or holds_one_array(entry))
     ]
@@ -260,6 +315,7 @@ def band_rows(
     auxiliary: Iterable[str],
     mask_asset: str | None,
     unit_of: Callable[[str], str | None],
+    classes_of: Callable[[str], tuple[ClassRow, ...] | None],
 ) -> list[dict[str, Any]]:
     """The answer of ``POST /collections/{dataset}/bands``: :func:`band_table` with whether each band starts ticked and
     whether it can be stacked with others into one file. A band read through chunk references (M5-11) cannot: the stacked
@@ -267,7 +323,9 @@ def band_rows(
     first = (items[0].get("assets") or {}) if items else {}
     return [
         {**meta.to_json(), "preselected": ticked, "stackable": not holds_one_array(first.get(meta.asset))}
-        for meta, ticked in band_table(items, auxiliary=auxiliary, mask_asset=mask_asset, unit_of=unit_of)
+        for meta, ticked in band_table(
+            items, auxiliary=auxiliary, mask_asset=mask_asset, unit_of=unit_of, classes_of=classes_of
+        )
     ]
 
 
@@ -516,11 +574,73 @@ def aoi_on_grid(aoi: Mapping[str, Any] | BaseGeometry, crs: Any) -> BaseGeometry
 
 
 def apply_band_tags(dst: Any, metas: Sequence[BandMeta]) -> None:
-    """The name of every band as its description, and the item's scale and offset as the file's (kept by ``cog_translate``)."""
+    """The name of every band as its description, and the item's scale and offset as the file's; for a file of one
+    band of classes in a type that can hold one, their colour table (all kept by ``cog_translate``; M5-62)."""
     for index, meta in enumerate(metas, start=1):
         dst.set_band_description(index, meta.name)
     dst.scales = tuple(1.0 if meta.scale is None else meta.scale for meta in metas)
     dst.offsets = tuple(0.0 if meta.offset is None else meta.offset for meta in metas)
+    if len(metas) == 1 and metas[0].classes is not None and dst.dtypes[0] in _PALETTE_TYPES:
+        dst.write_colormap(1, colour_table(metas[0]))
+
+
+def colour_table(meta: BandMeta) -> dict[int, tuple[int, int, int, int]]:
+    """The colour of every class of ``meta`` as a GeoTIFF holds it, its nodata see-through."""
+    assert meta.classes is not None
+    table = {row.value: (*_rgb(row.colour), 255) for row in meta.classes}
+    if meta.nodata is not None and float(meta.nodata).is_integer():
+        table[int(meta.nodata)] = (0, 0, 0, 0)
+    return table
+
+
+def _rgb(colour: str) -> tuple[int, int, int]:
+    return int(colour[1:3], 16), int(colour[3:5], 16), int(colour[5:7], 16)
+
+
+#: The largest value a list of names by index is written for (``uint16``); the attribute table names any value.
+_MAX_CATEGORY = 65535
+
+#: The columns of the attribute table of a band of classes: GDAL's type (0 integer, 2 text) and usage (5 the value,
+#: 2 the name, 6-8 the colour), as GDAL writes them into a PAM file.
+_RAT_FIELDS = (("Value", 0, 5), ("Class", 2, 2), ("Red", 0, 6), ("Green", 0, 7), ("Blue", 0, 8))
+
+
+def class_aux_xml(bands: Sequence[BandMeta]) -> str | None:
+    """``<file>.aux.xml`` of a file of ``bands``: the names (``CategoryNames``, the index is the value) and the attribute
+    table of each band of classes, as GDAL writes them for a GeoTIFF; ``None`` where no band has classes."""
+    parts = []
+    for index, meta in enumerate(bands, start=1):
+        if meta.classes is None:
+            continue
+        names = {row.value: row.name for row in meta.classes}
+        categories = "".join(
+            f"      <Category>{escape(names.get(value, ''))}</Category>\n" for value in range(max(names) + 1)
+        ) if 0 <= min(names) and max(names) <= _MAX_CATEGORY else ""
+        fields = "".join(
+            f'      <FieldDefn index="{number}">\n        <Name>{name}</Name>\n        <Type>{kind}</Type>\n'
+            f"        <Usage>{usage}</Usage>\n      </FieldDefn>\n"
+            for number, (name, kind, usage) in enumerate(_RAT_FIELDS)
+        )
+        rows = "".join(
+            f'      <Row index="{number}">\n'
+            + "".join(f"        <F>{escape(str(cell))}</F>\n" for cell in (row.value, row.name, *_rgb(row.colour)))
+            + "      </Row>\n"
+            for number, row in enumerate(meta.classes)
+        )
+        parts.append(
+            f'  <PAMRasterBand band="{index}">\n'
+            + (f"    <CategoryNames>\n{categories}    </CategoryNames>\n" if categories else "")
+            + f'    <GDALRasterAttributeTable tableType="thematic">\n{fields}{rows}    </GDALRasterAttributeTable>\n'
+            + "  </PAMRasterBand>\n"
+        )
+    if not parts:
+        return None
+    return "<PAMDataset>\n" + "".join(parts) + "</PAMDataset>\n"
+
+
+def class_files(files: Iterable[BandsFile]) -> list[tuple[str, str]]:
+    """The ``.aux.xml`` beside each data file that holds a band of classes, as path in the ZIP and text."""
+    return [(entry.path + AUX_SUFFIX, text) for entry in files if (text := class_aux_xml(entry.bands)) is not None]
 
 
 def _cell(value: Any) -> str:
@@ -591,4 +711,8 @@ def bands_text(
                     ]
                 )
             )
+        for index, meta in enumerate(entry.bands, start=1):
+            if meta.classes is not None:
+                lines += ["", f"Classes of band {index} ({meta.name})", "Value | Class | Colour"]
+                lines += [f"{row.value} | {row.name} | {row.colour}" for row in meta.classes]
     return "\n".join(lines) + "\n"

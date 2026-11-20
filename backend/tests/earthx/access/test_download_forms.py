@@ -78,7 +78,8 @@ def _sources() -> tuple[dict[str, MemoryFile], dict[str, Any]]:
     }
     item = _item()
     metas = {
-        asset: band_meta(item, asset, unit="1", categorical=asset == "scl") for asset in BANDS
+        asset: band_meta(item, asset, unit="1", categorical=asset == "scl", classes=SENTINEL_2_L2A.class_rows(asset))
+        for asset in BANDS
     }
     return mems, metas
 
@@ -122,6 +123,8 @@ def _table(archive: zipfile.ZipFile) -> dict[str, list[list[str]]]:
     for line in archive.read("exports/BANDS.txt").decode().splitlines():
         if line.startswith("File: "):
             current = files.setdefault(line[6:], [])
+        elif line.startswith("Classes of band "):
+            current = None
         elif current is not None and line and not line.startswith("Band |"):
             current.append([cell.strip() for cell in line.split("|")])
     return files
@@ -338,3 +341,27 @@ class TestTheGridIsTheSources:
         ) as b, b.open() as mask:
             assert (mask.crs, mask.transform, mask.shape) == (data.crs, data.transform, data.shape)
             assert set(np.unique(mask.read(1))) == {0, 1}
+
+
+class TestClasses:
+    """M5-62: a band of classes keeps them in the ZIP: colour table, names and table beside the file, BANDS.txt."""
+
+    def test_a_file_of_the_band_holds_its_colour_table_and_has_its_names_beside_it(self) -> None:
+        with _zip(["scl"]) as archive, _open(archive, "exports/SCL_20m.tif") as mem, mem.open() as ds:
+            assert ds.colormap(1)[3][:3] == (44, 160, 44)  # the third colour of the palette, for class 3
+            beside = archive.read("exports/SCL_20m.tif.aux.xml").decode()
+            assert "<Category>Cloud shadows</Category>" in beside
+            assert "Classes of band 1 (SCL)\nValue | Class | Colour\n1 | Saturated or defective | #1f77b4" in (
+                archive.read("exports/BANDS.txt").decode()
+            )
+
+    def test_in_a_stacked_file_only_the_band_of_classes_is_named_beside_it(self) -> None:
+        with _zip(["blue", "scl"], form="multi_band", common=20) as archive:
+            assert '<PAMRasterBand band="2">' in archive.read("exports/bands_20m.tif.aux.xml").decode()
+            with _open(archive, "exports/bands_20m.tif") as mem, mem.open() as ds, pytest.raises(ValueError):
+                ds.colormap(2)
+
+    def test_bands_without_classes_have_nothing_beside_them(self) -> None:
+        with _zip(["blue", "red"]) as archive:
+            assert not [name for name in archive.namelist() if name.endswith(".aux.xml")]
+            assert "Classes" not in archive.read("exports/BANDS.txt").decode()
