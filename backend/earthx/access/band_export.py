@@ -585,7 +585,8 @@ def apply_band_tags(dst: Any, metas: Sequence[BandMeta]) -> None:
 
 
 def colour_table(meta: BandMeta) -> dict[int, tuple[int, int, int, int]]:
-    """The colour of every class of ``meta`` as a GeoTIFF holds it, its nodata see-through."""
+    """The colour of every class of ``meta`` as a GeoTIFF holds it, and its nodata. A TIFF keeps no alpha: a reader
+    such as GDAL shows the entry of the file's own nodata see-through, which crop and export keep from the source."""
     assert meta.classes is not None
     table = {row.value: (*_rgb(row.colour), 255) for row in meta.classes}
     if meta.nodata is not None and float(meta.nodata).is_integer():

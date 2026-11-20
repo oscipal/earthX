@@ -120,6 +120,18 @@ def test_an_unknown_enum_value_is_an_error(tmp_path: Path) -> None:
         load_entry(_write(tmp_path, data))
 
 
+def test_the_classes_of_a_band_are_read_strictly(tmp_path: Path) -> None:
+    """M5-62: an unknown source of the colours and an unknown field of a class are errors with their path."""
+    data = _plain()
+    data["band_units"]["data"] = None
+    data["band_classes"] = {"data": {"colours": "guessed", "nodata": None, "classes": [{"value": 1, "name": "Sea"}]}}
+    with pytest.raises(EntryFileError, match=r"band_classes\.data\.colours"):
+        load_entry(_write(tmp_path, data))
+    data["band_classes"]["data"].update(colours="palette", classes=[{"value": 1, "name": "Sea", "label": "x"}])
+    with pytest.raises(EntryFileError, match=r"band_classes\.data\.classes\.0\.label"):
+        load_entry(_write(tmp_path, data))
+
+
 def test_a_check_of_the_dataclass_still_holds(tmp_path: Path) -> None:
     data = _plain()
     data["gsd"] = []

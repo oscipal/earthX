@@ -13,11 +13,10 @@ the architecture, not a consequence of this task.
 
 from __future__ import annotations
 
-import re
 from datetime import datetime, timezone
 from typing import Any
 
-from earthx.catalog.registry import DatasetConfig, FilterKind, LicenseInfo, doi_name
+from earthx.catalog.registry import DatasetConfig, FilterKind, LicenseInfo, class_key, doi_name
 
 # STAC 1.0 for now, because that is what pgstac and Earth Search speak. The licence
 # value below is tied to it: STAC 1.1 dropped "proprietary" in favour of "other",
@@ -109,17 +108,11 @@ def _earthx_bands(config: DatasetConfig) -> list[dict[str, Any]]:
         band: dict[str, Any] = {"name": key, "description": text}
         if (rows := config.class_rows(key)) is not None:
             band["classification:classes"] = [
-                {"value": row.value, "name": _class_key(row.name), "title": row.name, "color_hint": row.colour[1:].upper()}
+                {"value": row.value, "name": class_key(row.name), "title": row.name, "color_hint": row.colour[1:].upper()}
                 for row in rows
             ]
         bands.append(band)
     return bands
-
-
-def _class_key(name: str) -> str:
-    """The machine name of a class the extension asks for: letters, digits and ``_`` only (``Bare / sparse
-    vegetation`` → ``bare_sparse_vegetation``)."""
-    return "_".join(re.findall(r"[0-9a-z]+", name.lower()))
 
 
 def _earthx_auxiliary_assets(config: DatasetConfig) -> list[str]:

@@ -314,6 +314,10 @@ band_classes:
 - **A9 (Ergebnisse von Processing):** Download und Export-Job haben keine Schritte (`check_export`: „an export has no steps“) und geben immer die Werte der Quelle weiter; dort gelten die Klassen immer. Ergebnisse eines Processing-Jobs mit Schritten (`processing/core.py`) schreiben heute keine Klassen, auch nicht, wenn alle Schritte die Werte nur weitergeben (`passes_values`). Damit ist Punkt 5 der Aufgabe eingehalten. Die Klassen für solche Ergebnisse (Regel §6, für die Legende einer Ergebnis-Ebene) kommen mit PR 2, weil erst die Legende sie braucht.
 - **A10 (Download im Browser):** Das Frontend schreibt für Downloads direkt bei der Quelle eine eigene `BANDS.txt` (`bandChoice.ts::bandsFileText`, gleicher Text wie der Server, Golden-Test). Den Klassen-Block dort zieht PR 2 nach; die Antwort `POST /collections/{id}/bands` liefert `classes` je Band schon jetzt.
 - **A11 (Namen in der Collection):** Die Erweiterung verlangt für `name` nur Buchstaben, Ziffern, `_` und `-`; der lesbare Name steht in `title`. Der Data catalogue (PR 2) zeigt `title`.
+- **A13 (Kachelfarben):** Die Farbtabellen der Kacheln baut `access/colormaps.py` beim Import aus den freigegebenen Einträgen (`registry(prototype=False)`, ohne Startprüfung, wie der Runner); ein Prototyp-Eintrag mit eigenem Klassenband bekäme seine Tabelle erst mit einer eigenen kleinen Aufgabe (heute gibt es keinen).
+- **A14 (Namen):** Ein Klassenname ist druckbar (keine Steuerzeichen) und ergibt einen eigenen Schlüssel für STAC (`class_key`); „Built-up“ und „Built up“ zugleich lädt nicht.
+- **A15 (Transparenz):** Eine TIFF-Farbtabelle hat kein Alpha; durchsichtig zeigt GDAL den Eintrag des Nodata der Datei, das Zuschnitt und Export von der Quelle übernehmen.
+- **A16 (Export ohne Layout):** Der ältere Export-Job ohne `layout` (eine Datei je Asset, ohne `BANDS.txt`) schreibt keine Klassen; nur die Formen mit `layout` tun es.
 - **A12 (Liste der Namen):** `CategoryNames` wird nur für Werte von 0 bis 65 535 geschrieben (Index = Wert); die RAT nennt jeden Wert.
 
 ### 10.4 Tests
@@ -322,7 +326,7 @@ Neu: `backend/tests/catalog/test_band_classes.py` (Einträge, Regeln, Fehlerfäl
 
 ### 10.5 Was Otto lokal ausführt
 
-Nach dem Merge einmal `catalog-load` (die Collections tragen `classification:classes`). Prüfung in QGIS: WorldCover-Zuschnitt (eine Datei je Band) herunterladen, ZIP entpacken, `exports/…tif` öffnen; Symbologie „Paletted/Unique values“ zeigt Farben und Klassennamen.
+**Vor** dem ersten Start nach dem Merge: jedem eigenen Prototyp-Eintrag (`EARTHX_PROTOTYPE_SOURCES`, außerhalb des Repos) `band_classes: {}` ergänzen bzw. bei Klassenbändern die Klassen; das Feld hat keinen Standard (B10), ein Eintrag ohne lädt nicht. Danach einmal `catalog-load` (die Collections tragen `classification:classes`). Prüfung in QGIS: WorldCover-Zuschnitt (eine Datei je Band) herunterladen, ZIP entpacken, `exports/…tif` öffnen; Symbologie „Paletted/Unique values“ zeigt Farben und Klassennamen.
 
 ### 10.6 PR 2 (Frontend, neue Session nach dem Merge)
 

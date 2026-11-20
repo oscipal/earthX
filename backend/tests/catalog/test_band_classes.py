@@ -108,6 +108,9 @@ class TestTheRules:
             (BandClasses(ClassColours.PALETTE, 1, (BandClass(1, "A"),)), "nodata"),
             (BandClasses(ClassColours.PALETTE, None, (BandClass(1, " "),)), "one-line name"),
             (BandClasses(ClassColours.PALETTE, None, (BandClass(1, "A\nB"),)), "one-line name"),
+            (BandClasses(ClassColours.PALETTE, None, (BandClass(1, "A\tB"),)), "one-line name"),
+            (BandClasses(ClassColours.PALETTE, None, (BandClass(1, "–"),)), "letters or digits"),
+            (BandClasses(ClassColours.PALETTE, None, (BandClass(1, "Built-up"), BandClass(2, "Built up"))), "letters or digits"),
             (BandClasses(ClassColours.PALETTE, None, (BandClass(1, "A" * (MAX_CLASS_NAME_CHARS + 1)),)), "longer"),
             (BandClasses(ClassColours.FILE, None, (BandClass(1, "A", "#00FF00"),)), "#rrggbb"),
             (BandClasses(ClassColours.FILE, None, (BandClass(1, "A", "green"),)), "#rrggbb"),
@@ -115,7 +118,8 @@ class TestTheRules:
             (BandClasses(ClassColours.PALETTE, None, (BandClass(1, "A"), BandClass(2, "B", CLASS_PALETTE[0]))), "same colour"),
         ],
         ids=[
-            "none", "descending", "twice", "not whole", "nodata a class", "blank name", "two lines", "long name",
+            "none", "descending", "twice", "not whole", "nodata a class", "blank name", "two lines", "a tab",
+            "no letter", "same key", "long name",
             "capitals", "a colour name", "same colour from the file", "same colour as the palette",
         ],
     )  # fmt: skip
@@ -128,6 +132,21 @@ class TestTheRules:
         renamed = replace(worldcover.mask, classes=(MaskClass(10, "Trees"), *worldcover.mask.classes[1:]))
         with pytest.raises(ConfigError, match="classes of the mask differ"):
             replace(worldcover, mask=renamed)
+
+    def test_the_mask_may_add_no_class_but_the_value_without_one(self) -> None:
+        worldcover = WORLDCOVER[0]
+        extra = replace(worldcover.mask, classes=(*worldcover.mask.classes, MaskClass(200, "Other")))
+        with pytest.raises(ConfigError, match="classes of the mask differ"):
+            replace(worldcover, mask=extra)
+
+    def test_an_auxiliary_asset_has_no_classes(self, valid_config) -> None:
+        entry = replace(
+            valid_config,
+            band_units={**valid_config.band_units, "visual": None},
+            auxiliary_assets=("visual",),
+        )
+        with pytest.raises(ConfigError, match="no band of band_units"):
+            replace(entry, band_classes={"visual": _classes("Water")})
 
     def test_the_mask_may_add_the_value_without_a_class(self) -> None:
         sentinel = next(entry for entry in REGISTRY if entry.dataset_id == "sentinel-2-c1-l2a")

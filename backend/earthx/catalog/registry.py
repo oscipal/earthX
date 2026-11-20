@@ -1296,6 +1296,12 @@ class BandClass:
     colour: str | None = None
 
 
+def class_key(name: str) -> str:
+    """The machine name of a class the STAC classification extension asks for: small letters, digits and ``_`` only
+    (``Bare / sparse vegetation`` → ``bare_sparse_vegetation``)."""
+    return "_".join(re.findall(r"[0-9a-z]+", name.lower()))
+
+
 @dataclass(frozen=True, slots=True)
 class ClassRow:
     """One class with its colour settled (:meth:`BandClasses.rows`): what the catalogue, the legend and the export show."""
@@ -2064,7 +2070,7 @@ class DatasetConfig:
                 raise ConfigError(f"{where}: nodata is a whole number that is no class")
             for entry in classes.classes:
                 name = entry.name
-                if not isinstance(name, str) or not name.strip() or name != name.strip() or "\n" in name:
+                if not isinstance(name, str) or not name.strip() or name != name.strip() or not name.isprintable():
                     raise ConfigError(f"{where} each have a non-blank one-line name")
                 if len(name) > MAX_CLASS_NAME_CHARS:
                     raise ConfigError(f"{where}: a name is longer than {MAX_CLASS_NAME_CHARS} characters")
@@ -2075,6 +2081,9 @@ class DatasetConfig:
                 raise ConfigError(f"{where} take their colours from the source, so every class has one")
             if classes.colours is ClassColours.PALETTE and len(values) > len(CLASS_PALETTE) and not all(given[len(CLASS_PALETTE) :]):
                 raise ConfigError(f"{where} are more than the palette has colours; the others need a colour each")
+            keys = [class_key(entry.name) for entry in classes.classes]
+            if not all(keys) or len(set(keys)) != len(keys):
+                raise ConfigError(f"{where} each need a name with letters or digits that no other class shares")
             colours = [row.colour for row in classes.rows()]
             if len(set(colours)) != len(colours):
                 raise ConfigError(f"{where} have two classes of the same colour")

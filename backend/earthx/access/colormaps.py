@@ -39,10 +39,12 @@ def _class_tables() -> dict[str, dict[int, tuple[int, int, int, int]]]:
 
     They paint a class layer as its source does, with no stretch: the tiles take them as ``colormap_name`` like every
     other, but they are no ramp to choose for other data, so the list leaves them out and none has a reversed one.
-    Entries that share a name (the two states of WorldCover) must give the same table.
+    Entries that share a name (the two states of WorldCover) must give the same table. The released entries only, read
+    without the start check of the instance (adr/0024 R5), as the runner reads them: importing this module needs no
+    setting of the process.
     """
     tables: dict[str, dict[int, tuple[int, int, int, int]]] = {}
-    for entry in registry():
+    for entry in registry(prototype=False):
         render = entry.default_render
         if render is None or render.colormap_name is None or len(render.assets) != 1:
             continue
