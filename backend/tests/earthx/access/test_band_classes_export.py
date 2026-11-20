@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import xml.etree.ElementTree as ET
+from collections.abc import Iterator
 from dataclasses import replace
 
 import numpy
@@ -34,8 +36,8 @@ def _meta(classes: tuple[ClassRow, ...] | None = CLASSES, *, nodata: float | Non
     return band_meta(item, name, classes=classes)
 
 
-def _cog(dtype: str, metas: list[BandMeta]) -> rasterio.DatasetReader:
-    """A small file written as crop and export write theirs: tags first, then ``cog_translate``; read back."""
+def _cog(dtype: str, metas: list[BandMeta]) -> bytes:
+    """A small file written as crop and export write theirs: tags first, then ``cog_translate``."""
     profile = {
         "driver": "GTiff", "dtype": dtype, "count": len(metas), "width": 64, "height": 64, "crs": "EPSG:4326",
         "transform": rasterio.transform.from_origin(0, 1, 0.01, 0.01), "nodata": 0,
@@ -46,7 +48,13 @@ def _cog(dtype: str, metas: list[BandMeta]) -> rasterio.DatasetReader:
             dst.write(numpy.full((len(metas), 64, 64), 10, dtype=dtype))
         with plain.open() as source, MemoryFile() as out:
             cog_translate(source, out.name, COG_PROFILE, in_memory=True, quiet=True)
-            return MemoryFile(out.read()).open()
+            return out.read()
+
+
+@contextlib.contextmanager
+def _written(dtype: str, metas: list[BandMeta]) -> Iterator[rasterio.DatasetReader]:
+    with MemoryFile(_cog(dtype, metas)) as mem, mem.open() as dataset:
+        yield dataset
 
 
 class TestTheBand:
@@ -80,22 +88,22 @@ class TestTheBand:
 class TestTheGeoTiff:
     @pytest.mark.parametrize("dtype", ["uint8", "uint16"])
     def test_one_band_of_classes_holds_its_colour_table_after_cog_translate(self, dtype: str) -> None:
-        with _cog(dtype, [_meta()]) as written:
+        with _written(dtype, [_meta()]) as written:
             table = written.colormap(1)
         assert table[10] == (0, 100, 0, 255)
         assert table[60] == (180, 180, 180, 255)
         assert table[0][3] == 0
 
     def test_a_float_file_has_no_colour_table(self) -> None:
-        with _cog("float32", [_meta()]) as written, pytest.raises(ValueError):
+        with _written("float32", [_meta()]) as written, pytest.raises(ValueError):
             written.colormap(1)
 
     def test_a_file_of_several_bands_has_no_colour_table(self) -> None:
-        with _cog("uint8", [_meta(), _meta(None, name="red")]) as written, pytest.raises(ValueError):
+        with _written("uint8", [_meta(), _meta(None, name="red")]) as written, pytest.raises(ValueError):
             written.colormap(1)
 
     def test_a_band_without_classes_has_no_colour_table(self) -> None:
-        with _cog("uint8", [_meta(None)]) as written, pytest.raises(ValueError):
+        with _written("uint8", [_meta(None)]) as written, pytest.raises(ValueError):
             written.colormap(1)
 
     def test_nodata_that_is_no_whole_number_is_left_out_of_the_table(self) -> None:
