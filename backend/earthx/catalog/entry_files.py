@@ -140,9 +140,14 @@ def load_retired(path: Path) -> tuple[RetiredDataset, ...]:
 
 
 def to_plain(value: object) -> Any:
-    """The plain data of an entry, field by field in the order of the dataclass: what its YAML file holds."""
+    """The plain data of an entry, field by field in the order of the dataclass: what its YAML file holds. A field that
+    may be left out (it has a default) and holds its default is left out, as the file leaves it out."""
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
-        return {field.name: to_plain(getattr(value, field.name)) for field in dataclasses.fields(value)}
+        return {
+            field.name: to_plain(getattr(value, field.name))
+            for field in dataclasses.fields(value)
+            if field.default is dataclasses.MISSING or getattr(value, field.name) != field.default
+        }
     if isinstance(value, Enum):
         return value.value
     if isinstance(value, (datetime, date)):

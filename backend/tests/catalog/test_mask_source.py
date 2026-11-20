@@ -11,20 +11,20 @@ from earthx.catalog.registry import ConfigError, MaskClass, MaskSource
 from tests.catalog.entries import COP_DEM_GLO_30, SENTINEL_2_L2A
 from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR, TEST_ENTRIES
 
-# SentiWiki "S2 Processing", L2A Algorithms, Scene Classification, Table 3 (Otto, 20.10.2026).
+# The names of the scene classification by Otto (M5-62, 20.11.2026); the band's classes and the mask's are the same.
 SCL_NAMES = [
-    "NO_DATA",
-    "SATURATED_OR_DEFECTIVE",
-    "CAST_SHADOWS",
-    "CLOUD_SHADOWS",
-    "VEGETATION",
-    "NOT_VEGETATED",
-    "WATER",
-    "UNCLASSIFIED",
-    "CLOUD_MEDIUM_PROBABILITY",
-    "CLOUD_HIGH_PROBABILITY",
-    "THIN_CIRRUS",
-    "SNOW or ICE",
+    "No data",
+    "Saturated or defective",
+    "Topographic shadows",
+    "Cloud shadows",
+    "Vegetation",
+    "Not vegetated",
+    "Water",
+    "Unclassified",
+    "Cloud medium probability",
+    "Cloud high probability",
+    "Thin cirrus",
+    "Snow or ice",
 ]
 
 
@@ -59,7 +59,7 @@ class TestTheCollection:
     def test_it_publishes_the_layer_for_the_panel(self) -> None:
         published = to_stac_collection(SYNTHETIC_ZARR)["earthx:mask"]
         assert published["asset"] == "SCL_20m:scl" and published["band"] == "scl"
-        assert published["classes"][8] == {"value": 8, "label": "CLOUD_MEDIUM_PROBABILITY"}
+        assert published["classes"][8] == {"value": 8, "label": "Cloud medium probability"}
         assert published["suggested"] == [3, 8, 9, 10]
         assert published["note"] and published["reference"].startswith("https://")
 

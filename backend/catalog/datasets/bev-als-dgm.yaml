@@ -183,6 +183,8 @@ band_units:
 # What each band is, a few words (M5-59): the column "Description" of the Data catalogue.
 band_descriptions:
   dtm: Terrain height (DTM), 1 m grid
+# No band whose values are classes (M5-62).
+band_classes: {}
 auxiliary_assets: []
 # The feeds offer no search: no filters.
 search_filters: []

@@ -1266,6 +1266,67 @@ class MaskClass:
     label: str
 
 
+class ClassColours(Enum):
+    """Where the colours of the classes of a band come from (M5-62, Otto 20.11.2026: colours are never kept by hand)."""
+
+    FILE = "file"  # the colour table built into the source's files, as the onboarding read it
+    STAC = "stac"  # ``classification:classes`` of the source, its ``color_hint``
+    PALETTE = "palette"  # the source has none: :data:`CLASS_PALETTE` by the order of the classes
+
+
+#: The colours of classes whose source has none (M5-62, plan §9.2 A7): matplotlib's ``tab20`` in the order of its
+#: categories, the ten dark colours of ``tab10`` first, then their ten light ones. More classes need colours of their own.
+CLASS_PALETTE = (
+    "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf",
+    "#aec7e8", "#ffbb78", "#98df8a", "#ff9896", "#c5b0d5", "#c49c94", "#f7b6d2", "#c7c7c7", "#dbdb8d", "#9edae5",
+)  # fmt: skip
+
+#: Longest name of a class: one line of the legend and of the table in the Data catalogue.
+MAX_CLASS_NAME_CHARS = 40
+
+_COLOUR = re.compile(r"#[0-9a-f]{6}")
+
+
+@dataclass(frozen=True, slots=True)
+class BandClass:
+    """One class of a band of classes as the registry names it: value, English name, and a colour only where it is given."""
+
+    value: int
+    name: str
+    colour: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ClassRow:
+    """One class with its colour settled (:meth:`BandClasses.rows`): what the catalogue, the legend and the export show."""
+
+    value: int
+    name: str
+    colour: str
+
+
+@dataclass(frozen=True, slots=True)
+class BandClasses:
+    """The classes of one band whose values are classes (M5-62): every class the band knows, ascending.
+
+    ``colours`` says where the colours come from. With ``file`` or ``stac`` every class carries the colour its source
+    gives; with ``palette`` the colours are :data:`CLASS_PALETTE` in the order of the classes, and a class that carries
+    a colour of its own is the exception set by hand. ``nodata`` is the value of the band that is no class (shown
+    transparent), or ``None`` where every value is one.
+    """
+
+    colours: ClassColours
+    nodata: int | None
+    classes: tuple[BandClass, ...]
+
+    def rows(self) -> tuple[ClassRow, ...]:
+        """The classes with their colours, as everything that shows them takes them."""
+        return tuple(
+            ClassRow(entry.value, entry.name, entry.colour or CLASS_PALETTE[index % len(CLASS_PALETTE)])
+            for index, entry in enumerate(self.classes)
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class MaskSource:
     """Where the operator ``mask`` reads its classes from for this dataset (M4-18, adr/0014 §15m).
@@ -1754,6 +1815,10 @@ class DatasetConfig:
     # `description` of a STAC band, for the column "Description" of the Data catalogue (M5-59). No default (KLAERUNGEN
     # B10): every key of ``band_units`` that is no auxiliary asset needs one.
     band_descriptions: Mapping[str, str]
+    # The classes of each band whose values are classes, by the keys of ``band_units`` (M5-62): value, English name and
+    # where the colours come from. The Data catalogue, the legend of a layer, the colours of the tiles and the export all
+    # take them from here. No default (KLAERUNGEN B10): an entry says so, with an empty mapping where no band has classes.
+    band_classes: Mapping[str, BandClasses]
     # The assets that help to look at or read the data but are no band of it (a true-colour picture, a preview), by
     # asset key. The panel keeps them out of "Select all"; a user can still pick one. No default (KLAERUNGEN B10):
     # an entry says so, with an empty tuple where it has none. The mask layer is named by ``mask``, not here.
@@ -1787,6 +1852,7 @@ class DatasetConfig:
     def __post_init__(self) -> None:
         object.__setattr__(self, "band_units", MappingProxyType(dict(self.band_units)))
         object.__setattr__(self, "band_descriptions", MappingProxyType(dict(self.band_descriptions)))
+        object.__setattr__(self, "band_classes", MappingProxyType(dict(self.band_classes)))
         self._check_keywords()
         self._check_catalogue_fields()
         self._check_doi()
@@ -1807,6 +1873,7 @@ class DatasetConfig:
         self._check_band_units()
         self._check_auxiliary_assets()
         self._check_band_descriptions()
+        self._check_band_classes()
         self._check_asset_keys()
         self._check_item_states()
         self._check_search_filters()
@@ -1974,6 +2041,49 @@ class DatasetConfig:
         missing = [key for key in self.band_units if key not in self.band_descriptions and key not in self.auxiliary_assets]
         if missing:
             raise ConfigError(f"{self.dataset_id}: band_descriptions has no entry for {', '.join(map(repr, missing))}")
+
+    def class_rows(self, asset: str) -> tuple[ClassRow, ...] | None:
+        """The classes of ``asset`` with their colours, or ``None`` where its values are no classes."""
+        classes = self.band_classes.get(asset)
+        return None if classes is None else classes.rows()
+
+    def _check_band_classes(self) -> None:
+        """Each band of classes is a band without a unit; its classes ascending, named, and told apart by colour (M5-62)."""
+        for key, classes in self.band_classes.items():
+            where = f"{self.dataset_id}: the classes of {key!r}"
+            if key not in self.band_units or "*" in key or key in self.auxiliary_assets:
+                raise ConfigError(f"{self.dataset_id}: band_classes names {key!r}, which is no band of band_units")
+            if self.band_units[key] is not None:
+                raise ConfigError(f"{where} belong to a band without a unit")
+            values = [entry.value for entry in classes.classes]
+            if not values or values != sorted(set(values)):
+                raise ConfigError(f"{where} are listed ascending, each value once")
+            if not all(_is_whole_number(value) for value in values):
+                raise ConfigError(f"{where} have whole numbers as values")
+            if classes.nodata is not None and (not _is_whole_number(classes.nodata) or classes.nodata in values):
+                raise ConfigError(f"{where}: nodata is a whole number that is no class")
+            for entry in classes.classes:
+                name = entry.name
+                if not isinstance(name, str) or not name.strip() or name != name.strip() or "\n" in name:
+                    raise ConfigError(f"{where} each have a non-blank one-line name")
+                if len(name) > MAX_CLASS_NAME_CHARS:
+                    raise ConfigError(f"{where}: a name is longer than {MAX_CLASS_NAME_CHARS} characters")
+                if entry.colour is not None and not (isinstance(entry.colour, str) and _COLOUR.fullmatch(entry.colour)):
+                    raise ConfigError(f"{where}: a colour is written #rrggbb in small letters")
+            given = [entry.colour is not None for entry in classes.classes]
+            if classes.colours is not ClassColours.PALETTE and not all(given):
+                raise ConfigError(f"{where} take their colours from the source, so every class has one")
+            if classes.colours is ClassColours.PALETTE and len(values) > len(CLASS_PALETTE) and not all(given[len(CLASS_PALETTE) :]):
+                raise ConfigError(f"{where} are more than the palette has colours; the others need a colour each")
+            colours = [row.colour for row in classes.rows()]
+            if len(set(colours)) != len(colours):
+                raise ConfigError(f"{where} have two classes of the same colour")
+            if self.mask is not None and self.mask.asset == key:
+                named = [(entry.value, entry.name) for entry in classes.classes]
+                if classes.nodata is not None:
+                    named = sorted([*named, *((entry.value, entry.label) for entry in self.mask.classes if entry.value == classes.nodata)])
+                if named != [(entry.value, entry.label) for entry in self.mask.classes]:
+                    raise ConfigError(f"{where} and the classes of the mask differ")
 
     def _check_auxiliary_assets(self) -> None:
         """The auxiliary assets are distinct, usable keys, and none is the mask layer."""
@@ -2691,6 +2801,8 @@ for _entry_part in (
     TemporalExtent,
     MaskClass,
     MaskSource,
+    BandClass,
+    BandClasses,
     ShareClasses,
     FilterValue,
     SearchFilter,

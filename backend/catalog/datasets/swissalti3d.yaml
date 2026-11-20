@@ -211,6 +211,8 @@ band_units:
 band_descriptions:
   dtm: Terrain height (DTM), 0.5 m grid
   dtm_2m: Terrain height (DTM), 2 m grid
+# No band whose values are classes (M5-62).
+band_classes: {}
 # The ASCII-XYZ files in a ZIP: originals for the download, not readable as a raster (M5-08 F2).
 auxiliary_assets: [xyz, xyz_2m]
 # The source answers neither `query` nor CQL2 (M5-08 plan §2): no filters.

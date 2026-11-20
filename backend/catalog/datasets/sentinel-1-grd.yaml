@@ -194,6 +194,8 @@ band_descriptions:
   vh: VH polarisation amplitude
   hh: HH polarisation amplitude
   hv: HV polarisation amplitude
+# No band whose values are classes (M5-62).
+band_classes: {}
 # The source's quicklook and the SAFE annotation files, by the keys of the items [M]. The calibration tables are
 # what DS-05d will read.
 auxiliary_assets:
