@@ -1,6 +1,6 @@
 # M5-20 — Verify, Enrich, Dedupe, Lizenzregeln, Freigabe geernteter Einträge, Kandidaten
 
-**Status (19.11.2026):** Plan angenommen (Otto, 19.11.2026: F1–F6 und F8 je 1, F7 = 3, §13a; Vorgaben aus der Messung §4 in §13b, sie gehen §6–§9 vor; F9–F11 je 1 und A18 angenommen, §13c). **Stufe B.** PR 1 in [#388](https://github.com/oscipal/earthX/pull/388), PR 2 danach; höchstens zwei PRs (M5-Plan §2 Punkt 11).
+**Status (19.11.2026):** Plan angenommen (Otto, 19.11.2026: F1–F6 und F8 je 1, F7 = 3, §13a; Vorgaben aus der Messung §4 in §13b, sie gehen §6–§9 vor; F9–F11 je 1 und A18 angenommen, §13c; Vorgaben aus `-Classify` vom 20.11. in §13d). **Stufe B.** PR 1 in [#388](https://github.com/oscipal/earthX/pull/388), PR 2 danach; höchstens zwei PRs (M5-Plan §2 Punkt 11).
 **Aufgabe:** M5-20 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2, Auftrag von Otto vom 19.11.2026.
 **Grundlagen:** `adr/0025` (Schnitt 5, §5.1, §5.4, §6.3, §6.4, §6.5, §6.7 mit Nachträgen), `adr/0033` (§4–§11, §13 Zeile M5-20), `plans/m5/m5-19-harvest-kern.md` §12 (Befunde der Läufe, §12.11 offene Punkte), `plans/m5/m5-40-gelistete-in-postgres.md` (Tabelle, Filter, F10), M5-Plan §2 Punkt 12 (alle Datentypen, Filter nach Region und Zeit), `projektuebersicht.md` Prinzipien 12, 15, 16, KLAERUNGEN B8, B9, B11.
 
@@ -355,6 +355,36 @@ Die Ausgaben von M1–M8 stehen als Kommentar am PR. Die Vorgaben gehen §6–§
 - „Grossraum Basel“ trifft damit die Gemeinde Basel (Kern nach §13b).
 - Quellenangabe in `backend/THIRD_PARTY_NOTICES.md`.
 
+## 13d. Vorgaben aus `-Classify` (Otto, 20.11.2026) und Umsetzung
+
+Otto hat `-Classify` für opendata-swiss, govdata und fsdi-stac laufen lassen und `municipalities.json` gepusht (swissBOUNDARIES3D 2026-01, 2 110 Gemeinden). Die Ausgaben lagen der Sitzung nicht vor (am PR über die Schnittstelle nicht abrufbar); umgesetzt ist nach Ottos Vorgaben:
+
+1. **Ortstexte ohne Treffer:**
+   - „Jura (JU)“ (121): ein Kürzel in Klammern bestätigt einen mehrdeutigen Namen davor → Kanton Jura (Fehler behoben, Test). Ebenso „Luzern (LU)“ → Kanton; „Bern (Kanton)“: eine Bezeichnung in Klammern gilt für den Namen davor; eine Anmerkung in Klammern, die kein Ort ist, fällt weg („Basel (Stadtplan 1987 - 1992)“ → Basel).
+   - EU-Länder-URIs (`publications.europa.eu/resource/authority/country/<code>`) über den Ländercode, Alpha-2 oder Alpha-3 (Tabelle `alpha3` in `place_names.yaml`).
+   - Gliederungswörter ergänzt (Sprachgebiete, Statistische Städte, Gemeinden (Politik), Städtische/Ländliche Gebiete, NUTS 0 Staaten, Fachhochschulen; Präfix „Urban Audit“) = Staat des Katalogs.
+   - Produktnamen sind keine Orte (Präfixe Landeskarte, swissTLMRegio, swissALTIRegio, SWISSIMAGE, Orthofoto, Topografisches Landschaftsmodell, GeoMol15).
+   - Kern statt Zusatz: „Agglomeration“, „Seen im/in“ vorn weg („Agglomeration Bern“ → Bern, „Seen im Kanton Luzern“ → Kanton Luzern).
+   - **A25:** „Europa“, „Welt“, „International“, „Grenzüberschreitend…“ ergeben **keine Region** (Stufe `none`), ohne Rückfall auf Herausgeber oder Staat des Katalogs.
+   - **GeoNames (F10):** Die drei IDs 2657907, 7287644 und 6458807 waren aus der Sitzung nicht auflösbar (`geonames.org` nicht erreichbar, Websuche ohne Treffer). Keine Zuordnung geraten; Bitte an Otto: die drei Seiten im Browser öffnen und Name und Ebene nennen, oder die Hosts `www.geonames.org` und `sws.geonames.org` für die Umgebung freigeben.
+2. **Gleichnamige Stadt und Kanton** (Bern, Zürich, Luzern, Zug, Schwyz, Solothurn, Schaffhausen, St. Gallen, Freiburg, Glarus …): Ein nackter Name ist der Kanton, wenn der Herausgeber eine Stelle dieses Kantons ist („Kanton Zug“, „Amt für Geoinformation Kanton Schwyz“), sonst die Stadt. `-Classify` zählt je Name und Entscheid („zug: Kanton“, „zug: Stadt“). Mit Bezeichnung („Stadt Zug“) gilt das Genannte.
+3. **Nicht-Geodaten:** `geodata.yaml` mit neuen Listen `not_geo_publishers` (Materials Cloud, PSI Data Catalog, Deutsche Bibliotheksstatistik, Bundeskriminalamt, Bundesamt für Justiz) und `geo_publishers` (EnviDat), Begriffen ohne Geodaten (Kriminalstatistik, Staatsarchiv, Bibliotheksstatistik, Wissenschaftliche Bibliotheken, Organigramm, Fernsehprogramm, Jahresabschluss, Abfuhrtermine) und Geo-Signalen (Denkmalliste, Straßen-/Strassenverzeichnis, Ortschaftenverzeichnis, Niederschlag, Verkehrszählung, auch in zusammengesetzten Wörtern). Die Einträge „Staatsarchiv Hamburg …“ der Behörde für Kultur und Medien trifft der Begriff Staatsarchiv; die übrigen Einträge dieser Behörde bleiben.
+4. **`no_access`** (govdata 67 415, opendata-swiss 701): ausgelöst, wenn der Extract weder `delivery` noch `account` sicher kennt (M5-19 §5.2: nie geraten). Im Einzelnen, aus dem Code [P]:
+   - `delivery` leer: keine Ressource ist eine Datei (Format der Formattabelle oder Download-Adresse ohne Dienst-/Seitenformat) und keine ein Dienst. Das sind Funde nur mit Seiten (HTML, auch die Viewer, die Rang 1 des Links „Source“ sind), mit Formaten, die die Tabelle nicht kennt (z. B. leer, „API“, Freitext), oder ohne Ressource mit `https`-Adresse (`http`-Ressourcen hält die Zwischenform nicht).
+   - `account` leer: `access_rights` ist nicht „public“ (eingeschränkt, nicht öffentlich oder ein unbekannter Wert).
+   - Die zehn Beispiele mit Grund kann die Session nicht zeigen (die Daten liegen in Ottos Datenbank). `-Classify` zählt seit diesem Stand die Gründe und zeigt zehn Beispiele (Grund, Titel, Link, Formate).
+   - **Bewertung:** Gewollt ist, dass nicht geraten wird. Wahrscheinlich ist aber, dass ein großer Teil „nur Seiten“ oder „Format unbekannt“ ist, also Daten, die man über die Seite des Anbieters bekommt. Dafür fehlt eine Erkennung; die Entscheidung folgt nach den Zahlen (F12).
+5. **FSDI „proprietary“:** In STAC heißt das „siehe Link `rel=license`“; der Extract nimmt nur noch die Adresse des Links als Angabe, „proprietary“ (auch „other“, „various“) allein ist keine. Neue Extraktor-Version, `--reextract` setzt es um.
+6. **PowerShell 5.1:** Das Skript stellt Ein- und Ausgabe der Konsole auf UTF-8.
+7. **Lizenzliste:** `docs/plans/m5/m5-20-lizenzliste.md`, vorbereitet von `license-checker`, mit Schreibweisen, Bedeutung, Flags und Beleg. Die Belege konnten nicht abgerufen werden (Hosts aus der Sitzung nicht erreichbar, nur Suchtreffer), die Zahlen fehlen; `-Classify` druckt jetzt je Angabe Zahl und häufigste Herausgeber. Die Einstufung macht Otto.
+
+**Dazu A26:** Kennt das Ortsverzeichnis Gemeinden, die `earthx_municipality` nicht hält (`catalog-load` nicht gelaufen), bricht der Bericht mit Hinweis ab, statt Zeilen ohne Fußabdruck zu schreiben.
+
+**F12 — Funde ohne erkannten Zugangsweg (`no_access`), Entscheidung nach den Gründen aus dem nächsten `-Classify`:**
+1. Funde mit Seite (Viewer oder Download-Seite beim Anbieter, Rang 1 oder 2 des Links „Source“) und ohne erkannte Datei bekommen eine neue Zugangsart `page` („über die Seite des Anbieters“), Migration und Feld in `adr/0033` §5; Formate, die oft vorkommen, kommen in die Formattabelle; `access_rights` nicht öffentlich bleibt Warteliste **(Empfehlung, wenn „nur Seiten“ und „Format unbekannt“ überwiegen)**
+2. Nur die Formattabelle erweitern, Seiten bleiben ohne Zugangsart (Warteliste)
+3. So lassen: wer keinen Zugangsweg nennt, wartet
+
 ## 14. Auslegungen (gelten, wenn Otto nicht widerspricht)
 
 - **A1** IDs geernteter Einträge wie §12; keine `proto-`-ID möglich (die Quelle `proto-*` ist im Seed verboten).
@@ -380,6 +410,9 @@ Die Ausgaben von M1–M8 stehen als Kommentar am PR. Die Vorgaben gehen §6–§
 - **A21** DOI und Kennung, die mehr als 5 Funde tragen, sind Platzhalter eines Portals und kein Dedupe-Schlüssel; Collection-IDs zählen ohne diese Grenze.
 - **A22** Ein einzelner Fund, der sich nicht ableiten lässt oder den Postgres ablehnt, hält den Bericht nicht an: er wird als „fehlerhaft“ gezählt, seine Zeile bleibt, wie sie war. Ein Enddatum im Jahr 9999 ist ein offenes Ende. Eine Geometrie, deren Verschachtelung nicht zu ihrem Typ passt, gilt im Extract als keine.
 - **A23** Nimmt Otto eine Freigabe in `grants/` oder eine Lizenz in `terms.yaml` zurück, macht `catalog-load` die betroffenen Einträge sofort unsichtbar (`needs_rule`, `adr/0033` §9), nicht erst der nächste Bericht.
+- **A25** Ein Ortstext jenseits jedes Staats („Europa“, „Welt“, „International“, „Grenzüberschreitend…“) gibt keine Region und fällt nicht auf Herausgeber oder Staat des Katalogs zurück (Otto, 20.11.2026).
+- **A26** Der Bericht läuft nur, wenn `earthx_municipality` alle Gemeinden des Ortsverzeichnisses hält.
+- **A27** In Klammern: ein Kürzel bestätigt den mehrdeutigen Namen davor, eine Bezeichnung gilt für ihn, eine Anmerkung ohne Ort fällt weg (statt den ganzen Text ungültig zu machen).
 - **A24** Fehlt die Freigabedatei des offenen Stapels im Ausgabeverzeichnis (Branch verworfen, Schreiben gescheitert), schreibt der nächste Bericht sie neu.
 
 ## 15. Tests (Plan)
@@ -398,33 +431,14 @@ Ohne Netz, synthetische Fixtures (M5-19 A5), Transport-Attrappe am `Gateway`:
 
 ## 16. Befehle für Ottos lokalen Lauf
 
-**PR 1 zuerst mergen? Nein, erst `-Classify` auf dem Branch, dann mergen.** Begründung: `-Classify` schreibt nichts und verlangt `main` nicht; das Skript ohne `-Classify` (Freigabedatei auf eigenem Branch) braucht `main` und hat erst etwas zu tun, wenn `terms.yaml` und `grants/` Einträge haben – die kommen nach deiner Einstufung. Die Ausgaben von `-Classify` schärfen `geodata.yaml` und `place_names.yaml` noch in diesem PR. Hinweis: Mit dem Branch wendet `catalog-load` die Migrationen 032 und 033 auf deine Datenbank an; beide sind gepinnt und ändern sich danach nicht mehr, nur neue Migrationen kämen dazu.
-
-In dieser Reihenfolge, PowerShell im Checkout:
+Stand 20.11.2026, nach §13d. Weiter auf dem Branch, PR 1 noch nicht mergen: Die Ausgaben dieses Laufs entscheiden F12 und schärfen die Regeldateien noch einmal; danach Merge nach grüner CI. PowerShell im Checkout:
 
 ```powershell
-git fetch origin
 git switch claude/confident-turing-lucii4
 git pull
-```
-
-Gemeinden (F9), einmal: die GeoPackage-Datei von swissBOUNDARIES3D bei swisstopo laden (aktuelles Release) und in einen Ordner legen, z. B. `C:\daten\swissboundaries`. Das Skript läuft im Image (dort sind `shapely`, `pyproj`, `numpy`); `<datei>` und `<release>` wie bei swisstopo benannt:
-
-```powershell
-docker compose build
-docker compose run --rm --no-deps --entrypoint python -v "${PWD}\scripts:/work/scripts" -v "${PWD}\backend\catalog:/work/catalog" -v "C:\daten\swissboundaries:/data" harvest /work/scripts/write-municipality-outlines.py /data/<datei>.gpkg --release <release> --output /work/catalog/municipalities.json
-```
-
-- Meldet es eine fehlende Ebene oder ein fehlendes Feld, nennt es, was die Datei hält; dann mit `--layer` bzw. `--kind` aufrufen oder mir die Meldung schicken.
-- Danach `git add backend/catalog/municipalities.json`, `git commit -m "Add the municipalities of swissBOUNDARIES3D <release>"`, `git push` auf diesen Branch.
-
-Dann:
-
-```powershell
 docker compose build
 docker compose up -d
 docker compose run --rm harvest fsdi-stac --reextract
-docker compose run --rm harvest earth-search --reextract
 docker compose run --rm harvest opendata-swiss --reextract
 docker compose run --rm harvest govdata --reextract
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harvest-report.ps1 -Source opendata-swiss -Classify
@@ -432,10 +446,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harvest-report.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harvest-report.ps1 -Source fsdi-stac -Classify
 ```
 
-- `--reextract` setzt die neue Extraktor-Version um (Themen, Kennung, Ortstext `null`, Verschachtelung der Geometrie) ohne Anfrage.
-- `-Classify` schreibt nichts: Ergebnis, Ausdehnung, Signale, je 30 Verborgene und Grenzfälle, Ortstexte ohne Treffer, GeoNames-IDs, Warteliste nach Paar Herausgeber/Lizenzangabe mit Zahlen. Bitte alle drei Ausgaben an den PR hängen; daraus folgen die Schärfung von `geodata.yaml` und `place_names.yaml`, die Zuordnung der GeoNames-IDs (F10) und die Lizenzliste mit Zahlen für deine Einstufung.
-- **Danach** Merge von PR 1 nach grüner CI. Erst wenn `terms.yaml`/`grants/` Einträge haben (Vorschläge von `license-checker`, deine Einstufung), entsteht mit dem Skript ohne `-Classify` auf `main` eine Freigabedatei: `harvest-report.ps1 -Source <quelle>` legt `harvest/<datum>-<quelle>` an und committet; Push und Draft-PR mit deinem Zugang; nach dem Merge mit `decision: approved` `git pull`, `docker compose build`, `docker compose up -d` – `catalog-load` veröffentlicht.
-- Unter Linux startet das Skript den Bericht als Besitzer des Checkouts; die Freigabedatei bleibt ohne `sudo` bearbeitbar.
+- `docker compose up -d` lässt `catalog-load` die Gemeinden aus `municipalities.json` schreiben; ohne das bricht der Bericht mit Hinweis ab (A26).
+- `--reextract` ist für fsdi-stac nötig („proprietary“ → Link) und schadet bei den anderen nicht (der Bericht leitet ohnehin neu ab, wenn sich Regeln ändern).
+- Neue Abschnitte in `-Classify`: Gründe für `no_access` mit zehn Beispielen (F12), gleichnamige Stadt und Kanton je Name, alle Lizenzangaben mit Zahl und häufigsten Herausgebern (für `m5-20-lizenzliste.md`).
+- Bitte die drei Ausgaben wieder an den PR hängen. Kommen sie dort nicht an (die Sitzung sah die letzten nicht), als Datei unter `docs/plans/m5/` auf den Branch legen oder in den Chat kopieren.
+- GeoNames: die drei Seiten https://www.geonames.org/2657907, https://www.geonames.org/7287644, https://www.geonames.org/6458807 öffnen und Name und Ebene nennen (F10).
 
 ## 17. Umsetzung PR 1 ([#388](https://github.com/oscipal/earthX/pull/388)), Stand 19.11.2026
 
@@ -451,4 +466,5 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harvest-report.ps1
 - **Lokaler Lauf:** Compose-Dienst `harvest-report` (Profil `harvest`, `backend/catalog/approvals` eingebunden), `scripts/harvest-report.ps1` und `.sh` (sauberer Checkout auf `main`, Branch, Commit, nie Push), README „Geerntete Einträge freigeben“.
 - **Nach der Review (Subagent, 19.11.2026):** INSPIRE-Signal und Enddatum 9999 brachen den Bericht ab; ein Grabstein auf einem Duplikat und ein Upsert auf eine `superseded`-Zeile verletzten die CHECKs von 032; behoben mit Tests. Dazu A15, A18–A24 und F11.
 - **Zweite Runde (Otto, 19.11.2026):** Gemeinden aus swissBOUNDARIES3D (Skript, `municipalities.json` leer bis zum Lauf, Migration 033, Namen im Verzeichnis, Fußabdruck aus dem Umriss); `--classify` zählt GeoNames-IDs; `geodata.yaml` nennt IT.NRW (2 375 Tabellen ohne „statisti*“ im Namen); die Skripte starten den Bericht unter Linux als Besitzer des Checkouts, mit `HOME=/tmp` im Dienst; Test mit `docker`-Attrappe in einem Wegwerf-Repository.
+- **Dritte Runde (Otto, 20.11.2026, §13d):** Ortstexte (Kürzel in Klammern, EU-Länder-URIs, Gliederungswörter, Produktnamen, Kern statt Zusatz, „Europa“ ohne Region), gleichnamige Stadt und Kanton nach Herausgeber, `geodata.yaml` mit Herausgeber-Listen, Begriffen und Geo-Signalen, Gründe für `no_access` und Lizenzangaben in `-Classify`, STAC „proprietary“ → Link, UTF-8 in PowerShell 5.1, Lizenzliste `m5-20-lizenzliste.md`, Bericht prüft `earthx_municipality`.
 - **Nicht in PR 1** (F8 = 1, PR 2): Verify, Kandidaten und `discovery propose`, „—“ im Data catalogue, erste Lizenzen nach F5 (Vorschläge von `license-checker` nach den Zahlen aus `-Classify`), Zuordnung der GeoNames-IDs (F10) nach deiner Ausgabe.
