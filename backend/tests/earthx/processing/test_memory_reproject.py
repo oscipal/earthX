@@ -18,6 +18,7 @@ import json
 import math
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -40,9 +41,8 @@ LANCZOS_GROWTH_LIMIT_MB = 180
 
 
 @pytest.fixture(scope="module")
-def scenes(tmp_path_factory: pytest.TempPathFactory) -> dict[int, Path]:
-    root = tmp_path_factory.mktemp("scenes")
-    return {size: build_scene(root / f"scene-{size}.tif", size) for size in (SMALL, LARGE)}
+def scenes(memory_scene: Callable[..., Path]) -> dict[int, Path]:
+    return {size: memory_scene(size) for size in (SMALL, LARGE)}
 
 
 def measure(scene: Path, workdir: Path, size: int, step: str = "reproject") -> dict:
@@ -109,14 +109,12 @@ def _wide(scene: Path, tmp_path: Path, size: int, bands: int) -> dict:
 
 
 def test_four_bands_do_not_follow_the_scene_size(
-    tmp_path_factory: pytest.TempPathFactory, capsys: pytest.CaptureFixture[str]
+    memory_scene: Callable[..., Path], tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    root = tmp_path_factory.mktemp("four-bands")
     measured = {}
     for size in (SMALL, LARGE):
-        scene = build_scene(root / f"scene-{size}.tif", size, bands=4)
-        (root / str(size)).mkdir()
-        measured[size] = _wide(scene, root / str(size), size, 4)
+        (tmp_path / str(size)).mkdir()
+        measured[size] = _wide(memory_scene(size, 4), tmp_path / str(size), size, 4)
     growth = measured[LARGE]["peak_mb"] - measured[SMALL]["peak_mb"]
     with capsys.disabled():
         print(f"\nT2 memory reproject 4 bands {SMALL}²: {measured[SMALL]}, {LARGE}²: {measured[LARGE]}, growth {growth:.1f} MB")

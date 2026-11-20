@@ -21,7 +21,6 @@ import psycopg
 import pytest
 
 from earthx.api.main import build_app
-from earthx.catalog.load import main as load_catalog
 from earthx.catalog.pgstac import load_collection, use_pgstac_search_path
 from earthx.gateway import Gateway, Policy
 from tests.catalog.entries import SENTINEL_2_L2A
@@ -66,9 +65,7 @@ def _public(host: str, port: int) -> tuple[str, ...]:
 
 
 @pytest.fixture
-def require_catalog_loaded(require_postgres_env: None) -> Iterator[None]:
-    code = load_catalog()
-    assert code == 0
+def require_catalog_loaded(catalogue_loaded: None) -> Iterator[None]:
     with psycopg.connect(autocommit=True) as conn:
         load_collection(conn, SYNTHETIC_ZARR)
     # The search cache pool commits (autocommit=True, dependencies.cache_pool), so

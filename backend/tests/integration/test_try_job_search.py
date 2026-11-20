@@ -26,7 +26,6 @@ import pytest
 import uvicorn
 
 from earthx.api.main import app
-from earthx.catalog.load import main as load_catalog
 from earthx.gateway import Gateway, Policy
 
 pytestmark = pytest.mark.anyio
@@ -52,8 +51,7 @@ def geo_json(body: dict[str, Any]) -> httpx.Response:
 
 
 @pytest.fixture
-def require_catalog_loaded(require_postgres_env: None) -> None:
-    assert load_catalog() == 0
+def require_catalog_loaded(catalogue_loaded: None) -> None:
     with psycopg.connect(autocommit=True) as conn:
         conn.execute("DELETE FROM public.earthx_search_cache")
 

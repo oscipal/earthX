@@ -22,7 +22,6 @@ import httpx
 import pytest
 
 from earthx.api.main import app
-from earthx.catalog.load import main as load_catalog
 from earthx.gateway import Gateway, Policy
 from tests.catalog.entries import SENTINEL_2_L2A
 from tests.conftest import log_line_without_timestamp
@@ -47,9 +46,8 @@ def load_fixture(name: str) -> dict[str, Any]:
 
 
 @pytest.fixture
-def require_catalog_loaded(require_postgres_env: None) -> None:
-    code = load_catalog()
-    assert code == 0
+def require_catalog_loaded(catalogue_loaded: None) -> None:
+    """The catalogue as `catalog-load` leaves it, loaded only when a test changed it (`catalogue_loaded`)."""
 
 
 @asynccontextmanager

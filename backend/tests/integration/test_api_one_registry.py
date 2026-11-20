@@ -20,7 +20,6 @@ import psycopg
 import pytest
 
 from earthx.api.main import build_app
-from earthx.catalog.load import main as load_catalog
 from earthx.catalog.registry import DatasetRegistry
 from earthx.gateway import Gateway, Policy
 from tests.catalog.entries import SENTINEL_2_L2A
@@ -35,8 +34,7 @@ app = build_app(DatasetRegistry((APP_ONLY,)))
 
 
 @pytest.fixture
-def require_catalog_loaded(require_postgres_env: None) -> None:
-    assert load_catalog() == 0
+def require_catalog_loaded(catalogue_loaded: None) -> None:
     # The cache pool commits; a row an earlier run left would answer without
     # reaching the mocked transport (same reasoning as `test_api_federating.py`).
     with psycopg.connect(autocommit=True) as conn:

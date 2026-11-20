@@ -27,7 +27,6 @@ from rasterio.errors import RasterioIOError
 from earthx.access.aoi_clouds import AoiClouds
 from earthx.api import aoi_cloud_filter
 from earthx.api.main import build_app
-from earthx.catalog.load import main as load_catalog
 from earthx.catalog.pgstac import load_collection, use_pgstac_search_path
 from earthx.catalog.registry import CoverageProvider, DatasetRegistry, ItemHolding, SearchCapabilities
 from earthx.gateway import Gateway, Policy, ReadSlots
@@ -145,8 +144,7 @@ def world(monkeypatch: pytest.MonkeyPatch) -> World:
 
 
 @pytest.fixture
-def collections_loaded(require_postgres_env: None) -> Iterator[None]:
-    assert load_catalog() == 0
+def collections_loaded(catalogue_loaded: None) -> Iterator[None]:
     with psycopg.connect(autocommit=True) as conn:
         load_collection(conn, NATIVE)
         # Rows outlive one test (the cache pool commits); an earlier run's page or measure must not answer this one.

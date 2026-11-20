@@ -20,7 +20,6 @@ import psycopg
 import pytest
 
 from earthx.api.main import build_app
-from earthx.catalog.load import main as load_catalog
 from earthx.catalog.pgstac import load_collection, use_pgstac_search_path
 from earthx.catalog.registry import CoverageProvider, DatasetRegistry, ItemHolding, SearchCapabilities
 from earthx.gateway import Gateway, Policy
@@ -62,8 +61,7 @@ def _public(host: str, port: int) -> tuple[str, ...]:
 
 
 @pytest.fixture
-def collections_loaded(require_postgres_env: None) -> Iterator[None]:
-    assert load_catalog() == 0
+def collections_loaded(catalogue_loaded: None) -> Iterator[None]:
     with psycopg.connect(autocommit=True) as conn:
         load_collection(conn, CLOUD_ONLY)
         load_collection(conn, NATIVE)
