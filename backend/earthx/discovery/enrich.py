@@ -16,6 +16,7 @@ no place of the directory matches nothing, and a place in a title is never read.
 
 from __future__ import annotations
 
+import html
 import re
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -56,6 +57,7 @@ _KEYS = frozenset(
         "approximate",
         "not_places",
         "not_place_prefixes",
+        "not_place_patterns",
         "alpha3",
         "geonames",
     }
@@ -102,6 +104,7 @@ class PlaceDirectory:
     beyond: frozenset[str]
     beyond_prefixes: tuple[str, ...]
     not_place_prefixes: tuple[str, ...]
+    not_place_patterns: tuple[re.Pattern[str], ...]
     alpha3: Mapping[str, str]
     before: tuple[str, ...]
     after: tuple[str, ...]
@@ -195,9 +198,17 @@ def read_place_directory(
                 plain[normal] = code
     if unknown := sorted(ambiguous - set(designated)):
         raise EntryFileError(f"{path.name}: ambiguous names no place: {', '.join(unknown)}")
+    municipal_codes = {item.code for item in municipalities}
     for key, code in geonames.items():
-        if not isinstance(key, str) or not key.isdigit() or code not in regions:
-            raise EntryFileError(f"{path.name}: geonames maps a numeric id (as text) to a code of regions.json")
+        known = code in regions or (
+            isinstance(code, str) and MUNICIPALITY_CODE.fullmatch(code) and (not municipalities or code in municipal_codes)
+        )
+        if not isinstance(key, str) or not key.isdigit() or not known:
+            raise EntryFileError(f"{path.name}: geonames maps a numeric id (as text) to a region or a municipality")
+    try:
+        patterns = tuple(re.compile(p, re.IGNORECASE) for p in _names(data, "not_place_patterns"))
+    except re.error:
+        raise EntryFileError(f"{path.name}: not_place_patterns holds regular expressions") from None
     alpha3 = data["alpha3"]
     if not isinstance(alpha3, dict) or not all(
         isinstance(k, str) and re.fullmatch(r"[A-Z]{3}", k) and regions.get(v) == "state" for k, v in alpha3.items()
@@ -223,6 +234,7 @@ def read_place_directory(
         beyond=frozenset(normalize(text) for text in _names(data, "beyond")),
         beyond_prefixes=tuple(normalize(text) for text in _names(data, "beyond_prefixes")),
         not_place_prefixes=tuple(normalize(text) for text in _names(data, "not_place_prefixes")),
+        not_place_patterns=patterns,
         alpha3=dict(alpha3),
         before=tuple(sorted({normalize(t) for t in _names(approximate, "before")}, key=len, reverse=True)),
         after=tuple(sorted({normalize(t) for t in _names(approximate, "after")}, key=len, reverse=True)),
@@ -335,6 +347,10 @@ def place_codes(text: str, directory: PlaceDirectory, country: str | None) -> tu
     """The places a place text names: their codes, ``"*"`` for the whole state of the catalogue, :data:`BEYOND` for
     a text beyond any one state, ``""`` for a text that is no place at all, ``None`` where a part names no place of
     the directory."""
+    # "Carte géologique 1:200@squot;000": entities of HTML (and this broken one) are decoded before anything is compared.
+    text = html.unescape(text.replace("@squot;", "'").replace("&squot;", "'")).strip()
+    if any(pattern.search(text) for pattern in directory.not_place_patterns):
+        return ""
     ids = _GEONAMES.findall(text)
     if ids:
         codes = [directory.geonames.get(i) for i in ids]

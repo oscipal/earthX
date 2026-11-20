@@ -23,7 +23,7 @@ places:
   CH-BL: [Basel-Landschaft, Bâle-Campagne, Basilea Campagna]
   CH-BS: [Basel-Stadt, Bâle-Ville, Basilea Città]
   CH-FR: [Freiburg, Fribourg, Friburgo]
-  CH-GE: [Genf, Genève, Ginevra, Geneva]
+  CH-GE: [Genf, Genève, Ginevra, Geneva, Grand Genève]
   CH-GL: [Glarus, Glaris, Glarona]
   CH-GR: [Graubünden, Grisons, Grigioni, Grischun]
   CH-JU: [Jura, Giura]
@@ -98,12 +98,13 @@ municipal_designations: [Stadt, Gemeinde, Einwohnergemeinde, Politische Gemeinde
 # --- 2. Texts that name the whole state of the catalogue by its parts (Otto, 19.11.2026 and 20.11.2026) ---------------
 whole_country: [Kantone, Gemeinden, Politische Gemeinden, Bezirke, Grossregionen, Sonstige Raumgliederungen,
                 Cantons, Communes, Districts, Cantoni, Comuni, Distretti, Sprachgebiete, Statistische Städte,
-                Gemeinden (Politik), Städtische Gebiete, Ländliche Gebiete, Städtische/Ländliche Gebiete, NUTS 0 Staaten, Fachhochschulen]
+                Gemeinden (Politik), Städtische Gebiete, Ländliche Gebiete, Städtische/Ländliche Gebiete, NUTS 0 Staaten,
+                Fachhochschulen, Raum mit städtischem Charakter, Arbeitsmarktregionen, Pädagogische Hochschulen]
 # Texts that begin so name the state of the catalogue too ("Urban Audit Kernstädte (Schweiz-Perimeter)").
-whole_country_prefixes: [Urban Audit]
+whole_country_prefixes: [Urban Audit, Stadt/Land-Typologie]
 
 # --- 2a. Texts beyond any one state: no region at all, not the state of the catalogue (Otto, 20.11.2026, plan A25) ---
-beyond: [Europa, Europe, Welt, World, Monde, Mondo, International, Weltweit, Worldwide, Global]
+beyond: [Europa, Europe, Welt, World, Monde, Mondo, International, Weltweit, Worldwide, Global, "Welt: Regionen"]
 beyond_prefixes: [Grenzüberschreitend]
 
 # --- 3. Approximate places: the words around the core that are dropped (Otto, 19.11.2026) ----------------------------
@@ -112,10 +113,14 @@ approximate:
   after: [und angrenzende Gebiete, mit grenznahem Ausland, und Umgebung]
 
 # --- 4. Texts that are no place and are passed over like a missing one (Otto, 19.11.2026 and 20.11.2026) -------------
-not_places: [Spatial]
+not_places: [Spatial, Hektaren, Letzteiszeitliches Maximum]
 # Names of products, not places: a text that begins so is passed over ("Landeskarte 1:25 000", "SWISSIMAGE 10 cm").
 not_place_prefixes: [Landeskarte, swissTLMRegio, swissALTIRegio, SWISSIMAGE, Orthofoto, Topografisches Landschaftsmodell,
-                     GeoMol15]
+                     GeoMol15, DHM25, swissBATHY3D, Siegfriedkarte, Carte nationale, Carte géologique, Luftfahrtkarte,
+                     Strassenkarte, Skitourenkarte, Satellitenbilder]
+# Patterns of texts that are no place, as regular expressions on the text (case ignored): a map at a scale
+# ("…karte 1:50'000", "carte … 1:200'000"), and an empty node of RDF ("N" and 32 hex digits) (Otto, 20.11.2026).
+not_place_patterns: ["(?:karte|carte|map)\\b.*\\b1\\s*:", "^N[0-9a-f]{32}$"]
 
 # --- 4a. Country codes of the EU vocabulary (publications.europa.eu/resource/authority/country/<code>) ------------------
 # The vocabulary writes ISO 3166-1 alpha-3; these are the states of Europe and a few more it uses, as alpha-2.
@@ -124,5 +129,5 @@ alpha3: {AUT: AT, BEL: BE, BGR: BG, HRV: HR, CYP: CY, CZE: CZ, DNK: DK, EST: EE,
          SVN: SI, ESP: ES, SWE: SE, CHE: CH, LIE: LI, NOR: NO, ISL: IS, GBR: GB, USA: US}
 
 # --- 5. GeoNames: the id of an address sws.geonames.org/<id>, quoted as text -> a code of regions.json ---------------
-# Empty until the ids are shown (F10): `report --classify` counts the ids that occur.
-geonames: {}
+# A code of a municipality (municipalities.json) is allowed too. Ids from Otto (20.11.2026, F10 = 1).
+geonames: {"2657907": CH-ZG, "7287644": CH-ZG-1711, "6458807": CH-ZG}

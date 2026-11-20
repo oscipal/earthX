@@ -181,7 +181,7 @@ class TestTheDirectoryFile:
         "places: {CH: [Schweiz], CH-BE: [Bern]}\nambiguous: [Bern]\ndesignations: [Kanton]\n"
         "municipal_designations: [Stadt]\nwhole_country: [Kantone]\nwhole_country_prefixes: []\nbeyond: [Welt]\n"
         "beyond_prefixes: []\napproximate: {before: [Raum], after: [und Umgebung]}\nnot_places: [Spatial]\n"
-        "not_place_prefixes: []\nalpha3: {CHE: CH}\ngeonames: {}\n"
+        "not_place_prefixes: []\nnot_place_patterns: []\nalpha3: {CHE: CH}\ngeonames: {}\n"
     )
 
     def test_the_shipped_file_loads(self) -> None:
@@ -373,3 +373,42 @@ class TestTheShippedMunicipalities:
     def test_towns_of_the_classification(self, text: str) -> None:
         codes = place_codes(text, self.directory, "CH")
         assert isinstance(codes, tuple) and len(codes) == 1 and codes[0].count("-") == 2
+
+
+
+@pytest.mark.parametrize(
+    ("text", "codes"),
+    [
+        # Otto's second -Classify run (20.11.2026).
+        ("DHM25", ""),
+        ("swissBATHY3D", ""),
+        ("Siegfriedkarte", ""),
+        ("Carte nationale 1:500'000", ""),
+        ("Carte g\u00e9ologique g\u00e9n\u00e9rale 1:200@squot;000", ""),
+        ("Luftfahrtkarte 1:350'000", ""),
+        ("Strassenkarte 1:200'000", ""),
+        ("Skitourenkarte 1:50'000", ""),
+        ("Satellitenbilder (swisstopo)", ""),
+        ("Hektaren", ""),
+        ("Letzteiszeitliches Maximum", ""),
+        ("N767fa14707fb4a3385294cd8110e494b", ""),
+        ("Grand Genève", ("CH-GE",)),
+        ("Raum mit städtischem Charakter", "*"),
+        ("Stadt/Land-Typologie 2012", "*"),
+        ("Arbeitsmarktregionen", "*"),
+        ("Pädagogische Hochschulen", "*"),
+        ("Welt: Regionen", "!"),
+        ("Bern &amp; Jura", None),
+        # GeoNames (F10 = 1, Otto 20.11.2026): Kanton Zug (ADM1 and ADM2).
+        ("https://sws.geonames.org/2657907", ("CH-ZG",)),
+        ("https://sws.geonames.org/6458807/", ("CH-ZG",)),
+    ],
+)
+def test_place_texts_of_the_second_classification(text: str, codes: object) -> None:
+    assert place_codes(text, DIRECTORY, "CH") == codes
+
+
+def test_a_geonames_id_of_a_municipality() -> None:
+    # 7287644 is the municipality of Zug (ADM3): its outline, the regions of its canton.
+    extent = spatial_extent({"spatial_text": "https://sws.geonames.org/7287644/"}, country="CH")
+    assert (extent.basis, extent.places, extent.codes) == ("place", ("CH-ZG-1711",), ("CH", "CH-ZG"))
