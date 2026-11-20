@@ -6,5 +6,735 @@
 # spdx_id, name, url, the five flags, tier, attribution_modified, attribution_unmodified with `{publisher}`, terms),
 # `approved_on` (the day, ISO 8601). A listed entry is always in tier catalog; the tier here is for full entries.
 #
-# Empty until Otto grades the first licences (M5-20 F5 = 1).
-[]
+# Graded by Otto on 20.11.2026 (M5-20 plan §13f; docs/plans/m5/m5-20-lizenzliste.md): the classes K1-K6 of the licence
+# list stand above each entry. `matches` holds every spelling of the third -Classify with at least two finds where it
+# means this licence unambiguously. K1-K5 are granted to every publisher by `discovery grants`
+# (backend/catalog/licenses/grant-to-all.yaml), except de-official-work; K6 is graded and never granted. Statements
+# without a licence (K7, such as mdd-nrw-nutzungsbedingungen) are not here: their finds wait.
+# K1
+- license_ref: cc0-1.0
+  matches:
+    - "http://dcat-ap.de/def/licenses/cc-zero"
+    - "http://www.opendefinition.org/licenses/cc-zero"
+    - "http://dcat-ap.de/def/licenses/cc-zero/1.0"
+    - "https://creativecommons.org/publicdomain/zero/1.0"
+    - "https://creativecommons.org/publicdomain/zero/1.0/deed.en"
+    - "https://creativecommons.org/publicdomain/zero/1.0/deed.de"
+    - "Nutzungsbedingungen: Die Daten sind urheberrechtlich geschützt. Der Datensatz wird entgeltfrei mit Copyright: CC 0 https://creativecommons.org/publicdomain/zero/1.0/deed.de zur Verfügung gestellt."
+  license:
+    spdx_id: CC0-1.0
+    name: "Creative Commons Zero 1.0 Universal"
+    url: "https://creativecommons.org/publicdomain/zero/1.0/"
+    commercial_use: true
+    distribution: true
+    derivatives: true
+    share_alike: false
+    attribution_required: false
+    tier: catalog
+    attribution_modified: null
+    attribution_unmodified: null
+    terms: null
+  approved_on: 2026-11-20
+# K1
+- license_ref: dl-de-zero-2.0
+  matches:
+    - "http://dcat-ap.de/def/licenses/dl-zero-de/2.0"
+    - "https://www.govdata.de/dl-de/zero-2-0"
+    - "http://dcat-ap.de/def/licenses/dl-de-zero-2.0"
+    - "http://dcat-ap.de/def/licenses/dl-zero-de/2_0"
+    - "Datenlizenz Deutschland – Zero – Version 2.0"
+    - "Es gelten die Lizenzbedingungen „Datenlizenz Deutschland – Zero – Version 2.0“ bzw. „dl-zero-de/2.0” (https://www.govdata.de/dl-de/zero-2-0)."
+    - "Aus der Nutzung der bereitgestellten Daten können keinerlei rechtliche Ansprüche gegen den Landkreis Leer hergeleitet werden. Verbindliche Auskünfte können ausschließlich unmittelbar bei der datenhaltenden Stelle eingeholt werden.\nEs gelten die Lizenzbedingungen „Datenlizenz Deutschland – Zero – Version 2.0“ bzw. „dl-zero-de/2.0” (https://www.govdata.de/dl-de/zero-2-0)."
+    - "Der Geodatensatz steht gemäß der Datenlizenz Deutschland –\nZero – Version 2.0 geldleistungsfrei zur Verfügung.\nJede Nutzung ist ohne Einschränkungen oder Bedingungen \nzulässig."
+    - "Herstellung des Datensatzes unter Verwendung von amtlichen Geobasisdaten des Liegenschaftskatasters (ALKIS-Gebäudereferenzen), Herausgeber: Land NRW / Stadt Wuppertal, Datenlizenz Deutschland – Zero – Version 2.0 (dl-zero-de/2.0)"
+    - "Herstellung des bereitgestellten Datensatzes unter Verwendung von amtlichen Geobasisdaten des Liegenschaftskatasters (ALKIS-Gebäudereferenzen), Herausgeber: Land NRW / Stadt Wuppertal, Datenlizenz Deutschland – Zero – Version 2.0 (dl-zero-de/2.0)"
+  license:
+    spdx_id: DL-DE-ZERO-2.0
+    name: "Datenlizenz Deutschland – Zero – Version 2.0"
+    url: "https://www.govdata.de/dl-de/zero-2-0"
+    commercial_use: true
+    distribution: true
+    derivatives: true
+    share_alike: false
+    attribution_required: false
+    tier: catalog
+    attribution_modified: null
+    attribution_unmodified: null
+    terms: null
+  approved_on: 2026-11-20
+# K1
+- license_ref: cc-pdm-1.0
+  matches:
+    - "http://dcat-ap.de/def/licenses/ccpdm/1.0"
+  license:
+    spdx_id: null
+    name: "Creative Commons Public Domain Mark 1.0"
+    url: "https://creativecommons.org/publicdomain/mark/1.0/"
+    commercial_use: true
+    distribution: true
+    derivatives: true
+    share_alike: false
+    attribution_required: false
+    tier: catalog
+    attribution_modified: null
+    attribution_unmodified: null
+    terms: null
+  approved_on: 2026-11-20
+# K1
+- license_ref: pddl-1.0
+  matches:
+    - "http://dcat-ap.de/def/licenses/odcpddl"
+  license:
+    spdx_id: PDDL-1.0
+    name: "Open Data Commons Public Domain Dedication and License 1.0"
+    url: "https://opendatacommons.org/licenses/pddl/1-0/"
+    commercial_use: true
+    distribution: true
+    derivatives: true
+    share_alike: false
+    attribution_required: false
+    tier: catalog
+    attribution_modified: null
+    attribution_unmodified: null
+    terms: null
+  approved_on: 2026-11-20
+# K1
+- license_ref: opendata-swiss-open
+  matches:
+    - "https://opendata.swiss/terms-of-use#terms_open"
+    - "https://opendata.swiss/en/terms-of-use#terms_open"
+    - "https://opendata.swiss/en/terms-of-use/#terms_open"
+  license:
+    spdx_id: null
+    name: "opendata.swiss: Freie Nutzung"
+    url: "https://opendata.swiss/en/terms-of-use#terms_open"
+    commercial_use: true
+    distribution: true
+    derivatives: true
+    share_alike: false
+    attribution_required: false
+    tier: catalog
+    attribution_modified: null
+    attribution_unmodified: null
+    terms: null
+  approved_on: 2026-11-20
+# K1
+- license_ref: de-official-work
+  matches:
+    - "http://dcat-ap.de/def/licenses/officialWork"
+    - "http://dcat-ap.de/def/licenses/official-work"
+    - "http://www.gesetze-im-internet.de/urhg/__5.html"
+    - "https://www.gesetze-im-internet.de/urhg/__5.html"
+  license:
+    spdx_id: null
+    name: "Amtliches Werk (§ 5 UrhG)"
+    url: "https://www.gesetze-im-internet.de/urhg/__5.html"
+    commercial_use: true
+    distribution: true
+    derivatives: true
+    share_alike: false
+    attribution_required: false
+    tier: catalog
+    attribution_modified: null
+    attribution_unmodified: null
+    terms: null
+  approved_on: 2026-11-20
+# K2
+- license_ref: cc-by-4.0
+  matches:
+    - "http://dcat-ap.de/def/licenses/cc-by/4.0"
+    - "Creative Commons Namensnennung – 4.0 International (CC BY 4.0)"
+    - "https://creativecommons.org/licenses/by/4.0"
+    - "https://creativecommons.org/licenses/by/4.0/legalcode.de"
+    - "http://dcat-ap.de/def/licenses/CC%20BY%204.0"
+    - "https://dcat-ap.de/def/licenses/cc-by/4.0"
+    - "http://dcat-ap.de/def/licenses/cc-by/4_0"
+    - "http://creativecommons.org/licenses/by/4.0"
+    - "https://creativecommons.org/licenses/by/4.0/deed.de"
+    - "Dieser Datensatz kann gemäß der \"Creative Commons  – Namensnennung – Version 4.0\" (https://creativecommons.org/licenses/by/4.0/) genutzt werden."
+    - "Für die Lehre und Forschung zu verwenden, nicht tauglich für Navigation.\nCreative Commons Namensnennung 4.0 International\nQuellenvermerk: Bundesanstalt für Wasserbau <Jahr des Datenbezugs>"
+    - "Creative Commons Namensnennung 4.0 International\nQuellenvermerk: Bundesanstalt für Wasserbau"
+    - "Sie dürfen:\nTeilen — das Material in jedwedem Format oder Medium vervielfältigen und weiterverbreiten\n    \nBearbeiten — das Material remixen, verändern und darauf aufbauen und zwar für beliebige Zwecke, sogar kommerziell. \n\n\nUnter folgenden Bedingungen:\nNamensnennung — Sie müssen angemessene Urheber- und Rechteangaben machen, einen Link zur Lizenz beifügen und angeben, ob Änderungen vorgenommen wurden. Diese Angaben dürfen in jeder angemessenen Art und Weise gemacht werden, allerdings nicht so, dass der Eindruck entsteht, der Lizenzgeber unterstütze gerade Sie oder Ihre Nutzung besonders.\n\nKeine weiteren Einschränkungen — Sie dürfen keine zusätzlichen Klauseln oder technische Verfahren einsetzen, die anderen rechtlich irgendetwas untersagen, was die Lizenz erlaubt."
+    - "Nutzungseinschränkungen: Das DLR ist nicht haftbar für Schäden, die sich aus der Nutzung ergeben. / Use Limitations: DLR not liable for damage resulting from use.\nNutzungsbedingungen: Lizenz, https://creativecommons.org/licenses/by/4.0 / Terms of use: License, https://creativecommons.org/licenses/by/4.0"
+    - "Creative Commons Namensnennung 4.0 International\nQuellenvermerk: Bundesanstalt für Wasserbau <Jahr des Datenbezugs>"
+    - "Creative Commons Namensnennung – 4.0 International (CC BY 4.0) Quellenvermerk: Bundesanstalt für Wasserbau. Keine Gebühren"
+    - "Lizenz: cc-by-4.0 - Namensnennung 4.0 International - https://creativecommons.org/licenses/by/4.0/deed.de - Quellenvermerk: © GDI-SL (Jahr)"
+    - "Zur Einhaltung der Lizenzbedingungen und Vereinfachung der Zuordnung empfehlen wir, folgenden Text zur Angabe der Quelle zu verwenden: <b>Quelle der Daten: Bundesanstalt für Straßen- und Verkehrswesen (CC-BY 4.0) https://www.bast.de/fokusbruecken, Stand: September 2025</b>"
+  license:
+    spdx_id: CC-BY-4.0
+    name: "Creative Commons Attribution 4.0 International"
+    url: "https://creativecommons.org/licenses/by/4.0/"
+    commercial_use: true
+    distribution: true
+    derivatives: true
+    share_alike: false
+    attribution_required: true
+    tier: catalog
+    attribution_modified: "© {publisher} (modified)"
+    attribution_unmodified: "© {publisher}"
+    terms: null
+  approved_on: 2026-11-20
+# K2
+- license_ref: cc-by
+  matches:
+    - "http://dcat-ap.de/def/licenses/cc-by"
+    - "http://www.opendefinition.org/licenses/cc-by"
+    - "CC-BY"
+    - "Creative Commons Namensnennung (CC-BY)\nQuellenvermerk: Freie Hansestadt Bremen, Amt für Straßen und Verkehr"
+  license:
+    spdx_id: null
+    name: "Creative Commons Attribution (ohne Versionsangabe)"
+    url: "https://creativecommons.org/licenses/"
+    commercial_use: true
+    distribution: true
+    derivatives: true
+    share_alike: false
+    attribution_required: true
+    tier: catalog
+    attribution_modified: "© {publisher} (modified)"
+    attribution_unmodified: "© {publisher}"
+    terms: null
+  approved_on: 2026-11-20
+# K2
+- license_ref: cc-by-3.0-de
+  matches:
+    - "http://dcat-ap.de/def/licenses/cc-by-de/3.0"
+  license:
+    spdx_id: CC-BY-3.0-DE
+    name: "Creative Commons Namensnennung 3.0 Deutschland"
+    url: "https://creativecommons.org/licenses/by/3.0/de/"
+    commercial_use: true
+    distribution: true
+    derivatives: true
+    share_alike: false
+    attribution_required: true
+    tier: catalog
+    attribution_modified: "© {publisher} (modified)"
+    attribution_unmodified: "© {publisher}"
+    terms: null
+  approved_on: 2026-11-20
+# K2
+- license_ref: dl-de-by-2.0
+  matches:
+    - "http://dcat-ap.de/def/licenses/dl-by-de/2.0"
+    - "https://www.govdata.de/dl-de/by-2-0"
+    - "http://dcat-ap.de/def/licenses/dl-by-de/2_0"
+    - "http://www.govdata.de/dl-de/by-2-0"
+    - "https://www.dcat-ap.de/def/licenses/dl-by-de/2.0"
+    - "http://dcat-ap.de/def/licenses/dl-de-by/2.0"
+    - "Dieser Datensatz kann gemäß der \"Datenlizenz Deutschland – Namensnennung – Version 2.0\" (www.govdata.de/dl-de/by-2-0) genutzt werden."
+    - "Datenlizenz Deutschland Namensnennung 2.0\nQuellenvermerk: Landesamt für Umwelt Brandenburg"
+    - "Nutzungsbedingungen: Die Daten sind urheberrechtlich geschützt. Der Datensatz wird entgeltfrei mit der Datenlizenz Deutschland – Namensnennung – Version 2.0 (https://www.govdata.de/dl-de/by-2-0) zur Verfügung gestellt. Der Quellenvermerk ist zu beachten. Quellenvermerk: © Eisenbahn-Bundesamt (www.eba.bund.de/). Diese Karten finden Sie unter www.eba.bund.de/kartendienst."
+    - "Nutzungsbedingungen: Die Daten sind urheberrechtlich geschützt. Der Datensatz wird entgeltfrei mit der Datenlizenz Deutschland – Namensnennung – Version 2.0 (https://www.govdata.de/dl-de/by-2-0) zur Verfügung gestellt. Der Quellenvermerk ist zu beachten. Quellenvermerk: © Eisenbahn-Bundesamt (www.eba.bund.de/). Diese Karten finden Sie unter www.eba.bund.de/kartendienst"
+    - "None\nData licence Germany - attribution - version 2.0 or later (DL-DE->BY-2.0) | Datenlizenz Deutschland - Namensnennung - Version 2.0 oder neuer"
+    - "Nutzungsbedingungen: Es gelten die Lizenzbedingungen \"Datenlizenz Deutschland – Namensnennung – Version 2.0\" (https://www.govdata.de/dl-de/by-2-0) mit folgender Quellenangabe: \"Datengrundlage: Stadt Freiburg, www.freiburg.de\".\nZur Verwendung für OpenStreetMap siehe außerdem https://geoportal.freiburg.de/docs/freigis/index.php?section=chpt_terms (Kapitel 5.1)."
+    - "Sie dürfen die Daten nach der \"Datenlizenz Deutschland Namensnennung 2.0\" verwenden."
+    - "https://dkan-koeln-test.stadt-koeln.de/www.govdata.de/dl-de/by-2-0"
+    - "Es gelten keine Bedingungen\nDatenlizenz Deutschland Namensnennung 2.0\nQuellenvermerk: \"Landesamt für Umwelt Brandenburg\"; Angabe der URL der Datenquelle; Angabe der Datensatzbezeichnung"
+    - "Quellenvermerk: © GeoBasis-DE / BKG (Jahr des letzten Datenbezugs) dl-de/by-2-0"
+    - "keine\nDatenlizenz Deutschland - Namensnennung - Version 2.0"
+  license:
+    spdx_id: DL-DE-BY-2.0
+    name: "Datenlizenz Deutschland – Namensnennung – Version 2.0"
+    url: "https://www.govdata.de/dl-de/by-2-0"
+    commercial_use: true
+    distribution: true
+    derivatives: true
+    share_alike: false
+    attribution_required: true
+    tier: catalog
+    attribution_modified: "{publisher}, Datenlizenz Deutschland – Namensnennung – Version 2.0 (modified)"
+    attribution_unmodified: "{publisher}, Datenlizenz Deutschland – Namensnennung – Version 2.0"
+    terms: null
+  approved_on: 2026-11-20
+# K2
+- license_ref: dl-de-by
+  matches:
+    - "http://dcat-ap.de/def/licenses/dl-by-de"
+  license:
+    spdx_id: null
+    name: "Datenlizenz Deutschland – Namensnennung (ohne Versionsangabe)"
+    url: "https://www.govdata.de/lizenzen"
+    commercial_use: true
+    distribution: true
+    derivatives: true
+    share_alike: false
+    attribution_required: true
+    tier: catalog
+    attribution_modified: "© {publisher} (modified)"
+    attribution_unmodified: "© {publisher}"
+    terms: null
+  approved_on: 2026-11-20
+# K2
+- license_ref: dl-de-by-1.0
+  matches:
+    - "http://dcat-ap.de/def/licenses/dl-by-de/1.0"
+  license:
+    spdx_id: null
+    name: "Datenlizenz Deutschland – Namensnennung – Version 1.0"
+    url: "https://www.govdata.de/dl-de/by-1-0"
+    commercial_use: true
+    distribution: true
+    derivatives: true
+    share_alike: false
+    attribution_required: true
+    tier: catalog
+    attribution_modified: "© {publisher} (modified)"
+    attribution_unmodified: "© {publisher}"
+    terms: null
+  approved_on: 2026-11-20
+# K2
+- license_ref: geonutzv
+  matches:
+    - "http://dcat-ap.de/def/licenses/geonutz/20130319"
+    - "https://sg.geodatenzentrum.de/web_public/gdz/lizenz/geonutzv.pdf"
+    - "Dieser Datensatz kann gemäß der \"Nutzungsbestimmungen für die Bereitstellung von Geodaten des Bundes\" (http://www.gesetze-im-internet.de/geonutzv/GeoNutzV.pdf) genutzt werden."
+    - "http://www.gesetze-im-internet.de/geonutzv/GeoNutzV.pdf"
+  license:
+    spdx_id: null
+    name: "Nutzungsbestimmungen für die Bereitstellung von Geodaten des Bundes (GeoNutzV)"
+    url: "https://www.gesetze-im-internet.de/geonutzv/"
+    commercial_use: true
+    distribution: true
+    derivatives: true
+    share_alike: false
+    attribution_required: true
+    tier: catalog
+    attribution_modified: "© {publisher} (modified)"
+    attribution_unmodified: "© {publisher}"
+    terms: null
+  approved_on: 2026-11-20
+# K2
+- license_ref: odc-by-1.0
+  matches:
+    - "http://dcat-ap.de/def/licenses/odby"
+  license:
+    spdx_id: ODC-By-1.0
+    name: "Open Data Commons Attribution License 1.0"
+    url: "https://opendatacommons.org/licenses/by/1-0/"
+    commercial_use: true
+    distribution: true
+    derivatives: true
+    share_alike: false
+    attribution_required: true
+    tier: catalog
+    attribution_modified: "© {publisher} (modified)"
+    attribution_unmodified: "© {publisher}"
+    terms: null
+  approved_on: 2026-11-20
+# K2
+- license_ref: opendata-swiss-by
+  matches:
+    - "https://opendata.swiss/terms-of-use#terms_by"
+    - "https://opendata.swiss/en/terms-of-use/#terms_by"
+    - "https://opendata.swiss/terms-of-use/#terms_by"
+    - "https://opendata.swiss/en/terms-of-use#terms_by"
+  license:
+    spdx_id: null
+    name: "opendata.swiss: Freie Nutzung, Quellenangabe ist Pflicht"
+    url: "https://opendata.swiss/en/terms-of-use#terms_by"
+    commercial_use: true
+    distribution: true
+    derivatives: true
+    share_alike: false
+    attribution_required: true
+    tier: catalog
+    attribution_modified: "© {publisher} (modified)"
+    attribution_unmodified: "© {publisher}"
+    terms: null
+  approved_on: 2026-11-20
+# K2
+- license_ref: swisstopo-ogd
+  matches:
+    - "https://www.swisstopo.admin.ch/ogd-conditions"
+  license:
+    spdx_id: null
+    name: "swisstopo: Nutzungsbedingungen für kostenlose Geodaten und Geodienste (OGD)"
+    url: "https://www.swisstopo.admin.ch/ogd-conditions"
+    commercial_use: true
+    distribution: true
+    derivatives: true
+    share_alike: false
+    attribution_required: true
+    tier: catalog
+    attribution_modified: "© swisstopo (modified)"
+    attribution_unmodified: "© swisstopo"
+    terms: null
+  approved_on: 2026-11-20
+# K2
+- license_ref: lba-free-use
+  matches:
+    - "Alle vom Luftfahrt-Bundesamt veröffentlichten Statistiken - jeweils mit Stand 31.12. eines jeden Jahres - werden kostenfrei bereitgestellt und dürfen unter Verweis auf den Herausgeber des Datenbankwerks genutzt und weiterverwendet werden."
+    - "Alle vom Luftfahrt-Bundesamt veröffentlichten Listen - jeweils mit dem aktuellen Sachstand - werden kostenfrei bereitgestellt und dürfen unter Verweis auf den Herausgeber des Datenbankwerks genutzt und weiterverwendet werden."
+  license:
+    spdx_id: null
+    name: "Luftfahrt-Bundesamt: Nutzung und Weiterverwendung unter Verweis auf den Herausgeber"
+    url: "https://www.lba.de"
+    commercial_use: true
+    distribution: true
+    derivatives: true
+    share_alike: false
+    attribution_required: true
+    tier: catalog
+    attribution_modified: "© Luftfahrt-Bundesamt (modified)"
+    attribution_unmodified: "© Luftfahrt-Bundesamt"
+    terms: null
+  approved_on: 2026-11-20
+# K3
+- license_ref: cc-by-sa-4.0
+  matches:
+    - "http://dcat-ap.de/def/licenses/cc-by-sa/4.0"
+    - "https://www.dcat-ap.de/def/licenses/cc-by-sa/4.0"
+    - "https://creativecommons.org/licenses/by-sa/4.0/deed.de"
+  license:
+    spdx_id: CC-BY-SA-4.0
+    name: "Creative Commons Attribution-ShareAlike 4.0 International"
+    url: "https://creativecommons.org/licenses/by-sa/4.0/"
+    commercial_use: true
+    distribution: true
+    derivatives: true
+    share_alike: true
+    attribution_required: true
+    tier: catalog
+    attribution_modified: "© {publisher} (modified)"
+    attribution_unmodified: "© {publisher}"
+    terms: null
+  approved_on: 2026-11-20
+# K3
+- license_ref: cc-by-sa
+  matches:
+    - "http://dcat-ap.de/def/licenses/cc-by-sa"
+    - "http://www.opendefinition.org/licenses/cc-by-sa"
+  license:
+    spdx_id: null
+    name: "Creative Commons Attribution-ShareAlike (ohne Versionsangabe)"
+    url: "https://creativecommons.org/licenses/"
+    commercial_use: true
+    distribution: true
+    derivatives: true
+    share_alike: true
+    attribution_required: true
+    tier: catalog
+    attribution_modified: "© {publisher} (modified)"
+    attribution_unmodified: "© {publisher}"
+    terms: null
+  approved_on: 2026-11-20
+# K3
+- license_ref: cc-by-sa-3.0-de
+  matches:
+    - "http://dcat-ap.de/def/licenses/cc-by-sa-de/3.0"
+    - "https://creativecommons.org/licenses/by-sa/3.0/de"
+  license:
+    spdx_id: CC-BY-SA-3.0-DE
+    name: "Creative Commons Namensnennung – Weitergabe unter gleichen Bedingungen 3.0 Deutschland"
+    url: "https://creativecommons.org/licenses/by-sa/3.0/de/"
+    commercial_use: true
+    distribution: true
+    derivatives: true
+    share_alike: true
+    attribution_required: true
+    tier: catalog
+    attribution_modified: "© {publisher} (modified)"
+    attribution_unmodified: "© {publisher}"
+    terms: null
+  approved_on: 2026-11-20
+# K3
+- license_ref: cc-by-sa-3.0
+  matches:
+    - "https://creativecommons.org/licenses/by-sa/3.0/deed.de"
+  license:
+    spdx_id: CC-BY-SA-3.0
+    name: "Creative Commons Attribution-ShareAlike 3.0 Unported"
+    url: "https://creativecommons.org/licenses/by-sa/3.0/"
+    commercial_use: true
+    distribution: true
+    derivatives: true
+    share_alike: true
+    attribution_required: true
+    tier: catalog
+    attribution_modified: "© {publisher} (modified)"
+    attribution_unmodified: "© {publisher}"
+    terms: null
+  approved_on: 2026-11-20
+# K3
+- license_ref: odbl-1.0
+  matches:
+    - "http://dcat-ap.de/def/licenses/odbl"
+    - "Nutzungsbedingungen: Bedingungen unbekannt\nEs gelten die Lizenzbedingungen „Open Data Commons Open Database License“ bzw. „odbl” (https://opendatacommons.org/licenses/odbl/). Quellangabe: © Bike Citizens - Map data © OpenStreetMap"
+    - "http://dcat-ap.de/def/licenses/odc-odbl-1.0"
+    - "http://dcat-ap.de/def/licenses/ODC-ODbL"
+    - "Open Database License (ODbL)"
+  license:
+    spdx_id: ODbL-1.0
+    name: "Open Data Commons Open Database License 1.0"
+    url: "https://opendatacommons.org/licenses/odbl/1-0/"
+    commercial_use: true
+    distribution: true
+    derivatives: true
+    share_alike: true
+    attribution_required: true
+    tier: catalog
+    attribution_modified: "© {publisher} (modified)"
+    attribution_unmodified: "© {publisher}"
+    terms: null
+  approved_on: 2026-11-20
+# K4
+- license_ref: cc-by-nc-4.0
+  matches:
+    - "http://dcat-ap.de/def/licenses/cc-by-nc/4.0"
+    - "https://creativecommons.org/licenses/by-nc/4.0"
+    - "Nutzungsbedingungen: Creative Commons Namensnennung, nicht kommerziell 4.0 International\n\n{\"id\":\"cc-by-nc/4.0\",\"name\":\"Creative Commons Namensnennung, nicht kommerziell\\t4.0 International\",\"url\":\"https://creativecommons.org/licenses/by-nc/4.0/\",\"quelle\":\"Quelle: © Regionalverband Ruhr\"}"
+    - "http://dcat-ap.de/def/licenses/cc-by-nc-de/4.0"
+  license:
+    spdx_id: CC-BY-NC-4.0
+    name: "Creative Commons Attribution-NonCommercial 4.0 International"
+    url: "https://creativecommons.org/licenses/by-nc/4.0/"
+    commercial_use: false
+    distribution: true
+    derivatives: true
+    share_alike: false
+    attribution_required: true
+    tier: catalog
+    attribution_modified: "© {publisher} (modified)"
+    attribution_unmodified: "© {publisher}"
+    terms: null
+  approved_on: 2026-11-20
+# K4
+- license_ref: cc-by-nc-3.0-de
+  matches:
+    - "http://dcat-ap.de/def/licenses/cc-by-nc-de/3.0"
+  license:
+    spdx_id: CC-BY-NC-3.0-DE
+    name: "Creative Commons Namensnennung – Nicht kommerziell 3.0 Deutschland"
+    url: "https://creativecommons.org/licenses/by-nc/3.0/de/"
+    commercial_use: false
+    distribution: true
+    derivatives: true
+    share_alike: false
+    attribution_required: true
+    tier: catalog
+    attribution_modified: "© {publisher} (modified)"
+    attribution_unmodified: "© {publisher}"
+    terms: null
+  approved_on: 2026-11-20
+# K4
+- license_ref: cc-by-nc
+  matches:
+    - "http://dcat-ap.de/def/licenses/cc-by-nc"
+  license:
+    spdx_id: null
+    name: "Creative Commons Attribution-NonCommercial (ohne Versionsangabe)"
+    url: "https://creativecommons.org/licenses/"
+    commercial_use: false
+    distribution: true
+    derivatives: true
+    share_alike: false
+    attribution_required: true
+    tier: catalog
+    attribution_modified: "© {publisher} (modified)"
+    attribution_unmodified: "© {publisher}"
+    terms: null
+  approved_on: 2026-11-20
+# K4
+- license_ref: opendata-swiss-by-ask
+  matches:
+    - "https://opendata.swiss/terms-of-use#terms_by_ask"
+    - "https://opendata.swiss/en/terms-of-use#terms_by_ask"
+    - "https://opendata.swiss/en/terms-of-use/#terms_by_ask"
+  license:
+    spdx_id: null
+    name: "opendata.swiss: Freie Nutzung, Quellenangabe ist Pflicht, kommerzielle Nutzung nur mit Bewilligung"
+    url: "https://opendata.swiss/en/terms-of-use#terms_by_ask"
+    commercial_use: false
+    distribution: true
+    derivatives: true
+    share_alike: false
+    attribution_required: true
+    tier: catalog
+    attribution_modified: "© {publisher} (modified)"
+    attribution_unmodified: "© {publisher}"
+    terms: null
+  approved_on: 2026-11-20
+# K4
+- license_ref: opendata-swiss-ask
+  matches:
+    - "https://opendata.swiss/terms-of-use#terms_ask"
+  license:
+    spdx_id: null
+    name: "opendata.swiss: Freie Nutzung, kommerzielle Nutzung nur mit Bewilligung"
+    url: "https://opendata.swiss/en/terms-of-use#terms_ask"
+    commercial_use: false
+    distribution: true
+    derivatives: true
+    share_alike: false
+    attribution_required: true
+    tier: catalog
+    attribution_modified: "© {publisher} (modified)"
+    attribution_unmodified: "© {publisher}"
+    terms: null
+  approved_on: 2026-11-20
+# K5
+- license_ref: cc-by-nd-4.0
+  matches:
+    - "http://dcat-ap.de/def/licenses/cc-by-nd/4.0"
+    - "https://creativecommons.org/licenses/by-nd/4.0"
+    - "CC BY-ND 4.0"
+    - "https://creativecommons.org/licenses/by-nd/4.0/legalcode.de"
+  license:
+    spdx_id: CC-BY-ND-4.0
+    name: "Creative Commons Attribution-NoDerivatives 4.0 International"
+    url: "https://creativecommons.org/licenses/by-nd/4.0/"
+    commercial_use: true
+    distribution: true
+    derivatives: false
+    share_alike: false
+    attribution_required: true
+    tier: catalog
+    attribution_modified: "© {publisher} (modified)"
+    attribution_unmodified: "© {publisher}"
+    terms: null
+  approved_on: 2026-11-20
+# K6
+- license_ref: dcat-de-other-closed
+  matches:
+    - "http://dcat-ap.de/def/licenses/other-closed"
+  license:
+    spdx_id: null
+    name: "Andere geschlossene Lizenz (dcat-ap.de)"
+    url: "http://dcat-ap.de/def/licenses/other-closed"
+    commercial_use: false
+    distribution: false
+    derivatives: false
+    share_alike: false
+    attribution_required: false
+    tier: catalog
+    attribution_modified: null
+    attribution_unmodified: null
+    terms: null
+  approved_on: 2026-11-20
+# K6
+- license_ref: dcat-de-other-open
+  matches:
+    - "http://dcat-ap.de/def/licenses/other-open"
+  license:
+    spdx_id: null
+    name: "Andere offene Lizenz (dcat-ap.de)"
+    url: "http://dcat-ap.de/def/licenses/other-open"
+    commercial_use: false
+    distribution: false
+    derivatives: false
+    share_alike: false
+    attribution_required: false
+    tier: catalog
+    attribution_modified: null
+    attribution_unmodified: null
+    terms: null
+  approved_on: 2026-11-20
+# K6
+- license_ref: dcat-de-other-opensource
+  matches:
+    - "http://dcat-ap.de/def/licenses/other-opensource"
+  license:
+    spdx_id: null
+    name: "Andere Open-Source-Lizenz (dcat-ap.de)"
+    url: "http://dcat-ap.de/def/licenses/other-opensource"
+    commercial_use: false
+    distribution: false
+    derivatives: false
+    share_alike: false
+    attribution_required: false
+    tier: catalog
+    attribution_modified: null
+    attribution_unmodified: null
+    terms: null
+  approved_on: 2026-11-20
+# K6
+- license_ref: dcat-de-other-commercial
+  matches:
+    - "http://dcat-ap.de/def/licenses/other-commercial"
+  license:
+    spdx_id: null
+    name: "Andere kommerzielle Lizenz (dcat-ap.de)"
+    url: "http://dcat-ap.de/def/licenses/other-commercial"
+    commercial_use: false
+    distribution: false
+    derivatives: false
+    share_alike: false
+    attribution_required: false
+    tier: catalog
+    attribution_modified: null
+    attribution_unmodified: null
+    terms: null
+  approved_on: 2026-11-20
+# K6
+- license_ref: dcat-de-andere
+  matches:
+    - "http://dcat-ap.de/def/licenses/andere"
+  license:
+    spdx_id: null
+    name: "Andere Lizenz (dcat-ap.de)"
+    url: "http://dcat-ap.de/def/licenses/andere"
+    commercial_use: false
+    distribution: false
+    derivatives: false
+    share_alike: false
+    attribution_required: false
+    tier: catalog
+    attribution_modified: null
+    attribution_unmodified: null
+    terms: null
+  approved_on: 2026-11-20
+# K6
+- license_ref: admin-ch-disclaimer
+  matches:
+    - "http://disclaimer.admin.ch"
+  license:
+    spdx_id: null
+    name: "Rechtliche Hinweise der Bundesverwaltung (disclaimer.admin.ch)"
+    url: "http://disclaimer.admin.ch"
+    commercial_use: false
+    distribution: false
+    derivatives: false
+    share_alike: false
+    attribution_required: false
+    tier: catalog
+    attribution_modified: null
+    attribution_unmodified: null
+    terms: null
+  approved_on: 2026-11-20
+# K6
+- license_ref: admin-ch-terms
+  matches:
+    - "https://www.admin.ch/gov/en/start/terms-and-conditions.html"
+  license:
+    spdx_id: null
+    name: "Nutzungsbedingungen von admin.ch"
+    url: "https://www.admin.ch/gov/en/start/terms-and-conditions.html"
+    commercial_use: false
+    distribution: false
+    derivatives: false
+    share_alike: false
+    attribution_required: false
+    tier: catalog
+    attribution_modified: null
+    attribution_unmodified: null
+    terms: null
+  approved_on: 2026-11-20
+# K6
+- license_ref: nb-gdikom-b
+  matches:
+    - "NB-GDIKOM-B für Geodatendienste (Der Geodatendienst ist frei zugänglich für beliebige interne Nutzungen, dabei gelten für die übermittelten Daten die Nutzungsbeschränkungen nach dem Urheberrechtsgesetz. Jede darüber hinausgehende weitere Verwertung ist generell vertrags- und kostenpflichtig. Eine Einbettung von Leistungen des Dienstes in private und behördliche Internetseiten oder -anwendungen mit Hinweis auf dessen Herausgeber ist davon ausgenommen, hierfür gilt lediglich eine Anzeigepflicht.)"
+  license:
+    spdx_id: null
+    name: "NB-GDIKOM-B für Geodatendienste (nur interne Nutzung frei)"
+    url: "https://www.offenedaten-wuppertal.de/page/nutzungsbedingungen-kontakt-lizenzen"
+    commercial_use: false
+    distribution: false
+    derivatives: false
+    share_alike: false
+    attribution_required: false
+    tier: catalog
+    attribution_modified: null
+    attribution_unmodified: null
+    terms: null
+  approved_on: 2026-11-20

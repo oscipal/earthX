@@ -65,10 +65,66 @@ def _catalogue(tmp_path: Path, terms: str = BY + NC, grants: dict[str, str] | No
 
 
 class TestTheShippedFiles:
-    def test_they_load_and_are_empty_until_otto_grades_the_first_licences(self) -> None:
-        # F5 = 1: license-checker proposes, Otto writes; nothing graded by the session.
-        catalogue = load_licences(read_sources(), LICENSES_DIR)
-        assert dict(catalogue.terms) == {} and dict(catalogue.grants) == {}
+    """Otto's grading of 20.11.2026 (plan §13f): the classes of the licence list with his changes."""
+
+    @pytest.fixture(scope="class")
+    def catalogue(self):  # type: ignore[no-untyped-def]
+        return load_licences(read_sources(), LICENSES_DIR)
+
+    @pytest.mark.parametrize(
+        ("statement", "ref"),
+        [
+            ("http://dcat-ap.de/def/licenses/dl-by-de/2.0", "dl-de-by-2.0"),
+            ("https://www.govdata.de/dl-de/by-2-0", "dl-de-by-2.0"),
+            ("http://www.govdata.de/dl-de/by-2-0/", "dl-de-by-2.0"),
+            ("Datenlizenz Deutschland – Zero – Version 2.0", "dl-de-zero-2.0"),
+            ("https://opendata.swiss/terms-of-use#terms_by", "opendata-swiss-by"),
+            ("https://opendata.swiss/en/terms-of-use/#terms_by", "opendata-swiss-by"),
+            ("http://dcat-ap.de/def/licenses/officialWork", "de-official-work"),
+            ("http://www.gesetze-im-internet.de/urhg/__5.html", "de-official-work"),
+            ("http://disclaimer.admin.ch", "admin-ch-disclaimer"),
+        ],
+    )
+    def test_every_spelling_of_a_licence_means_the_same_ref(self, catalogue, statement: str, ref: str) -> None:  # type: ignore[no-untyped-def]
+        assert catalogue.by_statement[normal_statement(statement)] == ref
+
+    @pytest.mark.parametrize(
+        "statement",
+        [
+            "mdd-nrw-nutzungsbedingungen",
+            "Weitere Informationen zu den Daten und Veröffentlichungen erhalten Sie über das Portal.",
+            "http://inspire.ec.europa.eu/metadata-codelist/LimitationsOnPublicAccess/noLimitations",
+        ],
+    )
+    def test_statements_without_a_licence_are_not_graded(self, catalogue, statement: str) -> None:  # type: ignore[no-untyped-def]
+        # K7: not taken in; their finds wait.
+        assert normal_statement(statement) not in catalogue.by_statement
+
+    def test_the_classes_set_the_flags(self, catalogue) -> None:  # type: ignore[no-untyped-def]
+        def flags(ref: str) -> tuple[bool, ...]:
+            lic = catalogue.terms[ref].license
+            return (lic.distribution, lic.commercial_use, lic.derivatives, lic.share_alike, lic.attribution_required)
+
+        assert flags("cc0-1.0") == flags("de-official-work") == (True, True, True, False, False)
+        assert flags("lba-free-use") == flags("cc-by-4.0") == (True, True, True, False, True)
+        assert flags("odbl-1.0") == (True, True, True, True, True)
+        assert flags("opendata-swiss-by-ask") == (True, False, True, False, True)
+        assert flags("cc-by-nd-4.0") == (True, True, False, False, True)
+        assert flags("nb-gdikom-b") == flags("admin-ch-terms") == (False, False, False, False, False)
+        assert all(term.license.tier is LicenseTier.CATALOG for term in catalogue.terms.values())
+
+    def test_the_texts_of_the_attribution_otto_named(self, catalogue) -> None:  # type: ignore[no-untyped-def]
+        assert catalogue.terms["swisstopo-ogd"].license.attribution_unmodified == "© swisstopo"
+        assert catalogue.terms["lba-free-use"].license.attribution_unmodified == "© Luftfahrt-Bundesamt"
+        assert catalogue.terms["dl-de-by-2.0"].license.attribution_unmodified == (
+            "{publisher}, Datenlizenz Deutschland – Namensnennung – Version 2.0"
+        )
+        sie_duerfen = next(s for s in catalogue.by_statement if s.startswith("Sie dürfen:\nTeilen"))
+        assert catalogue.by_statement[sie_duerfen] == "cc-by-4.0"
+
+    def test_a_find_with_one_statement_without_a_licence_still_waits(self, catalogue) -> None:  # type: ignore[no-untyped-def]
+        found = catalogue.match("govdata", "Amt", ["http://dcat-ap.de/def/licenses/dl-by-de/2.0", "mdd-nrw-nutzungsbedingungen"])
+        assert found.reason == "unknown_licence"
 
 
 class TestMatch:
