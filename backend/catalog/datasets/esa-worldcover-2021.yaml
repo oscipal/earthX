@@ -182,7 +182,7 @@ mask:
   - value: 50
     label: Built-up
   - value: 60
-    label: Bare/sparse vegetation
+    label: Bare / sparse vegetation
   - value: 70
     label: Snow and ice
   - value: 80
@@ -205,6 +205,25 @@ band_units:
 # What each band is, a few words (M5-59): the column "Description" of the Data catalogue.
 band_descriptions:
   map: Land cover class (ESA WorldCover)
+# The classes of the map (M5-62): names as in the Earth Engine catalogue ESA/WorldCover v100/v200 (Otto,
+# 20.11.2026; the same at Planet), colours from the colour table of the map files as read on 06.11.2026 (M5-07
+# plan §2). 0 is no data and no class.
+band_classes:
+  map:
+    colours: file
+    nodata: 0
+    classes:
+    - {value: 10, name: Tree cover, colour: '#006400'}
+    - {value: 20, name: Shrubland, colour: '#ffbb22'}
+    - {value: 30, name: Grassland, colour: '#ffff4c'}
+    - {value: 40, name: Cropland, colour: '#f096ff'}
+    - {value: 50, name: Built-up, colour: '#fa0000'}
+    - {value: 60, name: Bare / sparse vegetation, colour: '#b4b4b4'}
+    - {value: 70, name: Snow and ice, colour: '#f0f0f0'}
+    - {value: 80, name: Permanent water bodies, colour: '#0064c8'}
+    - {value: 90, name: Herbaceous wetland, colour: '#0096a0'}
+    - {value: 95, name: Mangroves, colour: '#00cf75'}
+    - {value: 100, name: Moss and lichen, colour: '#fae6a0'}
 auxiliary_assets: []
 # Filters only for federated items for now (adr/0021 §2, point 1).
 search_filters: []

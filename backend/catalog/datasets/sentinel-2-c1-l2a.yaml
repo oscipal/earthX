@@ -222,29 +222,29 @@ mask:
   # §8).
   classes:
   - value: 0
-    label: NO_DATA
+    label: No data
   - value: 1
-    label: SATURATED_OR_DEFECTIVE
+    label: Saturated or defective
   - value: 2
-    label: CAST_SHADOWS
+    label: Topographic shadows
   - value: 3
-    label: CLOUD_SHADOWS
+    label: Cloud shadows
   - value: 4
-    label: VEGETATION
+    label: Vegetation
   - value: 5
-    label: NOT_VEGETATED
+    label: Not vegetated
   - value: 6
-    label: WATER
+    label: Water
   - value: 7
-    label: UNCLASSIFIED
+    label: Unclassified
   - value: 8
-    label: CLOUD_MEDIUM_PROBABILITY
+    label: Cloud medium probability
   - value: 9
-    label: CLOUD_HIGH_PROBABILITY
+    label: Cloud high probability
   - value: 10
-    label: THIN_CIRRUS
+    label: Thin cirrus
   - value: 11
-    label: SNOW or ICE
+    label: Snow or ice
   # Cloud shadows, both cloud classes and thin cirrus: the example of architekturplan.md 7.1.
   suggested: [3, 8, 9, 10]
   reference: https://sentiwiki.copernicus.eu/web/s2-processing
@@ -320,6 +320,25 @@ band_descriptions:
   cloud: Cloud probability
   snow: Snow probability
   scl: Scene classification
+# The classes of the scene classification (M5-62): names by Otto (20.11.2026). Before baseline 04.00 (25.01.2022)
+# class 2 is "Dark features / shadows". Neither the files nor the items are known to carry colours, so the
+# colours are the standard palette (plan §9.3). 0 is no data and no class.
+band_classes:
+  scl:
+    colours: palette
+    nodata: 0
+    classes:
+    - {value: 1, name: Saturated or defective}
+    - {value: 2, name: Topographic shadows}
+    - {value: 3, name: Cloud shadows}
+    - {value: 4, name: Vegetation}
+    - {value: 5, name: Not vegetated}
+    - {value: 6, name: Water}
+    - {value: 7, name: Unclassified}
+    - {value: 8, name: Cloud medium probability}
+    - {value: 9, name: Cloud high probability}
+    - {value: 10, name: Thin cirrus}
+    - {value: 11, name: Snow or ice}
 # Pictures made from the bands, not bands themselves. `scl` is the mask layer (`mask` above).
 auxiliary_assets: [visual, preview]
 # DS-02 plan §6.2, §6.2a and DS-02c (Otto 28.10.2026 and 30.10.2026): every filter below was measured against the

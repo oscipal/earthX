@@ -1998,7 +1998,7 @@ async def download_crop(
     band_metas = {
         asset: band_meta_of_items(
             all_matched, asset, unit=config.band_unit(asset),
-            categorical=config.mask is not None and config.mask.asset == asset,
+            categorical=config.mask is not None and config.mask.asset == asset, classes=config.class_rows(asset),
         )
         for asset in wanted
     }  # fmt: skip
@@ -2291,6 +2291,7 @@ async def bands_of_items(
         auxiliary=config.auxiliary_assets,
         mask_asset=config.mask.asset if config.mask is not None else None,
         unit_of=config.band_unit,
+        classes_of=config.class_rows,
     )
     return {"bands": rows}
 

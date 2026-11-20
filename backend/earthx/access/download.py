@@ -161,6 +161,7 @@ from earthx.access.band_export import (
     apply_band_tags,
     band_meta,
     bands_text,
+    class_files,
     file_profile,
     kept_nodata,
     plan_files,
@@ -1438,6 +1439,8 @@ def build_download_zip(
                     archive.writestr(folder + plan.name, crop_bytes.data)
                     archive.writestr(folder + plan.mask_name, crop_bytes.mask)
                     listed.append(BandsFile(folder + plan.name, members, methods, exports, written))
+            for member, text in class_files(listed):
+                archive.writestr(member, text)
             archive.writestr(
                 EXPORTS_DIR + BANDS_FILENAME,
                 bands_text(

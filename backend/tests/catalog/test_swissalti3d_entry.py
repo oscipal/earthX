@@ -32,7 +32,11 @@ def test_both_cogs_are_bands_and_the_zips_are_not() -> None:
 
 def test_the_download_dialog_offers_both_cogs_in_metres() -> None:
     table = band_table(
-        [_item()], auxiliary=SWISSALTI3D.auxiliary_assets, mask_asset=None, unit_of=SWISSALTI3D.band_unit
+        [_item()],
+        auxiliary=SWISSALTI3D.auxiliary_assets,
+        mask_asset=None,
+        unit_of=SWISSALTI3D.band_unit,
+        classes_of=SWISSALTI3D.class_rows,
     )
     assert [(meta.name, meta.unit) for meta, _ in table] == [("dtm", "m"), ("dtm_2m", "m")]
     # An elevation model has no spectral band to prefer: every band starts ticked.

@@ -93,7 +93,10 @@ def _paths() -> dict[str, Any]:
 
 
 def _metas() -> dict[str, BandMeta]:
-    return {asset: band_meta(_item(), asset, unit="1", categorical=asset == "scl") for asset in ASSETS}
+    return {
+        asset: band_meta(_item(), asset, unit="1", categorical=asset == "scl", classes=SENTINEL_2_L2A.class_rows(asset))
+        for asset in ASSETS
+    }
 
 
 def _crop(assets: list[str], form: str, common: float | None) -> zipfile.ZipFile:
@@ -173,6 +176,11 @@ def test_the_job_writes_the_crops_files_bit_for_bit(form: str, common: float | N
         for name in rasters:
             assert job.read(name) == crop.read(name), name
         assert job.read("exports/BANDS.txt") == crop.read("exports/BANDS.txt")
+        # The names and the table of the classes of SCL beside its file (M5-62), the same from both.
+        beside = [n for n in crop.namelist() if n.endswith(".aux.xml")]
+        assert beside and sorted(n for n in job.namelist() if n.endswith(".aux.xml")) == sorted(beside)
+        for name in beside:
+            assert job.read(name) == crop.read(name), name
         for name in ("exports/BANDS.txt", "ATTRIBUTION.txt"):
             assert job.read(name) == crop.read(name)
 

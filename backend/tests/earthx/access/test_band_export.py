@@ -169,7 +169,7 @@ class TestWhatIsRead:
 
 class TestTheTableOfTheDialog:
     def table(self, assets: dict[str, dict[str, Any]], **kw: Any) -> list[tuple[str, bool]]:
-        result = band_table([{"assets": assets}], auxiliary=kw.get("auxiliary", ()), mask_asset=kw.get("mask"), unit_of=lambda a: None)
+        result = band_table([{"assets": assets}], auxiliary=kw.get("auxiliary", ()), mask_asset=kw.get("mask"), unit_of=lambda a: None, classes_of=lambda a: None)
         return [(m.asset, ticked) for m, ticked in result]
 
     def test_spectral_bands_and_the_mask_layer_start_ticked_the_others_do_not(self) -> None:
@@ -187,13 +187,13 @@ class TestTheTableOfTheDialog:
 
         units = {"TabsD": "°C", "SrelD": "%"}
         day = {"properties": {"gsd": 1000.0}, "assets": {"TabsD": quantity("TabsD"), "SrelD": quantity("SrelD"), "original": {"type": "application/x-netcdf"}}}
-        result = band_table([day], auxiliary=(), mask_asset=None, unit_of=units.get)
+        result = band_table([day], auxiliary=(), mask_asset=None, unit_of=units.get, classes_of=lambda a: None)
         assert [(m.asset, m.unit, m.resolution_m, ticked) for m, ticked in result] == [("TabsD", "°C", 1000.0, True), ("SrelD", "%", 1000.0, True)]
         before_1971 = {"properties": {"gsd": 1000.0}, "assets": {"TabsD": quantity("TabsD")}}
-        assert [m.asset for m, _ in band_table([before_1971], auxiliary=(), mask_asset=None, unit_of=units.get)] == ["TabsD"]
+        assert [m.asset for m, _ in band_table([before_1971], auxiliary=(), mask_asset=None, unit_of=units.get, classes_of=lambda a: None)] == ["TabsD"]
 
     def test_no_scene_no_table(self) -> None:
-        assert band_table([], auxiliary=(), mask_asset=None, unit_of=lambda a: None) == []
+        assert band_table([], auxiliary=(), mask_asset=None, unit_of=lambda a: None, classes_of=lambda a: None) == []
 
     def test_the_finest_size_over_the_scenes_is_the_size_of_the_band(self) -> None:
         first = {"assets": {"red": asset("B04", 20)}}
