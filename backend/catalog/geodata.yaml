@@ -24,15 +24,27 @@ extent_share_below: 0.5
 # Words in the title or the keywords that never hide a find (Otto, 19.11.2026). A place in a title is no signal.
 geo_terms: ["*messstelle", "*messstellen", "*messnetz", "*zaehlstelle", "*zaehlstellen", "*zählstelle",
             "*zählstellen", poi, points of interest, standort, standorte, "*standort", "*standorte", koordinaten,
-            geodaten, geodata, géodonnées, geodati]
+            geodaten, geodata, géodonnées, geodati,
+            # Otto, 20.11.2026, from the samples of --classify:
+            denkmalliste, "*denkmalliste", strassenverzeichnis, "*strassenverzeichnis", straßenverzeichnis,
+            "*straßenverzeichnis", ortschaftenverzeichnis, niederschlag, "*niederschlag", verkehrszählung,
+            "*verkehrszählung", verkehrszaehlung]
+# Publishers whose finds are geodata whatever they are called (Otto, 20.11.2026): a geo signal in the publisher's name.
+geo_publishers: [EnviDat]
 
 # --- Non-geo signals: one of them hides a find without any geo signal -------------------------------------------------
 # EU data themes (codes) of administration, economy, justice, education, international affairs, technology.
 not_geo_eu_themes: [GOVE, ECON, JUST, EDUC, INTR, TECH]
 # Words in the title, the keywords or the publisher's name.
 not_geo_terms: ["statisti*", it nrw, information und technik nordrhein westfalen, wahl, wahlen, bundestagswahl,
-                landtagswahl, kommunalwahl, europawahl, abstimmung, abstimmungen, volksabstimmung, haushalt, haushaltsplan, haushaltsdaten, budget, jahresrechnung,
-                sitzung, sitzungen, protokoll, protokolle, ratsinformation, stellenplan, archivbestand,
+                landtagswahl, kommunalwahl, europawahl, abstimmung, abstimmungen, volksabstimmung, haushalt,
+                haushaltsplan, haushaltsdaten, budget, jahresrechnung, sitzung, sitzungen, protokoll, protokolle, ratsinformation, stellenplan, archivbestand,
                 pressemitteilung, pressemitteilungen, geschäftsbericht, élection, élections, votation, votations,
                 elezioni, votazione, votazioni, election, elections, statistics, statistique, statistiques,
-                statistica]
+                statistica,
+                # Otto, 20.11.2026, from the samples of --classify:
+                kriminalstatistik, "*kriminalstatistik", staatsarchiv, bibliotheksstatistik,
+                wissenschaftliche bibliotheken, organigramm, fernsehprogramm, jahresabschluss, "*jahresabschluss", abfuhrtermine, "*abfuhrtermine"]
+# Publishers without geodata (Otto, 20.11.2026): a non-geo signal in the publisher's name only.
+not_geo_publishers: [Materials Cloud, PSI Data Catalog, Deutsche Bibliotheksstatistik, Bundeskriminalamt,
+                     Bundesamt für Justiz]

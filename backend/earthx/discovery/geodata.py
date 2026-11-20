@@ -25,7 +25,16 @@ __all__ = ["GEODATA_FILE", "Classified", "GeodataRule", "classify", "load_geodat
 
 GEODATA_FILE = CATALOG_DIR / "geodata.yaml"
 _KEYS = frozenset(
-    {"geo_data_kinds", "geo_categories", "extent_share_below", "geo_terms", "not_geo_eu_themes", "not_geo_terms"}
+    {
+        "geo_data_kinds",
+        "geo_categories",
+        "extent_share_below",
+        "geo_terms",
+        "geo_publishers",
+        "not_geo_eu_themes",
+        "not_geo_terms",
+        "not_geo_publishers",
+    }
 )
 _DATA_KINDS = frozenset({"raster", "vector", "table", "document", "service", "other"})
 _EU_THEME = re.compile(r"[A-Z_]{2,12}")
@@ -73,8 +82,10 @@ class GeodataRule:
     geo_categories: frozenset[str]
     extent_share_below: float
     geo_terms: Terms
+    geo_publishers: Terms
     not_geo_eu_themes: frozenset[str]
     not_geo_terms: Terms
+    not_geo_publishers: Terms
 
 
 def read_geodata_rule(path: Path) -> GeodataRule:
@@ -98,8 +109,10 @@ def read_geodata_rule(path: Path) -> GeodataRule:
         geo_categories=frozenset(data["geo_categories"]),
         extent_share_below=float(share),
         geo_terms=_terms(data["geo_terms"], "geo_terms"),
+        geo_publishers=_terms(data["geo_publishers"], "geo_publishers"),
         not_geo_eu_themes=frozenset(data["not_geo_eu_themes"]),
         not_geo_terms=_terms(data["not_geo_terms"], "not_geo_terms"),
+        not_geo_publishers=_terms(data["not_geo_publishers"], "not_geo_publishers"),
     )
 
 
@@ -150,9 +163,11 @@ def classify(found: Mapping[str, Any], extent: Extent, *, country: str | None, r
             geo.append("extent:source")
     title, keywords = found.get("title") or "", [k for k in found.get("keywords") or () if isinstance(k, str)]
     geo += [f"term:{hit}" for hit in dict.fromkeys(rule.geo_terms.found([title, *keywords]))]
-    not_geo = [f"eu:{t[3:]}" for t in themes if t.startswith("eu:") and t[3:] in rule.not_geo_eu_themes]
     publisher = found.get("publisher") if isinstance(found.get("publisher"), str) else ""
+    geo += [f"publisher:{hit}" for hit in dict.fromkeys(rule.geo_publishers.found([publisher]))]
+    not_geo = [f"eu:{t[3:]}" for t in themes if t.startswith("eu:") and t[3:] in rule.not_geo_eu_themes]
     not_geo += [f"term:{hit}" for hit in dict.fromkeys(rule.not_geo_terms.found([title, *keywords, publisher]))]
+    not_geo += [f"publisher:{hit}" for hit in dict.fromkeys(rule.not_geo_publishers.found([publisher]))]
     if geo:
         outcome = "geodata"
     elif not_geo:

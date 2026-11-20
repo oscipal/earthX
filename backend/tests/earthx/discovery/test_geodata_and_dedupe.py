@@ -157,3 +157,33 @@ class TestGroups:
 
     def test_no_keys_no_group(self) -> None:
         assert main_entries([Member("a", (), (2,)), Member("b", (), (2,))]) == {}
+
+
+@pytest.mark.parametrize(
+    ("title", "publisher", "outcome"),
+    [
+        # Otto, 20.11.2026, from the borderline samples of --classify.
+        ("Strukturdaten Kristall X", "Materials Cloud", "not_geodata"),
+        ("Messreihe 42", "PSI Data Catalog", "not_geodata"),
+        ("Bestand 2023", "Deutsche Bibliotheksstatistik", "not_geodata"),
+        ("Fälle 2022", "Bundeskriminalamt", "not_geodata"),
+        ("Verfahren 2021", "Bundesamt für Justiz", "not_geodata"),
+        ("Staatsarchiv Hamburg: Bestände", "Behörde für Kultur und Medien", "not_geodata"),
+        ("Polizeiliche Kriminalstatistik 2023", "Amt", "not_geodata"),
+        ("Organigramm der Verwaltung", "Amt", "not_geodata"),
+        ("Fernsehprogramm", "Amt", "not_geodata"),
+        ("Jahresabschluss 2022 – Anhang", "Amt", "not_geodata"),
+        ("Müllabfuhrtermine 2024", "Amt", "not_geodata"),
+        # Geo signals that never hide, even beside a non-geo word.
+        ("Denkmalliste Statistik", "Amt", "geodata"),
+        ("Straßenverzeichnis", "Statistisches Amt", "geodata"),
+        ("Strassenverzeichnis", "Statistisches Amt", "geodata"),
+        ("Ortschaftenverzeichnis", "Statistisches Amt", "geodata"),
+        ("Jahresniederschlag Statistik", "Amt", "geodata"),
+        ("Verkehrszählung 2023", "Statistisches Amt", "geodata"),
+        # EnviDat stays geodata.
+        ("Statistics of snow", "EnviDat", "geodata"),
+    ],
+)
+def test_the_lists_of_otto_s_samples(title: str, publisher: str, outcome: str) -> None:
+    assert _verdict(_find(title, publisher=publisher)) == outcome
