@@ -383,6 +383,17 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harvest-report.ps1
   - Ein späterer Bericht derselben Quelle ersetzt einen nicht freigegebenen Stapel; dessen Datei gilt dann nicht mehr.
 - **Lizenzen:** Ohne Einträge in `backend/catalog/licenses/terms.yaml` und `grants/<Quelle>.yaml` wartet jeder
   Fund (`needs_rule`), und es entsteht kein Stapel. Die Einstufung jeder Lizenz machst du.
+- **Freigaben je Herausgeber:** `harvest-grants` schreibt `grants/<Quelle>.yaml` aus den Herausgebern der
+  geernteten Funde in der Datenbank. Jeder Herausgeber bekommt die Lizenzen aus
+  `backend/catalog/licenses/grant-to-all.yaml` (Plan §13f). Ein zweiter Lauf behält die vorhandenen Zeilen und
+  ergänzt neue Herausgeber. Funde ohne Herausgeber warten. Committen und mergen wie jede Freigabe; erst das neu
+  gebaute Image sieht die Datei.
+
+  ```powershell
+  docker compose --progress quiet run --build --rm harvest-grants govdata opendata-swiss fsdi-stac
+  ```
+
+  Unter Linux mit `--user "$(id -u):$(id -g)"` nach `--rm`, damit die Dateien dir gehören.
 - **Bei der Quelle verschwunden:** Ein veröffentlichter Eintrag wird beim ersten vollen Durchgang ohne ihn
   markiert. Fehlt er beim nächsten wieder, wird er Grabstein (`410`); dafür braucht es keine Freigabe.
 - **Gemeinden der Schweiz:** `scripts/write-municipality-outlines.py` reduziert eine lokale GeoPackage-Datei von

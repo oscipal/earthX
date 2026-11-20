@@ -29,6 +29,7 @@ from earthx.catalog.municipalities import Municipality, load_municipalities, wri
 from earthx.catalog.registry import ConfigError, Maturity
 from earthx.catalog.sources import CkanFilter, SourceConfig, SourceProtocol, StacFilter
 from earthx.discovery.enrich import PLACE_NAMES_FILE, read_place_directory
+from earthx.discovery.grants import GrantToAll, build_grants, dump_grants, publishers_of
 from earthx.discovery.report import classify_text, run_report, write_files
 
 DAY = date(2026, 11, 19)
@@ -597,3 +598,23 @@ def test_classify_explains_no_access_and_lists_the_licence_statements(world: Wor
         assert reason in text
     assert "3  CC-BY-4.0 | Kanton Zug 3" in text
     assert '{"finds": 3, "statement": "CC-BY-4.0"}' in text
+
+
+def test_grants_built_from_the_publishers_in_the_database_list_their_finds(world: World) -> None:
+    # Otto, 20.11.2026: the grants come from the data, one line per publisher (plan §13f).
+    world.grant()
+    world.put(
+        world.ckan,
+        _find("zug"),
+        _find("b", publisher="Amt B"),
+        _find("none", publisher=None),
+        _find("blank", publisher=" Amt C"),
+    )
+    world.put(world.ckan, _find("gone", publisher="Amt D"), state="gone")
+    found = publishers_of(world.conn, world.ckan.source_id)
+    assert (found.publishers, found.without) == (("Amt B", PUBLISHER), 2)
+    lines = build_grants(found.publishers, GrantToAll(("cc-by-4.0",), DAY), (), DAY)
+    (world.licence_dir / "grants" / f"{world.ckan.source_id}.yaml").write_text(dump_grants(lines), encoding="utf-8")
+    world.report()
+    assert world.row("b")["state"] == world.row("zug")["state"] == "in_review"
+    assert world.row("none")["waiting_reason"] == world.row("blank")["waiting_reason"] == "not_granted"
