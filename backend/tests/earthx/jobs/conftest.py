@@ -2,7 +2,7 @@
 
 The queue tests need rows that really are committed (several connections, several
 processes), which the rollback fixture of the T-C tests cannot give. So the session
-creates a throwaway database next to the configured one, applies the migrations to
+creates a throwaway database next to the run's own, applies the migrations to
 it, and drops it at the end. `PGDATABASE` points at it for every test, so a spawned
 child and `psycopg.connect()` with no arguments find it too.
 
@@ -12,7 +12,7 @@ message that says what to set (adr/0002 §2, tests/integration/conftest.py).
 
 from __future__ import annotations
 
-import secrets
+import os
 from collections.abc import Iterator
 
 import psycopg
@@ -21,13 +21,15 @@ from psycopg import sql
 
 from earthx.catalog.schema import apply_migrations
 from tests.integration.conftest import _postgres_env, require_postgres_env  # noqa: F401 - fixtures
+from tests.worker_database import worker_database_name
 
 from ..objectstore.conftest import store, store_env  # noqa: F401 - fixtures
 
 
 @pytest.fixture(scope="session")
 def jobs_database(require_postgres_env: None) -> Iterator[str]:  # noqa: F811 - the fixture it needs
-    name = f"earthx_jobs_{secrets.token_hex(4)}"
+    # Named after the run's own database, so a run that finds it left behind drops it (tests/worker_database.py).
+    name = worker_database_name(os.environ["PGDATABASE"], "jobs")
     try:
         admin = psycopg.connect(autocommit=True)
     except psycopg.OperationalError as error:

@@ -29,7 +29,6 @@ from fastapi.testclient import TestClient
 from earthx.adapters import ADAPTER_SPECS
 from earthx.api.coverage_route import build_router
 from earthx.api.dependencies import cache_pool
-from earthx.catalog.load import main as load_catalog
 from earthx.catalog.pgstac import load_collection, upsert_items, use_pgstac_search_path
 from earthx.catalog.registry import CoverageProvider, DatasetRegistry, ItemHolding, SearchCapabilities
 from earthx.gateway import Policy
@@ -139,15 +138,14 @@ def _all_items() -> list[dict[str, Any]]:
 
 
 @pytest.fixture
-def area_dataset_loaded(require_postgres_env: None) -> Any:
+def area_dataset_loaded(catalogue_loaded: None) -> Any:
     # `catalog.load`'s own migrations (`002_search_cache.sql` and friends) are what
     # actually create `public.earthx_search_cache` outside of the one rolled-back
     # transaction `test_search_cache.py` runs it in for itself
     # (`test_api_federating.py::require_catalog_loaded` takes the same route for
     # the same reason): this route's real pool commits with `autocommit=True`, so
     # the table has to exist for real, not just inside a transaction this test
-    # would roll back. Idempotent (`catalog.load`'s own docstring).
-    assert load_catalog() == 0
+    # would roll back (`catalogue_loaded`).
     with psycopg.connect(autocommit=True) as conn:
         load_collection(conn, AREA_DATASET)
         load_collection(conn, NO_TIME_AXIS)

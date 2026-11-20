@@ -147,18 +147,18 @@ function providersRow(collection: Collection): LinkText[] {
   return shown.length > 0 ? shown : plain(NONE);
 }
 
-// The host of the source's endpoint, linked to the endpoint, and the collection there.
+// The host of the page of the source, linked to it, and the collection there (M5-55). Never the endpoint: that is the API.
 export function sourceRow(collection: Collection): LinkText[] {
   if (isListed(collection)) {
     const page = listedSourceOf(collection);
     return page ? [link(new URL(page).host, page)] : plain(NONE);
   }
   const source = collection['earthx:source'];
-  const endpoint = source?.endpoint;
-  if (!isHttps(endpoint) || !URL.canParse(endpoint)) return plain(NONE);
-  const host = new URL(endpoint).host;
+  const page = source?.page_url;
+  if (!isHttps(page) || !URL.canParse(page)) return plain(NONE);
+  const host = new URL(page).host;
   const id = source?.source_collection_id;
-  return [link(typeof id === 'string' && id !== '' ? `${host} · ${id}` : host, endpoint)];
+  return [link(typeof id === 'string' && id !== '' ? `${host} · ${id}` : host, page)];
 }
 
 function licenseRows(collection: Collection): CatalogueRow[] {

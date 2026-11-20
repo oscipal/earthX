@@ -6,8 +6,8 @@
 //   1. a tile is not asked for at the route of its level (the pyramid below 6.5, the mosaic from there on, the first step excepted);
 //   2. a step draws nothing where the area lies (the area is 5 degrees wide: more than a pixel from z3 on);
 //   3. the attribution line does not name the dataset's own text for modified data below 6.5, or names it above;
-//   4. the loading display fails while the overview tiles come slowly: no busy toast with "Loading data" 0.6 s after a zoom out, no
-//      mark in the row "Search results" of the layer manager (MANAGER=open), or the toast stays when the tiles are in;
+//   4. the loading display fails while the overview tiles come slowly: no busy toast with "Loading data" 0.6 s after a zoom out (also
+//      with the layer manager open, MANAGER=open, where no row shows a loading mark since UI-09), or the toast stays when the tiles are in;
 //   5. the mark "Overview" over the map (Otto, 16.11.2026, UI-08) is missing below 6.5 or there from 6.5 on, has another tooltip than the
 //      one of a job's result, or another element that is not a tooltip says "overview".
 //
@@ -210,7 +210,10 @@ async function run(browser, theme, results) {
     // Below the first level the view draws the overview of the footprint selection of its scenes, not of the whole area (M5-56).
     const wanted = zoom < MOSAIC_FROM ? 'masked' : 'mosaic';
     // A tile that an earlier step loaded is not asked for again: a request is certain only at a whole level the steps before did not draw.
-    if (Number.isInteger(zoom) && zoom !== ZOOMS[0] && zoom >= 2 && asked.every((request) => request.route !== wanted)) problems.push(`z${zoom}: no tile of the ${wanted} was asked for`);
+    // Its first request can come later than 0.5 s when the page is busy (the layer manager open, M5-61): up to 3 s, then it fails.
+    const certain = Number.isInteger(zoom) && zoom !== ZOOMS[0] && zoom >= 2;
+    for (const until = Date.now() + 2500; certain && Date.now() < until && asked.every((request) => request.route !== wanted); ) await later(50);
+    if (certain && asked.every((request) => request.route !== wanted)) problems.push(`z${zoom}: no tile of the ${wanted} was asked for`);
     const wrong = asked.filter((request) => request.route !== wanted && !(zoom === ZOOMS[0] && request.route === 'masked'));
     if (wrong.length) problems.push(`z${zoom}: tiles of the ${wrong[0].route} (z${wrong[0].z}) were asked for where the ${wanted} draws`);
     if (asked.some((request) => request.route === 'overview')) problems.push(`z${zoom}: the crop view asked for the overview of the whole area, not of its scenes`);
@@ -252,7 +255,7 @@ async function run(browser, theme, results) {
   }
   if (toast === undefined) problems.push('after a zoom out onto slow overview tiles there was no "Loading data" toast');
   else if (toast < 450 || toast > 2500) problems.push(`the "Loading data" toast came after ${toast} ms (the threshold is 0.6 s; map-loading.cjs judges it closely)`);
-  if (MANAGER_OPEN && row === 0) problems.push('the layer manager is open and no row shows the mark while the overview tiles load');
+  if (MANAGER_OPEN && row > 0) problems.push('the layer manager is open and a row shows a loading mark, which UI-09 took out of the rows');
   await page.waitForTimeout(TILE_MS + 800);
   if ((await shown()) > 0) problems.push('the "Loading data" toast stays when the overview tiles are in');
   slow = false;

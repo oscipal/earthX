@@ -94,6 +94,8 @@ def test_source_carries_what_adr_0005_branches_on(collection: dict) -> None:
     assert source["item_holding"] == "federated"
     # M5-07: the region the entry's asset host names (adr/0022 §7.2).
     assert source["data_region"] == "aws:us-west-2"
+    # M5-55: the link "Source" is a page for people, not the API the platform reads from.
+    assert source["page_url"].startswith("https://") and source["page_url"] != source["endpoint"]
     # adr/0011 F5: runs live in `earthx_materialize_runs`, not in the document.
     assert "harvest_run" not in source
 

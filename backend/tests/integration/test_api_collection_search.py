@@ -15,10 +15,10 @@ import pytest
 
 from earthx.api.main import app
 from earthx.catalog.listed import sort_title
-from earthx.catalog.load import main as load_catalog
 from earthx.catalog.search import MAX_QUERY_CHARS
 from tests.catalog.entries import REGISTRY
 from tests.conftest import log_line_without_timestamp
+from tests.integration.conftest import Catalogue
 
 pytestmark = pytest.mark.anyio
 
@@ -29,13 +29,16 @@ _EXACT_LON, _EXACT_LAT = "7.123457", "46.654321"
 _TEXT = "Bodenreflexion"
 
 
-@pytest.fixture
-async def client(require_postgres_env: None) -> AsyncIterator[httpx.AsyncClient]:
-    """The full entries only: ``catalog-load`` also writes the hand entries of ``listed/`` (M5-17), which these tests of
-    the full catalogue leave out; ``test_api_listed.py`` covers listed rows."""
-    assert load_catalog() == 0
+def _without_listed_entries() -> None:
     with psycopg.connect() as conn:
         conn.execute("DELETE FROM public.earthx_listed_entry")
+
+
+@pytest.fixture
+async def client(catalogue_state: Catalogue) -> AsyncIterator[httpx.AsyncClient]:
+    """The full entries only: ``catalog-load`` also writes the hand entries of ``listed/`` (M5-17), which these tests of
+    the full catalogue leave out; ``test_api_listed.py`` covers listed rows."""
+    catalogue_state.ensure("full entries only", setup=_without_listed_entries)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
             yield http

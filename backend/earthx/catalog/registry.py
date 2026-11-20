@@ -557,6 +557,11 @@ class SourceInfo:
     for a materialized one it is the adapter the one-off load in ``discovery`` used
     to build the items in the first place (M3-11b).
 
+    ``page_url`` is the link "Source" of the Data catalogue (M5-55, M5-19 plan F2, Otto 17.11.2026): as directly as
+    possible to the data, first a viewer or download page at the provider, else the page of the dataset there; never
+    only a start page, never an API or a single file, ``https`` only (:func:`page_url_problem`). ``endpoint`` stays
+    what the platform reads from and is not shown as a link.
+
     ``data_region`` is where the storage of the assets lies, as ``<operator>:<place>`` with the operator of the
     storage, not the agency (``aws:eu-central-1``, ``eodc:vienna``), or ``unknown`` until both are shown
     (adr/0022 §7.2, adr/0023 F7). It sits next to ``asset_hosts`` because the start check reads it against them
@@ -575,6 +580,7 @@ class SourceInfo:
     adapter: AdapterKind
     endpoint: str
     source_collection_id: str
+    page_url: str
     asset_hosts: tuple[str, ...]
     item_holding: ItemHolding
     data_region: str
@@ -605,6 +611,44 @@ _HTTPS_PREFIX_RE = re.compile(r"https://(?P<host>[a-z0-9.-]+)/(?:(?!\.\.?/)[A-Za
 
 # An https address with a host and nothing blank in it: what the catalogue may put behind a link.
 _HTTPS_URL_RE = re.compile(r"https://[^\s/?#]+(?:[/?#]\S*)?")
+
+
+# Single files and machine answers the link "Source" never is (M5-19 plan F1 = 1): a click would load a file or show a
+# service answer instead of a page for people.
+_NOT_A_PAGE_SUFFIXES = frozenset(
+    {"json", "geojson", "xml", "rdf", "ttl", "csv", "tif", "tiff", "zip", "gz", "nc", "zarr", "pdf", "yaml", "yml", "txt"}
+)
+_LANGUAGE_SEGMENT_RE = re.compile(r"[a-z]{2}(?:[-_][a-z]{2})?", re.IGNORECASE)
+
+
+def page_url_problem(url: object, *, endpoint: str) -> str | None:
+    """Why ``url`` may not be the link "Source" of an entry, as a phrase; ``None`` where it may (M5-55).
+
+    ``https`` with a host name and no user part or port, no start page (empty path, a language prefix, an index
+    file), not the ``endpoint`` and no ``/api/`` or ``/collections/`` path of a service, no single file. A fragment
+    route of a viewer (``#/collections/x``) is a page.
+    """
+    if not isinstance(url, str) or not _HTTPS_URL_RE.fullmatch(url) or len(url) > 2048:
+        return "is not an https address"
+    authority = url[len("https://") :].split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]
+    if "@" in authority or ":" in authority:
+        return "has a user part or a port"
+    path, _, fragment = url[len("https://") + len(authority) :].partition("#")
+    path = path.split("?", 1)[0]
+    segments = [segment for segment in path.split("/") if segment]
+    if segments and _LANGUAGE_SEGMENT_RE.fullmatch(segments[0]):
+        segments = segments[1:]
+    if segments and re.fullmatch(r"(?:index|default|home)\.(?:html?|php|aspx?)", segments[-1], re.IGNORECASE):
+        segments = segments[:-1]
+    if not segments and len(fragment) <= 2:
+        return "is only a start page"
+    if url.rstrip("/") == endpoint.rstrip("/"):
+        return "is the endpoint of the source"
+    if "api" in (segment.lower() for segment in segments):
+        return "is an API address"
+    if segments and "." in segments[-1] and segments[-1].rsplit(".", 1)[1].lower() in _NOT_A_PAGE_SUFFIXES:
+        return "is a file address"
+    return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -2302,6 +2346,9 @@ class DatasetConfig:
                     f"{self.dataset_id}: asset_hosts entry {host!r} is not a bare host name "
                     "(no scheme, no path, no port, lower case)"
                 )
+        problem = page_url_problem(self.source.page_url, endpoint=self.source.endpoint)
+        if problem:
+            raise ConfigError(f"{self.dataset_id}: page_url {self.source.page_url!r} {problem}")
         self._check_data_region()
         self._check_href_rewrites()
         if self.source.asset_checksum is not None and not isinstance(self.source.asset_checksum, AssetChecksum):

@@ -65,6 +65,7 @@ def _make_record(message: str, **extra: object) -> logging.LogRecord:
     return record
 
 
+@pytest.mark.changes_logging
 class TestConfigureLogging:
     """M3-16: turning the root logger to INFO must not turn on a third-party
     library's own "HTTP Request: <url>" line — `httpx`/`httpx2` log the full URL,
@@ -88,6 +89,7 @@ class TestConfigureLogging:
                 logging.getLogger(name).setLevel(logging.NOTSET)
 
 
+@pytest.mark.changes_logging
 class TestUvicornAccessLogIsDisabledInCode:
     """M3-16 review: the guarantee must not depend on `--no-access-log` on the
     command line — a process started any other way (a bare `uvicorn earthx.jobs
@@ -457,6 +459,7 @@ class TestEndToEndGeometryLogging:
             assert str(_EXACT_LAT) not in line
 
 
+@pytest.mark.changes_logging
 class TestProcessEntrypointsWireTheMiddleware:
     """M3-16 (K-02): each of the four HTTP processes calls `configure_logging` and
     wires `RequestIdMiddleware` in, not only `test_logging.py`'s own bare apps."""

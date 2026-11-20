@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy
@@ -90,9 +91,8 @@ def build_scene(path: Path, size: int, bands: int = 2) -> Path:
 
 
 @pytest.fixture(scope="module")
-def scenes(tmp_path_factory: pytest.TempPathFactory) -> dict[int, Path]:
-    root = tmp_path_factory.mktemp("scenes")
-    return {size: build_scene(root / f"scene-{size}.tif", size) for size in (SMALL, LARGE)}
+def scenes(memory_scene: Callable[..., Path]) -> dict[int, Path]:
+    return {size: memory_scene(size) for size in (SMALL, LARGE)}
 
 
 def measure(scene: Path, workdir: Path, size: int) -> dict:

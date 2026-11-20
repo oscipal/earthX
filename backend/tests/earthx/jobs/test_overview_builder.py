@@ -1150,6 +1150,46 @@ class TestARetryHoldsItsHost:
 PACED_HOST = "bucket.example.org"
 
 
+class Granted:
+    """The turns the supervisor took in Postgres, by Postgres's clock, and how long each ``reserve`` call took.
+
+    A turn is ``next_start`` right after its ``reserve`` minus the interval (migration 022). The supervisor sends ``go``
+    at the clock it read before the call plus the wait the call returned, so at most the length of the call before
+    the turn (M5-61 §2.8).
+    """
+
+    def __init__(self) -> None:
+        self.turns: list[float] = []
+        self.calls: list[float] = []
+
+    def spacing(self) -> list[float]:
+        return [b - a for a, b in zip(self.turns, self.turns[1:], strict=False)]
+
+    def never_before(self, given: list[float]) -> bool:
+        """Each ``go`` the child saw (its own clock, after it came) lies at or after its turn, less the call."""
+        assert len(given) == len(self.turns)
+        return all(go >= turn - call - 0.001 for go, turn, call in zip(given, self.turns, self.calls, strict=True))
+
+
+@pytest.fixture
+def granted(monkeypatch: pytest.MonkeyPatch) -> Granted:
+    record = Granted()
+    reserve = SourceHosts.reserve
+
+    def reserve_and_note(self: SourceHosts, host: str, interval_s: float, max_wait_s: float) -> float:
+        before = time.time()
+        wait = reserve(self, host, interval_s, max_wait_s)
+        record.calls.append(time.time() - before)
+        row = self._conn.execute(
+            "SELECT extract(epoch FROM next_start)::float8 FROM public.earthx_source_host WHERE host = %s", (host,)
+        ).fetchone()
+        record.turns.append(row[0] - interval_s)
+        return wait
+
+    monkeypatch.setattr(SourceHosts, "reserve", reserve_and_note)
+    return record
+
+
 class TestTheSupervisorGivesTheTurns:
     """The child asks over its pipe; the supervisor answers from Postgres, shared with every other instance."""
 
@@ -1175,24 +1215,33 @@ class TestTheSupervisorGivesTheTurns:
         return supervisor, version
 
     def test_a_build_reads_its_files_an_interval_apart_and_leaves_no_place_behind(
-        self, db: psycopg.Connection, make: Callable[..., Supervisor], monkeypatch: pytest.MonkeyPatch
+        self,
+        db: psycopg.Connection,
+        make: Callable[..., Supervisor],
+        monkeypatch: pytest.MonkeyPatch,
+        granted: Granted,
     ) -> None:
         supervisor, version = self._build(db, make, monkeypatch, interval=0.5, PACED_FILES="4")
         _wait_for(db, "dem", version, "ready")
         given = self._given(supervisor)
         assert len(given) == 4
-        # Measured in the child after the answer came: under load a turn can arrive a little late, the next one on time.
-        assert min(b - a for a, b in zip(given, given[1:], strict=False)) > 0.4
+        # The turns, not when the child saw them: under load a `go` can come late, which the spacing never relies on.
+        assert min(granted.spacing()) >= 0.5 - 1e-5
+        assert granted.never_before(given)
         assert db.execute("SELECT count(*) FROM public.earthx_source_lease").fetchone() == (0,)
         assert db.execute("SELECT host FROM public.earthx_source_host").fetchall() == [(PACED_HOST,)]
 
     def test_the_requests_of_each_file_count_towards_the_spacing(
-        self, db: psycopg.Connection, make: Callable[..., Supervisor], monkeypatch: pytest.MonkeyPatch
+        self,
+        db: psycopg.Connection,
+        make: Callable[..., Supervisor],
+        monkeypatch: pytest.MonkeyPatch,
+        granted: Granted,
     ) -> None:
         supervisor, version = self._build(db, make, monkeypatch, interval=0.2, PACED_FILES="3", PACED_REQUESTS="3")
         _wait_for(db, "dem", version, "ready")
-        given = self._given(supervisor)
-        assert min(b - a for a, b in zip(given, given[1:], strict=False)) > 0.45, "3 requests of 0.2 s, not one"
+        assert min(granted.spacing()) >= 3 * 0.2 - 1e-5, "3 requests of 0.2 s, not one"
+        assert granted.never_before(self._given(supervisor))
 
     def test_a_turn_another_instance_took_first_is_waited_for(
         self, db: psycopg.Connection, make: Callable[..., Supervisor], monkeypatch: pytest.MonkeyPatch

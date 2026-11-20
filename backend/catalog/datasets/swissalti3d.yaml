@@ -124,6 +124,9 @@ source:
   adapter: fsdi-stac-v1
   endpoint: https://data.geo.admin.ch/api/stac/v1
   source_collection_id: ch.swisstopo.swissalti3d
+  # The link "Source" (M5-55, Otto 17.11.2026): STAC browser of the Federal Spatial Data Infrastructure with the
+  # files to load (as `catalog_page` of `sources/fsdi-stac.yaml`).
+  page_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.swisstopo.swissalti3d
   # The assets lie on the host of the API (S3 behind CloudFront, M5-08 plan §2).
   asset_hosts: [data.geo.admin.ch]
   # About 45 000 tiles, each read once a run (M5-08 plan §4.2); the source has no aggregation for a coverage.
