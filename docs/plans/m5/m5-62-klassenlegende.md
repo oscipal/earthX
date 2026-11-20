@@ -1,6 +1,6 @@
 # M5-62 — Klassenlegende
 
-**Stand:** 20.11.2026, Plan mit Fragen F1–F8 (§8), wartet auf Ottos Antworten. Umsetzung erst danach, im selben Draft-PR (PR 1) bzw. einem zweiten (§7, F7).
+**Stand:** 20.11.2026, Plan **angenommen** (Otto, 20.11.2026: F1 = 1, F2 = 3, F3 = 1, F4 = 1, F5–F7 ja, F8 „Classes“, A1–A5; Grundsatz zu den Farben, §9). PR 1 (Backend) in diesem Draft-PR (§10); PR 2 (Frontend) in einer neuen Session nach dem Merge.
 **Stufe B.** Höchstens zwei PRs (M5-Plan §2 Punkt 11).
 **Aufgabe (Otto, 19.11.2026; Grundlage M5-Plan §2 Punkt 9):**
 
@@ -60,6 +60,8 @@ alles nur, solange die Werte des Bands unverändert sind.
 
 ### 3.1 Form
 
+*Form und Farbregel ersetzt durch §9.2 (Otto, 20.11.2026).*
+
 Neues Pflichtfeld je Eintrag (B10: kein Standard, `{}` wo keine Klassen), Schlüssel wie `band_units`:
 
 ```yaml
@@ -90,6 +92,8 @@ Heute stehen die Namen in `mask.classes` und die Farben in `colormap_data/esa-wo
 Im Collection-JSON je Band in `earthx:bands` (M5-59) zusätzlich die Klassen in der Form der STAC-Erweiterung *classification* (`classification:classes` mit `value`, `name`, `color_hint` als Hex ohne `#`), weil das der verbreitete Standard dafür ist; dazu `stac_extensions` um die Erweiterung ergänzt. Die API liefert damit nichts Eigenes, das ein STAC-Client nicht kennt. Die Collections in Postgres neu schreiben: einmal `catalog-load` (§7). Keine Migration nötig; falls doch, Nummer 035 oder höher (032–034 sind von #388 belegt, Otto 20.11.2026).
 
 ### 3.4 Befüllen
+
+*Ersetzt durch §9.3 (Otto, 20.11.2026).*
 
 - **WorldCover 2020 und 2021:** 11 Klassen (10–100), Namen und Farben nach dem PUM (F2). Die Farben der Dateien (heute JSON) und die Namen der Datei-Legende stimmen nach Stand M5-07 mit der Produktbeschreibung überein; Abweichungen in der Schreibweise (z. B. „Bare/sparse vegetation“ gegenüber einer Schreibweise mit Leerzeichen im PUM) werden beim Befüllen geprüft und in `mask.classes` mitgezogen.
 - **Sentinel-2 SCL:** F5.
@@ -236,3 +240,49 @@ Die SCL ist ebenfalls ein Klassenband (12 Klassen in `mask.classes`).
 - **A3:** `float32`-Ausgabe mit unveränderten Werten behält Namen, RAT und `BANDS.txt`, nur ohne Farbtabelle (GeoTIFF erlaubt sie dort nicht).
 - **A4:** Die Klassen werden in der STAC-Form `classification:classes` veröffentlicht (§3.3); Registry-Feld heißt `band_classes`, Farbe in der Registry mit `#`.
 - **A5:** Der Name der Farbtabelle für die Kacheln bleibt `esa-worldcover`, damit gespeicherte Arbeitszustände und Rezepte weiter gelten.
+
+---
+
+## 9. Antworten von Otto (20.11.2026)
+
+### 9.1 Wortlaut
+
+> F1 = 1, F2 = 3, F3 = 1, F4 = 1, F5 = ja, F6 = ja, F7 = ja (Backend hier, Frontend in einer neuen Session nach Merge), F8 = „Classes“. A1–A5 angenommen.
+>
+> Grundsatz: Farben werden nie von Hand gepflegt. band_classes braucht je Klasse nur Wert und Name; die Farbe ist optional und wird so bestimmt:
+> 1. aus der Quelle: eingebaute Farbtabelle der Datei, bei STAC classification:classes (Name und color_hint) – beim Onboarding (adr/0031) automatisch übernehmen, wo vorhanden, auch die Namen;
+> 2. sonst eine feste Standardpalette, gut unterscheidbar, nach Reihenfolge der Klassen.
+>
+> Eine Farbe von Hand nur als Ausnahme. Bei WorldCover die Farben aus der Datei nehmen, nicht aus einer Tabelle von mir.
+>
+> F2 – Namen (Quelle: Earth-Engine-Katalog ESA/WorldCover v100/v200, gleichlautend bei Planet; die ESA-Seiten sind aus der Sitzung nicht erreichbar): WorldCover 2020 und 2021: 10 Tree cover, 20 Shrubland, 30 Grassland, 40 Cropland, 50 Built-up, 60 Bare / sparse vegetation, 70 Snow and ice, 80 Permanent water bodies, 90 Herbaceous wetland, 95 Mangroves, 100 Moss and lichen. Mit mask.classes abgleichen, Abweichungen im PR melden.
+> Sentinel-2 SCL: 0 No data (keine Klasse, A1), 1 Saturated or defective, 2 Topographic shadows (vor Baseline 04.00, 25.01.2022: Dark features / shadows), 3 Cloud shadows, 4 Vegetation, 5 Not vegetated, 6 Water, 7 Unclassified, 8 Cloud medium probability, 9 Cloud high probability, 10 Thin cirrus, 11 Snow or ice. Farben nach Regel 1, sonst Regel 2.
+>
+> F4: Farbtabelle in der GeoTIFF, Klassennamen und RAT in der .aux.xml daneben im ZIP, dazu die Klassen in BANDS.txt. F3: Das Popover darf das Panel nicht scrollen lassen und keine zusätzlichen Hinweistexte bringen (docs/ui/leitfaden.md).
+
+### 9.2 Form von `band_classes` (ersetzt §3.1)
+
+```yaml
+band_classes:
+  map:
+    colours: file        # file | stac | palette: woher die Farben kommen
+    classes:
+    - {value: 10, name: Tree cover, colour: '#006400'}
+    # …
+```
+
+- Je Klasse Pflicht nur `value` und `name`; `colour` ist optional.
+- `colours` sagt je Band, woher die Farben kommen:
+  - `file`: aus der eingebauten Farbtabelle der Datei; jede Klasse trägt die Farbe, wie das Onboarding sie aus der Datei gelesen hat.
+  - `stac`: aus `classification:classes` der Quelle (`color_hint`); ebenso jede Klasse mit Farbe.
+  - `palette`: die Quelle hat keine Farben; die Farben kommen beim Laden aus der festen Standardpalette nach der Reihenfolge der Klassen. Eine Klasse darf hier eine `colour` tragen: das ist die Ausnahme von Hand.
+- **Auslegung A6:** Farben aus der Quelle liegen in der YAML, weil das Onboarding nach `adr/0031` §7 je Eintrag eine YAML aus einer Probe der Quelle schreibt; „nie von Hand gepflegt“ heißt: Sie werden aus der Quelle übernommen und nicht verändert, eine Hand-Farbe gibt es nur bei `palette` als Ausnahme. Ein Lesen der Farben zur Laufzeit aus der Datei scheidet aus, weil Data catalogue und Legende sonst eine Quelle abrufen müssten.
+- **Standardpalette (A7):** die 20 Farben von „tab20“ (matplotlib, Reihenfolge der Kategorien: erst die zehn dunklen von tab10, dann die zehn hellen), gut unterscheidbar und verbreitet; ab der 21. Klasse wiederholt sie sich nicht still, der Eintrag lädt dann nicht (eine Hand-Farbe oder eine Farbe der Quelle ist nötig).
+- Der Rest der Prüfungen aus §3.1 bleibt; „zwei Klassen dürfen nicht dieselbe Farbe haben“ gilt für die aufgelösten Farben.
+
+### 9.3 Befüllen (ersetzt §3.4)
+
+- **WorldCover 2020 und 2021:** `colours: file`; Farben aus der Farbtabelle der Datei, wie sie in M5-07 am 06.11.2026 gelesen wurde (bisher `access/colormap_data/esa-worldcover.json`, die Datei entfällt); Namen nach Ottos Liste. Abweichung zu `mask.classes`: nur 60, dort „Bare/sparse vegetation“, neu „Bare / sparse vegetation“ (in `mask.classes` mitgezogen, die Ladeprüfung verlangt Gleichheit).
+- **Sentinel-2 SCL:** Namen nach Ottos Liste (Abweichungen zu `mask.classes` meldet §10). Farben: Earth Search führt nach dem Stand im Repo keine `classification:classes` mit `color_hint` für `scl`, und die SCL-Dateien haben keine bekannte Farbtabelle; prüfen kann die Session beides nicht (keine Abrufe der Quelle). Deshalb `colours: palette` (Regel 2). Findet Otto lokal eine Farbtabelle oder `color_hint`, wird der Eintrag auf `file` bzw. `stac` umgestellt.
+- Der Name „Topographic shadows“ gilt ab Baseline 04.00; ältere Szenen (vor 25.01.2022) nennen Klasse 2 „Dark features / shadows“. Ein Name je Wert ist die Form des Felds; der heutige Name steht in der Registry, der ältere im YAML-Kommentar (Auslegung A8).
+- **Onboarding (A1, Punkt 13):** Klassenbänder bekommen `band_classes`; Namen und Farben übernimmt das Onboarding aus der Quelle (Farbtabelle der Datei, STAC `classification:classes`), sonst `palette`.
