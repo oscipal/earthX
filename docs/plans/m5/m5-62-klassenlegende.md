@@ -62,7 +62,7 @@ alles nur, solange die Werte des Bands unverändert sind.
 
 *Form und Farbregel ersetzt durch §9.2 (Otto, 20.11.2026).*
 
-Neues Pflichtfeld je Eintrag (B10: kein Standard, `{}` wo keine Klassen), Schlüssel wie `band_units`:
+Neues Feld je Eintrag (ursprünglich als Pflichtfeld geplant; nach §11 optional, fehlt es, gibt es keine Klassen), Schlüssel wie `band_units`:
 
 ```yaml
 band_classes:
@@ -296,7 +296,7 @@ band_classes:
 | Teil | Stelle |
 |---|---|
 | Registry `band_classes` (Form §9.2): `ClassColours`, `BandClass`, `BandClasses`, `ClassRow`, `CLASS_PALETTE` (tab20); Prüfungen beim Laden (Band ohne Einheit, kein Muster, Werte aufsteigend und ganz, `nodata` keine Klasse, Name einzeilig ≤ 40 Zeichen, Farbe `#rrggbb`, bei `file`/`stac` jede Klasse mit Farbe, bei `palette` mehr als 20 Klassen nur mit eigenen Farben, keine Farbe doppelt, Gleichheit mit `mask.classes` bis auf den Wert ohne Klasse); `DatasetConfig.class_rows(asset)` | `backend/earthx/catalog/registry.py` |
-| Einträge: WorldCover 2020/2021 `colours: file` (Farben der Dateien aus M5-07), SCL `colours: palette`, alle übrigen `{}` | `backend/catalog/datasets/*.yaml` |
+| Einträge: WorldCover 2020/2021 `colours: file` (Farben der Dateien aus M5-07), SCL `colours: palette`; die übrigen ohne das Feld (§11) | `backend/catalog/datasets/*.yaml` |
 | Collection: `earthx:bands[].classification:classes` (`value`, `name` als Schlüssel, `title`, `color_hint`), Erweiterung *classification* v2.0.0 in `stac_extensions` | `backend/earthx/catalog/collection.py` |
 | Kachelfarben aus der Registry (Name `esa-worldcover` bleibt, A5); `colormap_data/esa-worldcover.json` gelöscht | `backend/earthx/access/colormaps.py` |
 | Export: `BandMeta.classes` (auch im JSON des Auftrags; ältere JSON ohne Feld gilt als „keine Klassen“); Farbtabelle in Dateien mit einem Klassenband in `uint8`/`uint16` (bleibt nach `cog_translate` erhalten, gemessen); `<datei>.aux.xml` mit `CategoryNames` und RAT (Value, Class, Red, Green, Blue) im ZIP; Block „Classes of band n (Name)“ mit „Value \| Class \| Colour“ in `BANDS.txt` | `backend/earthx/access/band_export.py`, `download.py`, `processing/export.py`, `api/intake.py`, `api/tiler.py` |
@@ -326,8 +326,29 @@ Neu: `backend/tests/catalog/test_band_classes.py` (Einträge, Regeln, Fehlerfäl
 
 ### 10.5 Was Otto lokal ausführt
 
-**Vor** dem ersten Start nach dem Merge: jedem eigenen Prototyp-Eintrag (`EARTHX_PROTOTYPE_SOURCES`, außerhalb des Repos) `band_classes: {}` ergänzen bzw. bei Klassenbändern die Klassen; das Feld hat keinen Standard (B10), ein Eintrag ohne lädt nicht. Danach einmal `catalog-load` (die Collections tragen `classification:classes`). Prüfung in QGIS: WorldCover-Zuschnitt (eine Datei je Band) herunterladen, ZIP entpacken, `exports/…tif` öffnen; Symbologie „Paletted/Unique values“ zeigt Farben und Klassennamen.
+Nach dem Merge einmal `catalog-load` (die Collections tragen `classification:classes`). Prüfung in QGIS: WorldCover-Zuschnitt (eine Datei je Band) herunterladen, ZIP entpacken, `exports/…tif` öffnen; Symbologie „Paletted/Unique values“ zeigt Farben und Klassennamen.
 
 ### 10.6 PR 2 (Frontend, neue Session nach dem Merge)
 
 Tabelle Value | Class | Colour im Data catalogue (F6: Farbfeld und Hex), Knopf „Classes“ mit Popover (F3, F8; Panel scrollt nicht, kein Zusatztext), Klassen-Block in der `BANDS.txt` des Browsers (A10), Klassen für Ergebnis-Ebenen nach §6 (A9) mit dem nötigen Backend-Teil.
+
+---
+
+## 11. Rückmeldung Otto zu PR 1 (20.11.2026)
+
+> 1. band_classes darf kein Pflichtfeld sein: Fehlt es, gilt „keine Klassen“ (Standard leer). Kein Eintrag, auch kein Prototyp-Eintrag außerhalb des Repos, soll ohne das Feld scheitern. Hinweis dazu aus Plan und PR-Text wieder entfernen.
+> 2. Prüfe, ob Rezepte, Permalinks, gespeicherte Jobs oder die Masken-Auswahl SCL-Klassen über den Namen (z. B. CAST_SHADOWS) statt über den Wert ablegen. Falls ja: alte Namen beim Lesen weiter annehmen (Zuordnung alt → Wert), mit Test. Falls nein: im Bericht kurz bestätigen.
+>
+> A9, A10, A16 angenommen. SCL bleibt bei der Palette.
+
+**Zu 1, umgesetzt:** `band_classes` steht als letztes Feld von `DatasetConfig` mit leerem Standard (bewusste Ausnahme von B10); fehlt es in einer YAML, hat der Eintrag keine Klassenbänder. Die Einträge ohne Klassen tragen das Feld nicht mehr; `to_plain` lässt ein Feld mit Standardwert weg, so bleibt der Rundlauf YAML → Eintrag → YAML gleich. Test: ein Eintrag ohne das Feld lädt (`test_entry_files.py`).
+
+**Zu 2, geprüft [P]: nein.** Klassen werden überall über den Wert abgelegt:
+
+- Rezept und gespeicherte Jobs: Der Operator `mask` nimmt `classes` als Liste ganzer Zahlen (`processing/operators/mask.py`, `MaskParams.classes`); Ergebnis-Eigenschaft `earthx:mask` ebenso.
+- Masken-Auswahl im Panel: `StepForm.tsx` hakt und schreibt `entry.value`; der Name ist nur Beschriftung.
+- Permalinks und Arbeitszustand im Browser (`permalink.ts`, `preferences.ts`, `jobShelf.ts`) enthalten keine Klassennamen.
+- Suchfilter und Anteile in der AOI (`cloud_classes`, `share_classes`) sind Werte.
+- Einzige Stelle, die Namen liest: `aoiFilter.ts::classNote` sucht „shadow“ im Namen, um im Tooltip zu sagen, dass Wolkenschatten nicht zählen; „Cloud shadows“ und „Topographic shadows“ treffen weiter wie zuvor `CLOUD_SHADOWS` und `CAST_SHADOWS`.
+
+Eine Zuordnung alter Namen ist damit nicht nötig.

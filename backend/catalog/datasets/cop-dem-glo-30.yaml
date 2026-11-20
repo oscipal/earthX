@@ -205,8 +205,6 @@ band_units:
 # What each band is, a few words (M5-59): the column "Description" of the Data catalogue.
 band_descriptions:
   data: Surface height (DSM)
-# No band whose values are classes (M5-62).
-band_classes: {}
 auxiliary_assets: []
 search_filters: []
 # DS-03c (Otto, 04.11.2026): the coverage of the AOI is meaningful, the share of the AOI the 1° tiles reach (oceans

@@ -16,7 +16,7 @@ import keyword
 import math
 import re
 from collections.abc import Iterable, Iterator, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from enum import Enum
 from fnmatch import fnmatchcase
@@ -1821,10 +1821,6 @@ class DatasetConfig:
     # `description` of a STAC band, for the column "Description" of the Data catalogue (M5-59). No default (KLAERUNGEN
     # B10): every key of ``band_units`` that is no auxiliary asset needs one.
     band_descriptions: Mapping[str, str]
-    # The classes of each band whose values are classes, by the keys of ``band_units`` (M5-62): value, English name and
-    # where the colours come from. The Data catalogue, the legend of a layer, the colours of the tiles and the export all
-    # take them from here. No default (KLAERUNGEN B10): an entry says so, with an empty mapping where no band has classes.
-    band_classes: Mapping[str, BandClasses]
     # The assets that help to look at or read the data but are no band of it (a true-colour picture, a preview), by
     # asset key. The panel keeps them out of "Select all"; a user can still pick one. No default (KLAERUNGEN B10):
     # an entry says so, with an empty tuple where it has none. The mask layer is named by ``mask``, not here.
@@ -1854,6 +1850,11 @@ class DatasetConfig:
     # F2, Nachtrag DS-04c), published as `earthx:limitations`. No default (KLAERUNGEN B10): an entry says so, with an
     # empty tuple where there is none, and the catalogue then has no such row.
     limitations: tuple[str, ...]
+    # The classes of each band whose values are classes, by the keys of ``band_units`` (M5-62): value, English name and
+    # where the colours come from. The Data catalogue, the legend of a layer, the colours of the tiles and the export all
+    # take them from here. Empty by default, unlike the fields above (Otto, 20.11.2026): an entry without the field has
+    # no band of classes, so no entry, in the repository or not, fails for lack of it.
+    band_classes: Mapping[str, BandClasses] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "band_units", MappingProxyType(dict(self.band_units)))
