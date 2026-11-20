@@ -431,9 +431,14 @@ Grundlage: `m5-20-lizenzliste.md` und der dritte Lauf `-Classify` (fsdi-stac 515
   - Neue Herausgeber eines späteren Harvests warten, bis der Befehl wieder läuft.
 - **Funde ohne Herausgeber (F14):** Eine Freigabe nennt einen Herausgeber; Funde ohne Herausgeberfeld (oder mit Leerzeichen am Rand) warten deshalb mit `not_granted`. `harvest-grants` gibt ihre Zahl je Quelle aus.
 
-**F14 — Funde ohne Herausgeber?**
+**F14 — Funde ohne Herausgeber?** **Otto, 20.11.2026: F14 = 1.**
 1. Sie warten; der Befehl zählt sie, ich entscheide nach den Zahlen **(Empfehlung)**
 2. Je Quelle eine Freigabe „ohne Herausgeber“ mit den Lizenzen aus `grant-to-all.yaml` (Lader und Regel bekommen dafür einen eigenen Wert)
+
+**Serieller Testlauf (Frage Otto, 20.11.2026):** `test_report` und `test_listed_load` scheiterten zusammen mit `pytest -n 0` an fehlendem `earthx_region`.
+- **Erste Ursache:** Ein serieller Lauf nutzte vor M5-61 die eingestellte Datenbank, und die war nicht migriert. Nur xdist-Worker bekamen eine migrierte Kopie. M5-61 (auf `main`) gibt jedem Lauf eine eigene, migrierte Kopie, auch seriell.
+- **Danach sichtbar, aus M5-20:** Gemeinden, die ein früheres Modul derselben Datenbank committet (`catalog-load`, `test_report`), halten ihren Kanton über den Fremdschlüssel von Migration 033. Die Regionstests von `test_listed_load` können Kantone dann nicht umschreiben oder löschen. Unter xdist hing das von der Verteilung auf die Worker ab.
+- **Behoben:** `test_listed_load` leert `earthx_municipality` in der zurückgerollten Transaktion jedes Tests. `CATALOGUE_TABLES` (M5-61) zählt `earthx_municipality` mit, denn `catalog-load` schreibt sie.
 
 ## 14. Auslegungen (gelten, wenn Otto nicht widerspricht)
 
