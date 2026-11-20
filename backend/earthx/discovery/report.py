@@ -67,6 +67,7 @@ from earthx.discovery.enrich import (
     spatial_extent,
     time_span,
 )
+from earthx.discovery.extract import resource_kind
 from earthx.discovery.geodata import GEODATA_FILE, Classified, GeodataRule, classify, load_geodata_rule
 from earthx.logging import configure_logging
 
@@ -385,6 +386,11 @@ class ReportResult:
     geonames: Counter[str] = field(default_factory=Counter)
     #: Bare names that are a city and its canton, by what the publisher decided ("zug: Kanton"), plan §13d.
     choices: Counter[str] = field(default_factory=Counter)
+    #: Why a find has no known way to the data (``no_access``), and the finds by reason (plan §13d, Otto's point 4).
+    access_reasons: Counter[str] = field(default_factory=Counter)
+    no_access: list[tuple[str, str, str, str]] = field(default_factory=list)
+    #: Every licence statement (normal form) of the source's finds, with its publishers, for Otto's grading (point 7).
+    statements: dict[str, Counter[str]] = field(default_factory=dict)
     pairs: Counter[tuple[str, str]] = field(default_factory=Counter)
     hidden: list[tuple[str, str, str]] = field(default_factory=list)
     undecided: list[tuple[str, str, str]] = field(default_factory=list)
@@ -406,6 +412,22 @@ def _stream(conn: psycopg.Connection, source_id: str):  # type: ignore[no-untype
             (source_id,),
         )
         yield from cur
+
+
+def _check_municipalities(conn: psycopg.Connection, directory: PlaceDirectory) -> None:
+    """The footprint of a municipality comes from ``earthx_municipality``: every municipality the directory knows must
+    be there, or the row of a find naming it would have no footprint. ``catalog-load`` writes them."""
+    codes = list(directory.municipal_boxes)
+    if not codes:
+        return
+    with conn.cursor() as cur:
+        cur.execute("SELECT count(*) FROM public.earthx_municipality WHERE code = ANY(%s)", (codes,))
+        row = cur.fetchone()
+    if row is None or row[0] != len(codes):
+        raise ConfigError(
+            "earthx_municipality does not hold the municipalities of municipalities.json; run catalog-load first"
+            " (docker compose up -d)"
+        )
 
 
 def _blocked(rules: Sequence[BlockRule], source_id: str, found: Mapping[str, Any]) -> bool:
@@ -431,6 +453,7 @@ def run_report(
     """One report of ``source`` against ``conn`` (autocommit); with ``classify_only`` nothing is written."""
     directory = load_place_directory() if directory is None else directory
     rule = load_geodata_rule() if rule is None else rule
+    _check_municipalities(conn, directory)
     known = known_collections(conn, sources)
     version = derivation_version(source, known, licences)
     stored = {} if classify_only else derivations(conn, source.source_id)
@@ -492,9 +515,15 @@ def _count(result: ReportResult, derived: Derived, found: Mapping[str, Any]) -> 
             result.geonames[geonames_id] += 1
     if derived.extent.choice:
         result.choices[derived.extent.choice] += 1
+    if row.waiting_reason == "no_access":
+        reason, formats = access_reason(found)
+        result.access_reasons[reason] += 1
+        result.no_access.append((reason, str(found.get("title"))[:100], str(found.get("source_url")), formats))
     for signal in (*derived.classified.geo, *derived.classified.not_geo):
         # Signals are "kind:value" or a kind alone ("inspire").
         result.signals[signal[:60]] += 1
+    for statement in {normal_statement(s) for s in derived.statements if normal_statement(s)}:
+        result.statements.setdefault(statement[:160], Counter())[row.publisher or "–"] += 1
     if row.waiting_reason in ("unknown_licence", "not_granted"):
         for statement in derived.statements:
             result.pairs[(row.publisher or "–", normal_statement(statement)[:100])] += 1
@@ -503,6 +532,25 @@ def _count(result: ReportResult, derived: Derived, found: Mapping[str, Any]) -> 
         result.hidden.append(entry)
     elif derived.classified.outcome == "undecided":
         result.undecided.append(entry)
+
+
+def access_reason(found: Mapping[str, Any]) -> tuple[str, str]:
+    """Why the extract found no way to the data of a find, from its intermediate form, and the formats of its files:
+    the source restricts access (``access_rights`` not public), names no resource with a usable address, names only
+    pages, or names formats the format table does not know. Resources with a plain ``http`` address are not kept in the
+    intermediate form and so count as none."""
+    distributions = [d for d in found.get("distributions") or () if isinstance(d, dict)]
+    kinds = [resource_kind(d.get("format"), d.get("media_type")) for d in distributions]
+    formats = ", ".join(sorted({str(d.get("format") or d.get("media_type") or "–") for d in distributions})) or "–"
+    if found.get("delivery") is not None:
+        return "access_rights nicht öffentlich oder unbekannt", formats
+    if not distributions:
+        return "keine Ressource mit https-Adresse", formats
+    if all(kind == "page" for kind in kinds):
+        return "nur Seiten (HTML)", formats
+    if any(kind is None for kind in kinds):
+        return "Format unbekannt", formats
+    return "nur Dokumentation oder Sonstiges", formats
 
 
 def _sample(items: Sequence[Any], size: int, seed: str) -> list[Any]:
@@ -527,10 +575,19 @@ def classify_text(source: SourceConfig, result: ReportResult) -> str:
     lines += [f"  - {t}  <{u}>" for _, t, u in _sample(result.undecided, CLASSIFY_SAMPLE, seed)]
     lines.append("Ortstexte ohne Treffer (häufigste 30):")
     lines += [f"  {count:>7}  {text}" for text, count in result.unresolved.most_common(30)]
+    lines.append(f"Kein Zugangsweg (no_access, {sum(result.access_reasons.values())}), nach Grund:")
+    lines += [f"  {count:>7}  {reason}" for reason, count in result.access_reasons.most_common()]
+    lines.append("  10 Beispiele (Grund | Titel | Link | Formate):")
+    lines += [f"  - {r} | {t} | <{u}> | {f}" for r, t, u, f in _sample(result.no_access, 10, seed)]
     lines.append("Gleichnamige Stadt und Kanton, je Name und Entscheid nach Herausgeber:")
     lines += [f"  {count:>7}  {choice}" for choice, count in sorted(result.choices.items())]
     lines.append(f"GeoNames-IDs ohne Zuordnung ({len(result.geonames)} verschiedene, häufigste 50):")
     lines += [f"  {count:>7}  https://sws.geonames.org/{gid}/" for gid, count in result.geonames.most_common(50)]
+    lines.append(f"Lizenzangaben ({len(result.statements)} verschiedene, häufigste 60; Funde | Angabe | häufigste Herausgeber):")
+    by_count = sorted(result.statements.items(), key=lambda item: (-sum(item[1].values()), item[0]))
+    for statement, publishers in by_count[:60]:
+        top = "; ".join(f"{name} {count}" for name, count in publishers.most_common(3))
+        lines.append(f"  {sum(publishers.values()):>7}  {statement} | {top}")
     lines.append("Warteliste nach Paar Herausgeber, Lizenzangabe (häufigste 20):")
     lines += [f"  {count:>7}  {pub} | {stmt}" for (pub, stmt), count in result.pairs.most_common(20)]
     return "\n".join(lines)
@@ -754,6 +811,9 @@ def main(argv: list[str] | None = None) -> int:
                 print(classify_text(source, result))
                 return 0
             result.files = write_files(conn, source, result, args.out, date.today())
+    except ConfigError as error:
+        print(f"report failed: {error}", file=sys.stderr)
+        return 1
     except psycopg.Error as error:
         print(f"report failed: database error {type(error).__name__} ({error.sqlstate or 'no state'})", file=sys.stderr)
         return 1

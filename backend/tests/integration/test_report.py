@@ -25,8 +25,8 @@ from earthx.catalog.listed import BlockReason, BlockRule, BlockScope, load_regio
 from earthx.catalog.listed_search import listed_entry
 from earthx.catalog.listed_store import apply_blocklist, write_regions
 from earthx.catalog.listing_store import withdraw
-from earthx.catalog.municipalities import Municipality, write_municipalities
-from earthx.catalog.registry import Maturity
+from earthx.catalog.municipalities import Municipality, load_municipalities, write_municipalities
+from earthx.catalog.registry import ConfigError, Maturity
 from earthx.catalog.sources import CkanFilter, SourceConfig, SourceProtocol, StacFilter
 from earthx.discovery.enrich import PLACE_NAMES_FILE, read_place_directory
 from earthx.discovery.report import classify_text, run_report, write_files
@@ -206,6 +206,8 @@ class World:
 def _regions(require_postgres_env: None) -> None:
     with psycopg.connect() as conn:
         write_regions(conn, load_regions())
+        # As catalog-load does: the report needs the municipalities of the image in the table (F9).
+        write_municipalities(conn, load_municipalities())
         conn.commit()
 
 
@@ -277,7 +279,7 @@ def test_the_extent_steps_give_a_footprint_only_where_it_is_known(world: World) 
     world.put(
         world.ckan,
         _find("place"),
-        _find("publisher", spatial_text="Winterthur"),
+        _find("publisher", spatial_text="Nirgendwo"),
         _find("catalog", spatial_text=None, publisher="Bundesamt"),
         _find("source", spatial_text=None, bbox=[8.4, 47.1, 8.6, 47.2]),
     )
@@ -407,7 +409,7 @@ def test_a_blocked_find_is_never_written(world: World) -> None:
 def test_classify_writes_nothing_and_names_the_unresolved_places(world: World) -> None:
     world.put(
         world.ckan,
-        _find("a", spatial_text="Winterthur"),
+        _find("a", spatial_text="Nirgendwo"),
         _find("statistics", data_kind="table", category="population", publisher="Statistisches Amt", spatial_text=None),
     )
     result = world.report(classify_only=True)
@@ -415,7 +417,7 @@ def test_classify_writes_nothing_and_names_the_unresolved_places(world: World) -
         "SELECT count(*) FROM public.earthx_listed_entry WHERE source_id = %s", (world.ckan.source_id,)
     ).fetchone() == (0,)
     text = classify_text(world.ckan, result)
-    assert "Winterthur" in text and "not_geodata 1" in text
+    assert "Nirgendwo" in text and "not_geodata 1" in text
 
 
 def test_one_foreign_find_never_stops_the_report(world: World) -> None:
@@ -556,7 +558,7 @@ def test_a_municipality_in_a_place_text_gives_its_outline_and_the_regions_of_its
         assert (row["extent_basis"], row["footprint"], row["regions"]) == ("place", True, ["CH", "CH-ZH"])
         assert row["content"]["extent"]["spatial"]["bbox"] == [[8.65, 47.45, 8.8, 47.55]]
     finally:
-        write_municipalities(world.conn, [])
+        write_municipalities(world.conn, load_municipalities())
 
 
 def test_classify_counts_the_geonames_ids_it_cannot_place(world: World) -> None:
@@ -564,3 +566,31 @@ def test_classify_counts_the_geonames_ids_it_cannot_place(world: World) -> None:
     world.put(world.ckan, _find("g", spatial_text="https://sws.geonames.org/2658434/"))
     text = classify_text(world.ckan, world.report(classify_only=True))
     assert "1  https://sws.geonames.org/2658434/" in text
+
+
+
+def test_the_report_refuses_to_run_before_catalog_load_wrote_the_municipalities(world: World) -> None:
+    winterthur = Municipality(
+        "CH-ZH-0230", "Winterthur", "CH-ZH", {"type": "Polygon", "coordinates": [[[8.7, 47.5], [8.8, 47.5], [8.8, 47.6], [8.7, 47.5]]]}
+    )
+    directory = read_place_directory(PLACE_NAMES_FILE, {r.code: r.level for r in load_regions()}, [winterthur])
+    world.conn.execute("DELETE FROM public.earthx_municipality WHERE code = %s", (winterthur.code,))
+    try:
+        with pytest.raises(ConfigError, match="run catalog-load first"):
+            world.report(directory=directory)
+    finally:
+        write_municipalities(world.conn, load_municipalities())
+
+
+def test_classify_explains_no_access_and_lists_the_licence_statements(world: World) -> None:
+    # Otto's points 4 and 7 of 20.11.2026.
+    world.put(
+        world.ckan,
+        _find("pages", delivery=None, account=None, distributions=[{"href": "https://amt.example.org/viewer", "format": "HTML", "media_type": None, "title": None, "roles": []}]),
+        _find("rights", account=None),
+        _find("none", delivery=None, account=None),
+    )
+    text = classify_text(world.ckan, world.report(classify_only=True))
+    for reason in ("nur Seiten (HTML)", "access_rights nicht öffentlich oder unbekannt", "keine Ressource mit https-Adresse"):
+        assert reason in text
+    assert "3  CC-BY-4.0 | Kanton Zug 3" in text
