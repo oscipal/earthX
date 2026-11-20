@@ -68,7 +68,8 @@ def test_the_fields_of_the_intermediate_form() -> None:
     found = extract_collection("ch.example.dem", COLLECTION, SOURCE)
     assert found.title == "Example elevation model"
     assert found.publisher == "Example Office of Topography"
-    assert found.licence_statements == ("proprietary", "https://www.example.org/terms")
+    # "proprietary" means "see the link rel=license": the link is the statement (Otto, 20.11.2026).
+    assert found.licence_statements == ("https://www.example.org/terms",)
     assert found.bbox == (5.9, 45.8, 10.5, 47.8)
     assert found.extent_known
     assert found.temporal == ("2019-01-01T00:00:00Z", None)
@@ -239,3 +240,17 @@ def test_the_extractor_version_follows_the_link_setting_of_the_source() -> None:
     other = SourceConfig(**{**{f: getattr(SOURCE, f) for f in SOURCE.__slots__}, "catalog_page": None})
     assert extractor_version(SOURCE) == extractor_version(SOURCE)
     assert extractor_version(SOURCE) != extractor_version(other)
+
+
+
+@pytest.mark.parametrize("word", ["proprietary", "Proprietary", "other", "various"])
+def test_proprietary_alone_is_no_licence_statement(word: str) -> None:
+    links = [link for link in COLLECTION["links"] if link.get("rel") != "license"]
+    assert extract_collection("ch.example.dem", _with(license=word, links=links), SOURCE).licence_statements == ()
+
+
+def test_a_named_licence_stays_beside_its_link() -> None:
+    assert extract_collection("ch.example.dem", _with(license="CC-BY-4.0"), SOURCE).licence_statements == (
+        "CC-BY-4.0",
+        "https://www.example.org/terms",
+    )

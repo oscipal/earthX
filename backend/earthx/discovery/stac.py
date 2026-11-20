@@ -49,6 +49,10 @@ class StacListing:
     validators: ListValidators | None = None
 
 
+#: Values of STAC `license` that point at the link `rel=license` instead of naming a licence.
+_SEE_LINK = frozenset({"proprietary", "other", "various"})
+
+
 def collection_key(collection: object) -> str | None:
     """The id of a collection if it can be a key at the source."""
     if not isinstance(collection, dict):
@@ -220,7 +224,13 @@ def extract_collection(key: str, collection: Mapping[str, Any], source: SourceCo
     if chosen is None:
         raise Invalid("no_link")
     landing = choose_link(c for c in candidates if c[0] is not LinkRank.VIEWER_OR_DOWNLOAD_PAGE)
-    statements = [collection.get("license"), *(link.get("href") for link in links if link.get("rel") == "license")]
+    licence_links = [link.get("href") for link in links if link.get("rel") == "license"]
+    licence = collection.get("license")
+    # "proprietary" (and "other", "various") only say "see the link rel=license": the link is the statement, and
+    # without one the word alone states no licence (Otto, 20.11.2026).
+    if isinstance(licence, str) and licence.strip().lower() in _SEE_LINK:
+        licence = None
+    statements = [licence, *licence_links]
     bbox = _bbox(collection)
     return Extracted(
         source_key=key,
