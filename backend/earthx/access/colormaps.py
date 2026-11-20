@@ -23,6 +23,8 @@ from typing import Any
 from rio_tiler.colormap import cmap as RIO_TILER_COLORMAPS
 from titiler.core.dependencies import create_colormap_dependency
 
+from earthx.catalog.datasets import registry
+
 __all__ = ["CLASS_TABLES", "COLORMAPS", "COLORMAP_PARAMS", "GROUPS", "PREVIEW_STOPS", "REVERSED", "catalog"]
 
 _DATA = Path(__file__).with_name("colormap_data")
@@ -30,10 +32,37 @@ _DATA = Path(__file__).with_name("colormap_data")
 #: The colormaps added to rio-tiler's, each a file of 256 RGB triples in ``colormap_data/`` (origin and licence in it).
 _ADDED = ("rocket", "mako")
 
-#: Tables of classes, each a file in ``colormap_data/`` with the colour of every class value (M5-07 plan F4). They paint
-#: a class layer as its source does, with no stretch: the tiles take them as ``colormap_name`` like every other, but
-#: they are no ramp to choose for other data, so the list leaves them out and none has a reversed one.
-CLASS_TABLES = ("esa-worldcover",)
+
+def _class_tables() -> dict[str, dict[int, tuple[int, int, int, int]]]:
+    """The tables of classes, by the ``colormap_name`` of the standard picture of each entry whose picture is a band of
+    classes (M5-07 plan F4, M5-62): the colour of every class from the registry, its value without a class see-through.
+
+    They paint a class layer as its source does, with no stretch: the tiles take them as ``colormap_name`` like every
+    other, but they are no ramp to choose for other data, so the list leaves them out and none has a reversed one.
+    Entries that share a name (the two states of WorldCover) must give the same table. The released entries only, read
+    without the start check of the instance (adr/0024 R5), as the runner reads them: importing this module needs no
+    setting of the process.
+    """
+    tables: dict[str, dict[int, tuple[int, int, int, int]]] = {}
+    for entry in registry(prototype=False):
+        render = entry.default_render
+        if render is None or render.colormap_name is None or len(render.assets) != 1:
+            continue
+        classes = entry.band_classes.get(render.assets[0])
+        if classes is None:
+            continue
+        table = {row.value: (*(int(row.colour[i : i + 2], 16) for i in (1, 3, 5)), 255) for row in classes.rows()}
+        if classes.nodata is not None:
+            table[classes.nodata] = (0, 0, 0, 0)
+        if tables.setdefault(render.colormap_name, table) != table:
+            raise ValueError(f"two entries give the class table {render.colormap_name} different colours")
+    return tables
+
+
+_CLASSES = _class_tables()
+
+#: The names of the tables of classes (:func:`_class_tables`).
+CLASS_TABLES = tuple(_CLASSES)
 
 REVERSED = "_r"
 
@@ -74,9 +103,7 @@ def _added() -> dict[str, dict[int, tuple[int, int, int, int]]]:
         table = [(int(r), int(g), int(b), 255) for r, g, b in rgb]
         added[name] = dict(enumerate(table))
         added[f"{name}{REVERSED}"] = dict(enumerate(reversed(table)))
-    for name in CLASS_TABLES:
-        classes = json.loads((_DATA / f"{name}.json").read_text(encoding="utf-8"))["classes"]
-        added[name] = {int(value): tuple(int(part) for part in rgba) for value, rgba in classes.items()}
+    added.update(_CLASSES)
     # rio-tiler's own ones without a reversed one get it here, so that "Reverse" holds for every colormap.
     names = set(RIO_TILER_COLORMAPS.list())
     for name in sorted(names):

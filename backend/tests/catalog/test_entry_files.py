@@ -120,6 +120,27 @@ def test_an_unknown_enum_value_is_an_error(tmp_path: Path) -> None:
         load_entry(_write(tmp_path, data))
 
 
+def test_an_entry_without_band_classes_has_no_band_of_classes(tmp_path: Path) -> None:
+    """M5-62 (Otto, 20.11.2026): the field may be left out, in the repository or in a prototype directory."""
+    data = _plain()
+    data.pop("band_classes", None)
+    entry = load_entry(_write(tmp_path, data))
+    assert dict(entry.band_classes) == {}
+    assert "band_classes" not in to_plain(entry)
+
+
+def test_the_classes_of_a_band_are_read_strictly(tmp_path: Path) -> None:
+    """M5-62: an unknown source of the colours and an unknown field of a class are errors with their path."""
+    data = _plain()
+    data["band_units"]["data"] = None
+    data["band_classes"] = {"data": {"colours": "guessed", "nodata": None, "classes": [{"value": 1, "name": "Sea"}]}}
+    with pytest.raises(EntryFileError, match=r"band_classes\.data\.colours"):
+        load_entry(_write(tmp_path, data))
+    data["band_classes"]["data"].update(colours="palette", classes=[{"value": 1, "name": "Sea", "label": "x"}])
+    with pytest.raises(EntryFileError, match=r"band_classes\.data\.classes\.0\.label"):
+        load_entry(_write(tmp_path, data))
+
+
 def test_a_check_of_the_dataclass_still_holds(tmp_path: Path) -> None:
     data = _plain()
     data["gsd"] = []
@@ -205,7 +226,8 @@ def test_to_plain_writes_enums_dates_and_sets_as_plain_values() -> None:
     plain = to_plain(COP_DEM_GLO_30)
     assert plain["license"]["tier"] == LicenseTier.PROCESSING.value
     assert plain["temporal_extent"]["start"] == COP_DEM_GLO_30.temporal_extent.start.isoformat()
-    assert list(plain) == [name for name in COP_DEM_GLO_30.__dataclass_fields__]
+    # In the order of the dataclass; a field left at its default (the DEM has no band of classes) is left out.
+    assert list(plain) == [name for name in COP_DEM_GLO_30.__dataclass_fields__ if name != "band_classes"]
 
 
 def test_an_instant_without_a_time_zone_is_an_error(tmp_path: Path) -> None:

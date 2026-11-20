@@ -62,6 +62,7 @@ from earthx.access.band_export import (
     apply_band_tags,
     band_meta,
     bands_text,
+    class_files,
     file_profile,
     kept_nodata,
     plan_files,
@@ -830,6 +831,7 @@ def export(recipe: Recipe, *, workdir: Path, progress: Progress, attachments: At
                 (NOTICE_FILENAME, notice.encode("utf-8")),
             ]
             if layout is not None:
+                texts += [(member, text.encode("utf-8")) for member, text in class_files(listed)]
                 texts.append(
                     (
                         EXPORTS_DIR + BANDS_FILENAME,

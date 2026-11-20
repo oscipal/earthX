@@ -45,6 +45,7 @@ def test_the_table_the_dialog_is_given_is_the_golden_response() -> None:
         auxiliary=collection["earthx:auxiliary_assets"],
         mask_asset=collection["earthx:mask"]["asset"],
         unit_of=collection["earthx:band_units"].get,
+        classes_of=lambda _key: None,
     )
     answer = {"bands": rows}
     assert answer == json.loads((FIXTURES / "golden_bands_response.json").read_text(encoding="utf-8"))

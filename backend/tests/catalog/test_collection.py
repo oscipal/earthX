@@ -14,6 +14,7 @@ import pystac
 import pytest
 
 from earthx.catalog.collection import (
+    CLASSIFICATION_EXTENSION,
     SCIENTIFIC_EXTENSION,
     STAC_VERSION,
     _stac_license,
@@ -161,7 +162,7 @@ def test_the_standard_visualisation_travels_in_the_field_names_of_the_render_ext
 
 
 def test_a_dataset_with_a_doi_declares_the_scientific_extension(collection: dict) -> None:
-    assert collection["stac_extensions"] == [SCIENTIFIC_EXTENSION]
+    assert collection["stac_extensions"] == [SCIENTIFIC_EXTENSION, CLASSIFICATION_EXTENSION]
     assert collection["sci:doi"] == "10.5270/S2_-742ikth"
 
 

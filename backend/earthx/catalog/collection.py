@@ -14,8 +14,9 @@ the architecture, not a consequence of this task.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Any
 
-from earthx.catalog.registry import DatasetConfig, FilterKind, LicenseInfo, doi_name
+from earthx.catalog.registry import DatasetConfig, FilterKind, LicenseInfo, class_key, doi_name
 
 # STAC 1.0 for now, because that is what pgstac and Earth Search speak. The licence
 # value below is tied to it: STAC 1.1 dropped "proprietary" in favour of "other",
@@ -26,6 +27,8 @@ STAC_VERSION = "1.0.0"
 # DOI and citation are not an earthx: field but the scientific extension, which
 # architekturplan.md 5.1 lists among the extensions we use.
 SCIENTIFIC_EXTENSION = "https://stac-extensions.github.io/scientific/v1.0.0/schema.json"
+#: The classes of a band (M5-62, plan §3.3): ``value``, a machine ``name``, the ``title`` people read, ``color_hint``.
+CLASSIFICATION_EXTENSION = "https://stac-extensions.github.io/classification/v2.0.0/schema.json"
 
 
 def _stac_license(license_info: LicenseInfo, stac_version: str = STAC_VERSION) -> str:
@@ -93,13 +96,23 @@ def _earthx_band_units(config: DatasetConfig) -> dict[str, str | None]:
     return dict(config.band_units)
 
 
-def _earthx_bands(config: DatasetConfig) -> list[dict[str, str]]:
-    """The bands as STAC names them, ``name`` and ``description``, in the order of the entry (M5-59).
+def _earthx_bands(config: DatasetConfig) -> list[dict[str, Any]]:
+    """The bands as STAC names them, ``name`` and ``description``, in the order of the entry (M5-59), and a band of
+    classes with its classes as the classification extension writes them (M5-62).
 
     A list, because the collection travels through JSONB, which does not keep the order of the keys of an object, and
     the Data catalogue shows the bands in the order the entry lists them.
     """
-    return [{"name": key, "description": text} for key, text in config.band_descriptions.items()]
+    bands: list[dict[str, Any]] = []
+    for key, text in config.band_descriptions.items():
+        band: dict[str, Any] = {"name": key, "description": text}
+        if (rows := config.class_rows(key)) is not None:
+            band["classification:classes"] = [
+                {"value": row.value, "name": class_key(row.name), "title": row.name, "color_hint": row.colour[1:].upper()}
+                for row in rows
+            ]
+        bands.append(band)
+    return bands
 
 
 def _earthx_auxiliary_assets(config: DatasetConfig) -> list[str]:
@@ -253,7 +266,10 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
     collection: dict[str, object] = {
         "type": "Collection",
         "stac_version": STAC_VERSION,
-        "stac_extensions": [SCIENTIFIC_EXTENSION] if scientific else [],
+        "stac_extensions": [
+            *([SCIENTIFIC_EXTENSION] if scientific else []),
+            *([CLASSIFICATION_EXTENSION] if config.band_classes else []),
+        ],
         "id": config.dataset_id,
         "title": config.title,
         "description": config.description,

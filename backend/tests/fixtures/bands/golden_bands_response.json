@@ -12,6 +12,7 @@
    "nodata": 0.0,
    "unit": "1",
    "categorical": false,
+   "classes": null,
    "preselected": true,
    "stackable": true
   },
@@ -27,6 +28,7 @@
    "nodata": 0.0,
    "unit": "1",
    "categorical": false,
+   "classes": null,
    "preselected": true,
    "stackable": true
   },
@@ -42,6 +44,7 @@
    "nodata": 0.0,
    "unit": "1",
    "categorical": false,
+   "classes": null,
    "preselected": true,
    "stackable": true
   },
@@ -57,6 +60,7 @@
    "nodata": 0.0,
    "unit": "1",
    "categorical": false,
+   "classes": null,
    "preselected": true,
    "stackable": true
   },
@@ -72,6 +76,7 @@
    "nodata": 0.0,
    "unit": "1",
    "categorical": false,
+   "classes": null,
    "preselected": false,
    "stackable": true
   },
@@ -87,6 +92,7 @@
    "nodata": 0.0,
    "unit": null,
    "categorical": true,
+   "classes": null,
    "preselected": true,
    "stackable": true
   }

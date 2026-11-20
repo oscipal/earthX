@@ -543,6 +543,7 @@ def layout_bands(prepared: _Prepared, recipe: Recipe) -> list[BandMeta]:
             asset,
             unit=prepared.config.band_unit(asset),
             categorical=prepared.config.mask is not None and prepared.config.mask.asset == asset,
+            classes=prepared.config.class_rows(asset),
         )
         for asset in recipe.inputs[0].assets
     ]
