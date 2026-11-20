@@ -388,6 +388,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harvest-report.ps1
 - **Gemeinden der Schweiz:** `scripts/write-municipality-outlines.py` reduziert eine lokale GeoPackage-Datei von
   swissBOUNDARIES3D (© swisstopo) auf `backend/catalog/municipalities.json`; Aufruf im Image in Plan §16. Ohne die Datei
   treffen Gemeindenamen in Ortstexten nicht.
+- **Ausgabe in eine Datei (Windows PowerShell 5.1):** Das Skript stellt seine eigene Konsole auf UTF-8, nicht aber die
+  äußere Pipe. Für `Tee-Object` vorher in derselben Sitzung:
+
+  ```powershell
+  [Console]::OutputEncoding = [Text.Encoding]::UTF8
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harvest-report.ps1 -Source govdata -Classify | Tee-Object classify-govdata.txt
+  ```
+
+  Das Image baut das Skript vorher leise (`--progress quiet`); `-NoBuild` (bash: `--no-build`) überspringt das.
 - **Linux:** Die Skripte starten den Bericht als Besitzer des Checkouts (`--user`), damit die Freigabedatei ohne
   `sudo` bearbeitbar bleibt.
 - **Prüfen in der Datenbank:**

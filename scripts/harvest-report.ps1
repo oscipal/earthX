@@ -26,10 +26,18 @@
 
 .PARAMETER Classify
     Show the classification only (`--classify`); write nothing.
+
+.PARAMETER NoBuild
+    Skip building the image of the report (when it is current). Otherwise it is built quietly first.
+
+    To keep the output in a file, set the console to UTF-8 in the calling shell too, before the pipe:
+        [Console]::OutputEncoding = [Text.Encoding]::UTF8
+        powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harvest-report.ps1 -Source govdata -Classify | Tee-Object classify.txt
 #>
 param(
     [Parameter(Mandatory = $true)][ValidatePattern('^[a-z][a-z0-9-]{1,62}$')][string]$Source,
-    [switch]$Classify
+    [switch]$Classify,
+    [switch]$NoBuild
 )
 
 $ErrorActionPreference = 'Stop'
@@ -49,8 +57,18 @@ function Fail([string]$Message) {
     exit 1
 }
 
+# The build in a step of its own and quiet: its progress went to stderr and showed as a red NativeCommandError in
+# Windows PowerShell (Otto, 20.11.2026). The report itself then runs without --build.
+function Build {
+    if (-not $NoBuild) {
+        docker compose --progress quiet build harvest-report
+        if ($LASTEXITCODE -ne 0) { Fail 'Das Image des Berichts laesst sich nicht bauen.' }
+    }
+}
+
 if ($Classify) {
-    docker compose run --build --rm @asOwner harvest-report $Source --classify
+    Build
+    docker compose --progress quiet run --rm @asOwner harvest-report $Source --classify
     exit $LASTEXITCODE
 }
 
@@ -58,12 +76,13 @@ if (git status --porcelain) { Fail 'Der Checkout ist nicht sauber; erst committe
 $branch = (git rev-parse --abbrev-ref HEAD).Trim()
 if ($branch -ne 'main') { Fail "Der Checkout steht auf '$branch', nicht auf main." }
 
+Build
 $day = Get-Date -Format 'yyyy-MM-dd'
 $target = "harvest/$day-$Source"
 git switch -c $target
 if ($LASTEXITCODE -ne 0) { Fail "Der Branch $target laesst sich nicht anlegen." }
 
-docker compose run --build --rm @asOwner harvest-report $Source
+docker compose --progress quiet run --rm @asOwner harvest-report $Source
 if ($LASTEXITCODE -ne 0) {
     git switch main
     git branch -D $target

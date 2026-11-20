@@ -47,7 +47,9 @@ def test_the_bash_script_parses() -> None:
 FAKE_DOCKER = """#!/usr/bin/env bash
 # Records its call; as the report, writes an approval file unless FAKE_STACK is empty.
 echo "$*" >> "$FAKE_LOG"
+[[ " $* " == *" build harvest-report "* ]] && exit 0
 [[ " $* " == *" --user $(id -u):$(id -g) "* ]] || { echo "not run as the owner of the checkout" >&2; exit 3; }
+[[ " $* " != *" --build "* ]] || { echo "the report runs without --build" >&2; exit 4; }
 if [[ -n "${FAKE_STACK:-}" && " $* " != *" --classify "* ]]; then
     printf 'decision: pending\\n' > backend/catalog/approvals/2026-11-19-govdata.yaml
 fi
@@ -124,6 +126,7 @@ def test_the_powershell_script_runs_the_report_as_the_owner_on_linux() -> None:
     text = PS1.read_text(encoding="utf-8")
     assert "if ($IsLinux) { $asOwner = @('--user'" in text
     assert text.count("@asOwner harvest-report") == 2
+    assert "run --build" not in text
 
 
 
@@ -132,4 +135,20 @@ def test_the_powershell_script_reads_the_report_as_utf8() -> None:
     text = PS1.read_text(encoding="utf-8")
     assert "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8" in text
     assert "$OutputEncoding = [System.Text.Encoding]::UTF8" in text
-    assert text.index("[Console]::OutputEncoding") < text.index("docker compose run --build --rm @asOwner")
+    assert text.index("[Console]::OutputEncoding") < text.index("docker compose --progress quiet run --rm @asOwner")
+
+
+
+def test_the_image_is_built_quietly_in_a_step_of_its_own_and_can_be_skipped(tmp_path: Path) -> None:
+    # Otto, 20.11.2026: the build's progress on stderr showed as a red NativeCommandError.
+    repo, env = _repo(tmp_path)
+    assert _run(repo, env, "govdata", "--classify").returncode == 0
+    calls = (tmp_path / "docker.log").read_text(encoding="utf-8").splitlines()
+    assert calls[0] == "compose --progress quiet build harvest-report"
+    assert calls[1].startswith("compose --progress quiet run --rm --user")
+    (tmp_path / "docker.log").unlink()
+    assert _run(repo, env, "govdata", "--classify", "--no-build").returncode == 0
+    assert "build" not in (tmp_path / "docker.log").read_text(encoding="utf-8")
+    assert "Unbekannte Option" in _run(repo, env, "govdata", "--fast").stdout
+    ps1 = PS1.read_text(encoding="utf-8")
+    assert "if (-not $NoBuild)" in ps1 and "docker compose --progress quiet build harvest-report" in ps1
