@@ -43,7 +43,7 @@ if __name__ == "__main__":
     from synthetic_item import synthetic_item
 
     from earthx.api.intake import accept_order, check_recipe_hosts
-    from earthx.catalog.datasets import REGISTRY
+    from earthx.catalog.datasets import registry
     from earthx.jobs.config import WorkerConfig
     from earthx.jobs.entry import ChildTarget
     from earthx.jobs.submit import dismiss, job_status, submit
@@ -101,9 +101,9 @@ def place(conn: psycopg.Connection, raw: str, version: str) -> tuple[str, float]
         return synthetic_item(item_id, version)
 
     begin = time.perf_counter()
-    accepted = asyncio.run(accept_order(raw, registry=REGISTRY, operators=OPERATORS, item_source=item_source,
+    accepted = asyncio.run(accept_order(raw, registry=registry(), operators=OPERATORS, item_source=item_source,
                                         gateway=NoGateway()))
-    check_recipe_hosts(accepted.recipe, REGISTRY)
+    check_recipe_hosts(accepted.recipe, registry())
     job_id = submit(conn, accepted.recipe, operators=OPERATORS, acquired_on=accepted.acquired_on,
                     scene_aoi=accepted.scene_aoi)
     return job_id, (time.perf_counter() - begin) * 1000

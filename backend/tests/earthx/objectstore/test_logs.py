@@ -31,6 +31,8 @@ class _Capture(logging.Handler):
         self.text.append(f"{record.name} {record.getMessage()}")
 
 
+pytestmark = pytest.mark.changes_logging
+
 @pytest.fixture
 def debug_log() -> Iterator[_Capture]:
     """`configure_logging(DEBUG)`, then a capture on the root logger; restored afterwards."""

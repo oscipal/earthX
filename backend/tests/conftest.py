@@ -10,15 +10,19 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
 import socket
+import tempfile
 from collections.abc import Iterator
+from typing import Any
 
 import pytest
 import rasterio.session
 
 from earthx.logging import JsonFormatter
 from earthx.readers.limits import limit_reads
-from tests.worker_database import drop_worker_database, load_session_env, use_worker_database
+from tests.logging_guard import COLLECTING, LoggingGuard, summary
+from tests.worker_database import TestRun, drop_worker_database, load_session_env, start_run, use_run_database
 
 # rasterio in the test process as in the image: without an AWS session (NM4-23).
 #
@@ -33,29 +37,104 @@ from tests.worker_database import drop_worker_database, load_session_env, use_wo
 # they checked before (tests/earthx/objectstore/test_rasterio_session.py).
 rasterio.session.boto3 = None
 
-_WORKER_DATABASE = pytest.StashKey[tuple[str, str]]()
+_RUN = pytest.StashKey[TestRun]()
+_LOGGING = pytest.StashKey[LoggingGuard]()
+_DATABASE = pytest.StashKey[tuple[str, str]]()
 
 
 def pytest_configure(config: pytest.Config) -> None:
-    """Under pytest-xdist, each worker gets a database of its own (tests/worker_database.py).
+    """The run's databases (tests/worker_database.py): here, before anything is collected.
 
-    Here, before anything is collected, so every fixture and every spawned child of the
-    worker reads the worker's `PGDATABASE`. A serial run (`pytest -n 0`) has no
-    `workerinput` and keeps the configured database.
+    The controller of an xdist run, or the one process of a serial run, takes the run's id and
+    migrates its template; each worker, and a serial run itself, then points `PGDATABASE` at a copy
+    of it, so every fixture and every spawned child reads that one.
     """
+    config.stash[_LOGGING] = LoggingGuard()
+    load_session_env()
     workerinput = getattr(config, "workerinput", None)
     if workerinput is None:
+        made = start_run()
+        if made is None:
+            return
+        config.stash[_RUN] = made
+        if not config.getoption("numprocesses", None) and not config.getoption("collectonly"):
+            used = use_run_database(made.run, made.configured, "main")
+            if used is not None:
+                config.stash[_DATABASE] = used
         return
-    load_session_env()
-    made = use_worker_database(workerinput["workerid"])
+    run = workerinput.get("earthx_run")
+    if run is not None:
+        used = use_run_database(run, workerinput["earthx_configured"], workerinput["workerid"])
+        if used is not None:
+            config.stash[_DATABASE] = used
+
+
+@pytest.hookimpl(optionalhook=True)
+def pytest_configure_node(node: Any) -> None:
+    """Hands the run's id to each xdist worker (`pytest-xdist` hook, run by the controller)."""
+    made = node.config.stash.get(_RUN, None)
     if made is not None:
-        config.stash[_WORKER_DATABASE] = made
+        node.workerinput["earthx_run"] = made.run
+        node.workerinput["earthx_configured"] = made.configured
+
+
+@pytest.fixture(autouse=True)
+def logging_as_found(request: pytest.FixtureRequest) -> Iterator[None]:
+    """Puts `logging` back as the run found it after each test (tests/logging_guard.py)."""
+    guard = request.config.stash[_LOGGING]
+    guard.learn()
+    guard.restore(COLLECTING)
+    yield
+    guard.restore(request.node.nodeid, note=request.node.get_closest_marker("changes_logging") is None)
+
+
+def pytest_sessionfinish(session: pytest.Session) -> None:
+    workeroutput = getattr(session.config, "workeroutput", None)
+    if workeroutput is not None:
+        workeroutput["earthx_logging_changed"] = session.config.stash[_LOGGING].changed
+
+
+@pytest.hookimpl(optionalhook=True)
+def pytest_testnodedown(node: Any, error: object) -> None:
+    """Collects what each xdist worker's tests left changed in `logging` (`pytest-xdist` hook)."""
+    changed = getattr(node, "workeroutput", {}).get("earthx_logging_changed", [])
+    node.config.stash[_LOGGING].changed.extend((test, names) for test, names in changed)
+
+
+def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter, config: pytest.Config) -> None:
+    guard = config.stash.get(_LOGGING, None)
+    changed = guard.changed if guard is not None else []
+    if changed:
+        terminalreporter.section("logging changed by a test and put back (M5-61)")
+        for line in summary(changed):
+            terminalreporter.line(line)
 
 
 def pytest_unconfigure(config: pytest.Config) -> None:
-    made = config.stash.get(_WORKER_DATABASE, None)
+    used = config.stash.get(_DATABASE, None)
+    if used is not None:
+        drop_worker_database(*used)
+    made = config.stash.get(_RUN, None)
     if made is not None:
-        drop_worker_database(*made)
+        made.end()
+
+
+#: A full run writes about 10 GB of `tmp_path` (M5-61 §2.5); below this a session disk can fill up during a run.
+LOW_DISK_BYTES = 12 * 1024**3
+
+
+def low_disk_warning(directory: str, free_bytes: int) -> str | None:
+    if free_bytes >= LOW_DISK_BYTES:
+        return None
+    return (
+        f"WARNING: only {free_bytes / 1024**3:.1f} GB free under {directory}; a full run needs about 10 GB "
+        "for its temporary files. Remove old /tmp/pytest-of-* directories first."
+    )
+
+
+def pytest_report_header(config: pytest.Config) -> str | None:
+    directory = tempfile.gettempdir()
+    return low_disk_warning(directory, shutil.disk_usage(directory).free)
 
 
 _ALLOWED_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", ""})
