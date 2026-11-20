@@ -3284,6 +3284,45 @@ button.pm-open:hover {
 .catalogue-bands tbody th {
   white-space: nowrap;
 }
+/* The classes of a band (M5-62): one table each under the bands, the band as its heading. */
+.catalogue-classes {
+  margin-top: var(--space-3);
+}
+.catalogue-classes caption {
+  padding-bottom: var(--space-1);
+  text-align: left;
+}
+/* The legend "Classes" (M5-62): over the map, one line per class, never scrolling for 11 classes on a map of 360 px. */
+.vc-classes {
+  justify-content: flex-start;
+}
+.popover.classes-popup {
+  padding: var(--space-2);
+}
+.classes-legend {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-sm);
+  color: var(--text);
+}
+.classes-legend li {
+  display: flex;
+  align-items: center;
+}
+/* The colour of a class, from the data: a small square before its hex (the Data catalogue, the legend "Classes"). */
+.class-swatch {
+  display: inline-block;
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+  margin-right: var(--space-1-5);
+  vertical-align: middle;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-xs);
+}
 .catalogue-value a {
   color: var(--accent);
 }
