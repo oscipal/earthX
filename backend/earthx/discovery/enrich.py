@@ -50,13 +50,21 @@ _KEYS = frozenset(
         "designations",
         "municipal_designations",
         "whole_country",
+        "whole_country_prefixes",
+        "beyond",
+        "beyond_prefixes",
         "approximate",
         "not_places",
+        "not_place_prefixes",
+        "alpha3",
         "geonames",
     }
 )
 _GEONAMES = re.compile(r"(?:https?://)?(?:sws\.|www\.)?geonames\.org/(\d{1,10})(?:/[^\s,;]*)?", re.IGNORECASE)
 _CODE = re.compile(r"[A-Z]{2}")
+_EU_COUNTRY = re.compile(r"publications\.europa\.eu/resource/authority/country/([A-Z0-9]{2,3})\b", re.IGNORECASE)
+#: What ``place_codes`` returns for a text beyond any one state ("Europa"): no region, and no fallback (plan A25).
+BEYOND = "!"
 _PARENTHESES = re.compile(r"\(([^()]*)\)")
 #: How the parts of one place text are separated: a list or a double name ("Kanton Bern / Canton de Berne").
 _PARTS = re.compile(r"\s*(?:/|;|,|\||\s+und\s+|\s+et\s+|\s+and\s+)\s*", re.IGNORECASE)
@@ -71,6 +79,8 @@ class Extent:
     codes: tuple[str, ...] = ()
     #: For ``place``: the places a text named (regions or municipalities), whose outlines are the footprint.
     places: tuple[str, ...] = ()
+    #: Where a bare name is a city and a canton ("Zug"), which one the publisher decided: ``"zug: Kanton"`` (plan §13d).
+    choice: str | None = None
     bbox: tuple[float, float, float, float] | None = None
     geometry: Mapping[str, Any] | None = None
     unresolved: str | None = None
@@ -88,6 +98,11 @@ class PlaceDirectory:
     designated: Mapping[str, str]
     designations: tuple[str, ...]
     whole_country: frozenset[str]
+    whole_country_prefixes: tuple[str, ...]
+    beyond: frozenset[str]
+    beyond_prefixes: tuple[str, ...]
+    not_place_prefixes: tuple[str, ...]
+    alpha3: Mapping[str, str]
     before: tuple[str, ...]
     after: tuple[str, ...]
     not_places: frozenset[str]
@@ -183,6 +198,11 @@ def read_place_directory(
     for key, code in geonames.items():
         if not isinstance(key, str) or not key.isdigit() or code not in regions:
             raise EntryFileError(f"{path.name}: geonames maps a numeric id (as text) to a code of regions.json")
+    alpha3 = data["alpha3"]
+    if not isinstance(alpha3, dict) or not all(
+        isinstance(k, str) and re.fullmatch(r"[A-Z]{3}", k) and regions.get(v) == "state" for k, v in alpha3.items()
+    ):
+        raise EntryFileError(f"{path.name}: alpha3 maps ISO 3166-1 alpha-3 codes to states of regions.json")
     # The longest designation first, so that "Canton de" is tried before "Canton".
     designations = tuple(sorted({normalize(d) for d in _names(data, "designations")}, key=len, reverse=True))
     # A name a region holds on its own stays the region's; an ambiguous one ("Bern") is the municipality's.
@@ -199,6 +219,11 @@ def read_place_directory(
         municipal_designations=municipal_designations,
         municipal_boxes={item.code: _box_of(item.outline) for item in municipalities},
         whole_country=frozenset(normalize(text) for text in _names(data, "whole_country")),
+        whole_country_prefixes=tuple(normalize(text) for text in _names(data, "whole_country_prefixes")),
+        beyond=frozenset(normalize(text) for text in _names(data, "beyond")),
+        beyond_prefixes=tuple(normalize(text) for text in _names(data, "beyond_prefixes")),
+        not_place_prefixes=tuple(normalize(text) for text in _names(data, "not_place_prefixes")),
+        alpha3=dict(alpha3),
         before=tuple(sorted({normalize(t) for t in _names(approximate, "before")}, key=len, reverse=True)),
         after=tuple(sorted({normalize(t) for t in _names(approximate, "after")}, key=len, reverse=True)),
         not_places=frozenset(normalize(text) for text in _names(data, "not_places")),
@@ -302,13 +327,30 @@ def geonames_ids(text: str) -> list[str]:
     return _GEONAMES.findall(text)
 
 
+def _starts(normal: str, prefixes: Iterable[str]) -> bool:
+    return any(normal == prefix or normal.startswith(prefix) for prefix in prefixes)
+
+
 def place_codes(text: str, directory: PlaceDirectory, country: str | None) -> tuple[str, ...] | str | None:
-    """The places a place text names: their codes, ``"*"`` for the whole state of the catalogue, ``""`` for a text
-    that is no place at all, ``None`` where one part names no place of the directory."""
+    """The places a place text names: their codes, ``"*"`` for the whole state of the catalogue, :data:`BEYOND` for
+    a text beyond any one state, ``""`` for a text that is no place at all, ``None`` where a part names no place of
+    the directory."""
     ids = _GEONAMES.findall(text)
     if ids:
         codes = [directory.geonames.get(i) for i in ids]
         return None if None in codes else tuple(sorted(set(codes)))  # type: ignore[arg-type]
+    countries = _EU_COUNTRY.findall(text)
+    if countries:
+        # The EU vocabulary of countries: its code, alpha-2 or alpha-3 (Otto, 20.11.2026).
+        codes = [c.upper() if directory.levels.get(c.upper()) == "state" else directory.alpha3.get(c.upper()) for c in countries]
+        return None if None in codes else tuple(sorted(set(codes)))  # type: ignore[arg-type]
+    normal = normalize(text)
+    if normal in directory.beyond or _starts(normal, directory.beyond_prefixes):
+        return BEYOND
+    if _starts(normal, directory.whole_country_prefixes):
+        return "*"
+    if _starts(normal, directory.not_place_prefixes):
+        return ""
     whole = _part(text, directory, country, abbreviation=True)
     if whole is not None:
         # "République et canton de Genève" is one name, not a list at "et".
@@ -321,12 +363,26 @@ def place_codes(text: str, directory: PlaceDirectory, country: str | None) -> tu
     for word in directory.after:
         if normal_whole.endswith(" " + word):
             outer = text[: _cut(text, word)]
-    parts = [(part, False) for part in _PARTS.split(_PARENTHESES.sub(" ", outer))] + [(part, True) for part in inner]
-    for part, in_parentheses in parts:
-        outcome = _part(part, directory, country, abbreviation=in_parentheses)
+    # In parentheses: an abbreviation that confirms the name before it ("Jura (JU)" is the canton, though "Jura" alone
+    # is ambiguous), a designation ("Bern (Kanton)"), or a note that is no place ("Basel (Stadtplan 1987 - 1992)").
+    confirmed = {code for part in inner if (code := directory.code_of(part.strip(), country)) is not None}
+    designation = next((normalize(p) for p in inner if normalize(p) in directory.designations), None)
+    for part in _PARTS.split(_PARENTHESES.sub(" ", outer)):
+        name = _drop_approximate(normalize(part), directory)
+        if directory.designated.get(name) in confirmed:
+            found.add(directory.designated[name])
+            continue
+        if designation is not None and (code := directory.name_code(f"{designation} {name}", municipal=False)):
+            found.add(code)
+            continue
+        outcome = _part(part, directory, country, abbreviation=False)
         if outcome is None:
             return None
         if outcome:
+            found.add(outcome)
+    for part in inner:
+        outcome = _part(part, directory, country, abbreviation=True)
+        if outcome and outcome != "*":
             found.add(outcome)
     if not found:
         return ""
@@ -365,6 +421,21 @@ def _in_country(code: str, country: str | None) -> bool:
     return country is None or code == country or code.startswith(country + "-")
 
 
+def _city_or_canton(
+    text: str, municipality: str, publisher: object, directory: PlaceDirectory, country: str | None
+) -> tuple[tuple[str, ...], str | None]:
+    """A bare name that is a city and its canton ("Zug", "Schwyz", "St. Gallen"): the canton where the publisher is an
+    office of that canton ("Kanton Zug", "Amt für Geoinformation Kanton Schwyz"), else the city (Otto, 20.11.2026)."""
+    name = _drop_approximate(normalize(text), directory)
+    canton = municipality[:5]
+    if directory.designated.get(name) != canton:
+        return (municipality,), None
+    office = publisher_code(publisher, directory) if isinstance(publisher, str) else None
+    if office == canton and _in_country(canton, country):
+        return (canton,), f"{name}: Kanton"
+    return (municipality,), f"{name}: Stadt"
+
+
 def spatial_extent(
     found: Mapping[str, Any], *, country: str | None, directory: PlaceDirectory | None = None
 ) -> Extent:
@@ -377,19 +448,25 @@ def spatial_extent(
     unresolved = None
     if isinstance(text, str) and text.strip():
         codes = place_codes(text, directory, country)
+        if codes == BEYOND:
+            # "Europa", "Welt": no region, and not the state of the catalogue either (plan A25).
+            return Extent("none")
         if codes == "*" and country is not None:
             return Extent("catalog", codes=(country,))
         if isinstance(codes, tuple) and codes and not all(_in_country(code, country) for code in codes if "-" in code):
             # "Vienne" at opendata.swiss is no Bundesland of Austria: a subdivision counts only in the state of the
             # catalogue (review M5-20 PR 1).
             codes = None
+        choice = None
+        if isinstance(codes, tuple) and len(codes) == 1 and MUNICIPALITY_CODE.fullmatch(codes[0]):
+            codes, choice = _city_or_canton(text, codes[0], found.get("publisher"), directory, country)
         if isinstance(codes, tuple) and codes:
             if all("-" not in code for code in codes):
                 # Only whole states ("Schweiz"): regions without a footprint, or every area in the state would find
                 # the entry (plan A19, F11).
                 return Extent("catalog", codes=codes)
             boxes = {**region_boxes(), **directory.municipal_boxes}
-            return Extent("place", codes=_states(codes), places=codes, bbox=_union_box(boxes, codes))
+            return Extent("place", codes=_states(codes), places=codes, bbox=_union_box(boxes, codes), choice=choice)
         if codes is None:
             unresolved = text
     publisher = found.get("publisher")

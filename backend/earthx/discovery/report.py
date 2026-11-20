@@ -383,6 +383,8 @@ class ReportResult:
     unresolved: Counter[str] = field(default_factory=Counter)
     #: GeoNames ids of place texts the table of place_names.yaml does not hold yet (F10 = 1).
     geonames: Counter[str] = field(default_factory=Counter)
+    #: Bare names that are a city and its canton, by what the publisher decided ("zug: Kanton"), plan §13d.
+    choices: Counter[str] = field(default_factory=Counter)
     pairs: Counter[tuple[str, str]] = field(default_factory=Counter)
     hidden: list[tuple[str, str, str]] = field(default_factory=list)
     undecided: list[tuple[str, str, str]] = field(default_factory=list)
@@ -488,6 +490,8 @@ def _count(result: ReportResult, derived: Derived, found: Mapping[str, Any]) -> 
         result.unresolved[derived.extent.unresolved[:80]] += 1
         for geonames_id in geonames_ids(derived.extent.unresolved):
             result.geonames[geonames_id] += 1
+    if derived.extent.choice:
+        result.choices[derived.extent.choice] += 1
     for signal in (*derived.classified.geo, *derived.classified.not_geo):
         # Signals are "kind:value" or a kind alone ("inspire").
         result.signals[signal[:60]] += 1
@@ -523,6 +527,8 @@ def classify_text(source: SourceConfig, result: ReportResult) -> str:
     lines += [f"  - {t}  <{u}>" for _, t, u in _sample(result.undecided, CLASSIFY_SAMPLE, seed)]
     lines.append("Ortstexte ohne Treffer (häufigste 30):")
     lines += [f"  {count:>7}  {text}" for text, count in result.unresolved.most_common(30)]
+    lines.append("Gleichnamige Stadt und Kanton, je Name und Entscheid nach Herausgeber:")
+    lines += [f"  {count:>7}  {choice}" for choice, count in sorted(result.choices.items())]
     lines.append(f"GeoNames-IDs ohne Zuordnung ({len(result.geonames)} verschiedene, häufigste 50):")
     lines += [f"  {count:>7}  https://sws.geonames.org/{gid}/" for gid, count in result.geonames.most_common(50)]
     lines.append("Warteliste nach Paar Herausgeber, Lizenzangabe (häufigste 20):")

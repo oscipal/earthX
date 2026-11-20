@@ -95,17 +95,33 @@ designations: [Kanton, Kantons, Canton de, Canton du, Canton d, Canton of, Canto
 municipal_designations: [Stadt, Gemeinde, Einwohnergemeinde, Politische Gemeinde, Commune de, Commune d, Ville de,
                          Città di, Comune di, City of, Municipality of]
 
-# --- 2. Texts that name the whole state of the catalogue by its parts (Otto, 19.11.2026) -----------------------------
+# --- 2. Texts that name the whole state of the catalogue by its parts (Otto, 19.11.2026 and 20.11.2026) ---------------
 whole_country: [Kantone, Gemeinden, Politische Gemeinden, Bezirke, Grossregionen, Sonstige Raumgliederungen,
-                Cantons, Communes, Districts, Cantoni, Comuni, Distretti]
+                Cantons, Communes, Districts, Cantoni, Comuni, Distretti, Sprachgebiete, Statistische Städte,
+                Gemeinden (Politik), Städtische Gebiete, Ländliche Gebiete, Städtische/Ländliche Gebiete, NUTS 0 Staaten, Fachhochschulen]
+# Texts that begin so name the state of the catalogue too ("Urban Audit Kernstädte (Schweiz-Perimeter)").
+whole_country_prefixes: [Urban Audit]
+
+# --- 2a. Texts beyond any one state: no region at all, not the state of the catalogue (Otto, 20.11.2026, plan A25) ---
+beyond: [Europa, Europe, Welt, World, Monde, Mondo, International, Weltweit, Worldwide, Global]
+beyond_prefixes: [Grenzüberschreitend]
 
 # --- 3. Approximate places: the words around the core that are dropped (Otto, 19.11.2026) ----------------------------
 approximate:
-  before: [Grossraum, Großraum, Raum, Region]
+  before: [Grossraum, Großraum, Raum, Region, Agglomeration, Seen im, Seen in]
   after: [und angrenzende Gebiete, mit grenznahem Ausland, und Umgebung]
 
-# --- 4. Texts that are no place and are passed over like a missing one (Otto, 19.11.2026) ----------------------------
-not_places: [Spatial, "Landeskarte 1:500'000"]
+# --- 4. Texts that are no place and are passed over like a missing one (Otto, 19.11.2026 and 20.11.2026) -------------
+not_places: [Spatial]
+# Names of products, not places: a text that begins so is passed over ("Landeskarte 1:25 000", "SWISSIMAGE 10 cm").
+not_place_prefixes: [Landeskarte, swissTLMRegio, swissALTIRegio, SWISSIMAGE, Orthofoto, Topografisches Landschaftsmodell,
+                     GeoMol15]
+
+# --- 4a. Country codes of the EU vocabulary (publications.europa.eu/resource/authority/country/<code>) ------------------
+# The vocabulary writes ISO 3166-1 alpha-3; these are the states of Europe and a few more it uses, as alpha-2.
+alpha3: {AUT: AT, BEL: BE, BGR: BG, HRV: HR, CYP: CY, CZE: CZ, DNK: DK, EST: EE, FIN: FI, FRA: FR, DEU: DE, GRC: GR,
+         HUN: HU, IRL: IE, ITA: IT, LVA: LV, LTU: LT, LUX: LU, MLT: MT, NLD: NL, POL: PL, PRT: PT, ROU: RO, SVK: SK,
+         SVN: SI, ESP: ES, SWE: SE, CHE: CH, LIE: LI, NOR: NO, ISL: IS, GBR: GB, USA: US}
 
 # --- 5. GeoNames: the id of an address sws.geonames.org/<id>, quoted as text -> a code of regions.json ---------------
 # Empty until the ids are shown (F10): `report --classify` counts the ids that occur.

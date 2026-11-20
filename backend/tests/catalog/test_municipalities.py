@@ -36,10 +36,13 @@ def _item(**changes: Any) -> dict[str, Any]:
     return {"code": "CH-BE-0351", "name": "Bern", "canton": "CH-BE", "outline": SQUARE, **changes}
 
 
-def test_the_shipped_file_holds_none_until_otto_runs_the_script() -> None:
-    # Nothing of swissBOUNDARIES3D is fetched from a session; the file names its attribution all the same.
-    assert load_municipalities() == ()
-    assert json.loads(MUNICIPALITIES_FILE.read_text(encoding="utf-8"))["attribution"] == "© swisstopo"
+def test_the_shipped_file_is_otto_s_run_of_swissboundaries3d() -> None:
+    # Otto ran the script on release 2026-01 (20.11.2026); every municipality of Switzerland, with its attribution.
+    head = json.loads(MUNICIPALITIES_FILE.read_text(encoding="utf-8"))
+    assert head["attribution"] == "© swisstopo" and head["release"] and len(head["sha256"]) == 64
+    municipalities = load_municipalities()
+    assert 2000 < len(municipalities) < 2300
+    assert {m.canton for m in municipalities} == {f"CH-{c}" for c in "AG AI AR BE BL BS FR GE GL GR JU LU NE NW OW SG SH SO SZ TG TI UR VD VS ZG ZH".split()}
 
 
 def test_a_municipality_loads(tmp_path: Path) -> None:

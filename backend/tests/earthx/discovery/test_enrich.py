@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from earthx.catalog.entry_files import EntryFileError
+from earthx.catalog.listed import load_regions
 from earthx.catalog.municipalities import Municipality
 from earthx.discovery.enrich import (
     PLACE_NAMES_FILE,
@@ -20,7 +21,8 @@ from earthx.discovery.enrich import (
     time_span,
 )
 
-DIRECTORY = load_place_directory()
+# The directory of regions alone; the municipalities of the image are tested apart (TestTheShippedMunicipalities).
+DIRECTORY = read_place_directory(PLACE_NAMES_FILE, {region.code: region.level for region in load_regions()})
 
 
 @pytest.mark.parametrize(
@@ -108,37 +110,37 @@ def test_publishers(publisher: str, code: str | None) -> None:
 def test_places_outside_the_catalogue_and_whole_states(
     found: dict[str, str], country: str, basis: str, codes: tuple[str, ...]
 ) -> None:
-    extent = spatial_extent(found, country=country)
+    extent = spatial_extent(found, country=country, directory=DIRECTORY)
     assert (extent.basis, extent.codes, extent.has_footprint) == (basis, codes, False if basis == "catalog" else True)
 
 
 class TestSteps:
     def test_the_geometry_of_the_source_comes_first(self) -> None:
-        extent = spatial_extent({"bbox": [8, 47, 9, 48], "spatial_text": "Aargau"}, country="CH")
+        extent = spatial_extent({"bbox": [8, 47, 9, 48], "spatial_text": "Aargau"}, country="CH", directory=DIRECTORY)
         assert (extent.basis, extent.bbox, extent.has_footprint) == ("source", (8.0, 47.0, 9.0, 48.0), True)
 
     def test_a_place_text_gives_the_place_and_its_state(self) -> None:
-        extent = spatial_extent({"spatial_text": "Kanton Bern", "publisher": "Kanton Zug"}, country="CH")
+        extent = spatial_extent({"spatial_text": "Kanton Bern", "publisher": "Kanton Zug"}, country="CH", directory=DIRECTORY)
         assert (extent.basis, extent.codes, extent.has_footprint) == ("place", ("CH", "CH-BE"), True)
 
     def test_a_text_without_a_place_falls_to_the_publisher(self) -> None:
-        extent = spatial_extent({"spatial_text": "Winterthur", "publisher": "Kanton Zug"}, country="CH")
+        extent = spatial_extent({"spatial_text": "Winterthur", "publisher": "Kanton Zug"}, country="CH", directory=DIRECTORY)
         assert (extent.basis, extent.codes, extent.has_footprint) == ("publisher", ("CH", "CH-ZG"), False)
         assert extent.unresolved == "Winterthur"
 
     def test_then_the_state_of_the_catalogue(self) -> None:
-        extent = spatial_extent({"publisher": "Bundesamt für Statistik"}, country="CH")
+        extent = spatial_extent({"publisher": "Bundesamt für Statistik"}, country="CH", directory=DIRECTORY)
         assert (extent.basis, extent.codes, extent.has_footprint) == ("catalog", ("CH",), False)
 
     def test_a_whole_country_text_is_the_state_of_the_catalogue(self) -> None:
-        assert spatial_extent({"spatial_text": "Gemeinden"}, country="CH").basis == "catalog"
+        assert spatial_extent({"spatial_text": "Gemeinden"}, country="CH", directory=DIRECTORY).basis == "catalog"
 
     def test_nothing_in_a_catalogue_of_the_world(self) -> None:
-        assert spatial_extent({"title": "Kanton Bern"}, country=None).basis == "none"
+        assert spatial_extent({"title": "Kanton Bern"}, country=None, directory=DIRECTORY).basis == "none"
 
     def test_a_place_in_the_title_is_never_read(self) -> None:
         # Otto, 19.11.2026: "Ort: Merkmal" is no extent.
-        assert spatial_extent({"title": "Kanton Bern: Bevölkerung"}, country="CH").basis == "catalog"
+        assert spatial_extent({"title": "Kanton Bern: Bevölkerung"}, country="CH", directory=DIRECTORY).basis == "catalog"
 
 
 @pytest.mark.parametrize(
@@ -177,8 +179,9 @@ class TestTheDirectoryFile:
 
     BASE = (
         "places: {CH: [Schweiz], CH-BE: [Bern]}\nambiguous: [Bern]\ndesignations: [Kanton]\n"
-        "municipal_designations: [Stadt]\nwhole_country: [Kantone]\n"
-        "approximate: {before: [Raum], after: [und Umgebung]}\nnot_places: [Spatial]\ngeonames: {}\n"
+        "municipal_designations: [Stadt]\nwhole_country: [Kantone]\nwhole_country_prefixes: []\nbeyond: [Welt]\n"
+        "beyond_prefixes: []\napproximate: {before: [Raum], after: [und Umgebung]}\nnot_places: [Spatial]\n"
+        "not_place_prefixes: []\nalpha3: {CHE: CH}\ngeonames: {}\n"
     )
 
     def test_the_shipped_file_loads(self) -> None:
@@ -226,6 +229,10 @@ MUNICIPALITIES = (
     Municipality("CH-ZH-0120", "Wald (ZH)", "CH-ZH", _square(8.9, 47.2)),
     Municipality("CH-AR-3001", "Wald", "CH-AR", _square(9.5, 47.4)),
     Municipality("CH-AG-4001", "Aargau", "CH-AG", _square(8.0, 47.3)),
+    Municipality("CH-ZG-1711", "Zug", "CH-ZG", _square(8.5, 47.15)),
+    Municipality("CH-SZ-1372", "Schwyz", "CH-SZ", _square(8.65, 47.0)),
+    Municipality("CH-LU-1061", "Luzern", "CH-LU", _square(8.3, 47.05)),
+    Municipality("CH-BS-2701", "Basel", "CH-BS", _square(7.58, 47.55)),
 )
 
 
@@ -277,3 +284,92 @@ class TestMunicipalities:
 
 def test_geonames_ids() -> None:
     assert geonames_ids("https://sws.geonames.org/2658434/ und http://sws.geonames.org/7285161") == ["2658434", "7285161"]
+
+
+
+@pytest.mark.parametrize(
+    ("text", "codes"),
+    [
+        # Otto's findings of 20.11.2026 from -Classify.
+        ("Jura (JU)", ("CH-JU",)),
+        ("Bern (Kanton)", ("CH-BE",)),
+        ("http://publications.europa.eu/resource/authority/country/CH", ("CH",)),
+        ("http://publications.europa.eu/resource/authority/country/CHE", ("CH",)),
+        ("http://publications.europa.eu/resource/authority/country/DEU", ("DE",)),
+        ("http://publications.europa.eu/resource/authority/country/XYZ", None),
+        ("Sprachgebiete", "*"),
+        ("Statistische Städte", "*"),
+        ("Gemeinden (Politik)", "*"),
+        ("Städtische/Ländliche Gebiete", "*"),
+        ("NUTS 0 Staaten", "*"),
+        ("Urban Audit Kernstädte (Schweiz-Perimeter)", "*"),
+        ("Fachhochschulen", "*"),
+        ("Landeskarte 1:25 000", ""),
+        ("swissTLMRegio", ""),
+        ("swissALTIRegio", ""),
+        ("SWISSIMAGE 10 cm", ""),
+        ("Orthofoto 2019", ""),
+        ("Topografisches Landschaftsmodell TLM", ""),
+        ("GeoMol15-Basismodell", ""),
+        ("Seen im Kanton Luzern", ("CH-LU",)),
+        ("Europa", "!"),
+        ("Welt", "!"),
+        ("International", "!"),
+        ("Grenzüberschreitender Urban Audit Perimeter", "!"),
+    ],
+)
+def test_place_texts_of_the_classification(text: str, codes: object) -> None:
+    assert place_codes(text, DIRECTORY, "CH") == codes
+
+
+def test_a_text_beyond_any_state_has_no_region_and_no_fallback() -> None:
+    # Plan A25: "Europa" does not fall to the state of the catalogue.
+    extent = spatial_extent({"spatial_text": "Europa", "publisher": "Kanton Zug"}, country="CH", directory=DIRECTORY)
+    assert (extent.basis, extent.codes, extent.has_footprint) == ("none", (), False)
+
+
+class TestCoresAndCities:
+    directory = read_place_directory(PLACE_NAMES_FILE, DIRECTORY.levels, MUNICIPALITIES)
+
+    @pytest.mark.parametrize(
+        ("text", "codes"),
+        [
+            ("Agglomeration Bern", ("CH-BE-0351",)),
+            ("Basel (Stadtplan 1987 - 1992)", ("CH-BS-2701",)),
+            ("Luzern (LU)", ("CH-LU",)),
+            ("Luzern", ("CH-LU-1061",)),
+        ],
+    )
+    def test_cores(self, text: str, codes: tuple[str, ...]) -> None:
+        assert place_codes(text, self.directory, "CH") == codes
+
+    @pytest.mark.parametrize(
+        ("text", "publisher", "places", "choice"),
+        [
+            ("Zug", "Kanton Zug", ("CH-ZG",), "zug: Kanton"),
+            ("Schwyz", "Amt für Geoinformation Kanton Schwyz", ("CH-SZ",), "schwyz: Kanton"),
+            ("Zug", "Stadt Zug", ("CH-ZG-1711",), "zug: Stadt"),
+            ("Zug", "Bundesamt für Statistik", ("CH-ZG-1711",), "zug: Stadt"),
+            # Not a bare name: the city as named, no choice.
+            ("Stadt Zug", "Kanton Zug", ("CH-ZG-1711",), None),
+        ],
+    )
+    def test_a_bare_name_of_city_and_canton_follows_the_publisher(
+        self, text: str, publisher: str, places: tuple[str, ...], choice: str | None
+    ) -> None:
+        # Otto, 20.11.2026: an office of the canton means the canton, else the city.
+        extent = spatial_extent({"spatial_text": text, "publisher": publisher}, country="CH", directory=self.directory)
+        assert (extent.places, extent.choice) == (places, choice)
+        assert extent.codes == ("CH", places[0][:5])
+
+
+
+class TestTheShippedMunicipalities:
+    """Otto's municipalities.json (swissBOUNDARIES3D 2026-01, pushed 20.11.2026): Otto's examples of M2."""
+
+    directory = load_place_directory()
+
+    @pytest.mark.parametrize("text", ["Stadt Bern", "Winterthur", "Emmen", "Biel/Bienne", "Riehen"])
+    def test_towns_of_the_classification(self, text: str) -> None:
+        codes = place_codes(text, self.directory, "CH")
+        assert isinstance(codes, tuple) and len(codes) == 1 and codes[0].count("-") == 2
