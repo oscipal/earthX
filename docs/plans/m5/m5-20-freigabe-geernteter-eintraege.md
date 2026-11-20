@@ -404,6 +404,37 @@ Die Ausgaben liegen der Sitzung jetzt vor (Datei im Chat). Zahlen: opendata-swis
 2. Je Quelle eine Vorgabe in der Seed-Datei (z. B. FSDI: Nutzungsbedingungen von geo.admin.ch), gilt für Funde ohne Angabe, nach deiner Einstufung
 3. Je Herausgeber eine Vorgabe in `grants/` (z. B. swisstopo → swisstopo OGD), nach deiner Einstufung
 
+## 13f. Lizenz-Einstufung und F13 (Otto, 20.11.2026)
+
+Grundlage: `m5-20-lizenzliste.md` und der dritte Lauf `-Classify` (fsdi-stac 515 Funde: `no_licence` 164, `unknown_licence` 351; opendata-swiss 16 216: `not_geodata` 7 761, `no_access` 102, `unknown_licence` 8 353; govdata 168 882: `not_geodata` 59 035, `no_access` 3 754, `unknown_licence` 106 093).
+
+- **F13 = 1:** FSDI-Collections ohne Lizenzangabe warten (`no_licence`); die Plattform unterstellt keine Lizenz.
+- **Einstufung, umgesetzt in `backend/catalog/licenses/terms.yaml`:** 36 Lizenzen in den Klassen der Lizenzliste, über der jeweiligen Lizenz vermerkt. Änderungen gegenüber dem Vorschlag:
+  - Freitexte des Luftfahrt-Bundesamts („Statistiken“ 43, „Listen“ 11): K2 als eigene Lizenz `lba-free-use`, Namensnennung „© Luftfahrt-Bundesamt“.
+  - „NB-GDIKOM-B für Geodatendienste …“ (Wuppertal, 36): K6 `nb-gdikom-b`.
+  - „Sie dürfen: Teilen … Bearbeiten …“ (27): eine Schreibweise von CC BY 4.0.
+  - `mdd-nrw-nutzungsbedingungen`: K7, nicht aufgenommen.
+  - officialWork, official-work und § 5 UrhG (beide Schreibweisen): K1 `de-official-work`, nicht freigegeben.
+  - `http://disclaimer.admin.ch` und die admin.ch-Nutzungsbedingungen: K6.
+  - swisstopo OGD: „© swisstopo“. DL-DE BY 2.0: „{publisher}, Datenlizenz Deutschland – Namensnennung – Version 2.0“.
+  - Sonst bei Namensnennung „© {publisher}“; für veränderte Daten jeweils mit „ (modified)“ wie bei den vollen Einträgen.
+- **Schreibweisen (A30):** Jede Angabe aus dem JSON-Abschnitt des dritten Laufs mit mindestens zwei Funden, die eindeutig eine eingestufte Lizenz meint, ist ein `match` dieser Lizenz: 115 Angaben. Dazu zählen Freitexte zu DL-DE BY 2.0, DL-DE Zero 2.0, CC0 und CC BY 4.0, auch mit Haftungsausschluss oder Quellenvermerk davor oder danach. Nicht aufgenommen, weil nicht eindeutig oder ohne Einstufung:
+  - „Alle veröffentlichten Statistiken …“ (3): Wortlaut des LBA ohne den Namen; Herausgeber unbekannt, die Namensnennung „© Luftfahrt-Bundesamt“ wäre falsch.
+  - ODbL mit CC BY-SA 4.0 für die Inhalte (3): zwei Lizenzen in einer Angabe.
+  - „Weitergabe unter gleichen Bedingungen — …“ (2): Auszug ohne Lizenz und Version.
+  - CC BY-NC-SA 4.0 (3 + 2), DL-DE BY-NC 1.0 (7), BSD (5), GPL 3.0 (3), `http://dcat-ap.de/def/licenses` (2): nicht in der Lizenzliste eingestuft.
+  - Alles mit einem Fund (z. B. „CC-BY 4.0“, „CC0-1.0“).
+  Funde mit diesen Angaben warten weiter (`unknown_licence`), ebenso jeder Fund, von dessen Angaben nur eine fehlt. Wer sie sichtbar haben will, stuft sie nach; eine neue Zeile in `matches` genügt.
+- **Freigaben (A31):** K1 bis K5 für alle Herausgeber jeder Quelle, ohne `de-official-work`; K6 nie. Die Regel bleibt je Herausgeber (L2; L3 ist in `adr/0033` F2 verworfen). Deshalb schreibt der neue Befehl `harvest-grants` (`python -m earthx.discovery.grants`) `grants/<quelle>.yaml` aus den Herausgebern der extrahierten Funde in der Datenbank. Jeder Herausgeber bekommt alle Lizenzen aus `backend/catalog/licenses/grant-to-all.yaml` (27 Lizenzen, Ottos Entscheidung vom 20.11.2026). Eigenschaften:
+  - Ein zweiter Lauf behält unveränderte Zeilen samt Tag und ergänzt neue Herausgeber; Zeilen von Herausgebern, die nicht mehr in der Datenbank stehen, bleiben stehen.
+  - Ändert sich `grant-to-all.yaml`, bekommt jede Zeile die neue Liste und den Tag des Laufs.
+  - Neue Herausgeber eines späteren Harvests warten, bis der Befehl wieder läuft.
+- **Funde ohne Herausgeber (F14):** Eine Freigabe nennt einen Herausgeber; Funde ohne Herausgeberfeld (oder mit Leerzeichen am Rand) warten deshalb mit `not_granted`. `harvest-grants` gibt ihre Zahl je Quelle aus.
+
+**F14 — Funde ohne Herausgeber?**
+1. Sie warten; der Befehl zählt sie, ich entscheide nach den Zahlen **(Empfehlung)**
+2. Je Quelle eine Freigabe „ohne Herausgeber“ mit den Lizenzen aus `grant-to-all.yaml` (Lader und Regel bekommen dafür einen eigenen Wert)
+
 ## 14. Auslegungen (gelten, wenn Otto nicht widerspricht)
 
 - **A1** IDs geernteter Einträge wie §12; keine `proto-`-ID möglich (die Quelle `proto-*` ist im Seed verboten).
@@ -450,27 +481,78 @@ Ohne Netz, synthetische Fixtures (M5-19 A5), Transport-Attrappe am `Gateway`:
 
 ## 16. Befehle für Ottos lokalen Lauf
 
-Stand 20.11.2026, nach §13e. Weiter auf dem Branch; PR 1 erst nach diesem Lauf und deiner Einstufung (oder schon vorher, wenn du F13 entschieden hast und nichts mehr an den Regeln ändern willst) mergen. PowerShell im Checkout:
+Stand 20.11.2026, nach §13f. Die Harvests aus dem Stand nach §13e (`--reextract` mit `--build`) bleiben gültig; neu sind nur Einstufung und Freigaben, und die leitet der Bericht ohne Anfrage neu ab. PowerShell im Checkout.
+
+**1. PR 1 mergen** (nach deinem Review), dann:
 
 ```powershell
-git switch claude/confident-turing-lucii4
+git switch main
 git pull
 docker compose build
 docker compose up -d
-docker compose run --build --rm harvest fsdi-stac --reextract
-docker compose run --rm harvest earth-search --reextract
-docker compose run --rm harvest opendata-swiss --reextract
-docker compose run --rm harvest govdata --reextract
+```
+
+`catalog-load` prüft dabei `terms.yaml`.
+
+**2. Freigaben erzeugen**, auf einem eigenen Branch:
+
+```powershell
+git switch -c grants/2026-11-20
+docker compose --progress quiet run --build --rm harvest-grants govdata opendata-swiss fsdi-stac
+git status
+```
+
+Je Quelle eine Zeile, z. B. `govdata: 2100 Herausgeber in der Datenbank, 2100 Zeilen (2100 neu oder geändert), je 27 Lizenzen; Funde ohne Herausgeber: 400` (Zahlen erfunden).
+
+**3. Vor dem Commit nachsehen, was sichtbar würde.** `-Classify` baut das Image mit den neuen Dateien:
+
+```powershell
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harvest-report.ps1 -Source fsdi-stac -Classify | Tee-Object classify-fsdi-stac.txt
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harvest-report.ps1 -Source opendata-swiss -Classify -NoBuild | Tee-Object classify-opendata-swiss.txt
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harvest-report.ps1 -Source govdata -Classify -NoBuild | Tee-Object classify-govdata.txt
 ```
 
-- **`--build` beim ersten `harvest`** ist nötig: `docker compose build` baut den Dienst im Profil `harvest` nicht mit (Befund FSDI „proprietary“, §13e). Die übrigen Läufe nutzen das frisch gebaute Image.
-- **`--reextract`** setzt die neuen Extraktor-Versionen um (FSDI: Link statt „proprietary“; CKAN: Zugangsart `page`, `access_rights`), ohne Anfrage.
-- **Erwartung:** `no_access` bei GovData fällt von 64 985 auf die Funde mit „nur `http`“ oder ausdrücklich nicht öffentlich; `unknown_licence` bleibt, bis `terms.yaml` Einträge hat.
-- **Danach:** Einstufung nach `m5-20-lizenzliste.md` (Klasse je Lizenz genügt; die Session schreibt daraus `terms.yaml` mit den Schreibweisen aus dem JSON-Abschnitt und `grants/` nach deiner Freigabe je Herausgeber).
+`in_review` in der Zeile „Ergebnis“ ist die Zahl, die mit der Freigabe des Laufs sichtbar würde; Dubletten über die Quellen zieht erst der echte Bericht ab. „Warten“ nennt den Rest nach Grund.
+
+**4. Freigaben committen und mergen:**
+
+```powershell
+git add backend/catalog/licenses/grants
+git commit -m "Grant K1 to K5 to the publishers of govdata, opendata-swiss and fsdi-stac"
+git push -u origin grants/2026-11-20
+```
+
+Draft-PR öffnen, ansehen, mergen. Danach:
+
+```powershell
+git switch main
+git pull
+docker compose build
+docker compose up -d
+```
+
+**5. Bericht je Quelle**, auf `main`, je ein Branch und eine Freigabedatei:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harvest-report.ps1 -Source fsdi-stac
+git switch main
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harvest-report.ps1 -Source opendata-swiss -NoBuild
+git switch main
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harvest-report.ps1 -Source govdata -NoBuild
+```
+
+Das Skript bleibt auf dem neuen Branch `harvest/<Tag>-<Quelle>`; vor der nächsten Quelle deshalb `git switch main`. FSDI zuerst, damit der Bericht von opendata.swiss die Dubletten zu den FSDI-Collections schon kennt (FSDI hat Rang 1 und stellt den Haupteintrag). Je Branch:
+
+```powershell
+git push -u origin harvest/2026-11-20-fsdi-stac
+```
+
+**6. Freigeben** je Draft-PR:
+- In `backend/catalog/approvals/<Tag>-<Quelle>.yaml` jede Zeile der Stichprobe prüfen (Link, Lizenz, Herausgeber, Zugang, Ausdehnung, Geodaten) und `ok: true` oder `false` setzen.
+- `decision: approved` und `decided_on: <Tag>` setzen. Einzelne Lizenzregeln lässt `excluded_rules` draußen.
+- Mergen, dann `git switch main`, `git pull`, `docker compose build`, `docker compose up -d`.
+- `catalog-load` macht den Stapel im Data catalogue sichtbar; prüfen mit der Abfrage am Ende von „Geerntete Einträge freigeben“ in der README (`state = published`).
 
 ## 17. Umsetzung PR 1 ([#388](https://github.com/oscipal/earthX/pull/388)), Stand 19.11.2026
 
@@ -488,4 +570,5 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harvest-report.ps1
 - **Zweite Runde (Otto, 19.11.2026):** Gemeinden aus swissBOUNDARIES3D (Skript, `municipalities.json` leer bis zum Lauf, Migration 033, Namen im Verzeichnis, Fußabdruck aus dem Umriss); `--classify` zählt GeoNames-IDs; `geodata.yaml` nennt IT.NRW (2 375 Tabellen ohne „statisti*“ im Namen); die Skripte starten den Bericht unter Linux als Besitzer des Checkouts, mit `HOME=/tmp` im Dienst; Test mit `docker`-Attrappe in einem Wegwerf-Repository.
 - **Dritte Runde (Otto, 20.11.2026, §13d):** Ortstexte (Kürzel in Klammern, EU-Länder-URIs, Gliederungswörter, Produktnamen, Kern statt Zusatz, „Europa“ ohne Region), gleichnamige Stadt und Kanton nach Herausgeber, `geodata.yaml` mit Herausgeber-Listen, Begriffen und Geo-Signalen, Gründe für `no_access` und Lizenzangaben in `-Classify`, STAC „proprietary“ → Link, UTF-8 in PowerShell 5.1, Lizenzliste `m5-20-lizenzliste.md`, Bericht prüft `earthx_municipality`.
 - **Vierte Runde (Otto, 20.11.2026, §13e):** Zugangsart `page` und `access_rights` nach F12, GeoNames-Zuordnung, weitere Nicht-Orte, Muster und Entity-Dekodierung, letzte Runde der Regel R-G, Lizenzangaben vollständig als JSON, leiser Build und `-NoBuild`, UTF-8-Hinweis für `Tee-Object`, Lizenzliste mit Zahlen und Klassen.
-- **Nicht in PR 1** (F8 = 1, PR 2): Verify, Kandidaten und `discovery propose`, „—“ im Data catalogue, erste Lizenzen nach F5 (Vorschläge von `license-checker` nach den Zahlen aus `-Classify`), Zuordnung der GeoNames-IDs (F10) nach deiner Ausgabe.
+- **Fünfte Runde (Otto, 20.11.2026, §13f):** `terms.yaml` nach Ottos Einstufung (36 Lizenzen, 115 Schreibweisen), `grant-to-all.yaml` (K1–K5 ohne amtliches Werk), Befehl `harvest-grants` (`discovery/grants.py`), der `grants/<quelle>.yaml` aus den Herausgebern in der Datenbank schreibt.
+- **Nicht in PR 1** (F8 = 1, PR 2): Verify, Kandidaten und `discovery propose`, „—“ im Data catalogue.

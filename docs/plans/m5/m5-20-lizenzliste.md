@@ -1,5 +1,15 @@
 # M5-20 — Lizenzliste zur Einstufung (Vorschlag, Stand 20.11.2026)
 
+> **Eingestuft von Otto am 20.11.2026** (Plan §13f): Klassen wie vorgeschlagen, mit diesen Änderungen:
+> - Luftfahrt-Bundesamt: K2 als eigene Lizenz.
+> - NB-GDIKOM-B: K6.
+> - „Sie dürfen: …“: CC BY 4.0.
+> - `mdd-nrw-nutzungsbedingungen`: K7.
+> - Amtliches Werk: K1, nicht freigegeben.
+> - admin.ch (beide): K6.
+>
+> Umgesetzt in `backend/catalog/licenses/terms.yaml`; freigegeben werden K1 bis K5 über `grant-to-all.yaml`. Die Tabellen unten bleiben als Stand des Vorschlags.
+
 **Zweck:** Vorlage für Ottos Einstufung der Lizenzangaben geernteter Funde in `backend/catalog/licenses/terms.yaml` (`adr/0033` §6.2, L2; Plan §9, §13b, F5 = 1). **Die Einstufung macht Otto. Nichts hier ist entschieden, und nichts ist Rechtsberatung.**
 
 **Datengrundlage:** Ottos `-Classify` vom 20.11.2026, nach dem zweiten Push. Die Angaben sind normalisiert: ohne Leerzeichen am Rand, ohne `/` am Ende.
