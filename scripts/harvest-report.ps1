@@ -34,6 +34,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# Windows PowerShell 5.1 decodes what docker prints in the code page of the console, so umlauts came out as two wrong characters
+# (Otto, 20.11.2026): read and write the console as UTF-8, which the report prints.
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+
 # On Linux (PowerShell 7) the report writes as the user who owns the checkout, never as root, so the approval file
 # stays editable; Docker Desktop on Windows maps the files to the user anyway ($IsLinux is unset in PowerShell 5.1).
 $asOwner = @()

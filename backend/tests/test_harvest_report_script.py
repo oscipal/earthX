@@ -124,3 +124,12 @@ def test_the_powershell_script_runs_the_report_as_the_owner_on_linux() -> None:
     text = PS1.read_text(encoding="utf-8")
     assert "if ($IsLinux) { $asOwner = @('--user'" in text
     assert text.count("@asOwner harvest-report") == 2
+
+
+
+def test_the_powershell_script_reads_the_report_as_utf8() -> None:
+    # Otto, 20.11.2026: umlauts arrived as "├ñ" in Windows PowerShell 5.1.
+    text = PS1.read_text(encoding="utf-8")
+    assert "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8" in text
+    assert "$OutputEncoding = [System.Text.Encoding]::UTF8" in text
+    assert text.index("[Console]::OutputEncoding") < text.index("docker compose run --build --rm @asOwner")
