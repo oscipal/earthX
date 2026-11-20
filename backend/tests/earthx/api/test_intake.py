@@ -512,6 +512,27 @@ class TestNetcdfReferences:
         assert (before.version.value, after.version.value) == ('"file-etag-1"', '"final-file-etag"')
         assert after.asset.refs == final_refs
 
+    async def test_the_provenance_names_the_state_of_each_input_where_the_asset_has_one(self) -> None:
+        """M5-58 (plan §3.7): a result from provisional values says so beside the version; a dataset of one state
+        writes no state, so its recipes and hashes stay what they were."""
+        registry = DatasetRegistry((*INTAKE_REGISTRY, self.CONFIG), retired=tuple(INTAKE_REGISTRY.retired))
+        document = order("synthetic-netcdf", (("NC_20240101",),), ("TabsD",))
+        plain = await accept(document, Source((self.CONFIG, self.item())), Heads(), registry=registry)
+        provisional = self.item()
+        provisional["assets"]["TabsD"]["earthx:state"] = "provisional"
+        marked = await accept(document, Source((self.CONFIG, provisional)), Heads(), registry=registry)
+        (without,), (with_state,) = plain.recipe.inputs[0].resolved, marked.recipe.inputs[0].resolved
+        assert without.state is None and "state" not in without.model_dump(mode="json")
+        assert with_state.state == "provisional" and with_state.model_dump(mode="json")["state"] == "provisional"
+
+    async def test_a_state_the_platform_does_not_know_is_left_out(self) -> None:
+        registry = DatasetRegistry((*INTAKE_REGISTRY, self.CONFIG), retired=tuple(INTAKE_REGISTRY.retired))
+        item = self.item()
+        item["assets"]["TabsD"]["earthx:state"] = "preliminary"
+        document = order("synthetic-netcdf", (("NC_20240101",),), ("TabsD",))
+        accepted = await accept(document, Source((self.CONFIG, item)), Heads(), registry=registry)
+        assert accepted.recipe.inputs[0].resolved[0].state is None
+
 
 class TestUnits:
     """The unit of a band: the item's own first, else the registry's, else none (M4-19b, adr/0014 §15n)."""

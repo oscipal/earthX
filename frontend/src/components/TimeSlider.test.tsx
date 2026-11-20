@@ -318,3 +318,37 @@ describe('playing and the results on the map', () => {
     expect(useAppStore.getState().playing).toBe(false);
   });
 });
+
+describe('a provisional day on the time slider (M5-58, Otto 19.11.2026)', () => {
+  const day = (id: string, state?: string): StacItem => ({ ...item(id), properties: state ? { 'earthx:state': state } : {} });
+  const GROUPS = [
+    { key: ['2026-11-17'], label: '2026-11-17', items: [day('a', 'provisional')] },
+    { key: ['2026-11-16'], label: '2026-11-16', items: [day('b', 'final'), day('c', 'provisional')] },
+    { key: ['2026-11-15'], label: '2026-11-15', items: [day('d', 'final')] },
+    { key: ['2026-11-14'], label: '2026-11-14', items: [day('e')] },
+  ];
+  const shown = () => container.querySelector('.time-dates strong');
+
+  it('draws a warning triangle beside the shown date of a provisional step, its text on the triangle', () => {
+    act(() => useAppStore.setState({ groups: GROUPS, activeGroupIndex: 1 }));
+    const warning = shown()?.querySelector('.tip.warn');
+    expect(warning).not.toBeNull();
+    expect(tipOf(warning)).toBe('Provisional values');
+    expect(shown()?.textContent).toBe('2026-11-16');
+    expect(tipOf(shown())).toBe('');
+  });
+
+  it('keeps the room of the triangle at a final step of the same results, so the arrows do not move', () => {
+    act(() => useAppStore.setState({ groups: GROUPS, activeGroupIndex: 2 }));
+    expect(shown()?.querySelector('.tip')).toBeNull();
+    expect(shown()?.querySelector('.time-mark-room')).not.toBeNull();
+  });
+
+  it('has neither triangle nor room where no step is provisional, and no tooltip at the neighbours or the ends', () => {
+    act(() => useAppStore.setState({ groups: GROUPS.slice(2), activeGroupIndex: 0 }));
+    expect(shown()?.querySelector('.tip, .time-mark-room')).toBeNull();
+    act(() => useAppStore.setState({ groups: GROUPS, activeGroupIndex: 2 }));
+    expect([...container.querySelectorAll('.time-near')].map((near) => tipOf(near))).toEqual(['', '']);
+    expect(tipOf(container.querySelector('.time-end.last'))).toBe('Last time step');
+  });
+});

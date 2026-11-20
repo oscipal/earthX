@@ -95,6 +95,10 @@ id (030). Geschrieben von `discovery` über `earthx.catalog.harvest_store`.
 `earthx_materialize_unit` (Stand, Validatoren und Beiträge je Datei), dazu die Zähler je Einheit in
 `earthx_materialize_runs`. Die Nummern 026–028 kamen aus M5-19 PR 2 (#379) später dazu.
 
+`031_materialize_unit_expires.sql` — die Spalte `earthx_materialize_unit.expires` aus M5-58 PR 2: das `expires`
+des Quell-Items einer Einheit, damit ein Neubau aus dem gespeicherten Zustand (`adr/0038` §3.4 Punkt 4) es ans Asset
+schreiben kann. Nur zur Information.
+
 Die Buchführungstabelle `earthx_migrations` gehört nicht hierher, sondern dem Läufer
 (`earthx/catalog/schema.py`) und wird von ihm angelegt. Sonst müsste jedes
 Migrationsverzeichnis sie erneut mitbringen.

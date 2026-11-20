@@ -338,29 +338,53 @@ def _replay_rasters(module: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None
 
 
 def _meteoswiss_double() -> Callable[[httpx.Request], httpx.Response]:
-    """The archive item of the MeteoSwiss grids and its annual files (M5-11): one synthetic NetCDF-4 file from
-    `mini_netcdf` behind every name, answered by range with an ETag and Last-Modified, as the FSDI does."""
+    """The item list of the MeteoSwiss grids (M5-11, M5-58 PR 2): the archive with annual files, an item of one month
+    and one of one day; behind each kind one synthetic NetCDF-4 file from `mini_netcdf` with the days that kind holds,
+    answered by range with an ETag and Last-Modified, as the FSDI does."""
     import tempfile
+
+    import numpy
 
     from earthx.discovery import meteoswiss_grid
     from tests.earthx.readers import mini_netcdf
 
     with tempfile.TemporaryDirectory() as directory:
-        body = mini_netcdf.build(Path(directory) / "annual.nc", time_units="days since 2025-01-01 00:00:00").read_bytes()
+        bodies = {
+            kind: mini_netcdf.build(
+                Path(directory) / f"{kind}.nc",
+                mini_netcdf.values(steps=steps),
+                time_units=f"days since {first} 00:00:00",
+                time_values=numpy.arange(steps, dtype="f8"),
+            ).read_bytes()
+            for kind, first, steps in (("archive", "2025-01-01", 3), ("last", "2026-10-01", 2), ("day", "2026-11-16", 1))
+        }
     first_years = {"TabsD": 1961, "RhiresD": 1961, "TminD": 1971, "TmaxD": 1971, "SrelD": 1971}
-    assets = {}
+    archive, month, day = {}, {}, {}
     for quantity, first in first_years.items():
         grid = meteoswiss_grid.PRODUCTS[quantity].grid
         for year in range(first, 2026):
-            name = f"ogd-surface-derived-grid-archive.{quantity.lower()}_{grid}.swiss.lv95_{year}0101000000_{year}1231235959.nc"
-            assets[name] = {"href": f"https://data.geo.admin.ch/files/{name}", "file:checksum": "1220" + "0" * 64}
-    archive_path = httpx.URL(REGISTRY.get("meteoswiss-daily-1km").source.endpoint).path
-    headers = {"etag": '"synthetic-annual"', "last-modified": "Wed, 12 Feb 2025 08:00:00 GMT"}
+            archive[f"ogd-surface-derived-grid-archive.{quantity.lower()}_{grid}.swiss.lv95_{year}0101000000_{year}1231235959.nc"] = {}
+        month[f"ogd-surface-derived-grid-last.{quantity.lower()}_{grid}.swiss.lv95_20261001000000_20261031000000.nc"] = {}
+        provisional = "rprelimd" if quantity == "RhiresD" else quantity.lower()
+        day[f"ogd-surface-derived-grid.{provisional}_{grid}.swiss.lv95_20261116000000_20261116000000.nc"] = {}
+
+    def feature(item_id: str, assets: dict[str, Any]) -> dict[str, Any]:
+        listed = {
+            name: {"href": f"https://data.geo.admin.ch/files/{name}", "file:checksum": "1220" + "0" * 64, "updated": "2026-11-17T08:00:00Z"}
+            for name in assets
+        }
+        return {"type": "Feature", "id": item_id, "properties": {}, "assets": listed}
+
+    features = [feature("archive-ch", archive), feature("month", month), feature("day", day)]
+    list_path = httpx.URL(REGISTRY.get("meteoswiss-daily-1km").source.endpoint).path
+    headers = {"etag": '"synthetic"', "last-modified": "Wed, 12 Feb 2025 08:00:00 GMT"}
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path == archive_path:
-            return _json({"type": "Feature", "id": "archive-ch", "assets": assets})
+        if request.url.path == list_path:
+            return _json({"type": "FeatureCollection", "features": features, "links": []})
         if request.url.path.startswith("/files/") and "range" in request.headers:
+            name = request.url.path.removeprefix("/files/")
+            body = bodies["archive" if name in archive else "last" if name in month else "day"]
             first, _, last = request.headers["range"].removeprefix("bytes=").partition("-")
             start, end = int(first), min(int(last), len(body) - 1)
             return httpx.Response(

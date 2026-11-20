@@ -114,6 +114,7 @@ def valid_config() -> DatasetConfig:
             adapter=AdapterKind.EARTH_SEARCH_V1,
             endpoint="https://example.invalid/v1",
             source_collection_id="test-collection",
+            page_url="https://viewer.example.invalid/collections/test-collection",
             asset_hosts=("assets.example.invalid",),
             item_holding=ItemHolding.FEDERATED,
             data_region="unknown",

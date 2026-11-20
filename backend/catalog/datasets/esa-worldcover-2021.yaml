@@ -114,6 +114,9 @@ source:
   endpoint: https://esa-worldcover.s3.eu-central-1.amazonaws.com
   # The bucket has no STAC collection; the prefix of the state is the closest thing to a source-side id.
   source_collection_id: v200/2021
+  # The link "Source" (M5-55, Otto 17.11.2026): Viewer of the producer, with the download of the tiles; one viewer
+  # for all states, so the link is the same as for 2020.
+  page_url: https://viewer.esa-worldcover.org/worldcover/
   asset_hosts: [esa-worldcover.s3.eu-central-1.amazonaws.com]
   item_holding: materialized
   data_region: aws:eu-central-1
