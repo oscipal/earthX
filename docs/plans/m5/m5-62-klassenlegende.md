@@ -286,3 +286,44 @@ band_classes:
 - **Sentinel-2 SCL:** Namen nach Ottos Liste (Abweichungen zu `mask.classes` meldet §10). Farben: Earth Search führt nach dem Stand im Repo keine `classification:classes` mit `color_hint` für `scl`, und die SCL-Dateien haben keine bekannte Farbtabelle; prüfen kann die Session beides nicht (keine Abrufe der Quelle). Deshalb `colours: palette` (Regel 2). Findet Otto lokal eine Farbtabelle oder `color_hint`, wird der Eintrag auf `file` bzw. `stac` umgestellt.
 - Der Name „Topographic shadows“ gilt ab Baseline 04.00; ältere Szenen (vor 25.01.2022) nennen Klasse 2 „Dark features / shadows“. Ein Name je Wert ist die Form des Felds; der heutige Name steht in der Registry, der ältere im YAML-Kommentar (Auslegung A8).
 - **Onboarding (A1, Punkt 13):** Klassenbänder bekommen `band_classes`; Namen und Farben übernimmt das Onboarding aus der Quelle (Farbtabelle der Datei, STAC `classification:classes`), sonst `palette`.
+
+---
+
+## 10. Umsetzung PR 1: Backend (20.11.2026)
+
+### 10.1 Was gebaut ist
+
+| Teil | Stelle |
+|---|---|
+| Registry `band_classes` (Form §9.2): `ClassColours`, `BandClass`, `BandClasses`, `ClassRow`, `CLASS_PALETTE` (tab20); Prüfungen beim Laden (Band ohne Einheit, kein Muster, Werte aufsteigend und ganz, `nodata` keine Klasse, Name einzeilig ≤ 40 Zeichen, Farbe `#rrggbb`, bei `file`/`stac` jede Klasse mit Farbe, bei `palette` mehr als 20 Klassen nur mit eigenen Farben, keine Farbe doppelt, Gleichheit mit `mask.classes` bis auf den Wert ohne Klasse); `DatasetConfig.class_rows(asset)` | `backend/earthx/catalog/registry.py` |
+| Einträge: WorldCover 2020/2021 `colours: file` (Farben der Dateien aus M5-07), SCL `colours: palette`, alle übrigen `{}` | `backend/catalog/datasets/*.yaml` |
+| Collection: `earthx:bands[].classification:classes` (`value`, `name` als Schlüssel, `title`, `color_hint`), Erweiterung *classification* v2.0.0 in `stac_extensions` | `backend/earthx/catalog/collection.py` |
+| Kachelfarben aus der Registry (Name `esa-worldcover` bleibt, A5); `colormap_data/esa-worldcover.json` gelöscht | `backend/earthx/access/colormaps.py` |
+| Export: `BandMeta.classes` (auch im JSON des Auftrags; ältere JSON ohne Feld gilt als „keine Klassen“); Farbtabelle in Dateien mit einem Klassenband in `uint8`/`uint16` (bleibt nach `cog_translate` erhalten, gemessen); `<datei>.aux.xml` mit `CategoryNames` und RAT (Value, Class, Red, Green, Blue) im ZIP; Block „Classes of band n (Name)“ mit „Value \| Class \| Colour“ in `BANDS.txt` | `backend/earthx/access/band_export.py`, `download.py`, `processing/export.py`, `api/intake.py`, `api/tiler.py` |
+| Onboarding-Checkliste Punkt 13 (A1) | `docs/projektuebersicht.md` §5 |
+
+**Gemessen [M]:** Eine mit `apply_band_tags` geschriebene WorldCover-Datei samt erzeugter `.aux.xml` liest GDAL 3.12.2 (`GDALInfo`) mit „Categories: 10: Tree cover … 100: Moss and lichen“, „Color Table (RGB with 256 entries)“ und der RAT mit 11 Zeilen.
+
+### 10.2 Abgleich mit `mask.classes` (F2: Abweichungen melden)
+
+- **WorldCover 2020 und 2021:** nur Klasse 60 wich ab: bisher „Bare/sparse vegetation“, jetzt „Bare / sparse vegetation“. Alle übrigen zehn Namen waren gleich.
+- **Sentinel-2 SCL:** Die Maske trug die Kennungen der SentiWiki-Tabelle (`NO_DATA`, `CAST_SHADOWS`, …, `SNOW or ICE`); jetzt Ottos Namen. Inhaltlich abweichend nur Klasse 2: bisher `CAST_SHADOWS`, jetzt „Topographic shadows“. Klasse 0 heißt in der Maske „No data“ (bleibt dort wählbar, ist aber keine Klasse des Bands, A2). Folge: Das Panel „Mask“ zeigt die neuen Namen.
+
+### 10.3 Auslegungen (gelten, wenn du nicht widersprichst)
+
+- **A9 (Ergebnisse von Processing):** Download und Export-Job haben keine Schritte (`check_export`: „an export has no steps“) und geben immer die Werte der Quelle weiter; dort gelten die Klassen immer. Ergebnisse eines Processing-Jobs mit Schritten (`processing/core.py`) schreiben heute keine Klassen, auch nicht, wenn alle Schritte die Werte nur weitergeben (`passes_values`). Damit ist Punkt 5 der Aufgabe eingehalten. Die Klassen für solche Ergebnisse (Regel §6, für die Legende einer Ergebnis-Ebene) kommen mit PR 2, weil erst die Legende sie braucht.
+- **A10 (Download im Browser):** Das Frontend schreibt für Downloads direkt bei der Quelle eine eigene `BANDS.txt` (`bandChoice.ts::bandsFileText`, gleicher Text wie der Server, Golden-Test). Den Klassen-Block dort zieht PR 2 nach; die Antwort `POST /collections/{id}/bands` liefert `classes` je Band schon jetzt.
+- **A11 (Namen in der Collection):** Die Erweiterung verlangt für `name` nur Buchstaben, Ziffern, `_` und `-`; der lesbare Name steht in `title`. Der Data catalogue (PR 2) zeigt `title`.
+- **A12 (Liste der Namen):** `CategoryNames` wird nur für Werte von 0 bis 65 535 geschrieben (Index = Wert); die RAT nennt jeden Wert.
+
+### 10.4 Tests
+
+Neu: `backend/tests/catalog/test_band_classes.py` (Einträge, Regeln, Fehlerfälle, Collection), `backend/tests/earthx/access/test_band_classes_export.py` (JSON des Auftrags inkl. Fehlerfälle, Farbtabelle nach `cog_translate` je Typ, keine Tabelle bei `float32`/mehreren Bändern, `.aux.xml`, `BANDS.txt`), `TestClasses` in `test_download_forms.py` (ZIP mit Farbtabelle, `.aux.xml`, `BANDS.txt`; nichts bei Bändern ohne Klassen). Erweitert: `test_export_layouts.py` (Export-Job schreibt dieselbe `.aux.xml` wie der Download, Byte für Byte).
+
+### 10.5 Was Otto lokal ausführt
+
+Nach dem Merge einmal `catalog-load` (die Collections tragen `classification:classes`). Prüfung in QGIS: WorldCover-Zuschnitt (eine Datei je Band) herunterladen, ZIP entpacken, `exports/…tif` öffnen; Symbologie „Paletted/Unique values“ zeigt Farben und Klassennamen.
+
+### 10.6 PR 2 (Frontend, neue Session nach dem Merge)
+
+Tabelle Value | Class | Colour im Data catalogue (F6: Farbfeld und Hex), Knopf „Classes“ mit Popover (F3, F8; Panel scrollt nicht, kein Zusatztext), Klassen-Block in der `BANDS.txt` des Browsers (A10), Klassen für Ergebnis-Ebenen nach §6 (A9) mit dem nötigen Backend-Teil.
