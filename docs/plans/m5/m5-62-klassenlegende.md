@@ -352,3 +352,38 @@ Tabelle Value | Class | Colour im Data catalogue (F6: Farbfeld und Hex), Knopf �
 - Einzige Stelle, die Namen liest: `aoiFilter.ts::classNote` sucht „shadow“ im Namen, um im Tooltip zu sagen, dass Wolkenschatten nicht zählen; „Cloud shadows“ und „Topographic shadows“ treffen weiter wie zuvor `CLOUD_SHADOWS` und `CAST_SHADOWS`.
 
 Eine Zuordnung alter Namen ist damit nicht nötig.
+
+---
+
+## 12. Umsetzung PR 2: Frontend (20.11.2026)
+
+### 12.1 Was gebaut ist
+
+| Teil | Stelle |
+|---|---|
+| Klassen eines Bands lesen: aus `earthx:bands[].classification:classes` (`title`, `color_hint` → `#rrggbb` klein) und aus `classes` der Antwort `POST /collections/{id}/bands`; eine Klasse ohne ganzen Wert, Namen oder sechsstellige Farbe fällt weg | `frontend/src/bandClasses.ts` |
+| Data catalogue (F6): je Klassenband unter Band \| Description \| Unit eine Tabelle Value \| Class \| Colour, Bandname als Überschrift, Farbfeld mit Hex | `catalogue.ts::bandsRow`, `DataCatalogue.tsx::ClassTable` |
+| Knopf „Classes“ (F3, F8): das feste Feld „Colormap: Classes“ einer Klassenebene wird zum Knopf, sein Popover zeigt je Klasse Farbfeld und Name, sonst nichts; ohne Klassen in der Registry bleibt das gesperrte Feld | `components/ClassesField.tsx`, `RenderFields.tsx`, `ViewerControls.tsx` |
+| Platz des Popovers (Auslegung A17): links neben der Seitenleiste über der Karte, so breit wie sein Inhalt, auf Höhe des Knopfs und so weit nach oben verschoben, wie das Fenster verlangt; ohne Platz links (schmale Fenster) unter oder über dem Knopf wie jedes Popover | `popover.ts::placeBeside`, `Popover.tsx` (`beside`) |
+| `BANDS.txt` des Browsers (A10): Block „Classes of band n (Name)“ wie beim Server; das Golden-Paar gibt dem synthetischen `scl` zwei Klassen, Server und Browser werden Byte für Byte verglichen | `bandChoice.ts::bandsFileText`, `api.ts::parseBands`, `backend/tests/fixtures/bands/`, `test_bands_golden.py` |
+| Farben von Daten: eine Farbe im `style` nur an `.class-swatch` und `.cm-strip`, je mit Grund | `uiRules.test.ts`, `docs/ui/leitfaden.md` |
+
+**Gemessen [M]** (`frontend/e2e/class-legend.cjs`, hell und dunkel): 1280 × 800 und 1280 × 360 – das Popover liegt links der Seitenleiste über der Karte, alle 11 Klassen ohne Scrollen; 360 × 740 – über dem Knopf; Seitenleiste und Seite ändern beim Öffnen ihre Höhe nicht. Data catalogue mit 11 Zeilen, Farbfeld und Hex, nichts läuft aus dem Fenster.
+
+### 12.2 SCL als einzeln gewähltes Band [P]
+
+Die Ansicht bietet das Band der Maske nie als einzelnes Band an (`viewBand.ts::bandAssetsOf` lässt es über `selectableAssets` weg). Ein „einzeln gewähltes Klassenband SCL“ (§4.2) gibt es dort also nicht; SCL erscheint mit Klassen im Data catalogue und in `BANDS.txt`, auf der Karte nur als Job-Ergebnis (F9).
+
+### 12.3 Offen: Klassen bei Job-Ergebnissen (A9) → F9
+
+Ein Job-Ergebnis mit Klassenband (`resultLayer.ts::isClassBand`, z. B. WorldCover `map` oder `scl`) wird heute „wie es ist“ gezeichnet. Die Ergebnis-COG hat keine Farbtabelle (PR 1 schreibt sie nur in Download und Export), die Kacheln sind also nicht in den Klassenfarben; eine Legende passte nicht zu ihnen. Wie die Klassen zum Ergebnis kommen, steht nicht im Plan.
+
+**F9 — Klassen bei Job-Ergebnissen**
+1. Das Rezept trägt die Klassen je Eingabe (Feld wie `state`, fehlt bei Bändern ohne Klassen); der Worker setzt sie nach §6, schreibt `classification:classes` in `bands[]` des Ergebnisses und die Farbtabelle in die COG (ein Band, `uint8`/`uint16`); das Frontend zeigt „Classes“, wo das Ergebnis Klassen nennt. Folge: neuer Hash nur für Rezepte mit Klassenband. Geschätzt 200–250 Zeilen in diesem PR. **(Empfehlung)**
+2. Die API ergänzt die Klassen beim Ausliefern des Ergebnisses (Registry und Schritte des Rezepts), der Worker bleibt unverändert; die Kacheln bekommen die Farben über `colormap_name` vom Frontend. Kein neuer Hash, aber die Regel §6 an zweiter Stelle.
+3. Jetzt keine Klassen bei Job-Ergebnissen; Legende nur für Ansicht, Zuschnitt und gespeicherte Ansichten.
+
+### 12.4 Auslegungen (gelten, wenn du nicht widersprichst)
+
+- **A17 (Platz des Popovers):** „über der Karte“ heißt links neben der Seitenleiste, nicht über ihren Feldern; das Popover deckt dort weder „Opacity“ noch „Apply“.
+- **A18 (Tooltip):** Der Knopf behält den bisherigen Tooltip des Felds („Each class in the colour of the source; …“, Stufe advanced); im Popover steht kein Text außer den Namen.
