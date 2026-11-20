@@ -1,6 +1,6 @@
 # M5-20 — Verify, Enrich, Dedupe, Lizenzregeln, Freigabe geernteter Einträge, Kandidaten
 
-**Status (19.11.2026):** Plan angenommen (Otto, 19.11.2026: F1–F6 und F8 je 1, F7 = 3, §13a; Vorgaben aus der Messung §4 in §13b, sie gehen §6–§9 vor; F9–F11 je 1 und A18 angenommen, §13c; Vorgaben aus `-Classify` vom 20.11. in §13d). **Stufe B.** PR 1 in [#388](https://github.com/oscipal/earthX/pull/388), PR 2 danach; höchstens zwei PRs (M5-Plan §2 Punkt 11).
+**Status (19.11.2026):** Plan angenommen (Otto, 19.11.2026: F1–F6 und F8 je 1, F7 = 3, §13a; Vorgaben aus der Messung §4 in §13b, sie gehen §6–§9 vor; F9–F11 je 1 und A18 angenommen, §13c; Vorgaben aus `-Classify` vom 20.11. in §13d und §13e; F12 = 1 und 2). **Stufe B.** PR 1 in [#388](https://github.com/oscipal/earthX/pull/388), PR 2 danach; höchstens zwei PRs (M5-Plan §2 Punkt 11).
 **Aufgabe:** M5-20 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2, Auftrag von Otto vom 19.11.2026.
 **Grundlagen:** `adr/0025` (Schnitt 5, §5.1, §5.4, §6.3, §6.4, §6.5, §6.7 mit Nachträgen), `adr/0033` (§4–§11, §13 Zeile M5-20), `plans/m5/m5-19-harvest-kern.md` §12 (Befunde der Läufe, §12.11 offene Punkte), `plans/m5/m5-40-gelistete-in-postgres.md` (Tabelle, Filter, F10), M5-Plan §2 Punkt 12 (alle Datentypen, Filter nach Region und Zeit), `projektuebersicht.md` Prinzipien 12, 15, 16, KLAERUNGEN B8, B9, B11.
 
@@ -385,6 +385,25 @@ Otto hat `-Classify` für opendata-swiss, govdata und fsdi-stac laufen lassen un
 2. Nur die Formattabelle erweitern, Seiten bleiben ohne Zugangsart (Warteliste)
 3. So lassen: wer keinen Zugangsweg nennt, wartet
 
+## 13e. Zweiter Lauf `-Classify` und Antworten (Otto, 20.11.2026)
+
+Die Ausgaben liegen der Sitzung jetzt vor (Datei im Chat). Zahlen: opendata-swiss 16 216 Funde (`not_geodata` 6 517, `no_access` 701, `unknown_licence` 8 998), govdata 168 882 (`not_geodata` 48 714, `no_access` 64 985, `unknown_licence` 55 183), fsdi-stac 515 (alle `unknown_licence`).
+
+- **F12 = 1 und 2, umgesetzt:**
+  - **A28:** Fehlende `access_rights` sind kein Ausschluss (GovData: 54 147 der 64 985 `no_access`, die Beispiele öffentlich). Nur eine Angabe „eingeschränkt“ oder „nicht öffentlich“ (EU-Vokabular `RESTRICTED`, `NON_PUBLIC`, auch `CONFIDENTIAL`, `SENSITIVE`) hält zurück; ein Freitext wie „nur nach Vereinbarung“ wird nicht gelesen.
+  - **A29:** Neue Zugangsart `page` („über die Seite des Anbieters“, Migration 034) für Funde mit `https`-Ressource, die nur Seiten oder unbekannte Formate nennen („SERVICE“, „API“, „onLine“); Dokumentation allein zählt nicht; nur `http` bleibt `no_access`. Neue Extraktor-Version. Nachtrag zu `adr/0033` §5 (Werte von `access.delivery`) mit der nächsten Doku-Runde.
+- **GeoNames (F10):** 2657907 und 6458807 → Kanton Zug, 7287644 → Gemeinde Zug (die Tabelle nimmt dafür Gemeindecodes).
+- **Ortstexte:** weitere Produktnamen (DHM25, swissBATHY3D, Siegfriedkarte, Carte nationale/géologique, Luftfahrt-, Strassen-, Skitourenkarte, „Satellitenbilder (swisstopo)“) und Muster „…karte 1:…“ sowie leere RDF-Knoten („N“ und 32 Hexziffern) sind keine Orte; „Hektaren“, „Letzteiszeitliches Maximum“ ebenso; „Grand Genève“ → Kanton Genf; Gliederungswörter Raum mit städtischem Charakter, Stadt/Land-Typologie, Arbeitsmarktregionen, Pädagogische Hochschulen; „Welt: Regionen“ wie „Welt“; HTML-Entities (auch „@squot;“) werden vor dem Abgleich dekodiert.
+- **Nicht-Geodaten, letzte Runde:** Herausgeber Identitas AG und Bundesjustizamt; Begriffe Entwurf eines Landesgesetzes/einer Landesverordnung, Corona, Vornamen, Schwarzarbeit, GZR/Gewerbezentralregister, Landsgemeinde, Kantonsrat, Handschriften, Ordnungsbussen; Geo-Signale Bebauungsplan, Flächennutzungsplan (auch „Flaechen…“), Naturschutzgebiet, Netzplan, Findlinge, AIS, Lärm (nur als Wort oder Wortanfang und Bahn-/Strassen-/Fluglärm, nicht „Alarm“), Beurteilungspegel, Hydrometrie, Luftqualität. Danach bleibt der Rest sichtbar.
+- **FSDI „proprietary“ (Frage Otto):** Die Änderung hat den Lauf nicht erreicht. `docker compose build` baut keine Dienste unter einem Profil mit, und `harvest` steht im Profil `harvest`; mein Befehl in §16 hatte für `harvest … --reextract` kein `--build`, lief also mit dem alten Extraktor. Das Bericht-Skript baut selbst und zeigte deshalb die neuen Abschnitte. Mit `--build` (§16) verschwindet „proprietary“; die Collections mit Link `rel=license` tragen dann dessen Adresse. Aus den Zahlen [A]: 492 Funde mit „proprietary“, aber nur rund 350 Link-Angaben insgesamt, also tragen gut 140 Collections keinen Link. **Ohne Link** hat eine Collection danach keine Lizenzangabe und wartet mit `no_licence` (F13).
+- **Lizenzliste:** `docs/plans/m5/m5-20-lizenzliste.md` mit Zahlen und Herausgebern je Angabe, den Wirkungen der Einstufung und sieben vorgeschlagenen Klassen. `-Classify` gibt die 200 häufigsten Angaben zusätzlich vollständig als JSON aus (für den genauen Wortlaut in `matches`).
+- **Skript:** Unter Windows PowerShell 5.1 wirkt die UTF-8-Einstellung des Skripts nicht auf eine äußere Pipe (`Tee-Object`); die README nennt `[Console]::OutputEncoding = [Text.Encoding]::UTF8` vor dem Aufruf. Das Image baut das Skript in einem eigenen, leisen Schritt (`--progress quiet`), überspringbar mit `-NoBuild` bzw. `--no-build`; der Bericht läuft danach ohne `--build`.
+
+**F13 — FSDI-Collections ohne Lizenzangabe (kein `license`-Wert außer „proprietary“, kein Link `rel=license`; geschätzt gut 140)?**
+1. Sie warten (`no_licence`) und erscheinen im Bericht; eine Lizenz unterstellt die Plattform nicht **(Empfehlung)**
+2. Je Quelle eine Vorgabe in der Seed-Datei (z. B. FSDI: Nutzungsbedingungen von geo.admin.ch), gilt für Funde ohne Angabe, nach deiner Einstufung
+3. Je Herausgeber eine Vorgabe in `grants/` (z. B. swisstopo → swisstopo OGD), nach deiner Einstufung
+
 ## 14. Auslegungen (gelten, wenn Otto nicht widerspricht)
 
 - **A1** IDs geernteter Einträge wie §12; keine `proto-`-ID möglich (die Quelle `proto-*` ist im Seed verboten).
@@ -431,26 +450,27 @@ Ohne Netz, synthetische Fixtures (M5-19 A5), Transport-Attrappe am `Gateway`:
 
 ## 16. Befehle für Ottos lokalen Lauf
 
-Stand 20.11.2026, nach §13d. Weiter auf dem Branch, PR 1 noch nicht mergen: Die Ausgaben dieses Laufs entscheiden F12 und schärfen die Regeldateien noch einmal; danach Merge nach grüner CI. PowerShell im Checkout:
+Stand 20.11.2026, nach §13e. Weiter auf dem Branch; PR 1 erst nach diesem Lauf und deiner Einstufung (oder schon vorher, wenn du F13 entschieden hast und nichts mehr an den Regeln ändern willst) mergen. PowerShell im Checkout:
 
 ```powershell
 git switch claude/confident-turing-lucii4
 git pull
 docker compose build
 docker compose up -d
-docker compose run --rm harvest fsdi-stac --reextract
+docker compose run --build --rm harvest fsdi-stac --reextract
+docker compose run --rm harvest earth-search --reextract
 docker compose run --rm harvest opendata-swiss --reextract
 docker compose run --rm harvest govdata --reextract
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harvest-report.ps1 -Source opendata-swiss -Classify
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harvest-report.ps1 -Source govdata -Classify
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harvest-report.ps1 -Source fsdi-stac -Classify
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harvest-report.ps1 -Source fsdi-stac -Classify | Tee-Object classify-fsdi-stac.txt
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harvest-report.ps1 -Source opendata-swiss -Classify -NoBuild | Tee-Object classify-opendata-swiss.txt
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harvest-report.ps1 -Source govdata -Classify -NoBuild | Tee-Object classify-govdata.txt
 ```
 
-- `docker compose up -d` lässt `catalog-load` die Gemeinden aus `municipalities.json` schreiben; ohne das bricht der Bericht mit Hinweis ab (A26).
-- `--reextract` ist für fsdi-stac nötig („proprietary“ → Link) und schadet bei den anderen nicht (der Bericht leitet ohnehin neu ab, wenn sich Regeln ändern).
-- Neue Abschnitte in `-Classify`: Gründe für `no_access` mit zehn Beispielen (F12), gleichnamige Stadt und Kanton je Name, alle Lizenzangaben mit Zahl und häufigsten Herausgebern (für `m5-20-lizenzliste.md`).
-- Bitte die drei Ausgaben wieder an den PR hängen. Kommen sie dort nicht an (die Sitzung sah die letzten nicht), als Datei unter `docs/plans/m5/` auf den Branch legen oder in den Chat kopieren.
-- GeoNames: die drei Seiten https://www.geonames.org/2657907, https://www.geonames.org/7287644, https://www.geonames.org/6458807 öffnen und Name und Ebene nennen (F10).
+- **`--build` beim ersten `harvest`** ist nötig: `docker compose build` baut den Dienst im Profil `harvest` nicht mit (Befund FSDI „proprietary“, §13e). Die übrigen Läufe nutzen das frisch gebaute Image.
+- **`--reextract`** setzt die neuen Extraktor-Versionen um (FSDI: Link statt „proprietary“; CKAN: Zugangsart `page`, `access_rights`), ohne Anfrage.
+- **Erwartung:** `no_access` bei GovData fällt von 64 985 auf die Funde mit „nur `http`“ oder ausdrücklich nicht öffentlich; `unknown_licence` bleibt, bis `terms.yaml` Einträge hat.
+- **Danach:** Einstufung nach `m5-20-lizenzliste.md` (Klasse je Lizenz genügt; die Session schreibt daraus `terms.yaml` mit den Schreibweisen aus dem JSON-Abschnitt und `grants/` nach deiner Freigabe je Herausgeber).
 
 ## 17. Umsetzung PR 1 ([#388](https://github.com/oscipal/earthX/pull/388)), Stand 19.11.2026
 
@@ -467,4 +487,5 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harvest-report.ps1
 - **Nach der Review (Subagent, 19.11.2026):** INSPIRE-Signal und Enddatum 9999 brachen den Bericht ab; ein Grabstein auf einem Duplikat und ein Upsert auf eine `superseded`-Zeile verletzten die CHECKs von 032; behoben mit Tests. Dazu A15, A18–A24 und F11.
 - **Zweite Runde (Otto, 19.11.2026):** Gemeinden aus swissBOUNDARIES3D (Skript, `municipalities.json` leer bis zum Lauf, Migration 033, Namen im Verzeichnis, Fußabdruck aus dem Umriss); `--classify` zählt GeoNames-IDs; `geodata.yaml` nennt IT.NRW (2 375 Tabellen ohne „statisti*“ im Namen); die Skripte starten den Bericht unter Linux als Besitzer des Checkouts, mit `HOME=/tmp` im Dienst; Test mit `docker`-Attrappe in einem Wegwerf-Repository.
 - **Dritte Runde (Otto, 20.11.2026, §13d):** Ortstexte (Kürzel in Klammern, EU-Länder-URIs, Gliederungswörter, Produktnamen, Kern statt Zusatz, „Europa“ ohne Region), gleichnamige Stadt und Kanton nach Herausgeber, `geodata.yaml` mit Herausgeber-Listen, Begriffen und Geo-Signalen, Gründe für `no_access` und Lizenzangaben in `-Classify`, STAC „proprietary“ → Link, UTF-8 in PowerShell 5.1, Lizenzliste `m5-20-lizenzliste.md`, Bericht prüft `earthx_municipality`.
+- **Vierte Runde (Otto, 20.11.2026, §13e):** Zugangsart `page` und `access_rights` nach F12, GeoNames-Zuordnung, weitere Nicht-Orte, Muster und Entity-Dekodierung, letzte Runde der Regel R-G, Lizenzangaben vollständig als JSON, leiser Build und `-NoBuild`, UTF-8-Hinweis für `Tee-Object`, Lizenzliste mit Zahlen und Klassen.
 - **Nicht in PR 1** (F8 = 1, PR 2): Verify, Kandidaten und `discovery propose`, „—“ im Data catalogue, erste Lizenzen nach F5 (Vorschläge von `license-checker` nach den Zahlen aus `-Classify`), Zuordnung der GeoNames-IDs (F10) nach deiner Ausgabe.

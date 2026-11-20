@@ -523,7 +523,7 @@ def _count(result: ReportResult, derived: Derived, found: Mapping[str, Any]) -> 
         # Signals are "kind:value" or a kind alone ("inspire").
         result.signals[signal[:60]] += 1
     for statement in {normal_statement(s) for s in derived.statements if normal_statement(s)}:
-        result.statements.setdefault(statement[:160], Counter())[row.publisher or "–"] += 1
+        result.statements.setdefault(statement, Counter())[row.publisher or "–"] += 1
     if row.waiting_reason in ("unknown_licence", "not_granted"):
         for statement in derived.statements:
             result.pairs[(row.publisher or "–", normal_statement(statement)[:100])] += 1
@@ -587,7 +587,13 @@ def classify_text(source: SourceConfig, result: ReportResult) -> str:
     by_count = sorted(result.statements.items(), key=lambda item: (-sum(item[1].values()), item[0]))
     for statement, publishers in by_count[:60]:
         top = "; ".join(f"{name} {count}" for name, count in publishers.most_common(3))
-        lines.append(f"  {sum(publishers.values()):>7}  {statement} | {top}")
+        lines.append(f"  {sum(publishers.values()):>7}  {statement[:160]} | {top}")
+    # Wording for `matches` in terms.yaml must be verbatim: the 200 most frequent statements whole, one JSON per line.
+    lines.append("Lizenzangaben vollständig (häufigste 200, je Zeile JSON mit Zahl und Angabe):")
+    lines += [
+        "  " + json.dumps({"finds": sum(publishers.values()), "statement": statement}, ensure_ascii=False)
+        for statement, publishers in by_count[:200]
+    ]
     lines.append("Warteliste nach Paar Herausgeber, Lizenzangabe (häufigste 20):")
     lines += [f"  {count:>7}  {pub} | {stmt}" for (pub, stmt), count in result.pairs.most_common(20)]
     return "\n".join(lines)
