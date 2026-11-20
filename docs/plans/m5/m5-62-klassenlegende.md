@@ -87,7 +87,7 @@ Heute stehen die Namen in `mask.classes` und die Farben in `colormap_data/esa-wo
 
 ### 3.3 Veröffentlichung
 
-Im Collection-JSON je Band in `earthx:bands` (M5-59) zusätzlich die Klassen in der Form der STAC-Erweiterung *classification* (`classification:classes` mit `value`, `name`, `color_hint` als Hex ohne `#`), weil das der verbreitete Standard dafür ist; dazu `stac_extensions` um die Erweiterung ergänzt. Die API liefert damit nichts Eigenes, das ein STAC-Client nicht kennt. Die Collections in Postgres neu schreiben: einmal `catalog-load` (§7). Keine Migration nötig.
+Im Collection-JSON je Band in `earthx:bands` (M5-59) zusätzlich die Klassen in der Form der STAC-Erweiterung *classification* (`classification:classes` mit `value`, `name`, `color_hint` als Hex ohne `#`), weil das der verbreitete Standard dafür ist; dazu `stac_extensions` um die Erweiterung ergänzt. Die API liefert damit nichts Eigenes, das ein STAC-Client nicht kennt. Die Collections in Postgres neu schreiben: einmal `catalog-load` (§7). Keine Migration nötig; falls doch, Nummer 035 oder höher (032–034 sind von #388 belegt, Otto 20.11.2026).
 
 ### 3.4 Befüllen
 
