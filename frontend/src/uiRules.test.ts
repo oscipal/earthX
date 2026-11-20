@@ -507,6 +507,36 @@ describe('no hard colour outside tokens.css (UI-04 §7.5 no. 4)', () => {
   });
 });
 
+describe('a colour set inline only from the data (M5-62)', () => {
+  // An element whose colour comes from the data, not from a token, by the class it carries; each with its reason.
+  const FROM_DATA: Record<string, string> = {
+    'class-swatch': 'the colour of a class as the registry names it: the Data catalogue and the legend "Classes" (M5-62)',
+    'cm-strip': 'the preview of a colormap, from the colours the server lists for it (UI-03d)',
+  };
+  const inlineColours = (text: string) =>
+    [...withoutComments(text).matchAll(/<\w+[^>]*style=\{\{[^}]*\b(?:background|color|borderColor|fill|stroke)\b[^>]*>/gu)].map(
+      ([tag]) => /className="([\w-]+)/u.exec(tag)?.[1] ?? tag,
+    );
+
+  it('sets a colour in a style only where it is the colour of the data', () => {
+    const found = sources.flatMap(([path, text]) => inlineColours(text).filter((name) => !Object.hasOwn(FROM_DATA, name)).map((name) => `${path}: ${name}`));
+    expect(found).toEqual([]);
+  });
+
+  it('finds a colour in a style and names the element by its class (counter-check)', () => {
+    expect(inlineColours('<span className="badge" style={{ color: tone }} />')).toEqual(['badge']);
+    expect(inlineColours('<span className="class-swatch" style={{ background: entry.colour }} />')).toEqual(['class-swatch']);
+    expect(inlineColours('<span style={{ width: 4 }} />')).toEqual([]);
+  });
+
+  it('names a reason for each, and each is still in use', () => {
+    for (const [name, reason] of Object.entries(FROM_DATA)) {
+      expect(reason.length, name).toBeGreaterThan(20);
+      expect(sources.some(([, text]) => inlineColours(text).includes(name)), name).toBe(true);
+    }
+  });
+});
+
 describe('one family (UI-04 part 3b, Otto, 3.11.2026): the font of the page, the monospace one for the band math only', () => {
   // Every `font-family` declaration with the rule it stands in; `font:` is only ever `inherit`.
   const declarations = (css: string, property: RegExp) =>
