@@ -187,3 +187,38 @@ class TestGroups:
 )
 def test_the_lists_of_otto_s_samples(title: str, publisher: str, outcome: str) -> None:
     assert _verdict(_find(title, publisher=publisher)) == outcome
+
+
+
+@pytest.mark.parametrize(
+    ("title", "publisher", "outcome"),
+    [
+        # Otto, 20.11.2026, second run.
+        ("Rinder - Altersstruktur", "Identitas AG", "not_geodata"),
+        ("Entwurf eines Landesgesetzes zur Änderung des Sparkassengesetzes", "Staatskanzlei", "not_geodata"),
+        ("Entwurf einer Landesverordnung über die Aktenführung", "Staatskanzlei", "not_geodata"),
+        ("gemeldete Corona Fälle - Kreisdaten", "Land", "not_geodata"),
+        ("D01 Vornamen eines Geburtsjahres Elsdorf", "Kommune", "not_geodata"),
+        ("GZR-Daten zur Schwarzarbeit 2022", "–", "not_geodata"),
+        ("Landsgemeinde vom 01. Mai 2016", "Kanton Glarus", "not_geodata"),
+        ("Geschäfte im Kantonsrat St.Gallen", "Kanton St. Gallen", "not_geodata"),
+        ("Digitalisierte Handschriften der Kantonsbibliothek", "Kanton Thurgau", "not_geodata"),
+        ("Ordnungsbussen nach Bussentyp", "Kanton Thurgau", "not_geodata"),
+        ("Statistik der Bussen", "Bundesjustizamt", "not_geodata"),
+        # Geo signals that never hide.
+        ("Bebauungsplan Nr. 103 Statistik", "Amt", "geodata"),
+        ("Flaechennutzungsplan VG Schweich", "Amt", "geodata"),
+        ("Flächennutzungsplan Statistik", "Amt", "geodata"),
+        ("Naturschutzgebiet (NSG) Elbniederung", "Statistisches Amt", "geodata"),
+        ("ÖPNV - Netzpläne der Buslinien", "Statistisches Amt", "geodata"),
+        ("Findlinge im Stadtgebiet", "Statistisches Amt", "geodata"),
+        ("AIS-Daten zur Schiffsabgasmessung", "Statistisches Amt", "geodata"),
+        ("Beurteilungspegel Bahnlärm Tag", "Statistisches Amt", "geodata"),
+        ("Hydrometrie Thurgau - Wasserstand", "Statistisches Amt", "geodata"),
+        ("Luftqualitätsmessungen Ostluft", "Statistisches Amt", "geodata"),
+        # "Alarm" is no noise.
+        ("Alarmierungen der Feuerwehr Statistik", "Amt", "not_geodata"),
+    ],
+)
+def test_the_lists_of_otto_s_second_samples(title: str, publisher: str, outcome: str) -> None:
+    assert _verdict(_find(title, publisher=publisher)) == outcome

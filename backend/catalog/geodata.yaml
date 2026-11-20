@@ -28,7 +28,11 @@ geo_terms: ["*messstelle", "*messstellen", "*messnetz", "*zaehlstelle", "*zaehls
             # Otto, 20.11.2026, from the samples of --classify:
             denkmalliste, "*denkmalliste", strassenverzeichnis, "*strassenverzeichnis", straßenverzeichnis,
             "*straßenverzeichnis", ortschaftenverzeichnis, niederschlag, "*niederschlag", verkehrszählung,
-            "*verkehrszählung", verkehrszaehlung]
+            "*verkehrszählung", verkehrszaehlung,
+            # Otto, 20.11.2026, second run ("lärm" not as a word end: "Alarm"):
+            "bebauungsplan*", "flächennutzungsplan*", "naturschutzgebiet*", "netzplan*", "*netzplan", "findling*",
+            ais, lärm, "lärm*", "*bahnlärm", "*strassenlärm", "*straßenlärm", "*fluglärm", "beurteilungspegel*",
+            "hydrometrie*", "luftqualität*", "flaechennutzungsplan*", "luftqualitaet*", laerm, "laerm*"]
 # Publishers whose finds are geodata whatever they are called (Otto, 20.11.2026): a geo signal in the publisher's name.
 geo_publishers: [EnviDat]
 
@@ -38,13 +42,18 @@ not_geo_eu_themes: [GOVE, ECON, JUST, EDUC, INTR, TECH]
 # Words in the title, the keywords or the publisher's name.
 not_geo_terms: ["statisti*", it nrw, information und technik nordrhein westfalen, wahl, wahlen, bundestagswahl,
                 landtagswahl, kommunalwahl, europawahl, abstimmung, abstimmungen, volksabstimmung, haushalt,
-                haushaltsplan, haushaltsdaten, budget, jahresrechnung, sitzung, sitzungen, protokoll, protokolle, ratsinformation, stellenplan, archivbestand,
+                haushaltsplan, haushaltsdaten, budget, jahresrechnung, sitzung, sitzungen, protokoll, protokolle,
+                ratsinformation, stellenplan, archivbestand,
                 pressemitteilung, pressemitteilungen, geschäftsbericht, élection, élections, votation, votations,
                 elezioni, votazione, votazioni, election, elections, statistics, statistique, statistiques,
                 statistica,
                 # Otto, 20.11.2026, from the samples of --classify:
                 kriminalstatistik, "*kriminalstatistik", staatsarchiv, bibliotheksstatistik,
-                wissenschaftliche bibliotheken, organigramm, fernsehprogramm, jahresabschluss, "*jahresabschluss", abfuhrtermine, "*abfuhrtermine"]
+                wissenschaftliche bibliotheken, organigramm, fernsehprogramm, jahresabschluss, "*jahresabschluss",
+                abfuhrtermine, "*abfuhrtermine",
+                # Otto, 20.11.2026, second run (the last; what is left stays visible):
+                entwurf eines landesgesetzes, entwurf einer landesverordnung, corona, vornamen, schwarzarbeit,
+                landsgemeinde, kantonsrat, handschriften, ordnungsbussen, gzr, gewerbezentralregister]
 # Publishers without geodata (Otto, 20.11.2026): a non-geo signal in the publisher's name only.
 not_geo_publishers: [Materials Cloud, PSI Data Catalog, Deutsche Bibliotheksstatistik, Bundeskriminalamt,
-                     Bundesamt für Justiz]
+                     Bundesamt für Justiz, Bundesjustizamt, Identitas AG]
