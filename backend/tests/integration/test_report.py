@@ -591,6 +591,6 @@ def test_classify_explains_no_access_and_lists_the_licence_statements(world: Wor
         _find("none", delivery=None, account=None),
     )
     text = classify_text(world.ckan, world.report(classify_only=True))
-    for reason in ("nur Seiten (HTML)", "access_rights nicht öffentlich oder unbekannt", "keine Ressource mit https-Adresse"):
+    for reason in ("nur Seiten (HTML)", "access_rights eingeschränkt oder nicht öffentlich", "keine Ressource mit https-Adresse"):
         assert reason in text
     assert "3  CC-BY-4.0 | Kanton Zug 3" in text

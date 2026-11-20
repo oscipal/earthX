@@ -111,6 +111,8 @@ class DeliveryKind(Enum):
     SERVICE = "service"
     ORDER = "order"
     ON_REQUEST = "on_request"
+    #: Through the provider's page: only pages or unknown formats are named (M5-20 F12 = 2).
+    PAGE = "page"
 
 
 @dataclass(frozen=True, slots=True)

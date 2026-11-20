@@ -82,8 +82,9 @@ _METADATA = re.compile(
     r"xml_iso19139|getrecordbyid|[?&]service=csw(?:&|$)|[?&]outputschema=|\.(?:xml|rdf|json|jsonld|ttl|n3)(?:[?#]|$)",
     re.IGNORECASE,
 )
-_PUBLIC = "PUBLIC"
-_NOT_PUBLIC = frozenset({"RESTRICTED", "NON_PUBLIC", "NONPUBLIC", "NON-PUBLIC"})
+#: Access rights that say "not for everyone" (EU vocabulary access-right and its spellings): only these keep a find
+#: without a known way to its data (Otto, 20.11.2026, F12 = 1); a missing or other statement does not.
+_NOT_PUBLIC = frozenset({"RESTRICTED", "NON_PUBLIC", "NONPUBLIC", "NON-PUBLIC", "CONFIDENTIAL", "SENSITIVE"})
 
 
 @dataclass(slots=True)
@@ -304,13 +305,13 @@ def _temporal(package: Mapping[str, Any], extras: Mapping[str, Any]) -> tuple[st
 
 
 def _account(package: Mapping[str, Any], extras: Mapping[str, Any], reachable: bool) -> str | None:
-    """``none`` for public data (DCAT ``access_rights``) or, without a statement, where a file or service is named;
-    restricted or unknown statements stay empty for M5-20 (plan §5.2), never guessed."""
+    """``none`` where a way to the data is named, unless the source says the data are not public (``access_rights``
+    restricted or non-public): that stays empty, never guessed. A missing or other statement is no exclusion (Otto,
+    20.11.2026, F12 = 1: at GovData the 54 147 finds it held back were public)."""
     statement = text_of(_field(package, extras, "access_rights"))
-    if statement is None:
-        return "none" if reachable else None
-    code = statement.rstrip("/").rsplit("/", 1)[-1].upper()
-    return "none" if code == _PUBLIC else None
+    if statement is not None and statement.rstrip("/").rsplit("/", 1)[-1].upper() in _NOT_PUBLIC:
+        return None
+    return "none" if reachable else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -521,6 +522,10 @@ def extract_package(key: str, package: Mapping[str, Any], source: SourceConfig) 
         delivery: str | None = "download"
     elif "service" in kinds:
         delivery = "service"
+    elif any(r.distribution is not None and not r.documentation and r.kind in ("page", None) for r in resources):
+        # Only pages or formats the table does not know ("SERVICE", "API", "onLine") at an https address: the data are
+        # had through the provider's page (Otto, 20.11.2026, F12 = 2). A resource at a plain http address is none.
+        delivery = "page"
     else:
         delivery = None
     # `rights` of a resource holds the terms of use at opendata.swiss [S].

@@ -331,8 +331,15 @@ def test_without_a_catalogue_page_and_a_page_of_the_provider_the_find_is_invalid
         ([{**FILE, "format": "CSV"}], "table", "download"),
         ([{**FILE, "format": "ZIP"}], "other", "download"),
         ([{**FILE, "format": "", "download_url": "https://geodaten.example.org/x"}], "other", "download"),
-        ([{**FILE, "format": "Unknown"}], "other", None),
-        ([VIEWER], "other", None),
+        # Only pages or unknown formats at an https address: through the provider's page (F12 = 2, Otto 20.11.2026).
+        ([{**FILE, "format": "Unknown"}], "other", "page"),
+        ([{**FILE, "format": "SERVICE"}], "other", "page"),
+        ([{**FILE, "format": "API"}], "other", "page"),
+        ([{**FILE, "format": "onLine"}], "other", "page"),
+        ([VIEWER], "other", "page"),
+        # A plain http address is none, nor is documentation alone.
+        ([{**VIEWER, "url": "http://geodaten.example.org/viewer"}], "other", None),
+        ([{**VIEWER, "resource_type": "documentation"}], "other", None),
         ([], "other", None),
     ],
 )
@@ -344,14 +351,19 @@ def test_data_kind_and_delivery(resources: list[dict[str, Any]], kind: str, deli
 @pytest.mark.parametrize(
     ("access_rights", "resources", "account"),
     [
-        ("http://publications.europa.eu/resource/authority/access-right/PUBLIC", [], "none"),
+        # Public, but nothing to get the data from: no way to it.
+        ("http://publications.europa.eu/resource/authority/access-right/PUBLIC", [], None),
         ("public", [FILE], "none"),
         ("http://publications.europa.eu/resource/authority/access-right/RESTRICTED", [FILE], None),
         ("NON_PUBLIC", [FILE], None),
-        ("nur nach Vereinbarung", [FILE], None),
+        ("http://publications.europa.eu/resource/authority/access-right/NON_PUBLIC", [VIEWER], None),
+        # F12 = 1 (Otto, 20.11.2026): only a statement that the data are not public holds a find back; a missing or
+        # other one does not (a free text is not read).
+        ("nur nach Vereinbarung", [FILE], "none"),
+        ("http://inspire.ec.europa.eu/metadata-codelist/LimitationsOnPublicAccess/noLimitations", [FILE], "none"),
         (None, [FILE], "none"),
         (None, [SERVICE], "none"),
-        (None, [VIEWER], None),
+        (None, [VIEWER], "none"),
     ],
 )
 def test_the_account(access_rights: str | None, resources: list[dict[str, Any]], account: str | None) -> None:

@@ -543,7 +543,7 @@ def access_reason(found: Mapping[str, Any]) -> tuple[str, str]:
     kinds = [resource_kind(d.get("format"), d.get("media_type")) for d in distributions]
     formats = ", ".join(sorted({str(d.get("format") or d.get("media_type") or "–") for d in distributions})) or "–"
     if found.get("delivery") is not None:
-        return "access_rights nicht öffentlich oder unbekannt", formats
+        return "access_rights eingeschränkt oder nicht öffentlich", formats
     if not distributions:
         return "keine Ressource mit https-Adresse", formats
     if all(kind == "page" for kind in kinds):
