@@ -8,11 +8,19 @@ everything else. Both read the same synthetic item (``tests/fixtures/bands/golde
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 from earthx.access.band_export import BandsFile, band_meta, band_rows, bands_text, plan_files
+from earthx.catalog.registry import ClassRow
 
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "bands"
+
+
+def _classes_of(given: dict) -> Callable[[str], tuple[ClassRow, ...] | None]:
+    """The classes the synthetic registry names for a band (M5-62): ``scl`` has two, every other band none."""
+    classes = {key: tuple(ClassRow(**row) for row in rows) for key, rows in given["classes"].items()}
+    return classes.get
 
 
 def test_the_server_writes_the_golden_text_for_one_file_per_band() -> None:
@@ -21,7 +29,13 @@ def test_the_server_writes_the_golden_text_for_one_file_per_band() -> None:
     auxiliary = set(collection["earthx:auxiliary_assets"])
     mask = collection["earthx:mask"]["asset"]
     metas = [
-        band_meta(item, asset, unit=collection["earthx:band_units"].get(asset), categorical=asset == mask)
+        band_meta(
+            item,
+            asset,
+            unit=collection["earthx:band_units"].get(asset),
+            categorical=asset == mask,
+            classes=_classes_of(given)(asset),
+        )
         for asset in item["assets"]
         if asset not in auxiliary
     ]
@@ -34,6 +48,7 @@ def test_the_server_writes_the_golden_text_for_one_file_per_band() -> None:
     assert text == (FIXTURES / "golden_per_band.txt").read_text(encoding="utf-8")
     assert "visual" not in text  # the picture the registry calls auxiliary is no band
     assert "B04 | red | 0.665 | 10 | 10 | none | uint16 | 0.0001 | -0.1 | 0 | 1" in text
+    assert text.endswith("Classes of band 1 (SCL)\nValue | Class | Colour\n4 | Vegetation | #2ca02c\n6 | Water | #1f77b4\n")
 
 
 def test_the_table_the_dialog_is_given_is_the_golden_response() -> None:
@@ -45,7 +60,7 @@ def test_the_table_the_dialog_is_given_is_the_golden_response() -> None:
         auxiliary=collection["earthx:auxiliary_assets"],
         mask_asset=collection["earthx:mask"]["asset"],
         unit_of=collection["earthx:band_units"].get,
-        classes_of=lambda _key: None,
+        classes_of=_classes_of(given),
     )
     answer = {"bands": rows}
     assert answer == json.loads((FIXTURES / "golden_bands_response.json").read_text(encoding="utf-8"))
