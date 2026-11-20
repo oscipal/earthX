@@ -1,5 +1,6 @@
 // The field "Colormap" of a layer of classes (M5-62, F3 and F8): the button "Classes" opens the legend over the map, one line per class
-// with its colour and name, as the tiles draw them. Nothing but the classes, and nothing in the panel that could make it scroll.
+// with its colour and name, as the tiles draw them; it lies left of the settings bar where there is room. Nothing but the classes, and
+// nothing in the panel that could make it scroll.
 
 import { useRef, useState } from 'react';
 
@@ -26,7 +27,7 @@ export default function ClassesField({ classes, title }: { classes: readonly Ban
       >
         {CLASSES}
       </button>
-      <Popover anchorRef={anchor} open={open} onClose={() => setOpen(false)} className="classes-popup" role="dialog" ariaLabel={CLASSES}>
+      <Popover anchorRef={anchor} open={open} onClose={() => setOpen(false)} className="classes-popup" role="dialog" ariaLabel={CLASSES} beside>
         <ul className="classes-legend">
           {classes.map((entry) => (
             <li key={entry.value}>

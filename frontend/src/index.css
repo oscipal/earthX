@@ -3297,6 +3297,7 @@ button.pm-open:hover {
   justify-content: flex-start;
 }
 .popover.classes-popup {
+  max-width: calc(100vw - 2 * var(--space-2));
   padding: var(--space-2);
 }
 .classes-legend {
@@ -3312,6 +3313,7 @@ button.pm-open:hover {
 .classes-legend li {
   display: flex;
   align-items: center;
+  white-space: nowrap;
 }
 /* The colour of a class, from the data: a small square before its hex (the Data catalogue, the legend "Classes"). */
 .class-swatch {
