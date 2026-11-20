@@ -51,7 +51,9 @@ class TestReadGrantToAll:
         with pytest.raises(EntryFileError, match="future"):
             self._read(tmp_path, f"licenses: [cc-by-4.0]\napproved_on: {later}\n")
 
-    @pytest.mark.parametrize("text", ["- cc-by-4.0\n", "licenses: [cc-by-4.0]\n", "licenses: [cc-by-4.0]\napproved_on: x\n"])
+    @pytest.mark.parametrize(
+        "text", ["- cc-by-4.0\n", "licenses: [cc-by-4.0]\n", "licenses: [cc-by-4.0]\napproved_on: x\n"]
+    )
     def test_a_file_of_another_shape_is_refused(self, tmp_path: Path, text: str) -> None:
         with pytest.raises(EntryFileError):
             self._read(tmp_path, text)
