@@ -27,7 +27,7 @@ export default function ClassesField({ classes, title }: { classes: readonly Ban
       >
         {CLASSES}
       </button>
-      <Popover anchorRef={anchor} open={open} onClose={() => setOpen(false)} className="classes-popup" role="dialog" ariaLabel={CLASSES} beside>
+      <Popover anchorRef={anchor} open={open} onClose={() => setOpen(false)} className="classes-popup" role="dialog" ariaLabel={CLASSES} beside=".inspector">
         <ul className="classes-legend">
           {classes.map((entry) => (
             <li key={entry.value}>

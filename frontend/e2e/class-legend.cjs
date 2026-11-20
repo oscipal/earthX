@@ -2,7 +2,7 @@
 // With a made-up land cover collection whose band carries the eleven classes of ESA WorldCover (names and colours as the registry
 // gives them), in the light and the dark theme, in a wide window, a map 360 px high and a narrow window, it fails when
 //   - the field "Colormap" of the view is no button "Classes", or the button does not open and close the legend;
-//   - the legend leaves the browser window, scrolls, or lacks a class, or a swatch is not in the colour of its class;
+//   - the legend leaves the browser window, covers the settings bar where there is room beside it, scrolls, or lacks a class, or a swatch is not in the colour of its class;
 //   - the legend says anything but the names of the classes;
 //   - opening the legend makes the settings bar or the page scroll or grow;
 //   - the Data catalogue lacks the table of classes, a hex or a swatch, or a value runs out of the window;
@@ -88,6 +88,8 @@ async function legend(browser, theme, viewport) {
   if (await popup.count()) {
     const box = await popup.boundingBox();
     if (!box || !inWindow(box, size)) problems.push(`the legend leaves the window: ${JSON.stringify(box)}`);
+    const panel = await page.locator('.inspector').boundingBox();
+    if (viewport !== 'narrow' && box && panel && box.x + box.width > panel.x + 0.5) problems.push(`the legend covers the settings bar: ${JSON.stringify(box)} / ${JSON.stringify(panel)}`);
     const scrolls = await popup.evaluate((el) => el.scrollHeight > el.clientHeight + 1);
     if (scrolls) problems.push('the legend scrolls');
     const lines = await popup.locator('li').evaluateAll((items) => items.map((li) => ({ text: li.textContent, colour: getComputedStyle(li.querySelector('.class-swatch')).backgroundColor })));
