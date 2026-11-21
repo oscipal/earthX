@@ -26,7 +26,7 @@ from earthx.discovery.extract import (
     data_kind_of,
     text_of,
 )
-from earthx.discovery.links import LinkRank, checked_link, choose_link, first_link
+from earthx.discovery.links import LinkRank, checked_link, choose_link, first_link, link_candidates
 from earthx.gateway import GatewayResponse
 
 __all__ = [
@@ -35,7 +35,6 @@ __all__ = [
     "StacListing",
     "collection_key",
     "extract_collection",
-    "link_candidates",
     "stac_pages",
 ]
 
@@ -222,14 +221,6 @@ def _link_candidates(key: str, links: list[Mapping[str, Any]], source: SourceCon
     ]
 
 
-def link_candidates(key: str, collection: Mapping[str, Any], source: SourceConfig) -> list[tuple[LinkRank, object]]:
-    """The addresses a collection could take as its link "Source" (plan §6) by rank, for the index of collective pages
-    (:class:`~earthx.discovery.links.LinkIndex`); :class:`Invalid` where the collection is no find (``no_title``)."""
-    if text_of(collection.get("title")) is None:
-        raise Invalid("no_title")
-    return _link_candidates(key, _links(collection), source)
-
-
 def extract_collection(
     key: str, collection: Mapping[str, Any], source: SourceConfig, shared: frozenset[str] = frozenset()
 ) -> Extracted:
@@ -245,7 +236,7 @@ def extract_collection(
     candidates = _link_candidates(key, links, source)
     chosen = choose_link(candidates, shared)
     if chosen is None:
-        raise Invalid("no_link")
+        raise Invalid("no_link", link_candidates(candidates))
     plain = first_link(candidates)
     skipped = plain if plain is not None and plain[1] < chosen[1] else None
     landing = choose_link((c for c in candidates if c[0] is not LinkRank.VIEWER_OR_DOWNLOAD_PAGE), shared)
@@ -283,5 +274,6 @@ def extract_collection(
         landing_url=None if landing is None else landing[0],
         skipped_url=None if skipped is None else skipped[0],
         skipped_rank=None if skipped is None else int(skipped[1]),
+        link_candidates=link_candidates(candidates),
         distributions=_distributions(collection),
     )

@@ -11,7 +11,7 @@ from earthx.catalog.registry import Maturity
 from earthx.catalog.sources import SourceConfig, SourceProtocol, StacFilter
 from earthx.discovery.extract import Invalid, extracted_sha256, extractor_version
 from earthx.discovery.links import LinkRank, address_key
-from earthx.discovery.stac import collection_key, extract_collection, link_candidates
+from earthx.discovery.stac import collection_key, extract_collection
 
 SOURCE = SourceConfig(
     source_id="example-stac",
@@ -279,11 +279,8 @@ def test_a_collection_without_a_collective_page_has_no_skipped_link() -> None:
     assert (found.skipped_url, found.skipped_rank) == (None, None)
 
 
-def test_the_candidates_of_a_collection_for_the_index_of_the_source() -> None:
+def test_the_links_a_collection_could_take_are_kept_for_the_index_of_the_source() -> None:
     links = [{"rel": "about", "href": "https://www.example.org/products/dem", "type": "text/html"}]
-    assert link_candidates("ch.example.dem", _with(links=links), SOURCE) == [
-        (LinkRank.DATASET_PAGE, "https://www.example.org/products/dem"),
-        (LinkRank.CATALOGUE_PAGE, "https://stac.example.org/browser/#/collections/ch.example.dem"),
-    ]
-    with pytest.raises(Invalid):
-        link_candidates("k", _with(title=None), SOURCE)
+    found = extract_collection("ch.example.dem", _with(links=links), SOURCE)
+    assert found.link_candidates == ((2, "https://www.example.org/products/dem"),)
+    assert extract_collection("ch.example.dem", COLLECTION, SOURCE).link_candidates == ()

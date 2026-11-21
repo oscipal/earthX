@@ -39,7 +39,15 @@ from earthx.discovery.extract import (
     text_of,
     theme_codes,
 )
-from earthx.discovery.links import LinkRank, checked_link, choose_link, first_link, is_collection_page, link_problem
+from earthx.discovery.links import (
+    LinkRank,
+    checked_link,
+    choose_link,
+    first_link,
+    is_collection_page,
+    link_candidates,
+    link_problem,
+)
 from earthx.discovery.stac import Fetch
 
 __all__ = [
@@ -48,7 +56,6 @@ __all__ = [
     "CkanListing",
     "ckan_pages",
     "extract_package",
-    "link_candidates",
     "link_reasons",
     "package_key",
     "search_params",
@@ -510,17 +517,6 @@ def _link_candidates(
     ]
 
 
-def link_candidates(package: Mapping[str, Any], source: SourceConfig) -> list[tuple[LinkRank, object]]:
-    """The addresses a package could take as its link "Source" (plan §6) by rank, in the order the rule reads them, for
-    the index of collective pages (:class:`~earthx.discovery.links.LinkIndex`); :class:`Invalid` where the package is no
-    find (``no_title``)."""
-    if localized(package.get("title")) is None:
-        raise Invalid("no_title")
-    raw_resources = package.get("resources")
-    documents = [r for r in raw_resources if isinstance(r, dict)] if isinstance(raw_resources, list) else []
-    return _link_candidates(package, _extras(package), [_resource(r) for r in documents], source)
-
-
 def extract_package(
     key: str, package: Mapping[str, Any], source: SourceConfig, shared: frozenset[str] = frozenset()
 ) -> Extracted:
@@ -537,7 +533,7 @@ def extract_package(
     candidates = _link_candidates(package, extras, resources, source)
     chosen = choose_link(candidates, shared)
     if chosen is None:
-        raise Invalid("no_link")
+        raise Invalid("no_link", link_candidates(candidates))
     plain = first_link(candidates)
     skipped = plain if plain is not None and plain[1] < chosen[1] else None
     landing = choose_link((c for c in candidates if c[0] is not LinkRank.VIEWER_OR_DOWNLOAD_PAGE), shared)
@@ -586,5 +582,6 @@ def extract_package(
         landing_url=None if landing is None else landing[0],
         skipped_url=None if skipped is None else skipped[0],
         skipped_rank=None if skipped is None else int(skipped[1]),
+        link_candidates=link_candidates(candidates),
         distributions=tuple(r.distribution for r in resources if r.distribution is not None)[:MAX_DISTRIBUTIONS],
     )
