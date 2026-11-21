@@ -304,7 +304,8 @@ def write_find(
     """The raw answer and the state of one find; a change of state or reason goes into the transitions.
 
     ``raw`` ``None`` keeps the stored raw answer (a re-extract). A raw answer over :data:`MAX_RAW_BYTES` is not kept,
-    only its hash (plan §3).
+    only its hash (plan §3). A re-extract asks no source, so it does not count as having seen the find: the run that
+    last saw it stays, and a find gone at the source is still marked ``gone`` by the pass it is open in (M5-20 A2).
     """
     packed = None if raw is None or len(raw) > MAX_RAW_BYTES else gzip.compress(raw, mtime=0)
     cur.execute(
@@ -323,7 +324,8 @@ def write_find(
         " ON CONFLICT (source_id, source_key) DO UPDATE SET state = EXCLUDED.state, reason = EXCLUDED.reason,"
         " extracted = EXCLUDED.extracted, extracted_sha256 = EXCLUDED.extracted_sha256,"
         " extent_known = EXCLUDED.extent_known, extractor_version = EXCLUDED.extractor_version,"
-        " last_seen_run = EXCLUDED.last_seen_run, updated_at = clock_timestamp()",
+        " last_seen_run = CASE WHEN %s THEN earthx_record_state.last_seen_run ELSE EXCLUDED.last_seen_run END,"
+        " updated_at = clock_timestamp()",
         (
             source_id,
             key,
@@ -334,6 +336,7 @@ def write_find(
             extent_known,
             extractor_version,
             run_id,
+            raw is None,
         ),
     )
     if before != (state, reason):

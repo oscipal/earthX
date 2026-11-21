@@ -27,3 +27,7 @@ robots_exception:
   evidence: https://www.govdata.de/daten/-/details/govdata-metadatenkatalog
 maturity: stable
 enabled: true
+# The state of the last step of the extent and the precedence among duplicates (M5-20 plan §6.1, §8): it harvests the
+# portals of the Länder and GDI-DE, so the same dataset can come twice.
+country: DE
+dedupe_rank: 3

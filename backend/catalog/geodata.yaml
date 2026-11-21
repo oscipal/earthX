@@ -1,0 +1,59 @@
+# The rule R-G: which harvested finds are no geodata (M5-20 plan §7, §13b; F3 = 1). A decision in Git like
+# `categories.yaml`; its merge after `report --classify` with two samples of 30 is Otto's release of the rule
+# (Prinzip 12). A find is hidden as no geodata only where it has NO geo signal and at least one non-geo signal;
+# everything else is geodata. Hidden, never deleted: a changed rule brings a find back with the next report.
+#
+# Terms are compared as the search compares (lower case, without accents, every run of other characters one space)
+# and only as whole words or word sequences. `*` at the start matches the end of a word ("*messstelle" matches
+# "Grundwassermessstelle"), at the end its start ("statisti*" matches "Statistisches").
+#
+# PROPOSAL from Otto's measurement of 19.11.2026 (M3-M5): to be sharpened with the samples of `--classify`. The
+# statistics tables without an extent at GovData (32 848 of 33 594 table/population) come from four offices: the
+# Statistisches Amt für Hamburg und Schleswig-Holstein (22 107), the Bayerisches Landesamt für Statistik (12 022) and
+# Destatis (3 182) carry "statisti*" in their name, IT.NRW (2 375) does not and stands by name.
+
+# --- Geo signals: any one of them keeps a find ------------------------------------------------------------------------
+# Data kinds of the find or of one of its files and services (the format table of the extract).
+geo_data_kinds: [raster, vector, service]
+# Categories of categories.yaml whose subject is a place (not population or other: statistics fall there).
+geo_categories: [optical, radar, elevation, land_cover, geology_soil, boundaries]
+# Any INSPIRE theme is a geo signal (fixed, no list).
+# An extent of the source or a place smaller than the state of the catalogue: a box below this share of the state's
+# box, or a place text naming a subdivision. A whole-country box on every dataset of a portal says nothing.
+extent_share_below: 0.5
+# Words in the title or the keywords that never hide a find (Otto, 19.11.2026). A place in a title is no signal.
+geo_terms: ["*messstelle", "*messstellen", "*messnetz", "*zaehlstelle", "*zaehlstellen", "*zählstelle",
+            "*zählstellen", poi, points of interest, standort, standorte, "*standort", "*standorte", koordinaten,
+            geodaten, geodata, géodonnées, geodati,
+            # Otto, 20.11.2026, from the samples of --classify:
+            denkmalliste, "*denkmalliste", strassenverzeichnis, "*strassenverzeichnis", straßenverzeichnis,
+            "*straßenverzeichnis", ortschaftenverzeichnis, niederschlag, "*niederschlag", verkehrszählung,
+            "*verkehrszählung", verkehrszaehlung,
+            # Otto, 20.11.2026, second run ("lärm" not as a word end: "Alarm"):
+            "bebauungsplan*", "flächennutzungsplan*", "naturschutzgebiet*", "netzplan*", "*netzplan", "findling*",
+            ais, lärm, "lärm*", "*bahnlärm", "*strassenlärm", "*straßenlärm", "*fluglärm", "beurteilungspegel*",
+            "hydrometrie*", "luftqualität*", "flaechennutzungsplan*", "luftqualitaet*", laerm, "laerm*"]
+# Publishers whose finds are geodata whatever they are called (Otto, 20.11.2026): a geo signal in the publisher's name.
+geo_publishers: [EnviDat]
+
+# --- Non-geo signals: one of them hides a find without any geo signal -------------------------------------------------
+# EU data themes (codes) of administration, economy, justice, education, international affairs, technology.
+not_geo_eu_themes: [GOVE, ECON, JUST, EDUC, INTR, TECH]
+# Words in the title, the keywords or the publisher's name.
+not_geo_terms: ["statisti*", it nrw, information und technik nordrhein westfalen, wahl, wahlen, bundestagswahl,
+                landtagswahl, kommunalwahl, europawahl, abstimmung, abstimmungen, volksabstimmung, haushalt,
+                haushaltsplan, haushaltsdaten, budget, jahresrechnung, sitzung, sitzungen, protokoll, protokolle,
+                ratsinformation, stellenplan, archivbestand,
+                pressemitteilung, pressemitteilungen, geschäftsbericht, élection, élections, votation, votations,
+                elezioni, votazione, votazioni, election, elections, statistics, statistique, statistiques,
+                statistica,
+                # Otto, 20.11.2026, from the samples of --classify:
+                kriminalstatistik, "*kriminalstatistik", staatsarchiv, bibliotheksstatistik,
+                wissenschaftliche bibliotheken, organigramm, fernsehprogramm, jahresabschluss, "*jahresabschluss",
+                abfuhrtermine, "*abfuhrtermine",
+                # Otto, 20.11.2026, second run (the last; what is left stays visible):
+                entwurf eines landesgesetzes, entwurf einer landesverordnung, corona, vornamen, schwarzarbeit,
+                landsgemeinde, kantonsrat, handschriften, ordnungsbussen, gzr, gewerbezentralregister]
+# Publishers without geodata (Otto, 20.11.2026): a non-geo signal in the publisher's name only.
+not_geo_publishers: [Materials Cloud, PSI Data Catalog, Deutsche Bibliotheksstatistik, Bundeskriminalamt,
+                     Bundesamt für Justiz, Bundesjustizamt, Identitas AG]

@@ -15,3 +15,7 @@ full_every_days: 7
 robots_exception: null
 maturity: stable
 enabled: false
+# The state of the last step of the extent and the precedence among duplicates (M5-20 plan §6.1, §8): the national
+# portal.
+country: AT
+dedupe_rank: 2

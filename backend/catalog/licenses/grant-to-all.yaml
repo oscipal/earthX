@@ -1,0 +1,33 @@
+# The licences `discovery grants` grants to every publisher of a source (M5-20 plan §13f). Otto, 20.11.2026: K1 to K5
+# of terms.yaml for all publishers of every source, built from the data; official works (de-official-work, K1) and K6
+# graded but not granted; K7 not taken in. The rule stays per publisher (adr/0033 §6.2, L2): this file only feeds the
+# command that writes grants/<source>.yaml from the publishers in the database, and Otto merges what it wrote.
+licenses:
+  - cc0-1.0
+  - dl-de-zero-2.0
+  - cc-pdm-1.0
+  - pddl-1.0
+  - opendata-swiss-open
+  - cc-by-4.0
+  - cc-by
+  - cc-by-3.0-de
+  - dl-de-by-2.0
+  - dl-de-by
+  - dl-de-by-1.0
+  - geonutzv
+  - odc-by-1.0
+  - opendata-swiss-by
+  - swisstopo-ogd
+  - lba-free-use
+  - cc-by-sa-4.0
+  - cc-by-sa
+  - cc-by-sa-3.0-de
+  - cc-by-sa-3.0
+  - odbl-1.0
+  - cc-by-nc-4.0
+  - cc-by-nc-3.0-de
+  - cc-by-nc
+  - opendata-swiss-by-ask
+  - opendata-swiss-ask
+  - cc-by-nd-4.0
+approved_on: 2026-11-20

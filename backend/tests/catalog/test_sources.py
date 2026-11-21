@@ -9,6 +9,7 @@ import pytest
 
 from earthx.catalog.datasets import CATALOG_DIR
 from earthx.catalog.entry_files import EntryFileError
+from earthx.catalog.listed import load_regions
 from earthx.catalog.sources import (
     CkanFilter,
     RobotsException,
@@ -33,6 +34,8 @@ full_every_days: 1
 robots_exception: null
 maturity: stable
 enabled: true
+country: null
+dedupe_rank: 1
 """
 
 
@@ -261,3 +264,34 @@ class TestRowsPerPage:
     def test_a_stac_source_has_no_rows(self, tmp_path: Path) -> None:
         with pytest.raises(EntryFileError, match="rows_per_page is for a ckan source"):
             read_source(_write(tmp_path, STAC.replace("rows_per_page: null", "rows_per_page: 50")))
+
+
+class TestCountryAndDedupeRank:
+    def test_the_released_seed(self) -> None:
+        # M5-20 F1 = 1, F4 = 1: the state of a national catalogue, the provider's catalogue before the portals.
+        sources = read_sources()
+        assert {key: (s.country, s.dedupe_rank) for key, s in sources.items()} == {
+            "fsdi-stac": ("CH", 1),
+            "earth-search": (None, 1),
+            "opendata-swiss": ("CH", 2),
+            "data-gv-at": ("AT", 2),
+            "govdata": ("DE", 3),
+        }
+
+    def test_every_country_is_a_state_of_the_region_outlines(self) -> None:
+        states = {region.code for region in load_regions() if region.level == "state"}
+        assert {s.country for s in read_sources().values() if s.country is not None} <= states
+
+    @pytest.mark.parametrize("value", ["ch", "CHE", "'C1'", "1", "true"])
+    def test_a_wrong_country(self, tmp_path: Path, value: str) -> None:
+        with pytest.raises(EntryFileError, match="country is null or an ISO 3166-1 code"):
+            read_source(_write(tmp_path, STAC.replace("country: null", f"country: {value}")))
+
+    @pytest.mark.parametrize("value", ["0", "10", "null", "'1'", "true"])
+    def test_a_wrong_dedupe_rank(self, tmp_path: Path, value: str) -> None:
+        with pytest.raises(EntryFileError, match="dedupe_rank is a whole number from 1 to 9"):
+            read_source(_write(tmp_path, STAC.replace("dedupe_rank: 1", f"dedupe_rank: {value}")))
+
+    def test_both_are_required(self, tmp_path: Path) -> None:
+        with pytest.raises(EntryFileError, match="needs exactly the fields"):
+            read_source(_write(tmp_path, STAC.replace("dedupe_rank: 1\n", "")))

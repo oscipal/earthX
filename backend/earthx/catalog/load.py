@@ -6,7 +6,8 @@ Runs the migrations this package owns, checks that pgstac matches the pin, write
 every registry entry as a collection, removes the federated collections the registry
 no longer lists, removes the pyramid rows of prototype sources the registry does not carry (adr/0024 R6; the worker
 deletes their objects), brings the index of the dataset search in line (M5-22b), writes the region outlines and the
-hand entries of ``listed/`` into the table of listed entries and applies ``blocked.yaml`` to it (M5-40), and commits.
+hand entries of ``listed/`` into the table of listed entries and applies ``blocked.yaml`` to it (M5-40), publishes
+the stacks of the approved files under ``approvals/`` and hides again what a revoked one published (M5-20), and commits.
 Idempotent from end to end: a second run migrates nothing, rewrites the same
 collections and writes no row of the search index.
 
@@ -21,13 +22,18 @@ import sys
 
 import psycopg
 
+from earthx.catalog.approvals import load_approvals, publish
 from earthx.catalog.datasets import registry
+from earthx.catalog.licences import load_licences
 from earthx.catalog.listed import load_blocked, load_catalog_tags, load_listed, load_regions
 from earthx.catalog.listed_store import apply_blocklist, supersede, write_hand_entries, write_regions
+from earthx.catalog.listing_store import withdraw
+from earthx.catalog.municipalities import load_municipalities, write_municipalities
 from earthx.catalog.pgstac import PgstacError, load_registry, remove_prototype_overviews
 from earthx.catalog.registry import ConfigError
 from earthx.catalog.schema import apply_migrations
 from earthx.catalog.search_index import write_search_index
+from earthx.catalog.sources import read_sources
 
 
 def main() -> int:
@@ -38,6 +44,10 @@ def main() -> int:
         blocklist = load_blocked()
         regions = load_regions()
         load_catalog_tags()
+        # Checked like every file of the image, though only the report of the harvest reads them (adr/0033 §6.2).
+        licences = load_licences(read_sources())
+        approvals = load_approvals()
+        municipalities = load_municipalities()
     except ConfigError as error:
         print(f"load failed: {error}", file=sys.stderr)
         return 1
@@ -51,11 +61,16 @@ def main() -> int:
             index = write_search_index(conn, datasets)
             full_ids = [config.dataset_id for config in datasets] + [gone.dataset_id for gone in datasets.retired]
             regions_changed = write_regions(conn, regions)
+            # After the regions: a municipality refers to its canton.
+            municipalities_changed = write_municipalities(conn, municipalities)
             # First the rows a full entry took over: a hand entry that went full leaves listed/ in the same commit,
             # and its row is then superseded, not a tombstone (adr/0033 §11).
             superseded = supersede(conn, full_ids)
             listed, blocked_hand = write_hand_entries(conn, hand_entries, blocklist, full_ids=full_ids)
             tombstones = apply_blocklist(conn, blocklist)
+            # A licence rule Otto took back hides its entries at once (adr/0033 §9), before anything is published.
+            withdrawn = withdraw(conn, licences.granted)
+            published = publish(conn, approvals)
             conn.commit()
     except (ConfigError, PgstacError, psycopg.Error) as error:
         print(f"load failed: {error}", file=sys.stderr)
@@ -68,10 +83,18 @@ def main() -> int:
     print(f"search index written: {', '.join(index.written) if index.written else 'none'}")
     print(f"search index removed: {', '.join(index.removed) if index.removed else 'none'}")
     print(f"region rows changed: {regions_changed}")
+    print(f"municipality rows changed: {municipalities_changed}")
     print(f"listed hand entries written: {', '.join(listed) if listed else 'none'}")
     print(f"listed hand entries left out as blocked: {', '.join(blocked_hand) if blocked_hand else 'none'}")
     print(f"listed entries superseded by a full entry: {', '.join(superseded) if superseded else 'none'}")
     print(f"listed entries turned into tombstones by the blocklist: {tombstones}")
+    print(f"listed entries back on the waiting list, their licence rule taken back: {withdrawn}")
+    for name, count in sorted(published.published.items()):
+        print(f"listed entries published by {name}: {count}")
+    for name, count in sorted(published.revoked.items()):
+        print(f"listed entries hidden again by the revoked {name}: {count}")
+    for name in published.stale:
+        print(f"approval not applied, its stack expired (a later report took it over): {name}")
     return 0
 
 

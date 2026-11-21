@@ -119,6 +119,52 @@ services:
       catalog-load:
         condition: service_completed_successfully
 
+  # The report of a harvested source (M5-20): derives the listed rows, dedupes, forms the stack and writes the
+  # approval file into the mounted `backend/catalog/approvals` of the checkout. Asks no source. Run it through
+  # `scripts/harvest-report.ps1` (or `.sh`), which makes the branch and the commit; it never pushes:
+  #   docker compose run --rm harvest-report <source_id> [--classify]
+  harvest-report:
+    profiles: ["harvest"]
+    build:
+      context: ./backend
+      target: app
+    entrypoint: ["python", "-m", "earthx.discovery.report", "--out", "/out"]
+    volumes:
+      - ./backend/catalog/approvals:/out
+    environment:
+      # The scripts run it as the owner of the checkout (`--user`), who has no home in the image.
+      HOME: /tmp
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+    depends_on:
+      catalog-load:
+        condition: service_completed_successfully
+
+  # One-off, run by hand (M5-20 plan §13f): writes backend/catalog/licenses/grants/<source>.yaml from the publishers of
+  # the harvested finds, each with the licences of grant-to-all.yaml. Otto commits and merges what it wrote. Run it with:
+  #   docker compose run --rm harvest-grants govdata opendata-swiss fsdi-stac
+  harvest-grants:
+    profiles: ["harvest"]
+    build:
+      context: ./backend
+      target: app
+    entrypoint: ["python", "-m", "earthx.discovery.grants", "--out", "/out"]
+    volumes:
+      - ./backend/catalog/licenses/grants:/out
+    environment:
+      HOME: /tmp
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+    depends_on:
+      catalog-load:
+        condition: service_completed_successfully
+
   # One-off, run by hand (M5-30b, adr/0032 §8.5, F11): tile times per zoom level over the real tile path, for the
   # budgets of the mosaic tile. Under a profile like `materialize`: it reads real files at the source. The rectangle
   # is an argument and never printed. Run it with:

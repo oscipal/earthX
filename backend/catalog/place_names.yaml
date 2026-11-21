@@ -1,0 +1,133 @@
+# The names under which catalogues write the places of `regions.json` (M5-20 plan §6.2, §13b; F2 = 1). Read by the report
+# of the harvest to turn a place text or a publisher into regions; a decision in Git like `categories.yaml`. Names are
+# compared as the search compares (lower case, without accents, every run of other characters one space), and only as
+# a whole text or a whole sequence of words: never part of a word, never fuzzy.
+#
+# Names here are from general knowledge [S]; Otto checks them in review. The municipalities of Switzerland come from
+# municipalities.json (swissBOUNDARIES3D, F9 = 1, licence graded by Otto 19.11.2026), not from this file; those of
+# Germany and Austria not yet (VG250 only once GovData's place texts ask for it).
+
+# --- 1. Places: a code of regions.json -> its names -------------------------------------------------------------------
+# A name in `ambiguous` (below) matches only after a designation ("Kanton Bern", "Canton de Berne"), because it is also
+# a municipality's name.
+places:
+  CH: [Schweiz, Switzerland, Suisse, Svizzera, Svizra, Schweizerische Eidgenossenschaft, Confédération suisse,
+       Confederazione Svizzera, Swiss Confederation]
+  DE: [Deutschland, Germany, Allemagne, Germania, Bundesrepublik Deutschland, Federal Republic of Germany]
+  AT: [Österreich, Austria, Autriche, Republik Österreich]
+  LI: [Liechtenstein, Fürstentum Liechtenstein, Principality of Liechtenstein]
+  CH-AG: [Aargau, Argovie, Argovia]
+  CH-AI: [Appenzell Innerrhoden, Appenzell Rhodes-Intérieures, Appenzello Interno]
+  CH-AR: [Appenzell Ausserrhoden, Appenzell Rhodes-Extérieures, Appenzello Esterno]
+  CH-BE: [Bern, Berne, Berna]
+  CH-BL: [Basel-Landschaft, Bâle-Campagne, Basilea Campagna]
+  CH-BS: [Basel-Stadt, Bâle-Ville, Basilea Città]
+  CH-FR: [Freiburg, Fribourg, Friburgo]
+  CH-GE: [Genf, Genève, Ginevra, Geneva, Grand Genève]
+  CH-GL: [Glarus, Glaris, Glarona]
+  CH-GR: [Graubünden, Grisons, Grigioni, Grischun]
+  CH-JU: [Jura, Giura]
+  CH-LU: [Luzern, Lucerne, Lucerna]
+  CH-NE: [Neuenburg, Neuchâtel]
+  CH-NW: [Nidwalden, Nidwald, Nidvaldo]
+  CH-OW: [Obwalden, Obwald, Obvaldo]
+  CH-SG: [St. Gallen, Sankt Gallen, Saint-Gall, San Gallo]
+  CH-SH: [Schaffhausen, Schaffhouse, Sciaffusa]
+  CH-SO: [Solothurn, Soleure, Soletta]
+  CH-SZ: [Schwyz, Schwytz, Svitto]
+  CH-TG: [Thurgau, Thurgovie, Turgovia]
+  CH-TI: [Tessin, Ticino]
+  CH-UR: [Uri]
+  CH-VD: [Waadt, Vaud]
+  CH-VS: [Wallis, Valais, Vallese]
+  CH-ZG: [Zug, Zoug, Zugo]
+  CH-ZH: [Zürich, Zurich, Zurigo]
+  DE-BB: [Brandenburg]
+  DE-BE: [Berlin]
+  DE-BW: [Baden-Württemberg]
+  DE-BY: [Bayern, Bavaria, Bavière]
+  DE-HB: [Bremen, Freie Hansestadt Bremen]
+  DE-HE: [Hessen, Hesse]
+  DE-HH: [Hamburg, Freie und Hansestadt Hamburg]
+  DE-MV: [Mecklenburg-Vorpommern]
+  DE-NI: [Niedersachsen, Lower Saxony, Basse-Saxe]
+  DE-NW: [Nordrhein-Westfalen, North Rhine-Westphalia, NRW]
+  DE-RP: [Rheinland-Pfalz, Rhineland-Palatinate]
+  DE-SH: [Schleswig-Holstein]
+  DE-SL: [Saarland]
+  DE-SN: [Sachsen, Saxony, Saxe]
+  DE-ST: [Sachsen-Anhalt, Saxony-Anhalt]
+  DE-TH: [Thüringen, Thuringia, Thuringe]
+  AT-1: [Burgenland]
+  AT-2: [Kärnten, Carinthia]
+  AT-3: [Niederösterreich, Lower Austria]
+  AT-4: [Oberösterreich, Upper Austria]
+  AT-5: [Salzburg]
+  AT-6: [Steiermark, Styria]
+  AT-7: [Tirol, Tyrol]
+  AT-8: [Vorarlberg]
+  AT-9: [Wien, Vienna, Vienne]
+  LI-01: [Balzers]
+  LI-02: [Eschen]
+  LI-03: [Gamprin]
+  LI-04: [Mauren]
+  LI-05: [Planken]
+  LI-06: [Ruggell]
+  LI-07: [Schaan]
+  LI-08: [Schellenberg]
+  LI-09: [Triesen]
+  LI-10: [Triesenberg]
+  LI-11: [Vaduz]
+
+# Names that are also a municipality (or a range of hills): they match only after a designation.
+ambiguous: [Bern, Berne, Berna, Freiburg, Fribourg, Friburgo, Genf, Genève, Ginevra, Geneva, Glarus, Glaris, Glarona,
+            Jura, Giura, Luzern, Lucerne, Lucerna, Neuenburg, Neuchâtel, St. Gallen, Sankt Gallen, Saint-Gall,
+            San Gallo, Schaffhausen, Schaffhouse, Sciaffusa, Solothurn, Soleure, Soletta, Schwyz, Schwytz, Svitto, Zug,
+            Zoug, Zugo, Zürich, Zurich, Zurigo, Bremen, Salzburg]
+
+# Words before the name of a subdivision that say what kind of place it is.
+designations: [Kanton, Kantons, Canton de, Canton du, Canton d, Canton of, Cantone di, Cantone del, Cantone dei,
+               Cantone, Republik und Kanton, République et canton de, République et canton du, Repubblica e Cantone,
+               Land, Landes, Bundesland, Freistaat, Free State of, State of]
+
+# Words before the name of a municipality (municipalities.json, F9): only after one of them does a municipality match
+# in the name of a publisher, or where a region or another municipality has the same name ("Stadt Bern").
+municipal_designations: [Stadt, Gemeinde, Einwohnergemeinde, Politische Gemeinde, Commune de, Commune d, Ville de,
+                         Città di, Comune di, City of, Municipality of]
+
+# --- 2. Texts that name the whole state of the catalogue by its parts (Otto, 19.11.2026 and 20.11.2026) ---------------
+whole_country: [Kantone, Gemeinden, Politische Gemeinden, Bezirke, Grossregionen, Sonstige Raumgliederungen,
+                Cantons, Communes, Districts, Cantoni, Comuni, Distretti, Sprachgebiete, Statistische Städte,
+                Gemeinden (Politik), Städtische Gebiete, Ländliche Gebiete, Städtische/Ländliche Gebiete, NUTS 0 Staaten,
+                Fachhochschulen, Raum mit städtischem Charakter, Arbeitsmarktregionen, Pädagogische Hochschulen]
+# Texts that begin so name the state of the catalogue too ("Urban Audit Kernstädte (Schweiz-Perimeter)").
+whole_country_prefixes: [Urban Audit, Stadt/Land-Typologie]
+
+# --- 2a. Texts beyond any one state: no region at all, not the state of the catalogue (Otto, 20.11.2026, plan A25) ---
+beyond: [Europa, Europe, Welt, World, Monde, Mondo, International, Weltweit, Worldwide, Global, "Welt: Regionen"]
+beyond_prefixes: [Grenzüberschreitend]
+
+# --- 3. Approximate places: the words around the core that are dropped (Otto, 19.11.2026) ----------------------------
+approximate:
+  before: [Grossraum, Großraum, Raum, Region, Agglomeration, Seen im, Seen in]
+  after: [und angrenzende Gebiete, mit grenznahem Ausland, und Umgebung]
+
+# --- 4. Texts that are no place and are passed over like a missing one (Otto, 19.11.2026 and 20.11.2026) -------------
+not_places: [Spatial, Hektaren, Letzteiszeitliches Maximum]
+# Names of products, not places: a text that begins so is passed over ("Landeskarte 1:25 000", "SWISSIMAGE 10 cm").
+not_place_prefixes: [Landeskarte, swissTLMRegio, swissALTIRegio, SWISSIMAGE, Orthofoto, Topografisches Landschaftsmodell,
+                     GeoMol15, DHM25, swissBATHY3D, Siegfriedkarte, Carte nationale, Carte géologique, Luftfahrtkarte,
+                     Strassenkarte, Skitourenkarte, Satellitenbilder]
+# Patterns of texts that are no place, as regular expressions on the text (case ignored): a map at a scale
+# ("…karte 1:50'000", "carte … 1:200'000"), and an empty node of RDF ("N" and 32 hex digits) (Otto, 20.11.2026).
+not_place_patterns: ["(?:karte|carte|map)\\b.*\\b1\\s*:", "^N[0-9a-f]{32}$"]
+
+# --- 4a. Country codes of the EU vocabulary (publications.europa.eu/resource/authority/country/<code>) ------------------
+# The vocabulary writes ISO 3166-1 alpha-3; these are the states of Europe and a few more it uses, as alpha-2.
+alpha3: {AUT: AT, BEL: BE, BGR: BG, HRV: HR, CYP: CY, CZE: CZ, DNK: DK, EST: EE, FIN: FI, FRA: FR, DEU: DE, GRC: GR,
+         HUN: HU, IRL: IE, ITA: IT, LVA: LV, LTU: LT, LUX: LU, MLT: MT, NLD: NL, POL: PL, PRT: PT, ROU: RO, SVK: SK,
+         SVN: SI, ESP: ES, SWE: SE, CHE: CH, LIE: LI, NOR: NO, ISL: IS, GBR: GB, USA: US}
+
+# --- 5. GeoNames: the id of an address sws.geonames.org/<id>, quoted as text -> a code of regions.json ---------------
+# A code of a municipality (municipalities.json) is allowed too. Ids from Otto (20.11.2026, F10 = 1).
+geonames: {"2657907": CH-ZG, "7287644": CH-ZG-1711, "6458807": CH-ZG}
