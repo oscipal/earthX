@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import gzip
 import json
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, fields
 from datetime import datetime
 from typing import Any
@@ -38,12 +38,14 @@ __all__ = [
     "mark_gone",
     "previous",
     "raw_of_catalogue_links",
+    "raw_of_keys",
     "raw_records",
     "renew_run",
     "save_list_validators",
     "seen",
     "source_summary",
     "start_run",
+    "stored_links",
     "write_find",
 ]
 
@@ -404,6 +406,31 @@ def raw_records(
         )
         for key, packed, state in cur:
             yield key, gzip.decompress(packed), state
+
+
+def raw_of_keys(conn: psycopg.Connection, source_id: str, keys: Sequence[str]) -> Iterator[tuple[str, bytes, str]]:
+    """``(key, raw, state)`` of the kept raw answers of ``keys`` that are not ``gone``, to extract some finds again."""
+    for start in range(0, len(keys), 1000):
+        rows = conn.execute(
+            "SELECT r.source_key, r.raw_gzip, s.state FROM public.earthx_raw_record r"
+            " JOIN public.earthx_record_state s USING (source_id, source_key)"
+            " WHERE r.source_id = %s AND r.source_key = ANY(%s) AND r.raw_gzip IS NOT NULL AND s.state <> 'gone'"
+            " ORDER BY r.source_key",
+            (source_id, list(keys[start : start + 1000])),
+        ).fetchall()
+        for key, packed, state in rows:
+            yield key, gzip.decompress(packed), state
+
+
+def stored_links(conn: psycopg.Connection, source_id: str) -> list[tuple[str, str, str | None, str | None]]:
+    """``(key, state, source_url, source_rank)`` of the finds of the source that have a link "Source" or lost theirs
+    (``no_link``): what each was derived to, to see which no longer fits the collective pages of the source."""
+    return conn.execute(
+        "SELECT source_key, state, extracted->>'source_url', extracted->>'source_rank'"
+        " FROM public.earthx_record_state WHERE source_id = %s"
+        " AND (state = 'extracted' OR (state = 'invalid' AND reason = 'no_link'))",
+        (source_id,),
+    ).fetchall()
 
 
 def raw_of_catalogue_links(conn: psycopg.Connection, source_id: str) -> Iterator[tuple[str, bytes]]:
