@@ -231,6 +231,33 @@ def test_a_tile_is_rendered_from_the_stored_result(rig: Rig, uploaded: str) -> N
     assert response.content.startswith(b"\x89PNG")
 
 
+def test_a_result_of_classes_is_drawn_in_the_colours_of_its_table(
+    rig: Rig, uploaded: str, mask_files: dict[str, Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """M5-62 F9: a job writes the colour table of a band of classes into its result; drawn as it is (no range, no
+    colormap, as the viewer asks for a band of classes), the tile shows the colours of the classes and nothing else."""
+    colours = {10: (0, 100, 0, 255), 20: (255, 187, 34, 255), 60: (180, 180, 180, 255)}
+    rows, cols = numpy.indices((SIZE, SIZE))
+    plain, target = tmp_path / "plain.tif", tmp_path / "classes.tif"
+    with rasterio.open(
+        plain, "w", driver="GTiff", width=SIZE, height=SIZE, count=1, dtype="uint8", crs=sources.CRS, nodata=0,
+        transform=from_origin(sources.ORIGIN_X, sources.ORIGIN_Y, sources.RESOLUTION, sources.RESOLUTION),
+    ) as destination:
+        destination.write(numpy.choose((rows // 16 + cols // 16) % 3, [10, 20, 60]).astype("uint8"), 1)
+        destination.write_colormap(1, {**colours, 0: (0, 0, 0, 0)})
+    cog_translate(str(plain), str(target), cog_profiles.get("deflate"), quiet=True)
+    monkeypatch.setattr(
+        result_tiles, "gdal_path", lambda url: str(mask_files["all"]) if url.endswith("mask.tif") else str(target)
+    )
+    z, x, y = TILE
+    response = rig.client.get(f"/results/{uploaded}/tiles/WebMercatorQuad/{z}/{x}/{y}.png")
+    assert response.status_code == 200, response.text
+    with MemoryFile(response.content) as memory, memory.open() as dataset:
+        pixels = dataset.read()
+    drawn = {tuple(int(v) for v in pixel) for pixel in pixels.reshape(pixels.shape[0], -1).T if pixel[-1] > 0}
+    assert drawn and drawn <= {colour[: pixels.shape[0]] for colour in colours.values()}
+
+
 def test_gdal_is_given_urls_signed_for_the_internal_endpoint_for_the_result_and_its_mask(
     rig: Rig, uploaded: str
 ) -> None:

@@ -64,6 +64,7 @@ __all__ = [
     "FilePlan",
     "StackReader",
     "AUX_SUFFIX",
+    "PALETTE_TYPES",
     "aoi_on_grid",
     "apply_band_tags",
     "band_count",
@@ -74,6 +75,7 @@ __all__ = [
     "is_geotiff",
     "band_meta",
     "bands_text",
+    "class_colour_table",
     "class_files",
     "file_profile",
     "format_resolution",
@@ -93,7 +95,7 @@ BANDS_FILENAME = "BANDS.txt"
 #: What GDAL appends to the name of a file for the one beside it that keeps what the file itself cannot (PAM).
 AUX_SUFFIX = ".aux.xml"
 #: The data types a GeoTIFF holds a colour table for.
-_PALETTE_TYPES = ("uint8", "uint16")
+PALETTE_TYPES = ("uint8", "uint16")
 
 _FORM_TEXT = {
     FORM_PER_BAND: "one file per band",
@@ -580,7 +582,7 @@ def apply_band_tags(dst: Any, metas: Sequence[BandMeta]) -> None:
         dst.set_band_description(index, meta.name)
     dst.scales = tuple(1.0 if meta.scale is None else meta.scale for meta in metas)
     dst.offsets = tuple(0.0 if meta.offset is None else meta.offset for meta in metas)
-    if len(metas) == 1 and metas[0].classes is not None and dst.dtypes[0] in _PALETTE_TYPES:
+    if len(metas) == 1 and metas[0].classes is not None and dst.dtypes[0] in PALETTE_TYPES:
         dst.write_colormap(1, colour_table(metas[0]))
 
 
@@ -588,9 +590,14 @@ def colour_table(meta: BandMeta) -> dict[int, tuple[int, int, int, int]]:
     """The colour of every class of ``meta`` as a GeoTIFF holds it, and its nodata. A TIFF keeps no alpha: a reader
     such as GDAL shows the entry of the file's own nodata see-through, which crop and export keep from the source."""
     assert meta.classes is not None
-    table = {row.value: (*_rgb(row.colour), 255) for row in meta.classes}
-    if meta.nodata is not None and float(meta.nodata).is_integer():
-        table[int(meta.nodata)] = (0, 0, 0, 0)
+    return class_colour_table(meta.classes, meta.nodata)
+
+
+def class_colour_table(classes: Sequence[ClassRow], nodata: float | None) -> dict[int, tuple[int, int, int, int]]:
+    """The colour table of a band of ``classes`` with ``nodata`` see-through; also the one of a job's result (F9)."""
+    table = {row.value: (*_rgb(row.colour), 255) for row in classes}
+    if nodata is not None and math.isfinite(nodata) and float(nodata).is_integer():
+        table[int(nodata)] = (0, 0, 0, 0)
     return table
 
 
