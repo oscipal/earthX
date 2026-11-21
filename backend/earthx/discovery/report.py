@@ -394,10 +394,6 @@ class ReportResult:
     pairs: Counter[tuple[str, str]] = field(default_factory=Counter)
     hidden: list[tuple[str, str, str]] = field(default_factory=list)
     undecided: list[tuple[str, str, str]] = field(default_factory=list)
-    #: Links "Source" that fell to another rank because the better one was a collective page (Otto, 21.11.2026), by
-    #: the move ("1 → 2"), and each as (title, skipped address, its rank, link now, its rank).
-    link_moves: Counter[str] = field(default_factory=Counter)
-    link_examples: list[tuple[str, str, int, str, int]] = field(default_factory=list)
     deleted: int = 0
     missing: int = 0
     tombstones: int = 0
@@ -531,11 +527,6 @@ def _count(result: ReportResult, derived: Derived, found: Mapping[str, Any]) -> 
     if row.waiting_reason in ("unknown_licence", "not_granted"):
         for statement in derived.statements:
             result.pairs[(row.publisher or "–", normal_statement(statement)[:100])] += 1
-    skipped = found.get("skipped_url")
-    if isinstance(skipped, str):
-        was, now = int(found.get("skipped_rank") or 0), int(found.get("source_rank") or 0)
-        result.link_moves[f"{was} → {now}"] += 1
-        result.link_examples.append((str(found.get("title"))[:100], skipped, was, str(found.get("source_url")), now))
     entry = (row.dataset_id, str(found.get("title"))[:120], str(found.get("source_url")))
     if derived.classified.outcome == "not_geodata":
         result.hidden.append(entry)
@@ -588,13 +579,6 @@ def classify_text(source: SourceConfig, result: ReportResult) -> str:
     lines += [f"  {count:>7}  {reason}" for reason, count in result.access_reasons.most_common()]
     lines.append("  10 Beispiele (Grund | Titel | Link | Formate):")
     lines += [f"  - {r} | {t} | <{u}> | {f}" for r, t, u, f in _sample(result.no_access, 10, seed)]
-    moved = sum(result.link_moves.values())
-    lines.append(
-        f"Link „Source“ wegen Sammelseite auf einen anderen Rang gefallen ({moved} von {result.finds}), nach Rang:"
-    )
-    lines += [f"  {count:>7}  Rang {move}" for move, count in sorted(result.link_moves.items())]
-    lines.append("  10 Beispiele (Titel | Sammelseite, Rang | Link jetzt, Rang):")
-    lines += [f"  - {t} | <{u}>, {r} | <{n}>, {m}" for t, u, r, n, m in _sample(result.link_examples, 10, seed)]
     lines.append("Gleichnamige Stadt und Kanton, je Name und Entscheid nach Herausgeber:")
     lines += [f"  {count:>7}  {choice}" for choice, count in sorted(result.choices.items())]
     lines.append(f"GeoNames-IDs ohne Zuordnung ({len(result.geonames)} verschiedene, häufigste 50):")

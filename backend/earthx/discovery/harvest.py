@@ -28,7 +28,7 @@ import logging
 import sys
 import time
 from collections import Counter
-from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
@@ -53,7 +53,6 @@ from earthx.catalog.harvest_store import (
     mark_gone,
     previous,
     raw_of_catalogue_links,
-    raw_of_keys,
     raw_records,
     renew_run,
     rest,
@@ -62,7 +61,6 @@ from earthx.catalog.harvest_store import (
     seen,
     source_summary,
     start_run,
-    stored_links,
     write_find,
 )
 from earthx.catalog.hosts import HostLimit
@@ -76,7 +74,6 @@ from earthx.discovery.ckan import (
     link_reasons,
     stable_package,
 )
-from earthx.discovery.ckan import link_candidates as ckan_candidates
 from earthx.discovery.ckan_measure import measure_page
 from earthx.discovery.extract import (
     Extracted,
@@ -87,10 +84,8 @@ from earthx.discovery.extract import (
     extracted_sha256,
     extractor_version,
 )
-from earthx.discovery.links import LinkIndex, LinkRank
 from earthx.discovery.source_gateway import open_source_gateway
 from earthx.discovery.stac import StacListing, extract_collection, stac_pages
-from earthx.discovery.stac import link_candidates as stac_candidates
 from earthx.gateway import (
     Gateway,
     GatewayError,
@@ -167,17 +162,10 @@ _STABLE: Mapping[SourceProtocol, Callable[[Any], Any]] = {
 #: How many changed fields a report names.
 _REPORT_FIELDS = 8
 
-_EXTRACTORS: Mapping[SourceProtocol, Callable[[str, Any, SourceConfig, frozenset[str]], Extracted]] = {
+_EXTRACTORS: Mapping[SourceProtocol, Callable[[str, Any, SourceConfig], Extracted]] = {
     SourceProtocol.STAC_API: extract_collection,
     SourceProtocol.CKAN: extract_package,
 }
-#: The addresses a find could take as its link "Source", for the index of collective pages (links.py).
-_CANDIDATES: Mapping[SourceProtocol, Callable[[str, Any, SourceConfig], list[tuple[LinkRank, object]]]] = {
-    SourceProtocol.STAC_API: stac_candidates,
-    SourceProtocol.CKAN: lambda key, document, source: ckan_candidates(document, source),
-}
-#: What a find of a foreign shape raises while it is read; it is no find, not the end of the run.
-_SHAPE_ERRORS = (TypeError, ValueError, AttributeError, KeyError, IndexError, ArithmeticError, RecursionError)
 
 
 @dataclass(frozen=True, slots=True)
@@ -204,8 +192,6 @@ class HarvestResult:
     #: How often a request failed (timeout, unreachable, 5xx) and was asked again, and how long the run waited for it.
     failures: int = 0
     failure_waited_s: float = 0.0
-    #: How many finds the run derived again at its end because a collective page changed their link (Otto, 21.11.2026).
-    links_settled: int = 0
     #: A CKAN pass over several runs (Otto, 18./19.11.2026): how many packages it had read when this run went on with
     #: it, and how many when this one stopped before the pass was through (the next run goes on after the last key).
     resumed_at: int | None = None
@@ -235,14 +221,6 @@ class _Run:
     pages: int = 0
     changed_fields: Counter[str] = field(default_factory=Counter)
     raw_fields: Counter[str] = field(default_factory=Counter)
-    #: The links every find of the source could take, and the collective pages among them (Otto, 21.11.2026): read from
-    #: the kept raw answers when the run starts, kept up to date with every find the run extracts.
-    index: LinkIndex = field(default_factory=LinkIndex)
-    shared: frozenset[str] = frozenset()
-    #: The finds this run derived, so that a second derivation at its end (:func:`_settle`) is not counted twice.
-    touched: set[str] = field(default_factory=set)
-    #: How many finds :func:`_settle` derived again because a collective page changed their link.
-    links_settled: int = 0
 
 
 def _retry_after_s(value: str | None, now: datetime) -> float | None:
@@ -369,27 +347,6 @@ class _Fetcher:
             self._renew()
 
 
-def _count_find(run: _Run, before: Previous | None, now: tuple[str, str | None], old: Any, new: Any) -> None:
-    """What a find that this run derived counts as: new, unchanged or changed, and which fields changed."""
-    counts = run.counts
-    if before is None or before.state == "gone":
-        counts.found_new += 1
-    elif (before.state, before.reason, old) == (*now, new):
-        # Equal after sorting the lists whose order says nothing: no change, whatever the hash of an older rule said.
-        counts.found_unchanged += 1
-    else:
-        counts.found_changed += 1
-        run.changed_fields.update(changed_fields(old, new) if (before.state, before.reason) == now else ["(Zustand)"])
-
-
-def _index(run: _Run, key: str, document: Any) -> None:
-    """Note what the link "Source" of a find could be, for the collective pages of the source (links.py)."""
-    try:
-        run.index.set(key, _CANDIDATES[run.source.protocol](key, document, run.source))
-    except (Invalid, *_SHAPE_ERRORS):
-        run.index.discard(key)
-
-
 def _record(
     cur: psycopg.Cursor,
     run: _Run,
@@ -407,20 +364,26 @@ def _record(
             raise Invalid("too_large")
         if not isinstance(document, dict):
             raise Invalid("shape")
-        _index(run, key, document)
         try:
-            found = _EXTRACTORS[run.source.protocol](key, document, run.source, run.shared)
-        except _SHAPE_ERRORS:
+            found = _EXTRACTORS[run.source.protocol](key, document, run.source)
+        except (TypeError, ValueError, AttributeError, KeyError, IndexError, ArithmeticError, RecursionError):
             # One find of a foreign shape must not end the run for every other one (review of PR 1).
             raise Invalid("shape") from None
         extracted, digest, extent = found.to_document(), extracted_sha256(found), found.extent_known
     except Invalid as invalid:
-        run.index.discard(key)
         state, reason = "invalid", invalid.reason
-    if key not in run.touched:
-        old = None if before is None else comparable(before.extracted)
-        _count_find(run, before, (state, reason), old, comparable(extracted))
-        run.touched.add(key)
+    counts = run.counts
+    new, old = comparable(extracted), None if before is None else comparable(before.extracted)
+    if before is None or before.state == "gone":
+        counts.found_new += 1
+    elif (before.state, before.reason, old) == (state, reason, new):
+        # Equal after sorting the lists whose order says nothing: no change, whatever the hash of an older rule said.
+        counts.found_unchanged += 1
+    else:
+        counts.found_changed += 1
+        run.changed_fields.update(
+            changed_fields(old, new) if (before.state, before.reason) == (state, reason) else ["(Zustand)"]
+        )
     write_find(
         cur,
         run_id=run.run_id,
@@ -521,9 +484,8 @@ async def _fetch_and_extract(run: _Run, fetch: _Fetcher) -> None:
     end_pass(conn, source.source_id)
 
 
-def _reextract(run: _Run, *, outdated_only: bool, keys: Sequence[str] | None = None) -> int:
-    """Extract again from the kept raw answers, without a request; returns how many finds it evaluated. ``keys`` limits
-    it to those finds."""
+def _reextract(run: _Run, *, outdated_only: bool) -> int:
+    """Extract again from the kept raw answers, without a request; returns how many finds it evaluated."""
     conn, source = run.conn, run.source
     batch: list[tuple[str, bytes]] = []
     evaluated = 0
@@ -537,12 +499,7 @@ def _reextract(run: _Run, *, outdated_only: bool, keys: Sequence[str] | None = N
                 _record(cur, run, key, json.loads(raw), before, raw=None, raw_sha256=before.raw_sha256)
         batch.clear()
 
-    stored = (
-        raw_records(conn, source.source_id, outdated_for=run.version if outdated_only else None)
-        if keys is None
-        else raw_of_keys(conn, source.source_id, keys)
-    )
-    for key, raw, _ in stored:
+    for key, raw, _ in raw_records(conn, source.source_id, outdated_for=run.version if outdated_only else None):
         batch.append((key, raw))
         evaluated += 1
         if len(batch) >= 500:
@@ -550,44 +507,6 @@ def _reextract(run: _Run, *, outdated_only: bool, keys: Sequence[str] | None = N
     if batch:
         flush()
     return evaluated
-
-
-def _build_index(run: _Run) -> None:
-    """Read the links of every find of the source from its kept raw answers (a run starts with what the earlier ones
-    left) and settle the collective pages among them."""
-    for key, raw, _ in raw_records(run.conn, run.source.source_id):
-        try:
-            document = json.loads(raw)
-        except (ValueError, RecursionError):
-            continue
-        _index(run, key, document)
-    run.shared = run.index.shared()
-
-
-def _settle(run: _Run) -> None:
-    """The end of a run: finds whose link does not fit the collective pages of the source as they stand now are derived
-    again from their raw answers. A find another one made a collective page of is one, also if it did not change; so is
-    one whose page stopped being collective. Looking at what is stored rather than at what this run did also mends a
-    run that ended early (Otto, 21.11.2026)."""
-    stored = stored_links(run.conn, run.source.source_id)
-    run.index.retain({key for key, *_ in stored})
-    shared = run.index.shared()
-    stale = []
-    for key, state, url, rank in stored:
-        if key not in run.index:
-            continue
-        expected = run.index.link_of(key, shared)
-        if state == "invalid":
-            wrong = expected is not None
-        elif expected is None:
-            wrong = rank != str(int(LinkRank.CATALOGUE_PAGE))
-        else:
-            wrong = url != expected
-        if wrong:
-            stale.append(key)
-    run.shared = shared
-    if stale:
-        run.links_settled = _reextract(run, outdated_only=False, keys=sorted(stale))
 
 
 def _kind(
@@ -649,7 +568,6 @@ async def run_harvest(
     fetch = None
     status, stop_reason = "done", None
     try:
-        _build_index(run)
         if reextract:
             _reextract(run, outdated_only=False)
         else:
@@ -687,14 +605,6 @@ async def run_harvest(
     except BaseException:
         finish_run(conn, run.run_id, status="failed", stop_reason="error", counts=run.counts)
         raise
-    if stop_reason != "lease_expired":
-        try:
-            _settle(run)
-        except _LeaseLost:
-            status, stop_reason = "interrupted", "lease_expired"
-        except BaseException:
-            finish_run(conn, run.run_id, status="failed", stop_reason="error", counts=run.counts)
-            raise
     summary = source_summary(conn, source.source_id)
     run.counts.invalid = sum(summary.invalid.values())
     run.counts.extent_unknown = summary.extent_unknown
@@ -718,7 +628,6 @@ async def run_harvest(
         waited_s=0.0 if fetch is None else fetch.waited_s,
         failures=0 if fetch is None else fetch.failures,
         failure_waited_s=0.0 if fetch is None else fetch.failure_waited_s,
-        links_settled=run.links_settled,
         resumed_at=resumed_at,
         resume_at=None if still_open is None else still_open.read,
         rest_until=rest_until,
@@ -807,11 +716,6 @@ def report(source: SourceConfig, result: HarvestResult) -> str:
     if result.raw_fields:
         named = ", ".join(f"{name} {count}" for name, count in result.raw_fields)
         lines.append(f"  Rohantwort geändert in: {named}")
-    if result.links_settled:
-        lines.append(
-            f"  Link „Source“ neu abgeleitet wegen einer Sammelseite (gleiche Adresse bei mehreren Funden):"
-            f" {result.links_settled}"
-        )
     if result.failures:
         lines.append(
             f"  Quelle antwortete nicht oder mit Fehler: {result.failures}-mal erneut gefragt,"
@@ -881,9 +785,6 @@ _LINK_TEXT = {
     "url_scheme": "anderes Schema",
     "url_invalid": "nicht lesbar",
     "url_metadata": "Metadaten-Endpunkt",
-    "url_collection_page": "Sammelseite (Host und höchstens ein Pfadteil)",
-    "extras_page_collection_page": "Feld aus page_extras: Sammelseite (Host und höchstens ein Pfadteil)",
-    "html_collection_page": "HTML-Ressource: Sammelseite (Host und höchstens ein Pfadteil)",
     "extras_page_empty": "Feld aus page_extras leer",
     "extras_page_http": "Feld aus page_extras nur http",
     "extras_page_file": "Feld aus page_extras zeigt auf eine Datei",

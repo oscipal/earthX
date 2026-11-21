@@ -10,8 +10,8 @@ import pytest
 from earthx.catalog.registry import Maturity
 from earthx.catalog.sources import SourceConfig, SourceProtocol, StacFilter
 from earthx.discovery.extract import Invalid, extracted_sha256, extractor_version
-from earthx.discovery.links import LinkRank, address_key
-from earthx.discovery.stac import collection_key, extract_collection, link_candidates
+from earthx.discovery.links import LinkRank
+from earthx.discovery.stac import collection_key, extract_collection
 
 SOURCE = SourceConfig(
     source_id="example-stac",
@@ -254,36 +254,3 @@ def test_a_named_licence_stays_beside_its_link() -> None:
         "CC-BY-4.0",
         "https://www.example.org/terms",
     )
-
-
-# --- Collective pages (Otto, 21.11.2026) ---------------------------------------------------------------------------
-
-
-def test_the_start_page_of_an_office_is_no_link_source() -> None:
-    links = [{"rel": "about", "href": "https://www.sz.ch/agi", "type": "text/html"}]
-    found = extract_collection("ch.example.dem", _with(links=links), SOURCE)
-    assert (found.source_rank, found.skipped_url, found.skipped_rank) == (LinkRank.CATALOGUE_PAGE, "https://www.sz.ch/agi", 2)
-    assert found.landing_url == found.source_url
-
-
-def test_a_page_the_source_shares_between_collections_is_no_link_source() -> None:
-    page = "https://oereb.bs.ch/theme/oereb_proj"
-    links = [{"rel": "via", "href": page, "type": "text/html"}]
-    assert extract_collection("ch.example.dem", _with(links=links), SOURCE).source_url == page
-    found = extract_collection("ch.example.dem", _with(links=links), SOURCE, frozenset({address_key(page)}))
-    assert (found.source_rank, found.skipped_url, found.skipped_rank) == (LinkRank.CATALOGUE_PAGE, page, 1)
-
-
-def test_a_collection_without_a_collective_page_has_no_skipped_link() -> None:
-    found = extract_collection("ch.example.dem", COLLECTION, SOURCE)
-    assert (found.skipped_url, found.skipped_rank) == (None, None)
-
-
-def test_the_candidates_of_a_collection_for_the_index_of_the_source() -> None:
-    links = [{"rel": "about", "href": "https://www.example.org/products/dem", "type": "text/html"}]
-    assert link_candidates("ch.example.dem", _with(links=links), SOURCE) == [
-        (LinkRank.DATASET_PAGE, "https://www.example.org/products/dem"),
-        (LinkRank.CATALOGUE_PAGE, "https://stac.example.org/browser/#/collections/ch.example.dem"),
-    ]
-    with pytest.raises(Invalid):
-        link_candidates("k", _with(title=None), SOURCE)
