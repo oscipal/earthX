@@ -1,6 +1,6 @@
 # M5-60 — Darstellung je Band
 
-**Stand:** 21.11.2026, **Entwurf mit offenen Fragen F1–F7** (§9). Umsetzung erst nach Ottos Antworten.
+**Stand:** 21.11.2026, Plan **angenommen** (Otto, 21.11.2026: F1–F7 je Option 1, A1–A5; Vorgabe zum gemessenen Bereich §11; Histogramm für PR 2 §12). PR 1 (Backend) in diesem Draft-PR (§13); PR 2 (Frontend) in einer neuen Session nach dem Merge und erst nach M5-62 PR 2.
 **Stufe B.** Höchstens zwei PRs (M5-Plan §2 Punkt 11).
 **Aufgabe (Otto, 21.11.2026; M5-Plan §6.2):**
 
@@ -66,7 +66,7 @@ Hat der Nutzer in der Ansicht selbst etwas angewandt (Hand) oder ein Preset gew�
 
 ### 3.3 Veröffentlichung
 
-In der Collection je Band in `earthx:bands` (M5-59) zwei Felder: `earthx:look` (Form §3.1) und `earthx:look_from` (Herkunft, §4: `manual`, `stac`, `standard`, `unit`, `default`). Kein Feld bei Klassenbändern, Hilfs-Assets und dem Band des Echtfarbbilds. Keine Migration: die Collections schreibt `catalog-load` neu (§8). Falls doch eine nötig wird: Nummer 035 oder höher.
+In der Collection je Band in `earthx:bands` (M5-59) zwei Felder: `earthx:look` (Form §3.1) und `earthx:look_origin` (Herkunft, §4: `manual`, `stac`, `standard`, `unit`, `default`). Kein Feld bei Klassenbändern, Hilfs-Assets und dem Band des Echtfarbbilds. Keine Migration: die Collections schreibt `catalog-load` neu (§8). Falls doch eine nötig wird: Nummer 035 oder höher.
 
 ---
 
@@ -74,7 +74,7 @@ In der Collection je Band in `earthx:bands` (M5-59) zwei Felder: `earthx:look` (
 
 Aufgelöst **einmal beim Laden des Eintrags** im Backend (`DatasetConfig.look_of(band)`), nicht im Frontend. Die erste Stufe, die etwas weiß, gilt:
 
-| # | Herkunft (`earthx:look_from`) | Was | Wer schreibt es |
+| # | Herkunft (`earthx:look_origin`) | Was | Wer schreibt es |
 |---|---|---|---|
 | 1 | `manual` | Ausnahme von Hand: vollständiger Look mit Grund als YAML-Kommentar | Otto im Review, nur als Ausnahme |
 | 2 | `stac` | aus der Quelle: Render Extension der Quell-Collection (`renders` mit genau diesem einen Asset: `colormap_name`, `rescale`), sonst `statistics.minimum`/`maximum` aus `raster:bands` in `item_assets` der Quell-Collection (→ `fixed`); fehlt der Quelle die Farbskala, kommt sie aus Stufe 4/5 | das Onboarding (`adr/0031` §7) aus der Probe, wörtlich übernommen (wie `colours: stac`, M5-62 A6) |
@@ -89,14 +89,14 @@ Damit hat **jedes** wählbare Band einen Look; kein Band bleibt grau, ohne dass 
 ```yaml
 band_looks:
   wvp:
-    from: stac            # stac | manual
+    origin: stac          # stac | manual
     scale: fixed
     low: 0.3
     high: 5.5
     # colormap fehlt: aus der Regel nach Einheit (Stufe 4/5)
 ```
 
-Prüfungen beim Laden (der Eintrag lädt sonst nicht): Band aus `band_units`, kein Hilfs-Asset, kein Klassenband; `from` ∈ `stac | manual`; bei `manual` Look vollständig (mit `colormap`); `low < high`, endliche Zahlen; `percentiles` nur 0–100 oder 2–98 (Grenze aus `adr/0035` §4 Punkt 3). Ein Test hält fest, dass der Tiler jede Farbskala der Regeltabelle und der Einträge kennt (wie bei `terrain`).
+Prüfungen beim Laden (der Eintrag lädt sonst nicht): Band aus `band_units`, kein Hilfs-Asset, kein Klassenband; `origin` ∈ `stac | manual`; bei `manual` Look vollständig (mit `colormap`); `low < high`, endliche Zahlen; `percentiles` nur 0–100 oder 2–98 (Grenze aus `adr/0035` §4 Punkt 3). Ein Test hält fest, dass der Tiler jede Farbskala der Regeltabelle und der Einträge kennt (wie bei `terrain`).
 
 ---
 
@@ -154,14 +154,14 @@ Berührungspunkt M5-62 PR 2 (Frontend, noch offen): beide ändern `ViewerControl
 
 **Schnitt (F6):**
 
-- **PR 1** (nach den Antworten in diesem Draft-PR): Plan, dann Backend — `Look` nach `catalog`, Feld `band_looks` mit Prüfungen, Regeltabelle, Auflösung Stufen 1–5, `earthx:look` und `earthx:look_from` in `earthx:bands`, Onboarding-Checkliste (A1), Nachtrag zu `adr/0035` (A2). Geschätzt 200–300 Zeilen ohne Tests.
+- **PR 1** (nach den Antworten in diesem Draft-PR): Plan, dann Backend — `Look` nach `catalog`, Feld `band_looks` mit Prüfungen, Regeltabelle, Auflösung Stufen 1–5, `earthx:look` und `earthx:look_origin` in `earthx:bands`, Onboarding-Checkliste (A1), Nachtrag zu `adr/0035` (A2). Geschätzt 200–300 Zeilen ohne Tests.
 - **PR 2** (neue Session nach Merge): Frontend — `bandLookOf`, `chooseViewBand`, Auto-scale, Ergebnis-Ebenen (F5), Browser-Check. Geschätzt 150–250 Zeilen ohne Tests.
 
 **Tests (ohne Netz, synthetische Fixtures):**
 
-- Registry: `band_looks` fehlt → lädt; unbekanntes Band, Hilfs-Asset, Klassenband, `from` unbekannt, `manual` ohne `colormap`, `low ≥ high`, NaN/∞, `percentiles` 5–95 → lädt nicht.
+- Registry: `band_looks` fehlt → lädt; unbekanntes Band, Hilfs-Asset, Klassenband, `origin` unbekannt, `manual` ohne `colormap`, `low ≥ high`, NaN/∞, `percentiles` 5–95 → lädt nicht.
 - Auflösung: je Stufe ein Fall; Rangfolge (manual vor stac vor standard vor unit vor default); `stac` ohne Farbskala nimmt die der Regel; jedes wählbare Band aller Einträge hat einen Look, kein Klassenband einen.
-- Collection: `earthx:look`/`earthx:look_from` je Band; nichts bei Klassen-, Hilfs- und Echtfarbbändern; der Tiler kennt jede Farbskala.
+- Collection: `earthx:look`/`earthx:look_origin` je Band; nichts bei Klassen-, Hilfs- und Echtfarbbändern; der Tiler kennt jede Farbskala.
 - Frontend (PR 2): `fixed` mit Skalierung (Sentinel-2 0–100 % `cloud` ohne Skalierung, Reflexion mit `scale`/`offset`) → richtiger Rohbereich; `measured` → Farbskala sofort, Bereich nach Messung; Hand und Preset gehen weiterhin vor; Ergebnis-Ebene mit unverändertem Band erbt, mit Band math nicht; unvollständiger Look verworfen.
 
 Laufen lassen: Tests der geänderten Module (`backend/tests/catalog`, `backend/tests/earthx/processing` für den verschobenen `Look`, betroffene API-Tests), `ruff check backend`, `lint-imports --config .importlinter`; in PR 2 `npm run lint`, `npx tsc -b --pretty false`, Vitest der geänderten Dateien, betroffene Browser-Checks. Nie zwei Läufe gleichzeitig.
@@ -204,8 +204,90 @@ Laufen lassen: Tests der geänderten Module (`backend/tests/catalog`, `backend/t
 
 ### 9.1 Auslegungen (gelten, wenn du nicht widersprichst)
 
-- **A1:** Onboarding-Checkliste `projektuebersicht.md` §5 Punkt 8 bekommt den Nachsatz: „Die Darstellung je Band kommt automatisch (Quelle, sonst Regel nach Einheit); das Onboarding übernimmt `renders` bzw. `statistics` der Quelle als `band_looks` mit `from: stac`; ein Look von Hand nur als Ausnahme.“ Dazu eine Zeile im Entscheidungslog.
+- **A1:** Onboarding-Checkliste `projektuebersicht.md` §5 Punkt 8 bekommt den Nachsatz: „Die Darstellung je Band kommt automatisch (Quelle, sonst Regel nach Einheit); das Onboarding übernimmt `renders` bzw. `statistics` der Quelle als `band_looks` mit `origin: stac`; ein Look von Hand nur als Ausnahme.“ Dazu eine Zeile im Entscheidungslog.
 - **A2:** Kein neues ADR; ein Nachtrag zu `adr/0035` („Looks auch je Band, aus der Registry; `Look` liegt in `catalog`“), weil Form und Rangfolge dort stehen.
 - **A3:** Der Look gilt nur für den Startbereich; was der Nutzer anwendet, geht vor (Hand) und wird wie heute gespeichert („Apply to all“, Permalink). Gespeicherte Arbeitszustände ändern sich nicht.
 - **A4:** Das Standardbild (`default_render`) bleibt unverändert und wird nicht aus dem Look abgeleitet; ein Band, das das Standardbild ist, bekommt trotzdem einen Look (für Ergebnis-Ebenen und M5-64), bei einem Band mit Farbskala und Bereich im Standardbild genau diesen.
 - **A5:** Werte des Looks in physikalischen Einheiten (§3.1); ein Item ohne lesbare Skalierung gilt als unskaliert (wie `viewMeasure.ts`).
+
+---
+
+## 10. Antworten von Otto (21.11.2026)
+
+> F1 = 1, F2 = 1, F3 = 1, F4 = 1, F5 = 1, F6 = 1 (Backend hier; Frontend in einer neuen Session nach Merge, und erst nach M5-62 PR 2), F7 = 1. A1–A5 angenommen.
+>
+> Vorgabe zum gemessenen Bereich: Er wird nie je Kachel bestimmt, sondern einmal je Ansicht bzw. Band – aus raster:bands.statistics, der Übersicht oder einer einmaligen Messung – und gecacht. Alle Kacheln einer Ansicht nutzen denselben Bereich; beim Zoomen und Verschieben ändert er sich nicht (kein Farbsprung, kein Verschwinden). Keine zusätzliche Rechenlast je Kachelanfrage. Beschreibe im Plan, wo gemessen und wo gecacht wird, und was es kostet.
+>
+> Nachtrag: Für PR 2 (Frontend) in den Plan aufnehmen: Das Histogramm wird in den Farben der aktiven Darstellung gezeichnet. Ein Band: jeder Balken in der Farbe, die sein Wert auf der Karte hat (außerhalb des Bereichs die Endfarben). RGB: je Kanal in Rot, Grün, Blau. Klassenband: Balken in den Klassenfarben (M5-62). Ändern sich Bereich oder Farbskala, färbt sich das Histogramm sofort mit. Keine zusätzlichen Texte oder Legenden.
+
+Folgen: Regeltabelle §5 wie vorgeschlagen (`%` fest 0–100 `viridis`; Temperatur `rdbu_r`; `mm` `blues`; `m` `terrain`; `1` `viridis`; `DN` `greys_r`; sonst `viridis`, alles außer `%` gemessen). H1 bleibt als Stufe 3. Keine Bandart. Ergebnis-Ebenen erben den Look in PR 2.
+
+**Name des Felds (Auslegung A6):** Die Herkunft heißt in der YAML `origin`, nicht `from` wie im Entwurf (§4), weil `from` in Python kein Feldname sein kann und die Registry-Dataclasses die Form der YAML sind (`entry_files`, M5-13); in der Collection entsprechend `earthx:look_origin`.
+
+**Standardbild (Auslegung A7):** Stufe 3 nimmt `rescale` des Standardbilds als physikalische Werte. Das trifft für die heutigen Einträge mit einem Band im Standardbild zu (Höhen in m, MeteoSchweiz in °C und mm, keine Skalierung in den Einträgen); ein künftiger Eintrag mit skaliertem Standardband bekäme dort einen Bereich in Rohwerten. Das Onboarding schreibt `default_render` aus der Quelle; fällt so ein Fall an, ist er in der Probe sichtbar.
+
+---
+
+## 11. Gemessener Bereich: wo gemessen, wo gecacht, was es kostet
+
+Die Vorgabe ist für die Ansicht heute schon so gebaut [P]; M5-60 ändert daran nichts, sondern legt nur fest, *welche* Messung ein Look mit `measured`/`percentiles` nimmt.
+
+**Ein Bereich je Ansicht und Band, nie je Kachel.**
+
+- Der Bereich steht als `rescale` (mit `colormap_name`) in der Kachel-URL der Ansicht (`render.ts`). Jede Kachel der Ansicht trägt dieselbe URL-Vorlage, also denselben Bereich. Der Tiler rechnet je Kachel nur die lineare Abbildung Wert → Farbe, die er ohnehin rechnet; er misst je Kachel nichts.
+- Zoomen und Verschieben ändern die URL nicht; neu gemessen wird nur, wenn sich die Frage ändert: ein anderes Band oder Preset (`chooseViewBand`, `quickIndex`), eine neue Ansicht (`store.ts`, „A view that stays keeps the fields it has“) oder der Nutzer drückt „Auto-scale“/„Enhance contrast“. Ein Schritt der Zeitleiste behält den Bereich der Ansicht, damit gleiche Werte gleiche Farben haben.
+- Ein Look `fixed` (z. B. `%` 0–100, Temperatur −20…30 °C) braucht keine Messung.
+
+**Woher die Messung kommt, in dieser Reihenfolge:**
+
+| # | Quelle | Wo | Kosten |
+|---|---|---|---|
+| 1 | `raster:bands.statistics` bzw. `renders` der Quelle | vom Onboarding in `band_looks` (`origin: stac`, `fixed`) übernommen, also gar keine Messung zur Laufzeit | keine |
+| 2 | Messung über die AOI, wenn die Ansicht auf sie zugeschnitten ist | `POST /collections/{id}/statistics` (`api/area_statistics.py`), liest höchstens 2048 × 2048 Pixel (`processing/core.py::MAX_AREA_PIXELS`), über einer großen AOI aus einem gröberen Raster | eine Anfrage je Ansicht und Band; Cache in Postgres (`earthx_stats_cache`), Schlüssel = Hash über das Rezept, Lebensdauer wie ein Rezept (`AREA_STATISTICS_TTL_S`) |
+| 3 | Messung der ersten Szene | `GET …/statistics` des Tilers (`access/tiles.py::_read_statistics`), auf der gröbsten Stufe der Datei (`preview`, Übersicht der COG, höchstens 1024 px Kante), bei Datensätzen mit Pyramide unter `min_zoom` aus deren Übersicht | eine Anfrage je Szene und Band, kalt rund 1 s (`adr/0006` §3.4), danach aus dem Cache (`catalog/stats_cache.py`, 30 Tage, Schlüssel = Hash über Datensatz, Item, Asset, Parameter) |
+
+Die Messung liegt damit immer vor der ersten Kachel einer Ansicht, einmal; die Kacheln selbst kosten nicht mehr als heute. Der Look ändert nur, welche Zahlen der Antwort genommen werden (`measured`: 2.–98. Perzentil; `percentiles` 0/100: Minimum/Maximum), nicht die Messung.
+
+**Für M5-64 (Export):** Ein QGIS-Stil braucht Zahlen. Bei `fixed` sind es die des Looks; bei `measured` nimmt der Export den Bereich, den die Ansicht gezeichnet hat (kommt mit dem Auftrag), sonst misst er einmal das exportierte Raster, das er ohnehin vollständig in der Hand hat (bei Jobs steht die Statistik schon heute in `result.tif`, M4-32). Kosten je Export einmal, nie je Kachel.
+
+---
+
+## 12. Histogramm in den Farben der Darstellung (PR 2, Nachtrag Otto)
+
+Das Histogramm der Einstellungsleiste (Feld „Scale“) wird in den Farben der aktiven Darstellung gezeichnet:
+
+- **Ein Band:** jeder Balken in der Farbe, die sein Wert auf der Karte hat: Mitte des Balkens → Stelle im Bereich → Farbe der Farbskala; unterhalb bzw. oberhalb des Bereichs die Endfarben. Die Farben der Skala kommen aus derselben Liste wie die Vorschau der Farbskalen (`GET /colormaps`, `PREVIEW_STOPS`), keine eigene Tabelle im Frontend.
+- **RGB (Echtfarbe, Komposite):** je Kanal in Rot, Grün, Blau.
+- **Klassenband:** Balken in den Klassenfarben (M5-62, `classification:classes`).
+- Ändern sich Bereich oder Farbskala (auch vor „Apply“, in den Feldern), färbt sich das Histogramm sofort mit; keine neue Messung.
+- Keine zusätzlichen Texte oder Legenden.
+
+Tests (PR 2): Balken innerhalb, unter und über dem Bereich; umgekehrte Skala (`_r`); RGB-Kanäle; Klassenfarben; Wechsel der Farbskala färbt ohne neue Anfrage um. Ausnahme „Farben von Daten“ in `uiRules.test.ts` wie bei M5-62.
+
+---
+
+## 13. Umsetzung PR 1: Backend (21.11.2026)
+
+### 13.1 Was gebaut ist
+
+| Teil | Stelle |
+|---|---|
+| `Look` aus `processing/operators/base.py` nach `catalog/registry.py` verschoben (unverändert bis auf den Docstring); `base.py` und `terrain.py` importieren ihn von dort | `backend/earthx/catalog/registry.py`, `backend/earthx/processing/operators/base.py`, `.../terrain.py` |
+| `LookOrigin` (`manual`, `stac`, `standard`, `unit`, `default`), `UNIT_LOOKS` (Regel §5 nach F1, F4, F7), `DEFAULT_LOOK`, `BandLook` (Form der YAML), `ResolvedLook` | `backend/earthx/catalog/registry.py` |
+| Feld `band_looks` (optional, leerer Standard wie `band_classes`), Prüfungen beim Laden (§4), `DatasetConfig.look_of(band)` mit der Rangfolge §4 | `backend/earthx/catalog/registry.py` |
+| `earthx:look` und `earthx:look_origin` je Band in `earthx:bands`; nichts bei Klassen- und Hilfs-Assets | `backend/earthx/catalog/collection.py` |
+| Onboarding-Checkliste Punkt 8 (A1), Nachtrag `adr/0035` §5 (A2), Entscheidungslog | `docs/` |
+
+Kein Eintrag trägt `band_looks`; die Looks der heutigen Einträge sind die aus §6 (Test `TestTheEntries`). Keine Migration.
+
+### 13.2 Tests
+
+Neu: `backend/tests/catalog/test_band_looks.py` — die Looks aller Einträge, jedes wählbare Band hat einen und kein Klassen- oder Hilfs-Asset, der Tiler kennt jede Farbskala der Einträge und der Regel; die Rangfolge (Hand, Quelle mit und ohne Farbskala, Standardbild und gleiche Einheit, Einheit, Standard; Standardbild ohne Farbskala, ohne Bereich, mit mehreren Bereichen); Fehlerfälle (unbekanntes Band, Muster, Klassenband, Hilfs-Asset, Herkunft `unit`/`standard` geschrieben, Hand ohne Farbskala, leere Farbskala, leerer Bereich, ein Ende, `measured` mit Enden, NaN, ∞, Perzentile außerhalb 0–100 und andere als 0/100, 2/98); Lesen aus der YAML (Rundlauf, strenge Prüfung: unbekannte Herkunft, unbekannte Skala, unbekanntes Feld, Zahl als Text); Collection. Angepasst: `test_entry_files.py` (Feld mit Standardwert wird nicht geschrieben).
+
+### 13.3 Was Otto lokal ausführt
+
+Nach dem Merge einmal `catalog-load` (die Collections tragen `earthx:look`). Sichtbar wird es erst mit PR 2.
+
+### 13.4 PR 2 (Frontend, neue Session nach dem Merge und nach M5-62 PR 2)
+
+§7 (`bandLookOf` statt `standardLookOfBand`, `chooseViewBand`, Auto-scale, Ergebnis-Ebenen nach F5) und §12 (Histogramm in den Farben der Darstellung), Browser-Check.
