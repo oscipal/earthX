@@ -8,6 +8,7 @@ import pytest
 
 from earthx.catalog.approvals import APPROVALS_DIR, load_approvals
 from earthx.catalog.entry_files import EntryFileError
+from earthx.catalog.sources import read_sources
 
 FILE = """\
 source_id: govdata
@@ -36,8 +37,16 @@ def _write(tmp_path: Path, name: str = "2026-11-19-govdata.yaml", **values: str)
     return tmp_path
 
 
-def test_the_shipped_directory_holds_no_approval_yet() -> None:
-    assert load_approvals(APPROVALS_DIR) == ()
+def test_every_shipped_approval_loads_and_is_consistent() -> None:
+    sources = read_sources()
+    for approval, name, sha in load_approvals(APPROVALS_DIR):
+        assert approval.source_id in sources, name
+        assert approval.decision in ("pending", "approved", "rejected"), name
+        assert len(sha) == 64, name
+        if approval.decision == "approved":
+            assert approval.decided_on is not None, name
+            assert approval.sample and all(check.ok is not None for check in approval.sample), name
+        assert name == f"approvals/{approval.created_on.isoformat()}-{approval.source_id}.yaml", name
 
 
 def test_a_pending_file_loads(tmp_path: Path) -> None:
