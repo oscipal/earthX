@@ -1777,6 +1777,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       const stats = place === RGB ? colourStats(job.bands, colour!) : several ? job.bands[place].stats : job.statistics;
       const preset = place === RGB ? (picture?.preset ?? null) : presetOfResultBand(job.bands[several ? place : 0], indexPresetsOf(dataset?.collection));
       const classes = place !== RGB && isClassBand(job.bands[several ? place : 0], tileJson.dataType, dataset?.collection);
+      const legend = classes ? job.bands[several ? place : 0]?.classes : null;
       const render = resultRender(tileJson.dataType, get().range, stats, ownRangeOf(job, job.bands, place), place === RGB, preset, classes);
       const template = resultTileTemplate(href);
       useAppStore.getState().pinDerivedLayer({
@@ -1790,6 +1791,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
           expired: false,
           dataType: tileJson.dataType,
           ...(classes ? { classes: true as const } : {}),
+          ...(legend ? { legend } : {}),
           stats,
           preset,
           look: place === RGB ? null : (job.bands[several ? place : 0]?.look ?? null),
@@ -2290,14 +2292,14 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         layers: app.layers.map((l) => {
           if (l.id !== layerId || !l.result) return l;
           // What was applied and not saved belongs to the band it was applied to: it goes with it.
-          const { savedTileUrl: _unsaved, savedPercent: _unsavedPercent, savedPercentChannels: _unsavedChannels, percent: _percent, percentChannels: _channels, classes: _classes, ...kept } = l.result;
+          const { savedTileUrl: _unsaved, savedPercent: _unsavedPercent, savedPercentChannels: _unsavedChannels, percent: _percent, percentChannels: _channels, classes: _classes, legend: _legend, ...kept } = l.result;
           let first = true;
           const overlays = l.overlays.map((o) => {
             if (o.kind !== 'raster' || !first) return o;
             first = false;
             return { ...o, tileUrl: colour ? colourTileUrl(o.tileUrl, colour, render) : bandTileUrl(o.tileUrl, place as number, render) };
           });
-          return { ...l, overlays, result: { ...kept, band: place, ...(classes ? { classes: true as const } : {}), stats, preset, look: colour ? null : (band?.look ?? null), ...typedOf(ownRangeOf(job, info.bands!, place)) } };
+          return { ...l, overlays, result: { ...kept, band: place, ...(classes ? { classes: true as const } : {}), ...(classes && band?.classes ? { legend: band.classes } : {}), stats, preset, look: colour ? null : (band?.look ?? null), ...typedOf(ownRangeOf(job, info.bands!, place)) } };
         }),
       });
     },

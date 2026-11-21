@@ -2,6 +2,7 @@
 // screen (a quicklook, a full-res crop, a stitch, a decomposition …) plus the
 // state needed to re-select it and keep working.
 
+import type { BandClass } from './bandClasses';
 import type { DisplayLook } from './displayLook';
 import type { Coords4 } from './geoUtils';
 import type { RGB } from './processingBands';
@@ -138,6 +139,8 @@ export interface ResultLayerInfo {
   // Set where the band the layer draws is a band of classes (`resultLayer.ts::isClassBand`): it is drawn as it is, with no
   // range or colormap to set. Every other result, of whole numbers too, has them. Left out in a layer made before this was written.
   classes?: true;
+  // The classes the result names for the band the layer draws (M5-62, F9): the legend "Classes". Left out where it names none.
+  legend?: readonly BandClass[];
   // The statistics of the AOI the default range comes from (M4-32); `null` for a result without them. Of a result of
   // several bands: those of the band the layer draws.
   stats: ResultStats | null;

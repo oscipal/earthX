@@ -16,6 +16,7 @@ import type { DatasetOption } from '../datasets';
 import { resultUrl, type Order } from '../processing';
 import { resetJobs, useProcessingStore, type JobEntry } from '../processingStore';
 import { resultStats } from '../resultLayer';
+import type { BandClass } from '../bandClasses';
 import { useAppStore } from '../store';
 import JobDetails from './JobDetails';
 import LayerManager from './LayerManager';
@@ -514,10 +515,10 @@ describe('"Apply" and "Save" of a result layer', () => {
 const MASK = { asset: 'map', band: 'map', classes: [{ value: 10, label: 'Tree cover' }, { value: 80, label: 'Permanent water bodies' }], suggested: [], reference: '', note: '' };
 const CLASSES = { id: 'land-cover', title: 'Land cover', viewable: true, collection: { id: 'land-cover', 'earthx:mask': MASK } } as unknown as DatasetOption;
 const CODES = { minimum: 10, maximum: 80, mean: 30, count: 1000, valid_percent: 100, percentile_2: 10, percentile_98: 80 };
-const classJob = (band: { name: string; expression?: string | null }) =>
+const classJob = (band: { name: string; expression?: string | null; classes?: BandClass[] }) =>
   entry({
     order: { recipe_version: 2, inputs: [{ name: 'input', dataset: 'land-cover', groups: [['T1']] }], steps: [], output: { kind: 'raster', format: 'cog', dtype: 'uint8', bands: [band.name] } } as unknown as Order,
-    bands: [{ name: band.name, stats: resultStats({ bands: [{ name: band.name, data_type: 'uint8', statistics: CODES }] }), expression: band.expression ?? null }],
+    bands: [{ name: band.name, stats: resultStats({ bands: [{ name: band.name, data_type: 'uint8', statistics: CODES }] }), expression: band.expression ?? null, ...(band.classes ? { classes: band.classes } : {}) }],
   });
 
 describe('a result of whole numbers', () => {
@@ -583,6 +584,67 @@ describe('a result of whole numbers', () => {
     expect(urlOf()).not.toContain('rescale');
     expect(button('Auto-scale')).toBeUndefined();
     expect(container.querySelector('.vc-head .tip')?.getAttribute('data-tip')).toBe(NO_TYPE_TIP);
+  });
+});
+
+// M5-62 F9: the worker names the classes of a band whose values stayed those of a band of classes; the layer shows their legend.
+const LEGEND: BandClass[] = [
+  { value: 10, name: 'Tree cover', colour: '#006400' },
+  { value: 80, name: 'Permanent water bodies', colour: '#0064c8' },
+];
+
+describe('a result that names its classes', () => {
+  const legend = () => document.querySelector('.classes-popup');
+
+  it('has the button "Classes" with their legend in place of the note in the head', async () => {
+    tileJsonBody = { ...TILE_JSON, data_type: 'uint8' };
+    useAppStore.setState({ datasets: [CLASSES] });
+    useProcessingStore.setState({ jobs: [classJob({ name: 'map', classes: LEGEND })] });
+    await openView();
+    expect(layers()[0].result?.legend).toEqual(LEGEND);
+    expect(urlOf()).not.toContain('colormap_name');
+    expect(container.querySelector('.vc-head .tip')).toBeNull();
+    click(button('Classes'));
+    expect([...legend()!.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['Tree cover', 'Permanent water bodies']);
+    expect(legend()!.textContent).toBe('Tree coverPermanent water bodies');
+    click(button('Classes'));
+    expect(legend()).toBeNull();
+  });
+
+  it('is drawn as it is where the result names classes, whatever the mask of the dataset', async () => {
+    tileJsonBody = { ...TILE_JSON, data_type: 'uint8' };
+    useProcessingStore.setState({ jobs: [classJob({ name: 'scl', classes: LEGEND })] });
+    await openView();
+    expect(layers()[0].result?.classes).toBe(true);
+    expect(urlOf()).not.toContain('rescale');
+    expect(button('Classes')).toBeDefined();
+  });
+
+  it('has no legend where the result is no type of classes or names none', async () => {
+    tileJsonBody = { ...TILE_JSON, data_type: 'float32' };
+    useAppStore.setState({ datasets: [CLASSES] });
+    useProcessingStore.setState({ jobs: [classJob({ name: 'map', classes: LEGEND })] });
+    await openView();
+    expect(layers()[0].result?.legend).toBeUndefined();
+    expect(button('Classes')).toBeUndefined();
+  });
+
+  it('keeps the note and has no button where a band of classes names no classes', async () => {
+    tileJsonBody = { ...TILE_JSON, data_type: 'uint8' };
+    useAppStore.setState({ datasets: [CLASSES] });
+    useProcessingStore.setState({ jobs: [classJob({ name: 'map' })] });
+    await openView();
+    expect(button('Classes')).toBeUndefined();
+    expect(container.querySelector('.vc-head .tip')?.getAttribute('data-tip')).toBe(CLASSES_TIP);
+  });
+
+  it('has no legend once the result expired', async () => {
+    tileJsonBody = { ...TILE_JSON, data_type: 'uint8' };
+    useAppStore.setState({ datasets: [CLASSES] });
+    useProcessingStore.setState({ jobs: [classJob({ name: 'map', classes: LEGEND })] });
+    await openView();
+    act(() => useAppStore.getState().expireResultLayers(Date.parse(layers()[0].result!.expires) + 1));
+    expect(button('Classes')).toBeUndefined();
   });
 });
 

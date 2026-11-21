@@ -24,12 +24,16 @@ function readClasses(rows: unknown, read: (row: Record<string, unknown>) => { va
   return classes.length > 0 ? classes : null;
 }
 
-// The classes of `band` as the collection publishes them in `earthx:bands`: the classification extension, the name people read in
-// `title`, the colour as `color_hint` (hex without `#`).
+// Classes in the form of the classification extension, as the collection and a job's result write them: the name people read
+// in `title`, the colour as `color_hint` (hex without `#`).
+export function stacClasses(rows: unknown): BandClass[] | null {
+  return readClasses(rows, (row) => ({ value: row.value, name: row.title, colour: row.color_hint }));
+}
+
+// The classes of `band` as the collection publishes them in `earthx:bands`.
 export function classesOfBand(collection: Collection, band: string | undefined): BandClass[] | null {
   const listed = Array.isArray(collection['earthx:bands']) ? collection['earthx:bands'] : [];
-  const entry = listed.find((one) => one?.name === band);
-  return readClasses(entry?.['classification:classes'], (row) => ({ value: row.value, name: row.title, colour: row.color_hint }));
+  return stacClasses(listed.find((one) => one?.name === band)?.['classification:classes']);
 }
 
 // The classes of a band in the answer of `POST /collections/{dataset}/bands`: `value`, `name`, `colour`.

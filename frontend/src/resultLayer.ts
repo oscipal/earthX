@@ -3,6 +3,7 @@
 // when the map says "Overview", and when the layer is "Expired". Pure functions; the
 // state lives in `processingStore.ts` and `store.ts`.
 
+import { stacClasses, type BandClass } from './bandClasses';
 import type { MapLayer, ResultLayerInfo } from './layers';
 import { channelsOfRescale, percentsOfChannels, withoutChannels } from './channels';
 import type { Percent } from './percentRange';
@@ -76,6 +77,8 @@ export interface ResultBand {
   expression?: string | null;
   // How the registry of the operator says the band is drawn, where a step with looks made it (M5-10): a terrain product. `null` otherwise.
   look?: DisplayLook | null;
+  // The classes the result names for the band, where its values are still those of a band of classes (M5-62, F9); the worker decides.
+  classes?: BandClass[] | null;
 }
 
 // The bands of `properties.bands` in the order of the file, so that the place of a band + 1 is its `bidx`. A band is judged
@@ -106,7 +109,14 @@ export function resultBands(
   );
   return listed.map((band): ResultBand => {
     const name = typeof (band as { name?: unknown } | null)?.name === 'string' ? (band as { name: string }).name : '';
-    return { name, stats: statsFrom([band], order === null ? any : made.has(name)), expression: expressions.get(name) ?? null, look: looked.get(name) ?? null };
+    const classes = stacClasses((band as { 'classification:classes'?: unknown } | null)?.['classification:classes']);
+    return {
+      name,
+      stats: statsFrom([band], order === null ? any : made.has(name)),
+      expression: expressions.get(name) ?? null,
+      look: looked.get(name) ?? null,
+      ...(classes ? { classes } : {}),
+    };
   });
 }
 
@@ -196,11 +206,13 @@ function drawnWith(range: PreviewRange, colour: boolean): AppliedRender {
 // A band of classes (Otto, 11.11.2026): the class layer the registry names for the dataset (the band of `earthx:mask`, e.g. the map of
 // ESA WorldCover or the scene classification of Sentinel-2), passed on as whole numbers and not made by Band math. Its values are codes;
 // a stretch would move them off their meaning, so it is drawn as it is. Any other result of whole numbers (reflectance as `uint16`,
-// heights as `int16`) is a quantity and takes a range and a colormap as a floating-point one does.
-export function isClassBand(band: Pick<ResultBand, 'name' | 'expression'> | undefined, dataType: string | null, collection: Collection | undefined): boolean {
+// heights as `int16`) is a quantity and takes a range and a colormap as a floating-point one does. A band the result names classes for
+// (M5-62, F9) is one as well.
+export function isClassBand(band: Pick<ResultBand, 'name' | 'expression' | 'classes'> | undefined, dataType: string | null, collection: Collection | undefined): boolean {
+  if (!band || band.expression || dataType === null || !isIntegerType(dataType)) return false;
+  if (band.classes) return true;
   const mask = maskLayerOf(collection);
-  if (!mask || !band || band.expression || dataType === null || !isIntegerType(dataType)) return false;
-  return band.name === mask.band || band.name === mask.asset;
+  return mask !== null && (band.name === mask.band || band.name === mask.asset);
 }
 
 // How a result is drawn (M4-32b, plan §6.7). A band of classes is drawn as it is (`isClassBand`), and so is a result whose type the
