@@ -1447,7 +1447,14 @@ def _resolved_json(target: _Target, version: InputVersion | None) -> dict[str, A
         "unit": _asset_unit(target, bands),
         "gsd": asset_gsd(target.item, target.item_asset),
         **({"state": state} if (state := _state_of(target)) is not None else {}),
+        **({"classes": classes} if (classes := _classes_of(target)) is not None else {}),
     }
+
+
+def _classes_of(target: _Target) -> list[dict[str, Any]] | None:
+    """The classes the registry names for the asset (M5-62, F9); ``None`` for an asset whose values are no classes."""
+    rows = target.config.class_rows(target.ref.asset)
+    return None if rows is None else [{"value": row.value, "name": row.name, "colour": row.colour} for row in rows]
 
 
 def _state_of(target: _Target) -> str | None:
