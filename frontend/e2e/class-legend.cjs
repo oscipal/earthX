@@ -1,7 +1,8 @@
 // Browser check of M5-62 PR 2: the legend "Classes" of a layer of classes and the table Value | Class | Colour of the Data catalogue.
 // With a made-up land cover collection whose band carries the eleven classes of ESA WorldCover (names and colours as the registry
 // gives them), in the light and the dark theme, in a wide window, a map 360 px high and a narrow window, it fails when
-//   - the field "Colormap" of the view is no button "Classes", or the button does not open and close the legend;
+//   - the field "Colormap" of the view, or of a layer of a job's result that names its classes (F9), is no button "Classes", or
+//     the button does not open and close the legend;
 //   - the legend leaves the browser window, covers the settings bar where there is room beside it, scrolls, or lacks a class, or a swatch is not in the colour of its class;
 //   - the legend says anything but the names of the classes;
 //   - opening the legend makes the settings bar or the page scroll or grow;
@@ -59,7 +60,8 @@ async function route(page) {
   });
 }
 
-async function legend(browser, theme, viewport) {
+// The legend of the view of the dataset, or of a layer of a job's result whose result names the classes (M5-62, F9).
+async function legend(browser, theme, viewport, kind) {
   const problems = [];
   const size = VIEWPORTS[viewport];
   const context = await browser.newContext({ viewport: size });
@@ -67,12 +69,21 @@ async function legend(browser, theme, viewport) {
   const page = await context.newPage();
   await route(page);
   await page.goto(BASE);
-  await page.evaluate(async (collection) => {
+  await page.evaluate(async ({ collection, kind, legend }) => {
     const { useAppStore } = await import('/src/store.ts');
     const { datasetsFrom } = await import('/src/datasets.ts');
+    if (kind === 'result') {
+      const result = {
+        id: 'R1', name: 'Result · Land cover', visible: true, opacity: 1, derived: 'result', restore: { datasetId: null, itemIds: [] },
+        overlays: [{ kind: 'raster', tileUrl: '/results/AbCdEfGhIjKlMnOpQrSt_-/tiles/{z}/{x}/{y}', bounds: [10, 50, 11, 51], minZoom: 0, maxZoom: 14 }],
+        result: { jobID: 'AbCdEfGhIjKlMnOpQrSt_-', expires: new Date(Date.now() + 86_400_000).toISOString(), gsd: 10, resampled: null, expired: false, dataType: 'uint8', classes: true, legend, stats: null },
+      };
+      useAppStore.setState({ datasets: datasetsFrom([collection]), layers: [result], resultViewLayerId: 'R1' });
+      return;
+    }
     const info = { datasetId: 'landcover', tileUrl: '/t/{z}/{x}/{y}', bounds: [0, 0, 1, 1], asset: 'map', minZoom: 0, maxZoom: 14 };
     useAppStore.setState({ datasets: datasetsFrom([collection]), datasetId: 'landcover', focusMode: true, cropToAoi: false, downloaded: { s0: info }, showDownloaded: true, pendingColormapName: '', pendingVmin: '', pendingVmax: '', focusLoading: false, groups: [], selectedIds: [] });
-  }, COLLECTION);
+  }, { collection: COLLECTION, kind, legend: CLASSES.map((c) => ({ value: c.value, name: c.title, colour: `#${c.color_hint.toLowerCase()}` })) });
   const button = page.locator('button.vc-classes');
   await button.waitFor({ timeout: 10000 }).catch(() => problems.push('no button "Classes" in the settings bar'));
   if (problems.length > 0) {
@@ -99,7 +110,7 @@ async function legend(browser, theme, viewport) {
     if (text !== CLASSES.map((c) => c.title).join('')) problems.push(`the legend says more than the names: "${text}"`);
     const after = await bar.evaluate((el) => ({ scroll: el.scrollHeight, client: el.clientHeight, page: document.documentElement.scrollHeight }));
     if (JSON.stringify(after) !== JSON.stringify(before)) problems.push(`opening the legend changes the settings bar or the page: ${JSON.stringify(before)} -> ${JSON.stringify(after)}`);
-    await page.screenshot({ path: path.join(OUT, `legend-${theme}-${viewport}.png`) });
+    await page.screenshot({ path: path.join(OUT, `legend-${kind}-${theme}-${viewport}.png`) });
     await button.click();
     if (await popup.count()) problems.push('a second click does not close the legend');
   }
@@ -143,7 +154,7 @@ async function catalogue(browser, theme, viewport) {
   let failed = 0;
   for (const theme of Object.keys(THEMES)) {
     for (const viewport of Object.keys(VIEWPORTS)) {
-      for (const [name, run] of [['legend', legend], ['catalogue', catalogue]]) {
+      for (const [name, run] of [['legend view', (b, t, v) => legend(b, t, v, 'view')], ['legend result', (b, t, v) => legend(b, t, v, 'result')], ['catalogue', catalogue]]) {
         if (name === 'catalogue' && viewport === 'low') continue;
         const problems = await run(browser, theme, viewport);
         failed += problems.length;
