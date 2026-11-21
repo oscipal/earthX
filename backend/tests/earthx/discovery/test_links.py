@@ -13,6 +13,7 @@ from earthx.discovery.links import (
     choose_link,
     first_link,
     is_collection_page,
+    link_candidates,
     link_problem,
 )
 
@@ -247,7 +248,7 @@ def test_the_addresses_of_the_same_page_agree() -> None:
 def _index(**finds: list[tuple[LinkRank, object]]) -> LinkIndex:
     index = LinkIndex()
     for key, candidates in finds.items():
-        index.set(key, candidates)
+        index.set(key, link_candidates(candidates))
     return index
 
 
@@ -310,12 +311,23 @@ def test_a_query_or_fragment_makes_two_finds_unique() -> None:
     assert index.shared() == frozenset()
 
 
-def test_the_index_holds_only_what_may_be_a_link() -> None:
-    index = _index(
-        a=[(VIEWER, "http://v.example.org/map/1"), (DATASET, OFFICE), (CATALOGUE, CATALOGUE_PAGE), (DATASET, None)],
-        b=[(CATALOGUE, CATALOGUE_PAGE)],
-    )
-    assert len(index) == 0 and "a" not in index and "b" not in index
+def test_the_candidates_are_what_may_be_a_link_by_rank_one_and_two() -> None:
+    assert link_candidates(
+        [
+            (VIEWER, "http://v.example.org/map/1"),
+            (VIEWER, "https://v.example.org/map/2"),
+            (DATASET, OFFICE),
+            (DATASET, None),
+            (DATASET, "https://p.example.org/data/1"),
+            (CATALOGUE, CATALOGUE_PAGE),
+        ]
+    ) == ((1, "https://v.example.org/map/2"), (2, "https://p.example.org/data/1"))
+    assert link_candidates([(CATALOGUE, CATALOGUE_PAGE)]) == ()
+
+
+def test_a_find_without_candidates_is_not_in_the_index() -> None:
+    index = _index(a=[(DATASET, OFFICE), (CATALOGUE, CATALOGUE_PAGE)], b=[(CATALOGUE, CATALOGUE_PAGE)])
+    assert len(index) == 0 and "a" not in index
 
 
 def test_a_find_that_changes_or_goes_leaves_the_shared_pages() -> None:
@@ -330,8 +342,31 @@ def test_a_find_that_changes_or_goes_leaves_the_shared_pages() -> None:
     assert index.shared() == frozenset() and len(index) == 1
 
 
-def test_the_finds_that_are_gone_leave_the_index() -> None:
+def test_the_candidates_read_back_from_json_work_the_same() -> None:
+    # The index is filled from the JSON lists of earthx_record_state: lists of lists.
     page = "https://p.example.org/data/x"
-    index = _index(a=[(DATASET, page)], b=[(DATASET, page)])
-    index.retain({"a", "unknown"})
-    assert "b" not in index and index.shared() == frozenset()
+    index = LinkIndex()
+    index.set("a", [[2, page]])
+    index.set("b", [[2, page], [2, "https://p.example.org/data/b"]])
+    assert index.shared() == {address_key(page)}
+
+
+def test_the_stale_finds_are_those_whose_stored_link_is_not_the_one_they_choose() -> None:
+    x, y = "https://p.example.org/data/x", "https://p.example.org/data/y"
+    index = LinkIndex()
+    index.set("alone", [(2, x)], stored=x)
+    index.set("twin1", [(2, y)], stored=y)
+    index.set("twin2", [(2, y)], stored=y)
+    index.set("fine", [(2, "https://p.example.org/data/z")], stored="https://p.example.org/data/z")
+    # `freed` was derived with the catalogue page, but its page is free; the twins share y and still hold it.
+    index.set("freed", [(2, "https://p.example.org/data/w")], stored=None)
+    assert index.stale(index.shared()) == ["freed", "twin1", "twin2"]
+    assert LinkIndex().stale(frozenset()) == []
+
+
+def test_a_find_without_a_free_link_is_stale_once_one_is_free() -> None:
+    page = "https://p.example.org/data/x"
+    index = LinkIndex()
+    index.set("a", [(2, page)], invalid=True)
+    assert index.stale(frozenset({address_key(page)})) == []
+    assert index.stale(frozenset()) == ["a"]
