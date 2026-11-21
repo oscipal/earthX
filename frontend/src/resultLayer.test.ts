@@ -693,3 +693,22 @@ describe('a band of classes (Otto, 11.11.2026)', () => {
     expect(isClassBand(band, dataType, where)).toBe(false);
   });
 });
+
+describe('the classes a result names (M5-62, F9)', () => {
+  const STAC = [{ value: 10, name: 'tree_cover', title: 'Tree cover', color_hint: '006400' }];
+
+  it('are read for each band from classification:classes, and a band without them has no key', () => {
+    const bands = resultBands({ bands: [{ name: 'map', 'classification:classes': STAC }, { name: 'red' }, { name: 'odd', 'classification:classes': [{ value: 'x' }] }] }, null);
+    expect(bands[0].classes).toEqual([{ value: 10, name: 'Tree cover', colour: '#006400' }]);
+    expect(bands[1]).not.toHaveProperty('classes');
+    expect(bands[2]).not.toHaveProperty('classes');
+  });
+
+  it('make a band of whole numbers a band of classes, never one of floats or one made by Band math', () => {
+    const classes = [{ value: 10, name: 'Tree cover', colour: '#006400' }];
+    expect(isClassBand({ name: 'scl', classes }, 'uint8', undefined)).toBe(true);
+    expect(isClassBand({ name: 'scl', classes }, 'float32', undefined)).toBe(false);
+    expect(isClassBand({ name: 'scl', classes, expression: 'scl * 2' }, 'uint8', undefined)).toBe(false);
+    expect(isClassBand({ name: 'scl', classes: null }, 'uint8', undefined)).toBe(false);
+  });
+});

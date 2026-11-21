@@ -74,6 +74,7 @@ __all__ = [
     "Recipe",
     "RecipeRequest",
     "ResolvedAssetModel",
+    "ResolvedClass",
     "ResolvedInput",
     "Step",
     "cache_key",
@@ -314,6 +315,14 @@ class ResolvedAssetModel(_Model):
         return ResolvedAsset(**{**self.model_dump(), "georeferencing": self.georeferencing, "refs": self.refs})
 
 
+class ResolvedClass(_Model):
+    """One class of an asset whose values are classes, as the registry names it at acceptance (M5-62, F9)."""
+
+    value: int
+    name: Annotated[str, Field(min_length=1, max_length=40)]
+    colour: Annotated[str, Field(pattern=r"^#[0-9a-f]{6}$")]
+
+
 class ResolvedInput(_Model):
     """One asset of one item, resolved: where, which version, which bands, which scaling.
 
@@ -336,6 +345,10 @@ class ResolvedInput(_Model):
     #: provisional values says so. Absent where the dataset knows one state only, so that every recipe and hash from
     #: before the field stays what it was.
     state: Literal["provisional", "final"] | None = Field(default=None, exclude_if=lambda value: value is None)
+    #: The classes of an asset of one band whose values are classes (M5-62, F9): the result keeps them where its values
+    #: stay those of the source. Part of the hash, because they name what the values mean and the colour table of the
+    #: result; absent for every other asset, so that every recipe and hash without a band of classes stays what it was.
+    classes: list[ResolvedClass] | None = Field(default=None, min_length=1, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
     def _scaling_matches(self) -> ResolvedInput:

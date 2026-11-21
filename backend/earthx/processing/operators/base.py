@@ -42,7 +42,7 @@ from typing import Any, Literal
 from pydantic import BaseModel
 from rasterio.transform import Affine
 
-from earthx.catalog.registry import Capabilities, DataClass, DatasetConfig, LicenseTier
+from earthx.catalog.registry import Capabilities, ClassRow, DataClass, DatasetConfig, LicenseTier
 
 __all__ = ["MAKES_VALUES", "PASSES_VALUES", "BandMeta", "BandUse", "Operator", "PassesValues", "RasterMeta", "Requirement", "Tier"]
 
@@ -87,6 +87,9 @@ class BandMeta:
     #: zone, reprojected). The result is marked resampled only if a band that is in it was (NM4-43c, backlog 51);
     #: a layer that only hides pixels does not count.
     resampled: bool = False
+    #: The classes of a band of the source whose values are classes (M5-62, F9); the core drops them where a step
+    #: changes values (:func:`~earthx.processing.core.run`). A band a step makes has none.
+    classes: tuple[ClassRow, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)

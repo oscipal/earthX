@@ -10,7 +10,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 
-import { focusFirstItem, placePopover, popoverItems, type Placement } from '../popover';
+import { focusFirstItem, placeBeside, placePopover, popoverItems, type Placement } from '../popover';
 
 export default function Popover({
   anchorRef,
@@ -21,6 +21,7 @@ export default function Popover({
   ariaLabel,
   focusOnOpen = false,
   form = false,
+  beside,
   children,
 }: {
   anchorRef: RefObject<HTMLElement | null>;
@@ -35,6 +36,9 @@ export default function Popover({
   // A pop-up with fields in it (DS-02c): Tab and the arrow keys stay with the fields, a dropdown that opens inside it (its own
   // `Popover`, lying over this one) is no click "beside" it, and Esc does not close it.
   form?: boolean;
+  // Left of the panel the anchor is in (a selector, e.g. `.inspector`), over the map, as wide as its content (the legend "Classes",
+  // M5-62); below or above the anchor where there is no room.
+  beside?: string;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -56,7 +60,11 @@ export default function Popover({
           onClose();
           return;
         }
-        const next = placePopover(rect, content.scrollHeight, { width: window.innerWidth, height: window.innerHeight });
+        const viewport = { width: window.innerWidth, height: window.innerHeight };
+        // Beside, the width is the content's own: no width is set on it.
+        const next = beside
+          ? (placeBeside({ top: rect.top, left: anchor.closest(beside)?.getBoundingClientRect().left ?? rect.left }, content.offsetWidth, content.scrollHeight, viewport) ?? placePopover({ ...rect, width: content.offsetWidth }, content.scrollHeight, viewport))
+          : placePopover(rect, content.scrollHeight, viewport);
         setPlacement((prev) => (prev && JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
       }
     };
@@ -69,7 +77,7 @@ export default function Popover({
     place();
     frame = window.requestAnimationFrame(loop);
     return () => window.cancelAnimationFrame(frame);
-  }, [open, anchorRef, onClose]);
+  }, [open, anchorRef, onClose, beside]);
 
   // Once per opening, as soon as it is placed (a hidden entry takes no focus).
   const focused = useRef(false);
@@ -127,7 +135,7 @@ export default function Popover({
         position: 'fixed',
         top: placement?.top ?? 0,
         left: placement?.left ?? 0,
-        width: placement?.width,
+        width: beside ? undefined : placement?.width,
         maxHeight: placement?.maxHeight,
         visibility: placement ? 'visible' : 'hidden',
       }}

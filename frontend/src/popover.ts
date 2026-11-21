@@ -30,6 +30,22 @@ export function placePopover(
   return { top: above ? anchor.top - GAP - height : anchor.bottom + GAP, left, width, maxHeight, above };
 }
 
+// Left of the anchor, over the map, in the width of its content: level with the anchor and moved up as far as it must to stay in the
+// window. `null` where there is no room at the left; the dropdown then goes below or above (`placePopover`).
+export function placeBeside(
+  anchor: { top: number; left: number },
+  contentWidth: number,
+  contentHeight: number,
+  viewport: { width: number; height: number },
+): Placement | null {
+  const left = anchor.left - GAP - contentWidth;
+  if (left < MARGIN) return null;
+  const maxHeight = Math.max(0, viewport.height - 2 * MARGIN);
+  const height = Math.min(contentHeight, maxHeight);
+  const top = Math.max(MARGIN, Math.min(anchor.top, viewport.height - MARGIN - height));
+  return { top, left, width: contentWidth, maxHeight, above: false };
+}
+
 const ITEMS = '[role="option"], [role^="menuitem"], button:not(:disabled), a[href]';
 
 export function popoverItems(root: HTMLElement | null): HTMLElement[] {

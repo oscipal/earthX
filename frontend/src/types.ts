@@ -275,8 +275,9 @@ export interface Collection {
   // `*` for a group (`SR_*`). `null` says the registry does not know it (M4-19b).
   'earthx:band_units'?: Record<string, string | null> | null;
   // The bands in the order of the registry entry, each with what it is in a few words (the `name` and `description`
-  // of a STAC band, M5-59); the column "Description" of the Data catalogue. Absent on a backend before it.
-  'earthx:bands'?: { name: string; description: string }[] | null;
+  // of a STAC band, M5-59); the column "Description" of the Data catalogue. Absent on a backend before it. A band of classes
+  // carries them as the classification extension writes them (M5-62, read by `bandClasses.ts`).
+  'earthx:bands'?: { name: string; description: string; 'classification:classes'?: unknown }[] | null;
   // The assets that are no band of the data (a picture, a preview), by the asset key an order names (NM4-07).
   'earthx:auxiliary_assets'?: string[] | null;
   // The three bands of the colour picture, red, green, blue (NM4-64); empty for a dataset that has none.
