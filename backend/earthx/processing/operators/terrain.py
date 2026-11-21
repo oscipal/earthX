@@ -29,10 +29,10 @@ import pyproj
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from rio_tiler.models import ImageData
 
-from earthx.catalog.registry import LicenseTier
+from earthx.catalog.registry import LicenseTier, Look
 from earthx.processing.errors import RecipeInvalid, UnsupportedRecipe
 from earthx.processing.operators.band_math import MAX_NAME_CHARS, check_name
-from earthx.processing.operators.base import BandMeta, BandUse, Look, Looks, Operator, RasterMeta, Requirement, Tier
+from earthx.processing.operators.base import BandMeta, BandUse, Looks, Operator, RasterMeta, Requirement, Tier
 
 __all__ = ["HEIGHT_UNIT", "TERRAIN", "TerrainParams"]
 
