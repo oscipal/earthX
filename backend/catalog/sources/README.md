@@ -19,5 +19,9 @@ Präfix `proto-` sind vergeben. `enabled: false` hält eine Quelle an, ohne die 
   also nur die Metadaten-API) und `evidence` (`https`-Adresse der Doku, in der der Anbieter diese API zur Nutzung
   beschreibt). Hebt nur das `Disallow` für diesen Pfad auf; `Crawl-delay` gilt weiter (Otto, 18.11.2026,
   `adr/0025` §6.2).
+- `country`: Staat (ISO 3166-1) der Datensätze des Katalogs oder `null` (Katalog der Welt); letzte Stufe der räumlichen
+  Ausdehnung, nur als Region, ohne Fußabdruck (M5-20 Plan §6.1, F1 = 1).
+- `dedupe_rank`: Vorrang unter Dubletten, 1 vor 2 (M5-20 Plan §8, F4 = 1): der Katalog des Anbieters vor dem Portal,
+  das von ihm erntet.
 
 Den Lauf beschreibt die README im Wurzelverzeichnis („Quellen ernten“).

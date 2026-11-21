@@ -23,7 +23,7 @@ from earthx.discovery.ckan import (
     search_params,
     stable_package,
 )
-from earthx.discovery.extract import Invalid, ShapeError, extracted_sha256, extractor_version
+from earthx.discovery.extract import Invalid, ShapeError, extracted_sha256, extractor_version, theme_codes
 from earthx.discovery.links import LinkRank
 from earthx.gateway import GatewayResponse
 
@@ -40,6 +40,8 @@ SOURCE = SourceConfig(
     robots_exception=None,
     maturity=Maturity.STABLE,
     enabled=True,
+    country=None,
+    dedupe_rank=1,
 )
 BY_ORGANIZATION = replace(SOURCE, filter=CkanFilter(None, "organization"))
 
@@ -329,8 +331,15 @@ def test_without_a_catalogue_page_and_a_page_of_the_provider_the_find_is_invalid
         ([{**FILE, "format": "CSV"}], "table", "download"),
         ([{**FILE, "format": "ZIP"}], "other", "download"),
         ([{**FILE, "format": "", "download_url": "https://geodaten.example.org/x"}], "other", "download"),
-        ([{**FILE, "format": "Unknown"}], "other", None),
-        ([VIEWER], "other", None),
+        # Only pages or unknown formats at an https address: through the provider's page (F12 = 2, Otto 20.11.2026).
+        ([{**FILE, "format": "Unknown"}], "other", "page"),
+        ([{**FILE, "format": "SERVICE"}], "other", "page"),
+        ([{**FILE, "format": "API"}], "other", "page"),
+        ([{**FILE, "format": "onLine"}], "other", "page"),
+        ([VIEWER], "other", "page"),
+        # A plain http address is none, nor is documentation alone.
+        ([{**VIEWER, "url": "http://geodaten.example.org/viewer"}], "other", None),
+        ([{**VIEWER, "resource_type": "documentation"}], "other", None),
         ([], "other", None),
     ],
 )
@@ -342,14 +351,19 @@ def test_data_kind_and_delivery(resources: list[dict[str, Any]], kind: str, deli
 @pytest.mark.parametrize(
     ("access_rights", "resources", "account"),
     [
-        ("http://publications.europa.eu/resource/authority/access-right/PUBLIC", [], "none"),
+        # Public, but nothing to get the data from: no way to it.
+        ("http://publications.europa.eu/resource/authority/access-right/PUBLIC", [], None),
         ("public", [FILE], "none"),
         ("http://publications.europa.eu/resource/authority/access-right/RESTRICTED", [FILE], None),
         ("NON_PUBLIC", [FILE], None),
-        ("nur nach Vereinbarung", [FILE], None),
+        ("http://publications.europa.eu/resource/authority/access-right/NON_PUBLIC", [VIEWER], None),
+        # F12 = 1 (Otto, 20.11.2026): only a statement that the data are not public holds a find back; a missing or
+        # other one does not (a free text is not read).
+        ("nur nach Vereinbarung", [FILE], "none"),
+        ("http://inspire.ec.europa.eu/metadata-codelist/LimitationsOnPublicAccess/noLimitations", [FILE], "none"),
         (None, [FILE], "none"),
         (None, [SERVICE], "none"),
-        (None, [VIEWER], None),
+        (None, [VIEWER], "none"),
     ],
 )
 def test_the_account(access_rights: str | None, resources: list[dict[str, Any]], account: str | None) -> None:
@@ -375,6 +389,39 @@ def test_a_doi(doi: str, expected: str | None) -> None:
 def test_a_group_named_after_an_eu_data_theme_counts_as_that_theme() -> None:
     package = _with(PACKAGE, extras=[], tags=[], groups=[{"name": "tran", "title": "Verkehr"}])
     assert extract_package(PACKAGE["id"], package, SOURCE).category == "infrastructure"
+
+
+@pytest.mark.parametrize("text", ["null", "NULL", " Null "])
+def test_a_place_text_null_is_no_place(text: str) -> None:
+    # Otto, 19.11.2026: the 24 place texts of GovData are the string "null".
+    found = extract_package(PACKAGE["id"], _with(PACKAGE, extras=[{"key": "spatial", "value": text}]), SOURCE)
+    assert (found.spatial_text, found.extent_known) == (None, False)
+
+
+def test_themes_are_kept_as_codes_for_the_geodata_rule() -> None:
+    # M5-20 A12: INSPIRE and EU data themes, from theme URIs and from groups named after an EU theme.
+    package = _with(PACKAGE, groups=[{"name": "gove", "title": "Regierung"}])
+    assert extract_package(PACKAGE["id"], package, SOURCE).themes == ("eu:GOVE", "inspire:el")
+    econ = "http://publications.europa.eu/resource/authority/data-theme/ECON"
+    package = _with(PACKAGE, groups=[], extras=[{"key": "theme", "value": econ}])
+    assert extract_package(PACKAGE["id"], package, SOURCE).themes == ("eu:ECON",)
+
+
+def test_theme_codes_drop_what_is_no_code() -> None:
+    assert theme_codes(["EL", "x1"], ["http://x/data-theme/ENVI/", "Umwelt und Natur", "TRAN"]) == (
+        "eu:ENVI",
+        "eu:TRAN",
+        "inspire:el",
+    )
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [("https://registry.example.org/ds/42", "https://registry.example.org/ds/42"), ("   ", None), ("x" * 301, None)],
+)
+def test_the_identifier(value: str, expected: str | None) -> None:
+    package = _with(PACKAGE, identifier=value)
+    assert extract_package(PACKAGE["id"], package, SOURCE).identifier == expected
 
 
 def test_licence_statements_are_kept_verbatim_and_once() -> None:
@@ -678,3 +725,17 @@ def test_an_html_resource_whose_download_address_is_a_file_is_no_viewer() -> Non
 
 def test_the_page_extras_are_part_of_the_extractor_version() -> None:
     assert extractor_version(SOURCE) != extractor_version(GOVDATA_LIKE)
+
+
+@pytest.mark.parametrize(
+    "geometry",
+    [
+        {"type": "Point", "coordinates": [[8.4, 47.1], [8.5, 47.2]]},
+        {"type": "Polygon", "coordinates": [[8.4, 47.1], [8.6, 47.2], [8.4, 47.2]]},
+        {"type": "MultiPolygon", "coordinates": [[[8.4, 47.1], [8.6, 47.2], [8.4, 47.1]]]},
+    ],
+)
+def test_a_geometry_whose_nesting_does_not_fit_its_type_is_no_extent(geometry: dict[str, Any]) -> None:
+    # Review M5-20 PR 1: PostGIS reads such a Point as POINT(0 0) and refuses such a Polygon.
+    package = _with(PACKAGE, extras=[{"key": "spatial", "value": json.dumps(geometry)}])
+    assert extract_package(PACKAGE["id"], package, SOURCE).extent_known is False

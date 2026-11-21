@@ -14,3 +14,7 @@ full_every_days: 1
 robots_exception: null
 maturity: stable
 enabled: true
+# The state of the last step of the extent and the precedence among duplicates (M5-20 plan §6.1, §8): the provider's
+# own catalogue (swisstopo and the federal offices).
+country: CH
+dedupe_rank: 1

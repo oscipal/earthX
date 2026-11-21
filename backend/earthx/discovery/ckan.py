@@ -37,6 +37,7 @@ from earthx.discovery.extract import (
     localized,
     resource_kind,
     text_of,
+    theme_codes,
 )
 from earthx.discovery.links import LinkRank, checked_link, choose_link, link_problem
 from earthx.discovery.stac import Fetch
@@ -56,6 +57,8 @@ __all__ = [
 PAGE_ROWS = 100
 MAX_DISTRIBUTIONS = 50
 MAX_SPATIAL_TEXT_CHARS = 500
+#: The longest identifier kept; a longer one is no identifier but a text.
+MAX_IDENTIFIER_CHARS = 300
 #: The overlap of an incremental run with the last one (ckanext-harvest, adr/0025 §3a).
 INCREMENTAL_OVERLAP = timedelta(hours=1)
 _KEY = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,255}")
@@ -79,8 +82,9 @@ _METADATA = re.compile(
     r"xml_iso19139|getrecordbyid|[?&]service=csw(?:&|$)|[?&]outputschema=|\.(?:xml|rdf|json|jsonld|ttl|n3)(?:[?#]|$)",
     re.IGNORECASE,
 )
-_PUBLIC = "PUBLIC"
-_NOT_PUBLIC = frozenset({"RESTRICTED", "NON_PUBLIC", "NONPUBLIC", "NON-PUBLIC"})
+#: Access rights that say "not for everyone" (EU vocabulary access-right and its spellings): only these keep a find
+#: without a known way to its data (Otto, 20.11.2026, F12 = 1); a missing or other statement does not.
+_NOT_PUBLIC = frozenset({"RESTRICTED", "NON_PUBLIC", "NONPUBLIC", "NON-PUBLIC", "CONFIDENTIAL", "SENSITIVE"})
 
 
 @dataclass(slots=True)
@@ -216,6 +220,12 @@ def _publisher(package: Mapping[str, Any], extras: Mapping[str, Any], field: str
     return localized(organization.get("title")) if isinstance(organization, dict) else None
 
 
+def _identifier(package: Mapping[str, Any], extras: Mapping[str, Any]) -> str | None:
+    """The DCAT identifier of the dataset (DCAT-AP ``identifier``), a short text; none where it is missing or long."""
+    value = text_of(_field(package, extras, "identifier"))
+    return value if value is not None and len(value) <= MAX_IDENTIFIER_CHARS else None
+
+
 def _doi(package: Mapping[str, Any], extras: Mapping[str, Any]) -> str | None:
     text = text_of(_field(package, extras, "doi"))
     match = _DOI.fullmatch(text) if text else None
@@ -277,8 +287,10 @@ def _spatial(package: Mapping[str, Any], extras: Mapping[str, Any]) -> tuple[Any
         found = geometry_of(value)
         if found is not None:
             return found[0], found[1], None
+        # GovData writes the text "null" where it has none (Otto, 19.11.2026, M5-20 plan §13b).
         if text is None and isinstance(value, str) and not value.lstrip().startswith(("{", "[")):
             text = localized(value)
+            text = None if text is not None and text.lower() == "null" else text
     return None, None, None if text is None else text[:MAX_SPATIAL_TEXT_CHARS]
 
 
@@ -293,13 +305,13 @@ def _temporal(package: Mapping[str, Any], extras: Mapping[str, Any]) -> tuple[st
 
 
 def _account(package: Mapping[str, Any], extras: Mapping[str, Any], reachable: bool) -> str | None:
-    """``none`` for public data (DCAT ``access_rights``) or, without a statement, where a file or service is named;
-    restricted or unknown statements stay empty for M5-20 (plan §5.2), never guessed."""
+    """``none`` where a way to the data is named, unless the source says the data are not public (``access_rights``
+    restricted or non-public): that stays empty, never guessed. A missing or other statement is no exclusion (Otto,
+    20.11.2026, F12 = 1: at GovData the 54 147 finds it held back were public)."""
     statement = text_of(_field(package, extras, "access_rights"))
-    if statement is None:
-        return "none" if reachable else None
-    code = statement.rstrip("/").rsplit("/", 1)[-1].upper()
-    return "none" if code == _PUBLIC else None
+    if statement is not None and statement.rstrip("/").rsplit("/", 1)[-1].upper() in _NOT_PUBLIC:
+        return None
+    return "none" if reachable else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -503,12 +515,17 @@ def extract_package(key: str, package: Mapping[str, Any], source: SourceConfig) 
         raise Invalid("no_link")
     landing = choose_link(c for c in candidates if c[0] is not LinkRank.VIEWER_OR_DOWNLOAD_PAGE)
     keywords = _keywords(package)
-    category = category_of(_evidence(package, extras, keywords))
+    evidence = _evidence(package, extras, keywords)
+    category = category_of(evidence)
     kinds = [r.kind for r in resources]
     if any(r.is_file for r in resources):
         delivery: str | None = "download"
     elif "service" in kinds:
         delivery = "service"
+    elif any(r.distribution is not None and not r.documentation and r.kind in ("page", None) for r in resources):
+        # Only pages or formats the table does not know ("SERVICE", "API", "onLine") at an https address: the data are
+        # had through the provider's page (Otto, 20.11.2026, F12 = 2). A resource at a plain http address is none.
+        delivery = "page"
     else:
         delivery = None
     # `rights` of a resource holds the terms of use at opendata.swiss [S].
@@ -535,6 +552,8 @@ def extract_package(key: str, package: Mapping[str, Any], source: SourceConfig) 
         account=_account(package, extras, delivery is not None),
         category=category,
         keywords=listed_keywords(keywords, category),
+        themes=theme_codes(evidence.inspire_themes, evidence.eu_data_themes),
+        identifier=_identifier(package, extras),
         source_url=chosen[0],
         source_rank=int(chosen[1]),
         landing_url=None if landing is None else landing[0],

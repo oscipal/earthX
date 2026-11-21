@@ -46,6 +46,7 @@ __all__ = [
     "localized",
     "resource_kind",
     "text_of",
+    "theme_codes",
 ]
 
 #: Data kinds by media type, without parameters (adr/0033 §5; plan §5.2). Data before service before document.
@@ -114,6 +115,7 @@ _GEOMETRY_TYPES = frozenset(
 #: The order a text given in several languages is read in (plan A7): the search knows German and English (adr/0026).
 LANGUAGES = ("de", "en", "fr", "it")
 _LANGUAGE_KEY = re.compile(r"[a-z]{2}(?:[-_][A-Za-z]{2})?")
+_THEME_CODE = re.compile(r"inspire:[a-z]{2}|eu:[A-Z_]{2,12}")
 
 
 class ShapeError(Exception):
@@ -160,6 +162,11 @@ class Extracted:
     account: str | None
     category: str
     keywords: tuple[str, ...]
+    #: The themes the source names, as codes: ``inspire:<code>`` (INSPIRE, lower case) and ``eu:<CODE>`` (EU data
+    #: themes), for the rule on finds that are no geodata (M5-20 plan §7, A12).
+    themes: tuple[str, ...]
+    #: The identifier of the dataset as the source writes it (DCAT ``identifier``), for dedupe (M5-20 plan §8, A12).
+    identifier: str | None
     #: The link "Source" (plan §6) and its rank; ``landing_url`` is the page of the dataset, for the sample of M5-20.
     source_url: str
     source_rank: int
@@ -171,7 +178,7 @@ class Extracted:
 
 
 #: Lists of the intermediate form whose order says nothing: compared and hashed sorted (Otto, 19.11.2026).
-_UNORDERED = ("keywords", "licence_statements", "distributions")
+_UNORDERED = ("keywords", "licence_statements", "distributions", "themes")
 #: How a field name of a source may appear in a report; any other is named as such, never quoted.
 _FIELD_NAME = re.compile(r"[A-Za-z0-9_:.-]{1,40}")
 
@@ -263,6 +270,14 @@ def extractor_version(source: SourceConfig) -> str:
         digest.update(b"\0" + source.filter.publisher_field.encode())
         digest.update(b"\0" + "\0".join(source.filter.page_extras).encode())
     return digest.hexdigest()[:16]
+
+
+def theme_codes(inspire: Iterable[str], eu: Iterable[str]) -> tuple[str, ...]:
+    """The themes of a find as codes, each once, sorted: an INSPIRE theme as ``inspire:el``, an EU data theme (a code
+    or the URI of the EU vocabulary) as ``eu:GOVE``."""
+    codes = {f"inspire:{code.lower()}" for code in inspire}
+    codes |= {f"eu:{theme.rstrip('/').rsplit('/', 1)[-1].upper()}" for theme in eu}
+    return tuple(sorted(code for code in codes if _THEME_CODE.fullmatch(code)))
 
 
 def text_of(value: object) -> str | None:
@@ -372,7 +387,22 @@ def _clean_geometry(value: object, points: list[tuple[float, float]], depth: int
         if depth or not isinstance(members, list) or not members:
             raise ValueError("no geometry collection")
         return {"type": value["type"], "geometries": [_clean_geometry(m, points, depth + 1) for m in members]}
-    return {"type": value["type"], "coordinates": _coordinates(value.get("coordinates"), 0, points)}
+    coordinates = _coordinates(value.get("coordinates"), 0, points)
+    if _nesting(coordinates) != _NESTING[value["type"]]:
+        # A Point given as a list of positions would be read by PostGIS as POINT(0 0) (review M5-20 PR 1).
+        raise ValueError("coordinates do not fit the type")
+    return {"type": value["type"], "coordinates": coordinates}
+
+
+#: How deep the positions of each geometry type are nested: a Point is one position, a MultiPolygon lists of rings.
+_NESTING = {"Point": 0, "MultiPoint": 1, "LineString": 1, "MultiLineString": 2, "Polygon": 2, "MultiPolygon": 3}
+
+
+def _nesting(coordinates: list[Any]) -> int:
+    depth = 0
+    while coordinates and isinstance(coordinates[0], list):
+        coordinates, depth = coordinates[0], depth + 1
+    return depth
 
 
 def geometry_of(value: object) -> tuple[tuple[float, float, float, float], dict[str, Any] | None] | None:

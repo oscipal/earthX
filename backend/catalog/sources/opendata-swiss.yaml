@@ -23,3 +23,7 @@ robots_exception:
   evidence: https://handbook.opendata.swiss/de/content/nutzen/api-nutzen.html
 maturity: stable
 enabled: true
+# The state of the last step of the extent and the precedence among duplicates (M5-20 plan §6.1, §8): the national
+# portal; it harvests the FSDI among others.
+country: CH
+dedupe_rank: 2
