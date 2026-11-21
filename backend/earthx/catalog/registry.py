@@ -21,7 +21,7 @@ from datetime import date, datetime, timezone
 from enum import Enum
 from fnmatch import fnmatchcase
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from earthx.gateway import host_of, normalize_host
 
@@ -1331,6 +1331,34 @@ class BandClasses:
             ClassRow(entry.value, entry.name, entry.colour or CLASS_PALETTE[index % len(CLASS_PALETTE)])
             for index, entry in enumerate(self.classes)
         )
+
+
+@dataclass(frozen=True, slots=True)
+class Look:
+    """How a band is drawn, wherever it is drawn: a colormap and where the colours start and end (adr/0035, M5-60).
+
+    ``measured`` is the usual scale of the measure (the 2nd to the 98th percentile of what was measured), ``percentiles``
+    takes ``low`` to ``high`` percent of it (``0`` and ``100`` are the minimum and the maximum), ``fixed`` is the same range of
+    numbers everywhere, so that a value has one colour on every scene and dataset (Otto, 16.11.2026, M5-10).
+    """
+
+    colormap: str
+    scale: Literal["measured", "percentiles", "fixed"] = "measured"
+    low: float | None = None
+    high: float | None = None
+
+    def __post_init__(self) -> None:
+        if not self.colormap:
+            raise ValueError("a look has a colormap")
+        if (self.scale == "measured") != (self.low is None and self.high is None):
+            raise ValueError("a look of the measured scale has no ends, any other has both")
+        if self.scale != "measured" and not (self.low is not None and self.high is not None and self.low < self.high):
+            raise ValueError("the low end of a look is below its high end")
+        if self.scale == "percentiles" and not (0 <= (self.low or 0) and (self.high or 0) <= 100):
+            raise ValueError("percentiles lie between 0 and 100")
+
+    def annotation(self) -> dict[str, Any]:
+        return {"colormap": self.colormap, "scale": self.scale, **({} if self.low is None else {"low": self.low, "high": self.high})}
 
 
 @dataclass(frozen=True, slots=True)
