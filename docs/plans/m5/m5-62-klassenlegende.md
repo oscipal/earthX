@@ -387,3 +387,23 @@ Ein Job-Ergebnis mit Klassenband (`resultLayer.ts::isClassBand`, z. B. WorldCove
 
 - **A17 (Platz des Popovers):** „über der Karte“ heißt links neben der Seitenleiste, nicht über ihren Feldern; das Popover deckt dort weder „Opacity“ noch „Apply“.
 - **A18 (Tooltip):** Der Knopf behält den bisherigen Tooltip des Felds („Each class in the colour of the source; …“, Stufe advanced); im Popover steht kein Text außer den Namen.
+
+---
+
+## 13. Antwort Otto zu F9 und Umsetzung (21.11.2026)
+
+> F9 = 1 (Klassen je Eingabe im Rezept, Worker schreibt sie nach §6 ins Ergebnis und setzt die Farbtabelle in die Ergebnis-Datei; neuer Hash nur für Rezepte mit Klassenband). A17, A18 angenommen. Prüfen: Rezepte ohne Klassenband behalten ihren Hash (Test); ein Ergebnis mit veränderten Werten (z. B. Band math) bekommt keine Klassen und keine Farbtabelle.
+
+| Teil | Stelle |
+|---|---|
+| Rezept: `ResolvedInput.classes` (Liste von `value`, `name` ≤ 40 Zeichen, `colour` `#rrggbb` klein), fehlt im Dump, wo es keine gibt | `backend/earthx/processing/recipe.py` (`ResolvedClass`) |
+| Intake: die Klassen der Registry (`class_rows`) an der Eingabe eines Klassenbands | `backend/earthx/api/intake.py::_classes_of` |
+| Worker: `BandMeta.classes` aus der Eingabe (ein Band je Asset, nicht vom Kern skaliert); Regel §6 an einer Stelle (`_keep_classes`): ein Schritt, der nicht `passes_values` erfüllt, nimmt allen Bändern des Ergebnisses die Klassen (wie bei nodata und Ausgabetyp); das Raster liest der Kern mit `nearest`, das behält die Werte | `backend/earthx/processing/core.py`, `operators/base.py` |
+| Ergebnis: `bands[].classification:classes` (Form der Collection), Farbtabelle im letzten Durchgang bei einem Band in `uint8`/`uint16`, `cog_translate` trägt sie in die COG; die Ergebnis-Kacheln (titiler) zeichnen sie ohne `colormap_name` | `core.py::write_pass`, `access/band_export.py::class_colour_table` |
+| Frontend: `resultBands` liest die Klassen je Band; ein Ganzzahl-Band mit Klassen ist eine Klassenebene (wie es ist gezeichnet); die Ebene hält die Klassen des gezeichneten Bands (`legend`) und zeigt den Knopf „Classes“ statt des Hinweises im Kopf | `frontend/src/resultLayer.ts`, `processingStore.ts`, `layers.ts`, `components/ResultControls.tsx` |
+
+**Hash [M]:** Die festen Hashes in `test_recipe.py` (`EXPECTED`) sind unverändert; `TestClasses` prüft: ohne Klassen gleicher Hash und kein Schlüssel im Dump, mit Klassen ein anderer, eine andere Farbe wieder ein anderer, kaputte Klassen lehnt das Rezept ab.
+
+**Veränderte Werte [M]:** `test_class_results.py`: ohne Schritte und mit `mask_values` (gibt Werte weiter) Klassen und Farbtabelle; `float32` Klassen ohne Farbtabelle (A3); zwei Bänder ohne Farbtabelle; `band_math` und `scale` weder Klassen noch Farbtabelle, auch nicht für das Klassenband neben einem Band-math-Band. `test_result_tiles.py`: eine Kachel einer Klassen-COG zeigt nur Klassenfarben.
+
+**Auslegung A19:** Ein Schritt, der Werte ändert, nimmt allen Bändern die Klassen, auch einem Klassenband, das er selbst nicht anfasst. Das ist dieselbe Regel wie für nodata und Ausgabetyp (§6: „jeder Schritt des Rezepts“), konservativ und an einer Stelle.
