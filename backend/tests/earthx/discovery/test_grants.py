@@ -27,8 +27,19 @@ class TestTheShippedFile:
         assert refs == open_ones - {"de-official-work"}
         assert {"nb-gdikom-b", "admin-ch-disclaimer", "dcat-de-other-closed"}.isdisjoint(refs)
 
-    def test_nothing_is_granted_before_otto_runs_the_command(self) -> None:
-        assert dict(CATALOGUE.grants) == {}
+    def test_every_granted_source_is_one_of_the_seed_files(self) -> None:
+        assert set(CATALOGUE.grants) <= set(SOURCES)
+
+    def test_every_granted_licence_is_in_terms_yaml(self) -> None:
+        granted = {ref for by_publisher in CATALOGUE.grants.values() for refs in by_publisher.values() for ref in refs}
+        assert granted <= set(CATALOGUE.terms)
+
+    def test_no_licence_is_granted_that_grant_to_all_does_not_list(self) -> None:
+        # Neither K6 nor an official work reaches a grants file: only what the command takes from grant-to-all.yaml.
+        allowed = set(read_grant_to_all(CATALOGUE.terms).licenses)
+        granted = {ref for by_publisher in CATALOGUE.grants.values() for refs in by_publisher.values() for ref in refs}
+        assert granted <= allowed
+        assert not granted & {"de-official-work", "nb-gdikom-b", "admin-ch-disclaimer", "dcat-de-other-closed"}
 
 
 class TestReadGrantToAll:
