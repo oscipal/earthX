@@ -159,6 +159,14 @@ CATALOGUE_PAGE = "https://catalogue.example.org/dataset/dem"
         "https://geo.example.ch",
         "https://geo.example.ch/de",
         "https://geo.example.ch/?lang=fr",
+        # A leading language is no part of the path (Otto, 21.11.2026).
+        "https://www.sz.ch/de/agi",
+        "https://www.sz.ch/DE/agi/",
+        "https://www.sz.ch/fr/agi",
+        "https://www.sz.ch/it/agi",
+        "https://www.sz.ch/en/agi",
+        "https://www.sz.ch/rm/agi",
+        "https://www.sz.ch/de/agi?lang=de",
     ],
 )
 def test_the_host_and_at_most_one_part_of_the_path_is_a_collective_page(url: str) -> None:
@@ -171,13 +179,20 @@ def test_the_host_and_at_most_one_part_of_the_path_is_a_collective_page(url: str
     [
         THEME,
         "https://data.example.org/download/dem",
-        "https://data.example.org/de/dem",
+        "https://data.example.org/de/dem/x",
+        "https://data.example.org/de/de/dem",
+        "https://data.example.org/agi/de",
+        # Only the five languages of the rule count, and only in front.
+        "https://data.example.org/es/dem",
+        "https://data.example.org/deutsch/dem",
         # Query and fragment belong to the address and make it specific.
         "https://geo.example.ch/geodaten?filter=dem",
         "https://geo.example.ch/?dataset=dem",
         "https://geo.example.ch/geodaten?lang=de&filter=dem",
         "https://geo.example.ch/#/produkt/dem",
         "https://geo.example.ch/geodaten#/produkt/dem",
+        "https://www.sz.ch/de/agi?filter=dem",
+        "https://www.sz.ch/de/agi#/produkt/dem",
     ],
 )
 def test_a_specific_address_is_no_collective_page_by_its_form(url: str) -> None:

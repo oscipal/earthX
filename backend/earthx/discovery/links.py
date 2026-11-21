@@ -46,6 +46,9 @@ _CONTROL = re.compile(r"[\x00-\x20\x7f-\x9f]")
 _LANGUAGE = re.compile(r"[a-z]{2}(?:[-_][a-z]{2})?", re.IGNORECASE)
 _INDEX = re.compile(r"(?:index|default|home)\.(?:html?|php|aspx?|jsp)", re.IGNORECASE)
 _LANGUAGE_KEYS = frozenset({"lang", "language", "locale", "l", "hl"})
+#: A leading part of the path that names the language is no part of the page for the rule on collective pages (Otto,
+#: 21.11.2026: /de/agi is a collective page like /agi): the languages of Switzerland and English.
+_PATH_LANGUAGES = frozenset({"de", "fr", "it", "en", "rm"})
 
 
 class LinkRank(IntEnum):
@@ -110,12 +113,15 @@ def _is_specific(query: str, fragment: str) -> bool:
 
 
 def is_collection_page(url: object) -> bool:
-    """(b) The host and at most one part of the path, without a query or fragment that makes it specific: the start
-    page of an office or the page of a department, not of a dataset. A text that is no address is none."""
+    """(b) The host and at most one part of the path, not counting a leading language (``/de/agi`` is one), without a
+    query or fragment that makes it specific: the start page of an office or the page of a department, not of a
+    dataset. A text that is no address is none."""
     match = _URL.fullmatch(url) if isinstance(url, str) else None
     if match is None:
         return False
     parts = [part for part in (match["path"] or "").split("/") if part]
+    if parts and parts[0].lower() in _PATH_LANGUAGES:
+        parts = parts[1:]
     return len(parts) <= 1 and not _is_specific(match["query"] or "", match["fragment"] or "")
 
 
