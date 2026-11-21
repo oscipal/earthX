@@ -1,0 +1,122 @@
+# Written by `discovery grants` from the publishers of the harvested finds (M5-20 plan §13f): every licence of
+# ../grant-to-all.yaml for each publisher. Commit and merge it like every grant; a later run keeps these lines.
+- publisher: "Agroscope"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
+- publisher: "CNES, Spot Image, swisstopo, NPOC"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
+- publisher: "Federal Office for Agriculture - FOAG"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
+- publisher: "Federal Office for Agriculture FOAG"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
+- publisher: "Federal Office for Civil Protection - FOCP"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
+- publisher: "Federal Office for Civil Protection FOCP"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
+- publisher: "Federal Office for Defence Procurement armasuisse"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
+- publisher: "Federal Office for Spatial Development - ARE"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
+- publisher: "Federal Office for Spatial Development ARE"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
+- publisher: "Federal Office for the Environment - FOEN"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
+- publisher: "Federal Office for the Environment FOEN"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
+- publisher: "Federal Office for the Environment FOEN, cantons"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
+- publisher: "Federal Office of Civil Aviation - FOCA"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
+- publisher: "Federal Office of Civil Aviation FOCA"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
+- publisher: "Federal Office of Communications - OFCOM"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
+- publisher: "Federal Office of Communications OFCOM"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
+- publisher: "Federal Office of Culture FOC"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
+- publisher: "Federal Office of Meteorology and Climatology MeteoSwiss"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
+- publisher: "Federal Office of Public Health - FOPH"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
+- publisher: "Federal Office of Public Health FOPH"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
+- publisher: "Federal Office of Sport - BASPO"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
+- publisher: "Federal Office of Topography - swisstopo"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
+- publisher: "Federal Office of Topography swisstopo"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
+- publisher: "Federal Office of Topography swisstopo, Georesources Switzerland Group"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
+- publisher: "Federal Office of Topography swisstopo, SCNAT"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
+- publisher: "Federal Office of Topography swisstopo, SGPK"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
+- publisher: "Federal Office of Transport FOT"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
+- publisher: "Federal Roads Office - FEDRO"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
+- publisher: "Federal Roads Office FEDRO"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
+- publisher: "Federal Roads Office FEDRO, cantons"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
+- publisher: "Federal Statistical Office FSO"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
+- publisher: "General Secretariat DDPS"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
+- publisher: "Pro Natura"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
+- publisher: "State Secretariat for Education, Research and Innovation SERI"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
+- publisher: "State Secretariat for Migration SEM"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
+- publisher: "Swiss Armed Forces"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
+- publisher: "Swiss Federal Nuclear Safety Inspectorate - ENSI"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
+- publisher: "Swiss Federal Office of Energy - SFOE"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
+- publisher: "Swiss Federal Office of Energy SFOE"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
+- publisher: "Swiss Seismological Service SED"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-21
