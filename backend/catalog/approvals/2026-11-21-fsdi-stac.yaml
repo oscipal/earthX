@@ -8,8 +8,8 @@ batch_id: 1
 fingerprint: eebb560d8d1a576d1df4691ca9731402a2753cbdedae52a81b4a0c91cbcf478e
 created_on: 2026-11-21
 entries: 305
-decision: pending
-decided_on: null
+decision: approved
+decided_on: 2026-11-21
 excluded_rules: []
 revoked_on: null
 sample:
@@ -18,182 +18,182 @@ sample:
   title: Alpine pastures protected by livestock guardian dogs
   source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.alpweiden-mit_herdenschutzhunden
   license_rule: fsdi-stac/Federal Office for the Environment FOEN/opendata-swiss-by
-  ok: null
+  ok: true
 - dataset_id: fsdi-stac.ch.bfe.abgeltung-wasserkraftnutzung
   why: new_rule
   title: Compensation for losses due to the use of hydraulic power (CLHPO)
   source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bfe.abgeltung-wasserkraftnutzung
   license_rule: fsdi-stac/Swiss Federal Office of Energy - SFOE/opendata-swiss-by
-  ok: null
+  ok: true
 - dataset_id: fsdi-stac.ch.swisstopo-karto.schneeschuhrouten
   why: new_rule
   title: Snowshoe routes
   source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.swisstopo-karto.schneeschuhrouten
   license_rule: fsdi-stac/Federal Office of Topography - swisstopo/swisstopo-ogd
-  ok: null
+  ok: true
 - dataset_id: fsdi-stac.ch.blw.alpprodukte
   why: new_rule
   title: Alpine products
   source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.blw.alpprodukte
   license_rule: fsdi-stac/Federal Office for Agriculture - FOAG/opendata-swiss-by
-  ok: null
+  ok: true
 - dataset_id: fsdi-stac.ch.bazl.luftfahrtkarten-icao
   why: new_rule
   title: Aeronautical Chart ICAO Switzerland 1:500'000
   source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bazl.luftfahrtkarten-icao
   license_rule: fsdi-stac/Federal Office of Topography swisstopo/swisstopo-ogd
-  ok: null
+  ok: true
 - dataset_id: fsdi-stac.ch.meteoschweiz.ogd-analysis-kenda-ch1
   why: new_rule
   title: Numerical weather analysis KENDA-CH1 - Grid data
   source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.meteoschweiz.ogd-analysis-kenda-ch1
   license_rule: fsdi-stac/Federal Office of Meteorology and Climatology MeteoSwiss/cc-by
-  ok: null
+  ok: true
 - dataset_id: fsdi-stac.ch.are.agglomerationsverkehr
   why: new_rule
   title: Cities and conurbations which qualify for subsidies
   source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.are.agglomerationsverkehr
   license_rule: fsdi-stac/Federal Office for Spatial Development - ARE/opendata-swiss-by
-  ok: null
+  ok: true
 - dataset_id: fsdi-stac.ch.bazl.bebaute-gebiete_luftfahrtrecht
   why: new_rule
   title: Built-up areas as defined in Swiss civil aviation legislation
   source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bazl.bebaute-gebiete_luftfahrtrecht
   license_rule: fsdi-stac/Federal Office of Civil Aviation FOCA/opendata-swiss-by
-  ok: null
+  ok: true
 - dataset_id: fsdi-stac.ch.bav.anlagen-schienengueterverkehr
   why: new_rule
   title: Existence of rail freight traffic systems as per the concept for freight
     transport by rail
   source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bav.anlagen-schienengueterverkehr
   license_rule: fsdi-stac/Federal Office of Transport FOT/opendata-swiss-by
-  ok: null
+  ok: true
 - dataset_id: fsdi-stac.ch.bfs.arealstatistik
   why: new_rule
   title: Land use statistics based on the standard nomenclature NOAS04
   source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bfs.arealstatistik
   license_rule: fsdi-stac/Federal Statistical Office FSO/opendata-swiss-by-ask
-  ok: null
+  ok: true
 - dataset_id: fsdi-stac.ch.agroscope.amphibien-bedeutung_parzellen
   why: new_rule
   title: Agricultural parcels with potential importance to amphibians, surfaces
   source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.agroscope.amphibien-bedeutung_parzellen
   license_rule: fsdi-stac/Agroscope/opendata-swiss-by
-  ok: null
+  ok: true
 - dataset_id: fsdi-stac.ch.swisstopo.geologie-geotechnik-gk500-lithologie_hauptgruppen
   why: new_rule
   title: Lithological map of Switzerland 1:500000
   source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.swisstopo.geologie-geotechnik-gk500-lithologie_hauptgruppen
   license_rule: fsdi-stac/Federal Office of Topography swisstopo, Georesources Switzerland
     Group/swisstopo-ogd
-  ok: null
+  ok: true
 - dataset_id: fsdi-stac.ch.vbs.armee-kriegsdenkmaeler
   why: new_rule
   title: Inventar der Armee- und Kriegsdenkmäler der Schweiz
   source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.vbs.armee-kriegsdenkmaeler
   license_rule: fsdi-stac/Swiss Armed Forces/opendata-swiss-by
-  ok: null
+  ok: true
 - dataset_id: fsdi-stac.ch.are.alpenkonvention
   why: new_rule
   title: Alpine Convention
   source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.are.alpenkonvention
   license_rule: fsdi-stac/Federal Office for Spatial Development ARE/opendata-swiss-by
-  ok: null
+  ok: true
 - dataset_id: fsdi-stac.ch.astra.mountainbikeland
   why: new_rule
   title: Non-motorised transport - Mountainbikeland Schweiz
   source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.astra.mountainbikeland
   license_rule: fsdi-stac/Federal Roads Office FEDRO, cantons/opendata-swiss-by
-  ok: null
+  ok: true
 - dataset_id: fsdi-stac.ch.bafu.fischerei-krebspest
   why: random
   title: Crayfish plague – Findings in Switzerland
   source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.fischerei-krebspest
   license_rule: fsdi-stac/Federal Office for the Environment FOEN/opendata-swiss-by
-  ok: null
+  ok: true
 - dataset_id: fsdi-stac.ch.bafu.luftreinhaltung-stickstoff_kritischer_eintrag
   why: random
   title: Exceedance of critical loads for nitrogen
   source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.luftreinhaltung-stickstoff_kritischer_eintrag
   license_rule: fsdi-stac/Federal Office for the Environment FOEN/opendata-swiss-by
-  ok: null
+  ok: true
 - dataset_id: fsdi-stac.ch.agroscope.fokuskarte-voegel
   why: random
   title: Focus map agri-environmental objective birds
   source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.agroscope.fokuskarte-voegel
   license_rule: fsdi-stac/Agroscope/opendata-swiss-by
-  ok: null
+  ok: true
 - dataset_id: fsdi-stac.ch.swisstopo.geologie-thermale_waesser
   why: random
   title: Thermal waters
   source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.swisstopo.geologie-thermale_waesser
   license_rule: fsdi-stac/Federal Office of Topography - swisstopo/swisstopo-ogd
-  ok: null
+  ok: true
 - dataset_id: fsdi-stac.ch.bfs.betriebszaehlungen
   why: random
   title: Structural Business Statistics
   source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bfs.betriebszaehlungen
   license_rule: fsdi-stac/Federal Statistical Office FSO/opendata-swiss-by-ask
-  ok: null
+  ok: true
 - dataset_id: fsdi-stac.ch.swisstopo.pixelkarte-grau
   why: random
   title: National maps of Switzerland (grey)
   source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.swisstopo.pixelkarte-grau
   license_rule: fsdi-stac/Federal Office of Topography swisstopo/swisstopo-ogd
-  ok: null
+  ok: true
 - dataset_id: fsdi-stac.ch.meteoschweiz.ogd-climate-scenarios-ch2025-grid
   why: random
   title: Climate scenarios CH2025 grid - DAILY-GRIDDED
   source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.meteoschweiz.ogd-climate-scenarios-ch2025-grid
   license_rule: fsdi-stac/Federal Office of Meteorology and Climatology MeteoSwiss/cc-by
-  ok: null
+  ok: true
 - dataset_id: fsdi-stac.ch.swisstopo.geologie-swissjura3d_profile
   why: random
   title: Profiles of the 3D geological model of the Swiss Jura swissJURA3D – Model
     area 1 St-Cergue – Le Sentier
   source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.swisstopo.geologie-swissjura3d_profile
   license_rule: fsdi-stac/Federal Office of Topography swisstopo/swisstopo-ogd
-  ok: null
+  ok: true
 - dataset_id: fsdi-stac.ch.bav.sachplan-infrastruktur-schifffahrt_anhoerung
   why: random
   title: 'Sector plan on transport, navigation infrastructure section (SIF): consultation'
   source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bav.sachplan-infrastruktur-schifffahrt_anhoerung
   license_rule: fsdi-stac/Federal Office of Transport FOT/opendata-swiss-by
-  ok: null
+  ok: true
 - dataset_id: fsdi-stac.ch.meteoschweiz.ogd-satellite-derived-grid
   why: random
   title: Spatial climate analyses - Radiation, clouds
   source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.meteoschweiz.ogd-satellite-derived-grid
   license_rule: fsdi-stac/Federal Office of Meteorology and Climatology MeteoSwiss/cc-by
-  ok: null
+  ok: true
 - dataset_id: fsdi-stac.ch.bfe.grundwasserwaermenutzungspotenzial
   why: random
   title: Groundwater heat utilisation potential
   source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bfe.grundwasserwaermenutzungspotenzial
   license_rule: fsdi-stac/Swiss Federal Office of Energy - SFOE/opendata-swiss-by
-  ok: null
+  ok: true
 - dataset_id: fsdi-stac.ch.meteoschweiz.ogd-radar-precip
   why: random
   title: Radar products precipitation - PRECIP, PRECIP-SV (Side View) and CombiPrecip
     (CPC)
   source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.meteoschweiz.ogd-radar-precip
   license_rule: fsdi-stac/Federal Office of Meteorology and Climatology MeteoSwiss/cc-by
-  ok: null
+  ok: true
 - dataset_id: fsdi-stac.ch.vbs.patrouilledesglaciers-z_rennen
   why: random
   title: Patrouille des Glaciers course (Z race)
   source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.vbs.patrouilledesglaciers-z_rennen
   license_rule: fsdi-stac/Swiss Armed Forces/opendata-swiss-by
-  ok: null
+  ok: true
 - dataset_id: fsdi-stac.ch.blw.hang_steillagen
   why: random
   title: Hillsides and slopes
   source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.blw.hang_steillagen
   license_rule: fsdi-stac/Federal Office for Agriculture - FOAG/opendata-swiss-by
-  ok: null
+  ok: true
 - dataset_id: fsdi-stac.ch.blw.klimaeignung-spezialkulturen
   why: random
   title: Climate suitability map for agriculture - Special crops
   source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.blw.klimaeignung-spezialkulturen
   license_rule: fsdi-stac/Federal Office for Agriculture - FOAG/opendata-swiss-by
-  ok: null
+  ok: true
