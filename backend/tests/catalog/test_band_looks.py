@@ -16,6 +16,7 @@ from earthx.catalog.entry_files import EntryFileError, load_entry, to_plain
 from earthx.catalog.registry import (
     DEFAULT_LOOK,
     UNIT_LOOKS,
+    AssetSelection,
     BandClass,
     BandClasses,
     BandLook,
@@ -25,7 +26,6 @@ from earthx.catalog.registry import (
     Look,
     LookOrigin,
 )
-from earthx.catalog.registry import AssetSelection
 from tests.catalog.entries import COP_DEM_GLO_30, REGISTRY
 
 
@@ -33,7 +33,9 @@ def _looks(entry) -> dict[str, tuple[Look, LookOrigin]]:
     return {key: (resolved.look, resolved.origin) for key in entry.band_units if (resolved := entry.look_of(key))}
 
 
-def _one_band_standard(config, band: str = "red", colormap: str | None = "magma", rescale=((0.0, 50.0),)) -> DefaultRender:
+def _one_band_standard(
+    config, band: str = "red", colormap: str | None = "magma", rescale=((0.0, 50.0),)
+) -> DefaultRender:
     return DefaultRender(
         title="One band",
         assets=(band,),
@@ -62,7 +64,9 @@ class TestTheEntries:
 
     def test_radar_numbers_stay_grey_on_the_measured_scale(self) -> None:
         looks = _looks(REGISTRY.get("sentinel-1-grd"))
-        assert {key: look for key, (look, _) in looks.items()} == {band: Look("greys_r") for band in ("vv", "vh", "hh", "hv")}
+        assert {key: look for key, (look, _) in looks.items()} == {
+            band: Look("greys_r") for band in ("vv", "vh", "hh", "hv")
+        }
 
     def test_the_second_height_of_swissalti3d_is_drawn_like_the_first(self) -> None:
         looks = _looks(REGISTRY.get("swissalti3d"))
@@ -136,7 +140,9 @@ class TestTheOrder:
     def test_a_standard_of_three_bands_gives_no_look(self, valid_config) -> None:
         assert valid_config.look_of("red").origin is LookOrigin.UNIT
 
-    def test_a_look_from_the_source_wins_over_the_standard_and_takes_the_colormap_of_the_rule(self, valid_config) -> None:
+    def test_a_look_from_the_source_wins_over_the_standard_and_takes_the_colormap_of_the_rule(
+        self, valid_config
+    ) -> None:
         entry = replace(
             valid_config,
             default_render=_one_band_standard(valid_config),
@@ -150,7 +156,9 @@ class TestTheOrder:
         assert entry.look_of("green").look == Look("greens", "fixed", 0.0, 0.4)
 
     def test_a_look_by_hand_is_taken_as_written(self, valid_config) -> None:
-        entry = replace(valid_config, band_looks={"red": BandLook(LookOrigin.MANUAL, "percentiles", 0.0, 100.0, "reds")})
+        entry = replace(
+            valid_config, band_looks={"red": BandLook(LookOrigin.MANUAL, "percentiles", 0.0, 100.0, "reds")}
+        )
         resolved = entry.look_of("red")
         assert (resolved.look, resolved.origin) == (Look("reds", "percentiles", 0.0, 100.0), LookOrigin.MANUAL)
 
@@ -235,7 +243,9 @@ class TestTheFile:
         data["band_looks"] = {"data": {"origin": "stac", "scale": "fixed", "low": -100, "high": 4000.5}}
         entry = load_entry(self._write(tmp_path, data))
         assert entry.look_of("data").look == Look("terrain", "fixed", -100.0, 4000.5)
-        assert to_plain(entry)["band_looks"] == {"data": {"origin": "stac", "scale": "fixed", "low": -100, "high": 4000.5}}
+        assert to_plain(entry)["band_looks"] == {
+            "data": {"origin": "stac", "scale": "fixed", "low": -100, "high": 4000.5}
+        }
 
     @pytest.mark.parametrize(
         "look",
@@ -256,7 +266,9 @@ class TestTheFile:
 
 class TestTheCollection:
     def test_every_band_with_values_publishes_its_look_and_where_it_came_from(self) -> None:
-        bands = {band["name"]: band for band in to_stac_collection(REGISTRY.get("meteoswiss-daily-1km"))["earthx:bands"]}
+        bands = {
+            band["name"]: band for band in to_stac_collection(REGISTRY.get("meteoswiss-daily-1km"))["earthx:bands"]
+        }
         assert bands["SrelD"]["earthx:look"] == {"colormap": "viridis", "scale": "fixed", "low": 0.0, "high": 100.0}
         assert bands["SrelD"]["earthx:look_origin"] == "unit"
         assert bands["TminD"]["earthx:look_origin"] == "standard"
