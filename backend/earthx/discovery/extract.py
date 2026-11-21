@@ -172,10 +172,6 @@ class Extracted:
     source_rank: int
     landing_url: str | None
     distributions: tuple[Distribution, ...]
-    #: Where the link "Source" would have gone had it not been a collective page (Otto, 21.11.2026): the address and
-    #: rank of the better candidate that was skipped, ``None`` where none was; for the count of ``report --classify``.
-    skipped_url: str | None = None
-    skipped_rank: int | None = None
 
     def to_document(self) -> dict[str, Any]:
         return asdict(self)
