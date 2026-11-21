@@ -18,13 +18,14 @@ from earthx.discovery.ckan import (
     CkanListing,
     ckan_pages,
     extract_package,
+    link_candidates,
     link_reasons,
     package_key,
     search_params,
     stable_package,
 )
 from earthx.discovery.extract import Invalid, ShapeError, extracted_sha256, extractor_version, theme_codes
-from earthx.discovery.links import LinkRank
+from earthx.discovery.links import LinkRank, address_key
 from earthx.gateway import GatewayResponse
 
 SOURCE = SourceConfig(
@@ -739,3 +740,71 @@ def test_a_geometry_whose_nesting_does_not_fit_its_type_is_no_extent(geometry: d
     # Review M5-20 PR 1: PostGIS reads such a Point as POINT(0 0) and refuses such a Polygon.
     package = _with(PACKAGE, extras=[{"key": "spatial", "value": json.dumps(geometry)}])
     assert extract_package(PACKAGE["id"], package, SOURCE).extent_known is False
+
+
+# --- Collective pages (Otto, 21.11.2026) ---------------------------------------------------------------------------
+
+OFFICE = "https://www.sz.ch/agi"
+THEME = "https://oereb.bs.ch/theme/oereb_proj"
+CATALOGUE_PAGE = "https://portal.example.org/dataset/example-dgm1"
+
+
+def test_the_start_page_of_an_office_is_no_link_source() -> None:
+    found = extract_package(PACKAGE["id"], _resources(FILE, url=OFFICE), SOURCE)
+    assert (found.source_url, found.source_rank) == (CATALOGUE_PAGE, 3)
+    assert (found.skipped_url, found.skipped_rank) == (OFFICE, 2)
+    assert found.landing_url == CATALOGUE_PAGE
+
+
+def test_a_page_the_source_shares_between_finds_is_no_link_source() -> None:
+    package = _resources(FILE, url=THEME)
+    assert extract_package(PACKAGE["id"], package, SOURCE).source_url == THEME
+    found = extract_package(PACKAGE["id"], package, SOURCE, frozenset({address_key(THEME)}))
+    assert (found.source_url, found.source_rank, found.landing_url) == (CATALOGUE_PAGE, 3, CATALOGUE_PAGE)
+    assert (found.skipped_url, found.skipped_rank) == (THEME, 2)
+
+
+def test_a_viewer_that_is_a_collective_page_gives_way_to_the_page_of_the_dataset() -> None:
+    viewer = {**VIEWER, "url": "https://geo.example.ch/geoportal"}
+    found = extract_package(PACKAGE["id"], _resources(viewer), SOURCE)
+    assert (found.source_url, found.source_rank) == (PACKAGE["url"], 2)
+    assert (found.skipped_url, found.skipped_rank) == ("https://geo.example.ch/geoportal", 1)
+
+
+@pytest.mark.parametrize("url", [THEME, "https://www.sz.ch/agi?filter=dgm1", "https://www.sz.ch/agi#/produkt/dgm1"])
+def test_a_specific_page_stays_the_link_source(url: str) -> None:
+    found = extract_package(PACKAGE["id"], _resources(FILE, url=url), SOURCE)
+    assert (found.source_url, found.source_rank, found.skipped_url, found.skipped_rank) == (url, 2, None, None)
+
+
+def test_a_rank_that_did_not_change_is_no_skipped_link() -> None:
+    # Two viewers, the first a collective page: the second is a viewer too, so the link stays at rank 1.
+    first = {**VIEWER, "url": "https://geo.example.ch/aa"}
+    second = {**VIEWER, "url": "https://geo.example.ch/viewer/dgm1"}
+    found = extract_package(PACKAGE["id"], _resources(first, second), SOURCE)
+    assert (found.source_url, found.source_rank, found.skipped_url) == (second["url"], 1, None)
+
+
+def test_without_a_page_left_the_find_is_invalid() -> None:
+    source = replace(SOURCE, catalog_page=None)
+    with pytest.raises(Invalid) as raised:
+        extract_package(PACKAGE["id"], _resources(FILE, url=OFFICE), source)
+    assert raised.value.reason == "no_link"
+
+
+def test_the_candidates_of_a_package_for_the_index_of_the_source() -> None:
+    package = _resources(VIEWER, FILE, url=THEME)
+    assert link_candidates(package, SOURCE) == [
+        (LinkRank.VIEWER_OR_DOWNLOAD_PAGE, VIEWER["url"]),
+        (LinkRank.DATASET_PAGE, THEME),
+        (LinkRank.CATALOGUE_PAGE, CATALOGUE_PAGE),
+    ]
+    with pytest.raises(Invalid):
+        link_candidates(_with(package, title=None), SOURCE)
+
+
+def test_the_reason_why_a_page_is_a_collective_page() -> None:
+    package = _resources({**VIEWER, "url": "https://geo.example.ch/geoportal"}, url=OFFICE)
+    reasons = dict(link_reasons(package, SOURCE))
+    assert reasons["url_collection_page"] == OFFICE
+    assert reasons["html_collection_page"] == "https://geo.example.ch/geoportal"

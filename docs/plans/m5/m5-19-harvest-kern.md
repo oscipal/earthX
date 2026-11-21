@@ -141,6 +141,7 @@ Eine Dataclass `Extracted` in `discovery`, als `jsonb` mit Hash in `earthx_recor
 | 3 | **Seite des Datensatzes im Katalog** | `catalog_page` der Seed-Datei mit dem Paketnamen; dort stehen alle Ressourcen mit Download | `catalog_page` der Seed-Datei mit der Collection-ID (z. B. der STAC-Browser der FSDI [S]) |
 
 - **Gültig** ist nur: `https`, ohne Benutzerteil, Host ein Name (keine IP), höchstens 2 048 Zeichen, kein Steuerzeichen; **nicht die Startseite**: Pfad leer, `/` oder nur ein Sprachkürzel (`/de`, `/fr/` …) ohne Abfrage. Ein `http`-Link wird nicht umgeschrieben, sondern übersprungen (Prinzip 15).
+- **Sammelseiten** sind nie der Link „Source“ (Otto, 21.11.2026, §12.13).
 - **Dienste** (WMS, WFS, WCS, OGC API, ATOM) sind nie der Link „Source“: eine Capabilities-Antwort ist keine Seite für Menschen. Sie bleiben Distributionen.
 - **Einzelne Dateien** sind nach F1 = 1 nie der Link „Source“: Ein Klick lädt sonst ohne Ansage eine große Datei, und bei mehreren Dateien wäre eine davon nur ein Teil. Sie bleiben Distributionen; mit F1 = 2 käme eine einzige Datei als Rang zwischen 1 und 2.
 - **Kein gültiger Kandidat:** Fund `invalid` mit Grund `no_link`, im Bericht gezählt.
@@ -439,3 +440,22 @@ Ein Fund zählt je Grund einmal und kann mehrere Gründe haben.
 | opendata.swiss | 6 337 / 6 059 / 3 820 | 6 492 / 5 952 / 3 772 | 39: geändert 833 (`source_url` 831, `source_rank` 192) |
 
 Bei GovData sinkt der Anteil der Funde mit nur der Katalogseite von 82 % auf 30 %; bei opendata.swiss wandern vor allem Viewer mit seitenartiger Download-Adresse auf Rang 1. Damit ist PR 2 aus Ottos Sicht fertig (19.11.2026).
+
+### 12.13 Sammelseiten (Otto, 21.11.2026, Nachtrag zu M5-19/M5-20)
+
+**Befund Otto** (Freigabe opendata-swiss): Mehrere Einträge verlinken auf eine allgemeine Seite statt auf den Datensatz, etwa die Startseite eines Amts (`https://www.sz.ch/agi`), dieselbe Seite der Stadt Luzern für zwei Einträge oder `https://oereb.bs.ch/theme/oereb_proj` für mehrere. Messung vom 19.11.: opendata.swiss 527 Gruppen gleicher Seite mit 4 106 Funden, GovData 170 mit 4 899.
+
+**Regel (Otto):** Eine Adresse ist eine **Sammelseite**, wenn (a) dieselbe Adresse bei mehr als einem Fund **derselben Quelle** als Link gewählt würde, oder (b) sie nur aus Host und höchstens einem Pfadteil besteht. Abfrage und Fragment zählen zur Adresse und machen sie eindeutig. Eine Sammelseite wird übersprungen; es gilt der nächste Rang, zuletzt die Katalogseite (Rang 3).
+
+**Umsetzung [P]:**
+1. **(b)** `links.is_collection_page` prüft die Adresse allein. Sie gilt nur für den Link „Source“ (`choose_link`), nicht für Distributionen: Deren Adressen sind oft `host/datei.tif`. Eine Abfrage, die nur die Sprache wählt (`?lang=de`), und ein Fragment aus `#` oder `#/` machen eine Adresse nicht eindeutig (wie bei der Startseiten-Prüfung).
+2. **(a)** braucht den Blick über die Quelle. Der Lauf liest beim Start die Kandidaten (Rang 1 und 2, gültig, nicht nach (b)) aller Funde aus den gespeicherten Rohantworten in einen `links.LinkIndex` und führt ihn mit jedem Fund nach, den er ableitet. `LinkIndex.shared()` bestimmt die Sammelseiten schrittweise: Adressen, die mehr als ein Fund wählen würde, entfallen; die Funde wählen neu; wieder gezählt, bis keine weitere Adresse mehrfach gewählt wird. Eine Adresse, die hier geteilt ist, bleibt es. Gezählt wird nach `links.address_key` (Host klein, ohne `:443`, ohne schließenden `/` des Pfads; Abfrage und Fragment unverändert).
+3. **Abgleich am Laufende** (`_settle`, auch nach einem früh beendeten Lauf, nie nach `lease_expired`): Jeder gültige Fund und jeder `no_link`-Fund, dessen gespeicherter Link nicht zu den Sammelseiten von jetzt passt, wird aus seiner Rohantwort neu abgeleitet. Das trifft auch einen Fund, der sich nicht geändert hat, aber dessen Seite ein neuer Fund mitnennt, oder dessen Seite keine Sammelseite mehr ist, weil der andere Fund verschwand. Verglichen wird mit dem Gespeicherten, nicht mit dem, was der Lauf tat; so heilt ein abgebrochener Lauf beim nächsten. Der Bericht nennt die Zahl („Link „Source“ neu abgeleitet wegen einer Sammelseite“); ein Fund, den der Lauf ohnehin ableitete, zählt dabei nicht doppelt als neu oder geändert.
+4. **Katalogseite (Rang 3) wird nie übersprungen**; sie nennt den Datensatz. Bleibt nach dem Überspringen nichts (Quelle ohne `catalog_page`), ist der Fund `invalid` mit `no_link`, wie vorher bei jedem Fund ohne Link.
+5. **Zwischenform:** Zwei neue Felder `skipped_url` und `skipped_rank` halten die Adresse und den Rang des besseren Kandidaten, den die Regel übersprungen hat (nur wenn der Rang dadurch schlechter wurde). `landing_url` folgt derselben Regel.
+6. **Extraktor-Version:** ändert sich von selbst (Fingerabdruck über `links.py`, `extract.py`, `ckan.py`, `stac.py`); `--reextract` leitet alle Funde neu ab.
+7. **`report --classify`** zählt je Quelle, wie viele Links wegen einer Sammelseite auf einen anderen Rang fielen (nach „1 → 2“, „1 → 3“, „2 → 3“), mit zehn Beispielen (Titel, Sammelseite mit Rang, Link jetzt mit Rang). `--explain-links` kennt die Gründe `url_collection_page`, `extras_page_collection_page` und `html_collection_page`.
+
+**Kosten:** Ein Lauf liest beim Start einmal alle Rohantworten der Quelle (GovData rund 140 000), um den Index aufzubauen; ohne Abruf, in der Größenordnung eines `--reextract`.
+
+**Offen, nicht entschieden (Otto):** (1) Ob ein Pfad mit Sprachpräfix und einem Teil (`/de/agi`) unter (b) fällt; umgesetzt ist der Wortlaut, `/de/agi` hat zwei Teile und fällt nicht darunter. (2) Ob ein Fund ohne Link `invalid` werden darf, wenn seine einzige Adresse eine Sammelseite ist und die Quelle keine Katalogseite hat; umgesetzt wie bisher bei jedem Fund ohne Link. Beide betreffen heute keine der vier Seed-Quellen mit `catalog_page`.

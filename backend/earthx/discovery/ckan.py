@@ -39,7 +39,7 @@ from earthx.discovery.extract import (
     text_of,
     theme_codes,
 )
-from earthx.discovery.links import LinkRank, checked_link, choose_link, link_problem
+from earthx.discovery.links import LinkRank, checked_link, choose_link, first_link, is_collection_page, link_problem
 from earthx.discovery.stac import Fetch
 
 __all__ = [
@@ -48,6 +48,7 @@ __all__ = [
     "CkanListing",
     "ckan_pages",
     "extract_package",
+    "link_candidates",
     "link_reasons",
     "package_key",
     "search_params",
@@ -439,6 +440,8 @@ def _page_problem(value: object) -> str | None:
             return "metadata"
         if _page_or_none(text) is None:
             return "file"
+        if is_collection_page(text):
+            return "collection_page"
     return problem
 
 
@@ -474,6 +477,8 @@ def link_reasons(package: Mapping[str, Any], source: SourceConfig) -> list[tuple
         if resource.kind is None and resource.download is None and resource.access is not None:
             reasons.append(("resource_without_format", resource.access))
         address, problem = _viewer_problem(resource)
+        if problem is None and address is not None and is_collection_page(address):
+            problem = "collection_page"
         if problem is not None and problem != "not_html":
             reasons.append((f"html_{problem}", address))
     for name, value in package.items():
@@ -489,8 +494,38 @@ def link_reasons(package: Mapping[str, Any], source: SourceConfig) -> list[tuple
     return reasons
 
 
-def extract_package(key: str, package: Mapping[str, Any], source: SourceConfig) -> Extracted:
-    """The intermediate form of one package, or :class:`Invalid` with its reason."""
+def _link_candidates(
+    package: Mapping[str, Any], extras: Mapping[str, Any], resources: Iterable[_Resource], source: SourceConfig
+) -> list[tuple[LinkRank, object]]:
+    name = package.get("name")
+    catalog_page = (
+        source.catalog_page.replace("{name}", name)
+        if source.catalog_page and isinstance(name, str) and _NAME.fullmatch(name)
+        else None
+    )
+    return [
+        *((LinkRank.VIEWER_OR_DOWNLOAD_PAGE, url) for url in _viewer_pages(resources)),
+        *((LinkRank.DATASET_PAGE, page) for page in _page_candidates(package, extras, source)),
+        (LinkRank.CATALOGUE_PAGE, catalog_page),
+    ]
+
+
+def link_candidates(package: Mapping[str, Any], source: SourceConfig) -> list[tuple[LinkRank, object]]:
+    """The addresses a package could take as its link "Source" (plan §6) by rank, in the order the rule reads them, for
+    the index of collective pages (:class:`~earthx.discovery.links.LinkIndex`); :class:`Invalid` where the package is no
+    find (``no_title``)."""
+    if localized(package.get("title")) is None:
+        raise Invalid("no_title")
+    raw_resources = package.get("resources")
+    documents = [r for r in raw_resources if isinstance(r, dict)] if isinstance(raw_resources, list) else []
+    return _link_candidates(package, _extras(package), [_resource(r) for r in documents], source)
+
+
+def extract_package(
+    key: str, package: Mapping[str, Any], source: SourceConfig, shared: frozenset[str] = frozenset()
+) -> Extracted:
+    """The intermediate form of one package, or :class:`Invalid` with its reason. ``shared`` are the collective pages of
+    the source (:meth:`~earthx.discovery.links.LinkIndex.shared`), which the link "Source" never is."""
     assert isinstance(source.filter, CkanFilter)
     title = localized(package.get("title"))
     if title is None:
@@ -499,21 +534,13 @@ def extract_package(key: str, package: Mapping[str, Any], source: SourceConfig) 
     raw_resources = package.get("resources")
     resource_documents = [r for r in raw_resources if isinstance(r, dict)] if isinstance(raw_resources, list) else []
     resources = [_resource(r) for r in resource_documents]
-    name = package.get("name")
-    catalog_page = (
-        source.catalog_page.replace("{name}", name)
-        if source.catalog_page and isinstance(name, str) and _NAME.fullmatch(name)
-        else None
-    )
-    candidates = [
-        *((LinkRank.VIEWER_OR_DOWNLOAD_PAGE, url) for url in _viewer_pages(resources)),
-        *((LinkRank.DATASET_PAGE, page) for page in _page_candidates(package, extras, source)),
-        (LinkRank.CATALOGUE_PAGE, catalog_page),
-    ]
-    chosen = choose_link(candidates)
+    candidates = _link_candidates(package, extras, resources, source)
+    chosen = choose_link(candidates, shared)
     if chosen is None:
         raise Invalid("no_link")
-    landing = choose_link(c for c in candidates if c[0] is not LinkRank.VIEWER_OR_DOWNLOAD_PAGE)
+    plain = first_link(candidates)
+    skipped = plain if plain is not None and plain[1] < chosen[1] else None
+    landing = choose_link((c for c in candidates if c[0] is not LinkRank.VIEWER_OR_DOWNLOAD_PAGE), shared)
     keywords = _keywords(package)
     evidence = _evidence(package, extras, keywords)
     category = category_of(evidence)
@@ -557,5 +584,7 @@ def extract_package(key: str, package: Mapping[str, Any], source: SourceConfig) 
         source_url=chosen[0],
         source_rank=int(chosen[1]),
         landing_url=None if landing is None else landing[0],
+        skipped_url=None if skipped is None else skipped[0],
+        skipped_rank=None if skipped is None else int(skipped[1]),
         distributions=tuple(r.distribution for r in resources if r.distribution is not None)[:MAX_DISTRIBUTIONS],
     )

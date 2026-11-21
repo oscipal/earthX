@@ -90,6 +90,8 @@ def _find(key: str, **changes: Any) -> dict[str, Any]:
         "source_rank": 2,
         "landing_url": f"https://amt.example.org/daten/{key}",
         "distributions": [],
+        "skipped_url": None,
+        "skipped_rank": None,
     }
     found.update(changes)
     return found
@@ -618,3 +620,48 @@ def test_grants_built_from_the_publishers_in_the_database_list_their_finds(world
     world.report()
     assert world.row("b")["state"] == world.row("zug")["state"] == "in_review"
     assert world.row("none")["waiting_reason"] == world.row("blank")["waiting_reason"] == "not_granted"
+
+
+def test_classify_counts_the_links_that_fell_to_another_rank_because_of_a_collective_page(world: World) -> None:
+    # Otto, 21.11.2026: how many links per source fell to another rank, with ten examples.
+    catalogue = "https://portal.example.org/dataset/"
+    office, project = "https://www.sz.ch/agi", "https://oereb.bs.ch/theme/oereb_proj"
+    world.put(
+        world.ckan,
+        _find("kept"),
+        _find("office", source_rank=3, source_url=catalogue + "office", skipped_url=office, skipped_rank=2),
+        _find("project", source_rank=3, source_url=catalogue + "project", skipped_url=project, skipped_rank=2),
+        _find(
+            "viewer",
+            source_rank=2,
+            source_url="https://amt.example.org/daten/viewer",
+            skipped_url="https://geo.example.ch/portal",
+            skipped_rank=1,
+        ),
+    )
+    result = world.report(classify_only=True)
+    assert result.link_moves == {"2 → 3": 2, "1 → 2": 1}
+    text = classify_text(world.ckan, result)
+    assert "auf einen anderen Rang gefallen (3 von 4), nach Rang:" in text
+    assert "2  Rang 2 → 3" in text and "1  Rang 1 → 2" in text
+    assert f"- Bodenkarte office | <https://www.sz.ch/agi>, 2 | <{catalogue}office>, 3" in text
+    assert "Bodenkarte kept |" not in text
+
+
+def test_classify_shows_at_most_ten_examples_of_fallen_links(world: World) -> None:
+    world.put(
+        world.ckan,
+        *(
+            _find(
+                f"f{n}",
+                source_rank=3,
+                source_url=f"https://portal.example.org/dataset/f{n}",
+                skipped_url="https://www.sz.ch/agi",
+                skipped_rank=2,
+            )
+            for n in range(25)
+        ),
+    )
+    text = classify_text(world.ckan, world.report(classify_only=True))
+    assert "(25 von 25)" in text
+    assert sum(1 for line in text.splitlines() if "<https://www.sz.ch/agi>, 2 |" in line) == 10
