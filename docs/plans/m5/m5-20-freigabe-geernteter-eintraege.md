@@ -440,6 +440,16 @@ Grundlage: `m5-20-lizenzliste.md` und der dritte Lauf `-Classify` (fsdi-stac 515
 - **Danach sichtbar, aus M5-20:** Gemeinden, die ein früheres Modul derselben Datenbank committet (`catalog-load`, `test_report`), halten ihren Kanton über den Fremdschlüssel von Migration 033. Die Regionstests von `test_listed_load` können Kantone dann nicht umschreiben oder löschen. Unter xdist hing das von der Verteilung auf die Worker ab.
 - **Behoben:** `test_listed_load` leert `earthx_municipality` in der zurückgerollten Transaktion jedes Tests. `CATALOGUE_TABLES` (M5-61) zählt `earthx_municipality` mit, denn `catalog-load` schreibt sie.
 
+## 13g. Befunde aus der Freigabe govdata (Otto, 23.11.2026)
+
+Bericht und Freigabedatei vom 23.11. verworfen. Umgesetzt (Ursachen aus dem Code abgeleitet; die Sitzung hatte weder die Datenbank noch Zugang zu GovData):
+
+- **Dedupe (F4 = 1 geschärft):** Zwei falsche Dubletten („Internationale Flussgebietseinheiten nach Wasserrahmenrichtlinie“ → `fsdi-stac.ch.bafu.wasser-einzugsgebietsgliederung`; „Bevölkerungsentwicklung (jahresweise)“ → „Gäste und Übernachtungen im Jahresverlauf“). Ursachen im Code: (a) DOI und Kennung galten bis zu fünf Funden als Schlüssel, auch zweimal in einer Quelle; (b) Gruppen bildeten sich über Ketten (A teilt mit B einen Schlüssel, B mit der Collection einen anderen). Neu: DOI und Kennung sind nur Schlüssel, wenn höchstens ein Fund je Quelle sie trägt (A21 bleibt); ein Duplikat teilt immer selbst einen Schlüssel mit seinem Haupteintrag. Collection-IDs unverändert. Der Bericht nennt je Paar den gemeinsamen Schlüssel.
+- **Metadaten-Schnittstellen:** `/api/hub/repo/`, `/api/hub/search/` (piveau) und `/api/3/action/` (CKAN) sind nie Link „Source“. Ein piveau-Datensatz von `open.bydata.de` steht für `https://open.bydata.de/datasets/<id>`; andere piveau-Portale fallen auf den nächsten Rang. `-Classify` zählt Links „Source“ mit Mustern einer Schnittstelle (ArcGIS REST, GeoNetwork, OGC-Pfad, SPARQL, OAI-PMH, Pfadteil `/api` oder `/rest`, Format-Parameter) mit zehn Beispielen.
+- **Statistiktabellen:** Sie hielt das schwache Geo-Signal Ausdehnung (`extent:place` aus dem Ortstext „Sachsen“ bzw. `extent:source` mit dem Kasten des Landes; abgeleitet, nicht an den Funden geprüft). Neu: Ausdehnung und Herausgeber sind schwache Geo-Signale; sie halten keinen Fund eines Statistikamts (`statistics_publishers` in `geodata.yaml`) und keine Software (`software_terms`). Format, INSPIRE, Kategorie und Geo-Begriffe halten weiter. `-Classify` zeigt verborgene Funde je Herausgeber ohne/mit dieser Regel und welche schwachen Signale sie vorher hielten.
+- **Geo-Begriffe** „Karte“, „Karten“, „Plan“ (ganze Wörter); **Software:** software, solver, source code, Quellcode, Programmcode, OpenFOAM.
+- **not_granted:** „Sächsisches Landesamt für Umwelt, Landwirtschaft und Geologie“ steht in `grants/govdata.yaml` mit `dl-de-by-2.0`. Die Warteliste zählte bisher jede Angabe eines wartenden Fundes, also auch die freigegebene; vermutlich trägt jeder der 224 Funde eine zweite, nicht freigegebene Angabe. Neu nennt die Warteliste die nicht freigegebenen Lizenzen oder „Herausgeber ohne Zeile“.
+
 ## 14. Auslegungen (gelten, wenn Otto nicht widerspricht)
 
 - **A1** IDs geernteter Einträge wie §12; keine `proto-`-ID möglich (die Quelle `proto-*` ist im Seed verboten).
