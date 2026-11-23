@@ -21,13 +21,14 @@ Punkt 2 des Auftrags (lexikalisch und Vektor) ist größer als ein Nachtrag, und
 1. **Migration 035:** Spalte `entry` (`full` oder `listed`) in `earthx_dataset_search`; gelistete Zeilen haben keine Haltung der Items.
 2. **Suchtext eines gelisteten Eintrags** (`search_text.py`, `listed_search_text`), in den vier Teilen von `adr/0026` §4.1:
    - A: Kennung, Titel und die **Titel seiner Dubletten** (`state = 'duplicate'`, `duplicate_of`). So findet „Götterbaum“ den Haupteintrag, auch wenn nur eine Dublette das Wort im Titel trägt.
-   - B: Schlagworte, die Namen seiner Regionen (`earthx_region.name`) und das Wort seiner Kategorie.
+   - B: Schlagworte, die Namen seiner Regionen aus `place_names.yaml` (Abschnitt `places`, deutsch, englisch, französisch, italienisch, z. B. „Schweiz“, „Switzerland“, „Zürich“; F3 = 1) und das Wort seiner Kategorie. Eine Region ohne Eintrag dort trägt keinen Namen bei.
    - C: Beschreibung.
    - D: Herausgeber und Zugang („free account required“, „requester pays“).
    - Trigramme: Kennung, Titel, Titel der Dubletten, Schlagworte.
-   - **Auslegung A1:** Die Ortsbegriffe der vollen Einträge (`place_terms`, deutsch und englisch aus Natural Earth) kosten je Eintrag 1,1 ms [M], bei 10⁵ Einträgen fast zwei Minuten je Lauf, und liefern für kleine Flächen nichts. Für gelistete Einträge stehen deshalb die Namen der Regionen im Text, die M5-40 schon abgeleitet hat (ein Name je Region, z. B. „Switzerland“, „Zürich“). Deutsche Staatsnamen wie „Schweiz“ fehlen damit (Frage F3).
+   - **Auslegung A1:** Die Ortsbegriffe der vollen Einträge (`place_terms`, aus Natural Earth) kosten je Eintrag 1,1 ms [M], bei 10⁵ Einträgen fast zwei Minuten je Lauf, und liefern für kleine Flächen nichts. Gelistete Einträge nehmen deshalb die Regionen, die M5-40 schon abgeleitet hat. `catalog` liest dafür nur den Abschnitt `places` der Datei; `discovery` liest sie weiter selbst (`catalog` darf `discovery` nicht importieren).
 3. **Pflege des Index** (`search_index.py`, `write_listed_search_index`), am Ende von `catalog-load`, nachdem die Freigaben veröffentlicht sind:
-   - Die Funktion baut den Text jedes veröffentlichten Eintrags. Neu geschrieben (mit `to_tsvector`) werden nur Zeilen, bei denen sich der Hash des Textes, die Box oder der Zeitraum geändert hat.
+   - **F2 = 2:** Postgres rechnet je veröffentlichtem Eintrag einen Hash der Eingaben: ein Salz aus Textversion, Ortsnamen und Wörtern der Kategorien, `content_sha256`, Regionen, Schlagworte, Kategorie, Herausgeber, Zugang, Box, Zeitraum und die `content_sha256` der Dubletten. Nur Einträge, deren Hash von `text_hash` ihrer Zeile abweicht, kommen nach Python. Dort wird ihr Text gebaut, und je 2 000 werden mit `to_tsvector` geschrieben.
+   - Eine gelistete Zeile trägt diesen Hash der Eingaben als `text_hash`; M5-23 bettet neu ein, wenn er sich ändert (§4).
    - Zeilen von Einträgen, die nicht mehr veröffentlicht sind oder deren Kennung ein voller Eintrag übernommen hat, werden gelöscht.
    - Die Startprüfung von `api` und `write_search_index` lassen die gelisteten Zeilen in Ruhe.
 4. **Suche** (`search.py`):
@@ -43,7 +44,11 @@ Punkt 2 des Auftrags (lexikalisch und Vektor) ist größer als ein Nachtrag, und
    - Die Fläche läuft weiter ohne räumlichen Index über die Box (B7, dritter Punkt). Das bleibt offen (F4).
 6. **Route** (`collection_search.py`): Gelistete Treffer behalten ihren Rang. Kategorie und Region prüft die Route an der Zeile des Eintrags, nicht an der Registry. Ein Treffer ist dasselbe Dokument wie `/stac/collections/{id}` (mit `earthx:also_at`). `entry=full` und `entry=listed` wirken auch mit Text.
 
-**Umfang:** etwa 330 geänderte Zeilen Code und 225 Zeilen Tests und Browser-Check; über dem Richtwert von 400 nur durch die Tests.
+7. **Bewertungs-Set (F7 = 1):** CLC und LS tragen ihre Ids (`corine-land-cover`, `landsat-c2-l2`); ein Id des Sets darf ein voller Eintrag oder ein Handeintrag von `catalog/listed/` sein. Die Auswertung läuft über den Index, den `catalog-load` schreibt. Geweckt sind Q13–Q16, Q45 und Q46.
+   - Ergebnis: Deutsch 15 von 19 unter den ersten fünf (vorher 9 von 12), Englisch 41/42. Q14 „land cover classification“ findet CORINE nicht, weil das Wort „classification“ nur WorldCover trägt und der lexikalische Arm jedes bekannte Wort verlangt. Das schließt erst der Vektorarm.
+   - Die Untergrenzen im Test folgen den aktiven Fragen wie beim Wecken von Q34/Q35: Deutsch 15/19 und 29/38, Englisch 41/42 und 27/28. Für dieselben Fragen sinken sie nie.
+
+**Umfang:** etwa 380 geänderte Zeilen Code und 340 Zeilen Tests, Fixture und Browser-Check; über dem Richtwert durch F2, F3 und F7 (Otto, 23.11.2026) und die Tests.
 
 ## 3. Messung bei 10⁵ gelisteten Einträgen [M]
 
@@ -54,15 +59,16 @@ Synthetische Einträge (`source_id = 'bench'`), lokal in der Cloud-Sitzung (Post
 
 **`catalog-load`, Teil der gelisteten Einträge:**
 
-| Lauf | Zeit | geschrieben |
-|---|---|---|
-| erster Lauf, 10⁵ neu | 39,9 s | 100 000 |
-| zweiter Lauf, nichts geändert | 11,8 s | 0 |
-| 10 % geändert | 14,4 s | 10 000 |
+| Lauf | erste Fassung | nach F2 | geschrieben |
+|---|---|---|---|
+| erster Lauf, 10⁵ neu | 39,9 s | 50,6 s | 100 000 |
+| nichts geändert | 11,8 s | **0,9 s** | 0 |
+| 10 % geändert | 14,4 s | 5,9 s | 10 000 |
 
-- Spitzenspeicher des Prozesses 352 MiB (Python, ganzer Lauf).
-- Tabelle und Indizes `earthx_dataset_search`: 429 MiB bei 10⁵ Zeilen (der `tsvector` hält jeden Teil in drei Konfigurationen).
-- **Bewertung [A]:** 12 s ohne Änderung sind spürbar und wachsen linear: bei 10⁶ rund zwei Minuten je `catalog-load`, auch wenn nichts geschah. Der Lauf baut jeden Text in Python, um den Hash zu vergleichen. Vorschlag in F2.
+- **`catalog-load` als Ganzes, nichts geändert:** 7,3 s mit 10⁵ gelisteten Einträgen, 6,5 s mit den 2 Handeinträgen. Der Rest sind Regionen, Gemeinden, pgstac und Freigaben.
+- Spitzenspeicher des Prozesses: 174 MiB nach F2 (vorher 352 MiB), weil nur noch geänderte Einträge und je ein Stapel in Python liegen.
+- Tabelle und Indizes `earthx_dataset_search`: 369 MiB bei 10⁵ Zeilen (der `tsvector` hält jeden Teil in drei Konfigurationen).
+- Der erste Lauf ist langsamer als vorher, weil die Texte jetzt die mehrsprachigen Ortsnamen tragen (F3) und Postgres die Hashes rechnet.
 
 **Suche, `search_datasets`, je bester von 3 Läufen:**
 
@@ -85,16 +91,30 @@ Voraussetzung ist M5-43 (Postgres-Image mit pgvector, Erlaubnis für `.github/` 
    - `embedding halfvec(D)` und `embedding_model text` in `earthx_dataset_search`, für beide Arten von Zeilen. HNSW wie in `adr/0026` §14.
    - Gelistete Einträge brauchen keinen eigenen Index, weil die Tabelle schon gemeinsam ist.
 2. **Inkrementelles Einbetten:**
-   - Neu eingebettet wird nur eine Zeile, deren `text_hash` oder `embedding_model` sich geändert hat (`adr/0026` §4.6). Der `text_hash` steht seit diesem PR für jede gelistete Zeile.
-   - `catalog-load` holt nach dem Schreiben des Textes die Zeilen mit `embedding IS NULL OR embedding_model <> :model`, bettet sie in Stapeln ein (z. B. 256) und schreibt die Vektoren zurück.
+   - Neu eingebettet wird nur eine Zeile, deren `text_hash` oder `embedding_model` sich geändert hat (`adr/0026` §4.6). Bei gelisteten Zeilen ist `text_hash` seit diesem PR der Hash der Eingaben (§2 Punkt 3).
+   - Wer eine Zeile neu schreibt, setzt ihr Embedding auf `NULL`. `catalog-load` holt danach die Zeilen mit `embedding IS NULL OR embedding_model <> :model`, bettet sie in Stapeln ein (z. B. 256) und schreibt die Vektoren zurück.
    - Ein Lauf ohne Änderung bettet nichts ein.
-   - Damit ein abgebrochener Lauf die geschriebenen Texte nicht verliert, schreibt er je Stapel. Offen ist, ob in eigenen Transaktionen (F6).
+   - **F6 = 1:** Jeder Stapel läuft in einer eigenen Transaktion nach dem Hauptlauf. Ein Abbruch lässt Zeilen ohne Vektor, die der nächste Lauf nachholt; der Vektorarm überspringt sie bis dahin.
 3. **Zahlen:**
    - **Speicher [M aus M5-41 §4.2]:** Bei 10⁵ Zeilen, D = 384, `halfvec` kommen etwa 89 MB Tabelle und 112 MB HNSW-Index (11 s Bau) dazu; bei D = 768 159 MB und 195 MB.
    - **Einbetten [A, nicht gemessen]:** Hugging Face ist aus der Sitzung gesperrt [M, 403 des Proxys am 23.11.2026]. Annahme für e5-small int8 auf CPU: einige Hundert Texte je Sekunde und Kern. Danach brauchen 10⁵ Einträge beim ersten Lauf etwa 5–20 Minuten, ein Tag mit 1 % Änderungen Sekunden. Gemessen wird das in M5-23 mit dem gewählten Modell.
    - Ohne inkrementelles Einbetten würde jeder Start von `catalog-load` den ersten Lauf wiederholen. Das ist der Grund für Punkt 2.
 
-## 5. Fragen an Otto
+## 5. Antworten Otto (23.11.2026)
+
+| Frage | Antwort | Folge |
+|---|---|---|
+| F1 | 1 | Otto testet nach dem Merge und nennt Suchwörter, falls ein voller Datensatz fehlt |
+| F2 | 2 | in diesem PR (§2 Punkt 3); `catalog-load` ohne Änderung bei 10⁵: 0,9 s statt 11,8 s für den Index, 7,3 s als Ganzes (§3) |
+| F3 | 1 | in diesem PR: Ortsnamen aus `place_names.yaml` (§2 Punkt 2) |
+| F4 | 1 | eigene Aufgabe **M5-65** im M5-Plan |
+| F5 | 1, Trefferzahl wie M5-40 F4 (genau bis 10 000, darüber weggelassen) | nicht in diesem PR: nur die besten 1 000 je Arm ranken; die Filter für Kategorie und Region müssen dazu vor die Tiefe in die SQL-Abfrage, sonst stimmt die Zahl nicht. Eigene Aufgabe, Nummer vergibt der Planungs-Chat |
+| F6 | 1 | gilt für M5-23 (§4 Punkt 2) |
+| F7 | 1, in diesem PR | §2 Punkt 7 |
+
+Die Fragen stehen unten unverändert als Historie.
+
+## 6. Fragen an Otto (beantwortet, §5)
 
 **F1 — Volle Datensätze, die fehlen.** Volle Einträge findet die Suche in der Sitzung (§1). Landsat ist gelistet.
 
