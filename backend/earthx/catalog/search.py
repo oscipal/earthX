@@ -285,7 +285,10 @@ def ranks(scored: Sequence[tuple[str, float]]) -> dict[str, int]:
     A tie must not be broken before the fusion: by title, "ESA WorldCover" would come before "Sentinel-2" in every arm
     where both score the same, and win the fusion for "Sentinel-2".
     """
-    return {dataset_id: 1 + sum(other > score for _, other in scored) for dataset_id, score in scored}
+    first: dict[float, int] = {}
+    for position, score in enumerate(sorted((score for _, score in scored), reverse=True), start=1):
+        first.setdefault(score, position)
+    return {dataset_id: first[score] for dataset_id, score in scored}
 
 
 def fuse(*ranked: Mapping[str, int], titles: Mapping[str, str], k: int = RRF_K) -> tuple[str, ...]:

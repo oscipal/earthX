@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import time
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from typing import Any
@@ -383,6 +384,15 @@ async def test_without_a_period_nothing_is_ignored(catalogue, aconn):
 
 def test_equal_scores_share_a_rank():
     assert ranks([("a", 3.0), ("b", 1.0), ("c", 1.0), ("d", 0.5)]) == {"a": 1, "b": 2, "c": 2, "d": 4}
+
+
+def test_ranks_of_a_hundred_thousand_hits_take_well_under_a_second():
+    # Listed entries bring lists of 10⁴–10⁵ hits; counting the better scores per hit took minutes there.
+    scored = [(f"e{i}", float(i % 1000)) for i in range(100_000)]
+    started = time.perf_counter()
+    ranked = ranks(scored)
+    assert time.perf_counter() - started < 1.0
+    assert (ranked["e999"], ranked["e1998"], ranked["e0"]) == (1, 101, 99_901)
 
 
 def test_a_tie_in_one_arm_does_not_decide_the_fusion():
