@@ -1,0 +1,199 @@
+# Approval of a run of the harvest (adr/0033 §8; M5-20 plan §12), written by `discovery report`. Check the sample in
+# the report beside this file: open each link, compare licence, publisher, access, extent and that it is geodata; set
+# `ok: true` or `ok: false` for every entry. Then set `decision` (approved or rejected) and `decided_on` (the day).
+# `excluded_rules` takes licence rules whose entries stay out; `revoked_on` hides again what this file published.
+# Never a name, an address or the words of a request here: the repository is public.
+source_id: opendata-swiss
+batch_id: 3
+fingerprint: 080df7e40e8ae00a08b3b7caa1c5d23be8b15db160be456e0e6bc990d9d3335c
+created_on: 2026-11-23
+entries: 7748
+decision: pending
+decided_on: null
+excluded_rules: []
+revoked_on: null
+sample:
+- dataset_id: opendata-swiss.004c07cc-70e5-4a86-aa7a-745c1e20051e
+  why: new_rule
+  title: Œuvres d'art dans l'espace public
+  source_url: https://opendata.swiss/de/dataset/uvres-dart-dans-lespace-public
+  license_rule: opendata-swiss/Kanton Genf/opendata-swiss-open
+  ok: null
+- dataset_id: opendata-swiss.00ffe03f-f932-46bd-a419-fc9f0f52a053
+  why: new_rule
+  title: Gemeinden mit vorhandenen Gefahrenkarten Massenbewegungen
+  source_url: https://opendata.swiss/de/dataset/gemeinden-mit-vorhandenen-gefahrenkarten-massenbewegungen
+  license_rule: opendata-swiss/AGIS Service Center Kanton Aargau/opendata-swiss-open
+  ok: null
+- dataset_id: opendata-swiss.0007484b-3efb-4725-8b49-2cf6f9b8968b
+  why: new_rule
+  title: Gebäudeeingänge der Stadt Zürich, tagesaktuelle Einzeldaten gemäss GWR-Modell
+  source_url: https://data.stadt-zuerich.ch/dataset/bau_gwr_gebeingaenge_best_od5502
+  license_rule: opendata-swiss/Stadt Zürich/opendata-swiss-open
+  ok: null
+- dataset_id: opendata-swiss.005be093-282c-413c-ac8a-ec2e33ed193e
+  why: new_rule
+  title: 'Verkehrsberuhigte Zonen: Kernzone Verkehrskonzept Innenstadt'
+  source_url: https://data.bs.ch/explore/dataset/100253/
+  license_rule: opendata-swiss/Kanton Basel-Stadt/opendata-swiss-by
+  ok: null
+- dataset_id: opendata-swiss.005916bf-96f3-432a-94e9-0fee73f78f76
+  why: new_rule
+  title: WMS Überbauungs- und Erschliessungsstände der Gemeinden
+  source_url: https://opendata.swiss/de/dataset/wms-uberbauungs-und-erschliessungsstande-der-gemeinden
+  license_rule: opendata-swiss/Geoinformation Kanton Zürich/opendata-swiss-open
+  ok: null
+- dataset_id: opendata-swiss.006846d9-b5ba-4a1d-838e-d2226b49a8f5
+  why: new_rule
+  title: Induced Rockfall Dataset (Small Rock Experimental Campaign), Tschamut, Grisons,
+    Switzerland
+  source_url: https://doi.org/10.16904/ENVIDAT.37
+  license_rule: 'opendata-swiss/EnviDat: das Umwelt-Datenportal/opendata-swiss-by-ask'
+  ok: null
+- dataset_id: opendata-swiss.00537830-818b-4272-bb31-8f834519c26a
+  why: new_rule
+  title: Wärmenutzungskarte
+  source_url: https://opendata.swiss/de/dataset/warmenutzungskarte
+  license_rule: opendata-swiss/Amt für Geoinformation Kanton Schwyz/opendata-swiss-by
+  ok: null
+- dataset_id: opendata-swiss.01d6b491-9a66-4343-8eb7-5efbaf96ae5f
+  why: new_rule
+  title: Altersbetreuungen - Standort und Informationen
+  source_url: https://opendata.swiss/de/dataset/altersbetreuungen-standort-und-informationen
+  license_rule: opendata-swiss/Stadt Luzern/opendata-swiss-open
+  ok: null
+- dataset_id: opendata-swiss.003ba190-aa00-4d41-ba8a-5343f220206d
+  why: new_rule
+  title: Stations d'épuration des eaux du canton (STEP)
+  source_url: https://opendata.swiss/de/dataset/stations-depuration-des-eaux-du-canton-step
+  license_rule: opendata-swiss/Geoinformation Kanton Freiburg/opendata-swiss-open
+  ok: null
+- dataset_id: opendata-swiss.02a63817-4f15-4245-81a1-4d81dda2eae9
+  why: new_rule
+  title: BernClim-Daten Pflanzenphänologie, Schneeandauer, Nebelhäufigkeit
+  source_url: https://www.agi.dij.be.ch/de/start/geoportal/geodaten/detail.html?type=geoproduct&code=BERNCLIM
+  license_rule: opendata-swiss/Amt für Geoinformation des Kantons Bern/opendata-swiss-open
+  ok: null
+- dataset_id: opendata-swiss.01b51e0b-bbbe-4563-a09e-422c33b7a933
+  why: new_rule
+  title: UNESCO Grünräume Terrassen Gärten Höfe Dachgärten
+  source_url: https://map.bern.ch/geoportal/#/produkt/UNESCO_Gruenraeume_Terrassen_Gaerten_Hoefe_Dachgaerten
+  license_rule: opendata-swiss/Geoinformation Stadt Bern/opendata-swiss-open
+  ok: null
+- dataset_id: opendata-swiss.02359cd3-29c2-415d-a1d3-a01e749f3fcd
+  why: new_rule
+  title: Quartierpläne projektiert (UR)
+  source_url: https://opendata.swiss/de/dataset/quartierplane-projektiert-ur
+  license_rule: opendata-swiss/Geoinformation Kanton Uri/opendata-swiss-open
+  ok: null
+- dataset_id: opendata-swiss.02a8b513-05f8-4355-80eb-0049b94de3f6
+  why: new_rule
+  title: Strassenlärmbelastungskataster
+  source_url: https://metadata.geo.sg.ch/geo_records/217
+  license_rule: opendata-swiss/Amt für Raumentwicklung und Geoinformation (AREG) Kanton
+    St. Gallen/opendata-swiss-open
+  ok: null
+- dataset_id: opendata-swiss.03e713c3-bba0-4863-b782-30c7ad7b6266
+  why: new_rule
+  title: Amphibian and urban-rural landscape data Swiss Lowlands
+  source_url: https://doi.org/10.16904/ENVIDAT.267
+  license_rule: 'opendata-swiss/EnviDat: das Umwelt-Datenportal/cc-by-sa+opendata-swiss-by-ask'
+  ok: null
+- dataset_id: opendata-swiss.022c1b6e-8163-4ec1-9062-138225fa4a58
+  why: new_rule
+  title: Notfalltreffpunkte
+  source_url: https://data.geo.so.ch?filter=ch.so.amb.notfalltreffpunkte
+  license_rule: opendata-swiss/Kanton Solothurn/opendata-swiss-open
+  ok: null
+- dataset_id: opendata-swiss.172f1f5f-eba9-4963-999e-44f857221b3c
+  why: random
+  title: Hydraulic stress limits thermal acclimation in trees under chronic drought
+  source_url: https://doi.org/10.16904/ENVIDAT.720
+  license_rule: 'opendata-swiss/EnviDat: das Umwelt-Datenportal/cc-by+opendata-swiss-by'
+  ok: null
+- dataset_id: opendata-swiss.f64c05bd-b17e-455c-ae25-4de064d4a3b3
+  why: random
+  title: Kataster der belasteten Standorte
+  source_url: https://metadata.geo.sg.ch/geo_records/58
+  license_rule: opendata-swiss/Amt für Raumentwicklung und Geoinformation (AREG) Kanton
+    St. Gallen/opendata-swiss-open
+  ok: null
+- dataset_id: opendata-swiss.6122919a-75c0-4cc7-b896-bbb54911c8b6
+  why: random
+  title: 'Solarkataster: Dachkanten'
+  source_url: https://data.bs.ch/explore/dataset/100383/
+  license_rule: opendata-swiss/Kanton Basel-Stadt/opendata-swiss-by
+  ok: null
+- dataset_id: opendata-swiss.20c8da73-b56a-4211-80b9-1e6183cf2ab7
+  why: random
+  title: Kiebitz-Förderperimeter
+  source_url: https://opendata.swiss/de/dataset/kiebitz-forderperimeter
+  license_rule: opendata-swiss/AGIS Service Center Kanton Aargau/opendata-swiss-open
+  ok: null
+- dataset_id: opendata-swiss.dd2bea4b-d31a-45de-b282-674609b58225
+  why: random
+  title: 'snowBedFoam: an OpenFOAM Eulerian-Lagrangian solver for modelling snow transport'
+  source_url: https://doi.org/10.16904/ENVIDAT.223
+  license_rule: 'opendata-swiss/EnviDat: das Umwelt-Datenportal/cc-by-sa+opendata-swiss-by-ask'
+  ok: null
+- dataset_id: opendata-swiss.c6e21da0-1f28-4f97-8e91-eb66b37dbbbb
+  why: random
+  title: Baumkataster
+  source_url: https://opendata.swiss/de/dataset/baumkataster4
+  license_rule: opendata-swiss/Stadt Winterthur/opendata-swiss-open
+  ok: null
+- dataset_id: opendata-swiss.160856b6-6ca8-42f4-bfb3-44d8700e2744
+  why: random
+  title: Validating and improving the critical crack length in SNOWPACK
+  source_url: https://doi.org/10.16904/ENVIDAT.119
+  license_rule: 'opendata-swiss/EnviDat: das Umwelt-Datenportal/opendata-swiss-by-ask'
+  ok: null
+- dataset_id: opendata-swiss.b2197eb6-05fe-4994-8f68-581730005bab
+  why: random
+  title: Vektorstadtplan Strassenkonturen
+  source_url: https://opendata.swiss/de/dataset/vektorstadtplan-strassenkonturen
+  license_rule: opendata-swiss/Kanton Basel-Stadt/opendata-swiss-by
+  ok: null
+- dataset_id: opendata-swiss.6b4377b0-b269-4955-ba41-d0eef1960ec3
+  why: random
+  title: Gemeindekategorien
+  source_url: https://opendata.swiss/de/dataset/gemeindekategorien
+  license_rule: 'opendata-swiss/Luzern: Dienststelle Raum und Wirtschaft/opendata-swiss-open'
+  ok: null
+- dataset_id: opendata-swiss.72a0c837-6184-49cb-87a0-53d1e5aad795
+  why: random
+  title: Historischer Übersichtsplan der Stadt Zürich um 1987
+  source_url: https://data.stadt-zuerich.ch/dataset/geo_historischer_uebersichtsplan_der_stadt_zuerich_um_1987
+  license_rule: opendata-swiss/Stadt Zürich/opendata-swiss-open
+  ok: null
+- dataset_id: opendata-swiss.446c26f3-d10d-4157-b81b-ae6f191cfd6b
+  why: random
+  title: Die Schweiz während des letzteiszeitlichen Maximums (LGM) 1:500000 (Vektorkarte)
+  source_url: https://opendata.swiss/de/dataset/die-schweiz-wahrend-des-letzteiszeitlichen-maximums-lgm-1-500000-vektorkarte
+  license_rule: opendata-swiss/Bundesamt für Landestopografie swisstopo/opendata-swiss-open
+  ok: null
+- dataset_id: opendata-swiss.a7f1881f-d37d-46dc-9664-0fba83641614
+  why: random
+  title: Polizeiposten
+  source_url: https://opendata.swiss/de/dataset/polizeiposten
+  license_rule: opendata-swiss/Kanton Basel-Stadt/opendata-swiss-by
+  ok: null
+- dataset_id: opendata-swiss.7d6770e3-61d3-4b26-a4b7-02d2271fb324
+  why: random
+  title: Übersichtsplan Stadt Bern 1914
+  source_url: https://map.bern.ch/geoportal/#/produkt/Hist_UP_Bern_1914
+  license_rule: opendata-swiss/Geoinformation Stadt Bern/opendata-swiss-open
+  ok: null
+- dataset_id: opendata-swiss.7fbd98ef-ea73-4d69-908b-193e15616326
+  why: random
+  title: Baumkataster
+  source_url: https://opendata.swiss/de/dataset/baumkataster3
+  license_rule: opendata-swiss/Geoinformation Kanton Uri/opendata-swiss-open
+  ok: null
+- dataset_id: opendata-swiss.bdd312f3-7bff-4b49-a1dd-6dbf16a9e317
+  why: random
+  title: Bereiche und Haltekanten
+  source_url: https://data.opentransportdata.swiss/dataset/traffic-point-v2
+  license_rule: opendata-swiss/Geschäftsstelle Systemaufgaben Kundeninformation (SBB
+    AG)/opendata-swiss-by
+  ok: null
