@@ -459,6 +459,8 @@ Ursachen wieder aus dem Code und den Zahlen der Rückmeldung abgeleitet; die Sit
 - **Dedupe:** „Internationale Flussgebietseinheiten nach Wasserrahmenrichtlinie“ (`govdata.ac63368c-…`) bekam den Schlüssel `coll:data.geo.admin.ch/ch.bafu.wasser-einzugsgebietsgliederung`, weil `find_keys` auch die Adressen der Distributionen nach Collection-IDs durchsuchte; es verweist nur auf die Collection. Neu zählt eine Collection-ID nur in der Kennung (`identifier`) oder in der Seite des Datensatzes selbst (`source_url`, `landing_url`); Distributionen und Verweise zählen nicht. Folge für M7: Funde von opendata.swiss, die die ID nur in einer Distribution trugen, verlieren den Schlüssel und werden keine Dubletten der FSDI-Collection mehr; der Bericht zeigt die Zahl der Paare.
 - **PRTR / Betriebsstätten:** `prtr`, `*betriebsstätte(n)` und `*betriebsstaette(n)` sind Geo-Begriffe in `geodata.yaml` (Standorte).
 
+- **`-Classify` zeigt Dubletten (Otto, 23.11.2026, nach dem Lauf von govdata und opendata-swiss):** Abschnitt „Dubletten“ mit den Paaren, die die Quelle berühren, je Schlüsselart (DOI, Kennung, Collection-ID), mit den Schlüsseln dieser Ableitung und mit denen des letzten Berichts in der Datenbank; dazu die weggefallenen und neuen Paare und je zehn Beispiele. `ok` in `-Classify` zieht keine Dubletten ab: bei opendata-swiss waren es im Bericht vom 23.11. ok 8 353 − 605 Dubletten = 7 748 Einträge im Stapel.
+
 ## 14. Auslegungen (gelten, wenn Otto nicht widerspricht)
 
 - **A1** IDs geernteter Einträge wie §12; keine `proto-`-ID möglich (die Quelle `proto-*` ist im Seed verboten).
