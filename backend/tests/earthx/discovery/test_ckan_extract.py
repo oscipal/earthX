@@ -697,6 +697,11 @@ def test_page_extras_are_read_only_where_the_source_names_them() -> None:
         "https://metadaten.example.org/record/1.xml",
         "https://metadaten.example.org/record/1.rdf",
         "https://metadaten.example.org/record/1.json?lang=de",
+        # Otto, 23.11.2026: the metadata APIs of piveau and of CKAN.
+        "https://piveau.example.org/api/hub/repo/datasets/abc-1",
+        "https://piveau.example.org/api/hub/search/datasets/abc-1?locale=de",
+        "https://piveau.example.org/api/hub/repo/catalogues/x/datasets/origin?originalId=1",
+        "https://ckan.example.org/api/3/action/package_show?id=x",
         "http://opendata.example.org/dataset/x",
         "https://opendata.example.org/",
     ],
@@ -705,6 +710,34 @@ def test_a_metadata_record_or_a_start_page_is_no_page_of_the_dataset(url: str) -
     package = _resources(FILE, url=None, extras=[{"key": "uri", "value": url}])
     assert extract_package(package["id"], package, GOVDATA_LIKE).source_rank == 3
     assert any(code.startswith("extras_page_") for code, _ in link_reasons(package, GOVDATA_LIKE))
+
+
+@pytest.mark.parametrize(
+    ("url", "page"),
+    [
+        ("https://open.bydata.de/api/hub/repo/datasets/abc-1", "https://open.bydata.de/datasets/abc-1"),
+        ("https://open.bydata.de/api/hub/search/datasets/abc-1?locale=de", "https://open.bydata.de/datasets/abc-1"),
+        ("https://open.bydata.de/api/hub/repo/datasets/abc-1.rdf", "https://open.bydata.de/datasets/abc-1"),
+    ],
+)
+def test_a_piveau_record_stands_for_the_portal_s_page_where_it_is_known(url: str, page: str) -> None:
+    package = _resources(FILE, url=None, extras=[{"key": "uri", "value": url}])
+    found = extract_package(package["id"], package, GOVDATA_LIKE)
+    assert (found.source_url, found.source_rank) == (page, 2)
+
+
+def test_a_piveau_record_of_an_unknown_portal_is_skipped_for_the_next_candidate() -> None:
+    extras = [
+        {"key": "uri", "value": "https://piveau.example.org/api/hub/repo/datasets/abc-1"},
+        {"key": "guid", "value": "https://opendata.example.org/dataset/x"},
+    ]
+    package = _resources(FILE, url=None, extras=extras)
+    assert extract_package(package["id"], package, GOVDATA_LIKE).source_url == "https://opendata.example.org/dataset/x"
+
+
+def test_an_html_resource_at_a_metadata_api_is_no_viewer() -> None:
+    viewer = {**VIEWER, "url": "https://open.bydata.de/api/hub/repo/datasets/abc-1"}
+    assert ("html_metadata", viewer["url"]) in link_reasons(_resources(viewer), SOURCE)
 
 
 def test_an_html_resource_whose_download_address_is_a_page_is_a_viewer() -> None:

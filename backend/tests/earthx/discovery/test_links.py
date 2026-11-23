@@ -9,6 +9,7 @@ from earthx.discovery.links import (
     LinkIndex,
     LinkRank,
     address_key,
+    api_pattern,
     checked_link,
     choose_link,
     first_link,
@@ -370,3 +371,29 @@ def test_a_find_without_a_free_link_is_stale_once_one_is_free() -> None:
     index.set("a", [(2, page)], invalid=True)
     assert index.stale(frozenset({address_key(page)})) == []
     assert index.stale(frozenset()) == ["a"]
+
+
+@pytest.mark.parametrize(
+    ("url", "pattern"),
+    [
+        ("https://open.bydata.de/api/hub/repo/datasets/x", "piveau /api/hub/"),
+        ("https://ckan.example.org/api/3/action/package_show?id=x", "CKAN /api/action/"),
+        ("https://gis.example.org/arcgis/rest/services/x/MapServer", "ArcGIS /rest/services"),
+        ("https://geo.example.org/geonetwork/srv/api/records/1", "GeoNetwork /srv/api"),
+        ("https://geo.example.org/geoserver/ows?x=1", "OGC-Pfad (wms, wfs, wcs, wmts, csw, ows)"),
+        ("https://data.example.org/sparql?query=x", "SPARQL"),
+        ("https://data.example.org/oai?verb=GetRecord", "OAI-PMH"),
+        ("https://data.example.org/api/v1/datasets/x", "Pfadteil /api"),
+        ("https://data.example.org/rest/x", "Pfadteil /rest"),
+        ("https://data.example.org/x?format=json", "Format-Parameter json/xml/rdf"),
+    ],
+)
+def test_api_patterns_are_named(url: str, pattern: str) -> None:
+    assert api_pattern(url) == pattern
+
+
+@pytest.mark.parametrize(
+    "url", ["https://open.bydata.de/datasets/x", "https://data.example.org/apidoc/x", "https://x.org/restaurants", None]
+)
+def test_pages_and_other_values_match_no_api_pattern(url: object) -> None:
+    assert api_pattern(url) is None

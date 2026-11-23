@@ -69,6 +69,7 @@ from earthx.discovery.enrich import (
 )
 from earthx.discovery.extract import resource_kind
 from earthx.discovery.geodata import GEODATA_FILE, Classified, GeodataRule, classify, load_geodata_rule
+from earthx.discovery.links import api_pattern
 from earthx.logging import configure_logging
 
 __all__ = ["Derived", "ReportResult", "derive", "main", "run_report"]
@@ -398,6 +399,9 @@ class ReportResult:
     #: the move ("1 → 2"), and each as (title, skipped address, its rank, link now, its rank).
     link_moves: Counter[str] = field(default_factory=Counter)
     link_examples: list[tuple[str, str, int, str, int]] = field(default_factory=list)
+    #: Links "Source" that look like a machine interface (Otto, 23.11.2026), by pattern, and each as (pattern, title, link).
+    api_links: Counter[str] = field(default_factory=Counter)
+    api_examples: list[tuple[str, str, str]] = field(default_factory=list)
     deleted: int = 0
     missing: int = 0
     tombstones: int = 0
@@ -536,6 +540,9 @@ def _count(result: ReportResult, derived: Derived, found: Mapping[str, Any]) -> 
         was, now = int(found.get("skipped_rank") or 0), int(found.get("source_rank") or 0)
         result.link_moves[f"{was} → {now}"] += 1
         result.link_examples.append((str(found.get("title"))[:100], skipped, was, str(found.get("source_url")), now))
+    if pattern := api_pattern(found.get("source_url")):
+        result.api_links[pattern] += 1
+        result.api_examples.append((pattern, str(found.get("title"))[:100], str(found.get("source_url"))))
     entry = (row.dataset_id, str(found.get("title"))[:120], str(found.get("source_url")))
     if derived.classified.outcome == "not_geodata":
         result.hidden.append(entry)
@@ -595,6 +602,10 @@ def classify_text(source: SourceConfig, result: ReportResult) -> str:
     lines += [f"  {count:>7}  Rang {move}" for move, count in sorted(result.link_moves.items())]
     lines.append("  10 Beispiele (Titel | Sammelseite, Rang | Link jetzt, Rang):")
     lines += [f"  - {t} | <{u}>, {r} | <{n}>, {m}" for t, u, r, n, m in _sample(result.link_examples, 10, seed)]
+    lines.append(f"Link „Source“ mit Muster einer Schnittstelle ({sum(result.api_links.values())}), nach Muster:")
+    lines += [f"  {count:>7}  {pattern}" for pattern, count in result.api_links.most_common()]
+    lines.append("  10 Beispiele (Muster | Titel | Link):")
+    lines += [f"  - {p} | {t} | <{u}>" for p, t, u in _sample(result.api_examples, 10, seed)]
     lines.append("Gleichnamige Stadt und Kanton, je Name und Entscheid nach Herausgeber:")
     lines += [f"  {count:>7}  {choice}" for choice, count in sorted(result.choices.items())]
     lines.append(f"GeoNames-IDs ohne Zuordnung ({len(result.geonames)} verschiedene, häufigste 50):")
