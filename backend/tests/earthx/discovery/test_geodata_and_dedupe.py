@@ -187,6 +187,41 @@ class TestKeys:
         found = {"source_url": "https://map.geo.admin.ch/?layers=ch.swisstopo.swissalti3d,ch.bafu.laerm"}
         assert find_keys(found, stac_host=None, known=KNOWN) == ()
 
+    def test_a_collection_in_a_distribution_or_a_reference_is_no_key(self) -> None:
+        # Otto, 23.11.2026: the GovData find "Internationale Flussgebietseinheiten nach Wasserrahmenrichtlinie" links to
+        # a collection of the FSDI; that makes it no duplicate of the collection.
+        known = {"ch.bafu.wasser-einzugsgebietsgliederung": "data.geo.admin.ch"}
+        found = {
+            "source_key": "ac63368c-5b3e-40c4-816e-4f9fa84e2f6e",
+            "source_url": "https://www.govdata.de/suche/daten/internationale-flussgebietseinheiten",
+            "landing_url": "https://www.govdata.de/suche/daten/internationale-flussgebietseinheiten",
+            "distributions": [
+                {"href": "https://data.geo.admin.ch/browser/#/collections/ch.bafu.wasser-einzugsgebietsgliederung"}
+            ],
+        }
+        assert find_keys(found, stac_host=None, known=known) == ()
+        # Where the dataset itself is at that address, or its identifier says so, it is the key.
+        coll = "coll:data.geo.admin.ch/ch.bafu.wasser-einzugsgebietsgliederung"
+        page = "https://data.geo.admin.ch/browser/#/collections/ch.bafu.wasser-einzugsgebietsgliederung"
+        assert find_keys({**found, "landing_url": page}, stac_host=None, known=known) == (coll,)
+        assert find_keys({**found, "source_url": page}, stac_host=None, known=known) == (coll,)
+        named = {**found, "identifier": "ch.bafu.wasser-einzugsgebietsgliederung"}
+        assert find_keys(named, stac_host=None, known=known) == (coll, "id:ch.bafu.wasser-einzugsgebietsgliederung")
+
+    def test_the_govdata_find_with_a_linked_collection_is_no_duplicate_of_it(self) -> None:
+        known = {"ch.bafu.wasser-einzugsgebietsgliederung": "data.geo.admin.ch"}
+        found = {
+            "source_key": "ac63368c",
+            "source_url": "https://www.govdata.de/suche/daten/internationale-flussgebietseinheiten",
+            "distributions": [{"href": "https://map.geo.admin.ch/?layers=ch.bafu.wasser-einzugsgebietsgliederung"}],
+        }
+        coll = "coll:data.geo.admin.ch/ch.bafu.wasser-einzugsgebietsgliederung"
+        members = [
+            Member("fsdi-stac.x", (coll,), (2, 1), "fsdi-stac"),
+            Member("govdata.ac63368c", find_keys(found, stac_host=None, known=known), (2, 3), "govdata"),
+        ]
+        assert main_entries(members) == {}
+
     def test_the_page_of_a_dataset_is_no_key(self) -> None:
         found = {"landing_url": "https://amt.example.org/daten", "source_url": "https://amt.example.org/daten"}
         assert find_keys(found, stac_host=None, known=KNOWN) == ()

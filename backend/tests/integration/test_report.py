@@ -693,6 +693,16 @@ def test_classify_names_why_a_find_is_not_granted(world: World) -> None:
     assert "Kanton Zug | CC-BY-4.0" not in text
 
 
+def test_a_collection_in_a_distribution_makes_no_duplicate(world: World) -> None:
+    # Otto, 23.11.2026: a find that links to a collection of the FSDI in a file is not that collection.
+    world.put(world.stac, _find("ch.example.boden", source_url="https://stac.example.org/browser/ch.example.boden"))
+    linked = {"href": "https://map.example.org/?layers=ch.example.boden", "format": "HTML", "media_type": None}
+    world.put(world.ckan, _find("linking", distributions=[linked]))
+    world.report(world.stac)
+    world.report()
+    assert world.row("linking")["duplicate_of"] is None
+
+
 def test_two_finds_of_one_source_with_one_identifier_stay_apart(world: World) -> None:
     # Otto, 23.11.2026: two GovData finds with one placeholder identifier were made one.
     world.put(world.ckan, _find("a", identifier="statistik"), _find("b", identifier="statistik"))

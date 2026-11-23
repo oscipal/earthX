@@ -6,9 +6,11 @@ collection pages within one source, never the same dataset across sources):
 * ``doi:`` the DOI;
 * ``id:`` the DCAT identifier of the dataset;
 * ``coll:<host>/<id>`` a STAC collection: its own id for a find of a STAC source or a full entry, and for any other
-  find the id of a collection that stands as a whole token in one of its addresses (opendata.swiss names the FSDI
-  collections it lists, M7). Only ids with two dots or more are looked for in addresses (``ch.swisstopo.x``): a short
-  id such as ``sentinel-2-l2a`` is too common a word. A find whose addresses name several collections gets none.
+  find the id of a collection that stands as a whole token in its identifier or in the page of the dataset itself
+  (opendata.swiss names the FSDI collections it lists, M7). Only ids with two dots or more are looked for
+  (``ch.swisstopo.x``): a short id such as ``sentinel-2-l2a`` is too common a word. A find that names several
+  collections there gets none. A collection id in a distribution or in a reference is no key (Otto, 23.11.2026: a
+  GovData find linking to a collection of the FSDI is not that collection).
 
 A DOI or identifier is a key only where it is unique (Otto, 23.11.2026): on at most one find of each source and on at
 most :data:`MAX_SHARED` finds in all. Two finds of one source with the same DOI or identifier are two datasets that
@@ -64,8 +66,7 @@ def find_keys(
     if stac_host is not None:
         keys.add(f"coll:{stac_host}/{str(found['source_key']).lower()}")
     else:
-        addresses = [found.get("source_url"), found.get("landing_url")]
-        addresses += [d.get("href") for d in found.get("distributions") or () if isinstance(d, dict)]
+        addresses = [found.get("identifier"), found.get("source_url"), found.get("landing_url")]
         tokens = collection_tokens((a for a in addresses if isinstance(a, str)), known)
         if len(tokens) == 1:
             keys |= tokens
