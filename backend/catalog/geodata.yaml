@@ -34,7 +34,9 @@ geo_terms: ["*messstelle", "*messstellen", "*messnetz", "*zaehlstelle", "*zaehls
             ais, lärm, "lärm*", "*bahnlärm", "*strassenlärm", "*straßenlärm", "*fluglärm", "beurteilungspegel*",
             "hydrometrie*", "luftqualität*", "flaechennutzungsplan*", "luftqualitaet*", laerm, "laerm*",
             # Otto, 23.11.2026, from earlier samples ("historische Karten der Aare" was hidden):
-            karte, karten, plan]
+            karte, karten, plan,
+            # Otto, 23.11.2026 ("PRTR_Betriebsstaetten_RLP" was hidden): PRTR registers and sites are places.
+            prtr, "*betriebsstätte", "*betriebsstätten", "*betriebsstaette", "*betriebsstaetten"]
 # Publishers whose finds are geodata whatever they are called (Otto, 20.11.2026): a geo signal in the publisher's name.
 geo_publishers: [EnviDat]
 

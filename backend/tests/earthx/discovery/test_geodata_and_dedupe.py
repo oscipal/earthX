@@ -131,6 +131,16 @@ class TestGeodataRule:
         # A statistics word in the title of another publisher is outweighed by the extent as before.
         assert _verdict(_find("Statistik der Pegel"), Extent("place", codes=("DE", "DE-SN"))) == "geodata"
 
+    @pytest.mark.parametrize(
+        "title", ["PRTR_Betriebsstaetten_RLP", "Betriebsstätten nach E-PRTR", "Industriebetriebsstätte Nord", "PRTR"]
+    )
+    def test_prtr_and_sites_are_places(self, title: str) -> None:
+        # Otto, 23.11.2026: "PRTR_Betriebsstaetten_RLP" was hidden as no geodata.
+        assert _verdict(_find(title, publisher=STATISTICS_OFFICE)) == "geodata"
+
+    def test_a_word_that_only_contains_a_site_word_is_no_signal(self) -> None:
+        assert _verdict(_find("Betriebsstatistik", publisher=STATISTICS_OFFICE)) == "not_geodata"
+
     @pytest.mark.parametrize("title", ["Historische Karten der Aare", "Karte der Wanderwege", "Plan der Stadt"])
     def test_map_and_plan_are_geo_words(self, title: str) -> None:
         assert _verdict(_find(title, publisher=STATISTICS_OFFICE)) == "geodata"
