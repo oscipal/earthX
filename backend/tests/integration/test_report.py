@@ -693,6 +693,15 @@ def test_classify_names_why_a_find_is_not_granted(world: World) -> None:
     assert "Kanton Zug | CC-BY-4.0" not in text
 
 
+def test_classify_lists_only_the_statements_the_catalogue_does_not_know(world: World) -> None:
+    # Otto, 23.11.2026: 224 finds of one publisher waited with an identifier of the licence beside its address; the pair
+    # of the waiting list must name the identifier, not the address that was known.
+    world.put(world.ckan, _find("beside", licence_statements=["CC-BY-4.0", "dl-by-zz/9.9"]))
+    text = classify_text(world.ckan, world.report(classify_only=True))
+    assert "1  Kanton Zug | dl-by-zz/9.9" in text
+    assert "Kanton Zug | CC-BY-4.0" not in text
+
+
 def test_a_collection_in_a_distribution_makes_no_duplicate(world: World) -> None:
     # Otto, 23.11.2026: a find that links to a collection of the FSDI in a file is not that collection.
     world.put(world.stac, _find("ch.example.boden", source_url="https://stac.example.org/browser/ch.example.boden"))
