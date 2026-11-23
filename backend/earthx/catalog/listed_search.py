@@ -23,7 +23,17 @@ from psycopg import sql
 
 from earthx.catalog.listed import sort_title
 
-__all__ = ["Gone", "ListedFilter", "ListedRow", "count_listed", "full_entries", "listed_entry", "listed_page"]
+__all__ = [
+    "Gone",
+    "ListedFilter",
+    "ListedRow",
+    "count_listed",
+    "full_entries",
+    "listed_documents",
+    "listed_entry",
+    "listed_page",
+    "matching_listed",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,6 +157,33 @@ async def full_entries(conn: Any, ids: Sequence[str], regions: Sequence[str]) ->
         await cur.execute(statement, {"ids": list(ids), "regions": list(regions)})
         rows = await cur.fetchall()
     return sorted((sort_title(title), dataset_id) for dataset_id, title in rows)
+
+
+async def matching_listed(conn: Any, ids: Sequence[str], where: ListedFilter) -> frozenset[str]:
+    """The published entries of ``ids`` that ``where`` matches."""
+    if not ids:
+        return frozenset()
+    condition, params = _conditions(where)
+    statement = sql.SQL("SELECT dataset_id FROM public.earthx_listed_entry WHERE dataset_id = ANY(%(ids)s) AND {}").format(
+        condition
+    )
+    async with conn.cursor() as cur:
+        await cur.execute(statement, {**params, "ids": list(ids)})
+        return frozenset(row[0] for row in await cur.fetchall())
+
+
+async def listed_documents(conn: Any, ids: Sequence[str]) -> dict[str, dict[str, Any]]:
+    """The documents of the published entries of ``ids``, as :func:`listed_entry` gives one."""
+    if not ids:
+        return {}
+    async with conn.cursor() as cur:
+        await cur.execute(
+            "SELECT dataset_id, content || jsonb_build_object('earthx:regions', to_jsonb(regions)) || "
+            + _ALSO_AT
+            + " FROM public.earthx_listed_entry e WHERE dataset_id = ANY(%s) AND state = 'published'",
+            (list(ids),),
+        )
+        return {row[0]: row[1] for row in await cur.fetchall()}
 
 
 async def listed_entry(conn: Any, dataset_id: str) -> dict[str, Any] | Gone | None:
