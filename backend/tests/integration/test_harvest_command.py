@@ -579,3 +579,51 @@ async def test_the_pages_of_another_source_do_not_count(db: psycopg.Connection, 
             "earthx_harvest_run",
         ):
             db.execute(f"DELETE FROM public.{table} WHERE source_id = %s", (other.source_id,))
+
+
+async def test_the_links_a_find_could_take_are_kept_in_its_intermediate_form(
+    db: psycopg.Connection, source: SourceConfig
+) -> None:
+    await run_harvest(db, replace(source, catalog_page=None), gateway=_gateway(Catalogue([_naming("a"), _naming("b")])))
+    rows = dict(
+        db.execute(
+            "SELECT source_key, extracted FROM public.earthx_record_state WHERE source_id = %s", (source.source_id,)
+        ).fetchall()
+    )
+    # No free link and no catalogue page: invalid, with nothing but the links it could have taken.
+    assert rows == {"a": {"link_candidates": [[2, PAGE]]}, "b": {"link_candidates": [[2, PAGE]]}}
+    await run_harvest(db, source, gateway=_gateway(Catalogue([_naming("a", "https://geo.example.ch/themen/a")])))
+    row = db.execute(
+        "SELECT extracted->'link_candidates' FROM public.earthx_record_state"
+        " WHERE source_id = %s AND source_key = 'a'",
+        (source.source_id,),
+    ).fetchone()
+    assert row == ([[2, "https://geo.example.ch/themen/a"]],)
+
+
+async def test_the_run_reads_a_raw_answer_only_of_a_find_it_derives_again(
+    db: psycopg.Connection, source: SourceConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Otto, 21.11.2026: the rule works on the intermediate forms; an incremental run is no dearer for it.
+    catalogue = Catalogue(
+        [_naming("a"), _naming("b", "https://geo.example.ch/themen/b"), _naming("c", "https://geo.example.ch/themen/c")]
+    )
+    await run_harvest(db, source, gateway=_gateway(catalogue))
+    asked: list[list[str]] = []
+    real = harvest_module.raw_of_keys
+
+    def spy(conn: psycopg.Connection, source_id: str, keys: Any) -> Any:
+        asked.append(list(keys))
+        return real(conn, source_id, keys)
+
+    def forbidden(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("a raw answer was read for the index")
+
+    monkeypatch.setattr(harvest_module, "raw_of_keys", spy)
+    monkeypatch.setattr(harvest_module, "raw_records", forbidden)
+    result = await run_harvest(db, source, gateway=_gateway(catalogue))
+    assert (result.counts.found_unchanged, result.links_settled, asked) == (3, 0, [])
+    # `d` names the page of `b`: `b` and `d` are derived again, `a` and `c` are not read.
+    later = Catalogue([*catalogue.collections, _naming("d", "https://geo.example.ch/themen/b")])
+    await run_harvest(db, source, gateway=_gateway(later))
+    assert asked == [["b", "d"]]

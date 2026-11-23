@@ -353,9 +353,12 @@ def seen(cur: psycopg.Cursor, *, run_id: int, source_id: str, key: str) -> None:
     )
 
 
-def mark_gone(conn: psycopg.Connection, *, run_id: int, source_id: str, seen_since_run: int | None = None) -> int:
+def mark_gone(
+    conn: psycopg.Connection, *, run_id: int, source_id: str, seen_since_run: int | None = None
+) -> list[str]:
     """Every find of the source that a complete listing did not name is ``gone`` (plan A3): no run from
-    ``seen_since_run`` on (the run that began a full pass over several runs; this run where it is ``None``) saw it."""
+    ``seen_since_run`` on (the run that began a full pass over several runs; this run where it is ``None``) saw it.
+    Returns their keys."""
     with conn.transaction(), conn.cursor() as cur:
         cur.execute(
             "UPDATE public.earthx_record_state s SET state = 'gone', reason = NULL, extracted = NULL,"
@@ -369,7 +372,7 @@ def mark_gone(conn: psycopg.Connection, *, run_id: int, source_id: str, seen_sin
         gone = cur.fetchall()
         for key, before in gone:
             _transition(cur, source_id, key, before, "gone", None, run_id)
-    return len(gone)
+    return [key for key, _ in gone]
 
 
 def source_summary(conn: psycopg.Connection, source_id: str) -> SourceSummary:
@@ -422,15 +425,22 @@ def raw_of_keys(conn: psycopg.Connection, source_id: str, keys: Sequence[str]) -
             yield key, gzip.decompress(packed), state
 
 
-def stored_links(conn: psycopg.Connection, source_id: str) -> list[tuple[str, str, str | None, str | None]]:
-    """``(key, state, source_url, source_rank)`` of the finds of the source that have a link "Source" or lost theirs
-    (``no_link``): what each was derived to, to see which no longer fits the collective pages of the source."""
-    return conn.execute(
-        "SELECT source_key, state, extracted->>'source_url', extracted->>'source_rank'"
-        " FROM public.earthx_record_state WHERE source_id = %s"
-        " AND (state = 'extracted' OR (state = 'invalid' AND reason = 'no_link'))",
-        (source_id,),
-    ).fetchall()
+def stored_links(conn: psycopg.Connection, source_id: str) -> Iterator[tuple[str, str, Any, str | None]]:
+    """``(key, state, link_candidates, source_url)`` of the finds of the source that have a link "Source" or lost theirs
+    (``no_link``), for the collective pages of the source (Otto, 21.11.2026). Reads the intermediate form only, never a
+    raw answer. ``source_url`` is the link the find was derived with at rank 1 or 2, else ``None`` (the catalogue page);
+    ``link_candidates`` the JSON list the extractor kept, ``None`` for a find an older extractor derived."""
+    # A named cursor needs a transaction on a connection in autocommit; it only reads.
+    with conn.transaction(), conn.cursor(name="earthx_stored_links") as cur:
+        cur.itersize = 5000
+        cur.execute(
+            "SELECT source_key, state, extracted->'link_candidates',"
+            " CASE WHEN extracted->>'source_rank' IN ('1', '2') THEN extracted->>'source_url' END"
+            " FROM public.earthx_record_state WHERE source_id = %s"
+            " AND (state = 'extracted' OR (state = 'invalid' AND reason = 'no_link')) AND extracted ? 'link_candidates'",
+            (source_id,),
+        )
+        yield from cur
 
 
 def raw_of_catalogue_links(conn: psycopg.Connection, source_id: str) -> Iterator[tuple[str, bytes]]:

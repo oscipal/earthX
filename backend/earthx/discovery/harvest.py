@@ -76,7 +76,6 @@ from earthx.discovery.ckan import (
     link_reasons,
     stable_package,
 )
-from earthx.discovery.ckan import link_candidates as ckan_candidates
 from earthx.discovery.ckan_measure import measure_page
 from earthx.discovery.extract import (
     Extracted,
@@ -87,10 +86,9 @@ from earthx.discovery.extract import (
     extracted_sha256,
     extractor_version,
 )
-from earthx.discovery.links import LinkIndex, LinkRank
+from earthx.discovery.links import LinkIndex
 from earthx.discovery.source_gateway import open_source_gateway
 from earthx.discovery.stac import StacListing, extract_collection, stac_pages
-from earthx.discovery.stac import link_candidates as stac_candidates
 from earthx.gateway import (
     Gateway,
     GatewayError,
@@ -171,11 +169,6 @@ _EXTRACTORS: Mapping[SourceProtocol, Callable[[str, Any, SourceConfig, frozenset
     SourceProtocol.STAC_API: extract_collection,
     SourceProtocol.CKAN: extract_package,
 }
-#: The addresses a find could take as its link "Source", for the index of collective pages (links.py).
-_CANDIDATES: Mapping[SourceProtocol, Callable[[str, Any, SourceConfig], list[tuple[LinkRank, object]]]] = {
-    SourceProtocol.STAC_API: stac_candidates,
-    SourceProtocol.CKAN: lambda key, document, source: ckan_candidates(document, source),
-}
 #: What a find of a foreign shape raises while it is read; it is no find, not the end of the run.
 _SHAPE_ERRORS = (TypeError, ValueError, AttributeError, KeyError, IndexError, ArithmeticError, RecursionError)
 
@@ -236,7 +229,7 @@ class _Run:
     changed_fields: Counter[str] = field(default_factory=Counter)
     raw_fields: Counter[str] = field(default_factory=Counter)
     #: The links every find of the source could take, and the collective pages among them (Otto, 21.11.2026): read from
-    #: the kept raw answers when the run starts, kept up to date with every find the run extracts.
+    #: the intermediate forms when the run starts, kept up to date with every find the run extracts.
     index: LinkIndex = field(default_factory=LinkIndex)
     shared: frozenset[str] = frozenset()
     #: The finds this run derived, so that a second derivation at its end (:func:`_settle`) is not counted twice.
@@ -382,14 +375,6 @@ def _count_find(run: _Run, before: Previous | None, now: tuple[str, str | None],
         run.changed_fields.update(changed_fields(old, new) if (before.state, before.reason) == now else ["(Zustand)"])
 
 
-def _index(run: _Run, key: str, document: Any) -> None:
-    """Note what the link "Source" of a find could be, for the collective pages of the source (links.py)."""
-    try:
-        run.index.set(key, _CANDIDATES[run.source.protocol](key, document, run.source))
-    except (Invalid, *_SHAPE_ERRORS):
-        run.index.discard(key)
-
-
 def _record(
     cur: psycopg.Cursor,
     run: _Run,
@@ -407,16 +392,18 @@ def _record(
             raise Invalid("too_large")
         if not isinstance(document, dict):
             raise Invalid("shape")
-        _index(run, key, document)
         try:
             found = _EXTRACTORS[run.source.protocol](key, document, run.source, run.shared)
         except _SHAPE_ERRORS:
             # One find of a foreign shape must not end the run for every other one (review of PR 1).
             raise Invalid("shape") from None
         extracted, digest, extent = found.to_document(), extracted_sha256(found), found.extent_known
+        run.index.set(key, found.link_candidates, stored=found.source_url if found.source_rank < 3 else None)
     except Invalid as invalid:
-        run.index.discard(key)
         state, reason = "invalid", invalid.reason
+        # A find without a free link keeps the links it could have, to be derived again when one is free.
+        extracted = {"link_candidates": invalid.link_candidates} if invalid.link_candidates else None
+        run.index.set(key, invalid.link_candidates, invalid=True)
     if key not in run.touched:
         old = None if before is None else comparable(before.extracted)
         _count_find(run, before, (state, reason), old, comparable(extracted))
@@ -501,7 +488,7 @@ async def _fetch_and_extract(run: _Run, fetch: _Fetcher) -> None:
         return
     if not isinstance(listing, CkanListing):
         if listing.complete:
-            run.counts.gone = mark_gone(conn, run_id=run.run_id, source_id=source.source_id)
+            _gone(run, mark_gone(conn, run_id=run.run_id, source_id=source.source_id))
             if listing.validators is not None:
                 save_list_validators(conn, source.source_id, listing.validators)
         return
@@ -513,12 +500,17 @@ async def _fetch_and_extract(run: _Run, fetch: _Fetcher) -> None:
         run.gone_unchecked = "incremental"
     elif listing.complete:
         # Gone is what no run of the pass saw, whichever of its runs read which page (A3).
-        run.counts.gone = mark_gone(
-            conn, run_id=run.run_id, source_id=source.source_id, seen_since_run=run.pass_.run_id
-        )
+        _gone(run, mark_gone(conn, run_id=run.run_id, source_id=source.source_id, seen_since_run=run.pass_.run_id))
     else:
         run.gone_unchecked = "listing_empty"
     end_pass(conn, source.source_id)
+
+
+def _gone(run: _Run, keys: Sequence[str]) -> None:
+    """Finds the source no longer names: counted, and out of the index of collective pages."""
+    run.counts.gone = len(keys)
+    for key in keys:
+        run.index.discard(key)
 
 
 def _reextract(run: _Run, *, outdated_only: bool, keys: Sequence[str] | None = None) -> int:
@@ -553,41 +545,24 @@ def _reextract(run: _Run, *, outdated_only: bool, keys: Sequence[str] | None = N
 
 
 def _build_index(run: _Run) -> None:
-    """Read the links of every find of the source from its kept raw answers (a run starts with what the earlier ones
-    left) and settle the collective pages among them."""
-    for key, raw, _ in raw_records(run.conn, run.source.source_id):
-        try:
-            document = json.loads(raw)
-        except (ValueError, RecursionError):
-            continue
-        _index(run, key, document)
+    """Read the links of every find of the source from the intermediate forms the earlier runs left (no raw answer)
+    and settle the collective pages among them."""
+    for key, state, candidates, stored in stored_links(run.conn, run.source.source_id):
+        run.index.set(key, candidates, stored=stored, invalid=state == "invalid")
     run.shared = run.index.shared()
 
 
 def _settle(run: _Run) -> None:
     """The end of a run: finds whose link does not fit the collective pages of the source as they stand now are derived
-    again from their raw answers. A find another one made a collective page of is one, also if it did not change; so is
-    one whose page stopped being collective. Looking at what is stored rather than at what this run did also mends a
-    run that ended early (Otto, 21.11.2026)."""
-    stored = stored_links(run.conn, run.source.source_id)
-    run.index.retain({key for key, *_ in stored})
+    again from their raw answers, only those. A find another one made a collective page of is one, also if it did not
+    change; so is one whose page stopped being collective. Comparing the stored links with what the index holds, not
+    with what this run did, also mends a run that ended early (Otto, 21.11.2026). Reads no raw answer but the stale
+    ones."""
     shared = run.index.shared()
-    stale = []
-    for key, state, url, rank in stored:
-        if key not in run.index:
-            continue
-        expected = run.index.link_of(key, shared)
-        if state == "invalid":
-            wrong = expected is not None
-        elif expected is None:
-            wrong = rank != str(int(LinkRank.CATALOGUE_PAGE))
-        else:
-            wrong = url != expected
-        if wrong:
-            stale.append(key)
+    stale = run.index.stale(shared)
     run.shared = shared
     if stale:
-        run.links_settled = _reextract(run, outdated_only=False, keys=sorted(stale))
+        run.links_settled = _reextract(run, outdated_only=False, keys=stale)
 
 
 def _kind(

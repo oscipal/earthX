@@ -18,7 +18,6 @@ from earthx.discovery.ckan import (
     CkanListing,
     ckan_pages,
     extract_package,
-    link_candidates,
     link_reasons,
     package_key,
     search_params,
@@ -756,6 +755,12 @@ def test_the_start_page_of_an_office_is_no_link_source() -> None:
     assert found.landing_url == CATALOGUE_PAGE
 
 
+def test_a_leading_language_does_not_make_the_page_of_an_office_a_dataset() -> None:
+    # Otto, 21.11.2026: /de/agi is a collective page like /agi.
+    found = extract_package(PACKAGE["id"], _resources(FILE, url="https://www.sz.ch/de/agi"), SOURCE)
+    assert (found.source_url, found.source_rank, found.skipped_url) == (CATALOGUE_PAGE, 3, "https://www.sz.ch/de/agi")
+
+
 def test_a_page_the_source_shares_between_finds_is_no_link_source() -> None:
     package = _resources(FILE, url=THEME)
     assert extract_package(PACKAGE["id"], package, SOURCE).source_url == THEME
@@ -792,15 +797,22 @@ def test_without_a_page_left_the_find_is_invalid() -> None:
     assert raised.value.reason == "no_link"
 
 
-def test_the_candidates_of_a_package_for_the_index_of_the_source() -> None:
+def test_the_links_a_package_could_take_are_kept_for_the_index_of_the_source() -> None:
     package = _resources(VIEWER, FILE, url=THEME)
-    assert link_candidates(package, SOURCE) == [
-        (LinkRank.VIEWER_OR_DOWNLOAD_PAGE, VIEWER["url"]),
-        (LinkRank.DATASET_PAGE, THEME),
-        (LinkRank.CATALOGUE_PAGE, CATALOGUE_PAGE),
-    ]
-    with pytest.raises(Invalid):
-        link_candidates(_with(package, title=None), SOURCE)
+    found = extract_package(PACKAGE["id"], package, SOURCE)
+    assert found.link_candidates == ((1, VIEWER["url"]), (2, THEME))
+    # What the rule skipped stays among them: the index decides on every candidate.
+    skipped = extract_package(PACKAGE["id"], package, SOURCE, frozenset({address_key(THEME)}))
+    assert skipped.link_candidates == found.link_candidates
+    assert extract_package(PACKAGE["id"], _resources(FILE, url=OFFICE), SOURCE).link_candidates == ()
+
+
+def test_a_find_without_a_free_link_keeps_the_links_it_could_have_taken() -> None:
+    source = replace(SOURCE, catalog_page=None)
+    package = _resources(FILE, url=THEME)
+    with pytest.raises(Invalid) as raised:
+        extract_package(PACKAGE["id"], package, source, frozenset({address_key(THEME)}))
+    assert (raised.value.reason, raised.value.link_candidates) == ("no_link", ((2, THEME),))
 
 
 def test_the_reason_why_a_page_is_a_collective_page() -> None:
