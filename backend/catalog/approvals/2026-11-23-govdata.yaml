@@ -8,8 +8,8 @@ batch_id: 5
 fingerprint: 8026460b56d980f0ff2b73684e2d5286f9edf924be28f75c7b42e5ae2f64bc14
 created_on: 2026-11-23
 entries: 94258
-decision: pending
-decided_on: null
+decision: approved
+decided_on: 2026-11-23
 excluded_rules: []
 revoked_on: null
 sample:
@@ -18,67 +18,67 @@ sample:
   title: 'Topographische Karte 1 : 25 000 - 2933 Gusborn (1994)'
   source_url: https://www.govdata.de/suche/daten/topographische-karte-1-25-000-2933-gusborn-1994
   license_rule: govdata/Landesvermessung und Geobasisinformation Brandenburg (LGB)/dl-de-by-2.0
-  ok: null
+  ok: true
 - dataset_id: govdata.0012fac8-074a-4151-ace9-e521250b9068
   why: new_rule
   title: Echolotdaten - Nordsee 2016 9281602
   source_url: https://www.govdata.de/suche/daten/echolotdaten-nordsee-2016-9281602b435d
   license_rule: govdata/Bundesamt für Seeschifffahrt und Hydrographie (BSH)/dl-de-by-2.0
-  ok: null
+  ok: true
 - dataset_id: govdata.00225a04-9e95-48db-a9f5-ed06fcab7142
   why: new_rule
   title: Denkmalliste Kreis Herzogtum Lauenburg
   source_url: https://opendata.schleswig-holstein.de/dataset/4521f10b-dbaa-4aa6-87c8-b76d4fc2da0f
   license_rule: govdata/Landesamt für Denkmalpflege/cc-by-4.0
-  ok: null
+  ok: true
 - dataset_id: govdata.000cc2ba-1fa3-4299-9a62-77666e349b16
   why: new_rule
   title: 'Messergebnisse zur Radioaktivität in: Trinkwasser (14.03.2017)'
   source_url: https://www.govdata.de/suche/daten/messergebnisse-zur-radioaktivitat-in-trinkwasser-14-03-2017-3
   license_rule: govdata/Institut für Hygiene und Umwelt/dl-de-by-2.0
-  ok: null
+  ok: true
 - dataset_id: govdata.0016c0ea-dabd-4380-ab98-976324a9930a
   why: new_rule
   title: Bebauungsplan Ottensen 48 Hamburg
   source_url: https://www.govdata.de/suche/daten/bebauungsplan-ottensen-48-hamburg0a74a
   license_rule: govdata/Landesbetrieb Geoinformation und Vermessung (LGV) Hamburg/dl-de-by-2.0
-  ok: null
+  ok: true
 - dataset_id: govdata.00120a33-258f-4523-b58d-b7b0d83c69a2
   why: new_rule
   title: Automatische Zählstellen auf der Bundesstraße B512 - 2012
   source_url: https://open.bydata.de/datasets/zaehlstellen-b512-2012
   license_rule: govdata/Bundesanstalt für Straßen- und Verkehrswesen (BASt)/cc-by-4.0
-  ok: null
+  ok: true
 - dataset_id: govdata.0014b435-9476-4f93-9efe-78d0fdc7287c
   why: new_rule
   title: Automatische Zählstelle Kiel-Holtenau I 2013
   source_url: https://opendata.schleswig-holstein.de/dataset/21f7e059-42ce-4008-becc-849fcdedbe71
   license_rule: govdata/Bundesanstalt für Straßenwesen (BASt)/dl-de-by-2.0
-  ok: null
+  ok: true
 - dataset_id: govdata.000c09c3-3fef-4abd-8643-d2bb9cc7182f
   why: new_rule
   title: Grundwasserstand Messstelle 8510 Wulfsmoor F2 - EL08
   source_url: https://www.govdata.de/suche/daten/grundwasserstand-messstelle-8510-wulfsmoor-f2-el08
   license_rule: govdata/Landesamt für Umwelt (LfU)/dl-de-by-2.0
-  ok: null
+  ok: true
 - dataset_id: govdata.004093aa-f709-434f-8ca5-586c926eb120
   why: new_rule
   title: Grundwassermessstelle AU, FINKENWEG FLBR.
   source_url: https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/kelheim/au-finkenweg-flbr-9791
   license_rule: govdata/Wasserwirtschaftsamt Donauwörth/cc-by-4.0
-  ok: null
+  ok: true
 - dataset_id: govdata.007d4049-667e-4c64-bcf6-c0f068ef504d
   why: new_rule
   title: Wasserstand Pegel Meggerdorf - Alte Sorge
   source_url: https://www.govdata.de/suche/daten/wasserstand-pegel-meggerdorf-alte-sorge
   license_rule: govdata/Landesamt für Umwelt (LfU)/cc-by-4.0+dl-de-by-2.0
-  ok: null
+  ok: true
 - dataset_id: govdata.00078c32-a99f-4c77-a394-bb8fa723bf3b
   why: new_rule
   title: KFÜ-Messwerte
   source_url: https://opendata.schleswig-holstein.de/dataset/03d06c9d-c021-4275-8d31-d326b66fb36f
   license_rule: govdata/Ministerium für Energiewende, Klimaschutz, Umwelt und Natur/cc0-1.0
-  ok: null
+  ok: true
 - dataset_id: govdata.00c24f62-8835-4e52-997a-8399f2fb3449
   why: new_rule
   title: Ruheplätze (gepuffert, 500m) von Robben im Schleswig-Holsteinischen Wattenmeer,
@@ -86,116 +86,116 @@ sample:
   source_url: https://www.govdata.de/suche/daten/ruheplatze-gepuffert-500m-von-robben-im-schleswig-holsteinischen-wattenmeer-gk-1997
   license_rule: govdata/Landesbetrieb für Küstenschutz, Nationalpark und Meeresschutz
     Schleswig-Holstein/cc-by-4.0
-  ok: null
+  ok: true
 - dataset_id: govdata.004fe411-b633-4069-9cc3-21bd1d250d40
   why: new_rule
   title: Solarpotential (2019) - Gebäudeflächen/Fassade (nur geeignete Flächen mit
     einer mittl. spez. Einstrahlung von mind. 400 kWh/m²a berücksichtigt)
   source_url: https://geoportal.sachsen.de/md/7789809d-fe44-4daf-8bf8-54b024c5e60a
   license_rule: govdata/Stadt Dresden/dl-de-by-2.0
-  ok: null
+  ok: true
 - dataset_id: govdata.00227ec3-b658-4bd9-89c7-ba11cf509d84
   why: new_rule
   title: Modelldaten Ertragspotenzial der Offshore-Windenergie für die gesamte Nordsee,
     Ausbauszenario 2025 -11
   source_url: https://www.govdata.de/suche/daten/modelldaten-ertragspotenzial-der-offshore-windenergie-fur-die-gesamte-nordsee-ausbausze-2025-111209b
   license_rule: govdata/Fraunhofer IWES/dl-de-by-2.0
-  ok: null
+  ok: true
 - dataset_id: govdata.00c3dc60-b425-4b79-8afb-952bdb7c34d3
   why: new_rule
   title: Grundwassermessstelle 1131754600180
   source_url: https://www.gkd.bayern.de/de/grundwasser/chemie/passau/1131754600180-1131754600180
   license_rule: govdata/Wasserwirtschaftsamt Deggendorf/cc-by-4.0
-  ok: null
+  ok: true
 - dataset_id: govdata.d5b6815d-9006-4e10-9ed6-edc4408c6b4c
   why: random
   title: Fließgewässermessstelle Oberhalb Mamming, Isar
   source_url: https://www.gkd.bayern.de/de/fluesse/chemie/passau/oberhalb-mamming-105522
   license_rule: govdata/Wasserwirtschaftsamt Landshut/cc-by-4.0
-  ok: null
+  ok: true
 - dataset_id: govdata.2a5a82bb-ffe6-4d98-976e-b00ca4602b56
   why: random
   title: Wohngebiet Hofacker 2. Änderung
   source_url: https://www.geoportal.rlp.de/map?LAYER%5Bzoom%5D=1&LAYER%5Bid%5D=48816
   license_rule: govdata/Verbandsgemeinde Dierdorf/cc0-1.0+dl-de-by-2.0
-  ok: null
+  ok: true
 - dataset_id: govdata.a16dec86-e7f5-4cc7-ba49-3835863e804f
   why: random
   title: Bebauungsplan Wandsbek 6 Hamburg
   source_url: https://www.govdata.de/suche/daten/bebauungsplan-wandsbek-6-hamburg831e2
   license_rule: govdata/Landesbetrieb Geoinformation und Vermessung (LGV) Hamburg/dl-de-by-2.0
-  ok: null
+  ok: true
 - dataset_id: govdata.08e7b55e-db94-4b63-8524-4c54803f588b
   why: random
   title: Masch I (Ursprungsplan)
   source_url: https://www.govdata.de/suche/daten/masch-i-ursprungsplan-1
   license_rule: govdata/Stadt Diepholz/dl-de-zero-2.0
-  ok: null
+  ok: true
 - dataset_id: govdata.0a998b7c-9e47-4447-b89c-1473875578fc
   why: random
   title: Gewerbegebiet In Wahlemd Erweiterung
   source_url: https://www.geoportal.rlp.de/map?LAYER%5Bzoom%5D=1&LAYER%5Bid%5D=35003
   license_rule: govdata/Verbandsgemeinde Gerolstein/cc0-1.0+dl-de-by-2.0
-  ok: null
+  ok: true
 - dataset_id: govdata.a310b00e-02e5-4dd4-a253-dcb0f11dd034
   why: random
   title: BeL - 2 Beienrode III (Grasstiege) (Urschrift)
   source_url: https://www.govdata.de/suche/daten/bel-2-beienrode-iii-grasstiege-urschrift-1
   license_rule: govdata/Gemeinde Lehre/dl-de-zero-2.0
-  ok: null
+  ok: true
 - dataset_id: govdata.bb50ccde-47a2-4b18-bfb5-6126fa0561d2
   why: random
   title: Seemessstelle Transekt 2, Hofstätter See
   source_url: https://www.gkd.bayern.de/de/seen/biologie/isar/transekt-2-120652
   license_rule: govdata/Wasserwirtschaftsamt Rosenheim/cc-by-4.0
-  ok: null
+  ok: true
 - dataset_id: govdata.336ac952-a632-4264-8161-ea7cd1c748ba
   why: random
   title: Schichtdicken des operationellen Zirkulationsmodells des BSH in der deutschen
     Bucht und der westlichen Ostsee (horizontale Auflösung ca. 900 m) 2024 01
   source_url: https://www.govdata.de/suche/daten/schichtdicken-des-operationellen-zirkulationsmodells-des-bsh-in-der-deutschen-bucht-und-2024-01bf0f1
   license_rule: govdata/Bundesamt für Seeschifffahrt und Hydrographie (BSH)/dl-de-by-2.0
-  ok: null
+  ok: true
 - dataset_id: govdata.0a975ed5-d838-4249-9c56-b39980097bb8
   why: random
   title: Kampstraße | Bernhardstraße (1. Änderung)
   source_url: https://www.govdata.de/suche/daten/kampstrasse-bernhardstrasse-1-anderung
   license_rule: govdata/Stadt Twistringen/dl-de-zero-2.0
-  ok: null
+  ok: true
 - dataset_id: govdata.126ce9cb-64d4-493f-a8ff-d5ddb8dd6417
   why: random
   title: Kleingärten - alle aktuell unbeschränkt
   source_url: https://geoportal.sachsen.de/md/5a8ed280-b0b6-4503-8d07-a0346195fc95
   license_rule: govdata/Stadt Dresden/dl-de-by-2.0
-  ok: null
+  ok: true
 - dataset_id: govdata.79de6e45-d083-4b03-8b2e-85870bdba57c
   why: random
   title: In der Villwies
   source_url: https://www.geoportal.rlp.de/map?LAYER%5Bzoom%5D=1&LAYER%5Bid%5D=50381
   license_rule: govdata/Verbandsgemeinde Vordereifel/cc0-1.0+dl-de-zero-2.0
-  ok: null
+  ok: true
 - dataset_id: govdata.972760b2-0154-4246-a966-be36b5d8a93b
   why: random
   title: Bebauungsplan Ottensen 56 Hamburg
   source_url: https://www.govdata.de/suche/daten/bebauungsplan-ottensen-56-hamburg
   license_rule: govdata/Landesbetrieb Geoinformation und Vermessung (LGV) Hamburg/dl-de-by-2.0
-  ok: null
+  ok: true
 - dataset_id: govdata.c817870c-595e-463c-bbc7-43aee4a3668d
   why: random
   title: Modelldaten langfristiges Ertragspotenzial Offshore-Windenergie Nordsee -
     Szenario 17 2006 -06
   source_url: https://www.govdata.de/suche/daten/modelldaten-langfristiges-ertragspotenzial-offshore-windenergie-nordsee-szenario-17-2006-0687b66
   license_rule: govdata/Fraunhofer IWES/dl-de-by-2.0
-  ok: null
+  ok: true
 - dataset_id: govdata.df1de765-17d7-4121-9ce8-27c7b508bf3d
   why: random
   title: 'Topographische Karte 1 : 25 000 - 3839 Reppinichen (1996)'
   source_url: https://www.govdata.de/suche/daten/topographische-karte-1-25-000-3839-reppinichen-1996
   license_rule: govdata/Landesvermessung und Geobasisinformation Brandenburg (LGB)/dl-de-by-2.0
-  ok: null
+  ok: true
 - dataset_id: govdata.18b9f1d8-2bcb-4df6-9ae4-c7a95a9643d0
   why: random
   title: Richtweg (Ursprungsplan)
   source_url: https://www.govdata.de/suche/daten/richtweg-ursprungsplan
   license_rule: govdata/Samtgemeinde Bruchhausen-Vilsen/dl-de-zero-2.0
-  ok: null
+  ok: true
