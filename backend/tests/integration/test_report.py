@@ -665,3 +665,71 @@ def test_classify_shows_at_most_ten_examples_of_fallen_links(world: World) -> No
     text = classify_text(world.ckan, world.report(classify_only=True))
     assert "(25 von 25)" in text
     assert sum(1 for line in text.splitlines() if "<https://www.sz.ch/agi>, 2 |" in line) == 10
+
+
+def test_classify_names_why_a_find_is_not_granted(world: World) -> None:
+    # Otto, 23.11.2026: a pair "publisher | granted licence" waited; the list now names what is missing.
+    terms = world.licence_dir / "terms.yaml"
+    terms.write_text(
+        terms.read_text(encoding="utf-8")
+        + """\
+- license_ref: other-closed
+  matches: [other-closed]
+  license: {spdx_id: null, name: Andere geschlossen, url: "https://example.org/closed", commercial_use: false,
+            distribution: false, derivatives: false, share_alike: false, attribution_required: true, tier: catalog,
+            attribution_modified: null, attribution_unmodified: null, terms: null}
+  approved_on: 2026-11-19
+""",
+        encoding="utf-8",
+    )
+    world.put(
+        world.ckan,
+        _find("two", licence_statements=["CC-BY-4.0", "other-closed"]),
+        _find("stranger", publisher="Stadt Zug"),
+    )
+    text = classify_text(world.ckan, world.report(classify_only=True))
+    assert "1  Kanton Zug | nicht freigegeben: other-closed" in text
+    assert f"1  Stadt Zug | Herausgeber ohne Zeile in grants/{world.ckan.source_id}.yaml (Lizenzen: cc-by-4.0)" in text
+    assert "Kanton Zug | CC-BY-4.0" not in text
+
+
+def test_two_finds_of_one_source_with_one_identifier_stay_apart(world: World) -> None:
+    # Otto, 23.11.2026: two GovData finds with one placeholder identifier were made one.
+    world.put(world.ckan, _find("a", identifier="statistik"), _find("b", identifier="statistik"))
+    world.report()
+    assert world.row("a")["duplicate_of"] is None and world.row("b")["duplicate_of"] is None
+
+
+def test_the_report_names_the_key_of_each_pair(world: World) -> None:
+    world.put(world.stac, _find("ch.example.boden", source_url="https://stac.example.org/browser/ch.example.boden"))
+    world.put(world.ckan, _find("viewer", source_url="https://map.example.org/?layers=ch.example.boden"), _find("kept"))
+    world.report(world.stac)
+    result = world.report()
+    markdown = next(path for path in result.files if path.suffix == ".md").read_text(encoding="utf-8")
+    assert "`coll:stac.example.org/ch.example.boden`" in markdown
+
+
+def test_classify_counts_links_that_look_like_an_interface(world: World) -> None:
+    world.put(
+        world.ckan,
+        _find("rest", source_url="https://gis.example.org/arcgis/rest/services/boden/MapServer"),
+        _find("page"),
+    )
+    text = classify_text(world.ckan, world.report(classify_only=True))
+    assert "Link „Source“ mit Muster einer Schnittstelle (1), nach Muster:" in text
+    assert "1  ArcGIS /rest/services" in text
+
+
+def test_classify_shows_the_hidden_finds_per_publisher_before_and_after(world: World) -> None:
+    office = "Statistisches Landesamt Musterland"
+    world.put(
+        world.ckan,
+        _find("table", publisher=office, title="Tourismus: Gäste - Jahr", data_kind="table", category="population",
+              keywords=[], spatial_text="Kanton Bern"),
+        _find("map", publisher=office, title="Gemeindegrenzen"),
+    )
+    result = world.report(classify_only=True)
+    text = classify_text(world.ckan, result)
+    assert result.hidden_before[office] == 0 and result.hidden_after[office] == 1
+    assert f"  {office} | 0 | 1" in text
+    assert "Schwache Geo-Signale, die diese Funde vorher hielten: extent 1" in text

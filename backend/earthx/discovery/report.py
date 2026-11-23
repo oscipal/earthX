@@ -496,7 +496,7 @@ def run_report(
             # One find of a foreign shape must not stop the report of every other one; its row stays as it was.
             result.failed += 1
             continue
-        _count(result, derived, found)
+        _count(result, derived, found, licences)
         if not classify_only and stored.get(key) != derived.row.derived_sha256:
             batch.append(derived.row)
             if len(batch) >= _BATCH:
@@ -516,7 +516,7 @@ def run_report(
     return result
 
 
-def _count(result: ReportResult, derived: Derived, found: Mapping[str, Any]) -> None:
+def _count(result: ReportResult, derived: Derived, found: Mapping[str, Any], licences: LicenceCatalogue) -> None:
     row = derived.row
     result.verdicts[row.verdict] += 1
     result.bases[derived.extent.basis] += 1
@@ -537,9 +537,11 @@ def _count(result: ReportResult, derived: Derived, found: Mapping[str, Any]) -> 
         result.signals[signal[:60]] += 1
     for statement in {normal_statement(s) for s in derived.statements if normal_statement(s)}:
         result.statements.setdefault(statement, Counter())[row.publisher or "–"] += 1
-    if row.waiting_reason in ("unknown_licence", "not_granted"):
+    if row.waiting_reason == "unknown_licence":
         for statement in derived.statements:
             result.pairs[(row.publisher or "–", normal_statement(statement)[:100])] += 1
+    elif row.waiting_reason == "not_granted":
+        result.pairs[(row.publisher or "–", _not_granted(licences, row.source_id, row.publisher, derived.licence.refs))] += 1
     skipped = found.get("skipped_url")
     if isinstance(skipped, str):
         was, now = int(found.get("skipped_rank") or 0), int(found.get("source_rank") or 0)
@@ -558,6 +560,15 @@ def _count(result: ReportResult, derived: Derived, found: Mapping[str, Any]) -> 
             result.hidden_before[row.publisher or "–"] += 1
     elif derived.classified.outcome == "undecided":
         result.undecided.append(entry)
+
+
+def _not_granted(licences: LicenceCatalogue, source_id: str, publisher: str | None, refs: Sequence[str]) -> str:
+    """Why a find waits as ``not_granted``, for the waiting list (Otto, 23.11.2026: a pair showed a granted licence):
+    the publisher has no line in ``grants/``, or the licences of the find not granted to it."""
+    granted = licences.grants.get(source_id, {}).get(publisher or "")
+    if granted is None:
+        return f"Herausgeber ohne Zeile in grants/{source_id}.yaml (Lizenzen: {', '.join(refs)})"
+    return "nicht freigegeben: " + ", ".join(ref for ref in refs if ref not in granted)
 
 
 def access_reason(found: Mapping[str, Any]) -> tuple[str, str]:
