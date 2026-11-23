@@ -22,18 +22,21 @@ from earthx.catalog.registry import (
 )
 from earthx.catalog.search import (
     MAX_QUERY_CHARS,
+    TIME_FILTER,
     Joining,
     QueryTooLong,
     box_area,
     fuse,
+    names_before_numbers,
     numbered_names,
     numbers_after_names,
     numbers_of,
     ranks,
     search_datasets,
 )
-from earthx.catalog.search_index import write_search_index
+from earthx.catalog.search_index import write_listed_search_index, write_search_index
 from tests.catalog.entries import COP_DEM_GLO_30, SENTINEL_2_L2A, SWISSALTI3D
+from tests.integration.listed_rows import insert_row
 
 GLOSSARY = load_glossary()
 
@@ -390,3 +393,50 @@ def test_a_tie_in_one_arm_does_not_decide_the_fusion():
 
 def test_what_no_arm_lists_is_not_there():
     assert fuse({}, {}, titles={}) == ()
+
+
+# --- listed entries ----------------------------------------------------------------------------------------------------
+
+
+@pytest.fixture
+def listed(catalogue: None) -> Iterator[None]:
+    """Next to :data:`CATALOGUE`: a published listed entry, a duplicate of it from another source and one in review."""
+    with psycopg.connect() as conn:
+        conn.execute("DELETE FROM public.earthx_listed_entry")
+        insert_row(conn, "main-entry", title="Neophyten der Schweiz", bbox=(6.0, 45.8, 10.5, 47.8))
+        insert_row(conn, "duplicate", state="duplicate", source_id="src-2", title="Götterbaum Standorte")
+        insert_row(conn, "in-review", state="in_review", title="Baumkataster der Stadt")
+        write_listed_search_index(conn, [config.dataset_id for config in CATALOGUE])
+        conn.commit()
+        yield
+        conn.execute("DELETE FROM public.earthx_listed_entry")
+        conn.commit()
+
+
+async def test_a_listed_entry_is_found_by_its_title_and_by_the_title_of_a_duplicate(listed, aconn):
+    result = await search_datasets(aconn, "Neophyten", glossary=GLOSSARY)
+    assert (result.ids, result.listed) == (("main-entry",), frozenset({"main-entry"}))
+    assert await _ids(aconn, "Götterbaum") == ("main-entry",)
+    assert await _ids(aconn, "Goetterbaum") == ("main-entry",)
+
+
+async def test_an_entry_in_review_is_no_hit_and_no_listed_entry_is_in_a_list_without_text(listed, aconn):
+    assert await _ids(aconn, "Baumkataster") == ()
+    assert set(await _ids(aconn, None)) == {config.dataset_id for config in CATALOGUE}
+
+
+async def test_the_area_meets_the_footprint_of_a_listed_entry(listed, aconn):
+    assert await _ids(aconn, "Neophyten", area=box_area(7.0, 46.0, 7.5, 46.5)) == ("main-entry",)
+    assert await _ids(aconn, "Neophyten", area=box_area(36.0, -1.0, 37.0, 0.0)) == ()
+
+
+async def test_a_listed_entry_without_a_period_stays_and_is_named(listed, aconn):
+    result = await search_datasets(aconn, "Neophyten", period=_years(2001, 2002), glossary=GLOSSARY)
+    assert result.ids == ("main-entry",)
+    assert result.ignored_filters_by_collection == {"main-entry": (TIME_FILTER,)}
+
+
+def test_the_rows_of_names_before_numbers_are_asked_by_like_patterns():
+    assert names_before_numbers("Landsat 9") == ["%landsat%"]
+    assert names_before_numbers("Sentinel 2 and Sentinel-2") == ["%sentinel%"]
+    assert names_before_numbers("10 m, 2021") == []

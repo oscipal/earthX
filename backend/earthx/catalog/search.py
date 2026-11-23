@@ -20,10 +20,14 @@ dataset the list is empty (adr/0026 K9); the full text cannot check this itself,
 and "-30". Nor does a bare number carry a dataset in the full text on its own: "Landsat 9", with no Landsat in the
 catalogue, finds nothing for its "9".
 
+The index holds full and listed entries (migration ``035``); a listed row counts only while its entry is published, and
+the area is matched against its footprint. Both arms go through the indexes of the table: the full text joins a row
+only to the units it matches, the trigram arm asks ``<%`` with the threshold set for the transaction.
+
 Hard filters before both arms: the area meets the footprints of a materialized dataset that has items in pgstac,
 otherwise the box of the collection (plan A4); the period overlaps the extent in time, an open end meaning now, and a
 dataset without a time axis never drops out for a period but is named in ``ignored_filters``. Without text the
-filtered list comes in the order of the ids, without a rank (plan A6).
+filtered full entries come in the order of the ids, without a rank (plan A6).
 
 Every text goes to SQL as a parameter, never into the statement.
 """
@@ -83,6 +87,8 @@ class SearchResult:
     ids: tuple[str, ...]
     ignored_filters: tuple[str, ...] = ()
     ignored_filters_by_collection: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+    #: The ids of ``ids`` that are listed entries.
+    listed: frozenset[str] = frozenset()
 
 
 def box_area(west: float, south: float, east: float, north: float) -> dict[str, Any]:
@@ -92,9 +98,13 @@ def box_area(west: float, south: float, east: float, north: float) -> dict[str, 
 
 
 _FILTERED = """
-    SELECT s.dataset_id, s.title, s.document, s.trigram_text, s.has_time_axis
+    SELECT s.dataset_id, s.title, s.document, s.trigram_text, s.has_time_axis, s.entry
     FROM public.earthx_dataset_search s
-    WHERE (%(area)s::text IS NULL OR CASE
+    LEFT JOIN public.earthx_listed_entry e ON s.entry = 'listed' AND e.dataset_id = s.dataset_id
+    WHERE (s.entry = 'full' OR e.state = 'published')
+      AND (%(area)s::text IS NULL OR CASE
+            WHEN s.entry = 'listed'
+            THEN ST_Intersects(e.footprint, ST_SetSRID(ST_GeomFromGeoJSON(%(area)s::text), 4326))
             WHEN s.item_holding = 'materialized'
                  AND EXISTS (SELECT 1 FROM pgstac.items i WHERE i.collection = s.dataset_id)
             THEN EXISTS (
@@ -155,6 +165,13 @@ def numbers_after_names(text: str, names: frozenset[str]) -> tuple[str, ...]:
     return tuple(words[position] for position in _name_numbers(words) if position and words[position - 1] in names)
 
 
+def names_before_numbers(text: str) -> list[str]:
+    """``LIKE`` patterns of the words of ``text`` right before a number of a name: the rows :data:`_NAMES_SQL` reads."""
+    words = normalize(text).split()
+    escaped = (re.sub(r"([\\%_])", r"\\\1", words[position - 1]) for position in _name_numbers(words) if position)
+    return [f"%{word}%" for word in dict.fromkeys(escaped)]
+
+
 def numbered_names(rows: Sequence[str]) -> frozenset[str]:
     """The words of the ids and titles in ``rows`` that come before a number of a name in the same row.
 
@@ -170,7 +187,9 @@ def numbered_names(rows: Sequence[str]) -> frozenset[str]:
     return frozenset(names)
 
 
-_NAMES_SQL = "SELECT dataset_id || ' ' || title FROM public.earthx_dataset_search"
+#: Only the rows whose id, title or keywords hold a word that comes right before a number of the query, through the
+#: trigram index: the rest cannot make that word a name with a number.
+_NAMES_SQL = "SELECT dataset_id || ' ' || title FROM public.earthx_dataset_search WHERE trigram_text LIKE ANY(%s)"
 
 
 def _unit_query(unit: Unit, number: int) -> sql.Composed:
@@ -224,15 +243,15 @@ def _full_text_sql(units: Sequence[Unit], joining: Joining) -> sql.Composed:
             WHERE EXISTS (SELECT 1 FROM public.earthx_dataset_search s WHERE s.document @@ u.query)),
         filtered AS ({filtered}),
         hits AS (
-            SELECT f.dataset_id, f.title, f.has_time_axis,
+            SELECT f.dataset_id, f.title, f.has_time_axis, f.entry,
                    count(*) FILTER (WHERE f.document @@ u.query) AS matched,
                    count(*) FILTER (WHERE f.document @@ u.query AND NOT u.bare) AS matched_words,
                    count(*) FILTER (WHERE f.document @@ u.query AND u.ord IN (SELECT ord FROM known)) AS matched_known,
                    sum(ts_rank_cd(f.document, u.query)) AS rank
-            FROM filtered f CROSS JOIN units u
+            FROM filtered f JOIN units u ON f.document @@ u.query
             WHERE {carries}
-            GROUP BY f.dataset_id, f.title, f.has_time_axis)
-        SELECT h.dataset_id, h.title, h.has_time_axis, h.rank FROM hits h
+            GROUP BY f.dataset_id, f.title, f.has_time_axis, f.entry)
+        SELECT h.dataset_id, h.title, h.has_time_axis, h.entry, h.rank FROM hits h
         WHERE h.matched_words > 0 AND {condition}
         ORDER BY h.rank DESC, h.title, h.dataset_id
         """
@@ -247,14 +266,16 @@ def _full_text_sql(units: Sequence[Unit], joining: Joining) -> sql.Composed:
 _TRIGRAM_SQL = sql.SQL(
     """
     WITH filtered AS ({filtered})
-    SELECT f.dataset_id, f.title, f.has_time_axis, word_similarity(%(normal)s, f.trigram_text) FROM filtered f
-    WHERE word_similarity(%(normal)s, f.trigram_text) >= %(threshold)s AND {carries}
+    SELECT f.dataset_id, f.title, f.has_time_axis, f.entry, word_similarity(%(normal)s, f.trigram_text)
+    FROM filtered f
+    WHERE %(normal)s <%% f.trigram_text AND {carries}
     ORDER BY word_similarity(%(normal)s, f.trigram_text) DESC, f.title, f.dataset_id
     """
 ).format(filtered=sql.SQL(_FILTERED), carries=sql.SQL(_carries("numbers", "codes")))
 
 _UNRANKED_SQL = sql.SQL(
-    "WITH filtered AS ({filtered}) SELECT f.dataset_id, f.title, f.has_time_axis, 0 FROM filtered f ORDER BY f.dataset_id"
+    "WITH filtered AS ({filtered}) SELECT f.dataset_id, f.title, f.has_time_axis, f.entry, 0 FROM filtered f"
+    " WHERE f.entry = 'full' ORDER BY f.dataset_id"
 ).format(filtered=sql.SQL(_FILTERED))
 
 
@@ -304,15 +325,15 @@ async def search_datasets(
     if text is not None and len(text) > MAX_QUERY_CHARS:
         raise QueryTooLong(f"the query is longer than {MAX_QUERY_CHARS} characters")
     params = _filter_params(area, period)
-    rows: dict[str, tuple[str, bool]] = {}
+    rows: dict[str, tuple[str, bool, str]] = {}
 
     async def run(statement: sql.Composable, extra: Mapping[str, object]) -> list[tuple[str, float]]:
         async with conn.cursor() as cur:
             await cur.execute(statement, {**params, **extra})
             found = await cur.fetchall()
-        for dataset_id, title, timed, _ in found:
-            rows[dataset_id] = (title, timed)
-        return [(row[0], float(row[3])) for row in found]
+        for dataset_id, title, timed, entry, _ in found:
+            rows[dataset_id] = (title, timed, entry)
+        return [(row[0], float(row[4])) for row in found]
 
     # One snapshot for both arms; a stop word makes Postgres say so as a NOTICE, which is no news here.
     async with conn.transaction():
@@ -328,23 +349,23 @@ async def search_datasets(
                 named_numbers: tuple[str, ...] = ()
                 if numbers:
                     async with conn.cursor() as cur:
-                        await cur.execute(_NAMES_SQL)
+                        await cur.execute(_NAMES_SQL, (names_before_numbers(text),))
                         names = numbered_names([row[0] for row in await cur.fetchall()])
                     named_numbers = numbers_after_names(text, names)
                 terms = {f"term_{n}_{i}": term for n, unit in enumerate(units) for i, term in enumerate(unit.terms)}
                 full_text = await run(
                     _full_text_sql(units, joining), {**terms, "share": MIN_SHARE, "named_numbers": list(named_numbers)}
                 )
-            trigrams = (
-                await run(
-                    _TRIGRAM_SQL,
-                    {"normal": normal, "threshold": threshold, "numbers": list(numbers), "codes": list(codes)},
+            # A similarity is at most 1: above it, the arm finds nothing and pg_trgm would refuse the threshold.
+            trigrams = []
+            if normal and threshold <= 1:
+                await conn.execute(
+                    "SELECT set_config('pg_trgm.word_similarity_threshold', %s, true)", (str(threshold),)
                 )
-                if normal
-                else []
-            )
-            ids = fuse(ranks(full_text), ranks(trigrams), titles={i: title for i, (title, _) in rows.items()})
+                trigrams = await run(_TRIGRAM_SQL, {"normal": normal, "numbers": list(numbers), "codes": list(codes)})
+            ids = fuse(ranks(full_text), ranks(trigrams), titles={i: row[0] for i, row in rows.items()})
+    listed = frozenset(i for i in ids if rows[i][2] == "listed")
     if period is None:
-        return SearchResult(ids)
+        return SearchResult(ids, listed=listed)
     by_collection = {i: (TIME_FILTER,) for i in ids if not rows[i][1]}
-    return SearchResult(ids, (TIME_FILTER,) if by_collection else (), by_collection)
+    return SearchResult(ids, (TIME_FILTER,) if by_collection else (), by_collection, listed)
