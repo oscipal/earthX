@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from earthx.catalog.listed import load_listed
 from tests.catalog.entries import REGISTRY
 from tests.search_evaluation import (
     ADR_0026_F5,
@@ -55,11 +56,12 @@ def test_the_filter_questions_carry_their_box_or_period():
     assert questions["Q32"].never == {"sentinel-1-grd"}
 
 
-def test_every_fixed_id_is_in_the_registry():
+def test_every_fixed_id_is_in_the_registry_or_a_hand_entry():
     # A renamed entry would otherwise make its questions rest without anyone noticing.
+    hand_entries = {entry.dataset_id for entry, _ in load_listed()}
     for ref in load_evaluation_set().datasets:
         if ref.id is not None and not ref.provisional:
-            assert ref.id in REGISTRY, ref.short_name
+            assert ref.id in REGISTRY or ref.id in hand_entries, ref.short_name
 
 
 def test_a_provisional_id_is_not_in_the_registry_yet():
