@@ -402,6 +402,11 @@ class ReportResult:
     #: Links "Source" that look like a machine interface (Otto, 23.11.2026), by pattern, and each as (pattern, title, link).
     api_links: Counter[str] = field(default_factory=Counter)
     api_examples: list[tuple[str, str, str]] = field(default_factory=list)
+    #: Finds hidden as no geodata by publisher, without and with the rule on weak geo signals (Otto, 23.11.2026), and
+    #: the weak signals that no longer keep a find.
+    hidden_before: Counter[str] = field(default_factory=Counter)
+    hidden_after: Counter[str] = field(default_factory=Counter)
+    overruled_signals: Counter[str] = field(default_factory=Counter)
     deleted: int = 0
     missing: int = 0
     tombstones: int = 0
@@ -546,6 +551,11 @@ def _count(result: ReportResult, derived: Derived, found: Mapping[str, Any]) -> 
     entry = (row.dataset_id, str(found.get("title"))[:120], str(found.get("source_url")))
     if derived.classified.outcome == "not_geodata":
         result.hidden.append(entry)
+        result.hidden_after[row.publisher or "–"] += 1
+        if derived.classified.weak_overruled:
+            result.overruled_signals.update(signal.split(":", 1)[0] for signal in derived.classified.geo)
+        else:
+            result.hidden_before[row.publisher or "–"] += 1
     elif derived.classified.outcome == "undecided":
         result.undecided.append(entry)
 
@@ -587,6 +597,19 @@ def classify_text(source: SourceConfig, result: ReportResult) -> str:
     lines += [f"  {count:>7}  {name}" for name, count in result.signals.most_common(30)]
     lines.append(f"Stichprobe verborgen als Nicht-Geodaten ({len(result.hidden)} insgesamt):")
     lines += [f"  - {t}  <{u}>" for _, t, u in _sample(result.hidden, CLASSIFY_SAMPLE, seed)]
+    changed = {p: result.hidden_after[p] - result.hidden_before[p] for p in result.hidden_after}
+    lines.append(
+        f"Verborgen je Herausgeber ohne/mit Regel schwacher Geo-Signale ({sum(result.hidden_before.values())} →"
+        f" {sum(result.hidden_after.values())}; häufigste 30 Änderungen, Herausgeber | vorher | nachher):"
+    )
+    lines += [
+        f"  {publisher[:80]} | {result.hidden_before[publisher]} | {result.hidden_after[publisher]}"
+        for publisher, _ in sorted(changed.items(), key=lambda item: (-item[1], item[0]))[:30]
+        if changed[publisher]
+    ]
+    lines.append("  Schwache Geo-Signale, die diese Funde vorher hielten: " + (
+        ", ".join(f"{k} {v}" for k, v in sorted(result.overruled_signals.items())) or "–"
+    ))
     lines.append(f"Stichprobe Geodaten ohne Signal, Grenzfälle ({len(result.undecided)} insgesamt):")
     lines += [f"  - {t}  <{u}>" for _, t, u in _sample(result.undecided, CLASSIFY_SAMPLE, seed)]
     lines.append("Ortstexte ohne Treffer (häufigste 30):")

@@ -89,6 +89,67 @@ class TestGeodataRule:
         assert _verdict(found, Extent("place", codes=("DE", "DE-HH"))) == "geodata"
         assert _verdict(found, Extent("place", codes=("DE",))) == "not_geodata"
 
+    @pytest.mark.parametrize(
+        ("title", "publisher", "extent"),
+        [
+            # Otto, 23.11.2026: statistics tables of the Statistisches Landesamt des Freistaates Sachsen with a CSV at
+            # genonline stayed visible through the extent of the Land.
+            (
+                "Straßenverkehrsunfälle: Beteiligte nach Art der Beteiligung, Sachsen - Jahr",
+                "Statistisches Landesamt des Freistaates Sachsen",
+                Extent("place", codes=("DE", "DE-SN")),
+            ),
+            (
+                "Tourismus: Hotellerie nach Reisegebieten (ab 2012)",
+                "Statistisches Landesamt des Freistaates Sachsen",
+                Extent("source", bbox=(11.8, 50.1, 15.1, 51.7)),
+            ),
+            ("Köln: Einwohner", "IT.NRW", Extent("place", codes=("DE", "DE-NW"))),
+        ],
+    )
+    def test_an_extent_keeps_no_table_of_a_statistics_office(self, title: str, publisher: str, extent: Extent) -> None:
+        csv = [{"href": "https://www.example.org/x.csv", "format": "CSV", "media_type": None}]
+        classified = classify(_find(title, publisher=publisher, distributions=csv), extent, country="DE", rule=RULE)
+        assert (classified.outcome, classified.weak_overruled) == ("not_geodata", True)
+
+    @pytest.mark.parametrize(
+        "changes",
+        [
+            {"distributions": [{"href": "https://x.example/a.shp", "format": "SHP", "media_type": None}]},
+            {"themes": ["inspire:su"]},
+            {"keywords": ["Standorte"]},
+        ],
+    )
+    def test_strong_geo_signals_still_keep_a_find_of_a_statistics_office(self, changes: dict[str, Any]) -> None:
+        found = _find("Gemeinden", publisher=STATISTICS_OFFICE, **changes)
+        assert _verdict(found, Extent("place", codes=("DE", "DE-SN"))) == "geodata"
+
+    def test_a_csv_with_an_extent_of_another_publisher_stays_geodata(self) -> None:
+        csv = [{"href": "https://www.example.org/x.csv", "format": "CSV", "media_type": None}]
+        found = _find("Pegelstände Elbe", publisher="Landesamt für Umwelt", distributions=csv)
+        assert _verdict(found, Extent("place", codes=("DE", "DE-SN"))) == "geodata"
+        # A statistics word in the title of another publisher is outweighed by the extent as before.
+        assert _verdict(_find("Statistik der Pegel"), Extent("place", codes=("DE", "DE-SN"))) == "geodata"
+
+    @pytest.mark.parametrize("title", ["Historische Karten der Aare", "Karte der Wanderwege", "Plan der Stadt"])
+    def test_map_and_plan_are_geo_words(self, title: str) -> None:
+        assert _verdict(_find(title, publisher=STATISTICS_OFFICE)) == "geodata"
+
+    def test_a_map_word_inside_another_word_is_no_signal(self) -> None:
+        assert _verdict(_find("Eintrittskarten und Haushaltsplan")) == "not_geodata"
+
+    @pytest.mark.parametrize(
+        ("title", "keywords"),
+        [("snowBedFoam: a solver for snow transport", []), ("Modell der Schneedecke", ["Software", "OpenFOAM"])],
+    )
+    def test_software_is_no_geodata_even_at_a_geodata_publisher(self, title: str, keywords: list[str]) -> None:
+        found = _find(title, publisher="EnviDat", category="other", keywords=keywords)
+        assert _verdict(found, Extent("source", bbox=(7.0, 46.0, 7.1, 46.1)), country="CH") == "not_geodata"
+
+    def test_software_with_a_raster_stays_geodata(self) -> None:
+        found = _find("Solver output", publisher="EnviDat", data_kind="raster")
+        assert _verdict(found) == "geodata"
+
     def test_the_shipped_rule_loads(self) -> None:
         assert read_geodata_rule(GEODATA_FILE).geo_data_kinds == {"raster", "vector", "service"}
 
