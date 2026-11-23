@@ -8,7 +8,15 @@ from typing import Any
 import pytest
 
 from earthx.catalog.entry_files import EntryFileError
-from earthx.discovery.dedupe import MAX_SHARED, Member, collection_tokens, find_keys, main_entries, namespaced
+from earthx.discovery.dedupe import (
+    MAX_SHARED,
+    Member,
+    collection_tokens,
+    find_keys,
+    main_entries,
+    namespaced,
+    shared_key,
+)
 from earthx.discovery.enrich import Extent
 from earthx.discovery.geodata import GEODATA_FILE, classify, load_geodata_rule, read_geodata_rule
 
@@ -151,9 +159,48 @@ class TestGroups:
 
     def test_an_identifier_on_many_finds_is_a_placeholder_and_joins_nothing(self) -> None:
         # Review M5-20 PR 1: a portal that writes "1" or its own address into every package.
-        members = [Member(f"govdata.{i}", ("id:1",), (2, 3, i)) for i in range(MAX_SHARED + 1)]
+        members = [Member(f"s{i}.a", ("id:1",), (2, 3, i), f"s{i}") for i in range(MAX_SHARED + 1)]
         assert main_entries(members) == {}
         assert len(main_entries(members[:MAX_SHARED])) == MAX_SHARED - 1
+
+    def test_an_identifier_twice_in_one_source_is_no_key(self) -> None:
+        # Otto, 23.11.2026: "Bevölkerungsentwicklung (jahresweise)" was a duplicate of "Gäste und Übernachtungen im
+        # Jahresverlauf", two GovData finds with one placeholder; the same holds for a DOI.
+        members = [
+            Member("govdata.cd084048", ("id:statistik",), (2, 3, 1), "govdata"),
+            Member("govdata.8dc6087a", ("id:statistik",), (2, 3, 1), "govdata"),
+            Member("govdata.x", ("doi:10.1/a",), (2, 3, 1), "govdata"),
+            Member("govdata.y", ("doi:10.1/a",), (2, 3, 1), "govdata"),
+        ]
+        assert main_entries(members) == {}
+
+    def test_the_same_identifier_in_two_sources_still_joins(self) -> None:
+        members = [Member("govdata.a", ("id:x@amt",), (2, 3), "govdata"), Member("ods.a", ("id:x@amt",), (2, 2), "ods")]
+        assert main_entries(members) == {"govdata.a": "ods.a"}
+
+    def test_a_find_joins_no_main_entry_it_shares_no_key_with(self) -> None:
+        # Otto, 23.11.2026: "Internationale Flussgebietseinheiten nach Wasserrahmenrichtlinie" (GovData) was a duplicate
+        # of the FSDI collection ch.bafu.wasser-einzugsgebietsgliederung through a find in between.
+        coll = "coll:data.geo.admin.ch/ch.bafu.wasser-einzugsgebietsgliederung"
+        members = [
+            Member("fsdi-stac.ch.bafu.wasser-einzugsgebietsgliederung", (coll,), (2, 1), "fsdi-stac"),
+            Member("opendata-swiss.b", (coll, "id:wrrl"), (2, 2), "opendata-swiss"),
+            Member("govdata.ac63368c", ("id:wrrl",), (2, 3), "govdata"),
+        ]
+        assert main_entries(members) == {"opendata-swiss.b": "fsdi-stac.ch.bafu.wasser-einzugsgebietsgliederung"}
+
+    def test_collection_ids_named_by_several_finds_of_one_source_still_join(self) -> None:
+        coll = "coll:h/ch.bafu.x"
+        members = [
+            Member("fsdi-stac.x", (coll,), (2, 1), "fsdi-stac"),
+            Member("ods.a", (coll,), (2, 2), "ods"),
+            Member("ods.b", (coll,), (2, 2), "ods"),
+        ]
+        assert main_entries(members) == {"ods.a": "fsdi-stac.x", "ods.b": "fsdi-stac.x"}
+
+    def test_the_report_names_the_shared_key(self) -> None:
+        assert shared_key(["doi:1", "id:a"], ["id:a", "coll:h/x"]) == "id:a"
+        assert shared_key(["id:a"], []) is None
 
     def test_no_keys_no_group(self) -> None:
         assert main_entries([Member("a", (), (2,)), Member("b", (), (2,))]) == {}

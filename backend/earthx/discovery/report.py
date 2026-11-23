@@ -56,7 +56,7 @@ from earthx.catalog.municipalities import MUNICIPALITIES_FILE
 from earthx.catalog.registry import ConfigError, LicenseInfo, doi_name
 from earthx.catalog.sources import MAX_DEDUPE_RANK, SourceConfig, SourceProtocol, read_sources
 from earthx.discovery import dedupe, enrich, geodata
-from earthx.discovery.dedupe import Member, find_keys, main_entries, namespaced
+from earthx.discovery.dedupe import Member, find_keys, main_entries, namespaced, shared_key
 from earthx.discovery.enrich import (
     PLACE_NAMES_FILE,
     Extent,
@@ -365,7 +365,7 @@ def _dedupe(conn: psycopg.Connection, sources: Mapping[str, SourceConfig]) -> di
             # A source no longer in sources/ ranks last.
             dedupe_rank = MAX_DEDUPE_RANK + 1 if source is None else source.dedupe_rank
             rank = (2, dedupe_rank, row.source_rank or 9, not row.footprint, row.source_id)
-        members.append(Member(row.dataset_id, row.keys, rank))
+        members.append(Member(row.dataset_id, row.keys, rank, row.source_id))
     return main_entries(members)
 
 
@@ -663,16 +663,19 @@ def stack_sample(conn: psycopg.Connection, stack: Stack) -> list[dict[str, Any]]
     return chosen
 
 
-def _pairs(conn: psycopg.Connection, source_id: str, seed: str) -> list[tuple[str, str, str, str]]:
-    """Up to 20 pairs (duplicate, main) that touch the source, drawn with ``seed`` (plan §13b)."""
+def _pairs(conn: psycopg.Connection, source_id: str, seed: str) -> list[tuple[str, str, str, str, str]]:
+    """Up to 20 pairs (duplicate, main, the key they share) that touch the source, drawn with ``seed`` (plan §13b)."""
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT d.dataset_id, d.content->>'title', d.duplicate_of, coalesce(m.content->>'title', d.duplicate_of)"
+            "SELECT d.dataset_id, d.content->>'title', d.duplicate_of, coalesce(m.content->>'title', d.duplicate_of),"
+            " coalesce(d.dedupe_keys, '{}'), coalesce(m.dedupe_keys, '{}')"
             " FROM public.earthx_listed_entry d LEFT JOIN public.earthx_listed_entry m ON m.dataset_id = d.duplicate_of"
             " WHERE d.state = 'duplicate' AND (d.source_id = %s OR m.source_id = %s) ORDER BY d.dataset_id",
             (source_id, source_id),
         )
-        return _sample(cur.fetchall(), SAMPLE_PAIRS, seed)
+        rows = cur.fetchall()
+    pairs = [(a, ta, b, tb, shared_key(ka, kb) or "voller oder Handeintrag") for a, ta, b, tb, ka, kb in rows]
+    return _sample(pairs, SAMPLE_PAIRS, seed)
 
 
 def approval_document(source: SourceConfig, stack: Stack, sample: list[dict[str, Any]], rows, day: date) -> dict:  # type: ignore[no-untyped-def]
@@ -749,8 +752,8 @@ def report_markdown(
     seed = stack.fingerprint
     lines += ["", "## Verborgen als Nicht-Geodaten (Stichprobe)", ""]
     lines += [f"- {t} — <{u}>" for _, t, u in _sample(result.hidden, SAMPLE_HIDDEN, seed)]
-    lines += ["", "## Dubletten (Stichprobe, Duplikat → Haupteintrag)", ""]
-    lines += [f"- {a} „{ta}“ → {b} „{tb}“" for a, ta, b, tb in pairs]
+    lines += ["", "## Dubletten (Stichprobe, Duplikat → Haupteintrag, gemeinsamer Schlüssel)", ""]
+    lines += [f"- {a} „{ta}“ → {b} „{tb}“ — `{key}`" for a, ta, b, tb, key in pairs]
     return "\n".join(lines) + "\n"
 
 
