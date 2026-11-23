@@ -31,6 +31,7 @@ __all__ = [
     "LinkIndex",
     "LinkRank",
     "address_key",
+    "api_pattern",
     "checked_link",
     "choose_link",
     "first_link",
@@ -53,6 +54,29 @@ _LANGUAGE_KEYS = frozenset({"lang", "language", "locale", "l", "hl"})
 #: A leading part of the path that names the language is no part of the page for the rule on collective pages (Otto,
 #: 21.11.2026: /de/agi is a collective page like /agi): the languages of Switzerland and English.
 _PATH_LANGUAGES = frozenset({"de", "fr", "it", "en", "rm"})
+
+
+#: Address patterns of machine interfaces, most specific first, that ``report --classify`` counts among the links
+#: "Source" (Otto, 23.11.2026): an API is no page for people. The extract rejects those it knows to be metadata.
+_API_PATTERNS = (
+    ("piveau /api/hub/", re.compile(r"/api/hub/", re.IGNORECASE)),
+    ("CKAN /api/action/", re.compile(r"/api/(?:3/)?action/", re.IGNORECASE)),
+    ("ArcGIS /rest/services", re.compile(r"/arcgis/rest/|/rest/services(?:/|$)", re.IGNORECASE)),
+    ("GeoNetwork /srv/api", re.compile(r"/srv/(?:api|[a-z]{3}/csw)(?:/|$|\?)", re.IGNORECASE)),
+    ("OGC-Pfad (wms, wfs, wcs, wmts, csw, ows)", re.compile(r"/(?:wms|wfs|wcs|wmts|csw|ows)(?:/|$|\?)", re.I)),
+    ("SPARQL", re.compile(r"/sparql(?:/|$|\?)", re.IGNORECASE)),
+    ("OAI-PMH", re.compile(r"/oai(?:/|$|\?)|[?&]verb=", re.IGNORECASE)),
+    ("Pfadteil /api", re.compile(r"/api(?:/|$|\?)|/api/v[0-9]", re.IGNORECASE)),
+    ("Pfadteil /rest", re.compile(r"/rest(?:/|$|\?)", re.IGNORECASE)),
+    ("Format-Parameter json/xml/rdf", re.compile(r"[?&](?:f|format|outputformat)=(?:geo)?(?:json|xml|rdf)", re.I)),
+)
+
+
+def api_pattern(url: object) -> str | None:
+    """The name of the first machine-interface pattern ``url`` matches, ``None`` for none or no text."""
+    if not isinstance(url, str):
+        return None
+    return next((name for name, pattern in _API_PATTERNS if pattern.search(url)), None)
 
 
 class LinkRank(IntEnum):
