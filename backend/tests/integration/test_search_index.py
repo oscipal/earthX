@@ -10,6 +10,7 @@ import psycopg
 import pytest
 
 import earthx.api.main
+import earthx.catalog.search_index
 from earthx.api.main import build_app
 from earthx.catalog.load import main as load_catalog
 from earthx.catalog.registry import DatasetRegistry, OverviewMode, OverviewResampling
@@ -216,12 +217,31 @@ def test_a_published_listed_entry_gets_a_row_with_the_titles_of_its_duplicates(l
     assert "Götterbaum (Ailanthus altissima)" in text_a.splitlines()
 
 
+def test_the_names_of_its_regions_come_from_the_place_names(listed):
+    listed.execute("UPDATE public.earthx_listed_entry SET regions = '{CH,CH-ZH}' WHERE dataset_id = 'main-entry'")
+    write_listed_search_index(listed, [])
+    text_b = listed.execute("SELECT text_b FROM public.earthx_dataset_search WHERE dataset_id = 'main-entry'").fetchone()
+    assert {"Schweiz", "Switzerland", "Zürich"} <= set(text_b[0].splitlines())
+
+
+def test_a_changed_duplicate_or_salt_rewrites_the_row_of_the_main_entry(listed, monkeypatch):
+    write_listed_search_index(listed, [])
+    listed.execute(
+        "UPDATE public.earthx_listed_entry SET content_sha256 = repeat('b', 64),"
+        " content = jsonb_set(content, '{title}', '\"Götterbaum\"') WHERE dataset_id = 'duplicate'"
+    )
+    assert write_listed_search_index(listed, []) == ListedIndexOutcome(1, 0)
+    assert "Götterbaum" in _listed_rows(listed)["main-entry"][1]
+    monkeypatch.setattr(earthx.catalog.search_index, "listed_text_salt", lambda: "another version")
+    assert write_listed_search_index(listed, []) == ListedIndexOutcome(1, 0)
+
+
 def test_a_second_run_writes_nothing_and_a_changed_title_rewrites_one_row(listed):
     write_listed_search_index(listed, [])
     assert write_listed_search_index(listed, []) == ListedIndexOutcome(0, 0)
     listed.execute(
-        "UPDATE public.earthx_listed_entry SET content = jsonb_set(content, '{title}', '\"Neophyten\"')"
-        " WHERE dataset_id = 'main-entry'"
+        "UPDATE public.earthx_listed_entry SET content = jsonb_set(content, '{title}', '\"Neophyten\"'),"
+        " content_sha256 = repeat('c', 64) WHERE dataset_id = 'main-entry'"
     )
     assert write_listed_search_index(listed, []) == ListedIndexOutcome(1, 0)
 

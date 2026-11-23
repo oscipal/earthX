@@ -4,8 +4,8 @@ One row of ``public.earthx_dataset_search`` per registry entry (migration ``016`
 (migration ``035``). :func:`write_search_index` writes a row only where the search text, the extent or the way the
 items are held changed, and removes the rows of datasets the registry no longer has; prototype entries are only where
 the registry of the instance holds them (adr/0024 R5). :func:`write_listed_search_index` does the same for the
-listed entries: it builds the text of every published one, but computes and writes only the rows whose text, box or
-period changed.
+listed entries: Postgres compares a hash of what each text is built from, so only the entries that changed are read
+into Python, built and written.
 :func:`check_search_index` stops a start where the index is not the one this code would write (plan A3): a new
 search text cannot quietly run on an old index.
 """
@@ -20,7 +20,14 @@ import psycopg
 from psycopg import sql
 
 from earthx.catalog.registry import DatasetConfig, DatasetRegistry
-from earthx.catalog.search_text import ListedFields, SearchText, listed_search_text, search_text
+from earthx.catalog.search_text import (
+    ListedFields,
+    SearchText,
+    listed_search_text,
+    listed_text_salt,
+    region_names,
+    search_text,
+)
 
 #: The three configurations of the full text (adr/0026 §4.2): names and abbreviations, German, English.
 CONFIGS = ("simple", "german", "english")
@@ -114,27 +121,39 @@ def write_search_index(conn: psycopg.Connection, registry: DatasetRegistry) -> I
     return IndexOutcome(tuple(written), tuple(removed))
 
 
-#: Every published listed entry that no full entry took over, with what its text and its filters are built from.
-_LISTED = """
-    SELECT e.dataset_id, coalesce(e.content ->> 'title', e.dataset_id), coalesce(e.content ->> 'description', ''), e.keywords, e.category,
-           coalesce(e.publisher, ''), e.account,
-           ARRAY(SELECT r.name FROM public.earthx_region r WHERE r.code = ANY(e.regions) ORDER BY r.code),
+#: The published listed entries that no full entry took over and whose row is missing or was built from other inputs.
+#: The hash of the inputs is computed here, in Postgres, so that an entry that did not change costs no Python: the
+#: salt (text version, place names, category words), the document by its hash, the fields of the row the text and the
+#: filters read, and the documents of the duplicates by their hashes. A listed row keeps it as its ``text_hash``.
+_CHANGED_LISTED = """
+    WITH entries AS (
+        SELECT e.*, encode(sha256(convert_to(concat_ws('|', %(salt)s::text, e.content_sha256, e.regions::text,
+                   e.keywords::text, e.category, coalesce(e.publisher, ''), e.account,
+                   ST_XMin(e.footprint)::text, ST_YMin(e.footprint)::text, ST_XMax(e.footprint)::text,
+                   ST_YMax(e.footprint)::text, coalesce(e.time_span::text, ''),
+                   coalesce((SELECT string_agg(d.content_sha256, ',' ORDER BY d.dataset_id)
+                             FROM public.earthx_listed_entry d
+                             WHERE d.duplicate_of = e.dataset_id AND d.state = 'duplicate'), '')), 'UTF8')), 'hex')
+               AS input_hash
+        FROM public.earthx_listed_entry e
+        WHERE e.state = 'published' AND NOT (e.dataset_id = ANY(%(full)s)))
+    SELECT e.dataset_id, coalesce(e.content ->> 'title', e.dataset_id), coalesce(e.content ->> 'description', ''),
+           e.keywords, e.category, coalesce(e.publisher, ''), e.account, e.regions,
            ARRAY(SELECT d.content ->> 'title' FROM public.earthx_listed_entry d
                  WHERE d.duplicate_of = e.dataset_id AND d.state = 'duplicate' AND d.content ? 'title'
                  ORDER BY d.dataset_id),
            ST_XMin(e.footprint), ST_YMin(e.footprint), ST_XMax(e.footprint), ST_YMax(e.footprint),
-           lower(e.time_span), upper(e.time_span), e.time_span IS NOT NULL
-    FROM public.earthx_listed_entry e
-    WHERE e.state = 'published' AND NOT (e.dataset_id = ANY(%(full)s))
+           lower(e.time_span), upper(e.time_span), e.time_span IS NOT NULL, e.input_hash
+    FROM entries e
+    LEFT JOIN public.earthx_dataset_search s ON s.dataset_id = e.dataset_id AND s.entry = 'listed'
+    WHERE s.text_hash IS DISTINCT FROM e.input_hash
 """
-_STORED_LISTED = (
-    "SELECT dataset_id, text_hash, west, south, east, north, time_start, time_end, has_time_axis"
-    " FROM public.earthx_dataset_search WHERE entry = 'listed'"
-)
 _LISTED_GONE = """
     DELETE FROM public.earthx_dataset_search s WHERE s.entry = 'listed' AND (s.dataset_id = ANY(%(full)s) OR NOT EXISTS (
         SELECT 1 FROM public.earthx_listed_entry e WHERE e.dataset_id = s.dataset_id AND e.state = 'published'))
 """
+#: Rows written per round trip.
+_BATCH = 2_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,41 +167,47 @@ class ListedIndexOutcome:
 def write_listed_search_index(conn: psycopg.Connection, full_ids: Iterable[str]) -> ListedIndexOutcome:
     """Bring the rows of the listed entries in line with the published ones that no id of ``full_ids`` took over.
 
-    Idempotent; the caller owns the transaction. A row is written only where its text hash, box or period changed:
-    the text of each entry is built here, the ``tsvector`` only for the rows written.
+    Idempotent; the caller owns the transaction. Postgres picks the entries whose inputs changed (``_CHANGED_LISTED``);
+    only their texts are built and their ``tsvector`` computed, a batch at a time.
     """
     full = list(full_ids)
     upsert = _UPSERT.format(document=document_sql())
-    with conn.cursor() as cur:
-        cur.execute(_STORED_LISTED)
-        stored = {row[0]: tuple(row[1:]) for row in cur.fetchall()}
-    changed = []
-    with conn.cursor(name="earthx_listed_search") as rows:
-        rows.itersize = 2_000
-        rows.execute(_LISTED, {"full": full})
-        for row in rows:
-            fields = ListedFields(*row[:3], tuple(row[3]), *row[4:7], tuple(row[7]), tuple(row[8]))
-            text = listed_search_text(fields)
-            filters = (text.text_hash, *row[9:16])
-            if stored.get(fields.dataset_id) != filters:
-                changed.append(_listed_row(fields, text, row[9:16]))
-    with conn.cursor() as cur:
-        cur.executemany(upsert, changed)
+    names = region_names()
+    written = 0
+    with conn.cursor(name="earthx_listed_search") as rows, conn.cursor() as cur:
+        rows.itersize = _BATCH
+        rows.execute(_CHANGED_LISTED, {"full": full, "salt": listed_text_salt()})
+        while batch := rows.fetchmany(_BATCH):
+            cur.executemany(upsert, [_listed_row(row, names) for row in batch])
+            written += len(batch)
         cur.execute(_LISTED_GONE, {"full": full})
         removed = cur.rowcount
-    return ListedIndexOutcome(len(changed), removed)
+    return ListedIndexOutcome(written, removed)
 
 
-def _listed_row(fields: ListedFields, text: SearchText, extent: Sequence[Any]) -> dict[str, object]:
-    west, south, east, north, start, end, timed = extent
+def _listed_row(row: Sequence[Any], names: Mapping[str, tuple[str, ...]]) -> dict[str, object]:
+    dataset_id, title, description, keywords, category, publisher, account, regions, duplicates = row[:9]
+    west, south, east, north, start, end, timed, input_hash = row[9:]
+    fields = ListedFields(
+        dataset_id=dataset_id,
+        title=title,
+        description=description,
+        keywords=tuple(keywords),
+        category=category,
+        publisher=publisher,
+        account=account,
+        region_names=tuple(name for code in regions for name in names.get(code, ())),
+        duplicate_titles=tuple(duplicates),
+    )
+    text = listed_search_text(fields)
     return {
-        "dataset_id": fields.dataset_id,
-        "title": fields.title,
+        "dataset_id": dataset_id,
+        "title": title,
         "a": text.a,
         "b": text.b,
         "c": text.c,
         "d": text.d,
-        "text_hash": text.text_hash,
+        "text_hash": input_hash,
         "trigram_text": text.trigram_text,
         "west": west,
         "south": south,

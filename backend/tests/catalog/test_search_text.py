@@ -12,7 +12,11 @@ from earthx.catalog.registry import AccountKind, ConfigError, DataClass, License
 from earthx.catalog.search_text import (
     DATA_CLASS_WORDS,
     CapabilityTerms,
+    ListedFields,
+    listed_search_text,
+    listed_text_salt,
     load_capability_terms,
+    read_region_names,
     search_text,
 )
 from earthx.processing.operators import REGISTRY as OPERATORS
@@ -177,3 +181,48 @@ def test_terms_load(tmp_path):
 def test_malformed_terms_are_refused(tmp_path, text, message):
     with pytest.raises(ConfigError, match=message):
         _terms(tmp_path, text)
+
+
+# --- listed entries ----------------------------------------------------------------------------------------------------
+
+LISTED = ListedFields(
+    dataset_id="neophyten",
+    title="Neophyten",
+    description="Standorte invasiver Pflanzen.",
+    keywords=("neophyten", "invasive arten"),
+    category="nature",
+    publisher="Kanton Beispiel",
+    account="free_account",
+    region_names=("Schweiz", "Switzerland"),
+    duplicate_titles=("Götterbaum", "Neophyten"),
+)
+
+
+def test_a_listed_text_has_the_titles_of_its_duplicates_on_a_and_its_regions_on_b():
+    text = listed_search_text(LISTED)
+    assert text.a.splitlines() == ["neophyten", "Götterbaum"]
+    assert {"Schweiz", "Switzerland", "invasive arten"} <= set(text.b.splitlines())
+    assert text.d.splitlines() == ["Kanton Beispiel", "free account required"]
+    assert "gotterbaum" in text.trigram_text.split()
+
+
+def test_an_open_listed_entry_has_no_access_words():
+    assert listed_search_text(dataclasses.replace(LISTED, account="none")).d == "Kanton Beispiel"
+
+
+def test_the_salt_is_stable_within_a_process():
+    assert listed_text_salt() == listed_text_salt()
+
+
+def test_region_names_are_read_from_places(tmp_path: Path):
+    path = tmp_path / "place_names.yaml"
+    path.write_text("places:\n  CH: [Schweiz, Switzerland]\nambiguous: [Bern]\n", encoding="utf-8")
+    assert read_region_names(path) == {"CH": ("Schweiz", "Switzerland")}
+
+
+@pytest.mark.parametrize("content", ["places: [CH]\n", "places:\n  CH: Schweiz\n", "places:\n  CH: ['']\n", "- a\n"])
+def test_malformed_region_names_are_a_config_error(tmp_path: Path, content: str):
+    path = tmp_path / "place_names.yaml"
+    path.write_text(content, encoding="utf-8")
+    with pytest.raises(ConfigError, match="place_names.yaml"):
+        read_region_names(path)
