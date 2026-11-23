@@ -240,11 +240,12 @@ async def test_the_start_check_and_the_full_rows_leave_a_listed_row_alone(commit
     try:
         with committed_index.transaction():
             insert_row(committed_index, "main-entry")
-            assert write_listed_search_index(committed_index, []) == ListedIndexOutcome(1, 0)
+            write_listed_search_index(committed_index, [config.dataset_id for config in REGISTRY])
+        assert "main-entry" in _listed_rows(committed_index)
         assert write_search_index(committed_index, REGISTRY) == IndexOutcome((), ())
         await check_search_index(REGISTRY, aconn)
     finally:
-        committed_index.execute("DELETE FROM public.earthx_listed_entry")
+        committed_index.execute("DELETE FROM public.earthx_listed_entry WHERE dataset_id = 'main-entry'")
 
 
 def test_a_full_entry_takes_over_the_row_of_a_listed_one_with_its_id(listed):
