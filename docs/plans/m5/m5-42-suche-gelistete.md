@@ -50,6 +50,15 @@ Punkt 2 des Auftrags (lexikalisch und Vektor) ist größer als ein Nachtrag, und
 
 **Umfang:** etwa 380 geänderte Zeilen Code und 340 Zeilen Tests, Fixture und Browser-Check; über dem Richtwert durch F2, F3 und F7 (Otto, 23.11.2026) und die Tests.
 
+8. **Einträge ohne Fußabdruck (Fehler beim Test von Otto, 23.11.2026):** `catalog-load` brach nach ~140 s ab: „null value in column "west"“ bei einem Eintrag von opendata-swiss, dessen Ausdehnung nur über Regionen bekannt ist.
+   - **Ursache:** Der Index nahm an, jeder veröffentlichte gelistete Eintrag habe einen Footprint, und die Spalten der Box waren `NOT NULL`. Einträge ohne Footprint sind aber gewollt (`extent_basis` `publisher`, `catalog`, `none`; M5-20 F1, F11, A19). Die Tests legten nur Einträge mit Footprint an.
+   - **Korrektur:**
+     - **Migration 036:** Die Box einer gelisteten Zeile darf fehlen; eine volle Zeile hat immer eine, und eine Box hat alle vier Kanten oder keine (CHECK). 036 ist eine eigene Migration, weil 035 bei Otto schon angewandt ist. Der Runner wendet sie beim nächsten `catalog-load` von selbst an, ohne Handarbeit.
+     - **Hash der Eingaben unverändert:** `concat_ws` überspringt die fehlenden Kanten. Zeilen, die schon im Index stehen, werden deshalb nicht neu gebaut.
+   - **Verhalten:** Ohne Footprint trifft der Flächenfilter den Eintrag nie; Text, Kategorie und Region finden ihn. Die Ortsnamen seiner Regionen stehen im Suchtext.
+   - **Tests:** Ein `catalog-load` mit gemischten Einträgen (Footprint, nur Regionen, gar keine Ausdehnung) läuft durch, ein zweiter Lauf schreibt nichts. Dazu kommen Index, Suche und Route je mit diesen Fällen.
+9. **Abbruch von `catalog-load` [P, M]:** Der Lauf ist eine einzige Transaktion (`load.py`). Bricht ein Schritt ab, rollt Postgres alles zurück, auch die Hand- und Sperreinträge und die Veröffentlichung der Freigaben; halb steht nichts. In der Sitzung nachgestellt: einen Handeintrag gelöscht, einen Eintrag ohne Footprint angelegt, `catalog-load` scheiterte am Index, und der Handeintrag fehlte danach weiterhin. Test: `test_a_load_that_fails_at_the_index_leaves_nothing_of_its_earlier_steps`. Folge für Otto: Die Freigabe von govdata war nach dem Abbruch nicht veröffentlicht; der nächste Lauf mit diesem Stand holt sie nach und baut dabei den Index aller gelisteten Einträge einmal (bei 10⁵ etwa 50 s, §3).
+
 ## 3. Messung bei 10⁵ gelisteten Einträgen [M]
 
 Synthetische Einträge (`source_id = 'bench'`), lokal in der Cloud-Sitzung (Postgres 16, ein Client), danach wieder gelöscht. Skript nur in der Sitzung, nicht im Repo.
