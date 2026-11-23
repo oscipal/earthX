@@ -133,3 +133,8 @@ Export), Umrechnung, Datentyp, Skalierung, Offset, nodata und Einheit.
   wo der Browser sie bei `per_band` streamen könnte (Otto: ok).
 - Ein Zuschnitt über die Datumsgrenze oder mit einer Quelle, die gedreht
   (nicht nach Norden ausgerichtet) ist, wird abgelehnt (`source_crop_grid`).
+
+## 6. Nachträge
+
+- **Klassen im Export (2026-11-20, M5-62, [#390](https://github.com/oscipal/earthX/pull/390), Plan `plans/m5/m5-62-klassenlegende.md`):** Ein Klassenband trägt im Export die Farbtabelle in der GeoTIFF, Klassennamen und Raster-Attributtabelle in einer `.aux.xml` daneben und die Klassen in `BANDS.txt`; alles aus einer Liste (`band_classes`). Farben nie von Hand: aus der Datei, aus STAC `classification:classes` oder aus der Standardpalette (tab20). Ergebnisse von Jobs tragen die Klassen ebenso (F9 = 1, mit M5-62 PR 2).
+- **QGIS-Stil bei jedem Export (Otto, 2026-11-20, Umsetzung M5-64):** Neben jeder Rasterdatei im ZIP liegt eine QGIS-Stildatei `.qml` gleichen Namens, damit die Daten in QGIS aussehen wie in der App: ein Band mit Farbskala und Min/Max, RGB mit Stretch je Band, Klassenband mit Werten, Farben und Namen.
