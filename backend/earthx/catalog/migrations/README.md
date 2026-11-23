@@ -103,6 +103,10 @@ schreiben kann. Nur zur Information.
 Suchtabelle (`adr/0026` §14 Punkt 1). Die Zeilen gelisteter Einträge schreibt `catalog-load` aus den veröffentlichten
 Zeilen von `earthx_listed_entry`; sie haben keine Haltung der Items.
 
+`036_listed_search_without_box.sql` — die Box einer gelisteten Zeile darf fehlen (M5-42): ein veröffentlichter
+gelisteter Eintrag ohne Footprint (Ausdehnung nur über Regionen oder gar keine). Eine eigene Migration, weil 035 schon
+angewandt sein kann.
+
 Die Buchführungstabelle `earthx_migrations` gehört nicht hierher, sondern dem Läufer
 (`earthx/catalog/schema.py`) und wird von ihm angelegt. Sonst müsste jedes
 Migrationsverzeichnis sie erneut mitbringen.

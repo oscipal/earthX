@@ -416,6 +416,8 @@ def listed(catalogue: None) -> Iterator[None]:
         insert_row(conn, "main-entry", title="Neophyten der Schweiz", bbox=(6.0, 45.8, 10.5, 47.8))
         insert_row(conn, "duplicate", state="duplicate", source_id="src-2", title="Götterbaum Standorte")
         insert_row(conn, "in-review", state="in_review", title="Baumkataster der Stadt")
+        insert_row(conn, "only-regions", title="Bevölkerung der Stadt Winterthur", bbox=None, regions=("CH", "CH-ZH"))
+        insert_row(conn, "no-extent", title="Bevölkerung nach Steuerklasse", bbox=None)
         write_listed_search_index(conn, [config.dataset_id for config in CATALOGUE])
         conn.commit()
         yield
@@ -450,3 +452,15 @@ def test_the_rows_of_names_before_numbers_are_asked_by_like_patterns():
     assert names_before_numbers("Landsat 9") == ["%landsat%"]
     assert names_before_numbers("Sentinel 2 and Sentinel-2") == ["%sentinel%"]
     assert names_before_numbers("10 m, 2021") == []
+
+
+async def test_an_entry_without_a_footprint_is_found_by_text_and_by_the_names_of_its_regions(listed, aconn):
+    assert set(await _ids(aconn, "Bevölkerung")) == {"only-regions", "no-extent"}
+    assert await _ids(aconn, "Winterthur Zürich") == ("only-regions",)
+    # The trigram arm also finds the other one by its strong "Bevölkerung"; the full text puts the Swiss one first.
+    assert (await _ids(aconn, "Bevölkerung Schweiz"))[0] == "only-regions"
+
+
+async def test_the_area_filter_never_meets_an_entry_without_a_footprint(listed, aconn):
+    assert await _ids(aconn, "Bevölkerung", area=box_area(8.6, 47.4, 8.8, 47.6)) == ()
+    assert await _ids(aconn, "Bevölkerung", area=box_area(-180.0, -90.0, 180.0, 90.0)) == ()

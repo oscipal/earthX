@@ -10,6 +10,7 @@ import psycopg
 import pytest
 
 import earthx.api.main
+import earthx.catalog.load
 import earthx.catalog.search_index
 from earthx.api.main import build_app
 from earthx.catalog.load import main as load_catalog
@@ -273,3 +274,87 @@ def test_a_full_entry_takes_over_the_row_of_a_listed_one_with_its_id(listed):
     write_listed_search_index(listed, [])
     assert set(write_search_index(listed, DatasetRegistry((ALONE,))).written) == {"swissalti3d"}
     assert _listed_rows(listed) == {}
+
+
+# --- listed entries without a footprint (M5-20 F1, F11, A19) -----------------------------------------------------------
+
+
+def _add_mixed(conn: psycopg.Connection) -> None:
+    """A footprint, only regions (a place text naming the state, say), and no extent at all."""
+    insert_row(conn, "with-footprint", title="Baumkataster Zürich", bbox=(8.4, 47.3, 8.6, 47.4), regions=("CH-ZH",))
+    insert_row(conn, "only-regions", title="Bevölkerung der Stadt Winterthur", bbox=None, regions=("CH", "CH-ZH"))
+    insert_row(conn, "no-extent", title="Steuerstatistik", bbox=None)
+
+
+def test_entries_without_a_footprint_get_a_row_without_a_box(listed):
+    _add_mixed(listed)
+    assert write_listed_search_index(listed, []).written == 4
+    boxes = dict(listed.execute(
+        "SELECT dataset_id, ARRAY[west, south, east, north] FROM public.earthx_dataset_search WHERE entry = 'listed'"
+    ).fetchall())
+    assert boxes["with-footprint"] == [8.4, 47.3, 8.6, 47.4]
+    assert boxes["only-regions"] == boxes["no-extent"] == [None, None, None, None]
+    text_b = listed.execute("SELECT text_b FROM public.earthx_dataset_search WHERE dataset_id = 'only-regions'").fetchone()
+    assert {"Schweiz", "Zürich"} <= set(text_b[0].splitlines())
+    assert write_listed_search_index(listed, []) == ListedIndexOutcome(0, 0)
+
+
+def test_a_full_row_without_a_box_or_half_a_box_is_refused(listed):
+    write_search_index(listed, REGISTRY)
+    with pytest.raises(psycopg.errors.CheckViolation):
+        with listed.transaction():
+            listed.execute("UPDATE public.earthx_dataset_search SET west = NULL, south = NULL, east = NULL, north = NULL"
+                           " WHERE dataset_id = 'swissalti3d'")
+    _add_mixed(listed)
+    write_listed_search_index(listed, [])
+    with pytest.raises(psycopg.errors.CheckViolation):
+        with listed.transaction():
+            listed.execute("UPDATE public.earthx_dataset_search SET west = 1 WHERE dataset_id = 'no-extent'")
+
+
+def test_catalog_load_with_mixed_listed_entries_runs_through(require_postgres_env, catalogue_state, capsys):
+    # Otto, 23.11.2026: one entry without a footprint stopped the whole load (`west` NOT NULL).
+    with psycopg.connect() as conn:
+        _add_mixed(conn)
+        conn.commit()
+    try:
+        assert load_catalog() == 0
+        with psycopg.connect() as conn:
+            rows = conn.execute(
+                "SELECT dataset_id FROM public.earthx_dataset_search WHERE entry = 'listed' AND dataset_id = ANY(%s)",
+                (["with-footprint", "only-regions", "no-extent"],),
+            ).fetchall()
+        assert len(rows) == 3
+        capsys.readouterr()
+        assert load_catalog() == 0
+        assert "search index rows of listed entries written: 0, removed: 0" in capsys.readouterr().out
+    finally:
+        with psycopg.connect() as conn:
+            conn.execute("DELETE FROM public.earthx_listed_entry WHERE source_id = 'src-1'")
+            conn.commit()
+        catalogue_state.forget()
+
+
+def test_a_load_that_fails_at_the_index_leaves_nothing_of_its_earlier_steps(
+    require_postgres_env, catalogue_state, monkeypatch, capsys
+):
+    # One transaction (load.py): a failure in the last step takes back the hand entries and publications before it.
+    assert load_catalog() == 0
+    with psycopg.connect() as conn:
+        conn.execute("DELETE FROM public.earthx_listed_entry WHERE dataset_id = 'landsat-c2-l2'")
+        conn.commit()
+
+    def fail(conn: psycopg.Connection, full_ids: object) -> None:
+        raise psycopg.errors.NotNullViolation("a row the index refuses")
+
+    monkeypatch.setattr(earthx.catalog.load, "write_listed_search_index", fail)
+    try:
+        assert load_catalog() == 1
+        assert "load failed" in capsys.readouterr().err
+        with psycopg.connect() as conn:
+            found = conn.execute("SELECT 1 FROM public.earthx_listed_entry WHERE dataset_id = 'landsat-c2-l2'").fetchone()
+        assert found is None
+    finally:
+        monkeypatch.undo()
+        catalogue_state.forget()
+        assert load_catalog() == 0

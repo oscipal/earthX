@@ -514,6 +514,31 @@ async def test_text_with_an_area_or_a_region_matches_the_footprint_and_the_regio
     )
 
 
+async def test_a_listed_entry_without_a_footprint_is_kept_by_category_and_region_and_never_by_an_area(client):
+    def add(conn: psycopg.Connection) -> None:
+        insert_row(conn, "winterthur-population", title="Bevölkerung der Stadt Winterthur", bbox=None, regions=("CH",))
+        _index(conn)
+
+    def remove(conn: psycopg.Connection) -> None:
+        conn.execute("DELETE FROM public.earthx_listed_entry WHERE dataset_id = 'winterthur-population'")
+        _index(conn)
+
+    _commit(add)
+    try:
+        text = {"q": "Bevölkerung Winterthur"}
+        assert _ids(await client.post("/stac/collections", json=text)) == ["winterthur-population"]
+        assert _ids(await client.post("/stac/collections", json={**text, "region": ["CH"], "category": "other"})) == [
+            "winterthur-population"
+        ]
+        assert _ids(await client.post("/stac/collections", json={**text, "region": ["DE"]})) == []
+        everywhere = {"type": "Polygon", "coordinates": [[[-180, -90], [180, -90], [180, 90], [-180, 90], [-180, -90]]]}
+        assert _ids(await client.post("/stac/collections", json={**text, "intersects": everywhere})) == []
+        page = await client.post("/stac/collections", json={"region": ["CH"], "entry": "listed"})
+        assert "winterthur-population" in _ids(page)
+    finally:
+        _commit(remove)
+
+
 async def test_a_listed_entry_taken_back_since_the_last_load_is_no_hit(client):
     _commit(lambda conn: conn.execute(
         "UPDATE public.earthx_listed_entry SET state = 'in_review', verdict = 'ok' WHERE dataset_id = 'bavaria-rainfall-gauges'"

@@ -24,20 +24,26 @@ def insert_row(
     title: str = "Harvested example",
     publisher: str = "Example Harvest Office",
     host: str = "harvest.example.org",
-    bbox: tuple[float, float, float, float] = (11.2, 48.2, 11.6, 48.4),
+    bbox: tuple[float, float, float, float] | None = (11.2, 48.2, 11.6, 48.4),
+    regions: tuple[str, ...] = (),
 ) -> None:
-    """One published (or ``state``) row of a source other than ``listed``, with every field a published row needs."""
+    """One published (or ``state``) row of a source other than ``listed``, with every field a published row needs.
+
+    ``bbox`` ``None``: no footprint, the extent known only from ``regions`` or not at all (`extent_basis` ``none``).
+    """
     content: dict[str, Any] = {"type": "Collection", "id": dataset_id, "title": title, "earthx:entry": "listed"}
     conn.execute(
         """
         INSERT INTO public.earthx_listed_entry (
             dataset_id, source_id, source_key, state, content, content_sha256, sort_title, footprint, regions,
-            keywords, data_kind, category, account, delivery, publisher, link_host, verdict, waiting_reason, duplicate_of
-        ) VALUES (%s, %s, %s, %s, %s::jsonb, %s, lower(%s), ST_MakeEnvelope(%s, %s, %s, %s, 4326), '{}',
+            keywords, data_kind, category, account, delivery, publisher, link_host, verdict, waiting_reason, duplicate_of,
+            extent_basis
+        ) VALUES (%s, %s, %s, %s, %s::jsonb, %s, lower(%s), ST_MakeEnvelope(%s, %s, %s, %s, 4326), %s,
                   '{harvested}', 'vector', 'other', 'none', 'download', %s, %s,
                   CASE %s WHEN 'needs_rule' THEN 'needs_rule' WHEN 'not_geodata' THEN 'not_geodata'
                       WHEN 'in_review' THEN 'ok' END,
-                  CASE WHEN %s = 'needs_rule' THEN 'not_granted' END, CASE WHEN %s = 'duplicate' THEN 'main-entry' END)
+                  CASE WHEN %s = 'needs_rule' THEN 'not_granted' END, CASE WHEN %s = 'duplicate' THEN 'main-entry' END,
+                  %s)
         """,
         (
             dataset_id,
@@ -47,11 +53,13 @@ def insert_row(
             json.dumps(content),
             content_sha256(content),
             title,
-            *bbox,
+            *(bbox or (None, None, None, None)),
+            list(regions),
             publisher,
             host,
             state,
             state,
             state,
+            "none" if bbox is None else None,
         ),
     )
