@@ -8,7 +8,7 @@
 
 # The short names of §8.2 and the dataset id behind each. `null`: the id is not fixed yet, so the dataset cannot be in
 # the catalogue. `provisional: true`: the id is the one §8.2 expects, but the entry does not exist yet. Every other id
-# has to be in the registry.
+# has to be in the registry or a hand entry of `catalog/listed/` (M5-42 F7 = 1, Otto 23.11.2026).
 datasets:
   S2: {id: sentinel-2-c1-l2a}
   DEM: {id: cop-dem-glo-30}
@@ -21,8 +21,8 @@ datasets:
   MCH: {id: meteoswiss-daily-1km}
   MCHP: {id: meteoswiss-daily-precip-1km}
   HYR: {id: null}
-  CLC: {id: null}
-  LS: {id: null}
+  CLC: {id: corine-land-cover}
+  LS: {id: landsat-c2-l2}
 
 # Per question: `language` (de, en); `kind` as in §8.3 (N name, T topic, X region in the text, R region as AOI, Z
 # time, F capability, S abbreviation or typo, K account entry, 0 no matching dataset); `grade_2` (wanted, should come

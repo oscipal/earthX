@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import time
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from typing import Any
@@ -22,18 +23,21 @@ from earthx.catalog.registry import (
 )
 from earthx.catalog.search import (
     MAX_QUERY_CHARS,
+    TIME_FILTER,
     Joining,
     QueryTooLong,
     box_area,
     fuse,
+    names_before_numbers,
     numbered_names,
     numbers_after_names,
     numbers_of,
     ranks,
     search_datasets,
 )
-from earthx.catalog.search_index import write_search_index
+from earthx.catalog.search_index import write_listed_search_index, write_search_index
 from tests.catalog.entries import COP_DEM_GLO_30, SENTINEL_2_L2A, SWISSALTI3D
+from tests.integration.listed_rows import insert_row
 
 GLOSSARY = load_glossary()
 
@@ -382,6 +386,15 @@ def test_equal_scores_share_a_rank():
     assert ranks([("a", 3.0), ("b", 1.0), ("c", 1.0), ("d", 0.5)]) == {"a": 1, "b": 2, "c": 2, "d": 4}
 
 
+def test_ranks_of_a_hundred_thousand_hits_take_well_under_a_second():
+    # Listed entries bring lists of 10⁴–10⁵ hits; counting the better scores per hit took minutes there.
+    scored = [(f"e{i}", float(i % 1000)) for i in range(100_000)]
+    started = time.perf_counter()
+    ranked = ranks(scored)
+    assert time.perf_counter() - started < 1.0
+    assert (ranked["e999"], ranked["e1998"], ranked["e0"]) == (1, 101, 99_901)
+
+
 def test_a_tie_in_one_arm_does_not_decide_the_fusion():
     # Both are 1.0 in the trigram arm; the full text puts "s2" first, so it wins whatever the titles say.
     fused = fuse({"s2": 1, "wc": 2}, ranks([("wc", 1.0), ("s2", 1.0)]), titles={"s2": "Sentinel-2", "wc": "ESA"})
@@ -390,3 +403,64 @@ def test_a_tie_in_one_arm_does_not_decide_the_fusion():
 
 def test_what_no_arm_lists_is_not_there():
     assert fuse({}, {}, titles={}) == ()
+
+
+# --- listed entries ----------------------------------------------------------------------------------------------------
+
+
+@pytest.fixture
+def listed(catalogue: None) -> Iterator[None]:
+    """Next to :data:`CATALOGUE`: a published listed entry, a duplicate of it from another source and one in review."""
+    with psycopg.connect() as conn:
+        conn.execute("DELETE FROM public.earthx_listed_entry")
+        insert_row(conn, "main-entry", title="Neophyten der Schweiz", bbox=(6.0, 45.8, 10.5, 47.8))
+        insert_row(conn, "duplicate", state="duplicate", source_id="src-2", title="Götterbaum Standorte")
+        insert_row(conn, "in-review", state="in_review", title="Baumkataster der Stadt")
+        insert_row(conn, "only-regions", title="Bevölkerung der Stadt Winterthur", bbox=None, regions=("CH", "CH-ZH"))
+        insert_row(conn, "no-extent", title="Bevölkerung nach Steuerklasse", bbox=None)
+        write_listed_search_index(conn, [config.dataset_id for config in CATALOGUE])
+        conn.commit()
+        yield
+        conn.execute("DELETE FROM public.earthx_listed_entry")
+        conn.commit()
+
+
+async def test_a_listed_entry_is_found_by_its_title_and_by_the_title_of_a_duplicate(listed, aconn):
+    result = await search_datasets(aconn, "Neophyten", glossary=GLOSSARY)
+    assert (result.ids, result.listed) == (("main-entry",), frozenset({"main-entry"}))
+    assert await _ids(aconn, "Götterbaum") == ("main-entry",)
+    assert await _ids(aconn, "Goetterbaum") == ("main-entry",)
+
+
+async def test_an_entry_in_review_is_no_hit_and_no_listed_entry_is_in_a_list_without_text(listed, aconn):
+    assert await _ids(aconn, "Baumkataster") == ()
+    assert set(await _ids(aconn, None)) == {config.dataset_id for config in CATALOGUE}
+
+
+async def test_the_area_meets_the_footprint_of_a_listed_entry(listed, aconn):
+    assert await _ids(aconn, "Neophyten", area=box_area(7.0, 46.0, 7.5, 46.5)) == ("main-entry",)
+    assert await _ids(aconn, "Neophyten", area=box_area(36.0, -1.0, 37.0, 0.0)) == ()
+
+
+async def test_a_listed_entry_without_a_period_stays_and_is_named(listed, aconn):
+    result = await search_datasets(aconn, "Neophyten", period=_years(2001, 2002), glossary=GLOSSARY)
+    assert result.ids == ("main-entry",)
+    assert result.ignored_filters_by_collection == {"main-entry": (TIME_FILTER,)}
+
+
+def test_the_rows_of_names_before_numbers_are_asked_by_like_patterns():
+    assert names_before_numbers("Landsat 9") == ["%landsat%"]
+    assert names_before_numbers("Sentinel 2 and Sentinel-2") == ["%sentinel%"]
+    assert names_before_numbers("10 m, 2021") == []
+
+
+async def test_an_entry_without_a_footprint_is_found_by_text_and_by_the_names_of_its_regions(listed, aconn):
+    assert set(await _ids(aconn, "Bevölkerung")) == {"only-regions", "no-extent"}
+    assert await _ids(aconn, "Winterthur Zürich") == ("only-regions",)
+    # The trigram arm also finds the other one by its strong "Bevölkerung"; the full text puts the Swiss one first.
+    assert (await _ids(aconn, "Bevölkerung Schweiz"))[0] == "only-regions"
+
+
+async def test_the_area_filter_never_meets_an_entry_without_a_footprint(listed, aconn):
+    assert await _ids(aconn, "Bevölkerung", area=box_area(8.6, 47.4, 8.8, 47.6)) == ()
+    assert await _ids(aconn, "Bevölkerung", area=box_area(-180.0, -90.0, 180.0, 90.0)) == ()

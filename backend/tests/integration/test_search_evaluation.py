@@ -8,15 +8,15 @@ what this arm measured (a ratchet: the floors only move up). The pass mark of ad
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from datetime import UTC, datetime, time
 
 import psycopg
 import pytest
 
+from earthx.catalog.listed import load_listed
 from earthx.catalog.search import Joining, box_area, search_datasets
-from earthx.catalog.search_index import write_search_index
 from tests.catalog.entries import REGISTRY
+from tests.integration.conftest import Catalogue as CatalogueState
 from tests.search_evaluation import (
     LANGUAGES,
     Catalogue,
@@ -33,16 +33,21 @@ pytestmark = pytest.mark.anyio
 
 #: Measured on 11.11.2026 with the six entries of the registry (M5-22b): German 8 of 11 questions in the first five
 #: and on the first rank, English all of 10; on 14.11.2026 with Q34 and Q35 active (M5-10) German 9 of 12, English
-#: all of 11. Raise them when the search gets better; never lower them.
-RATCHET = {"de": (9 / 12, 9 / 12), "en": (1.0, 1.0)}
+#: all of 11. On 23.11.2026 the hand entries CLC and LS woke Q13–Q16, Q45 and Q46 (M5-42 F7): German 15 of 19 in
+#: the first five, English 41/42 because "land cover classification" (Q14) does not reach CORINE, which lacks the word
+#: "classification"; the vector arm (M5-23) is to close it. Raise them when the search gets better; never lower them
+#: for the same questions.
+RATCHET = {"de": (15 / 19, 29 / 38), "en": (41 / 42, 27 / 28)}
+
+
+#: The hand entries of `catalog/listed/` (M5-17), which `catalog-load` publishes and indexes (M5-42 F7 = 1).
+HAND_ENTRIES = tuple(entry.dataset_id for entry, _ in load_listed())
 
 
 @pytest.fixture
-def registry_index(require_postgres_env: None) -> Iterator[None]:
-    with psycopg.connect(autocommit=True) as conn:
-        write_search_index(conn, REGISTRY)
-        yield
-        conn.execute("DELETE FROM public.earthx_dataset_search")
+def registry_index(catalogue_state: CatalogueState) -> None:
+    """The index as `catalog-load` writes it: the registry and the hand entries of `catalog/listed/`."""
+    catalogue_state.ensure()
 
 
 async def _evaluate(aconn: psycopg.AsyncConnection, joining: Joining) -> Evaluation:
@@ -60,7 +65,7 @@ async def _evaluate(aconn: psycopg.AsyncConnection, joining: Joining) -> Evaluat
             )
         )
         answers[query] = (await search_datasets(aconn, query.text, area=area, period=period, joining=joining)).ids
-    return evaluate(evaluation_set, Catalogue.of(REGISTRY), answers.__getitem__)
+    return evaluate(evaluation_set, Catalogue.of(REGISTRY, HAND_ENTRIES), answers.__getitem__)
 
 
 async def test_the_lexical_arm_holds_the_ratchet(registry_index, aconn):

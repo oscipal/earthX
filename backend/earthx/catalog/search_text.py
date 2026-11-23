@@ -8,6 +8,11 @@
 | D | bands with their unit, the quick processings, "true color", the data class, the providers, the access, the terms
   of each capability the dataset offers (F5) |
 
+A listed entry (:func:`listed_search_text`) has the same four parts from the fields of its row: the titles of its
+duplicates next to its own on A, so that a word only a duplicate's title has finds the main entry; the names its
+regions have in ``place_names.yaml`` (German, English, French, Italian) as its place names on B; its publisher and
+access on D.
+
 Keywords are on B, not on A as the ADR has it (plan A1, Otto 11.11.2026): WorldCover names ``sentinel-2`` among its
 keywords and would otherwise tie with Sentinel-2 for "Sentinel-2". What a dataset cannot do is not in its text: only
 its own quick processings, only the terms of capabilities it offers, never a general operator every dataset has.
@@ -36,6 +41,8 @@ from earthx.catalog.registry import AccountKind, Capabilities, ConfigError, Data
 SEARCH_TEXT_VERSION = 1
 
 CAPABILITY_TERMS_FILE = Path(earthx.__file__).resolve().parents[1] / "catalog" / "capability_terms.yaml"
+#: The names of the regions (M5-20, F2 = 1); the search reads only its section ``places``.
+PLACE_NAMES_FILE = CAPABILITY_TERMS_FILE.with_name("place_names.yaml")
 
 DATA_CLASS_WORDS = {DataClass.RASTER_TIME_SERIES: "raster time series", DataClass.RASTER_STATIC: "static raster"}
 #: Only what a user has to know before choosing: no words where the data is open.
@@ -165,3 +172,64 @@ def search_text(
             )
         ),
     )
+
+
+@dataclass(frozen=True, slots=True)
+class ListedFields:
+    """What the search text of a published listed entry is built from: fields of its row in ``earthx_listed_entry``."""
+
+    dataset_id: str
+    title: str
+    description: str
+    keywords: tuple[str, ...]
+    category: str
+    publisher: str
+    account: str
+    region_names: tuple[str, ...]
+    duplicate_titles: tuple[str, ...]
+
+
+def listed_search_text(entry: ListedFields, *, categories: Categories | None = None) -> SearchText:
+    """The search text of a listed entry, in the parts of :func:`search_text`."""
+    categories = load_categories() if categories is None else categories
+    titles = (entry.title, *entry.duplicate_titles)
+    return SearchText(
+        dataset_id=entry.dataset_id,
+        a=_lines(entry.dataset_id, *titles),
+        b=_lines(*entry.keywords, *entry.region_names, categories.search_texts.get(entry.category, "")),
+        c=entry.description,
+        d=_lines(entry.publisher, ACCESS_WORDS.get(AccountKind(entry.account), "")),
+        trigram_text=" ".join(
+            dict.fromkeys(normalize(part) for part in (entry.dataset_id, *titles, *entry.keywords) if normalize(part))
+        ),
+    )
+
+
+def read_region_names(path: Path = PLACE_NAMES_FILE) -> dict[str, tuple[str, ...]]:
+    """The names of each region code in the section ``places`` of ``path``; :class:`ConfigError` where it is malformed."""
+    try:
+        data = read_yaml(path)
+    except EntryFileError as error:
+        raise ConfigError(str(error)) from None
+    places = data.get("places") if isinstance(data, dict) else None
+    if not isinstance(places, dict) or not all(
+        isinstance(code, str) and isinstance(names, list) and all(isinstance(n, str) and n for n in names)
+        for code, names in places.items()
+    ):
+        raise ConfigError(f"{path.name}: 'places' maps a region code to a list of names")
+    return {code: tuple(names) for code, names in places.items()}
+
+
+@cache
+def region_names() -> dict[str, tuple[str, ...]]:
+    """The names of the regions for this process, read once."""
+    return read_region_names()
+
+
+def listed_text_salt() -> str:
+    """What every search text of a listed entry depends on besides its row: when it changes, every row is rebuilt."""
+    payload = json.dumps(
+        [SEARCH_TEXT_VERSION, sorted(region_names().items()), sorted(load_categories().search_texts.items())],
+        ensure_ascii=False,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
