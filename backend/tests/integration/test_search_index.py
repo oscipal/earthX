@@ -14,13 +14,17 @@ from earthx.api.main import build_app
 from earthx.catalog.load import main as load_catalog
 from earthx.catalog.registry import DatasetRegistry, OverviewMode, OverviewResampling
 from earthx.catalog.search_index import (
+    IndexOutcome,
+    ListedIndexOutcome,
     SearchIndexMismatch,
     check_search_index,
     compare_index,
+    write_listed_search_index,
     write_search_index,
 )
 from earthx.catalog.search_text import search_text
 from tests.catalog.entries import REGISTRY, SENTINEL_2_L2A, SWISSALTI3D
+from tests.integration.listed_rows import insert_row
 
 pytestmark = pytest.mark.anyio
 
@@ -183,3 +187,68 @@ async def test_api_does_not_start_on_an_old_index(committed_index, monkeypatch):
     with pytest.raises(SearchIndexMismatch, match="swissalti3d"):
         async with app.router.lifespan_context(app):
             pass
+
+
+# --- listed entries ----------------------------------------------------------------------------------------------------
+
+
+def _listed_rows(conn: psycopg.Connection) -> dict[str, tuple]:
+    with conn.cursor() as cur:
+        cur.execute("SELECT dataset_id, title, text_a, item_holding FROM public.earthx_dataset_search WHERE entry = 'listed'")
+        return {row[0]: row[1:] for row in cur.fetchall()}
+
+
+@pytest.fixture
+def listed(conn: psycopg.Connection) -> psycopg.Connection:
+    """Within the rolled-back transaction: no listed row but a published one, one in review, and a duplicate of it."""
+    conn.execute("DELETE FROM public.earthx_listed_entry")
+    insert_row(conn, "main-entry", title="Neophyten der Schweiz")
+    insert_row(conn, "in-review", state="in_review", title="Baumkataster der Stadt")
+    insert_row(conn, "duplicate", state="duplicate", source_id="src-2", title="Götterbaum (Ailanthus altissima)")
+    return conn
+
+
+def test_a_published_listed_entry_gets_a_row_with_the_titles_of_its_duplicates(listed):
+    outcome = write_listed_search_index(listed, [])
+    assert (outcome.written, outcome.removed) == (1, 0)
+    title, text_a, item_holding = _listed_rows(listed)["main-entry"]
+    assert title == "Neophyten der Schweiz" and item_holding is None
+    assert "Götterbaum (Ailanthus altissima)" in text_a.splitlines()
+
+
+def test_a_second_run_writes_nothing_and_a_changed_title_rewrites_one_row(listed):
+    write_listed_search_index(listed, [])
+    assert write_listed_search_index(listed, []) == ListedIndexOutcome(0, 0)
+    listed.execute(
+        "UPDATE public.earthx_listed_entry SET content = jsonb_set(content, '{title}', '\"Neophyten\"')"
+        " WHERE dataset_id = 'main-entry'"
+    )
+    assert write_listed_search_index(listed, []) == ListedIndexOutcome(1, 0)
+
+
+def test_a_row_goes_when_its_entry_is_no_longer_published_or_a_full_entry_took_its_id(listed):
+    write_listed_search_index(listed, [])
+    assert write_listed_search_index(listed, ["main-entry"]) == ListedIndexOutcome(0, 1)
+    write_listed_search_index(listed, [])
+    listed.execute("UPDATE public.earthx_listed_entry SET state = 'blocked' WHERE dataset_id = 'main-entry'")
+    assert write_listed_search_index(listed, []) == ListedIndexOutcome(0, 1)
+    assert _listed_rows(listed) == {}
+
+
+async def test_the_start_check_and_the_full_rows_leave_a_listed_row_alone(committed_index, aconn):
+    write_search_index(committed_index, REGISTRY)
+    try:
+        with committed_index.transaction():
+            insert_row(committed_index, "main-entry")
+            assert write_listed_search_index(committed_index, []) == ListedIndexOutcome(1, 0)
+        assert write_search_index(committed_index, REGISTRY) == IndexOutcome((), ())
+        await check_search_index(REGISTRY, aconn)
+    finally:
+        committed_index.execute("DELETE FROM public.earthx_listed_entry")
+
+
+def test_a_full_entry_takes_over_the_row_of_a_listed_one_with_its_id(listed):
+    listed.execute("UPDATE public.earthx_listed_entry SET dataset_id = 'swissalti3d' WHERE dataset_id = 'main-entry'")
+    write_listed_search_index(listed, [])
+    assert set(write_search_index(listed, DatasetRegistry((ALONE,))).written) == {"swissalti3d"}
+    assert _listed_rows(listed) == {}
