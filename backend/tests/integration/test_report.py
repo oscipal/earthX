@@ -712,6 +712,42 @@ def test_a_collection_in_a_distribution_makes_no_duplicate(world: World) -> None
     assert world.row("linking")["duplicate_of"] is None
 
 
+def test_classify_compares_the_pairs_with_the_last_report(world: World) -> None:
+    # Otto, 23.11.2026: pairs by kind of key, ten examples, and what the new keys make of the stored ones.
+    world.put(world.stac, _find("ch.example.boden", source_url="https://stac.example.org/browser/ch.example.boden"))
+    linked = {"href": "https://map.example.org/?layers=ch.example.boden", "format": "HTML", "media_type": None}
+    world.put(
+        world.ckan,
+        _find("viewer", source_url="https://map.example.org/?layers=ch.example.boden"),
+        _find("linking", distributions=[linked]),
+        _find("same-doi", doi="10.1/zz"),
+    )
+    world.put(world.stac, _find("other", doi="10.1/zz"))
+    world.report(world.stac)
+    world.report()
+    # The last report was made with the old keys: the distribution named the collection.
+    world.conn.execute(
+        "UPDATE public.earthx_listed_entry SET state = 'duplicate', duplicate_of = %s,"
+        " dedupe_keys = ARRAY[%s] WHERE dataset_id = %s",
+        (
+            f"{world.stac.source_id}.ch.example.boden",
+            "coll:stac.example.org/ch.example.boden",
+            f"{world.ckan.source_id}.linking",
+        ),
+    )
+    result = world.report(classify_only=True)
+    text = classify_text(world.ckan, result)
+    assert result.dedupe is not None
+    assert [pair[0] for pair in result.dedupe.lost] == [f"{world.ckan.source_id}.linking"]
+    assert "Dubletten (gerechnet mit den Schlüsseln dieser Ableitung; nichts geschrieben):" in text
+    assert "Paare jetzt 2 (nach Schlüsselart: DOI 1, Collection-ID 1)" in text
+    assert "Paare im Stand der Datenbank 3 (nach Schlüsselart: DOI 1, Collection-ID 2)" in text
+    assert "Weggefallen 1 (nach Schlüsselart: Collection-ID 1), neu 0" in text
+    assert f"<{world.ckan.source_id}.linking> | " in text
+    # Nothing was written: the row is still the duplicate of the last report.
+    assert world.row("linking")["state"] == "duplicate"
+
+
 def test_two_finds_of_one_source_with_one_identifier_stay_apart(world: World) -> None:
     # Otto, 23.11.2026: two GovData finds with one placeholder identifier were made one.
     world.put(world.ckan, _find("a", identifier="statistik"), _find("b", identifier="statistik"))
