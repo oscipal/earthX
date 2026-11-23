@@ -4,6 +4,7 @@
   - F12: keine eigene Doku-Aufgabe; die Nachträge aus §14 macht M5-40 als ersten Commit;
   - die Freigabedatei eines Laufs kommt, wo möglich, in denselben täglichen Sammel-PR wie das automatische Onboarding (`adr/0031`), damit nicht zwei PRs am Tag nötig sind (§8.4).
 - **Datum:** 2026-11-14 (Entwurf, Draft-PR [#352](https://github.com/oscipal/earthX/pull/352)); 2026-11-14 angenommen.
+- **Nachträge 2026-11-23** (Doku-Runde, Entscheidungen Ottos zu M5-19 und M5-20 vom 19. bis 23.11.2026): §5 (Link, Zugang, Ausdehnung, Nicht-Geodaten), §6.2 (Klassen und Freigabe für alle Herausgeber), §7 (weitere Wartegründe), §11 (geänderte Einstufung, A18).
 - **Aufgabe:** M5-39, Auftrag von Otto vom 14.11.2026 (Folgeaufgabe aus `plans/m5/m5-35-skalierbarkeit.md` §10, Bedingung zu F4). Die Nummer 0033 ist vom Auftrag vorgegeben; auf `main` endet die Reihe mit 0032.
 - **Autonomiestufe:** C. Kein Produktivcode.
   - Geändert sind nur dieses ADR und eine Zeile im Entscheidungslog.
@@ -176,6 +177,12 @@ Vorschlag für M5-40 und M5-20, nach Ottos Vorgabe. Die rechte Spalte sagt, welc
 - **Nachtrag 2026-11-17 (M5-19, Vorgaben Otto, `plans/m5/m5-19-harvest-kern.md` §6, §9a):**
   - **Link zur Quelle:** so direkt wie möglich zu den Daten: zuerst Viewer oder Download-Seite beim Anbieter, wo man die Daten laden kann; sonst die Seite des Datensatzes beim Anbieter; sonst die Seite im Katalog. Nie eine einzelne Datei, nie ein Dienst, nie nur die Startseite des Anbieters. Gilt für gelistete Einträge, auch die Handeinträge; volle Einträge folgen mit M5-55.
   - **Ohne räumliche Angabe:** Ein Fund wird nicht verworfen, sondern mit „Ausdehnung unbekannt“ gehalten; ob und wie er gelistet und gefiltert wird, entscheidet M5-20. Der Punkt „Geodaten“ darüber gilt damit nicht mehr als Filter der Quelle.
+- **Nachtrag 2026-11-23 (M5-19/M5-20, Otto 19.–23.11.2026; Plan `plans/m5/m5-20-freigabe-geernteter-eintraege.md` §13a–§13g):**
+  - **Link nie Sammelseite:** Eine Adresse, die bei mehr als einem Fund derselben Quelle als Link gewählt würde, oder die nur aus Host und höchstens einem Pfadteil besteht (ein führender Sprachteil wie `de`, `fr`, `it`, `en`, `rm` zählt nicht; Abfrage und Fragment gehören zur Adresse), ist eine Sammelseite. Sie wird übersprungen, es gilt der nächste Rang, zuletzt die Katalogseite des Datensatzes. Ein Fund ohne Katalogseite und nur mit einer Sammelseite bleibt `no_link`. Die Prüfung arbeitet auf Kandidatenlisten in der Zwischenform (`link_candidates`), ohne Rohantworten zu lesen.
+  - **Link nie Schnittstelle:** Metadaten-Endpunkte (piveau `/api/hub/repo/` und `/api/hub/search/`, CKAN `/api/3/action/`, GeoNetwork-Formatter, Format-Parameter wie `?format=rdf`) sind nie Link „Source“; `open.bydata.de` verlinkt die Seite `/datasets/<id>`.
+  - **Zugang:** Fehlende `access_rights` sind kein Ausschluss; zurückgehalten wird nur, was ausdrücklich eingeschränkt oder nicht öffentlich ist. Neue Zugangsart `page` in `access.delivery` („über die Seite des Anbieters“) für Funde mit `https`-Link, aber nur HTML oder unbekanntem Format; ein Fund nur mit `http` bleibt ohne Zugang (`no_access`). Migration 034.
+  - **Ausdehnung in Stufen** (ersetzt „entscheidet M5-20“ im Nachtrag 2026-11-17): Geometrie → Ortstext → Herausgeber → Staat des Katalogs; alle Funde werden gelistet; der AOI-Filter wirkt nur auf Einträge mit Fußabdruck, der Regionsfilter auch auf abgeleitete Regionen. Ortsverzeichnis mit Staaten, Ländern, Kantonen und Bundesländern, für die Schweiz auch Gemeinden (swissBOUNDARIES3D, „© swisstopo“) und GeoNames-Zuordnungen.
+  - **Nicht-Geodaten** (ersetzt den Punkt „Geodaten“ oben): verborgen, nie gelöscht, nur ohne Geo-Signal und mit Nicht-Geo-Signal (Herausgeber ohne Geodaten, Statistikämter, Software); Ausdehnung und Herausgeber sind nur schwache Geo-Signale; Begriffe wie Messstelle, Standorte, Karte, Plan sind Geo-Signale; ein Ort im Titel ist keines. Liste und Begriffe in `backend/catalog/geodata.yaml`; jede Änderung der Regel prüft Otto über `-Classify` mit Stichprobe.
 - **Neue Werte für `access`** ändern `adr/0027` §6.1; Prinzip 2 bleibt unberührt, weil ein Link kein Anbinden ist (`adr/0027` F2 = 1). Frage F10.
 
 ## 6. Lizenzregeln in Git
@@ -206,6 +213,8 @@ Vorschlag für M5-40 und M5-20, nach Ottos Vorgabe. Die rechte Spalte sagt, welc
 - **Dieselbe Regel für volle Einträge:** Ein voller Eintrag bekommt die Stufe aus dem Katalog (höchstens die nach den Flags) und `license_rule: <source>/<publisher>/<license_ref>`. Ottos Bestätigung im Onboarding-PR (`adr/0031` Q1) bleibt; nur die Ablage der Regel ändert sich.
 - **`license-checker`** schlägt Katalogeinträge und Zeilen in `grants/` vor, mit Belegstelle; schreiben und mergen tut Otto (wie `adr/0025` §6.7).
 
+**Nachtrag 2026-11-23 (M5-20, Otto 20.11.2026; `plans/m5/m5-20-lizenzliste.md`):** Jede Lizenz im Katalog trägt eine Klasse: K1 offen ohne Namensnennung, K2 Namensnennung, K3 Weitergabe unter gleichen Bedingungen, K4 nicht kommerziell (auch „auf Anfrage“), K5 keine Bearbeitung, K6 unbekannt oder geschlossen, K7 ohne Lizenz. K1–K5 sind für alle Herausgeber jeder Quelle freigegeben; die Regel bleibt je Herausgeber wörtlich (L2), der Befehl `harvest-grants` schreibt die Listen unter `grants/` aus der Datenbank. K6 und amtliches Werk sind eingestuft, aber nicht freigegeben; K7 ist nicht aufgenommen. Feeds, Seiten und Hinweistexte sind keine Lizenz; STAC `proprietary` heißt „siehe Link `rel=license`“.
+
 ## 7. Ohne Regel
 
 | | Option | Bewertung |
@@ -215,6 +224,8 @@ Vorschlag für M5-40 und M5-20, nach Ottos Vorgabe. Die rechte Spalte sagt, welc
 | H3 | **Gelistet mit Rohangabe** „Lizenz nicht eingestuft“ und dem Text der Quelle | schnellste Abdeckung; aber eine Lizenz-Aussage ohne Ottos Einstufung, widerspricht K1 |
 
 **Empfehlung H2, entschieden (F3 = 1).** Weitere Gründe für die Warteliste, je mit eigenem Zustand im Bericht: Lizenzangabe fehlt (`no_licence`), mehrere Lizenzen mit einer ohne Regel, Pflichtfeld fehlt (`invalid`), Host oder Herausgeber gesperrt (`blocked`). Eine Warteliste ohne Ende braucht eine Grenze [A]: Funde, die 12 Monate ohne Regel warten, verlieren ihre Rohantwort und bleiben nur als Zeile mit Paar und Zähler.
+
+**Nachtrag 2026-11-23 (M5-20, Otto 20.–23.11.2026):** Weitere Wartegründe: Fund ohne Herausgeber (F14 = 1, keine Namensnennung möglich; `harvest-grants` zählt sie), FSDI-Collection ohne Lizenzangabe (F13 = 1), Lizenz eingestuft, aber für den Herausgeber nicht freigegeben (`not_granted`; die Warteliste nennt die fehlende Freigabe). Ohne Einstufung kommt nichts nach `in_review`.
 
 ## 8. Lauf-Bericht, Stichprobe und Sammel-Freigabe
 
@@ -330,6 +341,8 @@ Der Harvest erkennt Änderungen am Inhalts-Hash (`adr/0025` §5.1). Dann gilt je
 | U3 | jede Änderung nur mit Freigabe | sicher, aber Ottos Aufwand wächst mit jeder Textkorrektur der Quelle |
 
 **Empfehlung U1, entschieden (F7 = 1).** Lizenzwechsel sind selten [A]; eine falsche Lizenz-Aussage wiegt schwerer als ein Eintrag, der einige Tage fehlt. Ein Hostwechsel gehört dazu, weil ein Link auf einen neuen Host bei einer übernommenen Quelle auf eine fremde Seite führen kann (Prinzip 15).
+
+**Nachtrag 2026-11-23 (A18, Otto 19.11.2026, Abweichung von der Zeile „Otto ändert eine Einstufung im Katalog“):** Ändert Otto die Einstufung einer Lizenz, werden die betroffenen veröffentlichten Einträge bis zur nächsten Lauf-Freigabe unsichtbar und stehen dort als „erneut vorgelegt“, wie bei einem Lizenzwechsel der Quelle (U1). Die alte Fassung bleibt nicht sichtbar.
 
 **Gelistet wird voll:** Kommt für einen gelisteten Eintrag ein Adapter, ein Format und ein Profil dazu, schreibt `discovery propose` eine Kandidatendatei für den vollen Weg (`adr/0031` §8). Der volle Eintrag übernimmt die ID; `catalog-load` lädt ihn aus `datasets/` und markiert die Zeile des gelisteten Eintrags als abgelöst.
 
