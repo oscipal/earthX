@@ -54,12 +54,13 @@ export default function RangeHistogram({ histogram, low, high, onLow, onHigh, ch
   const to = high ?? histogram.edges[histogram.edges.length - 1];
   const [lowAt, highAt] = sliderPlaces(histogram, from, to);
   const name = channel ? `${channel} ` : '';
-  const step = span > 0 ? span / STEPS : 'any';
+  // The keys move by a thousandth of the track; the inputs take any value, so that a slider stands exactly on the edge of a bar.
+  const step = span > 0 ? span / STEPS : null;
   const colours = paint && !channel ? barColours(histogram, paint.groups, paint.colormap, from, to) : null;
   // The keys move the value, not the place the slider is drawn at: from a slider at the edge of a bar they would not move it.
   const nudge = (end: 'low' | 'high') => (e: React.KeyboardEvent) => {
     const delta = KEYS[e.key];
-    if (delta === undefined || typeof step !== 'number') return;
+    if (delta === undefined || step === null) return;
     e.preventDefault();
     if (end === 'low') onLow(Math.min(from + delta * step, to));
     else onHigh(Math.max(to + delta * step, from));
@@ -74,7 +75,7 @@ export default function RangeHistogram({ histogram, low, high, onLow, onHigh, ch
         aria-valuetext={String(from)}
         min={track[0]}
         max={track[1]}
-        step={step}
+        step="any"
         value={lowAt}
         onKeyDown={nudge('low')}
         onChange={(e) => onLow(Math.min(Number(e.target.value), to))}
@@ -86,7 +87,7 @@ export default function RangeHistogram({ histogram, low, high, onLow, onHigh, ch
         aria-valuetext={String(to)}
         min={track[0]}
         max={track[1]}
-        step={step}
+        step="any"
         value={highAt}
         onKeyDown={nudge('high')}
         onChange={(e) => onHigh(Math.max(Number(e.target.value), from))}

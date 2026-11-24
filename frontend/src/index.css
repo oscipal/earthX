@@ -643,6 +643,9 @@ svg.lucide.icon-lead {
   height: var(--control-height);
   border-bottom: var(--line-width) solid var(--line);
   color: var(--accent);
+  /* The thumb of a slider: its line travels from half its width to the width less half of it, and the bars span exactly that travel,
+     so that a slider at the edge of a bar stands on it, at the ends too (Otto, 24.11.2026). */
+  --hist-thumb: var(--space-3);
 }
 .inspector .range-hist-red {
   color: var(--channel-red);
@@ -655,8 +658,9 @@ svg.lucide.icon-lead {
 }
 .inspector .range-hist-bars {
   position: absolute;
-  inset: 0;
-  width: 100%;
+  top: 0;
+  left: calc(var(--hist-thumb) / 2);
+  width: calc(100% - var(--hist-thumb));
   height: 100%;
 }
 .inspector .range-hist-bars rect {
@@ -690,7 +694,7 @@ svg.lucide.icon-lead {
 }
 /* The sliders are thin lines (Otto, 3.11.2026); what takes the pointer or a finger is wider than the line and clear around it. */
 .inspector .range-hist input[type='range']::-webkit-slider-thumb {
-  width: var(--space-3);
+  width: var(--hist-thumb);
   height: 100%;
   border: 0;
   border-radius: 0;
@@ -700,7 +704,7 @@ svg.lucide.icon-lead {
   appearance: none;
 }
 .inspector .range-hist input[type='range']::-moz-range-thumb {
-  width: var(--space-3);
+  width: var(--hist-thumb);
   height: 100%;
   border: 0;
   border-radius: 0;
