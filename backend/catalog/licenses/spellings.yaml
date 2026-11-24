@@ -1,0 +1,28 @@
+# Further spellings of graded standard licences, written by `discovery spellings` (M5-67 plan §7; adr/0033
+# §8.5): never a grade, only a statement that means exactly one licence of terms.yaml by rule S1 (address),
+# S2 (identifier) or S3 (typography). To take a spelling back, set `withdrawn_on: <day>` on its line (deleting
+# the line would let the next run add it again); the finds then wait again.
+- license_ref: cc-by-4.0
+  statement: CC-BY 4.0
+  rule: S2
+  added_on: 2026-11-24
+- license_ref: cc-by-4.0
+  statement: CC-BY-4.0
+  rule: S2
+  added_on: 2026-11-24
+- license_ref: cc-by-4.0
+  statement: https://www.dcat-ap.de/def/licenses/cc-by/4.0
+  rule: S1
+  added_on: 2026-11-24
+- license_ref: cc-by-nc-4.0
+  statement: "Nutzungsbedingungen: Creative Commons Namensnennung, nicht kommerziell 4.0 International\r\n\r\n{\"id\":\"cc-by-nc/4.0\",\"name\":\"Creative Commons Namensnennung, nicht kommerziell\\t4.0 International\",\"url\":\"https://creativecommons.org/licenses/by-nc/4.0/\",\"quelle\":\"Quelle: © Regionalverband Ruhr\"}"
+  rule: S3
+  added_on: 2026-11-24
+- license_ref: cc0-1.0
+  statement: CC0-1.0
+  rule: S2
+  added_on: 2026-11-24
+- license_ref: odbl-1.0
+  statement: http://dcat-ap.de/def/licenses/ODbL
+  rule: S1
+  added_on: 2026-11-24

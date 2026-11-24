@@ -1,0 +1,1 @@
+Bericht: Der Bericht von fsdi-stac ist gescheitert. Grund: report failed: flags.yaml: cannot be read as UTF-8 text (FileNotFoundError)
