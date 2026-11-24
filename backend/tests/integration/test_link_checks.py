@@ -4,6 +4,9 @@ Built on the synthetic world of ``test_report``: finds written straight into ``e
 and no page is asked.
 """
 
+# The fixtures of test_report are imported, so every test's parameter `world` shadows the import.
+# ruff: noqa: F811
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -164,3 +167,24 @@ def test_a_result_for_an_entry_that_is_gone_is_passed_over(world: World) -> None
     assert world.conn.execute(
         "SELECT count(*) FROM public.earthx_link_check WHERE dataset_id = %s", (_id(world, "nowhere"),)
     ).fetchone() == (0,)
+
+
+def test_a_whole_run_checks_hides_and_the_trial_run_only_counts(world: World) -> None:
+    import httpx
+
+    from earthx.discovery.linkcheck import load_link_rules, run_linkcheck, summary_text
+    from tests.earthx.discovery.test_linkcheck import opener, page, site
+
+    _published(world, "gut", "tot")
+    pages = {"amt.example.org/daten/gut": page("Bodenkarte gut"), "amt.example.org/daten/tot": httpx.Response(404)}
+    rules = load_link_rules()
+    for dry_run, state in ((True, "published"), (False, "link_failed")):
+        # The published Bestand, never checked (the helper of test_report passed them).
+        world.conn.execute("DELETE FROM public.earthx_link_check WHERE dataset_id LIKE %s", (f"{world.ckan.source_id}.%",))
+        run = run_linkcheck(
+            world.conn, rules=rules, hosts={}, dry_run=dry_run, open_gateway=opener(site(pages), []), minutes=5
+        )
+        ours = {r.dataset_id: r.outcome for r in run.results if r.dataset_id.startswith(world.ckan.source_id)}
+        assert ours == {_id(world, "gut"): "passed", _id(world, "tot"): "failed"}
+        assert (world.row("gut")["state"], world.row("tot")["state"]) == ("published", state)
+        assert ("Probelauf" in summary_text(run, {})) is dry_run
