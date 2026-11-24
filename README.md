@@ -381,6 +381,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harvest-report.ps1
   - `excluded_rules` lässt einzelne Lizenzregeln draußen.
   - `revoked_on` nimmt die Freigabe zurück.
   - Ein späterer Bericht derselben Quelle ersetzt einen nicht freigegebenen Stapel; dessen Datei gilt dann nicht mehr.
+- **Linkprüfung (M5-67):** Sichtbar wird ein Eintrag nur, wenn sein eigener Link die automatische Prüfung bestanden
+  hat (`backend/catalog/linkcheck.yaml`, Plan `docs/plans/m5/m5-67-harvest-automatisch.md` §4). Vor dem Merge einer
+  Freigabe deshalb prüfen; `--dry-run` zählt nur, was verborgen und was sichtbar würde:
+
+  ```powershell
+  docker compose run --build --rm harvest-linkcheck --dry-run
+  docker compose run --build --rm harvest-linkcheck
+  ```
+
+  Ein veröffentlichter Eintrag, dessen Link durchfällt, wird verborgen, nicht gelöscht, und kommt mit einer
+  bestandenen Prüfung zurück. Funde mit Warnzeichen (`backend/catalog/flags.yaml`) stehen in `excluded_entries`
+  der Freigabedatei und warten.
 - **Lizenzen:** Ohne Einträge in `backend/catalog/licenses/terms.yaml` und `grants/<Quelle>.yaml` wartet jeder
   Fund (`needs_rule`), und es entsteht kein Stapel. Die Einstufung jeder Lizenz machst du.
 - **Freigaben je Herausgeber:** `harvest-grants` schreibt `grants/<Quelle>.yaml` aus den Herausgebern der

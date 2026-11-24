@@ -18,18 +18,14 @@ Keine Personen, keine AOI, keine Hashes oder signierten Adressen in dieser Datei
 
 ## Offen, von Hand
 
-- [ ] **H-2026-11-24-01** · 2026-11-24 · govdata · Regel R-G: „Betriebsstätte(n)“ ist als Geo-Begriff zu breit; es
-  soll nur zusammen mit PRTR halten. Beispiel: die Steuerstatistik von Destatis wurde dadurch gehalten;
-  `PRTR_Betriebsstaetten_RLP` muss Geodaten bleiben. Vorschlag: Plan M5-67 §12 (01).
 - [ ] **H-2026-11-24-02** · 2026-11-24 · govdata · Fehltreffer als Geodaten: „Gewerbesteuer: Steuerpflichtige …
   Kreise … (ab 2010)“ (Statistik Sachsen) und „Aktuelle Lage … Aachen zum Corona-Virus“. Beide veröffentlicht.
   Vorschlag: Plan M5-67 §12 (02).
 - [ ] **H-2026-11-24-03** · 2026-11-24 · opendata-swiss · „Bibliothekenstatistik der Öffentlichen Bibliotheken im
   Kanton Thurgau (2005-2019)“ wird nicht als Nicht-Geodaten erkannt (in der Stichprobe von Stapel 6 mit `ok: false`,
-  veröffentlicht). Vorschlag: Plan M5-67 §12 (03).
-- [ ] **H-2026-11-24-04** · 2026-11-24 · opendata-swiss · Identitas AG: „Katzen – Verteilung pro Gemeinde“ und
-  „Ziegen – Verteilung pro Kanton“ sind nicht verborgen wie die übrigen Funde dieses Herausgebers (Stapel 6,
-  `ok: false`, veröffentlicht). Vorschlag: Plan M5-67 §12 (04).
+  veröffentlicht). Vorschlag: Plan M5-67 §12 (03). Stand 24.11. ([#408](https://github.com/oscipal/earthX/pull/408)):
+  `bibliothekenstatistik` ist Nicht-Geo-Begriff und Warnzeichen W1 hält solche Funde aus dem Stapel; die Ausdehnung
+  „Kanton Thurgau“ hält den schon veröffentlichten Fund aber weiter. Offen bis F14 im Plan.
 - [ ] **H-2026-11-24-05** · 2026-11-24 · govdata · Sächsisches Landesamt für Umwelt, Landwirtschaft und Geologie
   (LfULG): weiter 228 Funde `unknown_licence`; die Kurzform `dl-by-de/2.0` war nicht die Ursache. Braucht die
   wartenden Lizenzangaben aus dem ersten automatischen Lauf (`lizenzangaben.md`). Vorschlag: Plan M5-67 §12 (05).
@@ -43,4 +39,12 @@ Noch kein automatischer Lauf.
 
 ## Erledigt
 
-Noch nichts.
+- [x] **H-2026-11-24-01** · 2026-11-24 · govdata · Regel R-G: „Betriebsstätte(n)“ ist als Geo-Begriff zu breit; es
+  soll nur zusammen mit PRTR halten. Beispiel: die Steuerstatistik von Destatis wurde dadurch gehalten;
+  `PRTR_Betriebsstaetten_RLP` muss Geodaten bleiben. Vorschlag: Plan M5-67 §12 (01).
+  Erledigt 24.11.2026 ([#408](https://github.com/oscipal/earthX/pull/408)): die vier Begriffe gestrichen, `prtr` hält weiter.
+- [x] **H-2026-11-24-04** · 2026-11-24 · opendata-swiss · Identitas AG: „Katzen – Verteilung pro Gemeinde“ und
+  „Ziegen – Verteilung pro Kanton“ sind nicht verborgen wie die übrigen Funde dieses Herausgebers (Stapel 6,
+  `ok: false`, veröffentlicht). Vorschlag: Plan M5-67 §12 (04).
+  Erledigt 24.11.2026 ([#408](https://github.com/oscipal/earthX/pull/408)): Ausdehnung hält keine Funde von Herausgebern ohne
+  Geodaten mehr; ein starkes Signal hält weiter, dann greift W2. Der nächste Bericht verbirgt die beiden.
