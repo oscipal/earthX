@@ -75,7 +75,8 @@ export interface ResultBand {
   // The expression of the Band math step that made the band, where the order or the results say it (NM4-14): what the
   // presets of the dataset are matched by. `null` for a band of the data.
   expression?: string | null;
-  // How the registry of the operator says the band is drawn, where a step with looks made it (M5-10): a terrain product. `null` otherwise.
+  // How the band is drawn: as the registry of the operator says, where a step with looks made it (M5-10, a terrain product); as the band of
+  // the source is, where it is one whose values no step changed (M5-60 F5). `null` otherwise.
   look?: DisplayLook | null;
   // The classes the result names for the band, where its values are still those of a band of classes (M5-62, F9); the worker decides.
   classes?: BandClass[] | null;
@@ -90,6 +91,8 @@ export function resultBands(
   properties: Record<string, unknown> | undefined,
   order: { steps: { op: string; params: Record<string, unknown> }[] } | null,
   looks: (step: { op: string; params: Record<string, unknown> }) => DisplayLook | null = () => null,
+  // The look of a band of the source whose values reach the result as they are (M5-60 F5), by its name.
+  kept: (name: string) => DisplayLook | null = () => null,
 ): ResultBand[] {
   const listed = properties?.bands;
   if (!Array.isArray(listed)) return [];
@@ -117,7 +120,7 @@ export function resultBands(
       name,
       stats: statsFrom([band], order === null ? any : made.has(name)),
       expression: expressions.get(name) ?? null,
-      look: looked.get(name) ?? null,
+      look: looked.get(name) ?? (order === null || made.has(name) ? null : kept(name)),
       ...(classes ? { classes } : {}),
       ...(typeof unit === 'string' && unit !== '' ? { unit } : {}),
     };
