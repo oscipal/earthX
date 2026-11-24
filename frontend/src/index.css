@@ -2280,7 +2280,7 @@ textarea:autofill {
   /* The title of a layer has the first line to itself, with its date in it; the buttons are under it (Otto, 1.11.2026). Grip, eye,
      opacity (the wide place), up, down, process, zoom to layer, download, remove (a note takes the place of the download): a button that is missing leaves its place empty
      (`LayerManager.tsx::Slot`) instead of moving the others (UI-01 §1 point 8). */
-  grid-template-columns: 14px var(--lm-button) minmax(0, 1fr) repeat(6, var(--lm-button));
+  grid-template-columns: 14px var(--lm-button) var(--lm-button) minmax(0, 1fr) repeat(6, var(--lm-button));
   align-items: center;
   column-gap: var(--space-1);
   row-gap: var(--space-1);
@@ -2290,16 +2290,16 @@ textarea:autofill {
 }
 .layer-row > [data-col='grip'] {
   grid-column: 1;
-  grid-row: 1 / span 2;
+  grid-row: 1;
 }
 .layer-row > [data-col='name'] {
-  grid-column: 2 / -3;
+  grid-column: 2 / -2;
   grid-row: 1;
 }
-/* The button that shows and hides the legend of the layer (M5-62), before the pencil; an empty place where the layer has none. */
+/* The button that shows and hides the legend of the layer (M5-62), beside the eye; an empty place where the layer has none. */
 .layer-row > [data-col='legend-toggle'] {
-  grid-column: -3;
-  grid-row: 1;
+  grid-column: 3;
+  grid-row: 2;
 }
 /* The legend of the layer under its row, under the band of a result where it has one (M5-62, Otto 24.11.2026). */
 .layer-row > [data-col='legend'] {
@@ -2321,31 +2321,31 @@ textarea:autofill {
   grid-row: 2;
 }
 .layer-row > [data-col='opacity'] {
-  grid-column: 3;
-  grid-row: 2;
-}
-.layer-row > [data-col='up'] {
   grid-column: 4;
   grid-row: 2;
 }
-.layer-row > [data-col='down'] {
+.layer-row > [data-col='up'] {
   grid-column: 5;
   grid-row: 2;
 }
-.layer-row > [data-col='process'] {
+.layer-row > [data-col='down'] {
   grid-column: 6;
   grid-row: 2;
 }
-.layer-row > [data-col='zoom'] {
+.layer-row > [data-col='process'] {
   grid-column: 7;
   grid-row: 2;
 }
-.layer-row > [data-col='download'] {
+.layer-row > [data-col='zoom'] {
   grid-column: 8;
   grid-row: 2;
 }
-.layer-row > [data-col='remove'] {
+.layer-row > [data-col='download'] {
   grid-column: 9;
+  grid-row: 2;
+}
+.layer-row > [data-col='remove'] {
+  grid-column: 10;
   grid-row: 2;
   /* The bin of "Remove layer", as in the settings bar (Otto, 3.11.2026). */
   display: inline-flex;

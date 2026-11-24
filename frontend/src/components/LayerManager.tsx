@@ -165,6 +165,22 @@ function LayerRow({
     <li className={`layer-row${locked ? ' locked' : ''}${flipped ? ' flip' : ''}${dnd.className}`} aria-current={flipped || undefined}>
       <Grip dnd={dnd} />
       <EyeButton row col="eye" shown={shown} locked={locked} tip={locked ? LOCKED_LAYER_TIP : shown ? HIDE_LAYER_TIP : SHOW_LAYER_TIP} onToggle={() => toggleVis(l.id)} />
+      {/* Beside the eye, its tooltip always shown (Otto, 24.11.2026). */}
+      {legend ? (
+        <button
+          type="button"
+          className="icon-btn sm quiet"
+          data-col="legend-toggle"
+          aria-expanded={legend.open}
+          aria-label={legend.open ? HIDE_LEGEND_TIP : SHOW_LEGEND_TIP}
+          data-tip={legend.open ? HIDE_LEGEND_TIP : SHOW_LEGEND_TIP}
+          onClick={legend.onToggle}
+        >
+          {legend.open ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}
+        </button>
+      ) : (
+        <Slot col="legend-toggle" />
+      )}
       {renaming ? (
         <span className="lm-name lm-renaming" data-col="name" data-tip-level="advanced" data-tip="A layer needs a name: an empty one keeps the name it had">
           <InlineRename
@@ -189,22 +205,6 @@ function LayerRow({
         >
           {layerShownName(l)}
         </button>
-      )}
-      {legend ? (
-        <button
-          type="button"
-          className="icon-btn sm quiet"
-          data-col="legend-toggle"
-          aria-expanded={legend.open}
-          aria-label={legend.open ? HIDE_LEGEND_TIP : SHOW_LEGEND_TIP}
-          data-tip-level="advanced"
-          data-tip={legend.open ? HIDE_LEGEND_TIP : SHOW_LEGEND_TIP}
-          onClick={legend.onToggle}
-        >
-          {legend.open ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}
-        </button>
-      ) : (
-        <Slot col="legend-toggle" />
       )}
       {/* The name is renamed here as in the head of the settings (Otto, 3.11.2026). */}
       <button type="button" className="icon-btn sm quiet" data-col="rename" data-tip-level="advanced" data-tip={locked ? LOCKED_LAYER_TIP : RENAME_TIP} aria-label={RENAME_TIP} disabled={locked} onClick={() => setRenaming(true)}>

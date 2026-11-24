@@ -77,6 +77,9 @@ describe('the legends in the layer manager', () => {
     expect(toggleOf(c)).toBeNull();
     expect(c.querySelector('[data-col="legend-toggle"]')!.className).toBe('lm-slot');
     expect([toggleOf(a)!.getAttribute('aria-expanded'), toggleOf(a)!.getAttribute('data-tip')]).toEqual(['true', HIDE_LEGEND_TIP]);
+    // Beside the eye, its tooltip shown at every level of the tooltips (Otto, 24.11.2026).
+    expect(toggleOf(a)!.previousElementSibling?.getAttribute('data-col')).toBe('eye');
+    expect(toggleOf(a)!.hasAttribute('data-tip-level')).toBe(false);
   });
 
   it('hide and show with their button, each layer on its own', () => {
