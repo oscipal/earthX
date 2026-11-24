@@ -339,6 +339,24 @@ band_classes:
     - {value: 9, name: Cloud high probability}
     - {value: 10, name: Thin cirrus}
     - {value: 11, name: Snow or ice}
+# How the stored numbers become the values of band_units (M5-60 F8): `raster:bands` of the items, as measured on the item
+# of 25.10.2026 (adr/0017 §3.4): every reflectance band 0.0001 and -0.1, `aot` and `wvp` 0.001 and 0. `scl`, `cloud`
+# and `snow` are stored in their unit and are not named.
+band_scaling:
+  coastal: {scale: 0.0001, offset: -0.1}
+  blue: {scale: 0.0001, offset: -0.1}
+  green: {scale: 0.0001, offset: -0.1}
+  red: {scale: 0.0001, offset: -0.1}
+  rededge1: {scale: 0.0001, offset: -0.1}
+  rededge2: {scale: 0.0001, offset: -0.1}
+  rededge3: {scale: 0.0001, offset: -0.1}
+  nir: {scale: 0.0001, offset: -0.1}
+  nir08: {scale: 0.0001, offset: -0.1}
+  nir09: {scale: 0.0001, offset: -0.1}
+  swir16: {scale: 0.0001, offset: -0.1}
+  swir22: {scale: 0.0001, offset: -0.1}
+  aot: {scale: 0.001, offset: 0.0}
+  wvp: {scale: 0.001, offset: 0.0}
 # Pictures made from the bands, not bands themselves. `scl` is the mask layer (`mask` above).
 auxiliary_assets: [visual, preview]
 # DS-02 plan §6.2, §6.2a and DS-02c (Otto 28.10.2026 and 30.10.2026): every filter below was measured against the

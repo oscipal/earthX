@@ -48,6 +48,9 @@ TILE_DEGREES = 3
 
 # Nominal resolution: 1/12 000° per pixel, "10m" in the product's name (`adr/0023` §6.1).
 GSD_METRES = 10.0
+#: The map files: one band of class codes as ``uint8``, 0 no data and no class (M5-07, M5-62 plan §2, registry ``band_classes``).
+MAP_DATA_TYPE = "uint8"
+MAP_NODATA = 0
 
 _STATE_RE = re.compile(r"^(?P<version>v\d{3})/(?P<year>\d{4})$")
 _TILE_RE = re.compile(r"^(?P<ns>[NS])(?P<lat>\d{2})(?P<ew>[EW])(?P<lon>\d{3})$")
@@ -160,7 +163,15 @@ def _item(stem: str, key: str, cell: tuple[float, float, float, float], *, confi
             "gsd": GSD_METRES,
             "proj:code": "EPSG:4326",
         },
-        "assets": {"map": {"href": f"{config.source.endpoint}/{key}", "type": COG_MEDIA_TYPE, "roles": ["data"]}},
+        "assets": {
+            "map": {
+                "href": f"{config.source.endpoint}/{key}",
+                "type": COG_MEDIA_TYPE,
+                "roles": ["data"],
+                # What the file is, so that a job keeps the type of its classes and their colour table (M5-62).
+                "raster:bands": [{"data_type": MAP_DATA_TYPE, "nodata": MAP_NODATA}],
+            }
+        },
         "links": [],
     }
 

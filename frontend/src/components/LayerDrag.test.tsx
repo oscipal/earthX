@@ -238,7 +238,7 @@ describe('the look of the drag in index.css', () => {
     return CSS.slice(start, CSS.indexOf('}', start));
   };
   it('gives the grip its own column at the left of the row, and a finger no scrolling over it', () => {
-    expect(rule('.layer-row')).toContain('grid-template-columns: 14px var(--lm-button) minmax(0, 1fr)');
+    expect(rule('.layer-row')).toContain('grid-template-columns: 14px var(--lm-button) var(--lm-button) minmax(0, 1fr)');
     expect(rule('.lm-grip')).toContain('touch-action: none');
     expect(rule('.lm-grip')).toContain('cursor: grab');
   });

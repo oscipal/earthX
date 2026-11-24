@@ -17,7 +17,7 @@ const ROOT_TOKENS = [
   '--font', '--font-mono',
 ];
 const THEME_TOKENS = [
-  '--panel-bg', '--panel-border', '--accent', '--accent-2', '--text', '--muted', '--input-bg', '--glow', '--row-hover', '--map-bg',
+  '--panel-bg', '--tip-bg', '--panel-border', '--accent', '--accent-2', '--text', '--muted', '--input-bg', '--glow', '--row-hover', '--map-bg',
   '--line', '--line-soft', '--surface-2', '--danger', '--focus', '--on-accent', '--channel-red', '--channel-green', '--channel-blue',
 ];
 

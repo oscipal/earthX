@@ -12,6 +12,7 @@ import {
   colourStats,
   colourTileUrl,
   defaultRange,
+  classRender,
   isClassBand,
   isOverview,
   isResultExpired,
@@ -691,5 +692,45 @@ describe('a band of classes (Otto, 11.11.2026)', () => {
     ['no band', undefined, 'uint8', collection],
   ])('is not %s', (_, band, dataType, where) => {
     expect(isClassBand(band, dataType, where)).toBe(false);
+  });
+});
+
+describe('the classes a result names (M5-62, F9)', () => {
+  const STAC = [{ value: 10, name: 'tree_cover', title: 'Tree cover', color_hint: '006400' }];
+
+  it('are read for each band from classification:classes, and a band without them has no key', () => {
+    const bands = resultBands({ bands: [{ name: 'map', 'classification:classes': STAC }, { name: 'red' }, { name: 'odd', 'classification:classes': [{ value: 'x' }] }] }, null);
+    expect(bands[0].classes).toEqual([{ value: 10, name: 'Tree cover', colour: '#006400' }]);
+    expect(bands[1]).not.toHaveProperty('classes');
+    expect(bands[2]).not.toHaveProperty('classes');
+  });
+
+  it('make a band a band of classes whatever its type, never one made by Band math', () => {
+    const classes = [{ value: 10, name: 'Tree cover', colour: '#006400' }];
+    expect(isClassBand({ name: 'scl', classes }, 'uint8', undefined)).toBe(true);
+    // A float32 result keeps the values of its classes (plan A3); it is drawn in their colours, not stretched.
+    expect(isClassBand({ name: 'scl', classes }, 'float32', undefined)).toBe(true);
+    expect(isClassBand({ name: 'scl', classes }, null, undefined)).toBe(false);
+    expect(isClassBand({ name: 'scl', classes, expression: 'scl * 2' }, 'uint8', undefined)).toBe(false);
+    expect(isClassBand({ name: 'scl', classes: null }, 'uint8', undefined)).toBe(false);
+  });
+
+  it('are drawn in their colours, as the tiler takes them: value to RGBA', () => {
+    const render = classRender([{ value: 10, name: 'Tree cover', colour: '#006400' }, { value: 95, name: 'Mangroves', colour: '#00cf75' }]);
+    expect(JSON.parse(render.colormap!)).toEqual({ 10: [0, 100, 0, 255], 95: [0, 207, 117, 255] });
+    expect(render).not.toHaveProperty('rescale');
+    expect(render).not.toHaveProperty('colormapName');
+  });
+
+  // Otto's browser test (24.11.2026): WorldCover, "Mask by classes", Tree cover hidden. The bands the job writes
+  // (`backend/tests/earthx/api/test_class_job_chain.py` compares them with the same file) give the legend without Tree cover.
+  const chain = import.meta.glob('../../backend/tests/fixtures/classes/worldcover_mask_result.json', { eager: true, query: '?raw', import: 'default' }) as Record<string, string>;
+  const written = Object.values(chain)[0];
+  it.skipIf(written === undefined)('of the WorldCover job of the browser test are those left, without the hidden one', () => {
+    const [band] = resultBands(JSON.parse(written) as Record<string, unknown>, null);
+    expect(band.classes?.map((entry) => entry.name)).not.toContain('Tree cover');
+    expect(band.classes).toHaveLength(10);
+    expect(isClassBand(band, 'uint8', undefined)).toBe(true);
+    expect(JSON.parse(classRender(band.classes!).colormap!)).not.toHaveProperty('10');
   });
 });

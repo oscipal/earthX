@@ -21,7 +21,7 @@ from datetime import date, datetime, timezone
 from enum import Enum
 from fnmatch import fnmatchcase
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from earthx.gateway import host_of, normalize_host
 
@@ -1334,6 +1334,102 @@ class BandClasses:
 
 
 @dataclass(frozen=True, slots=True)
+class Look:
+    """How a band is drawn, wherever it is drawn: a colormap and where the colours start and end (adr/0035, M5-60).
+
+    ``measured`` is the usual scale of the measure (the 2nd to the 98th percentile of what was measured), ``percentiles``
+    takes ``low`` to ``high`` percent of it (``0`` and ``100`` are the minimum and the maximum), ``fixed`` is the same range of
+    numbers everywhere, so that a value has one colour on every scene and dataset (Otto, 16.11.2026, M5-10). The numbers of a
+    band of the registry are in its unit of ``band_units``, after the scale and offset of the source.
+    """
+
+    colormap: str
+    scale: Literal["measured", "percentiles", "fixed"] = "measured"
+    low: float | None = None
+    high: float | None = None
+
+    def __post_init__(self) -> None:
+        if not self.colormap:
+            raise ValueError("a look has a colormap")
+        if (self.scale == "measured") != (self.low is None and self.high is None):
+            raise ValueError("a look of the measured scale has no ends, any other has both")
+        if self.scale != "measured" and not (self.low is not None and self.high is not None and self.low < self.high):
+            raise ValueError("the low end of a look is below its high end")
+        if self.scale == "percentiles" and not (0 <= (self.low or 0) and (self.high or 0) <= 100):
+            raise ValueError("percentiles lie between 0 and 100")
+
+    def annotation(self) -> dict[str, Any]:
+        return {"colormap": self.colormap, "scale": self.scale, **({} if self.low is None else {"low": self.low, "high": self.high})}
+
+
+class LookOrigin(Enum):
+    """Where the look of a band comes from (M5-60 plan §4), the first that knows one: colours are never kept by hand per
+    dataset and band (Otto, 20.11.2026), so only the first two are written in an entry."""
+
+    MANUAL = "manual"  # the exception set by hand, with its reason beside it
+    STAC = "stac"  # the source's own, as the onboarding took it: `renders` or `raster:bands` statistics
+    STANDARD = "standard"  # the standard picture of one band, and every band of its unit (M5-11, H1 = 1)
+    UNIT = "unit"  # the fixed rule by unit (:data:`UNIT_LOOKS`)
+    DEFAULT = "default"  # every other unit: :data:`DEFAULT_LOOK`
+
+
+#: The fixed rule by unit (M5-60 plan §5, Otto F1 = 1, F4 = 1, F7 = 1): a percentage on its whole range, every other on the
+#: usual scale of the measure. Units are UCUM as in ``band_units``; °C is written as the entries write it.
+UNIT_LOOKS: Mapping[str, Look] = MappingProxyType(
+    {
+        "%": Look("viridis", "fixed", 0.0, 100.0),
+        "°C": Look("rdbu_r"),
+        "Cel": Look("rdbu_r"),
+        "K": Look("rdbu_r"),
+        "mm": Look("blues"),
+        "m": Look("terrain"),
+        "1": Look("viridis"),
+        "DN": Look("greys_r"),
+    }
+)
+
+#: The look of a band of any other unit, a unit the entry calls unknown included.
+DEFAULT_LOOK = Look("viridis")
+
+
+@dataclass(frozen=True, slots=True)
+class BandLook:
+    """The look of one band as an entry writes it (``band_looks``, M5-60): only where the source gives one (``stac``) or
+    as the exception by hand (``manual``). A look from the source without a colormap takes the colormap of the rule."""
+
+    origin: LookOrigin
+    scale: Literal["measured", "percentiles", "fixed"]
+    low: float | None = None
+    high: float | None = None
+    colormap: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedLook:
+    """The look a band starts with and where it came from: what the collection publishes per band."""
+
+    look: Look
+    origin: LookOrigin
+
+
+@dataclass(frozen=True, slots=True)
+class BandScaling:
+    """How the stored number of a band becomes its value in the unit of ``band_units``: ``stored · scale + offset``, as
+    ``raster:bands`` of the source says it (M5-60 F8). The onboarding takes it from the source; it is never kept by hand."""
+
+    scale: float
+    offset: float
+
+    def physical(self, stored: float) -> float:
+        """``stored`` in the unit of the band, to twelve significant digits (``3000 · 0.0001 − 0.1`` is ``0.2``)."""
+        return float(f"{stored * self.scale + self.offset:.12g}")
+
+
+#: The scaling of a band the entry names none for.
+UNSCALED = BandScaling(1.0, 0.0)
+
+
+@dataclass(frozen=True, slots=True)
 class MaskSource:
     """Where the operator ``mask`` reads its classes from for this dataset (M4-18, adr/0014 §15m).
 
@@ -1865,11 +1961,19 @@ class DatasetConfig:
     # these keys is a duplicate of this entry, in the report and in `catalog-load`. Empty by default: most datasets have
     # no listing the collection id does not already find.
     also_listed_as: tuple[str, ...] = ()
+    # The look of a band where its source gives one or, as the exception, one set by hand (M5-60): any other band takes
+    # its look from the rule (:meth:`look_of`). Empty by default like ``band_classes``, for the same reason.
+    band_looks: Mapping[str, BandLook] = field(default_factory=dict)
+    # The scale and offset of a band whose source stores it scaled (M5-60 F8), as the onboarding read them from
+    # `raster:bands`; a band not named here is stored in its unit (1, 0). Empty by default like ``band_classes``.
+    band_scaling: Mapping[str, BandScaling] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "band_units", MappingProxyType(dict(self.band_units)))
         object.__setattr__(self, "band_descriptions", MappingProxyType(dict(self.band_descriptions)))
         object.__setattr__(self, "band_classes", MappingProxyType(dict(self.band_classes)))
+        object.__setattr__(self, "band_looks", MappingProxyType(dict(self.band_looks)))
+        object.__setattr__(self, "band_scaling", MappingProxyType(dict(self.band_scaling)))
         self._check_keywords()
         self._check_catalogue_fields()
         self._check_doi()
@@ -1892,6 +1996,9 @@ class DatasetConfig:
         self._check_band_descriptions()
         self._check_band_classes()
         self._check_also_listed_as()
+        self._check_band_scaling()
+        self._check_band_looks()
+        self._check_standard_look()
         self._check_asset_keys()
         self._check_item_states()
         self._check_search_filters()
@@ -2119,6 +2226,104 @@ class DatasetConfig:
                     named = sorted([*named, *((entry.value, entry.label) for entry in self.mask.classes if entry.value == classes.nodata)])
                 if named != [(entry.value, entry.label) for entry in self.mask.classes]:
                     raise ConfigError(f"{where} and the classes of the mask differ")
+
+    def look_of(self, band: str) -> ResolvedLook | None:
+        """The look ``band`` starts with (M5-60 plan §4), or ``None`` for a band that has none: no band of ``band_units``,
+        an auxiliary asset, a band of classes (its colours are its classes, M5-62)."""
+        if band not in self.band_units or band in self.auxiliary_assets or band in self.band_classes:
+            return None
+        unit = self.band_units[band]
+        rule = (LookOrigin.UNIT, UNIT_LOOKS[unit]) if unit in UNIT_LOOKS else (LookOrigin.DEFAULT, DEFAULT_LOOK)
+        written = self.band_looks.get(band)
+        if written is not None:
+            look = Look(written.colormap or rule[1].colormap, written.scale, written.low, written.high)
+            return ResolvedLook(look, written.origin)
+        standard = self._standard_look()
+        if standard is not None and band in standard[0] and standard[1] is not None:
+            return ResolvedLook(standard[1], LookOrigin.STANDARD)
+        return ResolvedLook(rule[1], rule[0])
+
+    def scaling_of(self, band: str) -> BandScaling:
+        """The scaling of ``band``: what the source says, else none."""
+        return self.band_scaling.get(band, UNSCALED)
+
+    def _standard_look(self) -> tuple[frozenset[str], Look | None] | None:
+        """The bands that take the look of the standard picture and that look, its range in the unit of the bands (M5-11
+        H1, M5-60 F8, A8); ``None`` where the picture gives none.
+
+        The picture gives one where it draws one band with a colormap: one asset with one range, or the first present of
+        several assets with a range each. The bands are its assets and every band of their unit. Its ranges are in the
+        stored numbers its tiles draw, so each is turned into the unit of its asset with that asset's scaling; where they
+        then differ the look is ``None``, and the entry does not load unless each of those bands has a look of its own.
+        """
+        render = self.default_render
+        if render is None or render.colormap_name is None or render.expression is not None or render.rescale is None:
+            return None
+        assets = render.assets
+        one = len(assets) == 1 and len(render.rescale) == 1
+        first_present = render.asset_selection is AssetSelection.FIRST_PRESENT and len(render.rescale) == len(assets)
+        if not (one or first_present) or any(asset in self.band_classes for asset in assets):
+            return None
+        ranges = {
+            (self.scaling_of(asset).physical(low), self.scaling_of(asset).physical(high))
+            for asset, (low, high) in zip(assets, render.rescale, strict=True)
+        }
+        units = {self.band_units.get(asset) for asset in assets} - {None}
+        bands = frozenset(
+            key
+            for key, unit in self.band_units.items()
+            if (key in assets or unit in units) and key not in self.auxiliary_assets and key not in self.band_classes
+        )
+        if len(ranges) != 1:
+            return bands, None
+        ((low, high),) = ranges
+        return bands, Look(render.colormap_name, "fixed", low, high)
+
+    def _check_standard_look(self) -> None:
+        """A standard picture whose ranges differ once scaled gives no look; each band that would take it needs its own."""
+        standard = self._standard_look()
+        render = self.default_render
+        if standard is None or standard[1] is not None or render is None or render.rescale is None:
+            return
+        ranges = ", ".join(
+            f"{asset} {self.scaling_of(asset).physical(low):g} to {self.scaling_of(asset).physical(high):g}"
+            for asset, (low, high) in zip(render.assets, render.rescale, strict=True)
+        )
+        missing = sorted(standard[0] - set(self.band_looks))
+        if missing:
+            raise ConfigError(
+                f"{self.dataset_id}: the ranges of the standard picture differ once scaled ({ranges}), so it gives no look; "
+                f"set band_looks for {', '.join(missing)}"
+            )
+
+    def _check_band_scaling(self) -> None:
+        """Each scaling names a band of values, and its scale can be turned back (M5-60 F8)."""
+        for key, scaling in self.band_scaling.items():
+            if key not in self.band_units or key in self.auxiliary_assets or key in self.band_classes:
+                raise ConfigError(f"{self.dataset_id}: band_scaling names {key!r}, which is no band of band_units with values to scale")
+            if not (_is_finite_number(scaling.scale) and _is_finite_number(scaling.offset)) or not scaling.scale > 0:
+                raise ConfigError(f"{self.dataset_id}: the scaling of {key!r} has a finite scale above 0 and a finite offset")
+
+    def _check_band_looks(self) -> None:
+        """Each written look names a band that takes one, says where it came from and is a complete look (M5-60)."""
+        for key, written in self.band_looks.items():
+            if key not in self.band_units or "*" in key or key in self.auxiliary_assets or key in self.band_classes:
+                raise ConfigError(f"{self.dataset_id}: band_looks names {key!r}, which is no band of band_units with values to scale")
+            where = f"{self.dataset_id}: the look of {key!r}"
+            if written.origin not in (LookOrigin.STAC, LookOrigin.MANUAL):
+                raise ConfigError(f"{where} comes from the source (stac) or by hand (manual); any other comes from the rule")
+            if written.origin is LookOrigin.MANUAL and not written.colormap:
+                raise ConfigError(f"{where} is set by hand, so it names its colormap")
+            if written.colormap is not None and (not isinstance(written.colormap, str) or not written.colormap.strip()):
+                raise ConfigError(f"{where} names a colormap or none")
+            if not all(end is None or _is_finite_number(end) for end in (written.low, written.high)):
+                raise ConfigError(f"{where} has finite numbers as its ends")
+            try:
+                look = Look(written.colormap or "-", written.scale, written.low, written.high)
+            except ValueError as error:
+                raise ConfigError(f"{where} is no complete look: {error}") from None
+            if look.scale == "percentiles" and (look.low, look.high) not in ((0, 100), (2, 98)):
+                raise ConfigError(f"{where} takes the percentiles 0 to 100 or 2 to 98, the ones the measure knows")
 
     def _check_auxiliary_assets(self) -> None:
         """The auxiliary assets are distinct, usable keys, and none is the mask layer."""
@@ -2860,6 +3065,8 @@ for _entry_part in (
     MaskSource,
     BandClass,
     BandClasses,
+    BandLook,
+    BandScaling,
     ShareClasses,
     FilterValue,
     SearchFilter,

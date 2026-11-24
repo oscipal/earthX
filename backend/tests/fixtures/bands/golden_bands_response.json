@@ -92,7 +92,18 @@
    "nodata": 0.0,
    "unit": null,
    "categorical": true,
-   "classes": null,
+   "classes": [
+    {
+     "value": 4,
+     "name": "Vegetation",
+     "colour": "#2ca02c"
+    },
+    {
+     "value": 6,
+     "name": "Water",
+     "colour": "#1f77b4"
+    }
+   ],
    "preselected": true,
    "stackable": true
   }

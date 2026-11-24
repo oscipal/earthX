@@ -239,6 +239,17 @@ describe('the rows', () => {
     expect(rowsOf(c).Bands.bands).toEqual([{ band: 'map', description: 'Land cover class (ESA WorldCover)', unit: 'class code' }]);
   });
 
+  it('give the classes of each band of classes under the bands, and none to a dataset without (M5-62)', () => {
+    const classes = [{ value: 10, name: 'tree_cover', title: 'Tree cover', color_hint: '006400' }];
+    const c = collection('x', 'land', {
+      'earthx:band_units': { map: null },
+      'earthx:bands': [{ name: 'map', description: 'Land cover class', 'classification:classes': classes }],
+    });
+    expect(rowsOf(c).Bands.classes).toEqual([{ band: 'map', classes: [{ value: 10, name: 'Tree cover', colour: '#006400' }] }]);
+    const plain = collection('x', 'optical', { 'earthx:band_units': { red: '1' }, 'earthx:bands': [{ name: 'red', description: 'Red' }] });
+    expect(rowsOf(plain).Bands).not.toHaveProperty('classes');
+  });
+
   it('name the kind of values where the unit is no physical one, as the map does not (Otto, 14.11.2026)', () => {
     const c = collection('x', 'radar', { 'earthx:band_units': { vv: 'DN', vh: 'DN', dtm: 'm' } });
     expect(rowsOf(c).Bands.bands?.map((line) => line.unit)).toEqual(['DN, uncalibrated digital numbers', 'DN, uncalibrated digital numbers', 'm']);
