@@ -691,7 +691,6 @@ def test_page_extras_are_read_only_where_the_source_names_them() -> None:
 @pytest.mark.parametrize(
     "url",
     [
-        "https://metadaten.example.org/geonetwork/srv/api/records/1/formatters/xml_iso19139",
         "https://metadaten.example.org/csw?service=CSW&request=GetRecordById&id=1",
         "https://metadaten.example.org/csw?request=GetRecordById&outputSchema=http://www.isotc211.org/2005/gmd",
         "https://metadaten.example.org/record/1.xml",
@@ -733,6 +732,78 @@ def test_a_piveau_record_of_an_unknown_portal_is_skipped_for_the_next_candidate(
     ]
     package = _resources(FILE, url=None, extras=extras)
     assert extract_package(package["id"], package, GOVDATA_LIKE).source_url == "https://opendata.example.org/dataset/x"
+
+
+@pytest.mark.parametrize(
+    ("url", "page"),
+    [
+        (
+            "https://opendata.example.org/srv/api/records/6b8f1a2c-0000-4000-8000-00000000000a/formatters/xml",
+            "https://opendata.example.org/srv/eng/catalog.search#/metadata/6b8f1a2c-0000-4000-8000-00000000000a",
+        ),
+        (
+            "https://geo.example.org/geonetwork/srv/api/records/abc-1/formatters/xml?approved=true",
+            "https://geo.example.org/geonetwork/srv/eng/catalog.search#/metadata/abc-1",
+        ),
+        (
+            "https://geo.example.org/srv/api/0.1/records/abc-1",
+            "https://geo.example.org/srv/eng/catalog.search#/metadata/abc-1",
+        ),
+        (
+            "https://metadaten.example.org/geonetwork/srv/api/records/1/formatters/xml_iso19139",
+            "https://metadaten.example.org/geonetwork/srv/eng/catalog.search#/metadata/1",
+        ),
+    ],
+)
+def test_a_geonetwork_record_stands_for_its_page_for_people_on_the_same_host(url: str, page: str) -> None:
+    # Otto, 23.11.2026 (opendata.herne.de): the page of the dataset, never the interface.
+    package = _resources(FILE, url=None, extras=[{"key": "uri", "value": url}])
+    found = extract_package(package["id"], package, GOVDATA_LIKE)
+    assert (found.source_url, found.source_rank) == (page, 2)
+    assert url not in [address for _, address in link_reasons(package, GOVDATA_LIKE)]
+
+
+def test_a_geonetwork_record_in_the_field_url_stands_for_its_page_too() -> None:
+    record = "https://opendata.example.org/srv/api/records/abc-1/formatters/xml"
+    package = _resources(FILE, url=record)
+    found = extract_package(package["id"], package, SOURCE)
+    assert found.source_url == "https://opendata.example.org/srv/eng/catalog.search#/metadata/abc-1"
+
+
+def test_an_html_resource_at_a_geonetwork_record_is_its_page_for_people() -> None:
+    viewer = {**VIEWER, "url": "https://opendata.example.org/srv/api/records/abc-1/formatters/xml"}
+    found = extract_package(PACKAGE["id"], _resources(viewer), SOURCE)
+    assert (found.source_url, found.source_rank) == ("https://opendata.example.org/srv/eng/catalog.search#/metadata/abc-1", 1)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://metaver.example.org/opensearch/query?format=rdf&q=x",
+        "https://gis.example.org/arcgis/rest/services/boden/MapServer",
+        "https://geo.example.org/geoserver/wfs",
+        "https://data.example.org/api/v1/datasets/x",
+        "https://data.example.org/rest/x",
+    ],
+)
+def test_an_interface_is_never_the_link_and_the_next_rank_counts(url: str) -> None:
+    # Otto, 23.11.2026: every pattern `--classify` counts among the interfaces.
+    package = _resources(FILE, url=url, extras=[{"key": "uri", "value": "https://opendata.example.org/dataset/x"}])
+    found = extract_package(package["id"], package, GOVDATA_LIKE)
+    assert (found.source_url, found.source_rank) == ("https://opendata.example.org/dataset/x", 2)
+    assert ("url_api", url) in link_reasons(package, GOVDATA_LIKE)
+
+
+def test_an_interface_without_a_next_page_leaves_the_page_in_the_catalogue() -> None:
+    package = _resources(FILE, url="https://data.example.org/api/v1/datasets/x")
+    found = extract_package(package["id"], package, SOURCE)
+    assert found.source_rank == 3
+
+
+def test_an_html_resource_at_an_interface_is_no_viewer() -> None:
+    viewer = {**VIEWER, "url": "https://gis.example.org/arcgis/rest/services/boden/MapServer"}
+    assert ("html_api", viewer["url"]) in link_reasons(_resources(viewer), SOURCE)
+    assert extract_package(PACKAGE["id"], _resources(viewer), SOURCE).source_rank == 2
 
 
 def test_an_html_resource_at_a_metadata_api_is_no_viewer() -> None:

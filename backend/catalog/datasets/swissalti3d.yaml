@@ -254,3 +254,7 @@ notices: []
 limitations:
 - One area can combine tiles of different survey years; each tile keeps its own year.
 - Placed in WGS 84 without a grid file, to about 1 m.
+# The listing of this dataset at opendata.swiss (Otto, 24.11.2026): the find carries no link to the FSDI, only the geocat
+# identifier, so no key but this one makes it a duplicate of this entry.
+also_listed_as:
+- opendata-swiss:691cb471-c3b5-48ec-a107-d0ad612fa70b@bundesamt-fur-landestopografie-swisstopo
