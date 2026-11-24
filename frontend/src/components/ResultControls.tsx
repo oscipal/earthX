@@ -306,6 +306,7 @@ function Controls({ layer }: { layer: MapLayer }) {
                       vmax={unit === 'percent' ? typed.high : draft.vmax}
                       onVmin={unit === 'percent' ? (low) => { setTyped((t) => ({ ...t, low })); setProblem(null); } : (vmin) => edit({ vmin })}
                       onVmax={unit === 'percent' ? (high) => { setTyped((t) => ({ ...t, high })); setProblem(null); } : (vmax) => edit({ vmax })}
+                      colormap={colour ? undefined : draft.colormap}
                       channels={colour ? { values: channelValues, onChange: editChannel, onPercent: editChannelPercent } : undefined}
                     />
                   )

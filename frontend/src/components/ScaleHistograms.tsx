@@ -8,6 +8,7 @@ import { CHANNEL_NAMES } from '../channels';
 import { numberOf, percentAt, roundOnTrack, trackOf, valueAtPercentOf, type Histogram } from '../histogram';
 import type { RangeUnit } from '../percentRange';
 import RangeHistogram from './RangeHistogram';
+import { useColormapGroups } from './useColormapGroups';
 
 interface Props {
   histograms: readonly Histogram[];
@@ -17,6 +18,8 @@ interface Props {
   vmax: string;
   onVmin: (text: string) => void;
   onVmax: (text: string) => void;
+  // The colormap one band is drawn with ('' grey): its bars take the colours of the map (M5-60 §12).
+  colormap?: string;
   // A colour picture: the range of each channel. With `onPercent` a channel typed in percentiles has its pair on the sliders (UI-03e).
   channels?: {
     values: readonly ChannelRange[];
@@ -27,8 +30,10 @@ interface Props {
 
 const PERCENT_TIP = 'In percentiles one pair holds for the three channels, each at its own values';
 
-export default function ScaleHistograms({ histograms, unit, vmin, vmax, onVmin, onVmax, channels }: Props) {
+export default function ScaleHistograms({ histograms, unit, vmin, vmax, onVmin, onVmax, colormap, channels }: Props) {
   const colour = histograms.length === CHANNEL_NAMES.length;
+  const groups = useColormapGroups();
+  const paint = colormap === undefined || colour || groups === 'failed' ? undefined : { colormap, groups };
   return (
     <div className="range-hists">
       {histograms.map((histogram, index) => {
@@ -56,6 +61,7 @@ export default function ScaleHistograms({ histograms, unit, vmin, vmax, onVmin, 
               key={index}
               histogram={histogram}
               channel={channel}
+              paint={paint}
               title={colour ? PERCENT_TIP : undefined}
               low={lowPercent === null ? null : valueAtPercentOf(histogram, lowPercent)}
               high={highPercent === null ? null : valueAtPercentOf(histogram, highPercent)}
@@ -78,6 +84,7 @@ export default function ScaleHistograms({ histograms, unit, vmin, vmax, onVmin, 
             key={index}
             histogram={histogram}
             channel={channel}
+            paint={paint}
             low={low}
             high={high}
             onLow={(value) => write('vmin', value)}

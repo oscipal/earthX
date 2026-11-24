@@ -334,6 +334,7 @@ export default function ViewerControls() {
                     vmax={pendingUnit === 'percent' ? pendingPercentHigh : pendingVmax}
                     onVmin={pendingUnit === 'percent' ? (text) => setPendingPercent('low', text) : setPendingVmin}
                     onVmax={pendingUnit === 'percent' ? (text) => setPendingPercent('high', text) : setPendingVmax}
+                    colormap={colour ? undefined : pendingColormapName}
                     channels={colourChannels}
                   />
                 )
