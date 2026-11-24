@@ -1,6 +1,6 @@
 # M5-20 — Verify, Enrich, Dedupe, Lizenzregeln, Freigabe geernteter Einträge, Kandidaten
 
-**Status (19.11.2026):** Plan angenommen (Otto, 19.11.2026: F1–F6 und F8 je 1, F7 = 3, §13a; Vorgaben aus der Messung §4 in §13b, sie gehen §6–§9 vor; F9–F11 je 1 und A18 angenommen, §13c; Vorgaben aus `-Classify` vom 20.11. in §13d und §13e; F12 = 1 und 2). **Stufe B.** PR 1 in [#388](https://github.com/oscipal/earthX/pull/388), PR 2 danach; höchstens zwei PRs (M5-Plan §2 Punkt 11).
+**Status (19.11.2026):** Plan angenommen (Otto, 19.11.2026: F1–F6 und F8 je 1, F7 = 3, §13a; Vorgaben aus der Messung §4 in §13b, sie gehen §6–§9 vor; F9–F11 je 1 und A18 angenommen, §13c; Vorgaben aus `-Classify` vom 20.11. in §13d und §13e; F12 = 1 und 2). **Stufe B.** PR 1 in [#388](https://github.com/oscipal/earthX/pull/388), PR 2 danach; höchstens zwei PRs (M5-Plan §2 Punkt 11). **PR 2 (24.11.2026):** Plan in §14.1 mit Fragen F15–F17, Bau nach Ottos Antworten.
 **Aufgabe:** M5-20 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2, Auftrag von Otto vom 19.11.2026.
 **Grundlagen:** `adr/0025` (Schnitt 5, §5.1, §5.4, §6.3, §6.4, §6.5, §6.7 mit Nachträgen), `adr/0033` (§4–§11, §13 Zeile M5-20), `plans/m5/m5-19-harvest-kern.md` §12 (Befunde der Läufe, §12.11 offene Punkte), `plans/m5/m5-40-gelistete-in-postgres.md` (Tabelle, Filter, F10), M5-Plan §2 Punkt 12 (alle Datentypen, Filter nach Region und Zeit), `projektuebersicht.md` Prinzipien 12, 15, 16, KLAERUNGEN B8, B9, B11.
 
@@ -496,6 +496,133 @@ Ursachen wieder aus dem Code und den Zahlen der Rückmeldung abgeleitet; die Sit
 - **A26** Der Bericht läuft nur, wenn `earthx_municipality` alle Gemeinden des Ortsverzeichnisses hält.
 - **A27** In Klammern: ein Kürzel bestätigt den mehrdeutigen Namen davor, eine Bezeichnung gilt für ihn, eine Anmerkung ohne Ort fällt weg (statt den ganzen Text ungültig zu machen).
 - **A24** Fehlt die Freigabedatei des offenen Stapels im Ausgabeverzeichnis (Branch verworfen, Schreiben gescheitert), schreibt der nächste Bericht sie neu.
+
+### 14.1 Nachtrag (24.11.2026): Plan für PR 2 — Kandidaten des vollen Wegs und `discovery propose`
+
+**Auftrag (Otto, 24.11.2026, Stufe B):** Aus den geernteten Funden die Kandidaten für volle Einträge bestimmen (F6 = 1, F8 = 1: PR 2 = Verify, Kandidaten, `propose`), mit Probe nach `adr/0031` §4.4, höchstens 20 je Quelle und PR, als Dateien unter `backend/catalog/candidates/<quelle>/`. Wird ein Kandidat voller Eintrag, löst er die gelistete Zeile ab. `scripts/harvest-cycle.ps1` führt den Schritt mit aus, die Kandidaten landen im PR des Laufs; Otto sieht den PR nur an. Gebaut wird nach den Antworten auf F15–F17.
+
+Belegstufen wie oben; [P] am Stand `main` e971858. Aus der Sitzung keine Anfrage an eine Quelle (`adr/0002`).
+
+#### 14.1.1 Ausgangslage [P]
+
+| Stelle | Heute | Folge |
+|---|---|---|
+| `backend/catalog/candidates/` | gibt es nicht; `backend/.dockerignore` schließt den Pfad schon aus | neu, nie im Image |
+| `scripts/harvest-cycle.ps1` | ernten, Schreibweisen, Freigaben je Herausgeber, Bericht, Linkprüfung, Freigabe nach Regeln, Laufdateien; drei Commits (`licenses`, `approvals`, `docs/harvest`); Merge nach grünen Pflicht-Checks | ein Schritt und ein Commit mehr |
+| `backend/catalog/licenses/terms.yaml` | 36 Lizenzen, **alle `tier: catalog`**; der Kopf sagt „the tier here is for full entries“ | ein Kandidat mit dieser Stufe geht nach `adr/0031` §8 den Weg „gelistet“, keiner den vollen (F16) |
+| `report._licence_block` | schreibt für gelistete Einträge immer `tier: catalog`, unabhängig von `terms.yaml` | eine andere Stufe in `terms.yaml` ändert keinen gelisteten Inhalt [P; Test im Bau, F16] |
+| Ablösung | gleiche ID → `superseded` in `catalog-load` (`listed_store.supersede`); `also_listed_as` (`<quelle>:<kennung>`) → `duplicate` in `catalog-load` (`mark_listings`); STAC `coll:` und DOI des vollen Eintrags → `duplicate` im nächsten Bericht (`report._full_members`) | drei Wege sind da; welcher gilt, ist F17 |
+| Verify der Stichprobe (§10) | nicht gebaut; seit M5-67 prüft die Linkprüfung den Link **jedes** Eintrags | entfällt (A32) |
+| Gateway | `get` mit Kopfzeilen (auch `Range`, `Origin`), `head`, Adresse nach Weiterleitungen (`url`) | reicht für Verify; keine Änderung am Gateway |
+| Zwischenform | Distributionen mit Format und Medientyp; STAC-Funde tragen die Medientypen von `item_assets` nur in `data_kind`, nicht als Distribution | Items holt `propose` für Probe und Verify (§14.1.3) |
+
+#### 14.1.2 Wer Kandidat wird (F6 = 1, präzisiert)
+
+Ausgangsmenge ist der **sichtbare gelistete Bestand**: Zeilen in `published`, also Haupteintrag ihrer Gruppe, Link geprüft, Lizenz von Otto eingestuft und für den Herausgeber freigegeben (A33). Davon wird Kandidat, was alles erfüllt:
+
+1. `data_kind = raster` und ein lesbares Format: COG/GeoTIFF, NetCDF/HDF5 oder Zarr als Datei-Distribution (Format bzw. Medientyp nach der Tabelle des Extract) oder als Asset bzw. `item_assets` einer STAC-Collection. JPEG 2000 und ASCII-Grid zählen nicht.
+2. Ablösbar (F17): ein Schlüssel, über den ein voller Eintrag die Zeile ablöst.
+3. Kein voller Eintrag mit demselben Schlüssel (§8 Stufe 2), keine Zeile in `blocked.yaml`.
+4. Verify bestanden **ohne Konto** (§14.1.3): mindestens eine Datei antwortet `200`/`206`, und ihr Format aus den ersten Bytes ist eines aus Punkt 1. `401`/`403` heißt Konto, kein Kandidat (`adr/0031` §8, Stopp), gezählt im Lauf.
+
+**Reihenfolge und Grenzen** (`adr/0025` K5, §11): neue vor geänderten, dann nach Herausgeber, dann ID; **höchstens 20 je Quelle und Lauf**. Verify läuft für höchstens 60 Vorkandidaten je Quelle und Lauf, bis 20 bestanden haben (A34). Ein Lauf ohne neue oder geänderte Kandidaten schreibt keine Kandidatendatei.
+
+**„Geändert“** heißt: Die Datei, die `propose` jetzt schriebe, weicht ohne Prüfdatum von der Datei auf `main` ab (Inhalt, Lizenz, Link, Verify-Ergebnis, Zustand der gelisteten Zeile). Kein Hash im Repo; verglichen wird der Text (A35).
+
+#### 14.1.3 Verify und Probe (`adr/0025` §6.3, `adr/0031` §4.4)
+
+- **Welche Dateien:** STAC-Quelle: `propose` holt `<endpoint>/collections/<id>/items?limit=3` über den Katalog-Host der Quelle (Takt, `robots.txt`, wie der Harvest) und prüft die Daten-Assets dieser Items (Rolle `data` bzw. Medientyp aus Punkt 1), höchstens 3 Dateien. CKAN-Quelle: höchstens 3 Datei-Distributionen mit Format aus Punkt 1.
+- **Je Datei:** `HEAD`, dann `GET` mit `Range: bytes=0-16383` und `Origin` (fester Wert `https://earthx.invalid`, A36). Ergebnis: Status, Medientyp, Länge, `Accept-Ranges`, ob `206`, CORS (`*`, gespiegelt oder keine Freigabe), Host nach Weiterleitungen.
+- **Format aus den ersten Bytes**, ohne GDAL: TIFF und BigTIFF (`II*`/`MM*`, Version 42/43), COG am Vermerk `LAYOUT=COG` im Kopf; NetCDF klassisch (`CDF\x01`/`\x02`); HDF5 (Signatur am Dateianfang, NetCDF-4); Zarr an `zarr.json`, `.zarray` oder `.zgroup`. Bei TIFF dazu aus dem ersten IFD, soweit es in den 16 KB liegt: Breite, Höhe, Bänder, Datentyp, Kachelung, Zahl der Übersichten, EPSG aus den GeoKeys, Nodata (Tag 42113); was außerhalb liegt, heißt `unknown`. Ein reiner Leser in `discovery/probe.py`; kein Byte erreicht einen Treiber (`adr/0025` §6.3).
+- **Fremde Datei-Hosts** wie bei der Linkprüfung: genaue Allowlist je Runde, 1 Verbindung, 1 s Abstand, höchstens 50 neue Hosts je Lauf (A6). Eine Weiterleitung auf einen weiteren fremden Host ist „nicht geprüft“, kein Anlass, die Liste zu erweitern.
+- **Vorschlag `access.account`:** `200`/`206` → `none`; `data_region` nur bei AWS-Hosts (`adr/0022`).
+- **Probe** neben der Kandidatendatei (`<id>.probe.json`): die normalisierte Collection (Inhalt der gelisteten Zeile) und 1–3 Items, nur Metadaten, zusammen höchstens 50 KB (sonst weniger Items, dann gekürzte Collection); dazu das Verify-Ergebnis. Keine Pixel. Adressen durchlaufen `cycle.clean` (keine Signatur-Parameter).
+- Gespeichert wird nur in den Dateien; keine neue Tabelle, keine Migration.
+
+#### 14.1.4 Kandidatendatei
+
+`backend/catalog/candidates/<source_id>/<listed_id>.yaml` (Dateiname = ID der gelisteten Zeile nach A1, stabil über Läufe), Felder:
+
+- **Herkunft:** `source_id`, `source_key`, `listed_id`, Zustand der gelisteten Zeile, erster und letzter Lauf.
+- **Geerntetes:** Titel, Beschreibung, Herausgeber, Schlagworte, DOI, Lizenzangaben wörtlich, Ausdehnung (Rechteck, `extent_basis`), Zeitraum, Link „Source“, Seite des Datensatzes, Distributionen (höchstens 10).
+- **Vorschlag ID und Ablösung (F17):** `proposed_id` und der Weg der Ablösung (`also_listed_as`, `coll:` oder `doi:`) als Feld, das das Onboarding in den vollen Eintrag übernimmt.
+- **Lizenz:** `license_ref`, der Block aus `terms.yaml` mit der Stufe dort (F16), `license_rule`; Entscheidung nach F15 (`legal_status`, `decided_by`, `decided_on`).
+- **Verify:** Tag, je Datei das Ergebnis aus §14.1.3, Vorschlag `access.account`, `data_region`.
+- **Leere Entscheidungsfelder für das Onboarding:** `way`, `profile`, `notes` (`adr/0031` §7, §8).
+
+`propose` löscht nie eine Kandidatendatei (A37). Ist die gelistete Zeile nicht mehr sichtbar, ein Duplikat oder abgelöst, schreibt `propose` den neuen Zustand in die Datei (zählt als „geändert“); die Warteschlange (`adr/0031` §4.2, V-Aufgaben) nimmt nur Kandidaten mit sichtbarer Zeile.
+
+#### 14.1.5 Ablösung der gelisteten Zeile
+
+Wie ein voller Eintrag aus einem Kandidaten die gelistete Zeile ablöst, nach F17 = 1:
+
+| Fund | Schlüssel | Im vollen Eintrag | Wirkung |
+|---|---|---|---|
+| STAC-Quelle (FSDI, Earth Search) | `coll:<host>/<id>` | `source` mit Endpunkt und Collection-ID der Quelle | nächster Bericht: Zeile `duplicate` [P, Test `test_swissalti3d_listed_from_the_fsdi_is_a_duplicate_of_the_full_entry`] |
+| Kennung `id:`, in der Quelle eindeutig | `also:<quelle>:<kennung>` | `also_listed_as` | `catalog-load`: Zeile sofort `duplicate` [P, `mark_listings`] |
+| DOI, eindeutig | `doi:` | `doi` | nächster Bericht: `duplicate` |
+| keiner davon | — | — | kein Kandidat; im Lauf gezählt |
+
+Dieser PR baut den vollen Eintrag nicht (das ist das Onboarding, `adr/0031` V1–V9). Er belegt mit Tests, dass ein voller Eintrag mit den Feldern aus einer Kandidatendatei die Zeile über jeden der drei Wege ablöst und dass bis dahin nichts doppelt verborgen wird. Über `coll:` und DOI sind beide bis zum nächsten Lauf sichtbar (A38).
+
+#### 14.1.6 Im Lauf (`harvest-cycle.ps1`)
+
+- **Neuer Schritt „Kandidaten“** nach der Linkprüfung, vor der Freigabe nach Regeln: Dienst `harvest-propose` (Profil `harvest`, `python -m earthx.discovery.propose`, eingebunden `backend/catalog/candidates/` und der Laufordner), je Quelle, die geerntet wurde, Zahlen nach `/run/propose.json`.
+- **Scheitert `propose`**, läuft der Lauf weiter wie bei der Linkprüfung: keine Kandidaten in diesem Lauf, Befund `KANDIDATEN` in `befunde.md`.
+- **Commit** „Add candidates for full entries, harvest run <day>“ mit `backend/catalog/candidates`, zwischen Freigabedateien und Laufdateien; auch im Fehlerfall im Draft-PR.
+- **Laufdateien:** Abschnitt „Kandidaten des vollen Wegs“ in `laeufe/<Tag>/README.md` und im PR-Text: je Quelle neu, geändert, unverändert, übersprungen nach Grund (kein lesbares Format, nicht ablösbar, Konto, Verify gescheitert, Budget, Grenze 20); Tabelle der neuen mit Titel, Format, Lizenz, Stufe und Freigabe.
+- **Probelauf** (M5-67 F7): Kandidaten werden geschrieben, aber nicht freigegeben (A39).
+- M5-67 A13 bekommt den Pfad `backend/catalog/candidates/` dazu. Von Hand: `docker compose run --build --rm harvest-propose <quelle>`; `harvest-report.ps1`/`.sh` bleiben, wie sie sind.
+
+#### 14.1.7 Nicht in PR 2
+
+`discovery queue`, `onboarding.yaml` und die Onboarding-Session (`adr/0031` V1–V9); der volle Eintrag selbst; „—“ im Data catalogue (§6.1, A40); data.gv.at (M5-63); jede Einstufung einer Lizenz (F16 nur als Vorschlag von `license-checker`).
+
+#### 14.1.8 Tests
+
+Ohne Netz, synthetische Bytes und Dokumente, Transport-Attrappe am `Gateway` (wie M5-19, M5-67):
+
+- **Kopf-Leser:** TIFF little und big endian, BigTIFF, COG-Vermerk, GeoKeys mit EPSG, Nodata, Kachelung, Übersichten; IFD außerhalb der 16 KB → `unknown`; NetCDF, HDF5, Zarr; zweckfremd: leere Antwort, HTML-Fehlerseite mit `200`, abgeschnittener Kopf, IFD-Zeiger hinter das Ende, Zyklus in der IFD-Kette, riesige Zählerwerte.
+- **Verify:** `200`, `206`, `401`, `403`, `404`, `405` beim `HEAD`, `Range` ignoriert (`200` mit ganzem Körper wird nach 16 KB abgeschnitten), CORS-Varianten, Weiterleitung auf fremden Host, Grenze 50 Hosts, `robots.txt` beim Item-Abruf.
+- **Auswahl:** jede Bedingung aus §14.1.2 einzeln; Grenze 20 und Budget 60; Reihenfolge; unveränderter Kandidat schreibt nichts; geänderter wird neu geschrieben; Kandidat, dessen Zeile verschwindet; Kennung, die zwei Funde der Quelle tragen, ist kein Schlüssel.
+- **Datei und Probe:** Felder, 50 KB-Grenze, keine signierten Adressen, keine Personen; Probelauf ohne Freigabe.
+- **Ablösung:** je Weg aus §14.1.5 ein voller Eintrag mit den Feldern der Kandidatendatei, Zeile danach `duplicate`; eine andere Stufe in `terms.yaml` ändert keinen gelisteten Inhalt.
+- **Skript** (als Text): neuer Schritt, Dienst im Profil `harvest`, Commit des Pfads, Fehlerfall ohne Abbruch.
+
+#### 14.1.9 Nachträge mit dem Bau
+
+`adr/0025` §6.5 (P1: `propose` läuft im Lauf, das Skript pusht und merged), `adr/0031` §4.1 und §4.4 (nach F15), `adr/0033` §11 „Gelistet wird voll“ (nach F17), M5-67 A13 und §3, `backend/catalog/candidates/README.md`, README, Entscheidungslog.
+
+**Umfang [A]:** rund 1 200–1 600 Zeilen mit Tests, deutlich über dem Richtwert; laut Auftrag ein PR.
+
+#### 14.1.10 Fragen an Otto
+
+**F15 — Freigabe der Kandidaten im automatischen Lauf?** `adr/0031` §4.1 (Q1) setzt für „freigegeben“ deinen Merge voraus; seit M5-67 merged das Skript selbst.
+1. Nach Regeln wie die Stapel: Der Kandidat trägt die Lizenz seines sichtbaren gelisteten Eintrags (deine Einstufung, freigegebenes Paar) mit `legal_status: cleared`, `license_rule` und `decided_by: rules`; mit dem Merge des Lauf-PR steht er in der Warteschlange. Den vollen Eintrag prüfst und mergst du weiter im Onboarding-PR; herausnehmen über `blocked.yaml` **(Empfehlung)**
+2. Kandidaten kommen mit leerem `legal_status`; in die Warteschlange erst, wenn du ihn je Kandidat setzt
+3. Kandidaten in einem eigenen Draft-PR je Lauf, den du selbst mergst
+
+**F16 — Stufe der Lizenzen für volle Einträge?** Alle 36 Lizenzen in `terms.yaml` stehen auf `catalog`; damit geht jeder Kandidat nach `adr/0031` §8 den Weg „gelistet“.
+1. `license-checker` schlägt in diesem PR für die K1–K5-Lizenzen mit `derivatives` und `distribution` die Stufe `processing` vor, je mit Beleg, als eigener Commit; du stufst im PR ein. Gelistete Einträge bleiben `catalog`, keiner wird unsichtbar (Test) **(Empfehlung)**
+2. Du stufst selbst in `terms.yaml` ein; bis dahin tragen Kandidaten `catalog` und eine Notiz
+3. Stufe je Kandidat erst im Onboarding-PR
+
+**F17 — ID des vollen Eintrags und Ablösung der gelisteten Zeile?**
+1. Lesbare ID als Vorschlag (STAC: die Collection-ID, z. B. `ch.swisstopo.swissimage-dop10`; CKAN: der Titel als Kürzel aus `[a-z0-9-]`, höchstens 60 Zeichen, bei Kollision mit der Quelle davor); Ablösung über Schlüssel (`coll:`, `also_listed_as`, DOI, §14.1.5); Funde ohne solchen Schlüssel werden kein Kandidat. Nachtrag zu `adr/0033` §11 („übernimmt die ID“ wird „löst über Schlüssel ab“) **(Empfehlung)**
+2. Der volle Eintrag übernimmt die ID der gelisteten Zeile (`fsdi-stac.ch.swisstopo.swissimage-dop10`, `govdata.<uuid>`), wie `adr/0033` §11 heute sagt; Ablösung über `supersede` in `catalog-load`, für jeden Fund möglich
+3. Wie 1, dazu ein neues Registry-Feld `replaces_listed` (ID der gelisteten Zeile) für Funde ohne Schlüssel
+
+#### 14.1.11 Auslegungen zu PR 2 (gelten, wenn Otto nicht widerspricht)
+
+- **A32** Verify der Stichprobe (§10, erster Punkt) entfällt: die Linkprüfung aus M5-67 prüft den Link jedes Eintrags. Verify gibt es nur für Kandidaten.
+- **A33** Kandidaten nur aus sichtbaren Haupteinträgen (`published`): Link geprüft, Lizenz eingestuft und freigegeben. Funde des laufenden Stapels werden frühestens im nächsten Lauf Kandidat.
+- **A34** Verify für höchstens 60 Vorkandidaten je Quelle und Lauf (je bis zu 3 Dateien und ein Item-Abruf), bis 20 bestanden haben; der Rest wartet auf den nächsten Lauf.
+- **A35** „Geändert“ wird am Text der Datei ohne Prüfdatum gemessen, nicht an einem Hash; ein neues Verify-Ergebnis mit gleichem Inhalt ändert nichts.
+- **A36** `Origin` beim CORS-Test ist der feste Wert `https://earthx.invalid`, bis die Plattform eine öffentliche Adresse hat; geprüft wird, ob der Host `*` oder den Wert zurückgibt.
+- **A37** `propose` löscht keine Kandidatendatei; den Zustand der gelisteten Zeile schreibt es fort.
+- **A38** Über `coll:` und DOI bleibt die gelistete Zeile bis zum nächsten Lauf neben dem neuen vollen Eintrag sichtbar; über `also_listed_as` verschwindet sie mit `catalog-load`.
+- **A39** Im Probelauf (M5-67 F7) schreibt `propose` die Kandidaten ohne `legal_status` und ohne `decided_by`.
+- **A40** „—“ im Data catalogue (A7, eine Zeile Frontend) ist nicht Teil dieses PR und bleibt als kleine eigene Aufgabe offen.
 
 ## 15. Tests (Plan)
 
