@@ -328,7 +328,12 @@ class TestCatalogPageCheck:
         sources = read_sources()
         check = sources["govdata"].catalog_page_check
         assert (check.via, check.form_confirmed_on) == ("api", None)
-        assert {key for key, s in sources.items() if s.catalog_page_check.via == "api"} == {"govdata"}
+        assert {key for key, s in sources.items() if s.catalog_page_check.via == "api"} == {"govdata", "fsdi-stac"}
+
+    def test_the_fsdi_asks_its_collections_with_the_form_otto_opened(self) -> None:
+        # F13 = 1: the 30 links of stack 1, all in order (Otto, 21.11.2026).
+        check = read_sources()["fsdi-stac"].catalog_page_check
+        assert (check.via, check.form_confirmed_on) == ("api", date(2026, 11, 21))
 
     def test_without_it_the_page_itself_is_checked(self, tmp_path: Path) -> None:
         check = read_source(_write(tmp_path, CKAN)).catalog_page_check
@@ -345,14 +350,17 @@ class TestCatalogPageCheck:
             (CKAN + "catalog_page_check:\n  via: api\n", "has via and form_confirmed_on"),
             (CKAN + "catalog_page_check:\n  via: api\n  form_confirmed_on: 2999-01-01\n", "not in the future"),
             (CKAN + "catalog_page_check:\n  via: api\n  form_confirmed_on: gestern\n", "null or a day"),
-            (STAC + "catalog_page_check:\n  via: api\n  form_confirmed_on: null\n", "needs a ckan source"),
             (
                 CKAN.replace("https://portal.example.org/dataset/{name}", "null")
                 + "catalog_page_check:\n  via: api\n  form_confirmed_on: null\n",
-                "needs a ckan source with a catalog_page",
+                "needs a catalog_page",
             ),
         ],
     )
     def test_a_wrong_setting(self, tmp_path: Path, text: str, message: str) -> None:
         with pytest.raises(EntryFileError, match=message):
             read_source(_write(tmp_path, text))
+
+    def test_a_stac_source_may_ask_its_collections(self, tmp_path: Path) -> None:
+        text = STAC + "catalog_page_check:\n  via: api\n  form_confirmed_on: 2026-11-21\n"
+        assert read_source(_write(tmp_path, text)).catalog_page_check.via == "api"

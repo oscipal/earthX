@@ -103,10 +103,11 @@ class RobotsException:
 class CatalogPageCheck:
     """How the link check verifies a link to this catalogue's own page of a dataset (M5-67 F12 = 2, Otto 24.11.2026).
 
-    ``via``: ``page`` asks the page itself; ``api`` asks the catalogue's API whether a dataset of the name in the link
-    exists (a CKAN source with ``catalog_page``, under its robots exception). ``form_confirmed_on``: the day Otto opened
-    the form of ``catalog_page`` in a browser and found the page of the dataset; without it, the API proves only that
-    the dataset exists, not that the address leads to it, so such links stay unchecked."""
+    ``via``: ``page`` asks the page itself; ``api`` asks the catalogue's API whether the dataset in the link exists: a
+    CKAN source by the name (``package_search``, under its robots exception), a STAC source by the collection
+    (``/collections/<id>``, F13 = 1). ``form_confirmed_on``: the day Otto found the page of a dataset under the form of
+    ``catalog_page`` in a browser; without it, the API proves only that the dataset exists, not that the address leads
+    to it, so such links stay unchecked."""
 
     via: str = "page"
     form_confirmed_on: date | None = None
@@ -248,8 +249,8 @@ def _catalog_page_check(
     via, day = value["via"], value["form_confirmed_on"]
     if via not in ("page", "api"):
         raise _bad(name, "catalog_page_check.via is page or api")
-    if via == "api" and (protocol is not SourceProtocol.CKAN or catalog_page is None):
-        raise _bad(name, "catalog_page_check.via api needs a ckan source with a catalog_page")
+    if via == "api" and catalog_page is None:
+        raise _bad(name, "catalog_page_check.via api needs a catalog_page")
     if isinstance(day, str):
         try:
             day = date.fromisoformat(day)

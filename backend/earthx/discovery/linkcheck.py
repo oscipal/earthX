@@ -51,7 +51,7 @@ from earthx.catalog.link_checks import (
     record_results,
 )
 from earthx.catalog.registry import ConfigError
-from earthx.catalog.sources import SourceConfig, read_sources
+from earthx.catalog.sources import SourceConfig, SourceProtocol, read_sources
 from earthx.discovery.harvest import source_policy
 from earthx.discovery.links import is_start_page, url_parts
 from earthx.discovery.source_gateway import open_source_gateway
@@ -93,6 +93,8 @@ LINKCHECK_FILE = CATALOG_DIR / "linkcheck.yaml"
 API_BATCH = 40
 #: A CKAN name, as the extract fills ``{name}`` of ``catalog_page`` (``discovery.ckan``).
 _CKAN_NAME = re.compile(r"[a-z0-9_-]{2,100}")
+#: A STAC collection id as ``{id}`` of ``catalog_page`` (letters, digits, '.', '_', '-'; nothing that leaves the path).
+_STAC_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,199}")
 #: The reason a gateway gives when a redirect leads to a host outside the allowlist (``policy.inspect_url``).
 _NOT_ALLOWED = "host is not on the allowlist"
 _TEXT_TYPES = ("html", "xml", "json", "text/plain")
@@ -464,14 +466,55 @@ async def _round(
 
 
 def catalogue_name(source: SourceConfig, url: str) -> str | None:
-    """The CKAN name in ``url`` where it has the form of the source's ``catalog_page``, else ``None``."""
+    """The CKAN name or the STAC collection id in ``url`` where it has the form of the source's ``catalog_page``, else
+    ``None``."""
     if source.catalog_page is None:
         return None
-    prefix, _, suffix = source.catalog_page.partition("{name}")
+    stac = source.protocol is SourceProtocol.STAC_API
+    prefix, _, suffix = source.catalog_page.partition("{id}" if stac else "{name}")
     if not url.startswith(prefix) or not url.endswith(suffix) or len(url) <= len(prefix) + len(suffix):
         return None
     name = url[len(prefix) : len(url) - len(suffix)]
-    return name if _CKAN_NAME.fullmatch(name) else None
+    return name if (_STAC_ID if stac else _CKAN_NAME).fullmatch(name) else None
+
+
+async def _collection_round(
+    source: SourceConfig,
+    items: Sequence[tuple[DueLink, str]],
+    *,
+    hosts: Mapping[str, HostLimit],
+    open_gateway: OpenGateway,
+    deadline: float,
+    clock: Callable[[], float],
+) -> list[LinkResult]:
+    """The links to a STAC browser's page of a collection (``#/collections/<id>``: the part after ``#`` never reaches
+    the server), checked through the collection the browser shows (M5-67 F13 = 1): passed where
+    ``<endpoint>/collections/<id>`` answers with that id, under the source's own policy."""
+    found: list[LinkResult] = []
+    async with open_gateway(source_policy(source, hosts)) as gateway:
+        for item, collection in items:
+            if clock() >= deadline:
+                break
+            pattern = link_pattern(item.url, item.identifiers)
+            host = _host(item.url) or "invalid"
+            try:
+                response = await gateway.get(f"{source.endpoint}/collections/{collection}")
+                body = response.json()
+                same = isinstance(body, dict) and body.get("id") == collection
+            except GatewayError as error:
+                outcome, reason, status = _error(error)
+                found.append(LinkResult(item.dataset_id, item.url, host, pattern, outcome, reason, status, source.host))
+                continue
+            except ValueError:
+                same = None
+            if same is None:
+                outcome, reason = "unchecked", "api_shape"
+            else:
+                outcome, reason = ("passed", "ok") if same else ("failed", "not_in_catalogue")
+            found.append(
+                LinkResult(item.dataset_id, item.url, host, pattern, outcome, reason, response.status_code, source.host)
+            )
+    return found
 
 
 async def _catalogue_round(
@@ -581,7 +624,12 @@ async def check_links(
         return list(found.values())
 
     rounds = [pages()] + [
-        _catalogue_round((sources or {})[source_id], items, **options) for source_id, items in sorted(catalogue.items())
+        (
+            _collection_round
+            if (sources or {})[source_id].protocol is SourceProtocol.STAC_API
+            else _catalogue_round
+        )((sources or {})[source_id], items, **options)
+        for source_id, items in sorted(catalogue.items())
     ]
     for done in await asyncio.gather(*rounds):
         results.update((r.dataset_id, r) for r in done)

@@ -432,3 +432,80 @@ async def test_many_names_go_in_batches() -> None:
         sources={"govdata": _govdata(True)},
     )
     assert len(asked) == 2 and all(r.outcome == "passed" for r in results) and len(results) == len(names)
+
+
+# --- A STAC browser's page of a collection, through the collection (F13 = 1) -------------------------------------------
+
+
+def _fsdi():  # type: ignore[no-untyped-def]
+    from earthx.catalog.sources import read_sources
+
+    return read_sources()["fsdi-stac"]
+
+
+FSDI_HOSTS = {"data.geo.admin.ch": HostLimit(connections=6, interval_s=1.0, reason="test")}
+
+
+def fsdi_due(collection: str) -> DueLink:
+    url = f"https://data.geo.admin.ch/browser/index.html#/collections/{collection}"
+    return DueLink(f"fsdi-stac.{collection}", "fsdi-stac", "published", url, "X", (collection,), 1)
+
+
+def _collections(present: set[str], asked: list[str]) -> Callable[[httpx.Request], httpx.Response]:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(404)
+        asked.append(request.url.path)
+        prefix = "/api/stac/v1/collections/"
+        collection = request.url.path.removeprefix(prefix)
+        if request.url.path.startswith(prefix) and collection in present:
+            return httpx.Response(200, json={"id": collection, "title": "Titel"})
+        if collection == "anderer":
+            return httpx.Response(200, json={"id": "ganz-anderer"})
+        return httpx.Response(404, json={"code": "NotFound"})
+
+    return handler
+
+
+def test_the_collection_is_read_from_the_form_of_the_browser_page() -> None:
+    source = _fsdi()
+    assert linkcheck.catalogue_name(source, fsdi_due("ch.bafu.boden").url) == "ch.bafu.boden"
+    assert linkcheck.catalogue_name(source, "https://data.geo.admin.ch/browser/index.html#/collections/a/../b") is None
+    assert linkcheck.catalogue_name(source, "https://data.geo.admin.ch/browser/index.html#/") is None
+
+
+@pytestmark_anyio
+async def test_a_browser_page_is_checked_through_its_collection() -> None:
+    asked: list[str] = []
+    results = await check_links(
+        [fsdi_due("ch.bafu.boden"), fsdi_due("ch.bafu.weg"), fsdi_due("anderer")],
+        rules=RULES,
+        hosts=FSDI_HOSTS,
+        open_gateway=opener(_collections({"ch.bafu.boden"}, asked), []),
+        deadline=float("inf"),
+        sources={"fsdi-stac": _fsdi()},
+    )
+    found = {r.dataset_id: (r.outcome, r.reason, r.final_host) for r in results}
+    assert found == {
+        "fsdi-stac.ch.bafu.boden": ("passed", "ok", "data.geo.admin.ch"),
+        "fsdi-stac.ch.bafu.weg": ("failed", "http_404", "data.geo.admin.ch"),
+        "fsdi-stac.anderer": ("failed", "not_in_catalogue", "data.geo.admin.ch"),
+    }
+    # The browser page itself is never asked: only the collections of the API.
+    assert all(path.startswith("/api/stac/v1/collections/") for path in asked)
+
+
+@pytestmark_anyio
+async def test_a_collection_answer_that_is_no_json_leaves_the_link_unchecked() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404) if request.url.path == "/robots.txt" else httpx.Response(200, text="<html></html>")
+
+    results = await check_links(
+        [fsdi_due("ch.bafu.boden")],
+        rules=RULES,
+        hosts=FSDI_HOSTS,
+        open_gateway=opener(handler, []),
+        deadline=float("inf"),
+        sources={"fsdi-stac": _fsdi()},
+    )
+    assert [(r.outcome, r.reason) for r in results] == [("unchecked", "api_shape")]
