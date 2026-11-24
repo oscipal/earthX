@@ -960,3 +960,12 @@ def test_an_entry_with_a_warning_sign_stays_out_of_the_sample_and_the_approval(w
     world.approve(approval)
     world.publish()
     assert (world.row("a")["state"], world.row("b")["state"]) == ("published", "in_review")
+
+
+def test_the_statements_of_extracted_finds_are_counted_for_new_spellings(world: World) -> None:
+    from earthx.discovery.spellings import waiting_statements
+
+    statement = f"CC BY 4.0 ({world.ckan.source_id})"
+    world.put(world.ckan, _find("a", licence_statements=[statement]), _find("b", licence_statements=[statement]))
+    world.put(world.ckan, _find("c", licence_statements=[statement]), state="gone")
+    assert waiting_statements(world.conn)[statement] == 2
