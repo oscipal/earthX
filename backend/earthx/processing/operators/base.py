@@ -43,7 +43,7 @@ import numpy
 from pydantic import BaseModel
 from rasterio.transform import Affine
 
-from earthx.catalog.registry import Capabilities, ClassRow, DataClass, DatasetConfig, LicenseTier
+from earthx.catalog.registry import Capabilities, ClassRow, DataClass, DatasetConfig, LicenseTier, Look
 
 __all__ = ["MAKES_VALUES", "PASSES_VALUES", "BandMeta", "BandUse", "Operator", "PassesValues", "RasterMeta", "Requirement", "Tier"]
 
@@ -186,34 +186,6 @@ class PassesValues:
 
 MAKES_VALUES = PassesValues()
 PASSES_VALUES = PassesValues(always=True)
-
-
-@dataclass(frozen=True, slots=True)
-class Look:
-    """How a band a step makes is drawn, wherever it is drawn: a colormap and where the colours start and end.
-
-    ``measured`` is the usual scale of the measure (the 2nd to the 98th percentile of what was measured), ``percentiles``
-    takes ``low`` to ``high`` percent of it (``0`` and ``100`` are the minimum and the maximum), ``fixed`` is the same range of
-    numbers everywhere, so that a value has one colour on every scene and dataset (Otto, 16.11.2026, M5-10).
-    """
-
-    colormap: str
-    scale: Literal["measured", "percentiles", "fixed"] = "measured"
-    low: float | None = None
-    high: float | None = None
-
-    def __post_init__(self) -> None:
-        if not self.colormap:
-            raise ValueError("a look has a colormap")
-        if (self.scale == "measured") != (self.low is None and self.high is None):
-            raise ValueError("a look of the measured scale has no ends, any other has both")
-        if self.scale != "measured" and not (self.low is not None and self.high is not None and self.low < self.high):
-            raise ValueError("the low end of a look is below its high end")
-        if self.scale == "percentiles" and not (0 <= (self.low or 0) and (self.high or 0) <= 100):
-            raise ValueError("percentiles lie between 0 and 100")
-
-    def annotation(self) -> dict[str, Any]:
-        return {"colormap": self.colormap, "scale": self.scale, **({} if self.low is None else {"low": self.low, "high": self.high})}
 
 
 @dataclass(frozen=True, slots=True)

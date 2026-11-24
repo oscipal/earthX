@@ -98,7 +98,8 @@ def _earthx_band_units(config: DatasetConfig) -> dict[str, str | None]:
 
 def _earthx_bands(config: DatasetConfig) -> list[dict[str, Any]]:
     """The bands as STAC names them, ``name`` and ``description``, in the order of the entry (M5-59), and a band of
-    classes with its classes as the classification extension writes them (M5-62).
+    classes with its classes as the classification extension writes them (M5-62). Every other band with the look it starts
+    with and where that came from (M5-60): the form of ``x-earthx-looks`` (adr/0035), its numbers in the unit of the band.
 
     A list, because the collection travels through JSONB, which does not keep the order of the keys of an object, and
     the Data catalogue shows the bands in the order the entry lists them.
@@ -111,6 +112,9 @@ def _earthx_bands(config: DatasetConfig) -> list[dict[str, Any]]:
                 {"value": row.value, "name": class_key(row.name), "title": row.name, "color_hint": row.colour[1:].upper()}
                 for row in rows
             ]
+        if (look := config.look_of(key)) is not None:
+            band["earthx:look"] = look.look.annotation()
+            band["earthx:look_origin"] = look.origin.value
         bands.append(band)
     return bands
 

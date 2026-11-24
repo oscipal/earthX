@@ -37,3 +37,7 @@ Die Produkte des Operators `terrain` werden in Vorschau, Ergebnis-Layer und ange
 3. **Perzentile über Minimum/Maximum und 2/98 hinaus** kennt die Messung nicht (`percentile_N` gibt es erst über „Apply“ in Perzentilen); ein Look mit anderen Perzentilen fällt auf die übliche Skala zurück. Für die drei Produkte reicht es.
 4. **Weitere Operatoren** (TRI, TPI, Krümmung, P3) tragen ihren Look am selben Feld ein.
 5. **Pyramiden und Ersatz** (M5-30): Die Farbskala bleibt über allen Zoomstufen dieselbe wie über `min_zoom` (M5-10-Plan, Abschnitt zur Farbskala unter `min_zoom`); der Look ändert daran nichts, weil er Teil der Kachel-URL ist.
+
+## 5. Nachtrag M5-60 (21.11.2026): Looks auch je Band
+
+Ein Band der Quelle hat einen Look derselben Form (`plans/m5/m5-60-darstellung-je-band.md`, Otto 21.11.2026: F1–F7 je Option 1). `Look` liegt deshalb in `catalog/registry.py` statt in `processing/operators/base.py` (`catalog` darf `processing` nicht importieren, umgekehrt schon). Die Registry löst ihn je Band auf (`DatasetConfig.look_of`): Ausnahme von Hand > Quelle (`band_looks`) > Standardbild bzw. H1 > feste Regel nach Einheit (`UNIT_LOOKS`) > `DEFAULT_LOOK`; die Collection veröffentlicht ihn je Band in `earthx:bands` als `earthx:look` mit `earthx:look_origin`. Die Rangfolge in der Oberfläche bleibt: Hand > Preset > Look (Operator oder Band) > übliche Messung.
