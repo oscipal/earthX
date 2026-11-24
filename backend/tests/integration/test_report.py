@@ -193,7 +193,20 @@ class World:
         document.update(decision="approved", decided_on=decided, excluded_rules=list(excluded), revoked_on=revoked)
         path.write_text(yaml.safe_dump(document, sort_keys=False, allow_unicode=True), encoding="utf-8")
 
-    def publish(self):  # type: ignore[no-untyped-def]
+    def pass_links(self) -> None:
+        """Every link of these sources passed the automatic check with its current address (M5-67)."""
+        self.conn.execute(
+            "INSERT INTO public.earthx_link_check (dataset_id, url, host, pattern, outcome, reason, checked_at)"
+            " SELECT dataset_id, content -> 'earthx:listing' ->> 'source_url', link_host, link_host, 'passed', 'ok',"
+            " now() FROM public.earthx_listed_entry WHERE source_id = ANY(%s) AND content IS NOT NULL"
+            " ON CONFLICT (dataset_id) DO UPDATE SET url = EXCLUDED.url, outcome = 'passed', reason = 'ok',"
+            " guarded = false",
+            (list(self.sources),),
+        )
+
+    def publish(self, *, links_pass: bool = True):  # type: ignore[no-untyped-def]
+        if links_pass:
+            self.pass_links()
         return publish(self.conn, load_approvals(self.out))
 
     def clean(self) -> None:
