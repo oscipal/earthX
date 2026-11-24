@@ -124,3 +124,85 @@ def test_a_failed_link_check_does_not_stop_the_run_and_the_summary_runs_once() -
 
 def test_the_lock_is_taken_atomically() -> None:
     assert "[System.IO.FileMode]::CreateNew" in CODE and "Get-Process -Id" in CODE
+
+
+# --- M5-67 fix 1 (24.11.2026): the first trial run of Otto ---------------------------------------------------------------
+
+
+def _between(start: str, end: str) -> str:
+    return CODE[CODE.index(start) : CODE.index(end)]
+
+
+def test_only_exit_codes_decide_and_standard_error_is_never_an_error() -> None:
+    # Windows PowerShell 5.1 shows standard error of a native command as System.Management.Automation.RemoteException.
+    assert "$?" not in CODE and "$Error[" not in CODE and "$error[" not in CODE
+    assert CODE.count("2>&1") == 1 and "2>&1" in _between("function Native", "function Lines")
+    assert "function Text-Of" in CODE
+    text_of = _between("function Text-Of", "function Native")
+    assert "System.Management.Automation.RemoteException" in text_of and "return ''" in text_of
+    # Both functions that run a command take its text through Text-Of and its success from the exit code alone.
+    for name, following in (("function Native", "function Lines"), ("function Lines", "function Reason")):
+        body = _between(name, following)
+        assert "Text-Of $_" in body and "$LASTEXITCODE" in body and "= 'Continue'" in body, name
+    # No decision on what a command printed: the output is matched only by Reason, to name a line in a message.
+    for line in CODE.splitlines():
+        if "-match" in line and "$script:LastOutput" not in line:
+            assert "$out" not in line and "$Sources" not in line, line
+
+
+def test_a_harvest_that_paused_on_purpose_is_a_success_with_a_note() -> None:
+    from earthx.discovery.harvest import EXIT_PAUSED
+
+    assert f"$PauseCode = {EXIT_PAUSED}\n" in CODE
+    loop = _between("foreach ($source in $Sources)", "$Step = 'Lizenzen'")
+    assert "$code = Compose" in loop and "-eq $PauseCode" in loop
+    # The pause is harvested like a done run (its report goes on), noted for the summary, and never written as an error.
+    paused = loop[loop.index("-eq $PauseCode") : loop.index("} else {")]
+    assert "$Harvested += $source" in paused and "quellen-pause.txt" in paused and "quellen-fehler.txt" not in paused
+    failed = loop[loop.index("} else {") :]
+    assert "quellen-fehler.txt" in failed and "$Harvested" not in failed
+
+
+def test_every_failing_step_names_the_line_that_says_why() -> None:
+    assert "function Reason" in CODE and "$script:LastOutput = $out" in CODE
+    for line in CODE.splitlines():
+        if "throw" in line and ("Compose " in line or "Native " in line) and "-ne 0" in line:
+            assert "$(Reason)" in line, line
+    for message in ("Lizenzen: Schreibweisen gescheitert.", "Bericht: Der Bericht von $source ist gescheitert.",
+                    "Freigabe: Die Freigabe nach Regeln ist gescheitert.", "Git: Push gescheitert",
+                    "PR: gh pr create gescheitert", "Merge: abgelehnt"):
+        assert message in CODE and "$(Reason)" in CODE[CODE.index(message) :].split("\n", 1)[0], message
+    # The window gets the whole message of the step, and fehler.log and the pull request get the same from lauf-fehler.txt.
+    catch = CODE[CODE.index("} catch {\n    $ExitCode = 1") :]
+    assert '$Message = "FEHLER in $text Details: $RunDir"' in catch
+    assert "WriteAllText((Join-Path $RunDir 'lauf-fehler.txt'), $text" in catch
+    # An error without a message of its own says where it happened, not only the type of standard error.
+    assert "unerwarteter Fehler in Zeile" in catch
+
+
+def test_a_second_run_on_the_same_day_takes_a_branch_of_its_own_and_closes_the_old_failed_drafts() -> None:
+    branch = _between("$Step = 'Branch'", "$Trial = ")
+    assert 'if (Branch-Taken $Branch) {' in branch and "(Get-Date -Format 'HHmm')" in branch
+    assert 'while (Branch-Taken $Branch)' in branch  # even a second run in the same minute
+    taken = _between("function Branch-Taken", "if ($Install)")
+    assert "'rev-parse', '--verify', '--quiet', $Name" in taken and "'ls-remote', '--exit-code', '--heads', 'origin', $Name" in taken
+    assert '"Harvest run $Label (failed)"' in CODE and '"Harvest run $Label"' in CODE
+    # The old failed drafts: only drafts, only runs of this script (title and branch), a comment, the branch goes.
+    closing = _between("function Close-FailedRuns", "function Branch-Taken")
+    assert "'--draft'" in closing and "'--state', 'open'" in closing
+    assert "'^harvest/[0-9]{4}-[0-9]{2}-[0-9]{2}(-[0-9]+)*$'" in closing and r"'^Harvest run .+ \(failed\)$'" in closing
+    assert "'gh', 'pr', 'close'" in closing and "'--comment'" in closing and "'--delete-branch'" in closing
+    assert "throw" not in closing  # a pull request that cannot be closed never stops the run
+    # It happens after the checks and before the new branch, and it is the only place that closes or deletes anything.
+    assert CODE.index("$Closed = Close-FailedRuns") < CODE.index("$Step = 'Branch'")
+    assert CODE.count("'pr', 'close'") == 1 and CODE.count("'branch', '-D'") == 2  # 2: here, and the empty run's own branch
+
+
+def test_the_branch_names_the_script_makes_are_the_ones_it_closes() -> None:
+    # harvest/<day>, harvest/<day>-<HHmm>, harvest/<day>-<HHmm>-<n> and the older harvest/<day>-<n>, nothing else.
+    pattern = re.compile(r"^harvest/[0-9]{4}-[0-9]{2}-[0-9]{2}(-[0-9]+)*$")
+    for name in ("harvest/2026-11-24", "harvest/2026-11-24-1432", "harvest/2026-11-24-1432-2", "harvest/2026-11-24-2"):
+        assert pattern.match(name), name
+    for name in ("harvest/", "harvest/main", "harvest/2026-11-24-fix", "feature/2026-11-24", "harvest/2026-11-24/x",
+                 "xharvest/2026-11-24", "harvest/2026-11-24\nmain"):
+        assert not pattern.match(name), name

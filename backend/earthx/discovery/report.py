@@ -32,14 +32,13 @@ from pathlib import Path
 from typing import Any
 
 import psycopg
-import yaml
 
 from earthx.catalog import collection as collection_module
 from earthx.catalog import licences as licences_module
 from earthx.catalog import listed as listed_module
 from earthx.catalog.collection import SCIENTIFIC_EXTENSION, STAC_VERSION
 from earthx.catalog.datasets import CATALOG_DIR, registry
-from earthx.catalog.entry_files import EntryFileError
+from earthx.catalog.entry_files import EntryFileError, dump_yaml
 from earthx.catalog.licences import LicenceCatalogue, LicenceMatch, load_licences, normal_statement
 from earthx.catalog.listed import HAND_SOURCE, BlockRule, content_sha256, link_host, load_blocked, sort_title
 from earthx.catalog.listed_store import apply_blocklist, is_blocked
@@ -1041,13 +1040,6 @@ def approval_document(  # type: ignore[no-untyped-def]
     }
 
 
-class _PlainDumper(yaml.SafeDumper):
-    """YAML without anchors: the strict loader of the entries refuses them (``entry_files``)."""
-
-    def ignore_aliases(self, data: Any) -> bool:
-        return True
-
-
 _APPROVAL_HEAD = """\
 # Approval of a run of the harvest (adr/0033 §8; M5-20 plan §12), written by `discovery report`. Check the sample in
 # the report beside this file: open each link, compare licence, publisher, access, extent and that it is geodata; set
@@ -1079,7 +1071,7 @@ def _flag_lines(flagged: Mapping[str, tuple[Flag, ...]], rows: Mapping[str, Mapp
 
 def dump_approval(document: Mapping[str, Any]) -> str:
     """An approval file as the report writes it: the head of comments, then the fields in their order, no anchors."""
-    return _APPROVAL_HEAD + yaml.dump(dict(document), Dumper=_PlainDumper, sort_keys=False, allow_unicode=True)
+    return _APPROVAL_HEAD + dump_yaml(dict(document))
 
 
 def report_numbers(conn: psycopg.Connection, result: ReportResult) -> dict[str, Any]:

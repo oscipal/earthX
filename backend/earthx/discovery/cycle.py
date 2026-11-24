@@ -376,6 +376,7 @@ def run_files(
     run_error: str | None,
     published: tuple[int, list],
     classify: Mapping[str, str],
+    source_pauses: Mapping[str, str] | None = None,
 ) -> dict[str, str]:
     """The files of the run by name, in German, cleaned."""
     files: dict[str, str] = {}
@@ -396,6 +397,8 @@ def run_files(
         )
     for source_id, message in sorted(source_errors.items()):
         lines.append(f"- **{source_id}:** Harvest gescheitert: {message}")
+    for source_id, message in sorted((source_pauses or {}).items()):
+        lines.append(f"- **{source_id}:** Hinweis, planmäßige Pause (kein Fehler): {message}")
     lines += ["", "## Freigabe nach Regeln", ""]
     for item in decided:
         verdict = "freigegeben" if item["decision"] == "approved" else "bleibt pending"
@@ -466,10 +469,27 @@ def _load(path: Path) -> Any:
 
 
 def _text(path: Path) -> str | None:
-    """A short message a step of the script left (UTF-8, perhaps with a byte order mark), or ``None``."""
+    """A short message a step of the script left (UTF-8, perhaps with a byte order mark), or ``None``. One line, long
+    enough for the step and the line that says why it failed."""
     if not path.exists():
         return None
-    return path.read_text(encoding="utf-8-sig").strip()[:300] or None
+    return " ".join(path.read_text(encoding="utf-8-sig").split())[:500] or None
+
+
+def _pauses(run: Path) -> dict[str, str]:
+    """The sources whose harvest paused on purpose (``quellen-pause.txt``: one source id a line, M5-67 fix 1), each with
+    the line of what its harvest printed (``harvest-<source>.txt``) that starts with the source's id: the report line
+    (``<id>: Lauf 4 (inkrementell) interrupted (...)``) or the note of a rest. Log lines of the gateway (JSON) are skipped."""
+    listed = run / "quellen-pause.txt"
+    if not listed.exists():
+        return {}
+    found = {}
+    for source_id in listed.read_text(encoding="utf-8-sig").split():
+        printed = run / f"harvest-{source_id}.txt"
+        lines = printed.read_text(encoding="utf-8-sig").splitlines() if printed.exists() else []
+        first = next((line for line in lines if line.startswith(f"{source_id}:")), "")
+        found[source_id] = " ".join(first.split())[:300] or "der nächste Lauf setzt fort"
+    return found
 
 
 def _previous_run(harvest: Path, folder_name: str) -> date | None:
@@ -500,6 +520,7 @@ def summary(conn: psycopg.Connection, run: Path, harvest: Path, approvals: Path,
             source_id, _, message = line.partition(":")
             if source_id.strip():
                 source_errors[source_id.strip()] = message.strip()[:200]
+    source_pauses = _pauses(run)
     run_error = _text(run / "lauf-fehler.txt")
     linkcheck_error = _text(run / "linkpruefung-fehler.txt")
     open_prs = (run / "offene-prs.txt").read_text(encoding="utf-8").split() if (run / "offene-prs.txt").exists() else []
@@ -510,6 +531,7 @@ def summary(conn: psycopg.Connection, run: Path, harvest: Path, approvals: Path,
     files = run_files(
         day=day, folder=relative, trial=trial, linkcheck=linkcheck, reports=reports, decided=decided,
         spellings=spellings, source_errors=source_errors, run_error=run_error, published=published, classify=classify,
+        source_pauses=source_pauses,
     )
     folder.mkdir(parents=True, exist_ok=True)
     for name, text in files.items():
@@ -527,7 +549,9 @@ def summary(conn: psycopg.Connection, run: Path, harvest: Path, approvals: Path,
     hidden = (linkcheck or {}).get("applied", {}).get("hidden", 0)
     line = (
         f"{len(reports)} Quellen, {approved} von {len(decided)} Stapeln freigegeben, {hidden} Einträge verborgen,"
-        f" {len(findings)} offene Befunde aus den Läufen" + (" (Probelauf)" if trial else "")
+        f" {len(findings)} offene Befunde aus den Läufen"
+        + (f", {len(source_pauses)} Quellen mit planmäßiger Pause" if source_pauses else "")
+        + (" (Probelauf)" if trial else "")
     )
     (run / "ergebnis.txt").write_text(line + "\n", encoding="utf-8")
     return line
