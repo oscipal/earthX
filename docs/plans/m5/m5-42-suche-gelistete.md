@@ -116,7 +116,7 @@ Voraussetzung ist M5-43 (Postgres-Image mit pgvector, Erlaubnis für `.github/` 
 | F1 | 1 | Otto testet nach dem Merge und nennt Suchwörter, falls ein voller Datensatz fehlt |
 | F2 | 2 | in diesem PR (§2 Punkt 3); `catalog-load` ohne Änderung bei 10⁵: 0,9 s statt 11,8 s für den Index, 7,3 s als Ganzes (§3) |
 | F3 | 1 | in diesem PR: Ortsnamen aus `place_names.yaml` (§2 Punkt 2) |
-| F4 | 1 | eigene Aufgabe **M5-65** im M5-Plan |
+| F4 | 1 | eigene Aufgabe **M5-65** im M5-Plan, umgesetzt: `plans/m5/m5-65-suche-mit-flaeche.md` |
 | F5 | 1, Trefferzahl wie M5-40 F4 (genau bis 10 000, darüber weggelassen) | nicht in diesem PR: nur die besten 1 000 je Arm ranken; die Filter für Kategorie und Region müssen dazu vor die Tiefe in die SQL-Abfrage, sonst stimmt die Zahl nicht. Eigene Aufgabe **M5-66** (Otto, 23.11.2026) |
 | F6 | 1 | gilt für M5-23 (§4 Punkt 2) |
 | F7 | 1, in diesem PR | §2 Punkt 7; Untergrenzen Deutsch 15/19, Englisch 41/42 bestätigt (Otto, 23.11.2026), für vorher aktive Fragen gilt „nie senken“ weiter |
