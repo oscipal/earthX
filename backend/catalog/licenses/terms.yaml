@@ -217,6 +217,7 @@
 - license_ref: dl-de-by-2.0
   matches:
     - "http://dcat-ap.de/def/licenses/dl-by-de/2.0"
+    - "dl-by-de/2.0"
     - "https://www.govdata.de/dl-de/by-2-0"
     - "http://dcat-ap.de/def/licenses/dl-by-de/2_0"
     - "http://www.govdata.de/dl-de/by-2-0"

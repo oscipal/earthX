@@ -33,6 +33,7 @@ pytestmark = pytest.mark.anyio
 # swissALTI3D without its substitute, for a registry of this one entry (`overview_substitute` has to name an entry).
 ALONE = dataclasses.replace(
     SWISSALTI3D,
+    also_listed_as=(),
     viewer=dataclasses.replace(
         SWISSALTI3D.viewer,
         overview=OverviewMode.PYRAMID,

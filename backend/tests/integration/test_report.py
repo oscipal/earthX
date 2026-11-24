@@ -24,13 +24,15 @@ from earthx.catalog.licences import LicenceCatalogue, load_licences
 from earthx.catalog.listed import BlockReason, BlockRule, BlockScope, load_regions
 from earthx.catalog.listed_search import listed_entry
 from earthx.catalog.listed_store import apply_blocklist, write_regions
-from earthx.catalog.listing_store import withdraw
+from earthx.catalog.listing_store import mark_listings, withdraw
 from earthx.catalog.municipalities import Municipality, load_municipalities, write_municipalities
 from earthx.catalog.registry import ConfigError, Maturity
-from earthx.catalog.sources import CkanFilter, SourceConfig, SourceProtocol, StacFilter
+from earthx.catalog.sources import CkanFilter, SourceConfig, SourceProtocol, StacFilter, read_sources
+from earthx.discovery import report as report_module
+from earthx.discovery.dedupe import find_keys
 from earthx.discovery.enrich import PLACE_NAMES_FILE, read_place_directory
 from earthx.discovery.grants import GrantToAll, build_grants, dump_grants, publishers_of
-from earthx.discovery.report import classify_text, run_report, write_files
+from earthx.discovery.report import _full_collections, _full_members, classify_text, run_report, write_files
 
 DAY = date(2026, 11, 19)
 PUBLISHER = "Kanton Zug"
@@ -691,6 +693,204 @@ def test_classify_names_why_a_find_is_not_granted(world: World) -> None:
     assert "1  Kanton Zug | nicht freigegeben: other-closed" in text
     assert f"1  Stadt Zug | Herausgeber ohne Zeile in grants/{world.ckan.source_id}.yaml (Lizenzen: cc-by-4.0)" in text
     assert "Kanton Zug | CC-BY-4.0" not in text
+
+
+def test_classify_lists_only_the_statements_the_catalogue_does_not_know(world: World) -> None:
+    # Otto, 23.11.2026: 224 finds of one publisher waited with an identifier of the licence beside its address; the pair
+    # of the waiting list must name the identifier, not the address that was known.
+    world.put(world.ckan, _find("beside", licence_statements=["CC-BY-4.0", "dl-by-zz/9.9"]))
+    text = classify_text(world.ckan, world.report(classify_only=True))
+    assert "1  Kanton Zug | dl-by-zz/9.9" in text
+    assert "Kanton Zug | CC-BY-4.0" not in text
+
+
+def test_a_viewer_link_of_the_fsdi_makes_a_duplicate_only_for_a_source_that_says_so(world: World) -> None:
+    # Otto, 24.11.2026: opendata.swiss names the collections in the viewer links of its resources.
+    world.put(world.stac, _find("ch.example.boden", source_url="https://stac.example.org/browser/ch.example.boden"))
+    link = {"href": "https://map.example.org/?layers=ch.example.boden", "format": "HTML", "media_type": None}
+    world.put(world.ckan, _find("linking", distributions=[link]))
+    world.report(world.stac)
+    world.report()
+    assert world.row("linking")["duplicate_of"] is None
+    # The viewer link is that of the FSDI: map.geo.admin.ch with layers=, here at the address of the test portal.
+    fsdi = {"href": "https://map.geo.admin.ch/?layers=ch.example.boden", "format": "HTML", "media_type": None}
+    world.put(world.ckan, _find("linking", distributions=[fsdi]))
+    world.report(replace(world.ckan, dedupe_collection_links=True))
+    assert world.row("linking")["duplicate_of"] == f"{world.stac.source_id}.ch.example.boden"
+    world.report()
+    assert world.row("linking")["duplicate_of"] is None
+
+
+def _fsdi(world: World) -> SourceConfig:
+    """A STAC source at the host of the FSDI, as ``sources/fsdi-stac.yaml``, so that the full entries on it are met."""
+    fsdi = replace(_stac(f"f-{world.ckan.source_id}"), endpoint="https://data.geo.admin.ch/api/stac/v1")
+    world.sources[fsdi.source_id] = fsdi
+    return fsdi
+
+
+def test_swissalti3d_listed_from_the_fsdi_is_a_duplicate_of_the_full_entry(world: World) -> None:
+    # Otto, 24.11.2026: swissALTI3D showed twice in the Data catalogue, as a full and as a listed entry (adr/0033 §11).
+    fsdi = _fsdi(world)
+    world.put(fsdi, _find("ch.swisstopo.swissalti3d", source_url="https://data.geo.admin.ch/browser/#/collections/x"))
+    world.report(fsdi)
+    row = world.row("ch.swisstopo.swissalti3d", fsdi)
+    assert (row["state"], row["duplicate_of"]) == ("duplicate", "swissalti3d")
+
+
+def test_swissalti3d_listed_by_opendata_swiss_through_its_viewer_link_is_a_duplicate_of_the_full_entry(
+    world: World,
+) -> None:
+    page = "https://data.geo.admin.ch/browser/index.html#/collections/ch.swisstopo.swissalti3d"
+    world.put(
+        world.ckan,
+        _find("swissalti3d", source_url="https://opendata.swiss/de/dataset/swissalti3d", link_candidates=[[1, page]], skipped_url=page),
+    )
+    world.report()
+    assert world.row("swissalti3d")["duplicate_of"] is None
+    world.report(replace(world.ckan, dedupe_collection_links=True))
+    assert world.row("swissalti3d")["duplicate_of"] == "swissalti3d"
+
+
+def test_every_full_entry_on_a_harvested_stac_host_has_the_key_of_its_listed_collection() -> None:
+    # The audit of 24.11.2026: a find of a STAC source gets the key of its collection id at the source's host; the
+    # full entry on that host must carry the same key, else the full entry does not take over the listed one.
+    hosts = {s.host: s for s in read_sources().values() if s.protocol is SourceProtocol.STAC_API}
+    full = {m.dataset_id: m.keys for m in _full_members()}
+    audited = 0
+    for config, host, collection_id in _full_collections():
+        source = hosts.get(host)
+        if source is None:
+            continue
+        audited += 1
+        keys = find_keys({"source_key": collection_id}, stac_host=source.host, known={})
+        assert set(keys) <= set(full[config.dataset_id]), config.dataset_id
+    assert audited >= 5
+
+
+IDENTIFIER = "691cb471-c3b5-48ec-a107-d0ad612fa70b@bundesamt-fur-landestopografie-swisstopo"
+
+
+def _opendata_swissalti3d(world: World) -> tuple[str, list[dict[str, Any]]]:
+    """The finds of opendata.swiss around swissALTI3D (Otto, 24.11.2026): its listing, with a geocat identifier and no
+    link to the FSDI, and the two shaded-relief products, which are products of their own."""
+    finds = [
+        _find("549438da", title="swissALTI3D", identifier=IDENTIFIER, source_url="https://opendata.swiss/de/dataset/a"),
+        _find("mono", title="swissALTI3D Reliefschattierung monodirektional", identifier="mono@swisstopo"),
+        _find("multi", title="swissALTI3D Reliefschattierung multidirektional", identifier="multi@swisstopo"),
+    ]
+    return f"{world.ckan.source_id}:{IDENTIFIER}", finds
+
+
+def test_the_listing_of_swissalti3d_at_opendata_swiss_is_a_duplicate_of_the_full_entry(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    listing, finds = _opendata_swissalti3d(world)
+    monkeypatch.setattr(report_module, "_listings", lambda: {listing: "swissalti3d"})
+    world.put(world.ckan, *finds)
+    world.report()
+    assert (world.row("549438da")["state"], world.row("549438da")["duplicate_of"]) == ("duplicate", "swissalti3d")
+    for key in ("mono", "multi"):
+        assert world.row(key)["duplicate_of"] is None
+    # The named listing taken back, the find is its own entry again (in review, as every restored row).
+    monkeypatch.setattr(report_module, "_listings", lambda: {})
+    world.report()
+    assert (world.row("549438da")["state"], world.row("549438da")["duplicate_of"]) == ("in_review", None)
+
+
+def test_classify_proposes_the_finds_with_the_title_of_a_full_entry(world: World, monkeypatch: pytest.MonkeyPatch) -> None:
+    listing, finds = _opendata_swissalti3d(world)
+    world.put(world.ckan, *finds)
+    text = classify_text(world.ckan, world.report(classify_only=True))
+    assert "Kandidaten für also_listed_as (1; Titel gleich dem eines vollen Eintrags" in text
+    expected = f"swissalti3d „swissALTI3D“ | {world.ckan.source_id}.549438da „swissALTI3D“ | {world.ckan.source_id} | {PUBLISHER} | {listing}"
+    assert f"  - {expected}" in text
+    assert "Reliefschattierung" not in text.split("Kandidaten für also_listed_as")[1].split("Gleichnamige")[0]
+    # Once the listing is named, the find is no candidate any more; the report keeps the list in its file.
+    monkeypatch.setattr(report_module, "_listings", lambda: {listing: "swissalti3d"})
+    assert "Kandidaten für also_listed_as (0;" in classify_text(world.ckan, world.report(classify_only=True))
+
+
+def test_the_report_file_lists_the_candidates_for_also_listed_as(world: World) -> None:
+    listing, finds = _opendata_swissalti3d(world)
+    world.put(world.ckan, *finds)
+    result = world.report()
+    markdown = next(path for path in result.files if path.suffix == ".md").read_text(encoding="utf-8")
+    assert "## Kandidaten für also_listed_as (1; nur ein Vorschlag, nie automatisch eingetragen)" in markdown
+    assert f"| {listing}" in markdown
+    assert [c.key for c in result.title_candidates] == [listing]
+
+
+def test_classify_shows_examples_of_the_new_pairs(world: World, monkeypatch: pytest.MonkeyPatch) -> None:
+    listing, finds = _opendata_swissalti3d(world)
+    world.put(world.ckan, *finds)
+    world.report()
+    monkeypatch.setattr(report_module, "_listings", lambda: {listing: "swissalti3d"})
+    result = world.report(classify_only=True)
+    assert result.dedupe is not None and [p[0] for p in result.dedupe.new] == [f"{world.ckan.source_id}.549438da"]
+    text = classify_text(world.ckan, result)
+    assert "10 Beispiele neu (Duplikat | Haupteintrag | Schlüssel):" in text
+    assert f"- swissALTI3D <{world.ckan.source_id}.549438da> | " in text.split("10 Beispiele neu")[1]
+
+
+def test_catalog_load_marks_the_listing_of_a_full_entry_as_its_duplicate(world: World) -> None:
+    listing, finds = _opendata_swissalti3d(world)
+    world.put(world.ckan, *finds)
+    world.report()
+    published = f"{world.ckan.source_id}.549438da"
+    world.conn.execute("UPDATE public.earthx_listed_entry SET state = 'published' WHERE dataset_id = %s", (published,))
+    assert mark_listings(world.conn, {listing: "swissalti3d"}) == (published,)
+    assert (world.row("549438da")["state"], world.row("549438da")["duplicate_of"]) == ("duplicate", "swissalti3d")
+    assert world.row("mono")["duplicate_of"] is None
+    assert mark_listings(world.conn, {listing: "swissalti3d"}) == ()
+    assert mark_listings(world.conn, {}) == ()
+    # Another source with the same identifier is another find.
+    assert mark_listings(world.conn, {f"other-source:{IDENTIFIER}": "swissalti3d"}) == ()
+
+
+def test_a_collection_in_a_distribution_makes_no_duplicate(world: World) -> None:
+    # Otto, 23.11.2026: a find that links to a collection of the FSDI in a file is not that collection.
+    world.put(world.stac, _find("ch.example.boden", source_url="https://stac.example.org/browser/ch.example.boden"))
+    linked = {"href": "https://map.example.org/?layers=ch.example.boden", "format": "HTML", "media_type": None}
+    world.put(world.ckan, _find("linking", distributions=[linked]))
+    world.report(world.stac)
+    world.report()
+    assert world.row("linking")["duplicate_of"] is None
+
+
+def test_classify_compares_the_pairs_with_the_last_report(world: World) -> None:
+    # Otto, 23.11.2026: pairs by kind of key, ten examples, and what the new keys make of the stored ones.
+    world.put(world.stac, _find("ch.example.boden", source_url="https://stac.example.org/browser/ch.example.boden"))
+    linked = {"href": "https://map.example.org/?layers=ch.example.boden", "format": "HTML", "media_type": None}
+    world.put(
+        world.ckan,
+        _find("viewer", source_url="https://map.example.org/?layers=ch.example.boden"),
+        _find("linking", distributions=[linked]),
+        _find("same-doi", doi="10.1/zz"),
+    )
+    world.put(world.stac, _find("other", doi="10.1/zz"))
+    world.report(world.stac)
+    world.report()
+    # The last report was made with the old keys: the distribution named the collection.
+    world.conn.execute(
+        "UPDATE public.earthx_listed_entry SET state = 'duplicate', duplicate_of = %s,"
+        " dedupe_keys = ARRAY[%s] WHERE dataset_id = %s",
+        (
+            f"{world.stac.source_id}.ch.example.boden",
+            "coll:stac.example.org/ch.example.boden",
+            f"{world.ckan.source_id}.linking",
+        ),
+    )
+    result = world.report(classify_only=True)
+    text = classify_text(world.ckan, result)
+    assert result.dedupe is not None
+    assert [pair[0] for pair in result.dedupe.lost] == [f"{world.ckan.source_id}.linking"]
+    assert "Dubletten (gerechnet mit den Schlüsseln dieser Ableitung; nichts geschrieben):" in text
+    assert "Paare jetzt 2 (nach Schlüsselart: DOI 1, Collection-ID 1)" in text
+    assert "Paare im Stand der Datenbank 3 (nach Schlüsselart: DOI 1, Collection-ID 2)" in text
+    assert "Weggefallen 1 (nach Schlüsselart: Collection-ID 1), neu 0" in text
+    assert f"<{world.ckan.source_id}.linking> | " in text
+    # Nothing was written: the row is still the duplicate of the last report.
+    assert world.row("linking")["state"] == "duplicate"
 
 
 def test_two_finds_of_one_source_with_one_identifier_stay_apart(world: World) -> None:

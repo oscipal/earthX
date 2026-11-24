@@ -23,5 +23,9 @@ Präfix `proto-` sind vergeben. `enabled: false` hält eine Quelle an, ohne die 
   Ausdehnung, nur als Region, ohne Fußabdruck (M5-20 Plan §6.1, F1 = 1).
 - `dedupe_rank`: Vorrang unter Dubletten, 1 vor 2 (M5-20 Plan §8, F4 = 1): der Katalog des Anbieters vor dem Portal,
   das von ihm erntet.
+- `dedupe_collection_links` (optional, Standard `false`): Eine Collection der FSDI, die ein Viewer-Link in den
+  Dateien, den Kandidaten oder der übersprungenen Seite eines Fundes nennt (`map.geo.admin.ch` mit `layers=`,
+  `data.geo.admin.ch` mit `/collections/<id>`), ist ein Dedupe-Schlüssel, wenn es genau eine bekannte ID ist
+  (Otto, 24.11.2026; nur opendata-swiss).
 
 Den Lauf beschreibt die README im Wurzelverzeichnis („Quellen ernten“).

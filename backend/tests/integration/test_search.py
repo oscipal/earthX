@@ -42,9 +42,11 @@ from tests.integration.listed_rows import insert_row
 GLOSSARY = load_glossary()
 
 
-# swissALTI3D with a pyramid of its own: the copies below stand without the substitute the released entry names.
+# swissALTI3D with a pyramid of its own: the copies below stand without the substitute the released entry names, and
+# without the listing at opendata.swiss it names (`also_listed_as`), which one entry only may name.
 STATIC = dataclasses.replace(
     SWISSALTI3D,
+    also_listed_as=(),
     viewer=dataclasses.replace(
         SWISSALTI3D.viewer,
         overview=OverviewMode.PYRAMID,

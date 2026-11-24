@@ -397,3 +397,27 @@ def test_api_patterns_are_named(url: str, pattern: str) -> None:
 )
 def test_pages_and_other_values_match_no_api_pattern(url: object) -> None:
     assert api_pattern(url) is None
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://gis.example.org/arcgis/rest/services/boden/MapServer",
+        "https://geo.example.org/geoserver/ows?service=WMS",
+        "https://data.example.org/api/v1/datasets/x",
+        "https://metaver.example.org/opensearch/query?format=rdf&q=x",
+    ],
+)
+def test_an_interface_is_no_link_at_rank_one_or_two(url: str) -> None:
+    # Otto, 23.11.2026: never as the link "Source".
+    page = "https://data.example.org/datasets/x"
+    assert choose_link([(VIEWER, url), (DATASET, page)]) == (page, DATASET)
+    assert choose_link([(DATASET, url), (CATALOGUE, page)]) == (page, CATALOGUE)
+    assert choose_link([(VIEWER, url)]) is None
+    assert first_link([(VIEWER, url), (DATASET, page)]) == (page, DATASET)
+    assert link_candidates([(VIEWER, url), (DATASET, page)]) == ((2, page),)
+
+
+def test_the_page_in_the_catalogue_is_not_judged_by_the_patterns_of_an_interface() -> None:
+    url = "https://data.example.org/api/datasets/x"
+    assert choose_link([(CATALOGUE, url)]) == (url, CATALOGUE)

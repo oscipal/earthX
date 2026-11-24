@@ -292,6 +292,22 @@ class TestCountryAndDedupeRank:
         with pytest.raises(EntryFileError, match="dedupe_rank is a whole number from 1 to 9"):
             read_source(_write(tmp_path, STAC.replace("dedupe_rank: 1", f"dedupe_rank: {value}")))
 
+    def test_only_opendata_swiss_reads_collection_links(self) -> None:
+        # Otto, 24.11.2026: the narrow rule for the viewer links of the FSDI.
+        sources = read_sources()
+        assert {key for key, s in sources.items() if s.dedupe_collection_links} == {"opendata-swiss"}
+
+    def test_the_switch_is_optional_and_off_without_it(self, tmp_path: Path) -> None:
+        assert read_source(_write(tmp_path, STAC)).dedupe_collection_links is False
+
+    def test_the_switch_can_be_set(self, tmp_path: Path) -> None:
+        assert read_source(_write(tmp_path, STAC + "dedupe_collection_links: true\n")).dedupe_collection_links is True
+
+    @pytest.mark.parametrize("value", ["1", "'true'", "null", "yes please"])
+    def test_a_wrong_switch(self, tmp_path: Path, value: str) -> None:
+        with pytest.raises(EntryFileError, match="dedupe_collection_links is true or false"):
+            read_source(_write(tmp_path, STAC + f"dedupe_collection_links: {value}\n"))
+
     def test_both_are_required(self, tmp_path: Path) -> None:
         with pytest.raises(EntryFileError, match="needs exactly the fields"):
             read_source(_write(tmp_path, STAC.replace("dedupe_rank: 1\n", "")))

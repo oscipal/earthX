@@ -30,6 +30,8 @@ __all__ = [
     "dedupe_rows",
     "derivations",
     "form_stack",
+    "mark_duplicates",
+    "mark_listings",
     "settle_missing",
     "withdraw",
     "write_harvested",
@@ -290,25 +292,56 @@ def dedupe_rows(conn: psycopg.Connection) -> list[DedupeRow]:
         return [DedupeRow(row[0], row[1], tuple(row[2]), row[3], row[4]) for row in cur.fetchall()]
 
 
-def apply_duplicates(conn: psycopg.Connection, duplicates: Mapping[str, str]) -> tuple[int, int]:
-    """Mark the harvested rows of ``duplicates`` (id → main id) and restore the ones that are no longer one; returns
-    (marked, restored). A restored row goes back to its own state; one that was published goes back into review."""
-    ids, mains = list(duplicates), [duplicates[i] for i in duplicates]
+_MARK_DUPLICATES = (
+    "UPDATE public.earthx_listed_entry e SET state = 'duplicate', duplicate_of = d.main"
+    " FROM unnest(%s::text[], %s::text[]) AS d(id, main)"
+    " WHERE e.dataset_id = d.id AND e.source_id <> %s AND e.state NOT IN ('tombstone', 'superseded')"
+    " AND (e.state, e.duplicate_of) IS DISTINCT FROM ('duplicate', d.main)"
+)
+
+
+def mark_duplicates(conn: psycopg.Connection, duplicates: Mapping[str, str]) -> int:
+    """Mark the harvested rows of ``duplicates`` (id → main id); returns how many rows changed."""
+    with conn.cursor() as cur:
+        cur.execute(_MARK_DUPLICATES, (list(duplicates), [duplicates[i] for i in duplicates], HAND_SOURCE))
+        return cur.rowcount
+
+
+def mark_listings(conn: psycopg.Connection, listings: Mapping[str, str]) -> tuple[str, ...]:
+    """Mark the rows that are the listing of a full entry (``also_listed_as``, ``<source id>:<identifier>`` → dataset id)
+    as its duplicates, by the ``id:`` key they hold; returns their ids. Only marks: the report restores a row whose
+    listing is no longer named."""
+    if not listings:
+        return ()
+    sources, identifiers, mains = [], [], []
+    for key, main in sorted(listings.items()):
+        source_id, identifier = key.split(":", 1)
+        sources.append(source_id)
+        identifiers.append(identifier)
+        mains.append(main)
     with conn.cursor() as cur:
         cur.execute(
             "UPDATE public.earthx_listed_entry e SET state = 'duplicate', duplicate_of = d.main"
-            " FROM unnest(%s::text[], %s::text[]) AS d(id, main)"
-            " WHERE e.dataset_id = d.id AND e.source_id <> %s AND e.state NOT IN ('tombstone', 'superseded')"
-            " AND (e.state, e.duplicate_of) IS DISTINCT FROM ('duplicate', d.main)",
-            (ids, mains, HAND_SOURCE),
+            " FROM unnest(%s::text[], %s::text[], %s::text[]) AS d(source_id, identifier, main)"
+            " WHERE e.source_id = d.source_id AND 'id:' || d.identifier = ANY(e.dedupe_keys)"
+            " AND e.source_id <> %s AND e.state NOT IN ('tombstone', 'superseded')"
+            " AND (e.state, e.duplicate_of) IS DISTINCT FROM ('duplicate', d.main) RETURNING e.dataset_id",
+            (sources, identifiers, mains, HAND_SOURCE),
         )
-        marked = cur.rowcount
+        return tuple(sorted(row[0] for row in cur.fetchall()))
+
+
+def apply_duplicates(conn: psycopg.Connection, duplicates: Mapping[str, str]) -> tuple[int, int]:
+    """Mark the harvested rows of ``duplicates`` (id → main id) and restore the ones that are no longer one; returns
+    (marked, restored). A restored row goes back to its own state; one that was published goes back into review."""
+    marked = mark_duplicates(conn, duplicates)
+    with conn.cursor() as cur:
         cur.execute(
             "UPDATE public.earthx_listed_entry SET duplicate_of = NULL, approval_file = NULL, approval_sha256 = NULL,"
             " approved_on = NULL, published_at = NULL,"
             " state = CASE verdict WHEN 'ok' THEN 'in_review' ELSE verdict END"
             " WHERE state = 'duplicate' AND NOT (dataset_id = ANY(%s))",
-            (ids,),
+            (list(duplicates),),
         )
         return marked, cur.rowcount
 
