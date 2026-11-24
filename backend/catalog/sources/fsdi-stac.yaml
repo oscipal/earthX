@@ -5,6 +5,13 @@ protocol: stac-api
 endpoint: https://data.geo.admin.ch/api/stac/v1
 # The STAC browser of the FSDI shows a collection with its items and their files [S, not checked from a session].
 catalog_page: https://data.geo.admin.ch/browser/index.html#/collections/{id}
+# The link check of the page above (M5-67 F13 = 1, Otto 24.11.2026): the part after '#' never reaches the server, so
+# every address gives the same page of the STAC browser. The check asks the collection the browser shows,
+# <endpoint>/collections/<id>. The form leads to the collection's page: Otto opened 30 of these links when he approved
+# stack 1 of this source (2026-11-21, all in order; decision log 2026-11-23).
+catalog_page_check:
+  via: api
+  form_confirmed_on: 2026-11-21
 filter:
   collection_prefixes: []
 max_requests_per_run: 50

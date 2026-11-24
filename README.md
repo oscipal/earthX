@@ -351,6 +351,32 @@ docker compose run --rm harvest opendata-swiss
 - Hält ein Host still (Unterbrecher, `robots.txt`) oder ist die Obergrenze an Anfragen erreicht, endet der
   Lauf `interrupted` und ändert nichts an Funden, die er nicht gesehen hat; später erneut starten.
 
+### Harvest mit einem Doppelklick (M5-67)
+
+Ein Lauf über alle freigegebenen Quellen ohne Terminal: ernten, Bericht, Linkprüfung, Freigabe nach festen Regeln,
+ein PR, Merge nach grünen Pflicht-Checks, Neustart der Plattform (Plan `docs/plans/m5/m5-67-harvest-automatisch.md`,
+`docs/adr/0033-freigabe-gelisteter-eintraege.md` §8.5). Lizenzen stuft weiter nur Otto ein.
+
+**Einmal einrichten** (Windows PowerShell 5.1, im Checkout):
+
+```powershell
+winget install --id GitHub.cli -e
+gh auth login
+gh auth setup-git
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harvest-cycle.ps1 -Install
+```
+
+Danach startet „EarthX Harvest“ auf dem Desktop einen Lauf. Das Fenster sagt am Ende in einer Zeile, was geschehen
+ist. Der erste Lauf ist ein Probelauf: Er verbirgt nichts und gibt nichts frei, die Zahlen stehen im PR.
+
+- **Ausgaben:** das volle Protokoll unter `..\earthx-ausgaben\<Tag>_<Uhrzeit>\`, nie im Repo; im Repo nur die
+  bereinigten Laufdateien unter `docs/harvest/laeufe/<Tag>/` und die Befundliste `docs/harvest/befunde.md`.
+- **Bei einem Fehler** wird nichts gemergt; der Branch bleibt, wenn möglich mit Draft-PR und `fehler.log`.
+- **Zurücknehmen:** `revoked_on` in einer Freigabedatei, `blocked.yaml`, `cleared` in `backend/catalog/flags.yaml`,
+  `withdrawn_on` in `backend/catalog/licenses/spellings.yaml`. Am Handy im Editor von GitHub; der nächste Lauf wendet
+  es an.
+- **Regeln** in `backend/catalog/approval_rules.yaml` (Größe eines Stapels), `linkcheck.yaml`, `flags.yaml`.
+
 ### Geerntete Einträge freigeben (M5-20)
 
 Aus den Funden eines Harvest-Laufs werden gelistete Einträge im „Data catalogue“, aber erst nach deiner Freigabe
@@ -381,6 +407,20 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harvest-report.ps1
   - `excluded_rules` lässt einzelne Lizenzregeln draußen.
   - `revoked_on` nimmt die Freigabe zurück.
   - Ein späterer Bericht derselben Quelle ersetzt einen nicht freigegebenen Stapel; dessen Datei gilt dann nicht mehr.
+- **Linkprüfung (M5-67):** Sichtbar wird ein Eintrag nur, wenn sein eigener Link die automatische Prüfung bestanden
+  hat (`backend/catalog/linkcheck.yaml`, Plan `docs/plans/m5/m5-67-harvest-automatisch.md` §4). Vor dem Merge einer
+  Freigabe deshalb prüfen; `--dry-run` zählt nur, was verborgen und was sichtbar würde:
+
+  ```powershell
+  docker compose run --build --rm harvest-linkcheck --dry-run
+  docker compose run --build --rm harvest-linkcheck
+  ```
+
+  Ein veröffentlichter Eintrag ohne bestandene Prüfung seines Links (durchgefallen oder ungeprüft) wird verborgen,
+  nicht gelöscht, und kommt mit einer bestandenen Prüfung zurück. Links auf die Katalogseite von GovData prüft der
+  Lauf über die CKAN-API, sobald `catalog_page_check.form_confirmed_on` in `backend/catalog/sources/govdata.yaml`
+  steht (Tag, an dem du die Adressform im Browser bestätigt hast). Funde mit Warnzeichen (`backend/catalog/flags.yaml`) stehen in `excluded_entries`
+  der Freigabedatei und warten.
 - **Lizenzen:** Ohne Einträge in `backend/catalog/licenses/terms.yaml` und `grants/<Quelle>.yaml` wartet jeder
   Fund (`needs_rule`), und es entsteht kein Stapel. Die Einstufung jeder Lizenz machst du.
 - **Freigaben je Herausgeber:** `harvest-grants` schreibt `grants/<Quelle>.yaml` aus den Herausgebern der

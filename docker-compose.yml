@@ -165,6 +165,74 @@ services:
       catalog-load:
         condition: service_completed_successfully
 
+  # The steps of a harvest run that scripts/harvest-cycle.ps1 hands to the container (M5-67 plan §3, §6, §9): the
+  # sources in order, the approval by rules and the files of the run. Asks no source. The script adds the run's own
+  # folder outside the repository as /run (`-v`):
+  #   docker compose run --rm -v <folder>:/run harvest-cycle sources | decide ... | summary ...
+  harvest-cycle:
+    profiles: ["harvest"]
+    build:
+      context: ./backend
+      target: app
+    entrypoint: ["python", "-m", "earthx.discovery.cycle"]
+    volumes:
+      - ./backend/catalog/approvals:/approvals
+      - ./docs/harvest:/harvest
+    environment:
+      HOME: /tmp
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+    depends_on:
+      catalog-load:
+        condition: service_completed_successfully
+
+  # One-off, run by hand until scripts/harvest-cycle.ps1 runs it (M5-67 plan §4, §20): checks the link of every listed
+  # entry that is due through the gateway, keeps the results and hides published entries whose link failed. An entry
+  # becomes visible only with a pass of its own link, so run it before an approval publishes anything. It asks the
+  # providers' pages, never from CI. `--dry-run` only counts (the trial run):
+  #   docker compose run --build --rm harvest-linkcheck [--dry-run] [--minutes N]
+  harvest-linkcheck:
+    profiles: ["harvest"]
+    build:
+      context: ./backend
+      target: app
+    entrypoint: ["python", "-m", "earthx.discovery.linkcheck"]
+    environment:
+      EARTHX_USER_AGENT: ${EARTHX_USER_AGENT:-}
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+    depends_on:
+      catalog-load:
+        condition: service_completed_successfully
+
+  # One-off, run by hand until scripts/harvest-cycle.ps1 runs it (M5-67 plan §7): writes
+  # backend/catalog/licenses/spellings.yaml with new spellings of graded standard licences, never a grade. Asks no source.
+  #   docker compose run --build --rm harvest-spellings
+  harvest-spellings:
+    profiles: ["harvest"]
+    build:
+      context: ./backend
+      target: app
+    entrypoint: ["python", "-m", "earthx.discovery.spellings", "--out", "/out"]
+    volumes:
+      - ./backend/catalog/licenses:/out
+    environment:
+      HOME: /tmp
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+    depends_on:
+      catalog-load:
+        condition: service_completed_successfully
+
   # One-off, run by hand (M5-30b, adr/0032 §8.5, F11): tile times per zoom level over the real tile path, for the
   # budgets of the mosaic tile. Under a profile like `materialize`: it reads real files at the source. The rectangle
   # is an argument and never printed. Run it with:

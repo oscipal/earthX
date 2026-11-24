@@ -324,6 +324,8 @@ Tausende Collections ernten (`architekturplan.md` 5.2) geht nur, wenn ein Katalo
 
 **Nachtrag 2026-11-15 (`adr/0033` §14, M5-40):** P1 gilt für Kandidaten des vollen Wegs und für die Freigabedateien der Läufe (`backend/catalog/approvals/`, `adr/0033` §8.3, §8.4). Gelistete Einträge kommen nicht als Kandidatendatei nach Git.
 
+**Nachtrag 2026-11-24 (M5-67, Entscheidung Otto, `adr/0033` §8.5):** Für die Läufe gelisteter Einträge gilt P1 mit einer Abweichung: `scripts/harvest-cycle.ps1` läuft auf Ottos Rechner und auf seinen Doppelklick, pusht den Branch, öffnet mit Ottos `gh`-Zugang genau einen PR je Lauf und merged ihn nach grünen Pflicht-Checks mit Merge-Commit. „Das Skript pusht nie“ gilt für dieses Skript nicht; für `discovery propose` und `harvest-report.ps1` bleibt es. Kein neues Secret der Plattform, kein self-hosted runner.
+
 ### 6.6 Health-Checks und „zuletzt erfolgreich geprüft“
 
 Plan §3 legt die Health-Checks nach diesem ADR in Fassung 3. Hier nur, was die Pipeline dafür festlegt:

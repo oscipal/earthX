@@ -702,7 +702,7 @@ async def run_harvest(
     )
 
 
-def _policy_for(source: SourceConfig, hosts: Mapping[str, HostLimit]) -> Policy:
+def source_policy(source: SourceConfig, hosts: Mapping[str, HostLimit]) -> Policy:
     """The source's host alone, with its limits from hosts.yaml (M5-36), and robots.txt obeyed (adr/0025 §6.2) but for
     the path of the source's robots exception, if its file names one (Otto, 18.11.2026)."""
     limit = hosts[source.host]
@@ -927,7 +927,7 @@ def explain_links(conn: psycopg.Connection, source: SourceConfig) -> str:
 
 async def _measure(source: SourceConfig, hosts: Mapping[str, HostLimit]) -> str:
     with psycopg.connect(autocommit=True) as conn:
-        async with open_source_gateway(_policy_for(source, hosts)) as gateway:
+        async with open_source_gateway(source_policy(source, hosts)) as gateway:
             return await measure(conn, source, gateway)
 
 
@@ -944,7 +944,7 @@ async def _main_async(
     with psycopg.connect(autocommit=True) as conn:
         if reextract:
             return await run_harvest(conn, source, gateway=None, reextract=True)
-        async with open_source_gateway(_policy_for(source, hosts)) as gateway:
+        async with open_source_gateway(source_policy(source, hosts)) as gateway:
             return await run_harvest(conn, source, gateway=gateway, full=full)
 
 

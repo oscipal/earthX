@@ -5,6 +5,7 @@
   - die Freigabedatei eines Laufs kommt, wo möglich, in denselben täglichen Sammel-PR wie das automatische Onboarding (`adr/0031`), damit nicht zwei PRs am Tag nötig sind (§8.4).
 - **Datum:** 2026-11-14 (Entwurf, Draft-PR [#352](https://github.com/oscipal/earthX/pull/352)); 2026-11-14 angenommen.
 - **Nachträge 2026-11-23** (Doku-Runde, Entscheidungen Ottos zu M5-19 und M5-20 vom 19. bis 23.11.2026): §5 (Link, Zugang, Ausdehnung, Nicht-Geodaten), §6.2 (Klassen und Freigabe für alle Herausgeber), §7 (weitere Wartegründe), §11 (geänderte Einstufung, A18).
+- **Nachträge 2026-11-24** (M5-67, Entscheidung Otto vom 24.11.2026, Plan `plans/m5/m5-67-harvest-automatisch.md`): F1 neu = 2 (Lauf-Freigabe nach festen Regeln, nachgelagerte Stichprobe), §8.5 (neu), §11.
 - **Aufgabe:** M5-39, Auftrag von Otto vom 14.11.2026 (Folgeaufgabe aus `plans/m5/m5-35-skalierbarkeit.md` §10, Bedingung zu F4). Die Nummer 0033 ist vom Auftrag vorgegeben; auf `main` endet die Reihe mit 0032.
 - **Autonomiestufe:** C. Kein Produktivcode.
   - Geändert sind nur dieses ADR und eine Zeile im Entscheidungslog.
@@ -285,6 +286,19 @@ Die Freigabedatei eines Laufs kommt, wo möglich, in denselben täglichen Sammel
 - **Wo es nicht geht, eigener PR** wie in §8.3: kein Onboarding-Lauf an dem Tag, Rückstau-Regel (`adr/0031` §5.1 Punkt 2: zwei offene Onboarding-PRs) oder ein Konflikt zwischen Harvest- und Onboarding-Branch. Die Session meldet das im Bericht und lässt den Harvest-Branch für einen eigenen PR stehen.
 - **Bis die geplante Aufgabe läuft** (`adr/0031` V1–V7): eigener PR je Freigabedatei.
 
+### 8.5 Freigabe nach festen Regeln (Nachtrag 2026-11-24, M5-67)
+
+**Entscheidung Otto (24.11.2026):** Die Lauf-Freigabe geht von Otto auf feste Regeln über (F1 neu = 2, nachgelagerte Stichprobe). Otto übernimmt Haftung und Verantwortung. Grundsatz: **Im Zweifel wartet ein Fund; nie wird eine unsichere Lizenzangabe veröffentlicht.** Die Regeln im Einzelnen (Linkprüfung, Warnzeichen, Schwellen, Obergrenze) stehen im Plan `plans/m5/m5-67-harvest-automatisch.md` §4–§7 und gelten mit Ottos Antworten dort.
+
+- **Was bleibt:** drei Ebenen (§4); Lizenzkatalog und `grants/` (§6, L2); Warteliste (§7, H2); Stapel, Fingerabdruck, Stichprobe 30 (§8.1, §8.2, N2); Freigabedatei je Lauf und Quelle mit `decision` (§8.3, §8.4); Rücknahme über `blocked.yaml` und `revoked_on` (§9).
+- **Lizenzen werden nie automatisch eingestuft.** Ein Stapel enthält nur Funde mit Einstufung von Otto und freigegebenem Paar. Die Pipeline darf eine neue Schreibweise einer schon eingestuften Standardlizenz zuordnen, wenn sie nach den Kriterien des Plans (§7) eindeutig ist; sonst wartet der Fund.
+- **Linkprüfung jedes Eintrags (Zusatz Otto, 24.11.2026):** Ein gelisteter Eintrag wird erst sichtbar, wenn sein eigener Link die automatische Prüfung über `gateway` (Takt, `robots.txt`) bestanden hat, nicht nur die Stichprobe. Bestanden heißt: `200` nach Weiterleitungen; keine Startseite des Hosts, keine Fehler- oder Login-Seite; Titel oder Kennung des Datensatzes auf der Seite, auch in `<title>`, `og:title`, JSON-LD oder anderen Meta-Angaben. Wer nicht besteht, bleibt unsichtbar und steht nach Muster gruppiert in der Befundliste. Veröffentlichte Einträge werden beim ersten Lauf ebenso geprüft und ohne bestandene Prüfung **verborgen, nicht gelöscht** (Zustand `link_hidden`); auch ein ungeprüfter Link hält einen Eintrag nicht sichtbar (Otto, 24.11.2026). Danach rotierend etwa einmal im Monat (vgl. M5-24, §13). Links auf die eigene Katalogseite einer Quelle können über deren API geprüft werden (Einstellung `catalog_page_check` der Quell-Datei, F12 des Plans): GovData so, sobald Otto die Adressform bestätigt hat. Fällt bei einem Host oder Muster in einem Lauf ein großer Anteil durch, wird für ihn nichts verborgen und nichts freigegeben; der Fall steht als Befund oben (Schwelle im Plan §4c). Bestellung, Konto, kostenpflichtig und „auf Anfrage“ werden weiter gelistet (Vorgabe 14.11.2026), sofern der Link sicher auf die Seite des Datensatzes führt.
+- **Stichprobe:** bleibt (30 je Stapel) zur nachgelagerten Durchsicht, mit dem Ergebnis der Linkprüfung je Eintrag in der Freigabedatei. Warnzeichen am Fund (z. B. ein Statistik-Begriff im Titel, eine allgemeine Anbieterseite als Link) halten einen Fund aus dem Stapel heraus.
+- **Freigabe:** Erfüllt ein Stapel die Regeln, setzt die Pipeline `decision: approved` mit dem Vermerk `decided_by: rules`; sonst bleibt er `pending` und steht in der Befundliste `docs/harvest/befunde.md`. `rejected`, `excluded_rules` und `revoked_on` setzt nur Otto.
+- **Nachgelagert:** Der Bericht jedes Laufs zeigt, was seit dem letzten Lauf automatisch veröffentlicht wurde, mit einer Stichprobe zum Nachsehen.
+- **Weg (ändert §8.3 und §8.4):** `scripts/harvest-cycle.ps1` läuft auf Ottos Rechner, auf Ottos Doppelklick. Es pusht den Branch, öffnet mit Ottos Zugang genau einen PR je Lauf, wartet auf die grünen Pflicht-Checks und merged mit Merge-Commit. „Das Skript pusht nie“ (§8.4, `adr/0025` §6.5) gilt dafür nicht mehr. Der Lauf-PR ist ein eigener PR, nicht Teil eines Onboarding-Sammel-PRs.
+- **Nachvollziehbar (§10):** `decided_by` unterscheidet die Freigabe nach Regeln von der Freigabe von Hand; die Laufdateien unter `docs/harvest/laeufe/` halten Zahlen, Prüfungen und Warnzeichen.
+
 ## 9. Rücknahme und Löschung
 
 | Fall | Auslöser | Wirkung |
@@ -343,6 +357,13 @@ Der Harvest erkennt Änderungen am Inhalts-Hash (`adr/0025` §5.1). Dann gilt je
 **Empfehlung U1, entschieden (F7 = 1).** Lizenzwechsel sind selten [A]; eine falsche Lizenz-Aussage wiegt schwerer als ein Eintrag, der einige Tage fehlt. Ein Hostwechsel gehört dazu, weil ein Link auf einen neuen Host bei einer übernommenen Quelle auf eine fremde Seite führen kann (Prinzip 15).
 
 **Nachtrag 2026-11-23 (A18, Otto 19.11.2026, Abweichung von der Zeile „Otto ändert eine Einstufung im Katalog“):** Ändert Otto die Einstufung einer Lizenz, werden die betroffenen veröffentlichten Einträge bis zur nächsten Lauf-Freigabe unsichtbar und stehen dort als „erneut vorgelegt“, wie bei einem Lizenzwechsel der Quelle (U1). Die alte Fassung bleibt nicht sichtbar.
+
+**Nachtrag 2026-11-24 (M5-67, Freigabe nach Regeln, §8.5):** U1 und A18 bleiben. „Bis zur nächsten Lauf-Freigabe“ heißt jetzt: bis zum nächsten Lauf, dessen Stapel die Regeln erfüllt. Dabei gilt:
+
+- **Lizenzangabe der Quelle geändert:** Die neue Angabe wird nie automatisch eingestuft. Sie trifft eine Regel nur, wenn sie wörtlich im Katalog steht oder eine eindeutige Schreibweise einer eingestuften Standardlizenz ist (§8.5); sonst wartet der Eintrag (`needs_rule`).
+- **Link geändert (Pfad oder Host):** Ein Prüfergebnis gilt nur für die Adresse, mit der es geprüft wurde. Der Eintrag wird erst wieder sichtbar, wenn der neue Link die Prüfung bestanden hat (§8.5).
+- **Link fällt später durch oder ist ungeprüft:** Der Eintrag wird verborgen (`link_hidden`), Inhalt und Freigabe bleiben; besteht er eine spätere Prüfung mit derselben Adresse und unverändertem Inhalt, wird er ohne neue Freigabe wieder sichtbar.
+- **Einstufung von Otto geändert (A18):** Die erneut vorgelegten Einträge kommen mit dem nächsten Lauf nach den Regeln wieder, weil die Einstufung selbst von Otto stammt.
 
 **Gelistet wird voll:** Kommt für einen gelisteten Eintrag ein Adapter, ein Format und ein Profil dazu, schreibt `discovery propose` eine Kandidatendatei für den vollen Weg (`adr/0031` §8). Der volle Eintrag übernimmt die ID; `catalog-load` lädt ihn aus `datasets/` und markiert die Zeile des gelisteten Eintrags als abgelöst.
 
@@ -435,6 +456,8 @@ Nicht in diesem PR. Ausgeführt als **erster Commit von M5-40**, ohne eigene Dok
 3. Ein PR je Lauf mit allen Einträgen als Datei
 
 **Antwort F1 (Otto, 2026-11-14): 1.**
+
+**Antwort F1 neu (Otto, 2026-11-24): 2,** nach festen Regeln statt durch Otto, mit nachgelagerter Stichprobe; Otto übernimmt Haftung und Verantwortung (§8.5, M5-67).
 
 **F2 — Form der Lizenzregeln (§6)?**
 1. Lizenzkatalog (jede Lizenz einmal eingestuft) plus je Quelle „Herausgeber → Lizenzen“, beides wörtlich (L2) **(Empfehlung)**

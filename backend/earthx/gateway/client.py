@@ -24,7 +24,7 @@ import secrets
 import time
 from collections.abc import Awaitable, Callable, Mapping
 from contextlib import AbstractAsyncContextManager, nullcontext
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 from urllib.parse import urlencode
 
@@ -74,6 +74,9 @@ class GatewayResponse:
     content: bytes
     #: Seconds from sending the request to the end of the body, without the waits for spacing and turns.
     elapsed_s: float = 0.0
+    #: The address that answered, after the redirects the gateway followed (M5-67: a link check needs to see where a
+    #: link lands). Empty where a response was built by hand.
+    url: str = ""
 
     def json(self) -> Any:
         return json.loads(self.content)
@@ -250,7 +253,7 @@ class Gateway:
                         response.content[:EXCERPT_CHARS].decode(errors="replace"),
                         retry_after=response.headers.get("retry-after"),
                     )
-                return response
+                return replace(response, url=checked.url)
             location = response.headers.get("location")
             if not location:
                 raise UpstreamError(response.status_code, "redirect without a location")

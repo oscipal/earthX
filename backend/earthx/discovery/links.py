@@ -40,8 +40,10 @@ __all__ = [
     "choose_link",
     "first_link",
     "is_collection_page",
+    "is_start_page",
     "link_candidates",
     "link_problem",
+    "url_parts",
 ]
 
 MAX_LINK_CHARS = 2048
@@ -141,6 +143,22 @@ def _is_start_page(path: str, query: str, fragment: str) -> bool:
         segments = segments[:-1]
     keys = {pair.split("=", 1)[0].lower() for pair in query.lstrip("?").split("&") if pair}
     return not segments and keys <= _LANGUAGE_KEYS and len(fragment) <= 2
+
+
+def url_parts(url: object) -> tuple[str, str, str, str] | None:
+    """Host (lower case), path, query and fragment of an ``https`` address; ``None`` for anything else. Parsing
+    only, no check: ``urllib`` stays in ``gateway`` (KLAERUNGEN B8)."""
+    match = _URL.fullmatch(url) if isinstance(url, str) else None
+    if match is None:
+        return None
+    return match["host"].lower(), match["path"] or "", match["query"] or "", match["fragment"] or ""
+
+
+def is_start_page(url: object) -> bool:
+    """Whether ``url`` is the start page of its host: no path but a language part or an index file, a query that only
+    picks the language. A text that is no address is none."""
+    parts = url_parts(url)
+    return parts is not None and _is_start_page(parts[1], parts[2], parts[3])
 
 
 def _is_specific(query: str, fragment: str) -> bool:
