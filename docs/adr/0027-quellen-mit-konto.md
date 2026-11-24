@@ -360,12 +360,7 @@ Wie BIOMASS bis heute (`ENTSCHEIDUNGEN` §3): Otto nutzt ein eigenes Konto lokal
 - **Laden und Prüfen:** Der YAML-Lader aus M5-03 (`adr/0025`, B13) lädt und prüft `access.account` zusammen mit `legal_status` aus `adr/0024` (Entwurf in PR [#260](https://github.com/oscipal/earthX/pull/260)). Beide Felder sind Pflicht und ohne Vorgabe (B10); ein Eintrag ohne eines von beiden ist ein Ladefehler. Sie sind voneinander unabhängig: `legal_status` sagt, ob die Rechtslage geklärt ist, `access.account`, was das Lesen braucht.
 - Discovery (M5-03) liest die Metadaten weiter anonym; findet sie eine Collection, deren Assets ohne Konto `401`/`403` antworten, setzt der Vorschlag `free_account` statt den Eintrag zu verwerfen.
 - Oberfläche: Hinweis am Datensatz „Free account at <Quelle> required to download“ mit Link; kein Kartenlayer, kein Processing.
-
-**Nachtrag 2026-11-15 (`adr/0033` §14, M5-40):** Für gelistete Einträge (`adr/0033` §5, F10 = 1):
-
-- `access.account` bekommt den Wert **`paid`**: die Daten gibt es bei der Quelle nur gegen Bezahlung. Wie `free_account` und `requester_pays` nur W0 (Katalogeintrag mit Link), `account_paths` leer, `token_free_checked_at` leer.
-- Neues Feld **`access.delivery`**: wie die Quelle die Daten herausgibt, `download` (Datei), `service` (z. B. WMS, WFS, API), `order` (Bestellformular, Versand) oder `on_request` (auf Anfrage). Unabhängig von `account`.
-- Prinzip 2 bleibt unberührt, weil ein Link kein Anbinden ist (F2 = 1). Auf dem gelisteten Weg sind Konto, `paid`, Bestellung und auf Anfrage der Normalfall; die Einschränkung auf den vollen Weg in `adr/0031` §9 Fall 5 gilt dort nicht.
+- **Nachtrag 2026-11-23 (gelistete Einträge, `adr/0033` §5):** `access.delivery` kennt zusätzlich `page` („über die Seite des Anbieters“: `https`-Link, aber nur HTML oder unbekanntes Format; Migration 034). Fehlende `access_rights` der Quelle sind kein Ausschluss.
 
 ### 6.2 Regeltext
 
