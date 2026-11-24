@@ -104,6 +104,13 @@ describe('legendEntries', () => {
     ]);
   });
 
+  it('has none, and fails on nothing, for a layer or a view without tiles', () => {
+    const bare = { ...classes, overlays: [{ kind: 'raster' } as unknown as MapLayer['overlays'][number]] };
+    const view = { downloaded: { s: { datasetId: 'land', asset: 'map' } as unknown as DownloadedInfo }, render: {} };
+    expect(legendEntries({ layers: [bare], resultsAt: 1, datasets: DATASETS, view })).toEqual([]);
+    expect(legendEntries({ layers: [], resultsAt: 0, datasets: DATASETS, view: { downloaded: {}, render: {} } })).toEqual([]);
+  });
+
   it('takes the classes and the unit a result names, and none of an expired or deleted result', () => {
     const classed = layer('r', 'https://r.example/{z}/{x}/{y}?tilesize=256&colormap=x', result({ classes: true, legend: CLASSES }));
     const scaled = layer('s', 'https://r.example/{z}/{x}/{y}?tilesize=256&colormap_name=viridis&rescale=0,10', result({ dataType: 'float32', unit: 'm' }));
