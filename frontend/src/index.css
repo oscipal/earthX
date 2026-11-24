@@ -683,6 +683,7 @@ svg.lucide.icon-lead {
   background: none;
   pointer-events: none;
   appearance: none;
+  touch-action: none;
 }
 .inspector .range-hist input[type='range']::-webkit-slider-runnable-track {
   height: 100%;

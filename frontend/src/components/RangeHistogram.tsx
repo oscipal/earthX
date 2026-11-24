@@ -5,6 +5,8 @@
 // Otto 24.11.2026), while the fields keep the values. The sliders are two range inputs over one track, so the keys move them and a finger
 // can take them; the lower never passes the upper.
 
+import { useRef } from 'react';
+
 import type { ColormapGroup } from '../colormaps';
 import { barInRange, sliderPlaces, trackOf, type Histogram } from '../histogram';
 import { barColours } from '../histogramColours';
@@ -65,6 +67,35 @@ export default function RangeHistogram({ histogram, low, high, onLow, onHigh, ch
     if (end === 'low') onLow(Math.min(from + delta * step, to));
     else onHigh(Math.max(to + delta * step, from));
   };
+  // A slider dragged follows the mouse or the finger itself (Otto, 24.11.2026): the input shows the edge it snaps to, and from there the
+  // browser would report no change while the pointer moves within that bar, up to the end of the track. The value is read from where the
+  // pointer is over the travel of the thumb's line (`--hist-thumb`), the ends included.
+  const dragging = useRef<'low' | 'high' | null>(null);
+  const valueAt = (input: HTMLInputElement, x: number) => {
+    const box = input.getBoundingClientRect();
+    const thumb = parseFloat(getComputedStyle(input).getPropertyValue('--hist-thumb')) || 0;
+    const travel = box.width - thumb;
+    const share = travel > 0 ? Math.max(0, Math.min(1, (x - box.left - thumb / 2) / travel)) : 0;
+    return track[0] + share * span;
+  };
+  const move = (end: 'low' | 'high', value: number) => (end === 'low' ? onLow(Math.min(value, to)) : onHigh(Math.max(value, from)));
+  const drag = (end: 'low' | 'high') => ({
+    onPointerDown: (e: React.PointerEvent<HTMLInputElement>) => {
+      e.preventDefault();
+      e.currentTarget.focus();
+      e.currentTarget.setPointerCapture?.(e.pointerId);
+      dragging.current = end;
+    },
+    onPointerMove: (e: React.PointerEvent<HTMLInputElement>) => {
+      if (dragging.current === end) move(end, valueAt(e.currentTarget, e.clientX));
+    },
+    onPointerUp: () => {
+      dragging.current = null;
+    },
+    onPointerCancel: () => {
+      dragging.current = null;
+    },
+  });
   return (
     <div className={`range-hist${channel ? ` range-hist-${channel}` : ''}`} data-tip-level="advanced" data-tip={title}>
       <HistogramBars histogram={histogram} track={track} colours={colours} inside={(bar) => barInRange(histogram, bar, from, to)} />
@@ -78,7 +109,8 @@ export default function RangeHistogram({ histogram, low, high, onLow, onHigh, ch
         step="any"
         value={lowAt}
         onKeyDown={nudge('low')}
-        onChange={(e) => onLow(Math.min(Number(e.target.value), to))}
+        {...drag('low')}
+        onChange={(e) => move('low', Number(e.target.value))}
       />
       <input
         type="range"
@@ -90,7 +122,8 @@ export default function RangeHistogram({ histogram, low, high, onLow, onHigh, ch
         step="any"
         value={highAt}
         onKeyDown={nudge('high')}
-        onChange={(e) => onHigh(Math.max(Number(e.target.value), from))}
+        {...drag('high')}
+        onChange={(e) => move('high', Number(e.target.value))}
       />
     </div>
   );

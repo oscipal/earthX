@@ -135,6 +135,51 @@ describe('the sliders on the bars (Otto, 24.11.2026)', () => {
   });
 });
 
+describe('a slider dragged (Otto, 24.11.2026)', () => {
+  const TENS: Histogram = { counts: Array(12).fill(5), edges: Array.from({ length: 13 }, (_, i) => i * 10) };
+  // The histogram 112 px wide: the thumb's line travels from 6 px to 106 px, over 0…120.
+  const placed = (input: HTMLInputElement) => {
+    input.getBoundingClientRect = () => ({ left: 100, width: 112, top: 0, height: 20, right: 212, bottom: 20, x: 100, y: 0, toJSON: () => ({}) });
+    input.style.setProperty('--hist-thumb', '12px');
+    return input;
+  };
+  const pointer = (input: HTMLInputElement, type: string, clientX: number) =>
+    act(async () => {
+      input.dispatchEvent(new MouseEvent(type, { bubbles: true, clientX }));
+    });
+
+  it('follows the pointer over the whole travel, past the ends to the ends of the histogram', async () => {
+    const onVmin = vi.fn();
+    const onVmax = vi.fn();
+    await draw({ histograms: [TENS], colormap: 'gray', vmin: '23', vmax: '87', onVmin, onVmax });
+    const low = placed(container.querySelector<HTMLInputElement>('.range-hist-low')!);
+    await pointer(low, 'pointerdown', 126);
+    await pointer(low, 'pointermove', 156);
+    expect(onVmin).toHaveBeenLastCalledWith('60');
+    await pointer(low, 'pointermove', 40);
+    expect(onVmin).toHaveBeenLastCalledWith('0');
+    await pointer(low, 'pointerup', 40);
+    const high = placed(container.querySelector<HTMLInputElement>('.range-hist-high')!);
+    await pointer(high, 'pointerdown', 196);
+    await pointer(high, 'pointermove', 400);
+    expect(onVmax).toHaveBeenLastCalledWith('120');
+    await pointer(high, 'pointerup', 400);
+    // Once let go, a move of the pointer moves nothing.
+    onVmax.mockClear();
+    await pointer(high, 'pointermove', 150);
+    expect(onVmax).not.toHaveBeenCalled();
+  });
+
+  it('never takes the lower past the upper', async () => {
+    const onVmin = vi.fn();
+    await draw({ histograms: [TENS], colormap: 'gray', vmin: '23', vmax: '87', onVmin });
+    const low = placed(container.querySelector<HTMLInputElement>('.range-hist-low')!);
+    await pointer(low, 'pointerdown', 126);
+    await pointer(low, 'pointermove', 500);
+    expect(onVmin).toHaveBeenLastCalledWith('87');
+  });
+});
+
 describe('the histogram of a band of classes (Otto F9 = 1)', () => {
   it('draws each bar in the colour of its class, without sliders', async () => {
     const { default: ClassHistogram } = await import('./ClassHistogram');
