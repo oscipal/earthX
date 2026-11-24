@@ -16,6 +16,7 @@ import type { DatasetOption } from '../datasets';
 import { resultUrl, type Order } from '../processing';
 import { resetJobs, useProcessingStore, type JobEntry } from '../processingStore';
 import { resultStats } from '../resultLayer';
+import type { BandClass } from '../bandClasses';
 import { useAppStore } from '../store';
 import JobDetails from './JobDetails';
 import LayerManager from './LayerManager';
@@ -137,7 +138,7 @@ describe('"Download (ZIP)" in the row of a result layer', () => {
     expect([place.tagName, place.className]).toEqual(['SPAN', 'lm-note']);
     expect(row.querySelector('a')).toBeNull();
     expect(row.querySelector('.lm-note .tip')?.getAttribute('data-tip')).toContain('Expired: results are kept for 7 days.');
-    expect([...row.children].map((c) => c.getAttribute('data-col'))).toHaveLength(11);
+    expect([...row.children].map((c) => c.getAttribute('data-col'))).toHaveLength(12);
   });
 
   it('is not made of a job id that is none', () => {
@@ -514,10 +515,10 @@ describe('"Apply" and "Save" of a result layer', () => {
 const MASK = { asset: 'map', band: 'map', classes: [{ value: 10, label: 'Tree cover' }, { value: 80, label: 'Permanent water bodies' }], suggested: [], reference: '', note: '' };
 const CLASSES = { id: 'land-cover', title: 'Land cover', viewable: true, collection: { id: 'land-cover', 'earthx:mask': MASK } } as unknown as DatasetOption;
 const CODES = { minimum: 10, maximum: 80, mean: 30, count: 1000, valid_percent: 100, percentile_2: 10, percentile_98: 80 };
-const classJob = (band: { name: string; expression?: string | null }) =>
+const classJob = (band: { name: string; expression?: string | null; classes?: BandClass[] }) =>
   entry({
     order: { recipe_version: 2, inputs: [{ name: 'input', dataset: 'land-cover', groups: [['T1']] }], steps: [], output: { kind: 'raster', format: 'cog', dtype: 'uint8', bands: [band.name] } } as unknown as Order,
-    bands: [{ name: band.name, stats: resultStats({ bands: [{ name: band.name, data_type: 'uint8', statistics: CODES }] }), expression: band.expression ?? null }],
+    bands: [{ name: band.name, stats: resultStats({ bands: [{ name: band.name, data_type: 'uint8', statistics: CODES }] }), expression: band.expression ?? null, ...(band.classes ? { classes: band.classes } : {}) }],
   });
 
 describe('a result of whole numbers', () => {
@@ -583,6 +584,53 @@ describe('a result of whole numbers', () => {
     expect(urlOf()).not.toContain('rescale');
     expect(button('Auto-scale')).toBeUndefined();
     expect(container.querySelector('.vc-head .tip')?.getAttribute('data-tip')).toBe(NO_TYPE_TIP);
+  });
+});
+
+// M5-62 F9: the worker names the classes of a band whose values stayed those of a band of classes; the layer shows their legend.
+const LEGEND: BandClass[] = [
+  { value: 10, name: 'Tree cover', colour: '#006400' },
+  { value: 80, name: 'Permanent water bodies', colour: '#0064c8' },
+];
+
+describe('a result that names its classes', () => {
+  it('keeps them for the legend over the map and draws them in their colours, with the note in the head', async () => {
+    tileJsonBody = { ...TILE_JSON, data_type: 'uint8' };
+    useAppStore.setState({ datasets: [CLASSES] });
+    useProcessingStore.setState({ jobs: [classJob({ name: 'map', classes: LEGEND })] });
+    await openView();
+    expect(layers()[0].result?.legend).toEqual(LEGEND);
+    expect(urlOf()).not.toContain('rescale');
+    expect(urlOf()).not.toContain('colormap_name');
+    expect(container.querySelector('.vc-head .tip')?.getAttribute('data-tip')).toBe(CLASSES_TIP);
+    expect(button('Classes')).toBeUndefined();
+  });
+
+  it('is drawn as it is where the result names classes, whatever the mask of the dataset', async () => {
+    tileJsonBody = { ...TILE_JSON, data_type: 'uint8' };
+    useProcessingStore.setState({ jobs: [classJob({ name: 'scl', classes: LEGEND })] });
+    await openView();
+    expect(layers()[0].result?.classes).toBe(true);
+    expect(urlOf()).not.toContain('rescale');
+  });
+
+  it('draws a float32 result of classes in their colours, not stretched', async () => {
+    tileJsonBody = { ...TILE_JSON, data_type: 'float32' };
+    useAppStore.setState({ datasets: [CLASSES] });
+    useProcessingStore.setState({ jobs: [classJob({ name: 'map', classes: LEGEND })] });
+    await openView();
+    expect(layers()[0].result?.legend).toEqual(LEGEND);
+    expect(urlOf()).not.toContain('rescale');
+    expect(urlOf()).not.toContain('colormap_name');
+    expect(JSON.parse(new URL(urlOf(), 'http://x').searchParams.get('colormap')!)).toEqual({ 10: [0, 100, 0, 255], 80: [0, 100, 200, 255] });
+  });
+
+  it('keeps no classes where a band of classes names none', async () => {
+    tileJsonBody = { ...TILE_JSON, data_type: 'uint8' };
+    useAppStore.setState({ datasets: [CLASSES] });
+    useProcessingStore.setState({ jobs: [classJob({ name: 'map' })] });
+    await openView();
+    expect(layers()[0].result?.legend).toBeUndefined();
   });
 });
 

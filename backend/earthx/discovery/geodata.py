@@ -1,8 +1,10 @@
 """The rule R-G: whether a harvested find is no geodata (M5-20 plan §7, §13b; F3 = 1).
 
 A find is ``not_geodata`` only where it has no geo signal and at least one non-geo signal; with neither it counts as
-geodata ("undecided" in the classification, so that ``report --classify`` can show the borderline cases). The signals
-and the words live in ``backend/catalog/geodata.yaml``; the code only reads them. Pure: no database, no request.
+geodata ("undecided" in the classification, so that ``report --classify`` can show the borderline cases). The extent
+and the publisher are weak geo signals (Otto, 23.11.2026): they keep no find of a statistics office and no software.
+The signals and the words live in ``backend/catalog/geodata.yaml``; the code only reads them. Pure: no database, no
+request.
 """
 
 from __future__ import annotations
@@ -34,6 +36,8 @@ _KEYS = frozenset(
         "not_geo_eu_themes",
         "not_geo_terms",
         "not_geo_publishers",
+        "software_terms",
+        "statistics_publishers",
     }
 )
 _DATA_KINDS = frozenset({"raster", "vector", "table", "document", "service", "other"})
@@ -86,6 +90,8 @@ class GeodataRule:
     not_geo_eu_themes: frozenset[str]
     not_geo_terms: Terms
     not_geo_publishers: Terms
+    software_terms: Terms
+    statistics_publishers: Terms
 
 
 def read_geodata_rule(path: Path) -> GeodataRule:
@@ -113,6 +119,8 @@ def read_geodata_rule(path: Path) -> GeodataRule:
         not_geo_eu_themes=frozenset(data["not_geo_eu_themes"]),
         not_geo_terms=_terms(data["not_geo_terms"], "not_geo_terms"),
         not_geo_publishers=_terms(data["not_geo_publishers"], "not_geo_publishers"),
+        software_terms=_terms(data["software_terms"], "software_terms"),
+        statistics_publishers=_terms(data["statistics_publishers"], "statistics_publishers"),
     )
 
 
@@ -126,13 +134,19 @@ def _area(box: tuple[float, float, float, float]) -> float:
     return ((east - west) % 360 or (360.0 if east != west else 0.0)) * (north - south)
 
 
+#: Geo signals that keep no find of a statistics office and no software (Otto, 23.11.2026).
+_WEAK = ("extent:", "publisher:")
+
+
 @dataclass(frozen=True, slots=True)
 class Classified:
-    """``geodata``, ``not_geodata`` or ``undecided`` (counted as geodata) and the signals that decided it."""
+    """``geodata``, ``not_geodata`` or ``undecided`` (counted as geodata) and the signals that decided it.
+    ``weak_overruled`` names a find hidden only because its weak geo signals did not count."""
 
     outcome: str
     geo: tuple[str, ...]
     not_geo: tuple[str, ...]
+    weak_overruled: bool = False
 
     @property
     def hidden(self) -> bool:
@@ -168,6 +182,12 @@ def classify(found: Mapping[str, Any], extent: Extent, *, country: str | None, r
     not_geo = [f"eu:{t[3:]}" for t in themes if t.startswith("eu:") and t[3:] in rule.not_geo_eu_themes]
     not_geo += [f"term:{hit}" for hit in dict.fromkeys(rule.not_geo_terms.found([title, *keywords, publisher]))]
     not_geo += [f"publisher:{hit}" for hit in dict.fromkeys(rule.not_geo_publishers.found([publisher]))]
+    software = [f"software:{hit}" for hit in dict.fromkeys(rule.software_terms.found([title, *keywords]))]
+    not_geo += software
+    weak_only = bool(geo) and all(signal.startswith(_WEAK) for signal in geo)
+    overruled = weak_only and bool(not_geo) and (bool(software) or bool(rule.statistics_publishers.found([publisher])))
+    if overruled:
+        return Classified("not_geodata", tuple(geo), tuple(not_geo), weak_overruled=True)
     if geo:
         outcome = "geodata"
     elif not_geo:

@@ -32,7 +32,11 @@ geo_terms: ["*messstelle", "*messstellen", "*messnetz", "*zaehlstelle", "*zaehls
             # Otto, 20.11.2026, second run ("lärm" not as a word end: "Alarm"):
             "bebauungsplan*", "flächennutzungsplan*", "naturschutzgebiet*", "netzplan*", "*netzplan", "findling*",
             ais, lärm, "lärm*", "*bahnlärm", "*strassenlärm", "*straßenlärm", "*fluglärm", "beurteilungspegel*",
-            "hydrometrie*", "luftqualität*", "flaechennutzungsplan*", "luftqualitaet*", laerm, "laerm*"]
+            "hydrometrie*", "luftqualität*", "flaechennutzungsplan*", "luftqualitaet*", laerm, "laerm*",
+            # Otto, 23.11.2026, from earlier samples ("historische Karten der Aare" was hidden):
+            karte, karten, plan,
+            # Otto, 23.11.2026 ("PRTR_Betriebsstaetten_RLP" was hidden): PRTR registers and sites are places.
+            prtr, "*betriebsstätte", "*betriebsstätten", "*betriebsstaette", "*betriebsstaetten"]
 # Publishers whose finds are geodata whatever they are called (Otto, 20.11.2026): a geo signal in the publisher's name.
 geo_publishers: [EnviDat]
 
@@ -54,6 +58,12 @@ not_geo_terms: ["statisti*", it nrw, information und technik nordrhein westfalen
                 # Otto, 20.11.2026, second run (the last; what is left stays visible):
                 entwurf eines landesgesetzes, entwurf einer landesverordnung, corona, vornamen, schwarzarbeit,
                 landsgemeinde, kantonsrat, handschriften, ordnungsbussen, gzr, gewerbezentralregister]
+# Software and code are no geodata (Otto, 23.11.2026: EnviDat "snowBedFoam ... solver"): a non-geo signal in the
+# title or the keywords that the weak geo signals (extent, publisher) do not outweigh.
+software_terms: [software, solver, solvers, source code, quellcode, programmcode, openfoam]
+# Statistics offices (Otto, 23.11.2026): the extent of their tables is the area of the office, so an extent keeps
+# none of their finds; the strong geo signals (format, INSPIRE, category, geo words) still do.
+statistics_publishers: ["statisti*", it nrw, information und technik nordrhein westfalen]
 # Publishers without geodata (Otto, 20.11.2026): a non-geo signal in the publisher's name only.
 not_geo_publishers: [Materials Cloud, PSI Data Catalog, Deutsche Bibliotheksstatistik, Bundeskriminalamt,
                      Bundesamt für Justiz, Bundesjustizamt, Identitas AG]

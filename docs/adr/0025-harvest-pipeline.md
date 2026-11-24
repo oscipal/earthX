@@ -306,9 +306,10 @@ Tausende Collections ernten (`architekturplan.md` 5.2) geht nur, wenn ein Katalo
 
 ### 6.4 Dedupe und Distributionen
 
-- **Schlüssel:** DOI, dann kanonische Adresse (Schema, Host klein, ohne Abfrage und Fragment), dann Titel und Herausgeber unscharf. Treffer über die dritte Stufe werden nur vorgeschlagen, nie zusammengelegt.
+- **Schlüssel:** DOI, dann kanonische Adresse (Schema, Host klein, ohne Abfrage und Fragment), dann Titel und Herausgeber unscharf. Treffer über die dritte Stufe werden nur vorgeschlagen, nie zusammengelegt. *(aufgehoben 2026-11-19 (M5-20 F4 = 1); Titelgleichheit nur noch als Vorschlag für `also_listed_as`)*
 - **Ergebnis:** ein Kandidat mit mehreren Distributionen in `earthx:distributions` (`architekturplan.md` 5.1); Vorzug nach Format (Zarr > COG > Legacy) und Region (`adr/0022`).
 - **Erwartete Fälle [A]:** Daten der FSDI erscheinen auch in opendata.swiss; Länderdaten auch in GovData; Copernicus-Daten in mehreren STAC-APIs.
+- **Nachtrag 2026-11-23 (M5-20, Otto 19.–23.11.2026):** Dedupe legt nur über genaue Schlüssel zusammen: DOI und Kennung nur, wenn höchstens ein Fund je Quelle sie trägt; ein Duplikat teilt seinen Schlüssel selbst mit dem Haupteintrag (keine Ketten); nie über Dienste und nie über die Seite beim Anbieter; der Hauptfall opendata.swiss ↔ FSDI über die Collection-ID als ganzes Token. Der unscharfe dritte Schlüssel (Titel und Herausgeber) entfällt. Haupteintrag nach Rang, die übrigen als Distributionen am Haupteintrag; der Bericht nennt den Schlüssel je Paar.
 - **Stände sind keine Distributionen** (§9): gleiche Kachel, anderer Inhalt.
 
 ### 6.5 Weg in den Git-Review

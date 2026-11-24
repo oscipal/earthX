@@ -2280,7 +2280,7 @@ textarea:autofill {
   /* The title of a layer has the first line to itself, with its date in it; the buttons are under it (Otto, 1.11.2026). Grip, eye,
      opacity (the wide place), up, down, process, zoom to layer, download, remove (a note takes the place of the download): a button that is missing leaves its place empty
      (`LayerManager.tsx::Slot`) instead of moving the others (UI-01 §1 point 8). */
-  grid-template-columns: 14px var(--lm-button) minmax(0, 1fr) repeat(6, var(--lm-button));
+  grid-template-columns: 14px var(--lm-button) var(--lm-button) minmax(0, 1fr) repeat(6, var(--lm-button));
   align-items: center;
   column-gap: var(--space-1);
   row-gap: var(--space-1);
@@ -2296,6 +2296,17 @@ textarea:autofill {
   grid-column: 2 / -2;
   grid-row: 1;
 }
+/* The button that shows and hides the legend of the layer (M5-62), left of the eye; an empty place where the layer has none. */
+.layer-row > [data-col='legend-toggle'] {
+  grid-column: 2;
+  grid-row: 2;
+}
+/* The legend of the layer under its row, under the band of a result where it has one (M5-62, Otto 24.11.2026). */
+.layer-row > [data-col='legend'] {
+  grid-column: 2 / -1;
+  font-size: var(--text-xs);
+  color: var(--text);
+}
 /* The pencil that renames the layer, at the end of the line of its name (Otto, 3.11.2026). */
 .layer-row > [data-col='rename'] {
   grid-column: -2;
@@ -2306,35 +2317,35 @@ textarea:autofill {
   box-sizing: border-box;
 }
 .layer-row > [data-col='eye'] {
-  grid-column: 2;
-  grid-row: 2;
-}
-.layer-row > [data-col='opacity'] {
   grid-column: 3;
   grid-row: 2;
 }
-.layer-row > [data-col='up'] {
+.layer-row > [data-col='opacity'] {
   grid-column: 4;
   grid-row: 2;
 }
-.layer-row > [data-col='down'] {
+.layer-row > [data-col='up'] {
   grid-column: 5;
   grid-row: 2;
 }
-.layer-row > [data-col='process'] {
+.layer-row > [data-col='down'] {
   grid-column: 6;
   grid-row: 2;
 }
-.layer-row > [data-col='zoom'] {
+.layer-row > [data-col='process'] {
   grid-column: 7;
   grid-row: 2;
 }
-.layer-row > [data-col='download'] {
+.layer-row > [data-col='zoom'] {
   grid-column: 8;
   grid-row: 2;
 }
-.layer-row > [data-col='remove'] {
+.layer-row > [data-col='download'] {
   grid-column: 9;
+  grid-row: 2;
+}
+.layer-row > [data-col='remove'] {
+  grid-column: 10;
   grid-row: 2;
   /* The bin of "Remove layer", as in the settings bar (Otto, 3.11.2026). */
   display: inline-flex;
@@ -2514,7 +2525,8 @@ textarea:autofill {
   width: max-content;
   max-width: min(260px, calc(100vw - 16px));
   padding: var(--space-1-5) var(--space-2);
-  background: var(--panel-bg);
+  /* Opaque: no text under it shows through (Otto, 24.11.2026). */
+  background: var(--tip-bg);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-sm);
   color: var(--text);
@@ -3283,6 +3295,24 @@ button.pm-open:hover {
 }
 .catalogue-bands tbody th {
   white-space: nowrap;
+}
+/* The classes of a band (M5-62): one table each under the bands, the band as its heading. */
+.catalogue-classes {
+  margin-top: var(--space-3);
+}
+.catalogue-classes caption {
+  padding-bottom: var(--space-1);
+  text-align: left;
+}
+/* The colour of a class, from the data: a small square before its hex in the Data catalogue, before its value in the legend. */
+.class-swatch {
+  display: inline-block;
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+  margin-right: var(--space-1-5);
+  vertical-align: middle;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-xs);
 }
 .catalogue-value a {
   color: var(--accent);
@@ -4106,7 +4136,7 @@ button.pm-open:hover {
 /* "Preview" (M4-13c-2): over the map at the bottom left, and beside the heading
    of the preview section in the processing panel. */
 .preview-badge-dock {
-  left: calc(var(--rail-width) + 16px);
+  left: calc(var(--map-left, var(--rail-width)) + 16px);
   bottom: 20px;
   z-index: 11;
 }
@@ -4234,4 +4264,135 @@ button.pm-open:hover {
   background: var(--map-bg);
   color: var(--text);
   font-size: var(--text-md);
+}
+
+/* --- the legend over the map (M5-62, Otto 24.11.2026): one box at the bottom left beside the panel of the rail, moving with it as the
+   other things on the map do; above the marks and the bar at the bottom (`--legend-lift`, measured in `MapLegend.tsx`). Its head holds
+   the title "Legend", which folds it, and the choice of the layer. It never scrolls: a long list of classes takes two columns. --- */
+.overlay.map-legend {
+  left: calc(var(--map-left, var(--rail-width)) + var(--space-4));
+  bottom: calc(20px + var(--legend-lift, 0px));
+  /* Left of the column of the map buttons at the bottom right (`.map-controls-host`), never under it. */
+  max-width: min(
+    440px,
+    calc(
+      100vw - var(--map-left, var(--rail-width)) - var(--map-right, 0px) - var(--space-4) - var(--control-height) - 2 * var(--space-1) -
+        2 * var(--line-width) - var(--space-3) - var(--space-2)
+    )
+  );
+  max-height: calc(100% - 20px - var(--legend-lift, 0px) - var(--space-4));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+  overflow: hidden;
+}
+@media (max-width: 899px) {
+  .app.has-inspector .overlay.map-legend {
+    bottom: calc(var(--inspector-sheet-height, 0px) + 12px + var(--legend-lift, 0px));
+  }
+}
+.legend {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-1-5) var(--space-2);
+  background: var(--panel-bg);
+  border: var(--line-width) solid var(--panel-border);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  font-size: var(--text-xs);
+}
+.legend-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.legend-choice {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 260px;
+  padding: var(--space-0) var(--space-1-5);
+  background: var(--input-bg);
+  border: var(--line-width) solid var(--panel-border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: var(--text-xs);
+}
+.legend-title {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--text);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  text-align: left;
+  cursor: pointer;
+}
+.legend-title-text {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.legend-classes {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-0) var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.legend-classes.two-columns {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+/* Too narrow for two columns of names (under 900 px): one, so that a name is not cut. */
+@media (max-width: 899px) {
+  .legend-classes.two-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.legend-classes li {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.legend-classes .class-swatch {
+  width: var(--space-2);
+  height: var(--space-2);
+  margin-right: var(--space-1);
+}
+.legend-value {
+  flex: none;
+  min-width: 2.5em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.legend-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.legend-scale {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0);
+  min-width: 160px;
+}
+.legend-bar {
+  display: block;
+  height: var(--space-2);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-xs);
+}
+.legend-ends {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }

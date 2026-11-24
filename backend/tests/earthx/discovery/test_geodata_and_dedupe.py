@@ -8,7 +8,16 @@ from typing import Any
 import pytest
 
 from earthx.catalog.entry_files import EntryFileError
-from earthx.discovery.dedupe import MAX_SHARED, Member, collection_tokens, find_keys, main_entries, namespaced
+from earthx.discovery.dedupe import (
+    MAX_SHARED,
+    Member,
+    collection_tokens,
+    find_keys,
+    linked_collections,
+    main_entries,
+    namespaced,
+    shared_key,
+)
 from earthx.discovery.enrich import Extent
 from earthx.discovery.geodata import GEODATA_FILE, classify, load_geodata_rule, read_geodata_rule
 
@@ -81,6 +90,77 @@ class TestGeodataRule:
         assert _verdict(found, Extent("place", codes=("DE", "DE-HH"))) == "geodata"
         assert _verdict(found, Extent("place", codes=("DE",))) == "not_geodata"
 
+    @pytest.mark.parametrize(
+        ("title", "publisher", "extent"),
+        [
+            # Otto, 23.11.2026: statistics tables of the Statistisches Landesamt des Freistaates Sachsen with a CSV at
+            # genonline stayed visible through the extent of the Land.
+            (
+                "Straßenverkehrsunfälle: Beteiligte nach Art der Beteiligung, Sachsen - Jahr",
+                "Statistisches Landesamt des Freistaates Sachsen",
+                Extent("place", codes=("DE", "DE-SN")),
+            ),
+            (
+                "Tourismus: Hotellerie nach Reisegebieten (ab 2012)",
+                "Statistisches Landesamt des Freistaates Sachsen",
+                Extent("source", bbox=(11.8, 50.1, 15.1, 51.7)),
+            ),
+            ("Köln: Einwohner", "IT.NRW", Extent("place", codes=("DE", "DE-NW"))),
+        ],
+    )
+    def test_an_extent_keeps_no_table_of_a_statistics_office(self, title: str, publisher: str, extent: Extent) -> None:
+        csv = [{"href": "https://www.example.org/x.csv", "format": "CSV", "media_type": None}]
+        classified = classify(_find(title, publisher=publisher, distributions=csv), extent, country="DE", rule=RULE)
+        assert (classified.outcome, classified.weak_overruled) == ("not_geodata", True)
+
+    @pytest.mark.parametrize(
+        "changes",
+        [
+            {"distributions": [{"href": "https://x.example/a.shp", "format": "SHP", "media_type": None}]},
+            {"themes": ["inspire:su"]},
+            {"keywords": ["Standorte"]},
+        ],
+    )
+    def test_strong_geo_signals_still_keep_a_find_of_a_statistics_office(self, changes: dict[str, Any]) -> None:
+        found = _find("Gemeinden", publisher=STATISTICS_OFFICE, **changes)
+        assert _verdict(found, Extent("place", codes=("DE", "DE-SN"))) == "geodata"
+
+    def test_a_csv_with_an_extent_of_another_publisher_stays_geodata(self) -> None:
+        csv = [{"href": "https://www.example.org/x.csv", "format": "CSV", "media_type": None}]
+        found = _find("Pegelstände Elbe", publisher="Landesamt für Umwelt", distributions=csv)
+        assert _verdict(found, Extent("place", codes=("DE", "DE-SN"))) == "geodata"
+        # A statistics word in the title of another publisher is outweighed by the extent as before.
+        assert _verdict(_find("Statistik der Pegel"), Extent("place", codes=("DE", "DE-SN"))) == "geodata"
+
+    @pytest.mark.parametrize(
+        "title", ["PRTR_Betriebsstaetten_RLP", "Betriebsstätten nach E-PRTR", "Industriebetriebsstätte Nord", "PRTR"]
+    )
+    def test_prtr_and_sites_are_places(self, title: str) -> None:
+        # Otto, 23.11.2026: "PRTR_Betriebsstaetten_RLP" was hidden as no geodata.
+        assert _verdict(_find(title, publisher=STATISTICS_OFFICE)) == "geodata"
+
+    def test_a_word_that_only_contains_a_site_word_is_no_signal(self) -> None:
+        assert _verdict(_find("Betriebsstatistik", publisher=STATISTICS_OFFICE)) == "not_geodata"
+
+    @pytest.mark.parametrize("title", ["Historische Karten der Aare", "Karte der Wanderwege", "Plan der Stadt"])
+    def test_map_and_plan_are_geo_words(self, title: str) -> None:
+        assert _verdict(_find(title, publisher=STATISTICS_OFFICE)) == "geodata"
+
+    def test_a_map_word_inside_another_word_is_no_signal(self) -> None:
+        assert _verdict(_find("Eintrittskarten und Haushaltsplan")) == "not_geodata"
+
+    @pytest.mark.parametrize(
+        ("title", "keywords"),
+        [("snowBedFoam: a solver for snow transport", []), ("Modell der Schneedecke", ["Software", "OpenFOAM"])],
+    )
+    def test_software_is_no_geodata_even_at_a_geodata_publisher(self, title: str, keywords: list[str]) -> None:
+        found = _find(title, publisher="EnviDat", category="other", keywords=keywords)
+        assert _verdict(found, Extent("source", bbox=(7.0, 46.0, 7.1, 46.1)), country="CH") == "not_geodata"
+
+    def test_software_with_a_raster_stays_geodata(self) -> None:
+        found = _find("Solver output", publisher="EnviDat", data_kind="raster")
+        assert _verdict(found) == "geodata"
+
     def test_the_shipped_rule_loads(self) -> None:
         assert read_geodata_rule(GEODATA_FILE).geo_data_kinds == {"raster", "vector", "service"}
 
@@ -114,9 +194,48 @@ class TestKeys:
         addresses = ["https://data.geo.admin.ch/browser/#/collections/ch.swisstopo.swissalti3d"]
         assert collection_tokens(addresses, KNOWN) == {"coll:data.geo.admin.ch/ch.swisstopo.swissalti3d"}
 
+    def test_a_collection_in_a_distribution_is_no_key_without_the_switch_of_the_source(self) -> None:
+        found = {"distributions": [{"href": "https://map.geo.admin.ch/?layers=ch.bafu.laerm"}]}
+        assert find_keys(found, stac_host=None, known=KNOWN, collection_links=False) == ()
+
     def test_a_find_naming_two_collections_gets_none(self) -> None:
         found = {"source_url": "https://map.geo.admin.ch/?layers=ch.swisstopo.swissalti3d,ch.bafu.laerm"}
         assert find_keys(found, stac_host=None, known=KNOWN) == ()
+
+    def test_a_collection_in_a_distribution_or_a_reference_is_no_key(self) -> None:
+        # Otto, 23.11.2026: the GovData find "Internationale Flussgebietseinheiten nach Wasserrahmenrichtlinie" links to
+        # a collection of the FSDI; that makes it no duplicate of the collection.
+        known = {"ch.bafu.wasser-einzugsgebietsgliederung": "data.geo.admin.ch"}
+        found = {
+            "source_key": "ac63368c-5b3e-40c4-816e-4f9fa84e2f6e",
+            "source_url": "https://www.govdata.de/suche/daten/internationale-flussgebietseinheiten",
+            "landing_url": "https://www.govdata.de/suche/daten/internationale-flussgebietseinheiten",
+            "distributions": [
+                {"href": "https://data.geo.admin.ch/browser/#/collections/ch.bafu.wasser-einzugsgebietsgliederung"}
+            ],
+        }
+        assert find_keys(found, stac_host=None, known=known) == ()
+        # Where the dataset itself is at that address, or its identifier says so, it is the key.
+        coll = "coll:data.geo.admin.ch/ch.bafu.wasser-einzugsgebietsgliederung"
+        page = "https://data.geo.admin.ch/browser/#/collections/ch.bafu.wasser-einzugsgebietsgliederung"
+        assert find_keys({**found, "landing_url": page}, stac_host=None, known=known) == (coll,)
+        assert find_keys({**found, "source_url": page}, stac_host=None, known=known) == (coll,)
+        named = {**found, "identifier": "ch.bafu.wasser-einzugsgebietsgliederung"}
+        assert find_keys(named, stac_host=None, known=known) == (coll, "id:ch.bafu.wasser-einzugsgebietsgliederung")
+
+    def test_the_govdata_find_with_a_linked_collection_is_no_duplicate_of_it(self) -> None:
+        known = {"ch.bafu.wasser-einzugsgebietsgliederung": "data.geo.admin.ch"}
+        found = {
+            "source_key": "ac63368c",
+            "source_url": "https://www.govdata.de/suche/daten/internationale-flussgebietseinheiten",
+            "distributions": [{"href": "https://map.geo.admin.ch/?layers=ch.bafu.wasser-einzugsgebietsgliederung"}],
+        }
+        coll = "coll:data.geo.admin.ch/ch.bafu.wasser-einzugsgebietsgliederung"
+        members = [
+            Member("fsdi-stac.x", (coll,), (2, 1), "fsdi-stac"),
+            Member("govdata.ac63368c", find_keys(found, stac_host=None, known=known), (2, 3), "govdata"),
+        ]
+        assert main_entries(members) == {}
 
     def test_the_page_of_a_dataset_is_no_key(self) -> None:
         found = {"landing_url": "https://amt.example.org/daten", "source_url": "https://amt.example.org/daten"}
@@ -135,6 +254,108 @@ class TestKeys:
         assert namespaced(value) is expected
 
 
+LINKED = {
+    "ch.bakom.notruf": "data.geo.admin.ch",
+    "ch.bafu.neophyten": "data.geo.admin.ch",
+    "ch.bafu.wasser-einzugsgebietsgliederung": "data.geo.admin.ch",
+}
+NOTRUF = "coll:data.geo.admin.ch/ch.bakom.notruf"
+NEOPHYTEN = "coll:data.geo.admin.ch/ch.bafu.neophyten"
+
+
+def _keys(found: dict[str, Any], *, links: bool = True) -> tuple[str, ...]:
+    return find_keys(found, stac_host=None, known=LINKED, collection_links=links)
+
+
+class TestCollectionLinks:
+    """Otto, 24.11.2026: the narrow rule for opendata.swiss; a viewer link of the FSDI names its collection."""
+
+    @pytest.mark.parametrize("number", ["117", "144"])
+    def test_the_skipped_collection_page_of_the_emergency_numbers_is_the_key(self, number: str) -> None:
+        # Both finds link the same viewer page of ch.bakom.notruf, so the link "Source" skipped it as a collective page.
+        page = "https://data.geo.admin.ch/browser/index.html#/collections/ch.bakom.notruf"
+        found = {
+            "source_key": f"notruf-{number}",
+            "source_url": f"https://opendata.swiss/de/dataset/notruf-{number}",
+            "landing_url": f"https://opendata.swiss/de/dataset/notruf-{number}",
+            "skipped_url": page,
+            "skipped_rank": 1,
+            "link_candidates": [[1, page]],
+        }
+        assert _keys(found) == (NOTRUF,)
+        assert _keys(found, links=False) == ()
+
+    def test_the_link_candidates_and_the_distributions_count(self) -> None:
+        candidates = {"link_candidates": [[1, "https://map.geo.admin.ch/?lang=de&layers=ch.bafu.neophyten&topic=bafu"]]}
+        assert _keys(candidates) == (NEOPHYTEN,)
+        files = {"distributions": [{"href": "https://data.geo.admin.ch/browser/#/collections/ch.bafu.neophyten/items/x"}]}
+        assert _keys(files) == (NEOPHYTEN,)
+
+    def test_a_layer_may_carry_a_parameter_and_be_listed_twice(self) -> None:
+        link = "https://map.geo.admin.ch/#/map?layers=ch.bafu.neophyten@year=2020,ch.bafu.neophyten&lang=de"
+        assert _keys({"distributions": [{"href": link}]}) == (NEOPHYTEN,)
+
+    def test_an_escaped_comma_and_at_sign_are_read(self) -> None:
+        link = "https://map.geo.admin.ch/?layers=ch.bafu.neophyten%40year%3D2020%2Cch.bafu.neophyten"
+        assert _keys({"distributions": [{"href": link}]}) == (NEOPHYTEN,)
+
+    @pytest.mark.parametrize(
+        "link",
+        [
+            "https://map.geo.admin.ch/?layers=ch.bafu.neophyten,ch.bakom.notruf",
+            "https://map.geo.admin.ch/?topic=ch.bafu.neophyten",
+            "https://map.geo.admin.ch/?layers_visibility=ch.bafu.neophyten",
+            "https://map.geo.admin.ch/?layers=ch.bafu.unknown",
+            "https://data.geo.admin.ch/ch.bafu.neophyten/neophyten.zip",
+            "https://data.geo.admin.ch/browser/#/collections/ch.bafu.neophyten-x",
+            "https://www.example.org/?layers=ch.bafu.neophyten",
+            "https://example.org/collections/ch.bafu.neophyten",
+            "https://map.geo.admin.ch.example.org/?layers=ch.bafu.neophyten",
+            "http://map.geo.admin.ch/?layers=ch.bafu.neophyten",
+        ],
+    )
+    def test_any_other_link_names_no_collection(self, link: str) -> None:
+        assert _keys({"distributions": [{"href": link}]}) == ()
+
+    def test_two_collections_among_all_addresses_give_no_key(self) -> None:
+        found = {
+            "source_url": "https://map.geo.admin.ch/?layers=ch.bakom.notruf",
+            "distributions": [{"href": "https://map.geo.admin.ch/?layers=ch.bafu.neophyten"}],
+            "skipped_url": None,
+        }
+        assert _keys(found) == ()
+
+    def test_the_govdata_find_of_the_water_framework_directive_gets_no_key(self) -> None:
+        # Otto, 23.11.2026: it links to a collection of the FSDI and is not that collection; GovData has no switch.
+        found = {
+            "source_key": "ac63368c-5b3e-40c4-816e-4f9fa84e2f6e",
+            "source_url": "https://www.govdata.de/suche/daten/internationale-flussgebietseinheiten",
+            "distributions": [
+                {"href": "https://map.geo.admin.ch/?layers=ch.bafu.wasser-einzugsgebietsgliederung"},
+                {"href": "https://data.geo.admin.ch/browser/#/collections/ch.bafu.wasser-einzugsgebietsgliederung"},
+            ],
+            "link_candidates": [[1, "https://data.geo.admin.ch/browser/#/collections/ch.bafu.wasser-einzugsgebietsgliederung"]],
+        }
+        assert _keys(found, links=False) == ()
+
+    def test_the_two_emergency_numbers_are_duplicates_of_the_collection_and_the_water_find_is_not(self) -> None:
+        notruf = {"skipped_url": "https://data.geo.admin.ch/browser/#/collections/ch.bakom.notruf"}
+        water = {"distributions": [{"href": "https://map.geo.admin.ch/?layers=ch.bakom.notruf"}]}
+        members = [
+            Member("fsdi-stac.ch.bakom.notruf", (NOTRUF,), (2, 1), "fsdi-stac"),
+            Member("opendata-swiss.117", _keys(notruf), (2, 2), "opendata-swiss"),
+            Member("opendata-swiss.144", _keys(notruf), (2, 2), "opendata-swiss"),
+            Member("govdata.ac63368c", _keys(water, links=False), (2, 3), "govdata"),
+        ]
+        assert main_entries(members) == {
+            "opendata-swiss.117": "fsdi-stac.ch.bakom.notruf",
+            "opendata-swiss.144": "fsdi-stac.ch.bakom.notruf",
+        }
+
+    def test_linked_collections_reads_the_links_only(self) -> None:
+        assert linked_collections(["https://example.org/x", "text"], LINKED) == set()
+
+
 class TestGroups:
     def test_the_main_entry_is_first_by_rank_and_a_group_joins_through_shared_keys(self) -> None:
         members = [
@@ -151,9 +372,48 @@ class TestGroups:
 
     def test_an_identifier_on_many_finds_is_a_placeholder_and_joins_nothing(self) -> None:
         # Review M5-20 PR 1: a portal that writes "1" or its own address into every package.
-        members = [Member(f"govdata.{i}", ("id:1",), (2, 3, i)) for i in range(MAX_SHARED + 1)]
+        members = [Member(f"s{i}.a", ("id:1",), (2, 3, i), f"s{i}") for i in range(MAX_SHARED + 1)]
         assert main_entries(members) == {}
         assert len(main_entries(members[:MAX_SHARED])) == MAX_SHARED - 1
+
+    def test_an_identifier_twice_in_one_source_is_no_key(self) -> None:
+        # Otto, 23.11.2026: "Bevölkerungsentwicklung (jahresweise)" was a duplicate of "Gäste und Übernachtungen im
+        # Jahresverlauf", two GovData finds with one placeholder; the same holds for a DOI.
+        members = [
+            Member("govdata.cd084048", ("id:statistik",), (2, 3, 1), "govdata"),
+            Member("govdata.8dc6087a", ("id:statistik",), (2, 3, 1), "govdata"),
+            Member("govdata.x", ("doi:10.1/a",), (2, 3, 1), "govdata"),
+            Member("govdata.y", ("doi:10.1/a",), (2, 3, 1), "govdata"),
+        ]
+        assert main_entries(members) == {}
+
+    def test_the_same_identifier_in_two_sources_still_joins(self) -> None:
+        members = [Member("govdata.a", ("id:x@amt",), (2, 3), "govdata"), Member("ods.a", ("id:x@amt",), (2, 2), "ods")]
+        assert main_entries(members) == {"govdata.a": "ods.a"}
+
+    def test_a_find_joins_no_main_entry_it_shares_no_key_with(self) -> None:
+        # Otto, 23.11.2026: "Internationale Flussgebietseinheiten nach Wasserrahmenrichtlinie" (GovData) was a duplicate
+        # of the FSDI collection ch.bafu.wasser-einzugsgebietsgliederung through a find in between.
+        coll = "coll:data.geo.admin.ch/ch.bafu.wasser-einzugsgebietsgliederung"
+        members = [
+            Member("fsdi-stac.ch.bafu.wasser-einzugsgebietsgliederung", (coll,), (2, 1), "fsdi-stac"),
+            Member("opendata-swiss.b", (coll, "id:wrrl"), (2, 2), "opendata-swiss"),
+            Member("govdata.ac63368c", ("id:wrrl",), (2, 3), "govdata"),
+        ]
+        assert main_entries(members) == {"opendata-swiss.b": "fsdi-stac.ch.bafu.wasser-einzugsgebietsgliederung"}
+
+    def test_collection_ids_named_by_several_finds_of_one_source_still_join(self) -> None:
+        coll = "coll:h/ch.bafu.x"
+        members = [
+            Member("fsdi-stac.x", (coll,), (2, 1), "fsdi-stac"),
+            Member("ods.a", (coll,), (2, 2), "ods"),
+            Member("ods.b", (coll,), (2, 2), "ods"),
+        ]
+        assert main_entries(members) == {"ods.a": "fsdi-stac.x", "ods.b": "fsdi-stac.x"}
+
+    def test_the_report_names_the_shared_key(self) -> None:
+        assert shared_key(["doi:1", "id:a"], ["id:a", "coll:h/x"]) == "id:a"
+        assert shared_key(["id:a"], []) is None
 
     def test_no_keys_no_group(self) -> None:
         assert main_entries([Member("a", (), (2,)), Member("b", (), (2,))]) == {}

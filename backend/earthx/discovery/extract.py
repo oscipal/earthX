@@ -125,9 +125,12 @@ class ShapeError(Exception):
 class Invalid(Exception):
     """A find that cannot become an intermediate form; ``reason`` is a code of migration 024."""
 
-    def __init__(self, reason: str) -> None:
+    def __init__(self, reason: str, link_candidates: tuple[tuple[int, str], ...] = ()) -> None:
         super().__init__(reason)
         self.reason = reason
+        #: The links the find could have taken, where it has none that is free (``no_link``): kept so that it can be
+        #: derived again when one is.
+        self.link_candidates = link_candidates
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,6 +175,14 @@ class Extracted:
     source_rank: int
     landing_url: str | None
     distributions: tuple[Distribution, ...]
+    #: Where the link "Source" would have gone had it not been a collective page (Otto, 21.11.2026): the address and
+    #: rank of the better candidate that was skipped, ``None`` where none was; for the count of ``report --classify``.
+    skipped_url: str | None = None
+    skipped_rank: int | None = None
+    #: The links the find could be given as its link "Source" by rank 1 and 2, in the order the rule reads them
+    #: (:func:`~earthx.discovery.links.link_candidates`): all the rule on collective pages of a source works on, so that
+    #: it never reads a raw answer (Otto, 21.11.2026).
+    link_candidates: tuple[tuple[int, str], ...] = ()
 
     def to_document(self) -> dict[str, Any]:
         return asdict(self)

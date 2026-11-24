@@ -75,6 +75,8 @@ class TestDiscovery:
             ("032", "listing_approval"),
             ("033", "municipality"),
             ("034", "delivery_page"),
+            ("035", "listed_search"),
+            ("036", "listed_search_without_box"),
         ]
 
     def test_a_missing_directory_is_an_error_not_an_empty_run(self, tmp_path) -> None:

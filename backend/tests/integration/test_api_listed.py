@@ -33,6 +33,7 @@ from earthx.catalog.listed import (
 )
 from earthx.catalog.listed_store import apply_blocklist, supersede, write_hand_entries
 from earthx.catalog.registry import AccountKind, SpatialExtent, TemporalExtent
+from earthx.catalog.search_index import write_listed_search_index
 from tests.catalog.entries import REGISTRY
 from tests.catalog.listed_entries import listed_entry, utc
 from tests.conftest import log_line_without_timestamp
@@ -121,10 +122,16 @@ def _commit(work) -> None:
         conn.commit()
 
 
+def _index(conn: psycopg.Connection) -> None:
+    write_listed_search_index(conn, FULL)
+
+
 def _write(*entries: ListedEntry, blocklist: tuple[BlockRule, ...] = ()) -> None:
-    _commit(
-        lambda conn: write_hand_entries(conn, [(entry, "a" * 64) for entry in entries], list(blocklist), full_ids=[])
-    )
+    def work(conn: psycopg.Connection) -> None:
+        write_hand_entries(conn, [(entry, "a" * 64) for entry in entries], list(blocklist), full_ids=[])
+        _index(conn)
+
+    _commit(work)
 
 
 def _tombstone(dataset_id: str, reason: BlockReason) -> None:
@@ -142,9 +149,14 @@ def catalogue(catalogue_state: Catalogue) -> None:
     catalogue_state.ensure(
         "listed entries of test_api_listed.py",
         setup=lambda: _write(*LISTED.values()),
-        undo=lambda: _commit(lambda conn: conn.execute("DELETE FROM public.earthx_listed_entry")),
+        undo=lambda: _commit(_without_listed),
         owner="catalogue",
     )
+
+
+def _without_listed(conn: psycopg.Connection) -> None:
+    conn.execute("DELETE FROM public.earthx_listed_entry")
+    _index(conn)
 
 
 @asynccontextmanager
@@ -468,12 +480,78 @@ async def test_entry_full_is_the_whole_registry_in_title_order_and_needs_no_list
     assert _ids(response) == FULL_IDS and _next(response) is None
 
 
-async def test_with_text_only_full_entries_are_searched_until_m5_42(client):
-    # Plan F7: `q` does not reach the listed entries; no listed entry turns up for text that fits its title.
-    response = await client.get("/stac/collections", params={"q": "Rainfall gauges of Bavaria"})
-    assert not set(_ids(response)) & set(LISTED)
-    response = await client.get("/stac/collections", params={"q": "elevation", "entry": "listed"})
-    assert _ids(response) == [] and response.json()["numberMatched"] == 0
+async def test_text_finds_a_listed_entry_like_a_full_one(client):
+    # Until M5-42 `q` searched the full entries only (plan F7): this found nothing listed.
+    response = await client.post("/stac/collections", json={"q": "Rainfall gauges of Bavaria"})
+    assert _ids(response)[0] == "bavaria-rainfall-gauges"
+    hit = response.json()["collections"][0]
+    assert hit == (await client.get("/stac/collections/bavaria-rainfall-gauges")).json()
+    assert _ids(await client.get("/stac/collections", params={"q": "rainfal gauges"}))[0] == "bavaria-rainfall-gauges"
+    assert _ids(await client.get("/stac/collections", params={"q": "Example Weather Service"})) == [
+        "bavaria-rainfall-gauges"
+    ]
+
+
+async def test_text_with_entry_keeps_one_kind(client):
+    assert _ids(await client.get("/stac/collections", params={"q": "Shared title", "entry": "full"})) == []
+    assert set(_ids(await client.get("/stac/collections", params={"q": "Shared title", "entry": "listed"}))) == {
+        "shared-title-a",
+        "shared-title-b",
+    }
+    assert set(_ids(await client.get("/stac/collections", params={"q": "elevation", "entry": "listed"}))) <= set(LISTED)
+
+
+async def test_text_with_an_area_or_a_region_matches_the_footprint_and_the_regions_of_a_listed_entry(client):
+    kenya = {"type": "Polygon", "coordinates": [[[36.0, -1.0], [37.0, -1.0], [37.0, 0.0], [36.0, 0.0], [36.0, -1.0]]]}
+    body = {"q": "Shared title", "intersects": kenya}
+    assert set(_ids(await client.post("/stac/collections", json=body))) == {"shared-title-a", "shared-title-b"}
+    assert _ids(await client.post("/stac/collections", json={"q": "Shared title", "region": ["CH"]})) == []
+    assert _ids(await client.post("/stac/collections", json={"q": "rainfall gauges", "region": ["DE-BY"]}))[0] == (
+        "bavaria-rainfall-gauges"
+    )
+    assert "bavaria-rainfall-gauges" not in _ids(
+        await client.post("/stac/collections", json={"q": "rainfall gauges", "region": ["CH"]})
+    )
+
+
+async def test_a_listed_entry_without_a_footprint_is_kept_by_category_and_region_and_never_by_an_area(client):
+    def add(conn: psycopg.Connection) -> None:
+        insert_row(conn, "winterthur-population", title="Bevölkerung der Stadt Winterthur", bbox=None, regions=("CH",))
+        _index(conn)
+
+    def remove(conn: psycopg.Connection) -> None:
+        conn.execute("DELETE FROM public.earthx_listed_entry WHERE dataset_id = 'winterthur-population'")
+        _index(conn)
+
+    _commit(add)
+    try:
+        text = {"q": "Bevölkerung Winterthur"}
+        assert _ids(await client.post("/stac/collections", json=text)) == ["winterthur-population"]
+        assert _ids(await client.post("/stac/collections", json={**text, "region": ["CH"], "category": "other"})) == [
+            "winterthur-population"
+        ]
+        assert _ids(await client.post("/stac/collections", json={**text, "region": ["DE"]})) == []
+        everywhere = {"type": "Polygon", "coordinates": [[[-180, -90], [180, -90], [180, 90], [-180, 90], [-180, -90]]]}
+        assert _ids(await client.post("/stac/collections", json={**text, "intersects": everywhere})) == []
+        page = await client.post("/stac/collections", json={"region": ["CH"], "entry": "listed"})
+        assert "winterthur-population" in _ids(page)
+    finally:
+        _commit(remove)
+
+
+async def test_a_listed_entry_taken_back_since_the_last_load_is_no_hit(client):
+    _commit(lambda conn: conn.execute(
+        "UPDATE public.earthx_listed_entry SET state = 'in_review', verdict = 'ok' WHERE dataset_id = 'bavaria-rainfall-gauges'"
+    ))
+    try:
+        assert "bavaria-rainfall-gauges" not in _ids(
+            await client.get("/stac/collections", params={"q": "Rainfall gauges of Bavaria"})
+        )
+    finally:
+        _commit(lambda conn: conn.execute(
+            "UPDATE public.earthx_listed_entry SET state = 'published', verdict = NULL"
+            " WHERE dataset_id = 'bavaria-rainfall-gauges'"
+        ))
 
 
 # --- region -----------------------------------------------------------------------------------------------------------
@@ -779,9 +857,12 @@ async def test_the_category_filter_keeps_full_and_listed_entries_of_that_categor
     assert _ids(await client.post("/stac/collections", json=body)) == []
 
 
-async def test_a_category_filter_with_text_keeps_only_full_entries_of_it(client):
+async def test_a_category_filter_with_text_keeps_the_entries_of_it(client):
     response = await client.get("/stac/collections", params={"q": "elevation", "category": "elevation"})
     assert set(_ids(response)) <= {i for i in FULL if REGISTRY.get(i).category == "elevation"}
+    response = await client.get("/stac/collections", params={"q": "Shared title", "category": "water"})
+    assert set(_ids(response)) == {"shared-title-a", "shared-title-b"}
+    assert _ids(await client.get("/stac/collections", params={"q": "Shared title", "category": "elevation"})) == []
 
 
 async def test_an_unknown_category_is_a_400(client):

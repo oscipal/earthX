@@ -7,7 +7,9 @@ every registry entry as a collection, removes the federated collections the regi
 no longer lists, removes the pyramid rows of prototype sources the registry does not carry (adr/0024 R6; the worker
 deletes their objects), brings the index of the dataset search in line (M5-22b), writes the region outlines and the
 hand entries of ``listed/`` into the table of listed entries and applies ``blocked.yaml`` to it (M5-40), publishes
-the stacks of the approved files under ``approvals/`` and hides again what a revoked one published (M5-20), and commits.
+the stacks of the approved files under ``approvals/`` and hides again what a revoked one published (M5-20), marks the
+listings a full entry names (``also_listed_as``) as its duplicates, brings the
+rows of the published listed entries in the search index in line, and commits.
 Idempotent from end to end: a second run migrates nothing, rewrites the same
 collections and writes no row of the search index.
 
@@ -27,12 +29,12 @@ from earthx.catalog.datasets import registry
 from earthx.catalog.licences import load_licences
 from earthx.catalog.listed import load_blocked, load_catalog_tags, load_listed, load_regions
 from earthx.catalog.listed_store import apply_blocklist, supersede, write_hand_entries, write_regions
-from earthx.catalog.listing_store import withdraw
+from earthx.catalog.listing_store import mark_listings, withdraw
 from earthx.catalog.municipalities import load_municipalities, write_municipalities
 from earthx.catalog.pgstac import PgstacError, load_registry, remove_prototype_overviews
 from earthx.catalog.registry import ConfigError
 from earthx.catalog.schema import apply_migrations
-from earthx.catalog.search_index import write_search_index
+from earthx.catalog.search_index import write_listed_search_index, write_search_index
 from earthx.catalog.sources import read_sources
 
 
@@ -68,9 +70,13 @@ def main() -> int:
             superseded = supersede(conn, full_ids)
             listed, blocked_hand = write_hand_entries(conn, hand_entries, blocklist, full_ids=full_ids)
             tombstones = apply_blocklist(conn, blocklist)
+            # The listings a full entry names (also_listed_as) are its duplicates, whatever the last report knew (§11).
+            taken_over = mark_listings(conn, datasets.listings)
             # A licence rule Otto took back hides its entries at once (adr/0033 §9), before anything is published.
             withdrawn = withdraw(conn, licences.granted)
             published = publish(conn, approvals)
+            # Last: the listed entries of the index are the ones published now.
+            listed_index = write_listed_search_index(conn, full_ids)
             conn.commit()
     except (ConfigError, PgstacError, psycopg.Error) as error:
         print(f"load failed: {error}", file=sys.stderr)
@@ -82,11 +88,13 @@ def main() -> int:
     print(f"overview rows of prototype sources removed: {prototype_rows}")
     print(f"search index written: {', '.join(index.written) if index.written else 'none'}")
     print(f"search index removed: {', '.join(index.removed) if index.removed else 'none'}")
+    print(f"search index rows of listed entries written: {listed_index.written}, removed: {listed_index.removed}")
     print(f"region rows changed: {regions_changed}")
     print(f"municipality rows changed: {municipalities_changed}")
     print(f"listed hand entries written: {', '.join(listed) if listed else 'none'}")
     print(f"listed hand entries left out as blocked: {', '.join(blocked_hand) if blocked_hand else 'none'}")
     print(f"listed entries superseded by a full entry: {', '.join(superseded) if superseded else 'none'}")
+    print(f"listed entries taken over by a full entry (also_listed_as): {', '.join(taken_over) if taken_over else 'none'}")
     print(f"listed entries turned into tombstones by the blocklist: {tombstones}")
     print(f"listed entries back on the waiting list, their licence rule taken back: {withdrawn}")
     for name, count in sorted(published.published.items()):

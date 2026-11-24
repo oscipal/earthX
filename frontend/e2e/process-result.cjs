@@ -121,9 +121,10 @@ async function check(browser, theme, viewport) {
     const { context, page } = await open(browser, theme, viewport);
     await setUp(page, false);
     if ((await gear(page).evaluate((e) => e.tagName)) !== 'SPAN') problems.push('there is a ⚙ without the order of the job');
-    const places = await page.locator('.layer-row').first().locator(':scope > *').count();
-    // grip, eye, name, pencil (UI-03d), opacity, up, down, ⚙, note, trash: ten places and the gap of the ⚙, which stays
-    if (places !== 11) problems.push(`the row has ${places} places, not 11 (the one of ⚙ stays empty)`);
+    const places = await page.locator('.layer-row').first().locator(':scope > *:not([data-col="legend"])').count();
+    // grip, eye, name, legend (M5-62), pencil (UI-03d), opacity, up, down, ⚙, note, trash: eleven places and the gap of the ⚙, which
+    // stays; the legend of the layer under them is no place
+    if (places !== 12) problems.push(`the row has ${places} places, not 12 (the one of ⚙ stays empty)`);
     await context.close();
   }
 

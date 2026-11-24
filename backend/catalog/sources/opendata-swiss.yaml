@@ -27,3 +27,7 @@ enabled: true
 # portal; it harvests the FSDI among others.
 country: CH
 dedupe_rank: 2
+# The portal names the FSDI collections it lists in the viewer links of its resources (Otto, 24.11.2026: map.geo.admin.ch
+# with layers=, data.geo.admin.ch with /collections/<id>); a collective page skips such a link as "Source", so the key
+# is read from the files, the candidates and the skipped page as well (M5-20 plan §13h).
+dedupe_collection_links: true

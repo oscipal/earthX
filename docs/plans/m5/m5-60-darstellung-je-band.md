@@ -324,7 +324,7 @@ Heute betroffen ist kein Eintrag: Die Standardbilder aus einem Band (Höhen, Met
 | Prüfungen beim Laden: Band aus `band_units`, kein Hilfs-Asset, kein Klassenband (Klassen sind Codes); `scale` endlich und über 0 (umkehrbar, wie `viewMeasure.ts` es verlangt), `offset` endlich | ebd. `_check_band_scaling` |
 | Stufe 3 (A8): Standardbild aus einem Asset mit einem Bereich oder `first_present` mit einem Bereich je Asset, jeweils mit Farbskala. Jeder Bereich wird mit der Skalierung seines Assets umgerechnet; den Look übernehmen die Assets und jedes Band ihrer Einheit. Sind die umgerechneten Bereiche verschieden, bricht das Laden ab („the ranges of the standard picture differ once scaled (…), so it gives no look; set band_looks for …“), es sei denn, jedes dieser Bänder trägt `band_looks` | ebd. `_standard_look`, `_check_standard_look` |
 | Sentinel-2 befüllt nach `adr/0017` §3.4 (gemessen am Item vom 25.10.2026): zwölf Reflexionsbänder 0.0001 / −0.1, `aot` und `wvp` 0.001 / 0; `scl`, `cloud`, `snow` unskaliert, nicht genannt | `backend/catalog/datasets/sentinel-2-c1-l2a.yaml` |
-| Onboarding-Checkliste Punkt 14 | `docs/projektuebersicht.md` §5 |
+| Onboarding-Checkliste Punkt 15 (Punkt 14 ist seit #404 `also_listed_as`) | `docs/projektuebersicht.md` §5 |
 
 Wirkung auf die heutigen Einträge: keine Änderung der Looks (§6). Sentinel-2 hat kein Standardbild aus einem Band mit Farbskala; Sentinel-1 (`first_present` `vv`/`hh`) hat keine Farbskala im Standardbild und nimmt deshalb keine Stufe 3.
 

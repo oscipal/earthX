@@ -311,6 +311,22 @@ describe('BANDS.txt', () => {
     expect(text).toMatch(/\n1 \| B04 .*\n2 \| B04 /);
   });
 
+  it('lists the classes of a band of classes after the bands of its file, by its number, and nothing for the others (M5-62)', () => {
+    const map = band({ asset: 'map', name: 'map', dataType: 'uint8', nodata: 0, categorical: true, classes: [
+      { value: 10, name: 'Tree cover', colour: '#006400' },
+      { value: 20, name: 'Shrubland', colour: '#ffbb22' },
+    ] });
+    const text = bandsFileText({
+      title: 'x',
+      form: 'multi_band',
+      files: [{ path: 'exports/bands.tif', bands: [red, map].map((b) => ({ band: b, resampling: 'nearest' as const, exportResolution: 10 })) }],
+    });
+    expect(text.endsWith(['', 'Classes of band 2 (map)', 'Value | Class | Colour', '10 | Tree cover | #006400', '20 | Shrubland | #ffbb22', ''].join('\n'))).toBe(true);
+    expect(text.match(/Classes of band/gu)).toHaveLength(1);
+    const plain = bandsFileText({ title: 'x', form: 'per_band', files: [{ path: 'exports/a.tif', bands: [{ band: { ...map, classes: null }, resampling: 'none', exportResolution: 10 }] }] });
+    expect(plain).not.toContain('Classes');
+  });
+
   // The server writes the same text (`backend/tests/earthx/access/test_bands_golden.py`): it reads one synthetic item and gives the
   // golden file byte for byte. The browser reads the same bands from the answer of the platform for that item.
   const responses = import.meta.glob('../../backend/tests/fixtures/bands/golden_bands_response.json', { eager: true, query: '?raw', import: 'default' }) as Record<string, string>;

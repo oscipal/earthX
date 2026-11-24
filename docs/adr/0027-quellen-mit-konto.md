@@ -366,6 +366,7 @@ Wie BIOMASS bis heute (`ENTSCHEIDUNGEN` §3): Otto nutzt ein eigenes Konto lokal
 - `access.account` bekommt den Wert **`paid`**: die Daten gibt es bei der Quelle nur gegen Bezahlung. Wie `free_account` und `requester_pays` nur W0 (Katalogeintrag mit Link), `account_paths` leer, `token_free_checked_at` leer.
 - Neues Feld **`access.delivery`**: wie die Quelle die Daten herausgibt, `download` (Datei), `service` (z. B. WMS, WFS, API), `order` (Bestellformular, Versand) oder `on_request` (auf Anfrage). Unabhängig von `account`.
 - Prinzip 2 bleibt unberührt, weil ein Link kein Anbinden ist (F2 = 1). Auf dem gelisteten Weg sind Konto, `paid`, Bestellung und auf Anfrage der Normalfall; die Einschränkung auf den vollen Weg in `adr/0031` §9 Fall 5 gilt dort nicht.
+- **Nachtrag 2026-11-23 (gelistete Einträge, `adr/0033` §5):** `access.delivery` kennt zusätzlich `page` („über die Seite des Anbieters“: `https`-Link, aber nur HTML oder unbekanntes Format; Migration 034). Fehlende `access_rights` der Quelle sind kein Ausschluss.
 
 ### 6.2 Regeltext
 

@@ -1842,6 +1842,11 @@ def check_notices(notices: object) -> str | None:
     return None
 
 
+#: The longest identifier of a listing a full entry names (the harvest keeps no longer one, ``ckan.MAX_IDENTIFIER_CHARS``).
+MAX_LISTING_IDENTIFIER_CHARS = 300
+_LISTING_KEY = re.compile(r"[a-z][a-z0-9-]{1,62}:[^\s\x00-\x1f\x7f]{1,%d}" % MAX_LISTING_IDENTIFIER_CHARS)
+
+
 @dataclass(frozen=True, slots=True)
 class DatasetConfig:
     """One dataset, everything the platform decides about it before asking the source."""
@@ -1951,6 +1956,11 @@ class DatasetConfig:
     # take them from here. Empty by default, unlike the fields above (Otto, 20.11.2026): an entry without the field has
     # no band of classes, so no entry, in the repository or not, fails for lack of it.
     band_classes: Mapping[str, BandClasses] = field(default_factory=dict)
+    # Listings of this dataset in the catalogues the harvest reads (Otto, 24.11.2026), each as ``<source id>:<identifier>``
+    # with the identifier the source gives the find (the DCAT identifier at opendata.swiss). A listed find with one of
+    # these keys is a duplicate of this entry, in the report and in `catalog-load`. Empty by default: most datasets have
+    # no listing the collection id does not already find.
+    also_listed_as: tuple[str, ...] = ()
     # The look of a band where its source gives one or, as the exception, one set by hand (M5-60): any other band takes
     # its look from the rule (:meth:`look_of`). Empty by default like ``band_classes``, for the same reason.
     band_looks: Mapping[str, BandLook] = field(default_factory=dict)
@@ -1985,6 +1995,7 @@ class DatasetConfig:
         self._check_auxiliary_assets()
         self._check_band_descriptions()
         self._check_band_classes()
+        self._check_also_listed_as()
         self._check_band_scaling()
         self._check_band_looks()
         self._check_standard_look()
@@ -1998,6 +2009,20 @@ class DatasetConfig:
             raise ConfigError(f"{self.dataset_id}: {problem}")
         self._check_limitations()
         self._check_user_texts()
+
+    def _check_also_listed_as(self) -> None:
+        """Each listing is ``<source id>:<identifier>`` once; whether the source exists and no other entry names the
+        same listing is for the registry (:class:`DatasetRegistry`)."""
+        if not isinstance(self.also_listed_as, tuple):
+            raise ConfigError(f"{self.dataset_id}: also_listed_as is a list of '<source id>:<identifier>'")
+        for key in self.also_listed_as:
+            if not isinstance(key, str) or not _LISTING_KEY.fullmatch(key):
+                raise ConfigError(
+                    f"{self.dataset_id}: also_listed_as holds '<source id>:<identifier>' (no blanks, at most"
+                    f" {MAX_LISTING_IDENTIFIER_CHARS} characters of identifier)"
+                )
+        if len(set(self.also_listed_as)) != len(self.also_listed_as):
+            raise ConfigError(f"{self.dataset_id}: also_listed_as names a listing twice")
 
     def _check_limitations(self) -> None:
         """Each limitation one sentence of one line, each once."""
@@ -2900,6 +2925,7 @@ class DatasetRegistry:
         retired: tuple[RetiredDataset, ...] = (),
         hosts: Mapping[str, HostLimit] | None = None,
         seed_hosts: frozenset[str] = frozenset(),
+        source_ids: frozenset[str] | None = None,
     ) -> None:
         self._by_id = {entry.dataset_id: entry for entry in entries}
         if len(self._by_id) != len(entries):
@@ -2914,9 +2940,30 @@ class DatasetRegistry:
                 raise ConfigError(f"the successor of {gone.dataset_id!r} is not in the registry")
         for entry in self._by_id.values():
             self._check_substitute(entry)
+        self._listings = self._check_listings(source_ids)
         self._hosts: Mapping[str, HostLimit] = MappingProxyType(dict(hosts or {}))
         if hosts is not None:
             self._check_hosts(seed_hosts)
+
+    def _check_listings(self, source_ids: frozenset[str] | None) -> Mapping[str, str]:
+        """The listings the entries name (``also_listed_as``) by key: each in a source of the harvest seed (where the
+        sources are known) and at one entry only (Otto, 24.11.2026)."""
+        listings: dict[str, str] = {}
+        for entry in self._by_id.values():
+            for key in entry.also_listed_as:
+                source_id = key.split(":", 1)[0]
+                if source_ids is not None and source_id not in source_ids:
+                    raise ConfigError(f"{entry.dataset_id}: also_listed_as names {source_id!r}, which is no source")
+                if (other := listings.setdefault(key, entry.dataset_id)) != entry.dataset_id:
+                    raise ConfigError(
+                        f"also_listed_as names the listing {key!r} at {other} and at {entry.dataset_id}: it belongs to one"
+                    )
+        return MappingProxyType(listings)
+
+    @property
+    def listings(self) -> Mapping[str, str]:
+        """The listings of full entries in harvested catalogues, ``<source id>:<identifier>`` → dataset id."""
+        return self._listings
 
     def _check_hosts(self, seed_hosts: frozenset[str]) -> None:
         """Every host an entry or a source of the harvest seed reads from has its limits in hosts.yaml, and every limit

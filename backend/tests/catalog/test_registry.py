@@ -740,9 +740,10 @@ class TestMalformedInput:
 
 
 def _terrain(dataset_id: str, **changes) -> DatasetConfig:
-    """swissALTI3D under another id, the viewer replaced by what ``changes`` say of it."""
+    """swissALTI3D under another id, the viewer replaced by what ``changes`` say of it. Without the listing it names
+    (``also_listed_as``): one entry only may name it."""
     base = REGISTRY.get("swissalti3d")
-    return replace(base, dataset_id=dataset_id, viewer=replace(base.viewer, **changes))
+    return replace(base, dataset_id=dataset_id, also_listed_as=(), viewer=replace(base.viewer, **changes))
 
 
 def _surface(dataset_id: str = "cop-dem-glo-30", **changes) -> DatasetConfig:
