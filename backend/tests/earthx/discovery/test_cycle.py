@@ -14,6 +14,8 @@ from earthx.discovery.cycle import (
     AUTO_END,
     AUTO_START,
     Finding,
+    _pauses,
+    _text,
     clean,
     decide,
     findings_of,
@@ -236,3 +238,53 @@ def test_the_pr_text_of_an_approved_run_names_how_to_take_it_back() -> None:
         source_errors={}, run_error="Bericht: gescheitert", published=(0, []), classify={},
     )
     assert "revoked_on: <Tag>" in files["README.md"] and "Gescheitert" in files["README.md"]
+
+
+def test_a_pause_is_a_note_in_the_files_of_the_run_and_no_finding_and_no_error() -> None:
+    files = run_files(
+        day=DAY, folder="f", trial=False, linkcheck=None, reports=REPORTS, decided=[], spellings=None,
+        source_errors={}, run_error=None, published=(0, []), classify={},
+        source_pauses={"govdata": "govdata: Lauf 4 (inkrementell) interrupted (Seiten je Lauf erreicht)"},
+    )
+    assert "**govdata:** Hinweis, planmäßige Pause (kein Fehler): govdata: Lauf 4" in files["README.md"]
+    assert "gescheitert" not in files["README.md"] and files["fehler.log"].startswith("keine")
+
+
+def test_the_note_of_a_pause_is_the_report_line_of_the_source_and_never_a_log_line(tmp_path: Path) -> None:
+    (tmp_path / "quellen-pause.txt").write_text("govdata\nopendata-swiss\nfsdi-stac\n", encoding="utf-8")
+    (tmp_path / "harvest-govdata.txt").write_text(
+        '{"level": "INFO", "message": "gateway request"}\n\n'
+        "govdata: Lauf 4 (inkrementell) interrupted (Seiten je Lauf erreicht)\n  Anfragen 2\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "harvest-opendata-swiss.txt").write_text(
+        "opendata-swiss: kein Lauf gestartet – die Quelle bat mit 429 um Pause\n", encoding="utf-8"
+    )
+    # A source that printed nothing the summary can use still gets a note, never an error.
+    (tmp_path / "harvest-fsdi-stac.txt").write_text('{"level": "INFO"}\n', encoding="utf-8")
+    assert _pauses(tmp_path) == {
+        "govdata": "govdata: Lauf 4 (inkrementell) interrupted (Seiten je Lauf erreicht)",
+        "opendata-swiss": "opendata-swiss: kein Lauf gestartet – die Quelle bat mit 429 um Pause",
+        "fsdi-stac": "der nächste Lauf setzt fort",
+    }
+    assert _pauses(tmp_path / "nowhere") == {}
+
+
+def test_the_message_of_a_failed_step_is_one_line_with_the_reason_and_cleaned_in_the_repository(tmp_path: Path) -> None:
+    reason = "report failed: spellings.yaml: not valid YAML: an anchor is not allowed (line 8)"
+    (tmp_path / "lauf-fehler.txt").write_text(
+        f"\ufeffLizenzen: Der Bericht von govdata ist gescheitert. Grund: {reason}\r\n  in /home/otto/earthx\r\n",
+        encoding="utf-8",
+    )
+    text = _text(tmp_path / "lauf-fehler.txt")
+    assert text is not None and "\n" not in text and reason in text and len(text) <= 500
+    files = run_files(
+        day=DAY, folder="f", trial=False, linkcheck=None, reports={}, decided=[], spellings=None, source_errors={},
+        run_error=text, published=(0, []), classify={},
+    )
+    # fehler.log and the text of the pull request name the line; a path on Otto's computer does not get in.
+    for name in ("fehler.log", "README.md"):
+        assert "an anchor is not allowed (line 8)" in files[name] and "/home/otto" not in files[name], name
+    assert _text(tmp_path / "missing.txt") is None
+    (tmp_path / "long.txt").write_text("x " * 600, encoding="utf-8")
+    assert len(_text(tmp_path / "long.txt") or "") == 500

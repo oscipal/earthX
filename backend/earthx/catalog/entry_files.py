@@ -29,7 +29,7 @@ from pydantic import TypeAdapter, ValidationError
 
 from earthx.catalog.registry import ConfigError, DatasetConfig, RetiredDataset
 
-__all__ = ["EntryFileError", "load_entry", "load_retired", "read_yaml", "to_plain"]
+__all__ = ["EntryFileError", "dump_yaml", "load_entry", "load_retired", "read_yaml", "to_plain"]
 
 
 class EntryFileError(ConfigError):
@@ -83,6 +83,32 @@ def _core_int(loader: _StrictLoader, node: yaml.ScalarNode) -> int:
 
 
 _StrictLoader.add_constructor("tag:yaml.org,2002:int", _core_int)
+
+
+class _PlainDumper(yaml.SafeDumper):
+    """``SafeDumper`` that never writes an anchor or an alias: PyYAML gives one to every object that occurs twice, a
+    ``date`` shared by two lines too, and the strict loader above refuses it."""
+
+    def ignore_aliases(self, data: Any) -> bool:
+        return True
+
+
+def dump_yaml(data: Any, *, width: int | None = None) -> str:
+    """YAML text of ``data`` that :func:`read_yaml` reads back: block style, keys in their order, no anchors or aliases.
+
+    Every file a harvest run writes goes through here (M5-67 fix 1, 24.11.2026: ``spellings.yaml`` was written with an
+    alias for a day used in two lines, and the next step refused it). The text is read back with the strict loader
+    before it is returned, so an unreadable file is an error where it is written, not in the next step.
+    """
+    text = yaml.dump(
+        data, Dumper=_PlainDumper, sort_keys=False, allow_unicode=True, **({} if width is None else {"width": width})
+    )
+    try:
+        yaml.load(text, Loader=_StrictLoader)
+    except yaml.YAMLError as error:
+        problem = getattr(error, "problem", None) or str(error).splitlines()[0]
+        raise EntryFileError(f"the YAML written is not readable again: {problem}") from None
+    return text
 
 
 def read_yaml(path: Path) -> Any:
