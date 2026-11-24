@@ -22,6 +22,7 @@ Otto's ``terms.yaml``; ``withdrawn_on`` on a line takes the spelling back, and n
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from collections import Counter
@@ -205,6 +206,7 @@ def summary_text(proposals: Sequence[Proposal], waiting: Mapping[str, int], top:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m earthx.discovery.spellings", description=__doc__.splitlines()[0])
     parser.add_argument("--out", type=Path, default=LICENSES_DIR, help="where spellings.yaml goes")
+    parser.add_argument("--json", type=Path, default=None, help="also write what was added and what waits as JSON")
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
     configure_logging()
     try:
@@ -216,6 +218,12 @@ def main(argv: list[str] | None = None) -> int:
     except psycopg.Error as error:
         print(f"spellings failed: database error {type(error).__name__}", file=sys.stderr)
         return 1
+    if args.json is not None:
+        numbers = {
+            "added": [{"license_ref": p.license_ref, "statement": p.statement, "rule": p.rule} for p in proposals],
+            "waiting": [[statement, count] for statement, count in Counter(waiting).most_common(30)],
+        }
+        args.json.write_text(json.dumps(numbers, ensure_ascii=False), encoding="utf-8")
     print(summary_text(proposals, waiting))
     return 0
 

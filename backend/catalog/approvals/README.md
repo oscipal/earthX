@@ -8,3 +8,9 @@ In der `.yaml` setzt Otto je Eintrag der Stichprobe `ok: true` oder `ok: false`,
 `approved` ist und ihr Fingerabdruck dem Stapel in der Datenbank gleicht. `excluded_rules` lässt die Einträge einzelner
 Lizenzregeln draußen, `revoked_on` nimmt die Freigabe zurück. Nie ein Name, eine Adresse oder der Wortlaut einer
 Anfrage: das Repo ist öffentlich.
+
+Seit M5-67 (Otto, 24.11.2026) entscheidet ein Lauf von `scripts/harvest-cycle.ps1` nach festen Regeln
+(`backend/catalog/approval_rules.yaml`): `decision: approved` mit `decided_by: rules`, je Eintrag der Stichprobe die
+automatische Linkprüfung in `check`; sonst bleibt die Datei `pending` und Otto kann sie wie bisher von Hand freigeben.
+Sichtbar werden in beiden Fällen nur Einträge, deren eigener Link die Prüfung bestanden hat. `excluded_entries` sind
+Einträge mit Warnzeichen (`backend/catalog/flags.yaml`); sie warten.

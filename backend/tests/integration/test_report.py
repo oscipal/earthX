@@ -976,3 +976,20 @@ def test_a_title_with_a_mail_address_never_goes_into_the_report(world: World) ->
     approval, markdown = world.report().files
     text = approval.read_text(encoding="utf-8") + markdown.read_text(encoding="utf-8")
     assert "hans.muster" not in text and "Kontaktangabe" in text
+
+
+def test_the_spellings_command_writes_its_numbers_as_json(world: World, tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    import json
+
+    from earthx.discovery import spellings
+
+    def fake_run(conn, catalogue_dir, out, day):  # type: ignore[no-untyped-def]
+        return [spellings.Proposal("cc-by-4.0", "CC BY 4.0", "S2")], {"CC BY-NC-SA 4.0": 3}
+
+    monkeypatch.setattr(spellings, "run", fake_run)
+    out = tmp_path / "spellings.json"
+    assert spellings.main(["--out", str(tmp_path), "--json", str(out)]) == 0
+    assert json.loads(out.read_text(encoding="utf-8")) == {
+        "added": [{"license_ref": "cc-by-4.0", "statement": "CC BY 4.0", "rule": "S2"}],
+        "waiting": [["CC BY-NC-SA 4.0", 3]],
+    }

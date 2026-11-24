@@ -1077,6 +1077,48 @@ def _flag_lines(flagged: Mapping[str, tuple[Flag, ...]], rows: Mapping[str, Mapp
     return lines or ["- keine"]
 
 
+def dump_approval(document: Mapping[str, Any]) -> str:
+    """An approval file as the report writes it: the head of comments, then the fields in their order, no anchors."""
+    return _APPROVAL_HEAD + yaml.dump(dict(document), Dumper=_PlainDumper, sort_keys=False, allow_unicode=True)
+
+
+def report_numbers(conn: psycopg.Connection, result: ReportResult) -> dict[str, Any]:
+    """The numbers of a report for the files of a harvest run (M5-67 plan §9): counts, the stack, the files, and the
+    warning signs of the stack by code with up to ten entries each (a find with a mail address or a phone number by
+    its id only)."""
+    flagged: dict[str, list[dict[str, str]]] = {}
+    if result.stack is not None:
+        flags = stack_flags(conn, result.stack)
+        titles = _rows(conn, sorted(flags)) if flags else {}
+        for dataset_id, signs in sorted(flags.items()):
+            contact = any(sign.code == "W6" for sign in signs)
+            for sign in signs:
+                entries = flagged.setdefault(sign.code, [])
+                row = titles.get(dataset_id, {})
+                entries.append(
+                    {
+                        "dataset_id": dataset_id,
+                        "title": "" if contact else str(row.get("title") or ""),
+                        "link": "" if contact else str(row.get("source_url") or ""),
+                        "why": sign.why,
+                    }
+                )
+    return {
+        "source_id": result.source_id,
+        "finds": result.finds,
+        "written": result.written,
+        "blocked": result.blocked,
+        "failed": result.failed,
+        "verdicts": dict(result.verdicts),
+        "waiting": dict(result.waiting),
+        "stack": None
+        if result.stack is None
+        else {"batch_id": result.stack.batch_id, "entries": len(result.stack.entries), "created": result.stack.created},
+        "files": [path.name for path in result.files],
+        "flagged": {code: {"count": len(items), "examples": items[:10]} for code, items in flagged.items()},
+    }
+
+
 def report_markdown(  # type: ignore[no-untyped-def]
     source: SourceConfig,
     result: ReportResult,
@@ -1157,7 +1199,7 @@ def write_files(
         stem = f"{day.isoformat()}-{source.source_id}-{number}"
     approval = out / f"{stem}.yaml"
     document = approval_document(source, stack, sample, rows, day, excluded=list(flagged))
-    approval.write_text(_APPROVAL_HEAD + yaml.dump(document, Dumper=_PlainDumper, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    approval.write_text(dump_approval(document), encoding="utf-8")
     markdown = out / f"{stem}.md"
     markdown.write_text(report_markdown(source, result, sample, rows, pairs, day, flagged), encoding="utf-8")
     return approval, markdown
@@ -1186,6 +1228,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("source_id")
     parser.add_argument("--classify", action="store_true", help="show the rule R-G and the samples, write nothing")
     parser.add_argument("--out", type=Path, default=CATALOG_DIR / "approvals", help="where the approval file goes")
+    parser.add_argument("--json", type=Path, default=None, help="also write the numbers as JSON (harvest cycle)")
     return parser.parse_args(argv)
 
 
@@ -1214,6 +1257,8 @@ def main(argv: list[str] | None = None) -> int:
                 print(classify_text(source, result))
                 return 0
             result.files = write_files(conn, source, result, args.out, date.today())
+            if args.json is not None:
+                args.json.write_text(json.dumps(report_numbers(conn, result), ensure_ascii=False), encoding="utf-8")
     except ConfigError as error:
         print(f"report failed: {error}", file=sys.stderr)
         return 1

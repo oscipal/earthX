@@ -32,7 +32,12 @@ Keine Personen, keine AOI, keine Hashes oder signierten Adressen in dieser Datei
 
 ## Offen, aus den Läufen
 
+Diesen Abschnitt schreibt jeder Lauf neu (zwischen den Markierungen); was nicht mehr auftritt, steht danach
+abgehakt unter „Erledigt“.
+
+<!-- auto:start -->
 Noch kein automatischer Lauf.
+<!-- auto:end -->
 
 ## Erledigt
 

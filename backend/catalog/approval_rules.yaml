@@ -1,0 +1,13 @@
+# The rules by which a harvest run approves a stack without Otto (M5-67; docs/plans/m5/m5-67-harvest-automatisch.md §6;
+# adr/0033 §8.5, Otto 24.11.2026). A stack is approved where its licences are graded and granted (always, or it would
+# not be a stack), something is left once the entries with a warning sign are out, it is not larger than below, and
+# the report counted few finds it could not derive. Otherwise it stays pending and stands in the list of findings.
+# Only entries whose own link passed the check become visible either way (plan §4).
+
+# A stack larger than this waits for Otto (F6 = 1): a jump like that points at the pipeline, not at the source.
+max_entries: 5000
+# ... or larger than this share of the source's published entries, but never below `min_cap` entries.
+max_share_of_published: 0.25
+min_cap: 200
+# The share of finds the report could not derive (A22) above which a stack waits.
+max_failed_share: 0.01
