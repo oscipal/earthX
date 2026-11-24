@@ -105,12 +105,11 @@ describe('the buttons of a row stand under its title (Otto, 1.11.2026)', () => {
     expect(rule(".layer-row > [data-col='rename']")).toContain('grid-row: 1');
     expect(rule(".layer-row > [data-col='name']")).toContain('grid-row: 1');
     for (const col of ['eye', 'legend-toggle', 'opacity', 'up', 'down', 'process', 'zoom', 'download', 'remove']) expect(rule(`.layer-row > [data-col='${col}']`), col).toContain('grid-row: 2');
-    // The grip stands beside the name, on its line (Otto, 24.11.2026).
-    expect(rule(".layer-row > [data-col='grip']")).toMatch(/grid-row: 1;/u);
+    expect(rule(".layer-row > [data-col='grip']")).toContain('grid-row: 1 / span 2');
   });
 
-  it('gives the slider the wide place of the second line, in the order eye, legend (M5-62), opacity, ▲, ▼, ⚙, zoom to layer, ⇩, remove', () => {
-    const columns = ['eye', 'legend-toggle', 'opacity', 'up', 'down', 'process', 'zoom', 'download', 'remove'].map((col) => Number(/grid-column: (\d+)/u.exec(rule(`.layer-row > [data-col='${col}']`))![1]));
+  it('gives the slider the wide place of the second line, in the order legend (M5-62), eye, opacity, ▲, ▼, ⚙, zoom to layer, ⇩, remove', () => {
+    const columns = ['legend-toggle', 'eye', 'opacity', 'up', 'down', 'process', 'zoom', 'download', 'remove'].map((col) => Number(/grid-column: (\d+)/u.exec(rule(`.layer-row > [data-col='${col}']`))![1]));
     expect(columns).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10]);
     expect(rule('.layer-row')).toContain('grid-template-columns: 14px var(--lm-button) var(--lm-button) minmax(0, 1fr)');
   });

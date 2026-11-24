@@ -105,8 +105,8 @@ function Grip({ dnd }: { dnd: RowDnd }) {
 
 // One row, eleven places in a fixed order: grip, name and its pencil, then eye, opacity, up, down, process, zoom to layer, download, remove (UI-09:
 // zoom to layer is new, download moved one place to the right, no place for a note: an expired result shows its note where the download would be).
-export const SHOW_LEGEND_TIP = 'Show the legend';
-export const HIDE_LEGEND_TIP = 'Hide the legend';
+export const SHOW_LEGEND_TIP = 'Show legend';
+export const HIDE_LEGEND_TIP = 'Hide legend';
 
 // The legend of a layer under its row (M5-62, Otto 24.11.2026): shown unless its button hid it, or the list folded it to stay without
 // scrolling (`folded`).
@@ -164,8 +164,7 @@ function LayerRow({
   return (
     <li className={`layer-row${locked ? ' locked' : ''}${flipped ? ' flip' : ''}${dnd.className}`} aria-current={flipped || undefined}>
       <Grip dnd={dnd} />
-      <EyeButton row col="eye" shown={shown} locked={locked} tip={locked ? LOCKED_LAYER_TIP : shown ? HIDE_LAYER_TIP : SHOW_LAYER_TIP} onToggle={() => toggleVis(l.id)} />
-      {/* Beside the eye, its tooltip always shown (Otto, 24.11.2026). */}
+      {/* Left of the eye, its tooltip always shown (Otto, 24.11.2026). */}
       {legend ? (
         <button
           type="button"
@@ -181,6 +180,7 @@ function LayerRow({
       ) : (
         <Slot col="legend-toggle" />
       )}
+      <EyeButton row col="eye" shown={shown} locked={locked} tip={locked ? LOCKED_LAYER_TIP : shown ? HIDE_LAYER_TIP : SHOW_LAYER_TIP} onToggle={() => toggleVis(l.id)} />
       {renaming ? (
         <span className="lm-name lm-renaming" data-col="name" data-tip-level="advanced" data-tip="A layer needs a name: an empty one keeps the name it had">
           <InlineRename

@@ -2290,15 +2290,15 @@ textarea:autofill {
 }
 .layer-row > [data-col='grip'] {
   grid-column: 1;
-  grid-row: 1;
+  grid-row: 1 / span 2;
 }
 .layer-row > [data-col='name'] {
   grid-column: 2 / -2;
   grid-row: 1;
 }
-/* The button that shows and hides the legend of the layer (M5-62), beside the eye; an empty place where the layer has none. */
+/* The button that shows and hides the legend of the layer (M5-62), left of the eye; an empty place where the layer has none. */
 .layer-row > [data-col='legend-toggle'] {
-  grid-column: 3;
+  grid-column: 2;
   grid-row: 2;
 }
 /* The legend of the layer under its row, under the band of a result where it has one (M5-62, Otto 24.11.2026). */
@@ -2317,7 +2317,7 @@ textarea:autofill {
   box-sizing: border-box;
 }
 .layer-row > [data-col='eye'] {
-  grid-column: 2;
+  grid-column: 3;
   grid-row: 2;
 }
 .layer-row > [data-col='opacity'] {
@@ -2525,7 +2525,8 @@ textarea:autofill {
   width: max-content;
   max-width: min(260px, calc(100vw - 16px));
   padding: var(--space-1-5) var(--space-2);
-  background: var(--panel-bg);
+  /* Opaque: no text under it shows through (Otto, 24.11.2026). */
+  background: var(--tip-bg);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-sm);
   color: var(--text);
