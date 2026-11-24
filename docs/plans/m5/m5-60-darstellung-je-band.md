@@ -1,6 +1,6 @@
 # M5-60 — Darstellung je Band
 
-**Stand:** 21.11.2026, Plan **angenommen** (Otto, 21.11.2026: F1–F7 je Option 1, A1–A5; Vorgabe zum gemessenen Bereich §11; Histogramm für PR 2 §12). PR 1 (Backend, #396) gemergt (§13, §14); PR 2 (Frontend) umgesetzt am 24.11.2026 (§13.4), offen F9 und F10.
+**Stand:** 21.11.2026, Plan **angenommen** (Otto, 21.11.2026: F1–F7 je Option 1, A1–A5; Vorgabe zum gemessenen Bereich §11; Histogramm für PR 2 §12). PR 1 (Backend, #396) gemergt (§13, §14); PR 2 (Frontend) umgesetzt am 24.11.2026 (§13.4, §13.6); F10 als Folgeaufgabe M5-68 (§13.7).
 **Stufe B.** Höchstens zwei PRs (M5-Plan §2 Punkt 11).
 **Aufgabe (Otto, 21.11.2026; M5-Plan §6.2):**
 
@@ -320,6 +320,29 @@ Nach dem Merge einmal `catalog-load` (die Collections tragen `earthx:look`). Sic
 **F10 — Felder „Scale“ eines skalierten Bands.** Die Felder und das Histogramm zeigen bei Sentinel-2 wie bisher gespeicherte Werte (1200–3400, Plan §7), die Legende physikalische (0,02–0,24).
 1. Eigene kleine Aufgabe: Felder und Histogramm eines skalierten Bands in physikalischen Werten, die Umrechnung in gespeicherte Werte nur für die Kachel-URL; Permalinks und gespeicherte Looks bleiben lesbar. **(Empfehlung)**
 2. So lassen.
+
+### 13.6 Antworten Otto zu PR 2 und Umsetzung (24.11.2026)
+
+> F9 = 1. F10 = 1, in diesem PR, wenn nicht deutlich größer als ~200 Zeilen, sonst Folgeaufgabe M5-68. A9–A11 angenommen. Dunkles Thema: feine, neutrale Kontur an den Balken des Histogramms. Die scrollende rechte Leiste geht an UI-12. Zusatz: Die Schieber stehen außen an den Balken im Bereich; die Zahl in den Feldern bleibt der eingestellte Wert; festlegen, wann ein Balken „im Bereich“ ist; Schieber, Balkenfarbe und Zahl nie widersprüchlich; für Einzelbänder und je Kanal bei RGB.
+
+| Teil | Stelle |
+|---|---|
+| **F9:** Klassenband (Ansicht mit Klassen-Standardbild wie WorldCover, Ergebnis-Ebene mit Klassen) hat unter „Classes“ ein Histogramm ohne Schieber, jeder Balken in der Farbe der Klasse, deren Wert in ihm liegt (mehrere: die der Mitte nächste); Balken ohne Klasse in `--accent`. Aus derselben einen Messung der Ansicht bzw. der Statistik des Ergebnisses | `frontend/src/histogramColours.ts::classColours`, `components/ClassHistogram.tsx`, `ViewerControls.tsx`, `ResultControls.tsx` |
+| **Balken im Bereich** (Festlegung): Ein Balken ist im Bereich, wenn seine Mitte in [Min, Max] liegt (Grenzen eingeschlossen). Genau diese Balken haben Farben aus dem Inneren der Farbskala (Mitte → Stelle im Bereich), alle anderen die Endfarben; bei RGB sind genau sie voll, die anderen blass | `frontend/src/histogram.ts::barInRange`, `histogramColours.ts::barColours` |
+| **Schieber außen:** links an der linken Kante des ersten Balkens im Bereich, rechts an der rechten Kante des letzten. Liegt keine Mitte im Bereich, stehen beide an der Kante zwischen den Balken in der unteren und der oberen Endfarbe. Ein Ende außerhalb des Histogramms steht an seinem Wert (die Spur wird wie bisher verbreitert). Die Felder behalten den eingestellten Wert; Ziehen schreibt den gezogenen Wert, die Pfeiltasten verschieben den Wert (nicht die gezeichnete Stelle) um ein Tausendstel der Spur. So trennen die Schieber immer genau die Balken in Endfarben von denen mit inneren Farben, auch je Kanal bei RGB und in `percentile` | `frontend/src/histogram.ts::sliderPlaces`, `components/RangeHistogram.tsx` |
+| **Kontur im dunklen Thema:** fein (0,5 px), neutral, `--hist-bar-edge` (hell: keine), nur an farbigen Balken; keine Farbänderung, kein Text | `frontend/src/tokens.css`, `index.css` |
+| **F10:** nicht in diesem PR, sondern M5-68 (§13.7): deutlich über 200 Zeilen | — |
+| Scrollende Einstellungsleiste bei 1280×360 und 360×740: an UI-12 | — |
+
+Tests: `histogram.test.ts` (im Bereich, Schieber außen, Min/Max mitten in Balken, auf Kanten, keine Mitte im Bereich, Enden außerhalb), `histogramColours.test.ts` (Klassenfarben), `ScaleHistograms.test.tsx` (Schieber und Farben bei 23–87 auf Zehnerbalken, je Kanal, Tasten verschieben den Wert, Klassen-Histogramm ohne Schieber), `ResultControls.test.tsx` (Ergebnis mit Klassen), `e2e/band-look.cjs` (Sentinel-2 1200/3400 mitten in 500er-Balken: Schieber an 1000 und 3500, Felder 1200 und 3400, Balken außerhalb in Endfarben; WorldCover in den Klassenfarben ohne Schieber; Kontur nur dunkel).
+
+### 13.7 Folgeaufgabe M5-68: physikalische Werte in „Scale“ und Look-Erbe vom Worker
+
+**Warum nicht hier (gemessen am Code):** Die Kachelrouten von Szene, Mosaik und Übersicht nehmen `rescale` in gespeicherten Werten und kennen kein `unscale` (nur unter Schritten, `access/mosaic_tiles.py::grown_options`). Physikalische Felder hießen, jede Kachel-URL aus `AppliedRender.rescale` umzurechnen (76 Stellen mit `rescale` in 11 Dateien des Frontends: Ansicht, Ebenen, Mosaike, Übersicht, Permalink, gespeicherte Looks), dazu die Messung der Szene in physikalische Werte und eine verträgliche Lesart alter Permalinks und gespeicherter Looks, deren `rescale` gespeicherte Werte sind. Deutlich über 200 Zeilen und mit Rückwirkung auf das Backend.
+
+**Inhalt (Vorschlag, Stufe B):**
+1. Felder und Histogramm von „Scale“ eines skalierten Bands in physikalischen Werten (Sentinel-2 0,02–0,24). Zu klären im Plan: `unscale` an den Kachelrouten (Backend, eine Stelle je Route) oder Umrechnung im Frontend an einer Stelle; Kennzeichen im `AppliedRender` (z. B. `physical: true`), damit alte Permalinks und gespeicherte Looks in gespeicherten Werten gelesen werden.
+2. Das Ergebnis-Item sagt je Band selbst, ob es den Look der Quelle erbt: Der Worker kennt `BandUse` (`adds`, `acts_on`) und schreibt es ins Ergebnis, wie bei den Klassen (M5-62); das Frontend schätzt nicht mehr (`processingDefaults.ts::keepsValuesOf` und A9 entfallen).
 
 ## 14. Rückmeldung Otto zu PR 1 (24.11.2026)
 
