@@ -149,17 +149,31 @@ class TestGeodataRule:
         # Otto, 24.11.2026: "Betriebsstätte(n)" alone kept the tax statistics of Destatis.
         assert _verdict(_find(title, publisher="Statistisches Bundesamt")) == "not_geodata"
 
-    def test_the_library_statistics_with_en_is_a_non_geo_word_the_extent_still_outweighs(self) -> None:
-        # Otto, 24.11.2026: Thurgau, "Bibliothekenstatistik der Öffentlichen Bibliotheken im Kanton Thurgau". The word
-        # hides it without a geo signal; the extent of a publisher that is no statistics office still keeps it (rule
-        # of 23.11.2026; plan M5-67 F14), and warning sign W1 keeps it out of a stack.
-        title = "Bibliothekenstatistik der Öffentlichen Bibliotheken im Kanton Thurgau (2005-2019)"
-        assert _verdict(_find(title, publisher="Kanton Thurgau"), Extent("catalog", codes=("CH",)), "CH") == (
-            "not_geodata"
-        )
-        assert _verdict(_find(title, publisher="Kanton Thurgau"), Extent("place", codes=("CH", "CH-TG")), "CH") == (
-            "geodata"
-        )
+    @pytest.mark.parametrize(
+        ("title", "publisher", "codes"),
+        [
+            ("Bibliothekenstatistik der Öffentlichen Bibliotheken im Kanton Thurgau (2005-2019)", "Kanton Thurgau",
+             ("CH", "CH-TG")),
+            ("Aktuelle Lage in der Stadt Aachen zum Corona-Virus", "Stadt Aachen", ("DE", "DE-NW")),
+            ("Polizeiliche Kriminalstatistik", "Stadt Zürich", ("CH", "CH-ZH")),
+        ],
+    )
+    def test_a_strong_non_geo_word_outweighs_the_extent(self, title: str, publisher: str, codes: tuple) -> None:
+        # F14 = 1 (Otto, 24.11.2026): the Thurgau library statistics and the Aachen corona page were kept by their
+        # extent alone.
+        classified = classify(_find(title, publisher=publisher), Extent("place", codes=codes), country="CH", rule=RULE)
+        assert (classified.outcome, classified.weak_overruled) == ("not_geodata", True)
+        assert any(s.startswith("strong:") for s in classified.not_geo)
+
+    def test_a_strong_non_geo_word_does_not_outweigh_a_strong_geo_signal(self) -> None:
+        shapefile = [{"href": "https://x.example/a.shp", "format": "SHP", "media_type": None}]
+        found = _find("Corona-Testzentren, Standorte", publisher="Stadt Aachen", distributions=shapefile)
+        assert _verdict(found, Extent("place", codes=("DE", "DE-NW"))) == "geodata"
+
+    def test_a_word_that_only_contains_a_strong_word_is_none(self) -> None:
+        # "Coronado" is no corona; a whole word or word sequence only.
+        found = _find("Coronado Einwohnerzahlen", publisher="Stadt", data_kind="table")
+        assert _verdict(found, Extent("place", codes=("DE", "DE-NW"))) == "geodata"
 
     @pytest.mark.parametrize("title", ["Katzen - Verteilung pro Gemeinde", "Ziegen - Verteilung pro Kanton"])
     def test_an_extent_keeps_no_find_of_a_publisher_without_geodata(self, title: str) -> None:

@@ -64,6 +64,14 @@ not_geo_terms: ["statisti*", it nrw, information und technik nordrhein westfalen
 # Software and code are no geodata (Otto, 23.11.2026: EnviDat "snowBedFoam ... solver"): a non-geo signal in the
 # title or the keywords that the weak geo signals (extent, publisher) do not outweigh.
 software_terms: [software, solver, solvers, source code, quellcode, programmcode, openfoam]
+# Strong non-geo words (F14 = 1, Otto 24.11.2026; plan M5-67 §12): in the title or the keywords they hide a find also
+# against the weak geo signals (extent, publisher), not against a strong one (format, INSPIRE, category, geo word).
+# Short on purpose; each line with the find that asked for it.
+strong_not_geo_terms:
+  - bibliothekenstatistik     # "Bibliothekenstatistik der Öffentlichen Bibliotheken im Kanton Thurgau (2005-2019)"
+  - bibliotheksstatistik      # "Deutsche Bibliotheksstatistik", the same with "-s-"
+  - kriminalstatistik         # "Polizeiliche Kriminalstatistik" of a city, kept by the extent of the city
+  - corona                    # "Aktuelle Lage in der Stadt Aachen zum Corona-Virus", kept by the extent of Aachen
 # Statistics offices (Otto, 23.11.2026): the extent of their tables is the area of the office, so an extent keeps
 # none of their finds; the strong geo signals (format, INSPIRE, category, geo words) still do.
 statistics_publishers: ["statisti*", it nrw, information und technik nordrhein westfalen]

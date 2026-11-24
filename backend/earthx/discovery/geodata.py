@@ -3,7 +3,7 @@
 A find is ``not_geodata`` only where it has no geo signal and at least one non-geo signal; with neither it counts as
 geodata ("undecided" in the classification, so that ``report --classify`` can show the borderline cases). The extent
 and the publisher are weak geo signals (Otto, 23.11.2026): they keep no find of a statistics office, of a publisher
-without geodata (24.11.2026) and no software.
+without geodata, with a strong non-geo word (24.11.2026) and no software.
 The signals and the words live in ``backend/catalog/geodata.yaml``; the code only reads them. Pure: no database, no
 request.
 """
@@ -48,6 +48,7 @@ _KEYS = frozenset(
         "not_geo_publishers",
         "software_terms",
         "statistics_publishers",
+        "strong_not_geo_terms",
     }
 )
 _DATA_KINDS = frozenset({"raster", "vector", "table", "document", "service", "other"})
@@ -103,6 +104,8 @@ class GeodataRule:
     not_geo_publishers: Terms
     software_terms: Terms
     statistics_publishers: Terms
+    #: Non-geo words the weak geo signals do not outweigh (F14 = 1, Otto 24.11.2026).
+    strong_not_geo_terms: Terms
 
 
 def read_geodata_rule(path: Path) -> GeodataRule:
@@ -132,6 +135,7 @@ def read_geodata_rule(path: Path) -> GeodataRule:
         not_geo_publishers=parse_terms(data["not_geo_publishers"], "not_geo_publishers"),
         software_terms=parse_terms(data["software_terms"], "software_terms"),
         statistics_publishers=parse_terms(data["statistics_publishers"], "statistics_publishers"),
+        strong_not_geo_terms=parse_terms(data["strong_not_geo_terms"], "strong_not_geo_terms"),
     )
 
 
@@ -195,10 +199,11 @@ def classify(found: Mapping[str, Any], extent: Extent, *, country: str | None, r
     not_geo += [f"term:{hit}" for hit in dict.fromkeys(rule.not_geo_terms.found([title, *keywords, publisher]))]
     not_geo += [f"publisher:{hit}" for hit in dict.fromkeys(rule.not_geo_publishers.found([publisher]))]
     software = [f"software:{hit}" for hit in dict.fromkeys(rule.software_terms.found([title, *keywords]))]
-    not_geo += software
+    strong = [f"strong:{hit}" for hit in dict.fromkeys(rule.strong_not_geo_terms.found([title, *keywords]))]
+    not_geo += software + strong
     weak_only = bool(geo) and all(signal.startswith(_WEAK) for signal in geo)
     without_geodata = rule.statistics_publishers.found([publisher]) or rule.not_geo_publishers.found([publisher])
-    overruled = weak_only and bool(not_geo) and (bool(software) or bool(without_geodata))
+    overruled = weak_only and bool(not_geo) and (bool(software) or bool(strong) or bool(without_geodata))
     if overruled:
         return Classified("not_geodata", tuple(geo), tuple(not_geo), weak_overruled=True)
     if geo:
