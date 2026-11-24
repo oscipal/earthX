@@ -118,5 +118,5 @@ def test_a_malformed_glossary_is_refused(tmp_path, text, message):
 
 
 def test_a_missing_glossary_is_refused(tmp_path):
-    with pytest.raises(ConfigError, match="cannot be read"):
+    with pytest.raises(ConfigError, match="file not found"):
         load_glossary(tmp_path / "glossary.yaml")

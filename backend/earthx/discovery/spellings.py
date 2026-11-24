@@ -184,7 +184,8 @@ def run(conn: psycopg.Connection, catalogue_dir: Path, out: Path, day: date) -> 
     standard = standard_refs(catalogue, granted)
     known = catalogue.by_statement
     waiting = Counter({s: n for s, n in waiting_statements(conn).items() if normal_statement(s) not in known})
-    existing = _existing(catalogue_dir / SPELLINGS_FILE)
+    # What is merged is what is written: the file of `out` (a mount of the checkout), not the copy in the image.
+    existing = _existing(out / SPELLINGS_FILE)
     withdrawn = {normal_statement(s.statement) for s in existing if s.withdrawn_on is not None}
     proposals = [p for p in propose(waiting, catalogue, standard) if p.statement not in withdrawn]
     merged = merge_spellings(existing, proposals, day)
