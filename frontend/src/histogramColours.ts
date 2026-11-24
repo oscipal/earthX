@@ -1,8 +1,9 @@
 // The colours of the bars of the histogram of one band (M5-60 §12, Otto 21.11.2026): each bar in the colour its value has on the map. The
 // middle of a bar finds its place in the range and so its colour on the colormap; below and above the range the colours of the ends. The
 // colours of a colormap are the few the tiler lists for its preview (`GET /colormaps`), the same the legend draws its bar with; between
-// two of them the colour runs straight, as the bar of the legend does.
+// two of them the colour runs straight, as the bar of the legend does. A band of classes has each bar in the colour of its class.
 
+import type { BandClass } from './bandClasses';
 import { entryOf, isReversed, type ColormapGroup } from './colormaps';
 import type { Histogram } from './histogram';
 
@@ -31,5 +32,18 @@ export function barColours(histogram: Histogram, groups: readonly ColormapGroup[
     const middle = (histogram.edges[index] + histogram.edges[index + 1]) / 2;
     const t = high > low ? (middle - low) / (high - low) : middle < low ? 0 : 1;
     return colourAt(colors, t);
+  });
+}
+
+// The colour of each bar of the histogram of a band of classes (Otto F9 = 1): the colour of the class whose value lies in the bar, the one
+// nearest its middle where it holds several; `null` for a bar without a class (it keeps the colour of the page).
+export function classColours(histogram: Histogram, classes: readonly BandClass[]): (string | null)[] {
+  const last = histogram.counts.length - 1;
+  return histogram.counts.map((_, index) => {
+    const [low, high] = [histogram.edges[index], histogram.edges[index + 1]];
+    const middle = (low + high) / 2;
+    const held = classes.filter((entry) => entry.value >= low && (entry.value < high || (index === last && entry.value === high)));
+    if (held.length === 0) return null;
+    return held.reduce((best, entry) => (Math.abs(entry.value - middle) < Math.abs(best.value - middle) ? entry : best)).colour;
   });
 }

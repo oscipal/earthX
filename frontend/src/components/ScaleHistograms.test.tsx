@@ -102,3 +102,46 @@ describe('the histograms of a colour picture', () => {
     expect(fills().every((fill) => fill === 'in')).toBe(true);
   });
 });
+
+describe('the sliders on the bars (Otto, 24.11.2026)', () => {
+  // Bars of ten over 0…120.
+  const TENS: Histogram = { counts: Array(12).fill(5), edges: Array.from({ length: 13 }, (_, i) => i * 10) };
+  const sliders = () => [...container.querySelectorAll<HTMLInputElement>('.range-hist input[type=range]')].map((input) => Number(input.value));
+
+  it('stand outside the bars in the range where min and max lie inside bars; the bars between are the ones in the colours inside', async () => {
+    await draw({ histograms: [TENS], colormap: 'gray', vmin: '23', vmax: '87' });
+    expect(sliders()).toEqual([20, 90]);
+    const bars = fills();
+    expect(bars.slice(0, 2)).toEqual(['rgb(0, 0, 0)', 'rgb(0, 0, 0)']);
+    expect(bars.slice(9)).toEqual(['rgb(255, 255, 255)', 'rgb(255, 255, 255)', 'rgb(255, 255, 255)']);
+    expect(new Set(bars.slice(2, 9)).size).toBe(7);
+  });
+
+  it('stand the same way for each channel of a colour picture, the bars outside faint', async () => {
+    await draw({ histograms: [TENS, TENS, TENS], vmin: '23', vmax: '87' });
+    expect(sliders()).toEqual([20, 90, 20, 90, 20, 90]);
+    expect(fills().slice(0, 12)).toEqual(['out', 'out', ...Array(7).fill('in'), 'out', 'out', 'out']);
+  });
+
+  it('move the value with the keys, not the place they are drawn at', async () => {
+    const onVmin = vi.fn();
+    await draw({ histograms: [TENS], colormap: 'gray', vmin: '23', vmax: '87', onVmin });
+    const low = container.querySelector<HTMLInputElement>('.range-hist-low')!;
+    await act(async () => {
+      low.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    });
+    // From 23, not from the edge at 20 where the slider stands; a thousandth of the track, rounded as a slider writes.
+    expect(onVmin).toHaveBeenCalledWith('23.1');
+  });
+});
+
+describe('the histogram of a band of classes (Otto F9 = 1)', () => {
+  it('draws each bar in the colour of its class, without sliders', async () => {
+    const { default: ClassHistogram } = await import('./ClassHistogram');
+    await act(async () => {
+      root.render(<ClassHistogram histogram={HISTOGRAM} classes={[{ value: 15, name: 'A', colour: '#ff0000' }, { value: 35, name: 'B', colour: '#0000ff' }]} />);
+    });
+    expect(fills()).toEqual(['in', 'rgb(255, 0, 0)', 'in', 'rgb(0, 0, 255)']);
+    expect(container.querySelectorAll('input').length).toBe(0);
+  });
+});

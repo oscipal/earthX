@@ -27,6 +27,7 @@ import { percentOfLook } from '../displayLook';
 import AutoScaleButton from './AutoScaleButton';
 import RenderFields, { NO_COLORMAP } from './RenderFields';
 import ScaleHistograms from './ScaleHistograms';
+import ClassHistogram from './ClassHistogram';
 import { useHistograms } from './useHistograms';
 import Tip from './Tip';
 import OpacityRow from './OpacityRow';
@@ -315,6 +316,7 @@ function Controls({ layer }: { layer: MapLayer }) {
                 scale
               />
             )}
+            {info.classes && info.legend && histograms?.length === 1 && <ClassHistogram histogram={histograms[0]} classes={info.legend} />}
             <OpacityRow layer={layer} />
             {settable && (
               <div className="vc-buttons">

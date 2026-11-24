@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ColormapGroup } from './colormaps';
-import { barColours, colourAt } from './histogramColours';
+import { barColours, classColours, colourAt } from './histogramColours';
 
 const GROUPS: ColormapGroup[] = [
   {
@@ -64,5 +64,24 @@ describe('barColours', () => {
     expect(barColours(HISTOGRAM, GROUPS, 'nope', 0, 40)).toBeNull();
     expect(barColours(HISTOGRAM, null, 'gray', 0, 40)).toBeNull();
     expect(barColours(HISTOGRAM, [{ name: 'x', colormaps: [{ name: 'void', reversed: null, colors: [] }] }], 'void', 0, 40)).toBeNull();
+  });
+});
+
+describe('classColours (Otto F9 = 1)', () => {
+  const classes = [
+    { value: 10, name: 'Tree cover', colour: '#006400' },
+    { value: 20, name: 'Shrubland', colour: '#ffbb22' },
+    { value: 21, name: 'Close by', colour: '#123456' },
+    { value: 40, name: 'Cropland', colour: '#f096ff' },
+  ];
+
+  it('gives a bar the colour of the class whose value lies in it, the one nearest its middle where it holds several', () => {
+    // Bars 0–10, 10–20, 20–30, 30–40: 10 lies in the second, 20 and 21 in the third (21 nearer 25), 40 on the last edge.
+    expect(classColours(HISTOGRAM, classes)).toEqual([null, '#006400', '#123456', '#f096ff']);
+  });
+
+  it('has no colour for a bar without a class, and none at all without classes', () => {
+    expect(classColours({ counts: [1, 1], edges: [50, 60, 70] }, classes)).toEqual([null, null]);
+    expect(classColours(HISTOGRAM, [])).toEqual([null, null, null, null]);
   });
 });
