@@ -1,0 +1,70 @@
+{
+ "bands": [
+  {
+   "name": "map",
+   "data_type": "uint8",
+   "classification:classes": [
+    {
+     "value": 20,
+     "name": "shrubland",
+     "title": "Shrubland",
+     "color_hint": "FFBB22"
+    },
+    {
+     "value": 30,
+     "name": "grassland",
+     "title": "Grassland",
+     "color_hint": "FFFF4C"
+    },
+    {
+     "value": 40,
+     "name": "cropland",
+     "title": "Cropland",
+     "color_hint": "F096FF"
+    },
+    {
+     "value": 50,
+     "name": "built_up",
+     "title": "Built-up",
+     "color_hint": "FA0000"
+    },
+    {
+     "value": 60,
+     "name": "bare_sparse_vegetation",
+     "title": "Bare / sparse vegetation",
+     "color_hint": "B4B4B4"
+    },
+    {
+     "value": 70,
+     "name": "snow_and_ice",
+     "title": "Snow and ice",
+     "color_hint": "F0F0F0"
+    },
+    {
+     "value": 80,
+     "name": "permanent_water_bodies",
+     "title": "Permanent water bodies",
+     "color_hint": "0064C8"
+    },
+    {
+     "value": 90,
+     "name": "herbaceous_wetland",
+     "title": "Herbaceous wetland",
+     "color_hint": "0096A0"
+    },
+    {
+     "value": 95,
+     "name": "mangroves",
+     "title": "Mangroves",
+     "color_hint": "00CF75"
+    },
+    {
+     "value": 100,
+     "name": "moss_and_lichen",
+     "title": "Moss and lichen",
+     "color_hint": "FAE6A0"
+    }
+   ]
+  }
+ ]
+}
