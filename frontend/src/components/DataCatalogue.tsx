@@ -23,6 +23,7 @@ import {
   withOther,
   type LinkText,
 } from '../catalogue';
+import type { BandClass } from '../bandClasses';
 import { datasetsFrom, maturityLabel, type DatasetOption } from '../datasets';
 import { CATALOGUE_ID } from '../dock';
 import { useAppStore } from '../store';
@@ -151,6 +152,34 @@ function BandTable({ bands }: { bands: BandLine[] }) {
   );
 }
 
+// The classes of one band: Value | Class | Colour (M5-62), the colour as a swatch and its hex, the band as the heading.
+function ClassTable({ band, classes }: { band: string; classes: BandClass[] }) {
+  return (
+    <table className="catalogue-bands catalogue-classes">
+      <caption>{band}</caption>
+      <thead>
+        <tr>
+          <th scope="col">Value</th>
+          <th scope="col">Class</th>
+          <th scope="col">Colour</th>
+        </tr>
+      </thead>
+      <tbody>
+        {classes.map((entry) => (
+          <tr key={entry.value}>
+            <th scope="row">{entry.value}</th>
+            <td>{entry.name}</td>
+            <td>
+              <span className="class-swatch" style={{ background: entry.colour }} aria-hidden="true" />
+              {entry.colour}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 function Details({ dataset, onBack }: { dataset: DatasetOption; onBack: () => void }) {
   const legal = prototypeNote(dataset.collection);
   return (
@@ -171,7 +200,10 @@ function Details({ dataset, onBack }: { dataset: DatasetOption; onBack: () => vo
               {row.label}
               {row.tip && <Tip text={row.tip} />}
             </dt>
-            <dd>{row.bands ? <BandTable bands={row.bands} /> : <Links values={row.values} />}</dd>
+            <dd>
+              {row.bands ? <BandTable bands={row.bands} /> : <Links values={row.values} />}
+              {row.classes?.map((entry) => <ClassTable key={entry.band} band={entry.band} classes={entry.classes} />)}
+            </dd>
           </div>
         ))}
       </dl>

@@ -2,6 +2,7 @@
 // by default (the Vite dev server proxies /stac to the backend). Override
 // with VITE_API_BASE. Never talks to the prototype's `/api/…` routes.
 
+import { parseClasses } from './bandClasses';
 import type { DownloadBand } from './bandChoice';
 import type { FilterQuery, FilterQueryByCollection } from './searchFilters';
 import { AOI_BODY_KEY, aoiCountsOf, EVALUATE_BODY_KEY, type AoiCounts } from './aoiFilter';
@@ -991,6 +992,7 @@ export function parseBands(value: unknown): DownloadBand[] {
     const r = row && typeof row === 'object' ? (row as Record<string, unknown>) : {};
     const asset = textOf(r.asset);
     if (asset === null) return [];
+    const classes = parseClasses(r.classes);
     return [
       {
         asset,
@@ -1006,6 +1008,7 @@ export function parseBands(value: unknown): DownloadBand[] {
         unit: textOf(r.unit),
         preselected: r.preselected === true,
         stackable: r.stackable !== false,
+        ...(classes ? { classes } : {}),
       },
     ];
   });

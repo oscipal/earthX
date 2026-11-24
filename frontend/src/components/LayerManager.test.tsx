@@ -195,10 +195,10 @@ describe('LayerManager', () => {
       act(() => root.render(<LayerManager />));
     });
 
-    it('have the eleven places in the same order, whatever the kind of layer', () => {
+    it('have the twelve places in the same order, whatever the kind of layer (the button of the legend since M5-62)', () => {
       expect(rows()).toHaveLength(kinds.length);
       for (const row of rows()) {
-        expect(places(row)).toEqual(['grip', 'eye', 'name', 'rename', 'opacity', 'up', 'down', 'process', 'zoom', 'download', 'remove']);
+        expect(places(row)).toEqual(['grip', 'legend-toggle', 'eye', 'name', 'rename', 'opacity', 'up', 'down', 'process', 'zoom', 'download', 'remove']);
       }
     });
 
@@ -364,9 +364,9 @@ describe('the result layer of a deleted job', () => {
     expect(lockedWithoutReason(probe)).toEqual(['Find', 'Find', 'Find']);
   });
 
-  it('keeps its eleven places', () => {
+  it('keeps its twelve places', () => {
     deleteJobAt(1, NOW + DAY);
-    expect([...rows()[0].children].map((c) => c.getAttribute('data-col'))).toEqual(['grip', 'eye', 'name', 'rename', 'opacity', 'up', 'down', 'process', 'zoom', 'download', 'remove']);
+    expect([...rows()[0].children].map((c) => c.getAttribute('data-col'))).toEqual(['grip', 'legend-toggle', 'eye', 'name', 'rename', 'opacity', 'up', 'down', 'process', 'zoom', 'download', 'remove']);
   });
 
   it('cannot be switched on with the eye while it is locked, and can still be removed', () => {

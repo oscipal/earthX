@@ -39,10 +39,11 @@ from dataclasses import dataclass, field, fields
 from enum import Enum
 from typing import Any, Literal
 
+import numpy
 from pydantic import BaseModel
 from rasterio.transform import Affine
 
-from earthx.catalog.registry import Capabilities, DataClass, DatasetConfig, LicenseTier
+from earthx.catalog.registry import Capabilities, ClassRow, DataClass, DatasetConfig, LicenseTier, Look
 
 __all__ = ["MAKES_VALUES", "PASSES_VALUES", "BandMeta", "BandUse", "Operator", "PassesValues", "RasterMeta", "Requirement", "Tier"]
 
@@ -87,6 +88,9 @@ class BandMeta:
     #: zone, reprojected). The result is marked resampled only if a band that is in it was (NM4-43c, backlog 51);
     #: a layer that only hides pixels does not count.
     resampled: bool = False
+    #: The classes of a band of the source whose values are classes (M5-62, F9); the core drops them where a step
+    #: changes values (:func:`~earthx.processing.core.run`). A band a step makes has none.
+    classes: tuple[ClassRow, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -185,34 +189,6 @@ PASSES_VALUES = PassesValues(always=True)
 
 
 @dataclass(frozen=True, slots=True)
-class Look:
-    """How a band a step makes is drawn, wherever it is drawn: a colormap and where the colours start and end.
-
-    ``measured`` is the usual scale of the measure (the 2nd to the 98th percentile of what was measured), ``percentiles``
-    takes ``low`` to ``high`` percent of it (``0`` and ``100`` are the minimum and the maximum), ``fixed`` is the same range of
-    numbers everywhere, so that a value has one colour on every scene and dataset (Otto, 16.11.2026, M5-10).
-    """
-
-    colormap: str
-    scale: Literal["measured", "percentiles", "fixed"] = "measured"
-    low: float | None = None
-    high: float | None = None
-
-    def __post_init__(self) -> None:
-        if not self.colormap:
-            raise ValueError("a look has a colormap")
-        if (self.scale == "measured") != (self.low is None and self.high is None):
-            raise ValueError("a look of the measured scale has no ends, any other has both")
-        if self.scale != "measured" and not (self.low is not None and self.high is not None and self.low < self.high):
-            raise ValueError("the low end of a look is below its high end")
-        if self.scale == "percentiles" and not (0 <= (self.low or 0) and (self.high or 0) <= 100):
-            raise ValueError("percentiles lie between 0 and 100")
-
-    def annotation(self) -> dict[str, Any]:
-        return {"colormap": self.colormap, "scale": self.scale, **({} if self.low is None else {"low": self.low, "high": self.high})}
-
-
-@dataclass(frozen=True, slots=True)
 class Looks:
     """The look of the band a step makes, chosen by a parameter of the step (``terrain``: its ``product``).
 
@@ -260,6 +236,9 @@ class Operator:
     #: Whether every value the step writes is a value it read: selecting, hiding, ``nearest`` and ``mode``. Only then
     #: may an integer result keep the nodata of its source (:func:`~earthx.processing.nodata.output_nodata`, M5-28).
     passes_values: PassesValues = MAKES_VALUES
+    #: The band whose values decide what the step hides, and which of its values it hides (``mask``, ``mask_values``):
+    #: a band of classes loses the classes it no longer holds (M5-62). ``None`` for a step that hides by no value.
+    hides: Callable[[BaseModel], tuple[str, Callable[[numpy.ndarray], numpy.ndarray]]] | None = None
     #: How the band the step makes is drawn (:class:`Looks`); ``None`` where the usual rule of the measure holds.
     looks: Looks | None = None
     #: The same step for a stock that the planner narrowed: ``restrict(params, kept)`` keeps of the bands the step changes

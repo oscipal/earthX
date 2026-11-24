@@ -32,6 +32,20 @@
    "note": "synthetic"
   }
  },
+ "classes": {
+  "scl": [
+   {
+    "value": 4,
+    "name": "Vegetation",
+    "colour": "#2ca02c"
+   },
+   {
+    "value": 6,
+    "name": "Water",
+    "colour": "#1f77b4"
+   }
+  ]
+ },
  "item": {
   "id": "SYNTH_A",
   "assets": {

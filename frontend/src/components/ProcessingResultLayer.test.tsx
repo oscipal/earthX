@@ -455,7 +455,8 @@ describe('the layer a result becomes', () => {
     const empty = container.querySelector('.layer-row [data-col="process"]');
     expect(empty?.tagName).toBe('SPAN');
     expect(empty?.getAttribute('aria-hidden')).toBe('true');
-    expect(container.querySelector('.layer-row')?.children).toHaveLength(11);
+    // Twelve places; the legend of the layer (M5-62) stands under them and is no place.
+    expect([...container.querySelector('.layer-row')!.children].filter((c) => c.getAttribute('data-col') !== 'legend')).toHaveLength(12);
     expect(button('Download')).toBeUndefined();
   });
 

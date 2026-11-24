@@ -94,6 +94,7 @@ SYNTHETIC_ZARR: DatasetConfig = replace(
     band_units={"SR_*": "1", "SCL_20m:scl": None},
     band_descriptions={"SR_*": "Surface reflectance", "SCL_20m:scl": "Scene classification"},
     band_classes={},
+    band_scaling={},
     auxiliary_assets=(),
     # The Zarr layer has no cloud classes (DS-03 plan §6.19), so none of the inherited filters is "within AOI".
     search_filters=tuple(replace(entry, within_aoi=None) for entry in SENTINEL_2_L2A.search_filters),

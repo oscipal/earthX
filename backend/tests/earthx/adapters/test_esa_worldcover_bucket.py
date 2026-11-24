@@ -24,6 +24,7 @@ from earthx.adapters import (
     materialize_items,
 )
 from earthx.adapters.cop_dem_bucket import COG_MEDIA_TYPE
+from earthx.adapters.esa_worldcover_bucket import MAP_DATA_TYPE, MAP_NODATA
 from earthx.catalog.registry import ItemHolding, TemporalExtent
 from earthx.gateway import Policy
 from earthx.gateway.client import Gateway
@@ -114,9 +115,24 @@ class TestNormalRun:
         assert item["properties"]["datetime"] is None
         assert item["properties"]["start_datetime"] == "2021-01-01T00:00:00Z"
         assert item["properties"]["end_datetime"] == "2021-12-31T23:59:59Z"
-        assert item["assets"] == {"map": {"href": f"https://{HOST}/{key('S03W060')}", "type": COG_MEDIA_TYPE, "roles": ["data"]}}
+        assert item["assets"] == {
+            "map": {
+                "href": f"https://{HOST}/{key('S03W060')}",
+                "type": COG_MEDIA_TYPE,
+                "roles": ["data"],
+                "raster:bands": [{"data_type": "uint8", "nodata": 0}],
+            }
+        }
         # The listing asks for the map files of this state only.
         assert seen[1].url.params["prefix"] == "v200/2021/map/"
+
+    @pytest.mark.parametrize("entry", [ESA_WORLDCOVER_2020, ESA_WORLDCOVER_2021])
+    def test_the_nodata_of_the_item_is_the_value_without_a_class_of_the_registry(self, entry) -> None:
+        """M5-62: the item says the map is uint8 with the nodata the registry keeps out of the classes, so a job keeps
+        the type of its classes and their colour table instead of converting them to float32."""
+        classes = entry.band_classes["map"]
+        assert classes.nodata == MAP_NODATA
+        assert MAP_DATA_TYPE == "uint8"
 
     async def test_the_2020_state_reads_its_own_prefix(self) -> None:
         gateway, seen = bucket(grid(TILES), [[key(t, "v100/2020") for t in TILES]])

@@ -503,6 +503,51 @@ class TestChunkReferences:
         assert _hash(with_none) == _hash(data) == EXPECTED["zarr"]
 
 
+class TestClasses:
+    """M5-62 F9: an input of a band of classes carries them in the recipe; every other recipe hashes as before."""
+
+    CLASSES = [{"value": 10, "name": "Tree cover", "colour": "#006400"}, {"value": 20, "name": "Shrubland", "colour": "#ffbb22"}]
+
+    def recipe(self, classes: object) -> dict:
+        data = recipe_data()
+        data["inputs"][0]["resolved"][0]["classes"] = classes
+        return data
+
+    def test_they_reach_the_core_and_its_dump(self) -> None:
+        recipe = recipe_from_data(self.recipe(self.CLASSES), OPERATORS)
+        entry = recipe.inputs[0].resolved[0]
+        assert [(c.value, c.name, c.colour) for c in entry.classes or []] == [(10, "Tree cover", "#006400"), (20, "Shrubland", "#ffbb22")]
+        assert entry.model_dump(mode="json")["classes"] == self.CLASSES
+
+    def test_they_are_part_of_the_hash(self) -> None:
+        other = [{**self.CLASSES[0], "colour": "#006401"}, self.CLASSES[1]]
+        assert len({_hash(recipe_data()), _hash(self.recipe(self.CLASSES)), _hash(self.recipe(other))}) == 3
+
+    def test_a_recipe_without_them_keeps_its_hash_and_its_dump(self) -> None:
+        assert _hash(self.recipe(None)) == _hash(recipe_data()) == EXPECTED["base"]
+        recipe = recipe_from_data(recipe_data(), OPERATORS)
+        assert all("classes" not in entry for entry in recipe.model_dump(mode="json")["inputs"][0]["resolved"])
+
+    @pytest.mark.parametrize(
+        "classes",
+        [
+            [],
+            [{"value": 10, "name": "Tree cover"}],
+            [{"value": 10, "name": "", "colour": "#006400"}],
+            [{"value": 10, "name": "x" * 41, "colour": "#006400"}],
+            [{"value": 10, "name": "Tree cover", "colour": "#00640"}],
+            [{"value": 10, "name": "Tree cover", "colour": "#00640G"}],
+            [{"value": 10, "name": "Tree cover", "colour": "#006400", "extra": 1}],
+            [{"value": 1.5, "name": "Tree cover", "colour": "#006400"}],
+            [{"value": "10", "name": "Tree cover", "colour": "#006400"}],
+            "Tree cover",
+        ],
+    )
+    def test_a_class_that_does_not_read_refuses_the_recipe(self, classes: object) -> None:
+        with pytest.raises(RecipeInvalid):
+            recipe_from_data(self.recipe(classes), OPERATORS)
+
+
 def test_the_package_version_is_semver_0_x() -> None:
     # adr/0016 §9, F10: plain MAJOR.MINOR.PATCH, so `runner_version` can append `+g<commit>`.
     assert re.fullmatch(r"0\.\d+\.\d+", earthx.__version__)

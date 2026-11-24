@@ -19,6 +19,7 @@ classes like every other band, and whether it goes into the result is for ``outp
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Callable
 from typing import Annotated, Any
 
 import numpy
@@ -197,9 +198,16 @@ MASK = Operator(
 )
 
 #: Version 2 (NM4-43c): the layer stays in the stock. Listed since NM4-43e, the panel sends it; version 1 is accepted, not listed.
+def _hides(params: BaseModel) -> tuple[str, Callable[[numpy.ndarray], numpy.ndarray]]:
+    """The layer and its hidden classes: the layer, kept in the stock, holds them no more (M5-62)."""
+    assert isinstance(params, MaskParams)
+    return params.source, lambda values: numpy.isin(values, params.classes)
+
+
 MASK_V2 = dataclasses.replace(
     MASK,
     op_version=2,
+    hides=_hides,
     description="Hide the pixels that a classification layer assigns to the chosen classes, such as cloud.",
     transform=_transform_v2,
     run=_run_v2,

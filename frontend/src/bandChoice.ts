@@ -2,6 +2,7 @@
 // no band name is written down in the frontend; the dialog, the request, the job and the BANDS.txt of the browser's own ZIP all read it
 // from here. The rules of the file names and of BANDS.txt are those of `backend/earthx/access/band_export.py`.
 
+import type { BandClass } from './bandClasses';
 import type { DownloadForm } from './api';
 import type { DownloadRequestInfo } from './download';
 import { formatNumber } from './numberFormat';
@@ -42,6 +43,8 @@ export interface DownloadBand {
   // Whether the band can be stacked with others into one file; `false` for a band read through chunk references (M5-11), which goes
   // into a file of its own. Left out by an older answer: a GeoTIFF, which can.
   stackable?: boolean;
+  // The classes of a band whose values are classes (M5-62); left out or `null` for any other.
+  classes?: readonly BandClass[] | null;
 }
 
 // What is ticked when the dialog opens.
@@ -250,6 +253,10 @@ export function bandsFileText(args: { title: string; form: DownloadForm; files: 
           cell(band.unit),
         ].join(' | '),
       );
+    });
+    file.bands.forEach(({ band }, index) => {
+      if (!band.classes) return;
+      lines.push('', `Classes of band ${index + 1} (${band.name})`, 'Value | Class | Colour', ...band.classes.map((c) => `${c.value} | ${c.name} | ${c.colour}`));
     });
   }
   return `${lines.join('\n')}\n`;

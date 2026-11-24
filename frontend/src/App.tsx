@@ -10,6 +10,7 @@ import { ZoomToSelectionIcon } from './components/icons';
 import Inspector from './components/Inspector';
 import LayerManager from './components/LayerManager';
 import MapView from './components/MapView';
+import MapLegend from './components/MapLegend';
 import PreviewBadge from './components/PreviewBadge';
 import ProcessingManager from './components/ProcessingManager';
 import ProcessingPanel from './components/ProcessingPanel';
@@ -139,6 +140,7 @@ export default function App() {
       {/* After the side bar and the processing sheet (same layer): the window opened last lies above them, red x included. */}
       <DataCatalogue />
 
+      <MapLegend />
       <PreviewBadge />
 
       <DownloadDialog />
