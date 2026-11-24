@@ -75,6 +75,7 @@ class TestTheShippedFiles:
         ("statement", "ref"),
         [
             ("http://dcat-ap.de/def/licenses/dl-by-de/2.0", "dl-de-by-2.0"),
+            ("dl-by-de/2.0", "dl-de-by-2.0"),
             ("https://www.govdata.de/dl-de/by-2-0", "dl-de-by-2.0"),
             ("http://www.govdata.de/dl-de/by-2-0/", "dl-de-by-2.0"),
             ("Datenlizenz Deutschland – Zero – Version 2.0", "dl-de-zero-2.0"),
@@ -121,6 +122,14 @@ class TestTheShippedFiles:
         )
         sie_duerfen = next(s for s in catalogue.by_statement if s.startswith("Sie dürfen:\nTeilen"))
         assert catalogue.by_statement[sie_duerfen] == "cc-by-4.0"
+
+    def test_the_identifier_beside_the_address_does_not_make_a_granted_find_wait(self, catalogue) -> None:  # type: ignore[no-untyped-def]
+        # Otto, 23.11.2026: 224 finds of the Sächsisches Landesamt für Umwelt, Landwirtschaft und Geologie waited with
+        # the identifier "dl-by-de/2.0" beside the address of the same licence.
+        publisher = "Sächsisches Landesamt für Umwelt, Landwirtschaft und Geologie"
+        found = catalogue.match("govdata", publisher, ["dl-by-de/2.0", "http://dcat-ap.de/def/licenses/dl-by-de/2.0"])
+        assert (found.reason, found.refs) == (None, ("dl-de-by-2.0",))
+        assert catalogue.match("govdata", publisher, ["dl-by-de/2.0"]).reason is None
 
     def test_a_find_with_one_statement_without_a_licence_still_waits(self, catalogue) -> None:  # type: ignore[no-untyped-def]
         found = catalogue.match("govdata", "Amt", ["http://dcat-ap.de/def/licenses/dl-by-de/2.0", "mdd-nrw-nutzungsbedingungen"])

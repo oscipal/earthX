@@ -21,9 +21,10 @@ import argparse
 import hashlib
 import json
 import random
+import re
 import sys
 from collections import Counter
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from functools import cache
@@ -56,7 +57,7 @@ from earthx.catalog.municipalities import MUNICIPALITIES_FILE
 from earthx.catalog.registry import ConfigError, LicenseInfo, doi_name
 from earthx.catalog.sources import MAX_DEDUPE_RANK, SourceConfig, SourceProtocol, read_sources
 from earthx.discovery import dedupe, enrich, geodata
-from earthx.discovery.dedupe import Member, find_keys, main_entries, namespaced, shared_key
+from earthx.discovery.dedupe import Member, find_keys, main_entries, namespaced, shared_key, with_listings
 from earthx.discovery.enrich import (
     PLACE_NAMES_FILE,
     Extent,
@@ -244,7 +245,11 @@ def _code_fingerprint() -> bytes:
 def derivation_version(source: SourceConfig, known: Mapping[str, str], licences: LicenceCatalogue | None) -> str:
     digest = hashlib.sha256(_code_fingerprint())
     digest.update(b"" if licences is None else licences.fingerprint.encode())
-    digest.update(json.dumps([source.country, source.maturity.value, sorted(known.items())]).encode())
+    digest.update(
+        json.dumps(
+            [source.country, source.maturity.value, source.dedupe_collection_links, sorted(known.items())]
+        ).encode()
+    )
     return digest.hexdigest()
 
 
@@ -304,7 +309,9 @@ def derive(
         license_ref=None if not licence.refs or licence.reason else "+".join(licence.refs),
         license_rule=licence.rule,
         extent_basis=extent.basis,
-        dedupe_keys=find_keys(found, stac_host=stac_host, known=known),
+        dedupe_keys=find_keys(
+            found, stac_host=stac_host, known=known, collection_links=source.dedupe_collection_links
+        ),
         derived_sha256=hashlib.sha256(f"{extracted_sha256} {version}".encode()).hexdigest(),
     )
     return Derived(row, extent, classified, licence, statements)
@@ -342,6 +349,7 @@ def _full_collections() -> list[tuple[Any, str, str]]:
 
 def _full_members() -> list[Member]:
     members = []
+    listings = _listings()
     by_id = {config.dataset_id: config for config in registry()}
     collections = {config.dataset_id: (host, cid) for config, host, cid in _full_collections()}
     for dataset, config in by_id.items():
@@ -351,23 +359,188 @@ def _full_members() -> list[Member]:
         name = doi_name(config.doi)
         if name:
             keys.add(f"doi:{name.lower()}")
+        keys.update(f"also:{listing}" for listing, owner in listings.items() if owner == dataset)
         if keys:
             members.append(Member(dataset, tuple(sorted(keys)), (0,)))
     return members
 
 
-def _dedupe(conn: psycopg.Connection, sources: Mapping[str, SourceConfig]) -> dict[str, str]:
+def _listings() -> Mapping[str, str]:
+    """The listings of full entries in harvested catalogues, ``<source id>:<identifier>`` → dataset id."""
+    return registry().listings
+
+
+def _rank(source: SourceConfig | None, source_id: str, source_rank: int | None, footprint: bool) -> tuple[Any, ...]:
+    """The rank of a harvested find among duplicates; a source no longer in sources/ ranks last."""
+    dedupe_rank = MAX_DEDUPE_RANK + 1 if source is None else source.dedupe_rank
+    return (2, dedupe_rank, source_rank or 9, not footprint, source_id)
+
+
+def _members(conn: psycopg.Connection, sources: Mapping[str, SourceConfig], skip: str | None = None) -> list[Member]:
+    """The full entries and the rows of the database (but those of the source ``skip``) as members of the groups."""
     members = _full_members()
+    listings = _listings()
     for row in dedupe_rows(conn):
-        source = sources.get(row.source_id)
+        if row.source_id == skip:
+            continue
         if row.source_id == HAND_SOURCE:
             rank: tuple[Any, ...] = (1,)
         else:
-            # A source no longer in sources/ ranks last.
-            dedupe_rank = MAX_DEDUPE_RANK + 1 if source is None else source.dedupe_rank
-            rank = (2, dedupe_rank, row.source_rank or 9, not row.footprint, row.source_id)
-        members.append(Member(row.dataset_id, row.keys, rank, row.source_id))
-    return main_entries(members)
+            rank = _rank(sources.get(row.source_id), row.source_id, row.source_rank, row.footprint)
+        members.append(Member(row.dataset_id, with_listings(row.source_id, row.keys, listings), rank, row.source_id))
+    return members
+
+
+def _dedupe(conn: psycopg.Connection, sources: Mapping[str, SourceConfig]) -> dict[str, str]:
+    return main_entries(_members(conn, sources))
+
+
+#: What ``--classify`` knows of a find to place it among the duplicates: its member and its title.
+@dataclass(frozen=True, slots=True)
+class DedupeFind:
+    member: Member
+    title: str
+    verdict: str
+
+
+@dataclass(frozen=True, slots=True)
+class TitleMatch:
+    """A listed find whose title is that of a full entry (Otto, 24.11.2026): a candidate for ``also_listed_as``, only
+    ever proposed. ``key`` is ``<source id>:<identifier>`` as the field wants it, ``None`` for a find without one."""
+
+    find_id: str
+    find_title: str
+    full_id: str
+    full_title: str
+    source_id: str
+    publisher: str
+    key: str | None
+
+
+def title_key(title: str) -> str:
+    """A title as it is compared with the titles of the full entries: lower case, every run of other characters one blank."""
+    return re.sub(r"[\W_]+", " ", title.casefold()).strip()
+
+
+def _full_titles() -> dict[str, list[tuple[str, str]]]:
+    titles: dict[str, list[tuple[str, str]]] = {}
+    for config in registry():
+        titles.setdefault(title_key(config.title), []).append((config.dataset_id, config.title))
+    return titles
+
+
+#: A duplicate, its main entry and the key they share.
+Pair = tuple[str, str, str]
+_NO_KEY = "voller oder Handeintrag"
+_KEY_KINDS = {"doi": "DOI", "id": "Kennung", "coll": "Collection-ID"}
+
+
+@dataclass(frozen=True, slots=True)
+class DedupeCompare:
+    """The pairs that touch a source, as the database holds them (the last real report) and as the keys of this
+    derivation would make them (Otto, 23.11.2026), the rows of the source by state, and examples with titles."""
+
+    before: tuple[Pair, ...]
+    now: tuple[Pair, ...]
+    lost: tuple[Pair, ...]
+    new: tuple[Pair, ...]
+    #: Finds with the verdict ``ok`` that would go as duplicates.
+    ok_duplicates: int
+    states: Mapping[str, int]
+    #: Examples of the pairs now and of the lost ones, each as (title of the duplicate, its id, title of the main entry,
+    #: its id, key).
+    examples_now: tuple[tuple[str, str, str, str, str], ...]
+    examples_lost: tuple[tuple[str, str, str, str, str], ...]
+    examples_new: tuple[tuple[str, str, str, str, str], ...]
+
+
+def _pairs_of(members: Sequence[Member], own: set[str]) -> tuple[Pair, ...]:
+    keys = {member.dataset_id: member.keys for member in members}
+    pairs = [
+        (duplicate, main, shared_key(keys[duplicate], keys[main]) or _NO_KEY)
+        for duplicate, main in main_entries(members).items()
+        if duplicate in own or main in own
+    ]
+    return tuple(sorted(pairs))
+
+
+def _titled(
+    conn: psycopg.Connection, known: Mapping[str, str], pairs: Sequence[Pair]
+) -> tuple[tuple[str, str, str, str, str], ...]:
+    """``pairs`` with the titles of both sides: those ``known``, else the listed entry's (a full entry has none: its id)."""
+    titles = dict(known)
+    missing = sorted({i for d, m, _ in pairs for i in (d, m) if i not in titles})
+    if missing:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT dataset_id, content->>'title' FROM public.earthx_listed_entry WHERE dataset_id = ANY(%s)",
+                (missing,),
+            )
+            titles.update({dataset_id: title for dataset_id, title in cur.fetchall() if title})
+    return tuple((titles.get(d, d), d, titles.get(m, m), m, key) for d, m, key in pairs)
+
+
+def _stored_pairs(conn: psycopg.Connection, source_id: str) -> tuple[Pair, ...]:
+    """The duplicates the database holds (the last real report, ``catalog-load``) that touch the source, with the key
+    their rows share; a full entry carries the keys of the registry."""
+    full = {member.dataset_id: member.keys for member in _full_members()}
+    listings = _listings()
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT d.dataset_id, d.duplicate_of, d.source_id, coalesce(d.dedupe_keys, '{}'),"
+            " coalesce(m.dedupe_keys, '{}') FROM public.earthx_listed_entry d"
+            " LEFT JOIN public.earthx_listed_entry m ON m.dataset_id = d.duplicate_of"
+            " WHERE d.state = 'duplicate' AND (d.source_id = %s OR m.source_id = %s)",
+            (source_id, source_id),
+        )
+        rows = cur.fetchall()
+    pairs = [
+        (
+            duplicate,
+            main,
+            shared_key(with_listings(duplicate_source, duplicate_keys, listings), full.get(main) or main_keys)
+            or _NO_KEY,
+        )
+        for duplicate, main, duplicate_source, duplicate_keys, main_keys in rows
+    ]
+    return tuple(sorted(pairs))
+
+
+def compare_duplicates(
+    conn: psycopg.Connection,
+    sources: Mapping[str, SourceConfig],
+    source_id: str,
+    finds: Sequence[DedupeFind],
+    seed: str,
+) -> DedupeCompare:
+    """The pairs of ``source_id`` before (the keys in the database) and now (``finds`` derived anew); writes nothing.
+    The ten examples of each are drawn with ``seed``."""
+    own = {row.dataset_id for row in dedupe_rows(conn) if row.source_id == source_id}
+    own |= {f.member.dataset_id for f in finds}
+    before = _stored_pairs(conn, source_id)
+    now = _pairs_of([*_members(conn, sources, skip=source_id), *(f.member for f in finds)], own)
+    before_pairs, now_pairs = {(d, m) for d, m, _ in before}, {(d, m) for d, m, _ in now}
+    # A pair that only changed its key (the main entry stays) is the same pair.
+    lost = tuple(pair for pair in before if pair[:2] not in now_pairs)
+    new = tuple(pair for pair in now if pair[:2] not in before_pairs)
+    verdicts = {f.member.dataset_id: f.verdict for f in finds}
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT state, count(*) FROM public.earthx_listed_entry WHERE source_id = %s GROUP BY 1", (source_id,)
+        )
+        states = dict(cur.fetchall())
+    titles = {f.member.dataset_id: f.title for f in finds}
+    return DedupeCompare(
+        before=before,
+        now=now,
+        lost=lost,
+        new=new,
+        ok_duplicates=sum(1 for duplicate, _main, _key in now if verdicts.get(duplicate) == "ok"),
+        states=states,
+        examples_now=_titled(conn, titles, _sample(now, 10, seed)),
+        examples_lost=_titled(conn, titles, _sample(lost, 10, seed)),
+        examples_new=_titled(conn, titles, _sample(new, 10, seed)),
+    )
 
 
 @dataclass
@@ -411,6 +584,10 @@ class ReportResult:
     missing: int = 0
     tombstones: int = 0
     duplicates: tuple[int, int] = (0, 0)
+    #: ``--classify`` only: the pairs before and now (:func:`compare_duplicates`), the texts of the examples.
+    dedupe: DedupeCompare | None = None
+    #: Listed finds with the title of a full entry that are not its duplicates (proposals for ``also_listed_as``).
+    title_candidates: tuple[TitleMatch, ...] = ()
     stack: Stack | None = None
     files: tuple[Path, ...] = ()
     #: Finds that could not be derived or that Postgres refused: counted, never the reason of a stop.
@@ -473,6 +650,9 @@ def run_report(
     result = ReportResult(source.source_id)
     blocked_keys: list[str] = []
     batch: list[HarvestedRow] = []
+    placed: list[DedupeFind] = []
+    full_titles = _full_titles()
+    matches: list[TitleMatch] = []
 
     def flush() -> None:
         with conn.transaction(), conn.cursor() as cur:
@@ -497,11 +677,33 @@ def run_report(
             result.failed += 1
             continue
         _count(result, derived, found, licences)
+        if not derived.classified.hidden:
+            identifier = found.get("identifier")
+            listing = f"{source.source_id}:{identifier}" if isinstance(identifier, str) and identifier.strip() else None
+            matches += [
+                TitleMatch(
+                    derived.row.dataset_id,
+                    str(found.get("title"))[:120],
+                    full_id,
+                    full_title,
+                    source.source_id,
+                    derived.row.publisher or "–",
+                    listing,
+                )
+                for full_id, full_title in full_titles.get(title_key(str(found.get("title"))), ())
+            ]
+        if classify_only and not derived.classified.hidden:
+            rank = _rank(source, source.source_id, int(found.get("source_rank") or 0), derived.row.footprint is not None)
+            keys = with_listings(source.source_id, derived.row.dedupe_keys, _listings())
+            member = Member(derived.row.dataset_id, keys, rank, source.source_id)
+            placed.append(DedupeFind(member, str(found.get("title"))[:120], derived.row.verdict))
         if not classify_only and stored.get(key) != derived.row.derived_sha256:
             batch.append(derived.row)
             if len(batch) >= _BATCH:
                 flush()
     if classify_only:
+        result.dedupe = compare_duplicates(conn, sources, source.source_id, placed, classify_seed(source))
+        result.title_candidates = _candidates(matches, {d: m for d, m, _ in result.dedupe.now})
         return result
     if batch:
         flush()
@@ -510,10 +712,29 @@ def run_report(
         result.deleted, result.missing, result.tombstones = missing.deleted, missing.marked, missing.tombstones
         apply_blocklist(conn, blocklist)
     with conn.transaction():
-        result.duplicates = apply_duplicates(conn, _dedupe(conn, sources))
+        duplicates = _dedupe(conn, sources)
+        result.duplicates = apply_duplicates(conn, duplicates)
+    result.title_candidates = _candidates(matches, duplicates)
     with conn.transaction():
         result.stack = form_stack(conn, source.source_id)
     return result
+
+
+def _candidates(matches: Sequence[TitleMatch], duplicates: Mapping[str, str]) -> tuple[TitleMatch, ...]:
+    """The finds with a full entry's title that are not yet its duplicates, sorted."""
+    return tuple(sorted((m for m in matches if duplicates.get(m.find_id) != m.full_id), key=lambda m: (m.full_id, m.find_id)))
+
+
+def candidate_lines(candidates: Sequence[TitleMatch], limit: int = 50) -> list[str]:
+    """The proposals for ``also_listed_as``: full entry, find, source, publisher and the key to write."""
+    lines = [
+        f"  - {m.full_id} „{m.full_title}“ | {m.find_id} „{m.find_title}“ | {m.source_id} | {m.publisher[:80]}"
+        f" | {m.key or '(Fund ohne Kennung)'}"
+        for m in candidates[:limit]
+    ]
+    if len(candidates) > limit:
+        lines.append(f"  … und {len(candidates) - limit} weitere")
+    return lines
 
 
 def _count(result: ReportResult, derived: Derived, found: Mapping[str, Any], licences: LicenceCatalogue) -> None:
@@ -538,8 +759,11 @@ def _count(result: ReportResult, derived: Derived, found: Mapping[str, Any], lic
     for statement in {normal_statement(s) for s in derived.statements if normal_statement(s)}:
         result.statements.setdefault(statement, Counter())[row.publisher or "–"] += 1
     if row.waiting_reason == "unknown_licence":
-        for statement in derived.statements:
-            result.pairs[(row.publisher or "–", normal_statement(statement)[:100])] += 1
+        # Only the statements the catalogue does not know: a known one beside it is no reason to wait (Otto,
+        # 23.11.2026: a publisher's pair showed what was granted, the cause was the identifier beside the address).
+        for statement in {normal_statement(s) for s in derived.statements if normal_statement(s)}:
+            if statement not in licences.by_statement:
+                result.pairs[(row.publisher or "–", statement[:100])] += 1
     elif row.waiting_reason == "not_granted":
         result.pairs[(row.publisher or "–", _not_granted(licences, row.source_id, row.publisher, derived.licence.refs))] += 1
     skipped = found.get("skipped_url")
@@ -597,9 +821,43 @@ def _sample(items: Sequence[Any], size: int, seed: str) -> list[Any]:
     return random.Random(seed).sample(list(items), size)
 
 
+def _by_kind(pairs: Iterable[Pair]) -> str:
+    counts = Counter(_KEY_KINDS.get(key.split(":", 1)[0], key) for _, _, key in pairs)
+    return ", ".join(f"{kind} {counts[kind]}" for kind in (*_KEY_KINDS.values(), _NO_KEY) if counts[kind]) or "–"
+
+
+def _dedupe_lines(compare: DedupeCompare | None) -> list[str]:
+    """The section on duplicates of ``--classify`` (Otto, 23.11.2026): the pairs that touch the source, by kind of key,
+    against the last real report, and examples; nothing is written."""
+    if compare is None:
+        return []
+    states = ", ".join(f"{state} {count}" for state, count in sorted(compare.states.items())) or "–"
+    lines = [
+        "Dubletten (gerechnet mit den Schlüsseln dieser Ableitung; nichts geschrieben):",
+        f"  Zeilen der Quelle in der Datenbank (letzter Bericht), nach Stand: {states}",
+        f"  Paare jetzt {len(compare.now)} (nach Schlüsselart: {_by_kind(compare.now)}); davon Funde mit Ergebnis ok,"
+        f" die als Dublette abgehen: {compare.ok_duplicates}",
+        f"  Paare im Stand der Datenbank {len(compare.before)} (nach Schlüsselart: {_by_kind(compare.before)})",
+        f"  Weggefallen {len(compare.lost)} (nach Schlüsselart: {_by_kind(compare.lost)}), neu {len(compare.new)}"
+        f" (nach Schlüsselart: {_by_kind(compare.new)})",
+    ]
+    for name, examples in (
+        ("jetzt", compare.examples_now),
+        ("weggefallen", compare.examples_lost),
+        ("neu", compare.examples_new),
+    ):
+        lines.append(f"  10 Beispiele {name} (Duplikat | Haupteintrag | Schlüssel):")
+        lines += [f"  - {t} <{d}> | {mt} <{m}> | {key}" for t, d, mt, m, key in examples]
+    return lines
+
+
+def classify_seed(source: SourceConfig) -> str:
+    return f"{source.source_id}:{derivation_version(source, {}, None)}"
+
+
 def classify_text(source: SourceConfig, result: ReportResult) -> str:
     """The output of ``--classify``: counts and the two samples for the release of R-G (plan §7)."""
-    seed = f"{source.source_id}:{derivation_version(source, {}, None)}"
+    seed = classify_seed(source)
     lines = [f"Einstufung {source.source_id} (nichts geschrieben): {result.finds} Funde, gesperrt {result.blocked}"]
     lines.append("Ergebnis: " + ", ".join(f"{k} {v}" for k, v in sorted(result.verdicts.items())))
     lines.append("Ausdehnung: " + ", ".join(f"{k} {v}" for k, v in sorted(result.bases.items())))
@@ -640,6 +898,12 @@ def classify_text(source: SourceConfig, result: ReportResult) -> str:
     lines += [f"  {count:>7}  {pattern}" for pattern, count in result.api_links.most_common()]
     lines.append("  10 Beispiele (Muster | Titel | Link):")
     lines += [f"  - {p} | {t} | <{u}>" for p, t, u in _sample(result.api_examples, 10, seed)]
+    lines += _dedupe_lines(result.dedupe)
+    lines.append(
+        f"Kandidaten für also_listed_as ({len(result.title_candidates)}; Titel gleich dem eines vollen Eintrags, nur ein"
+        " Vorschlag, nie automatisch eingetragen; voller Eintrag | Fund | Quelle | Herausgeber | Schlüssel):"
+    )
+    lines += candidate_lines(result.title_candidates)
     lines.append("Gleichnamige Stadt und Kanton, je Name und Entscheid nach Herausgeber:")
     lines += [f"  {count:>7}  {choice}" for choice, count in sorted(result.choices.items())]
     lines.append(f"GeoNames-IDs ohne Zuordnung ({len(result.geonames)} verschiedene, häufigste 50):")
@@ -799,6 +1063,15 @@ def report_markdown(
     lines += [f"- {t} — <{u}>" for _, t, u in _sample(result.hidden, SAMPLE_HIDDEN, seed)]
     lines += ["", "## Dubletten (Stichprobe, Duplikat → Haupteintrag, gemeinsamer Schlüssel)", ""]
     lines += [f"- {a} „{ta}“ → {b} „{tb}“ — `{key}`" for a, ta, b, tb, key in pairs]
+    lines += [
+        "",
+        f"## Kandidaten für also_listed_as ({len(result.title_candidates)}; nur ein Vorschlag, nie automatisch eingetragen)",
+        "",
+        "Gelistete Funde, deren Titel dem eines vollen Eintrags gleicht (voller Eintrag | Fund | Quelle | Herausgeber |"
+        " Schlüssel):",
+        "",
+    ]
+    lines += [line.replace("  - ", "- ", 1) for line in candidate_lines(result.title_candidates)]
     return "\n".join(lines) + "\n"
 
 

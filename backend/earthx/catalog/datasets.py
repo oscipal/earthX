@@ -120,9 +120,14 @@ def read_registry(catalog_dir: Path = CATALOG_DIR, prototype_dir: Path | None = 
         hosts = _with_prototype_hosts(hosts, prototype_dir / HOSTS_FILE)
     # The hosts of the harvest seed have their limits in the same file (M5-19 F6); only `discovery` reads the sources
     # for more than their hosts.
-    seed_hosts = frozenset(source.host for source in read_sources(catalog_dir / "sources").values())
+    sources = read_sources(catalog_dir / "sources")
+    seed_hosts = frozenset(source.host for source in sources.values())
     return DatasetRegistry(
-        entries, retired=load_retired(catalog_dir / "retired.yaml"), hosts=hosts, seed_hosts=seed_hosts
+        entries,
+        retired=load_retired(catalog_dir / "retired.yaml"),
+        hosts=hosts,
+        seed_hosts=seed_hosts,
+        source_ids=frozenset(sources),
     )
 
 

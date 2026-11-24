@@ -14,6 +14,10 @@ skipped: it names the dataset). (b) is judged here from the address alone, (a) f
 :class:`LinkIndex`, which works on the candidate lists the extractors keep in the intermediate form of each find
 (:func:`link_candidates`), never on a raw answer. Pure: the extractors gather the candidates, this module ranks and
 checks them.
+
+Never an interface either (Otto, 23.11.2026): an address that matches a pattern of :func:`api_pattern` (ArcGIS REST,
+GeoNetwork API, OGC paths, ``/api``, ``format=rdf`` and the like) is no page for people and no candidate of rank 1 or 2.
+The page in the catalogue is the provider's own address and not judged by it.
 """
 
 from __future__ import annotations
@@ -77,6 +81,12 @@ def api_pattern(url: object) -> str | None:
     if not isinstance(url, str):
         return None
     return next((name for name, pattern in _API_PATTERNS if pattern.search(url)), None)
+
+
+def _candidate(rank: LinkRank, url: object) -> str | None:
+    """``url`` if it may be chosen at ``rank``: a valid link, and below rank 3 no interface (:func:`api_pattern`)."""
+    link = checked_link(url)
+    return None if link is None or (rank is not LinkRank.CATALOGUE_PAGE and api_pattern(link) is not None) else link
 
 
 class LinkRank(IntEnum):
@@ -168,7 +178,7 @@ def _choose(
 ) -> tuple[str, LinkRank] | None:
     best: tuple[str, LinkRank] | None = None
     for rank, url in candidates:
-        link = checked_link(url)
+        link = _candidate(rank, url)
         if link is not None and (best is None or rank < best[1]) and not skipped(rank, link):
             best = (link, rank)
     return best
@@ -194,14 +204,14 @@ def choose_link(
 
 
 def link_candidates(candidates: Iterable[tuple[LinkRank, object]]) -> tuple[tuple[int, str], ...]:
-    """The links a find could be given as its link "Source" by rank 1 and 2, in the order the rule reads them: valid and
-    no collective page by (b). What the intermediate form keeps of a find for :class:`LinkIndex`; the page in the
+    """The links a find could be given as its link "Source" by rank 1 and 2, in the order the rule reads them: valid, no
+    interface and no collective page by (b). What the intermediate form keeps of a find for :class:`LinkIndex`; the page in the
     catalogue (rank 3) names the find alone and is never skipped, so it is not kept."""
     return tuple(
         (int(rank), link)
         for rank, url in candidates
         if rank is not LinkRank.CATALOGUE_PAGE
-        and (link := checked_link(url)) is not None
+        and (link := _candidate(rank, url)) is not None
         and not is_collection_page(link)
     )
 
