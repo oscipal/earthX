@@ -1,6 +1,6 @@
 # M5-67 — Harvest ohne Handarbeit
 
-**Status (24.11.2026):** Plan, wartet auf Ottos Antworten zu F1–F11 (§18). **Stufe B:** gebaut wird erst nach den Antworten.
+**Status (24.11.2026):** Plan angenommen (Otto, 24.11.2026): F1, F4–F11 je 1; F2 und F3 ersetzt durch Ottos Zusatz „jeder Eintrag erst nach bestandener Prüfung seines eigenen Links“ (§4, §4a–§4d, §18a). **Stufe B.** Teil 1 (Plan, Nachträge, Backend-Bausteine) in [#408](https://github.com/oscipal/earthX/pull/408), Teil 2 (Skript, Freigabe nach Regeln, Laufdateien) danach.
 **Aufgabe:** M5-67, Auftrag von Otto vom 24.11.2026.
 **Entscheidung Otto (24.11.2026):** Die Lauf-Freigabe geht von Otto auf feste Regeln über (`adr/0033` F1, Option 2, nachgelagerte Stichprobe). Otto übernimmt Haftung und Verantwortung. Lizenzen werden nie automatisch neu eingestuft. Grundsatz: **Im Zweifel wartet ein Fund; nie wird eine unsichere Lizenzangabe veröffentlicht.** Ziel: Otto startet einen Lauf mit einem Doppelklick, sonst nichts. Was er bisher aus dem Terminal kopiert hat, steht danach im Repo.
 **Grundlagen:** `adr/0033` (§5–§11 mit den Nachträgen vom 23.11. und 24.11.), `plans/m5/m5-20-freigabe-geernteter-eintraege.md` (§10, §12, §13a–§13h, §14, §16), `adr/0002` (keine Abrufe realer Quellen aus der Sitzung, Tests ohne Netz), `adr/0025` §6.5 (P1), `scripts/harvest-report.ps1`, Entscheidungslog bis 24.11.2026, `projektuebersicht.md` Prinzipien 12, 15, KLAERUNGEN B8, B11.
@@ -68,7 +68,7 @@ Schritte des Skripts `scripts/harvest-cycle.ps1` (Windows PowerShell 5.1, nur AS
 5. **Ernten:** Images des Profils `harvest` leise bauen (`--progress quiet`, wie M5-20 §13e), dann je Quelle mit `enabled: true` ein Lauf `harvest <quelle>`. Scheitert eine Quelle (Host antwortet nicht, `robots`), ist das ein Befund dieser Quelle, kein Abbruch; ihr Bericht entfällt in diesem Lauf (A2).
 6. **Lizenzen:** `harvest-spellings` schreibt neue Schreibweisen nach §7 in `backend/catalog/licenses/spellings.yaml`; `harvest-grants` für alle Quellen (neue Herausgeber bekommen `grant-to-all.yaml`). Danach die Images neu bauen, damit der Bericht beides kennt.
 7. **Bericht** je Quelle in der Reihenfolge `dedupe_rank`, dann ID (FSDI zuerst, M5-20 §16): Stapel, Warnzeichen (§5), Stichprobe aus den Funden **ohne** Warnzeichen, Freigabedatei `pending`, Bericht `.md`, Classify-Auszug (A14).
-8. **Linkprüfung** je neuer Freigabedatei (§4), Ergebnis je Eintrag der Stichprobe in die Datei.
+8. **Linkprüfung** (§4): neue und erneut vorgelegte Einträge aller Stapel, dann der Bestand nach Rotation (§4a), im Budget; Verbergen und Zurückholen nach §4a mit Schutz nach §4c; Ergebnis der Stichprobe in die Freigabedatei.
 9. **Freigabe nach Regeln** je Datei (§6): `decision`, `decided_on`, `decided_by: rules`, `ok` je Eintrag, `excluded_entries`.
 10. **Laufdateien** (§9): `docs/harvest/laeufe/<Tag>/`, `docs/harvest/befunde.md` fortschreiben, PR-Text.
 11. **Git:** kleine Commits (Freigaben je Herausgeber; Schreibweisen; Bericht und Freigabe je Quelle; Laufdateien und Befunde), `git push -u origin harvest/<Tag>`, `gh pr create` (kein Draft, Titel „Harvest run <Tag>“).
@@ -78,23 +78,67 @@ Schritte des Skripts `scripts/harvest-cycle.ps1` (Windows PowerShell 5.1, nur AS
 
 Ein Lauf ohne neuen Stapel und ohne neue Befunde erzeugt keinen PR (`adr/0025` K5); die Meldung sagt das.
 
-## 4. Linkprüfung der Stichprobe (Punkt 2)
+## 4. Linkprüfung jedes Eintrags (Punkt 2; Zusatz Otto 24.11.2026)
 
-**Was geprüft wird**, je Eintrag der Stichprobe (30 je Stapel, `adr/0033` N2), über `gateway` mit `open_source_gateway`:
+**Vorgabe Otto (24.11.2026, ersetzt F2 und F3):** Ein gelisteter Eintrag wird erst sichtbar, wenn **sein eigener Link** die automatische Prüfung bestanden hat, nicht nur die Stichprobe. Wer nicht besteht, bleibt unsichtbar und kommt nach Muster gruppiert in die Befundliste. Gilt für geerntete Einträge; Handeinträge unter `listed/` schreibt `catalog-load` wie bisher.
 
-| Prüfung | Bestanden, wenn | Sonst |
+**Bestanden** heißt, alle drei Punkte gelten:
+
+| Punkt | Bestanden, wenn | Grund bei Fehlschlag |
 |---|---|---|
-| Link antwortet | `GET` auf den Link „Source“ ergibt `200` (Weiterleitungen auf demselben Host oder von `http` auf `https` gefolgt), Medientyp HTML; gelesen werden höchstens 1 MiB | `404`/`410` → **Fehler**; Timeout, `429`, `5xx` → einmal am Ende des Schritts wiederholt, dann **nicht prüfbar** |
-| Titel steht auf der Seite | der Titel, normalisiert wie die Suche (Kleinschreibung, ohne Akzente, jede Folge anderer Zeichen ein Leerzeichen), steht im normalisierten Text der Seite (Text, `<title>`, `og:title`); bei langen Titeln genügen 80 % der Wörter mit mindestens 4 Zeichen | Seite mit Text: **Fehler**; Seite mit weniger als 200 Zeichen Text (Inhalt per Skript): **nicht prüfbar** |
-| Host bekannt | Host des Links ist der Host der Quelle, steht in `hosts.yaml` oder bei einem schon veröffentlichten Eintrag derselben Quelle | siehe F3 |
-| Kein fremder Host | eine Weiterleitung bleibt auf dem Host (Prinzip 15) | **Fehler** |
-| `robots.txt` | erlaubt den Pfad | **nicht prüfbar** (kein Fehler, kein Abruf) |
+| Antwort | `GET` auf den Link „Source“ endet nach höchstens 5 Weiterleitungen mit `200` und HTML | `http_<code>` (z. B. `http_404`) |
+| Keine Start-, Fehler- oder Login-Seite | die Seite nach den Weiterleitungen ist nicht die Startseite des Hosts (Pfad leer, `/`, nur ein Sprachteil oder `index.*`, wo der Link tiefer zeigte); `<title>` nennt keinen Fehler („404“, „nicht gefunden“, „not found“, „Fehler“, „error“ …) und die Seite ist keine Anmeldung (Pfad mit `login`, `signin`, `anmelden`, `auth`, oder ein Passwortfeld, wo Titel und Kennung fehlen); Beispiel: GENESIS Statistik Sachsen „Tabelle zu groß für nicht registrierte Nutzer“ mit Rücksprung zur Startseite | `start_page`, `error_page`, `login_page` |
+| Titel oder Kennung | der Titel des Datensatzes (normalisiert wie die Suche: Kleinschreibung, ohne Akzente, jede Folge anderer Zeichen ein Leerzeichen) steht im sichtbaren Text, in `<title>`, einer `<meta>`-Angabe (`og:title`, `twitter:title`, `description` …), im JSON-LD oder im `canonical`-Link; bei Titeln mit mindestens 4 Wörtern ab 4 Zeichen genügen 80 % dieser Wörter. **Oder** eine Kennung des Datensatzes (Schlüssel bei der Quelle, z. B. CKAN-Name oder UUID, Collection-ID, DCAT-Kennung; mindestens 6 Zeichen) steht an einer dieser Stellen | `no_title` |
 
-- **Takt:** Hosts aus `hosts.yaml` mit ihren Grenzen; fremde Hosts 1 Verbindung, 1 s Abstand, höchstens 50 neue Hosts je Lauf (M5-20 A6). Der Zeiger je Host liegt in Postgres (M5-37), also gilt der Takt auch zusammen mit dem Harvest.
-- **Lizenzhinweis auf der Seite:** nur zur Information (steht Name oder Adresse der Lizenz im Text: ja/nein). Viele Seiten nennen die Lizenz nicht; kein Fehler [A].
-- **Ergebnis je Eintrag** in der Freigabedatei: `check: {status, title_found, host_known, licence_seen, result}` mit `result` aus `ok`, `failed`, `unchecked` und einem kurzen Grund. Im Bericht `.md` steht dieselbe Zeile neben dem Eintrag.
-- **Neue Hosts außerhalb der Stichprobe** (F3, Empfehlung): je neuem Host im Stapel wird zusätzlich ein Eintrag geprüft; erst ein bestandener Eintrag macht den Host bekannt.
-- Die Adresse steht in der Datei (öffentliche Metadaten), nie im Log (M5-20 §10).
+- **Nicht prüfbar** (`unchecked`, kein Fehlschlag): `robots.txt` verbietet den Pfad, keine Verbindung, Timeout, `429`, `5xx` (je einmal wiederholt), Antwort größer als 2 MiB, Adresse abgelehnt (privates Netz). Ein neuer Eintrag bleibt dann unsichtbar; ein schon sichtbarer bleibt sichtbar, bis eine Prüfung wirklich fehlschlägt.
+- **Weiterleitung auf einen anderen Host** ist erlaubt (z. B. `doi.org` → Anbieter); der Zielhost steht im Ergebnis. Die Prüfung von Titel oder Kennung deckt Prinzip 15 ab (keine fremde Seite).
+- **Zugang** spielt keine Rolle: Bestellung, Konto, kostenpflichtig und „auf Anfrage“ werden weiter gelistet (Vorgabe 14.11.2026), sofern der Link sicher auf die Seite des Datensatzes führt. Eine Seite mit Bestell- oder Anmeldeknopf besteht, wenn Titel oder Kennung dort stehen; eine Weiterleitung auf eine Anmeldeseite besteht nicht.
+- **Muster** des Links für die Gruppierung: Host und Pfad, in dem Kennungen des Datensatzes durch `{id}` und Teile mit Ziffern oder mehr als 40 Zeichen durch `{x}` ersetzt sind; Abfrage nur mit den Namen der Parameter (z. B. `www.govdata.de/suche/daten/{id}`, `www.geoportal.rlp.de/map?LAYER[id]&LAYER[zoom]`). Ein Fragment (`#…`) gehört dazu, weil der Server es nie sieht (§4d).
+- **Über `gateway`:** Allowlist = die Hosts der Links dieses Laufs; Takt aus `hosts.yaml`, sonst 1 Verbindung und 1 s Abstand je Host (M5-20 A6); `Crawl-delay` aus `robots.txt` gilt, wenn größer; der Zeiger je Host liegt in Postgres (M5-37), gilt also auch zusammen mit dem Harvest. Das Gateway gibt dafür die Adresse nach den Weiterleitungen zurück (neues Feld `url` der Antwort, sonst unverändert).
+- **Ergebnis** je Eintrag in Postgres (Tabelle `earthx_link_check`, Migration 037: Adresse, Host, Muster, Ergebnis, Grund, Status, Zielhost, Zeit, Schutz nach §4c). Ein Ergebnis gilt nur für die Adresse, mit der es geprüft wurde: ändert die Quelle den Link, ist der Eintrag ungeprüft. In der Freigabedatei steht es nur für die Stichprobe (`check`), in den Laufdateien als Zahlen je Host und Muster mit Beispielen.
+- **Lizenzhinweis auf der Seite** nur zur Information in der Stichprobe (Name oder Adresse der Lizenz im Text: ja/nein).
+
+### 4a. Sichtbar, verborgen, zurück
+
+- **Neuer oder erneut vorgelegter Eintrag** (`in_review`): `publish` macht ihn nur sichtbar, wenn seine Freigabedatei `approved` ist **und** seine letzte Prüfung mit der aktuellen Adresse `passed` ist und nicht unter dem Schutz nach §4c steht. Sonst bleibt er `in_review` und kommt mit dem nächsten Lauf wieder in den Stapel; ist er dann geprüft, wird er sichtbar. Das gilt auch für eine Freigabe von Hand.
+- **Veröffentlichter Eintrag mit Fehlschlag:** neuer Zustand `link_failed`, unsichtbar wie jeder Zustand außer `published`, **nicht gelöscht**: Inhalt, Freigabedatei und Datum bleiben. Besteht er eine spätere Prüfung mit derselben Adresse und unverändertem Inhalt, wird er wieder `published`, ohne neue Freigabe (er war schon freigegeben). Ändert die Quelle Inhalt oder Link, geht er wie ein veröffentlichter Eintrag nach U1 (`adr/0033` §11) in die Prüfung.
+- **Bestand beim ersten Lauf:** Alle veröffentlichten geernteten Einträge (rund 10⁵) werden geprüft, die neuen zuerst, dann der Bestand. Bis ein Eintrag des Bestands geprüft ist, bleibt er sichtbar.
+- **Rotation (vgl. M5-24):** Jeder sichtbare und jeder verborgene Eintrag wird erneut geprüft, wenn seine letzte Prüfung älter als 30 Tage ist, die ältesten zuerst. Weil Otto die Läufe selbst startet, gilt „etwa einmal im Monat“ nur bei mindestens einem Lauf im Monat.
+- **Budget je Lauf:** höchstens 180 min Prüfzeit (in `linkcheck.yaml`); was nicht drankommt, folgt im nächsten Lauf. Reihenfolge: neue und erneut vorgelegte Einträge, dann nie geprüfte des Bestands, dann die ältesten Prüfungen.
+
+### 4b. Laufzeit des ersten Laufs [A]
+
+Die Hosts werden parallel geprüft, jeder in seinem Takt; die Laufzeit bestimmt der Host mit den meisten Links: **Dauer ≈ max über die Hosts von (Links × Abstand)**. Die Verteilung auf Hosts kennt nur Ottos Datenbank; geschätzt aus den Stichproben der Freigabedateien (je 30 Einträge, `backend/catalog/approvals/`):
+
+| Quelle | Einträge | Host laut Stichprobe | geschätzte Links | Abstand | Dauer |
+|---|---|---|---|---|---|
+| govdata | 94 258 | `www.govdata.de` (17 von 30) | ≈ 53 000 | `robots.txt` sperrt Crawler außer großen Suchmaschinen (Kommentar in `sources/govdata.yaml` [P]) | keine Anfrage, alle nicht prüfbar (§4d) |
+| govdata | | `www.gkd.bayern.de` (4 von 30) | ≈ 12 500 | 1 s | ≈ 3,5 h |
+| govdata | | je rund 3 000–9 000: Schleswig-Holstein, Sachsen, Rheinland-Pfalz u. a. | | 1 s | ≈ 1–2,5 h, parallel |
+| opendata-swiss | 7 790 | `opendata.swiss` (14 von 30) | ≈ 3 600 | `Crawl-delay` 10 s, falls wie bei `ckan.opendata.swiss` [S] | ≈ 10 h |
+| fsdi-stac | 305 | `data.geo.admin.ch` (30 von 30) | 305 | 1 s | ≈ 5 min |
+
+**Schätzung:** ohne GovData-Katalogseiten rund 4–10 h Prüfzeit für den Bestand, bei 180 min je Lauf also 2–4 Läufe; mit einer `robots`-Freigabe für `www.govdata.de` (§4d) kämen bei 1 s Abstand rund 15 h dazu. Die Stichproben sind klein (30 je Quelle), die Zahlen sind Größenordnungen. Der Probelauf (§18a) zählt vor der ersten Anfrage die Links je Host und rechnet Links × Abstand aus; diese Tabelle steht dann in den Laufdateien.
+
+### 4c. Schutz je Host und Muster
+
+Fällt in einem Lauf bei einem Host oder einem Muster ein großer Anteil durch, liegt es eher an der Prüfung als an den Daten (z. B. eine Seite, die ihren Inhalt per Skript lädt, oder ein falsch gebautes Muster).
+
+- **Schwelle (Vorschlag, in `linkcheck.yaml`):** mindestens **20 geprüfte** Links (bestanden oder fehlgeschlagen) und mindestens **25 % Fehlschläge** in diesem Lauf, je Host und je Muster. [A] Echte tote Links liegen nach den Stichproben vom 21.–24.11. deutlich darunter (kein Linkfehler in 4 × 30); ein falsches Muster fällt nahezu ganz durch.
+- **Wirkung:** Für die Einträge dieses Hosts bzw. Musters wird in diesem Lauf **nichts verborgen und nichts freigegeben**: Veröffentlichte bleiben sichtbar, neue bleiben unsichtbar, auch die bestandenen. Die Ergebnisse stehen mit `guarded` in der Tabelle.
+- **Befund oben:** Der Fall steht als erster Befund aus den Läufen in `befunde.md`, mit Zahlen, Gründen und 5 Beispielen, und in den Laufdateien. Ebenso ein Host, bei dem mehr als die Hälfte nicht prüfbar ist (z. B. `robots.txt`).
+
+### 4d. Muster, die voraussichtlich durchfallen, und Vorschläge
+
+Aus den Stichproben der Freigabedateien [P] und dem Code; geprüft wird nichts aus der Sitzung.
+
+| Muster | Was dagegen spricht | Vorschlag |
+|---|---|---|
+| `www.govdata.de/suche/daten/{id}` (Katalogseite, Rang 3, aus `catalog_page` der Quell-Datei) | (1) Das Muster ist laut Quell-Datei ungeprüft [P: „[S, not checked from a session]“]. In den Daten stehen daneben `/web/guest/suchen/-/details/…` (ältere Form des Portals [S]). Die Seite, die Otto am 19.11. im Browser als Beleg geöffnet hat, hat die Form `https://www.govdata.de/daten/-/details/govdata-metadatenkatalog` [P, `robots_exception.evidence`]; dieselbe Form nennt eine Seite des Statistikportals [S]. (2) `robots.txt` von `www.govdata.de` sperrt Crawler; geprüft werden kann die Seite dann nicht. | (a) `catalog_page` auf `https://www.govdata.de/daten/-/details/{name}` umstellen, sobald Otto im Browser bestätigt, dass `…/suche/daten/3d-meshes-brandenburg`, `…/web/guest/suchen/-/details/3d-meshes-brandenburg` und `…/daten/-/details/3d-meshes-brandenburg` auf dieselbe Seite führen bzw. welche nicht; `catalog_page` geht in die Extraktor-Version ein [P, `extract.py`], der nächste Harvest wertet deshalb alle Funde ohne Anfrage neu aus. (b) Für die Prüfung: Frage F12 (§18a). |
+| `data.geo.admin.ch/browser#/collections/{id}` (FSDI, alle 305) | Der Teil nach `#` geht nie an den Server; jede Adresse liefert dieselbe Seite des STAC-Browsers ohne Titel. Fällt ganz durch, der Schutz (§4c) greift | Prüfen über die Seite, die der Browser anzeigt: die Collection `https://data.geo.admin.ch/api/stac/v1/collections/{id}` (JSON mit Titel und Kennung, derselbe Host); für Links mit `#/`-Pfad bei einem STAC-Browser. Frage F13 |
+| `www.geoportal.rlp.de/map?LAYER[…]` (Viewer mit Ebene) | Viewer laden Ebenen per Skript; Titel wohl nicht im HTML [A] | Befund nach dem Probelauf; Vorschlag dann mit den Zahlen |
+| `opendata.swiss/de/dataset/{id}` | Ob das Portal den Titel im HTML liefert, ist aus der Sitzung nicht prüfbar; `<title>` und `og:title` genügen nach Ottos Regel | Probelauf zeigt es |
+| GENESIS-Datenbanken (z. B. Statistik Sachsen) | Tabellen über einer Größe nur angemeldet, Rücksprung zur Startseite | fällt als `start_page` durch, wie gewollt |
 
 ## 5. Warnzeichen am Fund
 
@@ -118,20 +162,19 @@ Rein aus den Metadaten, ohne Anfrage, im Bericht über **alle** Funde des Stapel
 **Ein Stapel wird `approved`, wenn alles gilt:**
 
 1. **Lizenzen:** Jeder Eintrag des Stapels hat eine Regel aus `terms.yaml` (bzw. einer Schreibweise nach §7) und `grants/`; das gilt schon heute, sonst wartet er (`needs_rule`). Einstufungen kommen nur aus `terms.yaml` auf `main`, die der Lauf nie ändert.
-2. **Linkprüfung:** höchstens **1 Fehler** in der Stichprobe (F2); höchstens ein Drittel **nicht prüfbar**; bei weniger als 10 prüfbaren Einträgen **kein** Fehler.
+2. **Linkprüfung:** entfällt als Bedingung für den Stapel (F2 ersetzt): Jeder Eintrag wird nur mit eigener bestandener Prüfung sichtbar (§4a). Die Stichprobe zeigt das Ergebnis für die nachgelagerte Durchsicht.
 3. **Warnzeichen:** Funde mit Warnzeichen sind vorher herausgenommen (§5); ein Stapel, in dem nach dem Herausnehmen nichts bleibt, wird nicht freigegeben.
 4. **Größe:** höchstens 5 000 Einträge und höchstens 25 % der schon veröffentlichten Einträge der Quelle, mindestens aber 200 (F6). Ein Sprung darüber deutet auf einen Fehler der Pipeline (z. B. eine kaputte Regel R-G) und wartet auf Otto.
 5. **Lauf ohne Fehler:** der Bericht hat keinen Fund als „fehlerhaft“ gezählt (M5-20 A22), oder höchstens 1 %.
 
 **Wirkung:**
 
-- **Erfüllt:** `decision: approved`, `decided_on: <Tag>`, `decided_by: rules`; je Eintrag der Stichprobe `ok: true` bei `result: ok`, sonst `ok: false`; `excluded_entries` = Funde mit Warnzeichen plus Einträge der Stichprobe mit `failed`. `catalog-load` veröffentlicht den Rest nach dem Merge.
+- **Erfüllt:** `decision: approved`, `decided_on: <Tag>`, `decided_by: rules`; je Eintrag der Stichprobe `ok: true` bei bestandener Prüfung, sonst `ok: false`; `excluded_entries` = Funde mit Warnzeichen. `catalog-load` veröffentlicht nach dem Merge die übrigen Einträge mit bestandener Prüfung (§4a).
 - **Nicht erfüllt:** `decision: pending`, `decided_by: null`; die Datei wird trotzdem gemergt (nichts wird sichtbar, `adr/0033` §8.4), der Grund steht in der Befundliste. Otto kann sie später von Hand freigeben (wie bisher: Häkchen, `decision`, Merge), oder der nächste Lauf übernimmt die Funde in seinen Stapel (`adr/0033` §8.3, Takt).
 - **Nie automatisch:** `rejected`, `excluded_rules`, `revoked_on`. Das bleiben Ottos Werkzeuge.
 
 **Änderungen an der Freigabedatei** (`catalog/approvals.py`): neue Felder `decided_by` (`rules`, `otto`, `null`), `excluded_entries` (Liste von IDs), je Eintrag der Stichprobe `check`. Prüfung beim Laden: `decided_by: rules` nur mit `check` an jedem Eintrag der Stichprobe; `excluded_entries` nur IDs des Stapels (gegen die Datenbank in `publish`). Alte Dateien ohne die Felder bleiben gültig (`decided_by` fehlt = von Hand). `publish` überspringt `excluded_entries`; sie bleiben `in_review`.
 
-**Begründung der Schwelle [A]:** Ottos Stichproben vom 21.–24.11. hatten 0 bis 3 Fehler in 30, alle inhaltlich (Nicht-Geodaten), keiner am Link; die werden jetzt als Warnzeichen vorher herausgenommen. Ein Linkfehler, der übrig bleibt, ist selten und bei einem Fehler in 30 liegt der Fehleranteil mit 95 % Sicherheit unter rund 15 %, bei null unter rund 10 % („rule of three“, `adr/0033` §8.2 [S]). Strenger als 1 heißt: ein einziger toter Link beim Anbieter hält den ganzen Stapel auf.
 
 ## 7. Neue Schreibweisen einer eingestuften Lizenz
 
@@ -187,7 +230,7 @@ Die Stichprobe mit dem Ergebnis der Linkprüfung steht im Bericht `.md` neben de
 | 3 | Docker startet nicht in 5 min | Abbruch | „Docker antwortet nicht. Docker Desktop öffnen und neu starten.“ |
 | 5 | eine Quelle scheitert | weiter mit den übrigen; Befund `QUELLE` | in der Schlusszeile gezählt |
 | 6, 7 | Bericht, Schreibweisen oder Freigaben scheitern | Laufdateien mit `fehler.log` committen, pushen, **Draft-PR**, kein Merge (F10) | „FEHLER im Bericht von <quelle>. Branch harvest/<Tag>, PR <Nummer>.“ |
-| 8 | Linkprüfung scheitert als Ganzes | Stapel bleibt `pending`, weiter | in der Schlusszeile gezählt |
+| 8 | Linkprüfung scheitert als Ganzes | nichts verborgen, nichts Neues sichtbar; Stapel nach Regeln wie sonst; Befund | in der Schlusszeile gezählt |
 | 11 | Push oder PR scheitert | Abbruch, Branch bleibt lokal | „Push gescheitert, Branch harvest/<Tag> liegt lokal.“ |
 | 12 | ein Pflicht-Check rot oder 90 min um | kein Merge, PR bleibt offen; Befund | „Checks nicht grün: <Name>. PR <Nummer> bleibt offen, nichts gemergt.“ |
 | 13 | Merge abgelehnt (Branch-Schutz) | kein Merge | „Merge abgelehnt: <Grund von gh>. PR <Nummer> bleibt offen.“ |
@@ -244,7 +287,13 @@ Alle sechs stehen als erste Einträge in `docs/harvest/befunde.md` (`H-2026-11-2
 | Stelle | Neu oder geändert |
 |---|---|
 | `scripts/harvest-cycle.ps1` | Ablauf §3, `-Install`, Fehlerfälle §10; ruft nur `git`, `gh`, `docker` |
-| `backend/earthx/discovery/cycle.py` (neu) | Unterbefehle `spellings`, `verify`, `decide`, `summary` für den Dienst `harvest-cycle`; Linkprüfung über `open_source_gateway`; Regeln §6; Laufdateien und `befunde.md` §9; Bereinigung |
+| `backend/earthx/catalog/migrations/037_link_check.sql` (neu) | Tabelle `earthx_link_check`, Zustand `link_failed` |
+| `backend/earthx/catalog/link_checks.py` (neu) | Auswahl der fälligen Links (§4a), Ergebnisse speichern, Schutz (§4c), Verbergen und Zurückholen |
+| `backend/earthx/discovery/linkcheck.py` (neu) | Prüfung einer Seite (§4, rein) und Lauf über `open_source_gateway` mit Budget; Muster; Befehl `python -m earthx.discovery.linkcheck` |
+| `backend/catalog/linkcheck.yaml` (neu) | Schwellen, Budget, Fehler- und Anmelde-Wörter |
+| `backend/earthx/gateway/client.py` | Antwort mit der Adresse nach den Weiterleitungen (A17) |
+| `backend/earthx/catalog/listing_store.py` | `link_failed` wie `published` bei U1, „bei der Quelle weg“, Rücknahme einer Regel |
+| `backend/earthx/discovery/cycle.py` (neu) | Unterbefehle `spellings`, `decide`, `summary` für den Dienst `harvest-cycle`; Regeln §6; Laufdateien und `befunde.md` §9; Bereinigung |
 | `backend/earthx/discovery/flags.py` (neu) | Warnzeichen §5, rein; liest `flags.yaml` |
 | `backend/earthx/discovery/report.py` | Warnzeichen vor der Stichprobe; `excluded_entries` vorbelegt; `why: new_spelling`; Classify-Auszug als Datei in einem Durchgang mit dem Bericht (A14) |
 | `backend/earthx/catalog/approvals.py` | Felder `decided_by`, `excluded_entries`, `check`; Prüfung und `publish` §6 |
@@ -260,7 +309,8 @@ Importregeln unverändert: `discovery` importiert nur `adapters`, `catalog` und 
 
 Ohne Netz, synthetische Fixtures, Transport-Attrappe am `Gateway` (wie M5-19, M5-20):
 
-- **Linkprüfung:** `200` mit Titel; Titel fehlt bei Seite mit Text → Fehler; Skriptseite → nicht prüfbar; `404`, `410`; `429`, `5xx`, Timeout → einmal wiederholt, dann nicht prüfbar; Weiterleitung gleicher Host, `http`→`https`, fremder Host; `robots.txt` verbietet → kein Abruf; nicht HTML; mehr als 1 MiB; Takt und Grenze 50 neue Hosts; neuer Host wird nach bestandener Prüfung bekannt; zweckfremd: Link auf private Adresse (Gateway lehnt ab), leerer Titel, Titel nur aus Satzzeichen.
+- **Linkprüfung:** `200` mit Titel im Text, nur in `<title>`, nur in `og:title`, nur im JSON-LD, nur die Kennung; Titel fehlt → `no_title`; Startseite nach Weiterleitung, Fehlerseite mit `200`, Anmeldeseite → durchgefallen; `404`, `410`; `429`, `5xx`, Timeout → nicht prüfbar; Weiterleitung auf anderen Host besteht mit Titel; `robots.txt` verbietet → kein Abruf; nicht HTML; zu groß; Muster mit `{id}` und `{x}`; zweckfremd: Link auf private Adresse (Gateway lehnt ab), leerer Titel, Titel nur aus Satzzeichen, Kennung kürzer als 6 Zeichen zählt nicht.
+- **Sichtbarkeit:** `publish` nur mit bestandener, ungeschützter Prüfung der aktuellen Adresse; Fehlschlag verbirgt (`link_failed`), Inhalt bleibt; bestanden holt zurück; nicht prüfbar ändert nichts; Schutz je Host und Muster an der Grenze (19/20 Links, 24/25 %); Rotation nach 30 Tagen; Budget; `link_failed` bei Sperrliste, Rücknahme einer Freigabe, Rücknahme einer Regel und „bei der Quelle weg“ wie `published`.
 - **Warnzeichen:** jedes W einzeln und nicht bei ähnlichen Wörtern („Alarm“, „Testament“ trifft `test` nicht als ganzes Wort); `cleared` hebt auf; Fund mit Warnzeichen nie in der Stichprobe.
 - **Freigabe nach Regeln:** jede Bedingung aus §6 einzeln an der Grenze; `pending` statt `rejected`; `excluded_entries` wird nicht veröffentlicht und bleibt `in_review`; alte Dateien ohne neue Felder laden; `decided_by: rules` ohne `check` ist Ladefehler; Fingerabdruck anders → nichts.
 - **Schreibweisen:** S1–S3 je mit Treffer und Fast-Treffer (ohne Version, NC statt BY, zwei Lizenzen, Zusatztext, K6-Ziel, amtliches Werk); doppelte Zuordnung → Ladefehler; Zeile löschen → Einträge unsichtbar (A23).
@@ -271,12 +321,14 @@ Ohne Netz, synthetische Fixtures, Transport-Attrappe am `Gateway` (wie M5-19, M5
 ## 15. Nachträge in Dokumenten
 
 - **In diesem PR:** `adr/0033` (Kopf, §8.5 neu, §11, §16 F1 neu), Entscheidungslog (eine Zeile am Ende), `docs/harvest/befunde.md` (erste Fassung).
+- **Schnitt (F11 = 1):** Teil 1 in #408: Plan, Nachträge, Migration 037, Linkprüfung mit Sichtbarkeit und Schutz, Gateway-Feld, Freigabedatei-Felder, Warnzeichen, Schreibweisen, Regeldaten §12. Teil 2: Skript, `cycle.py` (Freigabe nach Regeln, Laufdateien, Befundliste), Compose-Dienst, README.
 - **Im Bau-PR:** README (Abschnitt „Geerntete Einträge freigeben“), `approvals/README.md`, M5-20 §16 (Verweis auf den Doppelklick), Nachtrag zu `adr/0025` §6.5 und M5-20 A13 („das Skript pusht nie“ gilt nicht für `harvest-cycle.ps1`, Otto 24.11.2026).
 
 ## 16. Risiken und Grenzen
 
-- **Linkprüfung ist keine Inhaltsprüfung:** Sie findet tote Links und falsche Seiten, nicht falsche Lizenzen an richtigen Seiten. Das Recht kommt weiter aus Ottos Einstufung und den Regeln; die Pipeline-Fehler fangen Warnzeichen, Schwellen und die nachgelagerte Stichprobe.
-- **Seiten mit Inhalt per Skript** (Portale, die erst im Browser rendern) machen den Titel unprüfbar. Ist das bei einer ganzen Quelle so, wartet jeder ihrer Stapel (mehr als ein Drittel nicht prüfbar). Der Probelauf (F7) zeigt es vor der ersten automatischen Freigabe.
+- **Linkprüfung ist keine Inhaltsprüfung:** Sie findet tote Links und falsche Seiten, nicht falsche Lizenzen an richtigen Seiten. Eine Seite, die Titel oder Kennung nur zurückspiegelt (z. B. eine Suchseite „keine Treffer für …“), kann bestehen; die Fehler-Wörter in `<title>` fangen den häufigsten Fall. Das Recht kommt weiter aus Ottos Einstufung und den Regeln; die Pipeline-Fehler fangen Warnzeichen, Schwellen und die nachgelagerte Stichprobe.
+- **Seiten mit Inhalt per Skript** fallen durch, wenn auch `<title>`, Meta-Angaben und JSON-LD den Titel nicht nennen. Bei einem ganzen Muster greift der Schutz (§4c); der Probelauf zeigt es vor der ersten Wirkung.
+- **Viele Anfragen an fremde Hosts:** rund 10⁵ beim ersten Lauf, danach rund 1/30 des Bestands je Tag Abstand zwischen den Läufen. Takt und `robots.txt` gelten; ein Host, der sich beschwert, kommt in `hosts.yaml` mit größerem Abstand.
 - **Warnzeichen erzeugen Fehlalarme**, z. B. „Verkehrsstatistik mit Zählstellen“. Sie kosten nur Wartezeit; `cleared` hebt sie auf.
 - **Repo wächst** je Lauf um die Laufdateien (geschätzt 50–150 KB [A]).
 - **CI-Zeit:** Der PR berührt `backend/`, also läuft die volle Backend-Suite (rund 15–25 min [A]).
@@ -287,7 +339,9 @@ Ohne Netz, synthetische Fixtures, Transport-Attrappe am `Gateway` (wie M5-19, M5
 
 Ein Klassifikator, der aus Ottos Entscheidungen lernt (Häkchen der Stichproben, `cleared`, `blocked.yaml`, Änderungen an `geodata.yaml`), könnte Warnzeichen gewichten und Nicht-Geodaten besser erkennen. Die Daten dafür sammeln die Laufdateien ab jetzt. Eigene Aufgabe mit ADR, frühestens nach einigen Wochen automatischer Läufe.
 
-## 18. Fragen an Otto
+## 18. Fragen an Otto — beantwortet am 24.11.2026
+
+**Antworten (Otto, 24.11.2026):** F1, F4–F11 je **1**. F2 und F3 ersetzt durch den Zusatz „jeder Eintrag erst nach bestandener Prüfung seines eigenen Links“ (§4–§4d, §18a). Branch-Schutz prüft Otto.
 
 **F1 — Checkout für den Lauf?**
 1. Dein Checkout; Abbruch, wenn er ungesicherte Änderungen hat; sonst Wechsel auf `main` (dein Branch bleibt) **(Empfehlung)**
@@ -341,6 +395,24 @@ Ein Klassifikator, der aus Ottos Entscheidungen lernt (Häkchen der Stichproben,
 1. PR 1 (dieser): Plan und Nachträge, danach die Backend-Bausteine (Freigabedatei, Warnzeichen, Schreibweisen, Linkprüfung, §12). PR 2: Skript, Freigabe nach Regeln, Laufdateien, Befundliste, README **(Empfehlung)**
 2. PR 1 nur Plan und Nachträge; PR 2 der ganze Bau (rund 2 000 Zeilen)
 
+## 18a. Zusatz Otto (24.11.2026) und neue Fragen
+
+**Zusatz (umgesetzt in §4–§4d, §6, §10, §14):** Prüfung jedes Links statt nur der Stichprobe; Bestehen nach drei Punkten; Fehlschlag unsichtbar und nach Muster in der Befundliste; ganze Muster, die durchfallen, gesondert untersucht (§4d); Bestand beim ersten Lauf geprüft und bei Fehlschlag verborgen, nicht gelöscht; danach rotierend etwa einmal im Monat; Laufzeit geschätzt (§4b); Schutz je Host und Muster (§4c); Bestellung, Konto, kostenpflichtig und „auf Anfrage“ weiter gelistet.
+
+**Probelauf (F7 = 1, präzisiert):** Der erste Lauf prüft im Budget und schreibt die Ergebnisse in `earthx_link_check`, verbirgt aber nichts und gibt nichts frei: Freigabedateien bleiben `pending`. Die Laufdateien zeigen je Host und Muster: Links, bestanden, durchgefallen nach Grund, nicht prüfbar, Schutz ja/nein, was verborgen und was freigegeben würde, dazu die Tabelle Links × Abstand aus §4b. Ab dem zweiten Lauf wirken die Regeln; Ergebnisse des Probelaufs unter 30 Tagen gelten weiter.
+
+**F12 — GovData-Katalogseiten, die `robots.txt` sperrt (§4d; rund die Hälfte der GovData-Einträge [A])?**
+1. Bleiben ungeprüft: veröffentlichte bleiben sichtbar, neue warten; Befund oben. Für den Link gilt nach Möglichkeit der nächste Rang (Seite beim Anbieter), die Katalogseite nur zuletzt, wie heute **(Empfehlung)**
+2. Prüfung über die CKAN-API der Quelle (`package_show`, schon mit `robots_exception` erlaubt): Datensatz mit Name und Titel vorhanden zählt als bestanden, wenn das Muster der Katalogseite von dir einmal im Browser bestätigt ist (§4d (a))
+3. `robots_exception` auch für die Seiten von `www.govdata.de`, mit Beleg von dir
+
+**F13 — Links mit `#/`-Pfad auf einen STAC-Browser (FSDI, §4d)?**
+1. Geprüft wird die Collection der STAC-API auf demselben Host (Titel und Kennung im JSON); bestanden, wenn sie `200` liefert und Titel oder Kennung nennt **(Empfehlung)**
+2. Der Link der FSDI-Funde wird ein anderer (z. B. der Viewer `map.geo.admin.ch` mit Ebene), mit derselben Frage dort
+3. Sie fallen durch und bleiben unsichtbar, bis die Quelle eine prüfbare Seite liefert
+
+Bis zu den Antworten auf F12 und F13 gilt der Schutz nach §4c: für diese Muster wird nichts verborgen und nichts Neues sichtbar.
+
 ## 19. Auslegungen (gelten, wenn Otto nicht widerspricht)
 
 - **A1** Quellen: alle mit `enabled: true` in `backend/catalog/sources/`, Reihenfolge nach `dedupe_rank`, dann ID. Ein Lauf je Quelle wie bisher (CKAN: 400 Seiten, ein voller Durchgang über mehrere Läufe); `--full` und `--reextract` nur von Hand, weil der Harvest veraltete Extraktor-Versionen selbst neu auswertet [P].
@@ -358,3 +430,5 @@ Ein Klassifikator, der aus Ottos Entscheidungen lernt (Häkchen der Stichproben,
 - **A13** Das Skript schreibt nur `backend/catalog/approvals/`, `backend/catalog/licenses/grants/`, `backend/catalog/licenses/spellings.yaml` und `docs/harvest/`; es ändert nie `terms.yaml`, `geodata.yaml`, `flags.yaml`, `blocked.yaml`, `sources/` oder `.github/`.
 - **A14** Der Classify-Auszug entsteht im selben Durchgang wie der Bericht, damit die Ableitung nur einmal läuft; `harvest-report.ps1 -Classify` bleibt für Hand-Läufe.
 - **A15** Kein PR, wenn der Lauf weder einen neuen Stapel noch einen neuen oder erledigten Befund hat.
+- **A16** Die Ergebnisse der Linkprüfung liegen nur in Postgres (`earthx_link_check`); Git hält Regeln und Schwellen (`backend/catalog/linkcheck.yaml`), die Laufdateien Zahlen und Beispiele. Verbergen braucht keine Freigabe (`adr/0033` §4: Entfernen nie), Zurückholen eines schon freigegebenen Eintrags mit unverändertem Inhalt auch nicht.
+- **A17** Das Gateway liefert die Adresse nach den Weiterleitungen als neues Feld `url` der Antwort; sonst ändert sich am Gateway nichts.
