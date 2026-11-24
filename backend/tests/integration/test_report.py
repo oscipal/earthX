@@ -24,10 +24,11 @@ from earthx.catalog.licences import LicenceCatalogue, load_licences
 from earthx.catalog.listed import BlockReason, BlockRule, BlockScope, load_regions
 from earthx.catalog.listed_search import listed_entry
 from earthx.catalog.listed_store import apply_blocklist, write_regions
-from earthx.catalog.listing_store import withdraw
+from earthx.catalog.listing_store import mark_listings, withdraw
 from earthx.catalog.municipalities import Municipality, load_municipalities, write_municipalities
 from earthx.catalog.registry import ConfigError, Maturity
 from earthx.catalog.sources import CkanFilter, SourceConfig, SourceProtocol, StacFilter, read_sources
+from earthx.discovery import report as report_module
 from earthx.discovery.dedupe import find_keys
 from earthx.discovery.enrich import PLACE_NAMES_FILE, read_place_directory
 from earthx.discovery.grants import GrantToAll, build_grants, dump_grants, publishers_of
@@ -764,6 +765,86 @@ def test_every_full_entry_on_a_harvested_stac_host_has_the_key_of_its_listed_col
         keys = find_keys({"source_key": collection_id}, stac_host=source.host, known={})
         assert set(keys) <= set(full[config.dataset_id]), config.dataset_id
     assert audited >= 5
+
+
+IDENTIFIER = "691cb471-c3b5-48ec-a107-d0ad612fa70b@bundesamt-fur-landestopografie-swisstopo"
+
+
+def _opendata_swissalti3d(world: World) -> tuple[str, list[dict[str, Any]]]:
+    """The finds of opendata.swiss around swissALTI3D (Otto, 24.11.2026): its listing, with a geocat identifier and no
+    link to the FSDI, and the two shaded-relief products, which are products of their own."""
+    finds = [
+        _find("549438da", title="swissALTI3D", identifier=IDENTIFIER, source_url="https://opendata.swiss/de/dataset/a"),
+        _find("mono", title="swissALTI3D Reliefschattierung monodirektional", identifier="mono@swisstopo"),
+        _find("multi", title="swissALTI3D Reliefschattierung multidirektional", identifier="multi@swisstopo"),
+    ]
+    return f"{world.ckan.source_id}:{IDENTIFIER}", finds
+
+
+def test_the_listing_of_swissalti3d_at_opendata_swiss_is_a_duplicate_of_the_full_entry(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    listing, finds = _opendata_swissalti3d(world)
+    monkeypatch.setattr(report_module, "_listings", lambda: {listing: "swissalti3d"})
+    world.put(world.ckan, *finds)
+    world.report()
+    assert (world.row("549438da")["state"], world.row("549438da")["duplicate_of"]) == ("duplicate", "swissalti3d")
+    for key in ("mono", "multi"):
+        assert world.row(key)["duplicate_of"] is None
+    # The named listing taken back, the find is its own entry again (in review, as every restored row).
+    monkeypatch.setattr(report_module, "_listings", lambda: {})
+    world.report()
+    assert (world.row("549438da")["state"], world.row("549438da")["duplicate_of"]) == ("in_review", None)
+
+
+def test_classify_proposes_the_finds_with_the_title_of_a_full_entry(world: World, monkeypatch: pytest.MonkeyPatch) -> None:
+    listing, finds = _opendata_swissalti3d(world)
+    world.put(world.ckan, *finds)
+    text = classify_text(world.ckan, world.report(classify_only=True))
+    assert "Kandidaten für also_listed_as (1; Titel gleich dem eines vollen Eintrags" in text
+    expected = f"swissalti3d „swissALTI3D“ | {world.ckan.source_id}.549438da „swissALTI3D“ | {world.ckan.source_id} | {PUBLISHER} | {listing}"
+    assert f"  - {expected}" in text
+    assert "Reliefschattierung" not in text.split("Kandidaten für also_listed_as")[1].split("Gleichnamige")[0]
+    # Once the listing is named, the find is no candidate any more; the report keeps the list in its file.
+    monkeypatch.setattr(report_module, "_listings", lambda: {listing: "swissalti3d"})
+    assert "Kandidaten für also_listed_as (0;" in classify_text(world.ckan, world.report(classify_only=True))
+
+
+def test_the_report_file_lists_the_candidates_for_also_listed_as(world: World) -> None:
+    listing, finds = _opendata_swissalti3d(world)
+    world.put(world.ckan, *finds)
+    result = world.report()
+    markdown = next(path for path in result.files if path.suffix == ".md").read_text(encoding="utf-8")
+    assert "## Kandidaten für also_listed_as (1; nur ein Vorschlag, nie automatisch eingetragen)" in markdown
+    assert f"| {listing}" in markdown
+    assert [c.key for c in result.title_candidates] == [listing]
+
+
+def test_classify_shows_examples_of_the_new_pairs(world: World, monkeypatch: pytest.MonkeyPatch) -> None:
+    listing, finds = _opendata_swissalti3d(world)
+    world.put(world.ckan, *finds)
+    world.report()
+    monkeypatch.setattr(report_module, "_listings", lambda: {listing: "swissalti3d"})
+    result = world.report(classify_only=True)
+    assert result.dedupe is not None and [p[0] for p in result.dedupe.new] == [f"{world.ckan.source_id}.549438da"]
+    text = classify_text(world.ckan, result)
+    assert "10 Beispiele neu (Duplikat | Haupteintrag | Schlüssel):" in text
+    assert f"- swissALTI3D <{world.ckan.source_id}.549438da> | " in text.split("10 Beispiele neu")[1]
+
+
+def test_catalog_load_marks_the_listing_of_a_full_entry_as_its_duplicate(world: World) -> None:
+    listing, finds = _opendata_swissalti3d(world)
+    world.put(world.ckan, *finds)
+    world.report()
+    published = f"{world.ckan.source_id}.549438da"
+    world.conn.execute("UPDATE public.earthx_listed_entry SET state = 'published' WHERE dataset_id = %s", (published,))
+    assert mark_listings(world.conn, {listing: "swissalti3d"}) == (published,)
+    assert (world.row("549438da")["state"], world.row("549438da")["duplicate_of"]) == ("duplicate", "swissalti3d")
+    assert world.row("mono")["duplicate_of"] is None
+    assert mark_listings(world.conn, {listing: "swissalti3d"}) == ()
+    assert mark_listings(world.conn, {}) == ()
+    # Another source with the same identifier is another find.
+    assert mark_listings(world.conn, {f"other-source:{IDENTIFIER}": "swissalti3d"}) == ()
 
 
 def test_a_collection_in_a_distribution_makes_no_duplicate(world: World) -> None:

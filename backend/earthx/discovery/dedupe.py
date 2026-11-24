@@ -15,6 +15,11 @@ collection pages within one source, never the same dataset across sources):
   candidates or its skipped page counts too: ``map.geo.admin.ch`` with ``layers=`` and ``data.geo.admin.ch`` with
   ``/collections/<id>``, and only where all addresses together name exactly one known collection.
 
+* ``also:<source>:<identifier>`` a listing a full entry names in ``also_listed_as`` (Otto, 24.11.2026): the identifier of a
+  find of that source that is that dataset's listing there (opendata.swiss lists swissALTI3D with a geocat identifier
+  and no link to the FSDI). Always a key; the full entry carries it, the find gets it from its ``id:`` key
+  (:func:`with_listings`).
+
 A DOI or identifier is a key only where it is unique (Otto, 23.11.2026): on at most one find of each source and on at
 most :data:`MAX_SHARED` finds in all. Two finds of one source with the same DOI or identifier are two datasets that
 share a placeholder of their portal, not one dataset twice.
@@ -28,7 +33,7 @@ becomes a main entry and takes every unplaced find that shares one of its keys. 
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -41,6 +46,7 @@ __all__ = [
     "main_entries",
     "namespaced",
     "shared_key",
+    "with_listings",
 ]
 
 #: How an address is cut into tokens: an id is whole between these.
@@ -123,6 +129,18 @@ def find_keys(
     return tuple(sorted(keys))
 
 
+def with_listings(source_id: str | None, keys: Iterable[str], listings: Collection[str]) -> tuple[str, ...]:
+    """``keys`` of a find of ``source_id`` and ``also:<source>:<identifier>`` for its ``id:`` key where a full entry names
+    that listing (``listings`` are the keys ``<source>:<identifier>`` of ``also_listed_as``)."""
+    keys = tuple(keys)
+    if source_id is None:
+        return keys
+    extra = tuple(
+        f"also:{source_id}:{key[3:]}" for key in keys if key.startswith("id:") and f"{source_id}:{key[3:]}" in listings
+    )
+    return tuple(sorted({*keys, *extra}))
+
+
 @dataclass(frozen=True, slots=True)
 class Member:
     """One entry that takes part in dedupe; ``rank`` orders the entries (the smallest is a main entry first).
@@ -150,7 +168,7 @@ def _usable(members: list[Member]) -> set[str]:
             if member.source is not None:
                 per_source[(member.source, key)] = per_source.get((member.source, key), 0) + 1
     repeated = {key for (_source, key), count in per_source.items() if count > 1}
-    return {k for k, n in total.items() if k.startswith("coll:") or (n <= MAX_SHARED and k not in repeated)}
+    return {k for k, n in total.items() if k.startswith(("coll:", "also:")) or (n <= MAX_SHARED and k not in repeated)}
 
 
 def main_entries(members: Iterable[Member]) -> dict[str, str]:
