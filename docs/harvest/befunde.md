@@ -43,7 +43,7 @@ Noch kein automatischer Lauf.
 
 - [x] **H-2026-11-24-07** · 2026-11-24 · Lauf · Der erste Probelauf brach nach `spellings` ab: `spellings.yaml` war mit
   YAML-Ankern geschrieben (eine `date` in mehreren Zeilen), der Lader lehnte sie ab („an anchor is not allowed (line 8)“).
-  Erledigt 24.11.2026 (Fix 1, Plan M5-67 §22): `dump_yaml` schreibt ohne Anker und liest sein Ergebnis zurück; alle
+  Erledigt 24.11.2026 (Fix 1, [#414](https://github.com/oscipal/earthX/pull/414), Plan M5-67 §22): `dump_yaml` schreibt ohne Anker und liest sein Ergebnis zurück; alle
   Schreiber des Laufs geprüft; Integrationstest über alle Schritte.
 - [x] **H-2026-11-24-08** · 2026-11-24 · Lauf · Eine planmäßige Pause von `harvest` (govdata: Seiten je Lauf erreicht)
   galt als „Harvest gescheitert“. Erledigt 24.11.2026 (Fix 1): Exit-Code 75 ist Erfolg, nur ein Hinweis im Bericht; das
