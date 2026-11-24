@@ -969,3 +969,10 @@ def test_the_statements_of_extracted_finds_are_counted_for_new_spellings(world: 
     world.put(world.ckan, _find("a", licence_statements=[statement]), _find("b", licence_statements=[statement]))
     world.put(world.ckan, _find("c", licence_statements=[statement]), state="gone")
     assert waiting_statements(world.conn)[statement] == 2
+
+
+def test_a_title_with_a_mail_address_never_goes_into_the_report(world: World) -> None:
+    world.put(world.ckan, _find("a"), _find("m", title="Bodenkarte, Fragen an hans.muster@amt.example.org"))
+    approval, markdown = world.report().files
+    text = approval.read_text(encoding="utf-8") + markdown.read_text(encoding="utf-8")
+    assert "hans.muster" not in text and "Kontaktangabe" in text

@@ -1069,7 +1069,11 @@ def _flag_lines(flagged: Mapping[str, tuple[Flag, ...]], rows: Mapping[str, Mapp
         lines.append(f"- {code}: {len(items)}")
         for dataset_id, why in items[:10]:
             row = rows.get(dataset_id, {})
-            lines.append(f"  - {row.get('title', dataset_id)} — <{row.get('source_url', '')}> — `{why}`")
+            if any(flag.code == "W6" for flag in flagged[dataset_id]):
+                # A mail address or a phone number in the title or the description never goes into the repository.
+                lines.append(f"  - {dataset_id} (Titel und Link nicht gezeigt: Kontaktangabe) — `{why}`")
+            else:
+                lines.append(f"  - {row.get('title', dataset_id)} — <{row.get('source_url', '')}> — `{why}`")
     return lines or ["- keine"]
 
 
