@@ -415,7 +415,14 @@ Ein Job-Ergebnis mit Klassenband (`resultLayer.ts::isClassBand`, z. B. WorldCove
 **Ursache [M]:** Der Adapter `esa_worldcover_bucket` schrieb kein `raster:bands` ins Item. Das Panel kannte deshalb den Datentyp nicht und wählte `float32` („The item does not state a type the result can keep“). Ein `float32`-Ergebnis behielt zwar `classification:classes` (A3), hatte aber keine Farbtabelle (GeoTIFF erlaubt sie dort nicht). Das Frontend nahm ein Gleitkomma-Band nie als Klassenband und zeichnete es mit Bereich und viridis. Der Operator war richtig: `mask` v2 gibt Werte weiter (`passes_values`).
 
 **Behoben:**
-1. Der Adapter nennt die Karte als `uint8` mit nodata 0 (gemessen M5-07, Registry `band_classes.nodata`). Das Panel schlägt dann `uint8` vor, und das Ergebnis behält die Farbtabelle. **Otto lokal:** einmal `python -m earthx.discovery.materialize esa-worldcover-2020 --force` und dasselbe für `esa-worldcover-2021`, sonst bleiben die alten Items ohne Typ.
+1. Der Adapter nennt die Karte als `uint8` mit nodata 0 (gemessen M5-07, Registry `band_classes.nodata`). Das Panel schlägt dann `uint8` vor, und das Ergebnis behält die Farbtabelle. **Otto lokal** (PowerShell, bei laufender Topologie; ohne lokales Python), sonst bleiben die alten Items ohne Typ:
+
+   ```powershell
+   docker compose run --build --rm materialize esa-worldcover-2020 --force
+   docker compose run --build --rm materialize esa-worldcover-2021 --force
+   ```
+
+  
 2. Ein Ergebnisband, das Klassen nennt, ist im Frontend ein Klassenband, gleich welcher Typ. Seine Kacheln bekommen die Farben dieser Klassen als `colormap` (JSON) des Tilers, auch bei `float32`. Dieselbe Liste zeigt die Legende.
 3. Ein maskierender Schritt nennt das entscheidende Band und die Werte, die er ausblendet (`Operator.hides`, bei `mask` und `mask_values`). Dieses Band verliert die ausgeblendeten Klassen, in `classification:classes` wie in der Farbtabelle. Die Legende zeigt also Tree cover nicht mehr.
 4. `reproject` baute die Bandangaben neu und verlor die Klassen auch bei `nearest`/`mode`. Jetzt behält es sie, und die Regel je Band (§14) entscheidet.
@@ -451,6 +458,27 @@ Die Farbtabelle gibt es nur bei einem einzelnen Band in `uint8`/`uint16`. Bei `f
 - **A21 (Ansicht der Suche):** Die Ansicht einer Suche ist keine Ebene, aber sichtbar und hat eine Darstellung. Sie bekommt eine Legende an der Stelle des Eintrags „Search results“, mit dem Titel des Datensatzes. Die Vorschau im Processing-Panel bekommt keine.
 - **A22 (Band ohne Colormap):** Ein gestrecktes Band ohne Colormap zeigt einen Balken in Grau.
 - **A23 (Zustand):** Das Einklappen gilt je Ebene für die Sitzung im Browser, nicht im gespeicherten Arbeitszustand.
+
+### 13.3 Eine Legende mit Auswahl, Legenden im Layer-Manager (Otto, 24.11.2026)
+
+> Eine Legende unten links, immer sichtbar, Titel „Legend“, mit einem Dropdown im Kopf, welche Ebene sie zeigt (alle sichtbaren Ebenen mit Legende, RGB nicht). Standard ist immer die oberste sichtbare Ebene mit Legende; sie folgt, wenn eine Ebene dazukommt, entfernt, aus- oder eingeblendet oder verschoben wird. Eine Auswahl im Dropdown gilt, bis sich an den Ebenen wieder etwas ändert. Ohne Ebene bleibt die Box mit dem Titel stehen. Einklappbar über den Titel, scrollt nie. Im Layer-Manager zeigt jede Ebene ihre Legende unter ihrem Eintrag, mit Knopf zum Ein- und Ausblenden, standardmäßig sichtbar; wird es zu hoch, klappen sie von unten her automatisch ein; Zustand für die Sitzung. A20–A23 angenommen.
+
+**Umgesetzt:**
+- **Über der Karte** (`components/MapLegend.tsx`): eine Box mit Kopf aus Titel (klappt ein) und Dropdown.
+- **Auswahl** (`mapLegend.ts`): `chooseLegend` zeigt die oberste. Eine Auswahl gilt, solange `layersSignature` gleich bleibt. Die Signatur ändert sich mit Reihenfolge, Sichtbarkeit, Ort von „Search results“ und vorhandenen Legenden, nicht aber mit Farbskala oder Bereich.
+- **Folgerung:** Eine oben geöffnete Ansicht und eine neue oberste Ergebnis-Ebene übernehmen die Legende von selbst.
+- **Im Layer-Manager** (`LayerManager.tsx::useRowLegends`): je Ebene Legende und Knopf. Das Einklappen von unten wird gemessen (die Liste scrollt sonst) und bei jeder Änderung der Ebenen, der Knöpfe und der Fensterhöhe neu bestimmt. Den Sitzungszustand hält `legendStore.ts`.
+
+**Gemessen [M]** (`frontend/e2e/map-legend.cjs`, 42 Fälle):
+- Bei 1280×800 stehen im Layer-Manager alle drei Legenden.
+- Bei 1280×360 passt neben drei Zeilen keine Legende; alle drei klappen ein, und die Liste scrollt nicht.
+- Auswahl wechseln, Ebene ausblenden, Ebene nach oben ziehen und Ansicht oben öffnen wirken wie verlangt.
+
+**Auslegungen (gelten, wenn du nicht widersprichst):**
+- **A24 (eine Spalte im Layer-Manager):** Die Klassenlisten unter den Zeilen haben immer eine Spalte. Im Panel (340 px) würden zwei Spalten die Namen abschneiden.
+- **A25 (streng von unten):** Das Einklappen geht streng von unten nach oben. Eine kleinere Legende weiter oben (z. B. ein Farbbalken) klappt auch dann ein, wenn sie allein noch passen würde. Die zuletzt mit ihrem Knopf geöffnete klappt zuletzt.
+- **A26 (eine Ebene):** Mit nur einer Ebene mit Legende ist das Dropdown gesperrt, mit dem Grund im Tooltip („Only one visible layer has a legend“).
+- **A27 (Legende im Layer-Manager auch ausgeblendet):** Eine ausgeblendete Ebene zeigt ihre Legende im Layer-Manager weiter, nur über der Karte nicht.
 
 ---
 
