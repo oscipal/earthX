@@ -5,6 +5,7 @@
   - CKAN zusätzlich auf eine Liste von Herausgebern begrenzt (§5.2);
   - Lizenzregeln „Herausgeber + Lizenz-URI → Stufe“ als Datei in Git (§6.7);
   - Folgen zu `adr/0029` (`source_changed`), `adr/0026` (Embeddings) und zur Reihenfolge des YAML-Laders (§12).
+- **Nachtrag 2026-11-15 (`adr/0033`, angenommen 2026-11-14):** Gelistete Einträge liegen in Postgres, nicht als YAML in Git; ihre Freigabe läuft über Lizenzkatalog, Freigaben je Herausgeber und Lauf-Freigaben mit Stichprobe statt über Kandidatendateien. Betroffen sind „Vorab fest“, K2, §5.1, §5.2, §5.4, §6.1a, §6.5–§6.7, §7.1 und §10; die Stellen tragen je einen Nachtrag. Wo ein Nachtrag und der Text davor sich widersprechen, gilt der Nachtrag.
 - **Datum:** 2026-11-06 (Entwurf, Draft-PR [#300](https://github.com/oscipal/earthX/pull/300)); 2026-11-06 angenommen.
 - **Aufgabe:** M5-03 laut `docs/plans/m5/m5-discovery-und-suche.md` §5a (Entscheidungsvorlage B, §4). Die Nummer 0025 ist dort fest vergeben.
 - **Autonomiestufe:** C. Kein Produktivcode.
@@ -13,7 +14,7 @@
   - Unverändert bleiben `backend/`, `frontend/`, `scripts/`, Registry, Fixtures, Backlog, M5-Plan, `.importlinter`, `.github/`, `.claude/` und `CLAUDE.md`.
 - **Vorab fest:**
   - Reihenfolge: zuerst Quellen von Hand, dann die Pipeline (Plan §5 Antwort 1).
-  - Zunächst nur Raster (Antwort 2).
+  - Zunächst nur Raster (Antwort 2). **Nachtrag 2026-11-15 (`adr/0033` §14, M5-40):** gilt für volle Einträge; gelistete Einträge umfassen alle Datentypen (Tabellen, Vektor, Dokumente, Dienste) und auch Daten ohne direkten Download (Otto, 14.11.2026).
   - Discovery-Umfang: feste Liste bekannter Quellen plus STAC Index, dazu CKAN/DCAT-AP für GovData, data.gv.at und opendata.swiss; offene Suche erst in Paket 7b (Antwort 5).
   - Nur frei und ohne Schlüssel; anonymes Token zählt, kostenloses Konto nicht (Plan §2 Punkte 3 und 6).
   - Lizenz-Einstufung und Freigabe immer durch Otto (`CLAUDE.md`, B11).
@@ -161,7 +162,7 @@ Recherche eines Hilfsagenten am 06.11.2026. Die Doku-Seiten von CKAN, GitHub, IE
 | # | Kriterium |
 |---|---|
 | K1 | **Rücksicht auf die Quellen:** bedingte Anfragen, wo möglich; Abstand je Host; eigener `User-Agent`; `robots.txt` (`architekturplan.md` 4.3) |
-| K2 | **Eine Wahrheit** (B13 Punkt 3): kuratierte Einträge nur in Git, pgstac daraus befüllt; kein zweiter gepflegter Bestand in der Datenbank |
+| K2 | **Eine Wahrheit** (B13 Punkt 3): kuratierte Einträge nur in Git, pgstac daraus befüllt; kein zweiter gepflegter Bestand in der Datenbank. **Nachtrag 2026-11-15 (`adr/0033` §14, M5-40):** Jede Entscheidung (Quelle, Lizenz, Freigabe, Sperre) liegt nur in Git; der Inhalt gelisteter Einträge liegt nur in Postgres, die Datenbank hält von den Entscheidungen nur eine abgeleitete Kopie (`adr/0033` §4) |
 | K3 | **Kein Eintrag ohne Otto:** Der Harvester setzt nie `legal_status`, Lizenzstufe oder Capabilities (`adr/0024` R1, B10, B11) |
 | K4 | **Sicherheit:** Jede Adresse aus einem fremden Katalog ist nicht vertrauenswürdig (Prinzip 15, `architekturplan.md` 11); alles über `gateway`; keine Secrets der Plattform, wo es ohne geht |
 | K5 | **Idempotent und inkrementell:** ein zweiter Lauf ohne Änderung erzeugt keine Arbeit und keinen PR |
@@ -185,6 +186,8 @@ Recherche eines Hilfsagenten am 06.11.2026. Die Doku-Seiten von CKAN, GitHub, IE
 | **Review** | Kandidatendatei, Draft-PR (§6.5) | `in_review` |
 | **Publish** | Merge durch Otto; `catalog-load` beim Start | `published` |
 
+**Nachtrag 2026-11-15 (`adr/0033` §14, M5-40):** Für gelistete Einträge läuft Verify nur in der Stichprobe des Laufs (3 Assets je Eintrag wären bei 10⁶ rund 3·10⁶ Anfragen an fremde Hosts); die Zugangsart (`access.account`, `access.delivery`) kommt aus den Metadaten. Review und Publish sind für sie Stapel, Lauf-Bericht und Freigabedatei (`adr/0033` §8) statt Kandidatendatei und PR.
+
 Jede Stufe ist über den Hash ihrer Eingabe geschlüsselt (`architekturplan.md` 4.3). Bleibt der Hash der Rohantwort gleich, endet der Fund nach Fetch. Ändert sich nur die Normalisierung (neuer Code), wird aus der gespeicherten Rohantwort neu abgeleitet, ohne neu zu holen.
 
 ### 5.2 Seed: Quellen sind Konfiguration
@@ -196,6 +199,8 @@ Eine YAML-Datei je Quelle unter `backend/catalog/sources/` (F8 = 1), im Review w
 - `max_requests_per_run`, `min_interval_s` je Host, Takt (`daily`, `weekly`);
 - `maturity` der Quelle (wie in der Registry);
 - bei CKAN eine **Liste der Herausgeber** (Ergänzung 2, Otto 06.11.2026): nur Datensätze dieser Stellen kommen in die Pipeline.
+
+**Nachtrag 2026-11-15 (`adr/0033` §14, M5-40):** Der Rasterfilter wird zum Filter „räumliche Angabe vorhanden“ (GovData 68 017 von 165 427 Datensätzen, `adr/0033` §2.2), jeder Datentyp. Die Herausgeberliste entfällt als Filter; Lizenzkatalog, Freigaben je Herausgeber und Warteliste übernehmen ihre Rolle (`adr/0033` F9 = 1, §6).
 
 **Erste Seed-Liste (F6 = 1, fest):** FSDI STAC, Earth Search v1, GeoSphere `/v1/datasets`, BEV ATOM, STAC Index (nur als Register, Stufe 0: liefert Kataloge, keine Datensätze), GovData, opendata.swiss, data.gv.at (aus der Sitzung nicht erreichbar, Messung bei Otto). AWS Open Data Registry, EODC und CEOS FedEO bleiben für später.
 
@@ -252,6 +257,7 @@ stateDiagram-v2
 - `published` erkennt der Harvester ohne GitHub: Die ID steht in der geladenen Registry bzw. in der Liste der gelisteten Einträge.
 - `rejected` steht in Git, in `backend/catalog/rejected.yaml` mit Schlüssel, Hash der Lizenzangabe und Grund. Sonst schlüge der Harvester denselben Fund jede Nacht neu vor [A].
 - Ein geänderter Fund in `published` öffnet nur dann einen neuen Vorschlag, wenn sich Lizenzangabe, Assets oder Hosts ändern (Review-Pflicht nach 4.3); Titel und Beschreibung allein nicht (F5).
+- **Nachtrag 2026-11-15 (`adr/0033` §14, M5-40):** Neue Zustände `needs_rule` (Warteliste ohne Lizenzregel), `blocked` (gesperrt) und `tombstone` (Grabstein: Inhalt gelöscht, ID, Schlüssel, Grund und Datum bleiben, `api` antwortet `410`). Übergang `published → in_review` bei einem Wechsel von Lizenzangabe, Herausgeber, `access.account`, `access.delivery` oder Host des Links (`adr/0033` §11, F7 = 1). `rejected.yaml` wird `backend/catalog/blocked.yaml` (`adr/0033` §9, F6 = 1).
 
 ## 6. Einzelfragen
 
@@ -275,17 +281,21 @@ Tausende Collections ernten (`architekturplan.md` 5.2) geht nur, wenn ein Katalo
 - **Wirkung:** erscheint in `/stac/collections` und in der Suche; kein Kachel-, Such- oder Processing-Weg. `tiler`, `processing` und `runner` kennen nur volle Einträge [A].
 - **Prüfung beim Laden:** `tier` ist `catalog`; Link auf die Quelle vorhanden; sonst wie bei vollen Einträgen.
 - Das ist ein **zweiter Eintragstyp**. `adr/0024` K4 wollte keinen für Prototyp-Quellen; hier geht es um eine andere Stufe nach B11, nicht um einen Sonderweg. Derselbe Lader, dieselben Kopfprüfungen [A]. Entschieden mit F2 = 1.
+- **Nachtrag 2026-11-15 (`adr/0033` §14, M5-40):** Gelistete Einträge liegen in Postgres. Neue Felder: `earthx:data_kind`, `access.delivery`, `access.account` mit `paid`, `earthx:regions`, räumliche und zeitliche Ausdehnung, Herkunft `earthx:listing` (`adr/0033` §5, F10 = 1). Handeinträge unter `listed/` liest nur `catalog-load` und schreibt sie in dieselbe Tabelle (F11 = 1). Gelistete Einträge sind nie Prototyp (`adr/0033` F8 = 1).
 
 ### 6.2 Fetch: Rücksicht und `gateway`
 
 - **`User-Agent`:** `Policy` bekommt einen Pflichtwert `user_agent`; `gateway` setzt ihn auf jede Anfrage, ein Aufrufer überschreibt ihn nicht. Vorgabe wie beim Geocoder: Projektname und Repo-Adresse, keine Mail-Adresse einer Person (`api/dependencies.py:45`). Begründung: §3, opendata.swiss.
 - **Abstand je Host:** neben den 6 Verbindungen ein Mindestabstand je Host aus der Seed-Datei (Vorschlag 1 s; GeoSphere hat 240 Anfragen je Stunde laut `adr/0023` §8.1 [P]).
 - **`robots.txt`:** einmal je Lauf und Host lesen, über `gateway`, und `Disallow` für den eigenen `User-Agent` beachten (`architekturplan.md` 4.3). `5xx` oder nicht erreichbar heißt: der Host ruht in diesem Lauf (RFC 9309, §3a). Gilt für Kataloge; Assets bei Verify fragt der Harvester nur mit `HEAD`/`Range` an.
+  - **Nachtrag 2026-11-18 (Otto, M5-19 PR 2, [#379](https://github.com/oscipal/earthX/pull/379)):** Eine Ausnahme gibt es nur je Quelle in ihrer Seed-Datei: Feld `robots_exception` mit dem Pfad der Metadaten-API (genau der Pfad des `endpoint` mit `/` am Ende) und der Adresse der Doku des Anbieters, die diese API zur Nutzung beschreibt. Ohne das Feld bleibt `robots.txt` streng. Auch mit Ausnahme wird `robots.txt` gelesen; die Ausnahme hebt nur das `Disallow` für diesen Pfad auf dem Host der Quelle auf, kein anderer Pfad und kein anderer Host. `Crawl-delay` gilt immer: Abstand ist der größere Wert aus `hosts.yaml` und `Crawl-delay`. Der Lauf-Bericht nennt die Ausnahme und ob sie gebraucht wurde. Anlass: CKAN sperrt in seiner Standard-`robots.txt` `/api/` (opendata.swiss); GovData sperrt auf `www.govdata.de` alles außer großen Suchmaschinen und wird deshalb über den API-Host `ckan.govdata.de` gefragt, eine Ausnahme nur, wenn auch dieser sperrt.
+- **Nachtrag 2026-11-18, zweiter Lauf (Otto, M5-19 PR 2, [#379](https://github.com/oscipal/earthX/pull/379)):** Bittet eine Quelle mit `429` um Pause, wartet der Harvest nach `Retry-After`, sonst Minuten und verdoppelnd (2 min bis 30 min je Pause, höchstens 60 min je Lauf), nicht mehrfach im Takt von `Crawl-delay`; `gateway` gibt dem Harvest den `429` dafür sofort zurück. Ein voller Lauf eines CKAN-Katalogs ist ein Durchgang über einen oder mehrere Läufe: Ein abgebrochener Lauf hält seinen Stand, der nächste setzt fort; `gone` erst nach einem ganz durchlaufenen Durchgang.
 - **Bedingte Anfragen:** `If-None-Match` mit gespeichertem starkem oder schwachem `ETag`, sonst `If-Modified-Since`. Ein `304` ist im Harvester ein Ergebnis, kein Fehler; heute wirft `gateway` erst ab `400` (`client.py:204`), `304` kommt also schon durch [P].
 - **Unterbrecher je Host:** nach 3 Fehlern in Folge ruht die Quelle für den Rest des Laufs; ihre Funde gehen nach `stale`, nicht nach `broken` (§5.4).
 - **Seiten ohne `ETag`** (FSDI-Liste, CKAN, GeoSphere): ganz holen, Hash bilden, bei gleichem Hash keine Folgearbeit. Kosten eines Laufs ohne Änderung [M, Größen aus §3]: FSDI 6 Seiten, rund 1,4 MB; GeoSphere 14 KB; GovData mit Rasterfilter rund 2 000 Datensätze, je nach Seitengröße 2–20 Anfragen [A].
 - **CKAN inkrementell:** `metadata_modified` als Vorfilter mit einer Stunde Überlappung wie ckanext-harvest (§3a); nach §3 spart es bei GovData und opendata.swiss rund die Hälfte. Entscheidend bleibt der Hash [A].
 - **Gelöschte Funde:** Ein Abruf ab einem Datum sieht sie nicht (§3a). Wöchentlich ein voller Abgleich der IDs je Quelle; was fehlt, geht nach `stale`, beim zweiten Fehlen nach `broken` bzw. bei Kandidaten nach `rejected` mit Grund „bei der Quelle entfernt“.
+- **Nachtrag 2026-11-16 (M5-37, `plans/m5/m5-37-zeiger-je-host.md`, J1–J4):** Abstand, Verbindungen und Unterbrecher je Host gelten für alle Läufe und Instanzen zusammen, über Postgres (`earthx_source_host`, `earthx_source_lease`). Der Harvester bekommt sein `Gateway` über `discovery.source_gateway.open_source_gateway`. Der Unterbrecher zählt jeden Versuch über alle Aufrufer: nach 3 Fehlern in Folge (`429`, `5xx`, keine Antwort) ruht der Host 5 min, jede weitere Pause direkt danach doppelt so lang bis 60 min; ein Erfolg setzt zurück. Ist der nächste Platz eines Hosts mehr als 60 s entfernt, ruht er für den Rest des Laufs (`HostResting`); die Funde gehen wie oben nach `stale`. Ein `Retry-After` schiebt den Zeiger des Hosts für alle vor (höchstens 10 min).
 
 ### 6.3 Verify
 
@@ -312,6 +322,8 @@ Tausende Collections ernten (`architekturplan.md` 5.2) geht nur, wenn ein Katalo
 
 **Empfehlung P1, entschieden (F1 = 1)** für M5; P2 oder P3 als Frage mit M6. Ein Lauf ohne neue oder geänderte Kandidaten erzeugt keinen Branch (K5).
 
+**Nachtrag 2026-11-15 (`adr/0033` §14, M5-40):** P1 gilt für Kandidaten des vollen Wegs und für die Freigabedateien der Läufe (`backend/catalog/approvals/`, `adr/0033` §8.3, §8.4). Gelistete Einträge kommen nicht als Kandidatendatei nach Git.
+
 ### 6.6 Health-Checks und „zuletzt erfolgreich geprüft“
 
 Plan §3 legt die Health-Checks nach diesem ADR in Fassung 3. Hier nur, was die Pipeline dafür festlegt:
@@ -319,6 +331,7 @@ Plan §3 legt die Health-Checks nach diesem ADR in Fassung 3. Hier nur, was die 
 - Ein eigener, häufigerer Schritt je veröffentlichtem Datensatz (`architekturplan.md` 4.5): Katalog erreichbar, ein Asset per `Range`, Vergleich von `ETag`. Gleiche Tabellen und dasselbe `gateway` wie der Harvester.
 - **Das Prüfdatum steht nicht in YAML.** Ein Feld, das sich täglich ändert, erzeugte täglich einen PR. Es liegt in `earthx_record_state` bzw. einer Tabelle `earthx_health_check`; `api` fügt es beim Ausliefern der Collection als eigenes Feld unter `earthx:health` an (`registry.py:726–737` sieht genau das vor) [A].
 - Ein Lizenz- oder Strukturwechsel öffnet einen Vorschlag (§5.4), nie eine stille Änderung.
+- **Nachtrag 2026-11-15 (`adr/0033` §14, M5-40):** Gelistete Einträge prüft der Health-Check nur rotierend: den Link einer Teilmenge je Tag, jeden Eintrag einmal im Monat (`adr/0033` §13, M5-24).
 - **`source_changed` aus `adr/0029`** stößt keinen eigenen Lauf an. `jobs` meldet nichts an `discovery`; der nächste geplante Lauf erneuert die Verweise (Ergänzung 4a, §12).
 
 ### 6.7 Lizenzregeln „Herausgeber + Lizenz-URI → Stufe“ (Ergänzung 3, Otto 06.11.2026)
@@ -345,6 +358,8 @@ Die meisten Funde aus CKAN kommen von wenigen Stellen mit wenigen Lizenzen (§5.
   - Eine geänderte oder gelöschte Regel ändert keinen veröffentlichten Eintrag. Sie legt beim nächsten Lauf die betroffenen Einträge erneut vor.
 - **`license-checker`** schlägt neue Regeln vor (Herausgeber, URI, SPDX, Flags, Belegstelle). Die Regel selbst schreibt und freigibt Otto.
 
+**Nachtrag 2026-11-15 (`adr/0033` §14, M5-40):** Statt `license_rules.yaml` gilt die Form L2: der Lizenzkatalog `backend/catalog/licenses/terms.yaml` (jede Lizenz einmal eingestuft, mit den wörtlichen Schreibweisen in `matches`) und je Quelle `backend/catalog/licenses/grants/<source_id>.yaml` (Herausgeber → erlaubte Lizenzen, wörtlich). Die Regel bleibt „Herausgeber + Lizenz-URI → Stufe“ (`adr/0033` §6, F2 = 1). „Ottos Bestätigung ist der Merge“ heißt für gelistete Einträge der Merge der Freigabedatei des Laufs (`adr/0033` §8).
+
 ## 7. YAML-Lader (B13 Stufe 2)
 
 ### 7.1 Ablage
@@ -358,6 +373,21 @@ Die meisten Funde aus CKAN kommen von wenigen Stellen mit wenigen Lizenzen (§5.
 | `backend/catalog/candidates/` | Vorschläge (§6.1) | **nein** | nie |
 | `backend/catalog/rejected.yaml` | Abgelehntes (§5.4) | ja | nur `discovery` |
 | `backend/catalog/prototype/` | Prototyp-Einträge (`adr/0024` R4) | **nie** | nur nach R5 |
+
+**Nachtrag 2026-11-15 (`adr/0033` §14, M5-40):** Diese Tabelle gilt nicht mehr; an ihre Stelle tritt die folgende (`adr/0033` §14). Die Sätze darunter gelten weiter.
+
+| Verzeichnis | Inhalt | im Image | geladen |
+|---|---|---|---|
+| `backend/catalog/datasets/` | volle Einträge | ja | immer |
+| `backend/catalog/listed/` | **nur Handeinträge** gelistet (wenige) | ja | **nur `catalog-load`**, nach Postgres |
+| (Postgres) | **gelistete Einträge aus dem Harvest** | — | `api` liest je Anfrage, kein Prozess hält sie ganz |
+| `backend/catalog/retired.yaml` | `RETIRED` (`adr/0017`) | ja | immer |
+| `backend/catalog/sources/` | Seed und Freigabe der Quelle | ja | nur `discovery` |
+| `backend/catalog/licenses/` | Lizenzkatalog und `grants/` (`adr/0033` §6.2) | ja | nur `discovery` und `catalog-load` |
+| `backend/catalog/approvals/` | Freigabedateien der Läufe (`adr/0033` §8.3) | ja | nur `discovery` und `catalog-load` |
+| `backend/catalog/blocked.yaml` | Sperrliste (`adr/0033` §9), ersetzt `rejected.yaml` | ja | nur `discovery` und `catalog-load` |
+| `backend/catalog/candidates/` | Kandidaten **des vollen Wegs** | nein | nie |
+| `backend/catalog/prototype/` | Prototyp-Einträge (`adr/0024` R4) | nie | nur nach R5 |
 
 - `backend/catalog/` statt `catalog/` an der Wurzel, weil der Build-Kontext `./backend` ist (`Dockerfile:52`) [P]. Das Image kopiert die freigegebenen Verzeichnisse einzeln, nie `candidates/` und nie `prototype/`; ein Test prüft den Text des `Dockerfile` (`adr/0024` Test 4).
 - Der Ort im Image kommt aus einer Konstante des Pakets, nicht aus einer Umgebungsvariable; nur das Prototyp-Verzeichnis kommt aus `EARTHX_PROTOTYPE_SOURCES`.
@@ -446,7 +476,7 @@ Beide Felder auch bei gelisteten Einträgen. In der Collection als `earthx:legal
 
 ## 10. Risiken und Grenzen
 
-- **Volumen:** Die Rasterfilter allein ergeben bei GovData rund 2 150 und bei opendata.swiss rund 400 Funde. Mit der Herausgeberliste (Ergänzung 2) bleiben 645 bzw. 14 [M] (§5.2). Ein PR mit hunderten Kandidaten ist nicht prüfbar. Deshalb höchstens 20 Kandidaten je PR, nach Quelle getrennt; der Rest wartet im Zustand `verified` (F4 = 1) [A].
+- **Volumen:** Die Rasterfilter allein ergeben bei GovData rund 2 150 und bei opendata.swiss rund 400 Funde. Mit der Herausgeberliste (Ergänzung 2) bleiben 645 bzw. 14 [M] (§5.2). Ein PR mit hunderten Kandidaten ist nicht prüfbar. Deshalb höchstens 20 Kandidaten je PR, nach Quelle getrennt; der Rest wartet im Zustand `verified` (F4 = 1) [A]. **Nachtrag 2026-11-15 (`adr/0033` §14, M5-40):** Die Grenze von 20 je PR gilt nur noch für Kandidaten des vollen Wegs; gelistete Einträge kommen über Lauf-Freigaben ohne Obergrenze je Stapel (`adr/0033` §8.1).
 - **Lizenz als Freitext:** FSDI meldet fast überall `proprietary` [M], CKAN Lizenz-URIs oder Freitext. Was keine Regel aus §6.7 trifft, bleibt ohne Lizenzblock und lädt nicht, bis Otto ihn ausfüllt; `license-checker` hilft im PR, entscheidet nicht.
 - **Verify fragt fremde Hosts an:** Auch `HEAD` auf eine Adresse aus einem fremden Katalog ist eine Anfrage an einen Host, den niemand geprüft hat. Grenzen: nur öffentliche Adressen (`gateway`), nur `HEAD`/`Range`, wenige Assets, Zahl der Hosts je Lauf begrenzt (§6.3).
 - **`www.data.gv.at`** war aus der Sitzung nicht erreichbar; ob es CKAN v3 ohne Schlüssel anbietet, ist nur S (`adr/0023` §7.4).
