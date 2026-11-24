@@ -1,0 +1,26 @@
+# Warning signs on a harvested find (M5-67; docs/plans/m5/m5-67-harvest-automatisch.md §5; adr/0033 §8.5). A find of a
+# stack with a warning sign stays out of the sample and out of the approval (`excluded_entries`); it waits in review
+# and stands in the list of findings. A decision in Git like geodata.yaml; the code only reads it.
+#
+# W1 a non-geo word in the title (geodata.yaml: not_geo_terms, software_terms) or one of `statistics_words`, of a find
+#    the rule R-G keeps; W2 a publisher of geodata.yaml's not_geo_publishers or statistics_publishers; W3 the link is a
+#    general page of the provider; W4 an imagery category without a raster or a service; W5 a copy or a test; W6 a mail
+#    address or a phone number; W7 a title too short or a file name.
+#
+# Words are compared as the search compares; `*` at the start matches word ends, at the end word starts.
+
+# W1: words in a title beyond the non-geo words of geodata.yaml.
+statistics_words: ["*statistik", "*statistiken", statistik, statistiken]
+# W3: the last part of the path of a general page (with or without an ending such as .html).
+general_pages: [home, index, start, startseite, default, welcome, willkommen, accueil, homepage]
+# W4: categories that name images or models of the ground, and the data kinds that can be one.
+imagery_categories: [optical, radar, elevation]
+imagery_kinds: [raster, service]
+# W5: words of a title that mark a copy, a draft or a test.
+copy_words: [kopie, copy, test, testdaten, testdatensatz, dummy, draft, entwurf, beispieldaten, sample data]
+# W7: a title shorter than this (letters and digits), and endings of a file name.
+min_title_chars: 4
+file_endings: [csv, zip, shp, xlsx, xls, pdf, json, geojson, xml, tif, tiff, gpkg, kml, kmz, txt]
+# Warning signs Otto cleared for one entry: `{dataset_id: ..., code: W1, cleared_on: 2026-11-25}`. The next run takes
+# the find back into its stack.
+cleared: []

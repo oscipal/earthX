@@ -24,7 +24,16 @@ from earthx.catalog.glossary import normalize
 from earthx.discovery.enrich import Extent, region_boxes
 from earthx.discovery.extract import resource_kind
 
-__all__ = ["GEODATA_FILE", "Classified", "GeodataRule", "classify", "load_geodata_rule", "read_geodata_rule"]
+__all__ = [
+    "GEODATA_FILE",
+    "Classified",
+    "GeodataRule",
+    "Terms",
+    "classify",
+    "load_geodata_rule",
+    "parse_terms",
+    "read_geodata_rule",
+]
 
 GEODATA_FILE = CATALOG_DIR / "geodata.yaml"
 _KEYS = frozenset(
@@ -66,15 +75,16 @@ class Terms:
         return hits
 
 
-def _terms(values: list[str], where: str) -> Terms:
+def parse_terms(values: list[str], where: str, file: str = GEODATA_FILE.name) -> Terms:
+    """Words of a rule file: whole word sequences, ``*`` at the start for word ends, at the end for word starts."""
     sequences, ends, starts = [], [], []
     for value in values:
         if not isinstance(value, str) or not normalize(value.strip("*")):
-            raise EntryFileError(f"{GEODATA_FILE.name}: {where} holds non-blank words")
+            raise EntryFileError(f"{file}: {where} holds non-blank words")
         normal = normalize(value.strip("*"))
         if value.startswith("*") or value.endswith("*"):
             if " " in normal or (value.startswith("*") and value.endswith("*")):
-                raise EntryFileError(f"{GEODATA_FILE.name}: {where}: '*' stands at one end of one word")
+                raise EntryFileError(f"{file}: {where}: '*' stands at one end of one word")
             (ends if value.startswith("*") else starts).append(normal)
         else:
             sequences.append(tuple(normal.split()))
@@ -115,13 +125,13 @@ def read_geodata_rule(path: Path) -> GeodataRule:
         geo_data_kinds=frozenset(data["geo_data_kinds"]),
         geo_categories=frozenset(data["geo_categories"]),
         extent_share_below=float(share),
-        geo_terms=_terms(data["geo_terms"], "geo_terms"),
-        geo_publishers=_terms(data["geo_publishers"], "geo_publishers"),
+        geo_terms=parse_terms(data["geo_terms"], "geo_terms"),
+        geo_publishers=parse_terms(data["geo_publishers"], "geo_publishers"),
         not_geo_eu_themes=frozenset(data["not_geo_eu_themes"]),
-        not_geo_terms=_terms(data["not_geo_terms"], "not_geo_terms"),
-        not_geo_publishers=_terms(data["not_geo_publishers"], "not_geo_publishers"),
-        software_terms=_terms(data["software_terms"], "software_terms"),
-        statistics_publishers=_terms(data["statistics_publishers"], "statistics_publishers"),
+        not_geo_terms=parse_terms(data["not_geo_terms"], "not_geo_terms"),
+        not_geo_publishers=parse_terms(data["not_geo_publishers"], "not_geo_publishers"),
+        software_terms=parse_terms(data["software_terms"], "software_terms"),
+        statistics_publishers=parse_terms(data["statistics_publishers"], "statistics_publishers"),
     )
 
 

@@ -946,3 +946,17 @@ def test_classify_shows_the_hidden_finds_per_publisher_before_and_after(world: W
     assert result.hidden_before[office] == 0 and result.hidden_after[office] == 1
     assert f"  {office} | 0 | 1" in text
     assert "Schwache Geo-Signale, die diese Funde vorher hielten: extent 1" in text
+
+
+def test_an_entry_with_a_warning_sign_stays_out_of_the_sample_and_the_approval(world: World) -> None:
+    # M5-67 plan §5: W1 for a statistics word in the title of a find the rule keeps (here by its vector data).
+    world.put(world.ckan, _find("a"), _find("b", title="Bodenkarte und Bibliothekenstatistik"))
+    approval, markdown = world.report().files
+    document = yaml.safe_load(approval.read_text(encoding="utf-8"))
+    flagged = f"{world.ckan.source_id}.b"
+    assert document["excluded_entries"] == [flagged]
+    assert [item["dataset_id"] for item in document["sample"]] == [f"{world.ckan.source_id}.a"]
+    assert "Warnzeichen (1 Einträge bleiben draußen und warten)" in markdown.read_text(encoding="utf-8")
+    world.approve(approval)
+    world.publish()
+    assert (world.row("a")["state"], world.row("b")["state"]) == ("published", "in_review")
