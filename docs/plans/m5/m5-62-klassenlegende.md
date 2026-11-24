@@ -408,6 +408,50 @@ Ein Job-Ergebnis mit Klassenband (`resultLayer.ts::isClassBand`, z. B. WorldCove
 
 **Auslegung A19** (verworfen, Otto 24.11.2026; ersetzt durch §14).
 
+### 13.1 Fehler aus Ottos Browsertest (24.11.2026): Klassen nach „Mask by classes“ weg
+
+**Befund:** WorldCover, „Mask by classes“, Tree cover ausgeblendet, „Start job“. Die Ergebnis-Ebene hatte keine Legende und keine Klassenfarben.
+
+**Ursache [M]:** Der Adapter `esa_worldcover_bucket` schrieb kein `raster:bands` ins Item. Das Panel kannte deshalb den Datentyp nicht und wählte `float32` („The item does not state a type the result can keep“). Ein `float32`-Ergebnis behielt zwar `classification:classes` (A3), hatte aber keine Farbtabelle (GeoTIFF erlaubt sie dort nicht). Das Frontend nahm ein Gleitkomma-Band nie als Klassenband und zeichnete es mit Bereich und viridis. Der Operator war richtig: `mask` v2 gibt Werte weiter (`passes_values`).
+
+**Behoben:**
+1. Der Adapter nennt die Karte als `uint8` mit nodata 0 (gemessen M5-07, Registry `band_classes.nodata`). Das Panel schlägt dann `uint8` vor, und das Ergebnis behält die Farbtabelle. **Otto lokal:** einmal `python -m earthx.discovery.materialize esa-worldcover-2020 --force` und dasselbe für `esa-worldcover-2021`, sonst bleiben die alten Items ohne Typ.
+2. Ein Ergebnisband, das Klassen nennt, ist im Frontend ein Klassenband, gleich welcher Typ. Seine Kacheln bekommen die Farben dieser Klassen als `colormap` (JSON) des Tilers, auch bei `float32`. Dieselbe Liste zeigt die Legende.
+3. Ein maskierender Schritt nennt das entscheidende Band und die Werte, die er ausblendet (`Operator.hides`, bei `mask` und `mask_values`). Dieses Band verliert die ausgeblendeten Klassen, in `classification:classes` wie in der Farbtabelle. Die Legende zeigt also Tree cover nicht mehr.
+4. `reproject` baute die Bandangaben neu und verlor die Klassen auch bei `nearest`/`mode`. Jetzt behält es sie, und die Regel je Band (§14) entscheidet.
+
+**Welche Schritte Klassen behalten [M]** (`test_class_results.py`, `test_class_job_chain.py`):
+
+| Schritt | Klassen des Bands |
+|---|---|
+| keiner (Mosaik, Zuschnitt) | bleiben |
+| `mask` v2 („Mask by classes“) | bleiben, ohne die ausgeblendeten Klassen des Maskenbands; andere Bänder unverändert |
+| `mask_values` („Mask by value“, `eq`/`lt`/`gt`/`between`) | bleiben, ohne die Klassen, die die Bedingung trifft |
+| `reproject` mit `nearest` oder `mode` | bleiben |
+| `select_bands` | bleiben (das Band wird nur ausgewählt) |
+| `reproject` mit `bilinear`/`average`/u. a., `normalize` (auf seine Bänder), `band_math` (nur das neue Band hat keine), Terrain-Schritte, jeder Schritt ohne Bandangabe | weg, nur bei den Bändern, deren Werte der Schritt ändert (§14) |
+
+Die Farbtabelle gibt es nur bei einem einzelnen Band in `uint8`/`uint16`. Bei `float32` stehen die Klassen im Ergebnis, und das Frontend zeichnet sie über `colormap`.
+
+**Weg geprüft:** Der Auftrag, wie das Panel ihn schickt, geht mit dem Item des Adapters durch Intake und Kern. Eine Kachel der Ergebnis-Datei wird so gelesen, wie die Ergebnis-Route sie liest. Die Bänder des Ergebnisses vergleicht der Test mit `backend/tests/fixtures/classes/worldcover_mask_result.json`; dieselbe Datei liest `resultLayer.test.ts` für die Legende. Die Ergebnis-Route selbst zeichnet `uint8` mit Farbtabelle und `float32` mit `colormap` in den Klassenfarben (`test_result_tiles.py`).
+
+### 13.2 Legende über der Karte (Otto, 24.11.2026)
+
+> Die Legende steht unten links über der Karte, direkt neben dem linken Panel, rückt mit und überdeckt keine Bedienelemente. Immer sichtbar, je sichtbarer Ebene mit Darstellung: Klassenband als Liste (Farbe, Wert, Name), Band mit Farbskala als Balken mit Min/Max und Einheit, RGB ohne Legende; für Datensatz- und Ergebnis-Ebenen. Mehrere Ebenen gestapelt in der Reihenfolge des Layer-Managers, je mit dem Ebenennamen. Scrollt nie, lange Listen zweispaltig, einklappbar über den Titel, Zustand je Ebene. Knopf „Classes“ und Popover entfernen. Der Balken hängt an Farbskala und Bereich der Ebene.
+
+**Umgesetzt:**
+- **Inhalt:** `frontend/src/mapLegend.ts` liest die Kachel-URL jeder sichtbaren Ebene (`colormap_name`, `rescale`, `colormap`, `bidx`) und dazu die Klassen (Registry bzw. Ergebnis) und die Einheit (nur physikalische, `shownUnit`).
+- **Darstellung:** `components/MapLegend.tsx` zeigt die Legenden.
+- **Entfernt:** Knopf „Classes“, Popover und die Platzierung `beside`. Das Feld „Colormap“ einer Klassenebene ist wieder das gesperrte Feld „Classes“.
+- **Ort:** `--map-left` (Leiste plus offenes Panel, wie die Statusbox; Übergänge gibt es dort keine). Darüber hinaus weicht die Legende gemessen den Marken unten links und der Leiste der Zeitschritte aus und bleibt links der Kartenknöpfe. Die Marke unten links („Overview“, „Preview“) steht jetzt ebenfalls an `--map-left`.
+- **Browser-Check** `frontend/e2e/map-legend.cjs`: 1, 2 und 3 Ebenen, Panel offen und zu, hell und dunkel, 1280×800, 1280×360, 360×740. Bei 1280×360 mit drei Ebenen (11 + Balken + 11 Klassen) muss eine Legende eingeklappt werden, dann passt alles.
+
+**Auslegungen (gelten, wenn du nicht widersprichst):**
+- **A20 (schmale Fenster):** Unter 900 px eine Spalte statt zwei, weil zwei Spalten bei 360 px die Namen abschneiden (gemessen). Dort deckt ein offenes Panel die Karte und damit die Legende.
+- **A21 (Ansicht der Suche):** Die Ansicht einer Suche ist keine Ebene, aber sichtbar und hat eine Darstellung. Sie bekommt eine Legende an der Stelle des Eintrags „Search results“, mit dem Titel des Datensatzes. Die Vorschau im Processing-Panel bekommt keine.
+- **A22 (Band ohne Colormap):** Ein gestrecktes Band ohne Colormap zeigt einen Balken in Grau.
+- **A23 (Zustand):** Das Einklappen gilt je Ebene für die Sitzung im Browser, nicht im gespeicherten Arbeitszustand.
+
 ---
 
 ## 14. Klassen je Band (Otto, 24.11.2026)
