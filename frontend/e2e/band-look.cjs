@@ -6,9 +6,11 @@
 //   - a bar of the histogram is not in the colour of its value (the end colours outside the range), or does not follow a change of the
 //     colormap or the range at once, or that change asks for a measure;
 //   - the bar of the legend over the map is not in the colours of the colormap, or its ends are not physical values with the unit;
-//   - a class layer (WorldCover) has a histogram or no class legend;
+//   - a slider does not stand outside the bars in the range (a bar is in it where its middle is: Sentinel-2 1200 and 3400 lie inside bars
+//     of 500), the fields do not keep the values, or a bar outside the sliders is not in an end colour;
+//   - a class layer (WorldCover) has no histogram in the colours of its classes, one with sliders, or no class legend;
 //   - a result band of the source whose values no step changed does not keep its look, or one Band math made takes one;
-//   - the legend scrolls, or the settings scroll at 1280×800 (below that they do on main already, with or without a histogram).
+//   - the legend scrolls, or the settings scroll at 1280×800 (below that they do on main already, with or without a histogram: UI-12).
 // It writes a screenshot per dataset.
 //
 //   cd frontend && npm run dev &            # the dev server; no backend is needed, the answers are made up here
@@ -57,6 +59,14 @@ const MEASURES = {
   SrelD: { min: -10, max: 110, percentile_2: 5, percentile_98: 95, histogram: histogram(-10, 110) },
   dtm_2m: { min: -500, max: 5500, percentile_2: 400, percentile_98: 2400, histogram: histogram(-500, 5500) },
 };
+// The land cover classes as codes: the bars that hold a class value count, the others none.
+const CODES = (() => {
+  const edges = Array.from({ length: 65 }, (_, i) => 10 + (90 * i) / 64);
+  const values = [10, 20, 30, 40, 50, 60, 70, 80, 90, 95, 100];
+  const counts = edges.slice(0, -1).map((low, i) => (values.some((v) => v >= low && (v < edges[i + 1] || i === 63)) ? 20 : 0));
+  return { min: 10, max: 100, percentile_2: 10, percentile_98: 100, histogram: [counts, edges] };
+})();
+MEASURES.map = CODES;
 const measureOf = (asset) => ({ count: 900, unit: null, ...(MEASURES[asset] ?? MEASURES.red) });
 
 // The scenes, by dataset: the assets of one band each the view offers, the scaling of Sentinel-2 reflectance (adr/0017 §3.4).
@@ -156,7 +166,27 @@ const legendBar = (page) => page.locator('.map-legend .legend-bar').evaluate((el
 const scrolls = (page, selector) => page.locator(selector).first().evaluate((el) => el.scrollHeight - el.clientHeight > 1).catch(() => false);
 const settle = (page) => page.waitForFunction(() => !window.appStore.getState().focusLoading).then(() => page.waitForTimeout(250));
 
-async function checkBand(page, asked, { dataset, band, colormap, fields, legend, unit }, say) {
+// The sliders stand outside the bars in the range (a bar is in it where its middle is), the fields keep the values, and the bars outside
+// the sliders have the end colours (Otto, 24.11.2026).
+async function checkSliders(page, band, colormap, say) {
+  const [low, high] = await page.evaluate(() => [Number(window.appStore.getState().pendingVmin), Number(window.appStore.getState().pendingVmax)]);
+  const edges = measureOf(band).histogram[1];
+  const middles = edges.slice(0, -1).map((edge, i) => (edge + edges[i + 1]) / 2);
+  const first = middles.findIndex((m) => m >= low);
+  const last = middles.findLastIndex((m) => m <= high);
+  const want = [low < edges[0] || low > edges.at(-1) ? low : edges[first === -1 ? middles.length : first], high < edges[0] || high > edges.at(-1) ? high : edges[last + 1]];
+  const shown = (await page.locator('.inspector .range-hist input[type=range]').evaluateAll((inputs) => inputs.map((input) => Number(input.value)))).slice(0, 2);
+  const tolerance = (edges.at(-1) - edges[0]) / 1000;
+  if (shown.length !== 2 || shown.some((at, i) => Math.abs(at - want[i]) > tolerance)) say(`${band}: the sliders stand at ${shown} for ${low}–${high}, not at ${want}`);
+  const fields = await page.locator('.viewer-controls .vc-num input[type=number]').evaluateAll((inputs) => inputs.slice(0, 2).map((input) => Number(input.value)));
+  if (fields[0] !== low || fields[1] !== high) say(`${band}: the fields say ${fields}, not ${low}–${high}`);
+  const bars = await fills(page);
+  const [start, end] = ends(colormap).map(rgb);
+  const wrong = middles.flatMap((m, i) => ((m < low && bars[i] !== start) || (m > high && bars[i] !== end) ? [i] : []));
+  if (wrong.length > 0) say(`${band}: bars outside the sliders not in the end colours: ${wrong}`);
+}
+
+async function checkBand(page, asked, { dataset, band, colormap, fields, legend, unit }, say, theme) {
   await field(page, 'Band').locator('select').selectOption(`band:${band}`);
   await settle(page);
   const state = await page.evaluate(async () => {
@@ -169,6 +199,11 @@ async function checkBand(page, asked, { dataset, band, colormap, fields, legend,
   if (bars.length === 0) say(`${band}: no histogram`);
   else if (bars[0] !== rgb(low) || bars.at(-1) !== rgb(high)) say(`${band}: the bars outside the range are ${bars[0]} and ${bars.at(-1)}, not the end colours`);
   else if (new Set(bars).size < 3) say(`${band}: the bars are not in the colours of their values (${new Set(bars).size} colours)`);
+  await checkSliders(page, band, colormap, say);
+  // In the dark theme a fine, neutral edge keeps a dark bar seen; in the light theme none.
+  const edge = await page.locator('.inspector .range-hist-bars rect.hist-bar').first().evaluate((rect) => getComputedStyle(rect).stroke).catch(() => '');
+  const edged = edge !== '' && edge !== 'none' && !/rgba\(0, 0, 0, 0\)|transparent/.test(edge);
+  if (edged !== (theme === 'dark')) say(`${band}: the edge of the bars is "${edge}" in the ${theme} theme`);
 
   // A change of the colormap and of the range colours the bars at once, without a measure.
   // A reversed colormap stays reversed: "Reverse" is a switch of its own.
@@ -184,6 +219,7 @@ async function checkBand(page, asked, { dataset, band, colormap, fields, legend,
   await page.waitForTimeout(120);
   const moved = await fills(page);
   if (JSON.stringify(moved) === JSON.stringify(bars)) say(`${band}: the bars did not follow vmin`);
+  await checkSliders(page, band, other, say);
   if (asked.length !== measured) say(`${band}: a change of the colormap or the range asked for ${asked.length - measured} measures`);
 
   // Applied: the legend over the map in the same colours and in physical values.
@@ -216,7 +252,11 @@ async function checkBand(page, asked, { dataset, band, colormap, fields, legend,
 
 async function checkWorldCover(page, say) {
   await openView(page, 'esa-worldcover-2021');
-  if ((await page.locator('.inspector .range-hist').count()) !== 0) say('WorldCover: a class layer has a histogram');
+  await page.locator('.inspector .class-hist').waitFor({ timeout: 5000 }).catch(() => say('WorldCover: no histogram of the classes'));
+  if ((await page.locator('.inspector .range-hist input').count()) !== 0) say('WorldCover: the histogram of the classes has sliders');
+  const classes = COLLECTIONS['esa-worldcover-2021']['earthx:bands'][0]['classification:classes'].map((c) => rgb(`#${c.color_hint}`));
+  const coloured = (await fills(page)).filter((fill) => fill.startsWith('rgb'));
+  if (JSON.stringify(coloured) !== JSON.stringify(classes)) say(`WorldCover: the bars are ${JSON.stringify(coloured)}, not the colours of the classes`);
   if ((await page.locator('.map-legend .legend-classes li').count()) !== 11) say('WorldCover: the legend does not list the eleven classes');
 }
 
@@ -266,7 +306,7 @@ async function check(browser, theme, viewport) {
   for (const one of CASES) {
     const say = (text) => problems.push(`${name}: ${one.dataset}: ${text}`);
     await openView(page, one.dataset);
-    await checkBand(page, asked, one, say);
+    await checkBand(page, asked, one, say, theme);
     // The settings scroll below a certain height on main already (1280×360, 360×740); the histogram adds nothing to them.
     if (viewport === 'wide' && (await scrolls(page, '.inspector .insp-body'))) say(`${one.band}: the settings scroll`);
     if (await scrolls(page, '.map-legend .legend')) say(`${one.band}: the legend scrolls`);
