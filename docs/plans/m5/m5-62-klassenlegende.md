@@ -468,6 +468,8 @@ Die Farbtabelle gibt es nur bei einem einzelnen Band in `uint8`/`uint16`. Bei `f
 - **Folgerung:** Eine oben geöffnete Ansicht und eine neue oberste Ergebnis-Ebene übernehmen die Legende von selbst.
 - **Im Layer-Manager** (`LayerManager.tsx::useRowLegends`): je Ebene Legende und Knopf. Das Einklappen von unten wird gemessen (die Liste scrollt sonst) und bei jeder Änderung der Ebenen, der Knöpfe und der Fensterhöhe neu bestimmt. Den Sitzungszustand hält `legendStore.ts`.
 
+**Nachtrag Otto (24.11.2026):** Der Knopf der Legende steht links neben dem Auge, sein Tooltip ist immer sichtbar; der Griff zum Verschieben steht neben dem Namen.
+
 **Gemessen [M]** (`frontend/e2e/map-legend.cjs`, 42 Fälle):
 - Bei 1280×800 stehen im Layer-Manager alle drei Legenden.
 - Bei 1280×360 passt neben drei Zeilen keine Legende; alle drei klappen ein, und die Liste scrollt nicht.
