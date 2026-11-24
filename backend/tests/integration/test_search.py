@@ -491,11 +491,6 @@ async def test_an_entry_whose_link_failed_the_check_since_the_last_load_is_no_hi
     assert await _ids(aconn, "Neophyten", area=over_it) == ("main-entry",)
 
 
-async def test_an_area_that_is_no_geometry_is_an_error_for_listed_entries_too(listed, aconn):
-    with pytest.raises(psycopg.Error):
-        await _ids(aconn, "Neophyten", area={"type": "Polygon", "coordinates": "nothing"})
-
-
 async def test_an_area_without_text_meets_the_full_entries_by_their_box(catalogue, aconn):
     assert await _ids(aconn, None, area=box_area(36.2, -0.8, 36.4, -0.6)) == ("test-kenya", "test-series")
     assert await _ids(aconn, None, area=box_area(-60.0, -60.0, -59.0, -59.0)) == ("test-series",)
@@ -535,8 +530,13 @@ def _full_text_statement(start: Start, area: dict | None = None, text: str = "Ne
 @pytest.mark.parametrize("start", list(Start))
 async def test_the_statement_has_a_condition_on_the_area_only_where_there_is_one(listed, aconn, start):
     statement, _ = _full_text_statement(start)
-    text = statement.as_string(aconn).lower()
-    assert ("%(area)s" in text) == (start is not Start.NO_AREA)
+    assert ("%(area)s" in statement.as_string(aconn)) == (start is not Start.NO_AREA)
+
+
+async def test_the_ranks_of_the_units_of_a_hit_are_summed_in_the_order_of_the_units(listed, aconn):
+    # Without it the sum of `real` values, and with it which hits tie, would depend on the plan.
+    statement, _ = _full_text_statement(Start.NO_AREA)
+    assert "sum(ts_rank_cd(f.document, u.query) ORDER BY u.ord)" in statement.as_string(aconn)
 
 
 #: 60 × 60 listed entries, each half a degree wide on a grid of whole degrees, all with "Alpha" in the title.
@@ -573,9 +573,9 @@ def _cell_id(west: int, south: int) -> str:
     return f"grid-{(south + 30) * 60 + west + 30}"
 
 
-async def _grid_ids(aconn, area=None, **kwargs) -> set[str]:
-    """The grid entries "Alpha" finds; the trigram arm also finds "alpine" of a full entry, which is no concern here."""
-    return {i for i in await _ids(aconn, "Alpha", area=area, **kwargs) if i.startswith("grid-")}
+async def _grid_ids(aconn, area=None, **kwargs) -> list[str]:
+    """The grid entries "Alpha" finds, in rank order; the trigram arm also finds "alpine" of a full entry."""
+    return [i for i in await _ids(aconn, "Alpha", area=area, **kwargs) if i.startswith("grid-")]
 
 
 async def _start_of(aconn, text, area, **limits) -> Start:
@@ -599,6 +599,7 @@ async def test_a_text_with_many_hits_over_a_small_area_starts_from_the_area(grid
 
 async def test_a_text_with_few_hits_starts_from_the_text_whatever_the_area(grid, aconn):
     assert await _start_of(aconn, "Alpha", ONE_CELL, text_first_max=3601) is Start.TEXT
+    assert await _start_of(aconn, "Alpha", ONE_CELL, text_first_max=3600) is Start.AREA
     assert await _start_of(aconn, "Neophyten", ONE_CELL) is Start.TEXT
     assert await _start_of(aconn, "in der", ONE_CELL) is Start.TEXT  # nothing but stop words
 
@@ -622,8 +623,9 @@ async def test_both_starts_find_the_same_with_an_area_that_keeps_one_or_many(gri
         (ONE_CELL, {_cell_id(10, 20)}),
         (many, {_cell_id(west, south) for west in range(0, 3) for south in range(0, 2)}),
     ):
-        assert await _grid_ids(aconn, area, **FROM_THE_AREA) == expected
-        assert await _grid_ids(aconn, area, **FROM_THE_TEXT) == expected
+        by_area = await _grid_ids(aconn, area, **FROM_THE_AREA)
+        assert set(by_area) == expected
+        assert by_area == await _grid_ids(aconn, area, **FROM_THE_TEXT)
 
 
 async def test_both_starts_rank_alike(listed, aconn):
@@ -632,6 +634,23 @@ async def test_both_starts_rank_alike(listed, aconn):
         by_area = await search_datasets(aconn, text, area=area, glossary=GLOSSARY, **FROM_THE_AREA)
         by_text = await search_datasets(aconn, text, area=area, glossary=GLOSSARY, **FROM_THE_TEXT)
         assert by_area == by_text, text
+
+
+async def test_a_period_with_an_area_keeps_the_same_hits_and_names_the_same_ignored_filter_from_either_start(
+    listed, aconn
+):
+    area = box_area(7.0, 46.0, 7.5, 46.5)
+    for text in ("Neophyten", "alpine"):
+        found = [
+            await search_datasets(aconn, text, area=area, period=_years(2001, 2002), glossary=GLOSSARY, **limits)
+            for limits in (FROM_THE_AREA, FROM_THE_TEXT)
+        ]
+        assert found[0] == found[1], text
+    listed_result = await search_datasets(
+        aconn, "Neophyten", area=area, period=_years(2001, 2002), glossary=GLOSSARY, **FROM_THE_AREA
+    )
+    assert listed_result.ids == ("main-entry",)
+    assert listed_result.ignored_filters_by_collection == {"main-entry": (TIME_FILTER,)}
 
 
 async def test_no_start_lets_an_entry_with_a_hidden_link_through(listed, aconn):

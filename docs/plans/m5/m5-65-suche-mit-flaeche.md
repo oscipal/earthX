@@ -31,7 +31,7 @@
    - Eine leere Liste „Zahlen von Namen“ (`named_numbers`, `numbers`, `codes`) gibt keine Klausel mehr.
 3. **`search_datasets`** nimmt `area_first_max` und `text_first_max` als Schlüsselwörter, wie `threshold` und `joining` für das Bewertungs-Set; die Tests erzwingen damit beide Wege.
 
-**Umfang:** etwa 180 geänderte Zeilen Code, 15 Zeilen SQL (Migration) und 160 Zeilen Tests.
+**Umfang:** etwa 260 geänderte Zeilen in `search.py` (ein Fünftel Docstrings), 20 Zeilen Migration (überwiegend Kommentar) und 175 Zeilen Tests; zusammen leicht über dem Richtwert von 400.
 
 ## 3. Messung bei 10⁵ gelisteten Einträgen [M]
 
@@ -88,7 +88,7 @@ Dazu ohne Text, nur mit Fläche (volle Zeilen): 0–1 ms vorher und nachher.
   - **Fehlerfall:** Eine Fläche, die keine Geometrie ist, ist ein Fehler.
   - **Spalte:** `geometry` ist die Hülle der Box einer vollen Zeile und folgt ihr, bei einer gelisteten Zeile leer.
   - **Start:** Die Wahl des Starts bei vielen und bei wenigen Treffern, bei kleiner und bei großer Fläche, ohne Fläche und bei einer Anfrage aus Stoppwörtern; der Plan beginnt mit dem Footprint-Index und dem Schlüssel `"C"`.
-  - **Gleichheit:** Beide Starts finden und ordnen gleich (60 × 60 Raster aus 3 600 gelisteten Einträgen und die Einträge der Suche); die Abfrage enthält ohne Fläche keine Bedingung auf einer Geometrie.
+  - **Gleichheit:** Beide Starts finden und ordnen gleich (60 × 60 Raster aus 3 600 gelisteten Einträgen und die Einträge der Suche), auch mit einem Zeitraum und seinem Hinweis `ignored_filters`; die Abfrage enthält ohne Fläche keine Bedingung auf einer Geometrie, und die Rangsumme steht mit `ORDER BY u.ord` in der Abfrage.
 - `test_migrations.py`: Die Liste der Migrationen kennt `038`.
 - **Vorhandene Tests der betroffenen Module** (Suche, Index, Route, Katalogzustand, Bewertungs-Set, Linkprüfung, Laden): 3 089 bestanden.
 
