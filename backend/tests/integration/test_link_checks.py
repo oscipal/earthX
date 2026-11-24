@@ -9,7 +9,7 @@ and no page is asked.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from earthx.catalog.link_checks import LinkResult, apply_results, due_links, guard_results, record_results
 from earthx.catalog.listing_store import withdraw
@@ -201,3 +201,56 @@ def test_an_excluded_entry_stays_in_review(world: World) -> None:
     approval.write_text(yaml.safe_dump(document, sort_keys=False, allow_unicode=True), encoding="utf-8")
     assert world.publish().published == {f"approvals/{approval.name}": 1}
     assert (world.row("a")["state"], world.row("b")["state"]) == ("published", "in_review")
+
+
+def _hidden(world: World, *keys: str) -> None:
+    _published(world, *keys)
+    record_results(world.conn, [_result(world, k, "failed") for k in keys], NOW)
+    apply_results(world.conn, dry_run=False)
+    assert all(world.row(k)["state"] == "link_failed" for k in keys)
+
+
+def test_a_revoked_approval_takes_back_a_hidden_entry_too(world: World) -> None:
+    import yaml
+
+    _hidden(world, "a")
+    approval = sorted(world.out.glob("*.yaml"))[-1]
+    document = yaml.safe_load(approval.read_text(encoding="utf-8"))
+    document["revoked_on"] = date(2026, 11, 24)
+    approval.write_text(yaml.safe_dump(document, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    assert world.publish(links_pass=False).revoked == {f"approvals/{approval.name}": 1}
+    assert world.row("a")["state"] == "in_review"
+
+
+def test_a_hidden_entry_gone_at_the_source_becomes_a_tombstone_like_a_published_one(world: World) -> None:
+    _hidden(world, "a")
+    world.put(world.ckan, _find("a"), state="gone")
+    world.put(world.ckan, _find("c"))
+    world.report()
+    assert world.row("a")["state"] == "link_failed" and world.row("a")["missing_since"] is not None
+    world.run(world.ckan)
+    world.report()
+    assert (world.row("a")["state"], world.row("a")["removed_reason"]) == ("tombstone", "source_removed")
+
+
+def test_a_run_that_breaks_off_before_the_guard_keeps_no_result(world: World, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    import pytest
+
+    from earthx.discovery import linkcheck
+    from tests.earthx.discovery.test_linkcheck import opener, site
+
+    world.put(world.ckan, _find("a"))
+    world.report()
+
+    def broken(*args, **kwargs):  # type: ignore[no-untyped-def]
+        raise RuntimeError("broken off")
+
+    monkeypatch.setattr(linkcheck, "guard_results", broken)
+    with pytest.raises(RuntimeError):
+        linkcheck.run_linkcheck(
+            world.conn, rules=linkcheck.load_link_rules(), hosts={}, dry_run=False,
+            open_gateway=opener(site({}), []), minutes=5,
+        )
+    assert world.conn.execute(
+        "SELECT count(*) FROM public.earthx_link_check WHERE dataset_id = %s", (_id(world, "a"),)
+    ).fetchone() == (0,)

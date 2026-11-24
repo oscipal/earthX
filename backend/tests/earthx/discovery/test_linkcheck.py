@@ -66,6 +66,15 @@ def test_an_identifier_counts_and_a_short_one_does_not() -> None:
     assert judge("<html><body>Seite xy12</body></html>", title="Anders", identifiers=("xy12",)) == ("failed", "no_title")
 
 
+def test_an_identifier_the_page_only_echoes_from_its_own_address_does_not_count() -> None:
+    # An app answering every path with 200 writes the address it was asked for into canonical and og:url.
+    link = "https://portal.example.org/dataset/ch.bafu.boden"
+    echo = f'<html><head><link rel="canonical" href="{link}"><meta property="og:url" content="{link}"></head></html>'
+    assert judge(echo, link=link, final=link, title="Anders", identifiers=("ch.bafu.boden",)) == ("failed", "no_title")
+    said = "<html><body><p>Kennung: ch.bafu.boden</p></body></html>"
+    assert judge(said, link=link, final=link, title="Anders", identifiers=("ch.bafu.boden",)) == ("passed", "ok")
+
+
 def test_script_text_is_no_text() -> None:
     page = f"<html><body><script>var t = '{TITLE}';</script><div id=app></div></body></html>"
     assert judge(page) == ("failed", "no_title")

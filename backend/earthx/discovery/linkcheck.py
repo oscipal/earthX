@@ -303,9 +303,15 @@ def judge_page(
     if final is not None and rules.login_path_parts & {p.lower() for p in final[1].split("/") if p}:
         return "failed", "login_page"
     page_title = normalize(" ".join(page.title))
-    haystack = normalize(" ".join([*page.text, *page.title, *page.meta, *(_json_text(j) for j in page.json_ld)]))
+    own = normalize(" ".join([*page.text, *page.title, *(_json_text(j) for j in page.json_ld)]))
+    haystack = f"{own} {normalize(' '.join(page.meta))}"
+    # An identifier that stands in the link itself counts only in what the page says of itself: an app that answers
+    # every path with 200 echoes the address it was asked for in its canonical link and og:url (review, 24.11.2026).
+    echoed = normalize(link)
     named = _title_on(title, haystack, rules.title_word_share) or any(
-        _has(haystack, normalize(i)) for i in identifiers if len(i) >= rules.min_identifier_chars
+        _has(own if _has(echoed, normalize(i)) else haystack, normalize(i))
+        for i in identifiers
+        if len(i) >= rules.min_identifier_chars
     )
     if any(_has(page_title, w) for w in rules.error_words) and not _title_on(title, page_title, rules.title_word_share):
         return "failed", "error_page"
@@ -508,7 +514,6 @@ class LinkRun:
     applied: Applied = field(default_factory=lambda: Applied(0, 0, 0))
 
 
-
 def run_linkcheck(
     conn: psycopg.Connection,
     *,
@@ -528,11 +533,13 @@ def run_linkcheck(
     run.results = asyncio.run(
         check_links(due, rules=rules, hosts=hosts, open_gateway=open_gateway, deadline=deadline, clock=clock)
     )
-    record_results(conn, run.results, datetime.now(UTC))
-    run.groups = guard_results(
-        conn, started, min_checked=rules.guard_min_checked, failed_share=rules.guard_failed_share
-    )
-    run.applied = apply_results(conn, dry_run=dry_run)
+    # One transaction: a result is never seen unguarded, and a run that breaks off leaves none behind (review).
+    with conn.transaction():
+        record_results(conn, run.results, datetime.now(UTC))
+        run.groups = guard_results(
+            conn, started, min_checked=rules.guard_min_checked, failed_share=rules.guard_failed_share
+        )
+        run.applied = apply_results(conn, dry_run=dry_run)
     return run
 
 
@@ -566,7 +573,9 @@ def summary_text(run: LinkRun, hosts: Mapping[str, HostLimit], *, top: int = 20)
     patterns = [g for g in run.groups if g.kind == "pattern" and not g.guarded and g.failed + g.unchecked]
     lines.append("  Muster mit Fehlschlägen:")
     for group in sorted(patterns, key=lambda g: -(g.failed + g.unchecked))[:top]:
-        lines.append(f"    {group.key}: bestanden {group.passed}, durchgefallen {group.failed}, nicht prüfbar {group.unchecked}")
+        lines.append(
+            f"    {group.key}: bestanden {group.passed}, durchgefallen {group.failed}, nicht prüfbar {group.unchecked}"
+        )
     return "\n".join(lines)
 
 
