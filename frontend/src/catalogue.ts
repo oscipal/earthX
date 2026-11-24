@@ -2,6 +2,7 @@
 // browser shows about it. Every value comes from the collection (P10); what a collection does not carry is "—", never a
 // guess. Which datasets are in "Search and area" is `addedDatasetIds` in the store, saved per browser (`preferences.ts`).
 
+import { classBandsOf, type BandClass } from './bandClasses';
 import type { DatasetOption } from './datasets';
 import { maturityLabel, maturityNote } from './datasets';
 import { utcDay } from './dateBounds';
@@ -126,6 +127,8 @@ export interface CatalogueRow {
   tip?: string;
   // The bands of a dataset as the lines of a table Band | Description | Unit (M5-59), instead of `values`.
   bands?: BandLine[];
+  // Under the bands, the classes of each band of classes as a table Value | Class | Colour headed by the band (M5-62).
+  classes?: { band: string; classes: BandClass[] }[];
 }
 
 export interface BandLine {
@@ -239,7 +242,8 @@ export const NO_UNIT = '–';
 
 function bandsRow(collection: Collection): CatalogueRow {
   const bands = bandLinesOf(collection);
-  return bands.length > 0 ? { label: 'Bands', values: [], bands } : { label: 'Bands', values: plain(NONE) };
+  const classes = classBandsOf(collection);
+  return bands.length > 0 ? { label: 'Bands', values: [], bands, ...(classes.length > 0 ? { classes } : {}) } : { label: 'Bands', values: plain(NONE) };
 }
 
 const OPERATORS: [string, string][] = [

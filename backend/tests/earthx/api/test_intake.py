@@ -276,6 +276,23 @@ class TestEarthSearchSentinel2:
         assert accepted.cacheable
         assert accepted.skipped_items == ()
 
+    async def test_a_band_of_classes_carries_the_classes_of_the_registry_and_no_other_band_any(self) -> None:
+        """M5-62 F9: the input of a band of classes names its classes, so the result can keep them; every other input
+        has no ``classes`` key, so its recipe and hash stay what they were."""
+        scl = {
+            "href": f"https://{S2_HOST}/tiles/S2_A/SCL.tif",
+            "file:checksum": "1220S2_ASCL",
+            "raster:bands": [{"nodata": 0, "data_type": "uint8", "spatial_resolution": 20}],
+        }
+        document = order(assets=("red", "scl"), steps=[])
+        accepted = await accept(document, Source((S2, s2_item(scl=scl))))
+        red, classes = accepted.recipe.inputs[0].resolved
+        assert red.classes is None and "classes" not in red.model_dump(mode="json")
+        rows = S2.class_rows("scl")
+        assert rows is not None and classes.classes is not None
+        assert [(c.value, c.name, c.colour) for c in classes.classes] == [(r.value, r.name, r.colour) for r in rows]
+        assert classes.model_dump(mode="json")["classes"][0] == {"value": rows[0].value, "name": rows[0].name, "colour": rows[0].colour}
+
     async def test_the_recipe_runs_through_the_core_models_unchanged(self) -> None:
         accepted = await accept(order(), Source((S2, s2_item())))
         again = recipe_from_data(accepted.recipe.model_dump(mode="json"), OPERATORS)

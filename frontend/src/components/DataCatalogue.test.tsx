@@ -56,10 +56,16 @@ function listed(id: string, title: string, category: string, extra: Partial<Coll
   } as Collection;
 }
 
+// Synthetic classes of a band (M5-62), as the collection publishes them.
+const RAW_CLASSES = [
+  { value: 1, name: 'low', title: 'Low', color_hint: '1F77B4' },
+  { value: 2, name: 'high', title: 'High', color_hint: 'FF7F0E' },
+];
+
 const FULL = [
   collection('relief', 'Relief model', 'elevation', {
     'earthx:band_units': { data: 'm', raw: 'DN', ratio: '1' },
-    'earthx:bands': [{ name: 'data', description: 'Surface height (DSM)' }, { name: 'raw', description: 'Raw counts' }, { name: 'ratio', description: 'Share' }],
+    'earthx:bands': [{ name: 'data', description: 'Surface height (DSM)' }, { name: 'raw', description: 'Raw counts', 'classification:classes': RAW_CLASSES }, { name: 'ratio', description: 'Share' }],
   }),
   collection('beta', 'Beta optical', 'optical'),
   collection('alpha', 'Alpha optical', 'optical'),
@@ -443,6 +449,27 @@ describe('the details', () => {
       ['ratio', 'Share', '–'],
     ]);
     expect(value('Bands')!.querySelectorAll('p, .hint')).toHaveLength(0);
+  });
+
+  it('show the classes of a band under the bands: the band as heading, Value | Class | Colour, a swatch and the hex (M5-62)', () => {
+    click(entry('Relief model').querySelector('.catalogue-entry-name')!);
+    const tables = value('Bands')!.querySelectorAll('table');
+    expect(tables).toHaveLength(2);
+    const classes = value('Bands')!.querySelector('table.catalogue-classes')!;
+    expect(classes.querySelector('caption')?.textContent).toBe('raw');
+    expect([...classes.querySelectorAll('thead th')].map((th) => th.textContent)).toEqual(['Value', 'Class', 'Colour']);
+    expect([...classes.querySelectorAll('tbody tr')].map((tr) => [...tr.children].map((cell) => cell.textContent))).toEqual([
+      ['1', 'Low', '#1f77b4'],
+      ['2', 'High', '#ff7f0e'],
+    ]);
+    const swatches = [...classes.querySelectorAll<HTMLElement>('.class-swatch')];
+    expect(swatches.map((swatch) => swatch.style.background)).toEqual(['rgb(31, 119, 180)', 'rgb(255, 127, 14)']);
+    expect(value('Bands')!.querySelectorAll('p, .hint')).toHaveLength(0);
+  });
+
+  it('show no table of classes for a dataset whose bands have none', () => {
+    click(entry('Alpha optical').querySelector('.catalogue-entry-name')!);
+    expect(container.querySelector('table.catalogue-classes')).toBeNull();
   });
 
   it('keep "—" and no table where a dataset has no bands', () => {

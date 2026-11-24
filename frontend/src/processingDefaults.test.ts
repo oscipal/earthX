@@ -113,3 +113,14 @@ describe('the type sent', () => {
     expect(effectiveDtype('uint16', dtypeOptions(args([], [band({ dataType: 'uint8' })])), chooseDtype(args([], [band({ dataType: 'uint8' })])))).toBe('float32');
   });
 });
+
+describe('a band of classes the item names as uint8 (M5-62, the WorldCover item of the browser test)', () => {
+  it('keeps uint8 under "Mask by classes", so the result keeps its colour table', () => {
+    const map = band({ dataType: 'uint8' });
+    expect(chooseDtype(args([{ op: 'mask', values: {} }], [map]))).toEqual({ value: 'uint8', reason: 'Same type as the source data (uint8).' });
+  });
+
+  it('falls back to float32 where the item names no type, as the item of before did', () => {
+    expect(chooseDtype(args([{ op: 'mask', values: {} }], [band({ dataType: null })])).value).toBe('float32');
+  });
+});

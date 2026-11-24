@@ -74,9 +74,11 @@ from rio_cogeo.cogeo import cog_translate
 from rio_cogeo.profiles import cog_profiles
 from rio_tiler.models import ImageData
 
+from earthx.access.band_export import PALETTE_TYPES, class_colour_table
 from earthx.access.crop_rules import AoiOutsideItems
 from earthx.access.radar import RadarGrid, copy_to_cog
 from earthx.access.resolve import open_asset_ref
+from earthx.catalog.registry import ClassRow, class_key
 from earthx.processing.errors import AoiOutsideInputs, UnsupportedRecipe
 from earthx.processing.export import Attachments, ExportResult, check_export, export
 from earthx.processing.mosaic import open_mosaic
@@ -385,6 +387,11 @@ class _Run:
                 # area (adr/0014 Nachtrag NM4-43c).
                 for index, band in enumerate(meta.bands, start=1):
                     dst.set_band_description(index, band.name)
+                # A result of one band of classes in a type that holds one keeps their colours (M5-62, F9); the
+                # tiles draw them, and ``cog_translate`` carries the table into the COG.
+                classes = meta.bands[0].classes if len(meta.bands) == 1 else None
+                if classes is not None and dtype in PALETTE_TYPES:
+                    dst.write_colormap(1, class_colour_table(classes, nodata))
             whole = [BandStatistics(dtype) for _ in meta.bands] if count_valid else []
             area = [BandStatistics(dtype) for _ in meta.bands] if count_valid else []
             inside_pixels = 0
@@ -505,9 +512,59 @@ def _source_meta(sources: list[Source], finest: Source, window: Window, transfor
             source.names, source.data_types, source.nodata, source.units, strict=True
         ):
             data_type = "float32" if source.scaling.applied_by_core else data_type
-            bands.append(BandMeta(name=name, data_type=data_type, nodata=nodata, unit=unit, resampled=moved))
+            bands.append(
+                BandMeta(
+                    name=name, data_type=data_type, nodata=nodata, unit=unit, resampled=moved, classes=_classes_of(source)
+                )
+            )
     crs = None if finest.crs is None else finest.crs.to_string()
     return RasterMeta(crs, transform, int(window.width), int(window.height), tuple(bands))  # type: ignore[arg-type]
+
+
+def _classes_of(source: Source) -> tuple[ClassRow, ...] | None:
+    """The classes of a source of one band whose values are classes, as the recipe names them (M5-62, F9); ``None``
+    where it has several bands, none, or the core converts its values (scaled)."""
+    classes = source.entry.classes
+    if classes is None or len(source.names) != 1 or source.scaling.applied_by_core:
+        return None
+    return tuple(ClassRow(value=entry.value, name=entry.name, colour=entry.colour) for entry in classes)
+
+
+def _keep_classes(meta: RasterMeta, steps: Sequence[PlannedStep]) -> RasterMeta:
+    """``meta`` with the classes of each band only while no step changes its values (plan §6, Otto 24.11.2026: per band),
+    less the classes a mask hides in the band that decides it (``Operator.hides``): they are in the result no more.
+
+    A step that passes the values on changes none; any other changes the band it adds (Band math), the bands it acts on
+    (Normalize), or every band where it names none. The grid the core reads every band onto is drawn with ``nearest``,
+    which keeps them. A band a step adds has no classes to begin with.
+    """
+    changed: set[str] = set()
+    hidden: dict[str, list[Callable[[numpy.ndarray], numpy.ndarray]]] = {}
+    for step in steps:
+        if step.operator.hides is not None:
+            band, hides = step.operator.hides(step.params)
+            hidden.setdefault(band, []).append(hides)
+        if step.operator.passes_values(step.params):
+            continue
+        use = step.operator.bands_used(step.params)
+        if use.adds is None and use.acts_on is None:
+            return replace(meta, bands=tuple(replace(band, classes=None) for band in meta.bands))
+        changed |= {use.adds} if use.adds is not None else set(use.acts_on or ())
+    return replace(meta, bands=tuple(_classes_left(band, changed, hidden.get(band.name, [])) for band in meta.bands))
+
+
+def _classes_left(
+    band: BandMeta, changed: set[str], hidden: list[Callable[[numpy.ndarray], numpy.ndarray]]
+) -> BandMeta:
+    """``band`` without its classes where a step changed its values, and without the classes a mask hid in it."""
+    if band.classes is None or band.name in changed:
+        return replace(band, classes=None)
+    values = numpy.array([row.value for row in band.classes], dtype=band.data_type)
+    gone = numpy.zeros(len(values), dtype=bool)
+    for hides in hidden:
+        gone |= numpy.asarray(hides(values), dtype=bool)
+    left = tuple(row for row, out in zip(band.classes, gone, strict=True) if not out)
+    return replace(band, classes=left or None)
 
 
 def _properties(
@@ -538,6 +595,7 @@ def _properties(
             "data_type": band.data_type,
             "nodata": "nan" if band.nodata is not None and math.isnan(band.nodata) else band.nodata,
             **({} if band.unit is None else {"unit": band.unit}),
+            **({} if band.classes is None else {"classification:classes": _stac_classes(band.classes)}),
             "statistics": band_statistics,
         }
         for band, band_statistics in zip(meta.bands, statistics, strict=True)
@@ -554,6 +612,14 @@ def _properties(
     if measured:
         properties[MEASURED_PROPERTY] = measured
     return properties
+
+
+def _stac_classes(classes: Sequence[ClassRow]) -> list[dict[str, Any]]:
+    """The classes in the form of the classification extension, as the collection writes them (M5-62)."""
+    return [
+        {"value": row.value, "name": class_key(row.name), "title": row.name, "color_hint": row.colour[1:].upper()}
+        for row in classes
+    ]
 
 
 def _mask_block(geometry: dict, window: Window, transform: Affine) -> numpy.ndarray:
@@ -659,6 +725,7 @@ def run(
             passes = segments(stock_steps(metas[0], planned, output.bands))
             for segment in passes:
                 metas.append(_transform_meta(metas[-1], segment.steps))
+            metas[-1] = _keep_classes(metas[-1], live_steps(planned, output.bands))
             nodata = _nodata_for(output.dtype, metas[-1], live_steps(planned, output.bands))
             state.total = sum(_block_count(meta) for meta in metas[1:])
             for index, segment in enumerate(passes[1:]):

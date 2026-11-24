@@ -77,6 +77,8 @@
 /* --- theme tokens --- */
 .app[data-theme='tech'] {
   --panel-bg: rgba(6, 12, 16, 0.82);
+  /* A tooltip covers what lies under it: the colour of the panels without their see-through (Otto, 24.11.2026). */
+  --tip-bg: rgb(6, 12, 16);
   --panel-border: rgba(120, 220, 255, 0.32);
   --accent: #19e0ff;
   --accent-2: #ffd166;
@@ -102,6 +104,7 @@
 
 .app[data-theme='normal'] {
   --panel-bg: rgba(255, 255, 255, 0.94);
+  --tip-bg: rgb(255, 255, 255);
   --panel-border: rgba(20, 40, 60, 0.16);
   --accent: #0a7ea4;
   --accent-2: #c76b00;

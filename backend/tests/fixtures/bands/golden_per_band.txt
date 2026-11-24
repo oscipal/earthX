@@ -25,3 +25,8 @@ Band | Name | Common name | Wavelength (um) | Source resolution (m) | Export res
 File: exports/SCL_20m.tif
 Band | Name | Common name | Wavelength (um) | Source resolution (m) | Export resolution (m) | Resampling | Data type | Scale | Offset | Nodata | Unit
 1 | SCL | - | - | 20 | 20 | none | uint8 | 1 | 0 | 0 | -
+
+Classes of band 1 (SCL)
+Value | Class | Colour
+4 | Vegetation | #2ca02c
+6 | Water | #1f77b4
