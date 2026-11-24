@@ -295,6 +295,10 @@ class TestCollectionLinks:
         link = "https://map.geo.admin.ch/#/map?layers=ch.bafu.neophyten@year=2020,ch.bafu.neophyten&lang=de"
         assert _keys({"distributions": [{"href": link}]}) == (NEOPHYTEN,)
 
+    def test_an_escaped_comma_and_at_sign_are_read(self) -> None:
+        link = "https://map.geo.admin.ch/?layers=ch.bafu.neophyten%40year%3D2020%2Cch.bafu.neophyten"
+        assert _keys({"distributions": [{"href": link}]}) == (NEOPHYTEN,)
+
     @pytest.mark.parametrize(
         "link",
         [

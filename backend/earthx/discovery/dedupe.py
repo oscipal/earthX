@@ -31,7 +31,6 @@ import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import unquote
 
 __all__ = [
     "MAX_SHARED",
@@ -63,6 +62,8 @@ def collection_tokens(addresses: Iterable[str], known: Mapping[str, str]) -> set
 _VIEWER_LINK = re.compile(r"https://(?P<host>map|data)\.geo\.admin\.ch(?::443)?(?:[/?#]|$)", re.IGNORECASE)
 _LAYERS = re.compile(r"[?&]layers=([^&#]*)", re.IGNORECASE)
 _COLLECTION_PATH = re.compile(r"/collections/([^/?#&]+)", re.IGNORECASE)
+#: The two escapes that matter in a ``layers=`` value: the comma between layers and the ``@`` before a parameter.
+_ESCAPES = re.compile(r"%(2c|40)", re.IGNORECASE)
 
 
 def linked_collections(addresses: Iterable[str], known: Mapping[str, str]) -> set[str]:
@@ -76,7 +77,7 @@ def linked_collections(addresses: Iterable[str], known: Mapping[str, str]) -> se
             continue
         values = _LAYERS.findall(address) if match["host"].lower() == "map" else _COLLECTION_PATH.findall(address)
         for value in values:
-            for part in unquote(value).split(","):
+            for part in _ESCAPES.sub(lambda m: "," if m[1].lower() == "2c" else "@", value).split(","):
                 token = part.split("@", 1)[0].strip().lower()
                 host = known.get(token)
                 if host is not None:
