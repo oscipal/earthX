@@ -20,12 +20,9 @@ Keine Personen, keine AOI, keine Hashes oder signierten Adressen in dieser Datei
 
 - [ ] **H-2026-11-24-02** · 2026-11-24 · govdata · Fehltreffer als Geodaten: „Gewerbesteuer: Steuerpflichtige …
   Kreise … (ab 2010)“ (Statistik Sachsen) und „Aktuelle Lage … Aachen zum Corona-Virus“. Beide veröffentlicht.
-  Vorschlag: Plan M5-67 §12 (02).
-- [ ] **H-2026-11-24-03** · 2026-11-24 · opendata-swiss · „Bibliothekenstatistik der Öffentlichen Bibliotheken im
-  Kanton Thurgau (2005-2019)“ wird nicht als Nicht-Geodaten erkannt (in der Stichprobe von Stapel 6 mit `ok: false`,
-  veröffentlicht). Vorschlag: Plan M5-67 §12 (03). Stand 24.11. ([#408](https://github.com/oscipal/earthX/pull/408)):
-  `bibliothekenstatistik` ist Nicht-Geo-Begriff und Warnzeichen W1 hält solche Funde aus dem Stapel; die Ausdehnung
-  „Kanton Thurgau“ hält den schon veröffentlichten Fund aber weiter. Offen bis F14 im Plan.
+  Vorschlag: Plan M5-67 §12 (02). Stand 24.11. ([#408](https://github.com/oscipal/earthX/pull/408)): „Corona“ steht in
+  `strong_not_geo_terms` (F14) und überstimmt die Ausdehnung von Aachen; „Betriebsstätten“ hält nicht mehr (01). Ob
+  beide danach verborgen sind, zeigt der Classify-Auszug des ersten Laufs.
 - [ ] **H-2026-11-24-05** · 2026-11-24 · govdata · Sächsisches Landesamt für Umwelt, Landwirtschaft und Geologie
   (LfULG): weiter 228 Funde `unknown_licence`; die Kurzform `dl-by-de/2.0` war nicht die Ursache. Braucht die
   wartenden Lizenzangaben aus dem ersten automatischen Lauf (`lizenzangaben.md`). Vorschlag: Plan M5-67 §12 (05).
@@ -48,3 +45,10 @@ Noch kein automatischer Lauf.
   `ok: false`, veröffentlicht). Vorschlag: Plan M5-67 §12 (04).
   Erledigt 24.11.2026 ([#408](https://github.com/oscipal/earthX/pull/408)): Ausdehnung hält keine Funde von Herausgebern ohne
   Geodaten mehr; ein starkes Signal hält weiter, dann greift W2. Der nächste Bericht verbirgt die beiden.
+- [x] **H-2026-11-24-03** · 2026-11-24 · opendata-swiss · „Bibliothekenstatistik der Öffentlichen Bibliotheken im
+  Kanton Thurgau (2005-2019)“ wird nicht als Nicht-Geodaten erkannt (in der Stichprobe von Stapel 6 mit `ok: false`,
+  veröffentlicht). Vorschlag: Plan M5-67 §12 (03). Stand 24.11. ([#408](https://github.com/oscipal/earthX/pull/408)):
+  `bibliothekenstatistik` ist Nicht-Geo-Begriff und Warnzeichen W1 hält solche Funde aus dem Stapel; die Ausdehnung
+  „Kanton Thurgau“ hält den schon veröffentlichten Fund aber weiter. Offen bis F14 im Plan.
+  Erledigt 24.11.2026 ([#408](https://github.com/oscipal/earthX/pull/408), F14 = 1): `bibliothekenstatistik` steht in
+  `strong_not_geo_terms` und überstimmt die Ausdehnung; der nächste Bericht verbirgt den Fund.
