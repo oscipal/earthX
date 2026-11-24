@@ -282,7 +282,8 @@ async function dragOut(page, hist, end, what, say) {
   await page.waitForTimeout(150);
   const after = await geometry(page, hist, end);
   const want = end === 'low' ? after.left : after.right;
-  if (after.value !== (end === 'low' ? after.min : after.max)) say(`${what}: the ${end} slider was not dragged to the ${end === 'low' ? 'left' : 'right'} end (${after.value})`);
+  const limit = end === 'low' ? after.min : after.max;
+  if (Math.abs(after.value - limit) > 1e-9 * Math.max(1, Math.abs(limit))) say(`${what}: the ${end} slider was not dragged to the ${end === 'low' ? 'left' : 'right'} end (${after.value})`);
   if (Math.abs(after.line - want) > 0.75) say(`${what}: the ${end} slider stands at ${after.line.toFixed(1)} px, the outer edge of the outermost bar at ${want.toFixed(1)} px`);
 }
 
