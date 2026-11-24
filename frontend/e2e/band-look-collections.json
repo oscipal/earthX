@@ -1,0 +1,862 @@
+{
+ "sentinel-2-c1-l2a": {
+  "id": "sentinel-2-c1-l2a",
+  "title": "Sentinel-2 L2A",
+  "earthx:format": "cog",
+  "earthx:viewer": {
+   "group_by": [
+    "datetime",
+    "grid:code"
+   ],
+   "min_zoom": 0,
+   "max_zoom": 19,
+   "browse": "quicklook",
+   "quicklook_nodata_max": 16,
+   "results_group_by": [
+    "datetime",
+    "s2:datatake_id"
+   ],
+   "overview": "scenes",
+   "overview_resampling": null,
+   "overview_substitute": null
+  },
+  "earthx:default_render": {
+   "title": "True colour (TCI)",
+   "assets": [
+    "visual"
+   ],
+   "rescale": [
+    [
+     0.0,
+     255.0
+    ],
+    [
+     0.0,
+     255.0
+    ],
+    [
+     0.0,
+     255.0
+    ]
+   ],
+   "colormap_name": null,
+   "expression": null,
+   "resampling": "nearest",
+   "asset_selection": "all"
+  },
+  "earthx:band_units": {
+   "coastal": "1",
+   "blue": "1",
+   "green": "1",
+   "red": "1",
+   "rededge1": "1",
+   "rededge2": "1",
+   "rededge3": "1",
+   "nir": "1",
+   "nir08": "1",
+   "nir09": "1",
+   "swir16": "1",
+   "swir22": "1",
+   "aot": "1",
+   "wvp": "cm",
+   "cloud": "%",
+   "snow": "%",
+   "scl": null,
+   "visual": null,
+   "preview": null
+  },
+  "earthx:bands": [
+   {
+    "name": "coastal",
+    "earthx:look": {
+     "colormap": "viridis",
+     "scale": "measured"
+    },
+    "earthx:look_origin": "unit"
+   },
+   {
+    "name": "blue",
+    "earthx:look": {
+     "colormap": "viridis",
+     "scale": "measured"
+    },
+    "earthx:look_origin": "unit"
+   },
+   {
+    "name": "green",
+    "earthx:look": {
+     "colormap": "viridis",
+     "scale": "measured"
+    },
+    "earthx:look_origin": "unit"
+   },
+   {
+    "name": "red",
+    "earthx:look": {
+     "colormap": "viridis",
+     "scale": "measured"
+    },
+    "earthx:look_origin": "unit"
+   },
+   {
+    "name": "rededge1",
+    "earthx:look": {
+     "colormap": "viridis",
+     "scale": "measured"
+    },
+    "earthx:look_origin": "unit"
+   },
+   {
+    "name": "rededge2",
+    "earthx:look": {
+     "colormap": "viridis",
+     "scale": "measured"
+    },
+    "earthx:look_origin": "unit"
+   },
+   {
+    "name": "rededge3",
+    "earthx:look": {
+     "colormap": "viridis",
+     "scale": "measured"
+    },
+    "earthx:look_origin": "unit"
+   },
+   {
+    "name": "nir",
+    "earthx:look": {
+     "colormap": "viridis",
+     "scale": "measured"
+    },
+    "earthx:look_origin": "unit"
+   },
+   {
+    "name": "nir08",
+    "earthx:look": {
+     "colormap": "viridis",
+     "scale": "measured"
+    },
+    "earthx:look_origin": "unit"
+   },
+   {
+    "name": "nir09",
+    "earthx:look": {
+     "colormap": "viridis",
+     "scale": "measured"
+    },
+    "earthx:look_origin": "unit"
+   },
+   {
+    "name": "swir16",
+    "earthx:look": {
+     "colormap": "viridis",
+     "scale": "measured"
+    },
+    "earthx:look_origin": "unit"
+   },
+   {
+    "name": "swir22",
+    "earthx:look": {
+     "colormap": "viridis",
+     "scale": "measured"
+    },
+    "earthx:look_origin": "unit"
+   },
+   {
+    "name": "aot",
+    "earthx:look": {
+     "colormap": "viridis",
+     "scale": "measured"
+    },
+    "earthx:look_origin": "unit"
+   },
+   {
+    "name": "wvp",
+    "earthx:look": {
+     "colormap": "viridis",
+     "scale": "measured"
+    },
+    "earthx:look_origin": "default"
+   },
+   {
+    "name": "cloud",
+    "earthx:look": {
+     "colormap": "viridis",
+     "scale": "fixed",
+     "low": 0.0,
+     "high": 100.0
+    },
+    "earthx:look_origin": "unit"
+   },
+   {
+    "name": "snow",
+    "earthx:look": {
+     "colormap": "viridis",
+     "scale": "fixed",
+     "low": 0.0,
+     "high": 100.0
+    },
+    "earthx:look_origin": "unit"
+   },
+   {
+    "name": "scl",
+    "classification:classes": [
+     {
+      "value": 1,
+      "name": "saturated_or_defective",
+      "title": "Saturated or defective",
+      "color_hint": "1F77B4"
+     },
+     {
+      "value": 2,
+      "name": "topographic_shadows",
+      "title": "Topographic shadows",
+      "color_hint": "FF7F0E"
+     },
+     {
+      "value": 3,
+      "name": "cloud_shadows",
+      "title": "Cloud shadows",
+      "color_hint": "2CA02C"
+     },
+     {
+      "value": 4,
+      "name": "vegetation",
+      "title": "Vegetation",
+      "color_hint": "D62728"
+     },
+     {
+      "value": 5,
+      "name": "not_vegetated",
+      "title": "Not vegetated",
+      "color_hint": "9467BD"
+     },
+     {
+      "value": 6,
+      "name": "water",
+      "title": "Water",
+      "color_hint": "8C564B"
+     },
+     {
+      "value": 7,
+      "name": "unclassified",
+      "title": "Unclassified",
+      "color_hint": "E377C2"
+     },
+     {
+      "value": 8,
+      "name": "cloud_medium_probability",
+      "title": "Cloud medium probability",
+      "color_hint": "7F7F7F"
+     },
+     {
+      "value": 9,
+      "name": "cloud_high_probability",
+      "title": "Cloud high probability",
+      "color_hint": "BCBD22"
+     },
+     {
+      "value": 10,
+      "name": "thin_cirrus",
+      "title": "Thin cirrus",
+      "color_hint": "17BECF"
+     },
+     {
+      "value": 11,
+      "name": "snow_or_ice",
+      "title": "Snow or ice",
+      "color_hint": "AEC7E8"
+     }
+    ]
+   }
+  ],
+  "earthx:auxiliary_assets": [
+   "visual",
+   "preview"
+  ],
+  "earthx:true_color": [
+   "red",
+   "green",
+   "blue"
+  ],
+  "earthx:mask": {
+   "asset": "scl",
+   "band": "scl",
+   "classes": [
+    {
+     "value": 0,
+     "label": "No data"
+    },
+    {
+     "value": 1,
+     "label": "Saturated or defective"
+    },
+    {
+     "value": 2,
+     "label": "Topographic shadows"
+    },
+    {
+     "value": 3,
+     "label": "Cloud shadows"
+    },
+    {
+     "value": 4,
+     "label": "Vegetation"
+    },
+    {
+     "value": 5,
+     "label": "Not vegetated"
+    },
+    {
+     "value": 6,
+     "label": "Water"
+    },
+    {
+     "value": 7,
+     "label": "Unclassified"
+    },
+    {
+     "value": 8,
+     "label": "Cloud medium probability"
+    },
+    {
+     "value": 9,
+     "label": "Cloud high probability"
+    },
+    {
+     "value": 10,
+     "label": "Thin cirrus"
+    },
+    {
+     "value": 11,
+     "label": "Snow or ice"
+    }
+   ],
+   "suggested": [
+    3,
+    8,
+    9,
+    10
+   ],
+   "reference": "https://sentiwiki.copernicus.eu/web/s2-processing",
+   "note": "Class names follow the current Sentinel-2 L2A documentation. Older processing baselines name some classes differently (for example 2 as Dark Area Pixels, 7 as Clouds Low Probability / Unclassified); the values are the same.",
+   "cloud_classes": [
+    8,
+    9,
+    10
+   ],
+   "cloud_note": "Sen2Cor's classification can miss thin cirrus and can take snow or bright ground for clouds.",
+   "share_classes": {
+    "earthx:aoi_thin_cirrus": [
+     10
+    ],
+    "earthx:aoi_cloud_shadow": [
+     3
+    ],
+    "earthx:aoi_snow_ice": [
+     11
+    ],
+    "earthx:aoi_water": [
+     6
+    ],
+    "earthx:aoi_vegetation": [
+     4
+    ],
+    "earthx:aoi_not_vegetated": [
+     5
+    ]
+   }
+  },
+  "earthx:capabilities": {
+   "roi": true,
+   "time_range": true,
+   "band_math": true,
+   "interpolation": true,
+   "reprojection": true,
+   "masking": true,
+   "value_masking": true,
+   "normalization": true,
+   "ml_processing": true,
+   "quad_pol": false,
+   "terrain": false,
+   "single_coverage_product": false
+  }
+ },
+ "sentinel-1-grd": {
+  "id": "sentinel-1-grd",
+  "title": "Sentinel-1 GRD",
+  "earthx:format": "cog",
+  "earthx:viewer": {
+   "group_by": [
+    "datetime",
+    "s1:datatake_id"
+   ],
+   "min_zoom": 0,
+   "max_zoom": 19,
+   "browse": "preview_tiles",
+   "quicklook_nodata_max": null,
+   "results_group_by": [
+    "datetime",
+    "s1:datatake_id"
+   ],
+   "overview": "scenes",
+   "overview_resampling": null,
+   "overview_substitute": null
+  },
+  "earthx:default_render": {
+   "title": "Co-polarisation (VV or HH)",
+   "assets": [
+    "vv",
+    "hh"
+   ],
+   "rescale": [
+    [
+     90.0,
+     250.0
+    ],
+    [
+     70.0,
+     750.0
+    ]
+   ],
+   "colormap_name": null,
+   "expression": null,
+   "resampling": "nearest",
+   "asset_selection": "first_present"
+  },
+  "earthx:band_units": {
+   "vv": "DN",
+   "vh": "DN",
+   "hh": "DN",
+   "hv": "DN"
+  },
+  "earthx:bands": [
+   {
+    "name": "vv",
+    "earthx:look": {
+     "colormap": "greys_r",
+     "scale": "measured"
+    },
+    "earthx:look_origin": "unit"
+   },
+   {
+    "name": "vh",
+    "earthx:look": {
+     "colormap": "greys_r",
+     "scale": "measured"
+    },
+    "earthx:look_origin": "unit"
+   },
+   {
+    "name": "hh",
+    "earthx:look": {
+     "colormap": "greys_r",
+     "scale": "measured"
+    },
+    "earthx:look_origin": "unit"
+   },
+   {
+    "name": "hv",
+    "earthx:look": {
+     "colormap": "greys_r",
+     "scale": "measured"
+    },
+    "earthx:look_origin": "unit"
+   }
+  ],
+  "earthx:auxiliary_assets": [
+   "thumbnail",
+   "safe-manifest",
+   "schema-product-vv",
+   "schema-product-vh",
+   "schema-product-hh",
+   "schema-product-hv",
+   "schema-calibration-vv",
+   "schema-calibration-vh",
+   "schema-calibration-hh",
+   "schema-calibration-hv",
+   "schema-noise-vv",
+   "schema-noise-vh",
+   "schema-noise-hh",
+   "schema-noise-hv"
+  ],
+  "earthx:true_color": [],
+  "earthx:mask": null,
+  "earthx:capabilities": {
+   "roi": true,
+   "time_range": true,
+   "band_math": true,
+   "interpolation": true,
+   "reprojection": false,
+   "masking": false,
+   "value_masking": false,
+   "normalization": true,
+   "ml_processing": false,
+   "quad_pol": false,
+   "terrain": false,
+   "single_coverage_product": false
+  }
+ },
+ "meteoswiss-daily-1km": {
+  "id": "meteoswiss-daily-1km",
+  "title": "MeteoSwiss daily climate grids 1 km",
+  "earthx:format": "netcdf-refs",
+  "earthx:viewer": {
+   "group_by": [
+    "datetime"
+   ],
+   "min_zoom": 0,
+   "max_zoom": 12,
+   "browse": "full_resolution",
+   "quicklook_nodata_max": null,
+   "results_group_by": [
+    "datetime"
+   ],
+   "overview": "own",
+   "overview_resampling": null,
+   "overview_substitute": null
+  },
+  "earthx:default_render": {
+   "title": "Daily mean temperature",
+   "assets": [
+    "TabsD"
+   ],
+   "rescale": [
+    [
+     -20.0,
+     30.0
+    ]
+   ],
+   "colormap_name": "rdbu_r",
+   "expression": null,
+   "resampling": "nearest",
+   "asset_selection": "all"
+  },
+  "earthx:band_units": {
+   "TabsD": "\u00b0C",
+   "TminD": "\u00b0C",
+   "TmaxD": "\u00b0C",
+   "SrelD": "%"
+  },
+  "earthx:bands": [
+   {
+    "name": "TabsD",
+    "earthx:look": {
+     "colormap": "rdbu_r",
+     "scale": "fixed",
+     "low": -20.0,
+     "high": 30.0
+    },
+    "earthx:look_origin": "standard"
+   },
+   {
+    "name": "TminD",
+    "earthx:look": {
+     "colormap": "rdbu_r",
+     "scale": "fixed",
+     "low": -20.0,
+     "high": 30.0
+    },
+    "earthx:look_origin": "standard"
+   },
+   {
+    "name": "TmaxD",
+    "earthx:look": {
+     "colormap": "rdbu_r",
+     "scale": "fixed",
+     "low": -20.0,
+     "high": 30.0
+    },
+    "earthx:look_origin": "standard"
+   },
+   {
+    "name": "SrelD",
+    "earthx:look": {
+     "colormap": "viridis",
+     "scale": "fixed",
+     "low": 0.0,
+     "high": 100.0
+    },
+    "earthx:look_origin": "unit"
+   }
+  ],
+  "earthx:auxiliary_assets": [],
+  "earthx:true_color": [],
+  "earthx:mask": null,
+  "earthx:capabilities": {
+   "roi": true,
+   "time_range": true,
+   "band_math": true,
+   "interpolation": true,
+   "reprojection": true,
+   "masking": false,
+   "value_masking": true,
+   "normalization": true,
+   "ml_processing": true,
+   "quad_pol": false,
+   "terrain": false,
+   "single_coverage_product": false
+  }
+ },
+ "swissalti3d": {
+  "id": "swissalti3d",
+  "title": "swissALTI3D",
+  "earthx:format": "cog",
+  "earthx:viewer": {
+   "group_by": [
+    "earthx:state"
+   ],
+   "min_zoom": 13,
+   "max_zoom": 20,
+   "browse": "full_resolution",
+   "quicklook_nodata_max": null,
+   "results_group_by": [
+    "earthx:state"
+   ],
+   "overview": "substitute",
+   "overview_resampling": null,
+   "overview_substitute": "cop-dem-glo-30"
+  },
+  "earthx:default_render": {
+   "title": "Elevation",
+   "assets": [
+    "dtm"
+   ],
+   "rescale": [
+    [
+     0.0,
+     5000.0
+    ]
+   ],
+   "colormap_name": "terrain",
+   "expression": null,
+   "resampling": "nearest",
+   "asset_selection": "all"
+  },
+  "earthx:band_units": {
+   "dtm": "m",
+   "dtm_2m": "m"
+  },
+  "earthx:bands": [
+   {
+    "name": "dtm",
+    "earthx:look": {
+     "colormap": "terrain",
+     "scale": "fixed",
+     "low": 0.0,
+     "high": 5000.0
+    },
+    "earthx:look_origin": "standard"
+   },
+   {
+    "name": "dtm_2m",
+    "earthx:look": {
+     "colormap": "terrain",
+     "scale": "fixed",
+     "low": 0.0,
+     "high": 5000.0
+    },
+    "earthx:look_origin": "standard"
+   }
+  ],
+  "earthx:auxiliary_assets": [
+   "xyz",
+   "xyz_2m"
+  ],
+  "earthx:true_color": [],
+  "earthx:mask": null,
+  "earthx:capabilities": {
+   "roi": true,
+   "time_range": false,
+   "band_math": true,
+   "interpolation": true,
+   "reprojection": true,
+   "masking": false,
+   "value_masking": true,
+   "normalization": true,
+   "ml_processing": true,
+   "quad_pol": false,
+   "terrain": true,
+   "single_coverage_product": true
+  }
+ },
+ "esa-worldcover-2021": {
+  "id": "esa-worldcover-2021",
+  "title": "ESA WorldCover 2021",
+  "earthx:format": "cog",
+  "earthx:viewer": {
+   "group_by": [
+    "start_datetime"
+   ],
+   "min_zoom": 5,
+   "max_zoom": 15,
+   "browse": "full_resolution",
+   "quicklook_nodata_max": null,
+   "results_group_by": [
+    "start_datetime"
+   ],
+   "overview": "pyramid",
+   "overview_resampling": "mode",
+   "overview_substitute": null
+  },
+  "earthx:default_render": {
+   "title": "Land cover",
+   "assets": [
+    "map"
+   ],
+   "rescale": null,
+   "colormap_name": "esa-worldcover",
+   "expression": null,
+   "resampling": "nearest",
+   "asset_selection": "all"
+  },
+  "earthx:band_units": {
+   "map": null
+  },
+  "earthx:bands": [
+   {
+    "name": "map",
+    "classification:classes": [
+     {
+      "value": 10,
+      "name": "tree_cover",
+      "title": "Tree cover",
+      "color_hint": "006400"
+     },
+     {
+      "value": 20,
+      "name": "shrubland",
+      "title": "Shrubland",
+      "color_hint": "FFBB22"
+     },
+     {
+      "value": 30,
+      "name": "grassland",
+      "title": "Grassland",
+      "color_hint": "FFFF4C"
+     },
+     {
+      "value": 40,
+      "name": "cropland",
+      "title": "Cropland",
+      "color_hint": "F096FF"
+     },
+     {
+      "value": 50,
+      "name": "built_up",
+      "title": "Built-up",
+      "color_hint": "FA0000"
+     },
+     {
+      "value": 60,
+      "name": "bare_sparse_vegetation",
+      "title": "Bare / sparse vegetation",
+      "color_hint": "B4B4B4"
+     },
+     {
+      "value": 70,
+      "name": "snow_and_ice",
+      "title": "Snow and ice",
+      "color_hint": "F0F0F0"
+     },
+     {
+      "value": 80,
+      "name": "permanent_water_bodies",
+      "title": "Permanent water bodies",
+      "color_hint": "0064C8"
+     },
+     {
+      "value": 90,
+      "name": "herbaceous_wetland",
+      "title": "Herbaceous wetland",
+      "color_hint": "0096A0"
+     },
+     {
+      "value": 95,
+      "name": "mangroves",
+      "title": "Mangroves",
+      "color_hint": "00CF75"
+     },
+     {
+      "value": 100,
+      "name": "moss_and_lichen",
+      "title": "Moss and lichen",
+      "color_hint": "FAE6A0"
+     }
+    ]
+   }
+  ],
+  "earthx:auxiliary_assets": [],
+  "earthx:true_color": [],
+  "earthx:mask": {
+   "asset": "map",
+   "band": "map",
+   "classes": [
+    {
+     "value": 10,
+     "label": "Tree cover"
+    },
+    {
+     "value": 20,
+     "label": "Shrubland"
+    },
+    {
+     "value": 30,
+     "label": "Grassland"
+    },
+    {
+     "value": 40,
+     "label": "Cropland"
+    },
+    {
+     "value": 50,
+     "label": "Built-up"
+    },
+    {
+     "value": 60,
+     "label": "Bare / sparse vegetation"
+    },
+    {
+     "value": 70,
+     "label": "Snow and ice"
+    },
+    {
+     "value": 80,
+     "label": "Permanent water bodies"
+    },
+    {
+     "value": 90,
+     "label": "Herbaceous wetland"
+    },
+    {
+     "value": 95,
+     "label": "Mangroves"
+    },
+    {
+     "value": 100,
+     "label": "Moss and lichen"
+    }
+   ],
+   "suggested": [],
+   "reference": "https://esa-worldcover.s3.eu-central-1.amazonaws.com/v200/2021/docs/WorldCover_PUM_V2.0.pdf",
+   "note": "Class names as in the legend of the map files; 0 is no data.",
+   "cloud_classes": [],
+   "cloud_note": "",
+   "share_classes": {}
+  },
+  "earthx:capabilities": {
+   "roi": true,
+   "time_range": false,
+   "band_math": false,
+   "interpolation": false,
+   "reprojection": true,
+   "masking": true,
+   "value_masking": true,
+   "normalization": false,
+   "ml_processing": false,
+   "quad_pol": false,
+   "terrain": false,
+   "single_coverage_product": true
+  }
+ }
+}
