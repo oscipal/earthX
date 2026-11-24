@@ -6,8 +6,9 @@
 An entry becomes visible only once its own link passed. Passed: ``200`` after the redirects; the page is no start page
 of its host, no error page and no login page; the title or an identifier of the dataset stands on the page, in its
 text, its ``<title>``, a ``<meta>`` value, JSON-LD or the canonical link (portals that load their text by script
-still name the dataset there). ``robots.txt``, no answer, ``429`` and ``5xx`` make a link ``unchecked``, which hides
-nothing and publishes nothing.
+still name the dataset there). ``robots.txt``, no answer, ``429`` and ``5xx`` make a link ``unchecked``: a new entry
+stays invisible, and so does a published one (Otto, 24.11.2026). A link to a catalogue's own page of a dataset can be
+checked through the catalogue's API instead, where its seed file says so (``catalog_page_check``, F12 = 2).
 
 Every request goes through ``gateway`` (KLAERUNGEN B8) with the spacing of ``hosts.yaml`` (else one connection and
 1 s per host) and ``robots.txt``; the allowlist is exactly the hosts of the links due. A redirect to another host is
@@ -21,6 +22,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import re
 import sys
 import time
 from collections import Counter, defaultdict
@@ -49,6 +51,8 @@ from earthx.catalog.link_checks import (
     record_results,
 )
 from earthx.catalog.registry import ConfigError
+from earthx.catalog.sources import SourceConfig, read_sources
+from earthx.discovery.harvest import source_policy
 from earthx.discovery.links import is_start_page, url_parts
 from earthx.discovery.source_gateway import open_source_gateway
 from earthx.gateway import (
@@ -73,6 +77,7 @@ __all__ = [
     "LINKCHECK_FILE",
     "LinkRules",
     "LinkRun",
+    "catalogue_name",
     "check_links",
     "judge_page",
     "link_pattern",
@@ -84,6 +89,10 @@ __all__ = [
 ]
 
 LINKCHECK_FILE = CATALOG_DIR / "linkcheck.yaml"
+#: Names of datasets asked in one ``package_search`` of a catalogue's API: well below the gateway's URL limit.
+API_BATCH = 40
+#: A CKAN name, as the extract fills ``{name}`` of ``catalog_page`` (``discovery.ckan``).
+_CKAN_NAME = re.compile(r"[a-z0-9_-]{2,100}")
 #: The reason a gateway gives when a redirect leads to a host outside the allowlist (``policy.inspect_url``).
 _NOT_ALLOWED = "host is not on the allowlist"
 _TEXT_TYPES = ("html", "xml", "json", "text/plain")
@@ -454,6 +463,66 @@ async def _round(
     return found
 
 
+def catalogue_name(source: SourceConfig, url: str) -> str | None:
+    """The CKAN name in ``url`` where it has the form of the source's ``catalog_page``, else ``None``."""
+    if source.catalog_page is None:
+        return None
+    prefix, _, suffix = source.catalog_page.partition("{name}")
+    if not url.startswith(prefix) or not url.endswith(suffix) or len(url) <= len(prefix) + len(suffix):
+        return None
+    name = url[len(prefix) : len(url) - len(suffix)]
+    return name if _CKAN_NAME.fullmatch(name) else None
+
+
+async def _catalogue_round(
+    source: SourceConfig,
+    items: Sequence[tuple[DueLink, str]],
+    *,
+    hosts: Mapping[str, HostLimit],
+    open_gateway: OpenGateway,
+    deadline: float,
+    clock: Callable[[], float],
+) -> list[LinkResult]:
+    """The links to the catalogue's own page of a dataset, checked through its CKAN API (M5-67 F12 = 2): passed where a
+    dataset of exactly the name in the link exists. ``package_search`` with up to :data:`API_BATCH` names a request,
+    under the source's own policy (its host, its limits, its robots exception)."""
+    found: list[LinkResult] = []
+
+    def result(item: DueLink, outcome: str, reason: str, status: int | None) -> LinkResult:
+        pattern = link_pattern(item.url, item.identifiers)
+        host = _host(item.url) or "invalid"
+        return LinkResult(item.dataset_id, item.url, host, pattern, outcome, reason, status, source.host)
+
+    async with open_gateway(source_policy(source, hosts)) as gateway:
+        for start in range(0, len(items), API_BATCH):
+            if clock() >= deadline:
+                break
+            chunk = items[start : start + API_BATCH]
+            names = sorted({name for _, name in chunk})
+            query = "name:(" + " OR ".join(f'"{name}"' for name in names) + ")"
+            try:
+                response = await gateway.get(
+                    f"{source.endpoint}/package_search", params={"fq": query, "rows": len(names), "fl": "name"}
+                )
+                body = response.json()
+                present = {row.get("name") for row in body["result"]["results"]} if body.get("success") else None
+            except GatewayError as error:
+                outcome, reason, status = _error(error)
+                found += [result(item, outcome, reason, status) for item, _ in chunk]
+                continue
+            except (ValueError, KeyError, TypeError, AttributeError):
+                present = None
+            if present is None:
+                found += [result(item, "unchecked", "api_shape", response.status_code) for item, _ in chunk]
+                continue
+            for item, name in chunk:
+                passed = name in present
+                found.append(
+                    result(item, "passed" if passed else "failed", "ok" if passed else "not_in_catalogue", 200)
+                )
+    return found
+
+
 async def check_links(
     due: Sequence[DueLink],
     *,
@@ -462,40 +531,60 @@ async def check_links(
     open_gateway: OpenGateway,
     deadline: float,
     clock: Callable[[], float] = time.monotonic,
+    sources: Mapping[str, SourceConfig] | None = None,
 ) -> list[LinkResult]:
     """Check ``due`` host by host until ``deadline`` (``clock`` seconds); what is left stays due. A link that is no
-    ``https`` address fails without a request."""
+    ``https`` address fails without a request. A link to the catalogue page of a source whose ``catalog_page_check``
+    says ``api`` is checked through the source's API, and stays unchecked until Otto confirmed the form of the page."""
     results: dict[str, LinkResult] = {}
     groups: dict[str, list[DueLink]] = defaultdict(list)
+    catalogue: dict[str, list[tuple[DueLink, str]]] = defaultdict(list)
     for item in due:
         host = _host(item.url)
+        source = (sources or {}).get(item.source_id)
+        name = None if source is None or source.catalog_page_check.via != "api" else catalogue_name(source, item.url)
         if host is None:
             pattern = link_pattern(item.url, item.identifiers)
             results[item.dataset_id] = LinkResult(
                 item.dataset_id, item.url, "invalid", pattern, "failed", "bad_address", None, None
             )
+        elif name is not None and source is not None and source.catalog_page_check.form_confirmed_on is None:
+            pattern = link_pattern(item.url, item.identifiers)
+            results[item.dataset_id] = LinkResult(
+                item.dataset_id, item.url, host, pattern, "unchecked", "form_unconfirmed", None, None
+            )
+        elif name is not None:
+            catalogue[item.source_id].append((item, name))
         else:
             groups[host].append(item)
-    if not groups:
-        return list(results.values())
-    allowed = frozenset(groups)
-    options = {"rules": rules, "hosts": hosts, "open_gateway": open_gateway, "deadline": deadline, "clock": clock}
-    first = await _round(groups, allowed, **options)
-    learned: dict[str, str] = {}
-    for result, target in first:
-        results[result.dataset_id] = result
-        if target is not None:
-            learned[result.dataset_id] = target
-    new_hosts = sorted({h for h in learned.values() if h not in allowed})[: rules.max_redirect_hosts]
-    if new_hosts:
-        by_id = {item.dataset_id: item for item in due}
-        again: dict[str, list[DueLink]] = defaultdict(list)
-        for dataset_id, target in learned.items():
-            if target in new_hosts:
-                item = by_id[dataset_id]
-                again[results[dataset_id].host].append(item)
-        for result, _ in await _round(again, allowed | frozenset(new_hosts), **options):
-            results[result.dataset_id] = result
+    options = {"hosts": hosts, "open_gateway": open_gateway, "deadline": deadline, "clock": clock}
+
+    async def pages() -> list[LinkResult]:
+        if not groups:
+            return []
+        found: dict[str, LinkResult] = {}
+        allowed = frozenset(groups)
+        learned: dict[str, str] = {}
+        for result, target in await _round(groups, allowed, rules=rules, **options):
+            found[result.dataset_id] = result
+            if target is not None:
+                learned[result.dataset_id] = target
+        new_hosts = sorted({h for h in learned.values() if h not in allowed})[: rules.max_redirect_hosts]
+        if new_hosts:
+            by_id = {item.dataset_id: item for item in due}
+            again: dict[str, list[DueLink]] = defaultdict(list)
+            for dataset_id, target in learned.items():
+                if target in new_hosts:
+                    again[found[dataset_id].host].append(by_id[dataset_id])
+            for result, _ in await _round(again, allowed | frozenset(new_hosts), rules=rules, **options):
+                found[result.dataset_id] = result
+        return list(found.values())
+
+    rounds = [pages()] + [
+        _catalogue_round((sources or {})[source_id], items, **options) for source_id, items in sorted(catalogue.items())
+    ]
+    for done in await asyncio.gather(*rounds):
+        results.update((r.dataset_id, r) for r in done)
     return list(results.values())
 
 
@@ -523,15 +612,20 @@ def run_linkcheck(
     minutes: float | None = None,
     open_gateway: OpenGateway = open_source_gateway,
     clock: Callable[[], float] = time.monotonic,
+    sources: Mapping[str, SourceConfig] | None = None,
+    only: Sequence[str] | None = None,
 ) -> LinkRun:
     """Check what is due within the budget, keep the results, guard hosts and patterns that failed for a large share,
-    then hide and bring back (plan §4a, §4c); with ``dry_run`` the last step only counts."""
+    then hide and bring back (plan §4a, §4c); with ``dry_run`` the last step only counts. ``only`` keeps the run to
+    these sources (every source where ``None``)."""
     started = datetime.now(UTC)
-    due = due_links(conn, recheck_days=rules.recheck_days)
+    due = due_links(conn, recheck_days=rules.recheck_days, only=only)
     run = LinkRun(dry_run=dry_run, due=len(due), due_by_host=Counter(_host(d.url) or "invalid" for d in due))
     deadline = clock() + 60 * (rules.budget_minutes if minutes is None else minutes)
     run.results = asyncio.run(
-        check_links(due, rules=rules, hosts=hosts, open_gateway=open_gateway, deadline=deadline, clock=clock)
+        check_links(
+            due, rules=rules, hosts=hosts, open_gateway=open_gateway, deadline=deadline, clock=clock, sources=sources
+        )
     )
     # One transaction: a result is never seen unguarded, and a run that breaks off leaves none behind (review).
     with conn.transaction():
@@ -539,7 +633,7 @@ def run_linkcheck(
         run.groups = guard_results(
             conn, started, min_checked=rules.guard_min_checked, failed_share=rules.guard_failed_share
         )
-        run.applied = apply_results(conn, dry_run=dry_run)
+        run.applied = apply_results(conn, dry_run=dry_run, only=only)
     return run
 
 
@@ -557,7 +651,8 @@ def summary_text(run: LinkRun, hosts: Mapping[str, HostLimit], *, top: int = 20)
         f"  {'würde verbergen' if run.dry_run else 'verborgen'} {run.applied.hidden},"
         f" {'würde zurückholen' if run.dry_run else 'zurückgeholt'} {run.applied.restored},"
         f" mit einer Freigabe sichtbar {run.applied.publishable}",
-        "  Fällig je Host (Links × Abstand, ohne Crawl-delay):",
+        "  Fällig je Host (Links × Abstand, ohne Crawl-delay; Katalogseiten mit Prüfung über die API brauchen eine"
+        f" Anfrage je {API_BATCH}):",
     ]
     for host, count in run.due_by_host.most_common(top):
         limit = hosts.get(host)
@@ -593,6 +688,7 @@ def main(argv: list[str] | None = None) -> int:
         user_agent_from_env()
         rules = load_link_rules()
         hosts = registry().host_limits
+        sources = read_sources()
     except (ValueError, ConfigError, EntryFileError) as error:
         print(f"linkcheck failed: {error}", file=sys.stderr)
         return 1
@@ -601,7 +697,9 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     try:
         with psycopg.connect(autocommit=True) as conn:
-            run = run_linkcheck(conn, rules=rules, hosts=hosts, dry_run=args.dry_run, minutes=args.minutes)
+            run = run_linkcheck(
+                conn, rules=rules, hosts=hosts, dry_run=args.dry_run, minutes=args.minutes, sources=sources
+            )
     except psycopg.Error as error:
         # Only the kind: the text of a database error can quote a row of foreign content.
         print(f"linkcheck failed: database error {type(error).__name__}", file=sys.stderr)

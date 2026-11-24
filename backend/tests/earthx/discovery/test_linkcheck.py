@@ -308,3 +308,127 @@ def test_misuse_minutes_out_of_range_is_refused(capsys: pytest.CaptureFixture[st
     monkeypatch.setattr(linkcheck, "load_link_rules", lambda: replace(RULES))
     assert linkcheck.main(["--minutes", "0"]) == 1
     assert "--minutes" in capsys.readouterr().err
+
+
+# --- The catalogue's own page, through its API (F12 = 2) ---------------------------------------------------------------
+
+
+def _govdata(confirmed: bool):  # type: ignore[no-untyped-def]
+    from datetime import date
+
+    from earthx.catalog.sources import CatalogPageCheck, read_sources
+
+    source = read_sources()["govdata"]
+    return replace(source, catalog_page_check=CatalogPageCheck("api", date(2026, 11, 25) if confirmed else None))
+
+
+def _catalogue(present: set[str], asked: list[str]) -> Callable[[httpx.Request], httpx.Response]:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(200, text="User-agent: *\nDisallow: /\n")
+        if request.url.path == "/api/3/action/package_search":
+            query = request.url.params["fq"]
+            asked.append(query)
+            names = [n for n in present if f'"{n}"' in query]
+            return httpx.Response(200, json={"success": True, "result": {"results": [{"name": n} for n in names]}})
+        return httpx.Response(404)
+
+    return handler
+
+
+HOSTS = {"ckan.govdata.de": HostLimit(connections=2, interval_s=1.0, reason="test")}
+
+
+def govdata_due(name: str) -> DueLink:
+    return DueLink(f"govdata.{name}", "govdata", "published", f"https://www.govdata.de/suche/daten/{name}", "X", (), 1)
+
+
+def test_the_name_is_read_from_the_form_of_the_catalogue_page() -> None:
+    source = _govdata(True)
+    assert linkcheck.catalogue_name(source, "https://www.govdata.de/suche/daten/3d-meshes-brandenburg") == (
+        "3d-meshes-brandenburg"
+    )
+    for other in (
+        "https://www.govdata.de/daten/-/details/3d-meshes-brandenburg",
+        "https://www.govdata.de/suche/daten/",
+        "https://www.govdata.de/suche/daten/A B",
+        "https://amt.example.org/suche/daten/x1",
+    ):
+        assert linkcheck.catalogue_name(source, other) is None
+
+
+@pytestmark_anyio
+async def test_a_catalogue_page_is_checked_through_the_api_under_the_robots_exception() -> None:
+    asked: list[str] = []
+    results = await check_links(
+        [govdata_due("da-ist-er"), govdata_due("weg-ist-er")],
+        rules=RULES,
+        hosts=HOSTS,
+        open_gateway=opener(_catalogue({"da-ist-er"}, asked), []),
+        deadline=float("inf"),
+        sources={"govdata": _govdata(True)},
+    )
+    found = {r.dataset_id: (r.outcome, r.reason, r.host, r.final_host) for r in results}
+    assert found == {
+        "govdata.da-ist-er": ("passed", "ok", "www.govdata.de", "ckan.govdata.de"),
+        "govdata.weg-ist-er": ("failed", "not_in_catalogue", "www.govdata.de", "ckan.govdata.de"),
+    }
+    # One request for both names, each quoted (an exact name, no Solr syntax from the data).
+    assert asked == ['name:("da-ist-er" OR "weg-ist-er")']
+
+
+@pytestmark_anyio
+async def test_without_ottos_confirmation_of_the_form_nothing_is_asked() -> None:
+    asked: list[str] = []
+    policies: list[Policy] = []
+    results = await check_links(
+        [govdata_due("da-ist-er")],
+        rules=RULES,
+        hosts=HOSTS,
+        open_gateway=opener(_catalogue({"da-ist-er"}, asked), policies),
+        deadline=float("inf"),
+        sources={"govdata": _govdata(False)},
+    )
+    assert [(r.outcome, r.reason) for r in results] == [("unchecked", "form_unconfirmed")]
+    assert asked == [] and policies == []
+
+
+@pytestmark_anyio
+@pytest.mark.parametrize(
+    ("answer", "expected"),
+    [
+        (httpx.Response(503), ("unchecked", "http_503")),
+        (httpx.Response(200, json={"success": False}), ("unchecked", "api_shape")),
+        (httpx.Response(200, text="<html>kaputt</html>"), ("unchecked", "api_shape")),
+    ],
+)
+async def test_a_catalogue_that_does_not_answer_leaves_the_link_unchecked(
+    answer: httpx.Response, expected: tuple[str, str]
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404) if request.url.path == "/robots.txt" else answer
+
+    results = await check_links(
+        [govdata_due("da-ist-er")],
+        rules=RULES,
+        hosts=HOSTS,
+        open_gateway=opener(handler, []),
+        deadline=float("inf"),
+        sources={"govdata": _govdata(True)},
+    )
+    assert [(r.outcome, r.reason) for r in results] == [expected]
+
+
+@pytestmark_anyio
+async def test_many_names_go_in_batches() -> None:
+    asked: list[str] = []
+    names = [f"satz-{i:03d}" for i in range(linkcheck.API_BATCH + 5)]
+    results = await check_links(
+        [govdata_due(n) for n in names],
+        rules=RULES,
+        hosts=HOSTS,
+        open_gateway=opener(_catalogue(set(names), asked), []),
+        deadline=float("inf"),
+        sources={"govdata": _govdata(True)},
+    )
+    assert len(asked) == 2 and all(r.outcome == "passed" for r in results) and len(results) == len(names)

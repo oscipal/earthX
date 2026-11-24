@@ -5,8 +5,17 @@ protocol: ckan
 # The API host of the catalogue as GovData documents it (Otto, 18.11.2026); www.govdata.de disallows every crawler but
 # the large search engines in its robots.txt, ckan.govdata.de disallows all (Otto, 19.11.2026), hence the exception.
 endpoint: https://ckan.govdata.de/api/3/action
-# [S, not checked from a session]: the page of a dataset on the portal.
+# [S, not checked from a session]: the page of a dataset on the portal. The data also name /web/guest/suchen/-/details/
+# and Otto's evidence below has /daten/-/details/; which form leads to the page Otto checks in a browser (M5-67 §4d).
+# A change of this line is all it takes: the next harvest builds the links anew without a request.
 catalog_page: https://www.govdata.de/suche/daten/{name}
+# The link check of a link to the page above (M5-67 F12 = 2, Otto 24.11.2026): robots.txt of www.govdata.de keeps out
+# crawlers, so the check asks the CKAN API (under the robots exception below) whether a dataset of the name in the link
+# exists. Only with form_confirmed_on, the day Otto found the page of a dataset under the form of catalog_page in a
+# browser: until then these links stay unchecked, and their entries are not visible.
+catalog_page_check:
+  via: api
+  form_confirmed_on: null
 filter:
   fq: null
   publisher_field: publisher_name
