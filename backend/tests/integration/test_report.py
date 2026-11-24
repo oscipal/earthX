@@ -27,10 +27,11 @@ from earthx.catalog.listed_store import apply_blocklist, write_regions
 from earthx.catalog.listing_store import withdraw
 from earthx.catalog.municipalities import Municipality, load_municipalities, write_municipalities
 from earthx.catalog.registry import ConfigError, Maturity
-from earthx.catalog.sources import CkanFilter, SourceConfig, SourceProtocol, StacFilter
+from earthx.catalog.sources import CkanFilter, SourceConfig, SourceProtocol, StacFilter, read_sources
+from earthx.discovery.dedupe import find_keys
 from earthx.discovery.enrich import PLACE_NAMES_FILE, read_place_directory
 from earthx.discovery.grants import GrantToAll, build_grants, dump_grants, publishers_of
-from earthx.discovery.report import classify_text, run_report, write_files
+from earthx.discovery.report import _full_collections, _full_members, classify_text, run_report, write_files
 
 DAY = date(2026, 11, 19)
 PUBLISHER = "Kanton Zug"
@@ -717,6 +718,52 @@ def test_a_viewer_link_of_the_fsdi_makes_a_duplicate_only_for_a_source_that_says
     assert world.row("linking")["duplicate_of"] == f"{world.stac.source_id}.ch.example.boden"
     world.report()
     assert world.row("linking")["duplicate_of"] is None
+
+
+def _fsdi(world: World) -> SourceConfig:
+    """A STAC source at the host of the FSDI, as ``sources/fsdi-stac.yaml``, so that the full entries on it are met."""
+    fsdi = replace(_stac(f"f-{world.ckan.source_id}"), endpoint="https://data.geo.admin.ch/api/stac/v1")
+    world.sources[fsdi.source_id] = fsdi
+    return fsdi
+
+
+def test_swissalti3d_listed_from_the_fsdi_is_a_duplicate_of_the_full_entry(world: World) -> None:
+    # Otto, 24.11.2026: swissALTI3D showed twice in the Data catalogue, as a full and as a listed entry (adr/0033 §11).
+    fsdi = _fsdi(world)
+    world.put(fsdi, _find("ch.swisstopo.swissalti3d", source_url="https://data.geo.admin.ch/browser/#/collections/x"))
+    world.report(fsdi)
+    row = world.row("ch.swisstopo.swissalti3d", fsdi)
+    assert (row["state"], row["duplicate_of"]) == ("duplicate", "swissalti3d")
+
+
+def test_swissalti3d_listed_by_opendata_swiss_through_its_viewer_link_is_a_duplicate_of_the_full_entry(
+    world: World,
+) -> None:
+    page = "https://data.geo.admin.ch/browser/index.html#/collections/ch.swisstopo.swissalti3d"
+    world.put(
+        world.ckan,
+        _find("swissalti3d", source_url="https://opendata.swiss/de/dataset/swissalti3d", link_candidates=[[1, page]], skipped_url=page),
+    )
+    world.report()
+    assert world.row("swissalti3d")["duplicate_of"] is None
+    world.report(replace(world.ckan, dedupe_collection_links=True))
+    assert world.row("swissalti3d")["duplicate_of"] == "swissalti3d"
+
+
+def test_every_full_entry_on_a_harvested_stac_host_has_the_key_of_its_listed_collection() -> None:
+    # The audit of 24.11.2026: a find of a STAC source gets the key of its collection id at the source's host; the
+    # full entry on that host must carry the same key, else the full entry does not take over the listed one.
+    hosts = {s.host: s for s in read_sources().values() if s.protocol is SourceProtocol.STAC_API}
+    full = {m.dataset_id: m.keys for m in _full_members()}
+    audited = 0
+    for config, host, collection_id in _full_collections():
+        source = hosts.get(host)
+        if source is None:
+            continue
+        audited += 1
+        keys = find_keys({"source_key": collection_id}, stac_host=source.host, known={})
+        assert set(keys) <= set(full[config.dataset_id]), config.dataset_id
+    assert audited >= 5
 
 
 def test_a_collection_in_a_distribution_makes_no_duplicate(world: World) -> None:
