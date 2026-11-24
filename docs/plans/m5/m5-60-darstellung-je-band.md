@@ -224,7 +224,7 @@ Folgen: Regeltabelle §5 wie vorgeschlagen (`%` fest 0–100 `viridis`; Temperat
 
 **Name des Felds (Auslegung A6):** Die Herkunft heißt in der YAML `origin`, nicht `from` wie im Entwurf (§4), weil `from` in Python kein Feldname sein kann und die Registry-Dataclasses die Form der YAML sind (`entry_files`, M5-13); in der Collection entsprechend `earthx:look_origin`.
 
-**Standardbild (Auslegung A7):** Stufe 3 nimmt `rescale` des Standardbilds als physikalische Werte. Das trifft für die heutigen Einträge mit einem Band im Standardbild zu (Höhen in m, MeteoSchweiz in °C und mm, keine Skalierung in den Einträgen); ein künftiger Eintrag mit skaliertem Standardband bekäme dort einen Bereich in Rohwerten. Das Onboarding schreibt `default_render` aus der Quelle; fällt so ein Fall an, ist er in der Probe sichtbar.
+**Standardbild (Auslegung A7, von Otto am 24.11.2026 abgelehnt, §14):** Stufe 3 nimmt `rescale` des Standardbilds als physikalische Werte. Das trifft für die heutigen Einträge mit einem Band im Standardbild zu (Höhen in m, MeteoSchweiz in °C und mm, keine Skalierung in den Einträgen); ein künftiger Eintrag mit skaliertem Standardband bekäme dort einen Bereich in Rohwerten. Das Onboarding schreibt `default_render` aus der Quelle; fällt so ein Fall an, ist er in der Probe sichtbar.
 
 ---
 
@@ -291,3 +291,23 @@ Nach dem Merge einmal `catalog-load` (die Collections tragen `earthx:look`). Sic
 ### 13.4 PR 2 (Frontend, neue Session nach dem Merge und nach M5-62 PR 2)
 
 §7 (`bandLookOf` statt `standardLookOfBand`, `chooseViewBand`, Auto-scale, Ergebnis-Ebenen nach F5) und §12 (Histogramm in den Farben der Darstellung), Browser-Check.
+
+---
+
+## 14. Rückmeldung Otto zu PR 1 (24.11.2026)
+
+> Zu A7: nicht so lassen. Übernimmt ein Band den Bereich des Standardbilds, rechne ihn mit scale/offset des Bandes in physikalische Werte um. Ist das nicht eindeutig (z. B. Standardbild über mehrere Bänder mit verschiedener Skalierung), soll der Eintrag beim Laden mit einer klaren Meldung abbrechen, bis er ein eigenes band_looks trägt. Test mit einem synthetischen skalierten Band. Entscheidungslog und Plan §10 nachführen.
+
+### 14.1 Befund [P]
+
+Die Registry kennt `scale` und `offset` eines Bands nicht. Sie stehen nur in `raster:bands` der Items der Quelle (Sentinel-2: `scale` 0.0001, `offset` −0.1, Fixture `earth_search/search_real_shape.json`); kein Feld eines Eintrags trägt sie, und beim Laden liest die Registry keine Items. Eine Prüfung „beim Laden“ braucht die Skalierung deshalb im Eintrag. Wo sie herkommt, ist nicht entschieden → F8. Bis zur Antwort ruht dieser Teil; PR 1 bleibt sonst, wie er ist.
+
+Heute betroffen ist kein Eintrag: Die Standardbilder aus einem Band (Höhen, MeteoSchweiz) sind unskaliert, Sentinel-2 hat ein Echtfarb-Standardbild, Sentinel-1 eines ohne Farbskala (keine Stufe 3).
+
+### 14.2 Frage F8 — Woher die Registry `scale`/`offset` kennt
+
+1. **Neues optionales Feld `band_scaling`** je Band (`scale`, `offset`), vom Onboarding aus `item_assets` bzw. `raster:bands` der Quelle übernommen (wie `band_units`); fehlt ein Band, gilt „unskaliert“ (1, 0). Stufe 3 rechnet `rescale` mit der Skalierung des Standardbands in physikalische Werte um. Abbruch beim Laden mit Meldung („… set band_looks for …“), wenn die Bänder des Standardbilds verschieden skaliert sind oder ein Standardband als Muster (`*`) mit mehreren Skalierungen steht. Heute ohne Wirkung auf die Einträge; Sentinel-2 bekommt das Feld trotzdem befüllt (Reflexion 0.0001/−0.1, `aot`/`wvp` 0.001/0), damit es künftig stimmt. **(Empfehlung)**
+2. Wie 1, aber Pflichtfeld für jedes Band (B10): jeder Eintrag sagt die Skalierung ausdrücklich, auch „1, 0“.
+3. Kein neues Feld: Stufe 3 gilt nur, wenn das Standardbild ausdrücklich unskaliert ist; sonst bricht der Eintrag ab, bis er `band_looks` trägt. Das hieße, ein Eintrag sagt „unskaliert“ an anderer Stelle (z. B. ein Schalter in `default_render`).
+
+**Auslegung A8 (gilt mit F8 = 1 oder 2):** „Mehrere Bänder“ im Sinne der Rückmeldung heißt: Stufe 3 gilt künftig auch für ein Standardbild aus mehreren Assets, von denen eines gezeichnet wird (`asset_selection: first_present`, z. B. `vv`/`hh`), mit Farbskala und einem Bereich je Asset. Ergeben alle nach der Umrechnung denselben physikalischen Bereich, gilt er; sonst Abbruch.
