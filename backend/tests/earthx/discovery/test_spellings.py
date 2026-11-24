@@ -105,6 +105,11 @@ def test_a_spelling_counts_like_a_match_and_changes_the_fingerprint(tmp_path: Pa
         ),
         ("- {license_ref: cc-by-4.0, statement: x, rule: S2, added_on: 2999-01-01}", "future"),
         ("- {license_ref: cc-by-4.0, statement: ' ', rule: S2, added_on: 2026-11-24}", "non-blank"),
+        ("- {license_ref: lba-free-use, statement: LBA 1.0, rule: S2, added_on: 2026-11-24}", "standard licence"),
+        (
+            "- {license_ref: cc-by-4.0, statement: x, rule: S2, added_on: 2026-11-24, withdrawn_on: 2026-11-20}",
+            "before added_on",
+        ),
     ],
 )
 def test_a_wrong_spelling_file(tmp_path: Path, line: str, message: str) -> None:
@@ -120,3 +125,14 @@ def test_merge_keeps_old_lines_and_their_day_and_dump_loads_again(tmp_path: Path
     assert merged == [Spelling("cc-by-4.0", "CC BY 4.0", "S2", date(2026, 11, 24)), old]
     catalogue = load_licences(read_sources(), _catalogue_with(tmp_path, dump_spellings(merged)))
     assert set(catalogue.spellings) == {"CC0 1.0", "CC BY 4.0"}
+
+
+def test_a_withdrawn_spelling_counts_no_more_and_is_never_added_again(tmp_path: Path) -> None:
+    line = "- {license_ref: cc-by-4.0, statement: CC BY 4.0, rule: S2, added_on: 2026-11-20, withdrawn_on: 2026-11-24}\n"
+    directory = _catalogue_with(tmp_path, line)
+    catalogue = load_licences(read_sources(), directory)
+    assert "CC BY 4.0" not in catalogue.by_statement
+    old = Spelling("cc-by-4.0", "CC BY 4.0", "S2", date(2026, 11, 20), date(2026, 11, 24))
+    merged = merge_spellings([old], [Proposal("cc-by-4.0", "CC BY 4.0", "S2")], date(2026, 11, 25))
+    assert merged == [old]
+    assert "withdrawn_on: 2026-11-24" in dump_spellings(merged)

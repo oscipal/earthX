@@ -16,7 +16,7 @@ by the fixed address of its licensor) only where exactly one such licence fits b
   and the dashes are made the same.
 
 Everything else waits and stands in the list of findings. The spellings go to ``licenses/spellings.yaml``, never into
-Otto's ``terms.yaml``; a line deleted there takes the spelling back.
+Otto's ``terms.yaml``; ``withdrawn_on`` on a line takes the spelling back, and no later run adds it again.
 """
 
 from __future__ import annotations
@@ -39,6 +39,7 @@ from earthx.catalog.licences import (
     SPELLINGS_FILE,
     LicenceCatalogue,
     Spelling,
+    is_standard_term,
     load_licences,
     normal_statement,
 )
@@ -56,9 +57,6 @@ __all__ = [
     "waiting_statements",
 ]
 
-#: Hosts of licensors whose terms are standard licences without an SPDX identifier (the terms of opendata.swiss, the
-#: licence pages of GovData).
-LICENSOR_HOSTS = frozenset({"opendata.swiss", "govdata.de"})
 _URL = re.compile(r"(?i)(?:https?)://(?:www\.)?(?P<host>[^/?#\s]+)(?P<path>/[^?#\s]*)?(?P<query>\?[^#\s]*)?(?P<frag>#\S*)?")
 _TAILS = re.compile(r"(?:/legalcode|/deed\.[a-z]{2}(?:-[a-z]{2})?|/index\.html?|\.html?)$", re.IGNORECASE)
 _LANGUAGE = re.compile(r"^/(?:de|en|fr|it|rm)(?=/)", re.IGNORECASE)
@@ -86,17 +84,9 @@ def _text_key(text: str) -> str:
 
 def standard_refs(catalogue: LicenceCatalogue, granted_to_all: Iterable[str]) -> frozenset[str]:
     """The licences a spelling may be added to: granted to every publisher, with an SPDX identifier (not a
-    ``LicenseRef-``) or with the address of a licensor of :data:`LICENSOR_HOSTS`."""
-    found = set()
-    for ref in granted_to_all:
-        term = catalogue.terms.get(ref)
-        if term is None:
-            continue
-        spdx = term.license.spdx_id or ""
-        host = (_url_key(term.license.url or "") or "").split("/", 1)[0]
-        if (spdx and not spdx.startswith("LicenseRef-")) or host in LICENSOR_HOSTS:
-            found.add(ref)
-    return frozenset(found)
+    ``LicenseRef-``) or with the address of a licensor (``licences.LICENSOR_HOSTS``)."""
+    terms = catalogue.terms
+    return frozenset(ref for ref in granted_to_all if ref in terms and is_standard_term(terms[ref]))
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,7 +146,8 @@ def waiting_statements(conn: psycopg.Connection) -> Counter[str]:
 
 
 def merge_spellings(existing: Sequence[Spelling], proposals: Iterable[Proposal], day: date) -> list[Spelling]:
-    """The lines kept as they are, the new ones with ``day``; sorted by licence, then statement."""
+    """The lines kept as they are, withdrawn ones too, the new ones with ``day``; a statement of any existing line is
+    never added again. Sorted by licence, then statement."""
     known = {normal_statement(s.statement) for s in existing}
     merged = list(existing)
     merged += [Spelling(p.license_ref, p.statement, p.rule, day) for p in proposals if p.statement not in known]
@@ -166,13 +157,15 @@ def merge_spellings(existing: Sequence[Spelling], proposals: Iterable[Proposal],
 _HEADER = (
     "# Further spellings of graded standard licences, written by `discovery spellings` (M5-67 plan §7; adr/0033\n"
     "# §8.5): never a grade, only a statement that means exactly one licence of terms.yaml by rule S1 (address),\n"
-    "# S2 (identifier) or S3 (typography). Delete a line to take a spelling back; the finds then wait again.\n"
+    "# S2 (identifier) or S3 (typography). To take a spelling back, set `withdrawn_on: <day>` on its line (deleting\n"
+    "# the line would let the next run add it again); the finds then wait again.\n"
 )
 
 
 def dump_spellings(spellings: Sequence[Spelling]) -> str:
     rows = [
         {"license_ref": s.license_ref, "statement": s.statement, "rule": s.rule, "added_on": s.added_on}
+        | ({} if s.withdrawn_on is None else {"withdrawn_on": s.withdrawn_on})
         for s in spellings
     ]
     return _HEADER + (yaml.safe_dump(rows, sort_keys=False, allow_unicode=True, width=1000) if rows else "[]\n")
@@ -191,8 +184,10 @@ def run(conn: psycopg.Connection, catalogue_dir: Path, out: Path, day: date) -> 
     standard = standard_refs(catalogue, granted)
     known = catalogue.by_statement
     waiting = Counter({s: n for s, n in waiting_statements(conn).items() if normal_statement(s) not in known})
-    proposals = propose(waiting, catalogue, standard)
-    merged = merge_spellings(_existing(catalogue_dir / SPELLINGS_FILE), proposals, day)
+    existing = _existing(catalogue_dir / SPELLINGS_FILE)
+    withdrawn = {normal_statement(s.statement) for s in existing if s.withdrawn_on is not None}
+    proposals = [p for p in propose(waiting, catalogue, standard) if p.statement not in withdrawn]
+    merged = merge_spellings(existing, proposals, day)
     out.mkdir(parents=True, exist_ok=True)
     (out / SPELLINGS_FILE).write_text(dump_spellings(merged), encoding="utf-8")
     taken = {p.statement for p in proposals}

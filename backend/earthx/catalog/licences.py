@@ -25,6 +25,7 @@ from earthx.catalog.registry import ENTRY_FILE_CONFIG, LicenseInfo, LicenseTier
 
 __all__ = [
     "LICENSES_DIR",
+    "LICENSOR_HOSTS",
     "SPELLINGS_FILE",
     "SPELLING_RULES",
     "Grant",
@@ -32,6 +33,7 @@ __all__ = [
     "LicenceMatch",
     "LicenceTerm",
     "Spelling",
+    "is_standard_term",
     "load_licences",
     "normal_statement",
 ]
@@ -78,6 +80,8 @@ class Spelling:
     #: S1 an address, S2 an identifier, S3 a text that differs only in typography.
     rule: str
     added_on: date
+    #: Set by Otto to take the spelling back; the line stays, so that no later run adds it again.
+    withdrawn_on: date | None = None
 
 
 for _part in (LicenceTerm, Grant, Spelling):
@@ -238,6 +242,20 @@ def _read_grants(directory: Path, known_refs: Collection[str], known_sources: Co
 
 SPELLINGS_FILE = "spellings.yaml"
 SPELLING_RULES = ("S1", "S2", "S3")
+#: Hosts of licensors whose terms are standard licences without an SPDX identifier (the terms of opendata.swiss, the
+#: licence pages of GovData; M5-67 plan §7).
+LICENSOR_HOSTS = frozenset({"opendata.swiss", "govdata.de"})
+_HOST = re.compile(r"(?i)https?://(?:www\.)?([^/?#\s:]+)")
+
+
+def is_standard_term(term: LicenceTerm) -> bool:
+    """A licence named by an SPDX identifier of the SPDX list or by the address of a licensor of
+    :data:`LICENSOR_HOSTS`: only such a licence may get spellings the pipeline adds."""
+    spdx = term.license.spdx_id or ""
+    host = _HOST.match(term.license.url or "")
+    if spdx and not spdx.startswith("LicenseRef-"):
+        return True
+    return host is not None and host[1].lower() in LICENSOR_HOSTS
 
 
 def _read_spellings(path: Path, by_ref: Mapping[str, LicenceTerm], by_statement: dict[str, str]) -> dict[str, str]:
@@ -254,6 +272,8 @@ def _read_spellings(path: Path, by_ref: Mapping[str, LicenceTerm], by_statement:
         normal = normal_statement(spelling.statement)
         if spelling.license_ref not in by_ref:
             raise EntryFileError(f"{where}: license_ref not in terms.yaml")
+        if not is_standard_term(by_ref[spelling.license_ref]):
+            raise EntryFileError(f"{where}: a spelling belongs to a standard licence (SPDX or a licensor's address)")
         if spelling.rule not in SPELLING_RULES:
             raise EntryFileError(f"{where}: rule is S1, S2 or S3")
         if not normal:
@@ -262,6 +282,10 @@ def _read_spellings(path: Path, by_ref: Mapping[str, LicenceTerm], by_statement:
             raise EntryFileError(f"{where}: the statement already means {by_statement[normal]}")
         if spelling.added_on > date.today():
             raise EntryFileError(f"{where}: added_on lies in the future")
+        if spelling.withdrawn_on is not None:
+            if spelling.withdrawn_on < spelling.added_on:
+                raise EntryFileError(f"{where}: withdrawn_on lies before added_on")
+            continue
         by_statement[normal] = found[normal] = spelling.license_ref
     return found
 
