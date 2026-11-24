@@ -722,10 +722,43 @@ def summary_text(run: LinkRun, hosts: Mapping[str, HostLimit], *, top: int = 20)
     return "\n".join(lines)
 
 
+def run_numbers(run: LinkRun, hosts: Mapping[str, HostLimit], *, top: int = 30) -> dict[str, object]:
+    """The run as numbers for the files of a harvest run (M5-67 plan §9): outcomes, reasons, what was hidden, the due
+    links per host with their time at the host's spacing, the groups with failures or a guard, and up to five links
+    per pattern that did not pass."""
+    examples: dict[str, list[dict[str, str]]] = {}
+    for result in sorted(run.results, key=lambda r: r.dataset_id):
+        if result.outcome != "passed" and len(examples.setdefault(result.pattern, [])) < 5:
+            examples[result.pattern].append({"dataset_id": result.dataset_id, "url": result.url, "reason": result.reason})
+    due = []
+    for host, count in run.due_by_host.most_common(top):
+        limit = hosts.get(host)
+        interval = limit.interval_s if limit is not None and limit.interval_s is not None else _DEFAULT_INTERVAL_S
+        due.append([host, count, round(count * interval / 3600, 1)])
+    return {
+        "dry_run": run.dry_run,
+        "due": run.due,
+        "checked": len(run.results),
+        "outcomes": dict(Counter(r.outcome for r in run.results)),
+        "reasons": dict(Counter(r.reason for r in run.results if r.outcome != "passed")),
+        "applied": {"hidden": run.applied.hidden, "restored": run.applied.restored,
+                    "publishable": run.applied.publishable},
+        "due_by_host": due,
+        "groups": [
+            {"kind": g.kind, "key": g.key, "passed": g.passed, "failed": g.failed, "unchecked": g.unchecked,
+             "transient": g.transient, "guarded": g.guarded}
+            for g in run.groups
+            if g.guarded or g.failed or g.unchecked or g.transient
+        ][:100],
+        "examples": examples,
+    }
+
+
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="python -m earthx.discovery.linkcheck", description=__doc__.splitlines()[0])
     parser.add_argument("--dry-run", action="store_true", help="check and count, but hide and bring back nothing")
     parser.add_argument("--minutes", type=float, default=None, help="budget of this run (else linkcheck.yaml)")
+    parser.add_argument("--json", type=Path, default=None, help="also write the numbers as JSON (harvest cycle)")
     return parser.parse_args(argv)
 
 
@@ -752,6 +785,8 @@ def main(argv: list[str] | None = None) -> int:
         # Only the kind: the text of a database error can quote a row of foreign content.
         print(f"linkcheck failed: database error {type(error).__name__}", file=sys.stderr)
         return 1
+    if args.json is not None:
+        args.json.write_text(json.dumps(run_numbers(run, hosts), ensure_ascii=False), encoding="utf-8")
     print(summary_text(run, hosts))
     return 0
 

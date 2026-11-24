@@ -509,3 +509,24 @@ async def test_a_collection_answer_that_is_no_json_leaves_the_link_unchecked() -
         sources={"fsdi-stac": _fsdi()},
     )
     assert [(r.outcome, r.reason) for r in results] == [("unchecked", "api_shape")]
+
+
+def test_the_numbers_of_a_run_for_the_files_of_the_harvest_run() -> None:
+    from collections import Counter
+
+    from earthx.catalog.link_checks import Applied, GroupCount, LinkResult
+
+    run = linkcheck.LinkRun(dry_run=True, due=3, due_by_host=Counter({"amt.example.org": 3}))
+    run.results = [
+        LinkResult("t.a", "https://amt.example.org/a", "amt.example.org", "amt.example.org/{x}", "passed", "ok", 200,
+                   "amt.example.org"),
+        LinkResult("t.b", "https://amt.example.org/b", "amt.example.org", "amt.example.org/{x}", "failed", "no_title",
+                   200, "amt.example.org"),
+    ]
+    run.groups = [GroupCount("pattern", "amt.example.org/{x}", 1, 1, 0, False)]
+    run.applied = Applied(1, 0, 0)
+    numbers = linkcheck.run_numbers(run, {"amt.example.org": HostLimit(connections=1, interval_s=2.0, reason="t")})
+    assert numbers["outcomes"] == {"passed": 1, "failed": 1} and numbers["reasons"] == {"no_title": 1}
+    assert numbers["due_by_host"] == [["amt.example.org", 3, 0.0]]
+    assert numbers["examples"] == {"amt.example.org/{x}": [{"dataset_id": "t.b", "url": "https://amt.example.org/b",
+                                                           "reason": "no_title"}]}
