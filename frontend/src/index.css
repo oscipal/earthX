@@ -3292,30 +3292,7 @@ button.pm-open:hover {
   padding-bottom: var(--space-1);
   text-align: left;
 }
-/* The legend "Classes" (M5-62): over the map, one line per class, never scrolling for 11 classes on a map of 360 px. */
-.vc-classes {
-  justify-content: flex-start;
-}
-.popover.classes-popup {
-  max-width: calc(100vw - 2 * var(--space-2));
-  padding: var(--space-2);
-}
-.classes-legend {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  font-size: var(--text-sm);
-  color: var(--text);
-}
-.classes-legend li {
-  display: flex;
-  align-items: center;
-  white-space: nowrap;
-}
-/* The colour of a class, from the data: a small square before its hex (the Data catalogue, the legend "Classes"). */
+/* The colour of a class, from the data: a small square before its hex in the Data catalogue, before its value in the legend. */
 .class-swatch {
   display: inline-block;
   width: var(--icon-size-sm);
@@ -4147,7 +4124,7 @@ button.pm-open:hover {
 /* "Preview" (M4-13c-2): over the map at the bottom left, and beside the heading
    of the preview section in the processing panel. */
 .preview-badge-dock {
-  left: calc(var(--rail-width) + 16px);
+  left: calc(var(--map-left, var(--rail-width)) + 16px);
   bottom: 20px;
   z-index: 11;
 }
@@ -4275,4 +4252,104 @@ button.pm-open:hover {
   background: var(--map-bg);
   color: var(--text);
   font-size: var(--text-md);
+}
+
+/* --- the legends over the map (M5-62, Otto 24.11.2026): at the bottom left beside the panel of the rail, moving with it as the other
+   things on the map do; above the marks and the bar at the bottom (`--legend-lift`, measured in `MapLegend.tsx`). One per visible layer,
+   the topmost first. They never scroll: a long list of classes takes two columns, and a legend folds away by its title. --- */
+.overlay.map-legend {
+  left: calc(var(--map-left, var(--rail-width)) + var(--space-4));
+  bottom: calc(20px + var(--legend-lift, 0px));
+  max-width: min(360px, calc(100vw - var(--map-left, var(--rail-width)) - var(--map-right, 0px) - 2 * var(--space-4)));
+  max-height: calc(100% - 20px - var(--legend-lift, 0px) - var(--space-4));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+  overflow: hidden;
+}
+@media (max-width: 899px) {
+  .app.has-inspector .overlay.map-legend {
+    bottom: calc(var(--inspector-sheet-height, 0px) + 12px + var(--legend-lift, 0px));
+  }
+}
+.legend {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-1-5) var(--space-2);
+  background: var(--panel-bg);
+  border: var(--line-width) solid var(--panel-border);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  font-size: var(--text-xs);
+}
+.legend-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--text);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  text-align: left;
+  cursor: pointer;
+}
+.legend-title-text {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.legend-classes {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-0) var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.legend-classes.two-columns {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.legend-classes li {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.legend-classes .class-swatch {
+  width: var(--space-2);
+  height: var(--space-2);
+  margin-right: var(--space-1);
+}
+.legend-value {
+  flex: none;
+  min-width: 2.5em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.legend-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.legend-scale {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0);
+  min-width: 160px;
+}
+.legend-bar {
+  display: block;
+  height: var(--space-2);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-xs);
+}
+.legend-ends {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }

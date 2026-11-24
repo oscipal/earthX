@@ -8,9 +8,7 @@ import { Fragment, useId, type ReactNode } from 'react';
 import { CHANNEL_NAMES, type ChannelRange } from '../channels';
 
 import { UNIT_LABELS, UNIT_TIP, type RangeUnit } from '../percentRange';
-import type { BandClass } from '../bandClasses';
 import BandSelect, { type BandOption } from './BandSelect';
-import ClassesField from './ClassesField';
 import ColormapField from './ColormapField';
 
 // What the box of the colormap says where a picture of three bands has none: it stays in its place, locked, and says "none" (Otto, 1.11.2026).
@@ -29,9 +27,8 @@ interface Props {
   vmin: { value: string; onChange: (value: string) => void };
   // No unit stands at the range (Otto, 03.11.2026): the unit of the data is in BANDS.txt and the metadata.
   vmax: { value: string; onChange: (value: string) => void };
-  // A colormap to pick, a fixed one-entry box (a picture of three bands is "RGB") or the classes of a layer of classes, whose legend the
-  // button "Classes" opens (M5-62); left out with `null`.
-  colormap: { value: string; onChange: (value: string) => void } | { fixed: string; title: string } | { classes: readonly BandClass[]; title: string } | null;
+  // A colormap to pick, or a fixed one-entry box (a picture of three bands is "RGB"); left out with `null`.
+  colormap: { value: string; onChange: (value: string) => void } | { fixed: string; title: string } | null;
   // What the empty ends of the range say.
   placeholder?: string;
   // The switch "value / %" of the range (NM4-65 part 4): with "%" the two fields hold percentiles. Left out where a place has
@@ -88,9 +85,7 @@ export default function RenderFields({ band, index, vmin, vmax, colormap, placeh
       )}
       {!noRange && range}
       {colormap &&
-        ('classes' in colormap ? (
-          <ClassesField classes={colormap.classes} title={colormap.title} />
-        ) : 'fixed' in colormap ? (
+        ('fixed' in colormap ? (
           // Not left out: the field keeps its place whatever band is drawn, locked, and its tooltip says why (NM4-54 part 5).
           <label className="vc-field" data-tip-level="advanced" data-tip={colormap.title}>
             <span>Colormap</span>

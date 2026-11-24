@@ -510,7 +510,8 @@ describe('no hard colour outside tokens.css (UI-04 §7.5 no. 4)', () => {
 describe('a colour set inline only from the data (M5-62)', () => {
   // An element whose colour comes from the data, not from a token, by the class it carries; each with its reason.
   const FROM_DATA: Record<string, string> = {
-    'class-swatch': 'the colour of a class as the registry names it: the Data catalogue and the legend "Classes" (M5-62)',
+    'class-swatch': 'the colour of a class as the registry or the result names it: the Data catalogue and the legend over the map (M5-62)',
+    'legend-bar': 'the colours of the colormap a layer is drawn with, from the colours the server lists for it: the legend over the map (M5-62)',
     'cm-strip': 'the preview of a colormap, from the colours the server lists for it (UI-03d)',
   };
   const inlineColours = (text: string) =>

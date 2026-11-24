@@ -594,21 +594,16 @@ const LEGEND: BandClass[] = [
 ];
 
 describe('a result that names its classes', () => {
-  const legend = () => document.querySelector('.classes-popup');
-
-  it('has the button "Classes" with their legend in place of the note in the head', async () => {
+  it('keeps them for the legend over the map and draws them in their colours, with the note in the head', async () => {
     tileJsonBody = { ...TILE_JSON, data_type: 'uint8' };
     useAppStore.setState({ datasets: [CLASSES] });
     useProcessingStore.setState({ jobs: [classJob({ name: 'map', classes: LEGEND })] });
     await openView();
     expect(layers()[0].result?.legend).toEqual(LEGEND);
+    expect(urlOf()).not.toContain('rescale');
     expect(urlOf()).not.toContain('colormap_name');
-    expect(container.querySelector('.vc-head .tip')).toBeNull();
-    click(button('Classes'));
-    expect([...legend()!.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['Tree cover', 'Permanent water bodies']);
-    expect(legend()!.textContent).toBe('Tree coverPermanent water bodies');
-    click(button('Classes'));
-    expect(legend()).toBeNull();
+    expect(container.querySelector('.vc-head .tip')?.getAttribute('data-tip')).toBe(CLASSES_TIP);
+    expect(button('Classes')).toBeUndefined();
   });
 
   it('is drawn as it is where the result names classes, whatever the mask of the dataset', async () => {
@@ -617,10 +612,9 @@ describe('a result that names its classes', () => {
     await openView();
     expect(layers()[0].result?.classes).toBe(true);
     expect(urlOf()).not.toContain('rescale');
-    expect(button('Classes')).toBeDefined();
   });
 
-  it('draws a float32 result of classes in their colours with its legend, not stretched', async () => {
+  it('draws a float32 result of classes in their colours, not stretched', async () => {
     tileJsonBody = { ...TILE_JSON, data_type: 'float32' };
     useAppStore.setState({ datasets: [CLASSES] });
     useProcessingStore.setState({ jobs: [classJob({ name: 'map', classes: LEGEND })] });
@@ -631,22 +625,12 @@ describe('a result that names its classes', () => {
     expect(JSON.parse(new URL(urlOf(), 'http://x').searchParams.get('colormap')!)).toEqual({ 10: [0, 100, 0, 255], 80: [0, 100, 200, 255] });
   });
 
-  it('keeps the note and has no button where a band of classes names no classes', async () => {
+  it('keeps no classes where a band of classes names none', async () => {
     tileJsonBody = { ...TILE_JSON, data_type: 'uint8' };
     useAppStore.setState({ datasets: [CLASSES] });
     useProcessingStore.setState({ jobs: [classJob({ name: 'map' })] });
     await openView();
-    expect(button('Classes')).toBeUndefined();
-    expect(container.querySelector('.vc-head .tip')?.getAttribute('data-tip')).toBe(CLASSES_TIP);
-  });
-
-  it('has no legend once the result expired', async () => {
-    tileJsonBody = { ...TILE_JSON, data_type: 'uint8' };
-    useAppStore.setState({ datasets: [CLASSES] });
-    useProcessingStore.setState({ jobs: [classJob({ name: 'map', classes: LEGEND })] });
-    await openView();
-    act(() => useAppStore.getState().expireResultLayers(Date.parse(layers()[0].result!.expires) + 1));
-    expect(button('Classes')).toBeUndefined();
+    expect(layers()[0].result?.legend).toBeUndefined();
   });
 });
 

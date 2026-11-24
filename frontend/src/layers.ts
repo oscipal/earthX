@@ -141,6 +141,8 @@ export interface ResultLayerInfo {
   classes?: true;
   // The classes the result names for the band the layer draws (M5-62, F9): the legend "Classes". Left out where it names none.
   legend?: readonly BandClass[];
+  // The unit of the band the layer draws, as the result names it: the legend's bar (M5-62). Left out where it names none.
+  unit?: string;
   // The statistics of the AOI the default range comes from (M4-32); `null` for a result without them. Of a result of
   // several bands: those of the band the layer draws.
   stats: ResultStats | null;

@@ -79,6 +79,8 @@ export interface ResultBand {
   look?: DisplayLook | null;
   // The classes the result names for the band, where its values are still those of a band of classes (M5-62, F9); the worker decides.
   classes?: BandClass[] | null;
+  // The unit of its values as the result names it, for the legend; left out where it names none.
+  unit?: string;
 }
 
 // The bands of `properties.bands` in the order of the file, so that the place of a band + 1 is its `bidx`. A band is judged
@@ -110,12 +112,14 @@ export function resultBands(
   return listed.map((band): ResultBand => {
     const name = typeof (band as { name?: unknown } | null)?.name === 'string' ? (band as { name: string }).name : '';
     const classes = stacClasses((band as { 'classification:classes'?: unknown } | null)?.['classification:classes']);
+    const unit = (band as { unit?: unknown } | null)?.unit;
     return {
       name,
       stats: statsFrom([band], order === null ? any : made.has(name)),
       expression: expressions.get(name) ?? null,
       look: looked.get(name) ?? null,
       ...(classes ? { classes } : {}),
+      ...(typeof unit === 'string' && unit !== '' ? { unit } : {}),
     };
   });
 }

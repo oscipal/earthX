@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { focusFirstItem, placeBeside, placePopover } from './popover';
+import { focusFirstItem, placePopover } from './popover';
 
 const WINDOW = { width: 1000, height: 800 };
 const anchorAt = (top: number, left = 100, width = 300) => ({ top, bottom: top + 30, left, width });
@@ -61,22 +61,5 @@ describe('focusFirstItem', () => {
     expect(document.activeElement?.textContent).toBe('a');
     expect(() => focusFirstItem(null)).not.toThrow();
     root.remove();
-  });
-});
-
-describe('placeBeside (the legend "Classes", M5-62)', () => {
-  const viewport = { width: 1280, height: 800 };
-
-  it('goes left of the anchor, level with it, as wide as its content', () => {
-    expect(placeBeside({ top: 160, left: 1057 }, 180, 220, viewport)).toEqual({ top: 160, left: 873, width: 180, maxHeight: 784, above: false });
-  });
-
-  it('moves up as far as it must to stay in the window, never above its edge', () => {
-    expect(placeBeside({ top: 160, left: 1057 }, 180, 220, { width: 1280, height: 360 })?.top).toBe(132);
-    expect(placeBeside({ top: 160, left: 1057 }, 180, 500, { width: 1280, height: 360 })).toMatchObject({ top: 8, maxHeight: 344 });
-  });
-
-  it('has no place where there is no room at the left', () => {
-    expect(placeBeside({ top: 160, left: 140 }, 180, 220, { width: 360, height: 740 })).toBeNull();
   });
 });

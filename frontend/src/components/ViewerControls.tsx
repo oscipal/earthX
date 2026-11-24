@@ -12,7 +12,6 @@ import { DRAW_AOI_TO_CROP, hasOriginalFiles, noOriginalsReason } from '../downlo
 import { originalsTitle, scenesOf, summaryOf, summaryText } from '../originals';
 import { processBlockReason } from '../processingOrder';
 import { useProcessingStore } from '../processingStore';
-import { classesOfBand } from '../bandClasses';
 import { defaultRenderOf, drawsClasses, showsColormap } from '../datasets';
 import { isComposite, quickPresetsOf } from '../quickPresets';
 import { trueColorOf } from '../processingOrder';
@@ -234,8 +233,6 @@ export default function ViewerControls() {
   const colormap = chosen ? !isComposite(chosen) : pendingBand || !shownDataset ? true : showsColormap(shownDataset.collection);
   // A layer of classes keeps the colours of its source: no range, no other colormap (M5-07 plan F4).
   const classes = !chosen && shownDataset ? drawsClasses(shownDataset.collection) : false;
-  // Their legend, where the registry names the classes of the band drawn (M5-62).
-  const legend = classes && shownDataset ? classesOfBand(shownDataset.collection, defaultRenderOf(shownDataset.collection, shownItem)?.assets?.[0]) : null;
   const at = shown ? here.indexOf(shown) : -1;
   // Temporary where no layer holds the image as it is drawn now (Otto, 1.11.2026). What is only typed in the fields does not count: the
   // measured range that stands in them when the view opens is no change; "Apply" is.
@@ -346,9 +343,7 @@ export default function ViewerControls() {
               unit={colour ? undefined : { value: pendingUnit, onChange: setPendingUnit }}
               // The bar stays as it is for every dataset; an image of three bands offers RGB and nothing else (Otto, 1.11.2026).
               colormap={
-                legend
-                  ? { classes: legend, title: CLASS_COLOURS_TIP }
-                  : classes
+                classes
                   ? { fixed: CLASS_COLOURS, title: CLASS_COLOURS_TIP }
                   : colormap
                     ? { value: pendingColormapName, onChange: setPendingColormapName }

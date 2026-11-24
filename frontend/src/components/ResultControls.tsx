@@ -25,7 +25,6 @@ import { sceneNamesOfOrder } from '../sceneNames';
 import { ONE_BAND_TIP } from '../viewBand';
 import { percentOfLook } from '../displayLook';
 import AutoScaleButton from './AutoScaleButton';
-import ClassesField from './ClassesField';
 import RenderFields, { NO_COLORMAP } from './RenderFields';
 import ScaleHistograms from './ScaleHistograms';
 import { useHistograms } from './useHistograms';
@@ -120,8 +119,6 @@ function Controls({ layer }: { layer: MapLayer }) {
   const adjustable = info.dataType !== null && !info.classes;
   // What cannot be set at all is not shown: a band of classes is drawn as it is, an expired result not at all.
   const settable = adjustable && !info.expired && !info.deleted;
-  // The legend of a band of classes where the result names its classes (M5-62, F9), in place of the fields it has none of.
-  const legend = info.classes && info.legend && !info.expired && !info.deleted ? info.legend : null;
   // The dropdown "Band" is there for a result of several bands, as the box of every layer has it where there is a choice.
   const bands = info.bands ?? [];
   const hasBand = bands.length > 1;
@@ -271,7 +268,7 @@ function Controls({ layer }: { layer: MapLayer }) {
     <div className="viewer-controls scene-view result-controls">
       <InspectorHead
         title={layerShownName(layer)}
-        mark={!adjustable && !info.expired && !legend && <Tip text={info.classes ? CLASSES_TIP : NO_TYPE_TIP} />}
+        mark={!adjustable && !info.expired && <Tip text={info.classes ? CLASSES_TIP : NO_TYPE_TIP} />}
         onClose={() => close()}
         rename={{ name: layer.name, onRename: (name) => renameLayer(layer.id, name) }}
         // The scenes of the job the layer was made by, from its copy of the order; none where that is gone, and then no line.
@@ -317,7 +314,6 @@ function Controls({ layer }: { layer: MapLayer }) {
                 scale
               />
             )}
-            {legend && <ClassesField classes={legend} title={CLASSES_TIP} />}
             <OpacityRow layer={layer} />
             {settable && (
               <div className="vc-buttons">
