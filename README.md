@@ -390,8 +390,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harvest-report.ps1
   docker compose run --build --rm harvest-linkcheck
   ```
 
-  Ein veröffentlichter Eintrag, dessen Link durchfällt, wird verborgen, nicht gelöscht, und kommt mit einer
-  bestandenen Prüfung zurück. Funde mit Warnzeichen (`backend/catalog/flags.yaml`) stehen in `excluded_entries`
+  Ein veröffentlichter Eintrag ohne bestandene Prüfung seines Links (durchgefallen oder ungeprüft) wird verborgen,
+  nicht gelöscht, und kommt mit einer bestandenen Prüfung zurück. Links auf die Katalogseite von GovData prüft der
+  Lauf über die CKAN-API, sobald `catalog_page_check.form_confirmed_on` in `backend/catalog/sources/govdata.yaml`
+  steht (Tag, an dem du die Adressform im Browser bestätigt hast). Funde mit Warnzeichen (`backend/catalog/flags.yaml`) stehen in `excluded_entries`
   der Freigabedatei und warten.
 - **Lizenzen:** Ohne Einträge in `backend/catalog/licenses/terms.yaml` und `grants/<Quelle>.yaml` wartet jeder
   Fund (`needs_rule`), und es entsteht kein Stapel. Die Einstufung jeder Lizenz machst du.
