@@ -188,3 +188,16 @@ def test_a_whole_run_checks_hides_and_the_trial_run_only_counts(world: World) ->
         assert ours == {_id(world, "gut"): "passed", _id(world, "tot"): "failed"}
         assert (world.row("gut")["state"], world.row("tot")["state"]) == ("published", state)
         assert ("Probelauf" in summary_text(run, {})) is dry_run
+
+
+def test_an_excluded_entry_stays_in_review(world: World) -> None:
+    import yaml
+
+    world.put(world.ckan, _find("a"), _find("b"))
+    approval = world.report().files[0]
+    world.approve(approval)
+    document = yaml.safe_load(approval.read_text(encoding="utf-8"))
+    document["excluded_entries"] = [_id(world, "b")]
+    approval.write_text(yaml.safe_dump(document, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    assert world.publish().published == {f"approvals/{approval.name}": 1}
+    assert (world.row("a")["state"], world.row("b")["state"]) == ("published", "in_review")
