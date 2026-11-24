@@ -224,7 +224,7 @@ Folgen: Regeltabelle §5 wie vorgeschlagen (`%` fest 0–100 `viridis`; Temperat
 
 **Name des Felds (Auslegung A6):** Die Herkunft heißt in der YAML `origin`, nicht `from` wie im Entwurf (§4), weil `from` in Python kein Feldname sein kann und die Registry-Dataclasses die Form der YAML sind (`entry_files`, M5-13); in der Collection entsprechend `earthx:look_origin`.
 
-**Standardbild (Auslegung A7, von Otto am 24.11.2026 abgelehnt, §14):** Stufe 3 nimmt `rescale` des Standardbilds als physikalische Werte. Das trifft für die heutigen Einträge mit einem Band im Standardbild zu (Höhen in m, MeteoSchweiz in °C und mm, keine Skalierung in den Einträgen); ein künftiger Eintrag mit skaliertem Standardband bekäme dort einen Bereich in Rohwerten. Das Onboarding schreibt `default_render` aus der Quelle; fällt so ein Fall an, ist er in der Probe sichtbar.
+**Standardbild (Auslegung A7, ersetzt durch F8 und A8, §14):** Stufe 3 nahm `rescale` des Standardbilds als physikalische Werte. Otto hat das am 24.11.2026 abgelehnt: Der Bereich wird mit `scale`/`offset` der Bänder des Standardbilds (`band_scaling`) in die Einheit umgerechnet; ist er danach nicht eindeutig, lädt der Eintrag nicht, bis die betroffenen Bänder `band_looks` tragen.
 
 ---
 
@@ -311,3 +311,21 @@ Heute betroffen ist kein Eintrag: Die Standardbilder aus einem Band (Höhen, Met
 3. Kein neues Feld: Stufe 3 gilt nur, wenn das Standardbild ausdrücklich unskaliert ist; sonst bricht der Eintrag ab, bis er `band_looks` trägt. Das hieße, ein Eintrag sagt „unskaliert“ an anderer Stelle (z. B. ein Schalter in `default_render`).
 
 **Auslegung A8 (gilt mit F8 = 1 oder 2):** „Mehrere Bänder“ im Sinne der Rückmeldung heißt: Stufe 3 gilt künftig auch für ein Standardbild aus mehreren Assets, von denen eines gezeichnet wird (`asset_selection: first_present`, z. B. `vv`/`hh`), mit Farbskala und einem Bereich je Asset. Ergeben alle nach der Umrechnung denselben physikalischen Bereich, gilt er; sonst Abbruch.
+
+### 14.3 Antwort Otto (24.11.2026)
+
+> F8 = 1: optionales Feld band_scaling (scale/offset je Band), beim Onboarding automatisch aus raster:bands der Quelle übernommen, nie von Hand gepflegt; fehlt es, gilt 1 / 0. Sentinel-2 gleich befüllen und die Onboarding-Checkliste in docs/projektuebersicht.md §5 entsprechend ergänzen. A8 ist angenommen.
+
+### 14.4 Umsetzung
+
+| Teil | Stelle |
+|---|---|
+| `BandScaling(scale, offset)` mit `physical(stored)` (auf zwölf signifikante Stellen, damit `3000 · 0.0001 − 0.1` als `0.2` erscheint), `UNSCALED` (1, 0); optionales Feld `band_scaling` mit leerem Standard; `DatasetConfig.scaling_of(band)` | `backend/earthx/catalog/registry.py` |
+| Prüfungen beim Laden: Band aus `band_units`, kein Hilfs-Asset, kein Klassenband (Klassen sind Codes); `scale` endlich und über 0 (umkehrbar, wie `viewMeasure.ts` es verlangt), `offset` endlich | ebd. `_check_band_scaling` |
+| Stufe 3 (A8): Standardbild aus einem Asset mit einem Bereich oder `first_present` mit einem Bereich je Asset, jeweils mit Farbskala. Jeder Bereich wird mit der Skalierung seines Assets umgerechnet; den Look übernehmen die Assets und jedes Band ihrer Einheit. Sind die umgerechneten Bereiche verschieden, bricht das Laden ab („the ranges of the standard picture differ once scaled (…), so it gives no look; set band_looks for …“), es sei denn, jedes dieser Bänder trägt `band_looks` | ebd. `_standard_look`, `_check_standard_look` |
+| Sentinel-2 befüllt nach `adr/0017` §3.4 (gemessen am Item vom 25.10.2026): zwölf Reflexionsbänder 0.0001 / −0.1, `aot` und `wvp` 0.001 / 0; `scl`, `cloud`, `snow` unskaliert, nicht genannt | `backend/catalog/datasets/sentinel-2-c1-l2a.yaml` |
+| Onboarding-Checkliste Punkt 14 | `docs/projektuebersicht.md` §5 |
+
+Wirkung auf die heutigen Einträge: keine Änderung der Looks (§6). Sentinel-2 hat kein Standardbild aus einem Band mit Farbskala; Sentinel-1 (`first_present` `vv`/`hh`) hat keine Farbskala im Standardbild und nimmt deshalb keine Stufe 3.
+
+Tests (`backend/tests/catalog/test_band_looks.py`, `TestTheScaling`): Skalierung von Sentinel-2; Band ohne Skalierung; synthetisches skaliertes Standardband (1000…4000 gespeichert → 0…0,3, auch in der Collection); `first_present` mit übereinstimmenden Bereichen; verschiedene Bereiche → Abbruch mit Meldung; eigene `band_looks` für alle betroffenen Bänder → lädt; eines fehlt → Abbruch, das fehlende genannt; falsche Skalierung (unbekanntes Band, 0, negativ, NaN, ∞) und Klassenband → lädt nicht; strenges Lesen aus der YAML. Angepasst: `synthetic_zarr.py` (leitet sich von Sentinel-2 ab, ohne dessen Bänder, also ohne Skalierung), `test_entry_files.py`.
