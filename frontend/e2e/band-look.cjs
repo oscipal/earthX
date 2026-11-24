@@ -8,6 +8,8 @@
 //   - the bar of the legend over the map is not in the colours of the colormap, or its ends are not physical values with the unit;
 //   - a slider does not stand outside the bars in the range (a bar is in it where its middle is: Sentinel-2 1200 and 3400 lie inside bars
 //     of 500), the fields do not keep the values, or a bar outside the sliders is not in an end colour;
+//   - a slider dragged with the mouse past an end of its histogram does not reach it, or its line does not stand exactly on the outer edge
+//     of the outermost bar; or a slider at the edge of a bar stands off it (one band, each channel of RGB, in values and percentiles);
 //   - a class layer (WorldCover) has no histogram in the colours of its classes, one with sliders, or no class legend;
 //   - a result band of the source whose values no step changed does not keep its look, or one Band math made takes one;
 //   - the legend scrolls, or the settings scroll at 1280×800 (below that they do on main already, with or without a histogram: UI-12).
@@ -111,7 +113,10 @@ async function open(browser, theme, viewport, problems) {
     if (url.pathname === '/colormaps') return json(COLORMAPS);
     if (url.pathname.endsWith('/statistics')) {
       asked.push(url.pathname);
-      return json({ b1: measureOf(url.searchParams.get('asset')) });
+      const asset = url.searchParams.get('asset');
+      // The colour picture: three channels, 0…255.
+      if (asset === 'visual') return json(Object.fromEntries(['b1', 'b2', 'b3'].map((b) => [b, { count: 900, unit: null, min: 0, max: 255, percentile_2: 20, percentile_98: 230, histogram: histogram(0, 255, 16) }])));
+      return json({ b1: measureOf(asset) });
     }
     if (url.pathname === '/processing/processes/recipe') return json(DESCRIPTION);
     if (url.pathname === `/processing/jobs/${JOB}`) return json({ jobID: JOB, status: 'successful', message: '', progress: 100, expires: new Date(Date.now() + 86_400_000).toISOString() });
@@ -250,6 +255,76 @@ async function checkBand(page, asked, { dataset, band, colormap, fields, legend,
   }
 }
 
+// Where the line of a slider stands on the page and where the edges of the bars of its histogram are, in pixels.
+async function geometry(page, hist, end) {
+  return hist.evaluate((element, end) => {
+    const input = element.querySelector(end === 'low' ? '.range-hist-low' : '.range-hist-high');
+    const box = input.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    const thumb = parseFloat(style.getPropertyValue('--hist-thumb')) || parseFloat(style.getPropertyValue('--space-3'));
+    const [min, max, value] = [Number(input.min), Number(input.max), Number(input.value)];
+    const line = box.left + thumb / 2 + ((box.width - thumb) * (value - min)) / (max - min);
+    const bars = [...element.querySelectorAll('.range-hist-bars rect')].map((rect) => rect.getBoundingClientRect());
+    return { line, value, min, max, y: box.top + box.height / 2, left: bars[0].left, right: bars.at(-1).right, edges: bars.map((bar) => bar.left).concat(bars.at(-1).right) };
+  }, end);
+}
+
+// A slider dragged with the mouse past the end of its histogram (Otto, 24.11.2026): it follows the mouse over the whole width and stands
+// exactly at the outer edge of the outermost bar, which is then in the range.
+async function dragOut(page, hist, end, what, say) {
+  const before = await geometry(page, hist, end);
+  const box = await hist.boundingBox();
+  await page.mouse.move(before.line, before.y);
+  await page.mouse.down();
+  const target = end === 'low' ? box.x - 40 : box.x + box.width + 40;
+  for (let step = 1; step <= 12; step += 1) await page.mouse.move(before.line + ((target - before.line) * step) / 12, before.y);
+  await page.mouse.up();
+  await page.waitForTimeout(150);
+  const after = await geometry(page, hist, end);
+  const want = end === 'low' ? after.left : after.right;
+  if (after.value !== (end === 'low' ? after.min : after.max)) say(`${what}: the ${end} slider was not dragged to the ${end === 'low' ? 'left' : 'right'} end (${after.value})`);
+  if (Math.abs(after.line - want) > 0.75) say(`${what}: the ${end} slider stands at ${after.line.toFixed(1)} px, the outer edge of the outermost bar at ${want.toFixed(1)} px`);
+}
+
+// The line of a slider at the edge of a bar inside the histogram stands on that edge (no shift by half a thumb).
+async function checkAligned(page, hist, what, say) {
+  for (const end of ['low', 'high']) {
+    const at = await geometry(page, hist, end);
+    const nearest = Math.min(...at.edges.map((edge) => Math.abs(edge - at.line)));
+    if (nearest > 0.75) say(`${what}: the ${end} slider stands ${nearest.toFixed(1)} px off the edge of a bar`);
+  }
+}
+
+async function checkDragging(page, say) {
+  await openView(page, 'sentinel-2-c1-l2a');
+  await settle(page);
+  // The colour picture: each channel on its own.
+  const green = page.locator('.inspector .range-hist').nth(1);
+  await checkAligned(page, green, 'RGB green', say);
+  await dragOut(page, green, 'low', 'RGB green', say);
+  await dragOut(page, green, 'high', 'RGB green', say);
+  // One band, in values and in percentiles.
+  await field(page, 'Band').locator('select').selectOption('band:red');
+  await settle(page);
+  const band = page.locator('.inspector .range-hist').first();
+  await checkAligned(page, band, 'red', say);
+  await dragOut(page, band, 'low', 'red', say);
+  await dragOut(page, band, 'high', 'red', say);
+  const [low, high] = await page.evaluate(() => [window.appStore.getState().pendingVmin, window.appStore.getState().pendingVmax]);
+  if (low !== '0' || high !== '6000') say(`red: dragged to both ends, the fields say ${low}–${high}, not 0–6000`);
+  const bars = await fills(page);
+  if (bars[0] === rgb(ends('viridis')[0]) && bars.length > 0) say('red: dragged to the left end, the first bar is not in the range');
+  await page.locator('.viewer-controls select.vc-unit').selectOption('percent');
+  await page.locator('.viewer-controls .vc-num input[type=number]').first().fill('20');
+  await page.locator('.viewer-controls .vc-num input[type=number]').nth(1).fill('80');
+  await page.waitForTimeout(150);
+  await checkAligned(page, band, 'red in percentiles', say);
+  await dragOut(page, band, 'low', 'red in percentiles', say);
+  await dragOut(page, band, 'high', 'red in percentiles', say);
+  const percent = await page.evaluate(() => [window.appStore.getState().pendingPercentLow, window.appStore.getState().pendingPercentHigh]);
+  if (percent[0] !== '0' || percent[1] !== '100') say(`red in percentiles: dragged to both ends, the fields say ${percent}`);
+}
+
 async function checkWorldCover(page, say) {
   await openView(page, 'esa-worldcover-2021');
   await page.locator('.inspector .class-hist').waitFor({ timeout: 5000 }).catch(() => say('WorldCover: no histogram of the classes'));
@@ -312,6 +387,7 @@ async function check(browser, theme, viewport) {
     if (await scrolls(page, '.map-legend .legend')) say(`${one.band}: the legend scrolls`);
     await page.screenshot({ path: path.join(OUT, `band-look-${one.dataset}-${one.band}-${theme}-${viewport}.png`) });
   }
+  await checkDragging(page, (text) => problems.push(`${name}: dragging: ${text}`));
   await checkWorldCover(page, (text) => problems.push(`${name}: ${text}`));
   await page.screenshot({ path: path.join(OUT, `band-look-worldcover-${theme}-${viewport}.png`) });
   await checkResult(page, (text) => problems.push(`${name}: ${text}`));
