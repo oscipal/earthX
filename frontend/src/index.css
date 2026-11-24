@@ -4260,7 +4260,14 @@ button.pm-open:hover {
 .overlay.map-legend {
   left: calc(var(--map-left, var(--rail-width)) + var(--space-4));
   bottom: calc(20px + var(--legend-lift, 0px));
-  max-width: min(360px, calc(100vw - var(--map-left, var(--rail-width)) - var(--map-right, 0px) - 2 * var(--space-4)));
+  /* Left of the column of the map buttons at the bottom right (`.map-controls-host`), never under it. */
+  max-width: min(
+    440px,
+    calc(
+      100vw - var(--map-left, var(--rail-width)) - var(--map-right, 0px) - var(--space-4) - var(--control-height) - 2 * var(--space-1) -
+        2 * var(--line-width) - var(--space-3) - var(--space-2)
+    )
+  );
   max-height: calc(100% - 20px - var(--legend-lift, 0px) - var(--space-4));
   display: flex;
   flex-direction: column;
@@ -4312,6 +4319,12 @@ button.pm-open:hover {
 }
 .legend-classes.two-columns {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+/* Too narrow for two columns of names (under 900 px): one, so that a name is not cut. */
+@media (max-width: 899px) {
+  .legend-classes.two-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .legend-classes li {
   display: flex;
