@@ -2,7 +2,8 @@
 
 A find is ``not_geodata`` only where it has no geo signal and at least one non-geo signal; with neither it counts as
 geodata ("undecided" in the classification, so that ``report --classify`` can show the borderline cases). The extent
-and the publisher are weak geo signals (Otto, 23.11.2026): they keep no find of a statistics office and no software.
+and the publisher are weak geo signals (Otto, 23.11.2026): they keep no find of a statistics office, of a publisher
+without geodata (24.11.2026) and no software.
 The signals and the words live in ``backend/catalog/geodata.yaml``; the code only reads them. Pure: no database, no
 request.
 """
@@ -134,7 +135,8 @@ def _area(box: tuple[float, float, float, float]) -> float:
     return ((east - west) % 360 or (360.0 if east != west else 0.0)) * (north - south)
 
 
-#: Geo signals that keep no find of a statistics office and no software (Otto, 23.11.2026).
+#: Geo signals that keep no find of a statistics office, of a publisher without geodata and no software (Otto,
+#: 23.11.2026 and 24.11.2026).
 _WEAK = ("extent:", "publisher:")
 
 
@@ -185,7 +187,8 @@ def classify(found: Mapping[str, Any], extent: Extent, *, country: str | None, r
     software = [f"software:{hit}" for hit in dict.fromkeys(rule.software_terms.found([title, *keywords]))]
     not_geo += software
     weak_only = bool(geo) and all(signal.startswith(_WEAK) for signal in geo)
-    overruled = weak_only and bool(not_geo) and (bool(software) or bool(rule.statistics_publishers.found([publisher])))
+    without_geodata = rule.statistics_publishers.found([publisher]) or rule.not_geo_publishers.found([publisher])
+    overruled = weak_only and bool(not_geo) and (bool(software) or bool(without_geodata))
     if overruled:
         return Classified("not_geodata", tuple(geo), tuple(not_geo), weak_overruled=True)
     if geo:

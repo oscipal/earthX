@@ -132,12 +132,44 @@ class TestGeodataRule:
         # A statistics word in the title of another publisher is outweighed by the extent as before.
         assert _verdict(_find("Statistik der Pegel"), Extent("place", codes=("DE", "DE-SN"))) == "geodata"
 
-    @pytest.mark.parametrize(
-        "title", ["PRTR_Betriebsstaetten_RLP", "Betriebsstätten nach E-PRTR", "Industriebetriebsstätte Nord", "PRTR"]
-    )
-    def test_prtr_and_sites_are_places(self, title: str) -> None:
+    @pytest.mark.parametrize("title", ["PRTR_Betriebsstaetten_RLP", "Betriebsstätten nach E-PRTR", "PRTR"])
+    def test_prtr_registers_are_places(self, title: str) -> None:
         # Otto, 23.11.2026: "PRTR_Betriebsstaetten_RLP" was hidden as no geodata.
         assert _verdict(_find(title, publisher=STATISTICS_OFFICE)) == "geodata"
+
+    @pytest.mark.parametrize(
+        "title",
+        [
+            "Steuerpflichtige und Betriebsstätten der Gewerbesteuer",
+            "Gewerbesteuer: Steuerpflichtige, Betriebsstaetten nach Kreisen (ab 2010)",
+            "Industriebetriebsstätte Nord",
+        ],
+    )
+    def test_sites_without_prtr_keep_no_table_of_a_statistics_office(self, title: str) -> None:
+        # Otto, 24.11.2026: "Betriebsstätte(n)" alone kept the tax statistics of Destatis.
+        assert _verdict(_find(title, publisher="Statistisches Bundesamt")) == "not_geodata"
+
+    def test_the_library_statistics_with_en_is_a_non_geo_word_the_extent_still_outweighs(self) -> None:
+        # Otto, 24.11.2026: Thurgau, "Bibliothekenstatistik der Öffentlichen Bibliotheken im Kanton Thurgau". The word
+        # hides it without a geo signal; the extent of a publisher that is no statistics office still keeps it (rule
+        # of 23.11.2026; plan M5-67 F14), and warning sign W1 keeps it out of a stack.
+        title = "Bibliothekenstatistik der Öffentlichen Bibliotheken im Kanton Thurgau (2005-2019)"
+        assert _verdict(_find(title, publisher="Kanton Thurgau"), Extent("catalog", codes=("CH",)), "CH") == (
+            "not_geodata"
+        )
+        assert _verdict(_find(title, publisher="Kanton Thurgau"), Extent("place", codes=("CH", "CH-TG")), "CH") == (
+            "geodata"
+        )
+
+    @pytest.mark.parametrize("title", ["Katzen - Verteilung pro Gemeinde", "Ziegen - Verteilung pro Kanton"])
+    def test_an_extent_keeps_no_find_of_a_publisher_without_geodata(self, title: str) -> None:
+        # Otto, 24.11.2026: two finds of Identitas AG were kept by their extent alone.
+        extent = Extent("place", codes=("CH", "CH-BE"))
+        classified = classify(_find(title, publisher="Identitas AG"), extent, country="CH", rule=RULE)
+        assert (classified.outcome, classified.weak_overruled) == ("not_geodata", True)
+        # A strong signal still keeps it.
+        shapefile = [{"href": "https://x.example/a.shp", "format": "SHP", "media_type": None}]
+        assert _verdict(_find(title, publisher="Identitas AG", distributions=shapefile), extent, "CH") == "geodata"
 
     def test_a_word_that_only_contains_a_site_word_is_no_signal(self) -> None:
         assert _verdict(_find("Betriebsstatistik", publisher=STATISTICS_OFFICE)) == "not_geodata"
