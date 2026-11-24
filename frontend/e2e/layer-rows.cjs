@@ -15,7 +15,7 @@ const BASE = process.env.BASE ?? 'http://localhost:5173';
 const OUT = process.env.OUT ?? path.join(require('node:os').tmpdir(), 'earthx-layer-rows');
 const THEMES = { light: 'normal', dark: 'tech' };
 const VIEWPORTS = { wide: { width: 1280, height: 800 }, middle: { width: 1000, height: 760 }, narrow: { width: 360, height: 740 } };
-const COLUMNS = ['grip', 'eye', 'name', 'rename', 'opacity', 'up', 'down', 'process', 'zoom', 'download', 'remove'];
+const COLUMNS = ['grip', 'eye', 'name', 'legend-toggle', 'rename', 'opacity', 'up', 'down', 'process', 'zoom', 'download', 'remove'];
 
 const overlap = (a, b) => a.x < b.x + b.width - 0.5 && b.x < a.x + a.width - 0.5 && a.y < b.y + b.height - 0.5 && b.y < a.y + a.height - 0.5;
 
@@ -54,7 +54,8 @@ async function check(browser, { theme, viewport }) {
   const rows = await page.$$eval('.layer-row', (rowNodes) =>
     rowNodes.map((row) => ({
       box: row.getBoundingClientRect().toJSON(),
-      cells: [...row.children].map((c) => ({ col: c.getAttribute('data-col'), box: c.getBoundingClientRect().toJSON() })),
+      // The legend of a layer (M5-62) stands under its places and is none of them.
+      cells: [...row.children].filter((c) => c.getAttribute('data-col') !== 'legend').map((c) => ({ col: c.getAttribute('data-col'), box: c.getBoundingClientRect().toJSON() })),
     })),
   );
   const panel = await page.$eval('.layer-manager', (el) => el.getBoundingClientRect().toJSON());
@@ -62,7 +63,9 @@ async function check(browser, { theme, viewport }) {
   const first = rows[0];
   rows.forEach((row, i) => {
     if (row.cells.map((c) => c.col).join() !== COLUMNS.join()) problems.push(`row ${i}: places ${row.cells.map((c) => c.col)}`);
-    if (Math.abs(row.box.height - first.box.height) > 0.5) problems.push(`row ${i}: height ${row.box.height} against ${first.box.height}`);
+    // As high as the first up to the foot of its places; a legend under them makes a row higher by design.
+    const foot = (r) => Math.max(...r.cells.map((c) => c.box.y + c.box.height)) - r.box.y;
+    if (Math.abs(foot(row) - foot(first)) > 0.5) problems.push(`row ${i}: places ${foot(row)} high against ${foot(first)}`);
     row.cells.forEach((cell, j) => {
       if (Math.abs(cell.box.x - first.cells[j].box.x) > 0.5) problems.push(`row ${i}: ${cell.col} at x=${cell.box.x}, first row at ${first.cells[j].box.x}`);
       if (Math.abs(cell.box.width - first.cells[j].box.width) > 0.5) problems.push(`row ${i}: ${cell.col} ${cell.box.width} wide, first row ${first.cells[j].box.width}`);
