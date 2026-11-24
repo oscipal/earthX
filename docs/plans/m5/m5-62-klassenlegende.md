@@ -406,4 +406,23 @@ Ein Job-Ergebnis mit Klassenband (`resultLayer.ts::isClassBand`, z. B. WorldCove
 
 **Veränderte Werte [M]:** `test_class_results.py`: ohne Schritte und mit `mask_values` (gibt Werte weiter) Klassen und Farbtabelle; `float32` Klassen ohne Farbtabelle (A3); zwei Bänder ohne Farbtabelle; `band_math` und `scale` weder Klassen noch Farbtabelle, auch nicht für das Klassenband neben einem Band-math-Band. `test_result_tiles.py`: eine Kachel einer Klassen-COG zeigt nur Klassenfarben.
 
-**Auslegung A19:** Ein Schritt, der Werte ändert, nimmt allen Bändern die Klassen, auch einem Klassenband, das er selbst nicht anfasst. Das ist dieselbe Regel wie für nodata und Ausgabetyp (§6: „jeder Schritt des Rezepts“), konservativ und an einer Stelle.
+**Auslegung A19** (verworfen, Otto 24.11.2026; ersetzt durch §14).
+
+---
+
+## 14. Klassen je Band (Otto, 24.11.2026)
+
+> Widerspruch zu A19: Klassen gelten je Band. Ein Band behält seine Klassen, wenn es unverändert durchgereicht wird (Data-Band, auf das kein wertändernder Schritt wirkt; Umrechnung nur mit nearest). Ändert ein Schritt seine Werte, verliert nur dieses Band die Klassen. Beispiel: Sentinel-2 mit Band math für NDVI und SCL unverändert in „Bands in output“ → SCL behält seine Klassen. Die Farbtabelle bleibt nur bei einem einzelnen Band.
+
+**Umgesetzt** (`processing/core.py::_keep_classes`): Ein Schritt, der `passes_values` erfüllt, ändert kein Band. Jeder andere Schritt ändert:
+- das Band, das er hinzufügt (`BandUse.adds`, Band math),
+- die Bänder, auf die er wirkt (`acts_on`, Normalize),
+- alle Bänder, wo er keine nennt (z. B. `reproject` mit `bilinear`).
+
+Nur diese Bänder verlieren ihre Klassen. Die Planung zählt mit derselben Angabe die Kosten je Band (`plan.py`). Das Raster liest der Kern mit `nearest`. Das Frontend braucht nichts Neues: Eine Ergebnis-Ebene liest die Klassen je Band, auch beim Bandwechsel.
+
+**Tests [M]** (`test_class_results.py`):
+- Band math neben dem Klassenband: das Klassenband behält seine Klassen, keine Farbtabelle (zwei Bänder).
+- Ein Schritt ohne Bandangabe (`scale`): kein Band behält seine Klassen.
+- Ein Schritt mit `acts_on` nimmt nur seinen Bändern die Klassen (Unit-Test).
+- Band math kann ein vorhandenes Band nicht überschreiben; das Rezept lehnt doppelte Namen ab.
