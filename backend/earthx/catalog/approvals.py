@@ -198,7 +198,7 @@ def publish(conn: psycopg.Connection, approvals: Sequence[tuple[Approval, str, s
                     cur.execute(
                         "UPDATE public.earthx_listed_entry SET state = 'in_review', approval_file = NULL,"
                         " approval_sha256 = NULL, approved_on = NULL, published_at = NULL"
-                        " WHERE approval_file = %s AND state IN ('published', 'link_failed')",
+                        " WHERE approval_file = %s AND state IN ('published', 'link_hidden')",
                         (name,),
                     )
                     revoked[name] = cur.rowcount

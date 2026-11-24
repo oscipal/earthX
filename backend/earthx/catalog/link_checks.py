@@ -1,10 +1,11 @@
 """The results of the automatic link check of harvested listed entries and what they hide or bring back (M5-67;
 docs/plans/m5/m5-67-harvest-automatisch.md §4a, §4c; adr/0033 §8.5; migration ``037``).
 
-An entry becomes visible only once its own link passed (``approvals.publish`` asks this table). A published entry whose
-link failed becomes ``link_failed``, hidden and never deleted; a later pass with the same link brings it back. Where a
-host or a pattern failed for a large share in one run, its results are ``guarded``: they hide nothing and publish
-nothing, since the check is then more likely wrong than the data (Otto, 24.11.2026).
+An entry is visible only while its own current link has passed (``approvals.publish`` asks this table). A published
+entry without that pass (its link failed, could not be checked, or was never checked with this address) becomes
+``link_hidden``, hidden and never deleted; a later pass with the same link brings it back (Otto, 24.11.2026, also for
+unchecked links). Where a host or a pattern failed or did not answer for a large share in one run, its results are
+``guarded``: they hide nothing and publish nothing, since the check is then more likely wrong than the data.
 
 Nothing here fetches; ``discovery.linkcheck`` does, through ``gateway``. Hand entries (source ``listed``) are not
 checked. No page text is stored, only codes.
@@ -36,7 +37,12 @@ __all__ = [
 LINK = "e.content -> 'earthx:listing' ->> 'source_url'"
 #: A check that counts: passed with the entry's current link and not guarded.
 PASSED = f"c.outcome = 'passed' AND NOT c.guarded AND c.url = {LINK}"
-_FAILED = f"c.outcome = 'failed' AND NOT c.guarded AND c.url = {LINK}"
+#: What keeps a published entry visible: a pass of its current link, or a guarded result of it (plan §4c).
+_KEEPS = f"c.url = {LINK} AND (c.outcome = 'passed' OR c.guarded)"
+#: Reasons of ``unchecked`` that pass (no answer, too many requests, a server error): they count for the guard like a
+#: failure, so that a host that is down hides nothing (plan A18). ``robots``, an unconfirmed form of a catalogue page
+#: or a page too large do not pass and do not count.
+TRANSIENT = "(reason IN ('unreachable', 'host_resting', 'gateway', 'api_shape') OR reason ~ '^http_(429|5[0-9][0-9])$')"
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,7 +83,9 @@ def _identifiers(source_key: str, keys: Sequence[str] | None) -> tuple[str, ...]
     return tuple(dict.fromkeys(v for v in found if v))
 
 
-def due_links(conn: psycopg.Connection, *, recheck_days: int, now: datetime | None = None) -> list[DueLink]:
+def due_links(
+    conn: psycopg.Connection, *, recheck_days: int, now: datetime | None = None, only: Sequence[str] | None = None
+) -> list[DueLink]:
     """Every harvested link that is due, most urgent first (plan §4a): new and presented-again entries without a pass
     of their current link; published or hidden ones never checked with their current link; those whose last check
     was ``unchecked``; and every check older than ``recheck_days``, the oldest first."""
@@ -94,7 +102,8 @@ def due_links(conn: psycopg.Connection, *, recheck_days: int, now: datetime | No
                        c.checked_at
                 FROM public.earthx_listed_entry e
                 LEFT JOIN public.earthx_link_check c ON c.dataset_id = e.dataset_id
-                WHERE e.source_id <> %(hand)s AND e.state IN ('in_review', 'published', 'link_failed')
+                WHERE e.source_id <> %(hand)s AND e.state IN ('in_review', 'published', 'link_hidden')
+                  AND (%(only)s::text[] IS NULL OR e.source_id = ANY(%(only)s))
                   AND {LINK} IS NOT NULL
                   AND (c.dataset_id IS NULL OR c.url IS DISTINCT FROM {LINK} OR c.outcome = 'unchecked'
                        OR c.checked_at < coalesce(%(now)s, now()) - make_interval(days => %(days)s)
@@ -102,7 +111,7 @@ def due_links(conn: psycopg.Connection, *, recheck_days: int, now: datetime | No
             ) due
             ORDER BY priority, checked_at NULLS FIRST, dataset_id
             """,
-            {"hand": HAND_SOURCE, "now": now, "days": recheck_days},
+            {"hand": HAND_SOURCE, "now": now, "days": recheck_days, "only": None if only is None else list(only)},
         )
         rows = cur.fetchall()
     return [
@@ -144,7 +153,8 @@ def record_results(conn: psycopg.Connection, results: Iterable[LinkResult], chec
 
 @dataclass(frozen=True, slots=True)
 class GroupCount:
-    """The results of one run for one host or one pattern (``kind`` ``host`` or ``pattern``)."""
+    """The results of one run for one host or one pattern (``kind`` ``host`` or ``pattern``): ``transient`` are the
+    ``unchecked`` that may pass next time, ``unchecked`` the others (``robots``, an unconfirmed form)."""
 
     kind: str
     key: str
@@ -152,33 +162,36 @@ class GroupCount:
     failed: int
     unchecked: int
     guarded: bool
+    transient: int = 0
 
     @property
     def checked(self) -> int:
-        return self.passed + self.failed
+        """Links asked: passed, failed, or without an answer that may come next time."""
+        return self.passed + self.failed + self.transient
 
 
 def guard_results(
     conn: psycopg.Connection, since: datetime, *, min_checked: int, failed_share: float
 ) -> list[GroupCount]:
     """Count the results checked since ``since`` per host and per pattern, and guard every result of a group where at
-    least ``min_checked`` links were checked (passed or failed) and at least ``failed_share`` of them failed (plan
-    §4c). Returns every group, the guarded ones first, then by size."""
+    least ``min_checked`` links were asked (passed, failed or without an answer) and at least ``failed_share`` of them
+    failed or got no answer (plan §4c, A18). Returns every group, the guarded ones first, then by size."""
     groups: list[GroupCount] = []
     with conn.cursor() as cur:
         for kind in ("host", "pattern"):
             cur.execute(
                 f"""
                 SELECT {kind}, count(*) FILTER (WHERE outcome = 'passed'), count(*) FILTER (WHERE outcome = 'failed'),
-                       count(*) FILTER (WHERE outcome = 'unchecked')
+                       count(*) FILTER (WHERE outcome = 'unchecked' AND NOT {TRANSIENT}),
+                       count(*) FILTER (WHERE outcome = 'unchecked' AND {TRANSIENT})
                 FROM public.earthx_link_check WHERE checked_at >= %s GROUP BY {kind}
                 """,
                 (since,),
             )
-            for key, passed, failed, unchecked in cur.fetchall():
-                checked = passed + failed
-                guarded = checked >= min_checked and failed >= failed_share * checked
-                groups.append(GroupCount(kind, key, passed, failed, unchecked, guarded))
+            for key, passed, failed, unchecked, transient in cur.fetchall():
+                asked = passed + failed + transient
+                guarded = asked >= min_checked and failed + transient >= failed_share * asked
+                groups.append(GroupCount(kind, key, passed, failed, unchecked, guarded, transient))
         hosts = [g.key for g in groups if g.guarded and g.kind == "host"]
         patterns = [g.key for g in groups if g.guarded and g.kind == "pattern"]
         if hosts or patterns:
@@ -193,8 +206,8 @@ def guard_results(
 
 @dataclass(frozen=True, slots=True)
 class Applied:
-    """Published entries hidden for a failed link, hidden ones brought back, and new ones that could now be published
-    by an approved file (in review with a pass)."""
+    """Published entries hidden for a link without a pass, hidden ones brought back, and new ones that could now be
+    published by an approved file (in review with a pass)."""
 
     hidden: int
     restored: int
@@ -202,27 +215,29 @@ class Applied:
 
 
 _HIDE = f"""
-    FROM public.earthx_link_check c
-    WHERE c.dataset_id = e.dataset_id AND e.state = 'published' AND e.source_id <> %(hand)s AND {_FAILED}
+    WHERE e.state = 'published' AND e.source_id <> %(hand)s AND (%(only)s::text[] IS NULL OR e.source_id = ANY(%(only)s))
+      AND NOT EXISTS (SELECT 1 FROM public.earthx_link_check c WHERE c.dataset_id = e.dataset_id AND {_KEEPS})
 """
 _RESTORE = f"""
     FROM public.earthx_link_check c
-    WHERE c.dataset_id = e.dataset_id AND e.state = 'link_failed' AND e.source_id <> %(hand)s AND {PASSED}
+    WHERE c.dataset_id = e.dataset_id AND e.state = 'link_hidden' AND e.source_id <> %(hand)s
+      AND (%(only)s::text[] IS NULL OR e.source_id = ANY(%(only)s)) AND {PASSED}
 """
 
 
-def apply_results(conn: psycopg.Connection, *, dry_run: bool) -> Applied:
-    """Hide published entries whose current link failed (``link_failed``) and bring back hidden ones whose current link
-    passed again; nothing guarded counts. With ``dry_run`` only count (the trial run, plan §18a)."""
-    params = {"hand": HAND_SOURCE}
+def apply_results(conn: psycopg.Connection, *, dry_run: bool, only: Sequence[str] | None = None) -> Applied:
+    """Hide published entries without a pass of their current link (``link_hidden``): failed, unchecked or never
+    checked, but not guarded; bring back hidden ones whose current link passed again. With ``dry_run`` only count
+    (the trial run, plan §18a). ``only`` keeps it to these sources; every source where it is ``None``."""
+    params = {"hand": HAND_SOURCE, "only": None if only is None else list(only)}
     with conn.cursor() as cur:
         if dry_run:
-            cur.execute(f"SELECT count(*) FROM public.earthx_listed_entry e WHERE EXISTS (SELECT 1 {_HIDE})", params)
+            cur.execute(f"SELECT count(*) FROM public.earthx_listed_entry e {_HIDE}", params)
             hidden = cur.fetchone()[0]
             cur.execute(f"SELECT count(*) FROM public.earthx_listed_entry e WHERE EXISTS (SELECT 1 {_RESTORE})", params)
             restored = cur.fetchone()[0]
         else:
-            cur.execute(f"UPDATE public.earthx_listed_entry e SET state = 'link_failed' {_HIDE}", params)
+            cur.execute(f"UPDATE public.earthx_listed_entry e SET state = 'link_hidden' {_HIDE}", params)
             hidden = cur.rowcount
             cur.execute(f"UPDATE public.earthx_listed_entry e SET state = 'published' {_RESTORE}", params)
             restored = cur.rowcount

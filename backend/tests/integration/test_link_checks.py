@@ -9,6 +9,7 @@ and no page is asked.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 
 from earthx.catalog.link_checks import LinkResult, apply_results, due_links, guard_results, record_results
@@ -70,21 +71,58 @@ def test_a_guarded_pass_publishes_nothing(world: World) -> None:
     assert world.row("a")["state"] == "in_review"
 
 
-def test_a_failed_link_hides_a_published_entry_without_deleting_it_and_a_pass_brings_it_back(world: World) -> None:
-    _published(world, "a", "b")
-    record_results(world.conn, [_result(world, "a", "failed"), _result(world, "b", "unchecked")], NOW)
+def test_a_link_without_a_pass_hides_a_published_entry_without_deleting_it_and_a_pass_brings_it_back(
+    world: World,
+) -> None:
+    # Otto, 24.11.2026: failed, unchecked and never checked alike; only a pass of the current link keeps it visible.
+    _published(world, "a", "b", "c", "d", "e")
+    world.conn.execute("DELETE FROM public.earthx_link_check WHERE dataset_id = %s", (_id(world, "c"),))
+    record_results(
+        world.conn,
+        [
+            _result(world, "a", "failed"),
+            _result(world, "b", "unchecked"),
+            _result(world, "d", url="https://amt.example.org/frueher"),  # a pass of a link the entry no longer has
+            _result(world, "e"),
+        ],
+        NOW,
+    )
+    only = [world.ckan.source_id]
     # The trial run only counts.
-    assert apply_results(world.conn, dry_run=True).hidden == 1
+    assert apply_results(world.conn, dry_run=True, only=only).hidden == 4
     assert world.row("a")["state"] == "published"
-    assert apply_results(world.conn, dry_run=False).hidden == 1
+    assert apply_results(world.conn, dry_run=False, only=only).hidden == 4
     hidden = world.row("a")
-    assert hidden["state"] == "link_failed" and hidden["content"]["title"] == "Bodenkarte a"
-    # Unchecked hides nothing.
-    assert world.row("b")["state"] == "published"
+    assert hidden["state"] == "link_hidden" and hidden["content"]["title"] == "Bodenkarte a"
+    assert [world.row(k)["state"] for k in "bcde"] == ["link_hidden", "link_hidden", "link_hidden", "published"]
     record_results(world.conn, [_result(world, "a")], NOW + timedelta(days=1))
-    applied = apply_results(world.conn, dry_run=False)
+    applied = apply_results(world.conn, dry_run=False, only=only)
     assert (applied.hidden, applied.restored) == (0, 1)
     assert world.row("a")["state"] == "published"
+
+
+def test_a_guarded_result_hides_nothing(world: World) -> None:
+    _published(world, "a")
+    record_results(world.conn, [_result(world, "a", "failed")], NOW)
+    world.conn.execute("UPDATE public.earthx_link_check SET guarded = true WHERE dataset_id = %s", (_id(world, "a"),))
+    assert apply_results(world.conn, dry_run=False, only=[world.ckan.source_id]).hidden == 0
+    assert world.row("a")["state"] == "published"
+
+
+def test_a_host_that_does_not_answer_is_guarded_but_robots_is_not(world: World) -> None:
+    keys = [f"k{i:02d}" for i in range(40)]
+    world.put(world.ckan, *(_find(k) for k in keys))
+    world.report()
+    down = [replace(_result(world, k, "unchecked", pattern="down"), reason="unreachable", host="down.example.org")
+            for k in keys[:20]]
+    robots = [replace(_result(world, k, "unchecked", pattern="robots"), reason="robots", host="closed.example.org")
+              for k in keys[20:]]
+    record_results(world.conn, down + robots, NOW)
+    groups = {(g.kind, g.key): g for g in guard_results(world.conn, NOW - timedelta(minutes=1), min_checked=20,
+                                                        failed_share=0.25)}
+    assert groups[("host", "down.example.org")].guarded and groups[("host", "down.example.org")].transient == 20
+    robots_host = groups[("host", "closed.example.org")]
+    assert not robots_host.guarded and robots_host.unchecked == 20
 
 
 def test_a_hidden_entry_keeps_its_state_on_a_describing_change_and_goes_into_review_on_a_deciding_one(
@@ -92,10 +130,10 @@ def test_a_hidden_entry_keeps_its_state_on_a_describing_change_and_goes_into_rev
 ) -> None:
     _published(world, "a")
     record_results(world.conn, [_result(world, "a", "failed")], NOW)
-    apply_results(world.conn, dry_run=False)
+    apply_results(world.conn, dry_run=False, only=[world.ckan.source_id])
     world.put(world.ckan, _find("a", description="Neu beschrieben."))
     world.report()
-    assert world.row("a")["state"] == "link_failed"
+    assert world.row("a")["state"] == "link_hidden"
     world.put(world.ckan, _find("a", account="free_account"))
     world.report()
     assert world.row("a")["state"] == "in_review"
@@ -104,7 +142,7 @@ def test_a_hidden_entry_keeps_its_state_on_a_describing_change_and_goes_into_rev
 def test_a_hidden_entry_loses_its_grant_like_a_published_one(world: World) -> None:
     _published(world, "a")
     record_results(world.conn, [_result(world, "a", "failed")], NOW)
-    apply_results(world.conn, dry_run=False)
+    apply_results(world.conn, dry_run=False, only=[world.ckan.source_id])
     world.grant()
     assert withdraw(world.conn, world.licences.granted) == 1
     assert world.row("a")["state"] == "needs_rule"
@@ -150,7 +188,7 @@ def test_due_links_come_most_urgent_first(world: World) -> None:
     record_results(world.conn, [_result(world, "unchecked", "unchecked")], NOW - timedelta(days=1))
     record_results(world.conn, [_result(world, "moved", url="https://amt.example.org/frueher")], NOW)
     world.conn.execute("DELETE FROM public.earthx_link_check WHERE dataset_id = %s", (_id(world, "never"),))
-    due = [d for d in due_links(world.conn, recheck_days=30, now=NOW) if d.source_id == world.ckan.source_id]
+    due = due_links(world.conn, recheck_days=30, now=NOW, only=[world.ckan.source_id])
     assert [(d.dataset_id.rsplit(".", 1)[1], d.priority) for d in due] == [
         ("new", 0),
         ("never", 1),
@@ -178,11 +216,12 @@ def test_a_whole_run_checks_hides_and_the_trial_run_only_counts(world: World) ->
     _published(world, "gut", "tot")
     pages = {"amt.example.org/daten/gut": page("Bodenkarte gut"), "amt.example.org/daten/tot": httpx.Response(404)}
     rules = load_link_rules()
-    for dry_run, state in ((True, "published"), (False, "link_failed")):
+    for dry_run, state in ((True, "published"), (False, "link_hidden")):
         # The published Bestand, never checked (the helper of test_report passed them).
         world.conn.execute("DELETE FROM public.earthx_link_check WHERE dataset_id LIKE %s", (f"{world.ckan.source_id}.%",))
         run = run_linkcheck(
-            world.conn, rules=rules, hosts={}, dry_run=dry_run, open_gateway=opener(site(pages), []), minutes=5
+            world.conn, rules=rules, hosts={}, dry_run=dry_run, open_gateway=opener(site(pages), []), minutes=5,
+            only=[world.ckan.source_id],
         )
         ours = {r.dataset_id: r.outcome for r in run.results if r.dataset_id.startswith(world.ckan.source_id)}
         assert ours == {_id(world, "gut"): "passed", _id(world, "tot"): "failed"}
@@ -206,8 +245,8 @@ def test_an_excluded_entry_stays_in_review(world: World) -> None:
 def _hidden(world: World, *keys: str) -> None:
     _published(world, *keys)
     record_results(world.conn, [_result(world, k, "failed") for k in keys], NOW)
-    apply_results(world.conn, dry_run=False)
-    assert all(world.row(k)["state"] == "link_failed" for k in keys)
+    apply_results(world.conn, dry_run=False, only=[world.ckan.source_id])
+    assert all(world.row(k)["state"] == "link_hidden" for k in keys)
 
 
 def test_a_revoked_approval_takes_back_a_hidden_entry_too(world: World) -> None:
@@ -227,7 +266,7 @@ def test_a_hidden_entry_gone_at_the_source_becomes_a_tombstone_like_a_published_
     world.put(world.ckan, _find("a"), state="gone")
     world.put(world.ckan, _find("c"))
     world.report()
-    assert world.row("a")["state"] == "link_failed" and world.row("a")["missing_since"] is not None
+    assert world.row("a")["state"] == "link_hidden" and world.row("a")["missing_since"] is not None
     world.run(world.ckan)
     world.report()
     assert (world.row("a")["state"], world.row("a")["removed_reason"]) == ("tombstone", "source_removed")
@@ -249,7 +288,7 @@ def test_a_run_that_breaks_off_before_the_guard_keeps_no_result(world: World, mo
     with pytest.raises(RuntimeError):
         linkcheck.run_linkcheck(
             world.conn, rules=linkcheck.load_link_rules(), hosts={}, dry_run=False,
-            open_gateway=opener(site({}), []), minutes=5,
+            open_gateway=opener(site({}), []), minutes=5, only=[world.ckan.source_id],
         )
     assert world.conn.execute(
         "SELECT count(*) FROM public.earthx_link_check WHERE dataset_id = %s", (_id(world, "a"),)
