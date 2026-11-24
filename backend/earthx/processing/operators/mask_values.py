@@ -25,6 +25,7 @@ across machines (§15c) and the tile and the job give the same bytes.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Annotated, Any, Literal
 
 import numpy
@@ -142,6 +143,12 @@ def _transform(meta: RasterMeta, params: BaseModel) -> RasterMeta:
     return meta
 
 
+def _hides(params: BaseModel) -> tuple[str, Callable[[numpy.ndarray], numpy.ndarray]]:
+    """The band that decides and the values hidden in it: a band of classes holds those classes no more (M5-62)."""
+    assert isinstance(params, MaskValuesParams)
+    return params.band, lambda values: _hits(values, params)
+
+
 def _bands_used(params: BaseModel) -> BandUse:
     assert isinstance(params, MaskValuesParams)
     return BandUse(reads=frozenset({params.band}))
@@ -211,5 +218,6 @@ MASK_VALUES = Operator(
     properties=_properties,
     bands_used=_bands_used,
     passes_values=PASSES_VALUES,
+    hides=_hides,
     listed=True,
 )

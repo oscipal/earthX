@@ -39,6 +39,7 @@ from dataclasses import dataclass, field, fields
 from enum import Enum
 from typing import Any, Literal
 
+import numpy
 from pydantic import BaseModel
 from rasterio.transform import Affine
 
@@ -263,6 +264,9 @@ class Operator:
     #: Whether every value the step writes is a value it read: selecting, hiding, ``nearest`` and ``mode``. Only then
     #: may an integer result keep the nodata of its source (:func:`~earthx.processing.nodata.output_nodata`, M5-28).
     passes_values: PassesValues = MAKES_VALUES
+    #: The band whose values decide what the step hides, and which of its values it hides (``mask``, ``mask_values``):
+    #: a band of classes loses the classes it no longer holds (M5-62). ``None`` for a step that hides by no value.
+    hides: Callable[[BaseModel], tuple[str, Callable[[numpy.ndarray], numpy.ndarray]]] | None = None
     #: How the band the step makes is drawn (:class:`Looks`); ``None`` where the usual rule of the measure holds.
     looks: Looks | None = None
     #: The same step for a stock that the planner narrowed: ``restrict(params, kept)`` keeps of the bands the step changes

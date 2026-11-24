@@ -53,7 +53,7 @@ from rasterio.windows import Window
 
 from earthx.catalog.registry import LicenseTier
 from earthx.processing.errors import UnsupportedRecipe
-from earthx.processing.operators.base import BandMeta, Grid, Operator, PassesValues, RasterMeta, Requirement, Tier
+from earthx.processing.operators.base import Grid, Operator, PassesValues, RasterMeta, Requirement, Tier
 from earthx.processing.workfile import open_workfile_band
 
 __all__ = [
@@ -179,7 +179,7 @@ def _transform_on(meta: RasterMeta, params: BaseModel, grid: Grid) -> RasterMeta
     assert isinstance(params, ReprojectParams)
     transform, width, height = grid
     bands = tuple(
-        BandMeta(b.name, b.data_type, b.nodata, b.unit, b.scale, b.offset, resampled=True) for b in meta.bands
+        dataclasses.replace(b, resampled=True) for b in meta.bands
     )
     return RasterMeta(params.crs, transform, width, height, bands, resampled=True)
 

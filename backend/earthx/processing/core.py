@@ -531,21 +531,40 @@ def _classes_of(source: Source) -> tuple[ClassRow, ...] | None:
 
 
 def _keep_classes(meta: RasterMeta, steps: Sequence[PlannedStep]) -> RasterMeta:
-    """``meta`` with the classes of each band only while no step changes its values (plan §6, Otto 24.11.2026: per band).
+    """``meta`` with the classes of each band only while no step changes its values (plan §6, Otto 24.11.2026: per band),
+    less the classes a mask hides in the band that decides it (``Operator.hides``): they are in the result no more.
 
     A step that passes the values on changes none; any other changes the band it adds (Band math), the bands it acts on
     (Normalize), or every band where it names none. The grid the core reads every band onto is drawn with ``nearest``,
     which keeps them. A band a step adds has no classes to begin with.
     """
     changed: set[str] = set()
+    hidden: dict[str, list[Callable[[numpy.ndarray], numpy.ndarray]]] = {}
     for step in steps:
+        if step.operator.hides is not None:
+            band, hides = step.operator.hides(step.params)
+            hidden.setdefault(band, []).append(hides)
         if step.operator.passes_values(step.params):
             continue
         use = step.operator.bands_used(step.params)
         if use.adds is None and use.acts_on is None:
             return replace(meta, bands=tuple(replace(band, classes=None) for band in meta.bands))
         changed |= {use.adds} if use.adds is not None else set(use.acts_on or ())
-    return replace(meta, bands=tuple(replace(band, classes=None) if band.name in changed else band for band in meta.bands))
+    return replace(meta, bands=tuple(_classes_left(band, changed, hidden.get(band.name, [])) for band in meta.bands))
+
+
+def _classes_left(
+    band: BandMeta, changed: set[str], hidden: list[Callable[[numpy.ndarray], numpy.ndarray]]
+) -> BandMeta:
+    """``band`` without its classes where a step changed its values, and without the classes a mask hid in it."""
+    if band.classes is None or band.name in changed:
+        return replace(band, classes=None)
+    values = numpy.array([row.value for row in band.classes], dtype=band.data_type)
+    gone = numpy.zeros(len(values), dtype=bool)
+    for hides in hidden:
+        gone |= numpy.asarray(hides(values), dtype=bool)
+    left = tuple(row for row, out in zip(band.classes, gone, strict=True) if not out)
+    return replace(band, classes=left or None)
 
 
 def _properties(

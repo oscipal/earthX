@@ -107,6 +107,23 @@ BAND_MATH = {"op": "band_math", "op_version": 2, "params": {"expression": "map *
 SCALE_2 = {"op": "scale", "op_version": 1, "params": {"factor": 2.0}}
 
 
+def _mask(source: str, classes: list[int]) -> dict[str, Any]:
+    """"Mask by classes" as the panel sends it (version 2: the layer stays in the stock)."""
+    return {"op": "mask", "op_version": 2, "params": {"source": source, "classes": classes}}
+
+
+def _mask_values(condition: str, values: list[float]) -> dict[str, Any]:
+    return {"op": "mask_values", "op_version": 1, "params": {"band": "map", "condition": condition, "values": values}}
+
+
+def _reproject(resampling: str) -> dict[str, Any]:
+    return {"op": "reproject", "op_version": 4, "params": {"crs": sources.CRS, "resolution": 20.0, "resampling": resampling}}
+
+
+def _without(*values: int) -> list[dict[str, Any]]:
+    return [row for row in STAC if row["value"] not in values]
+
+
 class TestValuesKept:
     def test_a_result_without_steps_keeps_the_classes_and_their_colour_table(self, tmp_path: Path) -> None:
         result = _run(_recipe([]), tmp_path)
@@ -116,10 +133,41 @@ class TestValuesKept:
         assert (table[10], table[20], table[60]) == ((0, 100, 0, 255), (255, 187, 34, 255), (180, 180, 180, 255))
         assert table[0][3] == 0  # nodata see-through
 
-    def test_a_step_that_passes_the_values_on_keeps_them(self, tmp_path: Path) -> None:
-        result = _run(_recipe([MASK_EQ_20]), tmp_path)
-        assert _band_classes(result) == [STAC]
-        assert _colour_table(result.path) is not None
+    @pytest.mark.parametrize(
+        ("step", "left"),
+        [
+            # Otto's browser test (24.11.2026): WorldCover, "Mask by classes", Tree cover hidden.
+            (_mask("map", [10]), _without(10)),
+            (_mask("map", [10, 60]), _without(10, 60)),
+            (MASK_EQ_20, _without(20)),
+            (_mask_values("lt", [15.0]), _without(10)),
+            (_mask_values("gt", [15.0]), _without(20, 60)),
+            (_mask_values("between", [15.0, 65.0]), _without(20, 60)),
+            (_reproject("nearest"), STAC),
+            (_reproject("mode"), STAC),
+        ],
+        ids=["mask-tree-cover", "mask-two", "values-eq", "values-lt", "values-gt", "values-between", "nearest", "mode"],
+    )
+    def test_a_step_that_passes_the_values_on_keeps_them_less_what_it_hides(
+        self, tmp_path: Path, step: dict, left: list
+    ) -> None:
+        result = _run(_recipe([step]), tmp_path)
+        assert _band_classes(result) == [left]
+        table = _colour_table(result.path)
+        assert table is not None
+        colour = {row["value"]: tuple(int(row["color_hint"][i : i + 2], 16) for i in (0, 2, 4)) for row in STAC}
+        kept = {row["value"] for row in left}
+        assert all(table[value][:3] == colour[value] for value in kept)
+        assert all(table[value][:3] != colour[value] for value in set(colour) - kept)  # hidden: not in the table
+
+    def test_a_mask_by_another_band_leaves_the_classes_of_the_band_of_classes(self, tmp_path: Path) -> None:
+        result = _run(_recipe([_mask("other", [10])], assets=("map", "other")), tmp_path)
+        assert _band_classes(result) == [STAC, None]
+
+    def test_a_mask_that_hides_every_class_leaves_none(self, tmp_path: Path) -> None:
+        result = _run(_recipe([_mask("map", [10, 20, 60])]), tmp_path)
+        assert _band_classes(result) == [None]
+        assert _colour_table(result.path) is None
 
     def test_a_float_result_keeps_the_classes_but_has_no_colour_table(self, tmp_path: Path) -> None:
         # GeoTIFF holds a colour table only for uint8 and uint16 (plan A3).
@@ -134,7 +182,7 @@ class TestValuesKept:
 
 
 class TestValuesChanged:
-    @pytest.mark.parametrize("step", [BAND_MATH, SCALE_2], ids=["band_math", "scale"])
+    @pytest.mark.parametrize("step", [BAND_MATH, SCALE_2, _reproject("bilinear")], ids=["band_math", "scale", "bilinear"])
     def test_a_step_that_changes_values_leaves_no_classes_and_no_colour_table(self, tmp_path: Path, step: dict) -> None:
         bands = ["doubled"] if step is BAND_MATH else None
         result = _run(_recipe([step], bands=bands), tmp_path)
@@ -172,6 +220,6 @@ def test_a_step_that_acts_on_some_bands_takes_the_classes_of_those_only() -> Non
 
     rows = (ClassRow(10, "Tree cover", "#006400"),)
     meta = RasterMeta(None, Affine.identity(), 1, 1, (BandMeta("map", "uint8", 0, classes=rows), BandMeta("scl", "uint8", 0, classes=rows)))
-    operator = SimpleNamespace(passes_values=lambda params: False, bands_used=lambda params: BandUse(acts_on=frozenset({"scl"})))
+    operator = SimpleNamespace(hides=None, passes_values=lambda params: False, bands_used=lambda params: BandUse(acts_on=frozenset({"scl"})))
     kept = _keep_classes(meta, [SimpleNamespace(operator=operator, params=None)])
     assert [band.classes for band in kept.bands] == [rows, None]
