@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import date
 from enum import Enum
 from pathlib import Path
 from types import MappingProxyType
@@ -20,6 +21,7 @@ from earthx.gateway import UrlRejected, check_robots_exception_path, host_of
 
 __all__ = [
     "SOURCES_DIR",
+    "CatalogPageCheck",
     "CkanFilter",
     "RobotsException",
     "SourceConfig",
@@ -56,7 +58,7 @@ _FIELDS = frozenset(
     }
 )
 #: Fields a seed file may leave out (the default holds).
-_OPTIONAL_FIELDS = frozenset({"dedupe_collection_links"})
+_OPTIONAL_FIELDS = frozenset({"dedupe_collection_links", "catalog_page_check"})
 #: The lowest precedence a source may have among duplicates (M5-20 plan §8): 1 wins over 2.
 MAX_DEDUPE_RANK = 9
 _COUNTRY = re.compile(r"[A-Z]{2}")
@@ -98,6 +100,20 @@ class RobotsException:
 
 
 @dataclass(frozen=True, slots=True)
+class CatalogPageCheck:
+    """How the link check verifies a link to this catalogue's own page of a dataset (M5-67 F12 = 2, Otto 24.11.2026).
+
+    ``via``: ``page`` asks the page itself; ``api`` asks the catalogue's API whether the dataset in the link exists: a
+    CKAN source by the name (``package_search``, under its robots exception), a STAC source by the collection
+    (``/collections/<id>``, F13 = 1). ``form_confirmed_on``: the day Otto found the page of a dataset under the form of
+    ``catalog_page`` in a browser; without it, the API proves only that the dataset exists, not that the address leads
+    to it, so such links stay unchecked."""
+
+    via: str = "page"
+    form_confirmed_on: date | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class SourceConfig:
     source_id: str
     protocol: SourceProtocol
@@ -128,6 +144,8 @@ class SourceConfig:
     #: key (Otto, 24.11.2026): opendata.swiss names the collections it lists in the links of its resources. Off for
     #: every other source.
     dedupe_collection_links: bool = False
+    #: How the link check verifies the links to ``catalog_page`` (M5-67 F12 = 2); by default the page itself.
+    catalog_page_check: CatalogPageCheck = CatalogPageCheck()
 
     @property
     def host(self) -> str:
@@ -221,6 +239,28 @@ def _robots_exception(name: str, endpoint: str, value: object) -> RobotsExceptio
     return RobotsException(path, evidence)
 
 
+def _catalog_page_check(
+    name: str, protocol: SourceProtocol, catalog_page: str | None, value: object
+) -> CatalogPageCheck:
+    if value is None:
+        return CatalogPageCheck()
+    if not isinstance(value, dict) or set(value) != {"via", "form_confirmed_on"}:
+        raise _bad(name, "catalog_page_check has via and form_confirmed_on, nothing else")
+    via, day = value["via"], value["form_confirmed_on"]
+    if via not in ("page", "api"):
+        raise _bad(name, "catalog_page_check.via is page or api")
+    if via == "api" and catalog_page is None:
+        raise _bad(name, "catalog_page_check.via api needs a catalog_page")
+    if isinstance(day, str):
+        try:
+            day = date.fromisoformat(day)
+        except ValueError:
+            raise _bad(name, "catalog_page_check.form_confirmed_on is null or a day") from None
+    if day is not None and (not isinstance(day, date) or day > date.today()):
+        raise _bad(name, "catalog_page_check.form_confirmed_on is null or a day, not in the future")
+    return CatalogPageCheck(via, day)
+
+
 def read_source(path: Path) -> SourceConfig:
     """One seed file, checked; :class:`EntryFileError` names the file and the field, never a value."""
     name = path.name
@@ -256,11 +296,12 @@ def read_source(path: Path) -> SourceConfig:
     collection_links = data.get("dedupe_collection_links", False)
     if not isinstance(collection_links, bool):
         raise _bad(name, "dedupe_collection_links is true or false")
+    catalog_page = _catalog_page(name, protocol, data["catalog_page"])
     return SourceConfig(
         source_id=source_id,
         protocol=protocol,
         endpoint=endpoint,
-        catalog_page=_catalog_page(name, protocol, data["catalog_page"]),
+        catalog_page=catalog_page,
         filter=_filter(name, protocol, data["filter"]),
         max_requests_per_run=_count(name, data, "max_requests_per_run", MAX_REQUESTS_PER_RUN),
         max_pages_per_run=_pages(name, protocol, data["max_pages_per_run"]),
@@ -272,6 +313,7 @@ def read_source(path: Path) -> SourceConfig:
         country=country,
         dedupe_rank=_count(name, data, "dedupe_rank", MAX_DEDUPE_RANK),
         dedupe_collection_links=collection_links,
+        catalog_page_check=_catalog_page_check(name, protocol, catalog_page, data.get("catalog_page_check")),
     )
 
 

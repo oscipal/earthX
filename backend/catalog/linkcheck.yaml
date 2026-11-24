@@ -1,0 +1,35 @@
+# The automatic check of the link of every harvested listed entry (M5-67; docs/plans/m5/m5-67-harvest-automatisch.md
+# §4-§4c; adr/0033 §8.5). A decision in Git like geodata.yaml: an entry becomes visible only once its own link passed
+# (Otto, 24.11.2026). Passed: 200 after redirects; no start page of the host, no error or login page; the title or an
+# identifier of the dataset on the page, in its text, <title>, a <meta> value, JSON-LD or the canonical link.
+#
+# Words are compared as the search compares (lower case, without accents, every run of other characters one space).
+
+# Minutes of checking per run; what is left comes next run (plan §4a).
+budget_minutes: 180
+# A link is checked again once its last check is older than this (rotation, about once a month; M5-24).
+recheck_days: 30
+# Guard per host and per pattern in one run (plan §4c): at least this many links checked (passed or failed) ...
+guard_min_checked: 20
+# ... and at least this share of them failed: then nothing is hidden or published for it, and it is a finding on top.
+guard_failed_share: 0.25
+# Hosts checked at the same time; each keeps its own spacing (hosts.yaml, else 1 s and one connection).
+parallel_hosts: 16
+# Hosts a redirect leads to that are learned in one run and checked in a second round (the allowlist stays exact).
+max_redirect_hosts: 200
+# The largest page read, in bytes; a larger one is not checkable.
+max_page_bytes: 2097152
+# An identifier of the dataset counts on the page from this length (short ones turn up anywhere).
+min_identifier_chars: 6
+# A long title (at least 4 words of 4 letters or more) counts when this share of those words is on the page.
+title_word_share: 0.8
+# Words of a <title> that make a page an error page, where the title of the dataset is not in it.
+error_words: ["404", "403", "410", "500", nicht gefunden, not found, page not found, seite nicht gefunden,
+              fehler, error, introuvable, page introuvable, non trovata, pagina non trovata, existiert nicht,
+              does not exist, no longer available, nicht mehr verfugbar, zugriff verweigert, access denied,
+              forbidden]
+# Parts of the path after the redirects that make a page a login page.
+login_path_parts: [login, signin, sign-in, anmelden, anmeldung, auth, sso, cas, logon, registrieren, register]
+# Words of a <title> or the first heading that make a page a login page, where the dataset is not named.
+login_words: [login, log in, anmelden, anmeldung, sign in, registrierte nutzer, registrierte benutzer, connexion,
+              accedi]

@@ -2,7 +2,8 @@
 
 A find is ``not_geodata`` only where it has no geo signal and at least one non-geo signal; with neither it counts as
 geodata ("undecided" in the classification, so that ``report --classify`` can show the borderline cases). The extent
-and the publisher are weak geo signals (Otto, 23.11.2026): they keep no find of a statistics office and no software.
+and the publisher are weak geo signals (Otto, 23.11.2026): they keep no find of a statistics office, of a publisher
+without geodata, with a strong non-geo word (24.11.2026) and no software.
 The signals and the words live in ``backend/catalog/geodata.yaml``; the code only reads them. Pure: no database, no
 request.
 """
@@ -23,7 +24,16 @@ from earthx.catalog.glossary import normalize
 from earthx.discovery.enrich import Extent, region_boxes
 from earthx.discovery.extract import resource_kind
 
-__all__ = ["GEODATA_FILE", "Classified", "GeodataRule", "classify", "load_geodata_rule", "read_geodata_rule"]
+__all__ = [
+    "GEODATA_FILE",
+    "Classified",
+    "GeodataRule",
+    "Terms",
+    "classify",
+    "load_geodata_rule",
+    "parse_terms",
+    "read_geodata_rule",
+]
 
 GEODATA_FILE = CATALOG_DIR / "geodata.yaml"
 _KEYS = frozenset(
@@ -38,6 +48,7 @@ _KEYS = frozenset(
         "not_geo_publishers",
         "software_terms",
         "statistics_publishers",
+        "strong_not_geo_terms",
     }
 )
 _DATA_KINDS = frozenset({"raster", "vector", "table", "document", "service", "other"})
@@ -65,15 +76,16 @@ class Terms:
         return hits
 
 
-def _terms(values: list[str], where: str) -> Terms:
+def parse_terms(values: list[str], where: str, file: str = GEODATA_FILE.name) -> Terms:
+    """Words of a rule file: whole word sequences, ``*`` at the start for word ends, at the end for word starts."""
     sequences, ends, starts = [], [], []
     for value in values:
         if not isinstance(value, str) or not normalize(value.strip("*")):
-            raise EntryFileError(f"{GEODATA_FILE.name}: {where} holds non-blank words")
+            raise EntryFileError(f"{file}: {where} holds non-blank words")
         normal = normalize(value.strip("*"))
         if value.startswith("*") or value.endswith("*"):
             if " " in normal or (value.startswith("*") and value.endswith("*")):
-                raise EntryFileError(f"{GEODATA_FILE.name}: {where}: '*' stands at one end of one word")
+                raise EntryFileError(f"{file}: {where}: '*' stands at one end of one word")
             (ends if value.startswith("*") else starts).append(normal)
         else:
             sequences.append(tuple(normal.split()))
@@ -92,6 +104,8 @@ class GeodataRule:
     not_geo_publishers: Terms
     software_terms: Terms
     statistics_publishers: Terms
+    #: Non-geo words the weak geo signals do not outweigh (F14 = 1, Otto 24.11.2026).
+    strong_not_geo_terms: Terms
 
 
 def read_geodata_rule(path: Path) -> GeodataRule:
@@ -114,13 +128,14 @@ def read_geodata_rule(path: Path) -> GeodataRule:
         geo_data_kinds=frozenset(data["geo_data_kinds"]),
         geo_categories=frozenset(data["geo_categories"]),
         extent_share_below=float(share),
-        geo_terms=_terms(data["geo_terms"], "geo_terms"),
-        geo_publishers=_terms(data["geo_publishers"], "geo_publishers"),
+        geo_terms=parse_terms(data["geo_terms"], "geo_terms"),
+        geo_publishers=parse_terms(data["geo_publishers"], "geo_publishers"),
         not_geo_eu_themes=frozenset(data["not_geo_eu_themes"]),
-        not_geo_terms=_terms(data["not_geo_terms"], "not_geo_terms"),
-        not_geo_publishers=_terms(data["not_geo_publishers"], "not_geo_publishers"),
-        software_terms=_terms(data["software_terms"], "software_terms"),
-        statistics_publishers=_terms(data["statistics_publishers"], "statistics_publishers"),
+        not_geo_terms=parse_terms(data["not_geo_terms"], "not_geo_terms"),
+        not_geo_publishers=parse_terms(data["not_geo_publishers"], "not_geo_publishers"),
+        software_terms=parse_terms(data["software_terms"], "software_terms"),
+        statistics_publishers=parse_terms(data["statistics_publishers"], "statistics_publishers"),
+        strong_not_geo_terms=parse_terms(data["strong_not_geo_terms"], "strong_not_geo_terms"),
     )
 
 
@@ -134,7 +149,8 @@ def _area(box: tuple[float, float, float, float]) -> float:
     return ((east - west) % 360 or (360.0 if east != west else 0.0)) * (north - south)
 
 
-#: Geo signals that keep no find of a statistics office and no software (Otto, 23.11.2026).
+#: Geo signals that keep no find of a statistics office, of a publisher without geodata and no software (Otto,
+#: 23.11.2026 and 24.11.2026).
 _WEAK = ("extent:", "publisher:")
 
 
@@ -183,9 +199,11 @@ def classify(found: Mapping[str, Any], extent: Extent, *, country: str | None, r
     not_geo += [f"term:{hit}" for hit in dict.fromkeys(rule.not_geo_terms.found([title, *keywords, publisher]))]
     not_geo += [f"publisher:{hit}" for hit in dict.fromkeys(rule.not_geo_publishers.found([publisher]))]
     software = [f"software:{hit}" for hit in dict.fromkeys(rule.software_terms.found([title, *keywords]))]
-    not_geo += software
+    strong = [f"strong:{hit}" for hit in dict.fromkeys(rule.strong_not_geo_terms.found([title, *keywords]))]
+    not_geo += software + strong
     weak_only = bool(geo) and all(signal.startswith(_WEAK) for signal in geo)
-    overruled = weak_only and bool(not_geo) and (bool(software) or bool(rule.statistics_publishers.found([publisher])))
+    without_geodata = rule.statistics_publishers.found([publisher]) or rule.not_geo_publishers.found([publisher])
+    overruled = weak_only and bool(not_geo) and (bool(software) or bool(strong) or bool(without_geodata))
     if overruled:
         return Classified("not_geodata", tuple(geo), tuple(not_geo), weak_overruled=True)
     if geo:

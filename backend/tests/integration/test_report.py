@@ -193,7 +193,20 @@ class World:
         document.update(decision="approved", decided_on=decided, excluded_rules=list(excluded), revoked_on=revoked)
         path.write_text(yaml.safe_dump(document, sort_keys=False, allow_unicode=True), encoding="utf-8")
 
-    def publish(self):  # type: ignore[no-untyped-def]
+    def pass_links(self) -> None:
+        """Every link of these sources passed the automatic check with its current address (M5-67)."""
+        self.conn.execute(
+            "INSERT INTO public.earthx_link_check (dataset_id, url, host, pattern, outcome, reason, checked_at)"
+            " SELECT dataset_id, content -> 'earthx:listing' ->> 'source_url', link_host, link_host, 'passed', 'ok',"
+            " now() FROM public.earthx_listed_entry WHERE source_id = ANY(%s) AND content IS NOT NULL"
+            " ON CONFLICT (dataset_id) DO UPDATE SET url = EXCLUDED.url, outcome = 'passed', reason = 'ok',"
+            " guarded = false",
+            (list(self.sources),),
+        )
+
+    def publish(self, *, links_pass: bool = True):  # type: ignore[no-untyped-def]
+        if links_pass:
+            self.pass_links()
         return publish(self.conn, load_approvals(self.out))
 
     def clean(self) -> None:
@@ -933,3 +946,33 @@ def test_classify_shows_the_hidden_finds_per_publisher_before_and_after(world: W
     assert result.hidden_before[office] == 0 and result.hidden_after[office] == 1
     assert f"  {office} | 0 | 1" in text
     assert "Schwache Geo-Signale, die diese Funde vorher hielten: extent 1" in text
+
+
+def test_an_entry_with_a_warning_sign_stays_out_of_the_sample_and_the_approval(world: World) -> None:
+    # M5-67 plan §5: W1 for a statistics word in the title of a find the rule keeps (here by its vector data).
+    world.put(world.ckan, _find("a"), _find("b", title="Bodenkarte und Bibliothekenstatistik"))
+    approval, markdown = world.report().files
+    document = yaml.safe_load(approval.read_text(encoding="utf-8"))
+    flagged = f"{world.ckan.source_id}.b"
+    assert document["excluded_entries"] == [flagged]
+    assert [item["dataset_id"] for item in document["sample"]] == [f"{world.ckan.source_id}.a"]
+    assert "Warnzeichen (1 Einträge bleiben draußen und warten)" in markdown.read_text(encoding="utf-8")
+    world.approve(approval)
+    world.publish()
+    assert (world.row("a")["state"], world.row("b")["state"]) == ("published", "in_review")
+
+
+def test_the_statements_of_extracted_finds_are_counted_for_new_spellings(world: World) -> None:
+    from earthx.discovery.spellings import waiting_statements
+
+    statement = f"CC BY 4.0 ({world.ckan.source_id})"
+    world.put(world.ckan, _find("a", licence_statements=[statement]), _find("b", licence_statements=[statement]))
+    world.put(world.ckan, _find("c", licence_statements=[statement]), state="gone")
+    assert waiting_statements(world.conn)[statement] == 2
+
+
+def test_a_title_with_a_mail_address_never_goes_into_the_report(world: World) -> None:
+    world.put(world.ckan, _find("a"), _find("m", title="Bodenkarte, Fragen an hans.muster@amt.example.org"))
+    approval, markdown = world.report().files
+    text = approval.read_text(encoding="utf-8") + markdown.read_text(encoding="utf-8")
+    assert "hans.muster" not in text and "Kontaktangabe" in text

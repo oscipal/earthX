@@ -4,7 +4,9 @@
 ``discovery`` derives a row per find and writes it here; nothing here derives anything. A row's own state follows
 its verdict (``ok`` → ``in_review``, ``needs_rule``, ``not_geodata``); a published row stays published while only
 describing fields change and goes back into review when its licence rule, publisher, account, delivery or the host of
-its link change (adr/0033 §11, U1). Dedupe and the stack act on all rows at once, one statement each.
+its link change (adr/0033 §11, U1). A row hidden for a failed link (``link_hidden``, M5-67) is treated as published:
+it keeps its state on describing changes, goes back into review on the others and is settled like a published row.
+Dedupe and the stack act on all rows at once, one statement each.
 """
 
 from __future__ import annotations
@@ -74,7 +76,8 @@ class HarvestedRow:
 
 _OWN_STATE = "CASE %(verdict)s WHEN 'ok' THEN 'in_review' ELSE %(verdict)s END"
 _STAYS = sql.SQL(
-    "stored.state = 'published' AND EXCLUDED.verdict = 'ok' AND ({stored}) IS NOT DISTINCT FROM ({excluded})"
+    "stored.state IN ('published', 'link_hidden') AND EXCLUDED.verdict = 'ok'"
+    " AND ({stored}) IS NOT DISTINCT FROM ({excluded})"
     # A changed grade of the licence too: never a licence statement Otto has not seen with the entry (plan A18).
     " AND stored.content -> 'earthx:license_flags' IS NOT DISTINCT FROM EXCLUDED.content -> 'earthx:license_flags'"
 ).format(
@@ -100,7 +103,7 @@ _UPSERT = sql.SQL(
                                SELECT m.outline FROM public.earthx_municipality m
                                WHERE m.code = ANY(%(footprint_codes)s::text[])) p)) AS geom) f
     ON CONFLICT (dataset_id) DO UPDATE SET
-        state = CASE WHEN {stays} THEN 'published' ELSE EXCLUDED.state END,
+        state = CASE WHEN {stays} THEN stored.state ELSE EXCLUDED.state END,
         content = CASE WHEN {stays}
                        THEN jsonb_set(EXCLUDED.content, '{{earthx:listing,approved_on}}', to_jsonb(stored.approved_on::text))
                        ELSE EXCLUDED.content END,
@@ -203,7 +206,7 @@ def settle_missing(conn: psycopg.Connection, source_id: str, blocked_keys: Seque
     with conn.cursor() as cur:
         cur.execute(
             "DELETE FROM public.earthx_listed_entry e WHERE e.source_id = %(source)s"
-            " AND e.state NOT IN ('published', 'tombstone', 'superseded')"
+            " AND e.state NOT IN ('published', 'link_hidden', 'tombstone', 'superseded')"
             " AND (e.source_key = ANY(%(blocked)s) OR NOT EXISTS (SELECT 1 FROM public.earthx_record_state s"
             "      WHERE s.source_id = e.source_id AND s.source_key = e.source_key AND s.state = 'extracted'))",
             {"source": source_id, "blocked": list(blocked_keys)},
@@ -217,7 +220,7 @@ def settle_missing(conn: psycopg.Connection, source_id: str, blocked_keys: Seque
         )
         cur.execute(
             "UPDATE public.earthx_listed_entry e SET missing_since = now() WHERE e.source_id = %s"
-            " AND e.state = 'published' AND e.missing_since IS NULL AND EXISTS (SELECT 1"
+            " AND e.state IN ('published', 'link_hidden') AND e.missing_since IS NULL AND EXISTS (SELECT 1"
             " FROM public.earthx_record_state s WHERE s.source_id = e.source_id AND s.source_key = e.source_key"
             " AND s.state = 'gone')",
             (source_id,),
@@ -228,7 +231,7 @@ def settle_missing(conn: psycopg.Connection, source_id: str, blocked_keys: Seque
                 """
             UPDATE public.earthx_listed_entry e SET {tombstone}, removed_reason = 'source_removed',
                 removed_on = current_date
-            WHERE e.source_id = %(source)s AND e.state = 'published' AND e.missing_since IS NOT NULL
+            WHERE e.source_id = %(source)s AND e.state IN ('published', 'link_hidden') AND e.missing_since IS NOT NULL
               AND EXISTS (SELECT 1 FROM public.earthx_record_state s WHERE s.source_id = e.source_id
                           AND s.source_key = e.source_key AND s.state = 'gone')
               AND EXISTS (SELECT 1 FROM public.earthx_harvest_run r WHERE r.source_id = e.source_id
@@ -247,7 +250,7 @@ def withdraw(conn: psycopg.Connection, granted: Callable[[str, str | None, tuple
     with conn.cursor() as cur:
         cur.execute(
             "SELECT DISTINCT source_id, publisher, license_ref FROM public.earthx_listed_entry"
-            " WHERE source_id <> %s AND state IN ('published', 'in_review') AND license_ref IS NOT NULL",
+            " WHERE source_id <> %s AND state IN ('published', 'link_hidden', 'in_review') AND license_ref IS NOT NULL",
             (HAND_SOURCE,),
         )
         gone = [row for row in cur.fetchall() if not granted(row[0], row[1], tuple(row[2].split("+")))]
@@ -257,7 +260,7 @@ def withdraw(conn: psycopg.Connection, granted: Callable[[str, str | None, tuple
                 "UPDATE public.earthx_listed_entry SET state = 'needs_rule', verdict = 'needs_rule',"
                 " waiting_reason = 'not_granted', approval_file = NULL, approval_sha256 = NULL, approved_on = NULL,"
                 " published_at = NULL, derived_sha256 = NULL WHERE source_id = %s AND publisher IS NOT DISTINCT FROM %s"
-                " AND license_ref = %s AND state IN ('published', 'in_review')",
+                " AND license_ref = %s AND state IN ('published', 'link_hidden', 'in_review')",
                 (source_id, publisher, refs),
             )
             count += cur.rowcount

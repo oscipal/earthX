@@ -249,6 +249,7 @@ forbidden_modules =
     earthx.catalog.harvest_store
     earthx.catalog.hosts
     earthx.catalog.licences
+    earthx.catalog.link_checks
     earthx.catalog.listed
     earthx.catalog.listed_search
     earthx.catalog.listed_store

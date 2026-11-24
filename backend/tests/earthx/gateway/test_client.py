@@ -210,6 +210,16 @@ async def test_a_redirect_within_the_allowlist_is_followed() -> None:
         response = await gateway.get(URL)
     assert response.json() == {"hop": "/v1/items"}
     assert [request.headers["host"] for request in seen] == [HOST, OTHER]
+    # Where the link landed (M5-67): the address after the redirects, the host a name, never the resolved address.
+    assert response.url == f"https://{OTHER}/v1/items"
+
+
+async def test_a_response_without_a_redirect_names_its_own_address() -> None:
+    handler, _ = replies(httpx.Response(200, json={}))
+    gateway, _ = build(handler)
+    async with gateway:
+        response = await gateway.get(URL, params={"limit": 1})
+    assert response.url == f"{URL}?limit=1"
 
 
 @pytest.mark.parametrize("location", ["https://evil.tld/v1", f"http://{OTHER}/v1", f"https://{OTHER}:8443/v1"])

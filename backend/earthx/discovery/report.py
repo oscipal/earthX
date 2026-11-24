@@ -69,6 +69,7 @@ from earthx.discovery.enrich import (
     time_span,
 )
 from earthx.discovery.extract import resource_kind
+from earthx.discovery.flags import Flag, FlagEntry, flags_of, load_flag_rules
 from earthx.discovery.geodata import GEODATA_FILE, Classified, GeodataRule, classify, load_geodata_rule
 from earthx.discovery.links import api_pattern
 from earthx.logging import configure_logging
@@ -935,9 +936,34 @@ def _rows(conn: psycopg.Connection, ids: Sequence[str]) -> dict[str, dict[str, A
         return {row[0]: dict(zip(names, row[1:], strict=True)) for row in cur.fetchall()}
 
 
-def stack_sample(conn: psycopg.Connection, stack: Stack) -> list[dict[str, Any]]:
-    """N2 (adr/0033 §8.2): 15 aimed (rules, hosts, ways of access new to the source, largest first), 15 at random."""
-    ids = [entry[0] for entry in stack.entries]
+def stack_flags(conn: psycopg.Connection, stack: Stack) -> dict[str, tuple[Flag, ...]]:
+    """The warning signs of the entries of ``stack`` that have one (M5-67 plan §5): they stay out of the sample and
+    out of the approval."""
+    rules, rule = load_flag_rules(), load_geodata_rule()
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT dataset_id, coalesce(content->>'title', ''), coalesce(content->>'description', ''), keywords,"
+            " coalesce(publisher, ''), category, data_kind, coalesce(content->'earthx:listing'->>'source_url', '')"
+            " FROM public.earthx_listed_entry WHERE dataset_id = ANY(%s)",
+            ([entry[0] for entry in stack.entries],),
+        )
+        rows = cur.fetchall()
+    found = {}
+    for dataset_id, title, description, keywords, publisher, category, data_kind, link in rows:
+        entry = FlagEntry(dataset_id, title, description, tuple(keywords or ()), publisher, category, data_kind, link)
+        flags = flags_of(entry, rules, rule)
+        if flags:
+            found[dataset_id] = flags
+    return found
+
+
+def stack_sample(
+    conn: psycopg.Connection, stack: Stack, flagged: Iterable[str] = ()
+) -> list[dict[str, Any]]:
+    """N2 (adr/0033 §8.2): 15 aimed (rules, hosts, ways of access new to the source, largest first), 15 at random;
+    never an entry with a warning sign (``flagged``), which stays out anyway."""
+    left_out = set(flagged)
+    ids = [entry[0] for entry in stack.entries if entry[0] not in left_out]
     if len(ids) <= SAMPLE_RANDOM + SAMPLE_AIMED:
         return [{"dataset_id": i, "why": "all"} for i in ids]
     rows = _rows(conn, ids)
@@ -987,7 +1013,9 @@ def _pairs(conn: psycopg.Connection, source_id: str, seed: str) -> list[tuple[st
     return _sample(pairs, SAMPLE_PAIRS, seed)
 
 
-def approval_document(source: SourceConfig, stack: Stack, sample: list[dict[str, Any]], rows, day: date) -> dict:  # type: ignore[no-untyped-def]
+def approval_document(  # type: ignore[no-untyped-def]
+    source: SourceConfig, stack: Stack, sample: list[dict[str, Any]], rows, day: date, excluded: Sequence[str] = ()
+) -> dict:
     return {
         "source_id": source.source_id,
         "batch_id": stack.batch_id,
@@ -1009,6 +1037,7 @@ def approval_document(source: SourceConfig, stack: Stack, sample: list[dict[str,
             }
             for item in sample
         ],
+        "excluded_entries": sorted(excluded),
     }
 
 
@@ -1024,13 +1053,39 @@ _APPROVAL_HEAD = """\
 # the report beside this file: open each link, compare licence, publisher, access, extent and that it is geodata; set
 # `ok: true` or `ok: false` for every entry. Then set `decision` (approved or rejected) and `decided_on` (the day).
 # `excluded_rules` takes licence rules whose entries stay out; `revoked_on` hides again what this file published.
-# Never a name, an address or the words of a request here: the repository is public.
+# `excluded_entries` are entries with a warning sign (M5-67 plan §5, in the report); they stay out and wait.
+# Only entries whose own link passed the automatic check become visible (M5-67 plan §4). Never a name, an address or the words of a request here: the repository is public.
 """
 
 
-def report_markdown(
-    source: SourceConfig, result: ReportResult, sample: list[dict[str, Any]], rows, pairs, day: date
-) -> str:  # type: ignore[no-untyped-def]
+def _flag_lines(flagged: Mapping[str, tuple[Flag, ...]], rows: Mapping[str, Mapping[str, Any]]) -> list[str]:
+    """Per code the number of entries and up to ten of them, sorted, with the word that gave the sign."""
+    by_code: dict[str, list[tuple[str, str]]] = {}
+    for dataset_id, flags in sorted(flagged.items()):
+        for flag in flags:
+            by_code.setdefault(flag.code, []).append((dataset_id, flag.why))
+    lines = []
+    for code, items in sorted(by_code.items()):
+        lines.append(f"- {code}: {len(items)}")
+        for dataset_id, why in items[:10]:
+            row = rows.get(dataset_id, {})
+            if any(flag.code == "W6" for flag in flagged[dataset_id]):
+                # A mail address or a phone number in the title or the description never goes into the repository.
+                lines.append(f"  - {dataset_id} (Titel und Link nicht gezeigt: Kontaktangabe) — `{why}`")
+            else:
+                lines.append(f"  - {row.get('title', dataset_id)} — <{row.get('source_url', '')}> — `{why}`")
+    return lines or ["- keine"]
+
+
+def report_markdown(  # type: ignore[no-untyped-def]
+    source: SourceConfig,
+    result: ReportResult,
+    sample: list[dict[str, Any]],
+    rows,
+    pairs,
+    day: date,
+    flagged: Mapping[str, tuple[Flag, ...]] | None = None,
+) -> str:
     stack = result.stack
     assert stack is not None
     lines = [
@@ -1051,6 +1106,10 @@ def report_markdown(
         "## Warteliste (die 20 größten Paare Herausgeber, Lizenzangabe)",
         "",
         *[f"- {count} — {pub} — `{stmt}`" for (pub, stmt), count in result.pairs.most_common(20)],
+        "",
+        f"## Warnzeichen ({len(flagged or {})} Einträge bleiben draußen und warten)",
+        "",
+        *_flag_lines(flagged or {}, rows),
         "",
         "## Stichprobe (in der Freigabedatei abhaken)",
         "",
@@ -1087,8 +1146,9 @@ def write_files(
     stack = result.stack
     if stack is None or (not stack.created and _has_file(out, stack.fingerprint)):
         return ()
-    sample = stack_sample(conn, stack)
-    rows = _rows(conn, [item["dataset_id"] for item in sample])
+    flagged = stack_flags(conn, stack)
+    sample = stack_sample(conn, stack, flagged)
+    rows = _rows(conn, [item["dataset_id"] for item in sample] + sorted(flagged))
     pairs = _pairs(conn, source.source_id, stack.fingerprint)
     out.mkdir(parents=True, exist_ok=True)
     stem, number = f"{day.isoformat()}-{source.source_id}", 1
@@ -1096,10 +1156,10 @@ def write_files(
         number += 1
         stem = f"{day.isoformat()}-{source.source_id}-{number}"
     approval = out / f"{stem}.yaml"
-    document = approval_document(source, stack, sample, rows, day)
+    document = approval_document(source, stack, sample, rows, day, excluded=list(flagged))
     approval.write_text(_APPROVAL_HEAD + yaml.dump(document, Dumper=_PlainDumper, sort_keys=False, allow_unicode=True), encoding="utf-8")
     markdown = out / f"{stem}.md"
-    markdown.write_text(report_markdown(source, result, sample, rows, pairs, day), encoding="utf-8")
+    markdown.write_text(report_markdown(source, result, sample, rows, pairs, day, flagged), encoding="utf-8")
     return approval, markdown
 
 
