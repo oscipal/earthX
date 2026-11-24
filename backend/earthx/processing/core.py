@@ -531,12 +531,21 @@ def _classes_of(source: Source) -> tuple[ClassRow, ...] | None:
 
 
 def _keep_classes(meta: RasterMeta, steps: Sequence[PlannedStep]) -> RasterMeta:
-    """``meta`` with its classes only where every step passes the values on (plan §6, the rule of nodata and type): a
-    step that changes values, such as Band math or Normalize, leaves no band of the result with classes. The grid the
-    core reads every band onto is drawn with ``nearest``, which keeps them."""
-    if all(step.operator.passes_values(step.params) for step in steps):
-        return meta
-    return replace(meta, bands=tuple(replace(band, classes=None) for band in meta.bands))
+    """``meta`` with the classes of each band only while no step changes its values (plan §6, Otto 24.11.2026: per band).
+
+    A step that passes the values on changes none; any other changes the band it adds (Band math), the bands it acts on
+    (Normalize), or every band where it names none. The grid the core reads every band onto is drawn with ``nearest``,
+    which keeps them. A band a step adds has no classes to begin with.
+    """
+    changed: set[str] = set()
+    for step in steps:
+        if step.operator.passes_values(step.params):
+            continue
+        use = step.operator.bands_used(step.params)
+        if use.adds is None and use.acts_on is None:
+            return replace(meta, bands=tuple(replace(band, classes=None) for band in meta.bands))
+        changed |= {use.adds} if use.adds is not None else set(use.acts_on or ())
+    return replace(meta, bands=tuple(replace(band, classes=None) if band.name in changed else band for band in meta.bands))
 
 
 def _properties(
