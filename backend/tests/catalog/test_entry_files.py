@@ -226,9 +226,10 @@ def test_to_plain_writes_enums_dates_and_sets_as_plain_values() -> None:
     plain = to_plain(COP_DEM_GLO_30)
     assert plain["license"]["tier"] == LicenseTier.PROCESSING.value
     assert plain["temporal_extent"]["start"] == COP_DEM_GLO_30.temporal_extent.start.isoformat()
-    # In the order of the dataclass; a field left at its default (the DEM has no band of classes, no look of its own) is
-    # left out.
-    assert list(plain) == [name for name in COP_DEM_GLO_30.__dataclass_fields__ if name not in ("band_classes", "band_looks")]
+    # In the order of the dataclass; a field left at its default (the DEM has no band of classes, no look of its own, no
+    # scaling) is left out.
+    left_out = ("band_classes", "band_looks", "band_scaling")
+    assert list(plain) == [name for name in COP_DEM_GLO_30.__dataclass_fields__ if name not in left_out]
 
 
 def test_an_instant_without_a_time_zone_is_an_error(tmp_path: Path) -> None:

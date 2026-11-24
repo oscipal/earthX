@@ -16,10 +16,12 @@ from earthx.catalog.entry_files import EntryFileError, load_entry, to_plain
 from earthx.catalog.registry import (
     DEFAULT_LOOK,
     UNIT_LOOKS,
+    UNSCALED,
     AssetSelection,
     BandClass,
     BandClasses,
     BandLook,
+    BandScaling,
     ClassColours,
     ConfigError,
     DefaultRender,
@@ -173,6 +175,118 @@ class TestTheOrder:
         assert entry.look_of("red") is None
         assert entry.look_of("thumb") is None
         assert entry.look_of("nir") is None
+
+
+class TestTheScaling:
+    """M5-60 F8 and A8 (Otto, 24.11.2026): the range of the standard picture is in the stored numbers its tiles draw, a
+    look in the unit of the band."""
+
+    REFLECTANCE = BandScaling(0.0001, -0.1)
+
+    def _first_present(self, rescale) -> DefaultRender:
+        return DefaultRender(
+            title="Co-polarisation",
+            assets=("red", "green"),
+            rescale=rescale,
+            colormap_name="magma",
+            expression=None,
+            resampling="nearest",
+            asset_selection=AssetSelection.FIRST_PRESENT,
+        )
+
+    def test_sentinel_2_names_the_scaling_of_its_source(self) -> None:
+        entry = REGISTRY.get("sentinel-2-c1-l2a")
+        for band in ("coastal", "red", "nir08", "swir22"):
+            assert entry.scaling_of(band) == self.REFLECTANCE
+        assert entry.scaling_of("aot") == entry.scaling_of("wvp") == BandScaling(0.001, 0.0)
+        for band in ("cloud", "snow", "scl"):
+            assert entry.scaling_of(band) == UNSCALED
+
+    def test_a_band_without_scaling_is_stored_in_its_unit(self, valid_config) -> None:
+        assert valid_config.scaling_of("red") == UNSCALED
+
+    def test_the_standard_range_of_a_scaled_band_is_turned_into_its_unit(self, valid_config) -> None:
+        entry = replace(
+            valid_config,
+            default_render=_one_band_standard(valid_config, rescale=((1000.0, 4000.0),)),
+            band_scaling={"red": self.REFLECTANCE},
+        )
+        for band in ("red", "green", "blue"):
+            resolved = entry.look_of(band)
+            assert (resolved.look, resolved.origin) == (Look("magma", "fixed", 0.0, 0.3), LookOrigin.STANDARD)
+        published = {band["name"]: band for band in to_stac_collection(entry)["earthx:bands"]}
+        assert published["green"]["earthx:look"] == {"colormap": "magma", "scale": "fixed", "low": 0.0, "high": 0.3}
+
+    def test_the_first_present_of_several_assets_gives_its_look_where_their_scaled_ranges_agree(self, valid_config) -> None:
+        entry = replace(
+            valid_config,
+            default_render=self._first_present(((1000.0, 4000.0), (0.0, 0.3))),
+            band_scaling={"red": self.REFLECTANCE},
+        )
+        assert entry.look_of("blue").look == Look("magma", "fixed", 0.0, 0.3)
+
+    def test_scaled_ranges_that_differ_stop_the_entry(self, valid_config) -> None:
+        with pytest.raises(ConfigError, match=r"differ once scaled \(red 0 to 0.3, green 0 to 3000\).*set band_looks for blue, green, red"):
+            replace(
+                valid_config,
+                default_render=self._first_present(((1000.0, 4000.0), (1000.0, 4000.0))),
+                band_scaling={"red": self.REFLECTANCE, "green": BandScaling(1.0, -1000.0)},
+            )
+
+    def test_looks_of_their_own_let_the_entry_load(self, valid_config) -> None:
+        own = BandLook(LookOrigin.STAC, "fixed", 0.0, 0.3)
+        entry = replace(
+            valid_config,
+            default_render=self._first_present(((1000.0, 4000.0), (1000.0, 4000.0))),
+            band_scaling={"red": self.REFLECTANCE},
+            band_looks={"red": own, "green": own, "blue": own},
+        )
+        assert {entry.look_of(band).origin for band in ("red", "green", "blue")} == {LookOrigin.STAC}
+
+    def test_a_missing_look_of_its_own_still_stops_the_entry(self, valid_config) -> None:
+        own = BandLook(LookOrigin.STAC, "fixed", 0.0, 0.3)
+        with pytest.raises(ConfigError, match="set band_looks for blue$"):
+            replace(
+                valid_config,
+                default_render=self._first_present(((1000.0, 4000.0), (1000.0, 4000.0))),
+                band_scaling={"red": self.REFLECTANCE},
+                band_looks={"red": own, "green": own},
+            )
+
+    @pytest.mark.parametrize(
+        ("scaling", "match"),
+        [
+            ({"nir": BandScaling(0.0001, -0.1)}, "no band of band_units"),
+            ({"red": BandScaling(0.0, 0.0)}, "scale above 0"),
+            ({"red": BandScaling(-0.0001, 0.0)}, "scale above 0"),
+            ({"red": BandScaling(math.nan, 0.0)}, "finite scale"),
+            ({"red": BandScaling(0.0001, math.inf)}, "finite offset"),
+        ],
+        ids=["unknown band", "zero", "negative", "nan", "infinite offset"],
+    )
+    def test_a_wrong_scaling_is_refused(self, valid_config, scaling, match) -> None:
+        with pytest.raises(ConfigError, match=match):
+            replace(valid_config, band_scaling=scaling)
+
+    def test_a_band_of_classes_has_no_scaling(self, valid_config) -> None:
+        with pytest.raises(ConfigError, match="no band of band_units"):
+            replace(
+                valid_config,
+                band_units={**valid_config.band_units, "red": None},
+                band_classes={"red": BandClasses(ClassColours.PALETTE, None, (BandClass(1, "Water"),))},
+                band_scaling={"red": BandScaling(2.0, 0.0)},
+            )
+
+    def test_a_scaling_is_read_strictly_from_the_file(self, tmp_path: Path) -> None:
+        data = to_plain(COP_DEM_GLO_30)
+        data["band_scaling"] = {"data": {"scale": 0.5, "offset": -10}}
+        path = tmp_path / f"{COP_DEM_GLO_30.dataset_id}.yaml"
+        path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+        assert load_entry(path).scaling_of("data") == BandScaling(0.5, -10.0)
+        data["band_scaling"] = {"data": {"scale": "0.5", "offset": 0}}
+        path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+        with pytest.raises(EntryFileError):
+            load_entry(path)
 
 
 class TestTheChecks:
