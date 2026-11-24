@@ -418,9 +418,9 @@ async def test_a_new_extractor_version_judges_unchanged_finds_again(
     await run_harvest(db, source, gateway=_gateway(Catalogue(THREE)))
     monkeypatch.setattr(harvest_module, "extractor_version", lambda source: "next-version")
 
-    def lenient(key: str, document: dict[str, Any], source: SourceConfig) -> Any:
+    def lenient(key: str, document: dict[str, Any], source: SourceConfig, shared: frozenset[str]) -> Any:
         # The new extractor accepts a collection without a title.
-        return _extract(key, {**document, "title": document.get("title") or "Untitled"}, source)
+        return _extract(key, {**document, "title": document.get("title") or "Untitled"}, source, shared)
 
     monkeypatch.setitem(harvest_module._EXTRACTORS, SourceProtocol.STAC_API, lenient)
     result = await run_harvest(db, source, gateway=_gateway(Catalogue(THREE)))
@@ -454,3 +454,176 @@ def test_listed_entries_point_to_their_run(require_postgres_env: None) -> None:
             "SELECT confrelid::regclass::text FROM pg_constraint WHERE conname = 'earthx_listed_entry_run_fk'"
         ).fetchone()
     assert row == ("earthx_harvest_run",)
+
+
+# --- Collective pages (Otto, 21.11.2026): an address that more than one find of the source names -------------------
+
+PAGE = "https://geo.example.ch/themen/projekte"
+
+
+def _naming(key: str, page: str | None = PAGE) -> dict[str, Any]:
+    links = [] if page is None else [{"rel": "about", "href": page, "type": "text/html"}]
+    return _collection(key, links=links)
+
+
+def _links(db: psycopg.Connection, source: SourceConfig) -> dict[str, tuple[str, int]]:
+    rows = db.execute(
+        "SELECT source_key, extracted->>'source_url', (extracted->>'source_rank')::int"
+        " FROM public.earthx_record_state WHERE source_id = %s AND state = 'extracted'",
+        (source.source_id,),
+    ).fetchall()
+    return {key: (url, rank) for key, url, rank in rows}
+
+
+def _catalogue_page(key: str) -> tuple[str, int]:
+    return f"https://stac.example.org/browser/#/collections/{key}", 3
+
+
+async def test_two_finds_naming_the_same_page_both_take_the_catalogue_page(
+    db: psycopg.Connection, source: SourceConfig
+) -> None:
+    own = "https://geo.example.ch/themen/gewaesser"
+    catalogue = Catalogue([_naming("a"), _naming("b"), _naming("c", own)], size=10)
+    result = await run_harvest(db, source, gateway=_gateway(catalogue))
+    assert _links(db, source) == {"a": _catalogue_page("a"), "b": _catalogue_page("b"), "c": (own, 2)}
+    # They are new in this run: derived a second time at its end, and counted once.
+    assert (result.counts.found_new, result.counts.found_changed, result.links_settled) == (3, 0, 2)
+    assert "Link „Source“ neu abgeleitet wegen einer Sammelseite" in report(source, result)
+
+
+async def test_a_page_of_one_part_is_never_a_link(db: psycopg.Connection, source: SourceConfig) -> None:
+    catalogue = Catalogue([_naming("a", "https://www.sz.ch/agi"), _naming("b", "https://www.sz.ch/agi?filter=b")])
+    result = await run_harvest(db, source, gateway=_gateway(catalogue))
+    assert _links(db, source) == {"a": _catalogue_page("a"), "b": ("https://www.sz.ch/agi?filter=b", 2)}
+    assert result.links_settled == 0
+
+
+async def test_a_find_that_comes_later_makes_a_page_collective(db: psycopg.Connection, source: SourceConfig) -> None:
+    await run_harvest(db, source, gateway=_gateway(Catalogue([_naming("a")])))
+    assert _links(db, source) == {"a": (PAGE, 2)}
+    result = await run_harvest(db, source, gateway=_gateway(Catalogue([_naming("a"), _naming("b")])))
+    # `a` did not change, but its page is no longer its own: it is derived again, and counted as changed.
+    assert _links(db, source) == {"a": _catalogue_page("a"), "b": _catalogue_page("b")}
+    assert (result.counts.found_new, result.counts.found_changed, result.links_settled) == (1, 1, 2)
+    assert ("source_url", 1) in result.changed_fields
+
+
+async def test_a_page_stops_being_collective_when_the_other_find_goes(
+    db: psycopg.Connection, source: SourceConfig
+) -> None:
+    await run_harvest(db, source, gateway=_gateway(Catalogue([_naming("a"), _naming("b")])))
+    assert _links(db, source) == {"a": _catalogue_page("a"), "b": _catalogue_page("b")}
+    result = await run_harvest(db, source, gateway=_gateway(Catalogue([_naming("a")])))
+    assert result.counts.gone == 1
+    assert _links(db, source) == {"a": (PAGE, 2)}
+
+
+async def test_a_run_that_ended_early_settles_what_it_read(db: psycopg.Connection, source: SourceConfig) -> None:
+    catalogue = Catalogue([_naming("a"), _naming("b"), _naming("c", "https://geo.example.ch/themen/x")], size=2)
+    result = await run_harvest(db, replace(source, max_requests_per_run=1), gateway=_gateway(catalogue))
+    assert result.stop_reason == "request_budget"
+    assert _links(db, source) == {"a": _catalogue_page("a"), "b": _catalogue_page("b")}
+
+
+async def test_a_find_left_with_a_stale_link_is_mended_by_the_next_run(
+    db: psycopg.Connection, source: SourceConfig
+) -> None:
+    # A run that did not get to settle (killed, or from before the rule) leaves `a` on a page `b` names as well.
+    catalogue = Catalogue([_naming("a"), _naming("b")])
+    await run_harvest(db, source, gateway=_gateway(catalogue))
+    db.execute(
+        "UPDATE public.earthx_record_state SET extracted = extracted || %s::jsonb"
+        " WHERE source_id = %s AND source_key = 'a'",
+        (json.dumps({"source_url": PAGE, "source_rank": 2}), source.source_id),
+    )
+    assert _links(db, source)["a"] == (PAGE, 2)
+    result = await run_harvest(db, source, gateway=_gateway(catalogue))
+    assert _links(db, source)["a"] == _catalogue_page("a") and result.links_settled == 1
+    again = await run_harvest(db, source, gateway=_gateway(catalogue))
+    assert again.links_settled == 0
+
+
+async def test_a_reextract_derives_with_the_collective_pages_of_the_source(
+    db: psycopg.Connection, source: SourceConfig
+) -> None:
+    catalogue = Catalogue([_naming("a"), _naming("b")])
+    await run_harvest(db, source, gateway=_gateway(catalogue))
+    result = await run_harvest(db, source, gateway=None, reextract=True)
+    assert (result.counts.requests, result.counts.found_changed, result.links_settled) == (0, 0, 0)
+    assert _links(db, source) == {"a": _catalogue_page("a"), "b": _catalogue_page("b")}
+
+
+async def test_a_find_whose_only_page_is_collective_is_invalid_until_it_is_alone(
+    db: psycopg.Connection, source: SourceConfig
+) -> None:
+    no_catalogue = replace(source, catalog_page=None)
+    first = await run_harvest(db, no_catalogue, gateway=_gateway(Catalogue([_naming("a"), _naming("b")])))
+    assert first.summary.invalid == {"no_link": 2} and first.summary.extracted == 0
+    second = await run_harvest(db, no_catalogue, gateway=_gateway(Catalogue([_naming("a")])))
+    assert _states(db, source)["a"][0] == "extracted" and second.summary.extracted == 1
+    assert _links(db, source) == {"a": (PAGE, 2)}
+
+
+async def test_the_pages_of_another_source_do_not_count(db: psycopg.Connection, source: SourceConfig) -> None:
+    other = replace(source, source_id=f"t-{uuid.uuid4().hex[:12]}")
+    try:
+        await run_harvest(db, other, gateway=_gateway(Catalogue([_naming("a")])))
+        await run_harvest(db, source, gateway=_gateway(Catalogue([_naming("a")])))
+        assert _links(db, source) == {"a": (PAGE, 2)} and _links(db, other) == {"a": (PAGE, 2)}
+    finally:
+        for table in (
+            "earthx_state_transition",
+            "earthx_record_state",
+            "earthx_raw_record",
+            "earthx_harvest_source",
+            "earthx_harvest_run",
+        ):
+            db.execute(f"DELETE FROM public.{table} WHERE source_id = %s", (other.source_id,))
+
+
+async def test_the_links_a_find_could_take_are_kept_in_its_intermediate_form(
+    db: psycopg.Connection, source: SourceConfig
+) -> None:
+    await run_harvest(db, replace(source, catalog_page=None), gateway=_gateway(Catalogue([_naming("a"), _naming("b")])))
+    rows = dict(
+        db.execute(
+            "SELECT source_key, extracted FROM public.earthx_record_state WHERE source_id = %s", (source.source_id,)
+        ).fetchall()
+    )
+    # No free link and no catalogue page: invalid, with nothing but the links it could have taken.
+    assert rows == {"a": {"link_candidates": [[2, PAGE]]}, "b": {"link_candidates": [[2, PAGE]]}}
+    await run_harvest(db, source, gateway=_gateway(Catalogue([_naming("a", "https://geo.example.ch/themen/a")])))
+    row = db.execute(
+        "SELECT extracted->'link_candidates' FROM public.earthx_record_state"
+        " WHERE source_id = %s AND source_key = 'a'",
+        (source.source_id,),
+    ).fetchone()
+    assert row == ([[2, "https://geo.example.ch/themen/a"]],)
+
+
+async def test_the_run_reads_a_raw_answer_only_of_a_find_it_derives_again(
+    db: psycopg.Connection, source: SourceConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Otto, 21.11.2026: the rule works on the intermediate forms; an incremental run is no dearer for it.
+    catalogue = Catalogue(
+        [_naming("a"), _naming("b", "https://geo.example.ch/themen/b"), _naming("c", "https://geo.example.ch/themen/c")]
+    )
+    await run_harvest(db, source, gateway=_gateway(catalogue))
+    asked: list[list[str]] = []
+    real = harvest_module.raw_of_keys
+
+    def spy(conn: psycopg.Connection, source_id: str, keys: Any) -> Any:
+        asked.append(list(keys))
+        return real(conn, source_id, keys)
+
+    def forbidden(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("a raw answer was read for the index")
+
+    monkeypatch.setattr(harvest_module, "raw_of_keys", spy)
+    monkeypatch.setattr(harvest_module, "raw_records", forbidden)
+    result = await run_harvest(db, source, gateway=_gateway(catalogue))
+    assert (result.counts.found_unchanged, result.links_settled, asked) == (3, 0, [])
+    # `d` names the page of `b`: `b` and `d` are derived again, `a` and `c` are not read.
+    later = Catalogue([*catalogue.collections, _naming("d", "https://geo.example.ch/themen/b")])
+    await run_harvest(db, source, gateway=_gateway(later))
+    assert asked == [["b", "d"]]

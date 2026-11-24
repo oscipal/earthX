@@ -10,9 +10,14 @@ collection pages within one source, never the same dataset across sources):
   collections it lists, M7). Only ids with two dots or more are looked for in addresses (``ch.swisstopo.x``): a short
   id such as ``sentinel-2-l2a`` is too common a word. A find whose addresses name several collections gets none.
 
-Finds that share a key, directly or through others, are one group; its main entry is the one first by rank (full
-entry, hand entry, then the source's ``dedupe_rank``, the rank of the link "Source", a footprint, the source and the
-key). Pure: no database, no request.
+A DOI or identifier is a key only where it is unique (Otto, 23.11.2026): on at most one find of each source and on at
+most :data:`MAX_SHARED` finds in all. Two finds of one source with the same DOI or identifier are two datasets that
+share a placeholder of their portal, not one dataset twice.
+
+A find is a duplicate only of a main entry it shares a key with itself, never through a chain of other finds (Otto,
+23.11.2026: a chain joined datasets that share no key). The finds are taken by rank (full entry, hand entry, then the
+source's ``dedupe_rank``, the rank of the link "Source", a footprint, the source and the key); each one not yet placed
+becomes a main entry and takes every unplaced find that shares one of its keys. Pure: no database, no request.
 """
 
 from __future__ import annotations
@@ -22,7 +27,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-__all__ = ["MAX_SHARED", "Member", "collection_tokens", "find_keys", "main_entries", "namespaced"]
+__all__ = ["MAX_SHARED", "Member", "collection_tokens", "find_keys", "main_entries", "namespaced", "shared_key"]
 
 #: How an address is cut into tokens: an id is whole between these.
 _DELIMITERS = re.compile(r"[/?&=#,;:\s|]+")
@@ -69,11 +74,13 @@ def find_keys(
 
 @dataclass(frozen=True, slots=True)
 class Member:
-    """One entry that takes part in dedupe; ``rank`` orders a group (the smallest is the main entry)."""
+    """One entry that takes part in dedupe; ``rank`` orders the entries (the smallest is a main entry first).
+    ``source`` is the source of a harvested find, ``None`` for a full or hand entry."""
 
     dataset_id: str
     keys: tuple[str, ...]
     rank: tuple[Any, ...]
+    source: str | None = None
 
 
 #: A DOI or identifier on more finds than this is a placeholder of a portal ("1", the portal's address), no key: a
@@ -81,38 +88,44 @@ class Member:
 MAX_SHARED = 5
 
 
+def _usable(members: list[Member]) -> set[str]:
+    """The keys that are unique: a collection id always; a DOI or identifier on at most one find of each source and on
+    at most :data:`MAX_SHARED` finds in all."""
+    total: dict[str, int] = {}
+    per_source: dict[tuple[str | None, str], int] = {}
+    for member in members:
+        for key in member.keys:
+            total[key] = total.get(key, 0) + 1
+            if member.source is not None:
+                per_source[(member.source, key)] = per_source.get((member.source, key), 0) + 1
+    repeated = {key for (_source, key), count in per_source.items() if count > 1}
+    return {k for k, n in total.items() if k.startswith("coll:") or (n <= MAX_SHARED and k not in repeated)}
+
+
 def main_entries(members: Iterable[Member]) -> dict[str, str]:
-    """For every member that is not the main entry of its group, the id of that main entry."""
+    """For every member that is not a main entry, the id of the main entry it shares a key with."""
     members = list(members)
-    shared: dict[str, int] = {}
+    usable = _usable(members)
+    by_key: dict[str, list[Member]] = {}
     for member in members:
         for key in member.keys:
-            shared[key] = shared.get(key, 0) + 1
-    usable = {k for k, n in shared.items() if n <= MAX_SHARED or k.startswith("coll:")}
-    members = [Member(m.dataset_id, tuple(k for k in m.keys if k in usable), m.rank) for m in members]
-    parent: dict[str, str] = {}
-
-    def root(item: str) -> str:
-        while parent.setdefault(item, item) != item:
-            parent[item] = parent[parent[item]]
-            item = parent[item]
-        return item
-
-    by_key: dict[str, str] = {}
-    for member in members:
-        root(member.dataset_id)
-        for key in member.keys:
-            if key in by_key:
-                parent[root(member.dataset_id)] = root(by_key[key])
-            else:
-                by_key[key] = member.dataset_id
-    groups: dict[str, list[Member]] = {}
-    for member in members:
-        groups.setdefault(root(member.dataset_id), []).append(member)
+            if key in usable:
+                by_key.setdefault(key, []).append(member)
+    placed: set[str] = set()
     duplicates: dict[str, str] = {}
-    for group in groups.values():
-        if len(group) < 2:
+    for main in sorted(members, key=lambda m: (m.rank, m.dataset_id)):
+        if main.dataset_id in placed:
             continue
-        main = min(group, key=lambda m: (m.rank, m.dataset_id))
-        duplicates.update({m.dataset_id: main.dataset_id for m in group if m is not main})
+        placed.add(main.dataset_id)
+        for key in main.keys:
+            for other in by_key.get(key, ()):
+                if other.dataset_id not in placed:
+                    placed.add(other.dataset_id)
+                    duplicates[other.dataset_id] = main.dataset_id
     return duplicates
+
+
+def shared_key(duplicate: Iterable[str], main: Iterable[str]) -> str | None:
+    """The first key a duplicate and its main entry share, for the report; ``None`` where they share none."""
+    common = sorted(set(duplicate) & set(main))
+    return common[0] if common else None

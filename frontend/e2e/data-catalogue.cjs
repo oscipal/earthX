@@ -11,7 +11,8 @@
 //   - search field and "Filters" are not in the head of the window, or the pop-up "Filters" leaves the browser window;
 //   - "Filter by search panel" is not locked without an AOI, or a field of the pop-up has no "×" that empties it;
 //   - choosing a category shows other groups, or a region is not sent with the next request;
-//   - a text in the search field does not show the hits in place of the groups, or its "×" does not bring them back;
+//   - a text in the search field does not show the hits, listed entries among them, in place of the groups, or its "×"
+//     does not bring them back;
 //   - the search panel has no tile "Add dataset" after its datasets, or the tile does not open the window;
 //   - "Add" does not put the dataset into "Search and area" and turn the pages to it, or "Remove" does not take it out;
 //   - in a narrow window the details are not a stage of their own with "Back";
@@ -83,8 +84,8 @@ const REGIONS = [
 // One page of `/stac/collections` as the API gives it: by title, a token in the body of the next link, a count.
 function pageOf(body) {
   if (typeof body.q === 'string') {
-    // The search with text: full entries only (M5-40 F7), 20 a page by offset; here the title holds the text.
-    const found = MADE_UP.filter((c) => c.title.toLowerCase().includes(body.q.toLowerCase()) && (!body.category || c['earthx:category'] === body.category));
+    // The search with text: full and listed entries (M5-42), 20 a page by offset; here the title holds the text.
+    const found = COLLECTIONS.filter((c) => c.title.toLowerCase().includes(body.q.toLowerCase()) && (!body.category || c['earthx:category'] === body.category));
     const offset = body.offset ?? 0;
     return {
       collections: found.slice(offset, offset + 20),
@@ -235,13 +236,14 @@ async function check(browser, { theme, viewport }) {
 
   // The search field: hits in rank order instead of the groups; its "×" brings the groups back.
   const search = win.locator('.catalogue-search input');
-  await search.fill('optical');
+  await search.fill('photos');
   await page.waitForTimeout(700);
   const hits = await win.locator('.catalogue-hits .catalogue-entry-title').allTextContents();
   // In the order the API ranks them (here: the order of the made-up list), not by title.
-  const ranked = MADE_UP.filter((c) => c.title.toLowerCase().includes('optical')).map((c) => c.title);
+  const ranked = COLLECTIONS.filter((c) => c.title.toLowerCase().includes('photos')).map((c) => c.title);
   expect('the hits stand in place of the groups, in the order of the API', hits.join('|') === ranked.join('|') && (await win.locator('.catalogue-group').count()) === 0, hits.join(', '));
-  expect('the text goes to the search', asked.some((b) => b.q === 'optical'));
+  expect('a listed entry is among the hits', hits.includes('Aerial photos 1950 (made up)'), hits.join(', '));
+  expect('the text goes to the search', asked.some((b) => b.q === 'photos'));
   await shot('1h-search');
   await win.locator('.catalogue-search .clear-btn').click();
   await page.waitForTimeout(500);

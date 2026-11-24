@@ -5,8 +5,8 @@
 never puts an area in a URL. Without any parameter the answer is the first page of the catalogue (M5-40 plan F3, F2):
 no request returns every collection at once.
 
-With ``q`` the ids come from :func:`~earthx.catalog.search.search_datasets` in rank order, full entries only until
-M5-42 (M5-40 plan F7); a page holds at most :data:`MAX_TEXT_PAGE` collections and goes on by ``offset``. Without ``q``
+With ``q`` the ids come from :func:`~earthx.catalog.search.search_datasets` in rank order, full and listed entries
+alike; a page holds at most :data:`MAX_TEXT_PAGE` collections and goes on by ``offset``. Without ``q``
 full and listed entries come in one order, title then id (M5-40 plan F3): the full ones of the filter from the same
 search, the listed ones a page at a time from ``earthx_listed_entry``; a page holds :data:`DEFAULT_PAGE` collections
 unless ``limit`` says otherwise, at most :data:`MAX_LISTING_PAGE`, and goes on by the keyset ``token`` of its last
@@ -45,7 +45,14 @@ from stac_fastapi.types.search import APIRequest
 from stac_pydantic.api.search import Intersection
 
 from earthx.catalog.categories import load_categories
-from earthx.catalog.listed_search import ListedFilter, count_listed, full_entries, listed_page
+from earthx.catalog.listed_search import (
+    ListedFilter,
+    count_listed,
+    full_entries,
+    listed_documents,
+    listed_page,
+    matching_listed,
+)
 from earthx.catalog.search import MAX_QUERY_CHARS, SearchResult, box_area, search_datasets
 
 #: adr/0026 §4.4: at most 20 hits per page of a text search.
@@ -368,17 +375,27 @@ async def search_collections(
     """One page of collections for ``query``; ``body`` is the POST body a next page repeats (``None`` for ``GET``)."""
     if query.text is None:
         return await _catalogue_page(request, query, body=body)
+    registry = getattr(request.app.state, "earthx_registry", None)
     async with request.app.state.earthx_cache_pool.connection() as conn:
         result: SearchResult = await search_datasets(conn, query.text, area=query.area, period=query.period)
-        ids = result.ids if query.entry != "listed" else ()
+        full = tuple(i for i in result.ids if i not in result.listed) if query.entry != "listed" else ()
         if query.category is not None:
-            registry = getattr(request.app.state, "earthx_registry", None)
-            ids = tuple(i for i in ids if registry is not None and i in registry and registry.get(i).category == query.category)
-        if query.regions and ids:
-            kept = {dataset_id for _, dataset_id in await full_entries(conn, ids, query.regions)}
-            ids = tuple(dataset_id for dataset_id in ids if dataset_id in kept)
-    page = ids[query.offset : query.offset + query.limit]
-    collections = await _collections(request, page)
+            full = tuple(i for i in full if registry is not None and i in registry and registry.get(i).category == query.category)
+        if query.regions and full:
+            kept = {dataset_id for _, dataset_id in await full_entries(conn, full, query.regions)}
+            full = tuple(dataset_id for dataset_id in full if dataset_id in kept)
+        listed: frozenset[str] = frozenset()
+        if query.entry != "full" and result.listed:
+            where = ListedFilter(category=query.category, regions=query.regions)
+            listed = await matching_listed(conn, sorted(result.listed), where)
+        ids = tuple(i for i in result.ids if i in listed or i in full)
+        page = ids[query.offset : query.offset + query.limit]
+        documents = await listed_documents(conn, [i for i in page if i in listed])
+    by_id = {c["id"]: c for c in await _collections(request, [i for i in page if i not in listed])}
+    for dataset_id, document in documents.items():
+        by_id[dataset_id] = await _with_links(request, document)
+    # An entry that a catalogue load or the harvest took back between the search and this read is not on the page.
+    collections = [by_id[i] for i in page if i in by_id]
     links = await CollectionSearchPagingLinks(request=request).get_links()
     if query.offset + query.limit < len(ids):
         links.append(_next_link(request, body, "offset", query.offset + query.limit))

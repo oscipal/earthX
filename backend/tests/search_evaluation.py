@@ -96,9 +96,11 @@ class Catalogue:
     capabilities: Mapping[str, frozenset[str]]
 
     @classmethod
-    def of(cls, registry: DatasetRegistry) -> Catalogue:
+    def of(cls, registry: DatasetRegistry, listed: Iterable[str] = ()) -> Catalogue:
+        """The full entries of ``registry`` with their capabilities, and the ``listed`` ids, which offer none."""
         return cls(
-            {
+            dict.fromkeys(listed, frozenset())
+            | {
                 entry.dataset_id: frozenset(
                     field.name
                     for field in fields(entry.capabilities)

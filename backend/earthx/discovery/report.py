@@ -56,7 +56,7 @@ from earthx.catalog.municipalities import MUNICIPALITIES_FILE
 from earthx.catalog.registry import ConfigError, LicenseInfo, doi_name
 from earthx.catalog.sources import MAX_DEDUPE_RANK, SourceConfig, SourceProtocol, read_sources
 from earthx.discovery import dedupe, enrich, geodata
-from earthx.discovery.dedupe import Member, find_keys, main_entries, namespaced
+from earthx.discovery.dedupe import Member, find_keys, main_entries, namespaced, shared_key
 from earthx.discovery.enrich import (
     PLACE_NAMES_FILE,
     Extent,
@@ -69,6 +69,7 @@ from earthx.discovery.enrich import (
 )
 from earthx.discovery.extract import resource_kind
 from earthx.discovery.geodata import GEODATA_FILE, Classified, GeodataRule, classify, load_geodata_rule
+from earthx.discovery.links import api_pattern
 from earthx.logging import configure_logging
 
 __all__ = ["Derived", "ReportResult", "derive", "main", "run_report"]
@@ -365,7 +366,7 @@ def _dedupe(conn: psycopg.Connection, sources: Mapping[str, SourceConfig]) -> di
             # A source no longer in sources/ ranks last.
             dedupe_rank = MAX_DEDUPE_RANK + 1 if source is None else source.dedupe_rank
             rank = (2, dedupe_rank, row.source_rank or 9, not row.footprint, row.source_id)
-        members.append(Member(row.dataset_id, row.keys, rank))
+        members.append(Member(row.dataset_id, row.keys, rank, row.source_id))
     return main_entries(members)
 
 
@@ -394,6 +395,18 @@ class ReportResult:
     pairs: Counter[tuple[str, str]] = field(default_factory=Counter)
     hidden: list[tuple[str, str, str]] = field(default_factory=list)
     undecided: list[tuple[str, str, str]] = field(default_factory=list)
+    #: Links "Source" that fell to another rank because the better one was a collective page (Otto, 21.11.2026), by
+    #: the move ("1 → 2"), and each as (title, skipped address, its rank, link now, its rank).
+    link_moves: Counter[str] = field(default_factory=Counter)
+    link_examples: list[tuple[str, str, int, str, int]] = field(default_factory=list)
+    #: Links "Source" that look like a machine interface (Otto, 23.11.2026), by pattern, and each as (pattern, title, link).
+    api_links: Counter[str] = field(default_factory=Counter)
+    api_examples: list[tuple[str, str, str]] = field(default_factory=list)
+    #: Finds hidden as no geodata by publisher, without and with the rule on weak geo signals (Otto, 23.11.2026), and
+    #: the weak signals that no longer keep a find.
+    hidden_before: Counter[str] = field(default_factory=Counter)
+    hidden_after: Counter[str] = field(default_factory=Counter)
+    overruled_signals: Counter[str] = field(default_factory=Counter)
     deleted: int = 0
     missing: int = 0
     tombstones: int = 0
@@ -483,7 +496,7 @@ def run_report(
             # One find of a foreign shape must not stop the report of every other one; its row stays as it was.
             result.failed += 1
             continue
-        _count(result, derived, found)
+        _count(result, derived, found, licences)
         if not classify_only and stored.get(key) != derived.row.derived_sha256:
             batch.append(derived.row)
             if len(batch) >= _BATCH:
@@ -503,7 +516,7 @@ def run_report(
     return result
 
 
-def _count(result: ReportResult, derived: Derived, found: Mapping[str, Any]) -> None:
+def _count(result: ReportResult, derived: Derived, found: Mapping[str, Any], licences: LicenceCatalogue) -> None:
     row = derived.row
     result.verdicts[row.verdict] += 1
     result.bases[derived.extent.basis] += 1
@@ -524,14 +537,38 @@ def _count(result: ReportResult, derived: Derived, found: Mapping[str, Any]) -> 
         result.signals[signal[:60]] += 1
     for statement in {normal_statement(s) for s in derived.statements if normal_statement(s)}:
         result.statements.setdefault(statement, Counter())[row.publisher or "–"] += 1
-    if row.waiting_reason in ("unknown_licence", "not_granted"):
+    if row.waiting_reason == "unknown_licence":
         for statement in derived.statements:
             result.pairs[(row.publisher or "–", normal_statement(statement)[:100])] += 1
+    elif row.waiting_reason == "not_granted":
+        result.pairs[(row.publisher or "–", _not_granted(licences, row.source_id, row.publisher, derived.licence.refs))] += 1
+    skipped = found.get("skipped_url")
+    if isinstance(skipped, str):
+        was, now = int(found.get("skipped_rank") or 0), int(found.get("source_rank") or 0)
+        result.link_moves[f"{was} → {now}"] += 1
+        result.link_examples.append((str(found.get("title"))[:100], skipped, was, str(found.get("source_url")), now))
+    if pattern := api_pattern(found.get("source_url")):
+        result.api_links[pattern] += 1
+        result.api_examples.append((pattern, str(found.get("title"))[:100], str(found.get("source_url"))))
     entry = (row.dataset_id, str(found.get("title"))[:120], str(found.get("source_url")))
     if derived.classified.outcome == "not_geodata":
         result.hidden.append(entry)
+        result.hidden_after[row.publisher or "–"] += 1
+        if derived.classified.weak_overruled:
+            result.overruled_signals.update(signal.split(":", 1)[0] for signal in derived.classified.geo)
+        else:
+            result.hidden_before[row.publisher or "–"] += 1
     elif derived.classified.outcome == "undecided":
         result.undecided.append(entry)
+
+
+def _not_granted(licences: LicenceCatalogue, source_id: str, publisher: str | None, refs: Sequence[str]) -> str:
+    """Why a find waits as ``not_granted``, for the waiting list (Otto, 23.11.2026: a pair showed a granted licence):
+    the publisher has no line in ``grants/``, or the licences of the find not granted to it."""
+    granted = licences.grants.get(source_id, {}).get(publisher or "")
+    if granted is None:
+        return f"Herausgeber ohne Zeile in grants/{source_id}.yaml (Lizenzen: {', '.join(refs)})"
+    return "nicht freigegeben: " + ", ".join(ref for ref in refs if ref not in granted)
 
 
 def access_reason(found: Mapping[str, Any]) -> tuple[str, str]:
@@ -571,6 +608,19 @@ def classify_text(source: SourceConfig, result: ReportResult) -> str:
     lines += [f"  {count:>7}  {name}" for name, count in result.signals.most_common(30)]
     lines.append(f"Stichprobe verborgen als Nicht-Geodaten ({len(result.hidden)} insgesamt):")
     lines += [f"  - {t}  <{u}>" for _, t, u in _sample(result.hidden, CLASSIFY_SAMPLE, seed)]
+    changed = {p: result.hidden_after[p] - result.hidden_before[p] for p in result.hidden_after}
+    lines.append(
+        f"Verborgen je Herausgeber ohne/mit Regel schwacher Geo-Signale ({sum(result.hidden_before.values())} →"
+        f" {sum(result.hidden_after.values())}; häufigste 30 Änderungen, Herausgeber | vorher | nachher):"
+    )
+    lines += [
+        f"  {publisher[:80]} | {result.hidden_before[publisher]} | {result.hidden_after[publisher]}"
+        for publisher, _ in sorted(changed.items(), key=lambda item: (-item[1], item[0]))[:30]
+        if changed[publisher]
+    ]
+    lines.append("  Schwache Geo-Signale, die diese Funde vorher hielten: " + (
+        ", ".join(f"{k} {v}" for k, v in sorted(result.overruled_signals.items())) or "–"
+    ))
     lines.append(f"Stichprobe Geodaten ohne Signal, Grenzfälle ({len(result.undecided)} insgesamt):")
     lines += [f"  - {t}  <{u}>" for _, t, u in _sample(result.undecided, CLASSIFY_SAMPLE, seed)]
     lines.append("Ortstexte ohne Treffer (häufigste 30):")
@@ -579,6 +629,17 @@ def classify_text(source: SourceConfig, result: ReportResult) -> str:
     lines += [f"  {count:>7}  {reason}" for reason, count in result.access_reasons.most_common()]
     lines.append("  10 Beispiele (Grund | Titel | Link | Formate):")
     lines += [f"  - {r} | {t} | <{u}> | {f}" for r, t, u, f in _sample(result.no_access, 10, seed)]
+    moved = sum(result.link_moves.values())
+    lines.append(
+        f"Link „Source“ wegen Sammelseite auf einen anderen Rang gefallen ({moved} von {result.finds}), nach Rang:"
+    )
+    lines += [f"  {count:>7}  Rang {move}" for move, count in sorted(result.link_moves.items())]
+    lines.append("  10 Beispiele (Titel | Sammelseite, Rang | Link jetzt, Rang):")
+    lines += [f"  - {t} | <{u}>, {r} | <{n}>, {m}" for t, u, r, n, m in _sample(result.link_examples, 10, seed)]
+    lines.append(f"Link „Source“ mit Muster einer Schnittstelle ({sum(result.api_links.values())}), nach Muster:")
+    lines += [f"  {count:>7}  {pattern}" for pattern, count in result.api_links.most_common()]
+    lines.append("  10 Beispiele (Muster | Titel | Link):")
+    lines += [f"  - {p} | {t} | <{u}>" for p, t, u in _sample(result.api_examples, 10, seed)]
     lines.append("Gleichnamige Stadt und Kanton, je Name und Entscheid nach Herausgeber:")
     lines += [f"  {count:>7}  {choice}" for choice, count in sorted(result.choices.items())]
     lines.append(f"GeoNames-IDs ohne Zuordnung ({len(result.geonames)} verschiedene, häufigste 50):")
@@ -647,16 +708,19 @@ def stack_sample(conn: psycopg.Connection, stack: Stack) -> list[dict[str, Any]]
     return chosen
 
 
-def _pairs(conn: psycopg.Connection, source_id: str, seed: str) -> list[tuple[str, str, str, str]]:
-    """Up to 20 pairs (duplicate, main) that touch the source, drawn with ``seed`` (plan §13b)."""
+def _pairs(conn: psycopg.Connection, source_id: str, seed: str) -> list[tuple[str, str, str, str, str]]:
+    """Up to 20 pairs (duplicate, main, the key they share) that touch the source, drawn with ``seed`` (plan §13b)."""
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT d.dataset_id, d.content->>'title', d.duplicate_of, coalesce(m.content->>'title', d.duplicate_of)"
+            "SELECT d.dataset_id, d.content->>'title', d.duplicate_of, coalesce(m.content->>'title', d.duplicate_of),"
+            " coalesce(d.dedupe_keys, '{}'), coalesce(m.dedupe_keys, '{}')"
             " FROM public.earthx_listed_entry d LEFT JOIN public.earthx_listed_entry m ON m.dataset_id = d.duplicate_of"
             " WHERE d.state = 'duplicate' AND (d.source_id = %s OR m.source_id = %s) ORDER BY d.dataset_id",
             (source_id, source_id),
         )
-        return _sample(cur.fetchall(), SAMPLE_PAIRS, seed)
+        rows = cur.fetchall()
+    pairs = [(a, ta, b, tb, shared_key(ka, kb) or "voller oder Handeintrag") for a, ta, b, tb, ka, kb in rows]
+    return _sample(pairs, SAMPLE_PAIRS, seed)
 
 
 def approval_document(source: SourceConfig, stack: Stack, sample: list[dict[str, Any]], rows, day: date) -> dict:  # type: ignore[no-untyped-def]
@@ -733,8 +797,8 @@ def report_markdown(
     seed = stack.fingerprint
     lines += ["", "## Verborgen als Nicht-Geodaten (Stichprobe)", ""]
     lines += [f"- {t} — <{u}>" for _, t, u in _sample(result.hidden, SAMPLE_HIDDEN, seed)]
-    lines += ["", "## Dubletten (Stichprobe, Duplikat → Haupteintrag)", ""]
-    lines += [f"- {a} „{ta}“ → {b} „{tb}“" for a, ta, b, tb in pairs]
+    lines += ["", "## Dubletten (Stichprobe, Duplikat → Haupteintrag, gemeinsamer Schlüssel)", ""]
+    lines += [f"- {a} „{ta}“ → {b} „{tb}“ — `{key}`" for a, ta, b, tb, key in pairs]
     return "\n".join(lines) + "\n"
 
 

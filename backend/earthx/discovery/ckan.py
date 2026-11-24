@@ -39,7 +39,15 @@ from earthx.discovery.extract import (
     text_of,
     theme_codes,
 )
-from earthx.discovery.links import LinkRank, checked_link, choose_link, link_problem
+from earthx.discovery.links import (
+    LinkRank,
+    checked_link,
+    choose_link,
+    first_link,
+    is_collection_page,
+    link_candidates,
+    link_problem,
+)
 from earthx.discovery.stac import Fetch
 
 __all__ = [
@@ -77,11 +85,21 @@ _SERVICE_QUERY = re.compile(r"[?&](?:service=(?:wms|wmts|wfs|wcs)|request=getcap
 # The page of a resource in CKAN itself: it is named after the resource's id, which a portal that re-creates its
 # resources on every harvest changes (Otto, 19.11.2026), so it is no stable link "Source".
 _RESOURCE_PAGE = re.compile(r"/resource/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:[/?#]|$)", re.I)
-# A metadata record, no page for people: ISO 19139 XML, a CSW record, RDF, JSON or XML by ending (F12 = 1).
+# A metadata record, no page for people: ISO 19139 XML, a CSW record, RDF, JSON or XML by ending (F12 = 1); the
+# metadata APIs of piveau (/api/hub/repo/, /api/hub/search/) and of CKAN (/api/3/action/) (Otto, 23.11.2026).
 _METADATA = re.compile(
-    r"xml_iso19139|getrecordbyid|[?&]service=csw(?:&|$)|[?&]outputschema=|\.(?:xml|rdf|json|jsonld|ttl|n3)(?:[?#]|$)",
+    r"xml_iso19139|getrecordbyid|[?&]service=csw(?:&|$)|[?&]outputschema=|\.(?:xml|rdf|json|jsonld|ttl|n3)(?:[?#]|$)"
+    r"|/api/hub/(?:repo|search)/|/api/(?:3/)?action/",
     re.IGNORECASE,
 )
+# The record of a dataset in the metadata API of a piveau portal, and the portals whose page for people of a dataset
+# is known (Otto, 23.11.2026: open.bydata.de/datasets/<id>); any other piveau record is no link and the next rank counts.
+_PIVEAU_RECORD = re.compile(
+    r"https://(?P<host>[^/?#]+)/api/hub/(?:repo|search)/datasets/(?P<id>[A-Za-z0-9][A-Za-z0-9_~-]{0,199})"
+    r"(?:\.[a-z]{2,6})?(?:[?#].*)?",
+    re.IGNORECASE,
+)
+_PIVEAU_PAGES = {"open.bydata.de": "https://open.bydata.de/datasets/{id}"}
 #: Access rights that say "not for everyone" (EU vocabulary access-right and its spellings): only these keep a find
 #: without a known way to its data (Otto, 20.11.2026, F12 = 1); a missing or other statement does not.
 _NOT_PUBLIC = frozenset({"RESTRICTED", "NON_PUBLIC", "NONPUBLIC", "NON-PUBLIC", "CONFIDENTIAL", "SENSITIVE"})
@@ -416,11 +434,19 @@ def _page_or_none(url: object) -> object:
     return None if resource_kind(ending, None) in FILE_KINDS | {"service"} else url
 
 
+def _human_page(url: str | None) -> str | None:
+    """The page for people of a piveau record where the portal has a known one, else ``url`` as it is."""
+    match = _PIVEAU_RECORD.fullmatch(url) if url is not None else None
+    page = _PIVEAU_PAGES.get(match["host"].lower()) if match is not None else None
+    return url if match is None or page is None else page.replace("{id}", match["id"])
+
+
 def _page_candidates(package: Mapping[str, Any], extras: Mapping[str, Any], source: SourceConfig) -> list[object]:
-    """Rank 2 in order: the field ``url``, then the extras the source names (``page_extras``), each a page only."""
+    """Rank 2 in order: the field ``url``, then the extras the source names (``page_extras``), each a page only; a
+    piveau record stands for the portal's page of the dataset where that is known."""
     assert isinstance(source.filter, CkanFilter)
     values = [package.get("url"), *(extras.get(key) for key in source.filter.page_extras)]
-    return [_page_or_none(text_of(value)) for value in values]
+    return [_page_or_none(_human_page(text_of(value))) for value in values]
 
 
 # Fields of a package that name a person: never read for a report (adr/0033 §5).
@@ -439,6 +465,8 @@ def _page_problem(value: object) -> str | None:
             return "metadata"
         if _page_or_none(text) is None:
             return "file"
+        if is_collection_page(text):
+            return "collection_page"
     return problem
 
 
@@ -474,6 +502,8 @@ def link_reasons(package: Mapping[str, Any], source: SourceConfig) -> list[tuple
         if resource.kind is None and resource.download is None and resource.access is not None:
             reasons.append(("resource_without_format", resource.access))
         address, problem = _viewer_problem(resource)
+        if problem is None and address is not None and is_collection_page(address):
+            problem = "collection_page"
         if problem is not None and problem != "not_html":
             reasons.append((f"html_{problem}", address))
     for name, value in package.items():
@@ -489,8 +519,27 @@ def link_reasons(package: Mapping[str, Any], source: SourceConfig) -> list[tuple
     return reasons
 
 
-def extract_package(key: str, package: Mapping[str, Any], source: SourceConfig) -> Extracted:
-    """The intermediate form of one package, or :class:`Invalid` with its reason."""
+def _link_candidates(
+    package: Mapping[str, Any], extras: Mapping[str, Any], resources: Iterable[_Resource], source: SourceConfig
+) -> list[tuple[LinkRank, object]]:
+    name = package.get("name")
+    catalog_page = (
+        source.catalog_page.replace("{name}", name)
+        if source.catalog_page and isinstance(name, str) and _NAME.fullmatch(name)
+        else None
+    )
+    return [
+        *((LinkRank.VIEWER_OR_DOWNLOAD_PAGE, url) for url in _viewer_pages(resources)),
+        *((LinkRank.DATASET_PAGE, page) for page in _page_candidates(package, extras, source)),
+        (LinkRank.CATALOGUE_PAGE, catalog_page),
+    ]
+
+
+def extract_package(
+    key: str, package: Mapping[str, Any], source: SourceConfig, shared: frozenset[str] = frozenset()
+) -> Extracted:
+    """The intermediate form of one package, or :class:`Invalid` with its reason. ``shared`` are the collective pages of
+    the source (:meth:`~earthx.discovery.links.LinkIndex.shared`), which the link "Source" never is."""
     assert isinstance(source.filter, CkanFilter)
     title = localized(package.get("title"))
     if title is None:
@@ -499,21 +548,13 @@ def extract_package(key: str, package: Mapping[str, Any], source: SourceConfig) 
     raw_resources = package.get("resources")
     resource_documents = [r for r in raw_resources if isinstance(r, dict)] if isinstance(raw_resources, list) else []
     resources = [_resource(r) for r in resource_documents]
-    name = package.get("name")
-    catalog_page = (
-        source.catalog_page.replace("{name}", name)
-        if source.catalog_page and isinstance(name, str) and _NAME.fullmatch(name)
-        else None
-    )
-    candidates = [
-        *((LinkRank.VIEWER_OR_DOWNLOAD_PAGE, url) for url in _viewer_pages(resources)),
-        *((LinkRank.DATASET_PAGE, page) for page in _page_candidates(package, extras, source)),
-        (LinkRank.CATALOGUE_PAGE, catalog_page),
-    ]
-    chosen = choose_link(candidates)
+    candidates = _link_candidates(package, extras, resources, source)
+    chosen = choose_link(candidates, shared)
     if chosen is None:
-        raise Invalid("no_link")
-    landing = choose_link(c for c in candidates if c[0] is not LinkRank.VIEWER_OR_DOWNLOAD_PAGE)
+        raise Invalid("no_link", link_candidates(candidates))
+    plain = first_link(candidates)
+    skipped = plain if plain is not None and plain[1] < chosen[1] else None
+    landing = choose_link((c for c in candidates if c[0] is not LinkRank.VIEWER_OR_DOWNLOAD_PAGE), shared)
     keywords = _keywords(package)
     evidence = _evidence(package, extras, keywords)
     category = category_of(evidence)
@@ -557,5 +598,8 @@ def extract_package(key: str, package: Mapping[str, Any], source: SourceConfig) 
         source_url=chosen[0],
         source_rank=int(chosen[1]),
         landing_url=None if landing is None else landing[0],
+        skipped_url=None if skipped is None else skipped[0],
+        skipped_rank=None if skipped is None else int(skipped[1]),
+        link_candidates=link_candidates(candidates),
         distributions=tuple(r.distribution for r in resources if r.distribution is not None)[:MAX_DISTRIBUTIONS],
     )

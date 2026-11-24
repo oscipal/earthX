@@ -26,10 +26,17 @@ from earthx.discovery.extract import (
     data_kind_of,
     text_of,
 )
-from earthx.discovery.links import LinkRank, checked_link, choose_link
+from earthx.discovery.links import LinkRank, checked_link, choose_link, first_link, link_candidates
 from earthx.gateway import GatewayResponse
 
-__all__ = ["PAGE_LIMIT", "Fetch", "StacListing", "collection_key", "extract_collection", "stac_pages"]
+__all__ = [
+    "PAGE_LIMIT",
+    "Fetch",
+    "StacListing",
+    "collection_key",
+    "extract_collection",
+    "stac_pages",
+]
 
 PAGE_LIMIT = 100
 MAX_DISTRIBUTIONS = 50
@@ -201,17 +208,9 @@ def _distributions(collection: Mapping[str, Any]) -> tuple[Distribution, ...]:
     return tuple(found[:MAX_DISTRIBUTIONS])
 
 
-def extract_collection(key: str, collection: Mapping[str, Any], source: SourceConfig) -> Extracted:
-    """The intermediate form of one collection, or :class:`Invalid` with its reason."""
-    title = text_of(collection.get("title"))
-    if title is None:
-        raise Invalid("no_title")
-    keywords = collection.get("keywords")
-    raw_keywords = [text for k in keywords if (text := text_of(k))] if isinstance(keywords, list) else []
-    category = category_of(Evidence(keywords=tuple(raw_keywords)))
-    links = _links(collection)
+def _link_candidates(key: str, links: list[Mapping[str, Any]], source: SourceConfig) -> list[tuple[LinkRank, object]]:
     catalog_page = source.catalog_page.replace("{id}", key) if source.catalog_page else None
-    candidates = [
+    return [
         *(
             (LinkRank.VIEWER_OR_DOWNLOAD_PAGE, link.get("href"))
             for link in links
@@ -220,10 +219,27 @@ def extract_collection(key: str, collection: Mapping[str, Any], source: SourceCo
         *((LinkRank.DATASET_PAGE, link.get("href")) for link in links if link.get("rel") == "about" and _html(link)),
         (LinkRank.CATALOGUE_PAGE, catalog_page),
     ]
-    chosen = choose_link(candidates)
+
+
+def extract_collection(
+    key: str, collection: Mapping[str, Any], source: SourceConfig, shared: frozenset[str] = frozenset()
+) -> Extracted:
+    """The intermediate form of one collection, or :class:`Invalid` with its reason. ``shared`` are the collective pages
+    of the source (:meth:`~earthx.discovery.links.LinkIndex.shared`), which the link "Source" never is."""
+    title = text_of(collection.get("title"))
+    if title is None:
+        raise Invalid("no_title")
+    keywords = collection.get("keywords")
+    raw_keywords = [text for k in keywords if (text := text_of(k))] if isinstance(keywords, list) else []
+    category = category_of(Evidence(keywords=tuple(raw_keywords)))
+    links = _links(collection)
+    candidates = _link_candidates(key, links, source)
+    chosen = choose_link(candidates, shared)
     if chosen is None:
-        raise Invalid("no_link")
-    landing = choose_link(c for c in candidates if c[0] is not LinkRank.VIEWER_OR_DOWNLOAD_PAGE)
+        raise Invalid("no_link", link_candidates(candidates))
+    plain = first_link(candidates)
+    skipped = plain if plain is not None and plain[1] < chosen[1] else None
+    landing = choose_link((c for c in candidates if c[0] is not LinkRank.VIEWER_OR_DOWNLOAD_PAGE), shared)
     licence_links = [link.get("href") for link in links if link.get("rel") == "license"]
     licence = collection.get("license")
     # "proprietary" (and "other", "various") only say "see the link rel=license": the link is the statement, and
@@ -256,5 +272,8 @@ def extract_collection(key: str, collection: Mapping[str, Any], source: SourceCo
         source_url=chosen[0],
         source_rank=int(chosen[1]),
         landing_url=None if landing is None else landing[0],
+        skipped_url=None if skipped is None else skipped[0],
+        skipped_rank=None if skipped is None else int(skipped[1]),
+        link_candidates=link_candidates(candidates),
         distributions=_distributions(collection),
     )

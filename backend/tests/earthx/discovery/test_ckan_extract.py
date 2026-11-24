@@ -24,7 +24,7 @@ from earthx.discovery.ckan import (
     stable_package,
 )
 from earthx.discovery.extract import Invalid, ShapeError, extracted_sha256, extractor_version, theme_codes
-from earthx.discovery.links import LinkRank
+from earthx.discovery.links import LinkRank, address_key
 from earthx.gateway import GatewayResponse
 
 SOURCE = SourceConfig(
@@ -697,6 +697,11 @@ def test_page_extras_are_read_only_where_the_source_names_them() -> None:
         "https://metadaten.example.org/record/1.xml",
         "https://metadaten.example.org/record/1.rdf",
         "https://metadaten.example.org/record/1.json?lang=de",
+        # Otto, 23.11.2026: the metadata APIs of piveau and of CKAN.
+        "https://piveau.example.org/api/hub/repo/datasets/abc-1",
+        "https://piveau.example.org/api/hub/search/datasets/abc-1?locale=de",
+        "https://piveau.example.org/api/hub/repo/catalogues/x/datasets/origin?originalId=1",
+        "https://ckan.example.org/api/3/action/package_show?id=x",
         "http://opendata.example.org/dataset/x",
         "https://opendata.example.org/",
     ],
@@ -705,6 +710,34 @@ def test_a_metadata_record_or_a_start_page_is_no_page_of_the_dataset(url: str) -
     package = _resources(FILE, url=None, extras=[{"key": "uri", "value": url}])
     assert extract_package(package["id"], package, GOVDATA_LIKE).source_rank == 3
     assert any(code.startswith("extras_page_") for code, _ in link_reasons(package, GOVDATA_LIKE))
+
+
+@pytest.mark.parametrize(
+    ("url", "page"),
+    [
+        ("https://open.bydata.de/api/hub/repo/datasets/abc-1", "https://open.bydata.de/datasets/abc-1"),
+        ("https://open.bydata.de/api/hub/search/datasets/abc-1?locale=de", "https://open.bydata.de/datasets/abc-1"),
+        ("https://open.bydata.de/api/hub/repo/datasets/abc-1.rdf", "https://open.bydata.de/datasets/abc-1"),
+    ],
+)
+def test_a_piveau_record_stands_for_the_portal_s_page_where_it_is_known(url: str, page: str) -> None:
+    package = _resources(FILE, url=None, extras=[{"key": "uri", "value": url}])
+    found = extract_package(package["id"], package, GOVDATA_LIKE)
+    assert (found.source_url, found.source_rank) == (page, 2)
+
+
+def test_a_piveau_record_of_an_unknown_portal_is_skipped_for_the_next_candidate() -> None:
+    extras = [
+        {"key": "uri", "value": "https://piveau.example.org/api/hub/repo/datasets/abc-1"},
+        {"key": "guid", "value": "https://opendata.example.org/dataset/x"},
+    ]
+    package = _resources(FILE, url=None, extras=extras)
+    assert extract_package(package["id"], package, GOVDATA_LIKE).source_url == "https://opendata.example.org/dataset/x"
+
+
+def test_an_html_resource_at_a_metadata_api_is_no_viewer() -> None:
+    viewer = {**VIEWER, "url": "https://open.bydata.de/api/hub/repo/datasets/abc-1"}
+    assert ("html_metadata", viewer["url"]) in link_reasons(_resources(viewer), SOURCE)
 
 
 def test_an_html_resource_whose_download_address_is_a_page_is_a_viewer() -> None:
@@ -739,3 +772,84 @@ def test_a_geometry_whose_nesting_does_not_fit_its_type_is_no_extent(geometry: d
     # Review M5-20 PR 1: PostGIS reads such a Point as POINT(0 0) and refuses such a Polygon.
     package = _with(PACKAGE, extras=[{"key": "spatial", "value": json.dumps(geometry)}])
     assert extract_package(PACKAGE["id"], package, SOURCE).extent_known is False
+
+
+# --- Collective pages (Otto, 21.11.2026) ---------------------------------------------------------------------------
+
+OFFICE = "https://www.sz.ch/agi"
+THEME = "https://oereb.bs.ch/theme/oereb_proj"
+CATALOGUE_PAGE = "https://portal.example.org/dataset/example-dgm1"
+
+
+def test_the_start_page_of_an_office_is_no_link_source() -> None:
+    found = extract_package(PACKAGE["id"], _resources(FILE, url=OFFICE), SOURCE)
+    assert (found.source_url, found.source_rank) == (CATALOGUE_PAGE, 3)
+    assert (found.skipped_url, found.skipped_rank) == (OFFICE, 2)
+    assert found.landing_url == CATALOGUE_PAGE
+
+
+def test_a_leading_language_does_not_make_the_page_of_an_office_a_dataset() -> None:
+    # Otto, 21.11.2026: /de/agi is a collective page like /agi.
+    found = extract_package(PACKAGE["id"], _resources(FILE, url="https://www.sz.ch/de/agi"), SOURCE)
+    assert (found.source_url, found.source_rank, found.skipped_url) == (CATALOGUE_PAGE, 3, "https://www.sz.ch/de/agi")
+
+
+def test_a_page_the_source_shares_between_finds_is_no_link_source() -> None:
+    package = _resources(FILE, url=THEME)
+    assert extract_package(PACKAGE["id"], package, SOURCE).source_url == THEME
+    found = extract_package(PACKAGE["id"], package, SOURCE, frozenset({address_key(THEME)}))
+    assert (found.source_url, found.source_rank, found.landing_url) == (CATALOGUE_PAGE, 3, CATALOGUE_PAGE)
+    assert (found.skipped_url, found.skipped_rank) == (THEME, 2)
+
+
+def test_a_viewer_that_is_a_collective_page_gives_way_to_the_page_of_the_dataset() -> None:
+    viewer = {**VIEWER, "url": "https://geo.example.ch/geoportal"}
+    found = extract_package(PACKAGE["id"], _resources(viewer), SOURCE)
+    assert (found.source_url, found.source_rank) == (PACKAGE["url"], 2)
+    assert (found.skipped_url, found.skipped_rank) == ("https://geo.example.ch/geoportal", 1)
+
+
+@pytest.mark.parametrize("url", [THEME, "https://www.sz.ch/agi?filter=dgm1", "https://www.sz.ch/agi#/produkt/dgm1"])
+def test_a_specific_page_stays_the_link_source(url: str) -> None:
+    found = extract_package(PACKAGE["id"], _resources(FILE, url=url), SOURCE)
+    assert (found.source_url, found.source_rank, found.skipped_url, found.skipped_rank) == (url, 2, None, None)
+
+
+def test_a_rank_that_did_not_change_is_no_skipped_link() -> None:
+    # Two viewers, the first a collective page: the second is a viewer too, so the link stays at rank 1.
+    first = {**VIEWER, "url": "https://geo.example.ch/aa"}
+    second = {**VIEWER, "url": "https://geo.example.ch/viewer/dgm1"}
+    found = extract_package(PACKAGE["id"], _resources(first, second), SOURCE)
+    assert (found.source_url, found.source_rank, found.skipped_url) == (second["url"], 1, None)
+
+
+def test_without_a_page_left_the_find_is_invalid() -> None:
+    source = replace(SOURCE, catalog_page=None)
+    with pytest.raises(Invalid) as raised:
+        extract_package(PACKAGE["id"], _resources(FILE, url=OFFICE), source)
+    assert raised.value.reason == "no_link"
+
+
+def test_the_links_a_package_could_take_are_kept_for_the_index_of_the_source() -> None:
+    package = _resources(VIEWER, FILE, url=THEME)
+    found = extract_package(PACKAGE["id"], package, SOURCE)
+    assert found.link_candidates == ((1, VIEWER["url"]), (2, THEME))
+    # What the rule skipped stays among them: the index decides on every candidate.
+    skipped = extract_package(PACKAGE["id"], package, SOURCE, frozenset({address_key(THEME)}))
+    assert skipped.link_candidates == found.link_candidates
+    assert extract_package(PACKAGE["id"], _resources(FILE, url=OFFICE), SOURCE).link_candidates == ()
+
+
+def test_a_find_without_a_free_link_keeps_the_links_it_could_have_taken() -> None:
+    source = replace(SOURCE, catalog_page=None)
+    package = _resources(FILE, url=THEME)
+    with pytest.raises(Invalid) as raised:
+        extract_package(PACKAGE["id"], package, source, frozenset({address_key(THEME)}))
+    assert (raised.value.reason, raised.value.link_candidates) == ("no_link", ((2, THEME),))
+
+
+def test_the_reason_why_a_page_is_a_collective_page() -> None:
+    package = _resources({**VIEWER, "url": "https://geo.example.ch/geoportal"}, url=OFFICE)
+    reasons = dict(link_reasons(package, SOURCE))
+    assert reasons["url_collection_page"] == OFFICE
+    assert reasons["html_collection_page"] == "https://geo.example.ch/geoportal"
