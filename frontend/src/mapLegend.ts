@@ -1,7 +1,8 @@
-// The legend over the map (M5-62, Otto 24.11.2026): one for each visible layer that is drawn with a colour scale or as classes, in
-// the order of the layer manager (the topmost first), the view of the search where the entry "Search results" stands. What a legend
-// shows comes from the tile URL the map draws the layer with, so it changes with the tiles: classes as a list (colour, value, name), a
-// band with a colour scale as a bar with its ends and unit, a colour picture (RGB) and a picture drawn as it is not at all.
+// The legends of the layers (M5-62, Otto 24.11.2026): what each layer drawn with a colour scale or as classes shows, from the tile URL
+// the map draws it with, so it changes with the tiles: classes as a list (colour, value, name), a band with a colour scale as a bar with
+// its ends and unit, a colour picture (RGB) and a picture drawn as it is nothing. The legend over the map shows one of them, chosen in its
+// head among the visible layers, in the order of the layer manager (the topmost first, the view of the search where the entry "Search
+// results" stands); the layer manager shows each layer's own under its row.
 
 import { classesOfBand, type BandClass } from './bandClasses';
 import { buildTileUrl } from './mapLayers';
@@ -52,7 +53,8 @@ function datasetUnit(dataset: DatasetOption | undefined, asset: string, tileUrl:
   return shownUnit(registryUnit(dataset.collection, asset));
 }
 
-function layerLegend(layer: MapLayer, datasets: readonly DatasetOption[]): LegendEntry | null {
+// The legend of one layer, visible or not; `null` where it has none.
+export function layerLegend(layer: MapLayer, datasets: readonly DatasetOption[]): LegendEntry | null {
   const tileUrl = rasterOf(layer);
   if (!tileUrl) return null;
   let content: LegendContent | null;
@@ -93,4 +95,27 @@ export function legendEntries({ layers, resultsAt, datasets, view }: LegendState
   const of = (list: readonly MapLayer[]) => list.flatMap((layer) => (layer.visible ? [layerLegend(layer, datasets)] : [])).filter((e): e is LegendEntry => e !== null);
   const shown = view ? viewLegend(view.downloaded, view.render, datasets) : null;
   return [...of(layers.slice(0, resultsAt)), ...(shown ? [shown] : []), ...of(layers.slice(resultsAt))];
+}
+
+// What the layers are, for the legend over the map: their order, which are shown, where "Search results" stands and which legends there
+// are. A layer added, removed, shown, hidden or moved, or a view opened or closed, makes another one.
+export function layersSignature(layers: readonly MapLayer[], resultsAt: number, entries: readonly LegendEntry[]): string {
+  return [layers.map((layer) => `${layer.id}:${layer.visible ? 1 : 0}`).join(','), resultsAt, entries.map((entry) => entry.id).join(',')].join('|');
+}
+
+// What the legend over the map shows, and the layers as they were when it was chosen.
+export interface LegendChoice {
+  chosen: string | null;
+  signature: string;
+}
+
+export const NO_CHOICE: LegendChoice = { chosen: null, signature: '' };
+
+// The legend to show (Otto, 24.11.2026): the topmost visible layer with a legend. One chosen in the dropdown holds until the layers
+// change (`layersSignature`); then it is the topmost again.
+export function chooseLegend(previous: LegendChoice, entries: readonly LegendEntry[], signature: string): LegendChoice {
+  const topmost = entries[0]?.id ?? null;
+  if (signature !== previous.signature) return { chosen: topmost, signature };
+  const kept = previous.chosen !== null && entries.some((entry) => entry.id === previous.chosen);
+  return { chosen: kept ? previous.chosen : topmost, signature };
 }

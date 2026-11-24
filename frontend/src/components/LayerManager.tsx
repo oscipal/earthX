@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from 'react';
 
 import { zoomFloorHint } from '../datasets';
 import { flipIdOf } from '../layerFlip';
 import { layerShownName } from '../layerName';
 import { layerBox } from '../layerExtent';
 import { EXPIRED_LAYER_TIP, LOCKED_LAYER_TIP, type MapLayer } from '../layers';
+import { useLegendStore } from '../legendStore';
+import { layerLegend, type LegendEntry } from '../mapLegend';
 import { RGB, RGB_LABEL } from '../processingBands';
 import { EXPIRED_PROCESS_TEXT, layerProcessBlock, NO_COPY_TEXT, PROCESS_LAYER_TEXT, useProcessingStore } from '../processingStore';
 import { MIN_REMAINING_MS } from '../resultLayer';
@@ -15,11 +17,12 @@ import { overviewNoteOf } from '../overviewSubstitute';
 import { zoomReasonOf } from '../zoomHint';
 import BandSelect from './BandSelect';
 import EyeButton from './EyeButton';
-import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon, CogIcon, FocusIcon, GripVerticalIcon, PencilIcon, PlusIcon } from './icons';
+import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon, ChevronDownIcon, ChevronRightIcon, CogIcon, FocusIcon, GripVerticalIcon, PencilIcon, PlusIcon } from './icons';
 import InlineRename from './InlineRename';
 import { RENAME_TIP } from './InspectorParts';
 import RemoveLayerButton from './RemoveLayerButton';
 import LayerDownload from './LayerDownload';
+import LegendBody from './LegendBody';
 import ResultsEye from './ResultsEye';
 import Tip from './Tip';
 import { useRowDrag, type RowDrag } from './useRowDrag';
@@ -102,7 +105,34 @@ function Grip({ dnd }: { dnd: RowDnd }) {
 
 // One row, eleven places in a fixed order: grip, name and its pencil, then eye, opacity, up, down, process, zoom to layer, download, remove (UI-09:
 // zoom to layer is new, download moved one place to the right, no place for a note: an expired result shows its note where the download would be).
-function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: MapLayer; index: number; last: boolean; dnd: RowDnd; flipped: boolean; flipping: boolean }) {
+export const SHOW_LEGEND_TIP = 'Show the legend';
+export const HIDE_LEGEND_TIP = 'Hide the legend';
+
+// The legend of a layer under its row (M5-62, Otto 24.11.2026): shown unless its button hid it, or the list folded it to stay without
+// scrolling (`folded`).
+interface RowLegend {
+  entry: LegendEntry;
+  open: boolean;
+  onToggle: () => void;
+}
+
+function LayerRow({
+  layer: l,
+  index,
+  last,
+  dnd,
+  flipped,
+  flipping,
+  legend,
+}: {
+  layer: MapLayer;
+  index: number;
+  last: boolean;
+  dnd: RowDnd;
+  flipped: boolean;
+  flipping: boolean;
+  legend: RowLegend | null;
+}) {
   const rename = useAppStore((s) => s.renameLayer);
   const [renaming, setRenaming] = useState(false);
   const toggleVis = useAppStore((s) => s.toggleLayerVisible);
@@ -159,6 +189,22 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
         >
           {layerShownName(l)}
         </button>
+      )}
+      {legend ? (
+        <button
+          type="button"
+          className="icon-btn sm quiet"
+          data-col="legend-toggle"
+          aria-expanded={legend.open}
+          aria-label={legend.open ? HIDE_LEGEND_TIP : SHOW_LEGEND_TIP}
+          data-tip-level="advanced"
+          data-tip={legend.open ? HIDE_LEGEND_TIP : SHOW_LEGEND_TIP}
+          onClick={legend.onToggle}
+        >
+          {legend.open ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}
+        </button>
+      ) : (
+        <Slot col="legend-toggle" />
       )}
       {/* The name is renamed here as in the head of the settings (Otto, 3.11.2026). */}
       <button type="button" className="icon-btn sm quiet" data-col="rename" data-tip-level="advanced" data-tip={locked ? LOCKED_LAYER_TIP : RENAME_TIP} aria-label={RENAME_TIP} disabled={locked} onClick={() => setRenaming(true)}>
@@ -258,6 +304,11 @@ function LayerRow({ layer: l, index, last, dnd, flipped, flipping }: { layer: Ma
         >
           <PlusIcon size={14} />
         </button>
+      )}
+      {legend?.open && (
+        <div className="lm-legend" data-col="legend">
+          <LegendBody content={legend.entry.content} columns={false} />
+        </div>
       )}
     </li>
   );
@@ -381,6 +432,59 @@ function dndClass(drag: RowDrag | null, index: number): string {
   return drag.over > drag.from ? ' drop-below' : ' drop-above';
 }
 
+// The legends under the rows (M5-62, Otto 24.11.2026): each layer's own, shown unless its button hid it. The panel never scrolls for them:
+// where the list would, they fold from the bottom up, one after the other, until it fits; the one opened last by its button folds last.
+// Measured again when the layers, the buttons or the height of the window change.
+function useRowLegends(layers: readonly MapLayer[], listRef: RefObject<HTMLUListElement | null>): Map<string, RowLegend> {
+  const datasets = useAppStore((s) => s.datasets);
+  const hidden = useLegendStore((s) => s.hidden);
+  const toggle = useLegendStore((s) => s.toggleHidden);
+  const [opened, setOpened] = useState<string | null>(null);
+  const [height, setHeight] = useState(() => window.innerHeight);
+  useEffect(() => {
+    const resize = () => setHeight(window.innerHeight);
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, []);
+  const entries = useMemo(
+    () => layers.flatMap((layer) => {
+      const entry = layerLegend(layer, datasets);
+      return entry ? [[layer.id, entry] as const] : [];
+    }),
+    [layers, datasets],
+  );
+  // Folded first: the lowest row, the one opened last at the end.
+  const order = entries.map(([id]) => id).filter((id) => !hidden[id]).reverse().sort((a, b) => Number(a === opened) - Number(b === opened));
+  const signature = `${order.join(',')}|${height}`;
+  const [fold, setFold] = useState({ signature, count: 0 });
+  const count = fold.signature === signature ? fold.count : 0;
+  const folded = new Set(order.slice(0, count));
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (list && list.scrollHeight > list.clientHeight + 1 && count < order.length) setFold({ signature, count: count + 1 });
+  }, [listRef, layers, signature, count, order.length]);
+  return new Map(
+    entries.map(([id, entry]) => {
+      const open = !hidden[id] && !folded.has(id);
+      return [
+        id,
+        {
+          entry,
+          open,
+          onToggle: () => {
+            // A legend the list folded is opened by its button: it folds last from now on.
+            if (folded.has(id)) setOpened(id);
+            else {
+              toggle(id);
+              if (hidden[id]) setOpened(id);
+            }
+          },
+        },
+      ];
+    }),
+  );
+}
+
 export default function LayerManager() {
   const layers = useAppStore((s) => s.layers);
   const moveRowTo = useAppStore((s) => s.moveRowTo);
@@ -400,9 +504,10 @@ export default function LayerManager() {
   const flipStep = useAppStore((s) => s.flipStep);
   const setFlip = useAppStore((s) => s.setFlipThrough);
   const dndOf = (row: number): RowDnd => ({ className: dndClass(drag, row), grip: rows > 1 ? grip(row) : null });
+  const legends = useRowLegends(layers, listRef);
   const rowOf = (l: MapLayer, i: number) => {
     const row = hasResults && i >= resultsAt ? i + 1 : i;
-    return <LayerRow key={l.id} layer={l} index={row} last={row === rows - 1} dnd={dndOf(row)} flipped={flipId === l.id} flipping={flipping} />;
+    return <LayerRow key={l.id} layer={l} index={row} last={row === rows - 1} dnd={dndOf(row)} flipped={flipId === l.id} flipping={flipping} legend={legends.get(l.id) ?? null} />;
   };
 
   // Docked beside the rail (UI-01 §6.9). It stays mounted when another panel is open: the timer of the

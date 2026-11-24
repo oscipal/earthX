@@ -138,7 +138,7 @@ describe('"Download (ZIP)" in the row of a result layer', () => {
     expect([place.tagName, place.className]).toEqual(['SPAN', 'lm-note']);
     expect(row.querySelector('a')).toBeNull();
     expect(row.querySelector('.lm-note .tip')?.getAttribute('data-tip')).toContain('Expired: results are kept for 7 days.');
-    expect([...row.children].map((c) => c.getAttribute('data-col'))).toHaveLength(11);
+    expect([...row.children].map((c) => c.getAttribute('data-col'))).toHaveLength(12);
   });
 
   it('is not made of a job id that is none', () => {

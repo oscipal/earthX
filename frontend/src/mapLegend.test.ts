@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import type { BandClass } from './bandClasses';
 import { datasetsFrom } from './datasets';
 import type { MapLayer, ResultLayerInfo } from './layers';
-import { legendEntries, legendOfTile, VIEW_LEGEND } from './mapLegend';
+import { chooseLegend, layersSignature, legendEntries, legendOfTile, NO_CHOICE, VIEW_LEGEND, type LegendEntry } from './mapLegend';
 import type { Collection, DownloadedInfo } from './types';
 
 const CLASSES: BandClass[] = [
@@ -121,5 +121,40 @@ describe('legendEntries', () => {
       { kind: 'classes', classes: CLASSES },
       { kind: 'bar', colormap: 'viridis', min: 0, max: 10, unit: 'm' },
     ]);
+  });
+});
+
+describe('chooseLegend (Otto, 24.11.2026)', () => {
+  const entry = (id: string): LegendEntry => ({ id, title: id, content: { kind: 'classes', classes: CLASSES } });
+  const A = entry('a');
+  const B = entry('b');
+
+  it('shows the topmost, and a choice while the layers stay as they are', () => {
+    const first = chooseLegend(NO_CHOICE, [A, B], 's1');
+    expect(first).toEqual({ chosen: 'a', signature: 's1' });
+    expect(chooseLegend({ ...first, chosen: 'b' }, [A, B], 's1').chosen).toBe('b');
+  });
+
+  it('goes back to the topmost when the layers change, and when the chosen one has no legend any more', () => {
+    expect(chooseLegend({ chosen: 'b', signature: 's1' }, [A, B], 's2').chosen).toBe('a');
+    expect(chooseLegend({ chosen: 'b', signature: 's1' }, [A], 's1').chosen).toBe('a');
+    expect(chooseLegend({ chosen: 'b', signature: 's1' }, [], 's2').chosen).toBeNull();
+  });
+});
+
+describe('layersSignature', () => {
+  const one = layer('a', 'u');
+  const two = layer('b', 'u');
+  const entries = [{ id: 'a', title: 'a', content: { kind: 'classes' as const, classes: CLASSES } }];
+
+  it('changes when a layer is added, removed, hidden, shown or moved, or the entries change, not with the look', () => {
+    const base = layersSignature([one, two], 2, entries);
+    expect(layersSignature([one, two, layer('c', 'u')], 3, entries)).not.toBe(base);
+    expect(layersSignature([one], 1, entries)).not.toBe(base);
+    expect(layersSignature([one, { ...two, visible: false }], 2, entries)).not.toBe(base);
+    expect(layersSignature([two, one], 2, entries)).not.toBe(base);
+    expect(layersSignature([one, two], 1, entries)).not.toBe(base);
+    expect(layersSignature([one, two], 2, [])).not.toBe(base);
+    expect(layersSignature([{ ...one, overlays: [] }, two], 2, entries)).toBe(base);
   });
 });

@@ -59,7 +59,7 @@ describe('the date in the name of a layer (Otto, 1.11.2026: "das datum gehört i
     useAppStore.setState({ layers: [layer('a', '2026-07-01')], dock: 'layers' });
     act(() => root.render(<LayerManager />));
     expect(container.querySelector('.lm-date')).toBeNull();
-    expect(container.querySelector('.layer-row')!.children).toHaveLength(11);
+    expect(container.querySelector('.layer-row')!.children).toHaveLength(12);
   });
 
   it('is in the name of results and previews too, and the name has no tooltip', () => {
@@ -100,8 +100,9 @@ describe('the buttons of a row stand under its title (Otto, 1.11.2026)', () => {
   };
 
   it('puts the title on the first line over every column but the grip, and the other places on the second', () => {
-    // The pencil that renames the layer ends the line (Otto, 3.11.2026).
-    expect(rule(".layer-row > [data-col='name']")).toContain('grid-column: 2 / -2');
+    // The pencil that renames the layer ends the line (Otto, 3.11.2026), the button of the legend before it (M5-62).
+    expect(rule(".layer-row > [data-col='name']")).toContain('grid-column: 2 / -3');
+    expect(rule(".layer-row > [data-col='legend-toggle']")).toContain('grid-row: 1');
     expect(rule(".layer-row > [data-col='rename']")).toContain('grid-row: 1');
     expect(rule(".layer-row > [data-col='name']")).toContain('grid-row: 1');
     for (const col of ['eye', 'opacity', 'up', 'down', 'process', 'zoom', 'download', 'remove']) expect(rule(`.layer-row > [data-col='${col}']`), col).toContain('grid-row: 2');
