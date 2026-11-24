@@ -16,7 +16,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, quote, urlsplit
 
 import numpy
 import pytest
@@ -231,26 +231,30 @@ def test_a_tile_is_rendered_from_the_stored_result(rig: Rig, uploaded: str) -> N
     assert response.content.startswith(b"\x89PNG")
 
 
-def test_a_result_of_classes_is_drawn_in_the_colours_of_its_table(
-    rig: Rig, uploaded: str, mask_files: dict[str, Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("dtype", ["uint8", "float32"])
+def test_a_result_of_classes_is_drawn_in_the_colours_of_its_classes(
+    rig: Rig, uploaded: str, mask_files: dict[str, Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dtype: str
 ) -> None:
-    """M5-62 F9: a job writes the colour table of a band of classes into its result; drawn as it is (no range, no
-    colormap, as the viewer asks for a band of classes), the tile shows the colours of the classes and nothing else."""
+    """M5-62 F9: a job writes the colour table of a band of classes of ``uint8`` into its result, which is drawn as it is
+    (no range, no colormap); a ``float32`` result holds none, and the viewer sends the colours of the classes the result
+    names as ``colormap`` (``resultLayer.ts::classColourParam``). Either way the tile shows the colours of the classes."""
     colours = {10: (0, 100, 0, 255), 20: (255, 187, 34, 255), 60: (180, 180, 180, 255)}
     rows, cols = numpy.indices((SIZE, SIZE))
     plain, target = tmp_path / "plain.tif", tmp_path / "classes.tif"
     with rasterio.open(
-        plain, "w", driver="GTiff", width=SIZE, height=SIZE, count=1, dtype="uint8", crs=sources.CRS, nodata=0,
+        plain, "w", driver="GTiff", width=SIZE, height=SIZE, count=1, dtype=dtype, crs=sources.CRS, nodata=0,
         transform=from_origin(sources.ORIGIN_X, sources.ORIGIN_Y, sources.RESOLUTION, sources.RESOLUTION),
     ) as destination:
-        destination.write(numpy.choose((rows // 16 + cols // 16) % 3, [10, 20, 60]).astype("uint8"), 1)
-        destination.write_colormap(1, {**colours, 0: (0, 0, 0, 0)})
+        destination.write(numpy.choose((rows // 16 + cols // 16) % 3, [10, 20, 60]).astype(dtype), 1)
+        if dtype == "uint8":
+            destination.write_colormap(1, {**colours, 0: (0, 0, 0, 0)})
     cog_translate(str(plain), str(target), cog_profiles.get("deflate"), quiet=True)
     monkeypatch.setattr(
         result_tiles, "gdal_path", lambda url: str(mask_files["all"]) if url.endswith("mask.tif") else str(target)
     )
+    query = "" if dtype == "uint8" else "?colormap=" + quote(json.dumps({str(k): list(v) for k, v in colours.items()}))
     z, x, y = TILE
-    response = rig.client.get(f"/results/{uploaded}/tiles/WebMercatorQuad/{z}/{x}/{y}.png")
+    response = rig.client.get(f"/results/{uploaded}/tiles/WebMercatorQuad/{z}/{x}/{y}.png{query}")
     assert response.status_code == 200, response.text
     with MemoryFile(response.content) as memory, memory.open() as dataset:
         pixels = dataset.read()

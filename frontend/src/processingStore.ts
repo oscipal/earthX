@@ -88,6 +88,7 @@ import {
   resultGsd,
   resultLayerName,
   presetOfResultBand,
+  classRender,
   isClassBand,
   resultRender,
   resultStats,
@@ -1778,7 +1779,9 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       const preset = place === RGB ? (picture?.preset ?? null) : presetOfResultBand(job.bands[several ? place : 0], indexPresetsOf(dataset?.collection));
       const classes = place !== RGB && isClassBand(job.bands[several ? place : 0], tileJson.dataType, dataset?.collection);
       const legend = classes ? job.bands[several ? place : 0]?.classes : null;
-      const render = resultRender(tileJson.dataType, get().range, stats, ownRangeOf(job, job.bands, place), place === RGB, preset, classes);
+      const render = legend
+        ? classRender(legend)
+        : resultRender(tileJson.dataType, get().range, stats, ownRangeOf(job, job.bands, place), place === RGB, preset, classes);
       const template = resultTileTemplate(href);
       useAppStore.getState().pinDerivedLayer({
         name: resultLayerName(job.title),
@@ -2287,7 +2290,10 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       const dataset = app.datasets.find((d) => d.id === job.order?.inputs[0]?.dataset);
       const preset = colour ? (colourOfResult(info.bands, dataset?.collection)?.preset ?? null) : presetOfResultBand(band ?? undefined, indexPresetsOf(dataset?.collection));
       const classes = !colour && isClassBand(band ?? undefined, info.dataType, dataset?.collection);
-      const render = resultRender(info.dataType, get().range, stats, ownRangeOf(job, info.bands, place), colour !== undefined, preset, classes);
+      const render =
+        classes && band?.classes
+          ? classRender(band.classes)
+          : resultRender(info.dataType, get().range, stats, ownRangeOf(job, info.bands, place), colour !== undefined, preset, classes);
       useAppStore.setState({
         layers: app.layers.map((l) => {
           if (l.id !== layerId || !l.result) return l;

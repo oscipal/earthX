@@ -620,13 +620,15 @@ describe('a result that names its classes', () => {
     expect(button('Classes')).toBeDefined();
   });
 
-  it('has no legend where the result is no type of classes or names none', async () => {
+  it('draws a float32 result of classes in their colours with its legend, not stretched', async () => {
     tileJsonBody = { ...TILE_JSON, data_type: 'float32' };
     useAppStore.setState({ datasets: [CLASSES] });
     useProcessingStore.setState({ jobs: [classJob({ name: 'map', classes: LEGEND })] });
     await openView();
-    expect(layers()[0].result?.legend).toBeUndefined();
-    expect(button('Classes')).toBeUndefined();
+    expect(layers()[0].result?.legend).toEqual(LEGEND);
+    expect(urlOf()).not.toContain('rescale');
+    expect(urlOf()).not.toContain('colormap_name');
+    expect(JSON.parse(new URL(urlOf(), 'http://x').searchParams.get('colormap')!)).toEqual({ 10: [0, 100, 0, 255], 80: [0, 100, 200, 255] });
   });
 
   it('keeps the note and has no button where a band of classes names no classes', async () => {

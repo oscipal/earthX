@@ -324,6 +324,9 @@ export interface AppliedRender {
   bidx?: string;
   expression?: string;
   colormapName?: string;
+  // The colours of the classes a result names, as the tiler's `colormap` (JSON, value → RGBA; M5-62): a result of classes drawn
+  // in their colours whatever its type, `float32` included, which holds no colour table of its own.
+  colormap?: string;
   rescale?: string; // "min,max" (adr/0006 §3.4 Z4)
   // What the range was typed as where it was typed in percentiles (NM4-65 part 4): `rescale` holds the values they gave when
   // they were applied, so the picture is always drawn from values; this is only for the fields to show "%" again.

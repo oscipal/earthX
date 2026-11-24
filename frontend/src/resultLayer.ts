@@ -209,10 +209,18 @@ function drawnWith(range: PreviewRange, colour: boolean): AppliedRender {
 // heights as `int16`) is a quantity and takes a range and a colormap as a floating-point one does. A band the result names classes for
 // (M5-62, F9) is one as well.
 export function isClassBand(band: Pick<ResultBand, 'name' | 'expression' | 'classes'> | undefined, dataType: string | null, collection: Collection | undefined): boolean {
-  if (!band || band.expression || dataType === null || !isIntegerType(dataType)) return false;
+  if (!band || band.expression || dataType === null) return false;
   if (band.classes) return true;
+  if (!isIntegerType(dataType)) return false;
   const mask = maskLayerOf(collection);
   return mask !== null && (band.name === mask.band || band.name === mask.asset);
+}
+
+// A band of classes the result names is drawn in their colours, as the legend shows them (M5-62): the tiler's `colormap`, which a
+// result of any type takes, `float32` included.
+export function classRender(classes: readonly BandClass[]): AppliedRender {
+  const rgba = (hex: string) => [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16)).concat(255);
+  return { colormap: JSON.stringify(Object.fromEntries(classes.map((entry) => [String(entry.value), rgba(entry.colour)]))) };
 }
 
 // How a result is drawn (M4-32b, plan §6.7). A band of classes is drawn as it is (`isClassBand`), and so is a result whose type the
