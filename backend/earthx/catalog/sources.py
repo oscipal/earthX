@@ -55,6 +55,8 @@ _FIELDS = frozenset(
         "dedupe_rank",
     }
 )
+#: Fields a seed file may leave out (the default holds).
+_OPTIONAL_FIELDS = frozenset({"dedupe_collection_links"})
 #: The lowest precedence a source may have among duplicates (M5-20 plan §8): 1 wins over 2.
 MAX_DEDUPE_RANK = 9
 _COUNTRY = re.compile(r"[A-Z]{2}")
@@ -122,6 +124,10 @@ class SourceConfig:
     #: Precedence among duplicates of the same dataset (M5-20 plan §8, F4 = 1): the provider's own catalogue before a
     #: portal that harvests it. 1 wins over 2.
     dedupe_rank: int
+    #: A collection of the FSDI named by a viewer link in the files, references or skipped pages of a find is a dedupe
+    #: key (Otto, 24.11.2026): opendata.swiss names the collections it lists in the links of its resources. Off for
+    #: every other source.
+    dedupe_collection_links: bool = False
 
     @property
     def host(self) -> str:
@@ -219,8 +225,9 @@ def read_source(path: Path) -> SourceConfig:
     """One seed file, checked; :class:`EntryFileError` names the file and the field, never a value."""
     name = path.name
     data = read_yaml(path)
-    if not isinstance(data, dict) or set(data) != _FIELDS:
-        raise _bad(name, f"needs exactly the fields {', '.join(sorted(_FIELDS))}")
+    if not isinstance(data, dict) or not _FIELDS <= set(data) <= _FIELDS | _OPTIONAL_FIELDS:
+        optional = ", ".join(sorted(_OPTIONAL_FIELDS))
+        raise _bad(name, f"needs exactly the fields {', '.join(sorted(_FIELDS))} (and may have {optional})")
     source_id = data["source_id"]
     if not isinstance(source_id, str) or not _ID.fullmatch(source_id) or f"{source_id}.yaml" != name:
         raise _bad(name, "source_id is lower case, digits and '-', and the file is named after it")
@@ -246,6 +253,9 @@ def read_source(path: Path) -> SourceConfig:
     country = data["country"]
     if country is not None and (not isinstance(country, str) or not _COUNTRY.fullmatch(country)):
         raise _bad(name, "country is null or an ISO 3166-1 code of two capital letters")
+    collection_links = data.get("dedupe_collection_links", False)
+    if not isinstance(collection_links, bool):
+        raise _bad(name, "dedupe_collection_links is true or false")
     return SourceConfig(
         source_id=source_id,
         protocol=protocol,
@@ -261,6 +271,7 @@ def read_source(path: Path) -> SourceConfig:
         enabled=data["enabled"],
         country=country,
         dedupe_rank=_count(name, data, "dedupe_rank", MAX_DEDUPE_RANK),
+        dedupe_collection_links=collection_links,
     )
 
 

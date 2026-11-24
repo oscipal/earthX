@@ -10,7 +10,10 @@ collection pages within one source, never the same dataset across sources):
   (opendata.swiss names the FSDI collections it lists, M7). Only ids with two dots or more are looked for
   (``ch.swisstopo.x``): a short id such as ``sentinel-2-l2a`` is too common a word. A find that names several
   collections there gets none. A collection id in a distribution or in a reference is no key (Otto, 23.11.2026: a
-  GovData find linking to a collection of the FSDI is not that collection).
+  GovData find linking to a collection of the FSDI is not that collection), but for a source that says so
+  (``dedupe_collection_links``, opendata.swiss; Otto, 24.11.2026) a viewer link of the FSDI in its files, its link
+  candidates or its skipped page counts too: ``map.geo.admin.ch`` with ``layers=`` and ``data.geo.admin.ch`` with
+  ``/collections/<id>``, and only where all addresses together name exactly one known collection.
 
 A DOI or identifier is a key only where it is unique (Otto, 23.11.2026): on at most one find of each source and on at
 most :data:`MAX_SHARED` finds in all. Two finds of one source with the same DOI or identifier are two datasets that
@@ -28,8 +31,18 @@ import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import unquote
 
-__all__ = ["MAX_SHARED", "Member", "collection_tokens", "find_keys", "main_entries", "namespaced", "shared_key"]
+__all__ = [
+    "MAX_SHARED",
+    "Member",
+    "collection_tokens",
+    "find_keys",
+    "linked_collections",
+    "main_entries",
+    "namespaced",
+    "shared_key",
+]
 
 #: How an address is cut into tokens: an id is whole between these.
 _DELIMITERS = re.compile(r"[/?&=#,;:\s|]+")
@@ -47,15 +60,49 @@ def collection_tokens(addresses: Iterable[str], known: Mapping[str, str]) -> set
     return found
 
 
+_VIEWER_LINK = re.compile(r"https://(?P<host>map|data)\.geo\.admin\.ch(?::443)?(?:[/?#]|$)", re.IGNORECASE)
+_LAYERS = re.compile(r"[?&]layers=([^&#]*)", re.IGNORECASE)
+_COLLECTION_PATH = re.compile(r"/collections/([^/?#&]+)", re.IGNORECASE)
+
+
+def linked_collections(addresses: Iterable[str], known: Mapping[str, str]) -> set[str]:
+    """The keys of the known collections a viewer link of the FSDI among ``addresses`` names: the ids of ``layers=`` at
+    ``map.geo.admin.ch`` (comma separated, a ``@parameter`` of a layer dropped) and the id after ``/collections/`` at
+    ``data.geo.admin.ch``. Any other address names none."""
+    found: set[str] = set()
+    for address in addresses:
+        match = _VIEWER_LINK.match(address)
+        if match is None:
+            continue
+        values = _LAYERS.findall(address) if match["host"].lower() == "map" else _COLLECTION_PATH.findall(address)
+        for value in values:
+            for part in unquote(value).split(","):
+                token = part.split("@", 1)[0].strip().lower()
+                host = known.get(token)
+                if host is not None:
+                    found.add(f"coll:{host}/{token}")
+    return found
+
+
+def _linked_addresses(found: Mapping[str, Any]) -> list[str]:
+    """The addresses of a find that are no page of the dataset itself: its files, its link candidates (pairs of rank and
+    address) and the page the link "Source" skipped."""
+    addresses = [d.get("href") for d in found.get("distributions") or () if isinstance(d, dict)]
+    addresses += [c[1] for c in found.get("link_candidates") or () if isinstance(c, (list, tuple)) and len(c) == 2]
+    addresses.append(found.get("skipped_url"))
+    return [a for a in addresses if isinstance(a, str)]
+
+
 def namespaced(collection_id: str) -> bool:
     """Whether an id is long enough to be looked for in the addresses of other finds."""
     return _NAMESPACED.fullmatch(collection_id.lower()) is not None
 
 
 def find_keys(
-    found: Mapping[str, Any], *, stac_host: str | None, known: Mapping[str, str]
+    found: Mapping[str, Any], *, stac_host: str | None, known: Mapping[str, str], collection_links: bool = False
 ) -> tuple[str, ...]:
-    """The dedupe keys of an intermediate form; ``stac_host`` is the host of a STAC source, ``None`` otherwise."""
+    """The dedupe keys of an intermediate form; ``stac_host`` is the host of a STAC source, ``None`` otherwise.
+    ``collection_links`` is the switch of the source (``dedupe_collection_links``)."""
     keys: set[str] = set()
     doi = found.get("doi")
     if isinstance(doi, str) and doi.strip():
@@ -68,6 +115,8 @@ def find_keys(
     else:
         addresses = [found.get("identifier"), found.get("source_url"), found.get("landing_url")]
         tokens = collection_tokens((a for a in addresses if isinstance(a, str)), known)
+        if collection_links:
+            tokens |= linked_collections(_linked_addresses(found), known)
         if len(tokens) == 1:
             keys |= tokens
     return tuple(sorted(keys))

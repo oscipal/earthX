@@ -244,7 +244,11 @@ def _code_fingerprint() -> bytes:
 def derivation_version(source: SourceConfig, known: Mapping[str, str], licences: LicenceCatalogue | None) -> str:
     digest = hashlib.sha256(_code_fingerprint())
     digest.update(b"" if licences is None else licences.fingerprint.encode())
-    digest.update(json.dumps([source.country, source.maturity.value, sorted(known.items())]).encode())
+    digest.update(
+        json.dumps(
+            [source.country, source.maturity.value, source.dedupe_collection_links, sorted(known.items())]
+        ).encode()
+    )
     return digest.hexdigest()
 
 
@@ -304,7 +308,9 @@ def derive(
         license_ref=None if not licence.refs or licence.reason else "+".join(licence.refs),
         license_rule=licence.rule,
         extent_basis=extent.basis,
-        dedupe_keys=find_keys(found, stac_host=stac_host, known=known),
+        dedupe_keys=find_keys(
+            found, stac_host=stac_host, known=known, collection_links=source.dedupe_collection_links
+        ),
         derived_sha256=hashlib.sha256(f"{extracted_sha256} {version}".encode()).hexdigest(),
     )
     return Derived(row, extent, classified, licence, statements)

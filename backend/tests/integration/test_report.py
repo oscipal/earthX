@@ -702,6 +702,23 @@ def test_classify_lists_only_the_statements_the_catalogue_does_not_know(world: W
     assert "Kanton Zug | CC-BY-4.0" not in text
 
 
+def test_a_viewer_link_of_the_fsdi_makes_a_duplicate_only_for_a_source_that_says_so(world: World) -> None:
+    # Otto, 24.11.2026: opendata.swiss names the collections in the viewer links of its resources.
+    world.put(world.stac, _find("ch.example.boden", source_url="https://stac.example.org/browser/ch.example.boden"))
+    link = {"href": "https://map.example.org/?layers=ch.example.boden", "format": "HTML", "media_type": None}
+    world.put(world.ckan, _find("linking", distributions=[link]))
+    world.report(world.stac)
+    world.report()
+    assert world.row("linking")["duplicate_of"] is None
+    # The viewer link is that of the FSDI: map.geo.admin.ch with layers=, here at the address of the test portal.
+    fsdi = {"href": "https://map.geo.admin.ch/?layers=ch.example.boden", "format": "HTML", "media_type": None}
+    world.put(world.ckan, _find("linking", distributions=[fsdi]))
+    world.report(replace(world.ckan, dedupe_collection_links=True))
+    assert world.row("linking")["duplicate_of"] == f"{world.stac.source_id}.ch.example.boden"
+    world.report()
+    assert world.row("linking")["duplicate_of"] is None
+
+
 def test_a_collection_in_a_distribution_makes_no_duplicate(world: World) -> None:
     # Otto, 23.11.2026: a find that links to a collection of the FSDI in a file is not that collection.
     world.put(world.stac, _find("ch.example.boden", source_url="https://stac.example.org/browser/ch.example.boden"))
