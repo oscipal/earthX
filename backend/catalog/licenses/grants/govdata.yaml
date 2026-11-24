@@ -66,6 +66,12 @@
 - publisher: "Aktivregion Uthlande"
   licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
   approved_on: 2026-11-21
+- publisher: "Albert-Ludwigs-Universität Freiburg"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-24
+- publisher: "Alfred-Wegener-Institut (AWI)"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-24
 - publisher: "Allgäuer Überlandwerk GmbH"
   licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
   approved_on: 2026-11-21
@@ -1404,6 +1410,9 @@
 - publisher: "Fluxguide Ausstellungssysteme GmbH"
   licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
   approved_on: 2026-11-21
+- publisher: "Forschungs- und Technologiezentrum Westküste (FTZ)"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-24
 - publisher: "Forschungsverbund Berlin e.V."
   licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
   approved_on: 2026-11-21
@@ -3147,6 +3156,9 @@
 - publisher: "Landkreis Diepholz"
   licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
   approved_on: 2026-11-21
+- publisher: "Landkreis Eichsfeld"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-24
 - publisher: "Landkreis Emsland"
   licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
   approved_on: 2026-11-21
@@ -3222,9 +3234,21 @@
 - publisher: "Landratsamt Donau-Ries"
   licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
   approved_on: 2026-11-21
+- publisher: "Landratsamt Greiz"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-24
+- publisher: "Landratsamt Kyffhäuserkreis"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-24
 - publisher: "Landratsamt Neustadt an der Waldnaab"
   licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
   approved_on: 2026-11-21
+- publisher: "Landratsamt Saale-Holzland-Kreis"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-24
+- publisher: "Landratsamt Wartburgkreis"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-24
 - publisher: "Landtag Brandenburg"
   licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
   approved_on: 2026-11-21
@@ -3879,6 +3903,9 @@
 - publisher: "OOWV"
   licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
   approved_on: 2026-11-21
+- publisher: "OanDev"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-24
 - publisher: "Oberbergamt des Saarlandes"
   licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
   approved_on: 2026-11-21
@@ -5292,6 +5319,9 @@
 - publisher: "Stadt Dormagen (SWD)"
   licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
   approved_on: 2026-11-21
+- publisher: "Stadt Dorsten"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-24
 - publisher: "Stadt Dortmund"
   licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
   approved_on: 2026-11-21
@@ -6258,6 +6288,12 @@
 - publisher: "Stadtverwaltung Böblingen"
   licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
   approved_on: 2026-11-21
+- publisher: "Stadtverwaltung Gera"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-24
+- publisher: "Stadtverwaltung Greiz"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-24
 - publisher: "Stadtverwaltung Hohen Neuendorf"
   licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
   approved_on: 2026-11-21
@@ -6471,6 +6507,9 @@
 - publisher: "Test-hannIT"
   licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
   approved_on: 2026-11-21
+- publisher: "ThüringenForst AöR, Forstliches Forschungs- und Kompetenzzentrum"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-24
 - publisher: "Thüringer Landesamt für Bau und Verkehr"
   licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
   approved_on: 2026-11-21
@@ -6483,9 +6522,15 @@
 - publisher: "Thüringer Landesamt für Umwelt, Bergbau und Naturschutz"
   licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
   approved_on: 2026-11-21
+- publisher: "Thüringer Landesamt für Verbraucherschutz"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-24
 - publisher: "Thüringer Landesverwaltungsamt"
   licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
   approved_on: 2026-11-21
+- publisher: "Thüringer Ministerium für Inneres, Kommunales und Landesentwicklung"
+  licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
+  approved_on: 2026-11-24
 - publisher: "Toll Collect GmbH"
   licenses: [cc0-1.0, dl-de-zero-2.0, cc-pdm-1.0, pddl-1.0, opendata-swiss-open, cc-by-4.0, cc-by, cc-by-3.0-de, dl-de-by-2.0, dl-de-by, dl-de-by-1.0, geonutzv, odc-by-1.0, opendata-swiss-by, swisstopo-ogd, lba-free-use, cc-by-sa-4.0, cc-by-sa, cc-by-sa-3.0-de, cc-by-sa-3.0, odbl-1.0, cc-by-nc-4.0, cc-by-nc-3.0-de, cc-by-nc, opendata-swiss-by-ask, opendata-swiss-ask, cc-by-nd-4.0]
   approved_on: 2026-11-21

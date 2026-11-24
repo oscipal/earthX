@@ -36,7 +36,17 @@ Diesen Abschnitt schreibt jeder Lauf neu (zwischen den Markierungen); was nicht 
 abgehakt unter „Erledigt“.
 
 <!-- auto:start -->
-Noch kein automatischer Lauf.
+- [ ] **LAUF** · seit 2026-11-24 · zuletzt 2026-11-24 · Lauf gescheitert: Bericht: Der Bericht von earth-search ist gescheitert.. Siehe `docs/harvest/laeufe/2026-11-24/fehler.log`.
+- [ ] **LIZENZ Weitere Informationen zu den Daten und Veröffentlichungen er** · seit 2026-11-24 · zuletzt 2026-11-24 · 19 Funde warten auf eine Einstufung von Otto.
+- [ ] **LIZENZ https://data-lra-cha.opendata.arcgis.com/api/feed/dcat-ap/3.** · seit 2026-11-24 · zuletzt 2026-11-24 · 165 Funde warten auf eine Einstufung von Otto.
+- [ ] **LIZENZ https://www.offenedaten-wuppertal.de/page/nutzungsbedingunge** · seit 2026-11-24 · zuletzt 2026-11-24 · 116 Funde warten auf eine Einstufung von Otto.
+- [ ] **LIZENZ Es gelten keine Zugriffsbeschränkungen** · seit 2026-11-24 · zuletzt 2026-11-24 · 82 Funde warten auf eine Einstufung von Otto.
+- [ ] **LIZENZ http://inspire.ec.europa.eu/metadata-codelist/LimitationsOnP** · seit 2026-11-24 · zuletzt 2026-11-24 · 36 Funde warten auf eine Einstufung von Otto.
+- [ ] **LIZENZ mdd-nrw-nutzungsbedingungen** · seit 2026-11-24 · zuletzt 2026-11-24 · 27 Funde warten auf eine Einstufung von Otto.
+- [ ] **LIZENZ https://opendata.kreis-borken.de/pages/datenschutz** · seit 2026-11-24 · zuletzt 2026-11-24 · 18 Funde warten auf eine Einstufung von Otto.
+- [ ] **LIZENZ Der Zugang zu den Daten ist nach § 3 des Informationsfreihei** · seit 2026-11-24 · zuletzt 2026-11-24 · 16 Funde warten auf eine Einstufung von Otto.
+- [ ] **LIZENZ Es erfolgt ein kompletter Haftungsausschluss. Es wird keiner** · seit 2026-11-24 · zuletzt 2026-11-24 · 8 Funde warten auf eine Einstufung von Otto.
+- [ ] **QUELLE govdata** · seit 2026-11-24 · zuletzt 2026-11-24 · Harvest gescheitert: Der Harvest endete mit Fehler (protokoll.txt).
 <!-- auto:end -->
 
 ## Erledigt
