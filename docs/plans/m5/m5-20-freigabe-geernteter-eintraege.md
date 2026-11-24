@@ -481,7 +481,7 @@ Ursachen wieder aus dem Code und den Zahlen der Rückmeldung abgeleitet; die Sit
 - **A10** „Engste“ Lizenz: kleinste Stufe, Flags als UND; für gelistete Einträge ist die Stufe ohnehin `catalog`, maßgeblich sind Flags und Attribution.
 - **A11** `blocked.yaml` wirkt in `report` vor Enrich (`adr/0033` §9) und weiter in `catalog-load`.
 - **A12** Zwischenform neu mit `themes` (INSPIRE- und EU-Themen als Codes) und `identifier`; neue Extraktor-Version, Ottos erster Lauf nach dem Merge wertet einmal ohne Anfrage neu aus und zählt die Funde einmal als „geändert“.
-- **A13** Git nur im Skript auf dem Rechner, nie im Image; das Skript pusht nie (`adr/0025` §8 Schritt 5).
+- **A13** Git nur im Skript auf dem Rechner, nie im Image; das Skript pusht nie (`adr/0025` §8 Schritt 5). **Nachtrag 2026-11-24 (M5-67):** gilt nicht für `scripts/harvest-cycle.ps1`, das nach Ottos Entscheidung pusht und nach grünen Pflicht-Checks merged (`adr/0025` §6.5, Nachtrag).
 - **A14** Dedupe über gleiche Datei-Adressen entfällt in PR 1: gemessen ist nur die Seite (M6, kein Schlüssel); eine Datei-Regel käme erst mit einer Messung.
 - **A16** Die Distributionen der Duplikate schreibt der Bericht nicht in den Inhalt des Haupteintrags (der Stapel bliebe sonst nie gleich), sondern `api` hängt sie beim Ausliefern als `earthx:also_at` an (Quelle, Link „Source“, Dateien je Duplikat). Volle Einträge aus pgstac bekommen das nicht; der Data catalogue zeigt es in M5-20 nicht.
 - **A17** Ein veröffentlichter Eintrag, dessen Fund ungültig wird, bleibt mit dem alten Inhalt sichtbar; ein nie veröffentlichter verschwindet. Ein Eintrag, der Duplikat wird, ist verborgen; wird er wieder Haupteintrag, kommt er erneut in die Prüfung.
@@ -512,6 +512,8 @@ Ohne Netz, synthetische Fixtures (M5-19 A5), Transport-Attrappe am `Gateway`:
 - **Skript:** bricht ab bei schmutzigem Checkout und außerhalb von `main`; pusht nie (Test am Text des Skripts wie bei bestehenden Skripten [A]).
 
 ## 16. Befehle für Ottos lokalen Lauf
+
+**Nachtrag 2026-11-24 (M5-67):** Der Regelfall ist jetzt ein Doppelklick auf „EarthX Harvest“ (`scripts/harvest-cycle.ps1`, Plan `plans/m5/m5-67-harvest-automatisch.md` §3, §11). Die Befehle unten bleiben für Läufe von Hand.
 
 Stand 20.11.2026, nach §13f. Die Harvests aus dem Stand nach §13e (`--reextract` mit `--build`) bleiben gültig; neu sind nur Einstufung und Freigaben, und die leitet der Bericht ohne Anfrage neu ab. PowerShell im Checkout.
 

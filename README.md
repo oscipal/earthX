@@ -351,6 +351,32 @@ docker compose run --rm harvest opendata-swiss
 - Hält ein Host still (Unterbrecher, `robots.txt`) oder ist die Obergrenze an Anfragen erreicht, endet der
   Lauf `interrupted` und ändert nichts an Funden, die er nicht gesehen hat; später erneut starten.
 
+### Harvest mit einem Doppelklick (M5-67)
+
+Ein Lauf über alle freigegebenen Quellen ohne Terminal: ernten, Bericht, Linkprüfung, Freigabe nach festen Regeln,
+ein PR, Merge nach grünen Pflicht-Checks, Neustart der Plattform (Plan `docs/plans/m5/m5-67-harvest-automatisch.md`,
+`docs/adr/0033-freigabe-gelisteter-eintraege.md` §8.5). Lizenzen stuft weiter nur Otto ein.
+
+**Einmal einrichten** (Windows PowerShell 5.1, im Checkout):
+
+```powershell
+winget install --id GitHub.cli -e
+gh auth login
+gh auth setup-git
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\harvest-cycle.ps1 -Install
+```
+
+Danach startet „EarthX Harvest“ auf dem Desktop einen Lauf. Das Fenster sagt am Ende in einer Zeile, was geschehen
+ist. Der erste Lauf ist ein Probelauf: Er verbirgt nichts und gibt nichts frei, die Zahlen stehen im PR.
+
+- **Ausgaben:** das volle Protokoll unter `..\earthx-ausgaben\<Tag>_<Uhrzeit>\`, nie im Repo; im Repo nur die
+  bereinigten Laufdateien unter `docs/harvest/laeufe/<Tag>/` und die Befundliste `docs/harvest/befunde.md`.
+- **Bei einem Fehler** wird nichts gemergt; der Branch bleibt, wenn möglich mit Draft-PR und `fehler.log`.
+- **Zurücknehmen:** `revoked_on` in einer Freigabedatei, `blocked.yaml`, `cleared` in `backend/catalog/flags.yaml`,
+  `withdrawn_on` in `backend/catalog/licenses/spellings.yaml`. Am Handy im Editor von GitHub; der nächste Lauf wendet
+  es an.
+- **Regeln** in `backend/catalog/approval_rules.yaml` (Größe eines Stapels), `linkcheck.yaml`, `flags.yaml`.
+
 ### Geerntete Einträge freigeben (M5-20)
 
 Aus den Funden eines Harvest-Laufs werden gelistete Einträge im „Data catalogue“, aber erst nach deiner Freigabe
