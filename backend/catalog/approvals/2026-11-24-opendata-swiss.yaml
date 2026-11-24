@@ -8,8 +8,8 @@ batch_id: 6
 fingerprint: 7b7fbd30869c1076a27541ffdd39fadcfb4806db0b7a164f1131823572b97761
 created_on: 2026-11-24
 entries: 42
-decision: pending
-decided_on: null
+decision: approved
+decided_on: 2026-11-24
 excluded_rules: []
 revoked_on: null
 sample:
@@ -18,108 +18,108 @@ sample:
   title: Katzen - Verteilung pro Gemeinde
   source_url: https://opendata.swiss/de/dataset/katzen-verteilung-pro-gemeinde
   license_rule: opendata-swiss/Identitas AG/opendata-swiss-by
-  ok: null
+  ok: false
 - dataset_id: opendata-swiss.b1405e11-135b-47fb-becd-2aa88553ef02
   why: new_host
   title: Anzahl Minergie-Gebäude in Gemeinden
   source_url: https://www.minergie.ch/de/gebaeude/gebaeudeliste/
   license_rule: opendata-swiss/Bundesamt für Energie BFE/opendata-swiss-by
-  ok: null
+  ok: true
 - dataset_id: opendata-swiss.c0680ca8-a739-4d92-ba07-32f060b7641e
   why: new_host
   title: Tree measurements 2002-2016 from the long-term irrigation experiment Pfynwald,
     Switzerland
   source_url: https://www.wsl.ch/en/about-wsl/instrumented-field-sites-and-laboratories/experimental-sites-in-forests/pfynwald.html
   license_rule: 'opendata-swiss/EnviDat: das Umwelt-Datenportal/opendata-swiss-by-ask'
-  ok: null
+  ok: true
 - dataset_id: opendata-swiss.abd4afe9-57d2-4fa7-bdce-fe3dd36facc3
   why: random
   title: 'historische Karten der Aare: 1809 Plan der Aare Blatt 1'
   source_url: https://opendata.swiss/de/dataset/historische-karten-der-aare-1809-plan-der-aare-blatt-1
   license_rule: opendata-swiss/AGIS Service Center Kanton Aargau/opendata-swiss-open
-  ok: null
+  ok: true
 - dataset_id: opendata-swiss.def4897e-3077-49de-82fc-095ec5f227f3
   why: random
   title: Bibliothekenstatistik der Öffentlichen Bibliotheken im Kanton Thurgau (2005-2019)
   source_url: https://data.tg.ch/explore/dataset/dek-kb-2/
   license_rule: opendata-swiss/Kanton Thurgau/cc0-1.0+opendata-swiss-open
-  ok: null
+  ok: false
 - dataset_id: opendata-swiss.0df43fd2-19a5-4976-8931-0f713d7c6573
   why: random
   title: 'historische Karten der Aare: 1770 Plan über die Aare'
   source_url: https://opendata.swiss/de/dataset/historische-karten-der-aare-1770-plan-uber-die-aare
   license_rule: opendata-swiss/AGIS Service Center Kanton Aargau/opendata-swiss-open
-  ok: null
+  ok: true
 - dataset_id: opendata-swiss.4d05ba94-7346-48f9-923c-e3431eb19408
   why: random
   title: 'historische Karten der Aare: 1882 Aarekorrektion Rupperswil-Auenstein'
   source_url: https://opendata.swiss/de/dataset/historische-karten-der-aare-1882-aarekorrektion-rupperswil-auenstein
   license_rule: opendata-swiss/AGIS Service Center Kanton Aargau/opendata-swiss-open
-  ok: null
+  ok: true
 - dataset_id: opendata-swiss.404bbec9-dafb-4eb4-b094-51402d638413
   why: random
   title: Ziegen - Verteilung pro Kanton
   source_url: https://opendata.swiss/de/dataset/ziegen-verteilung-pro-kanton
   license_rule: opendata-swiss/Identitas AG/opendata-swiss-by
-  ok: null
+  ok: false
 - dataset_id: opendata-swiss.6fcce607-fd15-44f6-978e-7c3ae2312aad
   why: random
   title: 'historische Karten der Aare: 1868 Korrektion und Brückenbau Wildegg'
   source_url: https://opendata.swiss/de/dataset/historische-karten-der-aare-1868-korrektion-und-bruckenbau-wildegg
   license_rule: opendata-swiss/AGIS Service Center Kanton Aargau/opendata-swiss-open
-  ok: null
+  ok: true
 - dataset_id: opendata-swiss.088a8bad-f237-440f-8fa8-37752d94cbce
   why: random
   title: 'Fahrbahn: Fläche'
   source_url: https://opendata.swiss/de/dataset/fahrbahn-flache
   license_rule: opendata-swiss/Geoinformation Kanton Freiburg/opendata-swiss-open
-  ok: null
+  ok: true
 - dataset_id: opendata-swiss.b5be0e67-2700-4da6-9180-ad5f01059d6a
   why: random
   title: Verwaltungseinheiten der Schweiz – INSPIRE
   source_url: https://opendata.swiss/de/dataset/verwaltungseinheiten-der-schweiz-inspire
   license_rule: opendata-swiss/Bundesamt für Landestopografie swisstopo/opendata-swiss-open
-  ok: null
+  ok: true
 - dataset_id: opendata-swiss.3462352e-cbf3-441d-a3a0-2931b9b03e88
   why: random
   title: Studie Winterstrom aus Photovoltaik - Produktionsprofile aller Schweizer
     Gemeinden
   source_url: https://www.bfe.admin.ch/bfe/de/home/politik/energieperspektiven-2050-plus.html
   license_rule: opendata-swiss/Bundesamt für Energie BFE/opendata-swiss-by
-  ok: null
+  ok: true
 - dataset_id: opendata-swiss.149f2203-7603-4cc9-bc52-c8c82bf5ba10
   why: random
   title: 'historische Karten der Aare: 1809 Plan der Aare Blatt 3'
   source_url: https://opendata.swiss/de/dataset/historische-karten-der-aare-1809-plan-der-aare-blatt-3
   license_rule: opendata-swiss/AGIS Service Center Kanton Aargau/opendata-swiss-open
-  ok: null
+  ok: true
 - dataset_id: opendata-swiss.e6d07a52-0234-46b5-b96a-a22b6affce24
   why: random
   title: Geografische Namen Schweiz - INSPIRE
   source_url: https://opendata.swiss/de/dataset/geografische-namen-schweiz-inspire
   license_rule: opendata-swiss/Bundesamt für Landestopografie swisstopo/opendata-swiss-open
-  ok: null
+  ok: true
 - dataset_id: opendata-swiss.c245b1f8-add9-46a8-a2f0-38d1ee655fb6
   why: random
   title: Administrative unit Switzerland - INSPIRE
   source_url: https://opendata.swiss/de/dataset/administrative-unit-switzerland-inspire
   license_rule: opendata-swiss/Bundesamt für Landestopografie swisstopo/opendata-swiss-open
-  ok: null
+  ok: true
 - dataset_id: opendata-swiss.8a0dddb4-e104-431d-aa8f-a7a0df1b2c87
   why: random
   title: HWGWP Hochwassergrenzwertpegel
   source_url: https://opendata.swiss/de/dataset/hwgwp-hochwassergrenzwertpegel
   license_rule: opendata-swiss/Bundesamt für Umwelt BAFU/opendata-swiss-open
-  ok: null
+  ok: true
 - dataset_id: opendata-swiss.f5c08a91-d1f0-455b-95df-d056b07f9948
   why: random
   title: Landeskarte 1:1 Million (grau)
   source_url: https://opendata.swiss/de/dataset/landeskarte-1-1-million-grau
   license_rule: opendata-swiss/Bundesamt für Landestopografie swisstopo/opendata-swiss-by
-  ok: null
+  ok: true
 - dataset_id: opendata-swiss.214c6230-068f-40ff-b2d9-c878cee65007
   why: random
   title: Bodenkarte Kanton Schaffhausen
   source_url: https://opendata.swiss/de/dataset/bodenkarte-kanton-schaffhausen
   license_rule: opendata-swiss/Amt für Geoinformation Kanton Schaffhausen/opendata-swiss-open
-  ok: null
+  ok: true
