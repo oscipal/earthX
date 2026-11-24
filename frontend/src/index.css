@@ -665,6 +665,11 @@ svg.lucide.icon-lead {
 .inspector .range-hist-bars rect.out {
   opacity: 0.25;
 }
+.inspector .range-hist-bars rect.hist-bar {
+  stroke: var(--hist-bar-edge);
+  stroke-width: 0.5px;
+  vector-effect: non-scaling-stroke;
+}
 .inspector .range-hist input[type='range'] {
   position: absolute;
   inset: 0;
