@@ -422,7 +422,6 @@ Ein Job-Ergebnis mit Klassenband (`resultLayer.ts::isClassBand`, z. B. WorldCove
    docker compose run --build --rm materialize esa-worldcover-2021 --force
    ```
 
-  
 2. Ein Ergebnisband, das Klassen nennt, ist im Frontend ein Klassenband, gleich welcher Typ. Seine Kacheln bekommen die Farben dieser Klassen als `colormap` (JSON) des Tilers, auch bei `float32`. Dieselbe Liste zeigt die Legende.
 3. Ein maskierender Schritt nennt das entscheidende Band und die Werte, die er ausblendet (`Operator.hides`, bei `mask` und `mask_values`). Dieses Band verliert die ausgeblendeten Klassen, in `classification:classes` wie in der Farbtabelle. Die Legende zeigt also Tree cover nicht mehr.
 4. `reproject` baute die Bandangaben neu und verlor die Klassen auch bei `nearest`/`mode`. Jetzt behält es sie, und die Regel je Band (§14) entscheidet.
