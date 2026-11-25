@@ -1,0 +1,208 @@
+# Approval of a run of the harvest (adr/0033 §8; M5-20 plan §12), written by `discovery report`. Check the sample in
+# the report beside this file: open each link, compare licence, publisher, access, extent and that it is geodata; set
+# `ok: true` or `ok: false` for every entry. Then set `decision` (approved or rejected) and `decided_on` (the day).
+# `excluded_rules` takes licence rules whose entries stay out; `revoked_on` hides again what this file published.
+# `excluded_entries` are entries with a warning sign (M5-67 plan §5, in the report); they stay out and wait.
+# Only entries whose own link passed the automatic check become visible (M5-67 plan §4). Never a name, an address or the words of a request here: the repository is public.
+source_id: fsdi-stac
+batch_id: 12
+fingerprint: 905987e913b59b201926036173f02567c93a0c36f219aac6530398e64fd3f119
+created_on: 2026-11-25
+entries: 107
+decision: approved
+decided_on: 2026-11-25
+excluded_rules: []
+revoked_on: null
+sample:
+- dataset_id: fsdi-stac.ch.bafu.gefahren-waldbrand_praeventionsmassnahmen_kantone
+  why: new_rule
+  title: Forest fire prevention measures of the cantons
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.gefahren-waldbrand_praeventionsmassnahmen_kantone
+  license_rule: fsdi-stac/Federal Office for the Environment FOEN, cantons/opendata-swiss-open
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: data.geo.admin.ch
+- dataset_id: fsdi-stac.ch.bafu.schutzgebiete-paerke_nationaler_bedeutung
+  why: new_rule
+  title: Swiss National Park and parks of national importance (Zones)
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.schutzgebiete-paerke_nationaler_bedeutung
+  license_rule: fsdi-stac/Federal Office for the Environment FOEN, cantons/opendata-swiss-by
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: data.geo.admin.ch
+- dataset_id: fsdi-stac.ch.bafu.wald-lufttemperatur_juli_2085_gering
+  why: random
+  title: Mean daily temperature high in July, period 2070-2099, Scenario RCP 2.6
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.wald-lufttemperatur_juli_2085_gering
+  license_rule: fsdi-stac/Federal Office for the Environment FOEN/opendata-swiss-open
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: data.geo.admin.ch
+- dataset_id: fsdi-stac.ch.bafu.landesforstinventar-produktionsregionen
+  why: random
+  title: Production regions NFI
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.landesforstinventar-produktionsregionen
+  license_rule: fsdi-stac/Federal Office for the Environment FOEN/opendata-swiss-by
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: data.geo.admin.ch
+- dataset_id: fsdi-stac.ch.bafu.neophyten
+  why: random
+  title: Invasive alien plants
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.neophyten
+  license_rule: fsdi-stac/Federal Office for the Environment FOEN/opendata-swiss-open
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: data.geo.admin.ch
+- dataset_id: fsdi-stac.ch.bafu.grundwasserkoerper
+  why: random
+  title: Groundwater bodies of Switzerland
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.grundwasserkoerper
+  license_rule: fsdi-stac/Federal Office for the Environment FOEN/opendata-swiss-open
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: data.geo.admin.ch
+- dataset_id: fsdi-stac.ch.bafu.hydrogeologie-uebersichtskarte
+  why: random
+  title: Hydrogeological sketch
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.hydrogeologie-uebersichtskarte
+  license_rule: fsdi-stac/Federal Office for the Environment FOEN/opendata-swiss-open
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: data.geo.admin.ch
+- dataset_id: fsdi-stac.ch.bafu.geochemischer-bodenatlas_schweiz_cadmium
+  why: random
+  title: 'Geochemical soil atlas of Switzerland: Cadmium'
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.geochemischer-bodenatlas_schweiz_cadmium
+  license_rule: fsdi-stac/Federal Office for the Environment FOEN/opendata-swiss-open
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: data.geo.admin.ch
+- dataset_id: fsdi-stac.ch.bafu.trockenheitsdaten-numerisch
+  why: random
+  title: Numeric data from drought platform
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.trockenheitsdaten-numerisch
+  license_rule: fsdi-stac/Federal Office for the Environment FOEN/opendata-swiss-open
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: data.geo.admin.ch
+- dataset_id: fsdi-stac.ch.bafu.luftreinhaltung-ozon
+  why: random
+  title: Air pollution by Ozone
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.luftreinhaltung-ozon
+  license_rule: fsdi-stac/Federal Office for the Environment FOEN/opendata-swiss-by
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: data.geo.admin.ch
+- dataset_id: fsdi-stac.ch.bafu.wald-foehnhaeufigkeit_jahr
+  why: random
+  title: Frequency of Föhn in the year, period variable (maximum 1969-2013)
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.wald-foehnhaeufigkeit_jahr
+  license_rule: fsdi-stac/Federal Office for the Environment FOEN/opendata-swiss-open
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: data.geo.admin.ch
+- dataset_id: fsdi-stac.ch.bafu.geochemischer-bodenatlas_schweiz_kupfer
+  why: random
+  title: 'Geochemical soil atlas of Switzerland: Copper'
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.geochemischer-bodenatlas_schweiz_kupfer
+  license_rule: fsdi-stac/Federal Office for the Environment FOEN/opendata-swiss-open
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: data.geo.admin.ch
+- dataset_id: fsdi-stac.ch.bafu.schutzgebiete-aulav
+  why: random
+  title: Protected areas in the civilian air navigation obstacles - Other protected
+    areas
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.schutzgebiete-aulav
+  license_rule: fsdi-stac/Federal Office for the Environment FOEN/opendata-swiss-open
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: data.geo.admin.ch
+- dataset_id: fsdi-stac.ch.bafu.gewaesserschutz-diffuse_eintraege_gesamt_phosphor
+  why: random
+  title: Diffuse total phosphorus inputs into waters
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.gewaesserschutz-diffuse_eintraege_gesamt_phosphor
+  license_rule: fsdi-stac/Federal Office for the Environment FOEN/opendata-swiss-open
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: data.geo.admin.ch
+- dataset_id: fsdi-stac.ch.bafu.gefahren-waldbrand_warnung
+  why: random
+  title: Warning Forest Fire Danger
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.gefahren-waldbrand_warnung
+  license_rule: fsdi-stac/Federal Office for the Environment FOEN/opendata-swiss-open
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: data.geo.admin.ch
+- dataset_id: fsdi-stac.ch.bafu.wald-niederschlag_april_august_2085_stark
+  why: random
+  title: Precipitation sum April-August, period 2070-2099, Scenario RCP 8.5
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.wald-niederschlag_april_august_2085_stark
+  license_rule: fsdi-stac/Federal Office for the Environment FOEN/opendata-swiss-open
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: data.geo.admin.ch
+- dataset_id: fsdi-stac.ch.bafu.landesforstinventar-schutzwaldregionen
+  why: random
+  title: Protection forest regions NFI
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.landesforstinventar-schutzwaldregionen
+  license_rule: fsdi-stac/Federal Office for the Environment FOEN/opendata-swiss-by
+  ok: true
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: data.geo.admin.ch
+excluded_entries:
+- fsdi-stac.ch.bafu.hydrologie-hochwasserstatistik
+- fsdi-stac.ch.bafu.hydrologie-niedrigwasserstatistik
+decided_by: rules
