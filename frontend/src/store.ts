@@ -2317,8 +2317,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => (toolMode === 'none' ? { toolMode } : { toolMode, dock: withoutControls(s.dock) })),
   // The AOI is also the coverage route's spatial filter (`refreshCoverage`),
   // so every way it can change reschedules a refresh.
+  // An AOI that comes in another way than drawing (a place, a file) ends the tool chosen for drawing (UI-12, Otto 18.11.2026): otherwise
+  // the next click on the map starts a shape that replaces it.
   setAoi: (aoi, point = null) => {
     set((s) => ({
+      ...(aoi ? { toolMode: 'none' as const } : {}),
       aoi,
       aoiPoint: point,
       lastAoi: aoi ?? s.lastAoi,
