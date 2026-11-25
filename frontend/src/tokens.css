@@ -59,8 +59,8 @@
   /* The column of the names in a form: the settings bar's, and the processing panel sets its own wider one. */
   --form-label-width: 72px;
   --sheet-wide-width: clamp(520px, 34vw, 640px);
-  /* The least width of the status box where a panel narrows the free area of the map: a short text and the red x or "Stop" still fit. */
-  --status-min-width: 240px;
+  /* The status line at the foot of the window (UI-12, F1): one row, as high as a control. */
+  --status-line-height: var(--control-height);
 
   /* One family; the monospace one is for code, formulas and expressions only. */
   --font: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;

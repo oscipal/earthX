@@ -33,10 +33,11 @@ textarea {
 
 .app {
   /* The bands at the bottom stand where they are anchored, whether a panel at the left is open or not (NM4-66): they are centred in
-     the map beside the rail (widths: `tokens.css`, UI-01 §6.9). The status box is the one that makes room for it (`mapEdges.ts`). */
+     the map beside the rail (widths: `tokens.css`, UI-01 §6.9). The status line has a place of its own under all of them (UI-12). */
   position: relative;
   width: 100vw;
-  height: 100vh;
+  /* The map and every panel end above the status line, which no panel covers (UI-12, Otto 17.11.2026). */
+  height: calc(100vh - var(--status-line-height));
   color: var(--text);
   /* One look for the scroll bars of all panels and windows (inherited): the Data catalogue as the processing panel (UI-12). */
   scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
@@ -92,21 +93,22 @@ textarea {
   /* Between the rail or the panel and the right edge, a margin of 16 px each side: never over an edge. */
   width: min(760px, calc(100vw - var(--rail-width) - 32px));
 }
-.status {
-  top: 16px;
-  left: calc((100% + var(--rail-width)) / 2);
-  transform: translateX(-50%);
-  /* Centred on the map right of the rail: no wider than that, or a phone scrolls sideways (UI-03d, seen at 360 px). */
-  width: min(560px, calc(100vw - var(--rail-width) - 16px));
-}
-/* Narrow windows: a panel covers the whole map, so the message lies over the panel of the rail (11), the settings bar and the sheet (12),
-   under the rail itself (14), and is never hidden by one (UI-04 part 6, backlog item 58). The buttons at the top right stand in the row
-   at the top, the message under them (it was over them, in two rows). */
-@media (max-width: 899px) {
-  .overlay.status {
-    top: calc(var(--space-4) + var(--control-height) + var(--space-2));
-    z-index: 13;
-  }
+/* The status line (UI-12, F1 and F2): at the foot of the window right of the rail, over its whole width, always there; the app with its map
+   and panels ends above it, so no panel ever covers it, in any window. One row: the spinner while something runs, one text, "Stop" and
+   the red x. */
+.overlay.status {
+  position: fixed;
+  z-index: 14;
+  left: var(--rail-width);
+  right: 0;
+  bottom: 0;
+  height: var(--status-line-height);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-3);
+  border-top: var(--line-width) solid var(--panel-border);
+  background: linear-gradient(var(--panel-bg), var(--panel-bg)), var(--map-bg);
+  pointer-events: auto;
 }
 
 /* --- draggable panels --- */
@@ -957,8 +959,8 @@ svg.lucide.icon-lead {
 /* The column is taken from the map: what stands at the bottom and the map controls move left of it. */
 @media (min-width: 900px) {
   /* The free area of the map: from the rail and the panel beside it to the settings bar or the sheet (the classes of `mapEdges.ts`).
-     The status box is centred in it, as wide as 560 px, and narrower, down to its minimum, where the free area is. The Data catalogue is
-     a window that may cover it, so it takes nothing from the area. Below 900 px a panel covers the whole map; the rule there is above. */
+     The legend and the buttons stand in it; the status line has its own place at the foot (UI-12). Below 900 px a panel covers the
+     whole map. */
   .app {
     --map-left: var(--rail-width);
     --map-right: 0px;
@@ -971,13 +973,6 @@ svg.lucide.icon-lead {
   }
   .app.has-sheet {
     --map-right: var(--sheet-wide-width);
-  }
-  /* A free area narrower than the box's minimum: the box lies over the panels at its sides (12, after them), never under them, and the
-     Data catalogue (12, after the box) still covers it (Otto, 14.11.2026, UI-08). */
-  .overlay.status {
-    z-index: 12;
-    left: calc((100% + var(--map-left) - var(--map-right)) / 2);
-    width: max(var(--status-min-width), min(560px, calc(100% - var(--map-left) - var(--map-right) - 2 * var(--space-4))));
   }
   .app.has-inspector .overlay.bottom {
     left: calc((100% + var(--rail-width) - var(--inspector-width)) / 2);
@@ -2510,7 +2505,8 @@ textarea:autofill {
   position: absolute;
   z-index: 14;
   top: 0;
-  bottom: 0;
+  /* Down to the foot of the window, beside the status line (UI-12). */
+  bottom: calc(-1 * var(--status-line-height));
   left: 0;
   width: var(--rail-width);
   padding: var(--space-3) 0;
@@ -3506,41 +3502,39 @@ button.pm-open:hover {
   font-size: var(--text-sm);
 }
 
-/* --- status toasts --- */
-/* The stack spans the full 560px of `.status` and sits at the top centre, where
-   it crosses the buttons of `.top-right` on any window below roughly 1500px.
-   While every toast was transient that cost nothing; the standing zoom hint
-   (M2-10) would have swallowed the clicks in that strip permanently, "Zoom to
-   selection" first of all. So the stack itself takes no pointer events and each
-   toast takes them back — except the hint, which has nothing to click. */
+/* --- the messages of the status line --- */
+/* One row: what runs (spinner, its text while no message stands, "Stop"), then the message; a long text is cut with "…" and shows whole
+   in its tooltip (UI-12, F2). */
 .status-stack {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  pointer-events: none;
-}
-.status-stack > .toast {
-  pointer-events: auto;
+  flex: 1;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  height: 100%;
 }
 .toast {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-md);
+  gap: var(--space-2);
+  min-width: 0;
   font-size: var(--text-sm);
-  backdrop-filter: blur(10px);
-  border: 1px solid var(--panel-border);
-  /* Opaque: a message lies over a panel in a narrow window, and its text must not show through. */
-  background: linear-gradient(var(--panel-bg), var(--panel-bg)), var(--map-bg);
+}
+.toast.error,
+.toast.notice {
+  flex: 1;
+  justify-content: space-between;
+}
+.status-text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .toast.error {
-  border-color: var(--danger);
   color: var(--danger);
 }
 .toast.notice {
-  border-color: var(--accent);
   color: var(--text);
 }
 .toast.busy {
