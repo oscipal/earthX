@@ -31,7 +31,8 @@ import { isTemporaryImage, layerOfView, viewLayerOf } from '../viewLayer';
 import AutoScaleButton from './AutoScaleButton';
 import Badge from './Badge';
 import Tip from './Tip';
-import { useInspectorFit } from '../inspectorFitContext';
+import { useQuickRows } from '../inspectorFitContext';
+import { QUICK_PER_ROW } from '../inspectorFit';
 import { InspectorHead, InspectorSection, LayerStepper, Stepper } from './InspectorParts';
 import Pager from './Pager';
 import { ArrowLeftIcon, CogIcon, DownloadIcon, PlusIcon } from './icons';
@@ -50,7 +51,6 @@ const INDEX_ONLY_TIP = 'This layer holds the index only';
 const CLASS_COLOURS = 'Classes';
 const CLASS_COLOURS_TIP = 'Each class in the colour of the source; a class map has no range and no other colormap';
 const STEP_UNREADY = 'The range of this step is being measured';
-const QUICK_PER_ROW = 3;
 const ENHANCE_RGB_TIP = 'Put the 2nd to the 98th percentile of red, green and blue in the fields, each channel on its own; Apply draws them. Only the look: Add to layers pins the whole view.';
 
 // The histograms of the bands the statistics name, in their order; none where one band has none.
@@ -60,7 +60,7 @@ async function loadHistograms(measure: ViewMeasure): Promise<Histogram[] | null>
 }
 
 export default function ViewerControls() {
-  const { quickRows } = useInspectorFit();
+  const quickRows = useQuickRows();
   const [quickPageWanted, setQuickPage] = useState(0);
   const pendingColormapName = useAppStore((s) => s.pendingColormapName);
   const pendingVmin = useAppStore((s) => s.pendingVmin);

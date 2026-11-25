@@ -3,15 +3,15 @@
 // bottom with a grip that folds it to its head, as the processing panel is. While the processing panel is open it takes the column; the bar
 // stays mounted, hidden, and comes back with what was typed in it.
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { useColormapPicker } from '../colormapPicker';
 import { useProcessingStore } from '../processingStore';
-import { COLUMN_WIDTH, START, foldOrder, foldedSections, maxColumns, nextFit, type Fit } from '../inspectorFit';
+import { fewerQuickRows } from '../inspectorFit';
 import { inspectorKindOf } from '../inspectorKind';
 import { useAppStore } from '../store';
 import { ChevronDownIcon, ChevronUpIcon } from './icons';
-import { InspectorFitContext, type InspectorFitState } from '../inspectorFitContext';
+import { QuickRowsContext } from '../inspectorFitContext';
 import ResultControls from './ResultControls';
 import ViewerControls from './ViewerControls';
 
@@ -33,33 +33,19 @@ function useSheetHeight(ref: { current: HTMLElement | null }): void {
   }, [ref]);
 }
 
-// The window as the bar sees it: its size and whether the panel of the rail takes room beside it.
-function useWindowSize(): { width: number; height: number } {
-  const [size, setSize] = useState(() => ({ width: window.innerWidth, height: window.innerHeight }));
+// The rows a page of "Quick processing" has (UI-12 (4)): all at first, one fewer while the body of the bar overflows, down to one. A change
+// of the window, of the kind or of the image starts again with all.
+function useQuickRows(ref: { current: HTMLElement | null }, kind: string): number {
+  const [size, setSize] = useState(() => `${window.innerWidth}x${window.innerHeight}`);
   useEffect(() => {
-    const resize = () => setSize({ width: window.innerWidth, height: window.innerHeight });
+    const resize = () => setSize(`${window.innerWidth}x${window.innerHeight}`);
     window.addEventListener('resize', resize);
     return () => window.removeEventListener('resize', resize);
   }, []);
-  return size;
-}
-
-// The bar never scrolls (UI-12 (12), `inspectorFit.ts`): it measures its body after each change of its content and takes the next step while
-// the body overflows; a change of the window, of the kind or of a fold by hand starts again from the first.
-function useFit(ref: { current: HTMLElement | null }, kind: string): InspectorFitState & { columns: number } {
-  const size = useWindowSize();
-  const dockOpen = useAppStore((s) => s.dock !== null);
-  // What the bar shows: the view, a pinned view or a result. A section opened or folded by hand belongs to it, and goes with it.
-  const target = useAppStore((s) => (s.focusMode ? `view|${s.viewLayerId ?? ''}` : `result|${s.resultViewLayerId ?? ''}`));
-  const [hand, setHand] = useState<{ target: string; folded: ReadonlySet<string>; openedLast: string | null }>({ target, folded: new Set(), openedLast: null });
-  const own = hand.target === target ? hand : { target, folded: new Set<string>(), openedLast: null };
-  const handFolded = own.folded;
-  const openedLast = own.openedLast;
-
-  const signature = [size.width, size.height, dockOpen, kind, target, Array.from(handFolded).join(','), openedLast].join('|');
-  const [state, setState] = useState<{ signature: string; fit: Fit }>({ signature, fit: START });
-  const fit = state.signature === signature ? state.fit : START;
-  const [titles, setTitles] = useState<string[]>([]);
+  const target = useAppStore((s) => (s.focusMode ? `view|${s.viewLayerId ?? ''}|${s.datasetId ?? ''}` : `result|${s.resultViewLayerId ?? ''}`));
+  const signature = [size, kind, target].join('|');
+  const [state, setState] = useState<{ signature: string; rows: number }>({ signature, rows: Number.POSITIVE_INFINITY });
+  const rows = state.signature === signature ? state.rows : Number.POSITIVE_INFINITY;
   const [tick, setTick] = useState(0);
 
   // Any change of size inside the body (a histogram that arrives, an RGB band with its three rows) asks for a new measurement.
@@ -82,58 +68,25 @@ function useFit(ref: { current: HTMLElement | null }, kind: string): InspectorFi
 
   useLayoutEffect(() => {
     const body = ref.current?.querySelector<HTMLElement>('.insp-body');
-    if (!body) return;
-    const found = [...body.querySelectorAll<HTMLElement>(':scope > .insp-section')].map((el) => el.dataset.title ?? '');
-    if (found.join('|') !== titles.join('|')) setTitles(found);
-    const overflows = body.scrollHeight > body.clientHeight + 1 || body.scrollWidth > body.clientWidth + 1;
-    if (!overflows) return;
-    const quick = body.querySelector<HTMLElement>('.vc-quick');
-    const quickRowsShown = quick ? Math.min(fit.quickRows, Number(quick.dataset.rows ?? 0)) : 0;
-    const taken = Number.parseFloat(getComputedStyle(body).getPropertyValue('--rail-width')) + (dockOpen ? Number.parseFloat(getComputedStyle(body).getPropertyValue('--dock-width')) : 0);
-    const next = nextFit(fit, { maxColumns: maxColumns(size.width, taken || 0), quickRowsShown, sections: foldOrder(found, openedLast).length });
-    if (next) setState({ signature, fit: next });
-  }, [ref, tick, fit, signature, size.width, dockOpen, titles, openedLast]);
-
-  const folded = useMemo(() => {
-    const auto = foldedSections(titles, fit.folds, openedLast);
-    return new Set([...auto, ...handFolded].filter((t) => t !== openedLast || handFolded.has(t)));
-  }, [titles, fit.folds, openedLast, handFolded]);
-  // A folded section opens and folds last from now on; an open one is folded by hand and stays so.
-  const toggle = useCallback(
-    (title: string) => {
-      if (folded.has(title)) setHand({ target, folded: new Set([...handFolded].filter((t) => t !== title)), openedLast: title });
-      else setHand({ target, folded: new Set([...handFolded, title]), openedLast: openedLast === title ? null : openedLast });
-    },
-    [folded, handFolded, openedLast, target],
-  );
-  return { folded, toggle, quickRows: fit.quickRows, columns: fit.columns };
+    const quick = body?.querySelector<HTMLElement>('.vc-quick');
+    if (!body || !quick || body.scrollHeight <= body.clientHeight + 1) return;
+    const next = fewerQuickRows(Math.min(rows, Number(quick.dataset.rows ?? 0)));
+    if (next !== null) setState({ signature, rows: next });
+  }, [ref, tick, rows, signature]);
+  return rows;
 }
 
 function Sheet({ kind, hidden }: { kind: 'view' | 'result'; hidden: boolean }) {
   const ref = useRef<HTMLElement>(null);
   const [folded, setFolded] = useState(false);
-  const { columns, ...fit } = useFit(ref, kind);
+  const quickRows = useQuickRows(ref, kind);
   useSheetHeight(ref);
-  // A bar of more columns is wider, and the map, its buttons and its legend move left of it (`--inspector-width` of `.app`).
-  useLayoutEffect(() => {
-    const app = ref.current?.closest<HTMLElement>('.app');
-    if (!app) return undefined;
-    if (columns > 1) app.style.setProperty('--inspector-width', `${columns * COLUMN_WIDTH}px`);
-    else app.style.removeProperty('--inspector-width');
-    return () => {
-      app.style.removeProperty('--inspector-width');
-    };
-  }, [columns]);
-  const { folded: foldedSet, toggle, quickRows } = fit;
-  const context = useMemo(() => ({ folded: foldedSet, toggle, quickRows }), [foldedSet, toggle, quickRows]);
   return (
     <aside
       ref={ref}
       className={`inspector panel${folded ? ' folded' : ''}`}
       aria-label={kind === 'result' ? 'Layer settings' : 'Image settings'}
       hidden={hidden}
-      data-columns={columns > 1 ? columns : undefined}
-      style={columns > 1 ? ({ '--columns': columns, width: `${columns * COLUMN_WIDTH}px` } as CSSProperties) : undefined}
     >
       <button
         type="button"
@@ -145,7 +98,7 @@ function Sheet({ kind, hidden }: { kind: 'view' | 'result'; hidden: boolean }) {
       >
         {folded ? <ChevronUpIcon /> : <ChevronDownIcon />}
       </button>
-      <InspectorFitContext.Provider value={context}>{kind === 'view' ? <ViewerControls /> : <ResultControls />}</InspectorFitContext.Provider>
+      <QuickRowsContext.Provider value={quickRows}>{kind === 'view' ? <ViewerControls /> : <ResultControls />}</QuickRowsContext.Provider>
     </aside>
   );
 }

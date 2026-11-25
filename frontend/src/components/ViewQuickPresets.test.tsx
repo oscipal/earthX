@@ -17,7 +17,7 @@ import type { MapLayer } from '../layers';
 import { forgetPresetLooks } from '../presetLooks';
 import { colourView, useAppStore } from '../store';
 import type { Collection, DownloadedInfo, StacItem } from '../types';
-import { InspectorFitContext } from '../inspectorFitContext';
+import { QuickRowsContext } from '../inspectorFitContext';
 import ViewerControls from './ViewerControls';
 
 declare global {
@@ -107,9 +107,9 @@ function mount(collection: Collection, asset: string, rescale = '0,3000', quickR
       dock: null,
     });
     root.render(
-      <InspectorFitContext.Provider value={{ folded: new Set(), toggle: () => {}, quickRows }}>
+      <QuickRowsContext.Provider value={quickRows}>
         <ViewerControls />
-      </InspectorFitContext.Provider>,
+      </QuickRowsContext.Provider>,
     );
   });
 }
@@ -157,7 +157,7 @@ describe('the pages of "Quick processing"', () => {
     mount(optical, 'visual');
     expect(quick()).toEqual(all());
     expect(count()).toBe('1 / 1');
-    expect(pager().closest('.insp-head')?.textContent).toContain('Quick processing');
+    expect(pager().closest('.insp-head')?.querySelector('.insp-heading')?.textContent).toBe('Quick processing');
     expect(arrow('Previous page').getAttribute('aria-disabled')).toBe('true');
     expect(arrow('Next page').getAttribute('aria-disabled')).toBe('true');
   });

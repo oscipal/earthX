@@ -1,12 +1,6 @@
 import { createContext, useContext } from 'react';
 
-// What the bar does so as not to scroll (UI-12 (12), `inspectorFit.ts`): the sections it folds, and the rows of "Quick processing" a page.
-export interface InspectorFitState {
-  folded: ReadonlySet<string>;
-  toggle: (title: string) => void;
-  quickRows: number;
-}
+// The rows a page of "Quick processing" has in the settings bar (UI-12 (4), `inspectorFit.ts`); `Infinity` for all.
+export const QuickRowsContext = createContext<number>(Number.POSITIVE_INFINITY);
 
-export const InspectorFitContext = createContext<InspectorFitState>({ folded: new Set(), toggle: () => {}, quickRows: Number.POSITIVE_INFINITY });
-
-export const useInspectorFit = (): InspectorFitState => useContext(InspectorFitContext);
+export const useQuickRows = (): number => useContext(QuickRowsContext);
