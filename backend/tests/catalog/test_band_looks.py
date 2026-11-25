@@ -395,3 +395,12 @@ class TestTheCollection:
         bands = {band["name"]: band for band in to_stac_collection(REGISTRY.get("sentinel-2-c1-l2a"))["earthx:bands"]}
         assert "earthx:look" not in bands["scl"] and "earthx:look_origin" not in bands["scl"]
         assert "classification:classes" in bands["scl"]
+
+    def test_a_scaled_band_publishes_its_scaling_and_no_other_band_does(self) -> None:
+        # M5-68: a picture drawn without an item (an overview) turns its range into stored values with it.
+        bands = {band["name"]: band for band in to_stac_collection(REGISTRY.get("sentinel-2-c1-l2a"))["earthx:bands"]}
+        assert bands["red"]["earthx:scaling"] == {"scale": 0.0001, "offset": -0.1}
+        assert bands["wvp"]["earthx:scaling"] == {"scale": 0.001, "offset": 0.0}
+        assert all("earthx:scaling" not in bands[name] for name in ("cloud", "snow", "scl"))
+        dem = to_stac_collection(REGISTRY.get("cop-dem-glo-30"))["earthx:bands"]
+        assert all("earthx:scaling" not in band for band in dem)
