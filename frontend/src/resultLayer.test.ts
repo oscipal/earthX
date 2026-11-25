@@ -435,13 +435,17 @@ describe('the bands of a result (NM4-43e PR 2)', () => {
     expect(resultBands(bands, null).map((b) => b.stats?.expression)).toEqual([true, true]);
   });
 
-  it('gives a band of the source whose values reach the result its look (M5-60 F5), never a band a step made', () => {
+  it('gives a band the look of the source band where the result says it holds its values (M5-68), and no other band', () => {
     const look = { colormap: 'viridis', scale: 'fixed' as const, low: 0, high: 100 };
-    const kept = (name: string) => (name === 'cloud' || name === 'ndvi' ? look : null);
-    const bands = resultBands({ bands: [band('ndvi', -1, 1), band('cloud', 0, 100), band('red', 0, 1)] }, { steps }, () => null, kept);
+    const kept = (name: string) => (name === 'cloud' || name === 'ndvi' || name === 'red' ? look : null);
+    const source = (one: ReturnType<typeof band>) => ({ ...one, 'earthx:source_values': true });
+    const bands = resultBands({ bands: [band('ndvi', -1, 1), source(band('cloud', 0, 100)), band('red', 0, 1)] }, { steps }, () => null, kept);
     expect(bands.map((b) => b.look)).toEqual([null, look, null]);
-    // Without the order nothing says which band a step made.
-    expect(resultBands({ bands: [band('cloud', 0, 100)] }, null, () => null, kept)[0].look).toBeNull();
+    // The result says it, not the order: a band of the source is known without it, and nothing is guessed from the steps.
+    expect(resultBands({ bands: [source(band('cloud', 0, 100))] }, null, () => null, kept)[0].look).toEqual(look);
+    expect(resultBands({ bands: [band('red', 0, 1)] }, { steps: [] }, () => null, kept)[0].look).toBeNull();
+    // Only `true` says it.
+    expect(resultBands({ bands: [{ ...band('cloud', 0, 100), 'earthx:source_values': 'yes' }] }, null, () => null, kept)[0].look).toBeNull();
     // Where no preset is the band, its look draws it.
     expect(presetOfResultBand(bands[1], [])).toEqual({ vmin: '0', vmax: '100', colormap: 'viridis' });
   });
