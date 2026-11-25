@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 //
 // The free area of the map (Otto, 14.11.2026): what an open panel takes from it, as classes of `.app`, read by the buttons and the legend.
-// The status has its own place since UI-12, a line at the foot of the window (`e2e/status-box.cjs` measures it in a real browser).
+// The status has its own place since UI-12, a line at the foot of the window (`e2e/ui-12-layout.cjs` measures it in a real browser).
 
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';

@@ -221,7 +221,9 @@ async function follow(browser, { theme, viewport }) {
   });
   await page.waitForTimeout(150);
   if ((await shownTitle(page)) !== 'Land cover (made up)') problems.push(`a view opened at the top shows ${await shownTitle(page)} in the legend, not itself`);
-  if (!(await page.locator('.map-legend').boundingBox().then((b) => b && inWindow(b, size)))) problems.push('with the view the legend leaves the window');
+  // Where the settings sheet takes the map of a narrow window the legend gives way (UI-12, `.crowded`); otherwise it stays in the window.
+  const givesWay = await page.locator('.map-legend.crowded').count();
+  if (!givesWay && !(await page.locator('.map-legend').boundingBox().then((b) => b && inWindow(b, size)))) problems.push('with the view the legend leaves the window');
   await page.screenshot({ path: path.join(OUT, `view-${theme}-${viewport}.png`) });
   await context.close();
   return problems;

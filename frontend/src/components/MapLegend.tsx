@@ -37,6 +37,15 @@ function liftOver(legends: HTMLElement, lifted: number): number {
   return Math.max(0, lift);
 }
 
+// Whether the legend, raised by `more` from where it stands, would reach the row of buttons at the top of the map (UI-12 (2)).
+function reachesTop(legends: HTMLElement, more: number): boolean {
+  const top = document.querySelector('.overlay.top-right');
+  if (!top) return false;
+  const own = legends.getBoundingClientRect();
+  const row = top.getBoundingClientRect();
+  return own.right > row.left && own.left < row.right && own.top - more < row.bottom;
+}
+
 export default function MapLegend() {
   const layers = useAppStore((s) => s.layers);
   const resultsAt = useAppStore((s) => s.resultsAt);
@@ -66,6 +75,7 @@ export default function MapLegend() {
   const shown = entries.find((entry) => entry.id === next.chosen) ?? null;
   const ref = useRef<HTMLDivElement>(null);
   const [lift, setLift] = useState(0);
+  const [crowded, setCrowded] = useState(false);
   const lifted = useRef(0);
   lifted.current = lift;
 
@@ -76,11 +86,13 @@ export default function MapLegend() {
     const measure = () => {
       const lifting = liftOver(legends, lifted.current);
       if (Math.abs(lifting - lifted.current) >= 1) setLift(lifting);
+      setCrowded(reachesTop(legends, lifting - lifted.current));
     };
     measure();
     const app = legends.closest('.app');
     const marks = app && typeof MutationObserver !== 'undefined' ? new MutationObserver(measure) : null;
-    if (app) marks?.observe(app, { childList: true });
+    // A panel that opens or closes moves the legend and the buttons at the top (the classes of `.app`, `mapEdges.ts`).
+    if (app) marks?.observe(app, { childList: true, attributes: true, attributeFilter: ['class', 'style'] });
     const sizes = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
     sizes?.observe(legends);
     const bottom = document.querySelector('.overlay.bottom');
@@ -97,11 +109,12 @@ export default function MapLegend() {
     if (!legends) return;
     const lifting = liftOver(legends, lifted.current);
     if (Math.abs(lifting - lifted.current) >= 1) setLift(lifting);
+    setCrowded(reachesTop(legends, lifting - lifted.current));
   }, [shown, folded]);
 
   const open = !folded;
   return (
-    <div ref={ref} className="overlay map-legend" style={{ ['--legend-lift' as string]: `${lift}px` }}>
+    <div ref={ref} className={`overlay map-legend${crowded ? ' crowded' : ''}`} style={{ ['--legend-lift' as string]: `${lift}px` }}>
       <section className="legend" role="region" aria-label={LEGEND}>
         <div className="legend-head">
           <button type="button" className="legend-title" aria-expanded={open} onClick={toggleFolded}>

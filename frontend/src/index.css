@@ -36,6 +36,11 @@ textarea {
      the map beside the rail (widths: `tokens.css`, UI-01 §6.9). The status line has a place of its own under all of them (UI-12). */
   position: relative;
   width: 100vw;
+  /* The edges of the free map, in every window; a wide window moves them for an open panel (below). The room of the column of map
+     buttons at the right, which nothing at the bottom reaches into (UI-12 (2)). */
+  --map-left: var(--rail-width);
+  --map-right: 0px;
+  --map-controls-room: calc(var(--control-height) + 2 * var(--space-1) + 2 * var(--line-width) + 2 * var(--space-3));
   /* The map and every panel end above the status line, which no panel covers (UI-12, Otto 17.11.2026). */
   height: calc(100vh - var(--status-line-height));
   color: var(--text);
@@ -83,15 +88,24 @@ textarea {
   align-items: flex-start;
 }
 .bottom {
-  left: calc((100% + var(--rail-width)) / 2);
-  bottom: 20px;
+  /* Centred in the free map, above the attribution, and never under the column of the map buttons at its right (UI-12 (2)). */
+  left: calc((100% + var(--map-left) - var(--map-right)) / 2);
+  bottom: calc(var(--attribution-height, 20px) + var(--space-1));
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
   align-items: center;
-  /* Between the rail or the panel and the right edge, a margin of 16 px each side: never over an edge. */
-  width: min(760px, calc(100vw - var(--rail-width) - 32px));
+  width: min(760px, calc(100% - var(--map-left) - var(--map-right) - 2 * var(--map-controls-room)));
+}
+/* A narrow window has no room for the column of buttons at both sides: the time steps reach from the rail to the column. */
+@media (max-width: 899px) {
+  .bottom {
+    left: calc(var(--rail-width) + var(--space-2));
+    right: var(--map-controls-room);
+    width: auto;
+    transform: none;
+  }
 }
 /* The status line (UI-12, F1 and F2): at the foot of the window right of the rail, over its whole width, always there; the app with its map
    and panels ends above it, so no panel ever covers it, in any window. One row: the spinner while something runs, one text, "Stop" and
@@ -490,6 +504,23 @@ svg.lucide.icon-lead {
   flex-direction: column;
   gap: var(--space-2);
 }
+/* Folded sections stand side by side in one row after the open ones: a head each, no more (UI-12 (12)). */
+.inspector .insp-body {
+  flex-flow: row wrap;
+  align-content: flex-start;
+  column-gap: var(--space-4);
+}
+.inspector .insp-section {
+  flex: 1 0 100%;
+}
+.inspector .insp-section.folded {
+  flex: 0 0 auto;
+}
+@media (max-width: 899px) {
+  .inspector .insp-body {
+    row-gap: var(--space-4);
+  }
+}
 .inspector .insp-section-body {
   display: flex;
   flex-direction: column;
@@ -694,6 +725,12 @@ svg.lucide.icon-lead {
   /* The thumb of a slider: its line travels from half its width to the width less half of it, and the bars span exactly that travel,
      so that a slider at the edge of a bar stands on it, at the ends too (Otto, 24.11.2026). */
   --hist-thumb: var(--space-3);
+}
+/* Under 900 px a histogram is lower than a finger-high control, so that the three of a colour picture leave the sheet room (UI-12 (12)). */
+@media (max-width: 899px) {
+  .inspector .range-hist {
+    height: calc(var(--control-height-sm) + var(--space-2));
+  }
 }
 .inspector .range-hist-red {
   color: var(--channel-red);
@@ -1018,10 +1055,6 @@ svg.lucide.icon-lead {
   .app.has-sheet {
     --map-right: var(--sheet-wide-width);
   }
-  .app.has-inspector .overlay.bottom {
-    left: calc((100% + var(--rail-width) - var(--inspector-width)) / 2);
-    width: min(760px, calc(100vw - var(--rail-width) - var(--inspector-width) - 32px));
-  }
   .app.has-inspector .maplibregl-ctrl-bottom-right {
     right: var(--inspector-width);
   }
@@ -1071,7 +1104,7 @@ svg.lucide.icon-lead {
     border-bottom: 0;
   }
   .app.has-inspector .overlay.bottom {
-    bottom: calc(var(--inspector-sheet-height, 0px) + 12px);
+    bottom: calc(var(--inspector-sheet-height, 0px) + var(--attribution-height, 20px) + var(--space-1));
   }
   .app.has-inspector .maplibregl-ctrl-bottom-right {
     bottom: var(--inspector-sheet-height, 0px);
@@ -3614,6 +3647,10 @@ button.pm-open:hover {
   font-family: var(--font);
 }
 /* MapLibre attribution in the tech theme: the text of the panel on the panel's dark strip (it is always open, `ATTRIBUTION_CONTROL`). */
+/* The attribution stays on the free map: it never runs under the rail or an open panel (UI-12 (2)). */
+.app .maplibregl-ctrl-attrib {
+  max-width: calc(100vw - var(--map-left) - var(--map-right));
+}
 .app[data-theme='tech'] .maplibregl-ctrl-attrib {
   background: var(--panel-bg);
   color: var(--text);
@@ -3798,11 +3835,6 @@ button.pm-open:hover {
   /* A band-math expression is code. */
   font-family: var(--font-mono);
 }
-/* The bottom bar (selection, time slider) centred in the map left of the side bar. */
-.bottom.beside-sheet {
-  left: calc((100% + var(--rail-width) - var(--sheet-wide-width)) / 2);
-  width: min(760px, calc(100vw - var(--rail-width) - var(--sheet-wide-width) - var(--space-6)));
-}
 /* In the column of the settings bar: flush with the edge and the foot, a line on the left, no corners. */
 @media (min-width: 900px) {
   .processing-sheet .processing-panel {
@@ -3856,8 +3888,6 @@ button.pm-open:hover {
     display: block;
   }
   .bottom.beside-sheet {
-    left: calc((100% + var(--rail-width)) / 2);
-    width: min(760px, calc(100vw - var(--rail-width) - var(--space-6)));
     bottom: calc(60vh + var(--space-3));
   }
   /* The sheet lies over the lower edge: the badge sits above it, left. */
@@ -4346,7 +4376,7 @@ button.pm-open:hover {
    the title "Legend", which folds it, and the choice of the layer. It never scrolls: a long list of classes takes two columns. --- */
 .overlay.map-legend {
   left: calc(var(--map-left, var(--rail-width)) + var(--space-4));
-  bottom: calc(20px + var(--legend-lift, 0px));
+  bottom: calc(var(--attribution-height, 20px) + var(--space-1) + var(--legend-lift, 0px));
   /* Left of the column of the map buttons at the bottom right (`.map-controls-host`), never under it. */
   max-width: min(
     440px,
@@ -4355,7 +4385,7 @@ button.pm-open:hover {
         2 * var(--line-width) - var(--space-3) - var(--space-2)
     )
   );
-  max-height: calc(100% - 20px - var(--legend-lift, 0px) - var(--space-4));
+  max-height: calc(100% - var(--attribution-height, 20px) - var(--space-1) - var(--legend-lift, 0px) - var(--space-4));
   display: flex;
   flex-direction: column;
   gap: var(--space-1-5);
@@ -4363,8 +4393,16 @@ button.pm-open:hover {
 }
 @media (max-width: 899px) {
   .app.has-inspector .overlay.map-legend {
-    bottom: calc(var(--inspector-sheet-height, 0px) + 12px + var(--legend-lift, 0px));
+    bottom: calc(var(--inspector-sheet-height, 0px) + var(--attribution-height, 20px) + var(--space-1) + var(--legend-lift, 0px));
   }
+  /* The processing sheet covers the map of a narrow window, and with it the legend (as an open panel does). */
+  .app.has-sheet .overlay.map-legend {
+    display: none;
+  }
+}
+/* A map too low for the legend above what stands at its foot: it would reach the buttons at the top, so it gives way (UI-12 (2)). */
+.overlay.map-legend.crowded {
+  visibility: hidden;
 }
 .legend {
   display: flex;

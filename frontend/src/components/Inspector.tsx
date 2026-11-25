@@ -49,9 +49,14 @@ function useWindowSize(): { width: number; height: number } {
 function useFit(ref: { current: HTMLElement | null }, kind: string): InspectorFitState & { columns: number } {
   const size = useWindowSize();
   const dockOpen = useAppStore((s) => s.dock !== null);
-  const [handFolded, setHandFolded] = useState<ReadonlySet<string>>(new Set());
-  const [openedLast, setOpenedLast] = useState<string | null>(null);
-  const signature = [size.width, size.height, dockOpen, kind, Array.from(handFolded).join(','), openedLast].join('|');
+  // What the bar shows: the view, a pinned view or a result. A section opened or folded by hand belongs to it, and goes with it.
+  const target = useAppStore((s) => (s.focusMode ? `view|${s.viewLayerId ?? ''}` : `result|${s.resultViewLayerId ?? ''}`));
+  const [hand, setHand] = useState<{ target: string; folded: ReadonlySet<string>; openedLast: string | null }>({ target, folded: new Set(), openedLast: null });
+  const own = hand.target === target ? hand : { target, folded: new Set<string>(), openedLast: null };
+  const handFolded = own.folded;
+  const openedLast = own.openedLast;
+
+  const signature = [size.width, size.height, dockOpen, kind, target, Array.from(handFolded).join(','), openedLast].join('|');
   const [state, setState] = useState<{ signature: string; fit: Fit }>({ signature, fit: START });
   const fit = state.signature === signature ? state.fit : START;
   const [titles, setTitles] = useState<string[]>([]);
@@ -93,17 +98,13 @@ function useFit(ref: { current: HTMLElement | null }, kind: string): InspectorFi
     const auto = foldedSections(titles, fit.folds, openedLast);
     return new Set([...auto, ...handFolded].filter((t) => t !== openedLast || handFolded.has(t)));
   }, [titles, fit.folds, openedLast, handFolded]);
+  // A folded section opens and folds last from now on; an open one is folded by hand and stays so.
   const toggle = useCallback(
     (title: string) => {
-      if (folded.has(title)) {
-        setHandFolded((set) => new Set([...set].filter((t) => t !== title)));
-        setOpenedLast(title);
-      } else {
-        setHandFolded((set) => new Set([...set, title]));
-        if (openedLast === title) setOpenedLast(null);
-      }
+      if (folded.has(title)) setHand({ target, folded: new Set([...handFolded].filter((t) => t !== title)), openedLast: title });
+      else setHand({ target, folded: new Set([...handFolded, title]), openedLast: openedLast === title ? null : openedLast });
     },
-    [folded, openedLast],
+    [folded, handFolded, openedLast, target],
   );
   return { folded, toggle, quickRows: fit.quickRows, columns: fit.columns };
 }
