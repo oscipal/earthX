@@ -14,8 +14,8 @@ candidate for a full entry where all of this holds (plan §14.1.2, F6 = 1, F16, 
 4. Verify passed without an account (adr/0025 §6.3): ``HEAD`` and the first 16 KB (``Range``) of at most three files,
    ``200``/``206`` and a readable format from the bytes (:mod:`earthx.discovery.probe`); ``401``/``403`` is an account.
 
-New candidates come before changed ones, then by publisher and id; at most :data:`MAX_PER_SOURCE` a source and run, and
-Verify for at most :data:`MAX_VERIFIED_PER_SOURCE` (A34). A candidate whose harvested part, licence and takeover are as
+New and changed candidates are verified in an order that turns with the day (A46), in rounds until
+:data:`MAX_PER_SOURCE` passed or :data:`MAX_VERIFIED_PER_SOURCE` were asked (A34). A candidate whose harvested part, licence and takeover are as
 on disk is left alone and asks nothing (A35). A candidate whose listed row is no longer visible gets the new state,
 without a request; no file is ever deleted (A37).
 
@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import re
 import sys
@@ -50,17 +51,18 @@ import psycopg
 import yaml
 
 from earthx.catalog.datasets import CATALOG_DIR, registry
-from earthx.catalog.entry_files import EntryFileError
+from earthx.catalog.entry_files import EntryFileError, dump_yaml
 from earthx.catalog.hosts import HostLimit
 from earthx.catalog.licences import LicenceCatalogue, load_licences
 from earthx.catalog.registry import MAX_LISTING_IDENTIFIER_CHARS, ConfigError, LicenseInfo, LicenseTier
 from earthx.catalog.sources import SourceConfig, SourceProtocol, read_sources
 from earthx.discovery.cycle import SKIPPED_TEXT, clean
+from earthx.discovery.dedupe import MAX_SHARED
 from earthx.discovery.extract import _format_token
 from earthx.discovery.harvest import source_policy
 from earthx.discovery.links import url_parts
 from earthx.discovery.probe import HEAD_BYTES, sniff
-from earthx.discovery.report import _full_members, dump_approval
+from earthx.discovery.report import _full_members
 from earthx.discovery.source_gateway import open_source_gateway
 from earthx.gateway import (
     Gateway,
@@ -124,11 +126,11 @@ OpenGateway = Callable[[Policy], AbstractAsyncContextManager[Gateway]]
 # --- Pure parts -------------------------------------------------------------------------------------------------------
 
 
-def readable_declared(format_: str | None, media_type: str | None) -> bool:
+def readable_declared(format_: object, media_type: object) -> bool:
     """Whether a file says it is in a format a full entry reads, by its format or its media type."""
-    if format_ and _format_token(format_) in _FORMAT_TOKENS:
+    if isinstance(format_, str) and format_ and _format_token(format_) in _FORMAT_TOKENS:
         return True
-    return bool(media_type) and media_type.split(";", 1)[0].strip().lower().startswith(_MEDIA_TYPES)
+    return isinstance(media_type, str) and media_type.split(";", 1)[0].strip().lower().startswith(_MEDIA_TYPES)
 
 
 def _https(href: object) -> bool:
@@ -167,8 +169,9 @@ _IDENTIFIER = re.compile(r"[^\s\x00-\x1f\x7f]{1,%d}" % MAX_LISTING_IDENTIFIER_CH
 
 
 def takeover_of(source_id: str, keys: Iterable[str], repeated: Iterable[str]) -> Takeover | None:
-    """The way a full entry takes over a row with ``keys``; ``repeated`` are the keys more than one row of the source
-    holds (no key then: ``also_listed_as`` would take them all). ``None`` where there is none (F17 = 1)."""
+    """The way a full entry takes over a row with ``keys``; ``repeated`` are the keys dedupe does not use (on more than
+    one row of the source, where ``also_listed_as`` would take them all, or on more finds than ``dedupe.MAX_SHARED``).
+    ``None`` where there is none (F17 = 1)."""
     keys = sorted(keys)
     repeated = set(repeated)
     for key in keys:
@@ -176,11 +179,12 @@ def takeover_of(source_id: str, keys: Iterable[str], repeated: Iterable[str]) ->
             return Takeover("coll", key)
     for key in keys:
         identifier = key[3:]
-        if key.startswith("id:") and key not in repeated and _IDENTIFIER.fullmatch(identifier):
+        # A key that ``clean`` would change (a mail or hash form) cannot stand in the public candidate file verbatim.
+        if key.startswith("id:") and key not in repeated and _IDENTIFIER.fullmatch(identifier) and clean(key) == key:
             listing = f"{source_id}:{identifier}"
             return Takeover("also_listed_as", f"also:{listing}", (listing,))
     for key in keys:
-        if key.startswith("doi:") and key not in repeated:
+        if key.startswith("doi:") and key not in repeated and clean(key) == key:
             return Takeover("doi", key)
     return None
 
@@ -268,12 +272,15 @@ def _cors(headers: Mapping[str, str]) -> str:
     return "origin" if allowed == ORIGIN else "none"
 
 
+_DIGITS = re.compile(r"[0-9]{1,19}")
+
+
 def _length(headers: Mapping[str, str]) -> int | None:
-    ranged = headers.get("content-range", "")
-    if "/" in ranged and ranged.rsplit("/", 1)[1].isdigit():
-        return int(ranged.rsplit("/", 1)[1])
-    declared = headers.get("content-length", "")
-    return int(declared) if declared.isdigit() else None
+    total = headers.get("content-range", "").rsplit("/", 1)[-1].strip()
+    if _DIGITS.fullmatch(total):
+        return int(total)
+    declared = headers.get("content-length", "").strip()
+    return int(declared) if _DIGITS.fullmatch(declared) else None
 
 
 def _failed(href: str, error: GatewayError) -> FileCheck:
@@ -289,7 +296,16 @@ def _failed(href: str, error: GatewayError) -> FileCheck:
 
 
 async def check_file(gateway: Gateway, href: str) -> FileCheck:
-    """``HEAD``, then ``GET`` of the first :data:`HEAD_BYTES` with ``Origin``; the format from the bytes."""
+    """``HEAD``, then ``GET`` of the first :data:`HEAD_BYTES` with ``Origin``; the format from the bytes. Whatever a
+    foreign host sends, the result is a :class:`FileCheck`: an answer no rule foresaw is ``unchecked``, never an error
+    that stops the run (review M5-20 PR 2)."""
+    try:
+        return await _check_file(gateway, href)
+    except Exception as error:  # noqa: BLE001 - a foreign host must not stop the run; only the kind is kept
+        return FileCheck(href, "unchecked", f"error_{type(error).__name__.lower()}"[:60])
+
+
+async def _check_file(gateway: Gateway, href: str) -> FileCheck:
     head_headers: Mapping[str, str] = {}
     try:
         head_headers = (await gateway.head(href, headers={"Origin": ORIGIN}, retry=False)).headers
@@ -304,8 +320,9 @@ async def check_file(gateway: Gateway, href: str) -> FileCheck:
             href, headers={"Range": f"bytes=0-{HEAD_BYTES - 1}", "Origin": ORIGIN}, retry=False
         )
     except ResponseTooLarge:
-        # The host ignored Range and sends the whole file: reachable, but no partial reads, so no full entry reads it.
-        return FileCheck(href, "failed", "no_range", status=200, partial=False)
+        # The host ignored Range and sends the whole file (or an error page larger than the limit): no partial reads,
+        # so no full entry reads it. The status is not known: the size stops the read before it.
+        return FileCheck(href, "failed", "no_range", partial=False)
     except GatewayError as error:
         return _failed(href, error)
     headers = {**head_headers, **response.headers}
@@ -351,8 +368,9 @@ def _data_assets(item: Mapping[str, Any]) -> list[str]:
     for asset in assets.values() if isinstance(assets, Mapping) else ():
         if not isinstance(asset, Mapping) or not _https(asset.get("href")):
             continue
-        roles = asset.get("roles") or ()
-        if readable_declared(None, asset.get("type")) or ("data" in roles and not asset.get("type")):
+        roles = asset.get("roles")
+        data_role = isinstance(roles, (list, tuple)) and "data" in roles
+        if readable_declared(None, asset.get("type")) or (data_role and asset.get("type") is None):
             found.append(str(asset["href"]))
     return found
 
@@ -365,7 +383,7 @@ async def fetch_items(gateway: Gateway, source: SourceConfig, collection_id: str
         features = response.json().get("features")
     except GatewayError as error:
         return [], _failed(url, error).reason
-    except (ValueError, AttributeError):
+    except Exception:  # noqa: BLE001 - an answer of a foreign shape: no items, never an error that stops the run
         return [], "items_unreadable"
     items = [f for f in features or () if isinstance(f, dict)][:MAX_ITEMS] if isinstance(features, list) else []
     return items, "ok" if items else "no_items"
@@ -401,13 +419,16 @@ def _rows(conn: psycopg.Connection, source_id: str) -> list[Row]:
 
 
 def _repeated(conn: psycopg.Connection, source_id: str) -> set[str]:
-    """The identifier and DOI keys more than one row of a source holds."""
+    """The identifier and DOI keys of a source that dedupe does not use (``dedupe._usable``): on more than one row of
+    the source, or on more than :data:`~earthx.discovery.dedupe.MAX_SHARED` rows of all sources."""
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT key FROM public.earthx_listed_entry, unnest(dedupe_keys) AS key WHERE source_id = %s"
-            " AND state NOT IN ('tombstone', 'superseded') AND (key LIKE 'id:%%' OR key LIKE 'doi:%%')"
-            " GROUP BY key HAVING count(*) > 1",
-            (source_id,),
+            "WITH k AS (SELECT key, source_id FROM public.earthx_listed_entry, unnest(dedupe_keys) AS key"
+            " WHERE state NOT IN ('tombstone', 'superseded') AND (key LIKE 'id:%%' OR key LIKE 'doi:%%')"
+            " AND key IN (SELECT unnest(dedupe_keys) FROM public.earthx_listed_entry WHERE source_id = %(source)s))"
+            " SELECT key FROM k GROUP BY key"
+            " HAVING count(*) FILTER (WHERE source_id = %(source)s) > 1 OR count(*) > %(shared)s",
+            {"source": source_id, "shared": MAX_SHARED},
         )
         return {row[0] for row in cur.fetchall()}
 
@@ -503,13 +524,30 @@ def candidate_document(
     }
 
 
+#: Fields a full entry takes over verbatim: never cleaned, or a key would no longer meet its row (review M5-20 PR 2).
+_BINDING = frozenset({"source_id", "source_key", "listed_id", "proposed_id", "takeover"})
+_CANDIDATE_HEAD = """\
+# A candidate for a full entry (M5-20 plan §14.1; adr/0031 §4.4, §8), written by `discovery propose` in a harvest run.
+# What was harvested, the proposed id and how the full entry takes over the listed row (`takeover`), the licence with
+# its decision by rules (F15 = 1) and the result of Verify. The fields under `onboarding` are for the onboarding of the
+# full entry. To take a candidate out, block its entry in backend/catalog/blocked.yaml; this file is never deleted.
+"""
+
+
+def dump_candidate(document: Mapping[str, Any]) -> str:
+    """A candidate file: its head, then the fields, every text but the binding ones cleaned, no anchors."""
+    cleaned = {key: value if key in _BINDING else clean_document(value) for key, value in document.items()}
+    return _CANDIDATE_HEAD + dump_yaml(cleaned)
+
+
 def _comparable(document: Mapping[str, Any]) -> dict[str, Any]:
-    """A candidate as it is compared with the file on disk: without its days and Verify (A35)."""
+    """A candidate as it is compared with the file on disk: as the file would hold it, without its days and Verify
+    (A35). Through YAML and back, so that a text YAML reads differently (U+0085) does not count as a change."""
     found = {key: value for key, value in document.items() if key not in ("first_proposed", "verify", "onboarding")}
     licence = dict(found.get("licence") or {})
     licence.pop("decided_on", None)
     found["licence"] = licence
-    return json.loads(json.dumps(clean_document(found), default=str))
+    return json.loads(json.dumps(yaml.safe_load(dump_candidate(found)), default=str, sort_keys=True))
 
 
 def clean_document(value: Any) -> Any:
@@ -538,14 +576,31 @@ def probe_document(row: Row, items: Sequence[Mapping[str, Any]], verify: Mapping
         collection["description"] = str(collection.get("description") or "")[:2000]
         collection["earthx:distributions"] = list(collection.get("earthx:distributions") or ())[:MAX_DISTRIBUTIONS]
         collection["keywords"] = list(collection.get("keywords") or ())[:50]
+    if len(text().encode("utf-8")) > MAX_PROBE_BYTES:
+        # Still too large (large summaries or item assets): the head of the collection only.
+        collection = {key: collection[key] for key in _PROBE_HEAD if key in collection}
+        collection["description"] = str(collection.get("description") or "")[:2000]
     return text()
+
+
+#: What a probe keeps of a collection that does not fit otherwise.
+_PROBE_HEAD = ("type", "stac_version", "id", "title", "description", "license", "extent", "earthx:extent_basis")
+
+
+class _Unreadable(Exception):
+    """A candidate file on disk that is no YAML mapping (spoilt by hand): left alone and counted."""
 
 
 def _read(path: Path) -> dict[str, Any] | None:
     if not path.exists():
         return None
-    document = yaml.safe_load(path.read_text(encoding="utf-8"))
-    return document if isinstance(document, dict) else None
+    try:
+        document = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (yaml.YAMLError, UnicodeDecodeError) as error:
+        raise _Unreadable(path.name) from error
+    if not isinstance(document, dict):
+        raise _Unreadable(path.name)
+    return document
 
 
 # --- One run ----------------------------------------------------------------------------------------------------------
@@ -616,7 +671,8 @@ def _select(
     taken_ids: set[str],
     count: SourceCount,
 ) -> list[_Pending]:
-    """The finds of a source that may become candidates before Verify, new ones first (plan §14.1.2)."""
+    """The finds of a source that may become candidates before Verify, new and changed ones in an order that turns
+    with the day (A46): a find that fails Verify in every run does not keep the others from their turn."""
     folder = out / source.source_id
     repeated = _repeated(conn, source.source_id)
     pending: list[_Pending] = []
@@ -643,7 +699,11 @@ def _select(
             count.skipped["tier_catalog"] += 1
             continue
         path = folder / f"{row.dataset_id}.yaml"
-        old = _read(path)
+        try:
+            old = _read(path)
+        except _Unreadable:
+            count.skipped["file_unreadable"] += 1
+            continue
         proposed = old["proposed_id"] if old and isinstance(old.get("proposed_id"), str) else None
         if proposed is None:
             proposed = proposed_id(source, row.found, taken_ids)
@@ -661,11 +721,8 @@ def _select(
                 count.unchanged += 1
                 continue
         pending.append(_Pending(row, document, path, old is None, files))
-    pending.sort(key=lambda p: (not p.new, p.row.publisher or "", p.row.dataset_id))
-    over = max(0, len(pending) - MAX_VERIFIED_PER_SOURCE)
-    if over:
-        count.skipped["budget"] += over
-    return pending[:MAX_VERIFIED_PER_SOURCE]
+    pending.sort(key=lambda p: hashlib.sha256(f"{day.isoformat()} {p.row.dataset_id}".encode()).hexdigest())
+    return pending
 
 
 async def _verify(
@@ -733,7 +790,7 @@ def _write(item: _Pending, *, day: date, trial: bool) -> dict[str, Any]:
     document = dict(item.document)
     document["verify"] = verify
     item.path.parent.mkdir(parents=True, exist_ok=True)
-    item.path.write_text(dump_approval(clean_document(document)), encoding="utf-8")
+    item.path.write_text(dump_candidate(document), encoding="utf-8")
     probe = item.path.with_name(f"{item.row.dataset_id}.probe.json")
     probe.write_text(probe_document(item.row, item.items, json.loads(json.dumps(verify, default=str))), encoding="utf-8")
     passed = next(check for check in item.checks if check.outcome == "passed")
@@ -757,13 +814,17 @@ def _update_states(conn: psycopg.Connection, source: SourceConfig, out: Path, co
     paths = {path.stem: path for path in folder.glob("*.yaml")}
     states = _states(conn, list(paths))
     for listed_id, path in sorted(paths.items()):
-        document = _read(path)
+        try:
+            document = _read(path)
+        except _Unreadable:
+            count.skipped["file_unreadable"] += 1
+            continue
         if document is None:
             continue
         state = states.get(listed_id, "gone")
         if state != "published" and document.get("listed_state") != state:
             document["listed_state"] = state
-            path.write_text(dump_approval(document), encoding="utf-8")
+            path.write_text(dump_candidate(document), encoding="utf-8")
             count.state_updated += 1
 
 
@@ -787,19 +848,25 @@ def propose_source(
         conn, source, licences=licences, out=out, day=day, trial=trial, full_keys=full_keys, taken_ids=taken_ids,
         count=count,
     )
-    asyncio.run(_verify(pending, source, hosts=hosts, open_gateway=open_gateway, run=run))
-    for item in pending:
-        outcome = _outcome(item)
-        if outcome != "passed":
-            count.skipped[outcome] += 1
-        elif len(count.written) >= MAX_PER_SOURCE:
-            count.skipped["limit"] += 1
-        else:
-            count.written.append(_write(item, day=day, trial=trial))
-            if item.new:
-                count.new += 1
+    # In rounds, until 20 passed or 60 were asked (A34): no request for a find the run cannot write any more.
+    verified = 0
+    while pending and len(count.written) < MAX_PER_SOURCE and verified < MAX_VERIFIED_PER_SOURCE:
+        size = min(MAX_PER_SOURCE - len(count.written), MAX_VERIFIED_PER_SOURCE - verified)
+        batch, pending = pending[:size], pending[size:]
+        verified += len(batch)
+        asyncio.run(_verify(batch, source, hosts=hosts, open_gateway=open_gateway, run=run))
+        for item in batch:
+            outcome = _outcome(item)
+            if outcome != "passed":
+                count.skipped[outcome] += 1
             else:
-                count.changed += 1
+                count.written.append(_write(item, day=day, trial=trial))
+                if item.new:
+                    count.new += 1
+                else:
+                    count.changed += 1
+    if pending:
+        count.skipped["limit" if len(count.written) >= MAX_PER_SOURCE else "budget"] += len(pending)
     return count
 
 
@@ -818,14 +885,22 @@ def run_propose(
     run = ProposeRun(trial)
     full_keys = _full_keys()
     taken = {config.dataset_id for config in registry()}
-    taken |= {str(d.get("proposed_id")) for path in out.glob("*/*.yaml") if (d := _read(path)) and d.get("proposed_id")}
+    for path in out.glob("*/*.yaml"):
+        try:
+            document = _read(path)
+        except _Unreadable:
+            continue
+        if document and isinstance(document.get("proposed_id"), str):
+            taken.add(document["proposed_id"])
     for source in sources:
         try:
             run.sources[source.source_id] = propose_source(
                 conn, source, licences=licences, hosts=hosts, out=out, day=day, trial=trial,
                 open_gateway=open_gateway, run=run, full_keys=full_keys, taken_ids=taken,
             )
-        except (GatewayError, psycopg.Error, OSError, yaml.YAMLError) as error:
+        except psycopg.Error:
+            raise
+        except Exception as error:  # noqa: BLE001 - one source must not cost the others their candidates
             run.sources[source.source_id] = SourceCount(error=type(error).__name__)
     return run
 

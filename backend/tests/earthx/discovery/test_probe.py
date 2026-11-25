@@ -75,10 +75,10 @@ class TestTiff:
         assert sniff(noted[:HEAD_BYTES]).format != "cog"
 
     def test_what_lies_beyond_the_bytes_is_unknown(self) -> None:
-        # The directory points past the 16 KB: the file is a TIFF, its header unknown, nothing guessed.
+        # The directory points past the 16 KB (libtiff writes it at the end): no COG, and "no geodata" is not said.
         data = b"II*\x00" + struct.pack("<I", 100_000) + b"\x00" * 100
         found = sniff(data)
-        assert found.format == "tiff" and not found.readable
+        assert found.format == "tiff_unread" and not found.readable
         assert found.tiff is not None and found.tiff.width is None and found.tiff.overviews is None
 
     def test_a_cut_directory(self) -> None:
@@ -98,6 +98,30 @@ class TestTiff:
         # BitsPerSample with three values lies at an offset beyond the bytes: no data type.
         found = sniff(_tiff([(256, 3, 1, 70), (258, 3, 3, 1_000_000)]))
         assert found.tiff is not None and found.tiff.data_type is None and found.tiff.width == 70
+
+    def test_geo_keys_whose_values_lie_beyond_the_bytes_still_make_a_geotiff(self) -> None:
+        # A large tile index before the GeoKeys (review): the directory names them, their values are unknown.
+        found = sniff(_tiff([(256, 3, 1, 70), (258, 3, 1, 8), (34735, 3, 32, 1_000_000)]))
+        assert found.format == "geotiff" and found.tiff is not None and found.tiff.epsg is None
+
+    @pytest.mark.parametrize("value", [float("nan"), float("inf"), -float("inf"), 2.5, 1e300])
+    def test_a_float_tag_that_is_no_whole_number(self, value: float) -> None:
+        # Review: BitsPerSample, Width or GeoKeys as type 12 with NaN or infinity broke the whole step.
+        double = struct.pack("<d", value)
+        data = b"II*\x00" + struct.pack("<I", 8) + struct.pack("<H", 3)
+        data += struct.pack("<HHII", 256, 12, 1, 50) + struct.pack("<HHII", 258, 12, 1, 58)
+        data += struct.pack("<HHII", 34735, 12, 4, 58) + struct.pack("<I", 0) + double * 4
+        found = sniff(data)
+        assert found.tiff is not None and found.tiff.width is None and found.tiff.data_type is None
+        assert found.tiff.epsg is None
+
+    def test_a_mask_is_no_overview(self) -> None:
+        # Two further directories: a mask (NewSubfileType 4) and an overview (1).
+        first = _tiff([(256, 3, 1, 70), (34735, 3, 4, 0)], following=38)
+        mask = struct.pack("<H", 1) + struct.pack("<HHII", 254, 4, 1, 4) + struct.pack("<I", 56)
+        overview = struct.pack("<H", 1) + struct.pack("<HHII", 254, 4, 1, 1) + struct.pack("<I", 0)
+        found = sniff(first + mask + overview)
+        assert found.tiff is not None and found.tiff.overviews == 1
 
     def test_user_defined_crs_has_no_epsg(self) -> None:
         found = sniff(_raster(crs="+proj=tmerc +lat_0=0 +lon_0=9 +k=1 +x_0=0 +y_0=0 +ellps=bessel +units=m")[:HEAD_BYTES])

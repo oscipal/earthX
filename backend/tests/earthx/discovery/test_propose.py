@@ -11,6 +11,7 @@ from dataclasses import replace
 import httpx
 import numpy as np
 import pytest
+import yaml
 from rasterio.io import MemoryFile
 from rasterio.transform import from_origin
 
@@ -383,3 +384,85 @@ def test_the_probe_holds_no_signed_address() -> None:
     items = [{"id": "i", "assets": {"data": {"href": "https://b.example.org/a.tif?X-Amz-Signature=abc&x=1"}}}]
     text = probe_document(row, items, {"files": []})
     assert "abc" not in text and "X-Amz-Signature=[entfernt]" in text
+
+
+# --- Review M5-20 PR 2: foreign data never stops the step -------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "asset",
+    [
+        {"href": "https://files.example.org/a.tif", "type": ["image/tiff"]},
+        {"href": "https://files.example.org/a.tif", "roles": 5},
+        {"href": "https://files.example.org/a.tif", "roles": "metadata"},
+        {"href": 7, "type": "image/tiff"},
+        "not an asset",
+    ],
+)
+def test_an_asset_of_a_foreign_shape_is_no_data_file(asset: object) -> None:
+    from earthx.discovery.propose import _data_assets
+
+    assert _data_assets({"assets": {"data": asset}}) == []
+
+
+@pytest.mark.parametrize(
+    ("headers", "length"),
+    [
+        ({"content-range": "bytes 0-1/²"}, None),
+        ({"content-range": "bytes 0-1/*", "content-length": "²"}, None),
+        ({"content-range": "bytes 0-1/123"}, 123),
+        ({"content-length": "456"}, 456),
+        ({"content-length": "9" * 40}, None),
+    ],
+)
+def test_lengths_only_from_ascii_digits(headers: dict[str, str], length: int | None) -> None:
+    from earthx.discovery.propose import _length
+
+    assert _length(headers) == length
+
+
+@pytestmark_anyio
+async def test_an_answer_no_rule_foresaw_is_unchecked_not_an_error() -> None:
+    # A header the gateway passes on raw (a false Content-Encoding) or anything else: the file is unchecked.
+    class Broken:
+        async def head(self, *args: object, **kwargs: object) -> object:
+            raise RuntimeError("decoding")
+
+    found = await check_file(Broken(), "https://files.example.org/a.tif")  # type: ignore[arg-type]
+    assert (found.outcome, found.reason) == ("unchecked", "error_runtimeerror")
+
+
+@pytestmark_anyio
+async def test_a_large_error_page_is_no_range_without_a_status() -> None:
+    found = await _check(
+        {"files.example.org/a.tif": lambda r: httpx.Response(405) if r.method == "HEAD" else httpx.Response(
+            403, content=b"x" * 200_000)},
+        "https://files.example.org/a.tif",
+    )
+    assert (found.outcome, found.reason, found.status) == ("failed", "no_range", None)
+
+
+def test_a_key_clean_would_change_is_no_takeover() -> None:
+    assert takeover_of("portal", ["id:amt@stadt.example.org"], ()) is None
+    assert takeover_of("portal", ["id:" + "a" * 64, "doi:10.1/x"], ()).via == "doi"  # type: ignore[union-attr]
+
+
+def test_the_probe_keeps_the_head_of_a_collection_too_large_otherwise() -> None:
+    row = replace(_row("big", []), content={"id": "x", "title": "T", "summaries": {"s": "x" * 80_000}})
+    text = probe_document(row, [], {"files": []})
+    assert len(text.encode("utf-8")) <= MAX_PROBE_BYTES and json.loads(text)["collection"]["id"] == "x"
+
+
+def test_a_candidate_file_has_its_own_head_and_keeps_binding_keys_verbatim() -> None:
+    from earthx.discovery.propose import _comparable, dump_candidate
+
+    document = {
+        "source_id": "portal", "source_key": "k", "listed_id": "portal.k", "proposed_id": "relief",
+        "takeover": {"via": "doi", "key": "doi:10.1/x?token=abc"},
+        "harvested": {"title": "Relief\x85 Schweiz", "description": "Fragen an hans@amt.example.org"},
+    }
+    text = dump_candidate(document)
+    assert text.startswith("# A candidate for a full entry") and "Approval" not in text
+    assert "doi:10.1/x?token=abc" in text and "hans@" not in text
+    # What YAML reads differently (U+0085) is compared as the file holds it: no change every run.
+    assert _comparable(yaml.safe_load(text)) == _comparable(document)

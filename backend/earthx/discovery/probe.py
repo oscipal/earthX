@@ -12,6 +12,7 @@ checks every offset and count against the length it was given.
 
 from __future__ import annotations
 
+import math
 import re
 import struct
 from dataclasses import asdict, dataclass
@@ -74,7 +75,8 @@ class TiffHeader:
 @dataclass(frozen=True, slots=True)
 class FileFormat:
     """The format of a file by its first bytes: one of :data:`READABLE`, ``tiff`` (a TIFF without geo keys),
-    ``hdf4``, ``html`` (an error or login page) or ``unknown``."""
+    ``tiff_unread`` (a TIFF whose first directory lies beyond the bytes), ``hdf4``, ``html`` (an error or login page) or
+    ``unknown``."""
 
     format: str
     big_tiff: bool = False
@@ -103,7 +105,7 @@ class _Bytes:
         self.order = order
 
     def unpack(self, code: str, offset: int, count: int = 1) -> tuple[Any, ...] | None:
-        size = struct.calcsize(code) * count
+        size = struct.calcsize(f"{self.order}{code}") * count
         if offset < 0 or count < 0 or offset + size > len(self.data):
             return None
         return struct.unpack_from(f"{self.order}{count}{code}", self.data, offset)
@@ -159,22 +161,33 @@ def _directory(head: _Bytes, offset: int, big: bool) -> tuple[dict[int, Any], in
     return tags, (None if following is None else following[0])
 
 
+def _whole(value: Any) -> int | None:
+    """A value of a tag as a whole number, ``None`` for anything else (NaN, infinity, a fraction of a float tag)."""
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and math.isfinite(value) and value.is_integer() and abs(value) < 2**63:
+        return int(value)
+    return None
+
+
 def _first(values: tuple[Any, ...] | None) -> int | None:
-    return int(values[0]) if values else None
+    return _whole(values[0]) if values else None
 
 
-def _epsg(keys: tuple[Any, ...] | None) -> tuple[int | None, bool]:
-    """The EPSG code of the GeoKey directory (projected before geographic), and whether there are geo keys at all."""
-    if not keys or len(keys) < 4:
-        return None, False
+def _epsg(keys: tuple[Any, ...] | None) -> int | None:
+    """The EPSG code of the GeoKey directory (projected before geographic); ``None`` where it names none or its values
+    lie beyond the bytes."""
+    numbers = [_whole(v) for v in keys or ()]
+    if len(numbers) < 4 or any(n is None for n in numbers):
+        return None
     found: dict[int, int] = {}
-    for index in range(1, min(int(keys[3]), (len(keys) - 4) // 4) + 1):
-        key, location, _count, value = (int(v) for v in keys[index * 4 : index * 4 + 4])
-        if location == 0:
+    for index in range(1, min(numbers[3] or 0, (len(numbers) - 4) // 4) + 1):  # type: ignore[operator]
+        key, location, _count, value = numbers[index * 4 : index * 4 + 4]
+        if location == 0 and key is not None and value is not None:
             found[key] = value
     code = found.get(_PROJECTED_CRS) or found.get(_GEOGRAPHIC_CRS)
     # 32767 is "user defined": no EPSG code to name.
-    return (code if code and code != 32767 else None), True
+    return code if code and code != 32767 else None
 
 
 def _tiff(data: bytes) -> FileFormat:
@@ -186,11 +199,12 @@ def _tiff(data: bytes) -> FileFormat:
     noted = any(note in data[:512] for note in _COG_NOTES)
     directory = None if pointer is None else _directory(head, pointer[0], big)
     if directory is None:
-        return FileFormat("tiff", big_tiff=big, tiff=TiffHeader(*([None] * 9)))
+        # The first directory lies beyond the bytes (libtiff writes it at the end): no cloud-optimised file, and
+        # whether it is geodata stays unknown, never "no geodata".
+        return FileFormat("tiff_unread", big_tiff=big, tiff=TiffHeader(*([None] * 9)))
     tags, following = directory
-    bits = tags.get(_BITS)
     sample_format = _first(tags.get(_SAMPLE_FORMAT)) or 1
-    data_type = _DATA_TYPES.get((sample_format, int(bits[0]))) if bits else None
+    data_type = _DATA_TYPES.get((sample_format, _first(tags.get(_BITS))))
     tile_width, tile_height = _first(tags.get(_TILE_WIDTH)), _first(tags.get(_TILE_LENGTH))
     tiled = None if _WIDTH not in tags else tile_width is not None
     overviews: int | None = 0
@@ -204,11 +218,15 @@ def _tiff(data: bytes) -> FileFormat:
         if nested is None:
             overviews = None
             break
-        overviews = (overviews or 0) + 1
+        # A transparency mask (NewSubfileType bit 4) is no overview.
+        if not (_first(nested[0].get(_SUBFILE)) or 0) & 4:
+            overviews = (overviews or 0) + 1
         following = nested[1]
     if following is None:
         overviews = None
-    epsg, geo = _epsg(tags.get(_GEO_KEYS))
+    # The GeoKey directory makes a GeoTIFF, even where its values lie beyond the bytes (a large tile index before it).
+    geo = _GEO_KEYS in tags
+    epsg = _epsg(tags.get(_GEO_KEYS))
     header = TiffHeader(
         width=_first(tags.get(_WIDTH)),
         height=_first(tags.get(_LENGTH)),
@@ -229,7 +247,11 @@ def _tiff(data: bytes) -> FileFormat:
 def sniff(data: bytes, url: str = "") -> FileFormat:
     """The format of a file by its first bytes (``data``) and, for Zarr, the address its metadata came from."""
     if data[:4] in (b"II*\x00", b"MM\x00*", b"II+\x00", b"MM\x00+"):
-        return _tiff(data)
+        try:
+            return _tiff(data)
+        except (ValueError, OverflowError, TypeError, struct.error):
+            # A header no check above foresaw: bytes from a foreign host never stop a run.
+            return FileFormat("tiff_unread", tiff=TiffHeader(*([None] * 9)))
     if data[:4] in (b"CDF\x01", b"CDF\x02", b"CDF\x05"):
         return FileFormat("netcdf")
     if any(data[offset : offset + 8] == _HDF5 for offset in _HDF5_OFFSETS):

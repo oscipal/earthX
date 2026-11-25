@@ -291,7 +291,7 @@ def findings_of(
         found.append(Finding("LINKPRUEFUNG", f"{linkcheck_error} Nichts verborgen, nichts Neues sichtbar."))
     if propose_error:
         found.append(Finding("KANDIDATEN", f"{propose_error} In diesem Lauf keine Kandidaten des vollen Wegs."))
-    for source_id, count in sorted(((propose or {}).get("sources") or {}).items()):
+    for source_id, count in sorted(((propose or {}).get("sources") or {}).items()) if not propose_error else ():
         if count.get("error"):
             found.append(Finding(f"KANDIDATEN {source_id}", f"Kandidaten gescheitert ({count['error']})."))
     if linkcheck:
@@ -385,6 +385,7 @@ SKIPPED_TEXT = {
     "account": "Konto",
     "verify_failed": "Verify gescheitert",
     "limit": "über der Grenze 20",
+    "file_unreadable": "Kandidatendatei nicht lesbar",
 }
 
 
@@ -410,7 +411,8 @@ def candidate_lines(propose: Mapping[str, Any] | None) -> list[str]:
     if written:
         lines += ["", "| Quelle | Vorschlag ID | Titel | Format | Lizenz | Stufe | Freigabe |", "|---|---|---|---|---|---|---|"]
         for source_id, item in written:
-            title = str(item.get("title") or "").replace("|", "/")[:80]
+            # One line, no table cell break, and no "@name" that would notify someone in the pull request.
+            title = " ".join(str(item.get("title") or "").split()).replace("|", "/").replace("@", "(at)")[:80]
             decision = "nach Regeln" if item.get("decision") == "cleared" else "Probelauf, offen"
             lines.append(
                 f"| {source_id} | `{item['proposed_id']}` | {title} | {item.get('format') or '–'}"

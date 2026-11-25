@@ -208,11 +208,42 @@ def test_the_trial_run_decides_nothing(published: World, tmp_path: Path) -> None
     assert _candidate(out, published, published.ckan, "r1")["licence"]["legal_status"] == "cleared"
 
 
-def test_at_most_twenty_a_source(published: World, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_at_most_twenty_a_source_and_no_request_beyond(
+    published: World, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Review: Verify stops once the limit is reached; the rest waits for the next run (A34).
     monkeypatch.setattr(propose_module, "MAX_PER_SOURCE", 1)
-    run = _run(published, tmp_path / "candidates", Answers())
+    answers = Answers()
+    run = _run(published, tmp_path / "candidates", answers)
     ckan = run.sources[published.ckan.source_id]
-    assert ckan.new == 1 and ckan.skipped["limit"] == 1
+    # r1, r4 and r5 wait for Verify in the turning order; r4 (an account) may come before the one that passes. What is
+    # left after the pass is never asked.
+    assert ckan.new == 1 and ckan.skipped["limit"] + ckan.skipped["account"] == 2
+    asked = {key for key in ("/r1.tif", "/locked.tif", "/r5.tif") if any(key in r for r in answers.requests)}
+    assert len(asked) == 1 + ckan.skipped["account"]
+
+
+def test_a_find_that_always_fails_does_not_keep_the_others_from_their_turn(
+    published: World, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Review: with one find verified a run, the order turns with the day, so every find has its turn.
+    monkeypatch.setattr(propose_module, "MAX_VERIFIED_PER_SOURCE", 1)
+    out, first = tmp_path / "candidates", set()
+    for day in range(1, 15):
+        answers = Answers()
+        _run(published, out, answers, day=DAY.replace(day=day))
+        first |= {key for key in ("/r1.tif", "/locked.tif", "/r5.tif") if any(key in r for r in answers.requests)}
+    assert first == {"/r1.tif", "/locked.tif", "/r5.tif"}
+
+
+def test_a_spoilt_candidate_file_is_left_alone_and_counted(published: World, tmp_path: Path) -> None:
+    out = tmp_path / "candidates"
+    _run(published, out, Answers())
+    path = out / published.ckan.source_id / f"{published.ckan.source_id}.r1.yaml"
+    path.write_text("title: [unclosed\n", encoding="utf-8")
+    run = _run(published, out, Answers())
+    assert run.sources[published.ckan.source_id].skipped["file_unreadable"] == 2  # once read for the state, once here
+    assert path.read_text(encoding="utf-8") == "title: [unclosed\n"
 
 
 def test_a_full_entry_takes_over_the_listed_row_by_each_way(
