@@ -5,7 +5,8 @@ An entry is visible only while its own current link has passed (``approvals.publ
 entry without that pass (its link failed, could not be checked, or was never checked with this address) becomes
 ``link_hidden``, hidden and never deleted; a later pass with the same link brings it back (Otto, 24.11.2026, also for
 unchecked links). Where a host or a pattern failed or did not answer for a large share in one run, its results are
-``guarded``: they hide nothing and publish nothing, since the check is then more likely wrong than the data.
+``guarded``: they hide nothing and publish nothing, since the check is then more likely wrong than the data. A page
+that is gone (``404``, ``410``) is never guarded.
 
 Nothing here fetches; ``discovery.linkcheck`` does, through ``gateway``. Hand entries (source ``listed``) are not
 checked. No page text is stored, only codes.
@@ -43,6 +44,9 @@ _KEEPS = f"c.url = {LINK} AND (c.outcome = 'passed' OR c.guarded)"
 #: failure, so that a host that is down hides nothing (plan A18). ``robots``, an unconfirmed form of a catalogue page
 #: or a page too large do not pass and do not count.
 TRANSIENT = "(reason IN ('unreachable', 'host_resting', 'gateway', 'api_shape') OR reason ~ '^http_(429|5[0-9][0-9])$')"
+#: Failures that say the page is gone (``404``, ``410``): never the check's fault, so they count for no guard and are
+#: never guarded; such entries are hidden however many they are (Otto, 25.11.2026, M5-67 §23).
+GONE = "(reason IN ('http_404', 'http_410'))"
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,8 +157,9 @@ def record_results(conn: psycopg.Connection, results: Iterable[LinkResult], chec
 
 @dataclass(frozen=True, slots=True)
 class GroupCount:
-    """The results of one run for one host or one pattern (``kind`` ``host`` or ``pattern``): ``transient`` are the
-    ``unchecked`` that may pass next time, ``unchecked`` the others (``robots``, an unconfirmed form)."""
+    """The results of one run for one host or one pattern (``kind`` ``host`` or ``pattern``): ``failed`` without the
+    pages that are gone, ``gone`` those (``404``, ``410``), ``transient`` the ``unchecked`` that may pass next time,
+    ``unchecked`` the others (``robots``, an unconfirmed form, no safe check)."""
 
     kind: str
     key: str
@@ -163,10 +168,12 @@ class GroupCount:
     unchecked: int
     guarded: bool
     transient: int = 0
+    gone: int = 0
 
     @property
     def checked(self) -> int:
-        """Links asked: passed, failed, or without an answer that may come next time."""
+        """Links asked whose result may be the check's fault: passed, failed, or without an answer that may come next
+        time; a page that is gone is no such result."""
         return self.passed + self.failed + self.transient
 
 
@@ -175,29 +182,32 @@ def guard_results(
 ) -> list[GroupCount]:
     """Count the results checked since ``since`` per host and per pattern, and guard every result of a group where at
     least ``min_checked`` links were asked (passed, failed or without an answer) and at least ``failed_share`` of them
-    failed or got no answer (plan §4c, A18). Returns every group, the guarded ones first, then by size."""
+    failed or got no answer (plan §4c, A18). A page that is gone (``404``, ``410``) counts for neither and is never
+    guarded (§23). Returns every group, the guarded ones first, then by size."""
     groups: list[GroupCount] = []
     with conn.cursor() as cur:
         for kind in ("host", "pattern"):
             cur.execute(
                 f"""
-                SELECT {kind}, count(*) FILTER (WHERE outcome = 'passed'), count(*) FILTER (WHERE outcome = 'failed'),
+                SELECT {kind}, count(*) FILTER (WHERE outcome = 'passed'),
+                       count(*) FILTER (WHERE outcome = 'failed' AND NOT {GONE}),
                        count(*) FILTER (WHERE outcome = 'unchecked' AND NOT {TRANSIENT}),
-                       count(*) FILTER (WHERE outcome = 'unchecked' AND {TRANSIENT})
+                       count(*) FILTER (WHERE outcome = 'unchecked' AND {TRANSIENT}),
+                       count(*) FILTER (WHERE outcome = 'failed' AND {GONE})
                 FROM public.earthx_link_check WHERE checked_at >= %s GROUP BY {kind}
                 """,
                 (since,),
             )
-            for key, passed, failed, unchecked, transient in cur.fetchall():
+            for key, passed, failed, unchecked, transient, gone in cur.fetchall():
                 asked = passed + failed + transient
                 guarded = asked >= min_checked and failed + transient >= failed_share * asked
-                groups.append(GroupCount(kind, key, passed, failed, unchecked, guarded, transient))
+                groups.append(GroupCount(kind, key, passed, failed, unchecked, guarded, transient, gone))
         hosts = [g.key for g in groups if g.guarded and g.kind == "host"]
         patterns = [g.key for g in groups if g.guarded and g.kind == "pattern"]
         if hosts or patterns:
             cur.execute(
                 "UPDATE public.earthx_link_check SET guarded = true WHERE checked_at >= %s"
-                " AND (host = ANY(%s) OR pattern = ANY(%s))",
+                f" AND (host = ANY(%s) OR pattern = ANY(%s)) AND NOT (outcome = 'failed' AND {GONE})",
                 (since, hosts, patterns),
             )
     groups.sort(key=lambda g: (not g.guarded, -(g.checked + g.unchecked), g.kind, g.key))
