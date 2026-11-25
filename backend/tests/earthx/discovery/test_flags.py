@@ -123,3 +123,23 @@ def test_a_cleared_entry_with_a_day_loads(tmp_path: Path) -> None:
     path = tmp_path / "flags.yaml"
     path.write_text(text, encoding="utf-8")
     assert read_flag_rules(path).cleared == {("govdata.x", "W1")}
+
+
+@pytest.mark.parametrize("cleared", ["", "cleared:\n", "cleared: []\n"])
+def test_a_rules_file_without_cleared_entries_loads_with_none(tmp_path: Path, cleared: str) -> None:
+    # M5-67 fix 2: nothing cleared is the usual state, so the key may be missing or empty; every other key stays required.
+    text = FLAGS_FILE.read_text(encoding="utf-8").replace("cleared: []\n", cleared)
+    path = tmp_path / "flags.yaml"
+    path.write_text(text, encoding="utf-8")
+    assert read_flag_rules(path).cleared == frozenset()
+
+
+def test_a_rules_file_without_a_rule_does_not_load_as_if_it_had_none(tmp_path: Path) -> None:
+    # An empty file is no rule set: without the words the warning signs would let everything through.
+    path = tmp_path / "flags.yaml"
+    path.write_text("cleared: []\n", encoding="utf-8")
+    with pytest.raises(EntryFileError, match="holds exactly"):
+        read_flag_rules(path)
+    path.write_text("", encoding="utf-8")
+    with pytest.raises(EntryFileError, match="holds exactly"):
+        read_flag_rules(path)
