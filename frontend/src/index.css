@@ -120,7 +120,8 @@ textarea {
   height: var(--status-line-height);
   display: flex;
   align-items: center;
-  padding: 0 var(--space-3);
+  /* At its left end the title of a docked legend, where there is one (`MapLegend.tsx`). */
+  padding: 0 var(--space-3) 0 calc(var(--legend-docked-width, 0px) + var(--space-3));
   border-top: var(--line-width) solid var(--panel-border);
   background: linear-gradient(var(--panel-bg), var(--panel-bg)), var(--map-bg);
   pointer-events: auto;
@@ -4361,9 +4362,6 @@ button.pm-open:hover {
   padding-bottom: 0;
   border-width: 0 var(--line-width) 0 0;
   border-radius: 0;
-}
-.app .overlay.status {
-  padding-left: calc(var(--legend-docked-width, 0px) + var(--space-3));
 }
 .legend {
   display: flex;
