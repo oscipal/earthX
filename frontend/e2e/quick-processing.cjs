@@ -117,7 +117,31 @@ async function seed(page) {
     });
     await useAppStore.getState().loadMosaics();
   }, { scenes: SCENES, footprint: FOOTPRINT, presets: PRESETS });
-  await page.waitForSelector('.inspector .vc-quick');
+  await page.waitForSelector('.inspector .insp-body');
+}
+
+// A button of "Quick processing", on whichever page it stands, as a person finds it: the section opened, the pages turned from the first.
+async function pressQuick(page, name) {
+  await (await findQuick(page, name)).click();
+}
+
+async function findQuick(page, name) {
+  await openSection(page, 'Quick processing');
+  const previous = page.locator('.inspector .quick-pages [aria-label="Previous page"]:not([aria-disabled="true"])');
+  while (await previous.count()) await previous.click();
+  const button = page.locator('.inspector .vc-quick button', { hasText: name });
+  const next = page.locator('.inspector .quick-pages [aria-label="Next page"]:not([aria-disabled="true"])');
+  while (!(await button.count()) && (await next.count())) await next.click();
+  return button;
+}
+
+// A narrow window folds sections so that the settings bar does not scroll (UI-12): a person opens the one needed by its head.
+async function openSection(page, title) {
+  const head = page.locator(`.inspector .insp-section.folded[data-title="${title}"] .insp-fold`);
+  if (await head.count()) {
+    await head.click();
+    await page.waitForTimeout(300);
+  }
 }
 
 const settle = (page) => page.waitForTimeout(500);
@@ -148,11 +172,22 @@ async function runCase(browser, theme, viewport, results) {
     await seed(page);
     await settle(page);
     // 1, 2: the colour picture.
-    const quick = await page.$$eval('.inspector .vc-quick button', (bs) => bs.map((b) => { const r = b.getBoundingClientRect(); return { text: b.textContent, x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width) }; }));
+    await openSection(page, 'Quick processing');
+    // The buttons of every page of "Quick processing" (UI-12: as many rows a page as the bar holds), three a row, all of one width.
+    const quick = [];
+    const pages = Number((await page.locator('.inspector .quick-pages .dataset-page-count').textContent()).split('/')[1]);
+    for (let p = 0; p < pages; p++) {
+      const onPage = await page.$$eval('.inspector .vc-quick button', (bs) => bs.map((b) => { const r = b.getBoundingClientRect(); return { text: b.textContent, x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width) }; }));
+      if (onPage.length > 3 && new Set(onPage.slice(0, 3).map((b) => b.y)).size !== 1) fail(`quick rows: ${JSON.stringify(onPage)}`);
+      quick.push(...onPage);
+      if (p < pages - 1) await page.locator('.inspector .quick-pages [aria-label="Next page"]').click();
+    }
+    for (let p = 1; p < pages; p++) await page.locator('.inspector .quick-pages [aria-label="Previous page"]').click();
     if (quick.map((b) => b.text).join('|') !== 'NDVI|NDWI|NDSI|NBR|EVI|Enhance contrast') fail(`quick buttons: ${quick.map((b) => b.text)}`);
-    if (new Set(quick.map((b) => b.y)).size !== 2 || new Set(quick.map((b) => b.w)).size !== 1) fail(`quick rows/widths: ${JSON.stringify(quick)}`);
+    if (new Set(quick.map((b) => b.w)).size !== 1) fail(`quick widths: ${JSON.stringify(quick)}`);
     const headings = await page.$$eval('.inspector .insp-heading', (hs) => hs.map((h) => h.textContent));
     if (headings.join('|') !== 'Display|Quick processing|Actions') fail(`headings: ${headings}`);
+    await openSection(page, 'Display');
     await page.waitForSelector('.inspector .range-hist-blue');
     const hists = await page.$$eval('.inspector .range-hist', (hs) => hs.map((h) => h.className));
     if (hists.length !== 3) fail(`histograms of RGB: ${hists}`);
@@ -161,31 +196,35 @@ async function runCase(browser, theme, viewport, results) {
     if (b.sideways || b.outside.length) fail(`rgb: ${JSON.stringify(b)}`);
     await shot('rgb');
     // "Enhance contrast" fills the fields like an index; "Apply" draws them (Otto, UI-03e, 3.11.2026).
-    await page.locator('.inspector .vc-quick button', { hasText: 'Enhance contrast' }).click();
+    await pressQuick(page, 'Enhance contrast');
     await settle(page);
     if ((await store(page, (s) => s.appliedRender.rescale)) !== '0,3000') fail('"Enhance contrast" drew before "Apply"');
+    await openSection(page, 'Display');
     await page.locator('.inspector .vc-apply').click();
     await settle(page);
     const enhanced = await store(page, (s) => s.appliedRender.rescale);
     if (!enhanced || enhanced.split(';').length !== 3) fail(`enhance: ${enhanced}`);
-    if ((await page.getAttribute('.inspector .vc-quick button:has-text("Enhance contrast")', 'aria-pressed')) !== 'true') fail('enhance not on');
+    if ((await (await findQuick(page, 'Enhance contrast')).getAttribute('aria-pressed')) !== 'true') fail('enhance not on');
     await shot('enhanced');
     // An index: into the fields, the button on, one histogram; drawn with "Apply" (Otto, 3.11.2026).
-    await page.locator('.inspector .vc-quick button', { hasText: 'NDVI' }).click();
+    await pressQuick(page, 'NDVI');
     await settle(page);
     if ((await store(page, (s) => s.appliedRender.index)) === 'NDVI') fail('NDVI drawn before "Apply"');
+    await openSection(page, 'Display');
     await page.locator('.inspector .vc-apply').click();
     await settle(page);
     if ((await store(page, (s) => s.appliedRender.index)) !== 'NDVI') fail('NDVI not drawn with "Apply"');
     if ((await page.$$('.inspector .range-hist')).length !== 1) fail('index has not one histogram');
-    if ((await page.getAttribute('.inspector .vc-quick button:has-text("NDVI")', 'aria-pressed')) !== 'true') fail('NDVI not on');
+    if ((await (await findQuick(page, 'NDVI')).getAttribute('aria-pressed')) !== 'true') fail('NDVI not on');
     // "Enhance contrast" is for RGB only (Otto, 3.11.2026).
+    await openSection(page, 'Quick processing');
     if ((await page.locator('.inspector .vc-quick button', { hasText: 'Enhance contrast' }).count()) !== 0) fail('"Enhance contrast" beside an index');
     b = await bounds(page, 'aside.inspector:not(.colormap-picker)');
     if (b.sideways || b.outside.length) fail(`index: ${JSON.stringify(b)}`);
     await shot('index');
     // 3: the list of colormaps.
     const barBefore = b.bar;
+    await openSection(page, 'Display');
     await page.locator('.inspector .vc-colormap select').selectOption({ label: 'More…' });
     await page.waitForSelector('aside.colormap-picker .cm-item');
     const p = await bounds(page, 'aside.colormap-picker');
@@ -198,8 +237,10 @@ async function runCase(browser, theme, viewport, results) {
     await settle(page);
     if (await page.$('aside.colormap-picker')) fail('the list stayed after a choice');
     if ((await page.inputValue('.inspector .vc-colormap select')) !== 'rocket') fail('rocket not in the dropdown');
+    await openSection(page, 'Display');
     await page.locator('.inspector .vc-colormap .vc-reverse').click();
     if ((await store(page, (s) => s.pendingColormapName)) !== 'rocket_r') fail('reverse did not give rocket_r');
+    await openSection(page, 'Display');
     await page.locator('.inspector .vc-colormap select').selectOption({ label: 'More…' });
     await page.waitForSelector('aside.colormap-picker .icon-btn[aria-label="Back"]');
     await page.locator('aside.colormap-picker .icon-btn[aria-label="Back"]').click();
@@ -217,6 +258,7 @@ async function runCase(browser, theme, viewport, results) {
     });
     await page.waitForSelector('.inspector button[aria-label="Rename layer"]');
     if ((await page.$$('.inspector .insp-row2 button[aria-label$=" image"]')).length !== 0) fail('arrows beside the date of a layer');
+    await openSection(page, 'Actions');
     const actions = await page.$$eval('.inspector .vc-actions > *', (as) => as.map((a) => a.textContent || a.getAttribute('aria-label')));
     if (actions.join('|') !== 'Process|Download|Add current view to layers|Remove layer') fail(`layer actions: ${actions}`);
     // Otto, 3.11.2026: the bin as wide as the others, the copy read in full (two lines).
@@ -237,7 +279,7 @@ async function runCase(browser, theme, viewport, results) {
     if ((await store(page, (s) => s.layers[0].name)) !== 'River bend') fail('rename');
     await shot('layer');
   } catch (error) {
-    fail(`stopped: ${error.message.split('\n')[0]}`);
+    fail(`stopped: ${error.message.split('\n').slice(0, 3).join(' ')}`);
     await shot('stopped').catch(() => undefined);
   }
   results.push({ tag, problems: [...problems] });
