@@ -92,7 +92,7 @@ Dazu ohne Text, nur mit Fläche (volle Zeilen): 0–1 ms vorher und nachher.
 - `test_migrations.py`: Die Liste der Migrationen kennt `038`.
 - **Vorhandene Tests der betroffenen Module** (Suche, Index, Route, Katalogzustand, Bewertungs-Set, Linkprüfung, Laden): 3 089 bestanden.
 
-## 6. Fragen an Otto
+## 6. Fragen an Otto (beantwortet 25.11.2026: F1 und F2 je Option 1)
 
 **F1 — Reihenfolge bei Gleichständen (A2).** Die Reihenfolge mit Fläche ändert sich bei Treffern mit fast gleichem Rang.
 
