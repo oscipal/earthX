@@ -41,8 +41,10 @@ from earthx.logging import configure_logging
 
 __all__ = [
     "APPROVAL_RULES_FILE",
+    "SKIPPED_TEXT",
     "ApprovalRules",
     "Finding",
+    "candidate_lines",
     "clean",
     "decide",
     "merge_findings",
@@ -61,7 +63,8 @@ _SECRET_PARAM = re.compile(
     re.IGNORECASE,
 )
 _HASH = re.compile(r"\b[0-9a-f]{64}\b")
-_MAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+# Only from the start of a word: else a long word without "@" is tried from each of its letters (quadratic time).
+_MAIL = re.compile(r"(?<![\w.+-])[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 _ENV = re.compile(r"\b(PG\w+|POSTGRES_\w+|EARTHX_\w+|GH_TOKEN|GITHUB_TOKEN)=\S+")
 # A path on Otto's computer names his account: C:\Users\<name>\..., /home/<name>/..., /Users/<name>/...
 _LOCAL_PATH = re.compile(r"(?i)\b[a-z]:\\(?:users|dokumente und einstellungen|documents and settings)\\[^\s'\"`<>]+|"
@@ -277,6 +280,8 @@ def findings_of(
     open_prs: Sequence[str],
     folder: str,
     linkcheck_error: str | None = None,
+    propose: Mapping[str, Any] | None = None,
+    propose_error: str | None = None,
 ) -> list[Finding]:
     """The findings of this run, the guarded hosts and patterns first (plan §4c)."""
     found: list[Finding] = []
@@ -284,6 +289,11 @@ def findings_of(
         found.append(Finding("LAUF", f"Lauf gescheitert: {run_error}. Siehe `{folder}/fehler.log`."))
     if linkcheck_error:
         found.append(Finding("LINKPRUEFUNG", f"{linkcheck_error} Nichts verborgen, nichts Neues sichtbar."))
+    if propose_error:
+        found.append(Finding("KANDIDATEN", f"{propose_error} In diesem Lauf keine Kandidaten des vollen Wegs."))
+    for source_id, count in sorted(((propose or {}).get("sources") or {}).items()) if not propose_error else ():
+        if count.get("error"):
+            found.append(Finding(f"KANDIDATEN {source_id}", f"Kandidaten gescheitert ({count['error']})."))
     if linkcheck:
         examples = linkcheck.get("examples") or {}
         for group in linkcheck.get("groups") or []:
@@ -363,6 +373,55 @@ def _rule_files(approvals: Path) -> list[str]:
     )
 
 
+#: Why a find became no candidate, in German (``discovery.propose``).
+SKIPPED_TEXT = {
+    "no_format": "kein lesbares Format",
+    "no_takeover": "nicht ablösbar",
+    "full_entry": "schon voller Eintrag",
+    "licence_changed": "Lizenz seit dem Bericht geändert",
+    "tier_catalog": "Lizenzstufe catalog",
+    "budget": "über dem Verify-Budget",
+    "no_items": "keine Items",
+    "account": "Konto",
+    "verify_failed": "Verify gescheitert",
+    "limit": "über der Grenze 20",
+    "file_unreadable": "Kandidatendatei nicht lesbar",
+}
+
+
+def candidate_lines(propose: Mapping[str, Any] | None) -> list[str]:
+    """The section on the candidates of the full way (M5-20 plan §14.1.6): per source the numbers, then the new and
+    changed candidates; empty where the step did not run."""
+    if not propose:
+        return []
+    lines = ["", "## Kandidaten des vollen Wegs", ""]
+    if propose.get("trial"):
+        lines += ["Probelauf: Kandidaten geschrieben, nichts entschieden.", ""]
+    written = []
+    for source_id, count in sorted((propose.get("sources") or {}).items()):
+        if count.get("error"):
+            lines.append(f"- **{source_id}:** gescheitert ({count['error']})")
+            continue
+        skipped = ", ".join(f"{SKIPPED_TEXT.get(k, k)} {n}" for k, n in sorted((count.get("skipped") or {}).items()))
+        lines.append(
+            f"- **{source_id}:** neu {count['new']}, geändert {count['changed']}, unverändert {count['unchanged']},"
+            f" Zustand fortgeschrieben {count['state_updated']}; übersprungen: {skipped or '–'}"
+        )
+        written += [(source_id, item) for item in count.get("written") or ()]
+    if written:
+        lines += ["", "| Quelle | Vorschlag ID | Titel | Format | Lizenz | Stufe | Freigabe |", "|---|---|---|---|---|---|---|"]
+        for source_id, item in written:
+            # One line, no table cell break, and no "@name" that would notify someone in the pull request.
+            title = " ".join(str(item.get("title") or "").split()).replace("|", "/").replace("@", "(at)")[:80]
+            decision = "nach Regeln" if item.get("decision") == "cleared" else "Probelauf, offen"
+            lines.append(
+                f"| {source_id} | `{item['proposed_id']}` | {title} | {item.get('format') or '–'}"
+                f" | {item.get('license') or '–'} | {item.get('tier')} | {decision} |"
+            )
+        lines += ["", "Dateien unter `backend/catalog/candidates/<Quelle>/`; herausnehmen über `blocked.yaml`."]
+    return lines
+
+
 def run_files(
     *,
     day: date,
@@ -377,6 +436,7 @@ def run_files(
     published: tuple[int, list],
     classify: Mapping[str, str],
     source_pauses: Mapping[str, str] | None = None,
+    propose: Mapping[str, Any] | None = None,
 ) -> dict[str, str]:
     """The files of the run by name, in German, cleaned."""
     files: dict[str, str] = {}
@@ -424,6 +484,7 @@ def run_files(
             + (" (Probelauf: würde)" if linkcheck.get("dry_run") else "")
             + ". Einzelheiten in `linkpruefung.md`.",
         ]
+    lines += candidate_lines(propose)
     lines += ["", f"Offene Befunde: `docs/harvest/befunde.md`. Dateien dieses Laufs: `{folder}/`."]
     files["README.md"] = "\n".join(lines) + "\n"
     if linkcheck:
@@ -523,6 +584,8 @@ def summary(conn: psycopg.Connection, run: Path, harvest: Path, approvals: Path,
     source_pauses = _pauses(run)
     run_error = _text(run / "lauf-fehler.txt")
     linkcheck_error = _text(run / "linkpruefung-fehler.txt")
+    propose = _load(run / "propose.json")
+    propose_error = _text(run / "kandidaten-fehler.txt")
     open_prs = (run / "offene-prs.txt").read_text(encoding="utf-8").split() if (run / "offene-prs.txt").exists() else []
     classify = {path.stem.removeprefix("classify-"): path.read_text(encoding="utf-8") for path in sorted(run.glob("classify-*.txt"))}
     folder = _folder(harvest, day)
@@ -531,14 +594,15 @@ def summary(conn: psycopg.Connection, run: Path, harvest: Path, approvals: Path,
     files = run_files(
         day=day, folder=relative, trial=trial, linkcheck=linkcheck, reports=reports, decided=decided,
         spellings=spellings, source_errors=source_errors, run_error=run_error, published=published, classify=classify,
-        source_pauses=source_pauses,
+        source_pauses=source_pauses, propose=propose,
     )
     folder.mkdir(parents=True, exist_ok=True)
     for name, text in files.items():
         (folder / name).write_text(text, encoding="utf-8")
     findings = findings_of(
         linkcheck=linkcheck, reports=reports, decided=decided, spellings=spellings, source_errors=source_errors,
-        run_error=run_error, open_prs=open_prs, folder=relative, linkcheck_error=linkcheck_error,
+        run_error=run_error, open_prs=open_prs, folder=relative, linkcheck_error=linkcheck_error, propose=propose,
+        propose_error=propose_error,
     )
     befunde = harvest / "befunde.md"
     befunde.write_text(merge_findings(befunde.read_text(encoding="utf-8"), findings, day), encoding="utf-8")
@@ -547,8 +611,10 @@ def summary(conn: psycopg.Connection, run: Path, harvest: Path, approvals: Path,
     )
     approved = sum(1 for item in decided if item["decision"] == "approved")
     hidden = (linkcheck or {}).get("applied", {}).get("hidden", 0)
+    candidates = sum(len(c.get("written") or ()) for c in ((propose or {}).get("sources") or {}).values())
     line = (
         f"{len(reports)} Quellen, {approved} von {len(decided)} Stapeln freigegeben, {hidden} Einträge verborgen,"
+        f" {candidates} Kandidaten des vollen Wegs,"
         f" {len(findings)} offene Befunde aus den Läufen"
         + (f", {len(source_pauses)} Quellen mit planmäßiger Pause" if source_pauses else "")
         + (" (Probelauf)" if trial else "")

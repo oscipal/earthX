@@ -24,6 +24,8 @@ from earthx.catalog.entry_files import EntryFileError, _validate, read_yaml
 from earthx.catalog.registry import ENTRY_FILE_CONFIG, LicenseInfo, LicenseTier
 
 __all__ = [
+    "CLASSES_ABOVE_CATALOG",
+    "LICENCE_CLASSES",
     "LICENSES_DIR",
     "LICENSOR_HOSTS",
     "SPELLINGS_FILE",
@@ -44,6 +46,11 @@ _REF = re.compile(r"[a-z0-9][a-z0-9.-]{0,63}")
 _SOURCE_ID = re.compile(r"[a-z][a-z0-9-]{1,62}")
 #: The order of the tiers from narrowest to widest (KLAERUNGEN B11).
 _TIER_ORDER = (LicenseTier.CATALOG, LicenseTier.DISPLAY, LicenseTier.PROCESSING)
+#: The classes of the licence list (docs/plans/m5/m5-20-lizenzliste.md); K7 is no licence and never in the catalogue.
+LICENCE_CLASSES = ("K1", "K2", "K3", "K4", "K5", "K6")
+#: The classes whose licences may be graded above the catalogue tier (Otto, 25.11.2026): sharing and changing allowed,
+#: at most attribution. Share alike (K3) stays in the catalogue, as EarthX cannot pass a licence on to its results.
+CLASSES_ABOVE_CATALOG = frozenset({"K1", "K2"})
 
 
 def normal_statement(value: str) -> str:
@@ -57,6 +64,8 @@ class LicenceTerm:
     """One licence of the catalogue: what it means, graded once (adr/0033 §6.2)."""
 
     license_ref: str
+    #: The class of the licence list (K1-K6); it bounds the tier (:data:`CLASSES_ABOVE_CATALOG`).
+    licence_class: str
     matches: tuple[str, ...]
     license: LicenseInfo
     approved_on: date
@@ -182,9 +191,16 @@ def _check_term(term: LicenceTerm, where: str) -> None:
         raise EntryFileError(f"{where}: license_ref is lower case, digits, '.' and '-'")
     if not term.matches or not all(normal_statement(text) for text in term.matches):
         raise EntryFileError(f"{where}: matches names at least one statement, each a non-blank text")
+    if term.licence_class not in LICENCE_CLASSES:
+        raise EntryFileError(f"{where}: licence_class is one of {', '.join(LICENCE_CLASSES)}")
     if lic.tier is not LicenseTier.CATALOG and not (lic.derivatives and lic.distribution):
         # KLAERUNGEN B11: display and processing need both; without one of them only the catalogue.
         raise EntryFileError(f"{where}: tier above catalog needs derivatives and distribution")
+    if lic.tier is not LicenseTier.CATALOG and term.licence_class not in CLASSES_ABOVE_CATALOG:
+        raise EntryFileError(f"{where}: tier above catalog only for the classes K1 and K2 (Otto, 25.11.2026)")
+    if term.licence_class in CLASSES_ABOVE_CATALOG and (lic.share_alike or not lic.commercial_use):
+        # A K1 or K2 licence allows commercial use and asks for no share alike: else its class is wrong.
+        raise EntryFileError(f"{where}: a licence of class {term.licence_class} allows commercial use and no share alike")
     if not (lic.spdx_id or (lic.name and lic.url)):
         raise EntryFileError(f"{where}: the licence needs an SPDX identifier or a name and a URL")
     if term.approved_on > date.today():

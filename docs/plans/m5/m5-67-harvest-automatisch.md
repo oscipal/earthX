@@ -69,6 +69,7 @@ Schritte des Skripts `scripts/harvest-cycle.ps1` (Windows PowerShell 5.1, nur AS
 6. **Lizenzen:** `harvest-spellings` schreibt neue Schreibweisen nach §7 in `backend/catalog/licenses/spellings.yaml`; `harvest-grants` für alle Quellen (neue Herausgeber bekommen `grant-to-all.yaml`). Danach die Images neu bauen, damit der Bericht beides kennt.
 7. **Bericht** je Quelle in der Reihenfolge `dedupe_rank`, dann ID (FSDI zuerst, M5-20 §16): Stapel, Warnzeichen (§5), Stichprobe aus den Funden **ohne** Warnzeichen, Freigabedatei `pending`, Bericht `.md`, Classify-Auszug (A14).
 8. **Linkprüfung** (§4): neue und erneut vorgelegte Einträge aller Stapel, dann der Bestand nach Rotation (§4a), im Budget; Verbergen und Zurückholen nach §4a mit Schutz nach §4c; Ergebnis der Stichprobe in die Freigabedatei.
+   - **Nachtrag 2026-11-25 (M5-20 PR 2):** danach **Kandidaten des vollen Wegs** (`harvest-propose`, M5-20 §14.1.6) für die geernteten Quellen; eigener Commit `backend/catalog/candidates`; scheitert der Schritt, läuft der Lauf weiter (Befund `KANDIDATEN`).
 9. **Freigabe nach Regeln** je Datei (§6): `decision`, `decided_on`, `decided_by: rules`, `ok` je Eintrag, `excluded_entries`.
 10. **Laufdateien** (§9): `docs/harvest/laeufe/<Tag>/`, `docs/harvest/befunde.md` fortschreiben, PR-Text.
 11. **Git:** kleine Commits (Freigaben je Herausgeber; Schreibweisen; Bericht und Freigabe je Quelle; Laufdateien und Befunde), `git push -u origin harvest/<Tag>-<HHmm>`, `gh pr create` (kein Draft, Titel „Harvest run <Tag>“).
@@ -461,7 +462,7 @@ Bis zu den Antworten auf F12 und F13 gilt der Schutz nach §4c: für diese Muste
 - **A10** Offene PRs früherer Läufe bleiben offen und stehen in der Befundliste. **Ausnahme (Otto, 24.11.2026, §22):** Draft-PRs gescheiterter Läufe (Titel „Harvest run … (failed)“, Branch `harvest/<Tag>…`) schließt der nächste Lauf selbst mit einem Kommentar und löscht ihre Branches; sonst schließt der Lauf keinen PR.
 - **A11** Höchstens 90 min Warten auf die Checks; danach wie rot.
 - **A12** Nach dem Merge wird der Branch gelöscht (`--delete-branch`); bei einem Fehler bleibt er.
-- **A13** Das Skript schreibt nur `backend/catalog/approvals/`, `backend/catalog/licenses/grants/`, `backend/catalog/licenses/spellings.yaml` und `docs/harvest/`; es ändert nie `terms.yaml`, `geodata.yaml`, `flags.yaml`, `blocked.yaml`, `sources/` oder `.github/`.
+- **A13** Das Skript schreibt nur `backend/catalog/approvals/`, `backend/catalog/licenses/grants/`, `backend/catalog/licenses/spellings.yaml`, `backend/catalog/candidates/` (Nachtrag 25.11.2026, M5-20 PR 2) und `docs/harvest/`; es ändert nie `terms.yaml`, `geodata.yaml`, `flags.yaml`, `blocked.yaml`, `sources/` oder `.github/`.
 - **A14** Der Classify-Auszug entsteht im selben Durchgang wie der Bericht, damit die Ableitung nur einmal läuft; `harvest-report.ps1 -Classify` bleibt für Hand-Läufe.
 - **A15** Kein PR, wenn der Lauf weder einen neuen Stapel noch einen neuen oder erledigten Befund hat.
 - **A16** Die Ergebnisse der Linkprüfung liegen nur in Postgres (`earthx_link_check`); Git hält Regeln und Schwellen (`backend/catalog/linkcheck.yaml`), die Laufdateien Zahlen und Beispiele. Verbergen braucht keine Freigabe (`adr/0033` §4: Entfernen nie), Zurückholen eines schon freigegebenen Eintrags mit unverändertem Inhalt auch nicht.

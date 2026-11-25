@@ -64,15 +64,17 @@ def test_it_writes_into_the_repository_only_through_its_commits() -> None:
     # It commits only the files of the run.
     for paths in re.findall(r"Commit \"[^\"]+\" @\(([^)]*)\)", CODE):
         for path in re.findall(r"'([^']+)'", paths):
-            assert path in {"backend/catalog/licenses", "backend/catalog/approvals", "docs/harvest"}, path
+            assert path in {
+                "backend/catalog/licenses", "backend/catalog/approvals", "backend/catalog/candidates", "docs/harvest"
+            }, path
     assert ".github" not in CODE and "CLAUDE.md" not in CODE
 
 
 def test_every_service_it_runs_exists_under_the_profile_harvest() -> None:
     services = yaml.safe_load((REPO / "docker-compose.yml").read_text(encoding="utf-8"))["services"]
     named = set(re.findall(r"'(harvest(?:-[a-z]+)?)'", CODE))
-    assert named == {"harvest", "harvest-report", "harvest-grants", "harvest-linkcheck", "harvest-spellings",
-                     "harvest-cycle"}
+    assert named == {"harvest", "harvest-report", "harvest-grants", "harvest-linkcheck", "harvest-propose",
+                     "harvest-spellings", "harvest-cycle"}
     for name in named:
         assert services[name]["profiles"] == ["harvest"], name
 
@@ -120,6 +122,21 @@ def test_a_failed_link_check_does_not_stop_the_run_and_the_summary_runs_once() -
     link = CODE[CODE.index("$Step = 'Linkpruefung'") : CODE.index("$Step = 'Freigabe'")]
     assert "throw" not in link and "linkpruefung-fehler.txt" in link
     assert "if ($Summary -and -not $SummaryDone)" in CODE
+
+
+def test_the_candidates_run_after_the_link_check_for_the_harvested_sources_and_never_stop_the_run() -> None:
+    # M5-20 plan §14.1.6: a step of its own, its files in a commit of their own and in the draft PR of a failed run.
+    step = CODE[CODE.index("$Step = 'Kandidaten'") : CODE.index("$Step = 'Freigabe'")]
+    assert CODE.index("$Step = 'Linkpruefung'") < CODE.index("$Step = 'Kandidaten'")
+    assert "throw" not in step and "kandidaten-fehler.txt" in step
+    assert "'harvest-propose', '--json', '/run/propose.json'" in step and "$propose + $Harvested" in step
+    assert "if ($Trial) { $propose += '--trial' }" in step and "$Harvested.Count -and" in step
+    assert 'Commit "Add candidates for full entries, harvest run $day" @(\'backend/catalog/candidates\')' in CODE
+    catch = CODE[CODE.index("} catch {\n    $ExitCode = 1") :]
+    assert "'backend/catalog/candidates'" in catch
+    services = yaml.safe_load((REPO / "docker-compose.yml").read_text(encoding="utf-8"))["services"]
+    assert "./backend/catalog/candidates:/app/catalog/candidates" in services["harvest-propose"]["volumes"]
+    assert (REPO / "backend" / "catalog" / "candidates").is_dir()
 
 
 def test_the_lock_is_taken_atomically() -> None:
