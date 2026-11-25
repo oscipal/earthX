@@ -1,0 +1,429 @@
+{
+ "collection": {
+  "description": "Erosion risk map for arable land, with average soil erosion in tonnes /(ha*year) (Federal Office for Agriculture)\r\nErosion risk map for arable land in Switzerland in a 2x2-metre grid based on SwissALTI3D and cantonal surface-area data on arable land (status 2021). The map shows the long-term average potential soil erosion in tonnes per hectare and year, calculated on the basis of bare fallow (erosion which theoretically could occur if the soil were permanently bare). Shades of green, yellow and red mean a slight, average and high risk of erosion, respectively. The values calculated in the model are consistently much higher than in actual fact (by around a factor of 10), since soil tillage and management (C-factor) were excluded and incorporated in the calculation as a constant with the value of 1. Calculating the erosion risk with multiple-flow algorithms allows us to illustrate the structure of the terrain in great detail – e.g. the shape of basins or of steep transverse slopes – and hence e.g. also to identify the risk of thalweg erosion. This is shown in detail in the flow-path map (which see). Field blocks (see field-block map) constitute the basis of the spatial calculation.",
+  "earthx:access": {
+   "account": "none",
+   "account_provider": null,
+   "delivery": "download"
+  },
+  "earthx:category": "other",
+  "earthx:coverage_states": null,
+  "earthx:data_kind": "raster",
+  "earthx:distributions": [],
+  "earthx:entry": "listed",
+  "earthx:extent_basis": "source",
+  "earthx:legal_note": null,
+  "earthx:legal_status": "cleared",
+  "earthx:license_flags": {
+   "attribution_modified": "© Federal Office for Agriculture - FOAG (modified)",
+   "attribution_required": true,
+   "attribution_unmodified": "© Federal Office for Agriculture - FOAG",
+   "commercial_use": true,
+   "derivatives": true,
+   "distribution": true,
+   "name": "opendata.swiss: Freie Nutzung, Quellenangabe ist Pflicht",
+   "share_alike": false,
+   "spdx_id": null,
+   "terms_notice": null,
+   "terms_url": null,
+   "tier": "catalog",
+   "url": "https://opendata.swiss/en/terms-of-use#terms_by"
+  },
+  "earthx:listing": {
+   "approved_on": "2026-11-21",
+   "license_rule": "fsdi-stac/Federal Office for Agriculture - FOAG/opendata-swiss-by",
+   "publisher": "Federal Office for Agriculture - FOAG",
+   "source_id": "fsdi-stac",
+   "source_key": "ch.blw.erosion-quantitativ",
+   "source_rank": 1,
+   "source_url": "https://data.geo.admin.ch/browser/index.html#/collections/ch.blw.erosion-quantitativ"
+  },
+  "earthx:maturity": "stable",
+  "extent": {
+   "spatial": {
+    "bbox": [
+     [
+      5.91979162243528,
+      45.8101668197365,
+      10.5102342774723,
+      47.8139533632312
+     ]
+    ]
+   },
+   "temporal": {
+    "interval": [
+     [
+      "2022-05-03T00:00:00Z",
+      "2022-05-03T00:00:00Z"
+     ]
+    ]
+   }
+  },
+  "id": "fsdi-stac.ch.blw.erosion-quantitativ",
+  "keywords": [
+   "other"
+  ],
+  "license": "proprietary",
+  "links": [
+   {
+    "href": "https://data.geo.admin.ch/browser/index.html#/collections/ch.blw.erosion-quantitativ",
+    "rel": "via",
+    "title": "Source"
+   },
+   {
+    "href": "https://opendata.swiss/en/terms-of-use#terms_by",
+    "rel": "license",
+    "title": "opendata.swiss: Freie Nutzung, Quellenangabe ist Pflicht"
+   }
+  ],
+  "providers": [
+   {
+    "name": "Federal Office for Agriculture - FOAG",
+    "roles": [
+     "licensor"
+    ]
+   }
+  ],
+  "stac_extensions": [],
+  "stac_version": "1.0.0",
+  "title": "Erosion risk map for arable land, with average soil erosion in tonnes /(ha*year)",
+  "type": "Collection"
+ },
+ "items": [
+  {
+   "assets": {
+    "erosion-quantitativ.zip": {
+     "created": "2021-12-22T14:55:21.181414Z",
+     "file:checksum": "1220a3234551dc888fc73c0441209310d60e1c9ce6f604282a74ab7b2b1321a4a473",
+     "href": "https://data.geo.admin.ch/ch.blw.erosion-quantitativ/erosion-quantitativ/erosion-quantitativ.zip",
+     "title": "Additional files",
+     "type": "application/zip",
+     "updated": "2025-01-18T05:55:10.989896Z"
+    },
+    "erosion-quantitativ_2056.tif": {
+     "created": "2021-12-22T15:30:12.676934Z",
+     "file:checksum": "12205d31c8dc882abc764489c0fa4a4f1caf3918b43e0a33aeb40a3adcdbd73209dc",
+     "href": "https://data.geo.admin.ch/ch.blw.erosion-quantitativ/erosion-quantitativ/erosion-quantitativ_2056.tif",
+     "proj:epsg": 2056,
+     "type": "image/tiff; application=geotiff",
+     "updated": "2025-01-18T05:55:11.275709Z"
+    }
+   },
+   "bbox": [
+    5.96,
+    45.82,
+    10.49,
+    47.81
+   ],
+   "collection": "ch.blw.erosion-quantitativ",
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       5.96,
+       45.82
+      ],
+      [
+       5.96,
+       47.81
+      ],
+      [
+       10.49,
+       47.81
+      ],
+      [
+       10.49,
+       45.82
+      ],
+      [
+       5.96,
+       45.82
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "id": "erosion-quantitativ",
+   "links": [
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/collections/ch.blw.erosion-quantitativ/items/erosion-quantitativ",
+     "rel": "self"
+    },
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/",
+     "rel": "root"
+    },
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/collections/ch.blw.erosion-quantitativ",
+     "rel": "parent"
+    },
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/collections/ch.blw.erosion-quantitativ",
+     "rel": "collection"
+    },
+    {
+     "href": "https://data.geo.admin.ch/browser/index.html#/collections/ch.blw.erosion-quantitativ/items/erosion-quantitativ",
+     "rel": "alternate",
+     "title": "STAC Browser",
+     "type": "text/html"
+    }
+   ],
+   "properties": {
+    "created": "2021-12-09T07:25:43.964850Z",
+    "datetime": "2022-05-03T00:00:00Z",
+    "title": "Erosion risk crop quantitative",
+    "updated": "2025-01-18T05:55:11.275709Z"
+   },
+   "stac_version": "1.0.0",
+   "type": "Feature"
+  },
+  {
+   "assets": {
+    "erosion-quantitativ_26_2056.tif": {
+     "created": "2022-06-29T12:08:54.467255Z",
+     "file:checksum": "12200074974130c4df91c12c88f81277d99154589dc9528d0eb86bcd91ea32d83aa1",
+     "href": "https://data.geo.admin.ch/ch.blw.erosion-quantitativ/erosion-quantitativ_26/erosion-quantitativ_26_2056.tif",
+     "proj:epsg": 2056,
+     "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+     "updated": "2025-01-18T12:07:13.886517Z"
+    }
+   },
+   "bbox": [
+    6.77108114486365,
+    47.4348768483709,
+    7.70564668783004,
+    47.8139533021959
+   ],
+   "collection": "ch.blw.erosion-quantitativ",
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       6.77108114486365,
+       47.8123373630889
+      ],
+      [
+       7.70564668783004,
+       47.8139533021959
+      ],
+      [
+       7.7037585397695,
+       47.4364813804274
+      ],
+      [
+       6.77582526985926,
+       47.4348768483709
+      ],
+      [
+       6.77108114486365,
+       47.8123373630889
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "id": "erosion-quantitativ_26",
+   "links": [
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/collections/ch.blw.erosion-quantitativ/items/erosion-quantitativ_26",
+     "rel": "self"
+    },
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/",
+     "rel": "root"
+    },
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/collections/ch.blw.erosion-quantitativ",
+     "rel": "parent"
+    },
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/collections/ch.blw.erosion-quantitativ",
+     "rel": "collection"
+    },
+    {
+     "href": "https://data.geo.admin.ch/browser/index.html#/collections/ch.blw.erosion-quantitativ/items/erosion-quantitativ_26",
+     "rel": "alternate",
+     "title": "STAC Browser",
+     "type": "text/html"
+    }
+   ],
+   "properties": {
+    "created": "2022-06-29T10:39:26.576753Z",
+    "datetime": "2022-05-03T00:00:00Z",
+    "title": "Erosion risk crop quantitative - 26",
+    "updated": "2025-01-18T12:07:13.886517Z"
+   },
+   "stac_version": "1.0.0",
+   "type": "Feature"
+  },
+  {
+   "assets": {
+    "erosion-quantitativ_27_2056.tif": {
+     "created": "2022-06-29T12:21:31.457330Z",
+     "file:checksum": "12204fe487c8c778e27f364e06514b1f6f8a5184087722fc7ab2a0e7afb37ba3cf1a",
+     "href": "https://data.geo.admin.ch/ch.blw.erosion-quantitativ/erosion-quantitativ_27/erosion-quantitativ_27_2056.tif",
+     "proj:epsg": 2056,
+     "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+     "updated": "2025-01-18T12:07:14.024809Z"
+    }
+   },
+   "bbox": [
+    7.70373202796477,
+    47.4306346416835,
+    8.64010952442732,
+    47.8139533632312
+   ],
+   "collection": "ch.blw.erosion-quantitativ",
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       7.70561998653268,
+       47.8139533632312
+      ],
+      [
+       8.64010952442732,
+       47.8080652212545
+      ],
+      [
+       8.63159113271342,
+       47.4306346416835
+      ],
+      [
+       7.70373202796477,
+       47.4364814410349
+      ],
+      [
+       7.70561998653268,
+       47.8139533632312
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "id": "erosion-quantitativ_27",
+   "links": [
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/collections/ch.blw.erosion-quantitativ/items/erosion-quantitativ_27",
+     "rel": "self"
+    },
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/",
+     "rel": "root"
+    },
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/collections/ch.blw.erosion-quantitativ",
+     "rel": "parent"
+    },
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/collections/ch.blw.erosion-quantitativ",
+     "rel": "collection"
+    },
+    {
+     "href": "https://data.geo.admin.ch/browser/index.html#/collections/ch.blw.erosion-quantitativ/items/erosion-quantitativ_27",
+     "rel": "alternate",
+     "title": "STAC Browser",
+     "type": "text/html"
+    }
+   ],
+   "properties": {
+    "created": "2022-06-29T10:46:09.285758Z",
+    "datetime": "2022-05-03T00:00:00Z",
+    "title": "Erosion risk crop quantitative - 27",
+    "updated": "2025-01-18T12:07:14.024809Z"
+   },
+   "stac_version": "1.0.0",
+   "type": "Feature"
+  }
+ ],
+ "verify": {
+  "account": "none",
+  "checked_on": "2026-11-25",
+  "data_region": null,
+  "files": [
+   {
+    "cors": "any",
+    "final_host": "data.geo.admin.ch",
+    "format": {
+     "big_tiff": true,
+     "format": "tiff_unread",
+     "tiff": {
+      "bands": null,
+      "data_type": null,
+      "epsg": null,
+      "height": null,
+      "nodata": null,
+      "overviews": null,
+      "tile_size": null,
+      "tiled": null,
+      "width": null
+     }
+    },
+    "href": "https://data.geo.admin.ch/ch.blw.erosion-quantitativ/erosion-quantitativ/erosion-quantitativ_2056.tif",
+    "length": 391976908,
+    "media_type": "image/tiff",
+    "outcome": "failed",
+    "partial": true,
+    "reason": "format_tiff_unread",
+    "status": 206
+   },
+   {
+    "cors": "any",
+    "final_host": "data.geo.admin.ch",
+    "format": {
+     "format": "cog",
+     "tiff": {
+      "bands": 1,
+      "data_type": "float32",
+      "epsg": 2056,
+      "height": 20986,
+      "nodata": "0",
+      "overviews": 7,
+      "tile_size": [
+       256,
+       256
+      ],
+      "tiled": true,
+      "width": 35001
+     }
+    },
+    "href": "https://data.geo.admin.ch/ch.blw.erosion-quantitativ/erosion-quantitativ_26/erosion-quantitativ_26_2056.tif",
+    "length": 114193135,
+    "media_type": "image/tiff",
+    "outcome": "passed",
+    "partial": true,
+    "reason": "ok",
+    "status": 206
+   },
+   {
+    "cors": "any",
+    "final_host": "data.geo.admin.ch",
+    "format": {
+     "format": "cog",
+     "tiff": {
+      "bands": 1,
+      "data_type": "float32",
+      "epsg": 2056,
+      "height": 20986,
+      "nodata": "0",
+      "overviews": 7,
+      "tile_size": [
+       256,
+       256
+      ],
+      "tiled": true,
+      "width": 35001
+     }
+    },
+    "href": "https://data.geo.admin.ch/ch.blw.erosion-quantitativ/erosion-quantitativ_27/erosion-quantitativ_27_2056.tif",
+    "length": 538280199,
+    "media_type": "image/tiff",
+    "outcome": "passed",
+    "partial": true,
+    "reason": "ok",
+    "status": 206
+   }
+  ],
+  "items": 3
+ }
+}

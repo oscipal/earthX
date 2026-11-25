@@ -1,0 +1,218 @@
+{
+ "collection": {
+  "description": "The map shows the nighttime railway noise to which the population is exposed. The noise calculation is based on emission data for 2021 as reported in the railway noise register as “actual emissions.” These were calculated for the SBB, BLS, SOB, SZU, Zentralbahn, and RhB networks on the basis of traffic data provided by SBB and recorded in the 2021 emissions register (EK2021). Of the total 5,800 km of tracks for rail-bound traffic under federal supervision, approximately 4,165 km are listed in EK2021. The data is not legally binding. Binding information on noise pollution and noise abatement is provided by the federal enforcement authority, the Federal Office of Transport (FOT).",
+  "earthx:access": {
+   "account": "none",
+   "account_provider": null,
+   "delivery": "download"
+  },
+  "earthx:category": "other",
+  "earthx:coverage_states": null,
+  "earthx:data_kind": "raster",
+  "earthx:distributions": [],
+  "earthx:entry": "listed",
+  "earthx:extent_basis": "source",
+  "earthx:legal_note": null,
+  "earthx:legal_status": "cleared",
+  "earthx:license_flags": {
+   "attribution_modified": "© Federal Office for the Environment FOEN (modified)",
+   "attribution_required": true,
+   "attribution_unmodified": "© Federal Office for the Environment FOEN",
+   "commercial_use": true,
+   "derivatives": true,
+   "distribution": true,
+   "name": "opendata.swiss: Freie Nutzung, Quellenangabe ist Pflicht",
+   "share_alike": false,
+   "spdx_id": null,
+   "terms_notice": null,
+   "terms_url": null,
+   "tier": "catalog",
+   "url": "https://opendata.swiss/en/terms-of-use#terms_by"
+  },
+  "earthx:listing": {
+   "approved_on": "2026-11-21",
+   "license_rule": "fsdi-stac/Federal Office for the Environment FOEN/opendata-swiss-by",
+   "publisher": "Federal Office for the Environment FOEN",
+   "source_id": "fsdi-stac",
+   "source_key": "ch.bafu.laerm-bahnlaerm_nacht",
+   "source_rank": 1,
+   "source_url": "https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.laerm-bahnlaerm_nacht"
+  },
+  "earthx:maturity": "stable",
+  "extent": {
+   "spatial": {
+    "bbox": [
+     [
+      5.96,
+      45.82,
+      10.49,
+      47.81
+     ]
+    ]
+   },
+   "temporal": {
+    "interval": [
+     [
+      "2021-12-31T00:00:00Z",
+      "2021-12-31T00:00:00Z"
+     ]
+    ]
+   }
+  },
+  "id": "fsdi-stac.ch.bafu.laerm-bahnlaerm_nacht",
+  "keywords": [
+   "other"
+  ],
+  "license": "proprietary",
+  "links": [
+   {
+    "href": "https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.laerm-bahnlaerm_nacht",
+    "rel": "via",
+    "title": "Source"
+   },
+   {
+    "href": "https://opendata.swiss/en/terms-of-use#terms_by",
+    "rel": "license",
+    "title": "opendata.swiss: Freie Nutzung, Quellenangabe ist Pflicht"
+   }
+  ],
+  "providers": [
+   {
+    "name": "Federal Office for the Environment FOEN",
+    "roles": [
+     "licensor"
+    ]
+   }
+  ],
+  "stac_extensions": [],
+  "stac_version": "1.0.0",
+  "title": "Nighttime railway noise exposure",
+  "type": "Collection"
+ },
+ "items": [
+  {
+   "assets": {
+    "laerm-bahnlaerm_nacht.zip": {
+     "created": "2025-07-02T13:57:32.429118Z",
+     "file:checksum": "1220049ff098d1acddf4c9bb538417aa00379ac71e593f430fdd9f9bd1237335e4af",
+     "href": "https://data.geo.admin.ch/ch.bafu.laerm-bahnlaerm_nacht/laerm-bahnlaerm_nacht/laerm-bahnlaerm_nacht.zip",
+     "title": "Additional Files",
+     "type": "application/x.pdf+zip",
+     "updated": "2025-07-02T13:58:07.621402Z"
+    },
+    "laerm-bahnlaerm_nacht_2056.tif": {
+     "created": "2025-07-01T09:18:59.660345Z",
+     "file:checksum": "122059cdb3064fd135f04613bfff79fd9555a627b5661bdff0b45e532b5fef790c66",
+     "href": "https://data.geo.admin.ch/ch.bafu.laerm-bahnlaerm_nacht/laerm-bahnlaerm_nacht/laerm-bahnlaerm_nacht_2056.tif",
+     "proj:epsg": 2056,
+     "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+     "updated": "2025-07-01T09:37:23.347029Z"
+    }
+   },
+   "bbox": [
+    5.96,
+    45.82,
+    10.49,
+    47.81
+   ],
+   "collection": "ch.bafu.laerm-bahnlaerm_nacht",
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       5.96,
+       45.82
+      ],
+      [
+       5.96,
+       47.81
+      ],
+      [
+       10.49,
+       47.81
+      ],
+      [
+       10.49,
+       45.82
+      ],
+      [
+       5.96,
+       45.82
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "id": "laerm-bahnlaerm_nacht",
+   "links": [
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/collections/ch.bafu.laerm-bahnlaerm_nacht/items/laerm-bahnlaerm_nacht",
+     "rel": "self"
+    },
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/",
+     "rel": "root"
+    },
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/collections/ch.bafu.laerm-bahnlaerm_nacht",
+     "rel": "parent"
+    },
+    {
+     "href": "https://data.geo.admin.ch/api/stac/v1/collections/ch.bafu.laerm-bahnlaerm_nacht",
+     "rel": "collection"
+    },
+    {
+     "href": "https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.laerm-bahnlaerm_nacht/items/laerm-bahnlaerm_nacht",
+     "rel": "alternate",
+     "title": "STAC Browser",
+     "type": "text/html"
+    }
+   ],
+   "properties": {
+    "created": "2025-06-17T09:58:50.218058Z",
+    "datetime": "2021-12-31T00:00:00Z",
+    "updated": "2025-07-02T13:58:07.621402Z"
+   },
+   "stac_version": "1.0.0",
+   "type": "Feature"
+  }
+ ],
+ "verify": {
+  "account": "none",
+  "checked_on": "2026-11-25",
+  "data_region": null,
+  "files": [
+   {
+    "accept_ranges": "bytes",
+    "cors": "any",
+    "final_host": "data.geo.admin.ch",
+    "format": {
+     "big_tiff": true,
+     "format": "cog",
+     "tiff": {
+      "bands": 1,
+      "data_type": "float64",
+      "epsg": null,
+      "height": 22260,
+      "nodata": "-9999",
+      "overviews": 5,
+      "tile_size": [
+       512,
+       512
+      ],
+      "tiled": true,
+      "width": 34348
+     }
+    },
+    "href": "https://data.geo.admin.ch/ch.bafu.laerm-bahnlaerm_nacht/laerm-bahnlaerm_nacht/laerm-bahnlaerm_nacht_2056.tif",
+    "length": 164827544,
+    "media_type": "image/tiff",
+    "outcome": "passed",
+    "partial": true,
+    "reason": "ok",
+    "status": 206
+   }
+  ],
+  "items": 1
+ }
+}

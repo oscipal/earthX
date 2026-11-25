@@ -1,0 +1,119 @@
+# A candidate for a full entry (M5-20 plan §14.1; adr/0031 §4.4, §8), written by `discovery propose` in a harvest run.
+# What was harvested, the proposed id and how the full entry takes over the listed row (`takeover`), the licence with
+# its decision by rules (F15 = 1) and the result of Verify. The fields under `onboarding` are for the onboarding of the
+# full entry. To take a candidate out, block its entry in backend/catalog/blocked.yaml; this file is never deleted.
+source_id: fsdi-stac
+source_key: ch.bafu.landesforstinventar-licht_verjuengungspotential
+listed_id: fsdi-stac.ch.bafu.landesforstinventar-licht_verjuengungspotential
+listed_state: published
+first_proposed: 2026-11-25
+proposed_id: ch.bafu.landesforstinventar-licht_verjuengungspotential
+takeover:
+  via: coll
+  key: coll:data.geo.admin.ch/ch.bafu.landesforstinventar-licht_verjuengungspotential
+harvested:
+  title: Switzerland-wide maps showing light-induced regeneration potential (as of
+    NFI VHM 2024)
+  description: 'The map shows where light conditions are sufficient for sufficient
+    height growth of regeneration (<= 300 cm) for each tree species group. The map
+    is based on expert field surveys in 39 forest districts spread across Switzerland
+    and at various altitudes, as well as on the degree of canopy opening derived from
+    LiDAR data. The tree species considered were divided into the classes listed below
+    based on their light requirements. The map can also be used as a guide for other
+    tree species in the respective class:<br><br> <ul> <li>Larch, birch, English oak,
+    sessile oak, Scots pine, and cherry: light-demanding tree species (class 1),</li>
+    <li>Sycamore maple and Norway maple: semi-light-demanding tree species (class
+    2),</li> <li>Spruce, small-leaved and large-leaved lime: semi-shade tree species
+    (class 3),</li> <li>Beech and fir: shade tree species (class 4),</li> <li>Too
+    dark for all tree species to grow (class 5).</li> </ul> <ul>Purpose: The map shows
+    whether the local light conditions are sufficient for young trees to grow vigorously
+    into pole wood without additional intervention, thus identifying potentially necessary
+    silvicultural measures at an early stage.</ul> <ul>Notes on use: Support for foresters
+    and forest managers in planning regeneration measures, young forest maintenance,
+    tree species selection, and temporal and spatial monitoring, as the map is regularly
+    updated with new LiDAR flights.</ul> <ul>Comments: The regeneration potential
+    was calculated solely on the basis of the degree of canopy opening, which takes
+    into account the shading caused by the surrounding tree crowns and the terrain.
+    Direct sunlight has not been taken into account so far, as this leads to statistically
+    less reliable results. This means that slope exposure or the orientation of gaps
+    cannot be taken into account at this stage. Similarly, no altitude-specific subdivisions
+    can be made at present, as the national model used performs best in statistical
+    tests. In stands with trees and shrubs of approx. 3-7 m in height, the light conditions
+    in the understorey are overestimated, i.e. in such cases the map shows an excessively
+    high regeneration potential. The map has been reduced to the forest area according
+    to the NFI, and forest roads have been masked out as much as possible.</ul> <p>The
+    map shows the regeneration potential <a href="https://data.geo.admin.ch/ch.bafu.landesforstinventar-licht_verjuengungspotential/landesforstinventar-licht_verjuengungspotential/landesforstinventar-licht_verjuengungspotential.png"
+    target="_blank">at the time of the LiDAR survey</a>, which was used to derive
+    the canopy openness.</p>'
+  publisher: Federal Office for the Environment FOEN
+  keywords:
+  - other
+  doi: null
+  licence_statements:
+  - https://opendata.swiss/en/terms-of-use/#terms_by
+  bbox:
+  - 5.96
+  - 45.82
+  - 10.49
+  - 47.81
+  extent_basis: source
+  temporal:
+  - '2026-05-21T00:00:00Z'
+  - '2026-05-21T00:00:00Z'
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.landesforstinventar-licht_verjuengungspotential
+  landing_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.landesforstinventar-licht_verjuengungspotential
+  distributions: []
+licence:
+  license_ref:
+  - opendata-swiss-by
+  license_rule: fsdi-stac/Federal Office for the Environment FOEN/opendata-swiss-by
+  license:
+    spdx_id: null
+    name: 'opendata.swiss: Freie Nutzung, Quellenangabe ist Pflicht'
+    url: https://opendata.swiss/en/terms-of-use#terms_by
+    commercial_use: true
+    distribution: true
+    derivatives: true
+    share_alike: false
+    attribution_required: true
+    tier: processing
+    attribution_modified: © Federal Office for the Environment FOEN (modified)
+    attribution_unmodified: © Federal Office for the Environment FOEN
+    terms_url: null
+  legal_status: cleared
+  decided_by: rules
+  decided_on: 2026-11-25
+verify:
+  checked_on: 2026-11-25
+  files:
+  - href: https://data.geo.admin.ch/ch.bafu.landesforstinventar-licht_verjuengungspotential/landesforstinventar-licht_verjuengungspotential/landesforstinventar-licht_verjuengungspotential_2056.tif
+    outcome: passed
+    reason: ok
+    status: 206
+    media_type: image/tiff; application=geotiff; profile=cloud-optimized
+    length: 195061430
+    accept_ranges: bytes
+    partial: true
+    cors: any
+    final_host: data.geo.admin.ch
+    format:
+      format: cog
+      tiff:
+        width: 69690
+        height: 44133
+        bands: 1
+        data_type: uint8
+        tiled: true
+        tile_size:
+        - 512
+        - 512
+        overviews: 8
+        epsg: 2056
+        nodata: '255'
+  items: 1
+  account: none
+  data_region: null
+onboarding:
+  way: null
+  profile: null
+  notes: null

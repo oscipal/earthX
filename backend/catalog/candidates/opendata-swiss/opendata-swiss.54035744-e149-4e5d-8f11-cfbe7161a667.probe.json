@@ -1,0 +1,145 @@
+{
+ "collection": {
+  "description": "Cette couche raster indique la taille de la maille effective qui est un indicateur de fragmentation du territoire. Elle est calculée selon une fenêtre mobile de 200 mètres.",
+  "earthx:access": {
+   "account": "none",
+   "account_provider": null,
+   "delivery": "download"
+  },
+  "earthx:category": "nature",
+  "earthx:coverage_states": null,
+  "earthx:data_kind": "raster",
+  "earthx:distributions": [
+   {
+    "format": "API",
+    "href": "https://raster.sitg.ge.ch/arcgis/rest/services",
+    "media_type": null,
+    "title": "0"
+   },
+   {
+    "format": "TIFF",
+    "href": "https://ge.ch/sitg/geodata/SITG/COG-DATA/SIPV_MN_FRAGMENTATION.tif",
+    "media_type": "image/tiff",
+    "title": "TIFF_COG"
+   }
+  ],
+  "earthx:entry": "listed",
+  "earthx:extent_basis": "place",
+  "earthx:legal_note": null,
+  "earthx:legal_status": "cleared",
+  "earthx:license_flags": {
+   "attribution_modified": null,
+   "attribution_required": false,
+   "attribution_unmodified": null,
+   "commercial_use": true,
+   "derivatives": true,
+   "distribution": true,
+   "name": "opendata.swiss: Freie Nutzung",
+   "share_alike": false,
+   "spdx_id": null,
+   "terms_notice": null,
+   "terms_url": null,
+   "tier": "catalog",
+   "url": "https://opendata.swiss/en/terms-of-use#terms_open"
+  },
+  "earthx:listing": {
+   "approved_on": "2026-11-23",
+   "license_rule": "opendata-swiss/Stadt Genf/opendata-swiss-open",
+   "publisher": "Stadt Genf",
+   "source_id": "opendata-swiss",
+   "source_key": "54035744-e149-4e5d-8f11-cfbe7161a667",
+   "source_rank": 3,
+   "source_url": "https://opendata.swiss/de/dataset/indice-de-fragmentation-du-territoire"
+  },
+  "earthx:maturity": "stable",
+  "extent": {
+   "spatial": {
+    "bbox": [
+     [
+      5.9548,
+      46.1305,
+      6.2812,
+      46.3318
+     ]
+    ]
+   },
+   "temporal": {
+    "interval": [
+     [
+      null,
+      null
+     ]
+    ]
+   }
+  },
+  "id": "opendata-swiss.54035744-e149-4e5d-8f11-cfbe7161a667",
+  "keywords": [
+   "nature",
+   "environment"
+  ],
+  "license": "proprietary",
+  "links": [
+   {
+    "href": "https://opendata.swiss/de/dataset/indice-de-fragmentation-du-territoire",
+    "rel": "via",
+    "title": "Source"
+   },
+   {
+    "href": "https://opendata.swiss/en/terms-of-use#terms_open",
+    "rel": "license",
+    "title": "opendata.swiss: Freie Nutzung"
+   }
+  ],
+  "providers": [
+   {
+    "name": "Stadt Genf",
+    "roles": [
+     "licensor"
+    ]
+   }
+  ],
+  "stac_extensions": [],
+  "stac_version": "1.0.0",
+  "title": "Indice de fragmentation du territoire",
+  "type": "Collection"
+ },
+ "items": [],
+ "verify": {
+  "account": "none",
+  "checked_on": "2026-11-25",
+  "data_region": null,
+  "files": [
+   {
+    "accept_ranges": "bytes",
+    "cors": "any",
+    "final_host": "ge.ch",
+    "format": {
+     "big_tiff": true,
+     "format": "cog",
+     "tiff": {
+      "bands": 1,
+      "data_type": "float32",
+      "epsg": 2056,
+      "height": 5450,
+      "nodata": "-9999",
+      "overviews": 4,
+      "tile_size": [
+       512,
+       512
+      ],
+      "tiled": true,
+      "width": 5775
+     }
+    },
+    "href": "https://ge.ch/sitg/geodata/SITG/COG-DATA/SIPV_MN_FRAGMENTATION.tif",
+    "length": 59686844,
+    "media_type": "image/tiff",
+    "outcome": "passed",
+    "partial": true,
+    "reason": "ok",
+    "status": 206
+   }
+  ],
+  "items": 0
+ }
+}

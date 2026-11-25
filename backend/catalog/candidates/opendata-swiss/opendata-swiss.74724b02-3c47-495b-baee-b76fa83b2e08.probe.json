@@ -1,0 +1,145 @@
+{
+ "collection": {
+  "description": "Les données montrent le débit d'air froid (en m³/[s*m]) dans le canton de Genève qui a été modélisé avec le modèle climatique urbain FITNAH-3D. Le débit d'air froid est le produit de la vitesse d'écoulement de l'air froid, de son expansion verticale (hauteur de la couche) et de l'expansion horizontale de la section transversale qu'il traverse. Il décrit donc la quantité d'air froid dans l'unité m³ qui traverse une section de 1 m de largeur toutes les secondes. Les résultats sont basés sur une résolution spatiale horizontale de 10 m et sur une situation météorologique estivale autochtone (condition météorologique de rayonnement à vent faible). Ils représentent la situation de nuit à 4:00 heures (refroidissement maximal). Le paramètre climatique est considéré à la fois dans sa caractéristique actuelle et future (y compris le changement climatique et le développement futur). Les augmentations de température supposées pour les périodes futures se réfèrent aux résultats des scénarios climatiques pour la Suisse (CH2018). Les hausses de température correspondent au signal de changement estival moyen du scénario RCP 8.5 pour l'Ouest de la Suisse. P1: période future 2020-2049 (\"2035\") -> + 1,5 °C par rapport à P0 Scénario de développement: P1, P2 et P3: occupation des sols avec les projets qui devraient être réalisés d'ici 2035 Pour les zones hors canton, les données de base relatives à la couverture du sol ont une précision inférieure à Genève. Les arbres isolés et les surfaces d'imperméabilisation autour des bâtiments, deux facteurs qui influencent les paramètres climatiques, n'ont pas pu être intégrés au modèle d'analyse. Il s'agit dès lors de considérer les données hors canton avec prudence. Rappel : conformément aux CGU, les informations relatives à l'analyse climatique sont sans valeur juridique.",
+  "earthx:access": {
+   "account": "none",
+   "account_provider": null,
+   "delivery": "download"
+  },
+  "earthx:category": "nature",
+  "earthx:coverage_states": null,
+  "earthx:data_kind": "raster",
+  "earthx:distributions": [
+   {
+    "format": "API",
+    "href": "https://raster.sitg.ge.ch/arcgis/rest/services",
+    "media_type": null,
+    "title": "0"
+   },
+   {
+    "format": "TIFF",
+    "href": "https://ge.ch/sitg/geodata/SITG/COG-DATA/CLIMAT_DEBIT_AIRFROID_4H00_P1_2020.tif",
+    "media_type": "image/tiff",
+    "title": "TIFF_COG"
+   }
+  ],
+  "earthx:entry": "listed",
+  "earthx:extent_basis": "place",
+  "earthx:legal_note": null,
+  "earthx:legal_status": "cleared",
+  "earthx:license_flags": {
+   "attribution_modified": null,
+   "attribution_required": false,
+   "attribution_unmodified": null,
+   "commercial_use": true,
+   "derivatives": true,
+   "distribution": true,
+   "name": "opendata.swiss: Freie Nutzung",
+   "share_alike": false,
+   "spdx_id": null,
+   "terms_notice": null,
+   "terms_url": null,
+   "tier": "catalog",
+   "url": "https://opendata.swiss/en/terms-of-use#terms_open"
+  },
+  "earthx:listing": {
+   "approved_on": "2026-11-23",
+   "license_rule": "opendata-swiss/Kanton Genf/opendata-swiss-open",
+   "publisher": "Kanton Genf",
+   "source_id": "opendata-swiss",
+   "source_key": "74724b02-3c47-495b-baee-b76fa83b2e08",
+   "source_rank": 3,
+   "source_url": "https://opendata.swiss/de/dataset/analyse-climatique-2020-debit-dair-froid-nocturne-2020-2049"
+  },
+  "earthx:maturity": "stable",
+  "extent": {
+   "spatial": {
+    "bbox": [
+     [
+      5.9548,
+      46.1305,
+      6.2812,
+      46.3318
+     ]
+    ]
+   },
+   "temporal": {
+    "interval": [
+     [
+      null,
+      null
+     ]
+    ]
+   }
+  },
+  "id": "opendata-swiss.74724b02-3c47-495b-baee-b76fa83b2e08",
+  "keywords": [
+   "nature",
+   "environment"
+  ],
+  "license": "proprietary",
+  "links": [
+   {
+    "href": "https://opendata.swiss/de/dataset/analyse-climatique-2020-debit-dair-froid-nocturne-2020-2049",
+    "rel": "via",
+    "title": "Source"
+   },
+   {
+    "href": "https://opendata.swiss/en/terms-of-use#terms_open",
+    "rel": "license",
+    "title": "opendata.swiss: Freie Nutzung"
+   }
+  ],
+  "providers": [
+   {
+    "name": "Kanton Genf",
+    "roles": [
+     "licensor"
+    ]
+   }
+  ],
+  "stac_extensions": [],
+  "stac_version": "1.0.0",
+  "title": "Analyse climatique 2020 - Débit d'air froid nocturne 2020-2049",
+  "type": "Collection"
+ },
+ "items": [],
+ "verify": {
+  "account": "none",
+  "checked_on": "2026-11-25",
+  "data_region": null,
+  "files": [
+   {
+    "accept_ranges": "bytes",
+    "cors": "any",
+    "final_host": "ge.ch",
+    "format": {
+     "big_tiff": true,
+     "format": "cog",
+     "tiff": {
+      "bands": 1,
+      "data_type": "float32",
+      "epsg": 2056,
+      "height": 2745,
+      "nodata": "-9999",
+      "overviews": 3,
+      "tile_size": [
+       512,
+       512
+      ],
+      "tiled": true,
+      "width": 3201
+     }
+    },
+    "href": "https://ge.ch/sitg/geodata/SITG/COG-DATA/CLIMAT_DEBIT_AIRFROID_4H00_P1_2020.tif",
+    "length": 34939388,
+    "media_type": "image/tiff",
+    "outcome": "passed",
+    "partial": true,
+    "reason": "ok",
+    "status": 206
+   }
+  ],
+  "items": 0
+ }
+}

@@ -1,0 +1,146 @@
+{
+ "collection": {
+  "description": "Le Modèle Numérique de Surface (MNS) 2005 ou Modèle numérique d'Elévation (MNE) est un modèle tridimensionnel représentant, sous forme numérique, le relief d'une portion de territoire, incluant les bâtiments et la végétation. Le MNS 2005 a une précision altimétrique de 25 cm environ sur surface dure et une précision planimétrique de 1 pixel soit 1 m.",
+  "earthx:access": {
+   "account": "none",
+   "account_provider": null,
+   "delivery": "download"
+  },
+  "earthx:category": "boundaries",
+  "earthx:coverage_states": null,
+  "earthx:data_kind": "raster",
+  "earthx:distributions": [
+   {
+    "format": "API",
+    "href": "https://raster.sitg.ge.ch/arcgis/rest/services",
+    "media_type": null,
+    "title": "0"
+   },
+   {
+    "format": "TIFF",
+    "href": "https://ge.ch/sitg/geodata/SITG/COG-DATA/MNA_SURFACE_2005.tif",
+    "media_type": "image/tiff",
+    "title": "TIFF_COG"
+   }
+  ],
+  "earthx:entry": "listed",
+  "earthx:extent_basis": "place",
+  "earthx:legal_note": null,
+  "earthx:legal_status": "cleared",
+  "earthx:license_flags": {
+   "attribution_modified": null,
+   "attribution_required": false,
+   "attribution_unmodified": null,
+   "commercial_use": true,
+   "derivatives": true,
+   "distribution": true,
+   "name": "opendata.swiss: Freie Nutzung",
+   "share_alike": false,
+   "spdx_id": null,
+   "terms_notice": null,
+   "terms_url": null,
+   "tier": "catalog",
+   "url": "https://opendata.swiss/en/terms-of-use#terms_open"
+  },
+  "earthx:listing": {
+   "approved_on": "2026-11-23",
+   "license_rule": "opendata-swiss/Kanton Genf/opendata-swiss-open",
+   "publisher": "Kanton Genf",
+   "source_id": "opendata-swiss",
+   "source_key": "cfce5a03-c576-4016-b960-1a678949d5f3",
+   "source_rank": 3,
+   "source_url": "https://opendata.swiss/de/dataset/mns-modele-numerique-de-surface-2005-pixel-1-0-m"
+  },
+  "earthx:maturity": "stable",
+  "extent": {
+   "spatial": {
+    "bbox": [
+     [
+      5.9548,
+      46.1305,
+      6.2812,
+      46.3318
+     ]
+    ]
+   },
+   "temporal": {
+    "interval": [
+     [
+      null,
+      null
+     ]
+    ]
+   }
+  },
+  "id": "opendata-swiss.cfce5a03-c576-4016-b960-1a678949d5f3",
+  "keywords": [
+   "boundaries",
+   "addresses",
+   "cadastre"
+  ],
+  "license": "proprietary",
+  "links": [
+   {
+    "href": "https://opendata.swiss/de/dataset/mns-modele-numerique-de-surface-2005-pixel-1-0-m",
+    "rel": "via",
+    "title": "Source"
+   },
+   {
+    "href": "https://opendata.swiss/en/terms-of-use#terms_open",
+    "rel": "license",
+    "title": "opendata.swiss: Freie Nutzung"
+   }
+  ],
+  "providers": [
+   {
+    "name": "Kanton Genf",
+    "roles": [
+     "licensor"
+    ]
+   }
+  ],
+  "stac_extensions": [],
+  "stac_version": "1.0.0",
+  "title": "MNS - Modèle numérique de surface 2005 (pixel 1.0 m)",
+  "type": "Collection"
+ },
+ "items": [],
+ "verify": {
+  "account": "none",
+  "checked_on": "2026-11-25",
+  "data_region": null,
+  "files": [
+   {
+    "accept_ranges": "bytes",
+    "cors": "any",
+    "final_host": "ge.ch",
+    "format": {
+     "big_tiff": true,
+     "format": "cog",
+     "tiff": {
+      "bands": 1,
+      "data_type": "float32",
+      "epsg": 2056,
+      "height": 30000,
+      "nodata": null,
+      "overviews": 6,
+      "tile_size": [
+       512,
+       512
+      ],
+      "tiled": true,
+      "width": 30000
+     }
+    },
+    "href": "https://ge.ch/sitg/geodata/SITG/COG-DATA/MNA_SURFACE_2005.tif",
+    "length": 1111255341,
+    "media_type": "image/tiff",
+    "outcome": "passed",
+    "partial": true,
+    "reason": "ok",
+    "status": 206
+   }
+  ],
+  "items": 0
+ }
+}

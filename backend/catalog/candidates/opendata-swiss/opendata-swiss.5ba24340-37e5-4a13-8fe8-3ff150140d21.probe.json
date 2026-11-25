@@ -1,0 +1,146 @@
+{
+ "collection": {
+  "description": "La carte de Jean Duvillard comporte deux parties. Une vue du lac Léman et de ses environs immédiats et une liste de dix-neuf espèces de poissons, – plus les écrevisses, le vengeron et les huitres lacustres – qui peuplent ses eaux accompagnée d'un dessin de chacune d'entre elles. Cette seconde partie est datée de 1581 alors que la carte a été faite sept ans plus tard. Elle comporte en outre un texte introductif donnant la date d'exécution, le nom de l''auteur et les armoiries de sa famille. Cette carte du Léman, qui a été utilisée par Jacques Goulard pour établir la sienne au début du XVIIe siècle, a été oubliée par la suite et n'a été redécouverte qu'en 1827, reliée en fin d'un livre de géographie de la Bibliothèque de Genève. Jusqu'à la Renaissance, la région lémanique n'est figurée que sur des cartes à grande échelle qui représentent le monde ou l'ensemble du continent. La plus ancienne qui soit conservée est la Table dite de Peutinger, copie médiévale d'un document antique qui montre le \"lacus Losanna\" sur une carte du réseau routier de l'Empire romain. La carte de Duvillard constitue l'un des meilleurs exemples genevois de la cartographie humaniste du XVIe siècle. Jean Duvillard n'a apparemment pas fait oeuvre de topographe mais s'est inspiré de documents existants qu'il actualise en les complétant d'informations nouvelles. Son modèle principal est la carte que le médecin Thomas Schöpf avait dessinée de l'Etat de Berne et qui avait été publiée après sa mort en 1578 à Strasbourg. Duvillard reprend même certains détails comme les chamois ou chevreuils qui s'affrontent au-dessus d'Evian.",
+  "earthx:access": {
+   "account": "none",
+   "account_provider": null,
+   "delivery": "download"
+  },
+  "earthx:category": "boundaries",
+  "earthx:coverage_states": null,
+  "earthx:data_kind": "raster",
+  "earthx:distributions": [
+   {
+    "format": "API",
+    "href": "https://raster.sitg.ge.ch/arcgis/rest/services",
+    "media_type": null,
+    "title": "0"
+   },
+   {
+    "format": "TIFF",
+    "href": "https://ge.ch/sitg/geodata/SITG/COG-DATA/HISTO_CARTE_DUVILLARD_1588.tif",
+    "media_type": "image/tiff",
+    "title": "TIFF_COG"
+   }
+  ],
+  "earthx:entry": "listed",
+  "earthx:extent_basis": "place",
+  "earthx:legal_note": null,
+  "earthx:legal_status": "cleared",
+  "earthx:license_flags": {
+   "attribution_modified": null,
+   "attribution_required": false,
+   "attribution_unmodified": null,
+   "commercial_use": true,
+   "derivatives": true,
+   "distribution": true,
+   "name": "opendata.swiss: Freie Nutzung",
+   "share_alike": false,
+   "spdx_id": null,
+   "terms_notice": null,
+   "terms_url": null,
+   "tier": "catalog",
+   "url": "https://opendata.swiss/en/terms-of-use#terms_open"
+  },
+  "earthx:listing": {
+   "approved_on": "2026-11-23",
+   "license_rule": "opendata-swiss/Kanton Genf/opendata-swiss-open",
+   "publisher": "Kanton Genf",
+   "source_id": "opendata-swiss",
+   "source_key": "5ba24340-37e5-4a13-8fe8-3ff150140d21",
+   "source_rank": 3,
+   "source_url": "https://opendata.swiss/de/dataset/carte-duvillard-1588"
+  },
+  "earthx:maturity": "stable",
+  "extent": {
+   "spatial": {
+    "bbox": [
+     [
+      5.9548,
+      46.1305,
+      6.2812,
+      46.3318
+     ]
+    ]
+   },
+   "temporal": {
+    "interval": [
+     [
+      null,
+      null
+     ]
+    ]
+   }
+  },
+  "id": "opendata-swiss.5ba24340-37e5-4a13-8fe8-3ff150140d21",
+  "keywords": [
+   "boundaries",
+   "addresses",
+   "cadastre"
+  ],
+  "license": "proprietary",
+  "links": [
+   {
+    "href": "https://opendata.swiss/de/dataset/carte-duvillard-1588",
+    "rel": "via",
+    "title": "Source"
+   },
+   {
+    "href": "https://opendata.swiss/en/terms-of-use#terms_open",
+    "rel": "license",
+    "title": "opendata.swiss: Freie Nutzung"
+   }
+  ],
+  "providers": [
+   {
+    "name": "Kanton Genf",
+    "roles": [
+     "licensor"
+    ]
+   }
+  ],
+  "stac_extensions": [],
+  "stac_version": "1.0.0",
+  "title": "Carte Duvillard 1588",
+  "type": "Collection"
+ },
+ "items": [],
+ "verify": {
+  "account": "none",
+  "checked_on": "2026-11-25",
+  "data_region": null,
+  "files": [
+   {
+    "accept_ranges": "bytes",
+    "cors": "any",
+    "final_host": "ge.ch",
+    "format": {
+     "big_tiff": true,
+     "format": "cog",
+     "tiff": {
+      "bands": 3,
+      "data_type": "uint8",
+      "epsg": 2056,
+      "height": 9838,
+      "nodata": null,
+      "overviews": 5,
+      "tile_size": [
+       512,
+       512
+      ],
+      "tiled": true,
+      "width": 14798
+     }
+    },
+    "href": "https://ge.ch/sitg/geodata/SITG/COG-DATA/HISTO_CARTE_DUVILLARD_1588.tif",
+    "length": 80445448,
+    "media_type": "image/tiff",
+    "outcome": "passed",
+    "partial": true,
+    "reason": "ok",
+    "status": 206
+   }
+  ],
+  "items": 0
+ }
+}

@@ -1,0 +1,153 @@
+{
+ "collection": {
+  "description": "Bei der Ebene \"Relief digitales Terrainmodell LiDAR (2018)\" handelt es sich um die schattierte Abbildung der Erdoberfläche ohne Gebäuden und Vegetation. <br> Die Daten basieren auf luftgestützten Lasermessungen mit einer mittleren Punktdichte von 16 Punkten pro m2 und einer Höhengenauigkeit von 10 cm (1 Sigma=68%). Die Auflösung des Reliefs beträgt 25 cm. Die Befliegung erfolgte im Frühjahr 2018.",
+  "earthx:access": {
+   "account": "none",
+   "account_provider": null,
+   "delivery": "download"
+  },
+  "earthx:category": "boundaries",
+  "earthx:coverage_states": null,
+  "earthx:data_kind": "raster",
+  "earthx:distributions": [
+   {
+    "format": "HTML",
+    "href": "https://data.geo.so.ch?filter=ch.bl.agi.lidar_2018.dtm_hillshade",
+    "media_type": "text/html",
+    "title": "Download-Seite"
+   },
+   {
+    "format": "TIFF",
+    "href": "https://files.geo.so.ch/ch.bl.agi.lidar_2018.dtm_hillshade/aktuell/ch.bl.agi.lidar_2018.dtm_hillshade.tif",
+    "media_type": "image/tiff",
+    "title": "GeoTIFF: Relief digitales Terrainmodell (2018)"
+   }
+  ],
+  "earthx:entry": "listed",
+  "earthx:extent_basis": "place",
+  "earthx:legal_note": null,
+  "earthx:legal_status": "cleared",
+  "earthx:license_flags": {
+   "attribution_modified": null,
+   "attribution_required": false,
+   "attribution_unmodified": null,
+   "commercial_use": true,
+   "derivatives": true,
+   "distribution": true,
+   "name": "opendata.swiss: Freie Nutzung",
+   "share_alike": false,
+   "spdx_id": null,
+   "terms_notice": null,
+   "terms_url": null,
+   "tier": "catalog",
+   "url": "https://opendata.swiss/en/terms-of-use#terms_open"
+  },
+  "earthx:listing": {
+   "approved_on": "2026-11-23",
+   "license_rule": "opendata-swiss/Kanton Solothurn/opendata-swiss-open",
+   "publisher": "Kanton Solothurn",
+   "source_id": "opendata-swiss",
+   "source_key": "a0e9788d-5024-4105-98df-ca6c8d852536",
+   "source_rank": 1,
+   "source_url": "https://data.geo.so.ch?filter=ch.bl.agi.lidar_2018.dtm_hillshade"
+  },
+  "earthx:maturity": "stable",
+  "extent": {
+   "spatial": {
+    "bbox": [
+     [
+      7.3462,
+      47.0754,
+      8.0291,
+      47.5001
+     ]
+    ]
+   },
+   "temporal": {
+    "interval": [
+     [
+      null,
+      null
+     ]
+    ]
+   }
+  },
+  "id": "opendata-swiss.a0e9788d-5024-4105-98df-ca6c8d852536",
+  "keywords": [
+   "hohe",
+   "laserscanning",
+   "lidar",
+   "dsm",
+   "dom",
+   "ndom",
+   "laz",
+   "las",
+   "kurven",
+   "hohenkurven"
+  ],
+  "license": "proprietary",
+  "links": [
+   {
+    "href": "https://data.geo.so.ch?filter=ch.bl.agi.lidar_2018.dtm_hillshade",
+    "rel": "via",
+    "title": "Source"
+   },
+   {
+    "href": "https://opendata.swiss/en/terms-of-use#terms_open",
+    "rel": "license",
+    "title": "opendata.swiss: Freie Nutzung"
+   }
+  ],
+  "providers": [
+   {
+    "name": "Kanton Solothurn",
+    "roles": [
+     "licensor"
+    ]
+   }
+  ],
+  "stac_extensions": [],
+  "stac_version": "1.0.0",
+  "title": "Relief digitales Terrainmodell (2018)",
+  "type": "Collection"
+ },
+ "items": [],
+ "verify": {
+  "account": "none",
+  "checked_on": "2026-11-25",
+  "data_region": null,
+  "files": [
+   {
+    "accept_ranges": "bytes",
+    "cors": "any",
+    "final_host": "files.geo.so.ch",
+    "format": {
+     "big_tiff": true,
+     "format": "cog",
+     "tiff": {
+      "bands": 2,
+      "data_type": "uint8",
+      "epsg": 2056,
+      "height": 110000,
+      "nodata": null,
+      "overviews": 9,
+      "tile_size": [
+       512,
+       512
+      ],
+      "tiled": true,
+      "width": 204000
+     }
+    },
+    "href": "https://files.geo.so.ch/ch.bl.agi.lidar_2018.dtm_hillshade/aktuell/ch.bl.agi.lidar_2018.dtm_hillshade.tif",
+    "length": 13406849114,
+    "media_type": "image/tiff",
+    "outcome": "passed",
+    "partial": true,
+    "reason": "ok",
+    "status": 206
+   }
+  ],
+  "items": 0
+ }
+}

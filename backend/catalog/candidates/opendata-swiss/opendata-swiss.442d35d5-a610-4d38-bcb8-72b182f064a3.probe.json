@@ -1,0 +1,286 @@
+{
+ "collection": {
+  "description": "Dem Klimamodell liegt als meteorologische Rahmenbedingung eine windschwache Wetterlage im Sommer zugrunde, da sich die siedlungsklimatischen Effekte vor allem während windschwacher Wetterlagen mit geringer Wolkenbedeckung im Sommer entwickeln. Charakteristisch für diese (Hochdruck-) Wetterlage ist die lokale Entstehung von Kaltluftströmungen (Flurwinde in ebener Lage und Kaltluftabflüsse über den Hängen), die durch den Temperaturgradienten zwischen kühlen Freiflächen und wärmeren Siedlungsräumen angetrieben werden und zu einem Abbau der Wärmebelastung in der Bebauung beitragen. Dabei geht es weniger um den Aufenthalt im Freien als vielmehr um die Wärmereduktion im Innenraum zur Verbesserung der Schlafumfeldbedingungen. Dazu wurden für die Nachtsituation die meteorologischen Parameter bodennahe Lufttemperatur, Kaltluftproduktionsrate, das bodennahe Kaltluftströmungsfeld sowie der Kaltluftvolumenstrom modelliert. Die Wärmebelastung am Tage im Freien wird über die Physiologisch Äquivalente Temperatur (PET) repräsentiert. Für das Zukunftsszenario im Jahr 2060 wird eine mittlere sommerliche Temperaturzunahme von 2,6 K zugrunde gelegt (vgl. Kap. 3.4.4 Erläuterungsbericht). Die unterschiedlichen Nutzungsstrukturen wirken darauf verstärkend (überbaute Räume) oder abschwächend (Grünräume) ein. Im Allgemeinen werden aber sowohl die Grünflächen als auch der Siedlungsraum wärmer. Die Grünflächen liefern aber auch zukünftig kalte Luft. Allerdings ist diese - unter dem Einfluss des Klimawandels - etwas wärmer verglichen mit der Gegenwart, aber immer noch kühler als die Siedlungsräume. Die relativen Temperaturunterschiede zwischen den Landnutzungen sowie der Luftaustausch insgesamt bleiben ähnlich ausgeprägt. Erläuterungsbericht (https://geofiles.be.ch/geoportal/pub/lpi/KLIMAMODELL_BE_Bericht_DE.pdf). Die simulierten Parameter stellen die Grundlage für die Herleitung der Klimaanalyse- und Planungshinweiskarten dar.",
+  "earthx:access": {
+   "account": "none",
+   "account_provider": null,
+   "delivery": "download"
+  },
+  "earthx:category": "nature",
+  "earthx:coverage_states": null,
+  "earthx:data_kind": "raster",
+  "earthx:distributions": [
+   {
+    "format": "OCTET",
+    "href": "https://geofiles.be.ch/geoportal/pub/download/KLIMAMOD/klimamod.zip",
+    "media_type": null,
+    "title": "ZIP-Datei mit Shapefile, Esri Grid, Metadaten und Begleitdaten"
+   },
+   {
+    "format": "GPKG",
+    "href": "https://geofiles.be.ch/geoportal/pub/download/KLIMAMOD/klimamod.gpkg.zip",
+    "media_type": null,
+    "title": "ZIP-Datei mit Geopackage mit Metadaten"
+   },
+   {
+    "format": "TIFF",
+    "href": "https://geofiles.be.ch/geoportal/pub/download/KLIMAMOD/klimamod_kpr20n.tif",
+    "media_type": "image/tiff",
+    "title": "Cloud-optimierte GeoTiff-Datei - Nächtliche Kaltluftproduktionsrate, 2020"
+   },
+   {
+    "format": "TIFF",
+    "href": "https://geofiles.be.ch/geoportal/pub/download/KLIMAMOD/klimamod_kpr60n.tif",
+    "media_type": "image/tiff",
+    "title": "Cloud-optimierte GeoTiff-Datei - Nächtliche Kaltluftproduktionsrate, 2060"
+   },
+   {
+    "format": "TIFF",
+    "href": "https://geofiles.be.ch/geoportal/pub/download/KLIMAMOD/klimamod_kvs20n.tif",
+    "media_type": "image/tiff",
+    "title": "Cloud-optimierte GeoTiff-Datei - Nächtliche Kaltluftvolumenstromdichte, 2020"
+   },
+   {
+    "format": "TIFF",
+    "href": "https://geofiles.be.ch/geoportal/pub/download/KLIMAMOD/klimamod_kvs60n.tif",
+    "media_type": "image/tiff",
+    "title": "Cloud-optimierte GeoTiff-Datei - Nächtliche Kaltluftvolumenstromdichte, 2060"
+   },
+   {
+    "format": "TIFF",
+    "href": "https://geofiles.be.ch/geoportal/pub/download/KLIMAMOD/klimamod_pet20t.tif",
+    "media_type": "image/tiff",
+    "title": "Cloud-optimierte GeoTiff-Datei - Physiologisches Temperaturäquivalent (Tag), 2020"
+   },
+   {
+    "format": "TIFF",
+    "href": "https://geofiles.be.ch/geoportal/pub/download/KLIMAMOD/klimamod_pet60t.tif",
+    "media_type": "image/tiff",
+    "title": "Cloud-optimierte GeoTiff-Datei - Physiologisches Temperaturäquivalent (Tag), 2060"
+   },
+   {
+    "format": "TIFF",
+    "href": "https://geofiles.be.ch/geoportal/pub/download/KLIMAMOD/klimamod_twg20n.tif",
+    "media_type": "image/tiff",
+    "title": "Cloud-optimierte GeoTiff-Datei - Nächtliche Windgeschwindigkeit, 2020"
+   },
+   {
+    "format": "TIFF",
+    "href": "https://geofiles.be.ch/geoportal/pub/download/KLIMAMOD/klimamod_twg60n.tif",
+    "media_type": "image/tiff",
+    "title": "Cloud-optimierte GeoTiff-Datei - Nächtliche Windgeschwindigkeit, 2060"
+   },
+   {
+    "format": "TIFF",
+    "href": "https://geofiles.be.ch/geoportal/pub/download/KLIMAMOD/klimamod_tluft20n.tif",
+    "media_type": "image/tiff",
+    "title": "Cloud-optimierte GeoTiff-Datei - Nächtliche Lufttemperatur, 2020"
+   },
+   {
+    "format": "TIFF",
+    "href": "https://geofiles.be.ch/geoportal/pub/download/KLIMAMOD/klimamod_tluft60n.tif",
+    "media_type": "image/tiff",
+    "title": "Cloud-optimierte GeoTiff-Datei - Nächtliche Lufttemperatur, 2060"
+   },
+   {
+    "format": "PARQUET",
+    "href": "https://geofiles.be.ch/geoportal/pub/download/KLIMAMOD/klimamod_wst20n20.parquet",
+    "media_type": null,
+    "title": "Geoparquet-Datei - Nächtliches bodennahes Windfeld in 2 m über Grund, aggregierte 200 m Auflösung, 2020"
+   },
+   {
+    "format": "PARQUET",
+    "href": "https://geofiles.be.ch/geoportal/pub/download/KLIMAMOD/klimamod_wst60n20.parquet",
+    "media_type": null,
+    "title": "Geoparquet-Datei - Nächtliches bodennahes Windfeld in 2 m über Grund, aggregierte 200 m Auflösung, 2060"
+   },
+   {
+    "format": "HTML",
+    "href": "https://geofiles.be.ch/geoportal/pub/stac/de/KLIMAMOD/collection.json?.language=de-CH",
+    "media_type": "text/html",
+    "title": "STAC-Collection - KLIMAMOD"
+   },
+   {
+    "format": "HTML",
+    "href": "https://www.agi.dij.be.ch/de/start/geoportal/geodaten/detail.html?type=geoproduct&code=KLIMAMOD",
+    "media_type": "text/html",
+    "title": "Link zum Geoportal des Kantons Bern"
+   }
+  ],
+  "earthx:entry": "listed",
+  "earthx:extent_basis": "publisher",
+  "earthx:legal_note": null,
+  "earthx:legal_status": "cleared",
+  "earthx:license_flags": {
+   "attribution_modified": null,
+   "attribution_required": false,
+   "attribution_unmodified": null,
+   "commercial_use": true,
+   "derivatives": true,
+   "distribution": true,
+   "name": "opendata.swiss: Freie Nutzung",
+   "share_alike": false,
+   "spdx_id": null,
+   "terms_notice": null,
+   "terms_url": null,
+   "tier": "catalog",
+   "url": "https://opendata.swiss/en/terms-of-use#terms_open"
+  },
+  "earthx:listing": {
+   "approved_on": "2026-11-23",
+   "license_rule": "opendata-swiss/Amt für Geoinformation des Kantons Bern/opendata-swiss-open",
+   "publisher": "Amt für Geoinformation des Kantons Bern",
+   "source_id": "opendata-swiss",
+   "source_key": "442d35d5-a610-4d38-bcb8-72b182f064a3",
+   "source_rank": 1,
+   "source_url": "https://www.agi.dij.be.ch/de/start/geoportal/geodaten/detail.html?type=geoproduct&code=KLIMAMOD"
+  },
+  "earthx:maturity": "stable",
+  "extent": {
+   "spatial": {
+    "bbox": [
+     [
+      6.8498,
+      46.3314,
+      8.45,
+      47.344
+     ]
+    ]
+   },
+   "temporal": {
+    "interval": [
+     [
+      null,
+      null
+     ]
+    ]
+   }
+  },
+  "id": "opendata-swiss.442d35d5-a610-4d38-bcb8-72b182f064a3",
+  "keywords": [
+   "klima",
+   "klimatologie"
+  ],
+  "license": "proprietary",
+  "links": [
+   {
+    "href": "https://www.agi.dij.be.ch/de/start/geoportal/geodaten/detail.html?type=geoproduct&code=KLIMAMOD",
+    "rel": "via",
+    "title": "Source"
+   },
+   {
+    "href": "https://opendata.swiss/en/terms-of-use#terms_open",
+    "rel": "license",
+    "title": "opendata.swiss: Freie Nutzung"
+   }
+  ],
+  "providers": [
+   {
+    "name": "Amt für Geoinformation des Kantons Bern",
+    "roles": [
+     "licensor"
+    ]
+   }
+  ],
+  "stac_extensions": [],
+  "stac_version": "1.0.0",
+  "title": "Szenarien des kantonalen Klimamodells",
+  "type": "Collection"
+ },
+ "items": [],
+ "verify": {
+  "account": "none",
+  "checked_on": "2026-11-25",
+  "data_region": null,
+  "files": [
+   {
+    "accept_ranges": "bytes",
+    "cors": "any",
+    "final_host": "geofiles.be.ch",
+    "format": {
+     "format": "cog",
+     "tiff": {
+      "bands": 1,
+      "data_type": "float32",
+      "epsg": null,
+      "height": 13502,
+      "nodata": "3.39999995214436425e+38",
+      "overviews": 6,
+      "tile_size": [
+       512,
+       512
+      ],
+      "tiled": true,
+      "width": 12733
+     }
+    },
+    "href": "https://geofiles.be.ch/geoportal/pub/download/KLIMAMOD/klimamod_kpr20n.tif",
+    "length": 264866993,
+    "media_type": "image/tiff",
+    "outcome": "passed",
+    "partial": true,
+    "reason": "ok",
+    "status": 206
+   },
+   {
+    "accept_ranges": "bytes",
+    "cors": "any",
+    "final_host": "geofiles.be.ch",
+    "format": {
+     "format": "cog",
+     "tiff": {
+      "bands": 1,
+      "data_type": "float32",
+      "epsg": null,
+      "height": 13502,
+      "nodata": "3.39999995214436425e+38",
+      "overviews": 6,
+      "tile_size": [
+       512,
+       512
+      ],
+      "tiled": true,
+      "width": 12733
+     }
+    },
+    "href": "https://geofiles.be.ch/geoportal/pub/download/KLIMAMOD/klimamod_kpr60n.tif",
+    "length": 264859087,
+    "media_type": "image/tiff",
+    "outcome": "passed",
+    "partial": true,
+    "reason": "ok",
+    "status": 206
+   },
+   {
+    "accept_ranges": "bytes",
+    "cors": "any",
+    "final_host": "geofiles.be.ch",
+    "format": {
+     "format": "cog",
+     "tiff": {
+      "bands": 1,
+      "data_type": "float32",
+      "epsg": null,
+      "height": 13502,
+      "nodata": "3.39999995214436425e+38",
+      "overviews": 6,
+      "tile_size": [
+       512,
+       512
+      ],
+      "tiled": true,
+      "width": 12733
+     }
+    },
+    "href": "https://geofiles.be.ch/geoportal/pub/download/KLIMAMOD/klimamod_kvs20n.tif",
+    "length": 285529844,
+    "media_type": "image/tiff",
+    "outcome": "passed",
+    "partial": true,
+    "reason": "ok",
+    "status": 206
+   }
+  ],
+  "items": 0
+ }
+}

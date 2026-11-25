@@ -1,0 +1,153 @@
+{
+ "collection": {
+  "description": "Auf Basis des DTM (Rasterdaten) wurde die Hangneigung in der Auflösung 25 cm abgeleitet. Die Neigung ist in Grad angegeben.",
+  "earthx:access": {
+   "account": "none",
+   "account_provider": null,
+   "delivery": "download"
+  },
+  "earthx:category": "boundaries",
+  "earthx:coverage_states": null,
+  "earthx:data_kind": "raster",
+  "earthx:distributions": [
+   {
+    "format": "HTML",
+    "href": "https://data.geo.so.ch?filter=ch.bl.agi.lidar_2018.dtm_slope",
+    "media_type": "text/html",
+    "title": "Download-Seite"
+   },
+   {
+    "format": "TIFF",
+    "href": "https://files.geo.so.ch/ch.bl.agi.lidar_2018.dtm_slope/aktuell/ch.bl.agi.lidar_2018.dtm_slope.tif",
+    "media_type": "image/tiff",
+    "title": "GeoTIFF: Hangneigung digitales Terrainmodell (2018)"
+   }
+  ],
+  "earthx:entry": "listed",
+  "earthx:extent_basis": "place",
+  "earthx:legal_note": null,
+  "earthx:legal_status": "cleared",
+  "earthx:license_flags": {
+   "attribution_modified": null,
+   "attribution_required": false,
+   "attribution_unmodified": null,
+   "commercial_use": true,
+   "derivatives": true,
+   "distribution": true,
+   "name": "opendata.swiss: Freie Nutzung",
+   "share_alike": false,
+   "spdx_id": null,
+   "terms_notice": null,
+   "terms_url": null,
+   "tier": "catalog",
+   "url": "https://opendata.swiss/en/terms-of-use#terms_open"
+  },
+  "earthx:listing": {
+   "approved_on": "2026-11-23",
+   "license_rule": "opendata-swiss/Kanton Solothurn/opendata-swiss-open",
+   "publisher": "Kanton Solothurn",
+   "source_id": "opendata-swiss",
+   "source_key": "de7bd831-19e9-4566-823e-c0b7e815c227",
+   "source_rank": 1,
+   "source_url": "https://data.geo.so.ch?filter=ch.bl.agi.lidar_2018.dtm_slope"
+  },
+  "earthx:maturity": "stable",
+  "extent": {
+   "spatial": {
+    "bbox": [
+     [
+      7.3462,
+      47.0754,
+      8.0291,
+      47.5001
+     ]
+    ]
+   },
+   "temporal": {
+    "interval": [
+     [
+      null,
+      null
+     ]
+    ]
+   }
+  },
+  "id": "opendata-swiss.de7bd831-19e9-4566-823e-c0b7e815c227",
+  "keywords": [
+   "hohe",
+   "laserscanning",
+   "lidar",
+   "dsm",
+   "dom",
+   "ndom",
+   "laz",
+   "las",
+   "kurven",
+   "hohenkurven"
+  ],
+  "license": "proprietary",
+  "links": [
+   {
+    "href": "https://data.geo.so.ch?filter=ch.bl.agi.lidar_2018.dtm_slope",
+    "rel": "via",
+    "title": "Source"
+   },
+   {
+    "href": "https://opendata.swiss/en/terms-of-use#terms_open",
+    "rel": "license",
+    "title": "opendata.swiss: Freie Nutzung"
+   }
+  ],
+  "providers": [
+   {
+    "name": "Kanton Solothurn",
+    "roles": [
+     "licensor"
+    ]
+   }
+  ],
+  "stac_extensions": [],
+  "stac_version": "1.0.0",
+  "title": "Hangneigung digitales Terrainmodell (2018)",
+  "type": "Collection"
+ },
+ "items": [],
+ "verify": {
+  "account": "none",
+  "checked_on": "2026-11-25",
+  "data_region": null,
+  "files": [
+   {
+    "accept_ranges": "bytes",
+    "cors": "any",
+    "final_host": "files.geo.so.ch",
+    "format": {
+     "big_tiff": true,
+     "format": "cog",
+     "tiff": {
+      "bands": 1,
+      "data_type": "float32",
+      "epsg": 2056,
+      "height": 110000,
+      "nodata": "-9999",
+      "overviews": 9,
+      "tile_size": [
+       512,
+       512
+      ],
+      "tiled": true,
+      "width": 204000
+     }
+    },
+    "href": "https://files.geo.so.ch/ch.bl.agi.lidar_2018.dtm_slope/aktuell/ch.bl.agi.lidar_2018.dtm_slope.tif",
+    "length": 57077977639,
+    "media_type": "image/tiff",
+    "outcome": "passed",
+    "partial": true,
+    "reason": "ok",
+    "status": 206
+   }
+  ],
+  "items": 0
+ }
+}

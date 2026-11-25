@@ -1,0 +1,97 @@
+# A candidate for a full entry (M5-20 plan §14.1; adr/0031 §4.4, §8), written by `discovery propose` in a harvest run.
+# What was harvested, the proposed id and how the full entry takes over the listed row (`takeover`), the licence with
+# its decision by rules (F15 = 1) and the result of Verify. The fields under `onboarding` are for the onboarding of the
+# full entry. To take a candidate out, block its entry in backend/catalog/blocked.yaml; this file is never deleted.
+source_id: fsdi-stac
+source_key: ch.bafu.laerm-bahnlaerm_nacht
+listed_id: fsdi-stac.ch.bafu.laerm-bahnlaerm_nacht
+listed_state: published
+first_proposed: 2026-11-25
+proposed_id: ch.bafu.laerm-bahnlaerm_nacht
+takeover:
+  via: coll
+  key: coll:data.geo.admin.ch/ch.bafu.laerm-bahnlaerm_nacht
+harvested:
+  title: Nighttime railway noise exposure
+  description: The map shows the nighttime railway noise to which the population is
+    exposed. The noise calculation is based on emission data for 2021 as reported
+    in the railway noise register as “actual emissions.” These were calculated for
+    the SBB, BLS, SOB, SZU, Zentralbahn, and RhB networks on the basis of traffic
+    data provided by SBB and recorded in the 2021 emissions register (EK2021). Of
+    the total 5,800 km of tracks for rail-bound traffic under federal supervision,
+    approximately 4,165 km are listed in EK2021. The data is not legally binding.
+    Binding information on noise pollution and noise abatement is provided by the
+    federal enforcement authority, the Federal Office of Transport (FOT).
+  publisher: Federal Office for the Environment FOEN
+  keywords:
+  - other
+  doi: null
+  licence_statements:
+  - https://opendata.swiss/en/terms-of-use/#terms_by
+  bbox:
+  - 5.96
+  - 45.82
+  - 10.49
+  - 47.81
+  extent_basis: source
+  temporal:
+  - '2021-12-31T00:00:00Z'
+  - '2021-12-31T00:00:00Z'
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.laerm-bahnlaerm_nacht
+  landing_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.bafu.laerm-bahnlaerm_nacht
+  distributions: []
+licence:
+  license_ref:
+  - opendata-swiss-by
+  license_rule: fsdi-stac/Federal Office for the Environment FOEN/opendata-swiss-by
+  license:
+    spdx_id: null
+    name: 'opendata.swiss: Freie Nutzung, Quellenangabe ist Pflicht'
+    url: https://opendata.swiss/en/terms-of-use#terms_by
+    commercial_use: true
+    distribution: true
+    derivatives: true
+    share_alike: false
+    attribution_required: true
+    tier: processing
+    attribution_modified: © Federal Office for the Environment FOEN (modified)
+    attribution_unmodified: © Federal Office for the Environment FOEN
+    terms_url: null
+  legal_status: cleared
+  decided_by: rules
+  decided_on: 2026-11-25
+verify:
+  checked_on: 2026-11-25
+  files:
+  - href: https://data.geo.admin.ch/ch.bafu.laerm-bahnlaerm_nacht/laerm-bahnlaerm_nacht/laerm-bahnlaerm_nacht_2056.tif
+    outcome: passed
+    reason: ok
+    status: 206
+    media_type: image/tiff
+    length: 164827544
+    accept_ranges: bytes
+    partial: true
+    cors: any
+    final_host: data.geo.admin.ch
+    format:
+      format: cog
+      tiff:
+        width: 34348
+        height: 22260
+        bands: 1
+        data_type: float64
+        tiled: true
+        tile_size:
+        - 512
+        - 512
+        overviews: 5
+        epsg: null
+        nodata: '-9999'
+      big_tiff: true
+  items: 1
+  account: none
+  data_region: null
+onboarding:
+  way: null
+  profile: null
+  notes: null

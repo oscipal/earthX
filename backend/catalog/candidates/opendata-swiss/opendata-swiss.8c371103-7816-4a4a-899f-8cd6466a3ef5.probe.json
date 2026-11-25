@@ -1,0 +1,288 @@
+{
+ "collection": {
+  "description": "Die Ebene Wasserpflanzen stellt dar, wo in Berner Gewässer Wasserpflanzen kartiert wurden und welche Arten vorkommen. Wasserpflanzen sind wichtige Indikatoren für den Zustand eines Sees: Sie zeigen, wie gesund er ist und wie sich Veränderungen im Nährstoffgehalt, aber auch der Klimawandel oder invasive Arten auf den See auswirken. Ausserdem zeigt die Ebene, wo im Brienzer-, Thuner- und Bielersee Schilfpflanzen und Makrophyten vorkommen könnten.",
+  "earthx:access": {
+   "account": "none",
+   "account_provider": null,
+   "delivery": "download"
+  },
+  "earthx:category": "nature",
+  "earthx:coverage_states": null,
+  "earthx:data_kind": "raster",
+  "earthx:distributions": [
+   {
+    "format": "OCTET",
+    "href": "https://geofiles.be.ch/geoportal/pub/download/MAKROPHY/makrophy.zip",
+    "media_type": null,
+    "title": "ZIP-Datei mit Shapefile, Esri Grid, Metadaten und Begleitdaten"
+   },
+   {
+    "format": "GPKG",
+    "href": "https://geofiles.be.ch/geoportal/pub/download/MAKROPHY/makrophy.gpkg.zip",
+    "media_type": null,
+    "title": "ZIP-Datei mit Geopackage mit Metadaten"
+   },
+   {
+    "format": "PARQUET",
+    "href": "https://geofiles.be.ch/geoportal/pub/download/MAKROPHY/makrophy_mesav.parquet",
+    "media_type": null,
+    "title": "Geoparquet-Datei - Kartierung der Wasserpflanzen nach Methode MESAV+"
+   },
+   {
+    "format": "TIFF",
+    "href": "https://geofiles.be.ch/geoportal/pub/download/MAKROPHY/makrophy_lb1976.tif",
+    "media_type": "image/tiff",
+    "title": "Cloud-optimierte GeoTiff-Datei - Luftbilder (Bielersee, 1976)"
+   },
+   {
+    "format": "TIFF",
+    "href": "https://geofiles.be.ch/geoportal/pub/download/MAKROPHY/makrophy_lb1984.tif",
+    "media_type": "image/tiff",
+    "title": "Cloud-optimierte GeoTiff-Datei - Luftbilder (Bielersee, 1984)"
+   },
+   {
+    "format": "TIFF",
+    "href": "https://geofiles.be.ch/geoportal/pub/download/MAKROPHY/makrophy_lb2005.tif",
+    "media_type": "image/tiff",
+    "title": "Cloud-optimierte GeoTiff-Datei - Luftbilder (Bielersee, 2005)"
+   },
+   {
+    "format": "TIFF",
+    "href": "https://geofiles.be.ch/geoportal/pub/download/MAKROPHY/makrophy_lb2015.tif",
+    "media_type": "image/tiff",
+    "title": "Cloud-optimierte GeoTiff-Datei - Luftbilder (Bielersee, 2015)"
+   },
+   {
+    "format": "TIFF",
+    "href": "https://geofiles.be.ch/geoportal/pub/download/MAKROPHY/makrophy_lb2025.tif",
+    "media_type": "image/tiff",
+    "title": "Cloud-optimierte GeoTiff-Datei - Luftbilder (Bielersee, 2025)"
+   },
+   {
+    "format": "PARQUET",
+    "href": "https://geofiles.be.ch/geoportal/pub/download/MAKROPHY/makrophy_testfl.parquet",
+    "media_type": null,
+    "title": "Geoparquet-Datei - Testflächenmethode"
+   },
+   {
+    "format": "PARQUET",
+    "href": "https://geofiles.be.ch/geoportal/pub/download/MAKROPHY/makrophy_wpflanz.parquet",
+    "media_type": null,
+    "title": "Geoparquet-Datei - Wasserpflanzen der drei grossen Seen"
+   },
+   {
+    "format": "PARQUET",
+    "href": "https://geofiles.be.ch/geoportal/pub/download/MAKROPHY/makrophy_faumesav.parquet",
+    "media_type": null,
+    "title": "Geoparquet-Datei - Wassertierarten"
+   },
+   {
+    "format": "PARQUET",
+    "href": "https://geofiles.be.ch/geoportal/pub/download/MAKROPHY/makrophy_flomesav.parquet",
+    "media_type": null,
+    "title": "Geoparquet-Datei - Wasserpflanzenarten"
+   },
+   {
+    "format": "PARQUET",
+    "href": "https://geofiles.be.ch/geoportal/pub/download/MAKROPHY/makrophy_luftkart.parquet",
+    "media_type": null,
+    "title": "Geoparquet-Datei - Luftbildanalyse Makrophyten"
+   },
+   {
+    "format": "HTML",
+    "href": "https://geofiles.be.ch/geoportal/pub/stac/de/MAKROPHY/collection.json?.language=de-CH",
+    "media_type": "text/html",
+    "title": "STAC-Collection - MAKROPHY"
+   },
+   {
+    "format": "HTML",
+    "href": "https://www.agi.dij.be.ch/de/start/geoportal/geodaten/detail.html?type=geoproduct&code=MAKROPHY",
+    "media_type": "text/html",
+    "title": "Link zum Geoportal des Kantons Bern"
+   }
+  ],
+  "earthx:entry": "listed",
+  "earthx:extent_basis": "publisher",
+  "earthx:legal_note": null,
+  "earthx:legal_status": "cleared",
+  "earthx:license_flags": {
+   "attribution_modified": null,
+   "attribution_required": false,
+   "attribution_unmodified": null,
+   "commercial_use": true,
+   "derivatives": true,
+   "distribution": true,
+   "name": "opendata.swiss: Freie Nutzung",
+   "share_alike": false,
+   "spdx_id": null,
+   "terms_notice": null,
+   "terms_url": null,
+   "tier": "catalog",
+   "url": "https://opendata.swiss/en/terms-of-use#terms_open"
+  },
+  "earthx:listing": {
+   "approved_on": "2026-11-23",
+   "license_rule": "opendata-swiss/Amt für Geoinformation des Kantons Bern/opendata-swiss-open",
+   "publisher": "Amt für Geoinformation des Kantons Bern",
+   "source_id": "opendata-swiss",
+   "source_key": "8c371103-7816-4a4a-899f-8cd6466a3ef5",
+   "source_rank": 1,
+   "source_url": "https://www.agi.dij.be.ch/de/start/geoportal/geodaten/detail.html?type=geoproduct&code=MAKROPHY"
+  },
+  "earthx:maturity": "stable",
+  "extent": {
+   "spatial": {
+    "bbox": [
+     [
+      6.8498,
+      46.3314,
+      8.45,
+      47.344
+     ]
+    ]
+   },
+   "temporal": {
+    "interval": [
+     [
+      null,
+      null
+     ]
+    ]
+   }
+  },
+  "id": "opendata-swiss.8c371103-7816-4a4a-899f-8cd6466a3ef5",
+  "keywords": [
+   "wasserpflanzen",
+   "see",
+   "gewasserokologie",
+   "wassertiere",
+   "makrophyten",
+   "luftbild",
+   "ufer"
+  ],
+  "license": "proprietary",
+  "links": [
+   {
+    "href": "https://www.agi.dij.be.ch/de/start/geoportal/geodaten/detail.html?type=geoproduct&code=MAKROPHY",
+    "rel": "via",
+    "title": "Source"
+   },
+   {
+    "href": "https://opendata.swiss/en/terms-of-use#terms_open",
+    "rel": "license",
+    "title": "opendata.swiss: Freie Nutzung"
+   }
+  ],
+  "providers": [
+   {
+    "name": "Amt für Geoinformation des Kantons Bern",
+    "roles": [
+     "licensor"
+    ]
+   }
+  ],
+  "stac_extensions": [],
+  "stac_version": "1.0.0",
+  "title": "Wasserpflanzen",
+  "type": "Collection"
+ },
+ "items": [],
+ "verify": {
+  "account": "none",
+  "checked_on": "2026-11-25",
+  "data_region": null,
+  "files": [
+   {
+    "accept_ranges": "bytes",
+    "cors": "any",
+    "final_host": "geofiles.be.ch",
+    "format": {
+     "big_tiff": true,
+     "format": "cog",
+     "tiff": {
+      "bands": 3,
+      "data_type": "uint8",
+      "epsg": null,
+      "height": 35308,
+      "nodata": "256",
+      "overviews": 8,
+      "tile_size": [
+       512,
+       512
+      ],
+      "tiled": true,
+      "width": 36864
+     }
+    },
+    "href": "https://geofiles.be.ch/geoportal/pub/download/MAKROPHY/makrophy_lb1976.tif",
+    "length": 428218948,
+    "media_type": "image/tiff",
+    "outcome": "passed",
+    "partial": true,
+    "reason": "ok",
+    "status": 206
+   },
+   {
+    "accept_ranges": "bytes",
+    "cors": "any",
+    "final_host": "geofiles.be.ch",
+    "format": {
+     "big_tiff": true,
+     "format": "cog",
+     "tiff": {
+      "bands": 3,
+      "data_type": "uint8",
+      "epsg": null,
+      "height": 54600,
+      "nodata": "256",
+      "overviews": 8,
+      "tile_size": [
+       512,
+       512
+      ],
+      "tiled": true,
+      "width": 63483
+     }
+    },
+    "href": "https://geofiles.be.ch/geoportal/pub/download/MAKROPHY/makrophy_lb1984.tif",
+    "length": 1729172513,
+    "media_type": "image/tiff",
+    "outcome": "passed",
+    "partial": true,
+    "reason": "ok",
+    "status": 206
+   },
+   {
+    "accept_ranges": "bytes",
+    "cors": "any",
+    "final_host": "geofiles.be.ch",
+    "format": {
+     "big_tiff": true,
+     "format": "cog",
+     "tiff": {
+      "bands": 3,
+      "data_type": "uint8",
+      "epsg": null,
+      "height": 21840,
+      "nodata": "256",
+      "overviews": 7,
+      "tile_size": [
+       512,
+       512
+      ],
+      "tiled": true,
+      "width": 25393
+     }
+    },
+    "href": "https://geofiles.be.ch/geoportal/pub/download/MAKROPHY/makrophy_lb2005.tif",
+    "length": 279731942,
+    "media_type": "image/tiff",
+    "outcome": "passed",
+    "partial": true,
+    "reason": "ok",
+    "status": 206
+   }
+  ],
+  "items": 0
+ }
+}

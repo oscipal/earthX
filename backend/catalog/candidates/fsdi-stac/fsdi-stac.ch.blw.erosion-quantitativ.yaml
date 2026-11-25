@@ -1,0 +1,147 @@
+# A candidate for a full entry (M5-20 plan §14.1; adr/0031 §4.4, §8), written by `discovery propose` in a harvest run.
+# What was harvested, the proposed id and how the full entry takes over the listed row (`takeover`), the licence with
+# its decision by rules (F15 = 1) and the result of Verify. The fields under `onboarding` are for the onboarding of the
+# full entry. To take a candidate out, block its entry in backend/catalog/blocked.yaml; this file is never deleted.
+source_id: fsdi-stac
+source_key: ch.blw.erosion-quantitativ
+listed_id: fsdi-stac.ch.blw.erosion-quantitativ
+listed_state: published
+first_proposed: 2026-11-25
+proposed_id: ch.blw.erosion-quantitativ
+takeover:
+  via: coll
+  key: coll:data.geo.admin.ch/ch.blw.erosion-quantitativ
+harvested:
+  title: Erosion risk map for arable land, with average soil erosion in tonnes /(ha*year)
+  description: "Erosion risk map for arable land, with average soil erosion in tonnes\
+    \ /(ha*year) (Federal Office for Agriculture)\r\nErosion risk map for arable land\
+    \ in Switzerland in a 2x2-metre grid based on SwissALTI3D and cantonal surface-area\
+    \ data on arable land (status 2021). The map shows the long-term average potential\
+    \ soil erosion in tonnes per hectare and year, calculated on the basis of bare\
+    \ fallow (erosion which theoretically could occur if the soil were permanently\
+    \ bare). Shades of green, yellow and red mean a slight, average and high risk\
+    \ of erosion, respectively. The values calculated in the model are consistently\
+    \ much higher than in actual fact (by around a factor of 10), since soil tillage\
+    \ and management (C-factor) were excluded and incorporated in the calculation\
+    \ as a constant with the value of 1. Calculating the erosion risk with multiple-flow\
+    \ algorithms allows us to illustrate the structure of the terrain in great detail\
+    \ – e.g. the shape of basins or of steep transverse slopes – and hence e.g. also\
+    \ to identify the risk of thalweg erosion. This is shown in detail in the flow-path\
+    \ map (which see). Field blocks (see field-block map) constitute the basis of\
+    \ the spatial calculation."
+  publisher: Federal Office for Agriculture - FOAG
+  keywords:
+  - other
+  doi: null
+  licence_statements:
+  - https://opendata.swiss/en/terms-of-use/#terms_by
+  bbox:
+  - 5.91979162243528
+  - 45.8101668197365
+  - 10.5102342774723
+  - 47.8139533632312
+  extent_basis: source
+  temporal:
+  - '2022-05-03T00:00:00Z'
+  - '2022-05-03T00:00:00Z'
+  source_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.blw.erosion-quantitativ
+  landing_url: https://data.geo.admin.ch/browser/index.html#/collections/ch.blw.erosion-quantitativ
+  distributions: []
+licence:
+  license_ref:
+  - opendata-swiss-by
+  license_rule: fsdi-stac/Federal Office for Agriculture - FOAG/opendata-swiss-by
+  license:
+    spdx_id: null
+    name: 'opendata.swiss: Freie Nutzung, Quellenangabe ist Pflicht'
+    url: https://opendata.swiss/en/terms-of-use#terms_by
+    commercial_use: true
+    distribution: true
+    derivatives: true
+    share_alike: false
+    attribution_required: true
+    tier: processing
+    attribution_modified: © Federal Office for Agriculture - FOAG (modified)
+    attribution_unmodified: © Federal Office for Agriculture - FOAG
+    terms_url: null
+  legal_status: cleared
+  decided_by: rules
+  decided_on: 2026-11-25
+verify:
+  checked_on: 2026-11-25
+  files:
+  - href: https://data.geo.admin.ch/ch.blw.erosion-quantitativ/erosion-quantitativ/erosion-quantitativ_2056.tif
+    outcome: failed
+    reason: format_tiff_unread
+    status: 206
+    media_type: image/tiff
+    length: 391976908
+    partial: true
+    cors: any
+    final_host: data.geo.admin.ch
+    format:
+      format: tiff_unread
+      tiff:
+        width: null
+        height: null
+        bands: null
+        data_type: null
+        tiled: null
+        tile_size: null
+        overviews: null
+        epsg: null
+        nodata: null
+      big_tiff: true
+  - href: https://data.geo.admin.ch/ch.blw.erosion-quantitativ/erosion-quantitativ_26/erosion-quantitativ_26_2056.tif
+    outcome: passed
+    reason: ok
+    status: 206
+    media_type: image/tiff
+    length: 114193135
+    partial: true
+    cors: any
+    final_host: data.geo.admin.ch
+    format:
+      format: cog
+      tiff:
+        width: 35001
+        height: 20986
+        bands: 1
+        data_type: float32
+        tiled: true
+        tile_size:
+        - 256
+        - 256
+        overviews: 7
+        epsg: 2056
+        nodata: '0'
+  - href: https://data.geo.admin.ch/ch.blw.erosion-quantitativ/erosion-quantitativ_27/erosion-quantitativ_27_2056.tif
+    outcome: passed
+    reason: ok
+    status: 206
+    media_type: image/tiff
+    length: 538280199
+    partial: true
+    cors: any
+    final_host: data.geo.admin.ch
+    format:
+      format: cog
+      tiff:
+        width: 35001
+        height: 20986
+        bands: 1
+        data_type: float32
+        tiled: true
+        tile_size:
+        - 256
+        - 256
+        overviews: 7
+        epsg: 2056
+        nodata: '0'
+  items: 3
+  account: none
+  data_region: null
+onboarding:
+  way: null
+  profile: null
+  notes: null
