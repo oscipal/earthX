@@ -1,6 +1,6 @@
 # M5-20 — Verify, Enrich, Dedupe, Lizenzregeln, Freigabe geernteter Einträge, Kandidaten
 
-**Status (19.11.2026):** Plan angenommen (Otto, 19.11.2026: F1–F6 und F8 je 1, F7 = 3, §13a; Vorgaben aus der Messung §4 in §13b, sie gehen §6–§9 vor; F9–F11 je 1 und A18 angenommen, §13c; Vorgaben aus `-Classify` vom 20.11. in §13d und §13e; F12 = 1 und 2). **Stufe B.** PR 1 in [#388](https://github.com/oscipal/earthX/pull/388), PR 2 danach; höchstens zwei PRs (M5-Plan §2 Punkt 11). **PR 2 (24.11.2026):** Plan in §14.1; Antworten Otto 25.11.2026 (F15 = 1, F16 Einstufung K1/K2, F17 = 1, A32–A40) in §14.1.12; im Bau.
+**Status (19.11.2026):** Plan angenommen (Otto, 19.11.2026: F1–F6 und F8 je 1, F7 = 3, §13a; Vorgaben aus der Messung §4 in §13b, sie gehen §6–§9 vor; F9–F11 je 1 und A18 angenommen, §13c; Vorgaben aus `-Classify` vom 20.11. in §13d und §13e; F12 = 1 und 2). **Stufe B.** PR 1 in [#388](https://github.com/oscipal/earthX/pull/388), PR 2 danach; höchstens zwei PRs (M5-Plan §2 Punkt 11). **PR 2 (24.11.2026):** Plan in §14.1; Antworten Otto 25.11.2026 (F15 = 1, F16 Einstufung K1/K2, F17 = 1, A32–A40) in §14.1.12; Umsetzung §14.1.13.
 **Aufgabe:** M5-20 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2, Auftrag von Otto vom 19.11.2026.
 **Grundlagen:** `adr/0025` (Schnitt 5, §5.1, §5.4, §6.3, §6.4, §6.5, §6.7 mit Nachträgen), `adr/0033` (§4–§11, §13 Zeile M5-20), `plans/m5/m5-19-harvest-kern.md` §12 (Befunde der Läufe, §12.11 offene Punkte), `plans/m5/m5-40-gelistete-in-postgres.md` (Tabelle, Filter, F10), M5-Plan §2 Punkt 12 (alle Datentypen, Filter nach Region und Zeit), `projektuebersicht.md` Prinzipien 12, 15, 16, KLAERUNGEN B8, B9, B11.
 
@@ -632,6 +632,21 @@ Ohne Netz, synthetische Bytes und Dokumente, Transport-Attrappe am `Gateway` (wi
 - **F17 = 1:** lesbare ID als Vorschlag, Ablösung über Schlüssel; Funde ohne Schlüssel werden kein Kandidat. Nachtrag zu `adr/0033` §11 mit dem Bau.
 - **A32–A40 angenommen.**
 - **Neue Aufgabe:** „—“ im Data catalogue bei fehlender Ausdehnung (A7, A40), Stufe A, als eigene Zeile im Entscheidungslog.
+
+#### 14.1.13 Umsetzung PR 2, Stand 25.11.2026
+
+- **Lizenzstufe (F16):** `terms.yaml` mit Feld `licence_class` je Lizenz, K1/K2 auf `processing`; Prüfung beim Laden in `catalog/licences.py` (Stufe über `catalog` nur bei K1/K2; K1/K2 nur mit kommerzieller Nutzung und ohne gleiche Bedingungen).
+- **`discovery/probe.py`:** Format aus den ersten 16 KB ohne GDAL; TIFF/BigTIFF mit Kopf des ersten IFD, NetCDF, HDF5, Zarr. Jeder Offset wird gegen die gelesenen Bytes geprüft; Ketten von IFDs enden bei einem Zyklus oder nach 64.
+- **`discovery/propose.py`:** Auswahl, Verify, Kandidatendatei und Probe, Befehl `python -m earthx.discovery.propose`; Compose-Dienst `harvest-propose` (Profil `harvest`, eingebunden `backend/catalog/candidates`).
+- **Lauf:** Schritt „Kandidaten“ in `scripts/harvest-cycle.ps1` nach der Linkprüfung, Commit `backend/catalog/candidates`, Abschnitt in Laufdateien und PR-Text, Befund `KANDIDATEN` (`discovery/cycle.py`).
+- **Abweichungen und Präzisierungen beim Bau:**
+  - **A41** Reihenfolge der Prüfung: lesbares Format, Schlüssel zur Ablösung, kein voller Eintrag, Lizenz wie im Bericht, Stufe über `catalog`; erst danach Verify. Ein Fund mit Lizenzstufe `catalog` (K3–K5) wird ohne Anfrage übersprungen und als `tier_catalog` gezählt.
+  - **A42** Ein Host, der `Range` übergeht und die ganze Datei schickt, ergibt keinen Kandidaten (`no_range`): ein voller Eintrag liest nur in Teilen.
+  - **A43** COG heißt: TIFF mit GeoKeys, gekachelt und mit dem Layout-Vermerk, den GDAL in den Kopf schreibt (`LAYOUT=IFDS_BEFORE_DATA`; der Plan nannte `LAYOUT=COG`, beides wird erkannt). Ein gekachelter GeoTIFF ohne Vermerk ist `geotiff` und ebenfalls lesbar; ein TIFF ohne GeoKeys und HDF4 sind es nicht.
+  - **A44** Bei einer STAC-Quelle prüft Verify je Item ein Daten-Asset (höchstens 3 Items); bei CKAN bis zu 3 Datei-Distributionen.
+  - **A45** Ein bestehender Kandidat wird nur neu geprüft, wenn sich Geerntetes, Lizenz, Ablösung oder Entscheidung ändern; der Zustand der gelisteten Zeile wird ohne Anfrage und außerhalb der Grenze 20 fortgeschrieben. Die vorgeschlagene ID und der Tag des ersten Vorschlags bleiben.
+  - **Fehler in `cycle.clean` behoben:** Der Ausdruck für Mail-Adressen lief bei langen Wörtern quadratisch (80 000 Zeichen rund 1 min); jetzt nur vom Wortanfang, gleiche Treffer.
+- **Nicht geprüft in der Sitzung:** echte Quellen und Dateien (adr/0002) und das Skript selbst (keine PowerShell). Der erste Lauf bei Otto ist der erste echte Test.
 
 ## 15. Tests (Plan)
 

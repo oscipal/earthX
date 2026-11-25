@@ -367,6 +367,8 @@ Der Harvest erkennt Änderungen am Inhalts-Hash (`adr/0025` §5.1). Dann gilt je
 
 **Gelistet wird voll:** Kommt für einen gelisteten Eintrag ein Adapter, ein Format und ein Profil dazu, schreibt `discovery propose` eine Kandidatendatei für den vollen Weg (`adr/0031` §8). Der volle Eintrag übernimmt die ID; `catalog-load` lädt ihn aus `datasets/` und markiert die Zeile des gelisteten Eintrags als abgelöst.
 
+**Nachtrag 2026-11-25 (M5-20 F17 = 1, Otto):** Der volle Eintrag übernimmt **nicht** die ID der gelisteten Zeile. Die Kandidatendatei schlägt eine lesbare ID vor (`proposed_id`: bei STAC die Collection-ID, sonst der Titel als Kürzel) und nennt, wie der volle Eintrag die Zeile ablöst: über die Collection seiner STAC-Quelle (`coll:`, im nächsten Bericht), über `also_listed_as` mit der Kennung des Fundes (sofort mit `catalog-load`) oder über die DOI (im nächsten Bericht). Ein Fund ohne einen dieser Schlüssel, eindeutig in seiner Quelle, wird kein Kandidat. Die Zeile wird damit `duplicate` des vollen Eintrags, nicht `superseded`; `superseded` bleibt für Handeinträge und gleiche IDs.
+
 ## 12. Prototyp-Quellen
 
 | | Option | Bewertung |
