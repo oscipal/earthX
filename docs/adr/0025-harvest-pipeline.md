@@ -326,6 +326,8 @@ Tausende Collections ernten (`architekturplan.md` 5.2) geht nur, wenn ein Katalo
 
 **Nachtrag 2026-11-24 (M5-67, Entscheidung Otto, `adr/0033` §8.5):** Für die Läufe gelisteter Einträge gilt P1 mit einer Abweichung: `scripts/harvest-cycle.ps1` läuft auf Ottos Rechner und auf seinen Doppelklick, pusht den Branch, öffnet mit Ottos `gh`-Zugang genau einen PR je Lauf und merged ihn nach grünen Pflicht-Checks mit Merge-Commit. „Das Skript pusht nie“ gilt für dieses Skript nicht; für `discovery propose` und `harvest-report.ps1` bleibt es. Kein neues Secret der Plattform, kein self-hosted runner.
 
+**Nachtrag 2026-11-25 (M5-20 PR 2, Otto: F15 = 1, F17 = 1):** `discovery propose` läuft als Schritt von `scripts/harvest-cycle.ps1`; die Kandidaten kommen mit eigenem Commit in den PR des Laufs, den das Skript nach grünen Pflicht-Checks merged. „Das Skript pusht nie“ gilt damit auch für `propose` nur noch bei einem Aufruf von Hand (`docker compose run --rm harvest-propose`), der nichts committet. Verify (§6.3) läuft nur für Kandidaten: höchstens 3 Dateien je Kandidat, für höchstens 60 Funde je Quelle und Lauf, Dateien ohne `robots.txt` (M5-20 A6, A32–A34).
+
 ### 6.6 Health-Checks und „zuletzt erfolgreich geprüft“
 
 Plan §3 legt die Health-Checks nach diesem ADR in Fassung 3. Hier nur, was die Pipeline dafür festlegt:

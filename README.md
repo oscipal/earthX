@@ -376,6 +376,11 @@ ist. Der erste Lauf ist ein Probelauf: Er verbirgt nichts und gibt nichts frei, 
   `withdrawn_on` in `backend/catalog/licenses/spellings.yaml`. Am Handy im Editor von GitHub; der nächste Lauf wendet
   es an.
 - **Regeln** in `backend/catalog/approval_rules.yaml` (Größe eines Stapels), `linkcheck.yaml`, `flags.yaml`.
+- **Kandidaten des vollen Wegs:** Jeder Lauf schreibt nach der Linkprüfung bis zu 20 Kandidaten je Quelle nach
+  `backend/catalog/candidates/<Quelle>/` (sichtbare Raster in COG/GeoTIFF, NetCDF/HDF5 oder Zarr mit Lizenz der Klassen
+  K1/K2; Prüfung der Dateien mit `HEAD` und den ersten 16 KB). Sie kommen mit eigenem Commit in den PR des Laufs; den
+  vollen Eintrag schreibt das Onboarding. Von Hand: `docker compose run --build --rm harvest-propose [<Quelle>...]`.
+  Siehe `backend/catalog/candidates/README.md`.
 
 ### Geerntete Einträge freigeben (M5-20)
 
