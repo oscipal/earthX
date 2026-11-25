@@ -55,7 +55,7 @@ from earthx.catalog.hosts import HostLimit
 from earthx.catalog.licences import LicenceCatalogue, load_licences
 from earthx.catalog.registry import MAX_LISTING_IDENTIFIER_CHARS, ConfigError, LicenseInfo, LicenseTier
 from earthx.catalog.sources import SourceConfig, SourceProtocol, read_sources
-from earthx.discovery.cycle import clean
+from earthx.discovery.cycle import SKIPPED_TEXT, clean
 from earthx.discovery.extract import _format_token
 from earthx.discovery.harvest import source_policy
 from earthx.discovery.links import url_parts
@@ -830,20 +830,6 @@ def run_propose(
     return run
 
 
-_SKIPPED = {
-    "no_format": "kein lesbares Format",
-    "no_takeover": "nicht ablösbar",
-    "full_entry": "schon voller Eintrag",
-    "licence_changed": "Lizenz seit dem Bericht geändert",
-    "tier_catalog": "Lizenzstufe catalog",
-    "budget": "über dem Verify-Budget",
-    "no_items": "keine Items",
-    "account": "Konto",
-    "verify_failed": "Verify gescheitert",
-    "limit": "über der Grenze 20",
-}
-
-
 def summary_text(run: ProposeRun) -> str:
     """The run in German, one line a source."""
     lines = ["Kandidaten des vollen Wegs" + (" (Probelauf: nichts entschieden)" if run.trial else "")]
@@ -851,7 +837,7 @@ def summary_text(run: ProposeRun) -> str:
         if count.error:
             lines.append(f"  {source_id}: gescheitert ({count.error})")
             continue
-        skipped = ", ".join(f"{_SKIPPED.get(k, k)} {n}" for k, n in sorted(count.skipped.items())) or "–"
+        skipped = ", ".join(f"{SKIPPED_TEXT.get(k, k)} {n}" for k, n in sorted(count.skipped.items())) or "–"
         lines.append(
             f"  {source_id}: neu {count.new}, geändert {count.changed}, unverändert {count.unchanged},"
             f" Zustand fortgeschrieben {count.state_updated}; übersprungen: {skipped}"

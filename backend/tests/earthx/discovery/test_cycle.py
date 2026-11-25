@@ -17,6 +17,7 @@ from earthx.discovery.cycle import (
     Finding,
     _pauses,
     _text,
+    candidate_lines,
     clean,
     decide,
     findings_of,
@@ -296,3 +297,44 @@ def test_the_message_of_a_failed_step_is_one_line_with_the_reason_and_cleaned_in
     assert _text(tmp_path / "missing.txt") is None
     (tmp_path / "long.txt").write_text("x " * 600, encoding="utf-8")
     assert len(_text(tmp_path / "long.txt") or "") == 500
+
+
+# --- Candidates of the full way (M5-20 plan §14.1.6) ------------------------------------------------------------------
+
+
+PROPOSE = {
+    "trial": False,
+    "new_hosts": 1,
+    "sources": {
+        "fsdi-stac": {
+            "new": 1, "changed": 0, "unchanged": 4, "state_updated": 0,
+            "skipped": {"tier_catalog": 2, "no_takeover": 1}, "error": None,
+            "written": [{"listed_id": "fsdi-stac.ch.a.b", "proposed_id": "ch.a.b", "title": "Relief | Schweiz",
+                         "format": "cog", "license": "swisstopo OGD", "tier": "processing", "decision": "cleared",
+                         "new": True}],
+        },
+        "govdata": {"new": 0, "changed": 0, "unchanged": 0, "state_updated": 0, "skipped": {}, "written": [],
+                    "error": "ConnectError"},
+    },
+}
+
+
+def test_the_run_files_name_the_candidates_per_source_and_in_a_table() -> None:
+    lines = "\n".join(candidate_lines(PROPOSE))
+    assert "## Kandidaten des vollen Wegs" in lines
+    assert "**fsdi-stac:** neu 1, geändert 0, unverändert 4, Zustand fortgeschrieben 0" in lines
+    assert "Lizenzstufe catalog 2" in lines and "nicht ablösbar 1" in lines
+    assert "| fsdi-stac | `ch.a.b` | Relief / Schweiz | cog | swisstopo OGD | processing | nach Regeln |" in lines
+    assert "**govdata:** gescheitert (ConnectError)" in lines
+    assert candidate_lines(None) == []
+    trial = "\n".join(candidate_lines({**PROPOSE, "trial": True}))
+    assert "Probelauf: Kandidaten geschrieben, nichts entschieden." in trial
+
+
+def test_a_failed_candidate_step_is_a_finding_and_so_is_a_failed_source() -> None:
+    found = findings_of(
+        linkcheck=None, reports={}, decided=[], spellings=None, source_errors={}, run_error=None, open_prs=[],
+        folder="docs/harvest/laeufe/x", propose=PROPOSE, propose_error="Die Kandidaten sind gescheitert.",
+    )
+    keys = [f.key for f in found]
+    assert "KANDIDATEN" in keys and "KANDIDATEN govdata" in keys and "KANDIDATEN fsdi-stac" not in keys

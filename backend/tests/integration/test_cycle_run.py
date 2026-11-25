@@ -33,7 +33,7 @@ from earthx.catalog import licences as licences_module
 from earthx.catalog.approvals import load_approvals
 from earthx.catalog.licences import load_licences
 from earthx.catalog.sources import SourceConfig
-from earthx.discovery import cycle, grants, harvest, linkcheck, report, spellings
+from earthx.discovery import cycle, grants, harvest, linkcheck, propose, report, spellings
 from earthx.discovery.harvest import EXIT_PAUSED, run_harvest
 from earthx.gateway import Gateway, Policy
 from tests.integration.test_harvest_ckan import Catalogue, _gateway, _package
@@ -47,7 +47,7 @@ HTML = "text/html; charset=utf-8"
 
 #: The steps this test runs, by the name the script gives them; `test_the_steps_run_in_the_order_of_the_script` holds
 #: this list against the text of the script, so that the two cannot drift apart.
-STEPS = ("sources", "harvest", "spellings", "grants", "report", "linkcheck", "decide", "summary")
+STEPS = ("sources", "harvest", "spellings", "grants", "report", "linkcheck", "propose", "decide", "summary")
 
 TERMS = """\
 - license_ref: cc-by-4.0
@@ -123,6 +123,7 @@ class Cycle:
             stale.unlink()  # a first run: no publisher has a grant yet, the step `grants` writes them
         self.approvals = world.out
         self.approvals.mkdir(parents=True, exist_ok=True)
+        self.candidates = tmp_path / "candidates"
         self.harvest_dir = tmp_path / "docs-harvest"
         self.harvest_dir.mkdir()
         shutil.copy(BEFUNDE, self.harvest_dir / "befunde.md")
@@ -131,13 +132,14 @@ class Cycle:
 
     def _patch(self, monkeypatch: pytest.MonkeyPatch) -> None:
         sources = self.world.sources
-        for module in (cycle, spellings, grants, report, linkcheck, harvest):
+        for module in (cycle, spellings, grants, report, linkcheck, harvest, propose):
             monkeypatch.setattr(module, "read_sources", lambda: sources)
         monkeypatch.setattr(spellings, "LICENSES_DIR", self.licences)
         grant_to_all = self.licences / "grant-to-all.yaml"
         monkeypatch.setattr(grants, "load_licences", partial(load_licences, directory=self.licences))
         monkeypatch.setattr(grants, "read_grant_to_all", partial(grants.read_grant_to_all, path=grant_to_all))
         monkeypatch.setattr(report, "load_licences", partial(load_licences, directory=self.licences))
+        monkeypatch.setattr(propose, "load_licences", partial(load_licences, directory=self.licences))
         monkeypatch.setattr(licences_module, "LICENSES_DIR", self.licences)
         monkeypatch.setenv("EARTHX_USER_AGENT", "earthx-test/0 (+https://example.org/contact)")
 
@@ -212,6 +214,10 @@ class Cycle:
         check = ["--json", str(folder / "linkcheck.json")] + (["--dry-run"] if trial else [])
         assert self.step("linkcheck", linkcheck.main(check), run) == 0, run.printed["linkcheck"]
 
+        propose_args = ["--out", str(self.candidates), "--json", str(folder / "propose.json"), "--day", day]
+        code = propose.main(propose_args + (["--trial"] if trial else []) + harvested)
+        assert self.step("propose", code, run) == 0, run.printed["propose"]
+
         run.approvals = sorted({path.name for path in self.approvals.glob("*.yaml")} - before)
         decide = ["decide", "--run", str(folder), "--approvals", str(self.approvals), "--day", day]
         code = cycle.main(decide + (["--trial"] if trial else []) + run.approvals)
@@ -247,6 +253,7 @@ def test_the_steps_run_in_the_order_of_the_script() -> None:
         "grants": r"Compose 'grants'",
         "report": r'Compose "report \$source"',
         "linkcheck": r"Compose 'linkcheck'",
+        "propose": r"Compose 'propose'",
         "decide": r"Compose 'decide'",
         "summary": r"Compose 'summary' \$Summary",
     }
@@ -270,6 +277,13 @@ def test_the_trial_run_goes_through_every_step_and_a_source_that_pauses_is_no_fa
         for name in run.approvals
     )
     assert "Probelauf" in run.printed["linkcheck"]
+    # The candidates ran for both harvested sources (tables, so none is a candidate) and the run files say so.
+    numbers = yaml.safe_load((run.folder / "propose.json").read_text(encoding="utf-8"))
+    assert numbers["trial"] and set(numbers["sources"]) == {a, b}
+    assert all(count["new"] == 0 and count["error"] is None for count in numbers["sources"].values())
+    readme = sorted((cycle_world.harvest_dir / "laeufe").iterdir())[-1] / "README.md"
+    assert "## Kandidaten des vollen Wegs" in readme.read_text(encoding="utf-8")
+    assert not cycle_world.candidates.exists() or not any(cycle_world.candidates.rglob("*.yaml"))
 
 
 def test_spellings_that_occur_several_times_are_written_without_an_alias_and_read_by_every_later_step(

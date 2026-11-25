@@ -211,6 +211,30 @@ services:
       catalog-load:
         condition: service_completed_successfully
 
+  # Candidates of the full way (M5-20 plan §14.1): writes backend/catalog/candidates/<source>/ of the checkout from the
+  # visible listed rasters, with Verify of up to three files each through the gateway (HEAD and the first 16 KB) and
+  # the items of a STAC source. Run by scripts/harvest-cycle.ps1; by hand, for one source or every enabled one:
+  #   docker compose run --build --rm harvest-propose [<source_id>...] [--trial]
+  harvest-propose:
+    profiles: ["harvest"]
+    build:
+      context: ./backend
+      target: app
+    entrypoint: ["python", "-m", "earthx.discovery.propose", "--out", "/out"]
+    volumes:
+      - ./backend/catalog/candidates:/out
+    environment:
+      HOME: /tmp
+      EARTHX_USER_AGENT: ${EARTHX_USER_AGENT:-}
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+    depends_on:
+      catalog-load:
+        condition: service_completed_successfully
+
   # One-off, run by hand until scripts/harvest-cycle.ps1 runs it (M5-67 plan §7): writes
   # backend/catalog/licenses/spellings.yaml with new spellings of graded standard licences, never a grade. Asks no source.
   #   docker compose run --build --rm harvest-spellings
