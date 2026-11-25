@@ -37,8 +37,10 @@ import OpacityRow from './OpacityRow';
 import PresetParamControls from './PresetParamControls';
 import type { BandOption } from './BandSelect';
 import { viewKind } from '../viewKind';
+import { classesOfBand } from '../bandClasses';
 import RenderFields, { NO_COLORMAP } from './RenderFields';
 import ScaleHistograms from './ScaleHistograms';
+import ClassHistogram from './ClassHistogram';
 import { useHistograms } from './useHistograms';
 
 const INDEX_ONLY_TIP = 'This layer holds the index only';
@@ -233,6 +235,8 @@ export default function ViewerControls() {
   const colormap = chosen ? !isComposite(chosen) : pendingBand || !shownDataset ? true : showsColormap(shownDataset.collection);
   // A layer of classes keeps the colours of its source: no range, no other colormap (M5-07 plan F4).
   const classes = !chosen && shownDataset ? drawsClasses(shownDataset.collection) : false;
+  // Its histogram in the colours of its classes (M5-60 F9), without sliders.
+  const classList = classes && shownDataset ? classesOfBand(shownDataset.collection, standardAsset ?? undefined) : null;
   const at = shown ? here.indexOf(shown) : -1;
   // Temporary where no layer holds the image as it is drawn now (Otto, 1.11.2026). What is only typed in the fields does not count: the
   // measured range that stands in them when the view opens is no change; "Apply" is.
@@ -334,6 +338,7 @@ export default function ViewerControls() {
                     vmax={pendingUnit === 'percent' ? pendingPercentHigh : pendingVmax}
                     onVmin={pendingUnit === 'percent' ? (text) => setPendingPercent('low', text) : setPendingVmin}
                     onVmax={pendingUnit === 'percent' ? (text) => setPendingPercent('high', text) : setPendingVmax}
+                    colormap={colour ? undefined : pendingColormapName}
                     channels={colourChannels}
                   />
                 )
@@ -354,6 +359,7 @@ export default function ViewerControls() {
               noRange={classes}
             />
             {/* The view of the search has an opacity of its own; a layer that draws it has its own (Otto, 2.11.2026). */}
+            {classList && histograms?.length === 1 && <ClassHistogram histogram={histograms[0]} classes={classList} />}
             <OpacityRow layer={compact ? layer : (drawnBy ?? undefined)} />
             <div className="vc-buttons">
               {!classes && <AutoScaleButton

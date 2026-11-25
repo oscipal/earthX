@@ -277,7 +277,8 @@ export interface Collection {
   // The bands in the order of the registry entry, each with what it is in a few words (the `name` and `description`
   // of a STAC band, M5-59); the column "Description" of the Data catalogue. Absent on a backend before it. A band of classes
   // carries them as the classification extension writes them (M5-62, read by `bandClasses.ts`).
-  'earthx:bands'?: { name: string; description: string; 'classification:classes'?: unknown }[] | null;
+  // `earthx:look`: the look the band starts with (M5-60), the form of `x-earthx-looks`, its numbers in the unit of the band.
+  'earthx:bands'?: { name: string; description: string; 'classification:classes'?: unknown; 'earthx:look'?: unknown }[] | null;
   // The assets that are no band of the data (a picture, a preview), by the asset key an order names (NM4-07).
   'earthx:auxiliary_assets'?: string[] | null;
   // The three bands of the colour picture, red, green, blue (NM4-64); empty for a dataset that has none.
@@ -349,6 +350,9 @@ export interface DownloadedInfo {
   // The asset the scene was opened with, when the view draws another one for the look of its image (NM4-45): the one the
   // standard picture of the dataset comes from.
   baseAsset?: string;
+  // The scaling of each asset of one band whose item states one other than 1 and 0 (`raster:bands`): the tiles draw the stored values,
+  // and the legend tells their range in physical ones (M5-60).
+  scalings?: Record<string, { scale: number; offset: number }>;
   // The levels this dataset is released for (`earthx:viewer`, M2-10). Below the
   // lower one MapLibre requests nothing, above the upper one it overzooms the
   // last level — which is also what the tile route allows, so the map never asks

@@ -435,6 +435,17 @@ describe('the bands of a result (NM4-43e PR 2)', () => {
     expect(resultBands(bands, null).map((b) => b.stats?.expression)).toEqual([true, true]);
   });
 
+  it('gives a band of the source whose values reach the result its look (M5-60 F5), never a band a step made', () => {
+    const look = { colormap: 'viridis', scale: 'fixed' as const, low: 0, high: 100 };
+    const kept = (name: string) => (name === 'cloud' || name === 'ndvi' ? look : null);
+    const bands = resultBands({ bands: [band('ndvi', -1, 1), band('cloud', 0, 100), band('red', 0, 1)] }, { steps }, () => null, kept);
+    expect(bands.map((b) => b.look)).toEqual([null, look, null]);
+    // Without the order nothing says which band a step made.
+    expect(resultBands({ bands: [band('cloud', 0, 100)] }, null, () => null, kept)[0].look).toBeNull();
+    // Where no preset is the band, its look draws it.
+    expect(presetOfResultBand(bands[1], [])).toEqual({ vmin: '0', vmax: '100', colormap: 'viridis' });
+  });
+
   it('draws a band with the range saved for it, a result of one band with the range of the job', () => {
     const own = { vmin: '0', vmax: '1', colormap: 'greys' };
     const job = { range: own, bandRanges: { red: { vmin: '2', vmax: '3', colormap: '' } } };

@@ -32,9 +32,8 @@ from datetime import date
 from pathlib import Path
 
 import psycopg
-import yaml
 
-from earthx.catalog.entry_files import EntryFileError, _validate, read_yaml
+from earthx.catalog.entry_files import EntryFileError, _validate, dump_yaml, read_yaml
 from earthx.catalog.licences import (
     LICENSES_DIR,
     SPELLINGS_FILE,
@@ -169,7 +168,7 @@ def dump_spellings(spellings: Sequence[Spelling]) -> str:
         | ({} if s.withdrawn_on is None else {"withdrawn_on": s.withdrawn_on})
         for s in spellings
     ]
-    return _HEADER + (yaml.safe_dump(rows, sort_keys=False, allow_unicode=True, width=1000) if rows else "[]\n")
+    return _HEADER + (dump_yaml(rows, width=1000) if rows else "[]\n")
 
 
 def _existing(path: Path) -> list[Spelling]:

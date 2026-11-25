@@ -16,7 +16,7 @@ import yaml
 
 from earthx.catalog import registry as registry_module
 from earthx.catalog.datasets import CATALOG_DIR
-from earthx.catalog.entry_files import EntryFileError, load_entry, load_retired, read_yaml, to_plain
+from earthx.catalog.entry_files import EntryFileError, dump_yaml, load_entry, load_retired, read_yaml, to_plain
 from earthx.catalog.registry import ENTRY_FILE_CONFIG, DatasetConfig, LicenseTier, RetiredDataset
 from tests.catalog.entries import COP_DEM_GLO_30, RETIRED
 
@@ -308,3 +308,42 @@ def test_the_checks_of_the_overview_hold_in_a_file(tmp_path: Path) -> None:
     data["viewer"].update(overview="own", overview_substitute="other", min_zoom=0)
     with pytest.raises(EntryFileError, match="overview_substitute is set"):
         load_entry(_write(tmp_path, data))
+
+
+# --- Writing: no anchors (M5-67 fix 1, 24.11.2026) ---------------------------------------------------------------------
+
+
+def test_a_value_used_twice_is_written_twice_and_never_as_an_alias(tmp_path: Path) -> None:
+    # Otto's first trial run: `yaml.safe_dump` wrote a `date` shared by several lines as `&id001` and `*id001`, and the
+    # next step refused its own file. A date, a list and a mapping each occur twice as the same object here.
+    day, shared, config = date(2026, 11, 24), ["a", "b"], {"x": 1}
+    data = [{"added_on": day, "tags": shared, "config": config}, {"added_on": day, "tags": shared, "config": config}]
+    assert "&id" in yaml.safe_dump(data) and "*id" in yaml.safe_dump(data)  # what the plain dumper does
+    text = dump_yaml(data)
+    assert "&" not in text and "*" not in text
+    path = _write_text(tmp_path, text, "list.yaml")
+    assert read_yaml(path) == [{"added_on": "2026-11-24", "tags": ["a", "b"], "config": {"x": 1}}] * 2
+
+
+def test_the_text_keeps_the_order_of_the_keys_unicode_and_the_width_it_is_given(tmp_path: Path) -> None:
+    long = "Zeile " * 40
+    text = dump_yaml([{"statement": long.strip(), "rule": "S3", "ä": "ö"}], width=1000)
+    assert text.splitlines()[0].startswith("- statement: Zeile ") and len(text.splitlines()[0]) > 200
+    assert text.index("statement") < text.index("rule") < text.index("ä") and "ö" in text
+    assert read_yaml(_write_text(tmp_path, text, "w.yaml"))[0]["statement"] == long.strip()
+
+
+@pytest.mark.parametrize("data", [{1: "a"}, {"a": {1, 2}}], ids=["number-as-key", "set"])
+def test_what_the_loader_would_refuse_is_an_error_where_it_is_written(data: object) -> None:
+    with pytest.raises((EntryFileError, yaml.YAMLError), match="(?i)not readable again|cannot represent|key is not text"):
+        dump_yaml(data)
+
+
+def test_no_file_of_the_platform_is_written_with_a_dumper_of_its_own() -> None:
+    # Every YAML a run writes goes through `dump_yaml`; a second dumper would bring the anchors back.
+    root = Path(__file__).resolve().parents[2] / "earthx"
+    for path in sorted(root.rglob("*.py")):
+        if path.name == "entry_files.py":
+            continue
+        text = path.read_text(encoding="utf-8")
+        assert "yaml.dump(" not in text and "yaml.safe_dump(" not in text and "SafeDumper" not in text, path.name

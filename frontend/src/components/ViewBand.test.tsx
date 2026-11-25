@@ -80,6 +80,7 @@ function mount(over: Partial<AppState> = {}, coll: Collection = collection(), as
       pendingVmax: '3000',
       pendingIndex: '',
       pendingBand: '',
+      pendingUnit: 'value',
       mosaics: {},
       mapZoom: 12,
       layers: [],
@@ -193,6 +194,11 @@ describe('the dropdown "Band" of a dataset read through chunk references (M5-11)
     'earthx:index_presets': [],
     'earthx:band_units': { TabsD: '°C', TminD: '°C', TmaxD: '°C', SrelD: '%' },
     'earthx:default_render': { title: 'Daily mean temperature', assets: ['TabsD'], rescale: [[-20, 30]], colormap_name: 'rdbu_r', expression: null, resampling: 'nearest' },
+    // The looks the registry resolves (M5-60): the temperatures like the standard picture, sunshine on the range of its unit.
+    'earthx:bands': [
+      ...['TabsD', 'TminD', 'TmaxD'].map((name) => ({ name, description: name, 'earthx:look': { colormap: 'rdbu_r', scale: 'fixed', low: -20, high: 30 } })),
+      { name: 'SrelD', description: 'Sunshine', 'earthx:look': { colormap: 'viridis', scale: 'fixed', low: 0, high: 100 } },
+    ],
   });
   const quantity = { href: 'https://data.test/tabsd_2024.nc', type: 'application/x-netcdf', roles: ['data'], 'earthx:refs': { etag: '"a"' }, 'raster:bands': [{ data_type: 'float32' }] } as unknown as StacAsset;
   const day = (names: string[]) => Object.fromEntries(names.map((name) => [name, quantity]));
@@ -203,7 +209,7 @@ describe('the dropdown "Band" of a dataset read through chunk references (M5-11)
     expect(select().options[0].textContent).toBe('TabsD');
   });
 
-  it('starts a temperature with the colormap and range of the mean temperature, sunshine with the measured range (H1 = 1)', async () => {
+  it('starts each band with the look the collection publishes for it, a fixed range without a measure (M5-60)', async () => {
     mount({}, meteo, day(['TabsD', 'TminD', 'TmaxD', 'SrelD']));
     fetchMock.mockClear();
     choose('band:TminD');
@@ -214,13 +220,92 @@ describe('the dropdown "Band" of a dataset read through chunk references (M5-11)
     expect(measured()).toBe(false);
     choose('band:SrelD');
     await settle();
-    expect(store().pendingColormapName).toBe('');
-    expect(measured()).toBe(true);
+    expect([store().pendingColormapName, store().pendingVmin, store().pendingVmax]).toEqual(['viridis', '0', '100']);
+    expect(measured()).toBe(false);
   });
 
   it('offers only what a day has: before 1971 the mean temperature alone, and the dropdown is locked', () => {
     mount({}, meteo, day(['TabsD']));
     expect(select().disabled).toBe(true);
+  });
+});
+
+describe('the look of a band (M5-60)', () => {
+  // Reflectance stored as whole numbers: stored · 0.0001 − 0.1 (Sentinel-2).
+  const scaled = { ...tiff(1), 'raster:bands': [{ scale: 0.0001, offset: -0.1 }] } as StacAsset;
+  const looks = collection({
+    'earthx:bands': [
+      { name: 'B04', description: 'Red', 'earthx:look': { colormap: 'viridis', scale: 'measured' } },
+      { name: 'B08', description: 'NIR', 'earthx:look': { colormap: 'magma', scale: 'fixed', low: 0, high: 0.3 } },
+    ],
+  });
+  const assets = { ...ASSETS, B04: scaled, B08: scaled };
+
+  it('puts the colormap of a measured look in the fields at once and the range once it is measured', async () => {
+    mount({}, looks, assets);
+    choose('band:B04');
+    expect(store().pendingColormapName).toBe('viridis');
+    await settle();
+    expect(inputs().map((i) => i.value)).toEqual(['150', '2500']);
+  });
+
+  it('puts a fixed range in the stored values the tiles draw, without a measure', async () => {
+    mount({}, looks, assets);
+    fetchMock.mockClear();
+    choose('band:B08');
+    await settle();
+    expect([store().pendingColormapName, store().pendingVmin, store().pendingVmax]).toEqual(['magma', '1000', '4000']);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/statistics') && !String(url).includes('histogram_bins'))).toBe(false);
+  });
+
+  it('keeps what is typed by hand until the next band, and "Auto-scale" goes back to the range of the look', async () => {
+    mount({}, looks, assets);
+    choose('band:B08');
+    await settle();
+    act(() => {
+      store().setPendingColormapName('gray');
+      store().setPendingVmin('1500');
+    });
+    await act(async () => {
+      await store().autoStretch();
+    });
+    // Only the range: the colormap chosen stays.
+    expect([store().pendingColormapName, store().pendingVmin, store().pendingVmax]).toEqual(['gray', '1000', '4000']);
+    choose('band:B04');
+    await settle();
+    expect(store().pendingColormapName).toBe('viridis');
+  });
+
+  it('takes a fixed range in values where the fields were in percentiles', async () => {
+    mount({ pendingUnit: 'percent' }, looks, assets);
+    choose('band:B08');
+    await settle();
+    expect(store().pendingUnit).toBe('value');
+    act(() => store().setPendingUnit('percent'));
+    await act(async () => {
+      await store().autoStretch();
+    });
+    expect([store().pendingUnit, store().pendingVmin, store().pendingVmax]).toEqual(['value', '1000', '4000']);
+  });
+
+  it('measures a look in percentiles as its percentiles: 0–100 is the minimum to the maximum, in values and in percent', async () => {
+    const whole = collection({ 'earthx:bands': [{ name: 'B04', description: 'Red', 'earthx:look': { colormap: 'gray', scale: 'percentiles', low: 0, high: 100 } }] });
+    mount({}, whole, assets);
+    choose('band:B04');
+    await settle();
+    expect(inputs().map((i) => i.value)).toEqual(['100', '4000']);
+    act(() => store().setPendingUnit('percent'));
+    await act(async () => {
+      await store().autoStretch();
+    });
+    expect([store().pendingPercentLow, store().pendingPercentHigh]).toEqual(['0', '100']);
+  });
+
+  it('starts a band the collection names no look for as before: no colormap, the measured range', async () => {
+    mount({}, collection(), assets);
+    choose('band:B04');
+    await settle();
+    expect([store().pendingColormapName, store().pendingVmin, store().pendingVmax]).toEqual(['', '150', '2500']);
   });
 });
 

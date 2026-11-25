@@ -41,6 +41,18 @@ Noch kein automatischer Lauf.
 
 ## Erledigt
 
+- [x] **H-2026-11-24-07** · 2026-11-24 · Lauf · Der erste Probelauf brach nach `spellings` ab: `spellings.yaml` war mit
+  YAML-Ankern geschrieben (eine `date` in mehreren Zeilen), der Lader lehnte sie ab („an anchor is not allowed (line 8)“).
+  Erledigt 24.11.2026 (Fix 1, [#414](https://github.com/oscipal/earthX/pull/414), Plan M5-67 §22): `dump_yaml` schreibt ohne Anker und liest sein Ergebnis zurück; alle
+  Schreiber des Laufs geprüft; Integrationstest über alle Schritte.
+- [x] **H-2026-11-24-08** · 2026-11-24 · Lauf · Eine planmäßige Pause von `harvest` (govdata: Seiten je Lauf erreicht)
+  galt als „Harvest gescheitert“. Erledigt 24.11.2026 (Fix 1): Exit-Code 75 ist Erfolg, nur ein Hinweis im Bericht; das
+  Skript wertet nur Exit-Codes aus (Auslegung A24 im Plan §22).
+- [x] **H-2026-11-24-09** · 2026-11-24 · Lauf · Fenster, `fehler.log` und PR-Text nannten bei einem Abbruch nur den Schritt,
+  nicht die Fehlerzeile. Erledigt 24.11.2026 (Fix 1): jeder Schritt hängt die Zeile an, die sagt warum.
+- [x] **H-2026-11-24-10** · 2026-11-24 · Lauf · Ein zweiter Lauf am selben Tag stieß auf Branch und Draft-PR des ersten.
+  Erledigt 24.11.2026 (Fix 1): Branch `harvest/<Tag>-<Uhrzeit>`; Draft-PRs gescheiterter Läufe schließt der nächste Lauf
+  selbst und löscht ihre Branches.
 - [x] **H-2026-11-24-01** · 2026-11-24 · govdata · Regel R-G: „Betriebsstätte(n)“ ist als Geo-Begriff zu breit; es
   soll nur zusammen mit PRTR halten. Beispiel: die Steuerstatistik von Destatis wurde dadurch gehalten;
   `PRTR_Betriebsstaetten_RLP` muss Geodaten bleiben. Vorschlag: Plan M5-67 §12 (01).

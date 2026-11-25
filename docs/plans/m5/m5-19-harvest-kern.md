@@ -176,7 +176,7 @@ docker compose run --rm harvest earth-search
 "SELECT source_id, extracted->>'title' AS title, extracted->>'source_rank' AS rank, extracted->>'source_url' AS source FROM earthx_record_state WHERE state = 'extracted' ORDER BY random() LIMIT 10;" | docker compose exec -T postgres sh -c 'psql -U $POSTGRES_USER -d $POSTGRES_DB'
 ```
 
-- Jeder Lauf druckt einen kurzen Bericht (Anfragen, davon `304`, Funde neu/geändert/unverändert/ungültig/weg, Ausdehnung unbekannt); Rückgabe 0 nur bei `done`.
+- Jeder Lauf druckt einen kurzen Bericht (Anfragen, davon `304`, Funde neu/geändert/unverändert/ungültig/weg, Ausdehnung unbekannt); Rückgabe 0 bei `done`, 75 bei einer planmäßigen Pause (Seiten- oder Anfragegrenze, Ruhe auf Bitten der Quelle: der Lauf behält seinen Platz, der nächste setzt fort), sonst 1 (Nachtrag M5-67 Fix 1, 24.11.2026; `harvest-cycle.ps1` liest nur diese Codes).
 - **Zweiter Lauf** je Quelle: FSDI ohne `ETag` mit `found_unchanged` = alle und ohne neue Übergänge; Earth Search mit einer Anfrage und `not_modified` 1. Das ist die Abnahme M5-Plan §7 Punkt 3 für diese beiden Quellen.
 - **Links:** Die dritte Abfrage zeigt zehn zufällige Funde mit dem Link „Source“ und seinem Rang (1 Viewer/Download-Seite, 2 Seite beim Anbieter, 3 Seite im Katalog). Bitte einige im Browser öffnen; die Adressen bleiben in deiner Datenbank, nicht im Repo.
 - **Neu ableiten ohne Abruf** nach einer Codeänderung: `docker compose run --build --rm harvest fsdi-stac --reextract`.

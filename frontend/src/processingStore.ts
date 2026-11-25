@@ -172,7 +172,7 @@ import {
   type PreviewSpec,
 } from './processingPreview';
 import type { ResultStats } from './render';
-import { chooseDtype, dtypeOptions, effectiveDtype, type Choice, type DtypeOption } from './processingDefaults';
+import { chooseDtype, dtypeOptions, effectiveDtype, keepsValuesOf, type Choice, type DtypeOption } from './processingDefaults';
 import { buildTileUrl } from './mapLayers';
 import type { PermalinkView } from './permalink';
 import { previewRangeOf } from './permalinkRange';
@@ -186,6 +186,7 @@ import type { MapLayer } from './layers';
 import { indexOrdersOfScenes, presetOfLayer } from './indexDownload';
 import { compositeAmong, type MadeBand, type QuickPreset } from './quickPresets';
 import { selectionItemsFrom, shownImageOf, ticksOfOpen, useAppStore, viewImagesOf, type AppState } from './store';
+import { bandLookOf } from './viewBand';
 import { buildGroups } from './grouping';
 import { stackLikeView } from './mosaic';
 import { fieldNumber } from './numberFormat';
@@ -1305,6 +1306,12 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     }));
   };
 
+  // The operators of the description of the dataset of an order, there once the job was started from the panel; `null` before.
+  const operatorsOf = (order: Order | null) => {
+    const description = get().descriptions[order?.inputs[0]?.dataset ?? ''];
+    return description?.state === 'ready' ? description.info.operators : null;
+  };
+
   const readResults = async (jobID: string, status: StatusInfo) => {
     try {
       const doc = await fetchResults(jobID);
@@ -1319,13 +1326,20 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
           ? { href, width: typeof doc.result?.width === 'number' ? doc.result.width : null, gsd: positive(properties?.gsd) }
           : null,
         statistics: resultStats(properties),
-        bands: resultBands(properties, order, (step) => {
+        bands: resultBands(
+          properties,
+          order,
           // How the registry of the operator says the band of the step is drawn (M5-10); the description of the dataset is there once the job was
           // started from the panel.
-          const description = get().descriptions[order?.inputs[0]?.dataset ?? ''];
-          const operators = description?.state === 'ready' ? description.info.operators : [];
-          return lookOfStep(operators.find((o) => o.op === step.op)?.looks, step.params);
-        }),
+          (step) => lookOfStep(operatorsOf(order)?.find((o) => o.op === step.op)?.looks, step.params),
+          // A band of the source keeps its look where no step changed its values (M5-60 F5).
+          (name) => {
+            const operators = operatorsOf(order);
+            const collection = useAppStore.getState().datasets.find((d) => d.id === order?.inputs[0]?.dataset)?.collection;
+            const steps = order?.steps.map((step) => ({ op: step.op, values: step.params })) ?? [];
+            return operators && keepsValuesOf(name, steps, operators) ? bandLookOf(collection, name) : null;
+          },
+        ),
         normalize: normalizeRuns(properties?.['earthx:normalize']),
       });
     } catch (error) {

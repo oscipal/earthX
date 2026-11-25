@@ -54,13 +54,13 @@ import { flipNext, flipStart } from './layerFlip';
 import type { LayerOverlay, LayerRestore, MapLayer, ResultLayerInfo } from './layers';
 import { bandLayerOf, isResultExpired, restyledTileUrl } from './resultLayer';
 import { buildTileUrl, footprintsFC } from './mapLayers';
-import { assetOfLook, bandAssetsOf, standardLookOfBand, withAsset } from './viewBand';
+import { assetOfLook, bandAssetsOf, bandLookOf, fixedRangeOf, withAsset } from './viewBand';
 import { footprintsKeyOf, indexKeyOf, mosaicKeyOf, MAX_FOOTPRINT_ITEMS, MAX_MOSAIC_OPERATOR_ASSETS, orderedPass, orderKeyOf, passesOf, stackLikeView } from './mosaic';
 import type { Mosaics, SceneEntry } from './mosaic';
 import { ensureFootprints, ensureSelection, withSelection } from './mosaicSelection';
 import { isComposite, lookOfPreset, type PresetParam, type PresetParams, type QuickPreset } from './quickPresets';
 import { knownLookOf, lookOfStepPreset, statsOfTiler } from './presetLooks';
-import { lookRange } from './displayLook';
+import { lookRange, percentOfLook, type DisplayLook } from './displayLook';
 import type { BasemapId } from './basemaps';
 import type { OverlayId, Overlays } from './overlays';
 import type { Appearance, Projection, Theme } from './preferences';
@@ -105,7 +105,7 @@ import { layerOfView, sameRender } from './viewLayer';
 import { downloadIndexCrop, downloadsIndexOnly, estimateIndexDownload, indexOfferedFor, type IndexNote } from './indexDownload';
 import { indexBlockOf, indexNote, indexStatisticsUrl, viewIndexOf } from './viewIndex';
 import { canonicalJson } from './processing';
-import { areaQuestionOf, measureView, type ViewMeasure } from './viewMeasure';
+import { areaQuestionOf, measureView, scaledAssetsOf, scalingOfAsset, type ViewMeasure } from './viewMeasure';
 import type { AppliedRender, Bbox, DownloadedInfo, StacItem, TimeStepGroup, ToolMode } from './types';
 import { counted } from './plural';
 import { fieldNumber } from './numberFormat';
@@ -878,6 +878,15 @@ function measureOfView(s: AppState): ViewMeasure | null {
   const area = asked && 'order' in asked ? asked : null;
   const skipped = asked && 'reason' in asked ? asked.reason : null;
   return { sceneUrl, area, skipped, key: area ? `${sceneUrl}\n${canonicalJson(area.order)}` : sceneUrl };
+}
+
+// The band in the fields of the view, with its look and, where that is fixed, its range in the values the tiles draw (M5-60).
+function bandOfView(s: AppState): { look: DisplayLook | null; fixed: { vmin: string; vmax: string } | null } | null {
+  const { itemId, info } = firstSceneOfView(s);
+  if (!s.pendingBand || s.pendingIndex || !info) return null;
+  const look = bandLookOf(s.datasets.find((d) => d.id === info.datasetId)?.collection, s.pendingBand);
+  const item = sectionsForView(s).flatMap((section) => section.items).find((it) => it.id === itemId);
+  return { look, fixed: look && item ? fixedRangeOf(look, scalingOfAsset(item, s.pendingBand)) : null };
 }
 
 function firstSceneOfView(s: AppState): { itemId: string | undefined; info: DownloadedInfo | undefined } {
@@ -3147,11 +3156,13 @@ export const useAppStore = create<AppState>((set, get) => ({
           problem ??= `Scene ${it.id} is in two datasets; the view shows it once.`;
           continue;
         }
+        const scalings = scaledAssetsOf(it);
         downloaded[it.id] = {
           datasetId: dataset.id,
           tileUrl: api.buildTileTemplate(dataset.id, it.id, asset),
           bounds: it.bbox,
           asset,
+          ...(scalings ? { scalings } : {}),
           minZoom: dataset.zoom.min,
           maxZoom: dataset.zoom.max,
         };
@@ -3281,19 +3292,22 @@ export const useAppStore = create<AppState>((set, get) => ({
       return;
     }
     const item = sectionsForView(s).flatMap((x) => x.items).find((it) => it.id === shown.ids[0]);
-    if (!bandAssetsOf(item, collection).includes(band)) return;
-    // A band in the unit of the standard picture starts with its colormap and range (M5-11, H1 = 1); any other is measured.
-    const standard = standardLookOfBand(collection, item, band);
+    if (!item || !bandAssetsOf(item, collection).includes(band)) return;
+    // The band starts with its look (M5-60): the colormap at once, a fixed range at once in the values the tiles draw, any other range
+    // once it is measured. What is typed by hand then holds until the next band.
+    const look = bandLookOf(collection, band);
+    const fixed = look ? fixedRangeOf(look, scalingOfAsset(item, band)) : null;
     set({
       pendingBand: band,
       pendingIndex: '',
       pendingPresetParams: {},
-      pendingColormapName: standard?.colormapName ?? '',
-      pendingVmin: standard?.vmin ?? '',
-      pendingVmax: standard?.vmax ?? '',
+      pendingColormapName: look?.colormap ?? '',
+      pendingVmin: fixed?.vmin ?? '',
+      pendingVmax: fixed?.vmax ?? '',
       pendingChannels: [],
+      ...(fixed ? { pendingUnit: 'value' as const } : {}),
     });
-    if (!standard) void get().autoStretch();
+    if (!fixed) void get().autoStretch();
   },
   toggleDownloaded: () => set((s) => ({ showDownloaded: !s.showDownloaded })),
   setViewOpacity: (opacity) => set({ viewOpacity: Number.isFinite(opacity) ? Math.max(0, Math.min(1, opacity)) : 1 }),
@@ -3450,8 +3464,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ pendingChannels: channels.map(usual), pendingUnit: 'value' });
       return;
     }
+    // A band of the data goes back to its look (M5-60): a fixed range to its values, a measured one to its percentiles.
+    const band = channels ? null : bandOfView(s);
+    if (band?.fixed) {
+      set({ pendingVmin: band.fixed.vmin, pendingVmax: band.fixed.vmax, pendingUnit: 'value', pendingChannels: [] });
+      return;
+    }
     if (!channels && s.pendingUnit === 'percent') {
-      set({ pendingPercentLow: DEFAULT_PERCENT.low, pendingPercentHigh: DEFAULT_PERCENT.high });
+      const percent = percentOfLook(band?.look ?? null);
+      set({ pendingPercentLow: percent.low, pendingPercentHigh: percent.high });
       return;
     }
     // The area of the crop, else the first scene of the image that is shown (the first of the view where nothing is shown yet); the
@@ -3465,7 +3486,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       // on its fixed range); the colormap in the fields stays.
       const { info } = firstSceneOfView(s);
       const preset = info ? viewIndexOf(pendingPresetLook(s), s.datasets.find((d) => d.id === info.datasetId)?.collection) : null;
-      const look = info && preset ? await lookOfStepPreset(info.datasetId, preset) : null;
+      const look = info && preset ? await lookOfStepPreset(info.datasetId, preset) : (band?.look ?? null);
       const drawn = look ? lookRange(look, statsOfTiler(stats)) : null;
       const range: [number, number] | null = drawn ? [Number(drawn.vmin), Number(drawn.vmax)] : autoRescale(stats);
       if (range && channels?.some((channel) => channel.percent)) {

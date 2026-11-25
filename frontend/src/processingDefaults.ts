@@ -41,6 +41,13 @@ export function passesValues(steps: readonly StepChoice[], operators: readonly P
   });
 }
 
+// Whether the values of the band `band` reach the result as they are (M5-60 F5): each step passes values on, or adds a band of its own
+// name (`band_math`, a terrain product) and leaves the others as they were. A step the description does not know does neither.
+export function keepsValuesOf(band: string, steps: readonly StepChoice[], operators: readonly Pick<Operator, 'op' | 'passesValues'>[]): boolean {
+  const adds = (step: StepChoice) => operators.some((o) => o.op === step.op) && typeof step.values?.name === 'string' && step.values.name !== band;
+  return steps.every((step) => passesValues([step], operators) || adds(step));
+}
+
 export interface DtypeOption {
   value: string;
   label: string;
