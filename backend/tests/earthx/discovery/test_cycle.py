@@ -14,6 +14,7 @@ from earthx.discovery.cycle import (
     APPROVAL_RULES_FILE,
     AUTO_END,
     AUTO_START,
+    GUARD_PATTERNS_SHOWN,
     Finding,
     _pauses,
     _text,
@@ -21,6 +22,7 @@ from earthx.discovery.cycle import (
     clean,
     decide,
     findings_of,
+    guard_findings,
     merge_findings,
     read_approval_rules,
     run_files,
@@ -208,10 +210,42 @@ def test_the_findings_of_a_run_put_the_guard_first() -> None:
         folder="docs/harvest/laeufe/2026-11-25",
     )
     keys = [f.key for f in found]
-    assert keys[0] == "SCHUTZ host spa.example.org"
+    assert keys[0] == "SCHUTZ spa.example.org"
     assert {"MUSTER amt.example.org/daten/{x}", "WARNZEICHEN W1 govdata", "WARNZEICHEN W6 govdata",
             "STAPEL govdata 7", "LIZENZ CC BY-NC-SA 4.0", "QUELLE data-gv-at", "PR 410"} <= set(keys)
     assert "LIZENZ einmal" not in keys
+
+
+def _group(kind: str, key: str, failed: int, *, guarded: bool = True) -> dict[str, object]:
+    return {"kind": kind, "key": key, "passed": 1, "failed": failed, "unchecked": 0, "transient": 2,
+            "guarded": guarded}
+
+
+def test_a_guard_is_one_finding_per_host_with_its_patterns_as_points() -> None:
+    # Otto, 25.11.2026: the 25.11. run wrote some 90 lines SCHUTZ host / SCHUTZ pattern.
+    groups = [
+        _group("host", "pegel.example.org", 300),
+        *(_group("pattern", f"pegel.example.org/de/{river}/{{x}}", 10 + i) for i, river in enumerate("abcdefg")),
+        _group("host", "viewer.example.org", 3, guarded=False),
+        _group("pattern", "viewer.example.org/map?LAYER%5Bid%5D", 40),
+        _group("pattern", "other.example.org/x", 40, guarded=False),
+    ]
+    found = guard_findings(groups)
+    assert [f.key for f in found] == ["SCHUTZ pegel.example.org", "SCHUTZ viewer.example.org"]
+    pegel, viewer = found
+    assert pegel.text.startswith("Host: 300 durchgefallen, 2 ohne Antwort, 1 bestanden")
+    assert len(pegel.items) == GUARD_PATTERNS_SHOWN + 1
+    assert pegel.items[0] == "`pegel.example.org/de/g/{x}`: 16 durchgefallen, 2 ohne Antwort, 1 bestanden"
+    assert pegel.items[-1] == "und 2 weitere Muster, siehe `linkpruefung.md`"
+    assert viewer.text.startswith("Host nicht geschützt")
+    assert viewer.items == ("`viewer.example.org/map?LAYER%5Bid%5D`: 40 durchgefallen, 2 ohne Antwort, 1 bestanden",)
+
+
+def test_the_points_of_a_finding_stand_under_it_and_do_not_count_as_findings() -> None:
+    first = merge_findings(_document(""), [Finding("SCHUTZ a.example.org", "Host", ("`a.example.org/x`: 1",))], DAY)
+    assert "· Host\n  - `a.example.org/x`: 1\n" in first
+    second = merge_findings(first, [Finding("SCHUTZ a.example.org", "Host")], DAY)
+    assert "a.example.org/x" not in second and "nicht mehr aufgetreten" not in second
 
 
 def test_a_failed_link_check_is_a_finding() -> None:

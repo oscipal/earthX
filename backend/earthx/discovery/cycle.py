@@ -230,6 +230,8 @@ class Finding:
 
     key: str
     text: str
+    #: Lines under the finding, each one point (the patterns of a guarded host).
+    items: tuple[str, ...] = ()
 
 
 _LINE = re.compile(r"- \[ \] \*\*(?P<key>[^*]+)\*\* · seit (?P<since>\d{4}-\d{2}-\d{2}) · zuletzt \d{4}-\d{2}-\d{2} · ")
@@ -248,6 +250,7 @@ def merge_findings(document: str, findings: Sequence[Finding], day: date) -> str
     lines = [
         f"- [ ] **{key}** · seit {previous.get(key, (day.isoformat(), ''))[0]} · zuletzt {day.isoformat()} · "
         + " ".join(clean(f.text).split())
+        + "".join(f"\n  - {' '.join(clean(item).split())}" for item in f.items)
         for key, f in keyed.items()
     ]
     body = "\n".join(lines) if lines else f"Keine offenen Befunde aus dem Lauf vom {day.isoformat()}."
@@ -269,6 +272,38 @@ def _examples(items: Sequence[Mapping[str, Any]], limit: int = 3) -> str:
     return "; ".join(shown)
 
 
+#: The patterns of a guarded host shown in the list of findings; the others are in ``linkpruefung.md``.
+GUARD_PATTERNS_SHOWN = 5
+
+
+def _counts(group: Mapping[str, Any]) -> str:
+    return f"{group['failed']} durchgefallen, {group['transient']} ohne Antwort, {group['passed']} bestanden"
+
+
+def guard_findings(groups: Sequence[Mapping[str, Any]]) -> list[Finding]:
+    """One finding per host with a guarded result (plan §4c), its guarded patterns as points with their numbers, the
+    largest first, so that ``befunde.md`` stays readable (Otto, 25.11.2026)."""
+    hosts = {g["key"]: g for g in groups if g["kind"] == "host"}
+    patterns: dict[str, list[Mapping[str, Any]]] = {}
+    for group in groups:
+        if group["kind"] == "pattern" and group["guarded"]:
+            patterns.setdefault(re.split(r"[/?#]", group["key"], maxsplit=1)[0], []).append(group)
+    guarded = [key for key, group in hosts.items() if group["guarded"]]
+    found = []
+    for host in guarded + sorted(set(patterns) - set(guarded)):
+        group = hosts.get(host)
+        if group is not None and group["guarded"]:
+            text = f"Host: {_counts(group)}; nichts verborgen, nichts freigegeben, liegt eher an der Prüfung."
+        else:
+            text = "Host nicht geschützt; in den Mustern unten nichts verborgen, nichts freigegeben."
+        own = sorted(patterns.get(host, []), key=lambda g: -(g["failed"] + g["transient"] + g["passed"]))
+        items = [f"`{g['key']}`: {_counts(g)}" for g in own[:GUARD_PATTERNS_SHOWN]]
+        if len(own) > GUARD_PATTERNS_SHOWN:
+            items.append(f"und {len(own) - GUARD_PATTERNS_SHOWN} weitere Muster, siehe `linkpruefung.md`")
+        found.append(Finding(f"SCHUTZ {host}", text, tuple(items)))
+    return found
+
+
 def findings_of(
     *,
     linkcheck: Mapping[str, Any] | None,
@@ -283,7 +318,7 @@ def findings_of(
     propose: Mapping[str, Any] | None = None,
     propose_error: str | None = None,
 ) -> list[Finding]:
-    """The findings of this run, the guarded hosts and patterns first (plan §4c)."""
+    """The findings of this run, the guarded hosts with their patterns first (plan §4c)."""
     found: list[Finding] = []
     if run_error:
         found.append(Finding("LAUF", f"Lauf gescheitert: {run_error}. Siehe `{folder}/fehler.log`."))
@@ -296,22 +331,24 @@ def findings_of(
             found.append(Finding(f"KANDIDATEN {source_id}", f"Kandidaten gescheitert ({count['error']})."))
     if linkcheck:
         examples = linkcheck.get("examples") or {}
-        for group in linkcheck.get("groups") or []:
-            if group["guarded"]:
-                found.append(
-                    Finding(
-                        f"SCHUTZ {group['kind']} {group['key']}",
-                        f"{group['failed']} durchgefallen, {group['transient']} ohne Antwort, {group['passed']}"
-                        " bestanden: nichts verborgen, nichts freigegeben; liegt eher an der Prüfung."
-                        + (f" Beispiele: {_examples(examples.get(group['key'], []))}" if group["kind"] == "pattern" else ""),
-                    )
+        found += guard_findings(linkcheck.get("groups") or [])
+        for form in linkcheck.get("forms") or []:
+            found.append(
+                Finding(
+                    f"UNGEPRUEFT {form['link']}",
+                    f"{form['count']} Links ohne sichere Prüfung, ihre Einträge bleiben unsichtbar."
+                    if form["reason"] == "no_safe_check"
+                    else f"{form['count']} Links: Prüfung über die Schnittstelle, wartet auf Ottos Bestätigung der"
+                    " Adressform (`form_confirmed_on` in `linkcheck.yaml`); bis dahin unsichtbar.",
                 )
+            )
         for group in linkcheck.get("groups") or []:
-            if group["kind"] == "pattern" and not group["guarded"] and group["failed"] + group["unchecked"] >= 5:
+            failed = group["failed"] + group.get("gone", 0)
+            if group["kind"] == "pattern" and not group["guarded"] and failed >= 5:
                 found.append(
                     Finding(
                         f"MUSTER {group['key']}",
-                        f"{group['failed']} durchgefallen, {group['unchecked']} nicht prüfbar, {group['passed']}"
+                        f"{failed} durchgefallen, {group['unchecked']} nicht prüfbar, {group['passed']}"
                         f" bestanden. Beispiele: {_examples(examples.get(group['key'], []))}",
                     )
                 )
@@ -496,7 +533,7 @@ def run_files(
             link.append(
                 f"- {'**geschützt** ' if group['guarded'] else ''}{group['kind']} `{group['key']}`: bestanden"
                 f" {group['passed']}, durchgefallen {group['failed']}, ohne Antwort {group['transient']},"
-                f" nicht prüfbar {group['unchecked']}"
+                f" weg (404/410) {group.get('gone', 0)}, nicht prüfbar {group['unchecked']}"
             )
             for example in (linkcheck.get("examples") or {}).get(group["key"], []) if group["kind"] == "pattern" else []:
                 link.append(f"  - {example['dataset_id']} <{example['url']}> `{example['reason']}`")
