@@ -197,6 +197,8 @@ export interface CatalogueFilter {
   region: string | null;
   from: string | null;
   to: string | null;
+  // Only the full entries (`entry=full`), for "Addable only" (UI-12).
+  fullOnly?: boolean;
 }
 
 export const NO_FILTER: CatalogueFilter = { area: null, region: null, from: null, to: null };
@@ -213,6 +215,7 @@ function filterBody(filter: CatalogueFilter): Record<string, unknown> {
     ...(filter.area ? { intersects: filter.area } : {}),
     ...(filter.region ? { region: [filter.region] } : {}),
     ...(datetime ? { datetime } : {}),
+    ...(filter.fullOnly ? { entry: 'full' } : {}),
   };
 }
 

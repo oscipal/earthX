@@ -19,13 +19,14 @@ export function placePopover(
   anchor: { top: number; bottom: number; left: number; width: number },
   contentHeight: number,
   viewport: { width: number; height: number },
+  minWidth = 0,
 ): Placement {
   const below = viewport.height - anchor.bottom - GAP - MARGIN;
   const aboveRoom = anchor.top - GAP - MARGIN;
   const above = contentHeight > below && aboveRoom > below;
   const maxHeight = Math.max(0, above ? aboveRoom : below);
   const height = Math.min(contentHeight, maxHeight);
-  const width = Math.min(anchor.width, viewport.width - 2 * MARGIN);
+  const width = Math.min(Math.max(anchor.width, minWidth), viewport.width - 2 * MARGIN);
   const left = Math.min(Math.max(MARGIN, anchor.left), viewport.width - MARGIN - width);
   return { top: above ? anchor.top - GAP - height : anchor.bottom + GAP, left, width, maxHeight, above };
 }

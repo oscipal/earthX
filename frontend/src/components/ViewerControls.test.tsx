@@ -376,8 +376,9 @@ describe('the layout contract in index.css', () => {
     expect(Number(/--inspector-width: (\d+)px/u.exec(TOKENS)?.[1])).toBe(320);
   });
 
-  it('makes it a sheet from the bottom under 900 px, at most 55 % high, round at the top', () => {
-    expect(CSS).toMatch(/@media \(max-width: 899px\) \{\s*\.inspector\.panel \{[^}]*top: auto;[^}]*left: var\(--rail-width\);[^}]*max-height: 55vh;[^}]*border-radius: var\(--radius-md\) var\(--radius-md\) 0 0;/u);
+  // UI-12 (12), F3 new: at most 55 % of the map, which stays free above it; the sheet scrolls.
+  it('makes it a sheet from the bottom under 900 px, at most 55 % of the map, round at the top', () => {
+    expect(CSS).toMatch(/@media \(max-width: 899px\) \{\s*\.inspector\.panel \{[^}]*top: auto;[^}]*left: var\(--rail-width\);[^}]*max-height: 55%;[^}]*border-radius: var\(--radius-md\) var\(--radius-md\) 0 0;/u);
   });
 
   it('keeps the head standing and lets the middle scroll', () => {

@@ -38,12 +38,19 @@ export default function StatusBar() {
         ? 'Loading data'
         : null;
 
+  // One row (UI-12, F2): the spinner stays while something runs; its text only while no message stands, the message after it. A text too
+  // long for the row is cut and shows whole in its tooltip.
+  const message = error ?? notice;
   return (
     <div className="status-stack">
       {busy && (
         <div className="toast busy">
           <span className="spinner" aria-hidden="true" />
-          {busy}
+          {!message && (
+            <span className="status-text" data-tip={busy} data-tip-cut="">
+              {busy}
+            </span>
+          )}
           {checking && (
             <button type="button" className="btn aoi-stop" data-tip-level="advanced" data-tip="Stop checking. What is found stays." onClick={stopSearch}>
               Stop
@@ -53,13 +60,17 @@ export default function StatusBar() {
       )}
       {error && (
         <div className="toast error" role="alert">
-          <span>{error}</span>
+          <span className="status-text" data-tip={error} data-tip-cut="">
+            {error}
+          </span>
           <CloseButton onClick={() => setError(null)} />
         </div>
       )}
-      {notice && (
+      {!error && notice && (
         <div className="toast notice fade" key={notice}>
-          <span>{notice}</span>
+          <span className="status-text" data-tip={notice} data-tip-cut="">
+            {notice}
+          </span>
           <CloseButton onClick={() => setNotice(null)} />
         </div>
       )}

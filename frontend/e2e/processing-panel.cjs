@@ -8,6 +8,7 @@
 //   4. The step is a card: its head holds the name and the symbols Rename, Move up, Move down and Remove; none of them leaves the card.
 //   5. Esc closes nothing, the red x closes the panel.
 //   6. The height of a control: 28 px with a mouse from 900 px, 40-44 px under 900 px and on a touch screen.
+//   7. A data type chosen by hand stands without a note: no "(your choice)" (UI-12).
 // In the light and the dark theme, at 1280 x 800, 1920 x 1080, 360 x 740 and 1280 x 800 with a touch screen; a screenshot per case.
 //
 //   cd frontend && npm run dev &            # the dev server; no backend is needed, the answers are made up here
@@ -170,6 +171,13 @@ async function check(browser, theme, viewport) {
     if (bad.length > 0) problems.push(`${kind}s are ${[...new Set(bad)]} px high, not ${lo}-${hi}`);
   }
   await page.screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}.png`) });
+  // 7. The data type chosen by hand: the line names it and nothing else.
+  await panel.locator('.pp-details summary', { hasText: 'Change the data type' }).click();
+  const typeSelect = panel.locator('.pp-details select');
+  const offered = await typeSelect.locator('option').evaluateAll((os) => os.map((o) => o.value).filter(Boolean));
+  await typeSelect.selectOption(offered[0]);
+  const typeLine = (await panel.locator('.pp-summary[aria-label="Data type"]').textContent()).trim();
+  if (typeLine !== `Data type: ${offered[0]}`) problems.push(`the line of the data type reads "${typeLine}"`);
   // 5. Esc closes nothing; the red x does.
   await page.locator('textarea[id$="-expression"]').focus();
   await page.keyboard.press('Escape');

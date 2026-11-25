@@ -33,11 +33,19 @@ textarea {
 
 .app {
   /* The bands at the bottom stand where they are anchored, whether a panel at the left is open or not (NM4-66): they are centred in
-     the map beside the rail (widths: `tokens.css`, UI-01 §6.9). The status box is the one that makes room for it (`mapEdges.ts`). */
+     the map beside the rail (widths: `tokens.css`, UI-01 §6.9). The status line has a place of its own under all of them (UI-12). */
   position: relative;
   width: 100vw;
-  height: 100vh;
+  /* The edges of the free map, in every window; a wide window moves them for an open panel (below). The room of the column of map
+     buttons at the right, which nothing at the bottom reaches into (UI-12 (2)). */
+  --map-left: var(--rail-width);
+  --map-right: 0px;
+  --map-controls-room: calc(var(--control-height) + 2 * var(--space-1) + 2 * var(--line-width) + 2 * var(--space-3));
+  /* The map and every panel end above the status line, which no panel covers (UI-12, Otto 17.11.2026). */
+  height: calc(100vh - var(--status-line-height));
   color: var(--text);
+  /* One look for the scroll bars of all panels and windows (inherited): the Data catalogue as the processing panel (UI-12). */
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
   /* What shows behind the globe and wherever no imagery is drawn: MapLibre clears
      its canvas to transparent every frame (V-6), so this is the actual backdrop.
      A theme token — dark in the tech theme, white in the light one — and the
@@ -80,31 +88,43 @@ textarea {
   align-items: flex-start;
 }
 .bottom {
-  left: calc((100% + var(--rail-width)) / 2);
-  bottom: 20px;
+  /* Centred in the map beside the rail, whether a panel of the rail is open or not (NM4-66), left of the settings bar or the sheet, above the
+     attribution, and never under the column of the map buttons at its right (UI-12 (2)). */
+  left: calc((100% + var(--rail-width) - var(--map-right)) / 2);
+  bottom: calc(var(--attribution-height, 20px) + var(--space-1));
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
   align-items: center;
-  /* Between the rail or the panel and the right edge, a margin of 16 px each side: never over an edge. */
-  width: min(760px, calc(100vw - var(--rail-width) - 32px));
+  width: min(760px, calc(100% - var(--rail-width) - var(--map-right) - 2 * var(--map-controls-room)));
 }
-.status {
-  top: 16px;
-  left: calc((100% + var(--rail-width)) / 2);
-  transform: translateX(-50%);
-  /* Centred on the map right of the rail: no wider than that, or a phone scrolls sideways (UI-03d, seen at 360 px). */
-  width: min(560px, calc(100vw - var(--rail-width) - 16px));
-}
-/* Narrow windows: a panel covers the whole map, so the message lies over the panel of the rail (11), the settings bar and the sheet (12),
-   under the rail itself (14), and is never hidden by one (UI-04 part 6, backlog item 58). The buttons at the top right stand in the row
-   at the top, the message under them (it was over them, in two rows). */
+/* A narrow window has no room for the column of buttons at both sides: the time steps reach from the rail to the column. */
 @media (max-width: 899px) {
-  .overlay.status {
-    top: calc(var(--space-4) + var(--control-height) + var(--space-2));
-    z-index: 13;
+  .bottom {
+    left: calc(var(--rail-width) + var(--space-2));
+    right: var(--map-controls-room);
+    width: auto;
+    transform: none;
   }
+}
+/* The status line (UI-12, F1 and F2): at the foot of the window right of the rail, over its whole width, always there; the app with its map
+   and panels ends above it, so no panel ever covers it, in any window. One row: the spinner while something runs, one text, "Stop" and
+   the red x. */
+.overlay.status {
+  position: fixed;
+  z-index: 14;
+  left: var(--rail-width);
+  right: 0;
+  bottom: 0;
+  height: var(--status-line-height);
+  display: flex;
+  align-items: center;
+  /* At its left end the title of a docked legend, where there is one (`MapLegend.tsx`). */
+  padding: 0 var(--space-3) 0 calc(var(--legend-docked-width, 0px) + var(--space-3));
+  border-top: var(--line-width) solid var(--panel-border);
+  background: linear-gradient(var(--panel-bg), var(--panel-bg)), var(--map-bg);
+  pointer-events: auto;
 }
 
 /* --- draggable panels --- */
@@ -486,6 +506,13 @@ svg.lucide.icon-lead {
   flex-direction: column;
   gap: var(--space-2);
 }
+/* The head of a section: its name and what stands at its right (the pages of "Quick processing", UI-12 (4)). */
+.inspector .insp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
 .inspector .insp-heading {
   margin: 0;
   font-size: var(--text-xs);
@@ -646,6 +673,12 @@ svg.lucide.icon-lead {
   /* The thumb of a slider: its line travels from half its width to the width less half of it, and the bars span exactly that travel,
      so that a slider at the edge of a bar stands on it, at the ends too (Otto, 24.11.2026). */
   --hist-thumb: var(--space-3);
+}
+/* Under 900 px a histogram is lower than a finger-high control, so that the three of a colour picture leave the sheet room (UI-12 (12)). */
+@media (max-width: 899px) {
+  .inspector .range-hist {
+    height: calc(var(--control-height-sm) + var(--space-2));
+  }
 }
 .inspector .range-hist-red {
   color: var(--channel-red);
@@ -955,8 +988,8 @@ svg.lucide.icon-lead {
 /* The column is taken from the map: what stands at the bottom and the map controls move left of it. */
 @media (min-width: 900px) {
   /* The free area of the map: from the rail and the panel beside it to the settings bar or the sheet (the classes of `mapEdges.ts`).
-     The status box is centred in it, as wide as 560 px, and narrower, down to its minimum, where the free area is. The Data catalogue is
-     a window that may cover it, so it takes nothing from the area. Below 900 px a panel covers the whole map; the rule there is above. */
+     The legend and the buttons stand in it; the status line has its own place at the foot (UI-12). Below 900 px a panel covers the
+     whole map. */
   .app {
     --map-left: var(--rail-width);
     --map-right: 0px;
@@ -969,17 +1002,6 @@ svg.lucide.icon-lead {
   }
   .app.has-sheet {
     --map-right: var(--sheet-wide-width);
-  }
-  /* A free area narrower than the box's minimum: the box lies over the panels at its sides (12, after them), never under them, and the
-     Data catalogue (12, after the box) still covers it (Otto, 14.11.2026, UI-08). */
-  .overlay.status {
-    z-index: 12;
-    left: calc((100% + var(--map-left) - var(--map-right)) / 2);
-    width: max(var(--status-min-width), min(560px, calc(100% - var(--map-left) - var(--map-right) - 2 * var(--space-4))));
-  }
-  .app.has-inspector .overlay.bottom {
-    left: calc((100% + var(--rail-width) - var(--inspector-width)) / 2);
-    width: min(760px, calc(100vw - var(--rail-width) - var(--inspector-width) - 32px));
   }
   .app.has-inspector .maplibregl-ctrl-bottom-right {
     right: var(--inspector-width);
@@ -1003,7 +1025,8 @@ svg.lucide.icon-lead {
     top: auto;
     left: var(--rail-width);
     width: auto;
-    max-height: 55vh;
+    /* At most a little over half the map, so that the map stays free above it; what does not fit scrolls (Otto, 25.11.2026, UI-12 F3 new). */
+    max-height: 55%;
     border-width: var(--line-width) 0 0;
     border-radius: var(--radius-md) var(--radius-md) 0 0;
   }
@@ -1028,7 +1051,7 @@ svg.lucide.icon-lead {
     border-bottom: 0;
   }
   .app.has-inspector .overlay.bottom {
-    bottom: calc(var(--inspector-sheet-height, 0px) + 12px);
+    bottom: calc(var(--inspector-sheet-height, 0px) + var(--attribution-height, 20px) + var(--space-1));
   }
   .app.has-inspector .maplibregl-ctrl-bottom-right {
     bottom: var(--inspector-sheet-height, 0px);
@@ -1158,8 +1181,7 @@ svg.lucide.icon-lead {
 }
 
 input[type='text'],
-input[type='search'],
-input[type='date'] {
+input[type='search'] {
   width: 100%;
   min-height: var(--control-height);
   padding: var(--space-1) var(--space-2);
@@ -1188,54 +1210,72 @@ textarea:autofill {
   transition: background-color 600000s 0s;
 }
 
-/* The native calendar icon is drawn dark-on-transparent by default, which
-   disappears against the dark HUD input background. `color-scheme` and
-   `filter: invert()` on `::-webkit-calendar-picker-indicator` (tried first)
-   depend on the engine actually honouring them, and didn't render reliably
-   white everywhere it was tested (2026-09-23). So instead: paint our own
-   white calendar icon as the input's background and make the native one
-   (still there, doing the actual click-to-open) fully transparent — an
-   ordinary `background-image` on an `<input>` needs no engine-specific
-   support, unlike styling the indicator itself. */
-.app[data-theme='tech'] input[type='date'] {
-  color-scheme: dark;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='18' rx='2'/%3E%3Cline x1='16' y1='2' x2='16' y2='6'/%3E%3Cline x1='8' y1='2' x2='8' y2='6'/%3E%3Cline x1='3' y1='10' x2='21' y2='10'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 8px center;
-  background-size: 16px 16px;
-  padding-right: var(--space-6);
-}
-.app[data-theme='tech'] input[type='date']::-webkit-calendar-picker-indicator {
-  opacity: 0;
-  /* `.date-icon-btn` is the actual click target now (V-5) — this stays
-     invisible only to avoid a second, misaligned hit-box underneath it. */
-  pointer-events: none;
-}
-
-/* Input + the transparent button that opens its picker (V-5). `min-width: 0`
-   lets it shrink inside the grid track below its content's natural size (see
-   `.date-row` below) — without it the field refused to shrink past its own
-   min-content width and pushed the row wider than the panel, clipping the
-   right field's calendar icon against the panel's edge (V-8). */
+/* A day field (UI-12): a text field "2026-12-03" and, at its right end, the button that opens the calendar of its own. `min-width: 0`
+   lets it shrink inside the grid track below its content's natural size (`.date-row` below, V-8). */
 .date-field {
   position: relative;
   min-width: 0;
 }
-.date-field input[type='date'] {
+.date-field input {
   width: 100%;
   min-width: 0;
+  padding-right: calc(var(--control-height) + var(--space-1));
 }
-.date-icon-btn {
+.date-field .date-icon-btn {
   position: absolute;
   top: 0;
   right: 0;
-  width: 32px;
   height: 100%;
-  background: transparent;
-  border: none;
+  border-color: transparent;
+}
+.day-calendar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+}
+.day-calendar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1);
+}
+.day-calendar-month {
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.day-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: var(--space-0);
+}
+.day-calendar-weekday {
+  font-size: var(--text-2xs);
+  color: var(--muted);
+  text-align: center;
+}
+.day-calendar-day {
+  height: var(--control-height);
   padding: 0;
-  margin: 0;
+  border: var(--line-width) solid transparent;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--text-sm);
   cursor: pointer;
+}
+.day-calendar-day:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+/* A window too low for six rows of finger-high days (1280 x 360): the rows of a mouse, so that the month fits without scrolling. */
+@media (max-height: 480px) and (min-width: 900px) {
+  .day-calendar-day {
+    height: var(--control-height-sm);
+  }
+}
+.day-calendar-day[aria-pressed='true'] {
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 /* Lines up with the pairs above it (`.aoi-extras`,
@@ -1599,7 +1639,7 @@ textarea:autofill {
   padding: var(--space-0);
 }
 /* "‹ 1 / 3 ›" small at the right of the heading "Datasets" (Otto, 06.11.2026), not in the capitals of the heading */
-.dataset-pages {
+.pager {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
@@ -1619,11 +1659,17 @@ textarea:autofill {
   padding: 0 var(--space-2);
   text-align: left;
 }
-/* "Add dataset" (Otto, 16.11.2026): a dataset tile with the plus before its text. */
+/* "Add dataset" (Otto, 16.11.2026): in the place of a dataset tile, with the plus before its text; an action, not a dataset
+   (UI-12): a dashed edge and the muted text, the text of the panel under the pointer. */
 .dataset-toggle.add-dataset {
   flex-direction: row;
   align-items: center;
   gap: var(--space-1);
+  border-style: dashed;
+  color: var(--muted);
+}
+.dataset-toggle.add-dataset:hover {
+  color: var(--text);
 }
 /* Half the panel width: a long title wraps onto a second line (two at most); next
    to the maturity chip it keeps one, so the button stays one row high. */
@@ -2485,7 +2531,8 @@ textarea:autofill {
   position: absolute;
   z-index: 14;
   top: 0;
-  bottom: 0;
+  /* Down to the foot of the window, beside the status line (UI-12). */
+  bottom: calc(-1 * var(--status-line-height));
   left: 0;
   width: var(--rail-width);
   padding: var(--space-3) 0;
@@ -3481,41 +3528,39 @@ button.pm-open:hover {
   font-size: var(--text-sm);
 }
 
-/* --- status toasts --- */
-/* The stack spans the full 560px of `.status` and sits at the top centre, where
-   it crosses the buttons of `.top-right` on any window below roughly 1500px.
-   While every toast was transient that cost nothing; the standing zoom hint
-   (M2-10) would have swallowed the clicks in that strip permanently, "Zoom to
-   selection" first of all. So the stack itself takes no pointer events and each
-   toast takes them back — except the hint, which has nothing to click. */
+/* --- the messages of the status line --- */
+/* One row: what runs (spinner, its text while no message stands, "Stop"), then the message; a long text is cut with "…" and shows whole
+   in its tooltip (UI-12, F2). */
 .status-stack {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  pointer-events: none;
-}
-.status-stack > .toast {
-  pointer-events: auto;
+  flex: 1;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  height: 100%;
 }
 .toast {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-md);
+  gap: var(--space-2);
+  min-width: 0;
   font-size: var(--text-sm);
-  backdrop-filter: blur(10px);
-  border: 1px solid var(--panel-border);
-  /* Opaque: a message lies over a panel in a narrow window, and its text must not show through. */
-  background: linear-gradient(var(--panel-bg), var(--panel-bg)), var(--map-bg);
+}
+.toast.error,
+.toast.notice {
+  flex: 1;
+  justify-content: space-between;
+}
+.status-text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .toast.error {
-  border-color: var(--danger);
   color: var(--danger);
 }
 .toast.notice {
-  border-color: var(--accent);
   color: var(--text);
 }
 .toast.busy {
@@ -3549,6 +3594,10 @@ button.pm-open:hover {
   font-family: var(--font);
 }
 /* MapLibre attribution in the tech theme: the text of the panel on the panel's dark strip (it is always open, `ATTRIBUTION_CONTROL`). */
+/* The attribution stays on the free map: it never runs under the rail or an open panel (UI-12 (2)). */
+.app .maplibregl-ctrl-attrib {
+  max-width: calc(100vw - var(--map-left) - var(--map-right));
+}
 .app[data-theme='tech'] .maplibregl-ctrl-attrib {
   background: var(--panel-bg);
   color: var(--text);
@@ -3733,11 +3782,6 @@ button.pm-open:hover {
   /* A band-math expression is code. */
   font-family: var(--font-mono);
 }
-/* The bottom bar (selection, time slider) centred in the map left of the side bar. */
-.bottom.beside-sheet {
-  left: calc((100% + var(--rail-width) - var(--sheet-wide-width)) / 2);
-  width: min(760px, calc(100vw - var(--rail-width) - var(--sheet-wide-width) - var(--space-6)));
-}
 /* In the column of the settings bar: flush with the edge and the foot, a line on the left, no corners. */
 @media (min-width: 900px) {
   .processing-sheet .processing-panel {
@@ -3791,8 +3835,6 @@ button.pm-open:hover {
     display: block;
   }
   .bottom.beside-sheet {
-    left: calc((100% + var(--rail-width)) / 2);
-    width: min(760px, calc(100vw - var(--rail-width) - var(--space-6)));
     bottom: calc(60vh + var(--space-3));
   }
   /* The sheet lies over the lower edge: the badge sits above it, left. */
@@ -4281,7 +4323,7 @@ button.pm-open:hover {
    the title "Legend", which folds it, and the choice of the layer. It never scrolls: a long list of classes takes two columns. --- */
 .overlay.map-legend {
   left: calc(var(--map-left, var(--rail-width)) + var(--space-4));
-  bottom: calc(20px + var(--legend-lift, 0px));
+  bottom: calc(var(--attribution-height, 20px) + var(--space-1) + var(--legend-lift, 0px));
   /* Left of the column of the map buttons at the bottom right (`.map-controls-host`), never under it. */
   max-width: min(
     440px,
@@ -4290,7 +4332,7 @@ button.pm-open:hover {
         2 * var(--line-width) - var(--space-3) - var(--space-2)
     )
   );
-  max-height: calc(100% - 20px - var(--legend-lift, 0px) - var(--space-4));
+  max-height: calc(100% - var(--attribution-height, 20px) - var(--space-1) - var(--legend-lift, 0px) - var(--space-4));
   display: flex;
   flex-direction: column;
   gap: var(--space-1-5);
@@ -4298,8 +4340,28 @@ button.pm-open:hover {
 }
 @media (max-width: 899px) {
   .app.has-inspector .overlay.map-legend {
-    bottom: calc(var(--inspector-sheet-height, 0px) + 12px + var(--legend-lift, 0px));
+    bottom: calc(var(--inspector-sheet-height, 0px) + var(--attribution-height, 20px) + var(--space-1) + var(--legend-lift, 0px));
   }
+}
+/* The legend never goes away (Otto, 25.11.2026): where an open panel would cover its place (a narrow window) or not even its title fits on
+   the map, its title stands at the left end of the status line, which nothing covers, and the box opens upwards from there, over what lies
+   above it, until its title folds it again (`MapLegend.tsx`, `legendPlace`). */
+.app .overlay.map-legend.docked,
+.app.has-inspector .overlay.map-legend.docked {
+  position: fixed;
+  z-index: 15;
+  left: var(--rail-width);
+  bottom: 0;
+  max-height: calc(100vh - var(--space-4));
+  max-width: min(440px, calc(100vw - var(--rail-width)));
+}
+.overlay.map-legend.docked:not(.unfolded) .legend {
+  justify-content: center;
+  height: var(--status-line-height);
+  padding-top: 0;
+  padding-bottom: 0;
+  border-width: 0 var(--line-width) 0 0;
+  border-radius: 0;
 }
 .legend {
   display: flex;

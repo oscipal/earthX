@@ -498,7 +498,7 @@ describe('AcquisitionDateFields: a dataset without a time axis', () => {
   };
 
   function dateInputs(): HTMLInputElement[] {
-    return [...container.querySelectorAll('.date-field input[type="date"]')] as HTMLInputElement[];
+    return [...container.querySelectorAll('.date-field input')] as HTMLInputElement[];
   }
 
   it('disables both date fields and names the acquisition period in their tooltip, not under them', () => {
@@ -581,7 +581,7 @@ describe('AcquisitionDateFields: the days of the ticked datasets', () => {
   });
   const OPTICAL = timed('optical', ['2015-06-27T10:25:31Z', null]);
   const RADAR = timed('radar', ['2014-10-03T00:00:00Z', '2021-12-23T23:59:59Z']);
-  const inputs = () => [...container.querySelectorAll('.date-field input[type="date"]')] as HTMLInputElement[];
+  const inputs = () => [...container.querySelectorAll('.date-field input')] as HTMLInputElement[];
   const leave = (input: HTMLInputElement, value: string) =>
     act(() => {
       useAppStore.getState()[input.getAttribute('aria-label') === 'From date' ? 'setDateFrom' : 'setDateTo'](value);
@@ -861,6 +861,8 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
       act(() => useAppStore.setState({ catalogueOpen: false }));
       act(() => addTile().click());
       expect(useAppStore.getState().catalogueOpen).toBe(true);
+      // UI-12 (7): with the filter "Addable only" on, the other filters as they were.
+      expect(useAppStore.getState().catalogueFilter).toMatchObject({ addableOnly: true, bySearchPanel: false });
       act(() => addTile().click());
       expect(useAppStore.getState().catalogueOpen).toBe(true);
     });
@@ -1036,7 +1038,7 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
 
   describe('the date fields', () => {
     function dateInputs(): HTMLInputElement[] {
-      return [...container.querySelectorAll('.date-field input[type="date"]')] as HTMLInputElement[];
+      return [...container.querySelectorAll('.date-field input')] as HTMLInputElement[];
     }
 
     it('stay usable while one ticked dataset has a time axis, and name each one without behind an (i)', () => {

@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import index from './index.css?raw';
+import tokens from './tokens.css?raw';
 
 const withoutComments = (css: string) => css.replace(/\/\*[\s\S]*?\*\//gu, '');
 const css = withoutComments(index);
@@ -17,30 +18,27 @@ export function ruleOf(sheet: string, selector: string, inMedia?: string): strin
 
 const zIndex = (sheet: string, selector: string): number => Number(/z-index:\s*(\d+)/u.exec(ruleOf(sheet, selector))?.[1] ?? Number.NaN);
 
-describe('the message of the status bar in a narrow window', () => {
-  it('lies over the panel of the rail, the settings bar and the sheet, and under the rail, below 900 px only', () => {
-    const narrow = '@media (max-width: 899px)';
-    const status = Number(/z-index:\s*(\d+)/u.exec(ruleOf(css, '.overlay.status', narrow))?.[1] ?? Number.NaN);
-    expect(status).toBeGreaterThan(zIndex(css, '.dock'));
-    expect(status).toBeGreaterThan(zIndex(css, '.inspector.panel'));
-    expect(status).toBeLessThan(zIndex(css, '.app-rail'));
-    // A wide window keeps the message beside the panel, where it never meets it: no rule lifts it there.
-    expect(ruleOf(css, '.status')).not.toContain('z-index');
+// UI-12 (3), F1 and F2 (replaces the message over the panels of a narrow window, backlog item 58): the status is a line at the foot of the
+// window, the same in every window. The app ends above it, so no panel covers it and it covers none.
+describe('the status line', () => {
+  it('stands at the foot right of the rail, one control high, in every window', () => {
+    const rule = ruleOf(css, '.overlay.status');
+    for (const part of ['position: fixed', 'left: var(--rail-width)', 'right: 0', 'bottom: 0', 'height: var(--status-line-height)']) expect(rule).toContain(part);
+    expect(tokens).toMatch(/--status-line-height:\s*var\(--control-height\)/u);
+    expect(ruleOf(css, '.overlay.status', '@media (max-width: 899px)')).toBe('');
   });
 
-  it('stands under the buttons at the top right below 900 px, one control high and one gap below them', () => {
-    const top = ruleOf(css, '.overlay.status', '@media (max-width: 899px)');
-    expect(top).toContain('top: calc(var(--space-4) + var(--control-height) + var(--space-2))');
-    // The wide window keeps its place at the top.
-    expect(ruleOf(css, '.status')).toContain('top: 16px');
+  it('has a place of its own: the app ends above it, the rail reaches down beside it', () => {
+    expect(ruleOf(css, '.app')).toContain('height: calc(100vh - var(--status-line-height))');
+    expect(ruleOf(css, '.app-rail')).toContain('bottom: calc(-1 * var(--status-line-height))');
+    expect(zIndex(css, '.overlay.status')).toBeGreaterThan(zIndex(css, '.dock'));
+    expect(zIndex(css, '.overlay.status')).toBeGreaterThan(zIndex(css, '.inspector.panel'));
   });
 
-  it('is opaque: a message over a panel does not show the panel through', () => {
-    expect(ruleOf(css, '.toast')).toMatch(/background:\s*linear-gradient\(var\(--panel-bg\), var\(--panel-bg\)\), var\(--map-bg\)/u);
-  });
-
-  it('is no wider than the map right of the rail', () => {
-    expect(ruleOf(css, '.status')).toContain('width: min(560px, calc(100vw - var(--rail-width) - 16px))');
+  it('is opaque, and cuts a long text in one row instead of growing', () => {
+    expect(ruleOf(css, '.overlay.status')).toMatch(/background:\s*linear-gradient\(var\(--panel-bg\), var\(--panel-bg\)\), var\(--map-bg\)/u);
+    const text = ruleOf(css, '.status-text');
+    for (const part of ['white-space: nowrap', 'text-overflow: ellipsis', 'overflow: hidden']) expect(text).toContain(part);
   });
 });
 

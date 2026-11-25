@@ -265,7 +265,7 @@ function OutputBands({ view }: { view: OrderView }) {
       )}
       <p className="pp-summary" aria-label="Data type">
         Data type: <strong>{view.dtype}</strong>
-        {view.dtypeChosen ? ' (your choice)' : ' (chosen automatically)'}
+        {!view.dtypeChosen && ' (chosen automatically)'}
       </p>
       {view.dtypeAutomatic && !view.dtypeChosen && <span className="hint">{view.dtypeAutomatic.reason}</span>}
       <details className="pp-details">

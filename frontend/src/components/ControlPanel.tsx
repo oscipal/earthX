@@ -5,7 +5,7 @@ import { readAoiFile } from '../aoiFile';
 import { completenessNote } from '../coverage';
 import { barInRange, histogramBars } from '../coverageHistogram';
 import { DATASETS_PER_ROW, pageCount, pageOf, pageSlice, rowsThatFit, START_DATASET_ROWS } from '../datasetPages';
-import { clampDay, dateBounds, todayUtc, type DayBounds } from '../dateBounds';
+import { dateBounds, todayUtc } from '../dateBounds';
 import { acquisitionNote, maturityLabel, maturityNote, type DatasetOption } from '../datasets';
 import { CATALOGUE_ID } from '../dock';
 import { bufferPointToPolygon, polygonBbox } from '../geoUtils';
@@ -14,73 +14,14 @@ import { focusFirstItem } from '../popover';
 import { totalItems } from '../sections';
 import { searchFiltersInvalid, useAppStore } from '../store';
 import AdvancedSearch from './AdvancedSearch';
+import { DateField } from './DateField';
 import ClearableInput from './ClearableInput';
-import { ChevronLeftIcon, ChevronRightIcon, CoverageIcon, HistoryIcon, PlusIcon, UploadIcon } from './icons';
+import { CoverageIcon, HistoryIcon, PlusIcon, UploadIcon } from './icons';
+import Pager from './Pager';
 import Popover from './Popover';
 import Tip from './Tip';
 import Toolbar from './Toolbar';
 import { counted } from '../plural';
-
-// A date input plus a transparent button covering its calendar icon
-// (V-5). The tech theme draws its own icon and hides the native
-// `::-webkit-calendar-picker-indicator` behind `padding-right`, but that
-// padding also pushes the engine's real (invisible) hit-box for the
-// indicator inward, out from under the icon we draw at a fixed offset —
-// clicking the visible icon then misses the part that actually opens the
-// picker. `showPicker()` sidesteps the mismatch instead of chasing it
-// pixel by pixel.
-//
-// UI-05 §3.3: the calendar offers only the days of the chosen datasets (`min`/`max`); a day typed outside them is moved
-// onto the nearest one when the field is left.
-export function DateField({
-  value,
-  onChange,
-  label,
-  disabled,
-  bounds,
-  lockReason,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  label: string;
-  disabled?: boolean;
-  bounds: DayBounds | null;
-  lockReason?: string;
-}) {
-  const ref = useRef<HTMLInputElement>(null);
-  return (
-    <div className="date-field">
-      <input autoComplete="off"
-        ref={ref}
-        type="date"
-        value={value}
-        min={bounds?.min ?? undefined}
-        max={bounds?.max ?? undefined}
-        onChange={(e) => onChange(e.target.value)}
-        onBlur={(e) => {
-          const day = clampDay(e.target.value, bounds);
-          if (day !== e.target.value) onChange(day);
-        }}
-        aria-label={label}
-        disabled={disabled}
-        data-tip={disabled ? lockReason : undefined}
-      />
-      <button
-        type="button"
-        className="date-icon-btn"
-        tabIndex={-1}
-        aria-label={`Open the ${label.toLowerCase()} calendar`}
-        disabled={disabled}
-        onClick={() => {
-          const input = ref.current;
-          if (!input) return;
-          if (typeof input.showPicker === 'function') input.showPicker();
-          else input.focus();
-        }}
-      />
-    </div>
-  );
-}
 
 // M3-12, F6 (Otto, 26.09.2026): a dataset without a time axis
 // (`capabilities.time_range=False`, the DEM) answers a search the same for
@@ -395,13 +336,13 @@ function MultiSelectToggle() {
 const ADD_DATASET = Symbol('add dataset');
 
 function AddDatasetTile() {
-  const openCatalogue = useAppStore((s) => s.openCatalogue);
+  const openCatalogueToAdd = useAppStore((s) => s.openCatalogueToAdd);
   return (
     <button
       type="button"
       className="btn dataset-toggle add-dataset"
       aria-controls={CATALOGUE_ID}
-      onClick={openCatalogue}
+      onClick={openCatalogueToAdd}
     >
       <PlusIcon lead size={14} />
       <span className="dataset-toggle-title">Add dataset</span>
@@ -468,45 +409,13 @@ function DatasetPicker() {
   });
 
 
-  const first = shownPage === 0;
-  const last = shownPage === pages - 1;
   return (
     <>
       <div className="field-label dataset-label">
         <span>
           Datasets
           <MaturityTip />
-          <span className="dataset-pages" role="group" aria-label="Pages of datasets">
-            <button
-              type="button"
-              className="icon-btn sm"
-              aria-label="Previous page"
-              aria-disabled={first || undefined}
-              data-tip-level="advanced"
-              data-tip={first ? 'Already on the first page' : 'Previous page'}
-              onClick={() => {
-                if (!first) setPage(shownPage - 1);
-              }}
-            >
-              <ChevronLeftIcon size={14} />
-            </button>
-            <span className="dataset-page-count">
-              {shownPage + 1} / {pages}
-            </span>
-            <button
-              type="button"
-              className="icon-btn sm"
-              aria-label="Next page"
-              aria-disabled={last || undefined}
-              data-tip-level="advanced"
-              data-tip={last ? 'Already on the last page' : 'Next page'}
-              onClick={() => {
-                if (!last) setPage(shownPage + 1);
-              }}
-            >
-              <ChevronRightIcon size={14} />
-            </button>
-          </span>
+          <Pager label="Pages of datasets" className="dataset-pages" page={shownPage} pages={pages} onPage={setPage} />
         </span>
         <MultiSelectToggle />
       </div>

@@ -105,6 +105,14 @@ async function setLayers(page, layers, dock) {
 }
 
 const box = (page) => page.locator('.map-legend .legend');
+// Where the map is too low for it or a panel would cover it, it stands folded, on the map or as its title in the status line (UI-12, Otto
+// 25.11.2026): a person opens it by its title.
+async function openFolded(page) {
+  if (await page.locator('.map-legend.folded:not(.unfolded), .map-legend.docked:not(.unfolded)').count()) {
+    await page.locator('.map-legend .legend-title').click();
+    await page.waitForTimeout(150);
+  }
+}
 const shownTitle = (page) => page.locator('.legend-choice').evaluate((el) => el.options[el.selectedIndex]?.textContent ?? null).catch(() => null);
 
 async function check(browser, { count, panel, theme, viewport }) {
@@ -113,6 +121,7 @@ async function check(browser, { count, panel, theme, viewport }) {
   const { context, page } = await open(browser, theme, viewport, problems);
   const layers = LAYERS.slice(0, count);
   await setLayers(page, layers, panel ? 'controls' : null);
+  await openFolded(page);
   if ((await box(page).count()) !== 1) problems.push(`${await box(page).count()} boxes instead of one`);
   const title = await page.locator('.map-legend .legend-title').textContent();
   if (title !== 'Legend') problems.push(`the title is "${title}"`);
@@ -146,16 +155,18 @@ async function check(browser, { count, panel, theme, viewport }) {
     const wide = size.width >= 900;
     const rail = await page.locator('.app-rail').boundingBox();
     const dock = panel ? await page.locator('.dock').boundingBox() : null;
-    const left = (wide && dock ? dock.x + dock.width : rail.x + rail.width) + 16;
+    // Docked (UI-12): its title at the left end of the status line, opened by hand over what lies above it (`ui-12-layout.cjs` checks it).
+    const docked = (await page.locator('.map-legend.docked').count()) > 0;
+    const left = (wide && dock ? dock.x + dock.width : rail.x + rail.width) + (docked ? 0 : 16);
     if (own && Math.abs(own.x - left) > 1) problems.push(`${layer.name}: the legend stands at x=${own.x}, not beside the panel at ${left}`);
     const controls = ['.app-rail', '.inspector', '.map-controls-host', '.overlay.top-right > *', '.preview-badge-dock > *', '.overlay.bottom > *', ...(wide ? ['.dock'] : [])];
-    for (const selector of controls) {
+    for (const selector of docked ? [] : controls) {
       for (const other of await page.locator(selector).all()) {
         const b = await other.boundingBox();
         if (b && own && b.width > 0 && overlap(own, b)) problems.push(`${layer.name}: the legend covers ${selector}`);
       }
     }
-    if (!wide && panel && own) {
+    if (!wide && panel && own && !docked) {
       const under = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('.dock') !== null, { x: own.x + own.width / 2, y: own.y + own.height / 2 });
       if (!under) problems.push(`${layer.name}: in a narrow window the legend lies over the open panel`);
     }
@@ -171,6 +182,7 @@ async function follow(browser, { theme, viewport }) {
   const size = VIEWPORTS[viewport];
   const { context, page } = await open(browser, theme, viewport, problems);
   await setLayers(page, LAYERS, 'layers');
+  await openFolded(page);
 
   // The layer manager with three layers never scrolls: the legends fold from the bottom up where they do not fit.
   const list = page.locator('.layer-list');
@@ -221,6 +233,7 @@ async function follow(browser, { theme, viewport }) {
   });
   await page.waitForTimeout(150);
   if ((await shownTitle(page)) !== 'Land cover (made up)') problems.push(`a view opened at the top shows ${await shownTitle(page)} in the legend, not itself`);
+  // It never goes away (UI-12, Otto 25.11.2026): on the map, folded there, or its title in the status line; always in the window.
   if (!(await page.locator('.map-legend').boundingBox().then((b) => b && inWindow(b, size)))) problems.push('with the view the legend leaves the window');
   await page.screenshot({ path: path.join(OUT, `view-${theme}-${viewport}.png`) });
   await context.close();
