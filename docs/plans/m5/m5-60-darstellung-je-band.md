@@ -1,6 +1,6 @@
 # M5-60 — Darstellung je Band
 
-**Stand:** 21.11.2026, Plan **angenommen** (Otto, 21.11.2026: F1–F7 je Option 1, A1–A5; Vorgabe zum gemessenen Bereich §11; Histogramm für PR 2 §12). PR 1 (Backend, #396) gemergt (§13, §14); PR 2 (Frontend) umgesetzt am 24.11.2026 (§13.4, §13.6); F10 als Folgeaufgabe M5-68 (§13.7).
+**Stand:** 25.11.2026 (Nachtrag M5-68, §15, Fragen F11–F14 offen); 21.11.2026, Plan **angenommen** (Otto, 21.11.2026: F1–F7 je Option 1, A1–A5; Vorgabe zum gemessenen Bereich §11; Histogramm für PR 2 §12). PR 1 (Backend, #396) gemergt (§13, §14); PR 2 (Frontend) umgesetzt am 24.11.2026 (§13.4, §13.6); F10 als Folgeaufgabe M5-68 (§13.7).
 **Stufe B.** Höchstens zwei PRs (M5-Plan §2 Punkt 11).
 **Aufgabe (Otto, 21.11.2026; M5-Plan §6.2):**
 
@@ -381,3 +381,70 @@ Heute betroffen ist kein Eintrag: Die Standardbilder aus einem Band (Höhen, Met
 Wirkung auf die heutigen Einträge: keine Änderung der Looks (§6). Sentinel-2 hat kein Standardbild aus einem Band mit Farbskala; Sentinel-1 (`first_present` `vv`/`hh`) hat keine Farbskala im Standardbild und nimmt deshalb keine Stufe 3.
 
 Tests (`backend/tests/catalog/test_band_looks.py`, `TestTheScaling`): Skalierung von Sentinel-2; Band ohne Skalierung; synthetisches skaliertes Standardband (1000…4000 gespeichert → 0…0,3, auch in der Collection); `first_present` mit übereinstimmenden Bereichen; verschiedene Bereiche → Abbruch mit Meldung; eigene `band_looks` für alle betroffenen Bänder → lädt; eines fehlt → Abbruch, das fehlende genannt; falsche Skalierung (unbekanntes Band, 0, negativ, NaN, ∞) und Klassenband → lädt nicht; strenges Lesen aus der YAML. Angepasst: `synthetic_zarr.py` (leitet sich von Sentinel-2 ab, ohne dessen Bänder, also ohne Skalierung), `test_entry_files.py`.
+
+## 15. Nachtrag M5-68 (25.11.2026): überall physikalische Werte
+
+**Aufgabe (Otto, 25.11.2026, Stufe B):** Bei skalierten Bändern (Sentinel-2: gespeicherter Wert × 0,0001 − 0,1) zeigen Histogramm, Felder „Scale“, „Auto-scale“, Perzentile und Legende dieselben, physikalischen Werte. Die Umrechnung geschieht an einer Stelle an der Grenze zum Tiler. Alte Permalinks, gespeicherte Looks und Rezepte bleiben lesbar, der Hash bestehender Rezepte bleibt gleich. Ergebnis-Items sagen je Band selbst, ob es den Look der Quelle erbt (ersetzt A9). Processing-Felder, die Werte nehmen, zeigen und nehmen physikalische Werte. Grundlage: §13.7, F10, A9; `adr/0035`; `ui/leitfaden.md`. Die Fragen zählen im Plan weiter (F11 …, A12 …), damit sie sich nicht mit F1–F10 vermischen.
+
+### 15.1 Befund [P, M]
+
+| Stelle | in welchen Werten heute |
+|---|---|
+| Kacheln von Szene, Mosaik und Übersicht **ohne** Schritte (`asset=…`, `buildTileUrl`) | **gespeichert**: rio-tiler zeichnet die Zahlen der Datei; `rescale` in gespeicherten Werten |
+| Statistik der Szene ohne Schritte (`GET …/statistics?asset=…`) | **gespeichert** |
+| Kacheln und Statistik **mit** Schritten (Index, Quick processing, Vorschau eines Auftrags), Mosaik mit Schritten | physikalisch: dieselbe Skalierung wie der Job (`processing/scaling.py::apply_scaling`, `adr/0014` §5.4) |
+| Messung über die AOI (`POST …/statistics`) | physikalisch; `viewMeasure.ts::inRawValues` rechnet sie heute für die Felder in gespeicherte zurück |
+| Job und Ergebnis | physikalisch: der Kern wendet `scale`/`offset` an, ein skaliertes Band wird `float32` (`core.py::_source_meta`) |
+| „Mask by value“, Normalize „From“, Perzentile von Normalize | physikalisch: sie vergleichen bzw. rechnen auf dem Bestand des Kerns, und die Vorschau misst über die AOI- bzw. Operator-Route |
+| Legende | physikalisch (M5-60 PR 2: Bereich der Kachel-URL mit `DownloadedInfo.scalings` umgerechnet) |
+| `default_render.rescale` der Registry | gespeichert (Bereich des Tilers; heute bei keinem Eintrag skaliert: Sentinel-2 zeichnet `visual` (TCI, `uint8`), Sentinel-1 `DN`, die übrigen sind unskaliert) |
+
+**Was gespeichert wird** [P]: Permalinks halten Auftrag und Bereich der Vorschau (`permalinkRange.ts`), die Vorschau zeichnet immer über die Operator-Route, also physikalisch. Die Ablage der Jobs (`earthx.processing.manager`) hält Aufträge und den Bereich je Ergebnis, beide physikalisch. Die Looks der Ansicht (`viewLooks`, `savedLooks`, `restore.appliedRender` der Ebenen) leben nur im Speicher der Seite und überdauern kein Neuladen. **Kein gespeicherter Stand enthält also gespeicherte Werte**; die einzigen stehen in `default_render` der Registry.
+
+Damit ist Punkt 4 der Aufgabe im Rechnen schon erfüllt: Rezepte enthalten physikalische Werte, seit es Skalierung im Kern gibt. Bestehende Rezepte ändern sich nicht, ihr Hash auch nicht (A12).
+
+### 15.2 Vorschlag
+
+**Ein Satz:** Im Frontend ist jeder Bereich physikalisch; gespeicherte Werte gibt es nur in der Kachel-URL einer Route ohne Schritte und in der Antwort ihrer Statistik, und beide rechnet je eine Funktion an der Grenze zum Tiler um.
+
+1. **Kacheln** (`mapLayers.ts::buildTileUrl`, die eine Stelle, die jede Kachel-URL baut): bekommt die Skalierung des Bilds, das sie zeichnet (`PlannedRaster.scaling` bzw. `DownloadedInfo.scalings[asset]`). Zeichnet die URL gespeicherte Werte (kein `op`, kein `expression`) und ist der Bereich physikalisch, rechnet sie jedes `rescale`-Paar in gespeicherte Werte um: `(x − offset) / scale`. Kachelrouten, Kachel-URLs der Ebenen und Cache des Tilers bleiben unverändert; die Abbildung ist linear und steigend, das Bild also genau dasselbe.
+2. **Messung** (`viewMeasure.ts::measureView`): liefert physikalische Werte. Die AOI-Route bleibt, wie sie antwortet (`inRawValues` entfällt); die Statistik der Szene wird mit der Skalierung des gemessenen Assets in physikalische umgerechnet (`ViewMeasure.scaling`). Damit sind Histogramm, „Auto-scale“, „Enhance contrast“ und Perzentile physikalisch, ohne dass sie selbst etwas wissen.
+3. **Woher die Skalierung kommt:** aus `raster:bands` des Items, wo das Bild aus Items gezeichnet wird (Szene, Mosaik; die Szenen eines Mosaiks sind gleich skaliert, das prüft der Tiler); aus `band_scaling` der Registry, wo kein Item da ist (Übersicht bzw. Pyramide unter `min_zoom`), veröffentlicht je Band als `earthx:scaling` in `earthx:bands`. Fehlt beides, gilt unskaliert (A5).
+4. **Kennzeichen** (F12): `AppliedRender.stored: true` heißt „`rescale` in gespeicherten Werten“; nur das Standardbild der Registry trägt es (`render.ts::appliedRenderFrom`). Die Ansicht hebt es beim Öffnen einmal mit der Skalierung des ersten Bilds in physikalische Werte (`physicalRender`), die Vorschau beim Durchblättern zeichnet es, wie es ist. Fehlt das Kennzeichen, ist der Bereich physikalisch: so lesen sich alle Permalinks und Ergebnisse unverändert.
+5. **Band-Look** (`chooseViewBand`, `fixedRangeOf`): ein fester Look steht schon physikalisch in der Collection und geht ohne Umrechnung in die Felder.
+6. **Look-Erbe vom Worker** (F13): Der Kern schreibt je Band des Ergebnisses `earthx:source_values: true`, wenn kein Schritt die Werte des gleichnamigen Bands der Quelle geändert hat, nach derselben Regel wie bei den Klassen (`_keep_classes`: ein Schritt, der Werte weitergibt, ändert keines; sonst das Band, das er hinzufügt (`BandUse.adds`), die Bänder, auf die er wirkt (`acts_on`), oder alle). Das Frontend nimmt dann den Look dieses Bands aus der Collection des Datensatzes; `processingDefaults.ts::keepsValuesOf` und A9 entfallen.
+
+Nicht Teil: die Einheit in den Feldern (keine neuen Texte), Klassenbänder (Codes, nie skaliert, `_check_band_scaling`), der QGIS-Stil (M5-64 bekommt den Bereich ohnehin physikalisch).
+
+### 15.3 Fragen an Otto
+
+**F11 — Wo die Umrechnung sitzt**
+1. Im Frontend an den zwei Stellen, die mit dem Tiler sprechen: `buildTileUrl` (Kachel-URL) und `measureView` (Statistik der Szene), wie §15.2. Kachelrouten, URLs der Ebenen und Cache bleiben gleich; kein Backend-Eingriff in die vier Kachel-Fabriken. **(Empfehlung)**
+2. Im Backend: Kachel- und Statistikrouten von Szene, Mosaik und Übersicht nehmen den Bereich physikalisch (neuer Parameter) und rechnen mit `raster:bands` des Items um. Eine Stelle je Route, aber Eingriff in TiTilers Abhängigkeiten von vier Fabriken; das Frontend bräuchte den Parameter trotzdem, damit alte Ebenen-URLs gespeichert bleiben.
+
+**F12 — Kennzeichen für alte Stände**
+1. Kennzeichen nur am gespeicherten Bereich (`stored: true`, heute nur das Standardbild der Registry); fehlt es, ist der Bereich physikalisch. Nach dem Befund §15.1 sind alle gespeicherten Stände schon physikalisch und lesen sich unverändert. **(Empfehlung)**
+2. Kennzeichen am physikalischen Bereich (`physical: true`), fehlt es → gespeichert. Läse jeden Permalink und jedes Ergebnis falsch, die schon physikalisch sind.
+3. Versionsnummer an Permalink und Ablage der Jobs. Nichts zu migrieren, nur zusätzliche Felder.
+
+**F13 — Wie das Ergebnis-Item das Look-Erbe sagt**
+1. Je Band `earthx:source_values: true` in `properties.bands`, gesetzt vom Kern nach `BandUse` (§15.2 Punkt 6). Ergebnisse von vorher tragen es nicht und erben keinen Look mehr (übliche Messung), das Frontend schätzt nicht. **(Empfehlung)**
+2. Der Kern schreibt den Look selbst (`earthx:look`) ins Item. Dafür müsste das Rezept den Look tragen (Hash ändert sich) oder der Kern die Registry lesen (das Ergebnis hinge dann an mehr als dem Rezept, B9).
+3. Wie 1, aber Ergebnisse ohne das Feld weiter nach A9 schätzen.
+
+**F14 — Schnitt**
+1. Ein PR (Plan, Backend: Feld im Ergebnis und `earthx:scaling`; Frontend), wenn er unter etwa 400 Zeilen ohne Tests bleibt, sonst Backend und Frontend getrennt. **(Empfehlung)**
+2. Immer zwei PRs.
+
+### 15.4 Auslegungen (gelten, wenn du nicht widersprichst)
+
+- **A12 — Processing-Felder und Rezepte:** „Mask by value“, Normalize „From“ und jede andere Zahl eines Schritts, die für Werte des Bands steht, sind und bleiben physikalisch, weil der Kern vor dem ersten Schritt skaliert. Bestehende Rezepte bedeuten dasselbe wie bisher, ihr Hash bleibt; ein Test hält fest, dass „Mask by value“ auf einem skalierten Band physikalisch vergleicht. Wer früher in einem Rezept gespeicherte Werte eingetragen hat (z. B. 3000 statt 0,2), hatte schon damals eine Maske in physikalischen Werten; daran ändert M5-68 nichts.
+- **A13 — Rundung:** Physikalische und zurückgerechnete Zahlen auf zwölf signifikante Stellen, wie `BandScaling.physical` im Backend (1200 → 0,02, nicht 0,020000000000000004).
+- **A14 — Verschieden skalierte Szenen einer Ansicht:** Ein physikalischer Bereich passt auf alle; jede Kachel rechnet mit der Skalierung ihrer Szene. Die Messung über die AOI lehnt solche Szenen deshalb nicht mehr ab (bisher „The scenes of this image are scaled differently …“).
+- **A15 — Ergebnis ohne Kopie des Auftrags:** Ein Band mit `earthx:source_values` braucht die Collection des Datensatzes; ohne Auftrag (Job aus einer anderen Sitzung ohne Kopie) bleibt es bei der üblichen Messung, wie bisher.
+
+### 15.5 Tests und Checks
+
+- Backend: `earthx:source_values` (ohne Schritt, Schritt gibt Werte weiter, Band math daneben, Normalize auf einem von zwei Bändern, Schritt ohne Bandangabe, Band math überschreibt ein Band gleichen Namens; skaliertes Band → `float32` und trotzdem Erbe); `earthx:scaling` in der Collection (nur skalierte Bänder); „Mask by value“ auf skaliertem Band vergleicht physikalisch.
+- Frontend: Umrechnung in `buildTileUrl` (ein Paar, drei Paare, Route mit `op`/`expression` unberührt, `stored` unberührt, ohne Skalierung unberührt, Rundung); Messung der Szene physikalisch, AOI unverändert; Band-Look fest ohne Umrechnung; Standardbild gehoben; Ergebnisband erbt nur mit Feld.
+- Browser (`frontend/e2e/band-look.cjs`): Sentinel-2 `red` – Histogramm, Felder und Legende 0,02–0,24, Kachel-URL 1200–3400; Sentinel-1, MeteoSwiss, swissALTI3D, Ergebnis-Ebene, alter Permalink; hell und dunkel; 1280×800, 1280×360, 360×740.
