@@ -448,3 +448,20 @@ Nicht Teil: die Einheit in den Feldern (keine neuen Texte), Klassenbänder (Code
 - Backend: `earthx:source_values` (ohne Schritt, Schritt gibt Werte weiter, Band math daneben, Normalize auf einem von zwei Bändern, Schritt ohne Bandangabe, Band math überschreibt ein Band gleichen Namens; skaliertes Band → `float32` und trotzdem Erbe); `earthx:scaling` in der Collection (nur skalierte Bänder); „Mask by value“ auf skaliertem Band vergleicht physikalisch (besteht schon: `test_mask_values.py::test_a_band_of_the_data_decides_just_the_same`, Schwelle 0,2 auf Reflexion mit 0.0001/−0.1).
 - Frontend: Umrechnung in `buildTileUrl` (ein Paar, drei Paare, Route mit `op`/`expression` unberührt, `stored` unberührt, ohne Skalierung unberührt, Rundung); Messung der Szene physikalisch, AOI unverändert; Band-Look fest ohne Umrechnung; Standardbild gehoben; Ergebnisband erbt nur mit Feld.
 - Browser (`frontend/e2e/band-look.cjs`): Sentinel-2 `red` – Histogramm, Felder und Legende 0,02–0,24, Kachel-URL 1200–3400; Sentinel-1, MeteoSwiss, swissALTI3D, Ergebnis-Ebene, alter Permalink; hell und dunkel; 1280×800, 1280×360, 360×740.
+
+### 15.6 Umsetzung (25.11.2026, nach den Empfehlungen F11–F14 = 1)
+
+Ein PR (F14 = 1): rund 280 geänderte Zeilen ohne Tests und Doku.
+
+| Teil | Stelle |
+|---|---|
+| Ergebnis-Item: `earthx:source_values: true` je Band, dessen Werte kein Schritt geändert hat; `_changed_bands` ist die eine Regel für Klassen und Look-Erbe | `backend/earthx/processing/core.py` (`_changed_bands`, `_source_values`, `_properties`) |
+| Collection: `earthx:scaling` je skaliertem Band aus `band_scaling` | `backend/earthx/catalog/collection.py` |
+| Umrechnung physikalisch → gespeichert für die Kachel-URL (`storedRescale`, aufgerufen nur in `buildTileUrl`), Skalierung des Bilds (`scalingOfRaster`: Szene aus `DownloadedInfo.scalings`, Mosaik aus der ersten Szene, Übersicht aus `earthx:scaling`) | `frontend/src/viewMeasure.ts`, `mapLayers.ts`, `mosaic.ts`, `store.ts::loadMosaic`, `overviewSubstitute.ts`, `viewBand.ts::scalingOfBand`, `searchLayers.ts`, `mapLegend.ts` |
+| Messung physikalisch: Szene über `ViewMeasure.scaling` (`inPhysicalValues`), AOI wie geantwortet (`inRawValues` entfällt); verschieden skalierte Szenen werden über die AOI gemessen (A14) | `frontend/src/viewMeasure.ts`, `store.ts::measureOfView` |
+| Kennzeichen `stored` am Standardbild der Registry, gehoben mit `physicalRender` in `defaultLookOf`; Band-Look fest ohne Umrechnung (`fixedRangeOf`) | `frontend/src/render.ts`, `types.ts`, `store.ts`, `viewBand.ts` |
+| Rundung auf zwölf signifikante Stellen (A13) | `frontend/src/numberFormat.ts::significant` |
+| Look-Erbe aus dem Item (`resultBands`), `keepsValuesOf` entfällt | `frontend/src/resultLayer.ts`, `processingStore.ts`, `processingDefaults.ts` |
+| Leitfaden §9 und Prüfungen, `adr/0035` §6 | `docs/` |
+
+**Befund aus dem Browser-Check:** Bei 360×740 steht die Legende seit UI-12 eingeklappt in der Statuszeile; der Check öffnet sie über ihren Titel (auf `main` scheiterte der alte Check dort ebenso). swissALTI3D zeigt beim Zoom des Checks die Übersicht; Kacheln des Bands verlangt der Check nur für ein skaliertes Band.
