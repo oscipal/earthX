@@ -1,0 +1,349 @@
+# Approval of a run of the harvest (adr/0033 §8; M5-20 plan §12), written by `discovery report`. Check the sample in
+# the report beside this file: open each link, compare licence, publisher, access, extent and that it is geodata; set
+# `ok: true` or `ok: false` for every entry. Then set `decision` (approved or rejected) and `decided_on` (the day).
+# `excluded_rules` takes licence rules whose entries stay out; `revoked_on` hides again what this file published.
+# `excluded_entries` are entries with a warning sign (M5-67 plan §5, in the report); they stay out and wait.
+# Only entries whose own link passed the automatic check become visible (M5-67 plan §4). Never a name, an address or the words of a request here: the repository is public.
+source_id: govdata
+batch_id: 11
+fingerprint: f93836dac9de81186f8102ea7e2980581e41d34bffa40e4e98e6aad620fa5bd4
+created_on: 2026-11-25
+entries: 759
+decision: pending
+decided_on: null
+excluded_rules: []
+revoked_on: null
+sample:
+- dataset_id: govdata.122db60f-f3af-4ba6-ba63-4afcf745fb29
+  why: new_rule
+  title: Waldzustandserhebung
+  source_url: https://www.govdata.de/suche/daten/waldzustandserhebung
+  license_rule: govdata/ThüringenForst AöR, Forstliches Forschungs- und Kompetenzzentrum/cc-by-4.0
+  ok: null
+  check:
+    outcome: unchecked
+    reason: not_checked
+- dataset_id: govdata.0d1401e9-7c2f-456a-8243-23e4321f424c
+  why: new_rule
+  title: Benthos, Dichte - WMS
+  source_url: https://mobilithek.info//offers/-2718454588362285194
+  license_rule: govdata/Alfred-Wegener-Institut (AWI)/geonutzv
+  ok: null
+  check:
+    outcome: unchecked
+    reason: not_checked
+- dataset_id: govdata.024b7516-d8d7-4aab-8484-d1299d57db6c
+  why: new_rule
+  title: Dichtekarte Seevögel TOPAS/MARLIN (2000–2013)
+  source_url: https://mobilithek.info//offers/-9018340152536081162
+  license_rule: govdata/Forschungs- und Technologiezentrum Westküste (FTZ)/geonutzv
+  ok: null
+  check:
+    outcome: unchecked
+    reason: not_checked
+- dataset_id: govdata.04995c32-b858-4ac6-9acc-1f46a8521110
+  why: new_rule
+  title: Schulbezirke des Landkreises Greiz
+  source_url: https://www.govdata.de/suche/daten/schulbezirke-des-landkreises-greiz
+  license_rule: govdata/Landratsamt Greiz/cc-by-4.0
+  ok: null
+  check:
+    outcome: unchecked
+    reason: not_checked
+- dataset_id: govdata.28eda05c-6c7e-4ccf-8f25-1050397cd0b2
+  why: new_rule
+  title: Gebiete mit positiven Aujeszky-Befunden beim Wildschwein in Thüringen
+  source_url: https://www.govdata.de/suche/daten/gebiete-mit-positiven-aujeszky-befunden-beim-wildschwein-in-thuringen
+  license_rule: govdata/Thüringer Landesamt für Verbraucherschutz/cc-by-4.0
+  ok: null
+  check:
+    outcome: unchecked
+    reason: not_checked
+- dataset_id: govdata.38cbb557-fc1f-42d8-bf4a-6a908810c046
+  why: new_rule
+  title: INSPIRE US Schulstandorte Stadt Gera
+  source_url: https://www.govdata.de/suche/daten/inspire-us-schulstandorte-stadt-gera
+  license_rule: govdata/Stadtverwaltung Gera/cc-by-4.0
+  ok: null
+  check:
+    outcome: unchecked
+    reason: not_checked
+- dataset_id: govdata.1e2e8498-c3e0-41e1-a77a-13507962e790
+  why: new_rule
+  title: Fahrradverleihstationen
+  source_url: https://daten.digitale-mrn.de/dataset/4d740b33-8cd3-4b51-bd78-25bcce5e69e2#dataset
+  license_rule: govdata/Metropolregion Rhein-Neckar/cc-by
+  ok: null
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: daten.digitale-mrn.de
+- dataset_id: govdata.2a1ed827-0db3-4bff-8365-da726f22a495
+  why: new_rule
+  title: Ladeinfrastruktur
+  source_url: https://mis.bkg.bund.de/trefferanzeige?docuuid=D345D2FE-ACC6-4911-AFF9-64DDD06062EA
+  license_rule: govdata/Bundesnetzagentur/cc-by
+  ok: null
+  check:
+    outcome: unchecked
+    reason: robots
+- dataset_id: govdata.3e03930b-a204-45c2-b9d4-e6f66da1bd9d
+  why: new_rule
+  title: Schulstandorte des Saale-Holzland-Kreises
+  source_url: https://www.govdata.de/suche/daten/schulstandorte-des-saale-holzland-kreises
+  license_rule: govdata/Landratsamt Saale-Holzland-Kreis/cc-by-4.0
+  ok: null
+  check:
+    outcome: unchecked
+    reason: not_checked
+- dataset_id: govdata.5134791c-f779-42c4-9738-271fb901c23d
+  why: new_rule
+  title: Bebauungspläne und Satzungen der Stadt Greiz
+  source_url: https://www.govdata.de/suche/daten/bebauungsplane-und-satzungen-der-stadt-greiz
+  license_rule: govdata/Stadtverwaltung Greiz/cc-by-4.0
+  ok: null
+  check:
+    outcome: unchecked
+    reason: not_checked
+- dataset_id: govdata.7d3982d3-6c15-434e-a804-ca5a3b02bb8e
+  why: new_rule
+  title: Erste Änderung des Landesentwicklungsprogramms Thüringen 2025
+  source_url: https://www.govdata.de/suche/daten/erste-anderung-des-landesentwicklungsprogramms-thuringen-2025
+  license_rule: govdata/Thüringer Ministerium für Inneres, Kommunales und Landesentwicklung/cc-by-4.0
+  ok: null
+  check:
+    outcome: unchecked
+    reason: not_checked
+- dataset_id: govdata.8ec4ff09-035c-4c91-9f37-249655b644c9
+  why: new_rule
+  title: Schulstandorte des Landkreises Kyffhäuserkreis
+  source_url: https://www.govdata.de/suche/daten/schulstandorte-des-landkreises-kyffhauserkreis
+  license_rule: govdata/Landratsamt Kyffhäuserkreis/cc-by-4.0
+  ok: null
+  check:
+    outcome: unchecked
+    reason: not_checked
+- dataset_id: govdata.a74a9393-736a-4f19-9e6e-ac7d59c06f6a
+  why: new_rule
+  title: INSPIRE US Kinderbetreuungseinrichtungen Wartburgkreis
+  source_url: https://www.govdata.de/suche/daten/inspire-us-kinderbetreuungseinrichtungen-wartburgkreis
+  license_rule: govdata/Landratsamt Wartburgkreis/cc-by-4.0
+  ok: null
+  check:
+    outcome: unchecked
+    reason: not_checked
+- dataset_id: govdata.be4e5c05-897a-4a91-92e6-0276efcf5aaa
+  why: new_rule
+  title: INSPIRE US Schulstandorte im Landkreis Eichsfeld
+  source_url: https://www.govdata.de/suche/daten/inspire-us-schulstandorte-im-landkreis-eichsfeld
+  license_rule: govdata/Landkreis Eichsfeld/cc-by-4.0
+  ok: null
+  check:
+    outcome: unchecked
+    reason: not_checked
+- dataset_id: govdata.c3455dcc-d62a-4f77-bc7e-f588858e3920
+  why: new_rule
+  title: Logos, Bilder & Grafiken VRR
+  source_url: https://ckan.open.nrw.de/dataset/29442dc7-6fae-4710-92e3-93ed16871f27
+  license_rule: govdata/OpenData ÖPNV/cc-by-4.0
+  ok: null
+  check:
+    outcome: unchecked
+    reason: guarded
+- dataset_id: govdata.72174794-8beb-4ab7-8573-1cf8256dce9a
+  why: random
+  title: Schienenverkehr
+  source_url: https://www.geoportal.rlp.de/map?LAYER%5Bzoom%5D=1&LAYER%5Bid%5D=53156
+  license_rule: govdata/SGD Süd Raumordnung Technisches Büro/cc0-1.0+dl-de-by-2.0
+  ok: null
+  check:
+    outcome: unchecked
+    reason: guarded
+    status: 200
+    final_host: www.geoportal.rlp.de
+- dataset_id: govdata.7af11a9e-0158-4632-879b-e1103cb9a787
+  why: random
+  title: Grenze Königreich Sachsen
+  source_url: https://geoportal.sachsen.de/md/cf1647f9-5ea4-42db-84d6-b6c64f108b48
+  license_rule: govdata/Stadt Dresden/dl-de-by-2.0
+  ok: null
+  check:
+    outcome: unchecked
+    reason: redirect_host
+- dataset_id: govdata.f51a8235-d8dd-4f00-918a-f43d6aca6497
+  why: random
+  title: Rechtskräftige Bebauungspläne und Satzungen (Rasterdaten) Krefeld
+  source_url: https://www.govdata.de/suche/daten/rechtskraftige-bebauungsplane-und-satzungen-rasterdaten-krefeld
+  license_rule: govdata/Stadt Krefeld/dl-de-zero-2.0
+  ok: null
+  check:
+    outcome: unchecked
+    reason: guarded
+- dataset_id: govdata.117cc498-bee5-46a2-b7b4-c4bbcedd0ab5
+  why: random
+  title: Unzerschnittene verkehrsarme Räume (UZVR) in Nordrhein-Westfalen
+  source_url: https://registry.gdi-de.org/id/de.nw/0fc86ac9-3363-401d-b306-e7a4a013bfe8
+  license_rule: govdata/Landesamt für Natur, Umwelt und Klima Nordrhein-Westfalen/dl-de-zero-2.0
+  ok: null
+  check:
+    outcome: unchecked
+    reason: guarded
+- dataset_id: govdata.513fd835-9a45-428e-a977-868d0e7edbfb
+  why: random
+  title: Schiffsdichte 2014
+  source_url: https://mobilithek.info//offers/-1528052225511265470
+  license_rule: govdata/Bundesamt für Seeschifffahrt und Hydrographie (BSH)/geonutzv
+  ok: null
+  check:
+    outcome: unchecked
+    reason: guarded
+    status: 200
+    final_host: mobilithek.info
+- dataset_id: govdata.f11adef6-9661-407d-8167-eeac8068ab98
+  why: random
+  title: Bathymetrie Deutsche Bucht Modellgitterpunkte (Projekt Aufmod) 2002
+  source_url: https://mobilithek.info//offers/-8820766592702835607
+  license_rule: govdata/Bundesamt für Seeschifffahrt und Hydrographie (BSH)/geonutzv
+  ok: null
+  check:
+    outcome: unchecked
+    reason: guarded
+    status: 200
+    final_host: mobilithek.info
+- dataset_id: govdata.25b97606-6f54-4fc0-8c85-6e769bc385ae
+  why: random
+  title: Umringe der Bebauungspläne und Satzungen der Stadt Jena
+  source_url: https://www.govdata.de/suche/daten/umringe-der-bebauungsplane-und-satzungen-der-stadt-jena
+  license_rule: govdata/Stadtverwaltung Jena/cc-by-4.0
+  ok: null
+  check:
+    outcome: unchecked
+    reason: guarded
+- dataset_id: govdata.8a527425-392a-4c34-b8bf-4ad11aeb8fee
+  why: random
+  title: Raumordnungsplan für deutsche Seegebiete - WFS
+  source_url: https://mobilithek.info//offers/-2362195853431546803
+  license_rule: govdata/Bundesamt für Seeschifffahrt und Hydrographie (BSH)/dl-de-by-2.0
+  ok: null
+  check:
+    outcome: unchecked
+    reason: guarded
+    status: 200
+    final_host: mobilithek.info
+- dataset_id: govdata.f0613a06-d505-4e1d-a508-919da640e76a
+  why: random
+  title: Meeres- und Küsteninformationen - WFS
+  source_url: https://mobilithek.info//offers/-5065959913108228202
+  license_rule: govdata/Bundesamt für Seeschifffahrt und Hydrographie (BSH)/cc-by+cc-by-4.0
+  ok: null
+  check:
+    outcome: unchecked
+    reason: guarded
+    status: 200
+    final_host: mobilithek.info
+- dataset_id: govdata.1f639ab5-89fe-4ea8-8d66-57b0e24ac19c
+  why: random
+  title: 'Messdaten Gamma-ODL: Station Fischbachau'
+  source_url: https://odlinfo.bfs.de/ODL/DE/themen/wo-stehen-die-sonden/karte/_documents/Messstelle.html?id=091821141
+  license_rule: govdata/Bundesamt für Strahlenschutz/dl-de-by-2.0
+  ok: null
+  check:
+    outcome: unchecked
+    reason: guarded
+    status: 200
+    final_host: odlinfo.bfs.de
+- dataset_id: govdata.7d0546e0-fb13-41e5-9b41-0782bdc42318
+  why: random
+  title: Bodennahe Kaltluftgeschwindigkeit gegen Mitternacht [m pro s]
+  source_url: https://geoportal.sachsen.de/md/dacd2e21-64a5-441c-af7b-d04d19f1625d
+  license_rule: govdata/Stadt Dresden/dl-de-by-2.0
+  ok: null
+  check:
+    outcome: unchecked
+    reason: redirect_host
+- dataset_id: govdata.cd0e60ee-d284-4bb9-9327-91dfd39a6870
+  why: random
+  title: Bathymetrie Deutsche Bucht Modellgitterpunkte (Projekt Aufmod) 1999
+  source_url: https://mobilithek.info//offers/-3802102585444631033
+  license_rule: govdata/Bundesamt für Seeschifffahrt und Hydrographie (BSH)/geonutzv
+  ok: null
+  check:
+    outcome: unchecked
+    reason: guarded
+    status: 200
+    final_host: mobilithek.info
+- dataset_id: govdata.cf53dde1-d494-4231-a3fa-f02c7ef25e53
+  why: random
+  title: Meeresgeologische Fokusgebiete (Projekt AufMod) - WFS
+  source_url: https://mobilithek.info//offers/-5211917815401864656
+  license_rule: govdata/Bundesamt für Seeschifffahrt und Hydrographie (BSH)/geonutzv
+  ok: null
+  check:
+    outcome: unchecked
+    reason: guarded
+    status: 200
+    final_host: mobilithek.info
+- dataset_id: govdata.0e63eb16-454b-480b-92a7-735f9367ddde
+  why: random
+  title: Gezeitenstrom Positionen - WMS
+  source_url: https://mobilithek.info//offers/-7019705957198535501
+  license_rule: govdata/Bundesamt für Seeschifffahrt und Hydrographie (BSH)/geonutzv
+  ok: null
+  check:
+    outcome: unchecked
+    reason: guarded
+    status: 200
+    final_host: mobilithek.info
+- dataset_id: govdata.cd05e38c-3399-4d36-b8e0-6cbe1ee7fecf
+  why: random
+  title: INSPIRE TH Flurstücke/Grundstücke ALKIS
+  source_url: https://www.govdata.de/suche/daten/inspire-th-flurstucke-grundstucke-alkis
+  license_rule: govdata/Thüringer Landesamt für Bodenmanagement und Geoinformation/cc-by-4.0
+  ok: null
+  check:
+    outcome: unchecked
+    reason: guarded
+excluded_entries:
+- govdata.0635b12a-281c-405d-91b7-d36c7f24d660
+- govdata.0b67e5ab-dd50-40c0-a0aa-8d0e6d917ee4
+- govdata.0d49ea3f-7b59-4cb7-86d0-931ed65158fb
+- govdata.13a84b38-746f-4ec3-a279-062080740fa4
+- govdata.1783b4b8-9dfa-4b48-b03e-7fe5d49fb5e8
+- govdata.1d779077-63f6-4443-8733-5875d1979d55
+- govdata.1eba4913-b332-441d-82e4-432774c4c39a
+- govdata.2710cd72-a370-47d2-8941-ac6b3ff61f4d
+- govdata.3b54e819-c1d4-4544-8a17-496e6b525f3e
+- govdata.3f06a322-7f94-4af1-8cce-e9de6c4adcf3
+- govdata.4781e170-a58a-4965-93ac-72a041ac067f
+- govdata.5917c15e-a940-4105-8f03-336ccacd0610
+- govdata.5d220f4d-c65c-4f28-ad61-f2ae6ac3ba9b
+- govdata.5d7e9200-a986-4c74-9533-833980b53c8a
+- govdata.5f6eb467-64a1-4312-8b4c-de85555eb998
+- govdata.67a3860c-9592-4f46-a1f2-7c8537193a15
+- govdata.712f929b-4763-4350-b009-5ed12cd8f33a
+- govdata.89277f82-8d2d-45d8-b6c8-f5e5a2e0008b
+- govdata.8f62a5ee-3895-4660-ba93-0f0d89db7bd1
+- govdata.917a3e46-9f35-44b5-b530-c5be6dec8fca
+- govdata.91c3a2b4-688a-4067-bbd5-0749b6494add
+- govdata.92d3b291-fa6a-4173-9472-25e5f9449a83
+- govdata.945813ce-c22d-4cb4-a4a3-ef11c3d21548
+- govdata.98fe38ba-ba6e-4c46-bbd3-1832766b4702
+- govdata.a22b3370-6927-49bd-890f-4ff6acfc669e
+- govdata.b03aee2d-71ab-4a88-a44f-2d55f4326603
+- govdata.b934fd1b-a721-4a60-877a-fc45dcf65b27
+- govdata.be0153b4-ec2a-49ec-990c-4e8cf3f5eb27
+- govdata.c1490805-778c-4633-a468-401477c0d549
+- govdata.d10e4e13-f99c-4601-96e1-499a8c505aa6
+- govdata.d259c514-17e3-47ed-a4b5-6983755c9dfc
+- govdata.d9a664b7-4192-4bce-9982-01eded5c76f1
+- govdata.dac13214-da54-43bd-beaf-1a0eea939698
+- govdata.db60b8c8-ee7a-47a7-b272-4d5d280fee81
+- govdata.e26d4e99-f7cd-47eb-850a-d09ccaf133d5
+- govdata.e4a57537-5b6e-47b7-9266-06d61a1f0d21
+- govdata.e904dd43-d48f-474f-aace-3e82c2b26b46
+- govdata.ed2ac728-131a-475f-98c5-321099d2a206
+- govdata.ed369f55-7e74-4a11-976e-7ed774c44d6a
+- govdata.f0d933ef-02d5-458b-9829-8ef2127260cf
+- govdata.f47a9bc3-e810-4d8f-9156-37443c1e086a
+- govdata.fc024bae-25f8-4b81-9bb2-944050e29bce
