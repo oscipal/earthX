@@ -33,3 +33,73 @@ login_path_parts: [login, signin, sign-in, anmelden, anmeldung, auth, sso, cas, 
 # Words of a <title> or the first heading that make a page a login page, where the dataset is not named.
 login_words: [login, log in, anmelden, anmeldung, sign in, registrierte nutzer, registrierte benutzer, connexion,
               accedi]
+# Forms of links whose page does not show the dataset to the check (it loads it by script) and how they are checked
+# instead (M5-67 §23, Otto 25.11.2026). A placeholder takes one whole part of the path, the fragment or a query value
+# (letters, digits, '.', '_', '~', '-'). check api: the portal's interface is asked for the record the link names; it
+# passes like a page, with the title or an identifier of the dataset in the record (a 200 alone never passes), and only
+# once Otto found the page of a dataset under `link` in a browser (form_confirmed_on). check none: no safe check is
+# documented; the links stay unchecked and their entries invisible. Interfaces from documentation only (adr/0002).
+link_forms:
+  # piveau hub-search, GET /datasets/{id}, 404 for an unknown id; the base /api/hub/search is the default of hub-search.
+  - link: https://open.bydata.de/datasets/{id}
+    check: api
+    api: https://open.bydata.de/api/hub/search/datasets/{id}
+    evidence: https://gitlab.com/piveau/hub/piveau-hub-search/-/raw/develop/README.md
+    form_confirmed_on: null
+  # GeoNetwork 3.12 and 4, GET /srv/api/records/{uuid}/formatters/xml, 404 for an unknown uuid.
+  - link: https://opendata.herne.de/katalogopendata/srv/{lang}/{page}#/metadata/{uuid}
+    check: api
+    api: https://opendata.herne.de/katalogopendata/srv/api/records/{uuid}/formatters/xml
+    evidence: https://github.com/geonetwork/core-geonetwork/blob/main/docs/manual/docs/api/the-geonetwork-api.md
+    form_confirmed_on: null
+  - link: https://geodatenkatalog.frankfurt.de/geonetwork/srv/{lang}/{page}#/metadata/{uuid}
+    check: api
+    api: https://geodatenkatalog.frankfurt.de/geonetwork/srv/api/records/{uuid}/formatters/xml
+    evidence: https://github.com/geonetwork/core-geonetwork/blob/main/docs/manual/docs/api/the-geonetwork-api.md
+    form_confirmed_on: null
+  - link: https://www.geocat.ch/geonetwork/srv/{lang}/{page}#/metadata/{uuid}
+    check: api
+    api: https://www.geocat.ch/geonetwork/srv/api/records/{uuid}/formatters/xml
+    evidence: https://github.com/geonetwork/core-geonetwork/blob/main/docs/manual/docs/api/the-geonetwork-api.md
+    form_confirmed_on: null
+  # Mapbender 2: ISO 19139 of a layer. It answers 200 also for an unknown id (a record "title not given"), so only the
+  # title in the record decides.
+  - link: https://www.geoportal.rlp.de/map?LAYER[id]={layer}&LAYER[zoom]={zoom}
+    check: api
+    api: https://www.geoportal.rlp.de/mapbender/php/mod_layerISOMetadata.php?SERVICE=WMS&outputFormat=iso19139&Id={layer}
+    evidence: https://github.com/mrmap-community/Mapbender2.8/blob/master/http/php/mod_layerISOMetadata.php
+    form_confirmed_on: null
+  - link: https://www.geoportal.hessen.de/map?LAYER[id]={layer}&LAYER[zoom]={zoom}
+    check: api
+    api: https://www.geoportal.hessen.de/mapbender/php/mod_layerISOMetadata.php?SERVICE=WMS&outputFormat=iso19139&Id={layer}
+    evidence: https://github.com/mrmap-community/Mapbender2.8/blob/master/http/php/mod_layerISOMetadata.php
+    form_confirmed_on: null
+  # BfS, WFS of the ODL network, a station by its identifier (viewparams kenn).
+  - link: https://odlinfo.bfs.de/ODL/DE/themen/wo-stehen-die-sonden/karte/_documents/Messstelle.html?id={kenn}
+    check: api
+    api: https://www.imis.bfs.de/ogc/opendata/ows?service=WFS&version=1.1.0&request=GetFeature&typeName=opendata:odlinfo_timeseries_odl_24h&outputFormat=application/json&viewparams=kenn:{kenn}
+    evidence: https://raw.githubusercontent.com/bundesAPI/strahlenschutz-api/main/openapi.yaml
+    form_confirmed_on: null
+  - link: https://mobilithek.info//offers/{id}
+    check: none
+    why: No documented interface for one offer (the specification of the broker was not readable).
+  - link: https://map.bern.ch/geoportal/#/produkt/{id}
+    check: none
+    why: A single-page app; no documented interface per product.
+  - link: https://data.geo.so.ch?filter={id}
+    check: none
+    why: The filter of a single-page app, no documented interface per dataset.
+  - link: https://www.agi.dij.be.ch/de/start/geoportal/geodaten/detail.html?type=geoproduct&code={code}
+    check: none
+    why: No documented interface per geoproduct (a PDF sheet exists, its answer to an unknown code is not documented).
+  - link: https://metadata.geo.sg.ch/produkte/{id}
+    check: none
+    why: The cantonal metadata application documents no interface.
+  - link: https://www.kiel.de/opendata/index.php?id={id}
+    check: none
+    why: Neither the software nor an interface is documented.
+  # Otto, 25.11.2026: 403 on all 402 links. The Berlin open data handbook calls the Datenregister the non-public
+  # editorial system of the portal (https://github.com/berlinonline/open-data-handbuch); not a matter of headers.
+  - link: https://datenregister.berlin.de/dataset/{id}
+    check: none
+    why: The Datenregister is not public (Berlin open data handbook); the public page has another address.
