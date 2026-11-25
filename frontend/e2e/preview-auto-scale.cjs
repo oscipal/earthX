@@ -59,7 +59,7 @@ async function check(browser, { dtype, theme, viewport }) {
       assets: { red: { href: 'https://example.org/red.tif', type: COG, 'raster:bands': [band] }, nir: { href: 'https://example.org/nir.tif', type: COG, 'raster:bands': [band] } } };
     useAppStore.setState({ datasets: [{ id: 'sentinel-2-c1-l2a', title: 'Sentinel-2 L2A', viewable: true, groupBy: ['datetime'], zoom: { min: 8, max: 14 }, browse: 'quicklook', quicklookNodataMax: null, resultsGroupBy: ['datetime'], hasTimeAxis: true,
         collection: { id: 'sentinel-2-c1-l2a', 'earthx:format': 'cog', 'earthx:license_flags': { tier: 'processing' }, 'earthx:capabilities': { interpolation: true, band_math: true } } }],
-      datasetId: 'sentinel-2-c1-l2a', items: [item], groups: [{ key: ['2026-07-01'], label: '2026-07-01', items: [item] }], activeGroupIndex: 0, selectedIds: ['S2B_A'], aoi, aoiPoint: null, layers: [], focusMode: false, error: null });
+      datasetId: 'sentinel-2-c1-l2a', items: [item], groups: [{ key: ['2026-07-01'], label: '2026-07-01', items: [item] }], activeGroupIndex: 0, selectedIds: ['S2B_A'], aoi, layers: [], focusMode: false, error: null });
     useProcessingStore.getState().openProcessing();
   });
   const panel = page.locator('.processing-panel');

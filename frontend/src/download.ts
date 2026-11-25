@@ -9,7 +9,7 @@ import type { ExportJobHint } from './api';
 import type { DatasetOption } from './datasets';
 import { defaultRenderOf } from './datasets';
 import type { MapLayer } from './layers';
-import { isJobId, type ExportLayout } from './processing';
+import { isJobId, type ExportLayout, type OrderAoi } from './processing';
 import type { LicenseFlags, StacItem } from './types';
 
 // `groups` (M3-17, replacing the flat `items` list): item ids per group, in
@@ -139,11 +139,10 @@ export interface OriginalFileLink {
 // A crop refused as too large for a direct download, whose `413` named an
 // export job (M4-11b-2): the request to export instead, the server's text, and
 // whether the job is possible (`available`) or over 5 GB too (`too-large`).
-// Only an area can be exported; a point AOI never gets an offer. `id` tells
-// two refusals apart, so the dialog starts each offer afresh.
+// `id` tells two refusals apart, so the dialog starts each offer afresh.
 export interface ExportOffer {
   id: number;
-  request: DownloadRequestInfo & { aoi: GeoJSON.Polygon | GeoJSON.MultiPolygon };
+  request: DownloadRequestInfo & { aoi: OrderAoi };
   message: string;
   exportJob: ExportJobHint;
 }

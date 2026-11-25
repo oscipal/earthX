@@ -1,7 +1,7 @@
 // Browser check of UI-12 PR 1 (Otto, 25.11.2026), with made-up answers of the API, at 1280 x 800, 1280 x 360 and 360 x 740, in the light
 // and the dark theme, with a German browser (`de-DE`). It fails when
 //   5. a place found while "Rectangle" is chosen leaves the tool on (pressed), or the next click on the map still draws;
-//   6. the AOI "Point" is not a point on the map (the colour of the AOI at the point, none on a ring round it where the square was);
+//   6. the AOI "Point" is a point on the map (the colour of the AOI at the point, none on a ring round it where the square was);
 //   7. "Add dataset" does not open the Data catalogue with "Addable only" on in the pop-up "Filters" ("Filters · 1", `entry=full` in the
 //      request), or its "×" does not take it off again (the next request without `entry`);
 //   8. a date field shows anything but "YYYY-MM-DD" in a German browser, or its calendar is not in English, Monday first, inside the window;
@@ -140,8 +140,8 @@ async function run(browser, theme, size) {
   await open(null);
   await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.setState({ flyToBbox: null }));
   await page.waitForTimeout(1500);
-  const point = await store(async () => (await import('/src/store.ts')).useAppStore.getState().aoiPoint);
-  if (!point) fail('the tool "Point" gave no point');
+  const point = await store(async () => (await import('/src/store.ts')).useAppStore.getState().aoi);
+  if (point?.type !== 'Point') fail('the tool "Point" gave no point');
   else {
     // Where the point now stands on the screen after the map flew to it.
     const png = await page.screenshot();

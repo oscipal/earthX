@@ -132,7 +132,7 @@ function resetStores() {
     selectedIds: [],
     layers: [],
     aoi: null,
-    aoiPoint: null,
+   
     dateFrom: '',
     dateTo: '',
     focusMode: false,

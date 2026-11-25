@@ -71,7 +71,7 @@ import { zoomTarget } from './zoomSelection';
 import type { Percent } from './percentRange';
 import { checkPercent, DEFAULT_PERCENT, NO_RANGE_AT_PERCENT, rescaleAtPercent, samePercent, type RangeUnit } from './percentRange';
 import { channelsAtOwnPercent, samePercents, CHANNEL_COUNT, CHANNEL_NAMES, type ChannelRange } from './channels';
-import { buildExportOrder, isArea, trueColorOf } from './processingOrder';
+import { buildExportOrder, isAoi, trueColorOf } from './processingOrder';
 import { appliedRenderFrom, autoRescale, colourChannelsOf, colourInPercent, lookChanged, lookOfPendingFields, pendingFieldsOf } from './render';
 import type { ResultSection, SectionSearchAnswer } from './sections';
 import {
@@ -1619,14 +1619,9 @@ const withoutResults = (dock: DockPanel | null): DockPanel | null => (dock === '
 export interface AppState {
   // --- map / selection ---
   toolMode: ToolMode;
+  // A point, a polygon or a multipolygon; a point is a point everywhere, its filters and crop those of its one pixel (M5-69).
   aoi: GeoJSON.Geometry | null;
-  // M3-08: the point the current AOI was drawn or uploaded from, kept apart from
-  // `aoi` (still the square `bufferPointToPolygon` built, which is what the map
-  // shows and the download crops) — only `runSearch` reads this, to search by the
-  // point itself rather than by its buffer square's bbox.
-  aoiPoint: GeoJSON.Point | null;
   lastAoi: GeoJSON.Geometry | null; // most recent AOI, for "use last"
-  lastAoiPoint: GeoJSON.Point | null; // the point behind lastAoi, if it had one
   flyToBbox: Bbox | null;
   // A camera to jump to as it is (a permalink's view, M4-19e): centre [lon, lat] and zoom.
   flyToView: { center: [number, number]; zoom: number } | null;
@@ -1786,7 +1781,6 @@ export interface AppState {
   enhance: { look: AppliedRender; before: AppliedRender } | null;
 
   // --- data ---
-  config: { point_buffer_deg: number } | null; // no server config endpoint any more; the client default (0.05) applies
   datasets: DatasetOption[];
   // M3-10: what the dataset filter has ticked — a search asks all of them at once.
   selectedDatasetIds: string[];
@@ -1900,7 +1894,7 @@ export interface AppState {
   ensureDatasetAdded: (id: string) => void;
   setOpenSection: (id: string) => void;
   setToolMode: (m: ToolMode) => void;
-  setAoi: (g: GeoJSON.Geometry | null, point?: GeoJSON.Point | null) => void;
+  setAoi: (g: GeoJSON.Geometry | null) => void;
   clearAoi: () => void;
   useLastAoi: () => void;
   flyTo: (b: Bbox) => void;
@@ -2071,9 +2065,7 @@ setTipLevel(firstTipLevel);
 export const useAppStore = create<AppState>((set, get) => ({
   toolMode: 'none',
   aoi: null,
-  aoiPoint: null,
   lastAoi: null,
-  lastAoiPoint: null,
   flyToBbox: null,
   flyToView: null,
   appearance: firstAppearance,
@@ -2143,7 +2135,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   pendingPercentHigh: DEFAULT_PERCENT.high,
   enhance: null,
 
-  config: null,
   datasets: [],
   selectedDatasetIds: [],
   multiSelect: false,
@@ -2322,27 +2313,25 @@ export const useAppStore = create<AppState>((set, get) => ({
   // so every way it can change reschedules a refresh.
   // An AOI that comes in another way than drawing (a place, a file) ends the tool chosen for drawing (UI-12, Otto 18.11.2026): otherwise
   // the next click on the map starts a shape that replaces it.
-  setAoi: (aoi, point = null) => {
+  setAoi: (aoi) => {
     set((s) => ({
       ...(aoi ? { toolMode: 'none' as const } : {}),
       aoi,
-      aoiPoint: point,
       lastAoi: aoi ?? s.lastAoi,
-      lastAoiPoint: aoi ? point : s.lastAoiPoint,
     }));
     dropPageToken(set, get);
     scheduleCoverageRefresh(set, get);
   },
   clearAoi: () => {
-    set({ aoi: null, aoiPoint: null });
+    set({ aoi: null });
     dropPageToken(set, get);
     scheduleCoverageRefresh(set, get);
   },
   useLastAoi: () => {
-    const { lastAoi: g, lastAoiPoint } = get();
+    const { lastAoi: g } = get();
     if (!g) return;
     const bb = polygonBbox(g);
-    set({ aoi: g, aoiPoint: lastAoiPoint, toolMode: 'none', ...(bb ? { flyToBbox: bb } : {}) });
+    set({ aoi: g, toolMode: 'none', ...(bb ? { flyToBbox: bb } : {}) });
     dropPageToken(set, get);
     scheduleCoverageRefresh(set, get);
   },
@@ -2383,7 +2372,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   clearAll: () => {
     set({
       aoi: null,
-      aoiPoint: null,
       sections: [],
       openSectionId: null,
       ...forgetSearch(),
@@ -3072,7 +3060,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         if (
           e instanceof api.HttpError &&
           e.exportJob &&
-          (aoi.type === 'Polygon' || aoi.type === 'MultiPolygon')
+          isAoi(aoi)
         ) {
           set({
             downloadExportOffer: { id: ++exportOffers, request: { ...req, aoi }, message: e.message, exportJob: e.exportJob },
@@ -3087,7 +3075,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     // Scenes of a mosaic may lie in different UTM zones, and a form other than one file per band may bring bands to one grid: the
     // platform says whether anything is resampled, and the person confirms before the download (NM4-65 part 7).
     const mayResample = req.layout !== undefined && (req.layout.form !== 'per_band' || req.groups.some((group) => group.length > 1));
-    if (mayResample && isArea(req.aoi)) {
+    if (mayResample && isAoi(req.aoi)) {
       set({ downloading: true, error: null, downloadExportOffer: null });
       const controller = new AbortController();
       downloadJobAbort = controller;
@@ -3672,7 +3660,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   runSearch: async () => {
     // One walk at a time (NM4-26): a second one would ask every page again while the first one goes on.
     if (get().searching) return;
-    const { aoi, aoiPoint, dateFrom, dateTo, selectedDatasetIds, datasets } = get();
+    const { aoi, dateFrom, dateTo, selectedDatasetIds, datasets } = get();
     if (!aoi) {
       set({ error: 'Draw or search an area of interest first.' });
       return;
@@ -3688,14 +3676,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ error: 'Correct the marked search filters first.' });
       return;
     }
-    // M3-08 F2a/F5a: a point AOI searches by the point itself, a polygon by its
-    // true shape, a rectangle by its bbox — `aoiPoint` is only ever read here,
-    // never for display or the download crop, which stay on `aoi`.
-    // A filter of the platform, or a search per pass, works on the AOI, the square around a point: that search is asked with the
-    // square too, the point would let scenes through that it cannot measure (Otto, 06.11.2026: a point is an area as well).
-    const wanted = filterQueriesOf(get(), chosen.map((d) => d.id));
-    const measuresArea = anyMeasuresAoi({ queryByCollection: wanted, ...evaluationOf(get(), wanted) });
-    const area = searchArea(aoi, measuresArea ? null : aoiPoint);
+    // M3-08 F2a/F5a: a point AOI searches by the point itself, a polygon by its true shape, a rectangle by its bbox. The filters
+    // the platform judges measure a point at its one pixel (M5-69).
+    const area = searchArea(aoi);
     if (!area.bbox && !area.intersects) {
       set({ error: 'Could not compute a search area for the area of interest.' });
       return;

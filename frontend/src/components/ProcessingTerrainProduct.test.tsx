@@ -82,7 +82,7 @@ beforeEach(() => {
     activeGroupIndex: 0,
     selectedIds: [scene.id],
     aoi: AOI,
-    aoiPoint: null,
+   
     layers: [],
     mapZoom: 9,
     viewportBbox: null,

@@ -345,7 +345,7 @@ export function ensureBaseLayers(map: MapLibreMap): void {
       source: AOI_SRC,
       paint: { 'line-color': '#19e0ff', 'line-width': 1.6, 'line-dasharray': [3, 2] },
     });
-    // An AOI "Point" is a point on the map, not the square around it (UI-12, Otto 18.11.2026).
+    // An AOI "Point" is a point on the map (UI-12, Otto 18.11.2026; M5-69).
     map.addLayer({
       id: 'aoi-point',
       type: 'circle',

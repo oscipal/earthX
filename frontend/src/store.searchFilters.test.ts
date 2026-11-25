@@ -52,7 +52,7 @@ function reset(selected: string[]) {
     selectedDatasetIds: selected,
     datasetId: selected[0] ?? null,
     aoi: AOI,
-    aoiPoint: null,
+   
     dateFrom: '',
     dateTo: '',
     searchFilters: {},

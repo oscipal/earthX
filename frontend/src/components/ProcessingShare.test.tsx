@@ -119,7 +119,7 @@ beforeEach(async () => {
     groups: [],
     selectedIds: [],
     aoi: OLD_AOI,
-    aoiPoint: null,
+   
     error: null,
     notice: null,
     flyToView: null,

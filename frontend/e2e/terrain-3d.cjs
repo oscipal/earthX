@@ -249,7 +249,7 @@ const near = (a, b, tolerance = 0.5) => Math.abs(a - b) <= tolerance;
     await pick('Point');
     await tap(at(0.5, 0.6));
     await page.waitForTimeout(600);
-    expect('the Point tool sets an AOI on a tilted map', (await aoi())?.type === 'Polygon');
+    expect('the Point tool sets a point as the AOI on a tilted map (M5-69)', (await aoi())?.type === 'Point');
     await settle();
     await page.evaluate((m) => m.jumpTo({ pitch: 50 }), map);
     await dock(true);

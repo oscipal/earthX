@@ -161,7 +161,7 @@ export const MAX_AOI_POSITIONS = 20_000;
 
 // Why "Within AOI" cannot be used right now, or `null` (§6.5, §6.17). The server needs an area and a date range with both
 // ends; more than `MAX_AOI_POSITIONS` positions are too many to measure in. A long AOI below that is no reason: the search then
-// sends its bounding box and the AOI beside it. A point is an area too (Otto, 06.11.2026): the square around it, which is the AOI.
+// sends its bounding box and the AOI beside it. A point is measured at its one pixel (M5-69).
 export function withinAoiLock(s: {
   aoi: GeoJSON.Geometry | null;
   dateFrom: string;
@@ -173,7 +173,7 @@ export function withinAoiLock(s: {
 }
 
 // Why "AOI coverage" cannot be used right now, or `null` (DS-03c). It reads outlines, so it needs an area and nothing else, no
-// date range; an AOI of more than `MAX_AOI_POSITIONS` positions is too long to send. A point is an area too (the square).
+// date range; an AOI of more than `MAX_AOI_POSITIONS` positions is too long to send. A point is covered or not (M5-69).
 export function coverageLock(s: { aoi: GeoJSON.Geometry | null }): string | null {
   if (!s.aoi) return LOCK_NEEDS_AOI;
   if (countPositions((s.aoi as { coordinates?: unknown }).coordinates) > MAX_AOI_POSITIONS) return LOCK_TOO_MANY;

@@ -71,12 +71,6 @@ export function unionBboxShortest(boxes: (Bbox | null | undefined)[]): Bbox | nu
   return [best.start, south, best.end, north];
 }
 
-// A clicked point becomes a small square AOI polygon (matches the backend
-// POINT_BUFFER_DEG behaviour, kept on the client so display == what we search).
-export function bufferPointToPolygon(lon: number, lat: number, deg: number): GeoJSON.Polygon {
-  return bboxToPolygon([lon - deg, lat - deg, lon + deg, lat + deg]);
-}
-
 export function polygonBbox(geom: GeoJSON.Geometry): Bbox | null {
   let minx = Infinity;
   let miny = Infinity;
@@ -364,14 +358,10 @@ export interface SearchArea {
   truncatedNotice?: string;
 }
 
-// M3-08 F2a/F5a: what one search request asks for, given the drawn/uploaded AOI
-// and, separately, the point it was drawn or uploaded from (`store.ts` tracks the
-// two apart — the AOI square stays what the map shows and the download crops,
-// the point is only ever used here). A rectangle AOI still asks by `bbox`; a
-// point or any other polygon asks by `intersects`, except a polygon so large it
-// would be rejected upstream, which falls back to `bbox` with a notice instead.
-export function searchArea(aoi: GeoJSON.Geometry | null, point: GeoJSON.Point | null): SearchArea {
-  if (point) return { intersects: point };
+// M3-08 F2a/F5a: what one search request asks for, given the drawn/uploaded AOI. A rectangle AOI asks by `bbox`; a point
+// or any other polygon asks by `intersects`, except a polygon so large it would be rejected upstream, which falls back to
+// `bbox` with a notice instead.
+export function searchArea(aoi: GeoJSON.Geometry | null): SearchArea {
   if (!aoi) return {};
   const bbox = polygonBbox(aoi);
   if (!bbox) return {};

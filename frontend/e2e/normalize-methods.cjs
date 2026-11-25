@@ -90,7 +90,7 @@ async function selectScene(page, withAoi, aoi = AOI) {
     useAppStore.setState({
       datasets: [{ id, title: id, viewable: true, groupBy: ['datetime'], zoom: { min: 8, max: 14 }, browse: 'quicklook', quicklookNodataMax: null, resultsGroupBy: ['datetime'], hasTimeAxis: true, collection }],
       datasetId: id, items: [item], groups: [{ key: ['2026-07-01'], label: '2026-07-01', items: [item] }],
-      activeGroupIndex: 0, selectedIds: ['ITEM_A'], aoi, aoiPoint: null, layers: [], focusMode: false, error: null,
+      activeGroupIndex: 0, selectedIds: ['ITEM_A'], aoi, layers: [], focusMode: false, error: null,
     });
   }, { aoi: withAoi ? aoi : null, collection: COLLECTION });
   await page.evaluate(async (aoi) => {
@@ -322,7 +322,7 @@ async function extendCase(browser, theme, viewport, label, { bands, normalize, c
       useAppStore.setState({
         datasets: [{ id: 'sentinel-2-c1-l2a', title: 'Sentinel-2 L2A', viewable: true, groupBy: ['datetime'], zoom: { min: 8, max: 14 }, browse: 'quicklook', quicklookNodataMax: null, resultsGroupBy: ['datetime'], hasTimeAxis: true, collection }],
         datasetId: 'sentinel-2-c1-l2a', items: [item], groups: [{ key: ['2026-07-01'], label: '2026-07-01', items: [item] }],
-        activeGroupIndex: 0, selectedIds: [], aoi: null, aoiPoint: null, layers: [], focusMode: false, error: null,
+        activeGroupIndex: 0, selectedIds: [], aoi: null, layers: [], focusMode: false, error: null,
       });
       const order = {
         recipe_version: 2,

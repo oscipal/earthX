@@ -77,7 +77,7 @@ function select(items: StacItem[], tier = 'processing', option: DatasetOption = 
     activeGroupIndex: 0,
     selectedIds: items.map((i) => i.id),
     aoi: AOI,
-    aoiPoint: null,
+   
   });
 }
 
@@ -1723,7 +1723,7 @@ describe('the area of the order (M4-13c §3.2)', () => {
     act(() => useAppStore.setState({ aoi: null }));
     expect(container.textContent).toContain('Draw an AOI first, or choose “Whole scene”.');
     await review();
-    expect(container.textContent).toContain('Draw an area as AOI.');
+    expect(container.textContent).toContain('Draw an AOI.');
     expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/estimate'))).toBe(false);
   });
 

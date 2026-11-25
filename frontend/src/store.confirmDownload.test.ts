@@ -255,11 +255,11 @@ describe('confirmDownload — a crop too large for a direct download (M4-11b-2)'
     expect(s.downloadExportOffer).toBeNull();
   });
 
-  it('a point AOI is no offer: only an area can be exported', async () => {
+  it('a point AOI is cropped like an area, and a refusal of it is an offer too (M5-69)', async () => {
     useAppStore.setState({ aoi: { type: 'Point', coordinates: [10, 50] } });
     vi.mocked(fetch).mockImplementation(async () => refused(413, { 'X-Export-Job': 'available' }));
     await useAppStore.getState().confirmDownload();
-    expect(useAppStore.getState().downloadExportOffer).toBeNull();
+    expect(useAppStore.getState().downloadExportOffer?.request.aoi).toEqual({ type: 'Point', coordinates: [10, 50] });
   });
 
   it('the offer goes with a change of the choice, with the dialog, and with the next attempt', async () => {

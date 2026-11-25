@@ -71,7 +71,7 @@ function select(items: StacItem[], aoi: GeoJSON.Geometry | null = AOI) {
     activeGroupIndex: 0,
     selectedIds: items.map((i) => i.id),
     aoi,
-    aoiPoint: null,
+   
     layers: [],
     mapZoom: 1.6,
     viewportBbox: null,

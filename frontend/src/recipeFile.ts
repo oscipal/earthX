@@ -6,7 +6,7 @@
 // server decides on the order itself.
 
 import { orderAoi } from './processingOrder';
-import type { CropOutput, Order, OrderInput, OrderStep, RasterOutput } from './processing';
+import type { CropOutput, Order, OrderAoi, OrderInput, OrderStep, RasterOutput } from './processing';
 import { upgradeOrder, type NamesOf } from './recipeUpgrade';
 
 // The size the job route takes (`MAX_BODY_BYTES`).
@@ -81,8 +81,9 @@ export function readRecipe(text: string, namesOf?: NamesOf): RecipeRead {
     steps.push(step);
   }
   const { aoi, output } = json;
-  if (aoi !== undefined && !(isObject(aoi) && ((aoi.type === 'Polygon' && isCoordinates(aoi.coordinates, 3)) || (aoi.type === 'MultiPolygon' && isCoordinates(aoi.coordinates, 4))))) {
-    return fail('The recipe has an AOI that is not a polygon.');
+  const shapes = { Point: 1, Polygon: 3, MultiPolygon: 4 } as const;
+  if (aoi !== undefined && !(isObject(aoi) && typeof aoi.type === 'string' && aoi.type in shapes && isCoordinates(aoi.coordinates, shapes[aoi.type as keyof typeof shapes]))) {
+    return fail('The recipe has an AOI that is neither a point nor a polygon.');
   }
   if (!isObject(output) || (output.kind !== 'raster' && output.kind !== 'crop')) return fail('The recipe has no known output.');
   if (output.kind === 'raster' && typeof output.dtype !== 'string') return fail('The recipe names no output data type.');
@@ -92,7 +93,7 @@ export function readRecipe(text: string, namesOf?: NamesOf): RecipeRead {
   const order = {
     recipe_version: version,
     inputs,
-    ...(aoi ? { aoi: orderAoi(aoi as unknown as GeoJSON.Polygon | GeoJSON.MultiPolygon) } : {}),
+    ...(aoi ? { aoi: orderAoi(aoi as unknown as OrderAoi) } : {}),
     steps,
     output: output as unknown as RasterOutput | CropOutput,
   };

@@ -164,11 +164,11 @@ async function check(browser, { theme, viewport }) {
   await button.click();
   expect('"AOI coverage" wants a date range', !(await slider.isDisabled()) && !(await number.isDisabled()));
   await close();
-  await store((s) => s.setState({ aoiPoint: { type: 'Point', coordinates: [10.5, 47.5] } }));
+  await store((s) => s.setState({ aoi: { type: 'Point', coordinates: [10.5, 47.5] } }));
   await button.click();
-  expect('"AOI coverage" is locked for a point (Otto, 06.11.2026: its square is the AOI)', !(await number.isDisabled()) && !(await slider.isDisabled()), await coverage.getAttribute('data-tip'));
+  expect('"AOI coverage" is free for a point (M5-69: 0 or 100 %)', !(await number.isDisabled()) && !(await slider.isDisabled()), await coverage.getAttribute('data-tip'));
   await close();
-  await store((s) => s.setState({ aoiPoint: null }));
+  await store((s, aoi) => s.setState({ aoi }), AOI);
 
   // 3. Slider and field say the same; "0" is no filter.
   await button.click();

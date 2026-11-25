@@ -60,7 +60,7 @@ async function selectScene(page, dem) {
     useAppStore.setState({
       datasets: [{ id, title: id, viewable: true, groupBy: ['datetime'], zoom: { min: 8, max: 14 }, browse: 'quicklook', quicklookNodataMax: null, resultsGroupBy: ['datetime'], hasTimeAxis: true, collection }],
       datasetId: id, items: [item], groups: [{ key: ['2026-07-01'], label: '2026-07-01', items: [item] }],
-      activeGroupIndex: 0, selectedIds: ['ITEM_A'], aoi: polygon, aoiPoint: null, layers: [], focusMode: false, error: null,
+      activeGroupIndex: 0, selectedIds: ['ITEM_A'], aoi: polygon, layers: [], focusMode: false, error: null,
     });
   }, dem);
 }
