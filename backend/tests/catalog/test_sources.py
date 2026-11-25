@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 from datetime import date
 from pathlib import Path
@@ -321,13 +322,56 @@ CKAN = (
 )
 
 
+class TestCatalogPageAliases:
+    """Older forms of the catalogue page (M5-67 Fix 3, Otto 25.11.2026)."""
+
+    def test_without_them_none(self, tmp_path: Path) -> None:
+        assert read_source(_write(tmp_path, CKAN)).catalog_page_aliases == ()
+
+    @pytest.mark.parametrize(
+        ("text", "message"),
+        [
+            (STAC + "catalog_page_aliases:\n  - https://stac.example.org/old/{id}\n", "only for a CKAN source"),
+            (CKAN + "catalog_page_aliases: []\n", "a list of older forms"),
+            (CKAN + "catalog_page_aliases: https://portal.example.org/old/{name}\n", "a list of older forms"),
+            (CKAN + "catalog_page_aliases:\n  - http://portal.example.org/old/{name}\n", "null or an https"),
+            (CKAN + "catalog_page_aliases:\n  - https://portal.example.org/old/{id}\n", "names {name} once"),
+            (CKAN + "catalog_page_aliases:\n  - null\n", "each older form once"),
+            (
+                CKAN + "catalog_page_aliases:\n  - https://portal.example.org/dataset/{name}\n",
+                "not catalog_page itself",
+            ),
+            (
+                CKAN + "catalog_page_aliases:\n  - https://portal.example.org/a/{name}\n"
+                "  - https://portal.example.org/a/{name}\n",
+                "each older form once",
+            ),
+            (
+                CKAN.replace("https://portal.example.org/dataset/{name}", "null")
+                + "catalog_page_aliases:\n  - https://portal.example.org/a/{name}\n",
+                "with a catalog_page",
+            ),
+        ],
+    )
+    def test_a_wrong_setting(self, tmp_path: Path, text: str, message: str) -> None:
+        with pytest.raises(EntryFileError, match=re.escape(message)):
+            read_source(_write(tmp_path, text))
+
+
 class TestCatalogPageCheck:
     """M5-67 F12 = 2 (Otto, 24.11.2026): how the link check verifies a link to the catalogue's own page."""
 
-    def test_govdata_asks_its_api_and_waits_for_ottos_confirmation_of_the_form(self) -> None:
+    def test_govdata_asks_its_api_with_the_form_otto_opened(self) -> None:
+        # Otto, 25.11.2026: /suche/daten/<name> leads to the page; the two older forms do not.
         sources = read_sources()
-        check = sources["govdata"].catalog_page_check
-        assert (check.via, check.form_confirmed_on) == ("api", None)
+        govdata = sources["govdata"]
+        check = govdata.catalog_page_check
+        assert (check.via, check.form_confirmed_on) == ("api", date(2026, 11, 25))
+        assert govdata.catalog_page == "https://www.govdata.de/suche/daten/{name}"
+        assert govdata.catalog_page_aliases == (
+            "https://www.govdata.de/web/guest/suchen/-/details/{name}",
+            "https://www.govdata.de/daten/-/details/{name}",
+        )
         assert {key for key, s in sources.items() if s.catalog_page_check.via == "api"} == {"govdata", "fsdi-stac"}
 
     def test_the_fsdi_asks_its_collections_with_the_form_otto_opened(self) -> None:

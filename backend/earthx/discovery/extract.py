@@ -270,7 +270,8 @@ def _code_fingerprint(protocol: SourceProtocol) -> bytes:
 
 def extractor_version(source: SourceConfig) -> str:
     """The version a find's state is derived with: a fingerprint of the extractor and of the source's settings that
-    shape a find (its catalogue page, and for CKAN its publisher field and the extras of its page).
+    shape a find (its catalogue page, and for CKAN its publisher field, the extras of its page and the older forms of
+    its catalogue page).
 
     A find with a kept raw answer is judged again when it changes, also if the answer itself did not (Otto,
     17.11.2026); a changed ``catalog_page`` changes the link "Source" of every find, so it counts too.
@@ -280,6 +281,7 @@ def extractor_version(source: SourceConfig) -> str:
     if isinstance(source.filter, CkanFilter):
         digest.update(b"\0" + source.filter.publisher_field.encode())
         digest.update(b"\0" + "\0".join(source.filter.page_extras).encode())
+        digest.update(b"\0" + "\0".join(source.catalog_page_aliases).encode())
     return digest.hexdigest()[:16]
 
 

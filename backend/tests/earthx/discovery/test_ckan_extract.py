@@ -683,6 +683,48 @@ def test_the_field_url_comes_before_the_page_extras() -> None:
     assert extract_package(package["id"], package, GOVDATA_LIKE).source_url == PACKAGE["url"]
 
 
+#: Otto, 25.11.2026: GovData's older forms of its page of a dataset no longer lead to it.
+WITH_OLD_FORMS = replace(
+    GOVDATA_LIKE,
+    catalog_page_aliases=(
+        "https://portal.example.org/web/guest/suchen/-/details/{name}",
+        "https://portal.example.org/daten/-/details/{name}",
+    ),
+)
+
+
+@pytest.mark.parametrize(
+    ("url", "extras"),
+    [
+        ("https://portal.example.org/web/guest/suchen/-/details/example-dgm1", []),
+        ("https://portal.example.org/daten/-/details/a-different-name", []),
+        (None, [{"key": "uri", "value": "https://portal.example.org/web/guest/suchen/-/details/example-dgm1"}]),
+    ],
+)
+def test_an_older_form_of_the_catalogue_page_is_never_the_link(url: str | None, extras: list[dict[str, str]]) -> None:
+    package = _resources(FILE, url=url, extras=extras)
+    found = extract_package(package["id"], package, WITH_OLD_FORMS)
+    assert (found.source_url, found.source_rank) == ("https://portal.example.org/dataset/example-dgm1", 3)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://portal.example.org/web/guest/suchen/-/details/x/../../admin",
+        "https://portal.example.org/web/guest/suchen/-/details/",
+        "https://other.example.org/web/guest/suchen/-/details/example-dgm1",
+    ],
+)
+def test_an_address_only_like_an_older_form_stays_a_page_candidate(url: str) -> None:
+    package = _resources(FILE, url=url)
+    assert extract_package(package["id"], package, WITH_OLD_FORMS).source_rank == 2
+
+
+def test_the_older_forms_are_part_of_the_extractor_version() -> None:
+    # A changed list derives every find anew at the next harvest, without a request.
+    assert extractor_version(WITH_OLD_FORMS) != extractor_version(GOVDATA_LIKE)
+
+
 def test_page_extras_are_read_only_where_the_source_names_them() -> None:
     package = _resources(FILE, url=None, extras=[{"key": "uri", "value": "https://opendata.example.org/dataset/x"}])
     assert extract_package(package["id"], package, SOURCE).source_rank == 3
