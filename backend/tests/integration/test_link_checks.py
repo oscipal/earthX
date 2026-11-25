@@ -217,10 +217,14 @@ def test_a_share_just_below_the_threshold_guards_nothing(world: World) -> None:
 
 
 def test_due_links_come_most_urgent_first(world: World) -> None:
-    _published(world, "fresh", "old", "never", "unchecked", "moved")
+    _published(world, "fresh", "old", "never", "unchecked", "moved", "guarded")
     world.put(world.ckan, _find("new"))
     world.report()
     record_results(world.conn, [_result(world, "fresh")], NOW - timedelta(days=2))
+    # A guarded result decided nothing: due again in the next run, not only after 30 days (M5-67 §23.8).
+    record_results(world.conn, [_result(world, "guarded", "failed")], NOW - timedelta(days=1))
+    world.conn.execute("UPDATE public.earthx_link_check SET guarded = true WHERE dataset_id = %s",
+                       (_id(world, "guarded"),))
     record_results(world.conn, [_result(world, "old")], NOW - timedelta(days=40))
     record_results(world.conn, [_result(world, "unchecked", "unchecked")], NOW - timedelta(days=1))
     record_results(world.conn, [_result(world, "moved", url="https://amt.example.org/frueher")], NOW)
@@ -230,6 +234,7 @@ def test_due_links_come_most_urgent_first(world: World) -> None:
         ("new", 0),
         ("never", 1),
         ("moved", 1),
+        ("guarded", 2),
         ("unchecked", 2),
         ("old", 3),
     ]

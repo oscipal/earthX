@@ -59,7 +59,8 @@ class DueLink:
     url: str
     title: str
     identifiers: tuple[str, ...]
-    #: 0 new or presented again, 1 published and never checked with this link, 2 last check unchecked, 3 rotation.
+    #: 0 new or presented again, 1 published and never checked with this link, 2 last check unchecked or guarded,
+    #: 3 rotation.
     priority: int
 
 
@@ -92,7 +93,8 @@ def due_links(
 ) -> list[DueLink]:
     """Every harvested link that is due, most urgent first (plan §4a): new and presented-again entries without a pass
     of their current link; published or hidden ones never checked with their current link; those whose last check
-    was ``unchecked``; and every check older than ``recheck_days``, the oldest first."""
+    was ``unchecked`` or guarded (it decided nothing, M5-67 §23.8); and every check older than ``recheck_days``, the
+    oldest first."""
     with conn.cursor() as cur:
         cur.execute(
             f"""
@@ -101,7 +103,7 @@ def due_links(
                        e.source_key, e.dedupe_keys,
                        CASE WHEN e.state = 'in_review' THEN 0
                             WHEN c.dataset_id IS NULL OR c.url IS DISTINCT FROM {LINK} THEN 1
-                            WHEN c.outcome = 'unchecked' THEN 2
+                            WHEN c.outcome = 'unchecked' OR c.guarded THEN 2
                             ELSE 3 END AS priority,
                        c.checked_at
                 FROM public.earthx_listed_entry e
@@ -109,7 +111,7 @@ def due_links(
                 WHERE e.source_id <> %(hand)s AND e.state IN ('in_review', 'published', 'link_hidden')
                   AND (%(only)s::text[] IS NULL OR e.source_id = ANY(%(only)s))
                   AND {LINK} IS NOT NULL
-                  AND (c.dataset_id IS NULL OR c.url IS DISTINCT FROM {LINK} OR c.outcome = 'unchecked'
+                  AND (c.dataset_id IS NULL OR c.url IS DISTINCT FROM {LINK} OR c.outcome = 'unchecked' OR c.guarded
                        OR c.checked_at < coalesce(%(now)s, now()) - make_interval(days => %(days)s)
                        OR (e.state = 'in_review' AND NOT ({PASSED})))
             ) due
