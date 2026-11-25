@@ -35,9 +35,10 @@ _KEYS = frozenset(
         "copy_words",
         "min_title_chars",
         "file_endings",
-        "cleared",
     }
 )
+# Nothing cleared yet is the usual state: the key may be missing or empty (M5-67 fix 2); every other key is a rule.
+_OPTIONAL_KEYS = frozenset({"cleared"})
 _KINDS = frozenset({"raster", "vector", "table", "document", "service", "other"})
 _MAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 # An international number or one after "Tel"/"Telefon"/"phone": at least 8 digits in a run of digits and separators.
@@ -94,8 +95,8 @@ def _cleared(path: Path, values: list) -> frozenset[tuple[str, str]]:  # type: i
 
 def read_flag_rules(path: Path) -> FlagRules:
     data = read_yaml(path)
-    if not isinstance(data, dict) or set(data) != _KEYS:
-        raise EntryFileError(f"{path.name}: holds exactly {', '.join(sorted(_KEYS))}")
+    if not isinstance(data, dict) or not _KEYS <= set(data) <= _KEYS | _OPTIONAL_KEYS:
+        raise EntryFileError(f"{path.name}: holds exactly {', '.join(sorted(_KEYS))} and perhaps cleared")
     categories = set(load_categories().ids)
     imagery = set(_list(path, data, "imagery_categories"))
     if not imagery <= categories:
@@ -117,7 +118,7 @@ def read_flag_rules(path: Path) -> FlagRules:
         copy_words=parse_terms(_list(path, data, "copy_words"), "copy_words", path.name),
         min_title_chars=minimum,
         file_endings=frozenset(w.lower() for w in words["file_endings"]),
-        cleared=_cleared(path, _list(path, data, "cleared")),
+        cleared=_cleared(path, data.get("cleared") or []),
     )
 
 

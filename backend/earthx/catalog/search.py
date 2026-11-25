@@ -20,14 +20,28 @@ dataset the list is empty (adr/0026 K9); the full text cannot check this itself,
 and "-30". Nor does a bare number carry a dataset in the full text on its own: "Landsat 9", with no Landsat in the
 catalogue, finds nothing for its "9".
 
-The index holds full and listed entries (migration ``035``); a listed row counts only while its entry is published, and
-the area is matched against its footprint. Both arms go through the indexes of the table: the full text joins a row
-only to the units it matches, the trigram arm asks ``<%`` with the threshold set for the transaction.
+The index holds full and listed entries (migration ``035``); a listed row counts only while its entry is published (a
+harvested entry whose link has not passed the check is ``link_hidden`` and no hit, M5-67), and the area is matched
+against its footprint. Both arms go through the indexes of the table: the full text joins a row only to the units it
+matches, the trigram arm asks ``<%`` with the threshold set for the transaction.
+
+An area is applied before the text where that is cheaper (M5-65; :class:`Start`). Postgres cannot tell: it takes the
+hits of any text for 0.5 % of the rows, and a few large footprints over a small area make its count of the footprints
+that meet it a hundredth of the true one. So the search counts, up to a limit: where at most :data:`AREA_FIRST_MAX`
+published listed entries have a footprint whose box meets the area and the text has more than :data:`TEXT_FIRST_MAX`
+hits, it starts from the footprints (the GiST index of ``earthx_listed_entry``) and looks each entry up by its id;
+otherwise from the text, as before. At 10⁵ entries that makes a text with many hits ("Götterbaum", 4·10⁴) over a city
+6 to 9 times as fast, and costs a text with few ("Sentinel-2") about 10 ms for the two counts. A full row has the
+envelope of its box in ``geometry`` (migration ``038``). The statements are sent without preparation: a plan prepared
+for one area would serve the next.
 
 Hard filters before both arms: the area meets the footprints of a materialized dataset that has items in pgstac,
 otherwise the box of the collection (plan A4); the period overlaps the extent in time, an open end meaning now, and a
 dataset without a time axis never drops out for a period but is named in ``ignored_filters``. Without text the
 filtered full entries come in the order of the ids, without a rank (plan A6).
+
+The rank of a hit is the sum of the ranks of the units it matches, added in the order of the units: a sum of ``real``
+values depends on the order, which Postgres leaves to the plan, and equal ranks decide the fusion.
 
 Every text goes to SQL as a parameter, never into the statement.
 """
@@ -97,39 +111,96 @@ def box_area(west: float, south: float, east: float, north: float) -> dict[str, 
     return {"type": "Polygon", "coordinates": [ring]}
 
 
-_FILTERED = """
-    SELECT s.dataset_id, s.title, s.document, s.trigram_text, s.has_time_axis, s.entry
-    FROM public.earthx_dataset_search s
-    LEFT JOIN public.earthx_listed_entry e ON s.entry = 'listed' AND e.dataset_id = s.dataset_id
-    WHERE (s.entry = 'full' OR e.state = 'published')
-      AND (%(area)s::text IS NULL OR CASE
-            WHEN s.entry = 'listed'
-            THEN ST_Intersects(e.footprint, ST_SetSRID(ST_GeomFromGeoJSON(%(area)s::text), 4326))
-            WHEN s.item_holding = 'materialized'
-                 AND EXISTS (SELECT 1 FROM pgstac.items i WHERE i.collection = s.dataset_id)
+_AREA = "ST_SetSRID(ST_GeomFromGeoJSON(%(area)s::text), 4326)"
+#: The period meets the extent in time, an open end meaning now; an entry without a time axis never drops out.
+_TIME = """(NOT %(timed)s OR NOT f.has_time_axis OR (
+            (%(until)s::timestamptz IS NULL OR f.time_start IS NULL OR f.time_start <= %(until)s::timestamptz)
+            AND (%(since)s::timestamptz IS NULL OR COALESCE(f.time_end, now()) >= %(since)s::timestamptz)))"""
+#: A full entry with items in pgstac is met by the footprints of its items, any other by its box (plan A4).
+_FULL_AREA = f"""CASE
+            WHEN f.item_holding = 'materialized'
+                 AND EXISTS (SELECT 1 FROM pgstac.items i WHERE i.collection = f.dataset_id)
             THEN EXISTS (
                 SELECT 1 FROM pgstac.items i
-                WHERE i.collection = s.dataset_id
-                  AND ST_Intersects(i.geometry, ST_SetSRID(ST_GeomFromGeoJSON(%(area)s::text), 4326)))
-            ELSE ST_Intersects(
-                ST_MakeEnvelope(s.west, s.south, s.east, s.north, 4326),
-                ST_SetSRID(ST_GeomFromGeoJSON(%(area)s::text), 4326))
-          END)
-      AND (NOT %(timed)s OR NOT s.has_time_axis OR (
-            (%(until)s::timestamptz IS NULL OR s.time_start IS NULL OR s.time_start <= %(until)s::timestamptz)
-            AND (%(since)s::timestamptz IS NULL OR COALESCE(s.time_end, now()) >= %(since)s::timestamptz)))
+                WHERE i.collection = f.dataset_id AND ST_Intersects(i.geometry, {_AREA}))
+            ELSE ST_Intersects(f.geometry, {_AREA})
+          END"""
+
+
+class Start(Enum):
+    """Where a search starts (M5-65): the planner cannot know how many rows a text matches, so the search says."""
+
+    #: No area: from the text.
+    NO_AREA = "no_area"
+    #: From the published listed entries whose footprint meets the area, each looked up in the index by its id.
+    AREA = "area"
+    #: From the text; the footprint is checked on its hits.
+    TEXT = "text"
+
+
+#: The most published listed entries whose footprint has a box meeting the area, up to which a search can start from the
+#: area. Looking up one entry costs about as much as reading one hit of the text, 20 to 30 µs at 10⁵ entries.
+AREA_FIRST_MAX = 5_000
+#: The most hits of the full text, up to which a search starts from the text whatever the area keeps: reading 500
+#: hits is 15 ms at most, and a text with so few ("Sentinel-2") is the common case.
+TEXT_FIRST_MAX = 500
+
+_CANDIDATES_SQL = f"""
+    SELECT count(*) FROM (
+        SELECT 1 FROM public.earthx_listed_entry e
+        WHERE e.state = 'published' AND e.footprint && {_AREA} LIMIT %(limit)s) c
 """
+
+
+def _sources(start: Start) -> tuple[tuple[str, str], tuple[str, str]]:
+    """What both arms read, as the ``FROM`` and ``WHERE`` of each of the two kinds of row, in the alias ``f``.
+
+    The published listed entries and the full entries are two flat queries, not one query over a union: with a union
+    Postgres cannot push the join with the text into its branches. A listed row of an entry the harvest took back, or
+    whose link has not passed the check (``link_hidden``, M5-67), is no row of the first source, whatever the start.
+
+    :attr:`Start.AREA`: the entries the area keeps come from the GiST index of ``earthx_listed_entry`` (partial on
+    ``published``), and each is looked up here by its id, one lookup per entry. The two ``OFFSET 0`` keep Postgres
+    from turning that into a join it orders by its own guess. :attr:`Start.TEXT`: ``NOT ST_Disjoint`` is the same test
+    as ``ST_Intersects`` without its use of the index. Without an area, no condition on a geometry is in the statement.
+    """
+    spatial = start is not Start.NO_AREA
+    full_area = f" AND {_FULL_AREA}" if spatial else ""
+    if start is Start.AREA:
+        listed = (
+            f"""(SELECT e.dataset_id FROM public.earthx_listed_entry e
+                 WHERE e.state = 'published' AND ST_Intersects(e.footprint, {_AREA}) OFFSET 0) a
+            CROSS JOIN LATERAL (
+                SELECT s.dataset_id, s.title, s.document, s.trigram_text, s.has_time_axis, s.time_start, s.time_end,
+                       s.entry
+                FROM public.earthx_dataset_search s WHERE s.dataset_id = a.dataset_id AND s.entry = 'listed'
+                OFFSET 0) f""",
+            _TIME,
+        )
+    else:
+        listed_area = f" AND NOT ST_Disjoint(e.footprint, {_AREA})" if start is Start.TEXT else ""
+        listed = (
+            "public.earthx_dataset_search f JOIN public.earthx_listed_entry e ON e.dataset_id = f.dataset_id",
+            f"f.entry = 'listed' AND e.state = 'published'{listed_area} AND {_TIME}",
+        )
+    full = ("public.earthx_dataset_search f", f"f.entry = 'full'{full_area} AND {_TIME}")
+    return listed, full
 
 
 _WORDS_OF_DIGITS = "ARRAY(SELECT w FROM unnest(string_to_array(f.trigram_text, ' ')) w WHERE w ~ '^[0-9]+$')"
 _RUNS_OF_DIGITS = "ARRAY(SELECT (regexp_matches(f.trigram_text, '[0-9]+', 'g'))[1])"
 
 
-def _carries(words: str, runs: str | None = None) -> str:
+def _carries(words: str | None = None, runs: str | None = None) -> str:
     """True where id, title or keywords of the row ``f`` have every number of the parameter ``words`` as a word and
-    every one of ``runs`` as a run of digits."""
-    condition = f"%({words})s::text[] <@ {_WORDS_OF_DIGITS}"
-    return condition if runs is None else f"{condition} AND %({runs})s::text[] <@ {_RUNS_OF_DIGITS}"
+    every one of ``runs`` as a run of digits. A parameter that is ``None`` has nothing to carry: its condition is left
+    out, because Postgres would evaluate it for every row and find it true."""
+    conditions = []
+    if words is not None:
+        conditions.append(f"%({words})s::text[] <@ {_WORDS_OF_DIGITS}")
+    if runs is not None:
+        conditions.append(f"%({runs})s::text[] <@ {_RUNS_OF_DIGITS}")
+    return " AND ".join(conditions) or "true"
 
 
 def _name_numbers(words: Sequence[str]) -> list[int]:
@@ -227,12 +298,46 @@ def _bare_number(unit: Unit) -> bool:
     return not unit.from_glossary and all(_NUMBER.fullmatch(word) for word in unit.terms[0].split("-"))
 
 
-def _full_text_sql(units: Sequence[Unit], joining: Joining) -> sql.Composed:
-    rows = sql.SQL(", ").join(
+def _unit_rows(units: Sequence[Unit]) -> sql.Composed:
+    return sql.SQL(", ").join(
         sql.SQL("({}, {}, {}, {})").format(
             sql.Literal(number), _unit_query(unit, number), _stop_word(unit, number), sql.Literal(_bare_number(unit))
         )
         for number, unit in enumerate(units)
+    )
+
+
+def _text_hits_sql(units: Sequence[Unit]) -> sql.Composed:
+    """At most ``limit`` rows (one per unit a row matches) of the full text, to be counted."""
+    return sql.SQL(
+        """
+        WITH all_units(ord, query, stop, bare) AS (VALUES {rows}),
+        units AS (SELECT ord, query, bare FROM all_units WHERE NOT stop)
+        SELECT count(*) FROM (
+            SELECT 1 FROM units u JOIN public.earthx_dataset_search s ON s.document @@ u.query LIMIT %(limit)s) h
+        """
+    ).format(rows=_unit_rows(units))
+
+
+def _full_text_sql(units: Sequence[Unit], joining: Joining, *, start: Start, named_numbers: bool) -> sql.Composed:
+    rows = _unit_rows(units)
+    hits = sql.SQL(" UNION ALL ").join(
+        sql.SQL(
+            """
+            SELECT f.dataset_id, f.title, f.has_time_axis, f.entry,
+                   count(*) FILTER (WHERE f.document @@ u.query) AS matched,
+                   count(*) FILTER (WHERE f.document @@ u.query AND NOT u.bare) AS matched_words,
+                   count(*) FILTER (WHERE f.document @@ u.query AND u.ord IN (SELECT ord FROM known)) AS matched_known,
+                   sum(ts_rank_cd(f.document, u.query) ORDER BY u.ord) AS rank
+            FROM {source}, units u
+            WHERE {condition} AND f.document @@ u.query AND {carries}
+            GROUP BY f.dataset_id, f.title, f.has_time_axis, f.entry"""
+        ).format(
+            source=sql.SQL(source),
+            condition=sql.SQL(condition),
+            carries=sql.SQL(_carries("named_numbers" if named_numbers else None)),
+        )
+        for source, condition in _sources(start)
     )
     return sql.SQL(
         """
@@ -241,42 +346,40 @@ def _full_text_sql(units: Sequence[Unit], joining: Joining) -> sql.Composed:
         known AS (
             SELECT u.ord FROM units u
             WHERE EXISTS (SELECT 1 FROM public.earthx_dataset_search s WHERE s.document @@ u.query)),
-        filtered AS ({filtered}),
-        hits AS (
-            SELECT f.dataset_id, f.title, f.has_time_axis, f.entry,
-                   count(*) FILTER (WHERE f.document @@ u.query) AS matched,
-                   count(*) FILTER (WHERE f.document @@ u.query AND NOT u.bare) AS matched_words,
-                   count(*) FILTER (WHERE f.document @@ u.query AND u.ord IN (SELECT ord FROM known)) AS matched_known,
-                   sum(ts_rank_cd(f.document, u.query)) AS rank
-            FROM filtered f JOIN units u ON f.document @@ u.query
-            WHERE {carries}
-            GROUP BY f.dataset_id, f.title, f.has_time_axis, f.entry)
+        hits AS ({hits})
         SELECT h.dataset_id, h.title, h.has_time_axis, h.entry, h.rank FROM hits h
         WHERE h.matched_words > 0 AND {condition}
         ORDER BY h.rank DESC, h.title, h.dataset_id
         """
-    ).format(
-        rows=rows,
-        filtered=sql.SQL(_FILTERED),
-        condition=sql.SQL(_JOIN_CONDITION[joining]),
-        carries=sql.SQL(_carries("named_numbers")),
+    ).format(rows=rows, hits=hits, condition=sql.SQL(_JOIN_CONDITION[joining]))
+
+
+def _trigram_sql(*, start: Start, numbers: bool, codes: bool) -> sql.Composed:
+    arms = sql.SQL(" UNION ALL ").join(
+        sql.SQL(
+            """
+            SELECT f.dataset_id, f.title, f.has_time_axis, f.entry, word_similarity(%(normal)s, f.trigram_text) AS score
+            FROM {source}
+            WHERE {condition} AND %(normal)s <%% f.trigram_text AND {carries}"""
+        ).format(
+            source=sql.SQL(source),
+            condition=sql.SQL(condition),
+            carries=sql.SQL(_carries("numbers" if numbers else None, "codes" if codes else None)),
+        )
+        for source, condition in _sources(start)
     )
+    return sql.SQL(
+        "SELECT t.dataset_id, t.title, t.has_time_axis, t.entry, t.score FROM ({arms}) t"
+        " ORDER BY t.score DESC, t.title, t.dataset_id"
+    ).format(arms=arms)
 
 
-_TRIGRAM_SQL = sql.SQL(
-    """
-    WITH filtered AS ({filtered})
-    SELECT f.dataset_id, f.title, f.has_time_axis, f.entry, word_similarity(%(normal)s, f.trigram_text)
-    FROM filtered f
-    WHERE %(normal)s <%% f.trigram_text AND {carries}
-    ORDER BY word_similarity(%(normal)s, f.trigram_text) DESC, f.title, f.dataset_id
-    """
-).format(filtered=sql.SQL(_FILTERED), carries=sql.SQL(_carries("numbers", "codes")))
-
-_UNRANKED_SQL = sql.SQL(
-    "WITH filtered AS ({filtered}) SELECT f.dataset_id, f.title, f.has_time_axis, f.entry, 0 FROM filtered f"
-    " WHERE f.entry = 'full' ORDER BY f.dataset_id"
-).format(filtered=sql.SQL(_FILTERED))
+def _unranked_sql(*, start: Start) -> sql.Composed:
+    source, condition = _sources(start)[1]
+    return sql.SQL(
+        "SELECT f.dataset_id, f.title, f.has_time_axis, f.entry, 0 FROM {source} WHERE {condition}"
+        " ORDER BY f.dataset_id"
+    ).format(source=sql.SQL(source), condition=sql.SQL(condition))
 
 
 def ranks(scored: Sequence[tuple[str, float]]) -> dict[str, int]:
@@ -310,6 +413,33 @@ def _filter_params(area: Mapping[str, Any] | None, period: tuple[datetime | None
     }
 
 
+async def _start(
+    conn: Any,
+    params: Mapping[str, Any],
+    units: Sequence[Unit],
+    terms: Mapping[str, str],
+    area_first_max: int,
+    text_first_max: int,
+) -> Start:
+    """Where a search with the text ``units`` and the area of ``params`` starts, by counting up to a limit.
+
+    From the area where at most ``area_first_max`` published listed entries have a footprint whose box meets it and the
+    text has more than ``text_first_max`` hits; otherwise from the text. Postgres could not decide this: it takes the
+    hits of a text for 0.5 % of the rows whatever the words, and the footprints of an area for as many rows as its
+    statistics say, which for a few large footprints over a small area is one row instead of thousands.
+    """
+    if params["area"] is None:
+        return Start.NO_AREA
+    async with conn.cursor() as cur:
+        await cur.execute(_CANDIDATES_SQL, {"area": params["area"], "limit": area_first_max + 1}, prepare=False)
+        candidates = (await cur.fetchone())[0]
+        if candidates > area_first_max or not units:
+            return Start.TEXT
+        await cur.execute(_text_hits_sql(units), {**terms, "limit": text_first_max + 1}, prepare=False)
+        hits = (await cur.fetchone())[0]
+    return Start.TEXT if hits <= text_first_max else Start.AREA
+
+
 async def search_datasets(
     conn: Any,
     text: str | None,
@@ -319,6 +449,8 @@ async def search_datasets(
     joining: Joining = JOINING,
     threshold: float = TRIGRAM_THRESHOLD,
     glossary: Glossary | None = None,
+    area_first_max: int = AREA_FIRST_MAX,
+    text_first_max: int = TEXT_FIRST_MAX,
 ) -> SearchResult:
     """The datasets for ``text`` within ``area`` (a GeoJSON polygon in WGS 84) and ``period`` (either end open), ranked.
 
@@ -332,7 +464,7 @@ async def search_datasets(
 
     async def run(statement: sql.Composable, extra: Mapping[str, object]) -> list[tuple[str, float]]:
         async with conn.cursor() as cur:
-            await cur.execute(statement, {**params, **extra})
+            await cur.execute(statement, {**params, **extra}, prepare=False)
             found = await cur.fetchall()
         for dataset_id, title, timed, entry, _ in found:
             rows[dataset_id] = (title, timed, entry)
@@ -342,9 +474,12 @@ async def search_datasets(
     async with conn.transaction():
         await conn.execute("SET LOCAL client_min_messages = warning")
         if text is None or not text.strip():
-            ids: tuple[str, ...] = tuple(dataset_id for dataset_id, _ in await run(_UNRANKED_SQL, {}))
+            start = Start.NO_AREA if area is None else Start.TEXT
+            ids: tuple[str, ...] = tuple(dataset_id for dataset_id, _ in await run(_unranked_sql(start=start), {}))
         else:
             units = parse_query(text, glossary)
+            terms = {f"term_{n}_{i}": term for n, unit in enumerate(units) for i, term in enumerate(unit.terms)}
+            start = await _start(conn, params, units, terms, area_first_max, text_first_max)
             normal = normalize(text)
             numbers, codes = numbers_of(text)
             full_text = []
@@ -355,9 +490,9 @@ async def search_datasets(
                         await cur.execute(_NAMES_SQL, (names_before_numbers(text),))
                         names = numbered_names([row[0] for row in await cur.fetchall()])
                     named_numbers = numbers_after_names(text, names)
-                terms = {f"term_{n}_{i}": term for n, unit in enumerate(units) for i, term in enumerate(unit.terms)}
                 full_text = await run(
-                    _full_text_sql(units, joining), {**terms, "share": MIN_SHARE, "named_numbers": list(named_numbers)}
+                    _full_text_sql(units, joining, start=start, named_numbers=bool(named_numbers)),
+                    {**terms, "share": MIN_SHARE, "named_numbers": list(named_numbers)},
                 )
             # A similarity is at most 1: above it, the arm finds nothing and pg_trgm would refuse the threshold.
             trigrams = []
@@ -365,7 +500,10 @@ async def search_datasets(
                 await conn.execute(
                     "SELECT set_config('pg_trgm.word_similarity_threshold', %s, true)", (str(threshold),)
                 )
-                trigrams = await run(_TRIGRAM_SQL, {"normal": normal, "numbers": list(numbers), "codes": list(codes)})
+                trigrams = await run(
+                    _trigram_sql(start=start, numbers=bool(numbers), codes=bool(codes)),
+                    {"normal": normal, "numbers": list(numbers), "codes": list(codes)},
+                )
             ids = fuse(ranks(full_text), ranks(trigrams), titles={i: row[0] for i, row in rows.items()})
     listed = frozenset(i for i in ids if rows[i][2] == "listed")
     if period is None:
