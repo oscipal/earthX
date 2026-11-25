@@ -131,6 +131,9 @@ services:
     entrypoint: ["python", "-m", "earthx.discovery.report", "--out", "/out"]
     volumes:
       - ./backend/catalog/approvals:/out
+      # The warning signs (M5-67 §5) are rules of the checkout, not of the image: the harvest of one run reads them as
+      # they stand on `main` (tests/test_harvest_container_files.py).
+      - ./backend/catalog/flags.yaml:/app/catalog/flags.yaml:ro
     environment:
       # The scripts run it as the owner of the checkout (`--user`), who has no home in the image.
       HOME: /tmp
@@ -178,6 +181,10 @@ services:
     volumes:
       - ./backend/catalog/approvals:/approvals
       - ./docs/harvest:/harvest
+      # The rules of the approval (M5-67 §6) and the warning signs the module of the report names: rules of the
+      # checkout, read-only, at the place the code reads them.
+      - ./backend/catalog/approval_rules.yaml:/app/catalog/approval_rules.yaml:ro
+      - ./backend/catalog/flags.yaml:/app/catalog/flags.yaml:ro
     environment:
       HOME: /tmp
       PGHOST: postgres
@@ -200,6 +207,9 @@ services:
       context: ./backend
       target: app
     entrypoint: ["python", "-m", "earthx.discovery.linkcheck"]
+    volumes:
+      # The rules and thresholds of the link check (M5-67 §4): a rule of the checkout, not of the image.
+      - ./backend/catalog/linkcheck.yaml:/app/catalog/linkcheck.yaml:ro
     environment:
       EARTHX_USER_AGENT: ${EARTHX_USER_AGENT:-}
       PGHOST: postgres

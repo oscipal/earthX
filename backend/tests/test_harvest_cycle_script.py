@@ -197,9 +197,11 @@ def test_every_failing_step_names_the_line_that_says_why() -> None:
     assert "unerwarteter Fehler in Zeile" in catch
 
 
-def test_a_second_run_on_the_same_day_takes_a_branch_of_its_own_and_closes_the_old_failed_drafts() -> None:
+def test_every_run_takes_a_branch_named_by_its_time_and_closes_the_old_failed_drafts() -> None:
     branch = _between("$Step = 'Branch'", "$Trial = ")
-    assert 'if (Branch-Taken $Branch) {' in branch and "(Get-Date -Format 'HHmm')" in branch
+    # Otto, 25.11.2026: always harvest/<day>-<HHmm>, also where harvest/<day> is free.
+    assert '$Branch = "harvest/$day-" + (Get-Date -Format \'HHmm\')' in branch
+    assert 'harvest/$day"' not in branch and '$Label = "$day " + (Get-Date -Format \'HH:mm\')' in branch
     assert 'while (Branch-Taken $Branch)' in branch  # even a second run in the same minute
     taken = _between("function Branch-Taken", "if ($Install)")
     assert "'rev-parse', '--verify', '--quiet', $Name" in taken and "'ls-remote', '--exit-code', '--heads', 'origin', $Name" in taken

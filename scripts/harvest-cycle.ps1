@@ -8,7 +8,7 @@
     rules: docs/adr/0033-freigabe-gelisteter-eintraege.md section 8.5 (Otto, 2026-11-24).
 
     A run: checks git, gh, a clean checkout and Docker (starts Docker Desktop if needed); `docker compose up -d --build`;
-    a branch harvest/<day>; per enabled source a harvest, then licence spellings and grants, the report with its
+    a branch harvest/<day>-<time>; per enabled source a harvest, then licence spellings and grants, the report with its
     classify excerpt, the link check, the approval by rules and the files of the run in docs/harvest/; commits, push,
     one pull request with gh; waits for the four required checks, merges with a merge commit, pulls and starts the
     platform again. The first run is a trial: it hides nothing and approves nothing.
@@ -19,7 +19,7 @@
     ..\earthx-ausgaben\<day>_<time>\ next to the checkout, never into the repository; the repository gets only the
     cleaned files of the run.
 
-    A second run on the same day takes a branch of its own (harvest/<day>-<time>). Draft pull requests of earlier failed
+    Every run takes a branch named by its time (harvest/<day>-<time>). Draft pull requests of earlier failed
     runs (title "Harvest run ... (failed)", branch harvest/<day>...) are closed by the next run with a short comment, and
     their branches are deleted.
 
@@ -319,17 +319,15 @@ try {
     if ($Closed.Count) { Say "Gescheiterte Draft-PRs frueherer Laeufe geschlossen: $($Closed -join ', ')." }
 
     $Step = 'Branch'
-    # The first run of a day is harvest/<day>; a second one (its branch may still stand, with a draft PR) takes the time.
-    $Branch = "harvest/$day"
-    if (Branch-Taken $Branch) {
-        $Label = "$day " + (Get-Date -Format 'HH:mm')
-        $Branch = "harvest/$day-" + (Get-Date -Format 'HHmm')
-        $number = 2
-        $base = $Branch
-        while (Branch-Taken $Branch) {
-            $Branch = "$base-$number"
-            $number += 1
-        }
+    # Always harvest/<day>-<HHmm> (Otto, 25.11.2026): a run is known by its time; only a second run in the same minute
+    # takes a number.
+    $Label = "$day " + (Get-Date -Format 'HH:mm')
+    $Branch = "harvest/$day-" + (Get-Date -Format 'HHmm')
+    $number = 2
+    $base = $Branch
+    while (Branch-Taken $Branch) {
+        $Branch = "$base-$number"
+        $number += 1
     }
     if ((Native 'git switch -c' @('git', 'switch', '-c', $Branch)) -ne 0) { $Branch = $null; throw "Branch: laesst sich nicht anlegen.$(Reason)" }
     $Trial = -not (Get-ChildItem (Join-Path $Repo 'docs\harvest\laeufe') -Directory -ErrorAction SilentlyContinue)
