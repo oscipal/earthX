@@ -3,6 +3,7 @@ the repository, the list of findings and the files of a run. Pure: no database, 
 
 from __future__ import annotations
 
+import time
 from datetime import date
 from pathlib import Path
 
@@ -104,6 +105,13 @@ def test_wrong_rules(tmp_path: Path, text: str, message: str) -> None:
 def test_clean(text: str, kept: str, gone: str) -> None:
     cleaned = clean(text)
     assert kept in cleaned and gone not in cleaned
+
+
+def test_clean_takes_linear_time_on_a_long_word() -> None:
+    # A description of one long word (a pasted hash, base64) once took a minute: the mail pattern tried every letter.
+    started = time.monotonic()
+    assert clean("d" * 200_000) == "d" * 200_000
+    assert time.monotonic() - started < 2
 
 
 def test_clean_leaves_ids_and_plain_links() -> None:

@@ -61,7 +61,8 @@ _SECRET_PARAM = re.compile(
     re.IGNORECASE,
 )
 _HASH = re.compile(r"\b[0-9a-f]{64}\b")
-_MAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+# Only from the start of a word: else a long word without "@" is tried from each of its letters (quadratic time).
+_MAIL = re.compile(r"(?<![\w.+-])[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 _ENV = re.compile(r"\b(PG\w+|POSTGRES_\w+|EARTHX_\w+|GH_TOKEN|GITHUB_TOKEN)=\S+")
 # A path on Otto's computer names his account: C:\Users\<name>\..., /home/<name>/..., /Users/<name>/...
 _LOCAL_PATH = re.compile(r"(?i)\b[a-z]:\\(?:users|dokumente und einstellungen|documents and settings)\\[^\s'\"`<>]+|"
