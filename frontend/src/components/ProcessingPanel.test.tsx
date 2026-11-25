@@ -824,7 +824,7 @@ describe('resampling and data type (Otto, 12.10.2026)', () => {
     const details = container.querySelector('details')!;
     act(() => details.setAttribute('open', ''));
     choose(dtypeSelect(), 'uint8');
-    expect(dtypeLine()).toBe('Data type: uint8 (your choice)');
+    expect(dtypeLine()).toBe('Data type: uint8');
     click(button('Band math'));
     expect(dtypeLine()).toBe('Data type: float32 (chosen automatically)');
     expect(offered()).toEqual(['', 'float32']);
@@ -835,7 +835,7 @@ describe('resampling and data type (Otto, 12.10.2026)', () => {
     select([classes()]);
     await openPanel();
     choose(dtypeSelect(), 'float32');
-    expect(dtypeLine()).toBe('Data type: float32 (your choice)');
+    expect(dtypeLine()).toBe('Data type: float32');
     choose(dtypeSelect(), '');
     expect(dtypeLine()).toBe('Data type: uint8 (chosen automatically)');
     expect([...dtypeSelect().options][0].textContent).toBe('Automatic: uint8');
