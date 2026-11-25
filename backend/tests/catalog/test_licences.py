@@ -13,6 +13,7 @@ from earthx.catalog.sources import read_sources
 
 TERM = """\
 - license_ref: {ref}
+  licence_class: {klass}
   matches: {matches}
   license:
     spdx_id: {spdx}
@@ -32,9 +33,18 @@ TERM = """\
 
 
 def _term(
-    ref: str, matches: str, *, spdx: str = "null", commercial: str = "true", derivatives: str = "true", tier: str = "catalog"
+    ref: str,
+    matches: str,
+    *,
+    spdx: str = "null",
+    commercial: str = "true",
+    derivatives: str = "true",
+    tier: str = "catalog",
+    klass: str = "K2",
 ) -> str:
-    return TERM.format(ref=ref, matches=matches, spdx=spdx, commercial=commercial, derivatives=derivatives, tier=tier)
+    return TERM.format(
+        ref=ref, matches=matches, spdx=spdx, commercial=commercial, derivatives=derivatives, tier=tier, klass=klass
+    )
 
 
 def _write(tmp_path: Path, terms: str, grants: dict[str, str] | None = None) -> Path:
@@ -46,7 +56,7 @@ def _write(tmp_path: Path, terms: str, grants: dict[str, str] | None = None) -> 
 
 
 BY = _term("cc-by-4.0", "[CC-BY-4.0, 'http://dcat-ap.de/def/licenses/cc-by/4.0']", spdx="CC-BY-4.0")
-NC = _term("cc-by-nc-4.0", "[CC-BY-NC-4.0]", commercial="false")
+NC = _term("cc-by-nc-4.0", "[CC-BY-NC-4.0]", commercial="false", klass="K4")
 GRANTS = {
     "govdata": """\
 - publisher: Amt für Beispiele
@@ -112,7 +122,16 @@ class TestTheShippedFiles:
         assert flags("opendata-swiss-by-ask") == (True, False, True, False, True)
         assert flags("cc-by-nd-4.0") == (True, True, False, False, True)
         assert flags("nb-gdikom-b") == flags("admin-ch-terms") == (False, False, False, False, False)
-        assert all(term.license.tier is LicenseTier.CATALOG for term in catalogue.terms.values())
+
+    def test_the_tiers_otto_graded(self, catalogue) -> None:  # type: ignore[no-untyped-def]
+        # Otto, 25.11.2026 (plan §14.1.12, F16): processing for K1 and K2, every other class stays in the catalogue.
+        by_class: dict[str, set[LicenseTier]] = {}
+        for term in catalogue.terms.values():
+            by_class.setdefault(term.licence_class, set()).add(term.license.tier)
+        assert by_class["K1"] == by_class["K2"] == {LicenseTier.PROCESSING}
+        assert all(by_class[k] == {LicenseTier.CATALOG} for k in ("K3", "K4", "K5", "K6"))
+        assert catalogue.terms["cc-by-sa-4.0"].licence_class == "K3"
+        assert catalogue.terms["cc-by-4.0"].license.tier is LicenseTier.PROCESSING
 
     def test_the_texts_of_the_attribution_otto_named(self, catalogue) -> None:  # type: ignore[no-untyped-def]
         assert catalogue.terms["swisstopo-ogd"].license.attribution_unmodified == "© swisstopo"
@@ -196,6 +215,31 @@ class TestLoadErrors:
         # KLAERUNGEN B11: without derivatives only the catalogue.
         with pytest.raises(EntryFileError, match="tier above catalog needs derivatives"):
             _catalogue(tmp_path, _term("nd", "[ND]", derivatives="false", tier="display"), grants={})
+
+    @pytest.mark.parametrize("klass", ["K3", "K4", "K5", "K6"])
+    def test_a_tier_above_catalog_outside_k1_and_k2(self, tmp_path: Path, klass: str) -> None:
+        # Otto, 25.11.2026: only K1 and K2 go above the catalogue; share alike (K3) cannot pass on to results.
+        with pytest.raises(EntryFileError, match="only for the classes K1 and K2"):
+            _catalogue(tmp_path, _term("sa", "[SA]", tier="processing", klass=klass), grants={})
+
+    @pytest.mark.parametrize("tier", ["catalog", "display", "processing"])
+    def test_k1_and_k2_may_take_any_tier(self, tmp_path: Path, tier: str) -> None:
+        catalogue = _catalogue(tmp_path, _term("by", "[BY]", tier=tier, klass="K1"), grants={})
+        assert catalogue.terms["by"].license.tier.value == tier
+
+    @pytest.mark.parametrize("klass", ["K0", "K7", "k2", "", "2"])
+    def test_an_unknown_class(self, tmp_path: Path, klass: str) -> None:
+        with pytest.raises(EntryFileError, match="licence_class is one of"):
+            _catalogue(tmp_path, _term("x", "[X]", klass=f"'{klass}'"), grants={})
+
+    def test_a_missing_class(self, tmp_path: Path) -> None:
+        with pytest.raises(EntryFileError):
+            _catalogue(tmp_path, _term("x", "[X]").replace("  licence_class: K2\n", ""), grants={})
+
+    def test_a_k2_licence_without_commercial_use_is_misclassed(self, tmp_path: Path) -> None:
+        # A non-commercial licence filed as K2 would reach the processing tier: the class is checked against the flags.
+        with pytest.raises(EntryFileError, match="allows commercial use"):
+            _catalogue(tmp_path, _term("nc", "[NC]", commercial="false", klass="K2"), grants={})
 
     def test_an_unknown_field(self, tmp_path: Path) -> None:
         with pytest.raises(EntryFileError):

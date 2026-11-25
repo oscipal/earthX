@@ -1,6 +1,6 @@
 # M5-20 — Verify, Enrich, Dedupe, Lizenzregeln, Freigabe geernteter Einträge, Kandidaten
 
-**Status (19.11.2026):** Plan angenommen (Otto, 19.11.2026: F1–F6 und F8 je 1, F7 = 3, §13a; Vorgaben aus der Messung §4 in §13b, sie gehen §6–§9 vor; F9–F11 je 1 und A18 angenommen, §13c; Vorgaben aus `-Classify` vom 20.11. in §13d und §13e; F12 = 1 und 2). **Stufe B.** PR 1 in [#388](https://github.com/oscipal/earthX/pull/388), PR 2 danach; höchstens zwei PRs (M5-Plan §2 Punkt 11). **PR 2 (24.11.2026):** Plan in §14.1 mit Fragen F15–F17, Bau nach Ottos Antworten.
+**Status (19.11.2026):** Plan angenommen (Otto, 19.11.2026: F1–F6 und F8 je 1, F7 = 3, §13a; Vorgaben aus der Messung §4 in §13b, sie gehen §6–§9 vor; F9–F11 je 1 und A18 angenommen, §13c; Vorgaben aus `-Classify` vom 20.11. in §13d und §13e; F12 = 1 und 2). **Stufe B.** PR 1 in [#388](https://github.com/oscipal/earthX/pull/388), PR 2 danach; höchstens zwei PRs (M5-Plan §2 Punkt 11). **PR 2 (24.11.2026):** Plan in §14.1; Antworten Otto 25.11.2026 (F15 = 1, F16 Einstufung K1/K2, F17 = 1, A32–A40) in §14.1.12; im Bau.
 **Aufgabe:** M5-20 aus `docs/plans/m5/m5-discovery-und-suche.md` §6.2, Auftrag von Otto vom 19.11.2026.
 **Grundlagen:** `adr/0025` (Schnitt 5, §5.1, §5.4, §6.3, §6.4, §6.5, §6.7 mit Nachträgen), `adr/0033` (§4–§11, §13 Zeile M5-20), `plans/m5/m5-19-harvest-kern.md` §12 (Befunde der Läufe, §12.11 offene Punkte), `plans/m5/m5-40-gelistete-in-postgres.md` (Tabelle, Filter, F10), M5-Plan §2 Punkt 12 (alle Datentypen, Filter nach Region und Zeit), `projektuebersicht.md` Prinzipien 12, 15, 16, KLAERUNGEN B8, B9, B11.
 
@@ -623,6 +623,15 @@ Ohne Netz, synthetische Bytes und Dokumente, Transport-Attrappe am `Gateway` (wi
 - **A38** Über `coll:` und DOI bleibt die gelistete Zeile bis zum nächsten Lauf neben dem neuen vollen Eintrag sichtbar; über `also_listed_as` verschwindet sie mit `catalog-load`.
 - **A39** Im Probelauf (M5-67 F7) schreibt `propose` die Kandidaten ohne `legal_status` und ohne `decided_by`.
 - **A40** „—“ im Data catalogue (A7, eine Zeile Frontend) ist nicht Teil dieses PR und bleibt als kleine eigene Aufgabe offen.
+
+#### 14.1.12 Antworten Otto (25.11.2026)
+
+- **F15 = 1:** Kandidaten werden nach Regeln freigegeben (`legal_status: cleared`, `license_rule`, `decided_by: rules`), mit dem Merge des Lauf-PR stehen sie in der Warteschlange; den vollen Eintrag prüft und merged Otto im Onboarding-PR.
+- **F16, Einstufung Otto (25.11.2026):** Stufe `processing` nur für Lizenzen der Klassen **K1 und K2** (Weitergabe und Bearbeitung erlaubt, höchstens Namensnennung). **K3** (gleiche Bedingungen) bleibt vorerst `catalog`, weil EarthX die Lizenz nicht auf Ergebnisse vererben kann; **K4 und K5** bleiben `catalog`. Umgesetzt in `terms.yaml`: jede Lizenz trägt ihre Klasse als Feld `licence_class` (bisher nur Kommentar), K1 und K2 mit `tier: processing` und `approved_on: 2026-11-25`. Der Lader lehnt eine Stufe über `catalog` außerhalb von K1/K2 ab, ebenso eine K1/K2-Lizenz ohne kommerzielle Nutzung oder mit gleichen Bedingungen (falsche Klasse). Nach `adr/0031` §8 können damit Kandidaten mit K1/K2-Lizenz volle Einträge werden. Gelistete Einträge bleiben `catalog`; ihr Inhalt ändert sich nicht, keiner wird nach A18 unsichtbar (Test).
+- **Offen (eigene Entscheidung, wenn gebraucht):** Stufe über `catalog` für K3. Dazu müsste EarthX die Bedingung „gleiche Bedingungen“ auf Ergebnisse und Exporte übertragen.
+- **F17 = 1:** lesbare ID als Vorschlag, Ablösung über Schlüssel; Funde ohne Schlüssel werden kein Kandidat. Nachtrag zu `adr/0033` §11 mit dem Bau.
+- **A32–A40 angenommen.**
+- **Neue Aufgabe:** „—“ im Data catalogue bei fehlender Ausdehnung (A7, A40), Stufe A, als eigene Zeile im Entscheidungslog.
 
 ## 15. Tests (Plan)
 

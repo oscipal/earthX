@@ -51,6 +51,7 @@ STEPS = ("sources", "harvest", "spellings", "grants", "report", "linkcheck", "de
 
 TERMS = """\
 - license_ref: cc-by-4.0
+  licence_class: K2
   matches: [CC-BY-4.0, "https://creativecommons.org/licenses/by/4.0/"]
   license: {spdx_id: CC-BY-4.0, name: CC BY 4.0, url: "https://creativecommons.org/licenses/by/4.0/",
             commercial_use: true, distribution: true, derivatives: true, share_alike: false,

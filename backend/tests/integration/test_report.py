@@ -117,6 +117,7 @@ class World:
         (self.licence_dir / "terms.yaml").write_text(
             """\
 - license_ref: cc-by-4.0
+  licence_class: K2
   matches: [CC-BY-4.0]
   license: {spdx_id: CC-BY-4.0, name: CC BY 4.0, url: "https://creativecommons.org/licenses/by/4.0/",
             commercial_use: true, distribution: true, derivatives: true, share_alike: false,
@@ -689,6 +690,7 @@ def test_classify_names_why_a_find_is_not_granted(world: World) -> None:
         terms.read_text(encoding="utf-8")
         + """\
 - license_ref: other-closed
+  licence_class: K6
   matches: [other-closed]
   license: {spdx_id: null, name: Andere geschlossen, url: "https://example.org/closed", commercial_use: false,
             distribution: false, derivatives: false, share_alike: false, attribution_required: true, tier: catalog,
