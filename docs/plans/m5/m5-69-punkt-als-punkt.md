@@ -31,7 +31,7 @@ Das Quadrat lebt nur im Frontend: `bufferPointToPolygon` (0,05°) macht aus dem 
 | `crop_rules.source_crop_grid` (alle Formen des Downloads) | ergibt für einen Punkt schon genau ein Pixel |
 | `crop_rules.native_crop_grid` (alter flacher Export, Zarr-Weg) | Transform mit Pixelgröße 0, bricht ab [M] |
 | Ansicht „Crop and merge“ | Zuschnitt nur im Browser (`aoiClip.ts`), die AOI geht nie über das Netz |
-| `catalog/coverage.py` (Coverage Map mit AOI) | „intersects needs a Polygon or MultiPolygon“ |
+| Coverage Map | fragt ohne AOI (UI-04 Teil 4); nicht betroffen |
 
 ## 3. Regeln am Punkt
 
@@ -43,7 +43,6 @@ Das Pixel, auf dem der Punkt liegt, ist das Pixel des Rasters der Quelle (Projek
 
 - **AOI coverage:** 100 %, wenn der Umriss der Szene (bzw. die Vereinigung der Umrisse eines Durchgangs) den Punkt enthält, sonst 0 %. „Enthält“ heißt `covers`: ein Punkt auf dem Rand zählt. Eine Szene, deren Umriss den Punkt nicht enthält, berührt die AOI nicht.
 - **Filter within AOI only, Wolken, Klassenanteile:** gemessen am einen Pixel der Klassenschicht am Punkt in voller Auflösung (keine Übersichtsstufe). Wolken sind damit 0 oder 100 %, jede Klasse 0 oder 100 %. Ist das Pixel nodata oder liegt der Punkt außerhalb des Rasters, gilt die vorhandene Regel für eine AOI ohne gültige Pixel (nodata 100 %, kein Wolkenwert).
-- **Coverage Map** mit „Filter within AOI only“: dieselbe Regel, ein Punkt ist als `intersects` erlaubt.
 
 ### 3.3 Zuschnitt
 
@@ -61,8 +60,8 @@ Das Pixel, auf dem der Punkt liegt, ist das Pixel des Rasters der Quelle (Projek
 | Gelände (Neigung, Exposition, Schummerung) | lesen ihren Rand aus den Nachbarn der Quelle wie an jedem Rand eines Zuschnitts; am Rand der Szene oder neben nodata wird das Pixel nodata (gdaldem-Regel) |
 | **Reprojektion** | Ergebnis ist das eine Pixel des Zielrasters, das den Punkt enthält; sein Wert ist der des Quellpixels, welche Methode auch gewählt ist (eine Interpolation zwischen Nachbarn gibt es bei einem Pixel nicht). Das Rezept behält die gewählte Methode, Hash unverändert (F4) |
 | Statistik der Fläche | ein Pixel: Anzahl 1, Mittel = Wert, Streuung 0, Histogramm mit einer Klasse |
-| Export, Ergebnis-ZIP, QGIS-Stil | 1×1-GeoTIFF mit Maske; ein Stil mit Min = Max bekommt eine Spanne um den Wert |
-| Methodentext | statt „covers about 0.0 km²“: „The area of interest is one pixel at a point.“ (keine Koordinate) |
+| Export, Ergebnis-ZIP | 1×1-GeoTIFF mit Maske |
+| Methodentext | statt „covers about 0.0 km²“: „The area of interest is the one pixel a point lies on.“ (keine Koordinate) |
 
 ## 4. Das Quadrat entfällt
 
@@ -73,7 +72,7 @@ Das Pixel, auf dem der Punkt liegt, ist das Pixel des Rasters der Quelle (Projek
 
 ## 5. Umfang der Änderungen
 
-**PR 1 (Backend und Plan):** `parse_aoi_geometry`, `recipe.Aoi` (+ `Point`), `aoi_cloud_filter`, `aoi_clouds`, `outlines`, `pass_filter`, `catalog/coverage`, `crop_rules.native_crop_grid`, `plan.crop_window`, Reprojektion im Kern, `methods`, QGIS-Stil bei Min = Max, Endpunkt `…/pixel`. Tests je Stelle: Punkt innen, auf der Kante, außerhalb, auf nodata; fehlerhafte Punkte (ohne Koordinaten, außerhalb von ±180/±90, nicht endlich, mit Höhe); ein altes Polygon-Rezept mit unverändertem Hash.
+**PR 1 (Backend und Plan):** `parse_aoi_geometry`, `recipe.Aoi` (+ `Point`), `aoi_cloud_filter`, `aoi_clouds`, `outlines` (damit auch `pass_filter`), `crop_rules.native_crop_grid`, Zarr-Weg des Zuschnitts, `plan.crop_window`, Reprojektion im Kern, `methods`, Endpunkt `…/pixel` (mit dem Umriss eines Radar-Pixels über die GCPs). Tests je Stelle: Punkt innen, auf der Kante, außerhalb, auf nodata; fehlerhafte Punkte (ohne Koordinaten, außerhalb von ±180/±90, nicht endlich, mit Höhe); ein altes Polygon-Rezept mit unverändertem Hash.
 
 **PR 2 (Frontend):** Punkt als `aoi`, Wegfall des Quadrats, Pixelumriss für Crop and merge und Vorschau des Processing, Tests, Browser-Checks (§8).
 
@@ -106,6 +105,6 @@ Das Pixel, auf dem der Punkt liegt, ist das Pixel des Rasters der Quelle (Projek
 
 ## 8. Prüfungen
 
-- PR 1: `pytest` der geänderten Module (`tests/earthx/access`, `tests/earthx/api`, `tests/earthx/processing`, `tests/catalog/test_coverage.py`), `ruff check backend`, `lint-imports`.
+- PR 1: `pytest` der geänderten Module (`tests/earthx/access`, `tests/earthx/api`, `tests/earthx/processing`), `ruff check backend`, `lint-imports`.
 - PR 2: Unit-Tests der geänderten Module, `npx tsc -b`, `npm run lint`.
 - Browser-Checks mit Punkt-AOI bei 1280×800 und 360×740: Suche, AOI coverage, Crop and merge (ein Pixel), Download crop, Processing mit einem Schritt (`frontend/e2e/m5-69-point.cjs`); dazu die vorhandenen, die einen Punkt setzen (`ui-12-search-panel.cjs`, `within-aoi.cjs`, `evaluate-coverage.cjs`).
