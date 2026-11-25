@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import type { BandClass } from './bandClasses';
 import { datasetsFrom } from './datasets';
 import type { MapLayer, ResultLayerInfo } from './layers';
-import { chooseLegend, layersSignature, legendEntries, legendOfTile, NO_CHOICE, VIEW_LEGEND, type LegendEntry } from './mapLegend';
+import { chooseLegend, layersSignature, legendEntries, legendOfTile, legendPlace, NO_CHOICE, VIEW_LEGEND, type LegendEntry } from './mapLegend';
 import type { Collection, DownloadedInfo } from './types';
 
 const CLASSES: BandClass[] = [
@@ -175,5 +175,22 @@ describe('layersSignature', () => {
     expect(layersSignature([one, two], 1, entries)).not.toBe(base);
     expect(layersSignature([one, two], 2, [])).not.toBe(base);
     expect(layersSignature([{ ...one, overlays: [] }, two], 2, entries)).toBe(base);
+  });
+});
+
+// UI-12, Otto 25.11.2026: the legend never goes away; it folds where the map is too low, and its title goes into the status line where a
+// panel would cover it or not even the title fits.
+describe('the place of the legend', () => {
+  it('is open at the bottom left where the map holds it', () => {
+    expect(legendPlace({ covered: false, room: 300, head: 30, full: 120 })).toBe('open');
+  });
+
+  it('is its title there where the map holds the title but not the box', () => {
+    expect(legendPlace({ covered: false, room: 80, head: 30, full: 120 })).toBe('folded');
+  });
+
+  it('is its title in the status line where a panel would cover it or not even the title fits', () => {
+    expect(legendPlace({ covered: true, room: 300, head: 30, full: 120 })).toBe('docked');
+    expect(legendPlace({ covered: false, room: 20, head: 30, full: 120 })).toBe('docked');
   });
 });

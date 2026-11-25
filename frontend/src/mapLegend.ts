@@ -126,3 +126,13 @@ export function chooseLegend(previous: LegendChoice, entries: readonly LegendEnt
   const kept = previous.chosen !== null && entries.some((entry) => entry.id === previous.chosen);
   return { chosen: kept ? previous.chosen : topmost, signature };
 }
+
+// Where the legend stands (UI-12, Otto 25.11.2026: it never goes away). `open`: at the bottom left of the map as it was; `folded`: there, but
+// only its title, where the map is too low for it below the buttons at the top (a click opens it all the same); `docked`: its title at the
+// left end of the status line, where an open panel would cover its place (a narrow window) or not even the title fits; it opens upwards.
+export type LegendPlace = 'open' | 'folded' | 'docked';
+
+export function legendPlace({ covered, room, head, full }: { covered: boolean; room: number; head: number; full: number }): LegendPlace {
+  if (covered || room < head) return 'docked';
+  return room < full ? 'folded' : 'open';
+}

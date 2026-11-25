@@ -1,20 +1,17 @@
 // @vitest-environment jsdom
 //
-// The free area of the map (Otto, 14.11.2026): the status box lies centred between an open panel at the left and an open panel at the
-// right, and narrower where they leave less room, so that no panel covers it. This is the rule of the classes of `.app` and of the sheet that
-// reads them; `e2e/status-box.cjs` measures the box in a real browser. The Data catalogue may cover the box and takes nothing from the area.
+// The free area of the map (Otto, 14.11.2026): what an open panel takes from it, as classes of `.app`, read by the buttons and the legend.
+// The status has its own place since UI-12, a line at the foot of the window (`e2e/ui-12-layout.cjs` measures it in a real browser).
 
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import App from './App';
-import appSource from './App.tsx?raw';
 import index from './index.css?raw';
 import { mapEdgeClasses } from './mapEdges';
 import { resetJobs, useProcessingStore } from './processingStore';
 import { useAppStore } from './store';
-import tokens from './tokens.css?raw';
 import type { MapLayer } from './layers';
 
 vi.mock('./components/MapView', () => ({ default: () => null }));
@@ -69,36 +66,13 @@ describe('the sheet', () => {
     expect(ruleOf(css, '.app.has-sheet', wide)).toContain('--map-right: var(--sheet-wide-width)');
   });
 
-  it('centres the box between the two edges, whichever are there, with one rule', () => {
-    const rule = ruleOf(css, '.overlay.status', wide);
-    expect(rule).toContain('left: calc((100% + var(--map-left) - var(--map-right)) / 2)');
-    expect(rule).toContain('calc(100% - var(--map-left) - var(--map-right) - 2 * var(--space-4))');
-    // No second rule per panel: one mechanism.
-    expect(css.match(/\.overlay\.status \{/gu)).toHaveLength(2);
-    expect(css).not.toMatch(/\.app\.has-(?:inspector|sheet) \.overlay\.status/u);
-  });
-
-  it('is no wider than 560 px and not narrower than its minimum, however little room the panels leave', () => {
-    expect(ruleOf(css, '.overlay.status', wide)).toContain('width: max(var(--status-min-width), min(560px, ');
-    expect(tokens).toMatch(/--status-min-width:\s*240px/u);
-  });
-
-  it('leaves the narrow window to its own rule: no panel is taken from the map there', () => {
-    expect(css.slice(css.indexOf('.status {')).split('@media')[0]).toContain('width: min(560px, calc(100vw - var(--rail-width) - 16px))');
-    expect(ruleOf(css, '.overlay.status', '@media (max-width: 899px)')).toContain('z-index: 13');
-    expect(ruleOf(css, '.app.has-dock', '@media (max-width: 899px)')).toBe('');
-  });
-
-  it('lies over the panels at its sides where the free area is narrower than the box (Otto, 14.11.2026, UI-08), under the Data catalogue', () => {
-    const z = (rule: string) => Number(/z-index:\s*(\d+)/u.exec(rule)?.[1]);
-    const box = z(ruleOf(css, '.overlay.status', wide));
-    for (const panel of ['.dock', '.inspector.panel', '.processing-sheet']) expect(z(ruleOf(css, panel))).toBeLessThanOrEqual(box);
-    expect(z(ruleOf(css, '.catalogue'))).toBe(box);
-    // In the same layer the later one lies above: the box after the settings bar and the sheet, the Data catalogue after the box.
-    const at = (text: string) => appSource.indexOf(text);
-    expect(at('<Inspector />')).toBeLessThan(at('className="overlay status"'));
-    expect(at('className="overlay processing-sheet"')).toBeLessThan(at('className="overlay status"'));
-    expect(at('className="overlay status"')).toBeLessThan(at('<DataCatalogue />'));
+  // UI-12 (3), F1: the status box no longer moves between the panels; it is a line of its own at the foot of the window.
+  it('takes no edge of the free area for the status: one rule, the line at the foot right of the rail', () => {
+    expect(css.match(/\.overlay\.status \{/gu)).toHaveLength(1);
+    expect(css).not.toMatch(/\.app\.has-(?:dock|inspector|sheet) \.overlay\.status/u);
+    const rule = ruleOf(css, '.overlay.status');
+    for (const part of ['position: fixed', 'left: var(--rail-width)', 'right: 0', 'bottom: 0', 'height: var(--status-line-height)']) expect(rule).toContain(part);
+    expect(rule).not.toMatch(/--map-(?:left|right)/u);
   });
 
   it('does not read the Data catalogue: it covers the box and the box does not move for it', () => {

@@ -77,6 +77,22 @@ function applyToolMode(draw: TerraDraw, mode: ToolMode): void {
   draw.setMode(mode === 'none' ? 'static' : mode);
 }
 
+// The height of the attribution at the foot of the map, as `--attribution-height` of `.app`: the time steps and the legend stand above it,
+// one line high in a wide window, two in a narrow one (UI-12 (2)).
+function watchAttributionHeight(map: MapLibreMap): () => void {
+  const attribution = map.getContainer().querySelector<HTMLElement>('.maplibregl-ctrl-attrib');
+  const app = map.getContainer().closest<HTMLElement>('.app');
+  if (!attribution || !app || typeof ResizeObserver === 'undefined') return () => {};
+  const measure = () => app.style.setProperty('--attribution-height', `${attribution.getBoundingClientRect().height}px`);
+  const observer = new ResizeObserver(measure);
+  observer.observe(attribution);
+  measure();
+  return () => {
+    observer.disconnect();
+    app.style.removeProperty('--attribution-height');
+  };
+}
+
 // M3-19: the current map extent and its on-screen size, both of which
 // `store.ts::refreshCoverage` needs (only for the no-AOI request) to derive
 // the geotile level and the request bbox — read here, at the one place that
@@ -217,6 +233,7 @@ export default function MapView() {
     watchTileRetry(map);
     watchOverviewMark(map, setMapOverview);
     watchSubstituteHold(map);
+    const stopAttribution = watchAttributionHeight(map);
     const first = useAppStore.getState().basemap;
     basemapRef.current = createBasemapSwitcher(map, isInFirstStyle(first) ? first : null, (reason, keep, overlays) => {
       // The map keeps what it shows; the choice stays saved, so that the next visit tries it again.
@@ -365,6 +382,7 @@ export default function MapView() {
         }
         drawRef.current = null;
       }
+      stopAttribution();
       map.remove();
       mapRef.current = null;
       setControls(null);

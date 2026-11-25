@@ -149,3 +149,35 @@ describe('the busy toast for tiles that load', () => {
     manager.remove();
   });
 });
+
+// UI-12 (3), F2: the status line has one row. A message takes the place of the text of what runs; the spinner stays.
+describe('one row in the status line', () => {
+  const busyWithMessage = () => {
+    act(() => setMapLoading(['L1']));
+    wait(LOADING_AFTER_MS);
+  };
+
+  it('shows the error and keeps the spinner of what loads, without its text', () => {
+    busyWithMessage();
+    act(() => useAppStore.setState({ error: 'The search failed' }));
+    expect(toasts()).toHaveLength(1);
+    expect(toasts()[0].querySelector('.spinner')).not.toBeNull();
+    expect(texts()).toEqual(['']);
+    expect(container.querySelector('.toast.error .status-text')?.textContent).toBe('The search failed');
+  });
+
+  it('shows the error rather than a notice, and the notice again when the error is closed', () => {
+    act(() => useAppStore.setState({ error: 'The search failed', notice: 'Link copied' }));
+    expect(container.querySelectorAll('.toast:not(.busy)')).toHaveLength(1);
+    expect(container.querySelector('.toast.notice')).toBeNull();
+    act(() => container.querySelector<HTMLButtonElement>('.toast.error .close-x')!.click());
+    expect(container.querySelector('.toast.notice .status-text')?.textContent).toBe('Link copied');
+  });
+
+  it('gives every text its whole in a tooltip, shown only when the row cuts it', () => {
+    act(() => useAppStore.setState({ error: 'A long text' }));
+    const text = container.querySelector('.toast.error .status-text')!;
+    expect(text.getAttribute('data-tip')).toBe('A long text');
+    expect(text.getAttribute('data-tip-cut')).toBe('');
+  });
+});

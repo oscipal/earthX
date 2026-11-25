@@ -16,7 +16,8 @@ import { searchFiltersInvalid, useAppStore } from '../store';
 import AdvancedSearch from './AdvancedSearch';
 import { DateField } from './DateField';
 import ClearableInput from './ClearableInput';
-import { ChevronLeftIcon, ChevronRightIcon, CoverageIcon, HistoryIcon, PlusIcon, UploadIcon } from './icons';
+import { CoverageIcon, HistoryIcon, PlusIcon, UploadIcon } from './icons';
+import Pager from './Pager';
 import Popover from './Popover';
 import Tip from './Tip';
 import Toolbar from './Toolbar';
@@ -408,45 +409,13 @@ function DatasetPicker() {
   });
 
 
-  const first = shownPage === 0;
-  const last = shownPage === pages - 1;
   return (
     <>
       <div className="field-label dataset-label">
         <span>
           Datasets
           <MaturityTip />
-          <span className="dataset-pages" role="group" aria-label="Pages of datasets">
-            <button
-              type="button"
-              className="icon-btn sm"
-              aria-label="Previous page"
-              aria-disabled={first || undefined}
-              data-tip-level="advanced"
-              data-tip={first ? 'Already on the first page' : 'Previous page'}
-              onClick={() => {
-                if (!first) setPage(shownPage - 1);
-              }}
-            >
-              <ChevronLeftIcon size={14} />
-            </button>
-            <span className="dataset-page-count">
-              {shownPage + 1} / {pages}
-            </span>
-            <button
-              type="button"
-              className="icon-btn sm"
-              aria-label="Next page"
-              aria-disabled={last || undefined}
-              data-tip-level="advanced"
-              data-tip={last ? 'Already on the last page' : 'Next page'}
-              onClick={() => {
-                if (!last) setPage(shownPage + 1);
-              }}
-            >
-              <ChevronRightIcon size={14} />
-            </button>
-          </span>
+          <Pager label="Pages of datasets" className="dataset-pages" page={shownPage} pages={pages} onPage={setPage} />
         </span>
         <MultiSelectToggle />
       </div>

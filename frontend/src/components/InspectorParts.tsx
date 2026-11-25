@@ -124,10 +124,14 @@ export function LayerStepper({ date }: { date?: string }) {
   return <Stepper text={date ?? ''} tip={date} previous={locked} next={locked} single />;
 }
 
-export function InspectorSection({ title, children }: { title: string; children: ReactNode }) {
+// A section of the bar; `extra` stands at the right of its heading (the pages of "Quick processing", UI-12 (4)).
+export function InspectorSection({ title, extra, children }: { title: string; extra?: ReactNode; children: ReactNode }) {
   return (
     <section className="insp-section">
-      <h3 className="insp-heading">{title}</h3>
+      <div className="insp-head">
+        <h3 className="insp-heading">{title}</h3>
+        {extra}
+      </div>
       {children}
     </section>
   );
