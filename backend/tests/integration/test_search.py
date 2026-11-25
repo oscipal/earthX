@@ -10,8 +10,9 @@ from typing import Any
 
 import psycopg
 import pytest
+from psycopg import sql
 
-from earthx.catalog.glossary import load_glossary
+from earthx.catalog.glossary import load_glossary, parse_query
 from earthx.catalog.pgstac import load_collection, upsert_items, use_pgstac_search_path
 from earthx.catalog.registry import (
     DatasetConfig,
@@ -22,10 +23,17 @@ from earthx.catalog.registry import (
     TemporalExtent,
 )
 from earthx.catalog.search import (
+    AREA_FIRST_MAX,
     MAX_QUERY_CHARS,
+    MIN_SHARE,
+    TEXT_FIRST_MAX,
     TIME_FILTER,
     Joining,
     QueryTooLong,
+    Start,
+    _filter_params,
+    _full_text_sql,
+    _start,
     box_area,
     fuse,
     names_before_numbers,
@@ -466,3 +474,188 @@ async def test_an_entry_without_a_footprint_is_found_by_text_and_by_the_names_of
 async def test_the_area_filter_never_meets_an_entry_without_a_footprint(listed, aconn):
     assert await _ids(aconn, "Bevölkerung", area=box_area(8.6, 47.4, 8.8, 47.6)) == ()
     assert await _ids(aconn, "Bevölkerung", area=box_area(-180.0, -90.0, 180.0, 90.0)) == ()
+
+
+# --- the area before the text (M5-65) ---------------------------------------------------------------------------------
+
+
+async def test_an_entry_whose_link_failed_the_check_since_the_last_load_is_no_hit_by_text_or_by_area(listed, aconn):
+    # `catalog-load` wrote the row of "main-entry" while it was published; the link check hides it between two loads.
+    await aconn.execute("UPDATE public.earthx_listed_entry SET state = 'link_hidden' WHERE dataset_id = 'main-entry'")
+    over_it = box_area(7.0, 46.0, 7.5, 46.5)
+    assert await _ids(aconn, "Neophyten", area=over_it) == ()
+    assert await _ids(aconn, "Neophyten") == ()
+    assert await _ids(aconn, "Neophyten Götterbaum Schweiz", area=over_it) == ()
+    assert "main-entry" not in await _ids(aconn, None, area=over_it)
+    await aconn.execute("UPDATE public.earthx_listed_entry SET state = 'published' WHERE dataset_id = 'main-entry'")
+    assert await _ids(aconn, "Neophyten", area=over_it) == ("main-entry",)
+
+
+async def test_an_area_without_text_meets_the_full_entries_by_their_box(catalogue, aconn):
+    assert await _ids(aconn, None, area=box_area(36.2, -0.8, 36.4, -0.6)) == ("test-kenya", "test-series")
+    assert await _ids(aconn, None, area=box_area(-60.0, -60.0, -59.0, -59.0)) == ("test-series",)
+
+
+def test_the_envelope_of_a_full_row_is_computed_from_its_box_and_a_listed_row_has_none(listed, conn):
+    conn.execute("UPDATE public.earthx_dataset_search SET west = 30.0 WHERE dataset_id = 'test-kenya'")
+    rows = dict(
+        conn.execute(
+            "SELECT dataset_id, ST_AsText(geometry) FROM public.earthx_dataset_search"
+            " WHERE dataset_id IN ('test-kenya', 'main-entry')"
+        ).fetchall()
+    )
+    assert rows["test-kenya"] == "POLYGON((30 -1,30 0,37 0,37 -1,30 -1))"
+    assert rows["main-entry"] is None
+
+
+#: A search that starts from the area whatever the text (no text has "at most -1" hits) and one that starts from the text
+#: whatever the area (no area keeps "at most -1" entries).
+FROM_THE_AREA = {"area_first_max": 10**9, "text_first_max": -1}
+FROM_THE_TEXT = {"area_first_max": -1}
+
+
+async def _plan(aconn, statement, params) -> str:
+    async with aconn.cursor() as cur:
+        await cur.execute(sql.SQL("EXPLAIN (COSTS OFF) ") + statement, params, prepare=False)
+        return "\n".join(row[0] for row in await cur.fetchall())
+
+
+def _full_text_statement(start: Start, area: dict | None = None, text: str = "Neophyten"):
+    units = parse_query(text, GLOSSARY)
+    terms = {f"term_{n}_{i}": term for n, unit in enumerate(units) for i, term in enumerate(unit.terms)}
+    params = {**_filter_params(area, None), **terms, "share": MIN_SHARE, "named_numbers": []}
+    return _full_text_sql(units, Joining.KNOWN, start=start, named_numbers=False), params
+
+
+@pytest.mark.parametrize("start", list(Start))
+async def test_the_statement_has_a_condition_on_the_area_only_where_there_is_one(listed, aconn, start):
+    statement, _ = _full_text_statement(start)
+    assert ("%(area)s" in statement.as_string(aconn)) == (start is not Start.NO_AREA)
+
+
+async def test_the_ranks_of_the_units_of_a_hit_are_summed_in_the_order_of_the_units(listed, aconn):
+    # Without it the sum of `real` values, and with it which hits tie, would depend on the plan.
+    statement, _ = _full_text_statement(Start.NO_AREA)
+    assert "sum(ts_rank_cd(f.document, u.query) ORDER BY u.ord)" in statement.as_string(aconn)
+
+
+#: 60 × 60 listed entries, each half a degree wide on a grid of whole degrees, all with "Alpha" in the title.
+_GRID = """
+    INSERT INTO public.earthx_listed_entry (
+        dataset_id, source_id, source_key, state, content, content_sha256, sort_title, footprint, regions, keywords,
+        data_kind, category, account, delivery, publisher, link_host)
+    SELECT 'grid-' || g, 'grid', 'grid-' || g, 'published',
+           jsonb_build_object('type', 'Collection', 'id', 'grid-' || g, 'title', 'Alpha grid ' || g,
+                              'earthx:entry', 'listed'),
+           md5(g::text) || md5(g::text), 'alpha grid ' || g,
+           ST_MakeEnvelope((g % 60) - 30, (g / 60) - 30, (g % 60) - 29.5, (g / 60) - 29.5, 4326), '{}', '{grid}',
+           'vector', 'other', 'none', 'download', 'Grid Office', 'grid.example.org'
+    FROM generate_series(0, 3599) g
+"""
+ONE_CELL = box_area(10.1, 20.1, 10.2, 20.2)
+
+
+@pytest.fixture
+def grid(catalogue: None) -> Iterator[None]:
+    with psycopg.connect() as conn:
+        conn.execute("DELETE FROM public.earthx_listed_entry")
+        conn.execute(_GRID)
+        write_listed_search_index(conn, [config.dataset_id for config in CATALOGUE])
+        conn.execute("ANALYZE public.earthx_listed_entry")
+        conn.execute("ANALYZE public.earthx_dataset_search")
+        conn.commit()
+        yield
+        conn.execute("DELETE FROM public.earthx_listed_entry")
+        conn.commit()
+
+
+def _cell_id(west: int, south: int) -> str:
+    return f"grid-{(south + 30) * 60 + west + 30}"
+
+
+async def _grid_ids(aconn, area=None, **kwargs) -> list[str]:
+    """The grid entries "Alpha" finds, in rank order; the trigram arm also finds "alpine" of a full entry."""
+    return [i for i in await _ids(aconn, "Alpha", area=area, **kwargs) if i.startswith("grid-")]
+
+
+async def _start_of(aconn, text, area, **limits) -> Start:
+    units = parse_query(text, GLOSSARY)
+    terms = {f"term_{n}_{i}": term for n, unit in enumerate(units) for i, term in enumerate(unit.terms)}
+    params = _filter_params(area, None)
+    return await _start(
+        aconn,
+        params,
+        units,
+        terms,
+        limits.get("area_first_max", AREA_FIRST_MAX),
+        limits.get("text_first_max", TEXT_FIRST_MAX),
+    )
+
+
+async def test_a_text_with_many_hits_over_a_small_area_starts_from_the_area(grid, aconn):
+    # 3 601 hits for "Alpha" (the grid and "Terrain Alpha"), one entry in the area.
+    assert await _start_of(aconn, "Alpha", ONE_CELL) is Start.AREA
+
+
+async def test_a_text_with_few_hits_starts_from_the_text_whatever_the_area(grid, aconn):
+    assert await _start_of(aconn, "Alpha", ONE_CELL, text_first_max=3601) is Start.TEXT
+    assert await _start_of(aconn, "Alpha", ONE_CELL, text_first_max=3600) is Start.AREA
+    assert await _start_of(aconn, "Neophyten", ONE_CELL) is Start.TEXT
+    assert await _start_of(aconn, "in der", ONE_CELL) is Start.TEXT  # nothing but stop words
+
+
+async def test_an_area_over_many_entries_starts_from_the_text(grid, aconn):
+    everywhere = box_area(-31.0, -31.0, 31.0, 31.0)
+    assert await _start_of(aconn, "Alpha", everywhere, area_first_max=3599) is Start.TEXT
+    assert await _start_of(aconn, "Alpha", everywhere, area_first_max=3600) is Start.AREA
+    assert await _start_of(aconn, "Alpha", None) is Start.NO_AREA
+
+
+async def test_starting_from_the_area_reads_the_footprint_index_and_looks_each_entry_up_by_its_id(grid, aconn):
+    statement, params = _full_text_statement(Start.AREA, ONE_CELL, "Alpha")
+    plan = await _plan(aconn, statement, params)
+    assert "earthx_listed_entry_footprint_idx" in plan and "earthx_dataset_search_id_c_idx" in plan
+
+
+async def test_both_starts_find_the_same_with_an_area_that_keeps_one_or_many(grid, aconn):
+    many = box_area(0.2, 0.2, 2.2, 1.2)
+    for area, expected in (
+        (ONE_CELL, {_cell_id(10, 20)}),
+        (many, {_cell_id(west, south) for west in range(0, 3) for south in range(0, 2)}),
+    ):
+        by_area = await _grid_ids(aconn, area, **FROM_THE_AREA)
+        assert set(by_area) == expected
+        assert by_area == await _grid_ids(aconn, area, **FROM_THE_TEXT)
+
+
+async def test_both_starts_rank_alike(listed, aconn):
+    area = box_area(7.0, 46.0, 7.5, 46.5)
+    for text in ("Neophyten", "Bevölkerung Schweiz", "Götterbaum Neophyten Sentinel", "alpine"):
+        by_area = await search_datasets(aconn, text, area=area, glossary=GLOSSARY, **FROM_THE_AREA)
+        by_text = await search_datasets(aconn, text, area=area, glossary=GLOSSARY, **FROM_THE_TEXT)
+        assert by_area == by_text, text
+
+
+async def test_a_period_with_an_area_keeps_the_same_hits_and_names_the_same_ignored_filter_from_either_start(
+    listed, aconn
+):
+    area = box_area(7.0, 46.0, 7.5, 46.5)
+    for text in ("Neophyten", "alpine"):
+        found = [
+            await search_datasets(aconn, text, area=area, period=_years(2001, 2002), glossary=GLOSSARY, **limits)
+            for limits in (FROM_THE_AREA, FROM_THE_TEXT)
+        ]
+        assert found[0] == found[1], text
+    listed_result = await search_datasets(
+        aconn, "Neophyten", area=area, period=_years(2001, 2002), glossary=GLOSSARY, **FROM_THE_AREA
+    )
+    assert listed_result.ids == ("main-entry",)
+    assert listed_result.ignored_filters_by_collection == {"main-entry": (TIME_FILTER,)}
+
+
+async def test_no_start_lets_an_entry_with_a_hidden_link_through(listed, aconn):
+    await aconn.execute("UPDATE public.earthx_listed_entry SET state = 'link_hidden' WHERE dataset_id = 'main-entry'")
+    over_it = box_area(7.0, 46.0, 7.5, 46.5)
+    for limits in (FROM_THE_AREA, FROM_THE_TEXT):
+        assert await _ids(aconn, "Neophyten", area=over_it, **limits) == ()
+        assert "main-entry" not in await _ids(aconn, "Neophyten Götterbaum Schweiz", area=over_it, **limits)
