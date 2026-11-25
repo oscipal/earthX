@@ -140,7 +140,8 @@ async function open(browser, theme, viewport, problems, address = '/') {
       tiles.push(url.href);
       return r.fulfill({ status: 404, body: '' });
     }
-    if (url.pathname === '/stac/collections') return json({ collections: Object.values(COLLECTIONS), links: [] });
+    // Only a link loads the datasets itself; every other check puts them into the store.
+    if (url.pathname === '/stac/collections' && address !== '/') return json({ collections: Object.values(COLLECTIONS), links: [] });
     if (url.pathname === `/stac/collections/sentinel-2-c1-l2a/items/${PERMALINK_ITEM}`) {
       const bbox = [10, 46, 11, 47];
       return json({ type: 'Feature', id: PERMALINK_ITEM, collection: 'sentinel-2-c1-l2a', bbox, geometry: { type: 'Polygon', coordinates: [[[10, 46], [11, 46], [11, 47], [10, 47], [10, 46]]] }, properties: { datetime: '2026-07-01T10:00:00Z' }, assets: ASSETS['sentinel-2-c1-l2a'], links: [] });
