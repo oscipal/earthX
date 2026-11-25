@@ -1,6 +1,6 @@
 # UI-12 — gesammelter UI-Lauf
 
-**Stand:** 25.11.2026, Auftrag Otto (Stufe B, Opus, mittel). Grundlage: `docs/ui/leitfaden.md`, `docs/plans/m5/m5-discovery-und-suche.md` (Zeile UI-12), Legende und Histogramm aus #391 und #410, Entscheidungslog bis 25.11.2026.
+**Stand:** 25.11.2026, Auftrag Otto (Stufe B, Opus, mittel); **Antworten Otto vom 25.11.2026 in §7 eingearbeitet**. Grundlage: `docs/ui/leitfaden.md`, `docs/plans/m5/m5-discovery-und-suche.md` (Zeile UI-12), Legende und Histogramm aus #391 und #410, Entscheidungslog bis 25.11.2026.
 **Regeln:** Oberflächentexte nur Englisch, keine Hinweistexte, Panels scrollen nie.
 **Vorgehen:** Plan mit Fragen F1–F7, dann Umsetzung nach den Empfehlungen in zwei Draft-PRs. Wo eine Antwort anders ausfällt, ändert dieselbe Session nach. Teile, die nicht entschieden sind, sind als *angehalten* markiert und bleiben, wie sie sind.
 
@@ -80,10 +80,17 @@
 
 ## 6. Stand der Umsetzung (25.11.2026)
 
-- **PR 1** ([#417](https://github.com/oscipal/earthX/pull/417)): Punkte 1, 5–11 nach F6 = 1 und F7 = 1. Punkt 6 ist für die Teile F4 und F5 angehalten.
-- **PR 2** ([#418](https://github.com/oscipal/earthX/pull/418)): Punkte 2, 3, 4 und 12 nach F1 = 1, F2 = 1 und F3 = 1. Abweichungen von F3, die sich beim Messen ergeben haben:
-  - Bis zu **drei** Spalten statt zwei. Bei 1280×360 braucht allein „Display“ eines Farbbilds mehr als zwei Spalten; die Karte behält mindestens 240 px.
-  - Das Sheet unter 900 px reicht bis an den oberen Rand der Karte und nicht nur bis unter die Knöpfe; sonst passt „Display“ eines Farbbilds bei 360×740 nicht. Die Histogramme sind dort niedriger.
-  - „Display“ klappt nie von selbst ein, nur für einen Abschnitt, den man von Hand öffnet. Eingeklappte Abschnitte stehen als Köpfe nebeneinander.
-  - Die Legende weicht (unsichtbar), wo die Karte für sie über der Zeitleiste zu niedrig ist; unter 900 px deckt das Processing-Sheet sie.
+- **PR 1** ([#417](https://github.com/oscipal/earthX/pull/417)): Punkte 1, 5–11 nach F6 = 1 und F7 = 1. Bei Punkt 6 gilt für Filter und Zuschnitt bis M5-69 das unsichtbare Quadrat (F4, F5).
+- **PR 2** ([#418](https://github.com/oscipal/earthX/pull/418)): Punkte 2, 3, 4 und 12 nach F1 = 1, F2 = 1 und F3 neu (§7).
 - Die Befunde aus §3 sind behoben und werden von `frontend/e2e/ui-12-layout.cjs` geprüft. `frontend/e2e/status-box.cjs` prüfte die alte Regel und entfällt.
+
+## 7. Antworten Otto (25.11.2026)
+
+- **F1 = 1, F2 = 1:** Statuszeile unten wie in QGIS, ein langer Text gekürzt und ganz im Tooltip. Umgesetzt.
+- **F3 neu:** Die rechte Einstellungsleiste darf scrollen: eine Spalte, keine weiteren Spalten, kein automatisches Einklappen, die Karte behält ihren Platz. „Quick processing“ behält die Seiten; eine Seite verliert eine Reihe, solange die Leiste überläuft, bis eine. Für alle anderen Panels und die Legende gilt weiter „scrollt nie“. Die Abweichung „bis zu drei Spalten“ entfällt. Angenommen bleiben: Histogramme unter 900 px niedriger. „Display“ klappt nicht von selbst ein (es klappt nichts mehr ein).
+  - **Vorschlag Sheet unter 900 px (umgesetzt):** höchstens 55 % der Karte, darüber bleibt die Karte frei, der Rest scrollt; der Griff klappt es weiter ein. Der Wert ist der bisherige vor UI-12.
+- **F4 = 1** als Folgeaufgabe **M5-69** („Punkt als echter Punkt: Filter und Zuschnitt am Punkt“): Der Server misst „AOI coverage“ (enthält die Szene den Punkt) und Wolken (Klasse des Pixels) am Punkt. Bis dahin Option 2: intern das Quadrat, auf der Karte nur der Punkt.
+- **F5 = 2**, ebenfalls in M5-69 (Backend): Zuschnitt mit einem Punkt ergibt das Pixel am Punkt, je Band in dessen nativer Auflösung, bei „One multi-band file“ in der gemeinsamen Auflösung, für „Download crop“ und den Zuschnitt im Processing. Bis dahin bleibt der Zuschnitt beim unsichtbaren Quadrat.
+- **F6 = 1** („Addable only“), **F7 = 1** (Format „2026-12-03“ mit eigenem englischem Kalender).
+- **Legende verschwindet nie:** Wo der Platz fehlt, bleibt sie eingeklappt mit dem Titel „Legend“ an ihrem Ort sichtbar und lässt sich aufklappen.
+  - **Vorschlag Ort (umgesetzt):** Wo ein Panel ihren Ort decken würde (unter 900 px mit offenem Panel der Leiste oder Processing-Sheet) oder nicht einmal der Titel auf die Karte passt, steht der eingeklappte Titel am **linken Ende der Statuszeile**. Dort deckt ihn nichts, und er deckt nichts; die Box klappt von dort nach oben auf. Direkt über der Statuszeile läge der Titel sonst auf dem Panel und deckte dessen Fuß (etwa „Search“ im Search panel).

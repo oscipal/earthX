@@ -1,14 +1,15 @@
-// Browser check of UI-12 PR 2 (Otto, 25.11.2026): the status line (3), the settings bar that never scrolls (12), the pages of "Quick
+// Browser check of UI-12 PR 2 (Otto, 25.11.2026): the status line (3), the settings bar of one column that may scroll (12, F3 new), the pages of "Quick
 // processing" (4) and what stands on the map in every view of a narrow and a low window (2). With made-up answers of the API, at 1280 x 800,
 // 1280 x 360 and 360 x 740, light and dark. For each view (no panel, each panel of the rail, the view of the search with its time steps and
 // its settings bar, the processing panel, the Data catalogue) it fails when
 //   - the status line, with an error and "Loading data" in it, is not at the foot right of the rail, one row high, or something covers it;
-//   - the settings bar scrolls (its body is taller or wider than it shows), or "Display" is folded while nothing was opened by hand;
+//   - the settings bar is wider than one column (320 px from 900 px), folds a section, or under 900 px takes more than 55 % of the map;
+//   - the legend is not to be seen: neither on the map nor, as its title, at the left end of the status line, or something covers it;
 //   - two things on the map cover each other: the buttons at the top right, the map controls, the legend, the time steps, the marks at the
 //     bottom left and the attribution (where an open panel covers one, it does not count);
 //   - something leaves the window or the page scrolls sideways;
 //   - "Quick processing" does not show "‹ 1 / n ›", or its page holds more rows than fit;
-// and opens a folded section by its head: it stays open, and the bar still does not scroll.
+// and opens the legend by its title where it stands folded or docked: it opens inside the window.
 // A screenshot per window, theme and view: <OUT>/layout-<theme>-<size>-<view>.png.
 //
 //   cd frontend && npm run dev &            # a FRESH dev server (one that saw no edits): the check imports the store
@@ -49,7 +50,7 @@ const READ = () => {
   const onMap = [
     ['buttons at the top', '.overlay.top-right > *'],
     ['map controls', '.map-controls'],
-    ['legend', '.map-legend .legend'],
+    ['legend', '.map-legend:not(.docked) .legend'],
     ['time steps', '.overlay.bottom > *'],
     ['marks', '.preview-badge-dock > *'],
     ['attribution', '.maplibregl-ctrl-attrib'],
@@ -58,6 +59,10 @@ const READ = () => {
   const sb = box(status);
   const hit = document.elementFromPoint(sb.x + sb.width / 2, sb.y + sb.height / 2);
   const body = document.querySelector('.inspector.panel:not([hidden]) .insp-body');
+  const legendBox = document.querySelector('.map-legend .legend');
+  const lb = legendBox ? box(legendBox) : null;
+  const legendHit = lb ? document.elementFromPoint(lb.x + 8, lb.y + Math.min(lb.height, 24) / 2) : null;
+  const legendEl = document.querySelector('.map-legend');
   const quick = document.querySelector('.inspector .vc-quick');
   return {
     win: { width: innerWidth, height: innerHeight },
@@ -66,10 +71,13 @@ const READ = () => {
     status: { ...sb, covered: !hit || !status.contains(hit), text: status.textContent.trim().slice(0, 60) },
     controlHeight: parseFloat(getComputedStyle(document.querySelector('.app')).getPropertyValue('--control-height')),
     onMap,
+    legend: lb ? { ...lb, docked: legendEl.classList.contains('docked'), place: legendEl.className, visible: shown(legendBox), covered: !legendHit || !legendBox.contains(legendHit) } : null,
+    sheetShare: body ? box(document.querySelector('.inspector.panel')).height / box(document.querySelector('.app')).height : 0,
+    barWidth: body ? box(document.querySelector('.inspector.panel')).width : 0,
     bar: body ? {
       scrollsDown: body.scrollHeight > body.clientHeight + 1,
       scrollsSide: body.scrollWidth > body.clientWidth + 1,
-      sections: [...body.querySelectorAll(':scope > .insp-section')].map((s) => ({ title: s.dataset.title, open: !s.classList.contains('folded') })),
+      sections: [...body.querySelectorAll(':scope > .insp-section')].map((s) => ({ title: s.querySelector('.insp-heading')?.textContent, open: !s.classList.contains('folded') && !s.querySelector('.insp-fold') })),
       quickCount: document.querySelector('.inspector .quick-pages .dataset-page-count')?.textContent ?? null,
       quickRows: quick ? Math.ceil(quick.children.length / 3) : 0,
     } : null,
@@ -144,7 +152,6 @@ async function run(browser, theme, size) {
     ['catalogue', async () => { await setProcessing(page, false); await setStore(page, { catalogueOpen: true }); }],
     ['map', () => setStore(page, { catalogueOpen: false, focusMode: false, selectedIds: [] })],
   ];
-  let openedByHand = false;
   for (const [name, arrange] of views) {
     await arrange();
     await setStore(page, { error: 'The search could not be completed because the catalogue answered with an error that has a long text', mapLoading: ['x'] });
@@ -167,26 +174,33 @@ async function run(browser, theme, size) {
       }
     }
     if (seen.bar) {
-      if (seen.bar.scrollsDown || seen.bar.scrollsSide) fail(`${where}: the settings bar scrolls (${JSON.stringify(seen.bar)})`);
-      if (!openedByHand && seen.bar.sections[0]?.open === false) fail(`${where}: "Display" is folded though nothing was opened by hand`);
+      const wide = seen.win.width >= 900;
+      if (wide && Math.abs(seen.barWidth - 320) > 1) fail(`${where}: the settings bar is ${seen.barWidth}px wide, not one column`);
+      if (!wide && seen.sheetShare > 0.55 + 0.01) fail(`${where}: the sheet takes ${Math.round(seen.sheetShare * 100)} % of the map`);
+      if (seen.bar.sections.some((x) => !x.open)) fail(`${where}: the settings bar folds a section`);
+      if (seen.bar.scrollsSide) fail(`${where}: the settings bar scrolls sideways`);
       const quick = seen.bar.sections.find((x) => x.title === 'Quick processing');
-      if (quick?.open && !/^1 \/ \d+$/.test(seen.bar.quickCount ?? '')) fail(`${where}: "Quick processing" shows no pages ("${seen.bar.quickCount}")`);
+      if (quick && !/^\d+ \/ \d+$/.test(seen.bar.quickCount ?? '')) fail(`${where}: "Quick processing" shows no pages ("${seen.bar.quickCount}")`);
+    }
+    const g = seen.legend;
+    if (!g || !g.visible) fail(`${where}: the legend is not to be seen`);
+    else {
+      if (g.x < -0.5 || g.y < -0.5 || g.x + g.width > seen.win.width + 0.5 || g.y + g.height > seen.win.height + 0.5) fail(`${where}: the legend leaves the window: ${JSON.stringify(g)}`);
+      if (g.covered && name !== 'catalogue') fail(`${where}: something covers the legend (${g.place})`);
+      if (g.docked && (Math.abs(g.x - seen.rail.width) > 1 || Math.abs(g.y + g.height - seen.win.height) > 1)) fail(`${where}: the docked legend is not at the left end of the status line: ${JSON.stringify(g)}`);
+      if (g.docked && g.x + g.width > s.x + s.width) fail(`${where}: the docked legend runs past the status line`);
     }
     await page.screenshot({ path: path.join(OUT, `layout-${theme}-${size}-${name}.png`) });
-    if (name === 'view') {
-      // A folded section opens by its head and stays open; the bar still does not scroll.
-      const folded = page.locator('.inspector .insp-section.folded .insp-fold').first();
-      if (await folded.count()) {
-        const title = await folded.textContent();
-        await folded.click();
-        openedByHand = true;
-        await page.waitForTimeout(600);
-        const after = await page.evaluate(READ);
-        const opened = after.bar.sections.find((x) => x.title === title);
-        if (!opened?.open) fail(`${where}: "${title}" did not stay open when its head was clicked`);
-        if (after.bar.scrollsDown || after.bar.scrollsSide) fail(`${where}: the settings bar scrolls after "${title}" was opened`);
-        await page.screenshot({ path: path.join(OUT, `layout-${theme}-${size}-${name}-opened.png`) });
-      }
+    // The legend opens by its title where it stands folded or docked, inside the window, and folds again.
+    const title = page.locator('.map-legend.folded .legend-title, .map-legend.docked .legend-title');
+    if (name !== 'catalogue' && (await title.count())) {
+      await title.click();
+      await page.waitForTimeout(300);
+      const opened = await page.locator('.map-legend .legend').boundingBox();
+      if ((await page.locator('.map-legend .legend-title').getAttribute('aria-expanded')) !== 'true') fail(`${where}: the legend did not open by its title`);
+      if (!opened || opened.y < -0.5 || opened.y + opened.height > seen.win.height + 0.5) fail(`${where}: the opened legend leaves the window: ${JSON.stringify(opened)}`);
+      await page.screenshot({ path: path.join(OUT, `layout-${theme}-${size}-${name}-legend.png`) });
+      await page.locator('.map-legend .legend-title').click();
     }
   }
   await context.close();

@@ -4341,14 +4341,29 @@ button.pm-open:hover {
   .app.has-inspector .overlay.map-legend {
     bottom: calc(var(--inspector-sheet-height, 0px) + var(--attribution-height, 20px) + var(--space-1) + var(--legend-lift, 0px));
   }
-  /* The processing sheet covers the map of a narrow window, and with it the legend (as an open panel does). */
-  .app.has-sheet .overlay.map-legend {
-    display: none;
-  }
 }
-/* A map too low for the legend above what stands at its foot: it would reach the buttons at the top, so it gives way (UI-12 (2)). */
-.overlay.map-legend.crowded {
-  visibility: hidden;
+/* The legend never goes away (Otto, 25.11.2026): where an open panel would cover its place (a narrow window) or not even its title fits on
+   the map, its title stands at the left end of the status line, which nothing covers, and the box opens upwards from there, over what lies
+   above it, until its title folds it again (`MapLegend.tsx`, `legendPlace`). */
+.app .overlay.map-legend.docked,
+.app.has-inspector .overlay.map-legend.docked {
+  position: fixed;
+  z-index: 15;
+  left: var(--rail-width);
+  bottom: 0;
+  max-height: calc(100vh - var(--space-4));
+  max-width: min(440px, calc(100vw - var(--rail-width)));
+}
+.overlay.map-legend.docked:not(.unfolded) .legend {
+  justify-content: center;
+  height: var(--status-line-height);
+  padding-top: 0;
+  padding-bottom: 0;
+  border-width: 0 var(--line-width) 0 0;
+  border-radius: 0;
+}
+.app .overlay.status {
+  padding-left: calc(var(--legend-docked-width, 0px) + var(--space-3));
 }
 .legend {
   display: flex;

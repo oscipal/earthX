@@ -125,9 +125,6 @@ async function checkRanges(browser, { theme, viewport }) {
   await fieldsFit(page, 'view', problems);
   await page.screenshot({ path: path.join(OUT, `view ${name}.png`) });
   // The view is added to the layers as a person does; its layer is the one that is not the made-up result.
-  // "Actions" may be folded so that the bar does not scroll (UI-12): a person opens it by its head.
-  const actions = page.locator('.inspector .insp-section.folded[data-title="Actions"] .insp-fold');
-  if (await actions.count()) await actions.click();
   await page.locator('.scene-view .vc-actions button', { hasText: 'Add to layers' }).first().click();
   await close();
   const pinned = await page.evaluate(async () => (await import('/src/store.ts')).useAppStore.getState().layers.find((l) => l.id !== 'res')?.id ?? null);
