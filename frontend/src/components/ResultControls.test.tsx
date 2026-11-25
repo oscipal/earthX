@@ -606,6 +606,25 @@ describe('a result that names its classes', () => {
     expect(button('Classes')).toBeUndefined();
   });
 
+  it('shows the histogram of the result in the colours of its classes, without sliders (M5-60 F9)', async () => {
+    tileJsonBody = { ...TILE_JSON, data_type: 'uint8' };
+    const histogram = [[5, 0, 0, 0, 0, 0, 0, 3], [10, 19, 28, 37, 46, 55, 64, 73, 82]];
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url === HREF) return json(tileJsonBody);
+      if (url.endsWith('/statistics')) return json({ bands: [{ statistics: { histogram } }] });
+      return new Response('{}', { status: 404 });
+    }));
+    useAppStore.setState({ datasets: [CLASSES] });
+    useProcessingStore.setState({ jobs: [classJob({ name: 'map', classes: LEGEND })] });
+    await openView();
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    const bars = [...container.querySelectorAll<SVGRectElement>('.class-hist rect')].map((rect) => rect.style.fill || rect.getAttribute('class'));
+    expect(bars).toEqual(['rgb(0, 100, 0)', 'in', 'in', 'in', 'in', 'in', 'in', 'rgb(0, 100, 200)']);
+    expect(container.querySelectorAll('.class-hist input').length).toBe(0);
+  });
+
   it('is drawn as it is where the result names classes, whatever the mask of the dataset', async () => {
     tileJsonBody = { ...TILE_JSON, data_type: 'uint8' };
     useProcessingStore.setState({ jobs: [classJob({ name: 'scl', classes: LEGEND })] });

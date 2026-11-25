@@ -15,6 +15,9 @@ an open connection and an open gateway; :func:`main` builds them.
 ``--reextract`` derives the intermediate form anew from the kept raw answers, without a request (plan A4). A CKAN source
 is read incrementally (packages changed since the last done run, less an hour) unless ``--full`` is given or its last
 full run lies ``full_every_days`` back; only a full run marks finds ``gone`` (A3). A STAC listing is always whole.
+
+Exit codes: 0 when the run is done, :data:`EXIT_PAUSED` when it paused on purpose (a budget of pages or requests reached,
+the source asked for a rest) and keeps its place, 1 for everything else. ``scripts/harvest-cycle.ps1`` reads only these.
 """
 
 from __future__ import annotations
@@ -103,7 +106,7 @@ from earthx.gateway import (
 )
 from earthx.logging import configure_logging
 
-__all__ = ["HarvestResult", "SourceResting", "main", "run_harvest"]
+__all__ = ["EXIT_PAUSED", "PAUSE_REASONS", "HarvestResult", "SourceResting", "main", "run_harvest"]
 
 
 LOGGER = logging.getLogger(__name__)
@@ -718,6 +721,13 @@ def source_policy(source: SourceConfig, hosts: Mapping[str, HostLimit]) -> Polic
     )
 
 
+#: The exit code of a run that paused on purpose and keeps its place (M5-67 fix 1, 24.11.2026): the next run goes on, so
+#: for ``scripts/harvest-cycle.ps1`` it is a success with a note, not a failure. 75 is ``EX_TEMPFAIL`` of ``sysexits.h``.
+EXIT_PAUSED = 75
+#: The stop reasons that are such a pause: a budget of the run reached, and the source asking for a rest. Everything else
+#: that ends a run early (robots, an unreachable source, a resting host, a lost lease) stays a failure with exit code 1.
+PAUSE_REASONS = frozenset({"page_budget", "request_budget", "rate_limited"})
+
 _STOP_TEXT = {
     "host_resting": "der Host ruht (Unterbrecher oder Platz zu weit weg)",
     "robots": "robots.txt verbietet den Abruf; eine Ausnahme braucht robots_exception in der Quell-Datei",
@@ -999,8 +1009,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         result = asyncio.run(_main_async(source, hosts, reextract=args.reextract, full=args.full))
     except SourceResting as error:
+        # A rest the source asked for earlier: no run starts, the finds read so far stay as they are.
         print(resting_text(error))
-        return 1
+        return EXIT_PAUSED
     except (HarvestBusy, ConfigError) as error:
         print(f"harvest failed: {error}", file=sys.stderr)
         return 1
@@ -1011,7 +1022,9 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
     print(report(source, result))
-    return 0 if result.status == "done" else 1
+    if result.status == "done":
+        return 0
+    return EXIT_PAUSED if result.status == "interrupted" and result.stop_reason in PAUSE_REASONS else 1
 
 
 if __name__ == "__main__":

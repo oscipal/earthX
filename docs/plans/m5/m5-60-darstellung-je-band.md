@@ -1,6 +1,6 @@
 # M5-60 — Darstellung je Band
 
-**Stand:** 21.11.2026, Plan **angenommen** (Otto, 21.11.2026: F1–F7 je Option 1, A1–A5; Vorgabe zum gemessenen Bereich §11; Histogramm für PR 2 §12). PR 1 (Backend) in diesem Draft-PR (§13); PR 2 (Frontend) in einer neuen Session nach dem Merge und erst nach M5-62 PR 2.
+**Stand:** 21.11.2026, Plan **angenommen** (Otto, 21.11.2026: F1–F7 je Option 1, A1–A5; Vorgabe zum gemessenen Bereich §11; Histogramm für PR 2 §12). PR 1 (Backend, #396) gemergt (§13, §14); PR 2 (Frontend) umgesetzt am 24.11.2026 (§13.4, §13.6); F10 als Folgeaufgabe M5-68 (§13.7).
 **Stufe B.** Höchstens zwei PRs (M5-Plan §2 Punkt 11).
 **Aufgabe (Otto, 21.11.2026; M5-Plan §6.2):**
 
@@ -288,11 +288,63 @@ Neu: `backend/tests/catalog/test_band_looks.py` — die Looks aller Einträge, j
 
 Nach dem Merge einmal `catalog-load` (die Collections tragen `earthx:look`). Sichtbar wird es erst mit PR 2.
 
-### 13.4 PR 2 (Frontend, neue Session nach dem Merge und nach M5-62 PR 2)
+### 13.4 Umsetzung PR 2: Frontend (24.11.2026)
 
-§7 (`bandLookOf` statt `standardLookOfBand`, `chooseViewBand`, Auto-scale, Ergebnis-Ebenen nach F5) und §12 (Histogramm in den Farben der Darstellung), Browser-Check.
+| Teil | Stelle |
+|---|---|
+| `bandLookOf(collection, band)` liest `earthx:look` aus `earthx:bands` (unvollständige Looks verworfen wie in `displayLook.ts`); `standardLookOfBand` entfällt, H1 rechnet das Backend | `frontend/src/viewBand.ts`, `frontend/src/displayLook.ts` (`lookOf` exportiert) |
+| `chooseViewBand`: Colormap des Looks sofort; `fixed` → Bereich sofort, mit `scale`/`offset` des Items in gespeicherte Werte umgerechnet (`fixedRangeOf`, ohne lesbare Skalierung unskaliert, A5), Einheit der Felder `absolute`; `measured`/`percentiles` → Bereich nach der einen Messung der Ansicht. Was von Hand geändert wird, bleibt bis zum nächsten Bandwechsel | `frontend/src/store.ts` |
+| „Auto-scale“ setzt den Bereich auf den des Looks zurück: fest → die festen Werte, `percentiles` → seine Perzentile (in `percentile` die Perzentile selbst, `percentOfLook`); die Colormap bleibt (Otto, 16.11.2026) | `frontend/src/store.ts::autoStretch`, `bandOfView` |
+| Histogramm in den Farben der Darstellung (§12): je Balken die Farbe seiner Mitte über dem Bereich der Felder, außerhalb die Endfarben, `_r` umgekehrt, ohne Colormap Grau; Farben aus `GET /colormaps` wie Vorschau und Legende; folgt Feldern und Colormap sofort, ohne Messung; RGB unverändert je Kanal | `frontend/src/histogramColours.ts`, `components/RangeHistogram.tsx`, `ScaleHistograms.tsx`, `ViewerControls.tsx`, `ResultControls.tsx` |
+| Legende (unten links und im Layer-Manager): Min und Max physikalisch, der Bereich der Kachel-URL mit der Skalierung der Szene umgerechnet (`DownloadedInfo.scalings`, beim Öffnen der Ansicht aus `raster:bands` der Items); Schritt und Index bleiben, wie sie sind | `frontend/src/mapLegend.ts`, `frontend/src/viewMeasure.ts`, `frontend/src/types.ts` |
+| Ergebnis-Ebenen (F5): ein Ergebnisband, das ein Band der Quelle ist und dessen Werte kein Schritt geändert hat, erbt dessen Look (`ResultBand.look`), nach dem Preset und vor der üblichen Messung (A9) | `frontend/src/processingDefaults.ts::keepsValuesOf`, `resultLayer.ts`, `processingStore.ts` |
 
----
+**Auslegungen (gelten, wenn du nicht widersprichst):**
+
+- **A9 — Unveränderte Werte im Ergebnis:** Ein Band behält seinen Look, wenn jeder Schritt Werte weitergibt (`x-earthx-passes-values`) oder nur ein eigenes, anders benanntes Band hinzufügt (`band_math`, Gelände-Produkt mit `name`). Das Frontend kennt `BandUse` nicht (nicht in der Prozessbeschreibung), daher diese Näherung; Normalize, eine interpolierende Reprojektion und jeder unbekannte Schritt nehmen allen Bändern den Look (dann gilt die übliche Messung wie bisher). Ohne die Kopie des Auftrags erbt kein Band.
+- **A10 — Balken außerhalb des Bereichs:** voll in den Endfarben, nicht blass, weil die Karte sie so zeichnet; bei RGB bleibt außerhalb blass.
+- **A11 — Kein Springen:** Der Bereich bleibt eine Zahl je Ansicht und Band (§11); PR 2 misst nichts neu. Ein fester Look misst gar nicht; das Histogramm wird wie bisher einmal je Bild geholt.
+
+**Befunde aus dem Browser-Check** (`frontend/e2e/band-look.cjs`, Collections wie die Registry sie schreibt, `e2e/band-look-collections.json`):
+
+- Alle Fälle grün: Sentinel-2 `red` (gemessen, Felder 1200–3400, Legende 0,02–0,24) und `cloud` (0–100 %), Sentinel-1 `vh` (`greys_r`), MeteoSwiss `TminD` (`rdbu_r`, −20…30 °C) und `SrelD` (0–100 %), swissALTI3D `dtm_2m` (`terrain`, 0–5000 m), WorldCover (Klassenlegende, kein Histogramm), Ergebnis-Ebene (`cloud` erbt 0–100 %, NDVI aus Band math nicht); hell und dunkel, 1280×800, 1280×360, 360×740; Legende scrollt nie.
+- Die Einstellungsleiste rechts scrollt bei 1280×360 und 360×740, auf `main` genauso (gemessen mit demselben Check); das Histogramm ändert ihre Höhe nicht. Nicht Teil von M5-60.
+- Im dunklen Thema sind die dunklen Enden mancher Colormaps (`magma`, `viridis`, `greys_r`) als Balken auf der Tafel kaum zu sehen; das ist die Farbe der Karte (Vorgabe Otto), kein Rahmen ergänzt.
+
+### 13.5 Fragen an Otto zu PR 2
+
+**F9 — Histogramm eines Klassenbands.** Ein Klassenband hat heute weder in der Ansicht (WorldCover) noch als Ergebnis-Ebene ein Histogramm, nur Opacity (Leitfaden §9, M5-07 F4); §12 „Klassenband: Balken in den Klassenfarben“ hat damit keinen Ort.
+1. Ein Klassenband bekommt unter „Classes“ ein Histogramm ohne Schieber, jeder Balken in der Farbe seiner Klasse (Wert ohne Klasse: `--accent`), aus derselben einen Messung der Ansicht. **(Empfehlung)**
+2. Kein Histogramm bei Klassen; der Punkt entfällt, die Klassenlegende genügt.
+
+**F10 — Felder „Scale“ eines skalierten Bands.** Die Felder und das Histogramm zeigen bei Sentinel-2 wie bisher gespeicherte Werte (1200–3400, Plan §7), die Legende physikalische (0,02–0,24).
+1. Eigene kleine Aufgabe: Felder und Histogramm eines skalierten Bands in physikalischen Werten, die Umrechnung in gespeicherte Werte nur für die Kachel-URL; Permalinks und gespeicherte Looks bleiben lesbar. **(Empfehlung)**
+2. So lassen.
+
+### 13.6 Antworten Otto zu PR 2 und Umsetzung (24.11.2026)
+
+> F9 = 1. F10 = 1, in diesem PR, wenn nicht deutlich größer als ~200 Zeilen, sonst Folgeaufgabe M5-68. A9–A11 angenommen. Dunkles Thema: feine, neutrale Kontur an den Balken des Histogramms. Die scrollende rechte Leiste geht an UI-12. Zusatz: Die Schieber stehen außen an den Balken im Bereich; die Zahl in den Feldern bleibt der eingestellte Wert; festlegen, wann ein Balken „im Bereich“ ist; Schieber, Balkenfarbe und Zahl nie widersprüchlich; für Einzelbänder und je Kanal bei RGB.
+
+| Teil | Stelle |
+|---|---|
+| **F9:** Klassenband (Ansicht mit Klassen-Standardbild wie WorldCover, Ergebnis-Ebene mit Klassen) hat unter „Classes“ ein Histogramm ohne Schieber, jeder Balken in der Farbe der Klasse, deren Wert in ihm liegt (mehrere: die der Mitte nächste); Balken ohne Klasse in `--accent`. Aus derselben einen Messung der Ansicht bzw. der Statistik des Ergebnisses | `frontend/src/histogramColours.ts::classColours`, `components/ClassHistogram.tsx`, `ViewerControls.tsx`, `ResultControls.tsx` |
+| **Balken im Bereich** (Festlegung): Ein Balken ist im Bereich, wenn seine Mitte in [Min, Max] liegt (Grenzen eingeschlossen). Genau diese Balken haben Farben aus dem Inneren der Farbskala (Mitte → Stelle im Bereich), alle anderen die Endfarben; bei RGB sind genau sie voll, die anderen blass | `frontend/src/histogram.ts::barInRange`, `histogramColours.ts::barColours` |
+| **Schieber außen:** links an der linken Kante des ersten Balkens im Bereich, rechts an der rechten Kante des letzten. Liegt keine Mitte im Bereich, stehen beide an der Kante zwischen den Balken in der unteren und der oberen Endfarbe. Ein Ende außerhalb des Histogramms steht an seinem Wert (die Spur wird wie bisher verbreitert). Die Felder behalten den eingestellten Wert; Ziehen schreibt den gezogenen Wert, die Pfeiltasten verschieben den Wert (nicht die gezeichnete Stelle) um ein Tausendstel der Spur. So trennen die Schieber immer genau die Balken in Endfarben von denen mit inneren Farben, auch je Kanal bei RGB und in `percentile` | `frontend/src/histogram.ts::sliderPlaces`, `components/RangeHistogram.tsx` |
+| **Kontur im dunklen Thema:** fein (0,5 px), neutral, `--hist-bar-edge` (hell: keine), nur an farbigen Balken; keine Farbänderung, kein Text | `frontend/src/tokens.css`, `index.css` |
+| **F10:** nicht in diesem PR, sondern M5-68 (§13.7): deutlich über 200 Zeilen | — |
+| Scrollende Einstellungsleiste bei 1280×360 und 360×740: an UI-12 | — |
+
+Tests: `histogram.test.ts` (im Bereich, Schieber außen, Min/Max mitten in Balken, auf Kanten, keine Mitte im Bereich, Enden außerhalb), `histogramColours.test.ts` (Klassenfarben), `ScaleHistograms.test.tsx` (Schieber und Farben bei 23–87 auf Zehnerbalken, je Kanal, Tasten verschieben den Wert, Klassen-Histogramm ohne Schieber), `ResultControls.test.tsx` (Ergebnis mit Klassen), `e2e/band-look.cjs` (Sentinel-2 1200/3400 mitten in 500er-Balken: Schieber an 1000 und 3500, Felder 1200 und 3400, Balken außerhalb in Endfarben; WorldCover in den Klassenfarben ohne Schieber; Kontur nur dunkel).
+
+**Nachtrag aus Ottos Browsertest (24.11.2026): Schieber nicht ganz am Rand.** Ursache [M]: Der Schieber ist ein Range-Input mit 12 px breitem Griff (`--space-3`). Seine Mitte, an der der Strich steht, wandert nur von 6 px bis Breite − 6 px, die Balken lagen aber über der vollen Breite. Am Rand stand der Strich deshalb 6 px innen, bei 64 Balken rund anderthalb Balkenbreiten, zur Mitte hin weniger. Ziehen bis an den Rand brachte ihn nie auf die Außenkante. Dazu verschob das Raster des Inputs (`step` = Spur/1000) eine Kante leicht (1000 → 1002). Die Wertlogik war richtig: Die Spur reicht von Kante zu Kante, nicht von Mitte zu Mitte, und `sliderPlaces` liefert Kanten. Behoben: Die Balken liegen genau über dem Weg der Griffmitte, um eine halbe Griffbreite eingerückt (`--hist-thumb`). Die Inputs nehmen jeden Wert (`step="any"`), und die Pfeiltasten verschieben wie bisher um ein Tausendstel der Spur. Zweiter Befund aus dem Check [M]: Beim Ziehen über den Rand blieb die Zahl auf dem letzten Zwischenwert (165 statt 0). Das eingerastete Input hatte den Randwert schon, also meldete der Browser keine Änderung mehr. Deshalb liest die Komponente beim Ziehen den Wert selbst aus der Stelle des Zeigers über dem Weg der Griffmitte (Pointer-Ereignisse, Ränder eingeschlossen). Die Zahl folgt der Maus über die ganze Breite, und der Strich rastet sichtbar an der Kante ein. Gezogen bis über den Rand hinaus ist der erste bzw. letzte Balken im Bereich, und der Strich steht auf dessen Außenkante. Browser-Check `band-look.cjs` (neu: Ziehen mit der Maus bis über beide Ränder, Strich auf ±0,75 px an der Außenkante; Strich an einer inneren Balkenkante; Einzelband in Werten und in Perzentilen, RGB je Kanal).
+
+### 13.7 Folgeaufgabe M5-68: physikalische Werte in „Scale“ und Look-Erbe vom Worker
+
+**Warum nicht hier (gemessen am Code):** Die Kachelrouten von Szene, Mosaik und Übersicht nehmen `rescale` in gespeicherten Werten und kennen kein `unscale` (nur unter Schritten, `access/mosaic_tiles.py::grown_options`). Physikalische Felder hießen, jede Kachel-URL aus `AppliedRender.rescale` umzurechnen (76 Stellen mit `rescale` in 11 Dateien des Frontends: Ansicht, Ebenen, Mosaike, Übersicht, Permalink, gespeicherte Looks), dazu die Messung der Szene in physikalische Werte und eine verträgliche Lesart alter Permalinks und gespeicherter Looks, deren `rescale` gespeicherte Werte sind. Deutlich über 200 Zeilen und mit Rückwirkung auf das Backend.
+
+**Inhalt (Vorschlag, Stufe B):**
+1. Felder und Histogramm von „Scale“ eines skalierten Bands in physikalischen Werten (Sentinel-2 0,02–0,24). Zu klären im Plan: `unscale` an den Kachelrouten (Backend, eine Stelle je Route) oder Umrechnung im Frontend an einer Stelle; Kennzeichen im `AppliedRender` (z. B. `physical: true`), damit alte Permalinks und gespeicherte Looks in gespeicherten Werten gelesen werden.
+2. Das Ergebnis-Item sagt je Band selbst, ob es den Look der Quelle erbt: Der Worker kennt `BandUse` (`adds`, `acts_on`) und schreibt es ins Ergebnis, wie bei den Klassen (M5-62); das Frontend schätzt nicht mehr (`processingDefaults.ts::keepsValuesOf` und A9 entfallen).
 
 ## 14. Rückmeldung Otto zu PR 1 (24.11.2026)
 

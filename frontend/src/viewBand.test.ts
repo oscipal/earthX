@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Collection, StacItem } from './types';
-import { bandAssetsOf, standardLookOfBand } from './viewBand';
+import { bandAssetsOf, bandLookOf, fixedRangeOf } from './viewBand';
 
 const meteo = (overrides: Partial<Collection> = {}): Collection =>
   ({
@@ -47,23 +47,53 @@ describe('bandAssetsOf (the dropdown "Band" of the view)', () => {
   });
 });
 
-describe('standardLookOfBand (Otto, H1 = 1)', () => {
-  const item = day(['TabsD', 'TminD', 'TmaxD', 'SrelD']);
+describe('bandLookOf (M5-60: the look the collection publishes for a band)', () => {
+  const bands = [
+    { name: 'TabsD', description: 'Mean', 'earthx:look': { colormap: 'rdbu_r', scale: 'fixed', low: -20, high: 30 } },
+    { name: 'SrelD', description: 'Sunshine', 'earthx:look': { colormap: 'viridis', scale: 'fixed', low: 0, high: 100 } },
+    { name: 'B04', description: 'Red', 'earthx:look': { colormap: 'viridis', scale: 'measured' } },
+    { name: 'map', description: 'Classes', 'classification:classes': [] },
+    { name: 'odd', description: 'Half a look', 'earthx:look': { colormap: 'viridis', scale: 'fixed', low: 5 } },
+    { name: 'flat', description: 'An empty range', 'earthx:look': { colormap: 'viridis', scale: 'fixed', low: 5, high: 5 } },
+    { name: 'wide', description: 'Percentiles out of range', 'earthx:look': { colormap: 'viridis', scale: 'percentiles', low: -1, high: 100 } },
+    { name: 'blank', description: 'No colormap', 'earthx:look': { colormap: '', scale: 'measured' } },
+  ];
+  const withBands = meteo({ 'earthx:bands': bands });
 
-  it('gives a band in the unit of the standard band its colormap and starting range', () => {
-    expect(standardLookOfBand(meteo(), item, 'TminD')).toEqual({ colormapName: 'rdbu_r', vmin: '-20', vmax: '30' });
-    expect(standardLookOfBand(meteo(), item, 'TmaxD')).toEqual({ colormapName: 'rdbu_r', vmin: '-20', vmax: '30' });
+  it('reads a fixed and a measured look as published', () => {
+    expect(bandLookOf(withBands, 'TabsD')).toEqual({ colormap: 'rdbu_r', scale: 'fixed', low: -20, high: 30 });
+    expect(bandLookOf(withBands, 'SrelD')).toEqual({ colormap: 'viridis', scale: 'fixed', low: 0, high: 100 });
+    expect(bandLookOf(withBands, 'B04')).toEqual({ colormap: 'viridis', scale: 'measured' });
   });
 
-  it('leaves a band in another unit, the standard band itself and a band without unit to the measure', () => {
-    expect(standardLookOfBand(meteo(), item, 'SrelD')).toBeNull();
-    expect(standardLookOfBand(meteo(), item, 'TabsD')).toBeNull();
-    expect(standardLookOfBand(meteo({ 'earthx:band_units': { TabsD: '°C' } }), item, 'TminD')).toBeNull();
+  it('gives none for a band of classes, an unknown band, a collection without bands and no collection', () => {
+    expect(bandLookOf(withBands, 'map')).toBeNull();
+    expect(bandLookOf(withBands, 'nope')).toBeNull();
+    expect(bandLookOf(meteo(), 'TabsD')).toBeNull();
+    expect(bandLookOf(meteo({ 'earthx:bands': null }), 'TabsD')).toBeNull();
+    expect(bandLookOf(undefined, 'TabsD')).toBeNull();
   });
 
-  it('gives nothing where the standard picture has no colormap or no range', () => {
-    const render = meteo()['earthx:default_render']!;
-    expect(standardLookOfBand(meteo({ 'earthx:default_render': { ...render, colormap_name: null } }), item, 'TminD')).toBeNull();
-    expect(standardLookOfBand(meteo({ 'earthx:default_render': { ...render, rescale: null } }), item, 'TminD')).toBeNull();
+  it('leaves out a look that is not complete: one end, an empty range, percentiles beyond 0–100, no colormap', () => {
+    for (const band of ['odd', 'flat', 'wide', 'blank']) expect(bandLookOf(withBands, band), band).toBeNull();
+  });
+});
+
+describe('fixedRangeOf (a fixed look in the values the tiles draw)', () => {
+  const fixed = { colormap: 'viridis', scale: 'fixed' as const, low: 0, high: 0.3 };
+
+  it('turns the physical range back into the stored values with the scaling of the item', () => {
+    // Sentinel-2 reflectance: stored · 0.0001 − 0.1.
+    expect(fixedRangeOf(fixed, { scale: 0.0001, offset: -0.1 })).toEqual({ vmin: '1000', vmax: '4000' });
+  });
+
+  it('takes the values as they are without a scaling (a percentage of clouds, a temperature)', () => {
+    expect(fixedRangeOf({ ...fixed, low: 0, high: 100 }, null)).toEqual({ vmin: '0', vmax: '100' });
+    expect(fixedRangeOf({ ...fixed, low: -20, high: 30 }, { scale: 1, offset: 0 })).toEqual({ vmin: '-20', vmax: '30' });
+  });
+
+  it('gives none for a range that comes from a measure', () => {
+    expect(fixedRangeOf({ colormap: 'viridis', scale: 'measured' }, null)).toBeNull();
+    expect(fixedRangeOf({ colormap: 'viridis', scale: 'percentiles', low: 0, high: 100 }, null)).toBeNull();
   });
 });

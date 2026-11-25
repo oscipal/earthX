@@ -57,6 +57,24 @@ export function valueAtPercentOf(h: Histogram, percent: number): number {
   return h.edges[h.edges.length - 1];
 }
 
+// A bar is in the range where its middle is (M5-60, Otto 24.11.2026): it then has a colour from inside the colormap, the others the colours
+// of its ends (`histogramColours.ts`).
+export const middleOf = (h: Histogram, bar: number): number => (h.edges[bar] + h.edges[bar + 1]) / 2;
+export const barInRange = (h: Histogram, bar: number, low: number, high: number): boolean => middleOf(h, bar) >= low && middleOf(h, bar) <= high;
+
+// Where the two sliders stand for the range `low`…`high` (Otto, 24.11.2026): outside the bars in the range, the lower at the left edge of the
+// first, the upper at the right edge of the last, so that they enclose what is in it. Where no middle lies in the range both stand at the
+// edge between the bars below and above it; an end beyond the histogram stands at its value. The fields keep the values.
+export function sliderPlaces(h: Histogram, low: number, high: number): [number, number] {
+  const bars = h.counts.length;
+  const [start, end] = [h.edges[0], h.edges[bars]];
+  let first = 0;
+  while (first < bars && middleOf(h, first) < low) first += 1;
+  let last = bars - 1;
+  while (last >= 0 && middleOf(h, last) > high) last -= 1;
+  return [low < start || low > end ? low : h.edges[first], high < start || high > end ? high : h.edges[last + 1]];
+}
+
 // The track of the sliders: the histogram, widened to take in ends that lie beyond it (an index drawn at −1…1, a range typed by hand).
 export function trackOf(h: Histogram, ends: readonly (number | null)[]): [number, number] {
   const known = ends.filter(finite);
