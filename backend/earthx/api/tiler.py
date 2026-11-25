@@ -1844,7 +1844,7 @@ class DownloadRequest(BaseModel):
         description="item ids per group, one merged file per group, as the results list groups them",
     )
     assets: list[str] = Field(min_length=1, max_length=32, description="asset keys, e.g. `visual`")
-    aoi: dict[str, Any] = Field(description="a GeoJSON Polygon or MultiPolygon, in WGS84")
+    aoi: dict[str, Any] = Field(description="a GeoJSON Point, Polygon or MultiPolygon, in WGS84; a point crops the one pixel it lies on")
     resolution: Literal[1] = Field(
         default=1,
         description=(

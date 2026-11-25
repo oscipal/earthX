@@ -43,7 +43,7 @@ ITEM_ID = "SYNTH_T00AAA_20260724T100000_L2A"
 
 GOOD_AOI = {"type": "Polygon", "coordinates": [[[7.1, 46.1], [7.2, 46.1], [7.2, 46.2], [7.1, 46.2], [7.1, 46.1]]]}
 OUTSIDE_AOI = {"type": "Polygon", "coordinates": [[[50, 50], [51, 50], [51, 51], [50, 51], [50, 50]]]}
-BAD_GEOMETRY = {"type": "Point", "coordinates": [1, 2]}
+BAD_GEOMETRY = {"type": "LineString", "coordinates": [[1, 2], [3, 4]]}
 
 
 @pytest.fixture(scope="module")

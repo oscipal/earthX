@@ -83,6 +83,9 @@ class TestParseAoiGeometry:
         geom = dl.parse_aoi_geometry(GOOD_AOI)
         assert geom.geom_type == "Polygon"
 
+    def test_a_point_is_an_aoi_of_its_own(self) -> None:
+        assert dl.parse_aoi_geometry({"type": "Point", "coordinates": [10.5, 47.25]}).geom_type == "Point"
+
     def test_a_valid_multipolygon_is_accepted(self) -> None:
         multi = {"type": "MultiPolygon", "coordinates": [GOOD_AOI["coordinates"]]}
         geom = dl.parse_aoi_geometry(multi)
@@ -91,7 +94,10 @@ class TestParseAoiGeometry:
     @pytest.mark.parametrize(
         "geometry",
         [
-            {"type": "Point", "coordinates": [0, 0]},
+            {"type": "Point", "coordinates": [181, 0]},
+            {"type": "Point", "coordinates": [0, -91]},
+            {"type": "Point", "coordinates": [0, 0, 5]},
+            {"type": "Point", "coordinates": []},
             {"type": "LineString", "coordinates": [[0, 0], [1, 1]]},
             {"type": "Polygon", "coordinates": [[[0, 0], [1, 1], [1, 0], [0, 1], [0, 0]]]},  # bowtie
             {"type": "Polygon", "coordinates": []},

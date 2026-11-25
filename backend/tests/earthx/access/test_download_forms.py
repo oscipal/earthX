@@ -8,6 +8,7 @@ the checks: a file of another form, a conversion that must not happen, a value t
 from __future__ import annotations
 
 import contextlib
+import json
 import zipfile
 from collections.abc import Iterator
 from io import BytesIO
@@ -18,6 +19,7 @@ import pytest
 import rasterio
 from rasterio.io import MemoryFile
 from rasterio.transform import from_origin
+from rasterio.warp import transform_geom
 
 from earthx.access import download as dl
 from earthx.access.band_export import ExportPlanError, band_meta
@@ -84,10 +86,14 @@ def _sources() -> tuple[dict[str, MemoryFile], dict[str, Any]]:
     return mems, metas
 
 
-def _zip(assets: list[str], *, form: str = "per_band", common: float | None = None, groups: int = 1, **kwargs: Any) -> zipfile.ZipFile:
+def _zip(
+    assets: list[str], *, form: str = "per_band", common: float | None = None, groups: int = 1, aoi: dict | None = None,
+    **kwargs: Any,
+) -> zipfile.ZipFile:  # fmt: skip
     mems, metas = _sources()
-    west, south, east, north = _bbox_to_wgs84(UTM32, (ORIGIN[0], ORIGIN[1] - SIZE_M, ORIGIN[0] + SIZE_M, ORIGIN[1]))
-    aoi = _polygon((west, south, east, north))
+    if aoi is None:
+        west, south, east, north = _bbox_to_wgs84(UTM32, (ORIGIN[0], ORIGIN[1] - SIZE_M, ORIGIN[0] + SIZE_M, ORIGIN[1]))
+        aoi = _polygon((west, south, east, north))
 
     def crops(item_id: str) -> list[dl.AssetCrop]:
         return [dl.AssetCrop(asset=a, paths=(_asset_path(mems[a], item_id=item_id, asset=a),)) for a in assets]
@@ -365,3 +371,46 @@ class TestClasses:
         with _zip(["blue", "red"]) as archive:
             assert not [name for name in archive.namelist() if name.endswith(".aux.xml")]
             assert "Classes" not in archive.read("exports/BANDS.txt").decode()
+
+
+def _point(x: float, y: float) -> dict:
+    """A point ``x`` m east and ``y`` m south of the scene's corner, in WGS84."""
+    return transform_geom(UTM32, "EPSG:4326", {"type": "Point", "coordinates": [ORIGIN[0] + x, ORIGIN[1] - y]})
+
+
+class TestAPoint:
+    """M5-69: a point crops the one pixel it lies on, each band in its own resolution or all in the common one."""
+
+    POINT = _point(10 * 37 + 4, 10 * 52 + 6)
+
+    def test_each_band_is_its_own_pixel_under_the_point(self) -> None:
+        with _zip(["red", "rededge1", "coastal"], aoi=self.POINT) as archive:
+            for name, asset, size in (
+                ("exports/B04_red_10m.tif", "red", 10),
+                ("exports/B05_rededge1_20m.tif", "rededge1", 20),
+                ("exports/B01_coastal_60m.tif", "coastal", 60),
+            ):
+                col, row = (10 * 37 + 4) // size, (10 * 52 + 6) // size
+                with _open(archive, name) as mem, mem.open() as ds:
+                    assert (ds.width, ds.height) == (1, 1)
+                    assert (ds.transform.c, ds.transform.f) == (ORIGIN[0] + col * size, ORIGIN[1] - row * size)
+                    assert ds.read(1)[0, 0] == _array(asset)[0, row, col]
+                with _open(archive, name.replace(".tif", "_mask.tif")) as mem, mem.open() as mask:
+                    assert mask.read(1).tolist() == [[1]]
+            assert json.loads(archive.read("aoi.geojson"))["type"] == "Point"
+
+    def test_one_multi_band_file_is_the_one_pixel_of_the_common_resolution(self) -> None:
+        with _zip(["blue", "scl"], form="multi_band", common=60, aoi=self.POINT) as archive, _open(
+            archive, "exports/bands_60m.tif"
+        ) as mem, mem.open() as ds:
+            assert (ds.count, ds.width, ds.height) == (2, 1, 1)
+            assert (ds.transform.c, ds.transform.f) == (ORIGIN[0] + 6 * 60, ORIGIN[1] - 8 * 60)
+            assert ds.read(2)[0, 0] == _array("scl")[0, 8 * 3, 6 * 3]  # one class in each 60 m pixel
+
+    def test_a_point_on_an_edge_takes_the_pixel_right_of_and_below_it(self) -> None:
+        with _zip(["red"], aoi=_point(10 * 40, 10 * 30)) as archive, _open(archive, "exports/B04_red_10m.tif") as mem, mem.open() as ds:
+            assert (ds.transform.c, ds.transform.f) == (ORIGIN[0] + 400, ORIGIN[1] - 300)
+
+    def test_a_point_beside_the_scene_is_refused(self) -> None:
+        with pytest.raises(dl.AoiOutsideItems):
+            _zip(["red"], aoi=_point(-50, 50))

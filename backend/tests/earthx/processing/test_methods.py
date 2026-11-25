@@ -45,6 +45,13 @@ def band_math(expression: str = "(nir - red) / (nir + red)") -> dict[str, Any]:
 
 
 class TestTheParagraph:
+    def test_a_point_names_its_one_pixel_and_no_coordinate(self) -> None:
+        data = band_math()
+        data["aoi"] = {"type": "Point", "coordinates": [9.005, 47.005]}
+        text = methods_text(document(data, scaling=SCALING), dataset=FACTS)
+        assert "The area of interest is the one pixel a point lies on." in text
+        assert "km²" not in text and "9.005" not in text and "47.005" not in text
+
     def test_it_names_the_data_the_scaling_the_step_the_output_the_area_and_the_software(self) -> None:
         text = methods_text(document(band_math(), scaling=SCALING), dataset=FACTS)
         assert text == (

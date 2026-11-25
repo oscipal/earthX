@@ -125,6 +125,37 @@
             "title": "MultiPolygon",
             "type": "object"
           },
+          "Point": {
+            "additionalProperties": false,
+            "description": "A point as the AOI (M5-69): the one pixel it lies on.",
+            "properties": {
+              "coordinates": {
+                "maxItems": 2,
+                "minItems": 2,
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "title": "Coordinates",
+                "type": "array"
+              },
+              "type": {
+                "const": "Point",
+                "title": "Type",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "coordinates"
+            ],
+            "title": "Point",
+            "type": "object"
+          },
           "Polygon": {
             "additionalProperties": false,
             "properties": {
@@ -433,11 +464,15 @@
                 "discriminator": {
                   "mapping": {
                     "MultiPolygon": "#/$defs/MultiPolygon",
+                    "Point": "#/$defs/Point",
                     "Polygon": "#/$defs/Polygon"
                   },
                   "propertyName": "type"
                 },
                 "oneOf": [
+                  {
+                    "$ref": "#/$defs/Point"
+                  },
                   {
                     "$ref": "#/$defs/Polygon"
                   },
@@ -451,7 +486,7 @@
               }
             ],
             "default": null,
-            "description": "The area to cut out, a Polygon or MultiPolygon in EPSG:4326. Left out, a raster job covers the whole scenes it names (the union of their footprints); an export needs it.",
+            "description": "The area to cut out, a Point, Polygon or MultiPolygon in EPSG:4326; a point cuts out the one pixel it lies on. Left out, a raster job covers the whole scenes it names (the union of their footprints); an export needs it.",
             "title": "Aoi"
           },
           "inputs": {

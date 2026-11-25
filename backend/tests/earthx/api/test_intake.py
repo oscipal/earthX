@@ -759,7 +759,9 @@ class TestRefusals:
             order(extra="x"),
             order(recipe_version=3),
             order(steps=[{"op": "scale", "op_version": 1, "params": {"factor": "2"}}]),
-            order(aoi={"type": "Point", "coordinates": [9.0, 47.0]}),
+            order(aoi={"type": "Point", "coordinates": [190.0, 47.0]}),
+            order(aoi={"type": "Point", "coordinates": [9.0, 47.0, 400.0]}),
+            order(aoi={"type": "LineString", "coordinates": [[9.0, 47.0], [9.1, 47.1]]}),
         ):
             assert (await refused(broken, source)).status_code == 422
         assert source.calls == []

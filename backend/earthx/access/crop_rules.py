@@ -32,9 +32,11 @@ from rasterio.errors import CRSError
 from rasterio.features import rasterize
 from rasterio.transform import from_bounds as transform_from_bounds
 from rasterio.warp import calculate_default_transform, transform_geom
+from rasterio.warp import transform as transform_coordinates
 from rio_cogeo.profiles import cog_profiles
 from rio_tiler.constants import WGS84_CRS
 from shapely.errors import ShapelyError
+from shapely.geometry import box
 from shapely.geometry import mapping as shapely_mapping
 from shapely.geometry import shape as shapely_shape
 from shapely.geometry.base import BaseGeometry
@@ -46,6 +48,7 @@ __all__ = [
     "CITATION_FILENAME",
     "COG_PROFILE",
     "FALLBACK_BYTES_PER_PIXEL",
+    "LATTICE_SLACK",
     "MAX_JOB_BYTES",
     "MAX_OUTPUT_SIDE_PX",
     "NOTICE_FILENAME",
@@ -67,6 +70,7 @@ __all__ = [
     "merge_first_valid",
     "mosaic_order",
     "native_crop_grid",
+    "point_pixel_bounds",
     "rasterize_aoi",
     "source_crop_grid",
     "target_crs",
@@ -354,12 +358,17 @@ def native_crop_grid(
 
     ``pixel_scale`` (NM4-75) makes the pixels that many times larger than the native ones: the grid of a
     common resolution coarser (or finer) than the dataset's own. ``1.0`` is the native grid, unchanged.
+
+    A point (M5-69) has no extent: its grid is the one pixel of that size centred on it.
     """
     res_transform, _, _ = calculate_default_transform(
         dataset.crs, dst_crs, dataset.width, dataset.height, *dataset.bounds
     )
     w_res, h_res = res_transform.a * pixel_scale, abs(res_transform.e) * pixel_scale
     minx, miny, maxx, maxy = region.bounds
+    if region.geom_type == "Point":
+        minx, maxx = minx - w_res / 2, maxx + w_res / 2
+        miny, maxy = miny - h_res / 2, maxy + h_res / 2
     width = max(1, round((maxx - minx) / w_res))
     height = max(1, round((maxy - miny) / h_res))
     crop_transform = transform_from_bounds(minx, miny, maxx, maxy, width, height)
@@ -376,7 +385,8 @@ def source_crop_grid(
     in the CRS of ``dataset``, snapped outward to the dataset's own pixel lattice, so that a band read on it from a
     dataset of that CRS is a plain copy of source pixels and nothing is resampled. ``pixel_scale`` makes the pixels
     that many times larger (a common resolution coarser than the dataset's own, or smaller for a finer one); the
-    lattice is then the coarser one from the same origin. A source in another CRS than the grid's is warped onto it
+    lattice is then the coarser one from the same origin. A point (M5-69) gives the one pixel it lies on, on an edge
+    the one right of or below it. A source in another CRS than the grid's is warped onto it
     (the scenes of a mosaic in another UTM zone).
     """
     if dataset.crs is None:
@@ -388,17 +398,34 @@ def source_crop_grid(
     left, bottom, right, top = shapely_shape(projected).bounds
     size_x, size_y = abs(transform.a) * pixel_scale, abs(transform.e) * pixel_scale
     origin_x, origin_y = transform.c, transform.f
-    first_column = math.floor((left - origin_x) / size_x + _LATTICE_SLACK)
-    last_column = math.ceil((right - origin_x) / size_x - _LATTICE_SLACK)
-    first_row = math.floor((origin_y - top) / size_y + _LATTICE_SLACK)
-    last_row = math.ceil((origin_y - bottom) / size_y - _LATTICE_SLACK)
+    first_column = math.floor((left - origin_x) / size_x + LATTICE_SLACK)
+    last_column = math.ceil((right - origin_x) / size_x - LATTICE_SLACK)
+    first_row = math.floor((origin_y - top) / size_y + LATTICE_SLACK)
+    last_row = math.ceil((origin_y - bottom) / size_y - LATTICE_SLACK)
     width, height = max(1, last_column - first_column), max(1, last_row - first_row)
     grid = rasterio.Affine(size_x, 0.0, origin_x + first_column * size_x, 0.0, -size_y, origin_y - first_row * size_y)
     return dataset.crs, grid, width, height
 
 
 #: A bound this close (in pixels) to a pixel edge belongs to the pixel inside, not the next one.
-_LATTICE_SLACK = 1e-6
+LATTICE_SLACK = 1e-6
+
+
+def point_pixel_bounds(reader: Any, point: BaseGeometry) -> tuple[float, float, float, float]:
+    """The WGS84 bounds of the pixel of ``reader``'s own grid that holds ``point`` (M5-69).
+
+    For a reader without a raster dataset of its own (a Zarr store): its ``transform`` and ``crs`` place the pixel, as
+    :func:`~earthx.access.crop_rules.source_crop_grid` places it for a COG; on an edge the one right of or below it.
+    """
+    transform = reader.transform
+    (x,), (y,) = transform_coordinates(WGS84_CRS, reader.crs, [point.x], [point.y])
+    col = math.floor((x - transform.c) / transform.a + LATTICE_SLACK)
+    row = math.floor((y - transform.f) / transform.e + LATTICE_SLACK)
+    corner = transform @ (col, row)
+    far = transform @ (col + 1, row + 1)
+    pixel = box(min(corner[0], far[0]), min(corner[1], far[1]), max(corner[0], far[0]), max(corner[1], far[1]))
+    return shapely_shape(transform_geom(reader.crs, WGS84_CRS, shapely_mapping(pixel))).bounds
+
 
 # GeoTIFF mask-file profile shared by both the windowed and the naive path
 # (M3-18 §3): plain, not a COG — a same-grid, single-band 0/1 raster has no
