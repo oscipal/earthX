@@ -146,6 +146,7 @@ export default function MapView() {
   // Reactive slices used to drive the imperative map updates.
   const toolMode = useAppStore((s) => s.toolMode);
   const aoi = useAppStore((s) => s.aoi);
+  const aoiPoint = useAppStore((s) => s.aoiPoint);
   const groups = useAppStore((s) => s.groups);
   const items = useAppStore((s) => s.items);
   const datasets = useAppStore((s) => s.datasets);
@@ -297,7 +298,7 @@ export default function MapView() {
       // A basemap with a published style comes after the first style (it is fetched).
       basemapRef.current?.show(st.basemap, st.overlays);
       if (carried) return;
-      setAoiData(map, st.aoi);
+      setAoiData(map, st.aoiPoint ?? st.aoi);
       setCoverageDisplay(map, coverageDisplayFor(st, map.getZoom()));
       const viewLayer = viewLayerOf(st.layers, st);
       const shown = resultsOnMapOf(st);
@@ -404,8 +405,8 @@ export default function MapView() {
   // --- AOI geometry ---
   useEffect(() => {
     const map = mapRef.current;
-    if (map && readyRef.current) setAoiData(map, aoi);
-  }, [aoi]);
+    if (map && readyRef.current) setAoiData(map, aoiPoint ?? aoi);
+  }, [aoi, aoiPoint]);
 
   // --- coverage heatmap / footprints (M2-07c) ---
   useEffect(() => {

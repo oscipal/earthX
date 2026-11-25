@@ -5,7 +5,7 @@ import type { ToolMode } from '../types';
 import { MapPinIcon, PentagonIcon, SquareIcon, TrashIcon } from './icons';
 
 const TOOLS: { mode: ToolMode; label: string; hint: string; icon: ReactNode }[] = [
-  { mode: 'point', label: 'Point', hint: 'Click the map to drop a point (auto-buffered to a small box)', icon: <MapPinIcon /> },
+  { mode: 'point', label: 'Point', hint: 'Click the map to drop a point', icon: <MapPinIcon /> },
   { mode: 'rectangle', label: 'Rectangle', hint: 'Click-drag to draw a bounding box', icon: <SquareIcon /> },
   { mode: 'polygon', label: 'Polygon', hint: 'Click to add vertices, double-click to finish', icon: <PentagonIcon /> },
 ];
