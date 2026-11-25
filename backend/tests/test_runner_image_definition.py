@@ -53,7 +53,7 @@ def test_every_compose_build_of_the_backend_names_the_app_stage() -> None:
     builds = {name: s["build"] for name, s in services.items() if "build" in s}
     backend = {name: b for name, b in builds.items() if b["context"] == "./backend"}
     # with `measure-tiles` (M5-30b), `bev-probe` (M5-09), `harvest` (M5-19), `meteoswiss-probe` (M5-11) and
-    # `harvest-report` and `harvest-grants` (M5-20), `harvest-linkcheck`, `harvest-spellings` and `harvest-cycle`
-    # (M5-67), one-offs under a profile like `materialize`
-    assert len(backend) == 18
+    # `harvest-report`, `harvest-grants` and `harvest-propose` (M5-20), `harvest-linkcheck`, `harvest-spellings` and
+    # `harvest-cycle` (M5-67), one-offs under a profile like `materialize`
+    assert len(backend) == 19
     assert {name: b.get("target") for name, b in backend.items()} == dict.fromkeys(backend, "app")

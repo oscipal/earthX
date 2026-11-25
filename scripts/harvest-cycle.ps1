@@ -53,7 +53,7 @@ $CheckMinutes = 90
 $DockerMinutes = 5
 # The exit code of `harvest` for a pause on purpose (EXIT_PAUSED in backend/earthx/discovery/harvest.py): a success.
 $PauseCode = 75
-$HarvestServices = @('harvest', 'harvest-report', 'harvest-grants', 'harvest-linkcheck', 'harvest-spellings', 'harvest-cycle')
+$HarvestServices = @('harvest', 'harvest-report', 'harvest-grants', 'harvest-linkcheck', 'harvest-propose', 'harvest-spellings', 'harvest-cycle')
 $Utf8 = New-Object System.Text.UTF8Encoding $false
 
 # On Linux (PowerShell 7) the containers write as the owner of the checkout; $IsLinux is unset in PowerShell 5.1.
@@ -378,6 +378,15 @@ try {
         [System.IO.File]::WriteAllText((Join-Path $RunDir 'linkpruefung-fehler.txt'), 'Die Linkpruefung ist gescheitert (protokoll.txt).', $Utf8)
     }
 
+    $Step = 'Kandidaten'
+    Say 'Kandidaten des vollen Wegs ...'
+    $propose = @('run', '--rm') + $AsOwner + @('-v', $Run, 'harvest-propose', '--json', '/run/propose.json', '--day', $day)
+    if ($Trial) { $propose += '--trial' }
+    if ($Harvested.Count -and ((Compose 'propose' ($propose + $Harvested)) -ne 0)) {
+        # M5-20 plan section 14.1.6: like the link check, the run goes on without candidates; the finding says why.
+        [System.IO.File]::WriteAllText((Join-Path $RunDir 'kandidaten-fehler.txt'), "Die Kandidaten sind gescheitert.$(Reason)", $Utf8)
+    }
+
     $Step = 'Freigabe'
     $new = Lines @('git', 'status', '--porcelain', '--', 'backend/catalog/approvals')
     if ($null -eq $new) { throw 'Freigabe: git status gescheitert.' }
@@ -395,6 +404,7 @@ try {
     $Step = 'Git'
     Commit "Grant licences to new publishers and add licence spellings, harvest run $day" @('backend/catalog/licenses')
     Commit "Add the approval files of the harvest run $day" @('backend/catalog/approvals')
+    Commit "Add candidates for full entries, harvest run $day" @('backend/catalog/candidates')
     Commit "Add the files of the harvest run $day and update the harvest findings" @('docs/harvest')
     $ahead = Lines @('git', 'rev-list', '--count', "main..$Branch")
     if ($null -eq $ahead -or $ahead.Count -ne 1) { throw 'Git: Zahl der Commits nicht lesbar.' }
@@ -451,7 +461,7 @@ try {
         try {
             # The files of the run once: a second summary would write a second folder and the findings twice.
             if ($Summary -and -not $SummaryDone) { Compose 'summary after error' $Summary | Out-Null }
-            Commit "Add the files of the failed harvest run $day" @('docs/harvest', 'backend/catalog/approvals', 'backend/catalog/licenses')
+            Commit "Add the files of the failed harvest run $day" @('docs/harvest', 'backend/catalog/approvals', 'backend/catalog/licenses', 'backend/catalog/candidates')
             $draft = 1
             if ((Native 'push' @('git', 'push', '-u', 'origin', $Branch)) -eq 0) {
                 $draft = Native 'draft pr' @('gh', 'pr', 'create', '--draft', '--base', 'main', '--head', $Branch, '--title', "Harvest run $Label (failed)", '--body-file', (Join-Path $RunDir 'pr-body.md'))

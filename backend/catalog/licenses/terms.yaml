@@ -2,17 +2,20 @@
 # `matches` lists the statements of sources that mean it, each verbatim (only blanks at the edges and a trailing '/'
 # are ignored). The grade is Otto's: `license-checker` proposes an entry with its evidence, Otto writes and merges it.
 #
-# Fields per entry: `license_ref` (lower case, digits, '.', '-'), `matches`, `license` (as in a dataset file:
-# spdx_id, name, url, the five flags, tier, attribution_modified, attribution_unmodified with `{publisher}`, terms),
-# `approved_on` (the day, ISO 8601). A listed entry is always in tier catalog; the tier here is for full entries.
+# Fields per entry: `license_ref` (lower case, digits, '.', '-'), `licence_class` (K1-K6 of the licence list),
+# `matches`, `license` (as in a dataset file: spdx_id, name, url, the five flags, tier, attribution_modified,
+# attribution_unmodified with `{publisher}`, terms), `approved_on` (the day, ISO 8601). A listed entry is always in tier
+# catalog; the tier here is for full entries made from candidates (adr/0031 §8).
 #
-# Graded by Otto on 20.11.2026 (M5-20 plan §13f; docs/plans/m5/m5-20-lizenzliste.md): the classes K1-K6 of the licence
-# list stand above each entry. `matches` holds every spelling of the third -Classify with at least two finds where it
+# Graded by Otto on 20.11.2026 (M5-20 plan §13f; docs/plans/m5/m5-20-lizenzliste.md): the class of each entry is its
+# `licence_class`. Tier graded by Otto on 25.11.2026 (M5-20 plan §14.1.12, F16): processing for K1 and K2 (sharing and
+# changing allowed, at most attribution); K3 (share alike) stays catalog because EarthX cannot pass the licence on to
+# results, K4 and K5 stay catalog. The loader refuses a tier above catalog outside K1 and K2. `matches` holds every spelling of the third -Classify with at least two finds where it
 # means this licence unambiguously. K1-K5 are granted to every publisher by `discovery grants`
 # (backend/catalog/licenses/grant-to-all.yaml), except de-official-work; K6 is graded and never granted. Statements
 # without a licence (K7, such as mdd-nrw-nutzungsbedingungen) are not here: their finds wait.
-# K1
 - license_ref: cc0-1.0
+  licence_class: K1
   matches:
     - "http://dcat-ap.de/def/licenses/cc-zero"
     - "http://www.opendefinition.org/licenses/cc-zero"
@@ -30,13 +33,13 @@
     derivatives: true
     share_alike: false
     attribution_required: false
-    tier: catalog
+    tier: processing
     attribution_modified: null
     attribution_unmodified: null
     terms: null
-  approved_on: 2026-11-20
-# K1
+  approved_on: 2026-11-25
 - license_ref: dl-de-zero-2.0
+  licence_class: K1
   matches:
     - "http://dcat-ap.de/def/licenses/dl-zero-de/2.0"
     - "https://www.govdata.de/dl-de/zero-2-0"
@@ -57,13 +60,13 @@
     derivatives: true
     share_alike: false
     attribution_required: false
-    tier: catalog
+    tier: processing
     attribution_modified: null
     attribution_unmodified: null
     terms: null
-  approved_on: 2026-11-20
-# K1
+  approved_on: 2026-11-25
 - license_ref: cc-pdm-1.0
+  licence_class: K1
   matches:
     - "http://dcat-ap.de/def/licenses/ccpdm/1.0"
   license:
@@ -75,13 +78,13 @@
     derivatives: true
     share_alike: false
     attribution_required: false
-    tier: catalog
+    tier: processing
     attribution_modified: null
     attribution_unmodified: null
     terms: null
-  approved_on: 2026-11-20
-# K1
+  approved_on: 2026-11-25
 - license_ref: pddl-1.0
+  licence_class: K1
   matches:
     - "http://dcat-ap.de/def/licenses/odcpddl"
   license:
@@ -93,13 +96,13 @@
     derivatives: true
     share_alike: false
     attribution_required: false
-    tier: catalog
+    tier: processing
     attribution_modified: null
     attribution_unmodified: null
     terms: null
-  approved_on: 2026-11-20
-# K1
+  approved_on: 2026-11-25
 - license_ref: opendata-swiss-open
+  licence_class: K1
   matches:
     - "https://opendata.swiss/terms-of-use#terms_open"
     - "https://opendata.swiss/en/terms-of-use#terms_open"
@@ -113,13 +116,13 @@
     derivatives: true
     share_alike: false
     attribution_required: false
-    tier: catalog
+    tier: processing
     attribution_modified: null
     attribution_unmodified: null
     terms: null
-  approved_on: 2026-11-20
-# K1
+  approved_on: 2026-11-25
 - license_ref: de-official-work
+  licence_class: K1
   matches:
     - "http://dcat-ap.de/def/licenses/officialWork"
     - "http://dcat-ap.de/def/licenses/official-work"
@@ -134,13 +137,13 @@
     derivatives: true
     share_alike: false
     attribution_required: false
-    tier: catalog
+    tier: processing
     attribution_modified: null
     attribution_unmodified: null
     terms: null
-  approved_on: 2026-11-20
-# K2
+  approved_on: 2026-11-25
 - license_ref: cc-by-4.0
+  licence_class: K2
   matches:
     - "http://dcat-ap.de/def/licenses/cc-by/4.0"
     - "Creative Commons Namensnennung – 4.0 International (CC BY 4.0)"
@@ -169,13 +172,13 @@
     derivatives: true
     share_alike: false
     attribution_required: true
-    tier: catalog
+    tier: processing
     attribution_modified: "© {publisher} (modified)"
     attribution_unmodified: "© {publisher}"
     terms: null
-  approved_on: 2026-11-20
-# K2
+  approved_on: 2026-11-25
 - license_ref: cc-by
+  licence_class: K2
   matches:
     - "http://dcat-ap.de/def/licenses/cc-by"
     - "http://www.opendefinition.org/licenses/cc-by"
@@ -190,13 +193,13 @@
     derivatives: true
     share_alike: false
     attribution_required: true
-    tier: catalog
+    tier: processing
     attribution_modified: "© {publisher} (modified)"
     attribution_unmodified: "© {publisher}"
     terms: null
-  approved_on: 2026-11-20
-# K2
+  approved_on: 2026-11-25
 - license_ref: cc-by-3.0-de
+  licence_class: K2
   matches:
     - "http://dcat-ap.de/def/licenses/cc-by-de/3.0"
   license:
@@ -208,13 +211,13 @@
     derivatives: true
     share_alike: false
     attribution_required: true
-    tier: catalog
+    tier: processing
     attribution_modified: "© {publisher} (modified)"
     attribution_unmodified: "© {publisher}"
     terms: null
-  approved_on: 2026-11-20
-# K2
+  approved_on: 2026-11-25
 - license_ref: dl-de-by-2.0
+  licence_class: K2
   matches:
     - "http://dcat-ap.de/def/licenses/dl-by-de/2.0"
     - "dl-by-de/2.0"
@@ -243,13 +246,13 @@
     derivatives: true
     share_alike: false
     attribution_required: true
-    tier: catalog
+    tier: processing
     attribution_modified: "{publisher}, Datenlizenz Deutschland – Namensnennung – Version 2.0 (modified)"
     attribution_unmodified: "{publisher}, Datenlizenz Deutschland – Namensnennung – Version 2.0"
     terms: null
-  approved_on: 2026-11-20
-# K2
+  approved_on: 2026-11-25
 - license_ref: dl-de-by
+  licence_class: K2
   matches:
     - "http://dcat-ap.de/def/licenses/dl-by-de"
   license:
@@ -261,13 +264,13 @@
     derivatives: true
     share_alike: false
     attribution_required: true
-    tier: catalog
+    tier: processing
     attribution_modified: "© {publisher} (modified)"
     attribution_unmodified: "© {publisher}"
     terms: null
-  approved_on: 2026-11-20
-# K2
+  approved_on: 2026-11-25
 - license_ref: dl-de-by-1.0
+  licence_class: K2
   matches:
     - "http://dcat-ap.de/def/licenses/dl-by-de/1.0"
   license:
@@ -279,13 +282,13 @@
     derivatives: true
     share_alike: false
     attribution_required: true
-    tier: catalog
+    tier: processing
     attribution_modified: "© {publisher} (modified)"
     attribution_unmodified: "© {publisher}"
     terms: null
-  approved_on: 2026-11-20
-# K2
+  approved_on: 2026-11-25
 - license_ref: geonutzv
+  licence_class: K2
   matches:
     - "http://dcat-ap.de/def/licenses/geonutz/20130319"
     - "https://sg.geodatenzentrum.de/web_public/gdz/lizenz/geonutzv.pdf"
@@ -300,13 +303,13 @@
     derivatives: true
     share_alike: false
     attribution_required: true
-    tier: catalog
+    tier: processing
     attribution_modified: "© {publisher} (modified)"
     attribution_unmodified: "© {publisher}"
     terms: null
-  approved_on: 2026-11-20
-# K2
+  approved_on: 2026-11-25
 - license_ref: odc-by-1.0
+  licence_class: K2
   matches:
     - "http://dcat-ap.de/def/licenses/odby"
   license:
@@ -318,13 +321,13 @@
     derivatives: true
     share_alike: false
     attribution_required: true
-    tier: catalog
+    tier: processing
     attribution_modified: "© {publisher} (modified)"
     attribution_unmodified: "© {publisher}"
     terms: null
-  approved_on: 2026-11-20
-# K2
+  approved_on: 2026-11-25
 - license_ref: opendata-swiss-by
+  licence_class: K2
   matches:
     - "https://opendata.swiss/terms-of-use#terms_by"
     - "https://opendata.swiss/en/terms-of-use/#terms_by"
@@ -339,13 +342,13 @@
     derivatives: true
     share_alike: false
     attribution_required: true
-    tier: catalog
+    tier: processing
     attribution_modified: "© {publisher} (modified)"
     attribution_unmodified: "© {publisher}"
     terms: null
-  approved_on: 2026-11-20
-# K2
+  approved_on: 2026-11-25
 - license_ref: swisstopo-ogd
+  licence_class: K2
   matches:
     - "https://www.swisstopo.admin.ch/ogd-conditions"
   license:
@@ -357,13 +360,13 @@
     derivatives: true
     share_alike: false
     attribution_required: true
-    tier: catalog
+    tier: processing
     attribution_modified: "© swisstopo (modified)"
     attribution_unmodified: "© swisstopo"
     terms: null
-  approved_on: 2026-11-20
-# K2
+  approved_on: 2026-11-25
 - license_ref: lba-free-use
+  licence_class: K2
   matches:
     - "Alle vom Luftfahrt-Bundesamt veröffentlichten Statistiken - jeweils mit Stand 31.12. eines jeden Jahres - werden kostenfrei bereitgestellt und dürfen unter Verweis auf den Herausgeber des Datenbankwerks genutzt und weiterverwendet werden."
     - "Alle vom Luftfahrt-Bundesamt veröffentlichten Listen - jeweils mit dem aktuellen Sachstand - werden kostenfrei bereitgestellt und dürfen unter Verweis auf den Herausgeber des Datenbankwerks genutzt und weiterverwendet werden."
@@ -376,13 +379,13 @@
     derivatives: true
     share_alike: false
     attribution_required: true
-    tier: catalog
+    tier: processing
     attribution_modified: "© Luftfahrt-Bundesamt (modified)"
     attribution_unmodified: "© Luftfahrt-Bundesamt"
     terms: null
-  approved_on: 2026-11-20
-# K3
+  approved_on: 2026-11-25
 - license_ref: cc-by-sa-4.0
+  licence_class: K3
   matches:
     - "http://dcat-ap.de/def/licenses/cc-by-sa/4.0"
     - "https://www.dcat-ap.de/def/licenses/cc-by-sa/4.0"
@@ -401,8 +404,8 @@
     attribution_unmodified: "© {publisher}"
     terms: null
   approved_on: 2026-11-20
-# K3
 - license_ref: cc-by-sa
+  licence_class: K3
   matches:
     - "http://dcat-ap.de/def/licenses/cc-by-sa"
     - "http://www.opendefinition.org/licenses/cc-by-sa"
@@ -420,8 +423,8 @@
     attribution_unmodified: "© {publisher}"
     terms: null
   approved_on: 2026-11-20
-# K3
 - license_ref: cc-by-sa-3.0-de
+  licence_class: K3
   matches:
     - "http://dcat-ap.de/def/licenses/cc-by-sa-de/3.0"
     - "https://creativecommons.org/licenses/by-sa/3.0/de"
@@ -439,8 +442,8 @@
     attribution_unmodified: "© {publisher}"
     terms: null
   approved_on: 2026-11-20
-# K3
 - license_ref: cc-by-sa-3.0
+  licence_class: K3
   matches:
     - "https://creativecommons.org/licenses/by-sa/3.0/deed.de"
   license:
@@ -457,8 +460,8 @@
     attribution_unmodified: "© {publisher}"
     terms: null
   approved_on: 2026-11-20
-# K3
 - license_ref: odbl-1.0
+  licence_class: K3
   matches:
     - "http://dcat-ap.de/def/licenses/odbl"
     - "Nutzungsbedingungen: Bedingungen unbekannt\nEs gelten die Lizenzbedingungen „Open Data Commons Open Database License“ bzw. „odbl” (https://opendatacommons.org/licenses/odbl/). Quellangabe: © Bike Citizens - Map data © OpenStreetMap"
@@ -479,8 +482,8 @@
     attribution_unmodified: "© {publisher}"
     terms: null
   approved_on: 2026-11-20
-# K4
 - license_ref: cc-by-nc-4.0
+  licence_class: K4
   matches:
     - "http://dcat-ap.de/def/licenses/cc-by-nc/4.0"
     - "https://creativecommons.org/licenses/by-nc/4.0"
@@ -500,8 +503,8 @@
     attribution_unmodified: "© {publisher}"
     terms: null
   approved_on: 2026-11-20
-# K4
 - license_ref: cc-by-nc-3.0-de
+  licence_class: K4
   matches:
     - "http://dcat-ap.de/def/licenses/cc-by-nc-de/3.0"
   license:
@@ -518,8 +521,8 @@
     attribution_unmodified: "© {publisher}"
     terms: null
   approved_on: 2026-11-20
-# K4
 - license_ref: cc-by-nc
+  licence_class: K4
   matches:
     - "http://dcat-ap.de/def/licenses/cc-by-nc"
   license:
@@ -536,8 +539,8 @@
     attribution_unmodified: "© {publisher}"
     terms: null
   approved_on: 2026-11-20
-# K4
 - license_ref: opendata-swiss-by-ask
+  licence_class: K4
   matches:
     - "https://opendata.swiss/terms-of-use#terms_by_ask"
     - "https://opendata.swiss/en/terms-of-use#terms_by_ask"
@@ -556,8 +559,8 @@
     attribution_unmodified: "© {publisher}"
     terms: null
   approved_on: 2026-11-20
-# K4
 - license_ref: opendata-swiss-ask
+  licence_class: K4
   matches:
     - "https://opendata.swiss/terms-of-use#terms_ask"
   license:
@@ -574,8 +577,8 @@
     attribution_unmodified: "© {publisher}"
     terms: null
   approved_on: 2026-11-20
-# K5
 - license_ref: cc-by-nd-4.0
+  licence_class: K5
   matches:
     - "http://dcat-ap.de/def/licenses/cc-by-nd/4.0"
     - "https://creativecommons.org/licenses/by-nd/4.0"
@@ -595,8 +598,8 @@
     attribution_unmodified: "© {publisher}"
     terms: null
   approved_on: 2026-11-20
-# K6
 - license_ref: dcat-de-other-closed
+  licence_class: K6
   matches:
     - "http://dcat-ap.de/def/licenses/other-closed"
   license:
@@ -613,8 +616,8 @@
     attribution_unmodified: null
     terms: null
   approved_on: 2026-11-20
-# K6
 - license_ref: dcat-de-other-open
+  licence_class: K6
   matches:
     - "http://dcat-ap.de/def/licenses/other-open"
   license:
@@ -631,8 +634,8 @@
     attribution_unmodified: null
     terms: null
   approved_on: 2026-11-20
-# K6
 - license_ref: dcat-de-other-opensource
+  licence_class: K6
   matches:
     - "http://dcat-ap.de/def/licenses/other-opensource"
   license:
@@ -649,8 +652,8 @@
     attribution_unmodified: null
     terms: null
   approved_on: 2026-11-20
-# K6
 - license_ref: dcat-de-other-commercial
+  licence_class: K6
   matches:
     - "http://dcat-ap.de/def/licenses/other-commercial"
   license:
@@ -667,8 +670,8 @@
     attribution_unmodified: null
     terms: null
   approved_on: 2026-11-20
-# K6
 - license_ref: dcat-de-andere
+  licence_class: K6
   matches:
     - "http://dcat-ap.de/def/licenses/andere"
   license:
@@ -685,8 +688,8 @@
     attribution_unmodified: null
     terms: null
   approved_on: 2026-11-20
-# K6
 - license_ref: admin-ch-disclaimer
+  licence_class: K6
   matches:
     - "http://disclaimer.admin.ch"
   license:
@@ -703,8 +706,8 @@
     attribution_unmodified: null
     terms: null
   approved_on: 2026-11-20
-# K6
 - license_ref: admin-ch-terms
+  licence_class: K6
   matches:
     - "https://www.admin.ch/gov/en/start/terms-and-conditions.html"
   license:
@@ -721,8 +724,8 @@
     attribution_unmodified: null
     terms: null
   approved_on: 2026-11-20
-# K6
 - license_ref: nb-gdikom-b
+  licence_class: K6
   matches:
     - "NB-GDIKOM-B für Geodatendienste (Der Geodatendienst ist frei zugänglich für beliebige interne Nutzungen, dabei gelten für die übermittelten Daten die Nutzungsbeschränkungen nach dem Urheberrechtsgesetz. Jede darüber hinausgehende weitere Verwertung ist generell vertrags- und kostenpflichtig. Eine Einbettung von Leistungen des Dienstes in private und behördliche Internetseiten oder -anwendungen mit Hinweis auf dessen Herausgeber ist davon ausgenommen, hierfür gilt lediglich eine Anzeigepflicht.)"
   license:

@@ -127,6 +127,8 @@ Belegstufen wie in `adr/0025` und `adr/0030`:
 
 **Nachtrag 2026-11-15 (`adr/0033` §14, M5-40):** Q1 gilt für den vollen Weg unverändert. Für gelistete Einträge ist die Freigabe die Lauf-Freigabe (`adr/0033` §8): Freigabedatei mit `decision: approved` auf `main`, Fingerabdruck gleich dem Stapel in Postgres.
 
+**Nachtrag 2026-11-25 (M5-20 F15 = 1, Otto):** Kandidaten des vollen Wegs werden nach Regeln freigegeben: Ein Kandidat entsteht nur aus einem sichtbaren gelisteten Eintrag, dessen Lizenz Otto eingestuft und für den Herausgeber freigegeben hat; er trägt diese Lizenz mit `legal_status: cleared`, `license_rule` und `decided_by: rules`. Der automatische Merge des Lauf-PR (`scripts/harvest-cycle.ps1`) stellt ihn in die Warteschlange; Ottos Merge des Onboarding-PR bestätigt den vollen Eintrag. Herausnehmen über `blocked.yaml`. Lizenzen mit Stufe `catalog` (alles außer K1/K2, Otto 25.11.2026) ergeben keinen Kandidaten.
+
 ### 4.2 Wo liegt die Liste?
 
 Keine zweite gepflegte Liste (K2 von `adr/0025`, „eine Wahrheit“). Die Warteschlange wird **abgeleitet**:
@@ -166,6 +168,8 @@ Die Session erreicht die Quellen nicht (§2). Damit sie trotzdem einen Eintrag f
 - nichts davon kommt ins Image (`candidates/` ist ausgeschlossen, `adr/0025` §7.1).
 
 Das ist eine Ergänzung zu M5-20 (§12, V1). Die Probe ist Metadaten einer freigegebenen Quelle, keine Pixel. Für Fixtures gilt weiter: nur synthetisch (§10.2).
+
+**Nachtrag 2026-11-25 (M5-20 PR 2):** umgesetzt in `discovery/propose.py` und `discovery/probe.py`. Die Probe liegt als `<gelistete ID>.probe.json` neben `<gelistete ID>.yaml`; Items gibt es nur bei STAC-Quellen (bei CKAN-Funden enthält die Probe die Collection des gelisteten Eintrags und Verify). Der TIFF-Kopf wird ohne GDAL aus den ersten 16 KB gelesen; was dort nicht liegt, steht als unbekannt.
 
 ## 5. Ablauf
 
