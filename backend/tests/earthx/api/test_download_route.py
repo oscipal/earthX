@@ -1073,3 +1073,92 @@ def test_the_search_without_the_timestamp_still_finds_a_real_coordinate() -> Non
     notice = "Sentinel-2 L2A\n\nItems: at 7.1,46.1\n\nGenerated: 2026-10-10T14:25:17.100083Z\n"
     assert "7.1" in _without_generated(notice)
     assert "7.1" not in _without_generated("Sentinel-2 L2A\n\nGenerated: 2026-10-10T14:25:17.100083Z\n")
+
+
+class _DatasetReader:
+    """A reader with a raster dataset of its own, as rio-tiler's ``Reader`` has one (M5-69)."""
+
+    def __init__(self, dataset: Any) -> None:
+        self.dataset = dataset
+
+    def __enter__(self) -> "_DatasetReader":
+        return self
+
+    def __exit__(self, *exc: object) -> bool:
+        return False
+
+
+class TestThePixelOfAPoint:
+    """M5-69: the outline of the pixel a point AOI cuts out, for the view on the map; the point only in the body."""
+
+    POINT = {"type": "Point", "coordinates": [7.5, 46.5]}
+
+    @pytest.fixture
+    def grid(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> Iterator[Any]:
+        from pyproj import Transformer
+        from rasterio.io import MemoryFile
+        from rasterio.transform import from_origin
+
+        x, y = Transformer.from_crs("EPSG:4326", "EPSG:32632", always_xy=True).transform(7.5, 46.5)
+        left, top = (x // 10) * 10 - 500, (y // 10) * 10 + 500
+        profile = {"driver": "GTiff", "dtype": "uint8", "count": 1, "width": 100, "height": 100, "crs": "EPSG:32632",
+                   "transform": from_origin(left, top, 10, 10)}  # fmt: skip
+        with MemoryFile() as memory:
+            with memory.open(**profile) as dataset:
+                dataset.write(np.ones((1, 100, 100), dtype="uint8"))
+            with memory.open() as dataset:
+                monkeypatch.setattr("earthx.api.tiler.open_asset", lambda src_path, **_: _DatasetReader(dataset))
+                yield (x // 10) * 10, (y // 10) * 10
+
+    def test_each_group_gets_the_outline_of_its_pixel(self, client: TestClient, grid: Any) -> None:
+        response = client.post(
+            f"/collections/{DATASET}/pixel",
+            json={"point": self.POINT, "groups": [[ITEM_ID], [f"{ITEM_ID}~outside#1"]], "assets": ["red", "visual"]},
+        )
+        assert response.status_code == 200, response.text
+        pixel, beside = response.json()["pixels"]
+        assert beside is None  # no scene of the group holds the point
+        from rasterio.warp import transform_geom
+        from shapely.geometry import shape
+
+        on_the_ground = shape(transform_geom("EPSG:4326", "EPSG:32632", pixel))
+        left, bottom = grid
+        assert on_the_ground.bounds == pytest.approx((left, bottom, left + 10, bottom + 10), abs=1e-3)
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            {"point": GOOD_AOI, "groups": [[ITEM_ID]], "assets": ["red"]},
+            {"point": {"type": "Point", "coordinates": [7.5, 96.5]}, "groups": [[ITEM_ID]], "assets": ["red"]},
+            {"point": {"type": "Point", "coordinates": []}, "groups": [[ITEM_ID]], "assets": ["red"]},
+        ],
+    )
+    def test_anything_but_a_point_on_the_globe_is_400(self, client: TestClient, body: dict) -> None:
+        assert client.post(f"/collections/{DATASET}/pixel", json=body).status_code == 400
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            {"point": POINT, "groups": [], "assets": ["red"]},
+            {"point": POINT, "groups": [[]], "assets": ["red"]},
+            {"point": POINT, "groups": [[ITEM_ID, ITEM_ID]], "assets": ["red"]},
+            {"point": POINT, "groups": [[ITEM_ID]], "assets": []},
+            {"point": POINT, "groups": [[ITEM_ID]], "assets": ["red"], "aoi": POINT},
+        ],
+    )
+    def test_a_malformed_request_is_422(self, client: TestClient, body: dict) -> None:
+        assert client.post(f"/collections/{DATASET}/pixel", json=body).status_code == 422
+
+    def test_an_unknown_dataset_or_item_is_404(self, client: TestClient) -> None:
+        body = {"point": self.POINT, "groups": [[ITEM_ID]], "assets": ["red"]}
+        assert client.post("/collections/no-such-dataset/pixel", json=body).status_code == 404
+        assert client.post(f"/collections/{DATASET}/pixel", json={**body, "groups": [["NOPE"]]}).status_code == 404
+
+    def test_an_asset_no_scene_has_gives_no_outline(self, client: TestClient, grid: Any) -> None:
+        body = {"point": self.POINT, "groups": [[ITEM_ID]], "assets": ["no-such-asset"]}
+        assert client.post(f"/collections/{DATASET}/pixel", json=body).json() == {"pixels": [None]}
+
+    def test_the_point_is_not_logged(self, client: TestClient, grid: Any, caplog: pytest.LogCaptureFixture) -> None:
+        with caplog.at_level(logging.DEBUG):
+            client.post(f"/collections/{DATASET}/pixel", json={"point": self.POINT, "groups": [[ITEM_ID]], "assets": ["red"]})
+        assert "46.5" not in caplog.text and "7.5," not in caplog.text

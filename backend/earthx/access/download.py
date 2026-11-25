@@ -133,6 +133,7 @@ from rasterio.enums import Resampling
 from rasterio.errors import RasterioError
 from rasterio.io import MemoryFile
 from rasterio.vrt import WarpedVRT
+from rasterio.warp import transform_geom
 from rasterio.windows import Window
 from rasterio.windows import transform as window_transform
 from rio_cogeo.cogeo import cog_translate
@@ -144,6 +145,7 @@ from rio_tiler.mosaic import mosaic_reader
 from rioxarray.exceptions import NoDataInBounds
 from shapely.errors import ShapelyError
 from shapely.geometry import box
+from shapely.geometry import mapping as shapely_mapping
 from shapely.geometry import shape as shapely_shape
 from shapely.geometry.base import BaseGeometry
 
@@ -174,6 +176,7 @@ from earthx.access.crop_rules import (
     CITATION_FILENAME,
     COG_PROFILE,
     FALLBACK_BYTES_PER_PIXEL,
+    LATTICE_SLACK,
     MAX_OUTPUT_SIDE_PX,
     NOTICE_FILENAME,
     RECIPE_FILENAME,
@@ -443,6 +446,52 @@ def check_output_size_cap(planned: Sequence[PlannedOutput], *, max_bytes: int = 
         f"{max_bytes / 1_000_000:.0f} MB limit. Draw a smaller area, choose fewer bands, or a coarser "
         "common resolution for one multi-band file."
     )
+
+
+def footprint_holds(item: Mapping[str, Any], point: BaseGeometry) -> bool:
+    """Whether the footprint of ``item`` holds ``point``, an edge included; its bbox where it has no footprint (M5-69)."""
+    try:
+        geometry = item.get("geometry")
+        if geometry:
+            return bool(shapely_shape(geometry).covers(point))
+        bbox = item.get("bbox")
+        return isinstance(bbox, (list, tuple)) and len(bbox) == 4 and bool(box(*bbox).covers(point))
+    except (ShapelyError, ValueError, TypeError, KeyError, AttributeError):
+        return False
+
+
+def point_pixel_outline(
+    open_reader: Callable[..., BaseReader],
+    path: AssetPath | ZarrAsset,
+    point: BaseGeometry,
+    *,
+    radar: bool = False,
+    gdal_env: Mapping[str, str] | None = None,
+) -> BaseGeometry:
+    """The outline (EPSG:4326) of the one pixel of ``path`` a point lies on, the pixel its crop gives (M5-69).
+
+    A COG on its own lattice (:func:`~earthx.access.crop_rules.source_crop_grid`), a radar scene in its pixels and lines
+    placed by its GCPs, a store without a raster dataset of its own by its transform (:func:`point_pixel_bounds`).
+    :class:`AoiOutsideItems` where the point lies past the raster. ``gdal_env`` as for :func:`build_download_zip`.
+    """
+    try:
+        with rasterio.Env(**(gdal_env or {})), open_reader(path) as reader:
+            dataset = getattr(reader, "dataset", None)
+            if dataset is None:
+                return box(*point_pixel_bounds(reader, point))
+            if radar:
+                grid = RadarGrid.of(dataset)
+                return grid.outline(grid.window(point))
+            crs, transform, _, _ = source_crop_grid(dataset, point)
+            column, row = ~dataset.transform @ (transform.c, transform.f)
+            if not (-LATTICE_SLACK < column < dataset.width - 1 + LATTICE_SLACK):
+                raise AoiOutsideItems("the point lies past the raster")
+            if not (-LATTICE_SLACK < row < dataset.height - 1 + LATTICE_SLACK):
+                raise AoiOutsideItems("the point lies past the raster")
+            pixel = box(transform.c, transform.f + transform.e, transform.c + transform.a, transform.f)
+            return shapely_shape(transform_geom(crs, WGS84_CRS, shapely_mapping(pixel)))
+    except _AOI_MISSES_THE_DATA as error:
+        raise AoiOutsideItems(str(error)) from None
 
 
 def crop_asset(

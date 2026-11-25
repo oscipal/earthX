@@ -39,6 +39,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import logging
+import math
 import time
 from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import AsyncExitStack, asynccontextmanager
@@ -71,7 +72,7 @@ from earthx.access.band_export import (
     resampling_for,
 )
 from earthx.access.colormaps import catalog as colormap_catalog
-from earthx.access.crop_rules import MAX_JOB_BYTES, mosaic_order, target_crs
+from earthx.access.crop_rules import MAX_JOB_BYTES, asset_gsd, mosaic_order, target_crs
 from earthx.access.download import (
     LARGE_DOWNLOAD_THRESHOLD_BYTES,
     RADAR_ONE_RESOLUTION,
@@ -88,8 +89,10 @@ from earthx.access.download import (
     check_output_size_cap,
     compute_crop_region,
     filter_items_intersecting_aoi,
+    footprint_holds,
     parse_aoi_geometry,
     plan_outputs,
+    point_pixel_outline,
 )
 from earthx.access.mosaic_tiles import (
     TILE_GATE,
@@ -203,6 +206,7 @@ DOWNLOAD_ROUTE = "/collections/{dataset}/download"
 # tile refuses can have more scenes than a URL takes. Apart from the mosaic router, whose routes are the tile and its TileJSON.
 SCENE_ORDER_ROUTE = "/collections/{dataset}/scene-order"
 BANDS_ROUTE = "/collections/{dataset}/bands"
+PIXEL_ROUTE = "/collections/{dataset}/pixel"
 # Scenes one such request may name: the largest overpasses of a continental AOI over a season stay far below it.
 MAX_ORDER_ITEMS = 500
 
@@ -2296,6 +2300,68 @@ async def bands_of_items(
     return {"bands": rows}
 
 
+class PixelRequest(BaseModel):
+    """Body of ``POST /collections/{dataset}/pixel`` (M5-69): a point AOI and the scenes a view draws."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    point: dict[str, Any] = Field(description="a GeoJSON Point in WGS84")
+    groups: list[list[str]] = Field(
+        min_length=1, description="the scenes of each image of the view: one id, or the ids of a mosaic"
+    )
+    assets: list[str] = Field(min_length=1, max_length=32, description="the assets the view draws")
+
+    @field_validator("groups")
+    @classmethod
+    def _sizes(cls, groups: list[list[str]]) -> list[list[str]]:
+        if any(not group or len(set(group)) != len(group) for group in groups):
+            raise ValueError("each group names at least one item, each once")
+        if len({item for group in groups for item in group}) > MAX_ORDER_ITEMS:
+            raise ValueError(f"name at most {MAX_ORDER_ITEMS} items")
+        return groups
+
+
+async def pixel_of_point(
+    request: Request, dataset: Annotated[str, Path(description="dataset id of the registry")], body: PixelRequest
+) -> dict[str, list[dict[str, Any] | None]]:
+    """The outline of the one pixel a point AOI cuts out of each group, for the view on the map (M5-69).
+
+    Per group the first scene in the order of the mosaic whose footprint holds the point, and of the given assets the one
+    with the finest pixels on it: the outline of its pixel at the point, in WGS84, as its crop gives it. ``None`` for a
+    group none of whose scenes holds the point. The point travels in the body only and is never logged.
+    """
+    state = request.app.state
+    config = _dataset_config(state, dataset)
+    try:
+        point = parse_aoi_geometry(body.point)
+    except InvalidAoi as error:
+        raise HTTPException(status_code=400, detail=str(error)) from None
+    if point.geom_type != "Point":
+        raise HTTPException(status_code=400, detail="point must be a GeoJSON Point")
+    ids = list(dict.fromkeys(item_id for group in body.groups for item_id in group))
+    fetched = await asyncio.gather(*(_fetch_item(state, dataset, item_id) for item_id in ids))
+    items = dict(zip(ids, fetched, strict=True))
+    radar = config.georeferencing is Georeferencing.GCP_TPS
+
+    async def outline_of_group(group: list[str]) -> dict[str, Any] | None:
+        holding = [items[item_id] for item_id in group if footprint_holds(items[item_id], point)]
+        assets = [asset for asset in body.assets if any(asset in item.get("assets", {}) for item in holding)]
+        if not assets:
+            return None
+        asset = min(assets, key=lambda key: min(asset_gsd(item, key) or math.inf for item in holding))
+        ordered = _in_mosaic_order([item for item in holding if asset in item.get("assets", {})], config=config, asset=asset)
+        path = _resolve_asset_path(state, ordered[0], config=config, item=ordered[0]["id"], asset=asset)
+        try:
+            outline = await run_in_threadpool(
+                point_pixel_outline, open_asset, path, point, radar=radar, gdal_env=state.earthx_crop_gdal_options
+            )
+        except AoiOutsideItems:
+            return None
+        return shapely_mapping(outline)
+
+    return {"pixels": list(await asyncio.gather(*(outline_of_group(group) for group in body.groups)))}
+
+
 def gdal_environment(request: Request) -> dict[str, str]:
     """The central GDAL configuration (M1-03) of the tile routes, built once per process."""
     return request.app.state.earthx_gdal_options
@@ -2531,6 +2597,13 @@ def build_app(
         summary="The bands the download dialog offers for some scenes",
     )
     app.add_api_route(
+        PIXEL_ROUTE,
+        pixel_of_point,
+        methods=["POST"],
+        tags=["Download"],
+        summary="The outline of the pixel a point AOI cuts out",
+    )
+    app.add_api_route(
         DOWNLOAD_ROUTE,
         download_crop,
         methods=["POST"],
@@ -2651,6 +2724,7 @@ app = build_app()
 
 __all__ = [
     "BANDS_ROUTE",
+    "PIXEL_ROUTE",
     "DOWNLOAD_ROUTE",
     "MOSAIC_ROUTER_PREFIX",
     "FOOTPRINT_SELECTION_ROUTE",
