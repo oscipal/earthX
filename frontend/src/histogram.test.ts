@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { HISTOGRAM_BINS, histogramOf, numberOf, percentAt, roundOnTrack, trackOf, valueAtPercentOf, type Histogram } from './histogram';
+import { barInRange, HISTOGRAM_BINS, histogramOf, numberOf, percentAt, roundOnTrack, sliderPlaces, trackOf, valueAtPercentOf, type Histogram } from './histogram';
 
 // Ten bins of ten values each over 0…10: every percentile is a tenth of the way along.
 const UNIFORM: Histogram = { counts: Array(10).fill(10), edges: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10] };
@@ -231,5 +231,38 @@ describe('numberOf', () => {
 
   it('is null for what is no number: text, a comma, more than one number, not finite', () => {
     for (const bad of ['abc', '1,5', '1 2', '1;2', '-', '.', '1e', 'NaN', 'Infinity', '-Infinity', '1e999']) expect(numberOf(bad), bad).toBeNull();
+  });
+});
+
+describe('the range on the bars (M5-60, Otto 24.11.2026): a bar is in it where its middle is, the sliders stand outside those bars', () => {
+  // Bars of ten over 0…120, their middles at 5, 15, … 115.
+  const tens = { counts: Array(12).fill(1), edges: Array.from({ length: 13 }, (_, i) => i * 10) };
+
+  it('takes in a bar whose middle lies in the range, at its ends too', () => {
+    expect([1, 2, 8, 9].map((bar) => barInRange(tens, bar, 23, 87))).toEqual([false, true, true, false]);
+    expect(barInRange(tens, 2, 25, 85)).toBe(true);
+    expect(barInRange(tens, 8, 25, 85)).toBe(true);
+  });
+
+  it('puts the sliders at the outer edges of the first and the last bar in the range where min and max lie inside a bar', () => {
+    expect(sliderPlaces(tens, 23, 87)).toEqual([20, 90]);
+    expect(sliderPlaces(tens, 27, 82)).toEqual([30, 80]);
+  });
+
+  it('keeps them on the edges where the range ends on them', () => {
+    expect(sliderPlaces(tens, 20, 90)).toEqual([20, 90]);
+    expect(sliderPlaces(tens, 0, 120)).toEqual([0, 120]);
+  });
+
+  it('puts both at the edge between the bars below and above where no middle lies in the range', () => {
+    expect(sliderPlaces(tens, 11, 14)).toEqual([10, 10]);
+    expect(sliderPlaces(tens, 16, 19)).toEqual([20, 20]);
+  });
+
+  it('puts an end beyond the histogram at its value', () => {
+    expect(sliderPlaces(tens, -40, 87)).toEqual([-40, 90]);
+    expect(sliderPlaces(tens, 23, 400)).toEqual([20, 400]);
+    expect(sliderPlaces(tens, 150, 400)).toEqual([150, 400]);
+    expect(sliderPlaces(tens, -9, -1)).toEqual([-9, -1]);
   });
 });

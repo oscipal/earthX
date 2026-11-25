@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import s2 from './fixtures/processes/sentinel-2-c1-l2a.json';
 import dem from './fixtures/processes/cop-dem-glo-30.json';
-import { chooseDtype, dtypeOptions, effectiveDtype, passesValues, type StepChoice } from './processingDefaults';
+import { chooseDtype, dtypeOptions, effectiveDtype, keepsValuesOf, passesValues, type StepChoice } from './processingDefaults';
 import type { ProcessDescription } from './processing';
 import { processInfo, type BandSource } from './processingOrder';
 
@@ -39,6 +39,22 @@ describe('the rule of the registry (x-earthx-passes-values)', () => {
     expect(passesValues([reproject('')], OPERATORS)).toBe(false);
     expect(passesValues([{ op: 'mask', values: {} }, MATH], OPERATORS)).toBe(false);
     expect(passesValues([{ op: 'unknown' }], OPERATORS)).toBe(false);
+  });
+});
+
+describe('keepsValuesOf (M5-60 F5): the values of one band reach the result as they are', () => {
+  it('where every step passes values, or adds a band of its own name and leaves the others', () => {
+    expect(keepsValuesOf('B04', [], OPERATORS)).toBe(true);
+    expect(keepsValuesOf('B04', [{ op: 'mask', values: {} }, reproject('nearest')], OPERATORS)).toBe(true);
+    expect(keepsValuesOf('B04', [MATH, { op: 'terrain', values: { name: 'slope' } }], OPERATORS)).toBe(true);
+  });
+
+  it('not for the band a step makes, after a step that computes every band anew, or after a step the description does not know', () => {
+    expect(keepsValuesOf('x', [MATH], OPERATORS)).toBe(false);
+    expect(keepsValuesOf('B04', [reproject('bilinear')], OPERATORS)).toBe(false);
+    expect(keepsValuesOf('B04', [{ op: 'normalize', values: { bands: ['B04'] } }], OPERATORS)).toBe(false);
+    expect(keepsValuesOf('B04', [{ op: 'unknown', values: { name: 'other' } }], OPERATORS)).toBe(false);
+    expect(keepsValuesOf('B04', [MATH], [])).toBe(false);
   });
 });
 

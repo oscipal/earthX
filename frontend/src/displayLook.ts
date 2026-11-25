@@ -24,7 +24,8 @@ export interface OperatorLooks {
 const isObject = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 const isNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 
-function lookOf(value: unknown): DisplayLook | null {
+// A look as the registry writes it; `null` where it is not complete.
+export function lookOf(value: unknown): DisplayLook | null {
   if (!isObject(value) || typeof value.colormap !== 'string' || value.colormap === '') return null;
   if (value.scale === 'measured') return { colormap: value.colormap, scale: 'measured' };
   const { low, high } = value;

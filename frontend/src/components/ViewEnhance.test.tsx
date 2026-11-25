@@ -321,10 +321,12 @@ describe('the histograms of "Scale"', () => {
     await press('NDVI');
     await vi.waitFor(() => expect(hists()).toHaveLength(3));
     await press('Enhance contrast');
-    // In percentiles: each slider stands where the 2nd and the 98th percentile of its channel's histogram lie.
+    // In percentiles, the fields keep 2 and 98; each slider stands outside the bars in the range (Otto, 24.11.2026): red's 2nd percentile
+    // (39.2) lies in its first bar (20–260, middle 140), so the slider stands at that bar's left edge; blue's 98th (1914) in its last
+    // (1500–1950, middle 1725), so at its right edge.
     expect(state().pendingChannels.map((channel) => channel.percent)).toEqual(Array.from({ length: 3 }, () => ({ low: '2', high: '98' })));
-    expect(Number(slider('red vmin').value)).toBeCloseTo(20 + 0.02 * 960, 5);
-    expect(Number(slider('blue vmax').value)).toBeCloseTo(150 + 0.98 * 1800, 5);
+    expect(Number(slider('red vmin').value)).toBeCloseTo(20, 5);
+    expect(Number(slider('blue vmax').value)).toBeCloseTo(1950, 5);
   });
 
   it('write whole percents in percentiles', async () => {
