@@ -331,10 +331,11 @@ def test_the_run_files_name_the_candidates_per_source_and_in_a_table() -> None:
     assert "Probelauf: Kandidaten geschrieben, nichts entschieden." in trial
 
 
-def test_a_failed_candidate_step_is_a_finding_and_so_is_a_failed_source() -> None:
-    found = findings_of(
-        linkcheck=None, reports={}, decided=[], spellings=None, source_errors={}, run_error=None, open_prs=[],
-        folder="docs/harvest/laeufe/x", propose=PROPOSE, propose_error="Die Kandidaten sind gescheitert.",
-    )
-    keys = [f.key for f in found]
-    assert "KANDIDATEN" in keys and "KANDIDATEN govdata" in keys and "KANDIDATEN fsdi-stac" not in keys
+def test_a_failed_candidate_step_is_one_finding_and_a_failed_source_is_one_of_its_own() -> None:
+    common = {"linkcheck": None, "reports": {}, "decided": [], "spellings": None, "source_errors": {},
+              "run_error": None, "open_prs": [], "folder": "docs/harvest/laeufe/x", "propose": PROPOSE}
+    # The step as a whole failed: one finding, not one more per source (review).
+    keys = [f.key for f in findings_of(**common, propose_error="Die Kandidaten sind gescheitert.")]
+    assert [k for k in keys if k.startswith("KANDIDATEN")] == ["KANDIDATEN"]
+    keys = [f.key for f in findings_of(**common)]
+    assert [k for k in keys if k.startswith("KANDIDATEN")] == ["KANDIDATEN govdata"]

@@ -504,7 +504,9 @@ def test_a_new_grade_of_the_licence_goes_back_into_review(world: World) -> None:
     world.approve(world.report().files[0])
     world.publish()
     terms = world.licence_dir / "terms.yaml"
-    terms.write_text(terms.read_text(encoding="utf-8").replace("commercial_use: true", "commercial_use: false"))
+    # Non-commercial is class K4, in the catalogue tier (the loader refuses it as K2 above the catalogue).
+    regraded = terms.read_text(encoding="utf-8").replace("commercial_use: true", "commercial_use: false")
+    terms.write_text(regraded.replace("licence_class: K2", "licence_class: K4").replace("tier: processing", "tier: catalog"))
     world.report()
     assert world.row("a")["state"] == "in_review"
 
