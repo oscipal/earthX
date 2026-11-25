@@ -284,10 +284,12 @@ describe('the bands and the panels beside the rail (NM4-66)', () => {
     // The open panel marks `.app` for the status box alone (`mapEdges.ts`, Otto, 14.11.2026); no rule of the bands reads the mark.
     expect(container.querySelector('.app')!.className).toBe('app has-dock');
     expect(CSS).not.toMatch(/\.has-dock[^{]*\.(?:overlay\.)?bottom|\.bottom[^{]*\.has-dock/u);
-    // The stack is centred in the map beside the rail, and as wide as the window allows beside it.
+    // The stack is centred in the map beside the rail, left of a bar at the right, and leaves the column of the map buttons free (UI-12);
+    // the panel of the rail does not move it.
     const bottom = CSS.slice(CSS.indexOf('\n.bottom {'), CSS.indexOf('}', CSS.indexOf('\n.bottom {')));
-    expect(bottom).toContain('left: calc((100% + var(--rail-width)) / 2)');
-    expect(bottom).toContain('width: min(760px, calc(100vw - var(--rail-width) - 32px))');
+    expect(bottom).toContain('left: calc((100% + var(--rail-width) - var(--map-right)) / 2)');
+    expect(bottom).toContain('width: min(760px, calc(100% - var(--rail-width) - var(--map-right) - 2 * var(--map-controls-room)))');
+    expect(bottom).not.toContain('--map-left');
   });
 
   it('close with the "x" of the block only that: the view beside it stays, and so do the ticks', async () => {
