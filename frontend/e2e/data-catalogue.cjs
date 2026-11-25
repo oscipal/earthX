@@ -204,7 +204,7 @@ async function check(browser, { theme, viewport }) {
   await openFilters();
   const p = await box('.catalogue-filters-popup');
   expect('the pop-up stays in the browser window', p && p.x >= 0 && p.y >= 0 && p.x + p.width <= size.width + 0.5 && p.y + p.height <= size.height + 0.5, JSON.stringify(p));
-  const panelSwitch = popup.locator('input[role="switch"]');
+  const panelSwitch = popup.locator('.catalogue-search-panel input[role="switch"]');
   expect('"Filter by search panel" is locked without an AOI', (await panelSwitch.getAttribute('aria-disabled')) === 'true');
   expect('the switch says why', (await popup.locator('label.locked').getAttribute('data-tip')) === 'Draw an AOI to use this filter');
   await shot('1e-filters');
