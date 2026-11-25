@@ -299,6 +299,11 @@ Die Freigabedatei eines Laufs kommt, wo möglich, in denselben täglichen Sammel
 - **Weg (ändert §8.3 und §8.4):** `scripts/harvest-cycle.ps1` läuft auf Ottos Rechner, auf Ottos Doppelklick. Es pusht den Branch, öffnet mit Ottos Zugang genau einen PR je Lauf, wartet auf die grünen Pflicht-Checks und merged mit Merge-Commit. „Das Skript pusht nie“ (§8.4, `adr/0025` §6.5) gilt dafür nicht mehr. Der Lauf-PR ist ein eigener PR, nicht Teil eines Onboarding-Sammel-PRs.
 - **Nachvollziehbar (§10):** `decided_by` unterscheidet die Freigabe nach Regeln von der Freigabe von Hand; die Laufdateien unter `docs/harvest/laeufe/` halten Zahlen, Prüfungen und Warnzeichen.
 
+**Nachtrag 2026-11-25 (M5-67 Fix 3, Otto 25.11.2026; Plan §23):**
+
+- **Seiten, die per Skript laden:** „Seite antwortet“ ist nie bestanden. Je Linkform kann `backend/catalog/linkcheck.yaml` (`link_forms`) eine Prüfung über die dokumentierte Schnittstelle des Portals festlegen (Datensatz der Kennung aus dem Link existiert und nennt Titel oder Kennung des Eintrags), wie `catalog_page_check` der Quell-Dateien, erst nach Ottos Bestätigung der Adressform (`form_confirmed_on`). Ohne sichere Prüfung bleibt eine Form ungeprüft (`check: none`), ihre Einträge unsichtbar, und sie steht in der Befundliste.
+- **Schutz:** `404` und `410` zählen für den Schutz je Host und Muster nicht und werden nie geschützt; solche Einträge werden auch in großer Zahl verborgen. Der Schutz bleibt für keine Antwort, `429`, `5xx`, `no_title`, `403` und die übrigen Gründe.
+
 ## 9. Rücknahme und Löschung
 
 | Fall | Auslöser | Wirkung |
