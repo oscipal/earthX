@@ -881,10 +881,10 @@ function measureOfView(s: AppState): ViewMeasure | null {
   const asked = areaQuestionOf({ datasetId: info.datasetId, collection, items: items.length === ids.length ? items : [], aoi: s.cropToAoi ? s.viewAoi : null, index, asset });
   const area = asked && 'order' in asked ? asked : null;
   const skipped = asked && 'reason' in asked ? asked.reason : null;
-  // An index is computed from physical values; a band or the colour picture is read from the stored numbers of the first scene.
+  // An index is computed from physical values; a scaled band is read from the stored numbers of the first scene, as its tiles draw them.
   const scene = known.get(itemId);
-  const scaling = !index && scene ? scalingOfAsset(scene, asset) : null;
-  return { sceneUrl, scaling: scaling && (scaling.scale !== 1 || scaling.offset !== 0) ? scaling : null, area, skipped, key: area ? `${sceneUrl}\n${canonicalJson(area.order)}` : sceneUrl };
+  const scaling = !index && scene ? (scaledAssetsOf(scene)?.[asset] ?? null) : null;
+  return { sceneUrl, scaling, area, skipped, key: area ? `${sceneUrl}\n${canonicalJson(area.order)}` : sceneUrl };
 }
 
 // The band in the fields of the view, with its look and, where that is fixed, its range (M5-60), physical like every field (M5-68).
