@@ -445,6 +445,6 @@ Nicht Teil: die Einheit in den Feldern (keine neuen Texte), Klassenbänder (Code
 
 ### 15.5 Tests und Checks
 
-- Backend: `earthx:source_values` (ohne Schritt, Schritt gibt Werte weiter, Band math daneben, Normalize auf einem von zwei Bändern, Schritt ohne Bandangabe, Band math überschreibt ein Band gleichen Namens; skaliertes Band → `float32` und trotzdem Erbe); `earthx:scaling` in der Collection (nur skalierte Bänder); „Mask by value“ auf skaliertem Band vergleicht physikalisch.
+- Backend: `earthx:source_values` (ohne Schritt, Schritt gibt Werte weiter, Band math daneben, Normalize auf einem von zwei Bändern, Schritt ohne Bandangabe, Band math überschreibt ein Band gleichen Namens; skaliertes Band → `float32` und trotzdem Erbe); `earthx:scaling` in der Collection (nur skalierte Bänder); „Mask by value“ auf skaliertem Band vergleicht physikalisch (besteht schon: `test_mask_values.py::test_a_band_of_the_data_decides_just_the_same`, Schwelle 0,2 auf Reflexion mit 0.0001/−0.1).
 - Frontend: Umrechnung in `buildTileUrl` (ein Paar, drei Paare, Route mit `op`/`expression` unberührt, `stored` unberührt, ohne Skalierung unberührt, Rundung); Messung der Szene physikalisch, AOI unverändert; Band-Look fest ohne Umrechnung; Standardbild gehoben; Ergebnisband erbt nur mit Feld.
 - Browser (`frontend/e2e/band-look.cjs`): Sentinel-2 `red` – Histogramm, Felder und Legende 0,02–0,24, Kachel-URL 1200–3400; Sentinel-1, MeteoSwiss, swissALTI3D, Ergebnis-Ebene, alter Permalink; hell und dunkel; 1280×800, 1280×360, 360×740.
