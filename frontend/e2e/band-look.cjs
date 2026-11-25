@@ -205,8 +205,22 @@ async function openView(page, dataset) {
 
 const field = (page, name) => page.locator('.viewer-controls .vc-render label').filter({ has: page.locator(`span:text-is("${name}")`) }).first();
 const fills = (page) => page.locator('.inspector .range-hist-bars rect').evaluateAll((rects) => rects.map((rect) => rect.style.fill || rect.getAttribute('class')));
-const legendNumbers = async (page) => (await page.locator('.map-legend .legend-ends span').allTextContents()).map((text) => text);
-const legendBar = (page) => page.locator('.map-legend .legend-bar').evaluate((el) => getComputedStyle(el).backgroundImage).catch(() => '');
+// Where the legend stands folded or docked (a low or narrow window, UI-12), it is opened by its title first, as a person would.
+async function unfold(page) {
+  const title = page.locator('.map-legend .legend-title[aria-expanded="false"]');
+  if ((await title.count()) > 0) {
+    await title.first().click();
+    await page.waitForTimeout(150);
+  }
+}
+const legendNumbers = async (page) => {
+  await unfold(page);
+  return page.locator('.map-legend .legend-ends span').allTextContents();
+};
+const legendBar = async (page) => {
+  await unfold(page);
+  return page.locator('.map-legend .legend-bar').evaluate((el) => getComputedStyle(el).backgroundImage).catch(() => '');
+};
 const scrolls = (page, selector) => page.locator(selector).first().evaluate((el) => el.scrollHeight - el.clientHeight > 1).catch(() => false);
 const settle = (page) => page.waitForFunction(() => !window.appStore.getState().focusLoading).then(() => page.waitForTimeout(250));
 
@@ -298,7 +312,8 @@ async function checkBand(page, asked, tiles, { band, colormap, fields, legend, u
     const range = [Math.min(edges[0], Number(fields[0])), Math.max(edges.at(-1), Number(fields[1]))];
     if (histEnds.length !== 2 || histEnds.some((value, i) => Math.abs(value - range[i]) > 1e-9 * Math.max(1, Math.abs(range[i])))) say(`${band}: the histogram spans ${histEnds}, not ${range}`);
     const asked = tiles.slice(before).map((tile) => new URL(tile).searchParams).filter((query) => query.get('asset') === band && !query.has('op'));
-    if (asked.length === 0) say(`${band}: no tile of the band was asked after "Apply"`);
+    // A scaled band must be asked; another may be drawn by its overview at this zoom (swissALTI3D).
+    if (asked.length === 0 && stored !== fields.join(',')) say(`${band}: no tile of the band was asked after "Apply"`);
     else if (asked.some((query) => query.getAll('rescale').join(';') !== stored)) say(`${band}: the tiles are asked with ${asked.map((q) => q.getAll('rescale')).join(' ')}, not ${stored}`);
   }
 }
@@ -382,6 +397,7 @@ async function checkWorldCover(page, say) {
   const classes = COLLECTIONS['esa-worldcover-2021']['earthx:bands'][0]['classification:classes'].map((c) => rgb(`#${c.color_hint}`));
   const coloured = (await fills(page)).filter((fill) => fill.startsWith('rgb'));
   if (JSON.stringify(coloured) !== JSON.stringify(classes)) say(`WorldCover: the bars are ${JSON.stringify(coloured)}, not the colours of the classes`);
+  await unfold(page);
   if ((await page.locator('.map-legend .legend-classes li').count()) !== 11) say('WorldCover: the legend does not list the eleven classes');
 }
 
