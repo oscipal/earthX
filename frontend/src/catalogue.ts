@@ -39,13 +39,6 @@ export function listedSourceOf(collection: Collection): string | null {
   return isHttps(via) ? via : null;
 }
 
-// The keywords of an entry, as the API sends them (normalized for a listed one), each once.
-export function keywordsOf(collection: Collection): string[] {
-  const keywords = collection.keywords;
-  if (!Array.isArray(keywords)) return [];
-  return [...new Set(keywords.filter((k): k is string => typeof k === 'string' && k.trim() !== ''))];
-}
-
 // How many datasets a first visit adds (UI-05 F3, Otto 06.11.2026; it stays six after the pages lost their limit, 07.11.2026).
 export const FIRST_VISIT_DATASETS = 6;
 
@@ -286,12 +279,10 @@ export function catalogueRows(dataset: DatasetOption): CatalogueRow[] {
   const presets = quickPresetsOf(c);
   const colour = trueColorOf(c) !== null || presets.some((p) => p.kind === 'composite');
   const quick = [...presets.map((p) => p.index?.title ?? p.label), ...(colour ? ['Enhance contrast'] : [])];
-  const keywords = keywordsOf(c);
   const listed = isListed(c);
   return [
     { label: 'Description', values: plain(typeof c.description === 'string' && c.description !== '' ? c.description : NONE) },
     ...(limitationsOf(c).length > 0 ? [{ label: 'Limitations', values: limitationsOf(c).map((text) => ({ text, href: null })) }] : []),
-    { label: 'Keywords', values: keywords.length > 0 ? keywords.map((text) => ({ text, href: null })) : plain(NONE) },
     { label: 'Provider', values: providersRow(c) },
     { label: 'Source', values: sourceRow(c) },
     ...licenseRows(c),

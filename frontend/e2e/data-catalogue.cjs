@@ -7,7 +7,7 @@
 //     page scrolls sideways;
 //   - the groups are not those of `/catalogue/categories` in their order, or a group without entries shows;
 //   - a group does not load its next page when its end is scrolled into view, or loads past its last;
-//   - a listed entry has a mark or no link "Source", or its details lack the keywords;
+//   - a listed entry has a mark or no link "Source", or its details show a row "Keywords" (UI-12: they are gone);
 //   - search field and "Filters" are not in the head of the window, or the pop-up "Filters" leaves the browser window;
 //   - "Filter by search panel" is not locked without an AOI, or a field of the pop-up has no "×" that empties it;
 //   - choosing a category shows other groups, or a region is not sent with the next request;
@@ -183,14 +183,14 @@ async function check(browser, { theme, viewport }) {
   expect('no request asks past the last page', asked.filter((b) => b.category === 'water').length === 3, String(asked.filter((b) => b.category === 'water').length));
   await shot('1c-paged');
 
-  // A listed entry: "Source", no mark, keywords in its details.
+  // A listed entry: "Source", no mark, no keywords in its details (UI-12).
   const gauge = win.locator('.catalogue-entry', { hasText: 'Gauge 000 (made up)' });
   expect('a listed entry links to its source', (await gauge.locator('a.catalogue-action').textContent()) === 'Source');
   expect('a listed entry has no mark', (await gauge.locator('.badge').count()) === 0);
   await gauge.locator('.catalogue-entry-name').click();
   await win.locator('.catalogue-details').waitFor();
-  const keywords = await win.locator('.catalogue-row-pair', { hasText: 'Keywords' }).locator('dd').textContent();
-  expect('the details show the keywords', keywords.includes('gauges'), keywords);
+  const labels = await win.locator('.catalogue-row-pair dt').allTextContents();
+  expect('the details have no row "Keywords"', labels.length > 0 && !labels.includes('Keywords'), labels.join(', '));
   await shot('1d-listed-details');
   if (viewport === 'narrow') await win.locator('.catalogue-back').click();
 

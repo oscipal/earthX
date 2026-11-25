@@ -430,7 +430,7 @@ describe('the details', () => {
     click(entry('Alpha optical').querySelector('.catalogue-entry-name')!);
     const labels = [...container.querySelectorAll('.catalogue-row-pair dt')].map((dt) => dt.textContent);
     expect(labels).toEqual([
-      'Description', 'Keywords', 'Provider', 'Source', 'License', 'Attribution', 'Spatial extent', 'Temporal extent', 'Resolution',
+      'Description', 'Provider', 'Source', 'License', 'Attribution', 'Spatial extent', 'Temporal extent', 'Resolution',
       'Bands', 'Data region', 'Citation', 'Last checked', 'Maturity', 'Processing', 'Quick processing',
     ]);
     expect(value('Provider')?.textContent).toBe('—');
@@ -509,9 +509,9 @@ describe('a listed entry in the details', () => {
   const value = (label: string) =>
     [...container.querySelectorAll('.catalogue-row-pair')].find((el) => el.querySelector('dt')?.textContent === label)?.querySelector('dd');
 
-  it('show its keywords and its source, and no rows that belong to display or processing', () => {
-    expect(value('Keywords')?.textContent).toBe('floodgauges');
-    expect([...value('Keywords')!.querySelectorAll('.catalogue-value')].map((v) => v.textContent)).toEqual(['flood', 'gauges']);
+  // UI-12 (1): the keywords stay in the registry, the API and the text a search reads, not in the details.
+  it('show its source and no row of keywords, nor rows that belong to display or processing', () => {
+    expect(labels()).not.toContain('Keywords');
     expect(value('Source')?.querySelector('a')?.getAttribute('href')).toBe('https://data.example.org/gauges');
     expect(labels()).not.toContain('Bands');
     expect(labels()).not.toContain('Processing');
