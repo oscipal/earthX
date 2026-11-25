@@ -1,6 +1,6 @@
 # M5-69 — Punkt als echter Punkt: Filter und Zuschnitt am Punkt
 
-**Stand:** 25.11.2026, Plan mit Fragen an Otto (§6). Umsetzung nach den Empfehlungen in zwei Draft-PRs (§7); wo eine Antwort anders ausfällt, ändert dieselbe Session nach.
+**Stand:** 25.11.2026, Plan mit Fragen an Otto (§6), **umgesetzt nach den Empfehlungen** in zwei Draft-PRs (§7, §9); wo eine Antwort anders ausfällt, ändert dieselbe Session nach.
 **Stufe B.** Höchstens zwei PRs (M5-Plan §2 Punkt 11).
 **Grundlagen:** `docs/plans/vp3/ui-12-sammellauf.md` (F4, F5, §7), `docs/adr/0028-band-export-formen.md`, `backend/earthx/access/crop_rules.py`, M5-Plan §2 Punkt 9 („AOI ‚Point‘ ist immer ein echter Punkt“) und §6.2 (Zeile M5-69), Entscheidungslog bis 25.11.2026.
 **Regeln:** Oberflächentexte nur Englisch, keine Hinweistexte, Panels scrollen nie (`docs/ui/leitfaden.md`).
@@ -48,7 +48,7 @@ Das Pixel, auf dem der Punkt liegt, ist das Pixel des Rasters der Quelle (Projek
 
 - **Download crop** (synchron und als Export-Job): ein Pixel je Datei, `per_band` je Band in nativer Auflösung, `per_resolution` je Auflösung, `multi_band` in der gemeinsamen. Maske 1×1 mit Wert 1. `aoi.geojson` enthält den Punkt. Ist das Pixel in keiner Szene gültig, kommt wie heute „AOI outside items“.
 - **Alter flacher Export und Zarr-Weg** (`native_crop_grid`): ebenfalls ein Pixel in der nativen Pixelgröße um den Punkt.
-- **Crop and merge:** Die Karte zeigt nur das Pixel. Der Browser beschneidet weiter selbst; den Umriss des Pixels liefert ein neuer Endpunkt `POST /collections/{dataset}/pixel` (Punkt und Szenen im Body, nie in der URL, nie im Log), weil nur der Server das Raster der Quelle kennt (P10: das Frontend liest keine Quelleigenschaft wie `proj:transform`). Je Szene (bzw. Mosaik) gilt das Pixel ihres gezeigten Assets (F2).
+- **Crop and merge:** Die Karte zeigt nur das Pixel. Der Browser beschneidet weiter selbst; den Umriss des Pixels liefert ein neuer Endpunkt `POST /collections/{dataset}/pixel` (Punkt und Szenen im Body, nie in der URL, nie im Log), weil nur der Server das Raster der Quelle kennt (P10: das Frontend liest keine Quelleigenschaft wie `proj:transform`). Eine Ansicht hat ein Pixel: das des Bildes, das sie beim Öffnen zeigt, aus der ersten Szene der Mosaikreihenfolge, die den Punkt enthält, im feinsten gezeigten Asset (F2). Bis der Umriss da ist, zeigt die Ansicht nichts; die Kamera fliegt dann auf das Pixel (F3). Die Vorschau im Processing wird ebenso auf das Pixel zugeschnitten, das der Job liest (feinstes Asset des Auftrags).
 - **Processing:** Das Raster eines Jobs ist wie bisher das des feinsten Bands; ein Punkt ergibt dort ein Pixel. Andere Bänder werden wie bisher auf dieses Raster gelegt.
 
 ### 3.4 Processing auf einem Pixel
@@ -83,8 +83,9 @@ Das Pixel, auf dem der Punkt liegt, ist das Pixel des Rasters der Quelle (Projek
 2. Ein Rezept, dessen AOI genau ein Quadrat von 0,1° ist, wird beim Öffnen als Punkt in seiner Mitte gelesen (ändert das Ergebnis; ein absichtlich so gezeichnetes Rechteck würde mitgeändert).
 
 **F2 – Welches Pixel zeigt Crop and merge**
-1. Je Szene das Pixel im Raster ihres gezeigten Assets; bei einem Mosaik das Pixel der ersten Szene der Mosaikreihenfolge, die den Punkt enthält; zeigt eine Ansicht mehrere Bänder verschiedener Auflösung, das Pixel des feinsten. **Empfehlung.**
+1. Ein Pixel je Ansicht: das des Bildes, das sie beim Öffnen zeigt, aus der ersten Szene der Mosaikreihenfolge, die den Punkt enthält; zeigt sie mehrere Bänder verschiedener Auflösung, das Pixel des feinsten. Eine Ansicht mit Bildern verschiedener Datensätze (NM4-53) schneidet alle auf dieses eine Pixel. **Empfehlung, umgesetzt.**
 2. Wie 1, aber bei verschiedenen Auflösungen das Pixel des gröbsten.
+3. Je Bild bzw. Datensatz der Ansicht ein eigenes Pixel (mehr Anfragen, Umriss wechselt mit dem Bild).
 
 **F3 – Kamera bei Crop and merge mit einem Punkt**
 1. Die Karte fliegt auf das Pixel, so nah, wie der Datensatz Kacheln hat (ein Pixel von 10 m ist bei Zoom 14 kaum ein Bildschirmpixel). **Empfehlung.**
@@ -108,3 +109,10 @@ Das Pixel, auf dem der Punkt liegt, ist das Pixel des Rasters der Quelle (Projek
 - PR 1: `pytest` der geänderten Module (`tests/earthx/access`, `tests/earthx/api`, `tests/earthx/processing`), `ruff check backend`, `lint-imports`.
 - PR 2: Unit-Tests der geänderten Module, `npx tsc -b`, `npm run lint`.
 - Browser-Checks mit Punkt-AOI bei 1280×800 und 360×740: Suche, AOI coverage, Crop and merge (ein Pixel), Download crop, Processing mit einem Schritt (`frontend/e2e/m5-69-point.cjs`); dazu die vorhandenen, die einen Punkt setzen (`ui-12-search-panel.cjs`, `within-aoi.cjs`, `evaluate-coverage.cjs`).
+
+## 9. Stand der Umsetzung (25.11.2026)
+
+- **PR 1** ([#422](https://github.com/oscipal/earthX/pull/422)): Plan, Backend (§5), Entscheidungslog.
+- **PR 2** (auf PR 1 gestapelt): Frontend; `aoi` ist der Punkt selbst, Pixelzuschnitt der Ansicht und der Vorschau (`pixelClip.ts`), Browser-Check `frontend/e2e/m5-69-point.cjs`.
+- Befund am Rand: Bei 360 px liegt das Einstellungs-Sheet über der Kartenmitte und damit über dem Pixel, wie bei jedem Flug der Karte; der Griff klappt es ein. Nicht geändert.
+- Befund am Rand: `ui-12-search-panel.cjs` meldet bei 1280×360 „the calendar scrolls“, auf `main` ebenso; nicht Teil von M5-69.
