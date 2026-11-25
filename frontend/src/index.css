@@ -38,6 +38,8 @@ textarea {
   width: 100vw;
   height: 100vh;
   color: var(--text);
+  /* One look for the scroll bars of all panels and windows (inherited): the Data catalogue as the processing panel (UI-12). */
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
   /* What shows behind the globe and wherever no imagery is drawn: MapLibre clears
      its canvas to transparent every frame (V-6), so this is the actual backdrop.
      A theme token — dark in the tech theme, white in the light one — and the

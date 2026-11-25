@@ -102,6 +102,9 @@
   --channel-blue: #5aa9ff;
   /* A fine, neutral edge round a bar of a histogram in the colours of the data, so that a dark end of a colormap stays seen (M5-60). */
   --hist-bar-edge: rgba(255, 255, 255, 0.4);
+  /* The scroll bars of every panel and window, dark in the dark theme (UI-12). */
+  --scrollbar-thumb: rgba(120, 220, 255, 0.32);
+  --scrollbar-track: transparent;
 }
 
 .app[data-theme='normal'] {
@@ -126,4 +129,6 @@
   --channel-green: #1f8a3a;
   --channel-blue: #1f5fbf;
   --hist-bar-edge: transparent;
+  --scrollbar-thumb: rgba(20, 40, 60, 0.28);
+  --scrollbar-track: transparent;
 }
