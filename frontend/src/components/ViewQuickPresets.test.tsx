@@ -17,6 +17,7 @@ import type { MapLayer } from '../layers';
 import { forgetPresetLooks } from '../presetLooks';
 import { colourView, useAppStore } from '../store';
 import type { Collection, DownloadedInfo, StacItem } from '../types';
+import { InspectorFitContext } from '../inspectorFitContext';
 import ViewerControls from './ViewerControls';
 
 declare global {
@@ -72,7 +73,7 @@ let container: HTMLDivElement;
 let root: Root;
 let fetchMock: ReturnType<typeof vi.fn>;
 
-function mount(collection: Collection, asset: string, rescale = '0,3000') {
+function mount(collection: Collection, asset: string, rescale = '0,3000', quickRows = Number.POSITIVE_INFINITY) {
   const items: StacItem[] = [{ id: 's0', collection: collection.id, bbox: [0, 0, 1, 1], properties: { datetime: '2026-07-01T10:00:00Z' }, assets: {} } as StacItem];
   act(() => {
     useAppStore.setState({
@@ -105,7 +106,11 @@ function mount(collection: Collection, asset: string, rescale = '0,3000') {
       notice: null,
       dock: null,
     });
-    root.render(<ViewerControls />);
+    root.render(
+      <InspectorFitContext.Provider value={{ folded: new Set(), toggle: () => {}, quickRows }}>
+        <ViewerControls />
+      </InspectorFitContext.Provider>,
+    );
   });
 }
 
@@ -140,6 +145,41 @@ const fields = () => {
   const s = useAppStore.getState();
   return { index: s.pendingIndex, colormap: s.pendingColormapName, vmin: s.pendingVmin, vmax: s.pendingVmax, channels: s.pendingChannels.map((c) => `${c.vmin},${c.vmax}`) };
 };
+
+// UI-12 (4), Otto 17.11.2026: in pages, as many rows a page as the bar holds without scrolling, with the arrows of "Datasets".
+describe('the pages of "Quick processing"', () => {
+  const all = () => [...SENTINEL_2_PRESETS.map((p) => p.name), 'False colour (IR)', 'Enhance contrast'];
+  const pager = () => container.querySelector('.quick-pages')!;
+  const count = () => pager().querySelector('.dataset-page-count')?.textContent;
+  const arrow = (label: string) => pager().querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!;
+
+  it('show every entry on one page while the bar holds them, "1 / 1" beside the heading', () => {
+    mount(optical, 'visual');
+    expect(quick()).toEqual(all());
+    expect(count()).toBe('1 / 1');
+    expect(pager().closest('.insp-head')?.textContent).toContain('Quick processing');
+    expect(arrow('Previous page').getAttribute('aria-disabled')).toBe('true');
+    expect(arrow('Next page').getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('show three a row and as many rows as the bar allows, the rest on the next pages, in the order of the registry', () => {
+    mount(optical, 'visual', '0,3000', 1);
+    const pages = Math.ceil(all().length / 3);
+    expect(quick()).toEqual(all().slice(0, 3));
+    expect(count()).toBe(`1 / ${pages}`);
+    act(() => arrow('Next page').click());
+    expect(quick()).toEqual(all().slice(3, 6));
+    expect(count()).toBe(`2 / ${pages}`);
+    expect(arrow('Previous page').getAttribute('aria-disabled')).toBeNull();
+    expect(arrow('Previous page').getAttribute('data-tip')).toBe('Previous page');
+    for (let i = 2; i < pages; i++) act(() => arrow('Next page').click());
+    expect(quick().at(-1)).toBe('Enhance contrast');
+    expect(arrow('Next page').getAttribute('aria-disabled')).toBe('true');
+    expect(arrow('Next page').getAttribute('data-tip')).toBe('Already on the last page');
+    act(() => arrow('Next page').click());
+    expect(count()).toBe(`${pages} / ${pages}`);
+  });
+});
 
 describe('composites under "Quick processing"', () => {
   it('stand after the indices and before "Enhance contrast"', () => {

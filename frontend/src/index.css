@@ -490,6 +490,50 @@ svg.lucide.icon-lead {
   flex-direction: column;
   gap: var(--space-2);
 }
+.inspector .insp-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+/* The head of a section: its name, which folds and opens it, and what stands at its right (the pages of "Quick processing"). */
+.inspector .insp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.inspector .insp-fold {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+/* More columns where the window is too low for one (UI-12 (12)): the body flows from one column into the next, a section may break between
+   its rows, never inside one; the bar is as wide as its columns (`--inspector-width` of `.app`, `Inspector.tsx`). */
+.inspector[data-columns] .insp-body {
+  display: block;
+  column-count: var(--columns);
+  column-fill: auto;
+  column-gap: var(--space-5);
+}
+.inspector[data-columns] .insp-section {
+  margin-bottom: var(--space-5);
+}
+.inspector[data-columns] .insp-head,
+.inspector[data-columns] .insp-section-body > :not(.vc-render),
+.inspector[data-columns] .vc-render > * {
+  break-inside: avoid;
+}
+.inspector[data-columns] .insp-head {
+  break-after: avoid;
+}
 .inspector .insp-heading {
   margin: 0;
   font-size: var(--text-xs);
@@ -1000,7 +1044,9 @@ svg.lucide.icon-lead {
     top: auto;
     left: var(--rail-width);
     width: auto;
-    max-height: 55vh;
+    /* As high as it needs, up to the top of the map (UI-12 (12)); what is still too much folds (`inspectorFit.ts`). Its grip folds it
+       down to show the map. */
+    max-height: 100%;
     border-width: var(--line-width) 0 0;
     border-radius: var(--radius-md) var(--radius-md) 0 0;
   }
@@ -1613,7 +1659,7 @@ textarea:autofill {
   padding: var(--space-0);
 }
 /* "‹ 1 / 3 ›" small at the right of the heading "Datasets" (Otto, 06.11.2026), not in the capitals of the heading */
-.dataset-pages {
+.pager {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;

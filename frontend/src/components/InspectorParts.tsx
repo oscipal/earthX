@@ -4,8 +4,10 @@
 
 import { useState, type KeyboardEventHandler, type ReactNode } from 'react';
 
+import { useInspectorFit } from '../inspectorFitContext';
+
 import CloseButton from './CloseButton';
-import { ChevronLeftIcon, ChevronRightIcon, PencilIcon } from './icons';
+import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, PencilIcon } from './icons';
 import InlineRename from './InlineRename';
 
 export const ONE_IMAGE_TIP = 'A layer holds one image';
@@ -124,11 +126,27 @@ export function LayerStepper({ date }: { date?: string }) {
   return <Stepper text={date ?? ''} tip={date} previous={locked} next={locked} single />;
 }
 
-export function InspectorSection({ title, children }: { title: string; children: ReactNode }) {
+// A section of the bar: its head folds and opens it (a chevron, as the legends in the layer manager); `extra` stands at the right of the head.
+export function InspectorSection({ title, extra, children }: { title: string; extra?: ReactNode; children: ReactNode }) {
+  const { folded, toggle } = useInspectorFit();
+  const open = !folded.has(title);
+  const id = `insp-${title.toLowerCase().replace(/\W+/gu, '-')}`;
   return (
-    <section className="insp-section">
-      <h3 className="insp-heading">{title}</h3>
-      {children}
+    <section className={`insp-section${open ? '' : ' folded'}`} data-title={title}>
+      <div className="insp-head">
+        <h3 className="insp-heading">
+          <button type="button" className="insp-fold" aria-expanded={open} aria-controls={id} onClick={() => toggle(title)}>
+            {open ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}
+            {title}
+          </button>
+        </h3>
+        {open && extra}
+      </div>
+      {open && (
+        <div className="insp-section-body" id={id}>
+          {children}
+        </div>
+      )}
     </section>
   );
 }

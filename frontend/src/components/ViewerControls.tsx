@@ -6,8 +6,9 @@
 // "Change image" leaves the view, keeps the choice of scenes and shows the search results; the red x takes the view off the map and
 // drops it, as "Clear" did (Otto, 2.11.2026: no "Clear" any more).
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 
+import { pageCount, pageSlice } from '../datasetPages';
 import { DRAW_AOI_TO_CROP, hasOriginalFiles, noOriginalsReason } from '../download';
 import { originalsTitle, scenesOf, summaryOf, summaryText } from '../originals';
 import { processBlockReason } from '../processingOrder';
@@ -30,7 +31,9 @@ import { isTemporaryImage, layerOfView, viewLayerOf } from '../viewLayer';
 import AutoScaleButton from './AutoScaleButton';
 import Badge from './Badge';
 import Tip from './Tip';
+import { useInspectorFit } from '../inspectorFitContext';
 import { InspectorHead, InspectorSection, LayerStepper, Stepper } from './InspectorParts';
+import Pager from './Pager';
 import { ArrowLeftIcon, CogIcon, DownloadIcon, PlusIcon } from './icons';
 import LayerActions from './LayerActions';
 import OpacityRow from './OpacityRow';
@@ -47,6 +50,7 @@ const INDEX_ONLY_TIP = 'This layer holds the index only';
 const CLASS_COLOURS = 'Classes';
 const CLASS_COLOURS_TIP = 'Each class in the colour of the source; a class map has no range and no other colormap';
 const STEP_UNREADY = 'The range of this step is being measured';
+const QUICK_PER_ROW = 3;
 const ENHANCE_RGB_TIP = 'Put the 2nd to the 98th percentile of red, green and blue in the fields, each channel on its own; Apply draws them. Only the look: Add to layers pins the whole view.';
 
 // The histograms of the bands the statistics name, in their order; none where one band has none.
@@ -56,6 +60,8 @@ async function loadHistograms(measure: ViewMeasure): Promise<Histogram[] | null>
 }
 
 export default function ViewerControls() {
+  const { quickRows } = useInspectorFit();
+  const [quickPageWanted, setQuickPage] = useState(0);
   const pendingColormapName = useAppStore((s) => s.pendingColormapName);
   const pendingVmin = useAppStore((s) => s.pendingVmin);
   const pendingVmax = useAppStore((s) => s.pendingVmax);
@@ -212,6 +218,46 @@ export default function ViewerControls() {
   // The parameters of the step chosen that a person may change (Otto, 17.11.2026), also at a layer of it.
   const params = chosen?.kind === 'step' && chosen.adjustable.length > 0 && shownDataset ? chosen : null;
   const quick = quickIndices || colour || params !== null;
+  // The buttons of "Quick processing" in pages (UI-12 (4), Otto 17.11.2026): three a row, as many rows a page as the bar holds without
+  // scrolling (`inspectorFit.ts`), the order of the registry; "Enhance contrast" last.
+  const quickItems = [
+    ...(quickIndices
+      ? presets.map((preset) => {
+          const on = chosen?.name === preset.name;
+          return (
+            <button
+              key={preset.name}
+              type="button"
+              className={`btn${on ? ' on' : ''}`}
+              aria-pressed={on}
+              disabled={pinLoading}
+              data-tip-level="advanced" data-tip={`${preset.tip} ${on ? 'Click again for the standard image of the dataset, then Apply.' : 'Apply draws it, no job.'}`}
+              onClick={() => void quickIndex(preset.name)}
+            >
+              {preset.label}
+            </button>
+          );
+        })
+      : []),
+    ...(colour
+      ? [
+          <button
+            key="enhance-contrast"
+            type="button"
+            className={`btn${enhanced ? ' on' : ''}`}
+            aria-pressed={enhanced}
+            disabled={focusLoading}
+            data-tip-level="advanced" data-tip={enhanced ? 'Click again for the fields as they were before' : ENHANCE_RGB_TIP}
+            onClick={() => void enhanceContrast()}
+          >
+            Enhance contrast
+          </button>,
+        ]
+      : []),
+  ];
+  const quickPageSize = Number.isFinite(quickRows) ? Math.max(1, quickRows) * QUICK_PER_ROW : Math.max(1, quickItems.length);
+  const quickPages = pageCount(quickItems.length, quickPageSize);
+  const quickPage = Math.min(quickPageWanted, quickPages - 1);
   const indexBlock =
     index && shown
       ? indexBlockOf({
@@ -418,38 +464,12 @@ export default function ViewerControls() {
             it but the parameters of its step. Three in a row (Otto, 2.11.2026), each says whether it is on; a second click, or a band picked,
             puts it away. */}
         {quick ? (
-          <InspectorSection title="Quick processing">
-            {(quickIndices || colour) && <div className="vc-quick">
-              {quickIndices &&
-                presets.map((preset) => {
-                  const on = chosen?.name === preset.name;
-                  return (
-                    <button
-                      key={preset.name}
-                      type="button"
-                      className={`btn${on ? ' on' : ''}`}
-                      aria-pressed={on}
-                      disabled={pinLoading}
-                      data-tip-level="advanced" data-tip={`${preset.tip} ${on ? 'Click again for the standard image of the dataset, then Apply.' : 'Apply draws it, no job.'}`}
-                      onClick={() => void quickIndex(preset.name)}
-                    >
-                      {preset.label}
-                    </button>
-                  );
-                })}
-              {colour && (
-                <button
-                  type="button"
-                  className={`btn${enhanced ? ' on' : ''}`}
-                  aria-pressed={enhanced}
-                  disabled={focusLoading}
-                  data-tip-level="advanced" data-tip={enhanced ? 'Click again for the fields as they were before' : ENHANCE_RGB_TIP}
-                  onClick={() => void enhanceContrast()}
-                >
-                  Enhance contrast
-                </button>
-              )}
-            </div>}
+          <InspectorSection title="Quick processing" extra={quickItems.length > 0 ? <Pager label="Pages of quick processing" className="quick-pages" page={quickPage} pages={quickPages} onPage={setQuickPage} /> : null}>
+            {quickItems.length > 0 && (
+              <div className="vc-quick" data-rows={Math.ceil(quickItems.length / QUICK_PER_ROW)}>
+                {pageSlice(quickItems, quickPage, quickPageSize)}
+              </div>
+            )}
             {params && shownDataset && <PresetParamControls datasetId={shownDataset.id} preset={params} onChange={setPresetParam} />}
             {note}
           </InspectorSection>
