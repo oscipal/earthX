@@ -513,6 +513,7 @@ describe('a colour set inline only from the data (M5-62)', () => {
     'class-swatch': 'the colour of a class as the registry or the result names it: the Data catalogue and the legend over the map (M5-62)',
     'legend-bar': 'the colours of the colormap a layer is drawn with, from the colours the server lists for it: the legend over the map (M5-62)',
     'cm-strip': 'the preview of a colormap, from the colours the server lists for it (UI-03d)',
+    'hist-bar': 'a bar of the histogram of one band in the colour its value has on the map, from the colours the server lists for the colormap (M5-60)',
   };
   const inlineColours = (text: string) =>
     [...withoutComments(text).matchAll(/<\w+[^>]*style=\{\{[^}]*\b(?:background|color|borderColor|fill|stroke)\b[^>]*>/gu)].map(

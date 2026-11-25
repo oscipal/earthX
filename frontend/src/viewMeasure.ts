@@ -64,6 +64,24 @@ function scalingsOf(item: StacItem, asset: string, count: number): BandScaling[]
   return scalings;
 }
 
+// A stored value in physical terms, and back.
+export const physicalOf = (raw: number, { scale, offset }: BandScaling): number => raw * scale + offset;
+export const rawOf = (value: number, { scale, offset }: BandScaling): number => (value - offset) / scale;
+
+// The scaling of an asset of one band as the item states it; `null` where it cannot be turned back.
+export function scalingOfAsset(item: StacItem, asset: string): BandScaling | null {
+  return scalingsOf(item, asset, 1)?.[0] ?? null;
+}
+
+// The scaling of every asset of one band of `item` that has one other than 1 and 0, for `DownloadedInfo.scalings`; `undefined` for none.
+export function scaledAssetsOf(item: StacItem): Record<string, BandScaling> | undefined {
+  const scaled = Object.keys(item.assets).flatMap((asset) => {
+    const one = bandsOf(item.assets[asset])?.length === 1 ? scalingOfAsset(item, asset) : null;
+    return one && (one.scale !== 1 || one.offset !== 0) ? [[asset, one] as const] : [];
+  });
+  return scaled.length > 0 ? Object.fromEntries(scaled) : undefined;
+}
+
 const sameScalings = (a: BandScaling[], b: BandScaling[]) => a.length === b.length && a.every((one, i) => one.scale === b[i].scale && one.offset === b[i].offset);
 
 // The area question for what the view draws: `null` where the view is not cropped (nothing to say), `{ reason }` where it is and none can be
@@ -108,12 +126,12 @@ const KEYS_OF_VALUES = /^(minimum|maximum|min|max|mean|median|percentile_\d+)$/u
 
 // One band of the answer, its numbers back in the raw values the tiles draw. A scaling is linear and rising, so every value, every
 // percentile and every edge of the histogram goes through the same line; the spread only grows by the scale.
-export function inRawValues(statistics: Record<string, unknown>, { scale, offset }: BandScaling): Record<string, unknown> {
-  const raw = (value: number) => (value - offset) / scale;
+export function inRawValues(statistics: Record<string, unknown>, scaling: BandScaling): Record<string, unknown> {
+  const raw = (value: number) => rawOf(value, scaling);
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(statistics)) {
     if (KEYS_OF_VALUES.test(key) && typeof value === 'number') out[key] = raw(value);
-    else if (key === 'stddev' && typeof value === 'number') out[key] = value / scale;
+    else if (key === 'stddev' && typeof value === 'number') out[key] = value / scaling.scale;
     else if (key === 'histogram' && Array.isArray(value) && Array.isArray(value[1])) out[key] = [value[0], value[1].map((edge) => (typeof edge === 'number' ? raw(edge) : edge))];
     else out[key] = value;
   }

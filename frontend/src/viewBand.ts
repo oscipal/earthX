@@ -7,9 +7,11 @@
 // no bands (`earthx:auxiliary_assets`, the mask layer) and whether the standard picture is a true-colour one.
 
 import { buildTileTemplate } from './api';
-import { defaultRenderOf } from './datasets';
-import { auxiliaryAssetsOf, bandSources, maskLayerOf, registryUnit, selectableAssets, trueColorOf } from './processingOrder';
+import { lookOf, type DisplayLook } from './displayLook';
+import { fieldNumber } from './numberFormat';
+import { auxiliaryAssetsOf, bandSources, maskLayerOf, selectableAssets, trueColorOf } from './processingOrder';
 import type { AppliedRender, Collection, DownloadedInfo, StacItem } from './types';
+import { rawOf, type BandScaling } from './viewMeasure';
 
 // The keys of the assets of `item` that hold one band, in the order of the item: not the pictures made from the bands, not
 // the mask layer, and not the asset the standard picture is made from where that is a true-colour one. For COG assets, whose
@@ -24,21 +26,20 @@ export function bandAssetsOf(item: StacItem | undefined, collection: Collection 
   return trueColorOf(collection) !== null ? wanted.filter((asset) => asset !== standard) : wanted;
 }
 
-// The look a band starts with where the registry says it is measured like the standard picture (M5-11, Otto H1 = 1): the same
-// unit as the band of the standard picture gives its colormap and starting range (`TminD`, `TmaxD` like `TabsD`). `null` for any
-// other band, which starts as before with its measured range and no colormap. A look of its own per band comes with M5-60.
-export function standardLookOfBand(
-  collection: Collection | undefined,
-  item: StacItem | undefined,
-  band: string,
-): { colormapName: string; vmin: string; vmax: string } | null {
-  const render = collection ? defaultRenderOf(collection, item) : null;
-  const standard = render?.assets[0];
-  if (!collection || !render || !standard || standard === band || render.assets.length !== 1) return null;
-  const unit = registryUnit(collection, band);
-  const range = render.rescale?.[0];
-  if (unit === null || unit !== registryUnit(collection, standard) || !render.colormap_name || !range) return null;
-  return { colormapName: render.colormap_name, vmin: String(range[0]), vmax: String(range[1]) };
+// The look a band starts with (M5-60): its colormap and range as the collection publishes them for the band (`earthx:bands`,
+// `earthx:look`, the form of `x-earthx-looks`, its numbers in the unit of the band). The registry resolves one for every band but a band
+// of classes; nothing here derives one. `null` where the collection names none, or one that is not complete.
+export function bandLookOf(collection: Collection | undefined, band: string): DisplayLook | null {
+  const listed = Array.isArray(collection?.['earthx:bands']) ? collection['earthx:bands'] : [];
+  return lookOf(listed.find((one) => one?.name === band)?.['earthx:look']);
+}
+
+// The fixed range of a look in the values the tiles of the band draw: the look is physical, the tiles draw what is stored
+// (`viewMeasure.ts`); a scaling that cannot be read counts as none (M5-60 A5). `null` for a range that comes from a measure.
+export function fixedRangeOf(look: DisplayLook, scaling: BandScaling | null): { vmin: string; vmax: string } | null {
+  if (look.scale !== 'fixed' || look.low === undefined || look.high === undefined) return null;
+  const one = scaling ?? { scale: 1, offset: 0 };
+  return { vmin: fieldNumber(rawOf(look.low, one)), vmax: fieldNumber(rawOf(look.high, one)) };
 }
 
 // The asset a scene is drawn from for a look: the band of the look, else the one it was opened with.

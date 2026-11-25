@@ -11,6 +11,7 @@ import { layerShownName } from './layerName';
 import type { MapLayer } from './layers';
 import { registryUnit, shownUnit } from './processingOrder';
 import type { AppliedRender, DownloadedInfo } from './types';
+import { physicalOf, type BandScaling } from './viewMeasure';
 
 export type LegendContent =
   | { kind: 'classes'; classes: readonly BandClass[] }
@@ -28,16 +29,19 @@ export const VIEW_LEGEND = 'view';
 
 // What the tiles of `tileUrl` show: `classes` where they are drawn in the colours of classes the data names (a class table or the
 // colours of the classes as `colormap`), a bar where one band is stretched over a range, nothing for a colour picture or a band drawn
-// as it is.
-export function legendOfTile(tileUrl: string, classes: readonly BandClass[] | null, unit: string | null): LegendContent | null {
+// as it is. The ends of a bar are physical (M5-60): the tiles of a band draw the stored values, which `scaling` turns into physical
+// ones; a step or an expression computes in physical values already.
+export function legendOfTile(tileUrl: string, classes: readonly BandClass[] | null, unit: string | null, scaling: BandScaling | null = null): LegendContent | null {
   const query = tileUrl.includes('?') ? tileUrl.slice(tileUrl.indexOf('?') + 1) : '';
   const params = new URLSearchParams(query);
   const rescale = params.getAll('rescale');
   const colour = params.getAll('bidx').length > 1 || (params.get('bidx') ?? '').includes(',') || rescale.length > 1;
   if (colour) return null;
   if (rescale.length === 0) return classes && (params.has('colormap') || params.has('colormap_name')) ? { kind: 'classes', classes } : null;
-  const [min, max] = rescale[0].split(',').map(Number);
-  if (!Number.isFinite(min) || !Number.isFinite(max)) return null;
+  const [low, high] = rescale[0].split(',').map(Number);
+  if (!Number.isFinite(low) || !Number.isFinite(high)) return null;
+  const stored = scaling !== null && !params.has('op') && !params.has('expression');
+  const [min, max] = stored ? [physicalOf(low, scaling), physicalOf(high, scaling)] : [low, high];
   return { kind: 'bar', colormap: params.getAll('colormap_name').at(-1) ?? '', min, max, unit };
 }
 
@@ -46,6 +50,9 @@ const rasterOf = (layer: MapLayer): string | null => {
   const raster = layer.overlays.find((o) => o.kind === 'raster');
   return raster && raster.kind === 'raster' && typeof raster.tileUrl === 'string' ? raster.tileUrl : null;
 };
+
+// The scaling of the asset a scene is drawn from, where the item states one.
+const scalingOf = (scene: DownloadedInfo): BandScaling | null => scene.scalings?.[scene.asset] ?? null;
 
 // The unit of a band of a dataset where it is physical; an index drawn by its expression has none.
 function datasetUnit(dataset: DatasetOption | undefined, asset: string, tileUrl: string): string | null {
@@ -65,7 +72,7 @@ export function layerLegend(layer: MapLayer, datasets: readonly DatasetOption[])
     const scene = Object.values(layer.restore.downloaded ?? {})[0];
     const dataset = scene ? datasets.find((d) => d.id === scene.datasetId) : undefined;
     const classes = scene && dataset ? classesOfBand(dataset.collection, scene.asset) : null;
-    content = legendOfTile(tileUrl, classes, scene ? datasetUnit(dataset, scene.asset, tileUrl) : null);
+    content = legendOfTile(tileUrl, classes, scene ? datasetUnit(dataset, scene.asset, tileUrl) : null, scene ? scalingOf(scene) : null);
   }
   return content ? { id: layer.id, title: layerShownName(layer), content } : null;
 }
@@ -76,7 +83,7 @@ function viewLegend(downloaded: Record<string, DownloadedInfo>, render: AppliedR
   if (!scene || typeof scene.tileUrl !== 'string') return null;
   const dataset = datasets.find((d) => d.id === scene.datasetId);
   const tileUrl = buildTileUrl(scene.tileUrl, render);
-  const content = legendOfTile(tileUrl, dataset ? classesOfBand(dataset.collection, scene.asset) : null, datasetUnit(dataset, scene.asset, tileUrl));
+  const content = legendOfTile(tileUrl, dataset ? classesOfBand(dataset.collection, scene.asset) : null, datasetUnit(dataset, scene.asset, tileUrl), scalingOf(scene));
   return content ? { id: VIEW_LEGEND, title: dataset?.title ?? scene.datasetId, content } : null;
 }
 

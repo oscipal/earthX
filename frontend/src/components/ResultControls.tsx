@@ -27,6 +27,7 @@ import { percentOfLook } from '../displayLook';
 import AutoScaleButton from './AutoScaleButton';
 import RenderFields, { NO_COLORMAP } from './RenderFields';
 import ScaleHistograms from './ScaleHistograms';
+import ClassHistogram from './ClassHistogram';
 import { useHistograms } from './useHistograms';
 import Tip from './Tip';
 import OpacityRow from './OpacityRow';
@@ -306,6 +307,7 @@ function Controls({ layer }: { layer: MapLayer }) {
                       vmax={unit === 'percent' ? typed.high : draft.vmax}
                       onVmin={unit === 'percent' ? (low) => { setTyped((t) => ({ ...t, low })); setProblem(null); } : (vmin) => edit({ vmin })}
                       onVmax={unit === 'percent' ? (high) => { setTyped((t) => ({ ...t, high })); setProblem(null); } : (vmax) => edit({ vmax })}
+                      colormap={colour ? undefined : draft.colormap}
                       channels={colour ? { values: channelValues, onChange: editChannel, onPercent: editChannelPercent } : undefined}
                     />
                   )
@@ -314,6 +316,7 @@ function Controls({ layer }: { layer: MapLayer }) {
                 scale
               />
             )}
+            {info.classes && info.legend && histograms?.length === 1 && <ClassHistogram histogram={histograms[0]} classes={info.legend} />}
             <OpacityRow layer={layer} />
             {settable && (
               <div className="vc-buttons">

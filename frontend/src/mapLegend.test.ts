@@ -31,6 +31,14 @@ describe('legendOfTile', () => {
     expect(legendOfTile(`${T}&colormap_name=viridis&rescale=0,100`, CLASSES, null)).toMatchObject({ kind: 'bar' });
   });
 
+  it('tells the ends in physical values (M5-60): the stored range turned with the scaling of the band, a step or an index as it is', () => {
+    const reflectance = { scale: 0.0001, offset: -0.1 };
+    expect(legendOfTile(`${T}&colormap_name=viridis&rescale=1000,4000`, null, null, reflectance)).toMatchObject({ min: expect.closeTo(0, 9), max: expect.closeTo(0.3, 9) });
+    expect(legendOfTile(`${T}&expression=(b-a)&colormap_name=rdylgn&rescale=-1,1`, null, null, reflectance)).toMatchObject({ min: -1, max: 1 });
+    expect(legendOfTile(`${T}&op=terrain&colormap_name=gray&rescale=0,255`, null, null, reflectance)).toMatchObject({ min: 0, max: 255 });
+    expect(legendOfTile(`${T}&colormap_name=viridis&rescale=0,100`, null, '%')).toMatchObject({ min: 0, max: 100, unit: '%' });
+  });
+
   it('has none for a colour picture, a picture drawn as it is, or a range that does not read', () => {
     expect(legendOfTile(`${T}&rescale=0,3000&rescale=0,3000&rescale=0,3000`, null, null)).toBeNull();
     expect(legendOfTile(`${T}&bidx=3&bidx=2&bidx=1&rescale=0,1`, null, null)).toBeNull();
@@ -92,6 +100,17 @@ describe('legendEntries', () => {
     const index = layer('i', 'https://tiles.example/{z}/{x}/{y}.png?assets=height&expression=(a-b)&colormap_name=rdylgn&rescale=-1,1', {}, 'height');
     const [h, c, i] = legendEntries({ layers: [heights, counts, index], resultsAt: 3, datasets: DATASETS, view: null });
     expect([h.content, c.content, i.content].map((content) => (content.kind === 'bar' ? content.unit : 'x'))).toEqual(['m', null, null]);
+  });
+
+  it('turns the range of a scaled band into physical values with the scaling of the scene, in a layer and in the view', () => {
+    const stored = (asset: string): DownloadedInfo => ({ ...scene(asset), scalings: { height: { scale: 0.5, offset: 100 } } });
+    const scaled = layer('h', 'https://tiles.example/{z}/{x}/{y}.png?assets=height&colormap_name=terrain&rescale=0,4000', { restore: { downloaded: { s: stored('height') } } as unknown as MapLayer['restore'] });
+    const view = { downloaded: { s: stored('height') }, render: { colormapName: 'terrain', rescale: '0,4000' } };
+    const [layerEntry, viewEntry] = legendEntries({ layers: [scaled], resultsAt: 1, datasets: DATASETS, view });
+    expect(layerEntry.content).toMatchObject({ min: 100, max: 2100, unit: 'm' });
+    expect(viewEntry.content).toMatchObject({ min: 100, max: 2100, unit: 'm' });
+    // Another asset of the same scene is not scaled.
+    expect(legendEntries({ layers: [counts], resultsAt: 1, datasets: DATASETS, view: null })[0].content).toMatchObject({ min: 1, max: 500 });
   });
 
   it('puts the view of the search where the entry "Search results" stands, titled by its dataset', () => {
