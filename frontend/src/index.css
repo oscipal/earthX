@@ -1225,7 +1225,7 @@ textarea:autofill {
 }
 .day-calendar-grid {
   display: grid;
-  grid-template-columns: repeat(7, var(--control-height));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: var(--space-0);
 }
 .day-calendar-weekday {
@@ -1245,6 +1245,12 @@ textarea:autofill {
 }
 .day-calendar-day:hover:not(:disabled) {
   border-color: var(--accent);
+}
+/* A window too low for six rows of finger-high days (1280 x 360): the rows of a mouse, so that the month fits without scrolling. */
+@media (max-height: 480px) and (min-width: 900px) {
+  .day-calendar-day {
+    height: var(--control-height-sm);
+  }
 }
 .day-calendar-day[aria-pressed='true'] {
   background: var(--accent);

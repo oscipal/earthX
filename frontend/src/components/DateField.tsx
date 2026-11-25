@@ -72,7 +72,7 @@ export function DateField({
         <CalendarIcon />
       </button>
       {open && (
-        <Popover anchorRef={field} open onClose={() => setOpen(false)} className="day-calendar-popup" role="dialog" ariaLabel={label} focusOnOpen form>
+        <Popover anchorRef={field} open onClose={() => setOpen(false)} className="day-calendar-popup" role="dialog" ariaLabel={label} focusOnOpen form minWidth={CALENDAR_WIDTH}>
           <DayCalendar
             value={value}
             bounds={bounds}
@@ -86,6 +86,9 @@ export function DateField({
     </div>
   );
 }
+
+// Wide enough for seven columns of days, also with the taller controls of a touch screen.
+const CALENDAR_WIDTH = 264;
 
 function DayCalendar({ value, bounds, onChoose }: { value: string; bounds: DayBounds | null; onChoose: (day: string) => void }) {
   const [shown, setShown] = useState<Month>(() => monthToShow(value, bounds, todayUtc()));
