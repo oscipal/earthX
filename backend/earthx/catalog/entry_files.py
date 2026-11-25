@@ -115,6 +115,9 @@ def read_yaml(path: Path) -> Any:
     """The plain data of ``path`` by the rules above, or :class:`EntryFileError`."""
     try:
         text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        # M5-67 fix 2: a file the image or a mount of the compose service does not bring said "cannot be read as UTF-8".
+        raise EntryFileError(f"{path.name}: file not found") from None
     except (OSError, UnicodeDecodeError) as error:
         raise EntryFileError(f"{path.name}: cannot be read as UTF-8 text ({type(error).__name__})") from None
     try:

@@ -1233,6 +1233,7 @@ def main(argv: list[str] | None = None) -> int:
         blocklist = load_blocked()
         load_place_directory()
         load_geodata_rule()
+        load_flag_rules()
     except (ConfigError, EntryFileError) as error:
         print(f"report failed: {error}", file=sys.stderr)
         return 1
