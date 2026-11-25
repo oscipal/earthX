@@ -135,7 +135,7 @@ def test_the_candidates_run_after_the_link_check_for_the_harvested_sources_and_n
     catch = CODE[CODE.index("} catch {\n    $ExitCode = 1") :]
     assert "'backend/catalog/candidates'" in catch
     services = yaml.safe_load((REPO / "docker-compose.yml").read_text(encoding="utf-8"))["services"]
-    assert services["harvest-propose"]["volumes"] == ["./backend/catalog/candidates:/out"]
+    assert "./backend/catalog/candidates:/app/catalog/candidates" in services["harvest-propose"]["volumes"]
     assert (REPO / "backend" / "catalog" / "candidates").is_dir()
 
 

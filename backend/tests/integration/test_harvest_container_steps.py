@@ -65,6 +65,11 @@ def test_the_steps_of_a_run_start_in_their_containers(tmp_path: Path) -> None:
     linkcheck.mount("/run")
     _ok(linkcheck.run("--dry-run", "--json", "/run/linkcheck.json"), "linkcheck")
 
+    propose = _container("harvest-propose", tmp_path)
+    propose.mount("/run")
+    _ok(propose.run("--json", "/run/propose.json", "--day", DAY, "--trial", SOURCE), "propose")
+    assert (propose.mounts["/run"] / "propose.json").is_file()
+
     cycle.mounts["/run"] = run
     _ok(cycle.run("decide", "--run", "/run", "--approvals", "/approvals", "--day", DAY, "--trial"), "decide")
     _ok(

@@ -230,9 +230,13 @@ services:
     build:
       context: ./backend
       target: app
-    entrypoint: ["python", "-m", "earthx.discovery.propose", "--out", "/out"]
+    entrypoint: ["python", "-m", "earthx.discovery.propose"]
     volumes:
-      - ./backend/catalog/candidates:/out
+      # The candidates of the checkout where the module looks for them (CANDIDATES_DIR); never in the image.
+      - ./backend/catalog/candidates:/app/catalog/candidates
+      # Rules of the checkout the modules it loads read (tests/test_harvest_container_files.py).
+      - ./backend/catalog/approval_rules.yaml:/app/catalog/approval_rules.yaml:ro
+      - ./backend/catalog/flags.yaml:/app/catalog/flags.yaml:ro
     environment:
       HOME: /tmp
       EARTHX_USER_AGENT: ${EARTHX_USER_AGENT:-}
