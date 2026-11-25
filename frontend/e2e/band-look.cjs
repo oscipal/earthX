@@ -109,6 +109,8 @@ const LINK = 'LiNkOfBeFoReM5x68aBcD_';
 // A permalink made before M5-68: a preview of "Mask by value" on Sentinel-2 red, its range set by hand. Its numbers were physical then
 // too: a preview is drawn by the steps, which compute in physical values.
 const PERMALINK_ITEM = 'S2A_PERMALINK';
+// The licence the panel needs to process the dataset of the link (made up; the trimmed collections carry none).
+const PROCESSING = { spdx_id: null, name: 'Made-up notice', url: 'https://example.org/legal', commercial_use: true, distribution: true, derivatives: true, share_alike: false, attribution_required: false, tier: 'processing' };
 const PERMALINK = {
   order: {
     recipe_version: 2,
@@ -141,10 +143,10 @@ async function open(browser, theme, viewport, problems, address = '/') {
       return r.fulfill({ status: 404, body: '' });
     }
     // Only a link loads the datasets itself; every other check puts them into the store.
-    if (url.pathname === '/stac/collections' && address !== '/') return json({ collections: Object.values(COLLECTIONS), links: [] });
+    if (url.pathname === '/stac/collections' && address !== '/') return json({ collections: [{ ...COLLECTIONS['sentinel-2-c1-l2a'], 'earthx:license_flags': PROCESSING }], links: [] });
     if (url.pathname === `/stac/collections/sentinel-2-c1-l2a/items/${PERMALINK_ITEM}`) {
       const bbox = [10, 46, 11, 47];
-      return json({ type: 'Feature', id: PERMALINK_ITEM, collection: 'sentinel-2-c1-l2a', bbox, geometry: { type: 'Polygon', coordinates: [[[10, 46], [11, 46], [11, 47], [10, 47], [10, 46]]] }, properties: { datetime: '2026-07-01T10:00:00Z' }, assets: ASSETS['sentinel-2-c1-l2a'], links: [] });
+      return json({ type: 'Feature', id: PERMALINK_ITEM, collection: 'sentinel-2-c1-l2a', bbox, geometry: { type: 'Polygon', coordinates: [[[10, 46], [11, 46], [11, 47], [10, 47], [10, 46]]] }, properties: { datetime: '2026-07-01T10:00:00Z', 's2:datatake_id': 'GS2A_20260701T100000_000000_N05.11' }, assets: ASSETS['sentinel-2-c1-l2a'], links: [] });
     }
     if (url.pathname === `/processing/permalinks/${LINK}`) return json(PERMALINK);
     if (url.pathname.endsWith('/statistics')) {
