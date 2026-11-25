@@ -1,0 +1,196 @@
+# Approval of a run of the harvest (adr/0033 §8; M5-20 plan §12), written by `discovery report`. Check the sample in
+# the report beside this file: open each link, compare licence, publisher, access, extent and that it is geodata; set
+# `ok: true` or `ok: false` for every entry. Then set `decision` (approved or rejected) and `decided_on` (the day).
+# `excluded_rules` takes licence rules whose entries stay out; `revoked_on` hides again what this file published.
+# `excluded_entries` are entries with a warning sign (M5-67 plan §5, in the report); they stay out and wait.
+# Only entries whose own link passed the automatic check become visible (M5-67 plan §4). Never a name, an address or the words of a request here: the repository is public.
+source_id: opendata-swiss
+batch_id: 10
+fingerprint: d637c057c05c3808105275d5088ca6e58ac7fe8f9fc894b46c7620c267b99ed6
+created_on: 2026-11-25
+entries: 98
+decision: pending
+decided_on: null
+excluded_rules: []
+revoked_on: null
+sample:
+- dataset_id: opendata-swiss.b602e9a5-6803-43b2-abe0-1943120257b5
+  why: new_host
+  title: Antibiotikaresistenzen und Antibiotikaeinsatz
+  source_url: https://www.idd.bag.admin.ch/topics/anresis/overview
+  license_rule: opendata-swiss/Abteilung Übertragbare Krankheiten/cc-by+opendata-swiss-by
+  ok: null
+  check:
+    outcome: failed
+    reason: no_title
+    status: 200
+    final_host: www.idd.bag.admin.ch
+- dataset_id: opendata-swiss.6dfac5d3-4b6c-4f76-9ae6-58b81b416144
+  why: random
+  title: Ortsinfo
+  source_url: https://opendata.swiss/de/dataset/ortsinfo
+  license_rule: opendata-swiss/Geoinformation Kanton Uri/opendata-swiss-open
+  ok: null
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: opendata.swiss
+- dataset_id: opendata-swiss.78f95427-835c-406b-ae4c-2fc5f2f6318b
+  why: random
+  title: Schutzmassnahmen Kultur- und Denkmalschutzobjekte national / regional Differenz
+  source_url: https://opendata.swiss/de/dataset/schutzmassnahmen-kultur-und-denkmalschutzobjekte-national-regional-differenz
+  license_rule: opendata-swiss/Geoinformation Kanton Uri/opendata-swiss-open
+  ok: null
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: opendata.swiss
+- dataset_id: opendata-swiss.ecbb7fa6-8dfc-4994-88bd-106229d83d83
+  why: random
+  title: ZAKU Sammelstellen Glas Alu ÖL
+  source_url: https://opendata.swiss/de/dataset/zaku-sammelstellen-glas-alu-ol
+  license_rule: opendata-swiss/Geoinformation Kanton Uri/opendata-swiss-open
+  ok: null
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: opendata.swiss
+- dataset_id: opendata-swiss.2a400a41-439a-4eb6-869f-6beb2dc17953
+  why: random
+  title: Vegetationskundliche Kartierung der Wälder (Waldvegetationskarte, Standortskarte)
+    - Geolion Eintrag in Bearbeitung
+  source_url: https://opendata.swiss/de/dataset/vegetationskundliche-kartierung-der-walder-waldvegetationskarte-standortskarte-geolion-eintrag-
+  license_rule: opendata-swiss/Geoinformation Kanton Zürich/opendata-swiss-open
+  ok: null
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: opendata.swiss
+- dataset_id: opendata-swiss.eb01334b-df9c-45d3-8ce3-43cc13f53e43
+  why: random
+  title: Schutzmassnahmen Kultur- und Denkmalschutzobjekte national / regional
+  source_url: https://opendata.swiss/de/dataset/schutzmassnahmen-kultur-und-denkmalschutzobjekte-national-regional
+  license_rule: opendata-swiss/Geoinformation Kanton Uri/opendata-swiss-open
+  ok: null
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: opendata.swiss
+- dataset_id: opendata-swiss.d75fed2e-b1b2-4f9f-9896-9c9fa6db1327
+  why: random
+  title: Zonenpläne, Überbauungs- und Erschliessungsstände der Gemeinden
+  source_url: https://opendata.swiss/de/dataset/zonenplane-uberbauungs-und-erschliessungsstande-der-gemeinden
+  license_rule: opendata-swiss/Geoinformation Kanton Zürich/opendata-swiss-open
+  ok: null
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: opendata.swiss
+- dataset_id: opendata-swiss.7ed5ca71-6fb0-465b-8d1d-bd62a33b530d
+  why: random
+  title: Carte des milieux naturels du Grand Genève au 25'000
+  source_url: https://opendata.swiss/de/dataset/carte-des-milieux-naturels-du-grand-geneve-au-25000
+  license_rule: opendata-swiss/Kanton Genf/opendata-swiss-open
+  ok: null
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: opendata.swiss
+- dataset_id: opendata-swiss.afc49ffa-6624-47a2-99c5-478695930d0c
+  why: random
+  title: Bewirtschaftungseinheit (UR)
+  source_url: https://opendata.swiss/de/dataset/bewirtschaftungseinheit-ur
+  license_rule: opendata-swiss/Geoinformation Kanton Uri/opendata-swiss-open
+  ok: null
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: opendata.swiss
+- dataset_id: opendata-swiss.fcd15bd1-be4c-4583-bb95-65bb781806f8
+  why: random
+  title: Todesfälle nach Todesursache, Grundkrankheit «assistierter Suizid» und Altersklasse
+  source_url: https://data.stadt-zuerich.ch/dataset/bfs_bevreg_todesursache_assistierter_suizid_altersklasse_od3114
+  license_rule: opendata-swiss/Stadt Zürich/opendata-swiss-open
+  ok: null
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: data.stadt-zuerich.ch
+- dataset_id: opendata-swiss.2705382d-39e1-4f93-a8f2-2e8d2b55ff70
+  why: random
+  title: Schutzinventar Natur
+  source_url: https://opendata.swiss/de/dataset/schutzinventar-natur
+  license_rule: opendata-swiss/Geoinformation Kanton Uri/opendata-swiss-open
+  ok: null
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: opendata.swiss
+- dataset_id: opendata-swiss.0252b180-2d01-4bcf-8965-8a5613a724b2
+  why: random
+  title: Elektro Leitungen
+  source_url: https://opendata.swiss/de/dataset/elektro-leitungen
+  license_rule: opendata-swiss/Geoinformation Kanton Uri/opendata-swiss-open
+  ok: null
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: opendata.swiss
+- dataset_id: opendata-swiss.80271564-b443-469c-a965-dcbe39420022
+  why: random
+  title: Konzessionen Grundwasserwärmepumpen
+  source_url: https://opendata.swiss/de/dataset/konzessionen-grundwasserwarmepumpen
+  license_rule: opendata-swiss/Geoinformation Kanton Uri/opendata-swiss-open
+  ok: null
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: opendata.swiss
+- dataset_id: opendata-swiss.33a0a241-82de-4adb-9bc4-babdcdd4c4d6
+  why: random
+  title: Rodungen und Rodungsersatz (UR)
+  source_url: https://opendata.swiss/de/dataset/rodungen-und-rodungsersatz-ur
+  license_rule: opendata-swiss/Geoinformation Kanton Uri/opendata-swiss-open
+  ok: null
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: opendata.swiss
+- dataset_id: opendata-swiss.6200d21c-324e-4110-9f1c-16c506c31f1a
+  why: random
+  title: 'Stromversorgungssicherheit: Netzebene 5 (UR)'
+  source_url: https://opendata.swiss/de/dataset/stromversorgungssicherheit-netzebene-5-ur
+  license_rule: opendata-swiss/Geoinformation Kanton Uri/opendata-swiss-open
+  ok: null
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: opendata.swiss
+- dataset_id: opendata-swiss.4e2462c3-0892-475a-8cdc-6fa80393cda9
+  why: random
+  title: Zulässigkeit Grundwasserwärmepumpen
+  source_url: https://opendata.swiss/de/dataset/zulassigkeit-grundwasserwarmepumpen
+  license_rule: opendata-swiss/Geoinformation Kanton Uri/opendata-swiss-open
+  ok: null
+  check:
+    outcome: passed
+    reason: ok
+    status: 200
+    final_host: opendata.swiss
+excluded_entries:
+- opendata-swiss.d328ad15-1493-49ca-9ae6-325be01fdf7f
+- opendata-swiss.eeb8b09f-9cae-45b7-9b32-6f78a58cbd43
