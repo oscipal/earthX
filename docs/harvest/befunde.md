@@ -29,6 +29,10 @@ Keine Personen, keine AOI, keine Hashes oder signierten Adressen in dieser Datei
 - [ ] **H-2026-11-24-06** · 2026-11-24 · govdata · Kategorie falsch („Optical imagery“): Gemeindefinanzen
   („Auszahlungen …“, „Einzahlungen …“) und „[BfTMAP] KOPIE MItarbeiter als Dienst“. Braucht die Belege der
   Kategorie aus dem ersten automatischen Lauf (`warnzeichen.md`). Vorschlag: Plan M5-67 §12 (06).
+- [ ] **H-2026-11-25-01** · 2026-11-25 · govdata · Links auf `datenregister.berlin.de/dataset/<id>` (402) führen auf das
+  nicht-öffentliche Redaktionssystem des Berliner Portals (`403`), ihre Einträge bleiben ungeprüft und unsichtbar
+  (M5-67 F17 = 1). Auf die öffentliche Seite `https://daten.berlin.de/datensaetze/<name>` umstellen; ob `<name>` dem
+  CKAN-Namen entspricht, ist nicht belegt und braucht einen Browsertest von Otto. Eigene Aufgabe.
 
 ## Offen, aus den Läufen
 

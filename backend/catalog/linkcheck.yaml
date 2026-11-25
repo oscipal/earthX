@@ -39,47 +39,48 @@ login_words: [login, log in, anmelden, anmeldung, sign in, registrierte nutzer, 
 # passes like a page, with the title or an identifier of the dataset in the record (a 200 alone never passes), and only
 # once Otto found the page of a dataset under `link` in a browser (form_confirmed_on). check none: no safe check is
 # documented; the links stay unchecked and their entries invisible. Interfaces from documentation only (adr/0002).
+# Otto opened a link of each of the seven api forms in a browser on 25.11.2026: each showed the dataset (F15 = 1).
 link_forms:
-  # piveau hub-search, GET /datasets/{id}, 404 for an unknown id; the base /api/hub/search is the default of hub-search.
+  # piveau hub-search, GET /datasets/{id}, 404 for an unknown id; the base /api/hub/search, Otto opened it (25.11.2026).
   - link: https://open.bydata.de/datasets/{id}
     check: api
     api: https://open.bydata.de/api/hub/search/datasets/{id}
     evidence: https://gitlab.com/piveau/hub/piveau-hub-search/-/raw/develop/README.md
-    form_confirmed_on: null
+    form_confirmed_on: 2026-11-25
   # GeoNetwork 3.12 and 4, GET /srv/api/records/{uuid}/formatters/xml, 404 for an unknown uuid.
   - link: https://opendata.herne.de/katalogopendata/srv/{lang}/{page}#/metadata/{uuid}
     check: api
     api: https://opendata.herne.de/katalogopendata/srv/api/records/{uuid}/formatters/xml
     evidence: https://github.com/geonetwork/core-geonetwork/blob/main/docs/manual/docs/api/the-geonetwork-api.md
-    form_confirmed_on: null
+    form_confirmed_on: 2026-11-25
   - link: https://geodatenkatalog.frankfurt.de/geonetwork/srv/{lang}/{page}#/metadata/{uuid}
     check: api
     api: https://geodatenkatalog.frankfurt.de/geonetwork/srv/api/records/{uuid}/formatters/xml
     evidence: https://github.com/geonetwork/core-geonetwork/blob/main/docs/manual/docs/api/the-geonetwork-api.md
-    form_confirmed_on: null
+    form_confirmed_on: 2026-11-25
   - link: https://www.geocat.ch/geonetwork/srv/{lang}/{page}#/metadata/{uuid}
     check: api
     api: https://www.geocat.ch/geonetwork/srv/api/records/{uuid}/formatters/xml
     evidence: https://github.com/geonetwork/core-geonetwork/blob/main/docs/manual/docs/api/the-geonetwork-api.md
-    form_confirmed_on: null
+    form_confirmed_on: 2026-11-25
   # Mapbender 2: ISO 19139 of a layer. It answers 200 also for an unknown id (a record "title not given"), so only the
   # title in the record decides.
   - link: https://www.geoportal.rlp.de/map?LAYER[id]={layer}&LAYER[zoom]={zoom}
     check: api
     api: https://www.geoportal.rlp.de/mapbender/php/mod_layerISOMetadata.php?SERVICE=WMS&outputFormat=iso19139&Id={layer}
     evidence: https://github.com/mrmap-community/Mapbender2.8/blob/master/http/php/mod_layerISOMetadata.php
-    form_confirmed_on: null
+    form_confirmed_on: 2026-11-25
   - link: https://www.geoportal.hessen.de/map?LAYER[id]={layer}&LAYER[zoom]={zoom}
     check: api
     api: https://www.geoportal.hessen.de/mapbender/php/mod_layerISOMetadata.php?SERVICE=WMS&outputFormat=iso19139&Id={layer}
     evidence: https://github.com/mrmap-community/Mapbender2.8/blob/master/http/php/mod_layerISOMetadata.php
-    form_confirmed_on: null
+    form_confirmed_on: 2026-11-25
   # BfS, WFS of the ODL network, a station by its identifier (viewparams kenn).
   - link: https://odlinfo.bfs.de/ODL/DE/themen/wo-stehen-die-sonden/karte/_documents/Messstelle.html?id={kenn}
     check: api
     api: https://www.imis.bfs.de/ogc/opendata/ows?service=WFS&version=1.1.0&request=GetFeature&typeName=opendata:odlinfo_timeseries_odl_24h&outputFormat=application/json&viewparams=kenn:{kenn}
     evidence: https://raw.githubusercontent.com/bundesAPI/strahlenschutz-api/main/openapi.yaml
-    form_confirmed_on: null
+    form_confirmed_on: 2026-11-25
   - link: https://mobilithek.info//offers/{id}
     check: none
     why: No documented interface for one offer (the specification of the broker was not readable).

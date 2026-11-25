@@ -641,3 +641,12 @@ Je Host ein Befund `SCHUTZ <Host>` mit den Zahlen des Hosts und den geschützten
 1. So übernehmen, `mdd-nrw-nutzungsbedingungen` bleibt draußen, Haftungsausschluss als Präfix **(Empfehlung)**
 2. Auch `mdd-nrw-nutzungsbedingungen` aufnehmen
 3. Haftungsausschluss erst mit vollem Text (dann wartet er weiter in der Liste)
+
+### 23.8 Antworten Otto (25.11.2026) und Nachtrag
+
+- **F15 = 1:** Ottos Browsertest vom 25.11.: Alle sieben `api`-Formen zeigen den Datensatz (RLP, Hessen, bydata, Herne, Frankfurt, geocat.ch, BfS); `form_confirmed_on: 2026-11-25` für alle.
+- **F16 = 1:** `https://open.bydata.de/api/hub/search/datasets/zaehlstellen-b512-2012` zeigt den Datensatz; bydata bleibt `api`.
+- **F17 = 1:** Berlin bleibt `none`; Befund H-2026-11-25-01 in `befunde.md`: Links auf `daten.berlin.de` umstellen (eigene Aufgabe).
+- **F18 = 1, F19 = 1:** PR B wie vorgeschlagen.
+- **A28 (Nachtrag beim Umsetzen):** Ein geschütztes Ergebnis ist im nächsten Lauf wieder fällig (Priorität 2 wie `unchecked`), nicht erst nach 30 Tagen. Vorher galten durchgefallene, geschützte Ergebnisse des Probelaufs als frisch: Die Regeln dieses Nachtrags (404 ohne Schutz, Prüfung je Linkform) hätten für RLP, bydata, `open.rlp.de` usw. erst nach einem Monat gegriffen, und die Einträge wären so lange sichtbar geblieben. Ein Schutz entscheidet nichts; also wird erneut geprüft. Kosten: Hosts, die dauerhaft geschützt bleiben (z. B. `www.gkd.bayern.de` mit rund 7 800 Links bei 1 s, etwa 2,2 h), werden in jedem Lauf geprüft und teilen sich das Budget mit dem Rest; die Hosts laufen parallel.
+- **Schätzung des nächsten (ersten echten) Laufs [A]:** Der Probelauf hätte 9 213 veröffentlichte Einträge verborgen. Dazu kommen, weil der Schutz sie nicht mehr hält: rund 2 300 tote Links (`open.rlp.de` 1 268, `registry.gdi-de.org/id/de.bw` 1 043) und rund 1 800 Links der Formen ohne sichere Prüfung (Mobilithek 803, Berlin 402, Kanton Bern 211, Solothurn 154, Stadt Bern 133, Kiel 64, St. Gallen 47). Zusammen **etwa 13 000** von rund 102 000 sichtbaren Einträgen (Spanne grob 11 000–16 000). Unsicher: die rund 10 300 Links der `api`-Formen (bestehen sie, bleiben sie sichtbar; fällt bei einer Form ein großer Anteil durch, greift wieder der Schutz) und die 56 500 GovData-Katalogseiten über die CKAN-API (erwartet fast alle bestanden). Die Zahlen der Gruppen zählen Links aller Zustände, nicht nur veröffentlichte; die Schätzung ist deshalb eher eine Obergrenze. Die Laufdateien nennen nach dem Lauf die genaue Zahl.
