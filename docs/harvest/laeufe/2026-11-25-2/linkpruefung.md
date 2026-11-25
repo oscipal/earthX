@@ -1,0 +1,561 @@
+# Linkprüfung
+
+## Fällig je Host (Links, Stunden bei seinem Abstand)
+
+- www.govdata.de: 56570 Links, rund 15.7 h
+- www.gkd.bayern.de: 7478 Links, rund 2.1 h
+- opendata.schleswig-holstein.de: 6841 Links, rund 1.9 h
+- registry.gdi-de.org: 1813 Links, rund 0.5 h
+- geoportal.sachsen.de: 666 Links, rund 0.2 h
+- ckan.open.nrw.de: 614 Links, rund 0.2 h
+- doi.org: 608 Links, rund 0.2 h
+- www.openagrar.de: 287 Links, rund 0.1 h
+- mobilithek.info: 267 Links, rund 0.1 h
+- www.opendata-hro.de: 246 Links, rund 0.1 h
+- portal-chemnitz.opendata.arcgis.com: 138 Links, rund 0.0 h
+- www.statistik.sachsen.de: 91 Links, rund 0.0 h
+- opendata.soest.de: 87 Links, rund 0.0 h
+- opendata.ruhr: 67 Links, rund 0.0 h
+- www.daten.bmfsfj.de: 65 Links, rund 0.0 h
+- opendata-duisburg.de: 56 Links, rund 0.0 h
+- www.duva-server.de: 38 Links, rund 0.0 h
+- www.bfs.admin.ch: 24 Links, rund 0.0 h
+- open.bydata.de: 19 Links, rund 0.0 h
+- open-data.ble.de: 11 Links, rund 0.0 h
+- open.rlp.de: 8 Links, rund 0.0 h
+- geoshop.rlp.de: 7 Links, rund 0.0 h
+- www.stadtzug.ch: 7 Links, rund 0.0 h
+- opendata.duesseldorf.de: 6 Links, rund 0.0 h
+- www.geoportal.rlp.de: 5 Links, rund 0.0 h
+- geodienste.hamburg.de: 5 Links, rund 0.0 h
+- katalog.geo.gr.ch: 5 Links, rund 0.0 h
+- dx.doi.org: 4 Links, rund 0.0 h
+- www.transparenz.bremen.de: 4 Links, rund 0.0 h
+- geodatenkatalog.frankfurt.de: 3 Links, rund 0.0 h
+
+## Gründe
+
+- form_unconfirmed: 56469
+- host_resting: 8561
+- http_404: 14
+- http_429: 1
+- no_title: 300
+- redirect_host: 3119
+- robots: 645
+- too_large: 21
+
+## Hosts und Muster mit Fehlschlägen (geschützte zuerst)
+
+- **geschützt** host `www.govdata.de`: bestanden 0, durchgefallen 0, ohne Antwort 101, nicht prüfbar 56469
+- **geschützt** host `www.gkd.bayern.de`: bestanden 0, durchgefallen 0, ohne Antwort 7478, nicht prüfbar 0
+- **geschützt** pattern `www.gkd.bayern.de/de/grundwasser/oberesstockwerk/kelheim/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 753, nicht prüfbar 0
+  - govdata.0a57a067-491e-48c7-be73-21b79bb41f40 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/kelheim/bobingen-no-578-8177> `host_resting`
+  - govdata.0abfc055-92a9-4972-b4c9-80d80c1f41d1 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/kelheim/ger-e-gerolfing-11223> `host_resting`
+  - govdata.0ac5bfc9-3d1b-48fe-a7c7-3b5c83f30410 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/kelheim/rehling-739-8237> `host_resting`
+  - govdata.0ad3033f-a8d7-4683-bdff-bf1ec20765e4 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/kelheim/holzkirchen-w7a-8154> `host_resting`
+  - govdata.0ad5c60d-b116-4a10-bdb3-fbaa390518a5 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/kelheim/dattenhausen-d-46-9246> `host_resting`
+- **geschützt** host `ckan.open.nrw.de`: bestanden 0, durchgefallen 0, ohne Antwort 614, nicht prüfbar 0
+- **geschützt** pattern `ckan.open.nrw.de/dataset/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 614, nicht prüfbar 0
+  - govdata.00da7fff-9516-4526-99b1-5da9be7707b2 <https://ckan.open.nrw.de/dataset/2386033e-2c74-4380-b1fa-842e116118df> `host_resting`
+  - govdata.0146f230-015a-4578-a55c-fd0274c191f0 <https://ckan.open.nrw.de/dataset/d160ce77-44b6-463f-bd2e-d840dbf5ef2c> `host_resting`
+  - govdata.01aa3141-a1ea-4cb9-8a2a-b3d3c44887ae <https://ckan.open.nrw.de/dataset/fd143b85-0a1e-4962-ba3d-c0c2b9df61b4> `host_resting`
+  - govdata.020f6a28-5bf9-4c20-bb8d-f58be394fd74 <https://ckan.open.nrw.de/dataset/f47eb9d7-ddc5-415d-af67-104e91b561a0> `host_resting`
+  - govdata.02b144c8-8185-41ac-9a21-9740a9f7d352 <https://ckan.open.nrw.de/dataset/2889f7a8-af67-46ad-90e8-62339ea3f964> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/grundwasser/chemie/kelheim/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 461, nicht prüfbar 0
+  - govdata.0b5349c9-c9c5-4ca5-b134-409a476d6d32 <https://www.gkd.bayern.de/de/grundwasser/chemie/kelheim/1131743100186-1131743100186> `host_resting`
+  - govdata.0b803160-d34d-43b2-8df4-034d562f18f2 <https://www.gkd.bayern.de/de/grundwasser/chemie/kelheim/1132672700077-1132672700077> `host_resting`
+  - govdata.0b85e17a-e358-43c7-b249-643ec0585d4b <https://www.gkd.bayern.de/de/grundwasser/chemie/kelheim/1132713800068-1132713800068> `host_resting`
+  - govdata.0badebfe-1c51-4645-b2f3-615c8718e37c <https://www.gkd.bayern.de/de/grundwasser/chemie/kelheim/1131733500013-1131733500013> `host_resting`
+  - govdata.0c9883e6-4ce0-4bc0-972d-cf0c492fcc43 <https://www.gkd.bayern.de/de/grundwasser/chemie/kelheim/1132652800133-1132652800133> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/grundwasser/oberesstockwerk/isar/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 395, nicht prüfbar 0
+  - govdata.0ac71a76-0297-4879-a739-0d261e750204 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/isar/am-gries-b5g-48767> `host_resting`
+  - govdata.0bec0adb-b127-45ce-b8de-89ec6bb048bb <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/isar/muenchen-u8-406-16705> `host_resting`
+  - govdata.0bf0d143-db82-4a45-bda3-117199bb0971 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/isar/lindach-577-23193> `host_resting`
+  - govdata.0c244a9b-0263-4378-a7c3-08cec79d1016 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/isar/st-leonhard-b10-23997> `host_resting`
+  - govdata.0cb288cc-ffea-45fa-8636-14a9b1ad5734 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/isar/n14-hws-moernbach-23911> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/fluesse/biologie/kelheim/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 350, nicht prüfbar 0
+  - govdata.0b353d14-5003-4ef2-b7b9-1986f6f77cab <https://www.gkd.bayern.de/de/fluesse/biologie/kelheim/wegbruecke-bei-bannacker-31022> `host_resting`
+  - govdata.0d7050a3-11d4-4038-aa9a-e9627cfd6217 <https://www.gkd.bayern.de/de/fluesse/biologie/kelheim/wegbr-bei-hohenaltheim-saegem-103368> `host_resting`
+  - govdata.0e66ca09-3739-4156-9478-e2746339febe <https://www.gkd.bayern.de/de/fluesse/biologie/kelheim/oh-autob-br-weixerau-11240> `host_resting`
+  - govdata.0e875713-1e5e-4797-b915-2a71438d0633 <https://www.gkd.bayern.de/de/fluesse/biologie/kelheim/bahnbr-uh-manching-3309> `host_resting`
+  - govdata.0e91f5e7-3215-453d-bbe8-e84ea34899c6 <https://www.gkd.bayern.de/de/fluesse/biologie/kelheim/uh-strassenbr-querab-fristingen-103358> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/grundwasser/oberesstockwerk/passau/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 326, nicht prüfbar 0
+  - govdata.0a358732-475e-4747-9507-dd65a5177380 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/passau/mertseebecken-2-19947> `host_resting`
+  - govdata.0b01d36b-d1ad-4605-baec-bc1f8900579a <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/passau/regensburg-773-20186> `host_resting`
+  - govdata.0bfd0676-d0a8-426f-87bc-3ff041658b58 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/passau/unterzeitldorn-l-103-2-82013> `host_resting`
+  - govdata.0c36b2ae-1f74-4f2c-a480-e764d6303c60 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/passau/niederpoering-15-1a-7620> `host_resting`
+  - govdata.0c3dd48e-cfc2-4b45-8c73-ead03435cc63 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/passau/oeberau-r-124-1-82015> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/seen/biologie/isar/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 281, nicht prüfbar 0
+  - govdata.0a3806b7-9bc7-4d61-83c4-2f5b2bd5fd3c <https://www.gkd.bayern.de/de/seen/biologie/isar/tiefste-stelle-2049> `host_resting`
+  - govdata.0aefc3b8-aaf6-4406-be5e-b4f2291aa7ee <https://www.gkd.bayern.de/de/seen/biologie/isar/transekt-4-suedwestufer-uh-parkbank-102915> `host_resting`
+  - govdata.0b4260df-98cc-4940-9650-cc0711200f45 <https://www.gkd.bayern.de/de/seen/biologie/isar/transekt-09-107590> `host_resting`
+  - govdata.0b70ac70-7bca-4a37-9481-268247cc5190 <https://www.gkd.bayern.de/de/seen/biologie/isar/transekt-1-130372> `host_resting`
+  - govdata.0c7bdd84-f207-4466-be0d-be4fed722f4d <https://www.gkd.bayern.de/de/seen/biologie/isar/transekt-12-107653> `host_resting`
+- **geschützt** host `mobilithek.info`: bestanden 0, durchgefallen 267, ohne Antwort 0, nicht prüfbar 0
+- **geschützt** pattern `mobilithek.info//offers/{x}`: bestanden 0, durchgefallen 266, ohne Antwort 0, nicht prüfbar 0
+  - govdata.000a9216-5204-40e4-b778-667b5b697e6e <https://mobilithek.info//offers/-2358120427886250361> `no_title`
+  - govdata.0068f1ae-00d4-43bb-b5f3-f5642cb69cd0 <https://mobilithek.info//offers/-8621677219067920761> `no_title`
+  - govdata.00e7962e-18f3-4834-935e-dea919e90636 <https://mobilithek.info//offers/-8113886252199210612> `no_title`
+  - govdata.013d588a-a251-4c7a-bd4b-e47c33d7fd8e <https://mobilithek.info//offers/-2328330561956779016> `no_title`
+  - govdata.021337a3-44c8-4db7-b112-0f91bfbe22d6 <https://mobilithek.info//offers/-1399784364667618780> `no_title`
+- **geschützt** pattern `www.gkd.bayern.de/de/grundwasser/chemie/passau/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 214, nicht prüfbar 0
+  - govdata.0b2465da-a681-46b7-8cbe-6fa02ea3f875 <https://www.gkd.bayern.de/de/grundwasser/chemie/passau/1230714500246-1230714500246> `host_resting`
+  - govdata.0c194cd9-2cbe-4e0c-a21c-6395dc5a8438 <https://www.gkd.bayern.de/de/grundwasser/chemie/passau/1131734300238-1131734300238> `host_resting`
+  - govdata.0cacdc84-a421-4ec3-b05e-ef065d95f724 <https://www.gkd.bayern.de/de/grundwasser/chemie/passau/4120754000009-4120754000009> `host_resting`
+  - govdata.0cff5c79-4eae-484a-b23b-1010f99c7755 <https://www.gkd.bayern.de/de/grundwasser/chemie/passau/4120684400017-4120684400017> `host_resting`
+  - govdata.0db887c7-6ce2-4981-90f8-f2576aae373b <https://www.gkd.bayern.de/de/grundwasser/chemie/passau/4120714000018-4120714000018> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/fluesse/biologie/isar/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 205, nicht prüfbar 0
+  - govdata.0ad54bb3-9557-4c50-a12d-36d216248710 <https://www.gkd.bayern.de/de/fluesse/biologie/isar/uh-bruecke-sportplatz-edling-132350> `host_resting`
+  - govdata.0bdb2a79-bae7-4f26-b77c-e2de01124c14 <https://www.gkd.bayern.de/de/fluesse/biologie/isar/300-m-uh-kw-stammham-12587> `host_resting`
+  - govdata.0c0f5986-1c53-4e14-95b1-7d3b5fb0adfa <https://www.gkd.bayern.de/de/fluesse/biologie/isar/bruecke-kohlstatt-124083> `host_resting`
+  - govdata.0c4bd1ee-26aa-4e0e-8f9a-182103ec01fd <https://www.gkd.bayern.de/de/fluesse/biologie/isar/800m-uh-oberstaudhausen-114277> `host_resting`
+  - govdata.0d0fa3c5-f83b-4596-9278-4ed05f1705b2 <https://www.gkd.bayern.de/de/fluesse/biologie/isar/uh-strassenbruecke-bei-kohlbrenn-121333> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/grundwasser/chemie/main_unten/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 198, nicht prüfbar 0
+  - govdata.0b1f6d7b-c883-4b6a-b207-dcfe1a72842f <https://www.gkd.bayern.de/de/grundwasser/chemie/main_unten/4120612500012-4120612500012> `host_resting`
+  - govdata.0b64df4b-d518-4c13-bb33-2fcddab6719d <https://www.gkd.bayern.de/de/grundwasser/chemie/main_unten/4120612000031-4120612000031> `host_resting`
+  - govdata.0c44f6d6-337a-46be-9995-89fe0d75dc79 <https://www.gkd.bayern.de/de/grundwasser/chemie/main_unten/4120592100007-4120592100007> `host_resting`
+  - govdata.0c51fb59-f918-4f29-ba58-3632b2b2c829 <https://www.gkd.bayern.de/de/grundwasser/chemie/main_unten/4120552400003-4120552400003> `host_resting`
+  - govdata.0cac1629-6103-4f2b-8024-3ef16c8176b6 <https://www.gkd.bayern.de/de/grundwasser/chemie/main_unten/4120602400058-4120602400058> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/grundwasser/chemie/isar/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 195, nicht prüfbar 0
+  - govdata.0a99aa03-95d1-4235-822e-677c710340d7 <https://www.gkd.bayern.de/de/grundwasser/chemie/isar/4120803800016-4120803800016> `host_resting`
+  - govdata.0b95e729-bc51-41ad-bf43-4a3762bb2c1d <https://www.gkd.bayern.de/de/grundwasser/chemie/isar/1131763800468-1131763800468> `host_resting`
+  - govdata.0d0f992d-9395-4214-8f79-75e36e08023f <https://www.gkd.bayern.de/de/grundwasser/chemie/isar/4120833700005-4120833700005> `host_resting`
+  - govdata.1011cb5d-eb38-428c-87eb-849ab6d661e6 <https://www.gkd.bayern.de/de/grundwasser/chemie/isar/1132764000093-1132764000093> `host_resting`
+  - govdata.1100a9ad-2b5e-41d8-8b08-6c1635004f12 <https://www.gkd.bayern.de/de/grundwasser/chemie/isar/1132773900400-1132773900400> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/fluesse/biologie/passau/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 174, nicht prüfbar 0
+  - govdata.0a7ac08c-5fc0-4f9f-b5ad-ee111c568362 <https://www.gkd.bayern.de/de/fluesse/biologie/passau/grosstiefenbach-142980> `host_resting`
+  - govdata.0b4d5692-46c1-46c3-84b4-c86e88d70fca <https://www.gkd.bayern.de/de/fluesse/biologie/passau/500m-uh-rappendorf-8861> `host_resting`
+  - govdata.0dd64dbe-e20f-43f7-b8be-a8e85299dd07 <https://www.gkd.bayern.de/de/fluesse/biologie/passau/strbr-arrach-10270> `host_resting`
+  - govdata.0ddf7169-0e90-44ae-9b3d-ee338783c9d4 <https://www.gkd.bayern.de/de/fluesse/biologie/passau/stegmuehle-ow-11591> `host_resting`
+  - govdata.0e149ad1-d223-418f-86d3-d6e03a39b6a3 <https://www.gkd.bayern.de/de/fluesse/biologie/passau/stadtpark-hauzenberg-103454> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/grundwasser/chemie/elbe/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 156, nicht prüfbar 0
+  - govdata.0a8cfbc8-2762-4ba2-8626-b04e2b55f142 <https://www.gkd.bayern.de/de/grundwasser/chemie/elbe/1131593800109-1131593800109> `host_resting`
+  - govdata.0a8e3f32-0894-4720-94e1-247f2c1789f2 <https://www.gkd.bayern.de/de/grundwasser/chemie/elbe/1132583100086-1132583100086> `host_resting`
+  - govdata.0b5e2a81-821f-404c-873d-67e2a43e25b9 <https://www.gkd.bayern.de/de/grundwasser/chemie/elbe/1132573100024-1132573100024> `host_resting`
+  - govdata.0c6feab1-4759-4fda-b374-8c0a3e51d762 <https://www.gkd.bayern.de/de/grundwasser/chemie/elbe/1131623000022-1131623000022> `host_resting`
+  - govdata.0d32d47e-9569-4759-8da5-239c8785312b <https://www.gkd.bayern.de/de/grundwasser/chemie/elbe/1131603000044-1131603000044> `host_resting`
+- **geschützt** host `portal-chemnitz.opendata.arcgis.com`: bestanden 0, durchgefallen 0, ohne Antwort 138, nicht prüfbar 0
+- **geschützt** pattern `www.gkd.bayern.de/de/grundwasser/tieferestockwerke/kelheim/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 131, nicht prüfbar 0
+  - govdata.0a3e5bdc-9330-4c69-b060-78e24b7d752e <https://www.gkd.bayern.de/de/grundwasser/tieferestockwerke/kelheim/gempfing-w4-8291> `host_resting`
+  - govdata.0af0cfa7-1d6d-4fa5-9f75-0d3de5753799 <https://www.gkd.bayern.de/de/grundwasser/tieferestockwerke/kelheim/oberdolling-harlanden-11168> `host_resting`
+  - govdata.0d0d9f13-029f-4000-99e3-4a159fc748c2 <https://www.gkd.bayern.de/de/grundwasser/tieferestockwerke/kelheim/obersteinbach-k-8-17167> `host_resting`
+  - govdata.0e6bf927-ff1b-47f8-8761-54b88879a9a7 <https://www.gkd.bayern.de/de/grundwasser/tieferestockwerke/kelheim/bruckb-feld-tb-774-15170> `host_resting`
+  - govdata.11d8bb6b-ad27-46fe-819f-67a27e9d1bbe <https://www.gkd.bayern.de/de/grundwasser/tieferestockwerke/kelheim/bergheim-b4-11161> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/fluesse/abfluss/kelheim/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 119, nicht prüfbar 0
+  - govdata.0aca9b8d-e453-4eed-8e5a-2cbf84d07c6a <https://www.gkd.bayern.de/de/fluesse/abfluss/kelheim/schambach-13450300> `host_resting`
+  - govdata.0e0f00ab-9bc8-47b7-96c8-9b5f435cec8e <https://www.gkd.bayern.de/de/fluesse/abfluss/kelheim/obermenzing-16666000> `host_resting`
+  - govdata.0e403e8d-13b7-4e33-ab15-f9711d7aa8d1 <https://www.gkd.bayern.de/de/fluesse/abfluss/kelheim/wendelstein-24217400> `host_resting`
+  - govdata.0fff74d2-e4de-45a1-8f50-963d2b0c77ba <https://www.gkd.bayern.de/de/fluesse/abfluss/kelheim/donauwoerth-10039802> `host_resting`
+  - govdata.1372d3d5-7ee9-4455-a39f-8fa304abeedf <https://www.gkd.bayern.de/de/fluesse/abfluss/kelheim/schmidmuehlen-14606008> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/fluesse/biologie/elbe/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 114, nicht prüfbar 0
+  - govdata.103025b6-121e-4525-b7c5-789bb7afd3f2 <https://www.gkd.bayern.de/de/fluesse/biologie/elbe/uth-marktleuthen-ca-900m-uth-bahnbruecke-22952> `host_resting`
+  - govdata.11f0efc6-1854-41a9-b397-39cdababa869 <https://www.gkd.bayern.de/de/fluesse/biologie/elbe/o-twt-u-pegel-14751> `host_resting`
+  - govdata.13d3dfac-3464-445a-9771-fe408f2a362b <https://www.gkd.bayern.de/de/fluesse/biologie/elbe/in-bt-uth-strbr-scheffelstr-fmistb16-96687> `host_resting`
+  - govdata.16d343f1-8f5a-4055-a50f-c1361caf22c2 <https://www.gkd.bayern.de/de/fluesse/biologie/elbe/str-br-uth-sommermuehle-23018> `host_resting`
+  - govdata.19067baf-863a-4813-862b-f6ce8111b8aa <https://www.gkd.bayern.de/de/fluesse/biologie/elbe/beim-silberhaus-sr-5-23088> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/fluesse/biologie/main_unten/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 112, nicht prüfbar 0
+  - govdata.0b481c17-c2cd-4d6e-a79a-e50625be8370 <https://www.gkd.bayern.de/de/fluesse/biologie/main_unten/oberbach-oh-ka-114350> `host_resting`
+  - govdata.0d51d793-3d77-4f5b-a8bc-5d7c43285487 <https://www.gkd.bayern.de/de/fluesse/biologie/main_unten/mechenried-uh-hartmuehle-105543> `host_resting`
+  - govdata.0f080f49-4eed-46eb-b431-1e57ad0c6224 <https://www.gkd.bayern.de/de/fluesse/biologie/main_unten/sh-freudenberg-km-146-2-oh-buhnenfeld-b-faulbach-mhs-193259> `host_resting`
+  - govdata.1058f043-7b71-4105-99e6-97d0d908c746 <https://www.gkd.bayern.de/de/fluesse/biologie/main_unten/oh-mdg-18690> `host_resting`
+  - govdata.113999b0-fd01-42a0-9b59-8f5a51b5cc7a <https://www.gkd.bayern.de/de/fluesse/biologie/main_unten/bad-kissingen-luitp-steg-105552> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/fluesse/abfluss/isar/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 111, nicht prüfbar 0
+  - govdata.0b81c7bd-d7e9-4a25-acc3-47adddba841d <https://www.gkd.bayern.de/de/fluesse/abfluss/isar/bad-toelz-16391004> `host_resting`
+  - govdata.1370e246-1865-4789-a117-ccd1d5d534e1 <https://www.gkd.bayern.de/de/fluesse/abfluss/isar/silberackersteg-16425300> `host_resting`
+  - govdata.14725d2e-cba2-49cd-ad66-05a4f85e5c5f <https://www.gkd.bayern.de/de/fluesse/abfluss/isar/stegen-16602303> `host_resting`
+  - govdata.157ee275-3bd5-4bfa-b0a4-caba79f94912 <https://www.gkd.bayern.de/de/fluesse/abfluss/isar/kochel-16407002> `host_resting`
+  - govdata.1972ee53-1803-438c-9c3b-327805cfafdd <https://www.gkd.bayern.de/de/fluesse/abfluss/isar/burgkirchen-18408200> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/fluesse/chemie/kelheim/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 108, nicht prüfbar 0
+  - govdata.0b2ac281-1a0b-4640-8e7e-29d2d14444a1 <https://www.gkd.bayern.de/de/fluesse/chemie/kelheim/guenzburg-wegbruecke-2371> `host_resting`
+  - govdata.0ee13c23-a496-405a-a31a-6c396ba9be59 <https://www.gkd.bayern.de/de/fluesse/chemie/kelheim/mitterfecking-br-dorfstrasse-218811> `host_resting`
+  - govdata.0fe7a051-e6ae-4e16-a919-59529434307c <https://www.gkd.bayern.de/de/fluesse/chemie/kelheim/taefertingen-2949> `host_resting`
+  - govdata.1038a3e0-74a7-4713-b97e-b5c02b20e0b9 <https://www.gkd.bayern.de/de/fluesse/chemie/kelheim/500m-uh-ilm-ueberleit-3316> `host_resting`
+  - govdata.13b6902f-5bbe-48a2-89fd-866de9332599 <https://www.gkd.bayern.de/de/fluesse/chemie/kelheim/guendlkofen-bruecke-la-52-128743> `host_resting`
+- **geschützt** pattern `www.govdata.de/web/guest/suchen/-/details/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 100, nicht prüfbar 0
+  - govdata.000b1256-d400-46f8-8393-bdfc4ea7d8fb <https://www.govdata.de/web/guest/suchen/-/details/mittlere-grundwasserneubildung-aus-niederschlag-1971-2000> `host_resting`
+  - govdata.062a6d37-b1b3-4c00-b33c-5349dde711e9 <https://www.govdata.de/web/guest/suchen/-/details/nurnberg-huttendorf-nitrate> `host_resting`
+  - govdata.0864cf86-ecfe-4ce1-83fa-137285a1aecc <https://www.govdata.de/web/guest/suchen/-/details/globalstrahlung-im-dezemberbaf04> `host_resting`
+  - govdata.09a68d2b-32d5-45d7-afcc-b9603b29a9f8 <https://www.govdata.de/web/guest/suchen/-/details/nurnberg-huttendorf-wassertemperatur> `host_resting`
+  - govdata.0dd4359d-af7d-4574-b6f7-7e661e480888 <https://www.govdata.de/web/guest/suchen/-/details/digitale-hydrogeologische-karte-1-100-000-hydrogeologisch-relevante-storungenc0568> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/grundwasser/oberesstockwerk/kelheim/{x}/download`: bestanden 0, durchgefallen 0, ohne Antwort 99, nicht prüfbar 0
+  - govdata.0ad08e4d-dc8c-445d-8ce3-eb583fd5f120 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/kelheim/emling-strassmeier-906-16225/download> `host_resting`
+  - govdata.0c4dd6d9-c4dd-41bd-bdcf-3d759d5ee533 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/kelheim/eugenbach-93-15594/download> `host_resting`
+  - govdata.0c90f0e0-b2ae-4d0d-abaf-ce46cc9bdb0a <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/kelheim/untereichen-931-9223/download> `host_resting`
+  - govdata.0ff700e7-7274-48e2-be2d-bbbf632cde63 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/kelheim/dornach-553-16195/download> `host_resting`
+  - govdata.1069e116-250f-4366-bf32-455f854dd5fd <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/kelheim/burgau-hws-bgw-8-9954/download> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/grundwasser/oberesstockwerk/main_unten/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 94, nicht prüfbar 0
+  - govdata.0dc10906-d2ef-47fc-ac8f-cbf1736bbe33 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/main_unten/n-oestl-kahl-a-main-3-4157> `host_resting`
+  - govdata.0f12ef46-fa07-4526-b6bd-7ca419d66a66 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/main_unten/niedernberg-fb-4166> `host_resting`
+  - govdata.0ff07f3b-c4d6-4c25-8743-1731e648bcb4 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/main_unten/dammbach-s-2-4170> `host_resting`
+  - govdata.10a28cbb-61cf-42bb-bb5f-98c397833d2e <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/main_unten/ottenhofen-56810> `host_resting`
+  - govdata.12c5822d-447b-4713-8f91-ddb8f9e99103 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/main_unten/guentersleben-27132> `host_resting`
+- **geschützt** pattern `portal-chemnitz.opendata.arcgis.com/datasets/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 93, nicht prüfbar 0
+  - govdata.042214ab-8a21-4fbc-864b-c680143baa9e <https://portal-chemnitz.opendata.arcgis.com/datasets/chemnitz::marktrichtwerte-2015> `host_resting`
+  - govdata.0601ddd2-a519-4b30-b1d5-5e7903bbc9ae <https://portal-chemnitz.opendata.arcgis.com/datasets/chemnitz::marktrichtwerte-2019> `host_resting`
+  - govdata.06dfc683-dcc4-4504-865a-cb9176480119 <https://portal-chemnitz.opendata.arcgis.com/datasets/chemnitz::bodenrichtwerte-2003> `host_resting`
+  - govdata.06e7dc82-7a14-44b6-9acc-f3f49770c03d <https://portal-chemnitz.opendata.arcgis.com/datasets/chemnitz::bodenrichtwerte-1992> `host_resting`
+  - govdata.0756b8ee-911c-45c1-877b-79de9c3ea0cb <https://portal-chemnitz.opendata.arcgis.com/datasets/chemnitz::alkistopo-alkis-klassifizierungtext-2> `host_resting`
+- **geschützt** host `opendata.soest.de`: bestanden 0, durchgefallen 0, ohne Antwort 87, nicht prüfbar 0
+- **geschützt** pattern `opendata.soest.de/dataset/{id}`: bestanden 0, durchgefallen 0, ohne Antwort 87, nicht prüfbar 0
+  - govdata.0aade5b8-ddb7-4831-b66e-ff244e4d21c5 <https://opendata.soest.de/dataset/a4c538b8-db7c-4ccd-8448-be227fcf543c> `host_resting`
+  - govdata.0d744fb6-ddd9-40c2-b675-e490a9e9a6eb <https://opendata.soest.de/dataset/988a258f-8f20-4e42-8878-8faca2e98642> `host_resting`
+  - govdata.12fea2a6-6b96-433e-b6a8-0a275bd629c0 <https://opendata.soest.de/dataset/d4dcce44-be39-4aa7-90ee-ac693a7ede8a> `host_resting`
+  - govdata.1367af23-9f34-4d46-8bd2-a985c1b7f782 <https://opendata.soest.de/dataset/ac87da3b-2762-44f4-8d84-8f5cb1e936c0> `host_resting`
+  - govdata.17cbd582-9c91-44b2-aee3-21057aecd2b0 <https://opendata.soest.de/dataset/caf732ef-4a8a-4ad5-9efa-d00fe40fca1e> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/grundwasser/oberesstockwerk/elbe/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 86, nicht prüfbar 0
+  - govdata.0b0f9e06-fdb0-4ca1-ada3-427692d75567 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/elbe/viereth-hut-193-a-5141> `host_resting`
+  - govdata.0e90aed1-2856-499d-b0f6-f73ced4610b8 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/elbe/neuenplos-119-6108> `host_resting`
+  - govdata.110ed04f-a53f-4bdb-9ff7-0f1365c79928 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/elbe/wingersdorf-13-5156> `host_resting`
+  - govdata.123e00f2-3b0b-4d1f-973b-103f0aa5dcca <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/elbe/burghaslach-q1-3639> `host_resting`
+  - govdata.1afba330-9430-43dc-b9fb-8e710003a83a <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/elbe/schottenstein-kms-2-10142> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/fluesse/chemie/isar/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 84, nicht prüfbar 0
+  - govdata.0a6f86e0-362d-4bbe-993f-58e0214cadad <https://www.gkd.bayern.de/de/fluesse/chemie/isar/hofmuehle-111780> `host_resting`
+  - govdata.0e57d169-e162-49df-af60-1af421a6bd3c <https://www.gkd.bayern.de/de/fluesse/chemie/isar/uh-hechtseeablauf-114502> `host_resting`
+  - govdata.0ebce9da-b597-415e-ae49-1f7c8daa8978 <https://www.gkd.bayern.de/de/fluesse/chemie/isar/br-oh-bahn-agatharied-12016> `host_resting`
+  - govdata.10a7d333-03ae-435b-8f75-d3a576fd3943 <https://www.gkd.bayern.de/de/fluesse/chemie/isar/unter-grainau-nach-einmdg-kramerlaine-193101> `host_resting`
+  - govdata.1193cea9-7c82-4ef8-8040-6de2460c53a7 <https://www.gkd.bayern.de/de/fluesse/chemie/isar/300m-oh-muendung-12566> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/grundwasser/chemie/naab_regen/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 82, nicht prüfbar 0
+  - govdata.0c7546a1-4294-4ab3-9a7a-dde356f1b0cc <https://www.gkd.bayern.de/de/grundwasser/chemie/naab_regen/4110654000004-4110654000004> `host_resting`
+  - govdata.1209266d-04bc-443a-a411-c5c87cd18585 <https://www.gkd.bayern.de/de/grundwasser/chemie/naab_regen/4120613700051-4120613700051> `host_resting`
+  - govdata.13e46fe9-8008-4996-aa30-5513e52c600c <https://www.gkd.bayern.de/de/grundwasser/chemie/naab_regen/1132664100123-1132664100123> `host_resting`
+  - govdata.170d3d3f-3cfb-4705-92ab-2edaed39258c <https://www.gkd.bayern.de/de/grundwasser/chemie/naab_regen/1131653600124-1131653600124> `host_resting`
+  - govdata.18c47482-9728-460a-889d-7eeb68aee3fd <https://www.gkd.bayern.de/de/grundwasser/chemie/naab_regen/4110633900002-4110633900002> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/fluesse/abfluss/elbe/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 78, nicht prüfbar 0
+  - govdata.0deae832-c360-4d81-bcee-0ecf21121cc2 <https://www.gkd.bayern.de/de/fluesse/abfluss/elbe/lohr-24183002> `host_resting`
+  - govdata.0df849a7-72f3-417b-b970-f9c0255bd59e <https://www.gkd.bayern.de/de/fluesse/abfluss/elbe/gampelmuehle-24126009> `host_resting`
+  - govdata.0e2e2a80-8b44-4ce4-9ac2-0db8c9439514 <https://www.gkd.bayern.de/de/fluesse/abfluss/elbe/schoenstaedt-24160903> `host_resting`
+  - govdata.0fe839a5-de1f-4be8-a19a-d0aa237ad4b7 <https://www.gkd.bayern.de/de/fluesse/abfluss/elbe/kauerndorf-24117008> `host_resting`
+  - govdata.112ed2dc-e7ff-4447-a590-7f6fb865674d <https://www.gkd.bayern.de/de/fluesse/abfluss/elbe/goldbergsee-ablauf-24165907> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/fluesse/chemie/passau/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 77, nicht prüfbar 0
+  - govdata.0c36f3f2-d607-4130-91c3-df89fb3f953b <https://www.gkd.bayern.de/de/fluesse/chemie/passau/pegel-freundorf-11676> `host_resting`
+  - govdata.0c96f8b2-fe7e-40c4-89c6-e5ab1a79d419 <https://www.gkd.bayern.de/de/fluesse/chemie/passau/uh-alperting-11478> `host_resting`
+  - govdata.0ecc3cda-6d2c-447e-a842-4e36d8920a3c <https://www.gkd.bayern.de/de/fluesse/chemie/passau/pegel-reibenmuehle-206852> `host_resting`
+  - govdata.10853347-4ad2-42dc-baa8-666318b6e1cb <https://www.gkd.bayern.de/de/fluesse/chemie/passau/steg_oh-mdg-8618> `host_resting`
+  - govdata.11a9e77e-f06d-4e0c-9b0b-ad412f4a3a7a <https://www.gkd.bayern.de/de/fluesse/chemie/passau/wallersdorf-uh-ka-11442> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/grundwasser/chemie/iller_lech/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 77, nicht prüfbar 0
+  - govdata.0ab2d814-e71a-4ba3-809e-8a583dfa1a94 <https://www.gkd.bayern.de/de/grundwasser/chemie/iller_lech/4120852600001-4120852600001> `host_resting`
+  - govdata.0bb840ce-7604-4607-b301-d8f202173ec4 <https://www.gkd.bayern.de/de/grundwasser/chemie/iller_lech/1131792700213-1131792700213> `host_resting`
+  - govdata.0df68236-9c5d-457d-bf36-33a4c1afaecb <https://www.gkd.bayern.de/de/grundwasser/chemie/iller_lech/4120842500023-4120842500023> `host_resting`
+  - govdata.0fe3fda2-0b8b-46db-bbc8-64cb33645735 <https://www.gkd.bayern.de/de/grundwasser/chemie/iller_lech/4120842700035-4120842700035> `host_resting`
+  - govdata.1483cbd3-7868-47cd-856c-b2fa94339db0 <https://www.gkd.bayern.de/de/grundwasser/chemie/iller_lech/1131792700048-1131792700048> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/seen/biologie/iller_lech/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 77, nicht prüfbar 0
+  - govdata.0a775c3e-3e4f-428f-b702-aa8ec0aba5c9 <https://www.gkd.bayern.de/de/seen/biologie/iller_lech/transekt-fo-10-130785> `host_resting`
+  - govdata.0fb10f4a-1524-44a0-9da3-9dc0787188c6 <https://www.gkd.bayern.de/de/seen/biologie/iller_lech/transekt-b4-96121> `host_resting`
+  - govdata.0ff3761e-1547-40e9-9f8f-fc0afc3aa064 <https://www.gkd.bayern.de/de/seen/biologie/iller_lech/transekt-ns6-108729> `host_resting`
+  - govdata.13ba1d38-6933-48c0-b4af-be544e3c0e09 <https://www.gkd.bayern.de/de/seen/biologie/iller_lech/transekt-rs8-108918> `host_resting`
+  - govdata.15b4399e-cea9-48df-8b4b-58b5f24bdb64 <https://www.gkd.bayern.de/de/seen/biologie/iller_lech/transekt-7-120637> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/fluesse/biologie/iller_lech/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 73, nicht prüfbar 0
+  - govdata.0d124348-8b13-4dce-9531-1718738ee6ed <https://www.gkd.bayern.de/de/fluesse/biologie/iller_lech/oh-mdg-141108> `host_resting`
+  - govdata.0d3940c9-1bc8-4dfa-8fea-bf876f01f0cd <https://www.gkd.bayern.de/de/fluesse/biologie/iller_lech/br-uh-hochgratbahn-uh-lanzenbach-13371> `host_resting`
+  - govdata.0ee926a0-7be4-4858-b7ce-d0932f88ab69 <https://www.gkd.bayern.de/de/fluesse/biologie/iller_lech/br-b-19-sonthofen-105733> `host_resting`
+  - govdata.18b21fd3-ae88-44a9-b151-7c80ccaa7d7f <https://www.gkd.bayern.de/de/fluesse/biologie/iller_lech/furt-oh-goerisried-176542> `host_resting`
+  - govdata.2030f076-314a-4df0-a8f6-5e2464a63160 <https://www.gkd.bayern.de/de/fluesse/biologie/iller_lech/bruecke-unterau-105827> `host_resting`
+- **geschützt** host `www.daten.bmfsfj.de`: bestanden 0, durchgefallen 0, ohne Antwort 65, nicht prüfbar 0
+- **geschützt** pattern `www.daten.bmfsfj.de/daten/daten/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 65, nicht prüfbar 0
+  - govdata.01103c0c-2c5b-49d8-a0b6-1bf3da5f8da3 <https://www.daten.bmfsfj.de/daten/daten/anteil-der-langzeitarbeitslosen-frauen-und-maenner-an-allen-arbeitslosen-frauen-beziehungsweise-maennern-nach-kreisen-132604> `host_resting`
+  - govdata.09813759-0d2f-45f0-a9ea-2944a0146b5a <https://www.daten.bmfsfj.de/daten/daten/anteil-von-frauen-und-maennern-in-fuehrungspositionen-in-der-justiz-134430> `host_resting`
+  - govdata.0ac7da6d-17e2-42c3-8f6c-05c6e902df09 <https://www.daten.bmfsfj.de/daten/daten/anteil-von-frauen-und-maennern-an-absolventinnen-und-absolventen-mit-allgemeiner-hochschulreife-aus-allgemeinbildenden-schulen-nach-kreisen-134472> `host_resting`
+  - govdata.0eb4c31c-a97e-4d81-855a-f0217479d572 <https://www.daten.bmfsfj.de/daten/daten/anteil-der-frauen-und-maenner-im-alter-von-30-bis-unter-55-in-ausschliesslich-geringfuegiger-beschaeftigung-minijobs-nach-kreisen-132194> `host_resting`
+  - govdata.111e142c-23a4-465b-a2a0-380c13a243aa <https://www.daten.bmfsfj.de/daten/daten/anteil-von-frauen-und-maennern-im-alter-von-15-bis-unter-65-jahren-in-familien-die-ihren-lebensunterhalt-durch-eigene-erwerbstaetigkeit-bestreiten-131902> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/fluesse/biologie/naab_regen/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 65, nicht prüfbar 0
+  - govdata.0abdf923-9fd9-4adf-a6d0-b128b1e764af <https://www.gkd.bayern.de/de/fluesse/biologie/naab_regen/bei-hammerberg-96806> `host_resting`
+  - govdata.0bc9f939-1597-4292-914b-a630c76d5248 <https://www.gkd.bayern.de/de/fluesse/biologie/naab_regen/wbr-1-5km-oh-geisleithen-4607> `host_resting`
+  - govdata.0fb29fc5-9187-4198-bb5c-b429c24a53ca <https://www.gkd.bayern.de/de/fluesse/biologie/naab_regen/uh-stegen-105647> `host_resting`
+  - govdata.11f6d90e-707a-473b-99a6-99d753fa4803 <https://www.gkd.bayern.de/de/fluesse/biologie/naab_regen/strbr-sportplatz-mantel-oh-muendg-143161> `host_resting`
+  - govdata.1a917fb8-d075-497a-ab6f-cdad22434a48 <https://www.gkd.bayern.de/de/fluesse/biologie/naab_regen/strbr-uh-neuenhammer-6366> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/fluesse/abfluss/passau/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 63, nicht prüfbar 0
+  - govdata.0afec327-83e9-46e9-b22e-b75d9f0d2dce <https://www.gkd.bayern.de/de/fluesse/abfluss/passau/schrottenbaummuehle-17404000> `host_resting`
+  - govdata.0ba4d597-19f6-4b5b-a949-d22504218a2e <https://www.gkd.bayern.de/de/fluesse/abfluss/passau/auerbach-17125006> `host_resting`
+  - govdata.0cc7cea2-8107-41da-b2a7-9d8858f59ba2 <https://www.gkd.bayern.de/de/fluesse/abfluss/passau/unterkashof-17466007> `host_resting`
+  - govdata.0de40247-ac63-4544-9683-1d188c707b48 <https://www.gkd.bayern.de/de/fluesse/abfluss/passau/deggendorf-15993001> `host_resting`
+  - govdata.116f5f90-bf32-4c9f-ad75-a691fb3584dc <https://www.gkd.bayern.de/de/fluesse/abfluss/passau/postmuenster-18804706> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/fluesse/chemie/main_unten/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 57, nicht prüfbar 0
+  - govdata.0faec471-c58c-477b-8bfc-e71f4082b3ed <https://www.gkd.bayern.de/de/fluesse/chemie/main_unten/roemershofen-pegel-113504> `host_resting`
+  - govdata.107e61ec-fc55-4be4-8e4e-74b5aea36290 <https://www.gkd.bayern.de/de/fluesse/chemie/main_unten/06-nes-saal-a-d-saale-113492> `host_resting`
+  - govdata.108ec7ef-2d86-490a-a75a-df8472507786 <https://www.gkd.bayern.de/de/fluesse/chemie/main_unten/06-wb-aschach-113604> `host_resting`
+  - govdata.1327e92b-09a5-4268-adaf-5d9cde3a39b1 <https://www.gkd.bayern.de/de/fluesse/chemie/main_unten/marktbreit-bachgasse-malerwinkel-20027> `host_resting`
+  - govdata.13f216d0-6a27-4e83-b2f1-4b8b724e78e9 <https://www.gkd.bayern.de/de/fluesse/chemie/main_unten/schweinhof-pegel-113598> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/fluesse/abfluss/main_unten/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 52, nicht prüfbar 0
+  - govdata.10f22f06-43e9-4c57-ae16-9dce04e3c940 <https://www.gkd.bayern.de/de/fluesse/abfluss/main_unten/buergstadt-24719102> `host_resting`
+  - govdata.12d84b20-ca5a-4226-ab4d-e9b6ee0bff16 <https://www.gkd.bayern.de/de/fluesse/abfluss/main_unten/wuerzburg-24374805> `host_resting`
+  - govdata.17a04af2-ccc7-46c3-8045-ad59a8e30285 <https://www.gkd.bayern.de/de/fluesse/abfluss/main_unten/bad-koenigshofen-im-grabfeld-24401001> `host_resting`
+  - govdata.22a663e9-f09d-4c60-90e9-ad763286044d <https://www.gkd.bayern.de/de/fluesse/abfluss/main_unten/bad-kissingen-golfplatz-24406005> `host_resting`
+  - govdata.25dc6cc5-f1b9-4893-a107-ea2855194b29 <https://www.gkd.bayern.de/de/fluesse/abfluss/main_unten/illesheim-24260500> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/grundwasser/oberesstockwerk/iller_lech/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 51, nicht prüfbar 0
+  - govdata.0b648c1e-7516-42f0-a086-baf8ad2aefe3 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/iller_lech/ortwang-p-13-tr-13621> `host_resting`
+  - govdata.0d1fbf28-7681-48a3-8bd5-2bdd6339888c <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/iller_lech/gwm-2-hrb-sontheim-13672> `host_resting`
+  - govdata.0ddbdcb2-57a0-4651-a5f7-2b2522cccb86 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/iller_lech/langenwang-p12-q4-13146> `host_resting`
+  - govdata.117ffa5d-e2ad-4eed-91cd-238c84a107ae <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/iller_lech/buchloe-gabriel-b1-13144> `host_resting`
+  - govdata.1bd6907d-86aa-4b6f-b54e-a912ca8c8cc6 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/iller_lech/zaisertshofen-678-9165> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/grundwasser/chemie/kelheim/{x}/download`: bestanden 0, durchgefallen 0, ohne Antwort 50, nicht prüfbar 0
+  - govdata.0dc8cf08-1ce7-4379-a098-5369f644fafc <https://www.gkd.bayern.de/de/grundwasser/chemie/kelheim/1131733300048-1131733300048/download> `host_resting`
+  - govdata.0edd5675-c67b-4fd0-bda8-47e64a028b3d <https://www.gkd.bayern.de/de/grundwasser/chemie/kelheim/1131733700134-1131733700134/download> `host_resting`
+  - govdata.16c586df-cfa7-4995-a72c-800643eec42d <https://www.gkd.bayern.de/de/grundwasser/chemie/kelheim/4110682800007-4110682800007/download> `host_resting`
+  - govdata.17d56d26-aea0-4e97-ab6a-2e959bdefff1 <https://www.gkd.bayern.de/de/grundwasser/chemie/kelheim/1132723100071-1132723100071/download> `host_resting`
+  - govdata.194c4a67-2971-42a9-bd4c-7eaacd9ab238 <https://www.gkd.bayern.de/de/grundwasser/chemie/kelheim/1131672900156-1131672900156/download> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/fluesse/biologie/kelheim/{x}/download`: bestanden 0, durchgefallen 0, ohne Antwort 47, nicht prüfbar 0
+  - govdata.0f7022a5-9c71-4aaa-980f-43c29de6db8c <https://www.gkd.bayern.de/de/fluesse/biologie/kelheim/uw-staustufe-19-800m-uh-br-zollhaus-132201/download> `host_resting`
+  - govdata.1157d648-e2cc-441c-85d4-db56535c9bbb <https://www.gkd.bayern.de/de/fluesse/biologie/kelheim/wegbr-oh-heissesheim-103332/download> `host_resting`
+  - govdata.1224dd08-ba01-4654-a042-d67047f3a2a7 <https://www.gkd.bayern.de/de/fluesse/biologie/kelheim/br-oh-mdg-103296/download> `host_resting`
+  - govdata.15551280-e0b8-4aa6-a7c4-acf3c3a2cf2a <https://www.gkd.bayern.de/de/fluesse/biologie/kelheim/oh-br-oberschwaig-103406/download> `host_resting`
+  - govdata.171b251d-15ae-494e-8816-dae96f57471a <https://www.gkd.bayern.de/de/fluesse/biologie/kelheim/200m-u-h-bahnl-markt-schwaben-130316/download> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/meteo/globalstrahlung/kelheim/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 47, nicht prüfbar 0
+  - govdata.1225e466-e4c5-405e-9cb2-3daaf5990254 <https://www.gkd.bayern.de/de/meteo/globalstrahlung/kelheim/ainertshofen-200100> `host_resting`
+  - govdata.12850a71-3f5c-4afe-bfd3-a73271605735 <https://www.gkd.bayern.de/de/meteo/globalstrahlung/kelheim/neuhof-200099> `host_resting`
+  - govdata.18a443f7-3f28-4e08-a37e-31db6facdf6b <https://www.gkd.bayern.de/de/meteo/globalstrahlung/kelheim/eichenried-200114> `host_resting`
+  - govdata.1e67d102-4f99-455c-93fe-4e238feccaf1 <https://www.gkd.bayern.de/de/meteo/globalstrahlung/kelheim/hiltersdorf-200065> `host_resting`
+  - govdata.293ba31c-ee79-4aab-bdd5-85a540f3a847 <https://www.gkd.bayern.de/de/meteo/globalstrahlung/kelheim/eiersdorf-200119> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/grundwasser/oberesstockwerk/inn/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 46, nicht prüfbar 0
+  - govdata.107b8749-b376-48b9-b952-e532faf18e79 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/inn/gwm12-hws-freilassing-23935> `host_resting`
+  - govdata.10badbc2-a1ae-44e7-b4cb-9f7e886175b7 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/inn/eham-westlich-23729> `host_resting`
+  - govdata.15487c69-dd63-4dfb-80d2-87abd1cedee5 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/inn/piding-bk4-23792> `host_resting`
+  - govdata.16422880-e5aa-49d5-81b7-7340456b3baf <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/inn/gwm7-hws-freilassing-23930> `host_resting`
+  - govdata.2b416ffc-2d76-4d3f-86de-b006c54a5599 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/inn/abfalter-noerdlich-23723> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/seen/biologie/kelheim/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 45, nicht prüfbar 0
+  - govdata.1238c6f1-04b1-46f4-971c-cdca12f352b9 <https://www.gkd.bayern.de/de/seen/biologie/kelheim/tiefste-stelle-hauptsperre-2207> `host_resting`
+  - govdata.155e19e5-df70-437c-b07f-2b64a7cde458 <https://www.gkd.bayern.de/de/seen/biologie/kelheim/transekt2-31244> `host_resting`
+  - govdata.176820fc-4532-4bb6-b3aa-804c56b4c79c <https://www.gkd.bayern.de/de/seen/biologie/kelheim/transekt-5-31239> `host_resting`
+  - govdata.198fca56-3940-489e-a5b4-7988eeeef42b <https://www.gkd.bayern.de/de/seen/biologie/kelheim/tiefste-stelle-boje-naehe-ablass-bauwerk-2210> `host_resting`
+  - govdata.1a5ca0bd-ad77-45be-9fee-15aed62ae415 <https://www.gkd.bayern.de/de/seen/biologie/kelheim/tiefste-stelle-steg-muhr-am-see-2175> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/grundwasser/oberesstockwerk/isar/{x}/download`: bestanden 0, durchgefallen 0, ohne Antwort 42, nicht prüfbar 0
+  - govdata.10536b49-953e-4bf2-b64f-9e225cb4a7da <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/isar/plossau-23710/download> `host_resting`
+  - govdata.1988bee6-e7e8-4b1d-8d9e-f7123242e2cc <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/isar/emmerting-z4-23648/download> `host_resting`
+  - govdata.1ce14bec-485b-41dc-9b09-8435948721d7 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/isar/seng-23652/download> `host_resting`
+  - govdata.1ee97653-611d-47f1-9178-a2e9006abbed <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/isar/wimpasing-611a-p52080-21121/download> `host_resting`
+  - govdata.2cb800c1-e00d-48fd-a783-edf8cd13e9d7 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/isar/oberau-2-3-tr-a-25668/download> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/fluesse/abfluss/iller_lech/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 41, nicht prüfbar 0
+  - govdata.0cc012f7-fbf4-4d80-8148-e9f8c7ebb3e2 <https://www.gkd.bayern.de/de/fluesse/abfluss/iller_lech/kempten-11402001> `host_resting`
+  - govdata.11eecd09-217a-4ac1-b439-1752a7904e1c <https://www.gkd.bayern.de/de/fluesse/abfluss/iller_lech/oberstdorf-11412107> `host_resting`
+  - govdata.1b182088-cc64-4d2e-bc44-f5e6fd36ed6c <https://www.gkd.bayern.de/de/fluesse/abfluss/iller_lech/wertach-12401004> `host_resting`
+  - govdata.31924eb4-e93e-4c98-97f5-95309f8b7de4 <https://www.gkd.bayern.de/de/fluesse/abfluss/iller_lech/lauben-11582300> `host_resting`
+  - govdata.387026c4-e4bf-4589-ad09-4e7a0bcfe16a <https://www.gkd.bayern.de/de/fluesse/abfluss/iller_lech/schoellang-11419004> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/fluesse/biologie/passau/{x}/download`: bestanden 0, durchgefallen 0, ohne Antwort 39, nicht prüfbar 0
+  - govdata.237b9211-b456-4a68-8eed-897e286a62c3 <https://www.gkd.bayern.de/de/fluesse/biologie/passau/kammersdorf-129345/download> `host_resting`
+  - govdata.272ab2e1-d3e2-4d31-b244-f98c2de3a497 <https://www.gkd.bayern.de/de/fluesse/biologie/passau/schwarzenthal-oestliches-ortsende-106467/download> `host_resting`
+  - govdata.2ea1d426-72c7-48ef-a868-d0f2d0c0f7f6 <https://www.gkd.bayern.de/de/fluesse/biologie/passau/winzer-103394/download> `host_resting`
+  - govdata.31965c80-59bf-4b4c-86a9-5b9dcae044ec <https://www.gkd.bayern.de/de/fluesse/biologie/passau/uh-haus-9522/download> `host_resting`
+  - govdata.37b37b8e-d736-4432-9752-b7091bb48585 <https://www.gkd.bayern.de/de/fluesse/biologie/passau/wegbr-oh-unterdeggenbach-96971/download> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/grundwasser/oberesstockwerk/passau/{x}/download`: bestanden 0, durchgefallen 0, ohne Antwort 39, nicht prüfbar 0
+  - govdata.0be5b79f-479a-4d67-8fd2-3e6e9248eedc <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/passau/ottmaring_op9-18670/download> `host_resting`
+  - govdata.1607e510-ea6c-4f1f-9664-fd17e1ea2cb4 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/passau/gangkofen-b-7-19675/download> `host_resting`
+  - govdata.1d48dd7d-4fa4-41a4-90dd-2a50963951f8 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/passau/fuerhaupt-ws-7844-7844/download> `host_resting`
+  - govdata.22df4592-0c22-4d98-bb5b-7edb4ae50e1f <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/passau/otzing-7851-7851/download> `host_resting`
+  - govdata.28481e20-cc86-413f-91b6-0ef44eb26d97 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/passau/otzing-b-89-7807/download> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/seen/biologie/isar/{x}/download`: bestanden 0, durchgefallen 0, ohne Antwort 39, nicht prüfbar 0
+  - govdata.0af50343-8b7a-457a-a7b9-ac442b054cae <https://www.gkd.bayern.de/de/seen/biologie/isar/transekt-6-109493/download> `host_resting`
+  - govdata.15d56d90-69dd-49eb-9683-9cbe9f830a8c <https://www.gkd.bayern.de/de/seen/biologie/isar/schwemmkegel-am-suedufer-badebereich-transekt-6-31843/download> `host_resting`
+  - govdata.28c98df5-ef4b-49f2-a3f1-1b31e5269092 <https://www.gkd.bayern.de/de/seen/biologie/isar/transekt8a_nordowk-120824/download> `host_resting`
+  - govdata.2a5d1ff3-2b48-43b0-9452-c9176fdf60c2 <https://www.gkd.bayern.de/de/seen/biologie/isar/transekt2a-120671/download> `host_resting`
+  - govdata.2fc9997c-0a29-4c42-b639-61e805eee10b <https://www.gkd.bayern.de/de/seen/biologie/isar/transekt-3-suedufer-a-h-steilufer-102913/download> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/seen/biologie/passau/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 39, nicht prüfbar 0
+  - govdata.0d804c64-8b1f-48e6-acb8-d4e88b1a1c34 <https://www.gkd.bayern.de/de/seen/biologie/passau/transekt-3-106287> `host_resting`
+  - govdata.11b642e7-04c7-4b52-8e5b-cb83d9e0b3da <https://www.gkd.bayern.de/de/seen/biologie/passau/transekt-6-106302> `host_resting`
+  - govdata.1a0f96ec-42b9-4597-a89e-f94b80f84173 <https://www.gkd.bayern.de/de/seen/biologie/passau/transekt-8-133600> `host_resting`
+  - govdata.1abaf879-18a1-45a2-8ca9-48e0ce2a3bac <https://www.gkd.bayern.de/de/seen/biologie/passau/transekt-6-no-ufer-bei-bootsverleih-40576> `host_resting`
+  - govdata.2ad393d9-3fe7-4cb6-a678-25ae6c621a61 <https://www.gkd.bayern.de/de/seen/biologie/passau/transekt-4-192257> `host_resting`
+- **geschützt** host `www.duva-server.de`: bestanden 0, durchgefallen 0, ohne Antwort 38, nicht prüfbar 0
+- **geschützt** pattern `www.duva-server.de/{x}/dataset/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 38, nicht prüfbar 0
+  - govdata.04cd3116-ed7b-4b07-9290-d0e9f7bbd3d5 <https://www.duva-server.de/psp2dcat/dataset/de-bw-pforzheim-baubloecke_nach_einwohnern_mit_hauptwohnsitz_in_pforzheim_im_zeitverlauf> `host_resting`
+  - govdata.0d42ec0e-e906-4ea4-bfe4-fe04d7afc81a <https://www.duva-server.de/obis2dcat/dataset/de-nw-oberhausen-regionalvergleich_-_krankenhaeuser_krankenbetten_stationaer_behandelte_krank_sowie_berechnungs-belegungstage_ab_2015> `host_resting`
+  - govdata.294c47c4-0238-4df4-bc34-b2bd39a08cd7 <https://www.duva-server.de/psp2dcat/dataset/de-bw-pforzheim-stadtwerke_pforzheim> `host_resting`
+  - govdata.2a4e504a-e4d9-4773-879a-ccd9c70df884 <https://www.duva-server.de/obis2dcat/dataset/de-nw-oberhausen-regionalvergleich_-_katasterflaeche_nach_nutzungsarten_ab_2016> `host_resting`
+  - govdata.309ee1a2-be05-45a5-a75a-637f8e39af15 <https://www.duva-server.de/obis2dcat/dataset/de-nw-oberhausen-regionalvergleich_-_gewerbean-_und_-abmeldungen_ab_2015> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/grundwasser/chemie/regnitz/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 38, nicht prüfbar 0
+  - govdata.0e362ab2-878a-4dea-80dc-1e081d4b1880 <https://www.gkd.bayern.de/de/grundwasser/chemie/regnitz/4110653200108-4110653200108> `host_resting`
+  - govdata.1ac60665-bc53-499f-aab8-e43bd62f48e1 <https://www.gkd.bayern.de/de/grundwasser/chemie/regnitz/1131643200038-1131643200038> `host_resting`
+  - govdata.2ae29d01-7fce-4a47-846e-5053fbddd2b2 <https://www.gkd.bayern.de/de/grundwasser/chemie/regnitz/1132633400028-1132633400028> `host_resting`
+  - govdata.2d4225f0-2b00-4173-8383-677750437069 <https://www.gkd.bayern.de/de/grundwasser/chemie/regnitz/4110643300029-4110643300029> `host_resting`
+  - govdata.2d8bc25a-f943-43a2-a8ea-f1d07f2eb891 <https://www.gkd.bayern.de/de/grundwasser/chemie/regnitz/4110643100087-4110643100087> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/grundwasser/tieferestockwerke/passau/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 37, nicht prüfbar 0
+  - govdata.0afcee9b-812c-410e-8cfa-9fc293054e56 <https://www.gkd.bayern.de/de/grundwasser/tieferestockwerke/passau/hoelsbrunn-t2-19242> `host_resting`
+  - govdata.12661f67-4c72-42d6-bd68-fe6716baf9cd <https://www.gkd.bayern.de/de/grundwasser/tieferestockwerke/passau/wackersdorf-1kt-2616> `host_resting`
+  - govdata.17141e4b-5484-49c8-876b-227ff4b5daa6 <https://www.gkd.bayern.de/de/grundwasser/tieferestockwerke/passau/brunnen-vii-kohlstorf-19618> `host_resting`
+  - govdata.276dbc74-3663-4155-8e42-ed193d59545d <https://www.gkd.bayern.de/de/grundwasser/tieferestockwerke/passau/osterhofen-sued-bo-c-7165> `host_resting`
+  - govdata.279b87e4-c9fc-4da3-8132-e4f64daad1d4 <https://www.gkd.bayern.de/de/grundwasser/tieferestockwerke/passau/brunnen-ii-muenchsdorf-15206> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/meteo/globalstrahlung/main_unten/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 34, nicht prüfbar 0
+  - govdata.14c07cd2-2c6d-4cd1-ab9f-f088728c587f <https://www.gkd.bayern.de/de/meteo/globalstrahlung/main_unten/ebertshausen-200027> `host_resting`
+  - govdata.210d0ddc-6d8e-4867-bc5a-b62ed4dffe22 <https://www.gkd.bayern.de/de/meteo/globalstrahlung/main_unten/schoellkrippen-200130> `host_resting`
+  - govdata.2132a2bb-e36c-42fc-aef3-a79eeb8eab16 <https://www.gkd.bayern.de/de/meteo/globalstrahlung/main_unten/albertshofen-200028> `host_resting`
+  - govdata.2180c6d6-386f-4768-b320-d8a8ffe2872c <https://www.gkd.bayern.de/de/meteo/globalstrahlung/main_unten/bischbrunn-602244> `host_resting`
+  - govdata.21d2327a-91c2-4b61-af47-d0184ab7a4e8 <https://www.gkd.bayern.de/de/meteo/globalstrahlung/main_unten/brueckenau-staatsbad-72416414> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/seen/biologie/naab_regen/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 34, nicht prüfbar 0
+  - govdata.0c713b8c-1930-4cb5-86aa-2877ed967d97 <https://www.gkd.bayern.de/de/seen/biologie/naab_regen/transekt-4-106676> `host_resting`
+  - govdata.1409b238-ac6d-4cad-b664-5e8d7abad64d <https://www.gkd.bayern.de/de/seen/biologie/naab_regen/transekt-5-nordufer-ca-250-m-oestl-bruecke-31829> `host_resting`
+  - govdata.165aff30-c83c-415e-8e98-a1ab84006567 <https://www.gkd.bayern.de/de/seen/biologie/naab_regen/transekt-3-106675> `host_resting`
+  - govdata.1822e901-d501-45c2-b104-78783079ca0e <https://www.gkd.bayern.de/de/seen/biologie/naab_regen/transekt-5-31823> `host_resting`
+  - govdata.202c3e90-cb37-4393-85ff-0c942776801b <https://www.gkd.bayern.de/de/seen/biologie/naab_regen/transekt-7-suedufer-ca-300-m-westl-bruecke-31831> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/fluesse/abfluss/naab_regen/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 33, nicht prüfbar 0
+  - govdata.0ebcbc31-930e-42d2-85d3-de80adc96b46 <https://www.gkd.bayern.de/de/fluesse/abfluss/naab_regen/liebenstein-werksabfluss-14108000> `host_resting`
+  - govdata.0f836d39-2b64-44a2-94b7-0360e4ed1971 <https://www.gkd.bayern.de/de/fluesse/abfluss/naab_regen/pommelsbrunn-24227006> `host_resting`
+  - govdata.288ba546-1883-4d9b-a081-a2a4cbae9275 <https://www.gkd.bayern.de/de/fluesse/abfluss/naab_regen/fronhof-14486008> `host_resting`
+  - govdata.2929f0a6-d28e-4b5b-954a-52cee87813a1 <https://www.gkd.bayern.de/de/fluesse/abfluss/naab_regen/friedersreuth-14198105> `host_resting`
+  - govdata.36d00d41-a202-4071-b5eb-94c4ba3060f6 <https://www.gkd.bayern.de/de/fluesse/abfluss/naab_regen/untereppenried-14465008> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/fluesse/chemie/elbe/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 33, nicht prüfbar 0
+  - govdata.0b8c9569-9788-4f29-9925-6aec8f768c56 <https://www.gkd.bayern.de/de/fluesse/chemie/elbe/str-br-in-kauerndorf-beim-pegel-13927> `host_resting`
+  - govdata.1f5e5b8b-e3da-429a-8a58-6faaad8da111 <https://www.gkd.bayern.de/de/fluesse/chemie/elbe/reuth-kw-oberwasser-18423> `host_resting`
+  - govdata.2a9e742a-80a7-4db8-8eab-41ea7fed4e44 <https://www.gkd.bayern.de/de/fluesse/chemie/elbe/vor-mdg-in-wiesent-bei-pegel-18109> `host_resting`
+  - govdata.308e26d1-89b7-4c9d-8241-13bef1b00f9f <https://www.gkd.bayern.de/de/fluesse/chemie/elbe/schulmuehle-vor-mdg-in-die-leinleiter-18318> `host_resting`
+  - govdata.3cc7c69a-a4cb-42cc-9292-0be6e7529c14 <https://www.gkd.bayern.de/de/fluesse/chemie/elbe/oh-kleinschmieden-109686> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/meteo/niederschlag/isar/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 33, nicht prüfbar 0
+  - govdata.14edf32c-4026-41be-aa4b-5019696b7e41 <https://www.gkd.bayern.de/de/meteo/niederschlag/isar/mittenwald-71613111> `host_resting`
+  - govdata.197814ee-4fe8-4a93-b1f8-77be99a82152 <https://www.gkd.bayern.de/de/meteo/niederschlag/isar/geretsried-feuerwehrschule-14351> `host_resting`
+  - govdata.1c363d64-40b8-47b0-bc14-12ff0bcf0878 <https://www.gkd.bayern.de/de/meteo/niederschlag/isar/miesbach-klaeranlage-6295> `host_resting`
+  - govdata.278f37b5-f4f4-4f23-8978-63a01146c0dc <https://www.gkd.bayern.de/de/meteo/niederschlag/isar/inzell-2412> `host_resting`
+  - govdata.2d708b88-408b-4331-811a-7ffad4ff4f32 <https://www.gkd.bayern.de/de/meteo/niederschlag/isar/lenggries-vorderriss-19407> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/grundwasser/chemie/isar/{x}/download`: bestanden 0, durchgefallen 0, ohne Antwort 29, nicht prüfbar 0
+  - govdata.15704a4c-6d11-4dc7-8f20-c45c01bd6811 <https://www.gkd.bayern.de/de/grundwasser/chemie/isar/1131794100455-1131794100455/download> `host_resting`
+  - govdata.1d9c7a5c-a4d7-4f09-bd64-3bc80d9ae8b4 <https://www.gkd.bayern.de/de/grundwasser/chemie/isar/1131784000069-1131784000069/download> `host_resting`
+  - govdata.208b5f19-228c-42b3-863f-d8d307f610a7 <https://www.gkd.bayern.de/de/grundwasser/chemie/isar/1131803500076-1131803500076/download> `host_resting`
+  - govdata.211a1de1-8fff-4153-8281-d65f20b13e15 <https://www.gkd.bayern.de/de/grundwasser/chemie/isar/1131793600241-1131793600241/download> `host_resting`
+  - govdata.250265bb-ddd2-4033-8e17-c0eccd37e1c6 <https://www.gkd.bayern.de/de/grundwasser/chemie/isar/4120823500181-4120823500181/download> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/grundwasser/chemie/main_unten/{x}/download`: bestanden 0, durchgefallen 0, ohne Antwort 29, nicht prüfbar 0
+  - govdata.11b6825b-7196-4966-9db7-b5817fede1c7 <https://www.gkd.bayern.de/de/grundwasser/chemie/main_unten/4110622400012-4110622400012/download> `host_resting`
+  - govdata.13aca5a7-c6e0-4609-a885-b52f6e1a99b6 <https://www.gkd.bayern.de/de/grundwasser/chemie/main_unten/1131612600054-1131612600054/download> `host_resting`
+  - govdata.22fbc0be-bdaa-4733-b88c-5d7c0b201108 <https://www.gkd.bayern.de/de/grundwasser/chemie/main_unten/4120612200016-4120612200016/download> `host_resting`
+  - govdata.2bea7db8-e4b6-441b-8784-4b85056bdbd5 <https://www.gkd.bayern.de/de/grundwasser/chemie/main_unten/4120592200019-4120592200019/download> `host_resting`
+  - govdata.2cba1082-e3c2-4391-a288-c12996c87cc8 <https://www.gkd.bayern.de/de/grundwasser/chemie/main_unten/4120642900034-4120642900034/download> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/grundwasser/tieferestockwerke/main_unten/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 29, nicht prüfbar 0
+  - govdata.0c3c3c3e-8ce6-44a4-9e60-07facaec89b7 <https://www.gkd.bayern.de/de/grundwasser/tieferestockwerke/main_unten/gelchsheim-mu-6-27141> `host_resting`
+  - govdata.0db853ce-ab55-4dd0-a1c0-ef68c5729286 <https://www.gkd.bayern.de/de/grundwasser/tieferestockwerke/main_unten/volkach-mu-16-27144> `host_resting`
+  - govdata.166dd31f-c180-431e-a5fd-230b3bc54405 <https://www.gkd.bayern.de/de/grundwasser/tieferestockwerke/main_unten/massbach-mst-1-22141> `host_resting`
+  - govdata.17caee22-e901-4c6f-8e97-ccb6cb8b82e3 <https://www.gkd.bayern.de/de/grundwasser/tieferestockwerke/main_unten/gefaell-s4-22156> `host_resting`
+  - govdata.1942e26f-a8d5-47e7-8f87-3c183e0a0868 <https://www.gkd.bayern.de/de/grundwasser/tieferestockwerke/main_unten/oberpleichfeld-9-27130> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/grundwasser/chemie/elbe/{x}/download`: bestanden 0, durchgefallen 0, ohne Antwort 26, nicht prüfbar 0
+  - govdata.0ab9fc13-1436-401b-a2d6-ee675f2fb2e9 <https://www.gkd.bayern.de/de/grundwasser/chemie/elbe/1132593100069-1132593100069/download> `host_resting`
+  - govdata.1f229c8d-20d7-442c-b6c7-b56c2deb00b6 <https://www.gkd.bayern.de/de/grundwasser/chemie/elbe/4110583000004-4110583000004/download> `host_resting`
+  - govdata.26633d49-7c96-4d90-ae12-0b0d7806992c <https://www.gkd.bayern.de/de/grundwasser/chemie/elbe/1132593100066-1132593100066/download> `host_resting`
+  - govdata.27d38d82-befe-464e-8e1a-738d16bcb61f <https://www.gkd.bayern.de/de/grundwasser/chemie/elbe/4110573700004-4110573700004/download> `host_resting`
+  - govdata.28582dbc-5c58-4754-ba72-db1190dcdb43 <https://www.gkd.bayern.de/de/grundwasser/chemie/elbe/4110593800004-4110593800004/download> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/grundwasser/chemie/passau/{x}/download`: bestanden 0, durchgefallen 0, ohne Antwort 26, nicht prüfbar 0
+  - govdata.0cb4f517-9bcc-4f87-b4b8-0a7e6e20cfe8 <https://www.gkd.bayern.de/de/grundwasser/chemie/passau/1131754100124-1131754100124/download> `host_resting`
+  - govdata.21297b67-2be8-4ed2-992c-be1d9b084de5 <https://www.gkd.bayern.de/de/grundwasser/chemie/passau/1132733800216-1132733800216/download> `host_resting`
+  - govdata.21461b68-334c-40a3-801a-6440e10fd809 <https://www.gkd.bayern.de/de/grundwasser/chemie/passau/1131703900167-1131703900167/download> `host_resting`
+  - govdata.53346daa-90ed-433e-a656-d270de7eff49 <https://www.gkd.bayern.de/de/grundwasser/chemie/passau/1132684200085-1132684200085/download> `host_resting`
+  - govdata.58046563-4050-4baa-89e2-427dcc7220dd <https://www.gkd.bayern.de/de/grundwasser/chemie/passau/4120744300011-4120744300011/download> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/meteo/globalstrahlung/isar/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 26, nicht prüfbar 0
+  - govdata.18042942-713e-432d-a9b8-2b61d31aef96 <https://www.gkd.bayern.de/de/meteo/globalstrahlung/isar/asen-200078> `host_resting`
+  - govdata.22c969f5-4bbc-4f7c-8f3d-c1a85735fcc8 <https://www.gkd.bayern.de/de/meteo/globalstrahlung/isar/osterseeon-200043> `host_resting`
+  - govdata.3092bbd6-884f-4b3c-ade9-4a6514ded1e3 <https://www.gkd.bayern.de/de/meteo/globalstrahlung/isar/forsting-200077> `host_resting`
+  - govdata.39f9f57a-f213-4a34-9774-38a897942875 <https://www.gkd.bayern.de/de/meteo/globalstrahlung/isar/karolinenfeld-200125> `host_resting`
+  - govdata.4cc04b05-3f9c-46eb-85a2-6977b9fa8ae9 <https://www.gkd.bayern.de/de/meteo/globalstrahlung/isar/nilling-200117> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/fluesse/biologie/main_unten/{x}/download`: bestanden 0, durchgefallen 0, ohne Antwort 25, nicht prüfbar 0
+  - govdata.180322fe-fc5c-4a93-b5bc-ed6efc2c0d8e <https://www.gkd.bayern.de/de/fluesse/biologie/main_unten/brandmuehle-uh-20879/download> `host_resting`
+  - govdata.21b23e9b-dbea-4336-9ac2-a8557d30cf1d <https://www.gkd.bayern.de/de/fluesse/biologie/main_unten/erlabrunn-kw-ow-20256/download> `host_resting`
+  - govdata.31b8d4dc-0bfb-49bb-ab77-667deea0e7c3 <https://www.gkd.bayern.de/de/fluesse/biologie/main_unten/bad-brueckenau-pegel-128859/download> `host_resting`
+  - govdata.40b0a99d-e29e-4889-9b38-eafcee9becca <https://www.gkd.bayern.de/de/fluesse/biologie/main_unten/muendung-ooh-strbr-20715/download> `host_resting`
+  - govdata.4cfdc650-4cf2-45e4-8386-013783c2dddd <https://www.gkd.bayern.de/de/fluesse/biologie/main_unten/zell-a-e-im-wald-114837/download> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/seen/biologie/inn/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 24, nicht prüfbar 0
+  - govdata.0c013a9c-1ea7-4116-822c-542112548a32 <https://www.gkd.bayern.de/de/seen/biologie/inn/ufer-oestl-badhaeuselgraben-bei-eiche-seemair-transekt-3-31835> `host_resting`
+  - govdata.0ce19990-a0cd-4eb7-b4b6-3e35f4adc0d4 <https://www.gkd.bayern.de/de/seen/biologie/inn/transekt-5-108205> `host_resting`
+  - govdata.158594d8-5519-4da0-9b51-a4833085f3e1 <https://www.gkd.bayern.de/de/seen/biologie/inn/transekt-6-120729> `host_resting`
+  - govdata.1c009de2-d69c-4edb-ab51-8637085f2455 <https://www.gkd.bayern.de/de/seen/biologie/inn/transekt-9-120744> `host_resting`
+  - govdata.2aa66849-ab2e-4c8a-9f52-94c283e539ad <https://www.gkd.bayern.de/de/seen/biologie/inn/badebucht-am-nordostufer-auf-dem-freizeitgelaende-bad-transekt-5-31837> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/grundwasser/oberesstockwerk/naab_regen/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 23, nicht prüfbar 0
+  - govdata.129c7612-aa74-47d5-a593-6b1d6b1ed813 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/naab_regen/hessenreuth-bo-a1-24138> `host_resting`
+  - govdata.1b5fd6de-ed5c-4e26-8597-4e81a4d4ebed <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/naab_regen/pressath-zessau-bo-a3-24136> `host_resting`
+  - govdata.1c4b262d-d2aa-40a0-ad88-704c5dc4bb3d <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/naab_regen/freihungsand-ii-657-2110> `host_resting`
+  - govdata.1e87a0e0-f050-44dd-a5ee-90c14c1c38b4 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/naab_regen/haid-w-1-2152> `host_resting`
+  - govdata.2b4d74c6-86d4-4d68-afd6-541b05ecb826 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/naab_regen/unterwildenau-q2-24151> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/fluesse/biologie/regnitz/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 22, nicht prüfbar 0
+  - govdata.0fc8c7d8-9ce5-40b0-96a7-8f8ce61e5c9d <https://www.gkd.bayern.de/de/fluesse/biologie/regnitz/hausen-messstation-17984> `host_resting`
+  - govdata.11cfdfb1-0b6b-48aa-8139-b75b6edcd7ef <https://www.gkd.bayern.de/de/fluesse/biologie/regnitz/uh-emdg-haidelbach-petersbruecke-17607> `host_resting`
+  - govdata.158adbe4-bdef-43a8-b74c-ee05d9bd913d <https://www.gkd.bayern.de/de/fluesse/biologie/regnitz/pegel-huettendorf-17783> `host_resting`
+  - govdata.1657e6bd-9fb6-4bc3-a6f0-759f2be30f84 <https://www.gkd.bayern.de/de/fluesse/biologie/regnitz/strbr-herzogenaurach-burgstall-17828> `host_resting`
+  - govdata.2b5765e8-21fd-46cf-9bcd-a6435768738e <https://www.gkd.bayern.de/de/fluesse/biologie/regnitz/oh-haselstauden-strbr-e-werk-18352> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/meteo/globalstrahlung/passau/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 22, nicht prüfbar 0
+  - govdata.10456291-8a0c-4506-ab72-1051029e9350 <https://www.gkd.bayern.de/de/meteo/globalstrahlung/passau/kitzenried-200033> `host_resting`
+  - govdata.51702371-f098-4891-8c26-ac681880791c <https://www.gkd.bayern.de/de/meteo/globalstrahlung/passau/steinbeissen-200016> `host_resting`
+  - govdata.5220c473-5acb-4d57-85a2-efaae001740a <https://www.gkd.bayern.de/de/meteo/globalstrahlung/passau/eiserszell-200132> `host_resting`
+  - govdata.52eed3e2-1e8c-4282-823c-43582ab834d4 <https://www.gkd.bayern.de/de/meteo/globalstrahlung/passau/eschlkam-200146> `host_resting`
+  - govdata.628e140d-774b-48f8-af61-9edd9d153b7d <https://www.gkd.bayern.de/de/meteo/globalstrahlung/passau/neusling-200014> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/seen/biologie/elbe/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 22, nicht prüfbar 0
+  - govdata.25375097-ee47-4f02-bbf2-8fc3e376c4de <https://www.gkd.bayern.de/de/seen/biologie/elbe/transekt-1-mitte-westufer-107306> `host_resting`
+  - govdata.362af2b0-d8c6-4eec-ace4-b52b8f70773f <https://www.gkd.bayern.de/de/seen/biologie/elbe/vorsperre-transekt-4-31854> `host_resting`
+  - govdata.3a716496-c14f-4a58-8a77-291d4fa981dc <https://www.gkd.bayern.de/de/seen/biologie/elbe/transekt-2-nordwestufer-107307> `host_resting`
+  - govdata.3aa6d13d-e35c-4ed4-aea4-373b9e0ca045 <https://www.gkd.bayern.de/de/seen/biologie/elbe/hauptsee-transekt-2-31845> `host_resting`
+  - govdata.3f1c1e35-0037-451a-b331-e09324812c6a <https://www.gkd.bayern.de/de/seen/biologie/elbe/hauptsperre-transekt-6-31856> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/fluesse/biologie/isar/{x}/download`: bestanden 0, durchgefallen 0, ohne Antwort 21, nicht prüfbar 0
+  - govdata.1614cf3c-e8d6-4bbb-a7ad-85a8479b45d1 <https://www.gkd.bayern.de/de/fluesse/biologie/isar/alte-bruecke-hohenwart-12581/download> `host_resting`
+  - govdata.35111104-8d9f-410c-bae9-41d5b70f9a50 <https://www.gkd.bayern.de/de/fluesse/biologie/isar/uh-sportgelaende-oberau-600m-oh-muendung-loisach-10842/download> `host_resting`
+  - govdata.4d0703c6-3b6d-4068-8621-2b842a279097 <https://www.gkd.bayern.de/de/fluesse/biologie/isar/uh-wehr-oh-wiedereinleitung-10830/download> `host_resting`
+  - govdata.62f42694-6d83-497a-b1a8-923ba3234006 <https://www.gkd.bayern.de/de/fluesse/biologie/isar/suedlich-greiling-br-oh-mdg-140993/download> `host_resting`
+  - govdata.64435892-af72-470d-8956-69016ad03e8d <https://www.gkd.bayern.de/de/fluesse/biologie/isar/rissbach-pegel-113916/download> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/grundwasser/oberesstockwerk/elbe/{x}/download`: bestanden 0, durchgefallen 0, ohne Antwort 21, nicht prüfbar 0
+  - govdata.122ce690-e7cc-4e3f-9a5d-d7da7839e4a5 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/elbe/unterwinterbach-231-17148/download> `host_resting`
+  - govdata.159606e6-e440-4b0c-aaf1-44431594be27 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/elbe/kulmbach-blaich-1-6701/download> `host_resting`
+  - govdata.1a5508f3-87a4-4613-af65-a3e71f858c5e <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/elbe/dietendorf-15-5176/download> `host_resting`
+  - govdata.2f37e4a2-1b4f-4cb3-b660-6c8c2030c910 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/elbe/kaltenbrunn-214-5142/download> `host_resting`
+  - govdata.52dcd8a7-0320-4263-b767-71a5287c3b88 <https://www.gkd.bayern.de/de/grundwasser/oberesstockwerk/elbe/gwm-b-koellersberg-6712/download> `host_resting`
+- **geschützt** pattern `www.gkd.bayern.de/de/meteo/niederschlag/kelheim/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 20, nicht prüfbar 0
+  - govdata.229f59f2-5471-4233-b180-ce4a99612d52 <https://www.gkd.bayern.de/de/meteo/niederschlag/kelheim/rothsee-bei-allersberg-6252> `host_resting`
+  - govdata.26e6212f-2577-46b3-8cce-da7a54cc90ca <https://www.gkd.bayern.de/de/meteo/niederschlag/kelheim/finsing-1366> `host_resting`
+  - govdata.2b613893-edc5-440f-8b76-3b9882666893 <https://www.gkd.bayern.de/de/meteo/niederschlag/kelheim/treuchtlingen-71345300> `host_resting`
+  - govdata.2e0dc7d3-7422-41d4-955d-00dcdb273d25 <https://www.gkd.bayern.de/de/meteo/niederschlag/kelheim/bechhofen-mittelfranken-voggendorf-323> `host_resting`
+  - govdata.3c7ca5d8-19bd-4f18-be8d-61c3dcd37371 <https://www.gkd.bayern.de/de/meteo/niederschlag/kelheim/breitenbrunn-fuerbuch-677> `host_resting`
+- pattern `www.govdata.de/suche/daten/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 0, nicht prüfbar 56154
+  - govdata.00006ca2-a6f1-40e4-afc7-95cb2c4f74f7 <https://www.govdata.de/suche/daten/2-anderung-zum-bebauungsplan-nr-150-ferienhausgebiet-haerswinkelwiesen-der-gemeinde-geeste> `form_unconfirmed`
+  - govdata.0001690f-e982-451a-938e-76b54d7e684d <https://www.govdata.de/suche/daten/topographische-karte-1-25-000-2933-gusborn-1994> `form_unconfirmed`
+  - govdata.0001830f-833d-424a-9feb-25cd630c328b <https://www.govdata.de/suche/daten/topographische-karte-1-25-000-2943-rheinsberg-s-1999> `form_unconfirmed`
+  - govdata.0004ad38-1311-4ae0-acc5-ecd5dbeba803 <https://www.govdata.de/suche/daten/fnp-hambergen-3-anderung> `form_unconfirmed`
+  - govdata.0004b1e9-1658-4e1c-9c29-21452f7783ee <https://www.govdata.de/suche/daten/bebauungsplan-nr-122-bahnhofsvorplatz> `form_unconfirmed`
+- host `registry.gdi-de.org`: bestanden 0, durchgefallen 1, ohne Antwort 0, nicht prüfbar 1812
+- pattern `registry.gdi-de.org/id/de.nw/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 0, nicht prüfbar 1672
+  - govdata.000200b5-6ac4-4478-9bc4-1edb4262f574 <https://registry.gdi-de.org/id/de.nw/HAA004> `redirect_host`
+  - govdata.00031581-335c-4e5a-8aaf-17e993a693fe <https://registry.gdi-de.org/id/de.nw/5b4204be-8193-45d6-94d4-441e6d7fefd6> `redirect_host`
+  - govdata.005452e4-8475-459d-970a-aab7e6fb36f8 <https://registry.gdi-de.org/id/de.nw/74aaa7ac-12a4-482c-b7bc-0c2e04b35004> `redirect_host`
+  - govdata.005f5e90-81c3-4a5d-9b0e-a9daba136722 <https://registry.gdi-de.org/id/de.nw/GE_04e2e05c-519c-4b7c-a94c-c96c8168ef41> `redirect_host`
+  - govdata.009e242c-a1ef-4898-b6b1-cf5e3fed59df <https://registry.gdi-de.org/id/de.nw/WUP-GUID_d4af51a0-4112-482d-9366-886fb4a33421> `redirect_host`
+- host `geoportal.sachsen.de`: bestanden 0, durchgefallen 0, ohne Antwort 0, nicht prüfbar 666
+- pattern `geoportal.sachsen.de/md/{id}`: bestanden 0, durchgefallen 0, ohne Antwort 0, nicht prüfbar 666
+  - govdata.004fe411-b633-4069-9cc3-21bd1d250d40 <https://geoportal.sachsen.de/md/7789809d-fe44-4daf-8bf8-54b024c5e60a> `redirect_host`
+  - govdata.00dee2c9-1b50-4833-a545-1ec7dc55bb78 <https://geoportal.sachsen.de/md/b0adf28b-c35f-42a7-a8de-388c03458693> `redirect_host`
+  - govdata.019e2f13-db7b-4dd2-8380-8493b03ab9da <https://geoportal.sachsen.de/md/3730e52e-2b84-48e4-896f-9fc9ff794fbd> `redirect_host`
+  - govdata.01a3125a-2595-4602-9d53-233f3e98ea5a <https://geoportal.sachsen.de/md/6d4fb955-40d1-4ed5-96cd-a5a87f500f7a> `redirect_host`
+  - govdata.028ca65c-62ef-4e56-bd63-204c35e48426 <https://geoportal.sachsen.de/md/4c805504-3820-445d-8ca5-6894773005c5> `redirect_host`
+- host `doi.org`: bestanden 0, durchgefallen 0, ohne Antwort 0, nicht prüfbar 608
+- pattern `doi.org/{x}/{x}`: bestanden 0, durchgefallen 0, ohne Antwort 0, nicht prüfbar 608
+  - govdata.69009590-2c20-433a-aeb8-753baba4db84 <https://doi.org/10.14644/DUST2021.001> `redirect_host`
+  - govdata.8ce55a1f-de9c-4fc9-93cf-9400d2210ce1 <https://doi.org/10.5281/zenodo.23596067> `redirect_host`
+  - govdata.dd7633ef-37b3-42c9-a7b2-5d3972553ccc <https://doi.org/10.5281/zenodo.23557186> `redirect_host`
+  - govdata.e2541a53-a054-4b4e-b242-81764d9f89d4 <https://doi.org/10.5281/zenodo.7594206> `redirect_host`
+  - govdata.fed1b1f2-e710-4266-a158-f98f49096c22 <https://doi.org/10.5281/zenodo.22828775> `redirect_host`
+- host `opendata.schleswig-holstein.de`: bestanden 533, durchgefallen 3, ohne Antwort 0, nicht prüfbar 0
+- pattern `opendata.schleswig-holstein.de/dataset/{id}`: bestanden 318, durchgefallen 3, ohne Antwort 0, nicht prüfbar 0
+  - govdata.11ccce52-78b1-46c4-8f3b-57f3a8dd1a5f <https://opendata.schleswig-holstein.de/dataset/StaNord_CMS:56884> `http_404`
+  - govdata.184acb27-cccd-422f-b1b7-ed19dd5a018c <https://opendata.schleswig-holstein.de/dataset/StaNord_CMS:60466> `http_404`
+  - govdata.219454f4-49ec-435d-b778-431cc8cbbbe2 <https://opendata.schleswig-holstein.de/dataset/StaNord_CMS:56886> `http_404`
+- host `www.openagrar.de`: bestanden 0, durchgefallen 0, ohne Antwort 0, nicht prüfbar 287
+- pattern `www.openagrar.de/receive/{id}`: bestanden 0, durchgefallen 0, ohne Antwort 0, nicht prüfbar 287
+  - govdata.01d91f4a-d65c-438f-b05f-25fb07320afd <https://www.openagrar.de/receive/openagrar_mods_00094567> `robots`
+  - govdata.037bf04d-67c5-4cce-aa8f-15355f0bcb07 <https://www.openagrar.de/receive/openagrar_mods_00097449> `robots`
+  - govdata.03b2afe3-1bd4-4b31-a236-8e9e9daf9aa8 <https://www.openagrar.de/receive/openagrar_mods_00104905> `robots`
+  - govdata.04358c93-1151-4a8e-8776-e0265158f910 <https://www.openagrar.de/receive/openagrar_mods_00096125> `robots`
+  - govdata.06a8838b-15ae-4c2d-8ae0-8bceb440d9c3 <https://www.openagrar.de/receive/openagrar_mods_00097447> `robots`
+- host `www.opendata-hro.de`: bestanden 0, durchgefallen 0, ohne Antwort 0, nicht prüfbar 246
+- pattern `www.opendata-hro.de/dataset/{id}`: bestanden 0, durchgefallen 0, ohne Antwort 0, nicht prüfbar 246
+  - govdata.008c9534-739c-44e7-8ad1-36c93abc1d4e <https://www.opendata-hro.de/dataset/d31b7c96-c44a-46d3-87b7-e6275d7637ca> `robots`
+  - govdata.016096de-5cb7-4de4-ac6f-86c777643cc9 <https://www.opendata-hro.de/dataset/f85e99de-1cfc-4b91-8948-69ce4dc633a5> `robots`
+  - govdata.01d48b60-3385-45e3-b4ac-7dfe67655ebd <https://www.opendata-hro.de/dataset/93b41a30-833b-4f65-aecd-89f02ddaea4e> `robots`
+  - govdata.02d14652-9fbf-456d-a7e6-cce84e06fd2c <https://www.opendata-hro.de/dataset/45d84fe3-5396-40e9-ae9d-938b1ddfe340> `robots`
+  - govdata.03839e7a-c875-4dc6-a41b-ab331fb1717c <https://www.opendata-hro.de/dataset/fe33fb5a-6739-440b-843b-c17e61cad596> `robots`
+- host `www.statistik.sachsen.de`: bestanden 0, durchgefallen 0, ohne Antwort 0, nicht prüfbar 91
+- pattern `www.statistik.sachsen.de/genonline/online?regionalschluessel&selectionname&sequenz#dataset`: bestanden 0, durchgefallen 0, ohne Antwort 0, nicht prüfbar 91
+  - govdata.02279b3d-899f-49e9-a20e-b7a3358b2563 <https://www.statistik.sachsen.de/genonline/online?sequenz=tabelleDownload&selectionname=51000-151Z&regionalschluessel=.csv#dataset> `robots`
+  - govdata.02a64bb8-5195-4de0-a389-b7d9c7d43ce6 <https://www.statistik.sachsen.de/genonline/online?sequenz=tabelleDownload&selectionname=51000-224&regionalschluessel=.csv#dataset> `robots`
+  - govdata.043da378-e6b6-4699-98d4-1920a654bf1c <https://www.statistik.sachsen.de/genonline/online?sequenz=tabelleDownload&selectionname=32511-010&regionalschluessel=.csv#dataset> `robots`
+  - govdata.04765b21-bbc7-473d-9c45-5cb21c64eef9 <https://www.statistik.sachsen.de/genonline/online?sequenz=tabelleDownload&selectionname=32531-134&regionalschluessel=.csv#dataset> `robots`
+  - govdata.04ae18de-a370-4d4d-b478-50474aa8838f <https://www.statistik.sachsen.de/genonline/online?sequenz=tabelleDownload&selectionname=51000-473&regionalschluessel=.csv#dataset> `robots`
+- pattern `registry.gdi-de.org/id/de.nw/{id}`: bestanden 0, durchgefallen 0, ohne Antwort 0, nicht prüfbar 78
+  - govdata.03c53d46-53fb-4068-9f8b-d402c3284bfd <https://registry.gdi-de.org/id/de.nw/e02ad618-ab42-48b5-8551-849aa936bb99> `redirect_host`
+  - govdata.092c2b41-6f7d-44ba-834c-70d59172c66d <https://registry.gdi-de.org/id/de.nw/0d4d3381-1d26-4d4c-ae49-42a5451eda87> `redirect_host`
+  - govdata.0e6697de-b304-458c-a3d6-55571192db0d <https://registry.gdi-de.org/id/de.nw/c18d4047-5572-4b25-98d8-4eff5bc6ce2e> `redirect_host`
+  - govdata.0ed467e4-e544-437d-9a27-cdf470c91833 <https://registry.gdi-de.org/id/de.nw/31d26d30-dd37-421d-a335-2705d8a70d56> `redirect_host`
+  - govdata.0fab1ce5-d0c7-48b2-a9d1-ff90a7b16c63 <https://registry.gdi-de.org/id/de.nw/3fac211e-e63f-47d6-9f48-d0a38f04bc29> `redirect_host`
+- host `www.bfs.admin.ch`: bestanden 0, durchgefallen 0, ohne Antwort 0, nicht prüfbar 24
+- host `open.bydata.de`: bestanden 0, durchgefallen 19, ohne Antwort 0, nicht prüfbar 0
+- pattern `open.bydata.de/datasets/{id}`: bestanden 0, durchgefallen 19, ohne Antwort 0, nicht prüfbar 0
+  - govdata.09f393c3-edc0-4bbc-9b0e-f4910538ae64 <https://open.bydata.de/datasets/40986241-934a-46e8-a24a-2c0383c5963e> `no_title`
+  - govdata.172ecc2e-c91d-41fa-becd-f1e7a32996fe <https://open.bydata.de/datasets/f7f9b06c-9de7-423d-8390-7d7d54f313df> `no_title`
+  - govdata.2220604a-af80-48fa-b7ee-888fedce60ab <https://open.bydata.de/datasets/71bdd85d-729f-4193-880c-0800d6009b87> `no_title`
+  - govdata.3229c6fd-16ac-4140-b53c-0d90b05b9fda <https://open.bydata.de/datasets/2a86a252-bc89-4de5-88df-253ec982ed1d> `no_title`
+  - govdata.33b3b753-45a0-436e-a3aa-e406614652ad <https://open.bydata.de/datasets/verkehrsflaeche_stadtbezirksebene_ingolstadt> `no_title`
