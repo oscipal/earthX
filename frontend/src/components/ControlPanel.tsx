@@ -5,7 +5,7 @@ import { readAoiFile } from '../aoiFile';
 import { completenessNote } from '../coverage';
 import { barInRange, histogramBars } from '../coverageHistogram';
 import { DATASETS_PER_ROW, pageCount, pageOf, pageSlice, rowsThatFit, START_DATASET_ROWS } from '../datasetPages';
-import { clampDay, dateBounds, todayUtc, type DayBounds } from '../dateBounds';
+import { dateBounds, todayUtc } from '../dateBounds';
 import { acquisitionNote, maturityLabel, maturityNote, type DatasetOption } from '../datasets';
 import { CATALOGUE_ID } from '../dock';
 import { bufferPointToPolygon, polygonBbox } from '../geoUtils';
@@ -14,73 +14,13 @@ import { focusFirstItem } from '../popover';
 import { totalItems } from '../sections';
 import { searchFiltersInvalid, useAppStore } from '../store';
 import AdvancedSearch from './AdvancedSearch';
+import { DateField } from './DateField';
 import ClearableInput from './ClearableInput';
 import { ChevronLeftIcon, ChevronRightIcon, CoverageIcon, HistoryIcon, PlusIcon, UploadIcon } from './icons';
 import Popover from './Popover';
 import Tip from './Tip';
 import Toolbar from './Toolbar';
 import { counted } from '../plural';
-
-// A date input plus a transparent button covering its calendar icon
-// (V-5). The tech theme draws its own icon and hides the native
-// `::-webkit-calendar-picker-indicator` behind `padding-right`, but that
-// padding also pushes the engine's real (invisible) hit-box for the
-// indicator inward, out from under the icon we draw at a fixed offset —
-// clicking the visible icon then misses the part that actually opens the
-// picker. `showPicker()` sidesteps the mismatch instead of chasing it
-// pixel by pixel.
-//
-// UI-05 §3.3: the calendar offers only the days of the chosen datasets (`min`/`max`); a day typed outside them is moved
-// onto the nearest one when the field is left.
-export function DateField({
-  value,
-  onChange,
-  label,
-  disabled,
-  bounds,
-  lockReason,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  label: string;
-  disabled?: boolean;
-  bounds: DayBounds | null;
-  lockReason?: string;
-}) {
-  const ref = useRef<HTMLInputElement>(null);
-  return (
-    <div className="date-field">
-      <input autoComplete="off"
-        ref={ref}
-        type="date"
-        value={value}
-        min={bounds?.min ?? undefined}
-        max={bounds?.max ?? undefined}
-        onChange={(e) => onChange(e.target.value)}
-        onBlur={(e) => {
-          const day = clampDay(e.target.value, bounds);
-          if (day !== e.target.value) onChange(day);
-        }}
-        aria-label={label}
-        disabled={disabled}
-        data-tip={disabled ? lockReason : undefined}
-      />
-      <button
-        type="button"
-        className="date-icon-btn"
-        tabIndex={-1}
-        aria-label={`Open the ${label.toLowerCase()} calendar`}
-        disabled={disabled}
-        onClick={() => {
-          const input = ref.current;
-          if (!input) return;
-          if (typeof input.showPicker === 'function') input.showPicker();
-          else input.focus();
-        }}
-      />
-    </div>
-  );
-}
 
 // M3-12, F6 (Otto, 26.09.2026): a dataset without a time axis
 // (`capabilities.time_range=False`, the DEM) answers a search the same for

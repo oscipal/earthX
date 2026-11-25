@@ -30,7 +30,7 @@ import { useAppStore } from '../store';
 import Badge from './Badge';
 import ClearableInput from './ClearableInput';
 import CloseButton from './CloseButton';
-import { DateField } from './ControlPanel';
+import { DateField } from './DateField';
 import { ArrowLeftIcon, ChevronDownIcon, ChevronRightIcon, ClearIcon, PlusIcon, SearchIcon, TrashIcon } from './icons';
 import Popover from './Popover';
 import Tip from './Tip';

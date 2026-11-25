@@ -607,7 +607,7 @@ describe('the filters (Otto, 16.11.2026)', () => {
     expect(filtersButton().getAttribute('aria-expanded')).toBe('true');
     expect(popup()!.querySelector('label')?.textContent).toBe('Filter by search panel');
     expect([...popup()!.querySelectorAll('select')].map((s) => s.getAttribute('aria-label'))).toEqual(['Region', 'Category']);
-    expect([...popup()!.querySelectorAll('input[type="date"]')].map((i) => i.getAttribute('aria-label'))).toEqual(['From date', 'To date']);
+    expect([...popup()!.querySelectorAll('.date-field input')].map((i) => i.getAttribute('aria-label'))).toEqual(['From date', 'To date']);
   });
 
   it('give every field an "×" to empty it while it has a value', async () => {
