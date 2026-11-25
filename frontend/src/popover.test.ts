@@ -44,6 +44,13 @@ describe('placePopover', () => {
     expect(placePopover(anchorAt(100, 0, 2000), 100, WINDOW).width).toBe(1000 - 16);
   });
 
+  // UI-12: the calendar of a date field is wider than its field, but never wider than the window.
+  it('takes a least width beside a narrow anchor, inside the window', () => {
+    expect(placePopover(anchorAt(100, 100, 150), 100, WINDOW, 264).width).toBe(264);
+    expect(placePopover(anchorAt(100, 900, 150), 100, WINDOW, 264).left).toBe(1000 - 8 - 264);
+    expect(placePopover(anchorAt(100, 0, 150), 100, { width: 200, height: 800 }, 264).width).toBe(200 - 16);
+  });
+
   it('a window too small for anything gives no negative height', () => {
     expect(placePopover(anchorAt(0), 100, { width: 200, height: 20 }).maxHeight).toBe(0);
   });

@@ -21,6 +21,7 @@ export default function Popover({
   ariaLabel,
   focusOnOpen = false,
   form = false,
+  minWidth = 0,
   children,
 }: {
   anchorRef: RefObject<HTMLElement | null>;
@@ -35,6 +36,8 @@ export default function Popover({
   // A pop-up with fields in it (DS-02c): Tab and the arrow keys stay with the fields, a dropdown that opens inside it (its own
   // `Popover`, lying over this one) is no click "beside" it, and Esc does not close it.
   form?: boolean;
+  // At least this wide (px), where the anchor is narrower and the window wide enough: the calendar of a date field.
+  minWidth?: number;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -56,7 +59,7 @@ export default function Popover({
           onClose();
           return;
         }
-        const next = placePopover(rect, content.scrollHeight, { width: window.innerWidth, height: window.innerHeight });
+        const next = placePopover(rect, content.scrollHeight, { width: window.innerWidth, height: window.innerHeight }, minWidth);
         setPlacement((prev) => (prev && JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
       }
     };
@@ -69,7 +72,7 @@ export default function Popover({
     place();
     frame = window.requestAnimationFrame(loop);
     return () => window.cancelAnimationFrame(frame);
-  }, [open, anchorRef, onClose]);
+  }, [open, anchorRef, onClose, minWidth]);
 
   // Once per opening, as soon as it is placed (a hidden entry takes no focus).
   const focused = useRef(false);

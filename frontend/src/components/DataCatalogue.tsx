@@ -30,7 +30,7 @@ import { useAppStore } from '../store';
 import Badge from './Badge';
 import ClearableInput from './ClearableInput';
 import CloseButton from './CloseButton';
-import { DateField } from './ControlPanel';
+import { DateField } from './DateField';
 import { ArrowLeftIcon, ChevronDownIcon, ChevronRightIcon, ClearIcon, PlusIcon, SearchIcon, TrashIcon } from './icons';
 import Popover from './Popover';
 import Tip from './Tip';
@@ -419,6 +419,12 @@ function Filters({ searchPanel, anchor }: { searchPanel: boolean; anchor: RefObj
             />
             Filter by search panel
           </label>
+          <Clearable value={filter.addableOnly ? 'on' : ''} label="Clear addable only" onClear={() => set({ addableOnly: false })}>
+            <label className="within-aoi catalogue-addable">
+              <input type="checkbox" role="switch" checked={filter.addableOnly} onChange={() => set({ addableOnly: !filter.addableOnly })} />
+              Addable only
+            </label>
+          </Clearable>
           {!searchPanel && (
             <>
               <Clearable value={filter.region} label="Clear region" onClear={() => set({ region: '' })}>
@@ -498,9 +504,12 @@ export default function DataCatalogue() {
   if (!open) return null;
   // "Filter by search panel" holds only while the search panel has an AOI; locked, region and from/to apply again.
   const searchPanel = fields.bySearchPanel && aoi !== null;
-  const filter: CatalogueFilter = searchPanel
-    ? { area: aoi, region: null, from: panelFrom || null, to: panelTo || null }
-    : { area: null, region: fields.region || null, from: fields.from || null, to: fields.to || null };
+  const filter: CatalogueFilter = {
+    ...(searchPanel
+      ? { area: aoi, region: null, from: panelFrom || null, to: panelTo || null }
+      : { area: null, region: fields.region || null, from: fields.from || null, to: fields.to || null }),
+    ...(fields.addableOnly ? { fullOnly: true } : {}),
+  };
   const groups = withOther(categories).filter((c) => !fields.category || c.id === fields.category);
   // A new filter mounts every list anew: their pages belong to the question they were asked with.
   const filterKey = JSON.stringify([filter, fields.category]);

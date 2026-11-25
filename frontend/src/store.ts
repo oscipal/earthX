@@ -139,6 +139,8 @@ export function selectionItemsFrom(s: Pick<AppState, 'groups' | 'activeGroupInde
 export interface CatalogueFilterState {
   // "Filter by search panel" (Otto, 16.11.2026): AOI and period of the search panel instead of region and from/to.
   bySearchPanel: boolean;
+  // "Addable only" (UI-12): only the full entries, those "Add" puts into the search panel; set by the tile "Add dataset".
+  addableOnly: boolean;
   region: string;
   from: string;
   to: string;
@@ -1887,7 +1889,8 @@ export interface AppState {
   toggleCatalogue: () => void;
   setCatalogueFilter: (change: Partial<CatalogueFilterState>) => void;
   setCatalogueSearch: (text: string) => void;
-  openCatalogue: () => void;
+  // The tile "Add dataset": the window with the filter "Addable only" on (UI-12).
+  openCatalogueToAdd: () => void;
   loadCatalogueRegions: () => Promise<void>;
   // "Add" in the Data catalogue (UI-05 A5): at the end of "Search and area", which turns to its page; not ticked.
   addDataset: (id: string) => void;
@@ -2150,7 +2153,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   catalogueOpen: false,
   catalogueCategories: [],
   catalogueRegions: null,
-  catalogueFilter: { bySearchPanel: false, region: '', from: '', to: '', category: '' },
+  catalogueFilter: { bySearchPanel: false, addableOnly: false, region: '', from: '', to: '', category: '' },
   catalogueSearch: '',
   datasetId: null,
   sections: [],
@@ -2250,7 +2253,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   toggleCatalogue: () => set((s) => ({ catalogueOpen: !s.catalogueOpen })),
   setCatalogueFilter: (change) => set((s) => ({ catalogueFilter: { ...s.catalogueFilter, ...change } })),
   setCatalogueSearch: (text) => set({ catalogueSearch: text }),
-  openCatalogue: () => set({ catalogueOpen: true }),
+  openCatalogueToAdd: () => set((s) => ({ catalogueOpen: true, catalogueFilter: { ...s.catalogueFilter, addableOnly: true } })),
   loadCatalogueRegions: async () => {
     if (get().catalogueRegions !== null) return;
     try {
@@ -2317,8 +2320,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => (toolMode === 'none' ? { toolMode } : { toolMode, dock: withoutControls(s.dock) })),
   // The AOI is also the coverage route's spatial filter (`refreshCoverage`),
   // so every way it can change reschedules a refresh.
+  // An AOI that comes in another way than drawing (a place, a file) ends the tool chosen for drawing (UI-12, Otto 18.11.2026): otherwise
+  // the next click on the map starts a shape that replaces it.
   setAoi: (aoi, point = null) => {
     set((s) => ({
+      ...(aoi ? { toolMode: 'none' as const } : {}),
       aoi,
       aoiPoint: point,
       lastAoi: aoi ?? s.lastAoi,

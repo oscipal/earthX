@@ -11,6 +11,7 @@ import {
   ArrowUp,
   ArrowUpDown,
   ArrowUpToLine,
+  Calendar,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -94,6 +95,7 @@ export const ArrowUpDownIcon = icon('ArrowUpDownIcon', ArrowUpDown);
 export const ArrowUpToLineIcon = icon('ArrowUpToLineIcon', ArrowUpToLine);
 export const CheckIcon = icon('CheckIcon', Check);
 export const ChevronDownIcon = icon('ChevronDownIcon', ChevronDown);
+export const CalendarIcon = icon('CalendarIcon', Calendar);
 export const ChevronLeftIcon = icon('ChevronLeftIcon', ChevronLeft);
 export const ChevronRightIcon = icon('ChevronRightIcon', ChevronRight);
 export const ChevronUpIcon = icon('ChevronUpIcon', ChevronUp);

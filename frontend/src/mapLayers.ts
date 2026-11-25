@@ -345,6 +345,14 @@ export function ensureBaseLayers(map: MapLibreMap): void {
       source: AOI_SRC,
       paint: { 'line-color': '#19e0ff', 'line-width': 1.6, 'line-dasharray': [3, 2] },
     });
+    // An AOI "Point" is a point on the map, not the square around it (UI-12, Otto 18.11.2026).
+    map.addLayer({
+      id: 'aoi-point',
+      type: 'circle',
+      source: AOI_SRC,
+      filter: ['==', ['geometry-type'], 'Point'],
+      paint: { 'circle-color': '#19e0ff', 'circle-radius': 5, 'circle-stroke-color': '#04070a', 'circle-stroke-width': 1.5 },
+    });
   }
   if (!map.getSource(COVERAGE_SRC)) {
     map.addSource(COVERAGE_SRC, { type: 'geojson', data: EMPTY_FC });

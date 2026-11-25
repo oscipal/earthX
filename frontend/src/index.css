@@ -38,6 +38,8 @@ textarea {
   width: 100vw;
   height: 100vh;
   color: var(--text);
+  /* One look for the scroll bars of all panels and windows (inherited): the Data catalogue as the processing panel (UI-12). */
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
   /* What shows behind the globe and wherever no imagery is drawn: MapLibre clears
      its canvas to transparent every frame (V-6), so this is the actual backdrop.
      A theme token — dark in the tech theme, white in the light one — and the
@@ -1158,8 +1160,7 @@ svg.lucide.icon-lead {
 }
 
 input[type='text'],
-input[type='search'],
-input[type='date'] {
+input[type='search'] {
   width: 100%;
   min-height: var(--control-height);
   padding: var(--space-1) var(--space-2);
@@ -1188,54 +1189,72 @@ textarea:autofill {
   transition: background-color 600000s 0s;
 }
 
-/* The native calendar icon is drawn dark-on-transparent by default, which
-   disappears against the dark HUD input background. `color-scheme` and
-   `filter: invert()` on `::-webkit-calendar-picker-indicator` (tried first)
-   depend on the engine actually honouring them, and didn't render reliably
-   white everywhere it was tested (2026-09-23). So instead: paint our own
-   white calendar icon as the input's background and make the native one
-   (still there, doing the actual click-to-open) fully transparent — an
-   ordinary `background-image` on an `<input>` needs no engine-specific
-   support, unlike styling the indicator itself. */
-.app[data-theme='tech'] input[type='date'] {
-  color-scheme: dark;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='18' rx='2'/%3E%3Cline x1='16' y1='2' x2='16' y2='6'/%3E%3Cline x1='8' y1='2' x2='8' y2='6'/%3E%3Cline x1='3' y1='10' x2='21' y2='10'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 8px center;
-  background-size: 16px 16px;
-  padding-right: var(--space-6);
-}
-.app[data-theme='tech'] input[type='date']::-webkit-calendar-picker-indicator {
-  opacity: 0;
-  /* `.date-icon-btn` is the actual click target now (V-5) — this stays
-     invisible only to avoid a second, misaligned hit-box underneath it. */
-  pointer-events: none;
-}
-
-/* Input + the transparent button that opens its picker (V-5). `min-width: 0`
-   lets it shrink inside the grid track below its content's natural size (see
-   `.date-row` below) — without it the field refused to shrink past its own
-   min-content width and pushed the row wider than the panel, clipping the
-   right field's calendar icon against the panel's edge (V-8). */
+/* A day field (UI-12): a text field "2026-12-03" and, at its right end, the button that opens the calendar of its own. `min-width: 0`
+   lets it shrink inside the grid track below its content's natural size (`.date-row` below, V-8). */
 .date-field {
   position: relative;
   min-width: 0;
 }
-.date-field input[type='date'] {
+.date-field input {
   width: 100%;
   min-width: 0;
+  padding-right: calc(var(--control-height) + var(--space-1));
 }
-.date-icon-btn {
+.date-field .date-icon-btn {
   position: absolute;
   top: 0;
   right: 0;
-  width: 32px;
   height: 100%;
-  background: transparent;
-  border: none;
+  border-color: transparent;
+}
+.day-calendar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+}
+.day-calendar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1);
+}
+.day-calendar-month {
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.day-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: var(--space-0);
+}
+.day-calendar-weekday {
+  font-size: var(--text-2xs);
+  color: var(--muted);
+  text-align: center;
+}
+.day-calendar-day {
+  height: var(--control-height);
   padding: 0;
-  margin: 0;
+  border: var(--line-width) solid transparent;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--text-sm);
   cursor: pointer;
+}
+.day-calendar-day:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+/* A window too low for six rows of finger-high days (1280 x 360): the rows of a mouse, so that the month fits without scrolling. */
+@media (max-height: 480px) and (min-width: 900px) {
+  .day-calendar-day {
+    height: var(--control-height-sm);
+  }
+}
+.day-calendar-day[aria-pressed='true'] {
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 /* Lines up with the pairs above it (`.aoi-extras`,
@@ -1619,11 +1638,17 @@ textarea:autofill {
   padding: 0 var(--space-2);
   text-align: left;
 }
-/* "Add dataset" (Otto, 16.11.2026): a dataset tile with the plus before its text. */
+/* "Add dataset" (Otto, 16.11.2026): in the place of a dataset tile, with the plus before its text; an action, not a dataset
+   (UI-12): a dashed edge and the muted text, the text of the panel under the pointer. */
 .dataset-toggle.add-dataset {
   flex-direction: row;
   align-items: center;
   gap: var(--space-1);
+  border-style: dashed;
+  color: var(--muted);
+}
+.dataset-toggle.add-dataset:hover {
+  color: var(--text);
 }
 /* Half the panel width: a long title wraps onto a second line (two at most); next
    to the maturity chip it keeps one, so the button stays one row high. */

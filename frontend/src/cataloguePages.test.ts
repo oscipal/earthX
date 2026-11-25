@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { catalogueDatetime, fetchCatalogueCategories, fetchCatalogueRegions, fetchCataloguePage, fetchCatalogueSearch, fetchCollections } from './api';
-import { activeFilters, isListed, keywordsOf, listedSourceOf, sourceRow } from './catalogue';
+import { activeFilters, isListed, listedSourceOf, sourceRow } from './catalogue';
 import type { Collection } from './types';
 
 const page = (ids: string[], next: string | null, extra: object = {}) =>
@@ -100,11 +100,6 @@ describe('a listed entry', () => {
     ]);
     expect(sourceRow(listed())).toEqual([{ text: '—', href: null }]);
   });
-
-  it('has its keywords each once, without empty ones and what is no text', () => {
-    expect(keywordsOf({ id: 'x', keywords: ['flood', 'flood', ' ', 3, 'gauges'] } as unknown as Collection)).toEqual(['flood', 'gauges']);
-    expect(keywordsOf({ id: 'x' } as Collection)).toEqual([]);
-  });
 });
 
 describe('the period of the catalogue', () => {
@@ -150,9 +145,11 @@ describe('fetchCatalogueSearch (Otto, 16.11.2026)', () => {
 });
 
 describe('activeFilters', () => {
-  const none = { bySearchPanel: false, region: '', from: '', to: '', category: '' };
+  const none = { bySearchPanel: false, addableOnly: false, region: '', from: '', to: '', category: '' };
   it('counts the fields that are set, the search panel as one with the category beside it', () => {
     expect(activeFilters(none, false)).toBe(0);
+    expect(activeFilters({ ...none, addableOnly: true, region: 'DE' }, false)).toBe(2);
+    expect(activeFilters({ ...none, addableOnly: true, bySearchPanel: true }, true)).toBe(2);
     expect(activeFilters({ ...none, region: 'DE', from: '2020-01-01', category: 'water' }, false)).toBe(3);
     expect(activeFilters({ ...none, bySearchPanel: true, region: 'DE', category: 'water' }, true)).toBe(2);
   });

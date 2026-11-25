@@ -109,3 +109,17 @@ export function formatDay(iso: string): string {
   const two = (n: number): string => String(n).padStart(2, '0');
   return `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())}`;
 }
+
+const MONTH_YEAR = new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+const WEEKDAY = new Intl.DateTimeFormat('en-GB', { weekday: 'short', timeZone: 'UTC' });
+
+// The head of a month in the calendar of a date field, in English whatever the browser's language: "November 2026" (UI-12).
+export function formatMonth(year: number, month: number): string {
+  return MONTH_YEAR.format(Date.UTC(year, month, 1));
+}
+
+// The heads of the columns of that calendar, Monday first: "Mon" … "Sun".
+export function weekdayHeads(): string[] {
+  // 5 Jan 2026 is a Monday.
+  return Array.from({ length: 7 }, (_, i) => WEEKDAY.format(Date.UTC(2026, 0, 5 + i)));
+}
