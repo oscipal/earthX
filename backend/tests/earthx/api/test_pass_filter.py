@@ -402,7 +402,28 @@ class TestTheCoverageOfTheAoi:
     def test_an_item_whose_geometry_is_no_area_has_no_outline(self, geometry: Any) -> None:
         assert outline_of({"id": "x", "geometry": geometry}) is None
 
-    @pytest.mark.parametrize("aoi", [{"type": "Point", "coordinates": [10, 10]}, {}])
+    def test_a_point_is_covered_all_or_not_at_all(self) -> None:
+        aoi = AoiOutlines({"type": "Point", "coordinates": [10.5, 10.5]})
+        inside = outline_of(scene("a", 0, "d", west=9.0, east=10.6))
+        beside = outline_of(scene("b", 0, "d", west=10.7, east=12.0))
+        assert aoi.coverage([inside]) == 100.0 and aoi.touches(inside)
+        assert aoi.coverage([beside]) == 0.0 and not aoi.touches(beside)
+        assert aoi.coverage([beside, inside]) == 100.0  # a pass covers it where one of its scenes does
+
+    def test_a_point_on_the_edge_of_an_outline_is_inside(self) -> None:
+        aoi = AoiOutlines({"type": "Point", "coordinates": [10.6, 10.5]})
+        assert aoi.coverage([outline_of(scene("a", 0, "d", west=9.0, east=10.6))]) == 100.0
+
+    @pytest.mark.parametrize(
+        "aoi",
+        [
+            {"type": "Point", "coordinates": [190, 10]},
+            {"type": "Point", "coordinates": [10, 10, 10]},
+            {"type": "Point", "coordinates": []},
+            {"type": "LineString", "coordinates": [[10, 10], [11, 11]]},
+            {},
+        ],
+    )
     def test_an_aoi_that_is_no_area_is_refused(self, aoi: Any) -> None:
         with pytest.raises(ValueError):
             AoiOutlines(aoi)

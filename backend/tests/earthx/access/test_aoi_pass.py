@@ -233,10 +233,10 @@ class TestRefusals:
         with pytest.raises(TypeError):
             measure_aoi_pass([], _region(1_000, 1_000, 2_000), CLOUDS)
 
-    @pytest.mark.parametrize("aoi", [{"type": "Point", "coordinates": [10, 47]}, {}, None, "x"])
+    @pytest.mark.parametrize("aoi", [{"type": "LineString", "coordinates": [[10, 47], [11, 48]]}, {}, None, "x"])
     def test_an_aoi_that_is_not_an_area(self, tmp_path: Path, aoi: object) -> None:
         path = _write(tmp_path / "a.tif", _filled(CLOUD))
-        with pytest.raises(ValueError, match="Polygon or MultiPolygon"):
+        with pytest.raises(ValueError, match="Point, Polygon or MultiPolygon"):
             measure_aoi_pass([path], aoi, CLOUDS)  # type: ignore[arg-type]
 
     def test_a_self_crossing_ring_names_no_coordinate(self, tmp_path: Path) -> None:
@@ -263,3 +263,33 @@ class TestTheKeys:
     def test_the_key_names_no_coordinate(self) -> None:
         key = aoi_pass_cache_key("d", ["a"], "scl", CLOUDS, _region(0, 0, 1_000))
         assert len(key) == 64 and key.isalnum()
+
+
+def _point(x: float, y: float) -> dict:
+    """A point ``x`` east and ``y`` south of the common origin, as GeoJSON."""
+    return {"type": "Point", "coordinates": list(TO_LONLAT.transform(ORIGIN_X + x, ORIGIN_Y - y))}
+
+
+class TestAPoint:
+    """M5-69: a pass is measured at the one pixel a point lies on, the first scene with a value there owning it."""
+
+    def test_the_first_scene_with_a_value_at_the_point_owns_it(self, tmp_path: Path) -> None:
+        first = _filled(CLOUD)
+        first[100:, :] = 0  # no data below row 100 in the first scene
+        paths = [_write(tmp_path / "a.tif", first), _write(tmp_path / "b.tif", _filled(WATER))]
+        above = measure_aoi_pass(paths, _point(50 * PIXEL + 3, 50 * PIXEL + 3), CLOUDS)
+        below = measure_aoi_pass(paths, _point(50 * PIXEL + 3, 200 * PIXEL + 3), CLOUDS)
+        assert (above.aoi_pixels, above.class_pixels, above.cloud_percent) == (1, {CLOUD: 1}, 100.0)
+        assert (below.aoi_pixels, below.class_pixels, below.cloud_percent) == (1, {WATER: 1}, 0.0)
+
+    def test_a_point_on_a_cell_edge_is_one_pixel(self, tmp_path: Path) -> None:
+        data = _filled(VEGETATION)
+        data[256, 256] = CLOUD
+        paths = [_write(tmp_path / "a.tif", data)]
+        measured = measure_aoi_pass(paths, _point(256 * PIXEL, 256 * PIXEL), CLOUDS)
+        assert (measured.aoi_pixels, measured.data_pixels, measured.class_pixels) == (1, 1, {CLOUD: 1})
+
+    def test_a_point_past_every_scene_is_one_pixel_without_data(self, tmp_path: Path) -> None:
+        paths = [_write(tmp_path / "a.tif", _filled(CLOUD))]
+        measured = measure_aoi_pass(paths, _point(-10 * PIXEL, 10 * PIXEL), CLOUDS)
+        assert (measured.aoi_pixels, measured.data_pixels, measured.cloud_percent) == (1, 0, None)

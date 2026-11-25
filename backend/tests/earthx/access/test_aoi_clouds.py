@@ -364,7 +364,6 @@ class TestRefusals:
     @pytest.mark.parametrize(
         "aoi",
         [
-            {"type": "Point", "coordinates": [10.0, 50.0]},
             {"type": "LineString", "coordinates": [[10.0, 50.0], [10.1, 50.1]]},
             {"type": "MultiPoint", "coordinates": [[10.0, 50.0]]},
             {"type": "GeometryCollection", "geometries": []},
@@ -603,7 +602,8 @@ class TestTheCacheKey:
     @pytest.mark.parametrize(
         "aoi",
         [
-            {"type": "Point", "coordinates": [10.0, 50.0]},
+            {"type": "Point", "coordinates": [[10.0, 50.0]]},
+            {"type": "Point", "coordinates": ["10.0", 50.0]},
             {"type": "Polygon"},
             {"type": "Polygon", "coordinates": [[["10.0", 50.0]]]},
             {"type": "Polygon", "coordinates": [[[float("nan"), 50.0]]]},
@@ -619,3 +619,47 @@ class TestTheCacheKey:
         with pytest.raises(ValueError) as caught:
             _key(aoi=aoi)
         assert not any(char.isdigit() for char in str(caught.value))
+
+
+def _point(x: float, y: float) -> dict:
+    """A point AOI at ``(x, y)`` in the scene's CRS, in EPSG:4326."""
+    lon, lat = TO_LONLAT.transform(x, y)
+    return {"type": "Point", "coordinates": [lon, lat]}
+
+
+class TestAPoint:
+    """M5-69: a point is measured at the one pixel it lies on, on the full-resolution grid."""
+
+    def test_the_class_of_the_pixel_under_the_point_decides(self, scene: Path) -> None:
+        data = _scene()
+        for row, col in ((300, 400), (512, 700), (900, 310)):
+            measured = measure_aoi_clouds(
+                _cleared(scene), _point(ORIGIN_X + (col + 0.3) * PIXEL, ORIGIN_Y - (row + 0.6) * PIXEL), CLOUDS
+            )
+            value = int(data[row, col])
+            assert (measured.aoi_pixels, measured.data_pixels, measured.resolution) == (1, 1, PIXEL)
+            assert measured.class_pixels == {value: 1}
+            assert measured.cloud_percent == (100.0 if value in CLOUDS else 0.0)
+
+    def test_a_point_on_an_edge_takes_the_pixel_right_of_and_below_it(self, tmp_path: Path) -> None:
+        data = numpy.full((512, 512), 4, dtype="uint8")
+        data[256, 256] = 9  # the pixel right of and below the corner of four blocks of the file
+        path = _write(tmp_path / "corner.tif", data, overviews=[])
+        measured = measure_aoi_clouds(_cleared(path), _point(ORIGIN_X + 256 * PIXEL, ORIGIN_Y - 256 * PIXEL), CLOUDS)
+        assert measured.class_pixels == {9: 1} and measured.cloud_percent == 100.0
+
+    def test_a_pixel_without_data_has_no_cloud_share(self, scene: Path) -> None:
+        measured = measure_aoi_clouds(
+            _cleared(scene), _point(ORIGIN_X + 10.5 * PIXEL, ORIGIN_Y - 10.5 * PIXEL), CLOUDS
+        )
+        assert (measured.aoi_pixels, measured.data_pixels) == (1, 0)
+        assert measured.cloud_percent is None and measured.data_percent == 0.0
+
+    def test_a_point_past_the_raster_is_one_pixel_without_data(self, scene: Path) -> None:
+        measured = measure_aoi_clouds(_cleared(scene), _point(ORIGIN_X - 5 * PIXEL, ORIGIN_Y - 5 * PIXEL), CLOUDS)
+        assert (measured.aoi_pixels, measured.data_pixels, measured.class_pixels) == (1, 0, {})
+
+    def test_the_key_of_a_point_reads_47_and_47_0_alike(self) -> None:
+        one = aoi_clouds_cache_key("s2", "a", "scl", CLOUDS, {"type": "Point", "coordinates": [10, 47]})
+        assert one == aoi_clouds_cache_key("s2", "a", "scl", CLOUDS, {"type": "Point", "coordinates": [10.0, 47.0]})
+        assert one != aoi_clouds_cache_key("s2", "a", "scl", CLOUDS, {"type": "Point", "coordinates": [10.0, 47.1]})
