@@ -320,6 +320,7 @@ export function groupCount(state: { matched: number | null; entries: readonly un
 
 // How many filters are set, for the label of the button (like "Advanced search · 2").
 export function activeFilters(fields: CatalogueFilterState, searchPanel: boolean): number {
-  if (searchPanel) return 1 + (fields.category ? 1 : 0);
-  return [fields.region, fields.from, fields.to, fields.category].filter((v) => v !== '').length;
+  const addable = fields.addableOnly ? 1 : 0;
+  if (searchPanel) return 1 + addable + (fields.category ? 1 : 0);
+  return addable + [fields.region, fields.from, fields.to, fields.category].filter((v) => v !== '').length;
 }

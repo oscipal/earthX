@@ -213,7 +213,7 @@ beforeEach(async () => {
       datasets: datasetsFrom(FULL),
       catalogueCategories: CATEGORIES,
       catalogueRegions: null,
-      catalogueFilter: { bySearchPanel: false, region: '', from: '', to: '', category: '' },
+      catalogueFilter: { bySearchPanel: false, addableOnly: false, region: '', from: '', to: '', category: '' },
       catalogueSearch: '',
       dateFrom: '',
       dateTo: '',
@@ -621,7 +621,29 @@ describe('the filters (Otto, 16.11.2026)', () => {
       click(clear(label)!);
     }
     await act(async () => {});
-    expect(useAppStore.getState().catalogueFilter).toEqual({ bySearchPanel: false, region: '', from: '', to: '', category: '' });
+    expect(useAppStore.getState().catalogueFilter).toEqual({ bySearchPanel: false, addableOnly: false, region: '', from: '', to: '', category: '' });
+  });
+
+  // UI-12 (7): "Addable only" stands in the pop-up like every other filter and goes with its "×"; it asks for the full entries only.
+  it('have "Addable only", which asks for the full entries only, counts on the button and goes with its "×"', async () => {
+    await openFilters();
+    const addable = () => popup()!.querySelector<HTMLInputElement>('.catalogue-addable input[role="switch"]')!;
+    expect(addable().checked).toBe(false);
+    expect(clear('Clear addable only')).toBeNull();
+    stub.bodies.length = 0;
+    click(addable());
+    await act(async () => {});
+    expect(useAppStore.getState().catalogueFilter.addableOnly).toBe(true);
+    expect(filtersButton().textContent).toBe('Filters · 1');
+    expect(stub.bodies.length).toBeGreaterThan(0);
+    expect(stub.bodies.every((b) => b.entry === 'full')).toBe(true);
+    stub.bodies.length = 0;
+    click(clear('Clear addable only')!);
+    await act(async () => {});
+    expect(useAppStore.getState().catalogueFilter.addableOnly).toBe(false);
+    expect(filtersButton().textContent).toBe('Filters');
+    expect(stub.bodies.length).toBeGreaterThan(0);
+    expect(stub.bodies.some((b) => 'entry' in b)).toBe(false);
   });
 
   it('count what is set on the button, like "Advanced search"', async () => {
@@ -766,7 +788,7 @@ describe('the search field (Otto, 16.11.2026)', () => {
   });
 
   it('keeps the filters: the category and the period go with the text', async () => {
-    act(() => useAppStore.setState({ catalogueFilter: { bySearchPanel: false, region: '', from: '2020-01-01', to: '', category: 'optical' } }));
+    act(() => useAppStore.setState({ catalogueFilter: { bySearchPanel: false, addableOnly: false, region: '', from: '2020-01-01', to: '', category: 'optical' } }));
     await type('optical');
     expect(stub.bodies.at(-1)).toMatchObject({ q: 'optical', category: 'optical', datetime: '2020-01-01T00:00:00Z/..' });
   });

@@ -395,13 +395,13 @@ function MultiSelectToggle() {
 const ADD_DATASET = Symbol('add dataset');
 
 function AddDatasetTile() {
-  const openCatalogue = useAppStore((s) => s.openCatalogue);
+  const openCatalogueToAdd = useAppStore((s) => s.openCatalogueToAdd);
   return (
     <button
       type="button"
       className="btn dataset-toggle add-dataset"
       aria-controls={CATALOGUE_ID}
-      onClick={openCatalogue}
+      onClick={openCatalogueToAdd}
     >
       <PlusIcon lead size={14} />
       <span className="dataset-toggle-title">Add dataset</span>

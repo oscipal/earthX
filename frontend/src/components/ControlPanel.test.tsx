@@ -861,6 +861,8 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
       act(() => useAppStore.setState({ catalogueOpen: false }));
       act(() => addTile().click());
       expect(useAppStore.getState().catalogueOpen).toBe(true);
+      // UI-12 (7): with the filter "Addable only" on, the other filters as they were.
+      expect(useAppStore.getState().catalogueFilter).toMatchObject({ addableOnly: true, bySearchPanel: false });
       act(() => addTile().click());
       expect(useAppStore.getState().catalogueOpen).toBe(true);
     });
