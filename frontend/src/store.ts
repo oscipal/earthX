@@ -100,6 +100,7 @@ import {
   type FilterQueryByCollection,
 } from './searchFilters';
 import { imagesOf, satellitesOf, sectionsForView, type ViewImage } from './viewImages';
+import { keepPixelOutline, pixelOutlineOf, zoomForPixel } from './pixelClip';
 import { viewDates } from './viewKind';
 import { layerOfView, sameRender } from './viewLayer';
 import { downloadIndexCrop, downloadsIndexOnly, estimateIndexDownload, indexOfferedFor, type IndexNote } from './indexDownload';
@@ -987,6 +988,43 @@ const inPercent = (s: AppState): boolean => (colourView(s) ? colourInPercent(s) 
 // "Add to layers" and "Add all to layers" in the view: the image that is shown, or every image, one layer each, all in one
 // step with the first on the bottom of the new ones, so that the last image of the list lies on top (NM4-53). A layer
 // takes the look its image is drawn with. Where a mosaic is not known yet it waits for it, as it always did.
+// The outline of the pixel a view at a point is cut to, and the camera on it (M5-69, plan F2, F3): the first image of the view, in
+// the finest of the assets it draws (the server picks it).
+async function loadViewPixel(set: SetState, get: GetState): Promise<void> {
+  const s = get();
+  const point = s.viewAoi;
+  if (point?.type !== 'Point' || pixelOutlineOf(point)) return;
+  const image = shownImageOf(viewImagesOf(s), s.shownImage);
+  const assets = [...new Set((image?.ids ?? []).flatMap((id) => (s.downloaded[id] ? [s.downloaded[id].asset] : [])))];
+  if (!image || assets.length === 0) return;
+  try {
+    const [outline] = await api.fetchPixelOutlines(image.datasetId, point, [image.ids], assets);
+    if (!outline || get().viewAoi !== point) return;
+    keepPixelOutline(point, outline);
+    const [lon, lat] = point.coordinates;
+    set({ pixelOutlines: get().pixelOutlines + 1, flyToView: { center: [lon, lat], zoom: zoomForPixel(outline) } });
+  } catch (e) {
+    if (get().viewAoi === point) set({ error: `The pixel at the point could not be found: ${(e as Error).message}` });
+  }
+}
+
+// The outline of the pixel a point AOI cuts out of these scenes, asked once for each point object (M5-69); `pixelOutlines` tells the
+// map that it is here. A failure leaves the point cut to nothing, and the next point asks again.
+const askedPixels = new WeakSet<GeoJSON.Geometry>();
+
+export async function loadPixelOutline(point: GeoJSON.Point, of: { datasetId: string; ids: string[]; assets: string[] }): Promise<void> {
+  if (askedPixels.has(point) || of.ids.length === 0 || of.assets.length === 0) return;
+  askedPixels.add(point);
+  try {
+    const [outline] = await api.fetchPixelOutlines(of.datasetId, point, [of.ids], of.assets);
+    if (!outline) return;
+    keepPixelOutline(point, outline);
+    useAppStore.setState({ pixelOutlines: useAppStore.getState().pixelOutlines + 1 });
+  } catch {
+    askedPixels.delete(point);
+  }
+}
+
 function pinViewImages(set: SetState, get: GetState, which: 'shown' | 'all'): void {
   const s = get();
   if (s.pinLoading) return; // already waiting for a mosaic; it pins when it is here
@@ -1690,6 +1728,8 @@ export interface AppState {
   // The area a cropped view was opened with (Otto, 27.10.2026): it keeps it. Drawing, changing or clearing the area in the
   // control menu does not touch the view. Null for every view that is not cropped.
   viewAoi: GeoJSON.Geometry | null;
+  // Counts the outlines of pixels that have arrived for a point AOI (`pixelClip.ts`, M5-69): the map cuts its tiles again with each.
+  pixelOutlines: number;
 
   // --- layer manager ---
   layers: MapLayer[]; // pinned images (top of list = top of map)
@@ -2099,6 +2139,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   mapOverview: false,
   cropToAoi: false,
   viewAoi: null,
+  pixelOutlines: 0,
 
   layers: [],
   resultsAt: 0,
@@ -3185,8 +3226,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       viewOfLayer: false,
       resultViewLayerId: null,
       cropToAoi,
-      // The view keeps the area it is opened with.
-      viewAoi: cropToAoi ? s.aoi : null,
+      // The view keeps the area it is opened with; a point its own copy, which the outline of its pixel belongs to (M5-69).
+      viewAoi: cropToAoi ? (s.aoi?.type === 'Point' ? { ...s.aoi } : s.aoi) : null,
       // A crop takes the results off the map and drops the tick of the scenes it was made of, so that their quicklooks
       // do not lie beside the crop; the view does not hang on the choice any more, and a scene ticked again shows like any
       // other (Otto, 27.10.2026). The whole scene keeps the tick and the switch.
@@ -3203,6 +3244,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     // because a time step draws nothing until its mosaic has answered.
     const mosaics = get().loadMosaics();
     // A view that stays keeps the fields it has: the range measured at the start is the new view's.
+    if (cropToAoi) void loadViewPixel(set, get);
     if (!open) await get().autoStretch();
     set({ focusLoading: true });
     await mosaics;

@@ -48,7 +48,7 @@ import { applyTerrain, flatViewBounds } from '../terrain';
 import { clipAoiOf, useProcessingStore } from '../processingStore';
 import { flipIdOf } from '../layerFlip';
 import { layersForMap, viewLayerOf, viewShown } from '../viewLayer';
-import { shownViewOf, useAppStore } from '../store';
+import { loadPixelOutline, shownViewOf, useAppStore } from '../store';
 import type { Bbox, StacItem, ToolMode } from '../types';
 import { MapControls } from './MapControls';
 
@@ -172,6 +172,7 @@ export default function MapView() {
   const allMosaics = useAppStore((s) => s.mosaics);
   const flyToBbox = useAppStore((s) => s.flyToBbox);
   const flyToView = useAppStore((s) => s.flyToView);
+  const pixelOutlines = useAppStore((s) => s.pixelOutlines);
   const appliedRender = useAppStore((s) => s.appliedRender);
   const focusMode = useAppStore((s) => s.focusMode);
   const cropToAoi = useAppStore((s) => s.cropToAoi);
@@ -203,7 +204,15 @@ export default function MapView() {
   const previewAoi = useProcessingStore((s) => clipAoiOf(s, aoi));
   // Cut to the AOI only for "AOI only": a new AOI leaves the others alone.
   const clipAoi = preview?.clipToAoi ? previewAoi : null;
-  const previewTiles = useMemo(() => (preview ? previewOverlays(preview, clipAoi) : []), [preview, clipAoi]);
+  // A point cuts the preview to the pixel the job reads (M5-69): a copy of the point for the scenes and assets it is asked for, which
+  // the outline of that pixel belongs to; `pixelOutlines` cuts the preview again when it is here.
+  const pixelKey = preview ? JSON.stringify(preview.pixelOf) : '';
+  const previewClip = useMemo(() => (clipAoi?.type === 'Point' && pixelKey ? { ...clipAoi } : clipAoi), [clipAoi, pixelKey]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const previewTiles = useMemo(() => (preview ? previewOverlays(preview, previewClip) : []), [preview, previewClip, pixelOutlines]);
+  useEffect(() => {
+    if (preview && previewClip?.type === 'Point') void loadPixelOutline(previewClip, preview.pixelOf);
+  }, [preview, previewClip]);
   const previewTilesRef = useRef(previewTiles);
   previewTilesRef.current = previewTiles;
 
@@ -502,7 +511,8 @@ export default function MapView() {
         mosaics,
       });
     }
-  }, [focusMode, view, appliedRender, showDownloaded, viewLayer, viewAoi, cropToAoi, mosaics, datasets]);
+    // A new outline of a pixel cuts the view at a point again (M5-69).
+  }, [focusMode, view, appliedRender, showDownloaded, viewLayer, viewAoi, cropToAoi, mosaics, datasets, pixelOutlines]);
 
   // --- the preview of the processing panel (M4-13c-2), a tier of "Results" over the results and the view
   // (`mapLayers.ts`); a new AOI cuts it again. ---

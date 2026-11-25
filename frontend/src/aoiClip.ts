@@ -24,6 +24,7 @@
 import type { AddProtocolAction } from 'maplibre-gl';
 
 import { polygonBbox } from './geoUtils';
+import { clipShapeOf } from './pixelClip';
 import type { Bbox } from './types';
 
 const PROTOCOL = 'earthx-clip';
@@ -73,9 +74,11 @@ function keyFor(aoi: GeoJSON.Geometry): string {
 // with no readable bbox) returns the template unchanged — the whole-scene
 // "View full selection" case never goes through the protocol at all, and
 // nothing about the requested tile changes.
+// A point AOI cuts to the outline of its one pixel (`pixelClip.ts`, M5-69).
 export function clipTileUrl(template: string, aoi: GeoJSON.Geometry | null): string {
-  if (!aoi) return template;
-  const key = keyFor(aoi);
+  const shape = clipShapeOf(aoi);
+  if (!shape) return template;
+  const key = keyFor(shape);
   if (!aoiByKey.has(key)) return template;
   return `${PREFIX}${key}/{z}/{x}/{y}/${template}`;
 }
