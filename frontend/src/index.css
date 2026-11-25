@@ -1621,11 +1621,17 @@ textarea:autofill {
   padding: 0 var(--space-2);
   text-align: left;
 }
-/* "Add dataset" (Otto, 16.11.2026): a dataset tile with the plus before its text. */
+/* "Add dataset" (Otto, 16.11.2026): in the place of a dataset tile, with the plus before its text; an action, not a dataset
+   (UI-12): a dashed edge and the muted text, the text of the panel under the pointer. */
 .dataset-toggle.add-dataset {
   flex-direction: row;
   align-items: center;
   gap: var(--space-1);
+  border-style: dashed;
+  color: var(--muted);
+}
+.dataset-toggle.add-dataset:hover {
+  color: var(--text);
 }
 /* Half the panel width: a long title wraps onto a second line (two at most); next
    to the maturity chip it keeps one, so the button stays one row high. */
