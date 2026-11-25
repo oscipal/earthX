@@ -33,6 +33,9 @@
 - 360×740: Die Legende liegt über der Attribution und bei einer Ansicht mit Zeitleiste über dem Kompass; die Zeitleiste liegt über der Knopfgruppe.
 - 360×740: Das Sheet der Einstellungen scrollt (Punkt 12).
 - 1280×360: Die Einstellungsleiste scrollt; „Actions“ ist nicht zu sehen (Punkt 12).
+- 1280×800 und 1280×360 mit Ansicht: Die Zeitleiste reicht unter die Spalte der Kartenknöpfe (Kompass, Zoom).
+- 360×740: Die Attribution läuft unter die Leiste; mit Processing-Sheet liegt die Legende über den Knöpfen oben.
+- 1280×360 mit Panel der Leiste und Ansicht: Die Karte ist zu niedrig für Legende und Zeitleiste; die Legende reicht in die Knöpfe oben.
 
 ## 4. Fragen an Otto
 
@@ -74,3 +77,13 @@
 
 - Unit-Tests der geänderten Module, `npx tsc -b`, `npm run lint`.
 - Browser-Checks je Punkt bei 1280×800, 1280×360 und 360×740, hell und dunkel: `frontend/e2e/ui-12-*.cjs`, dazu die betroffenen vorhandenen Checks (`status-box.cjs`, `narrow-windows.cjs`, `data-catalogue.cjs`, `dataset-pages.cjs`, `quick-processing.cjs`, `map-legend.cjs`).
+
+## 6. Stand der Umsetzung (25.11.2026)
+
+- **PR 1** ([#417](https://github.com/oscipal/earthX/pull/417)): Punkte 1, 5–11 nach F6 = 1 und F7 = 1. Punkt 6 ist für die Teile F4 und F5 angehalten.
+- **PR 2:** Punkte 2, 3, 4 und 12 nach F1 = 1, F2 = 1 und F3 = 1. Abweichungen von F3, die sich beim Messen ergeben haben:
+  - Bis zu **drei** Spalten statt zwei. Bei 1280×360 braucht allein „Display“ eines Farbbilds mehr als zwei Spalten; die Karte behält mindestens 240 px.
+  - Das Sheet unter 900 px reicht bis an den oberen Rand der Karte und nicht nur bis unter die Knöpfe; sonst passt „Display“ eines Farbbilds bei 360×740 nicht. Die Histogramme sind dort niedriger.
+  - „Display“ klappt nie von selbst ein, nur für einen Abschnitt, den man von Hand öffnet. Eingeklappte Abschnitte stehen als Köpfe nebeneinander.
+  - Die Legende weicht (unsichtbar), wo die Karte für sie über der Zeitleiste zu niedrig ist; unter 900 px deckt das Processing-Sheet sie.
+- Die Befunde aus §3 sind behoben und werden von `frontend/e2e/ui-12-layout.cjs` geprüft. `frontend/e2e/status-box.cjs` prüfte die alte Regel und entfällt.
