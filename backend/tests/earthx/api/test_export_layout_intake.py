@@ -14,8 +14,10 @@ from shapely.geometry import box
 from shapely.geometry import shape as shapely_shape
 
 from earthx.api.intake import OrderRefused
+from earthx.catalog.registry import Look
+from earthx.processing.recipe import recipe_hash
 from tests.earthx.api.test_estimate_resampling import ask, put, resampling, sentinel
-from tests.earthx.api.test_intake import accept, export_order, refused
+from tests.earthx.api.test_intake import accept, export_order, order, refused
 from tests.earthx.api.test_intake_mosaic import overpass, scene
 
 pytestmark = pytest.mark.anyio
@@ -157,3 +159,28 @@ class TestWhatTheEstimateSays:
             assert response.status_code == 200, response.text
             sizes[name] = response.json()["estimate"]["size"]
         assert sizes["coarse"] < sizes["per_band"] < sizes["fine"]
+
+
+class TestTheLookOfAnExport:
+    """M5-64: the look the app draws travels beside the recipe into the attachments, never into the recipe."""
+
+    LOOK = {"bands": {"red": {"colormap": "magma", "low": 0.0, "high": 0.25}}}
+
+    async def test_it_goes_over_the_looks_of_the_collection_and_the_hash_stays(self) -> None:
+        plain = await accept(layout_order({"form": "per_band"}), scenes("S2_A"))
+        looked = await accept(layout_order({"form": "per_band"}), scenes("S2_A"), look=self.LOOK)
+        assert looked.attachments is not None and plain.attachments is not None
+        assert looked.attachments.styles.looks["red"] == Look("magma", "fixed", 0.0, 0.25)
+        assert plain.attachments.styles.looks["red"] != looked.attachments.styles.looks["red"]
+        assert "scl" not in looked.attachments.styles.looks  # classes come from the registry, never from a look
+        assert recipe_hash(looked.recipe) == recipe_hash(plain.recipe)
+        assert "magma" not in looked.recipe.model_dump_json()
+
+    async def test_a_look_that_is_no_look_is_refused_before_anything_is_written(self) -> None:
+        bad = {"bands": {"red": {"colormap": "no-such-ramp", "low": 0, "high": 1}}}
+        error = await refused(layout_order({"form": "per_band"}), scenes("S2_A"), look=bad)
+        assert (error.status_code, error.stage) == (422, "look") and "colormap" in error.detail
+
+    async def test_a_raster_job_takes_no_look(self) -> None:
+        error = await refused(order(assets=("red",)), scenes("S2_A"), look=self.LOOK)
+        assert (error.status_code, error.stage) == (422, "look")

@@ -646,6 +646,18 @@ def class_aux_xml(bands: Sequence[BandMeta]) -> str | None:
     return "<PAMDataset>\n" + "".join(parts) + "</PAMDataset>\n"
 
 
+def style_bands(members: Sequence[BandMeta], count: int) -> tuple[list[str], list[tuple[ClassRow, ...] | None]]:
+    """What the QGIS style of a file of ``count`` bands needs (M5-64): the asset of each band and its classes.
+
+    One asset may fill several bands (the three of ``visual``); a band of classes keeps them only alone in its asset.
+    """
+    if len(members) == count:
+        return [meta.asset for meta in members], [meta.classes for meta in members]
+    if len(members) == 1:
+        return [members[0].asset] * count, [members[0].classes if count == 1 else None] * count
+    raise ValueError("a file holds one band of each of its assets, or every band of one asset")
+
+
 def class_files(files: Iterable[BandsFile]) -> list[tuple[str, str]]:
     """The ``.aux.xml`` beside each data file that holds a band of classes, as path in the ZIP and text."""
     return [(entry.path + AUX_SUFFIX, text) for entry in files if (text := class_aux_xml(entry.bands)) is not None]

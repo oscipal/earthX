@@ -232,6 +232,7 @@ async def accept(
     registry: DatasetRegistry = INTAKE_REGISTRY,
     operators: OperatorRegistry = OPERATORS,
     aoi_provenance: dict[str, str] | None = None,
+    look: dict[str, Any] | None = None,
 ):
     raw = document if isinstance(document, (str, bytes)) else json.dumps(document)
     heads = heads or Heads()
@@ -243,6 +244,7 @@ async def accept(
             item_source=source,
             gateway=gateway,
             aoi_provenance=aoi_provenance,
+            look=look,
         )
 
 

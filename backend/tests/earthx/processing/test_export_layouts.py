@@ -9,6 +9,7 @@ from __future__ import annotations
 import copy
 import io
 import json
+import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -20,8 +21,9 @@ import rasterio
 from earthx.access import download
 from earthx.access.band_export import BandMeta, band_meta
 from earthx.access.crop_rules import compute_crop_region
+from earthx.access.qgis_style import ExportStyles
 from earthx.access.tiles import open_asset
-from earthx.catalog.registry import AcquisitionYears
+from earthx.catalog.registry import AcquisitionYears, Look
 from earthx.processing import run
 from earthx.processing.errors import UnsupportedRecipe
 from earthx.processing.export import Attachments, AttachmentsInvalid
@@ -99,7 +101,7 @@ def _metas() -> dict[str, BandMeta]:
     }
 
 
-def _crop(assets: list[str], form: str, common: float | None) -> zipfile.ZipFile:
+def _crop(assets: list[str], form: str, common: float | None, styles: ExportStyles | None = None) -> zipfile.ZipFile:
     from shapely.geometry import mapping, shape
 
     region = compute_crop_region([{"geometry": FOOTPRINT}], shape(AOI))
@@ -109,7 +111,7 @@ def _crop(assets: list[str], form: str, common: float | None) -> zipfile.ZipFile
         crops=[download.AssetCrop(asset=a, paths=(paths[a],)) for a in assets],
         aoi_geometry=AOI, region_geometry=mapping(region), item_ids=["ITEM_A"],
         form=form, common_resolution=common, band_metas=_metas(),
-        recipe_json=b"{}", citation_bib=b"@misc{x}\n",
+        recipe_json=b"{}", citation_bib=b"@misc{x}\n", styles=styles,
     )  # fmt: skip
     return zipfile.ZipFile(io.BytesIO(data))
 
@@ -144,13 +146,16 @@ def _recipe(assets: list[str], layout: dict[str, Any], *, aoi: Any = AOI) -> Any
     return recipe_of_data(json.loads(json.dumps(data)), OPERATORS)
 
 
-def _job(assets: list[str], layout: dict[str, Any], crop: zipfile.ZipFile, workdir: Path) -> zipfile.ZipFile:
+def _job(
+    assets: list[str], layout: dict[str, Any], crop: zipfile.ZipFile, workdir: Path, styles: ExportStyles | None = None
+) -> zipfile.ZipFile:
     metas = _metas()
     attachments = Attachments(
         files={name: crop.read(name).decode() for name in ("ATTRIBUTION.txt", "citation.bib", "aoi.geojson")},
         attribution=("x",),
         dataset=DatasetFacts(SENTINEL_2_L2A.title, None),
         bands=tuple(metas[a] for a in assets),
+        styles=styles or ExportStyles(),
     )
     result = run(_recipe(assets, layout), workdir=workdir, progress=lambda done, total: None, operators=OPERATORS, attachments=attachments)
     return zipfile.ZipFile(result.path)
@@ -183,6 +188,41 @@ def test_the_job_writes_the_crops_files_bit_for_bit(form: str, common: float | N
             assert job.read(name) == crop.read(name), name
         for name in ("exports/BANDS.txt", "ATTRIBUTION.txt"):
             assert job.read(name) == crop.read(name)
+        # A QGIS style beside every file and mask (M5-64), the same bytes from both.
+        styles = [n for n in crop.namelist() if n.endswith(".qml")]
+        assert sorted(styles) == sorted(f"{n[:-4]}.qml" for n in rasters)
+        for name in styles:
+            assert job.read(name) == crop.read(name), name
+
+
+#: What a user drew: B02 (asset `blue`) in magma between two physical values; the rest from the collection (M5-64).
+STYLES = ExportStyles({"blue": Look("magma", "fixed", 0.02, 0.18), "rededge1": Look("viridis")})
+
+
+@pytest.mark.usefixtures("served")
+@pytest.mark.parametrize(("form", "common"), list(CASES.values()), ids=list(CASES))
+def test_the_styles_of_the_job_are_the_crops_and_draw_the_look_of_the_order(form: str, common: float | None, tmp_path: Path) -> None:
+    assets = list(ASSETS)
+    layout = {"form": form, **({"resolution_m": common} if common else {})}
+    crop = _crop(assets, form, common, STYLES)
+    with _job(assets, layout, crop, tmp_path, STYLES) as job:
+        styles = sorted(n for n in crop.namelist() if n.endswith(".qml"))
+        assert styles == sorted(n for n in job.namelist() if n.endswith(".qml"))
+        for name in styles:
+            assert job.read(name) == crop.read(name), name
+        first = next(n for n in styles if "_mask" not in n)
+        kinds = {n: ET.fromstring(crop.read(n)).find(".//rasterrenderer").get("type") for n in styles if "_mask" not in n}
+        if form == "per_band":
+            assert kinds == {
+                "exports/B02_blue_10m.qml": "singlebandpseudocolor",
+                "exports/B05_rededge1_20m.qml": "singlebandpseudocolor",
+                "exports/SCL_20m.qml": "paletted",
+            }, kinds
+            shader = ET.fromstring(crop.read("exports/B02_blue_10m.qml")).find(".//colorrampshader")
+            assert (float(shader.get("minimumValue")), float(shader.get("maximumValue"))) == (0.02, 0.18)
+        else:  # the band the look names is drawn in a file of several
+            renderer = ET.fromstring(crop.read(first)).find(".//rasterrenderer")
+            assert renderer.get("type") == "singlebandpseudocolor"
 
 
 @pytest.mark.usefixtures("served")

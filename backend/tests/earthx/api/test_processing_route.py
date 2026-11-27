@@ -1426,6 +1426,28 @@ class TestAnExport:
         for _, attachments in rows:
             assert set(attachments["files"]) == {"ATTRIBUTION.txt", "citation.bib", "aoi.geojson"}
 
+    async def test_the_look_goes_into_the_styles_of_the_side_files_and_not_into_the_recipe(self, rig: Rig) -> None:
+        look = {"bands": {"visual": {"colormap": "magma", "low": 0, "high": 200}}}
+        response = await rig.client.post(EXECUTION, json={"inputs": {"recipe": export_order(), "look": look}})
+        assert response.status_code == 201, response.text
+        (attachments,) = rig.db.execute("SELECT attachments FROM public.earthx_run").fetchone()  # type: ignore[misc]
+        assert attachments["styles"]["looks"]["visual"] == {"colormap": "magma", "scale": "fixed", "low": 0.0, "high": 200.0}
+        (body,) = rig.db.execute("SELECT body FROM public.earthx_recipe").fetchone()  # type: ignore[misc]
+        assert "magma" not in json.dumps(body)
+
+    @pytest.mark.parametrize(
+        ("look", "status"),
+        [
+            ([], 400),
+            ("magma", 400),
+            ({"bands": {"visual": {"colormap": "nope", "low": 0, "high": 1}}}, 422),
+            ({"bands": {"visual": {"colormap": "magma", "low": 1, "high": 0}}}, 422),
+        ],
+    )
+    async def test_a_look_that_is_no_look_is_refused(self, rig: Rig, look: object, status: int) -> None:
+        response = await rig.client.post(EXECUTION, json={"inputs": {"recipe": export_order(), "look": look}})
+        assert response.status_code == status, response.text
+
     async def test_the_origin_of_a_place_aoi_goes_into_the_side_files(self, rig: Rig) -> None:
         response = await rig.client.post(
             EXECUTION, json={"inputs": {"recipe": export_order(), "aoiProvenance": PLACE}}

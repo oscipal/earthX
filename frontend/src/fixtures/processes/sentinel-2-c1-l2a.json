@@ -30,6 +30,23 @@
       },
       "title": "Origin of the area of interest"
     },
+    "look": {
+      "description": "For an export only: how the app draws the bands, for the QGIS style beside each file of the ZIP. `bands` maps an asset key to `colormap`, `low` and `high` (physical values), `rgb` names three asset keys with a range each. Left out, the styles take the looks of the collection. Not part of the recipe, its hash or the cache.",
+      "maxOccurs": 1,
+      "minOccurs": 0,
+      "schema": {
+        "properties": {
+          "bands": {
+            "type": "object"
+          },
+          "rgb": {
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "title": "Look of the bands"
+    },
     "recipe": {
       "description": "The order itself, inline. It carries no address: the platform resolves items and assets. An input given by reference is refused.",
       "maxOccurs": 1,

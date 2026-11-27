@@ -151,8 +151,10 @@ class TestProcesses:
         self, docs_client: httpx.AsyncClient
     ) -> None:
         body = (await docs_client.get("/processing/processes/recipe")).json()
-        assert list(body["inputs"]) == ["recipe", "aoiProvenance"]
+        assert list(body["inputs"]) == ["recipe", "aoiProvenance", "look"]
         assert body["inputs"]["recipe"]["minOccurs"] == body["inputs"]["recipe"]["maxOccurs"] == 1
+        look = body["inputs"]["look"]  # M5-64: beside the recipe, never in it
+        assert (look["minOccurs"], look["maxOccurs"]) == (0, 1) and "hash" in look["description"]
         origin = body["inputs"]["aoiProvenance"]
         assert (origin["minOccurs"], origin["maxOccurs"]) == (0, 1)
         assert set(origin["schema"]["properties"]) == {"attribution", "license", "source"}

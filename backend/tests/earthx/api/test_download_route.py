@@ -325,6 +325,8 @@ class TestAcceptanceCriteria:
             assert names == {
                 "exports/visual_10m.tif",
                 "exports/visual_10m_mask.tif",
+                "exports/visual_10m.qml",
+                "exports/visual_10m_mask.qml",
                 "exports/BANDS.txt",
                 "ATTRIBUTION.txt",
                 "aoi.geojson",
@@ -413,8 +415,12 @@ class TestAcceptanceCriteria:
             assert names == {
                 "exports/group-01/visual_10m.tif",
                 "exports/group-01/visual_10m_mask.tif",
+                "exports/group-01/visual_10m.qml",
+                "exports/group-01/visual_10m_mask.qml",
                 "exports/group-02/visual_10m.tif",
                 "exports/group-02/visual_10m_mask.tif",
+                "exports/group-02/visual_10m.qml",
+                "exports/group-02/visual_10m_mask.qml",
                 "exports/BANDS.txt",
                 "ATTRIBUTION.txt",
                 "aoi.geojson",
@@ -432,6 +438,8 @@ class TestAcceptanceCriteria:
             assert set(archive.namelist()) == {
                 "exports/visual_10m.tif",
                 "exports/visual_10m_mask.tif",
+                "exports/visual_10m.qml",
+                "exports/visual_10m_mask.qml",
                 "exports/BANDS.txt",
                 "ATTRIBUTION.txt",
                 "aoi.geojson",
@@ -450,6 +458,8 @@ class TestAcceptanceCriteria:
             assert set(archive.namelist()) == {
                 "exports/visual_10m.tif",
                 "exports/visual_10m_mask.tif",
+                "exports/visual_10m.qml",
+                "exports/visual_10m_mask.qml",
                 "exports/BANDS.txt",
                 "ATTRIBUTION.txt",
                 "aoi.geojson",
@@ -1073,3 +1083,73 @@ def test_the_search_without_the_timestamp_still_finds_a_real_coordinate() -> Non
     notice = "Sentinel-2 L2A\n\nItems: at 7.1,46.1\n\nGenerated: 2026-10-10T14:25:17.100083Z\n"
     assert "7.1" in _without_generated(notice)
     assert "7.1" not in _without_generated("Sentinel-2 L2A\n\nGenerated: 2026-10-10T14:25:17.100083Z\n")
+
+
+class TestTheStyleOfACrop:
+    """M5-64: the crop carries a QGIS style beside each file, drawn with the look the app sends."""
+
+    def test_the_look_of_the_order_draws_the_style(self, client: TestClient) -> None:
+        import xml.etree.ElementTree as ET
+
+        look = {"bands": {"visual": {"colormap": "viridis", "low": 10, "high": 200}}}
+        response = _download(client, look=look)
+        assert response.status_code == 200, response.text
+        with zipfile.ZipFile(BytesIO(response.content)) as archive:
+            style = ET.fromstring(archive.read("exports/visual_10m.qml"))
+            mask = ET.fromstring(archive.read("exports/visual_10m_mask.qml"))
+        assert style.find(".//rasterrenderer").get("type") == "multibandcolor"  # the three bands of `visual`
+        assert [float(value.text) for value in style.iter("maxValue")] == [200.0] * 3
+        assert mask.find(".//rasterrenderer").get("type") == "paletted"
+
+    def test_without_a_look_the_standard_picture_gives_the_stretch(self, client: TestClient) -> None:
+        import xml.etree.ElementTree as ET
+
+        with zipfile.ZipFile(BytesIO(_download(client).content)) as archive:
+            style = ET.fromstring(archive.read("exports/visual_10m.qml"))
+        assert [float(value.text) for value in style.iter("maxValue")] == [255.0] * 3
+
+    @pytest.mark.parametrize(
+        "look",
+        [
+            {"bands": {"visual": {"colormap": "no-such-ramp", "low": 0, "high": 1}}},
+            {"bands": {"visual": {"colormap": "viridis", "low": 2, "high": 1}}},
+            {"bands": {"visual": {"colormap": "viridis", "low": 0, "high": 1}}, "url": "https://example.invalid/x.qml"},
+            {"rgb": {"bands": ["visual"], "ranges": [[0, 1]]}},
+        ],
+    )
+    def test_a_look_that_is_no_look_is_422_before_anything_is_read(self, client: TestClient, look: dict) -> None:
+        response = _download(client, look=look)
+        assert response.status_code == 422 and response.json()["detail"].startswith("look:")
+
+    def test_a_look_of_the_wrong_type_is_422(self, client: TestClient) -> None:
+        assert _download(client, look="viridis").status_code == 422
+
+
+class TestTheStylesOfOriginalFiles:
+    """M5-64 F4: the browser lays whole scenes into a ZIP itself and asks the style of each original file here."""
+
+    def _styles(self, client: TestClient, **body: Any) -> Any:
+        return client.post(f"/collections/{DATASET}/styles", json={"items": [ITEM_ID], "assets": ["visual"], **body})
+
+    def test_each_asset_gets_the_style_a_crop_of_it_carries(self, client: TestClient) -> None:
+        import xml.etree.ElementTree as ET
+
+        response = self._styles(client, look={"bands": {"visual": {"colormap": "viridis", "low": 5, "high": 250}}})
+        assert response.status_code == 200, response.text
+        style = ET.fromstring(response.json()["styles"]["visual"])
+        assert style.find(".//rasterrenderer").get("type") == "multibandcolor"
+        assert [float(value.text) for value in style.iter("maxValue")] == [250.0] * 3
+
+    @pytest.mark.parametrize(
+        ("body", "status"),
+        [
+            ({"assets": ["no-such-asset"]}, 422),
+            ({"look": {"bands": {"visual": {"colormap": "nope", "low": 0, "high": 1}}}}, 422),
+            ({"items": []}, 422),
+            ({"assets": []}, 422),
+            ({"url": "https://example.invalid/x.tif"}, 422),
+            ({"items": ["NOPE"]}, 404),
+        ],
+    )
+    def test_what_cannot_be_styled_is_refused(self, client: TestClient, body: dict, status: int) -> None:
+        assert self._styles(client, **body).status_code == status

@@ -37,6 +37,7 @@ from earthx.api.tiler import (
     OVERVIEW_ROUTER_PREFIX,
     ROUTER_PREFIX,
     SCENE_ORDER_ROUTE,
+    STYLES_ROUTE,
     build_app,
 )
 from earthx.catalog.registry import (
@@ -159,13 +160,17 @@ class TestNoFreeAddress:
         (M5-30b part 3), whose ids travel in the body and are fetched by id in batches. The mosaic tiles (M4-17b) name the dataset and the
         selection in the path, and each item they read is fetched through the same source. The tiles of a job
         result (M4-13c-5) name a result, which the object store holds, and no
-        source at all. ``/colormaps`` (UI-03d) renders nothing and reads no source: it lists the names the tiles take.
+        source at all. ``/colormaps`` (UI-03d) renders nothing and reads no source: it lists the names the tiles take. The
+        styles of original files (M5-64) are the bands' case: the item ids travel in the body.
         """
         rendering = [
             path
             for path in client.app.openapi()["paths"]
             if path
-            not in ("/health", "/colormaps", DOWNLOAD_ROUTE, AREA_STATISTICS_ROUTE, SCENE_ORDER_ROUTE, BANDS_ROUTE, MOSAIC_SELECTION_ROUTE)
+            not in (
+                "/health", "/colormaps", DOWNLOAD_ROUTE, AREA_STATISTICS_ROUTE, SCENE_ORDER_ROUTE, BANDS_ROUTE, STYLES_ROUTE,
+                MOSAIC_SELECTION_ROUTE,
+            )
             and not path.startswith((RESULT_ROUTER_PREFIX, MOSAIC_ROUTER_PREFIX, OVERVIEW_ROUTER_PREFIX))
         ]
         assert rendering

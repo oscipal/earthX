@@ -29,6 +29,7 @@ __all__ = [
     "EXPORT_OUTPUTS",
     "FORM_NOTE",
     "INLINE_ONLY",
+    "LOOK",
     "MEDIA_TYPES",
     "OUTPUTS",
     "PREFIX",
@@ -99,6 +100,9 @@ EXPORT_OUTPUTS = ("export", "recipe", "methods")
 AOI_PROVENANCE = "aoiProvenance"
 AOI_PROVENANCE_FIELDS = ("attribution", "license", "source")
 AOI_PROVENANCE_MAX_CHARS = 200
+
+#: The third, optional input (M5-64): how the app draws the bands, for the QGIS styles of an export.
+LOOK = "look"
 
 
 def _link(root: str, path: str, rel: str, type_: str | None = _JSON, title: str | None = None) -> dict[str, str]:
@@ -184,6 +188,18 @@ def process_description(root: str, operators: OperatorRegistry, config: DatasetC
                     "additionalProperties": False,
                     "minProperties": 1,
                 },
+            },
+            LOOK: {
+                "title": "Look of the bands",
+                "description": (
+                    "For an export only: how the app draws the bands, for the QGIS style beside each file of the ZIP. "
+                    "`bands` maps an asset key to `colormap`, `low` and `high` (physical values), `rgb` names three "
+                    "asset keys with a range each. Left out, the styles take the looks of the collection. Not part of "
+                    "the recipe, its hash or the cache."
+                ),
+                "minOccurs": 0,
+                "maxOccurs": 1,
+                "schema": {"type": "object", "properties": {"bands": {"type": "object"}, "rgb": {"type": "object"}}},
             },
         },
         "outputs": {

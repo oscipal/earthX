@@ -32,9 +32,9 @@ import math
 import time
 import zipfile
 import zlib
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import ExitStack
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
@@ -67,6 +67,7 @@ from earthx.access.band_export import (
     kept_nodata,
     plan_files,
     resampling_for,
+    style_bands,
     write_blocks,
 )
 from earthx.access.crop_rules import (
@@ -87,6 +88,7 @@ from earthx.access.crop_rules import (
     rasterize_aoi,
     source_crop_grid,
 )
+from earthx.access.qgis_style import MASK_STYLE, ExportStyles, dataset_style, style_name
 from earthx.access.radar import (
     JoinedPass,
     RadarGrid,
@@ -102,6 +104,7 @@ from earthx.access.radar import (
     scene_lines,
 )
 from earthx.access.resolve import open_asset_ref
+from earthx.catalog.registry import ClassRow
 from earthx.processing.errors import AoiOutsideInputs, ProcessingError, UnsupportedRecipe
 from earthx.processing.methods import DatasetFacts, methods_of, recipe_with_methods
 from earthx.processing.operators import REGISTRY
@@ -178,7 +181,9 @@ def attachment_limits(scenes: int) -> dict[str, int]:
 
 
 _ATTRIBUTION_ENTRIES = 8
-_ATTACHMENT_KEYS = frozenset({"files", "attribution", "dataset", "acquired_on", "bands", "notes", "notices", "scenes"})
+_ATTACHMENT_KEYS = frozenset(
+    {"files", "attribution", "dataset", "acquired_on", "bands", "notes", "notices", "scenes", "styles"}
+)
 
 _ATTRIBUTION_CHARS = 1024
 
@@ -216,6 +221,9 @@ class Attachments:
     #: The scenes the notice names, counted by `api` from the order; the limit of ``NOTICE.txt`` grows with it
     #: (:func:`attachment_limits`), up to :data:`MAX_ATTACHMENT_SCENES`. 0 for attachments written before F4 = 2.
     scenes: int = 0
+    #: What the QGIS styles beside the files are drawn with (M5-64): the look the user had at the order over the looks of
+    #: the collection. Empty for attachments written before M5-64: the styles then draw every band in viridis.
+    styles: ExportStyles = field(default_factory=ExportStyles)
 
     def __post_init__(self) -> None:
         if set(self.files) != set(ATTACHMENT_LIMITS):
@@ -249,6 +257,8 @@ class Attachments:
             data["notices"] = [notice.model_dump(mode="json") for notice in self.notices]
         if self.scenes:
             data["scenes"] = self.scenes
+        if self.styles != ExportStyles():
+            data["styles"] = self.styles.to_json()
         return data
 
     @classmethod
@@ -264,11 +274,14 @@ class Attachments:
             bands = tuple(BandMeta.from_json(band) for band in data.get("bands", ()))
             notes = tuple(data.get("notes", ()))
             notices = tuple(RecipeNotice.model_validate(notice) for notice in data.get("notices", ()))
+            styles = ExportStyles.from_json(data["styles"]) if "styles" in data else ExportStyles()
         except (ValueError, TypeError, KeyError):
             raise AttachmentsInvalid("the attachments hold files and attribution") from None
         if not all(isinstance(note, str) and len(note) <= _ATTRIBUTION_CHARS for note in notes):
             raise AttachmentsInvalid("the notes are short texts")
-        return cls(dict(files), tuple(attribution), dataset, acquired_on, bands, notes, notices, data.get("scenes", 0))
+        return cls(
+            dict(files), tuple(attribution), dataset, acquired_on, bands, notes, notices, data.get("scenes", 0), styles
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -754,6 +767,8 @@ def export(recipe: Recipe, *, workdir: Path, progress: Progress, attachments: At
             group_count = len(entry.groups)
             files: list[tuple[str, str]] = []
             listed: list[BandsFile] = []
+            # The files that get a QGIS style (M5-64): data member, data file in the work directory, mask member, bands.
+            styled: list[tuple[str, str, str, Sequence[BandMeta]]] = []
             layout = recipe.output.layout  # type: ignore[union-attr]  # `check_export`: a crop
             notice = attachments.files[NOTICE_FILENAME]
             if is_radar(recipe):
@@ -769,10 +784,14 @@ def export(recipe: Recipe, *, workdir: Path, progress: Progress, attachments: At
                         asset = output.plan.assets[0]
                         files.append((folder + crop_filename(asset), data_name))
                         files.append((folder + mask_filename(asset), mask_name))
+                        styled.append(
+                            (folder + crop_filename(asset), data_name, folder + mask_filename(asset), [_flat_meta(recipe, asset)])
+                        )
                         continue
                     folder = EXPORTS_DIR + group_dirname(output.group, group_count)
                     files.append((folder + output.plan.name, data_name))
                     files.append((folder + output.plan.mask_name, mask_name))
+                    styled.append((folder + output.plan.name, data_name, folder + output.plan.mask_name, output.members))
                     listed.append(
                         BandsFile(
                             folder + output.plan.name,
@@ -790,6 +809,8 @@ def export(recipe: Recipe, *, workdir: Path, progress: Progress, attachments: At
                     folder = group_dirname(output.group, group_count)
                     files.append((folder + crop_filename(output.asset), data_name))
                     files.append((folder + mask_filename(output.asset), mask_name))
+                    asset = output.asset
+                    styled.append((folder + crop_filename(asset), data_name, folder + mask_filename(asset), [_flat_meta(recipe, asset)]))
             else:
                 laid = state.plan_layout(attachments.bands)
                 state.total = sum(output.blocks for output in laid) + 1
@@ -798,6 +819,7 @@ def export(recipe: Recipe, *, workdir: Path, progress: Progress, attachments: At
                     folder = EXPORTS_DIR + group_dirname(output.group, group_count)
                     files.append((folder + output.plan.name, data_name))
                     files.append((folder + output.plan.mask_name, mask_name))
+                    styled.append((folder + output.plan.name, data_name, folder + output.plan.mask_name, output.members))
                     target = output.plan.resolution_m if layout.form == "multi_band" else None
                     listed.append(
                         BandsFile(
@@ -830,6 +852,11 @@ def export(recipe: Recipe, *, workdir: Path, progress: Progress, attachments: At
                 (CITATION_FILENAME, attachments.files[CITATION_FILENAME].encode("utf-8")),
                 (NOTICE_FILENAME, notice.encode("utf-8")),
             ]
+            for member, data_name, mask_member, members in styled:
+                with open_workfile(workdir, data_name) as written:
+                    style = dataset_style(written, *style_bands(members, written.count), attachments.styles)
+                texts.append((style_name(member), style.encode("utf-8")))
+                texts.append((style_name(mask_member), MASK_STYLE.encode("utf-8")))
             if layout is not None:
                 texts += [(member, text.encode("utf-8")) for member, text in class_files(listed)]
                 texts.append(
@@ -875,6 +902,13 @@ def export(recipe: Recipe, *, workdir: Path, progress: Progress, attachments: At
         methods=methods,
         notices=attachments.notices,
     )
+
+
+def _flat_meta(recipe: Recipe, asset: str) -> BandMeta:
+    """An asset of an export without a layout, which carries no bands: its classes from the recipe, for its style (M5-64)."""
+    resolved = next((entry for entry in recipe.inputs[0].resolved if entry.asset.asset == asset and entry.classes), None)
+    classes = None if resolved is None else tuple(ClassRow(c.value, c.name, c.colour) for c in resolved.classes or ())
+    return band_meta({}, asset, classes=classes)
 
 
 def read_attachments(workdir: Path) -> Attachments:

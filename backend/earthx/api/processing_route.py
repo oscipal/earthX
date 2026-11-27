@@ -645,13 +645,13 @@ async def _read_body(request: Request) -> bytes:
     return b"".join(chunks)
 
 
-def _unwrap(raw: bytes) -> tuple[bytes, dict[str, str] | None]:
+def _unwrap(raw: bytes) -> tuple[bytes, dict[str, str] | None, dict[str, Any] | None]:
     """The order inside the envelope ``{"inputs": {"recipe": {…}}}``, as JSON text; or the ``400`` that says why not.
 
     Only the part of the envelope the platform can honour is taken. An input given by
     reference is the part it cannot (F4, B8): nothing is fetched for it. Beside the order,
     an export or a raster job with an area may carry ``aoiProvenance`` (M4-11 F4, M4-30), returned
-    checked as the second value.
+    checked as the second value, and ``look`` (M5-64), the third, checked by the intake against the dataset.
     """
     try:
         document = loads_i_json(raw)
@@ -668,10 +668,16 @@ def _unwrap(raw: bytes) -> tuple[bytes, dict[str, str] | None]:
     if not isinstance(inputs, dict) or docs.PROCESS_ID not in inputs or set(inputs) - {
         docs.PROCESS_ID,
         docs.AOI_PROVENANCE,
+        docs.LOOK,
     }:
         raise Problem(
-            400, f"inputs holds the input {docs.PROCESS_ID!r} and, for an order with an area, {docs.AOI_PROVENANCE!r}"
+            400,
+            f"inputs holds the input {docs.PROCESS_ID!r} and, for an order with an area, {docs.AOI_PROVENANCE!r}, "
+            f"for an export {docs.LOOK!r}",
         )
+    look = inputs.get(docs.LOOK)
+    if look is not None and not isinstance(look, dict):
+        raise Problem(400, f"the input {docs.LOOK!r} is a JSON object")
     provenance = _aoi_provenance(inputs[docs.AOI_PROVENANCE]) if docs.AOI_PROVENANCE in inputs else None
     order = inputs[docs.PROCESS_ID]
     if (isinstance(order, dict) and "href" in order) or isinstance(order, str):
@@ -686,7 +692,7 @@ def _unwrap(raw: bytes) -> tuple[bytes, dict[str, str] | None]:
     export = isinstance(output, dict) and output.get("kind") == "crop"
     _check_outputs(document.get("outputs"), docs.EXPORT_OUTPUTS if export else docs.RASTER_OUTPUTS)
     try:
-        return json.dumps(order, ensure_ascii=False, allow_nan=False).encode("utf-8"), provenance
+        return json.dumps(order, ensure_ascii=False, allow_nan=False).encode("utf-8"), provenance, look
     except UnicodeEncodeError:
         # A lone surrogate (`"\ud800"`) is valid JSON text and not a string anyone can store.
         raise Problem(400, "not a JSON document: a string holds a character that has no UTF-8 form") from None
@@ -763,7 +769,7 @@ _ORDER_BODY = {
 async def execute(request: Request, process_id: str, api: Api) -> Response:
     if process_id != docs.PROCESS_ID:
         raise Problem(404, "there is no such process", type_=NO_SUCH_PROCESS, title="No such process")
-    order, provenance = _unwrap(await _read_body(request))
+    order, provenance, look = _unwrap(await _read_body(request))
     try:
         accepted = await accept_order(
             order,
@@ -772,6 +778,7 @@ async def execute(request: Request, process_id: str, api: Api) -> Response:
             item_source=api.item_source,
             gateway=api.gateway,
             aoi_provenance=provenance,
+            look=look,
         )
         check_recipe_hosts(accepted.recipe, api.registry)
     except OrderRefused as error:
@@ -843,7 +850,7 @@ def _duration(seconds: float) -> str:
 async def estimate_order_cost(request: Request, process_id: str, api: Api) -> Response:
     if process_id != docs.PROCESS_ID:
         raise Problem(404, "there is no such process", type_=NO_SUCH_PROCESS, title="No such process")
-    order, provenance = _unwrap(await _read_body(request))
+    order, provenance, _look = _unwrap(await _read_body(request))
     try:
         estimated = await estimate_order(
             order,

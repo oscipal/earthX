@@ -49,6 +49,7 @@ from typing import Annotated, Any, Literal, TypeVar
 
 import numpy
 import psycopg
+import rasterio
 from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request
 from fastapi.dependencies.utils import solve_dependencies
 from fastapi.exceptions import RequestValidationError
@@ -103,6 +104,7 @@ from earthx.access.mosaic_tiles import (
     open_mosaic,
 )
 from earthx.access.overview_tiles import PYRAMID_GATE, EarthxOverviewTilerFactory, PyramidTile
+from earthx.access.qgis_style import Stats, collection_styles, file_style, measure_band
 from earthx.access.radar import item_line_times
 from earthx.access.resolve import (
     AssetNotOnItem,
@@ -203,6 +205,7 @@ DOWNLOAD_ROUTE = "/collections/{dataset}/download"
 # tile refuses can have more scenes than a URL takes. Apart from the mosaic router, whose routes are the tile and its TileJSON.
 SCENE_ORDER_ROUTE = "/collections/{dataset}/scene-order"
 BANDS_ROUTE = "/collections/{dataset}/bands"
+STYLES_ROUTE = "/collections/{dataset}/styles"
 # Scenes one such request may name: the largest overpasses of a continental AOI over a season stay far below it.
 MAX_ORDER_ITEMS = 500
 
@@ -1867,6 +1870,14 @@ class DownloadRequest(BaseModel):
         le=1000,
         description="the pixel size in metres of the one file of `multi_band`; with no other form",
     )
+    look: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "How the app draws the bands (M5-64), for the QGIS style beside each file: `bands` (asset key → `colormap`, "
+            "`low`, `high`, physical) and `rgb` (`bands`: three asset keys, `ranges`: three pairs). Left out: the looks "
+            "of the collection."
+        ),
+    )
 
     @model_validator(mode="after")
     def _form_and_resolution_agree(self) -> DownloadRequest:
@@ -2016,6 +2027,10 @@ async def download_crop(
         plan_files(body.form, [band_metas[asset] for asset in wanted], body.common_resolution)
     except ExportPlanError as error:
         raise HTTPException(status_code=422, detail=str(error)) from None
+    try:
+        styles = collection_styles(config, wanted, body.look)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=f"look: {error}") from None
     if config.georeferencing is Georeferencing.GCP_TPS and any(
         resampling_for(band_metas[asset], body.common_resolution) != "none" for asset in wanted
     ):
@@ -2164,6 +2179,7 @@ async def download_crop(
             form=body.form,
             common_resolution=body.common_resolution,
             band_metas=band_metas,
+            styles=styles,
             bands_notes=bands_notes,
             line_times=(
                 None
@@ -2294,6 +2310,52 @@ async def bands_of_items(
         classes_of=config.class_rows,
     )
     return {"bands": rows}
+
+
+class StylesRequest(BaseModel):
+    """Body of ``POST /collections/{dataset}/styles`` (M5-64): the original files the browser lays into a ZIP itself."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[str] = Field(min_length=1, max_length=25, description="item ids, the first measured where a look has no numbers")
+    assets: list[str] = Field(min_length=1, max_length=32, description="asset keys, one file each")
+    look: dict[str, Any] | None = Field(default=None, description="how the app draws the bands, as in the crop's request")
+
+
+async def styles_of_assets(
+    request: Request, dataset: Annotated[str, Path(description="dataset id of the registry")], body: StylesRequest
+) -> dict[str, dict[str, str]]:
+    """The QGIS style of each original file of an asset (M5-64 F4), for the ZIP the browser builds of whole scenes.
+
+    The same styles as a crop of the asset would carry: the look of the request over the looks of the collection. A look
+    without numbers is measured on the first scene, once, as the crop measures its file.
+    """
+    state = request.app.state
+    config = _dataset_config(state, dataset)
+    first = await _fetch_item(state, dataset, body.items[0])
+    wanted = list(dict.fromkeys(body.assets))
+    unknown = [asset for asset in wanted if asset not in first.get("assets", {})]
+    if unknown:
+        raise HTTPException(status_code=422, detail=f"the first scene has no asset {', '.join(unknown)}")
+    try:
+        styles = collection_styles(config, wanted, body.look)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=f"look: {error}") from None
+    paths = {asset: _resolve_asset_path(state, first, config=config, item=first["id"], asset=asset) for asset in wanted}
+
+    def style_of(asset: str) -> str:
+        count = band_count(first, asset) or 1
+        classes = config.class_rows(asset) if count == 1 else None
+
+        def measure(index: int) -> Stats | None:
+            with rasterio.Env(**state.earthx_crop_gdal_options), open_asset(paths[asset]) as reader:
+                opened = getattr(reader, "dataset", None)
+                return None if opened is None else measure_band(opened, index + 1)
+
+        return file_style(count, [asset] * count, [classes] * count, styles, measure)
+
+    found = await asyncio.gather(*(run_in_threadpool(style_of, asset) for asset in wanted))
+    return {"styles": dict(zip(wanted, found, strict=True))}
 
 
 def gdal_environment(request: Request) -> dict[str, str]:
@@ -2524,6 +2586,13 @@ def build_app(
         summary="The order a mosaic reads the scenes of a pass in",
     )
     app.add_api_route(
+        STYLES_ROUTE,
+        styles_of_assets,
+        methods=["POST"],
+        tags=["Download"],
+        summary="The QGIS style of the original file of each asset",
+    )
+    app.add_api_route(
         BANDS_ROUTE,
         bands_of_items,
         methods=["POST"],
@@ -2651,6 +2720,7 @@ app = build_app()
 
 __all__ = [
     "BANDS_ROUTE",
+    "STYLES_ROUTE",
     "DOWNLOAD_ROUTE",
     "MOSAIC_ROUTER_PREFIX",
     "FOOTPRINT_SELECTION_ROUTE",

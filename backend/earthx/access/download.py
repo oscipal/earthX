@@ -166,6 +166,7 @@ from earthx.access.band_export import (
     kept_nodata,
     plan_files,
     resampling_for,
+    style_bands,
     write_blocks,
 )
 from earthx.access.crop_rules import (
@@ -192,6 +193,7 @@ from earthx.access.crop_rules import (
     rasterize_aoi,
     source_crop_grid,
 )
+from earthx.access.qgis_style import MASK_STYLE, ExportStyles, dataset_style, style_name
 from earthx.access.radar import (
     RADAR_GRID_LINE,
     JoinedPass,
@@ -1293,6 +1295,12 @@ class GroupCrop:
     region_geometry: Mapping[str, Any]
 
 
+def _style_of(data: bytes, members: Sequence[BandMeta], styles: ExportStyles | None) -> str:
+    """The QGIS style of one written file (M5-64): one asset may fill every band of it (``visual``), else one band each."""
+    with MemoryFile(data) as memory, memory.open() as dataset:
+        return dataset_style(dataset, *style_bands(members, dataset.count), styles or ExportStyles())
+
+
 def build_download_zip(
     *,
     config: DatasetConfig,
@@ -1313,6 +1321,7 @@ def build_download_zip(
     band_metas: Mapping[str, BandMeta] | None = None,
     bands_notes: Sequence[str] = (),
     line_times: Mapping[str, tuple[datetime, datetime] | None] | None = None,
+    styles: ExportStyles | None = None,
 ) -> bytes:
     """The finished ZIP: the data files of the chosen form and their masks in ``exports/``, ``exports/BANDS.txt``,
     the AOI as GeoJSON, plus :data:`NOTICE_FILENAME`.
@@ -1321,7 +1330,8 @@ def build_download_zip(
     caller can stream the result without anything having touched disk.
 
     ``form`` and ``common_resolution`` (NM4-75): one file per band (the default), one per resolution, or one
-    multi-band file at ``common_resolution`` (:mod:`earthx.access.band_export`). ``band_metas`` describes the
+    multi-band file at ``common_resolution`` (:mod:`earthx.access.band_export`). Beside every file and its mask lies
+    a QGIS style (M5-64, :mod:`earthx.access.qgis_style`) drawn with ``styles``. ``band_metas`` describes the
     assets as the items do, by asset key; an asset without an entry is described by its key alone. A band is
     always in the resolution of its source, or in ``common_resolution`` (no coarser factor is offered any more,
     Otto, 03.11.2026). ``bands_notes`` are lines for the head of ``BANDS.txt``.
@@ -1438,6 +1448,8 @@ def build_download_zip(
                             written = written_ds.dtypes[0]
                     archive.writestr(folder + plan.name, crop_bytes.data)
                     archive.writestr(folder + plan.mask_name, crop_bytes.mask)
+                    archive.writestr(folder + style_name(plan.name), _style_of(crop_bytes.data, members, styles))
+                    archive.writestr(folder + style_name(plan.mask_name), MASK_STYLE)
                     listed.append(BandsFile(folder + plan.name, members, methods, exports, written))
             for member, text in class_files(listed):
                 archive.writestr(member, text)

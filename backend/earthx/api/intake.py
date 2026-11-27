@@ -87,6 +87,7 @@ from earthx.access.download import (
     filter_items_intersecting_aoi,
     parse_aoi_geometry,
 )
+from earthx.access.qgis_style import collection_styles
 from earthx.access.radar import RADAR_GRID_LINE, item_line_times
 from earthx.access.resolve import (
     AssetNotOnItem,
@@ -257,15 +258,17 @@ async def accept_order(
     item_source: ItemSource,
     gateway: Gateway,
     aoi_provenance: Mapping[str, str] | None = None,
+    look: Mapping[str, Any] | None = None,
 ) -> AcceptedOrder:
     """The order as a recipe with a ``recipe_id`` — or an :class:`OrderRefused` (module docstring).
 
     ``aoi_provenance`` (M4-11 F4, M4-30) is where a place-search AOI came from (``attribution``,
     ``license``, ``source``), checked by the caller; it only goes into the side files of an export
-    or of a raster job's ZIP, never into the recipe or its hash.
+    or of a raster job's ZIP, never into the recipe or its hash. ``look`` (M5-64) is how the app draws the bands; it
+    goes into the QGIS styles of an export and is checked here (422), never into the recipe.
     """
     try:
-        accepted = await _accept(raw, registry, operators, item_source, gateway, aoi_provenance)
+        accepted = await _accept(raw, registry, operators, item_source, gateway, aoi_provenance, look)
     except OrderRefused as refused:
         _log_refused(refused)
         raise
@@ -395,6 +398,7 @@ async def _accept(
     item_source: ItemSource,
     gateway: Gateway,
     aoi_provenance: Mapping[str, str] | None = None,
+    look: Mapping[str, Any] | None = None,
 ) -> AcceptedOrder:
     prepared = await _prepare(raw, registry, operators, item_source, aoi_provenance)
     versions = await _gather(_version_of(target, gateway) for target in prepared.targets)
@@ -414,6 +418,9 @@ async def _accept(
         pass
     acquired_on = _acquired_on(prepared)
     if not isinstance(recipe.output, CropOutput):
+        if look is not None:
+            # A raster job's look is the one its result is downloaded with, never the one it was placed with (M5-64 F3).
+            raise OrderRefused(422, "look goes with an export; a result is styled when it is downloaded", "look")
         return AcceptedOrder(
             recipe,
             cache_key(recipe) is not None,
@@ -435,12 +442,15 @@ async def _accept(
             accepted_at=datetime.now(UTC),
             acquired_on=acquired_on,
             years=prepared.years,
+            look=look,
         )
     except AttachmentsInvalid:
         # The limit of the notice grows with the scenes (F4 = 2, plan M5-30b §6): up to MAX_ORDER_ITEMS scenes with ids
         # of full length fit, so this does not trigger for an order that passed the count above. A safety net: a
         # refusal of the order's size, never a 500.
         raise OrderRefused(413, "this export names more scenes than the notes of its ZIP can list; select fewer", "size") from None
+    except ValueError as error:  # the look, checked against the dataset (M5-64)
+        raise OrderRefused(422, f"look: {error}", "look") from None
     return AcceptedOrder(
         recipe, False, prepared.skipped, attachments, acquired_on, prepared.years, scene_aoi=prepared.scene_aoi
     )
@@ -638,6 +648,7 @@ def export_attachments(
     acquired_on: date | None = None,
     bands: Sequence[BandMeta] = (),
     scene_aoi: bool = False,
+    look: Mapping[str, Any] | None = None,
 ) -> Attachments:
     """The side files of an export's ZIP, as the synchronous crop writes them (M4-11 F3, F4, K3).
 
@@ -679,6 +690,7 @@ def export_attachments(
         bands=tuple(bands),
         notes=tuple(layout_notes(recipe)) if bands else (),
         scenes=sum(len(group) for group in entry.groups) + len(dropped),
+        styles=collection_styles(config, entry.assets, look),
     )
 
 
