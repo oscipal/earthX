@@ -160,6 +160,7 @@ def search_text(
         d=_lines(
             *bands,
             *presets,
+            *(row.name for classes in config.band_classes.values() for row in classes.classes),
             TRUE_COLOR_WORDS if config.true_color else "",
             DATA_CLASS_WORDS[config.data_class],
             *(provider.name for provider in config.providers),

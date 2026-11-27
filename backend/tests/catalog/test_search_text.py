@@ -61,6 +61,13 @@ def test_quick_processings_and_true_color_only_where_the_entry_has_them():
     assert "NDVI" not in dem and "true color" not in dem
 
 
+def test_the_classes_of_a_band_are_in_its_text_and_only_there():
+    # M5-23 plan §9a: "Gewässer" and "water" reach WorldCover through its class "Permanent water bodies".
+    lines = search_text(ESA_WORLDCOVER_2020, terms=NO_TERMS).d.splitlines()
+    assert {"Permanent water bodies", "Tree cover", "Snow and ice"} <= set(lines)
+    assert "Permanent water bodies" not in search_text(COP_DEM_GLO_30, terms=NO_TERMS).d
+
+
 def test_auxiliary_assets_and_dimensionless_units_stay_out():
     lines = search_text(SENTINEL_2_L2A, terms=NO_TERMS).d.splitlines()
     assert "red" in lines and "red 1" not in lines and "wvp cm" in lines
