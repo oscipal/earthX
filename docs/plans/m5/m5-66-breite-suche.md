@@ -49,7 +49,29 @@
 7. **Blättern:** Die Liste endet am Ende der Fusion. Eine Seite dahinter ist leer und hat keinen Link `next`, auch wenn `numberMatched` mehr nennt (F2). Das Frontend blättert die Suche per `offset` und liest `numberMatched` bei der Suche nicht (`frontend/src/api.ts`, `fetchCatalogueSearch`).
 8. **Unverändert:** Seiten ohne Text (`_catalogue_page`), Start bei Fläche oder Text (M5-65), Regeln zu Zahlen in Namen, Glossar, `ignored_filters`.
 
-**Umfang:** etwa 200 geänderte Zeilen in `search.py` und `collection_search.py`, dazu Tests (§7).
+**Umfang:** etwa 230 geänderte Zeilen in `search.py`, `collection_search.py` und `listed_search.py`, dazu 170 Zeilen Tests (§7).
+
+**Messung nach PR 1** [M], gleicher Bestand und gleiche Art wie §1, bester von 3:
+
+| Anfrage | Treffer | `main` | PR 1 |
+|---|---|---|---|
+| data | 102 144 | 1 402 ms | 859 ms |
+| map | 21 891 | 773 ms | 601 ms |
+| water | 28 215 | 961 ms | 773 ms |
+| Karte | 55 364 | 1 659 ms | 1 261 ms |
+| Bebauungsplan | 21 283 | 929 ms | 781 ms |
+| Wasser Pegel Messstelle | 7 849 | 1 726 ms | 793 ms |
+| Sentinel-2 | 3 | 13 ms | 13 ms |
+| data + Kategorie `water` | 11 248 | 1 304 ms | 231 ms |
+| map + Region DE-RP | 2 822 | 766 ms | 297 ms |
+| water + Region CH | 3 993 | 979 ms | 325 ms |
+| water + `boundaries` + DE | 5 586 | 963 ms | 395 ms |
+| data + Box Zürich | 454 | 48 ms | 50 ms |
+| map + Fläche Bayern | 1 455 | 262 ms | 270 ms |
+| data, nur gelistete | 102 138 | 1 553 ms | 837 ms |
+| data, ab Platz 200 | 102 144 | 1 553 ms | 850 ms |
+
+`numberMatched` ist in allen Fällen bis 10 000 gleich wie auf `main` und fehlt darüber. **Was bleibt [M]:** Bei einem breiten Wort ohne Filter kostet das Ranken aller Treffer im Volltext etwa 0,5 s je 5·10⁴ Treffer, der Trigramm-Arm 0,2–0,4 s, Übertragung und Fusion großer Gleichstände bis 0,3 s („Karte“: 19 384 Einträge in der Fusion). Beide Arme laufen nacheinander (F4).
 
 ## 3. Reihenfolge der ersten Treffer [M]
 
