@@ -159,6 +159,12 @@ async function runCase(browser, theme, viewport, results) {
     await settle(page);
     if (!(await headings(page)).includes('Quick processing')) fail(`no "Quick processing": ${await headings(page)}`);
     expectEq(fail, 'quick buttons', await quickButtons(page), ['VV dB', 'VH dB']);
+    // Uncalibrated in the tooltip only (Otto, 27.11.2026): no note in the bar.
+    for (const name of ['VV dB', 'VH dB']) {
+      const tip = await page.locator('.inspector .vc-quick button', { hasText: name }).getAttribute('data-tip');
+      if (!tip?.includes('uncalibrated digital numbers (DN), not calibrated backscatter (σ⁰)')) fail(`tooltip of ${name}: ${tip}`);
+    }
+    if (/uncalibrated/iu.test((await page.locator('.inspector .insp-body').textContent()) ?? '')) fail('a note on calibration in the bar');
     // look: "VV dB" into the fields, drawn with "Apply".
     await page.locator('.inspector .vc-quick button', { hasText: 'VV dB' }).click();
     await page.waitForFunction(async () => (await import('/src/store.ts')).useAppStore.getState().pendingColormapName !== '', null, { timeout: 5000 }).catch(() => fail('the look of VV dB did not come'));
@@ -203,6 +209,7 @@ async function runCase(browser, theme, viewport, results) {
     const add = page.locator('button', { hasText: /^SAR dB$/ });
     await add.first().waitFor({ timeout: 5000 }).catch(() => fail('"Add step" offers no "SAR dB"'));
     if (await add.count()) {
+      if (!(await add.first().getAttribute('data-tip'))?.includes('uncalibrated digital numbers (DN)')) fail(`tooltip of SAR dB: ${await add.first().getAttribute('data-tip')}`);
       await add.first().click();
       await settle(page);
       const step = await page.evaluate(async () => (await import('/src/processingStore.ts')).useProcessingStore.getState().steps.find((s) => s.op === 'sar_db')?.values ?? null);
@@ -220,6 +227,21 @@ async function runCase(browser, theme, viewport, results) {
     await settle(page);
     if ((await headings(page)).includes('Quick processing')) fail(`"Quick processing" on a scene of HH and HV: ${await quickButtons(page)}`);
     await shot('hh');
+    // panel on HH and HV: "SAR dB" reads hh (Otto, 27.11.2026); only the presets are missing there.
+    await page.evaluate(async () => {
+      const { useProcessingStore } = await import('/src/processingStore.ts');
+      useProcessingStore.getState().resetDraft();
+      useProcessingStore.getState().openProcessing();
+    });
+    const addHh = page.locator('button', { hasText: /^SAR dB$/ });
+    await addHh.first().waitFor({ timeout: 5000 }).catch(() => fail('"Add step" offers no "SAR dB" on HH and HV'));
+    if (await addHh.count()) {
+      await addHh.first().click();
+      await settle(page);
+      const step = await page.evaluate(async () => (await import('/src/processingStore.ts')).useProcessingStore.getState().steps.find((s) => s.op === 'sar_db')?.values ?? null);
+      expectEq(fail, 'step on HH', step && [step.bands, step.name], ['hh', 'hh_db']);
+      await shot('panel-hh');
+    }
   } catch (error) {
     fail(`stopped: ${error.message.split('\n').slice(0, 3).join(' ')}`);
     await shot('stopped').catch(() => undefined);

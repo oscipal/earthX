@@ -156,6 +156,26 @@ describe('a SAR dB step', () => {
     expect(sarDb().values.name).toBe('cross');
   });
 
+  it('reads hh on a scene of HH and HV, which has no preset but takes the step (Otto, 27.11.2026)', async () => {
+    const polar = {
+      ...scene,
+      id: 'S1A_EW_GRDM_1SDH_SYNTH',
+      properties: { ...scene.properties, 'sar:polarizations': ['HH', 'HV'] },
+      assets: { hh: scene.assets.vv, hv: scene.assets.vh },
+    } as unknown as StacItem;
+    useAppStore.setState({ items: [polar], groups: [{ key: ['2026-11-20'], label: '2026-11-20', items: [polar] }], selectedIds: [polar.id] });
+    await openWithSarDb();
+    expect(sarDb().values).toMatchObject({ bands: 'hh', name: 'hh_db' });
+    expect(JSON.parse(tiles().get('params')!)).toEqual({ bands: ['hh'], name: 'hh_db', quantity: 'amplitude' });
+    act(() => store().updateStep(sarDb().key, 'bands', 'hv'));
+    expect(sarDb().values.name).toBe('hv_db');
+  });
+
+  it('says in its tooltip that it reads uncalibrated digital numbers', async () => {
+    await openWithSarDb();
+    expect(button('SAR dB').getAttribute('data-tip')).toMatch(/uncalibrated digital numbers \(DN\), not calibrated backscatter \(σ⁰\)/u);
+  });
+
   it('offers a rename in its head like the other steps that add a band', async () => {
     await openWithSarDb();
     expect(container.querySelector('button[aria-label="Rename"]')).not.toBeNull();

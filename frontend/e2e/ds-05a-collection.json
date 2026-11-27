@@ -280,7 +280,8 @@
     "name": "vv_db",
     "quantity": "amplitude"
    },
-   "title": "VV dB"
+   "title": "VV dB",
+   "tooltip": "VV in decibels of the uncalibrated digital numbers (DN), not calibrated backscatter (σ⁰)."
   },
   {
    "adjustable": [],
@@ -294,7 +295,8 @@
     "name": "vh_db",
     "quantity": "amplitude"
    },
-   "title": "VH dB"
+   "title": "VH dB",
+   "tooltip": "VH in decibels of the uncalibrated digital numbers (DN), not calibrated backscatter (σ⁰)."
   }
  ],
  "earthx:true_color": [],
