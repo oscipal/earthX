@@ -370,6 +370,8 @@ source_modules =
 ; package as a forbidden module ("subpackages of external packages are not valid"),
 ; so that one is checked over the syntax tree in
 ; backend/tests/earthx/test_no_outbound_outside_gateway.py.
+; `huggingface_hub` joined in M5-23: `tokenizers` brings it along and fetches
+; models with it; the search reads its model from files of the image only.
 forbidden_modules =
     httpx
     httpx2
@@ -385,6 +387,7 @@ forbidden_modules =
     aiobotocore
     aioboto3
     minio
+    huggingface_hub
 ; M4-06 (adr/0015 F2, KLAERUNGEN B8 Nachtrag 2026-10-05): the platform's own
 ; object store is a platform service, not a way out. Its client is the one
 ; exception to this contract, and it is one import, not one module: any other
