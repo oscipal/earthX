@@ -242,6 +242,7 @@ forbidden_modules =
     earthx.catalog.categories
     earthx.catalog.collection
     earthx.catalog.coverage
+    earthx.catalog.embedding
     earthx.catalog.entry_files
     earthx.catalog.fixed_grid_coverage
     earthx.catalog.geocode_cache
