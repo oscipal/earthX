@@ -161,6 +161,13 @@ async def test_a_glossary_term_finds_its_partner_in_the_other_language(catalogue
     assert await _ids(aconn, "Echtfarben") == ("test-series",)
 
 
+async def test_a_glossary_group_no_row_has_is_an_unknown_unit(catalogue, aconn):
+    # M5-23 plan §5a: only the alternatives some row has stay in the query of a unit; with none left it is unknown,
+    # finds nothing on its own and drops out next to a known one.
+    assert await _ids(aconn, "Gewässer") == ()
+    assert await _ids(aconn, "Gewässer savanna") == await _ids(aconn, "savanna") == (KENYA.dataset_id,)
+
+
 async def test_a_surface_model_is_no_terrain_model(catalogue, aconn):
     # Every entry made from swissALTI3D carries its band `dtm`; only one names a surface model.
     assert await _ids(aconn, "Oberflächenmodell") == ("test-surface",)

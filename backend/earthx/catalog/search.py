@@ -331,14 +331,25 @@ _NAMES_SQL = "SELECT dataset_id || ' ' || title FROM public.earthx_dataset_searc
 
 
 def _unit_query(unit: Unit, number: int) -> sql.Composed:
-    """The OR of every term of ``unit`` as a phrase in every configuration."""
-    return sql.SQL(" || ").join(
+    """The OR of every term of ``unit`` as a phrase in every configuration, each phrase once and only those some row
+    of the index has; ``NULL`` where none has one (M5-23 plan §5a).
+
+    The same rows match and every rank stays the same: ``ts_rank_cd`` passes over an alternative a row does not have.
+    But it pays for each alternative of the query, a phrase most of all, whether or not the row has it: the glossary
+    group of "Gewässer" (5 terms in 3 configurations, two of them phrases no row has) cost 2.5 s at 5.7·10⁴ hits, its
+    two distinct alternatives that some row has 0.2 s, with equal ranks in every row.
+    """
+    alternatives = sql.SQL(", ").join(
         sql.SQL("phraseto_tsquery({}::regconfig, unaccent({}))").format(
             sql.Literal(config), sql.Placeholder(f"term_{number}_{index}")
         )
         for index, _ in enumerate(unit.terms)
         for config in CONFIGS
     )
+    return sql.SQL(
+        "(SELECT string_agg(DISTINCT '(' || a::text || ')', ' | ')::tsquery FROM unnest(ARRAY[{}]) a"
+        " WHERE numnode(a) > 0 AND EXISTS (SELECT 1 FROM public.earthx_dataset_search s WHERE s.document @@ a))"
+    ).format(alternatives)
 
 
 def _stop_word(unit: Unit, number: int) -> sql.Composable:
@@ -435,9 +446,7 @@ def _full_text_sql(
         """
         WITH all_units(ord, query, stop, bare) AS (VALUES {rows}),
         units AS (SELECT ord, query, bare FROM all_units WHERE NOT stop),
-        known AS (
-            SELECT u.ord FROM units u
-            WHERE EXISTS (SELECT 1 FROM public.earthx_dataset_search s WHERE s.document @@ u.query)),
+        known AS (SELECT u.ord FROM units u WHERE u.query IS NOT NULL),
         hits AS ({hits})
         {cut}
         """
