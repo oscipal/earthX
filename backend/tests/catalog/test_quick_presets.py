@@ -68,7 +68,15 @@ class TestTheEntries:
         ]
         assert SENTINEL_2_L2A.step_presets == ()
 
-    @pytest.mark.parametrize("entry", [ESA_WORLDCOVER_2020, ESA_WORLDCOVER_2021, SENTINEL_1_GRD])
+    def test_sentinel_1_offers_vv_and_vh_in_db_and_no_composite_yet(self) -> None:
+        """adr/0018 §9.4 (Nachtrag M5-12), DS-05a F2 = 1, F3 = 1; "Dual-pol RGB" comes with DS-05c."""
+        assert [(p.name, p.title, p.op, p.op_version, dict(p.params), p.adjustable) for p in SENTINEL_1_GRD.step_presets] == [
+            ("vv_db", "VV dB", "sar_db", 1, {"bands": ["vv"], "quantity": "amplitude"}, ()),
+            ("vh_db", "VH dB", "sar_db", 1, {"bands": ["vh"], "quantity": "amplitude"}, ()),
+        ]
+        assert SENTINEL_1_GRD.composite_presets == ()
+
+    @pytest.mark.parametrize("entry", [ESA_WORLDCOVER_2020, ESA_WORLDCOVER_2021])
     def test_the_others_offer_none(self, entry) -> None:
         assert (entry.composite_presets, entry.step_presets) == ((), ())
 

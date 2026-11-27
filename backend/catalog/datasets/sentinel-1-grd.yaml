@@ -293,12 +293,26 @@ search_filters:
 search_capabilities:
   evaluate: true
   aoi_coverage: true
-# adr/0018 F3: no index buttons on DN; the quick processings in dB come with DS-05a and DS-05c.
+# adr/0018 F3: no index buttons on DN; the quick processings in dB are steps of `sar_db` below.
 index_presets: []
 true_color: []
-# "Dual-pol RGB" comes with DS-05c, "VV dB" and "VH dB" with DS-05a (adr/0030 §9); none until then.
+# "Dual-pol RGB" comes with DS-05c (adr/0030 §9).
 composite_presets: []
-step_presets: []
+# "VV dB" and "VH dB", released on GRD by Otto on 06.11.2026 (adr/0018 §9.4); a scene of HH and HV shows neither
+# (DS-05a F3). Drawn with the look of `sar_db`.
+step_presets:
+- name: vv_db
+  title: VV dB
+  op: sar_db
+  op_version: 1
+  params: {bands: [vv], quantity: amplitude}
+  adjustable: []
+- name: vh_db
+  title: VH dB
+  op: sar_db
+  op_version: 1
+  params: {bands: [vh], quantity: amplitude}
+  adjustable: []
 # adr/0018 F2, DS-04 plan §4.4; the tooltips confirmed by Otto on 08.11.2026 (F10).
 notices:
 - code: approximate_geolocation
