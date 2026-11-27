@@ -48,7 +48,7 @@ from shapely.geometry import mapping, shape
 from shapely.geometry.base import BaseGeometry
 
 from earthx.access.crop_rules import asset_gsd, merge_first_valid, rasterize_aoi
-from earthx.catalog.registry import ClassRow
+from earthx.catalog.registry import ClassRow, Look
 from earthx.readers.reference_store import REFS_KEY
 
 __all__ = [
@@ -152,6 +152,8 @@ class BandMeta:
     categorical: bool
     #: The classes of a band whose values are classes (M5-62), ``None`` for any other.
     classes: tuple[ClassRow, ...] | None = None
+    #: The look of the band in the collection (M5-60), for its QGIS style (M5-64); ``None`` where it has none.
+    look: Look | None = None
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -162,16 +164,17 @@ class BandMeta:
             "classes": None if self.classes is None else [
                 {"value": row.value, "name": row.name, "colour": row.colour} for row in self.classes
             ],
+            **({} if self.look is None else {"look": self.look.annotation()}),
         }  # fmt: skip
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any]) -> BandMeta:
         """The band from the JSON of :meth:`to_json`; a field of the wrong type is a :class:`ValueError`, not a crash later.
 
-        JSON written before M5-62 has no ``classes``: the band then has none.
+        JSON written before M5-62 has no ``classes``, before M5-64 no ``look``: the band then has none.
         """
-        fields = {name: data[name] for name in cls.__slots__ if name != "classes"}
-        meta = cls(**fields, classes=_classes_from_json(data.get("classes")))
+        fields = {name: data[name] for name in cls.__slots__ if name not in ("classes", "look")}
+        meta = cls(**fields, classes=_classes_from_json(data.get("classes")), look=_look_from_json(data.get("look")))
         for name in ("asset", "name"):
             if not isinstance(getattr(meta, name), str):
                 raise ValueError(f"{name} is text")
@@ -205,6 +208,20 @@ def _classes_from_json(data: Any) -> tuple[ClassRow, ...] | None:
     return tuple(rows)
 
 
+def _look_from_json(data: Any) -> Look | None:
+    if data is None:
+        return None
+    if not isinstance(data, Mapping) or not {"colormap", "scale"} <= set(data) <= {"colormap", "scale", "low", "high"}:
+        raise ValueError("a look has a colormap, a scale and maybe its ends")
+    colormap, scale, low, high = data["colormap"], data["scale"], data.get("low"), data.get("high")
+    if not isinstance(colormap, str) or scale not in ("measured", "percentiles", "fixed"):
+        raise ValueError("a look has a colormap and one of the scales measured, percentiles, fixed")
+    for end in (low, high):
+        if end is not None and (isinstance(end, bool) or not isinstance(end, (int, float)) or not math.isfinite(end)):
+            raise ValueError("the ends of a look are numbers")
+    return Look(colormap, scale, low, high)
+
+
 def _number(value: Any) -> float | None:
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
         return None
@@ -222,9 +239,10 @@ def band_meta(
     unit: str | None = None,
     categorical: bool = False,
     classes: tuple[ClassRow, ...] | None = None,
+    look: Look | None = None,
 ) -> BandMeta:
-    """:class:`BandMeta` of ``asset`` from the item's own asset entry; ``unit`` and ``classes`` are the registry's, the
-    unit used where the item names none. A band of classes is categorical."""
+    """:class:`BandMeta` of ``asset`` from the item's own asset entry; ``unit``, ``classes`` and ``look`` are the
+    registry's, the unit used where the item names none. A band of classes is categorical."""
     assets = item.get("assets")
     entry = assets.get(asset) if isinstance(assets, Mapping) else None
     entry = entry if isinstance(entry, Mapping) else {}
@@ -245,6 +263,7 @@ def band_meta(
         unit=_text(first.get("unit")) or unit,
         categorical=categorical or classes is not None,
         classes=classes,
+        look=look,
     )
 
 
@@ -255,6 +274,7 @@ def band_meta_of_items(
     unit: str | None = None,
     categorical: bool = False,
     classes: tuple[ClassRow, ...] | None = None,
+    look: Look | None = None,
 ) -> BandMeta:
     """:class:`BandMeta` of ``asset`` over the items of an export: the first item's description, the finest pixel size of them all.
 
@@ -262,8 +282,8 @@ def band_meta_of_items(
     """
     holding = [item for item in items if asset in (item.get("assets") or {})]
     if not holding:
-        return band_meta({}, asset, unit=unit, categorical=categorical, classes=classes)
-    meta = band_meta(holding[0], asset, unit=unit, categorical=categorical, classes=classes)
+        return band_meta({}, asset, unit=unit, categorical=categorical, classes=classes, look=look)
+    meta = band_meta(holding[0], asset, unit=unit, categorical=categorical, classes=classes, look=look)
     sizes = [size for item in holding if (size := asset_gsd(item, asset)) is not None]
     return replace(meta, resolution_m=min(sizes) if sizes else None)
 

@@ -192,6 +192,7 @@ from earthx.access.crop_rules import (
     rasterize_aoi,
     source_crop_grid,
 )
+from earthx.access.qgis_style import ExportStyle, file_qml, qml_name
 from earthx.access.radar import (
     RADAR_GRID_LINE,
     JoinedPass,
@@ -1313,6 +1314,8 @@ def build_download_zip(
     band_metas: Mapping[str, BandMeta] | None = None,
     bands_notes: Sequence[str] = (),
     line_times: Mapping[str, tuple[datetime, datetime] | None] | None = None,
+    style: ExportStyle | None = None,
+    true_color: Sequence[str] = (),
 ) -> bytes:
     """The finished ZIP: the data files of the chosen form and their masks in ``exports/``, ``exports/BANDS.txt``,
     the AOI as GeoJSON, plus :data:`NOTICE_FILENAME`.
@@ -1324,7 +1327,9 @@ def build_download_zip(
     multi-band file at ``common_resolution`` (:mod:`earthx.access.band_export`). ``band_metas`` describes the
     assets as the items do, by asset key; an asset without an entry is described by its key alone. A band is
     always in the resolution of its source, or in ``common_resolution`` (no coarser factor is offered any more,
-    Otto, 03.11.2026). ``bands_notes`` are lines for the head of ``BANDS.txt``.
+    Otto, 03.11.2026). ``bands_notes`` are lines for the head of ``BANDS.txt``. Beside each data file lies its QGIS
+    style (M5-64): the layer's ``style`` where it applies to the file, else the look of the collection, the
+    ``true_color`` bands as a colour picture where a file holds all three (:func:`~earthx.access.qgis_style.file_renderer`).
 
     ``aoi_geometry`` is always the *original* AOI, exactly as drawn or
     uploaded (Otto, 23.09.2026, M3-18 §13): it is what ``aoi.geojson`` carries
@@ -1438,6 +1443,10 @@ def build_download_zip(
                             written = written_ds.dtypes[0]
                     archive.writestr(folder + plan.name, crop_bytes.data)
                     archive.writestr(folder + plan.mask_name, crop_bytes.mask)
+                    with MemoryFile(crop_bytes.data) as written_mem, written_mem.open() as written_ds:
+                        archive.writestr(
+                            folder + qml_name(plan.name), file_qml(written_ds, members, style, true_color)
+                        )
                     listed.append(BandsFile(folder + plan.name, members, methods, exports, written))
             for member, text in class_files(listed):
                 archive.writestr(member, text)

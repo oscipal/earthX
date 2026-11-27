@@ -192,6 +192,18 @@ class TestTheFormOfTheFiles:
             assert default.namelist() == named.namelist()
             assert json.loads(default.read("recipe.json"))["output"]["layout"] == {"form": "per_band"}
 
+    @pytest.mark.parametrize(
+        "style", [{}, "viridis", {"band": "visual", "colormap": "nope", "range": [0, 1]}, {"rgb": ["a"], "ranges": None}]
+    )
+    def test_a_style_this_platform_does_not_draw_is_422(self, client: TestClient, style: Any) -> None:
+        assert _download(client, style=style).status_code == 422
+
+    def test_the_style_of_the_layer_draws_the_file_in_qgis(self, client: TestClient) -> None:
+        style = {"band": "visual", "colormap": None, "range": [10, 200]}
+        with _zip_of(_download(client, style=style)) as archive:
+            qml = archive.read("exports/visual_10m.qml").decode()
+        assert 'type="singlebandgray"' in qml and "<minValue>10.0</minValue>" in qml and "<maxValue>200.0</maxValue>" in qml
+
     def test_a_source_that_offers_no_raster_to_stack_is_422(self, client: TestClient) -> None:
         response = _download(client, form="per_resolution")
         assert response.status_code == 422
@@ -325,6 +337,7 @@ class TestAcceptanceCriteria:
             assert names == {
                 "exports/visual_10m.tif",
                 "exports/visual_10m_mask.tif",
+                "exports/visual_10m.qml",
                 "exports/BANDS.txt",
                 "ATTRIBUTION.txt",
                 "aoi.geojson",
@@ -413,8 +426,10 @@ class TestAcceptanceCriteria:
             assert names == {
                 "exports/group-01/visual_10m.tif",
                 "exports/group-01/visual_10m_mask.tif",
+                "exports/group-01/visual_10m.qml",
                 "exports/group-02/visual_10m.tif",
                 "exports/group-02/visual_10m_mask.tif",
+                "exports/group-02/visual_10m.qml",
                 "exports/BANDS.txt",
                 "ATTRIBUTION.txt",
                 "aoi.geojson",
@@ -432,6 +447,7 @@ class TestAcceptanceCriteria:
             assert set(archive.namelist()) == {
                 "exports/visual_10m.tif",
                 "exports/visual_10m_mask.tif",
+                "exports/visual_10m.qml",
                 "exports/BANDS.txt",
                 "ATTRIBUTION.txt",
                 "aoi.geojson",
@@ -450,6 +466,7 @@ class TestAcceptanceCriteria:
             assert set(archive.namelist()) == {
                 "exports/visual_10m.tif",
                 "exports/visual_10m_mask.tif",
+                "exports/visual_10m.qml",
                 "exports/BANDS.txt",
                 "ATTRIBUTION.txt",
                 "aoi.geojson",
