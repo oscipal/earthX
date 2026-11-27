@@ -331,13 +331,45 @@ _NAMES_SQL = "SELECT dataset_id || ' ' || title FROM public.earthx_dataset_searc
 
 
 def _unit_query(unit: Unit, number: int) -> sql.Composed:
-    """The OR of every term of ``unit`` as a phrase in every configuration."""
-    return sql.SQL(" || ").join(
+    """Every term of ``unit`` as a phrase in every configuration, each phrase once and only those some row of the index
+    has: an array of ``tsquery``, ``NULL`` where no row has one (M5-23 plan §5a). :data:`_UNITS` makes the query of the
+    unit from it."""
+    alternatives = sql.SQL(", ").join(
         sql.SQL("phraseto_tsquery({}::regconfig, unaccent({}))").format(
             sql.Literal(config), sql.Placeholder(f"term_{number}_{index}")
         )
         for index, _ in enumerate(unit.terms)
         for config in CONFIGS
+    )
+    return sql.SQL(
+        "(SELECT array_agg(DISTINCT a) FROM unnest(ARRAY[{}]) a"
+        " WHERE numnode(a) > 0 AND EXISTS (SELECT 1 FROM public.earthx_dataset_search s WHERE s.document @@ a))"
+    ).format(alternatives)
+
+
+#: The units of a query, from the rows of :func:`_unit_rows`: ``query`` is the OR of all its alternatives, ``single``
+#: of those of one word, ``phrases`` of those of more. A rank is the same with ``query`` and with ``single`` for a row
+#: that matches no phrase (M5-23 plan §5a): ``ts_rank_cd`` passes over an alternative a row does not have, but it pays
+#: for each alternative of the query, a phrase most of all, whether or not the row has it. The glossary group of
+#: "Gewässer" (5 terms in 3 configurations, 15 alternatives, 4 of them phrases) cost 2.5 s at 5.7·10⁴ hits, its
+#: alternatives of one word 0.2 s, with equal ranks in every row that has none of its phrases.
+_UNITS = """
+    all_units(ord, alts, stop, bare) AS (VALUES {rows}),
+    units AS (
+        SELECT ord, bare,
+               (SELECT string_agg('(' || a::text || ')', ' | ' ORDER BY a::text)::tsquery FROM unnest(alts) a) AS query,
+               (SELECT string_agg('(' || a::text || ')', ' | ' ORDER BY a::text)::tsquery FROM unnest(alts) a
+                WHERE numnode(a) = 1) AS single,
+               (SELECT string_agg('(' || a::text || ')', ' | ' ORDER BY a::text)::tsquery FROM unnest(alts) a
+                WHERE numnode(a) > 1) AS phrases
+        FROM all_units WHERE NOT stop)"""
+
+
+def _rank(document: str) -> str:
+    """The rank of ``document`` for the unit ``u``, the same as ``ts_rank_cd(document, u.query)`` (:data:`_UNITS`)."""
+    return (
+        f"CASE WHEN u.phrases IS NOT NULL AND {document} @@ u.phrases THEN ts_rank_cd({document}, u.query)"
+        f" ELSE ts_rank_cd({document}, u.single) END"
     )
 
 
@@ -378,12 +410,11 @@ def _text_hits_sql(units: Sequence[Unit]) -> sql.Composed:
     """At most ``limit`` rows (one per unit a row matches) of the full text, to be counted."""
     return sql.SQL(
         """
-        WITH all_units(ord, query, stop, bare) AS (VALUES {rows}),
-        units AS (SELECT ord, query, bare FROM all_units WHERE NOT stop)
+        WITH {units}
         SELECT count(*) FROM (
             SELECT 1 FROM units u JOIN public.earthx_dataset_search s ON s.document @@ u.query LIMIT %(limit)s) h
         """
-    ).format(rows=_unit_rows(units))
+    ).format(units=sql.SQL(_UNITS).format(rows=_unit_rows(units)))
 
 
 def _full_text_sql(
@@ -398,7 +429,7 @@ def _full_text_sql(
     the grouping carries no ``tsvector``; with one it spilled to disk.
     """
     two_steps = len(units) > 1
-    rank = "NULL::real" if two_steps else "ts_rank_cd(f.document, u.query)"
+    rank = "NULL::real" if two_steps else _rank("f.document")
     matches = sql.SQL(" UNION ALL ").join(
         sql.SQL(
             """
@@ -426,23 +457,20 @@ def _full_text_sql(
            FROM ({matches}) m"""
     )
     ranked = (
-        """(SELECT sum(ts_rank_cd(s.document, u.query) ORDER BY u.ord)
+        f"""(SELECT sum({_rank("s.document")} ORDER BY u.ord)
             FROM public.earthx_dataset_search s, units u WHERE s.ctid = h.row_id AND u.ord = ANY(h.ords))"""
         if two_steps
         else "h.rank"
     )
     return sql.SQL(
         """
-        WITH all_units(ord, query, stop, bare) AS (VALUES {rows}),
-        units AS (SELECT ord, query, bare FROM all_units WHERE NOT stop),
-        known AS (
-            SELECT u.ord FROM units u
-            WHERE EXISTS (SELECT 1 FROM public.earthx_dataset_search s WHERE s.document @@ u.query)),
+        WITH {units},
+        known AS (SELECT u.ord FROM units u WHERE u.query IS NOT NULL),
         hits AS ({hits})
         {cut}
         """
     ).format(
-        rows=_unit_rows(units),
+        units=sql.SQL(_UNITS).format(rows=_unit_rows(units)),
         hits=sql.SQL(hits).format(matches=matches),
         cut=_cut(
             sql.SQL(

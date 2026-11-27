@@ -27,6 +27,7 @@ groups:
 - [Landbedeckung, Bodenbedeckung, land cover, landcover]
 - [Landnutzung, land use]
 - [Klassifikation, Klassenkarte, classification, class map]
+- [Karte, map]
 - [Baumbestand, tree cover]
 - [Gebüsch, shrubland]
 - [Grasland, grassland]

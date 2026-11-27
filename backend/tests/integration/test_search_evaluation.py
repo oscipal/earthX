@@ -41,9 +41,10 @@ pytestmark = pytest.mark.anyio
 #: and on the first rank, English all of 10; on 14.11.2026 with Q34 and Q35 active (M5-10) German 9 of 12, English
 #: all of 11. On 23.11.2026 the hand entries CLC and LS woke Q13–Q16, Q45 and Q46 (M5-42 F7): German 15 of 19 in
 #: the first five, English 41/42 because "land cover classification" (Q14) does not reach CORINE, which lacks the word
-#: "classification"; the vector arm (M5-23) is to close it. Raise them when the search gets better; never lower them
-#: for the same questions.
-RATCHET = {"de": (15 / 19, 29 / 38), "en": (41 / 42, 27 / 28)}
+#: "classification"; the vector arm (M5-23) is to close it. With Q53-Q56 (M5-23, broad words) German 17 of 21 and
+#: English 47/48: the four new ones are on the first rank but Q54 "water" (WorldCover second), the old ones unchanged.
+#: Raise them when the search gets better; never lower them for the same questions.
+RATCHET = {"de": (17 / 21, 33 / 42), "en": (47 / 48, 15 / 16)}
 
 
 #: The hand entries of `catalog/listed/` (M5-17), which `catalog-load` publishes and indexes (M5-42 F7 = 1).
