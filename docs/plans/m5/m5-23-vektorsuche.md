@@ -3,7 +3,7 @@
 - **Auftrag:** Otto, 27.11.2026, Stufe B (`plans/m5/m5-discovery-und-suche.md` §6.2, Zeile M5-23).
 - **Grundlage:** `adr/0026` §4.3, §4.4, §6 Schritte 3 und 4, §8, §14, §15; `plans/m5/m5-41-pgvector.md` §6, §8, §9; `plans/m5/m5-42-suche-gelistete.md` §4, F6; `plans/m5/m5-66-breite-suche.md` §2a, F4, F8; `plans/m5/m5-43-postgres-pgvector.md` (pgvector 0.8.7 in Compose, CI und Cloud-Umgebung); Entscheidungslog bis 27.11.2026.
 - **Belegstufen** wie in `adr/0026`: **M** in dieser Sitzung gemessen, **P** im Repo oder an der Primärquelle selbst gelesen, **P\*** Primärquelle über einen Hilfsagenten gelesen, **S** nur Suchtreffer, **A** eigene Ableitung.
-- **Zwei Draft-PRs:** PR 1 dieser Plan und der Vektorarm (§4); PR 2 breite Wörter, Glossar im Volltext, Schwelle des Trigramm-Arms, neue Fragen des Sets und das Messskript (§5, §6, §9).
+- **Zwei Draft-PRs:** PR 1 (`claude/upbeat-brown-zzfsrn`) dieser Plan und der Vektorarm (§4); PR 2 (`claude/upbeat-brown-zzfsrn-broad`, baut auf PR 1 auf) breite Wörter, Glossar im Volltext, Klassennamen, neue Fragen des Sets und das Messskript (§5, §6, §9). Die Schwelle des Trigramm-Arms bleibt (§6a).
 - **Netz der Sitzung:** `huggingface.co` war gesperrt. Für die Modellwahl hat Otto in der Sitzung sechs Hosts von Hugging Face in der Umgebung „earthX“ freigegeben (Frage F8). Echte Datenquellen wurden nicht abgerufen.
 
 ## 1. Kurzfassung
@@ -15,7 +15,9 @@
 5. **Index und Weg** wie `adr/0026` §14: Spalte `halfvec(384)`, HNSW, gefiltert exakt bis 5·10⁴ Zeilen. Tiefe wie die lexikalischen Arme (§15).
 6. **Gleichzeitig:** Die Anfrage wird eingebettet, während der Volltext läuft; Volltext und Vektorarm laufen auf zwei Verbindungen gleichzeitig; der Trigramm-Arm danach nur unter 20 Volltext-Treffern (§4.5).
 7. **Einbetten** nur, was neu ist oder sich geändert hat, in Stapeln mit eigener Transaktion nach dem Hauptlauf von `catalog-load` (M5-42 §4, F6).
-8. **Dauer bei Otto:** ~102 000 gelistete Einträge einmal einbetten: in der Sitzung 77 Texte/s auf 4 vCPU, also **rund 22 Minuten**; auf Ottos Rechner je nach Kernen etwa **10 bis 45 Minuten** (§7). Danach kostet ein Lauf ohne Änderung nichts.
+8. **Dauer bei Otto:** ~102 000 gelistete Einträge einmal einbetten: in der Sitzung gemessen **26,6 Minuten** auf 4 vCPU (64 Texte/s mit Index und Schreiben, Spitze 0,94 GB im Prozess); auf Ottos Rechner je nach Kernen etwa **15 bis 55 Minuten** (§7). Ein Lauf ohne Änderung bettet nichts ein (0,2 s).
+9. **Breite Wörter bei 10⁵** (PR 2, §5a): alle unter 1 s ohne Filter, auch „Karte“ (0,87 s) und „Gewässer“ (2,96 s auf `main`, jetzt 0,83 s), ohne Änderung der ersten Seite. Langsam bleiben Tippfehler ohne Volltext-Treffer („watr“ 1,36 s), wie auf `main`.
+10. **Schwelle 20 des Trigramm-Arms** bleibt (§6a); **vier neue Fragen** mit breiten Wörtern; damit sie bestehen, kommen Klassennamen in den Suchtext und eine Glossargruppe [Karte, map] (§9a, Frage F6).
 
 ## 2. Stand der Technik
 
@@ -120,11 +122,11 @@ Bester Wert je Modell, bei dem Filter- und Negativfragen bestehen; die Schwelle 
 ### 4.4 Vektorarm in der Suche (`catalog/search.py`)
 
 - `api` bettet die Anfrage ein (ein Faden je Anfrage, ~15 ms [M]) und gibt den Vektor an `search_datasets`.
-- Dieselben Quellen und harten Filter wie die lexikalischen Arme (`_sources`, `Kept`, Zeit, Fläche), dazu die Regel für Zahlen in Namen („Sentinel 3“ verlangt eine 3 im Namen).
-- **Wege (§14 Punkt 2):** zählen, wie viele Zeilen die Filter bestehen, bis T + 1 (T = 5·10⁴, Konfiguration). Bis T exakt (Index-Scans aus, Sortierung nach Abstand); darüber HNSW mit `hnsw.iterative_scan = relaxed_order` und `hnsw.ef_search = min(1 000, max(200, Tiefe))` in einer `MATERIALIZED`-CTE. Ohne jeden Filter immer HNSW.
+- Dieselben Quellen und harten Filter wie die lexikalischen Arme (`_sources`, `Kept`, Zeit, Fläche), dazu die Regel für Zahlen in Namen (Auslegung A6): Mit „Sentinel 3“ kommen nur Zeilen in Frage, die das Wort „sentinel“ (über den Trigramm-Index, `LIKE`) und die Zahl 3 tragen. Ohne das Namenswort lieferte der Vektorarm für „Sentinel-2“ bei 10⁵ jede Zeile mit einer 2 im Titel („… Nr. 2“), und der iterative Scan suchte dafür 0,6 s [M].
+- **Wege (§14 Punkt 2):** Volle Zeilen sind wenige und werden immer exakt verglichen. Gelistete Zeilen ohne jeden harten Filter gehen gleich zum HNSW-Index; das Zählen vorab kostete bei 10⁵ 0,11 s [M]. Mit Filter wird gezählt, bis T + 1 (T = 5·10⁴, Konfiguration): bis T exakt, darüber HNSW mit `hnsw.iterative_scan = relaxed_order` und `hnsw.ef_search = min(1 000, max(200, Tiefe))` in einer `MATERIALIZED`-CTE. Die HNSW-Abfrage mit Tiefe 1 000 kostet bei 10⁵ 14 ms [M].
 - **Mindestähnlichkeit** (§3.3) als Grenze des Abstands außerhalb der CTE.
 - **Tiefe** wie die anderen Arme (`DEPTH`, wächst mit der Seite), Gleichstand ganz.
-- **Trefferzahl:** Der Vektorarm zählt seine Treffer exakt, solange er sie alle liefert; ist er im Index-Weg an der Tiefe voll, ist seine Zahl unbekannt und `numberMatched` fehlt (Frage F4).
+- **Trefferzahl:** Der Vektorarm zählt seine Treffer exakt, solange er sie alle liefert; ist er im Index-Weg an der Tiefe voll, ist seine Zahl unbekannt und `numberMatched` fehlt (Frage F4). **Gemessen bei 10⁵ [M]:** Ohne Filter liegen für fast jede Anfrage mehr als 1 000 Einträge über der Mindestähnlichkeit („Sentinel-2“: alle 1 000 nächsten); `numberMatched` fehlt dann bei Text fast immer, mit Filter (exakter Weg) bleibt es („map + Region DE-RP“ 2 276).
 - **Startprüfung:** Ist ein Modell gesetzt, braucht jede volle Zeile ein Embedding dieses Modells, sonst startet `api` nicht (wie `check_search_index`); gelistete dürfen fehlen (F6 von M5-42).
 
 ### 4.5 Alle Arme gleichzeitig (M5-66 F4)
@@ -144,24 +146,60 @@ Bester Wert je Modell, bei dem Filter- und Negativfragen bestehen; die Schwelle 
 ## 5. Breite Wörter und Glossar im Volltext (PR 2)
 
 - **Ziel** (M5-66 F1, M5-23): ein breites Wort ohne Filter unter 1 s bei 10⁵, auch „Karte“ (1,26 s nach M5-66 PR 1) und die Glossargruppe „Gewässer“ (1,7 s, M5-66 F8).
-- **Synthetischer Bestand** wie M5-66 §5 (102 313 veröffentlichte gelistete Einträge, Texte und Kategorien nach den Lauf-Berichten), dazu die Embeddings mit dem gewählten Modell. Skripte nur in der Sitzung.
-- Gemessen werden vorher und nachher je Anfrage: Zeit der Route, Zeit je Arm, erste Seite (Hash), `numberMatched`. Ergebnisse in §5a mit PR 2.
+- **Synthetischer Bestand** wie M5-66 §5 [M]: 102 311 veröffentlichte gelistete Einträge (govdata 94 258, opendata-swiss 7 748, fsdi-stac 305) und die 2 Handeinträge; Kategorien `boundaries` 40 %, `infrastructure` 14 %, `water` 11 %, `nature` 10 %; Titel aus Arten wie „Bebauungsplan“, „Pegel“, „Topographische Karte“ mit Orten, opendata-swiss teils französisch und italienisch; Beschreibung log-normal (Median 260 bzw. 420 Zeichen); 1–6 Schlagworte aus einer Liste mit „opendata“, „map“, „water“, „Gewässer“, „Karte“. „Gewässer“ trifft damit 57 452 Einträge, „data“ fast alle: der ungünstige Fall. Postgres 16 mit pgvector 0.8.7, `shared_buffers` 512 MB, `work_mem` 16 MB wie in Compose (M5-43), 4 vCPU. Skripte nur in der Sitzung.
+
+### 5a. Ergebnis [M]
+
+**Ursache bei „Gewässer“:** Gefunden sind die 57 452 Treffer in 0,12 s. Der Rest ist `ts_rank_cd` mit der Anfrage der Glossargruppe: 5 Begriffe in 3 Konfigurationen sind 15 Glieder, 4 davon Phrasen („water bodies“, „permanent water bodies“). `ts_rank_cd` zahlt je Zeile für jedes Glied, für eine Phrase am meisten, auch wenn die Zeile sie nicht hat: 2,47 s mit allen 15, 0,19 s mit einem; die Phrasen allein 0,92 s, obwohl keine Zeile sie hat.
+
+**Umsetzung** (`search.py`, `_unit_query`, `_UNITS`, `_rank`), Treffer und Ränge unverändert:
+1. Jedes Glied einer Einheit steht nur einmal in ihrer Anfrage (`gewass` aus `german` und `english` gleich) und nur, wenn eine Zeile des Index es hat (vorher geprüft, 69 ms für 15 Glieder). Hat keine Zeile ein Glied, ist die Einheit unbekannt (`known` ist jetzt „Anfrage nicht leer“, die eigene Abfrage entfällt).
+2. Eine Zeile, die keine Phrase der Einheit trifft, wird mit den Einzelwörtern gerankt, sonst mit der ganzen Anfrage. Geprüft: gleiche Ränge in allen 57 452 Zeilen (größte Abweichung 0) und gleiche erste Seite; Test in `test_search.py`.
+
+**Zeiten** (`search_datasets` mit zwei Verbindungen, bester von 3 nach einem Lauf zum Aufwärmen; ohne Aufbau der Antwort in der Route, den die Messung bei Otto mit misst):
+
+| Anfrage | `main` | PR 1 (mit Vektorarm) | PR 1 + 2 | erste Seite PR 1 + 2 gegen `main` |
+|---|---|---|---|---|
+| data | 568 ms | 554 ms | 475 ms | anders (Vektorarm) |
+| map | 312 ms | 311 ms | 869 ms | anders (Glossar [Karte, map]) |
+| water | 352 ms | 355 ms | 368 ms | anders (Vektorarm) |
+| Karte | 669 ms | 695 ms | 874 ms | anders (Glossar, Vektorarm) |
+| Gewässer | 2 961 ms | 2 933 ms | **830 ms** | Volltext gleich, Fusion anders (Vektorarm) |
+| Wasser Pegel Messstelle | 438 ms | 445 ms | 494 ms | anders (Vektorarm) |
+| Bebauungsplan | 46 ms | 55 ms | 61 ms | anders (Vektorarm) |
+| Sentinel-2 | 14 ms | 27 ms | 32 ms | gleiche 3 Treffer, andere Folge |
+| Satellitenbilder in Echtfarben | 37 ms | 61 ms | 83 ms | anders (Vektorarm) |
+| watr (Tippfehler) | 1 308 ms | 1 325 ms | 1 357 ms | anders (Vektorarm) |
+| data + Kategorie water | 244 ms | 252 ms | 294 ms | anders (Vektorarm) |
+| water + Region CH | 145 ms | 149 ms | 200 ms | anders (Vektorarm) |
+| Gewässer + Region DE | 2 733 ms | 2 735 ms | 842 ms | Volltext gleich |
+| map + Region DE-RP | 102 ms | 107 ms | 414 ms | anders (Glossar) |
+
+- „Volltext gleich“: Die Liste nur aus dem Volltext (ohne Vektorarm) hat auf PR 1 + 2 denselben Hash wie auf `main`.
+- **Vektorarm gleichzeitig:** kostet bei breiten Wörtern nichts, bei schmalen 10–45 ms (Einbetten der Anfrage 15 ms, dann die HNSW-Abfrage). Nacheinander statt gleichzeitig wären es bei breiten Wörtern 100–150 ms mehr [M].
+- **Glossargruppe [Karte, map]** (§9a): „map“ und „Karte“ suchen jetzt beide nach beiden Wörtern, also nach der Vereinigung ihrer Treffer; deshalb 0,87 s statt 0,31 s für „map“. Unter 1 s, aber eine Folge von F6.
+- **Was bleibt:** Tippfehler ohne Volltext-Treffer („watr“ 1,36 s, „Gewaesser“ 1,5 s): dort rechnet der Trigramm-Arm die Ähnlichkeit jedes Kandidaten (M5-66 §2a). Unverändert gegen `main`; siehe §6a.
 
 ## 6. Schwelle des Trigramm-Arms neu bewerten (PR 2)
 
-Die Schwelle 20 (M5-66 Weg 3) wird mit dem Vektorarm am Set und am synthetischen Bestand gemessen: 0 (Trigramme nie), 20, unbegrenzt. Ergebnis und Vorschlag in §6a mit PR 2 (Frage F5).
+### 6a. Ergebnis [M]
+
+- **Am Bewertungs-Set** mit Vektorarm sind alle Maße für die Schwelle 0, 1, 20 und unbegrenzt gleich (Deutsch 0,947 / 0,868, Englisch 1,0 / 0,929). Die beiden Tippfehler des Sets (Q42 „Sentinal 2“, Q43 „Worldcovr“) findet auch der Vektorarm.
+- **Am Bestand** ändert die Schwelle nichts an breiten Wörtern: Ab 20 Volltext-Treffern läuft der Trigramm-Arm ohnehin nicht. Teuer bleiben Anfragen ohne jeden Volltext-Treffer; dort läuft er bei jeder Schwelle, und dort braucht man ihn: Für „watr“ liefert der Vektorarm vorn „Windkraftanlagen …“, nur die Trigramme bringen Einträge mit „water“.
+- **Vorschlag:** Schwelle 20 bleibt (F5 = 1). Tippfehler schneller zu machen (z. B. GiST-KNN nur, wenn der Volltext nichts findet; verworfen in M5-66 §2a wegen Gleichständen bei breiten Wörtern, die es hier nicht gibt) wäre eine eigene Aufgabe (F5 = 2). Schreibweisen mit „ae“, „oe“, „ue“ („Gewaesser“) sind ein eigener Fall: `unaccent` macht aus „ä“ ein „a“, nicht „ae“.
 
 ## 7. Dauer des ersten Einbettens bei Otto
 
-- **Gemessen [M]:** granite-97m-r2 fp32 auf 4 vCPU (Xeon 2,1 GHz, AVX-512) mit Texten wie denen gelisteter Einträge (Teile A und B, im Mittel 65 Tokens): 25 Texte/s mit einem Faden, 45 mit zwei, **77 mit vier** (Stapel 32). Eine Anfrage: 15 ms mit einem Faden.
-- **Gerechnet [A]:** 102 000 Einträge / 77 je s ≈ **22 Minuten** auf 4 Kernen. Docker Desktop gibt seiner VM unter Windows meist alle logischen Kerne [S]. Bei 8 Kernen etwa 11–15 Minuten, auf einer älteren CPU ohne AVX-512 eher das Doppelte: **10 bis 45 Minuten**. Dazu kommt das Einfügen in den HNSW-Index (wird mit PR 2 am Bestand gemessen).
+- **Gemessen [M], Modell allein:** granite-97m-r2 fp32 auf 4 vCPU (Xeon 2,1 GHz, AVX-512) mit Texten wie denen gelisteter Einträge (Teile A und B, im Mittel 65 Tokens): 25 Texte/s mit einem Faden, 45 mit zwei, 77 mit vier (Stapel 32). Eine Anfrage: 15 ms mit einem Faden.
+- **Gemessen [M], `catalog-load` am Bestand (§5):** erster Lauf 102 311 Zeilen in **1 599 s = 26,6 Minuten (64/s)**, dazu 73 s für den Suchindex der gelisteten Einträge; Spitze 0,94 GB im Prozess. Zweiter Lauf: 0 Zeilen, 0,2 s für den Schritt, 4,2 s für den ganzen Lauf.
+- **Gerechnet [A]:** Die Rate wächst etwa mit den Kernen (1 → 4 Fäden: 25 → 77/s). Docker Desktop gibt seiner VM unter Windows meist alle logischen Kerne [S]. Mit 8 Kernen etwa 15 Minuten, mit 4 rund 27, auf einer älteren CPU ohne AVX-512 eher das Doppelte: **15 bis 55 Minuten**.
 - `catalog-load` meldet unterwegs je 10 000 Zeilen und am Ende die Rate; die Zahl bei Otto ersetzt diese Schätzung.
 
 ## 8. Befehle für Otto (Windows, PowerShell 5.1, nur `docker compose`)
 
-Vom Wurzelverzeichnis des Repos, Ausgaben nach `..\earthx-ausgaben\m5-23\`, nie ins Repo. Das Messskript `scripts/m5-23-messung.ps1` kommt mit PR 2.
+Vom Wurzelverzeichnis des Repos, Ausgaben nach `..\earthx-ausgaben\m5-23\`, nie ins Repo. Das Messskript `scripts/m5-23-messung.ps1` liegt im Branch von PR 2, der auf PR 1 aufbaut; es ließ sich in der Sitzung nicht ausführen (kein PowerShell), es ist aus `scripts/m5-66-messung.ps1` abgeleitet. Es misst die Route `POST /stac/collections` mit den Anfragen aus §5a (den Umlaut in „Gewässer“ baut es aus dem Zeichencode, weil die Kopie als ASCII geschrieben wird), `catalog-load` und den Speicher je Container. Es schreibt keine Kennungen, Titel oder Flächen.
 
-**Vorher** (Stand `main`, Skript aus dem Branch von PR 2 geholt):
+**1. Vorher** (Stand `main`, Skript aus dem Branch von PR 2):
 
 ```powershell
 git switch main
@@ -174,34 +212,46 @@ docker compose up -d api
 powershell -NoProfile -ExecutionPolicy Bypass -File ..\earthx-ausgaben\m5-23\messung.ps1 -Label vorher
 ```
 
-**Erstes Einbetten** (beide PRs zusammen auf einem lokalen Branch, nichts davon wird gepusht; der Bau lädt das Modell einmal, 415 MB):
+**2. Erstes Einbetten** (PR 2 enthält PR 1; ein lokaler Branch, nichts davon wird gepusht). Der Bau lädt das Modell einmal von Hugging Face (415 MB, Prüfsummen fest). `catalog-load` wendet dabei die Migration 039 an:
 
 ```powershell
-git fetch origin claude/upbeat-brown-zzfsrn claude/upbeat-brown-zzfsrn-broad
-git switch -c m5-23-messung origin/claude/upbeat-brown-zzfsrn
-git merge --no-edit origin/claude/upbeat-brown-zzfsrn-broad
+git switch -c m5-23-messung origin/claude/upbeat-brown-zzfsrn-broad
 docker compose build api catalog-load pgstac-migrate
 docker compose stop api
-docker compose run --rm catalog-load 2>&1 | Tee-Object -FilePath ..\earthx-ausgaben\m5-23\einbetten.txt
-docker compose run --rm catalog-load 2>&1 | Tee-Object -FilePath ..\earthx-ausgaben\m5-23\einbetten-2.txt
+cmd /c "docker compose run --rm catalog-load 2>&1" | Tee-Object -FilePath ..\earthx-ausgaben\m5-23\einbetten.txt
+cmd /c "docker compose run --rm --no-deps catalog-load 2>&1" | Tee-Object -FilePath ..\earthx-ausgaben\m5-23\einbetten-2.txt
 ```
 
-Erwartet: `embeddings written: …` mit rund 102 000 im ersten und 0 im zweiten Lauf, je mit Rate in Texten je Sekunde.
+Erwartet: im ersten Lauf `migrations applied: 039`, alle 10 000 Zeilen eine Zeile `embeddings written: … of …` und am Ende `embeddings written: <rund 102 000> of <dieselbe Zahl> in … s (…/s)`; im zweiten `embeddings written: 0 of 0`. Bricht der erste Lauf ab (Fenster zu, Rechner schläft), den Befehl wiederholen: Jeder Stapel ist schon gespeichert, der nächste Lauf holt nur die fehlenden Zeilen nach.
 
-**Nachher:**
+**3. Nachher:**
 
 ```powershell
 docker compose up -d api
 powershell -NoProfile -ExecutionPolicy Bypass -File ..\earthx-ausgaben\m5-23\messung.ps1 -Label nachher
-docker stats --no-stream --format "{{.Name}} {{.MemUsage}}" | Out-File -Encoding utf8 ..\earthx-ausgaben\m5-23\speicher.txt
 git switch main
 ```
 
-Bricht das erste Einbetten ab (Fenster zu, Rechner schläft): einfach den Befehl wiederholen; der Lauf holt nur die fehlenden Zeilen nach.
+Zurückschicken: `vorher-suche.csv`, `nachher-suche.csv`, `*-laden.txt`, `*-speicher.txt` und die letzten 20 Zeilen von `einbetten.txt` (dort stehen nur Zahlen und Zeiten).
 
 ## 9. Neue Fragen des Bewertungs-Sets (PR 2, Vorschlag; Otto gibt frei)
 
-Breite Wörter und Glossarwörter (M5-66 F8), gegen die Datensätze des Sets benotet. Vorschlag in §9a mit PR 2.
+### 9a. Vorschlag und Ergebnis [M]
+
+| ID | Spr. | Frage | Note 2 | Note 1 | Art |
+|---|---|---|---|---|---|
+| Q53 | de | Gewässer | WC20, WC21 | S2, CLC, S1 | T |
+| Q54 | en | water | WC20, WC21 | S2, CLC, S1, MCHP | T |
+| Q55 | de | Karte | WC20, WC21, CLC | DEM, ALTI, BEV, MCH, MCHP | T |
+| Q56 | en | map | WC20, WC21, CLC | DEM, ALTI, BEV, MCH, MCHP | T |
+
+- Gesucht sind die Karten der Landbedeckung (WorldCover hat die Klasse „Permanent water bodies“); Note 1 haben Datensätze, die Wasser zeigen oder andere Karten sind.
+- **Ohne weitere Änderung** finden „Gewässer“ und „Karte“ nichts, auch nicht mit Vektorarm (keine Zeile liegt über der Mindestähnlichkeit), und „water“ nur Sentinel-2: Deutsch 0,857 / 0,786, Englisch 0,938 / 0,875, F5 nicht bestanden.
+- **Zwei Lücken im Suchtext:**
+  - Die Klassen eines Bands (M5-62, `band_classes`) stehen nicht im Text. Mit ihnen in Teil D findet die Gruppe „Gewässer“ WorldCover über „Permanent water bodies“, „water“ ebenso. Betrifft nur volle Einträge mit Klassen (WorldCover, Sentinel-2 mit der Szenenklassifikation).
+  - Das Glossar hat keine Gruppe [Karte, map]; die Texte sagen „land cover map“.
+- **Mit beiden** besteht das Set mit den vier neuen Fragen F5: Deutsch 0,952 / 0,849, Englisch 1,0 / 0,906, Filterfragen 5/5, Negativfragen 4/5. Die lexikalischen Arme allein: Deutsch 17/21, Englisch 47/48 (neue Untergrenzen der Ratsche; die alten Fragen unverändert).
+- Beides ist in PR 2 umgesetzt (je ein Commit), als Vorschlag zu F6.
 
 ## 10. Fragen an Otto
 
@@ -220,12 +270,18 @@ Breite Wörter und Glossarwörter (M5-66 F8), gegen die Datensätze des Sets ben
 2. Alle vier Teile wie der Volltext
 
 **F4 — `numberMatched` mit Vektorarm?**
-1. Vektortreffer zählen mit, solange der Arm alle liefert; ist er im Index-Weg an der Tiefe voll, fehlt `numberMatched` **(Empfehlung)**
+1. Vektortreffer zählen mit, solange der Arm alle liefert; ist er im Index-Weg an der Tiefe voll, fehlt `numberMatched` (bei 10⁵ ohne Filter fast immer, §4.4) **(Empfehlung: nie eine falsche Zahl, wie M5-40 F4)**
 2. `numberMatched` zählt nur die lexikalischen Arme (die Liste kann dann länger sein als die Zahl)
 
-**F5 — Schwelle des Trigramm-Arms:** folgt mit PR 2 (§6a).
+**F5 — Schwelle des Trigramm-Arms (§6a)?**
+1. Bleibt bei 20 **(Empfehlung)**
+2. Bleibt bei 20; Tippfehler ohne Volltext-Treffer (1,3–1,5 s bei 10⁵) schneller machen als eigene Aufgabe
+3. Trigramm-Arm aus, wo der Vektorarm läuft (Tippfehler schnell, aber „watr“ findet dann „Windkraftanlagen“)
 
-**F6 — Neue Fragen des Sets:** folgen mit PR 2 (§9a).
+**F6 — Neue Fragen Q53–Q56 (§9a)?**
+1. So freigeben, mit den Klassennamen im Suchtext und der Glossargruppe [Karte, map] **(Empfehlung)**
+2. Fragen freigeben, aber ohne die beiden Ergänzungen (dann besteht das Set F5 nicht: Deutsch 0,857)
+3. Andere Noten (bitte nennen)
 
 **F7 — Modell beim Bau aus Hugging Face?**
 1. Ja, feste Revision und SHA-256 je Datei; auch der Job `compose-topology` der CI lädt es dann (415 MB je Bau ohne Cache) **(Empfehlung)**
@@ -243,6 +299,8 @@ Breite Wörter und Glossarwörter (M5-66 F8), gegen die Datensätze des Sets ben
 - **A3:** Der Vektorarm hat eine eigene Verbindungsmenge (§4.5).
 - **A4:** Die Startprüfung verlangt Embeddings nur für volle Einträge (§4.4).
 - **A5:** Die Hintergrundtexte sind erfunden und allgemein, keine Titel echter Einträge.
+- **A6:** Mit einer Zahl in einem Namen sucht der Vektorarm nur unter Zeilen mit diesem Namen und dieser Zahl (§4.4).
+- **A7:** Eine Glossar-Einheit trägt in ihrer Anfrage jedes Glied nur einmal und nur, wenn eine Zeile es hat; eine Zeile ohne Phrase der Einheit wird mit den Einzelwörtern gerankt (§5a). Treffer und Ränge bleiben gleich.
 
 ## 12. Tests
 
