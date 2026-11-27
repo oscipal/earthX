@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { buildOperatorTileTemplate } from './api';
 import { SENTINEL_2_PRESETS } from './fixtures/indexPresets';
-import { compositeAmong, lookOfPreset, paramsOfPreset, presetOfLook, quickPresetsOf, shownBandsOf, tileStepsOf, withParams } from './quickPresets';
+import { compositeAmong, lookOfPreset, paramsOfPreset, presetOfLook, presetsForBands, quickPresetsOf, shownBandsOf, tileStepsOf, withParams } from './quickPresets';
 import { lookChanged, lookOfPendingFields, pendingFieldsOf } from './render';
 import type { Collection } from './types';
 import { indexChainOf, indexStatisticsUrl } from './viewIndex';
@@ -73,6 +73,28 @@ describe('the presets of a dataset', () => {
     const presets = quickPresetsOf(collection({ 'earthx:index_presets': SENTINEL_2_PRESETS, 'earthx:step_presets': [entry] }));
     expect(presets.some((p) => p.kind === 'step')).toBe(false);
     warn.mockRestore();
+  });
+});
+
+describe('the presets a scene can draw (DS-05a A7)', () => {
+  const step = (name: string, band: string) => ({ name, title: name, op: 'sar_db', op_version: 1, params: { bands: [band], quantity: 'amplitude', name }, adjustable: [] });
+  const RADAR = {
+    id: 'radar',
+    'earthx:band_units': { vv: 'DN', vh: 'DN', hh: 'DN', hv: 'DN' },
+    'earthx:step_presets': [step('vv_db', 'vv'), step('vh_db', 'vh')],
+  } as unknown as Collection;
+  const names = (bands: string[], collection: Collection = RADAR) => presetsForBands(quickPresetsOf(collection), collection, bands).map((preset) => preset.name);
+
+  it('are those whose bands the scene has: VV dB and VH dB on VV and VH, none on HH and HV', () => {
+    expect(names(['vv', 'vh'])).toEqual(['vv_db', 'vh_db']);
+    expect(names(['vh'])).toEqual(['vh_db']);
+    expect(names(['hh', 'hv'])).toEqual([]);
+  });
+
+  it('are all of the dataset where the bands of the scene are not known, or the dataset does not list a band they read', () => {
+    expect(names([])).toEqual(['vv_db', 'vh_db']);
+    const unlisted = { ...RADAR, 'earthx:band_units': { hh: 'DN' } } as unknown as Collection;
+    expect(names(['hh'], unlisted)).toEqual(['vv_db', 'vh_db']);
   });
 });
 

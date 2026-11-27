@@ -163,6 +163,16 @@ export function quickPresetsOf(collection: Collection | undefined): QuickPreset[
   return found;
 }
 
+// The presets of a dataset a scene of these bands can draw: a preset that reads a band of the dataset (`earthx:band_units`) the scene does
+// not have is left out ("VV dB" on a scene of HH and HV, DS-05a A7). Where the bands of the scene are not known (no scene, a store without
+// single files), or the dataset does not list a band a preset reads, the preset stays.
+export function presetsForBands(presets: QuickPreset[], collection: Collection | undefined, bands: readonly string[]): QuickPreset[] {
+  const units = collection?.['earthx:band_units'];
+  if (bands.length === 0 || !units || typeof units !== 'object') return presets;
+  const held = new Set(bands);
+  return presets.filter((preset) => preset.assets.every((asset) => held.has(asset) || !Object.hasOwn(units, asset)));
+}
+
 // The preset with the values a person chose for its adjustable parameters (Otto, 17.11.2026). A value of a parameter that is not adjustable,
 // or of another type than the registry's, is left out: the step keeps the registry's. The same preset object for the same values.
 const withValues = new WeakMap<QuickPreset, Map<string, QuickPreset>>();
