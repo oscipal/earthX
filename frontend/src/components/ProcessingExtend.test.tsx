@@ -200,7 +200,7 @@ beforeEach(() => {
     activeGroupIndex: 0,
     selectedIds: ['S2B_B'],
     aoi: OTHER_AOI,
-    aoiPoint: null,
+   
     layers: [resultLayer()],
     error: null,
     dock: 'layers',

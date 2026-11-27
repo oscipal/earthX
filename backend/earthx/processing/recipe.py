@@ -68,6 +68,7 @@ __all__ = [
     "InputRequest",
     "InputVersion",
     "MultiPolygon",
+    "Point",
     "Polygon",
     "Provenance",
     "RasterOutput",
@@ -128,12 +129,17 @@ class OperatorLookup(Protocol):
 # --- AOI -------------------------------------------------------------------
 
 
+def _check_position(position: Position) -> None:
+    lon, lat = position
+    if not (-180.0 <= lon <= 180.0 and -90.0 <= lat <= 90.0):
+        raise ValueError("a position lies outside longitude/latitude bounds")
+
+
 def _check_ring(ring: Sequence[Position]) -> None:
     if len(ring) < 4 or ring[0] != ring[-1]:
         raise ValueError("a linear ring has at least four positions and is closed")
-    for lon, lat in ring:
-        if not (-180.0 <= lon <= 180.0 and -90.0 <= lat <= 90.0):
-            raise ValueError("a position lies outside longitude/latitude bounds")
+    for position in ring:
+        _check_position(position)
 
 
 class _Geometry(_Model):
@@ -173,7 +179,19 @@ class MultiPolygon(_Geometry):
         return self
 
 
-Aoi = Annotated[Polygon | MultiPolygon, Field(discriminator="type")]
+class Point(_Geometry):
+    """A point as the AOI (M5-69): the one pixel it lies on."""
+
+    type: Literal["Point"]
+    coordinates: Position
+
+    @model_validator(mode="after")
+    def _valid(self) -> Point:
+        _check_position(self.coordinates)
+        return self
+
+
+Aoi = Annotated[Point | Polygon | MultiPolygon, Field(discriminator="type")]
 
 
 # --- steps and output --------------------------------------------------------
@@ -481,7 +499,8 @@ class RecipeRequest(_Common):
     inputs: list[InputRequest] = Field(min_length=1)
     aoi: Aoi | None = Field(
         default=None,
-        description="The area to cut out, a Polygon or MultiPolygon in EPSG:4326. Left out, a raster job covers the "
+        description="The area to cut out, a Point, Polygon or MultiPolygon in EPSG:4326; a point cuts out the one pixel "
+        "it lies on. Left out, a raster job covers the "
         "whole scenes it names (the union of their footprints); an export needs it.",
     )
 

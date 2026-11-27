@@ -14,7 +14,7 @@ import { fetchStatisticsAt, HttpError, postAreaStatistics, withHistogram, withPe
 import { significant } from './numberFormat';
 import type { QuickPreset } from './quickPresets';
 import { canonicalJson, type Order } from './processing';
-import { bandsOf, bandSources, isArea, orderAoi } from './processingOrder';
+import { bandsOf, bandSources, isAoi, orderAoi } from './processingOrder';
 import type { Collection, StacItem } from './types';
 
 // Said, always the same, wherever the first whole scene stands in for the area of the crop (Otto, 3.11.2026, zu #282): in the view next to
@@ -105,7 +105,7 @@ export function areaQuestionOf(args: {
   asset: string;
 }): AreaQuestion | { reason: string } | null {
   const { datasetId, collection, items, aoi, index, asset } = args;
-  if (!isArea(aoi)) return null;
+  if (!isAoi(aoi)) return null;
   if (items.length === 0) return { reason: 'The scenes of this image are not all known to the page.' };
   if (collection?.['earthx:format'] !== 'cog') return { reason: 'The area of this dataset cannot be measured: it is no cloud-optimized GeoTIFF.' };
   const input = { name: INPUT_NAME, dataset: datasetId, groups: [items.map((item) => item.id).sort()] };

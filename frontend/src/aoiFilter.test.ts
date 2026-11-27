@@ -8,6 +8,7 @@ import {
   aoiCountsOf,
   aoiNotes,
   countsFrom,
+  coverageLock,
   LOCK_NEEDS_INPUT,
   LOCK_TOO_MANY,
   MAX_AOI_POSITIONS,
@@ -75,7 +76,7 @@ describe('the counts of an answer', () => {
 describe('when "Within AOI" is locked', () => {
   const ready = {
     aoi: { type: 'Polygon', coordinates: [] } as GeoJSON.Polygon,
-    aoiPoint: null,
+   
     dateFrom: '2026-07-01',
     dateTo: '2026-07-31',
   };
@@ -93,8 +94,9 @@ describe('when "Within AOI" is locked', () => {
     expect(withinAoiLock({ ...ready, ...change })).toBe(LOCK_NEEDS_INPUT);
   });
 
-  it('is not locked for a point: its square is the AOI (Otto, 06.11.2026)', () => {
-    expect(withinAoiLock({ ...ready, aoi: { type: 'Polygon', coordinates: [[[1, 2], [1.1, 2], [1.1, 2.1], [1, 2.1], [1, 2]]] } })).toBeNull();
+  it('is not locked for a point: the server measures its one pixel (M5-69)', () => {
+    expect(withinAoiLock({ ...ready, aoi: { type: 'Point', coordinates: [1, 2] } })).toBeNull();
+    expect(coverageLock({ aoi: { type: 'Point', coordinates: [1, 2] } })).toBeNull();
   });
 
   const ring = (positions: number): GeoJSON.Polygon => ({

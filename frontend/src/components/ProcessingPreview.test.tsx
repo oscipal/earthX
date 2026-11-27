@@ -80,7 +80,7 @@ function select(items: StacItem[], tier = 'processing') {
     activeGroupIndex: 0,
     selectedIds: items.map((i) => i.id),
     aoi: AOI,
-    aoiPoint: null,
+   
     layers: [],
     focusMode: false,
     error: null,

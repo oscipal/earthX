@@ -13,7 +13,7 @@ import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
 
 import { AOI_CLIP_PROTOCOL, aoiClipProtocol } from '../aoiClip';
 import { areaGeometry, isAreaAnswer, showFootprints } from '../coverage';
-import { bufferPointToPolygon, pointInFootprint, polygonBbox } from '../geoUtils';
+import { pointInFootprint, polygonBbox } from '../geoUtils';
 import { openIdsOf, resultsOnMapOf } from '../mapResults';
 import { mosaicsOfView, sameMosaics } from '../mosaic';
 import { setMapLoading, watchLayerLoading } from '../layerLoading';
@@ -48,7 +48,7 @@ import { applyTerrain, flatViewBounds } from '../terrain';
 import { clipAoiOf, useProcessingStore } from '../processingStore';
 import { flipIdOf } from '../layerFlip';
 import { layersForMap, viewLayerOf, viewShown } from '../viewLayer';
-import { shownViewOf, useAppStore } from '../store';
+import { loadPixelOutline, shownViewOf, useAppStore } from '../store';
 import type { Bbox, StacItem, ToolMode } from '../types';
 import { MapControls } from './MapControls';
 
@@ -162,7 +162,6 @@ export default function MapView() {
   // Reactive slices used to drive the imperative map updates.
   const toolMode = useAppStore((s) => s.toolMode);
   const aoi = useAppStore((s) => s.aoi);
-  const aoiPoint = useAppStore((s) => s.aoiPoint);
   const groups = useAppStore((s) => s.groups);
   const items = useAppStore((s) => s.items);
   const datasets = useAppStore((s) => s.datasets);
@@ -173,6 +172,7 @@ export default function MapView() {
   const allMosaics = useAppStore((s) => s.mosaics);
   const flyToBbox = useAppStore((s) => s.flyToBbox);
   const flyToView = useAppStore((s) => s.flyToView);
+  const pixelOutlines = useAppStore((s) => s.pixelOutlines);
   const appliedRender = useAppStore((s) => s.appliedRender);
   const focusMode = useAppStore((s) => s.focusMode);
   const cropToAoi = useAppStore((s) => s.cropToAoi);
@@ -204,7 +204,15 @@ export default function MapView() {
   const previewAoi = useProcessingStore((s) => clipAoiOf(s, aoi));
   // Cut to the AOI only for "AOI only": a new AOI leaves the others alone.
   const clipAoi = preview?.clipToAoi ? previewAoi : null;
-  const previewTiles = useMemo(() => (preview ? previewOverlays(preview, clipAoi) : []), [preview, clipAoi]);
+  // A point cuts the preview to the pixel the job reads (M5-69): a copy of the point for the scenes and assets it is asked for, which
+  // the outline of that pixel belongs to; `pixelOutlines` cuts the preview again when it is here.
+  const pixelKey = preview ? JSON.stringify(preview.pixelOf) : '';
+  const previewClip = useMemo(() => (clipAoi?.type === 'Point' && pixelKey ? { ...clipAoi } : clipAoi), [clipAoi, pixelKey]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const previewTiles = useMemo(() => (preview ? previewOverlays(preview, previewClip) : []), [preview, previewClip, pixelOutlines]);
+  useEffect(() => {
+    if (preview && previewClip?.type === 'Point') void loadPixelOutline(previewClip, preview.pixelOf);
+  }, [preview, previewClip]);
   const previewTilesRef = useRef(previewTiles);
   previewTilesRef.current = previewTiles;
 
@@ -278,18 +286,9 @@ export default function MapView() {
         const feat = draw.getSnapshotFeature(id);
         if (!feat) return;
         const store = useAppStore.getState();
-        let geom = feat.geometry as GeoJSON.Geometry;
-        // M3-08 F5a: the point itself is kept for `runSearch` to search by
-        // (`store.setAoi`'s second argument) — `geom` still becomes the buffer
-        // square that stays the display AOI and the download crop.
-        let point: GeoJSON.Point | null = null;
-        if (geom.type === 'Point') {
-          point = geom as GeoJSON.Point;
-          const [lon, lat] = point.coordinates;
-          const buffer = store.config?.point_buffer_deg ?? 0.05;
-          geom = bufferPointToPolygon(lon, lat, buffer);
-        }
-        store.setAoi(geom, point);
+        // A point stays a point: its filters and its crop are those of the one pixel it lies on (M5-69).
+        const geom = feat.geometry as GeoJSON.Geometry;
+        store.setAoi(geom);
         // Zoom the map into the freshly drawn area.
         const bb = polygonBbox(geom);
         if (bb) store.flyTo(bb);
@@ -315,7 +314,7 @@ export default function MapView() {
       // A basemap with a published style comes after the first style (it is fetched).
       basemapRef.current?.show(st.basemap, st.overlays);
       if (carried) return;
-      setAoiData(map, st.aoiPoint ?? st.aoi);
+      setAoiData(map, st.aoi);
       setCoverageDisplay(map, coverageDisplayFor(st, map.getZoom()));
       const viewLayer = viewLayerOf(st.layers, st);
       const shown = resultsOnMapOf(st);
@@ -423,8 +422,8 @@ export default function MapView() {
   // --- AOI geometry ---
   useEffect(() => {
     const map = mapRef.current;
-    if (map && readyRef.current) setAoiData(map, aoiPoint ?? aoi);
-  }, [aoi, aoiPoint]);
+    if (map && readyRef.current) setAoiData(map, aoi);
+  }, [aoi]);
 
   // --- coverage heatmap / footprints (M2-07c) ---
   useEffect(() => {
@@ -512,7 +511,8 @@ export default function MapView() {
         mosaics,
       });
     }
-  }, [focusMode, view, appliedRender, showDownloaded, viewLayer, viewAoi, cropToAoi, mosaics, datasets]);
+    // A new outline of a pixel cuts the view at a point again (M5-69).
+  }, [focusMode, view, appliedRender, showDownloaded, viewLayer, viewAoi, cropToAoi, mosaics, datasets, pixelOutlines]);
 
   // --- the preview of the processing panel (M4-13c-2), a tier of "Results" over the results and the view
   // (`mapLayers.ts`); a new AOI cuts it again. ---

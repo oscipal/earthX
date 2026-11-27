@@ -38,7 +38,7 @@ beforeEach(() => {
     selectedDatasetIds: [],
     datasetId: null,
     aoi: AOI,
-    aoiPoint: null,
+   
     searchFilters: {},
     sceneNameQuery: '',
     showCoverage: false,
@@ -748,8 +748,8 @@ describe('"Filter within AOI only"', () => {
     expect([...container.querySelectorAll('.advanced-actions button')].map(text)).toEqual(['Done']);
   });
 
-  it('is free for a point: the square around it is the AOI (Otto, 06.11.2026)', () => {
-    useAppStore.setState({ aoiPoint: { type: 'Point', coordinates: [10.5, 47.5] } });
+  it('is free for a point: the server measures it at its one pixel (M5-69)', () => {
+    useAppStore.setState({ aoi: { type: 'Point', coordinates: [10.5, 47.5] } });
     pick('optical');
     open();
     expect(within()!.classList.contains('locked')).toBe(false);

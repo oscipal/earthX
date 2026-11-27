@@ -107,6 +107,11 @@ describe('readRecipe', () => {
     expect(result.ok && result.order.aoi).toEqual(AOI);
   });
 
+  it('takes a point as the AOI, without its height (M5-69)', () => {
+    const result = read(recipe({ aoi: { type: 'Point', coordinates: [9.02, 47.03, 500] } }));
+    expect(result.ok && result.order.aoi).toEqual({ type: 'Point', coordinates: [9.02, 47.03] });
+  });
+
   it('refuses a file that is not JSON, or larger than the job route takes', () => {
     expect(readRecipe('{"recipe_version": ')).toEqual({ ok: false, reason: 'The file is not valid JSON.' });
     const big = JSON.stringify(recipe({ note: 'x'.repeat(MAX_RECIPE_BYTES) }));
@@ -144,9 +149,11 @@ describe('readRecipe', () => {
     expect(reason(recipe({ inputs: [input, input] }))).toMatch(/more than one input/u);
   });
 
-  it('refuses an AOI that is no polygon, and an output it does not know', () => {
-    expect(reason(recipe({ aoi: { type: 'Point', coordinates: [9, 47] } }))).toMatch(/not a polygon/u);
-    expect(reason(recipe({ aoi: { type: 'Polygon', coordinates: [[[9, 'x']]] } }))).toMatch(/not a polygon/u);
+  it('refuses an AOI that is neither a point nor a polygon, and an output it does not know', () => {
+    expect(reason(recipe({ aoi: { type: 'LineString', coordinates: [[9, 47], [9.1, 47.1]] } }))).toMatch(/neither a point nor a polygon/u);
+    expect(reason(recipe({ aoi: { type: 'Point', coordinates: [9] } }))).toMatch(/neither a point nor a polygon/u);
+    expect(reason(recipe({ aoi: { type: 'Point', coordinates: [[9, 47]] } }))).toMatch(/neither a point nor a polygon/u);
+    expect(reason(recipe({ aoi: { type: 'Polygon', coordinates: [[[9, 'x']]] } }))).toMatch(/neither a point nor a polygon/u);
     expect(reason(recipe({ output: { kind: 'vector' } }))).toMatch(/no known output/u);
     expect(reason(recipe({ output: { kind: 'raster' } }))).toMatch(/no output data type/u);
   });

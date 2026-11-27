@@ -77,7 +77,7 @@ async function setUp(page, ids, crop, selected = ids) {
         }],
         datasetId: 'sentinel-2-c1-l2a', items: [...one, ...two],
         groups: [{ key: ['2026-07-01'], label: '2026-07-01', items: one }, { key: ['2026-07-02'], label: '2026-07-02', items: two }],
-        activeGroupIndex: 0, selectedIds: [], aoi: null, aoiPoint: null, focusMode: false, error: null, dock: 'layers',
+        activeGroupIndex: 0, selectedIds: [], aoi: null, focusMode: false, error: null, dock: 'layers',
         layers: [{
           id: 'L1', name: 'Crop', visible: true, opacity: 1, overlays: [],
           restore: {

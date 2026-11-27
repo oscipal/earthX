@@ -94,7 +94,7 @@ function select(item: StacItem, option: DatasetOption = dataset()) {
     activeGroupIndex: 0,
     selectedIds: [item.id],
     aoi: AOI,
-    aoiPoint: null,
+   
     layers: [],
     mapZoom: 1.6,
     viewportBbox: null,

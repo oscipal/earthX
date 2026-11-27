@@ -72,7 +72,7 @@ import { zoomTarget } from './zoomSelection';
 import type { Percent } from './percentRange';
 import { checkPercent, DEFAULT_PERCENT, NO_RANGE_AT_PERCENT, rescaleAtPercent, samePercent, type RangeUnit } from './percentRange';
 import { channelsAtOwnPercent, samePercents, CHANNEL_COUNT, CHANNEL_NAMES, type ChannelRange } from './channels';
-import { buildExportOrder, isArea, trueColorOf } from './processingOrder';
+import { buildExportOrder, isAoi, trueColorOf } from './processingOrder';
 import { appliedRenderFrom, autoRescale, colourChannelsOf, colourInPercent, lookChanged, lookOfPendingFields, pendingFieldsOf, physicalRender } from './render';
 import type { ResultSection, SectionSearchAnswer } from './sections';
 import {
@@ -101,6 +101,7 @@ import {
   type FilterQueryByCollection,
 } from './searchFilters';
 import { imagesOf, satellitesOf, sectionsForView, type ViewImage } from './viewImages';
+import { keepPixelOutline, pixelOutlineOf, zoomForPixel } from './pixelClip';
 import { viewDates } from './viewKind';
 import { layerOfView, sameRender } from './viewLayer';
 import { downloadIndexCrop, downloadsIndexOnly, estimateIndexDownload, indexOfferedFor, type IndexNote } from './indexDownload';
@@ -992,6 +993,43 @@ const inPercent = (s: AppState): boolean => (colourView(s) ? colourInPercent(s) 
 // "Add to layers" and "Add all to layers" in the view: the image that is shown, or every image, one layer each, all in one
 // step with the first on the bottom of the new ones, so that the last image of the list lies on top (NM4-53). A layer
 // takes the look its image is drawn with. Where a mosaic is not known yet it waits for it, as it always did.
+// The outline of the pixel a view at a point is cut to, and the camera on it (M5-69, plan F2, F3): the first image of the view, in
+// the finest of the assets it draws (the server picks it).
+async function loadViewPixel(set: SetState, get: GetState): Promise<void> {
+  const s = get();
+  const point = s.viewAoi;
+  if (point?.type !== 'Point' || pixelOutlineOf(point)) return;
+  const image = shownImageOf(viewImagesOf(s), s.shownImage);
+  const assets = [...new Set((image?.ids ?? []).flatMap((id) => (s.downloaded[id] ? [s.downloaded[id].asset] : [])))];
+  if (!image || assets.length === 0) return;
+  try {
+    const [outline] = await api.fetchPixelOutlines(image.datasetId, point, [image.ids], assets);
+    if (!outline || get().viewAoi !== point) return;
+    keepPixelOutline(point, outline);
+    const [lon, lat] = point.coordinates;
+    set({ pixelOutlines: get().pixelOutlines + 1, flyToView: { center: [lon, lat], zoom: zoomForPixel(outline) } });
+  } catch (e) {
+    if (get().viewAoi === point) set({ error: `The pixel at the point could not be found: ${(e as Error).message}` });
+  }
+}
+
+// The outline of the pixel a point AOI cuts out of these scenes, asked once for each point object (M5-69); `pixelOutlines` tells the
+// map that it is here. A failure leaves the point cut to nothing, and the next point asks again.
+const askedPixels = new WeakSet<GeoJSON.Geometry>();
+
+export async function loadPixelOutline(point: GeoJSON.Point, of: { datasetId: string; ids: string[]; assets: string[] }): Promise<void> {
+  if (askedPixels.has(point) || of.ids.length === 0 || of.assets.length === 0) return;
+  askedPixels.add(point);
+  try {
+    const [outline] = await api.fetchPixelOutlines(of.datasetId, point, [of.ids], of.assets);
+    if (!outline) return;
+    keepPixelOutline(point, outline);
+    useAppStore.setState({ pixelOutlines: useAppStore.getState().pixelOutlines + 1 });
+  } catch {
+    askedPixels.delete(point);
+  }
+}
+
 function pinViewImages(set: SetState, get: GetState, which: 'shown' | 'all'): void {
   const s = get();
   if (s.pinLoading) return; // already waiting for a mosaic; it pins when it is here
@@ -1627,14 +1665,9 @@ const withoutResults = (dock: DockPanel | null): DockPanel | null => (dock === '
 export interface AppState {
   // --- map / selection ---
   toolMode: ToolMode;
+  // A point, a polygon or a multipolygon; a point is a point everywhere, its filters and crop those of its one pixel (M5-69).
   aoi: GeoJSON.Geometry | null;
-  // M3-08: the point the current AOI was drawn or uploaded from, kept apart from
-  // `aoi` (still the square `bufferPointToPolygon` built, which is what the map
-  // shows and the download crops) — only `runSearch` reads this, to search by the
-  // point itself rather than by its buffer square's bbox.
-  aoiPoint: GeoJSON.Point | null;
   lastAoi: GeoJSON.Geometry | null; // most recent AOI, for "use last"
-  lastAoiPoint: GeoJSON.Point | null; // the point behind lastAoi, if it had one
   flyToBbox: Bbox | null;
   // A camera to jump to as it is (a permalink's view, M4-19e): centre [lon, lat] and zoom.
   flyToView: { center: [number, number]; zoom: number } | null;
@@ -1703,6 +1736,8 @@ export interface AppState {
   // The area a cropped view was opened with (Otto, 27.10.2026): it keeps it. Drawing, changing or clearing the area in the
   // control menu does not touch the view. Null for every view that is not cropped.
   viewAoi: GeoJSON.Geometry | null;
+  // Counts the outlines of pixels that have arrived for a point AOI (`pixelClip.ts`, M5-69): the map cuts its tiles again with each.
+  pixelOutlines: number;
 
   // --- layer manager ---
   layers: MapLayer[]; // pinned images (top of list = top of map)
@@ -1796,7 +1831,6 @@ export interface AppState {
   enhance: { look: AppliedRender; before: AppliedRender } | null;
 
   // --- data ---
-  config: { point_buffer_deg: number } | null; // no server config endpoint any more; the client default (0.05) applies
   datasets: DatasetOption[];
   // M3-10: what the dataset filter has ticked — a search asks all of them at once.
   selectedDatasetIds: string[];
@@ -1910,7 +1944,7 @@ export interface AppState {
   ensureDatasetAdded: (id: string) => void;
   setOpenSection: (id: string) => void;
   setToolMode: (m: ToolMode) => void;
-  setAoi: (g: GeoJSON.Geometry | null, point?: GeoJSON.Point | null) => void;
+  setAoi: (g: GeoJSON.Geometry | null) => void;
   clearAoi: () => void;
   useLastAoi: () => void;
   flyTo: (b: Bbox) => void;
@@ -2082,9 +2116,7 @@ setTipLevel(firstTipLevel);
 export const useAppStore = create<AppState>((set, get) => ({
   toolMode: 'none',
   aoi: null,
-  aoiPoint: null,
   lastAoi: null,
-  lastAoiPoint: null,
   flyToBbox: null,
   flyToView: null,
   appearance: firstAppearance,
@@ -2118,6 +2150,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   mapOverview: false,
   cropToAoi: false,
   viewAoi: null,
+  pixelOutlines: 0,
 
   layers: [],
   resultsAt: 0,
@@ -2155,7 +2188,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   pendingPercentHigh: DEFAULT_PERCENT.high,
   enhance: null,
 
-  config: null,
   datasets: [],
   selectedDatasetIds: [],
   multiSelect: false,
@@ -2334,27 +2366,25 @@ export const useAppStore = create<AppState>((set, get) => ({
   // so every way it can change reschedules a refresh.
   // An AOI that comes in another way than drawing (a place, a file) ends the tool chosen for drawing (UI-12, Otto 18.11.2026): otherwise
   // the next click on the map starts a shape that replaces it.
-  setAoi: (aoi, point = null) => {
+  setAoi: (aoi) => {
     set((s) => ({
       ...(aoi ? { toolMode: 'none' as const } : {}),
       aoi,
-      aoiPoint: point,
       lastAoi: aoi ?? s.lastAoi,
-      lastAoiPoint: aoi ? point : s.lastAoiPoint,
     }));
     dropPageToken(set, get);
     scheduleCoverageRefresh(set, get);
   },
   clearAoi: () => {
-    set({ aoi: null, aoiPoint: null });
+    set({ aoi: null });
     dropPageToken(set, get);
     scheduleCoverageRefresh(set, get);
   },
   useLastAoi: () => {
-    const { lastAoi: g, lastAoiPoint } = get();
+    const { lastAoi: g } = get();
     if (!g) return;
     const bb = polygonBbox(g);
-    set({ aoi: g, aoiPoint: lastAoiPoint, toolMode: 'none', ...(bb ? { flyToBbox: bb } : {}) });
+    set({ aoi: g, toolMode: 'none', ...(bb ? { flyToBbox: bb } : {}) });
     dropPageToken(set, get);
     scheduleCoverageRefresh(set, get);
   },
@@ -2395,7 +2425,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   clearAll: () => {
     set({
       aoi: null,
-      aoiPoint: null,
       sections: [],
       openSectionId: null,
       ...forgetSearch(),
@@ -3095,7 +3124,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         if (
           e instanceof api.HttpError &&
           e.exportJob &&
-          (aoi.type === 'Polygon' || aoi.type === 'MultiPolygon')
+          isAoi(aoi)
         ) {
           set({
             downloadExportOffer: { id: ++exportOffers, request: { ...req, aoi }, message: e.message, exportJob: e.exportJob },
@@ -3110,7 +3139,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     // Scenes of a mosaic may lie in different UTM zones, and a form other than one file per band may bring bands to one grid: the
     // platform says whether anything is resampled, and the person confirms before the download (NM4-65 part 7).
     const mayResample = req.layout !== undefined && (req.layout.form !== 'per_band' || req.groups.some((group) => group.length > 1));
-    if (mayResample && isArea(req.aoi)) {
+    if (mayResample && isAoi(req.aoi)) {
       set({ downloading: true, error: null, downloadExportOffer: null });
       const controller = new AbortController();
       downloadJobAbort = controller;
@@ -3220,8 +3249,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       viewOfLayer: false,
       resultViewLayerId: null,
       cropToAoi,
-      // The view keeps the area it is opened with.
-      viewAoi: cropToAoi ? s.aoi : null,
+      // The view keeps the area it is opened with; a point its own copy, which the outline of its pixel belongs to (M5-69).
+      viewAoi: cropToAoi ? (s.aoi?.type === 'Point' ? { ...s.aoi } : s.aoi) : null,
       // A crop takes the results off the map and drops the tick of the scenes it was made of, so that their quicklooks
       // do not lie beside the crop; the view does not hang on the choice any more, and a scene ticked again shows like any
       // other (Otto, 27.10.2026). The whole scene keeps the tick and the switch.
@@ -3238,6 +3267,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     // because a time step draws nothing until its mosaic has answered.
     const mosaics = get().loadMosaics();
     // A view that stays keeps the fields it has: the range measured at the start is the new view's.
+    if (cropToAoi) void loadViewPixel(set, get);
     if (!open) await get().autoStretch();
     set({ focusLoading: true });
     await mosaics;
@@ -3695,7 +3725,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   runSearch: async () => {
     // One walk at a time (NM4-26): a second one would ask every page again while the first one goes on.
     if (get().searching) return;
-    const { aoi, aoiPoint, dateFrom, dateTo, selectedDatasetIds, datasets } = get();
+    const { aoi, dateFrom, dateTo, selectedDatasetIds, datasets } = get();
     if (!aoi) {
       set({ error: 'Draw or search an area of interest first.' });
       return;
@@ -3711,14 +3741,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ error: 'Correct the marked search filters first.' });
       return;
     }
-    // M3-08 F2a/F5a: a point AOI searches by the point itself, a polygon by its
-    // true shape, a rectangle by its bbox — `aoiPoint` is only ever read here,
-    // never for display or the download crop, which stay on `aoi`.
-    // A filter of the platform, or a search per pass, works on the AOI, the square around a point: that search is asked with the
-    // square too, the point would let scenes through that it cannot measure (Otto, 06.11.2026: a point is an area as well).
-    const wanted = filterQueriesOf(get(), chosen.map((d) => d.id));
-    const measuresArea = anyMeasuresAoi({ queryByCollection: wanted, ...evaluationOf(get(), wanted) });
-    const area = searchArea(aoi, measuresArea ? null : aoiPoint);
+    // M3-08 F2a/F5a: a point AOI searches by the point itself, a polygon by its true shape, a rectangle by its bbox. The filters
+    // the platform judges measure a point at its one pixel (M5-69).
+    const area = searchArea(aoi);
     if (!area.bbox && !area.intersects) {
       set({ error: 'Could not compute a search area for the area of interest.' });
       return;

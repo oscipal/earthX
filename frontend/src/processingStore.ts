@@ -75,6 +75,7 @@ import {
   type AoiProvenance,
   type EstimateDocument,
   type Order,
+  type OrderAoi,
   type ResultTileJson,
   type StatusInfo,
 } from './processing';
@@ -122,7 +123,8 @@ import {
   candidateItems,
   dataBandsOf,
   draftFromOrder,
-  isArea,
+  holdsPoint,
+  isAoi,
   clipArea,
   measuredNumbers,
   lonelyBand,
@@ -214,7 +216,7 @@ export interface Fixed {
   itemIds: string[];
   // The area, whatever the map holds; `null`: the whole scenes. A result's own area is "Whole scene" in its panel; "AOI only" is
   // another AOI inside it (the map's).
-  aoi: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
+  aoi: OrderAoi | null;
   // Set when the entry is "process further" of a result: its steps stand first, locked.
   result: FixedResult | null;
 }
@@ -525,7 +527,7 @@ export interface OrderView {
   // an AOI where the job had one; `inner` is "AOI only" in the panel of a result, another AOI of which the part inside the result
   // is the area, and `outside` says that none of it is.
   area: Area;
-  aoi: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
+  aoi: OrderAoi | null;
   inner: boolean;
   outside: boolean;
   // The three bands of the colour picture "RGB", red, green, blue: `earthx:true_color` where its bands are in the output, else those of a
@@ -603,7 +605,7 @@ function candidatesOf(app: SelectionState, area: Area, fixed: Fixed | null): { i
   if (lastCandidates && lastCandidates.inputs.every((value, i) => value === inputs[i])) return lastCandidates.result;
   const named = fixed ? new Set(fixed.itemIds) : null;
   const selected = named ? app.items.filter((item) => named.has(item.id)) : selectionItemsFrom(app);
-  const items = area === 'scene' ? selected : isArea(app.aoi) ? candidateItems(selected, app.aoi) : [];
+  const items = area === 'scene' ? selected : isAoi(app.aoi) ? candidateItems(selected, app.aoi) : [];
   const result = { items, passes: passesOf(items, app.groups) };
   lastCandidates = { inputs, result };
   return result;
@@ -668,14 +670,15 @@ export const OUTSIDE_TEXT = 'The AOI does not meet the result.';
 
 // The part of an AOI that lies in the area of a result: its AOI, or the scenes' footprints. The last answer is kept, since the
 // clipping is the costly part of the view.
-let lastClip: { inputs: unknown[]; result: GeoJSON.Polygon | GeoJSON.MultiPolygon | null } | null = null;
+let lastClip: { inputs: unknown[]; result: OrderAoi | null } | null = null;
 
-function clipToResult(aoi: GeoJSON.Polygon | GeoJSON.MultiPolygon, fixed: Fixed, items: readonly StacItem[]) {
+// A point lies in the result's area or not (M5-69).
+function clipToResult(aoi: OrderAoi, fixed: Fixed, items: readonly StacItem[]) {
   const inputs = [aoi, fixed, items];
   if (lastClip && lastClip.inputs.every((value, i) => value === inputs[i])) return lastClip.result;
   const named = new Set(fixed.itemIds);
   const outer = resultArea(fixed.aoi, items.filter((item) => named.has(item.id)));
-  const result = outer === null ? aoi : clipArea(aoi, outer);
+  const result = outer === null ? aoi : aoi.type === 'Point' ? (holdsPoint(outer, aoi) ? aoi : null) : clipArea(aoi, outer);
   lastClip = { inputs, result };
   return result;
 }
@@ -700,7 +703,7 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
   // What an entry fixed is the order's area, whatever the map holds; but in the panel of a result "AOI only" is the map's AOI, inside
   // the result's own area (NM4-05b).
   const inner = p.fixed?.result != null && p.area === 'aoi';
-  const drawn = isArea(scenes.aoi) ? scenes.aoi : null;
+  const drawn = isAoi(scenes.aoi) ? scenes.aoi : null;
   // Another AOI on a result covers part of it at most: only that part is the order's, and none of it where the AOI misses it.
   const clipped = inner && drawn !== null ? clipToResult(drawn, p.fixed!, scenes.items) : drawn;
   // A crop (an entry that fixed its scenes and an AOI, and no result) is one object whose area is chosen: "AOI only" is its own AOI, the
@@ -1245,7 +1248,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     dataset: DatasetOption;
     preset: QuickPreset;
     groups: readonly (readonly string[])[];
-    aoi: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
+    aoi: OrderAoi | null;
     title: string;
     whose: string;
   }) => {
@@ -1655,7 +1658,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       if (!extraScenes) return;
       // A layer merged and cut to its AOI is one object (NM4-06).
       const { cropToAoi, aoi } = layer.restore;
-      openCrop(cropToAoi && isArea(aoi) ? { itemIds: layer.restore.itemIds, aoi, result: null } : null, extraScenes, layer.restore.selectedIds);
+      openCrop(cropToAoi && isAoi(aoi) ? { itemIds: layer.restore.itemIds, aoi, result: null } : null, extraScenes, layer.restore.selectedIds);
     },
     processFocusView: async () => {
       useAppStore.getState().activateViewContext();
@@ -1668,7 +1671,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       if (!extraScenes) return;
       const { cropToAoi, viewAoi } = app;
       // The pass in view is the one of the image the head of the view shows.
-      openCrop(cropToAoi && isArea(viewAoi) ? { itemIds: ids, aoi: viewAoi, result: null } : null, extraScenes, shown?.ids ?? []);
+      openCrop(cropToAoi && isAoi(viewAoi) ? { itemIds: ids, aoi: viewAoi, result: null } : null, extraScenes, shown?.ids ?? []);
     },
     // Values typed by hand are no percentiles any more (NM4-65 part 4).
     // The ranges of single channels are set with `channels`; a value typed in the shared fields is for all (UI-04 part 5).
@@ -2130,7 +2133,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         dataset,
         preset,
         groups: restore.groupItemIds.length > 0 ? restore.groupItemIds : [restore.itemIds],
-        aoi: restore.cropToAoi && isArea(restore.aoi) ? restore.aoi : null,
+        aoi: restore.cropToAoi && isAoi(restore.aoi) ? restore.aoi : null,
         title: layer.name,
         whose: 'this layer',
       });

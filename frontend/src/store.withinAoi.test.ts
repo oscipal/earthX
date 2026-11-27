@@ -88,7 +88,7 @@ function reset(selected: string[] = ['optical']) {
     selectedDatasetIds: selected,
     datasetId: selected[0] ?? null,
     aoi: RECT,
-    aoiPoint: null,
+   
     dateFrom: '2026-07-01',
     dateTo: '2026-07-31',
     searchFilters: { optical: { 'test:cloud': range('', '20') } },
@@ -166,13 +166,13 @@ describe('what the search asks', () => {
     }
   });
 
-  it('measures in the square around a point, and searches by the square (Otto, 06.11.2026)', async () => {
+  it('measures at the pixel of a point, and searches by the point (M5-69)', async () => {
     reset();
-    useAppStore.setState({ aoiPoint: { type: 'Point', coordinates: [10.5, 47.5] } });
+    useAppStore.setState({ aoi: { type: 'Point', coordinates: [10.5, 47.5] } });
     steps = [{ scenes: [], checked: 0 }];
     await state().runSearch();
     expect(asked[0].query_by_collection).toEqual({ optical: { [AOI_CLOUD_PROPERTY]: { lte: 20 } } });
-    expect((asked[0].intersects as { type?: string } | undefined)?.type).not.toBe('Point');
+    expect(asked[0].intersects).toEqual({ type: 'Point', coordinates: [10.5, 47.5] });
   });
 
   it('asks the scene, not the AOI, for an AOI with too many points to measure in', async () => {

@@ -277,6 +277,22 @@ class TestOneCollection:
         assert "intersects" not in world.bodies[0] and "earthx:aoi" not in world.bodies[0]
         assert all(aoi == SQUARE for _, aoi in world.reads)
 
+    async def test_a_point_goes_to_the_source_and_is_measured_as_itself(self, collections_loaded: None, world: World) -> None:
+        point = {"type": "Point", "coordinates": [10.2, 47.6]}
+        async with _client(world) as client:
+            response = await post(client, body(intersects=point))
+        assert response.status_code == 200 and ids(response) == list(range(0, 40, 4))
+        assert world.bodies[0]["intersects"] == point
+        assert all(aoi == point for _, aoi in world.reads)
+
+    async def test_a_point_beside_a_bbox_is_measured_as_the_point(self, collections_loaded: None, world: World) -> None:
+        point = {"type": "Point", "coordinates": [10.2, 47.6]}
+        async with _client(world) as client:
+            response = await post(client, body(intersects=None, bbox=BBOX, query_by_collection=NODATA_ONLY, **{"earthx:aoi": point}))
+        assert response.status_code == 200 and len(ids(response)) == 40
+        assert world.bodies[0]["bbox"] == BBOX and "earthx:aoi" not in world.bodies[0]
+        assert all(aoi == point for _, aoi in world.reads)
+
     async def test_a_scene_without_a_valid_pixel_falls_out(self, collections_loaded: None, world: World) -> None:
         world.share = lambda n: None if n == 0 else share_by_number(n)
         async with _client(world) as client:
@@ -678,13 +694,13 @@ class TestARequestACallerHasToChange:
             ({"datetime": "../2024-06-01T00:00:00Z"}, "date range with a start and an end"),
             ({"datetime": "2024-05-01T00:00:00Z"}, "date range with a start and an end"),
             ({"intersects": None}, "needs an area"),
-            ({"intersects": {"type": "Point", "coordinates": [10.123456, 47.654321]}}, "needs an area"),
+            ({"intersects": {"type": "Point", "coordinates": [190.123456, 47.654321]}}, "valid polygon or point"),
             ({"intersects": {"type": "LineString", "coordinates": [[10.123456, 47.654321], [10.2, 47.7]]}}, "needs an area"),
             ({"query_by_collection": {S2: {"earthx:aoi_cloud_cover": {"lte": 120.5}}}}, "outside the range"),
             ({"query_by_collection": {S2: {"earthx:aoi_cloud_cover": {"gte": 30, "lte": 10}}}}, "ends below"),
             ({"query_by_collection": {S2: {"earthx:aoi_cloud_cover": {"in": [1]}}}}, "operators gte and lte"),
             ({"query_by_collection": {S2: {"earthx:aoi_cloud_cover": {}}}}, "object of operators"),
-            ({"intersects": None, "bbox": BBOX, "earthx:aoi": {"type": "Point", "coordinates": [10.2, 47.6]}}, "needs an area"),
+            ({"intersects": None, "bbox": BBOX, "earthx:aoi": {"type": "Point", "coordinates": [10.2, 47.6, 500.0]}}, "valid polygon or point"),
             ({"intersects": None, "bbox": [20.0, 47.5, 20.5, 48.0], "earthx:aoi": SQUARE}, "outside the bbox"),
             ({"earthx:aoi": SQUARE}, "not with intersects"),
             ({"intersects": None, "earthx:aoi": SQUARE}, "goes with the bbox"),
@@ -698,8 +714,8 @@ class TestARequestACallerHasToChange:
             ({"query_by_collection": NODATA_ONLY, "datetime": None}, "date range with a start and an end"),
             ({"query_by_collection": NODATA_ONLY, "datetime": "2024-05-01T00:00:00Z/.."}, "date range with a start and an end"),
             ({"query_by_collection": NODATA_ONLY, "intersects": None}, "needs an area"),
-            ({"query_by_collection": NODATA_ONLY, "intersects": {"type": "Point", "coordinates": [10.123456, 47.654321]}}, "needs an area"),
-            ({"query_by_collection": NODATA_ONLY, "intersects": None, "bbox": BBOX, "earthx:aoi": {"type": "Point", "coordinates": [10.2, 47.6]}}, "needs an area"),
+            ({"query_by_collection": NODATA_ONLY, "intersects": {"type": "Point", "coordinates": [190.123456, 47.654321]}}, "valid polygon or point"),
+            ({"query_by_collection": NODATA_ONLY, "intersects": None, "bbox": BBOX, "earthx:aoi": {"type": "Point", "coordinates": []}}, "valid polygon or point"),
             ({"query_by_collection": NODATA_ONLY, "earthx:aoi": SQUARE}, "not with intersects"),
         ],
     )

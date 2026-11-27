@@ -32,7 +32,7 @@ beforeEach(() => {
   container.className = 'app';
   document.body.append(container);
   root = createRoot(container);
-  useAppStore.setState({ aoi: null, aoiPoint: null, lastAoi: null, lastAoiPoint: null, error: null, config: null });
+  useAppStore.setState({ aoi: null, lastAoi: null, error: null });
 });
 
 afterEach(() => {
@@ -66,7 +66,7 @@ async function selectFile(file: File): Promise<void> {
 }
 
 describe('AoiExtras: uploading a file goes through POST /aoi/upload (M3-06b)', () => {
-  it('turns a Point answer into aoi/aoiPoint, and lastAoi picks it up too', async () => {
+  it('keeps a Point answer a point, and lastAoi picks it up too (M5-69)', async () => {
     const point: GeoJSON.Point = { type: 'Point', coordinates: [8, 49] };
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, point)));
     act(() => root.render(<ControlPanel />));
@@ -74,14 +74,12 @@ describe('AoiExtras: uploading a file goes through POST /aoi/upload (M3-06b)', (
     await selectFile(new File(['{}'], 'a.geojson'));
 
     const state = useAppStore.getState();
-    expect(state.aoiPoint).toEqual(point);
-    expect(state.aoi).toMatchObject({ type: 'Polygon' }); // buffered square, geoUtils.test.ts covers the math
-    expect(state.lastAoi).toEqual(state.aoi);
-    expect(state.lastAoiPoint).toEqual(point);
+    expect(state.aoi).toEqual(point);
+    expect(state.lastAoi).toEqual(point);
     expect(state.error).toBeNull();
   });
 
-  it('turns a Polygon answer into aoi directly, with no buffered point', async () => {
+  it('turns a Polygon answer into aoi directly', async () => {
     const square: GeoJSON.Polygon = { type: 'Polygon', coordinates: [[[0, 0], [0, 1], [1, 1], [1, 0], [0, 0]]] };
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, square)));
     act(() => root.render(<ControlPanel />));
@@ -90,12 +88,11 @@ describe('AoiExtras: uploading a file goes through POST /aoi/upload (M3-06b)', (
 
     const state = useAppStore.getState();
     expect(state.aoi).toEqual(square);
-    expect(state.aoiPoint).toBeNull();
   });
 
   it('shows the mapped message in error and leaves the existing AOI untouched on a rejection', async () => {
     const existing: GeoJSON.Polygon = { type: 'Polygon', coordinates: [[[0, 0], [0, 1], [1, 1], [1, 0], [0, 0]]] };
-    useAppStore.setState({ aoi: existing, aoiPoint: null });
+    useAppStore.setState({ aoi: existing });
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(400, { detail: 'not valid JSON' })));
     act(() => root.render(<ControlPanel />));
 
@@ -246,7 +243,6 @@ describe('PlaceSearchField: searching a place and picking a hit (M3-07b)', () =>
 
     const state = useAppStore.getState();
     expect(state.aoi).toEqual({ ...BERLIN_OUTLINE, properties: { source: 'OpenStreetMap / Nominatim', attribution: '© OpenStreetMap contributors', license: 'ODbL-1.0' } });
-    expect(state.aoiPoint).toBeNull();
     expect(state.lastAoi).toEqual(state.aoi);
     expect(state.flyToBbox).toEqual([13.0, 52.3, 13.8, 52.7]);
     expect(runSearch).not.toHaveBeenCalled();

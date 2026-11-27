@@ -36,6 +36,7 @@ from shapely.geometry import shape as shapely_shape
 from earthx.access.crop_rules import (
     BLOCK_SIZE,
     FALLBACK_BYTES_PER_PIXEL,
+    LATTICE_SLACK,
     MAX_JOB_BYTES,
     MAX_OUTPUT_SIDE_PX,
     AoiOutsideItems,
@@ -424,12 +425,22 @@ def crop_window(aoi: dict, crs: str, transform: Affine, width: int, height: int)
 
     ``aoi`` is GeoJSON in EPSG:4326. Raises :class:`AoiOutsideInputs` when the two
     do not overlap, and :class:`UnsupportedRecipe` for a rotated grid.
+
+    A point (M5-69) gives the one pixel it lies on, on an edge the one right of or below it
+    (``crop_rules.source_crop_grid``); a point on the right or lower edge of the raster lies past it.
     """
     if transform.b != 0 or transform.d != 0 or transform.a <= 0 or transform.e >= 0:
         raise UnsupportedRecipe("only north-up grids without rotation are processed")
     left, top = transform.c, transform.f
     right, bottom = transform @ (width, height)
-    footprint = shapely_shape(transform_geom("EPSG:4326", crs, aoi)).intersection(box(left, bottom, right, top))
+    shape = shapely_shape(transform_geom("EPSG:4326", crs, aoi))
+    if shape.geom_type == "Point":
+        col0 = math.floor((shape.x - left) / transform.a + LATTICE_SLACK)
+        row0 = math.floor((top - shape.y) / -transform.e + LATTICE_SLACK)
+        if not (0 <= col0 < width and 0 <= row0 < height):
+            raise AoiOutsideInputs("the AOI does not overlap the input raster")
+        return Window(col0, row0, 1, 1), transform @ Affine.translation(col0, row0)
+    footprint = shape.intersection(box(left, bottom, right, top))
     if footprint.is_empty or footprint.area == 0:
         raise AoiOutsideInputs("the AOI does not overlap the input raster")
     minx, miny, maxx, maxy = footprint.bounds

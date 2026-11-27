@@ -227,6 +227,11 @@ class TestRefusals:
             (("output", "bands"), ["red band"]),
             (("output", "bands"), [""]),
             (("aoi", "type"), "Point"),
+            (("aoi",), {"type": "Point", "coordinates": [190.0, 47.0]}),
+            (("aoi",), {"type": "Point", "coordinates": [9.0, 47.0, 500.0]}),
+            (("aoi",), {"type": "Point", "coordinates": [9.0]}),
+            (("aoi",), {"type": "Point", "coordinates": ["9.0", 47.0]}),
+            (("aoi",), {"type": "Point", "coordinates": [9.0, 47.0], "bbox": [9.0, 47.0, 9.0, 47.0]}),
             (("aoi", "coordinates"), [[[9.0, 47.0], [9.01, 47.0], [9.0, 47.0]]]),
             (("aoi", "coordinates"), [[[9.0, 47.0], [9.01, 47.0], [9.01, 47.01], [9.0, 47.01]]]),
             (("aoi", "coordinates"), [[[0.0, 0.0], [1.0, 1.0], [1.0, 0.0], [0.0, 1.0], [0.0, 0.0]]]),
@@ -585,3 +590,16 @@ class TestLoadsIJson:
     def test_it_is_the_check_the_parsers_use(self) -> None:
         with pytest.raises(RecipeInvalid, match="duplicate key"):
             parse_request('{"recipe_version": 1, "recipe_version": 1}', OPERATORS)
+
+
+class TestAPointAoi:
+    """M5-69: a point is an AOI of its own; the recipes with polygons before it keep their hash (see the golden cases)."""
+
+    def test_it_is_read_and_hashed_like_any_aoi(self) -> None:
+        data = recipe_data(aoi={"type": "Point", "coordinates": [9, 47.005]})
+        recipe = parse_recipe(json.dumps(data).encode(), OPERATORS)
+        assert recipe.aoi.model_dump(mode="json") == {"type": "Point", "coordinates": [9.0, 47.005]}
+        same = parse_recipe(json.dumps(recipe_data(aoi={"type": "Point", "coordinates": [9.0, 47.005]})).encode(), OPERATORS)
+        assert recipe_hash(recipe) == recipe_hash(same)
+        moved = parse_recipe(json.dumps(recipe_data(aoi={"type": "Point", "coordinates": [9.0, 47.006]})).encode(), OPERATORS)
+        assert recipe_hash(recipe) != recipe_hash(moved)
