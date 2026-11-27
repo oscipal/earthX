@@ -131,7 +131,13 @@ def place_terms(bbox: Sequence[float], known: Places | None = None) -> tuple[str
     of_continent: dict[str, float] = {}
     in_continent: dict[str, float] = {}
     for country in known.countries:
-        inside = _area(country.outline.intersection(area)) if country.outline.intersects(area) else 0.0
+        if area.contains(country.outline):
+            # The whole country: its area as measured when it was read, without measuring the same again (M5-66).
+            inside = country.area
+        elif country.outline.intersects(area):
+            inside = _area(country.outline.intersection(area))
+        else:
+            inside = 0.0
         in_box[country.code] = inside / country.area
         if country.continent is not None:
             of_continent[country.continent] = of_continent.get(country.continent, 0.0) + country.area

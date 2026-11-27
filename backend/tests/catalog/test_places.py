@@ -130,3 +130,15 @@ def test_the_script_refuses_a_file_of_another_release(tmp_path, monkeypatch, cap
     script = runpy.run_path(str(SCRIPT), run_name="not_main")
     assert script["main"]() == 1
     assert hashlib.sha256(other.read_bytes()).hexdigest() in capsys.readouterr().err
+
+
+def test_a_country_wholly_in_the_box_counts_with_its_area_as_measured_when_read():
+    # M5-66: no geodesic area of the intersection where the box holds the whole country; the share stays the same.
+    from shapely.geometry import box
+
+    from earthx.catalog.places import _area, places
+
+    whole = box(-180.0, -90.0, 180.0, 90.0)
+    for country in places().countries[:40]:
+        assert whole.contains(country.outline)
+        assert _area(country.outline.intersection(whole)) == pytest.approx(country.area, rel=1e-9)

@@ -121,32 +121,39 @@ def write_search_index(conn: psycopg.Connection, registry: DatasetRegistry) -> I
     return IndexOutcome(tuple(written), tuple(removed))
 
 
-#: The published listed entries that no full entry took over and whose row is missing or was built from other inputs.
-#: The hash of the inputs is computed here, in Postgres, so that an entry that did not change costs no Python: the
-#: salt (text version, place names, category words), the document by its hash, the fields of the row the text and the
-#: filters read, and the documents of the duplicates by their hashes. A listed row keeps it as its ``text_hash``.
+#: The published listed entries that no full entry took over and whose row is missing or was built from other inputs,
+#: by id and hash of the inputs. The hash is computed here, in Postgres, so that an entry that did not change costs no
+#: Python: the salt (text version, place names, category words), the document by its hash, the fields of the row the
+#: text and the filters read, and the documents of the duplicates by their hashes. A listed row keeps it as its
+#: ``text_hash``. One plain statement, no cursor and no subquery per entry, so that Postgres can run it in parallel
+#: workers: 0.8 s on one core at 10⁵ entries, 0.2 s in parallel (M5-66).
 _CHANGED_LISTED = """
-    WITH entries AS (
-        SELECT e.*, encode(sha256(convert_to(concat_ws('|', %(salt)s::text, e.content_sha256, e.regions::text,
+    WITH duplicates AS (
+        SELECT d.duplicate_of, string_agg(d.content_sha256, ',' ORDER BY d.dataset_id) AS hashes
+        FROM public.earthx_listed_entry d WHERE d.state = 'duplicate' GROUP BY d.duplicate_of),
+    entries AS (
+        SELECT e.dataset_id, encode(sha256(convert_to(concat_ws('|', %(salt)s::text, e.content_sha256, e.regions::text,
                    e.keywords::text, e.category, coalesce(e.publisher, ''), e.account,
                    ST_XMin(e.footprint)::text, ST_YMin(e.footprint)::text, ST_XMax(e.footprint)::text,
-                   ST_YMax(e.footprint)::text, coalesce(e.time_span::text, ''),
-                   coalesce((SELECT string_agg(d.content_sha256, ',' ORDER BY d.dataset_id)
-                             FROM public.earthx_listed_entry d
-                             WHERE d.duplicate_of = e.dataset_id AND d.state = 'duplicate'), '')), 'UTF8')), 'hex')
-               AS input_hash
-        FROM public.earthx_listed_entry e
+                   ST_YMax(e.footprint)::text, coalesce(e.time_span::text, ''), coalesce(dup.hashes, '')), 'UTF8')),
+                   'hex') AS input_hash
+        FROM public.earthx_listed_entry e LEFT JOIN duplicates dup ON dup.duplicate_of = e.dataset_id
         WHERE e.state = 'published' AND NOT (e.dataset_id = ANY(%(full)s)))
+    SELECT e.dataset_id, e.input_hash
+    FROM entries e
+    LEFT JOIN public.earthx_dataset_search s ON s.dataset_id = e.dataset_id AND s.entry = 'listed'
+    WHERE s.text_hash IS DISTINCT FROM e.input_hash
+"""
+#: What the text of each of these entries is built from, read only for the entries that changed.
+_LISTED_FIELDS = """
     SELECT e.dataset_id, coalesce(e.content ->> 'title', e.dataset_id), coalesce(e.content ->> 'description', ''),
            e.keywords, e.category, coalesce(e.publisher, ''), e.account, e.regions,
            ARRAY(SELECT d.content ->> 'title' FROM public.earthx_listed_entry d
                  WHERE d.duplicate_of = e.dataset_id AND d.state = 'duplicate' AND d.content ? 'title'
                  ORDER BY d.dataset_id),
            ST_XMin(e.footprint), ST_YMin(e.footprint), ST_XMax(e.footprint), ST_YMax(e.footprint),
-           lower(e.time_span), upper(e.time_span), e.time_span IS NOT NULL, e.input_hash
-    FROM entries e
-    LEFT JOIN public.earthx_dataset_search s ON s.dataset_id = e.dataset_id AND s.entry = 'listed'
-    WHERE s.text_hash IS DISTINCT FROM e.input_hash
+           lower(e.time_span), upper(e.time_span), e.time_span IS NOT NULL
+    FROM public.earthx_listed_entry e WHERE e.dataset_id = ANY(%s)
 """
 _LISTED_GONE = """
     DELETE FROM public.earthx_dataset_search s WHERE s.entry = 'listed' AND (s.dataset_id = ANY(%(full)s) OR NOT EXISTS (
@@ -167,17 +174,21 @@ class ListedIndexOutcome:
 def write_listed_search_index(conn: psycopg.Connection, full_ids: Iterable[str]) -> ListedIndexOutcome:
     """Bring the rows of the listed entries in line with the published ones that no id of ``full_ids`` took over.
 
-    Idempotent; the caller owns the transaction. Postgres picks the entries whose inputs changed (``_CHANGED_LISTED``);
-    only their texts are built and their ``tsvector`` computed, a batch at a time.
+    Idempotent; the caller owns the transaction. Postgres picks the entries whose inputs changed (``_CHANGED_LISTED``,
+    ids and hashes only); only their fields are read, their texts built and their ``tsvector`` computed, a batch at a
+    time.
     """
     full = list(full_ids)
     upsert = _UPSERT.format(document=document_sql())
     names = region_names()
     written = 0
-    with conn.cursor(name="earthx_listed_search") as rows, conn.cursor() as cur:
-        rows.itersize = _BATCH
-        rows.execute(_CHANGED_LISTED, {"full": full, "salt": listed_text_salt()})
-        while batch := rows.fetchmany(_BATCH):
+    with conn.cursor() as cur:
+        cur.execute(_CHANGED_LISTED, {"full": full, "salt": listed_text_salt()})
+        changed = dict(cur.fetchall())
+        ids = sorted(changed)
+        for start in range(0, len(ids), _BATCH):
+            cur.execute(_LISTED_FIELDS, (ids[start : start + _BATCH],))
+            batch = [(*row, changed[row[0]]) for row in cur.fetchall()]
             cur.executemany(upsert, [_listed_row(row, names) for row in batch])
             written += len(batch)
         cur.execute(_LISTED_GONE, {"full": full})
