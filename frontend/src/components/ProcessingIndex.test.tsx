@@ -112,7 +112,7 @@ function setApp(over: object = {}) {
     activeGroupIndex: 0,
     selectedIds: [],
     aoi: AOI,
-    aoiPoint: null,
+   
     layers: [indexLayer()],
     focusMode: false,
     downloaded: {},

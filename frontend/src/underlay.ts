@@ -7,6 +7,7 @@
 import { preferredGeoreferencedAsset, quicklookAsset } from './datasets';
 import type { DatasetOption } from './datasets';
 import { quicklookAoiPixelRings, quicklookCoords } from './geoUtils';
+import { clipShapeOf } from './pixelClip';
 import type { LayerOverlay } from './layers';
 import type { StacItem } from './types';
 
@@ -20,6 +21,9 @@ export function underlayOf(
   clip: GeoJSON.Geometry | null,
 ): ImageOverlay | null {
   if (!dataset?.viewable || dataset.browse !== 'quicklook' || dataset.zoom.min <= 0) return null;
+  // A point cuts to its one pixel, or to nothing while that is not known (M5-69).
+  clip = clipShapeOf(clip);
+  if (clip?.type === 'Point') return null;
   const href = quicklookAsset(item)?.href;
   if (!href) return null;
   const preferred = preferredGeoreferencedAsset(dataset, item);

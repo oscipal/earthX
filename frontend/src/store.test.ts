@@ -520,23 +520,13 @@ describe('findSceneByName', () => {
   });
 });
 
-// M3-08: `aoiPoint` travels alongside `aoi` (and `lastAoi`/`lastAoiPoint`) without
-// leaking into an unrelated AOI, since only `runSearch` ever reads it.
-describe('AOI point tracking', () => {
+// M5-69: a point AOI is the point itself, also for "Last AOI"; no square is built around it.
+describe('AOI point', () => {
   const POINT: GeoJSON.Point = { type: 'Point', coordinates: [10, 49] };
-  const SQUARE: GeoJSON.Geometry = {
-    type: 'Polygon',
-    coordinates: [[[9.95, 48.95], [10.05, 48.95], [10.05, 49.05], [9.95, 49.05], [9.95, 48.95]]],
-  };
-  const RECTANGLE: GeoJSON.Geometry = {
-    type: 'Polygon',
-    coordinates: [[[8, 47], [12, 47], [12, 51], [8, 51], [8, 47]]],
-  };
 
   // No jsdom in this project (Vitest runs plain Node, `preferences.test.ts`) —
   // `setAoi`/`clearAoi`/`useLastAoi` schedule a debounced coverage refresh via
-  // `window.setTimeout`, which this stub only needs to not throw; the debounced
-  // refresh itself (against no dataset here) is not what these tests are about.
+  // `window.setTimeout`, which this stub only needs to not throw.
   beforeEach(() => {
     vi.stubGlobal('window', { setTimeout: (...args: Parameters<typeof setTimeout>) => setTimeout(...args), clearTimeout });
   });
@@ -545,34 +535,13 @@ describe('AOI point tracking', () => {
     vi.unstubAllGlobals();
   });
 
-  it('setAoi with a point keeps both the square and the point', () => {
-    useAppStore.getState().setAoi(SQUARE, POINT);
-    const s = useAppStore.getState();
-    expect(s.aoi).toBe(SQUARE);
-    expect(s.aoiPoint).toBe(POINT);
-  });
-
-  it('setAoi without a point clears any point a previous AOI had', () => {
-    useAppStore.getState().setAoi(SQUARE, POINT);
-    useAppStore.getState().setAoi(RECTANGLE);
-    expect(useAppStore.getState().aoiPoint).toBeNull();
-  });
-
-  it('clearAoi clears the point along with the AOI', () => {
-    useAppStore.getState().setAoi(SQUARE, POINT);
+  it('setAoi keeps the point as the AOI, and Last AOI gives it back', () => {
+    useAppStore.getState().setAoi(POINT);
+    expect(useAppStore.getState().aoi).toBe(POINT);
     useAppStore.getState().clearAoi();
-    const s = useAppStore.getState();
-    expect(s.aoi).toBeNull();
-    expect(s.aoiPoint).toBeNull();
-  });
-
-  it('useLastAoi restores the point the last AOI was drawn from', () => {
-    useAppStore.getState().setAoi(SQUARE, POINT);
-    useAppStore.getState().clearAoi();
+    expect(useAppStore.getState().aoi).toBeNull();
     useAppStore.getState().useLastAoi();
-    const s = useAppStore.getState();
-    expect(s.aoi).toBe(SQUARE);
-    expect(s.aoiPoint).toBe(POINT);
+    expect(useAppStore.getState().aoi).toBe(POINT);
   });
 });
 
@@ -608,13 +577,9 @@ describe('runSearch', () => {
     vi.unstubAllGlobals();
   });
 
-  it('a point AOI searches by the point itself, not its buffer square', async () => {
+  it('a point AOI searches by the point itself', async () => {
     const point: GeoJSON.Point = { type: 'Point', coordinates: [10, 49] };
-    const square: GeoJSON.Geometry = {
-      type: 'Polygon',
-      coordinates: [[[9.95, 48.95], [10.05, 48.95], [10.05, 49.05], [9.95, 49.05], [9.95, 48.95]]],
-    };
-    baseState({ aoi: square, aoiPoint: point });
+    baseState({ aoi: point });
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, { features: [], numberReturned: 0 })));
 
     await useAppStore.getState().runSearch();
@@ -628,7 +593,7 @@ describe('runSearch', () => {
       type: 'Polygon',
       coordinates: [[[8, 47], [12, 47], [12, 51], [8, 51], [8, 47]]],
     };
-    baseState({ aoi: rectangle, aoiPoint: null });
+    baseState({ aoi: rectangle });
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, { features: [], numberReturned: 0 })));
 
     await useAppStore.getState().runSearch();
@@ -640,7 +605,7 @@ describe('runSearch', () => {
 
   it('an ordinary polygon AOI searches by intersects', async () => {
     const triangle: GeoJSON.Geometry = { type: 'Polygon', coordinates: [[[8, 47], [12, 47], [8, 51], [8, 47]]] };
-    baseState({ aoi: triangle, aoiPoint: null });
+    baseState({ aoi: triangle });
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, { features: [], numberReturned: 0 })));
 
     await useAppStore.getState().runSearch();
@@ -656,7 +621,7 @@ describe('runSearch', () => {
     ]);
     ring.push(ring[0]);
     const huge: GeoJSON.Geometry = { type: 'Polygon', coordinates: [ring] };
-    baseState({ aoi: huge, aoiPoint: null });
+    baseState({ aoi: huge });
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, { features: [], numberReturned: 0 })));
 
     await useAppStore.getState().runSearch();
@@ -717,7 +682,7 @@ describe('refreshCoverage (M3-19, UI-04 part 4)', () => {
       datasetId: DATASET_ID,
       showCoverage: true,
       aoi: null,
-      aoiPoint: null,
+     
       dateFrom: '',
       dateTo: '',
       coverage: null,

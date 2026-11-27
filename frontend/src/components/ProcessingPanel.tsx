@@ -25,7 +25,7 @@ import {
   EMPTY_OUTPUT,
   formatDuration,
   insertName,
-  isArea,
+  isAoi,
   processBlockReason,
   type Area,
   type DataBand,
@@ -636,7 +636,7 @@ export default function ProcessingPanel() {
   const view = orderView(app, p);
   const info = view.info;
   const built = view.built;
-  const hasAoi = isArea(app.aoi);
+  const hasAoi = isAoi(app.aoi);
   const batch = view.runAs !== 'one' && p.batch && p.batch.key === view.key ? p.batch.parts : null;
   const estimate = view.runAs === 'one' && p.estimate && p.estimate.key === view.key ? p.estimate.doc : null;
   const taken = batch ? batch.filter((part) => part.doc).length : 0;

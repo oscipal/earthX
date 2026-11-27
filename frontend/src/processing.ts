@@ -42,10 +42,13 @@ export interface OrderStep {
 // The order (`RecipeRequest`, adr/0014 §4.1): what someone asks for, without
 // any address. Without `aoi` a raster job covers the whole scenes it names
 // (M4-12: `api` puts the union of their footprints into the recipe).
+// What an order takes as its AOI: an area, or a point, whose crop is the one pixel it lies on (M5-69).
+export type OrderAoi = GeoJSON.Point | GeoJSON.Polygon | GeoJSON.MultiPolygon;
+
 export interface Order {
   recipe_version: 2;
   inputs: OrderInput[];
-  aoi?: GeoJSON.Polygon | GeoJSON.MultiPolygon;
+  aoi?: OrderAoi;
   steps: OrderStep[];
   output: RasterOutput | CropOutput;
 }

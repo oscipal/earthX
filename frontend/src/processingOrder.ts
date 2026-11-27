@@ -8,7 +8,7 @@ import type { Geom } from 'polyclip-ts';
 import { footprintOf, polygonBbox } from './geoUtils';
 import { bboxesOverlap } from './aoiClip';
 import { groupIndexOfItem } from './grouping';
-import { canonicalJson, type AoiProvenance, type ExportLayout, type JsonSchema, type Order, type OrderStep, type ProcessDescription } from './processing';
+import { canonicalJson, type AoiProvenance, type ExportLayout, type JsonSchema, type Order, type OrderAoi, type OrderStep, type ProcessDescription } from './processing';
 import type { AreaStatistics } from './api';
 import type { PassesRule } from './processingDefaults';
 import { addsBand, bandNamesOf, isExpression, nameProblem, ownersOf, resultNameOf } from './processingBands';
@@ -412,6 +412,8 @@ function toGeom(geometry: GeoJSON.Geometry): Geom | null {
 export function touchesAoi(item: StacItem, aoi: GeoJSON.Geometry): boolean {
   const footprint = footprintOf(item);
   if (!footprint) return true;
+  // A point meets the scenes whose footprint holds it (M5-69).
+  if (aoi.type === 'Point') return holdsPoint(footprint, aoi);
   const a = polygonBbox(footprint);
   const b = polygonBbox(aoi);
   if (a && b && !bboxesOverlap(a, b)) return false;
@@ -423,6 +425,25 @@ export function touchesAoi(item: StacItem, aoi: GeoJSON.Geometry): boolean {
   } catch {
     return true;
   }
+}
+
+function inRing(ring: ReadonlyArray<readonly [number, number]>, [x, y]: GeoJSON.Position): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i];
+    const [xj, yj] = ring[j];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+// Whether an area holds a point (M5-69). Where the area cannot be computed the answer is yes, and the server has the last word.
+export function holdsPoint(area: GeoJSON.Geometry, point: GeoJSON.Point): boolean {
+  const polygons = area.type === 'Polygon' ? [area.coordinates] : area.type === 'MultiPolygon' ? area.coordinates : null;
+  if (!polygons) return true;
+  return (polygons as unknown as Array<Array<Array<readonly [number, number]>>>).some(
+    ([outer, ...holes]) => !!outer && inRing(outer, point.coordinates) && !holes.some((hole) => inRing(hole, point.coordinates)),
+  );
 }
 
 // The area in square degrees that a polygon or multi-polygon (as `Geom`) covers, holes taken off.
@@ -514,8 +535,8 @@ export function passesOf(items: readonly StacItem[], groups: readonly TimeStepGr
     );
 }
 
-export function isArea(aoi: GeoJSON.Geometry | null): aoi is GeoJSON.Polygon | GeoJSON.MultiPolygon {
-  return !!aoi && (aoi.type === 'Polygon' || aoi.type === 'MultiPolygon');
+export function isAoi(aoi: GeoJSON.Geometry | null): aoi is OrderAoi {
+  return !!aoi && (aoi.type === 'Point' || aoi.type === 'Polygon' || aoi.type === 'MultiPolygon');
 }
 
 // The AOI as the order's schema takes it: `type` and `coordinates`, nothing
@@ -524,9 +545,10 @@ export function isArea(aoi: GeoJSON.Geometry | null): aoi is GeoJSON.Polygon | G
 // `aoi.geojson` (F3 of M3-07), a GeoJSON geometry may have a `bbox`, a
 // position an altitude — and the job API forbids every member it does not
 // name (`extra_forbidden`). Whether the shape is valid the server decides.
-export function orderAoi(aoi: GeoJSON.Polygon | GeoJSON.MultiPolygon): GeoJSON.Polygon | GeoJSON.MultiPolygon {
+export function orderAoi(aoi: OrderAoi): OrderAoi {
   const position = (p: GeoJSON.Position): GeoJSON.Position => [p[0], p[1]];
   const ring = (r: GeoJSON.Position[]) => r.map(position);
+  if (aoi.type === 'Point') return { type: 'Point', coordinates: position(aoi.coordinates) };
   if (aoi.type === 'Polygon') return { type: 'Polygon', coordinates: aoi.coordinates.map(ring) };
   return { type: 'MultiPolygon', coordinates: aoi.coordinates.map((polygon) => polygon.map(ring)) };
 }
@@ -709,7 +731,7 @@ export function buildOrder(args: {
   });
   const { needs, tiles } = measureSteps({ ...args, built, stepProblems });
   if (itemIds.length === 0) problems.push('Choose a pass.');
-  if (area === 'aoi' && !isArea(aoi)) problems.push('Draw an area as AOI.');
+  if (area === 'aoi' && !isAoi(aoi)) problems.push('Draw an AOI.');
   if (steps.length === 0) problems.push('Add a step.');
   if (steps.length > info.maxSteps) problems.push(`At most ${info.maxSteps} steps.`);
   if (bands.length === 0) problems.push(EMPTY_OUTPUT);
@@ -719,7 +741,7 @@ export function buildOrder(args: {
   const order: Order = {
     recipe_version: 2,
     inputs: [{ name: INPUT_NAME, dataset: datasetId, groups: [orderedIds(itemIds)] }],
-    ...(area === 'aoi' && isArea(aoi) ? { aoi: orderAoi(aoi) } : {}),
+    ...(area === 'aoi' && isAoi(aoi) ? { aoi: orderAoi(aoi) } : {}),
     steps: built,
     output: { kind: 'raster', format: 'cog', dtype, bands: [...bands] },
   };
@@ -778,7 +800,7 @@ function measureSteps(args: {
       problem.errors.method = AFTER_REPROJECT;
       return;
     }
-    if (args.shown === false || (area === 'aoi' && !isArea(aoi))) return;
+    if (args.shown === false || (area === 'aoi' && !isAoi(aoi))) return;
     // An error before it, or in its bands: nothing is asked. The fields of the target range do not matter to the question, so it is
     // asked as soon as the method is chosen.
     const wrong = stepProblems.slice(0, index).some((p) => Object.keys(p.errors).length > 0) || problem.errors.bands !== undefined;
@@ -792,7 +814,7 @@ function measureSteps(args: {
     const body: Order = {
       recipe_version: 2,
       inputs: [{ name: INPUT_NAME, dataset: datasetId, groups: [orderedIds(itemIds)] }],
-      ...(area === 'aoi' && isArea(aoi) ? { aoi: orderAoi(aoi) } : {}),
+      ...(area === 'aoi' && isAoi(aoi) ? { aoi: orderAoi(aoi) } : {}),
       steps: tiles.slice(0, index).map((earlier) => ({ ...earlier! })),
       output: { kind: 'raster', format: 'cog', dtype: 'float64', bands: [...bandNames] },
     };
@@ -838,7 +860,7 @@ export interface Draft {
   datasetId: string;
   // One list of scenes per group; the panel's own orders have one.
   groups: string[][];
-  aoi: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
+  aoi: OrderAoi | null;
   steps: DraftStep[];
   // The bands of the output; empty for a crop, which names assets.
   bands: string[];
@@ -943,7 +965,7 @@ export function buildExportOrder(args: {
   datasetId: string;
   groups: readonly (readonly string[])[];
   assets: readonly string[];
-  aoi?: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
+  aoi?: OrderAoi | null;
   layout?: ExportLayout;
 }): Order {
   const { datasetId, groups, assets, aoi, layout } = args;

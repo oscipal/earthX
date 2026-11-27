@@ -61,9 +61,12 @@ describe('the order for what the view draws', () => {
     expect(ask({ aoi: dressed })?.order.aoi).toEqual(AOI);
   });
 
+  it('measures the one pixel of a point (M5-69)', () => {
+    expect(ask({ aoi: { type: 'Point', coordinates: [10.05, 47.05] } })?.order.aoi).toEqual({ type: 'Point', coordinates: [10.05, 47.05] });
+  });
+
   it.each([
     ['no area is cropped', { aoi: null }],
-    ['a point is no area', { aoi: { type: 'Point', coordinates: [10, 47] } as GeoJSON.Point }],
   ])('says nothing where %s: there is nothing to fall back from', (_, over) => {
     expect(asked(over as Over)).toBeNull();
   });

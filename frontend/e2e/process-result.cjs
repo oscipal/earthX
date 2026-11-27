@@ -86,7 +86,7 @@ async function setUp(page, withOrder) {
           browse: 'quicklook', quicklookNodataMax: null, resultsGroupBy: ['datetime'], hasTimeAxis: true, collection,
         }],
         datasetId: 'sentinel-2-c1-l2a', items: [item], groups: [{ key: ['2026-07-01'], label: '2026-07-01', items: [item] }],
-        activeGroupIndex: 0, selectedIds: [], aoi: null, aoiPoint: null, layers: [], focusMode: false, error: null,
+        activeGroupIndex: 0, selectedIds: [], aoi: null, layers: [], focusMode: false, error: null,
       });
       const order = {
         recipe_version: 2,

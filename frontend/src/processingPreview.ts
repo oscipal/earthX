@@ -412,6 +412,8 @@ export interface PreviewSpec {
   clipToAoi: boolean;
   // The AOI they are cut to where it is not the map's: the part of it that lies in a result.
   clipAoi?: GeoJSON.Geometry;
+  // What the server is asked for the pixel a point AOI cuts out (M5-69): the scenes and the assets the job reads.
+  pixelOf: { datasetId: string; ids: string[]; assets: string[] };
   // Below the first level of a dataset with a pyramid or a substitute: the same steps on the picture of the overview (M5-10 part B,
   // G1), so that the preview does not disappear when the map zooms out; `note` says what it is (G2). `null` elsewhere.
   overview: (PlannedRaster & { url: string; note: string | null; footprints: GeoJSON.Geometry }) | null;
@@ -616,6 +618,7 @@ export function previewSpec(args: {
     maxZoom,
     clipToAoi,
     ...(clipAoi ? { clipAoi } : {}),
+    pixelOf: { datasetId: dataset.id, ids: items.map((item) => item.id), assets: [...assets] },
     overview,
   };
 }

@@ -135,7 +135,7 @@ async function check(browser, theme, viewport, standIn) {
         browse: 'quicklook', quicklookNodataMax: null, resultsGroupBy: ['datetime'], hasTimeAxis: true,
         collection: { id: 'sentinel-2-c1-l2a', 'earthx:format': 'cog', 'earthx:license_flags': { tier: 'processing' }, 'earthx:capabilities': { interpolation: true } },
       }],
-      datasetId: 'sentinel-2-c1-l2a', selectedDatasetIds: ['sentinel-2-c1-l2a'], aoi, aoiPoint: null, error: null,
+      datasetId: 'sentinel-2-c1-l2a', selectedDatasetIds: ['sentinel-2-c1-l2a'], aoi, error: null,
     });
     await useAppStore.getState().runSearch();
   });

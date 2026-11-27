@@ -37,7 +37,7 @@ beforeEach(() => {
     selectedDatasetIds: [],
     datasetId: null,
     aoi: AOI,
-    aoiPoint: null,
+   
     dateFrom: '',
     dateTo: '',
     searchFilters: {},
@@ -230,8 +230,8 @@ describe('"AOI coverage"', () => {
     expect(coverage()!.getAttribute('data-tip')).toBe('Draw an AOI to use this filter');
   });
 
-  it('is not locked for a point: the square around it is the AOI (Otto, 06.11.2026)', () => {
-    useAppStore.setState({ aoiPoint: { type: 'Point', coordinates: [10.5, 47.5] } });
+  it('is not locked for a point: the server measures it at its one pixel (M5-69)', () => {
+    useAppStore.setState({ aoi: { type: 'Point', coordinates: [10.5, 47.5] } });
     pick('optical');
     open();
     expect(number().disabled).toBe(false);

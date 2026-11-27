@@ -226,7 +226,7 @@ const UPLOAD = { type: 'Polygon', coordinates: [[[10.0, 47.2], [10.3, 47.2], [10
     if (config.touch) await page.touchscreen.tap(spot.x, spot.y);
     else await page.mouse.click(spot.x, spot.y);
     await page.waitForTimeout(500);
-    expect('the Point tool sets an AOI', (await aoi())?.type === 'Polygon');
+    expect('the Point tool sets a point as the AOI (M5-69)', (await aoi())?.type === 'Point');
     await clear();
     if (!config.touch) {
       await dock(true);
