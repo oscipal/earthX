@@ -4,7 +4,7 @@
 
 import type { BandStatistics } from './api';
 import { lookOfStep, type DisplayLook } from './displayLook';
-import { fetchProcess } from './processing';
+import { canonicalJson, fetchProcess } from './processing';
 import { processInfo, type ProcessInfo } from './processingOrder';
 import type { QuickPreset } from './quickPresets';
 import type { ResultStats } from './render';
@@ -12,6 +12,10 @@ import type { Field } from './schemaForm';
 
 const asked = new Map<string, Promise<ProcessInfo | null>>();
 const known = new Map<string, ProcessInfo>();
+// The unit of the band a step preset adds, as the server named it when it measured the band (DS-05a F5): "dB" for "VV dB", "deg" for a
+// slope in degrees. By dataset and step, parameters included; only the operator knows it, so nothing here derives one.
+const measuredUnits = new Map<string, string | null>();
+const unitKey = (datasetId: string, preset: QuickPreset): string => `${datasetId}|${canonicalJson(preset.steps)}`;
 
 function infoOf(datasetId: string): Promise<ProcessInfo | null> {
   let answer = asked.get(datasetId);
@@ -61,10 +65,20 @@ export function knownFieldsOf(datasetId: string, preset: QuickPreset): Field[] {
 // The description of the dataset, asked for once; resolves when it is in (or failed).
 export const describeDataset = (datasetId: string): Promise<unknown> => infoOf(datasetId);
 
+// Keeps the unit the measure of a step preset names for its band (the measure asks for that band alone).
+export function keepStepUnit(datasetId: string, preset: QuickPreset, statistics: Record<string, BandStatistics>): void {
+  const band = statistics[preset.bands[0]] ?? Object.values(statistics)[0];
+  if (preset.kind === 'step' && band && 'unit' in band) measuredUnits.set(unitKey(datasetId, preset), typeof band.unit === 'string' && band.unit !== '' ? band.unit : null);
+}
+
+// The unit of the band of a step preset once it was measured; `null` before, or where the server named none.
+export const stepUnitOf = (datasetId: string, preset: QuickPreset): string | null => measuredUnits.get(unitKey(datasetId, preset)) ?? null;
+
 // Forget what was read (tests).
 export function forgetPresetLooks(): void {
   asked.clear();
   known.clear();
+  measuredUnits.clear();
 }
 
 const finite = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);

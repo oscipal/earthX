@@ -14,7 +14,7 @@ import { originalsTitle, scenesOf, summaryOf, summaryText } from '../originals';
 import { processBlockReason } from '../processingOrder';
 import { useProcessingStore } from '../processingStore';
 import { defaultRenderOf, drawsClasses, showsColormap } from '../datasets';
-import { isComposite, quickPresetsOf } from '../quickPresets';
+import { isComposite, presetsForBands, quickPresetsOf } from '../quickPresets';
 import { trueColorOf } from '../processingOrder';
 import { BAND_TIP, bandAssetsOf, ONE_BAND_TIP } from '../viewBand';
 import { appliedRenderFrom, colourChannelsOf, lookChanged, NOTHING_TO_APPLY, NOTHING_TO_APPLY_TO_ALL_LAYER, NOTHING_TO_SAVE, NOTHING_TO_SAVE_IMAGES, NOTHING_TO_SAVE_ONE_IMAGE } from '../render';
@@ -172,8 +172,7 @@ export default function ViewerControls() {
   }, [shown, datasets, sections, openSectionId, datasetId, items, groups]);
   const shownDataset = shown ? datasets.find((d) => d.id === shown.datasetId) : undefined;
   const originalsAllowed = hasOriginalFiles(shownDataset);
-  // What "Quick processing" offers for the dataset the image shows (NM4-14b, M5-14): its indices, composites and steps.
-  const presets = quickPresetsOf(shownDataset?.collection);
+
   // What the fields hold (chosen, drawn after "Apply") and what the map draws now.
   const chosen = viewIndexOf({ index: pendingIndex, presetParams: pendingPresetParams }, shownDataset?.collection);
   const index = viewIndexOf(appliedRender, shownDataset?.collection);
@@ -195,6 +194,9 @@ export default function ViewerControls() {
   const shownItem = shown ? sectionsForView({ sections, openSectionId, datasetId, items, groups }).flatMap((section) => section.items).find((it) => it.id === shown.ids[0]) : undefined;
   const standardAsset = shownDataset ? (defaultRenderOf(shownDataset.collection, shownItem)?.assets[0] ?? null) : null;
   const bandAssets = shownDataset && shown ? bandAssetsOf(shownItem, shownDataset.collection) : [];
+  // What "Quick processing" offers for the dataset the image shows (NM4-14b, M5-14): its indices, composites and steps, those of them
+  // the scene has the bands for ("VV dB" not on a scene of HH and HV, DS-05a A7).
+  const presets = presetsForBands(quickPresetsOf(shownDataset?.collection), shownDataset?.collection, bandAssets);
   const trueColour = shownDataset ? trueColorOf(shownDataset.collection) !== null : false;
   const chosenOption: BandOption[] = chosen ? [{ value: `index:${chosen.name}`, label: chosen.label, title: chosen.tip, disabled: true }] : [];
   const bandOptions: BandOption[] = indexOnly

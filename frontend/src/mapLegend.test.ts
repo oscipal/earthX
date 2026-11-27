@@ -7,6 +7,8 @@ import type { BandClass } from './bandClasses';
 import { datasetsFrom } from './datasets';
 import type { MapLayer, ResultLayerInfo } from './layers';
 import { chooseLegend, layersSignature, legendEntries, legendOfTile, legendPlace, NO_CHOICE, VIEW_LEGEND, type LegendEntry } from './mapLegend';
+import { forgetPresetLooks, keepStepUnit } from './presetLooks';
+import { quickPresetsOf } from './quickPresets';
 import type { Collection, DownloadedInfo } from './types';
 
 const CLASSES: BandClass[] = [
@@ -141,6 +143,34 @@ describe('legendEntries', () => {
       { kind: 'classes', classes: CLASSES },
       { kind: 'bar', colormap: 'viridis', min: 0, max: 10, unit: 'm' },
     ]);
+  });
+});
+
+describe('the unit of a band a step preset makes (DS-05a F5)', () => {
+  const RADAR = {
+    id: 'radar',
+    title: 'Radar',
+    'earthx:band_units': { vv: 'DN' },
+    'earthx:step_presets': [{ name: 'vv_db', title: 'VV dB', op: 'sar_db', op_version: 1, params: { bands: ['vv'], quantity: 'amplitude', name: 'vv_db' }, adjustable: [] }],
+  } as unknown as Collection;
+  const datasets = datasetsFrom([RADAR]);
+  const [preset] = quickPresetsOf(RADAR);
+  const tiles = 'https://tiles.example/{z}/{x}/{y}.png?asset=vv&op=sar_db&op_version=1&params=x&band=vv_db';
+  // The view draws the step from the scene's own template and its look (`viewIndex.ts`); a pinned layer keeps the tiles of the step.
+  const downloaded = { s: { ...scene('vv'), datasetId: 'radar', tileUrl: 'https://tiles.example/{z}/{x}/{y}.png?asset=vv' } };
+  const render = { index: 'vv_db', colormapName: 'greys_r', rescale: '38,51' };
+  const pinned = layer('p', `${tiles}&colormap_name=greys_r&rescale=38,51`, { restore: { downloaded, appliedRender: render } as unknown as MapLayer['restore'] });
+  const units = () => legendEntries({ layers: [pinned], resultsAt: 1, datasets, view: { downloaded, render } }).map((e) => (e.content.kind === 'bar' ? e.content.unit : 'x'));
+
+  it('is none before the band was measured, not the unit of the band it read', () => {
+    forgetPresetLooks();
+    expect(units()).toEqual([null, null]);
+  });
+
+  it('is the unit the server named when it measured the band, in a pinned layer and in the view', () => {
+    forgetPresetLooks();
+    keepStepUnit('radar', preset, { vv_db: { min: 30, max: 60, percentile_2: 38, percentile_98: 51, unit: 'dB' } });
+    expect(units()).toEqual(['dB', 'dB']);
   });
 });
 

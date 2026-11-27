@@ -9,7 +9,9 @@ import { buildTileUrl } from './mapLayers';
 import type { DatasetOption } from './datasets';
 import { layerShownName } from './layerName';
 import type { MapLayer } from './layers';
+import { stepUnitOf } from './presetLooks';
 import { registryUnit, shownUnit } from './processingOrder';
+import { presetOfLook } from './quickPresets';
 import type { AppliedRender, DownloadedInfo } from './types';
 import { physicalOf, type BandScaling } from './viewMeasure';
 
@@ -54,9 +56,15 @@ const rasterOf = (layer: MapLayer): string | null => {
 // The scaling of the asset a scene is drawn from, where the item states one.
 const scalingOf = (scene: DownloadedInfo): BandScaling | null => scene.scalings?.[scene.asset] ?? null;
 
-// The unit of a band of a dataset where it is physical; an index drawn by its expression has none.
-function datasetUnit(dataset: DatasetOption | undefined, asset: string, tileUrl: string): string | null {
-  if (!dataset || new URLSearchParams(tileUrl.split('?')[1] ?? '').has('expression')) return null;
+// The unit of a band of a dataset where it is physical; an index has none. A view or layer of a step preset shows the band the step makes,
+// in the unit the server named when it measured it ("dB" for "VV dB", DS-05a F5), not that of the band it read.
+function datasetUnit(dataset: DatasetOption | undefined, asset: string, tileUrl: string, render: AppliedRender | undefined): string | null {
+  const query = new URLSearchParams(tileUrl.split('?')[1] ?? '');
+  if (!dataset || query.has('expression')) return null;
+  if (render?.index || query.has('op')) {
+    const preset = render ? presetOfLook(render, dataset.collection) : null;
+    return preset?.kind === 'step' ? shownUnit(stepUnitOf(dataset.id, preset)) : null;
+  }
   return shownUnit(registryUnit(dataset.collection, asset));
 }
 
@@ -72,7 +80,7 @@ export function layerLegend(layer: MapLayer, datasets: readonly DatasetOption[])
     const scene = Object.values(layer.restore.downloaded ?? {})[0];
     const dataset = scene ? datasets.find((d) => d.id === scene.datasetId) : undefined;
     const classes = scene && dataset ? classesOfBand(dataset.collection, scene.asset) : null;
-    content = legendOfTile(tileUrl, classes, scene ? datasetUnit(dataset, scene.asset, tileUrl) : null, scene ? scalingOf(scene) : null);
+    content = legendOfTile(tileUrl, classes, scene ? datasetUnit(dataset, scene.asset, tileUrl, layer.restore.appliedRender) : null, scene ? scalingOf(scene) : null);
   }
   return content ? { id: layer.id, title: layerShownName(layer), content } : null;
 }
@@ -83,7 +91,7 @@ function viewLegend(downloaded: Record<string, DownloadedInfo>, render: AppliedR
   if (!scene || typeof scene.tileUrl !== 'string') return null;
   const dataset = datasets.find((d) => d.id === scene.datasetId);
   const tileUrl = buildTileUrl(scene.tileUrl, render, scalingOf(scene));
-  const content = legendOfTile(tileUrl, dataset ? classesOfBand(dataset.collection, scene.asset) : null, datasetUnit(dataset, scene.asset, tileUrl), scalingOf(scene));
+  const content = legendOfTile(tileUrl, dataset ? classesOfBand(dataset.collection, scene.asset) : null, datasetUnit(dataset, scene.asset, tileUrl, render), scalingOf(scene));
   return content ? { id: VIEW_LEGEND, title: dataset?.title ?? scene.datasetId, content } : null;
 }
 

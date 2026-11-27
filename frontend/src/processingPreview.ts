@@ -37,7 +37,7 @@ import { canonicalJson, type Order } from './processing';
 import { lookOfStep, lookRange, type DisplayLook } from './displayLook';
 import { indexPresetsOf, presetFor, presetRange } from './indexPresets';
 import { compositeAmong } from './quickPresets';
-import { addsBand, assetsCarrying, bandLabel, isBandMath, resultNameOf, resultsOf, RGB, startBand } from './processingBands';
+import { addsBand, assetsCarrying, bandLabel, isBandMath, readsBandsAddsBand, resultNameOf, resultsOf, RGB, startBand } from './processingBands';
 import {
   bandsOf,
   namesInExpression,
@@ -199,7 +199,7 @@ export function namesNeeded(steps: readonly DraftStep[], band: string): Set<stri
     // A mask by value always reads the band that decides (`BandUse(reads={band})`), whichever band is shown.
     if (step.op === 'mask_values' && typeof step.values.band === 'string' && step.values.band !== '') needed.add(step.values.band);
     if (!addsBand(step) || !needed.delete(resultNameOf(step))) continue;
-    if (step.op === 'terrain') {
+    if (readsBandsAddsBand(step)) {
       for (const name of namesIn(typeof step.values.bands === 'string' ? step.values.bands : '')) needed.add(name);
       continue;
     }

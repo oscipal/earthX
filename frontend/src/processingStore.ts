@@ -109,6 +109,7 @@ import {
   addsBand,
   nameProblem,
   outputBands,
+  readsBandsAddsBand,
   renameResult,
   resultNameOf,
   resultsOf,
@@ -136,6 +137,7 @@ import {
   processBlockReason,
   processInfo,
   readProblem,
+  registryUnit,
   resultArea,
   selectableAssets,
   stepOfRefusal,
@@ -756,7 +758,7 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
     ...output,
     ...bandMathExpressions(p.steps).flatMap((expression) => [...namesInExpression(expression)]),
     ...p.steps.flatMap((step) =>
-      (step.op === 'normalize' || step.op === 'terrain') && typeof step.values.bands === 'string' ? namesIn(step.values.bands) : [],
+      (step.op === 'normalize' || readsBandsAddsBand(step)) && typeof step.values.bands === 'string' ? namesIn(step.values.bands) : [],
     ),
     ...maskedBands(p.steps),
   ];
@@ -1017,17 +1019,25 @@ function isLocked(s: Pick<ProcessingState, 'steps' | 'fixed'>, key: number): boo
   return at >= 0 && at < (s.fixed?.result?.locked ?? 0);
 }
 
-// The new name of the band of a terrain step whose product changes, or `null` where it keeps its name: where the person named it (the name
-// is not the one the old product would get) or the product stays.
-function productRename(s: ProcessingState, step: DraftStep, product: FieldValue): { from: string; to: string } | null {
-  if (step.op !== 'terrain' || typeof product !== 'string' || product === '' || product === step.values.product) return null;
+// The name a step proposes for its band from the field that decides it: the product of a terrain step, `<band>_db` for a `sar_db` step
+// (DS-05a); `null` for any other field.
+const NAMED_BY: Readonly<Record<string, { field: string; name: (value: string) => string }>> = {
+  terrain: { field: 'product', name: (product) => product },
+  sar_db: { field: 'bands', name: (band) => `${band}_db` },
+};
+
+// The new name of the band of a step whose deciding field changes (`NAMED_BY`), or `null` where it keeps its name: where the person
+// named it (the name is not the one the old value would give) or the value stays.
+function proposedRename(s: ProcessingState, step: DraftStep, field: string, value: FieldValue): { from: string; to: string } | null {
+  const rule = NAMED_BY[step.op];
+  if (!rule || rule.field !== field || typeof value !== 'string' || value.trim() === '' || value === step.values[field]) return null;
   const from = resultNameOf(step);
-  const old = step.values.product;
-  if (typeof old !== 'string' || old === '') return null;
+  const old = step.values[field];
+  if (typeof old !== 'string' || old.trim() === '') return null;
   const view = orderView(selectionState(useAppStore.getState()), s);
   const taken = [...view.dataNames, ...s.steps.filter((other) => other.key !== step.key && addsBand(other)).map(resultNameOf)];
-  if (from !== defaultName(taken, old)) return null;
-  const to = defaultName(taken, product);
+  if (from !== defaultName(taken, rule.name(old.trim()))) return null;
+  const to = defaultName(taken, rule.name(value.trim()));
   return to === from ? null : { from, to };
 }
 
@@ -1120,7 +1130,7 @@ function missingBands(draft: { steps: readonly DraftStep[]; bands: readonly stri
     ...draft.bands,
     ...bandMathExpressions(draft.steps).flatMap((expression) => [...namesInExpression(expression)]),
     ...draft.steps.flatMap((step) =>
-      (step.op === 'normalize' || step.op === 'terrain') && typeof step.values.bands === 'string' ? namesIn(step.values.bands) : [],
+      (step.op === 'normalize' || readsBandsAddsBand(step)) && typeof step.values.bands === 'string' ? namesIn(step.values.bands) : [],
     ),
     ...maskedBands(draft.steps),
   ];
@@ -1926,6 +1936,13 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         added = defaultName([...view.dataNames, ...steps.filter(addsBand).map(resultNameOf)], 'slope');
         values.name = added;
         values.bands = view.dataBands.find((band) => band.unit === 'm' && !band.auxiliary && !band.layer)?.name ?? '';
+      } else if (op === 'sar_db') {
+        // A `sar_db` step reads digital numbers: the first band of the data in DN is proposed, its band named after it (DS-05a).
+        const collection = datasets.find((d) => d.id === datasetId)?.collection;
+        const band = view.dataBands.find((one) => !one.auxiliary && !one.layer && registryUnit(collection, one.asset || one.name) === 'DN')?.name ?? '';
+        added = defaultName([...view.dataNames, ...steps.filter(addsBand).map(resultNameOf)], band ? `${band}_db` : 'db');
+        values.name = added;
+        values.bands = band;
       } else if (op === 'normalize' && 'bands' in values) {
         if ('method' in values) Object.assign(values, startValues());
         values.bands = view.results.filter((result) => !view.hidden.includes(result.name)).at(-1)?.name ?? '';
@@ -1949,9 +1966,9 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         if (isLocked(s, key)) return {};
         const changed = s.steps.map((step) => (step.key === key ? { ...step, values: { ...step.values, [name]: value } } : step));
         const step = s.steps.find((candidate) => candidate.key === key);
-        // A terrain step whose band still has the name of its product takes the name of the new one (Otto, 17.11.2026); a name the
-        // person gave stays.
-        const renamed = step && name === 'product' ? productRename(s, step, value) : null;
+        // A terrain step whose band still has the name of its product takes the name of the new one (Otto, 17.11.2026), a `sar_db`
+        // step the name of its new band (DS-05a); a name the person gave stays.
+        const renamed = step ? proposedRename(s, step, name, value) : null;
         return {
           steps: renamed ? renameResult(changed, key, renamed.from, renamed.to).map((candidate) =>
             candidate.key === key ? { ...candidate, values: { ...candidate.values, name: renamed.to } } : candidate,

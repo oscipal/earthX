@@ -5,7 +5,7 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { BAND_TIP } from '../normalizeMethods';
-import { stepName } from '../processingBands';
+import { readsBandsAddsBand, stepName } from '../processingBands';
 import type { MeasureStatus, Operator } from '../processingOrder';
 import { integersIn, namesIn, type Field, type FieldValue } from '../schemaForm';
 import { fieldsOfProduct } from '../terrainFields';
@@ -346,9 +346,9 @@ export default function StepForm({
   useCrsLookup(reprojects ? values.crs : undefined);
   const cellTip = useCellSizeTip(values.crs, values.resolution, latitude);
   const bandMath = operator?.op === 'band_math';
-  // `terrain` (M5-10) shows the fields of its product only, and names the band it adds like band math.
+  // `terrain` (M5-10) shows the fields of its product only, and names the band it adds like band math, as `sar_db` does (DS-05a).
   const terrain = operator?.op === 'terrain' && operator.form.supported;
-  const named = bandMath || terrain;
+  const named = bandMath || (operator !== undefined && readsBandsAddsBand(operator) && operator.form.supported);
   const maskValues = operator?.op === 'mask_values' && operator.form.supported;
   // `normalize` of version 4 lays its fields out by method (`NormalizeFields`); the bands are the chips every version has.
   const normalizes = operator?.op === 'normalize' && operator.form.supported && fields.some((f) => f.name === 'method');

@@ -85,8 +85,12 @@ export function stepName(operator: Operator | undefined, values: Record<string, 
 
 export const isBandMath = (step: Pick<DraftStep, 'op'>): boolean => step.op === 'band_math';
 
-// Whether a step adds a band of its own name to the stock: `band_math`, and `terrain` with what it computes (M5-10).
-export const addsBand = (step: Pick<DraftStep, 'op'>): boolean => step.op === 'band_math' || step.op === 'terrain';
+// The steps that read the band in `bands` and add one named `name`: `terrain` with what it computes (M5-10), `sar_db` with the
+// band in dB (DS-05a).
+export const readsBandsAddsBand = (step: Pick<DraftStep, 'op'>): boolean => step.op === 'terrain' || step.op === 'sar_db';
+
+// Whether a step adds a band of its own name to the stock: `band_math`, and the steps of `readsBandsAddsBand`.
+export const addsBand = (step: Pick<DraftStep, 'op'>): boolean => step.op === 'band_math' || readsBandsAddsBand(step);
 
 // The name a step that adds a band gives it, as typed.
 export function resultNameOf(step: DraftStep): string {
@@ -119,7 +123,7 @@ export function renameResult(steps: readonly DraftStep[], key: number, from: str
     if (step.op === 'mask_values') {
       return step.values.band === from ? { ...step, values: { ...step.values, band: to } } : step;
     }
-    if ((step.op === 'normalize' || step.op === 'terrain') && typeof step.values.bands === 'string') {
+    if ((step.op === 'normalize' || readsBandsAddsBand(step)) && typeof step.values.bands === 'string') {
       const names = namesIn(step.values.bands);
       if (!names.includes(from)) return step;
       return { ...step, values: { ...step.values, bands: names.map((name) => (name === from ? to : name)).join(', ') } };
@@ -128,10 +132,10 @@ export function renameResult(steps: readonly DraftStep[], key: number, from: str
   });
 }
 
-// `normalize` and `terrain` steps without the band `name`, which a removed step added.
+// `normalize` steps and those of `readsBandsAddsBand` without the band `name`, which a removed step added.
 export function dropFromNormalize(steps: readonly DraftStep[], name: string): DraftStep[] {
   return steps.map((step) => {
-    if ((step.op !== 'normalize' && step.op !== 'terrain') || typeof step.values.bands !== 'string') return step;
+    if ((step.op !== 'normalize' && !readsBandsAddsBand(step)) || typeof step.values.bands !== 'string') return step;
     const names = namesIn(step.values.bands);
     return names.includes(name) ? { ...step, values: { ...step.values, bands: names.filter((n) => n !== name).join(', ') } } : step;
   });
