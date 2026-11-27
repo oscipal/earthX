@@ -14,7 +14,8 @@
 services:
   postgres:
     # PostGIS plus pgvector, built from compose/postgres/Dockerfile (M5-43).
-    build: ./compose/postgres
+    build:
+      context: ./compose/postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
